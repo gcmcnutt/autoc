@@ -5,5 +5,14 @@ log/
 *.csv
 nn_weights.dat
 nohup.out
+
+# xiao (PlatformIO)
 xiao/.pio/
-xiao/generated/
+xiao/.vscode/.browse.c_cpp.db*
+xiao/.vscode/c_cpp_properties.json
+xiao/.vscode/launch.json
+xiao/.vscode/ipch
+xiao/build/
+xiao/generated/*
+!xiao/generated/README.md
+xiao/*.pyc
