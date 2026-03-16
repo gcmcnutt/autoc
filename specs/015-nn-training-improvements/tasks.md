@@ -1,151 +1,247 @@
 # Tasks: NN Training Improvements
 
-**Input**: Migrated from 014 Phases 6-13
-**Prerequisites**: 014 complete (standalone NN-only autoc, clean build)
+**Input**: Design documents from `specs/015-nn-training-improvements/`
+**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
 
 ## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: Can run in parallel (different files, no dependencies)
+- **[Story]**: Which user story this task belongs to (e.g., US1, US9, US3)
+- Include exact file paths in descriptions
 
 ---
 
 ## Phase 1: Sigma Floor (US1, P1) — MVP
 
-**Goal**: Prevent search freeze by clamping mutation sigma
+**Goal**: Prevent search freeze by clamping mutation sigma to configurable minimum
+
+**Independent Test**: Run evolution for 50+ gens with NNSigmaFloor=0.05, verify sigma never drops below 0.05 in console output
 
 ### Contract Tests
 
-- [ ] T001 [US1] Write test: sigma clamped to floor when it would decay below in tests/sigma_floor_tests.cc
-- [ ] T002 [US1] Write test: sigma floor = 0 produces identical behavior to unclamped in tests/sigma_floor_tests.cc
+- [ ] T001 [P] [US1] Write test: sigma clamped to floor when it would decay below in tests/sigma_floor_tests.cc
+- [ ] T002 [P] [US1] Write test: sigma floor = 0 produces identical behavior to unclamped in tests/sigma_floor_tests.cc
+- [ ] T003 [P] [US1] Write test: warn if NNSigmaFloor > NNMutationSigma in tests/sigma_floor_tests.cc
 
 ### Implementation
 
-- [ ] T003 [US1] Add NNSigmaFloor config key (default: 0) to config parser in src/util/config.cc
-- [ ] T004 [US1] Implement sigma floor clamping in NNPopulation::mutate() in src/nn/nn_population.cc — clamp sigma after self-adaptive update, log clamping event
-- [ ] T005 [US1] Add sigma floor edge case: warn if floor > initial sigma in src/nn/nn_population.cc
-- [ ] T006 [US1] Run tests: `cd build && ctest -R sigma_floor --output-on-failure`
-- [ ] T007 [US1] Integration test: run `./build/autoc` for 20 generations with NNSigmaFloor=0.05, verify sigma never drops below 0.05 in console output
+- [ ] T004 [US1] Add NNSigmaFloor config key (default: 0) to config parser in src/util/config.cc and include/autoc/util/config.h
+- [ ] T005 [US1] Implement sigma floor clamping in nn_gaussian_mutation() in src/nn/population.cc — clamp sigma after self-adaptive update, log clamping event
+- [ ] T006 [US1] Add sigma floor validation: warn at startup if floor > initial sigma in src/autoc.cc
+- [ ] T007 [US1] Run tests: `cd build && ctest -R sigma_floor --output-on-failure`
+- [ ] T008 [US1] Integration test: run `./build/autoc` for 20 gens with NNSigmaFloor=0.05, verify sigma ≥ 0.05 in console output
+
+**Checkpoint**: Sigma floor working. Can run long experiments without sigma collapse.
 
 ---
 
-## Phase 2: Curriculum Scenario Ramp (US2, P1)
+## Phase 2: Fitness Decomposition in autoc (US9, P1) — see the signal
 
-**Goal**: Progressive scenario difficulty ramping for NN evolution
+**Goal**: Refactor computeNNFitness() to compute and retain per-scenario × per-component scores from existing EvalResults data. No RPC or worker change.
+
+**Independent Test**: Run evolution, verify per-scenario breakdown logged for best individual. Verify aggregate from components matches legacy scalar exactly.
 
 ### Contract Tests
 
-- [ ] T010 [US2] Write test: CurriculumSchedule parses "1:50,7:150,49:0" into 3 stages in tests/curriculum_tests.cc
-- [ ] T011 [US2] Write test: stage transitions occur at correct generation boundaries in tests/curriculum_tests.cc
-- [ ] T012 [US2] Write test: disabled curriculum uses all scenarios from gen 0 in tests/curriculum_tests.cc
+- [ ] T010 [P] [US9] Write test: per-scenario distance RMSE computation matches expected values for known aircraft states in tests/fitness_decomposition_tests.cc
+- [ ] T011 [P] [US9] Write test: per-scenario attitude error computation matches expected values in tests/fitness_decomposition_tests.cc
+- [ ] T012 [P] [US9] Write test: per-scenario smoothness (Σ|Δu(t)|) computation for bang-bang input ≈ 2.0, constant ≈ 0.0 in tests/fitness_decomposition_tests.cc
+- [ ] T013 [US9] Write test: aggregate of decomposed scores matches legacy computeNNFitness() output exactly in tests/fitness_decomposition_tests.cc
 
 ### Implementation
 
-- [ ] T013 [US2] Create CurriculumSchedule class in include/autoc/eval/curriculum.h and src/eval/curriculum.cc
-- [ ] T014 [US2] Add CurriculumEnabled and CurriculumSchedule config keys to config parser in src/util/config.cc
-- [ ] T015 [US2] Wire CurriculumSchedule into NN evolution loop in src/autoc.cc — query active scenario count per generation, log stage transitions
-- [ ] T016 [US2] Run tests: `cd build && ctest -R curriculum --output-on-failure`
-- [ ] T017 [US2] Integration test: run `./build/autoc` for 20 generations with CurriculumSchedule=1:5,7:15,49:0, verify stage transitions in console output
+- [ ] T014 [US9] Define ScenarioScore struct (distance_rmse, attitude_error, smoothness[3], crashed, crash_fraction) in include/autoc/eval/fitness_decomposition.h
+- [ ] T015 [US9] Add per-scenario score storage to NNGenome: vector<ScenarioScore> scenario_scores in include/autoc/nn/evaluator.h
+- [ ] T016 [US9] Extract per-scenario scoring from computeNNFitness() into computeScenarioScores() in src/eval/fitness_decomposition.cc — compute distance RMSE, attitude error, smoothness per scenario from existing EvalResults aircraft states
+- [ ] T017 [US9] Add backward-compat aggregate: aggregateScalarFitness() that recombines ScenarioScores into legacy scalar in src/eval/fitness_decomposition.cc
+- [ ] T018 [US9] Wire into evolution loop: call computeScenarioScores() then aggregateScalarFitness() in place of computeNNFitness() in src/autoc.cc:616
+- [ ] T019 [US9] Log per-scenario breakdown for best individual each generation (distance RMSE, attitude, smoothness per scenario) in src/autoc.cc
+- [ ] T020 [US9] Run tests: `cd build && ctest -R fitness_decomposition --output-on-failure`
+- [ ] T021 [US9] Integration test: run `./build/autoc` for 10 gens, verify per-scenario log output and that aggregate matches legacy behavior
+
+**Checkpoint**: Per-scenario scores visible. Aggregate unchanged. Ready for multi-objective selection.
 
 ---
 
-## Phase 3: Fitness Decomposition (US3, P2)
+## Phase 3: Multi-Objective Selection (US3, P1) — core hypothesis test
 
-**Goal**: Minimax or percentile fitness aggregation across scenarios
+**Goal**: Replace single-scalar selection with configurable multi-objective aggregation. Start with minimax (worst-case scenario drives selection).
+
+**Independent Test**: Run with FitnessAggregation=minimax for 50 gens, compare worst-scenario fitness trajectory against sum baseline.
+
+**Depends on**: Phase 2 (per-scenario scores to aggregate)
 
 ### Contract Tests
 
-- [ ] T020 [US3] Write test: minimax returns worst-case scenario score in tests/fitness_aggregator_tests.cc
-- [ ] T021 [US3] Write test: percentile returns correct value at 95th percentile in tests/fitness_aggregator_tests.cc
-- [ ] T022 [US3] Write test: sum mode matches current behavior in tests/fitness_aggregator_tests.cc
+- [ ] T025 [P] [US3] Write test: minimax on {100, 200, 9000} returns 9000 in tests/fitness_aggregator_tests.cc
+- [ ] T026 [P] [US3] Write test: percentile(0.95) on 20 known values returns correct value in tests/fitness_aggregator_tests.cc
+- [ ] T027 [P] [US3] Write test: sum mode produces identical result to legacy aggregate in tests/fitness_aggregator_tests.cc
+- [ ] T028 [US3] Write test: tournament selection uses aggregated fitness correctly in tests/fitness_aggregator_tests.cc
 
 ### Implementation
 
-- [ ] T023 [US3] Create FitnessAggregator class in include/autoc/eval/fitness_aggregator.h and src/eval/fitness_aggregator.cc
-- [ ] T024 [US3] Add FitnessAggregation and FitnessPercentile config keys to config parser in src/util/config.cc
-- [ ] T025 [US3] Wire FitnessAggregator into fitness computation in src/autoc.cc — replace sum-over-scenarios with aggregator call
-- [ ] T026 [US3] Run tests: `cd build && ctest -R fitness_aggregator --output-on-failure`
-- [ ] T027 [US3] Integration test: run `./build/autoc` for 20 generations with FitnessAggregation=minimax, verify worst-case scenario fitness drives selection in console output
+- [ ] T029 [US3] Implement FitnessAggregator with sum/minimax/percentile modes in include/autoc/eval/fitness_aggregator.h and src/eval/fitness_aggregator.cc
+- [ ] T030 [US3] Add FitnessAggregation and FitnessPercentile config keys to src/util/config.cc and include/autoc/util/config.h
+- [ ] T031 [US3] Wire FitnessAggregator into evolution loop: replace aggregateScalarFitness() with configurable aggregator in src/autoc.cc
+- [ ] T032 [US3] Log aggregation mode and per-generation statistics (best/worst/mean per scenario) in src/autoc.cc
+- [ ] T033 [US3] Run tests: `cd build && ctest -R fitness_aggregator --output-on-failure`
+- [ ] T034 [US3] Integration test: run with FitnessAggregation=minimax for 20 gens, verify worst-case scenario drives selection in console output
+- [ ] T035 [US3] Integration test: run with FitnessAggregation=sum, verify identical behavior to pre-015 baseline
+
+**Checkpoint**: Minimax selection working. Can run A/B experiments: sum vs minimax over long runs. Core hypothesis testable.
 
 ---
 
-## Phase 4: sep-CMA-ES Optimizer (US4, P2)
+## Phase 4: Research Spikes (US12, P2) — branched experiments
 
-**Goal**: Replace GA with sep-CMA-ES for 531-dim weight optimization
+**Goal**: Explore alternative selection strategies. Each on its own git branch, validated against Phase 3 minimax baseline.
 
-### Contract Tests
+**Independent Test**: Each spike produces a 500-gen run with per-scenario fitness logs. Compare against minimax baseline on same scenarios.
 
-- [ ] T030 [US4] Write test: CMA-ES converges on Rosenbrock function (N=10) in tests/cmaes_tests.cc
-- [ ] T031 [US4] Write test: ask() generates lambda candidates from distribution in tests/cmaes_tests.cc
-- [ ] T032 [US4] Write test: tell() updates mean/sigma/covariance correctly in tests/cmaes_tests.cc
-- [ ] T033 [US4] Write test: CMA-ES state serialization round-trips in tests/cmaes_tests.cc
+**Depends on**: Phase 3 (multi-objective selection infrastructure)
 
-### Implementation
+### Lexicase Selection Spike
 
-- [ ] T034 [US4] Implement SepCMAES class in include/autoc/nn/sep_cmaes.h and src/nn/sep_cmaes.cc — ask/tell interface, Eigen vectors, hyperparams from research.md (lambda=50, mu=25, sep-scaled learning rates)
-- [ ] T035 [US4] Add OptimizerType config key ("ga" or "sep-cma-es") to config parser in src/util/config.cc
-- [ ] T036 [US4] Wire SepCMAES into evolution loop in src/autoc.cc — replace mutate/crossover/select with ask/tell when OptimizerType=sep-cma-es
-- [ ] T037 [US4] Add CMA-ES logging: sigma, best fitness, mean fitness per generation in src/autoc.cc
-- [ ] T038 [US4] Add CMA-ES state to S3 archive format in src/nn/nn_serialization.cc
-- [ ] T039 [US4] Run tests: `cd build && ctest -R cmaes --output-on-failure`
-- [ ] T040 [US4] Integration test: run `./build/autoc` for 20 generations with OptimizerType=sep-cma-es and PopulationSize=50, verify sigma/fitness logging and fitness improvement
+- [ ] T040 [US12] Create branch `015-spike-lexicase` from 015-nn-training-improvements
+- [ ] T041 [P] [US12] Write test: lexicase with 3 scenarios and 5 individuals selects correct winner in tests/lexicase_tests.cc
+- [ ] T042 [P] [US12] Write test: epsilon-lexicase with continuous fitness uses epsilon threshold in tests/lexicase_tests.cc
+- [ ] T043 [US12] Implement epsilon-lexicase selection in src/eval/lexicase_selection.cc — shuffle scenarios, filter by epsilon-best, repeat until 1 remains or scenarios exhausted
+- [ ] T044 [US12] Wire lexicase into evolution loop as alternative to tournament in src/nn/population.cc
+- [ ] T045 [US12] Run 500-gen experiment, log per-scenario fitness, compare against minimax baseline
 
----
+### NSGA-II Pareto Spike
 
-## Phase 5: Per-Timestep Streaming (US7, P3)
+- [ ] T046 [US12] Create branch `015-spike-nsga2` from 015-nn-training-improvements
+- [ ] T047 [P] [US12] Write test: non-dominated sort on known 2-objective vectors in tests/nsga2_tests.cc
+- [ ] T048 [P] [US12] Write test: crowding distance computation in tests/nsga2_tests.cc
+- [ ] T049 [US12] Implement non-dominated sort + crowding distance selection in src/eval/nsga2_selection.cc — objectives: tracking RMSE, smoothness, worst-case spread
+- [ ] T050 [US12] Wire NSGA-II selection into evolution loop in src/nn/population.cc
+- [ ] T051 [US12] Run 500-gen experiment, log Pareto front evolution, compare against minimax
 
-**Goal**: Return per-timestep data from simulator (enables US5)
+### Rank-Based Fitness Shaping Spike
 
-- [ ] T050 [US7] Define TimestepRecord struct in include/autoc/eval/timestep_record.h
-- [ ] T051 [US7] Add per-timestep data collection in minisim evaluation loop in src/minisim.cc
-- [ ] T052 [US7] Extend EvalResponse in rpc_protocol.h to include per-timestep data
-- [ ] T053 [US7] Update RPC serialization in src/minisim.cc to send per-timestep data when enabled
-- [ ] T054 [US7] Update CRRCSim minisim to match new response format in crrcsim/
-- [ ] T055 [US7] Verify aggregate fitness from streamed data matches legacy scalar in tests/timestep_streaming_tests.cc
-- [ ] T056 [US7] Run tests: `cd build && ctest -R timestep --output-on-failure`
+- [ ] T052 [US12] Create branch `015-spike-rank-shaping` from 015-nn-training-improvements
+- [ ] T053 [US12] Implement rank-based fitness transformation (CMA-ES style) in src/eval/fitness_aggregator.cc — replace raw fitness with rank-derived weights
+- [ ] T054 [US12] Run 500-gen experiment, compare against minimax baseline
 
----
+### Research Analysis
 
-## Phase 6: Segment Scoring (US5, P3)
+- [ ] T055 [US12] Compare all spike results: plot per-scenario fitness trajectories, smoothness evolution, worst-case convergence
+- [ ] T056 [US12] Document findings in specs/015-nn-training-improvements/research.md — which strategy broke the plateau?
+- [ ] T057 [US12] Merge winning strategy to 015-nn-training-improvements, remove losing branches
 
-**Depends on**: Phase 5 (per-timestep streaming)
-
-- [ ] T060 [US5] Create TrajectorySegment struct and segment scoring function in include/autoc/eval/segment_scorer.h and src/eval/segment_scorer.cc
-- [ ] T061 [US5] Implement difficulty weighting (turn rate, crosswind) in segment_scorer.cc
-- [ ] T062 [US5] Wire segment scoring into fitness aggregation pipeline in src/autoc.cc
-- [ ] T063 [US5] Write tests: segment scoring produces expected scores for known trajectories in tests/segment_scorer_tests.cc
-- [ ] T064 [US5] Run tests: `cd build && ctest -R segment --output-on-failure`
+**Checkpoint**: Best selection strategy identified and merged. Decision documented.
 
 ---
 
-## Phase 7: Checkpoint/Resume (US8, P3)
+## Phase 5: Smoothness as Selection Pressure (US10, P2) — deferred
 
-- [ ] T070 [US8] Define EvolutionCheckpoint struct with serialization in include/autoc/nn/checkpoint.h and src/nn/checkpoint.cc
-- [ ] T071 [US8] Include CMAESState in checkpoint when optimizer_type=sep-cma-es (requires Phase 4)
-- [ ] T072 [US8] Implement checkpoint writing at end of each generation in src/autoc.cc
-- [ ] T073 [US8] Implement checkpoint loading and resume at startup in src/autoc.cc
-- [ ] T074 [US8] Add checkpoint corruption detection (magic bytes + checksum) in src/nn/checkpoint.cc
-- [ ] T075 [US8] Write test: checkpoint round-trip produces identical state in tests/checkpoint_tests.cc
-- [ ] T076 [US8] Run tests: `cd build && ctest -R checkpoint --output-on-failure`
-- [ ] T077 [US8] Integration test: run for 5 generations, kill, resume, verify gen 6 continues correctly
+**Goal**: Add control smoothness as explicit selection pressure, informed by Phase 4 findings
 
----
+**Depends on**: Phase 4 (research determines how to apply smoothness — objective vs constraint)
 
-## Phase 8: Polish
+- [ ] T060 [US10] Based on Phase 4 findings, decide: smoothness as Pareto objective, lexicase dimension, or constraint threshold
+- [ ] T061 [P] [US10] Write test: smoothness threshold rejects bang-bang individuals in tests/smoothness_tests.cc
+- [ ] T062 [US10] Integrate smoothness into winning selection strategy in src/eval/ and src/nn/population.cc
+- [ ] T063 [US10] Run 500-gen experiment, verify bang-bang suppression and tracking quality maintained
+- [ ] T064 [US10] Update autoc.ini with smoothness-related config keys
 
-- [ ] T080 Verify all 3 repo builds: autoc, CRRCSim, xiao-gp
-- [ ] T081 Run full test suite: `cd build && ctest --output-on-failure`
-- [ ] T082 Verify export pipeline: nnextractor → nn2cpp → xiao-gp build
-- [ ] T083 Update autoc.ini with all new config keys and sensible defaults
+**Checkpoint**: Controllers produce smooth outputs suitable for physical servos.
 
 ---
 
-## Dependencies
+## Phase 6: Per-Segment Temporal Credit (US11, P2) — deferred
 
-- Phases 1-4 are independent (can run in any order or parallel)
-- Phase 5 must complete before Phase 6
-- Phase 7 T071 depends on Phase 4 (CMAESState)
-- Phase 8 after all others
+**Goal**: Reward error reduction on hard maneuvers, not just low absolute error
 
-## Cross-References
+**Depends on**: Phase 4 (confirm temporal decomposition helps)
 
-- 014 tasks (completed): T070-T131 (original numbering)
-- 014 spec: acceptance scenarios and edge cases
-- 014 research.md: CMA-ES hyperparameters, segment scoring formulas
+- [ ] T070 [P] [US11] Write test: segment boundaries detected at path curvature changes in tests/segment_scorer_tests.cc
+- [ ] T071 [P] [US11] Write test: error_reduction = start_distance - end_distance for known segment in tests/segment_scorer_tests.cc
+- [ ] T072 [P] [US11] Write test: difficulty_weight increases with turn rate and crosswind in tests/segment_scorer_tests.cc
+- [ ] T073 [US11] Implement segment boundary detection from path geometry in src/eval/segment_scorer.cc
+- [ ] T074 [US11] Implement segment scoring: error_reduction × difficulty_weight in src/eval/segment_scorer.cc
+- [ ] T075 [US11] Wire segment scores into fitness aggregation pipeline in src/autoc.cc
+- [ ] T076 [US11] Run tests: `cd build && ctest -R segment --output-on-failure`
+- [ ] T077 [US11] Run 500-gen experiment, verify credit flows to hard segments
+
+**Checkpoint**: Temporal credit assignment working. Controllers improve on hard maneuvers.
+
+---
+
+## Phase 7: sep-CMA-ES Optimizer (US4, P3) — branch experiment
+
+**Goal**: Replace GA with sep-CMA-ES. Pop 5000→50. Explore after fitness signal is sorted.
+
+**Depends on**: Phase 4 (need good fitness signal first)
+
+- [ ] T080 [US4] Create branch `015-spike-cmaes` from 015-nn-training-improvements
+- [ ] T081 [P] [US4] Write test: sep-CMA-ES converges on Rosenbrock (N=10) in tests/cmaes_tests.cc
+- [ ] T082 [P] [US4] Write test: ask() generates lambda candidates in tests/cmaes_tests.cc
+- [ ] T083 [P] [US4] Write test: tell() updates mean/sigma/diagonal_cov in tests/cmaes_tests.cc
+- [ ] T084 [US4] Implement SepCMAES class (ask/tell) in include/autoc/nn/sep_cmaes.h and src/nn/sep_cmaes.cc — Eigen vectors, hyperparams from research.md
+- [ ] T085 [US4] Wire into evolution loop: ask/tell replaces mutate/select in src/autoc.cc
+- [ ] T086 [US4] Run 500-gen experiment with pop=50, compare against GA baseline on same fitness
+- [ ] T087 [US4] If validated, merge to 015; remove GA code
+
+---
+
+## Phase 8: Polish & Cross-Cutting Concerns
+
+**Purpose**: Final verification after research converges
+
+- [ ] T090 Verify all 3 repo builds: autoc (`scripts/rebuild.sh`), CRRCSim (`make`), xiao (`pio run`)
+- [ ] T091 Run full test suite: `cd build && ctest --output-on-failure`
+- [ ] T092 Verify export pipeline: nnextractor → nn2cpp → xiao build
+- [ ] T093 Update autoc.ini with all new config keys and sensible defaults
+- [ ] T094 Run quickstart.md validation: follow all steps and verify they work
+
+---
+
+## Dependencies & Execution Order
+
+### Phase Dependencies
+
+- **Phase 1 (Sigma Floor)**: No dependencies — start immediately
+- **Phase 2 (Fitness Decomposition)**: No dependencies — can parallel with Phase 1
+- **Phase 3 (Multi-Objective Selection)**: Depends on Phase 2
+- **Phase 4 (Research Spikes)**: Depends on Phase 3
+- **Phase 5 (Smoothness)**: Depends on Phase 4 findings
+- **Phase 6 (Segment Scoring)**: Depends on Phase 4 findings
+- **Phase 7 (CMA-ES)**: Depends on Phase 4 (good fitness signal)
+- **Phase 8 (Polish)**: After all active phases complete
+
+### Within Each Phase
+
+- Contract tests written FIRST, must FAIL before implementation
+- Implementation follows test structure
+- Integration test validates end-to-end
+- Commit after each logical group
+
+### Parallel Opportunities
+
+- Phase 1 and Phase 2 are fully independent — can run in parallel
+- Within Phase 2: T010, T011, T012 (scenario score tests) can run in parallel
+- Within Phase 3: T025, T026, T027 (aggregator tests) can run in parallel
+- Within Phase 4: Lexicase and NSGA-II spikes can run on separate branches in parallel
+- Phase 5-7 depend on Phase 4 findings but are independent of each other
+
+---
+
+## Implementation Strategy
+
+### MVP First (Phases 1-2)
+
+1. Phase 1: Sigma floor — unblock running experiments
+2. Phase 2: Fitness decomposition — see per-scenario signal
+3. **STOP and VALIDATE**: Run long experiment, examine per-scenario logs
+
+### Core Hypothesis Test (Phase 3-4)
+
+1. Phase 3: Minimax selection
+2. Phase 4: Research spikes
+3. **STOP and DECIDE**: Which strategy breaks the plateau?
+
+### Deferred (Phases 5-7)
+
+Informed by Phase 4 findings. Order and scope TBD based on research results.
