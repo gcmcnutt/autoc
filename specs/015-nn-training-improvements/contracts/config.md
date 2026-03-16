@@ -18,8 +18,8 @@ NNSigmaFloor = 0
 FitnessAggregation = sum
 FitnessPercentile = 0.95
 
-# Per-segment temporal credit (US11)
-# 0 = disabled, 1 = workers compute and return segment scores
+# Per-segment temporal credit (US11) — Phase 6, not yet implemented
+# 0 = disabled, 1 = autoc computes segment scores from path geometry
 SegmentScoringEnabled = 0
 ```
 

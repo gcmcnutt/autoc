@@ -195,6 +195,7 @@
 - [ ] T092 Verify export pipeline: nnextractor → nn2cpp → xiao build
 - [ ] T093 Update autoc.ini with all new config keys and sensible defaults
 - [ ] T094 Run quickstart.md validation: follow all steps and verify they work
+- [ ] T095 GP legacy cleanup: scan all source files (src/, include/, tools/, xiao/, crrcsim/) for GP-era remnants — `GP[A-Z]` identifiers (GPrandDouble, GPConfiguration, etc.), `gp_` prefixed functions/variables, `#ifndef` include guards (convert to `#pragma once`), GP references in comments. Rename or remove all vestiges. Covers at least: include/autoc/util/gp_math_utils.h, include/autoc/util/types.h, and any other files found by case-insensitive grep for `\bgp[_A-Z]`
 
 ---
 

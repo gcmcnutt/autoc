@@ -5,10 +5,10 @@
 
 ## Modified Entities
 
-### EvalResults (rpc/protocol.h — MODIFIED)
+### ScenarioScore (autoc-internal, NOT wire format)
 
-Current: Returns per-scenario crash status + aircraft states + single aggregate fitness.
-New: Add structured per-scenario × per-component score vectors.
+Computed by autoc from existing EvalResults data (aircraft states, command traces).
+No RPC or protocol.h changes during research phases. Wire format changes deferred to Phase 7.
 
 ```cpp
 struct ScenarioScore {

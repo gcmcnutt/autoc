@@ -51,21 +51,24 @@ at 10Hz (60 seconds).
 
 ### Fitness Decomposition
 
-Workers (minisim/crrcsim) compute and return structured score vectors instead of a single
-scalar. The return format is per-scenario × per-component:
+Autoc refactors `computeNNFitness()` to compute and retain per-scenario × per-component
+scores from the existing EvalResults data (aircraft states, command traces). No RPC or
+worker changes during research — the simulator already returns everything needed.
+
+Per-scenario scores computed by autoc:
 
 ```
-EvalResponse {
-    scenario_scores[49] {
-        distance_rmse      // path tracking accuracy
-        attitude_error     // orientation penalty
-        control_smoothness // Σ|Δu(t)| or jerk measure
-        segment_scores[]   // per-segment credit (optional, Phase 4)
-    }
+ScenarioScore {
+    distance_rmse      // path tracking accuracy (from aircraftStateList positions)
+    attitude_error     // orientation penalty (from aircraftStateList attitudes)
+    control_smoothness // Σ|Δu(t)| per axis (from command traces)
+    crashed            // scenario crashed before completion
+    crash_fraction     // fraction of flight completed
+    segment_scores[]   // per-segment credit (optional, Phase 6)
 }
 ```
 
-Heavy math stays on the worker side (scaleout). Autoc decides aggregation strategy.
+Worker-side refactoring deferred until research settles on what to compute (Phase 7).
 
 ### Multi-Objective Selection
 
@@ -106,9 +109,9 @@ Workers return per-scenario × per-component score vectors instead of single sca
 Enables all downstream selection strategies without re-running simulations.
 This is the foundational change — everything else builds on it.
 
-### US10 — Control Smoothness Objective (P1)
-Add control smoothness (Σ|Δu(t)|) as a separate computed metric per scenario.
-Workers compute it alongside distance/attitude. Directly addresses bang-bang.
+### US10 — Control Smoothness Objective (P2, deferred to Phase 5)
+Add control smoothness (Σ|Δu(t)|) as explicit selection pressure.
+How to apply (Pareto objective, lexicase dimension, or constraint) depends on Phase 4 findings.
 
 ### US3 — Multi-Objective Selection (P1)
 Replace single-scalar selection with multi-objective aggregation. Start with minimax
@@ -159,10 +162,10 @@ changes during research.
 that are (a) not bang-bang, (b) robust across scenarios, and (c) continue improving past
 where scalar fitness plateaus.
 
-- **SC-001**: Worst-scenario tracking RMSE improves monotonically through gen 500+
-  (no plateau). Measured per-scenario, not aggregate.
-- **SC-002**: Control smoothness (mean |Δu(t)|) below threshold TBD — no sustained
-  bang-bang on any axis for any scenario.
+- **SC-001**: Worst-scenario tracking RMSE shows trending improvement through gen 500+
+  (rolling 50-gen average decreasing, no sustained plateau). Measured per-scenario, not aggregate.
+- **SC-002**: Control smoothness (mean |Δu(t)|) below threshold (TBD pending Phase 4 research)
+  — no sustained bang-bang on any axis for any scenario.
 - **SC-003**: Minimax worst-case tracking ≥30% better than sum-aggregation baseline.
 - **SC-004**: Variance across 49 scenarios decreases over generations (robustness improves).
 - **SC-005**: Per-segment scores show credit flowing to hard segments (turns, crosswind).
@@ -176,6 +179,7 @@ where scalar fitness plateaus.
 - Q: Is single-scalar fitness the right metric? → A: No — collapsing 29,400 data points into one number masks training signal. Fitness decomposition is the primary investigation.
 - Q: Should fitness decomposition move ahead of curriculum? → A: Yes — US1 first (quick fix), then structured fitness return + multi-objective selection as primary investigation. Curriculum deferred.
 - Q: What level of detail should workers return? → A: Partial reductions — workers compute per-scenario × per-component score vectors. Heavy math on worker side, autoc handles aggregation strategy.
+- Q: How should decomposed fitness handle crashed scenarios? → A: Deferred to Phase 4 research. Crash handling depends on whether we're scoring segment performance vs completion, and how objectives combine (Pareto, lexicase, etc.). For Phase 2 (decomposition), preserve existing crash penalty logic unchanged. Revisit when multi-objective strategy is chosen.
 
 ## Constraints
 
