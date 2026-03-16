@@ -89,6 +89,11 @@ crrcsim/src/mod_inputdev/...  # MODIFY: same structured response
 
 ## Implementation Phases
 
+**Key principle**: Keep the experiment loop tight. The simulator returns per-scenario aircraft
+states and traces. Autoc already has all the data needed to compute any fitness decomposition.
+No RPC or worker changes during research — just refactor `computeNNFitness()` in autoc.
+Worker-side refactoring is deferred until the research settles on what's worth computing.
+
 ### Phase 1: Sigma Floor (US1) — quick unblock
 
 1. Add `NNSigmaFloor` to config parser
@@ -98,57 +103,63 @@ crrcsim/src/mod_inputdev/...  # MODIFY: same structured response
 
 **Estimated scope**: ~50 LOC change, ~50 LOC tests
 
-### Phase 2: Structured Fitness Return (US9) — infrastructure
+### Phase 2: Fitness Decomposition in autoc (US9) — see the signal
 
-1. Define `ScenarioScore` and `SegmentScore` structs in protocol.h
-2. Add `scenario_scores` field to `EvalResults`
-3. Move fitness component computation from `computeNNFitness()` to worker side
-4. Worker computes distance_rmse, attitude_error per scenario
-5. Autoc receives structured scores, computes aggregate for backward-compat logging
-6. Tests: round-trip serialization, aggregate from components matches legacy scalar
+Refactor `computeNNFitness()` to compute and *retain* per-scenario × per-component scores.
+No RPC change — autoc already receives per-scenario aircraft states and can compute
+distance, attitude, smoothness, etc. from them.
 
-**Key risk**: Ensuring the decomposed scores recombine to match the existing scalar exactly.
-Write a comparison test before splitting the computation.
+1. Extract per-scenario scoring from `computeNNFitness()` into separate function
+2. Store per-scenario scores (distance RMSE, attitude error) on NNGenome
+3. Compute smoothness (Σ|Δu(t)|) per scenario per axis from existing command traces
+4. Log per-scenario breakdown for best individual each generation
+5. Existing aggregate still used for selection (no behavior change yet)
+6. Tests: per-scenario scores recombine to match legacy aggregate exactly
 
-### Phase 3: Smoothness Objective (US10) — kills bang-bang
+**Key risk**: Ensuring the decomposition is faithful. Write comparison test first.
 
-1. Add smoothness computation to worker evaluation loop: `|u(t) - u(t-1)|` per axis
-2. Include in ScenarioScore response
-3. Log smoothness per generation alongside fitness
-4. Tests: bang-bang input → smoothness ≈ 2.0, constant input → 0.0
-
-**Depends on**: Phase 2 (structured response format)
-
-### Phase 4: Multi-Objective Selection (US3) — core hypothesis test
+### Phase 3: Multi-Objective Selection (US3) — core hypothesis test
 
 1. Implement `FitnessAggregator` with sum/minimax/percentile modes
 2. Add `FitnessAggregation` config key
-3. Wire into evolution loop: replace `computeNNFitness()` call with aggregator
-4. Add per-scenario fitness storage to NNGenome for logging/analysis
-5. Tests: minimax on known vectors, percentile computation, sum matches legacy
+3. Wire into evolution loop: selection uses aggregator instead of raw scalar
+4. Tests: minimax on known vectors, percentile computation, sum matches legacy
 
-**Depends on**: Phase 2 (structured scores to aggregate)
+**Depends on**: Phase 2 (per-scenario scores to aggregate)
 
-### Phase 5: Per-Segment Temporal Credit (US11)
+### Phase 4: Research Spikes (US12) — branched experiments
 
-1. Compute segment boundaries from path geometry in worker
-2. Score segments by error reduction × difficulty weight
-3. Include in ScenarioScore response
-4. Wire into aggregator as optional weighting
-5. Tests: known trajectory segments produce expected scores
+Each on its own branch, validated against Phase 3 baseline. This is where the real
+exploration happens — what selection strategy actually breaks the plateau?
 
-**Depends on**: Phase 2 (structured response), path geometry available in worker
+- **Lexicase selection**: Each of the 49 scenarios is a test case. Random scenario ordering
+  per selection event. No aggregation at all. Particularly compelling for this domain.
+- **NSGA-II Pareto**: Non-dominated sort on (tracking, smoothness, robustness).
+  Does Pareto find different controllers than minimax?
+- **MAP-Elites**: Behavioral grid (e.g., mean tracking error × mean smoothness).
+  Does quality-diversity find stepping-stone solutions?
+- **Rank-based fitness shaping**: Scale-invariant, like CMA-ES uses internally.
+  Simple to implement, may help with component scale mismatch.
 
-### Phase 6: Research Spikes (US12) — branched experiments
+### Phase 5: Smoothness as Selection Pressure (US10) — deferred
 
-Each on its own branch, validated against Phase 4 baseline:
+Add smoothness as explicit selection objective once Phase 4 research shows which
+multi-objective strategy works. Could be:
+- Separate Pareto objective
+- Lexicase test dimension
+- Constraint (threshold, not optimized)
 
-- **Lexicase selection**: Per-scenario test cases, no aggregation
-- **NSGA-II**: Pareto ranking on (tracking, smoothness, robustness)
-- **MAP-Elites**: Behavioral grid (mean tracking × smoothness)
-- **sep-CMA-ES** (US4): Ask/tell optimizer, pop=50
+### Phase 6: Per-Segment Temporal Credit (US11) — deferred
 
-### Phase 7: Polish
+Add once Phase 4 confirms that temporal decomposition helps. Requires understanding
+segment boundaries from path geometry (available in autoc via path generator).
+
+### Phase 7: Worker-Side Refactoring — deferred
+
+Move settled fitness computation to workers for scaleout. Only after research converges
+on what to compute and how to aggregate. Changes RPC protocol.
+
+### Phase 8: Polish
 
 1. Update autoc.ini with all new keys and sensible defaults
 2. Verify all builds: autoc, crrcsim, xiao

@@ -137,18 +137,21 @@ Save full evolution state per generation for crash recovery.
 
 ## Implementation Order
 
-1. **US1** (Sigma Floor) — 1-hour fix, unblocks running experiments now
-2. **US9** (Structured Fitness Return) — RPC protocol change, worker-side scoring
-3. **US10** (Smoothness Objective) — add Σ|Δu(t)| to worker scoring
-4. **US3** (Multi-Objective Selection) — minimax + smoothness threshold in autoc
-5. **US11** (Per-Segment Credit) — temporal decomposition
-6. **US12** (Research Spikes) — branched experiments with alternative selection
-7. **US4** (sep-CMA-ES) — optimizer experiment on branch
+1. **US1** (Sigma Floor) — quick fix, unblocks running experiments now
+2. **US9** (Fitness Decomposition in autoc) — refactor computeNNFitness() to retain
+   per-scenario × per-component scores. No RPC change — autoc already has the data.
+3. **US3** (Multi-Objective Selection) — minimax/percentile on decomposed scores
+4. **US12** (Research Spikes) — branched experiments: lexicase, NSGA-II, MAP-Elites,
+   rank-based shaping. This is the core investigation.
+5. **US10** (Smoothness) — deferred until research shows how to apply it
+6. **US11** (Per-Segment Credit) — deferred until temporal signal is needed
+7. **US4** (sep-CMA-ES) — optimizer experiment on branch, after fitness is sorted
 8. **US2** (Curriculum) — deferred
 9. **US8** (Checkpoint) — deferred
 
 Steps 2-4 form the core hypothesis test: does decomposed multi-objective fitness
-break through the nn13 plateau?
+break through the nn13 plateau? Keep the experiment loop tight — no RPC or worker
+changes during research.
 
 ## Success Criteria
 
