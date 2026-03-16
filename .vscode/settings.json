@@ -80,5 +80,5 @@
     "unordered_set": "cpp",
     "regex": "cpp"
   },
-  "cmake.sourceDirectory": "${env:HOME}/GP/autoc"
+  "cmake.sourceDirectory": "${workspaceFolder}"
 }

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.11)
 project(autoc)
 
 # Build crrcsim FDM alongside autoc (requires SDL, OpenGL, etc.)
-option(BUILD_CRRCSIM "Build CRRCSim flight dynamics model" OFF)
+option(BUILD_CRRCSIM "Build CRRCSim flight dynamics model" ON)
 
 find_package(VTK REQUIRED)
 find_package(Eigen3 REQUIRED)

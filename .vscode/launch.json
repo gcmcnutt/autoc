@@ -20,7 +20,7 @@
           "ignoreFailures": true
         }
       ],
-      "coreDumpPath": "${input:coreDumpPathMinisim}",
+      "coreDumpPath": "${input:coreDumpPath}",
       "miDebuggerPath": "/usr/bin/gdb"
     },
     {
@@ -41,7 +41,28 @@
           "ignoreFailures": true
         }
       ],
-      "coreDumpPath": "${input:coreDumpPathMinisim}",
+      "coreDumpPath": "${input:coreDumpPath}",
+      "miDebuggerPath": "/usr/bin/gdb"
+    },
+    {
+      "name": "crrcsim: Core Dump Debug",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/crrcsim/crrcsim",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "coreDumpPath": "${input:coreDumpPath}",
       "miDebuggerPath": "/usr/bin/gdb"
     },
     {
@@ -64,17 +85,11 @@
       ]
     },
     {
-      "name": "(gdb) autoc Launch",
+      "name": "(gdb) Attach CRRCSim",
       "type": "cppdbg",
-      "request": "launch",
-      "program": "${workspaceFolder}/build/autoc",
-      "args": [],
-      "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/autoc",
-      "environment": [],
-      "externalConsole": false,
+      "request": "attach",
+      "program": "${workspaceFolder}/build/crrcsim/crrcsim",
       "MIMode": "gdb",
-      "preLaunchTask": "make", // Add this line
       "setupCommands": [
         {
           "description": "Enable pretty-printing for gdb",
@@ -89,17 +104,17 @@
       ]
     },
     {
-      "name": "(gdb) gpextractor Launch",
+      "name": "(gdb) autoc Launch",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/gpextractor",
+      "program": "${workspaceFolder}/build/autoc",
       "args": [],
       "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/autoc",
+      "cwd": "${workspaceFolder}",
       "environment": [],
       "externalConsole": false,
       "MIMode": "gdb",
-      "preLaunchTask": "make", // Add this line
+      "preLaunchTask": "make",
       "setupCommands": [
         {
           "description": "Enable pretty-printing for gdb",
@@ -120,11 +135,11 @@
       "program": "${workspaceFolder}/build/renderer",
       "args": [],
       "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/autoc",
+      "cwd": "${workspaceFolder}",
       "environment": [],
       "externalConsole": false,
       "MIMode": "gdb",
-      "preLaunchTask": "make", // Add this line
+      "preLaunchTask": "make",
       "setupCommands": [
         {
           "description": "Enable pretty-printing for gdb",
@@ -149,11 +164,72 @@
         "1234"
       ],
       "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/autoc",
+      "cwd": "${workspaceFolder}",
       "environment": [],
       "externalConsole": false,
       "MIMode": "gdb",
-      //"preLaunchTask": "make", // Add this line
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        },
+        {
+          "description": "Set Disassembly Flavor to Intel",
+          "text": "-gdb-set disassembly-flavor intel",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "(gdb) crrcsim Launch",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/crrcsim/crrcsim",
+      "args": [
+        "-g",
+        "autoc_config.xml",
+        "-p",
+        "1234",
+        "-i",
+        "AUTOC"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/crrcsim",
+      "environment": [
+        {
+          "name": "DISPLAY",
+          "value": ":1"
+        }
+      ],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "preLaunchTask": "make",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        },
+        {
+          "description": "Set Disassembly Flavor to Intel",
+          "text": "-gdb-set disassembly-flavor intel",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "(gdb) nnextractor Launch",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/nnextractor",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "preLaunchTask": "make",
       "setupCommands": [
         {
           "description": "Enable pretty-printing for gdb",
@@ -170,16 +246,10 @@
   ],
   "inputs": [
     {
-      "id": "programPath",
-      "type": "promptString",
-      "description": "Enter the path to the program executable",
-      "default": "${workspaceFolder}/your_program"
-    },
-    {
-      "id": "coreDumpPathMinisim",
+      "id": "coreDumpPath",
       "type": "promptString",
       "description": "Enter the path to the core dump file",
-      "default": "/mnt/wslg/dumps/core.minisim."
+      "default": "/mnt/wslg/dumps/core."
     }
   ]
 }

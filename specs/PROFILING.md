@@ -55,18 +55,18 @@ echo 0 | sudo tee /proc/sys/kernel/kptr_restrict
 ### autoc
 
 ```bash
-cd ~/GP
+cd ~/autoc
 rm -rf build && mkdir build && cd build
 
 # Build with profiling flags (keeps frame pointers for call graph)
-cmake -DENABLE_PROFILING=ON ../autoc
+cmake -DENABLE_PROFILING=ON ..
 make -j$(nproc)
 ```
 
 ### crrcsim
 
 ```bash
-cd ~/crsim/crrcsim-0.9.13
+cd ~/autoc/crrcsim
 rm -rf build && mkdir build && cd build
 
 # Build with profiling flags
@@ -80,12 +80,12 @@ make -j$(nproc)
 
 Create a minimal test configuration for profiling:
 
-### ~/GP/autoc/autoc_profile.ini
+### ~/autoc/autoc_profile.ini
 
 ```ini
 # Profiling configuration - single worker, moderate load
 [General]
-SimProgram = ../crsim/crrcsim-0.9.13/build/crrcsim
+SimProgram = crrcsim/build/crrcsim
 
 [GP]
 PopulationSize = 100
@@ -106,16 +106,16 @@ windScenarioCount = 2     # Some variation
 ### Step 1: Profile autoc (dispatcher side)
 
 ```bash
-cd ~/GP/build
+cd ~/autoc/build
 
 # Record with call graph (dwarf for C++, fp for frame pointer)
 # Use -g for call graphs, -F for frequency
 perf record -g -F 99 --call-graph dwarf -o autoc.perf.data \
-    ./autoc -f ../autoc/autoc_profile.ini 2>&1 | tee autoc_run.log
+    ./autoc -f autoc_profile.ini 2>&1 | tee autoc_run.log
 
 # If dwarf doesn't work, try frame pointer mode
 perf record -g -F 99 --call-graph fp -o autoc.perf.data \
-    ./autoc -f ../autoc/autoc_profile.ini
+    ./autoc -f autoc_profile.ini
 
 # Generate report
 perf report -i autoc.perf.data --stdio > autoc_perf_report.txt
@@ -157,7 +157,7 @@ perf script -i crrcsim.perf.data | \
 perf record -g -F 99 --call-graph dwarf \
     --inherit \
     -o combined.perf.data \
-    ./autoc -f ../autoc/autoc_profile.ini
+    ./autoc -f autoc_profile.ini
 
 # Generate combined flame graph
 perf script -i combined.perf.data | \
@@ -344,12 +344,12 @@ void printFDMStats() {
 
 ```bash
 # 1. Build both projects with profiling
-cd ~/GP && rm -rf build && mkdir build && cd build && cmake -DENABLE_PROFILING=ON ../autoc && make -j$(nproc)
-cd ~/crsim/crrcsim-0.9.13 && rm -rf build && mkdir build && cd build && cmake -DENABLE_PROFILING=ON .. && make -j$(nproc)
+cd ~/autoc && rm -rf build && mkdir build && cd build && cmake -DENABLE_PROFILING=ON .. && make -j$(nproc)
+cd ~/autoc/crrcsim && rm -rf build && mkdir build && cd build && cmake -DENABLE_PROFILING=ON .. && make -j$(nproc)
 
 # 2. Run profiled test (if perf works)
-cd ~/GP/build
-perf record -g -F 99 --call-graph dwarf -o profile.data ./autoc -f ../autoc/autoc.ini
+cd ~/autoc/build
+perf record -g -F 99 --call-graph dwarf -o profile.data ./autoc -f autoc.ini
 
 # 3. Generate flame graph
 perf script -i profile.data | ~/FlameGraph/stackcollapse-perf.pl | ~/FlameGraph/flamegraph.pl > flame.svg

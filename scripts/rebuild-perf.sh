@@ -2,9 +2,9 @@
 set -ex
 
 # Clean optimized rebuild — autoc + crrcsim
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 rm -rf build
 mkdir build
 cd build
-cmake -DPERFORMANCE_BUILD=ON -DBUILD_CRRCSIM=ON ..
+cmake -DPERFORMANCE_BUILD=ON ..
 make

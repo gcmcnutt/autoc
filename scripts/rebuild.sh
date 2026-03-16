@@ -2,9 +2,9 @@
 set -ex
 
 # Clean debug rebuild — autoc + crrcsim
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 rm -rf build
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_CRRCSIM=ON ..
+cmake -DCMAKE_BUILD_TYPE=Debug ..
 make

@@ -1,0 +1,459 @@
+# Tasks: NN Training Signal Improvement
+
+**Input**: Design documents from `/specs/014-nn-training-signal/`
+**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
+
+**Tests**: Contract tests are included per spec clarification ("contract tests first, before ripping things out").
+
+**Organization**: Tasks follow the refactor-first implementation order from the spec clarifications. Foundational phases (GP removal, Boost removal, source reorg) are prerequisites. User story phases (sigma floor, curriculum, CMA-ES, etc.) follow.
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: Can run in parallel (different files, no dependencies)
+- **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
+- Include exact file paths in descriptions
+
+---
+
+## Phase 1: Setup
+
+**Purpose**: Dependency analysis and contract tests that define surviving behavior
+
+- [X] T001 Run `nm ~/GP/lib/libgp.a | grep ' T '` and document all 103 exported symbols used by autoc in specs/014-nn-training-signal/analysis/libgp-symbols.md
+- [X] T002 Scan all `#include "gp.h"` and `#include "gpconfig.h"` across 11 autoc files, document transitive usage in specs/014-nn-training-signal/analysis/gp-includes.md
+- [X] T003 Scan all `#include <boost/` across autoc files, document per-file usage in specs/014-nn-training-signal/analysis/boost-includes.md
+- [X] T004 [P] Write contract test for NN evaluator (sensor-in/control-out: 22 inputs → 3 outputs) in autoc/tests/contract_evaluator_tests.cc
+- [X] T005 [P] Write contract test for config parsing (load autoc.ini, verify key types and defaults) in autoc/tests/contract_config_tests.cc
+- [X] T006 [P] Write contract test for NN evolution loop (1 generation: init → evaluate → select → reproduce → verify fitness improves) in autoc/tests/contract_evolution_tests.cc
+- [X] T006a [P] Write contract test for RPC transport (serialize EvalRequest/EvalResponse, round-trip, verify fields match — little-endian wire format for x86↔ARM portability) in autoc/tests/rpc_transport_tests.cc
+- [X] T007 Update autoc/CMakeLists.txt to add new contract test targets and ensure tests build into build/tests/
+- [X] T008 Verify all existing + new tests pass: `cd build && ctest --output-on-failure`
+
+**Checkpoint**: Dependency surface fully documented, contract tests pass, safe to begin surgery
+
+---
+
+## Phase 2: Foundational — Strip GP Dependencies (FR-012, FR-014)
+
+**Purpose**: Remove all GP code and libgp.a dependency. BLOCKS all subsequent work.
+
+**⚠️ CRITICAL**: No user story work can begin until this phase is complete
+
+### 2a: Vendor inih config parser
+
+- [X] T009 Vendor inih library via CMake FetchContent (r58 tag)
+- [X] T010 Add inih to autoc/CMakeLists.txt as a static library dependency
+- [X] T011 Rewrite autoc/config_manager.h: unified AutocConfig struct replaces GPVariables + ExtraConfig — removed `#include "gp.h"` and `#include "gpconfig.h"`
+- [X] T012 Rewrite autoc/config_manager.cc to use INIReader::GetInteger/GetReal/GetString — updated all callers across autoc.cc, nnextractor.cc, renderer.cc, gpextractor.cc, threadpool.h, pathgen.cc
+- [X] T013 Verify contract_config_tests pass with new parser
+
+### 2b: Replace PRNG
+
+- [X] T014 [P] Create autoc/rng.h with std::mt19937 wrapper replacing GPrand()/GPsrand()/GPRandomPercent()
+- [X] T015 Replace GPrand() calls in autoc/pathgen.cc, autoc.cc, variation_generator.h, nn_population.cc, nn_evaluator_portable.cc with rng.h
+- [X] T016 Replace GPrandGaussian/GPrandDouble in gp_math_utils.h with rng.h delegates — removed `#include "gp.h"`
+
+### 2c: Break GP inheritance and remove GP code
+
+- [X] T017 Rewrite autoc/autoc.h: remove `#include "gp.h"`, remove MyGP/MyGene/MyPopulation classes, ExtraConfig, Operators enum — NN-only header with fitness defines and scenario types
+- [X] T018 Rewrite autoc/autoc.cc: remove MyPopulation class, MyGP::evaluate/evalTask, GP evolution loop, bytecode evaluation mode, GP initialization — NN-only with runNNEvolution/runNNEvaluation
+- [X] T019 Delete autoc/autoc-eval.cc (GP tree evaluation — entirely replaced by nn_evaluator_portable)
+- [X] T020 [P] Delete autoc/gp_bytecode.h and autoc/gp_bytecode.cc (bytecode interpreter)
+- [X] T021 [P] Delete autoc/gp_evaluator_portable.h and autoc/gp_evaluator_portable.cc (GP portable evaluator). Sensor math (executeGetDPhi, executeGetDTheta, getInterpolatedTargetPosition) extracted to new sensor_math.h/cc with fastAtan2 LUT preserved for embedded platform compatibility.
+- [X] T022 Remove GP tree deserialization from autoc/minisim.cc — complete rewrite, NN-only, uses sensor_math.h for temporal history
+- [X] T023 Remove GP tree deserialization from autoc/renderer.cc — remove `#include "gp.h"`, NN-only fitness extraction
+- [X] T024 Remove `#include "gp.h"` from autoc/nnextractor.cc, remove dummy MyGP implementations
+- [X] T025 Delete autoc/gpextractor.cc, bytecode2cpp.cc, gp_evaluator_desktop.h/cc, gp_evaluator_embedded.h/cc, gp_evaluator_tests.cc
+- [X] T026 Strip all GP/NN modal branches — NN is the only path in autoc.cc and minisim.cc
+
+### 2d: Sever CMake dependency on parent repo
+
+- [X] T027 Update autoc/CMakeLists.txt: remove `include_directories(../include)`, `link_directories(../lib)`, remove `gp` from all target_link_libraries
+- [X] T028 Remove references to deleted source files from autoc/CMakeLists.txt, add sensor_math.cc/h, remove autoc_tests (GP-only)
+- [X] T029 Full rebuild: clean build succeeds with zero GP references
+- [X] T030 Run all tests: `cd build && ctest --output-on-failure` — 8/8 tests pass
+- [X] T030a Integration smoke test: run `./build/autoc` for 3 generations with NN config, verify data.dat and data.stc are produced and fitness values are present in console output
+
+**Checkpoint**: autoc builds with zero dependency on libgp.a or parent GP repo. All `#include "gp.h"` removed.
+
+---
+
+## Phase 3: Foundational — Replace Boost (FR-013, phases C/D/E)
+
+**Purpose**: Remove Boost dependency entirely
+
+### 3a: Trivial Boost replacements
+
+- [X] T031 [P] Replace boost::thread with std::thread in autoc/threadpool.h
+- [X] T032 [P] Replace boost::mutex/unique_lock/condition_variable with std:: equivalents in autoc/threadpool.h and autoc/autoc.cc
+- [X] T033 [P] Replace boost::format with sprintf or std::stringstream in autoc/minisim.h and autoc/aircraft_state.h
+- [X] T034 [P] Replace boost::date_time with std::chrono in autoc/autoc.cc logging setup
+- [X] T035 Replace boost::process with fork()/execv() in autoc/threadpool.h
+
+### 3b: Medium Boost replacements
+
+- [X] T036 Create autoc/socket_wrapper.h with POSIX TCP socket wrapper (~150 LOC) replacing boost::asio usage
+- [X] T037 Replace boost::asio in autoc/threadpool.h (tcp::acceptor, io_service) with socket_wrapper.h
+- [X] T038 Replace boost::asio in autoc/minisim.cc (tcp::resolver, connect) with socket_wrapper.h
+- [X] T039 Replace boost::asio in autoc/minisim.h (read/write) with socket_wrapper.h
+- [X] T040 Rewrite autoc/logger.h and autoc/logger.cc: replace boost::log with simple custom logger (~30 LOC, severity levels, file + stderr output)
+- [X] T041 Replace boost::iostreams with std::stringstream in autoc/minisim.h and autoc/autoc.cc
+
+### 3c: Boost serialization replacement + unified transport
+
+- [X] T042 Define EvalRequest and EvalResponse structs with manual serialize/deserialize methods per contracts/rpc-transport.md in autoc/rpc_protocol.h
+- [X] T043 Rewrite sendRPC/receiveRPC in autoc/minisim.h to use manual binary serialization instead of boost::archive
+- [X] T044 Remove BOOST_SERIALIZATION_ACCESS, BOOST_CLASS_VERSION, and all boost::serialization friend classes from autoc/minisim.h, autoc/aircraft_state.h, autoc/gp_bytecode.h (if still present)
+- [X] T045 Remove all `#include <boost/` directives from all autoc source files
+- [X] T046 Remove Boost from find_package and target_link_libraries in autoc/CMakeLists.txt
+- [X] T047 Full rebuild: `bash scripts/rebuild.sh` — verify zero Boost references remain
+- [X] T048 Run all tests: `cd build && ctest --output-on-failure`
+- [X] T048a Integration smoke test: run `./build/autoc` for 3 generations, verify RPC communication works (autoc ↔ minisim), data.dat produced, fitness values in output
+
+**Checkpoint**: autoc builds with zero Boost dependency. RPC uses plain binary protocol.
+
+---
+
+## Phase 4: Foundational — Source Reorganization (Phase F)
+
+**Purpose**: Clean C++ project layout enabling standalone repo extraction
+
+- [X] T049 Create directory structure: autoc/include/autoc/{nn,eval,util}/, autoc/src/{nn,eval,util}/, autoc/tools/
+- [X] T050 [P] `git mv` NN headers to include/autoc/nn/: nn_topology.h, nn_genome.h (from nn_population.h), nn_population.h, nn_forward.h, nn_serialization.h
+- [X] T051 [P] `git mv` eval headers to include/autoc/eval/: nn_evaluator_portable.h, aircraft_state.h
+- [X] T052 [P] `git mv` util headers to include/autoc/util/: config_manager.h (→ config.h), logger.h, s3_archive.h, socket_wrapper.h, rng.h
+- [X] T053 [P] `git mv` NN source files to src/nn/
+- [X] T054 [P] `git mv` eval source files to src/eval/
+- [X] T055 [P] `git mv` util source files to src/util/
+- [X] T056 [P] `git mv` tool executables to tools/: nnextractor.cc, nn2cpp.cc, renderer.cc
+- [X] T057 [P] `git mv` test files to tests/
+- [X] T058 Update all `#include` directives across all moved files to use `"autoc/nn/..."`, `"autoc/eval/..."`, `"autoc/util/..."` style
+- [X] T059 Rewrite autoc/CMakeLists.txt for new directory structure: include paths, source file lists, add_subdirectory(tests), test output to build/tests/
+- [X] T060 Full rebuild and test: `bash scripts/rebuild.sh && cd build && ctest --output-on-failure`
+- [X] T060a Integration smoke test: run `./build/autoc` for 3 generations, verify everything still works after file moves (same output as T048a)
+
+**Checkpoint**: Clean source layout, all tests pass, ready for cross-repo updates
+
+---
+
+## Phase 5: Foundational — Cross-Repo & Output Cleanup (Phases G/H)
+
+**Purpose**: Update CRRCSim and xiao-gp for cereal/POSIX protocol, clean up run output
+
+**Direction**: autoc is the main repo. crrcsim and xiao-gp will become git submodules of autoc once it is extracted from GP.
+
+### 5a: CRRCSim integration
+
+- [X] T061 Update CRRCSim inputdev_autoc RPC: replace Boost serialization with cereal, Boost.Asio with POSIX sockets (matching autoc socket_wrapper.h protocol)
+- [X] T062 Remove GP dead code from CRRCSim inputdev_autoc: drop `gp.h`, `gp_bytecode.h`, `gp_evaluator_portable.h` includes; NN-only
+- [X] T062a Replace `boost::circular_buffer` in CRRCSim inputdev_autoc with std::array ring buffer
+- [X] T063 Build CRRCSim: `cd crrcsim/build && cmake .. && make`
+
+### 5b: xiao-gp integration
+
+- [X] T064 Verify xiao-gp export pipeline: `./build/nnextractor` → `./build/nn2cpp` → `cd ~/xiao-gp && pio run`
+- [X] T065 Remove GP dead code from xiao-gp: `gp_evaluator_embedded.cc`, `gp_program_generated.cpp`, `gp_program.h`
+- [X] T065a Update xiao-gp includes to match renamed autoc headers (types.h, math_utils.h, etc.)
+
+### 5c: Output cleanup
+
+- [ ] T066 Add OutputDir config key to autoc.ini (default: current directory) (deferred to backlog)
+- [ ] T067 Implement auto-created run subdirectory in autoc.cc: create OutputDir/{timestamp}/ at startup, route data.dat, data.stc, logs to it (deferred to backlog)
+- [ ] T068 Remove hardcoded `eval-` prefix from data file naming in autoc.cc (deferred to backlog)
+
+### 5d: Verification
+
+- [X] T069 Run all 3 repo builds and verify: autoc, CRRCSim, xiao-gp
+- [X] T069a Integration smoke test: run `./build/autoc` for 3 generations with OutputDir set, verify run artifacts land in auto-created subdirectory
+- [X] T069b Cross-repo integration test: run autoc with CRRCSim FDM worker, verify cereal RPC works end-to-end
+- [X] T069c Profile cereal serialization cost in large-scale CRRCSim run (vs Boost baseline)
+
+**Checkpoint**: All 3 repos build, cross-repo contracts aligned, run output goes to subdirectories
+
+---
+
+## Phase 6: User Story 1 — Sigma Floor (Priority: P1) 🎯 MVP
+
+**Goal**: Prevent search freeze by clamping mutation sigma to a configurable minimum
+
+**Independent Test**: Run short evolution, verify sigma never drops below floor, fitness continues improving
+
+### Contract Tests
+
+- [ ] T070 [US1] Write test: sigma clamped to floor when it would decay below in autoc/tests/sigma_floor_tests.cc
+- [ ] T071 [US1] Write test: sigma floor = 0 produces identical behavior to unclamped in autoc/tests/sigma_floor_tests.cc
+
+### Implementation
+
+- [ ] T072 [US1] Add NNSigmaFloor config key (default: 0) to config parser in autoc/src/util/config.cc
+- [ ] T073 [US1] Implement sigma floor clamping in NNPopulation::mutate() in autoc/src/nn/nn_population.cc — clamp sigma after self-adaptive update, log clamping event
+- [ ] T074 [US1] Add sigma floor edge case: warn if floor > initial sigma in autoc/src/nn/nn_population.cc
+- [ ] T075 [US1] Run tests: `cd build && ctest -R sigma_floor --output-on-failure`
+- [ ] T075a [US1] Integration test: run `./build/autoc` for 20 generations with NNSigmaFloor=0.05, verify sigma never drops below 0.05 in console output
+
+**Checkpoint**: Sigma floor working. SC-001 can be validated with a long evolution run.
+
+---
+
+## Phase 7: User Story 2 — Curriculum Scenario Ramp (Priority: P1)
+
+**Goal**: Progressive scenario difficulty ramping for NN evolution
+
+**Independent Test**: Run NN evolution, observe early gens use fewer scenarios, later gens use full suite
+
+### Contract Tests
+
+- [ ] T076 [US2] Write test: CurriculumSchedule parses "1:50,7:150,49:0" into 3 stages in autoc/tests/curriculum_tests.cc
+- [ ] T077 [US2] Write test: stage transitions occur at correct generation boundaries in autoc/tests/curriculum_tests.cc
+- [ ] T078 [US2] Write test: disabled curriculum uses all scenarios from gen 0 in autoc/tests/curriculum_tests.cc
+
+### Implementation
+
+- [ ] T079 [US2] Create CurriculumSchedule class in autoc/include/autoc/eval/curriculum.h and autoc/src/eval/curriculum.cc
+- [ ] T080 [US2] Add CurriculumEnabled and CurriculumSchedule config keys to config parser in autoc/src/util/config.cc
+- [ ] T081 [US2] Wire CurriculumSchedule into NN evolution loop in autoc/src/autoc.cc — query active scenario count per generation, log stage transitions
+- [ ] T082 [US2] Run tests: `cd build && ctest -R curriculum --output-on-failure`
+- [ ] T082a [US2] Integration test: run `./build/autoc` for 20 generations with CurriculumSchedule=1:5,7:15,49:0, verify stage transitions in console output
+
+**Checkpoint**: Curriculum ramping working. SC-002 can be validated with comparative evolution runs.
+
+---
+
+## Phase 8: User Story 3 — Per-Scenario Fitness Decomposition (Priority: P2)
+
+**Goal**: Minimax or percentile fitness aggregation across scenarios
+
+**Independent Test**: Compare population rankings under sum vs minimax, verify minimax penalizes high-variance individuals
+
+### Contract Tests
+
+- [ ] T083 [US3] Write test: minimax returns worst-case scenario score in autoc/tests/fitness_aggregator_tests.cc
+- [ ] T084 [US3] Write test: percentile returns correct value at 95th percentile in autoc/tests/fitness_aggregator_tests.cc
+- [ ] T085 [US3] Write test: sum mode matches current behavior in autoc/tests/fitness_aggregator_tests.cc
+
+### Implementation
+
+- [ ] T086 [US3] Create FitnessAggregator class in autoc/include/autoc/eval/fitness_aggregator.h and autoc/src/eval/fitness_aggregator.cc
+- [ ] T087 [US3] Add FitnessAggregation and FitnessPercentile config keys to config parser in autoc/src/util/config.cc
+- [ ] T088 [US3] Wire FitnessAggregator into fitness computation in autoc/src/autoc.cc — replace sum-over-scenarios with aggregator call
+- [ ] T089 [US3] Run tests: `cd build && ctest -R fitness_aggregator --output-on-failure`
+- [ ] T089a [US3] Integration test: run `./build/autoc` for 20 generations with FitnessAggregation=minimax, verify worst-case scenario fitness drives selection in console output
+
+**Checkpoint**: Fitness aggregation working. SC-003 can be validated with comparative runs.
+
+---
+
+## Phase 9: User Story 4 — sep-CMA-ES Optimizer (Priority: P2)
+
+**Goal**: Replace GA with sep-CMA-ES for efficient 531-dimensional optimization
+
+**Independent Test**: Run sep-CMA-ES on Rosenbrock benchmark, then on NN flight controller, compare against GA baseline
+
+### Contract Tests
+
+- [ ] T090 [US4] Write test: CMA-ES converges on Rosenbrock function (N=10) in autoc/tests/cmaes_tests.cc
+- [ ] T091 [US4] Write test: ask() generates lambda candidates from distribution in autoc/tests/cmaes_tests.cc
+- [ ] T092 [US4] Write test: tell() updates mean/sigma/covariance correctly in autoc/tests/cmaes_tests.cc
+- [ ] T093 [US4] Write test: CMA-ES state serialization round-trips in autoc/tests/cmaes_tests.cc
+
+### Implementation
+
+- [ ] T094 [US4] Implement SepCMAES class in autoc/include/autoc/nn/sep_cmaes.h and autoc/src/nn/sep_cmaes.cc — ask/tell interface, Eigen vectors, hyperparams from research.md (lambda=50, mu=25, sep-scaled learning rates)
+- [ ] T095 [US4] Add OptimizerType config key ("ga" or "sep-cma-es") to config parser in autoc/src/util/config.cc
+- [ ] T096 [US4] Wire SepCMAES into evolution loop in autoc/src/autoc.cc — replace mutate/crossover/select with ask/tell when OptimizerType=sep-cma-es
+- [ ] T097 [US4] Add CMA-ES logging: sigma, best fitness, mean fitness per generation in autoc/src/autoc.cc
+- [ ] T098 [US4] Add CMA-ES state to S3 archive format in autoc/src/nn/nn_serialization.cc
+- [ ] T099 [US4] Run tests: `cd build && ctest -R cmaes --output-on-failure`
+- [ ] T099a [US4] Integration test: run `./build/autoc` for 20 generations with OptimizerType=sep-cma-es and PopulationSize=50, verify sigma/fitness logging and fitness improvement
+
+**Checkpoint**: sep-CMA-ES working. SC-004 can be validated with comparative evolution runs.
+
+---
+
+## Phase 10: User Story 7 — Per-Timestep Fitness Streaming (Priority: P3)
+
+**Goal**: Return per-timestep data from simulator instead of just aggregate scalar
+
+**Independent Test**: Run single evaluation, verify returned data includes per-timestep distance/attitude/commands
+
+**Note**: Moved before US5/US6 because both depend on per-timestep data
+
+### Implementation
+
+- [ ] T100 [US7] Define TimestepRecord struct in autoc/include/autoc/eval/timestep_record.h
+- [ ] T101 [US7] Add per-timestep data collection in minisim evaluation loop in autoc/src/minisim.cc — populate TimestepRecord vector during simulation
+- [ ] T102 [US7] Extend EvalResponse in autoc/rpc_protocol.h to include per-timestep data (timestep_count + records per scenario)
+- [ ] T103 [US7] Update RPC serialization in autoc/src/minisim.cc to send per-timestep data when enabled
+- [ ] T104 [US7] Update CRRCSim minisim to match new response format in crrcsim/
+- [ ] T105 [US7] Verify aggregate fitness computed from streamed data matches legacy scalar in autoc/tests/timestep_streaming_tests.cc
+- [ ] T106 [US7] Run tests: `cd build && ctest -R timestep --output-on-failure`
+
+**Checkpoint**: Per-timestep data flowing. Enables US5 (segment scoring) and US6 (behavioral cloning data).
+
+---
+
+## Phase 11: User Story 5 — Per-Segment Credit Assignment (Priority: P3)
+
+**Goal**: Score trajectory segments by error reduction to amplify fitness signal
+
+**Independent Test**: Compute segment scores on recorded trajectory, verify controllers with good local corrections score higher
+
+**Depends on**: US7 (per-timestep streaming)
+
+### Implementation
+
+- [ ] T107 [US5] Create TrajectorySegment struct and segment scoring function in autoc/include/autoc/eval/segment_scorer.h and autoc/src/eval/segment_scorer.cc
+- [ ] T108 [US5] Implement difficulty weighting (turn rate, crosswind) in segment_scorer.cc
+- [ ] T109 [US5] Wire segment scoring into fitness aggregation pipeline in autoc/src/autoc.cc — use TimestepRecord data from US7
+- [ ] T110 [US5] Write tests: segment scoring produces expected scores for known trajectories in autoc/tests/segment_scorer_tests.cc
+- [ ] T111 [US5] Run tests: `cd build && ctest -R segment --output-on-failure`
+
+**Checkpoint**: Segment scoring working. Richer fitness signal for evolution.
+
+---
+
+## Phase 12: User Story 6 — Behavioral Cloning Bootstrap (Priority: P3) — DEFERRED
+
+**Status**: Deferred to backlog. Only pursue if direct NN training is exhausted and GP→NN weight transfer is attempted.
+
+~~- [ ] T112-T117: Behavioral cloning tasks~~
+
+**Checkpoint**: Skipped — proceed to Phase 13.
+
+---
+
+## Phase 13: User Story 8 — Checkpoint/Resume (Priority: P3)
+
+**Goal**: Save full evolution state per generation for crash recovery and resume
+
+**Independent Test**: Run 10 gens, kill, resume, verify gen 11 continues correctly
+
+### Implementation
+
+- [ ] T118 [US8] Define EvolutionCheckpoint struct with serialization in autoc/include/autoc/nn/checkpoint.h and autoc/src/nn/checkpoint.cc
+- [ ] T119 [US8] Include CMAESState in checkpoint when optimizer_type=sep-cma-es (requires US4/Phase 9 complete)
+- [ ] T120 [US8] Implement checkpoint writing at end of each generation in autoc/src/autoc.cc
+- [ ] T121 [US8] Implement checkpoint loading and resume at startup in autoc/src/autoc.cc — detect existing checkpoint, resume from saved generation
+- [ ] T122 [US8] Add checkpoint corruption detection (magic bytes + checksum) in autoc/src/nn/checkpoint.cc
+- [ ] T123 [US8] Write test: checkpoint round-trip produces identical state in autoc/tests/checkpoint_tests.cc
+- [ ] T124 [US8] Run tests: `cd build && ctest -R checkpoint --output-on-failure`
+- [ ] T124a [US8] Integration test: run `./build/autoc` for 5 generations, kill, resume, verify generation 6 continues with correct population state
+
+**Checkpoint**: Checkpoint/resume working. SC-006 can be validated by comparing interrupted vs uninterrupted runs.
+
+---
+
+## Phase 14: Polish & Cross-Cutting Concerns
+
+**Purpose**: Repo extraction preparation and final cleanup
+
+- [ ] T125 Verify all 3 repo builds pass: autoc (`scripts/rebuild.sh`), CRRCSim (`make`), xiao-gp (`pio run`)
+- [ ] T126 Run full test suite: `cd build && ctest --output-on-failure`
+- [ ] T127 Verify export pipeline end-to-end: nnextractor → nn2cpp → xiao-gp build
+- [ ] T128 Update autoc.ini with all new config keys and sensible defaults
+- [ ] T129 Update constitution build commands to reflect standalone autoc
+- [ ] T130 Prepare autoc/ for standalone repo extraction: verify CMakeLists.txt has no parent references, all includes use autoc/ prefix
+- [ ] T131 Run quickstart.md validation: follow all steps and verify they work
+
+---
+
+## Dependencies & Execution Order
+
+### Phase Dependencies
+
+- **Phase 1 (Setup)**: No dependencies — start immediately
+- **Phase 2 (Strip GP)**: Depends on Phase 1 contract tests — BLOCKS all subsequent work
+- **Phase 3 (Replace Boost)**: Depends on Phase 2 — can overlap with late Phase 2 work
+- **Phase 4 (Source Reorg)**: Depends on Phases 2+3 — all code changes done before moving files
+- **Phase 5 (Cross-Repo)**: Depends on Phase 4 — transport contract finalized, autoc is main repo
+- **Phases 6-13 (User Stories)**: Depend on Phase 5 — can proceed in priority order or parallel
+- **Repo Extraction (T200-T210)**: After user stories stabilize — crrcsim and xiao-gp become submodules of autoc
+
+### User Story Dependencies
+
+- **US1 (Sigma Floor, P1)**: Independent — can start after Phase 5
+- **US2 (Curriculum, P1)**: Independent — can start after Phase 5
+- **US3 (Fitness Decomposition, P2)**: Independent — can start after Phase 5
+- **US4 (sep-CMA-ES, P2)**: Independent — can start after Phase 5
+- **US7 (Per-Timestep Streaming, P3)**: Independent — moved early because US5 and US6 depend on it
+- **US5 (Segment Scoring, P3)**: Depends on US7 (needs per-timestep data)
+- **US6 (Behavioral Cloning, P3)**: Depends on US7 (for data collection format)
+- **US8 (Checkpoint/Resume, P3)**: T119 depends on US4 (CMAESState must exist). Rest of US8 is independent.
+
+### Within Each User Story
+
+- Contract tests first → implementation → integration → verify
+
+### Parallel Opportunities
+
+- T004/T005/T006: All contract tests in Phase 1
+- T031/T032/T033/T034: All trivial Boost replacements
+- T050/T051/T052/T053/T054/T055/T056/T057: All git mv operations
+- US1 and US2 can run in parallel (both P1, independent)
+- US3 and US4 can run in parallel (both P2, independent)
+
+---
+
+## Parallel Example: Phase 2c (GP removal)
+
+```bash
+# These can run in parallel (different files, no dependencies):
+Task T019: "Delete autoc/autoc-eval.cc"
+Task T020: "Delete autoc/gp_bytecode.h and autoc/gp_bytecode.cc"
+Task T021: "Delete autoc/gp_evaluator_portable.h and autoc/gp_evaluator_portable.cc"
+```
+
+## Parallel Example: User Stories 1 + 2 (both P1)
+
+```bash
+# After Phase 5, these can run in parallel:
+Task T072-T075: "Sigma Floor implementation"
+Task T079-T082: "Curriculum Ramp implementation"
+```
+
+---
+
+## Implementation Strategy
+
+### Status: Phases 1-5 and Repo Extraction COMPLETE
+
+Phases 1-5 (Setup, Strip GP, Replace Boost, Source Reorg, Cross-Repo Integration) and Repo Extraction (T200-T211) were completed during the GP-to-autoc migration. autoc is now a standalone repo with crrcsim and xiao-gp as submodules, zero GP/Boost dependencies, clean include/src/tools/tests layout, and cereal/POSIX RPC.
+
+Output cleanup tasks T066-T068 (OutputDir, auto-created run subdirectories, eval- prefix removal) are deferred to backlog.
+
+**Next work starts at Phase 6: Sigma Floor (US1).**
+
+### Incremental Delivery (remaining)
+
+1. ~~Phases 1-5 → Standalone NN-only autoc (major milestone)~~ DONE
+2. Add US1 (Sigma Floor) → Immediate fix for nn13 stall
+3. Add US2 (Curriculum) → Progressive difficulty
+4. Add US3 (Fitness Decomposition) → Robust controllers
+5. Add US4 (sep-CMA-ES) → Efficient optimization
+6. Add US7 → US5 → US6 → Advanced scoring + warm start
+7. Add US8 (Checkpoint) → Crash recovery
+
+- [X] T200 Extract autoc/ to standalone git repo (git subtree split), preserve commit history
+- [X] T201 Sort autoc/specs/: enumerate which stay with GP repo vs move to autoc repo
+- [X] T202 Move relevant specs/ and docs/ artifacts to new autoc repo
+- [X] T203 Add crrcsim as git submodule of autoc repo
+- [X] T204 Update crrcsim CMakeLists.txt: replace `$ENV{HOME}/GP/include` with parent autoc include path
+- [X] T205 Add xiao-gp as git submodule of autoc repo
+- [X] T206 Remove `~/GP` symlink from xiao-gp, update platformio.ini lib_deps to use submodule path
+- [X] T207 Update xiao-gp includes: `#include <GP/autoc/...>` → `#include <autoc/...>`
+- [X] T208 Build + test all three from autoc repo root: autoc, crrcsim, xiao-gp
+- [X] T209 Update CLAUDE.md in all repos for new submodule workflow
+- [X] T210 Update .gitignore for standalone autoc repo (no longer under GP)
+- [X] T211 Cross-platform verification: train on aarch64, pull repo on x86, build, run renderer/nnextractor/eval against S3 objects created on aarch64 — validates cereal binary portability end-to-end
+
+---
+
+## Notes
+
+- [P] tasks = different files, no dependencies
+- [Story] label maps task to specific user story for traceability
+- All file moves use `git mv` to preserve history
+- Happy path only — strip all defensive fallback branches
+- Contract tests define surviving behavior — don't break them during refactoring
+- Commit after each logical group of tasks
+- Stop at any checkpoint to validate independently

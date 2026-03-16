@@ -1,67 +1,50 @@
-# AutoC - Autonomous Aircraft Control via Genetic Programming
+# AutoC - Neural Network Aircraft Controller Evolution
 
-AutoC is a genetic programming system for autonomous aircraft control that uses the GPC++ kernel library. It evolves control programs for aircraft to follow flight paths using genetic programming techniques.
+AutoC evolves neural network controllers for autonomous RC aircraft flight. It uses evolutionary strategies to optimize NN weights for path-following in simulation, then deploys trained networks to embedded hardware (Seeed XIAO BLE Sense).
 
-## Quick Start
+## Components
 
-See the main project [CLAUDE.md](../CLAUDE.md) for comprehensive build instructions and architecture overview.
+| Component | Description |
+|-----------|-------------|
+| **autoc** | Main evolution engine — multi-threaded population evaluation |
+| **minisim** | Lightweight aircraft physics simulation (training) |
+| **crrcsim** | Full flight dynamics model (CRRCSim fork, validation) |
+| **renderer** | VTK-based 3D flight path visualization |
+| **nnextractor** | Extract NN weights from evolution checkpoints |
+| **nn2cpp** | Generate embedded C++ from trained NN weights |
+| **xiao/** | PlatformIO project for Seeed XIAO BLE Sense deployment |
 
-### Build
-
-```bash
-# Dependencies (Ubuntu 22.04)
-sudo apt-get install -y libboost-all-dev libeigen3-dev libvtk9-dev xvfb g++ cmake gdb qtbase5-dev
-
-# Build from scratch (debug)
-cd ~/GP/autoc && bash rebuild.sh
-
-# Incremental build
-cd ~/GP && make
-
-# Run tests
-cd ~/GP/build && ctest --output-on-failure
-```
-
-### Headless Operation
+## Build
 
 ```bash
-Xvfb :99 -screen 0 1024x768x24 &
-export DISPLAY=:99
+# Dependencies (Ubuntu 22.04+)
+sudo apt-get install -y libeigen3-dev libvtk9-dev libsdl1.2-dev \
+  libplib-dev libjpeg-dev g++ cmake gdb libgl-dev \
+  libaws-cpp-sdk-core-dev libaws-cpp-sdk-s3-dev
+
+# Debug build (autoc + crrcsim + tests)
+bash scripts/rebuild.sh
+
+# Performance build
+bash scripts/rebuild-perf.sh
+
+# Incremental rebuild
+cd build && make
+
+# Run tests only
+cd build && ctest --output-on-failure
 ```
 
-## Documentation
+### Embedded (xiao)
 
-| Location | Description |
-|----------|-------------|
-| [../CLAUDE.md](../CLAUDE.md) | Main project guidance, build system, architecture |
-| [../specs/BACKLOG.md](../specs/BACKLOG.md) | Project backlog and TODO items |
-| [specs/](specs/) | Design specifications for autoc features |
-| [../specs/](../specs/) | Feature specs (speckit workflow) |
-| [../.specify/](../.specify/) | Project constitution and templates |
-
-### Design Specs (autoc/specs/)
-
-| Spec | Status | Description |
-|------|--------|-------------|
-| COORDINATE_CONVENTIONS.md | Active | NED/quaternion conventions |
-| LAYERED_CONTROLLER.md | Active | Safety/strategy layer design |
-| FASTMATH.md | Active | LUT-based trig functions |
-| RAMP_LANDSCAPE.md | Active | Evaluation landscape analysis |
-| PROFILING.md | Reference | Performance profiling notes |
-| ZZZ-*.md | Archived | Completed or superseded specs |
-
-## Key Components
-
-- **autoc.cc** - Main GP evolution engine
-- **minisim.cc** - Aircraft physics simulation
-- **renderer.cc** - VTK-based 3D visualization
-- **gpextractor** - GP tree to bytecode converter
-- **gp_evaluator_portable.cc** - Portable evaluator (desktop + embedded)
-- **gp_bytecode.cc** - Stack-based bytecode interpreter
+```bash
+cd xiao
+~/.platformio/penv/bin/pio run -e xiaoblesense_arduinocore_mbed
+```
 
 ## Configuration
 
-Runtime configuration via `autoc.ini`:
+Runtime config via `autoc.ini`:
 
 ```ini
 PopulationSize=500
@@ -71,8 +54,20 @@ EvalThreads=12
 PathGeneratorMethod=random
 ```
 
+## Repo Layout
+
+```
+include/autoc/       # Headers (nn/, eval/, util/, rpc/)
+src/                 # Core source (autoc.cc, nn/, eval/, util/)
+tools/               # minisim, renderer, nnextractor, nn2cpp
+tests/               # Unit + contract tests (GoogleTest)
+crrcsim/             # CRRCSim FDM (git submodule)
+xiao/                # Embedded target (PlatformIO)
+specs/               # Feature specifications
+```
+
 ## AWS Integration
 
-Results stored in S3:
+Evolution checkpoints stored in S3:
 - Key format: `autoc-{timestamp}/gen{number}.dmp`
 - Configure bucket/profile in `autoc.ini`
