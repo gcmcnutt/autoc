@@ -1,0 +1,4 @@
+[submodule "crrcsim"]
+	path = crrcsim
+	url = https://github.com/gcmcnutt/CRRCsim.git
+	branch = 014-nn-training-signal

@@ -1,0 +1,6 @@
+- safety checks pre-arm -- to ensure the mode flip is safe and 
+  - rc failsafe
+  - rc disarm
+  - also hold or RTH should disarm co-processor
+- seems the msp_status should send an array of unsigned32 as a packed bit field.  is only 32 bits right now.
+- speed up the logfile download -- is probably too bucketed resulting from our troubleshooting of the root cause

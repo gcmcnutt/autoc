@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XIAO-GP Flight Logger</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 5px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .danger {
+      background: #dc3545;
+    }
+    .danger:hover {
+      background: #c82333;
+    }
+    #status {
+      margin: 20px 0;
+      padding: 15px;
+      background: #e9ecef;
+      border-radius: 5px;
+      font-family: monospace;
+      min-height: 50px;
+    }
+    #fileList {
+      margin: 20px 0;
+      list-style: none;
+      padding: 0;
+    }
+    #fileList li {
+      padding: 10px;
+      margin: 5px 0;
+      background: #f8f9fa;
+      border-radius: 5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .progress {
+      width: 100%;
+      height: 30px;
+      background: #e9ecef;
+      border-radius: 5px;
+      overflow: hidden;
+      margin: 10px 0;
+      display: none;
+    }
+    .progress-bar {
+      height: 100%;
+      background: #28a745;
+      width: 0%;
+      transition: width 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+    }
+    .connected {
+      color: #28a745;
+    }
+    .disconnected {
+      color: #dc3545;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚁 XIAO-GP Flight Logger</h1>
+
+    <div>
+      <button id="connectBtn" onclick="connect()">Connect to XIAO-GP</button>
+      <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+      <span id="connectionStatus" class="disconnected">● Disconnected</span>
+    </div>
+
+    <div id="status">Ready to connect...</div>
+
+    <div class="progress" id="progress">
+      <div class="progress-bar" id="progressBar">0%</div>
+    </div>
+
+    <div>
+      <button id="listBtn" onclick="listFiles()" disabled>List Flight Logs</button>
+      <button id="eraseBtn" onclick="eraseAll()" disabled class="danger">Erase All Logs</button>
+    </div>
+
+    <ul id="fileList"></ul>
+  </div>
+
+  <script>
+    // BLE UUIDs
+    const LOGGER_SERVICE_UUID = 'f1706000-1234-5678-9abc-def012345678';
+    const CONTROL_CHAR_UUID = 'f1706001-1234-5678-9abc-def012345678';
+    const DATA_CHAR_UUID = 'f1706002-1234-5678-9abc-def012345678';
+    const STATUS_CHAR_UUID = 'f1706003-1234-5678-9abc-def012345678';
+
+    // Cached encoder for commands
+    const textEncoder = new TextEncoder();
+
+    // Progress throttling
+    const PROGRESS_THROTTLE_MS = 100;
+    let lastProgressUpdate = 0;
+
+    // CRC32 implementation (matches firmware)
+    function crc32(data) {
+      let crc = 0xFFFFFFFF;
+      for (let i = 0; i < data.length; i++) {
+        crc ^= data[i];
+        for (let j = 0; j < 8; j++) {
+          crc = (crc >>> 1) ^ ((crc & 1) ? 0xEDB88320 : 0);
+        }
+      }
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    let device;
+    let loggerService;
+    let controlChar;
+    let dataChar;
+    let statusChar;
+    let downloadBuffer = null; // Uint8Array allocated on READY
+    let downloadOffset = 0;
+    let expectedFileSize = 0;
+    let currentFlightNumber = 0;
+
+    function log(msg) {
+      document.getElementById('status').textContent = msg;
+    }
+
+    function updateProgress(percent, text) {
+      const progressDiv = document.getElementById('progress');
+      const progressBar = document.getElementById('progressBar');
+      progressDiv.style.display = 'block';
+      progressBar.style.width = percent + '%';
+      progressBar.textContent = text || percent + '%';
+    }
+
+    function hideProgress() {
+      document.getElementById('progress').style.display = 'none';
+    }
+
+    async function connect() {
+      try {
+        log('Scanning for XIAO-GP...');
+
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: 'XIAO-GP' }],
+          optionalServices: [LOGGER_SERVICE_UUID]
+        });
+
+        log('Connecting...');
+        const server = await device.gatt.connect();
+
+        log('Getting logger service...');
+        loggerService = await server.getPrimaryService(LOGGER_SERVICE_UUID);
+
+        log('Getting characteristics...');
+        controlChar = await loggerService.getCharacteristic(CONTROL_CHAR_UUID);
+        dataChar = await loggerService.getCharacteristic(DATA_CHAR_UUID);
+        statusChar = await loggerService.getCharacteristic(STATUS_CHAR_UUID);
+
+        // Subscribe to notifications
+        await statusChar.startNotifications();
+        statusChar.addEventListener('characteristicvaluechanged', handleStatusChange);
+
+        await dataChar.startNotifications();
+        dataChar.addEventListener('characteristicvaluechanged', handleDataChunk);
+
+        log('Connected to XIAO-GP!');
+        document.getElementById('connectBtn').disabled = true;
+        document.getElementById('disconnectBtn').disabled = false;
+        document.getElementById('listBtn').disabled = false;
+        document.getElementById('eraseBtn').disabled = false;
+        document.getElementById('connectionStatus').textContent = '● Connected';
+        document.getElementById('connectionStatus').className = 'connected';
+
+        device.addEventListener('gattserverdisconnected', onDisconnected);
+
+      } catch (error) {
+        log('Error: ' + error);
+      }
+    }
+
+    async function disconnect() {
+      if (device && device.gatt.connected) {
+        device.gatt.disconnect();
+      }
+    }
+
+    function onDisconnected() {
+      log('Disconnected from XIAO-GP');
+      document.getElementById('connectBtn').disabled = false;
+      document.getElementById('disconnectBtn').disabled = true;
+      document.getElementById('listBtn').disabled = true;
+      document.getElementById('eraseBtn').disabled = true;
+      document.getElementById('connectionStatus').textContent = '● Disconnected';
+      document.getElementById('connectionStatus').className = 'disconnected';
+    }
+
+    function handleStatusChange(event) {
+      const value = new TextDecoder().decode(event.target.value);
+      log('Status: ' + value);
+
+      if (value.startsWith('FILE:')) {
+        // Parse: FILE:flight_001.txt:12345
+        const parts = value.substring(5).split(':');
+        if (parts.length >= 2) {
+          const filename = parts[0];
+          const size = parseInt(parts[1]);
+          addFileToList(filename, size);
+        }
+      } else if (value.startsWith('CURRENT:')) {
+        // Parse: CURRENT:5
+        currentFlightNumber = parseInt(value.substring(8));
+      } else if (value === 'LIST_DONE') {
+        log('File list received');
+      } else if (value === 'ERASE_DONE') {
+        log('✓ Flash erased! Device will reboot automatically...');
+      } else if (value.startsWith('READY:')) {
+        // Parse: READY:filesize:chunksize
+        const parts = value.substring(6).split(':');
+        if (parts.length >= 2) {
+          expectedFileSize = parseInt(parts[0]);
+          const chunkSize = parseInt(parts[1]);
+          downloadBuffer = new Uint8Array(expectedFileSize);
+          downloadOffset = 0;
+          // Request first chunk
+          requestNextChunk();
+        }
+      } else if (value.startsWith('DOWNLOAD_DONE')) {
+        // Parse: DOWNLOAD_DONE:CRC32:SIZE
+        const parts = value.split(':');
+        if (parts.length >= 3) {
+          const expectedCrc = parseInt(parts[1], 16);
+          const expectedSize = parseInt(parts[2]);
+
+          const actualCrc = crc32(downloadBuffer.subarray(0, downloadOffset));
+
+          if (actualCrc !== expectedCrc) {
+            log(`ERROR: CRC mismatch! Expected ${expectedCrc.toString(16)}, got ${actualCrc.toString(16)}`);
+            hideProgress();
+            expectedFileSize = 0;
+            return;
+          }
+
+          if (downloadOffset !== expectedSize) {
+            log(`WARNING: Size mismatch. Expected ${expectedSize}, got ${downloadOffset}`);
+          }
+
+          log(`Download verified: CRC ${actualCrc.toString(16)} OK`);
+        }
+        saveDownload();
+        hideProgress();
+        expectedFileSize = 0;
+      } else if (value.startsWith('ERROR')) {
+        hideProgress();
+        expectedFileSize = 0;
+      }
+    }
+
+    async function requestNextChunk() {
+      try {
+        await controlChar.writeValue(textEncoder.encode('NEXT'));
+      } catch (error) {
+        console.error('Error requesting next chunk:', error);
+        log('Error during download: ' + error);
+        hideProgress();
+      }
+    }
+
+    function addFileToList(filename, size) {
+      const fileList = document.getElementById('fileList');
+      const li = document.createElement('li');
+      const sizeKB = (size / 1024).toFixed(1);
+
+      // Extract flight number from filename
+      const flightNum = parseInt(filename.match(/\d+/)[0]);
+      const isCurrent = (flightNum === currentFlightNumber);
+
+      if (isCurrent) {
+        li.innerHTML = `
+          <span>${filename} (${sizeKB} KB) <strong>[CURRENT - in progress]</strong></span>
+          <button disabled>Download (in progress)</button>
+        `;
+      } else {
+        li.innerHTML = `
+          <span>${filename} (${sizeKB} KB)</span>
+          <button onclick="downloadFile('${filename}')">Download</button>
+        `;
+      }
+
+      // Insert at top (newest first)
+      if (fileList.firstChild) {
+        fileList.insertBefore(li, fileList.firstChild);
+      } else {
+        fileList.appendChild(li);
+      }
+    }
+
+    function handleDataChunk(event) {
+      // Accumulate only the valid bytes from this notification
+      const valueView = event.target.value;
+      const chunk = new Uint8Array(valueView.buffer, valueView.byteOffset, valueView.byteLength);
+
+      if (!downloadBuffer) {
+        console.warn('Received data chunk before READY; discarding');
+        return;
+      }
+
+      const bytesToCopy = Math.min(chunk.length, downloadBuffer.length - downloadOffset);
+      if (bytesToCopy > 0) {
+        downloadBuffer.set(chunk.subarray(0, bytesToCopy), downloadOffset);
+        downloadOffset += bytesToCopy;
+      }
+
+      // Throttle progress updates to reduce DOM thrashing
+      const now = Date.now();
+      if (now - lastProgressUpdate > PROGRESS_THROTTLE_MS) {
+        const kbReceived = (downloadOffset / 1024).toFixed(1);
+        let progressPercent = 0;
+        if (expectedFileSize > 0) {
+          progressPercent = Math.min(100, Math.round((downloadOffset / expectedFileSize) * 100));
+        }
+        updateProgress(progressPercent, `Received ${kbReceived} KB (${progressPercent}%)`);
+        lastProgressUpdate = now;
+      }
+      // Request-response: request next chunk after receiving this one
+      requestNextChunk();
+    }
+
+    async function listFiles() {
+      try {
+        document.getElementById('fileList').innerHTML = '';
+        currentFlightNumber = 0;
+        log('Requesting file list...');
+
+        await controlChar.writeValue(textEncoder.encode('LIST'));
+
+        // Files will be added via FILE: and CURRENT: status notifications
+
+      } catch (error) {
+        log('Error listing files: ' + error);
+      }
+    }
+
+    async function downloadFile(filename) {
+      try {
+        downloadBuffer = null;
+        downloadOffset = 0;
+        log('Starting download: ' + filename);
+        updateProgress(0, 'Starting...');
+
+        await controlChar.writeValue(textEncoder.encode('DL:' + filename));
+
+        log('Downloading... (wait for status notification)');
+
+      } catch (error) {
+        log('Error downloading: ' + error);
+        hideProgress();
+      }
+    }
+
+    function saveDownload() {
+      if (!downloadBuffer || (downloadOffset === 0 && expectedFileSize > 0)) {
+        log('No data to save');
+        return;
+      }
+
+      // CRC verification handles data integrity - no need to trim
+      const blob = new Blob([downloadBuffer.subarray(0, downloadOffset)], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'flight_log_' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+
+      log(`Download saved: ${downloadOffset} bytes`);
+      downloadBuffer = null;
+      downloadOffset = 0;
+    }
+
+    async function eraseAll() {
+      if (!confirm('Are you sure you want to erase ALL flight logs? This cannot be undone!')) {
+        return;
+      }
+
+      try {
+        log('Erasing all logs...');
+        await controlChar.writeValue(textEncoder.encode('ERASE:ALL'));
+
+        document.getElementById('fileList').innerHTML = '';
+        log('Erase command sent, waiting for completion...');
+
+      } catch (error) {
+        log('Error erasing: ' + error);
+      }
+    }
+
+    // Check if Web Bluetooth is supported
+    if (!navigator.bluetooth) {
+      log('Web Bluetooth API is not available. Please use Chrome, Edge, or Opera on a supported platform.');
+      document.getElementById('connectBtn').disabled = true;
+    }
+  </script>
+</body>
+</html>
