@@ -172,188 +172,14 @@
 
 ---
 
-## Phase 6: User Story 1 — Sigma Floor (Priority: P1) 🎯 MVP
+## Phases 6-14: MOVED TO 015-nn-training-improvements
 
-**Goal**: Prevent search freeze by clamping mutation sigma to a configurable minimum
+All remaining user story work (sigma floor, curriculum, fitness decomposition, sep-CMA-ES,
+per-timestep streaming, segment scoring, checkpoint/resume, polish) has been migrated to
+[specs/015-nn-training-improvements/tasks.md](../015-nn-training-improvements/tasks.md).
 
-**Independent Test**: Run short evolution, verify sigma never drops below floor, fitness continues improving
-
-### Contract Tests
-
-- [ ] T070 [US1] Write test: sigma clamped to floor when it would decay below in autoc/tests/sigma_floor_tests.cc
-- [ ] T071 [US1] Write test: sigma floor = 0 produces identical behavior to unclamped in autoc/tests/sigma_floor_tests.cc
-
-### Implementation
-
-- [ ] T072 [US1] Add NNSigmaFloor config key (default: 0) to config parser in autoc/src/util/config.cc
-- [ ] T073 [US1] Implement sigma floor clamping in NNPopulation::mutate() in autoc/src/nn/nn_population.cc — clamp sigma after self-adaptive update, log clamping event
-- [ ] T074 [US1] Add sigma floor edge case: warn if floor > initial sigma in autoc/src/nn/nn_population.cc
-- [ ] T075 [US1] Run tests: `cd build && ctest -R sigma_floor --output-on-failure`
-- [ ] T075a [US1] Integration test: run `./build/autoc` for 20 generations with NNSigmaFloor=0.05, verify sigma never drops below 0.05 in console output
-
-**Checkpoint**: Sigma floor working. SC-001 can be validated with a long evolution run.
-
----
-
-## Phase 7: User Story 2 — Curriculum Scenario Ramp (Priority: P1)
-
-**Goal**: Progressive scenario difficulty ramping for NN evolution
-
-**Independent Test**: Run NN evolution, observe early gens use fewer scenarios, later gens use full suite
-
-### Contract Tests
-
-- [ ] T076 [US2] Write test: CurriculumSchedule parses "1:50,7:150,49:0" into 3 stages in autoc/tests/curriculum_tests.cc
-- [ ] T077 [US2] Write test: stage transitions occur at correct generation boundaries in autoc/tests/curriculum_tests.cc
-- [ ] T078 [US2] Write test: disabled curriculum uses all scenarios from gen 0 in autoc/tests/curriculum_tests.cc
-
-### Implementation
-
-- [ ] T079 [US2] Create CurriculumSchedule class in autoc/include/autoc/eval/curriculum.h and autoc/src/eval/curriculum.cc
-- [ ] T080 [US2] Add CurriculumEnabled and CurriculumSchedule config keys to config parser in autoc/src/util/config.cc
-- [ ] T081 [US2] Wire CurriculumSchedule into NN evolution loop in autoc/src/autoc.cc — query active scenario count per generation, log stage transitions
-- [ ] T082 [US2] Run tests: `cd build && ctest -R curriculum --output-on-failure`
-- [ ] T082a [US2] Integration test: run `./build/autoc` for 20 generations with CurriculumSchedule=1:5,7:15,49:0, verify stage transitions in console output
-
-**Checkpoint**: Curriculum ramping working. SC-002 can be validated with comparative evolution runs.
-
----
-
-## Phase 8: User Story 3 — Per-Scenario Fitness Decomposition (Priority: P2)
-
-**Goal**: Minimax or percentile fitness aggregation across scenarios
-
-**Independent Test**: Compare population rankings under sum vs minimax, verify minimax penalizes high-variance individuals
-
-### Contract Tests
-
-- [ ] T083 [US3] Write test: minimax returns worst-case scenario score in autoc/tests/fitness_aggregator_tests.cc
-- [ ] T084 [US3] Write test: percentile returns correct value at 95th percentile in autoc/tests/fitness_aggregator_tests.cc
-- [ ] T085 [US3] Write test: sum mode matches current behavior in autoc/tests/fitness_aggregator_tests.cc
-
-### Implementation
-
-- [ ] T086 [US3] Create FitnessAggregator class in autoc/include/autoc/eval/fitness_aggregator.h and autoc/src/eval/fitness_aggregator.cc
-- [ ] T087 [US3] Add FitnessAggregation and FitnessPercentile config keys to config parser in autoc/src/util/config.cc
-- [ ] T088 [US3] Wire FitnessAggregator into fitness computation in autoc/src/autoc.cc — replace sum-over-scenarios with aggregator call
-- [ ] T089 [US3] Run tests: `cd build && ctest -R fitness_aggregator --output-on-failure`
-- [ ] T089a [US3] Integration test: run `./build/autoc` for 20 generations with FitnessAggregation=minimax, verify worst-case scenario fitness drives selection in console output
-
-**Checkpoint**: Fitness aggregation working. SC-003 can be validated with comparative runs.
-
----
-
-## Phase 9: User Story 4 — sep-CMA-ES Optimizer (Priority: P2)
-
-**Goal**: Replace GA with sep-CMA-ES for efficient 531-dimensional optimization
-
-**Independent Test**: Run sep-CMA-ES on Rosenbrock benchmark, then on NN flight controller, compare against GA baseline
-
-### Contract Tests
-
-- [ ] T090 [US4] Write test: CMA-ES converges on Rosenbrock function (N=10) in autoc/tests/cmaes_tests.cc
-- [ ] T091 [US4] Write test: ask() generates lambda candidates from distribution in autoc/tests/cmaes_tests.cc
-- [ ] T092 [US4] Write test: tell() updates mean/sigma/covariance correctly in autoc/tests/cmaes_tests.cc
-- [ ] T093 [US4] Write test: CMA-ES state serialization round-trips in autoc/tests/cmaes_tests.cc
-
-### Implementation
-
-- [ ] T094 [US4] Implement SepCMAES class in autoc/include/autoc/nn/sep_cmaes.h and autoc/src/nn/sep_cmaes.cc — ask/tell interface, Eigen vectors, hyperparams from research.md (lambda=50, mu=25, sep-scaled learning rates)
-- [ ] T095 [US4] Add OptimizerType config key ("ga" or "sep-cma-es") to config parser in autoc/src/util/config.cc
-- [ ] T096 [US4] Wire SepCMAES into evolution loop in autoc/src/autoc.cc — replace mutate/crossover/select with ask/tell when OptimizerType=sep-cma-es
-- [ ] T097 [US4] Add CMA-ES logging: sigma, best fitness, mean fitness per generation in autoc/src/autoc.cc
-- [ ] T098 [US4] Add CMA-ES state to S3 archive format in autoc/src/nn/nn_serialization.cc
-- [ ] T099 [US4] Run tests: `cd build && ctest -R cmaes --output-on-failure`
-- [ ] T099a [US4] Integration test: run `./build/autoc` for 20 generations with OptimizerType=sep-cma-es and PopulationSize=50, verify sigma/fitness logging and fitness improvement
-
-**Checkpoint**: sep-CMA-ES working. SC-004 can be validated with comparative evolution runs.
-
----
-
-## Phase 10: User Story 7 — Per-Timestep Fitness Streaming (Priority: P3)
-
-**Goal**: Return per-timestep data from simulator instead of just aggregate scalar
-
-**Independent Test**: Run single evaluation, verify returned data includes per-timestep distance/attitude/commands
-
-**Note**: Moved before US5/US6 because both depend on per-timestep data
-
-### Implementation
-
-- [ ] T100 [US7] Define TimestepRecord struct in autoc/include/autoc/eval/timestep_record.h
-- [ ] T101 [US7] Add per-timestep data collection in minisim evaluation loop in autoc/src/minisim.cc — populate TimestepRecord vector during simulation
-- [ ] T102 [US7] Extend EvalResponse in autoc/rpc_protocol.h to include per-timestep data (timestep_count + records per scenario)
-- [ ] T103 [US7] Update RPC serialization in autoc/src/minisim.cc to send per-timestep data when enabled
-- [ ] T104 [US7] Update CRRCSim minisim to match new response format in crrcsim/
-- [ ] T105 [US7] Verify aggregate fitness computed from streamed data matches legacy scalar in autoc/tests/timestep_streaming_tests.cc
-- [ ] T106 [US7] Run tests: `cd build && ctest -R timestep --output-on-failure`
-
-**Checkpoint**: Per-timestep data flowing. Enables US5 (segment scoring) and US6 (behavioral cloning data).
-
----
-
-## Phase 11: User Story 5 — Per-Segment Credit Assignment (Priority: P3)
-
-**Goal**: Score trajectory segments by error reduction to amplify fitness signal
-
-**Independent Test**: Compute segment scores on recorded trajectory, verify controllers with good local corrections score higher
-
-**Depends on**: US7 (per-timestep streaming)
-
-### Implementation
-
-- [ ] T107 [US5] Create TrajectorySegment struct and segment scoring function in autoc/include/autoc/eval/segment_scorer.h and autoc/src/eval/segment_scorer.cc
-- [ ] T108 [US5] Implement difficulty weighting (turn rate, crosswind) in segment_scorer.cc
-- [ ] T109 [US5] Wire segment scoring into fitness aggregation pipeline in autoc/src/autoc.cc — use TimestepRecord data from US7
-- [ ] T110 [US5] Write tests: segment scoring produces expected scores for known trajectories in autoc/tests/segment_scorer_tests.cc
-- [ ] T111 [US5] Run tests: `cd build && ctest -R segment --output-on-failure`
-
-**Checkpoint**: Segment scoring working. Richer fitness signal for evolution.
-
----
-
-## Phase 12: User Story 6 — Behavioral Cloning Bootstrap (Priority: P3) — DEFERRED
-
-**Status**: Deferred to backlog. Only pursue if direct NN training is exhausted and GP→NN weight transfer is attempted.
-
-~~- [ ] T112-T117: Behavioral cloning tasks~~
-
-**Checkpoint**: Skipped — proceed to Phase 13.
-
----
-
-## Phase 13: User Story 8 — Checkpoint/Resume (Priority: P3)
-
-**Goal**: Save full evolution state per generation for crash recovery and resume
-
-**Independent Test**: Run 10 gens, kill, resume, verify gen 11 continues correctly
-
-### Implementation
-
-- [ ] T118 [US8] Define EvolutionCheckpoint struct with serialization in autoc/include/autoc/nn/checkpoint.h and autoc/src/nn/checkpoint.cc
-- [ ] T119 [US8] Include CMAESState in checkpoint when optimizer_type=sep-cma-es (requires US4/Phase 9 complete)
-- [ ] T120 [US8] Implement checkpoint writing at end of each generation in autoc/src/autoc.cc
-- [ ] T121 [US8] Implement checkpoint loading and resume at startup in autoc/src/autoc.cc — detect existing checkpoint, resume from saved generation
-- [ ] T122 [US8] Add checkpoint corruption detection (magic bytes + checksum) in autoc/src/nn/checkpoint.cc
-- [ ] T123 [US8] Write test: checkpoint round-trip produces identical state in autoc/tests/checkpoint_tests.cc
-- [ ] T124 [US8] Run tests: `cd build && ctest -R checkpoint --output-on-failure`
-- [ ] T124a [US8] Integration test: run `./build/autoc` for 5 generations, kill, resume, verify generation 6 continues with correct population state
-
-**Checkpoint**: Checkpoint/resume working. SC-006 can be validated by comparing interrupted vs uninterrupted runs.
-
----
-
-## Phase 14: Polish & Cross-Cutting Concerns
-
-**Purpose**: Repo extraction preparation and final cleanup
-
-- [ ] T125 Verify all 3 repo builds pass: autoc (`scripts/rebuild.sh`), CRRCSim (`make`), xiao-gp (`pio run`)
-- [ ] T126 Run full test suite: `cd build && ctest --output-on-failure`
-- [ ] T127 Verify export pipeline end-to-end: nnextractor → nn2cpp → xiao-gp build
-- [ ] T128 Update autoc.ini with all new config keys and sensible defaults
-- [ ] T129 Update constitution build commands to reflect standalone autoc
-- [ ] T130 Prepare autoc/ for standalone repo extraction: verify CMakeLists.txt has no parent references, all includes use autoc/ prefix
-- [ ] T131 Run quickstart.md validation: follow all steps and verify they work
+Feature 014 scope = replumbing (GP removal, Boost removal, source reorg, repo extraction).
+Feature 015 scope = NN training signal improvements.
 
 ---
 
@@ -415,23 +241,13 @@ Task T079-T082: "Curriculum Ramp implementation"
 
 ## Implementation Strategy
 
-### Status: Phases 1-5 and Repo Extraction COMPLETE
+### Status: COMPLETE — Feature 014 closed
 
-Phases 1-5 (Setup, Strip GP, Replace Boost, Source Reorg, Cross-Repo Integration) and Repo Extraction (T200-T211) were completed during the GP-to-autoc migration. autoc is now a standalone repo with crrcsim and xiao-gp as submodules, zero GP/Boost dependencies, clean include/src/tools/tests layout, and cereal/POSIX RPC.
+Phases 1-5 (Setup, Strip GP, Replace Boost, Source Reorg, Cross-Repo Integration) and Repo Extraction (T200-T211) completed. autoc is a standalone repo with crrcsim and xiao-gp as submodules, zero GP/Boost dependencies, clean include/src/tools/tests layout, and cereal/POSIX RPC.
 
-Output cleanup tasks T066-T068 (OutputDir, auto-created run subdirectories, eval- prefix removal) are deferred to backlog.
+Output cleanup tasks T066-T068 deferred to [BACKLOG.md](../BACKLOG.md).
 
-**Next work starts at Phase 6: Sigma Floor (US1).**
-
-### Incremental Delivery (remaining)
-
-1. ~~Phases 1-5 → Standalone NN-only autoc (major milestone)~~ DONE
-2. Add US1 (Sigma Floor) → Immediate fix for nn13 stall
-3. Add US2 (Curriculum) → Progressive difficulty
-4. Add US3 (Fitness Decomposition) → Robust controllers
-5. Add US4 (sep-CMA-ES) → Efficient optimization
-6. Add US7 → US5 → US6 → Advanced scoring + warm start
-7. Add US8 (Checkpoint) → Crash recovery
+All user story work (Phases 6-14) migrated to [015-nn-training-improvements](../015-nn-training-improvements/tasks.md).
 
 - [X] T200 Extract autoc/ to standalone git repo (git subtree split), preserve commit history
 - [X] T201 Sort autoc/specs/: enumerate which stay with GP repo vs move to autoc repo
