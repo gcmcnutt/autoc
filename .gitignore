@@ -1,3 +1,9 @@
-build
+build/
+log/
+*.dat
+*.stc
 *.csv
+nn_weights.dat
 nohup.out
+xiao/.pio/
+xiao/generated/

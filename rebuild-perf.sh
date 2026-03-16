@@ -1,20 +1,10 @@
 #! /bin/bash
 set -ex
 
-# no parallelism, no special knobs, force hard clean 
-
-# rebuild from clean
-cd ~/GP/autoc
+# Clean optimized rebuild — autoc + crrcsim
+cd "$(dirname "$0")"
 rm -rf build
 mkdir build
 cd build
-cmake -DPERFORMANCE_BUILD=ON ..
-make
-
-# same for crrcsim -- perf mode
-cd ~/crsim/crrcsim-0.9.13
-rm -rf build
-mkdir build
-cd build
-cmake -DPERFORMANCE_BUILD=ON ..
+cmake -DPERFORMANCE_BUILD=ON -DBUILD_CRRCSIM=ON ..
 make

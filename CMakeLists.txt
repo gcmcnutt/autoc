@@ -1,5 +1,8 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.11)
 project(autoc)
+
+# Build crrcsim FDM alongside autoc (requires SDL, OpenGL, etc.)
+option(BUILD_CRRCSIM "Build CRRCSim flight dynamics model" OFF)
 
 find_package(VTK REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -137,7 +140,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME contract_evolution_tests COMMAND contract_evolution_tests)
   add_test(NAME rpc_transport_tests COMMAND rpc_transport_tests)
 
-  # --gtest_brief=1 only prints failures, not every test run
+  # Run all tests after build
   add_custom_target(run_autoc_tests ALL
     DEPENDS nn_evaluator_tests nn_serialization_tests nn_population_tests
             fitness_computer_tests contract_evaluator_tests contract_config_tests
@@ -151,4 +154,9 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND contract_evolution_tests --gtest_brief=1
     COMMAND rpc_transport_tests --gtest_brief=1
   )
+endif()
+
+# CRRCSim flight dynamics model (optional, needs SDL/OpenGL/etc.)
+if(BUILD_CRRCSIM)
+  add_subdirectory(crrcsim)
 endif()
