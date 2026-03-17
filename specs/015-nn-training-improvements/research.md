@@ -43,6 +43,25 @@ This collapses 49 scenarios × 600 timesteps = 29,400 data points into one doubl
 | Intercept budget | Quadratic ramp 0.1→1.0 over estimated intercept time | Based on displacement, heading offset, speeds |
 | Crash | `(1 - fraction_completed) * 1e6 + quality` | Soft lexicographic |
 
+### Note: Intercept Ramp Interaction with Decomposition
+
+The intercept-budget ramp (`computeInterceptScale()` in autoc.cc:97) applies a quadratic
+0.1→1.0 scale over the estimated intercept phase. This is baked into per-timestep scoring
+and affects per-scenario comparisons differently:
+
+- Easy-entry scenarios (small heading offset): full penalty from step 1
+- Hard-entry scenarios (e.g., 112° off-heading, 39° roll): ~50-80 steps at reduced penalty
+
+**Implications for multi-objective selection:**
+- Minimax: worst-case may not be hardest entry — could be where ramp expires and controller
+  hasn't caught up yet
+- Lexicase: fine — ramp is part of each scenario's identity
+- Segment scoring (Phase 6): should score intercept phase separately from tracking phase
+
+**For Phase 2 decomposition**: preserve the ramp as-is in per-scenario scoring. It's part
+of the current fitness signal. Revisit treatment when multi-objective research (Phase 4)
+shows whether it helps or hides signal.
+
 ### Decision: Decompose into structured per-scenario × per-component scores
 
 **Rationale**: The deterministic simulator can provide arbitrarily fine signal. The aggregation
@@ -96,11 +115,51 @@ compute component scores; autoc decides how to combine them for selection.
 - **Con**: Requires defining meaningful behavioral dimensions. Grid resolution tradeoffs.
 - **Reference**: Mouret & Clune (2015) "Illuminating search spaces by mapping elites"
 
-### Decision: Start with minimax (simplest), then research lexicase
+### Lessons from Prior Pareto Experiment (ZZZ-PARETO.md)
 
-**Rationale**: Minimax is a 10-line change once structured scores exist. It directly tests the
-hypothesis that worst-case selection improves robustness. Lexicase is the most theoretically
-compelling but requires more implementation work — do as a research spike on a branch.
+**4 objectives killed selection pressure**: With tracking, alignment, efficiency, and duration,
+the Pareto front grew to ~900/1000 individuals — effectively no selection. **Keep to 2-3
+objectives max.**
+
+**Crash handling is natural through truncation**: A crash truncates the run, degrading
+tracking and alignment averages automatically. No separate crash penalty objective needed —
+it just makes all other objectives worse. Optional small penalty on alignment for OOB.
+
+**Weights only at extraction**: During evolution, use weight-free dominance. Apply policy
+weights only when picking a single controller for deployment from the Pareto front.
+
+**Trimmed mean considered**: Drop worst 10% and best 5% of scenarios before averaging.
+Like figure skating judging — removes outlier crashes and lucky easy scenarios. Alternative
+to minimax that's less aggressive.
+
+**Interleaved step evaluation considered**: Instead of run-to-completion per scenario,
+interleave timesteps across scenarios. Smooths out knife-edge crashes. Not yet implemented
+but interesting for temporal credit.
+
+### Objective Priority Hierarchy (from calm-air diagnostic)
+
+Observed: NN learns to track one loop of horizontal-8 but spirals/crashes on the reversal.
+Fitness 16,875 → 16,525 over 33 gens — stuck because scalar fitness can't express "left
+loop = great, right loop = crash."
+
+**Priority ordering for selection**:
+1. **Survive** — complete the flight. Don't crash. This dominates everything.
+2. **Attitude stability** — don't tumble, don't spiral. Stay roughly level.
+3. **Track the path** — minimize distance to target. This is refinement.
+
+This maps naturally to lexicase or constrained Pareto:
+- Lexicase: survival (completion fraction) is the first test case filter
+- Pareto with constraints: feasibility = survival, then optimize tracking + smoothness
+
+### Decision: Start with lexicase (survival-first), minimax as comparison
+
+**Rationale**: The calm-air diagnostic shows the primary problem is the controller can't
+express "I survive 80% vs 95% of the path" in a way that creates selection gradient.
+Lexicase naturally handles this — completion fraction is the first filter, then tracking
+quality among survivors. Minimax is the simpler comparison point.
+
+**Keep objectives to 2-3**: Tracking + completion (+ smoothness later). Prior Pareto
+experiment proved 4 objectives destroy selection pressure.
 
 ---
 

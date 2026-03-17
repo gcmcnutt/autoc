@@ -109,23 +109,56 @@ Refactor `computeNNFitness()` to compute and *retain* per-scenario × per-compon
 No RPC change — autoc already receives per-scenario aircraft states and can compute
 distance, attitude, smoothness, etc. from them.
 
+**Objective priority hierarchy** (from calm-air diagnostic and Pareto experiment):
+1. **Completion fraction** — did the controller survive? 0.0 (crashed immediately) to
+   1.0 (completed full flight). This is the primary signal. Crash handling is *natural*
+   through truncation — no separate crash penalty needed (ZZZ-PARETO lesson).
+2. **Attitude stability** — don't tumble/spiral. Sum of |dphi| + |dtheta| over completed
+   timesteps, normalized by completion fraction.
+3. **Tracking accuracy** — distance RMSE over completed timesteps.
+4. **Control smoothness** — Σ|Δu(t)| per axis (computed but may not be used for selection
+   initially).
+
+**Keep to 2-3 objectives for selection**: Prior Pareto experiment proved 4 objectives
+grew the front to 900/1000, destroying selection pressure.
+
 1. Extract per-scenario scoring from `computeNNFitness()` into separate function
-2. Store per-scenario scores (distance RMSE, attitude error) on NNGenome
-3. Compute smoothness (Σ|Δu(t)|) per scenario per axis from existing command traces
-4. Log per-scenario breakdown for best individual each generation
-5. Existing aggregate still used for selection (no behavior change yet)
-6. Tests: per-scenario scores recombine to match legacy aggregate exactly
+2. Store per-scenario component scores on NNGenome: completion_fraction, attitude_error,
+   distance_rmse, smoothness[3]
+3. Log per-scenario breakdown for best individual each generation
+4. Existing aggregate still used for selection (no behavior change yet)
+5. Tests: per-scenario scores recombine to match legacy aggregate exactly
 
 **Key risk**: Ensuring the decomposition is faithful. Write comparison test first.
 
 ### Phase 3: Multi-Objective Selection (US3) — core hypothesis test
 
-1. Implement `FitnessAggregator` with sum/minimax/percentile modes
-2. Add `FitnessAggregation` config key
-3. Wire into evolution loop: selection uses aggregator instead of raw scalar
-4. Tests: minimax on known vectors, percentile computation, sum matches legacy
+The calm-air diagnostic showed the controller learns one turn direction but can't handle
+the reversal — and scalar fitness can't express "left loop = great, right loop = crash."
+Multi-objective selection must let the optimizer see *which part* needs improvement.
 
-**Depends on**: Phase 2 (per-scenario scores to aggregate)
+**Primary approach: Lexicase selection (survival-first)**
+- Each scenario (or path segment) is a test case
+- Completion fraction is the first filter — individuals that survive more of the path
+  are preferred before tracking quality is considered
+- No aggregation at all — naturally maintains specialists and generalists
+
+**Comparison: Minimax**
+- Worst-scenario completion fraction drives selection
+- Simpler to implement, good baseline comparison for lexicase
+
+**Constraints from Pareto experiment**:
+- Max 2-3 objectives (completion + tracking, possibly + smoothness)
+- Crash handling via truncation, not separate penalty
+- Weights only at extraction time, not during selection
+
+1. Implement lexicase selection on per-scenario completion + tracking scores
+2. Implement minimax aggregation as comparison
+3. Add `FitnessAggregation` config key (sum/minimax/lexicase)
+4. Wire into evolution loop
+5. Tests: lexicase on known scenarios, minimax on known vectors, sum matches legacy
+
+**Depends on**: Phase 2 (per-scenario scores to select on)
 
 ### Phase 4: Research Spikes (US12) — branched experiments
 
