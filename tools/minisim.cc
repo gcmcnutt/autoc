@@ -24,8 +24,8 @@ std::string crashReasonToString(CrashReason type) {
   case CrashReason::Boot: return "Boot";
   case CrashReason::Sim: return "Sim";
   case CrashReason::Eval: return "Eval";
-  case CrashReason::Time: return "Time";
-  case CrashReason::Distance: return "Distance";
+  case CrashReason::TimeLimit: return "TimeLimit";
+  case CrashReason::RabbitComplete: return "RabbitComplete";
   default: return "*?*";
   }
 }
@@ -184,10 +184,10 @@ public:
           aircraftStateSteps.push_back(aircraftState);
 
           if (duration_msec >= SIM_TOTAL_TIME_MSEC) {
-            crashReason = CrashReason::Time;
+            crashReason = CrashReason::TimeLimit;
           }
           if (aircraftState.getThisPathIndex() >= static_cast<int>(path.size()) - 2) {
-            crashReason = CrashReason::Distance;
+            crashReason = CrashReason::RabbitComplete;
           }
         }
 

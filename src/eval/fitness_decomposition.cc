@@ -119,7 +119,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         // Completion fraction
         score.steps_completed = simulation_steps;
         score.steps_total = static_cast<int>(path.size()) - 1;  // path has one extra start point
-        score.crashed = (crashReason != CrashReason::None);
+        score.crashed = isCrash(crashReason);
 
         if (score.crashed) {
             double total_path_distance = path.back().distanceFromStart;

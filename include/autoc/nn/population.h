@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <cstdint>
+#include <functional>
 #include "autoc/nn/evaluator.h"
 
 // Collection of NNGenome individuals with shared topology
@@ -29,6 +30,9 @@ void nn_gaussian_mutation(NNGenome& genome);
 // Tournament selection
 int nn_tournament_select(const NNPopulation& pop, int tournament_size);
 
+// Selection function type: given population, return index of selected parent
+using SelectionFn = std::function<int(const NNPopulation&)>;
+
 // Evolution parameters (shared with GP config where noted)
 struct NNEvolveParams {
     int tournament_size;         // GP & NN: TournamentSize
@@ -37,6 +41,7 @@ struct NNEvolveParams {
     double mutation_prob;        // GP & NN: SwapMutationProbability (0-100)
     float crossover_alpha;       // NN only: NNCrossoverAlpha (-1 = random blend)
     int elitism_count;           // GP & NN: AddBestToNewPopulation
+    SelectionFn select;          // Selection function (default: tournament on scalar fitness)
 };
 
 // Evolve one generation using config-driven parameters

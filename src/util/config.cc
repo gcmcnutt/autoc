@@ -66,6 +66,9 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
     config->randomPathSeedB = reader.GetInteger("", "RandomPathSeedB", config->randomPathSeedB);
     config->seed = reader.GetInteger("", "Seed", config->seed);
 
+    // Selection strategy (015)
+    config->selectionMode = reader.Get("", "SelectionMode", config->selectionMode);
+
     // Demetic grouping (scenario assignment)
     config->demeticGrouping = reader.GetInteger("", "DemeticGrouping", config->demeticGrouping);
     config->demeSize = reader.GetInteger("", "DemeSize", config->demeSize);

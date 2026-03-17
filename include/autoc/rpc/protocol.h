@@ -142,13 +142,20 @@ struct EvalData {
 CEREAL_CLASS_VERSION(EvalData, 1)
 
 enum class CrashReason {
-  None,
-  Boot,
-  Sim,
-  Eval,
-  Time,
-  Distance,
+  None,             // Still flying
+  Boot,             // Startup/initialization error
+  Sim,              // Physics crash (ground impact, structural failure)
+  Eval,             // Out of bounds (too far, too low, too high)
+  TimeLimit,        // Simulation time cap reached (was: Time)
+  RabbitComplete,   // Rabbit reached end of path — normal completion (was: Distance)
 };
+
+// Is this a real crash (penalizable) or normal termination?
+inline bool isCrash(CrashReason reason) {
+  return reason == CrashReason::Boot ||
+         reason == CrashReason::Sim ||
+         reason == CrashReason::Eval;
+}
 
 std::string crashReasonToString(CrashReason type);
 

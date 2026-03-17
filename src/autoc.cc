@@ -38,6 +38,7 @@ From skeleton/skeleton.cc
 #include "autoc/nn/evaluator.h"
 #include "autoc/eval/fitness_computer.h"
 #include "autoc/eval/fitness_decomposition.h"
+#include "autoc/eval/selection.h"
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
@@ -670,8 +671,8 @@ static double computeNNFitness(EvalResults& evalResults) {
 
     double localFitness = distance_sum + attitude_sum * attitude_scale;
 
-    // Crash penalty
-    if (crashReason != CrashReason::None) {
+    // Crash penalty (only for real crashes, not normal completion)
+    if (isCrash(crashReason)) {
       double total_path_distance = path.back().distanceFromStart;
       double fraction_completed =
         static_cast<double>(path.at(aircraftStates.back().getThisPathIndex()).distanceFromStart) / total_path_distance;
@@ -1004,6 +1005,7 @@ static void runNNEvolution(
   *logger.info() << "  CreationProb: " << cfg.creationProbability << "%" << endl;
   *logger.info() << "  MutationOnlyProb: " << cfg.swapMutationProbability << "%" << endl;
   *logger.info() << "  Elitism: " << cfg.addBestToNewPopulation << endl;
+  *logger.info() << "  SelectionMode: " << cfg.selectionMode << endl;
 
   // Initialize population
   NNPopulation pop;
@@ -1266,6 +1268,28 @@ static void runNNEvolution(
       evoParams.mutation_prob = cfg.swapMutationProbability;   // GP & NN
       evoParams.crossover_alpha = static_cast<float>(cfg.nnCrossoverAlpha); // NN only
       evoParams.elitism_count = cfg.addBestToNewPopulation;    // GP & NN
+
+      // Selection strategy (015)
+      SelectionMode selMode = parseSelectionMode(cfg.selectionMode);
+      if (selMode == SelectionMode::LEXICASE) {
+        // Build scenario scores table for lexicase
+        std::vector<std::vector<ScenarioScore>> allScores(popSize);
+        for (int i = 0; i < popSize; i++) {
+          allScores[i] = pop.individuals[i].scenario_scores;
+        }
+        evoParams.select = [allScores](const NNPopulation&) {
+          return lexicase_select(allScores, static_cast<int>(allScores.size()));
+        };
+      } else if (selMode == SelectionMode::MINIMAX) {
+        // Recompute fitness as minimax for tournament selection
+        for (int i = 0; i < popSize; i++) {
+          pop.individuals[i].fitness = minimax_fitness(pop.individuals[i].scenario_scores);
+        }
+        // Use default tournament selection (on updated fitness)
+        evoParams.select = nullptr;
+      }
+      // SUM mode: evoParams.select stays nullptr → default tournament
+
       nn_evolve_generation(pop, evoParams);
     }
   }

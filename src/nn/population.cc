@@ -143,14 +143,19 @@ void nn_evolve_generation(NNPopulation& pop, const NNEvolveParams& params) {
 
     int tournament_size = std::max(2, params.tournament_size); // GP & NN: TournamentSize
 
+    // Selection function: use custom if provided, else default tournament
+    SelectionFn selectParent = params.select
+        ? params.select
+        : SelectionFn([&](const NNPopulation& p) { return nn_tournament_select(p, tournament_size); });
+
     // Fill remaining slots
     for (int i = elitism_count; i < n; i++) {
         double r = randDouble();
 
         if (r < cross_thresh) {
             // Crossover + mutation
-            int p1 = nn_tournament_select(pop, tournament_size);
-            int p2 = nn_tournament_select(pop, tournament_size);
+            int p1 = selectParent(pop);
+            int p2 = selectParent(pop);
             NNGenome child = nn_arithmetic_crossover(
                 pop.individuals[p1], pop.individuals[p2],
                 params.crossover_alpha);  // NN only: NNCrossoverAlpha
@@ -168,15 +173,15 @@ void nn_evolve_generation(NNPopulation& pop, const NNEvolveParams& params) {
             next_gen.push_back(std::move(fresh));
         } else if (r < mutate_thresh) {
             // Mutation only, no crossover (SwapMutationProbability)
-            int p = nn_tournament_select(pop, tournament_size);
+            int p = selectParent(pop);
             NNGenome child = pop.individuals[p]; // copy
             child.generation = pop.generation + 1;
             nn_gaussian_mutation(child);
             next_gen.push_back(std::move(child));
         } else {
             // Crossover only, no mutation (remainder)
-            int p1 = nn_tournament_select(pop, tournament_size);
-            int p2 = nn_tournament_select(pop, tournament_size);
+            int p1 = selectParent(pop);
+            int p2 = selectParent(pop);
             NNGenome child = nn_arithmetic_crossover(
                 pop.individuals[p1], pop.individuals[p2],
                 params.crossover_alpha);

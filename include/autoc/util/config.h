@@ -65,6 +65,9 @@ struct AutocConfig {
     // --- Variation landscape ramp ---
     int variationRampStep = 0;
 
+    // --- Selection strategy (015) ---
+    std::string selectionMode = "sum";  // "sum", "minimax", "lexicase"
+
     // --- Variable rabbit speed ---
     double rabbitSpeedNominal = 16.0;
     double rabbitSpeedSigma = 0.0;

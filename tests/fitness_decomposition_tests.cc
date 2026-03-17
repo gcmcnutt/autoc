@@ -40,7 +40,7 @@ static EvalResults makeSimpleEvalResults(int numSteps, bool crash, int crashAtSt
     results.aircraftStateList.push_back(states);
 
     // Crash status
-    results.crashReasonList.push_back(crash ? CrashReason::Distance : CrashReason::None);
+    results.crashReasonList.push_back(crash ? CrashReason::Eval : CrashReason::None);
 
     // Empty scenario metadata
     results.scenarioList.push_back(ScenarioMetadata());
