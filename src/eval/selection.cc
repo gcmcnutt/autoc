@@ -23,7 +23,12 @@ const char* selectionModeToString(SelectionMode mode) {
 }
 
 // Epsilon-lexicase selection.
-// Priority: completion_fraction first (higher is better), then distance_rmse (lower is better).
+// Priority per scenario: completion_fraction → distance_rmse.
+// NOTE: smoothness (Σ|Δu|) was tried as a dimension but rewards saturation — a pegged
+// output has Δ=0 and looks perfectly smooth, reinforcing the spiral exploit. Revisit
+// once sensor expansion (dDist/dt) gives the NN closing-rate information to self-regulate.
+// Path-relative smoothness (normalised by path curvature) is the right formulation but
+// requires per-step curvature instrumentation — deferred to Phase 5.
 int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
                     int pop_size, double epsilon) {
     if (pop_size <= 0) return 0;
@@ -77,32 +82,9 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
         }
 
         survivors.clear();
-        // Epsilon for distance: use relative epsilon (5% of best, min 0.5m)
         double dist_epsilon = std::max(0.5, best_dist * epsilon);
         for (int idx : candidates) {
             if (all_scores[idx][si].distance_rmse <= best_dist + dist_epsilon) {
-                survivors.push_back(idx);
-            }
-        }
-
-        if (!survivors.empty()) {
-            candidates = survivors;
-        }
-        if (candidates.size() <= 1) break;
-
-        // Phase 3: Among distance survivors, filter on smoothness (lower is better)
-        // Use mean smoothness across pitch+roll (throttle excluded — less dynamic)
-        double best_smooth = 1e30;
-        for (int idx : candidates) {
-            double sm = (all_scores[idx][si].smoothness[0] + all_scores[idx][si].smoothness[1]) / 2.0;
-            best_smooth = std::min(best_smooth, sm);
-        }
-
-        survivors.clear();
-        double smooth_epsilon = std::max(0.05, best_smooth * epsilon);
-        for (int idx : candidates) {
-            double sm = (all_scores[idx][si].smoothness[0] + all_scores[idx][si].smoothness[1]) / 2.0;
-            if (sm <= best_smooth + smooth_epsilon) {
                 survivors.push_back(idx);
             }
         }

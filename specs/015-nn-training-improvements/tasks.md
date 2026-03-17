@@ -141,6 +141,17 @@ Topology: 29→16→8→3 = 616 weights (up from 531). Clean break — all prior
 
 ### Tasks
 
+- [ ] T039 [US13] Replace att= Euler decomposition with quaternion geodesic distance in src/eval/fitness_decomposition.cc (logging only — not used in selection):
+  - Remove roll/pitch via atan2/asin (gimbal lock risk near ±90° pitch, roll wrapping artifacts)
+  - Replace with: `dot = clamp(prev_q·curr_q, -1, 1); attitude_delta = 2*acos(fabs(dot))`
+  - `fabs(dot)` handles q/-q double-cover; result in [0,π] = actual rotation angle per step (radians)
+  - Update fitness_decomposition_tests.cc: verify att= near-zero for steady flight, non-zero for spin
+- [X] T039b [TRIED, REVERTED] Smoothness as lexicase dimension — rewards saturation, not smooth control.
+  - Pegged outputs (Δu=0) score perfectly smooth → reinforces spiral exploit (pitch=max, throttle=max, roll-only)
+  - Observed at gen 73: sm=0.00/0.41/0.00 — pitch and throttle fully pegged, only roll varies
+  - Reverted to completion_fraction → distance_rmse only
+  - **Revisit**: path-relative smoothness (normalise Δu by path curvature at each step) is the correct
+    formulation — requires per-step curvature from path geometry. Defer to Phase 5 after sensor expansion.
 - [ ] T040 [US13] Update NN_INPUT_COUNT to 29 and topology to {29,16,8,3} in include/autoc/nn/evaluator.h
 - [ ] T041 [US13] Remove NORM_ANGLE, NORM_DIST, NORM_VEL, NORM_RATE constants from include/autoc/nn/evaluator.h — use raw sensor values
 - [ ] T042 [US13] Expand temporal history from 4 slots to 6 slots (add +0.1s, +0.5s lookahead) in nn_gather_inputs() — both autoc/src/autoc.cc and crrcsim inputdev_autoc.cpp
@@ -150,9 +161,9 @@ Topology: 29→16→8→3 = 616 weights (up from 531). Clean break — all prior
 - [ ] T046 [US13] Update nn2cpp tool to generate correct input count
 - [ ] T047 [US13] Update all tests: nn_evaluator_tests.cc, contract_evaluator_tests.cc — new input count, removed norms
 - [ ] T048 [US13] Rebuild all 3 repos: autoc, crrcsim, xiao
-- [ ] T049 [US13] Diagnostic run: lexicase + smoothness, 9 wind scenarios, constant rabbit — verify dist signal improves, throttle not pegged at max
+- [ ] T049 [US13] Spiral reduction check: after sensor expansion, **temporarily reduce rabbit speed** (e.g. RabbitSpeedSigma=1.0) and run 50+ gens — verify spiral behavior reduces vs pre-expansion baseline; closing rate (dDist/dt) should show active throttle modulation in per-scenario logs rather than pegged at max
 - [ ] T050 [US13] Experiment: variable rabbit (sigma=3-5 m/s, aggressive cycles=[0.3, 2.0]) — verify throttle modulation and closing rate signal visible in per-scenario logs
-- [ ] T051 [US13] Tune rabbit speed config: test wider speed range (sigma=5+), shorter cycles, verify scenarios create meaningful throttle diversity for lexicase
+- [ ] T051 [US13] Radical rabbit path variations: tune config for more aggressive maneuvers — increase path curvature (shorter segment lengths, higher turn rates), test sigma=5+ m/s speed variation, asymmetric speed profiles; goal: scenarios that force real throttle diversity for lexicase to exploit
 
 **Checkpoint**: NN has direct closing-rate signal. Throttle modulation emerges under variable rabbit. Full-throttle spiral strategy no longer viable.
 

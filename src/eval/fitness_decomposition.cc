@@ -41,7 +41,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         double attitude_sum_legacy = 0.0;
         double distance_sq_sum = 0.0;  // For RMSE
         double attitude_delta_sum = 0.0;  // For normalized attitude error
-        double prev_roll = 0.0, prev_pitch = 0.0;
+        gp_quat prev_quat;
         bool first_attitude_sample = true;
         int stepIndex = 0;
         int simulation_steps = 0;
@@ -59,22 +59,22 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             gp_vec3 aircraftPosition = stepState.getPosition();
             gp_quat craftOrientation = stepState.getOrientation();
 
-            // Attitude delta (same as computeNNFitness)
-            double qw = craftOrientation.w(), qx = craftOrientation.x();
-            double qy = craftOrientation.y(), qz = craftOrientation.z();
-            double roll = atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy));
-            double sinp = std::clamp(2.0 * (qw * qy - qz * qx), -1.0, 1.0);
-            double pitch = asin(sinp);
-
+            // Attitude delta: geodesic distance between consecutive orientations.
+            // 2*acos(|q1·q2|) gives the actual rotation angle in [0,π] radians per step.
+            // fabs handles q/-q equivalence. No gimbal lock, no Euler wrap artifacts.
             double attitude_delta = 0.0;
             if (first_attitude_sample) {
-                prev_roll = roll;
-                prev_pitch = pitch;
+                prev_quat = craftOrientation;
                 first_attitude_sample = false;
             } else {
-                attitude_delta = fabs(roll - prev_roll) + fabs(pitch - prev_pitch);
-                prev_roll = roll;
-                prev_pitch = pitch;
+                double dot = std::clamp(
+                    static_cast<double>(prev_quat.w() * craftOrientation.w() +
+                    prev_quat.x() * craftOrientation.x() +
+                    prev_quat.y() * craftOrientation.y() +
+                    prev_quat.z() * craftOrientation.z()),
+                    -1.0, 1.0);
+                attitude_delta = 2.0 * acos(fabs(dot));
+                prev_quat = craftOrientation;
             }
 
             // Distance to rabbit

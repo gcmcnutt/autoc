@@ -18,8 +18,7 @@ const char* selectionModeToString(SelectionMode mode);
 //   1. Shuffle scenario order
 //   2. Filter to individuals within epsilon of best on completion_fraction
 //   3. Among survivors, filter on distance_rmse
-//   4. Repeat until 1 remains or scenarios exhausted
-//   5. If tie, pick randomly among survivors
+//   4. If tie, pick randomly among survivors
 // Returns index into population.
 int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
                     int pop_size, double epsilon = 0.05);
