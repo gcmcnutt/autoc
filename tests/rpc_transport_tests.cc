@@ -382,8 +382,8 @@ TEST(ContractRPC, EvalRequestRoundTrip) {
 
     // Verify
     EXPECT_EQ(req2.genome_count, 2u);
-    EXPECT_EQ(req2.genomes[0].weight_count, NN_WEIGHT_COUNTu);
-    EXPECT_EQ(req2.genomes[1].weight_count, NN_WEIGHT_COUNTu);
+    EXPECT_EQ(req2.genomes[0].weight_count, static_cast<uint32_t>(NN_WEIGHT_COUNT));
+    EXPECT_EQ(req2.genomes[1].weight_count, static_cast<uint32_t>(NN_WEIGHT_COUNT));
 
     for (int i = 0; i < NN_WEIGHT_COUNT; i++) {
         EXPECT_EQ(req2.genomes[0].weights[i], req.genomes[0].weights[i]);

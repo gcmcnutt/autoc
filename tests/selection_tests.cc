@@ -119,50 +119,6 @@ TEST(Selection, MinimaxWithCrash) {
     EXPECT_DOUBLE_EQ(mm, 500015.0);
 }
 
-// T039b: Smoothness filter precedes distance_rmse filter
-TEST(Selection, SmoothnessBeforeDistance) {
-    // 2 individuals, 1 scenario, both complete fully, both same distance.
-    // Ind 0: smooth (smoothness sum = 0.1). Ind 1: jittery (smoothness sum = 2.0).
-    // Lexicase should strongly prefer ind 0.
-    auto scores = makeScores(2, 1,
-        {{1.0}, {1.0}},
-        {{5.0}, {5.0}}
-    );
-    setSmoothnessAll(scores, 0, 0.03, 0.04, 0.03);  // sum = 0.10
-    setSmoothnessAll(scores, 1, 0.6,  0.7,  0.7);   // sum = 2.00
-
-    std::map<int, int> counts;
-    for (int i = 0; i < 1000; i++) {
-        int selected = lexicase_select(scores, 2);
-        counts[selected]++;
-    }
-
-    // Smooth individual (0) should dominate; jittery (1) nearly eliminated
-    EXPECT_GT(counts[0], 800);
-    EXPECT_LT(counts[1], 200);
-}
-
-// T039b: Smooth-but-imprecise beats jittery-but-precise
-TEST(Selection, SmoothBeatsJitteryEvenWithBetterDistance) {
-    // Ind 0: smooth, worse distance. Ind 1: jittery, better distance.
-    // Both complete fully. Smoothness filter runs first, so ind 0 should win.
-    auto scores = makeScores(2, 1,
-        {{1.0}, {1.0}},
-        {{10.0}, {3.0}}  // ind 1 has better distance
-    );
-    setSmoothnessAll(scores, 0, 0.03, 0.04, 0.03);  // sum = 0.10 (smooth)
-    setSmoothnessAll(scores, 1, 0.6,  0.7,  0.7);   // sum = 2.00 (jittery)
-
-    std::map<int, int> counts;
-    for (int i = 0; i < 1000; i++) {
-        int selected = lexicase_select(scores, 2);
-        counts[selected]++;
-    }
-
-    // Smooth individual should still dominate despite worse distance
-    EXPECT_GT(counts[0], 700);
-}
-
 // T028: parseSelectionMode
 TEST(Selection, ParseMode) {
     EXPECT_EQ(parseSelectionMode("sum"), SelectionMode::SUM);

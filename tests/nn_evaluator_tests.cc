@@ -268,26 +268,23 @@ TEST(NNForwardPass, Deterministic) {
 }
 
 // ============================================================
-// T032: Input normalization test
+// T040: Input layout test (normalization removed — all inputs raw)
 // ============================================================
 
-TEST(NNInputNormalization, NormConstants) {
-    // Verify the normalization constants match spec
-    EXPECT_NEAR(NORM_ANGLE, M_PI, 1e-5);
-    EXPECT_NEAR(NORM_DIST, 50.0f, 1e-5);
-    EXPECT_NEAR(NORM_VEL, 16.0f, 1e-5);
-    EXPECT_NEAR(NORM_RATE, 10.0f, 1e-5);
+// Input ordering (29 inputs, all raw):
+//  0- 5: dPhi  [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  radians
+//  6-11: dTheta same
+// 12-17: dist  [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  metres
+//    18: dDist/dt closing rate (m/s)
+// 19-22: quaternion (w,x,y,z)
+//    23: airspeed (m/s)
+// 24-25: alpha, beta (rad)
+// 26-28: pitchCmd, rollCmd, throttleCmd feedback
+
+TEST(NNInputLayout, InputCountMatchesTopology) {
+    // NN_INPUT_COUNT must equal the first layer of NN_TOPOLOGY
+    EXPECT_EQ(NN_INPUT_COUNT, NN_TOPOLOGY[0]);
+    EXPECT_EQ(NN_INPUT_COUNT, 29);
 }
 
-// Input ordering (22 inputs):
-//  0- 3: dPhi history [now, -0.1s, -0.3s, -0.9s] / NORM_ANGLE
-//  4- 7: dTheta history [now, -0.1s, -0.3s, -0.9s] / NORM_ANGLE
-//  8-11: dist history [now, -0.1s, -0.3s, -0.9s] / NORM_DIST
-// 12-15: quaternion (w, x, y, z) — already [-1,1]
-//    16: velocity / NORM_VEL
-//    17: alpha / NORM_ANGLE
-//    18: beta / NORM_ANGLE
-// 19-21: rollCmd, pitchCmd, throttleCmd (already [-1,1])
-
-// Note: Full nn_gather_inputs test requires AircraftState + PathProvider,
-// which needs GP_BUILD mode (not GP_TEST). Normalization constants verified above.
+// Note: Full nn_gather_inputs test requires AircraftState + PathProvider.
