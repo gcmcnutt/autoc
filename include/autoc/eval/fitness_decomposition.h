@@ -15,6 +15,7 @@ struct ScenarioScore {
     double attitude_error;       // Sum of |dphi| + |dtheta| per step, normalized by steps completed
     double distance_rmse;        // RMSE of distance-to-target over completed steps
     double smoothness[3];        // Mean |Δu(t)| per axis: pitch, roll, throttle (0=constant, 2=bang-bang)
+    double mean_throttle;        // Mean throttle command over episode [0,1] — energy proxy
     bool crashed;                // Whether this scenario crashed
     int steps_completed;         // Number of simulation steps completed
     int steps_total;             // Total steps expected (path length)
@@ -27,7 +28,7 @@ struct ScenarioScore {
 
     ScenarioScore()
         : completion_fraction(0.0), attitude_error(0.0), distance_rmse(0.0),
-          crashed(false), steps_completed(0), steps_total(0),
+          mean_throttle(0.0), crashed(false), steps_completed(0), steps_total(0),
           legacy_distance_sum(0.0), legacy_attitude_sum(0.0),
           legacy_attitude_scale(1.0), legacy_crash_penalty(0.0) {
         smoothness[0] = smoothness[1] = smoothness[2] = 0.0;

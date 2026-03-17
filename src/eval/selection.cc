@@ -23,12 +23,10 @@ const char* selectionModeToString(SelectionMode mode) {
 }
 
 // Epsilon-lexicase selection.
-// Priority per scenario: completion_fraction → distance_rmse.
-// NOTE: smoothness (Σ|Δu|) was tried as a dimension but rewards saturation — a pegged
-// output has Δ=0 and looks perfectly smooth, reinforcing the spiral exploit. Revisit
-// once sensor expansion (dDist/dt) gives the NN closing-rate information to self-regulate.
-// Path-relative smoothness (normalised by path curvature) is the right formulation but
-// requires per-step curvature instrumentation — deferred to Phase 5.
+// Priority per scenario: completion_fraction → distance_rmse → mean_throttle (energy).
+// Smoothness (Σ|Δu|) was tried as a dimension but rewards saturation — a pegged output
+// has Δ=0 and looks perfectly smooth, reinforcing the spiral exploit. Mean throttle is
+// the correct energy proxy: rewards efficient flight, penalizes full-throttle spiraling.
 int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
                     int pop_size, double epsilon) {
     if (pop_size <= 0) return 0;
@@ -85,6 +83,25 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
         double dist_epsilon = std::max(0.5, best_dist * epsilon);
         for (int idx : candidates) {
             if (all_scores[idx][si].distance_rmse <= best_dist + dist_epsilon) {
+                survivors.push_back(idx);
+            }
+        }
+
+        if (!survivors.empty()) {
+            candidates = survivors;
+        }
+        if (candidates.size() <= 1) break;
+
+        // Phase 3: Among distance survivors, filter on mean_throttle (lower is better = less energy)
+        double best_throttle = 1e30;
+        for (int idx : candidates) {
+            best_throttle = std::min(best_throttle, all_scores[idx][si].mean_throttle);
+        }
+
+        survivors.clear();
+        double throttle_epsilon = std::max(0.05, best_throttle * epsilon);
+        for (int idx : candidates) {
+            if (all_scores[idx][si].mean_throttle <= best_throttle + throttle_epsilon) {
                 survivors.push_back(idx);
             }
         }

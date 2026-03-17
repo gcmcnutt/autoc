@@ -49,6 +49,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         // Previous commands for smoothness (pitch, roll, throttle)
         double prev_cmd[3] = {0.0, 0.0, 0.0};
         double smoothness_sum[3] = {0.0, 0.0, 0.0};
+        double throttle_sum = 0.0;
         bool first_cmd = true;
 
         while (++stepIndex < static_cast<int>(aircraftStates.size())) {
@@ -106,6 +107,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                     smoothness_sum[a] += fabs(cmd[a] - prev_cmd[a]);
                 }
             }
+            throttle_sum += cmd[2];
             for (int a = 0; a < 3; a++) prev_cmd[a] = cmd[a];
 
             simulation_steps++;
@@ -137,6 +139,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         if (simulation_steps > 0) {
             score.distance_rmse = sqrt(distance_sq_sum / simulation_steps);
             score.attitude_error = attitude_delta_sum / simulation_steps;
+            score.mean_throttle = throttle_sum / simulation_steps;
             for (int a = 0; a < 3; a++) {
                 score.smoothness[a] = smoothness_sum[a] / std::max(1, simulation_steps - 1);
             }

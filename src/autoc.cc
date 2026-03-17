@@ -1258,6 +1258,7 @@ static void runNNEvolution(
                        << " comp=" << std::fixed << std::setprecision(2) << sc.completion_fraction
                        << " dist=" << sc.distance_rmse
                        << " att=" << sc.attitude_error
+                       << " thr=" << sc.mean_throttle
                        << " sm=" << sc.smoothness[0] << "/" << sc.smoothness[1] << "/" << sc.smoothness[2]
                        << endl;
       }
