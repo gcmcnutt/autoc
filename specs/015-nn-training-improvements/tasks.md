@@ -111,43 +111,81 @@ selection break the plateau? Compare against sum and minimax baselines.
 
 ---
 
-## Phase 4: Research Spikes (US12, P2) — branched experiments
+## Phase 4a: Enhanced NN Sensors (US13, P1) — anti-spiral, throttle signal
 
-**Goal**: Explore alternative selection strategies. Each on its own git branch, validated against Phase 3 minimax baseline.
+**Goal**: Give the NN direct closing-rate and lookahead signals so it can modulate throttle
+instead of full-blast spiraling. Expand temporal history for curve-ahead estimation.
 
-**Independent Test**: Each spike produces a 500-gen run with per-scenario fitness logs. Compare against minimax baseline on same scenarios.
+**Current problem**: NN has no direct closing-rate input. It sees distance at 4 time offsets
+and must implicitly compute dDist/dt. Full-throttle spiral is an exploit — the NN can't
+distinguish "need more speed" from "need to turn harder."
 
-**Depends on**: Phase 3 (multi-objective selection infrastructure)
+**Depends on**: Phase 3 (lexicase + smoothness working)
 
-### Lexicase Selection Spike
+### Sensor Changes
 
-- [ ] T040 [US12] Create branch `015-spike-lexicase` from 015-nn-training-improvements
-- [ ] T041 [P] [US12] Write test: lexicase with 3 scenarios and 5 individuals selects correct winner in tests/lexicase_tests.cc
-- [ ] T042 [P] [US12] Write test: epsilon-lexicase with continuous fitness uses epsilon threshold in tests/lexicase_tests.cc
-- [ ] T043 [US12] Implement epsilon-lexicase selection in src/eval/lexicase_selection.cc — shuffle scenarios, filter by epsilon-best, repeat until 1 remains or scenarios exhausted
-- [ ] T044 [US12] Wire lexicase into evolution loop as alternative to tournament in src/nn/population.cc
-- [ ] T045 [US12] Run 500-gen experiment, log per-scenario fitness, compare against minimax baseline
+New input layout (29 inputs, up from 22):
+```
+ 0- 5: dPhi  [-0.9s, -0.3s, -0.1s, now, +0.1s, +0.5s]  (raw, no NORM)
+ 6-11: dTheta [-0.9s, -0.3s, -0.1s, now, +0.1s, +0.5s]  (raw, no NORM)
+12-17: dist  [-0.9s, -0.3s, -0.1s, now, +0.1s, +0.5s]   (raw, no NORM)
+   18: dDist/dt (closing rate, m/s)                        (raw)
+19-22: quaternion (w, x, y, z)                             (already [-1,1])
+   23: airspeed (m/s)                                      (raw, no NORM_VEL)
+   24: alpha (rad)                                         (raw, no NORM_ANGLE)
+   25: beta (rad)                                          (raw, no NORM_ANGLE)
+26-28: rollCmd, pitchCmd, throttleCmd feedback              (already [-1,1])
+```
+
+Topology: 29→16→8→3 = 616 weights (up from 531). Clean break — all prior weights incompatible.
+
+### Tasks
+
+- [ ] T040 [US13] Update NN_INPUT_COUNT to 29 and topology to {29,16,8,3} in include/autoc/nn/evaluator.h
+- [ ] T041 [US13] Remove NORM_ANGLE, NORM_DIST, NORM_VEL, NORM_RATE constants from include/autoc/nn/evaluator.h — use raw sensor values
+- [ ] T042 [US13] Expand temporal history from 4 slots to 6 slots (add +0.1s, +0.5s lookahead) in nn_gather_inputs() — both autoc/src/autoc.cc and crrcsim inputdev_autoc.cpp
+- [ ] T043 [US13] Add dDist/dt (closing rate) input: compute from dist temporal history in nn_gather_inputs()
+- [ ] T044 [US13] Update nn_gather_inputs() input ordering to match new layout
+- [ ] T045 [US13] Update xiao nn_program.h input layout to match (xiao/include/nn_program.h)
+- [ ] T046 [US13] Update nn2cpp tool to generate correct input count
+- [ ] T047 [US13] Update all tests: nn_evaluator_tests.cc, contract_evaluator_tests.cc — new input count, removed norms
+- [ ] T048 [US13] Rebuild all 3 repos: autoc, crrcsim, xiao
+- [ ] T049 [US13] Diagnostic run: lexicase + smoothness, 9 wind scenarios, constant rabbit — verify dist signal improves, throttle not pegged at max
+- [ ] T050 [US13] Experiment: variable rabbit (sigma=3-5 m/s, aggressive cycles=[0.3, 2.0]) — verify throttle modulation and closing rate signal visible in per-scenario logs
+- [ ] T051 [US13] Tune rabbit speed config: test wider speed range (sigma=5+), shorter cycles, verify scenarios create meaningful throttle diversity for lexicase
+
+**Checkpoint**: NN has direct closing-rate signal. Throttle modulation emerges under variable rabbit. Full-throttle spiral strategy no longer viable.
+
+---
+
+## Phase 4b: Research Spikes (US12, P2) — branched experiments
+
+**Goal**: Explore alternative selection strategies. Each on its own git branch, validated against Phase 3 baseline.
+
+**Independent Test**: Each spike produces a 500-gen run with per-scenario fitness logs. Compare against lexicase baseline on same scenarios.
+
+**Depends on**: Phase 4a (enhanced sensors)
 
 ### NSGA-II Pareto Spike
 
-- [ ] T046 [US12] Create branch `015-spike-nsga2` from 015-nn-training-improvements
-- [ ] T047 [P] [US12] Write test: non-dominated sort on known 2-objective vectors in tests/nsga2_tests.cc
-- [ ] T048 [P] [US12] Write test: crowding distance computation in tests/nsga2_tests.cc
-- [ ] T049 [US12] Implement non-dominated sort + crowding distance selection in src/eval/nsga2_selection.cc — objectives: tracking RMSE, smoothness, worst-case spread
-- [ ] T050 [US12] Wire NSGA-II selection into evolution loop in src/nn/population.cc
-- [ ] T051 [US12] Run 500-gen experiment, log Pareto front evolution, compare against minimax
+- [ ] T055 [US12] Create branch `015-spike-nsga2` from 015-nn-training-improvements
+- [ ] T056 [P] [US12] Write test: non-dominated sort on known 2-objective vectors in tests/nsga2_tests.cc
+- [ ] T057 [P] [US12] Write test: crowding distance computation in tests/nsga2_tests.cc
+- [ ] T058 [US12] Implement non-dominated sort + crowding distance selection in src/eval/nsga2_selection.cc — objectives: tracking RMSE, smoothness, worst-case spread
+- [ ] T059 [US12] Wire NSGA-II selection into evolution loop in src/nn/population.cc
+- [ ] T060 [US12] Run 500-gen experiment, log Pareto front evolution, compare against lexicase
 
 ### Rank-Based Fitness Shaping Spike
 
-- [ ] T052 [US12] Create branch `015-spike-rank-shaping` from 015-nn-training-improvements
-- [ ] T053 [US12] Implement rank-based fitness transformation (CMA-ES style) in src/eval/fitness_aggregator.cc — replace raw fitness with rank-derived weights
-- [ ] T054 [US12] Run 500-gen experiment, compare against minimax baseline
+- [ ] T061 [US12] Create branch `015-spike-rank-shaping` from 015-nn-training-improvements
+- [ ] T062 [US12] Implement rank-based fitness transformation (CMA-ES style) in src/eval/fitness_aggregator.cc — replace raw fitness with rank-derived weights
+- [ ] T063 [US12] Run 500-gen experiment, compare against lexicase baseline
 
 ### Research Analysis
 
-- [ ] T055 [US12] Compare all spike results: plot per-scenario fitness trajectories, smoothness evolution, worst-case convergence
-- [ ] T056 [US12] Document findings in specs/015-nn-training-improvements/research.md — which strategy broke the plateau?
-- [ ] T057 [US12] Merge winning strategy to 015-nn-training-improvements, remove losing branches
+- [ ] T064 [US12] Compare all spike results: plot per-scenario fitness trajectories, smoothness evolution, worst-case convergence
+- [ ] T065 [US12] Document findings in specs/015-nn-training-improvements/research.md — which strategy broke the plateau?
+- [ ] T066 [US12] Merge winning strategy to 015-nn-training-improvements, remove losing branches
 
 **Checkpoint**: Best selection strategy identified and merged. Decision documented.
 

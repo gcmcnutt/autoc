@@ -88,6 +88,28 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
         if (!survivors.empty()) {
             candidates = survivors;
         }
+        if (candidates.size() <= 1) break;
+
+        // Phase 3: Among distance survivors, filter on smoothness (lower is better)
+        // Use mean smoothness across pitch+roll (throttle excluded — less dynamic)
+        double best_smooth = 1e30;
+        for (int idx : candidates) {
+            double sm = (all_scores[idx][si].smoothness[0] + all_scores[idx][si].smoothness[1]) / 2.0;
+            best_smooth = std::min(best_smooth, sm);
+        }
+
+        survivors.clear();
+        double smooth_epsilon = std::max(0.05, best_smooth * epsilon);
+        for (int idx : candidates) {
+            double sm = (all_scores[idx][si].smoothness[0] + all_scores[idx][si].smoothness[1]) / 2.0;
+            if (sm <= best_smooth + smooth_epsilon) {
+                survivors.push_back(idx);
+            }
+        }
+
+        if (!survivors.empty()) {
+            candidates = survivors;
+        }
     }
 
     // Pick randomly among remaining candidates
