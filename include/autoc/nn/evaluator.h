@@ -5,6 +5,7 @@
 #include <cstdint>
 #include "autoc/types.h"
 #include "autoc/eval/aircraft_state.h"
+#include "autoc/eval/fitness_decomposition.h"
 
 // Input normalization constants (applied before forward pass)
 // See research.md R9 for rationale
@@ -18,6 +19,7 @@ struct NNGenome {
     std::vector<float> weights;       // All weights + biases, layer-major order
     std::vector<int> topology;        // Layer sizes, e.g., {22, 16, 8, 3}
     double fitness;                   // Aggregated fitness from evaluation
+    std::vector<ScenarioScore> scenario_scores;  // Per-scenario decomposed scores (015)
     uint32_t generation;              // Generation when created
     float mutation_sigma;             // Per-individual mutation step size (self-adaptive)
     std::string source;               // Provenance: "bucket/key" from S3 extraction

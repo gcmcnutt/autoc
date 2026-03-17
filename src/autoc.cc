@@ -36,6 +36,8 @@ From skeleton/skeleton.cc
 #include "autoc/nn/population.h"
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
+#include "autoc/eval/fitness_computer.h"
+#include "autoc/eval/fitness_decomposition.h"
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
@@ -86,38 +88,14 @@ static double computeVariationScale() {
 // Intercept-Budget Fitness Scaling (see specs/005-entry-fitness-ramp)
 // ============================================================================
 
-/**
- * Compute per-step intercept scale factor.
- * Quadratic ramp from FLOOR to CEILING over the intercept budget.
- *
- * @param stepTimeSec  Current simulation step time in seconds
- * @param budgetSec    Estimated intercept budget in seconds
- * @return Scale factor in [FLOOR, CEILING]
- */
+// Intercept scale/budget functions now in FitnessComputer (fitness_computer.h/cc)
+// Local aliases for backward compatibility within this file
 static double computeInterceptScale(double stepTimeSec, double budgetSec) {
-    if (budgetSec <= 0.0) return INTERCEPT_SCALE_CEILING;  // No budget → full penalty
-    double t = std::min(1.0, stepTimeSec / budgetSec);
-    return INTERCEPT_SCALE_FLOOR + (INTERCEPT_SCALE_CEILING - INTERCEPT_SCALE_FLOOR) * t * t;
+    return FitnessComputer::computeInterceptScale(stepTimeSec, budgetSec);
 }
-
-/**
- * Estimate time-to-intercept from initial conditions.
- * Crude geometric estimate: turn_time + closure_time + rabbit_compensation.
- *
- * @param displacement    Horizontal distance to path start (meters)
- * @param headingOffset   Heading offset from path tangent (radians)
- * @param aircraftSpeed   Aircraft speed (m/s)
- * @param rabbitSpeed     Rabbit (target) speed (m/s)
- * @return Estimated budget in seconds, clamped to [0, INTERCEPT_BUDGET_MAX]
- */
 static double computeInterceptBudget(double displacement, double headingOffset,
                                       double aircraftSpeed, double rabbitSpeed) {
-    if (aircraftSpeed <= 0.0) return INTERCEPT_BUDGET_MAX;
-    double turn_time = fabs(headingOffset) / INTERCEPT_TURN_RATE;
-    double closure_time = displacement / aircraftSpeed;
-    double rabbit_compensation = closure_time * (rabbitSpeed / aircraftSpeed);
-    double budget = turn_time + closure_time + rabbit_compensation;
-    return std::clamp(budget, 0.0, INTERCEPT_BUDGET_MAX);
+    return FitnessComputer::computeInterceptBudget(displacement, headingOffset, aircraftSpeed, rabbitSpeed);
 }
 
 // ============================================================================
@@ -982,8 +960,9 @@ static void runNNEvaluation(
   });
   threadPool->wait_for_tasks();
 
-  // Compute fitness
-  double fitness = computeNNFitness(evalResults);
+  // Compute decomposed fitness then aggregate
+  auto evalScenarioScores = computeScenarioScores(evalResults);
+  double fitness = aggregateScalarFitness(evalScenarioScores);
 
   // Log per-step data to data.dat
   logEvalResults(fout, evalResults);
@@ -1111,8 +1090,9 @@ static void runNNEvolution(
         context.evalResults = receiveRPC<EvalResults>(*context.socket);
         globalSimRunCounter.fetch_add(context.evalResults.pathList.size(), std::memory_order_relaxed);
 
-        // Compute fitness
-        genome.fitness = computeNNFitness(context.evalResults);
+        // Compute decomposed fitness then aggregate for selection
+        genome.scenario_scores = computeScenarioScores(context.evalResults);
+        genome.fitness = aggregateScalarFitness(genome.scenario_scores);
       });
     }
 
@@ -1197,7 +1177,8 @@ static void runNNEvolution(
       logEvalResults(fout, bestResults);
 
       // Determinism check: re-eval fitness must match stored fitness exactly (T106)
-      double reevalFitness = computeNNFitness(bestResults);
+      auto reevalScores = computeScenarioScores(bestResults);
+      double reevalFitness = aggregateScalarFitness(reevalScores);
       double storedFitness = pop.individuals[bestIdx].fitness;
       if (!bitwiseEqual(reevalFitness, storedFitness)) {
         *logger.warn() << "NN_ELITE_DIVERGED: gen=" << gen
@@ -1248,6 +1229,22 @@ static void runNNEvolution(
                    << "  Worst=" << maxFitness
                    << "  Sigma=" << pop.individuals[bestIdx].mutation_sigma
                    << endl;
+
+    // Log per-scenario decomposition for best individual
+    const auto& bestScores = pop.individuals[bestIdx].scenario_scores;
+    if (!bestScores.empty()) {
+      *logger.info() << "  Scenarios: ";
+      for (size_t s = 0; s < bestScores.size(); s++) {
+        const auto& sc = bestScores[s];
+        *logger.info() << "  [" << s << "] "
+                       << (sc.crashed ? "CRASH" : "OK")
+                       << " comp=" << std::fixed << std::setprecision(2) << sc.completion_fraction
+                       << " dist=" << sc.distance_rmse
+                       << " att=" << sc.attitude_error
+                       << " sm=" << sc.smoothness[0] << "/" << sc.smoothness[1] << "/" << sc.smoothness[2]
+                       << endl;
+      }
+    }
 
     // Log to statistics file
     bout << "#NNGen gen=" << gen

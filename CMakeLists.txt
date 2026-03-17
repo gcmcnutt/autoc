@@ -86,6 +86,7 @@ add_library(autoc_common STATIC
     src/eval/pathgen.cc
     src/eval/sensor_math.cc
     src/eval/fitness_computer.cc
+    src/eval/fitness_decomposition.cc
     src/eval/eval_logger.cc
     src/nn/evaluator.cc
     src/nn/serialization.cc
@@ -118,6 +119,9 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(fitness_computer_tests tests/fitness_computer_tests.cc)
   target_link_libraries(fitness_computer_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(fitness_decomposition_tests tests/fitness_decomposition_tests.cc)
+  target_link_libraries(fitness_decomposition_tests GTest::gtest GTest::gtest_main autoc_common)
+
   add_executable(contract_evaluator_tests tests/contract_evaluator_tests.cc)
   target_link_libraries(contract_evaluator_tests GTest::gtest GTest::gtest_main autoc_common)
 
@@ -135,6 +139,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
   add_test(NAME nn_population_tests COMMAND nn_population_tests)
   add_test(NAME fitness_computer_tests COMMAND fitness_computer_tests)
+  add_test(NAME fitness_decomposition_tests COMMAND fitness_decomposition_tests)
   add_test(NAME contract_evaluator_tests COMMAND contract_evaluator_tests)
   add_test(NAME contract_config_tests COMMAND contract_config_tests)
   add_test(NAME contract_evolution_tests COMMAND contract_evolution_tests)
@@ -143,12 +148,14 @@ if(ENABLE_AUTOC_TESTS)
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
     DEPENDS nn_evaluator_tests nn_serialization_tests nn_population_tests
-            fitness_computer_tests contract_evaluator_tests contract_config_tests
+            fitness_computer_tests fitness_decomposition_tests
+            contract_evaluator_tests contract_config_tests
             contract_evolution_tests rpc_transport_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
     COMMAND fitness_computer_tests --gtest_brief=1
+    COMMAND fitness_decomposition_tests --gtest_brief=1
     COMMAND contract_evaluator_tests --gtest_brief=1
     COMMAND contract_config_tests --gtest_brief=1
     COMMAND contract_evolution_tests --gtest_brief=1

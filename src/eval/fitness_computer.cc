@@ -23,3 +23,21 @@ double FitnessComputer::computeAttitudeScale(double path_distance, double path_t
     double denominator = std::max(path_turn_rad, 2.0 * M_PI);
     return path_distance / denominator;
 }
+
+// Quadratic ramp from FLOOR to CEILING over the intercept budget
+double FitnessComputer::computeInterceptScale(double stepTimeSec, double budgetSec) {
+    if (budgetSec <= 0.0) return INTERCEPT_SCALE_CEILING;
+    double t = std::min(1.0, stepTimeSec / budgetSec);
+    return INTERCEPT_SCALE_FLOOR + (INTERCEPT_SCALE_CEILING - INTERCEPT_SCALE_FLOOR) * t * t;
+}
+
+// Crude geometric estimate of time-to-intercept
+double FitnessComputer::computeInterceptBudget(double displacement, double headingOffset,
+                                                double aircraftSpeed, double rabbitSpeed) {
+    if (aircraftSpeed <= 0.0) return INTERCEPT_BUDGET_MAX;
+    double turn_time = fabs(headingOffset) / INTERCEPT_TURN_RATE;
+    double closure_time = displacement / aircraftSpeed;
+    double rabbit_compensation = closure_time * (rabbitSpeed / aircraftSpeed);
+    double budget = turn_time + closure_time + rabbit_compensation;
+    return std::clamp(budget, 0.0, INTERCEPT_BUDGET_MAX);
+}
