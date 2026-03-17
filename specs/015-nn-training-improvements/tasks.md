@@ -34,13 +34,13 @@ strategy that works on all wind seeds. Selection (completion→distance) doesn't
 
 ---
 
-## Current situation — SPIRAL BROKEN (gen 300 checkpoint)
+## Current situation — SLEW LIMITING ACTIVE (gen 300 checkpoint, ramp2)
 
-Entry phase (EnableEntryVariations=1) + energy as 3rd lexicase dimension broke the spiral.
-Gen 300 results: 25/25 OK, dist=2.4–11m, thr=0.24–0.60, sm[roll]=0.36–0.55.
-Bang-bang reducing naturally — roll sm[1] max dropped 0.95→0.55 over 300 gens without slew limits.
+Entry phase + energy lexicase + servo slew rate limiting all active.
+Gen 300 results: 25/25 OK, dist=1.26–8.01m, thr=0.16–0.63, sm[roll]=0.18–0.28.
+Best fitness 100.70 (vs 114.96 pre-slew). NN learned anticipatory smooth control naturally.
 
-Remaining issues: bang-bang (physical slew limits needed), path diversity (one geometry), dDist/dt sensor not yet meaningfully exercised.
+Remaining issues: path diversity (one geometry), dDist/dt sensor not yet meaningfully exercised, NN_ELITE_DIVERGED false positives (T124).
 
 ---
 
@@ -132,19 +132,19 @@ prevPitch = pitchCommand; prevRoll = rollCommand; prevThrottle = throttleCommand
 
 Reset `prevPitch/Roll/Throttle` on scenario reset (gPendingCommand = PendingCommand{} sites).
 
-- [ ] T116 Add servo slew rate limiting in `inputdev_autoc.cpp`:
+- [x] T116 Add servo slew rate limiting in `inputdev_autoc.cpp`:
   - Pitch: 200%/sec (0.40/step in NN space)
   - Roll: 200%/sec (0.40/step in NN space)
   - Throttle: 300%/sec (0.60/step in NN space)
   - Reset prev values on scenario reset
-  - Add `slewP`, `slewR`, `slewT` columns to data.dat (actual vs requested delta) for analysis
-- [ ] T117 Run 50-gen experiment after slew limiting — observe sm[1] drop, check completion
-  holds. Does roll sm[1] drop from ~0.7 to ≤0.40? Does tracking degrade?
-- [ ] T118 Tune slew rates if needed — if tracking degrades badly, loosen limits.
-  If sm still high, tighten. Goal: sm[1] ≤ 0.3 without completion loss.
+  - slewP/slewR/slewT columns skipped — not needed, sm columns already show the effect
+- [x] T117 300-gen experiment (ramp2): sm[roll] dropped 0.36–0.55 → 0.18–0.28 (well below
+  0.40 limit — NN learned to stay smooth, not just hit the wall). dist 2.4–11m → 1.26–8.01m.
+  Best fitness 114.96 → 100.70. 25/25 completion held. No tuning needed.
+- [x] T118 No tuning required — rates well-chosen. NN naturally below limits at gen 300.
 
-**Checkpoint**: sm values physically bounded. Bang-bang eliminated as a strategy.
-Controller must anticipate turns and modulate smoothly.
+**Checkpoint**: ✓ Slew limiting works. sm[roll] max 0.55→0.28. Tracking improved.
+Bang-bang eliminated. NN learned anticipatory smooth control.
 
 ---
 
