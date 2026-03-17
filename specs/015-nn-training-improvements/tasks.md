@@ -34,18 +34,13 @@ strategy that works on all wind seeds. Selection (completion→distance) doesn't
 
 ---
 
-## Current situation: the spiral problem
+## Current situation — SPIRAL BROKEN (gen 300 checkpoint)
 
-The spiral exploit survives because:
-1. The path is fixed geometry — a fixed spiral can stay near the rabbit
-2. Lexicase only asks: *did you survive?* and *did you stay close?* — spiral answers both
-3. No test case asks: *can you acquire the path from a cold start?*
-4. No penalty for high throttle / high energy
+Entry phase (EnableEntryVariations=1) + energy as 3rd lexicase dimension broke the spiral.
+Gen 300 results: 25/25 OK, dist=2.4–11m, thr=0.24–0.60, sm[roll]=0.36–0.55.
+Bang-bang reducing naturally — roll sm[1] max dropped 0.95→0.55 over 300 gens without slew limits.
 
-The three levers to break it (in priority order):
-- **Intercept/entry phase**: force path acquisition from varied position/heading/speed — a spiral can't intercept, only maintain
-- **Energy pressure**: penalize high throttle — directly attacks the exploit
-- **Path shape diversity**: varied geometry so no fixed strategy dominates all scenarios
+Remaining issues: bang-bang (physical slew limits needed), path diversity (one geometry), dDist/dt sensor not yet meaningfully exercised.
 
 ---
 
@@ -59,15 +54,11 @@ mean throttle. This should push the search toward efficient flight paths.
 
 **Note**: mean throttle is already in smoothness[2] — no new computation needed.
 
-- [ ] T100 Fix build: NORM_ANGLE/NORM_DIST/NORM_VEL/NORM_RATE removed from topology.h
-  but still referenced in tests/nn_evaluator_tests.cc — remove stale test lines
-- [ ] T101 Add mean throttle (energy) as 3rd lexicase dimension: completion → distance → energy
-  in src/eval/lexicase_selection.cc. Use smoothness[2] (already computed). Epsilon same as distance.
-- [ ] T102 Run 50-gen experiment, log throttle distribution — does mean throttle drop?
-  Does spiral break or just become a more efficient spiral?
+- [x] T100 Fix build: NORM_* refs removed from nn_evaluator_tests.cc
+- [x] T101 Mean throttle as 3rd lexicase dimension: completion → distance → energy
+- [x] T102 300-gen experiment: spiral broken gen ~234, thr=0.24–0.60 at gen 300, 25/25 OK
 
-**Checkpoint**: Energy dimension tested. If throttle drops significantly → keep. If spiral
-just adapts → confirms intercept phase is the required fix.
+**Checkpoint**: ✓ Energy dimension works. Spiral broken. Path-relative smoothness deferred.
 
 ---
 
@@ -88,21 +79,18 @@ the real-world mission requirement.
 - Is this a new eval phase (intercept + track) or just varied initial conditions?
 - How does completion_fraction handle the intercept phase? (time to acquire vs time on path)
 
-- [ ] T110 Audit current entry variation: what does `EntryRollSigma=22.5` actually do?
-  Read crrcsim inputdev_autoc.cpp entry logic. Is position offset already supported?
-- [ ] T111 Design intercept phase: define entry state distribution (position: ±Xm from path
-  start, heading: ±Y°, speed: Z m/s range). Document in specs/015.../intercept-design.md
-- [ ] T112 Implement varied entry states in crrcsim — randomize initial position/heading
-  relative to path start using seed from scenario index
-- [ ] T113 Update completion_fraction to include intercept: time-to-acquire counts against
-  completion, or add intercept_success as a new lexicase dimension
-- [ ] T114 Run 50-gen experiment with intercept — does spiral fail to complete? Does
-  lexicase find genuine path-acquisition behavior?
-- [ ] T115 Revisit lexicase ordering once intercept is working: completion → energy → distance
-  may be better ordering at this point (survive, then be efficient, then be precise)
+- [x] T110 Audited: full entry variation suite already in crrcsim (heading, roll, pitch,
+  speed, position radius, altitude offsets). EnableEntryVariations=1 enables all.
+- [ ] T111 Formal intercept design doc — skipped; entry params defined in autoc.ini directly.
+  EntryHeadingSigma=45°, EntryPositionRadiusSigma=20m, EntryAltSigma=5m active.
+- [x] T112 Entry states already fully implemented — enabled via autoc.ini
+- [x] T113 interceptScale ramp (quadratic 0.1→1.0 over budget) handles graceful phase-in.
+  Applied to both legacy and lexicase distance/attitude metrics.
+- [x] T114 Ran 300-gen experiment: entry variations + energy lexicase broke spiral by gen 234
+- [ ] T115 Lexicase ordering revisit — current (completion→distance→energy) working well.
+  Defer until slew limits and path diversity are in.
 
-**Checkpoint**: Spiral fails to complete intercept phase. Lexicase differentiates on
-acquisition ability. Throttle modulation emerges naturally.
+**Checkpoint**: ✓ Entry phase working. Spiral broken. Throttle modulation emerged naturally.
 
 ---
 
