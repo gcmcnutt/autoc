@@ -16,6 +16,7 @@
 #include <vector>
 #include <cstring>
 #include <cstdint>
+#include "autoc/nn/topology.h"
 
 // ============================================================
 // Portable little-endian serialization helpers
@@ -352,17 +353,17 @@ TEST(ContractRPC, EvalRequestRoundTrip) {
     req.genome_count = 2;
     req.genomes.resize(2);
 
-    // Genome 0: 531 weights
-    req.genomes[0].weight_count = 531;
-    req.genomes[0].weights.resize(531);
-    for (int i = 0; i < 531; i++) {
+    // Genome 0: NN_WEIGHT_COUNT weights
+    req.genomes[0].weight_count = NN_WEIGHT_COUNT;
+    req.genomes[0].weights.resize(NN_WEIGHT_COUNT);
+    for (int i = 0; i < NN_WEIGHT_COUNT; i++) {
         req.genomes[0].weights[i] = static_cast<float>(i) * 0.001f;
     }
 
-    // Genome 1: 531 weights
-    req.genomes[1].weight_count = 531;
-    req.genomes[1].weights.resize(531);
-    for (int i = 0; i < 531; i++) {
+    // Genome 1: NN_WEIGHT_COUNT weights
+    req.genomes[1].weight_count = NN_WEIGHT_COUNT;
+    req.genomes[1].weights.resize(NN_WEIGHT_COUNT);
+    for (int i = 0; i < NN_WEIGHT_COUNT; i++) {
         req.genomes[1].weights[i] = -static_cast<float>(i) * 0.002f;
     }
 
@@ -381,10 +382,10 @@ TEST(ContractRPC, EvalRequestRoundTrip) {
 
     // Verify
     EXPECT_EQ(req2.genome_count, 2u);
-    EXPECT_EQ(req2.genomes[0].weight_count, 531u);
-    EXPECT_EQ(req2.genomes[1].weight_count, 531u);
+    EXPECT_EQ(req2.genomes[0].weight_count, NN_WEIGHT_COUNTu);
+    EXPECT_EQ(req2.genomes[1].weight_count, NN_WEIGHT_COUNTu);
 
-    for (int i = 0; i < 531; i++) {
+    for (int i = 0; i < NN_WEIGHT_COUNT; i++) {
         EXPECT_EQ(req2.genomes[0].weights[i], req.genomes[0].weights[i]);
         EXPECT_EQ(req2.genomes[1].weights[i], req.genomes[1].weights[i]);
     }

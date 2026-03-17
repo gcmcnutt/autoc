@@ -1,4 +1,5 @@
 #include "autoc/nn/evaluator.h"
+#include "autoc/eval/sensor_math.h"
 #include "autoc/util/rng.h"
 #include <cmath>
 #include <array>
@@ -146,59 +147,92 @@ void nn_xavier_init(NNGenome& genome) {
 }
 
 // ============================================================
-// T038: Gather NN_INPUT_COUNT sensor inputs with normalization
+// T040: Gather NN_INPUT_COUNT sensor inputs — raw, no normalization
 // ============================================================
-// Layout:
-//  0- 3: dPhi history    [now, -0.1s, -0.3s, -0.9s]  /π
-//  4- 7: dTheta history  [now, -0.1s, -0.3s, -0.9s]  /π
-//  8-11: dist history    [now, -0.1s, -0.3s, -0.9s]  /NORM_DIST
-// 12-15: quaternion (w, x, y, z)                      [-1,1]
-//    16: velocity                                     /NORM_VEL
-//    17: alpha (angle of attack)                      /π
-//    18: beta (sideslip)                              /π
-// 19-21: rollCmd, pitchCmd, throttleCmd               [-1,1]
+// Layout (29 inputs):
+//  0- 5: dPhi  [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  raw radians
+//  6-11: dTheta[-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  raw radians
+// 12-17: dist  [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  raw metres
+//    18: dDist/dt closing rate (m/s, positive = approaching)
+// 19-22: quaternion (w, x, y, z)                      [-1,1]
+//    23: airspeed (m/s)
+//    24: alpha (angle of attack, rad)
+//    25: beta  (sideslip, rad)
+// 26-28: pitchCmd, rollCmd, throttleCmd feedback       [-1,1]
+//
+// Past slots (n=9,3,1,0) use recorded aircraft history at those times.
+// Forecast slots (+0.1s=offset 1, +0.5s=offset 5) use current aircraft
+// position vs future rabbit path — curve-ahead estimation.
 
-static const int HIST_INDICES[] = {0, 1, 3, 9};
+// History slot indices: [9, 3, 1, 0] = [-0.9s, -0.3s, -0.1s, now]
+static const int HIST_PAST[] = {9, 3, 1, 0};
+// Forecast offsets in path steps: +1 = +0.1s, +5 = +0.5s
+static const float FORECAST_OFFSETS[] = {1.0f, 5.0f};
 
 void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
                       float* inputs) {
-    // 0-3: dPhi temporal history (0=now, 1=0.1s ago, 3=0.3s ago, 9=0.9s ago)
-    for (int i = 0; i < 4; i++)
-        inputs[i] = static_cast<float>(aircraftState.getHistoricalDPhi(HIST_INDICES[i]) / NORM_ANGLE);
+    int32_t simTimeMsec = static_cast<int32_t>(aircraftState.getSimTimeMsec());
 
-    // 4-7: dTheta temporal history
+    // 0-3: dPhi past history (raw radians)
     for (int i = 0; i < 4; i++)
-        inputs[4 + i] = static_cast<float>(aircraftState.getHistoricalDTheta(HIST_INDICES[i]) / NORM_ANGLE);
+        inputs[i] = static_cast<float>(aircraftState.getHistoricalDPhi(HIST_PAST[i]));
 
-    // 8-11: distance temporal history
+    // 4-5: dPhi path-lookahead forecast (+0.1s, +0.5s)
+    for (int i = 0; i < 2; i++)
+        inputs[4 + i] = static_cast<float>(
+            executeGetDPhi(pathProvider, aircraftState, FORECAST_OFFSETS[i]));
+
+    // 6-9: dTheta past history (raw radians)
     for (int i = 0; i < 4; i++)
-        inputs[8 + i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_INDICES[i]) / NORM_DIST);
+        inputs[6 + i] = static_cast<float>(aircraftState.getHistoricalDTheta(HIST_PAST[i]));
 
-    // 12-15: quaternion attitude (w, x, y, z) — unit norm, components in [-1,1]
+    // 10-11: dTheta path-lookahead forecast (+0.1s, +0.5s)
+    for (int i = 0; i < 2; i++)
+        inputs[10 + i] = static_cast<float>(
+            executeGetDTheta(pathProvider, aircraftState, FORECAST_OFFSETS[i]));
+
+    // 12-15: dist past history (raw metres)
+    for (int i = 0; i < 4; i++)
+        inputs[12 + i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[i]));
+
+    // 16-17: dist forecast — distance from current position to future rabbit (+0.1s, +0.5s)
+    for (int i = 0; i < 2; i++) {
+        gp_vec3 futureTarget = getInterpolatedTargetPosition(
+            pathProvider, simTimeMsec, FORECAST_OFFSETS[i]);
+        inputs[16 + i] = static_cast<float>(
+            (futureTarget - aircraftState.getPosition()).norm());
+    }
+
+    // 18: dDist/dt closing rate (m/s, positive = approaching)
+    {
+        float dist_now  = static_cast<float>(aircraftState.getHistoricalDist(0));
+        float dist_prev = static_cast<float>(aircraftState.getHistoricalDist(1));
+        inputs[18] = (dist_prev - dist_now) / 0.1f;  // divide by 0.1s tick
+    }
+
+    // 19-22: quaternion attitude (w, x, y, z) — unit norm, components in [-1,1]
     {
         gp_quat q = aircraftState.getOrientation();
-        inputs[12] = static_cast<float>(q.w());
-        inputs[13] = static_cast<float>(q.x());
-        inputs[14] = static_cast<float>(q.y());
-        inputs[15] = static_cast<float>(q.z());
+        inputs[19] = static_cast<float>(q.w());
+        inputs[20] = static_cast<float>(q.x());
+        inputs[21] = static_cast<float>(q.y());
+        inputs[22] = static_cast<float>(q.z());
     }
 
-    // 16: velocity
-    inputs[16] = static_cast<float>(aircraftState.getRelVel() / NORM_VEL);
+    // 23: airspeed (m/s, raw)
+    inputs[23] = static_cast<float>(aircraftState.getRelVel());
 
-    // 17-18: alpha/beta (aerodynamic angles)
+    // 24-25: alpha/beta (aerodynamic angles, raw radians)
     {
         gp_vec3 velocity_body = aircraftState.getOrientation().inverse() * aircraftState.getVelocity();
-        gp_scalar alpha = std::atan2(-velocity_body.z(), velocity_body.x());
-        gp_scalar beta = std::atan2(velocity_body.y(), velocity_body.x());
-        inputs[17] = static_cast<float>(alpha / NORM_ANGLE);
-        inputs[18] = static_cast<float>(beta / NORM_ANGLE);
+        inputs[24] = static_cast<float>(std::atan2(-velocity_body.z(), velocity_body.x()));
+        inputs[25] = static_cast<float>(std::atan2(velocity_body.y(), velocity_body.x()));
     }
 
-    // 19-21: current control commands — pitch, roll, throttle (matches output order)
-    inputs[19] = static_cast<float>(aircraftState.getPitchCommand());
-    inputs[20] = static_cast<float>(aircraftState.getRollCommand());
-    inputs[21] = static_cast<float>(aircraftState.getThrottleCommand());
+    // 26-28: control feedback — pitch, roll, throttle
+    inputs[26] = static_cast<float>(aircraftState.getPitchCommand());
+    inputs[27] = static_cast<float>(aircraftState.getRollCommand());
+    inputs[28] = static_cast<float>(aircraftState.getThrottleCommand());
 }
 
 // ============================================================

@@ -11,16 +11,16 @@
 #include <numeric>
 
 // ============================================================
-// Contract: NN topology is 22→16→8→3 with 531 weights
+// Contract: NN topology is 29→16→8→3 with 643 weights
 // ============================================================
 
 TEST(ContractEvaluator, TopologyConstants) {
-    EXPECT_EQ(NN_INPUT_COUNT, 22);
+    EXPECT_EQ(NN_INPUT_COUNT, 29);
     EXPECT_EQ(NN_HIDDEN1_SIZE, 16);
     EXPECT_EQ(NN_HIDDEN2_SIZE, 8);
     EXPECT_EQ(NN_OUTPUT_COUNT, 3);
     EXPECT_EQ(NN_NUM_LAYERS, 4);
-    EXPECT_EQ(NN_WEIGHT_COUNT, 531);
+    EXPECT_EQ(NN_WEIGHT_COUNT, 643);
 }
 
 TEST(ContractEvaluator, WeightCountMatchesTopology) {

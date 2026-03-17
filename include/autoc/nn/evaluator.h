@@ -7,17 +7,10 @@
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/eval/fitness_decomposition.h"
 
-// Input normalization constants (applied before forward pass)
-// See research.md R9 for rationale
-constexpr gp_scalar NORM_ANGLE = static_cast<gp_scalar>(M_PI);  // angles: dPhi, dTheta, roll, pitch, alpha, beta
-constexpr gp_scalar NORM_DIST  = static_cast<gp_scalar>(50.0f); // distance (meters)
-constexpr gp_scalar NORM_VEL   = static_cast<gp_scalar>(16.0f); // velocity (nominal rabbit speed, m/s)
-constexpr gp_scalar NORM_RATE  = static_cast<gp_scalar>(10.0f); // rate sensors (already clamped [-10, 10])
-
 // Neural network genome — the fundamental unit of neuroevolution
 struct NNGenome {
     std::vector<float> weights;       // All weights + biases, layer-major order
-    std::vector<int> topology;        // Layer sizes, e.g., {22, 16, 8, 3}
+    std::vector<int> topology;        // Layer sizes, e.g., {29, 16, 8, 3}
     double fitness;                   // Aggregated fitness from evaluation
     std::vector<ScenarioScore> scenario_scores;  // Per-scenario decomposed scores (015)
     uint32_t generation;              // Generation when created
@@ -41,7 +34,7 @@ gp_scalar fast_tanh(gp_scalar x);
 // Xavier/Glorot weight initialization
 void nn_xavier_init(NNGenome& genome);
 
-// Gather NN_INPUT_COUNT sensor inputs from aircraft state, apply normalization
+// Gather NN_INPUT_COUNT sensor inputs from aircraft state (raw, no normalization)
 void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
                       float* inputs);
 

@@ -790,18 +790,19 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
 
       // Per-step logging — all % 7.4f fields are 8 chars, % 8.2f fields are 9 chars
       if (printHeader) {
-        fout << "Scn    Bake   Pth/Wnd:Step:  Time Idx"  // 37 chars
-             << "   dPhi0   dPhi1   dPhi3   dPhi9"       // 4 × 8 = 32
-             << "   dTht0   dTht1   dTht3   dTht9"       // 4 × 8 = 32
-             << "    dst0    dst1    dst3    dst9"        // 4 × 8 = 32
-             << "      qw      qx      qy      qz"      // 4 × 8 = 32
-             << "     vel   alpha    beta"                // 3 × 8 = 24
-             << "   outPt   outRl   outTh"                // 3 × 8 = 24
-             << "    cmdP    cmdR    cmdT"                // 3 × 8 = 24
-             << "    pathX    pathY    pathZ"              // 3 × 9 = 27
-             << "        X        Y        Z"             // 3 × 9 = 27
-             << "   vxBody   vyBody   vzBody"             // 3 × 9 = 27
-             << "    dhome     dist  attDlt   rabVl   intSc" // 9+9+8+8+8=42
+        fout << "Scn    Bake   Pth/Wnd:Step:  Time Idx"               // 37
+             << "  dPh-9 dPh-3 dPh-1  dPh0 dPh+1 dPh+5"            // dPhi 6×7
+             << "  dTh-9 dTh-3 dTh-1  dTh0 dTh+1 dTh+5"            // dTheta 6×7
+             << "  ds-9  ds-3  ds-1   ds0  ds+1  ds+5"              // dist 6×7
+             << "   dddt"                                             // closing rate
+             << "      qw      qx      qy      qz"                   // quaternion 4×8
+             << "     vel   alpha    beta"                            // 3×8
+             << "   outPt   outRl   outTh"                           // NN outputs 3×8
+             << "    cmdP    cmdR    cmdT"                            // cmd feedback 3×8
+             << "    pathX    pathY    pathZ"                         // path pos 3×9
+             << "        X        Y        Z"                         // aircraft pos 3×9
+             << "   vxBody   vyBody   vzBody"                         // body vel 3×9
+             << "    dhome     dist  attDlt   rabVl   intSc"          // diagnostics
              << "\n";
         printHeader = false;
       }
@@ -813,32 +814,34 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       char outbuf[2048];
       sprintf(outbuf,
         "%06llu %06llu %03d/%02d:%04d: %06ld %3d"
-        " % 7.4f % 7.4f % 7.4f % 7.4f"    // dPhi[0,1,3,9]
-        " % 7.4f % 7.4f % 7.4f % 7.4f"    // dTheta[0,1,3,9]
-        " % 7.4f % 7.4f % 7.4f % 7.4f"    // dist[0,1,3,9]
-        " % 7.4f % 7.4f % 7.4f % 7.4f"    // qw,qx,qy,qz
-        " % 7.4f % 7.4f % 7.4f"            // vel, alpha, beta
-        " % 7.4f % 7.4f % 7.4f"            // NN outputs: pitch, roll, throttle
-        " % 7.4f % 7.4f % 7.4f"            // cmd feedback: pitch, roll, throttle
-        " % 8.2f % 8.2f % 8.2f"            // pathX, pathY, pathZ
-        " % 8.2f % 8.2f % 8.2f"            // X, Y, Z
-        " % 8.2f % 8.2f % 8.2f"            // vxBody, vyBody, vzBody
-        " % 8.2f % 8.3f % 7.4f % 7.1f % 7.3f"  // dhome, dist, attDlt, rabVel, intScl
+        " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"  // dPhi[−9,−3,−1,0,+1,+5]
+        " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"  // dTheta
+        " % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f"  // dist (metres)
+        " % 6.1f"                                        // dDist/dt
+        " % 7.4f % 7.4f % 7.4f % 7.4f"                 // qw,qx,qy,qz
+        " % 7.4f % 7.4f % 7.4f"                         // vel, alpha, beta
+        " % 7.4f % 7.4f % 7.4f"                         // NN outputs: pitch, roll, throttle
+        " % 7.4f % 7.4f % 7.4f"                         // cmd feedback: pitch, roll, throttle
+        " % 8.2f % 8.2f % 8.2f"                         // pathX, pathY, pathZ
+        " % 8.2f % 8.2f % 8.2f"                         // X, Y, Z
+        " % 8.2f % 8.2f % 8.2f"                         // vxBody, vyBody, vzBody
+        " % 8.2f % 8.3f % 7.4f % 7.1f % 7.3f"          // dhome, dist, attDlt, rabVel, intScl
         "\n",
         static_cast<unsigned long long>(scenarioSequence),
         static_cast<unsigned long long>(bakeoffSequence),
         pathVariantIndex, windVariantIndex, simulation_steps,
         stepState.getSimTimeMsec(), pathIndex,
-        // NN inputs [0-21] — actual normalized values presented to NN
-        in[0], in[1], in[2], in[3],         // dPhi temporal history
-        in[4], in[5], in[6], in[7],         // dTheta temporal history
-        in[8], in[9], in[10], in[11],       // distance temporal history
-        in[12], in[13], in[14], in[15],     // quaternion attitude
-        in[16], in[17], in[18],             // vel, alpha, beta
-        // NN outputs [0-2] — actual tanh outputs
-        out[0], out[1], out[2],             // pitch, roll, throttle
-        // cmd feedback inputs — previous tick's commands (P, R, T order)
-        in[19], in[20], in[21],             // pitch, roll, throttle
+        // NN inputs [0-28] — raw values presented to NN
+        in[0], in[1], in[2], in[3], in[4], in[5],       // dPhi past+forecast
+        in[6], in[7], in[8], in[9], in[10], in[11],     // dTheta past+forecast
+        in[12], in[13], in[14], in[15], in[16], in[17], // dist past+forecast
+        in[18],                                          // dDist/dt
+        in[19], in[20], in[21], in[22],                 // quaternion
+        in[23], in[24], in[25],                         // vel, alpha, beta
+        // NN outputs [0-2]
+        out[0], out[1], out[2],                         // pitch, roll, throttle
+        // cmd feedback [26-28]
+        in[26], in[27], in[28],                         // pitch, roll, throttle
         // Diagnostics
         path.at(pathIndex).start[0],
         path.at(pathIndex).start[1],
