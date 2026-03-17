@@ -375,14 +375,19 @@ struct AircraftState {
          pitchCommand, rollCommand, throttleCommand, simTimeMsec, wind_velocity,
          hasNNData_);
       if (hasNNData_) {
-        for (int i = 0; i < NN_INPUT_COUNT; i++) ar(nnInputs_[i]);
-        for (int i = 0; i < NN_OUTPUT_COUNT; i++) ar(nnOutputs_[i]);
+        uint32_t inputCount = NN_INPUT_COUNT;
+        uint32_t outputCount = NN_OUTPUT_COUNT;
+        ar(inputCount, outputCount);
+        for (uint32_t i = 0; i < inputCount && i < static_cast<uint32_t>(NN_INPUT_COUNT); i++)
+          ar(nnInputs_[i]);
+        for (uint32_t i = 0; i < outputCount && i < static_cast<uint32_t>(NN_OUTPUT_COUNT); i++)
+          ar(nnOutputs_[i]);
       }
     }
 #endif
 };
 #ifndef ARDUINO
-CEREAL_CLASS_VERSION(AircraftState, 1)
+CEREAL_CLASS_VERSION(AircraftState, 2)
 #endif
 
 // Physics trace entry - captures complete FDM state at a single timestep
