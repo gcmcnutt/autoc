@@ -27,6 +27,9 @@ NNGenome nn_arithmetic_crossover(const NNGenome& parent1, const NNGenome& parent
 // Gaussian mutation with self-adaptive sigma
 void nn_gaussian_mutation(NNGenome& genome);
 
+// Sigma floor: minimum mutation sigma (0 = disabled). Set from config.
+extern float nn_sigma_floor;
+
 // Tournament selection
 int nn_tournament_select(const NNPopulation& pop, int tournament_size);
 

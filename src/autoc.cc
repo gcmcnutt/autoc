@@ -1006,6 +1006,15 @@ static void runNNEvolution(
   *logger.info() << "  MutationOnlyProb: " << cfg.swapMutationProbability << "%" << endl;
   *logger.info() << "  Elitism: " << cfg.addBestToNewPopulation << endl;
   *logger.info() << "  SelectionMode: " << cfg.selectionMode << endl;
+  *logger.info() << "  NNSigmaFloor: " << cfg.nnSigmaFloor << endl;
+
+  // Set global sigma floor for mutation
+  nn_sigma_floor = static_cast<float>(cfg.nnSigmaFloor);
+  if (cfg.nnSigmaFloor > cfg.nnMutationSigma) {
+    *logger.warn() << "NNSigmaFloor (" << cfg.nnSigmaFloor
+                   << ") > NNMutationSigma (" << cfg.nnMutationSigma
+                   << ") — floor exceeds initial sigma!" << endl;
+  }
 
   // Initialize population
   NNPopulation pop;

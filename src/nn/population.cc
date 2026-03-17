@@ -4,6 +4,9 @@
 #include <algorithm>
 #include <limits>
 
+// Sigma floor: set from config, 0 = disabled (use hardcoded 1e-6 minimum)
+float nn_sigma_floor = 0.0f;
+
 namespace {
 inline double randDouble() { return rng::randDouble(); }
 inline double randGaussian(double sigma) { return rng::randGaussian(sigma); }
@@ -73,10 +76,10 @@ void nn_gaussian_mutation(NNGenome& genome) {
     double sigma_perturbation = std::exp(tau * randGaussian(1.0));
     genome.mutation_sigma = static_cast<float>(genome.mutation_sigma * sigma_perturbation);
 
-    // Clamp sigma to reasonable range
-    constexpr float SIGMA_MIN = 1e-6f;
+    // Clamp sigma to reasonable range (sigma floor from config if set)
+    float sigma_min = nn_sigma_floor > 0.0f ? nn_sigma_floor : 1e-6f;
     constexpr float SIGMA_MAX = 5.0f;
-    if (genome.mutation_sigma < SIGMA_MIN) genome.mutation_sigma = SIGMA_MIN;
+    if (genome.mutation_sigma < sigma_min) genome.mutation_sigma = sigma_min;
     if (genome.mutation_sigma > SIGMA_MAX) genome.mutation_sigma = SIGMA_MAX;
 
     // Mutate weights

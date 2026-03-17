@@ -68,6 +68,7 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
 
     // Selection strategy (015)
     config->selectionMode = reader.Get("", "SelectionMode", config->selectionMode);
+    config->nnSigmaFloor = reader.GetReal("", "NNSigmaFloor", config->nnSigmaFloor);
 
     // Demetic grouping (scenario assignment)
     config->demeticGrouping = reader.GetInteger("", "DemeticGrouping", config->demeticGrouping);

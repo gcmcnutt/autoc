@@ -22,6 +22,7 @@ struct AutocConfig {
     // --- NN-specific ---
     double nnMutationSigma = 0.1;
     double nnCrossoverAlpha = -1.0;
+    double nnSigmaFloor = 0.0;       // Minimum mutation sigma (0 = disabled)
     std::string nnWeightFile = "nn_weights.dat";
     std::string nnInitMethod = "xavier";
 
