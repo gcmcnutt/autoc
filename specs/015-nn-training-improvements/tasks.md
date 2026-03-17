@@ -40,7 +40,12 @@ Entry phase + energy lexicase + servo slew rate limiting all active.
 Gen 300 results: 25/25 OK, dist=1.26–8.01m, thr=0.16–0.63, sm[roll]=0.18–0.28.
 Best fitness 100.70 (vs 114.96 pre-slew). NN learned anticipatory smooth control naturally.
 
-Remaining issues: path diversity (one geometry), dDist/dt sensor not yet meaningfully exercised, NN_ELITE_DIVERGED false positives (T124).
+Remaining issues: path diversity (one geometry), dDist/dt sensor not yet meaningfully exercised, NN_ELITE_DIVERGED false positives (T124b).
+
+Eval robustness check (49 fresh wind seeds, longSequential): 46/49 OK. 3 crashes:
+  [3] thr=0.99 sm[2]=0.00 — spiral fallback on largest entry offset (41m radius). Latent.
+  [27] comp=0.80, [37] comp=0.68 — partial failures under moderate stress.
+Path diversity (T120) is the expected fix for the spiral fallback edge case.
 
 ---
 
@@ -182,34 +187,47 @@ the scenario set. Closing-rate sensor becomes active signal.
 
 ---
 
-## Phase 4f: Elite Fitness Fix — NN_ELITE_DIVERGED and multivariate storage
+## Phase 4f: Fitness Reporting Consistency — eval, elite divergence, stored fitness
 
-**Problem**: `NN_ELITE_DIVERGED` warnings appear every generation because the elite
-re-evaluation uses `aggregateScalarFitness()` (legacy scalar sum) while selection uses
-lexicase. These are different metrics — they will never match. The warning is a false
-positive that obscures genuine divergence (e.g. stochastic wind causing different outcomes).
+**Problem**: Three related fitness reporting issues all stem from the same root cause —
+multiple fitness aggregations (aggregateScalarFitness, aggregateRawFitness, lexicase rank)
+exist and are used inconsistently across training, re-eval, and eval mode.
+
+**Observed symptoms**:
+1. `NN_ELITE_DIVERGED` fires every generation: re-eval uses `aggregateScalarFitness()`
+   (legacy power-law sum → millions) vs lexicase-selected stored fitness (aggregateRawFitness
+   → ~100). Different metrics, will never match. False positive obscures real instability.
+2. Eval mode (`runNNEvaluation`) reported fitness 1195324 vs stored 100.70 — same mismatch.
+   Fixed: eval now uses `aggregateRawFitness`. But the numbers still aren't directly
+   comparable because eval uses different scenario seeds than training.
+3. Stored genome fitness (genome.fitness) is set during lexicase selection to
+   aggregateRawFitness — this is the right metric but is not documented/asserted anywhere.
 
 **Root cause** (autoc.cc ~line 1197-1203):
 ```cpp
-double reevalFitness = aggregateScalarFitness(reevalScores);  // scalar sum
-if (!bitwiseEqual(reevalFitness, storedFitness)) {            // vs lexicase-selected
+double reevalFitness = aggregateScalarFitness(reevalScores);  // scalar sum → wrong
+if (!bitwiseEqual(reevalFitness, storedFitness)) {            // vs aggregateRawFitness
     logger.warn() << "NN_ELITE_DIVERGED" ...
 ```
 
-**Fix**: Store the elite's per-scenario scores (vector of ScenarioScore) rather than a
-scalar. Re-evaluate and compare the scenario-level completion fractions + distance RMSE
-vectors. A genuine divergence is when the completion profile changes materially (e.g.
-scenario that used to complete now crashes). Tolerate small numeric differences (float
-rounding, wind stochasticity).
+**Fix strategy**: Use per-scenario completion profile as the divergence signal.
+A genuine divergence is a scenario that used to complete now crashing. Numeric fitness
+values are inherently non-comparable across scenario sets.
 
-- [ ] T124 Fix NN_ELITE_DIVERGED: replace scalar comparison with per-scenario vector comparison.
-  Store `bestScores: vector<ScenarioScore>` alongside best genome. On re-eval, compare
-  completion_fraction per scenario with tolerance (e.g. ≥0.95 of stored). Warn only on
-  material degradation (completion drops or dist RMSE grows >20%).
-- [ ] T125 Consider storing lexicase rank/scores in data.stc for offline analysis —
-  currently only scalar fitness logged there.
+- [x] T124a Eval mode fix: `runNNEvaluation` now uses `aggregateRawFitness` and logs
+  per-scenario breakdown ([s] OK/CRASH comp= dist= att= thr= sm=). Done.
+- [ ] T124b Fix NN_ELITE_DIVERGED: replace scalar comparison with per-scenario vector
+  comparison. Store `bestScores: vector<ScenarioScore>` alongside best genome. On re-eval,
+  compare completion_fraction per scenario (warn if any scenario drops from OK→CRASH or
+  completion falls >20%). Drop the bitwiseEqual scalar check entirely.
+- [ ] T124c Document/assert that genome.fitness is always aggregateRawFitness. Add a
+  comment to the fitness assignment site so it's clear what's stored.
+- [ ] T125 Store per-scenario lexicase scores in data.stc for offline robustness analysis.
+  Currently only scalar fitness logged there. Include completion, dist_rmse, mean_throttle
+  per scenario for the best individual each generation.
 
-**Checkpoint**: Elite divergence warnings only fire on genuine instability, not metric mismatch.
+**Checkpoint**: NN_ELITE_DIVERGED only fires on genuine completion regression.
+Eval and training fitness values use the same metric. Stored fitness is documented.
 
 ---
 
@@ -261,7 +279,23 @@ gives real gradient — with a spiral exploit in place, CMA-ES will just optimiz
 
 ---
 
-## Phase 8: Polish
+## Phase 8: Renderer / Arena Layout — multi-path display
+
+**Problem**: The renderer currently lays out the scenario arena as a minimum-area
+rectangle (fitting all paths in the tightest bounding box). This works well for
+single-path training (longSequential, 1 geometry). With aeroStandard (6 path variants
+× N wind seeds), the arena should be laid out as a `paths × winds` grid so each path
+variant occupies its own column and wind variations are rows. Otherwise all 6 geometries
+overlap in the same space and are unreadable.
+
+- [ ] T155 Renderer: arena layout should be `numPaths × numWinds` grid when
+  `numPaths > 1`. Each path variant gets its own column; wind seeds are rows within
+  each column. Minimum-area-rectangle layout retained for single-path case.
+  Requires passing numPaths/numWinds from the .dmp metadata to the renderer layout engine.
+
+---
+
+## Phase 9: Polish
 
 - [ ] T160 Verify all 3 repo builds: autoc, crrcsim, xiao
 - [ ] T161 Run full test suite: `cd build && ctest --output-on-failure`
@@ -269,7 +303,7 @@ gives real gradient — with a spiral exploit in place, CMA-ES will just optimiz
 - [ ] T163 GP legacy cleanup: scan for GP-era remnants (`GPrandDouble`, `gp_` prefixes,
   `#ifndef` guards → `#pragma once`). At minimum: include/autoc/util/gp_math_utils.h,
   include/autoc/util/types.h
-- [ ] T164 Remove 'sum' selection mode and legacy scalar fitness path — tearout list:
+- [ ] T165 Remove 'sum' selection mode and legacy scalar fitness path — tearout list:
   - `SelectionMode = sum` branch in autoc.cc
   - `aggregateScalarFitness()` in fitness_decomposition.cc (only logs now, not selected)
   - `distance_sum_legacy`, `attitude_sum_legacy`, `legacy_crash_penalty` fields in ScenarioScore

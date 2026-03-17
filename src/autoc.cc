@@ -965,10 +965,53 @@ static void runNNEvaluation(
 
   // Compute decomposed fitness then aggregate
   auto evalScenarioScores = computeScenarioScores(evalResults);
-  double fitness = aggregateScalarFitness(evalScenarioScores);
+  double fitness = aggregateRawFitness(evalScenarioScores);
 
   // Log per-step data to data.dat
   logEvalResults(fout, evalResults);
+
+  // Per-scenario breakdown (same format as training loop)
+  *logger.info() << "  Scenarios: " << endl;
+  for (size_t s = 0; s < evalScenarioScores.size(); s++) {
+    const auto& sc = evalScenarioScores[s];
+    *logger.info() << "  [" << s << "] "
+                   << (sc.crashed ? "CRASH" : "OK")
+                   << " comp=" << std::fixed << std::setprecision(2) << sc.completion_fraction
+                   << " dist=" << sc.distance_rmse
+                   << " att=" << sc.attitude_error
+                   << " thr=" << sc.mean_throttle
+                   << " sm=" << sc.smoothness[0] << "/" << sc.smoothness[1] << "/" << sc.smoothness[2]
+                   << endl;
+  }
+
+  globalSimRunCounter.fetch_add(evalResults.pathList.size(), std::memory_order_relaxed);
+
+  // Upload to S3 so renderer can display the eval results.
+  // Key uses same reverse-time prefix as training (renderer auto-discovers newest run).
+  // gen9999 = generation 1 in the reverse-sort scheme (10000 - gen).
+  evalResults.gp.assign(reinterpret_cast<const char*>(nnData.data()),
+                        reinterpret_cast<const char*>(nnData.data() + nnData.size()));
+  evalResults.gpHash = hashByteVector(evalResults.gp);
+  {
+    std::string keyName = startTime + "/gen9999.dmp";
+    auto s3Client = ConfigManager::getS3Client();
+    if (s3Client) {
+      std::ostringstream oss(std::ios::binary);
+      { cereal::BinaryOutputArchive oa(oss); oa(evalResults); }
+      auto stream = Aws::MakeShared<Aws::StringStream>("PutObject");
+      *stream << oss.str();
+      Aws::S3::Model::PutObjectRequest request;
+      request.SetBucket(cfg.s3Bucket);
+      request.SetKey(keyName);
+      request.SetBody(stream);
+      auto outcome = s3Client->PutObject(request);
+      if (!outcome.IsSuccess()) {
+        *logger.warn() << "S3 upload failed: " << outcome.GetError().GetMessage() << endl;
+      } else {
+        *logger.info() << "S3 upload: " << keyName << endl;
+      }
+    }
+  }
 
   *logger.info() << "NN Eval fitness: " << std::fixed << std::setprecision(6) << fitness << endl;
   *logger.info() << "Stored fitness:  " << std::fixed << std::setprecision(6) << genome.fitness << endl;
