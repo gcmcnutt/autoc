@@ -41,3 +41,8 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults);
 // Reconstruct legacy scalar fitness from decomposed scores.
 // Must produce identical output to the original computeNNFitness().
 double aggregateScalarFitness(const std::vector<ScenarioScore>& scores);
+
+// Raw aggregate for lexicase mode: sum of raw distance RMSE + crash penalty.
+// No power functions, no norm scaling. Lower is better.
+// Crash penalty: (1 - completion_fraction) * 1e6 per crashed scenario.
+double aggregateRawFitness(const std::vector<ScenarioScore>& scores);

@@ -165,3 +165,16 @@ double aggregateScalarFitness(const std::vector<ScenarioScore>& scores) {
     }
     return totalFitness;
 }
+
+// Raw aggregate: sum of distance RMSE + attitude error + crash penalty.
+// No power functions, no norm scaling. Matches what lexicase filters on.
+double aggregateRawFitness(const std::vector<ScenarioScore>& scores) {
+    double total = 0.0;
+    for (const auto& s : scores) {
+        if (s.crashed) {
+            total += (1.0 - s.completion_fraction) * CRASH_COMPLETION_WEIGHT;
+        }
+        total += s.distance_rmse + s.attitude_error;
+    }
+    return total;
+}

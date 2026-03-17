@@ -215,6 +215,7 @@ selection break the plateau? Compare against sum and minimax baselines.
 - [ ] T093 Update autoc.ini with all new config keys and sensible defaults
 - [ ] T094 Run quickstart.md validation: follow all steps and verify they work
 - [ ] T095 GP legacy cleanup: scan all source files (src/, include/, tools/, xiao/, crrcsim/) for GP-era remnants — `GP[A-Z]` identifiers (GPrandDouble, GPConfiguration, etc.), `gp_` prefixed functions/variables, `#ifndef` include guards (convert to `#pragma once`), GP references in comments. Rename or remove all vestiges. Covers at least: include/autoc/util/gp_math_utils.h, include/autoc/util/types.h, and any other files found by case-insensitive grep for `\bgp[_A-Z]`
+- [ ] T096 Consider removing legacy scalar fitness path: with lexicase selection, the single fitness number is only used for logging — not selection, not elitism ranking. Options: (a) remove aggregateScalarFitness() and power/norm constants entirely, (b) replace with a simple human-readable summary (mean distance RMSE across scenarios), (c) keep for A/B comparison with sum mode. Also consider: crashReasonToString() duplicated in minisim.cc and inputdev_autoc.cpp — should be a single definition in a shared header.
 
 ---
 

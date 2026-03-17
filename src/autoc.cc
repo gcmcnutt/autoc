@@ -992,6 +992,7 @@ static void runNNEvolution(
   std::vector<int> topology = getCompiledTopology();
   int popSize = cfg.populationSize;
   int numGens = cfg.numberOfGenerations;
+  bool useRawFitness = (parseSelectionMode(cfg.selectionMode) == SelectionMode::LEXICASE);
 
   *logger.info() << "NN Evolution mode" << endl;
   *logger.info() << "  Topology: " << NN_TOPOLOGY_STRING
@@ -1096,14 +1097,16 @@ static void runNNEvolution(
 
       // Send to minisim worker via ThreadPool
       auto evalDataPtr = std::make_shared<EvalData>(std::move(evalData));
-      threadPool->enqueue([&genome, evalDataPtr](WorkerContext& context) {
+      threadPool->enqueue([&genome, evalDataPtr, useRawFitness](WorkerContext& context) {
         sendRPC(*context.socket, *evalDataPtr);
         context.evalResults = receiveRPC<EvalResults>(*context.socket);
         globalSimRunCounter.fetch_add(context.evalResults.pathList.size(), std::memory_order_relaxed);
 
-        // Compute decomposed fitness then aggregate for selection
+        // Compute decomposed fitness then aggregate
         genome.scenario_scores = computeScenarioScores(context.evalResults);
-        genome.fitness = aggregateScalarFitness(genome.scenario_scores);
+        genome.fitness = useRawFitness
+            ? aggregateRawFitness(genome.scenario_scores)
+            : aggregateScalarFitness(genome.scenario_scores);
       });
     }
 
