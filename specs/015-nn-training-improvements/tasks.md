@@ -49,22 +49,22 @@
 
 ### Contract Tests
 
-- [ ] T010 [P] [US9] Write test: completion_fraction = 0.5 when crash at step 83 of 167 in tests/fitness_decomposition_tests.cc
-- [ ] T011 [P] [US9] Write test: per-scenario distance RMSE computation matches expected values for known aircraft states in tests/fitness_decomposition_tests.cc
-- [ ] T012 [P] [US9] Write test: per-scenario attitude error normalized by completion fraction in tests/fitness_decomposition_tests.cc
-- [ ] T013 [P] [US9] Write test: per-scenario smoothness (Σ|Δu(t)|) computation for bang-bang input ≈ 2.0, constant ≈ 0.0 in tests/fitness_decomposition_tests.cc
-- [ ] T014 [US9] Write test: aggregate of decomposed scores matches legacy computeNNFitness() output exactly in tests/fitness_decomposition_tests.cc
+- [X] T010 [P] [US9] Write test: completion_fraction = 0.5 when crash at step 83 of 167 in tests/fitness_decomposition_tests.cc
+- [X] T011 [P] [US9] Write test: per-scenario distance RMSE computation matches expected values for known aircraft states in tests/fitness_decomposition_tests.cc
+- [X] T012 [P] [US9] Write test: per-scenario attitude error normalized by completion fraction in tests/fitness_decomposition_tests.cc
+- [X] T013 [P] [US9] Write test: per-scenario smoothness (Σ|Δu(t)|) computation for bang-bang input ≈ 2.0, constant ≈ 0.0 in tests/fitness_decomposition_tests.cc
+- [X] T014 [US9] Write test: aggregate of decomposed scores matches legacy computeNNFitness() output exactly in tests/fitness_decomposition_tests.cc
 
 ### Implementation
 
-- [ ] T015 [US9] Define ScenarioScore struct (completion_fraction, attitude_error, distance_rmse, smoothness[3]) in include/autoc/eval/fitness_decomposition.h — crash handling via truncation, no separate crash penalty (Pareto lesson)
-- [ ] T016 [US9] Add per-scenario score storage to NNGenome: vector<ScenarioScore> scenario_scores in include/autoc/nn/evaluator.h
-- [ ] T016 [US9] Extract per-scenario scoring from computeNNFitness() into computeScenarioScores() in src/eval/fitness_decomposition.cc — compute distance RMSE, attitude error, smoothness per scenario from existing EvalResults aircraft states
-- [ ] T017 [US9] Add backward-compat aggregate: aggregateScalarFitness() that recombines ScenarioScores into legacy scalar in src/eval/fitness_decomposition.cc
-- [ ] T018 [US9] Wire into evolution loop: call computeScenarioScores() then aggregateScalarFitness() in place of computeNNFitness() in src/autoc.cc:616
-- [ ] T019 [US9] Log per-scenario breakdown for best individual each generation (distance RMSE, attitude, smoothness per scenario) in src/autoc.cc
-- [ ] T020 [US9] Run tests: `cd build && ctest -R fitness_decomposition --output-on-failure`
-- [ ] T021 [US9] Integration test: run `./build/autoc` for 10 gens, verify per-scenario log output and that aggregate matches legacy behavior
+- [X] T015 [US9] Define ScenarioScore struct (completion_fraction, attitude_error, distance_rmse, smoothness[3]) in include/autoc/eval/fitness_decomposition.h — crash handling via truncation, no separate crash penalty (Pareto lesson)
+- [X] T016 [US9] Add per-scenario score storage to NNGenome: vector<ScenarioScore> scenario_scores in include/autoc/nn/evaluator.h
+- [X] T016 [US9] Extract per-scenario scoring from computeNNFitness() into computeScenarioScores() in src/eval/fitness_decomposition.cc — compute distance RMSE, attitude error, smoothness per scenario from existing EvalResults aircraft states
+- [X] T017 [US9] Add backward-compat aggregate: aggregateScalarFitness() that recombines ScenarioScores into legacy scalar in src/eval/fitness_decomposition.cc
+- [X] T018 [US9] Wire into evolution loop: call computeScenarioScores() then aggregateScalarFitness() in place of computeNNFitness() in src/autoc.cc:616
+- [X] T019 [US9] Log per-scenario breakdown for best individual each generation (distance RMSE, attitude, smoothness per scenario) in src/autoc.cc
+- [X] T020 [US9] Run tests: `cd build && ctest -R fitness_decomposition --output-on-failure`
+- [X] T021 [US9] Integration test: run `./build/autoc` for 10 gens, verify per-scenario log output and that aggregate matches legacy behavior
 
 **Checkpoint**: Per-scenario scores visible. Aggregate unchanged. Ready for multi-objective selection.
 
@@ -90,21 +90,21 @@ the controller learn to complete both loops?
 
 ### Contract Tests
 
-- [ ] T025 [P] [US3] Write test: lexicase with 3 scenarios selects individual with best completion on randomly-ordered first scenario in tests/selection_tests.cc
-- [ ] T026 [P] [US3] Write test: epsilon-lexicase with continuous completion_fraction uses epsilon threshold in tests/selection_tests.cc
-- [ ] T027 [P] [US3] Write test: minimax on completion fractions {1.0, 1.0, 0.5} returns 0.5 in tests/selection_tests.cc
-- [ ] T028 [P] [US3] Write test: sum mode produces identical result to legacy aggregate in tests/selection_tests.cc
+- [X] T025 [P] [US3] Write test: lexicase with 3 scenarios selects individual with best completion on randomly-ordered first scenario in tests/selection_tests.cc
+- [X] T026 [P] [US3] Write test: epsilon-lexicase with continuous completion_fraction uses epsilon threshold in tests/selection_tests.cc
+- [X] T027 [P] [US3] Write test: minimax on completion fractions {1.0, 1.0, 0.5} returns 0.5 in tests/selection_tests.cc
+- [X] T028 [P] [US3] Write test: sum mode produces identical result to legacy aggregate in tests/selection_tests.cc
 
 ### Implementation
 
-- [ ] T029 [US3] Implement epsilon-lexicase selection in src/eval/lexicase_selection.h and src/eval/lexicase_selection.cc — shuffle scenarios, filter by epsilon-best on completion_fraction first, then distance_rmse, repeat until 1 remains
-- [ ] T030 [US3] Implement minimax aggregation on worst-scenario completion_fraction in src/eval/fitness_aggregator.h and src/eval/fitness_aggregator.cc
-- [ ] T031 [US3] Add FitnessAggregation config key (sum/minimax/lexicase) to src/util/config.cc and include/autoc/util/config.h
-- [ ] T032 [US3] Wire selection strategy into evolution loop: replace tournament-on-scalar with configurable selection in src/nn/population.cc and src/autoc.cc
-- [ ] T033 [US3] Log selection mode and per-generation statistics (completion fraction distribution, best/worst per scenario) in src/autoc.cc
-- [ ] T034 [US3] Run tests: `cd build && ctest -R selection --output-on-failure`
-- [ ] T035 [US3] Integration test: calm-air single-scenario, lexicase vs sum for 200 gens — does controller complete both loops?
-- [ ] T036 [US3] Integration test: 9-scenario with entry variations, lexicase vs sum — does worst-scenario completion improve?
+- [X] T029 [US3] Implement epsilon-lexicase selection in src/eval/lexicase_selection.h and src/eval/lexicase_selection.cc — shuffle scenarios, filter by epsilon-best on completion_fraction first, then distance_rmse, repeat until 1 remains
+- [X] T030 [US3] Implement minimax aggregation on worst-scenario completion_fraction in src/eval/fitness_aggregator.h and src/eval/fitness_aggregator.cc
+- [X] T031 [US3] Add FitnessAggregation config key (sum/minimax/lexicase) to src/util/config.cc and include/autoc/util/config.h
+- [X] T032 [US3] Wire selection strategy into evolution loop: replace tournament-on-scalar with configurable selection in src/nn/population.cc and src/autoc.cc
+- [X] T033 [US3] Log selection mode and per-generation statistics (completion fraction distribution, best/worst per scenario) in src/autoc.cc
+- [X] T034 [US3] Run tests: `cd build && ctest -R selection --output-on-failure`
+- [X] T035 [US3] Integration test: calm-air single-scenario, lexicase vs sum for 200 gens — does controller complete both loops?
+- [X] T036 [US3] Integration test: 9-scenario with entry variations, lexicase vs sum — does worst-scenario completion improve?
 
 **Checkpoint**: Lexicase selection working. Core hypothesis testable: does survival-first
 selection break the plateau? Compare against sum and minimax baselines.
