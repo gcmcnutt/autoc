@@ -723,7 +723,7 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
                                                 SIM_INITIAL_VELOCITY, gRabbitSpeedConfig.nominal);
     }
 
-    double prev_roll = 0.0, prev_pitch = 0.0;
+    gp_quat prev_quat;
     bool first_attitude_sample = true;
     int simulation_steps = 0;
 
@@ -739,22 +739,20 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       gp_vec3 aircraftPosition = stepState.getPosition();
       gp_quat craftOrientation = stepState.getOrientation();
 
-      // Attitude delta
-      double aqw = craftOrientation.w(), aqx = craftOrientation.x();
-      double aqy = craftOrientation.y(), aqz = craftOrientation.z();
-      double roll = atan2(2.0 * (aqw * aqx + aqy * aqz), 1.0 - 2.0 * (aqx * aqx + aqy * aqy));
-      double sinp = std::clamp(2.0 * (aqw * aqy - aqz * aqx), -1.0, 1.0);
-      double pitch = asin(sinp);
-
+      // Attitude delta: geodesic (matches fitness_decomposition.cc)
       double attitude_delta = 0.0;
       if (first_attitude_sample) {
-        prev_roll = roll;
-        prev_pitch = pitch;
+        prev_quat = craftOrientation;
         first_attitude_sample = false;
       } else {
-        attitude_delta = fabs(roll - prev_roll) + fabs(pitch - prev_pitch);
-        prev_roll = roll;
-        prev_pitch = pitch;
+        double dot = std::clamp(
+            static_cast<double>(prev_quat.w() * craftOrientation.w() +
+            prev_quat.x() * craftOrientation.x() +
+            prev_quat.y() * craftOrientation.y() +
+            prev_quat.z() * craftOrientation.z()),
+            -1.0, 1.0);
+        attitude_delta = 2.0 * acos(fabs(dot));
+        prev_quat = craftOrientation;
       }
 
       // Distance to rabbit
@@ -802,7 +800,7 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
              << "    pathX    pathY    pathZ"                         // path pos 3×9
              << "        X        Y        Z"                         // aircraft pos 3×9
              << "   vxBody   vyBody   vzBody"                         // body vel 3×9
-             << "    dhome     dist  attDlt   rabVl   intSc"          // diagnostics
+             << "    dhome     dist  attDlt   rabVl   intSc  rampSc"   // diagnostics
              << "\n";
         printHeader = false;
       }
@@ -825,7 +823,7 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         " % 8.2f % 8.2f % 8.2f"                         // pathX, pathY, pathZ
         " % 8.2f % 8.2f % 8.2f"                         // X, Y, Z
         " % 8.2f % 8.2f % 8.2f"                         // vxBody, vyBody, vzBody
-        " % 8.2f % 8.3f % 7.4f % 7.1f % 7.3f"          // dhome, dist, attDlt, rabVel, intScl
+        " % 8.2f % 8.3f % 7.4f % 7.1f % 7.3f % 7.3f"   // dhome, dist, attDlt, rabVel, intScl, rampSc
         "\n",
         static_cast<unsigned long long>(scenarioSequence),
         static_cast<unsigned long long>(bakeoffSequence),
@@ -854,7 +852,8 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         static_cast<gp_scalar>(distance),
         static_cast<gp_scalar>(attitude_delta),
         rabbitVel,
-        static_cast<gp_scalar>(interceptScale)
+        static_cast<gp_scalar>(interceptScale),
+        static_cast<gp_scalar>(computeVariationScale())
       );
       fout << outbuf;
     }

@@ -89,10 +89,11 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             distance_sum_legacy += pow(interceptScale * distDelta / DISTANCE_NORM, DISTANCE_POWER);
             attitude_sum_legacy += pow(interceptScale * attitude_delta / ATTITUDE_NORM, ATTITUDE_POWER);
 
-            // Decomposed metrics
-            double dist_error = distance - DISTANCE_TARGET;
+            // Decomposed metrics — interceptScale applied so intercept phase
+            // doesn't unfairly penalise off-path entry in lexicase selection.
+            double dist_error = interceptScale * (distance - DISTANCE_TARGET);
             distance_sq_sum += dist_error * dist_error;
-            attitude_delta_sum += attitude_delta;
+            attitude_delta_sum += interceptScale * attitude_delta;
 
             // Smoothness: |Δu(t)| per axis from commands sent to aircraft
             double cmd[3] = {

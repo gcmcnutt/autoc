@@ -106,26 +106,122 @@ acquisition ability. Throttle modulation emerges naturally.
 
 ---
 
-## Phase 4d: Path Shape Diversity
+## Phase 4d: Servo Slew Rate Limiting — sim fidelity + bang-bang prevention
+
+**Goal**: Real servos have physical slew limits. crrcsim currently applies NN commands
+instantaneously each 100ms step with no rate limiting — allowing full-range reversals
+every step (observed sm[1]=0.95 in roll). Adding slew limits models real hardware and
+forces the NN to develop anticipatory, smooth control without any fitness changes.
+
+**Coordinate conventions** (confirmed from inputdev_autoc.cpp):
+- Pitch: NN output [-1,1] → `elevator = -pitchCommand / 2.0` (sim [-0.5,0.5])
+- Roll: NN output [-1,1] → `aileron = rollCommand / 2.0` (sim [-0.5,0.5])
+- Throttle: NN output [-1,1] → `throttle = throttleCommand / 2.0 + 0.5` (sim [0,1])
+- NN eval rate: 10Hz (100ms), compute latency: 40ms. Commands applied at ~10Hz.
+
+**Slew rate spec** (all in NN coordinate space [-1,1], full range = 2.0):
+- Pitch: 200%/sec → max Δ = 2.0 × 2.0 × 0.1s = **0.40 per step**
+- Roll: 200%/sec → **0.40 per step**
+- Throttle: 300%/sec → 2.0 × 3.0 × 0.1s = **0.60 per step** in [-1,1]
+  (= 0.30/step in sim [0,1] — i.e. full [0,1] throttle travel in ~0.33s)
+
+**Implementation**: In `inputdev_autoc.cpp`, at the command-apply point (line ~934).
+Track `prevApplied{Pitch,Roll,Throttle}` as static locals, clamp delta on each apply.
+Hardcoded constants — no config file needed at this stage.
+
+```cpp
+// Slew rate limiting — applied when pending command is committed
+static const double SLEW_PITCH   = 0.40;  // max Δ per 100ms step (200%/sec)
+static const double SLEW_ROLL    = 0.40;  // max Δ per 100ms step (200%/sec)
+static const double SLEW_THROTTLE = 0.60; // max Δ per 100ms step (300%/sec)
+static double prevPitch = 0.0, prevRoll = 0.0, prevThrottle = -1.0;
+
+pitchCommand    = std::clamp(cmd.pitch,    prevPitch - SLEW_PITCH,    prevPitch + SLEW_PITCH);
+rollCommand     = std::clamp(cmd.roll,     prevRoll - SLEW_ROLL,      prevRoll + SLEW_ROLL);
+throttleCommand = std::clamp(cmd.throttle, prevThrottle - SLEW_THROTTLE, prevThrottle + SLEW_THROTTLE);
+prevPitch = pitchCommand; prevRoll = rollCommand; prevThrottle = throttleCommand;
+```
+
+Reset `prevPitch/Roll/Throttle` on scenario reset (gPendingCommand = PendingCommand{} sites).
+
+- [ ] T116 Add servo slew rate limiting in `inputdev_autoc.cpp`:
+  - Pitch: 200%/sec (0.40/step in NN space)
+  - Roll: 200%/sec (0.40/step in NN space)
+  - Throttle: 300%/sec (0.60/step in NN space)
+  - Reset prev values on scenario reset
+  - Add `slewP`, `slewR`, `slewT` columns to data.dat (actual vs requested delta) for analysis
+- [ ] T117 Run 50-gen experiment after slew limiting — observe sm[1] drop, check completion
+  holds. Does roll sm[1] drop from ~0.7 to ≤0.40? Does tracking degrade?
+- [ ] T118 Tune slew rates if needed — if tracking degrades badly, loosen limits.
+  If sm still high, tighten. Goal: sm[1] ≤ 0.3 without completion loss.
+
+**Checkpoint**: sm values physically bounded. Bang-bang eliminated as a strategy.
+Controller must anticipate turns and modulate smoothly.
+
+---
+
+## Phase 4e: Path Shape Diversity
 
 **Goal**: 25 wind seeds on the same path geometry still lets a fixed spiral win.
 Need varied *path shapes* so no single fixed strategy dominates all scenarios.
+(Note: spiral largely broken by gen 234 via energy lexicase + entry phase — path diversity now about quality, not survival.)
 
 **Note**: This is a path generator problem, not config tuning. The current rabbit
 path is a fixed circuit — more wind variations just perturb it, not change its topology.
 
-- [ ] T120 Audit path generator: what parameters control path shape vs path speed?
-  What's the range of achievable geometries from current config?
-- [ ] T121 Add path shape variation per scenario: vary curvature (turn rate, segment length)
-  across the 25 scenarios, not just wind. Goal: some scenarios have tight turns, some
-  have reversals, some have altitude changes
-- [ ] T122 Experiment: reduced rabbit speed (RabbitSpeedSigma=1.0) for 50 gens —
-  does throttle modulation appear? (T049 from old plan)
-- [ ] T123 Experiment: variable rabbit (sigma=3-5 m/s, aggressive speed cycles) —
-  does closing rate signal (dDist/dt) become active? (T050 from old plan)
+**Path generator methods already implemented** (pathgen.cc) — just need enabling in autoc.ini:
+- `longSequential` — current default, fixed figure-8 circuit
+- `aeroStandard` — 6 deterministic path variants (loop, figure-8, banked turns, etc), same seed
+- `progressiveDistance` — increasing path length over training (curriculum learning)
+
+- [ ] T120 Experiment: `PathGeneratorMethod = aeroStandard`, 25 wind × 6 path variants = 150
+  scenarios per generation. Observe if path diversity breaks remaining degenerate strategies.
+- [ ] T121a **Prereq — Immelmann renderer fix**: progressiveDistance paths include
+  inverted/loop segments; renderer currently assumes upright flight for path plotting,
+  producing garbled visualization during Immelmann/loop phases. Fix renderer path
+  drawing to handle inverted attitude before running T121 experiment.
+- [ ] T121b Experiment: `PathGeneratorMethod = progressiveDistance` — curriculum learning,
+  shorter paths early, full paths later. Does it improve early convergence?
+- [ ] T122 Rabbit speed tuning for closing-rate signal activation:
+  `RabbitSpeedNominal=16 RabbitSpeedSigma=4 RabbitSpeedMin=8 RabbitSpeedMax=24`
+  `RabbitSpeedCycleMin=3 RabbitSpeedCycleMax=7` (5s cycles, ~20% delta = ±3.2 m/s)
+  Goal: force dDist/dt sensor to become active. Does thr= track rabbit speed?
+- [ ] T123 Overnight scale-up config: pop=5000, gens=500, WindScenarios=25, aeroStandard paths.
+  Run on full hardware allocation. Baseline for post-slew-limit comparison.
 
 **Checkpoint**: Path shape diversity makes fixed-throttle spiral nonviable across
-the scenario set. Lexicase finds scenario-specialist behavior.
+the scenario set. Closing-rate sensor becomes active signal.
+
+---
+
+## Phase 4f: Elite Fitness Fix — NN_ELITE_DIVERGED and multivariate storage
+
+**Problem**: `NN_ELITE_DIVERGED` warnings appear every generation because the elite
+re-evaluation uses `aggregateScalarFitness()` (legacy scalar sum) while selection uses
+lexicase. These are different metrics — they will never match. The warning is a false
+positive that obscures genuine divergence (e.g. stochastic wind causing different outcomes).
+
+**Root cause** (autoc.cc ~line 1197-1203):
+```cpp
+double reevalFitness = aggregateScalarFitness(reevalScores);  // scalar sum
+if (!bitwiseEqual(reevalFitness, storedFitness)) {            // vs lexicase-selected
+    logger.warn() << "NN_ELITE_DIVERGED" ...
+```
+
+**Fix**: Store the elite's per-scenario scores (vector of ScenarioScore) rather than a
+scalar. Re-evaluate and compare the scenario-level completion fractions + distance RMSE
+vectors. A genuine divergence is when the completion profile changes materially (e.g.
+scenario that used to complete now crashes). Tolerate small numeric differences (float
+rounding, wind stochasticity).
+
+- [ ] T124 Fix NN_ELITE_DIVERGED: replace scalar comparison with per-scenario vector comparison.
+  Store `bestScores: vector<ScenarioScore>` alongside best genome. On re-eval, compare
+  completion_fraction per scenario with tolerance (e.g. ≥0.95 of stored). Warn only on
+  material degradation (completion drops or dist RMSE grows >20%).
+- [ ] T125 Consider storing lexicase rank/scores in data.stc for offline analysis —
+  currently only scalar fitness logged there.
+
+**Checkpoint**: Elite divergence warnings only fire on genuine instability, not metric mismatch.
 
 ---
 
@@ -185,17 +281,23 @@ gives real gradient — with a spiral exploit in place, CMA-ES will just optimiz
 - [ ] T163 GP legacy cleanup: scan for GP-era remnants (`GPrandDouble`, `gp_` prefixes,
   `#ifndef` guards → `#pragma once`). At minimum: include/autoc/util/gp_math_utils.h,
   include/autoc/util/types.h
-- [ ] T164 Consider removing legacy scalar fitness path (aggregateScalarFitness) —
-  only used for logging now, not selection. Replace with mean distance RMSE summary.
+- [ ] T164 Remove 'sum' selection mode and legacy scalar fitness path — tearout list:
+  - `SelectionMode = sum` branch in autoc.cc
+  - `aggregateScalarFitness()` in fitness_decomposition.cc (only logs now, not selected)
+  - `distance_sum_legacy`, `attitude_sum_legacy`, `legacy_crash_penalty` fields in ScenarioScore
+  - `legacy_attitude_scale`, `computeAttitudeScale()`, `DISTANCE_NORM`, `ATTITUDE_NORM` constants
+  - `legacy_distance_sum`, `legacy_attitude_sum` accumulation loop in fitness_decomposition.cc
+  - `computeStepPenalty()` in fitness_computer.cc (only used by sum path)
+  - After removal: `aggregateRawFitness()` is the only scalar summary needed (diagnostics only)
 
 ---
 
 ## Priority Order
 
-1. **T100** — fix build (blocker)
-2. **T101–T102** — energy lexicase (quick experiment, tests hypothesis cheaply)
-3. **T110–T115** — intercept/entry phase (highest leverage, fundamental fix)
-4. **T120–T123** — path shape diversity (complements intercept)
+1. **T100–T102** — DONE: energy lexicase. Spiral broken by gen 234 (thr=0.30–0.65, 25/25 OK)
+2. **T110–T115** — entry/intercept phase (already enabled via autoc.ini, intSc ramp working)
+3. **T116–T118** — servo slew rate limiting (next: kill bang-bang, model real hardware)
+4. **T120–T123** — path shape diversity (after slew works)
 5. **T130–T133** — path-relative smoothness (correct formulation, after above works)
 6. **T140–T145** — research spikes (after fitness signal is trustworthy)
 7. **T150–T153** — CMA-ES (last, needs good gradient)
