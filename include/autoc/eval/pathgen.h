@@ -509,7 +509,7 @@ public:
           }
         }
 
-        // Segment 7: 180° pitch-down loop (Split-S maneuver) at x=-20
+        // Segment 7: 180° pitch-down loop (Split-S maneuver)
         gp_vec3 seg7Start = path.back().start;
         addPitchDownLoop(path, seg7Start, headingSW, 15.0f, totalDistance);
 
@@ -804,10 +804,9 @@ public:
     // Turn to head back toward origin (180° turn)
     addHorizontalTurn(path, path.back().start, 15.0f, M_PI, true, totalDistance);
 
-    // Fly until positioned for Split-S that ends near origin
-    // Split-S with radius 15m drops 30m (diameter) - at z≈-30, will end at z≈0
+    // Fly south at altitude: position for split-S plus 20m extra run
     gp_vec3 preSplit = path.back().start;
-    gp_scalar distToSplitEntry = std::abs(preSplit[0]) - 15.0f;
+    gp_scalar distToSplitEntry = std::abs(preSplit[0]) - 15.0f + 20.0f;
     if (distToSplitEntry > 0) {
       addStraightSegment(path, preSplit, gp_vec3(-1.0f, 0.0f, 0.0f), distToSplitEntry, totalDistance);
     }
@@ -815,14 +814,9 @@ public:
     // Split-S maneuver (180° pitch-down loop) - exits heading north at z≈0
     addPitchDownLoop(path, path.back().start, gp_vec3(-1.0f, 0.0f, 0.0f), 15.0f, totalDistance);
 
-    // Final straight run to origin (no cubic needed - just connect the dots)
+    // Final straight run north (split-S exits heading north)
     gp_vec3 splitSEnd = path.back().start;
-    gp_scalar distToOrigin = std::sqrt(splitSEnd[0]*splitSEnd[0] + splitSEnd[1]*splitSEnd[1]);
-    if (distToOrigin > 1.0f) {
-      gp_vec3 toOrigin = -splitSEnd;
-      toOrigin[2] = 0.0f;  // Stay level
-      addStraightSegment(path, splitSEnd, toOrigin.normalized(), distToOrigin, totalDistance);
-    }
+    addStraightSegment(path, splitSEnd, gp_vec3(1.0f, 0.0f, 0.0f), 40.0f, totalDistance);
 
     return path;
   }

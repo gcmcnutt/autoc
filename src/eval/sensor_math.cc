@@ -109,16 +109,17 @@ gp_vec3 getInterpolatedTargetPosition(PathProvider& pathProvider,
         return pathProvider.getPath(pathSize - 1).start;
     }
 
-    // Binary search for bracketing waypoints (int32_t vs int32_t — deterministic)
-    int lo = 0;
-    int hi = pathSize - 1;
-    while (lo < hi - 1) {
-        int mid = (lo + hi) / 2;
-        if (pathProvider.getPath(mid).simTimeMsec <= goalTimeMsec) {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
+    // Linear scan from current index — O(1) amortized since rabbit only moves forward.
+    // For forecast offsets (+1..+5 steps), scan forward; for past offsets, scan backward.
+    int lo = CLAMP_DEF(pathProvider.getCurrentIndex(), 0, pathSize - 2);
+
+    // Scan forward if needed
+    while (lo < pathSize - 2 && pathProvider.getPath(lo + 1).simTimeMsec <= goalTimeMsec) {
+        lo++;
+    }
+    // Scan backward if needed (for negative offsets)
+    while (lo > 0 && pathProvider.getPath(lo).simTimeMsec > goalTimeMsec) {
+        lo--;
     }
 
     const Path& p0 = pathProvider.getPath(lo);

@@ -186,7 +186,9 @@ vtkSmartPointer<vtkPolyData> Renderer::createSegmentSet(vec3 offset, const std::
   for (size_t i = 0; i < numStatesToShow; i++) {
     auto& s = state.at(i);
     vec3 rStart = vec3{ s.getPosition()[0], s.getPosition()[1], s.getPosition()[2] } + offset;
-    vec3 rEnd = end[s.getThisPathIndex()] + offset;
+    // Use stored interpolated rabbit position (exact target NN was tracking)
+    gp_vec3 rabbit = s.getRabbitPosition();
+    vec3 rEnd = vec3{ rabbit[0], rabbit[1], rabbit[2] } + offset;
     points->InsertNextPoint(rStart[0], rStart[1], rStart[2]);
     points->InsertNextPoint(rEnd[0], rEnd[1], rEnd[2]);
   }

@@ -185,13 +185,15 @@ struct AircraftState {
         pitchCommand(0.0f),
         rollCommand(0.0f),
         throttleCommand(0.0f),
-        wind_velocity(gp_vec3::Zero()) {}
+        wind_velocity(gp_vec3::Zero()),
+        rabbitPosition(gp_vec3::Zero()) {}
     AircraftState(int thisPathIndex, gp_scalar relVel, gp_vec3 vel, gp_quat orientation,
       gp_vec3 pos, gp_scalar pc, gp_scalar rc, gp_scalar tc,
       unsigned long int timeMsec)
       : thisPathIndex(thisPathIndex), dRelVel(relVel), velocity(vel), aircraft_orientation(orientation), position(pos), simTimeMsec(timeMsec),
       pitchCommand(pc), rollCommand(rc), throttleCommand(tc),
-      wind_velocity(gp_vec3::Zero()) {
+      wind_velocity(gp_vec3::Zero()),
+      rabbitPosition(gp_vec3::Zero()) {
     }
 
     // Casting ctor for external Eigen scalar types while migrating callers to float
@@ -208,7 +210,8 @@ struct AircraftState {
         pitchCommand(static_cast<gp_scalar>(pc)),
         rollCommand(static_cast<gp_scalar>(rc)),
         throttleCommand(static_cast<gp_scalar>(tc)),
-        wind_velocity(gp_vec3::Zero()) {}
+        wind_velocity(gp_vec3::Zero()),
+        rabbitPosition(gp_vec3::Zero()) {}
 
     // generate setters and getters
     int getThisPathIndex() const { return thisPathIndex; }
@@ -238,6 +241,9 @@ struct AircraftState {
 
     gp_vec3 getWindVelocity() const { return wind_velocity; }
     void setWindVelocity(const gp_vec3& wind) { wind_velocity = wind; }
+
+    gp_vec3 getRabbitPosition() const { return rabbitPosition; }
+    void setRabbitPosition(const gp_vec3& pos) { rabbitPosition = pos; }
 
     // NN I/O capture — record what the NN actually saw and produced
     void setNNData(const float* inputs, int numInputs, const float* outputs, int numOutputs) {
@@ -354,6 +360,9 @@ struct AircraftState {
     // Wind diagnostic fields (for debugging non-determinism)
     gp_vec3 wind_velocity;  // Wind vector (north, east, down) from calculate_wind()
 
+    // Interpolated rabbit position for renderer playback
+    gp_vec3 rabbitPosition;  // Exact target position NN was tracking this tick
+
     // NN I/O capture — actual values presented to/produced by the neural net
     float nnInputs_[NN_INPUT_COUNT] = {0};   // Normalized inputs as NN sees them
     float nnOutputs_[NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs
@@ -373,7 +382,7 @@ struct AircraftState {
     void serialize(Archive& ar, const std::uint32_t /*version*/) {
       ar(thisPathIndex, dRelVel, velocity, aircraft_orientation, position,
          pitchCommand, rollCommand, throttleCommand, simTimeMsec, wind_velocity,
-         hasNNData_);
+         rabbitPosition, hasNNData_);
       if (hasNNData_) {
         uint32_t inputCount = NN_INPUT_COUNT;
         uint32_t outputCount = NN_OUTPUT_COUNT;
@@ -387,7 +396,7 @@ struct AircraftState {
 #endif
 };
 #ifndef ARDUINO
-CEREAL_CLASS_VERSION(AircraftState, 2)
+CEREAL_CLASS_VERSION(AircraftState, 3)
 #endif
 
 // Physics trace entry - captures complete FDM state at a single timestep
