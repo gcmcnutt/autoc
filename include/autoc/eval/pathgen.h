@@ -438,7 +438,7 @@ public:
         gp_scalar centerAlt = -loopRadius * cos45;
         gp_scalar yOffset = loopRadius * sin45;
 
-        for (gp_scalar turn = 0; turn < static_cast<gp_scalar>(M_PI * 2.0); turn += 0.5f) {  // Reduced from 0.05 to 0.5 rad
+        for (gp_scalar turn = 0; turn < static_cast<gp_scalar>(M_PI * 2.0); turn += 0.05f) {
           // Start at bottom of loop: turn starts at -90° (or 3π/2)
           // So at turn=0, we're at the bottom (south side)
           gp_scalar angle = turn - static_cast<gp_scalar>(M_PI / 2.0); // Start at bottom
