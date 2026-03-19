@@ -12,17 +12,17 @@ MSP msp;
 
 State state;
 
-// GP Rabbit Path Following System
+// NN Rabbit Path Following System
 static EmbeddedPathSelector path_generator;
 static std::vector<Path> flight_path;
 static AircraftState aircraft_state;
-static Path gp_path_segment; // Single GP-compatible path segment for evaluator
+static Path gp_path_segment; // Current path segment for NN evaluator
 
 // Test origin anchoring (captured at autoc enable; aircraft_state is expressed relative to this origin)
 static gp_vec3 test_origin_offset(0.0f, 0.0f, 0.0f);
 static bool test_origin_set = false;
 
-// GP Control Timing and State
+// Nav Control Timing and State
 static unsigned long rabbit_start_time = 0;
 static volatile bool rabbit_active = false;
 static int current_path_index = 0;
@@ -65,7 +65,7 @@ static gp_vec3 last_valid_position(0.0f, 0.0f, 0.0f);
 static bool have_valid_position = false;
 static bool was_system_armed = false;
 
-// Safety timeout for single GP test run (60 seconds max per run)
+// Safety timeout for single test run (60 seconds max per run)
 #define GP_MAX_SINGLE_RUN_MSEC (60 * 1000)
 #define MSP_BUS_LOCK_TIMEOUT_USEC (MSP_REPLY_TIMEOUT_MSEC * 2000UL)
 
@@ -120,7 +120,7 @@ static void stopAutoc(const char *reason, bool requireServoReset)
 
   if (wasAutoc || wasRabbit || (requireServoReset && !latchBefore))
   {
-    logPrint(INFO, "GP Control: Autoc disabled (%s) - pilot has control", reason);
+    logPrint(INFO, "Nav Control: Autoc disabled (%s) - pilot has control", reason);
   }
 
   if (wasRabbit)
@@ -152,9 +152,9 @@ static gp_quat neuQuaternionToNed(const float q[4])
   return attitude;
 }
 
-static void mspUpdateGPControl()
+static void mspUpdateNavControl()
 {
-  // Check for disarm or failsafe conditions before GP control
+  // Check for disarm or failsafe conditions before NN control
   // Only check if we're currently enabled to avoid repeat logging
   if (state.autoc_enabled && rabbit_active)
   {
@@ -166,31 +166,31 @@ static void mspUpdateGPControl()
       unsigned long test_run_duration = millis() - rabbit_start_time;
       if (isFailsafe)
       {
-        logPrint(INFO, "GP Control: INAV failsafe activated (%.1fs) - disabling autoc", test_run_duration * GP_INV_1000);
+        logPrint(INFO, "Nav Control: INAV failsafe activated (%.1fs) - disabling autoc", test_run_duration * GP_INV_1000);
       }
       else
       {
-        logPrint(INFO, "GP Control: Aircraft disarmed (%.1fs) - disabling autoc", test_run_duration * GP_INV_1000);
+        logPrint(INFO, "Nav Control: Aircraft disarmed (%.1fs) - disabling autoc", test_run_duration * GP_INV_1000);
       }
       stopAutoc(isFailsafe ? "failsafe" : "disarmed", true);
       return;
     }
   }
 
-  // GP rabbit path following control - only if autoc is still enabled
+  // NN rabbit path following control - only if autoc is still enabled
   if (!state.autoc_enabled || !rabbit_active || flight_path.empty())
   {
-    return; // Exit early if GP control has been disabled
+    return; // Exit early if NN control has been disabled
   }
 
-  // Proceed with GP control
+  // Proceed with NN control
   unsigned long current_time = millis();
   unsigned long elapsed_msec = current_time - rabbit_start_time;
 
   // Check termination conditions
   if (elapsed_msec > GP_MAX_SINGLE_RUN_MSEC)
   {
-    logPrint(INFO, "GP Control: Test run timeout (%.1fs) - stopping rabbit", elapsed_msec * GP_INV_1000);
+    logPrint(INFO, "Nav Control: Test run timeout (%.1fs) - stopping rabbit", elapsed_msec * GP_INV_1000);
     stopAutoc("timeout", true);
     return;
   }
@@ -201,51 +201,36 @@ static void mspUpdateGPControl()
   // End of path check
   if (current_path_index >= (int)flight_path.size() - 1)
   {
-    logPrint(INFO, "GP Control: End of path reached (%.1fs) - stopping rabbit", elapsed_msec * GP_INV_1000);
+    logPrint(INFO, "Nav Control: End of path reached (%.1fs) - stopping rabbit", elapsed_msec * GP_INV_1000);
     stopAutoc("path complete", true);
     return;
   }
 
-  // GP evaluation - calculate new commands
+  // NN evaluation - calculate new commands
   if (current_path_index < (int)flight_path.size())
   {
     gp_path_segment = flight_path[current_path_index];
 
-    // Set current path index for GP evaluation
+    // Set current path index and elapsed time for NN evaluation
+    // simTimeMsec must be elapsed (not absolute millis) to match path segment timestamps
     aircraft_state.setThisPathIndex(current_path_index);
+    aircraft_state.setSimTimeMsec(elapsed_msec);
 
     // Full path provider for interpolation and forecast lookahead
     VectorPathProvider pathProvider(flight_path, aircraft_state.getThisPathIndex());
     uint32_t eval_start_us = micros();
-    
-    // Calculate debug sensor values using sensor_math functions directly
-    gp_vec3 craftToTarget = gp_path_segment.start - aircraft_state.getPosition();
-    gp_scalar debug_getdtheta = executeGetDTheta(pathProvider, aircraft_state, 0.0f);
-    gp_scalar debug_getdphi = executeGetDPhi(pathProvider, aircraft_state, 0.0f);
-    gp_vec3 vel_body = aircraft_state.getOrientation().inverse() * aircraft_state.getVelocity();
-    gp_scalar debug_getalpha = std::atan2(-vel_body.z(), vel_body.x());
-    gp_scalar debug_getbeta = std::atan2(vel_body.y(), vel_body.x());
-    gp_scalar debug_getdhome = (gp_vec3(0, 0, -100.0f) - aircraft_state.getPosition()).norm();
+
+    // Compute current-step sensors for history recording
+    gp_scalar dphi_now = executeGetDPhi(pathProvider, aircraft_state, 0.0f);
+    gp_scalar dtheta_now = executeGetDTheta(pathProvider, aircraft_state, 0.0f);
     gp_vec3 targetPos = getInterpolatedTargetPosition(
         pathProvider, static_cast<int32_t>(aircraft_state.getSimTimeMsec()), 0.0f);
-    gp_scalar debug_getdist = (targetPos - aircraft_state.getPosition()).norm();
+    gp_scalar dist_now = (targetPos - aircraft_state.getPosition()).norm();
 
-    // NN inputs relative to rabbit
-    logPrint(INFO,
-             "NN Input: idx=%d rabbit=[%.1f,%.1f,%.1f] vec=[%.1f,%.1f,%.1f] alpha=%.3f beta=%.3f dtheta=%.3f dphi=%.3f dhome=%.3f relvel=%.2f",
-             current_path_index,
-             gp_path_segment.start.x(), gp_path_segment.start.y(), gp_path_segment.start.z(),
-             craftToTarget.x(), craftToTarget.y(), craftToTarget.z(),
-             debug_getalpha,
-             debug_getbeta,
-             debug_getdtheta,
-             debug_getdphi,
-             debug_getdhome,
-             aircraft_state.getRelVel());
+    // Capture temporal history before NN evaluation
+    aircraft_state.recordErrorHistory(dphi_now, dtheta_now, dist_now, millis());
 
-    // Capture temporal history before GP evaluation (for GETDPHI_PREV, GETDTHETA_PREV, etc.)
-    aircraft_state.recordErrorHistory(debug_getdphi, debug_getdtheta, debug_getdist, millis());
-
+    // Run NN: gathers 29 inputs, forward pass, sets pitch/roll/throttle commands
     generatedNNProgram(pathProvider, aircraft_state, 0.0f);
 
     // Convert NN-controlled aircraft commands to MSP RC values and cache them
@@ -254,7 +239,23 @@ static void mspUpdateGPControl()
     int throttle_cmd = convertThrottleToMSPChannel(aircraft_state.getThrottleCommand());
     updateCachedCommands(roll_cmd, pitch_cmd, throttle_cmd, eval_start_us);
 
-    logPrint(INFO, "NN Output: rc=[%d,%d,%d]", roll_cmd, pitch_cmd, throttle_cmd);
+    // Log compact NN I/O: 29 inputs, 3 outputs (tanh), 3 RC commands
+    // Inputs: [0-5]dPhi [6-11]dTheta [12-17]dist [18]dDist/dt [19-22]quat [23]airspeed [24]alpha [25]beta [26-28]cmdFeedback
+    const float* in = aircraft_state.getNNInputs();
+    const float* out = aircraft_state.getNNOutputs();
+    logPrint(INFO,
+             "NN: idx=%d in=[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d]",
+             current_path_index,
+             in[0], in[1], in[2], in[3], in[4], in[5],       // dPhi history+forecast
+             in[6], in[7], in[8], in[9], in[10], in[11],     // dTheta history+forecast
+             in[12], in[13], in[14], in[15], in[16], in[17],  // dist history+forecast
+             in[18],                                           // dDist/dt
+             in[19], in[20], in[21], in[22],                   // quaternion w,x,y,z
+             in[23],                                           // airspeed
+             in[24], in[25],                                   // alpha, beta
+             in[26], in[27], in[28],                           // cmd feedback
+             out[0], out[1], out[2],                           // NN outputs (tanh)
+             roll_cmd, pitch_cmd, throttle_cmd);               // RC commands
   }
 }
 
@@ -366,7 +367,7 @@ void mspUpdateState()
   {
     if (hadServoLatch)
     {
-      logPrint(INFO, "GP Control: Servo reset detected - autoc re-arm allowed");
+      logPrint(INFO, "Nav Control: Servo reset detected - autoc re-arm allowed");
     }
     servo_reset_required = false;
     state.autoc_countdown = 0;
@@ -440,7 +441,7 @@ void mspUpdateState()
     else
     {
       stopAutoc("missing local state", true);
-      logPrint(ERROR, "*** FATAL: No valid local state available for GP control - cannot enable autoc");
+      logPrint(ERROR, "*** FATAL: No valid local state available for NN control - cannot enable autoc");
     }
   }
   else if (!new_autoc_enabled && state.autoc_enabled)
@@ -448,7 +449,7 @@ void mspUpdateState()
     if (rabbit_active)
     {
       unsigned long test_run_duration = millis() - rabbit_start_time;
-      logPrint(INFO, "GP Control: Switch disabled (%.1fs) - stopping test run", test_run_duration * GP_INV_1000);
+      logPrint(INFO, "Nav Control: Switch disabled (%.1fs) - stopping test run", test_run_duration * GP_INV_1000);
     }
     if (!isArmed)
     {
@@ -467,7 +468,7 @@ void mspUpdateState()
   // Update aircraft state on every MSP cycle for continuous position/velocity tracking
   convertMSPStateToAircraftState(aircraft_state);
 
-  // Log raw vs GP-relative state for correlation (no inference beyond origin offset)
+  // Log raw vs origin-relative state for correlation
   gp_vec3 pos_raw = gp_vec3::Zero();
   gp_vec3 vel_raw = gp_vec3::Zero();
   if (state.local_state_valid)
@@ -490,7 +491,7 @@ void mspUpdateState()
   bool failsafe = state.status_valid && state.status.flightModeFlags & (1UL << MSP_MODE_FAILSAFE);
 
   logPrint(INFO,
-           "GP State: pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d",
+           "Nav State: pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d",
            pos_raw.x(), pos_raw.y(), pos_raw.z(),
            pos_rel.x(), pos_rel.y(), pos_rel.z(),
            vel_rel.x(), vel_rel.y(), vel_rel.z(),
@@ -502,8 +503,8 @@ void mspUpdateState()
            rabbit_active ? "Y" : "N",
            pathSelectorIndex);
 
-  // Update GP control and cache commands when enabled
-  mspUpdateGPControl();
+  // Update NN control and cache commands when enabled
+  mspUpdateNavControl();
 }
 
 void mspSetControls()

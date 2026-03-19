@@ -74,9 +74,13 @@ Remaining 015 work:
 ### [DEFERRED] Output Cleanup
 - OutputDir config key, auto-created run subdirectory, clean eval prefix naming
 
-### [DEFERRED] Make pathgen.h Portable for Embedded
+### [NEXT] Make pathgen.h Portable for Embedded
 - Single pathgen.h that works on both desktop and embedded
-- Wait until path system stabilizes
+- Current state: embedded_pathgen_selector.h is a manual clone of desktop pathgen.cc
+  with different helpers — changes don't propagate (e.g. FortyFiveDegreeAngledLoop
+  still at 0.5 rad step vs desktop 0.05 rad after fix 45df719)
+- Immediate fix: update embedded FortyFiveDegreeAngledLoop to 0.05 rad step
+- Long-term: refactor so both desktop and embedded use the same path generation code
 
 ---
 

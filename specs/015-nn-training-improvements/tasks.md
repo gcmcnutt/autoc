@@ -237,32 +237,37 @@ They are not blockers for the current milestone (robust repeatable training → 
 
 ## Phase 7: Xiao-GP Sensor Sync — embedded controller update
 
-**Goal**: Bring xiao-gp (embedded flight controller) in sync with current desktop
-NN sensor layout. The desktop NN evaluator has evolved significantly — 29 inputs,
-interpolated path targeting, temporal history, forecast lookahead, dDist/dt closing
-rate, quaternion attitude, command feedback. The xiao-gp code still uses the old
-sensor layout and path indexing.
+**Goal**: Bring xiao (embedded flight controller) in sync with current desktop
+NN sensor layout and verify end-to-end sensor pipeline correctness.
 
-**Blockers for flight test**: Without this, exported NN weights won't produce correct
-behavior on hardware — the inputs the NN expects won't match what xiao provides.
-
-- [ ] T170 Audit xiao-gp sensor inputs vs desktop nn_gather_inputs():
-  - Path indexing: time-based interpolated targeting (getInterpolatedTargetPosition)
-  - dPhi/dTheta: 4 history + 2 forecast slots (6 total each)
-  - dist: 4 history + 2 forecast slots
-  - dDist/dt closing rate (input 18)
-  - Quaternion attitude w,x,y,z (inputs 19-22)
-  - Airspeed, alpha, beta (inputs 23-25)
-  - Command feedback pitch/roll/throttle (inputs 26-28)
-- [ ] T171 Update xiao-gp msplink.cpp: implement matching sensor gather
-  - Port getInterpolatedTargetPosition (linear scan, no binary search)
-  - Port temporal history ring buffer (HISTORY_SIZE=10)
-  - Port forecast lookahead (+0.1s, +0.5s offsets)
-  - Match fastAtan2 LUT precision (already shared via sensor_math)
-- [ ] T172 Update embedded_pathgen_selector.h: verify path point spacing
-  compatible with interpolated targeting at variable rabbit speeds
-- [ ] T173 End-to-end validation: export weights → build xiao → compare
-  sensor values desktop vs embedded on same path/state sequence
+- [x] T170 Audit xiao sensor inputs vs desktop nn_gather_inputs():
+  All 29 inputs already matched — shared source files (evaluator.cc, sensor_math.cc)
+  compiled into both desktop and xiao via platformio build_src_filter. History buffer,
+  forecast lookahead, path interpolation, quaternion, aero angles all identical.
+- [x] T171 Xiao sensor gather already in sync — no porting needed. Shared code.
+- [x] T172 Embedded pathgen verified compatible with interpolated targeting.
+  Fixed FortyFiveDegreeAngledLoop step from 0.5 rad → 0.05 rad (matching desktop).
+- [x] T173 End-to-end bench validation via flight log analysis:
+  - Fixed critical bug: simTimeMsec was set to absolute millis() (~1.2M) instead of
+    elapsed time since autoc enable. getInterpolatedTargetPosition was clamping to
+    last path point every tick — dist was frozen at ~0.4m. Fixed by setting
+    aircraft_state.setSimTimeMsec(elapsed_msec) before NN eval.
+  - After fix: verification script (scripts/verify_flight_log.py) independently
+    reconstructs StraightAndLevel path and computes expected sensor values from
+    Nav State position + quaternion. Results:
+    - dist error: 0.1-0.5m (GPS noise on stationary bench, not computation error)
+    - dPhi error: < 0.003 rad across 128 ticks
+    - dTheta error: < 0.002 rad (one ±π wraparound, not real error)
+    - dDist/dt: correctly shows -16 m/s (rabbit pulling away at 16 m/s)
+    - History buffer: **zero mismatches** across 1,536 checks (128 ticks × 3 channels × 4 slots)
+    - Forecasts: errors track GPS position offset, not computation error
+  - Quaternion heading: bench test shows 41° vs INAV's 179°. Analysis traced to
+    INAV's MSP quaternion being in sensor/IMU frame — board alignment and GPS heading
+    fusion applied separately. Prior flight logs confirmed correct in actual flight.
+    Not a blocker — will verify on first flight.
+  - Also this session: GP→Nav rename in all log strings, compact NN I/O telemetry
+    (full 29 inputs + 3 outputs per tick), nn2cpp timestamp for rebuild detection,
+    moved xiao/generated/ under xiao/src/generated/ for PlatformIO dependency tracking.
 
 ---
 
@@ -279,9 +284,9 @@ behavior on hardware — the inputs the NN expects won't match what xiao provide
 - [ ] T155 Renderer: arena layout should be `numPaths × numWinds` grid when
   `numPaths > 1`. Each path variant gets its own column; wind seeds are rows within
   each column. Minimum-area-rectangle layout retained for single-path case.
-- [ ] T160 Verify all 3 repo builds: autoc, crrcsim, xiao
+- [x] T160 All 3 repo builds verified: autoc (cmake), crrcsim, xiao (PlatformIO both targets)
 - [ ] T161 Run full test suite: `cd build && ctest --output-on-failure`
-- [ ] T162 Verify export pipeline: nnextractor → nn2cpp → xiao build
+- [x] T162 Export pipeline verified: nnextractor → nn2cpp → xiao build → upload → bench test
 - [ ] T163 Remove `SinglePathProvider` from aircraft_state.h (no callers after xiao fix)
 - [ ] T164 GP legacy cleanup: scan for GP-era remnants (`GPrandDouble`, `gp_` prefixes,
   `#ifndef` guards → `#pragma once`). At minimum: include/autoc/util/gp_math_utils.h,
@@ -363,8 +368,10 @@ seen during training. This is the real acceptance test before flight.
 4. **T120–T121a** — DONE: aeroStandard + path fixes
 5. **T122** — DONE: rabbit speed tuning (sigma=4, 3-7s cycles)
 6. **T123** — DONE: BIG-aero1 (pop=3000, 294 scenarios, 266 gens, fitness 2,955)
-7. **T180–T183** — NEXT: generalization eval (novel path stress test) ← go/no-go gate
-8. **T170–T173** — xiao-gp sensor sync ← blocker for flight test
-9. **T140–T143** — aircraft variation (sim-to-real) ← blocker for flight test
-10. **T124c, T125, T155, T160–T166** — polish ← blocker for flight test
+7. **T180–T184** — DONE: generalization eval (86-98% across novel paths)
+8. **T170–T173** — DONE: xiao sensor sync + bench validation (simTimeMsec fix, full I/O telemetry)
+9. **T160, T162** — DONE: builds + export pipeline verified
+10. **T161, T163–T166** — NEXT: polish (test suite, cleanup, memory check)
+11. **T140–T143** — aircraft variation (sim-to-real, post-flight-test)
+12. **T124c, T125, T155** — lower-priority polish
 11. **T130–T133** — path-relative smoothness (on hold, only if lexicase plateaus)

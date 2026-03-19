@@ -6,6 +6,8 @@
 #include <getopt.h>
 #include <cmath>
 #include <iomanip>
+#include <chrono>
+#include <ctime>
 
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
@@ -33,7 +35,13 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
                                   const std::string& sourceFile) {
     std::stringstream code;
 
+    auto now = std::chrono::system_clock::now();
+    auto now_t = std::chrono::system_clock::to_time_t(now);
+    char timebuf[64];
+    std::strftime(timebuf, sizeof(timebuf), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now_t));
+
     code << "// Auto-generated NN evaluator function\n";
+    code << "// Generated: " << timebuf << "\n";
     code << "//\n";
     code << "// Source NN Information:\n";
     code << "//   Weight file: " << sourceFile << "\n";
@@ -86,6 +94,8 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     code << "    aircraftState.setPitchCommand(static_cast<gp_scalar>(outputs[0]));\n";
     code << "    aircraftState.setRollCommand(static_cast<gp_scalar>(outputs[1]));\n";
     code << "    aircraftState.setThrottleCommand(static_cast<gp_scalar>(outputs[2]));\n\n";
+    code << "    // Capture I/O for telemetry logging\n";
+    code << "    aircraftState.setNNData(inputs, 29, outputs, 3);\n\n";
     code << "    return static_cast<gp_scalar>(outputs[0]); // return pitch for compatibility\n";
     code << "}\n\n";
 
@@ -100,7 +110,13 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
                                   const std::string& sourceFile) {
     std::stringstream code;
 
+    auto now = std::chrono::system_clock::now();
+    auto now_t = std::chrono::system_clock::to_time_t(now);
+    char timebuf[64];
+    std::strftime(timebuf, sizeof(timebuf), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now_t));
+
     code << "// Auto-generated NN evaluator function (unrolled)\n";
+    code << "// Generated: " << timebuf << "\n";
     code << "//\n";
     code << "// Source NN Information:\n";
     code << "//   Weight file: " << sourceFile << "\n";
@@ -175,6 +191,8 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     code << "    aircraftState.setPitchCommand(static_cast<gp_scalar>(" << result_buf << "[0]));\n";
     code << "    aircraftState.setRollCommand(static_cast<gp_scalar>(" << result_buf << "[1]));\n";
     code << "    aircraftState.setThrottleCommand(static_cast<gp_scalar>(" << result_buf << "[2]));\n\n";
+    code << "    // Capture I/O for telemetry logging\n";
+    code << "    aircraftState.setNNData(inputs, 29, " << result_buf << ", 3);\n\n";
     code << "    return static_cast<gp_scalar>(" << result_buf << "[0]); // return pitch for compatibility\n";
     code << "}\n\n";
 

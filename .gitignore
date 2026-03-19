@@ -13,6 +13,6 @@ xiao/.vscode/c_cpp_properties.json
 xiao/.vscode/launch.json
 xiao/.vscode/ipch
 xiao/build/
-xiao/generated/*
-!xiao/generated/README.md
+xiao/src/generated/*
+!xiao/src/generated/README.md
 xiao/*.pyc

@@ -297,7 +297,7 @@ public:
         gp_scalar centerAlt = -loopRadius * cos45;  // Canonical origin at z=0
         gp_scalar yOffset = loopRadius * sin45;
 
-        for (gp_scalar turn = 0; turn < static_cast<gp_scalar>(M_PI * 2.0); turn += static_cast<gp_scalar>(0.5f)) {  // 0.5 rad - coarse to match trainer
+        for (gp_scalar turn = 0; turn < static_cast<gp_scalar>(M_PI * 2.0); turn += static_cast<gp_scalar>(0.05f)) {  // 0.05 rad (~3°) matches desktop pathgen.cc
           if (segment_count >= MAX_EMBEDDED_PATH_SEGMENTS) break;
 
           gp_scalar angle = turn - static_cast<gp_scalar>(M_PI / 2.0);
