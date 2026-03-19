@@ -214,8 +214,8 @@ static void mspUpdateGPControl()
     // Set current path index for GP evaluation
     aircraft_state.setThisPathIndex(current_path_index);
 
-    // Call generated GP program directly (aircraft_state is updated continuously in mspUpdateState)
-    SinglePathProvider pathProvider(gp_path_segment, aircraft_state.getThisPathIndex());
+    // Full path provider for interpolation and forecast lookahead
+    VectorPathProvider pathProvider(flight_path, aircraft_state.getThisPathIndex());
     uint32_t eval_start_us = micros();
     
     // Calculate debug sensor values using sensor_math functions directly

@@ -13,11 +13,11 @@ void controllerSetup()
 
 void controllerUpdate()
 {
-  // Unified timing loop - 200ms sensor/GP updates
+  // Unified timing loop - 100ms sensor/NN updates (10Hz, matches sim)
   static unsigned long lastUpdateTime = 0;
   unsigned long now = millis();
-  
-  // 200ms cycle: Update sensors and GP control
+
+  // 100ms cycle: Update sensors and NN control
   if (now - lastUpdateTime >= MSP_UPDATE_INTERVAL_MSEC)
   {
     lastUpdateTime = now;

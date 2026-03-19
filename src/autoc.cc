@@ -1237,7 +1237,9 @@ static void runNNEvolution(
 
       // Determinism check: re-eval fitness must match stored fitness exactly (T106)
       auto reevalScores = computeScenarioScores(bestResults);
-      double reevalFitness = aggregateScalarFitness(reevalScores);
+      double reevalFitness = useRawFitness
+          ? aggregateRawFitness(reevalScores)
+          : aggregateScalarFitness(reevalScores);
       double storedFitness = pop.individuals[bestIdx].fitness;
       if (!bitwiseEqual(reevalFitness, storedFitness)) {
         *logger.warn() << "NN_ELITE_DIVERGED: gen=" << gen

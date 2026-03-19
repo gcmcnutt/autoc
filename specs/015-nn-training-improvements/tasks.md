@@ -34,18 +34,20 @@ strategy that works on all wind seeds. Selection (completion→distance) doesn't
 
 ---
 
-## Current situation — SLEW LIMITING ACTIVE (gen 300 checkpoint, ramp2)
+## Current situation — BIG-aero1 complete (gen 266, fitness 2,955)
 
-Entry phase + energy lexicase + servo slew rate limiting all active.
-Gen 300 results: 25/25 OK, dist=1.26–8.01m, thr=0.16–0.63, sm[roll]=0.18–0.28.
-Best fitness 100.70 (vs 114.96 pre-slew). NN learned anticipatory smooth control naturally.
+Full stack active: entry phase + energy lexicase + servo slew + path diversity + rabbit speed.
+BIG-aero1 (pop=3000, aeroStandard 6 paths × 49 winds = 294 scenarios) ran 266 gens:
+- Best fitness: 114M → 2,955 (38,800× improvement)
+- 294/294 OK at gen 266, zero crashes
+- Dist: median ~8m, 75th pctile ~14m, 95th pctile ~22m (5 outliers at 25-27m)
+- Throttle: well-distributed 0.19–1.00, no bang-bang
+- Sigma: 0.20 → 0.05 (tight convergence)
+- NN_ELITE_SAME confirmed every generation (re-eval bug fixed)
+- Terminated by crrcsim segfault after gen 266 eval. Checkpoint saved.
 
-Remaining issues: path diversity (one geometry), dDist/dt sensor not yet meaningfully exercised, NN_ELITE_DIVERGED false positives (T124b).
-
-Eval robustness check (49 fresh wind seeds, longSequential): 46/49 OK. 3 crashes:
-  [3] thr=0.99 sm[2]=0.00 — spiral fallback on largest entry offset (41m radius). Latent.
-  [27] comp=0.80, [37] comp=0.68 — partial failures under moderate stress.
-Path diversity (T120) is the expected fix for the spiral fallback edge case.
+**Next**: Generalization eval (T180–T183) — test on novel paths never seen in training.
+This is the go/no-go gate before expanding to aircraft variations and flight test.
 
 ---
 
@@ -167,142 +169,129 @@ path is a fixed circuit — more wind variations just perturb it, not change its
 - `aeroStandard` — 6 deterministic path variants (loop, figure-8, banked turns, etc), same seed
 - `progressiveDistance` — increasing path length over training (curriculum learning)
 
-- [ ] T120 Experiment: `PathGeneratorMethod = aeroStandard`, 25 wind × 6 path variants = 150
-  scenarios per generation. Observe if path diversity breaks remaining degenerate strategies.
-- [ ] T121a **Prereq — Immelmann renderer fix**: progressiveDistance paths include
-  inverted/loop segments; renderer currently assumes upright flight for path plotting,
-  producing garbled visualization during Immelmann/loop phases. Fix renderer path
-  drawing to handle inverted attitude before running T121 experiment.
-- [ ] T121b Experiment: `PathGeneratorMethod = progressiveDistance` — curriculum learning,
-  shorter paths early, full paths later. Does it improve early convergence?
-- [ ] T122 Rabbit speed tuning for closing-rate signal activation:
+- [x] T120 Experiment: `PathGeneratorMethod = aeroStandard`, 25 wind × 6 path variants = 150
+  scenarios per generation. Path diversity working. Throttle modulation emerged.
+- [x] T121a Split-S path fix: progressiveDistance Split-S exit now heads cleanly north
+  with extended south run before entry. aeroStandard Split-S retains 150° angled approach.
+- [x] T122 Rabbit speed tuning for closing-rate signal activation:
   `RabbitSpeedNominal=16 RabbitSpeedSigma=4 RabbitSpeedMin=8 RabbitSpeedMax=24`
   `RabbitSpeedCycleMin=3 RabbitSpeedCycleMax=7` (5s cycles, ~20% delta = ±3.2 m/s)
-  Goal: force dDist/dt sensor to become active. Does thr= track rabbit speed?
-- [ ] T123 Overnight scale-up config: pop=5000, gens=500, WindScenarios=25, aeroStandard paths.
-  Run on full hardware allocation. Baseline for post-slew-limit comparison.
+  Active in BIG-aero1. Throttle distribution 0.19–1.00 confirms dDist/dt exercised.
+- [x] T123 Large-scale aeroStandard training run (BIG-aero1): pop=3000, 6 paths × 49 winds
+  = 294 scenarios. Ran 266 gens over ~7.5 hours. Best fitness 114M → 2,955 (38,800×).
+  294/294 OK at gen 266, zero crashes. Median dist ~8m, sigma 0.20→0.05.
+  Terminated by crrcsim segfault (TCP disconnect). Checkpoint saved.
 
 **Checkpoint**: Path shape diversity makes fixed-throttle spiral nonviable across
 the scenario set. Closing-rate sensor becomes active signal.
 
 ---
 
-## Phase 4f: Fitness Reporting Consistency — eval, elite divergence, stored fitness
-
-**Problem**: Three related fitness reporting issues all stem from the same root cause —
-multiple fitness aggregations (aggregateScalarFitness, aggregateRawFitness, lexicase rank)
-exist and are used inconsistently across training, re-eval, and eval mode.
-
-**Observed symptoms**:
-1. `NN_ELITE_DIVERGED` fires every generation: re-eval uses `aggregateScalarFitness()`
-   (legacy power-law sum → millions) vs lexicase-selected stored fitness (aggregateRawFitness
-   → ~100). Different metrics, will never match. False positive obscures real instability.
-2. Eval mode (`runNNEvaluation`) reported fitness 1195324 vs stored 100.70 — same mismatch.
-   Fixed: eval now uses `aggregateRawFitness`. But the numbers still aren't directly
-   comparable because eval uses different scenario seeds than training.
-3. Stored genome fitness (genome.fitness) is set during lexicase selection to
-   aggregateRawFitness — this is the right metric but is not documented/asserted anywhere.
-
-**Root cause** (autoc.cc ~line 1197-1203):
-```cpp
-double reevalFitness = aggregateScalarFitness(reevalScores);  // scalar sum → wrong
-if (!bitwiseEqual(reevalFitness, storedFitness)) {            // vs aggregateRawFitness
-    logger.warn() << "NN_ELITE_DIVERGED" ...
-```
-
-**Fix strategy**: Use per-scenario completion profile as the divergence signal.
-A genuine divergence is a scenario that used to complete now crashing. Numeric fitness
-values are inherently non-comparable across scenario sets.
+## Phase 4f: Fitness Reporting Consistency — eval fixed, remainder deferred to polish
 
 - [x] T124a Eval mode fix: `runNNEvaluation` now uses `aggregateRawFitness` and logs
   per-scenario breakdown ([s] OK/CRASH comp= dist= att= thr= sm=). Done.
-- [ ] T124b Fix NN_ELITE_DIVERGED: replace scalar comparison with per-scenario vector
-  comparison. Store `bestScores: vector<ScenarioScore>` alongside best genome. On re-eval,
-  compare completion_fraction per scenario (warn if any scenario drops from OK→CRASH or
-  completion falls >20%). Drop the bitwiseEqual scalar check entirely.
+- Remaining items (T124b/c, T125) moved to Phase 9: Polish.
+
+---
+
+## Phase 5: Path-Relative Smoothness — on hold
+
+**Status**: On hold. Lexicase hasn't run out of gas. Slew limiting already kills
+bang-bang (sm[roll] 0.18-0.28), so smoothness pressure isn't needed yet.
+
+- [ ] T130 Instrument per-step path curvature in EvalResults
+- [ ] T131 Compute path-normalized smoothness: |Δu(t)| / max(curvature(t), ε)
+- [ ] T132 Add as lexicase dimension after completion and distance
+- [ ] T133 Experiment: does path-normalized smoothness reward coordinated turns?
+
+---
+
+## Phase 6: Aircraft Variation (sim-to-real)
+
+**Goal**: Vary aircraft parameters across scenarios so the NN learns a robust controller
+that transfers to real hardware. Key sim-to-real gap: the real aircraft has different
+mass, CG, control throws, motor response, and aero coefficients than the sim nominal.
+
+- [ ] T140 Define variation parameters: mass ±10%, CG shift ±5mm, control surface
+  throw ±15%, motor thrust curve ±10%, drag coefficient ±10%
+- [ ] T141 Implement per-scenario aircraft parameter perturbation in crrcsim
+  (apply multipliers to FDM constants at scenario init, reset on next scenario)
+- [ ] T142 Config: `EnableAircraftVariations=1`, sigma params in autoc.ini
+- [ ] T143 Experiment: train with aircraft variations, compare eval robustness
+  vs nominal-only training
+
+---
+
+## Future features (separate from 015)
+
+The following are potential improvements deferred to their own feature branches.
+They are not blockers for the current milestone (robust repeatable training → flight test).
+
+### Selection strategy alternatives (if/when lexicase plateaus)
+- NSGA-II Pareto: non-dominated sort on (tracking RMSE, energy, worst-case spread)
+- Rank-based fitness shaping: CMA-ES style rank-derived weights
+- sep-CMA-ES optimizer: pop 5000→50, per-weight step size adaptation
+
+---
+
+## Phase 7: Xiao-GP Sensor Sync — embedded controller update
+
+**Goal**: Bring xiao-gp (embedded flight controller) in sync with current desktop
+NN sensor layout. The desktop NN evaluator has evolved significantly — 29 inputs,
+interpolated path targeting, temporal history, forecast lookahead, dDist/dt closing
+rate, quaternion attitude, command feedback. The xiao-gp code still uses the old
+sensor layout and path indexing.
+
+**Blockers for flight test**: Without this, exported NN weights won't produce correct
+behavior on hardware — the inputs the NN expects won't match what xiao provides.
+
+- [ ] T170 Audit xiao-gp sensor inputs vs desktop nn_gather_inputs():
+  - Path indexing: time-based interpolated targeting (getInterpolatedTargetPosition)
+  - dPhi/dTheta: 4 history + 2 forecast slots (6 total each)
+  - dist: 4 history + 2 forecast slots
+  - dDist/dt closing rate (input 18)
+  - Quaternion attitude w,x,y,z (inputs 19-22)
+  - Airspeed, alpha, beta (inputs 23-25)
+  - Command feedback pitch/roll/throttle (inputs 26-28)
+- [ ] T171 Update xiao-gp msplink.cpp: implement matching sensor gather
+  - Port getInterpolatedTargetPosition (linear scan, no binary search)
+  - Port temporal history ring buffer (HISTORY_SIZE=10)
+  - Port forecast lookahead (+0.1s, +0.5s offsets)
+  - Match fastAtan2 LUT precision (already shared via sensor_math)
+- [ ] T172 Update embedded_pathgen_selector.h: verify path point spacing
+  compatible with interpolated targeting at variable rabbit speeds
+- [ ] T173 End-to-end validation: export weights → build xiao → compare
+  sensor values desktop vs embedded on same path/state sequence
+
+---
+
+## Phase 8: Polish
+
+- [x] T124b NN_ELITE_DIVERGED confirmed fixed: BIG-aero1 ran 266 gens with NN_ELITE_SAME
+  on every generation. The plumbing bug (no signal reaching re-eval) was resolved.
+  Per-scenario vector comparison deferred — scalar bitwise check now works reliably.
 - [ ] T124c Document/assert that genome.fitness is always aggregateRawFitness. Add a
   comment to the fitness assignment site so it's clear what's stored.
 - [ ] T125 Store per-scenario lexicase scores in data.stc for offline robustness analysis.
   Currently only scalar fitness logged there. Include completion, dist_rmse, mean_throttle
   per scenario for the best individual each generation.
-
-**Checkpoint**: NN_ELITE_DIVERGED only fires on genuine completion regression.
-Eval and training fitness values use the same metric. Stored fitness is documented.
-
----
-
-## Phase 5: Path-Relative Smoothness — deferred
-
-**Goal**: Correct formulation of smoothness: normalize Δu by the path curvature at
-each step. Penalize control change *above what the path demands*.
-
-**Why deferred**: Requires per-step curvature from path geometry (radiansFromStart or
-per-segment curvature derivative). The path has this data but instrumenting it in the
-fitness pipeline is non-trivial. Correct in principle — do after intercept works.
-
-- [ ] T130 Instrument per-step path curvature in EvalResults (or derive from existing path data)
-- [ ] T131 Compute path-normalized smoothness: |Δu(t)| / max(curvature(t), ε)
-- [ ] T132 Add as lexicase dimension after completion and distance
-- [ ] T133 Run experiment — does path-normalized smoothness reward coordinated turns
-  while penalizing oscillation on straight segments?
-
----
-
-## Phase 6: Research Spikes — after intercept validated
-
-**Goal**: Explore alternative selection strategies once the fitness signal is trustworthy
-(post-intercept, post-energy). Each on its own branch.
-
-### NSGA-II Pareto Spike
-- [ ] T140 Branch `015-spike-nsga2`: non-dominated sort on (tracking RMSE, energy, worst-case spread)
-- [ ] T141 Run 500-gen experiment, compare Pareto front evolution against lexicase
-
-### Rank-Based Fitness Shaping Spike
-- [ ] T142 Branch `015-spike-rank-shaping`: CMA-ES style rank-derived weights
-- [ ] T143 Run 500-gen experiment, compare against lexicase baseline
-
-### Analysis
-- [ ] T144 Compare all spike results, document in research.md — which strategy broke the plateau?
-- [ ] T145 Merge winner to 015-nn-training-improvements
-
----
-
-## Phase 7: CMA-ES Optimizer — after fitness signal is trustworthy
-
-**Goal**: Replace GA with sep-CMA-ES. Pop 5000→50. Only worth doing once fitness signal
-gives real gradient — with a spiral exploit in place, CMA-ES will just optimize the spiral faster.
-
-- [ ] T150 Branch `015-spike-cmaes`
-- [ ] T151 Implement SepCMAES (ask/tell) in include/autoc/nn/sep_cmaes.h + src/nn/sep_cmaes.cc
-- [ ] T152 Wire into evolution loop, run 500-gen experiment with pop=50
-- [ ] T153 If validated, merge and remove GA code
-
----
-
-## Phase 8: Renderer / Arena Layout — multi-path display
-
-**Problem**: The renderer currently lays out the scenario arena as a minimum-area
-rectangle (fitting all paths in the tightest bounding box). This works well for
-single-path training (longSequential, 1 geometry). With aeroStandard (6 path variants
-× N wind seeds), the arena should be laid out as a `paths × winds` grid so each path
-variant occupies its own column and wind variations are rows. Otherwise all 6 geometries
-overlap in the same space and are unreadable.
-
 - [ ] T155 Renderer: arena layout should be `numPaths × numWinds` grid when
   `numPaths > 1`. Each path variant gets its own column; wind seeds are rows within
   each column. Minimum-area-rectangle layout retained for single-path case.
-  Requires passing numPaths/numWinds from the .dmp metadata to the renderer layout engine.
-
----
-
-## Phase 9: Polish
-
 - [ ] T160 Verify all 3 repo builds: autoc, crrcsim, xiao
 - [ ] T161 Run full test suite: `cd build && ctest --output-on-failure`
 - [ ] T162 Verify export pipeline: nnextractor → nn2cpp → xiao build
-- [ ] T163 GP legacy cleanup: scan for GP-era remnants (`GPrandDouble`, `gp_` prefixes,
+- [ ] T163 Remove `SinglePathProvider` from aircraft_state.h (no callers after xiao fix)
+- [ ] T164 GP legacy cleanup: scan for GP-era remnants (`GPrandDouble`, `gp_` prefixes,
   `#ifndef` guards → `#pragma once`). At minimum: include/autoc/util/gp_math_utils.h,
   include/autoc/util/types.h
+- [ ] T166 Memory leak sanity check: RSS hit ~13GB during BIG-aero1 run (pop=3000,
+  294 scenarios, 109+ gens). Verify whether this is expected working-set size for the
+  scale or indicates a leak introduced during the big refactor. Check: per-generation
+  arena/path allocations freed, EvalResults vectors not accumulating, cereal serialization
+  temporaries, scenario variation tables. Profile with valgrind --tool=massif or
+  /proc/self/smaps on a short run and compare RSS growth rate vs generation count.
 - [ ] T165 Remove 'sum' selection mode and legacy scalar fitness path — tearout list:
   - `SelectionMode = sum` branch in autoc.cc
   - `aggregateScalarFitness()` in fitness_decomposition.cc (only logs now, not selected)
@@ -314,13 +303,68 @@ overlap in the same space and are unreadable.
 
 ---
 
-## Priority Order
+## Phase 8b: Generalization Eval — novel path stress test
 
-1. **T100–T102** — DONE: energy lexicase. Spiral broken by gen 234 (thr=0.30–0.65, 25/25 OK)
-2. **T110–T115** — entry/intercept phase (already enabled via autoc.ini, intSc ramp working)
-3. **T116–T118** — servo slew rate limiting (next: kill bang-bang, model real hardware)
-4. **T120–T123** — path shape diversity (after slew works)
-5. **T130–T133** — path-relative smoothness (correct formulation, after above works)
-6. **T140–T145** — research spikes (after fitness signal is trustworthy)
-7. **T150–T153** — CMA-ES (last, needs good gradient)
-8. **T160–T164** — polish
+**Goal**: Verify the trained NN learned general path-following, not memorized the 6
+aeroStandard geometries. Export best weights from BIG-aero1, evaluate on paths never
+seen during training. This is the real acceptance test before flight.
+
+- [x] T180 Eval on progressiveDistance paths: BIG-aero1 genome (fitness 2,955) on novel
+  progressiveDistance geometry (2270 segments, 49 winds). Result: 42/49 OK (85.7%).
+  7 crashes all from extreme entry attitudes (135° heading reversal, >30° roll, large
+  offsets). OK flights: dist median ~8m, consistent with training quality. Confirms
+  generalization to novel path geometry — failures are entry recovery, not tracking.
+- [x] T181 Eval on longSequential: BIG-aero1 genome on fixed figure-8 circuit (273 segments,
+  49 winds). Result: 48/49 OK (98.0%). Single crash at [18] (heading=-76°, roll=+22°,
+  comp=0.68 — entry stress, not tracking failure). No temporal drift over extended circuit.
+  Dist median ~8m, consistent with training. Strongest generalization result.
+- [x] T182 Random path generalization test (12 paths × 12 winds = 144 flights):
+  Novel random geometries (seed=99999, never seen in training), full training-envelope
+  sigmas. Result: 141/144 OK (97.9%). 3 crashes: [23] spiral fallback (thr=1.00,
+  comp=0.14), [79] late crash (comp=0.79), [125] mid-course (comp=0.54).
+  Dist median ~13m (wider than training's 8m — expected for harder random geometry).
+  **Confirms NN learned general path-following, not memorized training paths.**
+- [x] T182b Random path envelope test (12×12=144 flights at 120% training sigmas):
+  Same seed=99999 paths, all entry/wind/rabbit sigmas at 120%. Result: 141/144 OK (97.9%)
+  — identical completion rate to T182 at 100%. 3 crashes: [35] spiral (comp=0.07),
+  [57] late (comp=0.84), [79] late (comp=0.78). Dist median ~14m (vs ~13m at 100%).
+  **Controller has significant headroom beyond training envelope.** Failure mode remains
+  rare spiral fallback on extreme entries, not systematic breakdown from harder conditions.
+- [x] T183 Failure mode analysis: two distinct crash modes identified across eval suite:
+  1. **Extreme entry** (T180): large heading reversals (>90°), big roll — physically
+     unrecoverable. Expected, not a policy defect.
+  2. **Geometry + altitude edge case** (T182/T182b): paths starting with dive + hard turn,
+     combined with low altitude offset, crash immediately (comp=0.07). 11/12 winds on same
+     path survive fine — it's one unlucky altitude draw, not spiral fallback. thr=1.00 is
+     "full power climb attempt", not degenerate spiral.
+  **Conclusion**: ~2% failure floor is from irreducible edge cases, not policy gaps.
+  The dive-and-turn-and-throttle intercept tactic is correct learned behavior — the NN
+  lacks altitude floor awareness, which is a higher-level safety concern (total energy
+  management, arena boundaries) for a future tactics layer above the path follower.
+  No training changes needed — proceed to flight test prep.
+  **Note**: throttle across all evals is still largely bang-bang (thr 0.40-0.75 average
+  but full range used). Smoothness metrics show sm[thr] typically 0.12-0.20. Future
+  work: total energy (elevation + speed) as input/objective, altitude floor guard.
+
+- [x] T184 Quiet throttle baseline: single longSequential path, no wind, no entry variation,
+  constant rabbit speed 12 m/s. Result: OK comp=1.00 dist=5.84 thr=0.47 sm[thr]=0.20.
+  Throttle still fairly bang-bang even in calm conditions — "race horse" effect: NN trained
+  at 16±4 m/s overshoots the slow 12 m/s rabbit, oscillates between catch-up and coast.
+  Bang-bang is intrinsic to the learned policy, not purely scenario-driven. Future work:
+  total energy input/objective, or training at wider rabbit speed range including slow end.
+
+---
+
+## Priority Order — milestone: robust training → flight test
+
+1. **T100–T102** — DONE: energy lexicase
+2. **T110–T115** — DONE: entry/intercept phase
+3. **T116–T118** — DONE: servo slew rate limiting
+4. **T120–T121a** — DONE: aeroStandard + path fixes
+5. **T122** — DONE: rabbit speed tuning (sigma=4, 3-7s cycles)
+6. **T123** — DONE: BIG-aero1 (pop=3000, 294 scenarios, 266 gens, fitness 2,955)
+7. **T180–T183** — NEXT: generalization eval (novel path stress test) ← go/no-go gate
+8. **T170–T173** — xiao-gp sensor sync ← blocker for flight test
+9. **T140–T143** — aircraft variation (sim-to-real) ← blocker for flight test
+10. **T124c, T125, T155, T160–T166** — polish ← blocker for flight test
+11. **T130–T133** — path-relative smoothness (on hold, only if lexicase plateaus)

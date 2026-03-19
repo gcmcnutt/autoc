@@ -1,136 +1,86 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-03-16 (consolidated from ~/old/GP/specs/, ~/old/GP/BACKLOG.md, xiao/TODO.md)
+**Last Updated**: 2026-03-18
 
 ## Legend
 
 - `[NEXT]` - High priority, ready to start
 - `[DEFERRED]` - Lower priority, will revisit
-- `[CANDIDATE]` - Imported from old repos, needs triage
+- `[DONE]` - Completed in 015 or prior
 
 ---
 
-## NN Training Improvements (015)
+## NN Training Improvements (015) — active
 
-Active work tracked in [specs/015-nn-training-improvements/tasks.md](015-nn-training-improvements/tasks.md).
+Tracked in [specs/015-nn-training-improvements/tasks.md](015-nn-training-improvements/tasks.md).
 
-### [NEXT] Sigma Floor (Phase 1)
-- Enforce minimum mutation sigma (e.g., 0.05) to prevent search freeze
-- Quick win — band-aid for stalled runs while better optimizers are developed
+Current milestone: robust repeatable training → flight test.
 
-### [NEXT] Curriculum Ramp (Phase 2)
-- Progressive difficulty: start with fewer wind scenarios, expand over generations
+BIG-aero1 complete: 266 gens, fitness 2,955, 294/294 OK, zero crashes.
 
-### [DEFERRED] Fitness Decomposition (Phase 3)
-- Minimax/percentile aggregation instead of sum-of-errors
-- Pressures NN to fix worst behaviors first
+Generalization eval complete (T180–T184): 86–98% completion across novel paths,
+random geometries, and 120% envelope stress. Controller has significant headroom.
 
-### [DEFERRED] sep-CMA-ES (Phase 4)
-- Replace isotropic Gaussian mutation with CMA-ES
-- Learns covariance structure of 531-weight space
+Remaining 015 work:
+- Phase 7: Xiao-GP sensor sync (blocker for flight test) ← NEXT
+- Phase 6: Aircraft parameter variation (sim-to-real)
+- Phase 8: Polish (data.stc, arena layout, legacy tearout, memory leak check)
 
-### [DEFERRED] Per-Timestep Streaming (Phase 5)
-- Enables per-segment credit assignment and checkpoint cloning
+---
 
-### [DEFERRED] Segment Scoring (Phase 6)
-- Per-segment credit assignment with delta-based scoring
-- Score by error reduction relative to initial condition
+## Future Features (separate from 015)
 
-### [DEFERRED] Checkpoint/Resume (Phase 7)
-- Dump full state each generation for crash recovery
-- Long runs (~9 hours) are vulnerable to crashes/OOM
+### [DEFERRED] Selection Strategy Alternatives
+- NSGA-II Pareto: non-dominated sort on (tracking RMSE, energy, worst-case spread)
+- Rank-based fitness shaping: CMA-ES style rank-derived weights
+- sep-CMA-ES optimizer: pop 5000→50, per-weight step size adaptation
+- Only pursue if/when epsilon-lexicase plateaus
+
+### [DEFERRED] Path-Relative Smoothness
+- Normalize Δu by path curvature: penalize excess control, not turns
+- On hold — slew limiting already killed bang-bang, lexicase hasn't plateaued
+
+### [DEFERRED] Total Energy Management + Altitude-Aware Distance
+- Current distance metric is flat Euclidean — treats "5m above" same as "5m below"
+- In reality above is always safer (altitude = energy reserve), below-and-inside is worst
+- Observed in T184: NN flies consistently low and outside at slow rabbit speeds ("race horse"
+  effect — trained at 16±4 m/s, throttle oscillates at 12 m/s)
+- Proposals:
+  - Total energy (altitude + airspeed) as NN input or lexicase objective
+  - Altitude-aware distance: asymmetric penalty (below penalized more than above)
+  - Wider rabbit speed range in training (include 8–12 m/s slow regime)
+- Also enables future tactics layer: arena boundary awareness, altitude floor guard
+- Post-flight-test refinement — current flat Euclidean tracking is adequate for first flight
+
+### [DEFERRED] Simulator Sampling Time Variation
+- Training uses exact 100ms steps; real hardware has jitter (~100ms ± 10ms)
+- Add configurable random dither to sim tick interval during training
+- Makes NN robust to real-world MSP bus contention and sensor read latency
+- Sim-to-real hardening item — after initial flight test data validates baseline
+
+### [DEFERRED] GPU-Native Evaluation
+- Accelerate fitness evaluation on GPU (5000 sims/sec vs ~200)
+- Major effort, future research
 
 ---
 
 ## Infrastructure
 
-### [DEFERRED] Make pathgen.h Portable for Embedded
-- Single pathgen.h that works on both desktop and embedded
-- Conditional compilation for std::vector vs fixed arrays
-- Wait until path system stabilizes
+### [NEXT] Batch and Cache Deterministic Scenarios
+- With 150+ scenarios per individual, serializing full table per eval is expensive
+- Send scenario table once at generation start, cache in crrcsim
+- Reduces per-eval serialization from O(scenarios × individual) to O(individual)
 
 ### [DEFERRED] Output Cleanup
-- OutputDir config key
-- Auto-created run subdirectory
-- Clean eval prefix naming
+- OutputDir config key, auto-created run subdirectory, clean eval prefix naming
 
-### [NEXT] Batch and Cache Deterministic Scenarios
-- With 36+ wind scenarios, serializing the full table per individual causes ~4x throughput hit
-- Send scenario table once at generation start, cache in crrcsim
-- Reduces per-eval serialization from O(scenarios x individual) to O(individual)
-
-### [CANDIDATE] Consolidate PRNG Sources
-- From ZZZ-SINGLE_PRNG: multiple PRNG instances across codebase
-- std::mt19937 wrapper exists (rng.h) but may not cover all sites
-- Ref: specs/archive/ZZZ-SINGLE_PRNG.md
-
----
-
-## Robustness
-
-### [DEFERRED] Wind Speed Variation
-- Currently only wind direction varies; speed is fixed at base value
-- Add windSpeedOffset/windSpeedFactor to ScenarioMetadata
-- Trains robustness to different wind regimes (complements turbulence)
-
-### [DEFERRED] Demetic Mode Elite Preservation
-- Best fitness jumps wildly when elite re-evaluated on single scenario
-- Revisit when fitness ramp stabilizes
-
-### [CANDIDATE] Pareto Multi-Objective Fitness
-- From ZZZ-PARETO: dominance-based selection instead of weighted sum
-- Good design exists, never implemented
-- Ref: specs/archive/ZZZ-PARETO.md
-
----
-
-## Controller Architecture
-
-### [DEFERRED] Upper-Level Intercept Director
-- Higher-level controller for initial maneuver before engaging track mode
-- Depends on entry variation training reaching maturity
-- Ref: specs/archive/ZZZ-LAYERED_CONTROLLER.md, old/GP/specs/010-safety-layer
-
-### [DEFERRED] Future State Predictor NN
-- Secondary NN that predicts short-horizon future sensor values
-- Depends on validating temporal history inputs first
-
-### [CANDIDATE] Behavioral Cloning Bootstrap
-- Initialize NN weights from supervised learning on recorded GP flight data
-- Only relevant if direct NN training is exhausted
-- Ref: 014 spec US6
-
----
-
-## Path & Evaluation
-
-### [CANDIDATE] Immelman Path Fix
-- LongSequential path has bad Immelman segment interfering with evolution
-- From old/GP/specs/009-immelman-path
-- Ref: specs/archive/ (if migrated)
-
-### [CANDIDATE] GP Eval Node Test Coverage
-- Full 3D quaternion test coverage for all ~40 operator nodes
-- Foundation exists (001) but not 100% coverage
-- From old/GP/specs/001-gp-eval-tests
-
-### [CANDIDATE] Float Precision Non-Determinism
-- Path interpolation at high sim times (>100s) loses 32-bit float precision
-- Proposed fix: progressive-index tracking with integer timestamps
-- From old/GP/specs/002-path-interpolation known issues
-
-### [CANDIDATE] Fitness Output Formatting
-- bytecode2cpp/nnextractor fitness values inconsistent (exponent vs fixed-point)
-- From old/GP/specs/006-fitness-precision
+### [DEFERRED] Make pathgen.h Portable for Embedded
+- Single pathgen.h that works on both desktop and embedded
+- Wait until path system stabilizes
 
 ---
 
 ## Embedded / Hardware
-
-### [NEXT] Training Record Consistency & Provenance
-- S3 provenance gaps: several locations print S3 key without bucket/profile
-- Fitness formatting inconsistency (exponent vs fixed-point)
-- Add bucket+profile to provenance, use consistent formatting
 
 ### [NEXT] Export RC Commands to Xiao Log
 - Log RC commands throughout entire flight for full playback visualization
@@ -138,22 +88,9 @@ Active work tracked in [specs/015-nn-training-improvements/tasks.md](015-nn-trai
 
 ### [DEFERRED] Xiao Safety Checks Pre-Arm
 - Ensure mode flip is safe: RC failsafe, RC disarm, hold/RTH should disarm co-processor
-- msp_status should send array of unsigned32 as packed bit field (currently 32 bits)
 
 ### [DEFERRED] Speed Up Logfile Download
 - BLE download may be over-bucketed from prior troubleshooting
-
-### [DEFERRED] GP to Autoc in INAV via Controls
-- Selector and activate mechanisms
-
----
-
-## Performance
-
-### [CANDIDATE] GPU-Native Evaluation
-- Accelerate fitness evaluation on GPU (5000 sims/sec vs ~200)
-- From old/GP/specs/011-gpu-native
-- Major effort, future research
 
 ---
 
@@ -179,3 +116,23 @@ Active work tracked in [specs/015-nn-training-improvements/tasks.md](015-nn-trai
 - Train on aarch64, pull repo on x86
 - Build and run renderer/nnextractor/eval against aarch64 S3 objects
 - Validates cereal binary portability end-to-end
+
+---
+
+## Completed / Superseded
+
+- ~~Sigma Floor~~ — done (015 Phase 1)
+- ~~Curriculum Ramp~~ — done (015 Phase 2, wind scenario ramp)
+- ~~Fitness Decomposition~~ — done (015 Phase 2, per-scenario scores)
+- ~~Pareto Multi-Objective~~ — superseded by epsilon-lexicase (015 Phase 3)
+- ~~Demetic Mode Elite~~ — superseded by lexicase selection
+- ~~Wind Speed Variation~~ — done (WindScenarios with varied seeds)
+- ~~Immelman Path Fix~~ — done (T121a, progressiveDistance split-S fixed)
+- ~~Float Precision Non-Determinism~~ — done (integer timestamps in Path)
+- ~~GP Eval Node Test Coverage~~ — superseded (GP removed, NN evaluator has tests)
+- ~~Fitness Output Formatting~~ — superseded (aggregateRawFitness is canonical)
+- ~~Training Record Consistency~~ — done (S3 upload in eval mode, consistent keys)
+- ~~Consolidate PRNG~~ — done (rng.h covers all sites)
+- ~~Upper-Level Intercept Director~~ — superseded by entry variation training
+- ~~Future State Predictor NN~~ — superseded by temporal history + forecast inputs
+- ~~Behavioral Cloning Bootstrap~~ — not needed, direct NN training working
