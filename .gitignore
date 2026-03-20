@@ -5,6 +5,8 @@ logs/
 *.csv
 nn_weights.dat
 nohup.out
+core.*
+eval-results/
 
 # xiao (PlatformIO)
 xiao/.pio/

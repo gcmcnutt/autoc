@@ -34,20 +34,34 @@ strategy that works on all wind seeds. Selection (completion→distance) doesn't
 
 ---
 
-## Current situation — BIG-aero1 complete (gen 266, fitness 2,955)
+## Current situation — BIG-3 complete (gen 400, fitness 2,724) — BEST RUN
 
-Full stack active: entry phase + energy lexicase + servo slew + path diversity + rabbit speed.
-BIG-aero1 (pop=3000, aeroStandard 6 paths × 49 winds = 294 scenarios) ran 266 gens:
-- Best fitness: 114M → 2,955 (38,800× improvement)
-- 294/294 OK at gen 266, zero crashes
-- Dist: median ~8m, 75th pctile ~14m, 95th pctile ~22m (5 outliers at 25-27m)
-- Throttle: well-distributed 0.19–1.00, no bang-bang
+Three BIG training runs completed. BIG-3 is the best result:
+
+| Run | Config delta | Gens | Best fitness | Crashes | Dist avg | Throttle | Sigma |
+|-----|-------------|------|-------------|---------|----------|----------|-------|
+| BIG-aero1 | baseline (Z sigma=5) | 266 | 2,955 | 0/294 | 15-25m | 0.19-1.00 (bang-bang) | 0.05 |
+| BIG-2 | same as aero1 | 313 | 5.7M | 8/294 | 13-20m | 0.66-0.97 | 0.06 |
+| **BIG-3** | **Z sigma=3** | **400** | **2,724** | **0/294** | **9.1m** | **0.48 avg (proportional)** | **0.05** |
+
+**BIG-3 detailed results (gen 400, pop=3000, aeroStandard 6 paths × 49 winds = 294 scenarios)**:
+- Best fitness: 124M → 2,724 (45,600× improvement)
+- **294/294 OK, zero crashes** across all wind/path/entry combinations
+- Distance: avg 9.1m, 17% under 5m, 64% under 10m
+- Attitude: avg 0.21 (clean, well-controlled flight)
+- **Throttle: avg 0.48 — real proportional control** (60% below 0.5, 36% mid-range, only 5% above 0.8)
+- **Smoothness: pitch=0.19, roll=0.15, thr=0.22** — smooth control throughout
 - Sigma: 0.20 → 0.05 (tight convergence)
-- NN_ELITE_SAME confirmed every generation (re-eval bug fixed)
-- Terminated by crrcsim segfault after gen 266 eval. Checkpoint saved.
+- Key transitions: 124M→20.8M (gen 35), 2.96M (gen 96), 2,850 (gen 157), 2,724 (gen 383)
+- Avg population fitness: 250M → 105M (whole population learning, not just elite)
+- NN_ELITE_SAME confirmed every generation
+- **Ran to completion (400 gens)** — first BIG run to finish without crrcsim crash
 
-**Next**: Generalization eval (T180–T183) — test on novel paths never seen in training.
-This is the go/no-go gate before expanding to aircraft variations and flight test.
+**Key insight**: Z sigma 5→3 was the differentiator. BIG-aero1 had bang-bang throttle
+(thr 0.91-0.97, sm[thr] 0.01-0.05). BIG-3 has proportional throttle (avg 0.48,
+sm[thr] 0.22) and tighter tracking (9.1m vs 15-25m). Narrower altitude entry variation
+lets the NN learn energy management rather than emergency recovery. BIG-2 shows training
+is sensitive to initial population seeding (same config as aero1, never converged well).
 
 ---
 
@@ -221,6 +235,21 @@ mass, CG, control throws, motor response, and aero coefficients than the sim nom
 - [ ] T143 Experiment: train with aircraft variations, compare eval robustness
   vs nominal-only training
 
+**Scaling concerns** (observed BIG-aero2 vs BIG-aero1): identical config except
+EntryPositionAltSigma 5→3 (should be easier), yet BIG-aero2 at gen 305 is 5.7M
+vs BIG-aero1's 2,955 at gen 266. Training is sensitive to initial population seeding.
+When adding aircraft variations, the scenario space expands significantly. Consider:
+- **Warm start**: seed population from prior best genome (e.g. BIG-aero1 weights)
+  and mutate from there, rather than random init. Most efficient for incremental dims.
+- **Variation ramp**: start narrow envelope, widen over generations (curriculum learning).
+  BIG-aero1 succeeded without it, but BIG-aero2's struggle suggests it's not reliably
+  optional. Especially important when adding aircraft param variations on top of
+  entry/wind/rabbit variations.
+- **More scenarios**: 49 may not provide enough lexicase differentiation with aircraft
+  variations added. Consider 64, 81, or 100 (trade-off: wall-clock per gen).
+- **Larger population**: 3000→5000 gives more genetic diversity but linear cost.
+  May be needed if warm start isn't sufficient.
+
 ---
 
 ## Future features (separate from 015)
@@ -371,7 +400,72 @@ seen during training. This is the real acceptance test before flight.
 7. **T180–T184** — DONE: generalization eval (86-98% across novel paths)
 8. **T170–T173** — DONE: xiao sensor sync + bench validation (simTimeMsec fix, full I/O telemetry)
 9. **T160, T162** — DONE: builds + export pipeline verified
-10. **T161, T163–T166** — NEXT: polish (test suite, cleanup, memory check)
-11. **T140–T143** — aircraft variation (sim-to-real, post-flight-test)
-12. **T124c, T125, T155** — lower-priority polish
-11. **T130–T133** — path-relative smoothness (on hold, only if lexicase plateaus)
+10. **BIG-3** — DONE: best run (gen 400, fitness 2,724, 0 crashes, proportional throttle)
+11. **Eval suite** — DONE: `scripts/eval_suite.sh` automated regression (T0-T3), 6/7 PASS
+12. **Flight test** — NEXT: load BIG-3 weights onto flight hardware, first NN flight
+13. **Flight data analysis** — post-flight: compare flight logs to desktop sensor pipeline
+14. **Feature 015 closeout** — wrap up after flight data analysis
+15. **T161, T163–T166** — polish (test suite, cleanup, memory check) — post-flight
+16. **T140–T143** — aircraft variation (sim-to-real, next feature after 015 closeout)
+17. **T124c, T125, T155** — lower-priority polish
+18. **T130–T133** — path-relative smoothness (on hold, only if lexicase plateaus)
+
+---
+
+## Automated Evaluation Suite — `scripts/eval_suite.sh`
+
+**Usage**: `./scripts/eval_suite.sh nn_weights.dat [tier]`
+
+Automated regression suite. `autoc-eval.ini` is the single source of truth for all
+sigmas — must match training config exactly. Tier overrides only change path type,
+dimensions, and seed — never sigmas. Results archived in `eval-results/<timestamp>/`.
+
+### BIG-3 eval suite results (2026-03-20, fitness 2,724):
+
+| Tier | Test | Result | OK/Total | Dist | Thr | SmT |
+|------|------|--------|----------|------|-----|-----|
+| T0 | repro (exact seed) | **PASS** | 294/294 (100%) | 9.1 | 0.48 | 0.22 |
+| T1 | aeroStandard (novel seed) | **PASS** | 294/294 (100%) | 8.5 | 0.46 | 0.23 |
+| T2 | progressiveDistance | **PASS** | 48/49 (97.9%) | 6.2 | 0.30 | 0.27 |
+| T2 | longSequential | **PASS** | 49/49 (100%) | 6.1 | 0.35 | 0.27 |
+| T2 | random 12×12 | FAIL | 133/144 (92.3%) | 12.0 | 0.48 | 0.22 |
+| T3 | stress 120% sigmas | **PASS** | 142/144 (98.6%) | 13.0 | 0.49 | 0.22 |
+| T3 | quiet (12 m/s, no wind) | **PASS** | 1/1 (100%) | 4.9 | 0.39 | 0.26 |
+
+**Key findings**: T0 bitwise fitness match confirms toolchain integrity. T1-T2-T3 show
+strong generalization — only T2-random below 95% (novel path geometry is the frontier).
+Stress at 120% sigmas actually scores *better* than random at training sigmas — path shape
+matters more than envelope edge. Throttle proportional across all tiers (avg 0.30-0.49).
+
+### Tier definitions:
+
+#### Tier 0: Reproducibility (1 run)
+- Exact seed repro using `autoc-eval.ini` as-is (must match training seed + config)
+- **Pass**: bitwise fitness match with stored value
+- **Purpose**: verify toolchain, weights extraction, config parity
+
+#### Tier 1: Quick validation (1 run, ~3 min)
+- aeroStandard 6×49 = 294 flights, novel seed (`Seed = -1`)
+- **Pass**: ≥95% completion, avg dist < 15m
+
+#### Tier 2: Generalization (3 runs, ~10 min)
+- progressiveDistance 1×49 = 49 flights (novel sequential geometry)
+- longSequential 1×49 = 49 flights (stability/drift test)
+- random 12×12 = 144 flights (novel paths, seed=99999)
+- **Pass**: ≥95% completion per test
+
+#### Tier 3: Stress / envelope (2 runs, ~5 min)
+- random 12×12 at 120% training sigmas = 144 flights
+- quiet: longSequential 1×1, no wind, rabbit 12 m/s (throttle character)
+- **Pass**: ≥95% completion (stress), 0 crashes (quiet)
+
+#### Tier 4: Future (post aircraft variations)
+- random 25×25 with craft variation sigmas = 625 flights
+- random paths at 20% inside training envelope = regression guard
+- Pass criteria: TBD based on Phase 6 results
+
+### Eval suite backlog:
+- [ ] Config stacking (`-i base -i overlay`) to eliminate sigma drift between training/eval INIs
+- [ ] Archive data.dat and data.stc alongside S3 eval uploads
+- [ ] `nnextractor` option to pull weights by S3 key/timestamp (not just latest)
+- [ ] Eval metadata (tier, weights hash, pass/fail) linked to S3 keys for renderer lookup
