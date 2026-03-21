@@ -98,6 +98,11 @@ Remaining 015 work:
 - Log RC commands throughout entire flight for full playback visualization
 - Location: xiao/src/msplink.cpp
 
+### [DEFERRED] GPS Dropout Handling During NN Control
+- What happens when GPS drops out during NN-active control? Position freezes, NN sees stale data
+- Need: xiao detects stale position (no update for N ms) and either disables autoc or flags it
+- Also consider MSP communication loss detection and safe fallback
+
 ### [DEFERRED] Xiao Safety Checks Pre-Arm
 - Ensure mode flip is safe: RC failsafe, RC disarm, hold/RTH should disarm co-processor
 
