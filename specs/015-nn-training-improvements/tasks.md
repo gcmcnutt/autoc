@@ -464,6 +464,30 @@ matters more than envelope edge. Throttle proportional across all tiers (avg 0.3
 - random paths at 20% inside training envelope = regression guard
 - Pass criteria: TBD based on Phase 6 results
 
+### Cross-ISA FP Divergence — observed, pre-flight validation needed
+
+**Observed**: Same code, same weights, same config on x86 WSL2 produces fitness 205,522
+vs 2,724 on aarch64 DGX Spark (75× degradation). FP rounding differences (FMA behavior,
+SIMD paths, compiler flags) compound over 130+ steps into divergent trajectories. The NN
+weights are optimized for ARM's specific FP behavior.
+
+**Concern**: Xiao flight hardware is Cortex-M4F (single-precision only, ARM). Desktop
+training is aarch64 with fp64. If any intermediate computation uses double precision on
+desktop but gets truncated to float32 on Cortex-M, that's a divergence source. ARM→ARM
+should be closer than ARM→x86, but must be verified.
+
+**Pre-flight validation** (T190):
+- [ ] T190 Cross-ISA NN output comparison: take 1000+ input vectors from desktop sim,
+  feed to xiao NN over serial (or via `pio test` unit test), compare outputs to desktop.
+  Acceptance: max output divergence < 0.01 (1% of [-1,1] range). Can synthesize inputs
+  or extract from flight log NN lines.
+
+**Post-flight validation** (T191):
+- [ ] T191 Flight log replay: take real flight log NN input lines, feed to desktop NN,
+  compare outputs to what xiao actually produced during flight. Uses existing compact
+  29-input + 3-output log format. Template: `verify_flight_log.py` with NN eval mode added.
+  Quantifies actual sim-to-real FP drift under real flight conditions.
+
 ### Eval suite backlog:
 - [ ] Config stacking (`-i base -i overlay`) to eliminate sigma drift between training/eval INIs
 - [ ] Archive data.dat and data.stc alongside S3 eval uploads

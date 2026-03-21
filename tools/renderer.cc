@@ -72,7 +72,7 @@ struct SpanData {
   std::vector<vec3> rabbitPoints;  // Goal path points (rabbit positions with Z offset)
   size_t startStateIdx;
   size_t endStateIdx;
-  int pathIndex;  // Path index from GP State (0-5), -1 if not set
+  int pathIndex;  // Path index from Nav State (0-5), -1 if not set
 
   SpanData() : origin(0.0f, 0.0f, 0.0f), startStateIdx(0), endStateIdx(0), pathIndex(-1) {}
 };
@@ -81,7 +81,7 @@ std::vector<TimestampedVec> craftToTargetVectors;  // Vec field with timestamps 
 std::vector<vec3> xiaoVirtualPositions;  // Virtual (pos) coordinates for individual test spans
 std::vector<std::string> xiaoLines;  // Store xiao log lines for span analysis
 std::vector<SpanData> xiaoSpanData;  // Rabbit and vec data organized by span
-std::vector<size_t> gpStateLineToStateIndex;  // Map GP State line number to actual state index
+std::vector<size_t> navStateLineToStateIndex;  // Map Nav State line number to actual state index
 
 // Forward declarations
 bool parseBlackboxData(const std::string& csvData);
@@ -1876,28 +1876,31 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
   xiaoLines.clear();
   craftToTargetVectors.clear();
   xiaoVirtualPositions.clear();
-  gpStateLineToStateIndex.clear();
+  navStateLineToStateIndex.clear();
 
   // Regex patterns for xiao log parsing
-  // Format: #<seqnum> <xiao_ms> <inav_ms> <level> GP ...
+  // Format: #<seqnum> <xiao_ms> <inav_ms> <level> Nav State/NN Control/Nav Control/NN ...
   std::regex timestampRe(R"(^#\d+\s+(\d+)\s+(\d+)\s+\w)");  // Capture xiao_ms (2nd) and inav_ms (3rd)
-  // Updated regex to match current xiao-gp log format (changed from "test origin NED" to "origin NED")
-  std::regex controlEnableRe(R"(GP Control: Switch enabled - origin NED=\[([-0-9\.]+),\s*([-0-9\.]+),\s*([-0-9\.]+)\])");
-  std::regex controlDisableRe(R"(GP Control: Switch disabled)");
-  std::regex inputRe(R"(GP Input:.*idx=(\d+).*rabbit=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*vec=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*relvel=([-0-9\.]+))");
-  std::regex stateRe(R"(GP State:.*pos_raw=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*pos=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*vel=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*quat=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\])");
+  std::regex controlEnableRe(R"(NN Control: Switch enabled - origin NED=\[([-0-9\.]+),\s*([-0-9\.]+),\s*([-0-9\.]+)\])");
+  std::regex controlDisableRe(R"(Nav Control:.*(disabled|Autoc disabled|path complete))");
+  std::regex stateRe(R"(Nav State:.*pos_raw=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*pos=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*vel=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*quat=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\])");
   std::regex autocFlagRe(R"(autoc=(Y|N))");
-  std::regex pathRe(R"(path=(\d+))");  // Capture path index from GP State line
-  std::regex outputRe(R"(GP Output: rc=\[(\d+),(\d+),(\d+)\])");
+  std::regex pathRe(R"(path=(\d+))");  // Capture path index from Nav State line
+  // NN line: idx, 29 inputs, 3 outputs, 3 RC values (replaces old GP Input + GP Output)
+  std::regex nnRe(R"(NN: idx=(\d+) in=\[([^\]]+)\] out=\[([^\]]+)\] rc=\[(\d+),(\d+),(\d+)\])");
 
   std::string line;
   bool inSpan = false;
   unsigned long spanStartTimeMs = 0;
-  unsigned long flightStartTimeMs = 0;  // First GP State time for full flight timing
+  unsigned long flightStartTimeMs = 0;  // First Nav State time for full flight timing
   bool flightStartSet = false;
   vec3 currentOrigin(0.0f, 0.0f, 0.0f);
   std::vector<TimestampedVec> currentVecPoints;
   std::smatch matches;
+
+  // Track latest Nav State position/quat for reconstructing rabbit from NN inputs
+  vec3 latestPos(0.0f, 0.0f, 0.0f);
+  quat latestQuat(1.0f, 0.0f, 0.0f, 0.0f);
 
   // Clear and prepare to collect span data
   xiaoSpanData.clear();
@@ -1929,16 +1932,12 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
       inavMs = std::stoul(tsMatch[2].str());
     }
 
-    // Parse GP Output (RC commands)
-    if (std::regex_search(line, matches, outputRe)) {
-      scalar rc_roll = std::stof(matches[1].str());
-      scalar rc_pitch = std::stof(matches[2].str());
-      scalar rc_throttle = std::stof(matches[3].str());
-
+    // Parse NN line for RC commands (replaces old GP Output)
+    if (std::regex_search(line, matches, nnRe)) {
       RCCommand rc;
-      rc.roll = rc_roll;
-      rc.pitch = rc_pitch;
-      rc.throttle = rc_throttle;
+      rc.roll = std::stof(matches[4].str());
+      rc.pitch = std::stof(matches[5].str());
+      rc.throttle = std::stof(matches[6].str());
       timestampRCMap[inavMs] = rc;
     }
   }
@@ -1989,40 +1988,101 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
       continue;
     }
 
-    // Parse GP Input (vec, relvel, and rabbit for goal path) - ONLY when in span
-    if (inSpan && std::regex_search(line, matches, inputRe)) {
-      int idx = std::stoi(matches[1].str());
+    // Parse NN line - reconstruct rabbit position from body-frame angles + distance
+    if (inSpan && std::regex_search(line, matches, nnRe)) {
+      // Parse the 29 comma-separated input values
+      std::string inputStr = matches[2].str();
+      std::vector<scalar> inputs;
+      std::istringstream iss(inputStr);
+      std::string token;
+      while (std::getline(iss, token, ',')) {
+        inputs.push_back(std::stof(token));
+      }
 
-      // Capture rabbit position (goal point along path, in virtual/origin-relative coords)
-      scalar rabbit_x = std::stof(matches[2].str());
-      scalar rabbit_y = std::stof(matches[3].str());
-      scalar rabbit_z = std::stof(matches[4].str());
-      vec3 rabbitPos(rabbit_x, rabbit_y, rabbit_z);
-      // Apply same Z offset as actual positions to align with simulation convention
-      rabbitPos[2] = rabbitPos[2] + SIM_INITIAL_ALTITUDE;
-      currentSpanData.rabbitPoints.push_back(rabbitPos);
+      if (inputs.size() >= 29) {
+        // inputs[18] = dDist/dt (closing rate)
+        scalar relVel = std::abs(inputs[18]);
+        timestampRelVelMap[inavMs] = relVel;
 
-      // Capture vec (direction to target)
-      scalar vec_n = std::stof(matches[5].str());
-      scalar vec_e = std::stof(matches[6].str());
-      scalar vec_d = std::stof(matches[7].str());
-      scalar relVel = std::stof(matches[8].str());
+        // Reconstruct rabbit position from NN inputs:
+        //   dPhi   = in[3]  = atan2(tl.y, -tl.z)   body YZ plane
+        //   dTheta = in[9]  = atan2(-tl.z, tl.x)    body XZ plane
+        //   dist   = in[15] = Euclidean distance
+        //   quat   = in[19-22] (w,x,y,z) earth->body
+        scalar dPhi   = inputs[3];
+        scalar dTheta = inputs[9];
+        scalar dist   = inputs[15];
+        scalar qw = inputs[19], qx = inputs[20], qy = inputs[21], qz = inputs[22];
 
-      vec3 vecDir(vec_n, vec_e, vec_d);
+        if (dist > 0.01f) {
+          // Reconstruct target_local (body frame) from two atan2 projections:
+          //   dPhi   = atan2(tl.y, -tl.z)  → -tl.z = r_yz * cos(dPhi), tl.y = r_yz * sin(dPhi)
+          //   dTheta = atan2(-tl.z, tl.x)  → tl.x = r_xz * cos(dTheta), -tl.z = r_xz * sin(dTheta)
+          // Shared: -tl.z appears in both. From dTheta: -tl.z = r_xz * sin(dTheta)
+          // From dPhi: tl.y = (-tl.z) * sin(dPhi) / cos(dPhi) when cos(dPhi) != 0
+          // Use unit direction then scale by dist.
+          //
+          // Set tl.x = cos(dTheta), -tl.z = sin(dTheta), tl.y = sin(dTheta) * sin(dPhi) / cos(dPhi)
+          // But cos(dPhi) can be zero. Instead use the constraint:
+          //   tl.x = cos(dTheta)
+          //   tl.z = -sin(dTheta)
+          //   tl.y = sin(dTheta) * tan(dPhi)  ... still has tan
+          //
+          // Better: parameterize via -tl.z as the link:
+          //   tl.x  = cos(dTheta)  (unnormalized)
+          //   tl.z  = -sin(dTheta)
+          //   tl.y  = sin(dPhi) * sin(dTheta) / cos(dPhi)  ... no
+          //
+          // Robust: just build direction from cos/sin, normalize, scale
+          scalar cd = std::cos(dTheta), sd = std::sin(dTheta);
+          scalar cp = std::cos(dPhi),   sp = std::sin(dPhi);
+          // From definitions: tl.x ∝ cd, -tl.z ∝ sd (from dTheta)
+          //                   tl.y ∝ sp, -tl.z ∝ cp (from dPhi)
+          // -tl.z must be consistent: sd and cp should have same sign if angles are consistent
+          // Use -tl.z = sd (from dTheta), then tl.y = sp/cp * sd (from dPhi ratio)
+          // Guard against cp near zero
+          scalar neg_z = sd;
+          scalar tl_x = cd;
+          scalar tl_y = (std::abs(cp) > 0.01f) ? (sp / cp) * neg_z : sp * 100.0f * neg_z;
+          scalar tl_z = -neg_z;
+          // Normalize and scale to dist
+          scalar len = std::sqrt(tl_x*tl_x + tl_y*tl_y + tl_z*tl_z);
+          if (len > 0.001f) {
+            tl_x = tl_x / len * dist;
+            tl_y = tl_y / len * dist;
+            tl_z = tl_z / len * dist;
+          }
 
-      // Calculate relative timestamp in microseconds (same as aircraft states)
-      unsigned long relativeTimeUs = (xiaoMs - spanStartTimeMs) * 1000;
+          // Rotate body->world using quaternion conjugate (earth->body inverted)
+          // q_inv = (w, -x, -y, -z)
+          scalar qi_w = qw, qi_x = -qx, qi_y = -qy, qi_z = -qz;
+          // v' = q * v * q_conj via Rodriguez: v' = v + 2w*(q_xyz × v) + 2*(q_xyz × (q_xyz × v))
+          scalar tx = 2.0f * (qi_y * tl_z - qi_z * tl_y);
+          scalar ty = 2.0f * (qi_z * tl_x - qi_x * tl_z);
+          scalar tz = 2.0f * (qi_x * tl_y - qi_y * tl_x);
+          scalar wx = tl_x + qi_w * tx + (qi_y * tz - qi_z * ty);
+          scalar wy = tl_y + qi_w * ty + (qi_z * tx - qi_x * tz);
+          scalar wz = tl_z + qi_w * tz + (qi_x * ty - qi_y * tx);
 
-      TimestampedVec timestampedVec(vecDir, relativeTimeUs);
-      currentVecPoints.push_back(timestampedVec);
-      currentSpanData.vecs.push_back(timestampedVec);  // Also add to span-specific data
+          // craftToTarget in world frame = (wx, wy, wz)
+          // rabbit_world = aircraft_virtual_pos + craftToTarget
+          // Use latestPos (virtual/relative pos from last Nav State)
+          vec3 rabbitPos(latestPos[0] + wx, latestPos[1] + wy, latestPos[2] + wz);
+          rabbitPos[2] = rabbitPos[2] + SIM_INITIAL_ALTITUDE;
+          currentSpanData.rabbitPoints.push_back(rabbitPos);
 
-      // Store vec and relvel with inavMs timestamp for matching with GP State
-      timestampVecMap[inavMs] = vecDir;
-      timestampRelVelMap[inavMs] = relVel;
+          // Vec direction for error arrows
+          vec3 vecDir(wx, wy, wz);
+          unsigned long relativeTimeUs = (xiaoMs - spanStartTimeMs) * 1000;
+          TimestampedVec timestampedVec(vecDir, relativeTimeUs);
+          currentVecPoints.push_back(timestampedVec);
+          currentSpanData.vecs.push_back(timestampedVec);
+          timestampVecMap[inavMs] = vecDir;
+        }
+      }
     }
 
-    // Parse GP State (position and attitude) - for ALL lines to capture full flight
+    // Parse Nav State (position and attitude) - for ALL lines to capture full flight
     if (std::regex_search(line, matches, stateRe)) {
       // Track flight start time for full flight timing
       if (!flightStartSet) {
@@ -2071,12 +2131,15 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
       vec3 position(pos_raw_n, pos_raw_e, pos_raw_d);  // Raw position (for 'a' all mode)
       vec3 virtualPosition(pos_n, pos_e, pos_d);        // Virtual position (for individual span mode)
 
+      // Track latest virtual position for rabbit reconstruction from NN inputs
+      latestPos = virtualPosition;
+
       // Filter out coincident points, but track mapping for span extraction
       bool addState = blackboxPoints.empty() || (position - blackboxPoints.back()).norm() > static_cast<scalar>(0.01f);
 
-      // Record mapping from GP State line number to actual state index
+      // Record mapping from Nav State line number to actual state index
       // If filtered out, use SIZE_MAX to indicate no state was created
-      gpStateLineToStateIndex.push_back(addState ? fullBlackboxAircraftStates.size() : SIZE_MAX);
+      navStateLineToStateIndex.push_back(addState ? fullBlackboxAircraftStates.size() : SIZE_MAX);
 
       if (addState) {
         blackboxPoints.push_back(position);
@@ -2085,7 +2148,7 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
         // Calculate velocity vector
         vec3 velocity_vector(vel_n, vel_e, vel_d);
 
-        // Use relVel from GP Input if available, otherwise compute from velocity vector
+        // Use relVel from NN line if available, otherwise compute from velocity vector
         scalar speed = velocity_vector.norm();
         if (timestampRelVelMap.find(inavMs) != timestampRelVelMap.end()) {
           speed = timestampRelVelMap[inavMs];
@@ -2194,16 +2257,16 @@ void extractXiaoTestSpans() {
   }
 
   // Regex patterns - updated to match current xiao-gp log format
-  std::regex controlEnableRe(R"(GP Control: Switch enabled - origin NED=\[([-0-9\.]+),\s*([-0-9\.]+),\s*([-0-9\.]+)\])");
-  std::regex controlDisableRe(R"(GP Control:.*(disabled|Autoc disabled))");  // Various ways control can end
-  std::regex stateRe(R"(GP State:)");
+  std::regex controlEnableRe(R"(NN Control: Switch enabled - origin NED=\[([-0-9\.]+),\s*([-0-9\.]+),\s*([-0-9\.]+)\])");
+  std::regex controlDisableRe(R"(Nav Control:.*(disabled|Autoc disabled|path complete))");
+  std::regex stateRe(R"(Nav State:)");
   std::regex autocFlagRe(R"(autoc=(Y|N))");
 
   bool inControlSpan = false;
   bool inAutocSpan = false;
   TestSpan currentSpan;
   vec3 currentOrigin(0.0f, 0.0f, 0.0f);
-  size_t stateIndex = 0;  // GP State line number (not actual state index)
+  size_t stateIndex = 0;  // Nav State line number (not actual state index)
   size_t lastSpanStateIndex = 0;  // Track last actual state index in current span
   std::smatch matches;
 
@@ -2238,13 +2301,13 @@ void extractXiaoTestSpans() {
       continue;
     }
 
-    // Check for GP State line - count ALL states, use mapping to get actual state indices
+    // Check for Nav State line - count ALL states, use mapping to get actual state indices
     if (std::regex_search(line, stateRe)) {
-      // stateIndex is the GP State LINE number (0-based)
-      // Use gpStateLineToStateIndex to get actual state array index
-      if (stateIndex >= gpStateLineToStateIndex.size()) break;
+      // stateIndex is the Nav State LINE number (0-based)
+      // Use navStateLineToStateIndex to get actual state array index
+      if (stateIndex >= navStateLineToStateIndex.size()) break;
 
-      size_t actualStateIndex = gpStateLineToStateIndex[stateIndex];
+      size_t actualStateIndex = navStateLineToStateIndex[stateIndex];
       bool hasActualState = (actualStateIndex != SIZE_MAX);
 
       // Only process span tracking when in control span
@@ -2277,7 +2340,7 @@ void extractXiaoTestSpans() {
         }
       }
 
-      // Always increment GP State line counter
+      // Always increment Nav State line counter
       stateIndex++;
     }
   }

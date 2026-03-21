@@ -58,9 +58,17 @@ Remaining 015 work:
 - Makes NN robust to real-world MSP bus contention and sensor read latency
 - Sim-to-real hardening item — after initial flight test data validates baseline
 
-### [DEFERRED] GPU-Native Evaluation
+### [NEXT] GPU-Native Evaluation — required for 017
 - Accelerate fitness evaluation on GPU (5000 sims/sec vs ~200)
-- Major effort, future research
+- BIG-3 training was ~352M sim evaluations (pop=3000 × 294 scenarios × 400 gens)
+- 017 (vision NN) at ~3K weights needs at minimum the same scale, likely 2-5×
+- Beacon projection adds ~46B projection calls at 400 gens — CPU-only is ~77 min/gen
+- Current crrcsim is single-threaded C++ with OpenGL dependency — not GPU-parallelizable
+- Options: (a) GPU physics sim (CUDA/Vulkan compute), (b) lightweight FDM on GPU with
+  beacon projection fused, (c) hybrid: crrcsim for physics, GPU batch for projection
+- DGX Spark (GB10) may be sufficient for Option (c); Options (a/b) may need larger GPU
+- **Blocking dependency for 017-phase3 at training scale**
+- See: [017 spec](017-visual-target-tracking/spec.md)
 
 ---
 
