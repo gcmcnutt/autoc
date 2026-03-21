@@ -74,7 +74,34 @@
 
 - [ ] T252 [US2] Verify projection alignment: run renderer with BIG-3 tier0-repro eval. Cyan projected path must lie exactly on red actual path. Fix until aligned.
 
-### Flight Data (after sim validation passes)
+### Pre-flight firmware changes (blockers for next flight)
+
+- [ ] T221a Remove MSP_ARM_CYCLE_COUNT delay in `xiao/include/main.h` and `xiao/src/msplink.cpp`:
+  set MSP_ARM_CYCLE_COUNT=0 or remove countdown logic. INAV's own freshness guard (790ms,
+  from `failsafe_recovery_delay=5`) already provides safety — our 200ms delay on top is
+  unnecessary and just means the NN commands for 200ms before INAV listens. Confirmed by
+  latency analysis: all 5 spans show consistent 790ms override activation delay regardless.
+
+- [ ] T221b Use MANUAL flight mode (not ACRO) for NN flights. In ACRO mode, INAV treats
+  RC commands as **rate commands** processed through expo → rate scaling → PID controller →
+  mixer. The sim applies NN output directly to control surfaces. MANUAL mode is closest
+  to sim behavior — rcCommand goes more directly to servos. Set via INAV mode tab or
+  transmitter switch assignment.
+
+- [ ] T221c Refactor to single 20Hz loop in `xiao/src/controller.cpp` and `xiao/src/msplink.cpp`:
+  Remove the separate 50ms ticker ISR. Replace with a single 50ms main loop:
+  - Every tick (50ms): send cached RC commands (heartbeat, keeps INAV >5Hz)
+  - Every Nth tick (N=2 → 10Hz, matching training): fetch MSP state → NN eval →
+    update cache → send RC immediately (same tick, minimal latency)
+  Currently the 10Hz NN eval and 20Hz send ticker are unsynchronized independent timers
+  with ISR bus contention — worst case 49ms wasted latency. Single loop eliminates:
+  - ISR/task bus lock contention (`tryLockMspBusFromIsr` vs `tryLockMspBusFromTask`)
+  - Random 0-49ms send delay after NN eval
+  - `mspSendPending` recovery path
+  Expected: pipeline latency drops from ~48ms to ~5ms on NN ticks.
+  MSP_UPDATE_INTERVAL_MSEC stays 100ms, MSP_SEND_INTERVAL_MSEC stays 50ms.
+  Future: N=1 (20Hz NN) is feasible if MSP fetch+NN+send fits in 50ms (~38ms measured),
+  but would require retraining at 20Hz.
 
 - [ ] T222 [P] [US2] Add rabbit world position to xiao NN log line in `xiao/src/msplink.cpp`: append `rabbit=[x,y,z]` (world-relative) to NN line. Position already computed in `getInterpolatedTargetPosition()`.
 
