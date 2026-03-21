@@ -102,6 +102,11 @@
   MSP_UPDATE_INTERVAL_MSEC stays 100ms, MSP_SEND_INTERVAL_MSEC stays 50ms.
   Future: N=1 (20Hz NN) is feasible if MSP fetch+NN+send fits in 50ms (~38ms measured),
   but would require retraining at 20Hz.
+  **IMPORTANT**: crrcsim has `COMPUTE_LATENCY_MSEC_DEFAULT=40` in `inputdev_autoc.h` —
+  the NN was trained with 40ms delay between sensor sample and command application.
+  Real measured pipeline is ~48ms (close match!). If T221c reduces real latency to ~5ms,
+  must also reduce sim latency to match, OR keep sim at 40ms as conservative margin.
+  Env override: `AUTOC_COMPUTE_LATENCY_MSEC=N`. Decision depends on T221c results.
 
 - [ ] T222 [P] [US2] Add rabbit world position to xiao NN log line in `xiao/src/msplink.cpp`: append `rabbit=[x,y,z]` (world-relative) to NN line. Position already computed in `getInterpolatedTargetPosition()`.
 
