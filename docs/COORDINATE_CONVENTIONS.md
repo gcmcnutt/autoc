@@ -91,10 +91,16 @@ Keep this file updated if additional actuators, sensors, or frames are added.
 - **Transformation applied:** Full conjugate to convert body→earth to earth→body
   - `neuQuaternionToNed()` applies: `gp_quat(q[0], -q[1], -q[2], -q[3])`
   - This conjugate operation inverts the rotation direction as required by the GP contract
-- **Board alignment:** INAV applies sensor→body rotation BEFORE quaternion formation
-  - Current config: `align_board_roll=1700, align_board_yaw=900`
-  - Compensates for IMU mounted upside-down, rotated 90° (sensor X-axis → right wing)
-  - After alignment, quaternion is in aircraft body frame (not sensor frame)
+- **Board alignment:** INAV applies sensor→body rotation at the RAW SENSOR level
+  (`applyBoardAlignment()` in `gyro.c:439`, `acceleration.c:564`) BEFORE IMU quaternion
+  fusion. The resulting MSP quaternion is always in **aircraft body frame**, not sensor frame.
+  - Board alignment compensates for physical IMU mounting orientation
+  - **Flight hardware**: `align_board_yaw=0` (IMU aligned with aircraft, no rotation)
+  - **Bench hardware**: `align_board_roll=1700, align_board_yaw=900` (IMU upside-down, rotated)
+  - Downstream code (xiao, renderer) does NOT need to apply board alignment — it's already
+    baked into the quaternion by INAV at the sensor level
+  - The 138° heading offset seen on bench tests was due to bench-specific board alignment,
+    not a pipeline bug
 - **INAV Configurator UI:** Shows **negative pitch** for nose up (cosmetic display choice only)
 
 #### GP/CRRCSim Contract (Standard NED/FRD)

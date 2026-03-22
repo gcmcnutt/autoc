@@ -2053,9 +2053,9 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
             tl_z = tl_z / len * dist;
           }
 
-          // Rotate body->world using quaternion conjugate (earth->body inverted)
-          // q_inv = (w, -x, -y, -z)
-          scalar qi_w = qw, qi_x = -qx, qi_y = -qy, qi_z = -qz;
+          // Rotate body->world: Hamilton q*v*q_conj with earth->body quat
+          // applied to body vector gives world vector (no conjugation needed)
+          scalar qi_w = qw, qi_x = qx, qi_y = qy, qi_z = qz;
           // v' = q * v * q_conj via Rodriguez: v' = v + 2w*(q_xyz × v) + 2*(q_xyz × (q_xyz × v))
           scalar tx = 2.0f * (qi_y * tl_z - qi_z * tl_y);
           scalar ty = 2.0f * (qi_z * tl_x - qi_x * tl_z);
@@ -3999,21 +3999,22 @@ void Renderer::updatePlaybackAnimation() {
           std::vector<vec3> visibleRabbitPoints(rabbitPoints.begin(), rabbitPoints.begin() + numPointsToShow);
           this->paths->AddInputData(createPointSet(blackboxOffset, visibleRabbitPoints));
 
-          // Render animated error bars connecting visible blackbox positions to rabbit points
+          // Render animated error bars connecting visible states to rabbit points
+          // In xiao-only mode, states and rabbit points are 1:1 (both from 10Hz NN ticks)
+          // Use stable step based on total span size to prevent rearrangement during animation
           size_t numVisibleStates = static_cast<size_t>(blackboxAircraftStates.size() * blackboxProgress);
           if (numVisibleStates > 0 && numPointsToShow > 0) {
             vtkSmartPointer<vtkPolyData> segmentData = vtkSmartPointer<vtkPolyData>::New();
             vtkSmartPointer<vtkPoints> segmentPoints = vtkSmartPointer<vtkPoints>::New();
             vtkSmartPointer<vtkCellArray> segmentLines = vtkSmartPointer<vtkCellArray>::New();
 
-            size_t numRabbit = numPointsToShow;
-
-            // Sample every Nth state to reduce clutter (show ~20-50 error bars)
-            size_t step = std::max(static_cast<size_t>(1), numVisibleStates / 50);
+            // Stable step from total size — never changes during animation
+            size_t totalStates = blackboxAircraftStates.size();
+            size_t step = std::max(static_cast<size_t>(1), totalStates / 50);
 
             for (size_t i = 0; i < numVisibleStates; i += step) {
-              size_t rabbitIdx = (i * numRabbit) / numVisibleStates;
-              if (rabbitIdx >= numRabbit) rabbitIdx = numRabbit - 1;
+              // Direct 1:1 mapping — state i corresponds to rabbit point i
+              size_t rabbitIdx = std::min(i, numPointsToShow - 1);
 
               vec3 statePos = blackboxAircraftStates[i].getPosition() + blackboxOffset;
               vec3 rabbitPos = visibleRabbitPoints[rabbitIdx] + blackboxOffset;

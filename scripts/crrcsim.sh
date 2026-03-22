@@ -18,7 +18,7 @@ mkdir -p "${CRRCSIM_LOGDIR}"
 
 case "$INSTANCE" in
   *)
-    DISPLAY=:2
+    DISPLAY=:1
     ;;
 esac
 
