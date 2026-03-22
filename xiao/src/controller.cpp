@@ -11,18 +11,30 @@ void controllerSetup()
 {
 }
 
+// Single 20Hz loop (MSP_LOOP_INTERVAL_MSEC = 50ms).
+// Every tick: send cached RC commands to INAV (heartbeat + command delivery).
+// Every Nth tick: fetch INAV state, run NN eval, update cache, THEN send.
+// This eliminates the separate ISR ticker and its 0-50ms send jitter.
+static unsigned long lastLoopTime = 0;
+static int loopCounter = 0;
+
 void controllerUpdate()
 {
-  // Unified timing loop - 100ms sensor/NN updates (10Hz, matches sim)
-  static unsigned long lastUpdateTime = 0;
   unsigned long now = millis();
 
-  // 100ms cycle: Update sensors and NN control
-  if (now - lastUpdateTime >= MSP_UPDATE_INTERVAL_MSEC)
+  if (now - lastLoopTime >= MSP_LOOP_INTERVAL_MSEC)
   {
-    lastUpdateTime = now;
-    
-    // Update sensor data, aircraft state, and GP control (all integrated)
-    mspUpdateState();
+    lastLoopTime = now;
+
+    if ((loopCounter % MSP_NN_EVAL_DIVISOR) == 0)
+    {
+      // NN tick: fetch state, eval NN, update cache, send immediately
+      mspUpdateState();    // fetches INAV state, runs NN, caches RC commands
+    }
+
+    // Every tick: send cached RC commands (heartbeat or fresh from NN eval above)
+    mspSetControls();
+
+    loopCounter++;
   }
 }

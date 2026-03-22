@@ -19,15 +19,17 @@ struct AircraftState;
 #define HEARTBEAT_LED RED_PIN
 #define BLINK_INTERVAL_MSEC 250
 
-#define MSP_UPDATE_INTERVAL_MSEC 100
-#define MSP_SEND_INTERVAL_MSEC 50
+// Single unified loop interval: 50ms (20Hz). Every tick sends cached RC commands.
+// Every Nth tick (N = MSP_NN_EVAL_DIVISOR) also fetches state and runs NN eval.
+#define MSP_LOOP_INTERVAL_MSEC 50
+#define MSP_NN_EVAL_DIVISOR 2     // NN eval every 2nd tick = 10Hz (matches training)
 #define MSP_REPLY_TIMEOUT_MSEC 50
 #define MSP_LOS_INTERVAL_MSEC 2000
 
 #define MSP_DEFAULT_CHANNEL_VALUE 1500
 #define MSP_ARM_CHANNEL 8
 #define MSP_ARMED_THRESHOLD 1600
-#define MSP_ARM_CYCLE_COUNT 2
+#define MSP_ARM_CYCLE_COUNT 0     // No delay — INAV's 790ms freshness guard is sufficient
 #define MSP_PATH_SELECT_CHANNEL 9  // INAV RC channel 10 → MSP array index 9 (6-position switch: 1000-2000 → paths 0-5)
 
 // MSP flight mode flags

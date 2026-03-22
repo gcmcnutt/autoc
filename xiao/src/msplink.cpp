@@ -36,10 +36,9 @@ static volatile int cached_throttle_cmd = MSP_DEFAULT_CHANNEL_VALUE;
 static volatile uint32_t cached_cmd_sequence = 0;
 static volatile uint32_t cached_eval_start_us = 0;
 static volatile uint32_t cached_eval_complete_us = 0;
+// Re-entry guard — prevents overlapping MSP transactions if NN eval exceeds one loop tick.
+// No ISR contention (ticker removed), but MSP fetch + NN eval could exceed 50ms.
 static volatile bool mspBusLocked = false;
-static volatile bool mspSendPending = false;
-static mbed::Ticker mspSendTicker;
-static bool mspSendTickerRunning = false;
 
 static constexpr gp_scalar GP_RAD_TO_DEG = static_cast<gp_scalar>(57.2957795f);
 static constexpr gp_scalar GP_HALF_PI = static_cast<gp_scalar>(1.57079633f);
@@ -73,16 +72,9 @@ static bool was_system_armed = false;
 static void updateCachedCommands(int roll, int pitch, int throttle, uint32_t evalStartUs);
 static bool tryLockMspBusFromTask();
 static bool lockMspBusBlockingFromTask();
-static bool releaseMspBusFromTask();
-static void servicePendingMspSendFromTask();
-static void attemptImmediateMspSendFromTask();
+static void releaseMspBusFromTask();
 static bool performMspRequest(uint16_t command, void *buffer, size_t size);
-static bool tryLockMspBusFromIsr();
-static void unlockMspBusFromIsr();
 static void performMspSendLocked();
-static void mspSendTimerHandler();
-static void startMspSendTicker();
-static void stopMspSendTicker();
 static void recordMspSendEvent();
 static void resetMspSendStats();
 static void logMspSendStats();
@@ -98,8 +90,6 @@ static void stopAutoc(const char *reason, bool requireServoReset)
   bool wasAutoc = state.autoc_enabled;
   bool wasRabbit = rabbit_active;
   bool latchBefore = servo_reset_required;
-  bool tickerWasRunning = mspSendTickerRunning;
-
   state.autoc_enabled = false;
   rabbit_active = false;
   test_origin_set = false;
@@ -111,11 +101,6 @@ static void stopAutoc(const char *reason, bool requireServoReset)
   if (requireServoReset)
   {
     servo_reset_required = true;
-  }
-
-  if (tickerWasRunning)
-  {
-    stopMspSendTicker();
   }
 
   if (wasAutoc || wasRabbit || (requireServoReset && !latchBefore))
@@ -244,7 +229,7 @@ static void mspUpdateNavControl()
     const float* in = aircraft_state.getNNInputs();
     const float* out = aircraft_state.getNNOutputs();
     logPrint(INFO,
-             "NN: idx=%d in=[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d]",
+             "NN: idx=%d in=[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d] rabbit=[%.2f,%.2f,%.2f]",
              current_path_index,
              in[0], in[1], in[2], in[3], in[4], in[5],       // dPhi history+forecast
              in[6], in[7], in[8], in[9], in[10], in[11],     // dTheta history+forecast
@@ -255,7 +240,8 @@ static void mspUpdateNavControl()
              in[24], in[25],                                   // alpha, beta
              in[26], in[27], in[28],                           // cmd feedback
              out[0], out[1], out[2],                           // NN outputs (tanh)
-             roll_cmd, pitch_cmd, throttle_cmd);               // RC commands
+             roll_cmd, pitch_cmd, throttle_cmd,                // RC commands
+             targetPos.x(), targetPos.y(), targetPos.z());     // rabbit world position (origin-relative)
   }
 }
 
@@ -272,8 +258,7 @@ void msplinkSetup()
     state.command_buffer.channel[i] = MSP_DEFAULT_CHANNEL_VALUE;
   }
 
-  // Start periodic MSP send timer
-  startMspSendTicker();
+  // No ticker — single 20Hz loop in controllerUpdate() handles sends
   resetMspSendStats();
 }
 
@@ -428,7 +413,7 @@ void mspUpdateState()
       rabbit_start_time = millis();
       rabbit_active = true;
       resetMspSendStats();
-      startMspSendTicker();
+      // No ticker — single 20Hz loop in controllerUpdate() handles sends
       current_path_index = 0;
 
       state.autoc_enabled = true;
@@ -509,20 +494,23 @@ void mspUpdateState()
 
 void mspSetControls()
 {
-  attemptImmediateMspSendFromTask();
+  if (!rabbit_active)
+  {
+    return;
+  }
+  performMspSendLocked();
 }
 
 static void updateCachedCommands(int roll, int pitch, int throttle, uint32_t evalStartUs)
 {
   uint32_t evalEndUs = micros();
-  noInterrupts();
+  // No ISR contention — single-threaded 20Hz loop
   cached_roll_cmd = roll;
   cached_pitch_cmd = pitch;
   cached_throttle_cmd = throttle;
   cached_eval_start_us = evalStartUs;
   cached_eval_complete_us = evalEndUs;
   cached_cmd_sequence++;
-  interrupts();
 }
 
 static bool tryLockMspBusFromTask()
@@ -553,59 +541,9 @@ static bool lockMspBusBlockingFromTask()
   return true;
 }
 
-static bool releaseMspBusFromTask()
+static void releaseMspBusFromTask()
 {
-  bool pendingSend = false;
-  noInterrupts();
   mspBusLocked = false;
-  pendingSend = mspSendPending;
-  mspSendPending = false;
-  interrupts();
-  return pendingSend;
-}
-
-static void servicePendingMspSendFromTask()
-{
-  while (rabbit_active)
-  {
-    if (!tryLockMspBusFromTask())
-    {
-      noInterrupts();
-      mspSendPending = true;
-      interrupts();
-      return;
-    }
-
-    performMspSendLocked();
-    bool morePending = releaseMspBusFromTask();
-    if (!morePending)
-    {
-      return;
-    }
-  }
-}
-
-static void attemptImmediateMspSendFromTask()
-{
-  if (!rabbit_active)
-  {
-    return;
-  }
-
-  if (!tryLockMspBusFromTask())
-  {
-    noInterrupts();
-    mspSendPending = true;
-    interrupts();
-    return;
-  }
-
-  performMspSendLocked();
-  bool pending = releaseMspBusFromTask();
-  if (pending)
-  {
-    servicePendingMspSendFromTask();
-  }
 }
 
 static bool performMspRequest(uint16_t command, void *buffer, size_t size)
@@ -615,27 +553,8 @@ static bool performMspRequest(uint16_t command, void *buffer, size_t size)
     return false;
   }
   bool success = msp.request(command, buffer, size);
-  bool pending = releaseMspBusFromTask();
-  if (pending)
-  {
-    servicePendingMspSendFromTask();
-  }
+  releaseMspBusFromTask();
   return success;
-}
-
-static bool tryLockMspBusFromIsr()
-{
-  if (mspBusLocked)
-  {
-    return false;
-  }
-  mspBusLocked = true;
-  return true;
-}
-
-static void unlockMspBusFromIsr()
-{
-  mspBusLocked = false;
 }
 
 static void performMspSendLocked()
@@ -645,23 +564,6 @@ static void performMspSendLocked()
   state.command_buffer.channel[2] = cached_throttle_cmd;
   msp.send(MSP_SET_RAW_RC, &state.command_buffer, sizeof(state.command_buffer));
   recordMspSendEvent();
-}
-
-static void mspSendTimerHandler()
-{
-  if (!rabbit_active)
-  {
-    return;
-  }
-
-  if (!tryLockMspBusFromIsr())
-  {
-    mspSendPending = true;
-    return;
-  }
-
-  performMspSendLocked();
-  unlockMspBusFromIsr();
 }
 
 static void recordMspSendEvent()
@@ -728,7 +630,7 @@ static void logMspSendStats()
   gp_scalar intervalMaxMs = 0.0f;
   uint32_t intervalCount = 0;
   uint32_t lateIntervals = 0;
-  const uint32_t desiredIntervalUs = MSP_SEND_INTERVAL_MSEC * 1000UL;
+  const uint32_t desiredIntervalUs = MSP_LOOP_INTERVAL_MSEC * 1000UL;
   const uint32_t lateThresholdUs = desiredIntervalUs + 20000UL; // allow 20ms slack (70ms total)
 
   gp_scalar latencyStartSumMs = 0.0f;
@@ -899,57 +801,4 @@ int convertThrottleToMSPChannel(gp_scalar gp_command)
   gp_scalar clamped = CLAMP_DEF(gp_command, -1.0f, 1.0f);
   return (int)(1500.0f + clamped * 500.0f);
 }
-static void startMspSendTicker()
-{
-  noInterrupts();
-  if (!mspSendTickerRunning)
-  {
-    mspSendTicker.attach_us(mbed::callback(mspSendTimerHandler), MSP_SEND_INTERVAL_MSEC * 1000);
-    mspSendTickerRunning = true;
-  }
-  interrupts();
-}
-
-static void stopMspSendTicker()
-{
-  bool isrActive = false;
-  noInterrupts();
-  if (mspSendTickerRunning)
-  {
-    mspSendTicker.detach();
-    mspSendTickerRunning = false;
-  }
-  if (mspBusLocked)
-  {
-    isrActive = true;
-  }
-  else
-  {
-    mspBusLocked = true; // prevent ISR from entering while we flush
-  }
-  interrupts();
-
-  if (isrActive)
-  {
-    // Busy-wait until ISR releases the lock (should be very short)
-    while (true)
-    {
-      noInterrupts();
-      bool locked = mspBusLocked;
-      if (!locked)
-      {
-        mspBusLocked = true;
-        interrupts();
-        break;
-      }
-      interrupts();
-      delayMicroseconds(10);
-    }
-  }
-
-  // At this point we own the lock exclusively; safe to disable pending flag
-  noInterrupts();
-  mspSendPending = false;
-  mspBusLocked = false;
-  interrupts();
-}
+// Ticker infrastructure removed — single 20Hz loop in controllerUpdate() handles all sends.
