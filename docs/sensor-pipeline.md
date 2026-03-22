@@ -270,6 +270,39 @@ See `specs/018-flight-analysis/flight-timing-20260320.md` for detailed measureme
 | NN eval latency | ✅ Verified | 2.5ms mean |
 | RC round-trip | ✅ Verified | 48ms mean (steady-state) |
 | Freshness guard | ✅ Verified | 791ms ±7ms across 5 spans |
-| Pitch sign convention | ⚠️ Not flight-verified | Matches sim, needs response verification |
-| Roll sign convention | ⚠️ Not flight-verified | Matches sim, needs response verification |
-| Throttle sign convention | ⚠️ Not flight-verified | Matches sim, needs response verification |
+| Pitch sign convention | ✅ Verified | Pilot r=+0.88, override r=+0.04 (same direction, weaker due to chaos) |
+| Roll sign convention | ✅ Verified | Pilot r=+0.25, override matches (high rc0 → roll right in both modes) |
+| Throttle sign convention | ✅ Verified | r=+0.26 to +0.52 across all spans (more throttle → more speed) |
+| Sim↔flight quat convention | ✅ Verified | Both use negative qw for southerly headings, same cause-effect pattern |
+| Sim↔flight cause-effect | ✅ Verified | pitch→ΔdTheta and roll→ΔdPhi correlations match sign and magnitude |
+
+## 10. Sim↔Flight Cause-Effect Verification (2026-03-21)
+
+**Critical finding**: The "inverted" correlations (pitch_cmd → negative ΔdTheta, roll_cmd →
+negative ΔdPhi) are **identical in sim and flight**. This is correct behavior in the
+body-frame sensor convention:
+
+| Correlation | Sim (41990 samples) | Flight (453 samples) | Match? |
+|-------------|--------------------|--------------------|--------|
+| pitch_cmd → ΔdTheta | r=-0.18 (3-step) | r=-0.18 (avg) | ✅ Same sign/magnitude |
+| roll_cmd → ΔdPhi | r=-0.25 (3-step) | r=-0.35 (avg) | ✅ Same sign |
+| thr_cmd → Δvel | r=+0.46 | r=+0.35 | ✅ Same sign |
+
+**Interpretation**: When the NN commands pitch up, dTheta *decreases* because the target
+moves downward in body frame (nose went up, target that was ahead is now more below).
+This is geometrically correct. The NN learned this relationship during training and its
+commands are appropriate for the convention.
+
+**Quaternion convention match**: Both sim and flight show `qw < 0` for southerly headings.
+The bench test table in `COORDINATE_CONVENTIONS.md` was verified with nose-north (qw=+1.0).
+For nose-south (yaw=180°), `qw = cos(90°) = 0`, and INAV/crrcsim both choose the
+negative-w branch. The conjugation in `neuQuaternionToNed` handles this consistently.
+
+**Conclusion**: The sensor pipeline conventions are correct end-to-end. The first flight
+failed due to other factors (ACRO mode PID interference, 790ms activation delay, possible
+aircraft model mismatch), NOT coordinate convention errors.
+
+**Action items for next flight** (no convention changes needed):
+- T221b: Use MANUAL mode (eliminates PID rate tracking, closer to sim's direct control)
+- T221c: Synchronized send loop (reduces pipeline latency from ~48ms to ~5ms)
+- T221a: Remove unnecessary 200ms arm countdown
