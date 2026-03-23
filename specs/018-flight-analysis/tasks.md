@@ -262,6 +262,34 @@ slew rate limiting. Real aircraft response is additionally smoothed by this filt
   matching INAV's `pt3FilterApply` with same cutoff frequency. This trains the NN to
   anticipate the smoothing and command accordingly.
 
+### Flight hardware config findings (2026-03-22 flight had these ACTIVE, now disabled):
+- `rc_filter_auto = ON`, `rc_filter_lpf_hz = 50` → PT3 filter was active, added ~30-35ms
+  **NOW DISABLED**: `rc_filter_auto = OFF`, `rc_filter_lpf_hz = 250`
+- `manual_rc_expo = 35` → non-linear center-stick deadening, unmodeled in sim
+  **NOW DISABLED**: `manual_rc_expo = 0`
+- These two changes should reduce attitude response from ~81ms to ~45-50ms
+
+### Pipeline timing (bench-measured T273a):
+- MSP fetch: 34.9ms avg (serial at 115200, multiple requests)
+- NN eval: 4.5ms avg
+- MSP send: 10.1ms avg
+- Total: 49.4ms avg
+- Interval: 101.7ms avg (rock solid 100ms cycle)
+- Flight attitude response (with old filter+expo): 81ms (55ms beyond RC delivery)
+- Expected with filter/expo disabled: ~45-50ms (close to CRRCSim's 40ms)
+
+### Sim calibration approach:
+Two independent calibrations:
+1. **hb1.xml aerodynamics** — measure from blackbox `servo → attitude` response.
+   Flying wing: servo[0,1] are elevons (mixed pitch+roll). De-mix first:
+   `pitch_deflection = (servo[0] + servo[1]) / 2`
+   `roll_deflection = (servo[0] - servo[1]) / 2`
+   Then measure rate per unit deflection at various airspeeds. Check mixer
+   coefficients match between INAV config and crrcsim hb1.xml.
+2. **COMPUTE_LATENCY** — measured at 49ms (bench). With INAV filter/expo disabled,
+   this is the dominant delay. CRRCSim's 40ms is close. Could increase to 50ms or
+   keep as slight conservative margin.
+
 ### Notes from flight analysis
 - Streamer: 25ft crepe adds significant parasitic drag and pitch damping. The craft
   can lose the streamer mid-flight, changing dynamics. Consider this as an aircraft
