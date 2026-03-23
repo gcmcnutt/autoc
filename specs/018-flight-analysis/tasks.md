@@ -76,19 +76,19 @@
 
 ### Pre-flight firmware changes (blockers for next flight)
 
-- [ ] T221a Remove MSP_ARM_CYCLE_COUNT delay in `xiao/include/main.h` and `xiao/src/msplink.cpp`:
+- [x] T221a Remove MSP_ARM_CYCLE_COUNT delay in `xiao/include/main.h` and `xiao/src/msplink.cpp`:
   set MSP_ARM_CYCLE_COUNT=0 or remove countdown logic. INAV's own freshness guard (790ms,
   from `failsafe_recovery_delay=5`) already provides safety — our 200ms delay on top is
   unnecessary and just means the NN commands for 200ms before INAV listens. Confirmed by
   latency analysis: all 5 spans show consistent 790ms override activation delay regardless.
 
-- [ ] T221b Use MANUAL flight mode (not ACRO) for NN flights. In ACRO mode, INAV treats
+- [x] T221b Use MANUAL flight mode (not ACRO) for NN flights. In ACRO mode, INAV treats
   RC commands as **rate commands** processed through expo → rate scaling → PID controller →
   mixer. The sim applies NN output directly to control surfaces. MANUAL mode is closest
   to sim behavior — rcCommand goes more directly to servos. Set via INAV mode tab or
   transmitter switch assignment.
 
-- [ ] T221c Refactor to single 20Hz loop in `xiao/src/controller.cpp` and `xiao/src/msplink.cpp`:
+- [x] T221c Refactor to single 20Hz loop in `xiao/src/controller.cpp` and `xiao/src/msplink.cpp`:
   Remove the separate 50ms ticker ISR. Replace with a single 50ms main loop:
   - Every tick (50ms): send cached RC commands (heartbeat, keeps INAV >5Hz)
   - Every Nth tick (N=2 → 10Hz, matching training): fetch MSP state → NN eval →
@@ -108,7 +108,7 @@
   must also reduce sim latency to match, OR keep sim at 40ms as conservative margin.
   Env override: `AUTOC_COMPUTE_LATENCY_MSEC=N`. Decision depends on T221c results.
 
-- [ ] T222 [P] [US2] Add rabbit world position to xiao NN log line in `xiao/src/msplink.cpp`: append `rabbit=[x,y,z]` (world-relative) to NN line. Position already computed in `getInterpolatedTargetPosition()`.
+- [x] T222 [P] [US2] Add rabbit world position to xiao NN log line in `xiao/src/msplink.cpp`: append `rabbit=[x,y,z]` (world-relative) to NN line. Position already computed in `getInterpolatedTargetPosition()`.
 
 - [ ] T222b [US2] Bench test rabbit logging: upload firmware, run bench test with path 0, verify rabbit position in log follows expected StraightAndLevel path geometry (20m south, 180° turn, 40m north). Cross-check first/last rabbit position against path definition.
 
@@ -217,6 +217,86 @@
 - [ ] T274 [US6] Sample rate increase feasibility: evaluate 10Hz→20Hz xiao MSP poll rate. Check MSP bandwidth, NN eval budget, INAV state update rate. Document trade-offs.
 
 **Checkpoint**: Timing characterized. Jitter injection implemented if needed.
+
+---
+
+## Phase 8b: Post-Flight Analysis — 2026-03-22 (Priority: P1)
+
+**Goal**: Triangulate AHRS accuracy, flight dynamics, and sim fidelity from the
+second flight data. No ground truth video — infer from multiple data sources.
+Key assumption: craft is roughly level heading south when autoc enables.
+
+### Q1: AHRS Accuracy — Is reported attitude where the craft actually was?
+
+- [ ] T290 [P] GPS ground track vs AHRS heading: during straight-ish flight (between
+  test spans), compare `atan2(navVel[1], navVel[0])` to quaternion yaw. Consistent
+  offset = magnetometer bias. Varying offset = AHRS drift or sideslip. Plot over time.
+
+- [ ] T291 [P] Bank angle vs turn rate: during turns, GPS trajectory curvature implies
+  a specific bank angle (`phi = atan(v² / (R*g))`). Compare to AHRS-reported roll.
+  If AHRS says 30° bank but GPS curvature implies 45°, AHRS is underreporting.
+
+- [ ] T292 [P] Gravity vector check: in between test spans (pilot flying level), the
+  accelerometer should read ~[0, 0, -g] in body frame. Compute `q * [0,0,-g] * q_conj`
+  and compare to `accSmooth[0-2]`. Difference = AHRS tilt error.
+
+- [ ] T293 [P] Altitude consistency: compare barometric altitude (BaroAlt) to GPS
+  altitude (navPos[2]) to NN-reported Z. Do they agree? If baro drifts differently
+  from GPS, position fusion may be compromised during test spans.
+
+- [ ] T294 Pre-test attitude: for each span, capture attitude at NN enable and compare
+  to expected (~level, ~180° heading). If the pilot has the craft roughly south and
+  level, attitude should confirm. Large deviation = AHRS was already wrong.
+
+### Q2: Flight Dynamics — Do control inputs produce expected responses?
+
+- [ ] T295 [P] Per-axis rate gain: for each test span, compute attitude rate (deg/s)
+  per unit RC deviation from 1500. Compare across spans. Is roll gain consistent?
+  Is pitch gain consistent? Or does it vary wildly (suggesting the craft was in
+  different flight regimes / the NN was saturating)?
+
+- [ ] T296 [P] Z-axis investigation: span 1 (racetrack) and span 3 (spiral climb) should
+  both show altitude changes from NN throttle commands. Check if pitch-up + throttle
+  produces climb or dive. If two spans show opposite Z results, determine if:
+  - NN commanded different directions (check rc values)
+  - Same commands produced opposite Z response (dynamics or AHRS issue)
+  - The craft was inverted (quat analysis)
+
+- [ ] T297 [P] IMU tumble detection: scan quaternion history for signs of gimbal lock
+  or heading reversal. Look for: qw crossing zero, heading jumping >90° between ticks,
+  roll exceeding ±90° without corresponding GPS trajectory change.
+
+- [ ] T298 Recovery behavior: when the craft goes out of tolerance (>30° from expected),
+  does the NN attempt to recover? Or does it go degenerate (pegged outputs)? This
+  informs whether we need a recovery training phase or just better dynamics matching.
+
+### Q3: Sim Fidelity — How close is hb1.xml to the real craft?
+
+- [ ] T299 [P] Compare attitude rates: from `eval-data.dat`, compute typical pitch rate
+  and roll rate per unit NN command in sim. Compare to flight measurements from T295.
+  Express as ratio: `real_rate / sim_rate`. If >2× or <0.5×, the sim model is far off.
+
+- [ ] T300 [P] Compare speed/altitude envelope: sim typical speed range, climb rate at
+  full throttle, descent rate at idle. Compare to flight GPS speed and altitude rates.
+  Is the real craft faster/slower? Does it climb/descend at different rates?
+
+- [ ] T301 [P] Input scaling comparison: verify that sim NN output [-1,1] → crrcsim
+  elevator/aileron/throttle produces the same effective deflection as NN output [-1,1]
+  → INAV RC override → MANUAL mode → servo. There may be an INAV rate/expo scaling
+  that makes real commands weaker or stronger than sim commands.
+
+- [ ] T302 hb1.xml parameter review: list the key parameters in
+  `crrcsim/models/hb1.xml` (mass, wing area, CL/CD, control effectiveness, thrust)
+  and compare to known/estimated values for the real aircraft. Flag any obviously
+  wrong parameters.
+
+- [ ] T303 Diagnostic script: create `specs/018-flight-analysis/flight_dynamics.py`
+  that reads both `eval-data.dat` (sim) and flight INAV CSV + xiao log, produces
+  side-by-side comparison charts for each axis: command → rate, speed envelope,
+  altitude rate vs throttle.
+
+**Checkpoint**: Error circles narrowed — AHRS accuracy quantified, dynamics mismatch
+measured as ratios, sim calibration gaps identified with specific parameters to adjust.
 
 ---
 

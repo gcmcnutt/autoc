@@ -2,7 +2,8 @@ build/
 logs/
 *.dat
 *.stc
-*.csv
+# Ignore CSVs in root (decoded blackbox) but not in flight-results/
+/*.csv
 nn_weights.dat
 nohup.out
 core.*
