@@ -435,12 +435,19 @@ measured as ratios, sim calibration gaps identified with specific parameters to 
 - Two flights analyzed, conventions confirmed correct
 
 ### Before next training run
-1. **T223** — Parse direct rabbit in renderer (replaces singularity-prone projection)
-2. **T273** — Sim latency calibration: `COMPUTE_LATENCY_MSEC` 40ms → 10ms, add jitter ±5ms
-3. **T295/T299** — Rate gain: measure flight °/s per unit command, compare to sim ratio
-4. **T301** — INAV MANUAL mode scaling: verify no hidden rate/expo distorting commands
-5. **T302** — hb1.xml parameter audit: list key params, compare to real aircraft
-6. **T244** — Update hb1.xml control effectiveness (~0.7× current) and thrust curve
+1. [x] **T223** — Direct rabbit in renderer (done — magenta spheres)
+2. [x] **T273a** — Pipeline timing instrumented (fetch=35ms eval=4.5ms send=10ms total=49ms)
+3. [x] **T301** — INAV MANUAL mode: confirmed linear (rate=100, expo NOW 0, filter NOW off)
+4. [ ] **T273g** — Bench servo response: run autoc on flight hardware with blackbox at 1/8 rate.
+   Measure NN command → servo[0,1] step response. No filter/expo. Characterize servo
+   actuator delay and slew rate. Compare to crrcsim's slew model.
+5. [ ] **T295/T299** — Rate gain from flight data: de-mix elevons, measure servo→attitude
+   rate at various airspeeds. Compare to crrcsim eval-data.dat. Express as ratio.
+6. [ ] **T302** — hb1.xml parameter audit: git log shows earlier tuning. Review key params
+   (mass, CL/CD, control effectiveness, thrust) vs known aircraft specs + streamer drag.
+7. [ ] **T273b** — Update COMPUTE_LATENCY based on T273a (49ms measured, 40ms current).
+   With filter/expo disabled, 40ms is close. May keep as-is or bump to 50ms.
+8. [ ] **T244** — Update hb1.xml with measured ratios from T295/T299.
 
 ### Before next flight
 7. **T240-T242** — Formal pitch/roll/throttle characterization scripts
