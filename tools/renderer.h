@@ -34,6 +34,7 @@
 #include <vtkLineSource.h>
 #include <vtkArrowSource.h>
 #include <vtkSphereSource.h>
+#include <vtkGlyph3D.h>
 #include <vtkTransform.h>
 #include <vtkTransformPolyDataFilter.h>
 #include <vtkAppendPolyData.h>
@@ -158,8 +159,10 @@ private:
   vtkSmartPointer<vtkAppendPolyData> blackboxTapes;
   vtkSmartPointer<vtkAppendPolyData> blackboxHighlightTapes;  // For highlighted test spans
   vtkSmartPointer<vtkAppendPolyData> xiaoVecArrows;  // For xiao vec vectors
+  vtkSmartPointer<vtkAppendPolyData> directRabbitData;  // Direct rabbit from log rabbit=[x,y,z]
 
   vtkSmartPointer<vtkActor> actor1;
+  vtkSmartPointer<vtkActor> directRabbitActor;  // Magenta tube for direct rabbit ground truth
   vtkSmartPointer<vtkActor> actor2;
   vtkSmartPointer<vtkActor> actor3;
   vtkSmartPointer<vtkActor> blackboxActor;

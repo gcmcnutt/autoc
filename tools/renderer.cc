@@ -69,7 +69,8 @@ struct TimestampedVec {
 struct SpanData {
   vec3 origin;
   std::vector<TimestampedVec> vecs;
-  std::vector<vec3> rabbitPoints;  // Goal path points (rabbit positions with Z offset)
+  std::vector<vec3> rabbitPoints;       // Projected rabbit (from NN body-frame inverse projection)
+  std::vector<vec3> directRabbitPoints;  // Direct rabbit position (from rabbit=[x,y,z] in log)
   size_t startStateIdx;
   size_t endStateIdx;
   int pathIndex;  // Path index from Nav State (0-5), -1 if not set
@@ -328,6 +329,8 @@ bool Renderer::updateGenerationDisplay(int newGen) {
 
   // Clear the existing data
   this->paths->RemoveAllInputs();
+  this->directRabbitData->RemoveAllInputs();
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->directRabbitData->AddInputData(e); }
   this->actuals->RemoveAllInputs();
   this->segmentGaps->RemoveAllInputs();
   this->planeData->RemoveAllInputs();
@@ -941,6 +944,7 @@ void Renderer::initialize() {
   blackboxTapes = vtkSmartPointer<vtkAppendPolyData>::New();
   blackboxHighlightTapes = vtkSmartPointer<vtkAppendPolyData>::New();
   xiaoVecArrows = vtkSmartPointer<vtkAppendPolyData>::New();
+  directRabbitData = vtkSmartPointer<vtkAppendPolyData>::New();
 
   // Temporary until first update
   vtkNew<vtkPolyData> emptyPolyData;
@@ -955,6 +959,7 @@ void Renderer::initialize() {
   blackboxTapes->AddInputData(emptyPolyData);
   blackboxHighlightTapes->AddInputData(emptyPolyData);
   xiaoVecArrows->AddInputData(emptyPolyData);
+  directRabbitData->AddInputData(emptyPolyData);
 
   // Update planeData to ensure it has an input port
   planeData->Update();
@@ -972,6 +977,21 @@ void Renderer::initialize() {
   tubeFilter1->SetRadius(0.2);
   tubeFilter1->SetNumberOfSides(10);
   mapper1->SetInputConnection(tubeFilter1->GetOutputPort());
+
+  // Direct rabbit: magenta spheres 1.25x red pipe radius (ground truth cross-check)
+  vtkNew<vtkSphereSource> directRabbitSphere;
+  directRabbitSphere->SetRadius(0.28);  // 1.4x red pipe radius (0.2)
+  directRabbitSphere->SetPhiResolution(8);
+  directRabbitSphere->SetThetaResolution(8);
+  vtkNew<vtkGlyph3D> directRabbitGlyphs;
+  directRabbitGlyphs->SetInputConnection(directRabbitData->GetOutputPort());
+  directRabbitGlyphs->SetSourceConnection(directRabbitSphere->GetOutputPort());
+  vtkNew<vtkPolyDataMapper> directRabbitMapper;
+  directRabbitMapper->SetInputConnection(directRabbitGlyphs->GetOutputPort());
+  directRabbitActor = vtkSmartPointer<vtkActor>::New();
+  directRabbitActor->SetMapper(directRabbitMapper);
+  directRabbitActor->GetProperty()->SetColor(1.0, 0.4, 0.7);  // Magenta/pink
+  directRabbitActor->GetProperty()->SetOpacity(0.8);
 
   vtkNew<vtkPolyDataMapper> mapper2;
   mapper2->SetInputConnection(actuals->GetOutputPort());
@@ -1090,7 +1110,8 @@ void Renderer::initialize() {
   actor2->SetBackfaceProperty(backProperty);
 
   renderer->AddActor(planeActor);
-  renderer->AddActor(actor1);  // Red path line
+  renderer->AddActor(actor1);  // Red path line (projected rabbit)
+  renderer->AddActor(directRabbitActor);  // Magenta path (direct rabbit ground truth)
   renderer->AddActor(actor2);  // Yellow flight tape
   renderer->AddActor(actor3);  // Blue delta lines
   
@@ -1886,8 +1907,9 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
   std::regex stateRe(R"(Nav State:.*pos_raw=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*pos=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*vel=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*quat=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\])");
   std::regex autocFlagRe(R"(autoc=(Y|N))");
   std::regex pathRe(R"(path=(\d+))");  // Capture path index from Nav State line
-  // NN line: idx, 29 inputs, 3 outputs, 3 RC values (replaces old GP Input + GP Output)
+  // NN line: idx, 29 inputs, 3 outputs, 3 RC values, optional rabbit position
   std::regex nnRe(R"(NN: idx=(\d+) in=\[([^\]]+)\] out=\[([^\]]+)\] rc=\[(\d+),(\d+),(\d+)\])");
+  std::regex rabbitRe(R"(rabbit=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\])");
 
   std::string line;
   bool inSpan = false;
@@ -1972,6 +1994,7 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
       currentSpanData.origin = currentOrigin;
       currentSpanData.vecs.clear();
       currentSpanData.rabbitPoints.clear();
+      currentSpanData.directRabbitPoints.clear();
       currentSpanData.startStateIdx = currentStateIdx;
       currentSpanData.pathIndex = -1;  // Reset path index for new span
       continue;
@@ -2082,7 +2105,19 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
           timestampVecMap[inavMs] = vecDir;
         }
       }
+
+      // Parse direct rabbit position if present (rabbit=[x,y,z] appended to NN line)
+      std::smatch rabbitMatch;
+      if (std::regex_search(line, rabbitMatch, rabbitRe)) {
+        scalar rx = std::stof(rabbitMatch[1].str());
+        scalar ry = std::stof(rabbitMatch[2].str());
+        scalar rz = std::stof(rabbitMatch[3].str());
+        vec3 directRabbit(rx, ry, rz);
+        directRabbit[2] = directRabbit[2] + SIM_INITIAL_ALTITUDE;
+        currentSpanData.directRabbitPoints.push_back(directRabbit);
+      }
     }
+
 
     // Parse Nav State (position and attitude) - for ALL lines to capture full flight
     if (std::regex_search(line, matches, stateRe)) {
@@ -2227,19 +2262,6 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
             << nonZeroVecs << " non-zero vecs, "
             << xiaoSpanData.size() << " spans" << std::endl;
 
-  // Show first few vecs with timestamps to debug duplicates
-  if (!craftToTargetVectors.empty()) {
-    std::cout << "\n=== VEC SAMPLE (first 10) ===" << std::endl;
-    size_t showVecs = std::min(size_t(10), craftToTargetVectors.size());
-    for (size_t i = 0; i < showVecs; i++) {
-      const auto& v = craftToTargetVectors[i];
-      std::cout << "  vec[" << i << "] = ["
-                << v.vector[0] << ", "
-                << v.vector[1] << ", "
-                << v.vector[2] << "] @ " << v.timestampUs << "us, norm=" << v.vector.norm() << std::endl;
-    }
-    std::cout << "===================\n" << std::endl;
-  }
 
   return !blackboxAircraftStates.empty();
 }
@@ -3721,6 +3743,8 @@ void Renderer::updatePlaybackAnimation() {
 
   // Clear existing data
   this->paths->RemoveAllInputs();
+  this->directRabbitData->RemoveAllInputs();
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->directRabbitData->AddInputData(e); }
   this->actuals->RemoveAllInputs();
   this->segmentGaps->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
@@ -4002,6 +4026,30 @@ void Renderer::updatePlaybackAnimation() {
           std::vector<vec3> visibleRabbitPoints(rabbitPoints.begin(), rabbitPoints.begin() + numPointsToShow);
           this->paths->AddInputData(createPointSet(blackboxOffset, visibleRabbitPoints));
 
+          // Render direct rabbit positions as large magenta points
+          // Ground truth from rabbit=[x,y,z] — cross-check against projected red path
+          if (currentTestIndex >= 0 && currentTestIndex < static_cast<int>(xiaoSpanData.size())) {
+            const std::vector<vec3>& directPts = xiaoSpanData[currentTestIndex].directRabbitPoints;
+            if (!directPts.empty()) {
+              size_t numDirectToShow = static_cast<size_t>(directPts.size() * blackboxProgress);
+              if (numDirectToShow == 0 && blackboxProgress > 0.0f) numDirectToShow = 1;
+              if (numDirectToShow > directPts.size()) numDirectToShow = directPts.size();
+
+              vtkSmartPointer<vtkPoints> directPoints = vtkSmartPointer<vtkPoints>::New();
+              vtkSmartPointer<vtkCellArray> directVerts = vtkSmartPointer<vtkCellArray>::New();
+              for (size_t di = 0; di < numDirectToShow; di++) {
+                vec3 pt = directPts[di] + blackboxOffset;
+                vtkIdType pid = directPoints->InsertNextPoint(pt[0], pt[1], pt[2]);
+                directVerts->InsertNextCell(1, &pid);
+              }
+              vtkSmartPointer<vtkPolyData> directPolyData = vtkSmartPointer<vtkPolyData>::New();
+              directPolyData->SetPoints(directPoints);
+              directPolyData->SetVerts(directVerts);
+
+              this->directRabbitData->AddInputData(directPolyData);
+            }
+          }
+
           // Render animated error bars connecting visible states to rabbit points
           // In xiao-only mode, states and rabbit points are 1:1 (both from 10Hz NN ticks)
           // Use stable step based on total span size to prevent rearrangement during animation
@@ -4133,6 +4181,8 @@ void Renderer::updatePlaybackAnimation() {
 void Renderer::renderFullScene() {
   // Clear existing data
   this->paths->RemoveAllInputs();
+  this->directRabbitData->RemoveAllInputs();
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->directRabbitData->AddInputData(e); }
   this->actuals->RemoveAllInputs();
   this->segmentGaps->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
@@ -4348,12 +4398,30 @@ void Renderer::renderFullScene() {
         blackboxActor->GetBackfaceProperty()->SetOpacity(1.0);
       }
 
-      // Render goal path from rabbit points (blue path line)
+      // Render goal path from rabbit points (red projected path)
       if (currentTestIndex >= 0 && currentTestIndex < static_cast<int>(xiaoSpanData.size())) {
         const std::vector<vec3>& rabbitPoints = xiaoSpanData[currentTestIndex].rabbitPoints;
         if (!rabbitPoints.empty()) {
           this->paths->AddInputData(createPointSet(blackboxOffset, rabbitPoints));
+        }
 
+        // Render direct rabbit as magenta spheres (ground truth cross-check)
+        const std::vector<vec3>& directPts = xiaoSpanData[currentTestIndex].directRabbitPoints;
+        if (!directPts.empty()) {
+          vtkSmartPointer<vtkPoints> dpts = vtkSmartPointer<vtkPoints>::New();
+          vtkSmartPointer<vtkCellArray> dverts = vtkSmartPointer<vtkCellArray>::New();
+          for (const auto& pt : directPts) {
+            vec3 p = pt + blackboxOffset;
+            vtkIdType pid = dpts->InsertNextPoint(p[0], p[1], p[2]);
+            dverts->InsertNextCell(1, &pid);
+          }
+          vtkSmartPointer<vtkPolyData> dpoly = vtkSmartPointer<vtkPolyData>::New();
+          dpoly->SetPoints(dpts);
+          dpoly->SetVerts(dverts);
+          this->directRabbitData->AddInputData(dpoly);
+        }
+
+        if (!rabbitPoints.empty()) {
           // Render error bars connecting blackbox positions to rabbit points
           // Correlate by index proportion: blackbox state i -> rabbit point floor(i * numRabbit / numStates)
           if (!blackboxAircraftStates.empty()) {
@@ -4364,12 +4432,10 @@ void Renderer::renderFullScene() {
             size_t numStates = blackboxAircraftStates.size();
             size_t numRabbit = rabbitPoints.size();
 
-            // Sample every Nth state to reduce clutter (show ~20-50 error bars)
-            size_t step = std::max(static_cast<size_t>(1), numStates / 50);
-
-            for (size_t i = 0; i < numStates; i += step) {
-              size_t rabbitIdx = (i * numRabbit) / numStates;
-              if (rabbitIdx >= numRabbit) rabbitIdx = numRabbit - 1;
+            // Direct 1:1 mapping — state i corresponds to rabbit point i
+            // No thinning — show all error bars for xiao-only mode
+            for (size_t i = 0; i < numStates; i++) {
+              size_t rabbitIdx = std::min(i, numRabbit - 1);
 
               vec3 statePos = blackboxAircraftStates[i].getPosition() + blackboxOffset;
               vec3 rabbitPos = rabbitPoints[rabbitIdx] + blackboxOffset;
