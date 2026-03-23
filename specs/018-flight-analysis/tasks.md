@@ -499,11 +499,15 @@ Real craft 2× roll, 5-7× pitch more responsive than sim. With expo now removed
 true ratios even higher. Flight data had PT3 filter ON — with filter OFF response
 will be faster. NN trained on sim's sluggish pitch overdrives real craft.
 
-hb1.xml current key params (last updated 2025-11-21, 7 commits total):
-- Cm_de = -0.32 (pitch moment per elevator) — needs ~5-7× increase
-- Cl_da = 0.14 (roll moment per aileron) — needs ~2× increase
-- I_yy = 0.0013 (pitch inertia) — verify if realistic for 505g 30in wing
-- Prior tuning contaminated by unmodeled filter/expo
+hb1.xml calibrated from physics audit (T302, 2026-03-22):
+- Physics steady-state: sim pitch=515°/s vs flight=127°/s (4× too fast)
+- Physics steady-state: sim roll=287°/s vs flight=270°/s (close!)
+- I_yy=0.0013 verified reasonable (uniform plate estimate matches)
+- Split pitch correction: Cm_de -0.32→-0.16 (2×) + Cm_q -3.0→-6.0 (2×)
+- Cl_da=0.14 unchanged (roll already matches)
+- Streamer modeled via Cm_q: no streamer=-3, full 25ft=-6
+- For aircraft variations: Cm_q is a variation param (streamer length)
+- Prior tuning contaminated by unmodeled PT3 filter + 35% expo (now disabled)
 
 ### CRRCSim processing chain (fully audited 2026-03-22):
 
