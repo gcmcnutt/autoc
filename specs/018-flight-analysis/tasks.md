@@ -476,6 +476,33 @@ measured as ratios, sim calibration gaps identified with specific parameters to 
 
 ## Notes
 
+### CRITICAL: Flight vs Sim Dynamics Mismatch (measured 2026-03-22)
+
+Command → attitude rate (°/s per rcCommand unit):
+
+| Speed | Roll flight/sim | Pitch flight/sim |
+|-------|----------------|-----------------|
+| Slow 12m/s | 0.42/0.21 = **2.0×** | 0.24/0.03 = **7.4×** |
+| Cruise 16m/s | 0.54/0.24 = **2.3×** | 0.25/0.04 = **6.0×** |
+| Fast 20m/s | 0.40/0.24 = **1.7×** | 0.26/0.05 = **4.9×** |
+
+Real craft 2× roll, 5-7× pitch more responsive than sim. With expo now removed,
+true ratios even higher. Flight data had PT3 filter ON — with filter OFF response
+will be faster. NN trained on sim's sluggish pitch overdrives real craft.
+
+hb1.xml current key params (last updated 2025-11-21, 7 commits total):
+- Cm_de = -0.32 (pitch moment per elevator) — needs ~5-7× increase
+- Cl_da = 0.14 (roll moment per aileron) — needs ~2× increase
+- I_yy = 0.0013 (pitch inertia) — verify if realistic for 505g 30in wing
+- Prior tuning contaminated by unmodeled filter/expo
+
+CRRCSim processing chain: 40ms COMPUTE_LATENCY applied before FDM as a block
+delay. Reality: 50ms transport then 22ms servo ramp concurrent with aero response.
+Current model is slightly pessimistic but close. Refine by moving delay to transport
+stage and adding servo ramp model if needed.
+
+---
+
 - Task IDs T200-T303 span this feature
 - Pipeline conventions verified correct across two flights
 - Key gap: sim dynamics gain ~0.7× real aircraft (NN overdrives, then degenerates >30m)
