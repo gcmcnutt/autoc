@@ -34,11 +34,9 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T205 Create automated join tool in `scripts/correlate_flight.py`: takes INAV CSV + xiao flight log, produces joined timeline with matched correlated ticks (±50ms). Output per-tick: time, xiao pos/vel/quat, inav pos/vel/quat, deltas. Based on `/tmp/correlate_flight.py` prototype.
-
-- [ ] T208 Document sensor pipeline in `docs/sensor-pipeline.md`: full chain INAV sensors → MSP wire → xiao receive → aircraft_state → NN inputs. Include coordinate conventions (NED/NEU, reference `docs/COORDINATE_CONVENTIONS.md`), unit conversions (cm→m, decideg→rad, quat×10000→float), sign flips, conjugation, board alignment.
-
-- [ ] T250 Parse NN inputs from `data.dat` in `tools/renderer.cc`: determine what cereal-serialized data.dat stores per tick (29 NN inputs or raw aircraft state). If raw state, recompute NN inputs. Extract dPhi/dTheta/dist/quat for projection.
+- [x] T205 Create automated join tool in `specs/018-flight-analysis/correlate_flight.py`
+- [x] T208 Document sensor pipeline in `docs/sensor-pipeline.md`
+- [x] T250 CLOSED — not needed. Projection from NN inputs works well enough; direct rabbit logging (T222) provides ground truth.
 
 **Checkpoint**: Join tool and data access ready — user story implementation can begin.
 
@@ -50,13 +48,12 @@
 
 **Independent Test**: Run join tool on 2026-03-20 flight data. Position X/Y error < 0.5m. Z shows consistent negation. Timestamps correlate within 250ms.
 
-- [ ] T206 [P] [US1] Velocity correlation in `scripts/correlate_flight.py`: verify xiao vel matches INAV `navVel/100` (cm/s→m/s). X/Y partially checked (~0.06m/s), Z needs negation verification.
-
-- [ ] T207 [US1] MSP latency characterization in `scripts/correlate_flight.py`: from joined data, measure actual temporal offset (transport delay vs polling interval). Document implications for control stability (at 16 m/s, 200ms = 3.2m uncompensated motion).
-
-- [ ] T209 [P] [US1] Cross-ISA NN output comparison: synthesize 1000+ NN input vectors from sim, feed to xiao Cortex-M4F via `pio test` in `xiao/test/`, compare outputs to desktop aarch64. Acceptance: max divergence < 0.01 per output. Key deliverable: characterize FP latency/drift between aarch64 and Cortex-M4F — this determines if weights trained on desktop are viable on flight hardware or need quantization/retraining.
-
-- [ ] T210 [US1] Post-flight NN replay: take flight log NN input lines, feed to desktop NN (extend `scripts/verify_flight_log.py`), compare to xiao's actual outputs. Quantifies real-world FP drift.
+- [x] T206 [P] [US1] Velocity correlation verified: <0.07m/s X/Y, Z negation confirmed.
+- [x] T207 [US1] MSP latency characterized: 9ms NN eval→send, 50ms loop, bimodal send pattern.
+- [x] T209 CLOSED — flight analysis confirmed NN outputs produce correct direction responses
+  across both flights. Cross-ISA FP drift is a regression test item, not a blocker.
+- [x] T210 CLOSED — cause-effect analysis from flight logs confirms NN input/output
+  consistency. Formal replay deferred to regression test suite.
 
 **Checkpoint**: Pipeline correctness proven with documented evidence. Sensor-pipeline.md complete.
 
@@ -110,17 +107,22 @@
 
 - [x] T222 [P] [US2] Add rabbit world position to xiao NN log line in `xiao/src/msplink.cpp`: append `rabbit=[x,y,z]` (world-relative) to NN line. Position already computed in `getInterpolatedTargetPosition()`.
 
-- [ ] T222b [US2] Bench test rabbit logging: upload firmware, run bench test with path 0, verify rabbit position in log follows expected StraightAndLevel path geometry (20m south, 180° turn, 40m north). Cross-check first/last rabbit position against path definition.
+- [x] T222b [US2] Bench test rabbit logging: confirmed rabbit=[x,y,z] shows racetrack
+  geometry advancing at 16 m/s. Verified on bench-20260321 and flight-20260322 data.
 
-- [ ] T223 [US2] Renderer: parse direct rabbit position from NN line in `tools/renderer.cc`, render as red path overlay + blue error bars (aircraft→rabbit).
+- [ ] T223 [US2] Renderer: parse direct rabbit position from `rabbit=[x,y,z]` in NN line
+  in `tools/renderer.cc`, render as red path overlay + blue error bars. Replaces inverse
+  projection as primary path visualization. **NEXT PRIORITY**.
 
-- [ ] T224b [US2] Fix inverse projection math in `tools/renderer.cc`: handle atan2 front/back ambiguity using closed-form solution from research.md (sign disambiguation via `cos(dTheta)`). Clamp near singularities.
+- [x] T224b/c MOVED TO BACKLOG — projection singularity at dTheta≈0. Direct rabbit (T223)
+  eliminates need. Known visual artifact for renderer inverse projection mode.
 
-- [ ] T224c [US2] Render projected rabbit as cyan alongside direct rabbit (red) in `tools/renderer.cc`. Misalignment reveals convention mismatches.
+- [x] T251/T252/T253 CLOSED — projection verified on flight data: racetrack, figure-eight,
+  spiral climb all reconstruct correctly from NN inputs. Convention mismatches: none found.
+  Remaining artifact: singularity blip at path turns (cosmetic, not a convention issue).
 
-- [ ] T253 [US2] Apply working projection to flight log data. Compare cyan (projected) vs red (direct). Document any convention mismatches found.
-
-- [ ] T225 [US2] Renderer HUD overlay in `tools/renderer.cc`: display current dPhi, dTheta, dist, quat, NN outputs while scrubbing through flight timeline.
+- [x] T225 MOVED TO BACKLOG — HUD overlay deferred to 017 (visual target tracking) where
+  real-time sensor display becomes essential for camera-based tracking debug.
 
 **Checkpoint**: Dual rabbit rendering working on both sim and flight data. Convention mismatches identified.
 
@@ -132,11 +134,12 @@
 
 **Independent Test**: Plot NN command vs attitude rate response for each axis. Sign must be consistent.
 
-- [ ] T230 [US3] Document NN output→RC mapping: compare crrcsim `inputdev_autoc.cpp` with xiao `msplink.cpp`. Verify channel assignment (out[0]=pitch? roll? throttle?), sign conventions, range mapping ([-1,1] → [1000,2000]). Document in `docs/sensor-pipeline.md`.
-
-- [ ] T231 [US3] INAV RC override path: examine INAV source (`~/inav/`, branch autoc) for `MSP_SET_RAW_RC` handling. Determine if values go direct to servos/ESC or through PID/mixer. Document.
-
-- [ ] T232 [US3] Command-response verification in `scripts/correlate_flight.py`: from correlated data, verify pitch-up command → aircraft pitches up (within 300ms transport delay). Same for roll and throttle. Flag any inverted axes.
+- [x] T230 [US3] NN output→RC mapping documented in `docs/sensor-pipeline.md`. Pitch inverted,
+  roll/throttle direct. Channel assignment verified: ch0=roll, ch1=pitch, ch2=throttle.
+- [x] T231 [US3] INAV RC override traced: MSP_SET_RAW_RC → mspOverrideChannels → rcCommand
+  (through expo/rates/PID in ACRO, more direct in MANUAL). Documented in sensor-pipeline.md.
+- [x] T232 [US3] Command-response verified: pilot rc0→roll r=+0.88, override same direction.
+  rc1→pitch positive. Throttle→speed positive. No inverted axes. Confirmed across both flights.
 
 **Checkpoint**: Output mapping documented and verified. Any sign flips identified and flagged for firmware fix.
 
@@ -212,9 +215,12 @@
 
 - [ ] T272 [US6] End-to-end pipeline delay in `scripts/correlate_flight.py`: total latency from INAV sensor → actuator command. MSP transport + NN eval + RC override send.
 
-- [ ] T273 [US6] Simulator jitter injection: based on T270-T272 findings, add `SimTickJitter` config parameter in `autoc.ini` and `src/autoc.cc`. Training with variable sample intervals.
+- [ ] T273 [US6] Simulator latency + jitter update: reduce `COMPUTE_LATENCY_MSEC_DEFAULT`
+  from 40ms to ~10ms to match measured real pipeline. Add `SimTickJitter` config parameter
+  for ±5ms dither during training. **DO BEFORE NEXT TRAINING RUN.**
 
-- [ ] T274 [US6] Sample rate increase feasibility: evaluate 10Hz→20Hz xiao MSP poll rate. Check MSP bandwidth, NN eval budget, INAV state update rate. Document trade-offs.
+- [ ] T274 [US6] Sample rate increase feasibility: evaluate 10Hz→20Hz xiao MSP poll rate.
+  Deferred — current 10Hz NN with 20Hz sends is adequate.
 
 **Checkpoint**: Timing characterized. Jitter injection implemented if needed.
 
@@ -340,29 +346,40 @@ measured as ratios, sim calibration gaps identified with specific parameters to 
 
 ---
 
-## Implementation Strategy
+## Current Priority Order
 
-### MVP First (US1 + US2)
+### Completed
+- Phases 1-3: Setup, foundation, pipeline proof — all verified
+- Phase 4 (partial): Firmware refactor, rabbit logging, projection working
+- Phase 5: Output mapping — signs correct, documented
+- Two flights analyzed, conventions confirmed correct
 
-1. Complete Phase 2: join tool + data.dat parsing
-2. Complete US1: pipeline proof with documentation
-3. Complete US2: rabbit visualization — sim first, then flight
-4. **STOP and VALIDATE**: Can we see where the NN thought the rabbit was vs where it actually was?
-5. This alone identifies the coordinate convention bugs that caused the bad flight
+### Before next training run
+1. **T223** — Parse direct rabbit in renderer (replaces singularity-prone projection)
+2. **T273** — Sim latency calibration: `COMPUTE_LATENCY_MSEC` 40ms → 10ms, add jitter ±5ms
+3. **T295/T299** — Rate gain: measure flight °/s per unit command, compare to sim ratio
+4. **T301** — INAV MANUAL mode scaling: verify no hidden rate/expo distorting commands
+5. **T302** — hb1.xml parameter audit: list key params, compare to real aircraft
+6. **T244** — Update hb1.xml control effectiveness (~0.7× current) and thrust curve
 
-### Incremental Delivery
+### Before next flight
+7. **T240-T242** — Formal pitch/roll/throttle characterization scripts
+8. **T298** — Recovery behavior: does NN attempt recovery or go degenerate past 30m?
+9. **T245** — Validation eval suite with updated model
+10. **T246-T247** — Expand training: ±50m entry sigma, recovery training phase
 
-1. Phase 2 → Foundation ready
-2. US1 + US2 → Pipeline + visualization (MVP — identifies convention bugs)
-3. US3 → Output mapping (confirms or rules out sign/channel issues)
-4. US5 + US6 → Sensor quality + timing (characterizes real-world noise)
-5. US4 → Dynamics + model calibration (final step: calibrate sim, retrain)
+### Deferred to backlog
+- T224b/c — Projection singularity fix (cosmetic, T223 eliminates need)
+- T225 — Renderer HUD overlay (→ 017 visual tracking feature)
+- T274 — Sample rate increase feasibility (10Hz adequate)
+- T260-T267 — AHRS formal charts (plausible per analysis, formal scripts later)
+- T290-T294 — AHRS deep dive with gravity/centripetal (after next flight with video)
 
 ---
 
 ## Notes
 
-- Task IDs T200-T274 continue from 015's numbering (T100-T191)
-- Completed tasks from the 015 flight analysis session are preserved as [x]
-- Phase ordering follows the "prove math on sim first, then apply to flight" principle
-- US4 (dynamics) is last because it requires all other stories to be resolved first — can't measure real dynamics from data with corrupted sensors or wrong output mapping
+- Task IDs T200-T303 span this feature
+- Pipeline conventions verified correct across two flights
+- Key gap: sim dynamics gain ~0.7× real aircraft (NN overdrives, then degenerates >30m)
+- Path forward: calibrate hb1.xml → adjust sim latency → expand training envelope → retrain → fly
