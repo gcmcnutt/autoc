@@ -110,12 +110,16 @@
 - [x] T222b [US2] Bench test rabbit logging: confirmed rabbit=[x,y,z] shows racetrack
   geometry advancing at 16 m/s. Verified on bench-20260321 and flight-20260322 data.
 
-- [ ] T223 [US2] Renderer: parse direct rabbit position from `rabbit=[x,y,z]` in NN line
-  in `tools/renderer.cc`, render as red path overlay + blue error bars. Replaces inverse
-  projection as primary path visualization. **NEXT PRIORITY**.
+- [x] T223 [US2] Renderer: parse direct rabbit position from `rabbit=[x,y,z]` in NN line.
+  Rendered as magenta spheres (vtkGlyph3D, radius 0.28 = 1.4x red pipe) alongside
+  projected red tube. Confirms projection singularity visible at body-frame angle
+  crossings — magenta shows ground truth, red diverges at blip points.
+  Blue error bars fixed to 1:1 mapping in both static and animated modes.
 
-- [x] T224b/c MOVED TO BACKLOG — projection singularity at dTheta≈0. Direct rabbit (T223)
-  eliminates need. Known visual artifact for renderer inverse projection mode.
+- [x] T224b/c MOVED TO BACKLOG — projection singularity at dTheta≈0 or dTheta≈±π.
+  T223 magenta spheres now show ground truth alongside red projection, making
+  singularity points visually obvious (red diverges, magenta stays correct).
+  Fix deferred — inverse projection is a diagnostic tool, not primary visualization.
 
 - [x] T251/T252/T253 CLOSED — projection verified on flight data: racetrack, figure-eight,
   spiral climb all reconstruct correctly from NN inputs. Convention mismatches: none found.
