@@ -505,10 +505,32 @@ hb1.xml current key params (last updated 2025-11-21, 7 commits total):
 - I_yy = 0.0013 (pitch inertia) — verify if realistic for 505g 30in wing
 - Prior tuning contaminated by unmodeled filter/expo
 
-CRRCSim processing chain: 40ms COMPUTE_LATENCY applied before FDM as a block
-delay. Reality: 50ms transport then 22ms servo ramp concurrent with aero response.
-Current model is slightly pessimistic but close. Refine by moving delay to transport
-stage and adding servo ramp model if needed.
+### CRRCSim processing chain (fully audited 2026-03-22):
+
+```
+NN output [-1,1] → stage as PendingCommand
+  wait COMPUTE_LATENCY (40ms, simTimeMsec-based)
+  apply slew limiter: pitch/roll ±0.40/step, throttle ±0.60/step
+  scale: elevator = -pitch/2 [-0.5,0.5], aileron = roll/2 [-0.5,0.5]
+  FDM: Cm = Cm_de × elevator, Cl = Cl_da × aileron (direct linear multiply)
+```
+
+No hidden filters, exponentials, or servo models. The [-0.5, 0.5] range IS the
+full control input to the FDM. At full stick: `Cm = -0.32 × 0.5 = 0.16`.
+
+Real INAV chain (with filter/expo NOW disabled):
+```
+NN [-1,1] → MSP PWM [1000,2000] → rcCommand [-500,500] → mixer → servo PWM
+  servo actuator: 22ms to 90% (concurrent with aero response)
+```
+
+Flight hardware confirmed: full pitch (rcCmd=-500) drives servos to limits
+(servo1=1000, servo2=2000). Full roll same. Combined clips at limits.
+100% pitch + 100% roll each use full servo range independently.
+
+The 5-7× pitch mismatch is purely in the aero coefficients (Cm_de and/or I_yy).
+No scaling confusion — sim ±0.5 = full deflection = real ±500 rcCmd = full servo.
+To fix: increase Cm_de ~5× or decrease I_yy ~5× (or combination).
 
 ---
 
