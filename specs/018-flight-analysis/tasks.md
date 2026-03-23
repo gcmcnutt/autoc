@@ -465,6 +465,15 @@ measured as ratios, sim calibration gaps identified with specific parameters to 
 9. **T245** — Validation eval suite with updated model
 10. **T246-T247** — Expand training: ±50m entry sigma, recovery training phase
 
+### After next training→flight cycle
+- [ ] **T273h** — Custom MSP command (reduce fetch 35ms→12ms)
+- [ ] **T273c** — Override flight mode channel from xiao (force MANUAL)
+- [ ] **T273i** — Cherry-pick INAV servo logging fix (commits 957f23d5d + 376346d8f).
+  Known bug in our INAV 8.0.0 autoc branch: blackbox logs servo[0] (unused) and
+  servo[1] (left elevon) but misses servo[2] (right elevon). `getServoCount()=2`
+  but loop indexes from 0 not from `minServoIndex=1`. Fixed upstream with per-servo
+  conditions (AT_LEAST_SERVOS_N). Need both elevons for proper de-mixing.
+
 ### Deferred to backlog
 - T224b/c — Projection singularity fix (cosmetic, T223 eliminates need)
 - T225 — Renderer HUD overlay (→ 017 visual tracking feature)
