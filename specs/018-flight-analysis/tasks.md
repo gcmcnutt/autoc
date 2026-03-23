@@ -236,6 +236,32 @@
   transmitter switch. Bench test on flight hardware to confirm mode switch works via
   MSP override.
 
+### CRITICAL: INAV RC Smoothing Filter (discovered 2026-03-22)
+
+INAV applies a **PT3 (third-order) low-pass filter** to ALL rcCommand values including
+MSP overrides, including MANUAL mode. Setting `rc_filter_smoothing_factor = 30` with
+`rc_filter_auto = ON` dynamically sets cutoff based on perceived RC refresh rate:
+
+  cutoff = scaleRange(30, 1, 100, nyquist, rc_rate/10)
+
+If INAV sees MSP RC at ~20Hz: cutoff ≈ 7.7Hz → PT3 at 7.7Hz would heavily smooth
+our 10Hz NN commands (~60-80ms rise time to 90% for step inputs).
+If INAV sees MSP RC at ~50Hz: cutoff ≈ 19Hz → moderate smoothing (~30ms rise time).
+
+**This is completely unmodeled in crrcsim.** The sim applies commands directly with only
+slew rate limiting. Real aircraft response is additionally smoothed by this filter.
+
+**Action items** (add to crrcsim before next training run):
+- [ ] T273d Determine actual RC refresh rate seen by INAV for MSP override channel.
+  Check blackbox `rxUpdateRate` column or INAV CLI `status` output. This determines
+  whether filter is at 7Hz (devastating) or 57Hz (moderate).
+- [ ] T273e Either disable RC smoothing for MSP override (`set rc_filter_auto = OFF`,
+  `set rc_filter_lpf_hz = 250`) OR model the PT3 filter in crrcsim after slew limiter.
+  Disabling is simpler but may cause servo jitter. Modeling is more accurate for training.
+- [ ] T273f If modeling: add PT3 filter in `inputdev_autoc.cpp` after slew limiting,
+  matching INAV's `pt3FilterApply` with same cutoff frequency. This trains the NN to
+  anticipate the smoothing and command accordingly.
+
 ### Notes from flight analysis
 - Streamer: 25ft crepe adds significant parasitic drag and pitch damping. The craft
   can lose the streamer mid-flight, changing dynamics. Consider this as an aircraft
