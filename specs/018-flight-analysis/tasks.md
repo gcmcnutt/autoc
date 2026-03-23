@@ -219,9 +219,31 @@
 
 - [ ] T272 [US6] End-to-end pipeline delay in `scripts/correlate_flight.py`: total latency from INAV sensor → actuator command. MSP transport + NN eval + RC override send.
 
-- [ ] T273 [US6] Simulator latency + jitter update: reduce `COMPUTE_LATENCY_MSEC_DEFAULT`
-  from 40ms to ~10ms to match measured real pipeline. Add `SimTickJitter` config parameter
-  for ±5ms dither during training. **DO BEFORE NEXT TRAINING RUN.**
+- [ ] T273a Instrument actual pipeline latency in `xiao/src/msplink.cpp`: add timing
+  from loop tick start (before MSP fetch) to MSP send complete. Report as separate
+  stat line: `MSP pipeline: fetch=Nms eval=Nms send=Nms total=Nms`. Current stats
+  only measure eval_start→send (9.5ms avg). Real fetch→send estimated ~15ms.
+  **Bench test before training to get accurate number.**
+
+- [ ] T273b Update `COMPUTE_LATENCY_MSEC_DEFAULT` in crrcsim based on T273a measurement.
+  Current: 40ms. Empirical total (INAV state→INAV rcData): 34ms avg but inflated by
+  blackbox sample granularity. Real xiao fetch→send likely ~15ms. INAV confirmed
+  MANUAL mode is strictly linear, no rate/expo scaling. Add `SimTickJitter` ±5ms.
+  **DO BEFORE NEXT TRAINING RUN.**
+
+- [ ] T273c Override flight mode via RC channel: send `msp_override_channels` to include
+  channel 6, set to 1000 to force MANUAL mode from xiao. Currently relies on pilot
+  transmitter switch. Bench test on flight hardware to confirm mode switch works via
+  MSP override.
+
+### Notes from flight analysis
+- Streamer: 25ft crepe adds significant parasitic drag and pitch damping. The craft
+  can lose the streamer mid-flight, changing dynamics. Consider this as an aircraft
+  variation parameter in training.
+- INAV MANUAL mode: confirmed strictly linear, no rate/expo. RC→servo is direct (through
+  mixer for flying wing elevon blending, but no PID or rate scaling).
+- Sim latency 40ms is slightly conservative vs real ~34ms (empirical). Safe to keep as-is
+  or reduce to match. The key unknown is the MSP fetch duration — T273a will measure it.
 
 - [ ] T274 [US6] Sample rate increase feasibility: evaluate 10Hz→20Hz xiao MSP poll rate.
   Deferred — current 10Hz NN with 20Hz sends is adequate.
