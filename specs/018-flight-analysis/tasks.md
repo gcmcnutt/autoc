@@ -448,6 +448,16 @@ measured as ratios, sim calibration gaps identified with specific parameters to 
 7. [ ] **T273b** — Update COMPUTE_LATENCY based on T273a (49ms measured, 40ms current).
    With filter/expo disabled, 40ms is close. May keep as-is or bump to 50ms.
 8. [ ] **T244** — Update hb1.xml with measured ratios from T295/T299.
+9. [ ] **T273h** — Research: custom MSP command to reduce fetch latency.
+   Currently 3 sequential requests (MSP_STATUS + MSP2_INAV_LOCAL_STATE + MSP_RC)
+   at 115200 baud = 35ms avg. Each request has serial round-trip overhead (request
+   frame + wait + response frame + parse). A single custom MSP2 command in INAV
+   (branch autoc) returning all needed fields in one response could reduce to ~12-15ms
+   (single round-trip, ~100 bytes payload at 115200 = ~9ms wire time + overhead).
+   Estimated pipeline reduction: 50ms → 27ms total. Would need INAV firmware change
+   (add MSP2_AUTOC_STATE handler in fc_msp.c) + xiao parser update.
+   Also consider: do we need MSP_STATUS every tick? If not, fetch it every Nth tick
+   and save one round-trip immediately (~7ms saved, no INAV changes needed).
 
 ### Before next flight
 7. **T240-T242** — Formal pitch/roll/throttle characterization scripts
