@@ -1977,8 +1977,10 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
       continue;
     }
 
-    // Check for control disable (span end)
-    if (std::regex_search(line, matches, controlDisableRe)) {
+    // Check for control disable (span end) — only process if currently in a span
+    // Guard against double-match: xiao logs "Switch disabled" then "Autoc disabled"
+    // on consecutive lines, both matching controlDisableRe
+    if (inSpan && std::regex_search(line, matches, controlDisableRe)) {
       inSpan = false;
       // Save span data
       currentSpanData.endStateIdx = currentStateIdx - 1;
@@ -2222,7 +2224,8 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
 
   std::cout << "Parsed xiao log: " << blackboxAircraftStates.size() << " states, "
             << craftToTargetVectors.size() << " total vecs, "
-            << nonZeroVecs << " non-zero vecs" << std::endl;
+            << nonZeroVecs << " non-zero vecs, "
+            << xiaoSpanData.size() << " spans" << std::endl;
 
   // Show first few vecs with timestamps to debug duplicates
   if (!craftToTargetVectors.empty()) {
