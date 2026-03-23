@@ -44,20 +44,44 @@ static constexpr gp_scalar GP_RAD_TO_DEG = static_cast<gp_scalar>(57.2957795f);
 static constexpr gp_scalar GP_HALF_PI = static_cast<gp_scalar>(1.57079633f);
 static constexpr gp_scalar GP_INV_1000 = static_cast<gp_scalar>(0.001f);
 
-#define MSP_SEND_LOG_CAPACITY 256
-struct MspSendLogEntry
-{
-  uint32_t sendTimeUs;
-  uint32_t evalStartUs;
-  uint32_t evalEndUs;
-  uint32_t sequence;
-  bool sequenceChanged;
+// Pipeline timing stats — measures fetch→eval→send per NN tick
+struct PipelineStats {
+  uint32_t samples;
+  uint32_t fetchSumUs, fetchMinUs, fetchMaxUs;   // MSP fetch duration
+  uint32_t evalSumUs, evalMinUs, evalMaxUs;       // NN eval duration
+  uint32_t sendSumUs, sendMinUs, sendMaxUs;       // MSP send duration
+  uint32_t totalSumUs, totalMinUs, totalMaxUs;    // fetch + eval + send
+  uint32_t intervalSumUs, intervalMinUs, intervalMaxUs;  // tick-to-tick interval
+  uint32_t intervalCount;
+  uint32_t lastTickUs;  // for interval measurement
+
+  void reset() {
+    samples = intervalCount = 0;
+    fetchSumUs = evalSumUs = sendSumUs = totalSumUs = intervalSumUs = 0;
+    fetchMinUs = evalMinUs = sendMinUs = totalMinUs = intervalMinUs = UINT32_MAX;
+    fetchMaxUs = evalMaxUs = sendMaxUs = totalMaxUs = intervalMaxUs = 0;
+    lastTickUs = 0;
+  }
+
+  void recordTick(uint32_t fetchUs, uint32_t evalUs, uint32_t sendUs, uint32_t tickStartUs) {
+    uint32_t total = fetchUs + evalUs + sendUs;
+    samples++;
+    fetchSumUs += fetchUs; fetchMinUs = std::min(fetchMinUs, fetchUs); fetchMaxUs = std::max(fetchMaxUs, fetchUs);
+    evalSumUs += evalUs; evalMinUs = std::min(evalMinUs, evalUs); evalMaxUs = std::max(evalMaxUs, evalUs);
+    sendSumUs += sendUs; sendMinUs = std::min(sendMinUs, sendUs); sendMaxUs = std::max(sendMaxUs, sendUs);
+    totalSumUs += total; totalMinUs = std::min(totalMinUs, total); totalMaxUs = std::max(totalMaxUs, total);
+
+    if (lastTickUs > 0 && tickStartUs > lastTickUs) {
+      uint32_t interval = tickStartUs - lastTickUs;
+      intervalSumUs += interval;
+      intervalMinUs = std::min(intervalMinUs, interval);
+      intervalMaxUs = std::max(intervalMaxUs, interval);
+      intervalCount++;
+    }
+    lastTickUs = tickStartUs;
+  }
 };
-static MspSendLogEntry mspSendLog[MSP_SEND_LOG_CAPACITY];
-static volatile uint16_t mspSendLogWriteIndex = 0;
-static volatile uint16_t mspSendLogReadIndex = 0;
-static volatile uint16_t mspSendLogCount = 0;
-static volatile uint32_t lastLoggedSequenceForStats = 0;
+static PipelineStats pipelineStats;
 
 // Aircraft state tracking for position/velocity calculation
 static gp_vec3 last_valid_position(0.0f, 0.0f, 0.0f);
@@ -75,9 +99,6 @@ static bool lockMspBusBlockingFromTask();
 static void releaseMspBusFromTask();
 static bool performMspRequest(uint16_t command, void *buffer, size_t size);
 static void performMspSendLocked();
-static void recordMspSendEvent();
-static void resetMspSendStats();
-static void logMspSendStats();
 
 static void resetPositionHistory()
 {
@@ -110,7 +131,23 @@ static void stopAutoc(const char *reason, bool requireServoReset)
 
   if (wasRabbit)
   {
-    logMspSendStats();
+    // Log pipeline timing stats
+    if (pipelineStats.samples > 0) {
+      gp_scalar n = static_cast<gp_scalar>(pipelineStats.samples);
+      logPrint(INFO, "MSP pipeline: samples=%u fetch=%.1f/%.1f/%.1fms eval=%.1f/%.1f/%.1fms send=%.1f/%.1f/%.1fms total=%.1f/%.1f/%.1fms",
+        pipelineStats.samples,
+        pipelineStats.fetchMinUs*GP_INV_1000, (pipelineStats.fetchSumUs/n)*GP_INV_1000, pipelineStats.fetchMaxUs*GP_INV_1000,
+        pipelineStats.evalMinUs*GP_INV_1000, (pipelineStats.evalSumUs/n)*GP_INV_1000, pipelineStats.evalMaxUs*GP_INV_1000,
+        pipelineStats.sendMinUs*GP_INV_1000, (pipelineStats.sendSumUs/n)*GP_INV_1000, pipelineStats.sendMaxUs*GP_INV_1000,
+        pipelineStats.totalMinUs*GP_INV_1000, (pipelineStats.totalSumUs/n)*GP_INV_1000, pipelineStats.totalMaxUs*GP_INV_1000);
+      if (pipelineStats.intervalCount > 0) {
+        gp_scalar ni = static_cast<gp_scalar>(pipelineStats.intervalCount);
+        logPrint(INFO, "MSP interval: avg=%.1fms min=%.1fms max=%.1fms",
+          (pipelineStats.intervalSumUs/ni)*GP_INV_1000,
+          pipelineStats.intervalMinUs*GP_INV_1000,
+          pipelineStats.intervalMaxUs*GP_INV_1000);
+      }
+    }
   }
 }
 
@@ -136,6 +173,11 @@ static gp_quat neuQuaternionToNed(const float q[4])
   attitude.normalize();
   return attitude;
 }
+
+// Pipeline timing points (set during mspUpdateState, read during mspSetControls)
+static uint32_t pipeTickStartUs = 0;
+static uint32_t pipeFetchEndUs = 0;
+static uint32_t pipeEvalEndUs = 0;
 
 static void mspUpdateNavControl()
 {
@@ -223,6 +265,7 @@ static void mspUpdateNavControl()
     int pitch_cmd = convertPitchToMSPChannel(aircraft_state.getPitchCommand());
     int throttle_cmd = convertThrottleToMSPChannel(aircraft_state.getThrottleCommand());
     updateCachedCommands(roll_cmd, pitch_cmd, throttle_cmd, eval_start_us);
+    pipeEvalEndUs = micros();
 
     // Log compact NN I/O: 29 inputs, 3 outputs (tanh), 3 RC commands
     // Inputs: [0-5]dPhi [6-11]dTheta [12-17]dist [18]dDist/dt [19-22]quat [23]airspeed [24]alpha [25]beta [26-28]cmdFeedback
@@ -259,11 +302,12 @@ void msplinkSetup()
   }
 
   // No ticker — single 20Hz loop in controllerUpdate() handles sends
-  resetMspSendStats();
+  pipelineStats.reset();
 }
 
 void mspUpdateState()
 {
+  pipeTickStartUs = micros();
   state.resetState();
   state.setAsOfMsec(millis());
 
@@ -412,7 +456,7 @@ void mspUpdateState()
 
       rabbit_start_time = millis();
       rabbit_active = true;
-      resetMspSendStats();
+      pipelineStats.reset();
       // No ticker — single 20Hz loop in controllerUpdate() handles sends
       current_path_index = 0;
 
@@ -449,6 +493,9 @@ void mspUpdateState()
       stopAutoc("autoc cancelled", true);
     }
   }
+
+  // Mark end of MSP fetch phase
+  pipeFetchEndUs = micros();
 
   // Update aircraft state on every MSP cycle for continuous position/velocity tracking
   convertMSPStateToAircraftState(aircraft_state);
@@ -499,6 +546,17 @@ void mspSetControls()
     return;
   }
   performMspSendLocked();
+
+  // Record pipeline timing on NN eval ticks (when pipeTickStartUs was set this cycle)
+  if (pipeEvalEndUs > pipeTickStartUs && pipeTickStartUs > 0)
+  {
+    uint32_t sendEndUs = micros();
+    uint32_t fetchUs = pipeFetchEndUs - pipeTickStartUs;
+    uint32_t evalUs = pipeEvalEndUs - pipeFetchEndUs;
+    uint32_t sendUs = sendEndUs - pipeEvalEndUs;
+    pipelineStats.recordTick(fetchUs, evalUs, sendUs, pipeTickStartUs);
+    pipeTickStartUs = 0;  // prevent double-counting on send-only ticks
+  }
 }
 
 static void updateCachedCommands(int roll, int pitch, int throttle, uint32_t evalStartUs)
@@ -563,156 +621,9 @@ static void performMspSendLocked()
   state.command_buffer.channel[1] = cached_pitch_cmd;
   state.command_buffer.channel[2] = cached_throttle_cmd;
   msp.send(MSP_SET_RAW_RC, &state.command_buffer, sizeof(state.command_buffer));
-  recordMspSendEvent();
 }
 
-static void recordMspSendEvent()
-{
-  if (!rabbit_active)
-  {
-    return;
-  }
-
-  uint32_t sendTime = micros();
-  noInterrupts();
-  uint32_t sequence = cached_cmd_sequence;
-  uint32_t evalStart = cached_eval_start_us;
-  uint32_t evalEnd = cached_eval_complete_us;
-  bool sequenceChanged = sequence != lastLoggedSequenceForStats;
-  lastLoggedSequenceForStats = sequence;
-
-  uint16_t idx = mspSendLogWriteIndex;
-  mspSendLog[idx].sendTimeUs = sendTime;
-  mspSendLog[idx].evalStartUs = evalStart;
-  mspSendLog[idx].evalEndUs = evalEnd;
-  mspSendLog[idx].sequence = sequence;
-  mspSendLog[idx].sequenceChanged = sequenceChanged;
-
-  mspSendLogWriteIndex = (idx + 1) % MSP_SEND_LOG_CAPACITY;
-  if (mspSendLogCount < MSP_SEND_LOG_CAPACITY)
-  {
-    mspSendLogCount++;
-  }
-  else
-  {
-    mspSendLogReadIndex = (mspSendLogReadIndex + 1) % MSP_SEND_LOG_CAPACITY;
-  }
-  interrupts();
-}
-
-static void resetMspSendStats()
-{
-  noInterrupts();
-  mspSendLogWriteIndex = 0;
-  mspSendLogReadIndex = 0;
-  mspSendLogCount = 0;
-  lastLoggedSequenceForStats = cached_cmd_sequence;
-  interrupts();
-}
-
-static void logMspSendStats()
-{
-  uint16_t count;
-  uint16_t readIdx;
-  noInterrupts();
-  count = mspSendLogCount;
-  readIdx = mspSendLogReadIndex;
-  interrupts();
-
-  if (count == 0)
-  {
-    logPrint(INFO, "MSP TX stats: no transmissions recorded");
-    return;
-  }
-
-  gp_scalar intervalSumMs = 0.0f;
-  gp_scalar intervalMinMs = 1e9f;
-  gp_scalar intervalMaxMs = 0.0f;
-  uint32_t intervalCount = 0;
-  uint32_t lateIntervals = 0;
-  const uint32_t desiredIntervalUs = MSP_LOOP_INTERVAL_MSEC * 1000UL;
-  const uint32_t lateThresholdUs = desiredIntervalUs + 20000UL; // allow 20ms slack (70ms total)
-
-  gp_scalar latencyStartSumMs = 0.0f;
-  gp_scalar latencyEndSumMs = 0.0f;
-  gp_scalar latencyStartMinMs = 1e9f;
-  gp_scalar latencyStartMaxMs = 0.0f;
-  gp_scalar latencyEndMinMs = 1e9f;
-  gp_scalar latencyEndMaxMs = 0.0f;
-  uint32_t latencySamples = 0;
-
-  uint32_t prevSend = 0;
-
-  for (uint16_t i = 0; i < count; ++i)
-  {
-    uint16_t idx = (readIdx + i) % MSP_SEND_LOG_CAPACITY;
-    const MspSendLogEntry &entry = mspSendLog[idx];
-
-    if (i > 0)
-    {
-      uint32_t delta = entry.sendTimeUs - prevSend;
-      gp_scalar deltaMs = static_cast<gp_scalar>(delta) * GP_INV_1000;
-      intervalSumMs += deltaMs;
-      intervalMinMs = std::min(intervalMinMs, deltaMs);
-      intervalMaxMs = std::max(intervalMaxMs, deltaMs);
-      intervalCount++;
-      if (delta > lateThresholdUs)
-      {
-        lateIntervals++;
-      }
-    }
-    prevSend = entry.sendTimeUs;
-
-    if (entry.sequenceChanged && entry.evalStartUs != 0 && entry.evalEndUs != 0)
-    {
-      gp_scalar startLatencyMs = static_cast<gp_scalar>(entry.sendTimeUs - entry.evalStartUs) * GP_INV_1000;
-      gp_scalar endLatencyMs = static_cast<gp_scalar>(entry.sendTimeUs - entry.evalEndUs) * GP_INV_1000;
-      latencyStartSumMs += startLatencyMs;
-      latencyEndSumMs += endLatencyMs;
-      latencyStartMinMs = std::min(latencyStartMinMs, startLatencyMs);
-      latencyStartMaxMs = std::max(latencyStartMaxMs, startLatencyMs);
-      latencyEndMinMs = std::min(latencyEndMinMs, endLatencyMs);
-      latencyEndMaxMs = std::max(latencyEndMaxMs, endLatencyMs);
-      latencySamples++;
-    }
-  }
-
-  gp_scalar intervalAvgMs = intervalCount ? intervalSumMs / intervalCount : 0.0f;
-  if (intervalCount == 0)
-  {
-    intervalMinMs = 0.0f;
-  }
-
-  logPrint(INFO,
-           "MSP TX stats: sends=%u intervals(ms) min=%.1f avg=%.1f max=%.1f late>%ums=%u",
-           count,
-           intervalMinMs,
-           intervalAvgMs,
-           intervalMaxMs,
-           (int)(lateThresholdUs / 1000),
-           lateIntervals);
-
-  if (latencySamples > 0)
-  {
-    gp_scalar latencyStartAvgMs = latencyStartSumMs / latencySamples;
-    gp_scalar latencyEndAvgMs = latencyEndSumMs / latencySamples;
-    logPrint(INFO,
-             "MSP latency: samples=%u start(ms) min=%.1f avg=%.1f max=%.1f end(ms) min=%.1f avg=%.1f max=%.1f",
-             latencySamples,
-             latencyStartMinMs,
-             latencyStartAvgMs,
-             latencyStartMaxMs,
-             latencyEndMinMs,
-             latencyEndAvgMs,
-             latencyEndMaxMs);
-  }
-  else
-  {
-    logPrint(INFO, "MSP latency: no GP evaluations recorded");
-  }
-
-  resetMspSendStats();
-}
+// Old per-send log infrastructure removed — replaced by PipelineStats
 
 // Convert MSP state data to AircraftState for GP evaluator
 void convertMSPStateToAircraftState(AircraftState &aircraftState)
