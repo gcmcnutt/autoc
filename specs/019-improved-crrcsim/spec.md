@@ -23,76 +23,105 @@ bandwidth.
 
 ## Critical Outcomes
 
-### CO1: Base model that doesn't reward degenerate strategies
-Full pitch + full throttle in CRRCSim must produce a stall/departure, not survivable
-looping. Step function inputs should produce responses comparable to the real aircraft
-within 2× on each axis.
+### CO1: Throttle response approximates real aircraft
+From a trimmed state, throttle step inputs in CRRCSim produce speed/climb changes
+comparable to flight hardware. Establishes the energy baseline — everything else
+(roll authority, pitch authority) depends on being at roughly the right airspeed.
+Sources: training run data (early gens before saturation), flight blackbox, or
+intentional step function tests in sim.
 
-### CO2: Pitch rate gain within 2× of reality
+### CO2: Roll rate gain within 2× of reality
+Currently ~2× off. Verify with proper elevon de-mixing (requires T273i servo logging
+fix). Adjust Cl_da if needed. Roll is partially independent of pitch — can tune from
+wings-level step inputs at known airspeed. Sources: training run data where roll varies,
+flight blackbox roll transients.
+
+### CO3: Pitch rate gain within 2× of reality
 Current 5-7× mismatch is the primary gap. After tuning hb1_streamer.xml, sim pitch rate
-per unit command must be within 0.5-2.0× of flight-measured rates across the speed envelope.
-
-### CO3: Roll rate gain confirmed or adjusted
-Currently ~2× off. Verify with proper elevon de-mixing (requires T273i servo logging fix).
-Adjust Cl_da if needed.
+per unit command must be within 0.5-2.0× of flight-measured rates across the speed
+envelope. Pitch depends on airspeed (CO1) and couples with roll at higher angles.
+Sources: same as CO1/CO2 — scrape from training data or intentional steps.
 
 ### CO4: Pipeline latency aligned
 COMPUTE_LATENCY in CRRCSim updated to match measured real pipeline latency. Currently
-40ms sim vs 49ms real. Either update sim or reduce real latency.
+50ms sim vs 49ms real. Custom MSP2 command (CO5) may reduce real latency — update sim
+to match. Do this BEFORE training runs so the NN trains against the correct delay.
 
-### CO5: Retrain produces non-degenerate controller
+### CO5: Custom MSP command reduces pipeline latency
+Single MSP2_AUTOC_STATE command replaces 3 sequential requests. Target: fetch time
+35ms → 12ms, total pipeline 49ms → 27ms. Requires INAV firmware change (autoc branch)
++ xiao parser update. Do before training to lock in the latency the NN trains against.
+
+### CO6: Flight mode override from xiao
+T273c: xiao sends flight mode channel via MSP override to force MANUAL mode, removing
+dependency on pilot transmitter switch. Can be done in parallel with sim tuning.
+
+### CO7: Non-degenerate training
 BIG training with calibrated model produces a controller that modulates pitch/roll/throttle
 across scenarios. Pitch output should NOT be saturated at ±1.0 for >50% of timesteps.
-
-### CO6: Custom MSP command reduces pipeline latency
-Single MSP2_AUTOC_STATE command replaces 3 sequential requests. Target: fetch time
-35ms → 12ms, total pipeline 49ms → 27ms.
-
-### CO7: Flight mode override from xiao
-T273c: xiao sends flight mode channel via MSP override to force MANUAL mode, removing
-dependency on pilot transmitter switch.
+This is the validation gate — only achievable after CO1-CO4 are in place.
 
 ## Approach
 
-### Phase 1: Measure & characterize (before touching hb1.xml)
-- Step function testing in CRRCSim: command full pitch, full roll, full throttle steps
-  from level flight, observe response. Does the aircraft depart? How quickly?
-- Same step functions on real aircraft (bench with blackbox, or deduce from flight data)
-- De-mix elevons from blackbox: servo[0,1] → pitch/roll deflection
-- Compute per-axis rate gain at multiple airspeeds
-- Side-by-side comparison: sim vs flight rate gain ratios
-
-### Phase 2: Tune hb1_streamer.xml
-- Adjust aero coefficients to match measured rates:
-  - Cm_de (pitch effectiveness) — primary gap
-  - Cm_q (pitch damping, models streamer drag)
-  - Cl_da (roll effectiveness) — verify, may be close
-  - Thrust curve, drag (CD0) — check speed envelope
-- Validate step functions produce realistic response
-- Replay actual flight NN commands through sim, compare trajectory segments
-
-### Phase 3: Pipeline improvements
+### Phase 1: Pipeline latency (CO4, CO5, CO6)
+Lock in the real pipeline latency before tuning aero. Training must use the correct
+delay from the start.
 - T273h: Custom MSP2_AUTOC_STATE in INAV (autoc branch) + xiao parser
-- T273c: Flight mode channel override
-- T273i: Cherry-pick INAV servo logging fix
-- T273b: Update COMPUTE_LATENCY to match real pipeline
+- T273c: Flight mode channel override from xiao
+- T273i: Cherry-pick INAV servo logging fix (enables elevon de-mixing for Phase 2-3)
+- Bench test: measure new pipeline latency
+- T273b: Update COMPUTE_LATENCY in CRRCSim to match measured value
 
-### Phase 4: Retrain & validate
-- BIG training with calibrated model
+### Phase 2: Throttle tuning (CO1)
+Get the energy/speed envelope right first. Everything else depends on airspeed.
+- Characterize real aircraft: throttle → speed and throttle → climb rate from flight
+  blackbox (straight-ish segments, wings level)
+- Same characterization in CRRCSim: step throttle from trim, measure speed/climb response
+- Tune thrust curve, CD0 (parasitic drag), streamer drag contribution
+- May scrape usable data from early-gen training runs before NN saturates, or build
+  a step-function test controller in CRRCSim
+- Validate: sim speed envelope matches flight (Vmin, Vcruise, Vmax, climb rate)
+
+### Phase 3: Roll tuning (CO2)
+Roll is relatively independent at small angles.
+- Characterize: roll rate per unit command at multiple airspeeds (flight blackbox,
+  de-mixed elevons from T273i)
+- Same in CRRCSim: roll step from wings-level, measure rate
+- Adjust Cl_da if needed (018 estimate: sim ~2× slow, Cl_da may already be close)
+- Validate: roll step response within 2× of flight
+
+### Phase 4: Pitch tuning (CO3)
+Pitch is the critical axis — 5-7× mismatch caused the degenerate training.
+- Characterize: pitch rate per unit command at multiple airspeeds (flight blackbox)
+- Same in CRRCSim: pitch step from trim, measure rate and stall behavior
+- Adjust Cm_de (effectiveness) and Cm_q (damping, streamer model)
+- Key test: full pitch + full throttle from level flight. Must stall/depart, not loop.
+- Validate: pitch step response within 2× of flight
+
+### Phase 5: Integration validation
+- Replay actual flight NN commands through CRRCSim from matched initial conditions.
+  Compare attitude/position over 1-2s segments. Divergence quantifies remaining gap.
+- If needed: intentional step function tests — build a test controller that injects
+  known inputs, logs response for direct comparison.
+
+### Phase 6: Retrain & validate (CO7)
+- BIG training with calibrated model + correct pipeline latency
 - Verify non-degenerate behavior (pitch/throttle not saturated)
 - Eval suite: tier1 pass rate, average distance, control modulation
 - Compare eval trajectories to flight data qualitatively
 
-## Validation approaches (if standard tuning is insufficient)
+## Data sources for characterization
 
-- **Custom step controller**: Build a test controller that injects known step inputs
-  (e.g., full pitch for 500ms then neutral) into CRRCSim, logs the response. Compare
-  to same inputs on real aircraft via blackbox.
-- **Flight replay**: Take actual NN commands from flight blackbox, play them through
-  CRRCSim from the same initial condition. Compare attitude/position over 1-2s segments.
-  Divergence quantifies the sim-to-real gap directly.
-- **Frequency sweep**: Sinusoidal inputs at various frequencies to characterize bandwidth
-  and phase lag differences between sim and real.
+Getting reference data for tuning does NOT require dedicated step-function flights:
+- **Training runs**: early generations (before NN saturates) contain varied control
+  inputs across many scenarios. Scrape pitch/roll/throttle transients from data.dat
+  where one axis changes while others are ~constant.
+- **Flight blackbox**: pilot recovery segments after MSP disable have clear step-like
+  inputs. NN-controlled segments have mixed inputs but some clean transients.
+- **Intentional sim steps**: if the above are insufficient, build a simple test
+  controller that commands step inputs in CRRCSim and logs the response.
+- **Flight replay**: play recorded NN commands from blackbox into CRRCSim from the
+  same initial state. Compare 1-2s trajectory segments directly.
 
 ## Known constraints
 - No ground truth video available yet (camera is a future addition)
