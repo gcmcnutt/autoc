@@ -426,60 +426,50 @@ measured as ratios, sim calibration gaps identified with specific parameters to 
 
 ---
 
-## Current Priority Order
+## Task Disposition (018 wrap-up, 2026-03-24)
 
-### Completed
-- Phases 1-3: Setup, foundation, pipeline proof — all verified
-- Phase 4 (partial): Firmware refactor, rabbit logging, projection working
-- Phase 5: Output mapping — signs correct, documented
+### Completed in 018
+- Phases 1-5: Setup, foundation, pipeline proof, rabbit viz, output mapping — all verified
 - Two flights analyzed, conventions confirmed correct
+- Firmware refactored: single 20Hz loop, rabbit logging, MANUAL mode
+- Pipeline timing measured: fetch=35ms eval=4.5ms send=10ms total=49ms
+- Dynamics mismatch quantified: real craft 2× roll, 5-7× pitch vs sim
+- hb1_streamer.xml initial tuning: Cm_de halved, Cm_q doubled for streamer drag
+- Rabbit speed calibrated: 16→13 m/s nominal to match real Vmax=17 m/s
+- AHRS plausibility confirmed: pilot pull-to-level recovery + accel consistency
+  across 3 test spans shows quat is within ~20° of physical reality
 
-### Before next training run
-1. [x] **T223** — Direct rabbit in renderer (done — magenta spheres)
-2. [x] **T273a** — Pipeline timing instrumented (fetch=35ms eval=4.5ms send=10ms total=49ms)
-3. [x] **T301** — INAV MANUAL mode: confirmed linear (rate=100, expo NOW 0, filter NOW off)
-4. [ ] **T273g** — Bench servo response: run autoc on flight hardware with blackbox at 1/8 rate.
-   Measure NN command → servo[0,1] step response. No filter/expo. Characterize servo
-   actuator delay and slew rate. Compare to crrcsim's slew model.
-5. [ ] **T295/T299** — Rate gain from flight data: de-mix elevons, measure servo→attitude
-   rate at various airspeeds. Compare to crrcsim eval-data.dat. Express as ratio.
-6. [ ] **T302** — hb1.xml parameter audit: git log shows earlier tuning. Review key params
-   (mass, CL/CD, control effectiveness, thrust) vs known aircraft specs + streamer drag.
-7. [ ] **T273b** — Update COMPUTE_LATENCY based on T273a (49ms measured, 40ms current).
-   With filter/expo disabled, 40ms is close. May keep as-is or bump to 50ms.
-8. [ ] **T244** — Update hb1.xml with measured ratios from T295/T299.
-9. [ ] **T273h** — Research: custom MSP command to reduce fetch latency.
-   Currently 3 sequential requests (MSP_STATUS + MSP2_INAV_LOCAL_STATE + MSP_RC)
-   at 115200 baud = 35ms avg. Each request has serial round-trip overhead (request
-   frame + wait + response frame + parse). A single custom MSP2 command in INAV
-   (branch autoc) returning all needed fields in one response could reduce to ~12-15ms
-   (single round-trip, ~100 bytes payload at 115200 = ~9ms wire time + overhead).
-   Estimated pipeline reduction: 50ms → 27ms total. Would need INAV firmware change
-   (add MSP2_AUTOC_STATE handler in fc_msp.c) + xiao parser update.
-   Also consider: do we need MSP_STATUS every tick? If not, fetch it every Nth tick
-   and save one round-trip immediately (~7ms saved, no INAV changes needed).
+### → 019-improved-crrcsim (sim fidelity + pipeline latency)
 
-### Before next flight
-7. **T240-T242** — Formal pitch/roll/throttle characterization scripts
-8. **T298** — Recovery behavior: does NN attempt recovery or go degenerate past 30m?
-9. **T245** — Validation eval suite with updated model
-10. **T246-T247** — Expand training: ±50m entry sigma, recovery training phase
+Core sim tuning:
+- [ ] **T302** — hb1.xml parameter audit vs known aircraft specs
+- [ ] **T295/T299** — Flight vs sim rate gain comparison (de-mix elevons)
+- [ ] **T244** — Update hb1.xml aero coefficients from measured ratios
+- [ ] **T273g** — Bench servo step response characterization
+- [ ] **T273b** — Update COMPUTE_LATENCY (40ms→49ms based on T273a)
+- [ ] **T243** — Replay flight NN commands through crrcsim, compare trajectories
+- [ ] **T245** — Validation eval with updated model
+- [ ] **T240-T242** — Per-axis characterization scripts
+- [ ] **T303** — Side-by-side flight vs sim diagnostic script
+- [ ] **T247** — Retrain with calibrated model
 
-### After next training→flight cycle
-- [ ] **T273h** — Custom MSP command (reduce fetch 35ms→12ms)
-- [ ] **T273c** — Override flight mode channel from xiao (force MANUAL)
-- [ ] **T273i** — Cherry-pick INAV servo logging fix (commits 957f23d5d + 376346d8f).
-  Known bug in our INAV 8.0.0 autoc branch: blackbox logs servo[0] (unused) and
-  servo[1] (left elevon) but misses servo[2] (right elevon). `getServoCount()=2`
-  but loop indexes from 0 not from `minServoIndex=1`. Fixed upstream with per-servo
-  conditions (AT_LEAST_SERVOS_N). Need both elevons for proper de-mixing.
+Pipeline latency reduction:
+- [ ] **T273h** — Custom MSP2 command (reduce fetch 35ms→12ms, INAV+xiao changes)
+- [ ] **T273c** — Override flight mode channel from xiao (force MANUAL via MSP)
 
-### Deferred to backlog
-- T224b/c — Projection singularity fix (cosmetic, T223 eliminates need)
+INAV fixes:
+- [ ] **T273i** — Cherry-pick servo logging fix (both elevons for de-mixing)
+
+### → Backlog (not blocking, do when convenient)
+- T224b/c — Projection singularity fix (cosmetic, T223 magenta spheres sufficient)
 - T225 — Renderer HUD overlay (→ 017 visual tracking feature)
-- T274 — Sample rate increase feasibility (10Hz adequate)
-- T260-T267 — AHRS formal charts (plausible per analysis, formal scripts later)
-- T290-T294 — AHRS deep dive with gravity/centripetal (after next flight with video)
+- T274 — 20Hz sample rate feasibility (10Hz adequate)
+- T260-T267 — AHRS formal charts (plausible per manual analysis, formal scripts later)
+- T290-T294 — AHRS deep dive (after next flight with video or xiao IMU cross-check)
+- T246 — Variation envelope definition (after 019 establishes calibrated baseline)
+- T298 — Recovery behavior analysis (interesting but training comes first)
+- T280-T283 — Polish/cleanup (move docs, quickstart validation, gitignore, 015 carryovers)
+- Xiao IMU cross-check — enable LSM6DS3TR-C onboard AHRS as independent attitude reference
 
 ---
 
@@ -540,5 +530,8 @@ To fix: increase Cm_de ~5× or decrease I_yy ~5× (or combination).
 
 - Task IDs T200-T303 span this feature
 - Pipeline conventions verified correct across two flights
-- Key gap: sim dynamics gain ~0.7× real aircraft (NN overdrives, then degenerates >30m)
-- Path forward: calibrate hb1.xml → adjust sim latency → expand training envelope → retrain → fly
+- Key gap: sim dynamics 2× roll, 5-7× pitch mismatch vs real aircraft
+- BIG3 training (400 gens) confirmed degenerate: NN converges to full pitch + full throttle
+  by gen 10, exploiting sim physics that rewards looping/porpoising at 20m avg distance
+- AHRS plausibility confirmed via manual recovery analysis (3 test spans)
+- Path forward → 019: calibrate hb1.xml → sim step function testing → retrain → fly
