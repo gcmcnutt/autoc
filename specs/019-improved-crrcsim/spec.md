@@ -48,18 +48,24 @@ COMPUTE_LATENCY in CRRCSim updated to match measured real pipeline latency. Curr
 to match. Do this BEFORE training runs so the NN trains against the correct delay.
 
 ### CO5: Custom MSP command reduces pipeline latency
-Single MSP2_AUTOC_STATE command replaces 3 sequential requests. Target: fetch time
-35ms → 12ms, total pipeline 49ms → 27ms. Requires INAV firmware change (autoc branch)
-+ xiao parser update. Do before training to lock in the latency the NN trains against.
+Single MSP2_AUTOC_STATE command replaces 3 sequential requests, carrying only what the
+NN needs (pos, vel, quat, rc) plus minimal safety fields (arming state). All other
+telemetry (sensor status, flight mode details, diagnostics) comes from INAV blackbox
+post-flight. Target: fetch time 35ms → 12ms, total pipeline 49ms → 27ms. Requires
+minimal INAV firmware change in autoc branch (not a full INAV upgrade — defer major
+INAV version updates to after this milestone) + xiao parser update.
 
 ### CO6: Flight mode override from xiao
 T273c: xiao sends flight mode channel via MSP override to force MANUAL mode, removing
 dependency on pilot transmitter switch. Can be done in parallel with sim tuning.
 
 ### CO7: Non-degenerate training
-BIG training with calibrated model produces a controller that modulates pitch/roll/throttle
-across scenarios. Pitch output should NOT be saturated at ±1.0 for >50% of timesteps.
-This is the validation gate — only achievable after CO1-CO4 are in place.
+BIG training with calibrated model produces response curves in data.dat that visually
+resemble flight blackbox curves across the operating envelope. This is attitude flying —
+full control inputs are expected and normal. The metric is not whether the NN avoids
+saturation, but whether the sim *response* to those commands (rate, speed, altitude
+change) looks like reality. Same response-curve comparison used in Phases 1-3 applied
+to trained behavior. This is the validation gate — only achievable after CO1-CO4.
 
 ## Repeatable tuning workflow
 
@@ -79,6 +85,13 @@ The same loop applies to each axis and will repeat when we build variant aircraf
 This workflow is designed to be repeatable: when we build a second craft within 5-10%
 of the current one, we repeat the same extract→compare→tune loop against its flight
 data. The tooling built here becomes the variation characterization pipeline.
+
+**Iteration is convergence-driven, not count-limited.** Throttle is where you build the
+mental model of how hb1.xml parameters map to observable behavior — expect the most
+learning there. By roll and pitch you're faster because you understand the FDM. The
+escalation trigger is "we don't understand what's happening" (cause/effect in the FDM
+is unclear), not "we ran N iterations." If curves are converging, keep going. If they're
+getting worse or making no sense, step back and study the FDM code.
 
 ## Approach
 
@@ -144,28 +157,34 @@ produce survivable looping.
 
 ### Phase 5: Sensor scaling audit (pre-flight gate)
 Before committing to a training run, verify the full state→sensor→NN input chain
-has no unit mismatches. This was broadly confirmed in 018 but worth a final check
-with the updated sim model.
-- CRRCSim FDM units: ft/s, radians, slugs — verify all conversions to SI at the
-  autoc interface boundary (position m, velocity m/s, attitude quaternion, rates rad/s)
-- NN input scaling: confirm dPhi/dTheta/dist inputs match between sim and flight
-  at known states (e.g., 10m offset at 45° should produce the same NN input values
-  in both CRRCSim and INAV blackbox)
-- Accelerometer/gyro scaling: if used as NN inputs, confirm units match
-- Cross-check: pick a few timesteps from flight blackbox and from sim data.dat at
-  similar physical states. NN input vectors should be comparable.
+has no unit mismatches via **code inspection**. 018 broadly confirmed the pipeline but
+had a NED/NEU confusion that was fixed — the fix may have papered over deeper scaling
+issues. Garbage-in-garbage-out compatibility is not the same as correct scaling.
+- **INAV side**: read what INAV actually publishes in MSP2_INAV_LOCAL_STATE and
+  MSP_RC. What units? What coordinate frame? Trace through xiao parser to NN inputs.
+- **CRRCSim side**: read what the FDM actually computes (ft/s, radians, slugs internally).
+  Trace through minisim interface to autoc NN inputs. Where are the unit conversions?
+- **Compare normalizers**: are dPhi/dTheta/dist computed the same way in both paths?
+  Same scaling, same units, same sign conventions? Reference: `docs/COORDINATE_CONVENTIONS.md`
+  and minisim interface code.
+- **Spot-check**: pick a few matched physical states from flight blackbox and sim data.dat.
+  NN input vectors should be numerically comparable at the same physical state.
 
 ### Phase 6: Pipeline latency + retrain (CO4, CO5, CO6, CO7)
 Once sim aero matches reality and sensor scaling is verified, lock in pipeline
 latency and train.
-- T273h: Custom MSP2_AUTOC_STATE in INAV (autoc branch) + xiao parser
+- T273h: Custom MSP2_AUTOC_STATE in INAV autoc branch — NN fields only (pos, vel,
+  quat, rc, arming state). Minimal local change, not a full INAV upgrade.
 - T273c: Flight mode channel override from xiao
-- T273i: Cherry-pick INAV servo logging fix (if not done earlier for de-mixing)
-- Bench test: measure new pipeline latency
-- T273b: Update COMPUTE_LATENCY in CRRCSim to match
+- T273i: Fix servo logging — minimal local fix to servo index loop in autoc branch
+  (not cherry-pick from upstream). Just fix the off-by-one so both elevons log.
+- Bench checks before flight:
+  - Verify servo logging fix: both elevons appear in blackbox CSV
+  - Confirm blackbox sample rate at 1/8 for higher resolution flight data
+  - Measure new pipeline latency with custom MSP command
+- T273b: Update COMPUTE_LATENCY in CRRCSim to match measured value
 - BIG training with calibrated model + correct latency
-- Verify non-degenerate behavior (pitch/throttle not saturated >50% of steps)
-- Compare data.dat response curves to flight data — should look similar now
+- Validate CO7: data.dat response curves resemble flight blackbox curves
 
 ## Data sources for characterization
 
@@ -183,11 +202,22 @@ Available data — no dedicated step-function flights needed to start:
 - **Flight replay:** play recorded NN commands into CRRCSim from matched initial state.
   Best for integration validation (Phase 4).
 
+## Clarifications
+
+### Session 2026-03-24
+- Q: What is the iteration budget per axis before escalating? → A: Convergence-driven, not count-limited. Throttle phase builds FDM mental model; later axes are faster. Escalate when cause/effect in FDM is unclear, not after N tries.
+- Q: What defines non-degenerate for CO7 training gate? → A: Response curve similarity — data.dat curves should visually resemble flight blackbox curves. Full control inputs are normal for attitude flying; the metric is response fidelity, not saturation avoidance.
+- Q: Sensor scaling audit scope? → A: Code inspection — read what INAV actually publishes, read what CRRCSim actually publishes, verify normalizers in both paths produce same NN inputs for same physical state. 018 NED/NEU fix may have papered over deeper issues.
+- Q: Custom MSP command scope? → A: NN-critical fields only (pos, vel, quat, rc) + arming state for safety. All diagnostics from INAV blackbox post-flight. Minimum latency path.
+- Q: INAV servo logging fix approach? → A: Minimal local fix in autoc branch (servo index loop). Defer full INAV version upgrade to after this milestone. Bench verify both elevons log.
+
 ## Known constraints
 - No ground truth video available yet (camera is a future addition)
 - AHRS is plausible but not precisely validated (manual recovery analysis shows ~20° accuracy)
 - Streamer adds significant variable drag — model as Cm_q variation, not fixed value
-- INAV servo logging bug means only one elevon is logged — T273i needed for proper de-mixing
+- INAV servo logging bug means only one elevon is logged — T273i (minimal local fix) needed for proper de-mixing
+- INAV major version upgrade (8→9+) deferred to after this milestone
+- Next flight: blackbox sample rate 1/8 for higher resolution data
 
 ## Prior art from 018
 - [018 tasks.md](../018-flight-analysis/tasks.md) — full task list with disposition
