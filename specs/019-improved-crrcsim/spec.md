@@ -211,6 +211,56 @@ Available data — no dedicated step-function flights needed to start:
 - Q: Custom MSP command scope? → A: NN-critical fields only (pos, vel, quat, rc) + arming state for safety. All diagnostics from INAV blackbox post-flight. Minimum latency path.
 - Q: INAV servo logging fix approach? → A: Minimal local fix in autoc branch (servo index loop). Defer full INAV version upgrade to after this milestone. Bench verify both elevons log.
 
+## Tuning log
+
+### 019 step 1: coefficient adjustments (2026-03-24)
+
+Based on flight vs sim response curve comparison (IMU gravity-corrected forward accel):
+
+| Param | Was | Changed to | Rationale |
+|-------|-----|-----------|-----------|
+| Cm_de | -0.19 | -0.24 | Sim pitch 0.5× flight. Increased past original -0.22 |
+| Cl_da | 0.14 | 0.10 | Sim roll 1.2-2× flight. Reduced 30% |
+| CD_prof | 0.18 | 0.14 | Sim drag curve too steep vs flight |
+
+**Result**: NN still converged to full pitch + full throttle by gen ~10.
+The coefficient changes didn't fix the degenerate strategy because the FDM
+doesn't punish full pitch — `CL_max=1.2` with `CL_drop=0.1` and `CD_stall=0`
+means the wing barely stalls. Full pitch mushes through instead of departing.
+
+### 019 step 2: stall model (2026-03-24)
+
+The root cause of degenerate training is structural: the FDM has no meaningful
+stall penalty. Real flying wings with streamers stall abruptly — the sim doesn't.
+
+| Param | Was | Changed to | Rationale |
+|-------|-----|-----------|-----------|
+| CL_max | 1.2 | 0.9 | Earlier stall, real wing+streamer has less margin |
+| CL_min | -0.9 | -0.5 | Inverted stall also sharper |
+| CL_drop | 0.1 | 0.5 | Sharp post-stall lift loss, not gentle mush |
+| CD_stall | 0 | 0.10 | Drag spike at stall — makes full pitch costly |
+
+**Expected**: Full pitch should now cause stall/departure, not survivable
+looping. The NN must learn to modulate pitch to stay in the flyable AoA range.
+
+### Flight response data (reference for tuning)
+
+Forward inertial accel (thrust-drag, gravity-corrected via AHRS quat):
+```
+Power     5    7    9   11   13   15   17   19   21   23  m/s
+  0-10% +0.4 -4.4 -2.3 -1.7 -1.4 -1.2 -0.8 -2.6  --  -1.2
+ 90-100% +7.7 +9.5 +5.2 +6.0 +5.6 +5.4 +4.6 +5.5 +5.9 +5.4
+```
+
+Sim (BIG3 gen 395-400, pre-019 model):
+```
+ 90-100% -0.5 +1.3 +4.2 +3.8 +3.6 +2.3 +0.9 -0.3 -1.2 -1.7
+```
+
+Flight: flat +5-6 across all speeds (always excess thrust at full power).
+Sim: falling curve crossing zero at 19 m/s (drag-limited).
+Flight at 90-100%: avg 3.3g load (aggressive maneuvering throughout).
+
 ## Known constraints
 - No ground truth video available yet (camera is a future addition)
 - AHRS is plausible but not precisely validated (manual recovery analysis shows ~20° accuracy)
