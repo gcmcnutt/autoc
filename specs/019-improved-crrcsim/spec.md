@@ -61,52 +61,103 @@ BIG training with calibrated model produces a controller that modulates pitch/ro
 across scenarios. Pitch output should NOT be saturated at ±1.0 for >50% of timesteps.
 This is the validation gate — only achievable after CO1-CO4 are in place.
 
-## Approach
+## Repeatable tuning workflow
 
-The core loop: extract response curves from real flight data (INAV blackbox), extract
-the same from CRRCSim (data.dat from training runs or intentional step tests), compare
-side-by-side, adjust hb1_streamer.xml, repeat until they look similar. Available data
-first — only build custom step controllers if we can't scrape enough clean transients.
+The same loop applies to each axis and will repeat when we build variant aircraft:
+
+1. **Extract real response curve** from flight blackbox (2026-03-22 data has climb,
+   coast, recovery, NN control with full throttle in various attitudes)
+2. **Extract sim response curve** from data.dat (BIG3 20260323 data has 400 gens,
+   early gens have varied inputs before NN saturates; later gens useful for steady-state)
+3. **Compare side-by-side** (ascii art / simple plots). Identify where nonlinearities
+   diverge — e.g., streamer drag at high speed, stall behavior, thrust saturation.
+4. **Adjust hb1_streamer.xml** parameters for the axis under test.
+5. **Run a mini training** (10-20 gens, enough to get varied inputs) to regenerate
+   sim response curves with the updated model.
+6. **Re-compare**. Iterate until curves look similar across the operating envelope.
+
+This workflow is designed to be repeatable: when we build a second craft within 5-10%
+of the current one, we repeat the same extract→compare→tune loop against its flight
+data. The tooling built here becomes the variation characterization pipeline.
+
+## Approach
 
 ### Phase 1: Throttle characterization (CO1)
 Get the energy/speed envelope right first. Roll and pitch authority depend on airspeed.
-- Extract from flight blackbox: throttle → speed and throttle → climb rate during
-  straight-ish wings-level segments. Pilot recovery segments have clear throttle
-  changes. NN-controlled segments may also have usable transients.
-- Extract from data.dat: same metrics from early-gen training data (gen 1-5 before
-  NN saturates). Find timesteps where throttle changes while pitch/roll are ~constant.
-- Compare response curves side-by-side. Tune thrust curve, CD0, streamer drag.
-- If insufficient clean transients: build a sim step-function test (step throttle
-  from trim, log speed/climb response).
-- Validate: sim speed envelope matches flight (Vmin, Vcruise, Vmax, climb rate)
+
+**Real (flight blackbox):**
+- Throttle → speed: straight-ish wings-level segments, pilot recovery climbs (full
+  throttle + level), NN segments with varied throttle at different attitudes
+- Throttle → climb rate: altitude rate vs throttle command, binned by attitude
+- Speed envelope: Vmin (near stall), Vcruise (50% throttle), Vmax (full throttle level)
+- Streamer drag signature: speed at full throttle should cap around 17 m/s
+
+**Sim (data.dat):**
+- Same metrics from BIG3 data. Gen 1-5 have varied throttle before saturation.
+  Later gens (full throttle always) useful for steady-state Vmax and climb rate.
+- Nonlinearities to check: does sim speed saturate at the same Vmax? Does climb
+  rate at full throttle match? Does idle-throttle descent rate match coast segments?
+
+**Tuning targets:** thrust curve, CD0 (parasitic drag), streamer drag contribution.
+Validate: sim speed envelope matches flight within ~15%.
 
 ### Phase 2: Roll characterization (CO2)
 Roll is relatively independent at small angles.
-- Extract from flight blackbox: roll rate per unit command at multiple airspeeds.
-  Needs elevon de-mixing (T273i servo fix, or estimate from single elevon + symmetry).
-- Extract from data.dat: roll transients where pitch/throttle are ~steady.
-- Compare response curves. Adjust Cl_da if needed (018 estimate: sim ~2× slow).
-- Validate: roll step response within 2× of flight
+
+**Real (flight blackbox):**
+- Roll rate per unit command at multiple airspeeds. Estimate elevon deflection from
+  single logged elevon + symmetry assumption (T273i fix enables proper de-mixing later).
+- Roll transients during NN control and pilot recovery segments.
+
+**Sim (data.dat):**
+- Roll transients where pitch/throttle are ~steady. BIG3 roll output varies (mean
+  -0.04 with 8.7% right, 16.2% left in last gen — earlier gens have more variation).
+
+**Tuning targets:** Cl_da (roll effectiveness). 018 estimate: sim ~2× slow.
+Validate: roll rate per unit command within 2× of flight across speed range.
 
 ### Phase 3: Pitch characterization (CO3)
 The critical axis — 5-7× mismatch caused the degenerate training.
-- Extract from flight blackbox: pitch rate per unit command at multiple airspeeds.
-- Extract from data.dat: pitch transients. Harder to isolate since NN saturates
-  early — gen 1 data may be the best source, or build sim step tests.
-- Compare response curves. Adjust Cm_de (effectiveness) and Cm_q (damping/streamer).
-- Key test: full pitch + full throttle from level flight. Must stall/depart, not loop.
-- Validate: pitch step response within 2× of flight
+
+**Real (flight blackbox):**
+- Pitch rate per unit command at multiple airspeeds. Pilot recovery pulls are
+  clean step-like inputs (seen in today's analysis: sustained -400 to -480 rcPitch).
+- NN segments have full pitch always — useful for steady-state but not transients.
+
+**Sim (data.dat):**
+- Gen 1 has pitch mean=0.83 (not yet saturated) — best source for transients.
+  By gen 5 it's already at 0.97. May need sim step tests for clean data.
+- Key nonlinearity: does full pitch + full throttle stall/depart or loop?
+
+**Tuning targets:** Cm_de (effectiveness), Cm_q (damping, streamer model).
+Validate: pitch rate per unit command within 2× of flight. Full pitch must not
+produce survivable looping.
 
 ### Phase 4: Integration & iteration
-- Overlay sim vs flight response curves across all axes. Iterate tuning where
-  interactions between axes cause secondary mismatches (e.g., pitch authority
-  changes with speed, which changed in Phase 1).
+- Overlay all three axis response curves (sim vs flight). Iterate where cross-axis
+  coupling causes secondary mismatches (pitch authority changes with speed from
+  Phase 1 tuning, roll couples to yaw at higher angles, etc).
 - Replay actual flight NN commands through CRRCSim from matched initial conditions.
-  Compare attitude/position over 1-2s segments. Divergence quantifies remaining gap.
+  Compare attitude/position over 1-2s segments.
 - If needed: build custom step controller for targeted experiments at the limits.
+- Mini training runs (10-20 gens) to validate tuning hasn't broken other axes.
 
-### Phase 5: Pipeline latency + retrain (CO4, CO5, CO6, CO7)
-Once sim aero matches reality, lock in the correct pipeline latency and train.
+### Phase 5: Sensor scaling audit (pre-flight gate)
+Before committing to a training run, verify the full state→sensor→NN input chain
+has no unit mismatches. This was broadly confirmed in 018 but worth a final check
+with the updated sim model.
+- CRRCSim FDM units: ft/s, radians, slugs — verify all conversions to SI at the
+  autoc interface boundary (position m, velocity m/s, attitude quaternion, rates rad/s)
+- NN input scaling: confirm dPhi/dTheta/dist inputs match between sim and flight
+  at known states (e.g., 10m offset at 45° should produce the same NN input values
+  in both CRRCSim and INAV blackbox)
+- Accelerometer/gyro scaling: if used as NN inputs, confirm units match
+- Cross-check: pick a few timesteps from flight blackbox and from sim data.dat at
+  similar physical states. NN input vectors should be comparable.
+
+### Phase 6: Pipeline latency + retrain (CO4, CO5, CO6, CO7)
+Once sim aero matches reality and sensor scaling is verified, lock in pipeline
+latency and train.
 - T273h: Custom MSP2_AUTOC_STATE in INAV (autoc branch) + xiao parser
 - T273c: Flight mode channel override from xiao
 - T273i: Cherry-pick INAV servo logging fix (if not done earlier for de-mixing)
@@ -118,17 +169,19 @@ Once sim aero matches reality, lock in the correct pipeline latency and train.
 
 ## Data sources for characterization
 
-Getting reference data for tuning does NOT require dedicated step-function flights:
-- **data.dat (training runs)**: early generations (before NN saturates) contain varied
-  control inputs across many scenarios. Scrape pitch/roll/throttle transients where
-  one axis changes while others are ~constant. This is the primary sim-side source.
-- **Flight blackbox**: pilot recovery segments after MSP disable have clear step-like
-  inputs. NN-controlled segments have mixed inputs but some clean transients.
-- **Intentional sim steps**: if the above are insufficient, build a simple test
-  controller that commands step inputs in CRRCSim and logs the response. Only if
-  we can't get clean enough transients from existing data.
-- **Flight replay**: play recorded NN commands from blackbox into CRRCSim from the
-  same initial state. Compare 1-2s trajectory segments. Best for integration validation.
+Available data — no dedicated step-function flights needed to start:
+- **Flight blackbox (2026-03-22):** Two flights with climb, coast, rapid recovery,
+  NN control at various attitudes. Pilot recovery segments have clear step-like inputs.
+  5 MSPRCOVERRIDE test spans. ~8MB CSV + GPS data.
+- **BIG3 data.dat (2026-03-23):** 400 generations, 51k steps per gen. Gen 1-5 have
+  varied control inputs (throttle mean=0.36, pitch mean=0.83). Later gens saturated
+  but useful for steady-state at full throttle. 19M+ lines total.
+- **Mini training runs:** 10-20 gen runs with updated hb1_streamer.xml to regenerate
+  sim response curves after each tuning iteration. Quick feedback loop.
+- **Intentional sim steps:** build only if scraped data is insufficient. Simple test
+  controller that commands step inputs in CRRCSim, logs response.
+- **Flight replay:** play recorded NN commands into CRRCSim from matched initial state.
+  Best for integration validation (Phase 4).
 
 ## Known constraints
 - No ground truth video available yet (camera is a future addition)
