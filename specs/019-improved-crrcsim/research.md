@@ -79,16 +79,57 @@ will verify this by code inspection.
 ## R5: Custom MSP2 command feasibility
 
 **Decision**: Add MSP2_AUTOC_STATE (command ID in MSP2 user range 0x4000-0x7FFF) to
-INAV autoc branch. Payload: pos[3] + vel[3] + quat[4] + rc[4] + armingFlags = ~60 bytes.
+INAV autoc branch. Payload: pos[3] + vel[3] + quat[4] + rc[4] + armingFlags = 38 bytes.
 
-**Rationale**: Current 3-request pipeline: MSP_STATUS (armingFlags) + MSP2_INAV_LOCAL_STATE
-(pos, vel, quat) + MSP_RC (rc channels). Each has serial round-trip overhead at 115200 baud.
-Single command eliminates 2 round-trips. Estimated: 35ms → 12ms fetch.
+**Wire time analysis** (115200 baud, 1 byte = 10 bits = 86.8 µs):
+
+Current 3-request pipeline (measured 35ms avg):
+```
+  MSP_STATUS request:          ~7 bytes  =  0.6 ms
+  MSP_STATUS response:        ~27 bytes  =  2.3 ms
+  + INAV scheduling delay                 ~  7 ms
+  MSP2_INAV_LOCAL_STATE req:  ~10 bytes  =  0.9 ms
+  MSP2_INAV_LOCAL_STATE rsp:  ~70 bytes  =  6.1 ms
+  + INAV scheduling delay                 ~  7 ms
+  MSP_RC request:              ~7 bytes  =  0.6 ms
+  MSP_RC response:            ~39 bytes  =  3.4 ms
+  + INAV scheduling delay                 ~  7 ms
+  ─────────────────────────────────────────────────
+  Total wire:                             ~ 14 ms
+  Total scheduling (3 turnarounds):       ~ 21 ms
+  Total:                                  ~ 35 ms  ✓ matches measurement
+```
+
+Custom MSP2_AUTOC_STATE (single round trip):
+```
+  Request:   10 bytes MSP2 frame (no payload)  =  0.9 ms
+  Response:  10 bytes overhead + 38 payload    =  4.2 ms
+  + INAV scheduling delay (1 turnaround)       ~  7 ms
+  ─────────────────────────────────────────────────
+  Total wire:                                  ~  5 ms
+  Total scheduling:                            ~  7 ms
+  Total fetch:                                 ~ 12 ms (possibly 8-10ms)
+```
+
+**Dominant cost is serial turnarounds, not wire time.** Eliminating 2 of 3 round trips
+saves ~20ms. Marshalling on both sides is microseconds (negligible).
+
+**Updated pipeline estimate:**
+```
+  Current:  fetch(35) + eval(5) + send(10) = 50ms total
+  Custom:   fetch(8-12) + eval(5) + send(10) = 23-27ms total
+```
+
+**Dependency**: This is a dependent project (INAV firmware + xiao firmware) that must
+be bench tested on flight hardware before updating COMPUTE_LATENCY in CRRCSim. The
+measured value from bench becomes the sim latency for the next BIG training run.
+Sequence: build → flash → bench measure → update sim → train.
 
 **Implementation scope**:
 - INAV: Add handler in `src/main/fc/fc_msp.c` for MSP2_AUTOC_STATE. Pack fields from
   existing internal state. Minimal local change to autoc branch.
 - Xiao: Replace 3 MSP calls in `msplink.cpp` with single MSP2 request + parser.
+- Bench: measure actual fetch latency, update COMPUTE_LATENCY_MSEC_DEFAULT to match.
 
 ## R6: INAV servo logging fix
 
