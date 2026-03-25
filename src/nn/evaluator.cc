@@ -171,7 +171,15 @@ static const float FORECAST_OFFSETS[] = {1.0f, 5.0f};
 
 void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
                       float* inputs) {
-    int32_t simTimeMsec = static_cast<int32_t>(aircraftState.getSimTimeMsec());
+    gp_scalar rabbitOdo = aircraftState.getRabbitOdometer();
+    gp_scalar rabbitSpeed = aircraftState.getRabbitSpeed();
+
+    // Convert forecast offset steps to offset meters
+    // FORECAST_OFFSETS are in steps (1 step = SIM_TIME_STEP_MSEC),
+    // convert: offsetMeters = steps * (SIM_TIME_STEP_MSEC / 1000.0) * rabbitSpeed
+    auto offsetStepsToMeters = [&](float steps) -> gp_scalar {
+        return static_cast<gp_scalar>(steps) * (static_cast<gp_scalar>(SIM_TIME_STEP_MSEC) / 1000.0f) * rabbitSpeed;
+    };
 
     // 0-3: dPhi past history (raw radians)
     for (int i = 0; i < 4; i++)
@@ -180,7 +188,7 @@ void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
     // 4-5: dPhi path-lookahead forecast (+0.1s, +0.5s)
     for (int i = 0; i < 2; i++)
         inputs[4 + i] = static_cast<float>(
-            executeGetDPhi(pathProvider, aircraftState, FORECAST_OFFSETS[i]));
+            executeGetDPhi(pathProvider, aircraftState, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i])));
 
     // 6-9: dTheta past history (raw radians)
     for (int i = 0; i < 4; i++)
@@ -189,7 +197,7 @@ void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
     // 10-11: dTheta path-lookahead forecast (+0.1s, +0.5s)
     for (int i = 0; i < 2; i++)
         inputs[10 + i] = static_cast<float>(
-            executeGetDTheta(pathProvider, aircraftState, FORECAST_OFFSETS[i]));
+            executeGetDTheta(pathProvider, aircraftState, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i])));
 
     // 12-15: dist past history (raw metres)
     for (int i = 0; i < 4; i++)
@@ -198,7 +206,7 @@ void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
     // 16-17: dist forecast — distance from current position to future rabbit (+0.1s, +0.5s)
     for (int i = 0; i < 2; i++) {
         gp_vec3 futureTarget = getInterpolatedTargetPosition(
-            pathProvider, simTimeMsec, FORECAST_OFFSETS[i]);
+            pathProvider, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i]));
         inputs[16 + i] = static_cast<float>(
             (futureTarget - aircraftState.getPosition()).norm());
     }

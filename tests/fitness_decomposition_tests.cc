@@ -17,8 +17,7 @@ static EvalResults makeSimpleEvalResults(int numSteps, bool crash, int crashAtSt
         gp_vec3 pos(static_cast<gp_scalar>(x), 0.0f, -25.0f);
         totalDist = static_cast<double>(i) * 1.6;
         double turnRad = static_cast<double>(i) * 0.1;  // some turning
-        double timeMsec = static_cast<double>(i) * 100.0;  // 10Hz
-        path.push_back(Path(pos, gp_vec3::UnitX(), totalDist, turnRad, timeMsec));
+        path.push_back(Path(pos, gp_vec3::UnitX(), totalDist, turnRad));
     }
     results.pathList.push_back(path);
 
@@ -166,7 +165,7 @@ TEST(FitnessDecomposition, MultipleScenarios) {
             double x = -static_cast<double>(i) * 1.6;
             gp_vec3 pos(static_cast<gp_scalar>(x), 0.0f, -25.0f);
             totalDist = static_cast<double>(i) * 1.6;
-            path.push_back(Path(pos, gp_vec3::UnitX(), totalDist, 0.1 * i, i * 100.0));
+            path.push_back(Path(pos, gp_vec3::UnitX(), totalDist, 0.1 * i));
         }
         results.pathList.push_back(path);
 

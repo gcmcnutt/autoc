@@ -15,7 +15,7 @@ import numpy as np
 from dataclasses import dataclass
 
 # Constants matching autoc
-SIM_RABBIT_VELOCITY = 16.0  # m/s
+SIM_RABBIT_VELOCITY = 13.0  # m/s (matches autoc.ini RabbitSpeedNominal) — used for odometer advancement
 SIM_TIME_STEP_MSEC = 100    # ms
 HIST_PAST = [9, 3, 1, 0]   # history indices for inputs [0-3], [6-9], [12-15]
 FORECAST_OFFSETS = [1.0, 5.0]  # steps for inputs [4-5], [10-11], [16-17]
@@ -28,7 +28,6 @@ FORECAST_OFFSETS = [1.0, 5.0]  # steps for inputs [4-5], [10-11], [16-17]
 class PathPoint:
     pos: np.ndarray   # [x, y, z]
     dist: float       # distance from start
-    time_msec: int    # simTimeMsec
 
 def generate_straight_and_level():
     """Generate the StraightAndLevel racetrack path (matches embedded_pathgen_selector.h)."""
@@ -47,8 +46,7 @@ def generate_straight_and_level():
             if len(points) > 0:
                 seg_dist = np.linalg.norm(pt - points[-1].pos)
                 total_dist += seg_dist
-            time_msec = int((total_dist / SIM_RABBIT_VELOCITY) * 1000.0)
-            points.append(PathPoint(pos=pt.copy(), dist=total_dist, time_msec=time_msec))
+            points.append(PathPoint(pos=pt.copy(), dist=total_dist))
 
     def add_horizontal_turn(start, radius, angle_radians, clockwise):
         nonlocal total_dist
@@ -84,8 +82,7 @@ def generate_straight_and_level():
             if len(points) > 0:
                 seg_dist = np.linalg.norm(pt - points[-1].pos)
                 total_dist += seg_dist
-            time_msec = int((total_dist / SIM_RABBIT_VELOCITY) * 1000.0)
-            points.append(PathPoint(pos=pt.copy(), dist=total_dist, time_msec=time_msec))
+            points.append(PathPoint(pos=pt.copy(), dist=total_dist))
 
     # Racetrack: south 20m, 180° right, north 40m, 180° right, south 20m
     entry = [0.0, 0.0, 0.0]
@@ -105,31 +102,31 @@ def generate_straight_and_level():
 
     return points
 
-def get_interpolated_position(path, time_msec, offset_steps=0.0):
-    """Match getInterpolatedTargetPosition from sensor_math.cc"""
+def get_interpolated_position(path, odometer, offset_meters=0.0):
+    """Match getInterpolatedTargetPosition from sensor_math.cc (odometer-based)"""
     if len(path) == 0:
         return np.zeros(3)
 
-    goal_time = time_msec + int(offset_steps * SIM_TIME_STEP_MSEC)
+    goal_dist = odometer + offset_meters
 
     # Clamp to path bounds
-    if goal_time <= path[0].time_msec:
+    if goal_dist <= path[0].dist:
         return path[0].pos.copy()
-    if goal_time >= path[-1].time_msec:
+    if goal_dist >= path[-1].dist:
         return path[-1].pos.copy()
 
     # Linear scan
     lo = 0
     for i in range(len(path) - 1):
-        if path[i + 1].time_msec > goal_time:
+        if path[i + 1].dist > goal_dist:
             lo = i
             break
 
     p0 = path[lo]
     p1 = path[lo + 1]
-    dt = p1.time_msec - p0.time_msec
-    if dt > 0:
-        frac = (goal_time - p0.time_msec) / dt
+    dd = p1.dist - p0.dist
+    if dd > 0:
+        frac = (goal_dist - p0.dist) / dd
         frac = max(0.0, min(1.0, frac))
     else:
         frac = 0.0
@@ -241,7 +238,7 @@ def main():
     nav_states, nn_entries = parse_log(sys.argv[1])
     path = generate_straight_and_level()
 
-    print(f"Path: {len(path)} points, max time {path[-1].time_msec}ms, length {path[-1].dist:.1f}m")
+    print(f"Path: {len(path)} points, length {path[-1].dist:.1f}m")
     print(f"Nav states: {len(nav_states)}, NN entries: {len(nn_entries)}")
 
     # Find autoc-enabled nav states (pos is relative after enable)
@@ -270,11 +267,11 @@ def main():
         idx = nn['idx']
         inputs = nn['inputs']
 
-        # Elapsed time: idx tells us path index, use path time
+        # Rabbit odometer: idx tells us path index, use path distance
         if idx < len(path):
-            elapsed_msec = path[idx].time_msec
+            rabbit_odo = path[idx].dist
         else:
-            elapsed_msec = path[-1].time_msec
+            rabbit_odo = path[-1].dist
 
         # Get aircraft state from corresponding autoc nav state
         if tick < len(autoc_states):
@@ -285,7 +282,7 @@ def main():
             continue
 
         # Compute expected target position (offset=0 = current rabbit)
-        target = get_interpolated_position(path, elapsed_msec, 0.0)
+        target = get_interpolated_position(path, rabbit_odo, 0.0)
 
         # Expected sensor values
         exp_dist = compute_dist(target, pos)
@@ -350,15 +347,16 @@ def main():
         nn = nn_entries[tick]
         idx = nn['idx']
         if idx < len(path):
-            elapsed_msec = path[idx].time_msec
+            rabbit_odo = path[idx].dist
         else:
-            elapsed_msec = path[-1].time_msec
+            rabbit_odo = path[-1].dist
         if tick < len(autoc_states):
             pos = autoc_states[tick]['pos']
         else:
             continue
         for fi, offset in enumerate(FORECAST_OFFSETS):
-            future_target = get_interpolated_position(path, elapsed_msec, offset)
+            offset_meters = offset * (SIM_TIME_STEP_MSEC / 1000.0) * SIM_RABBIT_VELOCITY
+            future_target = get_interpolated_position(path, rabbit_odo, offset_meters)
             exp_dist = compute_dist(future_target, pos)
             log_dist = nn['inputs'][16 + fi]
             err = exp_dist - log_dist

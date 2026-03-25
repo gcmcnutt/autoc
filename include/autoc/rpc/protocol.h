@@ -97,12 +97,16 @@ struct ScenarioMetadata {
   double entryEastOffset = 0.0;      // meters, NED East
   double entryAltOffset = 0.0;       // meters, NED Down (negative=up)
 
+  // Rabbit speed for odometer-based path traversal (m/s)
+  double rabbitSpeed = 0.0;          // 0 = use default SIM_INITIAL_VELOCITY
+
   template<class Archive>
-  void serialize(Archive& ar, const std::uint32_t version) {
+  void serialize(Archive& ar, const std::uint32_t /*version*/) {
     ar(pathVariantIndex, windVariantIndex, windSeed, scenarioSequence,
        bakeoffSequence, enableDeterministicLogging, entryHeadingOffset,
        entryRollOffset, entryPitchOffset, entrySpeedFactor,
-       windDirectionOffset, entryNorthOffset, entryEastOffset, entryAltOffset);
+       windDirectionOffset, entryNorthOffset, entryEastOffset, entryAltOffset,
+       rabbitSpeed);
   }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)

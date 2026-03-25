@@ -307,36 +307,9 @@ static void populateVariationOffsets(ScenarioMetadata& meta) {
   // If windIdx out of range, leave defaults (shouldn't happen)
 }
 
-// Helper to apply variable rabbit speed to a path using pre-fetched profile
-// Recomputes simTimeMsec for each path point based on the speed profile
-static void applySpeedProfileToPath(std::vector<Path>& path, int windVariantIndex) {
-  if (path.empty()) return;
-  if (gRabbitSpeedConfig.sigma <= 0.0) return;  // Constant speed mode, no changes needed
-
-  // Use pre-fetched speed profile (single PRNG architecture)
-  if (windVariantIndex < 0 || windVariantIndex >= static_cast<int>(gScenarioVariations.size())) {
-    return;  // Out of range, leave path unchanged
-  }
-  const auto& speedProfile = gScenarioVariations[windVariantIndex].rabbitProfile;
-
-  // RAMP_LANDSCAPE: Get scale for rabbit speed variation
-  double scale = computeVariationScale();
-  double nominal = gRabbitSpeedConfig.nominal;
-
-  // Recompute simTimeMsec for each path point based on variable speed profile
-  gp_scalar accumTimeMsec = 0.0f;
-  path[0].simTimeMsec = 0;
-
-  for (size_t i = 1; i < path.size(); i++) {
-    gp_scalar segmentDistance = path[i].distanceFromStart - path[i-1].distanceFromStart;
-    double profileSpeed = getSpeedAtTime(speedProfile, static_cast<double>(accumTimeMsec) / 1000.0);
-    // Scale speed toward nominal: at scale=0 use nominal, at scale=1 use profileSpeed
-    double speed = nominal + scale * (profileSpeed - nominal);
-    gp_scalar dt = (segmentDistance / static_cast<gp_scalar>(speed)) * 1000.0f;
-    accumTimeMsec += dt;
-    path[i].simTimeMsec = static_cast<int32_t>(accumTimeMsec);
-  }
-}
+// Rabbit speed is now applied at runtime via odometer advancement in minisim.
+// The applySpeedProfileToPath function has been removed as part of the
+// odometer-based path traversal refactor.
 std::atomic_ulong nanDetector = 0;
 std::ofstream fout;
 std::ofstream bout;
@@ -727,10 +700,6 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
     bool first_attitude_sample = true;
     int simulation_steps = 0;
 
-    gp_vec3 prevPathPos(0, 0, 0);
-    long prevPathTime = 0;
-    bool firstStep = true;
-
     int stepIndex = 0;
     while (++stepIndex < static_cast<int>(aircraftStates.size())) {
       auto& stepState = aircraftStates.at(stepIndex);
@@ -763,21 +732,8 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       double interceptScale = computeInterceptScale(stepTimeSec, interceptBudget);
       simulation_steps++;
 
-      // Rabbit velocity
-      gp_scalar rabbitVel = 0.0f;
-      gp_vec3 currPathPos = path.at(pathIndex).start;
-      long currPathTime = path.at(pathIndex).simTimeMsec;
-      if (simulation_steps == 1) {
-        firstStep = true;
-      }
-      if (!firstStep && currPathTime > prevPathTime) {
-        gp_scalar dist = (currPathPos - prevPathPos).norm();
-        gp_scalar dt = static_cast<gp_scalar>(currPathTime - prevPathTime) / 1000.0f;
-        rabbitVel = dist / dt;
-      }
-      prevPathPos = currPathPos;
-      prevPathTime = currPathTime;
-      firstStep = false;
+      // Rabbit velocity (from AircraftState odometer-based tracking)
+      gp_scalar rabbitVel = stepState.getRabbitSpeed();
 
       // Body-frame velocity
       gp_vec3 velocity_body = stepState.getOrientation().inverse() * stepState.getVelocity();
@@ -946,7 +902,7 @@ static void runNNEvaluation(
       meta.pathVariantIndex = static_cast<int>(idx);
     }
     populateVariationOffsets(meta);
-    applySpeedProfileToPath(evalData.pathList[idx], meta.windVariantIndex);
+    meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
     evalData.scenarioList.push_back(meta);
   }
   if (!evalData.scenarioList.empty()) {
@@ -1132,7 +1088,7 @@ static void runNNEvolution(
         }
 
         populateVariationOffsets(meta);
-        applySpeedProfileToPath(evalData.pathList[idx], meta.windVariantIndex);
+        meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
         evalData.scenarioList.push_back(meta);
       }
       if (!evalData.scenarioList.empty()) {
@@ -1216,7 +1172,7 @@ static void runNNEvolution(
           meta.pathVariantIndex = static_cast<int>(idx);
         }
         populateVariationOffsets(meta);
-        applySpeedProfileToPath(evalData.pathList[idx], meta.windVariantIndex);
+        meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
         evalData.scenarioList.push_back(meta);
       }
       if (!evalData.scenarioList.empty()) {

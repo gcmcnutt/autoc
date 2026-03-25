@@ -25,7 +25,6 @@
 #define SIM_MAX_PITCH_RATE_RADSEC (static_cast<gp_scalar>(M_PI))
 
 #define SIM_INITIAL_VELOCITY static_cast<gp_scalar>(20.0f)
-#define SIM_RABBIT_VELOCITY static_cast<gp_scalar>(16.0f)
 #define SIM_THROTTLE_SCALE static_cast<gp_scalar>(10.0f)
 #define SIM_CRASH_PENALTY static_cast<gp_scalar>(300.0f)  // Large penalty to ensure path completion
 #define SIM_INITIAL_ALTITUDE static_cast<gp_scalar>(-25.0f)
@@ -49,26 +48,24 @@ public:
   gp_vec3 orientation;
   gp_scalar distanceFromStart;
   gp_scalar radiansFromStart;
-  int32_t simTimeMsec;  // Simulation timestamp in milliseconds (integer for exact comparison)
 
   // Default constructor for backward compatibility
   Path() : start(gp_vec3::Zero()), orientation(gp_vec3::UnitX()),
-           distanceFromStart(0.0f), radiansFromStart(0.0f), simTimeMsec(0) {}
+           distanceFromStart(0.0f), radiansFromStart(0.0f) {}
 
   // Constructor to ensure all fields are properly initialized
   Path(const gp_vec3& start_pos, const gp_vec3& orient,
-       gp_scalar distance, gp_scalar radians, gp_scalar time_msec)
+       gp_scalar distance, gp_scalar radians)
     : start(start_pos), orientation(orient), distanceFromStart(distance),
-      radiansFromStart(radians), simTimeMsec(static_cast<int32_t>(time_msec)) {}
+      radiansFromStart(radians) {}
 
   // Generic constructor to cast external Eigen scalars into gp_scalar
   template <typename Scalar>
   Path(const Eigen::Matrix<Scalar, 3, 1>& start_pos, const Eigen::Matrix<Scalar, 3, 1>& orient,
-       Scalar distance, Scalar radians, Scalar time_msec)
+       Scalar distance, Scalar radians)
     : start(start_pos.template cast<gp_scalar>()), orientation(orient.template cast<gp_scalar>()),
       distanceFromStart(static_cast<gp_scalar>(distance)),
-      radiansFromStart(static_cast<gp_scalar>(radians)),
-      simTimeMsec(static_cast<int32_t>(time_msec)) {}
+      radiansFromStart(static_cast<gp_scalar>(radians)) {}
 
   void sanitize() {
     auto sanitizeScalar = [](gp_scalar value, gp_scalar fallback = 0.0f) {
@@ -81,20 +78,19 @@ public:
     }
     distanceFromStart = sanitizeScalar(distanceFromStart);
     radiansFromStart = sanitizeScalar(radiansFromStart);
-    if (simTimeMsec < 0) simTimeMsec = 0;
   }
 
   void dump(std::ostream& os) {
     char buf[256];
-    snprintf(buf, sizeof(buf), "Path: (%f, %f, %f), Odometer: %f, Turnmeter: %f, Time: %d",
-      start[0], start[1], start[2], distanceFromStart, radiansFromStart, simTimeMsec);
+    snprintf(buf, sizeof(buf), "Path: (%f, %f, %f), Odometer: %f, Turnmeter: %f",
+      start[0], start[1], start[2], distanceFromStart, radiansFromStart);
     os << buf;
   }
 
 #ifndef ARDUINO
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t /*version*/) {
-    ar(start, orientation, distanceFromStart, radiansFromStart, simTimeMsec);
+    ar(start, orientation, distanceFromStart, radiansFromStart);
   }
 #endif
 };
@@ -114,11 +110,11 @@ public:
     virtual int getCurrentIndex() const = 0;
     virtual int getPathSize() const = 0;
 
-    // Get the timestamp of the last waypoint in the path
-    int32_t getMaxTimeMsec() const {
+    // Get the distance of the last waypoint in the path
+    gp_scalar getMaxDistance() const {
         int size = getPathSize();
         if (size == 0) return 0;
-        return getPath(size - 1).simTimeMsec;
+        return getPath(size - 1).distanceFromStart;
     }
 };
 
@@ -186,7 +182,9 @@ struct AircraftState {
         rollCommand(0.0f),
         throttleCommand(0.0f),
         wind_velocity(gp_vec3::Zero()),
-        rabbitPosition(gp_vec3::Zero()) {}
+        rabbitPosition(gp_vec3::Zero()),
+        rabbitOdometer_(0.0f),
+        rabbitSpeed_(0.0f) {}
     AircraftState(int thisPathIndex, gp_scalar relVel, gp_vec3 vel, gp_quat orientation,
       gp_vec3 pos, gp_scalar pc, gp_scalar rc, gp_scalar tc,
       unsigned long int timeMsec)
@@ -244,6 +242,12 @@ struct AircraftState {
 
     gp_vec3 getRabbitPosition() const { return rabbitPosition; }
     void setRabbitPosition(const gp_vec3& pos) { rabbitPosition = pos; }
+
+    gp_scalar getRabbitOdometer() const { return rabbitOdometer_; }
+    void setRabbitOdometer(gp_scalar odo) { rabbitOdometer_ = odo; }
+
+    gp_scalar getRabbitSpeed() const { return rabbitSpeed_; }
+    void setRabbitSpeed(gp_scalar speed) { rabbitSpeed_ = speed; }
 
     // NN I/O capture — record what the NN actually saw and produced
     void setNNData(const float* inputs, int numInputs, const float* outputs, int numOutputs) {
@@ -363,6 +367,10 @@ struct AircraftState {
     // Interpolated rabbit position for renderer playback
     gp_vec3 rabbitPosition;  // Exact target position NN was tracking this tick
 
+    // Odometer-based rabbit tracking
+    gp_scalar rabbitOdometer_;  // Distance along path (meters)
+    gp_scalar rabbitSpeed_;     // Current rabbit speed (m/s)
+
     // NN I/O capture — actual values presented to/produced by the neural net
     float nnInputs_[NN_INPUT_COUNT] = {0};   // Normalized inputs as NN sees them
     float nnOutputs_[NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs
@@ -379,7 +387,7 @@ struct AircraftState {
 #ifndef ARDUINO
     friend class cereal::access;
     template<class Archive>
-    void serialize(Archive& ar, const std::uint32_t /*version*/) {
+    void serialize(Archive& ar, const std::uint32_t version) {
       ar(thisPathIndex, dRelVel, velocity, aircraft_orientation, position,
          pitchCommand, rollCommand, throttleCommand, simTimeMsec, wind_velocity,
          rabbitPosition, hasNNData_);
@@ -392,11 +400,12 @@ struct AircraftState {
         for (uint32_t i = 0; i < outputCount && i < static_cast<uint32_t>(NN_OUTPUT_COUNT); i++)
           ar(nnOutputs_[i]);
       }
+      ar(rabbitOdometer_, rabbitSpeed_);
     }
 #endif
 };
 #ifndef ARDUINO
-CEREAL_CLASS_VERSION(AircraftState, 3)
+CEREAL_CLASS_VERSION(AircraftState, 1)
 #endif
 
 // Physics trace entry - captures complete FDM state at a single timestep

@@ -10,6 +10,9 @@
 #include <math.h>
 #include <random>  // For std::mt19937 (path 5 only)
 
+// Maximum path length in meters (geometry-only paths have no timing)
+constexpr gp_scalar EMBEDDED_MAX_PATH_LENGTH_M = 2000.0f;
+
 // Maximum segments based on measured density (0.4m straight, 0.02 rad turns):
 // At 2.5x density vs original, Path 4 needs ~892 segments
 #define MAX_EMBEDDED_PATH_SEGMENTS 1000  // Increased for finer temporal resolution
@@ -81,8 +84,7 @@ private:
         gp_scalar segmentDist = (point - segments[segment_count-1].start).norm();
         totalDistance += segmentDist;
       }
-      gp_scalar simTimeMsec = (totalDistance / SIM_RABBIT_VELOCITY) * static_cast<gp_scalar>(1000.0f);
-      segments[segment_count++] = Path(point, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f), simTimeMsec);
+      segments[segment_count++] = Path(point, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f));
     }
   }
 
@@ -129,8 +131,7 @@ private:
         totalDistance += segmentDist;
       }
 
-      gp_scalar simTimeMsec = (totalDistance / SIM_RABBIT_VELOCITY) * static_cast<gp_scalar>(1000.0f);
-      segments[segment_count++] = Path(point, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f), simTimeMsec);
+      segments[segment_count++] = Path(point, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f));
     }
   }
 
@@ -171,8 +172,7 @@ private:
         totalDistance += segmentDist;
       }
 
-      gp_scalar simTimeMsec = (totalDistance / SIM_RABBIT_VELOCITY) * static_cast<gp_scalar>(1000.0f);
-      segments[segment_count++] = Path(point, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f), simTimeMsec);
+      segments[segment_count++] = Path(point, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f));
     }
   }
 
@@ -195,8 +195,7 @@ private:
         gp_scalar distance = (point - segments[segment_count-1].start).norm();
         totalDistance += distance;
       }
-      gp_scalar simTimeMsec = (totalDistance / SIM_RABBIT_VELOCITY) * static_cast<gp_scalar>(1000.0f);
-      segments[segment_count++] = Path(point, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f), simTimeMsec);
+      segments[segment_count++] = Path(point, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f));
     }
   }
 
@@ -224,8 +223,7 @@ private:
         totalDistance += segmentDist;
       }
 
-      gp_scalar simTimeMsec = (totalDistance / SIM_RABBIT_VELOCITY) * static_cast<gp_scalar>(1000.0f);
-      segments[segment_count++] = Path(point, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f), simTimeMsec);
+      segments[segment_count++] = Path(point, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f));
     }
   }
 
@@ -279,7 +277,7 @@ public:
 
         // Lead-in
         const gp_scalar leadSeconds = static_cast<gp_scalar>(1.0f);
-        const gp_scalar leadDistance = SIM_RABBIT_VELOCITY * leadSeconds;
+        const gp_scalar leadDistance = static_cast<gp_scalar>(13.0f);  // Fixed lead-in distance (was rabbitSpeed * 1s)
         addStraightSegment(entryPoint, gp_vec3(static_cast<gp_scalar>(-1.0f), static_cast<gp_scalar>(0.0f), static_cast<gp_scalar>(0.0f)), leadDistance, totalDistance);
 
         gp_vec3 loopOrigin = segments[segment_count-1].start;
@@ -297,7 +295,7 @@ public:
         gp_scalar centerAlt = -loopRadius * cos45;  // Canonical origin at z=0
         gp_scalar yOffset = loopRadius * sin45;
 
-        for (gp_scalar turn = 0; turn < static_cast<gp_scalar>(M_PI * 2.0); turn += static_cast<gp_scalar>(0.05f)) {  // 0.05 rad (~3°) matches desktop pathgen.cc
+        for (gp_scalar turn = 0; turn < static_cast<gp_scalar>(M_PI * 2.0); turn += static_cast<gp_scalar>(0.5f)) {  // 0.5 rad - coarse to match trainer
           if (segment_count >= MAX_EMBEDDED_PATH_SEGMENTS) break;
 
           gp_scalar angle = turn - static_cast<gp_scalar>(M_PI / 2.0);
@@ -310,8 +308,7 @@ public:
             gp_scalar distance = (interpolatedPoint - segments[segment_count-1].start).norm();
             totalDistance += distance;
           }
-          gp_scalar simTimeMsecLocal = (totalDistance / SIM_RABBIT_VELOCITY) * static_cast<gp_scalar>(1000.0f);
-          segments[segment_count++] = Path(interpolatedPoint, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f), simTimeMsecLocal);
+          segments[segment_count++] = Path(interpolatedPoint, gp_vec3::UnitX(), totalDistance, static_cast<gp_scalar>(0.0f));
         }
         break;
       }
@@ -386,14 +383,13 @@ public:
               gp_scalar newDistance = (interpolatedPoint - lastPoint).norm();
               gp_vec3 newDirection = (interpolatedPoint - lastPoint).normalized();
 
-              gp_scalar simTimeMsec = (odometer / SIM_RABBIT_VELOCITY) * static_cast<gp_scalar>(1000.0f);
-              segments[segment_count++] = Path(interpolatedPoint, gp_vec3::UnitX(), odometer, static_cast<gp_scalar>(0.0f), simTimeMsec);
+              segments[segment_count++] = Path(interpolatedPoint, gp_vec3::UnitX(), odometer, static_cast<gp_scalar>(0.0f));
 
               odometer += newDistance;
               lastDirection = newDirection;
 
-              // Stop at AERO_STANDARD_RANDOM_PATH_SECONDS to match trainer
-              if (simTimeMsec > AERO_STANDARD_RANDOM_PATH_SECONDS * static_cast<gp_scalar>(1000.0f)) {
+              // Stop at max path length
+              if (odometer > EMBEDDED_MAX_PATH_LENGTH_M) {
                 goto exitLoop;
               }
             } else {

@@ -3703,9 +3703,12 @@ void Renderer::updatePlaybackAnimation() {
   int maxArenas = evalResults.pathList.size();
   for (int i = 0; i < maxArenas; i++) {
     if (!evalResults.pathList[i].empty()) {
-      // Use path timestamp directly (convert from milliseconds to seconds)
-      scalar pathDuration = static_cast<scalar>(evalResults.pathList[i].back().simTimeMsec) / static_cast<scalar>(1000.0f);
-      primaryDuration = std::max(primaryDuration, pathDuration);
+      // Path is pure geometry now — derive duration from AircraftState timestamps
+      // Use last aircraft state time as proxy for path duration
+      if (i < static_cast<int>(evalResults.aircraftStateList.size()) && !evalResults.aircraftStateList[i].empty()) {
+        scalar stateDuration = static_cast<scalar>(evalResults.aircraftStateList[i].back().getSimTimeMsec()) / static_cast<scalar>(1000.0f);
+        primaryDuration = std::max(primaryDuration, stateDuration);
+      }
     }
   }
 
@@ -3802,12 +3805,18 @@ void Renderer::updatePlaybackAnimation() {
     
     // Time-based filtering: show data up to currentSimTime
 
-    // Filter path points by simulation timestamp
+    // Filter path points by distance-derived time (using rabbit speed from AircraftState)
     std::vector<vec3> visiblePathVector;
     if (hasSimData && i < static_cast<int>(evalResults.pathList.size()) && !evalResults.pathList[i].empty()) {
+      // Derive nominal rabbit speed from AircraftState if available
+      scalar nominalRabbitSpeed = 13.0f;  // fallback default
+      if (i < static_cast<int>(evalResults.aircraftStateList.size()) && !evalResults.aircraftStateList[i].empty()) {
+        scalar rs = evalResults.aircraftStateList[i].front().getRabbitSpeed();
+        if (rs > 0.0f) nominalRabbitSpeed = rs;
+      }
       std::vector<Path> visiblePath;
       for (const auto& pathPoint : evalResults.pathList[i]) {
-        scalar pathPointTime = static_cast<scalar>(pathPoint.simTimeMsec) / static_cast<scalar>(1000.0f); // Convert to seconds
+        scalar pathPointTime = pathPoint.distanceFromStart / nominalRabbitSpeed;
         if (pathPointTime <= currentSimTime) {
           visiblePath.push_back(pathPoint);
         }

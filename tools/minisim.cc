@@ -127,6 +127,9 @@ public:
         std::vector<AircraftState> aircraftStateSteps;
 
         // Fixed initial orientation and position for deterministic evaluation
+        // TODO(backlog): minisim entry position doesn't match crrcsim — crrcsim FDM
+        // applies its own altitude offset. Need to trace crrcsim's actual spawn logic
+        // to get minisim consistent. For now, hardcoded to approximate crrcsim start.
         gp_quat aircraft_orientation = gp_quat(Eigen::AngleAxis<gp_scalar>(static_cast<gp_scalar>(M_PI), gp_vec3::UnitZ())) *
           gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitY())) *
           gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitX()));
@@ -135,7 +138,24 @@ public:
 
         aircraftState = AircraftState{ 0, SIM_INITIAL_VELOCITY, initial_velocity, aircraft_orientation, initialPosition, 0.0f, 0.0f, SIM_INITIAL_THROTTLE, 0 };
         aircraftState.clearHistory();
+        aircraftState.setRabbitOdometer(0.0f);
 
+        // Get rabbit speed from scenario metadata
+        gp_scalar rabbitSpeed = SIM_INITIAL_VELOCITY;  // default
+        {
+          ScenarioMetadata meta = scenarioForPathIndex(evalData, static_cast<size_t>(i));
+          if (meta.rabbitSpeed > 0.0f) {
+            rabbitSpeed = static_cast<gp_scalar>(meta.rabbitSpeed);
+          }
+        }
+        aircraftState.setRabbitSpeed(rabbitSpeed);
+
+        // Set initial rabbit position (odometer=0 = first path point)
+        {
+          VectorPathProvider pathProvider(path, 0);
+          gp_vec3 rabbitPos = getInterpolatedTargetPosition(pathProvider, 0.0f, 0.0f);
+          aircraftState.setRabbitPosition(rabbitPos);
+        }
         aircraftStateSteps.push_back(aircraftState);
 
         unsigned long int duration_msec = 0;
@@ -146,11 +166,13 @@ public:
           // Capture temporal history before NN evaluation
           {
             VectorPathProvider pathProvider(path, aircraftState.getThisPathIndex());
-            gp_scalar dPhi = executeGetDPhi(pathProvider, aircraftState, 0.0f);
-            gp_scalar dTheta = executeGetDTheta(pathProvider, aircraftState, 0.0f);
+            gp_scalar rabbitOdo = aircraftState.getRabbitOdometer();
+            gp_scalar dPhi = executeGetDPhi(pathProvider, aircraftState, rabbitOdo, 0.0f);
+            gp_scalar dTheta = executeGetDTheta(pathProvider, aircraftState, rabbitOdo, 0.0f);
             gp_vec3 targetPos = getInterpolatedTargetPosition(
-                pathProvider, static_cast<int32_t>(aircraftState.getSimTimeMsec()), 0.0f);
+                pathProvider, rabbitOdo, 0.0f);
             gp_scalar distance = (targetPos - aircraftState.getPosition()).norm();
+            aircraftState.setRabbitPosition(targetPos);
             aircraftState.recordErrorHistory(dPhi, dTheta, distance, duration_msec);
           }
 
@@ -166,6 +188,10 @@ public:
           duration_msec += SIM_TIME_STEP_MSEC;
           aircraftState.setSimTimeMsec(duration_msec);
 
+          // Advance rabbit odometer
+          gp_scalar dtSec = static_cast<gp_scalar>(SIM_TIME_STEP_MSEC) / 1000.0f;
+          aircraftState.setRabbitOdometer(aircraftState.getRabbitOdometer() + rabbitSpeed * dtSec);
+
           // Crash detection
           gp_scalar distanceFromOrigin = std::sqrt(aircraftState.getPosition()[0] * aircraftState.getPosition()[0] +
             aircraftState.getPosition()[1] * aircraftState.getPosition()[1]);
@@ -175,10 +201,18 @@ public:
             crashReason = CrashReason::Eval;
           }
 
-          // Advance path index
+          // Advance path index by scanning distanceFromStart against rabbit odometer
           while (aircraftState.getThisPathIndex() < static_cast<int>(path.size()) - 2 &&
-                 (path.at(aircraftState.getThisPathIndex()).simTimeMsec < static_cast<int32_t>(duration_msec))) {
+                 path.at(aircraftState.getThisPathIndex()).distanceFromStart < aircraftState.getRabbitOdometer()) {
             aircraftState.setThisPathIndex(aircraftState.getThisPathIndex() + 1);
+          }
+
+          // Update rabbit position to match advanced odometer (for renderer error bars)
+          {
+            VectorPathProvider pathProvider(path, aircraftState.getThisPathIndex());
+            gp_vec3 rabbitPos = getInterpolatedTargetPosition(
+                pathProvider, aircraftState.getRabbitOdometer(), 0.0f);
+            aircraftState.setRabbitPosition(rabbitPos);
           }
 
           aircraftStateSteps.push_back(aircraftState);

@@ -74,8 +74,8 @@ inline gp_scalar fastAtan2(gp_scalar y, gp_scalar x) {
 // ============================================================================
 
 gp_vec3 getInterpolatedTargetPosition(PathProvider& pathProvider,
-                                       int32_t currentTimeMsec,
-                                       gp_scalar offsetSteps) {
+                                       gp_scalar currentOdometer,
+                                       gp_scalar offsetMeters) {
     int pathSize = pathProvider.getPathSize();
     if (pathSize == 0) {
         return gp_vec3::Zero();
@@ -85,40 +85,34 @@ gp_vec3 getInterpolatedTargetPosition(PathProvider& pathProvider,
     }
 
     // Handle NaN offset — return current rabbit position
-    if (std::isnan(offsetSteps)) {
+    if (std::isnan(offsetMeters)) {
         int currentIdx = CLAMP_DEF(pathProvider.getCurrentIndex(), 0, pathSize - 1);
         return pathProvider.getPath(currentIdx).start;
     }
 
-    // Clamp offset to ±MAX_OFFSET_STEPS (±1 second)
-    gp_scalar clampedSteps = CLAMP_DEF(offsetSteps,
-                                        static_cast<gp_scalar>(-MAX_OFFSET_STEPS),
-                                        static_cast<gp_scalar>(MAX_OFFSET_STEPS));
+    // Calculate goal distance along path
+    gp_scalar goalOdometer = currentOdometer + offsetMeters;
 
-    // Calculate goal time as integer (deterministic, no float precision issues)
-    int32_t goalTimeMsec = currentTimeMsec + static_cast<int32_t>(clampedSteps * static_cast<gp_scalar>(SIM_TIME_STEP_MSEC));
+    // Clamp goal distance to path bounds
+    gp_scalar minDist = pathProvider.getPath(0).distanceFromStart;
+    gp_scalar maxDist = pathProvider.getPath(pathSize - 1).distanceFromStart;
 
-    // Clamp goal time to path bounds (all int32_t comparisons — exact)
-    int32_t minTime = pathProvider.getPath(0).simTimeMsec;
-    int32_t maxTime = pathProvider.getPath(pathSize - 1).simTimeMsec;
-
-    if (goalTimeMsec <= minTime) {
+    if (goalOdometer <= minDist) {
         return pathProvider.getPath(0).start;
     }
-    if (goalTimeMsec >= maxTime) {
+    if (goalOdometer >= maxDist) {
         return pathProvider.getPath(pathSize - 1).start;
     }
 
     // Linear scan from current index — O(1) amortized since rabbit only moves forward.
-    // For forecast offsets (+1..+5 steps), scan forward; for past offsets, scan backward.
     int lo = CLAMP_DEF(pathProvider.getCurrentIndex(), 0, pathSize - 2);
 
     // Scan forward if needed
-    while (lo < pathSize - 2 && pathProvider.getPath(lo + 1).simTimeMsec <= goalTimeMsec) {
+    while (lo < pathSize - 2 && pathProvider.getPath(lo + 1).distanceFromStart <= goalOdometer) {
         lo++;
     }
     // Scan backward if needed (for negative offsets)
-    while (lo > 0 && pathProvider.getPath(lo).simTimeMsec > goalTimeMsec) {
+    while (lo > 0 && pathProvider.getPath(lo).distanceFromStart > goalOdometer) {
         lo--;
     }
 
@@ -126,10 +120,10 @@ gp_vec3 getInterpolatedTargetPosition(PathProvider& pathProvider,
     const Path& p1 = pathProvider.getPath(lo + 1);
 
     // Calculate interpolation fraction
-    int32_t dt = p1.simTimeMsec - p0.simTimeMsec;
+    gp_scalar dd = p1.distanceFromStart - p0.distanceFromStart;
     gp_scalar frac = 0.0f;
-    if (dt > 0) {
-        frac = static_cast<gp_scalar>(goalTimeMsec - p0.simTimeMsec) / static_cast<gp_scalar>(dt);
+    if (dd > 0.0f) {
+        frac = (goalOdometer - p0.distanceFromStart) / dd;
         frac = CLAMP_DEF(frac, 0.0f, 1.0f);
     }
 
@@ -141,9 +135,10 @@ gp_vec3 getInterpolatedTargetPosition(PathProvider& pathProvider,
 // Uses fastAtan2 for LUT-based trig matching embedded platform
 // ============================================================================
 
-gp_scalar executeGetDPhi(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {
+gp_scalar executeGetDPhi(PathProvider& pathProvider, AircraftState& aircraftState,
+                          gp_scalar rabbitOdometer, gp_scalar offsetMeters) {
     gp_vec3 targetPos = getInterpolatedTargetPosition(
-        pathProvider, static_cast<int32_t>(aircraftState.getSimTimeMsec()), arg);
+        pathProvider, rabbitOdometer, offsetMeters);
 
     gp_vec3 craftToTarget = targetPos - aircraftState.getPosition();
     gp_vec3 target_local = aircraftState.getOrientation().inverse() * craftToTarget;
@@ -152,9 +147,10 @@ gp_scalar executeGetDPhi(PathProvider& pathProvider, AircraftState& aircraftStat
     return fastAtan2(target_local.y(), -target_local.z());
 }
 
-gp_scalar executeGetDTheta(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {
+gp_scalar executeGetDTheta(PathProvider& pathProvider, AircraftState& aircraftState,
+                            gp_scalar rabbitOdometer, gp_scalar offsetMeters) {
     gp_vec3 targetPos = getInterpolatedTargetPosition(
-        pathProvider, static_cast<int32_t>(aircraftState.getSimTimeMsec()), arg);
+        pathProvider, rabbitOdometer, offsetMeters);
 
     gp_vec3 craftToTarget = targetPos - aircraftState.getPosition();
     gp_vec3 target_local = aircraftState.getOrientation().inverse() * craftToTarget;

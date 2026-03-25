@@ -26,6 +26,8 @@ static bool test_origin_set = false;
 static unsigned long rabbit_start_time = 0;
 static volatile bool rabbit_active = false;
 static int current_path_index = 0;
+constexpr gp_scalar XIAO_RABBIT_SPEED_MPS = 13.0f;  // Rabbit speed for xiao (m/s)
+static gp_scalar rabbit_odometer = 0.0f;             // Distance along path (meters)
 static int selected_path_index = 0;  // Path selected from RC channel (0-5)
 static bool servo_reset_required = false;
 
@@ -222,7 +224,11 @@ static void mspUpdateNavControl()
     return;
   }
 
-  // Find current path segment based on elapsed time since autoc enabled
+  // Advance rabbit odometer each tick
+  gp_scalar dt_sec = static_cast<gp_scalar>(SIM_TIME_STEP_MSEC) / 1000.0f;
+  rabbit_odometer += XIAO_RABBIT_SPEED_MPS * dt_sec;
+
+  // Find current path segment based on rabbit odometer
   current_path_index = getRabbitPathIndex(elapsed_msec);
 
   // End of path check
@@ -239,19 +245,20 @@ static void mspUpdateNavControl()
     gp_path_segment = flight_path[current_path_index];
 
     // Set current path index and elapsed time for NN evaluation
-    // simTimeMsec must be elapsed (not absolute millis) to match path segment timestamps
     aircraft_state.setThisPathIndex(current_path_index);
     aircraft_state.setSimTimeMsec(elapsed_msec);
+    aircraft_state.setRabbitOdometer(rabbit_odometer);
+    aircraft_state.setRabbitSpeed(XIAO_RABBIT_SPEED_MPS);
 
     // Full path provider for interpolation and forecast lookahead
     VectorPathProvider pathProvider(flight_path, aircraft_state.getThisPathIndex());
     uint32_t eval_start_us = micros();
 
     // Compute current-step sensors for history recording
-    gp_scalar dphi_now = executeGetDPhi(pathProvider, aircraft_state, 0.0f);
-    gp_scalar dtheta_now = executeGetDTheta(pathProvider, aircraft_state, 0.0f);
+    gp_scalar dphi_now = executeGetDPhi(pathProvider, aircraft_state, rabbit_odometer, 0.0f);
+    gp_scalar dtheta_now = executeGetDTheta(pathProvider, aircraft_state, rabbit_odometer, 0.0f);
     gp_vec3 targetPos = getInterpolatedTargetPosition(
-        pathProvider, static_cast<int32_t>(aircraft_state.getSimTimeMsec()), 0.0f);
+        pathProvider, rabbit_odometer, 0.0f);
     gp_scalar dist_now = (targetPos - aircraft_state.getPosition()).norm();
 
     // Capture temporal history before NN evaluation
@@ -456,6 +463,7 @@ void mspUpdateState()
 
       rabbit_start_time = millis();
       rabbit_active = true;
+      rabbit_odometer = 0.0f;
       pipelineStats.reset();
       // No ticker — single 20Hz loop in controllerUpdate() handles sends
       current_path_index = 0;
@@ -671,23 +679,22 @@ void convertMSPStateToAircraftState(AircraftState &aircraftState)
   aircraftState.setSimTimeMsec(state.asOfMsec);
 }
 
-// Find path index based on elapsed time since autoc enabled
-int getRabbitPathIndex(unsigned long elapsed_msec)
+// Find path index based on rabbit odometer (distance along path)
+int getRabbitPathIndex(unsigned long /* elapsed_msec */)
 {
   if (flight_path.empty())
     return 0;
 
-  // Linear scan from current point to find the path segment just beyond where we are in time
-  // Since time only moves forward, start from the current index to avoid redundant searches
+  // Linear scan from current point to find the path segment just beyond the odometer
   for (size_t i = current_path_index; i < flight_path.size(); i++)
   {
-    if (flight_path[i].simTimeMsec >= elapsed_msec)
+    if (flight_path[i].distanceFromStart >= rabbit_odometer)
     {
       return (int)i;
     }
   }
 
-  // If elapsed time has gone beyond the path, return last segment
+  // If odometer has gone beyond the path, return last segment
   return (int)(flight_path.size() - 1);
 }
 
