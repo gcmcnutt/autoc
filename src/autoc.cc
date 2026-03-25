@@ -579,12 +579,15 @@ static double computeNNFitness(EvalResults& evalResults) {
     double attitude_sum = 0.0;
     int simulation_steps = 0;
 
+    // Origin offset: first raw position → virtual for path comparison
+    gp_vec3 originOffset = aircraftStates.at(0).getPosition();
+
     // Intercept-budget scaling
     double interceptBudget = 0.0;
     {
-      gp_vec3 initialPos = aircraftStates.at(0).getPosition();
+      gp_vec3 virtualInitialPos = aircraftStates.at(0).getPosition() - originOffset;
       gp_vec3 pathStart = path.at(0).start;
-      gp_vec3 offset3d = initialPos - pathStart;
+      gp_vec3 offset3d = virtualInitialPos - pathStart;
       double displacement = sqrt(offset3d[0] * offset3d[0] + offset3d[1] * offset3d[1]);
       double headingOffset = 0.0;
       if (i < evalResults.scenarioList.size()) {
@@ -603,7 +606,7 @@ static double computeNNFitness(EvalResults& evalResults) {
       auto& stepState = aircraftStates.at(stepIndex);
       int pathIndex = std::clamp(stepState.getThisPathIndex(), 0, static_cast<int>(path.size()) - 1);
 
-      gp_vec3 aircraftPosition = stepState.getPosition();
+      gp_vec3 aircraftPosition = stepState.getPosition() - originOffset;
       gp_quat craftOrientation = stepState.getOrientation();
 
       // Attitude delta
@@ -681,12 +684,15 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       windVariantIndex = results.scenarioList.at(i).windVariantIndex;
     }
 
+    // Origin offset: first raw position → virtual for path comparison
+    gp_vec3 originOffset = aircraftStates.at(0).getPosition();
+
     // Intercept-budget scaling
     double interceptBudget = 0.0;
     {
-      gp_vec3 initialPos = aircraftStates.at(0).getPosition();
+      gp_vec3 virtualInitialPos = aircraftStates.at(0).getPosition() - originOffset;
       gp_vec3 pathStart = path.at(0).start;
-      gp_vec3 offset3d = initialPos - pathStart;
+      gp_vec3 offset3d = virtualInitialPos - pathStart;
       double displacement = sqrt(offset3d[0] * offset3d[0] + offset3d[1] * offset3d[1]);
       double headingOffset = 0.0;
       if (i < results.scenarioList.size()) {
@@ -705,7 +711,7 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       auto& stepState = aircraftStates.at(stepIndex);
       int pathIndex = std::clamp(stepState.getThisPathIndex(), 0, static_cast<int>(path.size()) - 1);
 
-      gp_vec3 aircraftPosition = stepState.getPosition();
+      gp_vec3 aircraftPosition = stepState.getPosition() - originOffset;
       gp_quat craftOrientation = stepState.getOrientation();
 
       // Attitude delta: geodesic (matches fitness_decomposition.cc)
@@ -739,8 +745,8 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       gp_vec3 velocity_body = stepState.getOrientation().inverse() * stepState.getVelocity();
 
       // Distance to home
-      gp_vec3 home(0, 0, SIM_INITIAL_ALTITUDE);
-      gp_scalar dhome = (home - stepState.getPosition()).norm();
+      gp_vec3 home(0, 0, 0);  // virtual origin (path frame)
+      gp_scalar dhome = (home - aircraftPosition).norm();  // aircraftPosition is already virtual
 
       // Per-step logging — all % 7.4f fields are 8 chars, % 8.2f fields are 9 chars
       if (printHeader) {

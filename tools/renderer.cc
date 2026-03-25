@@ -316,6 +316,22 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       std::istringstream iss(retrievedData, std::ios::binary);
       cereal::BinaryInputArchive ia(iss);
       ia(evalResults);
+
+      // Virtual→raw display offset: paths and rabbit positions arrive at virtual
+      // origin (Z=0). Shift to raw sim altitude (SIM_INITIAL_ALTITUDE) so they
+      // align with raw aircraft positions for display.
+      for (auto& singlePath : evalResults.pathList) {
+        for (auto& segment : singlePath) {
+          segment.start[2] += SIM_INITIAL_ALTITUDE;
+        }
+      }
+      for (auto& stateList : evalResults.aircraftStateList) {
+        for (auto& state : stateList) {
+          gp_vec3 rp = state.getRabbitPosition();
+          rp[2] += SIM_INITIAL_ALTITUDE;
+          state.setRabbitPosition(rp);
+        }
+      }
     }
     catch (const std::exception& e) {
       std::cerr << "Error during deserialization: " << e.what() << std::endl;

@@ -48,8 +48,11 @@ struct WorkerContext;
 
 // Entry position safe bounds (~15m margin from crash boundaries)
 #define ENTRY_SAFE_RADIUS static_cast<gp_scalar>(55.0f)       // SIM_PATH_RADIUS_LIMIT - 15m
-#define ENTRY_SAFE_ALT_MIN static_cast<gp_scalar>(-22.0f)     // SIM_MIN_ELEVATION - 15m (NED, shallowest)
-#define ENTRY_SAFE_ALT_MAX static_cast<gp_scalar>(-105.0f)    // SIM_MAX_ELEVATION + 15m (NED, deepest)
+// Entry altitude bounds are origin-relative (offset from start altitude, NED)
+// SIM_MIN_ELEVATION(-7) is 18m below start(-25), minus 15m margin = +3m offset
+// SIM_MAX_ELEVATION(-120) is 95m above start(-25), plus 15m margin = -80m offset
+#define ENTRY_SAFE_ALT_MIN static_cast<gp_scalar>(3.0f)       // shallowest: 3m below start (NED +)
+#define ENTRY_SAFE_ALT_MAX static_cast<gp_scalar>(-80.0f)     // deepest: 80m above start (NED -)
 
 // Crash penalty: soft lexicographic multiplier
 // Completion dominates (1e6 scale), quality provides gradient within similar completion levels

@@ -23,7 +23,7 @@
 // Maximum path length in meters (geometry-only paths have no timing)
 constexpr gp_scalar MAX_PATH_LENGTH_M = 2000.0f;
 
-gp_vec3 randomPointInCylinder(gp_scalar radius, gp_scalar height, gp_scalar base = SIM_INITIAL_ALTITUDE);
+gp_vec3 randomPointInCylinder(gp_scalar radius, gp_scalar height, gp_scalar base = 0.0f);
 gp_vec3 cubicInterpolate(const gp_vec3& p0, const gp_vec3& p1, const gp_vec3& p2, const gp_vec3& p3, gp_scalar t);
 // Generate paths with controllable random seed
 // For 'aeroStandard' and deterministic methods: use ONE seed for all numPaths
@@ -41,7 +41,7 @@ public:
 
 protected:
   // Generate random point in cylinder using local mt19937 PRNG (does not affect global rand state)
-  static gp_vec3 localRandomPointInCylinder(std::mt19937& rng, gp_scalar radius, gp_scalar height, gp_scalar base = SIM_INITIAL_ALTITUDE) {
+  static gp_vec3 localRandomPointInCylinder(std::mt19937& rng, gp_scalar radius, gp_scalar height, gp_scalar base = 0.0f) {
     std::uniform_real_distribution<gp_scalar> dist(static_cast<gp_scalar>(0.0), static_cast<gp_scalar>(1.0));
     gp_scalar r = radius * std::cbrt(dist(rng));
     gp_scalar theta = dist(rng) * static_cast<gp_scalar>(M_PI * 2.0);
