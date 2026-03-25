@@ -3820,23 +3820,21 @@ void Renderer::updatePlaybackAnimation() {
     }
     
     // Time-based filtering: show data up to currentSimTime
-
-    // Filter path points by distance-derived time (using rabbit speed from AircraftState)
+    // Use proportional reveal (same approach as -x mode) — avoids speed-to-distance assumptions
     std::vector<vec3> visiblePathVector;
     if (hasSimData && i < static_cast<int>(evalResults.pathList.size()) && !evalResults.pathList[i].empty()) {
-      // Derive nominal rabbit speed from AircraftState if available
-      scalar nominalRabbitSpeed = 13.0f;  // fallback default
+      scalar spanDuration = 0.0f;
       if (i < static_cast<int>(evalResults.aircraftStateList.size()) && !evalResults.aircraftStateList[i].empty()) {
-        scalar rs = evalResults.aircraftStateList[i].front().getRabbitSpeed();
-        if (rs > 0.0f) nominalRabbitSpeed = rs;
+        spanDuration = static_cast<scalar>(evalResults.aircraftStateList[i].back().getSimTimeMsec()) / 1000.0f;
       }
-      std::vector<Path> visiblePath;
-      for (const auto& pathPoint : evalResults.pathList[i]) {
-        scalar pathPointTime = pathPoint.distanceFromStart / nominalRabbitSpeed;
-        if (pathPointTime <= currentSimTime) {
-          visiblePath.push_back(pathPoint);
-        }
-      }
+      scalar progress = (spanDuration > 0.0f) ? std::min(currentSimTime / spanDuration, 1.0f) : 1.0f;
+      size_t totalPoints = evalResults.pathList[i].size();
+      size_t numPointsToShow = static_cast<size_t>(totalPoints * progress);
+      if (numPointsToShow == 0 && progress > 0.0f) numPointsToShow = 1;
+      if (numPointsToShow > totalPoints) numPointsToShow = totalPoints;
+
+      std::vector<Path> visiblePath(evalResults.pathList[i].begin(),
+                                     evalResults.pathList[i].begin() + numPointsToShow);
       if (!visiblePath.empty()) {
         visiblePathVector = pathToVector(visiblePath);
       }
