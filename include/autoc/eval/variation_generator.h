@@ -133,6 +133,11 @@ struct RabbitSpeedConfig {
     static RabbitSpeedConfig defaultConfig() {
         return RabbitSpeedConfig{16.0, 0.0, 8.0, 25.0, 0.5, 5.0};
     }
+
+    template<class Archive>
+    void serialize(Archive& ar) {
+        ar(nominal, sigma, minSpeed, maxSpeed, cycleMin, cycleMax);
+    }
 };
 
 /**

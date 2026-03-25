@@ -27,6 +27,7 @@
 
 #include "autoc/util/socket_wrapper.h"
 #include "autoc/eval/aircraft_state.h"
+#include "autoc/eval/variation_generator.h"
 
 // FNV-1a hash for serialized GP programs/bytecode (matches dtest tracker)
 inline uint64_t hashByteVector(const std::vector<char>& data) {
@@ -99,6 +100,7 @@ struct ScenarioMetadata {
 
   // Rabbit speed for odometer-based path traversal (m/s)
   double rabbitSpeed = 0.0;          // 0 = use default SIM_INITIAL_VELOCITY
+  unsigned int rabbitSpeedSeed = 0;  // per-scenario seed for local speed profile PRNG
 
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t /*version*/) {
@@ -106,7 +108,7 @@ struct ScenarioMetadata {
        bakeoffSequence, enableDeterministicLogging, entryHeadingOffset,
        entryRollOffset, entryPitchOffset, entrySpeedFactor,
        windDirectionOffset, entryNorthOffset, entryEastOffset, entryAltOffset,
-       rabbitSpeed);
+       rabbitSpeed, rabbitSpeedSeed);
   }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)
@@ -125,6 +127,7 @@ struct EvalData {
   std::vector<std::vector<Path>> pathList;
   ScenarioMetadata scenario;
   std::vector<ScenarioMetadata> scenarioList;
+  RabbitSpeedConfig rabbitSpeedConfig = RabbitSpeedConfig::defaultConfig();
 
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
@@ -132,7 +135,7 @@ struct EvalData {
     int ct = static_cast<int>(controllerType);
     ar(ct);
     controllerType = static_cast<ControllerType>(ct);
-    ar(pathList, scenario, scenarioList);
+    ar(pathList, scenario, scenarioList, rabbitSpeedConfig);
   }
 
   void sanitizePaths() {

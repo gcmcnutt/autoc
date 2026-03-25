@@ -110,8 +110,8 @@ static double computeInterceptBudget(double displacement, double headingOffset,
  */
 struct ScenarioVariations {
     unsigned int windSeed;                      // Seed for crrcsim CRRC_Random
+    unsigned int rabbitSpeedSeed;               // Seed for local rabbit speed profile PRNG
     VariationOffsets entryOffsets;              // Heading, roll, pitch, speed, windDir
-    std::vector<RabbitSpeedPoint> rabbitProfile;// Time-tagged speeds
 };
 
 // Global pre-computed table (indexed by wind scenario index 0..N-1)
@@ -198,8 +198,8 @@ static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigma
             sv.entryOffsets.windDirectionOffset = 0.0;
         }
 
-        // Rabbit speed profile (consume ~50-200 GPrand values)
-        sv.rabbitProfile = generateSpeedProfileFromGPrand(rabbitCfg, totalDurationSec);
+        // Rabbit speed: derive a per-scenario seed (profile generated locally by sim)
+        sv.rabbitSpeedSeed = static_cast<unsigned int>(rng::randLong());
 
         gScenarioVariations.push_back(std::move(sv));
     }
@@ -218,36 +218,22 @@ static void logPrefetchedVariations(int numScenarios, long seed) {
     *logger.info() << "Scenarios: " << numScenarios << endl;
     *logger.info() << endl;
 
-    *logger.info() << "Scenario  WindSeed    Heading°   Roll°   Pitch°  Speed%  WindDir°  RabbitSpd      North°  East°  Down°" << endl;
-    *logger.info() << "--------  ----------  --------  ------  ------  ------  --------  ---------      ------  -----  -----" << endl;
+    *logger.info() << "Scenario  WindSeed    RabbitSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°" << endl;
+    *logger.info() << "--------  ----------  ----------  --------  ------  ------  ------  --------  ------  -----  -----" << endl;
 
     for (int i = 0; i < numScenarios; i++) {
         const auto& sv = gScenarioVariations[i];
 
-        // Compute rabbit speed stats
-        double minSpd = sv.rabbitProfile.empty() ? 0 : sv.rabbitProfile[0].speed;
-        double maxSpd = minSpd, sumSpd = 0;
-        for (const auto& pt : sv.rabbitProfile) {
-            if (pt.speed < minSpd) minSpd = pt.speed;
-            if (pt.speed > maxSpd) maxSpd = pt.speed;
-            sumSpd += pt.speed;
-        }
-        double avgSpd = sv.rabbitProfile.empty() ? 0 : sumSpd / sv.rabbitProfile.size();
-
-        // Format rabbit speed as min/avg/max with 1 decimal
-        std::ostringstream rabbitStr;
-        rabbitStr << std::fixed << std::setprecision(1) << minSpd << "/" << avgSpd << "/" << maxSpd;
-
         std::ostringstream line;
         line << std::setw(4) << i << "      "
              << "0x" << std::hex << std::setw(8) << std::setfill('0') << sv.windSeed
+             << "  0x" << std::setw(8) << std::setfill('0') << sv.rabbitSpeedSeed
              << std::dec << std::setfill(' ')
              << "  " << std::setw(7) << std::fixed << std::setprecision(2) << radToDeg(sv.entryOffsets.entryHeadingOffset)
              << "  " << std::setw(6) << radToDeg(sv.entryOffsets.entryRollOffset)
              << "  " << std::setw(6) << radToDeg(sv.entryOffsets.entryPitchOffset)
              << "  " << std::setw(5) << std::setprecision(1) << ((sv.entryOffsets.entrySpeedFactor - 1.0) * 100) << "%"
-             << "  " << std::setw(7) << std::setprecision(2) << radToDeg(sv.entryOffsets.windDirectionOffset)
-             << "  " << std::setw(9) << rabbitStr.str();
+             << "  " << std::setw(7) << std::setprecision(2) << radToDeg(sv.entryOffsets.windDirectionOffset);
 
         // Position offsets columns
         const auto& o = sv.entryOffsets;
@@ -303,6 +289,9 @@ static void populateVariationOffsets(ScenarioMetadata& meta) {
     meta.entryNorthOffset = northScaled;
     meta.entryEastOffset = eastScaled;
     meta.entryAltOffset = altScaled;
+
+    // Rabbit speed seed for local profile generation (sigma=0 → constant speed automatically)
+    meta.rabbitSpeedSeed = gScenarioVariations[windIdx].rabbitSpeedSeed;
   }
   // If windIdx out of range, leave defaults (shouldn't happen)
 }
@@ -1066,6 +1055,7 @@ static void runNNEvolution(
                          reinterpret_cast<const char*>(nnData.data() + nnData.size()));
       evalData.gpHash = hashByteVector(evalData.gp);
       evalData.isEliteReeval = false;
+      evalData.rabbitSpeedConfig = gRabbitSpeedConfig;
       evalData.pathList = scenario.pathList;
       evalData.scenario.scenarioSequence = scenarioSequence;
       evalData.scenario.bakeoffSequence = 0;
@@ -1154,6 +1144,7 @@ static void runNNEvolution(
                          reinterpret_cast<const char*>(nnData.data() + nnData.size()));
       evalData.gpHash = hashByteVector(evalData.gp);
       evalData.isEliteReeval = false;
+      evalData.rabbitSpeedConfig = gRabbitSpeedConfig;
       evalData.pathList = scenario.pathList;
       evalData.scenario.scenarioSequence = scenarioSequence;
       evalData.scenario.bakeoffSequence = 0;
