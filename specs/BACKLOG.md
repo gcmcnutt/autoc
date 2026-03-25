@@ -70,6 +70,15 @@ Remaining 015 work:
 - **Blocking dependency for 017-phase3 at training scale**
 - See: [017 spec](017-visual-target-tracking/spec.md)
 
+### [DEFERRED] Renderer: Path reveal timing with variable rabbit speed
+- Training playback red path reveal leads/lags error bars and aircraft position
+- Root cause: proportional reveal assumes uniform speed, but rabbit speed varies per-scenario
+- Error bars are correct (tied to actual aircraft state timestamps)
+- Fix: use `getSpeedAtTime(profile, t)` to compute distance-at-time for path reveal,
+  or use the rabbit odometer from AircraftState to reveal path by distance rather than fraction
+- The speed profile can be reconstructed from `ScenarioMetadata.rabbitSpeedSeed` + `RabbitSpeedConfig`
+- Low priority — error bars are usable for analysis, red path is cosmetic
+
 ---
 
 ## Infrastructure

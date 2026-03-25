@@ -41,7 +41,10 @@ independent implementation and testing. Task IDs T400+ continue from 018's T303.
 
 - [ ] T412 [US1] Compare throttle curves using `scripts/compare_response.py --axis throttle`. Identify specific mismatches: Vmax ratio, climb rate ratio, descent rate ratio. Document which hb1_streamer.xml parameters to adjust (F, CD_prof, V_ref per data-model.md).
 
-- [ ] T413 [US1] Tune throttle parameters in `crrcsim/models/hb1_streamer.xml`: adjust F (thrust), CD_prof (parasitic drag), V_ref (engine reference speed) based on T412 mismatch ratios. Document each change with rationale.
+- [x] T413 [US1] Tune throttle parameters in `crrcsim/models/hb1_streamer.xml`: adjust F (thrust), CD_prof (parasitic drag), V_ref (engine reference speed) based on T412 mismatch ratios. Document each change with rationale.
+  - Pass 1: F 5.0→6.5 (more thrust headroom), CD_prof 0.14→0.15 (cap Vmax).
+    Sim cruise was 76% power vs flight 55%. Target: cruise at ~55% power.
+    Flight data: Vmax=17, Vcruise=13 at 55%, takeoff at 60%.
 
 - [ ] T414 [US1] Run mini training (20 gens) with `autoc-mini.ini` to regenerate sim response curves. Extract new throttle curve with `scripts/sim_response.py`. Re-compare. Iterate T413-T414 until throttle curves converge.
 
