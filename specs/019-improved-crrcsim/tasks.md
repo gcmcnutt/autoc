@@ -119,9 +119,9 @@ independent implementation and testing. Task IDs T400+ continue from 018's T303.
 
 - [ ] T451 [P] [US5] Code inspection — CRRCSim side: read FDM state extraction in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`. Document where ft→m, ft/s→m/s conversions happen. Trace through to NN input computation in autoc evaluator. Reference `docs/COORDINATE_CONVENTIONS.md`.
 
-- [ ] T452 [US5] Compare normalizers: verify dPhi/dTheta/dist are computed identically in both paths (same formula, same units, same sign conventions). Document any discrepancies. Check if 018 NED/NEU fix introduced compensating errors.
+- [ ] T452 [US5] Compare normalizers: verify dPhi/dTheta/dist are computed identically in both paths (same formula, same units, same sign conventions). Document any discrepancies. Check if 018 NED/NEU fix introduced compensating errors. Use `scripts/verify_flight_log.py` to cross-check xiao logged NN inputs against independently computed values from Nav State position + quaternion.
 
-- [ ] T453 [US5] Spot-check: pick 3-5 matched physical states from flight blackbox and sim data.dat (e.g., straight-level at 13 m/s heading north). Compare NN input vectors numerically. Differences >10% flag a scaling issue.
+- [ ] T453 [US5] Spot-check: pick 3-5 matched physical states from flight blackbox and sim data.dat (e.g., straight-level at 13 m/s heading north). Compare NN input vectors numerically. Differences >10% flag a scaling issue. `scripts/verify_flight_log.py` already does this for xiao flight logs — extend or adapt for sim data.dat comparison.
 
 **Checkpoint**: Sensor scaling verified or discrepancies documented and fixed.
 
