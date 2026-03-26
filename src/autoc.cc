@@ -1431,7 +1431,9 @@ int main(int argc, char** argv)
                  << "roll=" << cfg.entryRollSigma << "° "
                  << "pitch=" << cfg.entryPitchSigma << "° "
                  << "speed=" << (cfg.entrySpeedSigma * 100) << "% "
-                 << "wind=" << cfg.windDirectionSigma << "°" << endl;
+                 << "wind=" << cfg.windDirectionSigma << "° "
+                 << "posR=" << cfg.entryPositionRadiusSigma << "m "
+                 << "posAlt=" << cfg.entryPositionAltSigma << "m" << endl;
   logPrefetchedVariations(windScenarioCount, seed);
 
   // Open the main output file for the data and statistics file.
