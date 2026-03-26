@@ -53,9 +53,8 @@ struct AutocConfig {
     // --- Entry and wind direction variations ---
     int enableEntryVariations = 0;
     int enableWindVariations = 0;
-    double entryHeadingSigma = 45.0;
-    double entryRollSigma = 22.5;
-    double entryPitchSigma = 7.5;
+    double entryConeSigma = 30.0;     // degrees: half-angle of nose direction cone
+    double entryRollSigma = 22.5;     // degrees: roll around body axis
     double entrySpeedSigma = 0.1;
     double windDirectionSigma = 45.0;
 

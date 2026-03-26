@@ -29,22 +29,20 @@
  * Angles in radians, speed as fraction (e.g., 0.1 = 10%).
  */
 struct VariationSigmas {
-    double headingSigma;      // radians
-    double rollSigma;         // radians
-    double pitchSigma;        // radians
+    double coneSigma;         // radians: half-angle of nose direction cone
+    double rollSigma;         // radians: roll around body axis
     double speedSigma;        // fraction (0.1 = ±10% at 1σ)
     double windDirectionSigma; // radians
     double positionRadiusSigma = 0.0; // meters (horizontal, half-normal)
     double positionAltSigma = 0.0;    // meters (vertical/Down, Gaussian)
 
     // Construct from degrees (for convenience when reading from config)
-    static VariationSigmas fromDegrees(double headingDeg, double rollDeg, double pitchDeg,
+    static VariationSigmas fromDegrees(double coneDeg, double rollDeg,
                                         double speedFrac, double windDirDeg,
                                         double posRadiusM = 0.0, double posAltM = 0.0) {
         return VariationSigmas{
-            headingDeg * M_PI / 180.0,
+            coneDeg * M_PI / 180.0,
             rollDeg * M_PI / 180.0,
-            pitchDeg * M_PI / 180.0,
             speedFrac,
             windDirDeg * M_PI / 180.0,
             posRadiusM,
@@ -90,10 +88,18 @@ inline VariationOffsets generateVariations(unsigned int seed, const VariationSig
         return z * sigma;
     };
 
-    // Generate Gaussian-distributed offsets
-    v.entryHeadingOffset = gaussian(sigmas.headingSigma);
+    // Cone deviation: sample nose direction within a cone around nominal heading.
+    // coneAngle = magnitude (half-normal), azimuth = direction (uniform 0..2π).
+    // Decompose to Euler heading+pitch offsets for CRRCSim.
+    {
+        double coneAngle = fabs(gaussian(sigmas.coneSigma));
+        double azimuth = nextDouble() * 2.0 * M_PI;
+        double sinC = sin(coneAngle), cosC = cos(coneAngle);
+        double sinA = sin(azimuth), cosA = cos(azimuth);
+        v.entryHeadingOffset = atan2(sinC * cosA, cosC);
+        v.entryPitchOffset = -asin(sinC * sinA);
+    }
     v.entryRollOffset = gaussian(sigmas.rollSigma);
-    v.entryPitchOffset = gaussian(sigmas.pitchSigma);
     v.entrySpeedFactor = 1.0 + gaussian(sigmas.speedSigma);
     v.windDirectionOffset = gaussian(sigmas.windDirectionSigma);
 
@@ -270,10 +276,16 @@ inline VariationOffsets generateVariationsFromGPrand(const VariationSigmas& sigm
         return rng::randDouble();
     };
 
-    // Generate Gaussian-distributed offsets
-    v.entryHeadingOffset = gaussian(sigmas.headingSigma);
+    // Cone deviation: same math as generateVariations() local LCG version
+    {
+        double coneAngle = fabs(gaussian(sigmas.coneSigma));
+        double azimuth = nextDouble() * 2.0 * M_PI;
+        double sinC = sin(coneAngle), cosC = cos(coneAngle);
+        double sinA = sin(azimuth), cosA = cos(azimuth);
+        v.entryHeadingOffset = atan2(sinC * cosA, cosC);
+        v.entryPitchOffset = -asin(sinC * sinA);
+    }
     v.entryRollOffset = gaussian(sigmas.rollSigma);
-    v.entryPitchOffset = gaussian(sigmas.pitchSigma);
     v.entrySpeedFactor = 1.0 + gaussian(sigmas.speedSigma);
     v.windDirectionOffset = gaussian(sigmas.windDirectionSigma);
 

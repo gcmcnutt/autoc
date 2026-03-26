@@ -78,9 +78,8 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
     // Entry and wind direction variations
     config->enableEntryVariations = reader.GetInteger("", "EnableEntryVariations", config->enableEntryVariations);
     config->enableWindVariations = reader.GetInteger("", "EnableWindVariations", config->enableWindVariations);
-    config->entryHeadingSigma = reader.GetReal("", "EntryHeadingSigma", config->entryHeadingSigma);
+    config->entryConeSigma = reader.GetReal("", "EntryConeSigma", config->entryConeSigma);
     config->entryRollSigma = reader.GetReal("", "EntryRollSigma", config->entryRollSigma);
-    config->entryPitchSigma = reader.GetReal("", "EntryPitchSigma", config->entryPitchSigma);
     config->entrySpeedSigma = reader.GetReal("", "EntrySpeedSigma", config->entrySpeedSigma);
     config->windDirectionSigma = reader.GetReal("", "WindDirectionSigma", config->windDirectionSigma);
 

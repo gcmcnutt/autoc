@@ -1380,9 +1380,8 @@ int main(int argc, char** argv)
   gEnableEntryVariations = (cfg.enableEntryVariations != 0);
   gEnableWindVariations = (cfg.enableWindVariations != 0);
   gVariationSigmas = VariationSigmas::fromDegrees(
-      cfg.entryHeadingSigma,
+      cfg.entryConeSigma,
       cfg.entryRollSigma,
-      cfg.entryPitchSigma,
       cfg.entrySpeedSigma,  // already a fraction
       cfg.windDirectionSigma,
       cfg.entryPositionRadiusSigma,  // meters (no conversion needed)
@@ -1427,9 +1426,8 @@ int main(int argc, char** argv)
                         gEnableEntryVariations, gEnableWindVariations);
 
   // Log pre-fetched variations for verification
-  *logger.info() << "Sigmas: heading=" << cfg.entryHeadingSigma << "° "
+  *logger.info() << "Sigmas: cone=" << cfg.entryConeSigma << "° "
                  << "roll=" << cfg.entryRollSigma << "° "
-                 << "pitch=" << cfg.entryPitchSigma << "° "
                  << "speed=" << (cfg.entrySpeedSigma * 100) << "% "
                  << "wind=" << cfg.windDirectionSigma << "° "
                  << "posR=" << cfg.entryPositionRadiusSigma << "m "
