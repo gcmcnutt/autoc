@@ -11,8 +11,9 @@ Before the next flight test, the pipeline itself needs fixes:
 
 1. **Pipeline latency**: CRRCSim trains with COMPUTE_LATENCY=40ms but real xiao pipeline is ~10ms.
    Training at 4× real latency produces a conservative controller that under-reacts.
-2. **INAV data fetch**: Xiao makes 3 separate MSP calls per tick (~35ms total). A single
-   consolidated MSP2 command reduces this to ~8ms.
+2. **INAV data fetch**: Xiao makes 3 separate MSP calls per tick (~35ms total):
+   `MSP_STATUS` (armingFlags), `MSP2_INAV_LOCAL_STATE` (pos/vel/quat), `MSP_RC` (rc channels).
+   A single consolidated MSP2_AUTOC_STATE command replaces all three.
 3. **INAV servo logging**: Blackbox logs servo[0] (unused) instead of servo[1-2] (both elevons).
    Post-flight analysis needs real servo deflection data.
 4. **Flight mode override**: Currently requires pilot transmitter switch. Xiao should set the
@@ -85,7 +86,7 @@ armingFlags  uint32          for arm state detection
 ### INAV build strategy:
 - All INAV changes (servo logging, MSP2_AUTOC_STATE) on `~/inav` autoc branch
 - **Bench target: MAMBAF722_2022A** (STM32F722)
-- **Flight target**: TBD (different board — rebuild before flight)
+- **Flight target**: MATEKF722MINI (different board — rebuild before flight)
 - Build steps (see `~/inav/docs/Building in Linux.md`):
   ```
   cd ~/inav
@@ -98,6 +99,7 @@ armingFlags  uint32          for arm state detection
 - Before flight: `rm -rf build && mkdir build && cd build && cmake .. && make <FLIGHT_TARGET>`
 
 ### Bench hardware:
-- Bench flight controller (STM32F4-based) with INAV autoc branch
+- Bench flight controller: MAMBA F722 (STM32F722) with INAV autoc branch
+- Flight hardware: MATEKF722MINI (separate build target for actual flight)
 - Xiao BLE Sense connected via UART
 - Both on bench for flashing and testing

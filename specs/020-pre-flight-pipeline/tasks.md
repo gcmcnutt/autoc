@@ -51,9 +51,9 @@ Phase A must complete before B; B before C. Renderer fix (CO7) is independent.
 
 - [ ] T508 [P] [CO1] Rename `MSP2_INAV_LOCAL_STATE` to `MSP2_AUTOC_STATE` in `~/autoc/xiao/include/MSP.h`. Update `msp_local_state_t` struct to match extended 38-byte payload (add rc[4], armingFlags).
 
-- [ ] T509 [CO1] Replace 3 MSP calls with single MSP2_AUTOC_STATE request in `~/autoc/xiao/src/msplink.cpp`. Parse 38-byte response into existing state fields. Remove old `MSP_RAW_RC` and `MSP_STATUS` fetch calls. Keep MSP_STATUS as fallback polled every Nth tick for diagnostics.
+- [ ] T509 [CO1] Replace all 3 MSP calls (`MSP_STATUS`, `MSP2_INAV_LOCAL_STATE`, `MSP_RC`) with single `MSP2_AUTOC_STATE` request in `~/autoc/xiao/src/msplink.cpp`. Parse extended payload into existing state fields (pos, vel, quat from local_state; rc from rc; armingFlags from status). Remove all three old fetch calls — the consolidated command carries everything.
 
-- [ ] T510 [CO4] Add flight mode channel override in `~/autoc/xiao/src/msplink.cpp`: include RC channel 6 (bit 5) in MSP override channels, set to 1000 (→ MANUAL mode). INAV config update: `msp_override_channels` 15 → 47.
+- [ ] T510 [CO4] Add flight mode channel override in `~/autoc/xiao/src/msplink.cpp`: include RC channel 6 (bit 5) in MSP override channels, set to 1000 (→ MANUAL mode). Separately, update INAV CLI config during bench setup: `set msp_override_channels = 47` (adds bit 5 to existing mask 15).
 
 - [ ] T511 [CO1] Build xiao with MSP2 + flight mode changes: `pio run -e xiaoblesense_arduinocore_mbed`.
 
@@ -93,7 +93,7 @@ Phase A must complete before B; B before C. Renderer fix (CO7) is independent.
 
 - [ ] T519 [P] Document final COMPUTE_LATENCY value and bench measurement in spec comments.
 - [ ] T520 [P] [CO5] If board alignment confirmed wrong on bench (T501), update INAV config: `set align_board_roll = 1800`.
-- [ ] T521 Rebuild INAV for flight target (TBD): clean build dir, `cmake .. && make <FLIGHT_TARGET>`.
+- [ ] T521 Rebuild INAV for flight target: `rm -rf build && mkdir build && cd build && cmake .. && make MATEKF722MINI`.
 - [ ] T522 Final bench verification with flight-target firmware before deploying to aircraft.
 
 ---

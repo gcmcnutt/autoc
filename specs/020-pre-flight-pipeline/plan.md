@@ -62,7 +62,7 @@ make MAMBAF722_2022A
 ```
 - **IMPORTANT**: Disconnect GPS module before flashing MAMBA board.
 - Bench target: MAMBAF722_2022A (STM32F722)
-- Flight target: TBD — rebuild with clean `build/` dir for flight FC before actual flight.
+- Flight target: MATEKF722MINI — rebuild with clean `build/` dir for flight FC before actual flight.
 
 ### Xiao (~/autoc/xiao):
 ```
