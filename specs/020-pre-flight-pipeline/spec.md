@@ -73,10 +73,18 @@ armingFlags  uint32          for arm state detection
 
 ### INAV build strategy:
 - All INAV changes (servo logging, MSP2_AUTOC_STATE) on `~/inav` autoc branch
-- **Bench target differs from flight target** — bench FC may be a different board/MCU
+- **Bench target: MAMBAF722_2022A** (STM32F722)
+- **Flight target**: TBD (different board — rebuild before flight)
+- Build steps (see `~/inav/docs/Building in Linux.md`):
+  ```
+  cd ~/inav
+  mkdir build    # assumes clean
+  cd build
+  cmake ..
+  make MAMBAF722_2022A
+  ```
 - Development workflow: implement + build for bench target first, verify on bench hardware
-- Before flight: rebuild for flight target (different target dir, may need target.h adjustments)
-- Build: `cmake -B build_<TARGET> -DTARGET=<TARGET> && cmake --build build_<TARGET>`
+- Before flight: `rm -rf build && mkdir build && cd build && cmake .. && make <FLIGHT_TARGET>`
 
 ### Bench hardware:
 - Bench flight controller (STM32F4-based) with INAV autoc branch
