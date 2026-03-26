@@ -25,7 +25,7 @@ Before the next flight test, the pipeline itself needs fixes:
 - **CO1**: Single MSP2_AUTOC_STATE command replaces 3 MSP calls (latency: 35ms → ~8ms)
 - **CO2**: COMPUTE_LATENCY calibrated to bench-measured pipeline (~10-15ms)
 - **CO3**: Both elevons logged in blackbox (servo[1] + servo[2])
-- **CO4**: Xiao sets flight mode channel via MSP override (no pilot switch)
+- **CO4**: Xiao sets flight mode channel via MSP override (RC ch6=1000 → MANUAL, no pilot switch). INAV `msp_override_channels` bitmask: 15 → 47 (add bit 5).
 - **CO5**: Board alignment verified on bench (170° → 180° if confirmed)
 - **CO6**: BIG training run with calibrated model + correct latency
 - **CO7**: Renderer path reveal works with variable rabbit speed
@@ -47,6 +47,14 @@ Before the next flight test, the pipeline itself needs fixes:
 - Xiao onboard IMU cross-check (LSM6DS3TR-C AHRS)
 - Full quaternion entry variation (CRRCSim native quat init)
 
+## Clarifications
+
+### Session 2026-03-25
+- Q: Where does NEU→NED conversion happen for MSP2_AUTOC_STATE? → A: Xiao-side (INAV sends native NEU, xiao converts — matches existing `neuVectorToNedMeters()` pattern)
+- Q: What MSP2 command ID for AUTOC_STATE? → A: Reuse existing `0x210E` (MSP2_INAV_LOCAL_STATE), rename to MSP2_AUTOC_STATE, extend payload with rc+armingFlags. No need to support the old call separately.
+- Q: Add timing jitter to COMPUTE_LATENCY in training? → A: Deferred — measure actual bench latency first. If new pipeline is well under 50ms on 20Hz cadence, jitter is unnecessary. Conditional on bench results.
+- Q: Flight mode override — which channel and value? → A: RC channel 6 (AUX1, bit 5) set to 1000. At 1000 no mode range is active → defaults to MANUAL. INAV config: `msp_override_channels` bitmask adds bit 5 (current 15 → 47).
+
 ## Technical Context
 
 ### Repositories and branches:
@@ -63,9 +71,12 @@ Before the next flight test, the pipeline itself needs fixes:
 - `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.h` — COMPUTE_LATENCY
 
 ### MSP2_AUTOC_STATE payload (38 bytes):
+Reuses existing command ID `0x210E` (formerly MSP2_INAV_LOCAL_STATE) — rename enum,
+extend payload. INAV packs native NEU frame; xiao converts NEU→NED on receive
+(matches existing `neuVectorToNedMeters()` pattern — conversion stays on consumer side).
 ```
-pos[3]       int32   cm      NED (converted from INAV NEU)
-vel[3]       int16   cm/s    NED
+pos[3]       int32   cm      NEU (INAV native — xiao converts to NED)
+vel[3]       int16   cm/s    NEU (INAV native — xiao converts to NED)
 quat[4]      int16   /10000  body→earth (xiao conjugates to earth→body)
 rc[4]        uint16  PWM     channels 0-3
 armingFlags  uint32          for arm state detection
