@@ -71,7 +71,14 @@ rc[4]        uint16  PWM     channels 0-3
 armingFlags  uint32          for arm state detection
 ```
 
+### INAV build strategy:
+- All INAV changes (servo logging, MSP2_AUTOC_STATE) on `~/inav` autoc branch
+- **Bench target differs from flight target** — bench FC may be a different board/MCU
+- Development workflow: implement + build for bench target first, verify on bench hardware
+- Before flight: rebuild for flight target (different target dir, may need target.h adjustments)
+- Build: `cmake -B build_<TARGET> -DTARGET=<TARGET> && cmake --build build_<TARGET>`
+
 ### Bench hardware:
-- STM32F405 flight controller with INAV autoc branch
+- Bench flight controller (STM32F4-based) with INAV autoc branch
 - Xiao BLE Sense connected via UART
 - Both on bench for flashing and testing
