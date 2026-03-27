@@ -379,7 +379,7 @@ public:
         gp_scalar centerAlt = -loopRadius * cos45;
         gp_scalar yOffset = loopRadius * sin45;
 
-        for (gp_scalar turn = 0; turn < static_cast<gp_scalar>(M_PI * 2.0); turn += 0.5f) {
+        for (gp_scalar turn = 0; turn < static_cast<gp_scalar>(M_PI * 2.0); turn += 0.05f) {
           gp_scalar angle = turn - static_cast<gp_scalar>(M_PI / 2.0);
           gp_scalar x_plane = -loopRadius * std::cos(angle);
           gp_scalar z_plane = loopRadius * std::sin(angle);
