@@ -55,7 +55,7 @@
 #define MSP_SERVO_CONFIGURATIONS 120
 #define MSP_NAV_STATUS           121 // navigation status
 #define MSP_SENSOR_ALIGNMENT     126 // orientation of acc,gyro,mag
-#define MSP2_INAV_LOCAL_STATE    0x210E
+#define MSP2_AUTOC_STATE         0x210E  // consolidated nav + status + rc
 #define MSP_STATUS_EX            150
 #define MSP_SENSOR_STATUS        151
 #define MSP_BOXIDS               119
@@ -257,12 +257,15 @@ struct msp_attitude_t {
   int16_t yaw;
 } __attribute__ ((packed));
 
-// MSP2_INAV_LOCAL_STATE reply
-struct msp_local_state_t {
+// MSP2_AUTOC_STATE reply (consolidated nav + status + rc)
+struct msp_autoc_state_t {
   uint32_t timestamp_us; // microseconds since boot (for blackbox correlation)
   int32_t pos[3]; // cm in NEU frame
   int32_t vel[3]; // cm/s in NEU frame
   float q[4];     // quaternion (w,x,y,z) body->NEU
+  uint32_t flightModeFlags; // packed box mode bits (ARM, FAILSAFE, etc.)
+  uint16_t rcChannel8;      // arm switch
+  uint16_t rcChannel9;      // path selector
 } __attribute__ ((packed));
 
 // MSP_ALTITUDE reply

@@ -187,8 +187,8 @@ static void mspUpdateNavControl()
   // Only check if we're currently enabled to avoid repeat logging
   if (state.autoc_enabled && rabbit_active)
   {
-    bool isArmed = state.status_valid && state.status.flightModeFlags & (1UL << MSP_MODE_ARM);
-    bool isFailsafe = state.status_valid && state.status.flightModeFlags & (1UL << MSP_MODE_FAILSAFE);
+    bool isArmed = state.isArmed();
+    bool isFailsafe = state.isFailsafe();
 
     if (!isArmed || isFailsafe)
     {
@@ -318,50 +318,29 @@ void mspUpdateState()
   state.resetState();
   state.setAsOfMsec(millis());
 
-  // get status
-  state.status_valid = performMspRequest(MSP_STATUS, &state.status, sizeof(state.status));
-  if (!state.status_valid)
+  // Single consolidated MSP call: nav + status + rc
+  state.autoc_state_valid = performMspRequest(MSP2_AUTOC_STATE, &state.autoc_state, sizeof(state.autoc_state));
+  if (state.autoc_state_valid)
   {
-    stopAutoc("MSP status failure", true);
-    logPrint(ERROR, "*** CRITICAL: Failed to get MSP_STATUS - aborting MSP update cycle");
-    return; // Critical error - can't continue without status
+    state.inavSampleTimeMsec = state.autoc_state.timestamp_us / 1000;
   }
-
-  // Local state (position / velocity / quaternion)
-  state.local_state_valid = performMspRequest(MSP2_INAV_LOCAL_STATE, &state.local_state, sizeof(state.local_state));
-  if (state.local_state_valid)
+  if (!state.autoc_state_valid)
   {
-    // Convert INAV timestamp from microseconds to milliseconds
-    state.inavSampleTimeMsec = state.local_state.timestamp_us / 1000;
-  }
-  // Local state already provides quaternion data; if unavailable, orientation will be held from previous sample
-  if (!state.local_state_valid && (state.autoc_enabled || rabbit_active))
-  {
-    stopAutoc("MSP local state failure", true);
-  }
-
-  // RC channels
-  state.rc_valid = performMspRequest(MSP_RC, &state.rc, sizeof(state.rc));
-  if (!state.rc_valid && (state.autoc_enabled || rabbit_active))
-  {
-    stopAutoc("MSP RC failure", true);
+    if (state.autoc_enabled || rabbit_active)
+    {
+      stopAutoc("MSP autoc state failure", true);
+    }
+    logPrint(ERROR, "*** CRITICAL: Failed to get MSP2_AUTOC_STATE - aborting MSP update cycle");
+    return;
   }
 
   // Sample path selector channel every cycle (for pre-flight validation and GP State logging)
-  int pathSelectorRcValue = MSP_DEFAULT_CHANNEL_VALUE;
-  int pathSelectorIndex = 0;  // Default to path 0 (StraightAndLevel)
+  int pathSelectorRcValue = state.rcChannel(MSP_PATH_SELECT_CHANNEL);
+  // Map 1000-2000 → 0-5 (6-position switch)
+  int clamped = constrain(pathSelectorRcValue, 1000, 2000);
+  int pathSelectorIndex = min(5, (clamped - 1000) * 6 / 1001);
 
-  if (state.rc_valid) {
-    pathSelectorRcValue = state.rc.channelValue[MSP_PATH_SELECT_CHANNEL];
-    // Map 1000-2000 → 0-5 (6-position switch)
-    // Each position gets ~167μs range: 1000, 1200, 1400, 1600, 1800, 2000
-    int clamped = constrain(pathSelectorRcValue, 1000, 2000);
-    pathSelectorIndex = min(5, (clamped - 1000) * 6 / 1001);  // Scale to 0-5
-  }
-
-  // ok, let's see what we fetched and updated.
-  // first, check if we have a valid status
-  bool isArmed = state.status_valid && state.status.flightModeFlags & (1 << MSP_MODE_ARM);
+  bool isArmed = state.isArmed();
   if (isArmed)
   {
     analogWrite(BLUE_PIN, 0);
@@ -391,7 +370,7 @@ void mspUpdateState()
   }
 
   // then, check the servo channel to see if can auto-enable
-  bool hasServoActivation = state.rc_valid && state.rc.channelValue[MSP_ARM_CHANNEL] > MSP_ARMED_THRESHOLD;
+  bool hasServoActivation = state.autoc_state_valid && state.rcChannel(MSP_ARM_CHANNEL) > MSP_ARMED_THRESHOLD;
 
   if (!isArmed && (state.autoc_enabled || rabbit_active))
   {
@@ -425,9 +404,9 @@ void mspUpdateState()
   {
     resetPositionHistory();
 
-    if (state.local_state_valid)
+    if (state.autoc_state_valid)
     {
-      test_origin_offset = neuVectorToNedMeters(state.local_state.pos); // capture absolute INAV position at enable
+      test_origin_offset = neuVectorToNedMeters(state.autoc_state.pos); // capture absolute INAV position at enable
       test_origin_set = true;
 
       // Use cached path selector value from cycle sampling
@@ -511,10 +490,10 @@ void mspUpdateState()
   // Log raw vs origin-relative state for correlation
   gp_vec3 pos_raw = gp_vec3::Zero();
   gp_vec3 vel_raw = gp_vec3::Zero();
-  if (state.local_state_valid)
+  if (state.autoc_state_valid)
   {
-    pos_raw = neuVectorToNedMeters(state.local_state.pos);
-    vel_raw = neuVectorToNedMeters(state.local_state.vel);
+    pos_raw = neuVectorToNedMeters(state.autoc_state.pos);
+    vel_raw = neuVectorToNedMeters(state.autoc_state.vel);
   }
   else if (have_valid_position)
   {
@@ -527,8 +506,8 @@ void mspUpdateState()
   {
     q.normalize();
   }
-  bool armed = state.status_valid && state.status.flightModeFlags & (1UL << MSP_MODE_ARM);
-  bool failsafe = state.status_valid && state.status.flightModeFlags & (1UL << MSP_MODE_FAILSAFE);
+  bool armed = state.isArmed();
+  bool failsafe = state.isFailsafe();
 
   logPrint(INFO,
            "Nav State: pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d",
@@ -628,6 +607,9 @@ static void performMspSendLocked()
   state.command_buffer.channel[0] = cached_roll_cmd;
   state.command_buffer.channel[1] = cached_pitch_cmd;
   state.command_buffer.channel[2] = cached_throttle_cmd;
+  // CH6 (index 5) = 1000 → forces MANUAL mode (no INAV stabilization)
+  // msp_override_channels bitmask must include bit 5 (CLI: set msp_override_channels = 47)
+  state.command_buffer.channel[5] = 1000;
   msp.send(MSP_SET_RAW_RC, &state.command_buffer, sizeof(state.command_buffer));
 }
 
@@ -636,7 +618,7 @@ static void performMspSendLocked()
 // Convert MSP state data to AircraftState for GP evaluator
 void convertMSPStateToAircraftState(AircraftState &aircraftState)
 {
-  if (!state.local_state_valid)
+  if (!state.autoc_state_valid)
   {
     if (!have_valid_position)
     {
@@ -649,11 +631,11 @@ void convertMSPStateToAircraftState(AircraftState &aircraftState)
   gp_vec3 velocity = gp_vec3::Zero();
   gp_quat orientation = aircraftState.getOrientation();
 
-  if (state.local_state_valid)
+  if (state.autoc_state_valid)
   {
-    position_raw = neuVectorToNedMeters(state.local_state.pos);
-    velocity = neuVectorToNedMeters(state.local_state.vel);
-    orientation = neuQuaternionToNed(state.local_state.q);
+    position_raw = neuVectorToNedMeters(state.autoc_state.pos);
+    velocity = neuVectorToNedMeters(state.autoc_state.vel);
+    orientation = neuQuaternionToNed(state.autoc_state.q);
 
     last_valid_position = position_raw;
     have_valid_position = true;
