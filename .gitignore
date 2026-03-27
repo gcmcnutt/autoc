@@ -18,4 +18,4 @@ xiao/.vscode/ipch
 xiao/build/
 xiao/src/generated/*
 !xiao/src/generated/README.md
-xiao/*.pyc
+*.pyc
