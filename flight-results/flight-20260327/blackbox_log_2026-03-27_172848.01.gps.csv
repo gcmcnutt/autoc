@@ -1,0 +1,2 @@
+time (us), GPS_fixType, GPS_numSat, GPS_coord[0], GPS_coord[1], GPS_altitude, GPS_speed (m/s), GPS_ground_course, GPS_hdop, GPS_eph, GPS_epv, GPS_velned[0], GPS_velned[1], GPS_velned[2], GPS_home_lat, GPS_home_lon
+ 58375066,           2,         10,   37.4117637, -121.9949739, -4          ,            0.05,             285.4,      189,     200,     267, -4           ,             3,             7,   37.4117644, -121.9949746

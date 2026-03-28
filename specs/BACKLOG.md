@@ -107,6 +107,11 @@ Remaining 015 work:
 - Log RC commands throughout entire flight for full playback visualization
 - Location: xiao/src/msplink.cpp
 
+### [ACTIVE → 021] Xiao Onboard IMU as AHRS Cross-Check
+- Moved to [specs/021-xiao-ahrs-crosscheck/spec.md](021-xiao-ahrs-crosscheck/spec.md)
+- P0 blocker: Mar 27 flight showed uncontrolled rotation — cannot tell if AHRS or gain mismatch
+- LSM6DS3 + Madgwick on Xiao, log alongside INAV quat, compare post-flight
+
 ### [DEFERRED] GPS Dropout Handling During NN Control
 - What happens when GPS drops out during NN-active control? Position freezes, NN sees stale data
 - Need: xiao detects stale position (no update for N ms) and either disables autoc or flags it

@@ -19,17 +19,17 @@ Phase A must complete before B; B before C. Renderer fix (CO7) is independent.
 
 **Independent Test**: Blackbox CSV from bench run shows servo[1] and servo[2] columns with non-zero values for both elevons.
 
-- [ ] T500 [P] [CO3] Fix servo logging index in `~/inav/src/main/blackbox/blackbox.c`: change servo loop to start from `minServoIndex` instead of 0. Flying wing logs servo[1]+servo[2] (both elevons) instead of servo[0] (unused)+servo[1].
+- [x] T500 [P] [CO3] Fix servo logging index in `~/inav/src/main/blackbox/blackbox.c`: change servo loop to start from `minServoIndex` instead of 0. Flying wing logs servo[1]+servo[2] (both elevons) instead of servo[0] (unused)+servo[1].
 
-- [ ] T501 [P] [CO5] Board alignment investigation: analyze existing flight data (`eval-results/bench-20260322/`) for pitch bias at 50% cruise. Compare reported attitude vs expected level. Determine how much is board alignment (170° vs 180°) vs natural AoA vs IMU drift. Document findings.
+- [ ] T501 — **Moved to 021** (AHRS cross-check needed first). Board alignment investigation: analyze existing flight data (`eval-results/bench-20260322/`) for pitch bias at 50% cruise. Compare reported attitude vs expected level. Determine how much is board alignment (170° vs 180°) vs natural AoA vs IMU drift. Document findings.
 
-- [ ] T502 [P] [CO3] Set blackbox sample rate to 1/8 in INAV CLI config for higher resolution logging.
+- [x] T502 [P] [CO3] Set blackbox sample rate to 1/8 in INAV CLI config for higher resolution logging.
 
-- [ ] T503 [CO3] Build INAV for bench target: `cd ~/inav && mkdir build && cd build && cmake .. && make MAMBAF722_2022A`. NOTE: disconnect GPS module before flashing.
+- [x] T503 [CO3] Build INAV for bench target: `cd ~/inav && mkdir build && cd build && cmake .. && make MAMBAF722_2022A`. NOTE: disconnect GPS module before flashing.
 
-- [ ] T504 [CO3] Build+deploy xiao (wire-compatible, no code changes yet): `cd ~/autoc/xiao && pio run -e xiaoblesense_arduinocore_mbed`. Load recent training weights.
+- [x] T504 [CO3] Build+deploy xiao (wire-compatible, no code changes yet): `cd ~/autoc/xiao && pio run -e xiaoblesense_arduinocore_mbed`. Load recent training weights.
 
-- [ ] T505 [CO3] Bench run: capture blackbox log, decode with blackbox-tools, verify both elevon servo columns appear with non-zero data in CSV.
+- [x] T505 [CO3] Bench run: capture blackbox log, decode with blackbox-tools, verify both elevon servo columns appear with non-zero data in CSV.
 
 **Checkpoint**: Both elevons logged. Board alignment findings documented. Bench baseline established.
 

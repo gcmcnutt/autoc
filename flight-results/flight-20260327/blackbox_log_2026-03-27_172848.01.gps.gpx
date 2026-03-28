@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx creator="blackbox_decode v8.0.0 INAV c4f2026" version="1.1" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+<metadata><name>Blackbox flight log</name>
+ <link href="https://github.com/iNavFlight/blackbox-tools">
+ <text>INAV Blackbox Tools</text>
+ </link>
+</metadata>
+<trk><name>Blackbox flight log</name><trkseg>
+  <trkpt lat="37.4117637" lon="-121.9949739"><ele>-4</ele><time>2026-03-28T00:06:59.874788Z</time></trkpt>
+</trkseg></trk>
+</gpx>
