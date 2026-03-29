@@ -66,8 +66,10 @@ Based on Phase 1 data, redesign the sensor inputs for the next training cycle.
 - During steady flight (no acceleration): accel ≈ [0, 0, -g] rotated by attitude
 - Provides bank angle and pitch without AHRS quaternion dependency
 - 3 inputs replace 4 quaternion inputs
-- Available from both INAV (MSP) and local LSM6DS3
-- Cross-check: both sources should agree on "down"
+- **Primary source**: INAV filtered accelerometer via MSP (1kHz sample, calibrated)
+  - Extend MSP2_AUTOC_STATE with accel[3] (int16, milli-g or similar)
+- **Cross-check**: local LSM6DS3 for diagnostics only (not fed to NN)
+- Cross-check validation: both sources should agree on "down"
 
 #### Proposed input set (body-frame, all relative)
 ```
@@ -78,9 +80,14 @@ Path tracking (existing, validated):
   closing rate                 (1 input)
 
 Attitude/dynamics (new):
-  gravity vector, body frame   (3 inputs — from accel, replaces quaternion)
-  rate gyros p, q, r           (3 inputs — angular rates for damping)
+  gravity vector, body frame   (3 inputs — INAV filtered accel via MSP)
+  rate gyros p, q, r           (3 inputs — INAV filtered gyro via MSP, post-LPF)
   airspeed                     (1 input — keep, but need pitot for accuracy)
+
+Note: gyro filter params (LPF cutoff, dynamic notch) need research.
+Current filter config may be tuned for PID stability, not NN input
+fidelity. Phase 1 characterization flight should log both GYRO_RAW
+and filtered gyroADC to compare and determine if filter adjustment needed.
 
 Removed:
   quaternion (4)               — replaced by gravity vector
@@ -98,9 +105,14 @@ Total: ~26 inputs (down from 29)
 
 #### ACRO mode in sim
 - CRRCSim currently applies NN output directly as surface deflection
-- With ACRO, NN output should be interpreted as rate commands
-- Need a simple rate PID in the sim's autoc input device, or
-- Configure CRRCSim's existing control model to match INAV's ACRO gains
+- With ACRO, NN output is interpreted as desired angular rate via INAV's rate curve
+- INAV mapping: NN [-1,1] → INAV rate curve → [-max_rate, +max_rate] deg/s
+- INAV expo set to 0 (linear mapping): max_rate = rate_param * 10 + 200
+- Current hb1 config: roll 560°/s, pitch 400°/s, yaw 240°/s
+- CRRCSim needs matching rate PID in autoc input device:
+  - NN output [-1,1] → desired rate via same linear curve
+  - PID compares desired rate vs FDM body rate (p,q,r) → surface deflection
+  - PID gains tuned to match INAV's measured response from Phase 1
 
 ### Phase 3: Training + Flight Validation
 
@@ -176,6 +188,17 @@ get fw_d_pitch
 ### Phase 3
 9. Flight test with redesigned controller — sustained path tracking >10s
 10. No uncontrolled rotation
+
+## Clarifications
+
+### Session 2026-03-28
+- Q: How should the NN-to-ACRO command mapping work? → A: Use INAV's rate curve with expo=0 (linear). NN [-1,1] maps through INAV's standard rate formula. CRRCSim must implement matching rate PID with same curve.
+- Q: Which source for NN gravity vector input during flight? → A: INAV accelerometer via MSP (add to MSP2_AUTOC_STATE). INAV has 1kHz sample rate on 400MHz MCU with proper calibration. Local LSM6DS3 remains cross-check only.
+- Q: Raw or filtered gyro rates for NN input? → A: Filtered (post-LPF, pre-PID). Matches what INAV's own PID acts on. Research task: document current gyro filter params and assess if they need adjustment for NN use.
+- Q: Safety overrides in Phase 1 or 2? → A: Phase 2. Implement as distance-from-autoc-origin sphere check. Refine later with altitude floor, energy bounds. Foundation for future upper-level planner.
+- Q: MSP2_AUTOC_STATE extension timing? → A: Wait for Phase 2. Phase 1 gets gyro/accel from blackbox, no MSP change needed.
+- Note: gyroADC[0-2] (filtered) is always logged in blackbox base fields. gyroRaw[0-2] logged when GYRO_RAW enabled. Both available for Phase 1 characterization.
+- Note: PEAKS_R/P/Y (dynamic notch filter frequencies, 9 fields) stay OFF — PID tuning tool, not relevant for NN or characterization.
 
 ## Out of Scope
 - Pitot tube / airspeed sensor (would fix alpha, but hardware change)
