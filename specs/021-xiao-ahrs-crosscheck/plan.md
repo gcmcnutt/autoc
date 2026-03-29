@@ -158,6 +158,7 @@ Phase 2D: Safety overrides
 
 ```
 Phase 3A: Training
+  ├── COMPUTE_LATENCY stays 30ms, SIM_TIME_STEP_MSEC stays 100ms (already matched to real 10Hz)
   ├── BIG training run with new inputs + ACRO rate PID in sim
   ├── Eval suite: aeroStandard + random + stress tiers
   ├── Compare convergence and smoothness to BIG3 baseline

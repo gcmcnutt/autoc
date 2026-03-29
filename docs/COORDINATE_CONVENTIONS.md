@@ -70,6 +70,62 @@ analysing logs or integrating new flight data.
 
 Keep this file updated if additional actuators, sensors, or frames are added.
 
+## Gyro & Accelerometer Conventions (021, 2026-03-28)
+
+### INAV Sensor Processing Chain
+Both gyro and accelerometer follow the same transformation pipeline:
+
+```
+Raw ADC → Zero calibration → Sensor alignment → Board alignment → Filter → Output
+```
+
+Board alignment is applied at the RAW SENSOR level (`gyro.c:439`, `acceleration.c:564`)
+BEFORE filtering and BEFORE IMU quaternion fusion. The logged values (gyroADC, accSmooth)
+are already in aircraft body frame, not sensor frame.
+
+### Blackbox Gyro: gyroADC[0-2]
+
+| Index | Axis | Positive direction | Units | Notes |
+|-------|------|-------------------|-------|-------|
+| [0] | Roll (X body) | Right wing down | deg/s (int16) | FD_ROLL in axis.h |
+| [1] | Pitch (Y body) | Nose up | deg/s (int16) | FD_PITCH in axis.h |
+| [2] | Yaw (Z body) | Nose right | deg/s (int16) | FD_YAW in axis.h |
+
+- **Frame**: Body-frame, board-alignment-corrected
+- **Filtering**: Post-LPF (anti-alias 250Hz + main LPF 25Hz + dynamic notch)
+- **gyroRaw[0-2]**: Same axes but pre-main-filter (only anti-alias LPF applied)
+- **Right-hand rule**: curl fingers in rotation direction, thumb along positive axis
+
+### Blackbox Accelerometer: accSmooth[0-2]
+
+| Index | Axis | At rest (level) | Units | Notes |
+|-------|------|-----------------|-------|-------|
+| [0] | X body (forward) | ~0 | G × acc_1G scale | FD_ROLL axis |
+| [1] | Y body (right) | ~0 | G × acc_1G scale | FD_PITCH axis |
+| [2] | Z body (down) | ~+1G | G × acc_1G scale | FD_YAW axis |
+
+- **Frame**: Body-frame, board-alignment-corrected (same as gyro)
+- **At level rest**: accel ≈ [0, 0, +1G] (gravity points down in body frame = +Z)
+- **Gravity vector**: normalize accel to unit vector for attitude reference
+- **In turns**: centripetal acceleration adds to gravity vector (useful, not noise)
+
+### CRRCSim FDM Body Rates
+
+LaRCSim FDM computes body angular rates (p, q, r) internally:
+- `v_R_omega_total.r[0]` = p (roll rate, rad/s)
+- `v_R_omega_total.r[1]` = q (pitch rate, rad/s)
+- `v_R_omega_total.r[2]` = r (yaw rate, rad/s)
+
+Same right-hand convention as INAV gyroADC. Note CRRCSim uses rad/s while
+INAV uses deg/s — conversion needed at the interface.
+
+### Ground Verification Protocol
+Before flight, verify polarity on the ground:
+1. Roll aircraft right → gyroADC[0] should be positive
+2. Pitch aircraft nose up → gyroADC[1] should be positive
+3. Yaw aircraft nose right → gyroADC[2] should be positive
+4. Level aircraft → accSmooth[2] should be positive (~1G)
+
 ## Quaternion & Euler sign conventions (VERIFIED via bench testing 2025-12-20)
 
 ### Standard Aerospace Convention (NED/FRD)

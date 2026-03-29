@@ -157,3 +157,77 @@ May need to remap or add an ACRO range on CH6.
 
 **For Phase 1**: not needed (flying MANUAL only, no autoc spans).
 **For Phase 2**: update xiao to send CH6 value that selects ACRO, update INAV aux config.
+
+## R8: NN Tick Rate — Sim vs Real Alignment
+
+**Current state**:
+- Sim: `SIM_TIME_STEP_MSEC = 100` → NN eval at **10Hz** (aircraft_state.h:39)
+- Real: MSP at ~20Hz, NN eval every other tick → **10Hz**
+- COMPUTE_LATENCY = 30ms → transport delay (sample-to-stimulus) within each 100ms tick
+- **Sim and real are already matched at 10Hz. No mismatch.**
+
+**How it works**: Each 100ms tick, the sim samples state, waits 30ms (transport
+delay), then applies the NN output. The command holds for the remaining 70ms.
+This matches real hardware: MSP fetch (12ms) + eval (5ms) + send (12ms) = 29ms
+transport delay, command holds until next tick 100ms later.
+
+**10Hz is coarse for tracking**: At 18 m/s, the aircraft moves 1.8m between
+updates. With ACRO rate PID at 1kHz handling stabilization, the NN only
+adjusts rate setpoints — less critical than servo-level control. But path
+tracking accuracy is limited by this update rate.
+
+**Future (post-021)**: Move to eval-every-tick (20Hz, 50ms). Pipeline budget:
+fetch 12ms + eval 5ms + send 12ms = 29ms, leaves 21ms headroom in a 50ms tick.
+Update SIM_TIME_STEP_MSEC to 50 for that training cycle. COMPUTE_LATENCY
+stays at 30ms (transport delay doesn't change with tick rate).
+
+## R9: NN Topology — Deeper Analysis
+
+**Current**: 29→16→8→3 = 643 weights, pop=3000 → 4.7 individuals/weight
+
+**The NN's job is changing**:
+- Old: learn stabilization AND tracking from servo-level commands
+- New: learn tracking only, output rate commands, ACRO PID handles inner loop
+- This is a simpler mapping — arguably needs less network capacity
+
+**Input structure change**:
+- Old: mixed absolute (quaternion) + relative (path sensors) + derivative-free
+- New: all body-frame/relative, explicit derivatives (gyro rates)
+- More uniform input space, less nonlinearity to represent
+
+**History depth question**:
+- Current: 4 past samples for dPhi/dTheta/dist (inputs 0-3, 6-9, 12-15)
+- With explicit rate gyros, the NN no longer needs history to infer angular rates
+- However, history still provides path curvature information (how is the bearing changing)
+- **Keep 4 past samples** — they serve path prediction, not rate estimation
+
+**Topology options**:
+
+| Option | Shape | Weights | Ratio (pop=3000) | Notes |
+|--------|-------|---------|-------------------|-------|
+| A (minimal) | 26→16→8→3 | 571 | 5.3 | Safe, minimal change |
+| B (wider) | 26→20→10→3 | 753 | 4.0 | More features, slightly tight ratio |
+| C (single hidden) | 26→24→3 | 699 | 4.3 | Simpler, faster eval, may suffice for rate-command |
+| D (future-proof) | 26→32→16→3 | 1395 | 2.2 | Room for vision inputs later, but ratio too low |
+
+**Forward-looking context**: The next milestone (optical tracking) adds IR beacon
+data — either raw 2D camera pixels or reduced pose features. This could add
+10-50+ inputs depending on representation. If we go narrow now, we rearchitect.
+But training with unused capacity wastes evolutionary search.
+
+**Decision**: Start with **Option A** (26→16→8→3). Rationale:
+1. The simpler control task (rate commands) likely needs less capacity, not more
+2. Good individuals/weight ratio (5.3) maintains evolutionary pressure
+3. Vision inputs (next milestone) will require a fundamentally different
+   architecture anyway (likely CNN frontend → MLP backend), so "future-proofing"
+   the MLP width now doesn't help
+4. If convergence is poor, widen to Option B (26→20→10→3) — a single config change
+
+**Activation functions**:
+- Hidden layers: tanh (current, works well for bounded control)
+- Output layer: tanh clamped to [-1,1] (current, appropriate for rate commands
+  since the rate scaling happens externally via max_rate)
+- No change recommended
+
+**Population size**: Keep pop=3000 for Option A. If moving to Option B,
+consider pop=3500 to maintain >4.5 ratio.
