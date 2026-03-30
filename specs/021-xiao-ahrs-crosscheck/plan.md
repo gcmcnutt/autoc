@@ -71,106 +71,59 @@ specs/021-xiao-ahrs-crosscheck/
 
 ## Execution Phases
 
-### Phase 1: Instrumentation + Characterization Flight
+### Sim-First Approach
 
-**Goal**: Collect data to inform Phase 2 design. No NN changes. Fly MANUAL only.
+All sim-side changes are implemented and validated BEFORE touching flight hardware.
+The CRRCSim rate PID + NN input redesign + training validation prove the architecture
+works in simulation. Only then do we implement the INAV/xiao plumbing to replicate
+the same data flow on real hardware.
 
-**No INAV code changes** — config only (blackbox fields, already done).
+The characterization flight runs in parallel whenever props are available — it provides
+real-world response data that feeds back into CRRCSim PID tuning but does not block
+the sim-side work.
 
-```
-Phase 1A: Xiao AHRS cross-check code
-  ├── LSM6DS3 driver + Madgwick filter (new: ahrs.cpp/h)
-  ├── Log q_local alongside q_inav each MSP tick
-  ├── Log raw accel as gravity vector cross-check
-  └── Build xiao
+### Phase 1: Bench Verification
 
-Phase 1B: Characterization flight (MANUAL mode, no autoc)
-  ├── Pilot maneuvers: rolls, pitches, throttle steps at various speeds
-  ├── Blackbox: GYRO_RAW + ACC + QUAT + SERVOS + RC_COMMAND + etc @ 1/32
-  └── Collect xiao log with AHRS cross-check data
+**Goal**: Confirm gyro/accel polarity and ACRO config before any code changes.
+Quick sanity check on bench hardware — tilt frame, read sensors.
 
-Phase 1C: Analysis
-  ├── AHRS divergence: q_inav vs q_local delta over time
-  ├── Gravity vector: accel vs quaternion-derived, identify bias
-  ├── Response curves: gyroADC rate vs rcCommand per axis, binned by speed
-  ├── Gyro filter analysis: compare gyroRaw vs gyroADC, assess filter params
-  └── Document findings → inform Phase 2 parameter choices
-```
+### Phase 2: CRRCSim ACRO Rate PID (MVP)
 
-### Phase 2: NN Input Redesign + ACRO Mode
+**Goal**: Implement rate PID in CRRCSim. This is the sim-side inner loop that
+converts NN rate commands to surface deflections, matching INAV's ACRO behavior.
+Train with existing 29 inputs to validate ACRO mode helps convergence.
 
-**Goal**: New sensor inputs, ACRO inner loop in sim, retrain.
+### Phase 3: NN Input Redesign
 
-Order matters: INAV first (provides the data), then CRRCSim (consumes it in sim),
-then autoc NN topology (uses the new inputs).
+**Goal**: Change NN inputs from 29 to 27. Remove alpha/beta and previous commands,
+add rate gyros from FDM. Train and compare convergence to Phase 2 baseline.
 
-```
-Phase 2A: INAV MSP extension
-  ├── Add accel[3] (filtered, int16 milli-g) to MSP2_AUTOC_STATE
-  ├── Add gyro[3] (filtered, int16 deg/s scaled) to MSP2_AUTOC_STATE
-  ├── Build INAV for both MAMBA (bench) and MATEK (flight)
-  └── Bench verify: xiao receives and logs accel/gyro correctly
+### Phase 4: Training + Sim Validation
 
-Phase 2B: CRRCSim ACRO rate PID
-  ├── Extract body rates (p,q,r) from LaRCSim FDM (already computed internally)
-  ├── Extract body-frame accel from FDM (gravity + centripetal)
-  ├── Wire accel[3] + gyro[3] through autoc RPC protocol to evaluator
-  ├── Implement rate PID in inputdev_autoc:
-  │     NN output [-1,1] → desired rate (linear, expo=0)
-  │     PID: error = desired_rate - actual_rate → surface deflection
-  │     Roll max 560°/s, pitch 400°/s, yaw 240°/s (match INAV config)
-  ├── PID gains: start from INAV's fw_p/i/d/ff values, tune to match
-  │   Phase 1 measured response curves
-  └── Rebuild crrcsim
+**Goal**: Production training run. Validate at scale. Eval suite. Response analysis.
+If characterization flight data is available, use it to tune CRRCSim PID gains.
 
-Phase 2C: autoc NN topology + inputs
-  ├── New input vector in evaluator.cc:
-  │     Path sensors (19 inputs — dPhi/dTheta/dist history+forecast, closing rate)
-  │     Gravity vector body frame (3 inputs — from accel, normalized)
-  │     Rate gyros (3 inputs — p,q,r filtered, scaled to [-1,1] by max_rate)
-  │     Airspeed (1 input)
-  │     Total: 26 inputs
-  ├── Remove: quaternion (4), alpha/beta (2), previous commands (3)
-  ├── Hidden layer topology considerations:
-  │     Current: 29→16→8→3 (643 weights)
-  │     Option A: 26→16→8→3 (571 weights) — same hidden, fewer input connections
-  │     Option B: 26→20→10→3 (753 weights) — wider hidden for richer representation
-  │     Option C: 26→16→3 (323 weights) — single hidden, simpler
-  │     Decision: start with Option A (minimal change), evaluate convergence
-  ├── Input scaling: all inputs normalized to ~[-1,1] range
-  │     gravity: already [-1,1] (g-normalized)
-  │     gyro: divide by max_rate (560°/s roll, 400°/s pitch, 240°/s yaw)
-  │     path sensors: already in radians/meters (existing scaling)
-  ├── Update aircraft_state.h with accel/gyro fields
-  ├── Update xiao msplink.cpp to parse extended MSP2_AUTOC_STATE
-  ├── Update xiao nn_gather_inputs equivalent
-  └── GoogleTest: verify input vector construction with known state
+### Phase 5-6: INAV MSP + Xiao (hardware plumbing)
 
-Phase 2D: Safety overrides
-  ├── Distance-from-origin sphere check on xiao
-  │     On autoc enable: capture origin position
-  │     Each tick: if distance > threshold (e.g. 100m), disable autoc
-  ├── Log safety events to flash
-  └── Threshold configurable (compile-time initially)
-```
+**Goal**: Replicate on hardware what sim already provides. Extend MSP2_AUTOC_STATE
+with gyro[3]. Xiao parses it, feeds NN, overrides to ACRO mode.
+Only proceed after sim validation (Phase 4) confirms architecture works.
 
-### Phase 3: Training + Flight Validation
+### Phase 7: Safety Overrides
 
-```
-Phase 3A: Training
-  ├── COMPUTE_LATENCY stays 30ms, SIM_TIME_STEP_MSEC stays 100ms (already matched to real 10Hz)
-  ├── BIG training run with new inputs + ACRO rate PID in sim
-  ├── Eval suite: aeroStandard + random + stress tiers
-  ├── Compare convergence and smoothness to BIG3 baseline
-  └── Response curve analysis: sim vs Phase 1 flight data
+**Goal**: Distance-from-origin sphere check. Required before flight test.
 
-Phase 3B: Deploy + Flight
-  ├── Extract weights, nn2cpp, build xiao
-  ├── Flash INAV (MATEK) with extended MSP + blackbox config
-  ├── ACRO mode + safety overrides active
-  ├── Ground check: arm, verify ACRO mode, servo response, safety cutoff
-  └── Flight test: autoc spans, expect sustained tracking >10s
-```
+### Phase 8: Characterization Flight (parallel track)
+
+**Goal**: Fly choreography from `flight-choreography.md` whenever props arrive.
+MANUAL mode, no autoc. Provides response data for CRRCSim PID tuning.
+Feeds back into Phase 4 analysis.
+
+### Phase 9: Flight Test
+
+**Goal**: Fly with trained NN in ACRO mode. Expect sustained tracking >10s.
+
+See `tasks.md` for detailed task breakdown and dependency graph.
 
 ## Key Design Decisions
 
