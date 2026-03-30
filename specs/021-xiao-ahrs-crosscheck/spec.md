@@ -26,34 +26,27 @@ The NN is trying to learn both inner-loop stabilization AND outer-loop path
 tracking from high-level inputs, with no rate feedback. This works in sim
 where dynamics match perfectly but fails on real hardware.
 
-## Solution: Three Phases
+## Solution
 
-### Phase 1: Instrumentation + Data Collection Flight
+### Approach: Sim-First
 
-Fly with current NN (expect tumbling) to collect diagnostic data:
+All sim-side changes (CRRCSim rate PID, NN input redesign, training validation)
+are implemented and proven BEFORE touching flight hardware. INAV/xiao changes
+are plumbing to replicate what the sim already provides.
 
-**Xiao AHRS cross-check:**
-- Read LSM6DS3 accel+gyro at 100Hz via timer
-- Run Madgwick filter → local quaternion
-- Log both q_inav and q_local each MSP tick
-- Also log raw accel as gravity vector cross-check (should always point down)
+### Phase 1: Bench Verification + CRRCSim Rate PID (MVP)
 
-**INAV ACRO mode for autoc:**
-- Change autoc flight mode from MANUAL to ACRO
-- ACRO gives gyro-based rate damping on the inner loop (INAV PID at 1kHz)
-- NN commands desired rates, not raw servo deflections
-- Should immediately reduce the uncontrolled tumbling
+**Bench verification:**
+- Confirm gyro/accel polarity on bench hardware (no props needed)
+- Verify INAV ACRO PID config matches documented values
 
-**Pilot characterization maneuvers (outside autoc):**
-- Variable-rate rolls at different airspeeds (slow/cruise/fast)
-- Pitch doublets at different attitudes and speeds
-- Throttle steps from cruise
-- Provides ground-truth response data for sim tuning
-
-**Blackbox config:**
-- Rate 1/32 (verified: 3 failed frames vs 4645)
-- Add ACC back in for accelerometer cross-reference
-- Keep: NAV_POS, ACC, RC_DATA, RC_COMMAND, MOTORS, SERVOS, QUAT, MAG
+**CRRCSim ACRO rate PID (sim-side inner loop):**
+- Implement first in minisim (fast iteration, simplified physics)
+- Port to CRRCSim with full LaRCSim FDM
+- NN output [-1,1] → desired rate via INAV's rate curve (expo=0, linear)
+- PID compares desired vs actual body rate → surface deflection
+- Match INAV gains: roll FF=50 P=5 I=7, pitch FF=50 P=5 I=7
+- Rate limits: roll 560°/s, pitch 400°/s, yaw 240°/s
 
 ### Phase 2: NN Input Redesign
 
@@ -138,10 +131,9 @@ Benefits:
 ```
 
 #### CRRCSim / minisim presentation
-- Gravity vector: compute from quaternion in FDM, add centripetal correction
-- Rate gyros: available from FDM (p, q, r body rates)
-- Both trivial to extract — LaRCSim already computes them internally
-- Need to wire through the autoc RPC protocol to the NN evaluator
+- Rate gyros: available from FDM (p, q, r body rates in `v_R_omega_total`)
+- LaRCSim already computes them internally, need to wire through autoc RPC to evaluator
+- Quaternion: already wired (unchanged)
 
 #### ACRO mode in sim
 - CRRCSim currently applies NN output directly as surface deflection
@@ -162,31 +154,30 @@ Benefits:
 
 ## Phase 1 Design Details
 
-### Xiao AHRS (same as original spec)
-- IMU read: I2C LSM6DS3 at 100Hz, timer-driven
-- Madgwick filter: accel+gyro, no mag, ~50μs per update
-- Zero on autoc enable to match INAV orientation
-- Log q_local alongside q_inav each tick, plus angle-between delta
+### Bench verification
+- Ground polarity check: gyroADC[0] positive for right-wing-down, gyroADC[1]
+  positive for nose-up, accSmooth[2] positive when level
+- Per `docs/COORDINATE_CONVENTIONS.md` — verified against INAV source
 
-### Gravity vector cross-check
-- Raw accelerometer from LSM6DS3: accel[3] in body frame
-- During non-maneuvering flight: should equal q.inverse() * [0,0,-g]
-- Log raw accel alongside computed gravity-from-quaternion
-- Disagreement = centripetal effects (expected in turns) or AHRS error
+### CRRCSim rate PID
+- Implement in minisim first (fast iteration), then port to CRRCSim
+- PID per axis: `output = FF*cmd + P*(cmd_rate - actual_rate) + I*integral`
+- Gains from INAV config: FF=50, P=5, I=7, D=0 (roll/pitch), FF=60, P=6, I=10 (yaw)
+- Rate limits: roll 560°/s, pitch 400°/s, yaw 240°/s
+- Env var overrides for tuning without rebuild
 
-### ACRO mode switch
+### ACRO mode switch (Phase 5, xiao deployment)
 - Change xiao CH6 override to select ACRO instead of MANUAL
 - Check INAV config: `aux` mode assignments for ACRO vs MANUAL
-- Verify ACRO PID rates are reasonable for hb1 (check current config)
+- Set `rc_expo = 0` for linear rate mapping
 - On bench: confirm servo response to NN commands through ACRO PID
 
-### Pilot characterization protocol
-Document specific maneuvers for the pilot to perform during non-autoc segments:
-1. Wings-level, cruise speed → full left roll → hold 2s → level (repeat right)
-2. Wings-level, cruise speed → half-stick pitch up → hold → release
-3. Level cruise → throttle chop to idle → hold 3s → full throttle
-4. 45° bank turn left, steady → roll to 45° right
-5. Repeat 1-2 at slow speed and fast speed
+### Pilot characterization protocol (parallel, when props arrive)
+See `flight-choreography.md` for full sequence. Key maneuvers:
+1. Roll steps at cruise/slow/fast speeds
+2. Pitch doublets at multiple attitudes
+3. Throttle steps from cruise
+4. ACRO mode segments (if comfortable)
 
 ## INAV ACRO Configuration Check
 
@@ -206,28 +197,35 @@ get fw_d_pitch
 ```
 
 ## Dependencies
-- LSM6DS3 Arduino library (add to platformio.ini lib_deps)
-- Phase 1: no INAV code changes (just config)
-- Phase 2: changes to autoc evaluator.cc, CRRCSim autoc input device, xiao msplink
-- Phase 3: full retraining
+- Phase 1: CRRCSim + autoc changes only (no INAV/xiao code changes)
+- Phase 2: autoc evaluator.cc, CRRCSim autoc input device
+- Phase 3: INAV fc_msp.c (gyro extension), xiao msplink.cpp (consumer + ACRO)
+- Phase 4: full retraining + flight hardware deployment
 
 ## Success Criteria
 
-### Phase 1
-1. AHRS cross-check data collected — divergence timeline per span
-2. ACRO mode confirmed working with current NN (less tumbling expected)
-3. Clean blackbox Z data (no decode corruption)
-4. Pilot characterization data for all maneuvers
-5. Gravity vector logged from both INAV and local IMU
+### Phase 1: Bench + CRRCSim Rate PID (MVP)
+1. Gyro/accel polarity verified on bench hardware
+2. Rate PID working in minisim — NN converges with rate commands
+3. Rate PID ported to CRRCSim — convergence comparable to minisim
 
-### Phase 2
-6. New NN input set implemented in sim, trains successfully
-7. Gravity vector and rate gyros wired through CRRCSim → evaluator
-8. ACRO PID in sim matches INAV measured rates within 2x
+### Phase 2: NN Input Redesign
+4. 27-input NN (removed alpha/beta + prev cmds, added rate gyros) trains successfully
+5. Rate gyros wired through CRRCSim → evaluator
+6. Convergence comparable or better than BIG3 baseline
 
-### Phase 3
-9. Flight test with redesigned controller — sustained path tracking >10s
-10. No uncontrolled rotation
+### Phase 3: Training + Hardware Deployment
+7. BIG production run eval suite passes (>95% aeroStandard completion)
+8. INAV MSP extended with gyro[3], xiao consumer working on bench
+9. ACRO mode active on bench — NN commands rates, INAV PID stabilizes
+
+### Phase 4: Flight Test
+10. Flight test with redesigned controller — sustained path tracking >10s
+11. No uncontrolled rotation
+
+### Parallel: Characterization Flight (when props arrive)
+12. Clean blackbox data (Z not corrupted)
+13. Response curves collected for sim PID tuning
 
 ## Clarifications
 
@@ -240,7 +238,10 @@ get fw_d_pitch
 - Note: gyroADC[0-2] (filtered) is always logged in blackbox base fields. gyroRaw[0-2] logged when GYRO_RAW enabled. Both available for Phase 1 characterization.
 - Note: PEAKS_R/P/Y (dynamic notch filter frequencies, 9 fields) stay OFF — PID tuning tool, not relevant for NN or characterization.
 
-## Out of Scope
+## Out of Scope (021)
+- **Xiao onboard AHRS** (LSM6DS3 + Madgwick) — deferred to 022
+- **Board alignment investigation** (T501) — deferred to 022 (needs AHRS cross-check)
+- **Accelerometer in MSP** — deferred (only needed for cross-check, not NN input)
 - Pitot tube / airspeed sensor (would fix alpha, but hardware change)
 - Magnetometer fusion (yaw drift acceptable for ~10s spans)
 - Real-time AHRS switching or voting

@@ -14,7 +14,7 @@ timestamp   uint32  microseconds     4 bytes
                               Total: 38 bytes
 ```
 
-Extended (Phase 2, +12 bytes = 50 bytes):
+Extended (Phase 3, +6 bytes = 44 bytes):
 ```
 pos[3]      int32   cm NEU          12 bytes
 vel[3]      int16   cm/s NEU         6 bytes
@@ -22,15 +22,15 @@ quat[4]     int16   /10000 body→earth 8 bytes
 flags       uint32  flightModeFlags  4 bytes
 rc[2]       uint16  ch8, ch9 PWM     4 bytes
 timestamp   uint32  microseconds     4 bytes
-accel[3]    int16   milli-g body     6 bytes  ← NEW
 gyro[3]     int16   deci-deg/s body  6 bytes  ← NEW
                                     --------
-                              Total: 50 bytes
+                              Total: 44 bytes
 ```
 
 Scaling:
-- accel: 1000 = 1g. Range ±4g → ±4000. int16 sufficient.
 - gyro: 10 = 1°/s. Range ±560°/s → ±5600. int16 sufficient.
+
+Note: accel[3] deferred — only needed for AHRS cross-check (022), not NN input.
 
 ## NN Input Vector (Phase 2)
 
@@ -72,31 +72,14 @@ does whatever physics dictates). ACRO gives the NN a stable baseline to
 work from — it only needs to command rate deltas for steering.
 ```
 
-## Xiao Local AHRS State (Phase 1)
+## Xiao Local AHRS State — DEFERRED to 022
 
 ```
-struct LocalAHRS {
-    float q[4];           // Madgwick quaternion output (w,x,y,z)
-    float accel_raw[3];   // LSM6DS3 accel (g)
-    float gyro_raw[3];    // LSM6DS3 gyro (°/s)
-    uint32_t last_update_us;
-    bool valid;
-};
+// Deferred: LSM6DS3 + Madgwick AHRS cross-check
+// See 022 spec when created
 ```
 
-## Xiao Log Format Extension (Phase 1)
-
-Current:
-```
-Nav State: pos_raw=[...] pos=[...] vel=[...] quat=[...] armed=Y ...
-```
-
-Extended:
-```
-Nav State: pos_raw=[...] pos=[...] vel=[...] quat=[...] q_local=[w,x,y,z] q_delta=X.X armed=Y ...
-```
-
-## Safety Override State (Phase 2)
+## Safety Override State (Phase 8)
 
 ```
 struct SafetyState {
