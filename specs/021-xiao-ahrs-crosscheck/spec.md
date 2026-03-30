@@ -61,17 +61,18 @@ Based on Phase 1 data, redesign the sensor inputs for the next training cycle.
 
 **Research items:**
 
-#### Gravity vector method
-- Accelerometer gives gravity direction in body frame directly
-- During steady flight (no acceleration): accel ≈ [0, 0, -g] rotated by attitude
-- Provides bank angle and pitch without AHRS quaternion dependency
-- 3 inputs replace 4 quaternion inputs
-- **Primary source**: INAV filtered accelerometer via MSP (1kHz sample, calibrated)
-  - Extend MSP2_AUTOC_STATE with accel[3] (int16, milli-g or similar)
-- **Cross-check**: local LSM6DS3 for diagnostics only (not fed to NN)
-- Cross-check validation: both sources should agree on "down"
+#### Accelerometer / gravity vector (cross-check only, NOT NN input)
+- Accelerometer measures gravity + inertial acceleration — NOT pure gravity
+- At aggressive attitudes (>45° bank, pullouts, inverted): centripetal forces
+  dominate and the accel vector does not indicate "down"
+- Quaternion retained as NN attitude input for all-attitude flight
+- Accelerometer value for AHRS cross-check: compare accel direction vs
+  quaternion-derived gravity to detect AHRS divergence under load
+- **INAV source**: filtered accel available via MSP (extend MSP2_AUTOC_STATE
+  with accel[3] in Phase 2, for cross-check logging)
+- **Xiao local LSM6DS3**: independent cross-check source (Phase 1 diagnostic)
 
-#### Proposed input set (body-frame, all relative)
+#### Proposed input set
 ```
 Path tracking (existing, validated):
   dPhi history + forecast      (6 inputs — heading bearing to rabbit)
@@ -79,22 +80,61 @@ Path tracking (existing, validated):
   dist history + forecast      (6 inputs — range to rabbit)
   closing rate                 (1 input)
 
-Attitude/dynamics (new):
-  gravity vector, body frame   (3 inputs — INAV filtered accel via MSP)
-  rate gyros p, q, r           (3 inputs — INAV filtered gyro via MSP, post-LPF)
-  airspeed                     (1 input — keep, but need pitot for accuracy)
+Attitude (keep):
+  quaternion (w,x,y,z)         (4 inputs — earth-relative attitude, needed for
+                                all-attitude flight: inverted, knife-edge, etc.
+                                Gravity vector from accel is NOT a reliable
+                                attitude proxy under centripetal loads.)
+
+Dynamics (new):
+  rate gyros p, q, r           (3 inputs — INAV filtered gyro via MSP, post-LPF.
+                                Provides damping feedback the NN previously lacked.
+                                Critical for ACRO mode: NN commands desired rates,
+                                needs to see current rates to modulate.)
+  airspeed                     (1 input — keep, GPS-derived groundspeed for now)
+
+Removed:
+  alpha/beta (2)               — computed from GPS groundspeed + quaternion,
+                                measured ±70° in flight — physically meaningless
+                                without pitot tube
+  previous commands (3)        — unnecessary with ACRO rate feedback. The ACRO
+                                PID provides the integration/damping these were
+                                hacking around.
+
+Total: 27 inputs (down from 29)
+```
 
 Note: gyro filter params (LPF cutoff, dynamic notch) need research.
 Current filter config may be tuned for PID stability, not NN input
 fidelity. Phase 1 characterization flight should log both GYRO_RAW
 and filtered gyroADC to compare and determine if filter adjustment needed.
 
-Removed:
-  quaternion (4)               — replaced by gravity vector
-  alpha/beta (2)               — invalid without airspeed sensor
-  previous commands (3)        — unnecessary with proper rate feedback
+#### Control architecture — two-loop separation
 
-Total: ~26 inputs (down from 29)
+```
+Outer loop (NN, 10Hz on xiao):
+  Inputs: path sensors + quaternion + rate gyros + airspeed
+  Outputs: desired roll rate, desired pitch rate, throttle
+  Job: intercept and tracking — "where do I need to go"
+
+Inner loop (INAV ACRO PID, 1kHz on FC):
+  Inputs: gyro rates (raw, 1kHz)
+  Setpoints: NN desired rates (held between 10Hz updates)
+  Outputs: servo deflections (elevon mixer)
+  Job: stabilization and rate control — "hold this rate"
+  At center stick (NN output = 0): rates damp to zero, aircraft
+  holds current attitude vector. This is the key property — the
+  NN doesn't need to actively stabilize, only steer.
+
+Benefits:
+  - Sim-to-real gap shrinks: NN only needs rate dynamics to match,
+    not full aerodynamic response to servo deflection
+  - Coupling handled: INAV PID at 1kHz resolves roll/pitch/yaw
+    coupling that 10Hz NN cannot react to
+  - Speed regime robustness: INAV PID adapts to dynamic pressure
+    changes (same stick = same rate at any speed)
+  - Future: NN tick rate can increase to 20-50Hz for tighter
+    tracking without changing the architecture
 ```
 
 #### CRRCSim / minisim presentation
@@ -193,7 +233,7 @@ get fw_d_pitch
 
 ### Session 2026-03-28
 - Q: How should the NN-to-ACRO command mapping work? → A: Use INAV's rate curve with expo=0 (linear). NN [-1,1] maps through INAV's standard rate formula. CRRCSim must implement matching rate PID with same curve.
-- Q: Which source for NN gravity vector input during flight? → A: INAV accelerometer via MSP (add to MSP2_AUTOC_STATE). INAV has 1kHz sample rate on 400MHz MCU with proper calibration. Local LSM6DS3 remains cross-check only.
+- Q: Which source for NN gravity vector input during flight? → A: REVISED — gravity vector is NOT a reliable attitude proxy under centripetal loads. Quaternion retained as NN input. Accelerometer used for AHRS cross-check only, not NN input.
 - Q: Raw or filtered gyro rates for NN input? → A: Filtered (post-LPF, pre-PID). Matches what INAV's own PID acts on. Research task: document current gyro filter params and assess if they need adjustment for NN use.
 - Q: Safety overrides in Phase 1 or 2? → A: Phase 2. Implement as distance-from-autoc-origin sphere check. Refine later with altitude floor, energy bounds. Foundation for future upper-level planner.
 - Q: MSP2_AUTOC_STATE extension timing? → A: Wait for Phase 2. Phase 1 gets gyro/accel from blackbox, no MSP change needed.

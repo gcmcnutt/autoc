@@ -52,30 +52,34 @@ commands to surface deflections, matching INAV's ACRO behavior.
 **Rationale**: Must match INAV's actual rate response so the NN's trained
 rate commands produce similar physical outcomes on real hardware.
 
-## R3: Gravity Vector from Accelerometer
+## R3: Gravity Vector from Accelerometer — REVISED
 
-**Decision**: Normalize INAV's filtered accelerometer to unit vector for NN input.
+**Decision**: Do NOT use accelerometer as NN input. Keep quaternion for attitude.
+Use accelerometer for AHRS cross-check diagnostics only.
 
-**Computation**:
-```
-accel_body = [ax, ay, az]  // from INAV filtered accel (milli-g or similar)
-gravity_unit = accel_body / |accel_body|  // normalize to unit vector
-```
+**Why not gravity vector for NN**:
+- Accelerometer measures gravity + ALL inertial accelerations (centripetal,
+  linear acceleration, vibration)
+- At aggressive attitudes with centripetal loads (2g+ turns, pullouts, inverted
+  flight), the accel vector does NOT point "down" — it points along the
+  total load vector
+- To extract actual gravity from accel, you need... the AHRS quaternion
+  (which is what the AHRS fusion algorithm does)
+- For a gentle path tracker at <30° bank, accel ≈ gravity. But the NN trains
+  with 60°+ banks, full rolls, and inverted entry variations — accel is
+  unreliable as attitude proxy in these regimes
 
-**In steady flight**: gravity_unit ≈ R^T * [0, 0, -1] where R is body-to-earth rotation.
-- Wings level: gravity_unit ≈ [0, 0, -1]
-- 30° bank right: gravity_unit ≈ [0, 0.5, -0.87]
-- 90° bank: gravity_unit ≈ [0, 1, 0]
+**Why keep quaternion**:
+- Quaternion gives absolute attitude relative to earth — where is up, where
+  am I pointed — independent of load factor
+- The heading component is redundant with path sensors, but roll/pitch
+  relative to gravity is essential for energy management
+- Already validated in the pipeline (COORDINATE_CONVENTIONS.md)
 
-**During maneuvers**: centripetal acceleration adds to gravity. In a coordinated
-2g turn, |accel| = 2g and the vector tilts. This is actually useful information —
-it tells the NN the load factor, not just the bank angle. The NN should learn to
-handle this naturally since the sim FDM produces the same centripetal effects.
-
-**In CRRCSim**: compute from FDM's body-frame acceleration output, which already
-includes gravity + inertial forces.
-
-**Scaling**: already in [-1, 1] range after normalization. No additional scaling needed.
+**Accelerometer value for cross-check**:
+- Compare accel direction vs quaternion-derived gravity under load
+- Divergence indicates AHRS fusion issue
+- Log both INAV accel (via MSP) and local LSM6DS3 for independent comparison
 
 ## R4: NN Hidden Layer Topology
 
@@ -186,14 +190,18 @@ stays at 30ms (transport delay doesn't change with tick rate).
 **Current**: 29→16→8→3 = 643 weights, pop=3000 → 4.7 individuals/weight
 
 **The NN's job is changing**:
-- Old: learn stabilization AND tracking from servo-level commands
-- New: learn tracking only, output rate commands, ACRO PID handles inner loop
+- Old: learn stabilization AND tracking from servo-level commands (MANUAL)
+- New: learn tracking only, output rate commands (ACRO PID handles inner loop)
 - This is a simpler mapping — arguably needs less network capacity
+- Key insight: at center stick (NN output = 0), aircraft holds attitude and
+  rates damp to zero. NN only steers, doesn't stabilize.
 
 **Input structure change**:
-- Old: mixed absolute (quaternion) + relative (path sensors) + derivative-free
-- New: all body-frame/relative, explicit derivatives (gyro rates)
-- More uniform input space, less nonlinearity to represent
+- Old: quaternion + alpha/beta (invalid) + prev commands (hack) + path sensors
+- New: quaternion + rate gyros (real derivative) + path sensors
+- Removed: alpha/beta (2), previous commands (3) = -5 inputs
+- Added: rate gyros (3) = +3 inputs
+- Net: 29 → 27 inputs
 
 **History depth question**:
 - Current: 4 past samples for dPhi/dTheta/dist (inputs 0-3, 6-9, 12-15)
@@ -205,17 +213,17 @@ stays at 30ms (transport delay doesn't change with tick rate).
 
 | Option | Shape | Weights | Ratio (pop=3000) | Notes |
 |--------|-------|---------|-------------------|-------|
-| A (minimal) | 26→16→8→3 | 571 | 5.3 | Safe, minimal change |
-| B (wider) | 26→20→10→3 | 753 | 4.0 | More features, slightly tight ratio |
-| C (single hidden) | 26→24→3 | 699 | 4.3 | Simpler, faster eval, may suffice for rate-command |
-| D (future-proof) | 26→32→16→3 | 1395 | 2.2 | Room for vision inputs later, but ratio too low |
+| A (minimal) | 27→16→8→3 | 587 | 5.1 | Safe, minimal change from current 29→16→8→3 |
+| B (wider) | 27→20→10→3 | 773 | 3.9 | More features, slightly tight ratio |
+| C (single hidden) | 27→24→3 | 723 | 4.1 | Simpler, faster eval, may suffice for rate-command |
+| D (future-proof) | 27→32→16→3 | 1427 | 2.1 | Room for vision inputs later, but ratio too low |
 
 **Forward-looking context**: The next milestone (optical tracking) adds IR beacon
 data — either raw 2D camera pixels or reduced pose features. This could add
 10-50+ inputs depending on representation. If we go narrow now, we rearchitect.
 But training with unused capacity wastes evolutionary search.
 
-**Decision**: Start with **Option A** (26→16→8→3). Rationale:
+**Decision**: Start with **Option A** (27→16→8→3). Rationale:
 1. The simpler control task (rate commands) likely needs less capacity, not more
 2. Good individuals/weight ratio (5.3) maintains evolutionary pressure
 3. Vision inputs (next milestone) will require a fundamentally different

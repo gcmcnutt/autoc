@@ -44,21 +44,32 @@ Index  Name                    Source              Scale
 12-15  dist history                      path+pos    meters
 16-17  dist forecast                     path+pos    meters
 18     closing rate                      dist deriv  m/s
-19-21  gravity vector body frame         accel norm  [-1,1]
-22-24  gyro rates (p, q, r)             gyro filt   /max_rate → [-1,1]
-25     airspeed                          vel mag     m/s
+19-22  quaternion (w, x, y, z)           AHRS        [-1,1] (unit quat)
+23-25  gyro rates (p, q, r)             gyro filt   /max_rate → [-1,1]
+26     airspeed                          vel mag     m/s
 -----
-Total: 26 inputs
+Total: 27 inputs
+
+Changes from current (29 inputs):
+  Removed: alpha/beta (2 inputs) — invalid without airspeed sensor
+  Removed: previous commands (3 inputs) — unnecessary with ACRO rate feedback
+  Added:   gyro rates p,q,r (3 inputs) — angular rate damping
+  Net:     -5 + 3 = -2 inputs
 ```
 
-## NN Output Vector (unchanged)
+## NN Output Vector (reinterpreted for ACRO)
 
 ```
-Index  Name       Range    Meaning in ACRO
------  ----       -----    ---------------
-0      pitch      [-1,1]   desired pitch rate (×400°/s max)
-1      roll       [-1,1]   desired roll rate (×560°/s max)
-2      throttle   [-1,1]   throttle command (mapped to 0-1)
+Index  Name       Range    MANUAL (old)              ACRO (new)
+-----  ----       -----    ------------              ----------
+0      pitch      [-1,1]   direct servo deflection   desired pitch rate (×400°/s)
+1      roll       [-1,1]   direct servo deflection   desired roll rate (×560°/s)
+2      throttle   [-1,1]   direct throttle            throttle (unchanged)
+
+Key difference: in ACRO, output=0 means "hold current attitude" (rates damp
+to zero via INAV PID). In MANUAL, output=0 means "servos centered" (aircraft
+does whatever physics dictates). ACRO gives the NN a stable baseline to
+work from — it only needs to command rate deltas for steering.
 ```
 
 ## Xiao Local AHRS State (Phase 1)
