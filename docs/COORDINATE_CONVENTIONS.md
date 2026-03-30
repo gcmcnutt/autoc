@@ -70,6 +70,28 @@ analysing logs or integrating new flight data.
 
 Keep this file updated if additional actuators, sensors, or frames are added.
 
+## INAV ↔ AutoC Interface Transform Summary
+
+INAV uses an internal sign convention where pitch and yaw are systematically
+inverted from standard aerospace right-hand rule. Every signal crossing the
+INAV ↔ autoc boundary requires correction. The autoc pipeline (CRRCSim, NN,
+xiao state) uses standard aerospace NED/FRD with RHR throughout.
+
+| Signal | INAV convention | AutoC convention (standard) | Transform | Where applied |
+|--------|----------------|---------------------------|-----------|---------------|
+| Position XY | North+, East+ (NEU cm) | North+, East+ (NED m) | cm→m | `neuVectorToNedMeters` in msplink.cpp |
+| Position Z | **Up+ (NEU)** | **Down+ (NED)** | **Negate + cm→m** | `neuVectorToNedMeters` line 161 |
+| Quaternion | body→earth, inverted pitch/yaw | earth→body, standard RHR | **Full conjugate** (w,-x,-y,-z) | `neuQuaternionToNed` line 170 |
+| Gyro roll | Right wing down = + | Right wing down = + | None | T041 (021) |
+| Gyro pitch | **Nose down = +** | **Nose up = +** | **Negate** | T041 (021) |
+| Gyro yaw | **Nose left = +** | **Nose right = +** | **Negate** | T041 (021) |
+| Cmd roll (out) | MSP 2000 = right | NN +1 = right | Direct: `1500 + cmd*500` | msplink.cpp line 688 |
+| Cmd pitch (out) | MSP 1000 = nose up | NN +1 = nose up | **Invert**: `1500 - cmd*500` | msplink.cpp line 695 |
+| Cmd throttle (out) | MSP 2000 = full | NN +1 = full | Direct: `1500 + cmd*500` | msplink.cpp line 702 |
+
+All transforms are applied at the INAV↔xiao boundary (msplink.cpp). Downstream
+code (NN evaluator, CRRCSim, renderer) uses standard aerospace convention only.
+
 ## Gyro & Accelerometer Conventions (021, 2026-03-28)
 
 ### INAV Sensor Processing Chain
