@@ -83,30 +83,46 @@ Board alignment is applied at the RAW SENSOR level (`gyro.c:439`, `acceleration.
 BEFORE filtering and BEFORE IMU quaternion fusion. The logged values (gyroADC, accSmooth)
 are already in aircraft body frame, not sensor frame.
 
-### Blackbox Gyro: gyroADC[0-2]
+### Blackbox Gyro: gyroADC[0-2] (VERIFIED bench 2026-03-30)
 
-| Index | Axis | Positive direction | Units | Notes |
-|-------|------|-------------------|-------|-------|
-| [0] | Roll (X body) | Right wing down | deg/s (int16) | FD_ROLL in axis.h |
-| [1] | Pitch (Y body) | Nose up | deg/s (int16) | FD_PITCH in axis.h |
-| [2] | Yaw (Z body) | Nose right | deg/s (int16) | FD_YAW in axis.h |
+**WARNING**: INAV gyro pitch and yaw signs are INVERTED from standard aerospace RHR.
+
+| Index | Axis | INAV positive direction | Standard aerospace positive | Units |
+|-------|------|------------------------|----------------------------|-------|
+| [0] | Roll (X body) | Right wing down | Right wing down | deg/s (int16) |
+| [1] | Pitch (Y body) | **Nose DOWN** | Nose UP | deg/s (int16) |
+| [2] | Yaw (Z body) | **Nose LEFT / CCW** | Nose RIGHT / CW | deg/s (int16) |
 
 - **Frame**: Body-frame, board-alignment-corrected
 - **Filtering**: Post-LPF (anti-alias 250Hz + main LPF 25Hz + dynamic notch)
 - **gyroRaw[0-2]**: Same axes but pre-main-filter (only anti-alias LPF applied)
-- **Right-hand rule**: curl fingers in rotation direction, thumb along positive axis
+- **INAV convention**: roll matches standard RHR, but pitch and yaw are negated.
+  INAV configurator confirms: it displays negative pitch for nose up.
+- **This is consistent with the quaternion**: INAV's raw quaternion also has
+  inverted pitch/yaw Euler angles. The conjugate transform in msplink.cpp
+  (q → q(w,-x,-y,-z)) fixes this for attitude. Gyro rates need an explicit
+  sign flip on pitch and yaw.
 
-### Blackbox Accelerometer: accSmooth[0-2]
+**Required transform for NN / CRRCSim compatibility (021):**
+```
+roll_rate  =  gyroADC[0]    // matches standard, no change
+pitch_rate = -gyroADC[1]    // negate to match aerospace RHR (nose up = positive)
+yaw_rate   = -gyroADC[2]    // negate to match aerospace RHR (nose right = positive)
+```
 
-| Index | Axis | At rest (level) | Units | Notes |
-|-------|------|-----------------|-------|-------|
-| [0] | X body (forward) | ~0 | G × acc_1G scale | FD_ROLL axis |
-| [1] | Y body (right) | ~0 | G × acc_1G scale | FD_PITCH axis |
-| [2] | Z body (down) | ~+1G | G × acc_1G scale | FD_YAW axis |
+### Blackbox Accelerometer: accSmooth[0-2] (VERIFIED bench 2026-03-30)
+
+| Index | Axis | At rest (level) | Nose up 90° | Right wing down 90° | Units |
+|-------|------|-----------------|-------------|---------------------|-------|
+| [0] | X body (forward) | ~0 | **+1G** | ~0 | acc_1G scale |
+| [1] | Y body (right) | ~0 | ~0 | **+1G** | acc_1G scale |
+| [2] | Z body (down) | **+1G** | ~0 | ~0 | acc_1G scale |
 
 - **Frame**: Body-frame, board-alignment-corrected (same as gyro)
-- **At level rest**: accel ≈ [0, 0, +1G] (gravity points down in body frame = +Z)
-- **Gravity vector**: normalize accel to unit vector for attitude reference
+- **At level rest**: accel ≈ [0, 0, +1G] (gravity points down in body frame = +Z) ✓ verified
+- **Nose up**: accel ≈ [+1G, 0, 0] (gravity pulls along nose = +X) ✓ verified
+- **Right wing down**: accel ≈ [0, +1G, 0] (gravity pulls toward right wing = +Y) ✓ verified
+- **acc_1G scale**: ~2050 counts = 1G on this hardware (bench measurement)
 - **In turns**: centripetal acceleration adds to gravity vector (useful, not noise)
 
 ### CRRCSim FDM Body Rates
@@ -309,3 +325,29 @@ earthToBody.normalize();
 
 ### CRRCSim/GP Evaluation Data Loading
 CRRCSim `EvalResults` already contain earth→body quaternions (verified above), so no transformation is needed when loading evaluation data - the renderer uses them directly.
+
+### Ground Verification Results (bench 2026-03-30)
+
+Bench FC (MAMBAF722_2022A), board alignment: roll=-16 pitch=0 yaw=0 (near identity).
+Craft held by hand, tilted through each axis, blackbox recorded at 1/32.
+
+| Physical maneuver | gyroADC[0] | gyroADC[1] | gyroADC[2] | accSmooth at hold | Euler (from quat) |
+|-------------------|-----------|-----------|-----------|-------------------|-------------------|
+| Level (start) | ~0 | ~0 | ~0 | [~0, ~0, +2050] | roll=0° pitch=0° |
+| Right wing down 90° | **+156** | ~0 | ~0 | [~0, **+2060**, ~0] | roll=**+87°** |
+| Right wing back up | **-166** | ~0 | ~0 | — | roll→0° |
+| Nose up 90° | ~0 | **-136** | ~0 | [**+2050**, ~0, ~0] | pitch=**-84°** |
+| Nose back level | ~0 | **+149** | ~0 | — | pitch→0° |
+| Yaw right (N→E) | ~0 | ~0 | **-113** | [~0, ~0, +2050] | yaw: -9°→**-97°** |
+| Yaw back (E→N) | ~0 | ~0 | **+100** | — | yaw→-9° |
+
+**Key finding**: INAV gyro pitch and yaw sign convention is inverted from
+standard aerospace right-hand rule. Roll matches. This is consistent with
+INAV's quaternion convention (also requires conjugate to match standard).
+
+**Required gyro transform for autoc pipeline (021):**
+```
+roll_rate  =  gyroADC[0]    // no change
+pitch_rate = -gyroADC[1]    // negate: INAV positive = nose down, we need nose up = positive
+yaw_rate   = -gyroADC[2]    // negate: INAV positive = nose left, we need nose right = positive
+```

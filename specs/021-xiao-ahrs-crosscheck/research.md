@@ -2,8 +2,19 @@
 
 ## R1: INAV Gyro Filter Chain
 
-**Decision**: Use INAV's filtered gyro (gyroADCf) for NN input, but evaluate
-whether the 25Hz main LPF cutoff introduces too much lag at the NN's 30Hz tick rate.
+**Decision**: Use INAV's filtered gyro (gyroADCf) for NN input, with sign
+correction on pitch and yaw axes. Evaluate whether 25Hz main LPF introduces
+too much lag at the NN's 30Hz tick rate.
+
+**CRITICAL — Sign Convention (verified bench 2026-03-30):**
+INAV's gyro pitch and yaw are inverted from standard aerospace RHR:
+- gyroADC[0] (roll): matches standard (right wing down = positive)
+- gyroADC[1] (pitch): INVERTED (nose down = positive in INAV, nose up = positive in standard)
+- gyroADC[2] (yaw): INVERTED (nose left = positive in INAV, nose right = positive in standard)
+
+Must negate pitch and yaw gyro values at xiao MSP consumer to match CRRCSim FDM convention.
+Same pattern as quaternion conjugate — INAV's internal convention requires sign correction
+on pitch/yaw for compatibility with standard aerospace math.
 
 **Current filter chain** (in order, at ~1kHz loop rate):
 1. Anti-aliasing LPF @ 250Hz (at 8kHz gyro sample rate)
