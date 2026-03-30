@@ -39,11 +39,12 @@ what the sim already provides.
 
 **Independent Test**: Train a short run (50 gens) with rate PID active and existing 29 inputs. NN should converge — completion rate >80% on aeroStandard paths. Compare control smoothness to BIG3 baseline.
 
-- [ ] T010 [US1] Extract body angular rates (p, q, r) from LaRCSim FDM in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`. FDM stores rates in `v_R_omega_total.r[0-2]` (rad/s). Convert to deg/s. Wire to autoc RPC state.
-- [ ] T011 [US1] Implement rate PID in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`: for each axis, compute `output = FF*cmd + P*(cmd_rate - actual_rate) + I*integral(error)`. Use INAV gains: roll FF=50 P=5 I=7, pitch FF=50 P=5 I=7, yaw FF=60 P=6 I=10. No D term. Rate limits: roll 560°/s, pitch 400°/s, yaw 240°/s.
-- [ ] T012 [US1] Add rate PID config to `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.h`: define PID gains, rate limits, expo=0 as compile-time defaults. Add env var overrides (`AUTOC_ACRO_*`) for tuning without rebuild.
-- [ ] T013 [US1] Add ACRO mode toggle: env var `AUTOC_ACRO_MODE=1` (default ON). When OFF, revert to direct servo mapping (MANUAL mode, for regression testing). Guard the rate PID code path.
-- [ ] T014 [US1] Rebuild CRRCSim: `cd crrcsim/build && make -j8`. Smoke test: run a short training (10 gens, pop=100) with ACRO mode on. Verify NN outputs are interpreted as rate commands and surface deflections follow.
+- [ ] T010 [US1] Add gyro rate fields to `AircraftState` in `include/autoc/eval/aircraft_state.h`: body rates p, q, r (deg/s). These are populated by the minisim/CRRCSim bridge.
+- [ ] T011 [US1] Wire body rates through minisim RPC protocol: minisim provides angular rates from its simplified physics. Populate AircraftState gyro fields. This validates the rate PID path without full FDM physics.
+- [ ] T012 [US1] Implement rate PID in autoc evaluator or minisim bridge: for each axis, compute `output = FF*cmd + P*(cmd_rate - actual_rate) + I*integral(error)`. Use INAV gains: roll FF=50 P=5 I=7, pitch FF=50 P=5 I=7, yaw FF=60 P=6 I=10. No D term. Rate limits: roll 560°/s, pitch 400°/s, yaw 240°/s.
+- [ ] T013 [US1] Rebuild autoc: `bash scripts/rebuild.sh`. Smoke test: run short training (10 gens, pop=100) with minisim + rate PID. Verify NN outputs interpreted as rate commands.
+- [ ] T014 [US1] Port rate PID to CRRCSim: extract body rates (p, q, r) from LaRCSim FDM (`v_R_omega_total.r[0-2]`, rad/s → deg/s) in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`. Apply same PID. Add config to `inputdev_autoc.h` with env var overrides (`AUTOC_ACRO_*`). Add ACRO mode toggle (`AUTOC_ACRO_MODE=1`, default ON).
+- [ ] T015 [US1] Rebuild CRRCSim: `cd crrcsim/build && make -j8`. Smoke test: short training (10 gens, pop=100) with CRRCSim + ACRO. Compare behavior to minisim baseline.
 
 **Checkpoint**: CRRCSim has rate PID. NN outputs rate commands. Sim behavior plausible.
 
@@ -113,21 +114,7 @@ what the sim already provides.
 
 ---
 
-## Phase 7: Safety Overrides (US6)
-
-**Goal**: Distance-from-origin sphere check on xiao. Disables autoc if aircraft drifts too far.
-
-**Independent Test**: Bench test: manually inject position >100m from origin, verify autoc disables and log shows safety event.
-
-- [ ] T060 [US6] Implement safety check in `xiao/src/msplink.cpp`: on autoc enable, capture origin position. Each tick, compute distance. If > threshold (100m, compile-time configurable), set autoc=N and log safety event.
-- [ ] T061 [US6] Add safety state to xiao log: `safety=OK` or `safety=TRIPPED dist=X.Xm`.
-- [ ] T062 [US6] Build and bench test safety override.
-
-**Checkpoint**: Safety override active.
-
----
-
-## Phase 8: Characterization Flight + Analysis (US7)
+## Phase 7: Characterization Flight + Analysis (US7)
 
 **Goal**: Fly the choreography from `flight-choreography.md`. Collect response data for sim tuning.
 
@@ -140,6 +127,18 @@ what the sim already provides.
 - [ ] T074 [US7] Gyro filter analysis: compare gyroRaw vs gyroADC during step inputs. Assess 25Hz LPF lag. Document filter recommendations.
 
 **Checkpoint**: Response data collected. Sim PID tuning validated or updated.
+
+---
+
+## Phase 8: Safety Overrides (US6)
+
+**Goal**: Distance-from-origin sphere check on xiao. Disables autoc if aircraft drifts too far. Pilot override remains primary safety; this is a backup.
+
+- [ ] T060 [US6] Implement safety check in `xiao/src/msplink.cpp`: on autoc enable, capture origin position. Each tick, compute distance. If > threshold (100m, compile-time configurable), set autoc=N and log safety event.
+- [ ] T061 [US6] Add safety state to xiao log: `safety=OK` or `safety=TRIPPED dist=X.Xm`.
+- [ ] T062 [US6] Build and bench test safety override.
+
+**Checkpoint**: Safety override active.
 
 ---
 
@@ -172,9 +171,11 @@ what the sim already provides.
 ```
 T001-T002 (bench polarity/config check)
     ↓
-T010-T014 (CRRCSim rate PID — MVP)
+T010-T013 (minisim rate PID — MVP, validates architecture)
     ↓
-T020-T024 (NN input redesign)
+T014-T015 (CRRCSim rate PID — full physics)
+    ↓
+T020-T024 (NN input redesign, 29→27)
     ↓
 T030-T034 (training + sim validation)
     ↓  ← T074 feeds back PID tuning here
@@ -208,20 +209,21 @@ feeds back into T034 (CRRCSim PID tuning)
 
 ## Implementation Strategy
 
-### MVP: CRRCSim Rate PID (Phase 2)
+### MVP: Minisim Rate PID (Phase 2, T010-T013)
 
-1. Implement rate PID in CRRCSim
+1. Implement rate PID with minisim (simplified physics, fast iteration)
 2. Train with existing 29 inputs but ACRO mode
 3. **STOP and VALIDATE**: does ACRO help convergence?
-4. If yes: proceed to Phase 3. If no: investigate PID tuning.
+4. If yes: port to CRRCSim (T014-T015), proceed to Phase 3
+5. If no: investigate PID tuning before continuing
 
 ### Incremental
 
 1. Phase 1 → bench polarity confirmed
-2. Phase 2 → ACRO in sim (MVP — validates architecture)
+2. Phase 2 → ACRO in minisim then CRRCSim (MVP — validates architecture)
 3. Phase 3 → new 27 inputs (validates sensor changes)
 4. Phase 4 → production training (validates at scale)
 5. Phase 5+6 → INAV/xiao plumbing (replicates sim on hardware)
-6. Phase 7 → safety (required for flight)
-7. Phase 8 → characterization data (parallel, feeds back to PID)
+6. Phase 7 → characterization data (parallel, feeds back to PID)
+7. Phase 8 → safety overrides
 8. Phase 9 → flight test (endgame)
