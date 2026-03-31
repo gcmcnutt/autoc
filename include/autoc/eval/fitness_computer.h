@@ -2,6 +2,7 @@
 #define FITNESS_COMPUTER_H
 
 #include "autoc/types.h"
+#include "autoc/eval/aircraft_state.h"
 
 // Fitness computation constants (must match autoc.h defines)
 // These are duplicated here for test builds that don't include autoc.h
@@ -22,10 +23,7 @@
 #define INTERCEPT_TURN_RATE (M_PI / 4.0)
 #endif
 
-// Initial velocity for intercept budget computation
-#ifndef SIM_INITIAL_VELOCITY
-#define SIM_INITIAL_VELOCITY 16.0
-#endif
+// SIM_INITIAL_VELOCITY defined in aircraft_state.h (single source of truth)
 
 // Shared fitness computation extracted from autoc.cc eval pipeline.
 // Used by all controller backends (GP tree, bytecode, neural net).

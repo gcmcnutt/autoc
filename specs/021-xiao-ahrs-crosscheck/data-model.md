@@ -45,8 +45,8 @@ Index  Name                    Source              Scale
 16-17  dist forecast                     path+pos    meters
 18     closing rate                      dist deriv  m/s
 19-22  quaternion (w, x, y, z)           AHRS        [-1,1] (unit quat)
-23-25  gyro rates (p, q, r)             gyro filt   /max_rate → [-1,1]
-26     airspeed                          vel mag     m/s
+23     airspeed                          vel mag     m/s
+24-26  gyro rates (p, q, r)             gyro filt   rad/s (raw, no normalization)
 -----
 Total: 27 inputs
 

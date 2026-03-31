@@ -373,3 +373,11 @@ roll_rate  =  gyroADC[0]    // no change
 pitch_rate = -gyroADC[1]    // negate: INAV positive = nose down, we need nose up = positive
 yaw_rate   = -gyroADC[2]    // negate: INAV positive = nose left, we need nose right = positive
 ```
+
+**NN input convention (data.dat columns gyrP/Q/R):**
+Gyro rates are in **rad/s**, unscaled. The NN learns the natural scale from training.
+- `gyrP` = p (roll rate, rad/s)
+- `gyrQ` = q (pitch rate, rad/s)
+- `gyrR` = r (yaw rate, rad/s)
+Typical range: ±10 rad/s (≈ ±560 deg/s at max roll rate).
+No normalization by max rate — avoids baking INAV rate config into the NN.

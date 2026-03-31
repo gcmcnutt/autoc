@@ -271,20 +271,19 @@ TEST(NNForwardPass, Deterministic) {
 // T040: Input layout test (normalization removed — all inputs raw)
 // ============================================================
 
-// Input ordering (29 inputs, all raw):
+// Input ordering (27 inputs — 021 redesign):
 //  0- 5: dPhi  [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  radians
 //  6-11: dTheta same
 // 12-17: dist  [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  metres
 //    18: dDist/dt closing rate (m/s)
 // 19-22: quaternion (w,x,y,z)
 //    23: airspeed (m/s)
-// 24-25: alpha, beta (rad)
-// 26-28: pitchCmd, rollCmd, throttleCmd feedback
+// 24-26: gyro rates (p, q, r) in rad/s               standard aerospace RHR
 
 TEST(NNInputLayout, InputCountMatchesTopology) {
     // NN_INPUT_COUNT must equal the first layer of NN_TOPOLOGY
     EXPECT_EQ(NN_INPUT_COUNT, NN_TOPOLOGY[0]);
-    EXPECT_EQ(NN_INPUT_COUNT, 29);
+    EXPECT_EQ(NN_INPUT_COUNT, 27);
 }
 
 // Note: Full nn_gather_inputs test requires AircraftState + PathProvider.

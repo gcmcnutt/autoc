@@ -1,4 +1,5 @@
 #include "autoc/nn/evaluator.h"
+#include "autoc/nn/topology.h"
 #include "autoc/eval/sensor_math.h"
 #include "autoc/util/rng.h"
 #include <cmath>
@@ -156,9 +157,10 @@ void nn_xavier_init(NNGenome& genome) {
 //    18: dDist/dt closing rate (m/s, positive = approaching)
 // 19-22: quaternion (w, x, y, z)                      [-1,1]
 //    23: airspeed (m/s)
-//    24: alpha (angle of attack, rad)
-//    25: beta  (sideslip, rad)
-// 26-28: pitchCmd, rollCmd, throttleCmd feedback       [-1,1]
+// 24-26: gyro rates (p, q, r) in rad/s                standard aerospace RHR
+//
+// Removed in 021: alpha/beta (invalid without airspeed sensor),
+//   pitchCmd/rollCmd/throttleCmd feedback (unnecessary with ACRO rate PID)
 //
 // Past slots (n=9,3,1,0) use recorded aircraft history at those times.
 // Forecast slots (+0.1s=offset 1, +0.5s=offset 5) use current aircraft
@@ -230,17 +232,16 @@ void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
     // 23: airspeed (m/s, raw)
     inputs[23] = static_cast<float>(aircraftState.getRelVel());
 
-    // 24-25: alpha/beta (aerodynamic angles, raw radians)
+    // 24-26: gyro rates (p, q, r) in rad/s (raw, no scaling)
+    // Body-frame angular rates, standard aerospace RHR convention.
+    // CRRCSim FDM provides these directly; INAV requires pitch/yaw negation
+    // at consumer boundary (see COORDINATE_CONVENTIONS.md).
     {
-        gp_vec3 velocity_body = aircraftState.getOrientation().inverse() * aircraftState.getVelocity();
-        inputs[24] = static_cast<float>(std::atan2(-velocity_body.z(), velocity_body.x()));
-        inputs[25] = static_cast<float>(std::atan2(velocity_body.y(), velocity_body.x()));
+        gp_vec3 gyro = aircraftState.getGyroRates();
+        inputs[24] = static_cast<float>(gyro.x());  // p (roll rate, rad/s)
+        inputs[25] = static_cast<float>(gyro.y());  // q (pitch rate, rad/s)
+        inputs[26] = static_cast<float>(gyro.z());  // r (yaw rate, rad/s)
     }
-
-    // 26-28: control feedback — pitch, roll, throttle
-    inputs[26] = static_cast<float>(aircraftState.getPitchCommand());
-    inputs[27] = static_cast<float>(aircraftState.getRollCommand());
-    inputs[28] = static_cast<float>(aircraftState.getThrottleCommand());
 }
 
 // ============================================================

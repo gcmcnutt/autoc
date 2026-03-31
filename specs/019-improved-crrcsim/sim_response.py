@@ -9,14 +9,15 @@ Usage:
 Outputs ascii art response curves: command magnitude vs response metric,
 binned by airspeed regime (slow <12, cruise 12-16, fast >16 m/s).
 
-data.dat fields (1-indexed):
-  F1=Scn F2=Bake F3=Pth/Wnd:Step: F4=Time F5=Idx
-  F6-F11=dPhi  F12-F17=dTheta  F18-F23=dist  F24=dddt
-  F25=qw F26=qx F27=qy F28=qz F29=vel F30=alpha F31=beta
-  F32=outPt F33=outRl F34=outTh F35=cmdP F36=cmdR F37=cmdT
-  F38=pathX F39=pathY F40=pathZ F41=X F42=Y F43=Z
-  F44=vxBody F45=vyBody F46=vzBody F47=dhome F48=dist
-  F49=attDlt F50=rabVl F51=intSc F52=rampSc
+data.dat fields (0-indexed from split()):
+  F0=Scn F1=Bake F2=Pth/Wnd:Step: F3=Time F4=Idx
+  F5-F10=dPhi  F11-F16=dTheta  F17-F22=dist  F23=dddt
+  F24=qw F25=qx F26=qy F27=qz F28=vel F29=gyrP(rad/s) F30=gyrQ(rad/s) F31=gyrR(rad/s)
+  F32=outPt F33=outRl F34=outTh
+  F35=pathX F36=pathY F37=pathZ F38=X F39=Y F40=Z
+  F41=vxBody F42=vyBody F43=vzBody F44=dhome F45=dist
+  F46=attDlt F47=rabVl F48=intSc F49=rampSc
+  (021: removed alpha/beta/cmdFeedback, added gyrP/Q/R, shifted indices)
 """
 import argparse
 import math
@@ -60,7 +61,7 @@ def parse_data_dat(path, gen_min=1, gen_max=999):
                 break
 
             parts = line.split()
-            if len(parts) < 52:
+            if len(parts) < 50:
                 continue
             try:
                 scn = parts[0]
@@ -71,14 +72,13 @@ def parse_data_dat(path, gen_min=1, gen_max=999):
                 qy = float(parts[26])
                 qz = float(parts[27])
                 vel = float(parts[28])
-                alpha = float(parts[29])
-                beta = float(parts[30])
-                outPt = float(parts[31])
-                outRl = float(parts[32])
-                outTh = float(parts[33])
-                x = float(parts[40])
-                y = float(parts[41])
-                z = float(parts[42])
+                # 021: fields 29-31 are now gyrP, gyrQ, gyrR (was alpha, beta)
+                outPt = float(parts[32])
+                outRl = float(parts[33])
+                outTh = float(parts[34])
+                x = float(parts[38])
+                y = float(parts[39])
+                z = float(parts[40])
 
                 roll, pitch, yaw = quat_to_euler(qw, qx, qy, qz)
 

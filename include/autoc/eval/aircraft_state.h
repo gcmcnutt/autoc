@@ -255,6 +255,15 @@ struct AircraftState {
     gp_scalar getRabbitSpeed() const { return rabbitSpeed_; }
     void setRabbitSpeed(gp_scalar speed) { rabbitSpeed_ = speed; }
 
+    // Body-frame angular rates (p, q, r) in rad/s — standard aerospace RHR convention
+    // Roll (p): positive = right wing down
+    // Pitch (q): positive = nose up
+    // Yaw (r): positive = nose right
+    // NOTE: INAV gyro has inverted pitch/yaw signs — negate at consumer boundary.
+    // CRRCSim FDM provides these in standard convention (no conversion needed).
+    gp_vec3 getGyroRates() const { return gyroRates_; }
+    void setGyroRates(const gp_vec3& rates) { gyroRates_ = rates; }
+
     // NN I/O capture — record what the NN actually saw and produced
     void setNNData(const float* inputs, int numInputs, const float* outputs, int numOutputs) {
       for (int i = 0; i < NN_INPUT_COUNT && i < numInputs; i++) nnInputs_[i] = inputs[i];
@@ -332,6 +341,9 @@ struct AircraftState {
       // throttle = +1.0 → 1.5x base velocity (30 m/s)
       dRelVel = SIM_INITIAL_VELOCITY * (1.0f + throttleCommand * 0.5f);
 
+      // Save pre-rotation orientation for gyro rate computation
+      gp_quat q_prev = aircraft_orientation;
+
       // Convert pitch and roll updates to quaternions (in the body frame)
       gp_quat delta_roll_quat(Eigen::AngleAxis<gp_scalar>(delta_roll, gp_vec3::UnitX()));
       gp_quat delta_pitch_quat(Eigen::AngleAxis<gp_scalar>(delta_pitch, gp_vec3::UnitY()));
@@ -342,6 +354,18 @@ struct AircraftState {
 
       // Normalize the resulting quaternion
       aircraft_orientation.normalize();
+
+      // Compute actual body angular rates from quaternion delta (rad/s)
+      // delta_q = q_prev.inverse() * q_new = rotation in body frame over dt
+      // angular velocity = 2 * vec(delta_q) / dt (small angle approx)
+      if (dtSec > 0.0f) {
+        gp_quat dq = q_prev.inverse() * aircraft_orientation;
+        if (dq.w() < 0) { dq.coeffs() = -dq.coeffs(); }  // ensure shortest path
+        gyroRates_ = gp_vec3(
+            2.0f * dq.x() / dtSec,   // p (roll rate, rad/s)
+            2.0f * dq.y() / dtSec,   // q (pitch rate, rad/s)
+            2.0f * dq.z() / dtSec);  // r (yaw rate, rad/s)
+      }
 
       // Define the initial velocity vector in the body frame
       gp_vec3 velocity_body(dRelVel * dtSec, 0.0f, 0.0f);
@@ -379,6 +403,9 @@ struct AircraftState {
     // Odometer-based rabbit tracking
     gp_scalar rabbitOdometer_;  // Distance along path (meters)
     gp_scalar rabbitSpeed_;     // Current rabbit speed (m/s)
+
+    // Body-frame angular rates (rad/s, standard aerospace RHR)
+    gp_vec3 gyroRates_ = gp_vec3::Zero();
 
     // NN I/O capture — actual values presented to/produced by the neural net
     float nnInputs_[NN_INPUT_COUNT] = {0};   // Normalized inputs as NN sees them
