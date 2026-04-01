@@ -64,18 +64,16 @@ TEST(FitnessComputer, StepPenaltyWithInterceptScale) {
 }
 
 TEST(FitnessComputer, StepPenaltyKnownValues) {
-    // Hand-computed reference values from the spec:
-    // At 5m: distDelta=2.5, penalty = pow(2.5/5.0, 1.5) = pow(0.5, 1.5) ≈ 0.3536
-    // At 10m: distDelta=2.5, same
-    // At 24m: distDelta=16.5, penalty = pow(16.5/5.0, 1.5) = pow(3.3, 1.5) ≈ 5.993
+    // Test uses DISTANCE_TARGET, DISTANCE_NORM, DISTANCE_POWER from autoc.h
+    // At TARGET: distDelta=0, penalty = 0
+    // At TARGET+NORM: distDelta=NORM, penalty = pow(NORM/NORM, POWER) = 1.0
+    // Symmetric: TARGET-NORM and TARGET+NORM produce same penalty (if TARGET>NORM)
     FitnessComputer fc;
-    double penalty_5m = fc.computeStepPenalty(5.0, 0.0, 1.0);
-    double penalty_10m = fc.computeStepPenalty(10.0, 0.0, 1.0);
-    // Symmetric around target
-    EXPECT_NEAR(penalty_5m, penalty_10m, 1e-10);
-    // Known value
-    double expected = pow(2.5 / DISTANCE_NORM, DISTANCE_POWER);
-    EXPECT_NEAR(penalty_5m, expected, 1e-10);
+    double penalty_on = fc.computeStepPenalty(DISTANCE_TARGET, 0.0, 1.0);
+    EXPECT_NEAR(penalty_on, 0.0, 1e-10);
+    double penalty_far = fc.computeStepPenalty(DISTANCE_TARGET + DISTANCE_NORM, 0.0, 1.0);
+    double expected_far = pow(DISTANCE_NORM / DISTANCE_NORM, DISTANCE_POWER);  // = 1.0
+    EXPECT_NEAR(penalty_far, expected_far, 1e-10);
 }
 
 // ========================================================================

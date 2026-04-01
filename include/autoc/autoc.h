@@ -25,9 +25,9 @@ struct WorkerContext;
 //   - Too close (<5m): penalty rises — discourages overshooting on turns
 //   - Too far (>10m): penalty rises — pressures controller to close gap
 //   - Fractional power keeps far-tail (55m+) from dominating the sum
-// With TARGET=7.5, NORM=5, POWER=1.5:
-//   5m → 0.35  |  7.5m → 0  |  10m → 0.35  |  15m → 1.84  |  24m → 5.49
-#define DISTANCE_TARGET 7.5
+// With TARGET=1.0, NORM=5, POWER=1.5:
+//   1m → 0  |  6m → 1.0  |  11m → 2.83  |  16m → 5.20  |  24m → 9.74
+#define DISTANCE_TARGET 1.0
 #define DISTANCE_NORM 5.0
 #define DISTANCE_POWER 1.5
 

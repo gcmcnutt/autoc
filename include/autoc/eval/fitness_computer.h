@@ -6,8 +6,9 @@
 
 // Fitness computation constants (must match autoc.h defines)
 // These are duplicated here for test builds that don't include autoc.h
+// TODO: refactor to eliminate duplication — see BACKLOG.md
 #ifndef DISTANCE_TARGET
-#define DISTANCE_TARGET 7.5
+#define DISTANCE_TARGET 1.0
 #define DISTANCE_NORM 5.0
 #define DISTANCE_POWER 1.5
 #define ATTITUDE_NORM 0.349

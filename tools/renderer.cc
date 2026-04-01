@@ -3819,30 +3819,7 @@ void Renderer::updatePlaybackAnimation() {
       a = stateToVector(evalResults.aircraftStateList[i]);
     }
     
-    // Time-based filtering: show data up to currentSimTime
-    // Use proportional reveal (same approach as -x mode) — avoids speed-to-distance assumptions
-    std::vector<vec3> visiblePathVector;
-    if (hasSimData && i < static_cast<int>(evalResults.pathList.size()) && !evalResults.pathList[i].empty()) {
-      scalar spanDuration = 0.0f;
-      if (i < static_cast<int>(evalResults.aircraftStateList.size()) && !evalResults.aircraftStateList[i].empty()) {
-        spanDuration = static_cast<scalar>(evalResults.aircraftStateList[i].back().getSimTimeMsec()) / 1000.0f;
-      }
-      scalar progress = (spanDuration > 0.0f) ? std::min(currentSimTime / spanDuration, 1.0f) : 1.0f;
-      size_t totalPoints = evalResults.pathList[i].size();
-      size_t numPointsToShow = static_cast<size_t>(totalPoints * progress);
-      if (numPointsToShow == 0 && progress > 0.0f) numPointsToShow = 1;
-      if (numPointsToShow > totalPoints) numPointsToShow = totalPoints;
-
-      std::vector<Path> visiblePath(evalResults.pathList[i].begin(),
-                                     evalResults.pathList[i].begin() + numPointsToShow);
-      if (!visiblePath.empty()) {
-        visiblePathVector = pathToVector(visiblePath);
-      }
-    }
-    // Always add path data (empty if no visible path) to prevent VTK warnings
-    this->paths->AddInputData(createPointSet(offset, visiblePathVector));
-
-    // Filter aircraft states by timestamp
+    // Filter aircraft states by timestamp (must happen before path reveal)
     std::vector<AircraftState> visibleStates;
     std::vector<vec3> visibleStateVector;
     if (hasSimData && i < static_cast<int>(evalResults.aircraftStateList.size()) && !evalResults.aircraftStateList[i].empty()) {
@@ -3856,6 +3833,35 @@ void Renderer::updatePlaybackAnimation() {
         visibleStateVector = stateToVector(visibleStates);
       }
     }
+
+    // Odometer-based path reveal: show path segments up to the rabbit's current position.
+    // The rabbit odometer (meters along path) is stored in each AircraftState.
+    // Walk forward from the start until distanceFromStart >= rabbitOdometer.
+    std::vector<vec3> visiblePathVector;
+    if (hasSimData && i < static_cast<int>(evalResults.pathList.size()) && !evalResults.pathList[i].empty()) {
+      scalar rabbitOdo = 0.0f;
+      if (!visibleStates.empty()) {
+        rabbitOdo = static_cast<scalar>(visibleStates.back().getRabbitOdometer());
+      }
+      const auto& fullPath = evalResults.pathList[i];
+      size_t numPointsToShow = 0;
+      for (size_t pi = 0; pi < fullPath.size(); pi++) {
+        if (fullPath[pi].distanceFromStart <= rabbitOdo) {
+          numPointsToShow = pi + 1;
+        } else {
+          break;
+        }
+      }
+      if (numPointsToShow == 0 && rabbitOdo > 0.0f) numPointsToShow = 1;
+
+      std::vector<Path> visiblePath(fullPath.begin(), fullPath.begin() + numPointsToShow);
+      if (!visiblePath.empty()) {
+        visiblePathVector = pathToVector(visiblePath);
+      }
+    }
+    // Always add path data (empty if no visible path) to prevent VTK warnings
+    this->paths->AddInputData(createPointSet(offset, visiblePathVector));
+
     // Always add aircraft data (empty if no visible states) to prevent VTK warnings
     this->actuals->AddInputData(createTapeSet(offset, visibleStateVector,
       visibleStates.empty() ? std::vector<vec3>() : stateToOrientation(visibleStates)));

@@ -70,18 +70,36 @@ Remaining 015 work:
 - **Blocking dependency for 017-phase3 at training scale**
 - See: [017 spec](017-visual-target-tracking/spec.md)
 
-### [DEFERRED] Renderer: Path reveal timing with variable rabbit speed
-- Training playback red path reveal leads/lags error bars and aircraft position
-- Root cause: proportional reveal assumes uniform speed, but rabbit speed varies per-scenario
-- Error bars are correct (tied to actual aircraft state timestamps)
-- Fix: use `getSpeedAtTime(profile, t)` to compute distance-at-time for path reveal,
-  or use the rabbit odometer from AircraftState to reveal path by distance rather than fraction
-- The speed profile can be reconstructed from `ScenarioMetadata.rabbitSpeedSeed` + `RabbitSpeedConfig`
-- Low priority — error bars are usable for analysis, red path is cosmetic
+### [DONE] Renderer: Path reveal timing with variable rabbit speed
+- Fixed: renderer now uses rabbit odometer from AircraftState to reveal path
+  segments by distance traveled, not time fraction. Stops at crash point.
+- Was T516 from 020, closed 2026-03-31.
 
 ---
 
 ## Infrastructure
+
+### [NEXT] Type-Safe NN Sensor Interface
+- Currently NN inputs/outputs are opaque `float[]` arrays indexed by magic numbers
+- Topology changes (29→27) caused silent serialization corruption — now crashes, but
+  still fragile for future sensor additions (gravity vector, camera, etc.)
+- Need: a typed sensor struct or enum-indexed map that
+  - Names each input (e.g. `GYRO_P`, `QUAT_W`, `DPHI_NOW`)
+  - Carries type, units, valid range metadata
+  - Auto-generates topology count from struct definition
+  - Serializes with field names or tags so format is self-describing
+  - Compile-time error if evaluator.cc and topology.h disagree
+- Also unify the scattered constants: NN_INPUT_COUNT in topology.h, autoc.h,
+  evaluator.cc, tests, data.dat format comments, sim_response.py parser
+- This is load-bearing for 021+ as we iterate on sensor inputs frequently
+
+### [NEXT] Refactor Duplicate Fitness Constants (autoc.h vs fitness_computer.h)
+- DISTANCE_TARGET, DISTANCE_NORM, DISTANCE_POWER, ATTITUDE_NORM, ATTITUDE_POWER, CRASH_COMPLETION_WEIGHT
+  are defined in both autoc.h and fitness_computer.h with #ifndef guards
+- fitness_computer.h fallback is for test builds that don't include autoc.h
+- Easy to get out of sync (just happened with DISTANCE_TARGET change)
+- Fix: single source of truth — either fitness_computer.h is authoritative
+  (remove from autoc.h) or vice versa
 
 ### [NEXT] Batch and Cache Deterministic Scenarios
 - With 150+ scenarios per individual, serializing full table per eval is expensive

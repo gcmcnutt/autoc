@@ -431,9 +431,18 @@ struct AircraftState {
         uint32_t inputCount = NN_INPUT_COUNT;
         uint32_t outputCount = NN_OUTPUT_COUNT;
         ar(inputCount, outputCount);
-        for (uint32_t i = 0; i < inputCount && i < static_cast<uint32_t>(NN_INPUT_COUNT); i++)
+        if (inputCount != NN_INPUT_COUNT || outputCount != NN_OUTPUT_COUNT) {
+          throw std::runtime_error(
+            "AircraftState deserialization: NN topology mismatch — "
+            "serialized inputs=" + std::to_string(inputCount) +
+            " outputs=" + std::to_string(outputCount) +
+            " but compiled with inputs=" + std::to_string(NN_INPUT_COUNT) +
+            " outputs=" + std::to_string(NN_OUTPUT_COUNT) +
+            ". Regenerate training data with current binary.");
+        }
+        for (uint32_t i = 0; i < inputCount; i++)
           ar(nnInputs_[i]);
-        for (uint32_t i = 0; i < outputCount && i < static_cast<uint32_t>(NN_OUTPUT_COUNT); i++)
+        for (uint32_t i = 0; i < outputCount; i++)
           ar(nnOutputs_[i]);
       }
       ar(rabbitOdometer_, rabbitSpeed_);
