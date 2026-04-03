@@ -92,6 +92,19 @@ Remaining 015 work:
 - Also unify the scattered constants: NN_INPUT_COUNT in topology.h, autoc.h,
   evaluator.cc, tests, data.dat format comments, sim_response.py parser
 - This is load-bearing for 021+ as we iterate on sensor inputs frequently
+- Files that must change when NN_INPUT_COUNT changes (021 learnings):
+  - `include/autoc/nn/topology.h` — count, weight count, topology string
+  - `include/autoc/autoc.h` — duplicate defines (DISTANCE_TARGET etc.)
+  - `src/nn/evaluator.cc` — nn_gather_inputs(), index mapping, comments
+  - `src/autoc.cc` — data.dat format string, header, field indices
+  - `tests/contract_evaluator_tests.cc` — topology assertions
+  - `tests/nn_evaluator_tests.cc` — input layout assertions
+  - `specs/019-improved-crrcsim/sim_response.py` — data.dat parser
+  - `xiao/src/msplink.cpp` — xiao-side input gathering
+  - `include/autoc/eval/aircraft_state.h` — nnInputs_ array size, serialization
+- Consideration: prev commands (pitchCmd/rollCmd/throttleCmd feedback) as optional
+  inputs — may want to toggle these on/off during experimentation. Type-safe
+  interface should support optional/conditional inputs without recompiling everything
 
 ### [NEXT] Refactor Duplicate Fitness Constants (autoc.h vs fitness_computer.h)
 - DISTANCE_TARGET, DISTANCE_NORM, DISTANCE_POWER, ATTITUDE_NORM, ATTITUDE_POWER, CRASH_COMPLETION_WEIGHT
