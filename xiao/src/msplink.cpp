@@ -264,7 +264,7 @@ static void mspUpdateNavControl()
     // Capture temporal history before NN evaluation
     aircraft_state.recordErrorHistory(dphi_now, dtheta_now, dist_now, millis());
 
-    // Run NN: gathers 29 inputs, forward pass, sets pitch/roll/throttle commands
+    // Run NN: gathers 27 inputs, forward pass, sets pitch/roll/throttle commands
     generatedNNProgram(pathProvider, aircraft_state, 0.0f);
 
     // Convert NN-controlled aircraft commands to MSP RC values and cache them
@@ -274,12 +274,12 @@ static void mspUpdateNavControl()
     updateCachedCommands(roll_cmd, pitch_cmd, throttle_cmd, eval_start_us);
     pipeEvalEndUs = micros();
 
-    // Log compact NN I/O: 29 inputs, 3 outputs (tanh), 3 RC commands
-    // Inputs: [0-5]dPhi [6-11]dTheta [12-17]dist [18]dDist/dt [19-22]quat [23]airspeed [24]alpha [25]beta [26-28]cmdFeedback
+    // Log compact NN I/O: 27 inputs, 3 outputs (tanh), 3 RC commands
+    // Inputs: [0-5]dPhi [6-11]dTheta [12-17]dist [18]dDist/dt [19-22]quat [23]airspeed [24-26]gyro(p,q,r rad/s)
     const float* in = aircraft_state.getNNInputs();
     const float* out = aircraft_state.getNNOutputs();
     logPrint(INFO,
-             "NN: idx=%d in=[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d] rabbit=[%.2f,%.2f,%.2f]",
+             "NN: idx=%d in=[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f,%.2f,%.3f,%.3f,%.3f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d] rabbit=[%.2f,%.2f,%.2f]",
              current_path_index,
              in[0], in[1], in[2], in[3], in[4], in[5],       // dPhi history+forecast
              in[6], in[7], in[8], in[9], in[10], in[11],     // dTheta history+forecast
@@ -287,8 +287,7 @@ static void mspUpdateNavControl()
              in[18],                                           // dDist/dt
              in[19], in[20], in[21], in[22],                   // quaternion w,x,y,z
              in[23],                                           // airspeed
-             in[24], in[25],                                   // alpha, beta
-             in[26], in[27], in[28],                           // cmd feedback
+             in[24], in[25], in[26],                           // gyro p,q,r (rad/s, standard aerospace RHR)
              out[0], out[1], out[2],                           // NN outputs (tanh)
              roll_cmd, pitch_cmd, throttle_cmd,                // RC commands
              targetPos.x(), targetPos.y(), targetPos.z());     // rabbit world position (origin-relative)
@@ -509,12 +508,15 @@ void mspUpdateState()
   bool armed = state.isArmed();
   bool failsafe = state.isFailsafe();
 
+  // Log raw gyro from MSP (deci-deg/s, INAV convention — NOT sign-corrected here)
+  // Sign correction happens in convertMSPStateToAircraftState() for NN consumption.
   logPrint(INFO,
-           "Nav State: pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d",
+           "Nav State: pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro_raw=[%d,%d,%d] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d",
            pos_raw.x(), pos_raw.y(), pos_raw.z(),
            pos_rel.x(), pos_rel.y(), pos_rel.z(),
            vel_rel.x(), vel_rel.y(), vel_rel.z(),
            q.w(), q.x(), q.y(), q.z(),
+           state.autoc_state.gyro[0], state.autoc_state.gyro[1], state.autoc_state.gyro[2],
            armed ? "Y" : "N",
            failsafe ? "Y" : "N",
            hasServoActivation ? "Y" : "N",
@@ -659,6 +661,19 @@ void convertMSPStateToAircraftState(AircraftState &aircraftState)
   aircraftState.setVelocity(velocity);
   aircraftState.setRelVel(speed_magnitude);
   aircraftState.setSimTimeMsec(state.asOfMsec);
+
+  // Gyro rates from INAV (deci-deg/s → rad/s, with sign correction)
+  // INAV convention: pitch+ = nose DOWN, yaw+ = nose LEFT (inverted from aerospace RHR)
+  // Standard aerospace RHR: pitch+ = nose UP, yaw+ = nose RIGHT
+  // See COORDINATE_CONVENTIONS.md for full transform table.
+  if (state.autoc_state_valid)
+  {
+    const gp_scalar deciDegToRadS = static_cast<gp_scalar>(M_PI / 1800.0f); // deci-deg/s → rad/s
+    gp_scalar p =  static_cast<gp_scalar>(state.autoc_state.gyro[0]) * deciDegToRadS;  // roll: no sign change
+    gp_scalar q = -static_cast<gp_scalar>(state.autoc_state.gyro[1]) * deciDegToRadS;  // pitch: NEGATE
+    gp_scalar r = -static_cast<gp_scalar>(state.autoc_state.gyro[2]) * deciDegToRadS;  // yaw: NEGATE
+    aircraftState.setGyroRates(gp_vec3(p, q, r));
+  }
 }
 
 // Find path index based on rabbit odometer (distance along path)

@@ -95,7 +95,7 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     code << "    aircraftState.setRollCommand(static_cast<gp_scalar>(outputs[1]));\n";
     code << "    aircraftState.setThrottleCommand(static_cast<gp_scalar>(outputs[2]));\n\n";
     code << "    // Capture I/O for telemetry logging\n";
-    code << "    aircraftState.setNNData(inputs, 29, outputs, 3);\n\n";
+    code << "    aircraftState.setNNData(inputs, " << genome.topology.front() << ", outputs, " << genome.topology.back() << ");\n\n";
     code << "    return static_cast<gp_scalar>(outputs[0]); // return pitch for compatibility\n";
     code << "}\n\n";
 

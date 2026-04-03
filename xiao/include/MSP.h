@@ -257,7 +257,7 @@ struct msp_attitude_t {
   int16_t yaw;
 } __attribute__ ((packed));
 
-// MSP2_AUTOC_STATE reply (consolidated nav + status + rc)
+// MSP2_AUTOC_STATE reply (consolidated nav + status + rc + gyro)
 struct msp_autoc_state_t {
   uint32_t timestamp_us; // microseconds since boot (for blackbox correlation)
   int32_t pos[3]; // cm in NEU frame
@@ -266,6 +266,10 @@ struct msp_autoc_state_t {
   uint32_t flightModeFlags; // packed box mode bits (ARM, FAILSAFE, etc.)
   uint16_t rcChannel8;      // arm switch
   uint16_t rcChannel9;      // path selector
+  int16_t gyro[3]; // deci-deg/s, filtered (post-LPF). INAV sign convention:
+                   // [0]=roll (right wing down = +), [1]=pitch (nose DOWN = +),
+                   // [2]=yaw (nose LEFT = +). Consumer must negate [1] and [2]
+                   // for standard aerospace RHR. See COORDINATE_CONVENTIONS.md.
 } __attribute__ ((packed));
 
 // MSP_ALTITUDE reply
