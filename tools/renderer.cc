@@ -1923,7 +1923,7 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
   std::regex stateRe(R"(Nav State:.*pos_raw=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*pos=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*vel=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*quat=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\])");
   std::regex autocFlagRe(R"(autoc=(Y|N))");
   std::regex pathRe(R"(path=(\d+))");  // Capture path index from Nav State line
-  // NN line: idx, 29 inputs, 3 outputs, 3 RC values, optional rabbit position
+  // NN line: idx, 27 inputs (021+), 3 outputs, 3 RC values, optional rabbit position
   std::regex nnRe(R"(NN: idx=(\d+) in=\[([^\]]+)\] out=\[([^\]]+)\] rc=\[(\d+),(\d+),(\d+)\])");
   std::regex rabbitRe(R"(rabbit=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\])");
 
@@ -2031,7 +2031,7 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
 
     // Parse NN line - reconstruct rabbit position from body-frame angles + distance
     if (inSpan && std::regex_search(line, matches, nnRe)) {
-      // Parse the 29 comma-separated input values
+      // Parse comma-separated input values (27 inputs for 021+, was 29)
       std::string inputStr = matches[2].str();
       std::vector<scalar> inputs;
       std::istringstream iss(inputStr);
@@ -2040,7 +2040,7 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
         inputs.push_back(std::stof(token));
       }
 
-      if (inputs.size() >= 29) {
+      if (inputs.size() >= 27) {
         // inputs[18] = dDist/dt (closing rate)
         scalar relVel = std::abs(inputs[18]);
         timestampRelVelMap[inavMs] = relVel;
