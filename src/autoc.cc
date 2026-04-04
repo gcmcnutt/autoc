@@ -77,12 +77,14 @@ static double computeVariationScale() {
     if (gVariationRampStep <= 0) return 1.0;  // Disabled - full variations
     if (gTotalGenerations <= 0) return 1.0;   // Safety check
 
-    // Stepped: quantize to step boundaries
-    int stepIndex = gCurrentGeneration / gVariationRampStep;
-    int totalSteps = gTotalGenerations / gVariationRampStep;
-    if (totalSteps <= 0) return 1.0;
+    // Stepped ramp: gen 1-rampStep at 0%, last rampStep gens at 100%
+    // e.g. rampStep=20, totalGens=400: gen 1-20→0%, gen 381-400→100%
+    int gen1 = std::max(1, gCurrentGeneration);  // 1-based
+    int stepIndex = (gen1 - 1) / gVariationRampStep;
+    int numSteps = gTotalGenerations / gVariationRampStep;
+    if (numSteps <= 1) return 1.0;
 
-    return std::min(1.0, static_cast<double>(stepIndex) / static_cast<double>(totalSteps));
+    return std::min(1.0, static_cast<double>(stepIndex) / static_cast<double>(numSteps - 1));
 }
 
 // ============================================================================
@@ -1061,7 +1063,9 @@ static void runNNEvolution(
                          reinterpret_cast<const char*>(nnData.data() + nnData.size()));
       evalData.gpHash = hashByteVector(evalData.gp);
       evalData.isEliteReeval = false;
+      // RAMP_LANDSCAPE: scale rabbit speed sigma (0→full over training)
       evalData.rabbitSpeedConfig = gRabbitSpeedConfig;
+      evalData.rabbitSpeedConfig.sigma = gRabbitSpeedConfig.sigma * computeVariationScale();
       evalData.pathList = scenario.pathList;
       evalData.scenario.scenarioSequence = scenarioSequence;
       evalData.scenario.bakeoffSequence = 0;
@@ -1150,7 +1154,9 @@ static void runNNEvolution(
                          reinterpret_cast<const char*>(nnData.data() + nnData.size()));
       evalData.gpHash = hashByteVector(evalData.gp);
       evalData.isEliteReeval = false;
+      // Elite re-eval uses same ramp scale as current generation
       evalData.rabbitSpeedConfig = gRabbitSpeedConfig;
+      evalData.rabbitSpeedConfig.sigma = gRabbitSpeedConfig.sigma * computeVariationScale();
       evalData.pathList = scenario.pathList;
       evalData.scenario.scenarioSequence = scenarioSequence;
       evalData.scenario.bakeoffSequence = 0;
