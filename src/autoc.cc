@@ -74,17 +74,13 @@ static int gVariationRampStep = 0;      // Set from config at startup (0 = disab
  * @return Scale factor to apply to variation offsets (0.0 to 1.0)
  */
 static double computeVariationScale() {
-    if (gVariationRampStep <= 0) return 1.0;  // Disabled - full variations
-    if (gTotalGenerations <= 0) return 1.0;   // Safety check
-
-    // Stepped ramp: gen 1-rampStep at 0%, last rampStep gens at 100%
-    // e.g. rampStep=20, totalGens=400: gen 1-20→0%, gen 381-400→100%
-    int gen1 = std::max(1, gCurrentGeneration);  // 1-based
-    int stepIndex = (gen1 - 1) / gVariationRampStep;
-    int numSteps = gTotalGenerations / gVariationRampStep;
+    // Ramp from 0.0 (no variations) to 1.0 (full variations) over training.
+    // Disabled (rampStep<=0), eval mode (totalGens<=1), or trivial: return 1.0.
+    int numSteps = (gVariationRampStep > 0) ? gTotalGenerations / gVariationRampStep : 0;
     if (numSteps <= 1) return 1.0;
 
-    return std::min(1.0, static_cast<double>(stepIndex) / static_cast<double>(numSteps - 1));
+    int stepIndex = (gCurrentGeneration - 1) / gVariationRampStep;  // 1-based gen
+    return static_cast<double>(std::min(stepIndex, numSteps - 1)) / static_cast<double>(numSteps - 1);
 }
 
 // ============================================================================
