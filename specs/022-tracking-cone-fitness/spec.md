@@ -15,6 +15,16 @@ The current fitness function has two critical flaws:
 2. **Distance target offset**: DISTANCE_TARGET=1.0m creates an artificial
    "orbit at 1m" objective rather than rewarding being on the path.
 
+## Clarifications
+
+### Session 2026-04-05
+
+- Q: Should V1 use sum or lexicase for aggregating per-scenario scores? → A: Lexicase (unchanged from current). Single dimension per scenario: negated score. Completion fraction removed as a dimension — it's already encoded in the score (more steps = more points). Mean throttle deferred as a future second dimension.
+- Q: Should attitude delta penalty be kept alongside point accumulation? → A: Drop for V1. Smoothness signals (total energy, bang-bang penalty) likely added as separate objectives later.
+- Q: Should intercept budget/scale mechanism be kept? → A: Remove entirely. Scoring surface natural gradient is sufficient; intercept budget was compensating for crash penalty cliff.
+- Q: How to handle tangent at final path waypoint? → A: Reuse previous segment tangent. Verify when path actually ends and control returns to operator — scoring should stop at that boundary.
+- Q: Should variation ramp be kept with the new fitness function? → A: Keep as-is. Curriculum learning helps convergence independently of fitness shape. Already configurable via VariationRampStep in autoc.ini.
+
 ## Solution: Point Accumulation with Streak Multiplier
 
 Inspired by video game scoring. Every timestep earns points. More points = better.
@@ -63,21 +73,23 @@ else:
 
 eff_lateral = lateral_dist / cross_scale
 
-// Single smooth score from effective distance
+// Single smooth score: computeStepScore(along, lateralDist) → stepPoints
 eff_dist_sq = eff_along^2 + eff_lateral^2
-step_points = 1.0 / (1.0 + eff_dist_sq)
+stepPoints = 1.0 / (1.0 + eff_dist_sq)
 
-// Streak: multiplier builds when scoring well, resets when not
-if step_points >= streak_threshold:
+// Streak: builds when scoring well, hard reset when not
+// streak_steps_to_max derived from config: FitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000)
+if stepPoints >= streak_threshold:
     streak_count = min(streak_count + 1, streak_steps_to_max)
 else:
     streak_count = 0
 
-// Multiplier: 1x base, ramps to streak_max
-multiplier = 1.0 + (streak_max - 1.0) * streak_count / streak_steps_to_max
+// Multiplier: 1x base, linear ramp to streak_multiplier_max
+// streak_count / streak_steps_to_max gives 0..1 normalized ramp
+multiplier = 1.0 + (streak_multiplier_max - 1.0) * streak_count / streak_steps_to_max
 
-// Accumulate
-score += step_points * multiplier
+// applyStreak(stepPoints) → returns stepPoints * multiplier
+score += stepPoints * multiplier
 ```
 
 ### Parameters
@@ -90,8 +102,8 @@ All parameters are tunable via autoc.ini:
 | ahead_scale | FitAheadScale | Along-track scale when ahead of rabbit | 0.5m |
 | cross_scale | FitCrossScale | Lateral/vertical scale | 5.0m |
 | streak_threshold | FitStreakThreshold | Min step_points to maintain streak | 0.5 |
-| streak_max | FitStreakMax | Maximum multiplier | 5.0 |
-| streak_steps_to_max | FitStreakSteps | Steps to reach max multiplier | 25 |
+| streak_ramp_sec | FitStreakRampSec | Seconds to reach max multiplier | 2.5 |
+| streak_multiplier_max | FitStreakMultiplierMax | Maximum multiplier (1x base + Nx bonus) | 5.0 |
 
 **Teardrop shape**: the scoring surface is a teardrop — forgiving behind,
 a wall ahead. Being 0.5m ahead scores the same as 10m behind (~0.5).
@@ -123,8 +135,10 @@ tangent right). Right: 1D slices along-track and cross-track.*
 always points toward the rabbit, giving evolution something to select
 on during the intercept phase.
 
-**Multiplier ramp**: caps at 5x, reaches max in 25 steps (~2.5s at 10Hz).
-Fast enough to reward short bursts of good tracking.
+**Multiplier ramp**: caps at 5x, reaches max in FitStreakRampSec (2.5s).
+Rate-independent — streak_steps_to_max is derived from ramp duration and
+SIM_TIME_STEP_MSEC at startup. Fast enough to reward short bursts of
+good tracking.
 
 ### Why This Works
 
@@ -150,14 +164,16 @@ Negate so existing minimize-based selection works unchanged:
 fitness = -total_accumulated_points
 ```
 
+No magic offset constant — just sign flip. Selection operators already
+handle negative numbers correctly.
+
 ### Diagnostics
 
 Per-scenario logging (in the existing per-scenario summary line):
 
 - **score**: accumulated points for the scenario
 - **maxStreak**: longest consecutive streak in the scenario
-- **streakSteps**: total steps spent in streak (step_points >= threshold)
-- **avgStepPts**: mean step_points across all steps (raw, before multiplier)
+- **streakSteps**: total steps spent in streak (stepPoints >= threshold)
 - **maxMult**: highest multiplier reached
 
 Per-generation logging (in `data.stc` or console):
@@ -181,7 +197,9 @@ control.
 - `dot(offset, tangent)` for along-track decomposition
 - Streak counter: per-scenario state, reset at flight start
 - Per-scenario score: accumulated points for that scenario
-- Total fitness = sum (or lexicase) across scenarios
+- Lexicase selection: one dimension per scenario = `-score` (lower is better)
+- Completion fraction, attitude, throttle removed as separate lexicase dimensions
+- Total fitness for logging = sum of `-score` across scenarios
 
 ## V1: Symmetric Cross-Track (This Iteration)
 
