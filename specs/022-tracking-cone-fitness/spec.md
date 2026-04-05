@@ -1,189 +1,255 @@
-# 022 — Tracking Cone Fitness Function
+# 022 — Point-Accumulation Fitness with Streak Bonus
 
 **Status**: Draft
 **Priority**: P1 — next training cycle improvement
 **Created**: 2026-04-01
+**Updated**: 2026-04-04
 
 ## Problem
 
-The current fitness function uses flat Euclidean distance to a target offset
-(DISTANCE_TARGET) with a power-law penalty. This has several weaknesses:
+The current fitness function has two critical flaws:
 
-- **Symmetric**: 10m above and 10m below score the same. Below is dangerous.
-- **No bearing awareness**: 10m dead ahead on the path tangent scores the same
-  as 10m perpendicular. Ahead-on-path is much better for tracking.
-- **No sustained tracking reward**: a lucky 2m flyby scores as well as 10
-  seconds of steady 5m tracking. The NN has no incentive for lock-on.
-- **Crash is catastrophic**: a 10s perfect track followed by a crash scores
-  worse than 20s of lazy 15m orbiting. But the 10s track was actually better.
-- **Bang-bang friendly**: no penalty for jerky control that achieves low
-  distance error.
-- **Distance target offset**: the 7.5m (now 1.0m) target creates an
-  artificial orbit distance rather than rewarding being on the path.
+1. **Crash penalty cliff**: a discrete jump in fitness when the aircraft crashes,
+   giving no gradient for evolution to climb. This required the variation ramp
+   (curriculum learning) as a workaround.
+2. **Distance target offset**: DISTANCE_TARGET=1.0m creates an artificial
+   "orbit at 1m" objective rather than rewarding being on the path.
 
-## Solution: Tracking Cone with Combo Multiplier
+## Solution: Point Accumulation with Streak Multiplier
 
-Replace the distance-based fitness with a pursuit/tracking model inspired by
-missile guidance and video game scoring:
+Inspired by video game scoring. Every timestep earns points. More points = better.
+No crash penalty — crash just stops earning points.
 
-### Core Concept
+### Core Rules
 
-The rabbit moves along the path. The aircraft should be in a **trailing cone**
-behind the rabbit, aligned with the path tangent. The score rewards:
+1. **Each step earns points** based on a smooth 3D scoring surface centered on
+   the rabbit, oriented along the path tangent. Score = 1.0 at the rabbit,
+   decays in all directions — but decays faster ahead than behind.
+2. **Streak multiplier**: consecutive steps above a score threshold build an
+   escalating bonus (up to 5x). Resets to 1x when score drops too low.
+3. **Crash/OOB = stop**. No penalty. The sim ends and the aircraft earns no
+   more points. A crash at step 10 just means ~10 steps of points vs ~200+
+   for a full flight.
+4. **Fitness = total accumulated points**. Higher is better. Variable path
+   lengths are handled naturally — longer paths are more opportunity, not
+   more penalty.
 
-1. **Alignment** — body heading aligned with path-to-rabbit vector
-2. **Proximity** — closer is better, non-linear decay
-3. **Asymmetric bias** — above > below, behind > ahead, inside turn > outside
-4. **Combo multiplier** — sustained in-cone tracking builds a multiplier
-5. **Break penalty** — losing track costs proportional to combo length
-6. **Lead cone** — score against future rabbit positions, not just current
+### Scoring Surface
 
-### Flight Phases
+The rabbit is the origin. The path tangent (rabbit → next waypoint) defines
+the reference direction. The aircraft's position relative to the rabbit in
+this frame determines the score.
 
-```
-Intercept:  Entry → approaching rabbit
-            Score: alignment improving, distance decreasing
-            Low penalty — working toward lock-on
-
-Lock-on:    Entering the tracking cone, combo starts
-            Score: combo multiplier begins building
-            High reward rate — golden zone
-
-Track:      Sustained in-cone
-            Score: multiplier climbing, best reward per step
-            Longer = more valuable per step
-
-Break:      Left the cone
-            Penalty: combo resets + break penalty ∝ lost combo length
-            Worse than never having been on track
-
-Re-intercept: Back toward cone after break
-              Same as intercept but time burned
-
-Crash:      Permanent break. Penalty = remaining steps × expected combo value
-```
-
-### Step Score Computation
+The iso-score surfaces are **ellipsoids** elongated behind the rabbit along
+the path tangent. Ahead of the rabbit the ellipsoid is compressed — being
+ahead is penalized harder than being behind. The surface is smooth, continuous,
+and positive everywhere in 3D space.
 
 ```
-// 1. Bearing alignment: aircraft-to-rabbit vs path tangent
-alignment = dot(normalize(rabbit - aircraft), path_tangent)  // [-1, 1]
-alignment_score = max(0, alignment)  // 0 if perpendicular or ahead
+// Rabbit-centered, path-aligned coordinate frame
+offset = aircraft - rabbit
+tangent = normalize(path[i+1] - path[i])    // rabbit's direction of travel
+along = dot(offset, tangent)                 // + = ahead, - = behind
+lateral = offset - along * tangent           // perpendicular component (3D)
+lateral_dist = length(lateral)
 
-// 2. Proximity: smooth distance decay
-proximity = 1.0 / (1.0 + (dist / proximity_scale)^2)
-
-// 3. Asymmetric bias in path-relative frame
-error_along = dot(aircraft - rabbit, path_tangent)  // + = ahead (bad)
-error_up = -dot(aircraft - rabbit, gravity_dir)      // + = above (good)
-asym = 1.0 + above_bonus * error_up/dist
-           - ahead_penalty * max(0, error_along)/dist
-
-// 4. Multi-cone leading: weight current + future rabbit positions
-cone_now  = alignment_score * proximity * clamp(asym, 0.5, 1.5)
-cone_01s  = cone(rabbit_+0.1s, tangent_+0.1s)  // near lead
-cone_05s  = cone(rabbit_+0.5s, tangent_+0.5s)  // far lead (turn anticipation)
-step_base = w0 * cone_now + w1 * cone_01s + w2 * cone_05s
-
-// 5. Combo multiplier
-if dist < combo_threshold:
-    combo_count++
-    multiplier = 1.0 + combo_count * combo_growth
+// Effective distance: directional scaling in path frame
+// Behind the rabbit: gentle decay (large scale = forgiving)
+// Ahead of the rabbit: steep decay (small scale = punishing)
+if along <= 0:
+    eff_along = along / behind_scale
 else:
-    if combo_count > 0:
-        break_penalty += combo_count * break_cost  // losing track hurts
-    combo_count = 0
-    multiplier = 1.0
+    eff_along = along / ahead_scale
 
-step_score = step_base * multiplier
+eff_lateral = lateral_dist / cross_scale
+
+// Single smooth score from effective distance
+eff_dist_sq = eff_along^2 + eff_lateral^2
+step_points = 1.0 / (1.0 + eff_dist_sq)
+
+// Streak: multiplier builds when scoring well, resets when not
+if step_points >= streak_threshold:
+    streak_count = min(streak_count + 1, streak_steps_to_max)
+else:
+    streak_count = 0
+
+// Multiplier: 1x base, ramps to streak_max
+multiplier = 1.0 + (streak_max - 1.0) * streak_count / streak_steps_to_max
+
+// Accumulate
+score += step_points * multiplier
 ```
 
-### Scenario Fitness
+### Parameters
+
+All parameters are tunable via autoc.ini:
+
+| Parameter | ini key | Description | Starting value |
+|-----------|---------|-------------|---------------|
+| behind_scale | FitBehindScale | Along-track scale when behind rabbit | 10.0m |
+| ahead_scale | FitAheadScale | Along-track scale when ahead of rabbit | 0.5m |
+| cross_scale | FitCrossScale | Lateral/vertical scale | 5.0m |
+| streak_threshold | FitStreakThreshold | Min step_points to maintain streak | 0.5 |
+| streak_max | FitStreakMax | Maximum multiplier | 5.0 |
+| streak_steps_to_max | FitStreakSteps | Steps to reach max multiplier | 25 |
+
+**Teardrop shape**: the scoring surface is a teardrop — forgiving behind,
+a wall ahead. Being 0.5m ahead scores the same as 10m behind (~0.5).
+The gradient strongly discourages overshooting.
+
+![Scoring surface](scoring_surface.png)
+*Generated with behind_scale=10.0, ahead_scale=0.5, cross_scale=5.0,
+streak_threshold=0.50. Left: top-down contour (rabbit at origin, path
+tangent right). Right: 1D slices along-track and cross-track.*
+
+**Score examples** (at rabbit altitude, on path line):
+
+| Position | along | lateral | step_points |
+|----------|-------|---------|-------------|
+| At rabbit | 0 | 0 | 1.00 |
+| 3m behind | -3 | 0 | 0.92 |
+| 5m behind | -5 | 0 | 0.80 |
+| 10m behind | -10 | 0 | 0.50 |
+| 20m behind | -20 | 0 | 0.20 |
+| 0.5m ahead | +0.5 | 0 | 0.50 |
+| 1m ahead | +1 | 0 | 0.20 |
+| 2m ahead | +2 | 0 | 0.06 |
+| 5m lateral | 0 | 5 | 0.50 |
+| 10m lateral | 0 | 10 | 0.20 |
+
+**Score of 1.0**: at the rabbit position. This is the optimum.
+
+**Signal everywhere**: even at 50m the score is ~0.01. The gradient
+always points toward the rabbit, giving evolution something to select
+on during the intercept phase.
+
+**Multiplier ramp**: caps at 5x, reaches max in 25 steps (~2.5s at 10Hz).
+Fast enough to reward short bursts of good tracking.
+
+### Why This Works
+
+- **No crash cliff**: an aircraft that tracks well for 50 steps then crashes
+  keeps its 50 steps of points (with high multiplier). It scores better than
+  one that survives 200 steps but wanders at 20m distance the whole time.
+- **Streak rewards sustained tracking**: a brief 2m flyby earns a few good
+  points at 1x. 25 consecutive steps at 2m earns at up to 5x. The sustained
+  tracker wins overwhelmingly.
+- **Smooth gradient everywhere**: no discrete jumps. Every meter closer earns
+  more points. Every additional on-track step is worth more than the last.
+- **Directional bias built in**: the ellipsoidal surface naturally teaches
+  "approach from behind" without explicit phase logic.
+- **Variable paths handled**: longer paths = more steps = more opportunity.
+  No normalization needed.
+
+### Fitness Direction
+
+Current fitness is minimize (lower = better). This is maximize (higher = better).
+Negate so existing minimize-based selection works unchanged:
 
 ```
-scenario_score = Σ step_score - break_penalty
-
-// Crash: permanent break, penalize remaining potential
-if crashed:
-    remaining_steps = total_steps - crashed_at
-    scenario_score -= remaining_steps * expected_step_value
-
-// Higher is better (invert for minimization if needed)
-total_fitness = -Σ scenario_score  // minimize negative score
+fitness = -total_accumulated_points
 ```
 
-### Tunable Parameters
+### Diagnostics
 
-| Parameter | Description | Starting value |
-|-----------|-------------|---------------|
-| proximity_scale | Distance for 50% proximity score | 5.0m |
-| above_bonus | Reward for being above path | 0.1 |
-| ahead_penalty | Penalty for being ahead of rabbit | 0.2 |
-| w0, w1, w2 | Cone weights (now, +0.1s, +0.5s) | 0.5, 0.3, 0.2 |
-| combo_threshold | Distance for combo to build | 5.0m |
-| combo_growth | Multiplier increment per step | 0.02 (2% per 100ms) |
-| break_cost | Penalty per lost combo step | 0.5 |
-| expected_step_value | Crash remaining-step penalty | 1.0 |
+Per-scenario logging (in the existing per-scenario summary line):
 
-### Selection Strategy
+- **score**: accumulated points for the scenario
+- **maxStreak**: longest consecutive streak in the scenario
+- **streakSteps**: total steps spent in streak (step_points >= threshold)
+- **avgStepPts**: mean step_points across all steps (raw, before multiplier)
+- **maxMult**: highest multiplier reached
 
-With a well-shaped scalar fitness per scenario, lexicase may no longer be
-needed. Options:
+Per-generation logging (in `data.stc` or console):
 
-- **Sum**: total fitness across all scenarios. Simple, strong gradient.
-- **Tournament**: rank-based selection on sum fitness. Standard EA approach.
-- **Lexicase on scenario scores**: keep per-scenario pressure but with
-  single-dimension cone score instead of multi-phase filtering.
+- **bestScore**: best individual's total score across all scenarios
+- **avgMaxStreak**: mean of max streak length across scenarios for best individual
+- **pctInStreak**: % of total steps spent in streak for best individual
 
-Start with sum across scenarios, compare to lexicase.
-
-## Available Inputs
-
-The NN already receives everything needed to compute cone scores:
-
-- **dPhi/dTheta**: bearing to rabbit in body frame (current + forecast)
-- **dist**: distance to rabbit (current + forecast)
-- **quaternion**: attitude relative to earth (gravity direction)
-- **airspeed**: for energy management
-- **gyro rates**: for control smoothness assessment
-
-The fitness function has access to:
-- Aircraft position (virtual frame)
-- Path points with distanceFromStart
-- Path tangent (from consecutive path points)
-- Rabbit position (from AircraftState.rabbitPosition)
-
-## Relationship to Other Features
-
-- **021 (ACRO mode + rate gyros)**: This fitness works with either MANUAL or
-  ACRO mode. The rate PID is orthogonal to the fitness function.
-- **021 (DISTANCE_TARGET)**: Replaced entirely — no target offset, the cone
-  geometry handles positioning.
-- **Backlog (smoothness penalty)**: Implicit in combo multiplier — jerky
-  control breaks tracking streaks. No explicit Σ|Δu| penalty needed.
-- **Backlog (altitude-aware distance)**: Captured by asymmetric bias
-  (above > below in cone scoring).
+These let us track whether the NN is learning to sustain tracking (streak
+length growing) vs just getting closer on average (avgStepPts growing).
+Both should improve, but streak length is the key indicator of sustained
+control.
 
 ## Implementation Notes
 
-- Replaces `computeStepPenalty()` in `fitness_computer.h/.cc`
-- Replaces distance/attitude accumulation in `autoc.cc` and
-  `fitness_decomposition.cc`
-- Path tangent: `normalize(path[i+1].start - path[i].start)`
-- Gravity direction: `[0, 0, 1]` in NED (down)
-- Forecast rabbit position: already available via `getInterpolatedTargetPosition()`
-- Tests: update `fitness_computer_tests.cc` and `fitness_decomposition_tests.cc`
+- Replaces `computeStepPenalty()` in `fitness_computer.h`
+- Replaces distance/attitude accumulation in `autoc.cc` (lines ~596-648)
+- Removes: DISTANCE_TARGET, DISTANCE_NORM, DISTANCE_POWER, ATTITUDE_NORM,
+  ATTITUDE_POWER, CRASH_COMPLETION_WEIGHT, intercept budget/scale
+- Path tangent: `normalize(path[i+1].start - path[i].start)` — already available
+- `dot(offset, tangent)` for along-track decomposition
+- Streak counter: per-scenario state, reset at flight start
+- Per-scenario score: accumulated points for that scenario
+- Total fitness = sum (or lexicase) across scenarios
 
-## Success Criteria
+## V1: Symmetric Cross-Track (This Iteration)
 
-1. NN converges to lower mean distance than current RMSE-based fitness
-2. Sustained tracking streaks visible in renderer playback (combo > 20 steps)
-3. Fewer crashes on FigureEight (turn anticipation from lead cone)
-4. No bang-bang throttle (combo breaks on jerky control)
-5. Fitness number is meaningful: higher combo = clearly better flight
+Lateral/vertical treated identically via cross_scale. The ellipsoid is
+axially symmetric around the path tangent — a "cigar" shape elongated
+behind the rabbit.
 
-## Out of Scope
+## V2: Asymmetric Cross-Track (Future)
 
-- Optical tracking / beacon detection (future — this is path-only)
-- Real-time combo display in renderer (nice to have, not blocking)
-- Adaptive combo threshold based on path curvature
+Split cross_scale into directional components relative to gravity and
+turn direction:
+
+- **Below penalty**: below the rabbit decays faster than above.
+  Being below is dangerous (terrain, energy deficit). Above is safer.
+- **Outside-turn penalty**: outside the turn decays faster than inside.
+  Cutting inside is tighter tracking; drifting outside is losing it.
+
+The ellipsoid becomes a general 3D shape — still smooth, still a single
+`eff_dist_sq` computation, just with different scales per quadrant.
+
+```
+// V2 additions:
+up = -gravity_dir                            // [0,0,-1] in NED = up
+turn_inside = cross(tangent, up)             // points toward turn center
+
+vert_component = dot(lateral, up)
+horiz_component = dot(lateral, turn_inside)
+
+if vert_component >= 0:
+    eff_vert = vert_component / above_scale    // generous
+else:
+    eff_vert = vert_component / below_scale    // harsh
+
+// similar for inside/outside turn...
+```
+
+### V2 Additional Inputs Required
+
+V2 needs two things the NN doesn't currently have:
+
+1. **Gravity vector estimate (attitude-independent)**. The fitness function
+   needs "which way is down" regardless of aircraft attitude. In sim this is
+   trivial ([0,0,1] in NED). On real hardware the NN would need a gravity
+   estimate in the earth frame — derivable from the quaternion (rotate body-Z
+   to earth frame), but the fitness function runs post-flight so it has the
+   full state. Not an NN input issue, just a fitness computation detail.
+
+2. **Path curvature / turn direction at the rabbit**. The single tangent
+   vector isn't enough — we need the path shape around the rabbit to know
+   which side is "inside the turn." This requires the path deltas before
+   and after the current rabbit position:
+   - `tangent_prev = normalize(path[i] - path[i-1])` — where rabbit came from
+   - `tangent_next = normalize(path[i+1] - path[i])` — where rabbit is going
+   - `curvature = tangent_next - tangent_prev` — points toward turn center
+   - `turn_inside = normalize(curvature)` — inside-turn direction
+
+   On straight segments curvature ≈ 0 and there's no inside/outside
+   distinction (cross_scale stays symmetric). On turns the curvature
+   vector naturally defines the preferred side.
+
+   For real-time NN inputs (future): the path prediction could come from
+   a nav estimator that provides not just current rabbit position but
+   upcoming waypoint deltas — giving the NN foresight into turns.
+
+## Other Future Additions
+
+- Multi-point leading (score against future rabbit positions for turn anticipation)
+- Heading alignment bonus (body heading vs path tangent)
+- Adaptive scales based on path curvature magnitude or rabbit speed
+
+Start simple, add complexity only if needed.
