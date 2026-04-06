@@ -87,16 +87,6 @@ static double computeVariationScale() {
 // Intercept-Budget Fitness Scaling (see specs/005-entry-fitness-ramp)
 // ============================================================================
 
-// Intercept scale/budget functions now in FitnessComputer (fitness_computer.h/cc)
-// Local aliases for backward compatibility within this file
-static double computeInterceptScale(double stepTimeSec, double budgetSec) {
-    return FitnessComputer::computeInterceptScale(stepTimeSec, budgetSec);
-}
-static double computeInterceptBudget(double displacement, double headingOffset,
-                                      double aircraftSpeed, double rabbitSpeed) {
-    return FitnessComputer::computeInterceptBudget(displacement, headingOffset, aircraftSpeed, rabbitSpeed);
-}
-
 // ============================================================================
 // Single PRNG Architecture: Pre-fetched scenario variations
 // See specs/SINGLE_PRNG.md for design
@@ -552,102 +542,10 @@ static std::vector<int> getCompiledTopology() {
 
 // Compute fitness for an NN individual from EvalResults
 // Same formula as MyGP::evalTask() lines 1210-1417
+// 022: Point-accumulation fitness — delegates to computeScenarioScores + aggregateRawFitness
 static double computeNNFitness(EvalResults& evalResults) {
-  double totalFitness = 0.0;
-
-  for (size_t i = 0; i < evalResults.pathList.size(); i++) {
-    auto& path = evalResults.pathList.at(i);
-    auto& aircraftStates = evalResults.aircraftStateList.at(i);
-    auto& crashReason = evalResults.crashReasonList.at(i);
-
-    if (path.empty() || aircraftStates.empty()) continue;
-
-    double distance_sum = 0.0;
-    double attitude_sum = 0.0;
-    int simulation_steps = 0;
-
-    // Origin offset: first raw position → virtual for path comparison
-    gp_vec3 originOffset = aircraftStates.at(0).getPosition();
-
-    // Intercept-budget scaling
-    double interceptBudget = 0.0;
-    {
-      gp_vec3 virtualInitialPos = aircraftStates.at(0).getPosition() - originOffset;
-      gp_vec3 pathStart = path.at(0).start;
-      gp_vec3 offset3d = virtualInitialPos - pathStart;
-      double displacement = sqrt(offset3d[0] * offset3d[0] + offset3d[1] * offset3d[1]);
-      double headingOffset = 0.0;
-      if (i < evalResults.scenarioList.size()) {
-        headingOffset = evalResults.scenarioList.at(i).entryHeadingOffset;
-      }
-      interceptBudget = computeInterceptBudget(displacement, headingOffset,
-                                                SIM_INITIAL_VELOCITY, gRabbitSpeedConfig.nominal);
-    }
-
-    // Attitude delta tracking
-    double prev_roll = 0.0, prev_pitch = 0.0;
-    bool first_attitude_sample = true;
-    int stepIndex = 0;
-
-    while (++stepIndex < static_cast<int>(aircraftStates.size())) {
-      auto& stepState = aircraftStates.at(stepIndex);
-      int pathIndex = std::clamp(stepState.getThisPathIndex(), 0, static_cast<int>(path.size()) - 1);
-
-      gp_vec3 aircraftPosition = stepState.getPosition() - originOffset;
-      gp_quat craftOrientation = stepState.getOrientation();
-
-      // Attitude delta
-      double qw = craftOrientation.w(), qx = craftOrientation.x();
-      double qy = craftOrientation.y(), qz = craftOrientation.z();
-      double roll = atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + qy * qy));
-      double sinp = std::clamp(2.0 * (qw * qy - qz * qx), -1.0, 1.0);
-      double pitch = asin(sinp);
-
-      double attitude_delta = 0.0;
-      if (first_attitude_sample) {
-        prev_roll = roll;
-        prev_pitch = pitch;
-        first_attitude_sample = false;
-      } else {
-        attitude_delta = fabs(roll - prev_roll) + fabs(pitch - prev_pitch);
-        prev_roll = roll;
-        prev_pitch = pitch;
-      }
-
-      // Distance to rabbit
-      gp_vec3 craftOffset = aircraftPosition - path.at(pathIndex).start;
-      double distance = craftOffset.norm();
-
-      // Accumulate penalties
-      double stepTimeSec = stepState.getSimTimeMsec() / 1000.0;
-      double interceptScale = computeInterceptScale(stepTimeSec, interceptBudget);
-      double distDelta = fabs(distance - DISTANCE_TARGET);
-      distance_sum += pow(interceptScale * distDelta / DISTANCE_NORM, DISTANCE_POWER);
-      attitude_sum += pow(interceptScale * attitude_delta / ATTITUDE_NORM, ATTITUDE_POWER);
-      simulation_steps++;
-    }
-
-    // Scale attitude by path geometry
-    double path_distance = path.back().distanceFromStart;
-    double path_turn_rad = path.back().radiansFromStart;
-    double attitude_scale = path_distance / std::max(path_turn_rad, 2.0 * M_PI);
-
-    double localFitness = distance_sum + attitude_sum * attitude_scale;
-
-    // Crash penalty (only for real crashes, not normal completion)
-    if (isCrash(crashReason)) {
-      double total_path_distance = path.back().distanceFromStart;
-      double fraction_completed =
-        static_cast<double>(path.at(aircraftStates.back().getThisPathIndex()).distanceFromStart) / total_path_distance;
-      fraction_completed = std::max(fraction_completed, 0.001);
-      double completion_penalty = (1.0 - fraction_completed) * CRASH_COMPLETION_WEIGHT;
-      localFitness = completion_penalty + localFitness;
-    }
-
-    totalFitness += localFitness;
-  }
-
-  return totalFitness;
+  auto scenarioScores = computeScenarioScores(evalResults);
+  return aggregateRawFitness(scenarioScores);
 }
 
 // Log per-step data from EvalResults to data.dat
@@ -673,21 +571,6 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
 
     // Origin offset: first raw position → virtual for path comparison
     gp_vec3 originOffset = aircraftStates.at(0).getPosition();
-
-    // Intercept-budget scaling
-    double interceptBudget = 0.0;
-    {
-      gp_vec3 virtualInitialPos = aircraftStates.at(0).getPosition() - originOffset;
-      gp_vec3 pathStart = path.at(0).start;
-      gp_vec3 offset3d = virtualInitialPos - pathStart;
-      double displacement = sqrt(offset3d[0] * offset3d[0] + offset3d[1] * offset3d[1]);
-      double headingOffset = 0.0;
-      if (i < results.scenarioList.size()) {
-        headingOffset = results.scenarioList.at(i).entryHeadingOffset;
-      }
-      interceptBudget = computeInterceptBudget(displacement, headingOffset,
-                                                SIM_INITIAL_VELOCITY, gRabbitSpeedConfig.nominal);
-    }
 
     gp_quat prev_quat;
     bool first_attitude_sample = true;
@@ -721,8 +604,6 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       gp_vec3 craftOffset = aircraftPosition - path.at(pathIndex).start;
       double distance = craftOffset.norm();
 
-      double stepTimeSec = stepState.getSimTimeMsec() / 1000.0;
-      double interceptScale = computeInterceptScale(stepTimeSec, interceptBudget);
       simulation_steps++;
 
       // Rabbit velocity (from AircraftState odometer-based tracking)
@@ -807,7 +688,7 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         static_cast<gp_scalar>(distance),
         static_cast<gp_scalar>(attitude_delta),
         rabbitVel,
-        static_cast<gp_scalar>(interceptScale),
+        static_cast<gp_scalar>(1.0),  // intSc placeholder (intercept scale removed in 022)
         static_cast<gp_scalar>(computeVariationScale())
       );
       fout << outbuf;
@@ -931,11 +812,10 @@ static void runNNEvaluation(
     const auto& sc = evalScenarioScores[s];
     *logger.info() << "  [" << s << "] "
                    << (sc.crashed ? "CRASH" : "OK")
-                   << " comp=" << std::fixed << std::setprecision(2) << sc.completion_fraction
-                   << " dist=" << sc.distance_rmse
-                   << " att=" << sc.attitude_error
-                   << " thr=" << sc.mean_throttle
-                   << " sm=" << sc.smoothness[0] << "/" << sc.smoothness[1] << "/" << sc.smoothness[2]
+                   << " score=" << std::fixed << std::setprecision(2) << -sc.score
+                   << " maxStrk=" << sc.maxStreak
+                   << " strkSteps=" << sc.totalStreakSteps
+                   << " maxMult=" << std::setprecision(1) << sc.maxMultiplier
                    << endl;
   }
 
@@ -992,7 +872,7 @@ static void runNNEvolution(
   std::vector<int> topology = getCompiledTopology();
   int popSize = cfg.populationSize;
   int numGens = cfg.numberOfGenerations;
-  bool useRawFitness = (parseSelectionMode(cfg.selectionMode) == SelectionMode::LEXICASE);
+
 
   *logger.info() << "NN Evolution mode" << endl;
   *logger.info() << "  Topology: " << NN_TOPOLOGY_STRING
@@ -1100,16 +980,14 @@ static void runNNEvolution(
 
       // Send to minisim worker via ThreadPool
       auto evalDataPtr = std::make_shared<EvalData>(std::move(evalData));
-      threadPool->enqueue([&genome, evalDataPtr, useRawFitness](WorkerContext& context) {
+      threadPool->enqueue([&genome, evalDataPtr](WorkerContext& context) {
         sendRPC(*context.socket, *evalDataPtr);
         context.evalResults = receiveRPC<EvalResults>(*context.socket);
         globalSimRunCounter.fetch_add(context.evalResults.pathList.size(), std::memory_order_relaxed);
 
         // Compute decomposed fitness then aggregate
         genome.scenario_scores = computeScenarioScores(context.evalResults);
-        genome.fitness = useRawFitness
-            ? aggregateRawFitness(genome.scenario_scores)
-            : aggregateScalarFitness(genome.scenario_scores);
+        genome.fitness = aggregateRawFitness(genome.scenario_scores);
       });
     }
 
@@ -1198,9 +1076,7 @@ static void runNNEvolution(
 
       // Determinism check: re-eval fitness must match stored fitness exactly (T106)
       auto reevalScores = computeScenarioScores(bestResults);
-      double reevalFitness = useRawFitness
-          ? aggregateRawFitness(reevalScores)
-          : aggregateScalarFitness(reevalScores);
+      double reevalFitness = aggregateRawFitness(reevalScores);
       double storedFitness = pop.individuals[bestIdx].fitness;
       if (!bitwiseEqual(reevalFitness, storedFitness)) {
         *logger.warn() << "NN_ELITE_DIVERGED: gen=" << gen
@@ -1260,13 +1136,26 @@ static void runNNEvolution(
         const auto& sc = bestScores[s];
         *logger.info() << "  [" << s << "] "
                        << (sc.crashed ? "CRASH" : "OK")
-                       << " comp=" << std::fixed << std::setprecision(2) << sc.completion_fraction
-                       << " dist=" << sc.distance_rmse
-                       << " att=" << sc.attitude_error
-                       << " thr=" << sc.mean_throttle
-                       << " sm=" << sc.smoothness[0] << "/" << sc.smoothness[1] << "/" << sc.smoothness[2]
+                       << " score=" << std::fixed << std::setprecision(2) << -sc.score
+                       << " maxStrk=" << sc.maxStreak
+                       << " strkSteps=" << sc.totalStreakSteps
+                       << " maxMult=" << std::setprecision(1) << sc.maxMultiplier
                        << endl;
       }
+    }
+
+    // Streak diagnostics for best individual
+    double avgMaxStreak = 0.0;
+    double pctInStreak = 0.0;
+    if (!bestScores.empty()) {
+      double streakSum = 0.0, totalStrkSteps = 0.0, totalSteps = 0.0;
+      for (const auto& sc : bestScores) {
+        streakSum += sc.maxStreak;
+        totalStrkSteps += sc.totalStreakSteps;
+        totalSteps += sc.steps_completed;
+      }
+      avgMaxStreak = streakSum / bestScores.size();
+      pctInStreak = (totalSteps > 0) ? 100.0 * totalStrkSteps / totalSteps : 0.0;
     }
 
     // Log to statistics file
@@ -1275,6 +1164,8 @@ static void runNNEvolution(
          << " avg=" << avgFitness
          << " worst=" << maxFitness
          << " bestSigma=" << pop.individuals[bestIdx].mutation_sigma
+         << " avgMaxStreak=" << std::setprecision(1) << avgMaxStreak
+         << " pctInStreak=" << std::setprecision(1) << pctInStreak
          << std::endl;
     bout.flush();
 

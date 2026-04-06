@@ -1,55 +1,42 @@
 #ifndef FITNESS_COMPUTER_H
 #define FITNESS_COMPUTER_H
 
-#include "autoc/types.h"
-#include "autoc/eval/aircraft_state.h"
-
-// Fitness computation constants (must match autoc.h defines)
-// These are duplicated here for test builds that don't include autoc.h
-// TODO: refactor to eliminate duplication — see BACKLOG.md
-#ifndef DISTANCE_TARGET
-#define DISTANCE_TARGET 1.0
-#define DISTANCE_NORM 5.0
-#define DISTANCE_POWER 1.5
-#define ATTITUDE_NORM 0.349
-#define ATTITUDE_POWER 1.5
-#define CRASH_COMPLETION_WEIGHT 1e6
-#endif
-
-// Intercept-budget constants (from autoc.h)
-#ifndef INTERCEPT_SCALE_FLOOR
-#define INTERCEPT_SCALE_FLOOR 0.1
-#define INTERCEPT_SCALE_CEILING 1.0
-#define INTERCEPT_BUDGET_MAX 15.0
-#define INTERCEPT_TURN_RATE (M_PI / 4.0)
-#endif
-
-// SIM_INITIAL_VELOCITY defined in aircraft_state.h (single source of truth)
-
-// Shared fitness computation extracted from autoc.cc eval pipeline.
-// Used by all controller backends (GP tree, bytecode, neural net).
+// Point-accumulation fitness (022): ellipsoidal scoring surface + streak multiplier.
+// Replaces the old distance-penalty + crash-cliff model.
 class FitnessComputer {
 public:
-    // Compute per-step combined distance + attitude penalty.
-    // Returns: pow(interceptScale * |dist - TARGET| / DIST_NORM, DIST_POWER)
-    //        + pow(interceptScale * attitude_delta / ATT_NORM, ATT_POWER)
-    double computeStepPenalty(double distance, double attitude_delta, double intercept_scale);
+    FitnessComputer(double behindScale, double aheadScale, double crossScale,
+                    double streakThreshold, int streakStepsToMax, double streakMultMax);
 
-    // Compute crash penalty from fraction of path completed.
-    // Returns: (1 - fraction_completed) * CRASH_COMPLETION_WEIGHT
-    double computeCrashPenalty(double fraction_completed);
+    // Compute step score from along-track and cross-track distances.
+    // along: positive = ahead of rabbit, negative = behind (preferred)
+    // lateralDist: perpendicular distance (always >= 0)
+    // Returns: stepPoints in (0, 1], 1.0 at rabbit position.
+    double computeStepScore(double along, double lateralDist) const;
 
-    // Compute attitude scaling factor from path geometry.
-    // Returns: path_distance / max(path_turn_rad, 2*PI)
-    double computeAttitudeScale(double path_distance, double path_turn_rad);
+    // Update streak state and return stepPoints * multiplier.
+    // Streak increments if stepPoints >= threshold, hard-resets otherwise.
+    double applyStreak(double stepPoints);
 
-    // Compute per-step intercept scale factor.
-    // Quadratic ramp from FLOOR to CEILING over the intercept budget.
-    static double computeInterceptScale(double stepTimeSec, double budgetSec);
+    // Reset streak and diagnostics (call at start of each scenario).
+    void resetStreak();
 
-    // Estimate time-to-intercept from initial conditions.
-    static double computeInterceptBudget(double displacement, double headingOffset,
-                                          double aircraftSpeed, double rabbitSpeed);
+    // Diagnostics
+    int getMaxStreak() const { return maxStreak_; }
+    int getStreakSteps() const { return totalStreakSteps_; }
+    double getMaxMultiplier() const { return maxMultiplier_; }
+
+private:
+    double behindScale_, aheadScale_, crossScale_;
+    double streakThreshold_;
+    int streakStepsToMax_;
+    double streakMultMax_;
+
+    // Per-scenario state
+    int streakCount_ = 0;
+    int maxStreak_ = 0;
+    int totalStreakSteps_ = 0;
+    double maxMultiplier_ = 1.0;
 };
 
 #endif

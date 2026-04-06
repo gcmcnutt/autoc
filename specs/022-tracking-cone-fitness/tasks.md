@@ -123,8 +123,20 @@
 
 - [ ] T020 Start training run with new fitness: `nohup stdbuf -oL -eL build/autoc >logs/autoc-022-fit1.log 2>&1 &`
 - [ ] T021 Monitor first 20 generations — verify fitness is negative, decreasing (improving), streak diagnostics appearing in log
-- [ ] T022 Remove dead code — any remaining references to old fitness constants, computeStepPenalty callers, DISTANCE_TARGET usage
-- [ ] T023 Commit all changes
+- [ ] T022 Update data.dat per-step logging in src/autoc.cc logEvalResults():
+  - Replace `attDq` column with `along` (signed along-track distance, - = behind)
+  - Replace `intSc` column with `stpPt` (raw step score 0-1)
+  - Add `mult` column (current streak multiplier 1.0-5.0)
+  - Requires: compute path tangent + along/cross decomposition in logging loop (same math as fitness_decomposition.cc), create FitnessComputer instance, track streak state per scenario
+  - Update header string and sprintf format (7 trailing diag columns instead of 6)
+  - Remove attitude_delta computation from logging loop (no longer needed)
+- [ ] T023 Remove dead code — any remaining references to old fitness constants, computeStepPenalty callers, DISTANCE_TARGET usage
+- [ ] T024 Add streak threshold ramp:
+  - Add FitStreakThresholdMin (0.1) and FitStreakThresholdMax (0.5) to config.h, config.cc, autoc.ini
+  - In computeScenarioScores(), interpolate threshold: min + (max - min) * computeVariationScale()
+  - FitnessComputer constructor takes the interpolated threshold
+  - Update tests to verify threshold interpolation
+- [ ] T025 Commit all changes
 
 ---
 

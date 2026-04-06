@@ -271,3 +271,40 @@ V2 needs two things the NN doesn't currently have:
 - Adaptive scales based on path curvature magnitude or rabbit speed
 
 Start simple, add complexity only if needed.
+
+## Observations from test1 Training Run (2026-04-05)
+
+### Entry Position Offset Required
+Without entry position offset (EntryPositionRadiusSigma=0), the NN exploits
+starting near the rabbit — it dives at the rabbit, scores 8-10 high-multiplier
+steps, then crashes. Score: ~13 per scenario. This dominated the "fly far away
+and survive" strategy (~3 per scenario). Fixed by enabling
+EntryPositionRadiusSigma=15, which ramps with variation scale.
+
+### Plateau at ~-3600 Best Fitness (gen 130-207)
+The best individual found tracking on ~5-10 favorable scenarios (20+ step
+streaks, scores 50-58, multiplier 4-5x) but scores poorly on the remaining
+~235 scenarios (score 1-17, no streaks). The total is dominated by the
+low-scoring majority. The NN can't generalize its tracking behavior across
+varied entry conditions.
+
+### Streak Threshold Ramp (Proposed)
+The streak threshold (0.5) demands stepPoints >= 0.5 (~10m behind or ~5m
+lateral). Early in training when the population is far from the rabbit,
+almost no individual achieves this — there's no multiplier signal to
+differentiate "getting closer" from "still far." A ramped threshold would:
+- Start low (e.g., 0.1 = ~22m) so early generations can discover that
+  approaching the rabbit triggers multiplier bonus
+- Ramp to 0.5 over training, progressively demanding tighter tracking
+- Could use the same VariationRampStep mechanism or a separate ramp
+- Config: `FitStreakThresholdMin=0.1` + `FitStreakThresholdMax=0.5`,
+  interpolated by computeVariationScale()
+
+### Lexicase Single-Dimension Limitation
+With only `-score` as the lexicase dimension, there's limited pressure to
+improve on the many low-scoring scenarios. An individual that scores 50 on
+3 scenarios and 5 on 242 scenarios has similar total fitness to one that
+scores 10 on all 245. Lexicase should differentiate per-scenario, but with
+score ranging from 1-58 and epsilon at ~5%, most individuals look similar
+on any given low-scoring scenario. A future second dimension (e.g., steps
+survived, or mean stepPoints) might help lexicase discriminate.
