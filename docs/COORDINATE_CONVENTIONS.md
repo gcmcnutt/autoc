@@ -70,6 +70,58 @@ analysing logs or integrating new flight data.
 
 Keep this file updated if additional actuators, sensors, or frames are added.
 
+## Virtual Frame (Path-Relative Coordinates)
+
+Position data in the autoc pipeline uses a **virtual frame** where the origin
+is at the aircraft's position when a test begins (sim path reset or xiao arm).
+Paths are generated in this frame starting at (0,0,0).
+
+### Principle: Convert Once at the Boundary
+
+Raw (world) coordinates are converted to virtual coordinates **at the producer
+boundary**, once. All downstream code — NN sensors, fitness evaluation, logging,
+serialization — receives virtual position via `getPosition()`.
+
+| Producer | Boundary | Raw→Virtual |
+|----------|----------|-------------|
+| CRRCSim | `inputdev_autoc.cpp` | `setPosition(fdmPos - pathOriginOffset)` |
+| Xiao | `msplink.cpp` | `setPosition(inavPos - test_origin_offset)` |
+
+### Invariant
+
+**`AircraftState::getPosition()` always returns virtual coordinates.**
+
+There is no `getVirtualPosition()` / `getRawPosition()` distinction. Downstream
+code does not need to know whether the data came from CRRCSim or xiao.
+
+### Raw Coordinates
+
+Raw (world) coordinates are used for:
+- **Out-of-bounds detection** in CRRCSim — checked with local raw variable
+  before storing virtual position
+- **Renderer "all flights" display** — reconstructs raw from virtual +
+  origin offset metadata
+
+### Origin Offset Metadata
+
+The raw→virtual offset is stored per-scenario in `ScenarioMetadata::originOffset`
+(serialized via cereal). This allows the renderer and analysis tools to reconstruct
+raw positions when needed. It is NOT stored per-AircraftState.
+
+### Renderer Display Convention
+
+The renderer shows paths and aircraft at a display altitude offset from virtual:
+- Paths (virtual Z=0) → shifted by `SIM_INITIAL_ALTITUDE` (-25m) for display
+- Aircraft positions (virtual Z≈0) → shifted by `SIM_INITIAL_ALTITUDE` for display
+- Both use the same transform, so they overlap correctly
+
+### Logging
+
+- **data.dat**: All position columns (X, Y, Z, pathX, pathY, pathZ) are in
+  virtual coordinates. Origin offset is available in ScenarioMetadata.
+- **xiao flash log**: Logs both `pos_raw` (raw INAV) and `pos` (virtual)
+  for correlation.
+
 ## INAV ↔ AutoC Interface Transform Summary
 
 INAV uses an internal sign convention where pitch and yaw are systematically

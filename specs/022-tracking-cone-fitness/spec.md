@@ -17,6 +17,13 @@ The current fitness function has two critical flaws:
 
 ## Clarifications
 
+### Session 2026-04-06
+
+- Q: What training behavior confirms the coordinate fix is correct? → A: Both (1) aircraft Z distribution centers on path altitude (~Z=0 virtual) instead of hard deck, and (2) fitness scores increase significantly vs test2 with same population seed. The goal is unwinding accumulated workarounds to reach clean first-principles usage of virtual vs raw vs offset — not just fixing one symptom.
+- Q: How handle loading old EvalResults lacking ScenarioMetadata.originOffset? → A: Reject old data — no backwards compatibility needed now. Fix forward. Compatibility considerations deferred until codebase is stable.
+- Q: Correct contradictory "test2 fixed" observation re getVirtualPosition()? → A: Yes, correct inline. The fix was a no-op (originOffset_ not serialized). Python validation only confirmed formula consistency, not coordinate correctness. Clean up — no wrappers on hacks on masks.
+- Q: After coordinate fix, continue from test2 population or fresh start? → A: Fresh training run (test3) with new random population. Old populations are poisoned by the Z-error policy (hard-deck-hugging). Unlearning is slower than learning from scratch.
+
 ### Session 2026-04-05
 
 - Q: Should V1 use sum or lexicase for aggregating per-scenario scores? → A: Lexicase (unchanged from current). Single dimension per scenario: negated score. Completion fraction removed as a dimension — it's already encoded in the score (more steps = more points). Mean throttle deferred as a future second dimension.
@@ -275,15 +282,23 @@ Start simple, add complexity only if needed.
 
 ## Observations
 
-### test2 Run — Coordinate Fix (2026-04-05)
+### test2 Run — Coordinate Fix Attempt (2026-04-05)
 
-**originOffset bug found and fixed**: fitness_decomposition.cc was using raw
-CRRCSim position instead of virtual (path-frame) position. The ~25m Z offset
+**originOffset bug identified**: fitness_decomposition.cc was using raw
+CRRCSim position instead of virtual (virtual) position. The ~25m Z offset
 meant the scoring surface never saw the true distance. All test1 results
-were against broken distances. Fixed to use `getVirtualPosition()`.
+were against broken distances.
 
-**Python validation**: recreated fitness from data.dat per-step columns.
-Zero mismatches across all steps — the scoring math is verified correct.
+**Attempted fix was a no-op**: Changed to `getVirtualPosition()`, but
+`originOffset_` is not serialized in AircraftState. After RPC deserialization,
+originOffset_ defaults to zero, so `getVirtualPosition()` returns raw — identical
+to `getPosition()`. The bug persisted through test2. See
+[coordinate-cleanup-research.md](coordinate-cleanup-research.md) for root cause
+analysis and the actual fix (Phase 3b: virtual-at-boundary).
+
+**Python validation was misleading**: It confirmed the scoring *formula* is
+consistent (computeStepScore math matches between C++ and Python), but both
+sides operated on the same raw coordinates. It did not detect the ~25m Z error.
 
 **Fitness still clean**: no normalization by path length or step count
 anywhere in the pipeline. Pure point accumulation — longer flights
@@ -310,25 +325,41 @@ the random path tests generalization.
 
 ### test1 Run — Pre-Coordinate-Fix (2026-04-05)
 
-### Virtual vs Raw Position (Coordinate Frame Cleanup)
-The fitness computation, data.dat logging, and NN evaluation all need aircraft
-position in the virtual frame (origin at 0,0,0, path coordinates). Currently
-this is done inconsistently:
-- **AircraftState**: stores raw CRRCSim position via `setPosition()` plus
-  `originOffset_` separately. `getVirtualPosition()` subtracts the offset.
-- **autoc.cc logEvalResults()**: manually subtracts `aircraftStates.at(0).getPosition()`
-  as originOffset — duplicates the offset logic.
-- **fitness_decomposition.cc**: now uses `getVirtualPosition()` (fixed in this PR).
-- **CRRCSim inputdev_autoc.cpp**: computes NN inputs using raw position minus
-  origin offset inline.
+### Coordinate Convention Cleanup (2026-04-06)
 
-**TODO (simplification)**: Consider having `setPosition()` store virtual position
-directly (subtract originOffset at the CRRCSim/xiao boundary, once) so all
-downstream code just uses `getPosition()`. Eliminates double add/subtract risk
-and removes `originOffset_` field. The boundary (CRRCSim `inputdev_autoc.cpp`
-and xiao `msplink.cpp`) is where raw→virtual conversion should happen — same
-pattern as the INAV sign conventions (convert once at boundary, standard
-everywhere else).
+Deep research into all producers and consumers revealed the root cause and
+several downstream bugs. See [coordinate-cleanup-research.md](coordinate-cleanup-research.md)
+for the full audit.
+
+**Root cause**: `originOffset_` is NOT serialized in AircraftState. CRRCSim
+stores raw position via `setPosition(p)` and sets `originOffset_` at runtime.
+After RPC deserialization on the autoc side, `originOffset_` defaults to zero,
+so `getVirtualPosition()` returns raw position — identical to `getPosition()`.
+The "fix" to use `getVirtualPosition()` in fitness_decomposition.cc was a no-op.
+
+**Bugs found**:
+1. **fitness_decomposition.cc:43**: `getVirtualPosition()` returns raw (offset lost in RPC) — ~25m Z error in scoring
+2. **autoc.cc:678-680**: data.dat X,Y,Z columns log raw aircraft position while pathX/Y/Z and metrics are virtual
+3. **CRRCSim OOB (latent)**: uses `aircraftState.getPosition()` — will break when we store virtual
+
+**Asymmetry**: CRRCSim stores raw in `position`, xiao stores virtual. Consumers
+can't know which they're getting without knowing the producer.
+
+**Solution: Virtual-at-Boundary** — convert raw→virtual at the producer boundary
+(CRRCSim/xiao), once. Remove `originOffset_` from AircraftState. `getPosition()`
+IS virtual everywhere. Store origin offset as per-scenario metadata. Same pattern
+as INAV sign conventions: convert once at boundary, standard everywhere downstream.
+
+**Tests encode the bug**: `fitness_decomposition_tests.cc` hardcodes all positions
+at Z=-25 (raw altitude). Both path and aircraft at Z=-25 means the Z offset cancels —
+tests pass because both sides are equally wrong. Test-first approach: rewrite tests
+to express the virtual-space contract (Z=0), watch them fail against current code,
+then fix the code.
+
+**Scope**: This cleanup is part of the 022 milestone. It requires changes in
+CRRCSim (`inputdev_autoc.cpp`), `aircraft_state.h`, `protocol.h`, `autoc.cc`,
+`fitness_decomposition.cc`, `sensor_math.cc`, `evaluator.cc`, `renderer.cc`,
+`minisim.cc`, `fitness_decomposition_tests.cc`, and `COORDINATE_CONVENTIONS.md`.
 
 ### test1: Entry Position Offset Required
 Without entry position offset (EntryPositionRadiusSigma=0), the NN exploits

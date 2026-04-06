@@ -117,13 +117,165 @@
 
 ---
 
+## Phase 3b: Coordinate Convention Cleanup
+
+**Purpose**: Fix raw/virtual position inconsistency. See [coordinate-cleanup-research.md](coordinate-cleanup-research.md).
+
+**Principle**: Convert raw→virtual at the producer boundary (CRRCSim/xiao), once.
+`getPosition()` is always virtual. `getVirtualPosition()` removed.
+
+**Ordering**: Internal frameworks + minisim first (prove the fix), then CRRCSim
+(apply to real sim once minisim shows signal), then renderer (display correctly).
+Xiao already stores virtual — no code changes needed.
+
+**⚠️ TEST-FIRST**: Existing tests encode the bug (all positions at Z=-25 raw). Rewrite
+tests to express the correct virtual-space contract BEFORE fixing the code. Tests should
+FAIL against current code, then PASS after the fix.
+
+---
+
+### Phase 3b-i: Tests + Internal Framework + Minisim
+
+**Goal**: Prove the fix works end-to-end with minisim training before touching CRRCSim.
+
+#### Tests — Coordinate Contract (FIRST — before code changes)
+
+- [ ] T029 [US1] Rewrite fitness_decomposition_tests.cc to express virtual coordinate contract:
+  - All path positions at virtual origin: Z=0 (not Z=-25)
+  - All aircraft positions in virtual space: Z≈0 (near path, not raw altitude)
+  - No `setOriginOffset()` calls anywhere in tests
+  - **New test: VirtualOriginPerfectTracking**: aircraft at (x,0,0), path at (x,0,0) → step score 1.0
+  - **New test: RawPositionGivesWrongScore**: aircraft at (x,0,-25) with path at (x,0,0) → large Z offset
+    penalizes score heavily. This test documents the bug — it PASSES now (proving the bug exists)
+    and should STILL pass after the fix (the scenario genuinely has a 25m error).
+  - **Update makeStraightPath helper**: paths at Z=0, aircraft at Z=0 + offsets. Remove Z=-25 everywhere.
+  - Existing test logic (behind/ahead/lateral/crash/streaks) preserved, just in virtual space.
+  - **These tests will FAIL against current code** (which feeds raw Z=-25 to fitness). This is expected
+    and proves the bug. They pass after T030-T034 fix the coordinate pipeline.
+
+#### Internal Framework Changes
+
+- [ ] T030 [US1] Clean-cut remove ALL originOffset machinery from AircraftState (aircraft_state.h):
+  - Remove `originOffset_` member (L395)
+  - Remove `setOriginOffset()`, `getOriginOffset()`, `getVirtualPosition()` (L230-234)
+  - No deprecated alias — Constitution III: no compatibility shims
+  - `getPosition()` is now the sole position accessor — always virtual
+  - Compile will break at ALL callers (CRRCSim included) → forces updating everything in one cut
+
+- [ ] T031 [US1] Add `gp_vec3 originOffset` to ScenarioMetadata (protocol.h):
+  - Add field with default `gp_vec3::Zero()`
+  - Add to cereal `serialize()` method
+  - This preserves the raw→virtual offset for renderer and logging
+
+- [ ] T033 [US1] Update ALL getVirtualPosition() callers → getPosition() (one cut):
+  - `fitness_decomposition.cc:43`
+  - `sensor_math.cc:144, 157`
+  - `evaluator.cc:213`
+  - `inputdev_autoc.cpp:795, 972` (CRRCSim — updated now, not deferred)
+  - `minisim.cc:174`
+
+- [ ] T034 [US1] Fix autoc.cc logEvalResults() to use virtual positions:
+  - Remove manual `originOffset = aircraftStates.at(0).getPosition()` (L573)
+  - Change `stepState.getPosition() - originOffset` (L591) → `stepState.getPosition()`
+  - X,Y,Z columns in data.dat (L678-680) now log virtual position automatically
+  - Optionally log origin offset per-scenario as a comment line
+
+#### Minisim Changes
+
+- [ ] T033b [US1] Minisim: store virtual position, reconstruct raw for OOB (minisim.cc):
+  - Start at virtual origin: `initialPosition = (0, 0, 0)` — remove SIM_INITIAL_ALTITUDE from initial position
+  - Remove `setOriginOffset(initialPosition)` (L139)
+  - Initial velocity: rotate body-forward through initial orientation (already correct, just verify
+    that with virtual Z=0 start the velocity vector is horizontal)
+  - After `minisimAdvanceState()` (which advances position in virtual space),
+    reconstruct raw for OOB: `rawForOOB = getPosition() + vec3(0, 0, SIM_INITIAL_ALTITUDE)`
+  - OOB check uses `rawForOOB` against existing SIM_MAX_ELEVATION/SIM_MIN_ELEVATION bounds
+  - **Critical**: Without this, virtual Z=0 > SIM_MIN_ELEVATION(-7) → immediate OOB crash on first tick
+  - Remove stale comment "Raw altitude matches CRRCSim config" (L131)
+  - Store `SIM_INITIAL_ALTITUDE` as originOffset in ScenarioMetadata for downstream renderer use
+  - `getVirtualPosition()` (L174) → `getPosition()`
+
+#### Documentation (can run in parallel)
+
+- [ ] T037 [P] [US1] Add "Virtual Frame" section to COORDINATE_CONVENTIONS.md:
+  - Define virtual frame: origin at (0,0,0), path-relative coordinates
+  - Document the boundary: CRRCSim (inputdev_autoc.cpp), minisim (minisim.cc), xiao (msplink.cpp)
+  - State the invariant: `getPosition()` is always virtual downstream
+  - Document origin offset metadata: per-scenario in ScenarioMetadata
+  - Document renderer display convention: virtual + SIM_INITIAL_ALTITUDE
+
+#### Validation — Minisim Signal
+
+- [ ] T038a [US1] Verify minisim coordinate cleanup:
+  - Build succeeds with minisim: `scripts/rebuild.sh`
+  - Unit tests pass: `build/fitness_computer_tests`, `build/fitness_decomposition_tests`
+  - Start minisim training run, verify data.dat X,Y,Z columns near (0,0,~0) not (~0,~0,~-25)
+  - Verify minisim doesn't immediately OOB on first tick
+  - **Acceptance criterion**: Aircraft Z distribution in minisim training centers on Z≈0 (path
+    altitude), NOT at Z=-7 (hard deck). If minisim shows correct Z behavior, the core fix is validated.
+
+**Checkpoint**: Internal framework correct. Minisim shows proper Z tracking. Tests pass.
+All getVirtualPosition() callers updated (clean cut). CRRCSim compiles but still stores raw
+in position — fixed in Phase 3b-ii (T032).
+
+---
+
+### Phase 3b-ii: CRRCSim
+
+**Goal**: Apply virtual-at-boundary to CRRCSim. Run real training (test3).
+CRRCSim callers already updated in T033 (clean cut). This phase changes the producer.
+
+- [ ] T032 [US1] CRRCSim: store virtual position at boundary (inputdev_autoc.cpp):
+  - Add module-level `gp_vec3 pathOriginOffset` (like xiao's `test_origin_offset`)
+  - At path start (L511-540): `pathOriginOffset = initialPos`
+  - Initial state: `initialState.setPosition(gp_vec3::Zero())` (virtual origin)
+  - Each tick (L685): `aircraftState.setPosition(p - pathOriginOffset)` (virtual)
+  - OOB check (L702-708): use local raw `p` directly, NOT `aircraftState.getPosition()`
+  - Store `pathOriginOffset` in scenario metadata sent back to autoc
+  - Remove all `setOriginOffset()` calls
+
+- [ ] T038b [US1] Verify CRRCSim coordinate cleanup:
+  - CRRCSim build succeeds: `cd crrcsim/build && make -j8`
+  - Full rebuild: `scripts/rebuild.sh`
+  - Start FRESH test3 training run with CRRCSim (new random population):
+    `nohup stdbuf -oL -eL build/autoc >logs/autoc-022-test3.log 2>&1 &`
+  - **Acceptance criterion A**: Aircraft Z distribution centers on path altitude (~Z=0 virtual),
+    NOT hard deck (Z=-7 raw). The hard-deck-hugging behavior must disappear.
+  - **Acceptance criterion B**: Fitness scores increase significantly vs test2 — confirms the
+    scoring surface now sees true distances, not ~25m Z error.
+  - **Throughput check**: Time 1 generation, verify no regression from ~16K sims/sec baseline.
+
+**Checkpoint**: CRRCSim training produces correct coordinate behavior. test3 validates the fix.
+
+---
+
+### Phase 3b-iii: Renderer
+
+**Goal**: Display virtual positions correctly. Xiao already stores virtual — verify unchanged.
+
+- [ ] T035 [US1] Renderer: handle virtual aircraft positions from training eval results (renderer.cc):
+  - `updateGenerationDisplay()` (L320-334): add `SIM_INITIAL_ALTITUDE` to aircraft
+    positions (same as already done for paths) — both are now virtual at Z≈0
+  - Update comment at L320-322 to reflect new convention
+  - `renderFullScene()` all-flight mode: use originOffset from ScenarioMetadata
+    to reconstruct raw positions for "all paths in raw" display
+  - Verify single-arena training playback: paths and aircraft tape should overlap in Z
+
+- [ ] T036 [US1] Renderer: verify xiao modes unchanged:
+  - Xiao already stores virtual and adds SIM_INITIAL_ALTITUDE at render time
+  - Xiao has zero references to originOffset/getVirtualPosition — no code changes needed
+  - Verify single-span and all-flight modes still display correctly
+  - Load existing xiao log, confirm rendering matches pre-cleanup behavior
+
+---
+
 ## Phase 4: Polish & Validation
 
 **Purpose**: Verify training convergence and clean up
 
-- [ ] T020 Start training run with new fitness: `nohup stdbuf -oL -eL build/autoc >logs/autoc-022-fit1.log 2>&1 &`
-- [ ] T021 Monitor first 20 generations — verify fitness is negative, decreasing (improving), streak diagnostics appearing in log
-- [ ] T022 Update data.dat per-step logging in src/autoc.cc logEvalResults():
+- [ ] T020 Continue monitoring test3 run started in T038b — verify convergence beyond initial 20 generations
+- [ ] T021 Monitor training metrics: fitness improving over generations, streak diagnostics (pctInStreak increasing), aircraft Z distribution stable at path altitude (~Z=0 virtual)
+- [ ] T022 Update data.dat per-step logging in src/autoc.cc logEvalResults() (builds on T034 changes):
   - Replace `attDq` column with `along` (signed along-track distance, - = behind)
   - Replace `intSc` column with `stpPt` (raw step score 0-1)
   - Add `mult` column (current streak multiplier 1.0-5.0)
@@ -147,7 +299,10 @@
 - **Phase 1 (Setup)**: No dependencies — config only
 - **Phase 2 (Foundational)**: Depends on Phase 1 (needs config fields). Tests before implementation.
 - **Phase 3 (Integration)**: Depends on Phase 2 (needs working FitnessComputer)
-- **Phase 4 (Polish)**: Depends on Phase 3 (needs complete build)
+- **Phase 3b-i (Core + Minisim)**: Depends on Phase 3 (fitness_decomposition.cc exists). Tests first, then clean-cut all callers + minisim.
+- **Phase 3b-ii (CRRCSim)**: Depends on Phase 3b-i (minisim shows signal). CRRCSim producer changes only (callers already updated).
+- **Phase 3b-iii (Renderer)**: Depends on Phase 3b-ii (CRRCSim produces virtual positions). Xiao: verify only.
+- **Phase 4 (Polish)**: Depends on Phase 3b-ii (test3 running with correct coordinates)
 
 ### Within Phase 2
 
@@ -166,25 +321,14 @@
 
 ---
 
-## Implementation Strategy
-
-### MVP (Phase 1-3)
-
-1. Add config params (Phase 1)
-2. Build + test new FitnessComputer in isolation (Phase 2)
-3. Wire into evolution pipeline (Phase 3)
-4. **VALIDATE**: Start training run, monitor convergence
-
-### Key Risk
-
-Local minimum where streak on partial course dominates. Monitor `pctInStreak` in diagnostics — should increase over generations, not plateau early.
-
----
-
 ## Notes
 
 - Constitution requires tests — T004/T005 before T006/T007
-- No CRRCSim, xiao, or NN topology changes
+- Constitution III: No shims. All getVirtualPosition() callers updated in one cut (T030). No deprecated aliases.
+- CRRCSim changes limited to coordinate boundary cleanup (Phase 3b) — no NN topology changes
+- Xiao: no code changes needed (already stores virtual)
 - Existing variation ramp (VariationRampStep) unchanged
 - Path tangent at last waypoint: reuse previous segment tangent
 - Fitness direction: negate score so lower = better (existing convention)
+- Phase 3b is the critical correctness fix — fitness scoring has been using raw positions (~25m Z error)
+- See plan.md for full MVP strategy and risk assessment
