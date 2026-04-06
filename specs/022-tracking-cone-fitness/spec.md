@@ -273,7 +273,42 @@ V2 needs two things the NN doesn't currently have:
 
 Start simple, add complexity only if needed.
 
-## Observations from test1 Training Run (2026-04-05)
+## Observations
+
+### test2 Run — Coordinate Fix (2026-04-05)
+
+**originOffset bug found and fixed**: fitness_decomposition.cc was using raw
+CRRCSim position instead of virtual (path-frame) position. The ~25m Z offset
+meant the scoring surface never saw the true distance. All test1 results
+were against broken distances. Fixed to use `getVirtualPosition()`.
+
+**Python validation**: recreated fitness from data.dat per-step columns.
+Zero mismatches across all steps — the scoring math is verified correct.
+
+**Fitness still clean**: no normalization by path length or step count
+anywhere in the pipeline. Pure point accumulation — longer flights
+inherently earn more.
+
+### Path Length and Streak Dominance
+
+With point accumulation, longer paths offer more opportunity for high
+streaks. A 200-step path with a 50-step streak earns far more than
+a 50-step path even if tracking quality is identical. This isn't
+necessarily bad — longer sustained tracking IS harder and should be
+rewarded. Complex paths also naturally include re-intercept segments
+(turns, altitude changes) which break streaks and test recovery.
+
+**Consider enabling the 6th path** (SeededRandomB): currently
+SimNumPathsPerGeneration=5 skips the seeded random path. Adding it
+back (SimNumPathsPerGeneration=6) provides a longer, more varied path
+that tests sustained tracking through random turn sequences. This also
+adds re-intercept pressure — random turns break streaks, rewarding
+NNs that can recover quickly. The 5 deterministic aeroStandard paths
+(StraightAndLevel, SpiralClimb, HorizontalFigureEight,
+FortyFiveDegreeAngledLoop, HighPerchSplitS) test specific maneuvers;
+the random path tests generalization.
+
+### test1 Run — Pre-Coordinate-Fix (2026-04-05)
 
 ### Virtual vs Raw Position (Coordinate Frame Cleanup)
 The fitness computation, data.dat logging, and NN evaluation all need aircraft
@@ -295,14 +330,14 @@ and xiao `msplink.cpp`) is where raw→virtual conversion should happen — same
 pattern as the INAV sign conventions (convert once at boundary, standard
 everywhere else).
 
-### Entry Position Offset Required
+### test1: Entry Position Offset Required
 Without entry position offset (EntryPositionRadiusSigma=0), the NN exploits
 starting near the rabbit — it dives at the rabbit, scores 8-10 high-multiplier
 steps, then crashes. Score: ~13 per scenario. This dominated the "fly far away
 and survive" strategy (~3 per scenario). Fixed by enabling
 EntryPositionRadiusSigma=15, which ramps with variation scale.
 
-### Plateau at ~-3600 Best Fitness (gen 130-207)
+### test1: Plateau at ~-3600 Best Fitness (gen 130-207)
 The best individual found tracking on ~5-10 favorable scenarios (20+ step
 streaks, scores 50-58, multiplier 4-5x) but scores poorly on the remaining
 ~235 scenarios (score 1-17, no streaks). The total is dominated by the
