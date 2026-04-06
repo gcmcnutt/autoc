@@ -572,8 +572,15 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
     // Origin offset: first raw position → virtual for path comparison
     gp_vec3 originOffset = aircraftStates.at(0).getPosition();
 
-    gp_quat prev_quat;
-    bool first_attitude_sample = true;
+    // Fitness computer for logging (mirrors fitness_decomposition.cc)
+    const AutocConfig& cfg = ConfigManager::getConfig();
+    int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
+    if (streakStepsToMax < 1) streakStepsToMax = 1;
+    FitnessComputer logFC(cfg.fitBehindScale, cfg.fitAheadScale, cfg.fitCrossScale,
+                          cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
+    logFC.resetStreak();
+
+    gp_vec3 prevTangent = gp_vec3::UnitX();
     int simulation_steps = 0;
 
     int stepIndex = 0;
@@ -582,52 +589,44 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       int pathIndex = std::clamp(stepState.getThisPathIndex(), 0, static_cast<int>(path.size()) - 1);
 
       gp_vec3 aircraftPosition = stepState.getPosition() - originOffset;
-      gp_quat craftOrientation = stepState.getOrientation();
 
-      // Attitude delta: geodesic (matches fitness_decomposition.cc)
-      double attitude_delta = 0.0;
-      if (first_attitude_sample) {
-        prev_quat = craftOrientation;
-        first_attitude_sample = false;
+      // Path tangent (same as fitness_decomposition.cc)
+      gp_vec3 tangent;
+      if (pathIndex + 1 < static_cast<int>(path.size())) {
+        tangent = (path.at(pathIndex + 1).start - path.at(pathIndex).start);
+        double tn = tangent.norm();
+        if (tn > 0.01) { tangent = tangent / tn; prevTangent = tangent; }
+        else { tangent = prevTangent; }
       } else {
-        double dot = std::clamp(
-            static_cast<double>(prev_quat.w() * craftOrientation.w() +
-            prev_quat.x() * craftOrientation.x() +
-            prev_quat.y() * craftOrientation.y() +
-            prev_quat.z() * craftOrientation.z()),
-            -1.0, 1.0);
-        attitude_delta = 2.0 * acos(fabs(dot));
-        prev_quat = craftOrientation;
+        tangent = prevTangent;
       }
 
-      // Distance to rabbit
-      gp_vec3 craftOffset = aircraftPosition - path.at(pathIndex).start;
-      double distance = craftOffset.norm();
+      // Along/cross decomposition
+      gp_vec3 offset = aircraftPosition - path.at(pathIndex).start;
+      double along = offset.dot(tangent);
+      gp_vec3 lateral = offset - along * tangent;
+      double lateralDist = lateral.norm();
+      double distance = offset.norm();
+
+      // Step score + streak (mirrors fitness computation)
+      double stepPoints = logFC.computeStepScore(along, lateralDist);
+      double multipliedScore = logFC.applyStreak(stepPoints);
+      // Recover actual multiplier from the score ratio
+      double mult = (stepPoints > 0.0) ? multipliedScore / stepPoints : 1.0;
 
       simulation_steps++;
 
-      // Rabbit velocity (from AircraftState odometer-based tracking)
+      // Rabbit velocity
       gp_scalar rabbitVel = stepState.getRabbitSpeed();
 
       // Body-frame velocity
       gp_vec3 velocity_body = stepState.getOrientation().inverse() * stepState.getVelocity();
 
       // Distance to home
-      gp_vec3 home(0, 0, 0);  // virtual origin (path frame)
-      gp_scalar dhome = (home - aircraftPosition).norm();  // aircraftPosition is already virtual
+      gp_vec3 home(0, 0, 0);
+      gp_scalar dhome = (home - aircraftPosition).norm();
 
-      // Per-step logging — all % 7.4f fields are 8 chars, % 8.2f fields are 9 chars
       if (printHeader) {
-        // Header aligned to sprintf field widths:
-        // %06llu=6  %06llu=7(+sp)  %03d/%02d:%04d:=14(+sp)  %06ld=7(+sp)  %3d=4(+sp)
-        // dPhi/dTheta: " % 6.3f"=7 each (6 fields)
-        // dist: " % 6.1f"=7 each (6 fields)
-        // dddt: " % 6.1f"=7
-        // quat: " % 7.4f"=8 each (4 fields)
-        // vel: " % 7.4f"=8, gyro (rad/s): " % 6.3f"=7 each (3 fields)
-        // outputs: " % 7.4f"=8 each (3 fields)
-        // path/pos/bodyvel: " % 8.2f"=9 each (3+3+3 fields)
-        // diag: " % 8.2f"=9, " % 8.3f"=9, " % 7.4f"=8, " % 7.1f"=8, " % 7.3f"=8, " % 7.3f"=8
         fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx"
              << "  dPh-9  dPh-3  dPh-1   dPh0  dPh+1  dPh+5"
              << "  dTh-9  dTh-3  dTh-1   dTh0  dTh+1  dTh+5"
@@ -639,44 +638,40 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
              << "    pathX    pathY    pathZ"
              << "        X        Y        Z"
              << "    vxBdy    vyBdy    vzBdy"
-             << "    dhome     dist   attDq   rabVl   intSc  rampSc"
+             << "    dhome     dist   along   rabVl   stpPt    mult  rampSc"
              << "\n";
         printHeader = false;
       }
 
-      // Actual NN inputs/outputs captured in minisim
       const float* in = stepState.getNNInputs();
       const float* out = stepState.getNNOutputs();
 
       char outbuf[2048];
       sprintf(outbuf,
         "%06llu %06llu %03d/%02d:%04d: %06ld %3d"
-        " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"  // dPhi[−9,−3,−1,0,+1,+5]
-        " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"  // dTheta
-        " % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f"  // dist (metres)
-        " % 6.1f"                                        // dDist/dt
-        " % 7.4f % 7.4f % 7.4f % 7.4f"                 // qw,qx,qy,qz
-        " % 7.4f % 6.3f % 6.3f % 6.3f"                 // vel, gyroP, gyroQ, gyroR
-        " % 7.4f % 7.4f % 7.4f"                         // NN outputs: pitch rate, roll rate, throttle
-        " % 8.2f % 8.2f % 8.2f"                         // pathX, pathY, pathZ
-        " % 8.2f % 8.2f % 8.2f"                         // X, Y, Z
-        " % 8.2f % 8.2f % 8.2f"                         // vxBody, vyBody, vzBody
-        " % 8.2f % 8.3f % 7.4f % 7.1f % 7.3f % 7.3f"   // dhome, dist, attDlt, rabVel, intScl, rampSc
+        " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"
+        " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"
+        " % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f"
+        " % 6.1f"
+        " % 7.4f % 7.4f % 7.4f % 7.4f"
+        " % 7.4f % 6.3f % 6.3f % 6.3f"
+        " % 7.4f % 7.4f % 7.4f"
+        " % 8.2f % 8.2f % 8.2f"
+        " % 8.2f % 8.2f % 8.2f"
+        " % 8.2f % 8.2f % 8.2f"
+        " % 8.2f % 8.3f % 7.2f % 7.1f % 7.4f % 6.2f % 7.3f"
         "\n",
         static_cast<unsigned long long>(scenarioSequence),
         static_cast<unsigned long long>(bakeoffSequence),
         pathVariantIndex, windVariantIndex, simulation_steps,
         stepState.getSimTimeMsec(), pathIndex,
-        // NN inputs [0-26] — raw values presented to NN
-        in[0], in[1], in[2], in[3], in[4], in[5],       // dPhi past+forecast
-        in[6], in[7], in[8], in[9], in[10], in[11],     // dTheta past+forecast
-        in[12], in[13], in[14], in[15], in[16], in[17], // dist past+forecast
-        in[18],                                          // dDist/dt
-        in[19], in[20], in[21], in[22],                 // quaternion
-        in[23], in[24], in[25], in[26],                 // vel, gyroP, gyroQ, gyroR
-        // NN outputs [0-2]
-        out[0], out[1], out[2],                         // pitch rate, roll rate, throttle
-        // Diagnostics
+        in[0], in[1], in[2], in[3], in[4], in[5],
+        in[6], in[7], in[8], in[9], in[10], in[11],
+        in[12], in[13], in[14], in[15], in[16], in[17],
+        in[18],
+        in[19], in[20], in[21], in[22],
+        in[23], in[24], in[25], in[26],
+        out[0], out[1], out[2],
         path.at(pathIndex).start[0],
         path.at(pathIndex).start[1],
         path.at(pathIndex).start[2],
@@ -686,9 +681,10 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         velocity_body.x(), velocity_body.y(), velocity_body.z(),
         dhome,
         static_cast<gp_scalar>(distance),
-        static_cast<gp_scalar>(attitude_delta),
+        static_cast<gp_scalar>(along),
         rabbitVel,
-        static_cast<gp_scalar>(1.0),  // intSc placeholder (intercept scale removed in 022)
+        static_cast<gp_scalar>(stepPoints),
+        static_cast<gp_scalar>(mult),
         static_cast<gp_scalar>(computeVariationScale())
       );
       fout << outbuf;

@@ -98,7 +98,7 @@ All parameters are tunable via autoc.ini:
 
 | Parameter | ini key | Description | Starting value |
 |-----------|---------|-------------|---------------|
-| behind_scale | FitBehindScale | Along-track scale when behind rabbit | 10.0m |
+| behind_scale | FitBehindScale | Along-track scale when behind rabbit | 7.0m |
 | ahead_scale | FitAheadScale | Along-track scale when ahead of rabbit | 0.5m |
 | cross_scale | FitCrossScale | Lateral/vertical scale | 5.0m |
 | streak_threshold | FitStreakThreshold | Min step_points to maintain streak | 0.5 |
@@ -110,19 +110,20 @@ a wall ahead. Being 0.5m ahead scores the same as 10m behind (~0.5).
 The gradient strongly discourages overshooting.
 
 ![Scoring surface](scoring_surface.png)
-*Generated with behind_scale=10.0, ahead_scale=0.5, cross_scale=5.0,
-streak_threshold=0.50. Left: top-down contour (rabbit at origin, path
-tangent right). Right: 1D slices along-track and cross-track.*
+*Generated with behind_scale=7.0, ahead_scale=0.5, cross_scale=5.0.
+Left: top-down contour (rabbit at origin, path tangent right), red contour
+= streak threshold at max ramp (0.5). Right: 1D slices with both ramp=0
+(orange, threshold=0.1) and ramp=1 (red, threshold=0.5) thresholds shown.*
 
-**Score examples** (at rabbit altitude, on path line):
+**Score examples** (at rabbit altitude, on path line, behind_scale=7m):
 
-| Position | along | lateral | step_points |
-|----------|-------|---------|-------------|
+| Position | along | lateral | stepPoints |
+|----------|-------|---------|------------|
 | At rabbit | 0 | 0 | 1.00 |
-| 3m behind | -3 | 0 | 0.92 |
-| 5m behind | -5 | 0 | 0.80 |
-| 10m behind | -10 | 0 | 0.50 |
-| 20m behind | -20 | 0 | 0.20 |
+| 3m behind | -3 | 0 | 0.84 |
+| 5m behind | -5 | 0 | 0.66 |
+| 7m behind | -7 | 0 | 0.50 |
+| 14m behind | -14 | 0 | 0.20 |
 | 0.5m ahead | +0.5 | 0 | 0.50 |
 | 1m ahead | +1 | 0 | 0.20 |
 | 2m ahead | +2 | 0 | 0.06 |

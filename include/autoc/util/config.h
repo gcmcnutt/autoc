@@ -69,7 +69,7 @@ struct AutocConfig {
     std::string selectionMode = "sum";  // "sum", "minimax", "lexicase"
 
     // --- Fitness: point-accumulation scoring (022) ---
-    double fitBehindScale = 10.0;       // Along-track half-decay behind rabbit (m)
+    double fitBehindScale = 7.0;        // Along-track half-decay behind rabbit (m)
     double fitAheadScale = 0.5;         // Along-track half-decay ahead of rabbit (m)
     double fitCrossScale = 5.0;         // Cross-track half-decay (m)
     double fitStreakThreshold = 0.5;     // Min stepPoints to maintain streak

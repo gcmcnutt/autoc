@@ -40,7 +40,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             int pathIndex = std::clamp(stepState.getThisPathIndex(), 0,
                                        static_cast<int>(path.size()) - 1);
 
-            gp_vec3 aircraftPosition = stepState.getPosition();
+            gp_vec3 aircraftPosition = stepState.getVirtualPosition();
             gp_vec3 rabbitPosition = path.at(pathIndex).start;
 
             // Path tangent: direction rabbit is traveling

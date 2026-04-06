@@ -25,6 +25,7 @@ struct ScenarioScore {
 };
 
 // Compute per-scenario scores from EvalResults using point-accumulation fitness.
+// variationScale: 0.0 (no variations) to 1.0 (full variations), used for streak threshold ramp.
 // Returns one ScenarioScore per scenario (path×wind combination).
 std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults);
 

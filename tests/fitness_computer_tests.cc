@@ -3,10 +3,10 @@
 #include "autoc/eval/fitness_computer.h"
 
 // Default test parameters matching autoc.ini defaults
-static const double BEHIND = 10.0;
+static const double BEHIND = 7.0;
 static const double AHEAD = 0.5;
 static const double CROSS = 5.0;
-static const double STREAK_THRESH = 0.5;
+static const double STREAK_THRESH = 0.5;  // tests use max threshold directly
 static const int STREAK_STEPS = 25;  // 2.5s at 100ms
 static const double STREAK_MULT_MAX = 5.0;
 
@@ -25,11 +25,11 @@ TEST(FitnessComputer022, ScoreAtRabbit) {
 
 TEST(FitnessComputer022, ScoreBehindOnPath) {
     auto fc = makeDefault();
-    // behind: eff_along = along/10, score = 1/(1+(along/10)^2)
-    EXPECT_NEAR(fc.computeStepScore(-3.0, 0.0), 1.0/(1.0 + 9.0/100.0), 1e-10);  // 0.917
-    EXPECT_NEAR(fc.computeStepScore(-5.0, 0.0), 1.0/(1.0 + 25.0/100.0), 1e-10); // 0.80
-    EXPECT_NEAR(fc.computeStepScore(-10.0, 0.0), 1.0/(1.0 + 1.0), 1e-10);       // 0.50
-    EXPECT_NEAR(fc.computeStepScore(-20.0, 0.0), 1.0/(1.0 + 4.0), 1e-10);       // 0.20
+    // behind: eff_along = along/7, score = 1/(1+(along/7)^2)
+    EXPECT_NEAR(fc.computeStepScore(-3.0, 0.0), 1.0/(1.0 + 9.0/49.0), 1e-10);   // 0.845
+    EXPECT_NEAR(fc.computeStepScore(-5.0, 0.0), 1.0/(1.0 + 25.0/49.0), 1e-10);  // 0.662
+    EXPECT_NEAR(fc.computeStepScore(-7.0, 0.0), 1.0/(1.0 + 1.0), 1e-10);        // 0.50
+    EXPECT_NEAR(fc.computeStepScore(-14.0, 0.0), 1.0/(1.0 + 4.0), 1e-10);       // 0.20
 }
 
 TEST(FitnessComputer022, ScoreAheadOnPath) {
@@ -49,9 +49,10 @@ TEST(FitnessComputer022, ScorePureLateral) {
 
 TEST(FitnessComputer022, ScoreCombined) {
     auto fc = makeDefault();
-    // -5 behind, 5 lateral: eff_along=-5/10=-0.5, eff_lat=5/5=1.0
-    // eff_dist_sq = 0.25 + 1.0 = 1.25
-    EXPECT_NEAR(fc.computeStepScore(-5.0, 5.0), 1.0/(1.0 + 1.25), 1e-10);  // 0.444
+    // -5 behind, 5 lateral: eff_along=-5/7=-0.714, eff_lat=5/5=1.0
+    // eff_dist_sq = 0.510 + 1.0 = 1.510
+    double eff = (-5.0/7.0)*(-5.0/7.0) + 1.0;
+    EXPECT_NEAR(fc.computeStepScore(-5.0, 5.0), 1.0/(1.0 + eff), 1e-10);  // 0.398
 }
 
 TEST(FitnessComputer022, ScoreAsymmetry) {
@@ -61,7 +62,7 @@ TEST(FitnessComputer022, ScoreAsymmetry) {
     double behind3 = fc.computeStepScore(-3.0, 0.0);  // 1/(1+0.09) = 0.917
     EXPECT_LT(ahead3, behind3);
     EXPECT_LT(ahead3, 0.05);
-    EXPECT_GT(behind3, 0.90);
+    EXPECT_GT(behind3, 0.80);  // behind_scale=7: 1/(1+9/49) ≈ 0.845
 }
 
 TEST(FitnessComputer022, ScoreLateralDistAlwaysPositive) {
