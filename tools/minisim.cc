@@ -128,15 +128,14 @@ public:
         std::vector<AircraftState> aircraftStateSteps;
 
         // Fixed initial orientation and position for deterministic evaluation
-        // Raw altitude matches CRRCSim config (~25m up = SIM_INITIAL_ALTITUDE in NED)
+        // Virtual coordinates: start at origin (0,0,0). Path also at virtual origin.
         gp_quat aircraft_orientation = gp_quat(Eigen::AngleAxis<gp_scalar>(static_cast<gp_scalar>(M_PI), gp_vec3::UnitZ())) *
           gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitY())) *
           gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitX()));
-        gp_vec3 initialPosition(static_cast<gp_scalar>(0.0f), static_cast<gp_scalar>(0.0f), SIM_INITIAL_ALTITUDE);
+        gp_vec3 initialPosition(0.0f, 0.0f, 0.0f);  // virtual origin
         gp_vec3 initial_velocity = aircraft_orientation * gp_vec3(SIM_INITIAL_VELOCITY, 0.0f, 0.0f);
 
         aircraftState = AircraftState{ 0, SIM_INITIAL_VELOCITY, initial_velocity, aircraft_orientation, initialPosition, 0.0f, 0.0f, SIM_INITIAL_THROTTLE, 0 };
-        aircraftState.setOriginOffset(initialPosition);  // raw→virtual: like xiao arm point
         aircraftState.clearHistory();
         aircraftState.setRabbitOdometer(0.0f);
 
@@ -171,7 +170,7 @@ public:
             gp_scalar dTheta = executeGetDTheta(pathProvider, aircraftState, rabbitOdo, 0.0f);
             gp_vec3 targetPos = getInterpolatedTargetPosition(
                 pathProvider, rabbitOdo, 0.0f);
-            gp_scalar distance = (targetPos - aircraftState.getVirtualPosition()).norm();
+            gp_scalar distance = (targetPos - aircraftState.getPosition()).norm();
             aircraftState.setRabbitPosition(targetPos);
             aircraftState.recordErrorHistory(dPhi, dTheta, distance, duration_msec);
           }
@@ -192,11 +191,13 @@ public:
           gp_scalar dtSec = static_cast<gp_scalar>(SIM_TIME_STEP_MSEC) / 1000.0f;
           aircraftState.setRabbitOdometer(aircraftState.getRabbitOdometer() + rabbitSpeed * dtSec);
 
-          // Crash detection (raw sim coordinates)
-          gp_scalar distanceFromOrigin = std::sqrt(aircraftState.getPosition()[0] * aircraftState.getPosition()[0] +
-            aircraftState.getPosition()[1] * aircraftState.getPosition()[1]);
-          if (aircraftState.getPosition()[2] < (SIM_MAX_ELEVATION) ||
-            aircraftState.getPosition()[2] > (SIM_MIN_ELEVATION) ||
+          // Crash detection: reconstruct raw position for OOB bounds check.
+          // Position is virtual (Z≈0). Raw = virtual + (0,0,SIM_INITIAL_ALTITUDE).
+          gp_vec3 rawForOOB = aircraftState.getPosition() + gp_vec3(0.0f, 0.0f, SIM_INITIAL_ALTITUDE);
+          gp_scalar distanceFromOrigin = std::sqrt(rawForOOB[0] * rawForOOB[0] +
+            rawForOOB[1] * rawForOOB[1]);
+          if (rawForOOB[2] < (SIM_MAX_ELEVATION) ||
+            rawForOOB[2] > (SIM_MIN_ELEVATION) ||
             distanceFromOrigin > SIM_PATH_RADIUS_LIMIT) {
             crashReason = CrashReason::Eval;
           }
@@ -227,6 +228,7 @@ public:
 
         {
           ScenarioMetadata meta = scenarioForPathIndex(evalData, static_cast<size_t>(i));
+          meta.originOffset = gp_vec3(0.0f, 0.0f, SIM_INITIAL_ALTITUDE);  // raw→virtual offset for renderer
           evalResults.scenarioList.push_back(meta);
         }
         evalResults.pathList.push_back(path);

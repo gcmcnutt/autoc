@@ -227,11 +227,9 @@ struct AircraftState {
     gp_vec3 getPosition() const { return position; }
     void setPosition(gp_vec3 pos) { position = pos; }
 
-    // Origin offset: raw position at test start (like xiao arm point).
-    // Virtual position = raw - origin; path lives at virtual origin (Z=0).
-    void setOriginOffset(const gp_vec3& offset) { originOffset_ = offset; }
-    gp_vec3 getOriginOffset() const { return originOffset_; }
-    gp_vec3 getVirtualPosition() const { return position - originOffset_; }
+    // Position is always in virtual coordinates (origin at test start).
+    // Producers (CRRCSim, minisim, xiao) convert raw→virtual at boundary.
+    // See docs/COORDINATE_CONVENTIONS.md "Virtual Frame" section.
 
     unsigned long int getSimTimeMsec() const { return simTimeMsec; }
     void setSimTimeMsec(unsigned long int timeMsec) { simTimeMsec = timeMsec; }
@@ -390,9 +388,6 @@ struct AircraftState {
     gp_scalar pitchCommand;
     gp_scalar rollCommand;
     gp_scalar throttleCommand;
-
-    // Origin offset — raw position at test start (not serialized, set at runtime)
-    gp_vec3 originOffset_ = gp_vec3::Zero();
 
     // Wind diagnostic fields (for debugging non-determinism)
     gp_vec3 wind_velocity;  // Wind vector (north, east, down) from calculate_wind()

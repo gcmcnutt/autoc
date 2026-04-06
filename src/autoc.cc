@@ -569,8 +569,8 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       windVariantIndex = results.scenarioList.at(i).windVariantIndex;
     }
 
-    // Origin offset: first raw position → virtual for path comparison
-    gp_vec3 originOffset = aircraftStates.at(0).getPosition();
+    // Position is already virtual (converted at producer boundary).
+    // No manual offset subtraction needed.
 
     // Fitness computer for logging (mirrors fitness_decomposition.cc)
     const AutocConfig& cfg = ConfigManager::getConfig();
@@ -588,7 +588,7 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       auto& stepState = aircraftStates.at(stepIndex);
       int pathIndex = std::clamp(stepState.getThisPathIndex(), 0, static_cast<int>(path.size()) - 1);
 
-      gp_vec3 aircraftPosition = stepState.getPosition() - originOffset;
+      gp_vec3 aircraftPosition = stepState.getPosition();
 
       // Path tangent (same as fitness_decomposition.cc)
       gp_vec3 tangent;

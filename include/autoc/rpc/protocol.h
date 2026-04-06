@@ -102,13 +102,18 @@ struct ScenarioMetadata {
   double rabbitSpeed = 0.0;          // 0 = use default SIM_INITIAL_VELOCITY
   unsigned int rabbitSpeedSeed = 0;  // per-scenario seed for local speed profile PRNG
 
+  // Raw→virtual origin offset captured at test start (NED meters).
+  // Used by renderer to reconstruct raw positions for "all flights" display.
+  // See docs/COORDINATE_CONVENTIONS.md "Virtual Frame" section.
+  gp_vec3 originOffset = gp_vec3::Zero();
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t /*version*/) {
     ar(pathVariantIndex, windVariantIndex, windSeed, scenarioSequence,
        bakeoffSequence, enableDeterministicLogging, entryHeadingOffset,
        entryRollOffset, entryPitchOffset, entrySpeedFactor,
        windDirectionOffset, entryNorthOffset, entryEastOffset, entryAltOffset,
-       rabbitSpeed, rabbitSpeedSeed);
+       rabbitSpeed, rabbitSpeedSeed, originOffset);
   }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)

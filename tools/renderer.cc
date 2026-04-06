@@ -317,9 +317,9 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       cereal::BinaryInputArchive ia(iss);
       ia(evalResults);
 
-      // Virtual→raw display offset: paths and rabbit positions arrive at virtual
-      // origin (Z=0). Shift to raw sim altitude (SIM_INITIAL_ALTITUDE) so they
-      // align with raw aircraft positions for display.
+      // Virtual→display offset: paths, rabbit positions, AND aircraft positions
+      // all arrive in virtual coordinates (Z≈0). Shift all to display sim altitude
+      // (SIM_INITIAL_ALTITUDE) for visualization.
       for (auto& singlePath : evalResults.pathList) {
         for (auto& segment : singlePath) {
           segment.start[2] += SIM_INITIAL_ALTITUDE;
@@ -327,6 +327,10 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       }
       for (auto& stateList : evalResults.aircraftStateList) {
         for (auto& state : stateList) {
+          gp_vec3 pos = state.getPosition();
+          pos[2] += SIM_INITIAL_ALTITUDE;
+          state.setPosition(pos);
+
           gp_vec3 rp = state.getRabbitPosition();
           rp[2] += SIM_INITIAL_ALTITUDE;
           state.setRabbitPosition(rp);

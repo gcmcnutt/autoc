@@ -140,8 +140,8 @@ gp_scalar executeGetDPhi(PathProvider& pathProvider, AircraftState& aircraftStat
     gp_vec3 targetPos = getInterpolatedTargetPosition(
         pathProvider, rabbitOdometer, offsetMeters);
 
-    // Path is at virtual origin (Z=0); use virtual position (raw - originOffset)
-    gp_vec3 craftToTarget = targetPos - aircraftState.getVirtualPosition();
+    // Path and aircraft both in virtual coordinates (origin at test start)
+    gp_vec3 craftToTarget = targetPos - aircraftState.getPosition();
     gp_vec3 target_local = aircraftState.getOrientation().inverse() * craftToTarget;
 
     // Project onto body YZ plane, angle from body -Z axis
@@ -153,8 +153,8 @@ gp_scalar executeGetDTheta(PathProvider& pathProvider, AircraftState& aircraftSt
     gp_vec3 targetPos = getInterpolatedTargetPosition(
         pathProvider, rabbitOdometer, offsetMeters);
 
-    // Path is at virtual origin (Z=0); use virtual position (raw - originOffset)
-    gp_vec3 craftToTarget = targetPos - aircraftState.getVirtualPosition();
+    // Path and aircraft both in virtual coordinates (origin at test start)
+    gp_vec3 craftToTarget = targetPos - aircraftState.getPosition();
     gp_vec3 target_local = aircraftState.getOrientation().inverse() * craftToTarget;
 
     // Pitch error: rotation about body Y to point nose at target

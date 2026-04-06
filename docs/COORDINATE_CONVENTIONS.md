@@ -108,6 +108,17 @@ The raw→virtual offset is stored per-scenario in `ScenarioMetadata::originOffs
 (serialized via cereal). This allows the renderer and analysis tools to reconstruct
 raw positions when needed. It is NOT stored per-AircraftState.
 
+**The offset is canonical, not actual.** It is the *expected* launch position
+`(0, 0, SIM_INITIAL_ALTITUDE)`, NOT the actual FDM start position. Entry
+variations (`EnableEntryVariations`) intentionally start the craft off-target —
+north/east/altitude offsets from the canonical launch point. With a canonical
+offset, those variations show up as virtual position deviation from (0,0,0)
+that the fitness function correctly sees as "the aircraft started off-path."
+
+If `pathOriginOffset` captured the actual FDM position (including variations),
+the aircraft would always start at virtual (0,0,0) regardless of variations,
+hiding the training challenge.
+
 ### Renderer Display Convention
 
 The renderer shows paths and aircraft at a display altitude offset from virtual:

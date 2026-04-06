@@ -18,9 +18,9 @@
 
 **Purpose**: Add config parameters, no behavioral change yet
 
-- [ ] T001 Add 6 Fit* fields to AutocConfig struct in include/autoc/util/config.h
-- [ ] T002 Parse Fit* fields from autoc.ini in src/util/config.cc
-- [ ] T003 Add Fit* parameters with defaults to autoc.ini (under new FITNESS section)
+- [X] T001 Add 6 Fit* fields to AutocConfig struct in include/autoc/util/config.h
+- [X] T002 Parse Fit* fields from autoc.ini in src/util/config.cc
+- [X] T003 Add Fit* parameters with defaults to autoc.ini (under new FITNESS section)
 
 **Checkpoint**: Build succeeds, existing behavior unchanged, new params parsed but unused
 
@@ -34,7 +34,7 @@
 
 ### Tests — Scoring Surface (tests/fitness_computer_tests.cc)
 
-- [ ] T004 [P] [US1] Scoring surface unit tests in tests/fitness_computer_tests.cc:
+- [X] T004 [P] [US1] Scoring surface unit tests in tests/fitness_computer_tests.cc:
   - **At rabbit**: computeStepScore(0, 0) == 1.0
   - **Behind on path**: computeStepScore(-3, 0) ≈ 0.917, (-5, 0) ≈ 0.80, (-10, 0) ≈ 0.50, (-20, 0) ≈ 0.20
   - **Ahead on path**: computeStepScore(+0.5, 0) ≈ 0.50, (+1, 0) ≈ 0.20, (+2, 0) ≈ 0.059
@@ -47,7 +47,7 @@
 
 ### Tests — Streak Logic (tests/fitness_computer_tests.cc)
 
-- [ ] T005 [P] [US1] Streak mechanism unit tests in tests/fitness_computer_tests.cc:
+- [X] T005 [P] [US1] Streak mechanism unit tests in tests/fitness_computer_tests.cc:
   - **No streak at start**: after resetStreak(), applyStreak(0.8) returns 0.8 * 1.16 (streakCount=1, mult=1.16)
   - **Streak builds**: 25 consecutive applyStreak(0.8) calls → last returns 0.8 * 5.0
   - **Streak caps**: 30 consecutive calls → still 5.0x (doesn't exceed max)
@@ -61,10 +61,10 @@
 
 ### Implementation
 
-- [ ] T006 [US1] Replace FitnessComputer class in include/autoc/eval/fitness_computer.h — new constructor (6 params), computeStepScore(along, lateralDist), applyStreak(stepPoints), resetStreak(), diagnostic getters. Remove computeStepPenalty, computeCrashPenalty, computeAttitudeScale, computeInterceptScale, computeInterceptBudget. Remove old #define constants.
-- [ ] T007 [US1] Implement new FitnessComputer in src/eval/fitness_computer.cc — Lorentzian scoring surface with directional along-track scaling, integer streak counter with linear multiplier ramp, diagnostic tracking (maxStreak, totalStreakSteps, maxMultiplier)
-- [ ] T008 [US1] Remove old fitness constants from include/autoc/autoc.h — DISTANCE_TARGET, DISTANCE_NORM, DISTANCE_POWER, ATTITUDE_NORM, ATTITUDE_POWER, CRASH_COMPLETION_WEIGHT, INTERCEPT_SCALE_FLOOR, INTERCEPT_SCALE_CEILING, INTERCEPT_BUDGET_MAX, INTERCEPT_TURN_RATE
-- [ ] T009 [US1] Verify tests pass: `cd build && make -j8 && ./fitness_computer_tests`
+- [X] T006 [US1] Replace FitnessComputer class in include/autoc/eval/fitness_computer.h — new constructor (6 params), computeStepScore(along, lateralDist), applyStreak(stepPoints), resetStreak(), diagnostic getters. Remove computeStepPenalty, computeCrashPenalty, computeAttitudeScale, computeInterceptScale, computeInterceptBudget. Remove old #define constants.
+- [X] T007 [US1] Implement new FitnessComputer in src/eval/fitness_computer.cc — Lorentzian scoring surface with directional along-track scaling, integer streak counter with linear multiplier ramp, diagnostic tracking (maxStreak, totalStreakSteps, maxMultiplier)
+- [X] T008 [US1] Remove old fitness constants from include/autoc/autoc.h — DISTANCE_TARGET, DISTANCE_NORM, DISTANCE_POWER, ATTITUDE_NORM, ATTITUDE_POWER, CRASH_COMPLETION_WEIGHT, INTERCEPT_SCALE_FLOOR, INTERCEPT_SCALE_CEILING, INTERCEPT_BUDGET_MAX, INTERCEPT_TURN_RATE
+- [X] T009 [US1] Verify tests pass: `cd build && make -j8 && ./fitness_computer_tests`
 
 **Checkpoint**: New FitnessComputer tested in isolation, old one removed
 
@@ -78,16 +78,16 @@
 
 ### Implementation
 
-- [ ] T010 [US1] Simplify ScenarioScore in include/autoc/eval/fitness_decomposition.h — replace with single `double score` field (negated accumulated points). Keep `crashed` and `steps_completed` for logging. Remove completion_fraction, distance_rmse, attitude_error, smoothness, mean_throttle, all legacy_* fields.
-- [ ] T011 [US1] Rewrite computeScenarioScores() in src/eval/fitness_decomposition.cc — for each scenario: extract 6 Fit* params from AutocConfig, compute streakStepsToMax from FitStreakRampSec/SIM_TIME_STEP_MSEC, construct FitnessComputer, resetStreak, loop steps computing path tangent (reuse previous at last waypoint) + along/cross decomposition + stepScore + applyStreak, store negated total. Remove intercept budget, attitude delta, distance RMSE computation.
-- [ ] T012 [US1] Rewrite aggregateRawFitness() in src/eval/fitness_decomposition.cc — sum of per-scenario score (already negated, lower is better). Remove aggregateScalarFitness().
-- [ ] T013 [US1] Simplify lexicase_select() in src/eval/selection.cc — single dimension per scenario: score (lower is better). Remove 3-phase cascade (completion → distance → throttle).
-- [ ] T014 [US1] Update computeNNFitness() in src/autoc.cc (lines ~557-655) — replace inline fitness loop with call to computeScenarioScores() + aggregateRawFitness(). The structured path (computeScenarioScores in fitness_decomposition.cc) does the actual scoring; this function just aggregates. Remove inline intercept budget, distance/attitude accumulation, crash penalty.
-- [ ] T015 [US1] Update per-scenario logging in src/autoc.cc — replace dist/att/thr/sm fields with score/maxStrk/strkPct/maxMult from FitnessComputer diagnostics
-- [ ] T016 [US1] Update data.stc generation logging in src/autoc.cc — add bestScore, avgMaxStreak, pctInStreak to #NNGen line
+- [X] T010 [US1] Simplify ScenarioScore in include/autoc/eval/fitness_decomposition.h — replace with single `double score` field (negated accumulated points). Keep `crashed` and `steps_completed` for logging. Remove completion_fraction, distance_rmse, attitude_error, smoothness, mean_throttle, all legacy_* fields.
+- [X] T011 [US1] Rewrite computeScenarioScores() in src/eval/fitness_decomposition.cc — for each scenario: extract 6 Fit* params from AutocConfig, compute streakStepsToMax from FitStreakRampSec/SIM_TIME_STEP_MSEC, construct FitnessComputer, resetStreak, loop steps computing path tangent (reuse previous at last waypoint) + along/cross decomposition + stepScore + applyStreak, store negated total. Remove intercept budget, attitude delta, distance RMSE computation.
+- [X] T012 [US1] Rewrite aggregateRawFitness() in src/eval/fitness_decomposition.cc — sum of per-scenario score (already negated, lower is better). Remove aggregateScalarFitness().
+- [X] T013 [US1] Simplify lexicase_select() in src/eval/selection.cc — single dimension per scenario: score (lower is better). Remove 3-phase cascade (completion → distance → throttle).
+- [X] T014 [US1] Update computeNNFitness() in src/autoc.cc (lines ~557-655) — replace inline fitness loop with call to computeScenarioScores() + aggregateRawFitness(). The structured path (computeScenarioScores in fitness_decomposition.cc) does the actual scoring; this function just aggregates. Remove inline intercept budget, distance/attitude accumulation, crash penalty.
+- [X] T015 [US1] Update per-scenario logging in src/autoc.cc — replace dist/att/thr/sm fields with score/maxStrk/strkPct/maxMult from FitnessComputer diagnostics
+- [X] T016 [US1] Update data.stc generation logging in src/autoc.cc — add bestScore, avgMaxStreak, pctInStreak to #NNGen line
 ### Tests — End-to-End Fitness (tests/fitness_decomposition_tests.cc)
 
-- [ ] T017 [US1] Scoring with synthetic trajectories in tests/fitness_decomposition_tests.cc:
+- [X] T017 [US1] Scoring with synthetic trajectories in tests/fitness_decomposition_tests.cc:
   - **Perfect tracking**: aircraft at rabbit position for all steps → score ≈ numSteps * 1.0 * (avg multiplier). With 100 steps and 25-step ramp: first 25 steps ramp 1→5x, remaining 75 at 5x → total ≈ 25*avg(1,5) + 75*5 = 25*3 + 375 = 450
   - **Behind 5m constant**: aircraft 5m behind rabbit on path for 100 steps → stepPoints=0.80 each, all in streak, total ≈ 0.80 * (ramp multiplier sum) ≈ 0.80 * 450/1.0 * 0.80 ... compute exact expected value
   - **Ahead 2m constant**: aircraft 2m ahead for 100 steps → stepPoints≈0.059, below streak threshold (0.5), all at 1x → total ≈ 5.9. Verify MUCH worse than 5m behind.
@@ -95,23 +95,23 @@
   - **Crash at step 50**: 50 steps perfect tracking then stop → score ≈ half of full-flight perfect. No crash penalty added.
   - **Crash vs wandering**: 50 steps at rabbit then crash MUST score higher than 200 steps at 20m lateral (stepPoints=0.20, no streak)
 
-- [ ] T017b [US1] Streak diagnostics with controlled trajectories in tests/fitness_decomposition_tests.cc:
+- [X] T017b [US1] Streak diagnostics with controlled trajectories in tests/fitness_decomposition_tests.cc:
   - **Three short streaks**: 5 steps close (streak), 3 steps far (reset), 5 steps close, 3 steps far, 5 steps close → maxStreak=5, totalStreakSteps=15, 3 separate streaks
   - **One long streak**: 90 steps at rabbit, 10 steps far → maxStreak=25 (capped), totalStreakSteps=90, maxMultiplier=5.0. Verify accumulated score: first 25 steps ramp 1→5x, remaining 65 at 5x, all at stepPoints=1.0
   - **Verify negation**: scenario score stored as negative (lower = better)
   - **Multi-scenario aggregate**: 3 scenarios with different scores → aggregateRawFitness() = sum of negated scores
 
-- [ ] T017c [US1] Path tangent decomposition tests in tests/fitness_decomposition_tests.cc:
+- [X] T017c [US1] Path tangent decomposition tests in tests/fitness_decomposition_tests.cc:
   - **Straight path**: rabbit on X axis, aircraft offset in Y → along=0, lateralDist=offset. Score matches computeStepScore(0, offset).
   - **Straight path behind**: rabbit at (10,0,0), aircraft at (5,0,0), tangent=(1,0,0) → along=-5, lateral=0. Score = computeStepScore(-5, 0).
   - **Diagonal path**: rabbit moving at 45° (tangent=(0.707,0.707,0)), aircraft offset perpendicular → verify along/cross decomposition is correct.
   - **Last waypoint**: at final path point, tangent reuses previous segment. Verify no crash/NaN.
   - **3D offset**: aircraft above rabbit by 5m (Z offset in NED) → treated as lateral, score = computeStepScore(0, 5).
 
-- [ ] T018 [US1] Update selection_tests.cc — lexicase with single dimension:
+- [X] T018 [US1] Update selection_tests.cc — lexicase with single dimension:
   - Two individuals: one scores -100 (good), one scores -50 (worse) → lexicase selects the -100 individual
   - Tie-breaking: equal scores → random selection (verify both can be selected over multiple runs)
-- [ ] T019 [US1] Build and run all tests: `bash scripts/rebuild.sh`
+- [X] T019 [US1] Build and run all tests: `bash scripts/rebuild.sh`
 
 **Checkpoint**: Training uses new fitness. All tests pass. Ready for training run.
 
@@ -140,7 +140,7 @@ FAIL against current code, then PASS after the fix.
 
 #### Tests — Coordinate Contract (FIRST — before code changes)
 
-- [ ] T029 [US1] Rewrite fitness_decomposition_tests.cc to express virtual coordinate contract:
+- [X] T029 [US1] Rewrite fitness_decomposition_tests.cc to express virtual coordinate contract:
   - All path positions at virtual origin: Z=0 (not Z=-25)
   - All aircraft positions in virtual space: Z≈0 (near path, not raw altitude)
   - No `setOriginOffset()` calls anywhere in tests
@@ -155,26 +155,26 @@ FAIL against current code, then PASS after the fix.
 
 #### Internal Framework Changes
 
-- [ ] T030 [US1] Clean-cut remove ALL originOffset machinery from AircraftState (aircraft_state.h):
+- [X] T030 [US1] Clean-cut remove ALL originOffset machinery from AircraftState (aircraft_state.h):
   - Remove `originOffset_` member (L395)
   - Remove `setOriginOffset()`, `getOriginOffset()`, `getVirtualPosition()` (L230-234)
   - No deprecated alias — Constitution III: no compatibility shims
   - `getPosition()` is now the sole position accessor — always virtual
   - Compile will break at ALL callers (CRRCSim included) → forces updating everything in one cut
 
-- [ ] T031 [US1] Add `gp_vec3 originOffset` to ScenarioMetadata (protocol.h):
+- [X] T031 [US1] Add `gp_vec3 originOffset` to ScenarioMetadata (protocol.h):
   - Add field with default `gp_vec3::Zero()`
   - Add to cereal `serialize()` method
   - This preserves the raw→virtual offset for renderer and logging
 
-- [ ] T033 [US1] Update ALL getVirtualPosition() callers → getPosition() (one cut):
+- [X] T033 [US1] Update ALL getVirtualPosition() callers → getPosition() (one cut):
   - `fitness_decomposition.cc:43`
   - `sensor_math.cc:144, 157`
   - `evaluator.cc:213`
   - `inputdev_autoc.cpp:795, 972` (CRRCSim — updated now, not deferred)
   - `minisim.cc:174`
 
-- [ ] T034 [US1] Fix autoc.cc logEvalResults() to use virtual positions:
+- [X] T034 [US1] Fix autoc.cc logEvalResults() to use virtual positions:
   - Remove manual `originOffset = aircraftStates.at(0).getPosition()` (L573)
   - Change `stepState.getPosition() - originOffset` (L591) → `stepState.getPosition()`
   - X,Y,Z columns in data.dat (L678-680) now log virtual position automatically
@@ -182,7 +182,7 @@ FAIL against current code, then PASS after the fix.
 
 #### Minisim Changes
 
-- [ ] T033b [US1] Minisim: store virtual position, reconstruct raw for OOB (minisim.cc):
+- [X] T033b [US1] Minisim: store virtual position, reconstruct raw for OOB (minisim.cc):
   - Start at virtual origin: `initialPosition = (0, 0, 0)` — remove SIM_INITIAL_ALTITUDE from initial position
   - Remove `setOriginOffset(initialPosition)` (L139)
   - Initial velocity: rotate body-forward through initial orientation (already correct, just verify
@@ -197,7 +197,7 @@ FAIL against current code, then PASS after the fix.
 
 #### Documentation (can run in parallel)
 
-- [ ] T037 [P] [US1] Add "Virtual Frame" section to COORDINATE_CONVENTIONS.md:
+- [X] T037 [P] [US1] Add "Virtual Frame" section to COORDINATE_CONVENTIONS.md:
   - Define virtual frame: origin at (0,0,0), path-relative coordinates
   - Document the boundary: CRRCSim (inputdev_autoc.cpp), minisim (minisim.cc), xiao (msplink.cpp)
   - State the invariant: `getPosition()` is always virtual downstream
@@ -206,7 +206,7 @@ FAIL against current code, then PASS after the fix.
 
 #### Validation — Minisim Signal
 
-- [ ] T038a [US1] Verify minisim coordinate cleanup:
+- [X] T038a [US1] Verify minisim coordinate cleanup:
   - Build succeeds with minisim: `scripts/rebuild.sh`
   - Unit tests pass: `build/fitness_computer_tests`, `build/fitness_decomposition_tests`
   - Start minisim training run, verify data.dat X,Y,Z columns near (0,0,~0) not (~0,~0,~-25)
@@ -225,7 +225,7 @@ in position — fixed in Phase 3b-ii (T032).
 **Goal**: Apply virtual-at-boundary to CRRCSim. Run real training (test3).
 CRRCSim callers already updated in T033 (clean cut). This phase changes the producer.
 
-- [ ] T032 [US1] CRRCSim: store virtual position at boundary (inputdev_autoc.cpp):
+- [X] T032 [US1] CRRCSim: store virtual position at boundary (inputdev_autoc.cpp):
   - Add module-level `gp_vec3 pathOriginOffset` (like xiao's `test_origin_offset`)
   - At path start (L511-540): `pathOriginOffset = initialPos`
   - Initial state: `initialState.setPosition(gp_vec3::Zero())` (virtual origin)
@@ -234,7 +234,7 @@ CRRCSim callers already updated in T033 (clean cut). This phase changes the prod
   - Store `pathOriginOffset` in scenario metadata sent back to autoc
   - Remove all `setOriginOffset()` calls
 
-- [ ] T038b [US1] Verify CRRCSim coordinate cleanup:
+- [X] T038b [US1] Verify CRRCSim coordinate cleanup:
   - CRRCSim build succeeds: `cd crrcsim/build && make -j8`
   - Full rebuild: `scripts/rebuild.sh`
   - Start FRESH test3 training run with CRRCSim (new random population):
@@ -288,6 +288,10 @@ CRRCSim callers already updated in T033 (clean cut). This phase changes the prod
   - In computeScenarioScores(), interpolate threshold: min + (max - min) * computeVariationScale()
   - FitnessComputer constructor takes the interpolated threshold
   - Update tests to verify threshold interpolation
+- [ ] T024b Add `EnableRabbitSpeedVariations` bool to autoc.ini, config.h, config.cc:
+  - Follows existing `EnableEntryVariations` / `EnableWindVariations` pattern
+  - When false (default), forces RabbitSpeedSigma=0 regardless of .ini value
+  - Avoids the "set sigma to 0" footgun — explicit enable like the other variation knobs
 - [ ] T025 Commit all changes
 
 ---

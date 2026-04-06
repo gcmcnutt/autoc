@@ -210,7 +210,7 @@ void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
         gp_vec3 futureTarget = getInterpolatedTargetPosition(
             pathProvider, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i]));
         inputs[16 + i] = static_cast<float>(
-            (futureTarget - aircraftState.getVirtualPosition()).norm());
+            (futureTarget - aircraftState.getPosition()).norm());
     }
 
     // 18: dDist/dt closing rate (m/s, positive = approaching)

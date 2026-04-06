@@ -121,19 +121,19 @@ if(ENABLE_AUTOC_TESTS)
   target_link_libraries(fitness_computer_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(fitness_decomposition_tests tests/fitness_decomposition_tests.cc)
-  target_link_libraries(fitness_decomposition_tests GTest::gtest GTest::gtest_main autoc_common)
+  target_link_libraries(fitness_decomposition_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
 
   add_executable(selection_tests tests/selection_tests.cc)
-  target_link_libraries(selection_tests GTest::gtest GTest::gtest_main autoc_common)
+  target_link_libraries(selection_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
 
   add_executable(contract_evaluator_tests tests/contract_evaluator_tests.cc)
   target_link_libraries(contract_evaluator_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(contract_config_tests tests/contract_config_tests.cc)
-  target_link_libraries(contract_config_tests GTest::gtest GTest::gtest_main autoc_common)
+  target_link_libraries(contract_config_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
 
   add_executable(contract_evolution_tests tests/contract_evolution_tests.cc)
-  target_link_libraries(contract_evolution_tests GTest::gtest GTest::gtest_main autoc_common)
+  target_link_libraries(contract_evolution_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
 
   add_executable(rpc_transport_tests tests/rpc_transport_tests.cc)
   target_link_libraries(rpc_transport_tests GTest::gtest GTest::gtest_main)
