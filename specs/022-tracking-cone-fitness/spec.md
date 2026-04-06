@@ -275,6 +275,26 @@ Start simple, add complexity only if needed.
 
 ## Observations from test1 Training Run (2026-04-05)
 
+### Virtual vs Raw Position (Coordinate Frame Cleanup)
+The fitness computation, data.dat logging, and NN evaluation all need aircraft
+position in the virtual frame (origin at 0,0,0, path coordinates). Currently
+this is done inconsistently:
+- **AircraftState**: stores raw CRRCSim position via `setPosition()` plus
+  `originOffset_` separately. `getVirtualPosition()` subtracts the offset.
+- **autoc.cc logEvalResults()**: manually subtracts `aircraftStates.at(0).getPosition()`
+  as originOffset — duplicates the offset logic.
+- **fitness_decomposition.cc**: now uses `getVirtualPosition()` (fixed in this PR).
+- **CRRCSim inputdev_autoc.cpp**: computes NN inputs using raw position minus
+  origin offset inline.
+
+**TODO (simplification)**: Consider having `setPosition()` store virtual position
+directly (subtract originOffset at the CRRCSim/xiao boundary, once) so all
+downstream code just uses `getPosition()`. Eliminates double add/subtract risk
+and removes `originOffset_` field. The boundary (CRRCSim `inputdev_autoc.cpp`
+and xiao `msplink.cpp`) is where raw→virtual conversion should happen — same
+pattern as the INAV sign conventions (convert once at boundary, standard
+everywhere else).
+
 ### Entry Position Offset Required
 Without entry position offset (EntryPositionRadiusSigma=0), the NN exploits
 starting near the rabbit — it dives at the rabbit, scores 8-10 high-multiplier
