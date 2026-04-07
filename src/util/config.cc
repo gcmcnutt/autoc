@@ -90,10 +90,10 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
     // Variation landscape ramp
     config->variationRampStep = reader.GetInteger("", "VariationRampStep", config->variationRampStep);
 
-    // Fitness: point-accumulation scoring (022)
-    config->fitBehindScale = reader.GetReal("", "FitBehindScale", config->fitBehindScale);
-    config->fitAheadScale = reader.GetReal("", "FitAheadScale", config->fitAheadScale);
-    config->fitCrossScale = reader.GetReal("", "FitCrossScale", config->fitCrossScale);
+    // Fitness: point-accumulation scoring (022, conical surface V4)
+    config->fitDistScaleBehind = reader.GetReal("", "FitDistScaleBehind", config->fitDistScaleBehind);
+    config->fitDistScaleAhead = reader.GetReal("", "FitDistScaleAhead", config->fitDistScaleAhead);
+    config->fitConeAngleDeg = reader.GetReal("", "FitConeAngleDeg", config->fitConeAngleDeg);
     config->fitStreakThreshold = reader.GetReal("", "FitStreakThreshold", config->fitStreakThreshold);
     config->fitStreakRampSec = reader.GetReal("", "FitStreakRampSec", config->fitStreakRampSec);
     config->fitStreakMultiplierMax = reader.GetReal("", "FitStreakMultiplierMax", config->fitStreakMultiplierMax);

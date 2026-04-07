@@ -1,19 +1,48 @@
 #include "autoc/eval/fitness_computer.h"
 #include <algorithm>
+#include <cmath>
 
-FitnessComputer::FitnessComputer(double behindScale, double aheadScale, double crossScale,
+FitnessComputer::FitnessComputer(double distScaleBehind, double distScaleAhead, double coneAngleDeg,
                                  double streakThreshold, int streakStepsToMax, double streakMultMax)
-    : behindScale_(behindScale), aheadScale_(aheadScale), crossScale_(crossScale),
-      streakThreshold_(streakThreshold), streakStepsToMax_(streakStepsToMax),
+    : distScaleBehind_(distScaleBehind),
+      distScaleAhead_(distScaleAhead),
+      coneAngleRad_(coneAngleDeg * M_PI / 180.0),
+      streakThreshold_(streakThreshold),
+      streakStepsToMax_(streakStepsToMax),
       streakMultMax_(streakMultMax) {}
 
 double FitnessComputer::computeStepScore(double along, double lateralDist) const {
-    double effAlong = (along <= 0.0)
-        ? along / behindScale_
-        : along / aheadScale_;
-    double effLateral = lateralDist / crossScale_;
-    double effDistSq = effAlong * effAlong + effLateral * effLateral;
-    return 1.0 / (1.0 + effDistSq);
+    // Polar (conical) form with directional distance scaling and clamped angle.
+    //   distance     = sqrt(along² + lateralDist²)
+    //   angle        = acos(-along / distance)   [0 = behind, π = ahead]
+    //   angle_clamp  = min(angle, π/2)           [ahead saturates at "sideways"]
+    //   dist_scale   = behind or ahead based on along sign
+    //   score        = 1 / (1 + (dist/dist_scale)² + (angle_clamp/cone)²)
+    //
+    // The clamp at π/2 prevents the angle term from saturating ahead, so the
+    // (small) ahead distance scale carries the gradient when overshooting.
+    double distance = std::sqrt(along * along + lateralDist * lateralDist);
+    if (distance < 1e-6) {
+        return 1.0;  // At the rabbit position
+    }
+    // Angle from "directly behind" direction (-tangent).
+    double cosAngle = -along / distance;
+    if (cosAngle > 1.0) cosAngle = 1.0;
+    if (cosAngle < -1.0) cosAngle = -1.0;
+    double angle = std::acos(cosAngle);  // 0 = directly behind, π = directly ahead
+
+    // Clamp angle at π/2 so ahead positions don't saturate the angle term —
+    // the directional distance scale carries the ahead gradient.
+    constexpr double HALF_PI = M_PI / 2.0;
+    double angleClamped = (angle < HALF_PI) ? angle : HALF_PI;
+
+    // Directional distance scale: forgiving behind, sharp ahead.
+    double distScale = (along <= 0.0) ? distScaleBehind_ : distScaleAhead_;
+
+    double effDist  = distance / distScale;
+    double effAngle = angleClamped / coneAngleRad_;
+    double effTotalSq = effDist * effDist + effAngle * effAngle;
+    return 1.0 / (1.0 + effTotalSq);
 }
 
 double FitnessComputer::applyStreak(double stepPoints) {

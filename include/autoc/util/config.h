@@ -68,12 +68,12 @@ struct AutocConfig {
     // --- Selection strategy (015) ---
     std::string selectionMode = "sum";  // "sum", "minimax", "lexicase"
 
-    // --- Fitness: point-accumulation scoring (022) ---
-    double fitBehindScale = 7.0;        // Along-track half-decay behind rabbit (m)
-    double fitAheadScale = 0.5;         // Along-track half-decay ahead of rabbit (m)
-    double fitCrossScale = 5.0;         // Cross-track half-decay (m)
+    // --- Fitness: point-accumulation scoring (022, conical surface V4) ---
+    double fitDistScaleBehind = 7.0;     // Distance half-decay when behind rabbit (m)
+    double fitDistScaleAhead = 2.0;      // Distance half-decay when ahead of rabbit (m, sharp)
+    double fitConeAngleDeg = 45.0;       // Angular half-decay (degrees from "directly behind")
     double fitStreakThreshold = 0.5;     // Min stepPoints to maintain streak
-    double fitStreakRampSec = 2.5;       // Seconds to reach max multiplier
+    double fitStreakRampSec = 5.0;       // Seconds to reach max multiplier
     double fitStreakMultiplierMax = 5.0; // Maximum streak multiplier
 
     // --- Variable rabbit speed ---

@@ -2,20 +2,40 @@
 #include <cmath>
 #include "autoc/eval/fitness_computer.h"
 
-// Default test parameters matching autoc.ini defaults
-static const double BEHIND = 7.0;
-static const double AHEAD = 0.5;
-static const double CROSS = 5.0;
-static const double STREAK_THRESH = 0.5;  // tests use max threshold directly
-static const int STREAK_STEPS = 25;  // 2.5s at 100ms
+// Default test parameters matching autoc.ini defaults (V4 conical surface)
+static const double DIST_BEHIND = 7.0;      // m (-7m behind = 0.5 threshold)
+static const double DIST_AHEAD = 2.0;       // m
+static const double CONE_ANGLE_DEG = 45.0;  // degrees
+static const double STREAK_THRESH = 0.5;
+static const int STREAK_STEPS = 50;          // 5.0s at 100ms
 static const double STREAK_MULT_MAX = 5.0;
 
 static FitnessComputer makeDefault() {
-    return FitnessComputer(BEHIND, AHEAD, CROSS, STREAK_THRESH, STREAK_STEPS, STREAK_MULT_MAX);
+    return FitnessComputer(DIST_BEHIND, DIST_AHEAD, CONE_ANGLE_DEG,
+                            STREAK_THRESH, STREAK_STEPS, STREAK_MULT_MAX);
+}
+
+// Reference implementation in test code (Python-validated values)
+static double refScore(double along, double lat,
+                       double distBehind = DIST_BEHIND,
+                       double distAhead = DIST_AHEAD,
+                       double coneDeg = CONE_ANGLE_DEG) {
+    double dist = std::sqrt(along*along + lat*lat);
+    if (dist < 1e-6) return 1.0;
+    double cosA = -along / dist;
+    if (cosA > 1.0) cosA = 1.0;
+    if (cosA < -1.0) cosA = -1.0;
+    double angle = std::acos(cosA);
+    constexpr double HALF_PI = M_PI / 2.0;
+    double angleClamped = (angle < HALF_PI) ? angle : HALF_PI;
+    double distScale = (along <= 0.0) ? distBehind : distAhead;
+    double effDist  = dist / distScale;
+    double effAngle = angleClamped / (coneDeg * M_PI / 180.0);
+    return 1.0 / (1.0 + effDist*effDist + effAngle*effAngle);
 }
 
 // ========================================================================
-// T004: Scoring surface unit tests
+// V4 conical scoring surface unit tests
 // ========================================================================
 
 TEST(FitnessComputer022, ScoreAtRabbit) {
@@ -23,93 +43,164 @@ TEST(FitnessComputer022, ScoreAtRabbit) {
     EXPECT_DOUBLE_EQ(fc.computeStepScore(0.0, 0.0), 1.0);
 }
 
-TEST(FitnessComputer022, ScoreBehindOnPath) {
+TEST(FitnessComputer022, ScoreBehindOnAxis) {
     auto fc = makeDefault();
-    // behind: eff_along = along/7, score = 1/(1+(along/7)^2)
-    EXPECT_NEAR(fc.computeStepScore(-3.0, 0.0), 1.0/(1.0 + 9.0/49.0), 1e-10);   // 0.845
-    EXPECT_NEAR(fc.computeStepScore(-5.0, 0.0), 1.0/(1.0 + 25.0/49.0), 1e-10);  // 0.662
-    EXPECT_NEAR(fc.computeStepScore(-7.0, 0.0), 1.0/(1.0 + 1.0), 1e-10);        // 0.50
-    EXPECT_NEAR(fc.computeStepScore(-14.0, 0.0), 1.0/(1.0 + 4.0), 1e-10);       // 0.20
+    // Directly behind: angle = 0, only distance term contributes.
+    // score = 1 / (1 + (d/7)²)
+    EXPECT_NEAR(fc.computeStepScore(-3.0, 0.0),  refScore(-3, 0),  1e-10);
+    EXPECT_NEAR(fc.computeStepScore(-5.0, 0.0),  refScore(-5, 0),  1e-10);
+    EXPECT_NEAR(fc.computeStepScore(-7.0, 0.0),  0.5, 1e-10);    // (7/7)² = 1.0 → exact threshold
+    EXPECT_NEAR(fc.computeStepScore(-10.0, 0.0), refScore(-10, 0), 1e-10);
+    EXPECT_NEAR(fc.computeStepScore(-14.0, 0.0), 0.2, 1e-10);    // (14/7)² = 4
 }
 
-TEST(FitnessComputer022, ScoreAheadOnPath) {
+TEST(FitnessComputer022, ScoreAheadHasGradient) {
     auto fc = makeDefault();
-    // ahead: eff_along = along/0.5, score = 1/(1+(along/0.5)^2)
-    EXPECT_NEAR(fc.computeStepScore(0.5, 0.0), 1.0/(1.0 + 1.0), 1e-10);   // 0.50
-    EXPECT_NEAR(fc.computeStepScore(1.0, 0.0), 1.0/(1.0 + 4.0), 1e-10);   // 0.20
-    EXPECT_NEAR(fc.computeStepScore(2.0, 0.0), 1.0/(1.0 + 16.0), 1e-10);  // 0.0588
+    // V4's key fix: ahead positions have a real distance gradient via the
+    // small distScaleAhead. Each meter ahead is materially worse than the last.
+    double s_0_5  = fc.computeStepScore(0.5, 0.0);
+    double s_1    = fc.computeStepScore(1.0, 0.0);
+    double s_2    = fc.computeStepScore(2.0, 0.0);
+    double s_5    = fc.computeStepScore(5.0, 0.0);
+    double s_10   = fc.computeStepScore(10.0, 0.0);
+
+    // Monotonic decrease as distance ahead grows
+    EXPECT_GT(s_0_5, s_1);
+    EXPECT_GT(s_1,   s_2);
+    EXPECT_GT(s_2,   s_5);
+    EXPECT_GT(s_5,   s_10);
+
+    // Reference values from formula
+    EXPECT_NEAR(s_0_5, refScore(0.5, 0), 1e-10);
+    EXPECT_NEAR(s_1,   refScore(1.0, 0), 1e-10);
+    EXPECT_NEAR(s_5,   refScore(5.0, 0), 1e-10);
+
+    // Far ahead is catastrophic, near ahead has recovery signal
+    EXPECT_GT(s_0_5, 0.15);  // recoverable
+    EXPECT_LT(s_5,   0.10);  // very bad
+    EXPECT_LT(s_10,  0.05);  // catastrophic
 }
 
-TEST(FitnessComputer022, ScorePureLateral) {
+TEST(FitnessComputer022, ScoreAheadGradientExceedsV1) {
     auto fc = makeDefault();
-    // lateral: eff_lat = lat/5, score = 1/(1+(lat/5)^2)
-    EXPECT_NEAR(fc.computeStepScore(0.0, 5.0), 1.0/(1.0 + 1.0), 1e-10);   // 0.50
-    EXPECT_NEAR(fc.computeStepScore(0.0, 10.0), 1.0/(1.0 + 4.0), 1e-10);  // 0.20
+    // Check the V4 fix specifically: V1 had ~constant ~0.058 for 0.5m to 5m
+    // ahead. V4 must show meaningful difference.
+    double s_0_5 = fc.computeStepScore(0.5, 0.0);
+    double s_5   = fc.computeStepScore(5.0, 0.0);
+    // V4: 0.198 vs 0.089 — roughly 2.2x difference
+    EXPECT_GT(s_0_5 / s_5, 1.5);
 }
 
-TEST(FitnessComputer022, ScoreCombined) {
+TEST(FitnessComputer022, ScorePureLateralPenalized) {
     auto fc = makeDefault();
-    // -5 behind, 5 lateral: eff_along=-5/7=-0.714, eff_lat=5/5=1.0
-    // eff_dist_sq = 0.510 + 1.0 = 1.510
-    double eff = (-5.0/7.0)*(-5.0/7.0) + 1.0;
-    EXPECT_NEAR(fc.computeStepScore(-5.0, 5.0), 1.0/(1.0 + eff), 1e-10);  // 0.398
+    // Pure lateral at along=0: angle = π/2 (clamped exactly), so eff_angle² = 4
+    // (with cone=45°). plus small distance term. score ≈ 0.19.
+    // This is the GRAVITY FIX: 5m off-axis at along=0 used to score 0.5,
+    // now scores < 0.20 — clearly outside the streak threshold.
+    EXPECT_NEAR(fc.computeStepScore(0.0, 5.0), refScore(0, 5), 1e-10);
+    EXPECT_LT(fc.computeStepScore(0.0, 5.0), 0.25);
+    EXPECT_LT(fc.computeStepScore(0.0, 5.0), STREAK_THRESH);
+
+    EXPECT_NEAR(fc.computeStepScore(0.0, 10.0), refScore(0, 10), 1e-10);
+    EXPECT_LT(fc.computeStepScore(0.0, 10.0), 0.20);
 }
 
-TEST(FitnessComputer022, ScoreAsymmetry) {
+TEST(FitnessComputer022, ScoreCombinedBehindAndLateral) {
     auto fc = makeDefault();
-    // 3m ahead MUCH worse than 3m behind
-    double ahead3 = fc.computeStepScore(3.0, 0.0);   // 1/(1+36) = 0.027
-    double behind3 = fc.computeStepScore(-3.0, 0.0);  // 1/(1+0.09) = 0.917
-    EXPECT_LT(ahead3, behind3);
-    EXPECT_LT(ahead3, 0.05);
-    EXPECT_GT(behind3, 0.80);  // behind_scale=7: 1/(1+9/49) ≈ 0.845
+    // -7 back, 7 lateral: distance ≈ 9.9, angle = 45° (cone edge)
+    // eff_dist = 9.9/7 ≈ 1.414, eff_angle = 1.0
+    // score = 1/(1 + 2 + 1) = 0.25 exactly
+    EXPECT_NEAR(fc.computeStepScore(-7.0, 7.0), 0.25, 1e-10);
+
+    // -5 back, 5 lateral: also 45° cone-edge, smaller distance → better score
+    EXPECT_NEAR(fc.computeStepScore(-5.0, 5.0), refScore(-5, 5), 1e-10);
+
+    // -10 back, 5 lateral: angle ≈ 26.57°
+    EXPECT_NEAR(fc.computeStepScore(-10.0, 5.0), refScore(-10, 5), 1e-10);
+}
+
+TEST(FitnessComputer022, ScoreAsymmetryAheadVsBehind) {
+    auto fc = makeDefault();
+    // Same magnitude — ahead is dramatically worse than behind.
+    // Behind 3m: 0.917 (good)
+    // Ahead 3m: ~0.13 (bad — small dist scale ahead)
+    double behind3 = fc.computeStepScore(-3.0, 0.0);
+    double ahead3  = fc.computeStepScore(3.0, 0.0);
+    EXPECT_GT(behind3, 0.8);
+    EXPECT_LT(ahead3, 0.20);
+    EXPECT_GT(behind3, 5.0 * ahead3);  // dramatic asymmetry
 }
 
 TEST(FitnessComputer022, ScoreLateralDistAlwaysPositive) {
     auto fc = makeDefault();
-    // lateralDist is always >= 0 (it's a distance, not signed)
+    // lateralDist is a magnitude (always >= 0). 5m left == 5m right.
     EXPECT_DOUBLE_EQ(fc.computeStepScore(0.0, 5.0), fc.computeStepScore(0.0, 5.0));
 }
 
-TEST(FitnessComputer022, ScoreFarAwaySignal) {
+TEST(FitnessComputer022, ScoreFarAwayStillPositive) {
     auto fc = makeDefault();
-    // Always positive even very far away
+    // Always strictly positive — gradient signal everywhere.
     EXPECT_GT(fc.computeStepScore(-50.0, 0.0), 0.0);
     EXPECT_GT(fc.computeStepScore(0.0, 50.0), 0.0);
     EXPECT_GT(fc.computeStepScore(50.0, 50.0), 0.0);
 }
 
+TEST(FitnessComputer022, ScoreGravityFix) {
+    auto fc = makeDefault();
+    // The key claim: 5m off-axis at along=0 (left/right/above/below)
+    // is now firmly OUTSIDE the streak threshold (was exactly at 0.5).
+    // This eliminates the "happy hovering" gradient-free zone.
+    double off = fc.computeStepScore(0.0, 5.0);
+    EXPECT_LT(off, STREAK_THRESH);
+    EXPECT_LT(off, 0.25);
+
+    // Pure tail-chase 5m behind: well above threshold, dramatically better than off-axis.
+    // tail ≈ 0.66, off ≈ 0.18 → ratio ~3.6x
+    double tail = fc.computeStepScore(-5.0, 0.0);
+    EXPECT_GT(tail, STREAK_THRESH);
+    EXPECT_GT(tail, 3.0 * off);  // very different scores
+}
+
+TEST(FitnessComputer022, ScoreAheadIsAlwaysWorseThanLateralAtSameDistance) {
+    auto fc = makeDefault();
+    // Side-by-side comparison at distance 5:
+    //   5m to side (along=0): dist_scale = behind (7m),  eff_d = 0.71, eff_a = 2 → 0.18
+    //   5m ahead (along=5):   dist_scale = ahead  (2m),  eff_d = 2.5,  eff_a = 2 → 0.089
+    // The small dist_scale_ahead makes ahead-5 dramatically worse than side-5.
+    double side5  = fc.computeStepScore(0.0, 5.0);
+    double ahead5 = fc.computeStepScore(5.0, 0.0);
+    EXPECT_GT(side5, ahead5);
+}
+
 TEST(FitnessComputer022, ScoreDifferentScales) {
-    // Custom scales: behind=5, ahead=1, cross=3
-    FitnessComputer fc(5.0, 1.0, 3.0, 0.5, 25, 5.0);
-    // 5m behind with behind_scale=5: eff_along = -5/5 = -1, score = 1/(1+1) = 0.5
+    // Tighter cone (20°) and smaller distance scales
+    FitnessComputer fc(5.0, 1.0, 20.0, 0.5, 50, 5.0);
+    // 5m directly behind: eff_dist = 1, angle = 0 → score = 1/(1+1) = 0.5
     EXPECT_NEAR(fc.computeStepScore(-5.0, 0.0), 0.5, 1e-10);
-    // 1m ahead with ahead_scale=1: eff_along = 1/1 = 1, score = 1/(1+1) = 0.5
-    EXPECT_NEAR(fc.computeStepScore(1.0, 0.0), 0.5, 1e-10);
-    // 3m lateral with cross_scale=3: eff_lat = 3/3 = 1, score = 1/(1+1) = 0.5
-    EXPECT_NEAR(fc.computeStepScore(0.0, 3.0), 0.5, 1e-10);
+    // 1m directly ahead: eff_dist = 1 (with ahead_scale=1), angle clamped to π/2,
+    // eff_angle = (π/2) / (20°) = (π/2) / (π/9) = 4.5, eff_angle² = 20.25
+    // score = 1/(1 + 1 + 20.25) ≈ 0.045
+    EXPECT_LT(fc.computeStepScore(1.0, 0.0), 0.10);
 }
 
 // ========================================================================
-// T005: Streak mechanism unit tests
+// Streak mechanism unit tests (unchanged behavior)
 // ========================================================================
 
 TEST(FitnessComputer022, StreakFirstStep) {
     auto fc = makeDefault();
     fc.resetStreak();
-    // First good step: streakCount=1, mult = 1 + 4*1/25 = 1.16
     double result = fc.applyStreak(0.8);
-    EXPECT_NEAR(result, 0.8 * (1.0 + 4.0 * 1.0 / 25.0), 1e-10);
+    EXPECT_NEAR(result, 0.8 * (1.0 + 4.0 * 1.0 / STREAK_STEPS), 1e-10);
 }
 
 TEST(FitnessComputer022, StreakBuildsToMax) {
     auto fc = makeDefault();
     fc.resetStreak();
     double result = 0.0;
-    for (int i = 0; i < 25; i++) {
+    for (int i = 0; i < STREAK_STEPS; i++) {
         result = fc.applyStreak(0.8);
     }
-    // After 25 steps: streakCount=25, mult=5.0
     EXPECT_NEAR(result, 0.8 * 5.0, 1e-10);
 }
 
@@ -117,67 +208,51 @@ TEST(FitnessComputer022, StreakCapsAtMax) {
     auto fc = makeDefault();
     fc.resetStreak();
     double result = 0.0;
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < STREAK_STEPS + 10; i++) {
         result = fc.applyStreak(0.8);
     }
-    // After 30 steps: still capped at 25, mult=5.0
     EXPECT_NEAR(result, 0.8 * 5.0, 1e-10);
 }
 
 TEST(FitnessComputer022, StreakHardReset) {
     auto fc = makeDefault();
     fc.resetStreak();
-    // Build 10 steps
     for (int i = 0; i < 10; i++) {
         fc.applyStreak(0.8);
     }
-    // Reset by low score
-    fc.applyStreak(0.1);  // below threshold (0.5)
-    // Next good step starts at streakCount=1 again
+    fc.applyStreak(0.1);  // below threshold → reset
     double result = fc.applyStreak(0.8);
-    EXPECT_NEAR(result, 0.8 * (1.0 + 4.0 * 1.0 / 25.0), 1e-10);
+    EXPECT_NEAR(result, 0.8 * (1.0 + 4.0 * 1.0 / STREAK_STEPS), 1e-10);
 }
 
 TEST(FitnessComputer022, StreakThresholdBoundary) {
     auto fc = makeDefault();
     fc.resetStreak();
-    // Exactly at threshold: should maintain streak
     fc.applyStreak(0.50);
     double at_threshold = fc.applyStreak(0.50);
-    EXPECT_GT(at_threshold, 0.50);  // multiplied by > 1.0
+    EXPECT_GT(at_threshold, 0.50);
 
     fc.resetStreak();
-    // Just below threshold: should not build streak
     fc.applyStreak(0.499);
-    // streakCount should be 0, so next call with 0.499 → still no streak
     double below = fc.applyStreak(0.499);
-    EXPECT_NEAR(below, 0.499 * 1.0, 1e-10);  // no multiplier since streak reset
-
-    // Actually: 0.499 < 0.5 → streak resets, then 0.499 < 0.5 → still 0
-    // but wait — if below threshold, streakCount=0, multiplier=1.0
-    // So result = 0.499 * 1.0... but applyStreak returns stepPoints * multiplier
-    // where multiplier is based on NEW streakCount (0)
-    // So below should be 0.499 * (1 + 4*0/25) = 0.499
+    EXPECT_NEAR(below, 0.499, 1e-10);
 }
 
 TEST(FitnessComputer022, StreakMultiplierLinearity) {
     auto fc = makeDefault();
     fc.resetStreak();
-    // Build to step 12
     for (int i = 0; i < 12; i++) {
         fc.applyStreak(0.8);
     }
-    // Step 12: mult = 1.0 + 4.0 * 12/25 = 2.92
-    double result = fc.applyStreak(0.8);  // step 13
-    EXPECT_NEAR(result, 0.8 * (1.0 + 4.0 * 13.0 / 25.0), 1e-10);
+    double result = fc.applyStreak(0.8);
+    EXPECT_NEAR(result, 0.8 * (1.0 + 4.0 * 13.0 / STREAK_STEPS), 1e-10);
 }
 
 TEST(FitnessComputer022, DiagnosticMaxStreak) {
     auto fc = makeDefault();
     fc.resetStreak();
-    // 5 good, reset, 10 good
     for (int i = 0; i < 5; i++) fc.applyStreak(0.8);
-    fc.applyStreak(0.1);  // reset
+    fc.applyStreak(0.1);
     for (int i = 0; i < 10; i++) fc.applyStreak(0.8);
     EXPECT_EQ(fc.getMaxStreak(), 10);
 }
@@ -185,9 +260,8 @@ TEST(FitnessComputer022, DiagnosticMaxStreak) {
 TEST(FitnessComputer022, DiagnosticTotalStreakSteps) {
     auto fc = makeDefault();
     fc.resetStreak();
-    // 5 good, reset, 10 good
     for (int i = 0; i < 5; i++) fc.applyStreak(0.8);
-    fc.applyStreak(0.1);  // reset (not in streak)
+    fc.applyStreak(0.1);
     for (int i = 0; i < 10; i++) fc.applyStreak(0.8);
     EXPECT_EQ(fc.getStreakSteps(), 15);
 }
@@ -196,28 +270,18 @@ TEST(FitnessComputer022, DiagnosticMaxMultiplier) {
     auto fc = makeDefault();
     fc.resetStreak();
     for (int i = 0; i < 10; i++) fc.applyStreak(0.8);
-    // maxMultiplier after 10 steps = 1.0 + 4.0*10/25 = 2.6
-    EXPECT_NEAR(fc.getMaxMultiplier(), 1.0 + 4.0 * 10.0 / 25.0, 1e-10);
+    EXPECT_NEAR(fc.getMaxMultiplier(), 1.0 + 4.0 * 10.0 / STREAK_STEPS, 1e-10);
 }
 
 TEST(FitnessComputer022, StreakRateIndependence) {
-    // 50 steps at "5s at 100ms" vs 25 steps at "2.5s at 100ms"
-    // Both should reach max at the same fraction
-    FitnessComputer fc50(BEHIND, AHEAD, CROSS, STREAK_THRESH, 50, STREAK_MULT_MAX);
-    FitnessComputer fc25(BEHIND, AHEAD, CROSS, STREAK_THRESH, 25, STREAK_MULT_MAX);
+    FitnessComputer fc50(DIST_BEHIND, DIST_AHEAD, CONE_ANGLE_DEG, STREAK_THRESH, 50, STREAK_MULT_MAX);
+    FitnessComputer fc25(DIST_BEHIND, DIST_AHEAD, CONE_ANGLE_DEG, STREAK_THRESH, 25, STREAK_MULT_MAX);
 
     fc50.resetStreak();
     fc25.resetStreak();
 
-    // At 50% of max steps, both should have same multiplier
-    for (int i = 0; i < 25; i++) fc50.applyStreak(0.8);  // 50% of 50
-    for (int i = 0; i < 12; i++) fc25.applyStreak(0.8);  // ~50% of 25
-
-    // mult50 at step 25 of 50 = 1 + 4*25/50 = 3.0
-    // mult25 at step 12 of 25 = 1 + 4*12/25 = 2.92  (close but not exact due to integer)
-    // The key property: at 100% both reach 5.0
-    for (int i = 25; i < 50; i++) fc50.applyStreak(0.8);
-    for (int i = 12; i < 25; i++) fc25.applyStreak(0.8);
+    for (int i = 0; i < 50; i++) fc50.applyStreak(0.8);
+    for (int i = 0; i < 25; i++) fc25.applyStreak(0.8);
     EXPECT_NEAR(fc50.getMaxMultiplier(), 5.0, 1e-10);
     EXPECT_NEAR(fc25.getMaxMultiplier(), 5.0, 1e-10);
 }

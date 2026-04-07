@@ -24,7 +24,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             continue;
         }
 
-        FitnessComputer fc(cfg.fitBehindScale, cfg.fitAheadScale, cfg.fitCrossScale,
+        FitnessComputer fc(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
                            cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
         fc.resetStreak();
 

@@ -576,7 +576,7 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
     const AutocConfig& cfg = ConfigManager::getConfig();
     int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
     if (streakStepsToMax < 1) streakStepsToMax = 1;
-    FitnessComputer logFC(cfg.fitBehindScale, cfg.fitAheadScale, cfg.fitCrossScale,
+    FitnessComputer logFC(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
                           cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
     logFC.resetStreak();
 
