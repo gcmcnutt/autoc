@@ -5,6 +5,16 @@
 **Created**: 2026-04-07
 **Predecessor**: [022-tracking-cone-fitness](../022-tracking-cone-fitness/spec.md)
 
+## Clarifications
+
+### Session 2026-04-08
+
+- Q: Engage transient fix — which reset approach? → A: Option A (pre-fill history slots with current geometry on every engage transition)
+- Q: INAV engage delay modeling — which approach? → A: Option A (simulate delay in sim pipeline). During the ~0.75s window, CRRCSim applies centered stick (zero pitch/roll/throttle command) — craft flies open-loop under FDM + wind, no autopilot. NN runs and updates its history buffer every tick, but its outputs are ignored by the sim bridge until the window expires.
+- Q: Type-safe NN sensor interface — which approach? → A: Option A (struct-of-floats with named fields). Memory layout identical to `float[NN_INPUT_COUNT]` via `static_assert`; compiler flags every site that adds/removes/reorders fields. Worth the 1.5–2x migration cost vs enum indexing for permanent protection against the 021-style silent serialization corruption bug class.
+- Q: Authority-limit iteration (Change 8) — when to trigger Phase 3c retrain? → A: Deferred to plan phase. Determine the trigger criterion empirically after seeing Phase 3b baseline behavior under the 3-cosine representation. The 3-cosine change is the primary intervention; authority limiting is a conditional follow-up whose threshold should be set from observed data, not guessed.
+- Q: Streak threshold ramp — include in 023? → A: No. Leave parked in BACKLOG per 022 verdict (betterz2 converged without it). Revisit only if 023 Phase 3a shows an early-generation "no streak signal" problem under the new 3-cosine representation.
+
 ## Problem
 
 Flight 2026-04-07 (first 022-trained flight) showed control intent but failed
@@ -474,24 +484,39 @@ Root cause: xiao `recordErrorHistory()` is called during autoc but the
 buffer is NOT reset when autoc re-engages (second+ engage per flight).
 First engage works because buffer is zero-initialized at boot.
 
-**Fix**: At every autoc transition (`false → true`), reset the history
-buffers in `AircraftState`. Either:
-- **Option A**: Pre-fill with current in-autoc geometry (dPhi, dTheta, dist
-  computed against newly-armed path, pushed to all history slots)
-- **Option B**: Zero out all history slots
-- **Option C**: Remove the "first engage" special case and always reset
-  the same way whether first or re-engage
+**Fix (LOCKED 2026-04-08)**: On every autoc transition (`false → true`),
+pre-fill ALL history slots in `AircraftState` with the current in-autoc
+geometry computed against the newly-armed path:
+- Compute `target_x_body / target_y_body / target_z_body` (new 3-cosine
+  representation — see Change 6) from current aircraft state and path
+- Compute `dist` from current aircraft position to rabbit
+- Push the same computed values into every history slot (past samples
+  AND lookahead samples get the current-tick values)
+- First NN call sees a flat history matching reality: closing rate is
+  zero, all past samples equal the "now" sample.
 
-Options A and C are equivalent if the first-engage path also pre-fills.
-Option B is simplest (just `memset`), but closing rate becomes `(0-now)/dt`
-which can still be spurious on the first sample.
-
-**Recommended: Option A** — reset-and-fill with current values. First NN
-call sees a flat history matching reality, closing rate is zero.
+No special-case for first vs re-engage — the same reset happens every
+time. Closing rate is derived as `(now - prev) / dt`, which is zero when
+all slots are pre-filled identically. No spurious large gradient on the
+first post-engage tick.
 
 **Code location**: `xiao/src/msplink.cpp` — at the autoc enable transition
-(currently line ~402). Also check `include/autoc/eval/aircraft_state.h`
-for a `resetHistory()` method or add one.
+(currently line ~402). Add a `resetHistory(const Path& armedPath, const
+AircraftState& currentState)` method to `AircraftState` that performs the
+pre-fill computation. Sim side (CRRCSim `inputdev_autoc.cpp`) uses the
+same method at each scenario start — verifies the training path and
+runtime path share the same reset code.
+
+**Scope note — interaction with Change 1b (INAV engage delay)**: the
+pre-fill reset's practical impact is smaller than it looks at first.
+Change 1b adds a ~0.75s delay window in which the NN is running and
+updating its history buffer but the sim bridge ignores its outputs.
+By the time NN commands actually matter, the history has been
+overwritten by ~7 real in-flight samples. The pre-fill reset
+protects the first handful of samples inside the delay window
+against stale pre-engage contents — those samples influence the NN's
+later state even though their outputs are ignored. Still necessary
+but not dominant.
 
 **Also check**: does this same bug exist in CRRCSim? If the sim re-uses
 aircraft state across evaluations, it might have the same stale-history
@@ -500,40 +525,52 @@ creates a fresh state) but worth verifying.
 
 ### Change 1b: INAV Engage Delay Modeling
 
-The INAV 750ms delay between "switch on" and "commands effective" means
+The INAV ~750ms delay between "switch on" and "commands effective" means
 the entry position variation we train with is NOT what the real aircraft
 sees. Current training places the aircraft at `EntryPositionRadiusSigma`
 offset and starts NN control immediately. Real flight has the aircraft
-drifting for 750ms before NN commands matter.
+drifting for ~0.75s before NN commands reach the servos.
 
-**Options**:
+**Fix (LOCKED 2026-04-08)**: Simulate the delay in the CRRCSim bridge.
 
-**A. Simulate the delay** — in sim, feed NN inputs for the first ~750ms
-but ignore NN outputs (use current pilot-like stick position or ACRO
-behavior). After delay, start applying NN commands.
-- Matches real behavior exactly
-- Complicates sim pipeline — need to simulate "ACRO pilot" for 750ms
-- Requires defining what INAV does during the delay (it's the last
-  pilot stick, probably near-neutral for handoff)
+**Delay-window behavior** (the full ~0.75s after autoc engage):
+- NN runs every tick, computes outputs, and updates its internal history
+  buffer normally. The history buffer sees real in-flight samples
+  (dPhi/dTheta/dist etc. against the armed path) and fills naturally
+  over the window.
+- **CRRCSim ignores the NN's outputs** during the window. Instead it
+  applies centered stick: `pitch_cmd = 0, roll_cmd = 0, throttle_cmd = 0`.
+- Craft flies open-loop under FDM + wind during the window. No autopilot,
+  no attitude hold, no stabilization. Matches the real handoff: user
+  lines up the release, throws the switch, and the aircraft coasts
+  briefly on momentum + wind while INAV processes the mode change.
+- After the window expires, the sim bridge starts applying NN outputs
+  normally. From that tick forward, training and flight are identical.
 
-**B. Widen entry position variation** — current `EntryPositionRadiusSigma=15`
-assumes aircraft starts near path. Increase to 30-50 so training covers
-positions the aircraft actually reaches after 750ms of drift.
-- Simpler: no sim pipeline changes
-- Less accurate: training samples don't correspond to "just post-delay"
-  states, just "some far-away state"
-- But combined with intercept training, the NN learns to converge from
-  any entry point within the larger sigma
+**Configuration**:
+- Add `EngageDelayMs` to `autoc.ini` (default: 750).
+- Runtime global `gEngageDelayMs` read at startup.
+- Xiao-side constant matching the sim value. The sim models the delay
+  so that training conditions match what the aircraft experiences on
+  real flights; xiao doesn't need any new behavior because the delay
+  is imposed by INAV itself.
 
-**C. Do both** — widen sigma AND simulate delay.
+**Interaction with Change 1 (history buffer reset)**: Change 1's pre-fill
+still runs at engage transition, but its scope is narrower than initially
+thought. By the time NN commands actually take effect (end of delay
+window), the buffer has already been overwritten with ~7–8 real ticks
+of genuine in-flight samples. The reset primarily protects the first
+few samples of the window against stale pre-engage contents. Still
+worth doing — those early samples influence the NN's internal state
+even though its outputs are ignored — but it is not the dominant fix.
 
-**Recommended: B** for first iteration. A is complex and the exact
-pre-engage dynamics are not cleanly modeled anyway. If B doesn't work,
-revisit A.
+**Cost in training time**: each scenario gains ~7 ignored ticks (~14 if
+we go to 20 Hz). Trivial overhead.
 
-**Question for user**: is "reduce the INAV delay" even possible? Could
-xiao pre-arm / pre-engage to cut the 750ms down? That would be the
-cleanest fix but may require INAV-side changes.
+**Real-flight delay reduction is still open**: could xiao pre-arm the
+NN output path earlier to cut the 0.75s down? Would require INAV-side
+changes and is out of scope for 023. Parked as a future optimization
+— if it lands, `EngageDelayMs` becomes the only place to update.
 
 ### Change 2: Training Distribution — Far-Start Intercept Coverage
 
@@ -740,16 +777,25 @@ bang-bang behavior in real flight.
 
 **Approach** (iterative, not a single change):
 
-1. **Train baseline** with all other 023 changes in place. Examine what
-   the NN actually learns — throttle distribution, surface deflection
-   distribution, `d²output²` chatter.
+1. **Train baseline** with all other 023 changes in place (especially
+   Change 6, the 3-cosine bearing representation). Examine what the
+   NN actually learns — throttle distribution, surface deflection
+   distribution, `d²output²` chatter, per-axis saturation fraction.
 
-2. **If learned behavior is still saturating**: apply an *authority limit*
-   at the NN output clamp. Cap pitch/roll command magnitude at ~50% of
-   full throw during training AND inference. Retrain from scratch (or
-   from baseline weights as a warm start).
+2. **Set trigger criterion empirically (plan phase)**. Phase 3b baseline
+   observation produces the data that determines whether Phase 3c
+   authority-limit retrain is worth running. Specific trigger thresholds
+   (mean throttle, saturation fraction, chatter metric) are NOT set in
+   this spec — they are set after the baseline run, by the plan-phase
+   analysis of Phase 3b results. The 3-cosine representation change is
+   the primary intervention; Phase 3c is a conditional follow-up.
 
-3. **Compare**: does the authority-limited policy track as well in sim?
+3. **If triggered**: apply an *authority limit* at the NN output clamp.
+   Cap pitch/roll command magnitude at ~50% of full throw during
+   training AND inference. Retrain (from scratch or from baseline weights
+   as a warm start — decided during plan phase).
+
+4. **Compare**: does the authority-limited policy track as well in sim?
    How does it behave in real flight?
 
 This is likely to produce a stronger signal than a pure `Σ d²output²`
@@ -777,37 +823,120 @@ lock-step (see BACKLOG "Type-Safe NN Sensor Interface" for the full list).
 The 021 redesign (29→27) shipped with silent serialization corruption from
 this class of bug. Doing it one more time is asking for the same thing.
 
-**Goal**: The compiler enforces topology consistency. Changing
-`NN_INPUT_COUNT` in one place should either:
-- Propagate automatically everywhere it matters, OR
-- Produce compile errors at every site that assumed the old value.
+**Goal**: The compiler enforces topology consistency. Adding, removing,
+or reordering an input must either propagate automatically everywhere,
+or produce a compile error at every site that assumed the old layout.
+
+**Locked approach (2026-04-08)**: Named struct-of-float-arrays.
+
+```cpp
+// include/autoc/nn/nn_inputs.h
+struct NNInputs {
+    // 6 time samples each: [-0.9s, -0.3s, -0.1s, now, +0.1s, +0.5s]
+    float target_x[6];   // unit-vec x in body frame (was dPhi)
+    float target_y[6];   // unit-vec y in body frame (was dTheta, partial)
+    float target_z[6];   // unit-vec z in body frame (new)
+    float dist[6];       // metres
+    float closing_rate;  // m/s, +ve = approaching
+    float quat_w;
+    float quat_x;
+    float quat_y;
+    float quat_z;
+    float airspeed;      // m/s
+    float gyro_p;        // rad/s body rate, aerospace RHR
+    float gyro_q;
+    float gyro_r;
+};
+
+static_assert(sizeof(NNInputs) == 33 * sizeof(float),
+              "NNInputs layout must be contiguous float[33] with no padding");
+static_assert(alignof(NNInputs) == alignof(float),
+              "NNInputs must be float-aligned for matrix multiply");
+
+constexpr int NN_INPUT_COUNT = sizeof(NNInputs) / sizeof(float);
+```
+
+**Why this specific approach**:
+- **Runtime cost is zero.** Struct of `float[N]` members has identical
+  memory layout to a bare `float[33]`. Matrix multiply via
+  `reinterpret_cast<const float*>(&inputs)` gets the same pointer the
+  inner loop wanted anyway. All three candidate approaches (struct,
+  enum indexing, template tags) compile to identical machine code.
+- **`static_assert` catches the exact 021 failure mode.** The 021
+  serialization corruption happened because `NN_INPUT_COUNT` and the
+  actual layout drifted. Under this approach, any drift produces a
+  compile error: the `sizeof` assertion fails if padding is introduced
+  or fields are added without updating the contract.
+- **Adding fields forces visiting every site.** Designated-initializer
+  construction (`NNInputs{.target_x = ..., .dist = ..., ...}`) makes
+  the compiler flag any missed field at every construction point.
+- **Field names become self-documenting.** Access is `inputs.gyro_p`
+  not `inputs[26]`. `data.dat` columns emit with field names.
+  `sim_response.py` reads by name, not position.
+
+**Rejected alternatives**:
+- **Enum-class indexing** (`inputs[static_cast<int>(Input::GYRO_P)]`):
+  smallest migration but only catches typos. Does not catch adding an
+  enum value without a populator, off-by-one, or size drift. Preserves
+  the "floats addressable by number" pattern we are trying to eliminate.
+- **Template tag types** (`get<GyroP>(inputs)`): equivalent safety to
+  the struct for accesses but weaker for construction, and adds
+  template machinery with no corresponding benefit.
+
+**Constitutional note on struct field order**: the struct field
+declaration order is part of the serialization contract. Reordering
+fields is a format-breaking change equivalent to changing the cereal
+schema. Add a comment at the top of the header stating this, so future
+refactors don't silently break saved weights / data.dat parsers.
 
 **Minimum requirements**:
-- Named input enum or typed struct (not magic index into `float[]`)
-- Single source of truth for `NN_INPUT_COUNT` and topology string
-- Compile-time assertion that topology.h matches the enum/struct
-- Serialization format self-describing (field names or tags, not positional)
-- Xiao-side consumer (`xiao/src/msplink.cpp`) shares the same header
+- `NNInputs` struct as the single source of truth for input layout
+- `static_assert(sizeof(NNInputs) == N * sizeof(float))` contract
+- `NN_INPUT_COUNT` derived from `sizeof(NNInputs) / sizeof(float)`,
+  not hand-maintained as a separate constant
+- Serialization via direct member access (cereal `CEREAL_NVP` or
+  member-by-member), not `reinterpret_cast`
+- `nn_gather_inputs()` populates fields by name, not by index
+- `nn2cpp` codegen emits field-name access, not integer indexing
+- `data.dat` header emits column names derived from field names
+- `sim_response.py` parses by column name
+- Xiao `msplink.cpp` populates fields by name
 
 **Non-goals (for 023)**: Unit metadata, range validation, runtime
-introspection UI. The point is compile-time safety, not a full sensor
-framework. Keep it small.
+introspection, registry pattern. The point is compile-time safety, not
+a full sensor framework.
 
-**Files in scope for the prerequisite** (from BACKLOG list):
-- `include/autoc/nn/topology.h`
-- `include/autoc/autoc.h` (duplicate defines cleanup)
-- `src/nn/evaluator.cc` (nn_gather_inputs, index map)
-- `src/autoc.cc` (data.dat format, header, field indices)
-- `include/autoc/eval/aircraft_state.h` (nnInputs_ size, serialization)
-- `tests/contract_evaluator_tests.cc`
-- `tests/nn_evaluator_tests.cc`
-- `specs/019-improved-crrcsim/sim_response.py` (parser)
-- `xiao/src/msplink.cpp` (xiao-side input gathering)
+**Files in scope** (from BACKLOG list, updated with struct approach):
+- `include/autoc/nn/nn_inputs.h` (NEW — canonical struct definition)
+- `include/autoc/nn/topology.h` (derives `NN_INPUT_COUNT` from struct)
+- `include/autoc/autoc.h` (remove duplicate defines)
+- `include/autoc/eval/aircraft_state.h` (store `NNInputs` not `float[]`,
+  update cereal serialization to round-trip the struct)
+- `src/nn/evaluator.cc` (nn_gather_inputs → populate named fields;
+  matrix multiply uses `reinterpret_cast<const float*>(&inputs)` at
+  the single entry point of forward())
+- `src/autoc.cc` (data.dat format string, header emits field names,
+  field indexing becomes field access)
+- `tests/contract_evaluator_tests.cc` (layout assertions by name)
+- `tests/nn_evaluator_tests.cc` (input layout assertions by name)
+- `tools/nn2cpp/*` (codegen emits struct-field access for xiao)
+- `specs/019-improved-crrcsim/sim_response.py` (parse by column name)
+- `xiao/src/msplink.cpp` (populate fields by name, no integer index math)
 
-Order: land the type-safe interface FIRST on the 023 branch (still at
-27 inputs, no behavior change). Verify all tests pass. THEN make the
-27→33 input change in one commit, relying on the compiler to catch any
-missed site.
+**Migration order**:
+
+1. **Phase 0a.1** — Add the `NNInputs` struct at 27 inputs matching the
+   current layout. Derive `NN_INPUT_COUNT` from `sizeof`. Update all
+   consumers to access by name but keep behavior identical. Verify all
+   tests pass. **No behavior change, just refactor.** Verify by
+   deliberately breaking the struct (add an unused field, see compile
+   errors at every call site; remove it).
+2. **Phase 0a.2** — Apply the 27→33 input change in one commit, with
+   the new `target_x`/`target_y`/`target_z` arrays replacing `dPhi`/
+   `dTheta`. The compiler catches every site that missed the migration.
+3. **Phase 0a.3** — Run the deliberate-break test again (bump
+   `sizeof(NNInputs)` by adding a throwaway field) to verify the
+   static_assert catches the 021 failure mode.
 
 ## Parameter Schedules by Implementation Phase
 
@@ -1040,14 +1169,13 @@ training results.
 
 ## Questions for Clarification
 
-- **Streak threshold ramp**: 022 backlog had a deferred streak threshold ramp
-  (0.1 → 0.5 over training). Worth including in 023 or skip?
 - **Variation ramp with bigger sigmas**: with `EntryPositionRadiusSigma=30`,
   gen 1 still sees 0% (ramp=0). At gen 41 (ramp 11%) sigma effective is 3.3m.
   At gen 401 full 30m. Do we need a faster ramp to catch up, or keep the
-  current 10-step ramp schedule?
+  current 10-step ramp schedule? (plan-phase tuning decision)
 - **Throttle epsilon**: how tight should lexicase throttle filtering be?
   Too tight overrides score quality. Too loose has no effect. Start at 0.1?
+  (plan-phase tuning decision)
 
 ## Research Candidates (end-of-spec, not in main path)
 
