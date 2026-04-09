@@ -1,9 +1,9 @@
 # 022 — Point-Accumulation Fitness with Streak Bonus
 
-**Status**: Draft
+**Status**: Shipped (flown 2026-04-07). Follow-on work in [023-ood-and-engage-fixes](../023-ood-and-engage-fixes/spec.md)
 **Priority**: P1 — next training cycle improvement
 **Created**: 2026-04-01
-**Updated**: 2026-04-04
+**Updated**: 2026-04-07
 
 ## Problem
 

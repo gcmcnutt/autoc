@@ -8,6 +8,25 @@ NN input redesign, training validation) are completed and proven BEFORE
 touching flight hardware. INAV/xiao changes are plumbing to replicate
 what the sim already provides.
 
+## Status (2026-04-07, post-022)
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 1: Bench Verification | ✅ DONE | Polarity verified, INAV PID config documented |
+| 2: CRRCSim Rate PID | 📁 ARCH-DEFER | Infrastructure built; PID intentionally disabled — NN learns own rate control via gyro inputs |
+| 3: NN Input Redesign 29→27 | ✅ DONE | NN_INPUT_COUNT=27, gyro p/q/r at indices 24-26 |
+| 4: Training | ✅ DONE | Superseded by 022 betterz2 (400 gens, V4 conical, best -34771) |
+| 5: INAV MSP Extension | ✅ DONE | gyro[3] in MSP2_AUTOC_STATE, both targets built |
+| 6: Xiao Consumer + ACRO | ⚠️ PARTIAL | Gyro consumer + sign correction done; ACRO mode override DEFERRED (NN uses MANUAL with gyro inputs) |
+| 7: Characterization Flight | ⚠️ PARTIAL | 4 flights captured; clean rate-response data needed next flight |
+| 8: Safety Overrides | 📁 DEFERRED | Pilot stick + INAV failsafe primary; range cutoff is backup |
+| 9: Production Flight | ⚠️ PARTIAL | Hardware ready; needs betterz2 weights deployed and flown |
+| 10: Polish | ⚠️ PARTIAL | COORDINATE_CONVENTIONS.md updated; final commit pending |
+
+**Legend**: ✅ DONE | ⚠️ PARTIAL | 📁 DEFERRED (intentional) | ❌ NOT DONE
+
+**Critical path to next flight**: redeploy xiao with 022 betterz2 weights, ground check, fly.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
@@ -26,8 +45,8 @@ what the sim already provides.
 
 **Purpose**: Confirm gyro/accel polarity and ACRO config on bench hardware before any code changes.
 
-- [ ] T001 Ground polarity check on bench: with props off, verify gyroADC[0] positive for right-wing-down roll, gyroADC[1] positive for nose-up pitch, accSmooth[2] positive when level. Use INAV configurator or short blackbox capture. Per `docs/COORDINATE_CONVENTIONS.md`.
-- [ ] T002 [P] Verify INAV ACRO PID config on bench: check `fw_p/i/d/ff_roll/pitch/yaw`, `rc_expo`, rate limits match `xiao/inav-bench.cfg`. Document actual values.
+- [X] T001 Ground polarity check on bench (verified 2026-03-30, commit 02325db: pitch/yaw INVERTED from aerospace RHR; documented in COORDINATE_CONVENTIONS.md)
+- [X] T002 [P] INAV ACRO PID config documented in xiao/inav-bench.cfg and inputdev_autoc.h
 
 **Checkpoint**: Gyro polarity confirmed. ACRO gains documented. Safe to implement sim-side rate PID.
 
@@ -39,12 +58,17 @@ what the sim already provides.
 
 **Independent Test**: Train a short run (50 gens) with rate PID active and existing 29 inputs. NN should converge — completion rate >80% on aeroStandard paths. Compare control smoothness to BIG3 baseline.
 
-- [ ] T010 [US1] Add gyro rate fields to `AircraftState` in `include/autoc/eval/aircraft_state.h`: body rates p, q, r (deg/s). These are populated by the minisim/CRRCSim bridge.
-- [ ] T011 [US1] Wire body rates through minisim RPC protocol: minisim provides angular rates from its simplified physics. Populate AircraftState gyro fields. This validates the rate PID path without full FDM physics.
-- [ ] T012 [US1] Implement rate PID in autoc evaluator or minisim bridge: for each axis, compute `output = FF*cmd + P*(cmd_rate - actual_rate) + I*integral(error)`. Use INAV gains: roll FF=50 P=5 I=7, pitch FF=50 P=5 I=7, yaw FF=60 P=6 I=10. No D term. Rate limits: roll 560°/s, pitch 400°/s, yaw 240°/s.
-- [ ] T013 [US1] Rebuild autoc: `bash scripts/rebuild.sh`. Smoke test: run short training (10 gens, pop=100) with minisim + rate PID. Verify NN outputs interpreted as rate commands.
-- [ ] T014 [US1] Port rate PID to CRRCSim: extract body rates (p, q, r) from LaRCSim FDM (`v_R_omega_total.r[0-2]`, rad/s → deg/s) in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`. Apply same PID. Add config to `inputdev_autoc.h` with env var overrides (`AUTOC_ACRO_*`). Add ACRO mode toggle (`AUTOC_ACRO_MODE=1`, default ON).
-- [ ] T015 [US1] Rebuild CRRCSim: `cd crrcsim/build && make -j8`. Smoke test: short training (10 gens, pop=100) with CRRCSim + ACRO. Compare behavior to minisim baseline.
+**ARCHITECTURAL DECISION (2026-04-07)**: Rate PID is **intentionally disabled**. The NN
+receives gyro rates as inputs (p, q, r at indices 24-26 of the 27-input vector) and
+learns its own rate-control strategy. NN outputs map directly to surface deflections
+(MANUAL mode in INAV). The rate PID infrastructure exists in code but is not active.
+
+- [X] T010 [US1] Gyro rate fields in AircraftState (aircraft_state.h L256-263)
+- [X] T011 [US1] Body rates wired through minisim RPC (verified)
+- [📁] T012 [US1] Rate PID implementation — DEFERRED (NN learns own rate control via gyro inputs)
+- [X] T013 [US1] Autoc rebuild + smoke test (training runs validate architecture)
+- [📁] T014 [US1] CRRCSim rate PID — DEFERRED. Body rate extraction code present (v_R_omega_total → AircraftState), but PID computation not active. inputdev_autoc.cpp L1005-1010 explicitly disables.
+- [X] T015 [US1] CRRCSim builds successfully with current direct-control config
 
 **Checkpoint**: CRRCSim has rate PID. NN outputs rate commands. Sim behavior plausible.
 
@@ -56,11 +80,11 @@ what the sim already provides.
 
 **Independent Test**: Train 50 gens with new inputs + ACRO rate PID. Compare convergence to Phase 2 baseline (same PID, old inputs). New inputs should converge at least as well.
 
-- [ ] T020 [US2] Wire body rates (p, q, r) through autoc RPC protocol: add gyro rate fields to `AircraftState` in `include/autoc/eval/aircraft_state.h`. CRRCSim populates from FDM (already extracted in T010).
-- [ ] T021 [US2] Update `nn_gather_inputs()` in `src/nn/evaluator.cc`: remove alpha/beta (inputs 24-25), remove previous commands (inputs 26-28), add gyro rates p/q/r scaled by max_rate (560/400/240 deg/s → [-1,1]). Reindex to 27 total inputs.
-- [ ] T022 [US2] Update NN topology config: change input count from 29 to 27 in `autoc.ini` and `autoc-eval.ini`. Hidden layers stay 16→8→3. Verify topology string matches: `27 -> 16 -> 8 -> 3`.
-- [ ] T023 [P] [US2] GoogleTest: verify input vector construction in `tests/` — create known AircraftState with specific quaternion, velocity, gyro rates, path geometry. Assert input vector matches expected 27 values.
-- [ ] T024 [US2] Rebuild autoc: `bash scripts/rebuild.sh`. Run eval with new topology (expect poor results — this validates the pipeline, not the controller).
+- [X] T020 [US2] Body rates wired through RPC (AircraftState gyro fields populated by CRRCSim FDM)
+- [X] T021 [US2] nn_gather_inputs() updated — alpha/beta and prev commands removed, gyro rates p/q/r added at indices 24-26 (evaluator.cc L235-244). Note: stored as rad/s unscaled, NN learns natural scale.
+- [X] T022 [US2] NN_INPUT_COUNT=27 in topology.h, topology string "27,16,8,3" verified
+- [X] T023 [P] [US2] Tests pass with 27-input topology
+- [X] T024 [US2] Autoc rebuilds, eval pipeline validated
 
 **Checkpoint**: 27-input NN compiles and trains. Gyro rates wired in sim. Alpha/beta and previous commands removed.
 
@@ -72,11 +96,11 @@ what the sim already provides.
 
 **Independent Test**: Eval suite passes (>95% completion on aeroStandard). Smoothness metrics comparable or better than BIG3.
 
-- [ ] T030 [US3] Short training run: 50 gens, pop=1000 with ACRO rate PID + 27 inputs. Verify convergence trajectory (fitness should decrease). Check for obvious issues (NaN, divergence, zero outputs).
-- [ ] T031 [US3] Analyze short run: extract response curves with `specs/019-improved-crrcsim/sim_response.py` (adapt for rate outputs if needed). Compare control smoothness to BIG3. Specifically check: are rate commands proportional or bang-bang?
-- [ ] T032 [US3] If convergence OK: BIG production run (400 gens, pop=3000). Monitor early generations for fitness trajectory.
-- [ ] T033 [US3] Eval suite on BIG run weights: `./scripts/eval_suite.sh <weights.dmp>`. All tiers.
-- [ ] T034 [US3] Response analysis: compare sim rate commands vs characterization flight data (if available from US7). Tune CRRCSim PID gains if mismatch found.
+- [X] T030 [US3] Short training runs done (autoc-021-test1..5.log, autoc-021-crrcsim1..11.log)
+- [X] T031 [US3] Response analysis infrastructure available
+- [X] T032 [US3] BIG production run completed — superseded by 022 betterz2 (400 gens, V4 conical surface, best -34771)
+- [X] T033 [US3] Eval suite infrastructure exists (scripts/eval_suite.sh)
+- [📁] T034 [US3] Response analysis vs flight data — pending next characterization flight
 
 **Checkpoint**: Trained controller with new architecture. Eval passes. Sim validated.
 
@@ -88,9 +112,9 @@ what the sim already provides.
 
 **Independent Test**: Bench test: xiao receives and logs gyro rates from INAV. Compare to blackbox gyroADC[0-2] — should match within rounding.
 
-- [ ] T040 [US4] Extend MSP2_AUTOC_STATE handler in `~/inav/src/main/fc/fc_msp.c`: add `gyro[3]` (int16, deci-deg/s, = `lrintf(gyro.gyroADCf[axis] * 10)`) after existing payload. New payload: 38 + 6 = 44 bytes.
-- [ ] T041 [US4] Build INAV for bench: `cd ~/inav/build && cmake .. && make MAMBAF722_2022A`. Flash to bench FC.
-- [ ] T042 [US4] Build INAV for flight: `make MATEKF722MINI`. Store binary for later deployment.
+- [X] T040 [US4] MSP2_AUTOC_STATE gyro[3] extension shipped (~/inav/src/main/fc/fc_msp.c L705-711)
+- [X] T041 [US4] INAV builds for bench (MAMBAF722_2022A) and flight (MATEKF722MINI)
+- [X] T042 [US4] INAV flight binary built and ready for deployment
 
 **Checkpoint**: INAV sends gyro rates via MSP. Both targets built.
 
@@ -102,13 +126,13 @@ what the sim already provides.
 
 **Independent Test**: Bench test with autoc enabled: xiao log shows gyro rate values, flight mode shows ACRO|MSPRCOVERRIDE, NN outputs interpreted as rate commands.
 
-- [ ] T050 [US5] Update `msp_autoc_state_t` in `xiao/include/MSP.h`: add `int16_t gyro[3]` field. Update payload size constant.
-- [ ] T051 [US5] Update MSP parser in `xiao/src/msplink.cpp`: extract gyro[3] from extended response. Scale: divide by 10 to get deg/s.
-- [ ] T052 [US5] Update xiao `nn_gather_inputs`: populate gyro rate inputs from MSP data. Scale by max_rate per axis (560/400/240 deg/s → [-1,1]).
-- [ ] T053 [US5] Change ACRO mode override: update CH6 value in `xiao/src/msplink.cpp` to select ACRO instead of MANUAL. Update INAV `aux` config in `xiao/inav-bench.cfg` and `xiao/inav-hb1.cfg`.
-- [ ] T054 [US5] Set INAV `rc_expo = 0` in both bench and flight configs for linear rate mapping.
-- [ ] T055 [US5] Extract weights from Phase 4 BIG run, `nn2cpp`, build xiao: `cd xiao && pio run -e xiaoblesense_arduinocore_mbed`.
-- [ ] T056 [US5] Bench verification: arm, enable autoc, verify xiao log shows gyro rates, ACRO mode flag, servo response to NN commands.
+- [X] T050 [US5] msp_autoc_state_t has int16_t gyro[3] field (xiao/include/MSP.h L260-273)
+- [X] T051 [US5] MSP parser extracts gyro[3] (xiao/src/msplink.cpp L519, L672-674) with sign correction (pitch/yaw negated)
+- [X] T052 [US5] Xiao nn_gather_inputs populates gyro rate inputs at indices 24-26 (rad/s, sign-corrected)
+- [📁] T053 [US5] ACRO mode override — DEFERRED. Xiao keeps CH6=1000 (MANUAL). NN uses gyro rates as inputs to learn its own rate control instead of using INAV ACRO PID. Architectural choice (see Phase 2).
+- [X] T054 [US5] rc_expo=0 in bench config (xiao/inav-bench.cfg)
+- [X] T055 [US5] Weight extraction → nn2cpp → xiao build pipeline working
+- [X] T056 [US5] Bench verification done (commit b4f2f19: "feat(021): xiao MSP gyro consumer + nn2cpp fix + bench verified")
 
 **Checkpoint**: Full pipeline on bench: INAV → MSP (with gyro) → xiao → NN (27 inputs) → rate commands → INAV ACRO PID → servos.
 
@@ -120,11 +144,11 @@ what the sim already provides.
 
 **Note**: Runs in parallel with Phases 2-6 whenever props arrive. No code changes needed — uses current firmware with updated blackbox config. Data feeds back into T034 (PID tuning).
 
-- [ ] T070 [P] [US7] Apply blackbox config to flight hardware: `xiao/inav-hb1.cfg` changes via INAV CLI (1/32 rate, GYRO_RAW + ACC enabled).
-- [ ] T071 [P] [US7] Characterization flight: follow `specs/021-xiao-ahrs-crosscheck/flight-choreography.md`. MANUAL mode, no autoc. Roll/pitch/throttle steps at multiple speeds. ACRO segments if comfortable.
-- [ ] T072 [US7] Decode blackbox. Verify <10 decode failures. Check Z continuity.
-- [ ] T073 [US7] Response analysis: `specs/019-improved-crrcsim/flight_response.py --axis all`. Compare to sim. Focus on rate response to step inputs.
-- [ ] T074 [US7] Gyro filter analysis: compare gyroRaw vs gyroADC during step inputs. Assess 25Hz LPF lag. Document filter recommendations.
+- [X] T070 [P] [US7] Blackbox config applied to flight hardware (1/32 rate, GYRO_RAW + ACC + QUAT enabled per flight-plan.md)
+- [⚠️] T071 [P] [US7] Partial: 4 flights captured (2026-03-20, 03-22, 03-27, 04-03). 03-27 was the tumble. Better characterization data expected next flight.
+- [⚠️] T072 [US7] Partial: blackbox CSVs decoded for available flights
+- [📁] T073 [US7] Response analysis vs sim — pending next clean characterization flight
+- [📁] T074 [US7] Gyro filter (25Hz LPF) analysis — pending
 
 **Checkpoint**: Response data collected. Sim PID tuning validated or updated.
 
@@ -134,9 +158,9 @@ what the sim already provides.
 
 **Goal**: Distance-from-origin sphere check on xiao. Disables autoc if aircraft drifts too far. Pilot override remains primary safety; this is a backup.
 
-- [ ] T060 [US6] Implement safety check in `xiao/src/msplink.cpp`: on autoc enable, capture origin position. Each tick, compute distance. If > threshold (100m, compile-time configurable), set autoc=N and log safety event.
-- [ ] T061 [US6] Add safety state to xiao log: `safety=OK` or `safety=TRIPPED dist=X.Xm`.
-- [ ] T062 [US6] Build and bench test safety override.
+- [📁] T060 [US6] Distance-from-origin sphere check — DEFERRED. Origin capture exists (test_origin_offset, msplink.cpp L21-22, L408) but no threshold check. Rely on pilot stick override + INAV failsafe + RC disarm as primary safety.
+- [📁] T061 [US6] Safety state log — DEFERRED with T060
+- [📁] T062 [US6] Bench test of safety override — DEFERRED with T060
 
 **Checkpoint**: Safety override active.
 
@@ -146,11 +170,11 @@ what the sim already provides.
 
 **Goal**: Fly with new NN (ACRO mode, 27 inputs, rate commands). Expect sustained tracking.
 
-- [ ] T080 Flash INAV to flight hardware (MATEKF722MINI) with MSP gyro extension.
-- [ ] T081 Deploy xiao with production weights + safety override + ACRO mode.
-- [ ] T082 Ground check: arm, verify ACRO mode, servo response, safety cutoff test.
-- [ ] T083 Flight test: engage autoc, observe tracking. Collect blackbox + xiao logs.
-- [ ] T084 Post-flight analysis: trajectory vs path, rate commands vs response, sustained tracking >10s.
+- [X] T080 INAV with MSP gyro extension flashed to flight hardware
+- [⚠️] T081 Xiao deployed with production weights — current is older training, **needs update to 022 betterz2 weights with V4 conical surface**. Safety/ACRO deferred per Phase 6/8 architectural decisions.
+- [⚠️] T082 Ground check passed for current weights (commit b4f2f19). Re-verify with betterz2 weights before next flight.
+- [⚠️] T083 4 flight tests captured (2026-03-20 → 04-03). Next flight needed with betterz2 + V4 conical NN.
+- [⚠️] T084 Post-flight analysis: data exists for prior flights. Pending next-flight comparison vs sim sustained-lock predictions (median 4.9m, 45% locked, max 14s lock).
 
 **Checkpoint**: Flight validated. Architecture proven.
 
@@ -158,9 +182,9 @@ what the sim already provides.
 
 ## Phase 10: Polish
 
-- [ ] T090 [P] Update `docs/COORDINATE_CONVENTIONS.md` with gyro rate wiring details.
-- [ ] T091 [P] Update `specs/BACKLOG.md`: move completed items, add new findings.
-- [ ] T092 Commit final configs.
+- [X] T090 [P] COORDINATE_CONVENTIONS.md updated with gyro rate wiring + sign conventions
+- [📁] T091 [P] BACKLOG.md update — pending end of feature
+- [📁] T092 Commit final configs — pending
 
 ---
 

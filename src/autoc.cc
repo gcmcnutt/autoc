@@ -1269,6 +1269,7 @@ int main(int argc, char** argv)
   // Log VARIATIONS1 settings and initialize global sigmas
   *logger.info() << "EnableEntryVariations: " << cfg.enableEntryVariations << endl;
   *logger.info() << "EnableWindVariations: " << cfg.enableWindVariations << endl;
+  *logger.info() << "EnableRabbitSpeedVariations: " << cfg.enableRabbitSpeedVariations << endl;
 
   // Initialize global variation parameters from config (degrees -> radians)
   // Store individual flags for selective application in populateVariationOffsets()
@@ -1283,10 +1284,15 @@ int main(int argc, char** argv)
       cfg.entryPositionAltSigma      // meters (no conversion needed)
   );
 
-  // Initialize global rabbit speed config
+  // Initialize global rabbit speed config.
+  // EnableRabbitSpeedVariations=0 forces sigma=0 regardless of the .ini value
+  // (same footgun-avoidance pattern as EnableEntryVariations/EnableWindVariations).
+  const double effectiveRabbitSpeedSigma = (cfg.enableRabbitSpeedVariations != 0)
+                                           ? cfg.rabbitSpeedSigma
+                                           : 0.0;
   gRabbitSpeedConfig = RabbitSpeedConfig{
       cfg.rabbitSpeedNominal,
-      cfg.rabbitSpeedSigma,
+      effectiveRabbitSpeedSigma,
       cfg.rabbitSpeedMin,
       cfg.rabbitSpeedMax,
       cfg.rabbitSpeedCycleMin,
@@ -1295,10 +1301,10 @@ int main(int argc, char** argv)
 
   // Log rabbit speed configuration
   *logger.info() << "RabbitSpeed: nominal=" << cfg.rabbitSpeedNominal << " m/s"
-                 << " sigma=" << cfg.rabbitSpeedSigma << " m/s"
+                 << " sigma=" << effectiveRabbitSpeedSigma << " m/s"
                  << " range=[" << cfg.rabbitSpeedMin << ", " << cfg.rabbitSpeedMax << "] m/s"
                  << " cycles=[" << cfg.rabbitSpeedCycleMin << ", " << cfg.rabbitSpeedCycleMax << "] s"
-                 << (cfg.rabbitSpeedSigma > 0 ? " (VARIABLE)" : " (CONSTANT)") << endl;
+                 << (effectiveRabbitSpeedSigma > 0 ? " (VARIABLE)" : " (CONSTANT)") << endl;
 
   // RAMP_LANDSCAPE: Initialize variation ramp globals
   gTotalGenerations = cfg.numberOfGenerations;

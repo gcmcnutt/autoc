@@ -253,19 +253,21 @@ CRRCSim callers already updated in T033 (clean cut). This phase changes the prod
 
 **Goal**: Display virtual positions correctly. Xiao already stores virtual — verify unchanged.
 
-- [ ] T035 [US1] Renderer: handle virtual aircraft positions from training eval results (renderer.cc):
+- [X] T035 [US1] Renderer: handle virtual aircraft positions from training eval results (renderer.cc):
   - `updateGenerationDisplay()` (L320-334): add `SIM_INITIAL_ALTITUDE` to aircraft
     positions (same as already done for paths) — both are now virtual at Z≈0
   - Update comment at L320-322 to reflect new convention
   - `renderFullScene()` all-flight mode: use originOffset from ScenarioMetadata
     to reconstruct raw positions for "all paths in raw" display
   - Verify single-arena training playback: paths and aircraft tape should overlap in Z
+  - DONE: shipped in 7882550
 
-- [ ] T036 [US1] Renderer: verify xiao modes unchanged:
+- [X] T036 [US1] Renderer: verify xiao modes unchanged:
   - Xiao already stores virtual and adds SIM_INITIAL_ALTITUDE at render time
   - Xiao has zero references to originOffset/getVirtualPosition — no code changes needed
-  - Verify single-span and all-flight modes still display correctly
-  - Load existing xiao log, confirm rendering matches pre-cleanup behavior
+  - **Validated by 2026-04-07 flight**: xiao logs from flight-20260407/ rendered
+    correctly in both single-span and all-flight modes against the 022-cleanup
+    codebase. No regressions observed.
 
 ---
 
@@ -273,26 +275,21 @@ CRRCSim callers already updated in T033 (clean cut). This phase changes the prod
 
 **Purpose**: Verify training convergence and clean up
 
-- [ ] T020 Continue monitoring test3 run started in T038b — verify convergence beyond initial 20 generations
-- [ ] T021 Monitor training metrics: fitness improving over generations, streak diagnostics (pctInStreak increasing), aircraft Z distribution stable at path altitude (~Z=0 virtual)
-- [ ] T022 Update data.dat per-step logging in src/autoc.cc logEvalResults() (builds on T034 changes):
-  - Replace `attDq` column with `along` (signed along-track distance, - = behind)
-  - Replace `intSc` column with `stpPt` (raw step score 0-1)
-  - Add `mult` column (current streak multiplier 1.0-5.0)
-  - Requires: compute path tangent + along/cross decomposition in logging loop (same math as fitness_decomposition.cc), create FitnessComputer instance, track streak state per scenario
-  - Update header string and sprintf format (7 trailing diag columns instead of 6)
-  - Remove attitude_delta computation from logging loop (no longer needed)
-- [ ] T023 Remove dead code — any remaining references to old fitness constants, computeStepPenalty callers, DISTANCE_TARGET usage
-- [ ] T024 Add streak threshold ramp:
-  - Add FitStreakThresholdMin (0.1) and FitStreakThresholdMax (0.5) to config.h, config.cc, autoc.ini
-  - In computeScenarioScores(), interpolate threshold: min + (max - min) * computeVariationScale()
-  - FitnessComputer constructor takes the interpolated threshold
-  - Update tests to verify threshold interpolation
-- [ ] T024b Add `EnableRabbitSpeedVariations` bool to autoc.ini, config.h, config.cc:
+- [X] T020 Monitor betterz1/betterz2 — convergence verified through gen 400 (DONE)
+- [X] T021 Training metrics: best -34771, sigma at floor 0.05, 45.8% locked, median 4.9m to rabbit (DONE)
+- [X] T022 data.dat columns: along/stpPt/mult already in place (verified DONE)
+- [X] T023 Dead code: no DISTANCE_TARGET / computeStepPenalty refs remain (verified DONE)
+- [📁] T024 Add streak threshold ramp — DEFERRED to BACKLOG.md.
+  - betterz2 (V4 conical, 400 gens) converged strongly without it.
+  - Park as a tuning option if a future curriculum widens or training plateaus.
+- [X] T024b Add `EnableRabbitSpeedVariations` bool to autoc.ini, config.h, config.cc:
   - Follows existing `EnableEntryVariations` / `EnableWindVariations` pattern
-  - When false (default), forces RabbitSpeedSigma=0 regardless of .ini value
+  - When false, forces RabbitSpeedSigma=0 regardless of .ini value
   - Avoids the "set sigma to 0" footgun — explicit enable like the other variation knobs
-- [ ] T025 Commit all changes
+  - Verified: flag=1 logs `(VARIABLE)` sigma=2.0; flag=0 logs `(CONSTANT)` sigma=0.0
+    even when .ini still has RabbitSpeedSigma=2.0.
+- [X] T025 Commit final changes (flight-20260407 artifacts, sim/flight NN polar viz,
+  intercept visualization, dev report, spec/tasks/backlog edits).
 
 ---
 

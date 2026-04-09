@@ -1,8 +1,10 @@
 # Feature 022 Development Report
 
 **Branch**: `022-tracking-cone-fitness`
-**Date range**: 2026-04-01 to 2026-04-06
-**Status**: Phase 3b complete (coordinate cleanup landed). Phase 4 (tuning + validation) in progress.
+**Date range**: 2026-04-01 to 2026-04-08
+**Status**: Shipped. betterz2 (V4 conical, 400 gens) flown 2026-04-07 (see
+[flight-report.md](../../flight-results/flight-20260407/flight-report.md)).
+Follow-on work captured in [023-ood-and-engage-fixes](../023-ood-and-engage-fixes/spec.md).
 
 ## Summary
 
@@ -630,17 +632,17 @@ as documentation of the design exploration.
 
 ## Outstanding Work
 
-### Phase 3b-iii (in progress)
-- [X] T035: Renderer aircraft position shift (DONE this session)
-- [ ] T036: Verify xiao modes unchanged (xiao has zero references to originOffset; just needs visual spot-check)
+### Phase 3b-iii (closed)
+- [X] T035: Renderer aircraft position shift (shipped 7882550)
+- [X] T036: Verify xiao modes unchanged (validated by 2026-04-07 flight rendering)
 
-### Phase 4: Polish & Validation
-- [ ] T020-T021: Continue test3 monitoring
-- [ ] T022: Update data.dat per-step diagnostic columns (along, stpPt, mult — already partially done in current logging)
-- [ ] T023: Remove dead code (any remaining DISTANCE_TARGET refs)
-- [ ] T024: Streak threshold ramp (from spec proposal — defer until simpler tuning evaluated)
-- [ ] T024b: Add `EnableRabbitSpeedVariations` bool (queued — matches existing `EnableEntryVariations`/`EnableWindVariations` pattern)
-- [ ] T025: Final commit
+### Phase 4: Polish & Validation (closed)
+- [X] T020-T021: test3/betterz* monitoring, convergence verified through gen 400
+- [X] T022: data.dat per-step diagnostic columns (along, stpPt, mult) in place
+- [X] T023: Dead code removed (no DISTANCE_TARGET/computeStepPenalty refs remain)
+- [📁] T024: Streak threshold ramp — DEFERRED to BACKLOG.md (betterz2 converged without it)
+- [X] T024b: `EnableRabbitSpeedVariations` flag added and verified (flag=0 forces sigma=0)
+- [X] T025: Final wrap-up commit
 
 ### Curriculum Re-Enable Plan
 

@@ -106,27 +106,48 @@ Remaining 015 work:
   inputs — may want to toggle these on/off during experimentation. Type-safe
   interface should support optional/conditional inputs without recompiling everything
 
-### [NEXT] Eval Fitness Computation — Two Bugs
-- **Bug 1: Different metric** — Training fitness uses `computeNNFitness()` (power-law
-  penalty with intercept scaling), eval uses `aggregateRawFitness()` (simple RMSE sum).
-  Different formulas produce incomparable numbers for identical data.
+### [NEXT] Eval Fitness Computation — Bugs
+- **Bug 1: Different metric** — ✅ FIXED post-022. Both training and eval now use
+  `computeScenarioScores()` + `aggregateRawFitness()` (conical surface). Verified in
+  fitness_decomposition.cc and autoc.cc.
 - **Bug 2: Stale fitness in S3** — Eval uploads original NN weights (with training-time
   fitness baked into NN01 format) to S3 via `evalResults.gp`. Renderer deserializes
   this and shows the ORIGINAL stored fitness, not the eval result. Even with
   radically different eval scenarios, renderer always shows the training fitness.
   - Flow: `nn_weights.dat` (carries fitness from nnextractor) → `nn_deserialize` →
     `genome.fitness=508K` → raw bytes copied to `evalResults.gp` → S3 → renderer
-  - The eval-computed fitness (1.69M) is only printed to console/stc, never stored
+  - The eval-computed fitness is only printed to console/stc, never stored
   - Fix: update `genome.fitness` with eval result before serializing to evalResults,
     OR store eval fitness in a separate evalResults field the renderer can read
+- **Bug 3 (NEW 2026-04-07): Eval mode missing rabbit speed config** — `runNNEvaluation()`
+  in `src/autoc.cc` (around L750-787) builds `EvalData` without setting `evalData.rabbitSpeedConfig`.
+  Default is `{nominal=16.0, sigma=0.0}` from `RabbitSpeedConfig::defaultConfig()` —
+  i.e., **constant 16 m/s rabbit**, NOT the configured 13±2 m/s from autoc-eval.ini.
+  - Training path (L939-940 and L1028-1029) correctly sets `evalData.rabbitSpeedConfig = gRabbitSpeedConfig`.
+  - Symptom: eval fitness on saved gen-N weights is "slightly different" from the training
+    fitness reported at gen N — same NN, same scenarios, but different rabbit trajectories
+    because rabbit speed profile is wrong.
+  - Fix: add `evalData.rabbitSpeedConfig = gRabbitSpeedConfig;` (and `* computeVariationScale()`
+    for consistency, though both return 1.0) at line ~756 in eval path.
+  - Discovered while trying to reproduce 022 betterz2 gen 400 fitness in eval mode.
 
-### [NEXT] Refactor Duplicate Fitness Constants (autoc.h vs fitness_computer.h)
-- DISTANCE_TARGET, DISTANCE_NORM, DISTANCE_POWER, ATTITUDE_NORM, ATTITUDE_POWER, CRASH_COMPLETION_WEIGHT
-  are defined in both autoc.h and fitness_computer.h with #ifndef guards
-- fitness_computer.h fallback is for test builds that don't include autoc.h
-- Easy to get out of sync (just happened with DISTANCE_TARGET change)
-- Fix: single source of truth — either fitness_computer.h is authoritative
-  (remove from autoc.h) or vice versa
+### [DONE 2026-04-07] Refactor Duplicate Fitness Constants
+- ✅ Resolved by 022 conical-surface refactor. The old DISTANCE_TARGET / ATTITUDE_NORM
+  constants no longer exist. fitness_computer.h is the single source of truth for
+  the conical scoring surface (FitDistScaleBehind, FitDistScaleAhead, FitConeAngleDeg).
+
+### [DEFERRED] Streak Threshold Ramp (022 T024)
+- Originally proposed in 022: ramp `FitStreakThreshold` from min (e.g., 0.1, ~22m
+  forgiving) to max (0.5, ~7m demanding) over training via `computeVariationScale()`.
+- Goal: early generations get streak credit for "getting closer," late generations
+  demand tight tracking.
+- **Verdict 2026-04-07**: betterz2 (V4 conical, 400 gens) converged strongly without
+  this. Not needed for current curriculum. Park as a potential tool if a future
+  curriculum widens or training plateaus on a harder task.
+- Implementation (when needed):
+  - Add `FitStreakThresholdMin` / `FitStreakThresholdMax` to autoc.ini, config.h, config.cc
+  - In `computeScenarioScores()`, interpolate threshold = min + (max-min) * computeVariationScale()
+  - FitnessComputer constructor takes the interpolated threshold
 
 ### [NEXT] Batch and Cache Deterministic Scenarios
 - With 150+ scenarios per individual, serializing full table per eval is expensive
