@@ -121,26 +121,67 @@ same policy runs the aircraft ~30% faster than trained.
   weights reproduces the training-time fitness within FP rounding. Without this
   determinism cross-check, every 023 Phase 1 benchmark is contestable.
 
-**Plan-phase research (deliverables land in `~/autoc/docs/`):**
-- **INAV signal path audit** — deep read of `~/inav` source for every filter,
-  delay, smoothing, rate limit, LPF, notch, or latency-inducing stage between
-  `MSP2_AUTOC_STATE` input → servo output, AND between raw gyro → `MSP2_GYRO`
-  output. Includes the custom MSP extensions on the autoc INAV fork. Also
-  includes MSP scheduling latency characterization and the MANUAL-mode actual
-  code path (servo_lpf was the first surprise; assume there are more). Output
-  document: `docs/inav-signal-path-audit.md`.
-- **INAV escape-hatch architectures** — if the audit finds the delay is
-  architectural and not reducible within current topology, document alternative
-  architectures as 024+ candidates: direct xiao→servo PWM/PPM bypassing INAV's
-  control loop, drop GPS from NN input during autoc spans, run NN at higher
-  rate on IMU-only inputs. Not 023 scope — captured as fallback options.
-- **MSP2 latency bound** — parse `flight-results/flight-20260407/flight_log_*.txt`
-  end-of-span samples, bound the round-trip latency. Output appended to
-  `docs/inav-signal-path-audit.md`.
-- **Train/eval code duplication survey** — read `src/autoc.cc` `runNNEvaluation()`
-  and the training path side-by-side; enumerate every divergence. Output
-  document: `docs/train-eval-code-dedup.md`. Feeds the refactor design in
-  Phase 0b.
+**Plan-phase research (COMPLETE 2026-04-08):**
+
+- **INAV signal path audit** (`docs/inav-signal-path-audit.md`) — deep read of
+  `~/inav` source. Audited every filter, delay, smoothing, rate limit, LPF,
+  notch, and latency-inducing stage between xiao MSP input and servo output,
+  and between raw gyro and xiao MSP gyro input (which is actually
+  `MSP2_INAV_LOCAL_STATE` — `MSP2_GYRO` does not exist as a separate endpoint
+  in this fork; gyro is piggybacked). **Top findings:**
+  1. **`gyro_main_lpf_hz = 25` is the dominant NN-input delay** — PT1 @ 25 Hz
+     on the gyro output, ~6.4 ms group delay. Baked into what xiao reads via
+     `MSP2_INAV_LOCAL_STATE`. Default is 60 Hz.
+  2. **`setpoint_kalman_enabled = ON` is a misnomer** — despite the CLI name,
+     it is a gyro measurement Kalman stacked on top of the 25 Hz PT1.
+     Adaptive, state-dependent delay. Should be OFF.
+  3. **`rc_filter_lpf_hz = 250` is in the MANUAL-mode path** — PT3 applied to
+     rcCommand before the mixer, NOT gated by flight mode. ~1.9 ms delay at
+     250 Hz, would be ~9.5 ms at the 50 Hz default. Another servo_lpf-class
+     surprise.
+  4. **Servo LPF confirmed OFF** — `servo_lpf_hz = 0` already applied.
+  5. **TASK_SERIAL runs at 100 Hz LOW priority, processes one MSP command
+     per invocation** — up to 10 ms MSP ingress jitter under load.
+- **Measured MSP2 round-trip latency** (from xiao blackbox logs):
+  **median ~23 ms, max 42 ms** (xiao-observed fetch+eval+send), plus 0-15 ms
+  INAV-internal post-receive delay, plus up to 20 ms PWM quantization →
+  ~25 ms typical / ~55 ms worst-case end-to-end.
+- **750 ms engage delay root cause: PROBABLE but unconfirmed** —
+  `failsafe_recovery_delay = 5` × 100 ms + `PERIOD_RXDATA_RECOVERY` in
+  `src/main/rx/msp_override.c:103-104` is the leading candidate. Needs a
+  single-value bench test (`set failsafe_recovery_delay = 0` and re-measure)
+  to confirm. Fallback hypothesis: xiao-side delay between enabling
+  `MSPRCOVERRIDE` AUX and enabling `MANUAL` AUX (out of scope for the audit).
+  Runs as a Phase 1 bench test during implementation.
+- **INAV escape-hatch architectures** — audit concludes config changes alone
+  should remove most reducible delay; escape-hatches are NOT required for
+  023. Three 024+ candidates documented in the audit doc:
+  direct xiao→servo PWM/PPM, drop GPS during autoc spans, or higher-rate
+  NN on xiao with IMU-only inputs. None are 023 deliverables.
+- **Train/eval code duplication survey**
+  (`specs/023-ood-and-engage-fixes/train-eval-code-dedup.md`) — found **6
+  divergences** between `runNNEvaluation()` and the training path:
+  - **Bug 1** (metric drift): already resolved in 022
+  - **Bug 2** (stale S3 fitness): eval copies original NN01 bytes into
+    `evalResults.gp` at `src/autoc.cc:823-824` without rewriting
+    `genome.fitness`. Fix: assignment before `nn_serialize`.
+  - **Bug 3** (missing rabbit speed config): `src/autoc.cc:751` never
+    assigns `evalData.rabbitSpeedConfig`, inherits `{16.0, 0.0, ...}` default.
+  - **Bug 4 NEW** (`isEliteReeval` lies): eval hard-codes `false`; should
+    be `true` so deterministic logging matches training elite re-eval.
+  - **Bug 5 NEW** (scenario selection asymmetry): eval hard-codes
+    `scenarioForIndex(0)`. In demetic mode this silently drops N-1 path
+    variants. Fix: iterate all scenarios, match training aggregation.
+  - **Bug 6 NEW** (triple-duplication): three near-identical copies of the
+    scenario-list populator in `src/autoc.cc` (per-individual L932-975,
+    elite re-eval L1021-1060, eval L751-787). Root cause of the whole bug
+    class. Fix: extract `buildEvalData(EvalJob)` helper, delete all three
+    copies.
+- **Phase 0b refactor acceptance criterion**: eval on saved betterz2 weights
+  (gen 400, fitness −34771) reproduces the training-time fitness within FP
+  rounding. This is the first time the eval path will have been correct
+  since the codebase existed, because Bug 3 alone (constant-16 rabbit
+  instead of configured 13±2) has been corrupting every eval-mode run.
 
 **Diagnostic Phase (happens after prereqs, during implementation):**
 - Eval-mode random-path benchmark (depends on Phase 0b determinism fix)
@@ -590,10 +631,57 @@ even though its outputs are ignored — but it is not the dominant fix.
 **Cost in training time**: each scenario gains ~7 ignored ticks (~14 if
 we go to 20 Hz). Trivial overhead.
 
-**Real-flight delay reduction is still open**: could xiao pre-arm the
-NN output path earlier to cut the 0.75s down? Would require INAV-side
-changes and is out of scope for 023. Parked as a future optimization
-— if it lands, `EngageDelayMs` becomes the only place to update.
+**Real-flight delay reduction**: see Change 1c below.
+
+### Change 1c: INAV Config-Only Delay Reductions (from audit findings)
+
+The Phase 0 INAV signal path audit
+(`docs/inav-signal-path-audit.md`) identified five config-only changes to
+`xiao/inav-hb1.cfg` that remove unmodeled phase delay from both the NN
+input path and the servo command path. **No INAV code changes; no sim
+changes.** All are pure config tweaks applied and verified on bench
+before any flight test.
+
+| # | Config key | Current | Recommended | Effect |
+|---|---|---|---|---|
+| 1 | `gyro_main_lpf_hz` | `25` | `60` (default) or higher | Removes ~4 ms from gyro→xiao path (6.4 ms → 2.65 ms) |
+| 2 | `setpoint_kalman_enabled` | `ON` | `OFF` | Removes an adaptive Kalman stage on `gyroADCf` — state-dependent group delay. This is NOT a setpoint filter despite the name; it operates on gyro measurements. Should never have been on for NN use. |
+| 3 | `rc_filter_lpf_hz` | `250` | `0` | Disables the PT3 on `rcCommand` in the MANUAL-mode path. Removes ~1.9 ms. Surprise finding — we assumed MANUAL was pass-through (same class of error as `servo_lpf_hz`). |
+| 4 | `dynamic_gyro_notch_enabled` | *(unknown)* | `OFF` for fixed-wing | Dynamic notches are primarily for multirotor vibration rejection; our airframe and NN input are not sensitive to 100 Hz+ spectra. Also removes a state-dependent secondary dynamic notch that runs regardless of the enable flag. |
+| 5 | `failsafe_recovery_delay` | `5` (500 ms) | `0` | **Bench test, not a production change.** The audit flagged this as the PROBABLE root cause of the 750 ms engage delay (via `PERIOD_RXDATA_RECOVERY` + `failsafe_recovery_delay * 100 ms` in `src/main/rx/msp_override.c:103-104`). Test: set to 0, re-measure bench engage delay. If it drops, confirmed. If not, the delay is xiao-side. |
+
+**Implementation** (Phase 1 bench work, not training):
+1. Back up current `xiao/inav-hb1.cfg`.
+2. Apply changes 1-4 one at a time, rebuild xiao, bench test, measure
+   MSP2 round-trip latency via xiao blackbox logs at each step.
+3. Expected cumulative improvement: ~6-10 ms removed from the NN input
+   path, ~2 ms removed from the servo output path.
+4. Separately, run change 5 as a dedicated bench test to confirm/refute
+   the 750 ms engage delay hypothesis.
+5. Document measured before/after numbers in a Phase 1 summary note
+   appended to `docs/inav-signal-path-audit.md`.
+
+**Interaction with `EngageDelayMs` (Change 1b)**: if change 5 succeeds in
+reducing the 750 ms mystery delay, lower `EngageDelayMs` config default
+to match the new measured value. The sim should always model the real
+delay — not a constant 750.
+
+**Interaction with sim dynamics (Change 5)**: config changes here do NOT
+change the sim. They only change what xiao/INAV actually do on real
+hardware. The sim is already simulating a worst-case delay via
+Change 1b. If these config changes reduce real-hardware delay below the
+sim's modeled delay, the sim becomes more conservative than reality —
+acceptable. The reverse (sim faster than reality) would be a sim-to-real
+gap.
+
+**Not in scope for 023**: the audit flagged several items as "unknown"
+because they required either bench measurement or tracing constants
+beyond the source read. These stay in the audit doc's "Sections marked
+unknown" section, not this spec:
+- Exact `PERIOD_RXDATA_RECOVERY` value (change #5 is the test)
+- `FEATURE_THR_VBAT_COMP` active status
+- Adaptive Kalman / dynamic notch exact group delay
+- Hardware stage-1 anti-alias filter behavior
 
 ### Change 2: Training Distribution — Far-Start Intercept Coverage
 
@@ -1170,22 +1258,25 @@ cross-check; without it no 023 benchmark is trustworthy.
 
 ### Phase 1: Plan-Phase Research (concurrent with Phase 0)
 
-All research output lives in `~/autoc/docs/`. Findings feed implementation
-decisions in Phases 2–4.
+Research output location depends on durability: `~/autoc/docs/` for
+long-lived reference material that may outlive 023, the feature dir for
+one-off surveys that become obsolete once their refactor lands.
 
-**1a. INAV signal path audit** — deep read of `~/inav` source for every
-filter, delay, smoothing, rate limit, LPF, notch, or latency-inducing
-stage in the NN signal path. MANUAL-mode actual code path. Custom MSP
-extensions (`MSP2_AUTOC_STATE`, `MSP2_GYRO`). MSP scheduling latency.
-Output: `docs/inav-signal-path-audit.md`.
+**1a. INAV signal path audit** — COMPLETE. See
+`docs/inav-signal-path-audit.md`. Deep read of `~/inav` source found the
+gyro filter stack (`gyro_main_lpf_hz`, `setpoint_kalman_enabled`) and
+`rc_filter_lpf_hz` PT3 as unmodeled delay contributors in the MANUAL-mode
+path. Gyro data reaches xiao via `MSP2_INAV_LOCAL_STATE` (not `MSP2_GYRO`
+— that endpoint does not exist in this fork; gyro is piggybacked). Five
+config-only recommendations documented, no INAV code changes required.
 
 **1b. INAV escape-hatch architectures** — if 1a finds the delay is
 architectural, document alternatives as 024+ candidates: direct
 xiao→servo PWM/PPM bypassing INAV control loop, drop GPS from NN inputs
-during autoc, run NN on IMU-only at higher rate. Captured in the same
-`docs/inav-signal-path-audit.md` as a "fallback architectures" section.
-Not 023 scope — 023 uses the current topology, this just documents the
-pivot path if chronic.
+during autoc, run NN on IMU-only at higher rate. Captured as a section
+of the same `docs/inav-signal-path-audit.md` document. Not 023 scope —
+023 uses the current topology, this just documents the pivot path if
+chronic.
 
 **1c. MSP2 latency bound** — parse `flight-results/flight-20260407/flight_log_*.txt`
 end-of-span samples. Bound the current round-trip latency. Appended to
@@ -1193,7 +1284,9 @@ end-of-span samples. Bound the current round-trip latency. Appended to
 
 **1d. Train/eval code duplication survey** — side-by-side read of
 `runNNEvaluation()` and the training path. Enumerate every divergence.
-Output: `docs/train-eval-code-dedup.md`. Feeds Phase 0b refactor design.
+Output: `specs/023-ood-and-engage-fixes/train-eval-code-dedup.md`
+(one-off — feature-scoped, discarded after Phase 0b refactor lands).
+Feeds Phase 0b refactor design.
 
 ### Phase 2: Minisim Smoke Test
 
