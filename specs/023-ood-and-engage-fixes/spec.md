@@ -112,17 +112,40 @@ same policy runs the aircraft ~30% faster than trained.
 - Type-safe NN sensor interface (compiler-enforced topology consistency — enabler
   for the 3-cosine bearing representation, and protection against future silent
   topology drift). Historically BACKLOG item; promoted to 023 hard prerequisite.
-- Eval fitness determinism cross-check (Bug 3 — missing rabbit speed config in eval
-  mode). Eval must reproduce training fitness for same weights + scenarios before
-  any 023 benchmark is trustworthy.
+- Train/eval scenario construction de-duplication refactor (NOT a one-line fix).
+  BACKLOG enumerates three eval fitness bugs (Bug 1 metric drift, Bug 2 stale
+  S3 fitness, Bug 3 missing rabbit speed config); all three are symptoms of a
+  single root cause: training and eval paths have drifted copies of the same
+  scenario setup code. The fix is a refactor that extracts scenario construction
+  into a shared helper used by both paths. Acceptance: eval on saved betterz2
+  weights reproduces the training-time fitness within FP rounding. Without this
+  determinism cross-check, every 023 Phase 1 benchmark is contestable.
 
-**Diagnostic Phase:**
-- Eval-mode random-path benchmark (depends on determinism fix)
-- INAV filter audit (research — enumerate all INAV-side filters in the NN signal
-  path and confirm each is off or modeled in sim; servo LPF is already off)
-- MSP2 latency bound (measure from recent xiao logs at end-of-span)
-- AHRS reliability assessment (carry, optional — rule out "AHRS was lying" as a
-  confound for 2026-04-07 results)
+**Plan-phase research (deliverables land in `~/autoc/docs/`):**
+- **INAV signal path audit** — deep read of `~/inav` source for every filter,
+  delay, smoothing, rate limit, LPF, notch, or latency-inducing stage between
+  `MSP2_AUTOC_STATE` input → servo output, AND between raw gyro → `MSP2_GYRO`
+  output. Includes the custom MSP extensions on the autoc INAV fork. Also
+  includes MSP scheduling latency characterization and the MANUAL-mode actual
+  code path (servo_lpf was the first surprise; assume there are more). Output
+  document: `docs/inav-signal-path-audit.md`.
+- **INAV escape-hatch architectures** — if the audit finds the delay is
+  architectural and not reducible within current topology, document alternative
+  architectures as 024+ candidates: direct xiao→servo PWM/PPM bypassing INAV's
+  control loop, drop GPS from NN input during autoc spans, run NN at higher
+  rate on IMU-only inputs. Not 023 scope — captured as fallback options.
+- **MSP2 latency bound** — parse `flight-results/flight-20260407/flight_log_*.txt`
+  end-of-span samples, bound the round-trip latency. Output appended to
+  `docs/inav-signal-path-audit.md`.
+- **Train/eval code duplication survey** — read `src/autoc.cc` `runNNEvaluation()`
+  and the training path side-by-side; enumerate every divergence. Output
+  document: `docs/train-eval-code-dedup.md`. Feeds the refactor design in
+  Phase 0b.
+
+**Diagnostic Phase (happens after prereqs, during implementation):**
+- Eval-mode random-path benchmark (depends on Phase 0b determinism fix)
+- Engage transient fix (Change 1) — can be tested against current 022 NN
+  before any retraining lands
 
 **Core training changes:**
 - Engage transient fix (history buffer seeding or continuous recording)
@@ -994,13 +1017,13 @@ per-tick bearing input columns.
    `sizeof(NNInputs)` by adding a throwaway field) to verify the
    static_assert catches the 021 failure mode.
 
-## Parameter Schedules by Implementation Phase
+## Parameter Schedules for CRRCSim Milestones
 
-Configuration knob values for each Implementation Order phase. See
-Implementation Order section for phase execution order and dependencies.
-Phases here correspond 1:1 to Implementation Order Phase 3 / 4 / 5.
+Configuration knob values for the CRRCSim training milestones (Phase 3
+in Implementation Order). Milestones are observational layering — use
+judgment on ordering, same pattern as 022 betterz1/betterz2.
 
-### Implementation Phase 3a — Zero-Variation Baseline
+### CRRCSim Milestone A — Zero-Variation Baseline
 
 ```ini
 # Fitness (unchanged from 022)
@@ -1031,19 +1054,20 @@ SimNumPathsPerGeneration        = 5     # unchanged
 
 # SimTimeStepMs stays at 100ms (10 Hz). 20 Hz is Out of Scope for 023.
 
-# NN authority limit: start at 1.0 (no limit). Change 8 Phase 3c may
-# retrain with this reduced to 0.5 if Phase 3b shows saturation.
+# NN authority limit: start at 1.0 (no limit). Change 8 retrain may
+# drop this to 0.5 if baseline behavior examination shows saturation.
+# Trigger criterion determined empirically during plan phase.
 NNAuthorityLimit                = 1.0
 ```
 
-Goal: rock-solid tracking on the 5 deterministic paths with NO variations
-at all, under the new 3-cosine representation. This is the baseline — if
-the NN can't track here, nothing else matters.
+Goal: rock-solid tracking on 1 path (expand to 5 deterministic once it
+works) with NO variations, under the new 3-cosine representation. If the
+NN can't track here, nothing else matters.
 
-### Implementation Phase 4 — Layer in Complexity
+### CRRCSim Milestone B — Layer in Complexity
 
-Once Phase 3 is solid, add variations back ONE AT A TIME, measuring
-retention of Phase 3 quality at each step:
+Once Milestone A is solid, add variations back ONE AT A TIME, measuring
+retention of Milestone A quality at each step:
 
 1. Wind direction variation (`EnableWindVariations=1`, `WindDirectionSigma=45`)
 2. Entry attitude cone (`EnableEntryVariations=1`, `EntryConeSigma=30`, small → large)
@@ -1055,13 +1079,13 @@ retention of Phase 3 quality at each step:
 7. Discontinuity-forcing paths (Change 7 — chase, overshoot, inverted, descent)
 
 Each addition: one training run, measure:
-- Fitness retention vs Phase 3a baseline
+- Fitness retention vs Milestone A baseline
 - Per-path brittleness (any specific path scoring >10x worse than others?)
 - Discontinuity rate in data.dat — should stay at zero; if not, the
   representation change has a bug
 - Throttle saturation fraction and `d²output²` chatter
 
-### Implementation Phase 5 — Robustness (dynamics variations)
+### CRRCSim Milestone C — Robustness (dynamics variations)
 
 Craft parameter stddev variations (from 015 T140–T143):
 - Control effectiveness: `Cl_da`, `Cm_de` ± 10–20%
@@ -1069,7 +1093,8 @@ Craft parameter stddev variations (from 015 T140–T143):
 - Drag: `CD_prof` ± 10%
 - Mass / inertia: ± 5%
 - Control phase delay: 0–200 ms between command and servo response
-  (informed by Phase 1 INAV filter audit findings)
+  (informed by Phase 1a INAV filter audit findings in
+  `docs/inav-signal-path-audit.md`)
 
 Start narrow (control effectiveness + phase delay only), widen based on
 training results. Forces policy to generalize across a neighborhood of
@@ -1115,124 +1140,163 @@ the nominal `hb1_streamer.xml` dynamics.
 
 ## Implementation Order
 
+The execution structure is a **3-rung validation ladder**: minisim smoke
+test → CRRCSim training milestones → xiao field-test prep. This mirrors
+the successful 022 pattern (betterz1 / betterz2) where incremental
+observational milestones proved more useful than rigid phase gates.
+
 ### Phase 0: Prerequisites (blocking)
 
-All subsequent phases depend on these. Land them first, in order.
+Land these before any training run, in order.
 
-0a. **Type-safe NN sensor interface** — refactor topology consistency under
-    compiler enforcement. No behavior change (still 27 inputs). All tests
-    pass. Verified by deliberately breaking `NN_INPUT_COUNT` in a test
-    branch — must produce compile errors, not runtime corruption.
+**0a. Type-safe NN sensor interface refactor** — see Prerequisite section
+above for the full struct-of-floats design. Three sub-steps:
+- 0a.1: Add `NNInputs` struct at 27 inputs, refactor all access sites,
+  keep behavior identical. Verify `data.dat` columns pre/post refactor
+  match within FP rounding.
+- 0a.2: Grow to 33 inputs (3-cosine bearing representation, Change 6).
+  Compiler catches every migration site via designated-initializer
+  construction + `static_assert`.
+- 0a.3: Deliberately-break verification — add a throwaway field, confirm
+  compile error at the `sizeof` assertion. Revert.
 
-0b. **Eval fitness Bug 3 fix** — add `evalData.rabbitSpeedConfig = gRabbitSpeedConfig`
-    in `runNNEvaluation()`. Verify eval reproduces training-time fitness
-    for saved gen-N weights within FP rounding. This is the determinism
-    cross-check — without it, no 023 diagnostic is trustworthy.
+**0b. Train/eval scenario construction de-duplication** — NOT a one-line
+fix. `runNNEvaluation()` in `src/autoc.cc` has drifted from the training
+scenario setup path, producing the eval fitness bug family (Bugs 1/2/3
+in BACKLOG). Extract scenario construction into a shared helper used by
+both paths. Acceptance: eval on saved betterz2 weights reproduces the
+training-time fitness within FP rounding. This is the determinism
+cross-check; without it no 023 benchmark is trustworthy.
 
-### Phase 1: Diagnostic Phase
+### Phase 1: Plan-Phase Research (concurrent with Phase 0)
 
-Runs against current 022 betterz2 weights. Establishes a known-good
-baseline measurement for every metric 023 cares about.
+All research output lives in `~/autoc/docs/`. Findings feed implementation
+decisions in Phases 2–4.
 
-1. **Eval-mode random-path benchmark**: run betterz2 through eval with
-   SeededRandomB paths. Measure distance/streak/discontinuity stats.
-   Compare to real flight stats from 2026-04-07. Does sim reproduce the
-   failure mode? (Depends on Phase 0b.)
+**1a. INAV signal path audit** — deep read of `~/inav` source for every
+filter, delay, smoothing, rate limit, LPF, notch, or latency-inducing
+stage in the NN signal path. MANUAL-mode actual code path. Custom MSP
+extensions (`MSP2_AUTOC_STATE`, `MSP2_GYRO`). MSP scheduling latency.
+Output: `docs/inav-signal-path-audit.md`.
 
-2. **INAV filter audit (research)**: enumerate every filter in the NN signal
-   path between RC input / raw gyro and servo output / MSP gyro output.
-   Document current setting, whether it affects MANUAL mode pass-through,
-   and whether it is modeled in sim. Research-first; code changes flow from
-   findings during speckit plan phase. Specific filters to audit are listed
-   in the "Phase Delay Research" section above.
+**1b. INAV escape-hatch architectures** — if 1a finds the delay is
+architectural, document alternatives as 024+ candidates: direct
+xiao→servo PWM/PPM bypassing INAV control loop, drop GPS from NN inputs
+during autoc, run NN on IMU-only at higher rate. Captured in the same
+`docs/inav-signal-path-audit.md` as a "fallback architectures" section.
+Not 023 scope — 023 uses the current topology, this just documents the
+pivot path if chronic.
 
-3. **MSP2 latency bound**: measure from recent xiao blackbox logs at
-   end-of-span (clean data without wrap events). Bound the number and
-   document it. Previously reported as "50→30ms bench-measured" but the
-   current ceiling is unconfirmed.
+**1c. MSP2 latency bound** — parse `flight-results/flight-20260407/flight_log_*.txt`
+end-of-span samples. Bound the current round-trip latency. Appended to
+`docs/inav-signal-path-audit.md`.
 
-4. **AHRS reliability assessment (optional, carry)**: from 018 T260–T267.
-   Use 2026-04-07 blackbox to rule out "AHRS was lying" as a confound.
-   Runs in parallel with training work; not blocking.
+**1d. Train/eval code duplication survey** — side-by-side read of
+`runNNEvaluation()` and the training path. Enumerate every divergence.
+Output: `docs/train-eval-code-dedup.md`. Feeds Phase 0b refactor design.
 
-5. **Xiao NN correctness check (optional, low effort)**: feed xiao a known
-   sim input sequence, verify output matches sim within FP rounding.
-   From 015 T190–T191. Reference-only in 023 — don't block training on it.
+### Phase 2: Minisim Smoke Test
 
-6. **Engage transient fix (Change 1)**: xiao-side history reset on every
-   engage. Independent of retraining. Can test with current NN to see if
-   flight behavior improves before any new training lands.
+**Purpose**: prove the new code path can train *anything*. Not a tracking
+quality gate — a plumbing gate.
 
-### Phase 2: Representation Change
+**What runs**: 1 path, no variations, minisim backend. The 3-cosine
+representation, type-safe NN struct, engage delay window, Change 1 history
+reset, logging coverage, and eval determinism all wired together.
 
-After prereqs and diagnostics establish a clean baseline, change the NN's
-observation space. This is the biggest single change in 023.
+**Pass criteria**:
+- Build compiles, all unit tests pass
+- Minisim launches, runs 50+ gens without NaN / hang / segfault
+- `data.dat` emits all 33 + 3 + meta columns with named headers
+- Fitness decreases monotonically on average across gens (NN is learning
+  something; actual value doesn't matter)
+- Eval on any gen-N weight reproduces the training fitness within FP
+  rounding (Phase 0b determinism check)
 
-7. **NN topology migration (Change 6)**: 27 → 33 inputs. Replace `dPhi`/
-   `dTheta` with direction cosines. Hidden layers 16→32, 8→16. New weight
-   count 1667. Singularity handling via numerical floor + rabbit velocity
-   fallback. Same `computeTargetDir()` code in sim bridge and xiao.
+**What is NOT validated here**: tracking quality, real-dynamics behavior,
+variation handling (minisim has no wind / entry variations / craft
+parameter variations). Those all move to Phase 3.
 
-8. **Baseline retrain (new topology, current distribution)**: retrain with
-   ONLY the topology change active. Other parameters identical to 022
-   betterz2. Confirm the new representation can reach comparable fitness
-   on the same scenarios. Compare convergence walltime to 022 baseline.
+**Exit**: if minisim smoke test passes, promote to CRRCSim. If it fails,
+stop and fix; promoting a broken pipeline to CRRCSim only wastes training
+cycles on a known-bad baseline.
 
-### Phase 3: Training Regime Simplification
+### Phase 3: CRRCSim Training Milestones
 
-With clean topology and working representation, simplify the training
-regime to isolate the core tracking problem.
+**Purpose**: train the actual flight-ready NN. Milestones are observational
+layering, not strict gates — same pattern as betterz1/betterz2.
 
-9. **Phase 3a — Zero-variation baseline**: all entry sigmas = 0, fixed
-   rabbit at 10 m/s, 5 deterministic paths only. Verify NN learns to track
-   the basic paths perfectly with the new representation.
+**Starting state**: 1 path, zero-variation baseline with the new
+representation. Fixed rabbit at 10 m/s. All entry/wind/rabbit-speed
+variation enables OFF. No discontinuity-forcing paths yet. Authority
+limit OFF.
 
-10. **Phase 3b — Examine learned behavior**: diagnose what the NN actually
-    learned. Throttle distribution, surface deflection distribution,
-    `d²output²` chatter stats. Does it saturate? Does it bang-bang?
+**Layering pattern** (work back from the successful 022 approach):
+Observe what works on a simple scenario, add the next variation, see it
+still works, add the next. Not a strict ordering — use judgment. Typical
+progression:
 
-11. **Phase 3c — Authority-limit iteration (Change 8)**: IF 3b shows
-    saturation / bang-bang, apply authority limit (0.5x output scale) and
-    retrain. Compare. This is the 10 Hz overcorrection hypothesis test.
+1. **1 path, no variations** — the minisim baseline ported to CRRCSim.
+   Real FDM dynamics, Change 1b engage delay window active, Change 1
+   history reset active. Verify: NN learns the path, `data.dat` logs
+   are clean, discontinuity count in the log is zero (structural
+   wrap-freedom from Change 6).
 
-### Phase 4: Training Phase — Layer Complexity
+2. **Examine learned behavior** — throttle distribution, surface
+   deflection distribution, `d²output²` chatter. Does Change 8's
+   authority-limit iteration need to run? Set the trigger criterion
+   empirically here (this is the Q4 deferred-to-plan decision).
 
-One variation at a time, confirming each doesn't destroy Phase 3 quality:
-- Wind direction variation
-- Entry attitude / speed variations
-- Rabbit speed variation (re-enable via `EnableRabbitSpeedVariations=1`
-  from 022 T024b)
-- Entry position offset (small → large, to cover INAV delay drift)
-- 6th random path (SeededRandomB)
-- **Discontinuity-forcing paths (Change 7)**: chase-from-behind, overshoot
-  recovery, inverted sustained, vertical descent. Specifically exercise
-  the regimes that previously produced wrap events under 022.
+3. **If triggered: Change 8 authority-limit retrain** — apply
+   `NNAuthorityLimit=0.5`, retrain. Compare.
 
-### Phase 5: Robustness
+4. **Layer in complexity** — winds, entry attitude/speed, entry position,
+   rabbit speed, extra paths, discontinuity-forcing paths (Change 7).
+   One at a time, retraining briefly between each. Watch per-path
+   brittleness, per-axis saturation, streak diagnostics.
 
-Craft parameter stddev variations (from 015 T140–T143):
-- Control effectiveness: `Cl_da`, `Cm_de` ± 10–20%
-- Damping: `Cl_p`, `Cm_q` ± 10–20%
-- Drag: `CD_prof` ± 10%
-- Mass / inertia: ± 5%
-- Control phase delay: 0–200 ms between command and servo response (
-  informed by Phase 1 filter audit findings)
+5. **Full curriculum** — all variations on, 5+ paths, discontinuity-forcing
+   paths included. This is the 022-betterz-equivalent big training run.
 
-Start narrow (control effectiveness + phase delay only), widen based on
-training results.
+6. **Craft parameter variations (Phase 5 in spec, blended here)** —
+   control effectiveness, damping, drag, mass/inertia, control phase
+   delay informed by Phase 1a filter audit findings. Start narrow
+   (control effectiveness + phase delay), widen.
 
-### Phase 6: Flight Validation
+**CRRCSim phase exits**: flight-ready weights deployable to xiao, all
+success criteria 1–9 met at the sim level. Zero discontinuities in
+`data.dat` across all training scenarios (structural check on Change 6).
 
-12. **Phase 3 weights → flight test**. Confirm basic tracking on path 0
-    and 2. Blackbox must show **zero projection discontinuities** — this
-    is a hard acceptance gate for Change 6.
+### Phase 4: Xiao Field-Test Prep
 
-13. **Each Phase 4 addition → flight test**, verify retention.
+1. **Flash the final weights** via `nn2cpp` codegen (which now emits
+   struct-field access for the type-safe interface).
+2. **Bench verification** — pre-arm, confirm MSP gyro + autoc state
+   extensions still healthy, servos respond per calibration.
+3. **Pre-flight checklist** — existing ~/autoc/preflight memory drives
+   this; verify that the 023 changes (new NN, new history reset, new
+   input layout) don't change any pre-flight step.
+4. **Field test** — fly. Blackbox analysis on landing must show **zero
+   projection discontinuities** in the bearing inputs (Success Criterion
+   #6 — structural, not statistical). Post-flight metrics tracked:
+   distance distribution, dd/dt, throttle saturation, attitude range,
+   discontinuity count (must be zero), per-axis control effort.
+5. **Iteration** — if flight fails, diagnose against the diagnostic
+   suite from Phase 3 and iterate. Escape-hatch architectures (Phase 1b)
+   come into play only if flight fails AND the failure is consistent
+   with the escape-hatch hypothesis.
 
-14. **Post-flight analysis**: repeat the 2026-04-07 diagnostic suite
-    (dPhi/dTheta discontinuity rate, input distribution vs sim, throttle
-    saturation, AHRS quality) on every flight. Track the metrics across
-    flights to catch regressions.
+### Deferred to End-of-Feature or BACKLOG
+
+- **AHRS reliability assessment** (from 018 T260–T267). 022 coordinate
+  cleanup + 023 representation change are big enough that AHRS is a
+  last-resort suspect, not a first-look diagnostic. Quaternion norm
+  stability from 2026-04-07 already suggests AHRS is mostly right.
+  Check only if 023 flight reveals unexplained attitude inconsistency.
+  Likely endpoint: BACKLOG entry.
+- **Xiao NN correctness check** (015 T190–T191, nn2cpp bit-identical
+  test). Reference-only — don't block on it. Reopen if sim-vs-flight
+  output divergence is suspected.
 
 ## Questions for Clarification
 
