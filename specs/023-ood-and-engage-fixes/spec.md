@@ -31,7 +31,7 @@ On re-engage:
 - Closing rate `dd/dt`: **+1142 m/s** (computed from stale prev − fresh now)
 - Stays corrupted for ~9 samples (900ms) until buffer cycles through
 
-### 2. INAV Engage Delay (~750ms)
+### 1b. INAV Engage Delay (~750ms)
 
 Independent of the history bug, INAV has a ~750ms delay between "NN
 switch enabled" and "MANUAL mode active". During that window:
@@ -98,11 +98,46 @@ same policy runs the aircraft ~30% faster than trained.
 
 ### In Scope
 
+**Prerequisites (blocking, must land before main work):**
+- Type-safe NN sensor interface (compiler-enforced topology consistency — enabler
+  for the 3-cosine bearing representation, and protection against future silent
+  topology drift). Historically BACKLOG item; promoted to 023 hard prerequisite.
+- Eval fitness determinism cross-check (Bug 3 — missing rabbit speed config in eval
+  mode). Eval must reproduce training fitness for same weights + scenarios before
+  any 023 benchmark is trustworthy.
+
+**Diagnostic Phase:**
+- Eval-mode random-path benchmark (depends on determinism fix)
+- INAV filter audit (research — enumerate all INAV-side filters in the NN signal
+  path and confirm each is off or modeled in sim; servo LPF is already off)
+- MSP2 latency bound (measure from recent xiao logs at end-of-span)
+- AHRS reliability assessment (carry, optional — rule out "AHRS was lying" as a
+  confound for 2026-04-07 results)
+
+**Core training changes:**
 - Engage transient fix (history buffer seeding or continuous recording)
+- 3-cosine bearing representation (replace dPhi/dTheta with direction cosines —
+  structural elimination of atan2 wrapping; requires type-safe NN prerequisite)
+- Discontinuity-forcing training paths (purpose-built paths that place the
+  aircraft in target-behind / target-below / inverted regimes to exercise the
+  bearing representation during training; complements the 3-cosine change)
 - Training regime expansion (position, speed, attitude variations)
 - Throttle lexicase dimension (was deferred from 022)
+- Energy / authority-limit lexicase dimension (NEW — 10Hz overcorrection hypothesis:
+  craft tendency to overcorrect may benefit from limiting command throw to ~50%
+  and retraining. Iterative: train, examine learned behavior, then constrain
+  authority and retrain. More likely to give a signal than a pure energy penalty.)
 - Rabbit speed simplification (consider fixing 13 m/s)
+
+**Robustness Phase:**
+- Craft parameter variations (pulled in from 015 T140–T143: control effectiveness,
+  damping, drag, mass/inertia, control phase delay ± stddev per scenario)
 - Sim dynamics tuning if necessary after training changes
+
+**Validation:**
+- Next-flight blackbox analysis: structural check that projection discontinuities
+  in the bearing inputs are **zero** (not just reduced) — the 3-cosine change must
+  make wrapping impossible, and real flight must confirm it.
 
 ## Open Research Areas (notes for 023 planning)
 
@@ -152,13 +187,33 @@ parameters (control effectiveness + phase delay) before going wider.
 Sources of phase delay not currently in sim:
 1. **10Hz sample rate** — already in sim (100ms step). Not a "delay" per se,
    but a minimum loop latency.
-2. **INAV servo LPF** — was turned off for this flight (`servo_lpf_hz=0`)
-3. **MSP communication latency** — xiao→INAV→servo takes 10-20ms
+2. **INAV servo LPF** — confirmed OFF (`servo_lpf_hz=0`) for 2026-04-07 flight.
+3. **MSP communication latency** — xiao→INAV→servo takes 10-20ms. Bound via
+   end-of-span xiao logs (Diagnostic Phase task).
 4. **Actual servo rise time** — physical servos take 50-100ms to move full range
 5. **Control force buildup** — aerodynamic response to surface deflection
    isn't instant (boundary layer, etc.) — probably negligible but nonzero
 6. **Induced drag change** — response to surface deflection is nonlinear
    and depends on speed
+
+**INAV-side filter audit (research task)**: previously we argued MANUAL mode
+is pure pass-through, then discovered `servo_lpf` was NOT. Do not assume the
+rest of the INAV signal path is clean. Enumerate every filter between RC
+command input and servo output, and between raw gyro and MSP gyro output:
+- `gyro_hardware_lpf` (stage 1 sensor filter)
+- `gyro_main_lpf_hz` (stage 2 software filter)
+- `gyro_main_lpf_type`
+- Dynamic notch (matrix filter)
+- Static notch filters
+- `dterm_lpf_hz`, `dterm_lpf2_hz` (only if rate PID active — currently not,
+  but audit the pass-through path regardless)
+- `rc_smoothing_*` (if enabled)
+- Any MSP-side smoothing on received RC
+
+For each: document current setting, whether it affects the NN signal path in
+MANUAL mode, and whether it is modeled in sim. Research-first (document),
+code changes only if findings demand them. This research lands during
+speckit plan phase.
 
 Sim currently models none of these explicitly. Could add a configurable
 command delay at the `inputdev_autoc` boundary — NN computes at t, command
@@ -393,10 +448,23 @@ Order of operations:
 - Multi-point leading (future rabbit positions)
 - Heading alignment bonus
 - Adaptive scales based on path curvature
-- Higher NN sample rate (10 Hz → 20/50 Hz) — requires full retrain with
-  different history buffer sizing
-- NN authority scaling at xiao boundary (quick experiment, can do separately
-  without waiting for full retrain)
+- **Higher NN sample rate (10 Hz → 20/50 Hz)** — requires full retrain AND
+  xiao log format compression (current .txt format would ~double at 20 Hz,
+  eroding flash budget). The log-format work is the real blocker, not the
+  NN inference. When picked up, treat as a joint effort: log format change
+  + SimTimeStepMs change + history buffer resize + retrain.
+- **Xiao onboard IMU AHRS cross-check (LSM6DS3 + Madgwick)** — independent
+  from the 023 AHRS reliability assessment which uses existing INAV AHRS.
+  This is the "add a second physical sensor" version. Stays deferred.
+- **Wider NN capacity experiment (~5x weights)** — separate A/B against
+  the 023-tuned {33, 32, 16, 3} baseline once 023 lands and visual/LED
+  tracking work begins. The 023 hidden-layer sizing is already forward-
+  compatible with that work; a deliberate capacity experiment is its own
+  feature.
+- **Third lexicase dimension: energy / chatter penalty** (`Σ d²output²`
+  from 022 dev report) — Change 8's authority-limit iteration is 023's
+  hedge against bang-bang. A formal energy lexicase dimension is a
+  post-023 candidate if authority limiting alone is insufficient.
 
 ## Proposed Changes
 
@@ -534,12 +602,220 @@ speed issue persists, consider:
 - `CD_prof`: 0.18 → 0.22 (more drag, sim Vmax ~20 m/s)
 - Or thrust reduction to match real Vmax
 
-## Parameters — Simple First, Complexity Later
+### Change 6: Bearing Representation — Direction Cosines
 
-User guidance: get simple working well in sim AND real, then layer
-complexity back. Strategy:
+**Motivation**: The current `dPhi`/`dTheta` inputs are `atan2` outputs that
+wrap at ±π. Analysis of the 2026-04-07 flight found ~1 wrap event per second
+in real flight versus ~0.02/sec in sim — a 40x gap. The NN has essentially
+no training on discontinuity events. Replace with direction cosines to
+eliminate wrapping **structurally** (not statistically).
 
-### Phase 1: Simplest Possible (get it working)
+**Representation**: Instead of two angles per time sample, output the unit
+vector pointing from aircraft to target, expressed in body frame:
+`(tx, ty, tz)` where `tx² + ty² + tz² = 1`. Same 6 time samples
+(`[-0.9s, -0.3s, -0.1s, now, +0.1s, +0.5s]`).
+
+**Input delta**: +6 slots per time-sample set. Inputs grow from 27 to 33.
+
+**Singularity handling (dist ≈ 0)**: When aircraft is exactly at the rabbit,
+the direction vector is undefined. Use a hard numerical floor, not a blend:
+```cpp
+const float DIR_NUMERICAL_FLOOR = 1e-4f;  // meters
+
+vec3 computeTargetDir(vec3 target_body, float dist,
+                      vec3 rabbit_vel_dir_body) {
+    if (dist < DIR_NUMERICAL_FLOOR) {
+        return rabbit_vel_dir_body;  // path-tangent fallback at true singularity
+    }
+    return target_body * (1.0f / dist);
+}
+```
+
+Rationale for hard switch over a blended window: at 10 Hz and 18 m/s the
+aircraft covers ~1.8 m per tick. Any "smooth blend" window (e.g. 0.5 m) is
+traversed in a fraction of a tick, so the NN sees a step change either
+way. A blend adds tuning surface without removing the jump. The straight
+normalization handles "aircraft flies past rabbit" correctly — the direction
+vector rotates naturally through the pass. The fallback triggers only when
+the math is literally unsafe.
+
+**Lookahead samples** (`+0.1s`, `+0.5s`): use future rabbit position on the
+path, same as today. Project into *current* body frame, then direction-
+cosine normalize. No semantics change beyond the final projection.
+
+**Compute cost (xiao)**: No trig. Direction cosines eliminate `atan2`
+without introducing `cos`/`sin`. Per-sample cost is vector-subtract,
+length (`sqrt`), divide — all hardware FPU ops on nRF52840. No cos tables,
+no lookup, no approximation needed. Net MAC count for the full inference
+goes from ~584 to ~1600 (see NN Topology below), still under 300 μs per
+call on Cortex-M33 — negligible against any sample rate we'd consider.
+
+### NN Topology After Change 6
+
+**New topology: {33, 32, 16, 3}, 1667 weights** (vs. current {27, 16, 8, 3},
+611 weights — 2.7x weight count).
+
+**Input layout (33)**:
+```
+ 0- 5: target_x_body [-0.9,-0.3,-0.1,now,+0.1,+0.5]s   [-1,1]  unit-vec component
+ 6-11: target_y_body [-0.9,-0.3,-0.1,now,+0.1,+0.5]s   [-1,1]
+12-17: target_z_body [-0.9,-0.3,-0.1,now,+0.1,+0.5]s   [-1,1]
+18-23: dist          [-0.9,-0.3,-0.1,now,+0.1,+0.5]s   m
+   24: dDist/dt closing rate (m/s)
+25-28: quaternion (w, x, y, z)                         [-1,1]
+   29: airspeed (m/s)
+30-32: gyro rates (p, q, r) rad/s                      std RHR
+```
+
+**Hidden layers**: 32 (was 16), 16 (was 8). Rationale: the +6 input slots
+already force a topology migration; the type-safe NN sensor interface
+prerequisite makes the migration cost ~linear in the number of touched
+files, not quadratic in "how much we changed." While we're paying that
+cost, bump hidden capacity to match the richer input representation.
+
+**Weight arithmetic**:
+- Layer 1: `33 * 32 + 32` = 1088
+- Layer 2: `32 * 16 + 16` = 528
+- Layer 3: `16 * 3 + 3`   = 51
+- **Total: 1667**
+
+**Xiao inference cost**:
+- ~1616 MAC + 51 tanh per forward pass
+- At ~3.5 cycles/MAC on Cortex-M33 + FPU: ~280 μs/inference
+- Against 100 ms tick (10 Hz): 0.28% CPU. Against 50 ms tick (20 Hz): 0.56%.
+- **Compute is not the constraint.** Xiao log format compression is the
+  real 20 Hz constraint (already noted in Parked section).
+
+**Evolution cost**: ~2.7x weights means the search space for mutation is
+larger. First-baseline walltime estimate: 1.5–2x current (022 betterz2 was
+~400 gens × pop 3000 × 245 scenarios). Tolerable with 022's training
+infrastructure.
+
+**Forward compatibility**: Hidden layer sizing (32, 16) is also sized with
+visual target tracking in mind (wingtip-LED camera frontend). A visual
+frontend is likely to produce a wider preprocessed feature vector than
+current 33 inputs. Paying for wider hidden layers now avoids doing this
+migration twice. When visual-NN work lands (post-023, on GB10 GPU for
+training), the downstream NN backend already has capacity headroom. Not
+a 023 deliverable — just a sizing decision that costs nothing now and
+saves a migration later.
+
+**Not a 5x experiment**: An earlier discussion considered scaling weights
+~5x as an independent capacity experiment. Deferred post-023 as a separate
+A/B against the 023-tuned baseline. This spec's bump (1.91x — wait, 2.73x
+with the actual numbers) is a "paid for by the input change" size
+adjustment, not a research experiment on NN capacity.
+
+### Change 7: Discontinuity-Forcing Training Paths
+
+Sim training under 022 almost never triggers bearing discontinuities
+(~0.02/sec vs real ~0.8/sec). The NN therefore never develops a response
+to wrap events, and real flight exposes the gap. Change 6 fixes the
+representation so wraps *can't happen* — but the NN also needs training
+examples in the regimes that previously produced them (target behind
+aircraft, target below inverted aircraft, close overshoot).
+
+Add purpose-built training paths that force the aircraft into these
+regimes:
+- **Chase-from-behind**: rabbit starts 30m ahead, aircraft must actively
+  close. Time in "target ahead" regime = most of the path.
+- **Overshoot recovery**: rabbit stops at waypoint, aircraft must decelerate
+  or turn to avoid flying past. Forces "target behind" regime.
+- **Inverted sustained**: a path segment that requires sustained inverted
+  tracking (loop or split-s extended through the top).
+- **Vertical descent**: rabbit below aircraft at entry, aircraft must pitch
+  down and dive. Forces "target below" in NED while aircraft is near-level.
+
+These are Phase 2 additions — land after the base 5-path retrain stabilizes
+under the new representation.
+
+### Change 8: Authority-Limit Iteration (Energy / Bang-Bang)
+
+**Hypothesis**: The 10 Hz sample rate creates a tendency for the NN to
+overcorrect — commanding full surface throw in one tick, compensating the
+next. This is exacerbated by CRRCSim's dynamics being "stretched thin" at
+full-power / full-command inputs (sim artifacts that don't hold in
+reality). The result is a policy that looks fine in sim but produces
+bang-bang behavior in real flight.
+
+**Approach** (iterative, not a single change):
+
+1. **Train baseline** with all other 023 changes in place. Examine what
+   the NN actually learns — throttle distribution, surface deflection
+   distribution, `d²output²` chatter.
+
+2. **If learned behavior is still saturating**: apply an *authority limit*
+   at the NN output clamp. Cap pitch/roll command magnitude at ~50% of
+   full throw during training AND inference. Retrain from scratch (or
+   from baseline weights as a warm start).
+
+3. **Compare**: does the authority-limited policy track as well in sim?
+   How does it behave in real flight?
+
+This is likely to produce a stronger signal than a pure `Σ d²output²`
+chatter penalty (the "Phase 5+" proposal from 022 dev report), because
+the authority limit *forces* the change rather than penalizing it.
+Penalty-based approaches require tuning an epsilon; authority limits are
+a hard cap with no tuning surface.
+
+**Not a lexicase dimension** (at least not initially) — this is a
+configuration knob on the NN output boundary. If the iterative approach
+validates that limiting authority helps, we can consider adding
+`max(|output|)` or `Σ d²output²` as a lexicase dimension in a follow-up.
+
+**Configuration**:
+- Add `NNAuthorityLimit = 1.0` to `autoc.ini` (default = no limit).
+- Applied as `output = tanh(raw) * NNAuthorityLimit` before interpretation
+  in sim bridge AND on xiao. Must be identical both sides.
+- Xiao-side env var or hardcoded constant matching training value.
+
+### Prerequisite: Type-Safe NN Sensor Interface
+
+**Why blocking**: Change 6 grows NN inputs from 27 to 33. Under the current
+hand-maintained topology pattern, this forces updates to 9+ files in
+lock-step (see BACKLOG "Type-Safe NN Sensor Interface" for the full list).
+The 021 redesign (29→27) shipped with silent serialization corruption from
+this class of bug. Doing it one more time is asking for the same thing.
+
+**Goal**: The compiler enforces topology consistency. Changing
+`NN_INPUT_COUNT` in one place should either:
+- Propagate automatically everywhere it matters, OR
+- Produce compile errors at every site that assumed the old value.
+
+**Minimum requirements**:
+- Named input enum or typed struct (not magic index into `float[]`)
+- Single source of truth for `NN_INPUT_COUNT` and topology string
+- Compile-time assertion that topology.h matches the enum/struct
+- Serialization format self-describing (field names or tags, not positional)
+- Xiao-side consumer (`xiao/src/msplink.cpp`) shares the same header
+
+**Non-goals (for 023)**: Unit metadata, range validation, runtime
+introspection UI. The point is compile-time safety, not a full sensor
+framework. Keep it small.
+
+**Files in scope for the prerequisite** (from BACKLOG list):
+- `include/autoc/nn/topology.h`
+- `include/autoc/autoc.h` (duplicate defines cleanup)
+- `src/nn/evaluator.cc` (nn_gather_inputs, index map)
+- `src/autoc.cc` (data.dat format, header, field indices)
+- `include/autoc/eval/aircraft_state.h` (nnInputs_ size, serialization)
+- `tests/contract_evaluator_tests.cc`
+- `tests/nn_evaluator_tests.cc`
+- `specs/019-improved-crrcsim/sim_response.py` (parser)
+- `xiao/src/msplink.cpp` (xiao-side input gathering)
+
+Order: land the type-safe interface FIRST on the 023 branch (still at
+27 inputs, no behavior change). Verify all tests pass. THEN make the
+27→33 input change in one commit, relying on the compiler to catch any
+missed site.
+
+## Parameter Schedules by Implementation Phase
+
+Configuration knob values for each Implementation Order phase. See
+Implementation Order section for phase execution order and dependencies.
+Phases here correspond 1:1 to Implementation Order Phase 3 / 4 / 5.
+
+### Implementation Phase 3a — Zero-Variation Baseline
 
 ```ini
 # Fitness (unchanged from 022)
@@ -550,7 +826,10 @@ FitStreakThreshold              = 0.5
 FitStreakRampSec                = 5.0
 FitStreakMultiplierMax          = 5.0
 
-# Training distribution: ZERO ENTRY OFFSETS (023 phase 1)
+# Training distribution: ZERO VARIATION
+EnableEntryVariations           = 0     # (022 T024b-style master switch; add similar for all groups)
+EnableWindVariations            = 0
+EnableRabbitSpeedVariations     = 0     # from 022 T024b
 EntryConeSigma                  = 0     # was 30  — no attitude variation
 EntryRollSigma                  = 0     # was 30  — no roll variation
 EntrySpeedSigma                 = 0     # was 0.1 — no speed variation
@@ -558,45 +837,58 @@ EntryPositionRadiusSigma        = 0     # was 15  — start at path origin
 EntryPositionAltSigma           = 0     # was 3   — no altitude offset
 WindDirectionSigma              = 0     # was 45  — no wind variation
 
-# Rabbit speed: FIXED, slower
+# Rabbit speed: FIXED, slower than real cruise for reaction time
 RabbitSpeedSigma                = 0     # was 2    — fixed speed
 RabbitSpeedNominal              = 10.0  # was 13.0 — slower for more reaction time
 
 # Paths: keep 5 deterministic, no random
 SimNumPathsPerGeneration        = 5     # unchanged
 
-# NN rate (if feasible without full retrain infrastructure changes):
-SimTimeStepMs                   = 50    # was 100 — 20Hz for less phase delay
+# SimTimeStepMs stays at 100ms (10 Hz). 20 Hz is Out of Scope for 023.
+
+# NN authority limit: start at 1.0 (no limit). Change 8 Phase 3c may
+# retrain with this reduced to 0.5 if Phase 3b shows saturation.
+NNAuthorityLimit                = 1.0
 ```
 
-Goal: get rock-solid tracking on the 5 deterministic paths with NO
-variations at all. This is the baseline — if the NN can't track here,
-nothing else matters.
+Goal: rock-solid tracking on the 5 deterministic paths with NO variations
+at all, under the new 3-cosine representation. This is the baseline — if
+the NN can't track here, nothing else matters.
 
-### Phase 2: Layer in Complexity (one variable at a time)
+### Implementation Phase 4 — Layer in Complexity
 
-Once Phase 1 is solid, add back:
-1. Wind direction variation (sim sees real wind conditions)
-2. Entry attitude cone (small at first, grow)
-3. Entry speed variation (small)
-4. Rabbit speed variation (small)
-5. Entry position offset (small, then grow to cover INAV delay drift)
-6. 6th path (SeededRandomB) — random generalization
-7. Craft parameter variations (control effectiveness, phase delay)
+Once Phase 3 is solid, add variations back ONE AT A TIME, measuring
+retention of Phase 3 quality at each step:
 
-Each addition: one training run, measure retention of Phase 1 quality.
+1. Wind direction variation (`EnableWindVariations=1`, `WindDirectionSigma=45`)
+2. Entry attitude cone (`EnableEntryVariations=1`, `EntryConeSigma=30`, small → large)
+3. Entry speed variation (`EntrySpeedSigma=0.1`, small → large)
+4. Rabbit speed variation (`EnableRabbitSpeedVariations=1`, `RabbitSpeedSigma=2.0`)
+5. Entry position offset (`EntryPositionRadiusSigma=5` → `15` → `30-50`)
+   - Larger values cover INAV delay drift per Change 1b
+6. 6th path (`SimNumPathsPerGeneration=6` — enables SeededRandomB)
+7. Discontinuity-forcing paths (Change 7 — chase, overshoot, inverted, descent)
 
-### Phase 3: Robustness (dynamics variations)
+Each addition: one training run, measure:
+- Fitness retention vs Phase 3a baseline
+- Per-path brittleness (any specific path scoring >10x worse than others?)
+- Discontinuity rate in data.dat — should stay at zero; if not, the
+  representation change has a bug
+- Throttle saturation fraction and `d²output²` chatter
 
-Add stddev variations on dynamics parameters (see "Craft Parameter
-Variations" research section). Forces policy to generalize across
-a neighborhood of the nominal hb1_streamer.xml dynamics.
+### Implementation Phase 5 — Robustness (dynamics variations)
 
-### Special: Intercept Paths
+Craft parameter stddev variations (from 015 T140–T143):
+- Control effectiveness: `Cl_da`, `Cm_de` ± 10–20%
+- Damping: `Cl_p`, `Cm_q` ± 10–20%
+- Drag: `CD_prof` ± 10%
+- Mass / inertia: ± 5%
+- Control phase delay: 0–200 ms between command and servo response
+  (informed by Phase 1 INAV filter audit findings)
 
-Add purpose-built paths that test intercept-from-far. E.g., path starts
-~30m ahead of the aircraft's natural heading, so the NN must actively
-chase. Would be a 7th and 8th path in the aeroStandard set.
+Start narrow (control effectiveness + phase delay only), widen based on
+training results. Forces policy to generalize across a neighborhood of
+the nominal `hb1_streamer.xml` dynamics.
 
 ## Success Criteria
 
@@ -607,49 +899,144 @@ chase. Would be a 7th and 8th path in the aeroStandard set.
 3. **Throttle mean < 0.5** in sim training — NN uses < half-throttle on average
 4. **Real flight achieves sustained tracking** — distance stays below 30m for
    > 5 seconds on at least one autoc span
+5. **Bearing representation is structurally wrap-free** — post-Change 6, the
+   NN bearing inputs are unit vectors by construction. No `atan2` in the
+   input pipeline. Verified by code inspection and by the type-safe NN
+   interface's compile-time checks.
+6. **Next-flight blackbox shows zero projection discontinuities** — real
+   flight analysis (same methodology as 2026-04-07) must find **zero**
+   large-step events in the bearing input sequence. Not "below 0.1/sec" —
+   zero. The structural change means wraps cannot occur; if any appear,
+   the representation change was incomplete somewhere in the pipeline.
+7. **Eval-mode determinism** — running eval on saved gen-N weights
+   reproduces the training-time fitness within FP rounding. This is the
+   acceptance criterion for the Bug 3 fix and a precondition for every
+   other diagnostic in this feature.
+8. **Type-safe NN interface is compile-enforced** — changing
+   `NN_INPUT_COUNT` in one place either propagates automatically or
+   produces compile errors at every dependent site. Verified by
+   deliberately breaking the count in a test branch.
 
 ## Implementation Order
 
-### Diagnostic Phase
+### Phase 0: Prerequisites (blocking)
 
-1. **Eval-mode benchmark**: run current 022 NN through eval with random paths.
-   Measure distance/streak stats. Compare to real flight stats. Does sim
-   reproduce the failure mode?
-2. **Xiao NN correctness check**: feed xiao a known sim sequence, verify
-   output matches sim bit-for-bit (or within rounding). Rules out code
-   generation / FP issues.
-3. **Engage transient fix**: xiao-side history reset on every engage.
-   Independent of retraining. Test with current NN to see if flight behavior
-   improves.
+All subsequent phases depend on these. Land them first, in order.
 
-### Training Phase 1 (Simplest)
+0a. **Type-safe NN sensor interface** — refactor topology consistency under
+    compiler enforcement. No behavior change (still 27 inputs). All tests
+    pass. Verified by deliberately breaking `NN_INPUT_COUNT` in a test
+    branch — must produce compile errors, not runtime corruption.
 
-4. **Zero-variation training**: retrain with all entry sigmas = 0, fixed
+0b. **Eval fitness Bug 3 fix** — add `evalData.rabbitSpeedConfig = gRabbitSpeedConfig`
+    in `runNNEvaluation()`. Verify eval reproduces training-time fitness
+    for saved gen-N weights within FP rounding. This is the determinism
+    cross-check — without it, no 023 diagnostic is trustworthy.
+
+### Phase 1: Diagnostic Phase
+
+Runs against current 022 betterz2 weights. Establishes a known-good
+baseline measurement for every metric 023 cares about.
+
+1. **Eval-mode random-path benchmark**: run betterz2 through eval with
+   SeededRandomB paths. Measure distance/streak/discontinuity stats.
+   Compare to real flight stats from 2026-04-07. Does sim reproduce the
+   failure mode? (Depends on Phase 0b.)
+
+2. **INAV filter audit (research)**: enumerate every filter in the NN signal
+   path between RC input / raw gyro and servo output / MSP gyro output.
+   Document current setting, whether it affects MANUAL mode pass-through,
+   and whether it is modeled in sim. Research-first; code changes flow from
+   findings during speckit plan phase. Specific filters to audit are listed
+   in the "Phase Delay Research" section above.
+
+3. **MSP2 latency bound**: measure from recent xiao blackbox logs at
+   end-of-span (clean data without wrap events). Bound the number and
+   document it. Previously reported as "50→30ms bench-measured" but the
+   current ceiling is unconfirmed.
+
+4. **AHRS reliability assessment (optional, carry)**: from 018 T260–T267.
+   Use 2026-04-07 blackbox to rule out "AHRS was lying" as a confound.
+   Runs in parallel with training work; not blocking.
+
+5. **Xiao NN correctness check (optional, low effort)**: feed xiao a known
+   sim input sequence, verify output matches sim within FP rounding.
+   From 015 T190–T191. Reference-only in 023 — don't block training on it.
+
+6. **Engage transient fix (Change 1)**: xiao-side history reset on every
+   engage. Independent of retraining. Can test with current NN to see if
+   flight behavior improves before any new training lands.
+
+### Phase 2: Representation Change
+
+After prereqs and diagnostics establish a clean baseline, change the NN's
+observation space. This is the biggest single change in 023.
+
+7. **NN topology migration (Change 6)**: 27 → 33 inputs. Replace `dPhi`/
+   `dTheta` with direction cosines. Hidden layers 16→32, 8→16. New weight
+   count 1667. Singularity handling via numerical floor + rabbit velocity
+   fallback. Same `computeTargetDir()` code in sim bridge and xiao.
+
+8. **Baseline retrain (new topology, current distribution)**: retrain with
+   ONLY the topology change active. Other parameters identical to 022
+   betterz2. Confirm the new representation can reach comparable fitness
+   on the same scenarios. Compare convergence walltime to 022 baseline.
+
+### Phase 3: Training Regime Simplification
+
+With clean topology and working representation, simplify the training
+regime to isolate the core tracking problem.
+
+9. **Phase 3a — Zero-variation baseline**: all entry sigmas = 0, fixed
    rabbit at 10 m/s, 5 deterministic paths only. Verify NN learns to track
-   the basic paths perfectly.
-5. **20Hz rate (if possible)**: bump SimTimeStepMs to 50 if it doesn't
-   break the history buffer sizing elsewhere. Reduces phase delay.
+   the basic paths perfectly with the new representation.
 
-### Training Phase 2 (Layer Complexity)
+10. **Phase 3b — Examine learned behavior**: diagnose what the NN actually
+    learned. Throttle distribution, surface deflection distribution,
+    `d²output²` chatter stats. Does it saturate? Does it bang-bang?
 
-6. One variation at a time, confirming each doesn't destroy Phase 1 quality:
-   - Wind direction variation
-   - Entry attitude/speed variations
-   - Rabbit speed variation
-   - Entry position offset (small → large)
-   - 6th random path
+11. **Phase 3c — Authority-limit iteration (Change 8)**: IF 3b shows
+    saturation / bang-bang, apply authority limit (0.5x output scale) and
+    retrain. Compare. This is the 10 Hz overcorrection hypothesis test.
 
-### Flight Validation
+### Phase 4: Training Phase — Layer Complexity
 
-7. Phase 1 weights → flight test. Confirm basic tracking on path 0 and 2.
-8. Each Phase 2 addition → flight test, verify retention.
-9. If fails: diagnose (OOD? dynamics? phase delay?) and iterate.
+One variation at a time, confirming each doesn't destroy Phase 3 quality:
+- Wind direction variation
+- Entry attitude / speed variations
+- Rabbit speed variation (re-enable via `EnableRabbitSpeedVariations=1`
+  from 022 T024b)
+- Entry position offset (small → large, to cover INAV delay drift)
+- 6th random path (SeededRandomB)
+- **Discontinuity-forcing paths (Change 7)**: chase-from-behind, overshoot
+  recovery, inverted sustained, vertical descent. Specifically exercise
+  the regimes that previously produced wrap events under 022.
 
-### Robustness Phase (later)
+### Phase 5: Robustness
 
-10. Craft parameter stddev variations
-11. Special intercept paths
-12. Higher sample rate infrastructure (20 Hz or more)
+Craft parameter stddev variations (from 015 T140–T143):
+- Control effectiveness: `Cl_da`, `Cm_de` ± 10–20%
+- Damping: `Cl_p`, `Cm_q` ± 10–20%
+- Drag: `CD_prof` ± 10%
+- Mass / inertia: ± 5%
+- Control phase delay: 0–200 ms between command and servo response (
+  informed by Phase 1 filter audit findings)
+
+Start narrow (control effectiveness + phase delay only), widen based on
+training results.
+
+### Phase 6: Flight Validation
+
+12. **Phase 3 weights → flight test**. Confirm basic tracking on path 0
+    and 2. Blackbox must show **zero projection discontinuities** — this
+    is a hard acceptance gate for Change 6.
+
+13. **Each Phase 4 addition → flight test**, verify retention.
+
+14. **Post-flight analysis**: repeat the 2026-04-07 diagnostic suite
+    (dPhi/dTheta discontinuity rate, input distribution vs sim, throttle
+    saturation, AHRS quality) on every flight. Track the metrics across
+    flights to catch regressions.
 
 ## Questions for Clarification
 
@@ -661,3 +1048,120 @@ chase. Would be a 7th and 8th path in the aeroStandard set.
   current 10-step ramp schedule?
 - **Throttle epsilon**: how tight should lexicase throttle filtering be?
   Too tight overrides score quality. Too loose has no effect. Start at 0.1?
+
+## Research Candidates (end-of-spec, not in main path)
+
+These are interesting ideas considered during scoping but deliberately not
+in the 023 implementation. Parked here so they aren't lost.
+
+### Per-Scenario Worst-Case Lexicase Dimension
+
+Current lexicase uses sum-of-negated-scores as its primary dimension. An
+individual that scores well on 244/245 scenarios and catastrophically bad
+on 1 has similar total fitness to a mediocre-everywhere individual, so
+evolution is not pressured to raise the floor. This is the betterz1 path-3
+brittleness pattern: the NN finds a stable orbit on the hard path instead
+of actually tracking it.
+
+**Proposal**: add `min(scenario_scores)` as a third lexicase dimension
+(after score and throttle). Forces evolution to raise the worst-case, not
+just the mean.
+
+**Why not in 023 main path**: introduces another dimension to tune (
+epsilon, relative weight against score). The mean is already moving
+thanks to the 022 conical surface — evidence for "we need floor pressure"
+is weak until we see a Phase 3+ run stall the same way betterz1 did. Park
+as a candidate for Phase 5+ if brittleness persists.
+
+### Third Lexicase Dimension — Energy / Chatter Penalty
+
+The 022 dev report proposes `Σ d²output²` (second-derivative of control
+outputs) as an energy proxy that penalizes bang-bang without penalizing
+sustained maneuvers. See the development report for the worked examples
+and path-fairness analysis.
+
+**Why not in 023 main path**: Change 8 (authority-limit iteration) is
+023's bang-bang hedge, and it's expected to give a stronger signal
+because it's a hard cap rather than a tuning knob. If Phase 3c shows
+authority limiting is insufficient or produces side effects, re-open
+the energy lexicase dimension as a follow-up.
+
+### Wider NN Capacity Experiment
+
+A ~5x weight count experiment against the 023-tuned {33, 32, 16, 3}
+baseline. Cost is linear in walltime on evolution side; xiao compute is
+still well under budget at 5x. Interesting coupled with the visual/LED
+frontend work because visual inputs will want more capacity downstream.
+
+**Why not in 023 main path**: confounds the representation change with a
+capacity change. Run both experiments independently for clean A/B signal.
+
+## Parent-Feature Close-Outs Driven by 023
+
+023 subsumes or retargets work from several parent features. Close-out
+actions for each:
+
+### 021 — Xiao AHRS Crosscheck
+
+**Status**: CLOSED by 022. 022 betterz2 (V4 conical, 400 gens) produced
+a fundamentally better training approach than anything 021's rate-PID +
+IMU-crosscheck path produced. The 021 pivot to "NN learns its own rate
+control via gyro inputs" is already shipped as part of 022 (gyro p/q/r
+at indices 24–26).
+
+**Remaining 021 items**:
+- T070–T074 (characterization flight): superseded — 023 *is* the next
+  characterization flight under a better controller.
+- T083–T084 (post-flight analysis with betterz2): DONE — see
+  `flight-results/flight-20260407/flight-report.md`.
+- Mark the 021 spec itself CLOSED in its status line.
+
+### 020 — Pre-Flight Pipeline
+
+**Status**: T515–T518 superseded. Latency calibration work overlaps 023
+Phase 1 diagnostic (MSP2 latency bound, INAV filter audit). BIG training
+is superseded by 022 training infrastructure.
+
+**Action**: Mark T515–T518 as SUPERSEDED BY 023 in 020's tasks.md.
+
+### 019 — Improved CRRCSim
+
+**Status**: T400–T434 (full axis characterization + sim tuning) remain
+relevant but are not blocking 023. 023 Change 5 explicitly defers sim
+dynamics changes until training results demand them.
+
+**Action**: Keep 019 open. Reference from 023 Change 5 as "unblock path
+if Phase 3/4 training fails to close the dynamics gap." Explicit decision
+gate in 023 Phase 3b (learned behavior examination).
+
+### 018 — Flight Analysis
+
+**Status**: Several items pulled into 023 Phase 1 diagnostic:
+- T260–T267 (AHRS reliability assessment) — 023 Phase 1 item 4.
+- T273b (INAV RC filter modeling) — 023 Phase 1 item 2 (filter audit).
+- T273h (MSP2 latency reduction) — 023 Phase 1 item 3.
+
+**Action**: Mark these items as IN PROGRESS UNDER 023 in 018's tasks.md.
+Remaining 018 post-flight-analysis work (T290–T300) stays in 018 as
+ongoing analysis infrastructure.
+
+### 015 — NN Training Improvements
+
+**Status**:
+- T140–T143 (aircraft variation / sim-to-real) — pulled into 023 Phase 5
+  (Robustness). Implementation happens on 023 branch.
+- T190–T191 (Cross-ISA NN bit-identical check) — reference-only in 023
+  Phase 1 item 5. Not blocking.
+- T130–T133 (path-relative smoothness) — superseded by 023 Changes 3/8
+  (throttle lexicase + authority limit).
+- T165 (sum mode legacy tearout) — stays in 015, refactoring not
+  related to 023.
+
+**Action**: Mark T140–T143 as IN PROGRESS UNDER 023, T190–T191 as
+REFERENCED BY 023, T130–T133 as SUPERSEDED BY 023 in 015's tasks.md.
+
+### 014 — NN Training Signal
+
+**Status**: T066–T068 (output directory management) — infrastructure
+cleanup, tangentially related to flight debug but not load-bearing for
+023. Stays in 014.
