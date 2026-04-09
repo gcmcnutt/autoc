@@ -739,9 +739,20 @@ saves a migration later.
 
 **Not a 5x experiment**: An earlier discussion considered scaling weights
 ~5x as an independent capacity experiment. Deferred post-023 as a separate
-A/B against the 023-tuned baseline. This spec's bump (1.91x — wait, 2.73x
-with the actual numbers) is a "paid for by the input change" size
-adjustment, not a research experiment on NN capacity.
+A/B against the 023-tuned baseline. This spec's bump (2.73x with the
+actual numbers) is a "paid for by the input change" size adjustment, not
+a research experiment on NN capacity.
+
+**Logging coverage — all new inputs and all outputs**: when inputs grow
+from 27 to 33, `data.dat` must gain 6 new columns (one per new
+`target_x/y/z` × 6-tick history slot) and the header must emit the new
+field names. NN outputs (`pitch, roll, throttle`) continue to be logged
+as before. Xiao flight logs gain the same new input columns. This is a
+hard requirement from the Prerequisite section's "Logging preservation"
+clause — see Phase 0a.1 verification test. No field may be dropped as
+a side effect of the refactor, and no new field may be added to the
+struct without a corresponding column in both `data.dat` and the xiao
+log format.
 
 ### Change 7: Discontinuity-Forcing Training Paths
 
@@ -906,6 +917,51 @@ refactors don't silently break saved weights / data.dat parsers.
 introspection, registry pattern. The point is compile-time safety, not
 a full sensor framework.
 
+**Logging preservation — HARD REQUIREMENT**: both `data.dat` (sim side)
+and xiao flight logs must continue to emit **every NN input field and
+every NN output field, one column per field, every tick**, with no
+regression in coverage from the current output. The refactor changes
+*how* fields are accessed, not *whether* they are logged. Specifically:
+
+- `data.dat` per-step row: one column for every member of `NNInputs`
+  (e.g. `target_x_0, target_x_1, ..., target_z_5, dist_0, ..., gyro_r`)
+  plus the 3 NN output columns (`pitch, roll, throttle`) plus existing
+  meta columns (timestamps, path state, fitness diagnostics, etc.).
+- `data.dat` header: one header name per column, derived from struct
+  field names (e.g. `target_x_0` for `target_x[0]`, `gyro_p` for
+  `gyro_p`). Header order matches column order exactly.
+- Xiao log: same coverage. Every NN input and every NN output written
+  to flash every NN cycle, in the compact binary or CSV format the
+  xiao log already uses. Column/field names must stay consistent with
+  `data.dat` so downstream analysis scripts can cross-reference.
+- `sim_response.py` and any other parser must read by column name
+  (post-refactor), not positional index. This is also part of the
+  type-safety goal — if a parser reads by name, silent column
+  reordering produces a KeyError at parse time, not a garbage plot.
+
+**Phase 0a.1 verification test**: Before declaring the refactor done,
+run a training scenario under the pre-refactor binary and the
+post-refactor binary against the same seed and weights. Compare the
+two `data.dat` files:
+- Column count must match: `27 + 3 + meta_count` before, same after.
+- Column headers must exist for every new named field.
+- Row values for every NN input and every NN output must match within
+  FP rounding.
+- Any xiao log captured from a test flight / bench run (pre-refactor)
+  must be replayable against the post-refactor parser without data loss.
+
+If any NN input or output stops being logged as a side effect of the
+refactor, the refactor is broken and must be reverted — this is not
+optional cleanup.
+
+**Rationale**: `data.dat` and xiao logs are the ground truth for every
+post-flight diagnostic 023 depends on (discontinuity rate, throttle
+saturation fraction, `d²output²` chatter, input distribution vs sim).
+Losing coverage for even one field means a post-flight analysis
+question becomes impossible to answer. 023's success criteria #6
+(next-flight zero discontinuities) cannot be verified without the
+per-tick bearing input columns.
+
 **Files in scope** (from BACKLOG list, updated with struct approach):
 - `include/autoc/nn/nn_inputs.h` (NEW — canonical struct definition)
 - `include/autoc/nn/topology.h` (derives `NN_INPUT_COUNT` from struct)
@@ -1045,6 +1101,17 @@ the nominal `hb1_streamer.xml` dynamics.
    `NN_INPUT_COUNT` in one place either propagates automatically or
    produces compile errors at every dependent site. Verified by
    deliberately breaking the count in a test branch.
+9. **Logging coverage preserved and extended** — `data.dat` (sim) and
+   xiao flight logs emit one column per NN input field AND one column
+   per NN output field (`pitch`, `roll`, `throttle`), every tick. After
+   Change 6 expands inputs to 33, the logs must include all 33 new
+   input columns plus the 3 output columns plus existing meta columns.
+   No NN input or output field may disappear from the logs as a side
+   effect of the type-safe refactor. Verified by comparing pre-refactor
+   and post-refactor `data.dat` files at the same seed/weights — column
+   counts and per-tick values for inputs/outputs must match within FP
+   rounding (pre-refactor at 27 inputs vs post-refactor at 27 inputs
+   during Phase 0a.1, then 33 inputs after Phase 0a.2).
 
 ## Implementation Order
 
