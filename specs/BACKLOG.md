@@ -186,6 +186,86 @@ Remaining 015 work:
 ### [DEFERRED] Xiao Safety Checks Pre-Arm
 - Ensure mode flip is safe: RC failsafe, RC disarm, hold/RTH should disarm co-processor
 
+### [PRE-FLIGHT / 023] Failsafe Refinement and Bench Verification
+- **Blocker for next flight test after 023 NN training lands.** Not a 023 spec
+  deliverable, but must be addressed before flying the new NN policy. Source:
+  `docs/failsafe-behavior-audit.md` (2026-04-08 audit, see also
+  `docs/inav-signal-path-audit.md`).
+- **Current state**: `xiao/inav-hb1.cfg:1419-1432` has `failsafe_procedure = DROP`.
+  Acceptable for the current foamboard platform (~100g, minimal ground-impact
+  risk) and has been running this way for a while. User's earlier aircraft used
+  "launch, fly out, reset home, orbit home at 50m" — that is the aspirational
+  target procedure for larger/future platforms.
+- **Four specific items from the audit:**
+  1. **Failsafe has NEVER been exercised in real flight** on this platform
+     (audit confirmed no failsafe events in any 2026-04-07 flight log).
+     DROP path has never actually fired during an autoc span. **Action:**
+     bench test with physical SBUS disconnect during an active autoc span,
+     verify the full chain works: INAV trips → DROP disarms → xiao detects
+     FAILSAFE bit via `MSP2_INAV_LOCAL_STATE` → xiao calls `stopAutoc()` →
+     recovery path (disarm/rearm OR stick-wiggle above `failsafe_stick_threshold = 50`).
+  2. **SBUS receiver failsafe value behavior is unverified**. If the receiver
+     is configured to "hold last values" on signal loss AND AUX1 was HIGH
+     (armed) at the moment of loss, AUX1 stays HIGH after loss, keeping
+     `BOXARM` active. The only thing that actually disarms is the main
+     failsafe state machine calling `disarm(DISARM_FAILSAFE)` at
+     `flight/failsafe.c:587`. **Action:** verify the receiver's failsafe
+     channel config on the bench. Document the observed AUX1 behavior
+     during signal loss.
+  3. **Brittle recovery mechanics**. Depending on INAV settings, recovery
+     from failsafe requires either (a) disarm + rearm (possibly in-flight
+     if `nav_disarm_on_landing` etc. is off), or (b) sticks above
+     `failsafe_stick_threshold = 50` clearing failsafe without disarm.
+     Exact current behavior is undocumented for the hb1 platform. **Action:**
+     document the recovery behavior, test both paths on the bench.
+  4. **Aspirational upgrade path** — for larger/future aircraft or more
+     aggressive flight envelopes, switch `failsafe_procedure` from DROP to
+     LAND or RTH. Would require: `failsafe_fw_roll_angle` / `pitch_angle` /
+     `yaw_rate` tuning for glide, `failsafe_min_distance` semantics, and
+     re-auditing the MSP override + failsafe state machine interaction per
+     C4 in the audit doc. Not for 023.
+- **Why not in 023**: failsafe mechanism is orthogonal to NN representation +
+  training work. But the NN policy being harder to pilot-debug raises the
+  stakes on reliable control handoff, so failsafe refinement is pre-flight
+  prerequisite work, not "nice to have."
+
+### [NEXT / 023 follow-up] INAV Fork Patch: mspOverrideInit First-Frame Bug (C1)
+- **Source**: `docs/failsafe-behavior-audit.md` §Latent Bug Assessment → C1.
+- **Bug**: Even with `failsafe_recovery_delay = 0`, MSPRCOVERRIDE engage still
+  pays a 200 ms floor because `mspOverrideCalculateChannels()` runs at 50 Hz
+  from boot and pre-connection ticks update `validRxDataFailedAt = millis()`
+  every tick. The first valid MSP frame sees a tiny
+  `(validRxDataReceivedAt - validRxDataFailedAt)` difference and must wait
+  the full `rxDataRecoveryPeriod` before `rxFailsafe` clears.
+- **Fix**: in `src/main/rx/msp_override.c:mspOverrideInit()`, initialize
+  `validRxDataReceivedAt = millis() + rxDataRecoveryPeriod`. OR: in
+  `mspOverrideCalculateChannels()`, on the first
+  `rxSignalReceived = true` transition, unconditionally set
+  `rxFailsafe = false`. Either approach makes MSPRCOVERRIDE engage instant
+  once xiao starts streaming frames.
+- **Why not in 023**: INAV source change is out of scope for a feature
+  focused on autoc NN representation + training. The sim already models
+  the 750 ms delay via `EngageDelayMs` in Change 1b, and real flights
+  work around it (pilot aligns, releases, throws the switch, aircraft
+  coasts briefly on momentum). This is a correctness cleanup for a
+  future release, not a 023 blocker.
+- **Risk assessment**: low. The fix is local to `msp_override.c`, only
+  affects the initial boot state, does not touch the main failsafe state
+  machine, and does not change behavior for any scenario other than
+  "first MSPRCOVERRIDE engage after boot". Bench verification is
+  straightforward (measure engage delay before/after).
+
+### [DEFERRED] Xiao-Side Independent RC Dropout Detection
+- **Source**: `docs/failsafe-behavior-audit.md`.
+- Currently xiao only detects failsafe via the `MSP_MODE_FAILSAFE` bit in
+  `MSP2_INAV_LOCAL_STATE`. This means xiao's `stopAutoc("failsafe")` only
+  fires AFTER INAV's main failsafe has already tripped. xiao has no
+  independent way to detect RC dropout before INAV acknowledges it.
+- Defense in depth: xiao could track MSP round-trip latency and pause
+  autoc if a threshold is exceeded, OR directly monitor SBUS health via
+  a separate serial channel.
+- Not urgent for 023 — the current coupling works well enough for DROP.
+
 ### [DEFERRED] Speed Up Logfile Download
 - BLE download may be over-bucketed from prior troubleshooting
 

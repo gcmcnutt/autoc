@@ -648,23 +648,66 @@ before any flight test.
 | 2 | `setpoint_kalman_enabled` | `ON` | `OFF` | Removes an adaptive Kalman stage on `gyroADCf` — state-dependent group delay. This is NOT a setpoint filter despite the name; it operates on gyro measurements. Should never have been on for NN use. |
 | 3 | `rc_filter_lpf_hz` | `250` | `0` | Disables the PT3 on `rcCommand` in the MANUAL-mode path. Removes ~1.9 ms. Surprise finding — we assumed MANUAL was pass-through (same class of error as `servo_lpf_hz`). |
 | 4 | `dynamic_gyro_notch_enabled` | *(unknown)* | `OFF` for fixed-wing | Dynamic notches are primarily for multirotor vibration rejection; our airframe and NN input are not sensitive to 100 Hz+ spectra. Also removes a state-dependent secondary dynamic notch that runs regardless of the enable flag. |
-| 5 | `failsafe_recovery_delay` | `5` (500 ms) | `0` | **Bench test, not a production change.** The audit flagged this as the PROBABLE root cause of the 750 ms engage delay (via `PERIOD_RXDATA_RECOVERY` + `failsafe_recovery_delay * 100 ms` in `src/main/rx/msp_override.c:103-104`). Test: set to 0, re-measure bench engage delay. If it drops, confirmed. If not, the delay is xiao-side. |
+| 5 | `failsafe_recovery_delay` | `5` (500 ms) | `0` (**bench only**) | **CONFIRMED root cause of the 750 ms engage delay**, but with a nuance. See `docs/failsafe-behavior-audit.md`. Setting to 0 drops engage delay from ~760 ms to ~260 ms (not to zero — see notes below). Change ONLY `xiao/inav-bench.cfg`, NOT `inav-hb1.cfg`. Current DROP failsafe config makes this safe under all scenarios. Revert before any field test. |
 
 **Implementation** (Phase 1 bench work, not training):
 1. Back up current `xiao/inav-hb1.cfg`.
-2. Apply changes 1-4 one at a time, rebuild xiao, bench test, measure
-   MSP2 round-trip latency via xiao blackbox logs at each step.
+2. Apply changes 1-4 one at a time to `inav-hb1.cfg`, rebuild xiao,
+   bench test, measure MSP2 round-trip latency via xiao blackbox logs
+   at each step.
 3. Expected cumulative improvement: ~6-10 ms removed from the NN input
    path, ~2 ms removed from the servo output path.
-4. Separately, run change 5 as a dedicated bench test to confirm/refute
-   the 750 ms engage delay hypothesis.
+4. Change 5 runs as a **separate bench test on `inav-bench.cfg` ONLY**.
+   Do NOT apply to `inav-hb1.cfg`. Reboot the FC after the change
+   (`mspOverrideInit()` only runs at boot). Measure engage delay with
+   xiao fully streaming MSP frames. Expected drop: ~760 ms → ~260 ms.
+   Revert before field test.
 5. Document measured before/after numbers in a Phase 1 summary note
    appended to `docs/inav-signal-path-audit.md`.
 
-**Interaction with `EngageDelayMs` (Change 1b)**: if change 5 succeeds in
-reducing the 750 ms mystery delay, lower `EngageDelayMs` config default
-to match the new measured value. The sim should always model the real
-delay — not a constant 750.
+**Change 5 — confirmed root cause**: per `docs/failsafe-behavior-audit.md`,
+the 750 ms delay IS the `rxDataRecoveryPeriod` in
+`src/main/rx/msp_override.c:103-104, 200-211`:
+```
+rxDataRecoveryPeriod = PERIOD_RXDATA_RECOVERY (200 ms)
+                     + failsafe_recovery_delay (5) * 100 ms
+                     = 700 ms
+```
+plus ~50 ms of TASK_RX / PID scheduling latency = observed 760 ms. At
+INAV boot, `rxFailsafe = true` (msp_override.c:52) and only clears after
+`rxDataRecoveryPeriod` of continuous valid MSP frames. While
+`rxFailsafe = true`, the gate at `rx/rx.c:510`
+(`IS_RC_MODE_ACTIVE(BOXMSPRCOVERRIDE) && !mspOverrideIsInFailsafe()`) is
+closed, so `mspOverrideChannels()` never runs, AUX2 is never overwritten
+to 1000, and `BOXMANUAL` cannot activate.
+
+**The `failsafe_recovery_delay` key is overloaded**: INAV uses the same
+config value for TWO independent state machines — the main SBUS failsafe
+recovery (`flight/failsafe.c:157`) AND the MSP override boot gate
+(`rx/msp_override.c:104`). Setting to 0 affects both, but under the
+current `failsafe_procedure = DROP` configuration both effects are safe.
+If we ever switch failsafe procedure to LAND or RTH, re-audit.
+
+**Latent bug found in the audit (C1 in failsafe-behavior-audit.md)**:
+Even with `failsafe_recovery_delay = 0`, a 200 ms floor remains because
+`mspOverrideCalculateChannels()` is called at 50 Hz from boot and the
+pre-connection ticks touch `validRxDataFailedAt = millis()` every tick,
+preventing the "first valid frame" from immediately clearing the
+failsafe. A proper INAV-side fix (init `validRxDataReceivedAt =
+millis() + rxDataRecoveryPeriod` in `mspOverrideInit()`, OR
+unconditionally clear `rxFailsafe` on the first `rxSignalReceived`
+transition) would make MSPRCOVERRIDE engage instant. **Not a 023
+deliverable.** Tracked in BACKLOG as "INAV autoc-fork patch: fix
+`mspOverrideInit` first-frame init" with its own risk assessment.
+
+**Interaction with `EngageDelayMs` (Change 1b)**: the sim's
+`EngageDelayMs` models the real-world delay. With Change 1c item 5
+applied on bench only, the bench-measured engage delay drops but the
+field `inav-hb1.cfg` is unchanged, so the real-flight delay stays at
+~760 ms. The sim default of 750 ms is correct for real flight as long
+as `inav-hb1.cfg` keeps `failsafe_recovery_delay = 5`. If the latent
+bug fix (C1) lands later and the real delay drops, update the sim
+default to match.
 
 **Interaction with sim dynamics (Change 5)**: config changes here do NOT
 change the sim. They only change what xiao/INAV actually do on real
@@ -674,14 +717,17 @@ sim's modeled delay, the sim becomes more conservative than reality —
 acceptable. The reverse (sim faster than reality) would be a sim-to-real
 gap.
 
-**Not in scope for 023**: the audit flagged several items as "unknown"
-because they required either bench measurement or tracing constants
-beyond the source read. These stay in the audit doc's "Sections marked
-unknown" section, not this spec:
-- Exact `PERIOD_RXDATA_RECOVERY` value (change #5 is the test)
-- `FEATURE_THR_VBAT_COMP` active status
-- Adaptive Kalman / dynamic notch exact group delay
+**Not in scope for 023** (flagged by audit as "unknown" or deferred):
+- `FEATURE_THR_VBAT_COMP` active status (negligible impact)
+- Adaptive Kalman / dynamic notch exact group delay (irrelevant once
+  items 2 and 4 disable them)
 - Hardware stage-1 anti-alias filter behavior
+- INAV-fork patch to fix `mspOverrideInit()` first-frame bug (C1) —
+  would reduce remaining 200 ms floor to near-zero; tracked in BACKLOG
+- `failsafe_procedure` upgrade from DROP to LAND/RTH — tracked in
+  BACKLOG under pre-flight safety (user confirmed DROP is acceptable
+  for current foamboard craft, but worth revisiting before larger
+  platforms or more aggressive flight envelopes)
 
 ### Change 2: Training Distribution — Far-Start Intercept Coverage
 
