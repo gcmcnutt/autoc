@@ -15,9 +15,10 @@ struct NNGenome {
     std::vector<ScenarioScore> scenario_scores;  // Per-scenario decomposed scores (015)
     uint32_t generation;              // Generation when created
     float mutation_sigma;             // Per-individual mutation step size (self-adaptive)
+    float variation_scale;            // computeVariationScale() at save time — eval uses directly
     std::string source;               // Provenance: "bucket/key" from S3 extraction
 
-    NNGenome() : fitness(0.0), generation(0), mutation_sigma(0.1f) {}
+    NNGenome() : fitness(0.0), generation(0), mutation_sigma(0.1f), variation_scale(1.0f) {}
 };
 
 // Compute total weight+bias count from topology

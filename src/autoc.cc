@@ -66,14 +66,19 @@ static RabbitSpeedConfig gRabbitSpeedConfig = RabbitSpeedConfig::defaultConfig()
 static int gCurrentGeneration = 0;      // Updated at start of each generation
 static int gTotalGenerations = 1;       // Set from config at startup
 static int gVariationRampStep = 0;      // Set from config at startup (0 = disabled)
+static float gEvalVariationScaleOverride = -1.0f;  // >=0 = use this instead of computing
 
 /**
  * Compute variation scale for current generation.
  * Scale ramps from 0.0 to 1.0 over the course of training.
+ * In eval mode, returns the stored value from the weight file.
  *
  * @return Scale factor to apply to variation offsets (0.0 to 1.0)
  */
 static double computeVariationScale() {
+    // Eval mode: use the exact scale stored in the weight file
+    if (gEvalVariationScaleOverride >= 0.0f) return gEvalVariationScaleOverride;
+
     // Ramp from 0.0 (no variations) to 1.0 (full variations) over training.
     // Disabled (rampStep<=0), eval mode (totalGens<=1), or trivial: return 1.0.
     int numSteps = (gVariationRampStep > 0) ? gTotalGenerations / gVariationRampStep : 0;
@@ -834,6 +839,15 @@ static void runNNEvaluation(
     *logger.info() << "  Topology: " << topo.str() << " (" << genome.weights.size() << " weights)" << endl;
   }
   *logger.info() << "  Stored fitness: " << std::fixed << std::setprecision(6) << genome.fitness << endl;
+  *logger.info() << "  Generation: " << genome.generation
+                 << "  VariationScale: " << std::fixed << std::setprecision(4)
+                 << genome.variation_scale << endl;
+
+  // Use the variation scale stored in the weight file — this is the exact value
+  // computeVariationScale() returned at the gen these weights were saved during
+  // training. No recomputation from ramp globals needed (which would require
+  // matching NumberOfGenerations and VariationRampStep between train/eval configs).
+  gEvalVariationScaleOverride = genome.variation_scale;
 
   // Serialize genome for RPC (same format minisim expects)
   std::vector<uint8_t> nnData;
@@ -1042,6 +1056,7 @@ static void runNNEvolution(
     // Re-evaluate best individual and log per-step data to data.dat
     {
       NNGenome& bestGenome = pop.individuals[bestIdx];
+      bestGenome.variation_scale = static_cast<float>(computeVariationScale());
       std::vector<uint8_t> nnData;
       nn_serialize(bestGenome, nnData);
 
