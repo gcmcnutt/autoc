@@ -12,8 +12,8 @@
 - Q: Engage transient fix — which reset approach? → A: Option A (pre-fill history slots with current geometry on every engage transition)
 - Q: INAV engage delay modeling — which approach? → A: Option A (simulate delay in sim pipeline). During the ~0.75s window, CRRCSim applies centered stick (zero pitch/roll/throttle command) — craft flies open-loop under FDM + wind, no autopilot. NN runs and updates its history buffer every tick, but its outputs are ignored by the sim bridge until the window expires.
 - Q: Type-safe NN sensor interface — which approach? → A: Option A (struct-of-floats with named fields). Memory layout identical to `float[NN_INPUT_COUNT]` via `static_assert`; compiler flags every site that adds/removes/reorders fields. Worth the 1.5–2x migration cost vs enum indexing for permanent protection against the 021-style silent serialization corruption bug class.
-- Q: Authority-limit iteration (Change 8) — when to trigger Phase 3c retrain? → A: Deferred to plan phase. Determine the trigger criterion empirically after seeing Phase 3b baseline behavior under the 3-cosine representation. The 3-cosine change is the primary intervention; authority limiting is a conditional follow-up whose threshold should be set from observed data, not guessed.
-- Q: Streak threshold ramp — include in 023? → A: No. Leave parked in BACKLOG per 022 verdict (betterz2 converged without it). Revisit only if 023 Phase 3a shows an early-generation "no streak signal" problem under the new 3-cosine representation.
+- Q: Authority-limit iteration (Change 8) — when to trigger Milestone A authority-limit retrain? → A: Deferred to plan phase. Determine the trigger criterion empirically after seeing Milestone A baseline behavior under the 3-cosine representation. The 3-cosine change is the primary intervention; authority limiting is a conditional follow-up whose threshold should be set from observed data, not guessed.
+- Q: Streak threshold ramp — include in 023? → A: No. Leave parked in BACKLOG per 022 verdict (betterz2 converged without it). Revisit only if 023 CRRCSim Milestone A shows an early-generation "no streak signal" problem under the new 3-cosine representation.
 
 ## Problem
 
@@ -950,13 +950,13 @@ bang-bang behavior in real flight.
    NN actually learns — throttle distribution, surface deflection
    distribution, `d²output²` chatter, per-axis saturation fraction.
 
-2. **Set trigger criterion empirically (plan phase)**. Phase 3b baseline
-   observation produces the data that determines whether Phase 3c
+2. **Set trigger criterion empirically (plan phase)**. Milestone A baseline
+   observation produces the data that determines whether the
    authority-limit retrain is worth running. Specific trigger thresholds
    (mean throttle, saturation fraction, chatter metric) are NOT set in
    this spec — they are set after the baseline run, by the plan-phase
-   analysis of Phase 3b results. The 3-cosine representation change is
-   the primary intervention; Phase 3c is a conditional follow-up.
+   analysis of Milestone A observation results. The 3-cosine representation change is
+   the primary intervention; authority-limit retrain is a conditional follow-up.
 
 3. **If triggered**: apply an *authority limit* at the NN output clamp.
    Cap pitch/roll command magnitude at ~50% of full throw during
@@ -1480,7 +1480,7 @@ and path-fairness analysis.
 
 **Why not in 023 main path**: Change 8 (authority-limit iteration) is
 023's bang-bang hedge, and it's expected to give a stronger signal
-because it's a hard cap rather than a tuning knob. If Phase 3c shows
+because it's a hard cap rather than a tuning knob. If the authority-limit retrain shows
 authority limiting is insufficient or produces side effects, re-open
 the energy lexicase dimension as a follow-up.
 
@@ -1530,7 +1530,7 @@ dynamics changes until training results demand them.
 
 **Action**: Keep 019 open. Reference from 023 Change 5 as "unblock path
 if Phase 3/4 training fails to close the dynamics gap." Explicit decision
-gate in 023 Phase 3b (learned behavior examination).
+gate in 023 CRRCSim Milestone A observation (learned behavior examination).
 
 ### 018 — Flight Analysis
 

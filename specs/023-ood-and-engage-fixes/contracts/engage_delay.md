@@ -101,21 +101,22 @@ EngageDelayMs                   = 750       # ms
 - Global: `gEngageDelayMs` in `src/autoc.cc`, passed through `EvalData`
   to the CRRCSim RPC.
 
-### Protocol additions (RPC)
+### Configuration delivery (CRRCSim-local, NOT via RPC)
 
-`include/autoc/rpc/protocol.h` `EvalData` struct gains one new field:
+The engage delay is NOT transmitted via the RPC protocol. It is a CRRCSim-
+local setting read from the `AUTOC_ENGAGE_DELAY_MS` environment variable
+(same pattern as existing `AUTOC_ACRO_*` knobs in `inputdev_autoc.h`).
+Default: 750 if the env var is not set.
 
-```cpp
-struct EvalData {
-    // ... existing fields ...
-    int engage_delay_ms;  // NEW — from gEngageDelayMs
-};
-```
+autoc parses `EngageDelayMs` from `autoc.ini` for logging purposes (so the
+operator can see "what delay did CRRCSim use?" in the autoc startup log)
+and autoc's CRRCSim launcher script (`scripts/crrcsim.sh`) sets the env
+var from the parsed config value. This keeps the single-source-of-truth in
+`autoc.ini` while avoiding an RPC protocol change.
 
-Cereal serialization updated. Backward compat: old sim workers reading a new
-protocol with this field will fail loud (cereal will error on the missing
-field). No compat shim — per Constitution III, clean cut. Sim worker and
-autoc must be rebuilt together.
+Minisim does NOT model the engage delay — minisim is a kinematic plumbing
+test, not a flight-fidelity sim. The delay is a property of the INAV handoff
+that only CRRCSim needs to simulate.
 
 ## Interaction with other changes
 
@@ -193,7 +194,7 @@ During the first CRRCSim training milestone (zero-variation baseline):
 |---|---|
 | `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp` | Add `EngageDelayState`, gate stick application, apply `NN_outputs * NNAuthorityLimit` after window |
 | `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.h` | Declare config inputs |
-| `include/autoc/rpc/protocol.h` | Add `engage_delay_ms` to `EvalData` |
+| ~~`include/autoc/rpc/protocol.h`~~ | REMOVED (I3) — engage delay is CRRCSim-local, not on RPC |
 | `include/autoc/util/config.h` | Add `engageDelayMs` field |
 | `src/util/config.cc` | Parse `EngageDelayMs` key |
 | `autoc.ini`, `autoc-eval.ini` | Add `EngageDelayMs = 750` |

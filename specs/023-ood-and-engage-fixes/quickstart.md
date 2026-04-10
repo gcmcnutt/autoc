@@ -90,7 +90,8 @@ RabbitSpeedNominal              = 10.0
 RabbitSpeedSigma                = 0.0
 
 # New 023 fields
-EngageDelayMs                   = 750
+# NOTE: EngageDelayMs is CRRCSim-local (via AUTOC_ENGAGE_DELAY_MS env var),
+# NOT an autoc.ini key. Minisim does not model the engage delay.
 NNAuthorityLimit                = 1.0
 
 # Fitness unchanged from 022 (conical surface V4)

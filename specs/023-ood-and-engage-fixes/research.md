@@ -15,8 +15,8 @@ that downstream `/speckit.tasks` can work without re-reading the full documents.
 | Q1 | Engage transient fix approach | Pre-fill all history slots with current in-autoc geometry on every engage transition | First NN call sees a flat history matching reality, closing rate zero. No "first engage special case" — same reset every time. |
 | Q2 | INAV engage delay modeling | Simulate in sim pipeline with centered stick during the ~0.75s window | Matches user's real-flight handoff technique. NN runs every tick and fills history naturally; only outputs are ignored. |
 | Q3 | Type-safe NN sensor interface | Struct-of-floats with named fields + `static_assert` on layout | Strongest compile-time safety. `reinterpret_cast<const float*>` preserves inner-loop performance. Catches the 021 silent-corruption failure mode structurally. |
-| Q4 | Change 8 authority-limit trigger criterion | Deferred to empirical observation during Phase 3b | The 3-cosine representation is the primary intervention; authority limit is a conditional follow-up whose threshold should come from observed baseline data, not guessed. |
-| Q5 | Streak threshold ramp | Leave in BACKLOG; not in 023 | 022 verdict holds — betterz2 converged without it. Revisit only if Phase 3a shows an early-generation "no streak signal" problem under the new representation. |
+| Q4 | Change 8 authority-limit trigger criterion | Deferred to empirical observation during Milestone A observation | The 3-cosine representation is the primary intervention; authority limit is a conditional follow-up whose threshold should come from observed baseline data, not guessed. |
+| Q5 | Streak threshold ramp | Leave in BACKLOG; not in 023 | 022 verdict holds — betterz2 converged without it. Revisit only if Milestone A shows an early-generation "no streak signal" problem under the new representation. |
 
 All five decisions are integrated into spec.md Clarifications section and the
 corresponding Change / Prerequisite sections.
@@ -235,7 +235,7 @@ resolved:
   helper, 8-step migration order
 - **750 ms delay root cause** — PROBABLE (`failsafe_recovery_delay`),
   needs single bench test to confirm
-- **Authority-limit trigger criterion** — DEFERRED to Phase 3b empirical
+- **Authority-limit trigger criterion** — DEFERRED to Milestone A observation empirical
   observation per Q4 clarify decision
 
 ## Items still "unknown" (tracked in audit doc's §Sections marked "unknown")

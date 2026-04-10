@@ -24,7 +24,7 @@ description: "Task list for feature 023: OOD Coverage, Engage Transient, Throttl
 - **US2 (P1) — Clean Engage Handoff**: History buffer reset on engage + CRRCSim engage delay window + INAV config-only delay reductions. The aircraft engages cleanly and the sim trains against realistic handoff conditions.
 - **US3 (P2) — Throttle Discipline**: Throttle lexicase dimension + expanded training distribution (far-start intercept, wider sigmas).
 - **US4 (P2) — Discontinuity-Forcing Training Paths**: Purpose-built paths that exercise target-behind / target-below / inverted regimes.
-- **US5 (P3) — Authority-Limit Iteration**: Conditional iteration on NN output cap if Phase 3b baseline shows saturation.
+- **US5 (P3) — Authority-Limit Iteration**: Conditional iteration on NN output cap if Milestone A baseline shows saturation.
 - **US6 (P3) — Craft Parameter Variations**: Robustness training with ± stddev variations on aircraft dynamics parameters.
 
 ## Validation Ladder (per Implementation Order in plan.md)
@@ -42,7 +42,7 @@ All tasks feed into a 3-rung validation ladder:
 
 - [ ] T001 Verify clean build baseline at 023 branch HEAD: `bash scripts/rebuild.sh` succeeds, all existing tests pass. No code changes — just confirm the starting state.
 - [ ] T002 Verify xiao build baseline: `cd xiao && pio run -e xiaoblesense_arduinocore_mbed` succeeds with current code (pre-refactor).
-- [ ] T003 Create backup of current `xiao/inav-hb1.cfg` at `xiao/inav-hb1.cfg.pre-023.bak` for quick rollback during Phase 1c testing.
+- [ ] T003 Create backup of current `xiao/inav-hb1.cfg` at `xiao/inav-hb1.cfg.pre-023.bak` for quick rollback during Change 1c testing.
 
 **Checkpoint**: Clean baseline confirmed. Proceed to Foundational phase.
 
@@ -118,16 +118,16 @@ Landmarks: `include/autoc/eval/build_eval_data.h` (NEW), `tests/build_eval_data_
 - [ ] T044 **Fix Bug 5** in eval caller loop: iterate over all scenarios in `runNNEvaluation()` instead of hard-coding `scenarioForIndex(0)`. Match training's aggregation pattern: `for (size_t s = 0; s < generationScenarios.size(); ++s) { ... }` and aggregate across all scenarios before reporting fitness. See `train-eval-code-dedup.md` §Migration order step 5.
 - [ ] T045 **Fix Bug 4** in eval path: passing `EvalPurpose::StandaloneEval` already sets `isEliteReeval = true` via the helper (per contract). Verify the helper writes `meta.enableDeterministicLogging = true` for EliteReeval and StandaloneEval. Contract test B catches regressions here.
 - [ ] T046 Add determinism check in eval mode: mirror training's `bitwiseEqual` check at `src/autoc.cc:1077-1087`. After computing eval fitness, log "SAME" or "DIVERGED" relative to the stored NN01 fitness. Helps catch future regressions visually in eval logs.
-- [ ] T047 Wire up `eval_determinism_tests.cc`: replace the placeholder weight file reference with a deterministic test fixture (small synthetic NN weights or a committed test-only NN file under `tests/fixtures/`). The test runs one scenario through training and eval paths and asserts bitwise identical `ScenarioScore`.
+- [ ] T047 Wire up `eval_determinism_tests.cc`: create a committed test fixture under `tests/fixtures/` — a small synthetic NN weight file generated deterministically (e.g., all weights = 0.01, or Xavier-init with a fixed seed). This fixture is the PRIMARY gate for SC#7 (eval-mode determinism). The test loads the fixture, runs one scenario through the training path and the eval path, and asserts **exact** `ScenarioScore` match (`memcmp` — must be bitwise identical because both paths now call the same `buildEvalData()` code). This test is MANDATORY — not conditional on betterz2 availability.
 - [ ] T048 Run the full test suite. All build_eval_data_contract_tests pass. eval_determinism_tests passes. `bash scripts/rebuild.sh` is green.
-- [ ] T049 **Acceptance criterion from train-eval-code-dedup.md**: if a `betterz2` gen-400 weight file is available from 022 training, run it through eval mode and confirm the reported fitness reproduces the training-time `-34771` within FP rounding. Document the result in the commit message. If `betterz2` weights aren't accessible in the branch, skip this verification and note "betterz2 reproduction test deferred — requires access to 022 training output".
+- [ ] T049 **Secondary acceptance check from train-eval-code-dedup.md**: if a `betterz2` gen-400 weight file is available from 022 S3 artifacts, run it through eval mode and confirm the reported fitness reproduces the training-time `-34771` within FP rounding. Document the result in the commit message. NOTE: the PRIMARY SC#7 gate is T047 (committed synthetic fixture, exact `memcmp` match). This T049 check is a real-world validation that the betterz2 weights — which were produced under the pre-dedup eval path with Bug 3 active (constant 16 m/s rabbit) — now produce DIFFERENT fitness under the fixed eval path (correct 13±2 m/s rabbit). The "different" result proves the bug fix took effect. If betterz2 weights aren't accessible, note "betterz2 real-world check deferred" — this does NOT block SC#7 acceptance because T047 already covers it.
 
 ### Phase 0b supplement — Config knob additions (new 023 settings)
 
-- [ ] T050 [P] Update `include/autoc/util/config.h`: add `engageDelayMs` (int, default 750) and `nnAuthorityLimit` (double, default 1.0) fields to the config struct. Add validation ranges per data-model.md §7 (`EngageDelayMs ∈ [0, 5000]`, `NNAuthorityLimit ∈ (0.0, 1.0]`).
+- [ ] T050 [P] Update `include/autoc/util/config.h`: add `engageDelayMs` (int, default 750, for startup logging + CRRCSim launcher env var propagation — NOT transmitted via RPC) and `nnAuthorityLimit` (double, default 1.0) fields to the config struct. Validate `NNAuthorityLimit ∈ (0.0, 1.0]` with fatal error. `EngageDelayMs` validated CRRCSim-side.
 - [ ] T051 [P] Update `src/util/config.cc`: parse the two new keys from `autoc.ini`. Apply validation with fatal error on out-of-range.
 - [ ] T052 Update `autoc.ini` and `autoc-eval.ini`: add `EngageDelayMs = 750` and `NNAuthorityLimit = 1.0` with comments explaining each.
-- [ ] T053 Update `include/autoc/rpc/protocol.h`: add `engage_delay_ms` field to `EvalData` struct. Update cereal serialization. No compat shim — sim worker and autoc must be rebuilt together (Constitution III).
+- [REMOVED — I3] ~~T053~~ `engage_delay_ms` is CRRCSim-local, not transmitted via RPC. CRRCSim reads from `AUTOC_ENGAGE_DELAY_MS` env var (same pattern as existing `AUTOC_ACRO_*` knobs). autoc still parses `EngageDelayMs` from config for logging purposes but does not put it on the wire.
 
 **Checkpoint Phase 2 complete**: Type-safe NN interface at 33 inputs, train/eval dedup landed, config knobs in place. All foundational work done. **User stories can now proceed.**
 
@@ -179,9 +179,9 @@ Most of the heavy lifting was done in Phase 0a.2 (T024–T035). US1 adds the fin
   - `WindowSuppressesOutputs` — mock NN with non-zero outputs, verify sim receives {0,0,0} for ticks 1–N, receives NN outputs for tick N+1+, NN called every tick
   - `ZeroDelayDisablesWindow` — `EngageDelayMs = 0` → NN outputs take effect immediately
   - `WindowResetsOnScenarioBoundary` — back-to-back scenarios both re-enter the window
-- [ ] T067 [US2] Implement `EngageDelayState` (file-local struct) and delay window logic in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`. At scenario start: `window_active = true`, `ticks_remaining = ceil(engage_delay_ms / SimTimeStepMs)`. Each tick: if `window_active`, apply `{0, 0, 0}` stick, decrement counter, transition to `window_active = false` when counter reaches zero. After window: apply `NN_outputs * NNAuthorityLimit`. NN inputs updated every tick regardless.
-- [ ] T068 [US2] Apply the same delay window logic to `tools/minisim.cc` so minisim honors the same contract. Shared code path preferred (both use the same state machine).
-- [ ] T069 [US2] Update `include/autoc/rpc/protocol.h` `EvalData`: add `engage_delay_ms` field (already done in T053). Verify CRRCSim reads the value from the RPC and uses it for the window countdown, not a hardcoded constant.
+- [ ] T067 [US2] Implement `EngageDelayState` (file-local struct) and delay window logic in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`. Read `AUTOC_ENGAGE_DELAY_MS` env var (default 750 if not set, matching existing `AUTOC_ACRO_*` pattern in `inputdev_autoc.h`). At scenario start: `window_active = true`, `ticks_remaining = ceil(engage_delay_ms / SimTimeStepMs)`. Each tick: if `window_active`, apply `{0, 0, 0}` stick, decrement counter, transition to `window_active = false` when counter reaches zero. After window: apply `NN_outputs * NNAuthorityLimit`. NN inputs updated every tick regardless. Verify env var is read (not hardcoded) by running with `AUTOC_ENGAGE_DELAY_MS=500` and observing 5 ticks of suppressed output instead of 7.
+- [REMOVED — I3] ~~T068~~ Minisim does NOT model the INAV engage delay — minisim is a kinematic plumbing test, not a flight-fidelity sim. The delay is a property of the INAV handoff that only CRRCSim models.
+- [REMOVED — I3/D1] ~~T069~~ Absorbed: `engage_delay_ms` not on RPC. CRRCSim reads from `AUTOC_ENGAGE_DELAY_MS` env var. Verification that CRRCSim uses the env var (not hardcoded) is folded into T067.
 - [ ] T070 [US2] Run `tests/engage_delay_tests.cc`. All 3 tests pass.
 
 ### Change 1c — INAV config-only delay reductions (bench work, no code)
@@ -193,7 +193,7 @@ Most of the heavy lifting was done in Phase 0a.2 (T024–T035). US1 adds the fin
 - [ ] T073 [US2] Apply INAV config change #3: `set rc_filter_lpf_hz = 0` in `xiao/inav-hb1.cfg`. Reflash. Bench test (verify servos still respond to xiao commands normally — this removes an unmodeled filter). Document delta (~-2 ms expected on servo command path).
 - [ ] T074 [US2] Apply INAV config change #4 (conditional): `set dynamic_gyro_notch_enabled = OFF` in `xiao/inav-hb1.cfg`. Reflash. Bench test. Verify gyro signal quality is still acceptable for fixed-wing NN input (no new oscillation).
 - [ ] T075 [US2] INAV config change #5 **BENCH TEST ONLY**: edit `xiao/inav-bench.cfg` (NOT `inav-hb1.cfg`) to `set failsafe_recovery_delay = 0`. Reboot FC. Measure MSPRCOVERRIDE engage delay from xiao blackbox. Expected: ~760 ms → ~260 ms. If hypothesis confirmed, document in `docs/inav-signal-path-audit.md` appendix. **Revert `inav-bench.cfg` after test. DO NOT apply to `inav-hb1.cfg`.**
-- [ ] T076 [US2] Document cumulative latency improvement in a new "Phase 1c Measurements" section of `docs/inav-signal-path-audit.md`: per-change before/after MSP round-trip latency, NN input path delay reduction, expected effect on NN training realism.
+- [ ] T076 [US2] Document cumulative latency improvement in a new "Change 1c Measurements" section of `docs/inav-signal-path-audit.md`: per-change before/after MSP round-trip latency, NN input path delay reduction, expected effect on NN training realism.
 
 **Checkpoint US2**: Engage handoff is clean (history reset + delay window + reduced INAV-side latency). All tests pass. **Ready for CRRCSim Milestone A training** using `autoc.ini` with the new config knobs.
 
@@ -249,11 +249,11 @@ Most of the heavy lifting was done in Phase 0a.2 (T024–T035). US1 adds the fin
 
 ## Phase 7: User Story 5 — Authority-Limit Iteration (Priority: P3, Conditional)
 
-**Goal**: Change 8 — conditional iteration on NN output cap if Phase 3b baseline observation shows saturation.
+**Goal**: Change 8 — conditional iteration on NN output cap if Milestone A baseline observation shows saturation.
 
 **Independent Test**: After US5 (if triggered), a CRRCSim training run with `NNAuthorityLimit = 0.5` produces a NN whose effective command range is half of the pre-limit run. Both sim bridge and xiao apply the same limit.
 
-**⚠️ Conditional**: US5 tasks are only executed if post-Phase-3b analysis shows the NN is saturating (mean command magnitude > some empirical threshold). The trigger criterion is determined during Phase 3b observation per Q4 clarify decision. If the baseline looks fine, skip US5 entirely.
+**⚠️ Conditional**: US5 tasks are only executed if post-Milestone-A analysis shows the NN is saturating (mean command magnitude > some empirical threshold). The trigger criterion is determined during Milestone A observation per Q4 clarify decision. If the baseline looks fine, skip US5 entirely.
 
 ### Authority limit implementation (lands regardless of trigger)
 
@@ -264,8 +264,8 @@ Most of the heavy lifting was done in Phase 0a.2 (T024–T035). US1 adds the fin
 
 ### Conditional iteration (may or may not run)
 
-- [ ] T094 [US5] **PLAN-PHASE DECISION** (after Phase 3b baseline observation): determine whether authority limiting is warranted. If yes, set `NNAuthorityLimit = 0.5` in `autoc.ini`, retrain from scratch or warm-start from baseline weights, compare.
-- [ ] T095 [US5] Document the Phase 3b observation + trigger decision in a new "Authority Limit Iteration" section of `docs/inav-signal-path-audit.md` (or a dedicated 023 dev report file). Include: baseline throttle distribution, surface deflection distribution, `d²output²` chatter stats, reason for triggering (or skipping), post-iteration results if triggered.
+- [ ] T094 [US5] **PLAN-PHASE DECISION** (after Milestone A baseline observation): determine whether authority limiting is warranted. If yes, set `NNAuthorityLimit = 0.5` in `autoc.ini`, retrain from scratch or warm-start from baseline weights, compare.
+- [ ] T095 [US5] Document the Milestone A observation + trigger decision in a new "Authority Limit Iteration" section of `docs/inav-signal-path-audit.md` (or a dedicated 023 dev report file). Include: baseline throttle distribution, surface deflection distribution, `d²output²` chatter stats, reason for triggering (or skipping), post-iteration results if triggered.
 
 **Checkpoint US5**: Authority limit mechanism in place. Iteration runs only if baseline observation demands it.
 
@@ -293,8 +293,8 @@ Most of the heavy lifting was done in Phase 0a.2 (T024–T035). US1 adds the fin
 **Purpose**: Flight prep, final validation, documentation, and follow-through on research items.
 
 - [ ] T102 Run the complete minisim smoke test recipe from `quickstart.md` one final time. All 12 pass criteria must pass. This is the "is the tree in a shippable state" gate.
-- [ ] T103 [P] Run CRRCSim Milestone A → Milestone B → Milestone C progression as an end-to-end validation. Document fitness, per-path brittleness, throttle saturation, `d²output²` chatter, and discontinuity counts at each milestone. This is the training validation gate — produces the weights for the next flight test.
-- [ ] T104 [P] Update `docs/inav-signal-path-audit.md` with Phase 1c measurement results (from T076).
+- [ ] T103 [P] Run CRRCSim Milestone A → Milestone B → Milestone C progression as an end-to-end validation. Document fitness, per-path brittleness, throttle saturation (must achieve mean < 0.5 per SC#3), `d²output²` chatter, and discontinuity counts at each milestone. Verify SC#2 (sim p99 distance > 40m, p99 dd/dt negative) at Milestone B or C. This is the training validation gate — produces the weights for the next flight test.
+- [REMOVED — U2] ~~T104~~ Merged into T076 — the measurements are documented once, at the time of measurement, not twice.
 - [ ] T105 [P] Update `docs/COORDINATE_CONVENTIONS.md` if Change 6 introduces any new coordinate conventions (unlikely — the body frame convention is unchanged — but verify).
 - [ ] T106 [P] Update `CLAUDE.md` with any new technologies or conventions introduced by 023 (already done via update-agent-context.sh, verify still accurate).
 - [ ] T107 Generate final NN weights via `nn2cpp` for xiao flash: codegen emits field-name access per T031. Verify the generated xiao-side C++ compiles and produces output bit-identical to sim forward pass on a test fixture (from BACKLOG "Cross-ISA NN output comparison").
@@ -303,7 +303,7 @@ Most of the heavy lifting was done in Phase 0a.2 (T024–T035). US1 adds the fin
 - [ ] T110 [P] Delete `specs/023-ood-and-engage-fixes/train-eval-code-dedup.md` — this is a one-off research doc that becomes obsolete once Phase 0b lands (per spec). Removing it closes the TODO. Keep `docs/inav-signal-path-audit.md` (durable).
 - [ ] T111 [P] Optional follow-up (Phase 0b step 9 from `contracts/evaluator.md` §Future shape): refactor `buildEvalData(EvalJob)` to `class Evaluator` + `TrainingEvaluator` / `EliteReevalEvaluator` / `StandaloneEvalEvaluator` subclasses. Zero behavior change, better compile-time safety. Can land any time after T048 — does not block flight test.
 - [ ] T112 Flight test: deploy the Phase 3-trained NN weights and fly. Per success criteria #6 in spec.md, blackbox analysis must show **zero projection discontinuities** in the bearing inputs. If any appear, representation change is incomplete somewhere in the pipeline — stop and diagnose before further flights.
-- [ ] T113 Post-flight analysis: run the same diagnostic suite as the 2026-04-07 flight report (dPhi/dTheta discontinuity rate, input distribution vs sim, throttle saturation, AHRS quality). Document results in a new `flight-results/flight-<date>/flight-report.md`. Track metrics across 023 flights to catch regressions.
+- [ ] T113 Post-flight analysis: run the same diagnostic suite as the 2026-04-07 flight report. Verify SC#1 (|dd/dt| < 20 m/s on first engage sample), SC#4 (distance < 30m for > 5s on at least one autoc span), SC#6 (zero projection discontinuities in bearing inputs). Document input distribution vs sim, throttle saturation, AHRS quality. Results in a new `flight-results/flight-<date>/flight-report.md`. Track metrics across 023 flights to catch regressions.
 
 ---
 
@@ -320,7 +320,7 @@ Most of the heavy lifting was done in Phase 0a.2 (T024–T035). US1 adds the fin
 - **Phase 4 (US2 Clean Engage)**: Depends on Phase 2. Can run in parallel with US1 — different files (history reset + CRRCSim engage delay + INAV config vs bearing representation). Actual parallelism depends on team capacity.
 - **Phase 5 (US3 Throttle Discipline)**: Depends on Phase 2. Can run in parallel with US1, US2. Lexicase changes are in `src/eval/selection.cc`, disjoint from everything else.
 - **Phase 6 (US4 Discontinuity Paths)**: Depends on US1 (needs the wrap-free representation to test against) + Phase 2. Path generator changes are self-contained.
-- **Phase 7 (US5 Authority Limit)**: Depends on US1 + US2 + a Phase 3b observational run. CONDITIONAL — may be skipped.
+- **Phase 7 (US5 Authority Limit)**: Depends on US1 + US2 + a Milestone A observational run. CONDITIONAL — may be skipped.
 - **Phase 8 (US6 Craft Variations)**: Depends on Phase 2. Can run in parallel with US1-4. Independent.
 - **Phase 9 (Polish)**: Depends on all desired user stories. Final validation, flight test prep.
 
@@ -340,7 +340,7 @@ Most of the heavy lifting was done in Phase 0a.2 (T024–T035). US1 adds the fin
 ### Parallel Opportunities
 
 - **0a.1 and 0b**: different files, independent migrations. Can run truly in parallel.
-- **US1 and US2 and US3 and US4 and US6**: largely independent once Phase 2 is done. US5 is conditional and depends on Phase 3b observation.
+- **US1 and US2 and US3 and US4 and US6**: largely independent once Phase 2 is done. US5 is conditional and depends on Milestone A observation.
 - **Within US2**: Change 1 (history reset), Change 1b (engage delay), Change 1c (INAV bench work) all touch different files. Change 1c is bench work, not code changes.
 - **Contracts tests marked [P]**: different test files, independent assertions.
 
@@ -390,7 +390,7 @@ Task: T066 — [P] Create tests/engage_delay_tests.cc with 3 unit tests
 1. MVP (US1 + US2) → flight test → post-flight diagnostic.
 2. Add US3 (throttle lexicase) → retrain → compare fitness and throttle distribution.
 3. Add US4 (discontinuity paths) → retrain → verify hard-regime coverage.
-4. Run Phase 3b observation: is US5 (authority limit) triggered? If yes, run it.
+4. Run Milestone A observation: is US5 (authority limit) triggered? If yes, run it.
 5. Add US6 (craft parameter variations) → retrain.
 6. CRRCSim Milestone C complete → final flight test → production 023 NN weights.
 
@@ -401,7 +401,7 @@ With multiple developers:
 1. Developer A: Phase 0a (T004–T036). Touches `nn_inputs.h`, all input-gathering code sites, tests.
 2. Developer B: Phase 0b (T037–T049) + config knobs (T050–T053). Touches `src/autoc.cc runNNEvaluation`, `protocol.h`, `config.cc/h`, `autoc.ini`.
 3. Developer C: pre-fetching US1 (T054–T059) paperwork while A+B finish Phase 2. US1 code tasks start once Phase 0a.2 is in main.
-4. After Phase 2 complete: A takes US1+US2 follow-through (bearing + engage), B takes US3+US4 (lexicase + paths), C takes US6 (craft variations). US5 is conditional and handled by whoever's free after Phase 3b.
+4. After Phase 2 complete: A takes US1+US2 follow-through (bearing + engage), B takes US3+US4 (lexicase + paths), C takes US6 (craft variations). US5 is conditional and handled by whoever's free after Milestone A observation.
 
 ### Notes on Constitution Compliance
 
@@ -419,7 +419,7 @@ With multiple developers:
 - **[Story] labels**: US1 through US6 map to user stories above; Setup, Foundational, and Polish phases have no story label.
 - **Xiao changes**: tasks touching `xiao/src/*` require a `pio run -e xiaoblesense_arduinocore_mbed` rebuild after each change. Xiao-side changes are interleaved with autoc changes — don't leave xiao in a half-refactored state between commits.
 - **CRRCSim changes**: tasks touching `crrcsim/src/*` require rebuilding the submodule (`cd crrcsim/build && make -j8`). Commit the submodule pointer bump in autoc AFTER verifying the CRRCSim change works, per the "submodule merge order" lesson in feedback memory.
-- **Research docs** (`docs/inav-signal-path-audit.md`, `docs/failsafe-behavior-audit.md`): durable reference material. Update with Phase 1c measurements (T104) and Phase 3b observation (T095). Do NOT delete.
+- **Research docs** (`docs/inav-signal-path-audit.md`, `docs/failsafe-behavior-audit.md`): durable reference material. Update with Change 1c measurements (T076) and Milestone A observation (T095). Do NOT delete.
 - **Feature-scoped doc** (`specs/023-ood-and-engage-fixes/train-eval-code-dedup.md`): one-off survey. Delete in T110 after Phase 0b lands.
 - **Commit granularity**: one commit per logical task or tightly-coupled group. Each commit must leave main buildable and tests green.
 - **Stop at any checkpoint** to validate the story independently. Especially: after Phase 2 before user stories, after US1+US2 before US3+, after each CRRCSim milestone before the next.

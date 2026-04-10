@@ -122,7 +122,7 @@ survey — `rabbitSpeedConfig` was silently defaulted to `{16.0, 0.0, ...}`).
 | `gpHash` | Yes | `hashByteVector(gp)` |
 | `isEliteReeval` | Yes | `(job.purpose != EvalPurpose::Training)` |
 | `rabbitSpeedConfig` | **Yes (Bug 3 fix)** | `gRabbitSpeedConfig` with `sigma *= computeVariationScale()` |
-| `engage_delay_ms` | Yes | `gEngageDelayMs` (new in 023, from Change 1b) |
+| ~~`engage_delay_ms`~~ | **REMOVED (I3)** | CRRCSim-local via env var, not transmitted via RPC. Not part of `EvalData`. |
 | `pathList` | Yes | `job.scenario.pathList` |
 | `scenario` | Yes | First element of `scenarioList` after construction |
 | `scenarioList` | Yes | Built per-flight, demetic-aware, with `populateVariationOffsets` applied |
@@ -357,7 +357,7 @@ state on the branch per Constitution II.
 | `src/autoc.cc` | Delete 3 copies of scenario-list populator; add helper call in each call site |
 | `tests/build_eval_data_contract_tests.cc` | NEW — this contract's test suite |
 | `tests/eval_determinism_tests.cc` | NEW — end-to-end acceptance test (from plan.md) |
-| `include/autoc/rpc/protocol.h` | Add `engage_delay_ms` field (from Change 1b — may be same commit or separate) |
+| ~~`include/autoc/rpc/protocol.h`~~ | REMOVED (I3) — `engage_delay_ms` is CRRCSim-local, not on RPC |
 
 ## Future shape: class hierarchy (recommended follow-up refactor)
 

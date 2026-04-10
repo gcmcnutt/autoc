@@ -274,16 +274,19 @@ in favor of centered stick. This matches real flight: INAV is in pass-through
 but not yet applying commands, xiao is computing NN outputs every tick that
 aren't yet making it to servos.
 
-### Config
+### Config (CRRCSim-local)
 
-```ini
-# autoc.ini / autoc-eval.ini
-EngageDelayMs                   = 750       # ms, matches INAV handoff delay
-```
+The engage delay is a CRRCSim-local setting, NOT transmitted via RPC.
+CRRCSim reads it from the `AUTOC_ENGAGE_DELAY_MS` environment variable
+(same pattern as `AUTOC_ACRO_*` knobs in `inputdev_autoc.h`). Default =
+750 if env var is not set.
 
-New field. Default = 750 (matches measured INAV delay). Setting to 0 disables
-the window (useful for debugging — NN takes over immediately, matches pre-023
-behavior).
+autoc parses `EngageDelayMs` from `autoc.ini` for startup logging, and
+the CRRCSim launcher script (`scripts/crrcsim.sh`) sets the env var from
+the parsed value. Minisim does NOT model the engage delay.
+
+Setting `AUTOC_ENGAGE_DELAY_MS=0` disables the window (useful for
+debugging — NN takes over immediately, matches pre-023 behavior).
 
 ---
 
@@ -354,9 +357,9 @@ For any (weight, scenario) pair, training and eval must produce
 New fields added by 023:
 
 ```ini
-# Engage delay window (Change 1b) — CRRCSim simulates INAV's ~750ms handoff.
-# During the window, NN runs and updates history buffer but outputs are ignored
-# (centered stick applied to aircraft).
+# Engage delay window (Change 1b) — CRRCSim-LOCAL. autoc parses this for
+# logging; CRRCSim reads from AUTOC_ENGAGE_DELAY_MS env var set by the
+# launcher script. Minisim does NOT model the delay.
 EngageDelayMs                   = 750       # ms, set to 0 to disable
 
 # NN output authority limit (Change 8) — cap output magnitude before sim bridge
@@ -367,14 +370,15 @@ NNAuthorityLimit                = 1.0       # dimensionless, [0.0, 1.0]
 
 ### Config validation
 
-Both fields must be in valid range at startup (`src/util/config.cc`):
-- `EngageDelayMs` ∈ [0, 5000] — negative is nonsense, >5s is absurd
+`NNAuthorityLimit` must be in valid range at startup (`src/util/config.cc`):
 - `NNAuthorityLimit` ∈ (0.0, 1.0] — zero would disable NN entirely, >1 would
   amplify outputs beyond the tanh range which is outside the NN's learned
   distribution
 
-Values outside these ranges produce a fatal error on `ConfigManager::initialize()`,
-not a warning.
+`EngageDelayMs` is parsed by autoc for logging but validated CRRCSim-side
+(in `inputdev_autoc.cpp` when reading the env var). Range [0, 5000].
+
+Values outside range produce a fatal error, not a warning.
 
 ---
 
