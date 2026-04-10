@@ -1,6 +1,9 @@
 // sensor_math.h — Navigation sensor functions for temporal history recording
 // Shared between minisim (history capture) and NN evaluator (reads history buffers)
 // Extracted from gp_evaluator_portable during GP removal (014-nn-training-signal)
+//
+// 023: executeGetDPhi/executeGetDTheta removed — NN inputs now use direction
+// cosines (unit vector in body frame) via computeTargetDir() in nn_input_computation.h.
 
 #ifndef SENSOR_MATH_H
 #define SENSOR_MATH_H
@@ -12,13 +15,5 @@
 gp_vec3 getInterpolatedTargetPosition(PathProvider& pathProvider,
                                        gp_scalar currentOdometer,
                                        gp_scalar offsetMeters);
-
-// Roll angle to target (body-frame YZ plane projection)
-gp_scalar executeGetDPhi(PathProvider& pathProvider, AircraftState& aircraftState,
-                          gp_scalar rabbitOdometer, gp_scalar offsetMeters);
-
-// Pitch angle to target (body-frame XZ plane)
-gp_scalar executeGetDTheta(PathProvider& pathProvider, AircraftState& aircraftState,
-                            gp_scalar rabbitOdometer, gp_scalar offsetMeters);
 
 #endif

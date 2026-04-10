@@ -254,7 +254,10 @@ static void mspUpdateNavControl()
     VectorPathProvider pathProvider(flight_path, aircraft_state.getThisPathIndex());
     uint32_t eval_start_us = micros();
 
-    // Compute current-step sensors for history recording
+    // TODO(023): Update to direction cosines (computeTargetDir) and new
+    // recordErrorHistory(dir, dist, timeMs) signature. Requires nn_input_computation.h
+    // and updated NNInputs struct on xiao. For now, keep old atan2-based code — xiao
+    // uses its own generated NN program, not the shared evaluator.
     gp_scalar dphi_now = executeGetDPhi(pathProvider, aircraft_state, rabbit_odometer, 0.0f);
     gp_scalar dtheta_now = executeGetDTheta(pathProvider, aircraft_state, rabbit_odometer, 0.0f);
     gp_vec3 targetPos = getInterpolatedTargetPosition(
@@ -264,7 +267,7 @@ static void mspUpdateNavControl()
     // Capture temporal history before NN evaluation
     aircraft_state.recordErrorHistory(dphi_now, dtheta_now, dist_now, millis());
 
-    // Run NN: gathers 27 inputs, forward pass, sets pitch/roll/throttle commands
+    // Run NN: gathers 33 inputs, forward pass, sets pitch/roll/throttle commands
     generatedNNProgram(pathProvider, aircraft_state, 0.0f);
 
     // Convert NN-controlled aircraft commands to MSP RC values and cache them

@@ -278,30 +278,22 @@ struct AircraftState {
     // =========================================================================
     static constexpr int HISTORY_SIZE = 10;  // 1 sec at 10Hz
 
-    // Record current errors to history (call before GP eval each tick)
-    void recordErrorHistory(gp_scalar dPhi, gp_scalar dTheta, gp_scalar distance, unsigned long timeMs) {
-      dPhiHistory_[historyIndex_] = dPhi;
-      dThetaHistory_[historyIndex_] = dTheta;
+    // Record current target direction and distance to history (call before NN eval each tick)
+    void recordErrorHistory(const gp_vec3& targetDir, gp_scalar distance, unsigned long timeMs) {
+      targetDirHistory_[historyIndex_] = targetDir;
       distHistory_[historyIndex_] = distance;
       timeHistory_[historyIndex_] = timeMs;
       historyIndex_ = (historyIndex_ + 1) % HISTORY_SIZE;
       if (historyCount_ < HISTORY_SIZE) historyCount_++;
     }
 
-    // Get historical dPhi (n=0 is most recent, n=1 is one tick ago, etc.)
-    // Returns 0.0f if history not available. Uses CLAMP_DEF for portability.
-    gp_scalar getHistoricalDPhi(int n) const {
-      if (historyCount_ == 0) return static_cast<gp_scalar>(0.0f);
+    // Get historical target direction unit vector (n=0 is most recent, n=1 is one tick ago, etc.)
+    // Returns zero vector if history not available. Uses CLAMP_DEF for portability.
+    gp_vec3 getHistoricalTargetDir(int n) const {
+      if (historyCount_ == 0) return gp_vec3::Zero();
       n = CLAMP_DEF(n, 0, historyCount_ - 1);
       int idx = (historyIndex_ - 1 - n + HISTORY_SIZE) % HISTORY_SIZE;
-      return dPhiHistory_[idx];
-    }
-
-    gp_scalar getHistoricalDTheta(int n) const {
-      if (historyCount_ == 0) return static_cast<gp_scalar>(0.0f);
-      n = CLAMP_DEF(n, 0, historyCount_ - 1);
-      int idx = (historyIndex_ - 1 - n + HISTORY_SIZE) % HISTORY_SIZE;
-      return dThetaHistory_[idx];
+      return targetDirHistory_[idx];
     }
 
     gp_scalar getHistoricalDist(int n) const {
@@ -408,9 +400,8 @@ struct AircraftState {
     float nnOutputs_[NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs
     bool hasNNData_ = false;
 
-    // Temporal history for GP nodes - see specs/TEMPORAL_STATE.md
-    gp_scalar dPhiHistory_[HISTORY_SIZE] = {0};
-    gp_scalar dThetaHistory_[HISTORY_SIZE] = {0};
+    // Temporal history — target direction (unit vec in body frame) and distance
+    gp_vec3 targetDirHistory_[HISTORY_SIZE];  // unit vectors in body frame
     gp_scalar distHistory_[HISTORY_SIZE] = {0};
     unsigned long timeHistory_[HISTORY_SIZE] = {0};
     int historyIndex_ = 0;   // Next write position (ring buffer)

@@ -628,8 +628,9 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
 
       if (printHeader) {
         fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx"
-             << "  dPh-9  dPh-3  dPh-1   dPh0  dPh+1  dPh+5"
-             << "  dTh-9  dTh-3  dTh-1   dTh0  dTh+1  dTh+5"
+             << "  tgX-9  tgX-3  tgX-1   tgX0  tgX+1  tgX+5"
+             << "  tgY-9  tgY-3  tgY-1   tgY0  tgY+1  tgY+5"
+             << "  tgZ-9  tgZ-3  tgZ-1   tgZ0  tgZ+1  tgZ+5"
              << "   ds-9   ds-3   ds-1    ds0   ds+1   ds+5"
              << "  dd/dt"
              << "      qw      qx      qy      qz"
@@ -647,9 +648,10 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       const float* in = reinterpret_cast<const float*>(&nnIn);
       const float* out = stepState.getNNOutputs();
 
-      char outbuf[2048];
+      char outbuf[2560];
       sprintf(outbuf,
         "%06llu %06llu %03d/%02d:%04d: %06ld %3d"
+        " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"
         " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"
         " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"
         " % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f"
@@ -669,9 +671,10 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         in[0], in[1], in[2], in[3], in[4], in[5],
         in[6], in[7], in[8], in[9], in[10], in[11],
         in[12], in[13], in[14], in[15], in[16], in[17],
-        in[18],
-        in[19], in[20], in[21], in[22],
-        in[23], in[24], in[25], in[26],
+        in[18], in[19], in[20], in[21], in[22], in[23],
+        in[24],
+        in[25], in[26], in[27], in[28],
+        in[29], in[30], in[31], in[32],
         out[0], out[1], out[2],
         path.at(pathIndex).start[0],
         path.at(pathIndex).start[1],
@@ -799,6 +802,27 @@ static void runNNEvaluation(
   if (!nn_deserialize(fileData.data(), fileData.size(), genome)) {
     *logger.error() << "Failed to deserialize NN genome" << endl;
     exit(1);
+  }
+
+  // Validate topology matches compiled-in expectations
+  {
+    std::vector<int> expectedTopology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+    if (genome.topology != expectedTopology) {
+      std::ostringstream fileTopo, compiledTopo;
+      for (size_t i = 0; i < genome.topology.size(); i++) {
+        if (i > 0) fileTopo << ",";
+        fileTopo << genome.topology[i];
+      }
+      for (size_t i = 0; i < expectedTopology.size(); i++) {
+        if (i > 0) compiledTopo << ",";
+        compiledTopo << expectedTopology[i];
+      }
+      *logger.error() << "NN topology mismatch: file has {" << fileTopo.str()
+                      << "} but binary expects {" << compiledTopo.str()
+                      << "}. Old weight files (e.g. 611-weight 27,16,8,3) are incompatible "
+                      << "with the 023 direction-cosine input layout." << endl;
+      exit(1);
+    }
   }
 
   {
