@@ -36,7 +36,7 @@ void nn_xavier_init(NNGenome& genome);
 
 // Gather NN_INPUT_COUNT sensor inputs from aircraft state (raw, no normalization)
 void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
-                      float* inputs);
+                      NNInputs& inputs);
 
 #include "autoc/eval/backend.h"
 

@@ -643,7 +643,8 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         printHeader = false;
       }
 
-      const float* in = stepState.getNNInputs();
+      const NNInputs& nnIn = stepState.getNNInputs();
+      const float* in = reinterpret_cast<const float*>(&nnIn);
       const float* out = stepState.getNNOutputs();
 
       char outbuf[2048];

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -263,13 +264,13 @@ struct AircraftState {
     void setGyroRates(const gp_vec3& rates) { gyroRates_ = rates; }
 
     // NN I/O capture — record what the NN actually saw and produced
-    void setNNData(const float* inputs, int numInputs, const float* outputs, int numOutputs) {
-      for (int i = 0; i < NN_INPUT_COUNT && i < numInputs; i++) nnInputs_[i] = inputs[i];
+    void setNNData(const NNInputs& inputs, const float* outputs, int numOutputs) {
+      nnInputs_ = inputs;
       for (int i = 0; i < NN_OUTPUT_COUNT && i < numOutputs; i++) nnOutputs_[i] = outputs[i];
       hasNNData_ = true;
     }
     bool hasNNData() const { return hasNNData_; }
-    const float* getNNInputs() const { return nnInputs_; }
+    const NNInputs& getNNInputs() const { return nnInputs_; }
     const float* getNNOutputs() const { return nnOutputs_; }
 
     // =========================================================================
@@ -403,7 +404,7 @@ struct AircraftState {
     gp_vec3 gyroRates_ = gp_vec3::Zero();
 
     // NN I/O capture — actual values presented to/produced by the neural net
-    float nnInputs_[NN_INPUT_COUNT] = {0};   // Normalized inputs as NN sees them
+    NNInputs nnInputs_ = {};                 // Normalized inputs as NN sees them
     float nnOutputs_[NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs
     bool hasNNData_ = false;
 
@@ -435,8 +436,9 @@ struct AircraftState {
             " outputs=" + std::to_string(NN_OUTPUT_COUNT) +
             ". Regenerate training data with current binary.");
         }
+        float* rawInputs = reinterpret_cast<float*>(&nnInputs_);
         for (uint32_t i = 0; i < inputCount; i++)
-          ar(nnInputs_[i]);
+          ar(rawInputs[i]);
         for (uint32_t i = 0; i < outputCount; i++)
           ar(nnOutputs_[i]);
       }

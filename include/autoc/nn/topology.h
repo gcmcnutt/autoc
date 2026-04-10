@@ -27,9 +27,9 @@
 // Output interpretation (rate→surface) is handled by sim bridge, not the NN.
 
 #include <cstddef>
+#include "autoc/nn/nn_inputs.h"
 
-// Layer sizes
-constexpr int NN_INPUT_COUNT = 27;
+// Layer sizes (NN_INPUT_COUNT derived from NNInputs struct in nn_inputs.h)
 constexpr int NN_HIDDEN1_SIZE = 16;
 constexpr int NN_HIDDEN2_SIZE = 8;
 constexpr int NN_OUTPUT_COUNT = 3;

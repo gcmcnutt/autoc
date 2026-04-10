@@ -172,7 +172,7 @@ static const int HIST_PAST[] = {9, 3, 1, 0};
 static const float FORECAST_OFFSETS[] = {1.0f, 5.0f};
 
 void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
-                      float* inputs) {
+                      NNInputs& inputs) {
     gp_scalar rabbitOdo = aircraftState.getRabbitOdometer();
     gp_scalar rabbitSpeed = aircraftState.getRabbitSpeed();
 
@@ -183,64 +183,64 @@ void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
         return static_cast<gp_scalar>(steps) * (static_cast<gp_scalar>(SIM_TIME_STEP_MSEC) / 1000.0f) * rabbitSpeed;
     };
 
-    // 0-3: dPhi past history (raw radians)
+    // dPhi[0-3]: past history (raw radians)
     for (int i = 0; i < 4; i++)
-        inputs[i] = static_cast<float>(aircraftState.getHistoricalDPhi(HIST_PAST[i]));
+        inputs.dPhi[i] = static_cast<float>(aircraftState.getHistoricalDPhi(HIST_PAST[i]));
 
-    // 4-5: dPhi path-lookahead forecast (+0.1s, +0.5s)
+    // dPhi[4-5]: path-lookahead forecast (+0.1s, +0.5s)
     for (int i = 0; i < 2; i++)
-        inputs[4 + i] = static_cast<float>(
+        inputs.dPhi[4 + i] = static_cast<float>(
             executeGetDPhi(pathProvider, aircraftState, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i])));
 
-    // 6-9: dTheta past history (raw radians)
+    // dTheta[0-3]: past history (raw radians)
     for (int i = 0; i < 4; i++)
-        inputs[6 + i] = static_cast<float>(aircraftState.getHistoricalDTheta(HIST_PAST[i]));
+        inputs.dTheta[i] = static_cast<float>(aircraftState.getHistoricalDTheta(HIST_PAST[i]));
 
-    // 10-11: dTheta path-lookahead forecast (+0.1s, +0.5s)
+    // dTheta[4-5]: path-lookahead forecast (+0.1s, +0.5s)
     for (int i = 0; i < 2; i++)
-        inputs[10 + i] = static_cast<float>(
+        inputs.dTheta[4 + i] = static_cast<float>(
             executeGetDTheta(pathProvider, aircraftState, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i])));
 
-    // 12-15: dist past history (raw metres)
+    // dist[0-3]: past history (raw metres)
     for (int i = 0; i < 4; i++)
-        inputs[12 + i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[i]));
+        inputs.dist[i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[i]));
 
-    // 16-17: dist forecast — distance from current position to future rabbit (+0.1s, +0.5s)
+    // dist[4-5]: forecast — distance from current position to future rabbit (+0.1s, +0.5s)
     for (int i = 0; i < 2; i++) {
         gp_vec3 futureTarget = getInterpolatedTargetPosition(
             pathProvider, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i]));
-        inputs[16 + i] = static_cast<float>(
+        inputs.dist[4 + i] = static_cast<float>(
             (futureTarget - aircraftState.getPosition()).norm());
     }
 
-    // 18: dDist/dt closing rate (m/s, positive = approaching)
+    // closing_rate: dDist/dt (m/s, positive = approaching)
     {
         float dist_now  = static_cast<float>(aircraftState.getHistoricalDist(0));
         float dist_prev = static_cast<float>(aircraftState.getHistoricalDist(1));
-        inputs[18] = (dist_prev - dist_now) / 0.1f;  // divide by 0.1s tick
+        inputs.closing_rate = (dist_prev - dist_now) / 0.1f;  // divide by 0.1s tick
     }
 
-    // 19-22: quaternion attitude (w, x, y, z) — unit norm, components in [-1,1]
+    // quaternion attitude (w, x, y, z) — unit norm, components in [-1,1]
     {
         gp_quat q = aircraftState.getOrientation();
-        inputs[19] = static_cast<float>(q.w());
-        inputs[20] = static_cast<float>(q.x());
-        inputs[21] = static_cast<float>(q.y());
-        inputs[22] = static_cast<float>(q.z());
+        inputs.quat_w = static_cast<float>(q.w());
+        inputs.quat_x = static_cast<float>(q.x());
+        inputs.quat_y = static_cast<float>(q.y());
+        inputs.quat_z = static_cast<float>(q.z());
     }
 
-    // 23: airspeed (m/s, raw)
-    inputs[23] = static_cast<float>(aircraftState.getRelVel());
+    // airspeed (m/s, raw)
+    inputs.airspeed = static_cast<float>(aircraftState.getRelVel());
 
-    // 24-26: gyro rates (p, q, r) in rad/s (raw, no scaling)
+    // gyro rates (p, q, r) in rad/s (raw, no scaling)
     // Body-frame angular rates, standard aerospace RHR convention.
     // CRRCSim FDM provides these directly; INAV requires pitch/yaw negation
     // at consumer boundary (see COORDINATE_CONVENTIONS.md).
     {
         gp_vec3 gyro = aircraftState.getGyroRates();
-        inputs[24] = static_cast<float>(gyro.x());  // p (roll rate, rad/s)
-        inputs[25] = static_cast<float>(gyro.y());  // q (pitch rate, rad/s)
-        inputs[26] = static_cast<float>(gyro.z());  // r (yaw rate, rad/s)
+        inputs.gyro_p = static_cast<float>(gyro.x());  // p (roll rate, rad/s)
+        inputs.gyro_q = static_cast<float>(gyro.y());  // q (pitch rate, rad/s)
+        inputs.gyro_r = static_cast<float>(gyro.z());  // r (yaw rate, rad/s)
     }
 }
 
@@ -252,11 +252,12 @@ NNControllerBackend::NNControllerBackend(const NNGenome& genome)
     : genome_(genome) {}
 
 void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& pathProvider) {
-    float inputs[NN_INPUT_COUNT];
+    NNInputs inputs = {};
     nn_gather_inputs(pathProvider, aircraftState, inputs);
 
     float outputs[NN_OUTPUT_COUNT];
-    nn_forward(genome_.weights.data(), genome_.topology, inputs, outputs);
+    nn_forward(genome_.weights.data(), genome_.topology,
+               reinterpret_cast<const float*>(&inputs), outputs);
 
     // Set control commands: pitch, roll, throttle (already in [-1, 1] via tanh)
     aircraftState.setPitchCommand(static_cast<gp_scalar>(outputs[0]));
@@ -264,7 +265,7 @@ void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& p
     aircraftState.setThrottleCommand(static_cast<gp_scalar>(outputs[2]));
 
     // Capture actual NN I/O for diagnostics
-    aircraftState.setNNData(inputs, NN_INPUT_COUNT, outputs, NN_OUTPUT_COUNT);
+    aircraftState.setNNData(inputs, outputs, NN_OUTPUT_COUNT);
 }
 
 // ============================================================
