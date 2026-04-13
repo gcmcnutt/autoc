@@ -243,6 +243,14 @@ struct AircraftState {
     gp_scalar getThrottleCommand() const { return throttleCommand; }
     gp_scalar setThrottleCommand(gp_scalar throttle) { return (throttleCommand = CLAMP_DEF(throttle, -1.0f, 1.0f)); }
 
+    // Filtered commands (post-RC-smoothing, what actually reaches FDM surfaces)
+    gp_scalar getFilteredPitchCommand() const { return filteredPitchCommand_; }
+    void setFilteredPitchCommand(gp_scalar v) { filteredPitchCommand_ = v; }
+    gp_scalar getFilteredRollCommand() const { return filteredRollCommand_; }
+    void setFilteredRollCommand(gp_scalar v) { filteredRollCommand_ = v; }
+    gp_scalar getFilteredThrottleCommand() const { return filteredThrottleCommand_; }
+    void setFilteredThrottleCommand(gp_scalar v) { filteredThrottleCommand_ = v; }
+
     gp_vec3 getWindVelocity() const { return wind_velocity; }
     void setWindVelocity(const gp_vec3& wind) { wind_velocity = wind; }
 
@@ -406,6 +414,11 @@ struct AircraftState {
     gp_scalar rollCommand;
     gp_scalar throttleCommand;
 
+    // Filtered commands (post-RC smoothing pt3 filter, what FDM surfaces see)
+    gp_scalar filteredPitchCommand_ = 0.0f;
+    gp_scalar filteredRollCommand_ = 0.0f;
+    gp_scalar filteredThrottleCommand_ = 0.0f;
+
     // Wind diagnostic fields (for debugging non-determinism)
     gp_vec3 wind_velocity;  // Wind vector (north, east, down) from calculate_wind()
 
@@ -458,6 +471,7 @@ struct AircraftState {
           ar(nnOutputs_[i]);
       }
       ar(rabbitOdometer_, rabbitSpeed_);
+      ar(filteredPitchCommand_, filteredRollCommand_, filteredThrottleCommand_);
     }
 #endif
 };
