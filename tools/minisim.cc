@@ -148,7 +148,17 @@ public:
         gp_vec3 initial_velocity = aircraft_orientation * gp_vec3(SIM_INITIAL_VELOCITY, 0.0f, 0.0f);
 
         aircraftState = AircraftState{ 0, SIM_INITIAL_VELOCITY, initial_velocity, aircraft_orientation, initialPosition, 0.0f, 0.0f, SIM_INITIAL_THROTTLE, 0 };
-        aircraftState.clearHistory();
+        {
+          gp_vec3 tangent;
+          if (path.size() > 1)
+            tangent = path[1].start - path[0].start;
+          else
+            tangent = gp_vec3::UnitX();
+          double tn = tangent.norm();
+          if (tn > 1e-6) tangent = tangent / tn;
+          else tangent = gp_vec3::UnitX();
+          aircraftState.resetHistory(path[0].start, tangent);
+        }
         aircraftState.setRabbitOdometer(0.0f);
 
         // Get rabbit speed from scenario metadata

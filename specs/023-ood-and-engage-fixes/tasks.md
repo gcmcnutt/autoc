@@ -288,6 +288,56 @@ Most of the heavy lifting was done in Phase 0a.2 (T024–T035). US1 adds the fin
 
 ---
 
+## Phase 9a: RC Smoothing Filter Experiment (NEW — post-test3 finding)
+
+**Purpose**: Replicate INAV's RC smoothing filter (pt3) in CRRCSim to naturally smooth bang-bang control outputs. Enable the matching filter in the real INAV config. If training converges with smooth commands, 023 can go to flight test without waiting for 024 craft variations.
+
+**Background**: test3 (gen 243) shows strong fitness (-18k+) but bang-bang control — NN outputs saturate at ±1 on 25% of ticks. INAV has two filter stages on the command path, both currently disabled in our hb1 config:
+
+1. **RC smoothing** (`rc_filter_lpf_hz`) — pt3 filter (3rd-order cascade) on ALL 4 channels including throttle. Currently set to 250Hz (passthrough). Default is 50Hz.
+2. **Servo LPF** (`servo_lpf_hz`) — biquad Butterworth on servo channels only (not throttle). Currently 0 (disabled). Default is 20Hz.
+
+The RC smoothing filter is the better choice for CRRCSim because it covers all channels including throttle, and the pt3 has a gentler rolloff than the biquad.
+
+**INAV pt3 filter** (from `inav/src/main/common/filter.c`):
+```c
+// Gain computation:
+float orderCutoffCorrection = 1 / sqrtf(powf(2, 1.0f/3.0f) - 1); // ≈ 1.9615
+float RC = 1 / (2 * orderCutoffCorrection * M_PIf * f_cut);
+float k = dT / (RC + dT);
+
+// 3-stage cascade (runs every PID tick):
+state1 += k * (input - state1);
+state2 += k * (state1 - state2);
+state  += k * (state2 - state);
+return state;
+```
+
+**Real xiao signal path**: NN eval at 10Hz → MSP_SET_RAW_RC at 20Hz (keepalive repeats last command) → INAV PID at 2kHz → RC smoothing pt3 at 2kHz → servo LPF (if enabled) → PWM output.
+
+**CRRCSim timing model**: `getInputData()` is called every FDM frame at 333Hz (`dt=0.003` in `autoc_config.xml`). NN eval at 10Hz. The pt3 filter runs at 333Hz, smoothing the 10Hz NN command steps — analogous to INAV's 2kHz pt3 smoothing 20Hz MSP updates. The filter sees held commands between NN evals and continues settling toward them.
+
+**Timing constants for `inputdev_autoc.h`**:
+```
+NN_EVAL_INTERVAL_MSEC     = 100   // 10Hz NN evaluation (existing)
+RC_FILTER_HZ_DEFAULT       = 20   // pt3 cutoff frequency (new)
+```
+Note: no `SERVO_UPDATE_INTERVAL_MSEC` — the 20Hz MSP keepalive is a real-hardware liveness mechanism with no behavioral role in the sim filter model (clarified 2026-04-12).
+
+### Tasks
+
+- [ ] T114 Implement pt3 RC smoothing filter in `inputdev_autoc.cpp`. Replicate INAV's `pt3FilterGain()` + `pt3FilterApply()` as file-local functions (same algorithm, same cutoff correction factor 1.9615). Initialize at startup with `k` computed from FDM dt (3ms from `autoc_config.xml`) and cutoff frequency from `AUTOC_RC_FILTER_HZ` env var (default 20, 0=disabled). Maintain 3 filter instances (pitch, roll, throttle). Apply every `getInputData()` call (333Hz) to the cached `pitchCommand`/`rollCommand`/`throttleCommand` BEFORE CRRCSim scale conversion. Reset filter state at scenario start (pre-fill with initial commands to avoid transient).
+- [ ] T115 Add filtered command columns to `data.dat`. Log both raw NN output (`outPt`, `outRl`, `outTh` — unchanged) AND the filtered surface commands (`fltPt`, `fltRl`, `fltTh`). This lets the viz show the pt3's smoothing effect and phase delay. Update `logEvalResults()` in `src/autoc.cc` to emit the new columns from `AircraftState`.
+- [ ] T116 Add filtered command fields to `AircraftState`. New fields `filteredPitchCommand_`, `filteredRollCommand_`, `filteredThrottleCommand_` set by CRRCSim's `getInputData()` each frame. These capture what actually reached the FDM surfaces (post-filter) vs what the NN requested (pre-filter). Serialize in the cereal round-trip so they propagate to `data.dat`.
+- [ ] T117 Update `xiao/inav-hb1.cfg`: `set rc_filter_lpf_hz = 20` and `set rc_filter_auto = OFF`. This enables the real INAV RC smoothing filter to match what the sim now models. Leave `servo_lpf_hz = 0` (the RC filter already covers servos upstream). Document the change and rationale.
+- [ ] T118 Determine optimal filter frequency for 10Hz NN + 20Hz servo update at 333Hz FDM rate. Test 15Hz, 20Hz, and 30Hz in short training runs (50 gens, pop 2000). Compare control smoothness (mean |du/dt|, saturation %, phase delay) and fitness. Pick the frequency that eliminates bang-bang without killing tracking.
+- [ ] T119 Update `sim_polar_viz.py` to plot filtered surface output (`fltPt`, `fltRl`, `fltTh`) alongside raw NN output. Add a subplot or overlay showing the pt3 smoothing and phase delay.
+- [ ] T120 Full training run (400 gens, pop 10k or reduced if T118 suggests pop reduction works) with RC filter enabled. Compare fitness curve and control profiles to test3 (no filter). If mean |filtered command| < 0.6 and tracking fitness within 80% of test3, this is flight-test ready.
+- [ ] T121 Investigate autoc RSS memory (~40GB at gen 1). Profile heap to find what's accumulating. This blocks long training runs on constrained hardware.
+- [ ] T122 Reduce `RabbitSpeedNominal` from 13.0 to 12.0 m/s in `autoc.ini`. test3 analysis shows the NN at full throttle 72% of ticks and still averaging only 1.7 m/s faster than the rabbit — no headroom for maneuvering. Dropping to 12 m/s gives the underpowered craft breathing room and should reduce throttle saturation. Adjust `RabbitSpeedMin` accordingly (9.0 m/s).
+
+**Checkpoint Phase 9a**: If T120 produces smooth commands with acceptable fitness, proceed directly to flight prep (T107-T113). If bang-bang persists, escalate to 024 craft variations.
+
 ## Phase 9: Polish & Cross-Cutting Concerns
 
 **Purpose**: Flight prep, final validation, documentation, and follow-through on research items.

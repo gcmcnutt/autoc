@@ -9,6 +9,7 @@
 #include <string>
 #include "autoc/types.h"
 #include "autoc/nn/topology.h"
+#include "autoc/nn/nn_input_computation.h"
 
 #ifndef ARDUINO
 #include <cereal/cereal.hpp>
@@ -315,6 +316,29 @@ struct AircraftState {
     void clearHistory() {
       historyIndex_ = 0;
       historyCount_ = 0;
+    }
+
+    // Pre-fill all history slots with the current geometry so the NN starts
+    // with consistent direction cosines and closing_rate = 0.  Call at
+    // engage/scenario start AFTER position, orientation, and path are known.
+    // targetPos: world-frame position of the rabbit/path start
+    // pathTangent: unit vector along path at targetPos (singularity fallback)
+    void resetHistory(const gp_vec3& targetPos, const gp_vec3& pathTangent) {
+      clearHistory();
+      gp_vec3 craftToTarget = targetPos - position;
+      gp_vec3 target_local = aircraft_orientation.inverse() * craftToTarget;
+      float distance = static_cast<float>(target_local.norm());
+
+      gp_vec3 tangent_body = aircraft_orientation.inverse() * pathTangent;
+      float tn = static_cast<float>(tangent_body.norm());
+      if (tn > 1e-6f) tangent_body = tangent_body / tn;
+      else tangent_body = gp_vec3::UnitX();
+
+      gp_vec3 dir = computeTargetDir(target_local, distance, tangent_body);
+
+      for (int h = 0; h < HISTORY_SIZE; h++) {
+        recordErrorHistory(dir, distance, 0);
+      }
     }
 
     void minisimAdvanceState(gp_scalar dt) {

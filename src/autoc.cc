@@ -75,17 +75,18 @@ static float gEvalVariationScaleOverride = -1.0f;  // >=0 = use this instead of 
  *
  * @return Scale factor to apply to variation offsets (0.0 to 1.0)
  */
-static double computeVariationScale() {
+static float computeVariationScale() {
     // Eval mode: use the exact scale stored in the weight file
     if (gEvalVariationScaleOverride >= 0.0f) return gEvalVariationScaleOverride;
 
-    // Ramp from 0.0 (no variations) to 1.0 (full variations) over training.
-    // Disabled (rampStep<=0), eval mode (totalGens<=1), or trivial: return 1.0.
+    // Ramp from 0.0 to 1.0 over training.  Returns float for consistency with
+    // serialized variation_scale (stored as float in NN01 weights).  All call
+    // sites must see identical precision between training and eval.
     int numSteps = (gVariationRampStep > 0) ? gTotalGenerations / gVariationRampStep : 0;
-    if (numSteps <= 1) return 1.0;
+    if (numSteps <= 1) return 1.0f;
 
     int stepIndex = (gCurrentGeneration - 1) / gVariationRampStep;  // 1-based gen
-    return static_cast<double>(std::min(stepIndex, numSteps - 1)) / static_cast<double>(numSteps - 1);
+    return static_cast<float>(std::min(stepIndex, numSteps - 1)) / static_cast<float>(numSteps - 1);
 }
 
 // ============================================================================
@@ -249,7 +250,7 @@ static void populateVariationOffsets(ScenarioMetadata& meta) {
     const auto& v = gScenarioVariations[windIdx].entryOffsets;
 
     // Get current scale (0.0 to 1.0 over training)
-    double scale = computeVariationScale();
+    float scale = computeVariationScale();
 
     // Angular offsets: scale toward 0
     meta.entryHeadingOffset = v.entryHeadingOffset * scale;

@@ -15,6 +15,14 @@
 - Q: Authority-limit iteration (Change 8) — when to trigger Milestone A authority-limit retrain? → A: Deferred to plan phase. Determine the trigger criterion empirically after seeing Milestone A baseline behavior under the 3-cosine representation. The 3-cosine change is the primary intervention; authority limiting is a conditional follow-up whose threshold should be set from observed data, not guessed.
 - Q: Streak threshold ramp — include in 023? → A: No. Leave parked in BACKLOG per 022 verdict (betterz2 converged without it). Revisit only if 023 CRRCSim Milestone A shows an early-generation "no streak signal" problem under the new 3-cosine representation.
 
+### Session 2026-04-12
+
+- Q: RC pt3 filter — model 20Hz MSP sub-stepping in CRRCSim or run filter at FDM rate on held NN output? → A: Run at 333Hz FDM rate on held 10Hz NN output. The 20Hz MSP keepalive is a real-hardware liveness mechanism, not a signal processing cadence — it repeats the same value so the filter sees no change. No need to model it in sim.
+- Q: Filter state initialization at scenario start? → A: Pre-fill with engage delay commands (pitch=0, roll=0, throttle=coastThrottle). Avoids filter transient on first FDM frame; matches reality where servos are already at coast position when engage happens.
+- Q: Change 1c item 3 (rc_filter_lpf_hz = 0) vs Phase 9a (rc_filter_lpf_hz = 20) — contradiction? → A: Phase 9a supersedes Change 1c item 3. The earlier recommendation to disable the RC filter was made before the bang-bang analysis. The filter at 20Hz is now intentional smoothing, modeled in CRRCSim and matched in INAV config. Accept the ~8ms group delay as beneficial.
+- Q: Bump AircraftState cereal version for new filtered fields? → A: No versioning. Append fields directly. We always retrain from scratch and never deserialize old data.
+- Q: Add SERVO_UPDATE_INTERVAL_MSEC constant for 20Hz MSP cadence? → A: Drop it. No CRRCSim code uses it (per Q1 answer). Avoid dead constants that create confusion about what the sim models.
+
 ## Problem
 
 Flight 2026-04-07 (first 022-trained flight) showed control intent but failed
@@ -646,7 +654,7 @@ before any flight test.
 |---|---|---|---|---|
 | 1 | `gyro_main_lpf_hz` | `25` | `60` (default) or higher | Removes ~4 ms from gyro→xiao path (6.4 ms → 2.65 ms) |
 | 2 | `setpoint_kalman_enabled` | `ON` | `OFF` | Removes an adaptive Kalman stage on `gyroADCf` — state-dependent group delay. This is NOT a setpoint filter despite the name; it operates on gyro measurements. Should never have been on for NN use. |
-| 3 | `rc_filter_lpf_hz` | `250` | `0` | Disables the PT3 on `rcCommand` in the MANUAL-mode path. Removes ~1.9 ms. Surprise finding — we assumed MANUAL was pass-through (same class of error as `servo_lpf_hz`). |
+| 3 | `rc_filter_lpf_hz` | `250` | `20` | **SUPERSEDED by Phase 9a** — originally recommended 0 (disable) to remove delay. Now set to 20Hz for intentional command smoothing to eliminate bang-bang control. Modeled in CRRCSim pt3 filter. Adds ~8ms group delay (accepted as beneficial). |
 | 4 | `dynamic_gyro_notch_enabled` | *(unknown)* | `OFF` for fixed-wing | Dynamic notches are primarily for multirotor vibration rejection; our airframe and NN input are not sensitive to 100 Hz+ spectra. Also removes a state-dependent secondary dynamic notch that runs regardless of the enable flag. |
 | 5 | `failsafe_recovery_delay` | `5` (500 ms) | `0` (**bench only**) | **CONFIRMED root cause of the 750 ms engage delay**, but with a nuance. See `docs/failsafe-behavior-audit.md`. Setting to 0 drops engage delay from ~760 ms to ~260 ms (not to zero — see notes below). Change ONLY `xiao/inav-bench.cfg`, NOT `inav-hb1.cfg`. Current DROP failsafe config makes this safe under all scenarios. Revert before any field test. |
 
