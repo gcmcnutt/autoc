@@ -642,7 +642,6 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
              << "      qw      qx      qy      qz"
              << "     vel   gyrP   gyrQ   gyrR"
              << "   outPt   outRl   outTh"
-             << "   fltPt   fltRl   fltTh"
              << "    pathX    pathY    pathZ"
              << "        X        Y        Z"
              << "    vxBdy    vyBdy    vzBdy"
@@ -666,7 +665,6 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         " % 7.4f % 7.4f % 7.4f % 7.4f"
         " % 7.4f % 6.3f % 6.3f % 6.3f"
         " % 7.4f % 7.4f % 7.4f"
-        " % 7.4f % 7.4f % 7.4f"
         " % 8.2f % 8.2f % 8.2f"
         " % 8.2f % 8.2f % 8.2f"
         " % 8.2f % 8.2f % 8.2f"
@@ -684,9 +682,6 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         in[25], in[26], in[27], in[28],
         in[29], in[30], in[31], in[32],
         out[0], out[1], out[2],
-        stepState.getFilteredPitchCommand(),
-        stepState.getFilteredRollCommand(),
-        stepState.getFilteredThrottleCommand(),
         path.at(pathIndex).start[0],
         path.at(pathIndex).start[1],
         path.at(pathIndex).start[2],

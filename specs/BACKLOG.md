@@ -40,6 +40,27 @@ Remaining 015 work:
 - Normalize Δu by path curvature: penalize excess control, not turns
 - On hold — slew limiting already killed bang-bang, lexicase hasn't plateaued
 
+### [ABANDONED] INAV pt3 RC Smoothing Filter in CRRCSim (023 Phase 9a experiment)
+- **Attempted 2026-04-13**: replicated INAV's `rc_smoothing.c` pt3 filter (3rd-order
+  cascade Butterworth LPF) in CRRCSim `inputdev_autoc.cpp`. Filter ran at 333Hz
+  FDM rate, smoothing 10Hz NN command steps before FDM surface application.
+- **test5 (10kHz passthrough)**: confirmed filter code path is deterministic and
+  doesn't degrade convergence when effectively disabled. Matched test4 baseline.
+- **test6 (40Hz cutoff)**: training stunted — best stuck at -2225 through 55 gens
+  vs test4's -4410 at the same point. Avg fitness ~40% lower, pctInStreak 3% vs 12%.
+  The filter changes dynamics enough that the GA can't find productive policies.
+- **20Hz also tried**: even worse stunting (not logged as formal test).
+- **Root cause**: the filter mechanically prevents the NN from making the quick
+  corrections it needs to avoid crashes and maintain streaks. The NN must learn
+  that smooth commands are better through its own fitness signal, not be
+  mechanically constrained.
+- **Conclusion**: pt3 filter approach abandoned for training. If INAV's
+  `rc_filter_lpf_hz` is enabled for real flight, the sim-to-real gap from
+  not modeling it is acceptable — the NN learns direct control and the
+  physical filter just smooths the edges. A fitness-based smoothness
+  incentive (lexicase or per-step penalty) is the better path.
+- **Code fully backed out** — no pt3 code remains in CRRCSim or AircraftState.
+
 ### [DEFERRED] Total Energy Management + Altitude-Aware Distance
 - Current distance metric is flat Euclidean — treats "5m above" same as "5m below"
 - In reality above is always safer (altitude = energy reserve), below-and-inside is worst

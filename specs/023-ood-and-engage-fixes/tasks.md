@@ -288,7 +288,7 @@ Most of the heavy lifting was done in Phase 0a.2 (T024–T035). US1 adds the fin
 
 ---
 
-## Phase 9a: RC Smoothing Filter Experiment (NEW — post-test3 finding)
+## Phase 9a: RC Smoothing Filter Experiment — ABANDONED 2026-04-13
 
 **Purpose**: Replicate INAV's RC smoothing filter (pt3) in CRRCSim to naturally smooth bang-bang control outputs. Enable the matching filter in the real INAV config. If training converges with smooth commands, 023 can go to flight test without waiting for 024 craft variations.
 
@@ -336,7 +336,7 @@ Note: no `SERVO_UPDATE_INTERVAL_MSEC` — the 20Hz MSP keepalive is a real-hardw
 - [ ] T121 Investigate autoc RSS memory (~40GB at gen 1). Profile heap to find what's accumulating. This blocks long training runs on constrained hardware.
 - [ ] T122 Reduce `RabbitSpeedNominal` from 13.0 to 12.0 m/s in `autoc.ini`. test3 analysis shows the NN at full throttle 72% of ticks and still averaging only 1.7 m/s faster than the rabbit — no headroom for maneuvering. Dropping to 12 m/s gives the underpowered craft breathing room and should reduce throttle saturation. Adjust `RabbitSpeedMin` accordingly (9.0 m/s).
 
-**Checkpoint Phase 9a**: If T120 produces smooth commands with acceptable fitness, proceed directly to flight prep (T107-T113). If bang-bang persists, escalate to 024 craft variations.
+**ABANDONED**: pt3 filter stunts training convergence (test6: -2225 at gen 55 vs test4: -4410). Filter mechanically prevents the quick corrections the NN needs during early evolution. All pt3 code backed out. Smoothness must come from fitness-based incentives instead. See `specs/BACKLOG.md` for full findings.
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
