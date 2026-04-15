@@ -338,6 +338,51 @@ Note: no `SERVO_UPDATE_INTERVAL_MSEC` — the 20Hz MSP keepalive is a real-hardw
 
 **ABANDONED**: pt3 filter stunts training convergence (test6: -2225 at gen 55 vs test4: -4410). Filter mechanically prevents the quick corrections the NN needs during early evolution. All pt3 code backed out. Smoothness must come from fitness-based incentives instead. See `specs/BACKLOG.md` for full findings.
 
+## Phase 9b: Control Effort Streak — Lexicase Minimum-Effort Dimension (Change 9)
+
+**Purpose**: Add a second lexicase dimension measuring control effort (command magnitude), using the same streak/multiplier architecture as tracking fitness. The NN learns that minimal control effort is better — gentle commands near center are cheap, extreme deflections are expensive. Fixed cascade: tracking score filters first, effort filters survivors.
+
+**Background**: test4/test7 analysis shows the NN uses extreme commands as its primary strategy — |roll|=0.855 mean (75% of ticks >0.8), throttle=0.670 mean (93% >0.8), near-center commands only 0-3% of ticks. The problem is NOT oscillation (delta-based) — the NN holds steady at extreme deflections. The effort metric penalizes magnitude `sqrt(pitch² + roll² + throttle²)` regardless of rate of change.
+
+**Key design decisions** (from clarify sessions 2026-04-13):
+- Magnitude-based effort, not delta-based chatter — penalizes sustained extreme commands
+- Raw sum (unnormalized) — short-lived individuals already lose on tracking
+- Fixed absolute epsilon (~5.0) for effort dimension
+- Fixed cascade: tracking filters all scenarios first, then effort filters survivors
+- Extend existing `lexicase_select()` with second filtering loop
+- New lightweight `StreakAccumulator` struct for effort streak logic
+
+### Implementation Tasks
+
+**Note**: Per Constitution I (Testing-First), tests (T128, T129) are placed before implementation (T126, T127). This is experimental work — tests define the contract, implementation follows.
+
+- [ ] T123 [P] Create `StreakAccumulator` struct in `include/autoc/eval/fitness_computer.h`. Lightweight streak machine: threshold, count, stepsToMax, multMax. Methods: `reset()`, `tick(bool smooth) → double multiplier`, `getMaxStreak()`, `getTotalSmoothTicks()`. Same ramp logic as `FitnessComputer` streak but generic — not tied to tracking-specific scoring. Unit: ~20 lines. When threshold ≤ 0, all ticks are gentle (effort disabled).
+- [ ] T124 [P] Add effort config fields to `include/autoc/util/config.h`: `effortStreakThreshold` (double, default 0.95), `effortStreakRampSec` (double, default 5.0), `effortStreakMultiplierMax` (double, default 5.0), `effortLexicaseEpsilon` (double, default 5.0). Parse in `src/util/config.cc` from `autoc.ini` keys `EffortStreakThreshold`, `EffortStreakRampSec`, `EffortStreakMultiplierMax`, `EffortLexicaseEpsilon`.
+- [ ] T125 [P] Add effort fields to `ScenarioScore` in `include/autoc/eval/fitness_decomposition.h`: `double effortCost` (sum of effort/multiplier, lower=better), `int maxGentleStreak` (longest run of low-effort ticks), `int totalGentleTicks` (ticks below threshold). Update `ScenarioScore()` constructor with defaults (0.0, 0, 0).
+- [ ] T128 [P] Add 2-dim lexicase tests in `tests/selection_tests.cc` (tests-first — initially fail until T127 lands):
+  - Test: two individuals with equal tracking but different effort — lower effort wins
+  - Test: individual with better tracking but worse effort — better tracker wins (cascade guarantees tracking first)
+  - Test: effortEpsilon=0 — no effort filtering (existing behavior preserved)
+  - Test: all individuals have identical effort — tracking alone decides
+- [ ] T129 [P] Add effort computation tests in `tests/fitness_decomposition_tests.cc` (tests-first — initially fail until T126 lands):
+  - Test: all commands at zero → effortScore=1.0 per tick, effortCost maximally negative (best)
+  - Test: all commands at full deflection (1,1,1) → effortScore=0.0, effortCost=0 (worst)
+  - Test: moderate commands (0.05,0.05,0.05) → effortScore≈0.95, above threshold, streak builds
+  - Test: streak multiplier compounds score during sustained gentle period
+  - Test: first tick after engage skipped
+  - Test: effortStreakThreshold=0 → effort disabled (all ticks gentle, max score)
+- [ ] T126 Compute `effortCost` in `src/eval/fitness_decomposition.cc` `computeScenarioScores()`. Inside the existing stepIndex loop: compute `effortScore = 1.0 - sqrt(pitch² + roll² + throttle²) / sqrt(3)` from `aircraftStates[stepIndex]` commands. Skip stepIndex==1 (engage transition). Use `StreakAccumulator`: if `effortScore >= threshold` → streak continues, multiplier ramps. Accumulate `effortPoints += effortScore * multiplier`. After loop: `effortCost = -effortPoints` (negate for lower=better lexicase convention). Store diagnostics in `ScenarioScore`. Read config from `ConfigManager::getConfig()`. T129 tests must now pass.
+- [ ] T127 Extend `lexicase_select()` in `src/eval/selection.cc` with effort cascade. After the existing tracking-score filter loop completes, add a second loop: shuffle scenario order again, filter survivors on `effortCost` (lower=better) using fixed absolute epsilon from config. Accept epsilon as a new parameter (default 5.0). Signature change: `lexicase_select(..., double epsilon = 0.05, double effortEpsilon = 5.0)`. When effortEpsilon ≤ 0, skip effort filtering (backwards-compatible). T128 tests must now pass.
+- [ ] T130 Update `autoc.ini` and `autoc-eval.ini` with effort config knobs: `EffortStreakThreshold = 0.95`, `EffortStreakRampSec = 5.0`, `EffortStreakMultiplierMax = 5.0`, `EffortLexicaseEpsilon = 5.0`. Add comments explaining each.
+- [ ] T131 Add `effort` and `eftMul` columns to `data.dat` in `src/autoc.cc` `logEvalResults()`. Header: `"  effort  eftMul"`. Format: `" % 7.3f % 6.2f"`. `effort` = `1.0 - sqrt(pitch² + roll² + throttle²) / sqrt(3)` (effortScore, 0-1). `eftMul` = current effort streak multiplier (1.0-5.0). No previous-tick tracking needed. Compute using same formula as fitness but independent instance (logging mirrors, doesn't depend on fitness).
+- [ ] T132 Add effort stats to `data.stc` in `src/autoc.cc`. Per-gen line: append `avgEffort=X.XX bestGentleStreak=N` computed from best individual's `scenario_scores`. Use same pattern as existing `avgMaxStreak` and `pctInStreak`.
+- [ ] T133 Update call site in `src/autoc.cc` (~line 1188): pass `effortEpsilon` from config to `lexicase_select()`. The existing lambda captures `allScores` which now contains `effortCost` — no additional data plumbing needed.
+- [ ] T134 Build and run all tests: `cd build && make`. Verify `selection_tests` and `fitness_decomposition_tests` pass with new tests. Verify `NN_ELITE_SAME` determinism holds (effort computation must be deterministic).
+- [ ] T135 Training run with effort lexicase (400 gens, pop 3500). Compare fitness curve AND effort metrics vs test4/test7 baseline. Success criteria: mean per-tick effort < 0.5, max gentle streak > 10 ticks, tracking fitness within 80% of baseline (-16k × 0.8 = -12.8k minimum), mean throttle < 0.7 (SC#3 targets < 0.5 but initial target is less aggressive), mean |roll| < 0.5. Verify `NN_ELITE_SAME` determinism. Verify eval determinism (`NN_EVAL_SAME`).
+- [ ] T136 Update `sim_polar_viz.py` to plot `effort` column from data.dat (if present). Add to the NN outputs panel or as a separate subplot showing per-tick effort magnitude. Show gentle streak (ticks below threshold) as a shaded region.
+
+**Checkpoint Phase 9b**: If T135 produces gentle commands with acceptable fitness, proceed to xiao code sync and flight prep (Phase 9). If tracking collapses or spiral returns, revisit cascade ordering per 015 lesson.
+
 ## Phase 9: Polish & Cross-Cutting Concerns
 
 **Purpose**: Flight prep, final validation, documentation, and follow-through on research items.

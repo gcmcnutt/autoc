@@ -23,6 +23,15 @@
 - Q: Bump AircraftState cereal version for new filtered fields? → A: No versioning. Append fields directly. We always retrain from scratch and never deserialize old data.
 - Q: Add SERVO_UPDATE_INTERVAL_MSEC constant for 20Hz MSP cadence? → A: Drop it. No CRRCSim code uses it (per Q1 answer). Avoid dead constants that create confusion about what the sim models.
 
+### Session 2026-04-13 (Change 9 clarifications)
+
+- Q: Should chatter cost be normalized by step count for short scenarios? → A: Raw sum (unnormalized). Short-lived individuals already get punished on tracking. Raw sum naturally correlates with duration — survive longer AND stay smooth wins both dimensions.
+- Q: How should chatter epsilon work in lexicase? → A: Fixed absolute epsilon (not percentage). Chatter has a well-defined scale — use an absolute band (e.g., 5.0 units) so filtering is stable regardless of population smoothness. Set at roughly the p95 level of the population's chatter distribution — only the top 5% smoothest survive chatter filtering passes.
+- Q: Lexicase dimension ordering — intermixed or cascade? → A: Fixed cascade: filter all scenarios on tracking score first, then filter survivors on chatter. Mirrors proven 015 architecture (completion → distance → throttle). Guarantees tracking quality is never sacrificed for smoothness. **NOTE**: if spiral behavior returns (pegged outputs scoring well on chatter), revisit — may need intermixing to break spiral, per 015 lesson where smoothness dimension rewarded Δu=0.
+- Q: lexicase_select() API for cascade? → A: Extend existing function — add a second filtering loop after tracking pass within the same function. Minimal change, no new API surface.
+- Q: Chatter streak class design? → A: New lightweight `StreakAccumulator` struct — just threshold/count/ramp/multiplier/reset. Don't overload FitnessComputer with dummy tracking params. Keep it simple and experimental.
+- Q: Delta-based chatter vs magnitude-based effort? → A: Magnitude-based effort (`sqrt(pitch² + roll² + throttle²)`). Analysis shows the NN holds extreme deflections (|roll|=0.855, throttle=0.670) as its strategy, not just oscillating. Delta-based chatter would miss steady-state extreme commands. Effort penalizes displacement from center regardless of change rate. Renamed from "chatter" to "effort" throughout.
+
 ## Problem
 
 Flight 2026-04-07 (first 022-trained flight) showed control intent but failed
@@ -543,10 +552,10 @@ Order of operations:
   tracking work begins. The 023 hidden-layer sizing is already forward-
   compatible with that work; a deliberate capacity experiment is its own
   feature.
-- **Third lexicase dimension: energy / chatter penalty** (`Σ d²output²`
-  from 022 dev report) — Change 8's authority-limit iteration is 023's
-  hedge against bang-bang. A formal energy lexicase dimension is a
-  post-023 candidate if authority limiting alone is insufficient.
+- ~~Third lexicase dimension: energy / chatter penalty~~ — **PROMOTED to
+  Change 9** (control chatter streak). The pt3 filter experiment (Phase 9a,
+  ABANDONED) showed that mechanically constraining the NN stunts training.
+  Smoothness must come from fitness-based incentives. See Change 9 below.
 
 ## Proposed Changes
 
@@ -654,7 +663,7 @@ before any flight test.
 |---|---|---|---|---|
 | 1 | `gyro_main_lpf_hz` | `25` | `60` (default) or higher | Removes ~4 ms from gyro→xiao path (6.4 ms → 2.65 ms) |
 | 2 | `setpoint_kalman_enabled` | `ON` | `OFF` | Removes an adaptive Kalman stage on `gyroADCf` — state-dependent group delay. This is NOT a setpoint filter despite the name; it operates on gyro measurements. Should never have been on for NN use. |
-| 3 | `rc_filter_lpf_hz` | `250` | `20` | **SUPERSEDED by Phase 9a** — originally recommended 0 (disable) to remove delay. Now set to 20Hz for intentional command smoothing to eliminate bang-bang control. Modeled in CRRCSim pt3 filter. Adds ~8ms group delay (accepted as beneficial). |
+| 3 | `rc_filter_lpf_hz` | `250` | `250` (no change) | Phase 9a (pt3 filter) ABANDONED — training stunted. Leave at 250Hz (near-passthrough). Original recommendation was 0 (disable); 20Hz was tried and reverted. No sim-side RC filter modeling. |
 | 4 | `dynamic_gyro_notch_enabled` | *(unknown)* | `OFF` for fixed-wing | Dynamic notches are primarily for multirotor vibration rejection; our airframe and NN input are not sensitive to 100 Hz+ spectra. Also removes a state-dependent secondary dynamic notch that runs regardless of the enable flag. |
 | 5 | `failsafe_recovery_delay` | `5` (500 ms) | `0` (**bench only**) | **CONFIRMED root cause of the 750 ms engage delay**, but with a nuance. See `docs/failsafe-behavior-audit.md`. Setting to 0 drops engage delay from ~760 ms to ~260 ms (not to zero — see notes below). Change ONLY `xiao/inav-bench.cfg`, NOT `inav-hb1.cfg`. Current DROP failsafe config makes this safe under all scenarios. Revert before any field test. |
 
@@ -942,7 +951,7 @@ regimes:
 These are Phase 2 additions — land after the base 5-path retrain stabilizes
 under the new representation.
 
-### Change 8: Authority-Limit Iteration (Energy / Bang-Bang)
+### Change 8: Authority-Limit Iteration (Energy / Bang-Bang) — DEFERRED TO 024
 
 **Hypothesis**: The 10 Hz sample rate creates a tendency for the NN to
 overcorrect — commanding full surface throw in one tick, compensating the
@@ -985,11 +994,123 @@ configuration knob on the NN output boundary. If the iterative approach
 validates that limiting authority helps, we can consider adding
 `max(|output|)` or `Σ d²output²` as a lexicase dimension in a follow-up.
 
-**Configuration**:
+**DEFERRED**: Change 9 (control chatter streak lexicase) is now the primary
+approach to bang-bang control in 023. Authority limiting moves to 024 as a
+complement to craft parameter variations. See `remaining-work.md`.
+
+**Configuration** (when implemented in 024):
 - Add `NNAuthorityLimit = 1.0` to `autoc.ini` (default = no limit).
 - Applied as `output = tanh(raw) * NNAuthorityLimit` before interpretation
   in sim bridge AND on xiao. Must be identical both sides.
 - Xiao-side env var or hardcoded constant matching training value.
+
+### Change 9: Control Effort Streak — Lexicase Minimum-Effort Dimension
+
+**Motivation**: test4/test7 training achieves strong fitness (-16k+) but the
+NN uses extreme commands as its primary strategy.  Analysis shows:
+- Roll |mean| = 0.855 — held at near-full deflection 75% of ticks
+- Throttle mean = 0.670 — near full power 93% of ticks
+- Near-center commands (|pitch|<0.3 AND |roll|<0.3): only 0-3% of ticks
+- Extreme commands (|pitch|>0.7 OR |roll|>0.7): 80-93% even during BEST tracking
+
+The problem is not oscillation (delta-based chatter) — the NN holds steady
+at extreme deflections.  The pt3 RC filter experiment (Phase 9a, ABANDONED)
+showed that mechanically constraining commands stunts training.  The NN must
+learn on its own that minimal control effort is better.
+
+**Approach**: Add a second lexicase dimension per scenario measuring total
+control effort (command magnitude), using the same streak/multiplier
+architecture as tracking fitness.
+
+**Per-tick effort score** (normalized to [0, 1]):
+```
+effortScore = 1.0 - sqrt(pitch² + roll² + throttle²) / sqrt(3)
+```
+
+All three NN outputs are in [-1, 1] (confirmed in COORDINATE_CONVENTIONS.md).
+- All centered (0,0,0): effortScore = 1.0 (perfect, zero effort)
+- Cruise throttle only (0,0,0.2): effortScore = 0.88 (nearly free)
+- Moderate maneuver (0.3,0,0.2): effortScore = 0.79 (gentle)
+- Current NN typical (0.5,0.85,0.67): effortScore = 0.31 (poor)
+- Full deflection (1,1,1): effortScore = 0.0 (maximum effort)
+
+This penalizes BOTH sustained extreme commands AND oscillating extreme
+commands.  Whether the NN holds roll at 0.9 or alternates ±0.9, both
+score poorly.  Gentle commands near center score well.  When craft
+variations later add trim offsets, a small steady offset to compensate
+scores nearly 1.0 — big deflections remain expensive.
+
+**Effort streak** (parallels tracking streak):
+- If `effortScore >= EffortStreakThreshold`: gentle tick, streak continues,
+  multiplier ramps toward `EffortStreakMultiplierMax`
+- If `effortScore < EffortStreakThreshold`: high-effort tick, streak resets
+
+**Per-tick accumulated**: `effortScore * streak_multiplier`.  When in a
+gentle streak, the multiplier grows and the score compounds — sustained
+gentle control is rewarded exponentially.  One big deflection resets the
+multiplier.
+
+**Per-scenario effort**: `sum(effortScore[t] * multiplier[t])` across all
+ticks.  Higher = better (more gentle).  For lexicase filtering (lower =
+better convention), negate: `effortCost = -sum(effortScore[t] * multiplier[t])`.
+Skip the first tick after engage transition.
+
+**Lexicase integration**: Fixed cascade (same architecture as 015 Phase 4b):
+1. Filter all scenarios on tracking score (primary) — percentage epsilon ~0.05
+2. Filter survivors on effort cost (secondary) — fixed absolute epsilon ~5.0
+
+The cascade guarantees tracking quality is never sacrificed for efficiency.
+Effort only discriminates among equally-good trackers.
+
+**Epsilon design**: Tracking uses percentage-based epsilon (~5% of best score,
+min 0.5).  Effort uses **fixed absolute epsilon** (e.g., 5.0 effort units)
+because the effort scale is well-defined ([0, ~250] for a full scenario at
+max effort).  The absolute band targets roughly the p95 level of the
+population — only the top ~5% most efficient survivors from tracking
+filtering win the effort pass.
+
+**Spiral risk note**: 015 found that smoothness-as-lexicase rewarded pegged
+outputs (Δu=0 = perfectly smooth spiral).  Effort-based approach is LESS
+susceptible — a spiral with constant roll=1.0 and throttle=1.0 scores
+effort=1.41 per tick, which is very expensive.  A spiral with gentle commands
+would score low effort but also poor tracking (can't maintain spiral with
+gentle commands).  The tracking cascade filters first, so non-tracking
+spirals lose before effort matters.  If spiral behavior returns, switch to
+intermixed shuffle per the 015 lesson.
+
+**Configuration**:
+```ini
+EffortStreakThreshold        = 0.95   # effortScore above which = "gentle" tick (~p95 of sqrt(3))
+EffortStreakRampSec          = 5.0    # seconds to reach max multiplier
+EffortStreakMultiplierMax    = 5.0    # max multiplier for sustained gentle control
+EffortLexicaseEpsilon        = 5.0    # absolute effort units (fixed, not percentage)
+```
+
+**Threshold rationale**: 0.95 means the NN must keep command magnitude below
+sqrt(3) * (1 - 0.95) = 0.087 — roughly ±0.05 per axis.  This is the p95
+of "near-centered."  Current NN hits this on only ~5% of ticks.  The streak
+multiplier ramps over 5 seconds (50 ticks) to 5x — sustained gentle control
+for 5 seconds multiplies the effort score by 5x.  One big deflection resets.
+
+**Disable behavior**: When `EffortStreakThreshold ≤ 0` OR `EffortLexicaseEpsilon ≤ 0`,
+effort dimension is disabled entirely — all ticks are gentle, effortCost=0,
+lexicase skips the effort filtering pass.  This preserves backwards
+compatibility and enables A/B testing by config alone.
+
+**Data model**: Add `chatterCost` field to `ScenarioScore`.  Add per-gen
+chatter stats to `data.stc` logging.  Add per-tick `du` to `data.dat` for
+visualization.
+
+**Implementation**: Reuse the `FitnessComputer` streak pattern — either a
+second instance or a generic streak class parameterized by threshold/ramp/max.
+The chatter streak runs inside `computeScenarioScores()` alongside the
+existing tracking streak.
+
+**Empirical baseline** (from test4/test7 data.dat analysis):
+- Current median chatter/tick: 1.9 (threshold 0.3 → only 12% of ticks are "smooth")
+- Current max smooth streak: median 2 ticks
+- Path 3 (simplest geometry): 31% smooth, mean chatter 1.34
+- Target: median chatter/tick < 0.5, smooth streak > 10 ticks
 
 ### Prerequisite: Type-Safe NN Sensor Interface
 
@@ -1479,18 +1600,14 @@ thanks to the 022 conical surface — evidence for "we need floor pressure"
 is weak until we see a Phase 3+ run stall the same way betterz1 did. Park
 as a candidate for Phase 5+ if brittleness persists.
 
-### Third Lexicase Dimension — Energy / Chatter Penalty
+### ~~Third Lexicase Dimension — Energy / Chatter Penalty~~ PROMOTED
 
-The 022 dev report proposes `Σ d²output²` (second-derivative of control
-outputs) as an energy proxy that penalizes bang-bang without penalizing
-sustained maneuvers. See the development report for the worked examples
-and path-fairness analysis.
-
-**Why not in 023 main path**: Change 8 (authority-limit iteration) is
-023's bang-bang hedge, and it's expected to give a stronger signal
-because it's a hard cap rather than a tuning knob. If the authority-limit retrain shows
-authority limiting is insufficient or produces side effects, re-open
-the energy lexicase dimension as a follow-up.
+**Promoted to Change 9** as "Control Chatter Streak."  The original
+`Σ d²output²` proposal evolved into a streak-based approach using
+`sqrt(du_pitch² + du_roll² + du_throttle²)` per tick with a multiplier
+that rewards sustained smoothness.  The pt3 filter experiment showed
+that mechanical smoothing stunts training; fitness-based incentives are
+the correct path.  See Change 9 in Proposed Changes.
 
 ### Wider NN Capacity Experiment
 

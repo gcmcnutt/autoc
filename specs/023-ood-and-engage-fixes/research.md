@@ -250,9 +250,71 @@ All five are below the action threshold for 023. They don't block any
 implementation decision. If a later iteration cares, the audit doc has the
 specific file:line references to trace them.
 
+---
+
+## Change 9: Control Chatter Streak (2026-04-13)
+
+### Decision 1: Chatter Metric Formula
+
+**Decision**: `du = sqrt(du_pitch² + du_roll² + du_throttle²)` — 3D Euclidean distance in command space per tick.
+
+**Rationale**: All three NN outputs are in [-1, 1] (tanh, confirmed in COORDINATE_CONVENTIONS.md lines 43-44, 66). Same scale, no normalization needed. Euclidean distance treats coordinated maneuvers as a single diagonal move. Max delta = sqrt(4+4+4) = 3.46.
+
+**Alternatives considered**:
+- Manhattan distance: over-penalizes coordinated turns
+- FFT frequency analysis: overkill — tick-to-tick delta captures oscillation directly
+- `d²output²` (second derivative): more complex, same signal
+
+### Decision 2: Streak vs Raw Sum
+
+**Decision**: Streak-based accumulation with multiplier, paralleling the tracking streak.
+
+**Rationale**: Rewards *sustained* gentle control, not just average smoothness. Reuses `FitnessComputer` streak pattern (threshold → multiplier ramp → reset). Polarity inverted: low `du` is good (streak continues), high `du` resets. Cost per tick = `du / multiplier`.
+
+**Alternatives considered**:
+- Raw sum: no compounding incentive for sustained smoothness
+- pt3 LPF: ABANDONED — mechanically constraining the NN stunts training (test6)
+
+### Decision 3: Lexicase Integration
+
+**Decision**: Modify `lexicase_select()` to iterate `(scenario, dimension)` pairs. Each real scenario contributes two filtering passes (tracking score + chatter cost) in shuffled order.
+
+**Rationale**: Explicit, clean. The existing single-dimension loop extends naturally. Alternative (flattening to virtual scenarios) obscures the structure.
+
+### Decision 4: Engage Transition
+
+**Decision**: Skip first tick after engage when computing chatter. Initialize "previous commands" from engage coast values.
+
+**Rationale**: The NN's first command after 750ms coast is a legitimate handoff, not bang-bang.
+
+### Decision 5: Config Values
+
+**Decision**: `ChatterStreakThreshold=0.3`, `ChatterStreakRampSec=3.0`, `ChatterStreakMultiplierMax=3.0`.
+
+**Rationale** (from test4 empirical analysis):
+- Current: 12% of ticks < 0.3 threshold, median du=1.9, median streak=2
+- Threshold 0.3 ≈ ~10% per-axis change per tick
+- 3.0s ramp = 30 ticks sustained smoothness for max discount
+- 3.0 max multiplier (vs 5.0 for tracking — slightly lower to avoid chatter dominating)
+
+### Decision 6: Data Logging
+
+**Decision**: Add `du` to data.dat, `avgChatter`+`bestChatterStreak` to data.stc. No S3 changes.
+
+### Decision 7: Previous Command Access
+
+**Decision**: Use `aircraftStates[stepIndex-1].getPitchCommand()` etc. Already available in the iteration vector — no new state.
+
+### Empirical Baseline (test4/test7)
+
+```
+Overall (245 scenarios, ~33k ticks):
+  Mean chatter/tick: p50=1.905  (target: <0.5)
+  Max smooth streak: p50=2      (target: >10)
+  Pct smooth (<0.3): p50=11%    (target: >50%)
+```
+
 ## Next steps
 
-Proceed to `/speckit.tasks` to generate the actionable task breakdown from
-this research + plan + spec + data-model + contracts. Tasks should map 1:1
-to the migration orders in this research document (Phase 0b 8-step refactor,
-Phase 0a 3-step type-safe refactor) plus the contract verification tests.
+Proceed to `/speckit.tasks` to generate the task breakdown for Change 9
+implementation.

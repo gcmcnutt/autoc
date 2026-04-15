@@ -321,23 +321,33 @@ table and training sees all of them).
 
 ---
 
-## 6. `ScenarioScore` (unchanged from 022)
+## 6. `ScenarioScore` (UPDATED — Change 9 chatter dimension)
 
-Kept for reference — 022 already simplified this to:
+Extended with chatter streak metrics for lexicase 2-dim selection:
 
 ```cpp
 struct ScenarioScore {
-    double score;            // negated points, lower = better
+    double score;            // negated tracking points, lower = better
     bool crashed;
     int steps_completed;
-    // Streak diagnostics (post-022):
-    int max_streak;
-    int total_streak_steps;
-    double max_multiplier;
+    int steps_total;
+    // Tracking streak diagnostics:
+    int maxStreak;
+    int totalStreakSteps;
+    double maxMultiplier;
+    // Control effort dimension (Change 9):
+    double effortCost;       // sum(effort[t] / effortMultiplier[t]), lower = gentler
+    int maxGentleStreak;     // longest run of ticks with effort < threshold
+    int totalGentleTicks;    // total ticks below threshold
 };
 ```
 
-No changes in 023.
+**effortCost**: Per-tick command magnitude `effort = sqrt(pitch² + roll²
++ throttle²)` accumulated with a streak multiplier that discounts sustained
+gentle control.  Lower = better.  Skip first tick after engage.
+
+**Lexicase**: `score` (primary, eps ~0.05) then `effortCost` (secondary,
+eps ~5.0 absolute).  Individuals with equal tracking but gentler control win.
 
 ### New invariant (Phase 0b acceptance test)
 
@@ -366,6 +376,13 @@ EngageDelayMs                   = 750       # ms, set to 0 to disable
 # or xiao servo output. Default 1.0 = no limit. Reduced to 0.5 in Change 8
 # iteration if baseline shows saturation / bang-bang behavior.
 NNAuthorityLimit                = 1.0       # dimensionless, [0.0, 1.0]
+
+# Control effort streak (Change 9) — lexicase minimum-effort dimension
+# effort = sqrt(pitch² + roll² + throttle²) per tick (command magnitude)
+EffortStreakThreshold           = 0.4       # 3D magnitude below which = "gentle" tick
+EffortStreakRampSec             = 3.0       # seconds to reach max multiplier
+EffortStreakMultiplierMax       = 3.0       # max discount factor for sustained gentle control
+EffortLexicaseEpsilon           = 5.0       # absolute effort units for lexicase filtering
 ```
 
 ### Config validation
