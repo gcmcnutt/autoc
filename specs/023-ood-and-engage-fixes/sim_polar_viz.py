@@ -129,16 +129,22 @@ def plot_scenario(scn_rows, col, title, out_path, path_label=''):
     plt.colorbar(sc, ax=ax2, shrink=0.7, label='roll cmd')
 
     # ── Panel 3 (top-right): Direction cosine scatter (X vs Z, color=pitch) ──
+    # Y-axis inverted so "target ABOVE aircraft" appears at top of plot
+    # (tgZ is body-down: +Z = below, −Z = above). This matches pilot-view intuition.
     ax3 = fig.add_subplot(gs[0, 2])
     sc2 = ax3.scatter(tgX0, tgZ0, c=outPt, cmap='coolwarm', s=15, vmin=-1, vmax=1, alpha=0.7)
     ax3.set_xlabel('target_x (body forward)')
-    ax3.set_ylabel('target_z (body down)')
-    ax3.set_title('Direction cosines X vs Z\ncolor = pitch cmd')
+    ax3.set_ylabel('target_z (body down; + = BELOW, − = ABOVE)')
+    ax3.set_title('Direction cosines X vs Z\ncolor = pitch cmd — y-axis inverted (up = ABOVE)')
     ax3.set_xlim(-1.1, 1.1)
-    ax3.set_ylim(-1.1, 1.1)
+    ax3.set_ylim(1.1, -1.1)  # inverted: negative (above) at top
     ax3.set_aspect('equal')
     ax3.axhline(0, color='gray', linewidth=0.5, alpha=0.3)
     ax3.axvline(0, color='gray', linewidth=0.5, alpha=0.3)
+    ax3.text(0.02, 0.97, 'target ABOVE', transform=ax3.transAxes,
+             fontsize=7, color='gray', va='top', ha='left')
+    ax3.text(0.02, 0.03, 'target BELOW', transform=ax3.transAxes,
+             fontsize=7, color='gray', va='bottom', ha='left')
     circle2 = plt.Circle((0, 0), 1.0, fill=False, color='gray', linestyle='--', alpha=0.3)
     ax3.add_patch(circle2)
     ax3.grid(alpha=0.3)
