@@ -86,16 +86,16 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
 
     // Main function
     code << "gp_scalar " << functionName << "(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {\n";
-    code << "    float inputs[" << genome.topology.front() << "];\n";
+    code << "    NNInputs inputs = {};\n";
     code << "    nn_gather_inputs(pathProvider, aircraftState, inputs);\n\n";
     code << "    float outputs[" << genome.topology.back() << "];\n";
-    code << "    nn_forward(nn_weights, getTopology(), inputs, outputs);\n\n";
+    code << "    nn_forward(nn_weights, getTopology(), reinterpret_cast<const float*>(&inputs), outputs);\n\n";
     code << "    // Set control commands: pitch, roll, throttle (already [-1,1] via tanh)\n";
     code << "    aircraftState.setPitchCommand(static_cast<gp_scalar>(outputs[0]));\n";
     code << "    aircraftState.setRollCommand(static_cast<gp_scalar>(outputs[1]));\n";
     code << "    aircraftState.setThrottleCommand(static_cast<gp_scalar>(outputs[2]));\n\n";
     code << "    // Capture I/O for telemetry logging\n";
-    code << "    aircraftState.setNNData(inputs, " << genome.topology.front() << ", outputs, " << genome.topology.back() << ");\n\n";
+    code << "    aircraftState.setNNData(inputs, outputs, " << genome.topology.back() << ");\n\n";
     code << "    return static_cast<gp_scalar>(outputs[0]); // return pitch for compatibility\n";
     code << "}\n\n";
 
@@ -147,15 +147,16 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     // Main function with unrolled loops
     int max_layer = *std::max_element(genome.topology.begin(), genome.topology.end());
     code << "gp_scalar " << functionName << "(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {\n";
-    code << "    float inputs[" << genome.topology.front() << "];\n";
-    code << "    nn_gather_inputs(pathProvider, aircraftState, inputs);\n\n";
+    code << "    NNInputs inputs = {};\n";
+    code << "    nn_gather_inputs(pathProvider, aircraftState, inputs);\n";
+    code << "    const float* input_floats = reinterpret_cast<const float*>(&inputs);\n\n";
 
     // Layer buffers — fixed-size on stack
     code << "    float buf_a[" << max_layer << "], buf_b[" << max_layer << "];\n\n";
 
     // Copy inputs to buf_a
     code << "    // Copy inputs\n";
-    code << "    for (int i = 0; i < " << genome.topology.front() << "; i++) buf_a[i] = inputs[i];\n\n";
+    code << "    for (int i = 0; i < " << genome.topology.front() << "; i++) buf_a[i] = input_floats[i];\n\n";
 
     // Unrolled layer computation
     int weight_offset = 0;
@@ -192,7 +193,7 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     code << "    aircraftState.setRollCommand(static_cast<gp_scalar>(" << result_buf << "[1]));\n";
     code << "    aircraftState.setThrottleCommand(static_cast<gp_scalar>(" << result_buf << "[2]));\n\n";
     code << "    // Capture I/O for telemetry logging\n";
-    code << "    aircraftState.setNNData(inputs, 29, " << result_buf << ", 3);\n\n";
+    code << "    aircraftState.setNNData(inputs, " << result_buf << ", 3);\n\n";
     code << "    return static_cast<gp_scalar>(" << result_buf << "[0]); // return pitch for compatibility\n";
     code << "}\n\n";
 

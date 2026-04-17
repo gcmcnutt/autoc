@@ -2,6 +2,7 @@
 #include <autoc/eval/aircraft_state.h>
 #include <embedded_pathgen_selector.h>
 #include <autoc/eval/sensor_math.h>
+#include <autoc/nn/nn_input_computation.h>
 #include <nn_program.h>
 #include <mbed.h>
 #include <vector>
@@ -26,7 +27,7 @@ static bool test_origin_set = false;
 static unsigned long rabbit_start_time = 0;
 static volatile bool rabbit_active = false;
 static int current_path_index = 0;
-constexpr gp_scalar XIAO_RABBIT_SPEED_MPS = 13.0f;  // Rabbit speed for xiao (m/s)
+constexpr gp_scalar XIAO_RABBIT_SPEED_MPS = 12.0f;  // Rabbit speed for xiao (m/s) — matches autoc.ini RabbitSpeedNominal
 static gp_scalar rabbit_odometer = 0.0f;             // Distance along path (meters)
 static int selected_path_index = 0;  // Path selected from RC channel (0-5)
 static bool servo_reset_required = false;
@@ -254,18 +255,27 @@ static void mspUpdateNavControl()
     VectorPathProvider pathProvider(flight_path, aircraft_state.getThisPathIndex());
     uint32_t eval_start_us = micros();
 
-    // TODO(023): Update to direction cosines (computeTargetDir) and new
-    // recordErrorHistory(dir, dist, timeMs) signature. Requires nn_input_computation.h
-    // and updated NNInputs struct on xiao. For now, keep old atan2-based code — xiao
-    // uses its own generated NN program, not the shared evaluator.
-    gp_scalar dphi_now = executeGetDPhi(pathProvider, aircraft_state, rabbit_odometer, 0.0f);
-    gp_scalar dtheta_now = executeGetDTheta(pathProvider, aircraft_state, rabbit_odometer, 0.0f);
+    // Direction cosines: compute target unit vector in body frame (023)
+    // Same pattern as minisim.cc and crrcsim inputdev_autoc.cpp
     gp_vec3 targetPos = getInterpolatedTargetPosition(
         pathProvider, rabbit_odometer, 0.0f);
-    gp_scalar dist_now = (targetPos - aircraft_state.getPosition()).norm();
+    gp_vec3 craftToTarget = targetPos - aircraft_state.getPosition();
+    gp_vec3 target_local = aircraft_state.getOrientation().inverse() * craftToTarget;
+    float dist_now = static_cast<float>(target_local.norm());
 
-    // Capture temporal history before NN evaluation
-    aircraft_state.recordErrorHistory(dphi_now, dtheta_now, dist_now, millis());
+    // Path tangent for singularity fallback (dist < 1e-4m)
+    gp_vec3 posAhead = getInterpolatedTargetPosition(pathProvider, rabbit_odometer, 0.5f);
+    gp_vec3 tangent = posAhead - targetPos;
+    double tn = tangent.norm();
+    gp_vec3 tangent_body = (tn > 1e-6)
+        ? aircraft_state.getOrientation().inverse() * (tangent / tn)
+        : gp_vec3::UnitX();
+
+    gp_vec3 dir = computeTargetDir(target_local, dist_now, tangent_body);
+
+    // Record direction cosines to temporal history before NN evaluation
+    aircraft_state.setRabbitPosition(targetPos);
+    aircraft_state.recordErrorHistory(dir, dist_now, millis());
 
     // Run NN: gathers 33 inputs, forward pass, sets pitch/roll/throttle commands
     generatedNNProgram(pathProvider, aircraft_state, 0.0f);
@@ -277,23 +287,31 @@ static void mspUpdateNavControl()
     updateCachedCommands(roll_cmd, pitch_cmd, throttle_cmd, eval_start_us);
     pipeEvalEndUs = micros();
 
-    // Log compact NN I/O: 27 inputs, 3 outputs (tanh), 3 RC commands
-    // Inputs: [0-5]dPhi [6-11]dTheta [12-17]dist [18]dDist/dt [19-22]quat [23]airspeed [24-26]gyro(p,q,r rad/s)
-    const float* in = aircraft_state.getNNInputs();
+    // Log compact NN I/O: 33 inputs, 3 outputs (tanh), 3 RC commands
+    // Inputs (023 direction cosines):
+    //  [0-5]  target_x  body-frame unit-vec x (history + forecast)
+    //  [6-11] target_y  body-frame unit-vec y
+    //  [12-17] target_z body-frame unit-vec z
+    //  [18-23] dist     raw metres
+    //  [24]   closing_rate (m/s, + = approaching)
+    //  [25-28] quat w,x,y,z
+    //  [29]   airspeed (m/s)
+    //  [30-32] gyro p,q,r (rad/s)
+    const float* in = reinterpret_cast<const float*>(&aircraft_state.getNNInputs());
     const float* out = aircraft_state.getNNOutputs();
     logPrint(INFO,
-             "NN: idx=%d in=[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f,%.2f,%.3f,%.3f,%.3f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d] rabbit=[%.2f,%.2f,%.2f]",
+             "NN: idx=%d tX=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tY=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tZ=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] d=[%.1f,%.1f,%.1f,%.1f,%.1f,%.1f] cr=%.2f q=[%.3f,%.3f,%.3f,%.3f] as=%.1f g=[%.2f,%.2f,%.2f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d]",
              current_path_index,
-             in[0], in[1], in[2], in[3], in[4], in[5],       // dPhi history+forecast
-             in[6], in[7], in[8], in[9], in[10], in[11],     // dTheta history+forecast
-             in[12], in[13], in[14], in[15], in[16], in[17],  // dist history+forecast
-             in[18],                                           // dDist/dt
-             in[19], in[20], in[21], in[22],                   // quaternion w,x,y,z
-             in[23],                                           // airspeed
-             in[24], in[25], in[26],                           // gyro p,q,r (rad/s, standard aerospace RHR)
+             in[0], in[1], in[2], in[3], in[4], in[5],       // target_x
+             in[6], in[7], in[8], in[9], in[10], in[11],     // target_y
+             in[12], in[13], in[14], in[15], in[16], in[17],  // target_z
+             in[18], in[19], in[20], in[21], in[22], in[23],  // dist
+             in[24],                                           // closing_rate
+             in[25], in[26], in[27], in[28],                   // quaternion w,x,y,z
+             in[29],                                           // airspeed
+             in[30], in[31], in[32],                           // gyro p,q,r (rad/s)
              out[0], out[1], out[2],                           // NN outputs (tanh)
-             roll_cmd, pitch_cmd, throttle_cmd,                // RC commands
-             targetPos.x(), targetPos.y(), targetPos.z());     // rabbit world position (origin-relative)
+             roll_cmd, pitch_cmd, throttle_cmd);               // RC commands
   }
 }
 
@@ -448,6 +466,23 @@ void mspUpdateState()
       pipelineStats.reset();
       // No ticker — single 20Hz loop in controllerUpdate() handles sends
       current_path_index = 0;
+
+      // Pre-fill history buffer with initial geometry so the NN starts with
+      // consistent direction cosines instead of zeros (023 resetHistory).
+      // Same pattern as CRRCSim engage — uses path[0].start as target,
+      // path tangent as singularity fallback.
+      if (!flight_path.empty()) {
+        gp_vec3 pathStart = flight_path[0].start;
+        gp_vec3 tangent;
+        if (flight_path.size() > 1)
+          tangent = flight_path[1].start - flight_path[0].start;
+        else
+          tangent = gp_vec3::UnitX();
+        double tn = tangent.norm();
+        if (tn > 1e-6) tangent = tangent / tn;
+        else tangent = gp_vec3::UnitX();
+        aircraft_state.resetHistory(pathStart, tangent);
+      }
 
       state.autoc_enabled = true;
       servo_reset_required = false;

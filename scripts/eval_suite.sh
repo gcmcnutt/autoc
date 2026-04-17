@@ -12,7 +12,7 @@
 # Results stored in: eval-results/<timestamp>/
 #   ├── config.txt          # combined config used
 #   ├── tier0-repro/        # exact seed repro — must match stored fitness bitwise
-#   ├── tier1-aeroStandard/ # 6 paths × 49 winds = 294 flights, novel seed
+#   ├── tier1-aeroStandard/ # 5 paths × 49 winds = 245 flights, novel seed
 #   ├── tier2-progressive/  # 1 path × 49 winds
 #   ├── tier2-long/         # 1 path × 49 winds
 #   ├── tier2-random/       # 12 paths × 12 winds = 144 flights
@@ -97,6 +97,10 @@ run_eval() {
     [[ -f eval-data.dat ]] && mv eval-data.dat "$outdir/data.dat"
     [[ -f eval-data.stc ]] && mv eval-data.stc "$outdir/data.stc"
 
+    # Extract S3 key for renderer visualization
+    local s3_key
+    s3_key=$(grep "S3 upload:" "$outdir/console.log" 2>/dev/null | head -1 | awk '{print $NF}' | sed 's|/gen[0-9]*\.dmp$||')
+
     # Extract summary stats from log
     local ok_count=0 crash_count=0 total=0
     ok_count=$(grep -c " OK " "$outdir/console.log" 2>/dev/null || true)
@@ -105,25 +109,23 @@ run_eval() {
     crash_count=${crash_count:-0}
     total=$((ok_count + crash_count))
 
-    # Extract aggregate metrics from last eval block
-    local avg_dist avg_thr avg_att avg_sm_p avg_sm_r avg_sm_t
+    # Extract aggregate metrics from per-scenario log lines
+    # Format: [N] OK score=-1234.56 maxStrk=42 strkSteps=180 maxMult=3.2
+    local avg_score avg_maxStrk avg_strkSteps avg_maxMult
     eval_stats=$(grep -E "\] (OK|CRASH)" "$outdir/console.log" | awk '{
         for(i=1;i<=NF;i++) {
-            if($i~/^dist=/) d+=substr($i,6)+0;
-            if($i~/^att=/) a+=substr($i,5)+0;
-            if($i~/^thr=/) t+=substr($i,5)+0;
-            if($i~/^sm=/) {
-                split(substr($i,4), s, "/");
-                sp+=s[1]; sr+=s[2]; st+=s[3];
-            }
+            if($i~/^score=/) sc+=substr($i,7)+0;
+            if($i~/^maxStrk=/) ms+=substr($i,9)+0;
+            if($i~/^strkSteps=/) ss+=substr($i,11)+0;
+            if($i~/^maxMult=/) mm+=substr($i,9)+0;
         }
         n++
     } END {
-        if(n>0) printf "%.1f %.2f %.2f %.2f %.2f %.2f", d/n, a/n, t/n, sp/n, sr/n, st/n;
-        else printf "0 0 0 0 0 0"
+        if(n>0) printf "%.1f %.1f %.1f %.2f", sc/n, ms/n, ss/n, mm/n;
+        else printf "0 0 0 0"
     }')
 
-    read avg_dist avg_att avg_thr avg_sm_p avg_sm_r avg_sm_t <<< "$eval_stats"
+    read avg_score avg_maxStrk avg_strkSteps avg_maxMult <<< "$eval_stats"
 
     # Determine pass/fail
     local completion_pct=0
@@ -131,8 +133,9 @@ run_eval() {
 
     local result="PASS"
     # Tier-specific pass criteria
+    # score is negative (lower = better), maxStrk is in ticks (higher = better)
     case "$name" in
-        tier1-*) [[ $(echo "$completion_pct < 95" | bc -l) -eq 1 || $(echo "$avg_dist > 15" | bc -l) -eq 1 ]] && result="FAIL" ;;
+        tier1-*) [[ $(echo "$completion_pct < 95" | bc -l) -eq 1 ]] && result="FAIL" ;;
         tier2-*|tier3-stress*) [[ $(echo "$completion_pct < 95" | bc -l) -eq 1 ]] && result="FAIL" ;;
         tier3-quiet*) [[ $crash_count -gt 0 ]] && result="FAIL" ;;
     esac
@@ -142,16 +145,18 @@ run_eval() {
 Test: $name
 Result: $result
 Flights: $total  OK: $ok_count  CRASH: $crash_count  Completion: ${completion_pct}%
-Avg dist: ${avg_dist}m  att: $avg_att  thr: $avg_thr
-Smoothness: pitch=$avg_sm_p  roll=$avg_sm_r  thr=$avg_sm_t
+Avg score: $avg_score  maxStrk: $avg_maxStrk  strkSteps: $avg_strkSteps  maxMult: $avg_maxMult
 SUMMARY
     cat "$outdir/summary.txt"
     echo ""
 
     # Append to overall summary
-    printf "%-25s %s  %3d/%3d (%5.1f%%)  dist=%5.1f  thr=%4.2f  sm_t=%4.2f\n" \
+    printf "%-25s %s  %3d/%3d (%5.1f%%)  score=%7.1f  strk=%5.1f  mult=%4.2f\n" \
         "$name" "$result" "$ok_count" "$total" "$completion_pct" \
-        "$avg_dist" "$avg_thr" "$avg_sm_t" >> "$RESULTS_DIR/summary.txt"
+        "$avg_score" "$avg_maxStrk" "$avg_maxMult" >> "$RESULTS_DIR/summary.txt"
+    if [[ -n "$s3_key" ]]; then
+        echo "  build/renderer -i $overlay -k ${s3_key}/" >> "$RESULTS_DIR/summary.txt"
+    fi
 }
 
 # ============================================================================
@@ -173,6 +178,10 @@ run_tier0() {
     cp "$RESULTS_DIR/tier0-repro.ini" "$outdir/overlay.ini"
     $AUTOC -i "$RESULTS_DIR/tier0-repro.ini" > "$outdir/console.log" 2>&1 || true
 
+    # Extract S3 key for renderer visualization
+    local s3_key
+    s3_key=$(grep "S3 upload:" "$outdir/console.log" 2>/dev/null | head -1 | awk '{print $NF}' | sed 's|/gen[0-9]*\.dmp$||')
+
     # Extract eval fitness and stored fitness
     local eval_fitness stored_fitness
     eval_fitness=$(grep "NN Eval fitness:" "$outdir/console.log" | head -1 | awk '{print $NF}')
@@ -193,7 +202,7 @@ SUMMARY
     cat "$outdir/summary.txt"
     echo ""
 
-    local ok_count=0 crash_count=0 total=0 avg_dist=0 avg_thr=0 avg_sm_t=0
+    local ok_count=0 crash_count=0 total=0
     ok_count=$(grep -c " OK " "$outdir/console.log" 2>/dev/null || true)
     crash_count=$(grep -c " CRASH " "$outdir/console.log" 2>/dev/null || true)
     ok_count=${ok_count:-0}
@@ -202,22 +211,26 @@ SUMMARY
     local completion_pct=0
     [[ $total -gt 0 ]] && completion_pct=$(echo "scale=1; $ok_count * 100 / $total" | bc)
 
+    local avg_score avg_maxStrk avg_maxMult
     eval_stats=$(grep -E "\] (OK|CRASH)" "$outdir/console.log" 2>/dev/null | awk '{
         for(i=1;i<=NF;i++) {
-            if($i~/^dist=/) d+=substr($i,6)+0;
-            if($i~/^thr=/) t+=substr($i,5)+0;
-            if($i~/^sm=/) { split(substr($i,4), s, "/"); st+=s[3]; }
+            if($i~/^score=/) sc+=substr($i,7)+0;
+            if($i~/^maxStrk=/) ms+=substr($i,9)+0;
+            if($i~/^maxMult=/) mm+=substr($i,9)+0;
         }
         n++
     } END {
-        if(n>0) printf "%.1f %.2f %.2f", d/n, t/n, st/n;
+        if(n>0) printf "%.1f %.1f %.2f", sc/n, ms/n, mm/n;
         else printf "0 0 0"
     }' || echo "0 0 0")
-    read avg_dist avg_thr avg_sm_t <<< "$eval_stats"
+    read avg_score avg_maxStrk avg_maxMult <<< "$eval_stats"
 
-    printf "%-25s %s  %3d/%3d (%5.1f%%)  dist=%5.1f  thr=%4.2f  sm_t=%4.2f  fitness=%s\n" \
+    printf "%-25s %s  %3d/%3d (%5.1f%%)  score=%7.1f  strk=%5.1f  mult=%4.2f  fitness=%s\n" \
         "tier0-repro" "$result" "$ok_count" "$total" "$completion_pct" \
-        "$avg_dist" "$avg_thr" "$avg_sm_t" "$eval_fitness" >> "$RESULTS_DIR/summary.txt"
+        "$avg_score" "$avg_maxStrk" "$avg_maxMult" "$eval_fitness" >> "$RESULTS_DIR/summary.txt"
+    if [[ -n "$s3_key" ]]; then
+        echo "  build/renderer -i $RESULTS_DIR/tier0-repro.ini -k ${s3_key}/" >> "$RESULTS_DIR/summary.txt"
+    fi
 }
 
 # ============================================================================
@@ -230,6 +243,7 @@ run_tier1() {
     echo "=============================="
 
     # Same geometry and sigmas as training, but novel random seed.
+    # 5 paths × 49 winds = 245 flights.
     # All sigmas come from autoc-eval.ini base (which must match autoc.ini).
     # Only override: Seed=-1 for novel scenario table.
     make_eval_ini "$RESULTS_DIR/tier1-aero.ini" \
@@ -284,23 +298,22 @@ run_tier3() {
     echo "=============================="
 
     # Random at 120% of training sigmas
+    # Training: ConeSigma=30, RollSigma=30, SpeedSigma=0.1, WindDirSigma=45,
+    #           RabbitSpeedSigma=2.0, PositionRadius/Alt=0 (disabled)
     make_eval_ini "$RESULTS_DIR/tier3-stress.ini" \
         "PathGeneratorMethod = random" \
         "SimNumPathsPerGeneration = 12" \
         "WindScenarios = 12" \
         "RandomPathSeedB = 99999" \
         "Seed = -1" \
-        "EntryHeadingSigma = 54" \
-        "EntryRollSigma = 27" \
-        "EntryPitchSigma = 9" \
+        "EntryConeSigma = 36" \
+        "EntryRollSigma = 36" \
         "EntrySpeedSigma = 0.12" \
-        "EntryPositionRadiusSigma = 24" \
-        "EntryPositionAltSigma = 3.6" \
         "WindDirectionSigma = 54" \
-        "RabbitSpeedSigma = 4.8"
+        "RabbitSpeedSigma = 2.4"
     run_eval "tier3-stress" "$RESULTS_DIR/tier3-stress.ini"
 
-    # Quiet throttle baseline — no wind, no variation, slow rabbit
+    # Quiet throttle baseline — no wind, no variation, constant 12 m/s rabbit
     make_eval_ini "$RESULTS_DIR/tier3-quiet.ini" \
         "PathGeneratorMethod = longSequential" \
         "SimNumPathsPerGeneration = 1" \
@@ -308,8 +321,8 @@ run_tier3() {
         "Seed = 42" \
         "EnableEntryVariations = 0" \
         "EnableWindVariations = 0" \
-        "RabbitSpeedNominal = 12.0" \
-        "RabbitSpeedSigma = 0.0"
+        "EnableRabbitSpeedVariations = 0" \
+        "RabbitSpeedNominal = 12.0"
     run_eval "tier3-quiet" "$RESULTS_DIR/tier3-quiet.ini"
 }
 
@@ -323,8 +336,8 @@ echo "  Tier: $TIER"
 echo "============================================"
 
 echo "" > "$RESULTS_DIR/summary.txt"
-printf "%-25s %s  %7s  %11s  %5s  %4s  %4s\n" \
-    "Test" "Pass" "OK/Total" "Completion" "Dist" "Thr" "SmT" >> "$RESULTS_DIR/summary.txt"
+printf "%-25s %s  %7s  %11s  %7s  %5s  %4s\n" \
+    "Test" "Pass" "OK/Total" "Completion" "Score" "Strk" "Mult" >> "$RESULTS_DIR/summary.txt"
 echo "------------------------------------------------------------------------------------" >> "$RESULTS_DIR/summary.txt"
 
 case "$TIER" in
