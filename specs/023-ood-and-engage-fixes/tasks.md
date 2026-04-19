@@ -17,39 +17,45 @@ The following are implemented, tested via training + eval suite, and committed:
 - **FDM tuning** — hb1-adjust1 through adjust4 (6 tuning passes from flight data).
 - **Eval suite** — eval_suite.sh updated, all tiers passing including random path generalization.
 
-## P1 — Xiao Code Sync (flight blocker)
+## P1 — Xiao Code Sync (flight blocker) — DONE
 
-All tasks in this section must complete before flight test.
+All committed in `1189782 feat(023): xiao direction cosines, resetHistory, eval suite fixes, nn2cpp NNInputs API` (2026-04-16) and flight-tested on 2026-04-17.
 
-- [ ] T-XIAO-1 Update `xiao/src/msplink.cpp` direction cosines: replace `executeGetDPhi()`/`executeGetDTheta()` atan2 code (~lines 257-268) with `computeTargetDir()` populating `target_x/y/z` fields. Update `recordErrorHistory()` call to new `(targetDir_3vec, dist, timeMs)` signature.
-- [ ] T-XIAO-2 Replace `clearHistory()` with `resetHistory()` at engage transition in `xiao/src/msplink.cpp`.
-- [ ] T-XIAO-3 Update `XIAO_RABBIT_SPEED_MPS` from 13.0f to 12.0f in `xiao/src/msplink.cpp`.
-- [ ] T-XIAO-4 Regenerate `xiao/src/generated/nn_program_generated.cpp` from hb1-adjust4 best weights via `tools/nn2cpp/`. Verify topology {33,32,16,3} and weight count 1667.
-- [ ] T-XIAO-5 Build verify: `cd xiao && pio run -e xiaoblesense_arduinocore_mbed`.
-- [ ] T-XIAO-6 Walk pre-flight checklist (memory: project_preflight_checklist.md). Bench-test failsafe chain.
+- [x] T-XIAO-1 Update `xiao/src/msplink.cpp` direction cosines: replace `executeGetDPhi()`/`executeGetDTheta()` atan2 code with `computeTargetDir()` populating `target_x/y/z` fields. Update `recordErrorHistory()` call to new `(targetDir_3vec, dist, timeMs)` signature.
+- [x] T-XIAO-2 Replace `clearHistory()` with `resetHistory()` at engage transition in `xiao/src/msplink.cpp`.
+- [x] T-XIAO-3 Update `XIAO_RABBIT_SPEED_MPS` from 13.0f to 12.0f in `xiao/src/msplink.cpp`.
+- [x] T-XIAO-4 Regenerate `xiao/src/generated/nn_program_generated.cpp` from hb1-adjust4 best weights via `tools/nn2cpp/`. Verify topology {33,32,16,3} and weight count 1667.
+- [x] T-XIAO-5 Build verify: `cd xiao && pio run -e xiaoblesense_arduinocore_mbed`.
+- [x] T-XIAO-6 Walk pre-flight checklist. Bench-test failsafe chain.
 
-## P2 — Effort Lexicase (deferred, decision gate after flight)
+## Flight-20260417 Postflight — Diagnostic Work
 
-Design complete. Implementation tasks T123-T136 defined below. Gate: implement only if flight data shows bang-bang control is unacceptable.
+Did not land as tasks at feature start; surfaced during/after flight-20260417. Committed scripts and findings:
 
-- [ ] T123 Create `StreakAccumulator` struct in `include/autoc/eval/fitness_computer.h`.
-- [ ] T124 Add effort config fields to config.h/config.cc: `EffortStreakThreshold`, `EffortStreakRampSec`, `EffortStreakMultiplierMax`, `EffortLexicaseEpsilon`.
-- [ ] T125 Add `effortCost`, `maxGentleStreak`, `totalGentleTicks` to `ScenarioScore`.
-- [ ] T126 Compute `effortCost` in `computeScenarioScores()`. Formula: `effortScore = 1.0 - sqrt(pitch^2 + roll^2 + throttle^2) / sqrt(3)`.
-- [ ] T127 Extend `lexicase_select()` with effort cascade (tracking filters first, then effort).
-- [ ] T128 Add 2-dim lexicase tests in `tests/selection_tests.cc`.
-- [ ] T129 Add effort computation tests in `tests/fitness_decomposition_tests.cc`.
-- [ ] T130 Add effort config knobs to `autoc.ini` and `autoc-eval.ini`.
-- [ ] T131 Add `effort` and `eftMul` columns to `data.dat`.
-- [ ] T132 Add effort stats to `data.stc`.
-- [ ] T133 Wire effort epsilon from config to `lexicase_select()` call site.
-- [ ] T134 Build and test: verify `NN_ELITE_SAME` determinism holds.
-- [ ] T135 Training run with effort lexicase (400 gens, pop 3500). Success: effort < 0.5, fitness within 80% of baseline.
-- [ ] T136 Update `sim_polar_viz.py` to plot effort column.
+- Command→response scatter (sim + flight, 3×3 and 8-row lag sweep). Sim script in `specs/023-ood-and-engage-fixes/cmd_response_scatter_sim_lagged.py` and `cmd_response_lagsweep_sim.py`. Flight script in `flight-results/flight-20260417/cmd_response_scatter_lagged.py` and `cmd_response_lagsweep.py`.
+- Quat ordering audit across INAV → blackbox-tools → xiao → cereal → scripts → renderer: **clean**, scalar-first everywhere.
+- NN output polarity audit (pitch / roll): **clean**, strong positive cmd→gyro correlation at proper lag in flight.
+- Cadence finding: data.dat at 117 ms/step instead of 100 ms. Root-caused to CRRCSim physics tick vs strict-greater eval threshold.
+- Flight AHRS roll anomaly: quat-derived roll rate correlation is negative at all lags 0–707 ms while gyro-derived is +0.76. Not a simple lag or sign flip.
 
-## P3 — Test Coverage (post-flight)
+All above **moved to 024** for resolution:
+- Cadence fix → 024 WI1
+- Compound-attitude bench → 024 WI3
+- Full-sensor cmd→response audit → 024 WI4
+- AHRS roll root cause → 024 WI5
 
-- [ ] T-TEST-1 `tests/engage_reset_tests.cc` — 6 contract tests for resetHistory().
-- [ ] T-TEST-2 `tests/engage_delay_tests.cc` — 3 contract tests for delay window.
-- [ ] T-TEST-3 `tests/nn_inputs_tests.cc` — unit-vector invariant, poison-value completeness, sizeof contract.
-- [ ] T-TEST-4 Extend `tests/selection_tests.cc` with 2-dim lexicase tests (blocked on P2).
+## Moved Out
+
+| Item | Destination |
+|------|-------------|
+| P2 Effort Lexicase (T123-T136) | 025 (Change 5 Option A — smoothness pressure) |
+| P3 T-TEST-1/2/3 (engage_reset, engage_delay, nn_inputs) | 024 WI12 |
+| P3 T-TEST-4 (2-dim lexicase) | 025 (with effort lexicase) |
+| Cadence 117ms bug | 024 WI1 |
+| Compound-attitude bench | 024 WI3 |
+| Full-sensor cmd→response audit | 024 WI4 |
+| Flight AHRS roll divergence | 024 WI5 |
+
+## 023 Status: CLOSED
+
+All in-scope work done. Remaining items have new owners (024 or 025). Flight-20260417 is the closing checkpoint; its findings seeded 024.

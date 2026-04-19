@@ -1,8 +1,13 @@
-# 024 — Craft Parameter Variations & Control Smoothness
+# 025 — Craft Parameter Variations & Control Smoothness
 
-**Status**: Scaffold  
-**Depends on**: 023 (direction cosines, engage delay, deterministic eval)  
-**Priority**: P1 — required before next flight test
+**Status**: Scaffold
+**Depends on**: 023 (direction cosines, engage delay, deterministic eval), 024 (sim/real fidelity — cadence, sensor verification)
+**Priority**: P1 — next training pass after 024 gate
+**Renamed from**: 024-craft-variations (renumbered 2026-04-18 when 024-sim-real-fidelity was introduced)
+
+Absorbs from 023:
+- Effort lexicase (T123–T136) → integrate into Change 5 Option A (chatter penalty)
+- 2-dim lexicase tests (P3 T-TEST-4) → add alongside effort lexicase implementation
 
 ## Problem Statement
 
