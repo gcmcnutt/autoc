@@ -24,6 +24,8 @@
 #include <vtkPolygon.h>
 
 #include "autoc/nn/serialization.h"
+#include "autoc/nn/nn_inputs.h"
+#include <cstring>
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
@@ -1927,8 +1929,11 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
   std::regex stateRe(R"(Nav State:.*pos_raw=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*pos=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*vel=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\].*quat=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\])");
   std::regex autocFlagRe(R"(autoc=(Y|N))");
   std::regex pathRe(R"(path=(\d+))");  // Capture path index from Nav State line
-  // NN line: idx, 27 inputs (021+), 3 outputs, 3 RC values, optional rabbit position
-  std::regex nnRe(R"(NN: idx=(\d+) in=\[([^\]]+)\] out=\[([^\]]+)\] rc=\[(\d+),(\d+),(\d+)\])");
+  // NN line (023+ direction-cosine topology, typed groups):
+  //   NN: idx=N tX=[6f] tY=[6f] tZ=[6f] d=[6f] cr=f q=[4f] as=f g=[3f] out=[3f] rc=[i,i,i]
+  // Captures: 1=idx, 2=tX, 3=tY, 4=tZ, 5=d, 6=cr, 7=q, 8=as, 9=g, 10=out, 11-13=rc
+  // Format produced by xiao/src/msplink.cpp msplinkUpdate().
+  std::regex nnRe(R"(NN: idx=(\d+) tX=\[([^\]]+)\] tY=\[([^\]]+)\] tZ=\[([^\]]+)\] d=\[([^\]]+)\] cr=([-0-9.eE+]+) q=\[([^\]]+)\] as=([-0-9.eE+]+) g=\[([^\]]+)\] out=\[([^\]]+)\] rc=\[(\d+),(\d+),(\d+)\])");
   std::regex rabbitRe(R"(rabbit=\[([-0-9\.]+),([-0-9\.]+),([-0-9\.]+)\])");
 
   std::string line;
@@ -1977,9 +1982,9 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
     // Parse NN line for RC commands (replaces old GP Output)
     if (std::regex_search(line, matches, nnRe)) {
       RCCommand rc;
-      rc.roll = std::stof(matches[4].str());
-      rc.pitch = std::stof(matches[5].str());
-      rc.throttle = std::stof(matches[6].str());
+      rc.roll = std::stof(matches[11].str());
+      rc.pitch = std::stof(matches[12].str());
+      rc.throttle = std::stof(matches[13].str());
       timestampRCMap[inavMs] = rc;
     }
   }
@@ -2033,81 +2038,72 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
       continue;
     }
 
-    // Parse NN line - reconstruct rabbit position from body-frame angles + distance
+    // Parse NN line - reconstruct rabbit position from body-frame direction cosines + distance
     if (inSpan && std::regex_search(line, matches, nnRe)) {
-      // Parse comma-separated input values (27 inputs for 021+, was 29)
-      std::string inputStr = matches[2].str();
-      std::vector<scalar> inputs;
-      std::istringstream iss(inputStr);
-      std::string token;
-      while (std::getline(iss, token, ',')) {
-        inputs.push_back(std::stof(token));
-      }
+      // Fill NNInputs from the typed capture groups (tX, tY, tZ, d, cr, q, as, g).
+      // Using typed fields (not flat indexing) makes this site a real consumer of
+      // include/autoc/nn/nn_inputs.h — future renames/reorders fail at compile
+      // time rather than silently producing wrong reconstructions.
+      auto parseFloatList = [](const std::string& s, float* dst, int n) {
+        std::istringstream iss(s);
+        std::string tok;
+        int i = 0;
+        while (i < n && std::getline(iss, tok, ',')) {
+          dst[i++] = std::stof(tok);
+        }
+        return i == n;
+      };
 
-      if (inputs.size() >= 27) {
-        // inputs[18] = dDist/dt (closing rate)
-        scalar relVel = std::abs(inputs[18]);
+      NNInputs nn{};
+      bool okInputs =
+          parseFloatList(matches[2].str(), nn.target_x, 6) &&
+          parseFloatList(matches[3].str(), nn.target_y, 6) &&
+          parseFloatList(matches[4].str(), nn.target_z, 6) &&
+          parseFloatList(matches[5].str(), nn.dist,     6);
+      if (okInputs) {
+        nn.closing_rate = std::stof(matches[6].str());
+        float qwxyz[4] = {0,0,0,0};
+        parseFloatList(matches[7].str(), qwxyz, 4);
+        nn.quat_w = qwxyz[0]; nn.quat_x = qwxyz[1];
+        nn.quat_y = qwxyz[2]; nn.quat_z = qwxyz[3];
+        nn.airspeed = std::stof(matches[8].str());
+        float gpqr[3] = {0,0,0};
+        parseFloatList(matches[9].str(), gpqr, 3);
+        nn.gyro_p = gpqr[0]; nn.gyro_q = gpqr[1]; nn.gyro_r = gpqr[2];
+
+        scalar relVel = std::abs(nn.closing_rate);  // m/s, + = approaching
         timestampRelVelMap[inavMs] = relVel;
 
-        // Reconstruct rabbit position from NN inputs:
-        //   dPhi   = in[3]  = atan2(tl.y, -tl.z)   body YZ plane
-        //   dTheta = in[9]  = atan2(-tl.z, tl.x)    body XZ plane
-        //   dist   = in[15] = Euclidean distance
-        //   quat   = in[19-22] (w,x,y,z) earth->body
-        scalar dPhi   = inputs[3];
-        scalar dTheta = inputs[9];
-        scalar dist   = inputs[15];
-        scalar qw = inputs[19], qx = inputs[20], qy = inputs[21], qz = inputs[22];
+        // First-principles reconstruction, matching src/nn/evaluator.cc:
+        //   craftToTarget_world = rabbit_world - aircraft_world           (NED, metres)
+        //   target_local_body   = orientation.inverse() * craftToTarget   (body-frame FRD)
+        //   dir_body            = target_local_body / ||target_local_body||
+        // Invert: dir_body * dist → body-frame vector, rotate body→world with
+        // orientation (q_body_to_world), add aircraft position.
+        //
+        // Body frame: aerospace FRD (+X fwd, +Y right wing, +Z down).
+        // World frame: NED (+X North, +Y East, +Z Down).
+        // "Now" slot is history index 3 (HIST_PAST = {9,3,1,0} in evaluator.cc).
+        constexpr int NOW = 3;
+        scalar tx   = nn.target_x[NOW];
+        scalar ty   = nn.target_y[NOW];
+        scalar tz   = nn.target_z[NOW];
+        scalar dist = nn.dist[NOW];
+        scalar qw = nn.quat_w, qx = nn.quat_x, qy = nn.quat_y, qz = nn.quat_z;
 
         if (dist > 0.01f) {
-          // Reconstruct target_local (body frame) from two atan2 projections:
-          //   dPhi   = atan2(tl.y, -tl.z)  → -tl.z = r_yz * cos(dPhi), tl.y = r_yz * sin(dPhi)
-          //   dTheta = atan2(-tl.z, tl.x)  → tl.x = r_xz * cos(dTheta), -tl.z = r_xz * sin(dTheta)
-          // Shared: -tl.z appears in both. From dTheta: -tl.z = r_xz * sin(dTheta)
-          // From dPhi: tl.y = (-tl.z) * sin(dPhi) / cos(dPhi) when cos(dPhi) != 0
-          // Use unit direction then scale by dist.
-          //
-          // Set tl.x = cos(dTheta), -tl.z = sin(dTheta), tl.y = sin(dTheta) * sin(dPhi) / cos(dPhi)
-          // But cos(dPhi) can be zero. Instead use the constraint:
-          //   tl.x = cos(dTheta)
-          //   tl.z = -sin(dTheta)
-          //   tl.y = sin(dTheta) * tan(dPhi)  ... still has tan
-          //
-          // Better: parameterize via -tl.z as the link:
-          //   tl.x  = cos(dTheta)  (unnormalized)
-          //   tl.z  = -sin(dTheta)
-          //   tl.y  = sin(dPhi) * sin(dTheta) / cos(dPhi)  ... no
-          //
-          // Robust: just build direction from cos/sin, normalize, scale
-          scalar cd = std::cos(dTheta), sd = std::sin(dTheta);
-          scalar cp = std::cos(dPhi),   sp = std::sin(dPhi);
-          // From definitions: tl.x ∝ cd, -tl.z ∝ sd (from dTheta)
-          //                   tl.y ∝ sp, -tl.z ∝ cp (from dPhi)
-          // -tl.z must be consistent: sd and cp should have same sign if angles are consistent
-          // Use -tl.z = sd (from dTheta), then tl.y = sp/cp * sd (from dPhi ratio)
-          // Guard against cp near zero
-          scalar neg_z = sd;
-          scalar tl_x = cd;
-          scalar tl_y = (std::abs(cp) > 0.01f) ? (sp / cp) * neg_z : sp * 100.0f * neg_z;
-          scalar tl_z = -neg_z;
-          // Normalize and scale to dist
-          scalar len = std::sqrt(tl_x*tl_x + tl_y*tl_y + tl_z*tl_z);
-          if (len > 0.001f) {
-            tl_x = tl_x / len * dist;
-            tl_y = tl_y / len * dist;
-            tl_z = tl_z / len * dist;
-          }
+          // Body-frame craft→target vector (direction cosine * distance).
+          scalar tl_x = tx * dist;
+          scalar tl_y = ty * dist;
+          scalar tl_z = tz * dist;
 
-          // Rotate body->world: Hamilton q*v*q_conj with earth->body quat
-          // applied to body vector gives world vector (no conjugation needed)
-          scalar qi_w = qw, qi_x = qx, qi_y = qy, qi_z = qz;
-          // v' = q * v * q_conj via Rodriguez: v' = v + 2w*(q_xyz × v) + 2*(q_xyz × (q_xyz × v))
-          scalar tx = 2.0f * (qi_y * tl_z - qi_z * tl_y);
-          scalar ty = 2.0f * (qi_z * tl_x - qi_x * tl_z);
-          scalar tz = 2.0f * (qi_x * tl_y - qi_y * tl_x);
-          scalar wx = tl_x + qi_w * tx + (qi_y * tz - qi_z * ty);
-          scalar wy = tl_y + qi_w * ty + (qi_z * tx - qi_x * tz);
-          scalar wz = tl_z + qi_w * tz + (qi_x * ty - qi_y * tx);
+          // Rotate body→world: v' = q * v * q_conj (Rodrigues expansion).
+          scalar cx = 2.0f * (qy * tl_z - qz * tl_y);
+          scalar cy = 2.0f * (qz * tl_x - qx * tl_z);
+          scalar cz = 2.0f * (qx * tl_y - qy * tl_x);
+          scalar wx = tl_x + qw * cx + (qy * cz - qz * cy);
+          scalar wy = tl_y + qw * cy + (qz * cx - qx * cz);
+          scalar wz = tl_z + qw * cz + (qx * cy - qy * cx);
 
           // craftToTarget in world frame = (wx, wy, wz)
           // rabbit_world = aircraft_virtual_pos + craftToTarget

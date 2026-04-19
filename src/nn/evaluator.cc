@@ -1,5 +1,6 @@
 #include "autoc/nn/evaluator.h"
 #include "autoc/nn/topology.h"
+#include "autoc/nn/nn_input_computation.h"
 #include "autoc/eval/sensor_math.h"
 #include "autoc/util/rng.h"
 #include <cmath>
@@ -150,17 +151,15 @@ void nn_xavier_init(NNGenome& genome) {
 // ============================================================
 // T040: Gather NN_INPUT_COUNT sensor inputs — raw, no normalization
 // ============================================================
-// Layout (29 inputs):
-//  0- 5: dPhi  [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  raw radians
-//  6-11: dTheta[-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  raw radians
-// 12-17: dist  [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  raw metres
-//    18: dDist/dt closing rate (m/s, positive = approaching)
-// 19-22: quaternion (w, x, y, z)                      [-1,1]
-//    23: airspeed (m/s)
-// 24-26: gyro rates (p, q, r) in rad/s                standard aerospace RHR
-//
-// Removed in 021: alpha/beta (invalid without airspeed sensor),
-//   pitchCmd/rollCmd/throttleCmd feedback (unnecessary with ACRO rate PID)
+// Layout (33 inputs — 023 direction cosines):
+//  0- 5: target_x [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  body-frame unit-vec x
+//  6-11: target_y [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  body-frame unit-vec y
+// 12-17: target_z [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  body-frame unit-vec z
+// 18-23: dist     [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  raw metres
+//    24: dDist/dt closing rate (m/s, positive = approaching)
+// 25-28: quaternion (w, x, y, z)                         [-1,1]
+//    29: airspeed (m/s)
+// 30-32: gyro rates (p, q, r) in rad/s                   standard aerospace RHR
 //
 // Past slots (n=9,3,1,0) use recorded aircraft history at those times.
 // Forecast slots (+0.1s=offset 1, +0.5s=offset 5) use current aircraft
@@ -171,8 +170,20 @@ static const int HIST_PAST[] = {9, 3, 1, 0};
 // Forecast offsets in path steps: +1 = +0.1s, +5 = +0.5s
 static const float FORECAST_OFFSETS[] = {1.0f, 5.0f};
 
+// Get path tangent (direction of travel) at the given odometer offset
+static gp_vec3 getPathTangentAtOffset(PathProvider& pathProvider,
+                                       gp_scalar currentOdometer,
+                                       gp_scalar offsetMeters) {
+    gp_vec3 pos = getInterpolatedTargetPosition(pathProvider, currentOdometer, offsetMeters);
+    gp_vec3 posAhead = getInterpolatedTargetPosition(pathProvider, currentOdometer, offsetMeters + 0.5f);
+    gp_vec3 tangent = posAhead - pos;
+    double norm = tangent.norm();
+    if (norm > 1e-6) return tangent / norm;
+    return gp_vec3::UnitX();  // fallback
+}
+
 void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
-                      float* inputs) {
+                      NNInputs& inputs) {
     gp_scalar rabbitOdo = aircraftState.getRabbitOdometer();
     gp_scalar rabbitSpeed = aircraftState.getRabbitSpeed();
 
@@ -183,64 +194,75 @@ void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
         return static_cast<gp_scalar>(steps) * (static_cast<gp_scalar>(SIM_TIME_STEP_MSEC) / 1000.0f) * rabbitSpeed;
     };
 
-    // 0-3: dPhi past history (raw radians)
-    for (int i = 0; i < 4; i++)
-        inputs[i] = static_cast<float>(aircraftState.getHistoricalDPhi(HIST_PAST[i]));
+    // target_x/y/z[0-3]: past history (direction cosines from recorded history)
+    for (int i = 0; i < 4; i++) {
+        gp_vec3 dir = aircraftState.getHistoricalTargetDir(HIST_PAST[i]);
+        inputs.target_x[i] = static_cast<float>(dir.x());
+        inputs.target_y[i] = static_cast<float>(dir.y());
+        inputs.target_z[i] = static_cast<float>(dir.z());
+    }
 
-    // 4-5: dPhi path-lookahead forecast (+0.1s, +0.5s)
-    for (int i = 0; i < 2; i++)
-        inputs[4 + i] = static_cast<float>(
-            executeGetDPhi(pathProvider, aircraftState, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i])));
-
-    // 6-9: dTheta past history (raw radians)
-    for (int i = 0; i < 4; i++)
-        inputs[6 + i] = static_cast<float>(aircraftState.getHistoricalDTheta(HIST_PAST[i]));
-
-    // 10-11: dTheta path-lookahead forecast (+0.1s, +0.5s)
-    for (int i = 0; i < 2; i++)
-        inputs[10 + i] = static_cast<float>(
-            executeGetDTheta(pathProvider, aircraftState, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i])));
-
-    // 12-15: dist past history (raw metres)
-    for (int i = 0; i < 4; i++)
-        inputs[12 + i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[i]));
-
-    // 16-17: dist forecast — distance from current position to future rabbit (+0.1s, +0.5s)
+    // target_x/y/z[4-5]: path-lookahead forecast (+0.1s, +0.5s)
     for (int i = 0; i < 2; i++) {
         gp_vec3 futureTarget = getInterpolatedTargetPosition(
             pathProvider, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i]));
-        inputs[16 + i] = static_cast<float>(
+        gp_vec3 craftToTarget = futureTarget - aircraftState.getPosition();
+        gp_vec3 target_local = aircraftState.getOrientation().inverse() * craftToTarget;
+        float distance = static_cast<float>(target_local.norm());
+
+        // Get path tangent for singularity fallback
+        gp_vec3 pathTangent = getPathTangentAtOffset(pathProvider, rabbitOdo,
+                                                      offsetStepsToMeters(FORECAST_OFFSETS[i]));
+        gp_vec3 tangent_body = aircraftState.getOrientation().inverse() * pathTangent;
+        float tangent_norm = static_cast<float>(tangent_body.norm());
+        if (tangent_norm > 1e-6f) tangent_body = tangent_body / tangent_norm;
+
+        gp_vec3 dir = computeTargetDir(target_local, distance, tangent_body);
+        inputs.target_x[4 + i] = static_cast<float>(dir.x());
+        inputs.target_y[4 + i] = static_cast<float>(dir.y());
+        inputs.target_z[4 + i] = static_cast<float>(dir.z());
+    }
+
+    // dist[0-3]: past history (raw metres)
+    for (int i = 0; i < 4; i++)
+        inputs.dist[i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[i]));
+
+    // dist[4-5]: forecast — distance from current position to future rabbit (+0.1s, +0.5s)
+    for (int i = 0; i < 2; i++) {
+        gp_vec3 futureTarget = getInterpolatedTargetPosition(
+            pathProvider, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i]));
+        inputs.dist[4 + i] = static_cast<float>(
             (futureTarget - aircraftState.getPosition()).norm());
     }
 
-    // 18: dDist/dt closing rate (m/s, positive = approaching)
+    // closing_rate: dDist/dt (m/s, positive = approaching)
     {
         float dist_now  = static_cast<float>(aircraftState.getHistoricalDist(0));
         float dist_prev = static_cast<float>(aircraftState.getHistoricalDist(1));
-        inputs[18] = (dist_prev - dist_now) / 0.1f;  // divide by 0.1s tick
+        inputs.closing_rate = (dist_prev - dist_now) / 0.1f;  // divide by 0.1s tick
     }
 
-    // 19-22: quaternion attitude (w, x, y, z) — unit norm, components in [-1,1]
+    // quaternion attitude (w, x, y, z) — unit norm, components in [-1,1]
     {
         gp_quat q = aircraftState.getOrientation();
-        inputs[19] = static_cast<float>(q.w());
-        inputs[20] = static_cast<float>(q.x());
-        inputs[21] = static_cast<float>(q.y());
-        inputs[22] = static_cast<float>(q.z());
+        inputs.quat_w = static_cast<float>(q.w());
+        inputs.quat_x = static_cast<float>(q.x());
+        inputs.quat_y = static_cast<float>(q.y());
+        inputs.quat_z = static_cast<float>(q.z());
     }
 
-    // 23: airspeed (m/s, raw)
-    inputs[23] = static_cast<float>(aircraftState.getRelVel());
+    // airspeed (m/s, raw)
+    inputs.airspeed = static_cast<float>(aircraftState.getRelVel());
 
-    // 24-26: gyro rates (p, q, r) in rad/s (raw, no scaling)
+    // gyro rates (p, q, r) in rad/s (raw, no scaling)
     // Body-frame angular rates, standard aerospace RHR convention.
     // CRRCSim FDM provides these directly; INAV requires pitch/yaw negation
     // at consumer boundary (see COORDINATE_CONVENTIONS.md).
     {
         gp_vec3 gyro = aircraftState.getGyroRates();
-        inputs[24] = static_cast<float>(gyro.x());  // p (roll rate, rad/s)
-        inputs[25] = static_cast<float>(gyro.y());  // q (pitch rate, rad/s)
-        inputs[26] = static_cast<float>(gyro.z());  // r (yaw rate, rad/s)
+        inputs.gyro_p = static_cast<float>(gyro.x());  // p (roll rate, rad/s)
+        inputs.gyro_q = static_cast<float>(gyro.y());  // q (pitch rate, rad/s)
+        inputs.gyro_r = static_cast<float>(gyro.z());  // r (yaw rate, rad/s)
     }
 }
 
@@ -252,11 +274,12 @@ NNControllerBackend::NNControllerBackend(const NNGenome& genome)
     : genome_(genome) {}
 
 void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& pathProvider) {
-    float inputs[NN_INPUT_COUNT];
+    NNInputs inputs = {};
     nn_gather_inputs(pathProvider, aircraftState, inputs);
 
     float outputs[NN_OUTPUT_COUNT];
-    nn_forward(genome_.weights.data(), genome_.topology, inputs, outputs);
+    nn_forward(genome_.weights.data(), genome_.topology,
+               reinterpret_cast<const float*>(&inputs), outputs);
 
     // Set control commands: pitch, roll, throttle (already in [-1, 1] via tanh)
     aircraftState.setPitchCommand(static_cast<gp_scalar>(outputs[0]));
@@ -264,7 +287,7 @@ void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& p
     aircraftState.setThrottleCommand(static_cast<gp_scalar>(outputs[2]));
 
     // Capture actual NN I/O for diagnostics
-    aircraftState.setNNData(inputs, NN_INPUT_COUNT, outputs, NN_OUTPUT_COUNT);
+    aircraftState.setNNData(inputs, outputs, NN_OUTPUT_COUNT);
 }
 
 // ============================================================

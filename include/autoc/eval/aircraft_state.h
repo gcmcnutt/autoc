@@ -3,11 +3,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 #include "autoc/types.h"
 #include "autoc/nn/topology.h"
+#include "autoc/nn/nn_input_computation.h"
 
 #ifndef ARDUINO
 #include <cereal/cereal.hpp>
@@ -263,13 +265,13 @@ struct AircraftState {
     void setGyroRates(const gp_vec3& rates) { gyroRates_ = rates; }
 
     // NN I/O capture — record what the NN actually saw and produced
-    void setNNData(const float* inputs, int numInputs, const float* outputs, int numOutputs) {
-      for (int i = 0; i < NN_INPUT_COUNT && i < numInputs; i++) nnInputs_[i] = inputs[i];
+    void setNNData(const NNInputs& inputs, const float* outputs, int numOutputs) {
+      nnInputs_ = inputs;
       for (int i = 0; i < NN_OUTPUT_COUNT && i < numOutputs; i++) nnOutputs_[i] = outputs[i];
       hasNNData_ = true;
     }
     bool hasNNData() const { return hasNNData_; }
-    const float* getNNInputs() const { return nnInputs_; }
+    const NNInputs& getNNInputs() const { return nnInputs_; }
     const float* getNNOutputs() const { return nnOutputs_; }
 
     // =========================================================================
@@ -277,30 +279,22 @@ struct AircraftState {
     // =========================================================================
     static constexpr int HISTORY_SIZE = 10;  // 1 sec at 10Hz
 
-    // Record current errors to history (call before GP eval each tick)
-    void recordErrorHistory(gp_scalar dPhi, gp_scalar dTheta, gp_scalar distance, unsigned long timeMs) {
-      dPhiHistory_[historyIndex_] = dPhi;
-      dThetaHistory_[historyIndex_] = dTheta;
+    // Record current target direction and distance to history (call before NN eval each tick)
+    void recordErrorHistory(const gp_vec3& targetDir, gp_scalar distance, unsigned long timeMs) {
+      targetDirHistory_[historyIndex_] = targetDir;
       distHistory_[historyIndex_] = distance;
       timeHistory_[historyIndex_] = timeMs;
       historyIndex_ = (historyIndex_ + 1) % HISTORY_SIZE;
       if (historyCount_ < HISTORY_SIZE) historyCount_++;
     }
 
-    // Get historical dPhi (n=0 is most recent, n=1 is one tick ago, etc.)
-    // Returns 0.0f if history not available. Uses CLAMP_DEF for portability.
-    gp_scalar getHistoricalDPhi(int n) const {
-      if (historyCount_ == 0) return static_cast<gp_scalar>(0.0f);
+    // Get historical target direction unit vector (n=0 is most recent, n=1 is one tick ago, etc.)
+    // Returns zero vector if history not available. Uses CLAMP_DEF for portability.
+    gp_vec3 getHistoricalTargetDir(int n) const {
+      if (historyCount_ == 0) return gp_vec3::Zero();
       n = CLAMP_DEF(n, 0, historyCount_ - 1);
       int idx = (historyIndex_ - 1 - n + HISTORY_SIZE) % HISTORY_SIZE;
-      return dPhiHistory_[idx];
-    }
-
-    gp_scalar getHistoricalDTheta(int n) const {
-      if (historyCount_ == 0) return static_cast<gp_scalar>(0.0f);
-      n = CLAMP_DEF(n, 0, historyCount_ - 1);
-      int idx = (historyIndex_ - 1 - n + HISTORY_SIZE) % HISTORY_SIZE;
-      return dThetaHistory_[idx];
+      return targetDirHistory_[idx];
     }
 
     gp_scalar getHistoricalDist(int n) const {
@@ -322,6 +316,29 @@ struct AircraftState {
     void clearHistory() {
       historyIndex_ = 0;
       historyCount_ = 0;
+    }
+
+    // Pre-fill all history slots with the current geometry so the NN starts
+    // with consistent direction cosines and closing_rate = 0.  Call at
+    // engage/scenario start AFTER position, orientation, and path are known.
+    // targetPos: world-frame position of the rabbit/path start
+    // pathTangent: unit vector along path at targetPos (singularity fallback)
+    void resetHistory(const gp_vec3& targetPos, const gp_vec3& pathTangent) {
+      clearHistory();
+      gp_vec3 craftToTarget = targetPos - position;
+      gp_vec3 target_local = aircraft_orientation.inverse() * craftToTarget;
+      float distance = static_cast<float>(target_local.norm());
+
+      gp_vec3 tangent_body = aircraft_orientation.inverse() * pathTangent;
+      float tn = static_cast<float>(tangent_body.norm());
+      if (tn > 1e-6f) tangent_body = tangent_body / tn;
+      else tangent_body = gp_vec3::UnitX();
+
+      gp_vec3 dir = computeTargetDir(target_local, distance, tangent_body);
+
+      for (int h = 0; h < HISTORY_SIZE; h++) {
+        recordErrorHistory(dir, distance, 0);
+      }
     }
 
     void minisimAdvanceState(gp_scalar dt) {
@@ -403,13 +420,12 @@ struct AircraftState {
     gp_vec3 gyroRates_ = gp_vec3::Zero();
 
     // NN I/O capture — actual values presented to/produced by the neural net
-    float nnInputs_[NN_INPUT_COUNT] = {0};   // Normalized inputs as NN sees them
+    NNInputs nnInputs_ = {};                 // Normalized inputs as NN sees them
     float nnOutputs_[NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs
     bool hasNNData_ = false;
 
-    // Temporal history for GP nodes - see specs/TEMPORAL_STATE.md
-    gp_scalar dPhiHistory_[HISTORY_SIZE] = {0};
-    gp_scalar dThetaHistory_[HISTORY_SIZE] = {0};
+    // Temporal history — target direction (unit vec in body frame) and distance
+    gp_vec3 targetDirHistory_[HISTORY_SIZE];  // unit vectors in body frame
     gp_scalar distHistory_[HISTORY_SIZE] = {0};
     unsigned long timeHistory_[HISTORY_SIZE] = {0};
     int historyIndex_ = 0;   // Next write position (ring buffer)
@@ -435,8 +451,9 @@ struct AircraftState {
             " outputs=" + std::to_string(NN_OUTPUT_COUNT) +
             ". Regenerate training data with current binary.");
         }
+        float* rawInputs = reinterpret_cast<float*>(&nnInputs_);
         for (uint32_t i = 0; i < inputCount; i++)
-          ar(nnInputs_[i]);
+          ar(rawInputs[i]);
         for (uint32_t i = 0; i < outputCount; i++)
           ar(nnOutputs_[i]);
       }

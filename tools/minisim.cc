@@ -10,6 +10,7 @@
 #include "autoc/rpc/protocol.h"
 #include "autoc/autoc.h"
 #include "autoc/eval/sensor_math.h"
+#include "autoc/nn/nn_input_computation.h"
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
 
@@ -108,6 +109,17 @@ public:
         continue;
       }
 
+      // Validate topology matches compiled-in expectations
+      {
+        std::vector<int> expectedTopology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+        if (nnGenome.topology != expectedTopology) {
+          std::cerr << "[MINISIM] NN topology mismatch: file has "
+                    << nnGenome.weights.size() << " weights but binary expects "
+                    << NN_WEIGHT_COUNT << " (" << NN_TOPOLOGY_STRING << ")" << std::endl;
+          continue;
+        }
+      }
+
       // Log topology once on first eval
       if (evalCounter == 1) {
         std::ostringstream topo;
@@ -136,7 +148,17 @@ public:
         gp_vec3 initial_velocity = aircraft_orientation * gp_vec3(SIM_INITIAL_VELOCITY, 0.0f, 0.0f);
 
         aircraftState = AircraftState{ 0, SIM_INITIAL_VELOCITY, initial_velocity, aircraft_orientation, initialPosition, 0.0f, 0.0f, SIM_INITIAL_THROTTLE, 0 };
-        aircraftState.clearHistory();
+        {
+          gp_vec3 tangent;
+          if (path.size() > 1)
+            tangent = path[1].start - path[0].start;
+          else
+            tangent = gp_vec3::UnitX();
+          double tn = tangent.norm();
+          if (tn > 1e-6) tangent = tangent / tn;
+          else tangent = gp_vec3::UnitX();
+          aircraftState.resetHistory(path[0].start, tangent);
+        }
         aircraftState.setRabbitOdometer(0.0f);
 
         // Get rabbit speed from scenario metadata
@@ -166,13 +188,23 @@ public:
           {
             VectorPathProvider pathProvider(path, aircraftState.getThisPathIndex());
             gp_scalar rabbitOdo = aircraftState.getRabbitOdometer();
-            gp_scalar dPhi = executeGetDPhi(pathProvider, aircraftState, rabbitOdo, 0.0f);
-            gp_scalar dTheta = executeGetDTheta(pathProvider, aircraftState, rabbitOdo, 0.0f);
             gp_vec3 targetPos = getInterpolatedTargetPosition(
                 pathProvider, rabbitOdo, 0.0f);
-            gp_scalar distance = (targetPos - aircraftState.getPosition()).norm();
+            gp_vec3 craftToTarget = targetPos - aircraftState.getPosition();
+            gp_vec3 target_local = aircraftState.getOrientation().inverse() * craftToTarget;
+            float distance = static_cast<float>(target_local.norm());
+
+            // Path tangent for singularity fallback
+            gp_vec3 posAhead = getInterpolatedTargetPosition(pathProvider, rabbitOdo, 0.5f);
+            gp_vec3 tangent = posAhead - targetPos;
+            double tn = tangent.norm();
+            gp_vec3 tangent_body = (tn > 1e-6)
+                ? aircraftState.getOrientation().inverse() * (tangent / tn)
+                : gp_vec3::UnitX();
+
+            gp_vec3 dir = computeTargetDir(target_local, distance, tangent_body);
             aircraftState.setRabbitPosition(targetPos);
-            aircraftState.recordErrorHistory(dPhi, dTheta, distance, duration_msec);
+            aircraftState.recordErrorHistory(dir, distance, duration_msec);
           }
 
           // Run NN controller

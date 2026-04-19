@@ -11,6 +11,7 @@
 //          double    fitness
 //          uint32_t  generation
 //          float     mutation_sigma
+//          float     variation_scale
 
 namespace {
 
@@ -62,8 +63,9 @@ bool nn_serialize(const NNGenome& genome, std::vector<uint8_t>& out) {
     write_val(out, genome.fitness);
     write_val(out, genome.generation);
     write_val(out, genome.mutation_sigma);
+    write_val(out, genome.variation_scale);
 
-    // v2: provenance string
+    // Provenance string
     uint32_t source_len = static_cast<uint32_t>(genome.source.size());
     write_val(out, source_len);
     for (char c : genome.source) {
@@ -117,6 +119,7 @@ bool nn_deserialize(const uint8_t* data, size_t size, NNGenome& genome) {
     if (!read_val(ptr, remaining, genome.fitness)) return false;
     if (!read_val(ptr, remaining, genome.generation)) return false;
     if (!read_val(ptr, remaining, genome.mutation_sigma)) return false;
+    if (!read_val(ptr, remaining, genome.variation_scale)) return false;
 
     // Provenance string (optional — graceful if not present)
     genome.source.clear();

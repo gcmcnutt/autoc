@@ -21,23 +21,48 @@ analysing logs or integrating new flight data.
 - Path generator targets and GP sensors operate strictly in metres and radians.
 
 ## Orientation Representation
-- **Canonical state:** Unit quaternion `(w, x, y, z)` carried through the GP
-  stack and exchanged with the simulator.  
+- **Canonical state:** Unit quaternion `(w, x, y, z)` — scalar-first, Hamilton
+  convention — carried through the autoc stack and exchanged with the simulator.
+- **Rotation direction:** **earth→body** (`q_EB`). A world-frame vector `v_w`
+  is transformed to body frame via `v_b = q_EB * v_w * q_EB⁻¹`
+  (or in Eigen notation, `v_b = q.inverse() * v_w`).
+- **Why earth→body (industry split note):** Aerospace is divided on this.
+  - **Earth→body** (our choice): Stevens & Lewis *Aircraft Control and Simulation*,
+    Zipfel *Modeling and Simulation of Aerospace Vehicle Dynamics*, Etkin, most
+    flight-dynamics textbooks. CRRCSim EOM01 FDM uses this natively (verified
+    below). Convenient for rotating world gravity / wind / target vectors into
+    body frame for sensor readout (the dominant operation in this codebase).
+  - **Body→earth:** Shuster's survey, MATLAB Aerospace Toolbox, many spacecraft
+    attitude references, and — relevantly — INAV's raw MSP quaternion output.
+  - **Consequence:** Anything crossing the boundary from a body→earth source
+    (INAV) must be **conjugated** (`w, -x, -y, -z`) to enter our stack. This
+    is applied once at `msplink.cpp` and in the renderer's INAV-blackbox loader.
+    Nothing downstream (NN evaluator, CRRCSim bridge, minisim) needs to worry
+    about direction — it receives `q_EB` by contract.
 - **Euler read-out:** When needed for logging, the quaternion is converted to
-  yaw–pitch–roll via Eigen’s `eulerAngles(2, 1, 0)` (Z–Y–X sequence) and wrapped
-  to ±π radians.  
-- **Body attitude sense:**  
-  - Positive roll = right wing down.  
-  - Positive pitch = nose up.  
-  - Positive yaw = nose right.
+  yaw–pitch–roll via Eigen's `eulerAngles(2, 1, 0)` (Z–Y–X intrinsic sequence)
+  and wrapped to ±π radians. Return order: `[yaw, pitch, roll] = [ψ, θ, φ]`.
+- **Body attitude sense (standard aerospace RHR):**
+  - Positive roll φ (about body +X) = right wing down.
+  - Positive pitch θ (about body +Y) = nose up.
+  - Positive yaw ψ (about body +Z) = nose right (clockwise viewed from above).
 
 ## Sensor & Derived Quantities
-- `GETALPHA` and `GETBETA` rotate the velocity vector into the body frame using
-  the quaternion and compute angle-of-attack / sideslip with the standard
-  definitions (radians).  
-- `GETROLL_RAD`, `GETPITCH_RAD` expose the wrapped Euler angles in radians.  
+- `GETROLL_RAD`, `GETPITCH_RAD` expose the wrapped Euler angles in radians.
 - Distance-related primitives (`GETDHOME`, `GETDTARGET`, etc.) operate on metre
   vectors in the NED frame.
+- **Deprecated (removed from NN input path, 023):** `GETALPHA` and `GETBETA`
+  (angle of attack / sideslip) are no longer fed to the NN. If ever reintroduced,
+  use the standard forms with no sign negation:
+  - `α = atan2(v_body_z, v_body_x)` — positive when velocity has a downward
+    body-Z component (relative wind comes from below the nose).
+  - `β = atan2(v_body_y, v_body_x)` — positive when wind comes from the right.
+- **Current NN perception (023):** Target geometry is presented to the NN as
+  **direction cosines** — the unit vector `target_body / ||target_body||`
+  where `target_body = q_EB * (rabbit_world - aircraft_world)`. Direction
+  cosines are unitless, bounded ±1, and eliminate atan2 discontinuities.
+  Distance is a separate scalar input in metres. See
+  `include/autoc/nn/nn_input_computation.h` for the canonical implementation.
 
 ## Control Command Polarity & Scaling
 - GP program outputs are clamped in the range **−1 … 1** for pitch, roll,

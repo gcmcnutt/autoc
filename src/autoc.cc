@@ -66,21 +66,27 @@ static RabbitSpeedConfig gRabbitSpeedConfig = RabbitSpeedConfig::defaultConfig()
 static int gCurrentGeneration = 0;      // Updated at start of each generation
 static int gTotalGenerations = 1;       // Set from config at startup
 static int gVariationRampStep = 0;      // Set from config at startup (0 = disabled)
+static float gEvalVariationScaleOverride = -1.0f;  // >=0 = use this instead of computing
 
 /**
  * Compute variation scale for current generation.
  * Scale ramps from 0.0 to 1.0 over the course of training.
+ * In eval mode, returns the stored value from the weight file.
  *
  * @return Scale factor to apply to variation offsets (0.0 to 1.0)
  */
-static double computeVariationScale() {
-    // Ramp from 0.0 (no variations) to 1.0 (full variations) over training.
-    // Disabled (rampStep<=0), eval mode (totalGens<=1), or trivial: return 1.0.
+static float computeVariationScale() {
+    // Eval mode: use the exact scale stored in the weight file
+    if (gEvalVariationScaleOverride >= 0.0f) return gEvalVariationScaleOverride;
+
+    // Ramp from 0.0 to 1.0 over training.  Returns float for consistency with
+    // serialized variation_scale (stored as float in NN01 weights).  All call
+    // sites must see identical precision between training and eval.
     int numSteps = (gVariationRampStep > 0) ? gTotalGenerations / gVariationRampStep : 0;
-    if (numSteps <= 1) return 1.0;
+    if (numSteps <= 1) return 1.0f;
 
     int stepIndex = (gCurrentGeneration - 1) / gVariationRampStep;  // 1-based gen
-    return static_cast<double>(std::min(stepIndex, numSteps - 1)) / static_cast<double>(numSteps - 1);
+    return static_cast<float>(std::min(stepIndex, numSteps - 1)) / static_cast<float>(numSteps - 1);
 }
 
 // ============================================================================
@@ -244,7 +250,7 @@ static void populateVariationOffsets(ScenarioMetadata& meta) {
     const auto& v = gScenarioVariations[windIdx].entryOffsets;
 
     // Get current scale (0.0 to 1.0 over training)
-    double scale = computeVariationScale();
+    float scale = computeVariationScale();
 
     // Angular offsets: scale toward 0
     meta.entryHeadingOffset = v.entryHeadingOffset * scale;
@@ -628,8 +634,9 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
 
       if (printHeader) {
         fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx"
-             << "  dPh-9  dPh-3  dPh-1   dPh0  dPh+1  dPh+5"
-             << "  dTh-9  dTh-3  dTh-1   dTh0  dTh+1  dTh+5"
+             << "  tgX-9  tgX-3  tgX-1   tgX0  tgX+1  tgX+5"
+             << "  tgY-9  tgY-3  tgY-1   tgY0  tgY+1  tgY+5"
+             << "  tgZ-9  tgZ-3  tgZ-1   tgZ0  tgZ+1  tgZ+5"
              << "   ds-9   ds-3   ds-1    ds0   ds+1   ds+5"
              << "  dd/dt"
              << "      qw      qx      qy      qz"
@@ -643,12 +650,14 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         printHeader = false;
       }
 
-      const float* in = stepState.getNNInputs();
+      const NNInputs& nnIn = stepState.getNNInputs();
+      const float* in = reinterpret_cast<const float*>(&nnIn);
       const float* out = stepState.getNNOutputs();
 
-      char outbuf[2048];
+      char outbuf[2560];
       sprintf(outbuf,
         "%06llu %06llu %03d/%02d:%04d: %06ld %3d"
+        " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"
         " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"
         " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"
         " % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f"
@@ -668,9 +677,10 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         in[0], in[1], in[2], in[3], in[4], in[5],
         in[6], in[7], in[8], in[9], in[10], in[11],
         in[12], in[13], in[14], in[15], in[16], in[17],
-        in[18],
-        in[19], in[20], in[21], in[22],
-        in[23], in[24], in[25], in[26],
+        in[18], in[19], in[20], in[21], in[22], in[23],
+        in[24],
+        in[25], in[26], in[27], in[28],
+        in[29], in[30], in[31], in[32],
         out[0], out[1], out[2],
         path.at(pathIndex).start[0],
         path.at(pathIndex).start[1],
@@ -691,6 +701,76 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
     }
   }
   fout.flush();
+}
+
+// Purpose of each caller for buildEvalData()
+enum class EvalPurpose {
+    Training,        // Per-individual fitness during evolution
+    EliteReeval,     // Best-of-generation deterministic re-run
+    StandaloneEval,  // evaluateMode=1 one-shot evaluation
+};
+
+struct EvalJob {
+    const ScenarioDescriptor& scenario;
+    const std::vector<uint8_t>& nnData;  // Already-serialized NN01 payload
+    EvalPurpose purpose;
+};
+
+// Build a fully-populated EvalData ready for sanitizePaths() + sendRPC().
+// Reads globals: gRabbitSpeedConfig, gScenarioVariations (via populateVariationOffsets),
+// computeVariationScale(), globalScenarioCounter.
+static EvalData buildEvalData(const EvalJob& job) {
+    EvalData evalData;
+    evalData.controllerType = ControllerType::NEURAL_NET;
+    evalData.gp.assign(reinterpret_cast<const char*>(job.nnData.data()),
+                       reinterpret_cast<const char*>(job.nnData.data() + job.nnData.size()));
+    evalData.gpHash = hashByteVector(evalData.gp);
+
+    // Bug 4 fix: StandaloneEval and EliteReeval both get elite treatment
+    evalData.isEliteReeval = (job.purpose != EvalPurpose::Training);
+
+    // Bug 3 fix: ALWAYS set rabbitSpeedConfig from the global (was missing in eval path)
+    evalData.rabbitSpeedConfig = gRabbitSpeedConfig;
+    evalData.rabbitSpeedConfig.sigma = gRabbitSpeedConfig.sigma * computeVariationScale();
+
+    evalData.pathList = job.scenario.pathList;
+
+    uint64_t scenarioSequence = globalScenarioCounter.fetch_add(1, std::memory_order_relaxed) + 1;
+    evalData.scenario.scenarioSequence = scenarioSequence;
+    evalData.scenario.bakeoffSequence = 0;
+
+    // Build scenario list (single canonical copy — was 3 copies with drift)
+    evalData.scenarioList.clear();
+    evalData.scenarioList.reserve(job.scenario.pathList.size());
+    for (size_t idx = 0; idx < job.scenario.pathList.size(); ++idx) {
+        ScenarioMetadata meta;
+        meta.scenarioSequence = scenarioSequence;
+        // Bug 4 fix: enable deterministic logging for non-training purposes
+        meta.enableDeterministicLogging = (job.purpose != EvalPurpose::Training);
+        meta.bakeoffSequence = 0;
+
+        size_t numWindScenarios = job.scenario.windScenarios.size();
+        if (numWindScenarios > 0 && job.scenario.pathList.size() > 0) {
+            size_t pathIdx = idx / numWindScenarios;
+            size_t windIdx = idx % numWindScenarios;
+            meta.pathVariantIndex = static_cast<int>(pathIdx);
+            if (windIdx < job.scenario.windScenarios.size()) {
+                meta.windVariantIndex = job.scenario.windScenarios[windIdx].windVariantIndex;
+                meta.windSeed = job.scenario.windScenarios[windIdx].windSeed;
+            }
+        } else {
+            meta.pathVariantIndex = static_cast<int>(idx);
+        }
+
+        populateVariationOffsets(meta);
+        meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
+        evalData.scenarioList.push_back(meta);
+    }
+    if (!evalData.scenarioList.empty()) {
+        evalData.scenario = evalData.scenarioList.front();
+    }
+
+    return evalData;
 }
 
 // NN evaluation mode: load weight file, run through scenarios, report fitness
@@ -730,6 +810,27 @@ static void runNNEvaluation(
     exit(1);
   }
 
+  // Validate topology matches compiled-in expectations
+  {
+    std::vector<int> expectedTopology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+    if (genome.topology != expectedTopology) {
+      std::ostringstream fileTopo, compiledTopo;
+      for (size_t i = 0; i < genome.topology.size(); i++) {
+        if (i > 0) fileTopo << ",";
+        fileTopo << genome.topology[i];
+      }
+      for (size_t i = 0; i < expectedTopology.size(); i++) {
+        if (i > 0) compiledTopo << ",";
+        compiledTopo << expectedTopology[i];
+      }
+      *logger.error() << "NN topology mismatch: file has {" << fileTopo.str()
+                      << "} but binary expects {" << compiledTopo.str()
+                      << "}. Old weight files (e.g. 611-weight 27,16,8,3) are incompatible "
+                      << "with the 023 direction-cosine input layout." << endl;
+      exit(1);
+    }
+  }
+
   {
     std::ostringstream topo;
     for (size_t i = 0; i < genome.topology.size(); i++) {
@@ -739,51 +840,23 @@ static void runNNEvaluation(
     *logger.info() << "  Topology: " << topo.str() << " (" << genome.weights.size() << " weights)" << endl;
   }
   *logger.info() << "  Stored fitness: " << std::fixed << std::setprecision(6) << genome.fitness << endl;
+  *logger.info() << "  Generation: " << genome.generation
+                 << "  VariationScale: " << std::fixed << std::setprecision(4)
+                 << genome.variation_scale << endl;
+
+  // Use the variation scale stored in the weight file — this is the exact value
+  // computeVariationScale() returned at the gen these weights were saved during
+  // training. No recomputation from ramp globals needed (which would require
+  // matching NumberOfGenerations and VariationRampStep between train/eval configs).
+  gEvalVariationScaleOverride = genome.variation_scale;
 
   // Serialize genome for RPC (same format minisim expects)
   std::vector<uint8_t> nnData;
   nn_serialize(genome, nnData);
 
-  // Use scenario 0 (same as training)
+  // TODO T044: iterate all scenarios for Bug 5 fix
   const ScenarioDescriptor& scenario = scenarioForIndex(0);
-  uint64_t scenarioSequence = globalScenarioCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-
-  EvalData evalData;
-  evalData.controllerType = ControllerType::NEURAL_NET;
-  evalData.gp.assign(reinterpret_cast<const char*>(nnData.data()),
-                     reinterpret_cast<const char*>(nnData.data() + nnData.size()));
-  evalData.gpHash = hashByteVector(evalData.gp);
-  evalData.isEliteReeval = false;
-  evalData.pathList = scenario.pathList;
-  evalData.scenario.scenarioSequence = scenarioSequence;
-  evalData.scenario.bakeoffSequence = 0;
-
-  evalData.scenarioList.clear();
-  evalData.scenarioList.reserve(scenario.pathList.size());
-  for (size_t idx = 0; idx < scenario.pathList.size(); ++idx) {
-    ScenarioMetadata meta;
-    meta.scenarioSequence = scenarioSequence;
-    meta.enableDeterministicLogging = false;
-    meta.bakeoffSequence = 0;
-    size_t numWindScenarios = scenario.windScenarios.size();
-    if (numWindScenarios > 0 && scenario.pathList.size() > 0) {
-      size_t pathIdx = idx / numWindScenarios;
-      size_t windIdx = idx % numWindScenarios;
-      meta.pathVariantIndex = static_cast<int>(pathIdx);
-      if (windIdx < scenario.windScenarios.size()) {
-        meta.windVariantIndex = scenario.windScenarios[windIdx].windVariantIndex;
-        meta.windSeed = scenario.windScenarios[windIdx].windSeed;
-      }
-    } else {
-      meta.pathVariantIndex = static_cast<int>(idx);
-    }
-    populateVariationOffsets(meta);
-    meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
-    evalData.scenarioList.push_back(meta);
-  }
-  if (!evalData.scenarioList.empty()) {
-    evalData.scenario = evalData.scenarioList.front();
-  }
+  EvalData evalData = buildEvalData({scenario, nnData, EvalPurpose::StandaloneEval});
   evalData.sanitizePaths();
 
   // Send to minisim and get results
@@ -797,7 +870,18 @@ static void runNNEvaluation(
 
   // Compute decomposed fitness then aggregate
   auto evalScenarioScores = computeScenarioScores(evalResults);
+  double storedFitness = genome.fitness;  // Save before overwrite (Bug 2 fix)
   double fitness = aggregateRawFitness(evalScenarioScores);
+
+  // Determinism check: compare eval-computed fitness with stored fitness (T046)
+  // Note: with Bug 3 fix (rabbitSpeedConfig now set), eval fitness may legitimately
+  // differ from stored training-time fitness. This log is for visibility, not an error.
+  if (!bitwiseEqual(fitness, storedFitness)) {
+    *logger.info() << "NN_EVAL_DIFFERENT: eval=" << std::fixed << std::setprecision(6) << fitness
+                   << " stored=" << storedFitness << endl;
+  } else {
+    *logger.info() << "NN_EVAL_SAME: fitness=" << std::fixed << std::setprecision(6) << fitness << endl;
+  }
 
   // Log per-step data to data.dat
   logEvalResults(fout, evalResults);
@@ -817,11 +901,16 @@ static void runNNEvaluation(
 
   globalSimRunCounter.fetch_add(evalResults.pathList.size(), std::memory_order_relaxed);
 
+  // Bug 2 fix: store eval-computed fitness, not the original stored fitness
+  genome.fitness = fitness;
+  std::vector<uint8_t> updatedNnData;
+  nn_serialize(genome, updatedNnData);
+
   // Upload to S3 so renderer can display the eval results.
   // Key uses same reverse-time prefix as training (renderer auto-discovers newest run).
   // gen9999 = generation 1 in the reverse-sort scheme (10000 - gen).
-  evalResults.gp.assign(reinterpret_cast<const char*>(nnData.data()),
-                        reinterpret_cast<const char*>(nnData.data() + nnData.size()));
+  evalResults.gp.assign(reinterpret_cast<const char*>(updatedNnData.data()),
+                        reinterpret_cast<const char*>(updatedNnData.data() + updatedNnData.size()));
   evalResults.gpHash = hashByteVector(evalResults.gp);
   {
     std::string keyName = startTime + "/gen9999.dmp";
@@ -845,11 +934,11 @@ static void runNNEvaluation(
   }
 
   *logger.info() << "NN Eval fitness: " << std::fixed << std::setprecision(6) << fitness << endl;
-  *logger.info() << "Stored fitness:  " << std::fixed << std::setprecision(6) << genome.fitness << endl;
+  *logger.info() << "Stored fitness:  " << std::fixed << std::setprecision(6) << storedFitness << endl;
 
   // Log to statistics file
   bout << "#NNEval fitness=" << std::fixed << std::setprecision(6) << fitness
-       << " storedFitness=" << genome.fitness
+       << " storedFitness=" << storedFitness
        << " weightFile=" << cfg.nnWeightFile
        << " scenarios=" << evalResults.pathList.size()
        << endl;
@@ -927,51 +1016,7 @@ static void runNNEvolution(
 
       // Build EvalData
       const ScenarioDescriptor& scenario = scenarioForIndex(ind % generationScenarios.size());
-      uint64_t scenarioSequence = globalScenarioCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-
-      EvalData evalData;
-      evalData.controllerType = ControllerType::NEURAL_NET;
-      evalData.gp.assign(reinterpret_cast<const char*>(nnData.data()),
-                         reinterpret_cast<const char*>(nnData.data() + nnData.size()));
-      evalData.gpHash = hashByteVector(evalData.gp);
-      evalData.isEliteReeval = false;
-      // RAMP_LANDSCAPE: scale rabbit speed sigma (0→full over training)
-      evalData.rabbitSpeedConfig = gRabbitSpeedConfig;
-      evalData.rabbitSpeedConfig.sigma = gRabbitSpeedConfig.sigma * computeVariationScale();
-      evalData.pathList = scenario.pathList;
-      evalData.scenario.scenarioSequence = scenarioSequence;
-      evalData.scenario.bakeoffSequence = 0;
-
-      // Build scenario list
-      evalData.scenarioList.clear();
-      evalData.scenarioList.reserve(scenario.pathList.size());
-      for (size_t idx = 0; idx < scenario.pathList.size(); ++idx) {
-        ScenarioMetadata meta;
-        meta.scenarioSequence = scenarioSequence;
-        meta.enableDeterministicLogging = false;
-        meta.bakeoffSequence = 0;
-
-        size_t numWindScenarios = scenario.windScenarios.size();
-        if (numWindScenarios > 0 && scenario.pathList.size() > 0) {
-          size_t numBasePaths = scenario.pathList.size() / numWindScenarios;
-          size_t pathIdx = idx / numWindScenarios;
-          size_t windIdx = idx % numWindScenarios;
-          meta.pathVariantIndex = static_cast<int>(pathIdx);
-          if (windIdx < scenario.windScenarios.size()) {
-            meta.windVariantIndex = scenario.windScenarios[windIdx].windVariantIndex;
-            meta.windSeed = scenario.windScenarios[windIdx].windSeed;
-          }
-        } else {
-          meta.pathVariantIndex = static_cast<int>(idx);
-        }
-
-        populateVariationOffsets(meta);
-        meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
-        evalData.scenarioList.push_back(meta);
-      }
-      if (!evalData.scenarioList.empty()) {
-        evalData.scenario = evalData.scenarioList.front();
-      }
+      EvalData evalData = buildEvalData({scenario, nnData, EvalPurpose::Training});
       evalData.sanitizePaths();
 
       // Send to minisim worker via ThreadPool
@@ -1012,51 +1057,12 @@ static void runNNEvolution(
     // Re-evaluate best individual and log per-step data to data.dat
     {
       NNGenome& bestGenome = pop.individuals[bestIdx];
+      bestGenome.variation_scale = static_cast<float>(computeVariationScale());
       std::vector<uint8_t> nnData;
       nn_serialize(bestGenome, nnData);
 
       const ScenarioDescriptor& scenario = scenarioForIndex(bestIdx % generationScenarios.size());
-      uint64_t scenarioSequence = globalScenarioCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-
-      EvalData evalData;
-      evalData.controllerType = ControllerType::NEURAL_NET;
-      evalData.gp.assign(reinterpret_cast<const char*>(nnData.data()),
-                         reinterpret_cast<const char*>(nnData.data() + nnData.size()));
-      evalData.gpHash = hashByteVector(evalData.gp);
-      evalData.isEliteReeval = false;
-      // Elite re-eval uses same ramp scale as current generation
-      evalData.rabbitSpeedConfig = gRabbitSpeedConfig;
-      evalData.rabbitSpeedConfig.sigma = gRabbitSpeedConfig.sigma * computeVariationScale();
-      evalData.pathList = scenario.pathList;
-      evalData.scenario.scenarioSequence = scenarioSequence;
-      evalData.scenario.bakeoffSequence = 0;
-
-      evalData.scenarioList.clear();
-      evalData.scenarioList.reserve(scenario.pathList.size());
-      for (size_t idx = 0; idx < scenario.pathList.size(); ++idx) {
-        ScenarioMetadata meta;
-        meta.scenarioSequence = scenarioSequence;
-        meta.enableDeterministicLogging = false;
-        meta.bakeoffSequence = 0;
-        size_t numWindScenarios = scenario.windScenarios.size();
-        if (numWindScenarios > 0 && scenario.pathList.size() > 0) {
-          size_t pathIdx = idx / numWindScenarios;
-          size_t windIdx = idx % numWindScenarios;
-          meta.pathVariantIndex = static_cast<int>(pathIdx);
-          if (windIdx < scenario.windScenarios.size()) {
-            meta.windVariantIndex = scenario.windScenarios[windIdx].windVariantIndex;
-            meta.windSeed = scenario.windScenarios[windIdx].windSeed;
-          }
-        } else {
-          meta.pathVariantIndex = static_cast<int>(idx);
-        }
-        populateVariationOffsets(meta);
-        meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
-        evalData.scenarioList.push_back(meta);
-      }
-      if (!evalData.scenarioList.empty()) {
-        evalData.scenario = evalData.scenarioList.front();
-      }
+      EvalData evalData = buildEvalData({scenario, nnData, EvalPurpose::EliteReeval});
       evalData.sanitizePaths();
 
       auto evalDataPtr = std::make_shared<EvalData>(std::move(evalData));
