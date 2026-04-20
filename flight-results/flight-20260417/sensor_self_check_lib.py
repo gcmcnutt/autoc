@@ -1,5 +1,11 @@
 """Sensor self-consistency audit library (024 WI1/WI2).
 
+⚠️ See docs/COORDINATE_CONVENTIONS.md section "INAV NEU ↔ aerospace NED
+reflection" — the flight-side quaternion is NOT a kinematically-valid
+q_EB after the boundary fix. Only use it for static attitude look-ups
+(direction cosines, Euler extraction, body-axis-in-world rotations).
+Never integrate it against gyro or use in Kalman/Mahony/Madgwick filters.
+
 Reads INAV blackbox CSV, xiao flight log, or sim data.dat; converts each to
 a canonical NED / q_EB / aerospace-RHR representation; runs 8 cross-checks
 to verify conventions end-to-end.

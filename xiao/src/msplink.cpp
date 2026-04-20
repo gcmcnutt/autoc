@@ -163,12 +163,41 @@ static gp_vec3 neuVectorToNedMeters(const int32_t vec_cm[3])
   return gp_vec3(north, east, down);
 }
 
+//
+// ⚠️ KNOWN WRONG — TO FIX IN 024 WI3 T041.
+//
+// The current "full conjugate" is based on a 2025 bench interpretation that
+// turned out to be the opposite of what we actually need. Empirical work in
+// 024 (spec "Deep convention investigation", 2026-04-19) shows:
+//   - INAV stores q_EB in its NEU world frame.
+//   - Our stack uses aerospace NED.
+//   - NEU→NED is a REFLECTION of world-Z, NOT a rotation. Quaternions
+//     cannot represent reflections cleanly.
+//
+// Correct static-attitude-parity fix (planned for T041):
+//   return gp_quat(q[0], q[1], q[2], -q[3]);    // flip qz ONLY
+//
+// ⚠️⚠️⚠️  THE RESULT IS NOT A KINEMATIC q_EB.  ⚠️⚠️⚠️
+// DO NOT feed it into any attitude-estimation filter (Kalman / Mahony /
+// Madgwick) that also integrates body rates. It is only valid for STATIC
+// look-ups:
+//   - direction-cosine projection of world vector to body (NN input)
+//   - Euler angle extraction (roll/pitch/yaw display)
+//   - body-axis-in-world rotation for rendering / geometry
+//
+// For kinematic integration use RAW INAV quat + RAW INAV gyro, integrate in
+// INAV's NEU frame internally, and apply the qz flip only at the consumer
+// side.
+//
+// See docs/COORDINATE_CONVENTIONS.md "INAV NEU ↔ aerospace NED reflection"
+// section for the full rationale and allowed/forbidden operations list.
+//
 static gp_quat neuQuaternionToNed(const float q[4])
 {
   // INAV sends body->earth quaternion (confirmed via bench testing).
   // GP expects earth->body, so we take the conjugate.
   // Bench tests show ALL vector components need sign flip.
-  gp_quat attitude(q[0], -q[1], -q[2], -q[3]);  // Full conjugate
+  gp_quat attitude(q[0], -q[1], -q[2], -q[3]);  // Full conjugate — KNOWN WRONG, see note above
   if (attitude.norm() == 0.0f)
   {
     return gp_quat::Identity();

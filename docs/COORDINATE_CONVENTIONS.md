@@ -20,6 +20,57 @@ analysing logs or integrating new flight data.
   `AircraftState`.  
 - Path generator targets and GP sensors operate strictly in metres and radians.
 
+## ⚠️ CRITICAL: INAV NEU ↔ aerospace NED reflection (msplink boundary)
+
+INAV's internal world frame is NEU (North-East-**Up**). Our aerospace stack
+is NED (North-East-**Down**). The transformation between them is a
+**reflection** of the world-Z axis, NOT a rotation. **Quaternions cannot
+represent reflections.**
+
+Therefore there is no single quaternion transform `T` such that applying
+`q_aero_NED = T(q_inav_NEU)` preserves BOTH of:
+
+  (a) **static attitude interpretation** — pitch/roll/yaw extraction,
+      direction-cosine computation, body-axis-in-world lookups.
+  (b) **kinematic integration** — `dq/dt = ½·q·ω_body`. Integrating
+      body-rate `ω` into a transformed quat gives drift garbage.
+
+**Our boundary fix at xiao `msplink.cpp neuQuaternionToNed`:**
+```cpp
+return gp_quat(q[0], q[1], q[2], -q[3]);   // flip qz only (NEU→NED world-Z)
+```
+
+This achieves (a) — the NN, which uses quat only for static look-ups
+(direction-cosine projection of target into body frame), sees a quat that
+matches sim's aerospace q_EB convention. Training↔deployment parity.
+
+**DO NOT use this quat as a kinematic q_EB.** It is not one. Specifically:
+
+- **Forbidden**: feeding the fixed quat into any filter that also consumes
+  the logged body rates and integrates (Kalman, Mahony, Madgwick, etc.)
+  to produce updated attitude. The math will diverge because the quat
+  is a reflection artifact, not a proper rotation.
+- **Forbidden**: computing `d(fixed_quat)/dt = ½·fixed_quat·ω_gyro`. The
+  kinematic relation is broken by the reflection.
+- **Forbidden**: composing the fixed quat with other rotation quaternions
+  under assumption that Hamilton product behaves as proper rotation
+  composition. The result will be wrong.
+
+**Allowed**:
+- Static attitude extraction (Euler, body-axis-in-world rotations)
+- Direction-cosine computation for NN input
+- Sign-of-pitch / sign-of-roll / sign-of-yaw comparisons
+
+If a future Kalman/attitude filter wants kinematic-valid quat, it MUST use
+the raw INAV quat (unflipped) + raw INAV gyro, compute the filter update
+in INAV's NEU frame, and apply the z-flip ONLY at the point of consumption
+(to get static aerospace attitude for downstream use). The flip is a
+consumer-side patch, not a frame-transform.
+
+Background and empirical verification (at-rest accel + mid-flight yaw):
+see `specs/024-sim-real-fidelity/spec.md` "Deep convention investigation"
+section.
+
 ## Orientation Representation
 - **Canonical state:** Unit quaternion `(w, x, y, z)` — scalar-first, Hamilton
   convention — carried through the autoc stack and exchanged with the simulator.
