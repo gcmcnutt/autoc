@@ -56,7 +56,15 @@ class CanonicalData:
     t_ms: np.ndarray               # timestamps in milliseconds (monotonic)
     pos: Optional[np.ndarray] = None     # (N, 3) NED m
     vel: Optional[np.ndarray] = None     # (N, 3) NED m/s
+    # Aerospace q_EB (w, x, y, z). Static-lookup-valid in aerospace NED.
+    # On blackbox source this is the qz-flipped INAV quat (T044 convention
+    # boundary fix; matches T041 xiao msplink behavior). NOT kinematically
+    # valid on blackbox — rate integration requires quat_raw below.
     quat: Optional[np.ndarray] = None    # (N, 4) q_EB (w, x, y, z)
+    # Raw INAV NEU quat (scalar-first). Kinematically consistent with logged
+    # body rates: dq/dt = 0.5·q·ω. Blackbox populates this pre-flip; xiao
+    # (post-T041) and sim have no NEU↔NED reflection and set quat_raw = quat.
+    quat_raw: Optional[np.ndarray] = None  # (N, 4) kinematic-valid quat
     gyro: Optional[np.ndarray] = None    # (N, 3) body rad/s aerospace RHR
     accel: Optional[np.ndarray] = None   # (N, 3) body m/s² FRD
     euler: Optional[np.ndarray] = None   # (N, 3) (roll, pitch, yaw) rad aerospace
@@ -317,44 +325,27 @@ def read_blackbox_csv(path) -> CanonicalData:
         vel = vel_raw / 100.0
         vel[:, 2] *= -1.0
 
-    # Quaternion transform (2026-04-19 deep finding, T044):
-    # The INAV blackbox quaternion is stored in INAV's NEU world convention.
-    # Our aerospace stack uses NED. Converting between NEU and NED is a
-    # REFLECTION of the world Z axis, NOT a rotation. Quaternions can
-    # represent rotations but NOT reflections — so there is no clean static
-    # q_transform that takes NEU quat to NED quat while preserving the
-    # kinematic relation dq/dt = 0.5·q·ω_body.
+    # Quaternion convention (T044; matches T041 xiao msplink boundary fix):
+    # INAV blackbox stores the orientation quat in NEU world. Our aerospace
+    # stack uses NED. NEU→NED is a world-Z REFLECTION — not a rotation —
+    # so no single quat transform can be both static-lookup-valid AND
+    # kinematically consistent with body rates.
     #
-    # Empirically:
-    # - Raw quat (no transform) + raw gyro (no negation): gyro vs quat-delta
-    #   PASS slope +1.0 on all 3 axes (INAV internal consistency). Pitch
-    #   and roll extract correctly against at-rest accel. But yaw extraction
-    #   disagrees with aerospace ground-track by variable amounts (because
-    #   yaw sign is flipped between NEU and NED).
-    # - (w, x, y, -z) transform: gives aerospace yaw for static attitude
-    #   interpretation (heading matches track within ~10° declination).
-    #   BUT this transform breaks the kinematic quat<->gyro relationship
-    #   (reflection, not rotation), so gyro vs quat-delta fails.
+    # Both views are useful; this library exposes both:
+    #   quat     = aerospace q_EB, qz flipped. Use for all static attitude
+    #              lookups (Euler extraction, heading-vs-track, gravity
+    #              projection, nose-vs-velocity, mag heading).
+    #   quat_raw = raw INAV NEU quat. Kinematically consistent with logged
+    #              gyros: use ONLY for rate-integration cross-checks
+    #              (quat-delta vs gyro).
     #
-    # For this library we keep RAW (option A above). It preserves rate
-    # integration consistency, matches pitch/roll against accel directly,
-    # and the yaw flip issue is documented as a separate concern requiring
-    # either per-axis handling or a rethink of how attitude is passed to
-    # the NN (the NN trained against sim's aerospace-NED quat, so at
-    # deployment we need to flip qz BEFORE feeding NN — as a "lookup" op,
-    # understanding the flipped quat isn't kinematically valid for
-    # integration-style math).
-    #
-    # This is actually the answer to the flight-20260417 failure: the NN
-    # was trained with aerospace q_EB (sim EOM01, NED), but received INAV's
-    # NEU quat unmodified (msplink's conjugate was a red herring that made
-    # it worse). The fix for T041 msplink is:
-    #   q_for_NN = (w, x, y, -z)   # static lookup only
-    # with full awareness that this is NOT a kinematically-valid NED quat;
-    # it's a "static-attitude-parity" patch at the convention boundary.
-    quat_raw = np.array(quat_list, dtype=float) / 10000.0
-    quat_norm = np.linalg.norm(quat_raw, axis=1, keepdims=True)
-    quat = quat_raw / np.maximum(quat_norm, 1e-9)
+    # See docs/COORDINATE_CONVENTIONS.md "INAV NEU ↔ aerospace NED
+    # reflection" and include/autoc/imu/inav_quat_convention.h.
+    quat_scaled = np.array(quat_list, dtype=float) / 10000.0
+    quat_norms = np.linalg.norm(quat_scaled, axis=1, keepdims=True)
+    quat_raw = quat_scaled / np.maximum(quat_norms, 1e-9)
+    quat = quat_raw.copy()
+    quat[:, 3] *= -1.0  # flip qz: NEU→NED static lookup
 
     # Gyro transform: raw INAV gyro passed through as rad/s. No axis
     # negations. This matches the raw quat (no transform) policy — they
@@ -383,7 +374,7 @@ def read_blackbox_csv(path) -> CanonicalData:
 
     return CanonicalData(
         source='blackbox', t_ms=t_ms,
-        pos=pos, vel=vel, quat=quat, gyro=gyro,
+        pos=pos, vel=vel, quat=quat, quat_raw=quat_raw, gyro=gyro,
         accel=accel, euler=euler, mag=mag,
         meta={'path': path, 'rows': len(t_ms), 'vel_col': vel_base,
               'acc_col': acc_base, 'has_attitude': has_attitude,
@@ -434,10 +425,14 @@ def read_xiao_log(path) -> CanonicalData:
     if n == 0:
         raise ValueError(f"No NN lines parsed from xiao log: {path}")
 
+    # Xiao emits post-msplink aerospace q_EB (no NEU↔NED reflection applies
+    # after T041). Use quat for both static lookups and kinematic checks.
+    quat_arr = np.array(quat_list, dtype=float)
     return CanonicalData(
         source='xiao',
         t_ms=np.array(t_ms_list, dtype=np.int64),
-        quat=np.array(quat_list, dtype=float),
+        quat=quat_arr,
+        quat_raw=quat_arr,
         gyro=np.array(gyro_list, dtype=float),
         cmd=np.array(cmd_list, dtype=float),
         meta={'path': path, 'nn_samples': n})
@@ -504,9 +499,10 @@ def read_sim_data_dat(path) -> CanonicalData:
     vel_body = np.array(vel_body_list, dtype=float)
     vel = rotate_body_to_world(quat, vel_body)
 
+    # Sim is aerospace NED throughout: no NEU↔NED reflection. quat_raw = quat.
     return CanonicalData(
         source='sim', t_ms=t_ms,
-        pos=pos, vel=vel, quat=quat, gyro=gyro, cmd=cmd,
+        pos=pos, vel=vel, quat=quat, quat_raw=quat, gyro=gyro, cmd=cmd,
         meta={'path': path, 'rows': n})
 
 
@@ -577,10 +573,15 @@ def check_position_vs_velocity(d: CanonicalData):
 
 
 def check_gyro_vs_quat_delta(d: CanonicalData):
-    """q_delta-derived rate vs logged gyro (midpoint of sample pairs)."""
-    if d.gyro is None or d.quat is None:
+    """q_delta-derived rate vs logged gyro (midpoint of sample pairs).
+
+    Uses the kinematically-valid quat_raw (pre-qz-flip on blackbox; same as
+    quat on xiao/sim where no NEU↔NED reflection exists). Rate integration
+    is undefined on the flipped static-lookup quat."""
+    q = d.quat_raw if d.quat_raw is not None else d.quat
+    if d.gyro is None or q is None:
         return {'skipped': 'no gyro or quat'}
-    rates, mid_t = rate_from_quat_pairs(d.quat, d.t_ms)
+    rates, mid_t = rate_from_quat_pairs(q, d.t_ms)
     # Pair gyro at midpoints
     gyro_mid = 0.5 * (d.gyro[:-1] + d.gyro[1:])
     results = {}
@@ -693,10 +694,13 @@ def check_attitude_vs_velocity_direction(d: CanonicalData):
 
 def check_cmd_vs_attitude_change(d: CanonicalData, lag_ms=200):
     """NN command at t vs body rate at t+lag. For sim (single source, has cmd).
-    For flight, use fuse_blackbox_xiao() to bring cmd in."""
-    if d.cmd is None or d.quat is None:
+    For flight, use fuse_blackbox_xiao() to bring cmd in.
+
+    Rate derivation uses quat_raw (kinematically valid)."""
+    q = d.quat_raw if d.quat_raw is not None else d.quat
+    if d.cmd is None or q is None:
         return {'skipped': 'no cmd or quat'}
-    rates, mid_t = rate_from_quat_pairs(d.quat, d.t_ms)
+    rates, mid_t = rate_from_quat_pairs(q, d.t_ms)
     # For each cmd at time t, find rate at time t+lag
     target_t = d.t_ms[:-1] + lag_ms  # shift by lag (drop last cmd sample since no rate for it)
     idx = np.searchsorted(mid_t, target_t)

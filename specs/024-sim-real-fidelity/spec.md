@@ -332,8 +332,35 @@ already aerospace NED, no transforms needed.
 
 ### Additional findings captured here as we proceed below.
 
+### T044 resolution (2026-04-19) — two-quat split in analysis library
+
+`sensor_self_check_lib.py` now exposes both quats on blackbox:
+- `quat` = aerospace q_EB (qz flipped) — static lookups (Euler, heading,
+  gravity projection, nose-vs-velocity, mag heading).
+- `quat_raw` = raw INAV NEU quat — only the kinematic `quat↔gyro-delta`
+  and `cmd↔rate` checks, which need `dq/dt = 0.5·q·ω` to hold.
+
+Xiao (post-T041) and sim emit aerospace q_EB throughout and set
+`quat_raw = quat` — no reflection.
+
+Post-T044 audit on flight-20260417 (sign-gate):
+- Check 1 pos↔vel: PASS (unchanged)
+- Check 2 gyro↔quat-delta: PASS +1.00/+0.99/+1.00 (uses quat_raw)
+- Check 4 accel↔gravity: PASS (ax +0.60 was −4.83 pre-fix; sign restored)
+- Check 5 heading↔track: PASS +1.17 (unchanged — yaw was already correct
+  after qz flip)
+- Check 6 mag↔heading: offset −27.4° σ=63.8° (was −39.9° σ=98.8° raw)
+- Check 7 nose↔vel dir: PASS N +0.81, E +0.61; FAIL D −0.076 — noise-
+  dominated (|r|=0.08); aircraft is essentially level for most of the
+  flight so both nose-D and vel-D are near zero. **Not a convention
+  issue**; sign-gate limit when true correlation is ≈0.
+- Check 8 cmd↔rate: SKIP (still needs fusion join T025c).
+
+Satisfies spec Validation #1 — blackbox data was always correct; we now
+interpret it correctly.
+
 ```
-# (next: T041 msplink fix, WI5 bench verify, retrain + fly)
+# (next: WI5 bench verify, retrain + fly)
 ```
 
 ## Work Items (priority order)
