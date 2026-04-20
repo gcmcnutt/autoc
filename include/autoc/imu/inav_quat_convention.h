@@ -1,34 +1,40 @@
 // INAV quaternion → aerospace q_EB convention conversion (static lookup only).
 //
-// Background (see docs/COORDINATE_CONVENTIONS.md "INAV NEU ↔ aerospace NED
-// reflection" for the full rationale):
+// Background (see docs/COORDINATE_CONVENTIONS.md):
 //
-// INAV stores its orientation quaternion in its internal NEU world frame.
-// Our aerospace stack uses NED. NEU→NED is a REFLECTION of the world-Z axis,
-// NOT a rotation — and quaternions cannot represent reflections.
+// INAV's AHRS publishes an orientation quaternion that represents airframe
+// attitude in INAV's own conventions — specifically, pitch is nose-down-
+// positive and yaw is nose-left-positive (N→E negative). This matches
+// INAV's Euler `attitude[]` and raw `gyroADCf[]` streams (pitch rate
+// positive = nose down, yaw rate positive = N→W). Board alignment
+// (`align_board_roll/pitch/yaw`) is already applied inside INAV before
+// these values leave the FC, so the numbers arriving at xiao are
+// airframe-body-frame — not board-frame.
 //
-// There is therefore no single static transform that is both:
-//   (a) correct for static attitude look-ups (Euler extraction, direction
-//       cosine computation, body-axis-in-world rotation)
-//   (b) kinematically valid (dq/dt = 0.5·q·ω_body preserved)
+// Our documented convention (docs/COORDINATE_CONVENTIONS.md) is aerospace
+// NED / FRD / RHR: pitch positive = nose UP, roll positive = right-wing
+// DOWN, yaw positive = nose RIGHT (N→E). To bring the INAV quat into
+// conformance we must flip the components whose rotation axes have
+// opposite sign in the two conventions:
+//   qx (roll axis): same sign  → pass through unchanged
+//   qy (pitch axis): opposite  → flip
+//   qz (yaw axis):  opposite  → flip
 //
-// This function delivers (a) — suitable for feeding the NN static inputs
-// (direction cosines, quat components as features) and for rendering /
-// display. DO NOT use the result in a Kalman/Mahony/Madgwick filter or any
-// integration that consumes body rates to update attitude. For those, use
-// the raw INAV quat + raw INAV gyro together, and apply this flip only at
-// the consumer boundary.
+// Bench verification on this FC (2026-04-19, post board-alignment 1700/0/900):
+//   Nose up 30°:        raw qy = −0.2  → we want +0.26 (aerospace nose-up-pos)
+//   Nose down 30°:      raw qy = +0.25 → we want −0.26
+//   Right wing down 30°: raw qx = +0.2  → we want +0.26 (already correct)
+//   Nose east 90°:      raw qz = −0.7  → we want +0.71 (aerospace N→E-pos)
 //
-// Empirical derivation (2026-04-19, flight-20260417 analysis):
-// - Accel at rest (pre-takeoff): measured gravity in body gives physical
-//   pitch=-7.2°, roll=-3.3°.
-// - Raw INAV quat (no transform) Euler extraction (using aerospace q_EB
-//   formulas): pitch=-8.1°, roll=-5.5°. Matches in sign within ~2° (accel
-//   noise tolerance). Confirms raw INAV qx and qy match aerospace sign.
-// - Mid-flight yaw-from-raw-quat consistently 180° off from ground-track
-//   direction. Flipping qz brings agreement within ~10° (declination+wind).
-// - Bench compound-attitude verification is the final definitive test
-//   (024 WI5 T100-T104).
+// WARNING — not kinematically valid. This transform mixes sign flips on
+// two different components, which is a reflection when viewed from the
+// rotation-group side. The result is correct for STATIC attitude lookup
+// (Euler extraction, direction-cosine computation, body-axis-in-world
+// rotation) but NOT for dq/dt = 0.5·q·ω_body integration. Do not feed
+// the output into Kalman/Mahony/Madgwick filters or any consumer that
+// also integrates body rates to update attitude. Gyros must receive the
+// matching pitch/yaw sign flips downstream (convertMSPStateToAircraftState
+// handles that for NN consumption).
 
 #pragma once
 
@@ -37,18 +43,17 @@
 namespace autoc {
 namespace imu {
 
-// Convert an INAV-sent quaternion (body→earth, NEU world, with INAV's
-// internal conventions) into an aerospace q_EB (earth→body, NED world,
-// right-hand-rule) suitable for STATIC lookup.
+// Convert an INAV-sent quaternion (body→earth in INAV's pitch-nose-down-
+// positive / yaw-N→W-positive airframe convention) into an aerospace
+// q_EB (earth→body, NED world, RHR) suitable for STATIC lookup.
 //
 // Input: INAV wire format q[0..3] = (w, x, y, z), scalar-first.
 // Output: aerospace q_EB as gp_quat.
 //
 // See file header: output is NOT kinematically valid.
 inline gp_quat inavQuatToAerospaceEB(const float q[4]) {
-  // Flip qz only (NEU↔NED world-Z reflection). Keep qw/qx/qy.
-  // Pitch/roll axes are horizontal — unaffected by the reflection.
-  gp_quat out(q[0], q[1], q[2], -q[3]);
+  // Flip qy (pitch axis) and qz (yaw axis). Keep qw/qx.
+  gp_quat out(q[0], q[1], -q[2], -q[3]);
   if (out.norm() == 0.0f) {
     return gp_quat::Identity();
   }

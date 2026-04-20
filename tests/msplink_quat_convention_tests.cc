@@ -1,26 +1,17 @@
-// T040 — bench-derived harness for the INAV quat → aerospace q_EB conversion
-// used at the msplink boundary.
+// T040/T042 — bench-derived harness for INAV quat → aerospace q_EB
+// conversion used at the msplink boundary.
 //
-// These tests encode the aerospace convention we expect after applying the
-// boundary fix (autoc::imu::inavQuatToAerospaceEB). Evidence driving these
-// expectations:
+// Evidence (bench 2026-04-19, this FC, post-alignment-by-INAV):
+//   Nose up 30°        : raw INAV qy = -0.2   → aerospace expects +sin(15°) = +0.26
+//   Nose down 30°      : raw INAV qy = +0.25  → aerospace expects -0.26
+//   Right wing down 30°: raw INAV qx = +0.2   → aerospace expects +0.26  (match)
+//   Nose east 90°      : raw INAV qz = -0.7   → aerospace expects +sin(45°) = +0.71
+//   Compound (nose up 30°, RWD 30°): raw (0.92, +0.26, -0.3, 0)
+//                                    → aerospace (0.93, +0.25, +0.25, -0.07)
 //
-// 1. At-rest accelerometer (flight-20260417 row 2, pre-takeoff):
-//    accel body ≈ (+0.12, -0.056, +0.95) g with acc_1G=2050. Tilt:
-//    pitch=-7.2° (nose-down), roll=-3.3° (right-wing-up). Using raw INAV
-//    quat q=(.9706, -.0303, -.0798, +.2252), the aerospace-formula Euler
-//    extraction gives pitch=-8.1°, roll=-5.5° — matches accel in sign
-//    within accel noise. Confirms raw qx and qy match aerospace signs.
-//
-// 2. Mid-flight yaw vs ground-track: raw extracted yaw is consistently
-//    180°-ish off from track direction. After (w, x, y, -z) transform,
-//    yaw matches track within ~10° (declination + wind). Confirms qz
-//    needs flip.
-//
-// 3. Compound-attitude bench (WI5 T100-T104) will close the loop with
-//    known physical poses vs extracted Euler/cosines. These unit tests
-//    pre-encode those expectations so the msplink boundary implementation
-//    can be CI-gated against the convention.
+// Conclusion: raw INAV airframe-frame quat has qy and qz sign-inverted vs
+// aerospace (qx and qw are already aerospace-compatible). The boundary
+// transform is therefore (w, x, -y, -z).
 
 #include <gtest/gtest.h>
 #include <cmath>
@@ -80,94 +71,88 @@ TEST(InavQuatConvention, IdentityIsIdentity) {
   EXPECT_NEAR(out.z(), 0.0f, 1e-6f);
 }
 
-TEST(InavQuatConvention, AtRestSampleMatchesAccelAttitude) {
-  // flight-20260417 row 2 raw INAV quat (pre-takeoff on ground).
-  // Accel measured gravity in body = (+0.12, -0.056, +0.95) g
-  //   → pitch ≈ -7.2° (nose down), roll ≈ -3.3° (right wing up).
-  // Our conversion should extract matching signs within a few degrees.
-  const float q_raw[4] = {0.9706f, -0.0303f, -0.0798f, 0.2252f};
+TEST(InavQuatConvention, PureNoseUpBenchSample) {
+  // Bench 2026-04-19: physically hold nose up 30°. Raw INAV airframe quat
+  // reads (1, 0, -0.2, 0) (qy negative in INAV's nose-down-positive pitch
+  // convention). After our (w, x, -y, -z) boundary transform, qy flips to
+  // positive and aerospace Euler extraction gives nose-up.
+  const float s = std::sin(15.0f * kDegToRad);
+  const float c = std::cos(15.0f * kDegToRad);
+  const float q_raw[4] = {c, 0.0f, -s, 0.0f};  // INAV: nose-up with qy negative
   gp_quat q_eb = autoc::imu::inavQuatToAerospaceEB(q_raw);
 
-  // Pitch: expect roughly -7.2° (nose down). Allow ±3° for accel noise +
-  // extraction+float rounding.
-  EXPECT_NEAR(pitchDeg(q_eb), -7.2f, 3.0f)
-      << "pitch from at-rest sample should match accel (-7.2°)";
-
-  // Roll: expect roughly -3.3° (right wing up).
-  EXPECT_NEAR(rollDeg(q_eb), -3.3f, 3.0f)
-      << "roll from at-rest sample should match accel (-3.3°)";
-
-  // Body-frame gravity Z should be close to +1 (upright).
-  EXPECT_GT(bodyGravityZFromQuat(q_eb), 0.95f)
-      << "belly should point mostly down in world Z (upright aircraft)";
+  EXPECT_NEAR(pitchDeg(q_eb), +30.0f, 1.0f)
+      << "nose-up 30° should extract aerospace pitch +30° after qy flip";
+  EXPECT_NEAR(rollDeg(q_eb), 0.0f, 1.0f);
+  EXPECT_NEAR(yawDeg(q_eb), 0.0f, 1.0f);
 }
 
-TEST(InavQuatConvention, QzIsFlippedFromRaw) {
-  // The core empirical finding: qz must be flipped (NEU→NED world-Z
-  // reflection). Verify the conversion does exactly that and nothing else.
-  // Use a unit-normalized input so no additional scaling happens.
+TEST(InavQuatConvention, QyAndQzAreFlippedFromRaw) {
+  // Transform spec: flip qy AND qz; pass qw and qx through. Verify
+  // component-wise with a unit-normalized input.
   const float n = std::sqrt(0.64f + 0.01f + 0.04f + 0.09f);  // ≈ 0.883
   const float q_raw[4] = {0.8f / n, 0.1f / n, 0.2f / n, 0.3f / n};
   gp_quat q_eb = autoc::imu::inavQuatToAerospaceEB(q_raw);
 
   EXPECT_NEAR(q_eb.w(),  0.8f / n, 1e-4f);
   EXPECT_NEAR(q_eb.x(),  0.1f / n, 1e-4f);
-  EXPECT_NEAR(q_eb.y(),  0.2f / n, 1e-4f);
+  EXPECT_NEAR(q_eb.y(), -0.2f / n, 1e-4f);
   EXPECT_NEAR(q_eb.z(), -0.3f / n, 1e-4f);
 }
 
 TEST(InavQuatConvention, PureYawEastFlipsYawSign) {
-  // If raw INAV represents the aircraft heading east (in NEU's frame),
-  // after our fix the yaw extraction should be aerospace +90° (nose east).
-  //
-  // INAV NEU sends a quat where pure +90° yaw (nose rotating from N to E
-  // counter-clockwise from above in NEU) has qz=-sin(45°). After flip, qz
-  // becomes +sin(45°), matching aerospace q_EB for +90° aerospace yaw.
+  // Raw INAV yaw-east 90° has qz=-sin(45°) (yaw-N→W-positive in INAV).
+  // After the boundary flip qz becomes +sin(45°), aerospace yaw +90°.
   const float s = std::sin(45.0f * kDegToRad);
   const float c = std::cos(45.0f * kDegToRad);
-  const float q_raw[4] = {c, 0.0f, 0.0f, -s};  // INAV: "yaw east" with qz negative
+  const float q_raw[4] = {c, 0.0f, 0.0f, -s};
   gp_quat q_eb = autoc::imu::inavQuatToAerospaceEB(q_raw);
 
-  // After aerospace extraction we should get +90° yaw.
   EXPECT_NEAR(yawDeg(q_eb), +90.0f, 1.0f)
       << "nose-east should extract aerospace yaw +90° after qz flip";
-  // Pitch/roll should be zero.
   EXPECT_NEAR(pitchDeg(q_eb), 0.0f, 1.0f);
   EXPECT_NEAR(rollDeg(q_eb), 0.0f, 1.0f);
 }
 
-TEST(InavQuatConvention, CompoundAttitudeExtractsAerospaceEuler) {
-  // Compound physical attitude: pitch +45° nose up, roll +30° right-wing-down,
-  // yaw 0° nose-north. Aerospace q_EB (ZYX intrinsic):
-  //   e_0 = cos(0)·cos(22.5°)·cos(15°) + sin(0)·sin(22.5°)·sin(15°)
-  //   e_1 = cos(0)·cos(22.5°)·sin(15°) - sin(0)·sin(22.5°)·cos(15°)
-  //   e_2 = cos(0)·sin(22.5°)·cos(15°) + sin(0)·cos(22.5°)·sin(15°)
-  //   e_3 = -cos(0)·sin(22.5°)·sin(15°) + sin(0)·cos(22.5°)·cos(15°)
-  // For yaw=0, e_3 = -sin(22.5°)·sin(15°) = -0.0991.
-  //
-  // INAV's NEU-world quat for the same physical attitude differs ONLY in
-  // the sign of qz (world-Z axis flip). So raw INAV quat has qz=+0.0991.
-  // Applying inavQuatToAerospaceEB (which flips qz) should yield the
-  // aerospace q_EB above.
-  const float theta = 45.0f * kDegToRad;
-  const float phi = 30.0f * kDegToRad;
-  const float ct = std::cos(theta * 0.5f), st = std::sin(theta * 0.5f);
-  const float cp = std::cos(phi * 0.5f),   sp = std::sin(phi * 0.5f);
-  // Aerospace q_EB for yaw=0:
-  const float w_aero = ct * cp;
-  const float x_aero = ct * sp;
-  const float y_aero = st * cp;
-  const float z_aero = -st * sp;
-  // Raw INAV quat: aerospace with qz flipped.
-  const float q_raw[4] = {w_aero, x_aero, y_aero, -z_aero};
-
+TEST(InavQuatConvention, PureRollRightWingDownPassesThrough) {
+  // Raw INAV right-wing-down 30° has qx = +sin(15°), same sign as aerospace
+  // (roll axis is nominally the same in both). Verify the boundary does
+  // not touch qx.
+  const float s = std::sin(15.0f * kDegToRad);
+  const float c = std::cos(15.0f * kDegToRad);
+  const float q_raw[4] = {c, s, 0.0f, 0.0f};
   gp_quat q_eb = autoc::imu::inavQuatToAerospaceEB(q_raw);
 
-  // After conversion, Euler extraction should give the physical attitude.
-  EXPECT_NEAR(pitchDeg(q_eb), 45.0f, 1.0f);
-  EXPECT_NEAR(rollDeg(q_eb),  30.0f, 1.0f);
+  EXPECT_NEAR(rollDeg(q_eb), +30.0f, 1.0f)
+      << "right-wing-down 30° should extract aerospace roll +30°";
+  EXPECT_NEAR(pitchDeg(q_eb), 0.0f, 1.0f);
+  EXPECT_NEAR(yawDeg(q_eb), 0.0f, 1.0f);
+}
 
-  // Output should match aerospace q_EB components we constructed.
+TEST(InavQuatConvention, CompoundNoseUpRightWingDownBenchSample) {
+  // Bench 2026-04-19: physically pitch up 30° + right wing down 30° (yaw 0).
+  // Raw INAV quat observed ≈ (0.92, +0.26, -0.3, 0).
+  // After (w, x, -y, -z): (0.92, +0.26, +0.3, 0).
+  // Expected aerospace q_EB ZYX (pitch +30, roll +30, yaw 0):
+  //   w = cos(15°)·cos(15°)                    = 0.933
+  //   x = cos(15°)·sin(15°)                    = 0.250
+  //   y = sin(15°)·cos(15°)                    = 0.250
+  //   z = -sin(15°)·sin(15°)                   = -0.067
+  const float c = std::cos(15.0f * kDegToRad);
+  const float s = std::sin(15.0f * kDegToRad);
+  const float w_aero =  c * c;
+  const float x_aero =  c * s;
+  const float y_aero =  s * c;
+  const float z_aero = -s * s;
+
+  // Raw INAV for same physical attitude: qy and qz flipped vs aerospace.
+  const float q_raw[4] = {w_aero, x_aero, -y_aero, -z_aero};
+  gp_quat q_eb = autoc::imu::inavQuatToAerospaceEB(q_raw);
+
+  EXPECT_NEAR(pitchDeg(q_eb), +30.0f, 1.0f);
+  EXPECT_NEAR(rollDeg(q_eb),  +30.0f, 1.0f);
+  EXPECT_NEAR(yawDeg(q_eb),     0.0f, 1.0f);
+
   EXPECT_NEAR(q_eb.w(), w_aero, 1e-4f);
   EXPECT_NEAR(q_eb.x(), x_aero, 1e-4f);
   EXPECT_NEAR(q_eb.y(), y_aero, 1e-4f);

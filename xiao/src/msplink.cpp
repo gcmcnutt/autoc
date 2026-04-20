@@ -549,18 +549,19 @@ void mspUpdateState()
   {
     q.normalize();
   }
+  gp_vec3 gyro = aircraft_state.getGyroRates();  // aerospace convention (rad/s)
   bool armed = state.isArmed();
   bool failsafe = state.isFailsafe();
 
-  // Log raw gyro from MSP (deci-deg/s, INAV convention — NOT sign-corrected here)
-  // Sign correction happens in convertMSPStateToAircraftState() for NN consumption.
+  // Log post-boundary aerospace-convention state (quat q_EB, gyro RHR rad/s).
+  // Raw INAV values are still in the MSP stream / blackbox if needed for cross-check.
   logPrint(INFO,
-           "Nav State: pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro_raw=[%d,%d,%d] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d",
+           "Nav State: pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro=[%.2f,%.2f,%.2f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d",
            pos_raw.x(), pos_raw.y(), pos_raw.z(),
            pos_rel.x(), pos_rel.y(), pos_rel.z(),
            vel_rel.x(), vel_rel.y(), vel_rel.z(),
            q.w(), q.x(), q.y(), q.z(),
-           state.autoc_state.gyro[0], state.autoc_state.gyro[1], state.autoc_state.gyro[2],
+           gyro.x(), gyro.y(), gyro.z(),
            armed ? "Y" : "N",
            failsafe ? "Y" : "N",
            hasServoActivation ? "Y" : "N",
