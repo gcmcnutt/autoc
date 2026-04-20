@@ -328,8 +328,24 @@ Before flight, verify polarity on the ground:
   (`applyBoardAlignment()` in `gyro.c:439`, `acceleration.c:564`) BEFORE IMU quaternion
   fusion. The resulting MSP quaternion is always in **aircraft body frame**, not sensor frame.
   - Board alignment compensates for physical IMU mounting orientation
-  - **Flight hardware**: `align_board_yaw=0` (IMU aligned with aircraft, no rotation)
-  - **Bench hardware**: `align_board_roll=1700, align_board_yaw=900` (IMU upside-down, rotated)
+  - **Flight hardware (hb1, per `xiao/inav-hb1.cfg`)**: `align_board_roll=1700,
+    align_board_pitch=0, align_board_yaw=900` — board is mounted with ~170° roll
+    and 90° yaw relative to aircraft body. INAV corrects internally.
+  - **Bench hardware (legacy)**: `align_board_roll=1700, align_board_yaw=900`
+    — same values as flight currently. (An earlier revision of this doc
+    incorrectly claimed flight was `align_board_yaw=0`; hb1.cfg is the source
+    of truth.)
+  - **Implication**: all logged `gyroADC[]`, `accSmooth[]`, `magADC[]` values
+    are post-alignment — already in aircraft body frame FRD. No further
+    sensor-frame correction is needed in consumer code. Verified via INAV
+    source pipeline (`sensors/gyro.c:437-442`, `sensors/acceleration.c:563-564`,
+    `sensors/compass.c:482-483`, `blackbox.c:1674-1676`).
+  - **Pre-flight sanity check**: before each flight test, verify via INAV
+    configurator that the FC shows near-zero roll/pitch/yaw when the
+    aircraft is held nose-north-level. This catches misaligned board
+    config (e.g., physical re-mount without config update), which would
+    corrupt flight data in a way internally-consistent checks (gyro vs
+    quat integration) cannot detect.
   - Downstream code (xiao, renderer) does NOT need to apply board alignment — it's already
     baked into the quaternion by INAV at the sensor level
   - The 138° heading offset seen on bench tests was due to bench-specific board alignment,
