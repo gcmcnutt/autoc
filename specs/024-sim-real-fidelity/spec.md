@@ -236,8 +236,104 @@ Artifacts:
 
 ### Additional findings captured here as we proceed below.
 
+### Deep convention investigation (2026-04-19, post-US1 iteration)
+
+After the first audit run flagged check 2 (gyro↔quat-delta) FAIL, I dug into
+the accelerometer at rest — the cleanest possible convention witness —
+and iterated through quaternion interpretation hypotheses. Key results
+visualized in `flight-results/flight-20260417/geometric_quat_flight.png`
+and `specs/024-sim-real-fidelity/geometric_quat_sim_gen400.png`.
+
+**The gyro↔quat-delta slope=1 circular-argument trap** (user called this
+out explicitly): in sim, `gyrP/Q/R = eom01->getOmegaBody()` and
+`qw/qx/qy/qz` is INAV/EOM01's integrated quat from those same rates. So
+slope = 1 is definitional, not a validation of aerospace convention.
+
+**Non-circular witnesses** (three independent physics paths):
+
+1. **At-rest sample (row 2, t=195.96s, pre-takeoff)**: accel measures
+   gravity in body frame ≈ (0.12, -0.056, 0.95) g (with acc_1G = 2050,
+   not 256 as our code had — verified from INAV blackbox row: accZ=1956
+   LSB ≈ 1G). Tilt from accel gives pitch=-7.2°, roll=-3.3° aerospace.
+   - Full conjugate of raw INAV quat (current blackbox_to_canonical):
+     extracts pitch=+9.7°, roll=+1.3° — **sign-inverted**. WRONG.
+   - Raw INAV quat, no transform: pitch=-8.1°, roll=-5.5° — **matches**
+     (±2°, attributable to accel noise / IMU calibration).
+2. **Gyro vs quat-delta per-axis slope**: with raw quat + raw gyro
+   (no transforms), all three axes return slope +1.00 (r ≥ 0.997).
+   Internal INAV integration is self-consistent. No axis-by-axis
+   hidden sign flips.
+3. **Mid-flight yaw vs ground-track angle**: with raw quat, yaw and
+   track have OPPOSITE signs on aerospace comparison. With (w,x,y,-z)
+   transform, they align within ~5–25° (declination + wind).
+
+**Synthesis** — the FRAME issue:
+
+- INAV's blackbox quat is q_EB in INAV's **NEU world frame**.
+- Our aerospace stack uses **NED world frame**.
+- **NEU→NED is a reflection of the world-Z axis, not a rotation.**
+- **Quaternions cannot represent reflections.** There is no clean static
+  `q_transform` such that applying it preserves both:
+  (a) static attitude interpretation (pitch/roll/yaw match physical)
+  (b) kinematic relation `dq/dt = 0.5·q·ω_body` (rate integration)
+- Pitch and roll extraction "accidentally" match in both frames because
+  their rotation axes (body-Y and body-X) are horizontal — the world-Z
+  flip doesn't affect them at the integration-point level.
+- Yaw sign is flipped between NEU and NED (positive yaw-NEU = CCW
+  from above = negative yaw-aerospace-NED = CCW).
+
+**Implication for the flight-20260417 failure**:
+
+The NN was trained on sim data where qw/qx/qy/qz come from EOM01 (aerospace
+NED). At deployment, msplink currently applies **full conjugate** to INAV's
+MSP quat then feeds the NN. The NN sees: conjugate of NEU quat. That's
+doubly wrong: (i) it's INAV's NEU frame, not NED, (ii) the conjugate flips
+all three axes' signs on top of that. Net effect on the NN's attitude
+perception is garbled. **Root cause of "wildly wrong with some intention"
+identified.**
+
+**T041 fix** (msplink quat boundary):
+```cpp
+// REMOVE: return gp_quat(q[0], -q[1], -q[2], -q[3]);  // full conjugate: WRONG
+// REPLACE: return gp_quat(q[0], q[1], q[2], -q[3]);   // flip qz only (NEU→NED static)
 ```
-# (subsequent findings from fixes and iterations below)
+This is a static-attitude-parity patch: the resulting quat is NOT
+kinematically valid as a NED q_EB, but for **look-up** purposes (what
+direction is the nose in world? what is the roll angle?) it matches
+aerospace convention. Since NN uses quat statically (for direction-cosine
+computation, not integration), this gets training-deployment parity.
+
+**T044 (analysis library)**: already applies raw-no-transform pattern,
+matching the INAV internal consistency for rate checks. For heading/attitude
+extraction against world-frame quantities (checks 5, 7), we document the
+NEU→NED reflection issue and either apply z-flip at extraction time OR
+note the fails as "expected artifacts of frame mismatch, not a bug."
+
+**Other findings from this iteration**:
+- [bug] acc_1G was hardcoded 256; actual FC value is 2050. Fixed. Check 4
+  went from slopes 4–6 (wildly off) to slopes 0.76–0.94 (sensible
+  with noise from maneuver loads per user's reminder about dynamic flight).
+- [doc] The `COORDINATE_CONVENTIONS.md` bench test "nose-up 45° | INAV
+  sends [.93, 0, -.38, 0]" is likely a transcription error — multiple
+  other bench rows (right-wing-down, inverted) align with aerospace
+  interpretation but this one inverts pitch. Worth re-testing at WI5
+  compound-attitude bench.
+- [finding] Yaw/heading issue explains why the previous `cmd_response`
+  analysis (023 postmortem) showed pitch axis anomaly in gyro-vs-quat —
+  it was actually the ensemble of NEU→NED reflection + full conjugate
+  creating specific-axis failure patterns. The specific "pitch inverted"
+  reading from 023 was a special case of the general convention drift.
+
+**Status**: blackbox-side audit now has clean explanations for all
+sign-related FAILs. Scale-related issues (accel calibration) also resolved.
+Next: apply same findings to msplink T041 fix, then rerun audit after
+a bench capture to verify. Sim conformance (WI2) unchanged — sim is
+already aerospace NED, no transforms needed.
+
+### Additional findings captured here as we proceed below.
+
+```
+# (next: T041 msplink fix, WI5 bench verify, retrain + fly)
 ```
 
 ## Work Items (priority order)

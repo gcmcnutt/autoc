@@ -26,7 +26,9 @@ import numpy as np
 # Constants
 # ---------------------------------------------------------------------------
 
-ACC_1G_LSB = 256        # INAV acc_1G constant (typical ICM-series IMUs)
+ACC_1G_LSB = 2050       # INAV acc_1G constant per project memory (bench 2026-03-30).
+                        # NOT the typical ICM-series 256 — this FC calibrates differently.
+                        # Verified at-rest: accZ ≈ 1956 ≈ 1G → 1956/2050 = 0.954 g, correct.
 G_MS2 = 9.81            # gravitational acceleration (m/s²)
 DEG_PER_SEC_TO_RAD = np.pi / 180.0
 DECIDEG_TO_RAD = 0.1 * DEG_PER_SEC_TO_RAD
@@ -309,23 +311,51 @@ def read_blackbox_csv(path) -> CanonicalData:
         vel = vel_raw / 100.0
         vel[:, 2] *= -1.0
 
-    # Quaternion: /10000, then INAV->aerospace transform.
-    # CURRENT working transform (pre-T044 fix): simple conjugate as msplink does.
-    # This is what we AUDIT. If the audit fails, the fix lands here (and in
-    # msplink) per T044.
+    # Quaternion transform (2026-04-19 deep finding, T044):
+    # The INAV blackbox quaternion is stored in INAV's NEU world convention.
+    # Our aerospace stack uses NED. Converting between NEU and NED is a
+    # REFLECTION of the world Z axis, NOT a rotation. Quaternions can
+    # represent rotations but NOT reflections — so there is no clean static
+    # q_transform that takes NEU quat to NED quat while preserving the
+    # kinematic relation dq/dt = 0.5·q·ω_body.
+    #
+    # Empirically:
+    # - Raw quat (no transform) + raw gyro (no negation): gyro vs quat-delta
+    #   PASS slope +1.0 on all 3 axes (INAV internal consistency). Pitch
+    #   and roll extract correctly against at-rest accel. But yaw extraction
+    #   disagrees with aerospace ground-track by variable amounts (because
+    #   yaw sign is flipped between NEU and NED).
+    # - (w, x, y, -z) transform: gives aerospace yaw for static attitude
+    #   interpretation (heading matches track within ~10° declination).
+    #   BUT this transform breaks the kinematic quat<->gyro relationship
+    #   (reflection, not rotation), so gyro vs quat-delta fails.
+    #
+    # For this library we keep RAW (option A above). It preserves rate
+    # integration consistency, matches pitch/roll against accel directly,
+    # and the yaw flip issue is documented as a separate concern requiring
+    # either per-axis handling or a rethink of how attitude is passed to
+    # the NN (the NN trained against sim's aerospace-NED quat, so at
+    # deployment we need to flip qz BEFORE feeding NN — as a "lookup" op,
+    # understanding the flipped quat isn't kinematically valid for
+    # integration-style math).
+    #
+    # This is actually the answer to the flight-20260417 failure: the NN
+    # was trained with aerospace q_EB (sim EOM01, NED), but received INAV's
+    # NEU quat unmodified (msplink's conjugate was a red herring that made
+    # it worse). The fix for T041 msplink is:
+    #   q_for_NN = (w, x, y, -z)   # static lookup only
+    # with full awareness that this is NOT a kinematically-valid NED quat;
+    # it's a "static-attitude-parity" patch at the convention boundary.
     quat_raw = np.array(quat_list, dtype=float) / 10000.0
-    # Simple conjugate (the transform we think is correct, pending WI5 bench)
-    quat = quat_raw.copy()
-    quat[:, 1:] *= -1.0
-    # Re-normalize
-    quat_norm = np.linalg.norm(quat, axis=1, keepdims=True)
-    quat = quat / np.maximum(quat_norm, 1e-9)
+    quat_norm = np.linalg.norm(quat_raw, axis=1, keepdims=True)
+    quat = quat_raw / np.maximum(quat_norm, 1e-9)
 
-    # Gyro: deg/s -> rad/s; negate pitch and yaw (aerospace RHR)
+    # Gyro transform: raw INAV gyro passed through as rad/s. No axis
+    # negations. This matches the raw quat (no transform) policy — they
+    # are internally consistent in INAV's frame (gyro-vs-quat-delta
+    # passes slope +1 on all axes with this pairing).
     gyro_raw = np.array(gyro_list, dtype=float)
     gyro = gyro_raw * DEG_PER_SEC_TO_RAD
-    gyro[:, 1] *= -1.0
-    gyro[:, 2] *= -1.0
 
     accel = None
     if accel_list:

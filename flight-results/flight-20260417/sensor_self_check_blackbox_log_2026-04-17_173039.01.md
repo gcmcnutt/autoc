@@ -9,26 +9,26 @@ Correlation 'r' reported but not gated.
                  N  slope=+1.070  r=+0.970  n=9593
                  E  slope=+1.105  r=+0.991  n=9593
                  D  slope=+0.922  r=+0.989  n=9593
-  2. Gyro ↔ quat-delta: FAIL
-                 p  slope=-0.166  r=-0.202  n=9592
-                 q  slope=-0.235  r=-0.237  n=9592
-                 r  slope=+1.053  r=+0.599  n=9592
+  2. Gyro ↔ quat-delta: PASS
+                 p  slope=+1.005  r=+0.999  n=9592
+                 q  slope=+0.985  r=+0.999  n=9592
+                 r  slope=+1.000  r=+0.997  n=9592
   3. Euler(quat) ↔ attitude[]: SKIP (no euler or quat)
-  4. Accel ↔ gravity (quasi-steady): FAIL
-                ax  slope=-4.825  r=-0.709  n=1234
-                ay  slope=-0.250  r=-0.082  n=1234
-                az  slope=+6.055  r=+0.290  n=1234
+  4. Accel ↔ gravity (quasi-steady): PASS
+                ax  slope=+0.781  r=+0.816  n=1234
+                ay  slope=+0.094  r=+0.251  n=1234
+                az  slope=+0.756  r=+0.290  n=1234
       filtered_samples: 1234
-  5. Heading ↔ ground track: PASS
-               yaw  slope=+1.165  r=+0.808  n=8407
+  5. Heading ↔ ground track: FAIL
+               yaw  slope=-0.632  r=-0.671  n=8407
       filtered_samples: 8407
   6. Mag ↔ heading: PASS
-      mean_offset_deg: -39.92105374724732
-      stddev_deg: 98.75310629686761
+      mean_offset_deg: -42.598749653588285
+      stddev_deg: 63.28511152199289
       n: 9593
-  7. Attitude vector ↔ velocity dir: PASS
+  7. Attitude vector ↔ velocity dir: FAIL
                  N  slope=+0.811  r=+0.904  n=9019
-                 E  slope=+0.608  r=+0.735  n=9019
-                 D  slope=+0.076  r=+0.083  n=9019
+                 E  slope=-0.835  r=-0.931  n=9019
+                 D  slope=-0.773  r=-0.910  n=9019
       filtered_samples: 9019
   8. Cmd ↔ attitude change (rate): SKIP (no cmd or quat)
