@@ -3,6 +3,7 @@
 #include <embedded_pathgen_selector.h>
 #include <autoc/eval/sensor_math.h>
 #include <autoc/nn/nn_input_computation.h>
+#include <autoc/imu/inav_quat_convention.h>
 #include <nn_program.h>
 #include <mbed.h>
 #include <vector>
@@ -163,47 +164,22 @@ static gp_vec3 neuVectorToNedMeters(const int32_t vec_cm[3])
   return gp_vec3(north, east, down);
 }
 
+// INAV quaternion → aerospace q_EB (static-lookup-valid ONLY).
+// Delegates to autoc::imu::inavQuatToAerospaceEB().
 //
-// ⚠️ KNOWN WRONG — TO FIX IN 024 WI3 T041.
+// ⚠️ Result is NOT a kinematically-valid NED q_EB. Do not feed into
+// Kalman/Mahony/Madgwick filters that also integrate body rates. Valid
+// for: direction cosines, Euler extraction, body-axis-in-world rotation
+// for rendering. See docs/COORDINATE_CONVENTIONS.md
+// "INAV NEU ↔ aerospace NED reflection" and the header for the full
+// rationale and empirical derivation (flight-20260417 at-rest accel
+// verification).
 //
-// The current "full conjugate" is based on a 2025 bench interpretation that
-// turned out to be the opposite of what we actually need. Empirical work in
-// 024 (spec "Deep convention investigation", 2026-04-19) shows:
-//   - INAV stores q_EB in its NEU world frame.
-//   - Our stack uses aerospace NED.
-//   - NEU→NED is a REFLECTION of world-Z, NOT a rotation. Quaternions
-//     cannot represent reflections cleanly.
-//
-// Correct static-attitude-parity fix (planned for T041):
-//   return gp_quat(q[0], q[1], q[2], -q[3]);    // flip qz ONLY
-//
-// ⚠️⚠️⚠️  THE RESULT IS NOT A KINEMATIC q_EB.  ⚠️⚠️⚠️
-// DO NOT feed it into any attitude-estimation filter (Kalman / Mahony /
-// Madgwick) that also integrates body rates. It is only valid for STATIC
-// look-ups:
-//   - direction-cosine projection of world vector to body (NN input)
-//   - Euler angle extraction (roll/pitch/yaw display)
-//   - body-axis-in-world rotation for rendering / geometry
-//
-// For kinematic integration use RAW INAV quat + RAW INAV gyro, integrate in
-// INAV's NEU frame internally, and apply the qz flip only at the consumer
-// side.
-//
-// See docs/COORDINATE_CONVENTIONS.md "INAV NEU ↔ aerospace NED reflection"
-// section for the full rationale and allowed/forbidden operations list.
-//
+// Kept as a thin wrapper (not inlined at call sites) so grep still finds
+// "neuQuaternionToNed" as the boundary.
 static gp_quat neuQuaternionToNed(const float q[4])
 {
-  // INAV sends body->earth quaternion (confirmed via bench testing).
-  // GP expects earth->body, so we take the conjugate.
-  // Bench tests show ALL vector components need sign flip.
-  gp_quat attitude(q[0], -q[1], -q[2], -q[3]);  // Full conjugate — KNOWN WRONG, see note above
-  if (attitude.norm() == 0.0f)
-  {
-    return gp_quat::Identity();
-  }
-  attitude.normalize();
-  return attitude;
+  return autoc::imu::inavQuatToAerospaceEB(q);
 }
 
 // Pipeline timing points (set during mspUpdateState, read during mspSetControls)
@@ -329,7 +305,7 @@ static void mspUpdateNavControl()
     const float* in = reinterpret_cast<const float*>(&aircraft_state.getNNInputs());
     const float* out = aircraft_state.getNNOutputs();
     logPrint(INFO,
-             "NN: idx=%d tX=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tY=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tZ=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] d=[%.1f,%.1f,%.1f,%.1f,%.1f,%.1f] cr=%.2f q=[%.3f,%.3f,%.3f,%.3f] as=%.1f g=[%.2f,%.2f,%.2f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d]",
+             "NN: idx=%d tX=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tY=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tZ=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] d=[%.1f,%.1f,%.1f,%.1f,%.1f,%.1f] cr=%.2f q=[%.3f,%.3f,%.3f,%.3f] as=%.1f g=[%.2f,%.2f,%.2f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d] rabbit=[%.2f,%.2f,%.2f]",
              current_path_index,
              in[0], in[1], in[2], in[3], in[4], in[5],       // target_x
              in[6], in[7], in[8], in[9], in[10], in[11],     // target_y
@@ -340,7 +316,8 @@ static void mspUpdateNavControl()
              in[29],                                           // airspeed
              in[30], in[31], in[32],                           // gyro p,q,r (rad/s)
              out[0], out[1], out[2],                           // NN outputs (tanh)
-             roll_cmd, pitch_cmd, throttle_cmd);               // RC commands
+             roll_cmd, pitch_cmd, throttle_cmd,                // RC commands
+             targetPos.x(), targetPos.y(), targetPos.z());     // T080: rabbit ground-truth (virtual NED m)
   }
 }
 
