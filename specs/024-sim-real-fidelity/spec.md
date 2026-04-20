@@ -147,8 +147,97 @@ Categories:
 Format: `[category] short description — found in WI_, fix in WI_ (or "logged
 for later")`.
 
+### Findings from first audit run (2026-04-19)
+
+Artifacts:
+- [flight-results/flight-20260417/sensor_self_check_lib.py](../../flight-results/flight-20260417/sensor_self_check_lib.py)
+- [flight-results/flight-20260417/sensor_self_check.py](../../flight-results/flight-20260417/sensor_self_check.py)
+- [flight-results/flight-20260417/sensor_self_check_blackbox_log_2026-04-17_173039.01.md](../../flight-results/flight-20260417/sensor_self_check_blackbox_log_2026-04-17_173039.01.md) — real flight blackbox
+- `/tmp/sensor_self_check_gen400_p0_p2.md` — sim gen-400 slice
+
+**Flight (blackbox CSV, 9593 samples, 161s):**
+
+- **[bug] Check 2 (gyro↔quat-delta): FAIL on roll AND pitch.** p slope
+  −0.17 r −0.20; q slope −0.24 r −0.24; r slope +1.05 r +0.60. The yaw
+  axis works cleanly; roll and pitch are both sign-inverted vs gyro.
+  Earlier xiao-log analysis showed ONLY pitch inverted — blackbox-side
+  shows an ADDITIONAL roll inversion. Points at the INAV→aerospace
+  quat transform in `blackbox_to_canonical()` being wrong on TWO axes
+  (the simple conjugate currently used is insufficient; NEU→NED + pitch
+  convention both need explicit handling). **Fix target: T041 (msplink)
+  and T044 (analysis-library)** — WI5 bench derives the correct
+  composition.
+- **[bug] Check 4 (accel↔gravity): FAIL.** ax slope −4.83, az slope
+  +6.05 (expected both slope ≈ 1). Scale magnitude ≈ 5 suggests a
+  consistent mis-rotation chaining from check 2 (expected gravity
+  direction comes from rotating world gravity to body via the same
+  wrong quat). Will retest after WI3 quat fix lands; may reveal
+  residual scaling issue (`acc_1G = 256` verification from
+  INAV_BLACKBOX.md) separately if not.
+- **[debt] Check 3 (Euler↔attitude): SKIP** — flight-20260417 log
+  doesn't include `attitude[0..2]` columns. This is an INAV blackbox
+  config setting (`blackbox_fields`). If we want this cross-check for
+  US6, add `attitude` to the blackbox field set before the next flight.
+- **[warn] Check 6 (mag↔heading):** mean offset −39.9°, stddev 98.75° —
+  huge variance. Likely: mag calibration on the flight FC not refreshed,
+  or dynamic disturbances (motor current, ferrous frame). Low priority
+  unless WI6 post-retrain flight also shows bad mag.
+- **[ok] Check 1 (pos↔vel): PASS.** Slope 1.07, 1.11, 0.92 with r ≥ 0.97.
+  Position and velocity transforms are internally consistent (NEU→NED
+  + cm→m both working). **Validates WI1 belief cascade layer 1.**
+- **[ok] Check 5 (heading↔track): PASS.** Quat-yaw direction matches
+  ground-track direction (slope +1.17, r +0.81). **Validates cascade
+  layer 2 for yaw.**
+- **[ok] Check 7 (attitude vector↔vel direction): PASS on N and E.**
+  Nose direction in world agrees with velocity direction on horizontal
+  axes (N +0.81 r +0.90, E +0.61 r +0.74). D axis weak (+0.08, noisy)
+  because flight is mostly horizontal. **Strong check for quat
+  convention — passing suggests quat yaw direction is correct in world
+  frame.**
+- **[skip] Check 8 (cmd↔attitude): SKIP** — blackbox doesn't have NN
+  cmd; need the fusion join (T025c) with xiao log. Defer until fusion
+  implemented.
+
+**Sim (gen 400 data.dat, 350 samples, 23s):**
+
+- **[bug] Check 1 (pos↔vel): FAIL on N (−0.25) and noisy D (r 0.28).**
+  Unexpected — sim should trivially pass. The integration uses
+  `rotate_body_to_world(q_EB, v_body)` on sim's `vxBdy/vyBdy/vzBdy`.
+  If sim's body velocity convention doesn't match my rotate assumption
+  (or if q_EB doesn't match expectations), integration drifts. **Suspect
+  workaround/fallback zone** — sim's world pos comes from the FDM
+  directly; sim's body vel comes from the FDM differently. Their
+  relationship may assume a rotation direction that doesn't match
+  research.md §3's claimed q_EB. Logged as [workaround] candidate —
+  need to trace either CRRCSim velocity export path or our rotate
+  convention. Fix target: T034 sim investigation.
+- **[ok] Check 2 (gyro↔quat): PASS** slope +1.10 +0.97 +1.03 r +0.96
+  +0.70 +0.99 — sim's gyro and quat are self-consistent (as expected,
+  sim gyro = quat integration). Confirms sim side of the cascade.
+- **[ok] Check 5 (heading↔track): PASS** slope +0.99 r +0.99.
+- **[ok] Check 7 (attitude↔vel dir): PASS** slopes +0.93 +0.95 +0.85.
+- **[ok] Check 8 (cmd↔rate): PASS** slopes +0.15, +0.29 (weak but positive
+  correlation; r is low due to saturated bang-bang commands). Sign is
+  correct.
+
+### Key implications
+
+- **Flight blackbox quat conversion is definitely wrong on 2 axes** (roll +
+  pitch). Sim quat conversion is RIGHT (slope ≈ 1 on all axes in check 2).
+  The fix is in `blackbox_to_canonical()` (T044) and `msplink.cpp`
+  `neuQuaternionToNed()` (T041). WI5 bench derives the exact transform.
+- **Belief cascade layers 1 (pos↔vel) and 2 (yaw direction) validate** on
+  flight, giving us trust in the position, velocity, and yaw pieces.
+- **Sim position integration surprise** suggests sim-side convention drift
+  we didn't anticipate. Could be a real bug OR a subtle expectation
+  mismatch on my rotate. To investigate in T034.
+- **No xiao-log-fusion check ran yet** — T025c / T025b still pending;
+  will reveal cmd↔rate flight behavior.
+
+### Additional findings captured here as we proceed below.
+
 ```
-# (log starts empty; append as we go)
+# (subsequent findings from fixes and iterations below)
 ```
 
 ## Work Items (priority order)

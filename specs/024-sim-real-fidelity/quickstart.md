@@ -8,7 +8,8 @@ workflow so implementers have a concrete target.
 ## Prerequisites
 
 - Repo checked out on `024-sim-real-fidelity` branch.
-- Python 3.11 with `numpy`, `matplotlib`, `scipy` installed.
+- Python 3.11+ with `numpy` and `matplotlib`. `scipy` NOT required (numpy's
+  `polyfit`, `corrcoef`, and `linalg` cover all statistics used).
 - Reference data in place (already committed via 023):
   - `flight-results/flight-20260417/blackbox_log_2026-04-17_173039.01.csv`
   - `flight-results/flight-20260417/flight_log_2026-04-18T00-36-37.txt`
