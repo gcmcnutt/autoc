@@ -22,13 +22,19 @@ section below overlays a flight-centric ordering on top of the phases.
 ## Current Working Plan (2026-04-21)
 
 Training run `cadence7` complete (gen 400 best=-35951, strongest of three
-compared runs). Eval suite passed. Weights extracted. **Group C flight-deployment
-sprint is now active.**
+compared runs). Eval suite passed. Weights extracted. T112 nn2cpp regen + T113
+xiao rebuild done manually. Sensor sanity + cmd-response analysis confirms the
+sim is coordinate-canonical (see
+[cadence7_sensor_response_analysis.md](./cadence7_sensor_response_analysis.md)).
+**Next up: T114 pre-flight bench prep.**
 
 ### A — Closed
 
 - **Done**: T090–T097, T100–T104, T205 (code + bench + 20 Hz notes).
 - **T095** determinism reference absorbed by full eval-suite pass.
+- **Sensor alignment verified** against [COORDINATE_CONVENTIONS.md](../../docs/COORDINATE_CONVENTIONS.md)
+  on tier1 eval data. Pitch +0.86 @ +100 ms, roll +0.52 @ +200 ms,
+  throttle +0.40 @ +700 ms — all sign-correct per-axis at best lag.
 
 ### B — Parallel cleanup (still open, zero flight risk)
 
@@ -36,27 +42,28 @@ sprint is now active.**
 - **T081** — boot-time `sizeof(NNInputs)` assert. Xiao-side, trivial.
 - **T204** — training run archive policy. One page. Name cadence7 as canonical.
 - **T211** — spec.md findings log pass. Move resolved items into done sections.
+- **Comment fix**: misleading `msplink.cpp:753` comment ("GP +1.0 = pitch up") —
+  code is correct, comment is confusing. Non-blocking follow-up.
 
-### C — Flight-deployment sprint (ACTIVE — next up)
-
-Training + eval done. Remaining sequential steps:
+### C — Flight-deployment sprint (ACTIVE — T114 prep next)
 
 - ✅ T110 retrain (cadence7 complete, best=-35951)
 - ✅ T111 eval suite (all tiers pass)
-- 🟡 **T112** — regenerate `xiao/src/generated/nn_program_generated.cpp` via
-  `tools/nn2cpp/` from the extracted weights. Verify topology and weight count.
-- 🟡 **T113** — `cd xiao && pio run -e xiaoblesense_arduinocore_mbed`. First
-  build touching flight hardware. Any error investigate immediately.
+- ✅ T112 nn2cpp regen (done manually)
+- ✅ T113 xiao rebuild (done manually)
 - 🟡 **T114** — preflight checklist walk (per `project_preflight_checklist`
-  memory). Bench-run compound-attitude holds on the about-to-fly binary as
-  sanity that flight build matches bench build.
+  memory). Bench-run the [bench checklist](./cadence7_sensor_response_analysis.md#bench-checklist-pre-flight)
+  from the sensor analysis: pitch polarity, roll polarity, throttle polarity,
+  xiao-side cadence audit. Compound-attitude hold re-check on the about-to-fly
+  binary confirms the flight build matches the bench build.
 - 🟡 **T113a** — flash the flight FC. Single deployment event of 024. Confirm
   boot banner shows expected schema version + weight count.
 - 🟡 **T115** — flight test. Short xiao engage span(s), pilot-flown coordinated
   maneuvers for post-flight audit data.
 
-**Guardrail**: T112 is the only non-xiao source change remaining pre-flight
-(regenerated weights file). Don't touch crrcsim/autoc sources until post-flight.
+**Guardrail**: no further source-code changes pre-flight. Any convention or
+polarity surprise on the bench (T114) gets resolved via INAV CLI reversal
+settings, not code.
 
 ### D — Post-flight (required to analyze the next flight, not before)
 
@@ -292,8 +299,8 @@ artifacts.
 
 - [x] T110 [US6] Retrain from the existing topology (33→32→16→3, unchanged per clarification). Target 400 generations on the fixed-cadence sim. Commit weights in the standard location. — `cadence7` complete 2026-04-21: gen 400 best=-35951 (vs hb1-adjust4 -29358, test7 -21173). Strongest trajectory of the three comparison runs. Weights extracted.
 - [x] T111 [US6] Eval suite: run tier0 (repro determinism), tier1 (novel seed), tier2 (generalization — random paths, craft variations, long), tier3 (stress + quiet). All must pass. — `scripts/eval-suite.sh` passed 2026-04-21.
-- [ ] T112 [US6] Regenerate `xiao/src/generated/nn_program_generated.cpp` via `tools/nn2cpp/`. Verify topology and weight count match expectations.
-- [ ] T113 [US6] Xiao rebuild with the retrained `nn_program_generated.cpp` and all accumulated msplink/rabbit-logging fixes from US3: `cd xiao && pio run -e xiaoblesense_arduinocore_mbed`. Any build error investigates immediately. This is the first build that will touch flight hardware.
+- [x] T112 [US6] Regenerate `xiao/src/generated/nn_program_generated.cpp` via `tools/nn2cpp/`. Verify topology and weight count match expectations. — done manually 2026-04-21.
+- [x] T113 [US6] Xiao rebuild with the retrained `nn_program_generated.cpp` and all accumulated msplink/rabbit-logging fixes from US3: `cd xiao && pio run -e xiaoblesense_arduinocore_mbed`. Any build error investigates immediately. This is the first build that will touch flight hardware. — done manually 2026-04-21.
 - [ ] T113a [US6] **Deploy to flight FC**: flash the xiao binary from T113. Confirm boot banner shows expected schema version and weight count. This is the single deployment event of 024.
 - [ ] T114 [US6] Preflight checklist walk. Use project memory (`project_preflight_checklist.md`). Bench-test failsafe chain **on the flight-deployed binary** (re-run the T102 compound-attitude holds as a sanity check that the flight build matches the bench build).
 - [ ] T115 [US6] Flight test — pilot warmup, short xiao engage span(s), pilot-flown coordinated maneuvers (level circle, climb, dive) for post-flight audit data. Varied-throttle span during engage if possible.
