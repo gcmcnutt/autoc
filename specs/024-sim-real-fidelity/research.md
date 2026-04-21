@@ -139,66 +139,112 @@ the table in §1.
 ## 3. CRRCSim headless inner loop
 
 ### Architecture (from `CTime.cpp`, `SimStateHandler.cpp`, `Simulator.cpp`)
-- **`gameSpeed = 25` fps** from `autoc_config.xml:3`.
-- **`dt = 0.002777 seconds`** (physics substep) — crrc_main.cpp:492. Fixed at
-  startup; not run-time variable.
-- **`cycleLength ≈ 39.378 ms`** (one outer "frame") — CTime.cpp:71. Computed
-  as `(int)(1000/gameSpeed/dt)*dt + rounding`.
-- Each frame advances **`multiloop ≈ 14`** physics substeps internally.
-- **`simTimeMsec = sim_steps × dt × 1000`** — SimStateHandler.cpp:390–393.
+- **`video.fps`** from `autoc_config.xml` sets `gameSpeed` (the outer-frame
+  rate).
+- **`Global::dt`** (seconds) — from `simulation.flightModel.dt` at
+  `crrc_main.cpp:492`. Fixed at startup; not run-time variable. Quantized
+  to an integer millisecond by `(int)(dt*1000 + 0.5)/1000`.
+- **`cycleLength_ms`** (outer frame length) — `CTime.cpp:71`, computed as
+  `(int)(1000/gameSpeed/dtMs) * dtMs + 0.5`. Always a multiple of `dtMs`;
+  may differ from `1000/gameSpeed` by up to one `dtMs`.
+- Each outer frame advances `multiloop = cycleLength_ms / dtMs` physics
+  substeps internally.
+- **`simTimeMsec = sim_steps × dt × 1000`** — `SimStateHandler.cpp:390–393`.
   Deterministic, step-count-based, not wall-clock.
 
-### Why data.dat logs at 117 ms
-`inputdev_autoc.cpp:341`:
+### Historical root cause for 117 ms cadence
+With the pre-WI4 values `fps=25, dt=0.003`, `cycleLength_ms ≈ 39`. The
+legacy trigger was:
 ```cpp
 bool shouldEval = (simTimeMsec > lastUpdateTimeMsec + gEvalUpdateIntervalMsec) || ...
 ```
-With 39 ms frames:
-- After frame 1: simTimeMsec ≈ 38.9 ms (< 100, skip)
-- After frame 2: simTimeMsec ≈ 77.8 ms (< 100, skip)
-- After frame 3: simTimeMsec ≈ 116.6 ms (> 100, **fire**)
-- Delta between fires: 3 × 39 ms = **117 ms**. Observation matches.
+Frame-by-frame walk:
+- Frame 1: simTimeMsec ≈ 39 ms (< 100, skip)
+- Frame 2: simTimeMsec ≈ 78 ms (< 100, skip)
+- Frame 3: simTimeMsec ≈ 117 ms (> 100, **fire**)
 
-### The `SIM_FPS = 25.0` mystery
-inputdev_autoc.h:53. Used only in overflow-bucket calculation
-(inputdev_autoc.cpp:99–102). Value matches `gameSpeed` not physics rate; the
-comment "~40 Hz physics tick" is **stale and incorrect** — physics is
-2.777 ms substeps, not 40 Hz. **Fix as part of WI4**: replace value-vs-comment
-mismatch with accurate comment citing `gameSpeed`.
+Delta between fires: 3 × 39 = **117 ms**. Not 100 ms.
 
 ### Determinism
-Headless mode (`video.enabled=0`) uses fixed `cycleLength`. `multiloop` is
-deterministic, `sim_steps` is deterministic, `simTimeMsec` is deterministic.
-Any cadence fix MUST preserve this.
+Headless mode (`video.enabled=0`) uses fixed `cycleLength`. `multiloop`,
+`sim_steps`, and `simTimeMsec` are deterministic. Any cadence fix MUST
+preserve this — selection PRNG reproducibility (70c46b3) already depends
+on bitwise-deterministic training.
 
-### Recommended cadence fix (WI4)
-**Accumulator-based time budget** at `inputdev_autoc.cpp:341`:
+### Selected cadence fix (WI4): frame-counter + startup integrality check
+
+The legacy trigger compared simTime against a threshold. The fix replaces
+that with a frame counter and moves the correctness invariant to startup:
 
 ```cpp
-static double evalAccum = 0.0;
-evalAccum += (simTimeMsec - lastUpdateTimeMsec);
-bool shouldEval = (evalAccum >= gEvalUpdateIntervalMsec) || (++cycleCounter > overflowLimit);
-if (shouldEval) {
-  evalAccum -= gEvalUpdateIntervalMsec;  // preserve the fractional remainder
-}
+// inputdev_autoc.cpp getInputData()
+bool shouldEval = (++cycleCounter >= framesPerEval);
+if (shouldEval) { cycleCounter = 0; /* ... eval ... */ }
+
+// inputdev_autoc.cpp init()
+//   cycleLengthMs = (int)(1000.0 / fps / dtMs) * dtMs + 0.5
+//   must divide gEvalUpdateIntervalMsec exactly — abort if not.
+framesPerEval = gEvalUpdateIntervalMsec / cycleLengthMs;
 ```
 
-- Long-run average: exactly 100 ms.
-- Per-tick: ≤ 39 ms jitter (one frame boundary). Over many ticks, averaged out.
-- Fully deterministic (depends only on `simTimeMsec` and a deterministic
-  accumulator state).
-- Trivially extends to 50 ms (20 Hz) by changing the interval constant.
+Properties:
+- Deterministic by construction (counter only, no time-diff).
+- Zero long-run drift: every Nth outer frame, exactly.
+- One invariant, checked once at startup: `evalInterval % cycleLength == 0`.
+  Bad triples fail loudly instead of producing silent 117 ms / 150 ms drift.
+- SimTime jumps (OS pause, debugger stall) still caught by the
+  pre-existing `SIM_MAX_INTERVAL_MSEC` check, which resets counters.
+
+#### The cadence triple: why `dt` moved from 0.003 to 0.005
+
+Integrality depends on the triple `(dt, fps, gEvalUpdateIntervalMsec)`.
+`cycleLength_ms` is always a multiple of `dtMs`, and `gEvalUpdateIntervalMsec`
+must be a multiple of `cycleLength_ms`. Transitively,
+`gEvalUpdateIntervalMsec` must be a multiple of `dtMs`.
+
+At `evalInterval=100 ms`, `dtMs ∈ {1, 2, 4, 5, 10, 20, 25, 50, 100}`. The
+pre-WI4 value `dt=0.003` (`dtMs=3`) does **not** divide 100 — no choice of
+`fps` rescues this, because `cycleLength` is a multiple of 3 and 100 is
+not. So `dt=0.003` is incompatible with 10 Hz NN cadence under
+frame-counter semantics.
+
+Options considered:
+| dt | dtMs | fps | cycleLength_ms | framesPerEval | Physics rate | Notes |
+|---|---|---|---|---|---|---|
+| **0.005** | 5 | 20 | 50 | 2 | **200 Hz** | **Chosen.** |
+| 0.0025 | 2.5 | 20 | 50 | 2 | 400 Hz | More cost, no FDM benefit. |
+| 0.002 | 2 | 20 | 50 | 2 | 500 Hz | Even more cost. |
+| 0.003 | 3 | 20 | 48 | — | 333 Hz | Non-integral with evalInterval=100 ms. |
+| 0.003 | 3 | 20 | 48 | 2 | 333 Hz | Would require evalInterval=96 ms, desyncs xiao (100 ms). Rejected. |
+
+200 Hz physics is 10× the outer frame; any reasonable FDM stability
+requirement is satisfied with headroom. CRRCSim shipped with
+`dt=0.002777` historically — nothing about the HB1 airframe requires
+sub-5 ms steps. If future work shows instability at 200 Hz, the triple
+can be re-chosen with a smaller dt and a matched evalInterval / fps —
+the integrality check will guide the search.
 
 **Rejected alternatives**:
-- `>` → `>=`: cosmetic; frame-boundary sampling still lands at 117 ms.
-- Change physics `dt`: invasive, affects FDM stability.
+- Accumulator-based time budget. Works, but leaves per-tick jitter of one
+  `cycleLength` and does not force the integrality discipline. The
+  frame-counter / startup-check variant turns a runtime property into a
+  static invariant — easier to reason about, easier to catch regressions.
+- `>` → `>=`: cosmetic; frame-boundary sampling at `dt=0.003` still missed
+  100 ms.
 - Separate timer thread: unnecessary complexity; determinism risk.
 
 ### Decision log
-- **Cadence fix**: accumulator-based time budget at inputdev_autoc.cpp:341.
-- **SIM_FPS comment**: correct the stale comment in same commit.
-- **20 Hz readiness**: accumulator works unchanged — just change the interval
-  constant in config. No structural work needed for WI13.
+- **Cadence fix**: frame-counter at `inputdev_autoc.cpp getInputData()` with
+  startup integrality check in `init()`.
+- **Dead code removal**: `SIM_FPS` define and `getCycleCounterOverflow()`
+  deleted; both were plumbing for the legacy overflow-bucket guard that
+  the frame-counter design makes redundant.
+- **Physics dt**: 0.003 → 0.005 to satisfy integrality with
+  `fps=20, evalInterval=100 ms`.
+- **Outer frame**: `fps=25` → `fps=20` (50 ms cycle).
+- **NN cadence**: unchanged at 10 Hz / 100 ms this feature. 20 Hz NN
+  readiness is WI13; the frame-counter design extends cleanly
+  (`framesPerEval=1` at `evalInterval=50 ms`).
 
 ## 4. Xiao timer source
 
@@ -257,11 +303,12 @@ approach: hardware timer sets a flag, main loop services it.
 | navPos/navVel sign | NEU→NED: `/100`, negate Z | WI1 tool |
 | Gyro sign | `× π/180`, negate pitch and yaw for aerospace RHR | WI1 tool |
 | Accel scale | `× 1/256 × g` for m/s² | WI1 tool |
-| Sim cadence fix | Accumulator-based time budget, inputdev_autoc.cpp:341 | WI4 |
+| Sim cadence fix | Frame-counter + startup integrality check (inputdev_autoc.cpp) | WI4 |
+| Cadence triple | `dt=0.005, fps=20, evalInterval=100 ms` → `framesPerEval=2` | WI4 |
 | Xiao cadence at 10 Hz | No change — current soft-polling accepted | WI4 |
 | Xiao cadence at 20 Hz | Hybrid hardware-timer design (future) | WI13 |
 | `xiao_ms` vs `inav_ms` | Not sync'd; use `inav_ms` for cross-source joins | WI1 tool |
-| SIM_FPS constant | Fix stale comment in WI4 commit | WI4 |
+| SIM_FPS / getCycleCounterOverflow | Deleted in WI4 (dead after frame-counter) | WI4 |
 
 ## Open Items
 

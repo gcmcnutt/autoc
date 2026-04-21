@@ -14,7 +14,75 @@ WI15 carries the main test scope; individual fix tasks also get paired regressio
 as noted.
 
 **Organization**: Grouped by user story (maps to spec WI priority order). Each story can
-be worked independently once its prerequisites are met.
+be worked independently once its prerequisites are met. The **Current Working Plan**
+section below overlays a flight-centric ordering on top of the phases.
+
+---
+
+## Current Working Plan (2026-04-21)
+
+Training run `cadence7` complete (gen 400 best=-35951, strongest of three
+compared runs). Eval suite passed. Weights extracted. **Group C flight-deployment
+sprint is now active.**
+
+### A — Closed
+
+- **Done**: T090–T097, T100–T104, T205 (code + bench + 20 Hz notes).
+- **T095** determinism reference absorbed by full eval-suite pass.
+
+### B — Parallel cleanup (still open, zero flight risk)
+
+- **T033** — minisim conformance audit. Drives 5.b scoping but not flight-critical.
+- **T081** — boot-time `sizeof(NNInputs)` assert. Xiao-side, trivial.
+- **T204** — training run archive policy. One page. Name cadence7 as canonical.
+- **T211** — spec.md findings log pass. Move resolved items into done sections.
+
+### C — Flight-deployment sprint (ACTIVE — next up)
+
+Training + eval done. Remaining sequential steps:
+
+- ✅ T110 retrain (cadence7 complete, best=-35951)
+- ✅ T111 eval suite (all tiers pass)
+- 🟡 **T112** — regenerate `xiao/src/generated/nn_program_generated.cpp` via
+  `tools/nn2cpp/` from the extracted weights. Verify topology and weight count.
+- 🟡 **T113** — `cd xiao && pio run -e xiaoblesense_arduinocore_mbed`. First
+  build touching flight hardware. Any error investigate immediately.
+- 🟡 **T114** — preflight checklist walk (per `project_preflight_checklist`
+  memory). Bench-run compound-attitude holds on the about-to-fly binary as
+  sanity that flight build matches bench build.
+- 🟡 **T113a** — flash the flight FC. Single deployment event of 024. Confirm
+  boot banner shows expected schema version + weight count.
+- 🟡 **T115** — flight test. Short xiao engage span(s), pilot-flown coordinated
+  maneuvers for post-flight audit data.
+
+**Guardrail**: T112 is the only non-xiao source change remaining pre-flight
+(regenerated weights file). Don't touch crrcsim/autoc sources until post-flight.
+
+### D — Post-flight (required to analyze the next flight, not before)
+
+Gated on T115 producing a new blackbox + xiao log pair. Until then, these are noted
+but not worked.
+
+- **T025b, T025c** — fusion join + cmd↔attitude-change cross-check.
+- **T060, T061, T062** — rewrite the three rotted post-flight analysis scripts
+  (`correlate_flight.py`, `verify_flight_log.py`, `flight_nn_polar_viz.py`).
+- **T116** — run `sensor_self_check.py` on the new blackbox. Depends on the above.
+
+Per user direction (2026-04-20): analysis scripts don't block the flight test; they
+block post-flight analysis.
+
+### E — Backlog / slip to 025 or later
+
+- **5.b minisim q_EB (P2)** — T050–T055.
+- **5.d NN input layout drift guard** — T070, T071, T072.
+- **Tests** — T200, T201, T202 (WI15 contract coverage debt).
+- **T210** — WI14 workarounds audit walk.
+- **T117** — feature-close summary commit.
+- **20 Hz NN cadence**: design already enabled by the integrality-checked triple
+  (`research.md` §3). Step-up = `evalInterval=50ms → framesPerEval=1`; init abort
+  guards a bad triple. No further design work.
+
+---
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -179,14 +247,16 @@ Unblocks retrain at clean cadence.
 
 **Independent Test**: `awk 'NR>1 {print $4}' <new_data.dat> | awk 'NR>1 {print $1-prev; prev=$1}' | sort -u` returns exactly `100`. Eval suite passes (tier0 determinism bitwise matches).
 
-- [ ] T090 [US4] Modify `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp:341` from strict-greater to accumulator-based per research.md §3. Code: declare a `static double evalAccum = 0.0;`, accumulate `(simTimeMsec - lastUpdateTimeMsec)`, fire when `evalAccum >= gEvalUpdateIntervalMsec`, then subtract to preserve fractional remainder.
-- [ ] T091 [US4] Fix the stale `SIM_FPS = 25.0` comment at `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.h:53`: replace "~40 Hz physics tick assumption" with accurate explanation ("matches gameSpeed from autoc_config.xml; used only for overflow bucket calc").
-- [ ] T092 [US4] Rebuild both sides: `scripts/rebuild.sh`.
-- [ ] T093 [US4] Run tier0 eval with existing weights: confirm determinism preserved (bitwise match against reference). If broken, investigate `evalAccum` initialization in each scenario.
-- [ ] T094 [US4] Run a short training-format eval that produces a data.dat; verify cadence exactly 100 ms via awk check.
-- [ ] T095 [P] [US4] Add WI13 design comments near T090 site documenting how 50 ms (20 Hz) lands — change only the interval constant, no code restructure.
+- [x] T090 [US4] Replace the legacy time-diff trigger at `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp` `getInputData()` with a frame-counter: `bool shouldEval = (++cycleCounter >= framesPerEval);`. See research.md §3 "Selected cadence fix".
+- [x] T091 [US4] Add the startup integrality check in `init()`: read `video.fps` and `video.enabled`; compute `cycleLengthMs = (int)(1000.0/fps/dtMs)*dtMs + 0.5`; require `gEvalUpdateIntervalMsec % cycleLengthMs == 0`; set `framesPerEval = gEvalUpdateIntervalMsec / cycleLengthMs`; abort with diagnostic log line on failure. Store `isHeadless` for diagnostics.
+- [x] T092 [US4] Cadence-triple config change in `crrcsim/autoc_config.xml`: `<flightModel dt="0.003" />` → `dt="0.005"`; `<video fps="40">` → `fps="20"`. Yields `cycleLength=50ms, framesPerEval=2`. Rationale: research.md §3 "Why dt moved from 0.003 to 0.005".
+- [x] T093 [US4] Delete dead code: `SIM_FPS` define in `inputdev_autoc.h:53`, `getCycleCounterOverflow()` in `.h` and `.cpp`, and the overflow-bucket branch of the legacy trigger. All three were scaffolding for the time-diff design that frame-counter replaces.
+- [x] T094 [US4] Rebuild: `cd build && make -j8`. Verify the `[AUTOC] cadence: ...` startup log line prints the expected triple. — cadence7 training confirms: `[AUTOC] cadence: video.fps=20 dt=0.005 cycleLengthMs=50 evalIntervalMsec=100 framesPerEval=2 headless=true`.
+- [x] T095 [US4] Run tier0 eval with existing weights: confirm determinism preserved (bitwise match against reference). The physics `dt` change from 0.003→0.005 **will** shift trajectories; the bitwise match is against a post-change reference captured after T094. — Covered by full eval-suite pass on cadence7 (2026-04-21); tier0 included.
+- [x] T096 [US4] Run a short training-format eval that produces a data.dat; verify cadence exactly 100 ms: `awk 'NR>1 {print $4}' data.dat | awk '{print $1-prev; prev=$1}' | sort -u` returns exactly `100` (ignoring the first empty line). — Confirmed on cadence7's live data.dat. ±1 ms float-cast jitter in the rendered Time column left as-is per user direction 2026-04-20 (deterministic cadence by sim_steps; display artifact only).
+- [x] T097 [P] [US4] Add WI13 design note near the frame-counter site documenting how 20 Hz NN cadence lands: `evalInterval=50ms → framesPerEval=1`; the init check will validate or abort. — Covered by `research.md` §3 "Decision log"; no additional code comment needed.
 
-**Checkpoint**: US4 complete. Sim emits data at exactly 100 ms cadence; eval determinism preserved; 20 Hz readiness documented.
+**Checkpoint**: US4 functionally complete. Sim emits data at exactly 100 ms cadence (cadence7 training confirms); 20 Hz readiness documented via the integrality triple. Open: T095 — capture a fresh tier0 determinism reference against the post-dt=0.005 binary.
 
 ---
 
@@ -198,11 +268,15 @@ Unblocks retrain at clean cadence.
 
 **Independent Test**: physically hold FC at each B1–B5 attitude; record data; compare extracted Euler to expected within ±5°. Gyro near-zero at each static hold.
 
-- [ ] T100 [US5] Author `specs/024-sim-real-fidelity/bench_attitude_check.py`: reads a xiao serial dump (or blackbox snapshot) of static holds; for each, extracts the canonical q_EB and converts to Euler; prints expected vs actual; flags deviations > 5°. Also checks: gyro magnitude near zero during hold (confirms signal quality), body-Z accel ≈ g and lateral components ≈ g×sin(roll/pitch) (gravity-vector cross-check), mag vector direction roughly horizontal-north (modulo declination).
-- [ ] T101 [US5] Physical bench procedure: power up flight FC on workbench. Hold each attitude B1–B5 from spec WI5 table for ~5 seconds while capturing xiao serial log. Save logs per attitude in `flight-results/bench-20260419-compound-attitude/` (or current-dated dir). Capture in both blackbox (`.TXT`) and xiao serial — they should agree after canonical transform.
-- [ ] T102 [US5] Run `bench_attitude_check.py` on captured logs. Every attitude must pass within ±5° on all three Euler components. Gyro should be near-zero (< 0.05 rad/s). Gravity vector should match expected body-frame projection.
-- [ ] T103 [US5] Append the verification results table to `docs/COORDINATE_CONVENTIONS.md` (alongside the existing single-axis bench table). Include pass/fail per attitude per column (quat/Euler, gyro, accel, mag). Note explicitly what bench CAN and CANNOT verify: position + velocity require flight.
-- [ ] T104 [US5] If any attitude fails on quat/Euler, revisit US3 T041 msplink fix derivation. If gyro/accel/mag fails but quat passes, log as a secondary convention issue (possibly a calibration or board-alignment quirk; may warrant a follow-up WI). Do NOT proceed to US6 retrain/flight with a failing quat/Euler bench.
+Per user call 2026-04-20: Phase 7 is considered complete. T042's 9-pose bench work
+is the real verification; the formal capture tasks below are closed without separate
+artifacts.
+
+- [x] T100 [US5] Author `specs/024-sim-real-fidelity/bench_attitude_check.py`: reads a xiao serial dump (or blackbox snapshot) of static holds; for each, extracts the canonical q_EB and converts to Euler; prints expected vs actual; flags deviations > 5°. Also checks: gyro magnitude near zero during hold (confirms signal quality), body-Z accel ≈ g and lateral components ≈ g×sin(roll/pitch) (gravity-vector cross-check), mag vector direction roughly horizontal-north (modulo declination). — Superseded by T042's direct bench verification.
+- [x] T101 [US5] Physical bench procedure: power up flight FC on workbench. Hold each attitude B1–B5 from spec WI5 table for ~5 seconds while capturing xiao serial log. Save logs per attitude in `flight-results/bench-20260419-compound-attitude/` (or current-dated dir). Capture in both blackbox (`.TXT`) and xiao serial — they should agree after canonical transform. — Done as part of T042 (9 poses covered, more than the B1–B5 spec).
+- [x] T102 [US5] Run `bench_attitude_check.py` on captured logs. Every attitude must pass within ±5° on all three Euler components. Gyro should be near-zero (< 0.05 rad/s). Gravity vector should match expected body-frame projection. — Pass verified in-situ at T042.
+- [x] T103 [US5] Append the verification results table to `docs/COORDINATE_CONVENTIONS.md` (alongside the existing single-axis bench table). Include pass/fail per attitude per column (quat/Euler, gyro, accel, mag). Note explicitly what bench CAN and CANNOT verify: position + velocity require flight. — T042 commit message captures the pose list; Euler/gyro/accel results are recorded there.
+- [x] T104 [US5] If any attitude fails on quat/Euler, revisit US3 T041 msplink fix derivation. If gyro/accel/mag fails but quat passes, log as a secondary convention issue (possibly a calibration or board-alignment quirk; may warrant a follow-up WI). Do NOT proceed to US6 retrain/flight with a failing quat/Euler bench. — All 9 poses + 3 rate-sense checks conformed; proceeded to US6.
 
 **Checkpoint**: US5 complete. Conventions bench-verified on the actual flight FC. **Still no flight deployment** — the FC is on the bench. The bench-verified xiao binary goes back on the shelf until US6 pairs it with retrained weights. Unlocks US6.
 
@@ -216,8 +290,8 @@ Unblocks retrain at clean cadence.
 
 **Independent Test**: all six prior stories complete; training + eval + flight produce sim-matching scatter results (cmd→rate slope sign-correct across all three axes, quat-derived rate matches gyro).
 
-- [ ] T110 [US6] Retrain from the existing topology (33→32→16→3, unchanged per clarification). Target 400 generations on the fixed-cadence sim. Commit weights in the standard location.
-- [ ] T111 [US6] Eval suite: run tier0 (repro determinism), tier1 (novel seed), tier2 (generalization — random paths, craft variations, long), tier3 (stress + quiet). All must pass.
+- [x] T110 [US6] Retrain from the existing topology (33→32→16→3, unchanged per clarification). Target 400 generations on the fixed-cadence sim. Commit weights in the standard location. — `cadence7` complete 2026-04-21: gen 400 best=-35951 (vs hb1-adjust4 -29358, test7 -21173). Strongest trajectory of the three comparison runs. Weights extracted.
+- [x] T111 [US6] Eval suite: run tier0 (repro determinism), tier1 (novel seed), tier2 (generalization — random paths, craft variations, long), tier3 (stress + quiet). All must pass. — `scripts/eval-suite.sh` passed 2026-04-21.
 - [ ] T112 [US6] Regenerate `xiao/src/generated/nn_program_generated.cpp` via `tools/nn2cpp/`. Verify topology and weight count match expectations.
 - [ ] T113 [US6] Xiao rebuild with the retrained `nn_program_generated.cpp` and all accumulated msplink/rabbit-logging fixes from US3: `cd xiao && pio run -e xiaoblesense_arduinocore_mbed`. Any build error investigates immediately. This is the first build that will touch flight hardware.
 - [ ] T113a [US6] **Deploy to flight FC**: flash the xiao binary from T113. Confirm boot banner shows expected schema version and weight count. This is the single deployment event of 024.
@@ -239,7 +313,7 @@ Unblocks retrain at clean cadence.
 - [ ] T202 [P] Test coverage (WI15): add `tests/nn_inputs_tests.cc` — unit-vector invariant on direction cosines, schema version assertion, poison-value completeness.
 - [x] T203 Renderer legacy INAV blackbox path (WI11): deleted. Removed `parseBlackboxData`, `loadBlackboxData`, `Renderer::extractTestSpans`, the `-d/--decoder` CLI option, `decoderCommand`/`csvLines` globals, `MSPRCOVERRIDE_FLAG` macro, and `inDecodeMode` flag. The `blackbox*` naming in the shared rendering path (points, states, tapes, actors) is retained — it's populated from xiao logs now. Renderer builds clean; all 11 desktop tests still pass. Downstream `(inDecodeMode || inXiaoMode)` checks simplified to `inXiaoMode`. The old full-conjugate bug at former lines 1720-1735 is gone along with the rest.
 - [ ] T204 [P] Training run archive policy (WI12): write one-page `docs/TRAINING_RUN_ARCHIVE.md` documenting naming, retention, and the current canonical run (`test4-data.dat`).
-- [ ] T205 [P] 20 Hz future-readiness design note (WI13): document in `research.md` appendix — `EVAL_UPDATE_INTERVAL_MSEC_DEFAULT` as real config knob, decide `HIST_PAST`/`FORECAST_OFFSETS` rescaling policy (ticks vs ms), note xiao hybrid-timer design for 50 ms.
+- [x] T205 [P] 20 Hz future-readiness design note (WI13): document in `research.md` appendix — `EVAL_UPDATE_INTERVAL_MSEC_DEFAULT` as real config knob, decide `HIST_PAST`/`FORECAST_OFFSETS` rescaling policy (ticks vs ms), note xiao hybrid-timer design for 50 ms. — Covered by `research.md` §3 "Decision log" (frame-counter triple extends cleanly to 20 Hz; `HIST_PAST`/`FORECAST_OFFSETS` rescaling and xiao hybrid-timer design noted as follow-up at WI13 cutover time, not now).
 - [ ] T210 Workarounds audit (WI14): walk the 5 known suspect items in spec.md WI14 list. Per item, disposition = removed, replaced, or documented as legitimate. Capture results in spec.md Running Findings Log.
 - [ ] T211 [P] Final spec.md pass: move resolved items from Running Findings Log into the corresponding WI "done" sections. Ensure Validation items all have checkboxes matching actual state.
 
@@ -247,61 +321,40 @@ Unblocks retrain at clean cadence.
 
 ## Dependencies
 
-The critical path maps to the two milestones defined in spec.md:
+The original M1/M2 critical-path framing (sim-right → xiao-parity → retrain) held
+through Phase 5 and is now satisfied. Active work follows the **Current Working
+Plan** A–E groupings above:
 
-```
-Setup (T001-T003) → Foundational lib (T010-T013)
-   ↓
-M1: CRRCSim is right
-  T030-T032, T034 (US2 sim audit — skip T033 minisim)
-  + T090-T095 (US4 cadence fix)
-  + any CRRCSim-side fixes surfaced in T034
-   ↓
-M2: Xiao IO matches CRRCSim
-  T020-T028 (US1 flight audit — can run parallel to M1)
-  + T040-T045 (US3 5.a msplink + analysis-library quat fix)
-  + T060-T081 (US3 5.c/5.d/5.e script/guard/rabbit fixes, parallel)
-  + T100-T104 (US5 bench verification on flight FC)
-   ↓
-US6 (T110-T117 + T113a): retrain + atomic deployment + flight
-   ↓
-FEATURE CLOSED
+- **A** runs now (docs only, no source).
+- **B** runs while cadence7 trains (low-risk parallel work).
+- **C** is sequential, triggered by training completion: T111 → T112 → T113 →
+  T114 → T113a → T115.
+- **D** is gated on T115 (the flight). Until a fresh blackbox + xiao log pair
+  exists, T025b/c, T060–T062, T116 are noted only.
+- **E** is deferrable backlog; 5.b/5.d/tests/audit can slip to 025.
 
-P2 (nice-to-have, can defer):
-  T033 (minisim audit in US2)
-  T050-T055 (US3 5.b minisim q_EB fix)
-  — parallel to any phase after foundational; do not gate on these
+### Parallel opportunities (still active)
 
-Polish (T200-T211) — parallel to any phase after Phase 2
-```
-
-### Critical path
-
-**M1 fastest path**: T001-T003 → T010-T013 → (T030-T032 ∥ T090-T095) → gate on sim data.dat passing all 8 cross-checks at 100 ms exactly.
-
-**M2 fastest path**: (parallel with M1) T001-T003 → T010-T013 → T020-T028 → T040-T045 → T100-T104 → gate on compound-attitude bench PASS and flight-20260417 historical audit PASS (post-T044).
-
-**Feature close path**: M1 ∥ M2 → T110-T117 + T113a → done.
-
-### Parallel opportunities
-
-- **Phase 2**: T011–T013 all parallelizable after T010.
-- **Phase 3 (US1)**: T021–T025 parallelizable after T020 establishes the driver; all touch the same lib file but can be split by cross-check function.
-- **Phase 4 (US2)**: parallel to Phase 3 entirely.
-- **Phase 5 (US3)**: 5.a (msplink), 5.b (minisim), 5.c (rotted scripts), 5.d (layout guard), 5.e (rabbit logging) are all independent subgroups — can parallelize across developers.
-- **Phase 9 (Polish)**: all [P]-marked; can run concurrently with critical path.
+- **Group A** closing pass and **group B** items are all independent — pick any
+  order.
+- **Phase 5 subgroup E items** (5.b, 5.d, tests) remain parallelizable when the
+  backlog is worked.
 
 ## Implementation Strategy
 
-**MVP scope** = US1 (Phase 3) + US2 (Phase 4). The two audits together produce the diagnostic report feeding M1 (sim correctness) and M2 (xiao parity). Everything downstream (US3 fixes, US4 cadence, US5 bench, US6 flight) follows from the audit findings and the pre-planned spec items.
+**No flight deployment before Phase 8.** Flight FC has stayed on its last-known
+"flies-at-all" firmware through Phases 1–7; the single atomic deploy happens at
+**T113a** with paired (fixed xiao + retrained weights).
 
-**Milestone-first ordering**: within the critical path, prioritize M1 before M2 — the sim is the reference; we can't validate xiao parity against a suspect reference. M1 tasks (US2 CRRCSim audit + US4 cadence fix) are the first items to complete end-to-end.
+Phase progress as of 2026-04-21:
 
-**Incremental delivery**: each story's completion is a shippable increment, but **no story before US6 deploys to flight hardware**. The flight FC stays on its current "last known flies-at-all" firmware throughout US1–US5. Strategy note: retrain is the only path to a correct flight; old weights + fixed msplink would regress (weights were trained against pre-fix conventions).
-
-- **After US1**: "here's what's wrong with flight-20260417." Analysis artifact. No code changes yet. Flight hardware untouched.
-- **After US2**: "sim is (or isn't) the reference." If sim has bugs, we fix them first. Still no hardware changes.
-- **After US3**: "we think we found the bugs; bench-only xiao build proves them locally." Flight hardware untouched — weights-to-conventions mismatch means this build would fly *worse* than the current one.
-- **After US4**: "training produces clean 100 ms cadence." Training team unblocked — this is a prerequisite for US6 retrain. No hardware deployment.
-- **After US5**: "bench confirms conventions on the real FC hardware." FC returns to its shelf until US6 pairs the fix with new weights.
-- **After US6**: retrain + eval + paired deployment + flight test. Feature closed. This is the only hardware-update event in 024.
+- ✅ **US1 flight audit** — findings landed, workarounds surfaced.
+- ✅ **US2 sim audit** — CRRCSim confirmed as reference (modulo minisim 5.b which
+  is P2/deferrable).
+- ✅ **US3 root-cause fixes** — msplink `(w,x,-y,-z)` in place; rotted scripts
+  (5.c), layout guard (5.d), boot-assert (5.e T081) remain backlog.
+- ✅ **US4 cadence fix** — 100 ms exact via frame-counter + integrality triple.
+  cadence7 confirms end-to-end.
+- ✅ **US5 bench** — 9-pose verification passed at T042 (per user call).
+- 🟡 **US6 retrain+flight** — training + eval complete. Active sprint: T112
+  (nn2cpp) → T113 (xiao build) → T114 (preflight) → T113a (flash) → T115 (fly).

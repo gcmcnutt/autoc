@@ -534,40 +534,72 @@ failure→pass transition.
 
 ### WI4 — Cadence fix to 100 ms exactly (both sides)
 
-Root cause (sim side): `inputdev_autoc.cpp:341`
-`simTimeMsec > lastUpdateTimeMsec + 100` combined with ~39 ms physics tick
-lands at 117 ms (3 ticks past threshold).
+Root cause (sim side): the legacy strict-greater trigger
+`simTimeMsec > lastUpdateTimeMsec + 100` combined with a ~39 ms outer frame
+(`fps=25`, `dt=0.003`) lands at 117 ms (3 frames past threshold, not 2).
 
-**Plan-phase research prerequisites** (both sides, not just sim):
+**Strategy: frame-counter cadence with a startup integrality check.**
 
-- **CRRCSim inner loop in headless mode**: what actually drives the physics
-  tick when the renderer is disabled? Is it a hardware timer, a sleep-based
-  loop, a tick-as-fast-as-possible virtual clock? What knobs exist
-  (`SIM_FPS`, `Simulation::getSimulationTimeSinceReset`, etc.)? Why does
-  the header say `SIM_FPS = 25.0` with a "~40 Hz" comment and we observe
-  ~39 ms ticks? Where does the FDM `dt` actually come from?
-- **Xiao timer source**: is the 100 ms NN eval loop driven by a sustained
-  hardware timer (no drift, exact 100 ms), or software-accumulated (subject
-  to drift based on MSP request/response timing)? Check `xiao/src/msplink.cpp`
-  main loop cadence source.
-- **20 Hz path**: at 20 Hz = 50 ms, are there new constraints on either
-  side? MSP bus saturation, physics sub-step accuracy, xiao compute time
-  per NN forward pass.
+Instead of comparing simTime against a wall-clock-style threshold, count
+outer frames and fire NN eval every `framesPerEval`-th frame. Deterministic
+by construction; drift is zero as long as the cadence triple below is
+integral. `simTimeMsec` is still stamped into the diag ring buffer so drift
+between virtual and wall time is observable in video mode.
 
-Candidate approaches (decide after research):
-1. Change `>` to `>=` and align physics tick to divide 100 ms cleanly.
-2. Accumulate partial-tick time budget so long-run average is 100 ms
-   (per-tick jitter acceptable).
-3. Override physics rate in training config (50 Hz = 20 ms tick, 5 ticks
-   = 100 ms exactly).
-4. Combo of 1 + 3.
+**The cadence triple.** Three quantities must be chosen together:
 
-Verify: `awk 'NR>1 {print $4}' data.dat | uniq -c` shows every Time delta
-exactly 100 ms. Xiao log `xiao_ms` deltas jitter measured ≤ 2 ms from
-100 ms nominal.
+1. `Global::dt` — physics substep (seconds). From `simulation.flightModel.dt`
+   in `autoc_config.xml`.
+2. `video.fps` — outer-frame rate (Hz). From `video.fps`. `CTime` rounds the
+   outer cycle to `cycleLength_ms = (int)(1000 / fps / dtMs) * dtMs`, i.e. an
+   integer multiple of `dtMs`. `cycleLength_ms` is the outer frame length
+   used everywhere downstream; it may differ from `1000/fps` by up to one
+   `dtMs`.
+3. `gEvalUpdateIntervalMsec` — NN eval cadence (ms). Default 100 ms.
 
-Also document the actual physics stepping path. Resolve the `SIM_FPS = 25.0`
-constant with its "~40 Hz" comment (they disagree).
+**Integrality requirement** (enforced in `inputdev_autoc.cpp init()`):
+
+```
+gEvalUpdateIntervalMsec % cycleLength_ms == 0
+framesPerEval = gEvalUpdateIntervalMsec / cycleLength_ms
+```
+
+If the triple is not integral, `init()` aborts with a fatal log line naming
+all four numbers. This is a deliberate loud-failure: silent non-integer
+ratios are what produced 117 ms and 150 ms cadences in the past. Picking
+the triple is a design decision that belongs in config, not in runtime
+drift.
+
+**Not every (fps, dt) pair admits an integral triple.** Example:
+`dt=0.003, fps=20` → `cycleLength_ms=48`, which does not divide 100. In
+fact no `fps` yields a 100-ms-compatible `cycleLength` at `dt=0.003` —
+because `cycleLength_ms` is always a multiple of `dtMs=3` and 3 does not
+divide 100. This is why **`dt` was moved from 0.003 to 0.005** in this
+feature: with `dt=0.005, fps=20`, `cycleLength_ms=50` and
+`framesPerEval=2`. Physics runs at 200 Hz — still 10× the outer rate, well
+above any stability requirement for the HB1 FDM. Reverting `dt` downward
+requires re-choosing `fps` and/or `gEvalUpdateIntervalMsec` to keep the
+triple integral. See `research.md` §3 for the derivation and rejected
+alternatives (accumulator-based cadence, strict-equal `>=`).
+
+**Current triple** (post-WI4):
+
+| Knob | Value | Source |
+|---|---|---|
+| `Global::dt` | 0.005 s (200 Hz physics) | `autoc_config.xml` `<flightModel dt="0.005" />` |
+| `video.fps` | 20 Hz (50 ms outer frame) | `autoc_config.xml` `<video fps="20">` |
+| `cycleLength_ms` | 50 ms | computed by CTime |
+| `gEvalUpdateIntervalMsec` | 100 ms | `EVAL_UPDATE_INTERVAL_MSEC_DEFAULT`, env-overridable |
+| `framesPerEval` | 2 | computed at init |
+
+**Xiao side.** No change at this feature: `MSP_LOOP_INTERVAL_MSEC=50`,
+`MSP_NN_EVAL_DIVISOR=2` still yields 100 ms NN cadence. Matches sim
+exactly. Still not hardware-timed; jitter is millis()-granularity plus MSP
+latency. See WI13 for 20-Hz-NN readiness (not cut over in this feature).
+
+Verify: `awk 'NR>1 {print $4}' data.dat` shows every Time delta exactly
+100 ms. Startup log line `[AUTOC] cadence: video.fps=... cycleLengthMs=...
+framesPerEval=2 headless=...` confirms the triple was accepted.
 
 ### WI5 — Compound-attitude bench verification
 
@@ -666,24 +698,33 @@ keep-and-maintain (adds version check per WI9) or delete. Low priority.
 short retention policy for training runs: naming, what to preserve, what
 to discard. One-page note, low complexity.
 
-### WI13 — 20 Hz future readiness (design, no cutover)
+### WI13 — 20 Hz NN cadence future readiness (design, no cutover)
 
-Don't cut over to 20 Hz in this feature. But design WI4's cadence fix so
-step-up is cheap:
+**Scope clarification.** WI4 already cuts the **outer frame** over to 20 Hz
+(50 ms cycle). WI13 is specifically about the **NN eval cadence** (currently
+10 Hz / 100 ms) — that stays 10 Hz in this feature. The knobs below become
+relevant when the NN itself steps to 20 Hz.
+
+Design for cheap step-up without cutting over:
 
 - `EVAL_UPDATE_INTERVAL_MSEC_DEFAULT` → real config knob, not compile-time
-  constant.
+  constant. At 20 Hz NN, drops to 50 ms. The frame-counter triple must
+  stay integral: with `cycleLength_ms=50, evalInterval=50 → framesPerEval=1`
+  (eval every outer frame). `init()` will catch a bad triple at startup.
 - Decide whether `HIST_PAST` / `FORECAST_OFFSETS` remain in ticks
   (NN window scales with rate) or become explicit ms (rate-independent).
-- Note in code where 20 Hz will require additional care (xiao MSP poll,
+- Note in code where 20 Hz NN will require additional care (xiao MSP poll,
   INAV RC-override cadence, training wall-time).
 
 ### WI14 — Workarounds & fallbacks audit
 
 Sweep for "workaround shaped" code. Known or suspected:
 
-- `SIM_FPS = 25.0` with "~40 Hz" comment — value and comment disagree.
-  Resolve via WI4.
+- `SIM_FPS` define and `getCycleCounterOverflow()` — removed in WI4. The
+  constant existed only as input to the overflow-bucket "way late" guard in
+  the legacy time-diff cadence path. Frame-counter cadence with a startup
+  integrality check makes both unnecessary; simTime jumps are caught by
+  `SIM_MAX_INTERVAL_MSEC` instead.
 - `engageDelayMsec = 750` with stick-centered + cruise-throttle hold —
   is this masking a real NN startup instability, or legitimate engage
   smoothing? Revisit after WI1/WI3 clarify attitude tracking.
