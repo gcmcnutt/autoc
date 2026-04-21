@@ -87,6 +87,11 @@ struct PipelineStats {
 };
 static PipelineStats pipelineStats;
 
+// Controller-loop cadence stats (struct declared in main.h).
+// Populated by controllerUpdate() per tick; reset alongside pipelineStats
+// at engage-span start; summarized in stopAutoc when the span ends.
+LoopStats loopStats;
+
 // Aircraft state tracking for position/velocity calculation
 static gp_vec3 last_valid_position(0.0f, 0.0f, 0.0f);
 static bool have_valid_position = false;
@@ -151,6 +156,16 @@ static void stopAutoc(const char *reason, bool requireServoReset)
           pipelineStats.intervalMinUs*GP_INV_1000,
           pipelineStats.intervalMaxUs*GP_INV_1000);
       }
+    }
+    // Controller loop cadence — ERROR level if any tick overran the
+    // MSP_LOOP_INTERVAL_MSEC budget during this engage span, INFO otherwise.
+    if (loopStats.ticks > 0) {
+      LogLevel ctlLevel = (loopStats.overruns > 0) ? ERROR : INFO;
+      float avgLate = (float)loopStats.totalLateMs / (float)loopStats.ticks;
+      logPrint(ctlLevel,
+        "ctl loop: ticks=%u overruns=%u resyncs=%u maxLate=%ums avgLate=%.2fms",
+        loopStats.ticks, loopStats.overruns, loopStats.resyncs,
+        loopStats.maxLateMs, avgLate);
     }
   }
 }
@@ -336,6 +351,7 @@ void msplinkSetup()
 
   // No ticker — single 20Hz loop in controllerUpdate() handles sends
   pipelineStats.reset();
+  loopStats.reset();
 }
 
 void mspUpdateState()
@@ -470,6 +486,7 @@ void mspUpdateState()
       rabbit_active = true;
       rabbit_odometer = 0.0f;
       pipelineStats.reset();
+      loopStats.reset();
       // No ticker — single 20Hz loop in controllerUpdate() handles sends
       current_path_index = 0;
 
