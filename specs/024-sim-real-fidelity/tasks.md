@@ -38,12 +38,14 @@ sim is coordinate-canonical (see
 
 ### B — Parallel cleanup (still open, zero flight risk)
 
-- **T033** — minisim conformance audit. Drives 5.b scoping but not flight-critical.
-- **T081** — boot-time `sizeof(NNInputs)` assert. Xiao-side, trivial.
-- **T204** — training run archive policy. One page. Name cadence7 as canonical.
 - **T211** — spec.md findings log pass. Move resolved items into done sections.
 - **Comment fix**: misleading `msplink.cpp:753` comment ("GP +1.0 = pitch up") —
   code is correct, comment is confusing. Non-blocking follow-up.
+
+**Moved out of 024 (2026-04-21)**:
+- T033, T081 → [specs/025-craft-variations/spec.md](../025-craft-variations/spec.md#carried-over-from-024)
+  (minisim audit + 5.b q_EB canonicalization, sizeof boot assert).
+- T204 → [specs/BACKLOG.md](../BACKLOG.md) ("Training Run Archive Policy").
 
 ### C — Flight-deployment sprint (ACTIVE — T114 prep next)
 
@@ -183,7 +185,7 @@ sim bug to fix in US3 before trusting sim's baseline.
 - [x] T030 [US2] Implement `sim_data_to_canonical()` reader in `sensor_self_check_lib.py` per `contracts/sim_data_dat_contract.md`. Data.dat columns are already in canonical stack conventions (minimal transform).
 - [x] T031 [P] [US2] Extend the sensor checks to handle sim: position/velocity cross-check adapts to use `X Y Z` + body-velocity-rotated-to-world; quat↔gyro same as flight; accel/mag not in sim data.dat (skip or mark N/A); heading↔track uses `X Y Z` velocity direction; attitude-vector↔velocity-direction uses the same body-forward check; cmd↔attitude-change uses data.dat's `outPt outRl outTh` as the command side (no fusion needed — sim is single-source).
 - [x] T032 [US2] Run audit on `/tmp/gen400_p0_p2.dat` (CRRCSim). Commit result as the sim-reference baseline.
-- [ ] T033 [P] [US2] Minisim conformance audit. Step 1: inspect `tools/minisim.cc` for fixed-attitude-scenario support. If present, run with a known-attitude config (e.g., 30° pitch up + 30° right bank initial), emit data.dat, pipe to audit tool. If NOT present, add a minimal test mode: CLI flag or hardcoded short scenario that initializes `aircraft_orientation` at a compound attitude, runs 1 s of zero-command integration, writes data.dat compatible with the audit reader. Expected audit result: quat↔gyro FAIL (minisim's q_EB vs q_WB bug — fixed in US3 5.b).
+- ~~T033~~ **MOVED TO 025** (2026-04-21) — minisim not on 024 flight critical path; folded into 025's convention-canonicalization pass. See [specs/025-craft-variations/spec.md](../025-craft-variations/spec.md#carried-over-from-024).
 - [x] T034 [US2] Document sim-side findings in spec.md Running Findings Log. CRRCSim issues (if any) and minisim q_EB failure expected.
 
 **Checkpoint**: US2 complete. Sim provides the reference baseline; any sim-side surprises feed US3.
@@ -207,20 +209,19 @@ failing axis now PASSes. No regressions on other checks.
 - [x] T044 [US3] Update `flight-results/flight-20260417/sensor_self_check_lib.py` to a **two-quat split**: `quat` = aerospace q_EB (qz flipped) for all static lookups; `quat_raw` = INAV NEU (no flip) for kinematic rate checks (`quat↔gyro`, `cmd↔rate`). Xiao (post-T041) and sim have no NEU↔NED reflection so set `quat_raw = quat`. Matches the T041 msplink boundary convention; self-test passes.
 - [x] T045 [US3] Re-ran `sensor_self_check.py` on `flight-results/flight-20260417/blackbox_log_2026-04-17_173039.01.csv` with T044 in place. Check 2 (gyro↔quat-delta) now PASSes slope +1.00/+0.99/+1.00; Check 4 (accel↔gravity) ax slope went −4.83→+0.60 (sign restored); Check 5 (heading↔track) PASS +1.17; Check 7 (nose↔vel) N/E pass, D weak −0.076 noise-dominated (|r|=0.08, aircraft mostly level — not a convention bug). Satisfies spec Validation #1.
 
-### 5.b — Minisim q_EB canonicalization (WI7) — **P2 (nice-to-have)**
+### 5.b — Minisim q_EB canonicalization (WI7) — **MOVED TO 025** (2026-04-21)
 
-Per spec Critical Milestones: minisim is NOT on the M1 or M2 critical path.
-It is not in training (CRRCSim is) and not on xiao. Fold in if time permits;
-otherwise these tasks can defer and remain in BACKLOG. T033 US2 check will
-show the minisim bug expected; documenting it (without fixing) is acceptable
-at feature close.
+Minisim isn't on 024's critical path (not in training, not on xiao). Per user
+call, the whole 5.b block — T033 (audit) + T050–T055 (test + fix + doc) —
+lands in 025's convention-canonicalization pass alongside 025's other
+minisim/aircraft_state touches. See [specs/025-craft-variations/spec.md](../025-craft-variations/spec.md#carried-over-from-024).
 
-- [ ] T050 [US3-P2] Write `tests/minisim_convention_tests.cc`: construct `AircraftState` with a known non-identity attitude (e.g., 30° right bank, nose east); assert `orientation.inverse() * gravity_world` gives the expected body-frame gravity, and that `minisimAdvanceState` with zero commands advances the aircraft along its nose direction in world frame. Initially fails.
-- [ ] T051 [US3-P2] Modify `include/autoc/eval/aircraft_state.h` `minisimAdvanceState`: change composition to `aircraft_orientation = delta_body * aircraft_orientation` (pre-multiply for q_EB); change velocity rotation to `velocity_world = aircraft_orientation.inverse() * velocity_body`.
-- [ ] T052 [US3-P2] Modify `tools/minisim.cc:148`: drop the initial-velocity pre-rotation or switch to `q_EB.inverse() * (V,0,0)` form.
-- [ ] T053 [US3-P2] Revisit gyro-rate computation at `aircraft_state.h:379-382` — with q_EB composition, verify the body-rate formula direction. Update test to pin the correct sign.
-- [ ] T054 [US3-P2] Update `docs/COORDINATE_CONVENTIONS.md` with a subsection explicitly naming `AircraftState::aircraft_orientation` as the canonical q_EB holder. Reference test file.
-- [ ] T055 [US3-P2] Verify US2 (T033) minisim audit now PASSes all checks.
+- ~~T050~~ moved to 025.
+- ~~T051~~ moved to 025.
+- ~~T052~~ moved to 025.
+- ~~T053~~ moved to 025.
+- ~~T054~~ moved to 025.
+- ~~T055~~ moved to 025.
 
 ### 5.c — Rotted post-flight analysis scripts (WI10)
 
@@ -237,7 +238,7 @@ at feature close.
 ### 5.e — Xiao rabbit logging sanity (WI8)
 
 - [x] T080 [US3] Audit `xiao/src/msplink.cpp` NN log line emission — confirmed `rabbit=[x,y,z]` field was **missing** from current NN log format. Added `rabbit=[%.2f,%.2f,%.2f]` at end of log format; value is `targetPos` (virtual-NED m) from `getInterpolatedTargetPosition()` — the actual NN target, not a reconstruction.
-- [ ] T081 [US3] Add a boot-time log line asserting `sizeof(NNInputs) == 33 * sizeof(float)` (the existing static_assert also prints a line on boot).
+- ~~T081~~ **MOVED TO 025** (2026-04-21) — fold into 025's NN-input schema work alongside variation-aware features. See [specs/025-craft-variations/spec.md](../025-craft-variations/spec.md#carried-over-from-024).
 
 **Checkpoint**: US3 complete. After T044 (analysis-library fix), re-running US1 on flight-20260417 historical CSV **now PASSes** — the blackbox data was always correct; we just interpret it correctly now. T042 bench verifies the xiao-side msplink fix behaves the same way on the live pipeline. US2 sim audit passes after T055 (minisim q_EB fix).
 
@@ -319,7 +320,7 @@ artifacts.
 - [ ] T201 [P] Test coverage (WI15): add `tests/engage_delay_tests.cc` — 3 contract tests for the 750 ms delay window (stick-centered output during delay, cruise-throttle derivation, first-real-command timing).
 - [ ] T202 [P] Test coverage (WI15): add `tests/nn_inputs_tests.cc` — unit-vector invariant on direction cosines, schema version assertion, poison-value completeness.
 - [x] T203 Renderer legacy INAV blackbox path (WI11): deleted. Removed `parseBlackboxData`, `loadBlackboxData`, `Renderer::extractTestSpans`, the `-d/--decoder` CLI option, `decoderCommand`/`csvLines` globals, `MSPRCOVERRIDE_FLAG` macro, and `inDecodeMode` flag. The `blackbox*` naming in the shared rendering path (points, states, tapes, actors) is retained — it's populated from xiao logs now. Renderer builds clean; all 11 desktop tests still pass. Downstream `(inDecodeMode || inXiaoMode)` checks simplified to `inXiaoMode`. The old full-conjugate bug at former lines 1720-1735 is gone along with the rest.
-- [ ] T204 [P] Training run archive policy (WI12): write one-page `docs/TRAINING_RUN_ARCHIVE.md` documenting naming, retention, and the current canonical run (`test4-data.dat`).
+- ~~T204~~ **MOVED TO BACKLOG** (2026-04-21) — general infra concern, not 024-scoped. See [specs/BACKLOG.md](../BACKLOG.md) "Training Run Archive Policy".
 - [x] T205 [P] 20 Hz future-readiness design note (WI13): document in `research.md` appendix — `EVAL_UPDATE_INTERVAL_MSEC_DEFAULT` as real config knob, decide `HIST_PAST`/`FORECAST_OFFSETS` rescaling policy (ticks vs ms), note xiao hybrid-timer design for 50 ms. — Covered by `research.md` §3 "Decision log" (frame-counter triple extends cleanly to 20 Hz; `HIST_PAST`/`FORECAST_OFFSETS` rescaling and xiao hybrid-timer design noted as follow-up at WI13 cutover time, not now).
 - [ ] T210 Workarounds audit (WI14): walk the 5 known suspect items in spec.md WI14 list. Per item, disposition = removed, replaced, or documented as legitimate. Capture results in spec.md Running Findings Log.
 - [ ] T211 [P] Final spec.md pass: move resolved items from Running Findings Log into the corresponding WI "done" sections. Ensure Validation items all have checkboxes matching actual state.

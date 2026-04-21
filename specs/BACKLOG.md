@@ -178,6 +178,16 @@ Remaining 015 work:
 ### [DEFERRED] Output Cleanup
 - OutputDir config key, auto-created run subdirectory, clean eval prefix naming
 
+### [DEFERRED] Training Run Archive Policy (moved from 024 T204)
+- One-page `docs/TRAINING_RUN_ARCHIVE.md` documenting: naming scheme for
+  training runs, retention policy (what to keep, what to discard), and a
+  record of the current canonical run (`test4-data.dat`, now cadence7).
+- Current ad-hoc: training runs live in `/home/gmcnutt/autoc/data.dat` +
+  `logs/autoc-<feature>-<name>.log` + S3 bucket artifacts. No formal
+  rotation; big `.dat` files accumulate.
+- Write when the accumulated `.dat` size becomes a problem or when a
+  new run needs canonical-reference status for post-flight analysis.
+
 ### [NEXT] Make pathgen.h Portable for Embedded
 - Single pathgen.h that works on both desktop and embedded
 - Current state: embedded_pathgen_selector.h is a manual clone of desktop pathgen.cc

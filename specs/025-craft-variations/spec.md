@@ -213,6 +213,58 @@ Add chatter penalty or min-turn-radius.  Retrain.  Compare.
 | US6 Craft variations | Changes 1-2 above (expanded with trim offsets) |
 | Memory leak investigation | Remains in 023 — fix before 024 training |
 
+## Carried over from 024
+
+These items were flagged as not flight-critical for 024 and deferred to 025
+(2026-04-21):
+
+### Minisim conformance audit + q_EB canonicalization (WI7)
+
+Minisim is a lightweight sim used for some offline analysis; it was flagged
+in 024 as having a `q_EB` vs `q_WB` convention bug (see 024 WI7 and
+tasks.md 5.b T050–T055). **Not on the critical path for 024 flight**
+because minisim isn't in the training pipeline (CRRCSim is) and isn't on
+the xiao. Carry into 025 as part of the overall convention-canonicalization
+pass, since 025 touches minisim and aircraft_state anyway:
+
+- Minisim conformance audit: add fixed-attitude-scenario support to
+  `tools/minisim.cc`, pipe output through `sensor_self_check.py`,
+  confirm the expected `q_EB` bug surfaces. (024 T033)
+- `tests/minisim_convention_tests.cc` — compound-attitude bench in code.
+  (024 T050)
+- Fix `minisimAdvanceState` composition to `delta_body * aircraft_orientation`
+  and velocity rotation to world-via-inverse. (024 T051)
+- Drop or re-derive the initial-velocity pre-rotation in
+  `tools/minisim.cc:148`. (024 T052)
+- Verify gyro-rate sign at `aircraft_state.h:379-382`. (024 T053)
+- Name `AircraftState::aircraft_orientation` as canonical q_EB in
+  `docs/COORDINATE_CONVENTIONS.md`. (024 T054)
+- Confirm T033 audit passes after the above. (024 T055)
+
+### NN input layout drift guard + schema version (024 T081)
+
+024 flagged that `sizeof(NNInputs) == 33 * sizeof(float)` is currently
+enforced by a compile-time static_assert but not by a boot-time log line
+or a version field in serialized artifacts. Easy to add alongside 025's
+inevitable input-layout churn (new variation-aware features, etc.).
+
+- Add a boot-time log line asserting the sizeof invariant. (024 T081)
+
+### Path-Relative Smoothness / Control-Effort Pressure
+
+See the 024 bang-bang evolution analysis
+(`specs/024-sim-real-fidelity/cadence7_bang_bang_evolution.md`). cadence7
+already shows a weak downward dCtrl trend (~30% over gens 90–400),
+suggesting the current lexicase setup has residual selection for smoother
+control — it's just faint because the airframe+servo are fixed. 025's
+Change 1 (aero + mass + CG + servo variations) should amplify this signal
+without any explicit smoothness term in fitness, consistent with the
+"no tunables" project constraint. Re-run
+`plot_control_aggressiveness.py` after 025's first full training to
+measure the shift. If variations don't move the dCtrl/|out| plateau
+meaningfully, revisit a structural selection change (e.g. NSGA-II on
+tracking + robustness-proxy) — but variations first.
+
 ## Backlog Items Absorbed into 024
 
 From `specs/BACKLOG.md`:
