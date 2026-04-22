@@ -72,6 +72,7 @@ struct SpanData {
   vec3 origin;
   std::vector<TimestampedVec> vecs;
   std::vector<vec3> rabbitPoints;       // Projected rabbit (from NN body-frame inverse projection)
+  std::vector<unsigned long> rabbitTimesMs;  // Rabbit timestamps in ms, relative to span start (matches AircraftState::getSimTimeMsec after span normalization)
   std::vector<vec3> directRabbitPoints;  // Direct rabbit position (from rabbit=[x,y,z] in log)
   size_t startStateIdx;
   size_t endStateIdx;
@@ -1783,6 +1784,7 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
       currentSpanData.origin = currentOrigin;
       currentSpanData.vecs.clear();
       currentSpanData.rabbitPoints.clear();
+      currentSpanData.rabbitTimesMs.clear();
       currentSpanData.directRabbitPoints.clear();
       currentSpanData.startStateIdx = currentStateIdx;
       currentSpanData.pathIndex = -1;  // Reset path index for new span
@@ -1875,6 +1877,14 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
           vec3 rabbitPos(latestPos[0] + wx, latestPos[1] + wy, latestPos[2] + wz);
           rabbitPos[2] = rabbitPos[2] + SIM_INITIAL_ALTITUDE;
           currentSpanData.rabbitPoints.push_back(rabbitPos);
+          // Track rabbit timestamp relative to span start — matches the
+          // normalization that AircraftState::getSimTimeMsec gets in
+          // updateBlackboxForCurrentTest (line ~1645). Used for
+          // time-based state↔rabbit pairing in the blue-delta-line
+          // rendering, which is robust to the 0.01m coincident-point
+          // state filter at line ~1955.
+          currentSpanData.rabbitTimesMs.push_back(
+              static_cast<unsigned long>(xiaoMs - spanStartTimeMs));
 
           // Vec direction for error arrows
           vec3 vecDir(wx, wy, wz);
@@ -3712,25 +3722,45 @@ void Renderer::updatePlaybackAnimation() {
             }
           }
 
-          // Render animated error bars connecting visible states to rabbit points
-          // In xiao-only mode, states and rabbit points are 1:1 (both from 10Hz NN ticks)
-          // Use stable step based on total span size to prevent rearrangement during animation
-          size_t numVisibleStates = static_cast<size_t>(blackboxAircraftStates.size() * blackboxProgress);
-          if (numVisibleStates > 0 && numPointsToShow > 0) {
+          // Render animated error bars connecting aircraft states to rabbit points.
+          // Iterate by RABBIT index (matches red-path reveal rate). For each
+          // visible rabbit j, pair with the aircraft state whose timestamp is
+          // closest to that rabbit's timestamp. This is robust to the 0.01m
+          // coincident-point filter at line ~1955 — on stationary-ish data
+          // (bench, hover) many Nav States get dropped, so state-index pairing
+          // desyncs from rabbit-index pairing; timestamp pairing stays correct.
+          const std::vector<unsigned long>& rabbitTimes =
+              xiaoSpanData[currentTestIndex].rabbitTimesMs;
+          if (numPointsToShow > 0 && !blackboxAircraftStates.empty() &&
+              rabbitTimes.size() == rabbitPoints.size()) {
             vtkSmartPointer<vtkPolyData> segmentData = vtkSmartPointer<vtkPolyData>::New();
             vtkSmartPointer<vtkPoints> segmentPoints = vtkSmartPointer<vtkPoints>::New();
             vtkSmartPointer<vtkCellArray> segmentLines = vtkSmartPointer<vtkCellArray>::New();
 
-            // Stable step from total size — never changes during animation
-            size_t totalStates = blackboxAircraftStates.size();
-            size_t step = std::max(static_cast<size_t>(1), totalStates / 50);
+            // Step off rabbit total — stable across animation frames, caps ~50 lines.
+            size_t step = std::max(static_cast<size_t>(1), rabbitPoints.size() / 50);
+            size_t searchStart = 0;  // monotonic advance of state index across iterations
 
-            for (size_t i = 0; i < numVisibleStates; i += step) {
-              // Direct 1:1 mapping — state i corresponds to rabbit point i
-              size_t rabbitIdx = std::min(i, numPointsToShow - 1);
+            for (size_t j = 0; j < numPointsToShow; j += step) {
+              unsigned long tgt = rabbitTimes[j];
+              // Advance searchStart until next state is past tgt or end.
+              while (searchStart + 1 < blackboxAircraftStates.size() &&
+                     blackboxAircraftStates[searchStart + 1].getSimTimeMsec() <= tgt) {
+                searchStart++;
+              }
+              size_t stateIdx = searchStart;
+              // Pick nearer of [searchStart, searchStart+1]
+              if (searchStart + 1 < blackboxAircraftStates.size()) {
+                unsigned long t0 = blackboxAircraftStates[searchStart].getSimTimeMsec();
+                unsigned long t1 = blackboxAircraftStates[searchStart + 1].getSimTimeMsec();
+                if ((tgt > t0 ? tgt - t0 : t0 - tgt) >
+                    (tgt > t1 ? tgt - t1 : t1 - tgt)) {
+                  stateIdx = searchStart + 1;
+                }
+              }
 
-              vec3 statePos = blackboxAircraftStates[i].getPosition() + blackboxOffset;
-              vec3 rabbitPos = visibleRabbitPoints[rabbitIdx] + blackboxOffset;
+              vec3 statePos = blackboxAircraftStates[stateIdx].getPosition() + blackboxOffset;
+              vec3 rabbitPos = visibleRabbitPoints[j] + blackboxOffset;
 
               vtkIdType p1 = segmentPoints->InsertNextPoint(statePos[0], statePos[1], statePos[2]);
               vtkIdType p2 = segmentPoints->InsertNextPoint(rabbitPos[0], rabbitPos[1], rabbitPos[2]);
@@ -4084,23 +4114,40 @@ void Renderer::renderFullScene() {
         }
 
         if (!rabbitPoints.empty()) {
-          // Render error bars connecting blackbox positions to rabbit points
-          // Correlate by index proportion: blackbox state i -> rabbit point floor(i * numRabbit / numStates)
-          if (!blackboxAircraftStates.empty()) {
+          // Render error bars connecting aircraft states to rabbit points.
+          // Iterate by RABBIT index; pair each rabbit with the aircraft state
+          // nearest in timestamp. Robust to the 0.01m coincident-point state
+          // filter (line ~1955) which would otherwise desync index-pairing
+          // under stationary-ish flight (bench, hover).
+          const std::vector<unsigned long>& rabbitTimes =
+              xiaoSpanData[currentTestIndex].rabbitTimesMs;
+          if (!blackboxAircraftStates.empty() &&
+              rabbitTimes.size() == rabbitPoints.size()) {
             vtkSmartPointer<vtkPolyData> segmentData = vtkSmartPointer<vtkPolyData>::New();
             vtkSmartPointer<vtkPoints> segmentPoints = vtkSmartPointer<vtkPoints>::New();
             vtkSmartPointer<vtkCellArray> segmentLines = vtkSmartPointer<vtkCellArray>::New();
 
-            size_t numStates = blackboxAircraftStates.size();
             size_t numRabbit = rabbitPoints.size();
+            size_t searchStart = 0;  // monotonic advance of state index
 
-            // Direct 1:1 mapping — state i corresponds to rabbit point i
-            // No thinning — show all error bars for xiao-only mode
-            for (size_t i = 0; i < numStates; i++) {
-              size_t rabbitIdx = std::min(i, numRabbit - 1);
+            for (size_t j = 0; j < numRabbit; j++) {
+              unsigned long tgt = rabbitTimes[j];
+              while (searchStart + 1 < blackboxAircraftStates.size() &&
+                     blackboxAircraftStates[searchStart + 1].getSimTimeMsec() <= tgt) {
+                searchStart++;
+              }
+              size_t stateIdx = searchStart;
+              if (searchStart + 1 < blackboxAircraftStates.size()) {
+                unsigned long t0 = blackboxAircraftStates[searchStart].getSimTimeMsec();
+                unsigned long t1 = blackboxAircraftStates[searchStart + 1].getSimTimeMsec();
+                if ((tgt > t0 ? tgt - t0 : t0 - tgt) >
+                    (tgt > t1 ? tgt - t1 : t1 - tgt)) {
+                  stateIdx = searchStart + 1;
+                }
+              }
 
-              vec3 statePos = blackboxAircraftStates[i].getPosition() + blackboxOffset;
-              vec3 rabbitPos = rabbitPoints[rabbitIdx] + blackboxOffset;
+              vec3 statePos = blackboxAircraftStates[stateIdx].getPosition() + blackboxOffset;
+              vec3 rabbitPos = rabbitPoints[j] + blackboxOffset;
 
               vtkIdType p1 = segmentPoints->InsertNextPoint(statePos[0], statePos[1], statePos[2]);
               vtkIdType p2 = segmentPoints->InsertNextPoint(rabbitPos[0], rabbitPos[1], rabbitPos[2]);
