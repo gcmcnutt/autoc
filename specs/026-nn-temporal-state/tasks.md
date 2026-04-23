@@ -98,7 +98,10 @@ PID columns; `sensor_self_check_lib.py` parses them without error.
   that launches a deterministic one-path eval, extracts per-tick
   commanded vs achieved rate from the new data.dat columns (T020),
   and asserts rate-tracking error < 10% after 40 ms settling on a
-  step input. Exit code signals pass/fail.
+  step input. Exit code signals pass/fail. Note: the *script* is
+  authored here in Group 1.a, but it only runs successfully after
+  Group 1.b (T020) adds the `rateCmd*` / `rateAch*` columns and
+  Group 1.e (T060) rebuilds the binary. First execution is at T061.
 
 ### Group 1.b — data.dat diagnostics + serialization
 
@@ -124,7 +127,10 @@ PID columns; `sensor_self_check_lib.py` parses them without error.
 - [ ] T023 [P] [US1] Update the RPC protocol / EvalResults
   serialization (`include/autoc/rpc/protocol.h`) to carry the
   `PidInternals` through from crrcsim workers back to the main
-  autoc process. Version bump, no backward compat.
+  autoc process. Gate the payload on the same `gTraceIsEliteReeval`
+  flag T021/T022 use — don't include PID internals in
+  per-individual training evals, only in elite re-eval (avoids
+  per-individual RPC bloat). Version bump, no backward compat.
 
 ### Group 1.c — downstream tools
 

@@ -355,22 +355,20 @@ Only if Phase 2 gate misses. Flight hardware still untouched.
 
 ## Task ordering within Phase 1
 
-Breakdown of Phase 1 work into commit-sized chunks, ordered so each
-commit leaves a working build:
+Authoritative decomposition lives in
+[`tasks.md`](./tasks.md) Groups 1.a–1.e under User Story 1.
+High-level intent: each group is a commit-sized chunk that leaves
+a working build. The ordering is:
 
-1. Inner-loop filters + ACRO PID re-enable (1.1 + 1.2) — single
-   commit. CRRCSim builds and runs; NN outputs are now rate commands.
-   Sim behaviour changes visibly but deterministically.
-2. data.dat + AircraftState new fields (1.3 + 1.4) — single commit.
-   Everything that reads data.dat breaks until step 3.
-3. Analysis scripts + renderer parser updates (1.5 + 1.6) — single
-   commit. Restores the pipeline; tools read the new fields.
-4. Semantic docs + minisim annotation (1.7 + 1.8) — docs-only commit.
-5. Smoke test harness (1.9) — script + expected output.
+- **Group 1.a** (T010–T015) — CRRCSim ACRO PID re-enable + filters.
+- **Group 1.b** (T020–T023) — data.dat schema + cereal serialization.
+- **Group 1.c** (T030–T035) — analysis-script + renderer parser updates.
+- **Group 1.d** (T040–T050) — docs + PID unit test.
+- **Group 1.e** (T060–T061) — full rebuild + smoke test.
 
-Each commit can build and at least partially work; analysis tools
-don't work between 2 and 3 but rebuild is trivial. Training tool
-(`build/autoc`) works throughout.
+Analysis tools temporarily lose the new columns between Group 1.b
+and Group 1.c but always build and pass their own parsing
+gracefully. `build/autoc` works throughout.
 
 ## Open questions for implementation-time
 
@@ -380,14 +378,11 @@ don't work between 2 and 3 but rebuild is trivial. Training tool
    step response matching flight. Plan: bring up ACRO, run a step-
    input sim, check rise time & overshoot, adjust FF/P/I to match
    a reference target. Part of 1.9's smoke test.
-2. **Yaw in sim**: currently sim treats NN outputs as 3-vector
-   (pitch, roll, throttle). Yaw is not commanded. Under ACRO with
-   INAV's yaw PID live, yaw gets a neutral 1500 command. What should
-   sim do for yaw — run the yaw PID on a held-0 rate command (yaw
-   stabilization via the FF_YAW + P_YAW constants already in header),
-   or leave yaw uncontrolled? Recommendation: **run sim yaw PID on
-   commanded rate=0**, which models INAV's behaviour of "hold zero
-   yaw rate unless commanded." One-line change.
+2. ~~**Yaw in sim**~~: **RESOLVED 2026-04-23 (spec clarification Q3)**.
+   Leave yaw passive in sim — no PID, no rudder input. HB1 has a
+   tail fin for stability but no controllable rudder; INAV's yaw PID
+   has no actuator on this airframe either. The `ACRO_FF_YAW / P_YAW
+   / I_YAW` header constants stay as documentation but are not wired.
 3. **NN input vector**: 021's plan removed `previous command` inputs
    on the theory that ACRO made them redundant. The current
    cadence7 topology inherited 024's input set which does NOT include

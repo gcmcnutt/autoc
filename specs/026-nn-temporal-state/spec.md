@@ -98,9 +98,12 @@ including what ACRO does *not* fix on its own.
 - Add INAV-equivalent filters in sim: gyro LPF and D-term LPF on the
   inner loop. Specific INAV params match the bench config
   (`xiao/inav-bench.cfg`); cross-reference the inventory in research §3.
-- Decide the INAV param set for the *next flight* (PID gains, rate
-  limits, filter cutoffs, rc_filter). Flight FC config will be set
-  from those.
+- INAV flight-config changes for the next flight: captured in
+  `plan.md` §"INAV knobs on the flight FC." Summary: `rc_expo = 0`
+  and `rc_yaw_expo = 0` in profile 1 are the only edits; existing
+  PID gains, rate limits, and filter cutoffs all stay. The
+  MANUAL→ACRO transition is effected by a one-line xiao code change
+  (channel[5] 1000→1500), not by new aux entries.
 - **Compile-time constants for now**. `ACRO_MAX_RATE_*` and `ACRO_FF/P/I`
   stay in the header. No new ini knobs. No XML properties. We can
   promote to `hb1_streamer.xml` later if variation sensitivity warrants.
@@ -124,7 +127,7 @@ including what ACRO does *not* fix on its own.
   alone doesn't bend the dCtrl/|out| curve we know it's not the
   structural change alone. A 50–100 gen smoke run precedes the full
   400-gen run to catch regressions early (see `plan.md` Phase 2.2).
-  Retrain to produce **cadence8** (or rate1, TBD naming).
+  Retrain to produce **cadence8**.
 - Measurement: reuse
   [`plot_control_aggressiveness.py`](../024-sim-real-fidelity/plot_control_aggressiveness.py)
   and
@@ -152,17 +155,26 @@ including what ACRO does *not* fix on its own.
 - Recurrent NN (option D in research). Out of scope for the foreseeable
   future — gradient-trained RNN/LSTM is out of project style.
 
-### Definitions left to plan phase
+### Definitions resolved in plan phase
 
-- Which specific INAV params we want for next flight (exact gains,
-  rates, filter cutoffs). Starting point is the 021-era values in
-  `inputdev_autoc.h` and the bench config.
-- Exact data.dat diagnostics schema.
-- Exact S3 state schema for future renderer visualization.
-- NN input-vector update (if any). 021 removed "previous commands"
-  inputs on the assumption that ACRO integration replaced them; whether
-  we keep that decision or re-add prior outputs is a plan-phase call.
-- Xiao/INAV AUX channel remap for ACRO vs MANUAL if CH6 needs to move.
+All items that were previously listed as "left to plan phase" have
+been settled in [`plan.md`](./plan.md):
+
+- **INAV param set**: only `rc_expo = 0` (and `rc_yaw_expo = 0`).
+  Existing PID gains, rate limits, and filter cutoffs all stay. See
+  plan.md §"INAV knobs on the flight FC."
+- **data.dat diagnostic schema**: 12 numeric + 1 bitmask new columns
+  (`rateCmdP/Q`, `rateAchP/Q`, `pidFF_P/Q`, `pidP_P/Q`, `pidI_P/Q`,
+  `pidIntP/Q`, `pidSat`). plan.md §"data.dat schema additions."
+- **S3 state schema**: `PidInternals` struct on `AircraftState`,
+  populated during elite re-eval only. plan.md §"S3 payload."
+- **NN input vector**: keep cadence7's 33 inputs unchanged. 021's
+  "drop previous-command inputs" call stands. If ACRO alone falls
+  short, Phase 4 escalation A adds previous-output feedback.
+- **Xiao/INAV AUX channel**: no new aux entry. The MANUAL→ACRO
+  switch is a one-line xiao code change — `channel[5] = 1500`
+  falls in the 1300–1700 unmapped band, making ACRO the INAV
+  default.
 
 ## Validation
 
@@ -182,13 +194,15 @@ move meaningfully off bang-bang but throttle stays pinned at +1,
 that still clears 026; the throttle architecture change (airspeed
 PID or INAV CRUISE mode) is deferred to 027+.
 
-1. Sim retrain to ≥ 400 gens with ACRO loop active. Call it **cadence8**
-   (or rate1).
+1. Sim retrain to ≥ 400 gens with ACRO loop active. Call it **cadence8**.
 2. `plot_fitness_ramp.py` — fitness trajectory comparable to cadence7.
 3. `plot_control_aggressiveness.py` — dCtrl plateau drops measurably
    versus cadence7's (1.0, 2.2).
-4. Eval suite passes (tier 0 bitwise determinism captured against new
-   binary; tier 1–3 must pass).
+4. Eval suite: tier-0 bitwise determinism captured against new binary
+   (pass required); tier-1 aeroStandard ≥ 99 % pass rate (cadence7 was
+   99.1 %); tier-2-long 100 %. Tier-2-random and tier-3-stress are
+   informational and may remain in the ~70 % range as with cadence7
+   without blocking 026.
 5. Deploy to flight FC with matching INAV ACRO config.
 6. Bench preflight per the cadence7 checklist in
    [`specs/024-sim-real-fidelity/cadence7_sensor_response_analysis.md`](../024-sim-real-fidelity/cadence7_sensor_response_analysis.md),
@@ -206,24 +220,19 @@ or Pareto selection on (tracking, control-effort).
 
 ## Relationship to 025
 
-025 (craft variations) remains BLOCKED on 026. The HB1 rudder-moment
-calibration work in 025 becomes *more* relevant after ACRO — ACRO's
-PID surfaces sim-vs-real yaw-authority discrepancies that MANUAL's
-direct control partially masks. Sequence is 026 → 025 when 026 is
-flying satisfactorily.
+025 (craft variations) remains BLOCKED on 026. Sequence is 026 →
+025 when 026 is flying satisfactorily.
 
-## Open questions for plan phase
+The "HB1 rudder-moment calibration" item that was previously in 025
+was based on a misread of HB1's tail geometry (HB1 has a tail fin
+for stability but no controllable rudder — see clarification Q3).
+The 025 branch has been corrected: `Cn_dr` is dropped from the
+aero-variation table; `Cn_b` (passive yaw stiffness from the fin)
+and `Cn_r` (yaw damping) remain as the real passive-yaw knobs for
+025 to vary. If cadence8 still shows yaw wobble in sim video
+playback after ACRO delegation, that points 025 at the
+`Cn_b`/`Cn_r` baselines and possibly the elevon mixer's
+yaw-coupling terms, NOT rudder authority.
 
-1. Exact INAV param set for the flight FC — start from bench config and
-   021 header constants, adjust based on flight tuning. Does this
-   warrant a dedicated bench-tuning session before 026 implementation?
-2. data.dat diagnostic schema — which PID internals matter for
-   post-flight analysis? Desired rate, achieved rate, P/I/FF
-   contributions, integrator state, saturation bits.
-3. S3 additional-state payload — serialize what the renderer will want
-   to show later, without committing to the renderer visualization now.
-4. NN input vector — keep cadence7's 33 inputs, or revisit 021's "drop
-   previous-command inputs" decision (which was predicated on ACRO
-   being on)?
-5. CRRCSim ACRO PID re-enablement: direct revert of 07c4832, or is
-   there a cleaner landing given the 024 refactors intervened?
+<!-- Plan-phase open questions all resolved; see "Definitions resolved in plan phase" above and plan.md for details. -->
+
