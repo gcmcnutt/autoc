@@ -3,10 +3,25 @@
 **Status**: SKETCH — problem statement + candidate approaches. To be
 specified and scoped before implementation.
 
+**Companion**: [`research.md`](./research.md) — git history of prior
+experiments (021 ACRO PID, 023 pt3 filter), INAV filter inventory for
+the bench FC, analysis of whether ACRO delegation settles bang-bang or
+displaces it, objective-function options under the "no tunables" rule,
+and ranked candidate experiments. Read that before settling the plan.
+
 **Relationship to 025**: 026 is a prerequisite for 025. Craft variations
 (025's scope) under the current bang-bang policy mostly add noise to
 selection; variations will select meaningfully for robustness only after
 the NN has the structural capacity to produce smooth control.
+
+**Current leading direction** (see research §5): re-enable the ACRO
+rate-PID that was built and shelved in 021, add matching 25 Hz gyro LPF
++ 50 Hz RC LPF in sim to match INAV's bench config, leave training
+topology/fitness unchanged, retrain, and *measure* the effect on the
+dCtrl / |out| plateau. If the structural change alone doesn't bring
+`<|Δout|>` meaningfully below cadence7's 1.0/tick, add previous-output
+feedback inputs (option A) or switch to Pareto selection (option E1)
+as escalation steps.
 
 ## Problem statement
 
