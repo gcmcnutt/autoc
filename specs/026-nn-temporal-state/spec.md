@@ -1,13 +1,17 @@
 # 026 — INAV ACRO Delegation (non-bang-bang control via rate-mode inner loop)
 
-**Status**: SPEC — scope locked, plan phase to follow.
+**Status**: PLAN — scope locked, implementation sequence in
+[`plan.md`](./plan.md).
 
-**Companion**: [`research.md`](./research.md) — git history of prior
-experiments (021 ACRO PID build + revert, 023 pt3 filter), INAV filter
-inventory for the bench FC, analysis of whether ACRO delegation settles
-bang-bang or displaces it, objective-function options, alternative
-approaches (previous-output feedback, recurrent NN, Pareto selection)
-kept as escalation ladder if the primary approach doesn't suffice.
+**Companions**:
+- [`research.md`](./research.md) — git history of prior experiments
+  (021 ACRO PID build + revert, 023 pt3 filter), INAV filter
+  inventory, analysis of whether ACRO delegation settles bang-bang
+  or displaces it, objective-function options, escalation ladder
+  (previous-output feedback, Pareto selection).
+- [`plan.md`](./plan.md) — implementation phases, ordering (sim
+  signal before flight prep), INAV-knob audit on the flight config,
+  go/no-go gate table, stopping rules.
 
 ## Summary
 
