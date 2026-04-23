@@ -9,6 +9,21 @@ Absorbs from 023:
 - Effort lexicase (T123–T136) → integrate into Change 5 Option A (chatter penalty)
 - 2-dim lexicase tests (P3 T-TEST-4) → add alongside effort lexicase implementation
 
+## Status (2026-04-22)
+
+**BLOCKED on 026-nn-temporal-state.** Flight-20260422 showed the
+cadence7 NN collapses to full-throw bang-bang as the trained policy —
+with current single-pass instantaneous-input MLP topology, evolution
+lacks the machinery to build smoother control. Adding craft variations
+on top of a bang-bang policy will mostly add selection noise; 025's
+robustness gains will land only after 026 equips the NN with temporal
+state. See [`specs/026-nn-temporal-state/spec.md`](../026-nn-temporal-state/spec.md)
+and the flight report at
+[`flight-results/flight-20260422/FLIGHT_REPORT.md`](../../flight-results/flight-20260422/FLIGHT_REPORT.md).
+
+The work described below is scoped and valid — it just doesn't start
+until 026 produces a smoother baseline to vary against.
+
 ## Problem Statement
 
 The NN trained in 023 achieves strong fitness (-18k+) but exhibits bang-bang
