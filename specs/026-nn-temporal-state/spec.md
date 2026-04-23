@@ -1,176 +1,187 @@
-# 026 — NN Temporal State (non-bang-bang control)
+# 026 — INAV ACRO Delegation (non-bang-bang control via rate-mode inner loop)
 
-**Status**: SKETCH — problem statement + candidate approaches. To be
-specified and scoped before implementation.
+**Status**: SPEC — scope locked, plan phase to follow.
 
 **Companion**: [`research.md`](./research.md) — git history of prior
-experiments (021 ACRO PID, 023 pt3 filter), INAV filter inventory for
-the bench FC, analysis of whether ACRO delegation settles bang-bang or
-displaces it, objective-function options under the "no tunables" rule,
-and ranked candidate experiments. Read that before settling the plan.
+experiments (021 ACRO PID build + revert, 023 pt3 filter), INAV filter
+inventory for the bench FC, analysis of whether ACRO delegation settles
+bang-bang or displaces it, objective-function options, alternative
+approaches (previous-output feedback, recurrent NN, Pareto selection)
+kept as escalation ladder if the primary approach doesn't suffice.
 
-**Relationship to 025**: 026 is a prerequisite for 025. Craft variations
-(025's scope) under the current bang-bang policy mostly add noise to
-selection; variations will select meaningfully for robustness only after
-the NN has the structural capacity to produce smooth control.
+## Summary
 
-**Current leading direction** (see research §5): re-enable the ACRO
-rate-PID that was built and shelved in 021, add matching 25 Hz gyro LPF
-+ 50 Hz RC LPF in sim to match INAV's bench config, leave training
-topology/fitness unchanged, retrain, and *measure* the effect on the
-dCtrl / |out| plateau. If the structural change alone doesn't bring
-`<|Δout|>` meaningfully below cadence7's 1.0/tick, add previous-output
-feedback inputs (option A) or switch to Pareto selection (option E1)
-as escalation steps.
+Delegate low-level rate stabilization to INAV's ACRO-mode PID + matching
+inner-loop emulation in CRRCSim, so the NN only has to answer "what
+rate do I want?" instead of "how do I keep the aircraft from oscillating
+while I try to hit a target?" This restores the 021 design intent,
+which was shelved on 2026-04-07 on the basis of 022's successful
+direct-servo training — a call that was right then but is superseded
+now that cadence7 has hit the full-throw bang-bang ceiling inherent to
+current-state-only MLPs (see
+[`flight-results/flight-20260422/FLIGHT_REPORT.md`](../../flight-results/flight-20260422/FLIGHT_REPORT.md)).
 
 ## Problem statement
 
 cadence7's trained NN, deployed on flight-20260422, produced clean
 sim-to-real sign correlation on all control axes but collapsed to
 full-throw bang-bang: pitch and roll outputs pile up at ±1, throttle
-pinned at +1 ≥90% of the time. Mean `|Δout|` per tick ≈ 1.0; mean `|out|`
-per tick ≈ 2.2 out of a 3.0 ceiling. These are essentially identical to
-cadence7 *training* statistics — the NN is doing what it was trained to
-do. See
+pinned at +1 ≥ 90 % of the time. Mean `|Δout|` per tick ≈ 1.0; mean
+`|out|` per tick ≈ 2.2 out of a 3.0 ceiling.
+
+Training statistics are essentially identical to flight statistics — the
+NN is doing what it was trained to do. The architecture cannot express
+smoother control: a single-pass, current-state-only MLP has no machinery
+for integration, no explicit time-history of its own outputs, no
+low-pass filter structure. Evolution against that input vector will, in
+the limit, always find bang-bang as the optimum.
+
+See also
 [`specs/024-sim-real-fidelity/cadence7_bang_bang_evolution.md`](../024-sim-real-fidelity/cadence7_bang_bang_evolution.md)
-and
-[`flight-results/flight-20260422/FLIGHT_REPORT.md`](../../flight-results/flight-20260422/FLIGHT_REPORT.md)
-for the empirical characterization.
+for the empirical bang-bang characterization.
 
-**Root cause** (from the flight report's "What's next"): the NN sees
-only *current-state* inputs — current target direction cosines (with
-6-tap history via HIST_PAST), current quat, current gyro, current
-airspeed, current distance. It has **no machinery to build an
-integrator, no explicit time-history of its own outputs, no low-pass
-filter structure**. A purely instantaneous-input MLP will, in the limit,
-always find bang-bang as the optimum — because smooth control
-requires internal state the NN cannot represent.
+## Primary approach: INAV ACRO delegation
 
-The 023-era training did feed prior-state control into the NN; that was
-removed before 024. The weak downward dCtrl drift observed in cadence7
-training (≈30% over gens 90–400) shows that selection already has some
-appetite for smoothness — it's just too thin to overcome the immediate
-gain of full-throw commands without structural help.
+**NN outputs `outPt`, `outRl`, `outTh` are reinterpreted as desired body
+rates (and throttle unchanged)**. `outPt ∈ [-1, +1]` × `ACRO_MAX_RATE_PITCH`
+= desired pitch rate in rad/s; same for roll and yaw. INAV's ACRO-mode
+rate PID (already on the FC) tracks the commanded rate via its
+feed-forward + P + I controller, driving surface deflections. The NN
+becomes a pure planner; the inner loop is physical PID with
+well-understood behavior.
 
-## Candidate approaches
+The 021 data-model [`021-xiao-ahrs-crosscheck/data-model.md`](../021-xiao-ahrs-crosscheck/data-model.md#L60-L73)
+captured the *semantics* shift cleanly:
 
-Ordered by complexity / risk (lowest first). Only one or two should
-land; the others inform 025 and beyond.
+> In ACRO, output=0 means "hold current attitude" (rates damp to zero
+> via INAV PID). In MANUAL, output=0 means "servos centered" (aircraft
+> does whatever physics dictates). ACRO gives the NN a stable baseline
+> to work from — it only needs to command rate deltas for steering.
 
-### A. Previous-output feedback (simplest)
+**Why this settles (or at least pushes back on) bang-bang**: with a
+consistent rate-mapping, the fitness landscape is smoother — small
+input changes produce predictable output changes — so selection for
+moderation happens faster. ACRO's "natural zero" also means that
+outputting 0 *doesn't cost fitness*, which in MANUAL it does (no
+built-in stabilization). See research §2 for the full analysis
+including what ACRO does *not* fix on its own.
 
-Add `outPt_prev`, `outRl_prev`, `outTh_prev` (or a HIST_PAST-style window
-of the NN's own recent outputs) to the NN input vector. Evolution can
-learn to use them as low-pass state ("ouput close to last tick") or as
-change-sensing ("act on difference").
+## Scope
 
-- **Scope**: +3 inputs (or +3×N for N-deep history). MLP topology stays.
-- **Training**: straightforward — one more tensor column into the input
-  layer. Existing evolution operators work unchanged.
-- **Deployment**: xiao already has `cached_*_cmd` state for the MSP
-  heartbeat; feed those back into the next NN tick.
-- **Risk**: NN may still find "ignore the history and go bang-bang"
-  because it's allowed to. Evolution must *want* the smoothness — 025's
-  craft variations may provide that pressure, but 026 alone may not
-  show much improvement over 024 unless we also add something on
-  fitness.
-- **Was this tried pre-024?** Yes — 023-era training had prior-state
-  control inputs; removed because interactions with lexicase weren't
-  favorable. Revisit with the current clean baseline.
+### In scope
 
-### B. Error integral as an explicit input
+- Re-enable the 021 ACRO rate-PID code in CRRCSim `inputdev_autoc.cpp`
+  (already preserved in git at commit 9809dd6). Use the existing
+  `ACRO_MAX_RATE_*` and `ACRO_FF/P/I` constants in
+  `inputdev_autoc.h:63-90` — they already track flight-measured rate
+  limits.
+- Add INAV-equivalent filters in sim: gyro LPF and D-term LPF on the
+  inner loop. Specific INAV params match the bench config
+  (`xiao/inav-bench.cfg`); cross-reference the inventory in research §3.
+- Decide the INAV param set for the *next flight* (PID gains, rate
+  limits, filter cutoffs, rc_filter). Flight FC config will be set
+  from those.
+- **Compile-time constants for now**. `ACRO_MAX_RATE_*` and `ACRO_FF/P/I`
+  stay in the header. No new ini knobs. No XML properties. We can
+  promote to `hb1_streamer.xml` later if variation sensitivity warrants.
+- Xiao/INAV side: switch the engage-time mode from MANUAL to ACRO. MSP
+  channel mapping may need adjustment (see 021 research R7). INAV config
+  must have ACRO mapped to the corresponding aux channel value.
+- Additional diagnostics in `data.dat`: log the PID internal state so
+  we can see what the inner loop is doing during training (desired vs
+  actual rate per axis, integrator state, surface output after PID).
+  No backward compatibility — existing parsers break cleanly when the
+  format changes.
+- Additional state in the eval S3 payload / renderer data so the
+  renderer can later visualize PID behavior (desired-rate vs
+  achieved-rate traces, integrator trajectory, saturation markers).
+- Training: same fitness, same topology, same rest-of-everything else.
+  The only change is that the NN's action space is now "desired rate"
+  instead of "surface deflection." Retrain at 400 gens to produce
+  cadence8 (or rate1, TBD naming).
+- Measurement: reuse
+  [`plot_control_aggressiveness.py`](../024-sim-real-fidelity/plot_control_aggressiveness.py)
+  and
+  [`plot_bangbang_flight.py`](../024-sim-real-fidelity/plot_bangbang_flight.py)
+  to compare the new training to cadence7. Primary go/no-go metric:
+  dCtrl plateau drops ≥ 20 % at tracking-fitness ≥ 70 % of cadence7.
 
-Add `∫(target - position)·dt` as an NN input, per axis. Direct analog
-of PID's I-term — evolution gets a free "accumulated tracking error"
-signal instead of having to build one.
+### Out of scope
 
-- **Scope**: 3 new inputs (one per axis). Plus bookkeeping to maintain
-  the integral across NN ticks, reset on engage start.
-- **Training**: same as A plus per-scenario integral state.
-- **Risk**: integral windup on bang-bang — if NN can't prevent
-  integrator saturation, fitness tanks in long-duration paths. Needs an
-  anti-windup bound. Ugly.
+- **minisim**: **N/A** — minisim is offline analysis, not flight
+  hardware. It stays on its current simple kinematic model. No ACRO
+  PID in minisim.
+- `hb1_streamer.xml` changes. Compile constants stay in the header. A
+  future 027/028 could move them into the airframe config if we want
+  per-airframe variation (which is 025 territory anyway).
+- **Backward compatibility** on data.dat format, log format, xiao log
+  format. Format changes are allowed; old files just don't parse in new
+  tools. Downstream scripts (sim_polar_viz, cmd_response_scatter,
+  bangbang_flight) get whatever updates they need to read the new
+  fields.
+- Previous-output feedback inputs (option A in research). Kept in reserve
+  as escalation if ACRO alone doesn't bring dCtrl down enough.
+- Fitness-side changes (Pareto selection, quiet-scenario lexicase).
+  Likewise reserved. Go/no-go on ACRO-only first.
+- Recurrent NN (option D in research). Out of scope for the foreseeable
+  future — gradient-trained RNN/LSTM is out of project style.
 
-### C. Pre-defined filter node in the NN (architectural)
+### Definitions left to plan phase
 
-Add an explicit first-order low-pass (IIR) node with evolvable α to the
-output stage. `out_smooth = α * out_raw + (1-α) * out_smooth_prev`. The
-NN learns both what to command AND how smoothly to command it.
+- Which specific INAV params we want for next flight (exact gains,
+  rates, filter cutoffs). Starting point is the 021-era values in
+  `inputdev_autoc.h` and the bench config.
+- Exact data.dat diagnostics schema.
+- Exact S3 state schema for future renderer visualization.
+- NN input-vector update (if any). 021 removed "previous commands"
+  inputs on the assumption that ACRO integration replaced them; whether
+  we keep that decision or re-add prior outputs is a plan-phase call.
+- Xiao/INAV AUX channel remap for ACRO vs MANUAL if CH6 needs to move.
 
-- **Scope**: architectural — node type added to the topology. GP-style
-  trees handle this naturally; our fixed-topology MLP does not.
-- **Training**: evolution now tunes α per output axis. Could also allow
-  per-cell α to build more complex IIR networks.
-- **Risk**: topology changes invalidate all prior weights. Full
-  retrain. Scope creep into "arbitrary GP tree" territory.
+## Validation
 
-### D. Recurrent NN (hidden state between ticks)
+1. Sim retrain to ≥ 400 gens with ACRO loop active. Call it **cadence8**
+   (or rate1).
+2. `plot_fitness_ramp.py` — fitness trajectory comparable to cadence7.
+3. `plot_control_aggressiveness.py` — dCtrl plateau drops measurably
+   versus cadence7's (1.0, 2.2).
+4. Eval suite passes (tier 0 bitwise determinism captured against new
+   binary; tier 1–3 must pass).
+5. Deploy to flight FC with matching INAV ACRO config.
+6. Bench preflight per the cadence7 checklist in
+   [`specs/024-sim-real-fidelity/cadence7_sensor_response_analysis.md`](../024-sim-real-fidelity/cadence7_sensor_response_analysis.md),
+   plus ACRO-specific: verify rate response on bench (stick full-throw
+   → aircraft rotates at the commanded rate).
+7. Flight test. `plot_bangbang_flight.py` on the new xiao log — output
+   histograms should spread away from ±1 toward the middle. New
+   `plot_rate_tracking_flight.py` (to be written) — per-axis
+   commanded-rate vs achieved-rate scatter, showing INAV PID tracking
+   quality in real flight.
 
-Actual RNN-style hidden vector that persists across NN ticks. LSTM /
-GRU / simple RNN cell.
+If bang-bang persists after ACRO retrain, *then* we reach for the
+escalation options in research §4: previous-output feedback (option A)
+or Pareto selection on (tracking, control-effort).
 
-- **Scope**: significant — NN forward pass becomes stateful, xiao
-  embedded side needs to carry hidden vector through `nn_program_generated`.
-  Training needs to expose and initialize hidden state per scenario.
-- **Training**: recurrence is known to be hard for evolution; gradient
-  methods typically outperform. If we go this way it's a broader
-  rethink.
-- **Risk**: largest structural change. Probably not the right first
-  step.
+## Relationship to 025
 
-### E. Discourage bang-bang via fitness (no-tunables constraint)
+025 (craft variations) remains BLOCKED on 026. The HB1 rudder-moment
+calibration work in 025 becomes *more* relevant after ACRO — ACRO's
+PID surfaces sim-vs-real yaw-authority discrepancies that MANUAL's
+direct control partially masks. Sequence is 026 → 025 when 026 is
+flying satisfactorily.
 
-Not a structural NN change, but a selection-side nudge. Mentioned in the
-024 bang-bang note: autoc fitness doesn't use tunable coefficients, so
-an explicit `|Δout|²` penalty with a weight is ruled out by project
-rule. Two possible no-tunable forms:
+## Open questions for plan phase
 
-- **Lexicase cases that require quietness** — synthetic "cruise"
-  scenarios added to the per-individual case list where high dCtrl is
-  penalized in the success/fail sense, not via a weight.
-- **Pareto selection** on (tracking, control-effort) — a structural
-  change to `SelectionMode` that keeps both "aggressive-and-accurate"
-  and "quiet-and-moderate" champions in the population.
-
-Most likely combines with A/B/C to provide the pressure that evolution
-needs to *use* the new temporal machinery for smoothing.
-
-## Validation strategy
-
-For whichever approach lands, the measurement setup already exists:
-
-1. Train to ≥ gen 400 on the new architecture.
-2. Run [`plot_control_aggressiveness.py`](../024-sim-real-fidelity/plot_control_aggressiveness.py)
-   on the training `data.dat`. Compare the dCtrl / |out| plateau to
-   cadence7 (1.5 / 2.2). Movement off that point in either direction is
-   meaningful.
-3. Target regime (from the cadence7 2×2 table): **high dCtrl + low
-   |out|** = "fine-grained tracking". If the plateau moves toward (>1,
-   <1.5), we've found smoother control.
-4. Eval suite passes.
-5. Flight-test. Run `plot_bangbang_flight.py` on the xiao log —
-   histograms of outputs should spread from ±1 extremes toward the
-   middle.
-
-## What this spec is NOT
-
-- A commitment to any specific approach. Pick one or two from A–E and
-  draft a proper plan.
-- An implementation schedule. 026 inherits the "no tunables" project
-  constraint; approach B is suspect on that ground alone.
-- A replacement for 025. 025 (craft variations) lines up right after
-  026 lands with a smooth baseline; the rudder-moment calibration work
-  proposed there remains.
-
-## Open questions
-
-1. Do we re-use cadence7's topology (33 → 32 → 16 → 3) with added
-   inputs, or is this the moment to revisit topology (maybe a small
-   dedicated "feedback stage" hidden layer)?
-2. Xiao carries stateful NN execution if approach D is chosen — any
-   restriction from the `nn_program_generated.cpp` generator?
-3. The 024 cadence-fix guardrails (deterministic training, frame-
-   counter cadence) all carry forward. Anything else to preserve?
-4. How much of the existing eval-suite tier 0 stays valid when the
-   input layout changes? Presumably tier 0 is just "bitwise match a
-   frozen reference", regenerate after the change.
+1. Exact INAV param set for the flight FC — start from bench config and
+   021 header constants, adjust based on flight tuning. Does this
+   warrant a dedicated bench-tuning session before 026 implementation?
+2. data.dat diagnostic schema — which PID internals matter for
+   post-flight analysis? Desired rate, achieved rate, P/I/FF
+   contributions, integrator state, saturation bits.
+3. S3 additional-state payload — serialize what the renderer will want
+   to show later, without committing to the renderer visualization now.
+4. NN input vector — keep cadence7's 33 inputs, or revisit 021's "drop
+   previous-command inputs" decision (which was predicated on ACRO
+   being on)?
+5. CRRCSim ACRO PID re-enablement: direct revert of 07c4832, or is
+   there a cleaner landing given the 024 refactors intervened?
