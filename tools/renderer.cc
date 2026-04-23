@@ -3737,15 +3737,22 @@ void Renderer::updatePlaybackAnimation() {
             vtkSmartPointer<vtkPoints> segmentPoints = vtkSmartPointer<vtkPoints>::New();
             vtkSmartPointer<vtkCellArray> segmentLines = vtkSmartPointer<vtkCellArray>::New();
 
-            // Step off rabbit total — stable across animation frames, caps ~50 lines.
-            size_t step = std::max(static_cast<size_t>(1), rabbitPoints.size() / 50);
+            // Draw every rabbit (step=1) to match the static end-of-animation
+            // view. Earlier logic capped to ~50 lines for clarity; in practice
+            // spans are short enough (few hundred rabbits) that drawing all
+            // reads fine and stays consistent with the static view.
+            size_t step = 1;
             size_t searchStart = 0;  // monotonic advance of state index across iterations
 
+            // NOTE: AircraftState::getSimTimeMsec() actually returns MICROSECONDS
+            // (renderer.cc:1977 passes absoluteTimeUs into the field named Msec —
+            // historical naming bug). rabbitTimes is in milliseconds. Multiply
+            // rabbit ms by 1000 so both sides compare in µs.
             for (size_t j = 0; j < numPointsToShow; j += step) {
-              unsigned long tgt = rabbitTimes[j];
+              unsigned long tgt_us = rabbitTimes[j] * 1000UL;
               // Advance searchStart until next state is past tgt or end.
               while (searchStart + 1 < blackboxAircraftStates.size() &&
-                     blackboxAircraftStates[searchStart + 1].getSimTimeMsec() <= tgt) {
+                     blackboxAircraftStates[searchStart + 1].getSimTimeMsec() <= tgt_us) {
                 searchStart++;
               }
               size_t stateIdx = searchStart;
@@ -3753,8 +3760,8 @@ void Renderer::updatePlaybackAnimation() {
               if (searchStart + 1 < blackboxAircraftStates.size()) {
                 unsigned long t0 = blackboxAircraftStates[searchStart].getSimTimeMsec();
                 unsigned long t1 = blackboxAircraftStates[searchStart + 1].getSimTimeMsec();
-                if ((tgt > t0 ? tgt - t0 : t0 - tgt) >
-                    (tgt > t1 ? tgt - t1 : t1 - tgt)) {
+                if ((tgt_us > t0 ? tgt_us - t0 : t0 - tgt_us) >
+                    (tgt_us > t1 ? tgt_us - t1 : t1 - tgt_us)) {
                   stateIdx = searchStart + 1;
                 }
               }
@@ -4130,18 +4137,20 @@ void Renderer::renderFullScene() {
             size_t numRabbit = rabbitPoints.size();
             size_t searchStart = 0;  // monotonic advance of state index
 
+            // See comment at playback-path site: AircraftState::getSimTimeMsec
+            // returns µs (field-name bug). Compare in µs.
             for (size_t j = 0; j < numRabbit; j++) {
-              unsigned long tgt = rabbitTimes[j];
+              unsigned long tgt_us = rabbitTimes[j] * 1000UL;
               while (searchStart + 1 < blackboxAircraftStates.size() &&
-                     blackboxAircraftStates[searchStart + 1].getSimTimeMsec() <= tgt) {
+                     blackboxAircraftStates[searchStart + 1].getSimTimeMsec() <= tgt_us) {
                 searchStart++;
               }
               size_t stateIdx = searchStart;
               if (searchStart + 1 < blackboxAircraftStates.size()) {
                 unsigned long t0 = blackboxAircraftStates[searchStart].getSimTimeMsec();
                 unsigned long t1 = blackboxAircraftStates[searchStart + 1].getSimTimeMsec();
-                if ((tgt > t0 ? tgt - t0 : t0 - tgt) >
-                    (tgt > t1 ? tgt - t1 : t1 - tgt)) {
+                if ((tgt_us > t0 ? tgt_us - t0 : t0 - tgt_us) >
+                    (tgt_us > t1 ? tgt_us - t1 : t1 - tgt_us)) {
                   stateIdx = searchStart + 1;
                 }
               }
