@@ -66,22 +66,47 @@ That's it for hard edits.
 | `fw_p_roll / fw_i_roll / fw_d_roll / fw_ff_roll` | 15 / 3 / 7 / 50 | unchanged | Same — proven in flight. |
 | `fw_p_yaw / fw_i_yaw / fw_d_yaw / fw_ff_yaw` | 20 / 0 / 0 / 100 | unchanged | Yaw PID; xiao holds yaw at 1500 so this only affects pilot yaw. |
 
-### Operational change (no config edit — pilot behaviour)
+### xiao-side change (small code edit, not pilot behaviour)
 
-The CH5 3-position switch selects pilot mode (INAV permanentId):
+**Today's setup**: autoc engage force-selects MANUAL. xiao drives the
+mode-select channel itself:
 
-- CH5 low (900–1200) → MANUAL (permanentId 12, `aux 2`)
-- CH5 mid (1300–1700) → **ACRO (default — no aux entry needed)**
-- CH5 high (1800–2100) → ANGLE (permanentId 1, `aux 1`)
+- [`xiao/src/msplink.cpp:676`](../../xiao/src/msplink.cpp#L676):
+  ```cpp
+  // CH6 (index 5) = 1000 → forces MANUAL mode (no INAV stabilization)
+  state.command_buffer.channel[5] = 1000;
+  ```
+- `msp_override_channels = 47` includes bit 5, so this override is
+  delivered.
+- `aux 2 12 1 900 1200` maps MANUAL (permanentId 12) to AUX2 (CH6)
+  range 900–1200. xiao's 1000 falls in that range → MANUAL is
+  active during engage.
 
-flight-20260422 used MANUAL (CH5 low) during autoc engage. For 026 the
-pilot holds CH5 mid (ACRO) during autoc engage. xiao still activates
-`BOXMSPRCOVERRIDE` on CH8 to override roll/pitch/throttle — INAV then
-routes those through the ACRO rate PID instead of the MANUAL
-passthrough.
+**For 026**: change xiao to drive CH6 to mid-range (1300–1700). No
+aux entry maps to that range, so INAV falls back to its default mode
+— which for fixed-wing is **ACRO**. The pilot's CH6 position is
+irrelevant during engage because xiao overrides it.
 
-No code change on xiao for mode selection. The xiao-side MSP override
-is already channel-independent.
+```cpp
+// Proposed for 026:
+// CH6 (index 5) = 1500 → ACRO mode (INAV rate PID active)
+state.command_buffer.channel[5] = 1500;
+```
+
+Audit for ambiguity on CH6 in the current aux table:
+
+| aux entry | Mode | CH6 range |
+|---|---|---|
+| `aux 1 1 1 1800 2100` | ANGLE | 1800–2100 |
+| `aux 2 12 1 900 1200` | MANUAL | 900–1200 |
+| (no entry) | **ACRO (default)** | **1300–1700** |
+
+Any value 1300–1700 is unambiguously ACRO. 1500 picked as a safe mid.
+
+The xiao ARM/engage switch (CH9 via `aux 6 50 4 1600 2100` →
+`BOXMSPRCOVERRIDE` on AUX5) is **not** in the override mask (bit 8
+clear in 47). Pilot retains physical control of engage/disengage via
+that channel. Only the mode-select channel is xiao-controlled.
 
 ### Throttle — what to do (TLDR: nothing)
 
@@ -263,6 +288,13 @@ code paths.
 - **3.1 INAV flight config**: `rc_expo = 0`, `rc_yaw_expo = 0` in
   profile 1 (autoc profile). No other config changes expected. Commit
   updated `xiao/inav-hb1.cfg`. Apply via INAV CLI on the flight FC.
+- **3.1b xiao mode-select change**: edit
+  [`xiao/src/msplink.cpp`](../../xiao/src/msplink.cpp#L676)
+  `performMspSendLocked()` to drive `state.command_buffer.channel[5] = 1500`
+  (ACRO default) instead of 1000 (MANUAL). Update the adjacent comment.
+  Belongs in Phase 1 or here; placing here because it's the last
+  flight-side change before flash and keeping it close to the INAV config
+  edit makes the MANUAL→ACRO transition visible as a single reviewable unit.
 - **3.2 Weights → nn2cpp → xiao rebuild**: extract cadence8 final
   weights, regenerate `nn_program_generated.cpp`, rebuild xiao.
 - **3.3 Flash flight FC** with 026 xiao binary. Verify boot banner.
