@@ -13,6 +13,16 @@
   signal before flight prep), INAV-knob audit on the flight config,
   go/no-go gate table, stopping rules.
 
+## Clarifications
+
+### Session 2026-04-23
+
+- Q: Training variations for cadence8 ACRO retrain — full (cadence7 parity) vs relaxed? → A: Full variations identical to cadence7, with smoke testing first.
+- Q: Go/no-go gate — hard thresholds or organic early-signal judgment? → A: Keep the plan.md gate (dCtrl < 0.8, fitness ≥ -25000) but treat the call as organic — early fitness-curve shape and qualitative output-histogram behavior can trigger an early no-go without waiting for gen 400.
+- Q: Sim yaw handling under ACRO (given HB1 has no controllable rudder)? → A: Leave yaw passive in sim — no PID, no rudder deflection. Matches real HB1 which has a tail fin for stability but no rudder surface. INAV yaw PID output has no physical actuator on this airframe either.
+- Q: xiao log `out=[pt,rl,th]` token — rename to `rate=...` under ACRO, or leave? → A: Keep the `out=` literal token unchanged. Semantic shift documented in comments / docs / new diagnostic fields; existing parsers (`plot_bangbang_flight.py`, `cmd_response_scatter_lagged.py`, `join_flight_analysis.py`) continue working without modification.
+- Q: Throttle bang-bang — if cadence8 fixes pitch/roll but throttle still pins at +1, does that clear the 026 gate? → A: Yes — gate on pitch/roll dCtrl only. Throttle bang-bang is envelope-dominated (wind + HB1 Vmax), not architecture-dominated; separate control-architecture change (airspeed PID or INAV CRUISE mode) is a 027+ item.
+
 ## Summary
 
 Delegate low-level rate stabilization to INAV's ACRO-mode PID + matching
@@ -78,7 +88,13 @@ including what ACRO does *not* fix on its own.
   (already preserved in git at commit 9809dd6). Use the existing
   `ACRO_MAX_RATE_*` and `ACRO_FF/P/I` constants in
   `inputdev_autoc.h:63-90` — they already track flight-measured rate
-  limits.
+  limits. **Pitch and roll only** — yaw stays passive (no PID, no
+  rudder input). HB1 has a tail fin for stability but no controllable
+  rudder; INAV's yaw PID has no actuator to drive on this airframe, so
+  sim mirrors by leaving yaw alone. The `ACRO_FF_YAW / P_YAW / I_YAW`
+  header constants stay as documentation but aren't wired. (The earlier
+  "HB1 rudder-moment calibration" note in the 025 spec is based on a
+  misread of HB1's tail geometry; needs revision on the 025 branch.)
 - Add INAV-equivalent filters in sim: gyro LPF and D-term LPF on the
   inner loop. Specific INAV params match the bench config
   (`xiao/inav-bench.cfg`); cross-reference the inventory in research §3.
@@ -99,10 +115,16 @@ including what ACRO does *not* fix on its own.
 - Additional state in the eval S3 payload / renderer data so the
   renderer can later visualize PID behavior (desired-rate vs
   achieved-rate traces, integrator trajectory, saturation markers).
-- Training: same fitness, same topology, same rest-of-everything else.
-  The only change is that the NN's action space is now "desired rate"
-  instead of "surface deflection." Retrain at 400 gens to produce
-  cadence8 (or rate1, TBD naming).
+- Training: same fitness, same topology, same variations
+  (`EnableEntryVariations=1`, `EnableWindVariations=1`,
+  `EnableRabbitSpeedVariations=1`, `VariationRampStep=40` — all
+  identical to cadence7), same rest-of-everything else. The only
+  change is that the NN's action space is now "desired rate" instead
+  of "surface deflection." Apples-to-apples comparison; if ACRO
+  alone doesn't bend the dCtrl/|out| curve we know it's not the
+  structural change alone. A 50–100 gen smoke run precedes the full
+  400-gen run to catch regressions early (see `plan.md` Phase 2.2).
+  Retrain to produce **cadence8** (or rate1, TBD naming).
 - Measurement: reuse
   [`plot_control_aggressiveness.py`](../024-sim-real-fidelity/plot_control_aggressiveness.py)
   and
@@ -143,6 +165,22 @@ including what ACRO does *not* fix on its own.
 - Xiao/INAV AUX channel remap for ACRO vs MANUAL if CH6 needs to move.
 
 ## Validation
+
+Gate decisions are organic, not strictly automated. The plan.md gate
+thresholds (dCtrl < 0.8, fitness ≥ -25000) are anchors, not pass/fail
+checklists. Early signals — fitness-curve shape before gen 100, dCtrl
+trend through the first variation ramp, output histogram qualitative
+spread — can trigger an early no-go (stop and escalate to Phase 4)
+before a full 400-gen run. Likewise, an obviously-converging run can
+proceed to flight even if one threshold is mid-margin.
+
+**Gate is pitch/roll-dominant.** The dCtrl metric is evaluated on
+pitch + roll only. Throttle bang-bang may persist in cadence8 because
+the root cause is envelope-limited (wind + rabbit groundspeed above
+HB1 Vmax), which ACRO delegation does not address. If pitch and roll
+move meaningfully off bang-bang but throttle stays pinned at +1,
+that still clears 026; the throttle architecture change (airspeed
+PID or INAV CRUISE mode) is deferred to 027+.
 
 1. Sim retrain to ≥ 400 gens with ACRO loop active. Call it **cadence8**
    (or rate1).
