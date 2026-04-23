@@ -67,40 +67,58 @@ by the scenario RNG (same architecture as wind/entry variations).
 | `Cl_p` | Roll damping | 0.10 | ±30% |
 | `Cm_q` | Pitch damping | 0.10 | ±30% |
 | `CD_prof` | Profile drag | 0.10 | ±30% |
-| `Cn_dr` | Rudder yaw effectiveness | 0.10 | ±30% |
-| `Cn_b` | Yaw stiffness (weathervane) | 0.15 | ±40% |
+| `Cn_b` | Yaw stiffness (weathervane via vertical fin) | 0.15 | ±40% |
 | `Cn_r` | Yaw damping | 0.10 | ±30% |
 
-##### HB1 rudder-moment calibration (2026-04-21 observation)
+`Cn_dr` (rudder yaw effectiveness) is **deliberately absent** — HB1 has
+no controllable rudder surface (see HB1 vertical-stabilizer note
+below). The sim airframe XML has non-zero `Cn_dr` historically but no
+rudder input is commanded in either MANUAL or ACRO modes on this
+airframe.
 
-cadence7 sim-video playback of an eval flight shows the craft tracking
-the path correctly overall, but with apparent yaw/rudder wobble that
-the real HB1 doesn't exhibit at equivalent conditions. The sim HB1
-streamer model probably under-models the rudder's authority: the
-physical HB1 is a flying-board layout with a **large rudder positioned
-noticeably aft of the wing**, giving it more yaw moment arm and more
-effective `Cn_dr` / `Cn_b` than a conventional low-moment-arm tail
-surface.
+##### HB1 vertical stabilizer — no controllable rudder (2026-04-23 correction)
 
-025 should:
+A 2026-04-21 note in an earlier draft of this spec called HB1 a
+"flying-board layout with a large rudder positioned noticeably aft of
+the wing" and proposed calibrating `Cn_dr` as part of 025. That was
+based on a misread of HB1's tail geometry.
 
-1. **Measure the real HB1 yaw-response first** (bench ground-run with
-   rudder step + gyro log, OR flight rudder-step with blackbox capture).
-   Compare sim cadence7 step response to the measured baseline; decide
-   whether `hb1_streamer.xml` baseline values (`Cn_dr`, `Cn_b`, `Cn_r`,
-   moment-arm scaling) need updating *before* applying variations.
-2. **If the baseline is off**: update `Cn_dr` in the airframe XML to
-   match measured authority. Retraining on corrected baseline will
-   naturally reduce the wobble that cadence7 carries in as a
-   compensation for under-authority sim.
-3. **Then apply the variations table above** on top of the corrected
-   baseline, so the NN learns both "authority is this strong" and "but
-   varies ±30% per airframe."
+**Actual HB1**: vertical stabilizer (fixed tail fin) with NO
+controllable rudder. Yaw control comes entirely from:
 
-Two of the variation rows in the table above are new for HB1 yaw
-specifically (`Cn_b`, `Cn_r`) — conventional-tail aircraft might not
-need them, but a flying-board layout with an oversized rudder makes
-them worth exercising.
+- Passive fin stability (weathervaning into the airstream — `Cn_b`).
+- Yaw damping from fin area (`Cn_r`).
+- Roll-yaw coupling (dihedral effect on the wing).
+- Differential elevon drag (if the mixer is configured to use it —
+  currently on HB1 it is not).
+
+Implications for 025:
+
+1. **Drop `Cn_dr` from the aero-variation table** (done above). Varying
+   it would change a coefficient that multiplies a zero-input channel,
+   so the variation would have no observable effect on training.
+2. **Keep `Cn_b` and `Cn_r` in the variation table**. These are the
+   real passive-yaw knobs. Airframe-to-airframe variation in fin area,
+   mounting angle, and CG-to-fin moment arm all land on these two
+   coefficients; ±30-40% sigma is reasonable.
+3. **The yaw/rudder wobble observed in cadence7 sim-video playback** is
+   a different issue from what the 2026-04-21 note proposed. With no
+   rudder, the wobble is driven by roll-axis ringing + insufficient
+   passive yaw damping in the sim (vs. whatever the real HB1 has).
+   Candidates worth checking during 025 bench work:
+   - `Cn_b` baseline in `hb1_streamer.xml` vs. measurable real-world
+     side-slip response.
+   - `Cn_r` baseline vs. real yaw-damping decay after a gust.
+   - Elevon-differential-drag term (`Cn_da` if present) — a real HB1
+     with elevon mixer that includes yaw coupling may damp yaw
+     via aileron activity.
+4. The "measure HB1 rudder step response" plan from the earlier note
+   is dropped — nothing to step.
+
+If the cadence8 retrain (delivered by 026) still shows yaw wobble in
+sim video playback after the rate-PID pitch/roll stabilization, 025
+should start by revisiting `Cn_b` / `Cn_r` baselines rather than
+chasing non-existent rudder authority.
 
 #### Mass/Inertia Variations
 
