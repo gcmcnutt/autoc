@@ -19,14 +19,18 @@ section below overlays a flight-centric ordering on top of the phases.
 
 ---
 
-## Current Working Plan (2026-04-21)
+## Current Working Plan (2026-04-22)
 
-Training run `cadence7` complete (gen 400 best=-35951, strongest of three
-compared runs). Eval suite passed. Weights extracted. T112 nn2cpp regen + T113
-xiao rebuild done manually. Sensor sanity + cmd-response analysis confirms the
-sim is coordinate-canonical (see
-[cadence7_sensor_response_analysis.md](./cadence7_sensor_response_analysis.md)).
-**Next up: T114 pre-flight bench prep.**
+Training + eval done. Timer-fix xiao binary built, flashed, and bench-verified
+on the flight FC — `ctl loop:` reports zero overruns, 100 ms cadence holds,
+projected/magenta/red/blue all aligned in the renderer (after the time-based
+pairing fix at `4f94d14`). **Awaiting T115 flight test** — it is the only
+remaining critical-path item to close 024.
+
+Video-mode sim playback of an eval flight with the cadence7 weights shows
+apparent yaw/rudder wobble that the real HB1 doesn't show — suspected
+sim-side rudder-authority under-modeling. Noted for 025 (see
+[025-craft-variations/spec.md HB1 rudder-moment calibration](../025-craft-variations/spec.md#hb1-rudder-moment-calibration-2026-04-21-observation)).
 
 ### A — Closed
 
@@ -35,6 +39,15 @@ sim is coordinate-canonical (see
 - **Sensor alignment verified** against [COORDINATE_CONVENTIONS.md](../../docs/COORDINATE_CONVENTIONS.md)
   on tier1 eval data. Pitch +0.86 @ +100 ms, roll +0.52 @ +200 ms,
   throttle +0.40 @ +700 ms — all sign-correct per-axis at best lag.
+- **Xiao timer fix + overrun stats** shipped (commit `b2e6702`).
+  Fixed-schedule `nextLoopTime += INTERVAL` replaces the slip-prone
+  `lastLoopTime = now`. Overrun counters in `LoopStats` summarized at
+  engage-span end (ERROR level if any overruns, INFO otherwise).
+  Bench-verified on flight FC: zero overruns, 100 ms cadence holds.
+- **Renderer time-based pairing** for blue delta lines shipped
+  (commit `4f94d14`). Resolves animation-rate mismatch under
+  stationary-ish data (bench, hover) where the 0.01 m coincident-point
+  state filter desyncs index-pairing.
 
 ### B — Parallel cleanup (still open, zero flight risk)
 
@@ -47,25 +60,22 @@ sim is coordinate-canonical (see
   (minisim audit + 5.b q_EB canonicalization, sizeof boot assert).
 - T204 → [specs/BACKLOG.md](../BACKLOG.md) ("Training Run Archive Policy").
 
-### C — Flight-deployment sprint (ACTIVE — T114 prep next)
+### C — Flight-deployment sprint (ACTIVE — awaiting T115)
 
 - ✅ T110 retrain (cadence7 complete, best=-35951)
 - ✅ T111 eval suite (all tiers pass)
 - ✅ T112 nn2cpp regen (done manually)
-- ✅ T113 xiao rebuild (done manually)
-- 🟡 **T114** — preflight checklist walk (per `project_preflight_checklist`
-  memory). Bench-run the [bench checklist](./cadence7_sensor_response_analysis.md#bench-checklist-pre-flight)
-  from the sensor analysis: pitch polarity, roll polarity, throttle polarity,
-  xiao-side cadence audit. Compound-attitude hold re-check on the about-to-fly
-  binary confirms the flight build matches the bench build.
-- 🟡 **T113a** — flash the flight FC. Single deployment event of 024. Confirm
-  boot banner shows expected schema version + weight count.
-- 🟡 **T115** — flight test. Short xiao engage span(s), pilot-flown coordinated
-  maneuvers for post-flight audit data.
+- ✅ T113 xiao rebuild (initial + timer-fix rebuild)
+- ✅ T113a flash (timer-fix binary on FC, boot banner confirmed)
+- ✅ T114 preflight checklist walk + bench. Polarity sanity good,
+  `ctl loop:` clean on engage end, renderer playback of the bench log
+  shows all layers coordinated.
+- 🟡 **T115** — flight test. Short xiao engage span(s), pilot-flown
+  coordinated maneuvers for post-flight audit data. Varied-throttle
+  span if possible.
 
-**Guardrail**: no further source-code changes pre-flight. Any convention or
-polarity surprise on the bench (T114) gets resolved via INAV CLI reversal
-settings, not code.
+**Post-flight immediately feeds group D** (T116, T025b/c, T060–T062)
+for analysis of the new blackbox + xiao log pair.
 
 ### D — Post-flight (required to analyze the next flight, not before)
 
@@ -302,8 +312,8 @@ artifacts.
 - [x] T111 [US6] Eval suite: run tier0 (repro determinism), tier1 (novel seed), tier2 (generalization — random paths, craft variations, long), tier3 (stress + quiet). All must pass. — `scripts/eval-suite.sh` passed 2026-04-21.
 - [x] T112 [US6] Regenerate `xiao/src/generated/nn_program_generated.cpp` via `tools/nn2cpp/`. Verify topology and weight count match expectations. — done manually 2026-04-21.
 - [x] T113 [US6] Xiao rebuild with the retrained `nn_program_generated.cpp` and all accumulated msplink/rabbit-logging fixes from US3: `cd xiao && pio run -e xiaoblesense_arduinocore_mbed`. Any build error investigates immediately. This is the first build that will touch flight hardware. — done manually 2026-04-21.
-- [ ] T113a [US6] **Deploy to flight FC**: flash the xiao binary from T113. Confirm boot banner shows expected schema version and weight count. This is the single deployment event of 024.
-- [ ] T114 [US6] Preflight checklist walk. Use project memory (`project_preflight_checklist.md`). Bench-test failsafe chain **on the flight-deployed binary** (re-run the T102 compound-attitude holds as a sanity check that the flight build matches the bench build).
+- [x] T113a [US6] **Deploy to flight FC**: flash the xiao binary from T113. Confirm boot banner shows expected schema version and weight count. This is the single deployment event of 024. — Done 2026-04-22 with the timer-fix binary (commit `b2e6702`). Boot banner confirmed.
+- [x] T114 [US6] Preflight checklist walk. Use project memory (`project_preflight_checklist.md`). Bench-test failsafe chain **on the flight-deployed binary** (re-run the T102 compound-attitude holds as a sanity check that the flight build matches the bench build). — Bench clean: pitch/roll/throttle polarity correct, `ctl loop:` zero overruns, 100 ms cadence holds, renderer playback (after `4f94d14`) shows all layers aligned. Rudder/yaw wobble observed on video playback — logged to 025.
 - [ ] T115 [US6] Flight test — pilot warmup, short xiao engage span(s), pilot-flown coordinated maneuvers (level circle, climb, dive) for post-flight audit data. Varied-throttle span during engage if possible.
 - [ ] T116 [US6] Post-flight: run `sensor_self_check.py` on the new blackbox CSV. All cross-checks PASS. Run `gyro_vs_quat.py` on the new xiao log. Slope ≈ 1.0 on all three axes with positive sign.
 - [ ] T117 [US6] Close the feature: summary commit documenting the progression from WI1 findings through US6 flight verification. Update spec.md Validation checkboxes.
@@ -354,15 +364,18 @@ Plan** A–E groupings above:
 "flies-at-all" firmware through Phases 1–7; the single atomic deploy happens at
 **T113a** with paired (fixed xiao + retrained weights).
 
-Phase progress as of 2026-04-21:
+Phase progress as of 2026-04-22:
 
 - ✅ **US1 flight audit** — findings landed, workarounds surfaced.
-- ✅ **US2 sim audit** — CRRCSim confirmed as reference (modulo minisim 5.b which
-  is P2/deferrable).
+- ✅ **US2 sim audit** — CRRCSim confirmed as reference (modulo minisim 5.b
+  which moved to 025).
 - ✅ **US3 root-cause fixes** — msplink `(w,x,-y,-z)` in place; rotted scripts
-  (5.c), layout guard (5.d), boot-assert (5.e T081) remain backlog.
+  (5.c) remain backlog; 5.d/5.e moved to 025.
 - ✅ **US4 cadence fix** — 100 ms exact via frame-counter + integrality triple.
-  cadence7 confirms end-to-end.
-- ✅ **US5 bench** — 9-pose verification passed at T042 (per user call).
-- 🟡 **US6 retrain+flight** — training + eval complete. Active sprint: T112
-  (nn2cpp) → T113 (xiao build) → T114 (preflight) → T113a (flash) → T115 (fly).
+  cadence7 confirms end-to-end. Xiao side hardened with fixed-schedule timer
+  + overrun counters (`b2e6702`).
+- ✅ **US5 bench** — 9-pose verification passed at T042. Pre-flight bench
+  (T114) clean on the retrained flight FC.
+- 🟡 **US6 retrain+flight** — training + eval + flash + bench all done.
+  **Awaiting T115 flight test**. Post-flight: group D analysis sprint
+  (T116, T025b/c, T060–T062), then T117 close.

@@ -53,6 +53,39 @@ by the scenario RNG (same architecture as wind/entry variations).
 | `Cm_q` | Pitch damping | 0.10 | ±30% |
 | `CD_prof` | Profile drag | 0.10 | ±30% |
 | `Cn_dr` | Rudder yaw effectiveness | 0.10 | ±30% |
+| `Cn_b` | Yaw stiffness (weathervane) | 0.15 | ±40% |
+| `Cn_r` | Yaw damping | 0.10 | ±30% |
+
+##### HB1 rudder-moment calibration (2026-04-21 observation)
+
+cadence7 sim-video playback of an eval flight shows the craft tracking
+the path correctly overall, but with apparent yaw/rudder wobble that
+the real HB1 doesn't exhibit at equivalent conditions. The sim HB1
+streamer model probably under-models the rudder's authority: the
+physical HB1 is a flying-board layout with a **large rudder positioned
+noticeably aft of the wing**, giving it more yaw moment arm and more
+effective `Cn_dr` / `Cn_b` than a conventional low-moment-arm tail
+surface.
+
+025 should:
+
+1. **Measure the real HB1 yaw-response first** (bench ground-run with
+   rudder step + gyro log, OR flight rudder-step with blackbox capture).
+   Compare sim cadence7 step response to the measured baseline; decide
+   whether `hb1_streamer.xml` baseline values (`Cn_dr`, `Cn_b`, `Cn_r`,
+   moment-arm scaling) need updating *before* applying variations.
+2. **If the baseline is off**: update `Cn_dr` in the airframe XML to
+   match measured authority. Retraining on corrected baseline will
+   naturally reduce the wobble that cadence7 carries in as a
+   compensation for under-authority sim.
+3. **Then apply the variations table above** on top of the corrected
+   baseline, so the NN learns both "authority is this strong" and "but
+   varies ±30% per airframe."
+
+Two of the variation rows in the table above are new for HB1 yaw
+specifically (`Cn_b`, `Cn_r`) — conventional-tail aircraft might not
+need them, but a flying-board layout with an oversized rudder makes
+them worth exercising.
 
 #### Mass/Inertia Variations
 
