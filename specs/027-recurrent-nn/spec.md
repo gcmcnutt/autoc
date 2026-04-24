@@ -1,12 +1,22 @@
 # 027 — Recurrent / history-aware NN architectures
 
-**Status**: DRAFT — baseline skeleton. Full spec to be developed on
-the `027-recurrent-nn` branch.
+**Status**: CLARIFIED — 5/5 open questions resolved 2026-04-24;
+ready for `/speckit.plan`.
 
 **Origin**: 026 (ACRO PID delegation) closed NO-GO — downstream
 smoothing can't fix bang-bang because the NN itself has no memory.
 See [`specs/026-nn-temporal-state/findings.md`](../026-nn-temporal-state/findings.md)
 for the evidence and the reasoning that leads here.
+
+## Clarifications
+
+### Session 2026-04-24
+
+- Q: Incentive axis — is extending lexicase with a smoothness test case in scope for 027? → A: In scope as primary incentive; lexicase extension (NOT a separate Pareto selection mode).
+- Q: Test matrix scope — full 5-step escalation or MVP? → A: MVP — step #0 baseline-sanity + step #3 primary bet (D-simple + C2-via-lexicase-smoothness). A2-alone, A2+C2, and D-alone reserved; decide #4 diagnostic after #3 completes.
+- Q: D-simple hidden-layer size — 16-wide (layer2 recurrent) or 32-wide (layer1 recurrent)? → A: 16-wide layer2 (W_hh 16×16 = 256 extra weights, 1667 → 1923, +15 % budget). 32-wide reserved as escalation.
+- Q: Hidden-state reset semantics — when does h_t clear/advance? → A: Zero on span start; advance only on NN eval ticks (~10 Hz). h_t does NOT advance on intermediate outer-frame ticks (~20 Hz) when NN doesn't fire.
+- Q: Xiao deployment timing — when port the recurrent forward pass to `nn_program_generated.cpp`? → A: After step #3 passes the sim gate (aggressiveness off cadence7 plateau + fitness ≥ cadence7 at matched gen). Sim-first discipline; don't port until sim proves the architecture works.
 
 ## Core hypothesis
 
@@ -17,67 +27,70 @@ for the evidence and the reasoning that leads here.
 > reason about its own history — either explicitly (past outputs as
 > inputs) or implicitly (persistent hidden state).
 
-## Approach — two tracks, cheapest-first
+## Approach — primary bet: D-simple + C2-via-lexicase-smoothness
 
-### Track A2 — output history window as inputs
+The MVP for 027 is **a single combined experiment** on both axes:
+- **D-simple** (architecture): one recurrent layer inside the NN
+  with persistent hidden state `h_t = f(W_hh h_{t-1} + W_xh x_t)`,
+  output `y_t = g(W_hy h_t)`. State resets on span start (see
+  reset semantics clarification below). Simple RNN (not GRU / LSTM
+  — per research bias, gates add evolutionary search dimensions
+  without gradient signal to justify them).
+- **C2 via lexicase smoothness test case** (incentive): extend
+  existing lexicase selection with an additional per-scenario
+  smoothness test case (score computed from `Δout` sequence during
+  evaluation). No new selection mode — it's a test case in the
+  lexicase pool.
 
-Smallest architectural change. Feed the last N ticks of NN output
-back in as inputs next tick (plus the current sensor inputs). This
-gives the NN direct visibility of its own trajectory through its
-output space — it can learn to reason about "was I just saturating?"
-or "am I flipping sign?"
+The combined "#3" in the research matrix is our primary bet —
+literature (research.md §2) strongly suggests memory alone without
+incentive regularization amplifies rather than reduces action
+variability, and our prior open-loop smoothing attempts (B, C1, E)
+confirm the symmetric failure mode from the incentive-only side.
 
-**Why first**: cheapest falsification of the core hypothesis. If
-this alone moves the needle materially (dCtrl off 1.0, |out| off
-2.2), we have a clean answer without the full recurrent rewrite.
-If it doesn't, we've ruled out "just give it history" and earned the
-right to do the real architectural work.
+Reserved experiments (not in MVP scope, decide after #3 result):
+- **#1 A2 alone** (output history window as inputs, feedforward) —
+  skipped; memory-alone-style attempts in project history (B, E,
+  C1) underwhelm and the literature bias is the same direction.
+- **#2 A2 + C2** — skipped for same reason.
+- **#4 D-simple alone** (no C2) — diagnostic-only; decide whether
+  to run AFTER #3 completes, based on what question remains.
+- **D-gated GRU-lite, D-ESN, C1 α-penalty** — reserved, revisit
+  only if #3 plateaus.
 
-**Open design questions** (to be decided on-branch):
-- N = how many past ticks (1, 3, 5, 10)? Each costs NN_INPUT_COUNT+3.
-- Include previous inputs (e.g. target direction) too, or just
-  previous outputs?
-- Weighting in fitness: anything explicit, or purely evolutionary
-  pressure?
+**Topology (decided)**: `33 → 32 → 16-recurrent → 3`. The 16-wide
+second hidden layer gains a self-connection matrix `W_hh` (16×16 =
+256 extra weights). Total NN_WEIGHT_COUNT: 1667 → **1923** (+15 %).
+32-wide recurrent variant reserved as escalation.
 
-### Track D — true recurrent architecture
+**State semantics (decided)**: hidden state `h_t` is zero on span
+start and advances **only** on NN evaluation ticks (~10 Hz). It
+does NOT advance on intermediate outer-frame ticks when the NN
+doesn't fire. This keeps "memory" aligned with what the NN
+actually decides/observes, matches xiao MSP cadence, and is the
+conventional recurrent-policy semantics.
 
-Persistent hidden state *inside* the NN: `h_t = f(W_hh h_{t-1} + W_xh x_t)`,
-output `y_t = g(W_hy h_t)`. The NN learns what to remember and how
-to use it. State resets on span start.
+**Xiao deployment (decided)**: port only after step #3 passes the
+sim gate. Sim-first discipline — no recurrent forward pass in
+`xiao/src/generated/nn_program_generated.cpp` until sim data
+confirms D-simple + C2 produces a non-bang-bang controller.
+Matches the project pattern used by 024 and 026.
 
-**Why second**: bigger engineering cost — changes the forward pass,
-the weight serialization format, the weight-count accounting. But
-it's the architecturally honest answer to "the NN has no memory":
-*give it memory*.
+## Research grounding
 
-**Open design questions**:
-- Simple RNN vs GRU-lite vs LSTM? Simple RNN is easiest, GRU gates
-  help stability, LSTM is overkill for our input/output dims.
-- Hidden state size: current topology 33→32→16→3. Natural choice
-  is to make the first hidden layer (32) recurrent.
-- Weight count impact: adding W_hh (32×32) = 1024 extra weights →
-  NN_WEIGHT_COUNT 1667 → 2691 (~60 % larger search space, ~60 %
-  slower evolution per gen at constant compute).
-- Evaluator rewrite scope: single-pass → per-tick with carried state.
-- Xiao implications: C-generated NN on the xiao needs the same
-  recurrent forward pass; not free but tractable.
+Done — see [`research.md`](./research.md). Key takeaways that
+shaped the decisions above:
 
-## Research agenda (pre-implementation)
-
-Before committing to specific architecture details, survey the
-current state-of-the-art in recurrent policies for physics control
-(the user's phrase: "is this phys AI state of the art?"). Topics:
-
-- Evolved RNNs (NEAT variants, CMA-ES with recurrent topology)
-- Deep-RL with recurrent policies (PPO-LSTM, SAC-RNN) — what
-  architectures are they picking and why
-- GRU vs LSTM vs simple RNN in short-horizon tight-loop control
-- Recent arXiv work on memory-augmented policies for
-  quad/fixed-wing flight
-
-Output: `research.md` on the 027 branch summarizing what maps to our
-evolved-NN + genetic-evolution constraint set and what doesn't.
+- **Literature bias**: memory alone (LSTM without action-rate
+  regularization) documented to *amplify* action variability, not
+  reduce it — supports the combined D + C2 bet.
+- **A3 (input derivatives/history) is already implemented** via
+  `NNInputs`' 6-sample target history + `closing_rate` + gyro
+  rates; bang-bang emerges despite these. Missing piece is
+  **self-memory**, not more world-memory.
+- **GRU-lite, ESN held in reserve**: gates add search dimensions
+  without gradient signal; ESN adds reservoir hyperparameter
+  surface. Direct-to-evolve simple RNN is the right first bet.
 
 ## What carries forward from 026
 
@@ -103,10 +116,14 @@ alive as diagnostics.
 
 ## Out of scope
 
-- **Fitness-surface changes** (Pareto, smoothness penalty). 026
-  findings show open-loop smoothing "tends to look like rate-
-  limit" — not the intervention we need first. Can revisit if A2/D
-  alone don't land.
+- **Pareto selection as a new selection mode.** Lexicase stays the
+  selection primitive; C2's contribution is an *additional test
+  case* (smoothness score per scenario) added to the lexicase
+  pool — not a switch to Pareto-dominance selection.
+- **C1 α-penalty in fitness (open-loop rate penalty).** Prior
+  experience shows this "tends to look like rate-limit mush"
+  without memory. Reserved as fallback if C2-via-lexicase proves
+  infeasible; not a primary 027 experiment.
 - **Flight hardware changes.** xiao stays on INAV MANUAL mode as it
   has been. No handoff-mode changes until sim signal is strong.
 - **New craft variations.** 025 remains blocked; we don't complicate
@@ -126,10 +143,10 @@ Same gate as 026 originally had, with the organic-call posture:
 
 ## Relationship to 025
 
-025 (craft variations) is now blocked on 027. If 027 A2 or D
+025 (craft variations) is now blocked on 027. If D-simple + C2
 produces a non-bang-bang controller, 025 becomes the natural
 follow-on for robustness. If 027 also falls short, 025 gets
 revisited with a different framing — at that point the problem is
 probably upstream of both architecture and variations (fitness
-surface, training objective, or the core "evolve feedforward weights
-against a tracking score" premise).
+surface, training objective, or the core "evolve weights against a
+tracking score" premise).
