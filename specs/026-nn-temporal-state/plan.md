@@ -57,8 +57,8 @@ That's it for hard edits.
 | `msp_override_channels` | 47 (= roll, pitch, throttle, yaw, AUX2) | unchanged | Bits set on channels xiao needs to drive. Covering yaw with a neutral 1500 keeps the pilot out of yaw during autoc. Could trim to 7 (just main three) but not necessary. |
 | `rc_filter_lpf_hz` | 250 | unchanged | 250 Hz LPF at 10 Hz NN command rate is essentially no filtering. Benign. |
 | `rc_filter_auto` | OFF | OFF | Keep off. |
-| `gyro_main_lpf_hz` | 25 | unchanged | Sim will match this value on its inner loop. |
-| `dterm_lpf_hz` | 10 | unchanged | Standard PID D-term LPF. |
+| `gyro_main_lpf_hz` | 25 | unchanged | INAV side stays 25 Hz (tuned for MEMS noise at 1 kHz PID). Sim uses 40 Hz on its own inner loop (2× outer frame); filter cutoffs are sim-cadence-derived, not INAV-copied — see research.md §"Sim PID implementation notes". |
+| `dterm_lpf_hz` | 10 | unchanged | INAV side stays 10 Hz. Sim uses 20 Hz (outer-frame rate). Dormant in both until D gain is enabled. |
 | `roll_rate` | 36 | unchanged | Flight-measured max ~430 °/s — matches `ACRO_MAX_RATE_ROLL = 430` in [`crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.h`](../../crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.h). |
 | `pitch_rate` | 12 | unchanged | Flight-measured ~300 °/s → `ACRO_MAX_RATE_PITCH = 300`. |
 | `yaw_rate` | 4 | unchanged | Flight-measured ~180 °/s → `ACRO_MAX_RATE_YAW = 180`. |
@@ -222,10 +222,14 @@ data.dat fields, and downstream scripts parse them.
   already in the original design (±10 rad). Reset integrators on span
   start (the `gAcroLastTimeMsec` + `gAcroIntegral*` globals exist,
   already reset).
-- **1.2 Inner-loop filters**: 25 Hz single-pole LPF on gyro rate
-  before PID error computation (matches INAV `gyro_main_lpf_hz`); 10 Hz
-  PT2 on D-term (matches `dterm_lpf_hz`). Parameters as compile
-  constants in `inputdev_autoc.h` next to the ACRO constants.
+- **1.2 Inner-loop filters**: 40 Hz single-pole LPF on body-rate
+  before PID error computation; 20 Hz PT2 on D-term (dormant if D=0).
+  Cutoffs picked for sim cadence (2× outer-frame, 4× NN rate), not
+  copied from INAV's 25/10 values — see research.md §"Sim PID
+  implementation notes" for the derivation. Parameters as compile
+  constants in `inputdev_autoc.h` next to the ACRO_* block:
+  `ACRO_GYRO_LPF_HZ = 40`, `ACRO_DTERM_LPF_HZ = 20`. Discrete α
+  computed at sim init from cutoff + `Global::dt`.
 - **1.3 data.dat diagnostic fields**: append the 12+1 new columns per
   the schema above. Update [`src/autoc.cc`](../../src/autoc.cc) header
   print and sprintf in the elite-reeval path.

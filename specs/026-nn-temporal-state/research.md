@@ -181,17 +181,16 @@ The tools are in place.
 
 **What to consider modeling in sim for 026**:
 
-- **If ACRO is adopted**: sim needs an equivalent INAV rate PID + pt3 on
-  D-term. The 021 code is the template. Parameters come from the bench
-  config above.
-- **rc_filter at 50 Hz**: worth adding to the sim command path if we go
-  ACRO. At the new 100 ms cadence (10 Hz command rate), a 50 Hz LPF is
-  ~5× above the command rate — minimal dynamic effect, but measurable.
-  Distinct from the 20 Hz pt3 that stunted training (which was *below*
-  2× the command rate).
-- **gyro_main_lpf at 25 Hz**: adding a 25 Hz LPF to sim gyro before
-  presenting to NN matches what the NN sees in flight. This is a
-  separate improvement from ACRO; useful either way.
+- **If ACRO is adopted**: sim needs an equivalent rate PID + optional
+  D-term LPF. The 021 code is the template. Gains come from the 021
+  header tuning (not INAV's numbers); filter cutoffs picked to match
+  sim's own cadence rather than copying INAV (see "Sim PID
+  implementation notes" below).
+- **rc_filter at 50 Hz**: mostly benign at the 10 Hz NN command rate
+  (5× above) — can skip in sim. If the bench T210 shows rate-tracking
+  lag we don't explain, revisit.
+- **Gyro LPF in sim**: worthwhile as part of the ACRO inner loop. Sim
+  cutoff **40 Hz** (not 25) — picked for sim cadence, see below.
 
 **What to NOT model**:
 
@@ -199,6 +198,133 @@ The tools are in place.
   exist in sim. Model them and you introduce a sim-side noise that isn't
   really there.
 - `acc_lpf_hz` 15 — the NN doesn't consume accel today; skip.
+
+### Sim PID implementation notes
+
+Same algorithm structure as INAV, sim-specific gains, sim runs at FDM
+rate — but the filter cutoffs pick "round numbers" that line up with
+the sim's own cadence rather than inheriting INAV's values verbatim.
+
+#### Algorithm
+
+Discrete-time PID per axis (pitch and roll; yaw passive per
+clarification Q3):
+
+```
+error = setpoint_rate - filtered_measured_rate
+iterm = clamp(iterm + error·dt, ±I_MAX)
+out   = (FF·setpoint_rate + P·error + I·iterm) / PID_SCALE
+out   = clamp(out, -1, +1)   # surface deflection normalized
+```
+
+- FF + P + I + integrator anti-windup clamp (±10 rad, matches 021's
+  preserved design).
+- D gain stays 0 initially (021 code had it zero; INAV's flight config
+  has `fw_d_pitch=5, fw_d_roll=7, fw_d_yaw=0` — nonzero but small).
+  Add D only if rate-tracking rise time during bench
+  characterization (T210) undershoots.
+- Pre-filter: 1-pole LPF on measured body rate before error compute.
+- Post-filter: PT2 (2nd-order) LPF on the D-term output if D is
+  enabled. Dormant for now.
+
+#### Gain numbers
+
+INAV ships gains in its internal units (deci-degree-per-second PID math
+scaled to PWM range). Sim works in rad/s natively. **These aren't
+directly comparable**. The `ACRO_FF/P/I/PID_SCALE` constants in
+[`crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.h`](../../crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.h#L68-L90)
+were tuned empirically for CRRCSim FDM response, not copied from INAV.
+
+021-era gains: `FF=50, P=40, I=15, PID_SCALE=350`. Tuned at
+`Global::dt = 0.003` (333 Hz). Under 024's `dt = 0.005` (200 Hz) these
+likely want a mild re-tune — the integrator accumulates at a different
+rate per tick. Plan.md Phase 1.9 / T015 smoke test exercises this;
+T210 bench characterization is the final sim-to-real match.
+
+**Match criterion**: rate step response shape — rise time, overshoot,
+settling. Not gain numbers. If sim step response diverges > 30 % from
+the flight FC's bench-measured response, re-tune the compile-time
+constants and re-smoke; do NOT retrain from this.
+
+#### Loop rate
+
+- Sim PID runs at the FDM tick rate: **200 Hz** (dt = 0.005).
+- INAV PID runs at its configured `looptime`, typically **1 kHz**.
+- 5× rate difference. **Not a correctness problem**: noise-free FDM
+  doesn't need the faster loop, HB1's natural frequencies are well
+  below 100 Hz, and we're training a 10 Hz planner — 200 Hz is ample
+  margin above everything that matters.
+
+#### Filter cutoffs — re-derived for sim cadence
+
+INAV's bench config carries values (`gyro_main_lpf_hz = 25`,
+`dterm_lpf_hz = 10`) that were tuned historically for MEMS gyro noise
+on 1 kHz PID loops. The sim has a different noise profile (essentially
+none) and different rate structure. Instead of inheriting INAV's
+numbers, sim picks cutoffs that match its own cadence:
+
+Sim cadence:
+- FDM tick: **200 Hz** (dt = 0.005).
+- Outer cycleLength: **20 Hz** (50 ms, framesPerEval = 2).
+- NN command rate: **10 Hz** (100 ms).
+
+Chosen sim filter cutoffs:
+- **Gyro LPF: 40 Hz** (2× outer frame, 4× NN rate, 1/5 FDM). Light
+  filtering — enough to smooth any numerical FDM noise without masking
+  real body-rate dynamics. The 023 pt3 experiment (ABANDONED) was
+  cutting at 20-40 Hz on the *command* path — below 4× the NN rate —
+  which is why it stunted training. 40 Hz on the *feedback* path is
+  different: it filters noise, not commands.
+- **D-term LPF: 20 Hz** (matches outer frame). Keeps D from
+  reacting to sub-outer-tick numerical jitter. Dormant unless D gain
+  is later enabled.
+
+Both are configured as compile-time constants in
+`inputdev_autoc.h` next to `ACRO_MAX_RATE_*`:
+
+```cpp
+#define ACRO_GYRO_LPF_HZ   40.0   // 2× outer frame, 4× NN rate
+#define ACRO_DTERM_LPF_HZ  20.0   // outer frame rate
+```
+
+Discrete α computed at sim init from cutoff + `Global::dt`:
+
+```
+α_single_pole = exp(-2π · fc · dt)
+```
+
+At `dt = 0.005, fc = 40`: α ≈ `exp(-2π·40·0.005) = exp(-1.257) ≈ 0.285`.
+So `y = 0.285·y_prev + 0.715·x_new`. Very light filtering, preserves
+signal.
+
+At `dt = 0.005, fc = 20` (D-term): α ≈ `exp(-0.628) ≈ 0.534`. Heavier.
+
+#### Context — cadence7 shipped without any of this
+
+cadence7 trained stably and flew controllably on
+MANUAL-mode-direct-servo + no inner filters. The ACRO PID + LPFs
+we're adding in 026 are about giving the NN's action space a
+different semantic (rate instead of deflection) and delegating the
+stabilization loop to a physics-correct PID rather than requiring the
+NN to learn one implicitly. Starting values come from 021-era
+empirical tuning; they're a sensible baseline, not a final answer.
+T210 bench characterization verifies before flight.
+
+#### What we're NOT trying to match
+
+- INAV's gain numbers.
+- INAV's PID loop rate.
+- Every nuance of INAV's PID (iterm lock, iterm throw limit, Smith
+  predictor, TPA). Those tune around sensor noise and airframe-specific
+  quirks on the FC; sim's noise-free FDM doesn't need them.
+- INAV's filter cutoffs as-is — sim picks rate-appropriate cutoffs.
+
+#### What we ARE trying to match
+
+- Rate step response *shape* on a commanded-rate step input.
+- "Natural zero" semantic: rate = 0 → aircraft holds attitude.
+- Max achievable rates: `ACRO_MAX_RATE_*` in the header already match
+  flight-measured peaks (430 / 300 / 180 °/s roll/pitch/yaw).
 
 ## 4. Objective-function options under the "no tunables" constraint
 
@@ -276,14 +402,18 @@ without explicit pressure. If not, E2 or E1 come next.
 - Update the rate limits to the current `ACRO_MAX_RATE_*` constants
   (already in the header from cf8d406) which track the flight-measured
   values.
-- Add a 25 Hz single-pole LPF on the gyro values handed to the NN in
-  sim. Match the INAV bench config.
-- Add a 50 Hz LPF on the NN→surface path through the PID (mirrors
-  INAV's `rc_filter_lpf_hz = 50`). This is *below* the 20/40 Hz pt3
-  that stunted training, but *above* the 10 Hz NN command rate, so
-  should be benign.
-- Xiao side: flip `CH6` override to ACRO mode during engage. INAV
-  does the rate PID work.
+- Add a **40 Hz** single-pole LPF on the body-rate values before the
+  PID error computation. Cutoff picked to match sim cadence (2×
+  outer-frame rate, 4× NN rate), not copied from INAV's 25 Hz (which
+  was tuned for MEMS gyro noise at 1 kHz PID loops). See "Sim PID
+  implementation notes" above.
+- D-term LPF: **20 Hz** PT2 (outer-frame rate). Dormant unless D gain
+  is enabled later.
+- Skip modeling INAV's 50 Hz `rc_filter_lpf_hz` in sim — at the 10 Hz
+  NN command rate a 50 Hz filter is benign; if T210 rate-tracking
+  shows a lag we don't explain, revisit.
+- Xiao side: flip `CH6` override from MANUAL (1000) to ACRO
+  (1500). INAV does the rate PID work.
 
 **Training**:
 

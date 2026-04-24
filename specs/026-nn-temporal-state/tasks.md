@@ -86,14 +86,19 @@ PID columns; `sensor_self_check_lib.py` parses them without error.
   `inputdev_autoc.cpp:993-1005` (reverted in commit 07c4832 2026-04-02).
   Replace with a single brief comment noting the PID is now live and
   pointing at spec 026.
-- [ ] T013 [P] [US1] Add 25 Hz single-pole LPF on body angular rate
-  before PID error computation. Compile constant
-  `ACRO_GYRO_LPF_HZ = 25` next to the ACRO_* block in
-  `inputdev_autoc.h`. Per-axis filter state (`gyroLpfP`, `gyroLpfQ`)
-  resets on span start.
-- [ ] T014 [P] [US1] Add 10 Hz PT2 (2nd-order Butterworth) LPF on PID
-  D-term output. Compile constant `ACRO_DTERM_LPF_HZ = 10`. Per-axis
-  state, reset on span start.
+- [ ] T013 [P] [US1] Add **40 Hz** single-pole LPF on body angular
+  rate before PID error computation. Cutoff picked for sim cadence
+  (2× outer-frame rate, 4× NN rate), not INAV's 25 Hz — see
+  research.md §"Sim PID implementation notes" for the derivation.
+  Compile constant `ACRO_GYRO_LPF_HZ = 40.0` next to the ACRO_*
+  block in `inputdev_autoc.h`. Compute discrete α from
+  `exp(-2π·fc·Global::dt)` at sim init. Per-axis filter state
+  (`gyroLpfP`, `gyroLpfQ`) resets on span start.
+- [ ] T014 [P] [US1] Add **20 Hz** PT2 (2nd-order Butterworth) LPF
+  on PID D-term output. Cutoff matches outer-frame rate (not INAV's
+  10 Hz). Compile constant `ACRO_DTERM_LPF_HZ = 20.0`. Per-axis
+  state, reset on span start. Dormant while D gain is 0 — filter
+  applied when D is enabled later.
 - [ ] T015 [US1] Smoke-test helper: write `scripts/026_acro_smoke.sh`
   that launches a deterministic one-path eval, extracts per-tick
   commanded vs achieved rate from the new data.dat columns (T020),
