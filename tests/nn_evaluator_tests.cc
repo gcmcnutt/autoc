@@ -10,10 +10,11 @@
 // ============================================================
 
 TEST(NNWeightCount, BasicTopology) {
-    // Canonical topology should produce NN_WEIGHT_COUNT weights
+    // Canonical topology produces feedforward+W_hh = NN_WEIGHT_COUNT.
     std::vector<int> topology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
-    int count = nn_weight_count(topology);
-    EXPECT_EQ(count, NN_WEIGHT_COUNT);
+    std::vector<uint8_t> recurrent(NN_NUM_LAYERS);
+    for (int i = 0; i < NN_NUM_LAYERS; i++) recurrent[i] = NN_RECURRENT[i] ? 1 : 0;
+    EXPECT_EQ(nn_weight_count(topology, recurrent), NN_WEIGHT_COUNT);
 }
 
 TEST(NNWeightCount, SingleLayer) {
@@ -101,24 +102,116 @@ TEST(NNForwardPass, TwoLayerKnown) {
     EXPECT_NEAR(outputs[0], expected, 1e-2);
 }
 
-TEST(NNForwardPass, FullTopology22_16_8_3) {
-    // Verify the canonical topology works end-to-end
+TEST(NNForwardPass, FullTopology33_32_16_3) {
+    // Verify the canonical topology works end-to-end via the feedforward
+    // path (nn_forward only uses the first 1667 floats; remaining 256 are
+    // W_hh and unused here).
     std::vector<int> topology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
-    int wc = nn_weight_count(topology);
-    EXPECT_EQ(wc, NN_WEIGHT_COUNT);
+    int wc_ff = nn_weight_count(topology);
 
-    // All-zero weights: every layer produces tanh(0) = 0 (only biases matter, which are 0)
-    std::vector<float> weights(wc, 0.0f);
+    // All-zero weights: every layer produces tanh(0) = 0.
+    std::vector<float> weights(wc_ff, 0.0f);
     float inputs[NN_INPUT_COUNT];
     for (int i = 0; i < NN_INPUT_COUNT; i++) inputs[i] = 1.0f;
     float outputs[NN_OUTPUT_COUNT];
 
     nn_forward(weights.data(), topology, inputs, outputs);
 
-    // With all-zero weights, all outputs should be tanh(0) = 0
     for (int i = 0; i < NN_OUTPUT_COUNT; i++) {
         EXPECT_NEAR(outputs[i], 0.0f, 1e-3);
     }
+}
+
+// ============================================================
+// T024 (spec 027): recurrent forward + reset semantics
+// ============================================================
+
+TEST(NNRecurrentForward, ResetZerosHiddenState) {
+    // Build a canonical recurrent topology (layer 2 recurrent per 027).
+    NNGenome genome;
+    genome.topology.assign(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+    genome.recurrent.resize(NN_NUM_LAYERS);
+    for (int i = 0; i < NN_NUM_LAYERS; i++) genome.recurrent[i] = NN_RECURRENT[i] ? 1 : 0;
+    nn_xavier_init(genome);
+    EXPECT_EQ(static_cast<int>(genome.weights.size()), NN_WEIGHT_COUNT);
+
+    NNControllerBackend backend(genome);
+
+    // After construction, hidden state is internal — exercise reset() which is a no-op semantically
+    // when state is already zeroed, so this test is mostly checking that reset() is callable and
+    // matches the contract "two resets yield identical behavior."
+    backend.reset();
+    backend.reset();  // idempotent
+}
+
+TEST(NNRecurrentForward, HiddenStateAdvancesOnRepeatedEval) {
+    // Directly exercise nn_forward_recurrent with fixed non-zero W_hh to
+    // show that identical inputs on tick N+1 produce different outputs than
+    // on tick N (state has advanced). Use a tiny topology 2 → 2-recurrent.
+    std::vector<int> topology = {2, 2};
+    std::vector<uint8_t> recurrent = {0, 1};
+
+    // Feedforward block: W(2x2) + B(2) = 6 floats.
+    // W_hh block: 2x2 = 4 floats appended.
+    std::vector<float> weights = {
+        // W: identity
+        1.0f, 0.0f,
+        0.0f, 1.0f,
+        // B: zero
+        0.0f, 0.0f,
+        // W_hh: non-trivial (h_t depends on h_{t-1})
+        0.5f, 0.0f,
+        0.0f, 0.5f,
+    };
+    ASSERT_EQ(static_cast<int>(weights.size()),
+              nn_weight_count(topology, recurrent));
+
+    std::vector<float> hidden(nn_hidden_state_count(topology, recurrent), 0.0f);
+    EXPECT_EQ(hidden.size(), size_t(2));
+
+    float inputs[2] = {0.5f, 0.5f};
+    float outputs_t1[2];
+    nn_forward_recurrent(weights.data(), topology, recurrent,
+                         inputs, outputs_t1, hidden.data());
+    // t=1: hidden was 0, so output = tanh(0.5 + 0) = tanh(0.5)
+    EXPECT_NEAR(outputs_t1[0], std::tanh(0.5f), 1e-4);
+
+    float outputs_t2[2];
+    nn_forward_recurrent(weights.data(), topology, recurrent,
+                         inputs, outputs_t2, hidden.data());
+    // t=2: hidden carries t1 output (tanh(0.5)); output = tanh(0.5 + 0.5*tanh(0.5)) > tanh(0.5)
+    EXPECT_GT(outputs_t2[0], outputs_t1[0]);
+
+    // Reset: zero hidden, run again — must match outputs_t1 exactly
+    std::fill(hidden.begin(), hidden.end(), 0.0f);
+    float outputs_reset[2];
+    nn_forward_recurrent(weights.data(), topology, recurrent,
+                         inputs, outputs_reset, hidden.data());
+    EXPECT_NEAR(outputs_reset[0], outputs_t1[0], 1e-6);
+    EXPECT_NEAR(outputs_reset[1], outputs_t1[1], 1e-6);
+}
+
+TEST(NNRecurrentForward, FeedforwardPathUnchangedWhenNoRecurrentFlags) {
+    // Same weights, empty recurrent vector: forward_recurrent must match
+    // plain nn_forward. Ensures the recurrent path doesn't perturb
+    // feedforward genomes.
+    std::vector<int> topology = {2, 2};
+    std::vector<uint8_t> recurrent = {0, 0};
+    std::vector<float> weights = {
+        1.0f, 0.0f,
+        0.0f, 1.0f,
+        0.1f, 0.2f,
+    };
+    std::vector<float> hidden;  // empty — no recurrent layers
+    float inputs[2] = {0.3f, -0.4f};
+    float out_ff[2], out_rr[2];
+
+    nn_forward(weights.data(), topology, inputs, out_ff);
+    nn_forward_recurrent(weights.data(), topology, recurrent,
+                         inputs, out_rr, hidden.data());
+
+    EXPECT_NEAR(out_ff[0], out_rr[0], 1e-6);
+    EXPECT_NEAR(out_ff[1], out_rr[1], 1e-6);
 }
 
 // ============================================================

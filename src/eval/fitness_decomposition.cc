@@ -31,6 +31,13 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         double accumulatedScore = 0.0;
         int simulation_steps = 0;
 
+        // Spec 027 C2: smoothness accumulator — per-tick mean of
+        // |Δoutpt| + |Δoutrl| + |Δoutth|. Lower = smoother.
+        double smoothnessAccum = 0.0;
+        int smoothnessPairs = 0;
+        float prev_out[3] = {0.0f, 0.0f, 0.0f};
+        bool havePrevOut = false;
+
         // Previous tangent for last-waypoint fallback
         gp_vec3 prevTangent = gp_vec3::UnitX();
 
@@ -70,10 +77,28 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             accumulatedScore += multipliedScore;
 
             simulation_steps++;
+
+            // Accumulate smoothness: requires NN data captured on this state.
+            if (stepState.hasNNData()) {
+                const float* out = stepState.getNNOutputs();
+                if (havePrevOut) {
+                    smoothnessAccum += std::abs(out[0] - prev_out[0])
+                                     + std::abs(out[1] - prev_out[1])
+                                     + std::abs(out[2] - prev_out[2]);
+                    smoothnessPairs++;
+                }
+                prev_out[0] = out[0];
+                prev_out[1] = out[1];
+                prev_out[2] = out[2];
+                havePrevOut = true;
+            }
         }
 
         // Store result
         result.score = -accumulatedScore;  // Negate: lower = better
+        result.smoothness_score = (smoothnessPairs > 0)
+            ? (smoothnessAccum / smoothnessPairs)
+            : 0.0;
         result.crashed = isCrash(crashReason);
         result.steps_completed = simulation_steps;
         result.steps_total = static_cast<int>(path.size()) - 1;

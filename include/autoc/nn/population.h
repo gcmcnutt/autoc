@@ -10,6 +10,7 @@
 struct NNPopulation {
     std::vector<NNGenome> individuals;
     std::vector<int> topology;        // Shared topology (all same shape)
+    std::vector<uint8_t> recurrent;   // Per-layer recurrent flag, same size as topology (spec 027)
     int population_size;
     uint32_t generation;
     double best_fitness;
@@ -18,8 +19,22 @@ struct NNPopulation {
     NNPopulation() : population_size(0), generation(0), best_fitness(0.0), best_index(0) {}
 };
 
-// Initialize population with Xavier-initialized individuals
-void nn_init_population(NNPopulation& pop, const std::vector<int>& topology, int size);
+// Initialize population with Xavier-initialized individuals. `recurrent`
+// is a per-layer flag vector parallel to `topology` (spec 027); pass an
+// empty vector for fully feedforward networks.
+void nn_init_population(NNPopulation& pop,
+                        const std::vector<int>& topology,
+                        const std::vector<uint8_t>& recurrent,
+                        int size);
+
+// Feedforward-only overload (legacy). Equivalent to passing an empty
+// recurrent vector. Kept so tests and other callers don't need to thread
+// the flag vector through when the network is pure feedforward.
+inline void nn_init_population(NNPopulation& pop,
+                               const std::vector<int>& topology,
+                               int size) {
+    nn_init_population(pop, topology, std::vector<uint8_t>{}, size);
+}
 
 // Arithmetic crossover (BLX-alpha blend)
 NNGenome nn_arithmetic_crossover(const NNGenome& parent1, const NNGenome& parent2, float alpha);

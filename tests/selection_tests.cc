@@ -103,3 +103,81 @@ TEST(Selection022, ModeToString) {
     EXPECT_STREQ(selectionModeToString(SelectionMode::MINIMAX), "minimax");
     EXPECT_STREQ(selectionModeToString(SelectionMode::LEXICASE), "lexicase");
 }
+
+// ============================================================
+// T043 (spec 027 C2): smoothness test cases in lexicase pool
+// ============================================================
+
+// Helper: build scores with tracking + smoothness per individual/scenario.
+static std::vector<std::vector<ScenarioScore>> makeScoresWithSmoothness(
+    int pop_size, int num_scenarios,
+    const std::vector<std::vector<double>>& tracking,
+    const std::vector<std::vector<double>>& smoothness
+) {
+    std::vector<std::vector<ScenarioScore>> all(pop_size);
+    for (int i = 0; i < pop_size; i++) {
+        all[i].resize(num_scenarios);
+        for (int s = 0; s < num_scenarios; s++) {
+            all[i][s].score = tracking[i][s];
+            all[i][s].smoothness_score = smoothness[i][s];
+        }
+    }
+    return all;
+}
+
+// Equal tracking, different smoothness: smoother must win in aggregate.
+TEST(Selection027, SmoothnessBreaksTrackingTie) {
+    // Two individuals, same tracking on 2 scenarios; individual 0 is smooth.
+    auto scores = makeScoresWithSmoothness(2, 2,
+        /*tracking*/   {{-50.0, -50.0}, {-50.0, -50.0}},
+        /*smoothness*/ {{ 0.10,  0.10}, { 1.50,  1.50}}
+    );
+
+    std::map<int, int> counts;
+    for (int i = 0; i < 2000; i++) {
+        int selected = lexicase_select(scores, 2);
+        counts[selected]++;
+    }
+    // The smooth individual should dominate — every smoothness round
+    // filters the jittery one out.
+    EXPECT_GT(counts[0], counts[1] * 3)
+        << "smooth=" << counts[0] << " jittery=" << counts[1];
+}
+
+// Tradeoff: A tracks better but jitters; B tracks worse but smooth.
+// Lexicase with shuffled test-case order should let BOTH survive across
+// many selections (each wins on a different dimension).
+TEST(Selection027, TradeoffBothSurvive) {
+    auto scores = makeScoresWithSmoothness(2, 2,
+        /*tracking*/   {{-100.0, -100.0}, { -30.0,  -30.0}},
+        /*smoothness*/ {{   1.5,    1.5}, {   0.1,    0.1}}
+    );
+
+    std::map<int, int> counts;
+    for (int i = 0; i < 2000; i++) {
+        int selected = lexicase_select(scores, 2);
+        counts[selected]++;
+    }
+    // Both should get meaningful wins. Not symmetric (tracking has larger
+    // absolute scale), but each must land above a reasonable floor.
+    EXPECT_GT(counts[0], 200) << "A (tracks-better) wins = " << counts[0];
+    EXPECT_GT(counts[1], 200) << "B (smoother) wins = " << counts[1];
+}
+
+// Smoothness equal across all: tracking still decides winner.
+TEST(Selection027, EqualSmoothnessFallsThroughToTracking) {
+    auto scores = makeScoresWithSmoothness(3, 2,
+        /*tracking*/   {{-100.0, -100.0}, {-50.0, -50.0}, {-10.0, -10.0}},
+        /*smoothness*/ {{   0.5,    0.5}, {  0.5,   0.5}, {  0.5,   0.5}}
+    );
+
+    std::map<int, int> counts;
+    for (int i = 0; i < 2000; i++) {
+        int selected = lexicase_select(scores, 3);
+        counts[selected]++;
+    }
+    // Best-tracking (individual 0) should dominate — smoothness ties pass
+    // all candidates through.
+    EXPECT_GT(counts[0], counts[1]);
+    EXPECT_GT(counts[0], counts[2]);
+}

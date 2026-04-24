@@ -45,7 +45,7 @@ validation is Phase 2 training signal against the go/no-go gate in
 
 - [ ] T001 Verify `027-recurrent-nn` branch builds clean on both
   autoc and crrcsim submodule with the PID-nullified code (commits
-  3cd193e autoc / 74ba0b8 crrcsim): `cd build && make -j8`. All
+  3cd193e autoc / 74ba0b8 crrcsim): `scripts/rebuild-perf.sh`. All
   existing tests pass. Baseline must be green.
 
 **Checkpoint**: Clean build baseline with PID nullified.
@@ -86,7 +86,7 @@ compiles; contract test pins the numeric values.
 build cleanly with the new 1923-weight recurrent topology and C2
 lexicase plumbing. Training can launch. Nothing flies.
 
-**Independent Test**: `cd build && make -j8` succeeds; all unit tests
+**Independent Test**: `scripts/rebuild-perf.sh` succeeds; all unit tests
 pass; a 5-gen smoke run of `build/autoc` produces a data.dat with the
 expected columns and no crash.
 
@@ -213,7 +213,7 @@ expected columns and no crash.
 
 ### Group 1.e — Build + verify
 
-- [ ] T060 [US1] Full rebuild: `cd build && make -j8`. All targets
+- [ ] T060 [US1] Full rebuild: `scripts/rebuild-perf.sh`. All targets
   (autoc, crrcsim, minisim, renderer, nn2cpp, nnextractor, all
   unit tests) compile. Phase 2 contract test and Phase 3 US1
   tests all pass. User runs.

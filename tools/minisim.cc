@@ -133,11 +133,18 @@ public:
                   << std::endl;
       }
 
+      // Per-span NN controller — constructed once per span so the
+      // recurrent hidden state (spec 027 D-simple) persists across ticks
+      // within a scenario. reset() called at span start. Feedforward
+      // genomes use this same instance with an empty hidden state buffer.
+      NNControllerBackend nnBackend(nnGenome);
+
       // Evaluate each path
       for (int i = 0; i < static_cast<int>(evalData.pathList.size()); i++) {
         // Path stays at canonical origin (Z=0); origin offset bridges raw→virtual
         std::vector<Path> path = evalData.pathList.at(i);
         std::vector<AircraftState> aircraftStateSteps;
+        nnBackend.reset();  // zero recurrent state at span start (no-op for feedforward)
 
         // Fixed initial orientation and position for deterministic evaluation
         // Virtual coordinates: start at origin (0,0,0). Path also at virtual origin.
@@ -207,10 +214,9 @@ public:
             aircraftState.recordErrorHistory(dir, distance, duration_msec);
           }
 
-          // Run NN controller
+          // Run NN controller (per-span instance, see above)
           {
             VectorPathProvider pathProvider(path, aircraftState.getThisPathIndex());
-            NNControllerBackend nnBackend(nnGenome);
             nnBackend.evaluate(aircraftState, pathProvider);
           }
 

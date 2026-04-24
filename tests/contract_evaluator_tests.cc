@@ -11,7 +11,8 @@
 #include <numeric>
 
 // ============================================================
-// Contract: NN topology is 33→32→16→3 with 1667 weights (023 direction cosines)
+// Contract: NN topology is 33→32→16-recurrent→3 with 1923 weights
+//   (spec 027: layer 2 recurrent W_hh = 16*16 = 256 extra over feedforward 1667)
 // ============================================================
 
 TEST(ContractEvaluator, TopologyConstants) {
@@ -20,12 +21,22 @@ TEST(ContractEvaluator, TopologyConstants) {
     EXPECT_EQ(NN_HIDDEN2_SIZE, 16);
     EXPECT_EQ(NN_OUTPUT_COUNT, 3);
     EXPECT_EQ(NN_NUM_LAYERS, 4);
-    EXPECT_EQ(NN_WEIGHT_COUNT, 1667);
+    EXPECT_EQ(NN_WEIGHT_COUNT, 1923);
+    // Spec 027 recurrent-flag contract: only layer 2 (16-wide) recurrent.
+    EXPECT_FALSE(NN_RECURRENT[0]);
+    EXPECT_FALSE(NN_RECURRENT[1]);
+    EXPECT_TRUE (NN_RECURRENT[2]);
+    EXPECT_FALSE(NN_RECURRENT[3]);
+    EXPECT_EQ(NN_HIDDEN_STATE_COUNT, NN_HIDDEN2_SIZE);  // 16
 }
 
 TEST(ContractEvaluator, WeightCountMatchesTopology) {
     std::vector<int> topology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
-    EXPECT_EQ(nn_weight_count(topology), NN_WEIGHT_COUNT);
+    std::vector<uint8_t> recurrent(NN_NUM_LAYERS);
+    for (int i = 0; i < NN_NUM_LAYERS; i++) recurrent[i] = NN_RECURRENT[i] ? 1 : 0;
+    EXPECT_EQ(nn_weight_count(topology, recurrent), NN_WEIGHT_COUNT);
+    // Feedforward-only overload excludes W_hh blocks.
+    EXPECT_EQ(nn_weight_count(topology), NN_WEIGHT_COUNT - 256);
 }
 
 // ============================================================
@@ -126,6 +137,8 @@ TEST(ContractEvaluator, ZeroWeightsZeroOutputs) {
 TEST(ContractEvaluator, XavierInitProducesValidGenome) {
     NNGenome genome;
     genome.topology = std::vector<int>(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+    genome.recurrent.assign(NN_NUM_LAYERS, 0);
+    for (int i = 0; i < NN_NUM_LAYERS; i++) genome.recurrent[i] = NN_RECURRENT[i] ? 1 : 0;
     nn_xavier_init(genome);
 
     EXPECT_EQ(static_cast<int>(genome.weights.size()), NN_WEIGHT_COUNT);

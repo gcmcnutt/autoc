@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <chrono>
 #include <ctime>
+#include <algorithm>
 
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
@@ -50,6 +51,7 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     for (size_t i = 0; i < genome.topology.size(); i++) {
         if (i > 0) code << " -> ";
         code << genome.topology[i];
+        if (i < genome.recurrent.size() && genome.recurrent[i]) code << "r";
     }
     code << "\n";
     code << "//   Weights:     " << genome.weights.size() << "\n";
@@ -67,6 +69,24 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     code << "};\n";
     code << "static const int nn_num_layers = " << genome.topology.size() << ";\n\n";
 
+    // Recurrent flags (spec 027). Emitted even when all-false so xiao build
+    // can switch on compile-time feedforward-only simpler path if wanted.
+    const bool any_recurrent = std::any_of(genome.recurrent.begin(),
+        genome.recurrent.end(), [](uint8_t v) { return v != 0; });
+    code << "static const bool nn_recurrent[] = {";
+    for (size_t i = 0; i < genome.topology.size(); i++) {
+        if (i > 0) code << ", ";
+        code << ((i < genome.recurrent.size() && genome.recurrent[i]) ? "true" : "false");
+    }
+    code << "};\n";
+
+    int hidden_total = 0;
+    for (size_t i = 0; i < genome.topology.size() && i < genome.recurrent.size(); i++) {
+        if (genome.recurrent[i]) hidden_total += genome.topology[i];
+    }
+    code << "static float nn_hidden_state[" << (hidden_total > 0 ? hidden_total : 1) << "] = {0};\n";
+    code << "static const int nn_hidden_state_size = " << hidden_total << ";\n\n";
+
     // Weights — formatted 8 per line for readability
     code << "static const float nn_weights[" << genome.weights.size() << "] = {\n";
     for (size_t i = 0; i < genome.weights.size(); i++) {
@@ -78,10 +98,23 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     }
     code << "};\n\n";
 
-    // Topology as std::vector (needed by nn_forward)
+    // Topology vectors (needed by nn_forward / nn_forward_recurrent)
     code << "static const std::vector<int>& getTopology() {\n";
     code << "    static const std::vector<int> t(nn_topology, nn_topology + nn_num_layers);\n";
     code << "    return t;\n";
+    code << "}\n";
+    code << "static const std::vector<uint8_t>& getRecurrent() {\n";
+    code << "    static const std::vector<uint8_t> r = [] {\n";
+    code << "        std::vector<uint8_t> v(nn_num_layers);\n";
+    code << "        for (int i = 0; i < nn_num_layers; i++) v[i] = nn_recurrent[i] ? 1 : 0;\n";
+    code << "        return v;\n";
+    code << "    }();\n";
+    code << "    return r;\n";
+    code << "}\n\n";
+
+    // Reset function (spec 027 Q4): zero hidden state. Call on span start.
+    code << "void generatedNNProgramReset() {\n";
+    code << "    for (int i = 0; i < nn_hidden_state_size; i++) nn_hidden_state[i] = 0.0f;\n";
     code << "}\n\n";
 
     // Main function
@@ -89,7 +122,12 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     code << "    NNInputs inputs = {};\n";
     code << "    nn_gather_inputs(pathProvider, aircraftState, inputs);\n\n";
     code << "    float outputs[" << genome.topology.back() << "];\n";
-    code << "    nn_forward(nn_weights, getTopology(), reinterpret_cast<const float*>(&inputs), outputs);\n\n";
+    if (any_recurrent) {
+        code << "    nn_forward_recurrent(nn_weights, getTopology(), getRecurrent(),\n";
+        code << "                         reinterpret_cast<const float*>(&inputs), outputs, nn_hidden_state);\n\n";
+    } else {
+        code << "    nn_forward(nn_weights, getTopology(), reinterpret_cast<const float*>(&inputs), outputs);\n\n";
+    }
     code << "    // Set control commands: pitch, roll, throttle (already [-1,1] via tanh)\n";
     code << "    aircraftState.setPitchCommand(static_cast<gp_scalar>(outputs[0]));\n";
     code << "    aircraftState.setRollCommand(static_cast<gp_scalar>(outputs[1]));\n";
@@ -268,11 +306,21 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Generate code
+    // Generate code. Note: unrolled-path emission for recurrent layers is
+    // not implemented (spec 027 deferred xiao port behind sim gate — once
+    // sim validates the architecture we'll spec the unrolled recurrent
+    // emission as part of that work). Fall back to portable if the genome
+    // has any recurrent layers.
+    const bool any_recurrent = std::any_of(genome.recurrent.begin(),
+        genome.recurrent.end(), [](uint8_t v) { return v != 0; });
     std::string code;
-    if (unrolled) {
+    if (unrolled && !any_recurrent) {
         code = generateUnrolledCode(genome, functionName, inputFile);
     } else {
+        if (unrolled && any_recurrent) {
+            std::cerr << "warning: -u (unrolled) not supported for recurrent genomes; "
+                      << "falling back to portable emission." << std::endl;
+        }
         code = generatePortableCode(genome, functionName, inputFile);
     }
 

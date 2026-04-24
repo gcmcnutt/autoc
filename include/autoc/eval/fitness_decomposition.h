@@ -6,10 +6,14 @@
 // Forward declaration — full definition in rpc/protocol.h
 struct EvalResults;
 
-// Per-scenario fitness score (022: point-accumulation).
-// Single score dimension: negated accumulated points (lower = better).
+// Per-scenario fitness score (022 + 027).
+// - `score`: accumulated tracking fitness (negated points, lower = better).
+// - `smoothness_score`: mean-of-ticks control-rate magnitude
+//   Σ_i (|Δoutpt| + |Δoutrl| + |Δoutth|) / (steps-1), lower = better
+//   (spec 027 C2). Fed into lexicase as an independent test case.
 struct ScenarioScore {
-    double score;           // Negated accumulated points (lower = better)
+    double score;           // Tracking (negated accumulated points, lower = better)
+    double smoothness_score; // Mean per-tick control-rate magnitude (spec 027, lower = better)
     bool crashed;           // Whether this scenario crashed
     int steps_completed;    // Number of simulation steps completed
     int steps_total;        // Total steps expected (path length)
@@ -20,7 +24,8 @@ struct ScenarioScore {
     double maxMultiplier;   // Highest multiplier reached
 
     ScenarioScore()
-        : score(0.0), crashed(false), steps_completed(0), steps_total(0),
+        : score(0.0), smoothness_score(0.0),
+          crashed(false), steps_completed(0), steps_total(0),
           maxStreak(0), totalStreakSteps(0), maxMultiplier(1.0) {}
 };
 

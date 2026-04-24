@@ -20,6 +20,27 @@ int nn_weight_count(const std::vector<int>& topology) {
     return count;
 }
 
+int nn_weight_count(const std::vector<int>& topology,
+                    const std::vector<uint8_t>& recurrent) {
+    int count = nn_weight_count(topology);
+    // W_hh blocks appended for each recurrent layer: size × size (no bias).
+    for (size_t l = 0; l < topology.size() && l < recurrent.size(); l++) {
+        if (recurrent[l]) {
+            count += topology[l] * topology[l];
+        }
+    }
+    return count;
+}
+
+int nn_hidden_state_count(const std::vector<int>& topology,
+                          const std::vector<uint8_t>& recurrent) {
+    int count = 0;
+    for (size_t l = 0; l < topology.size() && l < recurrent.size(); l++) {
+        if (recurrent[l]) count += topology[l];
+    }
+    return count;
+}
+
 // ============================================================
 // T035: fast_tanh LUT — 512 entries, domain [-5, 5]
 // ============================================================
@@ -123,14 +144,108 @@ void nn_forward(const float* weights, const std::vector<int>& topology,
 }
 
 // ============================================================
+// Recurrent forward pass (spec 027, D-simple)
+// ============================================================
+// Same as nn_forward but with a persistent hidden state for any layer
+// flagged recurrent. W_hh blocks are appended at the end of the weights
+// vector, in layer-index order, after all feedforward [W, B] pairs.
+//
+// For a recurrent layer l with size N:
+//     h_t[j] = tanh(W_xh[j] · x_t + W_hh[j] · h_{t-1}[j] + B[j])
+// i.e., we add the dot product of the row j of W_hh (size N) with the
+// previous h_{t-1} (also size N) to the usual pre-activation sum.
+
+void nn_forward_recurrent(const float* weights,
+                          const std::vector<int>& topology,
+                          const std::vector<uint8_t>& recurrent,
+                          const float* inputs, float* outputs,
+                          float* hidden_state) {
+    if (topology.size() < 2) return;
+
+    int max_layer = *std::max_element(topology.begin(), topology.end());
+    float buf_a_stack[64], buf_b_stack[64];
+    float* buf_a = (max_layer <= 64) ? buf_a_stack : new float[max_layer];
+    float* buf_b = (max_layer <= 64) ? buf_b_stack : new float[max_layer];
+
+    for (int i = 0; i < topology[0]; i++) buf_a[i] = inputs[i];
+
+    // Pre-compute W_hh offsets: feedforward block total first, then
+    // W_hh blocks in layer-index order for each recurrent layer.
+    int ff_total = 0;
+    for (size_t i = 0; i + 1 < topology.size(); i++) {
+        ff_total += topology[i] * topology[i + 1] + topology[i + 1];
+    }
+    const float* whh_base = weights + ff_total;
+
+    // Compute a per-recurrent-layer starting offset into `hidden_state` and
+    // into the W_hh blob, iterating in order.
+    int hs_offset = 0;
+    int whh_offset = 0;
+
+    const float* w_ptr = weights;
+    float* current_in = buf_a;
+    float* current_out = buf_b;
+
+    for (size_t layer = 0; layer + 1 < topology.size(); layer++) {
+        int in_size = topology[layer];
+        int out_size = topology[layer + 1];
+        const bool out_is_recurrent = (layer + 1 < recurrent.size())
+                                      && recurrent[layer + 1];
+
+        const float* W = w_ptr;
+        const float* B = w_ptr + in_size * out_size;
+
+        for (int j = 0; j < out_size; j++) {
+            float sum = B[j];
+            for (int i = 0; i < in_size; i++) {
+                sum += W[j * in_size + i] * current_in[i];
+            }
+            if (out_is_recurrent) {
+                // Add W_hh row j · h_{t-1}
+                const float* Whh_row = whh_base + whh_offset + j * out_size;
+                const float* h_prev = hidden_state + hs_offset;
+                for (int i = 0; i < out_size; i++) {
+                    sum += Whh_row[i] * h_prev[i];
+                }
+            }
+            current_out[j] = static_cast<float>(fast_tanh(static_cast<gp_scalar>(sum)));
+        }
+
+        if (out_is_recurrent) {
+            // Write h_t back to hidden_state (overwrites h_{t-1}).
+            for (int j = 0; j < out_size; j++) {
+                hidden_state[hs_offset + j] = current_out[j];
+            }
+            hs_offset += out_size;
+            whh_offset += out_size * out_size;
+        }
+
+        w_ptr += in_size * out_size + out_size;
+
+        float* tmp = current_in;
+        current_in = current_out;
+        current_out = tmp;
+    }
+
+    int out_size = topology.back();
+    for (int i = 0; i < out_size; i++) outputs[i] = current_in[i];
+
+    if (max_layer > 64) {
+        delete[] buf_a;
+        delete[] buf_b;
+    }
+}
+
+// ============================================================
 // T037: Xavier/Glorot initialization
 // ============================================================
 
 void nn_xavier_init(NNGenome& genome) {
-    int total = nn_weight_count(genome.topology);
+    const int total = nn_weight_count(genome.topology, genome.recurrent);
     genome.weights.resize(total);
 
     int idx = 0;
+    // Feedforward [W, B] pairs for each layer transition
     for (size_t layer = 0; layer + 1 < genome.topology.size(); layer++) {
         int fan_in = genome.topology[layer];
         int fan_out = genome.topology[layer + 1];
@@ -140,10 +255,19 @@ void nn_xavier_init(NNGenome& genome) {
         for (int i = 0; i < num_weights; i++) {
             genome.weights[idx++] = static_cast<float>(rng::randGaussian(stddev));
         }
-
-        // Initialize biases to zero
-        for (int i = 0; i < fan_out; i++) {
-            genome.weights[idx++] = 0.0f;
+        for (int i = 0; i < fan_out; i++) genome.weights[idx++] = 0.0f;
+    }
+    // W_hh blocks for each recurrent layer, appended in layer-index order.
+    // Xavier fan-in for the recurrent block uses the layer's own size +
+    // its incoming size (it "sees" both x_t and h_{t-1}).
+    for (size_t layer = 0; layer < genome.topology.size() && layer < genome.recurrent.size(); layer++) {
+        if (!genome.recurrent[layer]) continue;
+        int size = genome.topology[layer];
+        int in_size = (layer > 0) ? genome.topology[layer - 1] : size;
+        double stddev = std::sqrt(1.0 / (in_size + size));
+        int num_weights = size * size;
+        for (int i = 0; i < num_weights; i++) {
+            genome.weights[idx++] = static_cast<float>(rng::randGaussian(stddev));
         }
     }
 }
@@ -271,15 +395,30 @@ void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
 // ============================================================
 
 NNControllerBackend::NNControllerBackend(const NNGenome& genome)
-    : genome_(genome) {}
+    : genome_(genome) {
+    // Allocate hidden-state buffer if any layer is recurrent. Zeros on construct.
+    const int hs = nn_hidden_state_count(genome_.topology, genome_.recurrent);
+    if (hs > 0) hidden_state_.assign(static_cast<size_t>(hs), 0.0f);
+}
+
+void NNControllerBackend::reset() {
+    std::fill(hidden_state_.begin(), hidden_state_.end(), 0.0f);
+}
 
 void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& pathProvider) {
     NNInputs inputs = {};
     nn_gather_inputs(pathProvider, aircraftState, inputs);
 
     float outputs[NN_OUTPUT_COUNT];
-    nn_forward(genome_.weights.data(), genome_.topology,
-               reinterpret_cast<const float*>(&inputs), outputs);
+    if (hidden_state_.empty()) {
+        nn_forward(genome_.weights.data(), genome_.topology,
+                   reinterpret_cast<const float*>(&inputs), outputs);
+    } else {
+        nn_forward_recurrent(genome_.weights.data(), genome_.topology,
+                             genome_.recurrent,
+                             reinterpret_cast<const float*>(&inputs), outputs,
+                             hidden_state_.data());
+    }
 
     // Set control commands: pitch, roll, throttle (already in [-1, 1] via tanh)
     aircraftState.setPitchCommand(static_cast<gp_scalar>(outputs[0]));

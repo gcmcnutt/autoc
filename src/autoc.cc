@@ -546,6 +546,13 @@ static std::vector<int> getCompiledTopology() {
   return std::vector<int>(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
 }
 
+// Get compiled recurrent-layer flags as std::vector (spec 027, D-simple).
+static std::vector<uint8_t> getCompiledRecurrent() {
+  std::vector<uint8_t> r(NN_NUM_LAYERS);
+  for (int i = 0; i < NN_NUM_LAYERS; i++) r[i] = NN_RECURRENT[i] ? 1 : 0;
+  return r;
+}
+
 // Compute fitness for an NN individual from EvalResults
 // Same formula as MyGP::evalTask() lines 1210-1417
 // 022: Point-accumulation fitness — delegates to computeScenarioScores + aggregateRawFitness
@@ -999,7 +1006,8 @@ static void runNNEvolution(
 
   // Initialize population
   NNPopulation pop;
-  nn_init_population(pop, topology, popSize);
+  const std::vector<uint8_t> recurrent = getCompiledRecurrent();
+  nn_init_population(pop, topology, recurrent, popSize);
 
   // Set initial mutation sigma from config
   for (auto& ind : pop.individuals) {
@@ -1161,18 +1169,22 @@ static void runNNEvolution(
       }
     }
 
-    // Streak diagnostics for best individual
+    // Streak + smoothness diagnostics for best individual
     double avgMaxStreak = 0.0;
     double pctInStreak = 0.0;
+    double avgSmoothness = 0.0;
     if (!bestScores.empty()) {
       double streakSum = 0.0, totalStrkSteps = 0.0, totalSteps = 0.0;
+      double smoothSum = 0.0;
       for (const auto& sc : bestScores) {
         streakSum += sc.maxStreak;
         totalStrkSteps += sc.totalStreakSteps;
         totalSteps += sc.steps_completed;
+        smoothSum += sc.smoothness_score;
       }
       avgMaxStreak = streakSum / bestScores.size();
       pctInStreak = (totalSteps > 0) ? 100.0 * totalStrkSteps / totalSteps : 0.0;
+      avgSmoothness = smoothSum / bestScores.size();
     }
 
     // Log to statistics file
@@ -1183,6 +1195,7 @@ static void runNNEvolution(
          << " bestSigma=" << pop.individuals[bestIdx].mutation_sigma
          << " avgMaxStreak=" << std::setprecision(1) << avgMaxStreak
          << " pctInStreak=" << std::setprecision(1) << pctInStreak
+         << " smoothness=" << std::setprecision(4) << avgSmoothness
          << std::endl;
     bout.flush();
 

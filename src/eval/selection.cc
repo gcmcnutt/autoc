@@ -26,7 +26,23 @@ const char* selectionModeToString(SelectionMode mode) {
     }
 }
 
-// Epsilon-lexicase selection (022): single dimension per scenario = score (lower is better).
+// Epsilon-lexicase selection.
+//
+// 022: single dimension per scenario = tracking score (lower is better).
+// 027 C2: added a second dimension per scenario = smoothness score. The
+// pool doubles — for each scenario both test cases are available; the
+// shuffle mixes them so a jittery-but-well-tracking individual may
+// survive the tracking round but be filtered in the smoothness round
+// (or vice versa). Smoothness epsilon is calibrated to its own scale
+// (0.05 relative, floor 0.02 absolute) so it filters tighter than
+// tracking's 0.5-absolute floor.
+//
+// Score extractor: member pointer lets us pick which ScenarioScore field
+// each test case scores against.
+namespace {
+    using ScoreField = double ScenarioScore::*;
+}
+
 int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
                     int pop_size, double epsilon) {
     if (pop_size <= 0) return 0;
@@ -35,35 +51,47 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
         return std::uniform_int_distribution<int>(0, pop_size - 1)(rng::engine());
     }
 
+    // Build the combined test-case pool: (scenario_idx, field, abs_epsilon_floor).
+    // tracking: floor 0.5 absolute (legacy); smoothness: floor 0.02 absolute
+    // since smoothness scores are O(1) in magnitude for healthy training.
+    struct TestCase {
+        int scenario;
+        ScoreField field;
+        double epsilon_floor;
+    };
+    std::vector<TestCase> pool;
+    pool.reserve(num_scenarios * 2);
+    for (int s = 0; s < num_scenarios; s++) {
+        pool.push_back({s, &ScenarioScore::score,            0.5});
+        pool.push_back({s, &ScenarioScore::smoothness_score, 0.02});
+    }
+
     // Start with all candidates
     std::vector<int> candidates(pop_size);
     std::iota(candidates.begin(), candidates.end(), 0);
 
-    // Shuffled scenario order
-    std::vector<int> scenario_order(num_scenarios);
-    std::iota(scenario_order.begin(), scenario_order.end(), 0);
-    std::shuffle(scenario_order.begin(), scenario_order.end(), rng::engine());
+    // Shuffled test-case order
+    std::shuffle(pool.begin(), pool.end(), rng::engine());
 
-    // For each scenario, filter on score (lower = better)
-    for (int si : scenario_order) {
+    for (const auto& tc : pool) {
         if (candidates.size() <= 1) break;
 
-        // Find best (lowest) score among candidates
+        // Find best (lowest) value among candidates on this test case
         double best_score = 1e30;
         for (int idx : candidates) {
             if (idx < static_cast<int>(all_scores.size()) &&
-                si < static_cast<int>(all_scores[idx].size())) {
-                best_score = std::min(best_score, all_scores[idx][si].score);
+                tc.scenario < static_cast<int>(all_scores[idx].size())) {
+                best_score = std::min(best_score, all_scores[idx][tc.scenario].*(tc.field));
             }
         }
 
-        // Keep candidates within epsilon of best
-        double score_epsilon = std::max(0.5, std::abs(best_score) * epsilon);
+        // Keep candidates within epsilon of best (relative * |best| floored at absolute)
+        double score_epsilon = std::max(tc.epsilon_floor, std::abs(best_score) * epsilon);
         std::vector<int> survivors;
         for (int idx : candidates) {
             if (idx < static_cast<int>(all_scores.size()) &&
-                si < static_cast<int>(all_scores[idx].size())) {
-                if (all_scores[idx][si].score <= best_score + score_epsilon) {
+                tc.scenario < static_cast<int>(all_scores[idx].size())) {
+                if (all_scores[idx][tc.scenario].*(tc.field) <= best_score + score_epsilon) {
                     survivors.push_back(idx);
                 }
             }

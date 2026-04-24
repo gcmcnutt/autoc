@@ -87,6 +87,40 @@ TEST(NNSerialization, RoundTripPreservesAllFields) {
     EXPECT_FLOAT_EQ(restored.mutation_sigma, original.mutation_sigma);
 }
 
+TEST(NNSerialization, RoundTripRecurrentCanonicalTopology) {
+    // Spec 027: serialize with per-layer recurrent flags + W_hh weights;
+    // deserialize recovers flags and full weight vector (1923 floats).
+    NNGenome original;
+    original.topology = std::vector<int>(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+    original.recurrent.resize(NN_NUM_LAYERS);
+    for (int i = 0; i < NN_NUM_LAYERS; i++) original.recurrent[i] = NN_RECURRENT[i] ? 1 : 0;
+    original.weights.resize(nn_weight_count(original.topology, original.recurrent));
+    ASSERT_EQ(static_cast<int>(original.weights.size()), NN_WEIGHT_COUNT);
+    for (size_t i = 0; i < original.weights.size(); i++) {
+        original.weights[i] = static_cast<float>(i) / 200.0f - 4.0f;
+    }
+    original.fitness = -27.5;
+    original.generation = 13;
+    original.mutation_sigma = 0.2f;
+
+    std::vector<uint8_t> buf;
+    ASSERT_TRUE(nn_serialize(original, buf));
+
+    NNGenome restored;
+    ASSERT_TRUE(nn_deserialize(buf.data(), buf.size(), restored));
+
+    EXPECT_EQ(restored.topology, original.topology);
+    EXPECT_EQ(restored.recurrent, original.recurrent);
+    ASSERT_EQ(restored.weights.size(), original.weights.size());
+    for (size_t i = 0; i < original.weights.size(); i++) {
+        EXPECT_EQ(restored.weights[i], original.weights[i])
+            << "Weight mismatch at index " << i;
+    }
+    EXPECT_DOUBLE_EQ(restored.fitness, original.fitness);
+    EXPECT_EQ(restored.generation, original.generation);
+    EXPECT_FLOAT_EQ(restored.mutation_sigma, original.mutation_sigma);
+}
+
 TEST(NNSerialization, RoundTripSmallNetwork) {
     NNGenome original;
     original.topology = {1, 1};
