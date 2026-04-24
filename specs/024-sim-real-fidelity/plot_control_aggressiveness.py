@@ -134,6 +134,7 @@ def main():
     out = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(
         "specs/024-sim-real-fidelity/control_aggressiveness_cadence7.png"
     )
+    label = sys.argv[3] if len(sys.argv) > 3 else "cadence7"
 
     data = load(inp)
     print(f"Paths found: {sorted(data.keys())}")
@@ -173,7 +174,7 @@ def main():
     # Top panel — change rate
     ax_dc.set_ylabel("Mean |Δout| per tick  (stick speed)")
     ax_dc.set_title(
-        "cadence7 control evolution — top: change rate  |  bottom: magnitude\n"
+        f"{label} control evolution — top: change rate  |  bottom: magnitude\n"
         "HIGH dctrl + LOW |out| = fine-grained tracking  (desirable close-in)\n"
         "HIGH dctrl + HIGH |out| = full-throw bang-bang"
     )

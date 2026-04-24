@@ -1,17 +1,25 @@
 # 026 — INAV ACRO Delegation (non-bang-bang control via rate-mode inner loop)
 
-**Status**: PLAN — scope locked, implementation sequence in
-[`plan.md`](./plan.md).
+**Status**: CLOSED — **NO-GO**. Hypothesis disproven. See
+[`findings.md`](./findings.md) for outcome, measurements, and what the
+result forces us to rethink. Follow-on work in
+[`specs/027-recurrent-nn/`](../027-recurrent-nn/).
 
 **Companions**:
+- [`findings.md`](./findings.md) — run outcome, data, learnings,
+  carry-forward into 027. **Read this first.**
 - [`research.md`](./research.md) — git history of prior experiments
   (021 ACRO PID build + revert, 023 pt3 filter), INAV filter
   inventory, analysis of whether ACRO delegation settles bang-bang
   or displaces it, objective-function options, escalation ladder
-  (previous-output feedback, Pareto selection).
+  (previous-output feedback, Pareto selection). Pre-NO-GO; preserved
+  as the reasoning that *led* to 026.
 - [`plan.md`](./plan.md) — implementation phases, ordering (sim
   signal before flight prep), INAV-knob audit on the flight config,
-  go/no-go gate table, stopping rules.
+  go/no-go gate table, stopping rules. Execution against this plan is
+  complete through US1+US2 (infra built, cadence8 / pid1 run); US3+
+  (flight deployment, escalation) was mooted by the NO-GO outcome
+  moving escalation to 027.
 
 ## Clarifications
 
@@ -220,8 +228,9 @@ or Pareto selection on (tracking, control-effort).
 
 ## Relationship to 025
 
-025 (craft variations) remains BLOCKED on 026. Sequence is 026 →
-025 when 026 is flying satisfactorily.
+025 (craft variations) remains BLOCKED — now on 027, not 026. See
+[findings.md](./findings.md) "Relationship to 025" for the updated
+view.
 
 The "HB1 rudder-moment calibration" item that was previously in 025
 was based on a misread of HB1's tail geometry (HB1 has a tail fin
