@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # 3x3 cmd->response scatter from sim data.dat (024 variant).
 #
+# Semantic note (spec 026, ACRO delegation): outPt/outRl are *rate commands*
+# (NN [-1,+1] scaled by ACRO_MAX_RATE_*) not direct surface deflections. The
+# inner ACRO PID converts them to surfaces in CRRCSim. cmd→gyro correlation
+# is now mediated by the rate PID, so expect tighter/faster correlation than
+# pre-026 raw-MANUAL scatter. data.dat carries rateCmd*/rateAch* if the run
+# captured PidInternals (elite reeval); use those for direct rate tracking.
+
+#
 # Row 1: cmd(t) vs gyro-rate(t)                     (instantaneous, lag=0)
 # Row 2: cmd(t) vs gyro-rate(t + best_lag_per_axis) (per-axis best lag, gyro)
 # Row 3: cmd(t) vs quat-rate(t + best_lag_per_axis) (per-axis best lag, quat-d/dt)

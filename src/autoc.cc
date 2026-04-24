@@ -646,6 +646,13 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
              << "        X        Y        Z"
              << "    vxBdy    vyBdy    vzBdy"
              << "    dhome     dist   along   rabVl   stpPt    mult  rampSc"
+             // 026 ACRO PID per-axis internals (zero when PidInternals absent).
+             // rateCmd/rateAch in rad/s; pid* terms post-scale (sum ≈ pre-clamp
+             // surface output); pidInt = integrator state (rad);
+             // pidSat bitmask (bit0=pitch, bit1=roll).
+             << " rateCmdP rateCmdQ rateAchP rateAchQ"
+             << " pidFF_P pidFF_Q pidP_P pidP_Q pidI_P pidI_Q"
+             << " pidIntP pidIntQ pidSat"
              << "\n";
         printHeader = false;
       }
@@ -653,6 +660,8 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       const NNInputs& nnIn = stepState.getNNInputs();
       const float* in = reinterpret_cast<const float*>(&nnIn);
       const float* out = stepState.getNNOutputs();
+
+      const PidInternals& pidRow = stepState.getPidInternals();
 
       char outbuf[2560];
       sprintf(outbuf,
@@ -669,6 +678,9 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         " % 8.2f % 8.2f % 8.2f"
         " % 8.2f % 8.2f % 8.2f"
         " % 8.2f % 8.3f % 7.2f % 7.1f % 7.4f % 6.2f % 7.3f"
+        " % 7.3f % 7.3f % 7.3f % 7.3f"
+        " % 7.4f % 7.4f % 7.4f % 7.4f % 7.4f % 7.4f"
+        " % 7.4f % 7.4f %1u"
         "\n",
         static_cast<unsigned long long>(scenarioSequence),
         static_cast<unsigned long long>(bakeoffSequence),
@@ -695,7 +707,10 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         rabbitVel,
         static_cast<gp_scalar>(stepPoints),
         static_cast<gp_scalar>(mult),
-        static_cast<gp_scalar>(computeVariationScale())
+        static_cast<gp_scalar>(computeVariationScale()),
+        pidRow.rateCmdP, pidRow.rateCmdQ, pidRow.rateAchP, pidRow.rateAchQ,
+        pidRow.ffP, pidRow.ffQ, pidRow.pP, pidRow.pQ, pidRow.iP, pidRow.iQ,
+        pidRow.intP, pidRow.intQ, static_cast<unsigned>(pidRow.sat)
       );
       fout << outbuf;
     }

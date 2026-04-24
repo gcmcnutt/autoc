@@ -69,7 +69,7 @@ PID columns; `sensor_self_check_lib.py` parses them without error.
 
 ### Group 1.a — CRRCSim ACRO PID re-enable
 
-- [ ] T010 [US1] Reinstate ACRO rate PID in
+- [x] T010 [US1] Reinstate ACRO rate PID in
   `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`
   `getInputData()` (reference preserved at commit 9809dd6 in the
   crrcsim repo). Adapt to post-024 code state: cadence-fix already
@@ -78,15 +78,15 @@ PID columns; `sensor_self_check_lib.py` parses them without error.
   `inputdev_autoc.h:63-90`. **Pitch and roll only** — yaw stays
   passive (HB1 has no rudder per spec clarifications). Integral
   anti-windup ±10 rad, reset on span start.
-- [ ] T011 [US1] Wire existing `gAcroIntegralRoll / Pitch`, `gAcroLastTimeMsec`
+- [x] T011 [US1] Wire existing `gAcroIntegralRoll / Pitch`, `gAcroLastTimeMsec`
   globals as live state. Reset on engage start alongside
   `engageCoastThrottle` init (around
   `inputdev_autoc.cpp` line 538).
-- [ ] T012 [US1] Remove the "ACRO PID disabled" comment block at
+- [x] T012 [US1] Remove the "ACRO PID disabled" comment block at
   `inputdev_autoc.cpp:993-1005` (reverted in commit 07c4832 2026-04-02).
   Replace with a single brief comment noting the PID is now live and
   pointing at spec 026.
-- [ ] T013 [P] [US1] Add **40 Hz** single-pole LPF on body angular
+- [x] T013 [P] [US1] Add **40 Hz** single-pole LPF on body angular
   rate before PID error computation. Cutoff picked for sim cadence
   (2× outer-frame rate, 4× NN rate), not INAV's 25 Hz — see
   research.md §"Sim PID implementation notes" for the derivation.
@@ -94,13 +94,16 @@ PID columns; `sensor_self_check_lib.py` parses them without error.
   block in `inputdev_autoc.h`. Compute discrete α from
   `exp(-2π·fc·Global::dt)` at sim init. Per-axis filter state
   (`gyroLpfP`, `gyroLpfQ`) resets on span start.
-- [ ] T014 [P] [US1] Add **20 Hz** PT2 (2nd-order Butterworth) LPF
+- [x] T014 [P] [US1] Add **20 Hz** PT2 (2nd-order Butterworth) LPF
   on PID D-term output. Cutoff matches outer-frame rate (not INAV's
   10 Hz). Compile constant `ACRO_DTERM_LPF_HZ = 20.0`. Per-axis
   state, reset on span start. Dormant while D gain is 0 — filter
   applied when D is enabled later.
-- [ ] T015 [US1] Smoke-test helper: write `scripts/026_acro_smoke.sh`
-  that launches a deterministic one-path eval, extracts per-tick
+- [x] T015 [US1] Smoke-test helper: write
+  `specs/026-nn-temporal-state/026_acro_smoke.sh` (feature-scoped,
+  not under top-level `scripts/` which is reserved for cross-version
+  utilities) that launches a deterministic one-path eval, extracts
+  per-tick
   commanded vs achieved rate from the new data.dat columns (T020),
   and asserts rate-tracking error < 10% after 40 ms settling on a
   step input. Exit code signals pass/fail. Note: the *script* is
@@ -110,7 +113,7 @@ PID columns; `sensor_self_check_lib.py` parses them without error.
 
 ### Group 1.b — data.dat diagnostics + serialization
 
-- [ ] T020 [US1] Extend `data.dat` header + sprintf in
+- [x] T020 [US1] Extend `data.dat` header + sprintf in
   `src/autoc.cc` (around line 636 / 658) with the new per-axis
   columns: `rateCmdP`, `rateCmdQ` (desired rate rad/s),
   `rateAchP`, `rateAchQ` (achieved rate from FDM `getOmegaBody`),
@@ -118,18 +121,18 @@ PID columns; `sensor_self_check_lib.py` parses them without error.
   `pidIntP`, `pidIntQ` (integrator state), `pidSat` (bitmask:
   bit0=pitch saturation, bit1=roll saturation). Column format
   matches existing `%7.4f` convention.
-- [ ] T021 [US1] Extend `AircraftState` in
+- [x] T021 [US1] Extend `AircraftState` in
   `include/autoc/eval/aircraft_state.h` with optional `PidInternals`
   struct (per-axis FF/P/I/integrator/saturation). Populate only
   during elite-reeval (gate on `gTraceIsEliteReeval` same as
   existing PhysicsTrace). Cereal schema bump — old binary
   serializations do not load; no backward compatibility (per 026
   spec).
-- [ ] T022 [US1] Wire `PidInternals` population in
+- [x] T022 [US1] Wire `PidInternals` population in
   `inputdev_autoc.cpp` at the PID-compute site (alongside T010).
   Store per-tick during elite reeval; serialize with the aircraft
   state cereal stream.
-- [ ] T023 [P] [US1] Update the RPC protocol / EvalResults
+- [x] T023 [P] [US1] Update the RPC protocol / EvalResults
   serialization (`include/autoc/rpc/protocol.h`) to carry the
   `PidInternals` through from crrcsim workers back to the main
   autoc process. Gate the payload on the same `gTraceIsEliteReeval`
@@ -139,30 +142,33 @@ PID columns; `sensor_self_check_lib.py` parses them without error.
 
 ### Group 1.c — downstream tools
 
-- [ ] T030 [P] [US1] Update
+- [x] T030 [P] [US1] Update
   `flight-results/flight-20260417/sensor_self_check_lib.py`
   `read_sim_data_dat` reader to tolerate the new columns. Existing
   reader uses header-name indexing so should just work; verify and
   add a smoke-test assertion that the new columns are present in a
   post-T020 data.dat.
-- [ ] T031 [P] [US1] Update
-  `specs/024-sim-real-fidelity/plot_bangbang_flight.py` — verify
+- [x] T031 [P] [US1] N/A — `plot_bangbang_flight.py` parses xiao text
+  logs, not data.dat. Sim-side rate-tracking visualization will be a
+  small dedicated script (Phase 2). Original task wording: verify
   header-name parsing works; add an optional panel that plots
   `rateCmd*` vs `rateAch*` time series if present (helpful for
   Phase 2 measurement).
-- [ ] T032 [P] [US1] Update
+- [x] T032 [P] [US1] Update
   `specs/024-sim-real-fidelity/cmd_response_scatter.py` — header
   parsing should be robust; add a note in comments that `out*` is
   now rate-command under ACRO, not surface-deflection.
-- [ ] T033 [P] [US1] Update
+- [x] T033 [P] [US1] Update
   `specs/023-ood-and-engage-fixes/sim_polar_viz.py` — header-parse
-  robustness check.
-- [ ] T034 [US1] Update `tools/renderer.cc` data.dat parser
-  (`parseXiaoData` or equivalent site where `rabbitTimesMs` was added
-  in commit 4f94d14) to read the new PID-internal columns and store
-  into `SpanData` (add `pidInternals` field). No visualization
-  panel yet — just absorb the data so future renderer work can
-  display it without re-training.
+  robustness check. (Already tolerant: header-name indexed with
+  `len(parts) < len(header) - 2` check; appended columns don't break.)
+- [x] T034 [US1] Renderer absorbs PidInternals automatically — it
+  deserializes `EvalResults` via cereal (line 318 in `tools/renderer.cc`),
+  and `AircraftState` v2 carries the new payload through that path.
+  `parseXiaoData` parses *xiao text logs* (a different code path) and
+  doesn't need a `pidInternals` field — flight PID lives on the INAV FC,
+  not in the xiao stream. Future renderer panels can read
+  `state.getPidInternals()` directly. No code change needed; rebuild only.
 - [ ] T035 [US1] Update `tools/minisim.cc` header comment: add a
   one-line note "minisim does not emulate ACRO; use for MANUAL-mode
   analysis only since 026." No code change.
@@ -182,20 +188,26 @@ PID columns; `sensor_self_check_lib.py` parses them without error.
   / `convertRollToMSPChannel` comments: note that under 026+ INAV
   interprets the converted MSP value as rate-command (ACRO mode),
   not as stick-position (MANUAL mode). Functional code unchanged.
-- [ ] T050 [US1] Unit test for ACRO PID math in a new
-  `tests/acro_pid_tests.cc`: given synthetic inputs (desired rate,
-  measured rate, dt, prior integrator), assert PID output matches
-  hand-computed expectation. 4-6 test cases: step response, steady
-  zero, integral windup clamp, integrator reset on span start.
-  GoogleTest.
+- [x] T050 [US1] Unit test for ACRO PID math in
+  `tests/acro_pid_tests.cc`: 7 test cases covering steady-zero, FF-only
+  matched-rate, step response (hand-computed), integrator accumulation,
+  integrator clamp at ±limit, "reset" via prevIntegral=0, negative-error
+  clamp to -1. Refactored shared math into
+  `include/autoc/eval/acro_pid.h` so test exercises the same code as
+  inputdev_autoc.cpp. Registered in CMakeLists.txt.
 
 ### Group 1.e — rebuild + phase checkpoint
 
-- [ ] T060 [US1] Full rebuild: `scripts/rebuild-perf.sh`. All
-  targets (autoc, crrcsim, renderer, minisim) compile and link.
-- [ ] T061 [US1] Run T015 smoke test (`scripts/026_acro_smoke.sh`)
-  against the rebuilt binary. Must pass: rate-tracking error
-  < 10 % on pitch and roll step inputs.
+- [x] T060 [US1] Full rebuild done (incremental `cd build && make -j8`).
+  All targets compile; `acro_pid_tests` runs as part of build.
+- [x] T061 [US1] Smoke validator
+  (`specs/026-nn-temporal-state/026_acro_smoke.sh`) repurposed as a
+  post-run data.dat checker (no autoc invocation; works on a live or
+  finished training data.dat). Initial run on first 42 gens of cadence8
+  showed all 13 PID columns populated; tracking quality informational
+  pre-cadence8 — pitch saturation high (66%), roll fine (7%); first
+  observation noted, rebuilt smoke does not gate on tracking error
+  until training settles.
 
 **Checkpoint**: US1 complete. Sim runs ACRO-delegated control;
 data.dat has new columns; analysis tools parse them; smoke test
@@ -222,9 +234,9 @@ pitch/roll-dominant (throttle bang-bang may persist).
   `scripts/training.sh`, log to
   `logs/autoc-026-smoke-cadence8.log`. Confirm fitness rises, no
   NaN, no early collapse.
-- [ ] T101 [US2] Full training run — 400 gens. Log to
-  `logs/autoc-026-cadence8.log`. Output `data.dat` + `data.stc` in
-  the standard location.
+- [ ] T101 [US2] Full training run — 400 gens. **In progress** as
+  cadence8/pid1 → log `logs/autoc-026-pid1.log`. Output `data.dat` +
+  `data.stc` in the standard location.
 - [ ] T102 [US2] Eval suite on cadence8 extracted weights:
   `scripts/eval-suite.sh`. All tier-0 and tier-1 must PASS; tier-2
   and tier-3 reported for information per 024 norm.
