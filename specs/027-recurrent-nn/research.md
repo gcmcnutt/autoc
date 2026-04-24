@@ -116,17 +116,20 @@ NN can't *learn* what to remember, only see a fixed window.
 
 ### A3 — derivative/history of **inputs** (not outputs)
 
-Feed rate-of-change of target direction, distance, etc. as extra
-inputs. Not really "memory of self" — gives trend visibility but
-NN still has no view of what *it* was just doing.
+**Already implemented.** Current NNInputs
+([include/autoc/nn/nn_inputs.h](../../include/autoc/nn/nn_inputs.h))
+carries:
+- 6-sample target-direction history: `[t−0.9, t−0.3, t−0.1, t+0, t+0.1, t+0.5]`
+  for body-frame target_x/y/z and distance
+- `closing_rate` — explicit derivative of distance
+- `gyro_p/q/r` — explicit derivatives of attitude
 
-Costs similar to A2 per extra input.
-
-**The user's read** (from conversation):
-> a3 is about target not as much about our control history
-
-Correct. A3 helps anticipation; doesn't attack self-jitter. De-prioritized
-for this spec's focus on smoothness.
+The NN *already* sees trend information about the world. Bang-bang
+emerges despite it. That localizes the missing piece: the NN sees
+what the **world** is doing, not what **it** is doing. Self-memory
+— not more world-memory — is the gap. This removes A3 from the
+027 option set entirely; it's solved-state-of-the-art for our
+constraints already.
 
 ### D — simple recurrent layer
 
@@ -151,66 +154,69 @@ Serialization schema change. xiao forward pass updated to carry
 state across MSP frames. Weight-count growth slows genetic search
 proportionally.
 
-### D-gated — GRU-lite
+### D-gated (GRU-lite) and D-esn (echo state)
 
-Same structure as D but with update/reset gates. ~3× the weight
-count of simple RNN for the same hidden size. Standard choice in
-sequence-learning literature when gradient-based training; less
-obvious for genetic evolution since the gates add evolutionary
-search dimensions that may not pay off without gradient signal.
+Held in reserve, not primary options.
 
-Precedent: [GRU-NEAT for navigation (arxiv 1904.06239)](https://arxiv.org/pdf/1904.06239)
-shows it works but with carefully-designed tasks.
+- **GRU-lite**: ~3× weight count of simple RNN; gate dimensions
+  are hard for genetic evolution to navigate without gradient
+  signal. Literature precedent (GRU-NEAT,
+  [arxiv 1904.06239](https://arxiv.org/pdf/1904.06239)) works but
+  on carefully designed tasks.
+- **Echo state network** (fixed-random reservoir, evolve only
+  readout): theoretically compatible with genetic search, but the
+  reservoir itself is a hyperparameter tuning surface (sparsity,
+  spectral radius, size). The user's read: "smacks of fine tuning."
+  Project bias is against fine-tuning-heavy approaches when a
+  direct-to-evolve simple form exists.
 
-| Recurrent layer | Weight cost | Total |
-|---|---|---|
-| 16-wide GRU-lite (update + reset) | ~768 | ~2435 (+46 %) |
-| 32-wide GRU-lite | ~3072 | ~4739 (+184 %) |
-
-Probably **overkill** for our 33→3 mapping at current horizons.
-Holding in reserve.
-
-### D-esn — echo state network
-
-Random-fixed recurrent reservoir; only output weights are evolved.
-The reservoir is the "memory"; evolution learns to read it.
-
-Pros: drastically reduces what evolution has to search over (~only
-output weights). Documented for fixed-wing UAV control
-([IEEE 7525104 ESN UAV](https://ieeexplore.ieee.org/document/7525104/)).
-Potentially the **sweet spot** for genetic search + recurrent state.
-
-Cons: reservoir design is its own art; fixed-weight init adds a
-hyperparameter (sparsity, spectral radius) we'd have to tune.
-Xiao-side weight export gets a little messier.
-
-Worth keeping in the candidate set, especially if D's weight-count
-cost bites training time harder than expected.
+D-simple is the primary architectural bet.
 
 ## 4. Incentive options, ranked by cost
 
-### C1 — action-rate penalty in fitness
+### C2 — extend lexicase with a smoothness test case (primary)
+
+Lexicase selection ([src/eval/selection.cc:30](../../src/eval/selection.cc))
+is already the selection method. Epsilon-lexicase works by running
+candidates through a sequence of test cases in random order; at
+each stage individuals within ε of the best survive. Currently the
+test cases are per-scenario tracking scores.
+
+Extending lexicase with a smoothness test case (e.g.,
+`sum_over_ticks(|ΔoutPt|+|ΔoutRl|+|ΔoutTh|)` computed per
+individual per scenario) gives the selection mechanism direct
+access to the smoothness axis without α tuning — individuals that
+track well in most scenarios but bang-bang get filtered in the
+smoothness round, and vice versa.
+
+Pros:
+- No α hyperparameter sweep.
+- Same selection primitive, just more test cases in the pool.
+- Prior art in the codebase: we've made "a few stabs" at
+  smoothness-flavored selection variants
+  (see commit d6a970c era work).
+
+Cons: harder to reason about the exact pressure than C1. Needs a
+defined "smoothness score per scenario" that's computed alongside
+tracking score — small but non-trivial plumbing in
+`FitnessComputer` and `ScenarioScore`.
+
+**Primary 027 incentive option.**
+
+### C1 — action-rate penalty in fitness (held in reserve)
 
 Subtract `α · (|ΔoutPt|+|ΔoutRl|+|ΔoutTh|)` per tick from the
 step score in `FitnessComputer::computeStepScore`. One line. α is
-a hyperparameter; needs light sweep (start 0.05, range 0.01–0.2 of
-peak step score).
+a hyperparameter; needs light sweep.
 
-Cons: open-loop (pre-026 experience) "tends to B" — mushes. But
-**pre-026 this was tried without memory**. With A2 or D providing
-memory, the NN can potentially learn to use smoothness selectively
-rather than uniformly blur. This is the key hypothesis for the
-bottom-right cell.
+Prior experience: "c1, c2 yes but open loop this tends to look
+like B [rate-limit mush]." That's without memory. With memory
+(D-simple) the NN can in principle use smoothness selectively
+rather than uniformly blur — but C2 is the cleaner mechanism to
+test that hypothesis given our existing lexicase plumbing.
 
-### C2 — multi-objective / Pareto selection
-
-Lexicase or Pareto with `(tracking, smoothness)` objectives. More
-principled than C1 (no α tuning), at the cost of a selection-code
-change.
-
-Current code uses `lexicase` (see `src/nn/selection.cc`). Adding
-Pareto is moderate effort; multiple precedents in evolutionary
-literature.
+Held as a fallback if C2-via-lexicase plumbing proves costly or
+ambiguous in signal.
 
 ### C3 — hard slew-rate limiter in consumer (== B)
 
@@ -234,60 +240,83 @@ as a primary 027 option.
 
 ## 6. Proposed experimental test matrix
 
-Cheapest-first, escalating along whichever axis moves the needle:
+Reordered by project bias (per conversation 2026-04-24): D-simple +
+C2-lexicase is the primary bet; A2-alone and A2+C2 are cheap
+falsification upstream of it; D-ESN and GRU held in reserve.
 
 | # | Config | Axis | Total weights | Est. gen budget | Decision rule |
 |---|---|---|---|---|---|
-| 0 | 027 baseline (nullified PID, cadence7-parity) | none | 1667 | ~50 (smoke) | sanity: same fitness & bang-bang as cadence7 |
-| 1 | A2 (prev-output, N=3) | A only | 1955 | 200 | does |out| or dCtrl drop at matched gen? |
-| 2 | A2 + C1 (light α) | A + I | 1955 | 200 | bottom-right cell, light-touch |
-| 3 | D 16-wide simple RNN | A only (stronger) | 1923 | 400 | does memory alone do it? |
-| 4 | D 16-wide simple RNN + C1 | A + I | 1923 | 400 | primary hypothesis |
-| 5 | D-esn reservoir | A only (cheap) | ~1750 | 300 | faster convergence? |
+| 0 | 027 baseline (nullified PID) | none | 1667 | ~50 (smoke) | sanity: cadence7-parity fitness & bang-bang |
+| 1 | A2 (prev-output, N=3) | A only | 1955 | ~200 | cheap falsification: does memory alone help at all? |
+| 2 | A2 + C2-lexicase-smoothness | A + I | 1955 | ~200 | does lightweight memory + selection pressure suffice? |
+| 3 | **D 16-wide simple RNN + C2** | **A + I** | **1923** | ~400 | **primary bet** — real memory, principled incentive |
+| 4 | D 16-wide simple RNN alone | A only | 1923 | ~400 | diagnostic: is the memory doing the work or the incentive? |
 
-"Est. gen budget" assumes training time scales linearly with weight
-count versus cadence7's 400-gen baseline. Will refine when we have
-observed per-gen times on the 027 binary.
+Est. gen budget scales roughly with weight count versus cadence7's
+1667 / 400-gen baseline. Will refine with observed per-gen times on
+the 027 binary.
 
 **Decision logic**:
 
-- Step 0 establishes that nullifying the PID recovered cadence7
-  parity (sanity only).
-- Step 1 (A2 alone) is the cheap falsification of "memory alone
-  suffices." If it works: skip to step 5 for efficiency or stop.
-- Step 2 gives us the first bottom-right data point with minimal
-  infrastructure cost.
-- Steps 3-4 commit to the real architecture change. Step 4 is the
-  primary bet.
-- Step 5 explores if D-simple is weight-budget-painful.
+- **Step 0** is the one definite starting point — confirms PID
+  nullification recovered cadence7 parity. No surprises expected;
+  if fitness or aggressiveness differs from cadence7 meaningfully,
+  something's wrong with the passthrough.
+- **Step 1** (A2 alone, cheapest axis-A test) tells us whether
+  giving the NN its own outputs as inputs produces *any* movement
+  off rails. Low budget because we expect it to fail (literature
+  bias: LSTM-alone amplified variability; less powerful A2 likely
+  worse). Result informs order after step 2.
+- **Step 2** is the first bottom-right cell. If this works, we
+  save the recurrent-rewrite cost entirely.
+- **Step 3** is the primary experiment. Architecture change AND
+  incentive change together — the configuration literature most
+  strongly endorses.
+- **Step 4** is diagnostic if 3 works — if memory alone (without
+  C2) *also* gets off rails, it tells us the incentive wasn't
+  load-bearing; if it plateaus at bang-bang, we confirm both axes
+  were necessary. Useful for deciding where future compute goes.
+
+**Reserved** (not in initial matrix): GRU-lite, D-ESN, C1
+rate-penalty fallback. Revisit if 1-4 don't land.
 
 ## 7. Open questions for spec refinement
 
-These should drive the next `/speckit.clarify` pass before 027
-moves to plan/task:
+Project biases have narrowed several of the original questions.
+Remaining ones for the next `/speckit.clarify` pass:
 
-1. **Scope of 027 — how many cells?** Commit to #0-2 as MVP and
-   treat #3-5 as escalation? Or go straight to #3-4 on the premise
-   that A2 is a weaker test?
-2. **N for A2** — pick 3 or 5? Weight-cost difference is
-   significant for evolution budget.
-3. **α tuning for C1** — how much retraining per α? Single α or
-   sweep?
-4. **D architecture — simple RNN vs ESN first?** The ESN angle
-   might be the right bet for genetic evolution specifically; not
-   well-known outside niche literature.
-5. **Xiao implications** — recurrent forward pass isn't free on
-   the flight FC. Do we commit to generating a per-tick state
-   variable in `nn_program_generated.cpp`? When?
-6. **Flight-gate criteria** — at what 027 result do we actually
-   flash cadence11 (or whatever) and fly? What does "passes the
-   bench" look like now that rate-tracking isn't a valid proxy
-   (PID nullified)?
-7. **Reset semantics** — hidden state reset on span start is
-   obvious; but what about reset on NN-cadence tick-boundaries
-   (since NN runs at 10Hz, outer frame at 20Hz)? Does the NN's
-   hidden state carry across outer-frame ticks or only across NN
-   evaluations?
+1. **N for A2** — 3 or 5 past outputs? Cheap falsification
+   lands at N=3 (lowest cost that still gives sequence
+   information); N=5 if we want a stronger test of the weaker
+   architecture. Bias: start at 3.
+2. **C2 smoothness score definition** — sum of |Δout|? RMS? Per-
+   axis or combined? How aggregated across ticks to a single
+   per-scenario score for lexicase? Light design work.
+3. **D-simple hidden-size decision** — 16-wide recurrent
+   (make layer2 recurrent, +256 weights, +15%) versus 32-wide
+   (layer1 recurrent, +1024, +61%)? Bias: start at 16 for budget.
+4. **Hidden-state reset semantics** — clear reset on span start
+   is obvious. What about NN tick vs outer-frame tick (10Hz vs
+   20Hz cadence)? Does the hidden state advance each outer frame
+   even when NN isn't evaluated, or only on NN ticks? Inclined
+   toward "only on NN ticks" — keeps state semantics close to
+   conventional recurrent policy.
+5. **Xiao implications** — recurrent forward pass needs per-tick
+   state in `nn_program_generated.cpp`. Small state array + an
+   extra mat-vec per tick; not free but tractable. When do we
+   do the xiao-side work — after step 3 succeeds, or in parallel?
+6. **Flight-gate criteria** — rate-tracking is no longer a valid
+   proxy (PID nullified). What replaces it? Likely: aggressiveness
+   signature off cadence7 plateau + fitness at or above cadence7
+   at same gen count + tier-0/1 eval pass.
+
+**Decided via research + history biases** (no clarify needed):
+- A3 skipped — already implemented via NNInputs trend samples.
+- GRU-lite skipped — weight cost disproportionate for our scale.
+- D-ESN skipped — project bias against hyperparameter tuning
+  burden.
+- C1 skipped as primary — C2-via-lexicase is cleaner given the
+  existing selection plumbing.
 
 ## 8. What this research is NOT
 
