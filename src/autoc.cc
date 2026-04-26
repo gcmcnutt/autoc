@@ -1169,22 +1169,25 @@ static void runNNEvolution(
       }
     }
 
-    // Streak + smoothness diagnostics for best individual
+    // Streak + stability + energy diagnostics for best individual.
+    // stability and energy are SUMS of per-scenario scores (additive across
+    // the 245-scenario landscape, same convention as genome.fitness for
+    // tracking). All three negative; lower = better.
     double avgMaxStreak = 0.0;
     double pctInStreak = 0.0;
-    double avgSmoothness = 0.0;
+    double totalStability = 0.0;
+    double totalEnergy = 0.0;
     if (!bestScores.empty()) {
       double streakSum = 0.0, totalStrkSteps = 0.0, totalSteps = 0.0;
-      double smoothSum = 0.0;
       for (const auto& sc : bestScores) {
         streakSum += sc.maxStreak;
         totalStrkSteps += sc.totalStreakSteps;
         totalSteps += sc.steps_completed;
-        smoothSum += sc.smoothness_score;
+        totalStability += sc.stability_score;
+        totalEnergy += sc.energy_score;
       }
       avgMaxStreak = streakSum / bestScores.size();
       pctInStreak = (totalSteps > 0) ? 100.0 * totalStrkSteps / totalSteps : 0.0;
-      avgSmoothness = smoothSum / bestScores.size();
     }
 
     // Log to statistics file
@@ -1195,7 +1198,8 @@ static void runNNEvolution(
          << " bestSigma=" << pop.individuals[bestIdx].mutation_sigma
          << " avgMaxStreak=" << std::setprecision(1) << avgMaxStreak
          << " pctInStreak=" << std::setprecision(1) << pctInStreak
-         << " smoothness=" << std::setprecision(4) << avgSmoothness
+         << " stability=" << std::setprecision(2) << totalStability
+         << " energy=" << std::setprecision(2) << totalEnergy
          << std::endl;
     bout.flush();
 

@@ -228,7 +228,7 @@ D-simple + C2 lexicase extension. No hardware touched.
 
 ---
 
-## Phase 4: User Story 2 — Primary training run cadence9 (Priority: P1, depends on US1)
+## Phase 4: User Story 2 — Primary training run rnn1 (Priority: P1, depends on US1)
 
 **Goal**: Execute the full 400-gen training run of the primary bet
 (#3: D-simple + C2). Monitor during the run. Collect the data needed
@@ -239,40 +239,40 @@ log at 400 generations; fitness reaches the plateau; plot scripts
 produce the measurement PNGs without error.
 
 - [ ] T100 [US2] Launch full training:
-  `nohup ./build/autoc -c autoc.ini > logs/autoc-027-cadence9.log 2>&1 &`.
+  `nohup ./build/autoc -c autoc.ini > logs/autoc-027-rnn1.log 2>&1 &`.
   Default config parity with cadence7/pid1 (pop 3500, 400 gens,
   longSequential, all variations on).
 - [ ] T101 [P] [US2] Every ~50 gens during the run, regenerate
   fitness ramp PNG: `python3 specs/024-sim-real-fidelity/plot_fitness_ramp.py
-  --focus cadence9:logs/autoc-027-cadence9.log
+  --focus rnn1:logs/autoc-027-rnn1.log
   --compare cadence7:logs/autoc-024-cadence7.log
   --compare pid1:logs/autoc-026-pid1.log --total-gens 400
-  --out specs/027-recurrent-nn/autoc-027-cadence9-fitness.png`.
+  --out specs/027-recurrent-nn/autoc-027-rnn1-fitness.png`.
 - [ ] T102 [P] [US2] Every ~50 gens during the run, regenerate
   aggressiveness PNG:
   `python3 specs/024-sim-real-fidelity/plot_control_aggressiveness.py
-  data.dat specs/027-recurrent-nn/control_aggressiveness_cadence9.png "autoc-027-cadence9 (D-simple + C2)"`.
+  data.dat specs/027-recurrent-nn/control_aggressiveness_rnn1.png "autoc-027-rnn1 (D-simple + C2)"`.
 - [ ] T103 [US2] Early-stop check at gen 100: if dCtrl mean-of-paths
   exceeds pid1's 1.60, pause training, capture diagnostic PNGs,
   flag for plan-level decision (likely escalation to US4 without
   waiting for full 400 gens).
 
-**Checkpoint**: US2 complete. cadence9 trained to plateau OR
+**Checkpoint**: US2 complete. rnn1 trained to plateau OR
 early-stopped with clear failure mode.
 
 ---
 
 ## Phase 5: User Story 3 — Analyze + decide (Priority: P1, depends on US2)
 
-**Goal**: Apply the go/no-go gate from plan.md against cadence9's
+**Goal**: Apply the go/no-go gate from plan.md against rnn1's
 result. Record the decision and the evidence.
 
-**Independent Test**: A `cadence9_measurement.md` committed with
+**Independent Test**: A `rnn1_measurement.md` committed with
 fitness ramp + aggressiveness PNGs + explicit GO or NO-GO call with
 quantitative justification against the gate.
 
 - [ ] T200 [US3] Final fitness ramp PNG (same command as T101, final
-  log state). Capture cadence9's final fitness number.
+  log state). Capture rnn1's final fitness number.
 - [ ] T201 [US3] Final aggressiveness PNG (same command as T102,
   final data.dat state). Capture mean dCtrl + mean |out| across
   paths at plateau.
@@ -282,7 +282,7 @@ quantitative justification against the gate.
   `scripts/eval-suite.sh` if not already). Verify histogram
   spreads toward 0 vs pid1's more-bimodal state.
 - [ ] T203 [US3] Write
-  [`specs/027-recurrent-nn/cadence9_measurement.md`](./cadence9_measurement.md)
+  [`specs/027-recurrent-nn/rnn1_measurement.md`](./rnn1_measurement.md)
   with: the three PNGs, table of metrics vs plan.md gate, GO or
   NO-GO call with rationale.
   - **GO** if all three quantitative bars hit (dCtrl ≤ 0.80,
@@ -290,7 +290,7 @@ quantitative justification against the gate.
   - **NO-GO** if any misses. Document which bar missed and by
     how much.
 - [ ] T204 [US3] Update [`spec.md`](./spec.md) status header with
-  the decision. If GO → "GO — primary bet landed, see cadence9_measurement.md".
+  the decision. If GO → "GO — primary bet landed, see rnn1_measurement.md".
   If NO-GO → "NO-GO #3 — escalating per US4".
 
 **Checkpoint**: US3 complete. Decision recorded with evidence.
@@ -338,7 +338,7 @@ analysis of why the 027 approaches can't land.
 
 ## Phase 7: User Story 5 — Feature close (Priority: P1, depends on US3 GO or US4 final)
 
-**Goal**: Close 027 either as a go-with-cadence9 (or cadenceN from
+**Goal**: Close 027 either as a go-with-rnn1 (or cadenceN from
 escalation) or as a no-go-with-learnings. Queue follow-up work.
 
 - [ ] T400 [US5] Summary commit on `027-recurrent-nn` branch
@@ -382,7 +382,7 @@ US1: Sim infra (MVP)
   Group 1.d Sim integration       (T050-T052)    [after 1.a]
   Group 1.e Build + verify        (T060-T061)    [after all above]
    ↓
-US2: Primary training cadence9   (T100-T103)
+US2: Primary training rnn1   (T100-T103)
    ↓
 US3: Analyze + decide             (T200-T204)
    ↓

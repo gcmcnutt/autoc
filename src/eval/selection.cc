@@ -29,18 +29,19 @@ const char* selectionModeToString(SelectionMode mode) {
 // Epsilon-lexicase selection.
 //
 // 022: single dimension per scenario = tracking score (lower is better).
-// 027 C2: added a second dimension per scenario = smoothness score. The
-// pool doubles — for each scenario both test cases are available; the
-// shuffle mixes them so a jittery-but-well-tracking individual may
-// survive the tracking round but be filtered in the smoothness round
-// (or vice versa). Smoothness epsilon is calibrated to its own scale
-// (0.05 relative, floor 0.02 absolute) so it filters tighter than
-// tracking's 0.5-absolute floor.
+// 027 C2 v4: three dimensions per scenario — tracking, stability, energy.
+// All three are per-tick-additive across the scenario with comparable
+// magnitudes (tracking: -100s to -10000s; stability: 0 to -2*N_ticks;
+// energy: 0 to -N_ticks). Same 0.5 absolute epsilon floor applies.
+// Pool size = 3 × num_scenarios. Random shuffle mixes all three
+// dimensions, so an individual must be balanced across all three to
+// survive many rounds — pure tracking-saturated, pure-do-nothing, or
+// pinned-deflection strategies each fail one of the dimensions.
 //
 // Score extractor: member pointer lets us pick which ScenarioScore field
 // each test case scores against.
 namespace {
-    using ScoreField = double ScenarioScore::*;
+    using ScoreField = gp_fitness ScenarioScore::*;
 }
 
 int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
@@ -52,18 +53,20 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
     }
 
     // Build the combined test-case pool: (scenario_idx, field, abs_epsilon_floor).
-    // tracking: floor 0.5 absolute (legacy); smoothness: floor 0.02 absolute
-    // since smoothness scores are O(1) in magnitude for healthy training.
+    // All three physics-grounded dimensions use the same 0.5 absolute floor.
     struct TestCase {
         int scenario;
         ScoreField field;
         double epsilon_floor;
     };
     std::vector<TestCase> pool;
-    pool.reserve(num_scenarios * 2);
+    pool.reserve(num_scenarios);
     for (int s = 0; s < num_scenarios; s++) {
-        pool.push_back({s, &ScenarioScore::score,            0.5});
-        pool.push_back({s, &ScenarioScore::smoothness_score, 0.02});
+        pool.push_back({s, &ScenarioScore::score,           0.5});
+        // CADENCE7-REDUX (diagnostic): tracking-only pool to reproduce cadence7
+        // exactly. Restore the two below for any 027-style multi-objective run.
+        // pool.push_back({s, &ScenarioScore::stability_score, 0.5});
+        // pool.push_back({s, &ScenarioScore::energy_score,    0.5});
     }
 
     // Start with all candidates

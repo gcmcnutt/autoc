@@ -105,32 +105,62 @@ TEST(Selection022, ModeToString) {
 }
 
 // ============================================================
-// T043 (spec 027 C2): smoothness test cases in lexicase pool
+// T043 (spec 027 C2 v3): energy test cases in lexicase pool
+// energy_score = Σ (out_th - 1) / 2 per tick across scenario;
+// values are in [-N, 0] with lower (more negative) = less energy used.
 // ============================================================
 
-// Helper: build scores with tracking + smoothness per individual/scenario.
-static std::vector<std::vector<ScenarioScore>> makeScoresWithSmoothness(
+// Helper: build scores with tracking + energy (and optional stability)
+// per individual/scenario. Existing tests keep stability=0 (neutral).
+static std::vector<std::vector<ScenarioScore>> makeScoresWithEnergy(
     int pop_size, int num_scenarios,
     const std::vector<std::vector<double>>& tracking,
-    const std::vector<std::vector<double>>& smoothness
+    const std::vector<std::vector<double>>& energy
 ) {
     std::vector<std::vector<ScenarioScore>> all(pop_size);
     for (int i = 0; i < pop_size; i++) {
         all[i].resize(num_scenarios);
         for (int s = 0; s < num_scenarios; s++) {
             all[i][s].score = tracking[i][s];
-            all[i][s].smoothness_score = smoothness[i][s];
+            all[i][s].energy_score = energy[i][s];
+            // stability_score defaults to 0 — equal across individuals,
+            // so the stability lexicase round will be a pass-through.
         }
     }
     return all;
 }
 
-// Equal tracking, different smoothness: smoother must win in aggregate.
-TEST(Selection027, SmoothnessBreaksTrackingTie) {
-    // Two individuals, same tracking on 2 scenarios; individual 0 is smooth.
-    auto scores = makeScoresWithSmoothness(2, 2,
-        /*tracking*/   {{-50.0, -50.0}, {-50.0, -50.0}},
-        /*smoothness*/ {{ 0.10,  0.10}, { 1.50,  1.50}}
+// Helper: build scores with all three dimensions per individual/scenario.
+static std::vector<std::vector<ScenarioScore>> makeScoresThreeDim(
+    int pop_size, int num_scenarios,
+    const std::vector<std::vector<double>>& tracking,
+    const std::vector<std::vector<double>>& stability,
+    const std::vector<std::vector<double>>& energy
+) {
+    std::vector<std::vector<ScenarioScore>> all(pop_size);
+    for (int i = 0; i < pop_size; i++) {
+        all[i].resize(num_scenarios);
+        for (int s = 0; s < num_scenarios; s++) {
+            all[i][s].score = tracking[i][s];
+            all[i][s].stability_score = stability[i][s];
+            all[i][s].energy_score = energy[i][s];
+        }
+    }
+    return all;
+}
+
+// CADENCE7-REDUX: tests below renamed DISABLED_ for the diagnostic build
+// (lexicase pool is tracking-only). Restore names to re-enable when
+// stability/energy lexicase dimensions are turned back on.
+
+// Equal tracking, different energy: lower-energy must win in aggregate.
+TEST(Selection027, DISABLED_EnergyBreaksTrackingTie) {
+    // Two individuals, same tracking on 2 scenarios; individual 0 is efficient
+    // (energy ≈ -90, almost-no-throttle); individual 1 wasteful (≈ -10, full
+    // throttle).
+    auto scores = makeScoresWithEnergy(2, 2,
+        /*tracking*/ {{-50.0, -50.0}, {-50.0, -50.0}},
+        /*energy*/   {{-90.0, -90.0}, {-10.0, -10.0}}
     );
 
     std::map<int, int> counts;
@@ -138,19 +168,19 @@ TEST(Selection027, SmoothnessBreaksTrackingTie) {
         int selected = lexicase_select(scores, 2);
         counts[selected]++;
     }
-    // The smooth individual should dominate — every smoothness round
-    // filters the jittery one out.
+    // The efficient individual should dominate — every energy round
+    // filters the wasteful one out.
     EXPECT_GT(counts[0], counts[1] * 3)
-        << "smooth=" << counts[0] << " jittery=" << counts[1];
+        << "efficient=" << counts[0] << " wasteful=" << counts[1];
 }
 
-// Tradeoff: A tracks better but jitters; B tracks worse but smooth.
+// Tradeoff: A tracks better but burns energy; B tracks worse but efficient.
 // Lexicase with shuffled test-case order should let BOTH survive across
 // many selections (each wins on a different dimension).
-TEST(Selection027, TradeoffBothSurvive) {
-    auto scores = makeScoresWithSmoothness(2, 2,
-        /*tracking*/   {{-100.0, -100.0}, { -30.0,  -30.0}},
-        /*smoothness*/ {{   1.5,    1.5}, {   0.1,    0.1}}
+TEST(Selection027, DISABLED_TradeoffBothSurvive) {
+    auto scores = makeScoresWithEnergy(2, 2,
+        /*tracking*/ {{-100.0, -100.0}, { -30.0,  -30.0}},
+        /*energy*/   {{ -10.0,  -10.0}, { -90.0,  -90.0}}
     );
 
     std::map<int, int> counts;
@@ -158,17 +188,16 @@ TEST(Selection027, TradeoffBothSurvive) {
         int selected = lexicase_select(scores, 2);
         counts[selected]++;
     }
-    // Both should get meaningful wins. Not symmetric (tracking has larger
-    // absolute scale), but each must land above a reasonable floor.
+    // Both should get meaningful wins.
     EXPECT_GT(counts[0], 200) << "A (tracks-better) wins = " << counts[0];
-    EXPECT_GT(counts[1], 200) << "B (smoother) wins = " << counts[1];
+    EXPECT_GT(counts[1], 200) << "B (efficient) wins = " << counts[1];
 }
 
-// Smoothness equal across all: tracking still decides winner.
-TEST(Selection027, EqualSmoothnessFallsThroughToTracking) {
-    auto scores = makeScoresWithSmoothness(3, 2,
-        /*tracking*/   {{-100.0, -100.0}, {-50.0, -50.0}, {-10.0, -10.0}},
-        /*smoothness*/ {{   0.5,    0.5}, {  0.5,   0.5}, {  0.5,   0.5}}
+// Energy equal across all: tracking still decides winner.
+TEST(Selection027, EqualEnergyFallsThroughToTracking) {
+    auto scores = makeScoresWithEnergy(3, 2,
+        /*tracking*/ {{-100.0, -100.0}, {-50.0, -50.0}, {-10.0, -10.0}},
+        /*energy*/   {{ -50.0,  -50.0}, {-50.0, -50.0}, {-50.0, -50.0}}
     );
 
     std::map<int, int> counts;
@@ -176,8 +205,53 @@ TEST(Selection027, EqualSmoothnessFallsThroughToTracking) {
         int selected = lexicase_select(scores, 3);
         counts[selected]++;
     }
-    // Best-tracking (individual 0) should dominate — smoothness ties pass
+    // Best-tracking (individual 0) should dominate — energy ties pass
     // all candidates through.
     EXPECT_GT(counts[0], counts[1]);
     EXPECT_GT(counts[0], counts[2]);
+}
+
+// ============================================================
+// 027 v4: stability test cases (third lexicase dimension)
+// ============================================================
+
+// Equal tracking + energy, different stability: stable surfaces win.
+TEST(Selection027v4, DISABLED_StabilityBreaksTrackingTie) {
+    // Two individuals, same tracking + same energy on 2 scenarios;
+    // individual 0 has stable (centered) surfaces, 1 has saturated.
+    auto scores = makeScoresThreeDim(2, 2,
+        /*tracking*/  {{-50.0, -50.0}, {-50.0, -50.0}},
+        /*stability*/ {{-90.0, -90.0}, {-10.0, -10.0}},   // 0 = surfaces near center
+        /*energy*/    {{-50.0, -50.0}, {-50.0, -50.0}}
+    );
+
+    std::map<int, int> counts;
+    for (int i = 0; i < 2000; i++) {
+        int selected = lexicase_select(scores, 2);
+        counts[selected]++;
+    }
+    EXPECT_GT(counts[0], counts[1] * 3)
+        << "stable=" << counts[0] << " saturated=" << counts[1];
+}
+
+// Three-way tradeoff: each individual is best on one dimension.
+// Lexicase shuffle should let all three survive.
+TEST(Selection027v4, DISABLED_ThreeWayTradeoffAllSurvive) {
+    auto scores = makeScoresThreeDim(3, 2,
+        /*tracking*/  {{-100.0, -100.0}, { -30.0,  -30.0}, { -30.0,  -30.0}},
+        /*stability*/ {{ -10.0,  -10.0}, { -90.0,  -90.0}, { -10.0,  -10.0}},
+        /*energy*/    {{ -10.0,  -10.0}, { -10.0,  -10.0}, { -90.0,  -90.0}}
+    );
+
+    std::map<int, int> counts;
+    for (int i = 0; i < 3000; i++) {
+        int selected = lexicase_select(scores, 3);
+        counts[selected]++;
+    }
+    // Each should land above a reasonable floor — not perfectly equal
+    // due to tracking having larger absolute scale, but each must win
+    // its dimension regularly.
+    EXPECT_GT(counts[0], 200) << "best-tracker wins = " << counts[0];
+    EXPECT_GT(counts[1], 200) << "best-stability wins = " << counts[1];
+    EXPECT_GT(counts[2], 200) << "best-energy wins = " << counts[2];
 }
