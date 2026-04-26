@@ -1,7 +1,28 @@
 # 027 — Recurrent / history-aware NN architectures
 
-**Status**: CLARIFIED — 5/5 open questions resolved 2026-04-24;
-ready for `/speckit.plan`.
+**Status**: CLOSED 2026-04-26 — **infrastructure landed, primary bet
+deferred to [028 — deeper-rnn](../028-deeper-rnn/spec.md)**.
+
+The build infrastructure for D-simple recurrent + C2-via-lexicase
+(stability + energy axes) is in the tree, gated off behind
+`CADENCE7-REDUX` markers in 5 files. Three full training runs of the
+primary bet (rnn1, rnn2, rnn3) all stalled below cadence7's fitness
+plateau; the diagnostic build (FF + tracking-only, "cadence7-redux")
+recovered to −33037 at gen 400 (~92 % of cadence7's −35951, within
+seed variance), ruling out infrastructure bugs and isolating the
+failure to design choices in the rnn experiments themselves. See
+[`flight-results/flight-20260426/FLIGHT_REPORT.md`](../../flight-results/flight-20260426/FLIGHT_REPORT.md).
+
+The 04-26 flight ran the cadence7-redux build (different seed than
+cadence7, lighter wind on the field). All three engage spans ran
+to path-end — first time across any 027/cadence flight. Roll
+bang-bang dropped meaningfully; framed as a **second cadence7-class
+flight, not validation of the 027 architectural change** (which was
+not in the binary).
+
+028 inherits all of: D-simple architecture, lexicase multi-axis
+plumbing, the rnn1/2/3 failure-mode analysis as required prework,
+and the open xiao-port question.
 
 **Origin**: 026 (ACRO PID delegation) closed NO-GO — downstream
 smoothing can't fix bang-bang because the NN itself has no memory.

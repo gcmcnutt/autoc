@@ -5,6 +5,42 @@ description: "Task list for 027 — Recurrent NN + lexicase smoothness"
 
 # Tasks: 027 — Recurrent NN + C2-via-lexicase-smoothness
 
+**STATUS 2026-04-26 — CLOSED**. Infrastructure landed, primary bet
+(rnn1/2/3) failed to descend below cadence7 plateau, diagnostic
+("cadence7-redux") recovered cadence7-class fitness, flown 04-26 as
+a cadence7 replicate. RNN + multi-axis lexicase work carries forward
+to **[028 — deeper-rnn](../028-deeper-rnn/spec.md)**. Task status
+below is annotated retrospectively; see
+[FLIGHT_REPORT.md](../../flight-results/flight-20260426/FLIGHT_REPORT.md)
+and [028 spec](../028-deeper-rnn/spec.md) for the next steps.
+
+Outcome summary by phase:
+- **Phase 1 (Setup)**: ✅ T001 baseline build verified.
+- **Phase 2 (Foundational)**: ✅ T010–T013 — `NN_RECURRENT[]` array
+  and weight-count math landed. **Currently `[2]=false` in the
+  diagnostic build** (cadence7-redux); restore for 028.
+- **Phase 3 (US1 sim infra)**: ✅ all of T020–T061 landed
+  (recurrent forward pass, xavier W_hh init, serialization, nn2cpp,
+  minisim/renderer compile, multi-axis ScenarioScore + lexicase
+  pool, full rebuild). C2 evolved across rnn1 (smoothness =
+  Σ\|Δout\|), rnn2 (v3 energy = Σ(out_th−1)/2), rnn3 (v3 energy
+  + v4 stability = Σ(\|out_pt\|−1)+(\|out_rl\|−1)). Lexicase
+  pushes for stability + energy currently commented out for
+  diagnostic.
+- **Phase 4 (US2 primary training rnn1)**: rnn1, rnn2, rnn3 all
+  ran 400 gens; none descended past −7000 to −12000 fitness.
+  Documented in
+  [`{rnn1,rnn2,rnn3}_evolution.png`](.).
+- **Phase 5 (US3 analyze + decide)**: implicit NO-GO on all three
+  rnn runs; formal `rnn1_measurement.md` not written. The
+  decision was instead "build a cadence7-redux diagnostic to
+  prove infrastructure is clean, then close 027 and re-scope".
+- **Phase 6 (US4 escalation ladder)**: not exercised as written;
+  superseded by the diagnostic-and-defer call.
+- **Phase 7 (US5 close)**: ✅ this commit and FLIGHT_REPORT.md
+  close 027. xiao-port plan is part of 028's scope. Backlog
+  cleanup landed in [`specs/BACKLOG.md`](../BACKLOG.md).
+
 **Input**: Design documents from `/specs/027-recurrent-nn/`
 **Prerequisites**: [spec.md](./spec.md), [plan.md](./plan.md), [research.md](./research.md)
 

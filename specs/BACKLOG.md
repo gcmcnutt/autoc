@@ -1,6 +1,76 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-04-18
+**Last Updated**: 2026-04-26
+
+---
+
+## 027 carry-forward → 028 deeper-rnn
+
+[028 spec](028-deeper-rnn/spec.md) inherits the architectural and
+incentive bets that 027 plumbed but did not validate.
+[027 findings.md](027-recurrent-nn/findings.md) is the consolidated
+record of what was built, what happened in rnn1/2/3, and the four
+not-yet-disambiguated failure modes — required reading before
+working any of the items below.
+
+Items: either "in tree, restored later" (CADENCE7-REDUX markers —
+flip to re-enable) or "investigate before retraining":
+
+### [NEXT — 028] D-simple recurrent NN
+
+- 1923-weight recurrent topology (16-wide layer 2 W_hh) plumbed in
+  `include/autoc/nn/topology.h`, `src/nn/evaluator.cc`,
+  `src/nn/population.cc`, `src/nn/serialization.cc`, `tools/nn2cpp.cc`,
+  `tools/minisim.cc`, crrcsim `inputdev_autoc.{h,cpp}`.
+- Currently disabled: `NN_RECURRENT[]` all-false in topology.h. Flip
+  layer 2 to `true` and update `static_assert` from 1667 → 1923.
+- Three rnn experiments (rnn1, rnn2, rnn3) failed to descend below
+  cadence7 plateau — failure mode not yet diagnosed.
+
+### [NEXT — 028] C2 stability lexicase axis (027 v4)
+
+- `Σ_t (|out_pt|-1)+(|out_rl|-1)` per scenario, on `ScenarioScore`.
+- Plumbed in `src/eval/fitness_decomposition.cc` and
+  `src/eval/selection.cc` (commented out behind CADENCE7-REDUX).
+- Restore: uncomment the `pool.push_back({s,
+  &ScenarioScore::stability_score, 0.5})` in selection.cc.
+
+### [NEXT — 028] C2 energy lexicase axis (027 v3)
+
+- `Σ_t (out_th-1)/2` per scenario, on `ScenarioScore`. Same plumbing
+  pattern as stability above; same restore path.
+
+### [NEXT — 028] rnn1/2/3 failure-mode disambiguation
+
+- Required prework before any 028 retraining. Four candidate
+  failure modes documented in
+  [`027/findings.md`](027-recurrent-nn/findings.md) §"Plausible
+  failure modes" — covered by one cheap experiment.
+- Cleanest first experiment: **D-alone diagnostic** (D-simple ON,
+  C2 axes OFF). Outcomes drive different 028 directions per the
+  table in [`028/spec.md`](028-deeper-rnn/spec.md).
+
+### [DEFERRED — post-028] Re-enable Selection027 multi-objective tests
+
+- 4 tests renamed `DISABLED_` in `tests/selection_tests.cc:152+`
+  for the cadence7-redux build. Restore once C2 axes are
+  uncommented in selection.cc.
+
+### [DEFERRED — post-028] Xiao-side recurrent forward pass
+
+- `nn2cpp` already emits the C code (W_hh mat-vec, hidden-state
+  array, `nn_reset()`), but `xiao/src/generated/nn_program_generated.cpp`
+  is not regenerated/built/flashed.
+- Triggered by 028's sim gate clearing — same discipline as 027.
+
+### [DEFERRED — post-028] Renderer scrubbing with hidden state
+
+- 027 plan open decision #5: when user scrubs the timeline
+  backwards, does the recurrent hidden state get recomputed from
+  span start, or persisted forward-only? Currently no
+  reconstruction; documented limitation.
+
+---
 
 ## Legend
 
@@ -199,6 +269,20 @@ Remaining 015 work:
 ---
 
 ## Embedded / Hardware
+
+### [NEXT] USB Log Download from Xiao
+- BLE log download is slow (BLE bandwidth-limited) AND unreliable in the
+  field — drops/stalls observed even when no other 2.4 GHz interference is
+  present. Pre-flight log retrieval blocks turnaround between flights.
+- Need: USB-CDC (or USB Mass Storage if simpler) path to dump xiao flash
+  log files. Xiao SAMD/nRF supports USB-CDC out of the box.
+- Implementation sketch: enumerate flight log files on flash, expose a
+  serial menu over USB (e.g., `LIST`, `DUMP <name>`, `ERASE`) — same
+  protocol surface as BLE so the host-side download tool can share most
+  code. Should not regress BLE path; both are useful (USB at the bench,
+  BLE for opportunistic extracts).
+- Hold the BLE-reliability investigation as a separate orthogonal item;
+  USB download is the practical workaround.
 
 ### [NEXT] Export RC Commands to Xiao Log
 - Log RC commands throughout entire flight for full playback visualization
