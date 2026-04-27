@@ -11,7 +11,8 @@
 #include <numeric>
 
 // ============================================================
-// Contract: NN topology is 33→32→16→3 with 1667 weights (023 direction cosines)
+// CADENCE7-REDUX (diagnostic): all-feedforward, 1667 weights.
+// Restore 1923 + recurrent[2]=true after diagnostic run completes.
 // ============================================================
 
 TEST(ContractEvaluator, TopologyConstants) {
@@ -21,11 +22,18 @@ TEST(ContractEvaluator, TopologyConstants) {
     EXPECT_EQ(NN_OUTPUT_COUNT, 3);
     EXPECT_EQ(NN_NUM_LAYERS, 4);
     EXPECT_EQ(NN_WEIGHT_COUNT, 1667);
+    EXPECT_FALSE(NN_RECURRENT[0]);
+    EXPECT_FALSE(NN_RECURRENT[1]);
+    EXPECT_FALSE(NN_RECURRENT[2]);
+    EXPECT_FALSE(NN_RECURRENT[3]);
+    EXPECT_EQ(NN_HIDDEN_STATE_COUNT, 0);
 }
 
 TEST(ContractEvaluator, WeightCountMatchesTopology) {
     std::vector<int> topology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
-    EXPECT_EQ(nn_weight_count(topology), NN_WEIGHT_COUNT);
+    std::vector<uint8_t> recurrent(NN_NUM_LAYERS);
+    for (int i = 0; i < NN_NUM_LAYERS; i++) recurrent[i] = NN_RECURRENT[i] ? 1 : 0;
+    EXPECT_EQ(nn_weight_count(topology, recurrent), NN_WEIGHT_COUNT);
 }
 
 // ============================================================
@@ -126,6 +134,8 @@ TEST(ContractEvaluator, ZeroWeightsZeroOutputs) {
 TEST(ContractEvaluator, XavierInitProducesValidGenome) {
     NNGenome genome;
     genome.topology = std::vector<int>(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+    genome.recurrent.assign(NN_NUM_LAYERS, 0);
+    for (int i = 0; i < NN_NUM_LAYERS; i++) genome.recurrent[i] = NN_RECURRENT[i] ? 1 : 0;
     nn_xavier_init(genome);
 
     EXPECT_EQ(static_cast<int>(genome.weights.size()), NN_WEIGHT_COUNT);

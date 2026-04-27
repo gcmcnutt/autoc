@@ -50,7 +50,6 @@
 
 #define FIELD_SIZE 100.0
 #define FIELD_GAP 10.0
-#define MSPRCOVERRIDE_FLAG "MSPRCOVERRIDE"
 
 // Forward declarations
 class Renderer;
@@ -76,7 +75,7 @@ extern bool inXiaoOnlyMode;
 // Forward declarations for timestamped structures (defined in renderer.cc)
 struct TimestampedVec;
 
-// Test span structure for MSPRCOVERRIDE segments
+// Test span structure for xiao autoc-engaged segments
 struct TestSpan {
   size_t startIndex;
   size_t endIndex;
@@ -104,7 +103,6 @@ public:
   void nextTest();
   void previousTest();
   void showAllFlight();
-  void extractTestSpans();
   void togglePlaybackAnimation();
   void updatePlaybackAnimation();
   void pausePlaybackAnimation();
@@ -129,7 +127,6 @@ public:
   std::vector<TestSpan> testSpans;
   int currentTestIndex = 0;
   bool showingFullFlight = false;
-  bool inDecodeMode = false;
   bool inXiaoMode = false;
   bool focusMode = false;
   int focusArenaIndex = 0;

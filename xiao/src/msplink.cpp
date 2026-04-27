@@ -3,6 +3,7 @@
 #include <embedded_pathgen_selector.h>
 #include <autoc/eval/sensor_math.h>
 #include <autoc/nn/nn_input_computation.h>
+#include <autoc/imu/inav_quat_convention.h>
 #include <nn_program.h>
 #include <mbed.h>
 #include <vector>
@@ -86,6 +87,11 @@ struct PipelineStats {
 };
 static PipelineStats pipelineStats;
 
+// Controller-loop cadence stats (struct declared in main.h).
+// Populated by controllerUpdate() per tick; reset alongside pipelineStats
+// at engage-span start; summarized in stopAutoc when the span ends.
+LoopStats loopStats;
+
 // Aircraft state tracking for position/velocity calculation
 static gp_vec3 last_valid_position(0.0f, 0.0f, 0.0f);
 static bool have_valid_position = false;
@@ -151,6 +157,16 @@ static void stopAutoc(const char *reason, bool requireServoReset)
           pipelineStats.intervalMaxUs*GP_INV_1000);
       }
     }
+    // Controller loop cadence — ERROR level if any tick overran the
+    // MSP_LOOP_INTERVAL_MSEC budget during this engage span, INFO otherwise.
+    if (loopStats.ticks > 0) {
+      LogLevel ctlLevel = (loopStats.overruns > 0) ? ERROR : INFO;
+      float avgLate = (float)loopStats.totalLateMs / (float)loopStats.ticks;
+      logPrint(ctlLevel,
+        "ctl loop: ticks=%u overruns=%u resyncs=%u maxLate=%ums avgLate=%.2fms",
+        loopStats.ticks, loopStats.overruns, loopStats.resyncs,
+        loopStats.maxLateMs, avgLate);
+    }
   }
 }
 
@@ -163,18 +179,22 @@ static gp_vec3 neuVectorToNedMeters(const int32_t vec_cm[3])
   return gp_vec3(north, east, down);
 }
 
+// INAV quaternion → aerospace q_EB (static-lookup-valid ONLY).
+// Delegates to autoc::imu::inavQuatToAerospaceEB().
+//
+// ⚠️ Result is NOT a kinematically-valid NED q_EB. Do not feed into
+// Kalman/Mahony/Madgwick filters that also integrate body rates. Valid
+// for: direction cosines, Euler extraction, body-axis-in-world rotation
+// for rendering. See docs/COORDINATE_CONVENTIONS.md
+// "INAV NEU ↔ aerospace NED reflection" and the header for the full
+// rationale and empirical derivation (flight-20260417 at-rest accel
+// verification).
+//
+// Kept as a thin wrapper (not inlined at call sites) so grep still finds
+// "neuQuaternionToNed" as the boundary.
 static gp_quat neuQuaternionToNed(const float q[4])
 {
-  // INAV sends body->earth quaternion (confirmed via bench testing).
-  // GP expects earth->body, so we take the conjugate.
-  // Bench tests show ALL vector components need sign flip.
-  gp_quat attitude(q[0], -q[1], -q[2], -q[3]);  // Full conjugate
-  if (attitude.norm() == 0.0f)
-  {
-    return gp_quat::Identity();
-  }
-  attitude.normalize();
-  return attitude;
+  return autoc::imu::inavQuatToAerospaceEB(q);
 }
 
 // Pipeline timing points (set during mspUpdateState, read during mspSetControls)
@@ -300,7 +320,7 @@ static void mspUpdateNavControl()
     const float* in = reinterpret_cast<const float*>(&aircraft_state.getNNInputs());
     const float* out = aircraft_state.getNNOutputs();
     logPrint(INFO,
-             "NN: idx=%d tX=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tY=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tZ=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] d=[%.1f,%.1f,%.1f,%.1f,%.1f,%.1f] cr=%.2f q=[%.3f,%.3f,%.3f,%.3f] as=%.1f g=[%.2f,%.2f,%.2f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d]",
+             "NN: idx=%d tX=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tY=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tZ=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] d=[%.1f,%.1f,%.1f,%.1f,%.1f,%.1f] cr=%.2f q=[%.3f,%.3f,%.3f,%.3f] as=%.1f g=[%.2f,%.2f,%.2f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d] rabbit=[%.2f,%.2f,%.2f]",
              current_path_index,
              in[0], in[1], in[2], in[3], in[4], in[5],       // target_x
              in[6], in[7], in[8], in[9], in[10], in[11],     // target_y
@@ -311,7 +331,8 @@ static void mspUpdateNavControl()
              in[29],                                           // airspeed
              in[30], in[31], in[32],                           // gyro p,q,r (rad/s)
              out[0], out[1], out[2],                           // NN outputs (tanh)
-             roll_cmd, pitch_cmd, throttle_cmd);               // RC commands
+             roll_cmd, pitch_cmd, throttle_cmd,                // RC commands
+             targetPos.x(), targetPos.y(), targetPos.z());     // T080: rabbit ground-truth (virtual NED m)
   }
 }
 
@@ -330,6 +351,7 @@ void msplinkSetup()
 
   // No ticker — single 20Hz loop in controllerUpdate() handles sends
   pipelineStats.reset();
+  loopStats.reset();
 }
 
 void mspUpdateState()
@@ -464,6 +486,7 @@ void mspUpdateState()
       rabbit_active = true;
       rabbit_odometer = 0.0f;
       pipelineStats.reset();
+      loopStats.reset();
       // No ticker — single 20Hz loop in controllerUpdate() handles sends
       current_path_index = 0;
 
@@ -543,18 +566,19 @@ void mspUpdateState()
   {
     q.normalize();
   }
+  gp_vec3 gyro = aircraft_state.getGyroRates();  // aerospace convention (rad/s)
   bool armed = state.isArmed();
   bool failsafe = state.isFailsafe();
 
-  // Log raw gyro from MSP (deci-deg/s, INAV convention — NOT sign-corrected here)
-  // Sign correction happens in convertMSPStateToAircraftState() for NN consumption.
+  // Log post-boundary aerospace-convention state (quat q_EB, gyro RHR rad/s).
+  // Raw INAV values are still in the MSP stream / blackbox if needed for cross-check.
   logPrint(INFO,
-           "Nav State: pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro_raw=[%d,%d,%d] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d",
+           "Nav State: pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro=[%.2f,%.2f,%.2f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d",
            pos_raw.x(), pos_raw.y(), pos_raw.z(),
            pos_rel.x(), pos_rel.y(), pos_rel.z(),
            vel_rel.x(), vel_rel.y(), vel_rel.z(),
            q.w(), q.x(), q.y(), q.z(),
-           state.autoc_state.gyro[0], state.autoc_state.gyro[1], state.autoc_state.gyro[2],
+           gyro.x(), gyro.y(), gyro.z(),
            armed ? "Y" : "N",
            failsafe ? "Y" : "N",
            hasServoActivation ? "Y" : "N",

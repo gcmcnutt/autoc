@@ -1,12 +1,16 @@
 #include "autoc/eval/selection.h"
+#include "autoc/util/rng.h"
 #include <algorithm>
-#include <random>
 #include <numeric>
 #include <cmath>
 #include <cassert>
 
-// Thread-local RNG for selection (avoid contention)
-static thread_local std::mt19937 tl_rng(std::random_device{}());
+// Selection is called serially from the main autoc thread only (see
+// population.cc::breed_population — single for-loop, no threading).
+// Use the main seeded PRNG so training is bitwise reproducible given
+// autoc.ini's Seed. Prior implementation used a thread_local mt19937
+// seeded from std::random_device, which bypassed the user's Seed and
+// made gen 2+ populations drift between reruns of the same config.
 
 SelectionMode parseSelectionMode(const std::string& str) {
     if (str == "minimax") return SelectionMode::MINIMAX;
@@ -22,44 +26,75 @@ const char* selectionModeToString(SelectionMode mode) {
     }
 }
 
-// Epsilon-lexicase selection (022): single dimension per scenario = score (lower is better).
+// Epsilon-lexicase selection.
+//
+// 022: single dimension per scenario = tracking score (lower is better).
+// 027 C2 v4: three dimensions per scenario — tracking, stability, energy.
+// All three are per-tick-additive across the scenario with comparable
+// magnitudes (tracking: -100s to -10000s; stability: 0 to -2*N_ticks;
+// energy: 0 to -N_ticks). Same 0.5 absolute epsilon floor applies.
+// Pool size = 3 × num_scenarios. Random shuffle mixes all three
+// dimensions, so an individual must be balanced across all three to
+// survive many rounds — pure tracking-saturated, pure-do-nothing, or
+// pinned-deflection strategies each fail one of the dimensions.
+//
+// Score extractor: member pointer lets us pick which ScenarioScore field
+// each test case scores against.
+namespace {
+    using ScoreField = gp_fitness ScenarioScore::*;
+}
+
 int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
                     int pop_size, double epsilon) {
     if (pop_size <= 0) return 0;
     int num_scenarios = all_scores.empty() ? 0 : static_cast<int>(all_scores[0].size());
     if (num_scenarios == 0) {
-        return std::uniform_int_distribution<int>(0, pop_size - 1)(tl_rng);
+        return std::uniform_int_distribution<int>(0, pop_size - 1)(rng::engine());
+    }
+
+    // Build the combined test-case pool: (scenario_idx, field, abs_epsilon_floor).
+    // All three physics-grounded dimensions use the same 0.5 absolute floor.
+    struct TestCase {
+        int scenario;
+        ScoreField field;
+        double epsilon_floor;
+    };
+    std::vector<TestCase> pool;
+    pool.reserve(num_scenarios);
+    for (int s = 0; s < num_scenarios; s++) {
+        pool.push_back({s, &ScenarioScore::score,           0.5});
+        // CADENCE7-REDUX (diagnostic): tracking-only pool to reproduce cadence7
+        // exactly. Restore the two below for any 027-style multi-objective run.
+        // pool.push_back({s, &ScenarioScore::stability_score, 0.5});
+        // pool.push_back({s, &ScenarioScore::energy_score,    0.5});
     }
 
     // Start with all candidates
     std::vector<int> candidates(pop_size);
     std::iota(candidates.begin(), candidates.end(), 0);
 
-    // Shuffled scenario order
-    std::vector<int> scenario_order(num_scenarios);
-    std::iota(scenario_order.begin(), scenario_order.end(), 0);
-    std::shuffle(scenario_order.begin(), scenario_order.end(), tl_rng);
+    // Shuffled test-case order
+    std::shuffle(pool.begin(), pool.end(), rng::engine());
 
-    // For each scenario, filter on score (lower = better)
-    for (int si : scenario_order) {
+    for (const auto& tc : pool) {
         if (candidates.size() <= 1) break;
 
-        // Find best (lowest) score among candidates
+        // Find best (lowest) value among candidates on this test case
         double best_score = 1e30;
         for (int idx : candidates) {
             if (idx < static_cast<int>(all_scores.size()) &&
-                si < static_cast<int>(all_scores[idx].size())) {
-                best_score = std::min(best_score, all_scores[idx][si].score);
+                tc.scenario < static_cast<int>(all_scores[idx].size())) {
+                best_score = std::min(best_score, all_scores[idx][tc.scenario].*(tc.field));
             }
         }
 
-        // Keep candidates within epsilon of best
-        double score_epsilon = std::max(0.5, std::abs(best_score) * epsilon);
+        // Keep candidates within epsilon of best (relative * |best| floored at absolute)
+        double score_epsilon = std::max(tc.epsilon_floor, std::abs(best_score) * epsilon);
         std::vector<int> survivors;
         for (int idx : candidates) {
             if (idx < static_cast<int>(all_scores.size()) &&
-                si < static_cast<int>(all_scores[idx].size())) {
-                if (all_scores[idx][si].score <= best_score + score_epsilon) {
+                tc.scenario < static_cast<int>(all_scores[idx].size())) {
+                if (all_scores[idx][tc.scenario].*(tc.field) <= best_score + score_epsilon) {
                     survivors.push_back(idx);
                 }
             }
@@ -72,7 +107,7 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
 
     // Pick randomly among remaining candidates
     if (candidates.empty()) return 0;
-    return candidates[std::uniform_int_distribution<int>(0, static_cast<int>(candidates.size()) - 1)(tl_rng)];
+    return candidates[std::uniform_int_distribution<int>(0, static_cast<int>(candidates.size()) - 1)(rng::engine())];
 }
 
 // Minimax: worst-case scenario score (most positive = worst for negated scores)

@@ -41,14 +41,42 @@ constexpr int NN_TOPOLOGY[NN_NUM_LAYERS] = {
     NN_INPUT_COUNT, NN_HIDDEN1_SIZE, NN_HIDDEN2_SIZE, NN_OUTPUT_COUNT
 };
 
-// Total weight+bias count: (33*32+32) + (32*16+16) + (16*3+3) = 1088+528+51 = 1667
+// Recurrent-layer flag (spec 027, D-simple). A recurrent layer gets a
+// self-connection weight matrix W_hh (size × size, no extra bias — the
+// layer's existing bias is shared). Hidden state is carried across NN
+// evaluation ticks and reset on span start. Only hidden layers can be
+// recurrent (input has no weights in; output is typically a projection).
+// Clarify Q3 picked the 16-wide hidden2 layer.
+// CADENCE7-REDUX (diagnostic): all-feedforward to reproduce cadence7
+// exactly on the new build. Restore layer 2 = true after diagnostic.
+constexpr bool NN_RECURRENT[NN_NUM_LAYERS] = {
+    false,   // layer 0: input (no weights in)
+    false,   // layer 1: hidden1, 32-wide
+    false,   // layer 2: hidden2, 16-wide — DIAGNOSTIC FF-only
+    false    // layer 3: output
+};
+
+// Total weight+bias count. Feedforward: (33*32+32) + (32*16+16) + (16*3+3)
+// = 1088+528+51 = 1667. Recurrent: + Σ_i size_i² for each recurrent layer i.
+// With hidden2 recurrent: +16*16 = 256 → 1923.
 constexpr int NN_WEIGHT_COUNT =
     (NN_INPUT_COUNT * NN_HIDDEN1_SIZE + NN_HIDDEN1_SIZE) +
     (NN_HIDDEN1_SIZE * NN_HIDDEN2_SIZE + NN_HIDDEN2_SIZE) +
-    (NN_HIDDEN2_SIZE * NN_OUTPUT_COUNT + NN_OUTPUT_COUNT);
-static_assert(NN_WEIGHT_COUNT == 1667, "Weight count arithmetic inconsistent");
+    (NN_HIDDEN2_SIZE * NN_OUTPUT_COUNT + NN_OUTPUT_COUNT) +
+    (NN_RECURRENT[1] ? NN_HIDDEN1_SIZE * NN_HIDDEN1_SIZE : 0) +
+    (NN_RECURRENT[2] ? NN_HIDDEN2_SIZE * NN_HIDDEN2_SIZE : 0) +
+    (NN_RECURRENT[3] ? NN_OUTPUT_COUNT  * NN_OUTPUT_COUNT  : 0);
+static_assert(NN_WEIGHT_COUNT == 1667, "Weight count arithmetic inconsistent (cadence7-redux: feedforward)");
 
-// Topology as comma-separated string (for config logging/validation)
-constexpr const char* NN_TOPOLOGY_STRING = "33,32,16,3";
+// Total recurrent hidden-state floats across all recurrent layers.
+// Zero for pure-feedforward networks; 16 for the current 027 config.
+constexpr int NN_HIDDEN_STATE_COUNT =
+    (NN_RECURRENT[1] ? NN_HIDDEN1_SIZE : 0) +
+    (NN_RECURRENT[2] ? NN_HIDDEN2_SIZE : 0) +
+    (NN_RECURRENT[3] ? NN_OUTPUT_COUNT  : 0);
+
+// Topology as comma-separated string (for config logging/validation).
+// Recurrent layers marked with a trailing 'r'.
+constexpr const char* NN_TOPOLOGY_STRING = "33,32,16r,3";
 
 #endif

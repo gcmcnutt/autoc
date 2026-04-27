@@ -17,8 +17,12 @@ inline int randInt(int max_exclusive) { return rng::randInt(max_exclusive); }
 // T064: Population initialization
 // ============================================================
 
-void nn_init_population(NNPopulation& pop, const std::vector<int>& topology, int size) {
+void nn_init_population(NNPopulation& pop,
+                        const std::vector<int>& topology,
+                        const std::vector<uint8_t>& recurrent,
+                        int size) {
     pop.topology = topology;
+    pop.recurrent = recurrent;
     pop.population_size = size;
     pop.generation = 0;
     pop.best_fitness = std::numeric_limits<double>::max();
@@ -27,6 +31,7 @@ void nn_init_population(NNPopulation& pop, const std::vector<int>& topology, int
     pop.individuals.resize(size);
     for (int i = 0; i < size; i++) {
         pop.individuals[i].topology = topology;
+        pop.individuals[i].recurrent = recurrent;
         pop.individuals[i].generation = 0;
         pop.individuals[i].mutation_sigma = 0.1f;
         pop.individuals[i].fitness = 0.0;
@@ -41,6 +46,7 @@ void nn_init_population(NNPopulation& pop, const std::vector<int>& topology, int
 NNGenome nn_arithmetic_crossover(const NNGenome& parent1, const NNGenome& parent2, float alpha) {
     NNGenome child;
     child.topology = parent1.topology;
+    child.recurrent = parent1.recurrent;
     child.generation = parent1.generation;
     child.mutation_sigma = (parent1.mutation_sigma + parent2.mutation_sigma) * 0.5f;
     child.fitness = 0.0;
@@ -169,6 +175,7 @@ void nn_evolve_generation(NNPopulation& pop, const NNEvolveParams& params) {
             // Fresh random individual (CreationProbability)
             NNGenome fresh;
             fresh.topology = pop.topology;
+            fresh.recurrent = pop.recurrent;
             fresh.generation = pop.generation + 1;
             fresh.mutation_sigma = pop.individuals[0].mutation_sigma;
             fresh.fitness = 0.0;

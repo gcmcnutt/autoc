@@ -44,6 +44,28 @@ enum LogLevel
   ERROR = 3
 };
 
+// Controller-loop cadence stats — populated by controllerUpdate() per tick,
+// reset at engage-span start (pipelineStats.reset sites), summarized when
+// the engage span ends (inside stopAutoc). See research.md §4 / plot_xiao_cadence.py.
+struct LoopStats {
+  uint32_t ticks;        // total ticks since reset (denominator)
+  uint32_t overruns;     // ticks late by >= MSP_LOOP_INTERVAL_MSEC
+  uint32_t resyncs;      // ticks late by >= 3*INTERVAL (forced schedule skip)
+  uint32_t maxLateMs;    // worst per-tick lateness observed
+  uint32_t totalLateMs;  // cumulative lateness (for average)
+
+  void reset() { ticks = overruns = resyncs = maxLateMs = totalLateMs = 0; }
+
+  void recordTick(uint32_t lateMs) {
+    ticks++;
+    totalLateMs += lateMs;
+    if (lateMs > maxLateMs) maxLateMs = lateMs;
+    if (lateMs >= MSP_LOOP_INTERVAL_MSEC) overruns++;
+    if (lateMs >= 3 * MSP_LOOP_INTERVAL_MSEC) resyncs++;
+  }
+};
+extern LoopStats loopStats;
+
 // utils
 void consoleInit();
 void logPrint(LogLevel level, const char* format, ...);

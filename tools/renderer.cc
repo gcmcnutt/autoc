@@ -43,16 +43,16 @@ EvalResults evalResults;
 std::string computedKeyName = "";
 Renderer renderer;
 
-// Blackbox-related global variables
-std::string decoderCommand = "";
+// Flight-trace render globals (populated from xiao log; legacy "blackbox*"
+// naming retained because it's load-bearing throughout the rendering path.
+// The INAV blackbox CSV playback mode was removed 2026-04-20 — T203.)
 vtkSmartPointer<vtkAppendPolyData> blackboxTape;
 std::vector<vec3> blackboxPoints;
 std::vector<vec3> blackboxNormals;
 std::vector<AircraftState> blackboxAircraftStates;
-std::vector<AircraftState> fullBlackboxAircraftStates;  // Store full flight for span extraction
+std::vector<AircraftState> fullBlackboxAircraftStates;  // full flight for span extraction
 vec3 blackboxOrigin(0.0f, 0.0f, 0.0f);
 scalar blackboxTimeOffset = 0.0f;
-std::vector<std::string> csvLines;  // Store CSV lines for span analysis
 
 // Xiao-related global variables
 std::string xiaoLogFile = "";
@@ -72,6 +72,7 @@ struct SpanData {
   vec3 origin;
   std::vector<TimestampedVec> vecs;
   std::vector<vec3> rabbitPoints;       // Projected rabbit (from NN body-frame inverse projection)
+  std::vector<unsigned long> rabbitTimesMs;  // Rabbit timestamps in ms, relative to span start (matches AircraftState::getSimTimeMsec after span normalization)
   std::vector<vec3> directRabbitPoints;  // Direct rabbit position (from rabbit=[x,y,z] in log)
   size_t startStateIdx;
   size_t endStateIdx;
@@ -87,8 +88,6 @@ std::vector<SpanData> xiaoSpanData;  // Rabbit and vec data organized by span
 std::vector<size_t> navStateLineToStateIndex;  // Map Nav State line number to actual state index
 
 // Forward declarations
-bool parseBlackboxData(const std::string& csvData);
-bool loadBlackboxData();
 bool parseXiaoData(const std::string& xiaoLogPath);
 bool loadXiaoData();
 void extractXiaoTestSpans();
@@ -521,13 +520,13 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       
       // Only create tape if we have enough points
       if (a.size() >= 2) {
-        if ((inDecodeMode || inXiaoMode) && !testSpans.empty() && !showingFullFlight) {
+        if (inXiaoMode && !testSpans.empty() && !showingFullFlight) {
           // Create regular tape for current test span only
           this->blackboxTapes->AddInputData(createTapeSet(blackboxOffset, a, stateToOrientation(blackboxAircraftStates)));
           // Reset opacity to full brightness for single span display
           blackboxActor->GetProperty()->SetOpacity(1.0);
           blackboxActor->GetBackfaceProperty()->SetOpacity(1.0);
-        } else if ((inDecodeMode || inXiaoMode) && showingFullFlight && !testSpans.empty()) {
+        } else if (inXiaoMode && showingFullFlight && !testSpans.empty()) {
           // Show full flight with highlighted test spans
           createHighlightedFlightTapes(blackboxOffset);
         } else {
@@ -1346,7 +1345,7 @@ void Renderer::updateTextDisplay(int generation, gp_fitness fitness) {
   }
 
   // Update test display based on decode mode or xiao mode and current state
-  if ((inDecodeMode || inXiaoMode) && !testSpans.empty()) {
+  if (inXiaoMode && !testSpans.empty()) {
     // Make test actors visible
     testTextActor->SetVisibility(1);
     testValueActor->SetVisibility(1);
@@ -1382,7 +1381,6 @@ int main(int argc, char** argv) {
   // Parse command line arguments
   static struct option long_options[] = {
     {"keyname", required_argument, 0, 'k'},
-    {"decoder", required_argument, 0, 'd'},
     {"xiaofile", required_argument, 0, 'x'},
     {"config", required_argument, 0, 'i'},
     {"help", no_argument, 0, 'h'},
@@ -1393,13 +1391,10 @@ int main(int argc, char** argv) {
   int option_index = 0;
   int c;
 
-  while ((c = getopt_long(argc, argv, "k:d:x:i:h", long_options, &option_index)) != -1) {
+  while ((c = getopt_long(argc, argv, "k:x:i:h", long_options, &option_index)) != -1) {
     switch (c) {
       case 'k':
         computedKeyName = optarg;
-        break;
-      case 'd':
-        decoderCommand = optarg;
         break;
       case 'x':
         xiaoLogFile = optarg;
@@ -1418,13 +1413,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Check mutual exclusivity
-  if (!decoderCommand.empty() && !xiaoLogFile.empty()) {
-    std::cerr << "Error: -d and -x options are mutually exclusive" << std::endl;
-    printUsage(argv[0]);
-    return 1;
-  }
-
   // Handle positional arguments for backward compatibility
   if (computedKeyName.empty() && optind < argc) {
     computedKeyName = argv[optind];
@@ -1440,31 +1428,6 @@ int main(int argc, char** argv) {
   Aws::InitAPI(options);
 
   std::shared_ptr<Aws::S3::S3Client> s3_client = getS3Client();
-  
-  // Load blackbox data if decoder command is specified
-  if (!decoderCommand.empty()) {
-    if (!loadBlackboxData()) {
-      std::cerr << "Failed to load blackbox data" << std::endl;
-      return 1;
-    }
-    if (!blackboxAircraftStates.empty()) {
-      std::cout << "Blackbox data loaded: " << blackboxAircraftStates.size() << " states" << std::endl;
-      renderer.inDecodeMode = true;
-      renderer.extractTestSpans();
-
-      if (!renderer.testSpans.empty()) {
-        std::cout << "Found " << renderer.testSpans.size() << " test spans" << std::endl;
-        renderer.currentTestIndex = 0;
-        renderer.showingFullFlight = false;
-        // Filter blackbox data to show first test span immediately
-        updateBlackboxForCurrentTest();
-        std::cout << "Showing test 1: " << blackboxAircraftStates.size() << " states" << std::endl;
-      } else {
-        std::cout << "No MSPRCOVERRIDE test spans found, showing full flight" << std::endl;
-        renderer.showingFullFlight = true;
-      }
-    }
-  }
 
   // Load xiao log data if specified
   if (!xiaoLogFile.empty()) {
@@ -1592,7 +1555,7 @@ int main(int argc, char** argv) {
   std::cout << "  SPACE - Toggle playback animation" << std::endl;
   std::cout << "  f - Focus camera on current arena" << std::endl;
   std::cout << "  Arrow keys - Move focus between arenas" << std::endl;
-  if (!decoderCommand.empty() && !renderer.testSpans.empty()) {
+  if (renderer.inXiaoMode && !renderer.testSpans.empty()) {
     std::cout << "  t - Next test segment" << std::endl;
     std::cout << "  r - Previous test segment" << std::endl;
     std::cout << "  a - Show all flight (with test highlights)" << std::endl;
@@ -1605,175 +1568,15 @@ int main(int argc, char** argv) {
   return 0;
 }
 
-// Parse blackbox decode CSV output
-bool parseBlackboxData(const std::string& csvData) {
-  std::istringstream stream(csvData);
-  std::string line;
-  std::vector<std::string> headers;
-  bool headerParsed = false;
-  
-  blackboxPoints.clear();
-  blackboxNormals.clear();
-  blackboxAircraftStates.clear();
-  fullBlackboxAircraftStates.clear();
-  csvLines.clear();
-  
-  // Find column indices
-  int latIndex = -1, lonIndex = -1, altIndex = -1, timeIndex = -1;
-  int quatWIndex = -1, quatXIndex = -1, quatYIndex = -1, quatZIndex = -1;
-  int rcRollIndex = -1, rcPitchIndex = -1, rcThrottleIndex = -1;
-  
-  while (std::getline(stream, line)) {
-    csvLines.push_back(line);  // Store all lines for span analysis
-    
-    if (line.empty() || line.find("End of log") != std::string::npos) {
-      continue;
-    }
-    
-    // Parse header
-    if (!headerParsed) {
-      std::istringstream headerStream(line);
-      std::string header;
-      int index = 0;
-      
-      while (std::getline(headerStream, header, ',')) {
-        // Trim whitespace from header
-        header.erase(0, header.find_first_not_of(" \t"));
-        header.erase(header.find_last_not_of(" \t") + 1);
-        
-        headers.push_back(header);
-        if (header == "navPos[0]") latIndex = index;
-        else if (header == "navPos[1]") lonIndex = index;
-        else if (header == "navPos[2]") altIndex = index;
-        else if (header == "time (us)") timeIndex = index;
-        else if (header == "quaternion[0]") quatWIndex = index;
-        else if (header == "quaternion[1]") quatXIndex = index;
-        else if (header == "quaternion[2]") quatYIndex = index;
-        else if (header == "quaternion[3]") quatZIndex = index;
-        else if (header == "rcCommand[0]") rcRollIndex = index;
-        else if (header == "rcCommand[1]") rcPitchIndex = index;
-        else if (header == "rcCommand[3]") rcThrottleIndex = index;
-        index++;
-      }
-      headerParsed = true;
-      continue;
-    }
-    
-    // Parse data rows
-    std::istringstream dataStream(line);
-    std::string cell;
-    std::vector<std::string> row;
-    
-    while (std::getline(dataStream, cell, ',')) {
-      // Trim whitespace from cell
-      cell.erase(0, cell.find_first_not_of(" \t"));
-      cell.erase(cell.find_last_not_of(" \t") + 1);
-      row.push_back(cell);
-    }
-    
-    if (row.size() < headers.size()) continue;
-    
-    // Sample at 50ms intervals (50,000 microseconds)
-    static unsigned long int lastSampleTime = 0;
-    const unsigned long int SAMPLE_INTERVAL_US = 50000; // 50ms in microseconds
-    
-    if (timeIndex >= 0) {
-      unsigned long int currentTime = std::stoul(row[timeIndex]);
-      if (lastSampleTime > 0 && (currentTime - lastSampleTime) < SAMPLE_INTERVAL_US) {
-        continue; // Skip this record, not enough time has passed
-      }
-      lastSampleTime = currentTime;
-    }
-    
-    // Extract navPos coordinates and convert to meters
-    if (latIndex >= 0 && lonIndex >= 0 && altIndex >= 0) {
-      scalar navX = std::stof(row[latIndex]);  // navPos[0] in cm
-      scalar navY = std::stof(row[lonIndex]);  // navPos[1] in cm
-      scalar navZ = std::stof(row[altIndex]);  // navPos[2] in cm
-      
-      // Convert from centimeters to meters and center on origin
-      static bool firstPoint = true;
-      static scalar originX, originY, originZ;
-      
-      if (firstPoint) {
-        originX = navX;
-        originY = navY;
-        originZ = navZ;
-        firstPoint = false;
-      }
-      
-      // Convert to meters and translate to origin
-      // NED coordinates: North=X, East=Y, Down=Z
-      // For VTK visualization, flip Z to make "up" positive (NED Down -> VTK Up)
-      scalar x = (navX - originX) / static_cast<scalar>(100.0f);   // cm to m, North
-      scalar y = (navY - originY) / static_cast<scalar>(100.0f);   // cm to m, East  
-      scalar z = -(navZ - originZ) / static_cast<scalar>(100.0f);  // cm to m, Down->Up (flip sign)
-      
-      vec3 newPoint(x, y, z);
-      
-      // Filter out coincident points to avoid VTK ribbon filter issues
-      if (blackboxPoints.empty() || (newPoint - blackboxPoints.back()).norm() > static_cast<scalar>(0.01f)) {
-        
-        blackboxPoints.push_back(newPoint);
-        
-        // Create AircraftState object
-        if (quatWIndex >= 0 && quatXIndex >= 0 && quatYIndex >= 0 && quatZIndex >= 0) {
-          // Parse normalized quaternion values (stored as integers * 10000)
-          scalar qw = std::stof(row[quatWIndex]) / static_cast<scalar>(10000.0f);
-          scalar qx = std::stof(row[quatXIndex]) / static_cast<scalar>(10000.0f);
-          scalar qy = std::stof(row[quatYIndex]) / static_cast<scalar>(10000.0f);
-          scalar qz = std::stof(row[quatZIndex]) / static_cast<scalar>(10000.0f);
-          
-          // INAV blackbox logs raw body->earth quaternion in NED frame
-          // (same as what MSP sends before the conjugate fix in msplink.cpp)
-          quat inavQuat(qw, qx, qy, qz);
-          inavQuat.normalize();
-
-          // Convert body->earth to earth->body to match renderer/GP contract
-          // Apply conjugate: (w, x, y, z) -> (w, -x, -y, -z)
-          quat earthToBody(inavQuat.w(), -inavQuat.x(), -inavQuat.y(), -inavQuat.z());
-          earthToBody.normalize();
-          
-          // Get time if available, otherwise use index
-          unsigned long int timeMs = (timeIndex >= 0) ? std::stoul(row[timeIndex]) : blackboxAircraftStates.size() * 100;
-
-          // Create simple velocity vector for blackbox data (assuming forward flight)
-          // earth->body quaternion rotates body vectors to earth frame
-          vec3 velocity_vector = earthToBody * vec3(static_cast<scalar>(20.0f), 0, 0);
-
-          gp_scalar pitchCmd = 0.0f;
-          gp_scalar rollCmd = 0.0f;
-          gp_scalar throttleCmd = 0.0f;
-          if (rcRollIndex >= 0 && rcPitchIndex >= 0 && rcThrottleIndex >= 0) {
-            rollCmd = CLAMP_DEF(static_cast<gp_scalar>(std::stof(row[rcRollIndex]) / static_cast<scalar>(500.0f)), -1.0f, 1.0f);
-            pitchCmd = CLAMP_DEF(static_cast<gp_scalar>(std::stof(row[rcPitchIndex]) / static_cast<scalar>(500.0f)), -1.0f, 1.0f);
-            // rcCommand[3] is centered around 1500us; scale to -1..1
-            throttleCmd = CLAMP_DEF(static_cast<gp_scalar>((std::stof(row[rcThrottleIndex]) - static_cast<scalar>(1500.0f)) / static_cast<scalar>(500.0f)), -1.0f, 1.0f);
-          }
-
-          // Create AircraftState with earth->body quaternion (matches CRRCSim/GP contract)
-          AircraftState state(static_cast<int>(blackboxAircraftStates.size()), static_cast<scalar>(20.0f), velocity_vector, earthToBody, newPoint, pitchCmd, rollCmd, throttleCmd, timeMs);
-          blackboxAircraftStates.push_back(state);
-          fullBlackboxAircraftStates.push_back(state);  // Store full flight data
-          
-        } else {
-          // Error: quaternion information is required for proper tape orientation
-          std::cerr << "Error: Blackbox data missing quaternion information (quaternion[0], quaternion[1], quaternion[2], quaternion[3])" << std::endl;
-          std::cerr << "Cannot render tape with proper orientation without aircraft quaternion data" << std::endl;
-          return false;
-        }
-      }
-    }
-  }
-  
-  return !blackboxAircraftStates.empty();
-}
+// INAV blackbox CSV playback path removed 2026-04-20 (T203). See
+// sensor_self_check_lib.py for historical flight analysis; use xiao log
+// (-x) for in-repo visualization.
 
 // Method to update blackbox rendering based on current test selection
 void updateBlackboxForCurrentTest() {
   extern Renderer renderer;
 
-  if ((!renderer.inDecodeMode && !renderer.inXiaoMode) || fullBlackboxAircraftStates.empty()) {
+  if (!renderer.inXiaoMode || fullBlackboxAircraftStates.empty()) {
     return;
   }
   
@@ -1865,44 +1668,6 @@ void updateBlackboxForCurrentTest() {
   }
 }
 
-
-// Load CSV data from decoder command or stdin
-bool loadBlackboxData() {
-  std::string csvData;
-  
-  if (decoderCommand == "-") {
-    // Read from stdin
-    std::ostringstream result;
-    std::string line;
-    while (std::getline(std::cin, line)) {
-      result << line << "\n";
-    }
-    csvData = result.str();
-  } else {
-    // Execute the decoder command
-    FILE* pipe = popen(decoderCommand.c_str(), "r");
-    if (!pipe) {
-      std::cerr << "Failed to execute decoder command: " << decoderCommand << std::endl;
-      return false;
-    }
-    
-    std::ostringstream result;
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-      result << buffer;
-    }
-    
-    int exitCode = pclose(pipe);
-    if (exitCode != 0) {
-      std::cerr << "Decoder command failed with exit code: " << exitCode << std::endl;
-      return false;
-    }
-    
-    csvData = result.str();
-  }
-  
-  return parseBlackboxData(csvData);
-}
 
 // Parse xiao log file
 bool parseXiaoData(const std::string& xiaoLogPath) {
@@ -2019,6 +1784,7 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
       currentSpanData.origin = currentOrigin;
       currentSpanData.vecs.clear();
       currentSpanData.rabbitPoints.clear();
+      currentSpanData.rabbitTimesMs.clear();
       currentSpanData.directRabbitPoints.clear();
       currentSpanData.startStateIdx = currentStateIdx;
       currentSpanData.pathIndex = -1;  // Reset path index for new span
@@ -2111,6 +1877,14 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
           vec3 rabbitPos(latestPos[0] + wx, latestPos[1] + wy, latestPos[2] + wz);
           rabbitPos[2] = rabbitPos[2] + SIM_INITIAL_ALTITUDE;
           currentSpanData.rabbitPoints.push_back(rabbitPos);
+          // Track rabbit timestamp relative to span start — matches the
+          // normalization that AircraftState::getSimTimeMsec gets in
+          // updateBlackboxForCurrentTest (line ~1645). Used for
+          // time-based state↔rabbit pairing in the blue-delta-line
+          // rendering, which is robust to the 0.01m coincident-point
+          // state filter at line ~1955.
+          currentSpanData.rabbitTimesMs.push_back(
+              static_cast<unsigned long>(xiaoMs - spanStartTimeMs));
 
           // Vec direction for error arrows
           vec3 vecDir(wx, wy, wz);
@@ -2483,137 +2257,6 @@ void Renderer::jumpToOldestGeneration() {
   // Generation 1 is stored as gen9999.dmp
   genNumber = 9999;
   updateGenerationDisplay(genNumber);
-}
-
-// Print usage information
-void Renderer::extractTestSpans() {
-  testSpans.clear();
-  
-  if (csvLines.empty() || fullBlackboxAircraftStates.empty()) {
-    std::cerr << "No CSV data or aircraft states available for test span extraction" << std::endl;
-    return;
-  }
-  
-  // Find the flightModeFlags column index
-  int flightModeFlagsIndex = -1;
-  int timeIndex = -1;
-  
-  // Parse header to find column indices
-  if (!csvLines.empty()) {
-    std::istringstream headerStream(csvLines[0]);
-    std::string header;
-    int index = 0;
-    
-    while (std::getline(headerStream, header, ',')) {
-      // Trim whitespace from header
-      header.erase(0, header.find_first_not_of(" \t"));
-      header.erase(header.find_last_not_of(" \t") + 1);
-      
-      if (header == "flightModeFlags (flags)") {
-        flightModeFlagsIndex = index;
-      } else if (header == "time (us)" || header == "time (us) ") {
-        timeIndex = index;
-      }
-      index++;
-    }
-  }
-  
-  if (flightModeFlagsIndex == -1) {
-    std::cerr << "flightModeFlags column not found in CSV" << std::endl;
-    return;
-  }
-  
-  // Scan through data rows to find MSPRCOVERRIDE spans
-  // We need to correlate CSV rows with aircraft state indices based on sampling
-  bool inSpan = false;
-  TestSpan currentSpan;
-  size_t aircraftStateIndex = 0;
-  
-  for (size_t lineIndex = 1; lineIndex < csvLines.size(); lineIndex++) {
-    const std::string& line = csvLines[lineIndex];
-    if (line.empty() || line.find("End of log") != std::string::npos) {
-      continue;
-    }
-    
-    // Parse data row
-    std::istringstream dataStream(line);
-    std::string cell;
-    std::vector<std::string> row;
-    
-    while (std::getline(dataStream, cell, ',')) {
-      // Trim whitespace from cell
-      cell.erase(0, cell.find_first_not_of(" \t"));
-      cell.erase(cell.find_last_not_of(" \t") + 1);
-      row.push_back(cell);
-    }
-    
-    if (row.size() <= flightModeFlagsIndex) continue;
-    
-    // Check if this row would have been sampled (same logic as parseBlackboxData)
-    static unsigned long int lastSampleTime = 0;
-    const unsigned long int SAMPLE_INTERVAL_US = 50000; // 50ms in microseconds
-    
-    bool wouldBeSampled = false;
-    if (timeIndex >= 0 && timeIndex < row.size()) {
-      unsigned long int currentTime = std::stoul(row[timeIndex]);
-      if (lastSampleTime == 0 || (currentTime - lastSampleTime) >= SAMPLE_INTERVAL_US) {
-        wouldBeSampled = true;
-        lastSampleTime = currentTime;
-      }
-    } else {
-      wouldBeSampled = true; // If no time column, assume all rows are sampled
-    }
-    
-    if (!wouldBeSampled) continue;
-    
-    // This row corresponds to an aircraft state
-    if (aircraftStateIndex >= fullBlackboxAircraftStates.size()) break;
-    
-    bool hasMSPRCOVERRIDE = row[flightModeFlagsIndex].find(MSPRCOVERRIDE_FLAG) != std::string::npos;
-    unsigned long currentTime = (timeIndex >= 0 && timeIndex < row.size()) ? std::stoul(row[timeIndex]) : 0;
-    
-    if (hasMSPRCOVERRIDE && !inSpan) {
-      // Start of new span
-      currentSpan.startIndex = aircraftStateIndex;
-      currentSpan.startTime = currentTime;
-      inSpan = true;
-    } else if (!hasMSPRCOVERRIDE && inSpan) {
-      // End of current span
-      currentSpan.endIndex = aircraftStateIndex - 1;
-      currentSpan.endTime = currentTime;
-      testSpans.push_back(currentSpan);
-      inSpan = false;
-    }
-    
-    aircraftStateIndex++;
-  }
-  
-  // Handle case where span continues to end of file
-  if (inSpan) {
-    currentSpan.endIndex = aircraftStateIndex - 1;
-    currentSpan.endTime = 0; // Use 0 if no time available
-    testSpans.push_back(currentSpan);
-  }
-  
-  // Validate all spans have valid indices
-  std::vector<TestSpan> validSpans;
-  for (const TestSpan& span : testSpans) {
-    if (span.startIndex < fullBlackboxAircraftStates.size() && 
-        span.endIndex < fullBlackboxAircraftStates.size() && 
-        span.startIndex <= span.endIndex) {
-      validSpans.push_back(span);
-    } else {
-      std::cerr << "Invalid span removed: indices " << span.startIndex << "-" << span.endIndex 
-                << " (max: " << fullBlackboxAircraftStates.size() - 1 << ")" << std::endl;
-    }
-  }
-  testSpans = validSpans;
-  
-  std::cout << "Extracted " << testSpans.size() << " valid test spans from " << aircraftStateIndex << " aircraft states" << std::endl;
-  for (size_t i = 0; i < testSpans.size(); i++) {
-    std::cout << "  Test " << (i+1) << ": indices " << testSpans[i].startIndex << "-" << testSpans[i].endIndex 
-              << " (" << (testSpans[i].endIndex - testSpans[i].startIndex + 1) << " states)" << std::endl;
-  }
 }
 
 void Renderer::nextTest() {
@@ -3916,11 +3559,11 @@ void Renderer::updatePlaybackAnimation() {
 
       if (a_bb.size() >= 2) {
 
-        if ((inDecodeMode || inXiaoMode) && !testSpans.empty() && !showingFullFlight) {
+        if (inXiaoMode && !testSpans.empty() && !showingFullFlight) {
           this->blackboxTapes->AddInputData(createTapeSet(blackboxOffset, a_bb, stateToOrientation(blackboxAircraftStates), blackboxProgress));
           blackboxActor->GetProperty()->SetOpacity(1.0);
           blackboxActor->GetBackfaceProperty()->SetOpacity(1.0);
-        } else if ((inDecodeMode || inXiaoMode) && showingFullFlight && !testSpans.empty()) {
+        } else if (inXiaoMode && showingFullFlight && !testSpans.empty()) {
           // For full flight mode, filter full flight blackbox data by time
           scalar fullStartTime = static_cast<scalar>(fullBlackboxAircraftStates.front().getSimTimeMsec()) / static_cast<scalar>(1000000.0f); // microseconds to seconds
           std::vector<AircraftState> visibleFullStates;
@@ -4079,25 +3722,52 @@ void Renderer::updatePlaybackAnimation() {
             }
           }
 
-          // Render animated error bars connecting visible states to rabbit points
-          // In xiao-only mode, states and rabbit points are 1:1 (both from 10Hz NN ticks)
-          // Use stable step based on total span size to prevent rearrangement during animation
-          size_t numVisibleStates = static_cast<size_t>(blackboxAircraftStates.size() * blackboxProgress);
-          if (numVisibleStates > 0 && numPointsToShow > 0) {
+          // Render animated error bars connecting aircraft states to rabbit points.
+          // Iterate by RABBIT index (matches red-path reveal rate). For each
+          // visible rabbit j, pair with the aircraft state whose timestamp is
+          // closest to that rabbit's timestamp. This is robust to the 0.01m
+          // coincident-point filter at line ~1955 — on stationary-ish data
+          // (bench, hover) many Nav States get dropped, so state-index pairing
+          // desyncs from rabbit-index pairing; timestamp pairing stays correct.
+          const std::vector<unsigned long>& rabbitTimes =
+              xiaoSpanData[currentTestIndex].rabbitTimesMs;
+          if (numPointsToShow > 0 && !blackboxAircraftStates.empty() &&
+              rabbitTimes.size() == rabbitPoints.size()) {
             vtkSmartPointer<vtkPolyData> segmentData = vtkSmartPointer<vtkPolyData>::New();
             vtkSmartPointer<vtkPoints> segmentPoints = vtkSmartPointer<vtkPoints>::New();
             vtkSmartPointer<vtkCellArray> segmentLines = vtkSmartPointer<vtkCellArray>::New();
 
-            // Stable step from total size — never changes during animation
-            size_t totalStates = blackboxAircraftStates.size();
-            size_t step = std::max(static_cast<size_t>(1), totalStates / 50);
+            // Draw every rabbit (step=1) to match the static end-of-animation
+            // view. Earlier logic capped to ~50 lines for clarity; in practice
+            // spans are short enough (few hundred rabbits) that drawing all
+            // reads fine and stays consistent with the static view.
+            size_t step = 1;
+            size_t searchStart = 0;  // monotonic advance of state index across iterations
 
-            for (size_t i = 0; i < numVisibleStates; i += step) {
-              // Direct 1:1 mapping — state i corresponds to rabbit point i
-              size_t rabbitIdx = std::min(i, numPointsToShow - 1);
+            // NOTE: AircraftState::getSimTimeMsec() actually returns MICROSECONDS
+            // (renderer.cc:1977 passes absoluteTimeUs into the field named Msec —
+            // historical naming bug). rabbitTimes is in milliseconds. Multiply
+            // rabbit ms by 1000 so both sides compare in µs.
+            for (size_t j = 0; j < numPointsToShow; j += step) {
+              unsigned long tgt_us = rabbitTimes[j] * 1000UL;
+              // Advance searchStart until next state is past tgt or end.
+              while (searchStart + 1 < blackboxAircraftStates.size() &&
+                     blackboxAircraftStates[searchStart + 1].getSimTimeMsec() <= tgt_us) {
+                searchStart++;
+              }
+              size_t stateIdx = searchStart;
+              // Pick nearer of [searchStart, searchStart+1]
+              if (searchStart + 1 < blackboxAircraftStates.size()) {
+                unsigned long t0 = blackboxAircraftStates[searchStart].getSimTimeMsec();
+                unsigned long t1 = blackboxAircraftStates[searchStart + 1].getSimTimeMsec();
+                if ((tgt_us > t0 ? tgt_us - t0 : t0 - tgt_us) >
+                    (tgt_us > t1 ? tgt_us - t1 : t1 - tgt_us)) {
+                  stateIdx = searchStart + 1;
+                }
+              }
 
-              vec3 statePos = blackboxAircraftStates[i].getPosition() + blackboxOffset;
-              vec3 rabbitPos = visibleRabbitPoints[rabbitIdx] + blackboxOffset;
+              vec3 statePos = blackboxAircraftStates[stateIdx].getPosition() + blackboxOffset;
+              vec3 rabbitPos = visibleRabbitPoints[j] + blackboxOffset;
 
               vtkIdType p1 = segmentPoints->InsertNextPoint(statePos[0], statePos[1], statePos[2]);
               vtkIdType p2 = segmentPoints->InsertNextPoint(rabbitPos[0], rabbitPos[1], rabbitPos[2]);
@@ -4264,12 +3934,12 @@ void Renderer::renderFullScene() {
       std::vector<vec3> a_bb = stateToVector(blackboxAircraftStates);
 
       if (a_bb.size() >= 2) {
-        if ((inDecodeMode || inXiaoMode) && !testSpans.empty() && !showingFullFlight) {
+        if (inXiaoMode && !testSpans.empty() && !showingFullFlight) {
           // Single test span mode - full brightness
           this->blackboxTapes->AddInputData(createTapeSet(blackboxOffset, a_bb, stateToOrientation(blackboxAircraftStates)));
           blackboxActor->GetProperty()->SetOpacity(1.0);
           blackboxActor->GetBackfaceProperty()->SetOpacity(1.0);
-        } else if ((inDecodeMode || inXiaoMode) && showingFullFlight && !testSpans.empty()) {
+        } else if (inXiaoMode && showingFullFlight && !testSpans.empty()) {
           // All flight mode - dimmed background with highlighted test spans
           createHighlightedFlightTapes(blackboxOffset);
         } else {
@@ -4451,23 +4121,42 @@ void Renderer::renderFullScene() {
         }
 
         if (!rabbitPoints.empty()) {
-          // Render error bars connecting blackbox positions to rabbit points
-          // Correlate by index proportion: blackbox state i -> rabbit point floor(i * numRabbit / numStates)
-          if (!blackboxAircraftStates.empty()) {
+          // Render error bars connecting aircraft states to rabbit points.
+          // Iterate by RABBIT index; pair each rabbit with the aircraft state
+          // nearest in timestamp. Robust to the 0.01m coincident-point state
+          // filter (line ~1955) which would otherwise desync index-pairing
+          // under stationary-ish flight (bench, hover).
+          const std::vector<unsigned long>& rabbitTimes =
+              xiaoSpanData[currentTestIndex].rabbitTimesMs;
+          if (!blackboxAircraftStates.empty() &&
+              rabbitTimes.size() == rabbitPoints.size()) {
             vtkSmartPointer<vtkPolyData> segmentData = vtkSmartPointer<vtkPolyData>::New();
             vtkSmartPointer<vtkPoints> segmentPoints = vtkSmartPointer<vtkPoints>::New();
             vtkSmartPointer<vtkCellArray> segmentLines = vtkSmartPointer<vtkCellArray>::New();
 
-            size_t numStates = blackboxAircraftStates.size();
             size_t numRabbit = rabbitPoints.size();
+            size_t searchStart = 0;  // monotonic advance of state index
 
-            // Direct 1:1 mapping — state i corresponds to rabbit point i
-            // No thinning — show all error bars for xiao-only mode
-            for (size_t i = 0; i < numStates; i++) {
-              size_t rabbitIdx = std::min(i, numRabbit - 1);
+            // See comment at playback-path site: AircraftState::getSimTimeMsec
+            // returns µs (field-name bug). Compare in µs.
+            for (size_t j = 0; j < numRabbit; j++) {
+              unsigned long tgt_us = rabbitTimes[j] * 1000UL;
+              while (searchStart + 1 < blackboxAircraftStates.size() &&
+                     blackboxAircraftStates[searchStart + 1].getSimTimeMsec() <= tgt_us) {
+                searchStart++;
+              }
+              size_t stateIdx = searchStart;
+              if (searchStart + 1 < blackboxAircraftStates.size()) {
+                unsigned long t0 = blackboxAircraftStates[searchStart].getSimTimeMsec();
+                unsigned long t1 = blackboxAircraftStates[searchStart + 1].getSimTimeMsec();
+                if ((tgt_us > t0 ? tgt_us - t0 : t0 - tgt_us) >
+                    (tgt_us > t1 ? tgt_us - t1 : t1 - tgt_us)) {
+                  stateIdx = searchStart + 1;
+                }
+              }
 
-              vec3 statePos = blackboxAircraftStates[i].getPosition() + blackboxOffset;
-              vec3 rabbitPos = rabbitPoints[rabbitIdx] + blackboxOffset;
+              vec3 statePos = blackboxAircraftStates[stateIdx].getPosition() + blackboxOffset;
+              vec3 rabbitPos = rabbitPoints[j] + blackboxOffset;
 
               vtkIdType p1 = segmentPoints->InsertNextPoint(statePos[0], statePos[1], statePos[2]);
               vtkIdType p2 = segmentPoints->InsertNextPoint(rabbitPos[0], rabbitPos[1], rabbitPos[2]);
@@ -4537,18 +4226,11 @@ void printUsage(const char* progName) {
   std::cout << "Usage: " << progName << " [OPTIONS]\n";
   std::cout << "Options:\n";
   std::cout << "  -k, --keyname KEYNAME    Specify GP log key name\n";
-  std::cout << "  -d, --decoder COMMAND    Specify shell command to generate CSV data\n";
-  std::cout << "                           Use '-' to read CSV data from stdin\n";
-  std::cout << "                           If not specified, no blackbox data is loaded\n";
   std::cout << "  -x, --xiaofile FILE      Specify xiao log file to overlay\n";
-  std::cout << "                           Mutually exclusive with -d option\n";
   std::cout << "  -i, --config FILE        Use specified config file (default: autoc.ini)\n";
   std::cout << "  -h, --help               Show this help message\n";
   std::cout << "\n";
   std::cout << "Examples:\n";
-  std::cout << "  " << progName << "                                    # Render all arenas without blackbox data\n";
-  std::cout << "  " << progName << " -d 'blackbox_decode file.bbl'     # Pipe through decoder command\n";
-  std::cout << "  " << progName << " -d -                              # Read CSV from stdin\n";
-  std::cout << "  cat data.csv | " << progName << " -d -               # Read CSV from stdin (alternative)\n";
+  std::cout << "  " << progName << "                                    # Render sim arenas from S3\n";
   std::cout << "  " << progName << " -x flight.txt                     # Overlay xiao log data\n";
 }

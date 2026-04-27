@@ -9,6 +9,21 @@ Absorbs from 023:
 - Effort lexicase (T123–T136) → integrate into Change 5 Option A (chatter penalty)
 - 2-dim lexicase tests (P3 T-TEST-4) → add alongside effort lexicase implementation
 
+## Status (2026-04-22)
+
+**BLOCKED on 026-nn-temporal-state.** Flight-20260422 showed the
+cadence7 NN collapses to full-throw bang-bang as the trained policy —
+with current single-pass instantaneous-input MLP topology, evolution
+lacks the machinery to build smoother control. Adding craft variations
+on top of a bang-bang policy will mostly add selection noise; 025's
+robustness gains will land only after 026 equips the NN with temporal
+state. See [`specs/026-nn-temporal-state/spec.md`](../026-nn-temporal-state/spec.md)
+and the flight report at
+[`flight-results/flight-20260422/FLIGHT_REPORT.md`](../../flight-results/flight-20260422/FLIGHT_REPORT.md).
+
+The work described below is scoped and valid — it just doesn't start
+until 026 produces a smoother baseline to vary against.
+
 ## Problem Statement
 
 The NN trained in 023 achieves strong fitness (-18k+) but exhibits bang-bang
@@ -52,7 +67,58 @@ by the scenario RNG (same architecture as wind/entry variations).
 | `Cl_p` | Roll damping | 0.10 | ±30% |
 | `Cm_q` | Pitch damping | 0.10 | ±30% |
 | `CD_prof` | Profile drag | 0.10 | ±30% |
-| `Cn_dr` | Rudder yaw effectiveness | 0.10 | ±30% |
+| `Cn_b` | Yaw stiffness (weathervane via vertical fin) | 0.15 | ±40% |
+| `Cn_r` | Yaw damping | 0.10 | ±30% |
+
+`Cn_dr` (rudder yaw effectiveness) is **deliberately absent** — HB1 has
+no controllable rudder surface (see HB1 vertical-stabilizer note
+below). The sim airframe XML has non-zero `Cn_dr` historically but no
+rudder input is commanded in either MANUAL or ACRO modes on this
+airframe.
+
+##### HB1 vertical stabilizer — no controllable rudder (2026-04-23 correction)
+
+A 2026-04-21 note in an earlier draft of this spec called HB1 a
+"flying-board layout with a large rudder positioned noticeably aft of
+the wing" and proposed calibrating `Cn_dr` as part of 025. That was
+based on a misread of HB1's tail geometry.
+
+**Actual HB1**: vertical stabilizer (fixed tail fin) with NO
+controllable rudder. Yaw control comes entirely from:
+
+- Passive fin stability (weathervaning into the airstream — `Cn_b`).
+- Yaw damping from fin area (`Cn_r`).
+- Roll-yaw coupling (dihedral effect on the wing).
+- Differential elevon drag (if the mixer is configured to use it —
+  currently on HB1 it is not).
+
+Implications for 025:
+
+1. **Drop `Cn_dr` from the aero-variation table** (done above). Varying
+   it would change a coefficient that multiplies a zero-input channel,
+   so the variation would have no observable effect on training.
+2. **Keep `Cn_b` and `Cn_r` in the variation table**. These are the
+   real passive-yaw knobs. Airframe-to-airframe variation in fin area,
+   mounting angle, and CG-to-fin moment arm all land on these two
+   coefficients; ±30-40% sigma is reasonable.
+3. **The yaw/rudder wobble observed in cadence7 sim-video playback** is
+   a different issue from what the 2026-04-21 note proposed. With no
+   rudder, the wobble is driven by roll-axis ringing + insufficient
+   passive yaw damping in the sim (vs. whatever the real HB1 has).
+   Candidates worth checking during 025 bench work:
+   - `Cn_b` baseline in `hb1_streamer.xml` vs. measurable real-world
+     side-slip response.
+   - `Cn_r` baseline vs. real yaw-damping decay after a gust.
+   - Elevon-differential-drag term (`Cn_da` if present) — a real HB1
+     with elevon mixer that includes yaw coupling may damp yaw
+     via aileron activity.
+4. The "measure HB1 rudder step response" plan from the earlier note
+   is dropped — nothing to step.
+
+If the cadence8 retrain (delivered by 026) still shows yaw wobble in
+sim video playback after the rate-PID pitch/roll stabilization, 025
+should start by revisiting `Cn_b` / `Cn_r` baselines rather than
+chasing non-existent rudder authority.
 
 #### Mass/Inertia Variations
 
@@ -212,6 +278,58 @@ Add chatter penalty or min-turn-radius.  Retrain.  Compare.
 | US5 Authority limit | Change 3 above |
 | US6 Craft variations | Changes 1-2 above (expanded with trim offsets) |
 | Memory leak investigation | Remains in 023 — fix before 024 training |
+
+## Carried over from 024
+
+These items were flagged as not flight-critical for 024 and deferred to 025
+(2026-04-21):
+
+### Minisim conformance audit + q_EB canonicalization (WI7)
+
+Minisim is a lightweight sim used for some offline analysis; it was flagged
+in 024 as having a `q_EB` vs `q_WB` convention bug (see 024 WI7 and
+tasks.md 5.b T050–T055). **Not on the critical path for 024 flight**
+because minisim isn't in the training pipeline (CRRCSim is) and isn't on
+the xiao. Carry into 025 as part of the overall convention-canonicalization
+pass, since 025 touches minisim and aircraft_state anyway:
+
+- Minisim conformance audit: add fixed-attitude-scenario support to
+  `tools/minisim.cc`, pipe output through `sensor_self_check.py`,
+  confirm the expected `q_EB` bug surfaces. (024 T033)
+- `tests/minisim_convention_tests.cc` — compound-attitude bench in code.
+  (024 T050)
+- Fix `minisimAdvanceState` composition to `delta_body * aircraft_orientation`
+  and velocity rotation to world-via-inverse. (024 T051)
+- Drop or re-derive the initial-velocity pre-rotation in
+  `tools/minisim.cc:148`. (024 T052)
+- Verify gyro-rate sign at `aircraft_state.h:379-382`. (024 T053)
+- Name `AircraftState::aircraft_orientation` as canonical q_EB in
+  `docs/COORDINATE_CONVENTIONS.md`. (024 T054)
+- Confirm T033 audit passes after the above. (024 T055)
+
+### NN input layout drift guard + schema version (024 T081)
+
+024 flagged that `sizeof(NNInputs) == 33 * sizeof(float)` is currently
+enforced by a compile-time static_assert but not by a boot-time log line
+or a version field in serialized artifacts. Easy to add alongside 025's
+inevitable input-layout churn (new variation-aware features, etc.).
+
+- Add a boot-time log line asserting the sizeof invariant. (024 T081)
+
+### Path-Relative Smoothness / Control-Effort Pressure
+
+See the 024 bang-bang evolution analysis
+(`specs/024-sim-real-fidelity/cadence7_bang_bang_evolution.md`). cadence7
+already shows a weak downward dCtrl trend (~30% over gens 90–400),
+suggesting the current lexicase setup has residual selection for smoother
+control — it's just faint because the airframe+servo are fixed. 025's
+Change 1 (aero + mass + CG + servo variations) should amplify this signal
+without any explicit smoothness term in fitness, consistent with the
+"no tunables" project constraint. Re-run
+`plot_control_aggressiveness.py` after 025's first full training to
+measure the shift. If variations don't move the dCtrl/|out| plateau
+meaningfully, revisit a structural selection change (e.g. NSGA-II on
+tracking + robustness-proxy) — but variations first.
 
 ## Backlog Items Absorbed into 024
 

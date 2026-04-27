@@ -164,6 +164,33 @@ public:
 // Forward declaration for AircraftState
 struct AircraftState;
 
+// ACRO rate-PID per-tick internals captured from CRRCSim inputdev for
+// post-run analysis. Pitch/roll only; yaw passive (HB1 has no rudder).
+// All rates rad/s, integrators in rad. See spec 026.
+struct PidInternals {
+  float rateCmdP = 0.0f;  // desired body-X rate (roll), rad/s
+  float rateCmdQ = 0.0f;  // desired body-Y rate (pitch), rad/s
+  float rateAchP = 0.0f;  // achieved body-X rate from FDM, rad/s
+  float rateAchQ = 0.0f;  // achieved body-Y rate from FDM, rad/s
+  float ffP = 0.0f;       // FF term contribution (post-scale)
+  float ffQ = 0.0f;
+  float pP  = 0.0f;       // P term contribution (post-scale)
+  float pQ  = 0.0f;
+  float iP  = 0.0f;       // I term contribution (post-scale)
+  float iQ  = 0.0f;
+  float intP = 0.0f;      // integrator state (rad)
+  float intQ = 0.0f;
+  uint8_t sat = 0;        // bit0=pitch axis hit ±1, bit1=roll axis hit ±1
+
+#ifndef ARDUINO
+  template<class Archive>
+  void serialize(Archive& ar) {
+    ar(rateCmdP, rateCmdQ, rateAchP, rateAchQ,
+       ffP, ffQ, pP, pQ, iP, iQ, intP, intQ, sat);
+  }
+#endif
+};
+
 // REMOVED: getPathIndex() - replaced by getInterpolatedTargetPosition() in gp_evaluator_portable.cc
 // The old discrete index lookup caused jitter sensitivity; interpolation provides smooth sensor values.
 
@@ -273,6 +300,10 @@ struct AircraftState {
     bool hasNNData() const { return hasNNData_; }
     const NNInputs& getNNInputs() const { return nnInputs_; }
     const float* getNNOutputs() const { return nnOutputs_; }
+
+    // ACRO PID per-tick internals (see PidInternals).
+    void setPidInternals(const PidInternals& p) { pidInternals_ = p; }
+    const PidInternals& getPidInternals() const { return pidInternals_; }
 
     // =========================================================================
     // Temporal history for GP nodes - see specs/TEMPORAL_STATE.md
@@ -424,6 +455,9 @@ struct AircraftState {
     float nnOutputs_[NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs
     bool hasNNData_ = false;
 
+    // ACRO PID per-tick snapshot (always populated when PID runs)
+    PidInternals pidInternals_;
+
     // Temporal history — target direction (unit vec in body frame) and distance
     gp_vec3 targetDirHistory_[HISTORY_SIZE];  // unit vectors in body frame
     gp_scalar distHistory_[HISTORY_SIZE] = {0};
@@ -458,6 +492,7 @@ struct AircraftState {
           ar(nnOutputs_[i]);
       }
       ar(rabbitOdometer_, rabbitSpeed_);
+      ar(pidInternals_);
     }
 #endif
 };

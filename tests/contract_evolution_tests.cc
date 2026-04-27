@@ -16,16 +16,20 @@
 TEST(ContractEvolution, PopulationInit) {
     NNPopulation pop;
     std::vector<int> topology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
-    nn_init_population(pop, topology, 20);
+    std::vector<uint8_t> recurrent(NN_NUM_LAYERS);
+    for (int i = 0; i < NN_NUM_LAYERS; i++) recurrent[i] = NN_RECURRENT[i] ? 1 : 0;
+    nn_init_population(pop, topology, recurrent, 20);
 
     EXPECT_EQ(pop.population_size, 20);
     EXPECT_EQ(static_cast<int>(pop.individuals.size()), 20);
     EXPECT_EQ(pop.generation, 0u);
     EXPECT_EQ(pop.topology, topology);
+    EXPECT_EQ(pop.recurrent, recurrent);
 
     for (const auto& ind : pop.individuals) {
         EXPECT_EQ(static_cast<int>(ind.weights.size()), NN_WEIGHT_COUNT);
         EXPECT_EQ(ind.topology, topology);
+        EXPECT_EQ(ind.recurrent, recurrent);
         EXPECT_EQ(ind.generation, 0u);
         EXPECT_GT(ind.mutation_sigma, 0.0f);
     }
@@ -39,7 +43,9 @@ TEST(ContractEvolution, PopulationInit) {
 TEST(ContractEvolution, SingleGenerationCycle) {
     NNPopulation pop;
     std::vector<int> topology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
-    nn_init_population(pop, topology, 20);
+    std::vector<uint8_t> recurrent(NN_NUM_LAYERS);
+    for (int i = 0; i < NN_NUM_LAYERS; i++) recurrent[i] = NN_RECURRENT[i] ? 1 : 0;
+    nn_init_population(pop, topology, recurrent, 20);
 
     // Simulate fitness evaluation: assign random-ish fitness values
     // Lower fitness = better (minimization)
@@ -86,7 +92,9 @@ TEST(ContractEvolution, SingleGenerationCycle) {
 TEST(ContractEvolution, ElitismPreservesBest) {
     NNPopulation pop;
     std::vector<int> topology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
-    nn_init_population(pop, topology, 20);
+    std::vector<uint8_t> recurrent(NN_NUM_LAYERS);
+    for (int i = 0; i < NN_NUM_LAYERS; i++) recurrent[i] = NN_RECURRENT[i] ? 1 : 0;
+    nn_init_population(pop, topology, recurrent, 20);
 
     // Set individual 5 as clearly the best
     for (int i = 0; i < pop.population_size; i++) {

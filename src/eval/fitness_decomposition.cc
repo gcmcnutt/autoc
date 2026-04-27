@@ -28,8 +28,31 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                            cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
         fc.resetStreak();
 
-        double accumulatedScore = 0.0;
+        gp_fitness accumulatedScore = 0.0;
         int simulation_steps = 0;
+
+        // Spec 027 C2 v4: stability + energy accumulators.
+        //
+        // Stability per tick: (|out_pt|-1) + (|out_rl|-1) ∈ [-2, 0].
+        //   Both surfaces centered → -2 (best, "trim flying")
+        //   Either saturated → contributes 0 to that side → less negative
+        //   Both saturated → 0 (worst, "fighting the controls")
+        // Captures "time pitch/roll surfaces spend away from center" — the
+        // PID-style cost of deflection. Throttle excluded (handled by energy).
+        //
+        // Energy per tick: (out_th - 1) / 2 ∈ [-1, 0].
+        //   No throttle → -1 (best, gliding)
+        //   Full throttle → 0 (worst, max propulsion)
+        // FDM handles induced drag implicitly via airspeed loss → throttle
+        // compensation, but only if NN actually compensates. Stability dim
+        // (above) directly catches NN strategies that hide their drag in
+        // pinned pitch/roll.
+        //
+        // Both additive across ticks AND scenarios (no division by ticks).
+        // No streak multiplier — these are raw physical costs, not behavioral
+        // rewards.
+        gp_fitness stabilityAccum = 0.0;
+        gp_fitness energyAccum = 0.0;
 
         // Previous tangent for last-waypoint fallback
         gp_vec3 prevTangent = gp_vec3::UnitX();
@@ -70,10 +93,21 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             accumulatedScore += multipliedScore;
 
             simulation_steps++;
+
+            // Accumulate stability + energy: requires NN data on this state.
+            if (stepState.hasNNData()) {
+                const float* out = stepState.getNNOutputs();
+                const gp_fitness abs_pt = std::abs(static_cast<gp_fitness>(out[0]));
+                const gp_fitness abs_rl = std::abs(static_cast<gp_fitness>(out[1]));
+                stabilityAccum += (abs_pt - 1.0) + (abs_rl - 1.0);
+                energyAccum    += (static_cast<gp_fitness>(out[2]) - 1.0) / 2.0;
+            }
         }
 
         // Store result
-        result.score = -accumulatedScore;  // Negate: lower = better
+        result.score = -accumulatedScore;       // Negate: lower = better
+        result.stability_score = stabilityAccum; // Already negative; lower = better
+        result.energy_score = energyAccum;       // Already negative; lower = better
         result.crashed = isCrash(crashReason);
         result.steps_completed = simulation_steps;
         result.steps_total = static_cast<int>(path.size()) - 1;

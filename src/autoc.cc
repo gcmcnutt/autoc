@@ -546,6 +546,13 @@ static std::vector<int> getCompiledTopology() {
   return std::vector<int>(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
 }
 
+// Get compiled recurrent-layer flags as std::vector (spec 027, D-simple).
+static std::vector<uint8_t> getCompiledRecurrent() {
+  std::vector<uint8_t> r(NN_NUM_LAYERS);
+  for (int i = 0; i < NN_NUM_LAYERS; i++) r[i] = NN_RECURRENT[i] ? 1 : 0;
+  return r;
+}
+
 // Compute fitness for an NN individual from EvalResults
 // Same formula as MyGP::evalTask() lines 1210-1417
 // 022: Point-accumulation fitness — delegates to computeScenarioScores + aggregateRawFitness
@@ -646,6 +653,13 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
              << "        X        Y        Z"
              << "    vxBdy    vyBdy    vzBdy"
              << "    dhome     dist   along   rabVl   stpPt    mult  rampSc"
+             // 026 ACRO PID per-axis internals (zero when PidInternals absent).
+             // rateCmd/rateAch in rad/s; pid* terms post-scale (sum ≈ pre-clamp
+             // surface output); pidInt = integrator state (rad);
+             // pidSat bitmask (bit0=pitch, bit1=roll).
+             << " rateCmdP rateCmdQ rateAchP rateAchQ"
+             << " pidFF_P pidFF_Q pidP_P pidP_Q pidI_P pidI_Q"
+             << " pidIntP pidIntQ pidSat"
              << "\n";
         printHeader = false;
       }
@@ -653,6 +667,8 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       const NNInputs& nnIn = stepState.getNNInputs();
       const float* in = reinterpret_cast<const float*>(&nnIn);
       const float* out = stepState.getNNOutputs();
+
+      const PidInternals& pidRow = stepState.getPidInternals();
 
       char outbuf[2560];
       sprintf(outbuf,
@@ -669,6 +685,9 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         " % 8.2f % 8.2f % 8.2f"
         " % 8.2f % 8.2f % 8.2f"
         " % 8.2f % 8.3f % 7.2f % 7.1f % 7.4f % 6.2f % 7.3f"
+        " % 7.3f % 7.3f % 7.3f % 7.3f"
+        " % 7.4f % 7.4f % 7.4f % 7.4f % 7.4f % 7.4f"
+        " % 7.4f % 7.4f %1u"
         "\n",
         static_cast<unsigned long long>(scenarioSequence),
         static_cast<unsigned long long>(bakeoffSequence),
@@ -695,7 +714,10 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         rabbitVel,
         static_cast<gp_scalar>(stepPoints),
         static_cast<gp_scalar>(mult),
-        static_cast<gp_scalar>(computeVariationScale())
+        static_cast<gp_scalar>(computeVariationScale()),
+        pidRow.rateCmdP, pidRow.rateCmdQ, pidRow.rateAchP, pidRow.rateAchQ,
+        pidRow.ffP, pidRow.ffQ, pidRow.pP, pidRow.pQ, pidRow.iP, pidRow.iQ,
+        pidRow.intP, pidRow.intQ, static_cast<unsigned>(pidRow.sat)
       );
       fout << outbuf;
     }
@@ -984,7 +1006,8 @@ static void runNNEvolution(
 
   // Initialize population
   NNPopulation pop;
-  nn_init_population(pop, topology, popSize);
+  const std::vector<uint8_t> recurrent = getCompiledRecurrent();
+  nn_init_population(pop, topology, recurrent, popSize);
 
   // Set initial mutation sigma from config
   for (auto& ind : pop.individuals) {
@@ -1146,15 +1169,22 @@ static void runNNEvolution(
       }
     }
 
-    // Streak diagnostics for best individual
+    // Streak + stability + energy diagnostics for best individual.
+    // stability and energy are SUMS of per-scenario scores (additive across
+    // the 245-scenario landscape, same convention as genome.fitness for
+    // tracking). All three negative; lower = better.
     double avgMaxStreak = 0.0;
     double pctInStreak = 0.0;
+    double totalStability = 0.0;
+    double totalEnergy = 0.0;
     if (!bestScores.empty()) {
       double streakSum = 0.0, totalStrkSteps = 0.0, totalSteps = 0.0;
       for (const auto& sc : bestScores) {
         streakSum += sc.maxStreak;
         totalStrkSteps += sc.totalStreakSteps;
         totalSteps += sc.steps_completed;
+        totalStability += sc.stability_score;
+        totalEnergy += sc.energy_score;
       }
       avgMaxStreak = streakSum / bestScores.size();
       pctInStreak = (totalSteps > 0) ? 100.0 * totalStrkSteps / totalSteps : 0.0;
@@ -1168,6 +1198,8 @@ static void runNNEvolution(
          << " bestSigma=" << pop.individuals[bestIdx].mutation_sigma
          << " avgMaxStreak=" << std::setprecision(1) << avgMaxStreak
          << " pctInStreak=" << std::setprecision(1) << pctInStreak
+         << " stability=" << std::setprecision(2) << totalStability
+         << " energy=" << std::setprecision(2) << totalEnergy
          << std::endl;
     bout.flush();
 

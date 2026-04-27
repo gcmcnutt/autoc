@@ -20,6 +20,67 @@ analysing logs or integrating new flight data.
   `AircraftState`.  
 - Path generator targets and GP sensors operate strictly in metres and radians.
 
+## ⚠️ CRITICAL: INAV airframe quat ↔ aerospace q_EB (msplink boundary)
+
+INAV's AHRS publishes an airframe orientation quaternion that follows its
+own internal convention: pitch is nose-down-positive (INAV Configurator
+shows -30° for nose up), and yaw is nose-left-positive (N→E rotation is
+negative). Roll matches aerospace (right-wing-down-positive). Board
+alignment (`align_board_roll/pitch/yaw`) is applied INSIDE INAV before
+any MSP message leaves the FC, so what arrives at xiao is already in
+airframe body frame — just in INAV's sign conventions for pitch and yaw.
+
+**Our boundary fix at xiao `msplink.cpp neuQuaternionToNed`** (T042,
+bench-verified 2026-04-19):
+
+```cpp
+return gp_quat(q[0], q[1], -q[2], -q[3]);   // flip qy (pitch) and qz (yaw)
+```
+
+This flips the two components whose rotation axes have opposite sign in
+INAV vs aerospace. `qw` and `qx` pass through unchanged. The result is a
+quaternion whose static attitude extraction (Euler, direction cosines,
+body-axis-in-world rotations) matches CRRCSim's aerospace q_EB. Training
+↔ deployment parity verified: all 9 bench poses plus per-axis rate senses
+conform.
+
+**The gyro needs the same sign flips for consistency** — applied in
+`convertMSPStateToAircraftState` ([msplink.cpp:710-719](../xiao/src/msplink.cpp#L710-L719)):
+
+```cpp
+gp_scalar p =  gyro_inav[0] * deciDegToRadS;   // roll: no change
+gp_scalar q = -gyro_inav[1] * deciDegToRadS;   // pitch: flip
+gp_scalar r = -gyro_inav[2] * deciDegToRadS;   // yaw: flip
+```
+
+**NOT KINEMATICALLY VALID.** Flipping two quaternion components is a
+reflection as viewed by the rotation group — not a proper rotation. The
+output quat is suitable for **static lookup** (attitude extraction,
+direction cosines, body-axis-in-world projection) but **`dq/dt = ½·q·ω`
+does not hold** between the transformed quat and the transformed gyro.
+
+**Forbidden**:
+- Feeding the (quat, gyro) pair into a filter that integrates body rates
+  to update attitude (Kalman, Mahony, Madgwick) — the math will diverge.
+- Computing `d(fixed_quat)/dt = ½·fixed_quat·ω` — kinematic relation broken.
+- Composing the fixed quat with other rotation quaternions via Hamilton
+  product under rotation-composition assumptions.
+
+**Allowed**:
+- Static attitude extraction (Euler, body-axis-in-world rotations).
+- Direction-cosine computation for NN input.
+- Sign-of-pitch / sign-of-roll / sign-of-yaw comparisons.
+
+If a future Kalman/attitude filter wants a kinematically valid q_EB, it
+MUST operate in INAV's native convention — use the raw INAV quat +
+unflipped INAV gyro, integrate in INAV frame, and apply the qy/qz flip
+only at the CONSUMER side to extract aerospace attitude.
+
+Empirical derivation and bench evidence: see
+`specs/024-sim-real-fidelity/spec.md` Findings Log and
+`include/autoc/imu/inav_quat_convention.h` header. Covered by 8 contract
+tests in `tests/msplink_quat_convention_tests.cc`.
+
 ## Orientation Representation
 - **Canonical state:** Unit quaternion `(w, x, y, z)` — scalar-first, Hamilton
   convention — carried through the autoc stack and exchanged with the simulator.
@@ -33,12 +94,16 @@ analysing logs or integrating new flight data.
     below). Convenient for rotating world gravity / wind / target vectors into
     body frame for sensor readout (the dominant operation in this codebase).
   - **Body→earth:** Shuster's survey, MATLAB Aerospace Toolbox, many spacecraft
-    attitude references, and — relevantly — INAV's raw MSP quaternion output.
-  - **Consequence:** Anything crossing the boundary from a body→earth source
-    (INAV) must be **conjugated** (`w, -x, -y, -z`) to enter our stack. This
-    is applied once at `msplink.cpp` and in the renderer's INAV-blackbox loader.
-    Nothing downstream (NN evaluator, CRRCSim bridge, minisim) needs to worry
-    about direction — it receives `q_EB` by contract.
+    attitude references.
+  - **INAV's MSP quat**: airframe orientation in INAV's internal sign
+    conventions (pitch nose-down-pos, yaw N→W-pos). Bringing it to
+    aerospace q_EB requires flipping qy and qz — the T042 `(w, x, -y, -z)`
+    transform in `inavQuatToAerospaceEB`. Applied once at `msplink.cpp`
+    and in the renderer's INAV-blackbox loader. Nothing downstream
+    (NN evaluator, CRRCSim bridge, minisim) needs to worry about
+    direction — it receives aerospace `q_EB` by contract. Caveat: the
+    transformed quat is not kinematically valid — see the "CRITICAL"
+    section above for forbidden vs allowed uses.
 - **Euler read-out:** When needed for logging, the quaternion is converted to
   yaw–pitch–roll via Eigen's `eulerAngles(2, 1, 0)` (Z–Y–X intrinsic sequence)
   and wrapped to ±π radians. Return order: `[yaw, pitch, roll] = [ψ, θ, φ]`.
@@ -169,7 +234,7 @@ xiao state) uses standard aerospace NED/FRD with RHR throughout.
 |--------|----------------|---------------------------|-----------|---------------|
 | Position XY | North+, East+ (NEU cm) | North+, East+ (NED m) | cm→m | `neuVectorToNedMeters` in msplink.cpp |
 | Position Z | **Up+ (NEU)** | **Down+ (NED)** | **Negate + cm→m** | `neuVectorToNedMeters` line 161 |
-| Quaternion | body→earth, inverted pitch/yaw | earth→body, standard RHR | **Full conjugate** (w,-x,-y,-z) | `neuQuaternionToNed` line 170 |
+| Quaternion | Airframe quat, pitch nose-down-pos, yaw N→W-pos | Aerospace q_EB, standard RHR | **Flip qy+qz**: `(w, x, -y, -z)` | `inavQuatToAerospaceEB` (T042) |
 | Gyro roll | Right wing down = + | Right wing down = + | None | T041 (021) |
 | Gyro pitch | **Nose down = +** | **Nose up = +** | **Negate** | T041 (021) |
 | Gyro yaw | **Nose left = +** | **Nose right = +** | **Negate** | T041 (021) |
@@ -208,10 +273,10 @@ are already in aircraft body frame, not sensor frame.
 - **gyroRaw[0-2]**: Same axes but pre-main-filter (only anti-alias LPF applied)
 - **INAV convention**: roll matches standard RHR, but pitch and yaw are negated.
   INAV configurator confirms: it displays negative pitch for nose up.
-- **This is consistent with the quaternion**: INAV's raw quaternion also has
-  inverted pitch/yaw Euler angles. The conjugate transform in msplink.cpp
-  (q → q(w,-x,-y,-z)) fixes this for attitude. Gyro rates need an explicit
-  sign flip on pitch and yaw.
+- **This is consistent with the quaternion**: INAV's airframe quaternion also
+  has pitch and yaw in the same inverted convention. The T042 boundary
+  transform `(w, x, -y, -z)` flips qy and qz to bring the quat into
+  aerospace convention (see the "CRITICAL" section at the top).
 
 **Required transform for NN / CRRCSim compatibility (021):**
 ```
@@ -252,7 +317,7 @@ Before flight, verify polarity on the ground:
 3. Yaw aircraft nose right → gyroADC[2] should be positive
 4. Level aircraft → accSmooth[2] should be positive (~1G)
 
-## Quaternion & Euler sign conventions (VERIFIED via bench testing 2025-12-20)
+## Quaternion & Euler sign conventions (VERIFIED via bench testing 2026-04-19)
 
 ### Standard Aerospace Convention (NED/FRD)
 - **World frame:** NED (North-East-Down), right-handed
@@ -263,47 +328,80 @@ Before flight, verify polarity on the ground:
   - **Pitch** (θ, about +Y body): Positive = nose up
   - **Yaw** (ψ, about +Z body): Positive = nose right (clockwise from above)
 
-### Actual Implementation (Bench-Tested 2025-12-20)
+### Actual Implementation (Bench-Tested 2026-04-19, T042)
 
 #### INAV (xiao-gp/msplink.cpp)
-- **MSP2_INAV_LOCAL_STATE** sends quaternion as `(q0, q1, q2, q3)` = `(w, x, y, z)`
-- **Convention:** Body→earth in NED/FRD (CONFIRMED via bench testing)
-  - Despite INAV source code suggesting earth→body, empirical tests prove body→earth
-  - The `imuTransformVectorBodyToEarth` function name is misleading regarding quaternion direction
-- **Transformation applied:** Full conjugate to convert body→earth to earth→body
-  - `neuQuaternionToNed()` applies: `gp_quat(q[0], -q[1], -q[2], -q[3])`
-  - This conjugate operation inverts the rotation direction as required by the GP contract
-- **Board alignment:** INAV applies sensor→body rotation at the RAW SENSOR level
-  (`applyBoardAlignment()` in `gyro.c:439`, `acceleration.c:564`) BEFORE IMU quaternion
-  fusion. The resulting MSP quaternion is always in **aircraft body frame**, not sensor frame.
-  - Board alignment compensates for physical IMU mounting orientation
-  - **Flight hardware**: `align_board_yaw=0` (IMU aligned with aircraft, no rotation)
-  - **Bench hardware**: `align_board_roll=1700, align_board_yaw=900` (IMU upside-down, rotated)
-  - Downstream code (xiao, renderer) does NOT need to apply board alignment — it's already
-    baked into the quaternion by INAV at the sensor level
-  - The 138° heading offset seen on bench tests was due to bench-specific board alignment,
-    not a pipeline bug
-- **INAV Configurator UI:** Shows **negative pitch** for nose up (cosmetic display choice only)
+- **MSP2_AUTOC_STATE** sends quaternion as `(q0, q1, q2, q3)` = `(w, x, y, z)`.
+- **Convention as sent**: airframe body→earth, but in INAV's internal
+  sign conventions — pitch nose-down-positive and yaw N→W-positive (same
+  convention as INAV's `attitude[]` Euler and `gyroADCf[]` rates).
+- **Transformation applied** (T042 bench-verified):
+  `inavQuatToAerospaceEB` returns `gp_quat(q[0], q[1], -q[2], -q[3])` —
+  flip qy (pitch axis) and qz (yaw axis); qw and qx pass through.
+- **Not a proper rotation** — flipping two components is a reflection
+  relative to the rotation group. Result is valid for STATIC lookup only,
+  NOT kinematic integration. See the "CRITICAL" section at the top.
+- **Board alignment**: INAV applies sensor→board and board→airframe
+  rotations at the RAW SENSOR level (`gyro.c:439`, `acceleration.c:564`)
+  BEFORE IMU quaternion fusion. What arrives at xiao is already in
+  airframe body frame — no board-alignment residual leaks into the MSP
+  stream.
+  - **Flight hardware (hb1, per `xiao/inav-hb1.cfg`)**: `align_board_roll=1700,
+    align_board_pitch=0, align_board_yaw=900` — board is mounted with ~170°
+    roll and 90° yaw relative to aircraft body. INAV corrects internally.
+  - **Pre-flight sanity check**: before each flight test, verify via INAV
+    configurator that the FC shows near-zero roll/pitch/yaw when the
+    aircraft is held nose-north-level (remember: configurator shows
+    negative pitch for nose-up — that's INAV's convention, not a bug).
+    This catches misaligned board config (e.g., physical re-mount
+    without config update).
+- **INAV Configurator UI**: shows **negative pitch** for nose up — this
+  is the INAV convention showing through, not a display artifact. The
+  T042 boundary flip aligns the stored quat to aerospace nose-up-pos.
 
 #### GP/CRRCSim Contract (Standard NED/FRD)
-- **Required quaternion:** Earth→body in NED/FRD with standard right-hand rule
-- **Validation:** All bench tests confirm proper aerospace conventions after conjugate
-- **Frame consistency:** Both INAV (after transform) and CRRCSim use identical conventions
+- **Required quaternion**: Earth→body in NED/FRD with standard right-hand rule.
+- **Validation**: sim gen-400 paths 1 and 2 both pass all applicable
+  `sensor_self_check` cross-checks (pos↔vel integration, gyro↔quat-delta,
+  heading↔track, nose-vs-velocity direction). EOM01 formulas in
+  `crrcsim/src/mod_fdm/eom01/eom01.cpp:111-118` expand to aerospace q_EB
+  ZYX (see math block below).
+- **Frame consistency**: both the xiao pipeline (after T042 boundary) and
+  CRRCSim produce aerospace q_EB. Training ↔ deployment parity.
 
-### Bench Test Results (Verification Table)
+### Bench Test Results (Verification Table, T042, 2026-04-19)
 
-Physical craft orientations tested with INAV board alignment `1700/0/900` and conjugate transformation:
+Physical craft orientations measured with INAV board alignment
+`align_board=1700/0/900` and the T042 `(w, x, -y, -z)` boundary transform.
+The "INAV sends" column is the raw airframe quat before our flip; the
+"After T042" column is what xiao logs and what flows into `AircraftState`.
 
-| Orientation | INAV Sends (body→earth) | After Conjugate (earth→body) | Euler (φ,θ,ψ) | Validates |
-|-------------|------------------------|----------------------------|---------------|-----------|
-| Level, nose north, canopy up | `[1, 0, 0, 0]` | `[1, 0, 0, 0]` | (0°, 0°, 0°) | ✅ Identity baseline |
-| Nose up 45° | `[.93, 0, -.38, 0]` | `[.93, 0, .38, 0]` | (0°, +45°, 0°) | ✅ +Y = nose up (RHR) |
-| Right wing down 45° | `[.92, .35, 0, 0]` | `[.92, -.35, 0, 0]` | (+45°, 0°, 0°) | ✅ +X = right wing down (RHR) |
-| Nose east (yaw 90°) | `[.7, 0, 0, -.7]` | `[.7, 0, 0, .7]` | (0°, 0°, +90°) | ✅ +Z = nose right (RHR) |
-| Inverted | `[0, 1, 0, 0]` | `[0, -1, 0, 0]` | (±180°, 0°, 0°) | ✅ 180° roll |
-| Nose down 30°, right 20° | `[.94, -.16, .3, -.14]` | `[.94, .16, -.3, .14]` | (+20°, -30°, 0°) | ✅ Combined axes |
+| Physical orientation | INAV sends (raw airframe) | After T042 (aerospace q_EB) | Validates |
+|---|---|---|---|
+| Level, nose north | `[1, 0, 0, 0]` | `[1, 0, 0, 0]` | ✅ identity baseline |
+| Nose up 30° | `[.97, 0, -.26, 0]` | `[.97, 0, +.26, 0]` | ✅ +qy = nose up |
+| Nose down 30° | `[.97, 0, +.25, 0]` | `[.97, 0, -.25, 0]` | ✅ -qy = nose down |
+| Right wing down 30° | `[.97, +.26, 0, 0]` | `[.97, +.26, 0, 0]` | ✅ +qx = RWD (qx pass-through) |
+| Right wing up 30° | `[.97, -.26, 0, 0]` | `[.97, -.26, 0, 0]` | ✅ -qx = RWU |
+| Nose east 90° | `[.71, 0, 0, -.71]` | `[.71, 0, 0, +.71]` | ✅ +qz = N→E |
+| Nose west 90° | `[.71, 0, 0, +.71]` | `[.71, 0, 0, -.71]` | ✅ -qz = N→W |
+| Compound: nose up 30° + RWD 30° | `[.92, +.26, -.3, 0]` | `[.93, +.25, +.25, -.07]` | ✅ combined axes |
+| Inverted (180° roll) | `[0, -1, 0, 0]` | `[0, -1, 0, 0]` | ✅ 180° roll (double-cover ambiguity OK) |
 
-**Conclusion:** After conjugate transformation, quaternions follow proper NED/FRD right-hand rule and match standard aerospace conventions. The GP receives earth→body quaternions as required by the training data contract.
+**Per-axis rate sense** (slow rotation into each pose, `gyro=` field on
+Nav State log line, aerospace rad/s post-msplink):
+
+| Motion | Axis expected + | Bench observation |
+|---|---|---|
+| Slowly roll right (RWD) | `p` (gyro.x) | ✅ positive during motion |
+| Slowly pitch up (nose up) | `q` (gyro.y) | ✅ positive during motion |
+| Slowly yaw right (N→E) | `r` (gyro.z) | ✅ positive during motion |
+
+**Conclusion**: with T042's `(w, x, -y, -z)` quat flip and the existing
+gyro pitch/yaw negations in `convertMSPStateToAircraftState`, the xiao
+pipeline delivers aerospace q_EB and aerospace body rates. Both sides
+(sim and xiao) feed the NN the same convention. Contract-tested in
+`tests/msplink_quat_convention_tests.cc` (8 tests, all pass).
 
 ### Euler Angle Extraction
 - Use Eigen's `eulerAngles(2, 1, 0)` for ZYX intrinsic sequence (yaw-pitch-roll)
@@ -402,11 +500,11 @@ case GETBETA: {
 
 ✅ **GP Sensors:** Use `.inverse()` correctly to transform world-frame vectors to body frame, confirming they expect earth→body quaternions
 
-✅ **INAV (after conjugate):** Now produces earth→body quaternions matching the CRRCSim/GP contract
+✅ **INAV (after T042 boundary flip):** The `(w, x, -y, -z)` transform in `inavQuatToAerospaceEB` brings INAV's airframe-convention quat into aerospace q_EB for static lookup. Not kinematically valid; see "CRITICAL" section.
 
-✅ **Renderer (after fix):** Correctly converts INAV blackbox body→earth quaternions to earth→body for visualization
+✅ **Renderer:** AircraftState stores aerospace q_EB post-T042, so renderer gets the right convention directly.
 
-**Conclusion:** The entire system follows a consistent earth→body quaternion convention in NED/FRD coordinates with standard aerospace right-hand rule. The INAV conjugate transformation (implemented 2025-12-20) ensures the real hardware matches the training data contract.
+**Conclusion:** After the T042 boundary flip, both the xiao pipeline and CRRCSim produce aerospace q_EB in NED/FRD. The transformed quat is safe for static attitude lookup (Euler extraction, direction cosines, renderer projections); do NOT feed it into a Kalman/Mahony filter alongside the gyro — see the "CRITICAL" section at the top for the full forbidden/allowed list.
 
 ## Renderer Quaternion Handling (FIXED 2025-12-20)
 
@@ -418,20 +516,24 @@ The renderer (renderer.cc) expects earth→body quaternions in `AircraftState`, 
 
 Both operations correctly use earth→body quaternions by multiplying body-frame vectors.
 
-### INAV Blackbox Loading (renderer.cc:1453-1461)
+### INAV Blackbox Loading (renderer)
+
+The renderer's INAV-blackbox path applies the same T042 boundary transform
+as msplink so historical flight data is interpreted in aerospace q_EB:
+
 ```cpp
-// INAV blackbox logs raw body->earth quaternion in NED frame
+// INAV blackbox quat is in INAV's airframe convention (pitch-nose-down-pos,
+// yaw-N→W-pos). Flip qy and qz to get aerospace q_EB for rendering.
 quat inavQuat(qw, qx, qy, qz);
 inavQuat.normalize();
-
-// Convert body->earth to earth->body to match renderer/GP contract
-quat earthToBody(inavQuat.w(), -inavQuat.x(), -inavQuat.y(), -inavQuat.z());
-earthToBody.normalize();
+quat aero_q_EB(inavQuat.w(), inavQuat.x(), -inavQuat.y(), -inavQuat.z());
+aero_q_EB.normalize();
 ```
 
-**Previous Bug:** Applied incorrect NEU→NED conversion plus conjugate, resulting in wrong orientation display.
-
-**Fix:** Simple conjugate transformation, identical to msplink.cpp, converts INAV's body→earth to earth→body.
+(The sensor_self_check analysis library uses the same T042 boundary in
+its `blackbox_to_canonical()`; see `sensor_self_check_lib.py` — it
+exposes both `quat` (aerospace, post-flip) and `quat_raw` (INAV, for
+kinematic rate checks that would break under the reflection).)
 
 ### CRRCSim/GP Evaluation Data Loading
 CRRCSim `EvalResults` already contain earth→body quaternions (verified above), so no transformation is needed when loading evaluation data - the renderer uses them directly.
@@ -453,7 +555,8 @@ Craft held by hand, tilted through each axis, blackbox recorded at 1/32.
 
 **Key finding**: INAV gyro pitch and yaw sign convention is inverted from
 standard aerospace right-hand rule. Roll matches. This is consistent with
-INAV's quaternion convention (also requires conjugate to match standard).
+INAV's quaternion convention (also requires qy and qz flips — the T042
+boundary transform — to match aerospace).
 
 **Required gyro transform for autoc pipeline (021):**
 ```

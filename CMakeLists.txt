@@ -138,6 +138,9 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(rpc_transport_tests tests/rpc_transport_tests.cc)
   target_link_libraries(rpc_transport_tests GTest::gtest GTest::gtest_main)
 
+  add_executable(msplink_quat_convention_tests tests/msplink_quat_convention_tests.cc)
+  target_link_libraries(msplink_quat_convention_tests GTest::gtest GTest::gtest_main autoc_common)
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -149,6 +152,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME contract_config_tests COMMAND contract_config_tests)
   add_test(NAME contract_evolution_tests COMMAND contract_evolution_tests)
   add_test(NAME rpc_transport_tests COMMAND rpc_transport_tests)
+  add_test(NAME msplink_quat_convention_tests COMMAND msplink_quat_convention_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -156,6 +160,7 @@ if(ENABLE_AUTOC_TESTS)
             fitness_computer_tests fitness_decomposition_tests selection_tests
             contract_evaluator_tests contract_config_tests
             contract_evolution_tests rpc_transport_tests
+            msplink_quat_convention_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -166,6 +171,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND contract_config_tests --gtest_brief=1
     COMMAND contract_evolution_tests --gtest_brief=1
     COMMAND rpc_transport_tests --gtest_brief=1
+    COMMAND msplink_quat_convention_tests --gtest_brief=1
   )
 endif()
 

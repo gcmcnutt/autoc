@@ -1,348 +1,785 @@
-# 024 — Sim/Real Fidelity & Cadence
+# 024 — Sim/Real Fidelity
 
 **Status**: Scaffold
 **Depends on**: 023 (direction cosines, engage delay, deterministic eval)
-**Priority**: P0 — gates next flight; absorbs leftover 023 tech debt
+**Priority**: P0 — gates next flight with new training
 **Related**: 025 (craft variations — formerly 024)
+
+## North Star
+
+**Close-out criterion: research → corrections → retrain → eval → flight
+test showing sim-parity dynamics.** The feature closes when a flight
+test of the retrained (unchanged-topology) NN, on a cadence-corrected and
+sensor-verified pipeline, shows the same dynamic control response as sim
+— same cmd→rate slope, same cmd→attitude-delta behavior, same trajectory
+family. The corrections we expect to land (rabbit position logging,
+sensor-axis fixes, sampling-rate alignment, history buffer verification)
+are precisely the kind that a flight test is the only definitive proof
+of; we keep them bundled so the feature's outcome is a flown, working
+system, not a staged hand-off.
+
+**Deployment rule**: **no changes to flight hardware until the retrained NN
+is ready** (US6). Msplink convention fixes, cadence corrections, and all
+other pipeline changes will invalidate the current NN weights — the
+current weights were trained against pre-fix conventions, so flashing the
+fixed xiao code with old weights would make flight behavior *worse*, not
+better. Xiao rebuilds during US3/US5 are for bench verification only. The
+single deployment event is US6: new weights + fixed pipeline flashed
+together, then flown.
+
+### Critical milestones
+
+The work items collapse into **two ordered milestones** that together close
+the feature. Everything else is either (a) prerequisite diagnostic work
+feeding these milestones, or (b) nice-to-have cleanup that can defer.
+
+- **M1 — CRRCSim is right against our aeronautical conventions**
+  (reference correctness). The training simulator must match the standard
+  aerospace conventions in `docs/COORDINATE_CONVENTIONS.md` before we can
+  trust anything downstream — CRRCSim is NOT assumed correct; it's tested
+  against first-principles aero conventions just like every other component.
+  Acceptance: sim `data.dat` passes all 8 cross-checks at exactly 100 ms
+  cadence; quaternion, gyro, position, velocity, attitude, accel (N/A if
+  not logged), heading, and command→rate correlations all sign-correct.
+  Covered by: **US2 + US4 + any CRRCSim-side fixes in US3.**
+- **M2 — Xiao IO matches CRRCSim** (deployment parity). Every signal the
+  NN sees and every command it emits must use the same convention on the
+  xiao deployment target as on the CRRCSim training target. Acceptance:
+  US1 cross-checks on flight-20260417 historical data pass after analysis-
+  library fix; compound-attitude bench on flight FC reproduces the
+  canonical signals expected by the (reference) sim for each pose.
+  Covered by: **US1 + US3 msplink fixes + US5 bench.**
+
+**Minisim q_EB fix (WI7) is P2**, nice-to-have for convention consistency
+across our stack. It does not gate either M1 or M2 — minisim is not in
+training or the xiao pipeline. Fold into the feature if time permits
+(tasks.md subgroup 5.b); otherwise leave the BACKLOG entry and address
+when minisim is actually reused.
+
+The primary focus is going deep on sensor consistency: sim-to-real. Dynamic
+control response in flight should match sim at the single-sample level
+(slope ≈ 1 on cmd→rate, quat-delta ≈ gyro, position integrates cleanly from
+velocity, attitude matches accel/gravity). We've been circling around
+"something is off" — the fix is to stop guessing and methodically confirm
+every NN-visible sensor signal is self-consistent with every other one,
+conforms to [COORDINATE_CONVENTIONS.md](../../docs/COORDINATE_CONVENTIONS.md),
+and matches between sim and real at the interfaces we control.
+
+Non-linear effects, CG differences, airframe wear, bang-bang control, and
+craft variations are NOT gated here — those are 025.
+
+## Clarifications
+
+### Session 2026-04-19
+
+- Q: Does 024 scope include a fresh NN training run, or does training wait until a later feature? → A: Full sequence is in-scope — research, corrections, retrain, eval, **and flight test**. NN topology stays the same for the next flight. The fixes expected from this work (rabbit position logging, sensor tweaks, sampling-rate alignment) mean the *outcome* of 024 is a new flight, and that flight is the closing proof point for the feature. (Revised from initial answer of "flight is separate" — clarified 2026-04-19: the corrections we expect to land are exactly the kind that require an end-of-feature flight to validate, so we keep them together.)
+- Q: New pilot-only flight, or work with flight-20260417 data first? → A: Use 20260417 first; supplementary pilot-only flight only if WI1 inconclusive. Premise: we trust the INAV → blackbox → CSV pipeline end-to-end once plan-phase research verifies each column, so pilot-flight portions of 20260417 are as valid as xiao engage spans for convention cross-checks.
+- Q: Pass/fail threshold policy for WI1 cross-checks? → A: Directional only — slopes must be positively signed (no sign inversions); correlation strength is reported and reviewed, not gated by a numeric threshold. Rationale: sim shows strong correlation despite cross-coupling, which demonstrates that correct conventions produce strong correlation; flight with correct conventions should too. We inspect correlation values to catch weak/drifting signals, but the hard pass/fail is "no axis is sign-inverted."
+- Q: History buffer semantics — does a stored direction-cosine entry represent the direction "at sim tick now" or "at sim time of recording"? → A: Current sim tick. `recordErrorHistory(dir, dist, timeMs)` stores `dir` as computed at the caller's "now"; history index `[t]` = direction observed at sim tick t. Lock with a contract test in `tests/engage_reset_tests.cc` (WI15).
+- Q: WI4 cadence fix approach — options A (tick alignment), B (partial-tick budget), C (50 Hz physics override), D (combo)? → A: Defer to plan-phase research. Research targets: (a) CRRCSim's inner loop / frame update rate in **headless mode** — what drives the tick, what knobs exist; (b) Xiao's timer — is its 100 ms sample interval on a sustained hardware timer (no drift) or software-accumulated (subject to drift from MSP response time)? Goal: hit exactly 10 Hz now with a path to 20 Hz later, on both sides, with the cleanest + lowest-risk mechanism.
 
 ## Problem Statement
 
-flight-20260417 diverged "wildly with some intention." The 023 postflight audit
-ruled out the obvious convention bugs (quat ordering, NN output polarity on
-pitch/roll, renderer perception, cmd→gyro timing on pitch/roll). Two real findings
-remain unexplained by any convention bug, plus a pile of related tech debt that's
-been accumulating:
+flight-20260417 showed "wildly wrong with some intention." 023 postmortem
+ruled out obvious convention bugs (quat scalar ordering, NN output polarity
+on pitch/roll, renderer perception, cmd→gyro timing on pitch/roll). Two
+findings survive and drive 024:
 
-1. **Training cadence drift.** Sim `data.dat` steps 117 ms/sample instead of the
-   intended 100 ms. CRRCSim physics ticks at ~39 ms and the eval threshold
-   `simTimeMsec > lastUpdateTimeMsec + 100` (strict greater) fires at the next
-   physics tick past 100 ms (3 × 39 = 117). NN was trained at ~8.5 Hz while xiao
-   runs at ~10 Hz, heading to 20 Hz. The sim and deployment cadences do not match.
+1. **Flight gyro vs quat-delta rate scatter** (`gyro_vs_quat.py` / `.png` in
+   `flight-results/flight-20260417/` and `specs/024-sim-real-fidelity/`):
+   sim is identity (slope ~1 on all three axes — expected since CRRCSim's
+   gyro is integrated from the quat). Flight yaw agrees (slope +0.93,
+   correctly signed), flight roll is attenuated/noisy (+0.17), flight pitch
+   is **sign-inverted (−0.22)**. Only pitch flips — a global convention bug
+   would affect all three. Working hypothesis: msplink's quat conjugate
+   doesn't correct INAV's non-aerospace pitch sign the way the explicit
+   `-gyroADC[1]` correction does for the gyro.
+2. **Sim cadence drift**: training data.dat steps 117 ms/sample instead of
+   100 ms. CRRCSim physics tick (~39 ms) + strict-greater eval threshold
+   in `inputdev_autoc.cpp:341` lands at 3 ticks = 117 ms. NN trained at
+   ~8.5 Hz while xiao runs ~10 Hz, heading to 20 Hz.
 
-2. **Flight AHRS quat disagrees with flight gyro on roll axis.** Post-flight
-   analysis: flight cmd→gyro roll correlation is +0.76 at ~200 ms lag, but
-   cmd→quat-derived-roll-rate is **negative at every lag 0–707 ms** (best −0.14).
-   Sim shows +0.54 for the equivalent signal. Negating the flight quat-derived
-   signal only gets to +0.14–0.27, much weaker than sim. The AHRS attitude
-   tracking on the roll axis is materially different from what sim produces.
-
-3. **Bench verification gap.** `docs/COORDINATE_CONVENTIONS.md` bench tests use
-   only single-axis rotations. A compound-attitude test would distinguish several
-   quat-convention bugs that isolated-axis tests cannot.
-
-4. **Broader fidelity sweep pending.** Only body angular rates and attitude have
-   been subjected to end-to-end cmd→response audit. Position, velocity, and
-   acceleration pipelines between sim and flight have not been audited the same way.
-
-5. **Accumulated tech debt around the NN input/output contract.** The 023
-   topology change silently broke several post-flight scripts and the renderer
-   (reconstructed rabbit from wrong indices) because the log format relies on
-   index-based parsing without a schema version. Several scripts still carry
-   old-layout assumptions. Renderer has a legacy INAV-blackbox direct path that
-   is separate from the primary xiao `-x` flow.
-
-6. **Workarounds and fallbacks rarely get revisited.** The `SIM_FPS = 25.0`
-   with a comment claiming "~40 Hz" is a good example — a constant that doesn't
-   match reality that's been sitting there. Similar latent items likely exist.
+These findings are tips of a pile — likely other coordinate and pipeline
+drift issues we haven't surfaced yet because the xiao engage spans during
+flight-20260417 are short and bang-bang, leaving limited dynamic range to
+expose bugs. The first work item exploits the **manual (pilot) flight
+portions** of the same blackbox log for richer, non-saturated data.
 
 ## Goals
 
-1. **Cadence correctness**: sim eval fires at exactly 100 ms (10 Hz).
-   Training-time and deploy-time cadence match exactly. 20 Hz (50 ms)
-   infrastructure is a future-facing concern — keep in mind while designing
-   the cadence fix so the step-up is low-friction later, but **do not** cut
-   over to 20 Hz in this feature.
-2. **Ground-truth sensor fidelity**: every signal the NN sees or acts on —
-   position, velocity, acceleration, quaternion, angular rate, **and throttle
-   response (airspeed, RPM)** — is traced to a ground-truth source and
-   validated end-to-end, sim↔flight. The theme is "we stop guessing; every
-   signal has a reference we can compare against."
-3. **Quat sign-convention audit closed**: flight AHRS roll anomaly either
-   root-caused or characterized and accepted.
-4. **Tooling debt paid**: schema-versioned logs, post-flight scripts rewritten
-   around literal NN I/O, renderer legacy path resolved, training run archive
-   policy in place.
-5. **Workarounds cleared**: known workarounds replaced with proper implementations
-   where possible; documented where not.
+**Premise**: INAV's internal state is trusted — INAV configurator accurately
+shows orientation and the map matches reality. The blackbox logger and
+`blackbox-tools` decoder are faithful passthroughs of INAV's belief (cited
+in [docs/INAV_BLACKBOX.md](../../docs/INAV_BLACKBOX.md)). The xiao pipeline
+and our analysis library are where convention drift can enter — **that is
+what we audit and fix**.
 
-## Work Items
+1. **Every NN-visible sensor signal is self-consistent** with every other
+   signal it overlaps with (position↔velocity, quat↔gyro, attitude↔accel,
+   heading↔track), on real flight data — including manual-flight portions
+   outside xiao engage spans.
+2. **Every signal conforms to COORDINATE_CONVENTIONS.md** in both sim
+   (CRRCSim + minisim) and real (INAV → xiao pipeline). Where they don't,
+   we fix the producer, not the consumer.
+3. **History buffers are correct** — temporal indices, direction semantics,
+   engage-reset behavior all verified in sim and the xiao pipeline.
+4. **Cadence uniform** at 100 ms/sample end-to-end (sim training = xiao
+   deployment). 20 Hz-ready in API shape but not cut over.
+5. **Bench test confirms** sensor conventions on the actual flight FC so
+   we predict flight behavior before the next test flight.
 
-### WI1 — Fix sim eval cadence to 100 ms exactly
+## Running Findings Log
 
-**Root cause**: `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp:341`
-`shouldEval = (simTimeMsec > lastUpdateTimeMsec + gEvalUpdateIntervalMsec)` with
-physics ticking at ~39 ms lands on 117 ms. Header claims `SIM_FPS = 25.0`
-("~40 Hz physics tick assumption") but actual step disagrees — first pass is to
-understand why.
+As we work WI1–WI6 we will uncover bugs, workarounds, fallbacks, or tech
+debt that isn't the thing being audited. Capture here **on the spot**,
+categorized, with a pointer to which WI absorbs the fix. This log lives
+with the spec so nothing drifts into a "cleanup phase at the end" pile.
 
-**Options**:
-1. Change `>` to `>=` and align physics tick to divide 100 ms evenly.
-2. Accumulate partial-tick virtual-time budget so long-run rate averages exactly
-   100 ms.
-3. Override physics rate in training so 100 ms lands on a tick.
+Categories:
+- **bug**: behavior is wrong against the convention doc or self-consistency.
+- **workaround**: behavior is OK but only because of a hack; the underlying
+  cause should be addressed.
+- **fallback**: we silently use a default when something upstream is broken,
+  masking the upstream issue.
+- **debt**: test/doc/script rot, not a behavior bug per se.
+- **question**: we need input from the human or a bench measurement.
 
-**Verify**: `awk 'NR>1 {print $4}' data.dat | uniq -c` shows every Time delta
-exactly 100 ms.
+Format: `[category] short description — found in WI_, fix in WI_ (or "logged
+for later")`.
 
-**Also document**: actual physics step path in a new `docs/CADENCE.md` (or append
-to `COORDINATE_CONVENTIONS.md`). Resolve the `SIM_FPS` comment vs value disagreement.
+### Findings from first audit run (2026-04-19)
 
-### WI2 — Keep 20 Hz in mind (design, do not implement)
+Artifacts:
+- [flight-results/flight-20260417/sensor_self_check_lib.py](../../flight-results/flight-20260417/sensor_self_check_lib.py)
+- [flight-results/flight-20260417/sensor_self_check.py](../../flight-results/flight-20260417/sensor_self_check.py)
+- [flight-results/flight-20260417/sensor_self_check_blackbox_log_2026-04-17_173039.01.md](../../flight-results/flight-20260417/sensor_self_check_blackbox_log_2026-04-17_173039.01.md) — real flight blackbox
+- `/tmp/sensor_self_check_gen400_p0_p2.md` — sim gen-400 slice
 
-20 Hz is the next target after 024 ships. In WI1, design so the step-up is
-cheap later — don't bake in assumptions that 100 ms is forever:
+**Flight (blackbox CSV, 9593 samples, 161s):**
 
-- `EVAL_UPDATE_INTERVAL_MSEC_DEFAULT` should become a real config knob, not
-  a compile-time constant.
-- NN temporal history offsets (`HIST_PAST`, `FORECAST_OFFSETS`) are in *ticks*.
-  At tick=100ms vs 50ms, their wall-clock semantics differ. Decide now whether
-  they should be expressed in ms (so they're tick-rate-independent) or left
-  in ticks (NN window scales with rate). This decision affects WI1's API shape.
-- Note in the code where 20 Hz will require additional care (MSP poll rate,
-  INAV RC override cadence, training wall-time budget).
+- **[bug] Check 2 (gyro↔quat-delta): FAIL on roll AND pitch.** p slope
+  −0.17 r −0.20; q slope −0.24 r −0.24; r slope +1.05 r +0.60. The yaw
+  axis works cleanly; roll and pitch are both sign-inverted vs gyro.
+  Earlier xiao-log analysis showed ONLY pitch inverted — blackbox-side
+  shows an ADDITIONAL roll inversion. Points at the INAV→aerospace
+  quat transform in `blackbox_to_canonical()` being wrong on TWO axes
+  (the simple conjugate currently used is insufficient; NEU→NED + pitch
+  convention both need explicit handling). **Fix target: T041 (msplink)
+  and T044 (analysis-library)** — WI5 bench derives the correct
+  composition.
+- **[bug] Check 4 (accel↔gravity): FAIL.** ax slope −4.83, az slope
+  +6.05 (expected both slope ≈ 1). Scale magnitude ≈ 5 suggests a
+  consistent mis-rotation chaining from check 2 (expected gravity
+  direction comes from rotating world gravity to body via the same
+  wrong quat). Will retest after WI3 quat fix lands; may reveal
+  residual scaling issue (`acc_1G = 256` verification from
+  INAV_BLACKBOX.md) separately if not.
+- **[debt] Check 3 (Euler↔attitude): SKIP** — flight-20260417 log
+  doesn't include `attitude[0..2]` columns. This is an INAV blackbox
+  config setting (`blackbox_fields`). If we want this cross-check for
+  US6, add `attitude` to the blackbox field set before the next flight.
+- **[warn] Check 6 (mag↔heading):** mean offset −39.9°, stddev 98.75° —
+  huge variance. Likely: mag calibration on the flight FC not refreshed,
+  or dynamic disturbances (motor current, ferrous frame). Low priority
+  unless WI6 post-retrain flight also shows bad mag.
+- **[ok] Check 1 (pos↔vel): PASS.** Slope 1.07, 1.11, 0.92 with r ≥ 0.97.
+  Position and velocity transforms are internally consistent (NEU→NED
+  + cm→m both working). **Validates WI1 belief cascade layer 1.**
+- **[ok] Check 5 (heading↔track): PASS.** Quat-yaw direction matches
+  ground-track direction (slope +1.17, r +0.81). **Validates cascade
+  layer 2 for yaw.**
+- **[ok] Check 7 (attitude vector↔vel direction): PASS on N and E.**
+  Nose direction in world agrees with velocity direction on horizontal
+  axes (N +0.81 r +0.90, E +0.61 r +0.74). D axis weak (+0.08, noisy)
+  because flight is mostly horizontal. **Strong check for quat
+  convention — passing suggests quat yaw direction is correct in world
+  frame.**
+- **[skip] Check 8 (cmd↔attitude): SKIP** — blackbox doesn't have NN
+  cmd; need the fusion join (T025c) with xiao log. Defer until fusion
+  implemented.
 
-No training-run or xiao rebuild at 20 Hz in this feature — just the paper
-design and the API shape that makes it possible.
+**Sim (gen 400 data.dat, 350 samples, 23s):**
 
-### WI3 — Quat sign convention: compound-attitude bench verification
+- **[bug] Check 1 (pos↔vel): FAIL on N (−0.25) and noisy D (r 0.28).**
+  Unexpected — sim should trivially pass. The integration uses
+  `rotate_body_to_world(q_EB, v_body)` on sim's `vxBdy/vyBdy/vzBdy`.
+  If sim's body velocity convention doesn't match my rotate assumption
+  (or if q_EB doesn't match expectations), integration drifts. **Suspect
+  workaround/fallback zone** — sim's world pos comes from the FDM
+  directly; sim's body vel comes from the FDM differently. Their
+  relationship may assume a rotation direction that doesn't match
+  research.md §3's claimed q_EB. Logged as [workaround] candidate —
+  need to trace either CRRCSim velocity export path or our rotate
+  convention. Fix target: T034 sim investigation.
+- **[ok] Check 2 (gyro↔quat): PASS** slope +1.10 +0.97 +1.03 r +0.96
+  +0.70 +0.99 — sim's gyro and quat are self-consistent (as expected,
+  sim gyro = quat integration). Confirms sim side of the cascade.
+- **[ok] Check 5 (heading↔track): PASS** slope +0.99 r +0.99.
+- **[ok] Check 7 (attitude↔vel dir): PASS** slopes +0.93 +0.95 +0.85.
+- **[ok] Check 8 (cmd↔rate): PASS** slopes +0.15, +0.29 (weak but positive
+  correlation; r is low due to saturated bang-bang commands). Sign is
+  correct.
 
-Existing table only tests isolated-axis rotations. Add compound attitudes; record
-INAV raw, xiao post-conjugate, xiao log `q=` field, Eigen Euler, and our quat→body-axis
-formula output for each:
+### Key implications
+
+- **Flight blackbox quat conversion is definitely wrong on 2 axes** (roll +
+  pitch). Sim quat conversion is RIGHT (slope ≈ 1 on all axes in check 2).
+  The fix is in `blackbox_to_canonical()` (T044) and `msplink.cpp`
+  `neuQuaternionToNed()` (T041). WI5 bench derives the exact transform.
+- **Belief cascade layers 1 (pos↔vel) and 2 (yaw direction) validate** on
+  flight, giving us trust in the position, velocity, and yaw pieces.
+- **Sim position integration surprise** suggests sim-side convention drift
+  we didn't anticipate. Could be a real bug OR a subtle expectation
+  mismatch on my rotate. To investigate in T034.
+- **No xiao-log-fusion check ran yet** — T025c / T025b still pending;
+  will reveal cmd↔rate flight behavior.
+
+### Additional findings captured here as we proceed below.
+
+### Deep convention investigation (2026-04-19, post-US1 iteration)
+
+After the first audit run flagged check 2 (gyro↔quat-delta) FAIL, I dug into
+the accelerometer at rest — the cleanest possible convention witness —
+and iterated through quaternion interpretation hypotheses. Key results
+visualized in `flight-results/flight-20260417/geometric_quat_flight.png`
+and `specs/024-sim-real-fidelity/geometric_quat_sim_gen400.png`.
+
+**The gyro↔quat-delta slope=1 circular-argument trap** (user called this
+out explicitly): in sim, `gyrP/Q/R = eom01->getOmegaBody()` and
+`qw/qx/qy/qz` is INAV/EOM01's integrated quat from those same rates. So
+slope = 1 is definitional, not a validation of aerospace convention.
+
+**Non-circular witnesses** (three independent physics paths):
+
+1. **At-rest sample (row 2, t=195.96s, pre-takeoff)**: accel measures
+   gravity in body frame ≈ (0.12, -0.056, 0.95) g (with acc_1G = 2050,
+   not 256 as our code had — verified from INAV blackbox row: accZ=1956
+   LSB ≈ 1G). Tilt from accel gives pitch=-7.2°, roll=-3.3° aerospace.
+   - Full conjugate of raw INAV quat (current blackbox_to_canonical):
+     extracts pitch=+9.7°, roll=+1.3° — **sign-inverted**. WRONG.
+   - Raw INAV quat, no transform: pitch=-8.1°, roll=-5.5° — **matches**
+     (±2°, attributable to accel noise / IMU calibration).
+2. **Gyro vs quat-delta per-axis slope**: with raw quat + raw gyro
+   (no transforms), all three axes return slope +1.00 (r ≥ 0.997).
+   Internal INAV integration is self-consistent. No axis-by-axis
+   hidden sign flips.
+3. **Mid-flight yaw vs ground-track angle**: with raw quat, yaw and
+   track have OPPOSITE signs on aerospace comparison. With (w,x,y,-z)
+   transform, they align within ~5–25° (declination + wind).
+
+**Synthesis** — the FRAME issue:
+
+- INAV's blackbox quat is q_EB in INAV's **NEU world frame**.
+- Our aerospace stack uses **NED world frame**.
+- **NEU→NED is a reflection of the world-Z axis, not a rotation.**
+- **Quaternions cannot represent reflections.** There is no clean static
+  `q_transform` such that applying it preserves both:
+  (a) static attitude interpretation (pitch/roll/yaw match physical)
+  (b) kinematic relation `dq/dt = 0.5·q·ω_body` (rate integration)
+- Pitch and roll extraction "accidentally" match in both frames because
+  their rotation axes (body-Y and body-X) are horizontal — the world-Z
+  flip doesn't affect them at the integration-point level.
+- Yaw sign is flipped between NEU and NED (positive yaw-NEU = CCW
+  from above = negative yaw-aerospace-NED = CCW).
+
+**Implication for the flight-20260417 failure**:
+
+The NN was trained on sim data where qw/qx/qy/qz come from EOM01 (aerospace
+NED). At deployment, msplink currently applies **full conjugate** to INAV's
+MSP quat then feeds the NN. The NN sees: conjugate of NEU quat. That's
+doubly wrong: (i) it's INAV's NEU frame, not NED, (ii) the conjugate flips
+all three axes' signs on top of that. Net effect on the NN's attitude
+perception is garbled. **Root cause of "wildly wrong with some intention"
+identified.**
+
+**T041 fix** (msplink quat boundary):
+```cpp
+// REMOVE: return gp_quat(q[0], -q[1], -q[2], -q[3]);  // full conjugate: WRONG
+// REPLACE: return gp_quat(q[0], q[1], q[2], -q[3]);   // flip qz only (NEU→NED static)
+```
+This is a static-attitude-parity patch: the resulting quat is NOT
+kinematically valid as a NED q_EB, but for **look-up** purposes (what
+direction is the nose in world? what is the roll angle?) it matches
+aerospace convention. Since NN uses quat statically (for direction-cosine
+computation, not integration), this gets training-deployment parity.
+
+**T044 (analysis library)**: already applies raw-no-transform pattern,
+matching the INAV internal consistency for rate checks. For heading/attitude
+extraction against world-frame quantities (checks 5, 7), we document the
+NEU→NED reflection issue and either apply z-flip at extraction time OR
+note the fails as "expected artifacts of frame mismatch, not a bug."
+
+**Other findings from this iteration**:
+- [bug] acc_1G was hardcoded 256; actual FC value is 2050. Fixed. Check 4
+  went from slopes 4–6 (wildly off) to slopes 0.76–0.94 (sensible
+  with noise from maneuver loads per user's reminder about dynamic flight).
+- [doc] The `COORDINATE_CONVENTIONS.md` bench test "nose-up 45° | INAV
+  sends [.93, 0, -.38, 0]" is likely a transcription error — multiple
+  other bench rows (right-wing-down, inverted) align with aerospace
+  interpretation but this one inverts pitch. Worth re-testing at WI5
+  compound-attitude bench.
+- [finding] Yaw/heading issue explains why the previous `cmd_response`
+  analysis (023 postmortem) showed pitch axis anomaly in gyro-vs-quat —
+  it was actually the ensemble of NEU→NED reflection + full conjugate
+  creating specific-axis failure patterns. The specific "pitch inverted"
+  reading from 023 was a special case of the general convention drift.
+
+**Status**: blackbox-side audit now has clean explanations for all
+sign-related FAILs. Scale-related issues (accel calibration) also resolved.
+Next: apply same findings to msplink T041 fix, then rerun audit after
+a bench capture to verify. Sim conformance (WI2) unchanged — sim is
+already aerospace NED, no transforms needed.
+
+### Additional findings captured here as we proceed below.
+
+### T044 resolution (2026-04-19) — two-quat split in analysis library
+
+`sensor_self_check_lib.py` now exposes both quats on blackbox:
+- `quat` = aerospace q_EB (qz flipped) — static lookups (Euler, heading,
+  gravity projection, nose-vs-velocity, mag heading).
+- `quat_raw` = raw INAV NEU quat — only the kinematic `quat↔gyro-delta`
+  and `cmd↔rate` checks, which need `dq/dt = 0.5·q·ω` to hold.
+
+Xiao (post-T041) and sim emit aerospace q_EB throughout and set
+`quat_raw = quat` — no reflection.
+
+Post-T044 audit on flight-20260417 (sign-gate):
+- Check 1 pos↔vel: PASS (unchanged)
+- Check 2 gyro↔quat-delta: PASS +1.00/+0.99/+1.00 (uses quat_raw)
+- Check 4 accel↔gravity: PASS (ax +0.60 was −4.83 pre-fix; sign restored)
+- Check 5 heading↔track: PASS +1.17 (unchanged — yaw was already correct
+  after qz flip)
+- Check 6 mag↔heading: offset −27.4° σ=63.8° (was −39.9° σ=98.8° raw)
+- Check 7 nose↔vel dir: PASS N +0.81, E +0.61; FAIL D −0.076 — noise-
+  dominated (|r|=0.08); aircraft is essentially level for most of the
+  flight so both nose-D and vel-D are near zero. **Not a convention
+  issue**; sign-gate limit when true correlation is ≈0.
+- Check 8 cmd↔rate: SKIP (still needs fusion join T025c).
+
+Satisfies spec Validation #1 — blackbox data was always correct; we now
+interpret it correctly.
+
+```
+# (next: WI5 bench verify, retrain + fly)
+```
+
+## Work Items (priority order)
+
+### WI1 — Full-flight sensor self-consistency audit (first story)
+
+Exploit the ENTIRE flight-20260417 blackbox log, not just the three xiao
+engage spans. Pilot-flight portions have varied, non-saturated dynamics —
+rich data for cross-validating conventions.
+
+#### Belief cascade (audit philosophy)
+
+The audit rests on trusting what INAV has already demonstrated to be
+internally consistent:
+
+- INAV configurator accurately represents aircraft orientation, and the
+  flight path displayed on its map matches reality. Therefore INAV's
+  internal convention is self-consistent and physically correct.
+- The blackbox logger emits INAV's internal values (source-cited in
+  [docs/INAV_BLACKBOX.md](../../docs/INAV_BLACKBOX.md)). `blackbox-tools`
+  is a faithful passthrough.
+- **Therefore**: the blackbox CSV content can be trusted as an accurate
+  representation of INAV's belief at each logged instant.
+
+What is NOT yet trusted: **OUR conversion boundaries** — msplink's
+`neuQuaternionToNed`, the analysis library's `blackbox_to_canonical`,
+and the xiao→autoc interface layer. This is where 024's fixes land.
+
+The cross-checks therefore form a cascade, each layer gating the next:
+
+1. **Position ↔ velocity integration** — if pos/vel transforms are correct,
+   integrating vel over time recovers pos delta. No attitude needed.
+2. **Quat direction sanity** — body-forward rotated by our canonical q_EB
+   should align with world-frame velocity direction during coordinated
+   flight. Confirms quat direction semantics.
+3. **Quat ↔ gyro (d/dt)** — q_delta-derived rate matches logged gyro. Both
+   come from INAV's independent measurement paths (fused attitude vs raw
+   gyro); internal consistency confirms our conversion on both.
+4. **Euler(our_quat) ↔ attitude[]** — independent of (3) because
+   `attitude[]` is INAV's own Euler extraction from the same internal
+   state. Mismatch points to our extraction formula.
+5. **Accel ↔ gravity** — at quasi-steady flight, body-Z accel ≈ g×cos(θ)×cos(φ).
+   Confirms accel frame and our Euler extraction agree with measured specific
+   force.
+6. **Mag ↔ heading** — body-frame mag vector rotated to world via our q_EB
+   should point approximately magnetic north (plus declination). Confirms
+   full world-frame reconstruction. Board-alignment and calibration
+   complications kept minimal by requiring only "rough alignment."
+
+If all six pass on the same data, the conversion boundary is trusted. If
+a specific check fails, the cascade tells us which layer owns the bug.
+
+**Working premise**: once plan-phase research nails down each blackbox
+column's meaning from `~/inav` and `~/blackbox-tools` source (see below),
+we trust the INAV → blackbox → CSV pipeline end-to-end. That means pilot-
+flight portions of 20260417 are as valid as xiao engage spans for
+convention cross-checks — no xiao/autoc code path runs during pilot flight,
+but every sensor is still logged. **Decision (2026-04-19)**: work with
+20260417 first. Only schedule a supplementary pilot-only flight if WI1 is
+inconclusive after plan-phase research + cross-checks.
+
+**Plan-phase research prerequisites** (before any analysis code): the exact
+interpretation of each blackbox CSV column must be re-derived from source.
+We believe gyro and position transforms are correct; quat is the most
+suspect. Research targets:
+
+- `~/inav/src/main/blackbox/blackbox.c` — emission site for each field.
+  What units, what scaling, what frame? Compare with bench-verified behavior.
+- `~/inav/src/main/navigation/*.c` — `navPos` / `navVel` compute path.
+  Confirm NED vs NEU, cm vs m, sign conventions (especially Z).
+- `~/inav/src/main/imu/*.c` — quaternion construction. Confirm whether
+  the stored quat is earth→body or body→earth, Hamilton vs JPL, scalar
+  position.
+- `~/inav/src/main/sensors/gyro.c`, `acceleration.c` — raw-ADC → logged-
+  value chain. Confirm scaling (gyro `× 16 deg/s`? acc_1G const?) and
+  board-alignment application order.
+- `~/blackbox-tools/src/parser.c` — CSV decode. Does it apply any
+  transformation (reorder, rescale, sign-flip) that would differ from
+  the raw blackbox frame?
+- `~/inav/src/main/flight/imu.c` or similar — `attitude[0..2]` Euler
+  extraction: angle ORDER in the array (some INAV versions store
+  `[roll, pitch, yaw]`, others `[yaw, pitch, roll]`) and sign convention
+  (doc notes INAV displays *negative* pitch for nose up — does this
+  apply to the logged `attitude[1]` too?).
+- Check the INAV fork `~/inav` is actually `gcmcnutt/inav` with any
+  custom modifications vs mainline.
+
+Output of plan-phase research: an append to `docs/COORDINATE_CONVENTIONS.md`
+(or a new `docs/INAV_BLACKBOX.md`) that nails each column's meaning
+source-by-source, with file:line citations, so future analysis isn't
+based on guesses. This research is the precondition to the actual
+cross-checks.
+
+Using the blackbox CSV only (no dependency on xiao log), verify each signal
+is self-consistent with the others per
+[COORDINATE_CONVENTIONS.md](../../docs/COORDINATE_CONVENTIONS.md):
+
+- **Position ↔ velocity**: integrate `navVel` over time, compare to
+  `navPos` delta. NED units should agree. Catches cm/m unit bugs or Z-sign
+  drift.
+- **Attitude ↔ angular rate** (the check we've started): for each sample
+  `q_delta = q_prev.inv() * q_curr; rate = 2 * q_delta.vec / dt` and
+  compare to `gyroADC` (post-negation). Expected: y=x on all axes. This
+  is `gyro_vs_quat.py` extended to the full flight.
+- **Quaternion Euler ↔ `attitude[0..2]`**: INAV already computes Euler
+  angles and logs them. Eigen `eulerAngles(2,1,0)` of our post-conjugate
+  quat must match `attitude[]` (decideg → deg). Any mismatch is a
+  conjugate or convention drift.
+- **Accel ↔ gravity + dynamics**: at steady level flight, `accSmooth`
+  should be (~0, ~0, +1G) in body frame. In a coordinated turn at bank
+  angle φ, body +Z accel ≈ g·sec(φ). Check a sustained turn from pilot
+  flight.
+- **Heading ↔ ground track**: during level flight, quat-derived heading
+  should match `atan2(navVel_E, navVel_N)` (within wind). Any persistent
+  offset = yaw-reference drift.
+- **Mag ↔ heading**: `magADC` direction should match quat heading
+  (within local declination). Confirms AHRS mag fusion is healthy and
+  helps characterize WI5 AHRS roll anomaly.
+- **If we claim quat says we're heading south** → `navPos` north should be
+  decreasing, if climbing → `navPos` Z decreasing. Spot-check a few
+  representative samples end-to-end.
+
+Deliverable: a script (likely `flight-results/flight-20260417/sensor_self_check.py`
+or similar) that produces a report + per-check scatter/time-series plots.
+
+**Pass/fail policy**: each check reports Pearson correlation and linear-fit
+slope. A check **fails** only if slope is sign-inverted (a negative slope
+where we expect positive, or vice versa). Correlation strength is reported
+and visually inspected but not a numeric gate. Sim's own correlation on
+each check is the reference; flight shouldn't be dramatically weaker
+without an explainable physical reason (e.g., AHRS filter noise). Any
+axis that comes out sign-flipped becomes a hypothesis for WI3.
+
+Output → feeds WI3 fixes.
+
+### WI2 — Sim (CRRCSim + minisim) conformance audit
+
+Run the same self-consistency checks on sim data.dat. Sim SHOULD pass
+everything (it's the convention doc's reference), but we've been wrong
+before. The exact same script machinery as WI1, just pointed at sim data.
+
+If sim fails a check, fix the sim producer BEFORE comparing against
+flight — otherwise we can't tell which side is the reference.
+
+Covers both CRRCSim (inputdev_autoc bridge) and minisim explicitly —
+minisim's q_EB vs q_WB confusion (known from 023) almost certainly fails
+the quat↔gyro check. That confirms WI3 scope.
+
+Output → feeds WI3 fixes.
+
+### WI3 — Root-cause fixes (from WI1 + WI2 findings)
+
+Fix everything that failed the cross-checks. Candidates (confirm / expand
+after WI1, WI2):
+
+- **msplink.cpp pitch-axis convention** (high probability): the flight
+  pitch sign-inversion finding suggests `neuQuaternionToNed` needs more
+  than a simple conjugate. Likely a per-axis sign handling matching how
+  the gyro pitch/yaw are negated. Fix and re-verify via `gyro_vs_quat.py`
+  slope → 1.
+- **minisim q_EB alignment**: handled in WI7 (kept as a separate WI for
+  visibility; implementation tasks are grouped with other US3 fixes in
+  tasks.md subgroup 5.b).
+- **Position/unit/sign drift** in any script or converter that failed WI1
+  (history of rotted scripts in 023 postmortem suggests more lurk).
+- **History buffer semantics**: if WI1 shows historical direction cosines
+  point the wrong way, fix `recordErrorHistory` and related.
+
+Each fix is its own small commit with a paired cross-check showing the
+failure→pass transition.
+
+### WI4 — Cadence fix to 100 ms exactly (both sides)
+
+Root cause (sim side): the legacy strict-greater trigger
+`simTimeMsec > lastUpdateTimeMsec + 100` combined with a ~39 ms outer frame
+(`fps=25`, `dt=0.003`) lands at 117 ms (3 frames past threshold, not 2).
+
+**Strategy: frame-counter cadence with a startup integrality check.**
+
+Instead of comparing simTime against a wall-clock-style threshold, count
+outer frames and fire NN eval every `framesPerEval`-th frame. Deterministic
+by construction; drift is zero as long as the cadence triple below is
+integral. `simTimeMsec` is still stamped into the diag ring buffer so drift
+between virtual and wall time is observable in video mode.
+
+**The cadence triple.** Three quantities must be chosen together:
+
+1. `Global::dt` — physics substep (seconds). From `simulation.flightModel.dt`
+   in `autoc_config.xml`.
+2. `video.fps` — outer-frame rate (Hz). From `video.fps`. `CTime` rounds the
+   outer cycle to `cycleLength_ms = (int)(1000 / fps / dtMs) * dtMs`, i.e. an
+   integer multiple of `dtMs`. `cycleLength_ms` is the outer frame length
+   used everywhere downstream; it may differ from `1000/fps` by up to one
+   `dtMs`.
+3. `gEvalUpdateIntervalMsec` — NN eval cadence (ms). Default 100 ms.
+
+**Integrality requirement** (enforced in `inputdev_autoc.cpp init()`):
+
+```
+gEvalUpdateIntervalMsec % cycleLength_ms == 0
+framesPerEval = gEvalUpdateIntervalMsec / cycleLength_ms
+```
+
+If the triple is not integral, `init()` aborts with a fatal log line naming
+all four numbers. This is a deliberate loud-failure: silent non-integer
+ratios are what produced 117 ms and 150 ms cadences in the past. Picking
+the triple is a design decision that belongs in config, not in runtime
+drift.
+
+**Not every (fps, dt) pair admits an integral triple.** Example:
+`dt=0.003, fps=20` → `cycleLength_ms=48`, which does not divide 100. In
+fact no `fps` yields a 100-ms-compatible `cycleLength` at `dt=0.003` —
+because `cycleLength_ms` is always a multiple of `dtMs=3` and 3 does not
+divide 100. This is why **`dt` was moved from 0.003 to 0.005** in this
+feature: with `dt=0.005, fps=20`, `cycleLength_ms=50` and
+`framesPerEval=2`. Physics runs at 200 Hz — still 10× the outer rate, well
+above any stability requirement for the HB1 FDM. Reverting `dt` downward
+requires re-choosing `fps` and/or `gEvalUpdateIntervalMsec` to keep the
+triple integral. See `research.md` §3 for the derivation and rejected
+alternatives (accumulator-based cadence, strict-equal `>=`).
+
+**Current triple** (post-WI4):
+
+| Knob | Value | Source |
+|---|---|---|
+| `Global::dt` | 0.005 s (200 Hz physics) | `autoc_config.xml` `<flightModel dt="0.005" />` |
+| `video.fps` | 20 Hz (50 ms outer frame) | `autoc_config.xml` `<video fps="20">` |
+| `cycleLength_ms` | 50 ms | computed by CTime |
+| `gEvalUpdateIntervalMsec` | 100 ms | `EVAL_UPDATE_INTERVAL_MSEC_DEFAULT`, env-overridable |
+| `framesPerEval` | 2 | computed at init |
+
+**Xiao side.** No change at this feature: `MSP_LOOP_INTERVAL_MSEC=50`,
+`MSP_NN_EVAL_DIVISOR=2` still yields 100 ms NN cadence. Matches sim
+exactly. Still not hardware-timed; jitter is millis()-granularity plus MSP
+latency. See WI13 for 20-Hz-NN readiness (not cut over in this feature).
+
+Verify: `awk 'NR>1 {print $4}' data.dat` shows every Time delta exactly
+100 ms. Startup log line `[AUTOC] cadence: video.fps=... cycleLengthMs=...
+framesPerEval=2 headless=...` confirms the triple was accepted.
+
+### WI5 — Compound-attitude bench verification
+
+Existing bench table (docs/COORDINATE_CONVENTIONS.md lines 270–285) uses
+single-axis rotations. Single-axis tests cannot distinguish several quat-
+convention bugs. Add compound attitudes and verify each sensor field at
+the known pose.
 
 | # | Physical hold | Expected Euler (φ, θ, ψ) |
 |---|---|---|
 | B1 | Level, nose north, canopy up | (0°, 0°, 0°) |
-| B2 | Nose up 30°, right wing down 30°, heading 0° | (+30°, +30°, 0°) |
-| B3 | Nose up 45°, heading east (yaw 90°) | (0°, +45°, +90°) |
-| B4 | Right wing down 60°, heading south 180° | (+60°, 0°, +180°) |
+| B2 | Nose up 30°, right wing down 30° | (+30°, +30°, 0°) |
+| B3 | Nose up 45°, heading east | (0°, +45°, +90°) |
+| B4 | Right wing down 60°, heading south | (+60°, 0°, +180°) |
 | B5 | Nose down 30°, left wing down 45°, heading west | (−45°, −30°, −90°) |
 
-Any row where extracted Euler ≠ expected within 5° = documented sign-convention
-drift. Results append to `docs/COORDINATE_CONVENTIONS.md` as pass/fail matrix.
+For each hold, record INAV raw quat, msplink post-processed quat, xiao
+log `q=` field, gyro values (with aircraft held still → gyro ≈ 0),
+accel values (should show gravity vector in body frame), `attitude[]`
+Euler. Each compared against expected.
 
-### WI4 — Full-sensor ground-truth audit on new flight
+Outcome: either confirms the WI3 msplink fix worked, or exposes more
+convention drift.
 
-A flight test designed for this audit (not aerobatic, not just "fly a path").
-Every NN-visible signal is reduced to ground truth and compared sim↔flight:
+### WI6 — Full-sensor ground-truth audit on next flight
 
-- **Position / velocity**: log INAV navPos, navVel over an engage span of a
-  straight climb and a controlled circle. Compare against sim eval of the same
-  path. World-frame trajectory should match within sim-to-real dynamics tolerance.
-  Ground truth for position is GPS-derived (INAV nav), for velocity navVel.
-- **Acceleration**: log `accSmooth[0..2]` during engage. Body-frame accel
-  signature (centripetal in turn, vertical in climb) must match expected signs
-  and magnitude. Ground truth is gravity (at rest / level) and derivable from
-  velocity curvature during known maneuvers.
-- **Quat continuity**: log quat every sample over a full engage span, overlay
-  against gyro-integrated quat seeded from the span's initial quat. Divergence =
-  AHRS filter contribution. Direct test for WI5. Ground truth is the
-  gyro-integrated attitude trajectory.
-- **Throttle → airspeed / RPM ground truth**: **deliberately command varying
-  throttle during engage** (or allow pilot throttle override under autoc
-  roll/pitch) so throttle→airspeed polarity and gain can be measured directly.
-  The 20260417 flight pegged throttle near +1 throughout, leaving polarity
-  unverified. Additionally log `escRPM` from blackbox so we have a second
-  reference (RPM is closer ground truth for "motor is responding to command"
-  than airspeed, which integrates airframe + prop + gravity). Confirm:
-  - throttle cmd → ESC RPM correlation clean and positive at short lag (~50–100 ms).
-  - ESC RPM → airspeed correlation clean and positive at longer lag (~500–1000 ms).
-- **Angular rate**: gyrP/Q/R ground truth is the differentiated attitude from
-  quat (or vice versa — either signal can sanity-check the other). Covered by
-  WI5 investigation.
+Once WI3 fixes land and WI5 confirms, a flight test designed to exercise
+the full signal chain and verify in-motion:
 
-### WI5 — Flight AHRS/gyro axis convention: root-cause
+- Straight climb segment (exercises pos, vel, pitch attitude, accel).
+- Controlled level circle (exercises yaw rate, bank angle, centripetal
+  accel, heading tracking).
+- Varied-throttle span during engage (verifies throttle→airspeed polarity
+  that 20260417 couldn't — throttle was saturated at +1 throughout).
+- Both pilot-flown and xiao-control portions, so we have high-dynamic-range
+  pilot data plus the engage spans.
 
-**Updated finding (2026-04-18)**: The simple lag hypothesis doesn't hold after
-the quat-delta-based rate extraction. Using `q_delta = q_prev.inverse() * q_curr,
-(p,q,r) = 2 * q_delta.vec / dt` — the exact kinematics relation with no Euler
-coupling — sim shows slope = 1.0 on all three axes (identity as expected), but
-flight shows:
+Validation: same cross-checks as WI1 must pass on the new flight, now with
+the WI3 fixes applied.
 
-- **Yaw**: slope ≈ +0.93, correctly signed. Quat and gyro agree on yaw.
-- **Roll**: slope ≈ +0.17, weakly positive (attenuated / noisy but not inverted).
-- **Pitch**: slope ≈ **−0.22**, **sign-inverted**.
+### WI7 — Minisim q_EB canonicalization
 
-Only the pitch axis inverts. A global convention bug would flip all three.
+Carried from BACKLOG. 024 owns it fully. `AircraftState::aircraft_orientation`
+is documented as q_EB but `minisimAdvanceState` composes and rotates
+assuming body→world. Fix composition (pre-multiply body delta), fix
+velocity rotation (`.inverse() * body_vel`), fix `minisim.cc:148` initial
+velocity. Add locking unit test that builds an AircraftState at known
+attitude and asserts round-trip body↔world.
 
-**Working hypothesis**: msplink's `neuQuaternionToNed` applies a full conjugate
-`(q[0], -q[1], -q[2], -q[3])` to convert INAV's body-to-earth to earth-to-body.
-But INAV's *gyro* pitch (`gyroADC[1]`) is non-standard aerospace RHR — it's
-"nose-down = positive" — so msplink separately negates `gyroADC[1]` to flip
-it into aerospace RHR. If INAV's *quaternion* encodes pitch with the same
-"nose-down = positive" convention as their gyro, then the conjugate alone
-produces a quat where qy still represents "nose-down-positive rotation" — NOT
-aerospace RHR. Our quat-delta rate extraction then gives `-q` (aerospace pitch
-rate) while the gyro (already negated) gives `+q`. Exactly the observed inversion.
+Sequence with WI2 and WI3 — WI2 sim audit will confirm or refute the bug;
+fix is this.
 
-Yaw is unaffected because — assumption to verify — INAV's yaw encoding in the
-quat happens to align with aerospace after conjugate (or the effect is small
-on yaw-axis rotations because they're about world-down, a shared reference).
+### WI8 — Xiao rabbit logging sanity
 
-Roll is attenuated but not cleanly inverted. Possibly:
-- Similar convention mismatch but partially cancelled by bank-angle coupling.
-- Dominant noise from near-saturated roll commands with rate-limit clipping.
+`rabbit=[x,y,z]` field in xiao NN log lines should be the NN's direct
+target in virtual NED. Verify present and correct on every engage sample
+and matches what the NN reconstructs from direction cosines + distance.
+Discrepancy = rabbit interpolation or log bug.
 
-**Actions (folded into WI3 bench + here)**:
-1. **WI3 compound-attitude bench** answers this definitively. At e.g.
-   +30°-pitch +30°-roll, record INAV raw quat, msplink post-conjugate quat,
-   and compare each component sign against standard aerospace q_EB computed
-   from the known Euler. Any component that disagrees is documented as an
-   INAV-specific flip requiring correction in msplink.
-2. Depending on bench result, fix msplink `neuQuaternionToNed` to produce a
-   true aerospace-RHR q_EB (not just conjugate). May need per-component sign
-   handling matching the gyro-axis negations.
-3. Once fixed, rerun `gyro_vs_quat.py` on a re-flown span — expect slopes
-   near 1.0 on all three axes, matching sim.
-4. If bench disproves the convention hypothesis, pivot to AHRS filter
-   investigation (`inav_w_acc`, `inav_w_mag`, `imu_acc_ignore_rate`, centrifugal
-   compensation, mag alignment in `xiao/inav-hb1.cfg`). Integrate flight gyro
-   over each engage span, compare trajectory to AHRS quat.
+Needed by renderer `-x` magenta ground-truth reference.
 
-**Diagnostic artifacts** (kept for reference, rerun after fix):
-- `flight-results/flight-20260417/gyro_vs_quat.py` / `.png` — flight scatter
-- `specs/024-sim-real-fidelity/gyro_vs_quat_sim.py` / `.png` — sim baseline
+### WI9 — NN input layout drift guard
 
-### WI6 — Xiao rabbit logging
+023's topology change silently broke the renderer (fixed now — commit
+5330af6 updated parser for named-field xiao log format). Prevent recurrence:
 
-`rabbit=[x,y,z]` field in NN log lines is the NN's direct target (virtual NED).
-Verify it's consistently present in all engage spans and is the true
-rabbit position from the NN's own state, not a reconstruction. Fix if missing.
-Needed by renderer `-x` mode magenta ground-truth reference line.
+- Schema version constant in `nn_inputs.h`, emitted in data.dat header and
+  xiao log banner.
+- Renderer + Python scripts read version and bail loud on mismatch.
 
-### WI7 — NN input layout drift guard
+Stronger: make data.dat parsing use named-field headers (as xiao log already
+does) so index-based drift is structurally impossible. Ties to WI10.
 
-Commit 1189782 (023) changed NN input layout; renderer and scripts silently
-continued compiling because they parse the text log by regex, not through the
-`NNInputs` type. Add:
-
-- Schema version constant next to `NNInputs` struct (bumped on any field change).
-- Version emitted in data.dat header and xiao log banner.
-- Renderer + Python readers verify version and bail loud on mismatch.
-
-Stronger alternative: replace index-based data.dat parsing with named-field
-parsing (already done in xiao log: `tX=`, `g=`, `out=`). Apply same discipline
-to data.dat header format so silent drift is structurally impossible.
-
-### WI8 — Post-flight analysis scripts: rewrite around literal NN I/O
+### WI10 — Post-flight analysis scripts: rewrite around literal NN I/O
 
 Several scripts rotted across the 023 layout change:
-- `specs/018-flight-analysis/correlate_flight.py` — missing Z-flip and quat conjugate.
+- `specs/018-flight-analysis/correlate_flight.py` — missing Z-flip, missing quat conjugate.
 - `specs/019-improved-crrcsim/scripts/verify_flight_log.py` — reads old
   dPhi/dTheta indices.
 - `specs/022-tracking-cone-fitness/flight_nn_polar_viz.py` — plots direction
   cosines as bearing angles.
 
-Rewrite under a single principle: **the NN input/output in the log is canonical
-truth.** Consume literal named fields; share a helper module with canonical
-column/index constants; keep sim and flight analyses structurally comparable.
-Folds with WI7 version check.
+Rewrite under principle: **NN input/output in the log is canonical truth.**
+Consume literal named fields; shared helper module with canonical field
+names; sim and flight analyses structurally parallel. Folds with WI9.
 
-### WI9 — Renderer legacy INAV blackbox path: decide
+### WI11 — Renderer legacy INAV blackbox path
 
-`tools/renderer.cc:1720–1735` loads INAV blackbox CSV directly (pre-xiao flow).
-Complies with conventions today but parallel to the primary xiao-log `-x` path.
-Decide and execute: **keep-and-maintain** (add version check per WI7, keep as
-fallback when xiao log unavailable) or **delete**. Removing it reduces surface
-area; keeping it gives a conventions cross-check against an independent source.
-Low priority but close it out either way.
+`tools/renderer.cc:1720–1735` loads INAV blackbox CSV directly, parallel to
+the xiao `-x` path. Complies today but duplicates convention work. Decide:
+keep-and-maintain (adds version check per WI9) or delete. Low priority.
 
-### WI10 — Training run archive policy
+### WI12 — Training run archive policy
 
-We have `test4-data.dat` (6.3 GB) anchoring current analysis. Define policy for
-which training runs to preserve long-term vs discard: a short note in
-`docs/` or `specs/` covering naming, retention, and the current canonical run.
+`test4-data.dat` (6.3 GB) is the current canonical analysis target. Define
+short retention policy for training runs: naming, what to preserve, what
+to discard. One-page note, low complexity.
 
-### WI11 — Workarounds & fallbacks audit
+### WI13 — 20 Hz NN cadence future readiness (design, no cutover)
 
-A cross-cutting sweep for "workaround shaped" code we've been working around
-rather than fixing. Known or suspected items to check:
+**Scope clarification.** WI4 already cuts the **outer frame** over to 20 Hz
+(50 ms cycle). WI13 is specifically about the **NN eval cadence** (currently
+10 Hz / 100 ms) — that stays 10 Hz in this feature. The knobs below become
+relevant when the NN itself steps to 20 Hz.
 
-- `SIM_FPS = 25.0` with comment "~40 Hz physics tick assumption" — comment and
-  value disagree; which is correct? (Connected to WI1.)
+Design for cheap step-up without cutting over:
+
+- `EVAL_UPDATE_INTERVAL_MSEC_DEFAULT` → real config knob, not compile-time
+  constant. At 20 Hz NN, drops to 50 ms. The frame-counter triple must
+  stay integral: with `cycleLength_ms=50, evalInterval=50 → framesPerEval=1`
+  (eval every outer frame). `init()` will catch a bad triple at startup.
+- Decide whether `HIST_PAST` / `FORECAST_OFFSETS` remain in ticks
+  (NN window scales with rate) or become explicit ms (rate-independent).
+- Note in code where 20 Hz NN will require additional care (xiao MSP poll,
+  INAV RC-override cadence, training wall-time).
+
+### WI14 — Workarounds & fallbacks audit
+
+Sweep for "workaround shaped" code. Known or suspected:
+
+- `SIM_FPS` define and `getCycleCounterOverflow()` — removed in WI4. The
+  constant existed only as input to the overflow-bucket "way late" guard in
+  the legacy time-diff cadence path. Frame-counter cadence with a startup
+  integrality check makes both unnecessary; simTime jumps are caught by
+  `SIM_MAX_INTERVAL_MSEC` instead.
 - `engageDelayMsec = 750` with stick-centered + cruise-throttle hold —
-  is the delay masking a real startup instability in the NN or the
-  AHRS-just-after-engage? Revisit once WI3–WI5 give cleaner attitude tracking.
-- `XIAO_RABBIT_SPEED_MPS = 12.0f` as a xiao-side constant separate from
-  sim's `autoc.ini RabbitSpeedNominal` — two sources of truth. Consolidate.
-- `inav-hb1.cfg` board alignment quirks on bench hardware — document current
-  values and why; decide whether they're still needed.
-- `MSP_override_channels = 47` (bits 0,1,2,5) forcing CH6 = MANUAL — working
-  as intended, but verify in the INAV CLI of the flight FC (came up as "top
-  suspect" in the 023 output-side audit).
+  is this masking a real NN startup instability, or legitimate engage
+  smoothing? Revisit after WI1/WI3 clarify attitude tracking.
+- `XIAO_RABBIT_SPEED_MPS = 12.0f` duplicates sim's `autoc.ini
+  RabbitSpeedNominal`. Consolidate single source of truth.
+- INAV board alignment bench vs flight quirks — document current values
+  and why.
+- `MSP_override_channels` mask — confirm in actual flight FC CLI.
 
-For each: is this a real workaround that should be removed, or a legitimate
-boundary decision that just *looks* like a workaround? Document either way.
+Per item: removed / replaced / documented as legitimate. No "ambiguous,
+revisit later."
 
-### WI12 — Test coverage (carried from 023 P3)
-
-From `specs/023-ood-and-engage-fixes/tasks.md` P3:
+### WI15 — Test coverage (carried from 023 P3)
 
 - `tests/engage_reset_tests.cc` — 6 contract tests for `resetHistory()`.
 - `tests/engage_delay_tests.cc` — 3 contract tests for delay window.
-- `tests/nn_inputs_tests.cc` — unit-vector invariant, poison-value completeness,
-  `sizeof(NNInputs) == 33 * sizeof(float)` contract (already `static_assert`ed,
-  but test makes behavior visible in test output).
-
-Selection-tests / 2-dim lexicase moved to 025 with effort-lexicase.
-
-### WI13 — Minisim quat convention — fix in-scope
-
-Previously backlogged. Fits 024's fidelity theme squarely: minisim currently
-treats `AircraftState::aircraft_orientation` as body→world while every other
-code path treats it as earth→body, and `tools/minisim.cc:148` plus
-`aircraft_state.h:367,389` carry that assumption. Not flight-relevant today
-(minisim is only plumbing-tests) but it's a latent footgun that will poison
-any future reuse of `minisimAdvanceState` for training-adjacent work.
-
-Full description of the bug, proposed fix, and acceptance test are in the
-`[NEXT]` entry that was in BACKLOG — pulled into 024 in this feature. See
-commit history for the original backlog prose.
-
-Acceptance:
-- `AircraftState::aircraft_orientation` has exactly one semantic (q_EB),
-  documented at the field declaration.
-- Minisim composition and velocity rotation use q_EB semantics.
-- Locking unit test constructs an AircraftState at known non-identity
-  attitude, asserts body-frame ↔ world-frame transformations round-trip
-  correctly.
+- `tests/nn_inputs_tests.cc` — unit-vector invariant, `sizeof(NNInputs)`
+  contract, poison-value completeness.
 
 ## Validation
 
-1. **Cadence**: data.dat Time deltas all exactly 100 ms (then 50 ms after WI2).
-   Flight xiao_ms deltas all 100 ms ± 5 ms (then 50 ms).
-2. **Quat bench (WI3)**: all 5 compound attitudes Euler-extract within 5°, in
-   both the sim init path and after xiao msplink conjugate.
-3. **Flight cmd→response audit (WI4)**:
-   - gyro-based cmd→rate correlation ≥ +0.5 at lag 100–300 ms on all 3 axes.
-   - quat-derived cmd→rate within ±0.2 of gyro-based (no sign flip).
-   - Position trajectory matches sim within 5 m RMS over 5 s span.
-   - Throttle→airspeed clearly positive at ~700 ms lag.
-4. **AHRS divergence (WI5)**: quantified divergence angle; either root-caused
-   and fixed, or documented as known-acceptable bias below threshold.
-5. **Tooling**: WI7 version guard trips on a deliberate layout-change test.
-   WI8 rewritten scripts produce correct output on both 20260417 flight log
-   and sim data.dat.
-6. **Workarounds (WI11)**: for each listed item, disposition is one of
-   {removed, replaced, documented as legitimate}. No "ambiguous, revisit later."
+Feature closes when:
+
+1. **WI1 all cross-checks pass on flight-20260417** (after WI3 fixes to
+   BOTH the msplink pipeline (xiao side) AND the analysis-library
+   `blackbox_to_canonical()` quat transform, no axis on any cross-check
+   is sign-inverted; correlation strengths reported and visually in line
+   with sim baselines). Historical blackbox data is INAV-produced and
+   cannot be retroactively fixed — the fix is in how our conversion code
+   interprets INAV's emission.
+2. **WI2 all cross-checks pass on sim** (CRRCSim and minisim; same
+   sign-inversion pass/fail, sim is the correlation reference).
+3. **Cadence**: sim data.dat and xiao logs both step at exactly 100 ms.
+4. **WI5 bench**: all 5 compound attitudes verify per-field against expected.
+5. **Retrain + eval**: one training run on the fixed-cadence sim completes,
+   eval suite (tier0 repro through tier3 stress) passes, xiao build verifies
+   with the new weights. NN topology unchanged from 023.
+6. **WI6 flight test**: flight of the retrained NN on the corrected
+   pipeline shows the same dynamic control response as sim — cmd→rate
+   slope sign-correct on all three axes, quat-derived rate agrees with
+   gyro on sign, position trajectory follows the intended path family.
+   Not asking for aerobatic fidelity; asking for "sim-to-real is on the
+   same footing" (non-linear effects and craft variation are 025).
+7. **Workarounds (WI14)**: every listed item has a disposition.
 
 ## Out of Scope
 
 - Craft parameter variations, trim offsets, authority limit — 025.
-- NN topology changes.
+- Effort lexicase / smoothness-pressure training — 025.
+- NN topology changes (stays fixed at 33,32,16,3 for next flight).
 - Hardware (airframe, servo, prop) changes.
-- Effort lexicase / smoothness-pressure training — 025 Change 5.
+- Cut-over to 20 Hz (design only in WI13).
 
 ## Open Questions
 
-1. Does AHRS roll divergence come from centripetal accel contamination or from
-   a convention mismatch? WI3 + WI5 together answer.
-2. Is the training-time / flight-time cadence mismatch actually affecting NN
-   behavior meaningfully, or is 117 vs 100 ms within the noise? Compare NN
-   control patterns before vs after WI1.
-3. At 20 Hz, do history window tick offsets (−9, −3, −1, 0, +1, +5) still
-   make sense or should they be rescaled to preserve wall-clock semantics?
-4. If AHRS is noisy, should NN consume gyro-integrated attitude instead? Pro:
-   cleaner. Con: drift over long engage.
-5. For WI11 engage delay: does the 750 ms window mask a real NN startup
-   instability, or is it just engage-transient smoothing?
+1. Will WI3 msplink pitch-sign fix land at a simple per-axis negation, or
+   will it require re-deriving the INAV→aerospace rotation from first
+   principles? WI5 bench answers this.

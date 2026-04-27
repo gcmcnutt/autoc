@@ -1,17 +1,20 @@
 #include "autoc/nn/serialization.h"
 #include <cstring>
 
-// Binary format layout:
+// Binary format layout (spec 027 bumped layout to carry recurrent flags):
 // [0..3]   char[4]   magic "NN01"
 // [4..7]   uint32_t  format version
 // [8..11]  uint32_t  num_layers
 // [12..]   uint32_t[num_layers]  topology
+//          uint8_t[num_layers]   recurrent flags (0/1, one byte per layer)
 //          uint32_t  num_weights
-//          float[num_weights]    weights
+//          float[num_weights]    weights (ff pairs then W_hh blocks per 027)
 //          double    fitness
 //          uint32_t  generation
 //          float     mutation_sigma
 //          float     variation_scale
+//          uint32_t  source_len
+//          char[source_len] source
 
 namespace {
 
@@ -50,6 +53,14 @@ bool nn_serialize(const NNGenome& genome, std::vector<uint8_t>& out) {
     for (int layer_size : genome.topology) {
         uint32_t ls = static_cast<uint32_t>(layer_size);
         write_val(out, ls);
+    }
+
+    // Recurrent flags (spec 027). One byte per layer; if the genome's
+    // recurrent vector is empty or shorter, remaining layers are
+    // serialized as 0 (feedforward).
+    for (uint32_t i = 0; i < num_layers; i++) {
+        uint8_t flag = (i < genome.recurrent.size()) ? genome.recurrent[i] : 0;
+        out.push_back(flag);
     }
 
     // Weights
@@ -103,6 +114,14 @@ bool nn_deserialize(const uint8_t* data, size_t size, NNGenome& genome) {
         uint32_t ls;
         if (!read_val(ptr, remaining, ls)) return false;
         genome.topology[i] = static_cast<int>(ls);
+    }
+
+    // Recurrent flags (spec 027)
+    genome.recurrent.resize(num_layers);
+    for (uint32_t i = 0; i < num_layers; i++) {
+        uint8_t flag;
+        if (!read_val(ptr, remaining, flag)) return false;
+        genome.recurrent[i] = flag;
     }
 
     // Weights
