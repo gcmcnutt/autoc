@@ -146,16 +146,25 @@ def main():
     status = "live" if f["gens"][-1] < args.total_gens else "final"
     print(f"loaded {n} gens from {focus_path} ({status})")
 
-    # 6 panels stacked. Panel 6 has two subplots inside it (ratio top, CV bottom).
-    fig = plt.figure(figsize=(14, 19))
-    gs = fig.add_gridspec(7, 1, height_ratios=[3, 2, 2, 2, 2, 1.5, 1.5], hspace=0.3)
-    ax_fit       = fig.add_subplot(gs[0])
-    ax_streak    = fig.add_subplot(gs[1], sharex=ax_fit)
-    ax_stability = fig.add_subplot(gs[2], sharex=ax_fit)
-    ax_energy    = fig.add_subplot(gs[3], sharex=ax_fit)
-    ax_sigma     = fig.add_subplot(gs[4], sharex=ax_fit)
-    ax_ratio     = fig.add_subplot(gs[5], sharex=ax_fit)
-    ax_cv        = fig.add_subplot(gs[6], sharex=ax_fit)
+    # Two-column layout:
+    #   Left column  — run-shape: fitness | streak | stability | energy
+    #   Right column — search/architecture: sigma | whh_xh_ratio | block CV
+    # Two independent GridSpecs so each column can have its own row count
+    # (4 left, 3 right) while filling the same vertical extent.
+    fig = plt.figure(figsize=(20, 14))
+    gs_left = fig.add_gridspec(
+        4, 1, left=0.05, right=0.48, top=0.95, bottom=0.05,
+        hspace=0.30, height_ratios=[3, 2, 2, 2])
+    gs_right = fig.add_gridspec(
+        3, 1, left=0.55, right=0.98, top=0.95, bottom=0.05,
+        hspace=0.30, height_ratios=[3, 2, 2])
+    ax_fit       = fig.add_subplot(gs_left[0])
+    ax_streak    = fig.add_subplot(gs_left[1], sharex=ax_fit)
+    ax_stability = fig.add_subplot(gs_left[2], sharex=ax_fit)
+    ax_energy    = fig.add_subplot(gs_left[3], sharex=ax_fit)
+    ax_sigma     = fig.add_subplot(gs_right[0])
+    ax_ratio     = fig.add_subplot(gs_right[1], sharex=ax_sigma)
+    ax_cv        = fig.add_subplot(gs_right[2], sharex=ax_sigma)
 
     compare_colors = ["tab:blue", "tab:green", "tab:purple", "tab:orange"]
 
@@ -225,6 +234,7 @@ def main():
     ax_sigma.grid(True, linewidth=0.4, alpha=0.4)
     ax_sigma.legend(loc="upper right", framealpha=0.9, fontsize=9)
     ax_sigma.set_ylim(bottom=0)
+    ax_sigma.set_xlim(0, args.total_gens)
 
     # --- Panel 6 top: whh_xh_ratio (signal 1) ---
     if _all_zeros_or_nan(f["whh_xh_ratio"]):
@@ -253,12 +263,14 @@ def main():
         ax_cv.plot(f["gens"], f["w_hh_cv"], "tab:red", linewidth=1.4,
                    label=f"w_hh_cv (final {f['w_hh_cv'][-1]:.3f})")
     ax_cv.set_xlabel("Generation")
+    ax_energy.set_xlabel("Generation")  # left-column bottom panel
     ax_cv.set_ylabel("Block CV")
     ax_cv.grid(True, linewidth=0.4, alpha=0.4)
     ax_cv.legend(loc="upper right", framealpha=0.9, fontsize=9)
     ax_cv.set_ylim(bottom=0)
 
-    fig.tight_layout()
+    # tight_layout fights with twinx (panel 2) and the two manually-positioned
+    # gridspecs — left/right/top/bottom on the gridspecs already do the layout.
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, dpi=110)
     print(f"wrote {args.out}", file=sys.stderr)

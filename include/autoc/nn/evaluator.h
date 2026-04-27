@@ -48,12 +48,21 @@ void nn_forward(const float* weights, const std::vector<int>& topology,
 
 // Signal 1 telemetry — see specs/028-deeper-rnn/data-model.md §2.
 // Defined here (not telemetry.h) so that NNControllerBackend can hold one
-// by value without a forward-decl/incomplete-type problem.
+// by value without a forward-decl/incomplete-type problem. All members are
+// inline so this struct does not require linking telemetry.cc — important
+// for crrcsim's mod_inputdev which compiles evaluator.cc directly without
+// pulling in autoc_common.a.
 struct RecurrentTelemetry {
     double xh_mag_sum = 0.0;
     double hh_mag_sum = 0.0;
     long long sample_count = 0;
-    double activation_ratio() const;
+    double activation_ratio() const {
+        if (sample_count == 0) return 0.0;
+        const double xh_mean = xh_mag_sum / static_cast<double>(sample_count);
+        const double hh_mean = hh_mag_sum / static_cast<double>(sample_count);
+        if (xh_mean < 1e-9) return 0.0;
+        return hh_mean / xh_mean;
+    }
     void reset() { xh_mag_sum = 0.0; hh_mag_sum = 0.0; sample_count = 0; }
 };
 

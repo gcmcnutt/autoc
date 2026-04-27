@@ -388,6 +388,34 @@ Remaining 015 work:
 
 ## Visualization
 
+### [NEXT] Renderer Playback Enhancements — per-tick scrub + streak/multiplier overlay
+- **Per-tick scrub controls**: pause / step-forward-one-tick / step-backward-one-tick.
+  Today the renderer plays a continuous timeline; for diagnostic work you want to
+  freeze on a specific tick and walk one step at a time to see exactly when the NN
+  does what.
+- **In-streak counter overlay**: per-tick `streakCount` displayed alongside
+  the rendered aircraft, so you can see "is this a streak tick? for how long?"
+- **Points multiplier overlay**: per-tick `multiplier` (= 1 + (streakMultMax-1) ·
+  streakCount/streakStepsToMax), the same value `FitnessComputer::applyStreak`
+  uses to amplify stepPoints during fitness aggregation.
+- **Data path**: per-tick streak/multiplier are NOT in `EvalResults` today
+  (only scenario-aggregates `maxStreak` / `totalStreakSteps` / `maxMultiplier`
+  on `ScenarioScore`). Two implementation options:
+  - **Re-synthesize in renderer/script**: replay `FitnessComputer::applyStreak`
+    against captured `aircraftStateList` + `pathList` + autoc.ini config knobs
+    (`fitStreakThreshold`, `fitStreakRampSec`, `fitStreakMultiplierMax`).
+    No schema change. Drift risk: renderer math must match training math.
+  - **Capture per-tick on AircraftState**: add 2 fields (streakCount int +
+    multiplier float) per tick. Ground truth, no drift, ~negligible dump size
+    increase. Cereal schema bump (per project policy: no versioning shim, old
+    dumps unloadable post-bump).
+- Recommend the schema-bump path for permanent renderer feature; recompute
+  is fine for one-off Python diagnostics in the meantime.
+- **Files likely involved**: `tools/renderer.cc` (UI controls + overlay),
+  `include/autoc/eval/aircraft_state.h` + cereal serialization (if capturing),
+  `src/eval/fitness_computer.cc` (export the per-step multiplier alongside the
+  streak update — it's already computed, just discarded).
+
 ### [DEFERRED] Blackbox Rendering Improvements
 - Select path + blackbox log for comparisons, FPV mode
 
@@ -400,6 +428,19 @@ Remaining 015 work:
 ---
 
 ## Code Cleanup
+
+### [NEXT] crrcsim mod_inputdev — link autoc_common instead of cherry-picking sources
+- **Current**: [crrcsim/src/mod_inputdev/CMakeLists.txt:21-23](../crrcsim/src/mod_inputdev/CMakeLists.txt#L21-L23) compiles three autoc-side files directly into `mod_inputdev.a`:
+  ```
+  ${CMAKE_SOURCE_DIR}/src/nn/evaluator.cc
+  ${CMAKE_SOURCE_DIR}/src/nn/serialization.cc
+  ${CMAKE_SOURCE_DIR}/src/eval/sensor_math.cc
+  ```
+- **Problem**: any new file in `src/nn/` or `src/eval/` that an above .cc references at link time silently breaks the crrcsim build at link, with `undefined reference` errors. The 028 telemetry.cc landing tripped this — `evaluator.cc` called `RecurrentTelemetry::activation_ratio()` which lived in `telemetry.cc`, and crrcsim's mod_inputdev didn't pick up telemetry.cc. Worked around by inlining the method in `evaluator.h`, but the architectural fragility remains.
+- **Fix**: have `mod_inputdev` link against `autoc_common` (which is built by the parent autoc CMakeLists). crrcsim already builds via `add_subdirectory(crrcsim)` per Constitution Principle IV (Unified Build), so `autoc_common` is in scope. Remove the cherry-pick lines, add `target_link_libraries(mod_inputdev autoc_common)` (or thread it through the crrcsim link chain to wherever the final crrcsim binary links).
+- **Risk**: low. autoc_common pulls in cereal/inih/Eigen/etc., all of which crrcsim already depends on transitively (mod_inputdev's evaluator.cc compile already needs them). Possible duplicate-symbol issues if any crrcsim file also defines something autoc_common does — none observed but worth checking on first build.
+- **Alternate workaround**: keep the cherry-pick pattern but add a `mod_inputdev` build-time test that asserts no undefined references in the link target. Less clean but lower-risk.
+- Triggered by: 028 telemetry signals (Apr 2026). Will re-trigger on the next autoc-side .cc addition that evaluator.cc transitively references at link.
 
 ### [DEFERRED] Memory Leak Investigation
 - Small memory leak exists in autoc

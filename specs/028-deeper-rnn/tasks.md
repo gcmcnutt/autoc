@@ -120,15 +120,56 @@ documented branch decision in `specs/028-deeper-rnn/dalone_outcome.md`.
 
 ### Implementation for User Story 2
 
-- [ ] T027 [US2] Launch D-alone diagnostic training run: `nohup ./build/autoc -c autoc.ini > logs/autoc-028-dalone.log 2>&1 &` (pop 3500, gens 400, single seed)
-- [ ] T028 [US2] Set up monitoring loop (separate terminal): regenerate 6-panel plot every 50 gens — `python3 specs/028-deeper-rnn/plot_evolution_progress.py logs/autoc-028-dalone.log --out specs/028-deeper-rnn/dalone_evolution.png`
-- [ ] T029 [P] [US2] Set up monitoring for control-aggressiveness PNG every 50 gens — invocation per [quickstart.md Phase 3](./quickstart.md#phase-3--d-alone-diagnostic-run); existing tool from 027
-- [ ] T030 [US2] Apply early-stop criteria during run per [plan §Phase 3](./plan.md#phase-3--d-alone-diagnostic-single-seed-recurrent-on-lexicase-off): kill run if best-fitness > pid1's −27045 floor by gen 100 with no descent OR `whh_xh_ratio` flat near zero across gens 50–150 (sustained ≥ 30 gens)
-- [ ] T031 [US2] At run completion (or early-stop), capture the late-plateau metrics: read final-gen `#NNGen` line, compute late-plateau `dCtrl` and `<|out|>` from the control-aggressiveness tool's last-50-gens window
-- [ ] T032 [US2] Write `specs/028-deeper-rnn/dalone_outcome.md` with: final fitness, dCtrl, `<|out|>`, `whh_xh_ratio` final value, `w_hh_cv` trajectory summary, comparison against [validation gate](./spec.md#validation-gate-carries-from-027-plan), and **branch decision** (Phase 6 win, Phase 5a, Phase 5b, or Phase 5c per [quickstart.md Phase 4 table](./quickstart.md#phase-4--branch-on-d-alone-outcome))
+- [X] T027 [US2] Launched D-alone diagnostic training run as `more-rnn1`: `nohup ./build/autoc -c autoc.ini > logs/autoc-028-more-rnn1.log 2>&1 &` (pop 3500, gens 400, time-based seed). Run completed 2026-04-26.
+- [X] T028 [US2] Monitored via the 2-column 6-panel `plot_evolution_progress.py` every ~30–60 gens; final render at [`more-rnn1_evolution.png`](./more-rnn1_evolution.png)
+- [X] T029 [P] [US2] Control-aggressiveness PNG generated post-run via 024's `plot_control_aggressiveness.py`: [`more-rnn1_aggressiveness.png`](./more-rnn1_aggressiveness.png). Used path-prefilter (paths 0-4, wind 00) per script convention.
+- [X] T030 [US2] Early-stop criteria did not trigger — fitness descent was healthy throughout (gen 100 best ≈ −12k, well below pid1 floor); `whh_xh_ratio` 0.4–0.9 throughout (block engaged).
+- [X] T031 [US2] Late-plateau metrics captured: best fitness −30626 (gen 400), `dCtrl` 1.94 (last-50-gen mean), `<|out|>` 2.34. Per-axis: pt 0.58/0.66, rl 1.08/0.80, th 0.36/0.88 — **roll dominant bang-bang axis**.
+- [X] T032 [US2] Wrote [`dalone_outcome.md`](./dalone_outcome.md): fitness gate cleared (−30626 ≤ −30000, just), smoothness gates failed, branch routes to spec §Phase 5a but operator opted for **tuned D-alone retry first** (Path A / more-rnn2; new sub-phase below) before incentive change. Existence test PASSED — RNN works at this setup, vastly outperforms 027 RNN runs, architectural failure modes H1+H4 ruled out by telemetry.
 
 **Checkpoint**: D-alone outcome assessed. One of four next-action paths is documented and ready
 to execute as US3 — *or* US2 itself triggers the Phase 6 win path directly.
+
+---
+
+## Phase 4.5: User Story 2.5 — Tuned D-alone retry "more-rnn2" (Priority: P1)
+
+**Goal**: As an operator, given more-rnn1 cleared the fitness gate but missed smoothness with
+slope still active at gen 400, I run a tuned D-alone retry to test whether smoothness emerges
+organically with more compute + better GA dynamics — *before* committing to pattern 2's
+incentive change.
+
+**Independent Test**: A populated `logs/autoc-028-more-rnn2.log` with 600 generations, regenerated
+6-panel evolution PNG, regenerated control-aggressiveness PNG, and a documented branch
+decision in `specs/028-deeper-rnn/more-rnn2_outcome.md`. **Pass criterion**: best fitness
+≤ −33000 (matches cadence7-redux class) AND dCtrl ≤ 0.80 (smoothness gate). **If both clear**:
+candidate winner → Phase 6 win path. **If fitness improves but smoothness still misses**:
+route to Phase 5a (pattern 2 stability-only lexicase, with 027 v4 pt+rl formulation per the
+[bang-bang axis migration finding](./dalone_outcome.md#smoothness--per-axis-breakdown-last-50-gens-paths-0-4-wind-00)).
+
+### Implementation for US2.5
+
+- [ ] T032a [US2.5] Apply Path A `autoc.ini` updates per [tuning_notes.md](./tuning_notes.md):
+  `PopulationSize 3500 → 5000`, `NumberOfGenerations 400 → 600`, `TournamentSize 5 → 3`,
+  `NNCrossoverAlpha -1 → 0.3`, `CrossoverProbability 95 → 80`,
+  `SwapMutationProbability 15 → 25`, `AddBestToNewPopulation 1 → 3`. Single-file edit, no
+  code changes. Compute uplift ≈ 2.1× wall-clock vs more-rnn1.
+- [ ] T032b [US2.5] Launch more-rnn2: `nohup ./build/autoc -c autoc.ini > logs/autoc-028-more-rnn2.log 2>&1 &`. Single seed (or pin to a fixed value if cross-attempt comparison desired).
+- [ ] T032c [US2.5] Monitor via 6-panel plot every 50–100 gens. **Watch the dominant bang-bang axis** as it evolves (per-axis `<|Δout|>` from `plot_control_aggressiveness.py`). If the axis migrates between pitch and roll across the run, that's a direct signal for multi-axis pareto / NSGA-II in the next round (records [bang-bang axis migration memory](../../../.claude/projects/-home-gmcnutt-autoc/memory/project_bangbang_axis_migration.md)).
+- [ ] T032d [US2.5] Apply same early-stop criteria as US2 (T030); also flag if fitness *plateaus* before gen 500 (would suggest the GA is finding the same local minimum despite more compute → C2 incentive really needed).
+- [ ] T032e [US2.5] At completion, write `specs/028-deeper-rnn/more-rnn2_outcome.md` with same structure as `dalone_outcome.md`. Critical addition: per-axis breakdown over time (gen 100, 200, 300, 400, 500, 600 buckets), so the bang-bang axis migration question is answered with data.
+- [ ] T032f [US2.5] Branch decision documented in `more-rnn2_outcome.md`:
+  - Both gates clear → Phase 6 win path (T048+)
+  - Fitness improves but smoothness misses → Phase 5a (US3, pattern 2 stability-only lexicase)
+  - Fitness *also* misses (plateau before reaching cadence7-class) → Phase 5b orthogonal init (US3) OR direct pareto/NSGA-II investigation (out-of-spec, would require Q3 selection-regime re-clarify)
+
+**Envelope note**: more-rnn2 is the first of the spec's "≤ 2 follow-on patterns" envelope. If
+more-rnn2 routes to Phase 5a, that's the second (and final) envelope slot. If more-rnn2 routes
+to Phase 5b orthogonal init, same — second slot used. Either way, after more-rnn2 + one more,
+028 closes per spec §Q3 bounded-no-go OR ships a winner.
+
+**Checkpoint**: more-rnn2 outcome assessed. Branch decision documented. Operator picks the
+next phase based on the gate-clear pattern.
 
 ---
 

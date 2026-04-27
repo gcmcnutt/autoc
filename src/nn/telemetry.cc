@@ -1,25 +1,19 @@
-// 028 telemetry — signal 1 ratio aggregation + signal 2 population CV.
+// 028 telemetry — signal 2 population CV per weight block + synthetic
+// activation-ratio capture for signal 1. RecurrentTelemetry::activation_ratio()
+// is inlined in evaluator.h so this TU is not required by the recurrent
+// forward pass — only by callers of compute_population_block_stats /
+// compute_synthetic_activation_ratio (autoc.cc, tests).
+//
 // See specs/028-deeper-rnn/data-model.md.
 
 #include "autoc/nn/telemetry.h"
-#include "autoc/nn/evaluator.h"  // RecurrentTelemetry
+#include "autoc/nn/evaluator.h"
 
 #include <cmath>
 #include <cstddef>
 
 namespace {
 constexpr double kEps = 1e-9;
-}
-
-double RecurrentTelemetry::activation_ratio() const {
-    if (sample_count == 0) return 0.0;
-    const double xh_mean = xh_mag_sum / static_cast<double>(sample_count);
-    const double hh_mean = hh_mag_sum / static_cast<double>(sample_count);
-    if (xh_mean < kEps) return 0.0;
-    return hh_mean / xh_mean;
-}
-
-namespace {
 
 // For a single genome, compute mean(|w|) over a contiguous slice of its
 // flat weight vector — that's the per-individual aggregate magnitude

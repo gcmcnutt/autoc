@@ -1,5 +1,4 @@
 #include "autoc/nn/evaluator.h"
-#include "autoc/nn/telemetry.h"
 #include "autoc/nn/topology.h"
 #include "autoc/nn/nn_input_computation.h"
 #include "autoc/eval/sensor_math.h"
