@@ -1,4 +1,5 @@
 #include "autoc/nn/evaluator.h"
+#include "autoc/nn/telemetry.h"
 #include "autoc/nn/topology.h"
 #include "autoc/nn/nn_input_computation.h"
 #include "autoc/eval/sensor_math.h"
@@ -159,7 +160,8 @@ void nn_forward_recurrent(const float* weights,
                           const std::vector<int>& topology,
                           const std::vector<uint8_t>& recurrent,
                           const float* inputs, float* outputs,
-                          float* hidden_state) {
+                          float* hidden_state,
+                          RecurrentTelemetry* telemetry) {
     if (topology.size() < 2) return;
 
     int max_layer = *std::max_element(topology.begin(), topology.end());
@@ -196,19 +198,30 @@ void nn_forward_recurrent(const float* weights,
         const float* B = w_ptr + in_size * out_size;
 
         for (int j = 0; j < out_size; j++) {
-            float sum = B[j];
+            float xh_part = B[j];
             for (int i = 0; i < in_size; i++) {
-                sum += W[j * in_size + i] * current_in[i];
+                xh_part += W[j * in_size + i] * current_in[i];
             }
+            float hh_part = 0.0f;
             if (out_is_recurrent) {
                 // Add W_hh row j · h_{t-1}
                 const float* Whh_row = whh_base + whh_offset + j * out_size;
                 const float* h_prev = hidden_state + hs_offset;
                 for (int i = 0; i < out_size; i++) {
-                    sum += Whh_row[i] * h_prev[i];
+                    hh_part += Whh_row[i] * h_prev[i];
                 }
             }
+            const float sum = xh_part + hh_part;
             current_out[j] = static_cast<float>(fast_tanh(static_cast<gp_scalar>(sum)));
+
+            // 028 telemetry: accumulate per-recurrent-neuron magnitudes when capture is on.
+            // Skipped for non-recurrent neurons (out_is_recurrent==false) — the ratio
+            // metric is only defined where W_hh exists.
+            if (telemetry && out_is_recurrent) {
+                telemetry->xh_mag_sum += static_cast<double>(std::fabs(xh_part));
+                telemetry->hh_mag_sum += static_cast<double>(std::fabs(hh_part));
+                telemetry->sample_count++;
+            }
         }
 
         if (out_is_recurrent) {
@@ -405,6 +418,26 @@ void NNControllerBackend::reset() {
     std::fill(hidden_state_.begin(), hidden_state_.end(), 0.0f);
 }
 
+void NNControllerBackend::enableTelemetryCapture() {
+    telemetry_capture_enabled_ = true;
+}
+
+void NNControllerBackend::disableTelemetryCapture() {
+    telemetry_capture_enabled_ = false;
+}
+
+void NNControllerBackend::resetTelemetry() {
+    telemetry_.reset();
+}
+
+double NNControllerBackend::telemetryActivationRatio() const {
+    return telemetry_.activation_ratio();
+}
+
+long long NNControllerBackend::telemetrySampleCount() const {
+    return telemetry_.sample_count;
+}
+
 void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& pathProvider) {
     NNInputs inputs = {};
     nn_gather_inputs(pathProvider, aircraftState, inputs);
@@ -414,10 +447,12 @@ void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& p
         nn_forward(genome_.weights.data(), genome_.topology,
                    reinterpret_cast<const float*>(&inputs), outputs);
     } else {
+        RecurrentTelemetry* tlm = telemetry_capture_enabled_ ? &telemetry_ : nullptr;
         nn_forward_recurrent(genome_.weights.data(), genome_.topology,
                              genome_.recurrent,
                              reinterpret_cast<const float*>(&inputs), outputs,
-                             hidden_state_.data());
+                             hidden_state_.data(),
+                             tlm);
     }
 
     // Set control commands: pitch, roll, throttle (already in [-1, 1] via tanh)

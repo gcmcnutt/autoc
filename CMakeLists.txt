@@ -92,6 +92,7 @@ add_library(autoc_common STATIC
     src/nn/evaluator.cc
     src/nn/serialization.cc
     src/nn/population.cc
+    src/nn/telemetry.cc
 )
 target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen)
 
@@ -141,6 +142,9 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(msplink_quat_convention_tests tests/msplink_quat_convention_tests.cc)
   target_link_libraries(msplink_quat_convention_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(nn_telemetry_tests tests/nn_telemetry_tests.cc)
+  target_link_libraries(nn_telemetry_tests GTest::gtest GTest::gtest_main autoc_common)
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -153,6 +157,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME contract_evolution_tests COMMAND contract_evolution_tests)
   add_test(NAME rpc_transport_tests COMMAND rpc_transport_tests)
   add_test(NAME msplink_quat_convention_tests COMMAND msplink_quat_convention_tests)
+  add_test(NAME nn_telemetry_tests COMMAND nn_telemetry_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -160,7 +165,7 @@ if(ENABLE_AUTOC_TESTS)
             fitness_computer_tests fitness_decomposition_tests selection_tests
             contract_evaluator_tests contract_config_tests
             contract_evolution_tests rpc_transport_tests
-            msplink_quat_convention_tests
+            msplink_quat_convention_tests nn_telemetry_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1

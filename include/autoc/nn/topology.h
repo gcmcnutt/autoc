@@ -47,12 +47,12 @@ constexpr int NN_TOPOLOGY[NN_NUM_LAYERS] = {
 // evaluation ticks and reset on span start. Only hidden layers can be
 // recurrent (input has no weights in; output is typically a projection).
 // Clarify Q3 picked the 16-wide hidden2 layer.
-// CADENCE7-REDUX (diagnostic): all-feedforward to reproduce cadence7
-// exactly on the new build. Restore layer 2 = true after diagnostic.
+// 028 D-alone: layer-2 (16-wide) recurrent re-enabled per spec/plan §Phase 2.
+// CADENCE7-REDUX marker flipped: was {false,false,false,false} for diagnostic.
 constexpr bool NN_RECURRENT[NN_NUM_LAYERS] = {
     false,   // layer 0: input (no weights in)
     false,   // layer 1: hidden1, 32-wide
-    false,   // layer 2: hidden2, 16-wide — DIAGNOSTIC FF-only
+    true,    // layer 2: hidden2, 16-wide — RECURRENT (028 D-alone)
     false    // layer 3: output
 };
 
@@ -66,7 +66,7 @@ constexpr int NN_WEIGHT_COUNT =
     (NN_RECURRENT[1] ? NN_HIDDEN1_SIZE * NN_HIDDEN1_SIZE : 0) +
     (NN_RECURRENT[2] ? NN_HIDDEN2_SIZE * NN_HIDDEN2_SIZE : 0) +
     (NN_RECURRENT[3] ? NN_OUTPUT_COUNT  * NN_OUTPUT_COUNT  : 0);
-static_assert(NN_WEIGHT_COUNT == 1667, "Weight count arithmetic inconsistent (cadence7-redux: feedforward)");
+static_assert(NN_WEIGHT_COUNT == 1923, "Weight count arithmetic inconsistent (028 D-alone: 1667 FF + 256 W_hh)");
 
 // Total recurrent hidden-state floats across all recurrent layers.
 // Zero for pure-feedforward networks; 16 for the current 027 config.
