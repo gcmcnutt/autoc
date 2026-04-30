@@ -54,6 +54,10 @@ LOG_GEN_RE = re.compile(
     r"Gen\s+(\d+)\s+Best=(-?\d+\.?\d*)\s+Avg=(-?\d+\.?\d*)\s+Worst=(-?\d+\.?\d*)\s+Sigma=(\d+\.?\d*)"
 )
 
+# Crash log line: "  [N] CRASH score=…" / "  [N] OK score=…" — per-scenario
+# rows emitted right after each "Gen N Best=…" header.
+SCENARIO_RESULT_RE = re.compile(r"\s+\[(\d+)\]\s+(CRASH|OK)\s+score=")
+
 
 def _parse_float_or_nan(s):
     if s is None:
@@ -99,6 +103,39 @@ def load_log(path: Path):
     return rows
 
 
+def load_crashes(path: Path):
+    """Parse per-gen crash counts from a training log. Returns dict
+    {gens=[...], crashes=[...], total=[...], rate=[...]} where rate is
+    crashes / total * 100. Streams once through the log."""
+    rows = dict(gens=[], crashes=[], total=[], rate=[])
+    cur_gen = None
+    crashes = 0
+    total = 0
+
+    def flush():
+        if cur_gen is not None and total > 0:
+            rows["gens"].append(cur_gen)
+            rows["crashes"].append(crashes)
+            rows["total"].append(total)
+            rows["rate"].append(100.0 * crashes / total)
+
+    for line in path.read_text().splitlines():
+        m = LOG_GEN_RE.search(line)
+        if m:
+            flush()
+            cur_gen = int(m.group(1))
+            crashes = 0
+            total = 0
+            continue
+        m = SCENARIO_RESULT_RE.search(line)
+        if m:
+            if m.group(2) == "CRASH":
+                crashes += 1
+            total += 1
+    flush()
+    return rows
+
+
 def parse_pair(s):
     if ":" not in s:
         raise argparse.ArgumentTypeError(f"expected NAME:PATH, got {s!r}")
@@ -123,8 +160,14 @@ def main():
                    help="comparison run NAME:LOG_PATH (may repeat)")
     p.add_argument("--out", type=Path,
                    default=Path("specs/028-deeper-rnn/evolution_progress.png"))
-    p.add_argument("--total-gens", type=int, default=400)
+    p.add_argument("--total-gens", type=int, default=800,
+                   help="x-axis extent + 40-gen variation-step markers (default 800 — "
+                        "matches more-rnn3 extended budget; bump as needed)")
     p.add_argument("--title", default=None)
+    p.add_argument("--crash-log", type=Path, default=None,
+                   help="path to focus run's training log file (.log); when set, "
+                        "the evolution plot adds a crash-rate panel parsed from "
+                        "the per-scenario CRASH/OK lines")
     args = p.parse_args()
 
     if not args.compare:
@@ -142,6 +185,13 @@ def main():
 
     compares = [(name, load_log(pth)) for name, pth in args.compare if pth.is_file()]
 
+    crash_data = None
+    if args.crash_log is not None and args.crash_log.is_file():
+        crash_data = load_crashes(args.crash_log)
+        print(f"crash log: {len(crash_data['gens'])} gens, "
+              f"final crash rate {crash_data['rate'][-1]:.1f}% "
+              f"({crash_data['crashes'][-1]}/{crash_data['total'][-1]})")
+
     n = len(f["gens"])
     status = "live" if f["gens"][-1] < args.total_gens else "final"
     print(f"loaded {n} gens from {focus_path} ({status})")
@@ -152,9 +202,17 @@ def main():
     # Two independent GridSpecs so each column can have its own row count
     # (4 left, 3 right) while filling the same vertical extent.
     fig = plt.figure(figsize=(20, 14))
+    # Left col: fitness | streak | stability | energy | crash-rate (when log given)
+    # Right col: sigma | whh_xh_ratio | block CV
+    if crash_data is not None:
+        left_rows = 5
+        left_heights = [3, 2, 2, 2, 1.2]
+    else:
+        left_rows = 4
+        left_heights = [3, 2, 2, 2]
     gs_left = fig.add_gridspec(
-        4, 1, left=0.05, right=0.48, top=0.95, bottom=0.05,
-        hspace=0.30, height_ratios=[3, 2, 2, 2])
+        left_rows, 1, left=0.05, right=0.48, top=0.95, bottom=0.05,
+        hspace=0.30, height_ratios=left_heights)
     gs_right = fig.add_gridspec(
         3, 1, left=0.55, right=0.98, top=0.95, bottom=0.05,
         hspace=0.30, height_ratios=[3, 2, 2])
@@ -162,6 +220,7 @@ def main():
     ax_streak    = fig.add_subplot(gs_left[1], sharex=ax_fit)
     ax_stability = fig.add_subplot(gs_left[2], sharex=ax_fit)
     ax_energy    = fig.add_subplot(gs_left[3], sharex=ax_fit)
+    ax_crash     = fig.add_subplot(gs_left[4], sharex=ax_fit) if crash_data else None
     ax_sigma     = fig.add_subplot(gs_right[0])
     ax_ratio     = fig.add_subplot(gs_right[1], sharex=ax_sigma)
     ax_cv        = fig.add_subplot(gs_right[2], sharex=ax_sigma)
@@ -179,9 +238,15 @@ def main():
     ax_fit.plot(f["gens"], f["best"], color="red", linewidth=2.2,
                 label=f"{focus_name} best ({status}) gen {f['gens'][-1]}: {f['best'][-1]:.0f}")
     ax_fit.fill_between(f["gens"], f["best"], f["worst"], color="tab:gray", alpha=0.06)
-    for pct in range(10, 101, 10):
-        x = args.total_gens * pct / 100
+    # Variation-ramp step markers — every 40 gens (matches VariationRampStep
+    # in autoc.ini). Total markers = total_gens / 40 (so 10 for 400-gen, 15 for
+    # 600-gen). Each marker = one variation-ramp increment.
+    VARIATION_STEP = 40
+    for x in range(VARIATION_STEP, args.total_gens + 1, VARIATION_STEP):
         ax_fit.axvline(x, color="red", linewidth=0.4, alpha=0.25)
+        ax_fit.text(x, 0.97, str(x), color="red", alpha=0.5,
+                    ha="center", va="top", fontsize=7,
+                    transform=ax_fit.get_xaxis_transform())
     title = args.title or f"{focus_name} — 028 evolution progress (6-panel telemetry)"
     ax_fit.set_ylabel("Fitness (lower = better)")
     ax_fit.set_title(title)
@@ -219,6 +284,26 @@ def main():
     ax_energy.set_ylabel("Σ energy_score")
     ax_energy.grid(True, linewidth=0.4, alpha=0.4)
     ax_energy.legend(loc="upper right", framealpha=0.9, fontsize=9)
+
+    # --- Panel 5 (left col, optional): crash rate from .log file ---
+    if ax_crash is not None and crash_data is not None and crash_data["gens"]:
+        ax_crash.plot(crash_data["gens"], crash_data["rate"], color="tab:red",
+                      linewidth=1.4,
+                      label=f"crash rate (final {crash_data['rate'][-1]:.1f}% — "
+                            f"{crash_data['crashes'][-1]}/{crash_data['total'][-1]})")
+        # Symlog y-axis: linear below 1/245 ≈ 0.4% (the smallest possible
+        # nonzero rate), log above. Lets the early-gen 80%→0.4% descent
+        # show structure while still rendering the 0% floor cleanly.
+        ax_crash.set_yscale("symlog", linthresh=0.41)
+        ax_crash.set_ylim(bottom=0, top=120)
+        ax_crash.axhline(0, color="gray", linestyle=":", linewidth=0.6, alpha=0.5)
+        # Force human-readable tick labels on log portion
+        from matplotlib.ticker import FixedLocator, FuncFormatter
+        ax_crash.yaxis.set_major_locator(FixedLocator([0, 0.5, 1, 5, 10, 50, 100]))
+        ax_crash.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: f"{v:g}%"))
+        ax_crash.set_ylabel("Crash % (symlog)")
+        ax_crash.grid(True, linewidth=0.4, alpha=0.4, which="both")
+        ax_crash.legend(loc="upper right", framealpha=0.9, fontsize=9)
 
     # --- Panel 5: sigma ---
     for i, (name, cd) in enumerate(compares):
@@ -263,7 +348,8 @@ def main():
         ax_cv.plot(f["gens"], f["w_hh_cv"], "tab:red", linewidth=1.4,
                    label=f"w_hh_cv (final {f['w_hh_cv'][-1]:.3f})")
     ax_cv.set_xlabel("Generation")
-    ax_energy.set_xlabel("Generation")  # left-column bottom panel
+    # left-column bottom panel: ax_crash if present, else ax_energy
+    (ax_crash or ax_energy).set_xlabel("Generation")
     ax_cv.set_ylabel("Block CV")
     ax_cv.grid(True, linewidth=0.4, alpha=0.4)
     ax_cv.legend(loc="upper right", framealpha=0.9, fontsize=9)

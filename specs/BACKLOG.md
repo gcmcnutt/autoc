@@ -170,6 +170,26 @@ Remaining 015 work:
 
 ## Infrastructure
 
+### [NEXT — post more-rnn3 completion] Genome ablation tool — generic weight/input editor + eval harness
+- **Trigger**: when more-rnn3 finishes 800-gen run. Run alongside the usual subjective robustness eval tests (the existing post-run set) to add a quantitative ablation dimension.
+- **Immediate use case**: answer the question "is the R in RNN actually helping, or is more-rnn3's outperformance just from +256 W_hh weights of capacity?" Take the more-rnn3 winning genome, **zero W_hh weights**, run eval pipeline, compare fitness.
+  - If zeroed-W_hh fitness collapses (e.g., back to cadence7-redux's −33000): recurrence is load-bearing.
+  - If zeroed-W_hh fitness ≈ original: recurrence is decorative; FF capacity at matched weight count would have done the same. (Then the 2-day matched-FF retrain becomes the next experiment.)
+- **Generalization** (the actual ask — design as a reusable diagnostic): a NNGenome editor that takes a *mask spec* and an input genome `.dmp`, produces a modified genome, runs eval, reports fitness diff. Mask spec covers ablation regions like:
+  - `--zero-whh` → zero all W_hh weight blocks (drop recurrence)
+  - `--zero-input GYRO_P,GYRO_Q,GYRO_R` → zero specific NN input columns at each tick (drop rate gyros — does the controller still track without body-rate sensing?)
+  - `--zero-input DPHI_NOW,...` → drop temporal history features
+  - `--zero-layer N` → zero entire hidden layer (drop a feedforward stage)
+  - Other "drop X and re-evaluate" patterns as they arise in research questions
+- **Implementation sketch**:
+  - New tool: `tools/nn_ablate.cc` (or extend `nnextractor`/`minisim`).
+  - Accepts an input `.dmp` (or `nn_weights.dat`) + mask spec + autoc-eval.ini (or autoc.ini).
+  - Loads NNGenome, applies mask (zeros specified weights/blocks OR rewrites `nn_gather_inputs` output to mask specific input fields).
+  - Runs same eval pipeline as `runNNEvaluation()` — uses identical scenario set, deterministic seeds.
+  - Outputs: original fitness, ablated fitness, Δ fitness, per-axis dCtrl/`<|out|>` Δ, per-scenario fitness Δ histogram.
+- **Why this design** (vs one-off ablation scripts): research questions like "drop gyros," "drop recurrence," "drop temporal history" recur. A generic mask-based editor amortizes the eval-pipeline plumbing across all of them. Names like `GYRO_P` align with the [Type-Safe NN Sensor Interface](#next-type-safe-nn-sensor-interface) work — both share the "name input columns by enum" need.
+- **Out of scope for v1**: weight perturbation (Gaussian noise), targeted permutation, partial zeroing (e.g., 50% of W_hh). Add only if specific research questions need them.
+
 ### [NEXT] Type-Safe NN Sensor Interface
 - Currently NN inputs/outputs are opaque `float[]` arrays indexed by magic numbers
 - Topology changes (29→27) caused silent serialization corruption — now crashes, but

@@ -149,19 +149,12 @@ route to Phase 5a (pattern 2 stability-only lexicase, with 027 v4 pt+rl formulat
 
 ### Implementation for US2.5
 
-- [ ] T032a [US2.5] Apply Path A `autoc.ini` updates per [tuning_notes.md](./tuning_notes.md):
-  `PopulationSize 3500 → 5000`, `NumberOfGenerations 400 → 600`, `TournamentSize 5 → 3`,
-  `NNCrossoverAlpha -1 → 0.3`, `CrossoverProbability 95 → 80`,
-  `SwapMutationProbability 15 → 25`, `AddBestToNewPopulation 1 → 3`. Single-file edit, no
-  code changes. Compute uplift ≈ 2.1× wall-clock vs more-rnn1.
-- [ ] T032b [US2.5] Launch more-rnn2: `nohup ./build/autoc -c autoc.ini > logs/autoc-028-more-rnn2.log 2>&1 &`. Single seed (or pin to a fixed value if cross-attempt comparison desired).
-- [ ] T032c [US2.5] Monitor via 6-panel plot every 50–100 gens. **Watch the dominant bang-bang axis** as it evolves (per-axis `<|Δout|>` from `plot_control_aggressiveness.py`). If the axis migrates between pitch and roll across the run, that's a direct signal for multi-axis pareto / NSGA-II in the next round (records [bang-bang axis migration memory](../../../.claude/projects/-home-gmcnutt-autoc/memory/project_bangbang_axis_migration.md)).
-- [ ] T032d [US2.5] Apply same early-stop criteria as US2 (T030); also flag if fitness *plateaus* before gen 500 (would suggest the GA is finding the same local minimum despite more compute → C2 incentive really needed).
-- [ ] T032e [US2.5] At completion, write `specs/028-deeper-rnn/more-rnn2_outcome.md` with same structure as `dalone_outcome.md`. Critical addition: per-axis breakdown over time (gen 100, 200, 300, 400, 500, 600 buckets), so the bang-bang axis migration question is answered with data.
-- [ ] T032f [US2.5] Branch decision documented in `more-rnn2_outcome.md`:
-  - Both gates clear → Phase 6 win path (T048+)
-  - Fitness improves but smoothness misses → Phase 5a (US3, pattern 2 stability-only lexicase)
-  - Fitness *also* misses (plateau before reaching cadence7-class) → Phase 5b orthogonal init (US3) OR direct pareto/NSGA-II investigation (out-of-spec, would require Q3 selection-regime re-clarify)
+- [X] T032a [US2.5] **Path A tuning isolated as rnn2's failure mode**: rnn2 launched with full Path A config (pop 5000, gens 600, TournamentSize 3, NNCrossoverAlpha 0.3, CrossoverProbability 80, elitism 3) and stalled at gen 363 (best −20413). For more-rnn3: **revert rnn2's search-dynamics knobs back to rnn1 baseline** (TournamentSize 5, NNCrossoverAlpha -1, CrossoverProbability 95, elitism 1), keep only the budget extensions (pop 5000, gens **800**). Hypothesis: TournamentSize=3 was the primary stall driver — weak selection + strong elitism + local crossover = local-minimum lock-in.
+- [X] T032b [US2.5] more-rnn3 launched with rnn1 config + extended compute, completed gen 800 (autoc-027-rnn3.log)
+- [X] T032c [US2.5] Monitored via 6-panel + per-axis time-series + per-axis snapshot histograms. Bang-bang axis stayed roll throughout (no within-run migration); 027 v4 pt+rl stability remains the safer pattern-2 formulation
+- [X] T032d [US2.5] Early-stop did not trigger; sigma hit 0.05 floor at gen 643 with descent continuing
+- [X] T032e [US2.5] more-rnn3 outcome captured across artifacts: `more-rnn3_evolution.png` (now with crash-rate symlog panel), `more-rnn3_aggressiveness.png`, `more-rnn3_per_axis_time_series.png`, `more-rnn3_per_axis_aggressiveness.png` (gen 800 snapshot). Final fitness −50422 — 53 % deeper than cadence7-redux, 65 % deeper than more-rnn1. Eval pass clean: tier0-repro 100 %, tier1 100 %, tier2-random 100 %, tier3-stress 99.3 %. Smoothness gates still fail (dCtrl ~1.6 vs ≤ 0.80, |out| ~1.97 vs ≤ 2.00) but per-axis roll smoothness improved meaningfully (rl dCtrl 1.08→0.77, |out| 0.80→0.60 under budget for first time).
+- [X] T032f [US2.5] **Branch decision: route to 025 craft variations (NOT pattern 2)** per operator strategic pivot. Reasoning: D-alone produced strong fitness + meaningful smoothness improvement on roll without C2 incentive; broader scenario coverage (craft variations) is the higher-value next experiment than adding incentive complexity. Pattern 2 (5a/5b/5c) stays in tree as contingency. See [project_post_028_routing.md](../../../.claude/projects/-home-gmcnutt-autoc/memory/project_post_028_routing.md). First RNN-vs-FF flight comparison with more-rnn3 weights is queued (uses path 5 button-6 for OOD generalization test per [project_path5_random_intercept.md](../../../.claude/projects/-home-gmcnutt-autoc/memory/project_path5_random_intercept.md)).
 
 **Envelope note**: more-rnn2 is the first of the spec's "≤ 2 follow-on patterns" envelope. If
 more-rnn2 routes to Phase 5a, that's the second (and final) envelope slot. If more-rnn2 routes
