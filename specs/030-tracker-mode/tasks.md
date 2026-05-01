@@ -1,16 +1,20 @@
 ---
 
-description: "029 — Tracker Mode — task list"
+description: "030 — Tracker Mode — task list (parked, gated on 029-no-future-arch)"
 ---
 
-# Tasks: 029 Tracker Mode (beacon-camera target tracking via flight playback)
+# Tasks: 030 Tracker Mode (beacon-camera target tracking via flight playback)
 
-**Input**: Design documents from [`specs/029-tracker-mode/`](.)
-**Prerequisites**: [plan.md](./plan.md), [spec.md](./spec.md), [research.md](./research.md), [data-model.md](./data-model.md), [contracts/](./contracts/), [quickstart.md](./quickstart.md)
+**Input**: Design documents from [`specs/030-tracker-mode/`](.)
+**Prerequisites**: [plan.md](./plan.md), [spec.md](./spec.md), [research.md](./research.md), [data-model.md](./data-model.md), [contracts/](./contracts/), [quickstart.md](./quickstart.md), AND [`specs/029-no-future-arch/`](../029-no-future-arch/) cleared (controller architecture trains effectively from past-only inputs)
+
+**Status**: Parked. See [pivot note in spec.md](./spec.md).
+
+> **PIVOT NOTE (2026-04-30)**: This task list was originally 029. The "Phase 2 — US1 past-only baseline experiment" (T006-T015) has moved out — that experiment is the *only* US in the new [`specs/029-no-future-arch/`](../029-no-future-arch/) and gates this whole list. When 030 unparks: drop Phase 2 from this list, renumber tasks starting from Phase 3 (US2 substrate work) as the new Phase 1, and adopt the 029-chosen NN architecture as the controller baseline.
 
 **Tests**: Included per Constitution Principle I (Testing-First). Each contract gets a contract-test task before implementation. Determinism tests are explicit and load-bearing.
 
-**Organization**: Tasks grouped by operator user story so each story is independently testable. **US1 (past-only baseline experiment) lands FIRST on pristine 028** — no refactor prerequisites — to validate the architectural assumption cheaply. Type-safe sensor interface refactor lands inside US2 substrate (parallel-mergeable during US1's training run).
+**Organization**: Tasks grouped by operator user story so each story is independently testable. **(Historical note: US1 past-only baseline was originally Phase 2 here; now lives in 029-no-future-arch.)** Type-safe sensor interface refactor remains as Phase 3.1 (US2 substrate prerequisite).
 
 ## Format: `[ID] [P?] [Story?] Description`
 

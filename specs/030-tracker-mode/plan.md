@@ -1,7 +1,10 @@
-# 029 — Implementation Plan (Tracker Mode — beacon-camera target tracking via flight playback)
+# 030 — Implementation Plan (Tracker Mode — beacon-camera target tracking via flight playback)
 
-**Branch**: `029-tracker-mode` | **Date**: 2026-04-29 | **Spec**: [spec.md](./spec.md)
-**Input**: [`spec.md`](./spec.md) (6 user stories, 18 functional requirements, 12 success criteria, 6 clarifications resolved 2026-04-29), [`research.md`](./research.md) (plan-phase architectural research)
+**Branch**: TBD (parked in `029-tracker-mode` working branch — see [pivot note in spec.md](./spec.md)) | **Date**: 2026-04-29 (originally 029, renumbered 030 in 2026-04-30 pivot) | **Spec**: [spec.md](./spec.md)
+**Input**: [`spec.md`](./spec.md) (6 user stories, 22 functional requirements, 12 success criteria, 6 clarifications resolved 2026-04-29), [`research.md`](./research.md) (plan-phase architectural research)
+**Status**: Parked — gated on [`specs/029-no-future-arch/`](../029-no-future-arch/) clearing.
+
+> **PIVOT NOTE (2026-04-30)**: Same as spec.md banner. US1 (past-only experiment) extracted to 029-no-future-arch; everything else parked here as 030. Internal references to "029" / "Phase 1 — US1" / "FR-001…" are historical and accurate-as-of-original-029-spec. When 030 unparks, fold the 029-chosen architecture into Phase 0, drop the now-029 US1 work from this plan, and renumber phases accordingly.
 
 ## Summary
 

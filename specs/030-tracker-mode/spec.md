@@ -1,9 +1,19 @@
-# Feature Specification: 029 Tracker Mode — beacon-camera target tracking via flight playback
+# Feature Specification: 030 Tracker Mode — beacon-camera target tracking via flight playback
 
-**Feature Branch**: `029-tracker-mode`
-**Created**: 2026-04-29
-**Status**: Draft
+**Feature Branch**: TBD (likely `030-tracker-mode` when this kicks off; currently parked inside the `029-tracker-mode` working branch)
+**Created**: 2026-04-29 (originally numbered 029; renumbered 030 in the 2026-04-30 pivot)
+**Status**: Parked — gated on [`specs/029-no-future-arch/`](../029-no-future-arch/) clearing
 **Input**: User description: tracker mode — train a NN to track another aircraft via simulated wingtip-beacon camera, replacing pathgen with playback of prior training-run flights as targets.
+
+> **PIVOT NOTE (2026-04-30)**: This spec was originally 029. After kicking off the past-only-input baseline experiment (US1), the insight surfaced that no-future-input training is its own architectural problem (controller can only react, not predict — needs a predictor inside the NN). That problem became the new 029 ([`specs/029-no-future-arch/`](../029-no-future-arch/)). Tracker mode (this spec) was bumped to 030 and parked until 029 clears with a working past-only architecture.
+>
+> **Internal references in this document still say "029"** in many places (e.g., FR-001, US numbers, schema names). Those are accurate as historical text but should be read as "030 future work." A deeper rewrite happens when 030 is unparked.
+>
+> **What's preserved from the original 029 work**:
+> - US1 past-only experiment → moved to [`specs/029-no-future-arch/`](../029-no-future-arch/) as 029's only active US
+> - All other content (US2-US6: substrate, camera, training, renderer, review) → stays here as 030
+>
+> **Prerequisite**: 029-no-future-arch must demonstrate a recurrent NN architecture that trains effectively from past-only inputs. That architecture becomes 030's controller baseline.
 
 ## Overview
 
