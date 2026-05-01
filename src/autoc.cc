@@ -642,10 +642,10 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
 
       if (printHeader) {
         fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx"
-             << "  tgX-9  tgX-3  tgX-1   tgX0  tgX+1  tgX+5"
-             << "  tgY-9  tgY-3  tgY-1   tgY0  tgY+1  tgY+5"
-             << "  tgZ-9  tgZ-3  tgZ-1   tgZ0  tgZ+1  tgZ+5"
-             << "   ds-9   ds-3   ds-1    ds0   ds+1   ds+5"
+             << "  tgX-5  tgX-4  tgX-3  tgX-2  tgX-1   tgX0"
+             << "  tgY-5  tgY-4  tgY-3  tgY-2  tgY-1   tgY0"
+             << "  tgZ-5  tgZ-4  tgZ-3  tgZ-2  tgZ-1   tgZ0"
+             << "   ds-5   ds-4   ds-3   ds-2   ds-1    ds0"
              << "  dd/dt"
              << "      qw      qx      qy      qz"
              << "     vel   gyrP   gyrQ   gyrR"

@@ -8,10 +8,10 @@
 // (32 and 16 neurons), 3 control outputs (pitch rate, roll rate, throttle).
 //
 // Input layout (33 sensors):
-//  0- 5: target_x [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  unit-vec x (body frame)
-//  6-11: target_y [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  unit-vec y (body frame)
-// 12-17: target_z [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  unit-vec z (body frame)
-// 18-23: dist     [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  metres; dist to rabbit position
+//  0- 5: target_x [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  unit-vec x (body frame)
+//  6-11: target_y [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  unit-vec y (body frame)
+// 12-17: target_z [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  unit-vec z (body frame)
+// 18-23: dist     [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  metres; dist to rabbit position
 //    24: dDist/dt closing rate (m/s, positive = approaching)
 // 25-28: quaternion (w, x, y, z)                         [-1,1]
 //    29: airspeed (m/s)

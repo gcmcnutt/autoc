@@ -364,11 +364,11 @@ TEST(NNForwardPass, Deterministic) {
 // T040: Input layout test (normalization removed — all inputs raw)
 // ============================================================
 
-// Input ordering (33 inputs — 023 direction cosines):
-//  0- 5: target_x [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  body-frame unit-vec x
+// Input ordering (33 inputs — 023 direction cosines, 029 US1 past-only):
+//  0- 5: target_x [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  body-frame unit-vec x
 //  6-11: target_y same                                    body-frame unit-vec y
 // 12-17: target_z same                                    body-frame unit-vec z
-// 18-23: dist     [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  metres
+// 18-23: dist     [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  metres
 //    24: dDist/dt closing rate (m/s)
 // 25-28: quaternion (w,x,y,z)
 //    29: airspeed (m/s)

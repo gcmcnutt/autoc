@@ -7,7 +7,8 @@
 // DO NOT add padding or non-float members.
 
 struct NNInputs {
-    // Time samples: [-0.9s, -0.3s, -0.1s, now, +0.1s, +0.5s]
+    // Time samples: [-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now]
+    // 029 US1: past-only distribution, 100 ms uniform grid (no future lookahead).
     float target_x[6];   // body-frame unit-vec x component (was dPhi)
     float target_y[6];   // body-frame unit-vec y component (was dTheta partial)
     float target_z[6];   // body-frame unit-vec z component (NEW)

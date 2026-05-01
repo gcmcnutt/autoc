@@ -1849,8 +1849,8 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
         //
         // Body frame: aerospace FRD (+X fwd, +Y right wing, +Z down).
         // World frame: NED (+X North, +Y East, +Z Down).
-        // "Now" slot is history index 3 (HIST_PAST = {9,3,1,0} in evaluator.cc).
-        constexpr int NOW = 3;
+        // "Now" slot is history index 5 (HIST_PAST = {5,4,3,2,1,0} in evaluator.cc, 029 US1 past-only).
+        constexpr int NOW = 5;
         scalar tx   = nn.target_x[NOW];
         scalar ty   = nn.target_y[NOW];
         scalar tz   = nn.target_z[NOW];
