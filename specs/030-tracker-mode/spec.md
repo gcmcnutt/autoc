@@ -14,6 +14,48 @@
 > - All other content (US2-US6: substrate, camera, training, renderer, review) → stays here as 030
 >
 > **Prerequisite**: 029-no-future-arch must demonstrate a recurrent NN architecture that trains effectively from past-only inputs. That architecture becomes 030's controller baseline.
+>
+> **Pose-estimation framing (2026-04-30)**: from two beacon dots `(screen_x, screen_y, visible)` per beacon × history slots, the only physically grounded predictor is one that recovers target **pose** (bearing, bank angle, range, attitude rates) and propagates pose forward via banked-aircraft kinematics. A naive position-extrapolator is fundamentally wrong on a banking target — target follows an arc, extrapolator predicts a straight line. This framing reshapes the 030 controller architecture choice:
+> - **Pose-derived geometric features** (inter-beacon midpoint / angle / distance / rates) are first-class inputs alongside the raw `(x, y, visible)` triples — they expose the physical state directly rather than asking the NN to infer it from raw points.
+> - **Auxiliary supervised pose head** (per 029 task T062) — supervised against ground-truth target pose during training (pathgen has known rabbit pose; tracker mode has known playback-aircraft pose) — shapes the trunk representation toward pose-awareness. The head structure transfers between 029 and 030 unchanged.
+> - **Banked-aircraft kinematics in any predictor stage** — turn radius from bank × airspeed, pitch rate from elevator-equivalent — give the predictor physical truth to lean on, not just function-fitting on past samples.
+>
+> When this spec is unparked, the controller-architecture section should bake in the pose-estimation framing as the primary perception-to-control bridge, with the raw `(x, y, visible)` triples treated as the *minimal* interface (matching the deployed FPGA centroid extractor) but with pose-derived features computed inside the NN trunk.
+>
+> **Two-loop architecture (2026-04-30)** — looking past 030 to the eventual pixel-mode perception:
+>
+> The front/back-aliasing problem in pose estimation (a target heading away at 45° has near-identical instantaneous beacon geometry to one heading toward at 45°) is fundamentally only resolvable from *trajectory*, not from a single observation. This drives a clean perception-control decomposition:
+>
+> ```
+> camera frames → [Pose Perception Loop] → pose + pose_history → [Control Loop] → pitch/roll/throttle
+>                  temporal smoothing,                            existing NN-evolved
+>                  prediction-aided                                recurrent controller
+>                  estimator (CNN/                                 (consumes pose history
+>                  transformer + recurrent)                        instead of raw beacon coords)
+> ```
+>
+> | Loop | Update rate | Training | Deploy | Notes |
+> |---|---|---|---|---|
+> | Perception | camera-fast (30-60 Hz) | supervised against ground-truth pose | perception MCU / FPGA + small NN | prediction-aided; future pose-prior disambiguates ambiguous observations |
+> | Control | NN-tick (10 Hz) | GA-evolved (existing pipeline) | small embedded MCU | unchanged contract apart from input-feature semantics |
+>
+> **Implications for the spec arc**:
+>
+> - **Pose history can be faked now.** In pathgen / playback modes the target pose is known exactly. Synthesize pose-history with optional noise / dropout (curriculum: anneal noise from 0 to realistic perception-error magnitude over training). Control loop can develop against this interface *independently of any perception-loop work*. This is the highest-leverage decoupling.
+> - **Pose history interface = natural successor to current input-history pattern.** Today: `(target_x, target_y, target_z, dist) × 6 slots`. Tomorrow: `(bearing, bank, range, pitch_attitude, plus rates) × 6 slots`. Same shape, different semantics. Today's no-future work (029) carries forward unchanged at the layout level.
+> - **Pixel-mode perception is its own feature, not part of 030.** Background declutter, object detection, pose estimation with prediction prior — that's a full feature spec (likely 031 or 032). 030 stays at "FPGA-extracted (x, y, visible) interface that produces beacon-derived pose features," and the pose-history-fed control loop is what 030 trains. The 031 perception loop slots in later, replacing the FPGA centroid extractor with a richer pose stream — control loop unchanged.
+> - **Pose history is the contract** between perception and control. Define it crisply when 030 unparks; it'll govern at least three features (030, 031-perception, and any future re-flight against real cameras).
+>
+> **Staged path for the spec arc** (operator-confirmed 2026-04-30 — also captured in [memory: project_perception_control_two_loop.md](../../.claude/projects/-home-gmcnutt-autoc/memory/project_perception_control_two_loop.md)):
+>
+> | Milestone | Perception | Controller training | What's tested | Controller weights |
+> |---|---|---|---|---|
+> | 029 (current) — no-future arch | rabbit oracle (none) | GA on past-only inputs | architecture trains predictively | new |
+> | **030 — this spec** — sim-beacons learnable | analytic beacon projection | GA on beacon-derived features | perception→control bridge in sim | new |
+> | Real-flight-with-beacons | FPGA centroid extractor on real hw | reuses 030 weights | sim-to-real + minimal-calibration (FR-003f) | unchanged |
+> | 031+ — pixel-mode | camera→CNN/transformer pose loop | reuses controller (interface = pose history) | full vision stack | unchanged |
+>
+> The load-bearing property: **controller weights ship unchanged across the bottom three rows**, because the pose-history interface is identical. 030's controller-training output deploys directly to real-flight-with-beacons; once 031 lands, the same controller continues to work behind a richer perception loop. This justifies measured pace — each row uniquely tests one property; rushing any row collapses the test of the next one.
 
 ## Overview
 

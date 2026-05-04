@@ -278,6 +278,44 @@ Remaining 015 work:
 - Write when the accumulated `.dat` size becomes a problem or when a
   new run needs canonical-reference status for post-flight analysis.
 
+### [NEXT] Per-axis / per-path analysis from S3 .dmp instead of data.dat
+- **Problem**: `data.dat` is overwritten at the start of every training run.
+  The per-axis aggressiveness time-series + per-path roll/pitch rate analysis
+  in `specs/029-no-future-arch/plot_per_axis_time_series.py` reads `data.dat`
+  directly, so as soon as the next training launches, the prior run's
+  analysis is no longer reproducible. Specific instance: pastonly2 finished
+  2026-05-02, pastonly3 launched same day → pastonly2's data.dat lost. We
+  cannot retroactively re-render pastonly2's per-path roll/pitch RATE chart
+  with the new normalization (introduced 2026-05-02 in this same session).
+- **Long-term solution**: extend the per-axis analysis tooling to read
+  per-tick aircraft state from the S3 `.dmp` files (cereal-serialized
+  `EvalResults` containing `aircraftStateList[scenario][tick]`). Each gen's
+  best individual is dumped to S3 (per `src/autoc.cc:1119-1146`), so
+  per-tick quaternion + outputs are recoverable for any prior run as long
+  as S3 retention holds.
+- **Implementation sketch**:
+  - New tool: `tools/aircraft_state_extractor.cc` (or extend `nnextractor`).
+  - CLI: `--source-run <S3-prefix> [--gens 0-800] --out per-tick.csv`
+  - Iterates all gen .dmp files for the run, deserializes `EvalResults`,
+    flattens `aircraftStateList[scenario][tick]` into a CSV with columns
+    matching today's `data.dat` (Scn, Pth/Wnd:Step, qw qx qy qz, outPt
+    outRl outTh, etc.).
+  - Existing `plot_per_axis_time_series.py` reads either source (data.dat
+    OR extracted CSV) — minor parser tweak.
+- **Why this enables**: retroactive per-path metric refinement (like the rate
+  normalization we just added), cross-run direct comparisons (pastonly2 vs
+  pastonly3 vs more-rnn3 on the same metric, computed identically), and
+  reproducibility of analysis when source data.dat has been overwritten.
+- **Trigger**: next time we want to retroactively analyze a prior run with a
+  metric we didn't compute at the time. Likely fires when 030 needs to
+  cross-compare pastonly2 / pastonly3 / 025 controllers post-hoc, or when
+  a flight-test outcome motivates re-checking some prior controller's
+  per-path behavior.
+- **Out of scope for v1**: extracting non-best individuals (only the gen's
+  elite is dumped to S3); extracting per-tick PidInternals (not in
+  EvalResults today — would need another schema add); replicating data.dat
+  byte-for-byte (just the columns the per-axis analysis needs).
+
 ### [NEXT] Make pathgen.h Portable for Embedded
 - Single pathgen.h that works on both desktop and embedded
 - Current state: embedded_pathgen_selector.h is a manual clone of desktop pathgen.cc
