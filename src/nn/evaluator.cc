@@ -159,7 +159,8 @@ void nn_forward_recurrent(const float* weights,
                           const std::vector<int>& topology,
                           const std::vector<uint8_t>& recurrent,
                           const float* inputs, float* outputs,
-                          float* hidden_state) {
+                          float* hidden_state,
+                          RecurrentTelemetry* telemetry) {
     if (topology.size() < 2) return;
 
     int max_layer = *std::max_element(topology.begin(), topology.end());
@@ -196,19 +197,30 @@ void nn_forward_recurrent(const float* weights,
         const float* B = w_ptr + in_size * out_size;
 
         for (int j = 0; j < out_size; j++) {
-            float sum = B[j];
+            float xh_part = B[j];
             for (int i = 0; i < in_size; i++) {
-                sum += W[j * in_size + i] * current_in[i];
+                xh_part += W[j * in_size + i] * current_in[i];
             }
+            float hh_part = 0.0f;
             if (out_is_recurrent) {
                 // Add W_hh row j · h_{t-1}
                 const float* Whh_row = whh_base + whh_offset + j * out_size;
                 const float* h_prev = hidden_state + hs_offset;
                 for (int i = 0; i < out_size; i++) {
-                    sum += Whh_row[i] * h_prev[i];
+                    hh_part += Whh_row[i] * h_prev[i];
                 }
             }
+            const float sum = xh_part + hh_part;
             current_out[j] = static_cast<float>(fast_tanh(static_cast<gp_scalar>(sum)));
+
+            // 028 telemetry: accumulate per-recurrent-neuron magnitudes when capture is on.
+            // Skipped for non-recurrent neurons (out_is_recurrent==false) — the ratio
+            // metric is only defined where W_hh exists.
+            if (telemetry && out_is_recurrent) {
+                telemetry->xh_mag_sum += static_cast<double>(std::fabs(xh_part));
+                telemetry->hh_mag_sum += static_cast<double>(std::fabs(hh_part));
+                telemetry->sample_count++;
+            }
         }
 
         if (out_is_recurrent) {
@@ -275,89 +287,41 @@ void nn_xavier_init(NNGenome& genome) {
 // ============================================================
 // T040: Gather NN_INPUT_COUNT sensor inputs — raw, no normalization
 // ============================================================
-// Layout (33 inputs — 023 direction cosines):
-//  0- 5: target_x [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  body-frame unit-vec x
-//  6-11: target_y [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  body-frame unit-vec y
-// 12-17: target_z [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  body-frame unit-vec z
-// 18-23: dist     [-0.9s,-0.3s,-0.1s,now,+0.1s,+0.5s]  raw metres
+// Layout (33 inputs — 023 direction cosines, 029 US1 past-only redistribution):
+//  0- 5: target_x [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  body-frame unit-vec x
+//  6-11: target_y [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  body-frame unit-vec y
+// 12-17: target_z [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  body-frame unit-vec z
+// 18-23: dist     [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  raw metres
 //    24: dDist/dt closing rate (m/s, positive = approaching)
 // 25-28: quaternion (w, x, y, z)                         [-1,1]
 //    29: airspeed (m/s)
 // 30-32: gyro rates (p, q, r) in rad/s                   standard aerospace RHR
 //
-// Past slots (n=9,3,1,0) use recorded aircraft history at those times.
-// Forecast slots (+0.1s=offset 1, +0.5s=offset 5) use current aircraft
-// position vs future rabbit path — curve-ahead estimation.
+// 029 US1 past-only redistribution: all 6 slots use recorded aircraft history
+// at tick offsets [5, 4, 3, 2, 1, 0]. Future-lookahead slots (+0.1s, +0.5s)
+// are dropped because tracker mode (the eventual consumer of this layout) has
+// no parametric path to look ahead on. PathProvider parameter is retained on
+// the signature for API stability across nn2cpp / xiao callers but is unused
+// here.
 
-// History slot indices: [9, 3, 1, 0] = [-0.9s, -0.3s, -0.1s, now]
-static const int HIST_PAST[] = {9, 3, 1, 0};
-// Forecast offsets in path steps: +1 = +0.1s, +5 = +0.5s
-static const float FORECAST_OFFSETS[] = {1.0f, 5.0f};
+// History slot indices (tick offsets at SIM_TIME_STEP_MSEC = 100 ms):
+// [5, 4, 3, 2, 1, 0] = [-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now]
+static const int HIST_PAST[] = {5, 4, 3, 2, 1, 0};
 
-// Get path tangent (direction of travel) at the given odometer offset
-static gp_vec3 getPathTangentAtOffset(PathProvider& pathProvider,
-                                       gp_scalar currentOdometer,
-                                       gp_scalar offsetMeters) {
-    gp_vec3 pos = getInterpolatedTargetPosition(pathProvider, currentOdometer, offsetMeters);
-    gp_vec3 posAhead = getInterpolatedTargetPosition(pathProvider, currentOdometer, offsetMeters + 0.5f);
-    gp_vec3 tangent = posAhead - pos;
-    double norm = tangent.norm();
-    if (norm > 1e-6) return tangent / norm;
-    return gp_vec3::UnitX();  // fallback
-}
-
-void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
+void nn_gather_inputs([[maybe_unused]] PathProvider& pathProvider,
+                      AircraftState& aircraftState,
                       NNInputs& inputs) {
-    gp_scalar rabbitOdo = aircraftState.getRabbitOdometer();
-    gp_scalar rabbitSpeed = aircraftState.getRabbitSpeed();
-
-    // Convert forecast offset steps to offset meters
-    // FORECAST_OFFSETS are in steps (1 step = SIM_TIME_STEP_MSEC),
-    // convert: offsetMeters = steps * (SIM_TIME_STEP_MSEC / 1000.0) * rabbitSpeed
-    auto offsetStepsToMeters = [&](float steps) -> gp_scalar {
-        return static_cast<gp_scalar>(steps) * (static_cast<gp_scalar>(SIM_TIME_STEP_MSEC) / 1000.0f) * rabbitSpeed;
-    };
-
-    // target_x/y/z[0-3]: past history (direction cosines from recorded history)
-    for (int i = 0; i < 4; i++) {
+    // target_x/y/z[0-5]: past history (direction cosines from recorded history)
+    for (int i = 0; i < 6; i++) {
         gp_vec3 dir = aircraftState.getHistoricalTargetDir(HIST_PAST[i]);
         inputs.target_x[i] = static_cast<float>(dir.x());
         inputs.target_y[i] = static_cast<float>(dir.y());
         inputs.target_z[i] = static_cast<float>(dir.z());
     }
 
-    // target_x/y/z[4-5]: path-lookahead forecast (+0.1s, +0.5s)
-    for (int i = 0; i < 2; i++) {
-        gp_vec3 futureTarget = getInterpolatedTargetPosition(
-            pathProvider, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i]));
-        gp_vec3 craftToTarget = futureTarget - aircraftState.getPosition();
-        gp_vec3 target_local = aircraftState.getOrientation().inverse() * craftToTarget;
-        float distance = static_cast<float>(target_local.norm());
-
-        // Get path tangent for singularity fallback
-        gp_vec3 pathTangent = getPathTangentAtOffset(pathProvider, rabbitOdo,
-                                                      offsetStepsToMeters(FORECAST_OFFSETS[i]));
-        gp_vec3 tangent_body = aircraftState.getOrientation().inverse() * pathTangent;
-        float tangent_norm = static_cast<float>(tangent_body.norm());
-        if (tangent_norm > 1e-6f) tangent_body = tangent_body / tangent_norm;
-
-        gp_vec3 dir = computeTargetDir(target_local, distance, tangent_body);
-        inputs.target_x[4 + i] = static_cast<float>(dir.x());
-        inputs.target_y[4 + i] = static_cast<float>(dir.y());
-        inputs.target_z[4 + i] = static_cast<float>(dir.z());
-    }
-
-    // dist[0-3]: past history (raw metres)
-    for (int i = 0; i < 4; i++)
+    // dist[0-5]: past history (raw metres)
+    for (int i = 0; i < 6; i++)
         inputs.dist[i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[i]));
-
-    // dist[4-5]: forecast — distance from current position to future rabbit (+0.1s, +0.5s)
-    for (int i = 0; i < 2; i++) {
-        gp_vec3 futureTarget = getInterpolatedTargetPosition(
-            pathProvider, rabbitOdo, offsetStepsToMeters(FORECAST_OFFSETS[i]));
-        inputs.dist[4 + i] = static_cast<float>(
-            (futureTarget - aircraftState.getPosition()).norm());
-    }
 
     // closing_rate: dDist/dt (m/s, positive = approaching)
     {
@@ -405,6 +369,26 @@ void NNControllerBackend::reset() {
     std::fill(hidden_state_.begin(), hidden_state_.end(), 0.0f);
 }
 
+void NNControllerBackend::enableTelemetryCapture() {
+    telemetry_capture_enabled_ = true;
+}
+
+void NNControllerBackend::disableTelemetryCapture() {
+    telemetry_capture_enabled_ = false;
+}
+
+void NNControllerBackend::resetTelemetry() {
+    telemetry_.reset();
+}
+
+double NNControllerBackend::telemetryActivationRatio() const {
+    return telemetry_.activation_ratio();
+}
+
+long long NNControllerBackend::telemetrySampleCount() const {
+    return telemetry_.sample_count;
+}
+
 void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& pathProvider) {
     NNInputs inputs = {};
     nn_gather_inputs(pathProvider, aircraftState, inputs);
@@ -414,10 +398,12 @@ void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& p
         nn_forward(genome_.weights.data(), genome_.topology,
                    reinterpret_cast<const float*>(&inputs), outputs);
     } else {
+        RecurrentTelemetry* tlm = telemetry_capture_enabled_ ? &telemetry_ : nullptr;
         nn_forward_recurrent(genome_.weights.data(), genome_.topology,
                              genome_.recurrent,
                              reinterpret_cast<const float*>(&inputs), outputs,
-                             hidden_state_.data());
+                             hidden_state_.data(),
+                             tlm);
     }
 
     // Set control commands: pitch, roll, throttle (already in [-1, 1] via tanh)

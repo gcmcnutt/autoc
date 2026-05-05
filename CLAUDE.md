@@ -1,6 +1,6 @@
 # autoc Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-19
+Auto-generated from all feature plans. Last updated: 2026-05-04
 
 ## Active Technologies
 - C++17 (renderer, shared code), Python 3.11 (analysis scripts) + Eigen (math), VTK (renderer), cereal (data.dat parsing), blackbox-tools (INAV decode) (018-flight-analysis)
@@ -17,6 +17,12 @@ Auto-generated from all feature plans. Last updated: 2026-04-19
 - File-based — data.dat, data.stc, NN01 weights (023-ood-and-engage-fixes)
 - C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis scripts) + Eigen (vec3/quat math), cereal, inih, GoogleTest, (024-sim-real-fidelity)
 - File-based — `data.dat` (sim), blackbox CSV (flight), xiao flash logs (024-sim-real-fidelity)
+- C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis & plotting) + Eigen (vec3/dot, mat-vec), cereal (NN serialization), inih (autoc.ini), (028-deeper-rnn)
+- File-based — `data.dat` (training), evolution log lines (per-gen telemetry), (028-deeper-rnn)
+- C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis scripts, conversion tools) + Eigen (vec3 / quat / matrix-vector math, projection geometry), cereal (NN serialization, EvalResults schema, new tracker-mode dump format), inih (autoc.ini parsing), GoogleTest (unit/contract tests), CRRCSim LaRCSim FDM (sim physics) (029-tracker-mode)
+- file-based — `data.dat` (training output, schema extends per FR-015), evolution log lines (per-gen telemetry), `data.stc`, S3 `.dmp` (cereal-serialized `EvalResults` — schema bump for tracker-mode dumps), playback library files (crrcsim binary playback format for v1, per spec assumption pending R1 research finding) (029-tracker-mode)
+- C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis) + Eigen (vec3/quat math), cereal (NN serialization), inih (autoc.ini), GoogleTest, CRRCSim LaRCSim FDM (029-no-future-arch)
+- file-based (`data.dat`, `data.stc`, S3 `.dmp`) — no schema changes for US1/US2 (029-no-future-arch)
 
 - C++17 + Eigen, cereal (serialization), inih (config), GoogleTest (015-nn-training-improvements)
 
@@ -36,9 +42,9 @@ tests/
 C++17: Follow standard conventions
 
 ## Recent Changes
-- 024-sim-real-fidelity: Added C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis scripts) + Eigen (vec3/quat math), cereal, inih, GoogleTest,
-- 023-ood-and-engage-fixes: Added C++17 (autoc, crrcsim), Python 3.11 (analysis) + Eigen (math), cereal (serialization), GoogleTest
-- 023-ood-and-engage-fixes: Added C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis scripts, data.dat parsers) + Eigen (vec3/dot), cereal (serialization), inih (config), GoogleTest, CRRCSim LaRCSim FDM, INAV MSP protocol, PlatformIO (xiao target)
+- 029-no-future-arch: Added C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis) + Eigen (vec3/quat math), cereal (NN serialization), inih (autoc.ini), GoogleTest, CRRCSim LaRCSim FDM
+- 029-tracker-mode: Added C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis scripts, conversion tools) + Eigen (vec3 / quat / matrix-vector math, projection geometry), cereal (NN serialization, EvalResults schema, new tracker-mode dump format), inih (autoc.ini parsing), GoogleTest (unit/contract tests), CRRCSim LaRCSim FDM (sim physics)
+- 028-deeper-rnn: Added C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis & plotting) + Eigen (vec3/dot, mat-vec), cereal (NN serialization), inih (autoc.ini),
 
 
 <!-- MANUAL ADDITIONS START -->

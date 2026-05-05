@@ -39,7 +39,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-POP_SIZE = 3500  # autoc.ini PopulationSize — gen encoded as Scn/(POP_SIZE+1)
+POP_SIZE = 3500  # autoc.ini PopulationSize default — overridable via argv[5]
 
 
 def parse_pth_wnd(field: str):
@@ -135,6 +135,10 @@ def main():
         "specs/024-sim-real-fidelity/control_aggressiveness_cadence7.png"
     )
     label = sys.argv[3] if len(sys.argv) > 3 else "cadence7"
+    total_gens = int(sys.argv[4]) if len(sys.argv) > 4 else 400  # x-axis extent
+    global POP_SIZE
+    if len(sys.argv) > 5:
+        POP_SIZE = int(sys.argv[5])  # gen = Scn / (POP_SIZE+1) — must match autoc.ini
 
     data = load(inp)
     print(f"Paths found: {sorted(data.keys())}")
@@ -166,7 +170,7 @@ def main():
 
     # VariationRampStep=40 boundaries
     for ax in (ax_dc, ax_mag):
-        for g in range(40, 401, 40):
+        for g in range(40, total_gens + 1, 40):
             ax.axvline(g, color="red", linewidth=0.5, alpha=0.35)
     ax_dc.text(40, 0.05, "ramp@40", color="red", alpha=0.7, fontsize=9,
                ha="left", va="bottom", transform=ax_dc.get_xaxis_transform())
@@ -186,11 +190,11 @@ def main():
     ax_mag.set_xlabel("Generation")
     ax_mag.set_ylabel("Mean |out| per tick  (stick amplitude)")
     ax_mag.grid(True, linewidth=0.5, alpha=0.4)
-    ax_mag.set_xlim(0, 400)
+    ax_mag.set_xlim(0, total_gens)
     ax_mag.set_ylim(bottom=0, top=3.1)
     # dashed reference line: absolute ceiling (|outPt| + |outRl| + |outTh| ≤ 3)
     ax_mag.axhline(3.0, color="gray", linewidth=0.6, linestyle="--", alpha=0.5)
-    ax_mag.text(395, 3.0, " ceiling = 3.0 (full throw all 3 axes)",
+    ax_mag.text(total_gens - 5, 3.0, " ceiling = 3.0 (full throw all 3 axes)",
                 color="gray", alpha=0.7, fontsize=8, ha="right", va="top")
 
     out.parent.mkdir(parents=True, exist_ok=True)

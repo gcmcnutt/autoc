@@ -144,6 +144,81 @@ tests in `tests/msplink_quat_convention_tests.cc`.
   direct (`1500 + throttle*500`).
 - Rudder, flaps, spoilers, etc. remain neutral in the current integration.
 
+## Propeller Rotation & Reaction Torque (crrcsim FDM)
+
+The crrcsim power model carries a per-propeller rotation-direction sign that
+determines the airframe's reaction-torque polarity. This is a load-bearing
+convention because it produces an asymmetric roll tendency that the controller
+must learn to compensate (i.e., what real fixed-wing pilots call "P-factor +
+torque effect requiring right rudder/aileron").
+
+### Convention
+
+Per [`crrcsim/src/mod_fdm/power/propeller.h:168`](../crrcsim/src/mod_fdm/power/propeller.h):
+
+> *"Direction of rotation (view from behind): +1 = cw, -1 = ccw."*
+
+- `<propeller rotation="+1">` (or no attribute — `+1` is the default)
+  = **CW viewed from behind the craft** = **CCW viewed from in front of the craft**.
+- `<propeller rotation="-1">` = CCW from behind = CW from front.
+
+The XML attribute is parsed at [`propeller.cpp:130`](../crrcsim/src/mod_fdm/power/propeller.cpp):
+`rot = prop->getDouble("rotation", 1);`
+
+### Roll-torque sign (matches standard US engine convention)
+
+For `rotation = +1` (CW-from-behind, CCW-from-front):
+
+- Prop angular-momentum vector points **forward along craft +X** (right-hand rule).
+- Newton's third-law reaction torque on the airframe is in **−X** direction.
+- Body-frame −X torque rolls the craft **left** (port wing down).
+- Pilot/controller compensates with right aileron/rudder.
+
+This matches standard US-engine rotation convention (Cessna, Piper, etc.) — and
+matches what evolved controllers in autoc training will learn to compensate for.
+
+### hb1_streamer.xml — uses the default
+
+[`crrcsim/models/hb1_streamer.xml`](../crrcsim/models/hb1_streamer.xml) declares:
+
+```xml
+<propeller D="0.127" H="0.114" J="0" n_fold="5" />
+```
+
+No `rotation` attribute → defaults to `+1` → **CCW viewed from in front of craft**
+→ produces left-roll reaction torque, consistent with the trainer's intended
+real-world behavior.
+
+### Visual model vs aero model — independent
+
+The `<graphics version="1" model="zagi-xs.ac">` line uses a delta-wing pusher
+visual; the actual aero / torque model is independent of the rendered geometry.
+The propeller's reaction torque axis is **along craft +X regardless of whether
+the visual prop sits at the front (tractor) or back (pusher)** — the same
+`rotation` sign produces the same airframe roll torque either way. So a
+visual/physical mismatch (pusher rendered, tractor configured) is cosmetic only;
+torque physics matches the aerodynamic model, not the rendered geometry.
+
+### Implementation reference
+
+Torque application in body frame at [`propeller.cpp:219`](../crrcsim/src/mod_fdm/power/propeller.cpp):
+
+```cpp
+*values->moment += mulMoment * F_X - dirThrust * (rot * M) + mulPfac * (rot * M_Pfac);
+```
+
+Where `dirThrust` is the prop axis direction (≈ craft +X), `M` is shaft torque
+magnitude, and `rot` is the ±1 sign. With `rot = +1` and `dirThrust = +X`, the
+contribution to the body-frame moment is `−X · M`, i.e., roll-left.
+
+### When this would change
+
+`rotation = -1` should only be set when modeling a craft where the actual
+engine/prop rotates opposite the standard convention (e.g., counter-rotating
+prop on a twin, or specific European/Russian engines). For paired-prop multicopters,
+each prop's `rotation` is set independently to balance net yaw torque — see
+[`propeller.cpp:124`](../crrcsim/src/mod_fdm/power/propeller.cpp).
+
 ## Summary Table
 
 | Aspect                    | AutoC GP side                        | crrcsim / FDM side                 | Notes                                     |

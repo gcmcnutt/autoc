@@ -328,7 +328,72 @@ Remaining ones for the next `/speckit.clarify` pass:
 - C1 skipped as primary — C2-via-lexicase is cleaner given the
   existing selection plumbing.
 
-## 8. What this research is NOT
+## 8. 028 plan-phase research items (additions to 027 inheritance)
+
+The 027 sections above are the literature/architecture grounding 028
+inherits unchanged. The items below are 028-specific research deliverables
+that came out of the [spec.md clarify session](./spec.md#clarifications)
+and ground the 028 plan.
+
+### 8.1 R-layer placement & sizing first principles → separate doc
+
+Anchored in literature priors + actuator/sensor latency + airframe
+dynamics + GA search efficiency. **Output**:
+[`research_rlayer_placement.md`](./research_rlayer_placement.md). Drives
+plan §Phase 5b (larger budget) vs §Phase 5c (state-init) sub-path
+selection if D-alone stalls. Confirms (or revises) the 16-wide layer-2
+placement inherited from 027.
+
+### 8.2 Sim tick rate + actuator/sensor latency numbers (measurement)
+
+**Decision needed**: confirm the sim's NN eval cadence (Hz, expected
+~10 Hz from 027 plan §4.2 cadence comment), measure typical servo +
+ESC + AHRS pipeline latency from existing flight logs. **Output**:
+inline section in §8.1 or a short notes file. Grounds the "useful
+memory horizon" reasoning. Cheap — pulls from existing artifacts
+(autoc.ini, blackbox CSVs, INAV defaults).
+
+### 8.3 Threshold calibration design for telemetry signals 1 + 2
+
+**Decision needed**: what activation-ratio value counts as "block
+engaged" vs "block dead"? **Approach**: two unit-test calibrations in
+`tests/nn_telemetry_tests.cc`:
+- Hand-zero W_hh, ratio = 0 exactly (lower bound).
+- Hand-set W_hh to identity or known-active matrix, measure ratio
+  (upper bound).
+
+Plot threshold line in the 6th panel sits at midpoint or 10 % of the
+engaged value. **Final pick**: deferred to `/speckit.tasks` per
+[plan §1.5](./plan.md#15-threshold-calibration-informs-13-plot-threshold-line).
+
+### 8.4 Stability-axis (027 v4) score distribution mining
+
+**Decision needed**: if pattern 2 (stability-only single-axis lexicase)
+runs, is the 027 ε=0.5 floor still right-scale for the stability axis
+in isolation (vs the 3-axis pool it was tuned in)? **Approach**: pull
+stability scores from rnn3 logs (final population, late generations),
+plot percentiles, decide whether ε needs re-derivation. **Trigger**:
+only if Phase 4 routes to pattern 2 (stability-only). Until then this
+is conditional research, not gating.
+
+### 8.5 "Robustness via within-run population stats" — metric definition
+
+Spec Q5 accepted single-seed per attempt with the mitigation: "if
+late-gen fitness spread looks degenerate, pull a second seed before
+flight." **Decision needed**: define *spread* and *degenerate* with
+measurable thresholds. **Proposed metric**:
+- Late-gen (last 50 gens) IQR of population fitness / |median fitness|.
+  Call it `pop_spread`.
+- Degenerate ⇔ `pop_spread` < 0.05 (population is a near-clone of the
+  best individual).
+
+If `pop_spread` < threshold AND the run hit the gate, treat as
+seed-suspect; pull a second seed at same config before flight.
+Documented in [`data-model.md`](./data-model.md). Final threshold
+picked in `/speckit.tasks` after one D-alone run gives a baseline
+distribution.
+
+## 9. What this research is NOT
 
 - A full lit review. This is grounding, not a thesis.
 - A commitment to a specific cell of the 2×2. That comes out of

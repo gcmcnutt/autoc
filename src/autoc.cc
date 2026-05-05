@@ -36,6 +36,7 @@ From skeleton/skeleton.cc
 #include "autoc/nn/population.h"
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
+#include "autoc/nn/telemetry.h"
 #include "autoc/eval/fitness_computer.h"
 #include "autoc/eval/fitness_decomposition.h"
 #include "autoc/eval/selection.h"
@@ -641,10 +642,10 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
 
       if (printHeader) {
         fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx"
-             << "  tgX-9  tgX-3  tgX-1   tgX0  tgX+1  tgX+5"
-             << "  tgY-9  tgY-3  tgY-1   tgY0  tgY+1  tgY+5"
-             << "  tgZ-9  tgZ-3  tgZ-1   tgZ0  tgZ+1  tgZ+5"
-             << "   ds-9   ds-3   ds-1    ds0   ds+1   ds+5"
+             << "  tgX-5  tgX-4  tgX-3  tgX-2  tgX-1   tgX0"
+             << "  tgY-5  tgY-4  tgY-3  tgY-2  tgY-1   tgY0"
+             << "  tgZ-5  tgZ-4  tgZ-3  tgZ-2  tgZ-1   tgZ0"
+             << "   ds-5   ds-4   ds-3   ds-2   ds-1    ds0"
              << "  dd/dt"
              << "      qw      qx      qy      qz"
              << "     vel   gyrP   gyrQ   gyrR"
@@ -1190,6 +1191,12 @@ static void runNNEvolution(
       pctInStreak = (totalSteps > 0) ? 100.0 * totalStrkSteps / totalSteps : 0.0;
     }
 
+    // 028 telemetry: signal 1 (synthetic W_hh/W_xh activation ratio for best individual)
+    //                signal 2 (population-level CV per weight block)
+    // See specs/028-deeper-rnn/data-model.md and contracts/evolution_log_columns.md.
+    const double whh_xh_ratio = compute_synthetic_activation_ratio(pop.individuals[bestIdx]);
+    const PopulationBlockStats blockStats = compute_population_block_stats(pop.individuals);
+
     // Log to statistics file
     bout << "#NNGen gen=" << gen
          << " best=" << std::fixed << std::setprecision(6) << minFitness
@@ -1200,6 +1207,10 @@ static void runNNEvolution(
          << " pctInStreak=" << std::setprecision(1) << pctInStreak
          << " stability=" << std::setprecision(2) << totalStability
          << " energy=" << std::setprecision(2) << totalEnergy
+         << " whh_xh_ratio=" << std::setprecision(4) << whh_xh_ratio
+         << " w_xh0_cv=" << std::setprecision(4) << blockStats.w_xh0_cv
+         << " w_xh1_cv=" << std::setprecision(4) << blockStats.w_xh1_cv
+         << " w_hh_cv=" << std::setprecision(4) << blockStats.w_hh_cv
          << std::endl;
     bout.flush();
 

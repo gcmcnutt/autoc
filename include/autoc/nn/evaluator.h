@@ -46,17 +46,43 @@ int nn_hidden_state_count(const std::vector<int>& topology,
 void nn_forward(const float* weights, const std::vector<int>& topology,
                 const float* inputs, float* outputs);
 
+// Signal 1 telemetry — see specs/028-deeper-rnn/data-model.md §2.
+// Defined here (not telemetry.h) so that NNControllerBackend can hold one
+// by value without a forward-decl/incomplete-type problem. All members are
+// inline so this struct does not require linking telemetry.cc — important
+// for crrcsim's mod_inputdev which compiles evaluator.cc directly without
+// pulling in autoc_common.a.
+struct RecurrentTelemetry {
+    double xh_mag_sum = 0.0;
+    double hh_mag_sum = 0.0;
+    long long sample_count = 0;
+    double activation_ratio() const {
+        if (sample_count == 0) return 0.0;
+        const double xh_mean = xh_mag_sum / static_cast<double>(sample_count);
+        const double hh_mean = hh_mag_sum / static_cast<double>(sample_count);
+        if (xh_mean < 1e-9) return 0.0;
+        return hh_mean / xh_mean;
+    }
+    void reset() { xh_mag_sum = 0.0; hh_mag_sum = 0.0; sample_count = 0; }
+};
+
 // Recurrent forward pass: same as nn_forward but with a persistent hidden
 // state. `hidden_state` is read-and-written — caller owns storage, zeros it
 // on span start, and keeps it across ticks. Layout of hidden_state matches
 // layer iteration order: for each recurrent layer, `topology[l]` floats are
 // consumed/produced sequentially. W_hh blocks live at the tail of `weights`
 // per the NNGenome layout above.
+//
+// If `telemetry` is non-null, the function accumulates per-recurrent-neuron
+// magnitudes of |W_xh row · x_t + b| and |W_hh row · h_{t-1}| into the
+// telemetry struct. Default null = no overhead, matches pre-028 behavior.
+// See specs/028-deeper-rnn/data-model.md §2.
 void nn_forward_recurrent(const float* weights,
                           const std::vector<int>& topology,
                           const std::vector<uint8_t>& recurrent,
                           const float* inputs, float* outputs,
-                          float* hidden_state);
+                          float* hidden_state,
+                          RecurrentTelemetry* telemetry = nullptr);
 
 // Fast tanh via 512-entry LUT with linear interpolation
 gp_scalar fast_tanh(gp_scalar x);
@@ -92,9 +118,23 @@ public:
     // No-op for feedforward networks.
     void reset();
 
+    // 028 — telemetry capture for signal 1 (W_hh / W_xh activation ratio).
+    // Off by default; enable only on best-of-gen evaluations to avoid
+    // per-individual cost during selection. See specs/028-deeper-rnn/spec.md
+    // §Clarifications and data-model.md §2.2.
+    void enableTelemetryCapture();
+    void disableTelemetryCapture();
+    void resetTelemetry();
+    double telemetryActivationRatio() const;
+    long long telemetrySampleCount() const;
+
 private:
     const NNGenome& genome_;
     std::vector<float> hidden_state_;  // Sized by nn_hidden_state_count(); empty for feedforward
+    // 028: held by value; cheap, no allocation. Captures samples only when
+    // telemetry_capture_enabled_ is true (see enableTelemetryCapture()).
+    RecurrentTelemetry telemetry_;
+    bool telemetry_capture_enabled_ = false;
 };
 
 // Expose LUT functions for testing

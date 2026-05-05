@@ -11,8 +11,8 @@
 #include <numeric>
 
 // ============================================================
-// CADENCE7-REDUX (diagnostic): all-feedforward, 1667 weights.
-// Restore 1923 + recurrent[2]=true after diagnostic run completes.
+// 028 D-alone: layer-2 (16-wide) recurrent, 1923 weights.
+// (Was 1667 / all-feedforward during the 027 cadence7-redux diagnostic.)
 // ============================================================
 
 TEST(ContractEvaluator, TopologyConstants) {
@@ -21,12 +21,12 @@ TEST(ContractEvaluator, TopologyConstants) {
     EXPECT_EQ(NN_HIDDEN2_SIZE, 16);
     EXPECT_EQ(NN_OUTPUT_COUNT, 3);
     EXPECT_EQ(NN_NUM_LAYERS, 4);
-    EXPECT_EQ(NN_WEIGHT_COUNT, 1667);
+    EXPECT_EQ(NN_WEIGHT_COUNT, 1923);
     EXPECT_FALSE(NN_RECURRENT[0]);
     EXPECT_FALSE(NN_RECURRENT[1]);
-    EXPECT_FALSE(NN_RECURRENT[2]);
+    EXPECT_TRUE(NN_RECURRENT[2]);
     EXPECT_FALSE(NN_RECURRENT[3]);
-    EXPECT_EQ(NN_HIDDEN_STATE_COUNT, 0);
+    EXPECT_EQ(NN_HIDDEN_STATE_COUNT, NN_HIDDEN2_SIZE);
 }
 
 TEST(ContractEvaluator, WeightCountMatchesTopology) {
