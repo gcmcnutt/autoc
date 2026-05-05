@@ -1,9 +1,15 @@
-# Flight 2026-05-03 — pastonly1 (gen 391, no-future arch, intermediate)
+# Flight 2026-05-03 — pastonly3 (gen 391, no-future arch, intermediate)
 
 **Date**: 2026-05-03 ~12:14 local (two flights, ~17:34 / ~18:13 INAV-side)
-**NN weights**: pastonly1 / 029-no-future-arch, gen ~391 mid-training pull
-(`gen9609.dmp`) under run id
+**NN weights**: **pastonly3** / 029-no-future-arch, **gen ~391
+mid-training pull** (`gen9609.dmp`) under run id
 `autoc-9223370259105171692-2026-05-02T19:20:04.115Z` — flown S3 artifact.
+**pastonly3 config (vs pastonly2)**: `SimNumPathsPerGeneration = 6`
+(path 5 re-included, having been excluded in pastonly2 — see
+[`pastonly2_outcome.md`](../../specs/029-no-future-arch/pastonly2_outcome.md)),
+49 wind variations per path → **294 scenarios per gen** (vs 245 in
+pastonly2). pastonly3 is intentionally pastonly2's path-distribution
+fix-up; this flight pulled it mid-run before convergence.
 **Xiao binary**: 029 tree, past-only sensor input (5 lookback ticks + now,
 6 slots indexed 0..5). Same airframe as 04-26.
 **INAV**: same fork as 04-26 (world→body blackbox quat, MSP override
@@ -64,7 +70,7 @@ every span. No regression.
 
 Pooled across **all 6 spans, 1239 NN ticks**:
 
-| Metric                              | 04-26 cad7-redux | 0503 pastonly1   | Δ                      |
+| Metric                              | 04-26 cad7-redux | 0503 pastonly3   | Δ                      |
 |-------------------------------------|------------------|------------------|------------------------|
 | `<\|out\|>`  total / tick           | 2.11             | 2.31             | +9 %                   |
 | `<\|Δout\|>` total / tick           | 0.88             | **1.26**         | **+43 % (more chatter)** |
@@ -130,21 +136,63 @@ Cmd → gyro lag and correlation per span:
 Identical lag/correlation envelope to 04-26 (~+0.78 @ 8–14 ms). Aero
 and servo response unchanged.
 
+## Departure / short-stall events
+
+Scanned each engaged span for low-airspeed dropouts (`as < 8 m/s` for
+≥ 3 consecutive NN ticks ≈ ≥ 0.3 s) and high-pitch + low-airspeed
+co-occurrences (`pitch > +25°` AND `as < 10`):
+
+| Span | Path                | as min/mean/max  | pitch° min/mean/max | low-as runs (≥ 3 ticks)            | high-α stall-like ticks |
+|------|---------------------|------------------|---------------------|------------------------------------|-------------------------|
+| 1    | StraightAndLevel    | 8.7 / 15.0 / 22.7 | −78 / +5 / +81      | none                                | 5 at t = 1.0 s (entry pull-up) |
+| 2    | HorizontalFigureEight | 4.2 / 16.0 / 21.7 | −46 / +7 / +57    | one 0.4 s @ t = 10.4 s (min 4.2)    | 3 at t = 10.2 s (recovered) |
+| 3    | SeededRandomB (path 5) | 4.5 / 13.2 / 25.1 | −76 / **+24** / +87 | **four 0.2–0.5 s** @ 10.8 / 18.6 / 24.7 / 28.9 s | **50 ticks** ≈ 5 s, starting t = 4.7 s |
+| 4    | SpiralClimb         | 8.2 / 15.4 / 21.6 | −77 / +7 / +63      | none                                | 0                       |
+| 5    | HighPerchSplitS     | 7.7 / 15.2 / 22.0 | −87 / +7 / +77      | none                                | 2 at t = 2.2 s          |
+| 6    | FortyFiveDegreeAngledLoop | 8.6 / 18.6 / 25.3 | −30 / +7 / +89  | none                                | 2 at t = 2.3 s          |
+
+**No span departed.** All low-airspeed dropouts are brief (≤ 0.5 s)
+and the controller flew through them without uncommanded pitch breaks
+or sustained dives. The longest stall-like residence is on **span 3
+(path 5)**: ~ 16 % of the span has `pitch > +25° AND as < 10` —
+consistent with the pastonly-policy "spiral patrol" behaviour
+(sustained nose-up while ranging the rabbit) rather than a stall
+event. Path 5's mean pitch is **+23.5°** (vs +5–7° on the other
+spans), confirming this span ran nose-high for much of its 31.5 s.
+
+**Caveat on the airspeed sensor**: the pitot reading at very low
+values (~ 4 m/s) likely includes wind component / dynamic-pressure
+noise rather than true free-stream — order-of-magnitude indicator
+only. The gross signal (no extended low-as runs, no nose-down
+recovery dives) is what's load-bearing here.
+
+**Implication for the spiral-strategy hypothesis**: if the controller
+were on the edge of envelope, the brief low-as runs on path 5 would
+have triggered a departure. They didn't. The current fixed-wing
+appears to have margin against the evolved spiral strategy at gen
+391; whether that margin holds at gen 575+ (more aggressive
+late-evolution roll commands) is the next test.
+
 ## What flew vs what didn't
 
 - **Architecture**: 029 past-only — 5 lookback ticks + now, no future
   lookahead. Confirmed in xiao log via the 6-slot `tX/tY/tZ` array
   with shift-register evolution (slot[5] = now, slots[0..4] = past).
-- **Weights**: gen ~391 (mid-pastonly1 run, intentional intermediate
-  pull, not a converged elite). Spec-comparable elite (pastonly2 gen
-  ~575+) is still training; this flight does **not** validate
-  end-of-run pastonly. It validates the **architecture** at a working
-  fitness level.
-- **Run lineage**: pastonly1, NOT pastonly2 (which has the brittleness
-  finding from 2026-05-02 OOD eval suite — see
-  [project_evolved_strategy_vs_airframe](../../.claude/projects/-home-gmcnutt-autoc/memory/project_evolved_strategy_vs_airframe.md)).
-  pastonly1 was the first past-only run, baseline for the "did the
-  arch even train?" gate.
+- **Weights**: gen ~391 (mid-pastonly3 run, intentional intermediate
+  pull and field-flash before pastonly3 converges). Spec-comparable
+  end-of-run elite is still training; this flight does **not**
+  validate converged pastonly3. It validates the **architecture +
+  the pastonly3 path-distribution fix** at a working fitness level
+  ~halfway through training.
+- **Run lineage**: pastonly3 — the pastonly2 follow-up that
+  re-includes path 5 (random-aerostandard) in the training joint-PRNG.
+  pastonly2 carries the OOD-brittleness finding from 2026-05-02 (see
+  [project_evolved_strategy_vs_airframe](../../.claude/projects/-home-gmcnutt-autoc/memory/project_evolved_strategy_vs_airframe.md)
+  and [`pastonly2_outcome.md`](../../specs/029-no-future-arch/pastonly2_outcome.md)
+  §"path-5 exclusion") that motivated pastonly3. Today's gen-391
+  controller has *seen* path-5 geometries during training (unlike
+  pastonly2), so its real-flight path-5 result is not subject to the
+  pastonly2 caveat.
 - **Tracker mode (030)**: NOT flown. Today's controller still uses
   rabbit-oracle inputs (tX/tY/tZ/d direction cosines), not beacon
   features. 030 is parked behind 025 craft variations.
@@ -161,8 +209,8 @@ and servo response unchanged.
   path 5 (random-intercept geometry). This is **the real-flight signal
   the 2026-05-01 architecture-vs-airframe decision was waiting for** —
   the airframe sustains the evolved spiral strategy at gen 391.
-  Whether **gen ~575+ pastonly2** sustains it equally well is the next
-  flight test, not this one.
+  Whether **converged pastonly3 (gen ~575+)** sustains it equally
+  well is the next flight test, not this one.
 - **Bang-bang axis migrated pitch → roll, as the sim training
   predicted.** 04-26 had pitch as the noisy axis (0426 cadence7-redux:
   `<|pt|>` = 0.76, pitch saturation flat). 0503 has roll as the noisy
@@ -184,18 +232,19 @@ and servo response unchanged.
   tracking). The airframe held; the question is whether the spiral
   strategy preserves enough margin for added perception noise and
   real-target intercept geometry. That will fall out of M1.3-style
-  flight tests on the **converged** pastonly2 / pastonly3 controller
-  and on 025 craft-varied controllers — not this one.
+  flight tests on the **converged pastonly3** controller and on 025
+  craft-varied controllers — not this one.
 
 ## Hypotheses worth a discussion thread
 
-1. **M1.3 is a wrap on the architecture but not on the controller
-   weights.** The architecture flies; the gen-391 mid-run weights fly;
-   converged pastonly2 weights (gen 575+) are the right thing to fly
-   next, on a calmer day, to compare apples-to-apples vs gen 391 on
-   the same airframe and weather. Question: do we re-fly with
-   pastonly2 elite before declaring M1.3 done, or treat gen 391 as
-   sufficient evidence and route to 025?
+1. **M1.3 is a wrap on the architecture but not on the converged
+   weights.** The architecture flies; the pastonly3 gen-391 mid-run
+   weights fly; **converged pastonly3 weights (gen 575+)** are the
+   right thing to fly next, on a calmer day, to compare
+   apples-to-apples vs gen 391 on the same airframe and weather.
+   Question: do we re-fly with the converged pastonly3 elite before
+   declaring M1.3 done, or treat gen 391 as sufficient evidence and
+   route to 025?
 2. **The roll-axis bang-bang is the predicted spiral strategy
    surfacing in flight.** If true, we should see roll airframe rate
    (gyro p RMS) ≈ several × the path-required roll envelope, similar
