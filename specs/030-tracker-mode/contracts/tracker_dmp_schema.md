@@ -1,99 +1,142 @@
-# Contract: Tracker-mode `EvalResults` schema
+# Contract: Tracker-mode `EvalResults` schema (FR-015 + FR-015a + Constitution V)
 
-**Producer**: tracker-mode `autoc` evaluation worker (`src/autoc.cc` + crrcsim FDM eval pipeline)
-**Consumer**: renderer (`tools/renderer.cc`), analysis scripts, future ablation tooling
+**Producer**: tracker-mode `autoc` evaluation worker (`src/autoc.cc` + crrcsim FDM pipeline)
+**Consumer**: renderer (`tools/renderer.cc` — M9), per-tick dmp extractor (`tools/aircraft_state_extractor.cc` — M11a), analytics scripts
 
-**Schema basis**: extends existing `EvalResults` ([`include/autoc/rpc/protocol.h:234`](../../../include/autoc/rpc/protocol.h)). Per FR-015 and [no-cereal-versioning policy](../../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_no_cereal_versioning.md), this is a clean schema bump — old `.dmp` files become unloadable by tracker-aware tools, but pathgen-mode tools continue unchanged.
+Refreshed 2026-05-04: includes FR-015a versioning per Constitution V, and FR-015's two embedded classes (camera view + copied target trajectory).
 
-## Schema additions
+## Schema additions to `EvalResults` (cereal class version 2)
 
 ```cpp
+// include/autoc/rpc/protocol.h additions
+
+namespace autoc::eval {
+
+struct CameraViewSample {
+  // Camera pose at this tick (world frame; for renderer's 1st-person mode + reverse-projection)
+  gp_vec3 camera_pose_world_pos;
+  gp_quat camera_pose_world_orient;
+  float camera_fov_h_deg;
+  float camera_fov_v_deg;
+  // Per-beacon observations (2 beacons × 1 camera = 2 in v1)
+  BeaconObservation beacon_left;
+  BeaconObservation beacon_right;
+
+  template <class Archive>
+  void serialize(Archive& ar) {
+    ar(camera_pose_world_pos, camera_pose_world_orient,
+       camera_fov_h_deg, camera_fov_v_deg,
+       beacon_left, beacon_right);
+  }
+};
+
+struct CopiedTargetSample {
+  // Copied from the source-scenario target trajectory at the matching sim_time
+  // (FR-015 self-containedness: M2 dmp doesn't reference M1 source dmp at playback)
+  gp_vec3 position;
+  gp_quat orientation;
+  gp_vec3 velocity;
+  // Per-tick fitness state:
+  gp_vec3 trail_rabbit_position;
+  bool inside_crash_hull;
+  bool used_nose_trail_fallback;  // R10 telemetry
+
+  template <class Archive>
+  void serialize(Archive& ar) {
+    ar(position, orientation, velocity,
+       trail_rabbit_position, inside_crash_hull, used_nose_trail_fallback);
+  }
+};
+
+}  // namespace autoc::eval
+
+// Existing EvalResults extended:
+
 struct EvalResults {
-    // ===== existing pathgen-mode fields, unchanged =====
-    std::vector<char> gp;
-    uint64_t gpHash = 0;
-    std::vector<CrashReason> crashReasonList;
-    std::vector<std::vector<Path>> pathList;
-    std::vector<std::vector<AircraftState>> aircraftStateList;
-    ScenarioMetadata scenario;
-    std::vector<ScenarioMetadata> scenarioList;
-    std::vector<std::vector<DebugSample>> debugSamples;
-    std::vector<std::vector<PhysicsTraceEntry>> physicsTrace;
-    int workerId = -1;
-    int workerPid = 0;
-    int workerEvalCounter = 0;
+  // === Existing fields (cereal version 1, unchanged) ===
+  /* gp, gpHash, crashReasonList, pathList, aircraftStateList,
+     scenario, scenarioList, debugSamples, physicsTrace, ... */
 
-    // ===== 029 tracker-mode additions =====
-    bool tracker_mode = false;       // schema discriminator; false for pathgen dumps
-    std::vector<TrackerScenarioState> trackerScenarios;  // empty when tracker_mode == false
+  // === New tracker-mode fields (cereal version 2) ===
+  std::vector<std::vector<CameraViewSample>> cameraViewList;        // [scenario][tick]
+  std::vector<std::vector<CopiedTargetSample>> targetTrajectoryList; // [scenario][tick]
+  // Telemetry (per-scenario aggregates):
+  std::vector<int> arenaEgressCount;       // [scenario] — #ticks egressed (for telemetry)
+  std::vector<int> hullStrikeCount;        // [scenario] — #p_crash fires per scenario
 
-    template<class Archive>
-    void serialize(Archive& ar, const std::uint32_t version) {
-        ar(/* existing fields */, tracker_mode, trackerScenarios);
+  template <class Archive>
+  void serialize(Archive& ar, std::uint32_t const version) {
+    // version 1 (pathgen) and version 2 (tracker) share the existing fields:
+    ar(gp, gpHash, crashReasonList, pathList, aircraftStateList,
+       scenario, scenarioList, debugSamples, physicsTrace, /* ... */);
+    if (version >= 2) {
+      ar(cameraViewList, targetTrajectoryList,
+         arenaEgressCount, hullStrikeCount);
     }
-    // ...
+  }
 };
+
+CEREAL_CLASS_VERSION(EvalResults, 2);  // bumped from 1 in M1 (FR-015a groundwork) → committed at M8
 ```
+
+## Read-side back-compat (FR-015a + Constitution V)
 
 ```cpp
-struct TrackerScenarioState {
-    std::string library_entry_path;       // e.g., "library/000.crrclog"
-    std::string library_metadata_json;    // serialized library metadata for this scenario
-    std::vector<TickCameraState> cameraStates;  // per-tick — same length as aircraftStateList[scenario]
-};
-
-struct TickCameraState {
-    Vector3f camera_pos_world;
-    Quaternionf camera_orientation_world;
-    int camera_config_index;              // index into a per-dump array of CameraConfig instances
-                                          // (most runs have 1 config; multi-camera variants have N)
-    BeaconProjectionResult beacon_left;   // see beacon_projection_api.md
-    BeaconProjectionResult beacon_right;
-};
+EvalResults loadDmp(const std::string& s3_key_or_path) {
+  std::ifstream f(...);
+  cereal::BinaryInputArchive ar(f);
+  EvalResults result;
+  try {
+    ar(result);  // cereal handles per-version field deserialization
+  } catch (cereal::Exception& e) {
+    throw std::runtime_error(
+      "Failed to load dmp '" + s3_key_or_path + "': " + e.what()
+      + " (Constitution V: dmp readers must fail loudly on schema mismatch)");
+  }
+  // ... validation
+  return result;
+}
 ```
 
-## Validation rules
+**Pre-versioning dmps**: dmps written before the FR-015a version-field add (M1) are treated as cereal class version 1 (the documented pre-versioning assumption). Cereal's serialize-with-version automatically handles this — version-1 dmps deserialize without the new tracker fields.
 
-When `tracker_mode == false` (pathgen-mode dump):
-- `trackerScenarios` MUST be empty
-- All existing pathgen-mode fields MUST be populated as today
+**Forward incompatibility**: if a future cereal class version 3 dmp is read by a v2-only reader, cereal will throw — matching Constitution V's loud-fail rule. No silent truncation.
 
-When `tracker_mode == true` (tracker-mode dump):
-- `trackerScenarios.size() == aircraftStateList.size()` (one tracker-state per scenario)
-- `trackerScenarios[s].cameraStates.size() == aircraftStateList[s].size()` (one per-tick state per aircraft tick)
-- `library_entry_path` MUST be non-empty
-- `library_metadata_json` SHOULD parse as valid JSON matching the schema in [data-model.md §2.2](../data-model.md)
+## Self-containedness property (FR-015 + D13)
 
-## Backward compatibility — CLEAN CUT
+The M2 dmp's `targetTrajectoryList` is a *copy* of the source-scenario target trajectory data the M2 run consumed at training time. The renderer (M9) reads `targetTrajectoryList` directly to render the target craft + beacons in 3rd-person view — never reaches into the M1 source dmp at playback.
 
-Per [no-cereal-versioning policy](../../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_no_cereal_versioning.md): this is a **clean schema bump, no compatibility shims**.
+**Implication for analytics**: an analyst given only the M2 dmp can fully replay the run. No external M1 dmp dependency. Same property pathgen-mode dmps have today (path geometry recoverable from path-name + scenario seed).
 
-**Important — cereal does NOT skip unknown fields automatically.** The version bump (`CEREAL_CLASS_VERSION(EvalResults, 1) → 2`) plus the additional `tracker_mode` / `trackerScenarios` fields means:
+## Storage budget
 
-- **Pre-029 binaries reading 029-produced dumps**: fail at deserialization. The new fields trip the version check and the missing-from-old-struct fields would corrupt the stream. No mitigation in code; operator must rebuild tooling against the 029 schema.
-- **029 binaries reading pre-029 dumps**: fail at deserialization (version mismatch). The bump is intentionally non-shim-able. Pre-029 dumps remain readable only by pre-029 binaries.
-- **No shared dumps across the boundary**: 029 ships with a unified schema where every dump (whether pathgen or tracker mode) carries the v2 layout. The `tracker_mode` flag distinguishes contents within the unified schema; the version bump distinguishes pre-029 from 029-onward.
+Per-tick per-scenario in version-2 fields: roughly
+- `CameraViewSample`: ~20 floats = 80 bytes
+- `CopiedTargetSample`: ~15 floats + 2 bytes = ~62 bytes
+- Total: ~150 bytes/tick
 
-This matches the project policy of "greenfield schema changes only, no backward compat" — old `.dmp` archives stay readable by old tooling, all new tooling reads the new schema, and there is no version-conditional code path to maintain.
+Per-scenario at 30s × 10 Hz: ~45 KB.
+Per-gen at 245 scenarios: ~11 MB additional vs pathgen-mode.
+Acceptable; cereal binary is reasonably efficient.
 
-## Renderer consumer behavior
+## Determinism (FR-009)
 
-- Renderer detects `tracker_mode == true` flag at load time
-- If true: enables tracker-mode views (3rd-person dual-aircraft + 1st-person camera-POV per FR-012). Loads the corresponding library entry from `library_entry_path` for target craft visualization.
-- If false: existing pathgen-mode rendering (rabbit + path).
+Same input scenario + same NN weights + same `autoc-tracker.ini` ⇒ bit-identical M2 dmp output. All per-tick PRNG draws (e.g., `p_crash`) use seeded subsequences derived from `ScenarioMetadata.scenarioSequence`.
 
-## Test surface
+## Test coverage
 
-`tests/tracker_mode_integration_tests.cc` (NEW for 029):
+`tests/tracker_dmp_roundtrip_tests.cc` (M8 deliverable):
+- Serialize / deserialize identity for a synthetic version-2 dmp (small fixture).
+- Pre-versioning dmp (a fixture pathgen-mode v1 dmp) loads correctly with new fields empty.
+- Version mismatch (synthesized v3 read by v2-aware reader) throws cleanly.
+- Self-containedness: a renderer-mock loading only the M2 dmp produces correctly-rendered scene state without M1 source.
 
-| Test | Assertion |
-|---|---|
-| `SchemaRoundtrip_TrackerMode` | Construct an `EvalResults` with `tracker_mode = true` + populated `trackerScenarios`. Cereal-serialize, deserialize, compare. All fields preserved. |
-| `SchemaRoundtrip_PathgenMode` | Same but with `tracker_mode = false`. Existing fields preserved; `trackerScenarios` empty. |
-| `MixedFleetTooling_PathgenReadsNewSchema` | Construct an `EvalResults` from a tracker-mode run. Existing `nnextractor` reads the existing fields without error (the new fields land but are ignored). |
-| `RendererDispatch_TrackerFlag` | Construct both a tracker-mode and pathgen-mode dump. Renderer correctly dispatches to dual-aircraft view vs path view based on `tracker_mode` flag. |
+## Citations
 
-## Open contract decisions
-
-1. **camera_config_index granularity**: per-tick or per-scenario? v1: per-scenario (camera config doesn't change mid-scenario). Possible future: per-tick if config can be PRNG-varied within a scenario. Pin v1 in implementation.
-2. **library_metadata_json deduplication**: 245 scenarios × identical run-level metadata = redundant data. Could store run-level metadata once in `EvalResults` and per-scenario provenance separately. Decide based on dump size impact (likely negligible vs the per-tick aircraft state).
+- `include/autoc/rpc/protocol.h:234-336` (existing `EvalResults` schema)
+- 030 spec FR-015 (two embedded classes)
+- 030 spec FR-015a (versioning per Constitution V)
+- 030 spec D13 (self-containedness clarification)
+- [Constitution V](../../../.specify/memory/constitution.md) — versioned persistence artifacts
+- research.md R8 (no source-side schema change required for v1)
+- research.md R9 (renderer reads from M2 dmp, not M1)

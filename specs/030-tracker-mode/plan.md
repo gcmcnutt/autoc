@@ -1,350 +1,344 @@
 # 030 — Implementation Plan (Tracker Mode — beacon-camera target tracking via flight playback)
 
-**Branch**: TBD (parked in `029-tracker-mode` working branch — see [pivot note in spec.md](./spec.md)) | **Date**: 2026-04-29 (originally 029, renumbered 030 in 2026-04-30 pivot) | **Spec**: [spec.md](./spec.md)
-**Input**: [`spec.md`](./spec.md) (6 user stories, 22 functional requirements, 12 success criteria, 6 clarifications resolved 2026-04-29), [`research.md`](./research.md) (plan-phase architectural research)
-**Status**: Parked — gated on [`specs/029-no-future-arch/`](../029-no-future-arch/) clearing.
-
-> **PIVOT NOTE (2026-04-30)**: Same as spec.md banner. US1 (past-only experiment) extracted to 029-no-future-arch; everything else parked here as 030. Internal references to "029" / "Phase 1 — US1" / "FR-001…" are historical and accurate-as-of-original-029-spec. When 030 unparks, fold the 029-chosen architecture into Phase 0, drop the now-029 US1 work from this plan, and renumber phases accordingly.
+**Branch**: TBD (to be created when implementation begins; current scoping work happens on `029-no-future-arch`) | **Date**: 2026-05-04 (fresh rewrite per operator scoping pass) | **Spec**: [spec.md](./spec.md)
+**Input**: [`spec.md`](./spec.md) (28 FRs, 16 design notes), [`research.md`](./research.md) (this plan's research output), [BACKLOG.md "030 spin-offs"](../BACKLOG.md) (031 candidates and pure-backlog defers)
+**Status**: Plan-research phase — no implementation work has started.
 
 ## Summary
 
-029 introduces a **second autoc training mode** that trains a controller to track another aircraft via a simulated wingtip-beacon camera, replacing pathgen with playback of recorded flights as targets. The control NN's output remains pitch/roll/throttle; its inputs are the analytic projection of two IR-color-distinguished wingtip beacons through a configurable camera model (v1: planar pinhole, 120° FOV, single forward-mounted) — collapsed at the perception interface to `(screen_x, screen_y, visible)` per beacon, mirroring the FPGA centroid extractor that would deploy on real hardware.
+030 introduces a **second autoc training mode** (sibling to pathgen mode) that trains a controller to track another aircraft via a simulated wingtip-beacon camera, using a recorded prior-run S3 dmp file as the target-trajectory source. The control NN's output remains pitch / roll / throttle; its inputs are the analytic projection of two outward-facing 270° wingtip beacons through a configurable camera model (v1: planar pinhole at 120° FOV, 30 Hz, single forward-mounted on top of wing-chord), collapsed at the perception interface to **`(x, y, CEP)`** per beacon (FR-005) — mirroring the FPGA centroid + cluster-spread output the eventual real-hardware perception pipeline produces (the 031-candidate parallel feature; see [BACKLOG.md](../BACKLOG.md)).
 
-The implementation has three concentric scopes:
-
-1. **US1 baseline experiment** — runs *first*, on the *existing 028 codebase*, with a single-file change to `NNInputs` time-sample distribution `[-0.5, -0.4, -0.3, -0.2, -0.1, now]` (past-only, drops the +0.1/+0.5 future-lookahead samples). Validates the foundational assumption that the recurrent NN can train without lookahead before any 029 implementation work begins. Runs concurrently with the 028 flight wait.
-
-2. **029 substrate** (US2 gateway + dependencies) — `dmp-to-playback` converter tool, `RobotProgrammable` subclass in `mod_robots`, `RobotPathProvider` integration into `inputdev_autoc`, type-safe NN sensor interface (rolled in from BACKLOG), tracker-mode autoc.ini config separate from pathgen mode, extended `EvalResults` schema for camera view data.
-
-3. **Camera + perception modeling** (US3 + US4) — analytic beacon projection through configurable camera model (planar pinhole at 120° FOV / 30 Hz frame rate / 0 ms latency v1 baseline), color-filter / channel-response model for L/R beacon disambiguation, US3's camera-config experimentation harness, US4's controller training. Renderer dual-mode (3rd-person + 1st-person camera-POV) lands in US5.
-
-The **US1 → US2 → US3 → US4** sequence is a critical-path chain: US1 gates the architectural assumption, US2 lights up the new training mode, US3 settles camera-design baseline before US4 commits compute to long-run training. US5 (renderer) and US6 (architectural review) are diagnostic / audit work that lands as deliverables alongside US3/US4.
+The implementation is structured as a **smoke-test-first milestone ramp** (per spec D13 / D16). The "v1 done" floor is the four smoke-test deliverables: run M2 from an M1 file → single-path config → save results → renderer animates the M2 result. Above that floor, post-smoke-test analytics experimentation refines the tracking architecture and is the part of 030 most likely to bracket between "smoke green" and "030 declared done." Items past 030 done line move to 031 (BACKLOG roll-out already in place).
 
 ## Technical Context
 
-**Language/Version**: C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis scripts, conversion tools)
-**Primary Dependencies**: Eigen (vec3 / quat / matrix-vector math, projection geometry), cereal (NN serialization, EvalResults schema, new tracker-mode dump format), inih (autoc.ini parsing), GoogleTest (unit/contract tests), CRRCSim LaRCSim FDM (sim physics)
-**New Dependencies**: none expected (Eigen sufficient for projection math per R3 research finding pending)
-**Storage**: file-based — `data.dat` (training output, schema extends per FR-015), evolution log lines (per-gen telemetry), `data.stc`, S3 `.dmp` (cereal-serialized `EvalResults` — schema bump for tracker-mode dumps), playback library files (crrcsim binary playback format for v1, per spec assumption pending R1 research finding)
-**Testing**: GoogleTest (C++ unit + contract tests), pytest-style scripts (Python analysis), determinism contract tests for playback substrate
-**Target Platform**: Linux x86-64 (training & analysis), VTK-rendered renderer; xiao deferred until 029 sim+flight gate clears (a future feature)
-**Project Type**: Research/training feature within an evolved-NN control system. Adds a parallel training mode alongside existing pathgen mode. No user-facing UI; deliverables are training-run telemetry, evolution PNGs, dual-mode renderer (3rd-person + camera-POV), outcome documents.
-**Performance Goals**: per-generation eval time should not regress vs more-rnn3 baseline by more than ~10 % from analytic beacon projection overhead at v1's single-camera × 30 Hz × 245 scenarios setting. **R5 research confirms GPU-Native Evaluation is NOT a 029 v1 prerequisite** — projection is 8 calls per NN tick at ~30 FLOPs each, ~5–10 % over 028's per-tick cost. CPU eval is sufficient for full-population training. (Spec §Overview line 73's earlier GPU caveat assumed 017's vision-NN cost model; 029's analytic 3-float interface is fundamentally different.)
-**Constraints**:
-- **Determinism non-negotiable** — same Seed + same library = bitwise-identical evaluations (per project_variation_design_principles memory)
-- **Joint-PRNG variation preserved** — library-entry-index becomes one PRNG axis alongside wind/entry/craft (inherited from source recording)
-- **gp_fitness type throughout** — no raw double/float in fitness path
-- **No cereal versioning** — schema changes are clean-cut bumps; old tracker-mode dumps unloadable post-bump (acceptable, no precious archive yet)
-- **Minimal-camera-calibration** — controller architecture must work without per-unit camera calibration (FR-003f); per-scenario camera-variation training is the future mechanism (deferred)
-**Scale/Scope** (research-confirmed): 6 user stories across 3 concentric scopes. 18 functional requirements. Total new C++: **~600–800 LOC** (R4 confirms ~120–180 in mod_robots, R3 confirms ~30–50 LOC projection in pure Eigen, R2 confirms ~150–250 LOC for `dmp_to_playback` converter, plus ~200 LOC `RobotPathProvider` + autoc-tracker.ini wiring). **Type-safe sensor interface refactor: ~270–330 LOC across 12 files** (R7); lands first as Phase 0 PR. Renderer dual-mode: ~500–1000 LOC including VTK camera-POV math.
+**Language/Version**: C++17 (autoc, crrcsim, xiao firmware), Python 3.11 (analysis scripts, possibly per-tick dmp extractor — TBD plan-phase)
+**Primary Dependencies**: Eigen (vec3 / quat / matrix math, projection geometry); cereal (NN serialization, EvalResults schema, new tracker-mode dump format); inih (autoc.ini parsing); GoogleTest (unit / contract tests); CRRCSim LaRCSim FDM (sim physics — chase craft only in v1; multi-aircraft substrate via `mod_robots` is M4-deferred); INAV MSP protocol (xiao deploy, post-v1)
+**Storage**: file-based — `data.dat` (training output, schema extends per FR-015), evolution log lines (per-gen telemetry), `data.stc` (per-best-of-gen renderer feed), S3 `.dmp` (cereal-serialized `EvalResults` — schema bump for tracker-mode dumps per FR-015a + Constitution V), source-run `.dmp` (loaded directly per FR-001 — *no* separate playback library files in this revision); xiao flash logs (post-v1 deploy)
+**Testing**: GoogleTest contract tests for type-safe sensor interface, beacon projection determinism, FR-018 timing-loop determinism, dmp version round-trip; existing pathgen-mode test suite must continue to pass (Constitution Principle II — Build Stability)
+**Target Platform**: Linux desktop for autoc + crrcsim + renderer (training-time); xiao deploy is post-v1 and is a 031+ concern
+**Project Type**: multi-component embedded-aware C++ tree (autoc evolution engine + crrcsim FDM + renderer + xiao firmware), single repo
+**Performance Goals**: smoke-test single-path × small population → CPU-feasible in minutes-to-hours per run; full-scale multi-path × full-pop training is post-v1 and is gated by the [GPU-Native Evaluation backlog item](../BACKLOG.md) (re-flagged at v1→v2 boundary, NOT a v1 prereq per D13)
+**Constraints**: Constitution V (versioned persistence) — first dmp schema bump lands here; Constitution III (no compatibility shims) — type-safe sensor interface is a clean cut, FR-006 names replace magic-number indexing; Constitution II (build stability) — every milestone must keep autoc+crrcsim+xiao building (the rolled-in mod_inputdev linkage fix, [BACKLOG.md "[NEXT] crrcsim mod_inputdev"](../BACKLOG.md), is M1 prerequisite work)
+**Scale/Scope**: source dmps from pastonly3 / more-rnn3-class runs (~245-294 scenarios per gen, multi-tick aircraftStateList per scenario); v1 smoke test exercises 1 scenario at small population for signal-or-not.
 
 ## Constitution Check
 
-*Reference: [`.specify/memory/constitution.md`](../../.specify/memory/constitution.md) v1.0.0*
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+
+Constitution version 1.1.0 (Last Amended 2026-05-04 to add Principle V).
 
 | Principle | Status | Notes |
 |---|---|---|
-| **I. Testing-First** | PASS | Each substrate component (RobotProgrammable, RobotPathProvider, projection module, type-safe sensor interface, dmp-to-playback converter, library schema) gets contract tests before implementation. Determinism tests are load-bearing and explicit (per project invariants). The US1 baseline experiment uses existing test infrastructure unchanged. |
-| **II. Build Stability** | PASS | Substrate work is additive — pathgen mode coexists in tree (FR-011). Each phase commits with green `bash scripts/rebuild.sh` + xiao build. The autoc-tracker.ini config selects mode at runtime. Tracker-mode dump schema bump triggers a clean cereal-version bump (per project policy: no shims, fresh `.dmp` files only). |
-| **III. No Compatibility Shims** | PASS | Tracker-mode `.dmp` schema is a clean-cut new format; old pathgen-mode dumps continue to work with pathgen-mode tools, but tracker-mode tools won't read pre-029 dumps. No compat layer. Mode-selector in autoc.ini is a config switch, not a runtime polymorphism kludge. |
-| **IV. Unified Build** | PASS | New crrcsim sources (`mod_robots/RobotProgrammable.cc`) build via existing `add_subdirectory(crrcsim)`. The new converter tool links autoc_common per the existing pattern (per R2 research finding pending). No duplicate dependency declarations. |
+| **I. Testing-First** | PASS | Each milestone (below) names contract / integration tests it lands. Existing pathgen-mode test suite must remain green at every milestone (regression invariant). |
+| **II. Build Stability** | PASS | M1 lands the mod_inputdev linkage fix as the *first* implementation work, before any new file in `src/nn/` or `src/eval/` is added — otherwise the next addition silently breaks the crrcsim build at link (the 028 telemetry incident). Every subsequent milestone passes `bash scripts/rebuild.sh` and `cd xiao && pio run -e xiaoblesense_arduinocore_mbed`. |
+| **III. No Compatibility Shims** | PASS | FR-006 type-safe sensor interface is a clean replacement for magic-number `float[]` indexing — full files-to-touch (sim + xiao + tests + scripts), no backwards-compat shim. FR-015 dmp schema bump is greenfield: pre-versioning dmps are pre-Constitution-V and treated as version-0 with documented assumption (per FR-015a). No re-export / wrapper layer. |
+| **IV. Unified Build** | PASS | `mod_inputdev` linkage fix routes crrcsim's `mod_inputdev` to link `autoc_common` rather than cherry-picking sources — restores Principle IV's "single source of truth" property. |
+| **V. Versioned Persistence Artifacts** | PASS | First load-bearing application of the principle: tracker-mode dmp schema bump lands with FR-015a (version field embedded; readers attempt back-compat then fail loud). Establishes the pattern for future `.dmp` evolution. |
 
-**Gate result**: PASS. No violations. Section §Complexity Tracking intentionally empty.
+**Gate result**: PASS. No violations to track in Complexity section.
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/029-tracker-mode/
-├── spec.md                         # 6 user stories + 18 FRs + clarifications
-├── plan.md                         # This file
-├── research.md                     # Phase 0 (R1-R7) — architectural decisions for plan
-├── data-model.md                   # Phase 1 — entities + schema
-├── contracts/                      # Phase 1 — interface contracts
-│   ├── playback_file_format.md     # Per FR-001: binary playback format spec
-│   ├── tracker_dmp_schema.md       # Per FR-015: extended EvalResults schema
-│   ├── nn_sensor_interface.md      # Per FR-006: type-safe sensor input contract
-│   └── beacon_projection_api.md    # Per FR-005: per-tick projection output
-├── quickstart.md                   # Phase 1 — operator walkthrough
-├── checklists/
-│   └── requirements.md             # Spec quality checklist (from /speckit.specify)
-├── pastonly_outcome.md             # US1 result document (created during Phase 1 execution)
-└── tasks.md                        # Phase 2 output — created by /speckit.tasks (NOT here)
+specs/030-tracker-mode/
+├── plan.md              # This file (/speckit.plan output, fresh rewrite 2026-05-04)
+├── research.md          # Phase 0 output (fresh rewrite — supersedes prior 029-era research)
+├── data-model.md        # Phase 1 output (entities — Source-scenario target trajectory, CameraConfig, BeaconObservation, etc.)
+├── quickstart.md        # Phase 1 output (smoke-test runbook)
+├── contracts/           # Phase 1 output (refreshed for (x,y,CEP) interface + FR-018 timing model)
+│   ├── nn_sensor_interface.md     # FR-006 typed sensor names + dtype + dynamic ranges
+│   ├── beacon_projection_api.md   # FR-005 projection module input/output contract
+│   ├── tracker_dmp_schema.md      # FR-015 + FR-015a dmp schema (+ versioning)
+│   └── source_dmp_loading.md      # FR-001 source-dmp load contract (replaces prior playback_file_format)
+├── spec.md              # Source spec (28 FRs, 16 design notes)
+└── tasks.md             # Phase 2 output (NOT created by /speckit.plan — happens at /speckit.tasks)
 ```
 
-### Source Code (repository root)
+### Source Code (repository root, deltas from current tree)
 
 ```text
-include/autoc/nn/
-├── nn_inputs.h                     # MODIFY for US1 (time-offset comment), MODIFY for type-safe interface
-└── sensor_interface.h              # NEW (US2 substrate) — typed/named sensor input enumeration
+include/autoc/
+├── nn/
+│   ├── topology.h                  # FR-006: type-safe sensor enum + count auto-derivation
+│   ├── nn_inputs.h                 # FR-006: typed BEACON_L_X[t] / BEACON_L_Y[t] / BEACON_L_CEP[t] etc.
+│   └── ...
+├── eval/
+│   ├── aircraft_state.h            # FR-015: tracker-mode fields (camera view data, copied target traj)
+│   ├── camera_config.h             # NEW — FR-003 + FR-003a-f camera parameter struct (v1 fixed; PRNG-varied dimension architectural)
+│   ├── camera_projection.h         # NEW — FR-005 analytic projection → (x, y, CEP), FR-017 int8 quant
+│   ├── beacon_config.h             # NEW — FR-004 wingtip beacon parameters (270° outward, wavelength, body-frame mount)
+│   ├── trail_rabbit.h              # NEW — FR-008/8a trailing-rabbit computation
+│   ├── crash_hull.h                # NEW — FR-008b hull definition + intersection test (mode-gated)
+│   ├── arena.h                     # NEW or refactor — FR-016 in-flight bounds (depends on plan-phase R5 outcome)
+│   └── ...
+└── rpc/
+    └── protocol.h                  # FR-015 EvalResults extension; FR-015a version field
 
-src/nn/
-└── nn_input_computation.cc         # MODIFY for US1 (time offsets), MODIFY for tracker-mode inputs
+src/
+├── autoc.cc                        # FR-011 (autoc-tracker.ini handling), FR-018 (M1-timestamp main loop branch), tracker mode dispatch
+├── eval/
+│   ├── camera_projection.cc        # NEW — FR-005 implementation
+│   ├── trail_rabbit.cc             # NEW — FR-008
+│   ├── crash_hull.cc               # NEW — FR-008b
+│   └── ...
+├── nn/
+│   └── (FR-006 type-safe interface impl across evaluator.cc / serialization.cc / population.cc)
+└── ...
 
-include/autoc/eval/
-├── beacon_projection.h             # NEW (US3) — analytic projection module API
-└── camera_config.h                 # NEW (US3) — camera config struct + compile-time defaults
-
-src/eval/
-└── beacon_projection.cc            # NEW (US3) — pinhole projection + channel response + visible-flag
-
-include/autoc/rpc/
-└── protocol.h                      # MODIFY (US2) — tracker-mode EvalResults extension
-
-crrcsim/src/mod_robots/
-├── robot.h                         # MODIFY (US2 substrate) — Robots accessor for state query
-├── robots.cpp                      # MODIFY — same
-└── robot_programmable.cpp          # NEW (US2 substrate) — programmatic-trajectory subclass of RobotBase
-
-crrcsim/src/mod_inputdev/inputdev_autoc/
-├── inputdev_autoc.cpp              # MODIFY (US2) — RobotPathProvider; tracker-mode select; FR-002 multi-aircraft
-└── robot_path_provider.h/.cc       # NEW (US2) — wraps Robot pos/quat as the rabbit input
+crrcsim/
+└── (NO changes to crrcsim/src/mod_robots/ for v1 — M4 deferred to post-v1)
+   # The post-v1 work:
+   #   src/mod_robots/robot_programmable.{h,cc}  # RobotBase subclass consuming
+   #     in-memory pose stream — landed when video-enabled mode requires
+   #     live two-aircraft display in crrcsim's 3D viewer during training.
 
 tools/
-├── dmp_to_playback.cc              # NEW (US2) — converter: source-run .dmp → 245 playback files
-└── (existing tools unchanged)
+├── renderer.cc                     # FR-012 tracker-mode views + camera-POV mini-panel; FR-012a per-tick scrub + streak overlay
+├── aircraft_state_extractor.cc     # NEW — rolled-in BACKLOG: per-tick dmp → CSV
+└── ...
 
-src/autoc.cc                        # MODIFY — autoc-tracker.ini mode selector, tracker-mode log fields
-
-specs/029-tracker-mode/
-├── plot_tracker_evolution.py       # NEW (US4) — adapted plot for tracker-mode telemetry
-└── plot_per_axis_tracker_aggressiveness.py  # NEW (US4) — adapted from per_axis_aggressiveness.py
-
-tools/  (renderer)
-├── renderer.cc                     # MODIFY (US5) — dual-mode views + per-tick scrub
-└── tracker_view_modes.h/.cc        # NEW (US5) — 3rd-person + 1st-person camera-POV view modes
+xiao/
+└── (FR-006 type-safe interface mirror — scaffolding in v1; full perception path is post-v1, since 030 v1 is sim-only)
 
 tests/
-├── beacon_projection_tests.cc      # NEW — projection math contract + edge cases
-├── nn_sensor_interface_tests.cc    # NEW — type-safe sensor interface contract
-├── robot_programmable_tests.cc     # NEW — multi-aircraft + determinism
-├── dmp_to_playback_tests.cc        # NEW — converter tool roundtrip
-├── tracker_mode_integration_tests.cc  # NEW — end-to-end deterministic eval
-└── (existing tests unchanged but the extended NNInputs may break some — migration in Phase 2)
+├── beacon_projection_tests.cc          # NEW — FR-005 contract tests (known geometry, sentinel handling, int8 quant)
+├── timing_model_tests.cc                # NEW — FR-018 determinism contract test (variable-rate source, sim-clock-speed-invariance)
+├── trail_rabbit_tests.cc                # NEW — FR-008/8a math + degenerate-velocity fallback
+├── crash_hull_tests.cc                  # NEW — FR-008b hull intersection + p_crash distribution
+├── tracker_dmp_roundtrip_tests.cc       # NEW — FR-015 + FR-015a serialize/deserialize + version handling
+├── nn_sensor_interface_tests.cc         # NEW — FR-006 named-input contract (mirror of nn_evaluator_tests)
+└── (existing pathgen-mode tests must stay green)
 ```
 
-**Structure Decision**: Single-project, native to existing autoc tree. Tracker mode runs as a config-selected mode of the existing autoc binary; no new top-level executable. Per [feedback memory: feature one-offs in specs/<feature>/](../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_scripts_dir_scope.md), tracker-mode-specific plotting scripts live in `specs/029-tracker-mode/`. The crrcsim mod_robots integration is the largest contiguous code addition (~150 LOC per R4 research pending), with the projection module (~200 LOC est) close behind.
+**Structure Decision**: Existing single-repo C++ tree extended in-place. New eval-side modules (`camera_*.{h,cc}`, `trail_rabbit.*`, `crash_hull.*`) live alongside the existing `src/eval/` family. **No changes to `crrcsim/src/mod_robots/` for v1** — M4 (live two-aircraft display in crrcsim's 3D viewer during training) is deferred to post-v1; v1 reads the target trajectory from autoc memory and computes virtual beacons in the projection module without crrcsim hosting the target. New tools (per-tick dmp extractor) live in `tools/`. No new top-level directories (perception-front-end work — when 031 unparks — likely earns one then).
 
-## Ordering principle
+## Milestone-ordered implementation phases
 
-**Validate the foundational assumption first; then build the substrate; then build the camera + training.**
+Each milestone has a "what works after this is green" answer (the visible checkpoint) and the contract tests that lock in that capability. Order minimizes accumulated unknowns: prerequisites first, smoke-test cone last, post-smoke analytics on top.
 
-US1 runs first because it can fail cheaply and reframe everything downstream. US2 (substrate) lights up the new training mode but doesn't yet let the controller see beacons — useful as a working-but-empty checkpoint. US3 (camera config experimentation) and US4 (controller training) gate on US2; US3 lands a baseline camera config before US4 commits to a long-run training cycle. US5 (renderer) and US6 (architectural review) are diagnostic / audit; land alongside US3/US4 rather than blocking them.
+> **Reading guide**: M0 is plan-research (this phase). M1–M3 are precondition / scaffolding. M4–M9 build the smoke-test cone. M10 = SMOKE TEST (D13 floor). M11+ = post-smoke analytics (the area where "030 done" line gets drawn vs 031). The first ten milestones are sequenced; M11+ are largely parallel and plan-phase orderable.
 
-## Phase 1 — US1: Past-only baseline experiment (FIRST, runs in parallel with 028 flight wait)
+### M0 — Plan-research (this phase, no code)
 
-**Goal**: validate that the recurrent NN trains effectively without future-lookahead inputs. Single-file experimental change on the existing 028 codebase. No 029 implementation begins until this passes.
+**What works after**: every open architectural question in the spec has a concrete decision recorded in `research.md`; gates the start of M1.
 
-### 1.1 Modify `nn_inputs.h` time-sample comment
+**Open questions to resolve** (full list in [research.md](./research.md)):
+- **R1**: source dmp loading path — direct cereal load into autoc memory, vs. write-then-replay via crrcsim mod_robots/playback `.crrclog` files (the prior research's R1 default). The FR-001 revision favors the direct path; confirm crrcsim mod_robots can accept an in-memory pose stream from a new `RobotProgrammable` subclass.
+- **R2**: arena enforcement primitive — extend existing `ENTRY_SAFE_RADIUS` / `ENTRY_SAFE_ALT_MIN/MAX` constants (`src/autoc.cc:266`, currently entry-time-only) into in-flight bounds, vs. add parallel `FLIGHT_ARENA_*` constants. Avoid silent overload (D11).
+- **R3**: `p_crash` v1 default — deterministic (`p_crash = 1.0`), zero (`p_crash = 0.0`, sphere defined but inert), or curriculum-anneal (`p_crash` ramps low → high across gens). Choice depends on whether early-gen exploration is fitness-landscape blocked by deterministic crash.
+- **R4**: type-safe sensor interface concrete shape — enum + tag-dispatch + `constexpr` count derivation, vs. struct-of-arrays, vs. some other pattern. Carries forward to xiao-side (FR-006 full scope), so mirroring constraints matter.
+- **R5**: FR-018 main-loop refactor — how to share pathgen ↔ tracker mode worker / population / fitness-aggregation pipelines while diverging cleanly on per-tick stepping logic. Likely a strategy-pattern split inside the worker.
+- **R6**: CEP encoding — what scaling produces the most-useful gradient for the NN to learn discount-on-noisy? Linear vs log-spread vs piecewise. Sentinel choice for invisibility (NaN-marker vs INT8_MIN as integer sentinel).
+- **R7**: int8 quantization round-trip — exact int8 mapping for `x ∈ [-1, +1]` and CEP, sentinel reservation, fp32 conversion edge cases.
+- **R8**: M1 source dmp schema — what fields actually live in `aircraftStateList[scenario][step]` today, what gaps exist for tracker-mode needs (target-craft pose-per-tick, source-scenario joint-PRNG params), what extra extraction is required vs already-present.
+- **R9**: renderer — confirm existing `vtkCamera` viewport math is unrelated to FR-005 analytic projection (don't accidentally couple). Confirm renderer can load tracker-mode dmps without breaking pathgen-mode dmp loading (FR-015a back-compat path).
+- **R10**: trail-rabbit degenerate fallback — exact transition policy from velocity-based to nose-based when target speed → 0 (continuous interpolation vs hard-switch threshold).
 
-[`include/autoc/nn/nn_inputs.h`](../../include/autoc/nn/nn_inputs.h): update the `// Time samples: [-0.9s, -0.3s, -0.1s, now, +0.1s, +0.5s]` comment to `// Time samples: [-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now]` (per spec US1 distribution choice).
+**Output**: `research.md` with R1–R10 each carrying Decision / Rationale / Alternatives / Citations.
 
-### 1.2 Modify `nn_input_computation.cc` time offsets
+**Tests**: none (research-only).
 
-Find the array of time offsets used for the 6 history-and-future samples. Replace with `{-0.5, -0.4, -0.3, -0.2, -0.1, 0.0}` (5 past + now, no future). The corresponding rabbit-position lookup goes from "advance odometer ahead by +0.1s / +0.5s" (which currently exists for the future slots) to "look up odometer at -0.5s / -0.4s / etc." (which is straightforward since the path is fully known and the rabbit's position-vs-odometer history is implicit in the path geometry).
+### M1 — Build precondition: mod_inputdev linkage fix + dmp versioning groundwork
 
-For the past samples, the existing `target_x[6]` etc. fields already store position-direction at past odometer values; the existing code can be reused with new offset values.
+**What works after**: `bash scripts/rebuild.sh` is clean; `cd xiao && pio run` is clean; the project is *ready* to receive new files in `src/nn/` and `src/eval/` without the cherry-picked-sources fragility detonating the crrcsim build.
 
-### 1.3 Verify build + tests green
+**Work**:
+1. crrcsim `mod_inputdev` rolled-in BACKLOG fix: replace cherry-picked `${CMAKE_SOURCE_DIR}/src/nn/evaluator.cc` etc. lines with `target_link_libraries(mod_inputdev autoc_common)`. Audit for duplicate-symbol issues. (`crrcsim/src/mod_inputdev/CMakeLists.txt:21-23`)
+2. Add the FR-015a dmp version field (single integer, embedded at a stable offset) to the existing `EvalResults` cereal schema. Pre-versioning dmps in S3 are read with documented version-0 assumption. Version increments are reserved for the M8 schema bump.
 
-`bash scripts/rebuild.sh` and `ctest --output-on-failure`. The 33-input layout doesn't change (`NNInputs` struct field order preserved); only the time semantics differ. Existing topology tests pass unchanged.
+**Tests**: build-only — no functional tests. Existing pathgen-mode test suite stays green.
 
-### 1.4 Launch the past-only training run
+**Visible checkpoint**: green build on a fresh checkout; one-line `git log` showing the linkage fix + version-field add.
 
-```bash
-nohup ./build/autoc -c autoc.ini > logs/autoc-029-pastonly.log 2>&1 &
-```
+### M2 — Type-safe NN sensor interface scaffolding (FR-006 full scope)
 
-Same Path A `autoc.ini` config as more-rnn3 (pop 5000 × 600 gens, all other knobs identical). Run name convention: `more-rnn4-pastonly`.
+**What works after**: pathgen-mode runs unchanged with the new typed interface; magic-number indexing into NN inputs is gone from the entire codebase (sim + xiao + tests + analysis scripts).
 
-### 1.5 Monitor + analyze
+**Work** (rolled-in BACKLOG entry "[NEXT] Type-Safe NN Sensor Interface" — full files-to-touch list):
+1. `include/autoc/nn/topology.h` — sensor enum + count auto-derivation; `static_assert` against the historical magic count.
+2. `include/autoc/nn/nn_inputs.h` — typed accessors keyed by enum.
+3. `include/autoc/autoc.h` — drop duplicate defines (`DISTANCE_TARGET` etc.).
+4. `src/nn/evaluator.cc` — `nn_gather_inputs()` rewritten to populate by typed name; index mapping derived from enum.
+5. `src/autoc.cc` — `data.dat` format string, header, field indices generated from enum.
+6. `tests/contract_evaluator_tests.cc` + `tests/nn_evaluator_tests.cc` — assertions against typed names.
+7. `specs/019-improved-crrcsim/sim_response.py` — parser keys off enum-derived header names.
+8. `xiao/src/msplink.cpp` — xiao-side input gathering uses the same enum mirror (compile-time-shared header).
+9. `include/autoc/eval/aircraft_state.h` — `nnInputs_` array typing + serialization preserves names.
 
-Same monitoring cadence as more-rnn3 — 6-panel `plot_evolution_progress.py` every 50 gens, per-axis aggressiveness PNG every 100 gens. The plot script needs no changes; it consumes `data.stc` which has the same `#NNGen` log fields (the 028 telemetry fields land naturally — `whh_xh_ratio`, `w_*_cv` all still apply).
+**Why this lands ahead of any beacon work**: the new `BEACON_L_X[t]` / `BEACON_L_Y[t]` / `BEACON_L_CEP[t]` names land cleanly only if the typed scaffolding is already in place. Trying to add them ad-hoc against magic-number indexing risks the silent-corruption bug class the typed interface exists to prevent.
 
-### 1.6 Decide: pass / fail
+**Tests**: `nn_sensor_interface_tests.cc` — contract test for typed name → index round-trip; `tests/contract_evaluator_tests.cc` updated; existing pathgen-mode tests stay green (the typed interface is behavior-equivalent for pathgen inputs).
 
-Pass criterion (per US1 acceptance scenarios):
-- Late-plateau fitness within ±10 % of more-rnn3 (re-evaluated on fixed-difficulty eval per [project_late_run_fitness_interpretation.md](../../.claude/projects/-home-gmcnutt-autoc/memory/project_late_run_fitness_interpretation.md))
-- Per-axis aggressiveness: same architecture-consistency pattern (roll dominates per [project_bangbang_axis_migration.md](../../.claude/projects/-home-gmcnutt-autoc/memory/project_bangbang_axis_migration.md))
-- pctInStreak emergence on schedule
+**Visible checkpoint**: pathgen-mode training run completes with byte-identical `data.dat` output to the pre-M2 run (regression-tight); no magic-number indexing remains in the codebase (`grep` proof).
 
-Outcome doc: `specs/029-tracker-mode/pastonly_outcome.md` with fitness + per-axis comparison + go/no-go.
+### M3 — Source M1 dmp loader (FR-001)
 
-**If PASS**: 029 implementation proceeds as planned. Record in outcome doc and move to Phase 2.
-**If FAIL** (>10 % regression): pause 029 implementation. Investigate which input class (recent-past selectivity? long-history at -0.9s? something else?) was load-bearing. Try the documented alternative distributions (`[-0.9, -0.5, -0.3, -0.1, -0.05, now]` etc.) before declaring "no-lookahead doesn't work." A real fail here would force architectural rethinking before the rest of 029.
+**What works after**: a CLI invocation reads a real S3 dmp from a prior pastonly3 / more-rnn3 run and prints per-scenario summary stats (scenario count, tick count per scenario, joint-PRNG variation params, target-craft pose extents). Standalone, no autoc-side integration yet.
 
-**Branching note**: this experiment runs ON THE 029-tracker-mode BRANCH but uses only the 028 codebase. The single-file change is committed to 029-tracker-mode as a pre-substrate-work artifact. If outcome is fail, that commit might be reverted or rebased, but the branch state holds.
+**Work**:
+1. Wire `EvalResults` cereal load into autoc startup (or initially into a standalone tool, then graduate). Pattern follows `tools/nnextractor.cc:177-192`.
+2. Indexed in-memory representation: `vector<SourceScenarioTrajectory>` keyed by scenario index; each entry carries per-tick pose + the joint-PRNG variation parameters.
+3. Per FR-011 source-key-string parsing: accept `autoc-storage/<run-id>/gen<N>.dmp` form, round-tripping with xiao-log convention.
 
-**Critical sequencing**: US1 runs on **pristine 028** — the type-safe sensor interface refactor (Phase 2.1) does NOT land before US1. US1's whole point is fail-fast architectural validation; adding a behavior-preserving-but-still-meaningful refactor in the path muddies that signal. If US1 fails, you want to know it's the time-offset change, not a refactor regression. The sensor refactor is *parallel work* — it can develop and merge during the ~24-48 hour US1 training run, landing on the branch *after* US1's training completes but ready for Phase 2.2+ to consume. (The refactor's only consumer is tracker-mode-specific work, which doesn't begin until after US1 passes anyway.)
+**Tests**: integration test loading a known dmp file (small fixture committed to test data, or pulled from a known S3 prefix); contract test for the source-key-string parser.
 
-## Phase 2 — US2 substrate: type-safe sensor interface + crrcsim multi-aircraft + dmp converter
+**Visible checkpoint**: command-line `tools/source_dmp_inspect <path>` prints scenario count, mean-tick-count, sample target-craft pose at tick 0 and tick mid. Operator can sanity-check dmp shape before any tracker-mode run launches.
 
-**Goal**: light up tracker mode end-to-end with placeholder beacon projection (constant zeros). The training launches against a recorded library, the second aircraft replays trajectories, but the NN sees no useful beacon data yet — that's Phase 3. This phase is the *plumbing*.
+### M4 — [DEFERRED to post-v1] Two-aircraft sim infrastructure in crrcsim
 
-**Sub-phases**:
+**Status (2026-05-04)**: **Deferred from v1**. The smoke test (D13) strictly computes virtual beacons on a screen of a certain warp — the math; no live in-crrcsim two-aircraft visualization needed. The target trajectory lives in autoc memory only (M3); the projection module (M5) reads `(target pose at t_i)` directly from memory and computes beacon `(x, y, CEP)` from `(chase pose from crrcsim, target pose from memory)`. crrcsim during training runs the chase craft alone, exactly as today.
 
-### 2.1 Type-safe sensor interface refactor
+**Renderer 3rd-person view of both aircraft (M9)**: handled via the renderer's own VTK actors, drawing both `aircraftStateList` (chase) and `targetTrajectoryList` (target copy from source) from the M2 dmp directly per FR-015 self-containedness. Also needs no crrcsim mod_robots integration.
 
-Per FR-006. R7 research informs cost / sequencing. Lands first because it's the foundation for the new beacon-input layout coming in Phase 3.
+**When this milestone unparks (post-v1)**:
+- When operator wants to *watch training in progress* in crrcsim's 3D viewer (live two-aircraft display during training, not playback after-the-fact).
+- When the camera-pixel-to-(x, y) parallel feature (031 candidate) needs a real visual rendering of the target craft to feed into image-domain processing experiments.
 
-- New `include/autoc/nn/sensor_interface.h`: enum-indexed input names, per-input metadata (type, range, units), compile-time topology computation
-- Modify `nn_inputs.h` / `nn_input_computation.cc` to use the new interface
-- Migration: data.dat header, `sim_response.py` parser, `tests/contract_evaluator_tests.cc` topology assertions, `xiao/src/msplink.cpp` xiao-side gathering, `tests/nn_evaluator_tests.cc` input-layout assertions
-- Tests: `nn_sensor_interface_tests.cc` for the new interface contract
-- Build verification: `bash scripts/rebuild.sh` green; xiao `pio run` green
+**Original work scope** (preserved here for the post-v1 reactivation):
+1. New `crrcsim/src/mod_robots/robot_programmable.{h,cc}` — `RobotBase` subclass consuming an in-memory pose stream (per R1 v1+ alternative path).
+2. `Robots::AddRobot` integration so autoc-side can register a programmable robot per scenario.
+3. Per-scenario teardown / reset.
 
-This is the single biggest pre-029 refactor. Per R7, lands as one PR before tracker-mode-specific work to avoid rebasing pain.
+Per the existing `mod_robots` reference research ([reference_crrcsim_mod_robots.md](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_crrcsim_mod_robots.md)) — ~150 LOC sketch, well-bounded. Becomes M4 work whenever v1+ priorities call it.
 
-### 2.2 crrcsim multi-aircraft substrate (Robots accessor + reuse existing playback)
+**v1 milestone numbering**: M5–M11 retain their original numbers despite M4 dropping out, to preserve cross-references in research.md and contracts/ during the v1 build. The "M4 slot" is intentionally empty; subsequent milestones (M5 onward) follow M3 directly with no gap in actual work.
 
-Per FR-002. **R4 research updates the architecture**: no new `RobotProgrammable` subclass needed — the existing `CRRC_AirplaneSim_Playback` class (`crrcsim/src/mod_robots/fdm_playback.{h,cpp}`) handles file-based trajectory playback exactly as 029 needs. Total cost is ~120–180 LOC (smaller than the spec's 150 estimate).
+### M5 — Beacon projection module (FR-003 + FR-004 + FR-005 + FR-007 + FR-017)
 
-- Modify `crrcsim/src/mod_robots/robots.{h,cpp}` — add `Robots::getRobotFDM(int idx)` public accessor (~5 LOC)
-- Per-scenario file selection plumbing in `inputdev_autoc.cpp` — load the right library entry into the existing CRRC_AirplaneSim_Playback per scenario (~30 LOC)
-- Single airframe `hb1_streamer.xml` for both training and target craft in v1 (R4 confirms — both aircraft load the same model)
-- Tests: `robot_programmable_tests.cc` (renamed from "programmable" to "playback" to match what's actually used) — multi-aircraft instantiation, state-query roundtrip, determinism under same seed and same library entry
+**What works after**: given (chase pose, target pose, target attitude, camera config, beacon config), the projection module emits `(x, y, CEP)` per beacon — including int8 quantization round-trip and sentinel handling. Standalone unit-tested; no NN integration yet.
 
-### 2.3 dmp-to-playback converter tool
+**Work**:
+1. `include/autoc/eval/camera_config.h` + `beacon_config.h` — parameter structs, v1 baseline values committed (single camera, planar pinhole, 120° FOV, 30 Hz, top-of-wing-chord; 270° outward beacons at wingtip body-frame positions).
+2. `include/autoc/eval/camera_projection.{h,cc}` — analytic pinhole projection per the existing R3-era research math (still valid; output type changes from `(x, y, visible)` to `(x, y, CEP)`). Airframe self-occlusion via coarse body-shape proxy (D10).
+3. CEP computation — small for sharp centroid, larger near edges / aberration zones, sentinel for off-screen / behind / occluded.
+4. Int8 quantization (FR-017) round-trip — `[-128, +127] ↔ [-1.0, +1.0]` for x/y; CEP with `INT8_MIN` reserved as invisibility sentinel.
+5. The decision from M0/R6 + R7 locks in CEP encoding semantics + sentinel.
 
-Per FR-001. R1 research provides the binary playback format spec; R2 research provides the dmp deserialization approach.
+**Tests**: `beacon_projection_tests.cc` — contract tests against known geometry (target dead-ahead, target left/right edge, target behind, target occluded by airframe proxy), int8 round-trip determinism, sentinel correctness for each invisibility cause.
 
-- New `tools/dmp_to_playback.cc` — reads `.dmp` files (cereal `EvalResults`), extracts per-scenario aircraft trajectories, writes one playback file per scenario in the format mod_robots' `CRRC_AirplaneSim_Playback` already reads
-- CLI: `--source-run <id> --source-gen <N> --output-dir <path>`; emits 245 playback files
-- Tests: `dmp_to_playback_tests.cc` — roundtrip a known dmp → playback → readback; determinism
+**Visible checkpoint**: a contract test that loops chase/target poses through the projection and asserts known `(x, y, CEP)` triples — operator can read the test as documentation of "what does the perception pipeline produce."
 
-### 2.4 RobotPathProvider + tracker-mode autoc.ini selector
+### M6 — Tracker-mode autoc.ini parsing + main-loop branch (FR-011 + FR-018)
 
-Per FR-002 + FR-011.
+**What works after**: autoc launched with `-i autoc-tracker.ini` enters tracker mode; the FR-018 M1-timestamp-driven main loop drives one chase-craft iteration per source-data sample; pathgen mode unchanged.
 
-- New `crrcsim/src/mod_inputdev/inputdev_autoc/robot_path_provider.{h,cc}` — implements the same interface as `VectorPathProvider` but pulls position from `Global::robots->getRobotFDM(targetRobotIdx)->getPos()`
-- Modify `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp` — autoc-tracker.ini mode selector spawns RobotProgrammable for the target craft + uses RobotPathProvider for the rabbit-substitution
-- New `autoc-tracker.ini` — separate config file with `TrainingMode = tracker` selector + `LibraryDirectory = <path>` + tracker-mode-specific knobs
-- Modify `src/autoc.cc` — read mode selector; delegate scenario construction to library loader when in tracker mode
-- Tests: `tracker_mode_integration_tests.cc` — end-to-end deterministic eval (single scenario, fixed seed, fixed library entry → identical fitness across runs)
+**Work**:
+1. New `autoc-tracker.ini` parser entries: `TrackerSourceRun`, `TrackerScenarioSubset` (single scenario for v1), `TrailDistance` (default 10ft = 3.048m), `CrashHullShape` + `CrashHullRadius` + `pCrash` (defaults from R3 decision), `ArenaRadius` + `ArenaFloorAGL`, etc.
+2. Mode dispatch in autoc.cc: pathgen vs tracker by config-file content. Mutual exclusion enforced (D4).
+3. FR-018 main loop refactor — the strategy-pattern split decided in M0/R5. Worker contract unchanged; per-tick stepping logic differs.
+4. Source-dmp wired in via M3's loader at autoc startup.
+5. Per-scenario distribution to workers.
 
-### 2.5 Tracker-mode `EvalResults` schema bump
+**Tests**: `timing_model_tests.cc` — contract test for FR-018 determinism (variable-rate source samples, sim-clock-speed-invariance); functional smoke (without fitness yet) — short tracker-mode run launches, runs, terminates cleanly.
 
-Per FR-015.
+**Visible checkpoint**: log output shows tracker-mode startup, source-dmp loaded, per-scenario distribution, gen 0 evaluations executing. Operator believes the loop machinery works end-to-end.
 
-- Modify `include/autoc/rpc/protocol.h` — extend `EvalResults` with optional camera view data block (per-tick projection results, camera state)
-- Bump `CEREAL_CLASS_VERSION(EvalResults, ...)` per [no cereal versioning](../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_no_cereal_versioning.md) — clean-cut, old dumps unloadable
-- Tests: schema roundtrip test for tracker-mode dump
+### M7 — Tracker fitness: trail-rabbit + crash hull + arena (FR-008 + FR-008a + FR-008b + FR-016)
 
-**Phase 2 exit gate**: tracker-mode autoc launches end-to-end with placeholder zero-beacon-input, runs 245 scenarios per gen with the second aircraft visibly replaying, fitness reported (will be uniformly bad since NN sees no target signal). Build green, all tests pass, xiao build green. Determinism verified (same seed = identical fitness).
+**What works after**: per-tick fitness for tracker mode produces sensible numbers — chase craft following the trail rabbit gets high fitness; chase craft hitting the crash hull gets a fitness penalty; chase craft leaving the arena gets penalty / scenario terminated.
 
-## Phase 3 — US3: Camera + beacon projection + camera-config experimentation harness
+**Work**:
+1. `src/eval/trail_rabbit.cc` — FR-008 + FR-008a per-tick rabbit recompute from current target velocity (with degenerate-fallback per R10 decision).
+2. `src/eval/crash_hull.cc` — FR-008b sphere intersection + probabilistic firing per R3 decision; mode-gated on `Mode = Tracker`.
+3. Arena enforcement (FR-016) — wired to the primitive chosen in M0/R2 (extend `ENTRY_SAFE_*` vs new `FLIGHT_ARENA_*`).
+4. Tracker-mode `FitnessComputer` path (reuse cone-surface fitness; substitute trail-rabbit for path point).
 
-**Goal**: connect the perception pipeline. NN now sees real beacon coordinates. US3's camera-config sweep capability is in place. Short training runs validate behavior before US4 commits to the long-run.
+**Tests**: `trail_rabbit_tests.cc`, `crash_hull_tests.cc` — math + degenerate cases + p_crash distribution.
 
-### 3.1 Camera config + projection module
+**Visible checkpoint**: tracker-mode short run produces a per-gen fitness number; operator can launch with extreme parameter values and watch fitness break in expected directions (trail distance huge → fitness terrible; arena tiny → fitness terrible).
 
-Per FR-003 / FR-003a / FR-003b / FR-003c / FR-003d / FR-003e / FR-005. R3 research provides the projection-math implementation strategy.
+### M8 — Tracker-mode dmp output (FR-015 + FR-015a)
 
-- New `include/autoc/eval/camera_config.h` — `CameraConfig` struct with the parameter classes per spec (compile-time fixed: type, frame rate, latency, projection geometry, color filter, shutter; PRNG-varied at-nominal for v1: mount offset, orientation, FOV, projection params, aberrations)
-- New `include/autoc/eval/beacon_projection.h` — projection module API: `projectBeacon(world_pos, camera_config, training_craft_pose) → (screen_x, screen_y, visible)`
-- New `src/eval/beacon_projection.cc` — analytic planar pinhole projection; channel response model (binary v1: dual-pass IR filter); FOV / behind-camera tests collapsed to single `visible` flag per spec
-- v1 baseline: planar pinhole, 120° FOV, single forward-mounted, 30 Hz frame rate, 0 ms latency, all aberrations stubbed identity
-- Tests: `beacon_projection_tests.cc` — projection math roundtrip; edge cases (target behind camera, out of FOV, near-field); deterministic output for fixed inputs
+**What works after**: tracker-mode best-of-gen produces a self-contained `.dmp` file (per FR-015's two embedded classes: per-tick beacon `(x, y, CEP)` projection state + camera pose; copied target-craft trajectory from the source). Pre-versioning pathgen dmps still readable (FR-015a back-compat).
 
-### 3.2 Beacon model on target craft
+**Work**:
+1. `EvalResults` schema extension — camera view data, target trajectory copy.
+2. Version-field bump (Constitution V).
+3. Read-side adjustments: pathgen-mode renderer still loads pathgen dmps; tracker-mode renderer (M9) loads tracker dmps.
+4. Round-trip serialize/deserialize tests.
 
-Per FR-004.
+**Tests**: `tracker_dmp_roundtrip_tests.cc` — serialize/deserialize identity, version field handling, pre-versioning dmp falls through to documented version-0.
 
-- Define beacon body-frame positions (one per wingtip) — compile-time constant for now
-- Beacon emission model: wavelength + emission cone (>180° hemisphere, brightness drops off outside)
-- Wire into `RobotProgrammable` so beacon world positions emit per tick from the target's per-tick pose
+**Visible checkpoint**: an actual tracker-mode `.dmp` lives in S3 from a real (small) run. `cereal` round-trips it. Operator can `cat` the metadata layer and see scenario count + version.
 
-### 3.3 Frame-buffer / history window infrastructure
+### M9 — Renderer tracker-mode playback (FR-012 + FR-012a)
 
-Per FR-003e (multi-frame-per-tick → NN input mapping).
+**What works after**: renderer loads a tracker-mode `.dmp` and animates the M2 result — 3rd-person view (both aircraft, beacons on target wingtips), camera-POV mode (1st-person from chase camera), camera-POV mini-panel (current-tick beacon screen positions in the HUD). Per-tick scrub controls work (rolled-in BACKLOG renderer enhancements). Reads target trajectory from the M2 dmp directly (not from the M1 source — per FR-015 self-contained property).
 
-- Per-camera ring buffer holding last N camera frames (N = ceil(camera_frame_rate / NN_tick_rate)); v1 single-camera × 30 Hz × 10 Hz NN tick = 3-frame buffer minimum
-- Sample selection: at each NN tick, pull frames at the dphi-pattern offsets `[-0.5, -0.4, -0.3, -0.2, -0.1, now]` (per US1 outcome — but US1 ran in pathgen mode; for tracker mode we keep the same offset distribution but apply to beacon screen coords instead of rabbit-direction unit vectors)
+**Work** (rolled-in BACKLOG entries: type-safe interface already done in M2; renderer enhancements lands here):
+1. `tools/renderer.cc` — tracker-mode dmp loader path; 3rd-person + 1st-person views; camera-POV mini-panel slot in the existing HUD overlay system (per D5 — follows existing visibility logic, not always-on).
+2. Per-tick scrub controls (pause / step-forward / step-backward).
+3. Streak / multiplier overlay (optional plumbing — recompute path or schema-bump path per backlog entry; pick during M9).
+4. **CEP error-bar visualization** — committed v1 per spec D15 trim — renders CEP as a visible spread / ellipse around each projected beacon centroid.
 
-### 3.4 Type-safe sensor interface — beacon inputs
+**Tests**: visual + a smoke renderer-loads-tracker-dmp test; existing pathgen-renderer tests stay green.
 
-Per FR-006.
+**Visible checkpoint**: **operator opens renderer on a tracker-mode dmp, sees two aircraft + beacons + camera-POV mini-panel + CEP error bars + per-tick scrub.** This is the qualitative "do we believe the loop closes" eyeball test, ahead of the full smoke test.
 
-- Add named beacon inputs to the sensor enum: `BEACON_L_X[t]`, `BEACON_L_Y[t]`, `BEACON_L_VISIBLE[t]` for each time offset, mirrored for `BEACON_R_*`
-- v1 layout: 4 history slots × 3 fields × 2 beacons × 1 camera = 24 beacon-related inputs + aircraft state ≈ 32 floats total
-- The pathgen-mode rabbit-direction inputs are *replaced* (not coexisted) when in tracker mode — different sensor layout per mode
+### M10 — SMOKE TEST (D13 floor — 030 v1 done line minimum)
 
-### 3.5 US3 camera-config experimentation harness
+**What works after**: end-to-end loop closes on a real M1 source dmp + real tracker-mode autoc run + real renderer playback. Fitness curve does *something* — descends, plateaus, or fails informatively.
 
-Per FR-003 / SC-009 / SC-010.
+**Work**:
+1. Pick an M1 source dmp (pastonly3 gen-N, single scenario index).
+2. Configure `autoc-tracker.ini` for that scenario, default trail / hull / quantization / arena.
+3. Launch autoc, run a small population × small generations.
+4. Observe results in renderer.
+5. Compute per-axis aggressiveness + tracker-specific telemetry from the M2 dmp output stream.
+6. Capture findings.
 
-- Make `CameraConfig` instances easily editable in autoc-tracker.ini OR via compile-time selection of one of several preset configs in `camera_config.h`
-- Document a v1 sweep grid: FOV {60°, 90°, 120°}, mount {nose, canopy}, frame rate {30, 60} for example
-- Operator workflow: edit one field, rebuild, re-run training (10-50 gens for quick comparison), check per-axis aggressiveness for behavior comparison
+**Tests**: this *is* the test — operator-driven end-to-end run. No automated test gates here; the gates were at M5/M6/M7/M8/M9 individually.
 
-**Phase 3 exit gate**: short training run (50-100 gens) at v1 baseline produces sane-looking fitness descent and the controller demonstrably tracks (visual inspection in renderer or via fitness signature). Multiple camera configs validated by US3 experimentation harness — sweep at least 3 variants (FOV change, mount change, frame rate change). Determinism preserved.
+**Visible checkpoint**: the four D13 deliverables, each demonstrably done:
+1. ✓ Autoc loaded an M1 dmp and ran tracker mode against it.
+2. ✓ Single scenario per autoc-tracker.ini.
+3. ✓ Results are saved (M2 dmp + per-gen logs).
+4. ✓ Renderer animated the M2 result.
 
-## Phase 4 — US4: Long-run controller training
+### M11+ — Post-smoke-test analytics experimentation (the "030 done" line is somewhere in here)
 
-**Goal**: produce a tracker-mode controller meeting the SC-003 / SC-004 / SC-005 / SC-006 success criteria.
+**What works after**: operator has tools to assess what trained — per-axis aggressiveness on tracker outputs, visual-lock-fraction time series, perception-error visualization, crash-hull strike rate, etc. Plan-research's "030 done line" lands somewhere in this ramp.
 
-### 4.1 Choose v1 baseline camera config from US3 results
+**Parallel work streams** (no strict ordering; pick by what the smoke-test signal surfaces):
 
-US3 phase yields a chosen baseline config. This is the config US4 trains against.
+- **M11a — Per-tick dmp extractor** (rolled-in BACKLOG entry — the per-axis analytics tool extension): `tools/aircraft_state_extractor.cc` reads tracker-mode dmps + emits CSV with the new tracker-mode column set (beacon `(x, y, CEP)`, camera pose, target-craft pose, trail-rabbit position).
+- **M11b — Eval Fitness Bug 2 fix** (rolled-in BACKLOG entry): `genome.fitness` updated with eval result before serializing. Renderer shows eval-mode tracker fitness, not training-time fitness.
+- **M11c — Tracker-specific analytics**: visual-lock-fraction time series, crash-hull strike rate per-gen, per-axis aggressiveness comparison with pathgen-mode controllers.
+- **M11d — Plan-phase candidates for v1 inclusion** (per D15 trim): nothing else committed; everything past D15's "stays in v1" list is 031 territory.
 
-### 4.2 Long-run training launch
+**Where "030 done" lands**: plan-research's call. Floor is M10 smoke green; ceiling is somewhere before the 031-CANDIDATE work starts (parallel perception-front-end, library curation + mirror-pairing, variable-rate source robustness, renderer reverse-projection / dphi-overlay / crash-strike-viz exotic goodies). Concrete ceiling proposal: **030 done = M10 + M11a + M11b + M11c**, leaving everything else to 031.
 
-```bash
-nohup ./build/autoc -c autoc-tracker.ini > logs/autoc-029-tracker-base.log 2>&1 &
-```
+## Why this milestone order
 
-Path-A-class config (pop 5000 × 600 gens, recurrent NN, single seed). Library = source pathgen run (the more-rnn3 final or whichever recording is the agreed seed library).
+Reasoning behind the M0 → M11 progression, in case plan-research wants to argue with it:
 
-### 4.3 Monitor + analyze + outcome
+1. **M0 (research) before any code** — the open questions (R1–R10) are coupled enough that resolving them in isolation later means rework. Resolve up front.
+2. **M1 (build precondition) before any new file in `src/nn|eval/`** — the 028 telemetry incident proved that the `mod_inputdev` cherry-pick pattern silently breaks the crrcsim build when new transitively-referenced files appear. Fixing this *first* means M2 onward never trips it.
+3. **M2 (typed sensor) before M5 (beacon projection)** — the new `BEACON_L_X[t]` / `BEACON_L_CEP[t]` typed names land cleanly only against typed scaffolding. Otherwise we'd rebuild the typed interface twice (once in M5 with magic numbers, once in a follow-up).
+4. **M4 deferred to post-v1** — smoke test computes virtual beacons strictly as math; no live in-crrcsim two-aircraft display needed for v1. Source target trajectory in autoc memory (M3) feeds the projection module (M5) directly. Renderer (M9) draws both aircraft from the M2 dmp via VTK without crrcsim mod_robots involvement.
+5. **M3 (source dmp load) before M5 (projection)** — projection module reads target-craft pose from the in-memory `SourceScenarioTrajectory`; M3 produces that data structure. Reverse order would stub the source side.
+6. **M5 (projection) before M6 (main loop)** — M6 wires perception-output into the worker contract; M5 produces that output. Reverse order would stub perception in M6 then re-wire in M5.
+7. **M6 (main loop + autoc-tracker.ini) before M7 (fitness)** — M7's per-tick fitness machinery needs the M6 main loop to *fire* the per-tick callback. Could be parallelized partially; likely simpler in sequence.
+8. **M7 (fitness) before M8 (dmp output)** — M8's dmp captures the fitness numbers M7 computes. Reverse order would stub fitness in M8.
+9. **M8 (dmp output) before M9 (renderer)** — M9 reads dmps; M8 produces them. Hard sequential.
+10. **M9 (renderer) before M10 (smoke test)** — D13's 4th deliverable is renderer animation of the M2 result. Smoke is undefined without the renderer working.
+11. **M10 (smoke) before M11 (analytics ramp)** — analytics on a non-running loop is empty. Smoke green is the prerequisite; analytics tooling answers questions the smoke run raises.
 
-Same telemetry cadence as 028 (6-panel evolution + per-axis aggressiveness + per-axis time series). Outcome doc: `specs/029-tracker-mode/tracker-base_outcome.md` documenting whether SC-003 / SC-004 / SC-005 / SC-006 pass.
+## Quick-test cadence
 
-### 4.4 GPU-eval co-dependency — RESOLVED (NOT required)
+Each milestone produces a visible / quick-testable artifact (above). Cadence target: M1 → M9 land on **roughly weekly** checkpoints if the team works straight through; M10 smoke is a multi-hour operator-driven run; M11 analytics is open-ended and bracketed by the "030 done" decision.
 
-**R5 research resolved**: GPU eval is *not* a 029 v1 prerequisite. Projection cost is 5–10 % over 028 per-tick budget — manageable on CPU. The earlier spec caveat (line 73) assumed 017's vision-NN cost model; 029's analytic 3-float interface is fundamentally different. GPU eval becomes critical only if 029 expands to multi-camera @ 60+ Hz or sub-tick NN evaluation — none of which are v1 scope.
-
-## Phase 5 — US5 + US6: Renderer dual-mode + architectural review
-
-### 5.1 Renderer dual-mode
-
-Per FR-012 / FR-012a.
-
-- Modify `tools/renderer.cc` (or wherever renderer lives — see renderer file map) to load tracker-mode `.dmp` files
-- Add 3rd-person view: render both aircraft (training + target), beacons on target wingtips, camera FOV cone from training craft, per-tick error overlays
-- Add 1st-person camera-POV view: project beacons through the recorded camera state, render colored points at projected positions, FOV bounds at screen edges
-- Per-tick scrub controls (pause / step-forward / step-backward) — rolled in from BACKLOG renderer-playback-enhancements
-
-### 5.2 Architectural review (US6)
-
-Code review at end of Phase 4 to confirm the perception-to-NN interface separation is clean — same NN binary would work against sim beacons or any future perception module. Documented in outcome.
-
-## Phase 6 — Close 029
-
-- Update `BACKLOG.md` to mark rolled-in items complete (Type-Safe NN Sensor Interface, Renderer Playback Enhancements)
-- Generate `specs/029-tracker-mode/findings.md` summarizing experimental outcomes + open questions for follow-on features
-- Carry-forward to next milestone (real-target tracking — gates on path-5 random-intercept proof)
-
-## What this plan intentionally does NOT cover
-
-- **Real-world deployment**. Sim gate first; flight test happens in a future feature.
-- **Per-scenario camera variation** (manufacturing tolerance training). Architecturally enabled, not implemented in v1.
-- **Library curation / auto-bootstrapping**. v1 takes a single fixed source run.
-- **Pixel-buffer rendering / vision NN perception layer**. Analytic projection only.
-- **Physics-driven target aircraft**. Kinematic playback only.
-- **GPU eval implementation** (if R5 says it must land first, that's a separate feature).
-
-## Open implementation decisions (resolve in `/speckit.tasks` or during implementation)
-
-1. **Camera latency v1 default**: 0 ms (clean fitness comparison) vs realistic 30-50 ms. Per spec deferred clarify item; pick during US3 setup.
-2. **US3 camera-config sweep granularity**: how many configs to compare before US4 baseline lock-in? 3-5 seems right.
-3. **GPU eval co-dependency**: per R5 research finding. Confirm in research.md outcome.
-4. **Tracker-mode dump schema details**: which fields exactly land in the extended `EvalResults`. Pin in [contracts/tracker_dmp_schema.md](./contracts/tracker_dmp_schema.md).
-5. **autoc-tracker.ini schema**: which knobs are per-mode vs shared with autoc.ini. Pin in [contracts/](./contracts/).
+If a milestone overshoots its visible-checkpoint deliverable, that's a signal to split the milestone (e.g., M5 has natural sub-splits at M5a projection geometry, M5b CEP + sentinel, M5c int8 quantization). Plan-research output may pre-split these per the R1–R10 outcomes.
 
 ## Complexity Tracking
 
-> **Fill ONLY if Constitution Check has violations that must be justified.**
+No Constitution Check violations to justify; section intentionally empty.
 
-No violations. Section intentionally empty.
+## Phase progression
+
+- **Phase 0 (research.md)**: in-progress with this plan-write — see [research.md](./research.md). Resolves R1–R10. Output: each R-question has Decision / Rationale / Alternatives / Citations.
+- **Phase 1 (data-model.md, contracts/, quickstart.md)**: refreshed alongside this plan to reflect current spec. Existing artifacts dating from the 029-era pre-pivot are superseded by the fresh write.
+- **Phase 2 (tasks.md)**: NOT generated by `/speckit.plan`. Will be generated by `/speckit.tasks` once plan + research + design are reviewed and accepted.

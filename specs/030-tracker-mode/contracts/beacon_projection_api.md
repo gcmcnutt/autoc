@@ -1,157 +1,157 @@
-# Contract: Beacon projection API
+# Contract: Beacon projection API (FR-005 + FR-007 + FR-017)
 
-**Producer**: `src/eval/beacon_projection.cc` (NEW for 029)
-**Consumer**: `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp` (per-tick input gathering for tracker mode)
+**Producer**: `src/eval/camera_projection.cc` (NEW — M5 deliverable)
+**Consumer**: `TrackerStepper` per-tick path (M6); recorder for `cameraViewList` in M2 dmp (M8)
 
-**Source**: per FR-005 and [research.md R3](../research.md#r3--camera-projection-math-implementation-strategy). Hand-rolled in pure Eigen (~30-50 LOC). No new dependencies.
+Refreshed 2026-05-04 for the `(x, y, CEP)` perception interface (was `(x, y, visible)` in the prior version).
 
-## API
+## Surface
 
 ```cpp
-// include/autoc/eval/beacon_projection.h
+namespace autoc::eval {
 
-#include <Eigen/Geometry>
-#include "autoc/eval/camera_config.h"
+struct BeaconObservation {
+  // NN-facing dequantized values (fp32 at the boundary):
+  float screen_x;       // [-1, +1] uncalibrated screen-relative; arbitrary if invisible
+  float screen_y;       // same
+  float cep;            // [0, 1.0] for visible, == kCepSentinelFloat (1.5f) for invisible
 
-struct BeaconProjectionResult {
-    float screen_x;       // [-1, +1] normalized to camera FOV; 0 = center
-    float screen_y;       // [-1, +1] normalized
-    float visible;        // 1.0 = beacon detected, 0.0 = not detected
+  // For dmp / renderer:
+  int8_t raw_x_int8;
+  int8_t raw_y_int8;
+  int8_t raw_cep_int8;  // INT8_MIN ⇔ invisible
 };
 
-/// Project a single beacon point through the camera, given the training craft's
-/// pose. Returns the 3-float collapsed result the NN sees, mirroring the deployed
-/// FPGA centroid-extractor's output (per spec §FR-005).
-///
-/// Args:
-///   beacon_world      — beacon position in world frame (meters)
-///   beacon_emission_dir — beacon emission cone center axis in world frame (unit vec)
-///   beacon_emission_cone_deg — beacon emission cone half-angle (>180 in v1 = omnidirectional)
-///   beacon_wavelength_nm — for color-filter response (v1: 850 = L-channel, 940 = R-channel)
-///   training_pos      — training craft position in world frame
-///   training_orient   — training craft body-to-world quaternion
-///   camera            — camera config (mount offset/orient, FOV, projection geometry, etc.)
-BeaconProjectionResult project_beacon(
-    const Eigen::Vector3f& beacon_world,
-    const Eigen::Vector3f& beacon_emission_dir,
-    float beacon_emission_cone_deg,
-    float beacon_wavelength_nm,
-    const Eigen::Vector3f& training_pos,
-    const Eigen::Quaternionf& training_orient,
-    const CameraConfig& camera);
+struct ProjectionInput {
+  gp_vec3 chase_position_world;
+  gp_quat chase_orientation_world;       // body→world
+  gp_vec3 target_position_world;
+  gp_quat target_orientation_world;
+  // beacon-mount in target body frame:
+  gp_vec3 beacon_mount_target_body;
+  gp_vec3 beacon_emission_axis_target_body;
+  // camera mount on chase:
+  gp_vec3 camera_mount_chase_body;
+  gp_quat camera_orientation_chase_body;
+  // configs:
+  CameraConfig camera;
+  BeaconConfig beacon;
+  // self-occlusion:
+  AirframeProxy chase_airframe;          // coarse body shape for self-occlusion check
+};
+
+BeaconObservation projectBeacon(const ProjectionInput& input);
+
+// Helper: int8 quantization round-trip primitives (per R7)
+int8_t quantize_xy(float v_in_minus_one_plus_one);
+int8_t quantize_cep(float cep_in_zero_one_or_sentinel);
+float dequantize_xy(int8_t q);
+float dequantize_cep(int8_t q);
+
+constexpr float kCepSentinelThreshold = 1.25f;
+constexpr float kCepSentinelFloat = 1.5f;
+
+}  // namespace autoc::eval
 ```
 
-## Algorithm (planar pinhole, v1)
+## Projection math (per R3 carry-forward + R6 + R7)
 
 ```
-Step 1 — World to body frame (training craft):
-    beacon_body = training_orient.inverse() * (beacon_world - training_pos)
+1. Compute beacon position in world frame:
+     beacon_world = target_position
+                  + (target_orientation_world * beacon_mount_target_body)
 
-Step 2 — Body to camera frame:
-    beacon_camera = camera.mount_orientation.inverse() *
-                    (beacon_body - camera.mount_offset_body)
+2. Transform to chase body frame:
+     beacon_in_chase_body = chase_orientation_world.inverse() * (beacon_world - chase_position_world)
 
-Step 3 — Behind-camera test:
-    if (beacon_camera.x() <= 0):    // crrcsim convention: camera looks +X
-        return {0, 0, 0};            // not visible
+3. Transform to camera frame (apply camera mount offset + orientation):
+     beacon_in_camera = camera_orientation_chase_body.inverse()
+                        * (beacon_in_chase_body - camera_mount_chase_body)
 
-Step 4 — Pinhole projection:
-    fov_h = camera.fov_horiz_deg * PI / 180
-    fov_v = camera.fov_vert_deg * PI / 180
-    half_tan_h = tan(fov_h / 2)
-    half_tan_v = tan(fov_v / 2)
-    screen_x = (beacon_camera.y() / beacon_camera.x()) / half_tan_h
-    screen_y = (-beacon_camera.z() / beacon_camera.x()) / half_tan_v
-    // Note: y-component sign flip because crrcsim Z-axis points down (NED)
+4. Sentinel checks (each → invisible):
+     a. behind camera: beacon_in_camera.z <= 0       → cep = sentinel
+     b. occluded by self-airframe: ray (camera origin → beacon_in_camera)
+        passes through chase_airframe proxy box      → cep = sentinel
+     c. beacon emission cone: angle between beacon_emission_axis and
+        (chase_position - beacon_world) > 270°/2     → cep = sentinel
+     d. behind FOV: |u| > tan(fov_h/2) OR |v| > tan(fov_v/2)
+        where u = bx/bz, v = by/bz                   → cep = sentinel
 
-Step 5 — FOV test:
-    if (|screen_x| > 1 || |screen_y| > 1):
-        return {0, 0, 0};            // out of FOV → not visible
+5. Otherwise compute screen coordinates:
+     u = beacon_in_camera.x / beacon_in_camera.z
+     v = beacon_in_camera.y / beacon_in_camera.z
+     fov_limit_h = tan(fov_h_deg * π / 360)
+     fov_limit_v = tan(fov_v_deg * π / 360)
+     screen_x = u / fov_limit_h            // normalized [-1, +1]
+     screen_y = v / fov_limit_v
 
-Step 6 — Beacon emission cone test:
-    los_world = (training_pos + camera.mount_offset_body) - beacon_world
-    los_world_unit = los_world.normalized()
-    cone_half_rad = (beacon_emission_cone_deg / 2) * PI / 180
-    if (acos(beacon_emission_dir.dot(-los_world_unit)) > cone_half_rad):
-        return {0, 0, 0};            // beacon facing away → not visible
+6. Compute CEP (R6 v1 linear, deferred refinement):
+     base_cep = 0.0  // ideal centroid
+     edge_factor = max(|screen_x|, |screen_y|)  // 0 at center, 1 at edge
+     cep = clamp(base_cep + edge_factor * 0.3, 0.0, 1.0)
+     // Future v2+: add aberration zones, motion blur estimate, etc.
 
-Step 7 — Channel response (v1: binary IR-color filter):
-    if (camera.color_filter == DUAL_PASS_IR):
-        // Beacon must match one of the two IR wavelengths
-        if (beacon_wavelength_nm == 850 || beacon_wavelength_nm == 940):
-            visible = 1
-        else:
-            visible = 0  // wavelength filtered out
-    else:
-        visible = 1  // no filter, all beacons visible if other tests passed
+7. Quantize to int8 (FR-017, R7):
+     raw_x_int8 = quantize_xy(screen_x)
+     raw_y_int8 = quantize_xy(screen_y)
+     raw_cep_int8 = quantize_cep(cep)        // INT8_MIN if sentinel
 
-Step 8 — Aberrations (v1: identity, all skipped):
-    // Future: apply radial / tangential / chromatic distortion to (screen_x, screen_y)
-
-return {screen_x, screen_y, visible};
+8. Dequantize for NN-facing fp32 output:
+     screen_x = dequantize_xy(raw_x_int8)
+     screen_y = dequantize_xy(raw_y_int8)
+     cep = dequantize_cep(raw_cep_int8)
 ```
 
-## Validation rules
+## Round-trip property (contract test)
 
-The function MUST:
+For any visible `(x_in, y_in, cep_in)` in valid range:
+- `dequantize_xy(quantize_xy(x_in))` is within `1/127.0 ≈ 0.0079` of `x_in` (one int8 step).
+- `dequantize_cep(quantize_cep(cep_in))` is within `1/127.0` of `cep_in` provided `cep_in < kCepSentinelThreshold`.
 
-| Rule | Why |
-|---|---|
-| Return `{0, 0, 0}` (with visible=0) when any visibility test fails | FR-007 — NN gets explicit no-signal indicator, not garbage coords |
-| Be deterministic — same inputs produce identical outputs across calls | Project determinism invariant |
-| Not allocate memory | Called per-tick per-beacon per-camera × ~10⁶+ times per gen — must be alloc-free |
-| Use only float arithmetic on Eigen primitives | Match project's gp_fitness type discipline (no doubles in eval path) |
-| Handle near-zero `beacon_camera.x()` gracefully | Avoid div-by-zero singularity at the camera plane; behind-camera test catches `≤ 0` already |
+For invisibility:
+- `dequantize_cep(quantize_cep(any_value >= 1.25))` exactly equals `kCepSentinelFloat (1.5f)`.
 
-## Future-friendly extensibility points
+## Determinism contract (FR-009)
 
-Aberrations + non-pinhole geometries land at Step 8 / Step 4 respectively without touching call sites:
+Same `ProjectionInput` ⇒ bit-identical `BeaconObservation` across invocations. Math uses `gp_scalar` (Eigen) operations; no PRNG, no system clock, no thread-dependent state.
+
+## Self-occlusion proxy (D10)
+
+`AirframeProxy` v1 = axis-aligned box in chase body frame approximating fuselage + wing extents. Ray from `camera_mount_chase_body` to `beacon_in_chase_body` tested for box intersection; if it hits, beacon registers as occluded (sentinel).
 
 ```cpp
-// Future Step 4 dispatch by geometry:
-switch (camera.geometry) {
-    case PLANAR_PINHOLE:    /* current code */
-    case FISHEYE_SPHERICAL: /* lat/lon-style projection */
-    case CYLINDRICAL:       /* future */
-}
+struct AirframeProxy {
+  gp_vec3 box_min_chase_body;
+  gp_vec3 box_max_chase_body;
+};
 
-// Future Step 8 chain (composable):
-apply_radial_distortion(screen_x, screen_y, camera.radial_k1, camera.radial_k2, camera.radial_k3);
-apply_tangential_distortion(screen_x, screen_y, camera.tangential_p1, camera.tangential_p2);
-apply_chromatic_shift(screen_x, screen_y, beacon_wavelength_nm, camera);
-// vignetting affects intensity / detection threshold, not coords
-// motion blur is a kernel applied in the FPGA detection stage, not modeled in v1
+bool rayHitsProxy(const gp_vec3& ray_origin_chase_body,
+                  const gp_vec3& ray_target_chase_body,
+                  const AirframeProxy& proxy);
 ```
 
-## Test surface
+V1 default proxy: hb1 dimensions, calibrated against operator's reference video of actual occlusion footprint.
 
-`tests/beacon_projection_tests.cc` (NEW):
+## Test coverage
 
-| Test | Assertion |
-|---|---|
-| `BeaconAtCameraOrigin_VisibleAtCenter` | Beacon at training craft's camera position → screen_x=0, screen_y=0, visible=1 |
-| `BeaconBehindCamera_NotVisible` | Beacon directly behind training craft → visible=0, screen=(0,0) |
-| `BeaconOutsideFOV_NotVisible` | Beacon at 95° angle from camera forward (FOV is 120° → half-fov 60°; beacon outside) → visible=0 |
-| `BeaconAtFOVEdge_VisibleAtEdge` | Beacon exactly at FOV edge → visible=1, screen_x≈±1 (within float tolerance) |
-| `BeaconNearField_LargeAngularDisplacement` | Target close to camera; beacons project to large displacement; both still in FOV → both visible=1 |
-| `BeaconFarField_ScreenCoordsConverge` | Target far from camera; both beacons project to nearly same screen point | visible=1 for both, screen distance < 0.05 |
-| `EmissionConeBackside_NotVisible` | Target facing away (beacon emission cone points away from camera) → visible=0 |
-| `WrongWavelength_NotVisible` | Beacon at 550 nm (visible green, not in dual-pass IR filter) → visible=0 |
-| `Determinism_RepeatCalls` | Same args → byte-identical output across 1000 calls |
-| `NoAllocation_HotPath` | Use a custom allocator hook to assert zero allocations during 1M projection calls |
+`tests/beacon_projection_tests.cc` (M5 deliverable):
+- Target dead-ahead at various distances → `cep` near 0, `(x, y)` near `(0, 0)`.
+- Target left-edge / right-edge of FOV → `cep` elevated, `screen_x` approaching `±1`.
+- Target behind chase camera → sentinel.
+- Target occluded by airframe proxy → sentinel.
+- Target outside emission cone (270° outward, target tail-on aspect) → sentinel.
+- int8 round-trip determinism: 10 random `(x, y, cep)` triples; assert round-trip within tolerance.
+- Sentinel exactly equals `kCepSentinelFloat`.
 
-## Performance budget
+## Citations
 
-Per R5 research finding:
-- ~30 FLOPs per `project_beacon` call
-- 8 calls per NN tick (4 history slots × 2 beacons × 1 camera in v1)
-- 240 FLOPs per NN tick for projection
-- ~10^6+ calls per gen at 5000 pop × 245 scenarios × ~350 ticks/scenario
-- Total per-gen: ~10^9 FLOPs ≈ ~0.3 seconds at 3 GFLOPS effective single-thread → noise compared to per-gen training time
-
-Target: ≤ 5 % per-gen wall-clock overhead vs more-rnn3 baseline.
-
-## Open contract decisions
-
-1. **Beacon emission direction**: in v1, set to "match target body's +Z (up)" so beacons point upward as the aircraft banks. Plausible default; pin in implementation. Future: explicit emission-direction config per beacon.
-2. **Channel-response interpretation**: v1 binary (1 channel responds, others 0). Future: continuous response curve (e.g., 850 nm beacon at 0.7 sensitivity in IR-A channel, 0.05 leakage into IR-B channel). Architecture supports the extension by changing `visible` from float (binary 0/1) to per-channel response curve — but the wire format is bound by FR-005's "(x, y, visible)" contract for the NN, so additional per-channel data is internal-only.
+- 030 spec FR-003 (camera config)
+- 030 spec FR-004 (beacon config)
+- 030 spec FR-005 (projection output)
+- 030 spec FR-007 (sentinel handling)
+- 030 spec FR-017 (int8 quantization)
+- 030 spec D10 (camera v1 baseline + self-occlusion)
+- research.md R3 carry-forward (projection math)
+- research.md R6 (CEP encoding)
+- research.md R7 (int8 quantization math)
+- `src/nn/evaluator.cc:343-356` (existing inverse-quat * vec3 body-frame transform pattern)

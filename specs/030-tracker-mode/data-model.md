@@ -1,359 +1,446 @@
-# 029 — Data Model
+# 030 — Data Model
 
-Entities, schemas, validation rules, and per-tick data flow for tracker mode. Anchored to spec.md FRs and the research.md findings (R1 playback format, R2 dmp deserialization, R7 type-safe sensor interface).
+Entities, schemas, validation rules, and per-tick data flow for tracker mode. Anchored to [spec.md](./spec.md) FRs and the [research.md](./research.md) R1–R10 findings.
 
-## 1. Library entry (`.crrclog` playback file)
+> **Heritage**: this is a fresh rewrite (2026-05-04) replacing the prior 029-era data model that was keyed off the obsolete `.crrclog` library / `(x, y, visible)` interface. Where prior content carries forward unchanged, citations note carry-forward; otherwise the prior version is archived as alternatives in research.md.
 
-**Source**: produced by `tools/dmp_to_playback` from one source-run `.dmp` per scenario.
-**Format**: existing crrcsim `.crrclog` binary (per R1) — *no new format invented*.
-**Consumer**: `crrcsim/src/mod_robots/CRRC_AirplaneSim_Playback`, instantiated per scenario as the target aircraft.
+## 1. Source-scenario target trajectory (in-memory, no on-disk format)
 
-### 1.1 File structure
+**Per FR-001 + R1 + R8**: 030 v1 does NOT introduce a new on-disk file format for source target trajectories. Instead, the source M1 dmp's `EvalResults` is loaded directly at autoc startup; per-scenario target trajectories live in autoc memory.
 
-```
-+-----------------------------------+
-| ASCII XML header                  |  Root: CRRCSim_record (enforced by reader)
-| - airplane.file = hb1_streamer.xml|  v1: same model as training craft
-| - airplane.graphics = ...         |
-| - scenery.file = ...              |
-| - wind.* (seed, direction, etc.)  |  Inherited from source scenario
-| - description (free text)         |
-+-----------------------------------+
-| '\n' separator byte               |
-+-----------------------------------+
-| Tagged record stream (binary, LE) |
-| Each record:                       |
-|   1 byte tag                       |
-|   variable body                    |
-+-----------------------------------+
-```
+**In-memory representation**:
 
-### 1.2 Record types
+```cpp
+// include/autoc/eval/source_trajectory.h (illustrative)
+struct SourceTickSample {
+  double simTimeMsec;             // M1 source timestamp at this sample
+  gp_vec3 position;               // target world position (NED, meters)
+  gp_quat orientation;            // target body→world quat
+  gp_vec3 velocity;               // target velocity (NED, m/s)
+  gp_vec3 angularRate;            // target body rates (p, q, r, rad/s)
+};
 
-| Tag | Use in 029 v1 | Body | Cadence |
-|---|---|---|---|
-| `0x00` | **Position/attitude** (load-bearing) | 20 bytes: `double timestep` + `float[3] pos` + `int16[3] euler` (each ÷ ROBOT_EULER_TO_INT16 = 32767/2π) | One per FDM tick from source recording |
-| `0x01` | NOT USED — reader has no case for it | — | omit |
-| `0x02` | NOT USED — F3F sync markers irrelevant for tracker | — | omit |
-| `0x03` | **Provenance metadata** (used in 029) | ASCII XML carrying source-run id, source gen, source scenario index, joint-PRNG params (path/wind/craft variation indices) | One at file end |
-
-### 1.3 Endianness + invariants
-
-- Native little-endian (per crrcsim convention; documented at `crrcsim/src/mod_robots/robotfile.h:36`)
-- Python writer: `struct.pack('<d3f3h', ...)` per 0x00 record body
-- Constant timestep matching crrcsim's autoc tick (`Global::dt × multiloop`) — playback consumer interpolates linearly between consecutive 0x00 records
-
-### 1.4 Validation rules
-
-- XML root element name MUST be `CRRCSim_record` (enforced by `fdm_playback.cpp:143–146`; converter must emit exactly this)
-- `airplane.file` MUST resolve to a valid crrcsim aircraft model (hb1_streamer.xml in v1)
-- 0x00 records MUST have monotonic-non-decreasing accumulated timestep
-- Final 0x03 provenance record is OPTIONAL but recommended for debuggability and joint-PRNG re-seeding (FR-010)
-
-## 2. Library directory
-
-A directory containing the 245 `.crrclog` files (one per source scenario), produced from a single source pathgen-run + chosen source gen.
-
-### 2.1 Layout
-
-```
-<library_root>/
-├── library_metadata.json    # Source run id, source gen, conversion timestamp,
-│                            # variation params per scenario, sha256 of dmp source
-├── 000.crrclog              # Scenario 0 (path 0, wind 0)
-├── 001.crrclog              # Scenario 1 (path 0, wind 1)
-├── ...
-└── 244.crrclog              # Scenario 244 (path 4, wind 48 — last)
+struct SourceScenarioTrajectory {
+  int sourceScenarioIndex;        // index into source dmp's scenarioList
+  ScenarioMetadata variation;     // copied from source dmp scenarioList[i]
+  std::vector<SourceTickSample> samples;  // copied from aircraftStateList[i]
+  // Validation: samples sorted by simTimeMsec; sample count >= MIN_SCENARIO_TICKS
+};
 ```
 
-### 2.2 Library metadata schema (`library_metadata.json`)
+**Source population**: at autoc startup, `loadSourceDmp(s3_key) → vector<SourceScenarioTrajectory>` reads the source `EvalResults` (cereal binary load, pattern follows `tools/nnextractor.cc:177-192`), iterates `aircraftStateList[scenario]` × `scenarioList[scenario]`, and produces one `SourceScenarioTrajectory` per source scenario. Optional filter via `TrackerScenarioSubset` per FR-011.
 
-```json
-{
-  "source_run_id": "more-rnn3-2026-04-26T...",
-  "source_gen": 600,
-  "source_dmp_path": "s3://autoc-storage/.../gen9400.dmp",
-  "source_dmp_sha256": "...",
-  "conversion_timestamp": "2026-04-29T...",
-  "scenario_count": 245,
-  "scenarios": [
-    {
-      "index": 0,
-      "filename": "000.crrclog",
-      "path_variant": 0,
-      "wind_variant": 0,
-      "wind_seed": 12345,
-      "craft_variation": null,
-      "entry_pose": {"cone_phi_deg": 0.0, "cone_theta_deg": 0.0, "roll_deg": 0.0, "speed_factor": 1.0},
-      "tick_count": 350,
-      "duration_sec": 35.0,
-      "crashed": false
-    },
-    ...
-  ]
+**Validation rules**:
+- `samples` non-empty per scenario (`MIN_SCENARIO_TICKS = 30` — 3 seconds at 10 Hz; rejects truncated / crashed source scenarios from contributing useless data; gate by `crashReasonList[i]` from source dmp).
+- `samples[i].simTimeMsec` monotonically increasing.
+- `orientation` quat magnitude ≈ 1.0 (validates source data integrity — older dmps occasionally had non-unit quats from numerical drift).
+- `position` reasonably bounded (sanity check: distance from origin < 10 km).
+
+**Citations**:
+- `include/autoc/rpc/protocol.h:234-336` (source `EvalResults`)
+- `include/autoc/eval/aircraft_state.h:295-490` (per-tick `AircraftState` getters)
+- research.md R8 (schema gap analysis — none for v1)
+
+---
+
+## 2. Tracker-mode autoc.ini schema
+
+**Per FR-011**: new sibling config `autoc-tracker.ini`. Mutual exclusion with pathgen-mode: tracker-only fields, plus mode dispatch by config-file path.
+
+**Schema sketch** (illustrative; concrete inih sections):
+
+```ini
+[Source]
+TrackerSourceRun = autoc-storage/autoc-9223370259105171692-2026-05-02T19:20:04.115Z/gen9609.dmp
+TrackerScenarioSubset = 17       ; v1: single scenario index. List/range/slice deferred.
+
+[TrackingFitness]
+TrailDistance = 3.048             ; meters; 10 ft per FR-008
+LowSpeedTrailThreshold = 2.0      ; m/s; below this → nose-trail per R10
+LowSpeedTrailHysteresis = 0.5     ; m/s; ±0.5 around threshold
+
+[CrashHull]
+CrashHullShape = SPHERE           ; v1 only SPHERE supported
+CrashHullRadius = 1.0             ; meters per FR-008b
+PCrashGen0 = 0.0                  ; per R3 curriculum anneal
+PCrashGenRamp = 100               ; gens 0-100 ramp
+PCrashGenPlateau = 200            ; gens 200+ at plateau value
+PCrashPlateau = 0.30
+
+[Arena]
+FlightArenaRadius = 80.0          ; m horizontal, per R2 default
+FlightArenaFloorAGL = 5.0         ; m AGL hard floor
+FlightArenaCeilingAGL = 100.0     ; m AGL ceiling
+
+[Camera]                          ; FR-003 v1 baseline
+CameraCount = 1
+CameraFOVHorizontal = 120.0
+CameraFOVVertical = 90.0
+CameraFrameRateHz = 30
+CameraLatencyMs = 0
+CameraMountOffsetX = 0.0          ; on top of wing-chord; calibrate against airframe model
+CameraMountOffsetY = 0.0
+CameraMountOffsetZ = -0.05        ; m above wing surface (NED, +Z down)
+
+[Beacon]                          ; FR-004 v1 baseline
+BeaconLeftWavelength = 850        ; nm
+BeaconRightWavelength = 940
+BeaconEmissionConeDeg = 270
+BeaconLeftMountX = 0.0            ; wingtip body-frame position; populate from airframe model
+BeaconLeftMountY = -0.45          ; left wingtip
+BeaconLeftMountZ = 0.0
+BeaconRightMountX = 0.0
+BeaconRightMountY = +0.45         ; right wingtip
+BeaconRightMountZ = 0.0
+
+[Population]
+; ... reuses pathgen-mode population/seed/etc. fields unchanged
+```
+
+**Validation**: at autoc startup, parse + assert all required tracker fields present; reject if pathgen-only fields present. Loud failure on invalid combinations.
+
+**Citations**:
+- 030 spec FR-011 (autoc-tracker.ini structure + mutual exclusion)
+- 030 spec D4 (autoc-tracker.ini detail)
+- research.md R3 (`p_crash` curriculum schema)
+
+---
+
+## 3. Camera + beacon configuration entities
+
+**Per FR-003 + FR-004**: structs in `include/autoc/eval/camera_config.h` + `beacon_config.h` populated from the autoc-tracker.ini. v1 baseline values committed; PRNG-varied dimensions architectural-only (sigmas at zero in v1 per D13).
+
+```cpp
+// camera_config.h
+struct CameraConfig {
+  // Compile-time-fixed (target-hardware spec)
+  enum class Projection { PLANAR_PINHOLE, SPHERICAL_FISHEYE } projection = Projection::PLANAR_PINHOLE;
+  float fov_h_deg = 120.0f;
+  float fov_v_deg = 90.0f;
+  float frame_rate_hz = 30.0f;
+  float latency_ms = 0.0f;
+  // Color filter / shutter (v1 stubs — interface in place)
+  // ...
+
+  // PRNG-varied per scenario (v1 sigmas at zero; populated from autoc-tracker.ini)
+  gp_vec3 mount_offset_body{0, 0, -0.05};   // top-of-wing-chord
+  gp_quat mount_orientation_body{1, 0, 0, 0};  // forward-aligned with body +x
+  // ...
+};
+
+// beacon_config.h
+struct BeaconConfig {
+  uint16_t wavelength_nm;
+  float emission_cone_deg = 270.0f;
+  gp_vec3 mount_body;                         // wingtip body-frame position
+  gp_vec3 emission_axis_body{0, 1, 0};        // outward; left = -y, right = +y
+  // PRNG-varied infrastructure (v1 sigmas at zero — D1 / FR-004 variation hooks)
+};
+```
+
+---
+
+## 4. Beacon observation (per-tick perception output)
+
+**Per FR-005 + FR-007 + FR-017**: the projection module's per-tick output for one (camera, beacon) pair.
+
+```cpp
+// camera_projection.h
+struct BeaconObservation {
+  // NN-facing dequantized values (fp32 at the boundary):
+  float screen_x;       // [-1, +1] uncalibrated screen-relative; arbitrary if invisible
+  float screen_y;       // [-1, +1] same
+  float cep;            // [0, 1.0] for visible, == kCepSentinelFloat (1.5f) for invisible
+
+  // For dmp / renderer (kept separate; FR-015 self-containedness):
+  bool was_quantized;
+  int8_t raw_x_int8;    // post-quantization storage
+  int8_t raw_y_int8;
+  int8_t raw_cep_int8;  // INT8_MIN ⇔ invisible
+};
+```
+
+**Round-trip property** (per R7): `dequantize(quantize(x_in_minus_one_plus_one)) ≈ x` within 1/127.0 step. Sentinel: `dequantize_cep(INT8_MIN) == kCepSentinelFloat`. Tested in `beacon_projection_tests.cc` (M5).
+
+---
+
+## 5. NN inputs (typed, per FR-006 + R4)
+
+```cpp
+// nn_inputs.h (illustrative — exact enum order locked in M2)
+enum class NNInput : uint16_t {
+  // Beacon left × 6 history slots × 3 channels (x, y, cep) = 18
+  BEACON_L_X_TM5,    BEACON_L_Y_TM5,    BEACON_L_CEP_TM5,
+  BEACON_L_X_TM4,    BEACON_L_Y_TM4,    BEACON_L_CEP_TM4,
+  BEACON_L_X_TM3,    BEACON_L_Y_TM3,    BEACON_L_CEP_TM3,
+  BEACON_L_X_TM2,    BEACON_L_Y_TM2,    BEACON_L_CEP_TM2,
+  BEACON_L_X_TM1,    BEACON_L_Y_TM1,    BEACON_L_CEP_TM1,
+  BEACON_L_X_NOW,    BEACON_L_Y_NOW,    BEACON_L_CEP_NOW,
+  // Beacon right (mirror, 18 more)
+  BEACON_R_X_TM5,    /* ... */          BEACON_R_CEP_NOW,
+  // Aircraft state (8)
+  QUAT_W, QUAT_X, QUAT_Y, QUAT_Z,
+  AIRSPEED,
+  GYRO_P, GYRO_Q, GYRO_R,
+  COUNT  // = 44 per spec FR-006
+};
+
+struct NNInputMeta {
+  const char* name;
+  float range_min;
+  float range_max;
+  const char* units;
+};
+
+inline constexpr NNInputMeta kNNInputMeta[static_cast<size_t>(NNInput::COUNT)] = { /* per-entry */ };
+
+static_assert(static_cast<size_t>(NNInput::COUNT) == TRACKER_INPUT_COUNT,
+              "NNInput enum count mismatch with topology");
+```
+
+**Total**: 36 beacon (2 × 6 × 3) + 8 aircraft state = **44 fp32 inputs** matching FR-006.
+
+**Per-tick population**: the worker fills `inputs[NNInput::COUNT]` at each NN tick using the strategy:
+- For each of 6 history slots `t ∈ {-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now}`: dequantize the recorded `BeaconObservation` from the slot's tick; assign to `inputs[NNInput::BEACON_L_X_T*]`, etc.
+- Aircraft state from current chase craft pose.
+
+**Citations**:
+- 030 spec FR-006 (full files-to-touch list + naming)
+- research.md R4 (enum+constexpr metadata pattern)
+
+---
+
+## 6. Trail rabbit (per-tick fitness target)
+
+**Per FR-008 + FR-008a + R10**: computed each tick from the current target-craft sample.
+
+```cpp
+// trail_rabbit.h
+struct TrailRabbit {
+  gp_vec3 position;     // world (NED, meters) — fitness uses this as the rabbit point
+  bool used_nose_trail; // true if degenerate-velocity branch fired (R10 fallback)
+};
+
+TrailRabbit computeTrailRabbit(const SourceTickSample& target_sample,
+                                float trail_distance,
+                                float low_speed_threshold,
+                                float low_speed_hysteresis,
+                                bool prev_was_nose_trail);
+```
+
+**Math**:
+```
+target_speed = |target_sample.velocity|
+
+// Hysteretic switch (R10):
+if (prev_was_nose_trail) {
+  using_nose_trail = (target_speed < threshold + hysteresis);
+} else {
+  using_nose_trail = (target_speed < threshold - hysteresis);
+}
+
+if (using_nose_trail) {
+  // Nose direction = body +x rotated to world by target's quat
+  nose_world = target_sample.orientation * gp_vec3(1, 0, 0);
+  rabbit = target_sample.position - nose_world * trail_distance;
+} else {
+  velocity_unit = target_sample.velocity / target_speed;
+  rabbit = target_sample.position - velocity_unit * trail_distance;
 }
 ```
 
-### 2.3 Validation rules
+**Validation**: `trail_distance >= 0.5m` (sanity); `low_speed_threshold >= 0.5m/s`.
 
-- `scenario_count` MUST equal source run's per-gen scenario count (245 for Path A configs)
-- `tick_count` per scenario MUST equal the count of 0x00 records in that scenario's `.crrclog` file
-- Crashed scenarios (`crashed: true`): library can either include partial trajectory OR omit the scenario entirely (FR-013 decision; documented in `library_metadata.json` if included)
+**Citations**:
+- 030 spec FR-008 + FR-008a
+- research.md R10 (hard-switch with hysteresis at 2 m/s)
 
-## 3. Camera configuration
+---
 
-Per FR-003 / FR-003a / FR-003b / FR-003c / FR-003d / FR-003e. Compile-time constants for v1 with the architectural class split (compile-time fixed vs PRNG-varied) preserved.
+## 7. Crash hull (per-tick collision check)
 
-### 3.1 `CameraConfig` struct (`include/autoc/eval/camera_config.h`)
-
-```cpp
-struct CameraConfig {
-    // Compile-time fixed (target-hardware spec)
-    enum SensorType { SENSOR_GENERIC_RGB_BAYER, ... };
-    SensorType sensor_type;
-    int frame_rate_hz;            // v1: 30
-    float exposure_ms;            // v1: 0
-    float readout_ms;             // v1: 0 (latency split per R6)
-    enum ProjectionGeometry { PLANAR_PINHOLE, FISHEYE_SPHERICAL, ... };
-    ProjectionGeometry geometry;  // v1: PLANAR_PINHOLE
-    enum ColorFilter { DUAL_PASS_IR, FULL_VISIBLE, ... };
-    ColorFilter color_filter;     // v1: DUAL_PASS_IR
-    enum ShutterMode { GLOBAL, ROLLING_HORIZONTAL, ROLLING_VERTICAL };
-    ShutterMode shutter;          // v1: GLOBAL
-
-    // PRNG-varied per scenario (held at nominal in v1; future variants sample)
-    Vector3f mount_offset_body;   // body-frame meters; v1: nose-forward
-    Quaternionf mount_orientation; // identity v1
-    float fov_horiz_deg;          // v1: 120
-    float fov_vert_deg;           // v1: derived from horizontal + sensor aspect
-
-    // Aberrations — interface present, identity in v1
-    float radial_k1, radial_k2, radial_k3;        // v1: 0
-    float tangential_p1, tangential_p2;            // v1: 0
-    float chromatic_shift_per_channel[2];          // v1: 0
-    float vignetting_falloff;                      // v1: 0
-    float motion_blur_kernel_sigma;                // v1: 0
-};
-```
-
-### 3.2 Validation rules
-
-- `frame_rate_hz` MUST be ≥ NN tick rate (10 Hz). Lower means dropped NN ticks; not supported.
-- `frame_rate_hz / 10` (frames per NN tick) MUST be integer for clean buffer sizing in v1.
-- `geometry == PLANAR_PINHOLE` requires `fov_horiz_deg < 180`. Wider angles MUST use `FISHEYE_SPHERICAL`.
-- `mount_offset_body` magnitude MUST be < 1 m for cheap-camera physical realism.
-
-### 3.3 Compile-time defaults (v1)
+**Per FR-008b + R3**: sphere intersection + probabilistic firing.
 
 ```cpp
-// include/autoc/eval/camera_config.h
-constexpr CameraConfig kDefaultCameraV1 = {
-    SENSOR_GENERIC_RGB_BAYER,
-    /*frame_rate_hz=*/ 30,
-    /*exposure_ms=*/ 0.0f,
-    /*readout_ms=*/ 0.0f,
-    PLANAR_PINHOLE,
-    DUAL_PASS_IR,
-    GLOBAL,
-    /*mount_offset_body=*/ {0.5f, 0.0f, 0.0f},  // 50 cm forward of CG (nose)
-    /*mount_orientation=*/ Quaternionf::Identity(),
-    /*fov_horiz_deg=*/ 120.0f,
-    /*fov_vert_deg=*/  90.0f,                   // assuming 4:3 sensor aspect
-    // ... aberrations all zero
-};
-```
+// crash_hull.h
+enum class CrashHullShape { SPHERE, AABB_HB1, MESH_AIRFRAME };
 
-## 4. Beacon configuration
-
-Per FR-004.
-
-### 4.1 `BeaconConfig` struct
-
-```cpp
-struct BeaconConfig {
-    enum WingtipSide { LEFT, RIGHT };
-    WingtipSide side;
-    Vector3f position_body;        // body-frame position on target craft
-    float wavelength_nm;           // 850 (left) or 940 (right) for v1 IR
-    float emission_cone_deg;       // >180 in v1 (omnidirectional in hemisphere)
-    float emission_intensity;      // brightness; affects detection threshold
+struct CrashHull {
+  CrashHullShape shape = CrashHullShape::SPHERE;
+  float sphere_radius = 1.0f;  // v1 default
 };
 
-constexpr BeaconConfig kBeaconLeftV1 = { LEFT,  /*pos*/{0, -wingspan/2, 0}, /*nm*/850, /*cone*/200, /*intensity*/1.0f };
-constexpr BeaconConfig kBeaconRightV1 = { RIGHT, /*pos*/{0, +wingspan/2, 0}, /*nm*/940, /*cone*/200, /*intensity*/1.0f };
+bool isInsideHull(const CrashHull& hull,
+                  const gp_vec3& chase_pos,
+                  const SourceTickSample& target_sample);
+
+// Returns true if (a) inside the hull AND (b) p_crash random draw fires
+bool didCrashFire(const CrashHull& hull,
+                  const gp_vec3& chase_pos,
+                  const SourceTickSample& target_sample,
+                  float p_crash_this_tick,
+                  PRNG& scenario_rng);
 ```
 
-### 4.2 Validation rules
+**`p_crash_this_tick` curriculum** (per R3):
+```
+gen = current generation index;
+if (gen < gen0) → 0.0
+elif (gen < genRamp) → linear interp from 0 to plateau
+else → plateau
 
-- `wavelength_nm` MUST be in the IR range (>700 nm) for v1 IR-color baseline
-- `emission_cone_deg` ≥ 180 ensures attitude-independent visibility per spec assumption
+// Defaults: gen0 = 0, genRamp = 100, plateau = 0.30, plateau_starts = 200
+```
 
-## 5. Beacon projection output (per-camera per-tick)
+**Mode gating**: only called from tracker-mode fitness path; pathgen-mode never invokes it.
 
-Per FR-005. **The minimal 3-float collapsed output** that the NN sees, mirroring the deployed FPGA centroid extractor.
+**Citations**:
+- 030 spec FR-008b
+- research.md R3 (curriculum-anneal v1 default)
 
-### 5.1 `BeaconProjectionResult` struct
+---
+
+## 8. Tracker-mode dmp output schema (FR-015)
+
+**Per FR-015 + FR-015a + Constitution V**: extended `EvalResults` with two new classes of per-tick data, version-bumped to `CEREAL_CLASS_VERSION(EvalResults, 2)`.
+
+**Schema additions** (sketch):
 
 ```cpp
-struct BeaconProjectionResult {
-    float screen_x;       // [-1, +1] normalized to camera FOV; 0 = center
-    float screen_y;       // [-1, +1] normalized
-    float visible;        // 1.0 = beacon detected, 0.0 = not detected (FOV / behind / threshold)
+// rpc/protocol.h additions
+struct CameraViewSample {
+  // From the chase craft's perception module per FR-005 (one camera)
+  gp_vec3 camera_pose_world_pos;
+  gp_quat camera_pose_world_orient;
+  float camera_fov_h_deg;
+  float camera_fov_v_deg;
+  // 2 beacons × 1 camera = 2 BeaconObservations per tick
+  BeaconObservation beacon_left;
+  BeaconObservation beacon_right;
 };
-```
 
-### 5.2 Validation rules
-
-- When `visible == 0`, `screen_x` and `screen_y` MUST be 0 (FR-007 — no fabricated coords)
-- When `visible == 1`, `(screen_x, screen_y)` MUST be in valid normalized range for the projection geometry
-
-## 6. NN sensor input layout (tracker mode)
-
-Per FR-006 (type-safe sensor interface).
-
-### 6.1 Input enumeration
-
-Tracker-mode inputs replace pathgen-mode's `target_x[6]` / `target_y[6]` / `target_z[6]` / `dist[6]` with beacon-coordinate history. Aircraft state inputs (quat, airspeed, gyros) carry over unchanged.
-
-```cpp
-enum class TrackerSensorInput : int {
-    // Beacon history per tracker-mode design (4 history slots × 3 fields × 2 beacons)
-    BEACON_L_X_T_500MS_PAST,    BEACON_L_Y_T_500MS_PAST,    BEACON_L_VISIBLE_T_500MS_PAST,
-    BEACON_L_X_T_400MS_PAST,    BEACON_L_Y_T_400MS_PAST,    BEACON_L_VISIBLE_T_400MS_PAST,
-    BEACON_L_X_T_300MS_PAST,    BEACON_L_Y_T_300MS_PAST,    BEACON_L_VISIBLE_T_300MS_PAST,
-    BEACON_L_X_T_200MS_PAST,    BEACON_L_Y_T_200MS_PAST,    BEACON_L_VISIBLE_T_200MS_PAST,
-    BEACON_L_X_T_100MS_PAST,    BEACON_L_Y_T_100MS_PAST,    BEACON_L_VISIBLE_T_100MS_PAST,
-    BEACON_L_X_NOW,             BEACON_L_Y_NOW,             BEACON_L_VISIBLE_NOW,
-    BEACON_R_X_T_500MS_PAST,    BEACON_R_Y_T_500MS_PAST,    BEACON_R_VISIBLE_T_500MS_PAST,
-    BEACON_R_X_T_400MS_PAST,    BEACON_R_Y_T_400MS_PAST,    BEACON_R_VISIBLE_T_400MS_PAST,
-    BEACON_R_X_T_300MS_PAST,    BEACON_R_Y_T_300MS_PAST,    BEACON_R_VISIBLE_T_300MS_PAST,
-    BEACON_R_X_T_200MS_PAST,    BEACON_R_Y_T_200MS_PAST,    BEACON_R_VISIBLE_T_200MS_PAST,
-    BEACON_R_X_T_100MS_PAST,    BEACON_R_Y_T_100MS_PAST,    BEACON_R_VISIBLE_T_100MS_PAST,
-    BEACON_R_X_NOW,             BEACON_R_Y_NOW,             BEACON_R_VISIBLE_NOW,
-    // 6 history slots × 3 fields × 2 beacons = 36 beacon inputs
-
-    // Aircraft state (unchanged from pathgen mode)
-    QUAT_W, QUAT_X, QUAT_Y, QUAT_Z,
-    AIRSPEED,
-    GYRO_P, GYRO_Q, GYRO_R,
-
-    COUNT  // 36 + 8 = 44 inputs total — wait, recount per Q5 design
+struct CopiedTargetSample {
+  // Copied from SourceScenarioTrajectory.samples[i] at the matching sim_time
+  gp_vec3 position;
+  gp_quat orientation;
+  gp_vec3 velocity;
+  gp_vec3 trail_rabbit_position;  // computed per FR-008
+  bool inside_crash_hull;          // FR-008b telemetry
 };
-```
 
-**Note on count**: Q5 in spec.md spelled out 4 history slots × 2 axes (x,y) × 2 beacons = 16 beacon-related screen-coord floats + 1 in_fov flag at "now" per beacon = 18 total target-related floats, plus 8 aircraft = 26. The above enumerates 6 history slots (matching the existing `[-0.5, -0.4, -0.3, -0.2, -0.1, now]` decision from clarifications) with per-sample visibility flags = 36 + 8 = 44. **Plan reconciles to 6 slots × 3 fields × 2 beacons = 36 + 8 aircraft = 44.** Higher than the spec's pre-clarify estimate of ~32 because the per-sample-visibility-flag decision adds 6 more flags (5 past + now per beacon) × 2 beacons = 12 flags. Acceptable input-dim growth; weight count grows by ~360 (44 × 8 first-layer factor estimate) — noise compared to the 1923-weight baseline.
-
-### 6.2 Topology constants
-
-```cpp
-constexpr int NN_INPUT_COUNT = static_cast<int>(TrackerSensorInput::COUNT);  // 44 in tracker mode
-// Pathgen mode keeps existing NN_INPUT_COUNT = 33 unchanged
-```
-
-The mode selector chooses which enum drives `NN_INPUT_COUNT`. Per FR-011, both modes coexist; the build is mode-conditional or runtime-mode-selected (decision pinned in plan §2.4).
-
-### 6.3 Validation rules
-
-- `BEACON_*_X` / `BEACON_*_Y` MUST be in [-1, +1] when `BEACON_*_VISIBLE` is 1; arbitrary when 0
-- `BEACON_*_VISIBLE` MUST be exactly 0.0 or 1.0 (binary in v1; future: continuous channel response)
-- `QUAT_*` MUST satisfy `qw² + qx² + qy² + qz² ≈ 1.0` per existing convention
-
-## 7. Tracker-mode `EvalResults` extension
-
-Per FR-015. Extends existing `include/autoc/rpc/protocol.h` `EvalResults` schema with camera view data. Schema bump per [no cereal versioning policy](../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_no_cereal_versioning.md) — old `.dmp` files become unloadable by tracker-aware tools, but pathgen-mode tooling continues unchanged.
-
-### 7.1 Added fields
-
-```cpp
 struct EvalResults {
-    // ... existing pathgen fields unchanged ...
+  // Existing fields (unchanged from version 1):
+  // gp, gpHash, crashReasonList, pathList, aircraftStateList, scenario, scenarioList, ...
 
-    // 029 tracker-mode additions (optional; populated only when training_mode == TRACKER):
-    bool tracker_mode = false;                // schema discriminator
-    std::vector<std::vector<CameraTickState>> camera_state_per_scenario;
-    // camera_state_per_scenario[scenario][tick] = camera pose + projection results at that tick
-};
+  // New (version 2 = tracker mode):
+  std::vector<std::vector<CameraViewSample>> cameraViewList;       // [scenario][tick]
+  std::vector<std::vector<CopiedTargetSample>> targetTrajectoryList; // [scenario][tick]
 
-struct CameraTickState {
-    Vector3f camera_pos_world;
-    Quaternionf camera_orientation_world;
-    CameraConfig camera_config_snapshot;       // for renderer's camera-POV mode
-    BeaconProjectionResult beacon_left;
-    BeaconProjectionResult beacon_right;
+  // FR-015a versioning: cereal CEREAL_CLASS_VERSION bumped 1 → 2
+  template <class Archive>
+  void serialize(Archive& ar, std::uint32_t const version) {
+    // version 1: existing fields
+    ar(gp, gpHash, ...);
+    if (version >= 2) {
+      ar(cameraViewList, targetTrajectoryList);
+    }
+  }
 };
+CEREAL_CLASS_VERSION(EvalResults, 2);
 ```
 
-### 7.2 Validation rules
+**Read-side back-compat** (R9 + Constitution V loud-fail rule):
+- Pathgen-mode dmps written at version 1 deserialize the existing fields normally; new fields are absent (cereal handles this via the version-aware `serialize`).
+- Pre-versioning dmps (those written before the FR-015a version-field add at M1) are treated as version 1 with documented assumption — readers verify the assumption in a startup check and loud-fail if the schema doesn't actually match.
+- A future version 3 read by a v2-only reader fails loudly (don't silently truncate).
 
-- If `tracker_mode == true`, `camera_state_per_scenario.size() == aircraftStateList.size()` (one camera-state vector per scenario)
-- Per-tick `camera_state_per_scenario[s].size() == aircraftStateList[s].size()` (one entry per aircraft tick)
-- `tracker_mode == false` for pathgen-mode dumps (backward-compat with existing pathgen tooling)
+**Self-containedness property** (per FR-015 design intent + D13 storage clarification): the M2 dmp's `targetTrajectoryList` is a *copy* of the source-scenario target trajectory data the M2 run consumed. Renderer (M9) reads M2 dmp directly; never reaches into M1 source dmp at playback time.
 
-## 8. Frame buffer / history window
+**Storage cost** (back-of-envelope): per scenario per tick: ~10 floats (target pos+quat+vel+trail) + ~20 floats (camera view) = ~30 floats = 120 bytes. At 30s × 10 Hz × 245 scenarios per gen = ~88 MB per gen. Acceptable.
 
-Per FR-003e (multi-frame-per-tick → NN input mapping).
+**Citations**:
+- `include/autoc/rpc/protocol.h:234-336` (existing EvalResults)
+- 030 spec FR-015 (two embedded classes)
+- 030 spec FR-015a (versioning per Constitution V)
+- 030 spec D14 (timing-model copies vs interpolation)
 
-### 8.1 Per-camera ring buffer
+---
+
+## 9. State transitions / per-tick data flow
+
+**Tracker-mode worker per-tick flow** (M6 + M7 implementations, driven by FR-018 timing model):
+
+```
+M2 source-tick t_i arrives:
+  1. target_state = source_traj.sample(t_i)        // in-memory lookup; v1 path
+                                                   // post-v1: RobotProgrammable.advanceTo(t_i)
+                                                   // when crrcsim multi-aircraft display lands
+  2. BeaconProjector.projectBeacons(chase_state, target_state, camera_config, beacon_config)
+     → BeaconObservation × 2 (left, right) — analytic projection,
+       int8 quantization round-trip, sentinel handling
+  3. NN history slot shift:
+     - oldest slot dropped; new BeaconObservation added at NOW slot
+     - 6-slot ring per (beacon × {x, y, cep}) = 36 fp32 NN inputs
+  4. NN inputs gathered per FR-006 / R4 typed interface
+  5. NN forward pass → out = (pitch, roll, throttle)
+  6. crrcsim chase-craft physics integrated until t_{i+1} (FR-018):
+     - msp commands sent to crrcsim
+     - crrcsim runs micro physics steps until simulated time >= t_{i+1}
+  7. Fitness contributions for this tick:
+     - TrailRabbit.compute(target_sample[i]) → rabbit position
+     - cone-surface fitness against rabbit (existing FitnessComputer reused)
+     - CrashHull check → if fired, scenario terminates with penalty
+     - Arena bound check → if egressed, scenario terminates with penalty
+  8. Record per-tick state for M2 dmp output (FR-015):
+     - chase AircraftState → aircraftStateList
+     - CameraViewSample → cameraViewList
+     - CopiedTargetSample → targetTrajectoryList
+  9. Loop: i++, fetch t_{i+1}, repeat from step 1
+```
+
+**Pathgen-mode flow**: unchanged. The strategy-pattern split (R5) means `PathgenStepper` runs the existing per-tick logic without touching this new pipeline.
+
+**Determinism invariant** (per FR-009 + R3 + R7 + R10):
+- All per-tick PRNG draws (p_crash, etc.) use a dedicated subsequence of the per-scenario PRNG seeded from `ScenarioMetadata.scenarioSequence` and the source's joint-PRNG params. Same scenario index + same source dmp + same `autoc-tracker.ini` ⇒ bit-identical M2 dmp output.
+- int8 quantization round-trip (R7) is deterministic; floating-point math in projection (R3-research-era math, still valid) is deterministic on the same hardware.
+- crrcsim physics integration is deterministic per existing project guarantees.
+
+---
+
+## 10. Arena (FR-016)
 
 ```cpp
-struct CameraFrameBuffer {
-    std::deque<BeaconProjectionResult> beacon_left_history;
-    std::deque<BeaconProjectionResult> beacon_right_history;
-    int capacity;  // = ceil(camera.frame_rate_hz * 1.0s) = ~30 at 30 Hz
+// arena.h (illustrative)
+struct FlightArena {
+  float radius_m = 80.0f;       // R2 default
+  float floor_agl_m = 5.0f;
+  float ceiling_agl_m = 100.0f;
 };
+
+enum class ArenaEgressKind { OK, OUTSIDE_RADIUS, BELOW_FLOOR, ABOVE_CEILING };
+
+ArenaEgressKind checkArenaBounds(const FlightArena& arena, const gp_vec3& chase_pos_world);
 ```
 
-### 8.2 Sample selection at NN tick
+**Per-tick check** (M7): chase craft world position vs arena cylinder. Egress kind recorded for telemetry; scenario terminates with arena-egress penalty.
 
-Per US1 outcome → tracker-mode design: at each NN tick, pull frames at offsets `[-0.5, -0.4, -0.3, -0.2, -0.1, now]` seconds. With 30 Hz camera × 10 Hz NN tick:
-- `now` = frame index 0 (newest)
-- `-0.1s` = frame index -3 (3 frames back, exactly 100 ms)
-- `-0.2s` = frame index -6
-- `-0.3s` = frame index -9
-- `-0.4s` = frame index -12
-- `-0.5s` = frame index -15
+**Citations**:
+- 030 spec FR-016
+- research.md R2 (parallel `FLIGHT_ARENA_*` constants vs extending `ENTRY_SAFE_*`)
 
-All offsets quantize cleanly to 30 Hz frame indices.
+---
 
-### 8.3 Validation rules
+## Summary — entity inventory
 
-- Buffer capacity MUST hold enough frames to support the deepest history offset (-0.5s @ 30 Hz = 15 frames; round up to 16)
-- Sample at deepest offset before buffer is full = treat as `visible=0` for that slot (warm-up state)
-
-## 9. Mode selector
-
-Per FR-011.
-
-### 9.1 `TrainingMode` enum
-
-```cpp
-enum class TrainingMode {
-    PATHGEN,    // existing pathgen-mode (rabbit on synthetic path)
-    TRACKER,    // tracker mode (target craft from playback library)
-};
-```
-
-### 9.2 Config-driven selection
-
-- `autoc.ini` (existing): implicit `TrainingMode = PATHGEN`
-- `autoc-tracker.ini` (new): explicit `TrainingMode = TRACKER` + `LibraryDirectory = <path>` + tracker-mode-specific knobs
-
-The runtime `TrainingMode` value drives:
-- Scenario construction (synthesized rabbit vs library entry)
-- NN input layout (33 pathgen vs 44 tracker)
-- Sensor interface enum (`PathgenSensorInput` vs `TrackerSensorInput`)
-- Eval pipeline (rabbit position vs robot position)
-- `EvalResults` dump variant (pathgen-only vs `tracker_mode = true`)
-
-### 9.3 Validation rules
-
-- Mode is determined at autoc startup from the loaded config; cannot change mid-run
-- A given training run is exactly one mode (no mid-run switching)
-- A `.dmp` file is exactly one mode (no mixed-mode dumps)
-
-## 10. State transitions — none
-
-029 introduces no new state-machine entities. All data is per-scenario / per-tick snapshot data, computed and emitted in line with the existing evolution loop. The autoc / crrcsim per-scenario lifecycle (variation seed → scenario init → tick loop → eval results) is preserved unchanged; the only differences are:
-- Scenario init loads a library entry instead of synthesizing a path
-- Tick loop projects beacons in addition to existing per-tick work
-- Eval results carry the camera state extension when `tracker_mode == true`
+| # | Entity | Lives in | Created at | Consumed by |
+|---|---|---|---|---|
+| 1 | `SourceScenarioTrajectory` | autoc memory | startup, from M1 dmp | TrackerStepper, BeaconProjector (v1 path); `RobotProgrammable` post-v1 |
+| 2 | `autoc-tracker.ini` | disk (`-i autoc-tracker.ini`) | operator | autoc startup parsing |
+| 3 | `CameraConfig` / `BeaconConfig` | from ini | startup | BeaconProjector |
+| 4 | `BeaconObservation` | per-tick | BeaconProjector | NN inputs (M2 typed interface), M2 dmp `cameraViewList` |
+| 5 | `NNInput` enum | header | compile time | evaluator, xiao mirror, analysis scripts |
+| 6 | `TrailRabbit` | per-tick | trail_rabbit.cc | FitnessComputer (cone-surface), M2 dmp `targetTrajectoryList` |
+| 7 | `CrashHull` + curriculum | per-scenario + per-tick | crash_hull.cc | FitnessComputer (penalty), scenario termination |
+| 8 | `EvalResults` v2 schema | M2 dmp | per-best-of-gen at S3 write | renderer (M9), per-tick dmp extractor (M11a) |
+| 9 | per-tick data flow | runtime | TrackerStepper | M2 dmp + fitness aggregation |
+| 10 | `FlightArena` | from ini | startup | per-tick arena check |

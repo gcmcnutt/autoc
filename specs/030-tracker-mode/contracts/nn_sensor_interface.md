@@ -1,174 +1,146 @@
-# Contract: Type-safe NN sensor interface
+# Contract: Type-safe NN sensor interface (FR-006 + R4)
 
-**Producer**: `nn_input_computation.cc` (existing) + new tracker-mode input computation
-**Consumer**: NN forward-pass (`evaluator.cc`), data.dat emission (`autoc.cc`), xiao-side input gathering (`xiao/src/msplink.cpp`), data.dat parser (`specs/019-improved-crrcsim/sim_response.py`), genome ablation tool (future BACKLOG item)
+**Producer**: NN-input gathering (sim-side `evaluator.cc`; xiao-side `msplink.cpp`)
+**Consumer**: NN forward-pass (`evaluator.cc`), `data.dat` emission (`autoc.cc`), data.dat parser (`specs/019-improved-crrcsim/sim_response.py`), [genome ablation tool](../../BACKLOG.md), per-tick dmp extractor (M11a)
 
-**Source**: rolled in from BACKLOG `Type-Safe NN Sensor Interface` (per FR-006 and [research.md R7](../research.md#r7--type-safe-nn-sensor-interface--implementation-cost-estimate)). Lands as a Phase 0 PR before tracker-mode-specific work begins.
+Refreshed 2026-05-04: typed names use the `(x, y, CEP)` interface (was `(x, y, visible)` in the prior version).
 
-## Goal
-
-Replace opaque `float[NN_INPUT_COUNT]` indexing with named/typed enum-tagged inputs:
+## Surface
 
 ```cpp
-// Before (existing, magic-number layout):
-float inputs[33];  // What's at index 0? You read evaluator.cc to find out.
+// include/autoc/nn/nn_inputs.h
 
-// After (typed):
-SensorInputs inputs;
-inputs[GYRO_P] = ...;
-inputs[BEACON_L_X_NOW] = ...;  // tracker mode
+namespace autoc::nn {
+
+enum class NNInput : uint16_t {
+  // ============================================================
+  // Beacon left observations (3 channels × 6 history slots = 18)
+  // ============================================================
+  BEACON_L_X_TM5,    BEACON_L_Y_TM5,    BEACON_L_CEP_TM5,
+  BEACON_L_X_TM4,    BEACON_L_Y_TM4,    BEACON_L_CEP_TM4,
+  BEACON_L_X_TM3,    BEACON_L_Y_TM3,    BEACON_L_CEP_TM3,
+  BEACON_L_X_TM2,    BEACON_L_Y_TM2,    BEACON_L_CEP_TM2,
+  BEACON_L_X_TM1,    BEACON_L_Y_TM1,    BEACON_L_CEP_TM1,
+  BEACON_L_X_NOW,    BEACON_L_Y_NOW,    BEACON_L_CEP_NOW,
+
+  // ============================================================
+  // Beacon right observations (mirror, 18)
+  // ============================================================
+  BEACON_R_X_TM5,    BEACON_R_Y_TM5,    BEACON_R_CEP_TM5,
+  BEACON_R_X_TM4,    BEACON_R_Y_TM4,    BEACON_R_CEP_TM4,
+  BEACON_R_X_TM3,    BEACON_R_Y_TM3,    BEACON_R_CEP_TM3,
+  BEACON_R_X_TM2,    BEACON_R_Y_TM2,    BEACON_R_CEP_TM2,
+  BEACON_R_X_TM1,    BEACON_R_Y_TM1,    BEACON_R_CEP_TM1,
+  BEACON_R_X_NOW,    BEACON_R_Y_NOW,    BEACON_R_CEP_NOW,
+
+  // ============================================================
+  // Aircraft state (8)
+  // ============================================================
+  QUAT_W, QUAT_X, QUAT_Y, QUAT_Z,
+  AIRSPEED,
+  GYRO_P, GYRO_Q, GYRO_R,
+
+  COUNT  // sentinel; total = 44 per FR-006
+};
+
+struct NNInputMeta {
+  const char* name;          // canonical name; appears in data.dat headers
+  float range_min;
+  float range_max;
+  const char* units;
+};
+
+inline constexpr size_t kNNInputCount = static_cast<size_t>(NNInput::COUNT);
+
+inline constexpr NNInputMeta kNNInputMeta[kNNInputCount] = {
+  // Beacon left
+  { "BEACON_L_X_TM5",   -1.0f, +1.0f, "screen_norm" },
+  { "BEACON_L_Y_TM5",   -1.0f, +1.0f, "screen_norm" },
+  { "BEACON_L_CEP_TM5",  0.0f,  1.5f, "cep_or_sentinel" },
+  // ... (one entry per enum value, total = 44)
+  { "GYRO_R", -50.0f, +50.0f, "rad/s" },
+};
+
+static_assert(static_cast<size_t>(NNInput::COUNT) == TRACKER_INPUT_COUNT,
+              "NNInput enum count must match topology weight count");
+
+inline constexpr const char* nameOf(NNInput input) {
+  return kNNInputMeta[static_cast<size_t>(input)].name;
+}
+
+}  // namespace autoc::nn
 ```
 
-## Two enum domains
+## Population pattern
 
-Per FR-011, pathgen mode and tracker mode have distinct sensor layouts. The interface accommodates both via two enums, mode-selected at compile or runtime:
-
-### Pathgen-mode inputs (`PathgenSensorInput`, 33 entries)
-
-Mirrors today's `NNInputs` struct ([include/autoc/nn/nn_inputs.h](../../../include/autoc/nn/nn_inputs.h)):
+Sim-side per-tick gathering (in `nn_gather_inputs()`):
 
 ```cpp
-enum class PathgenSensorInput : int {
-    TARGET_X_T_900MS_PAST,    TARGET_X_T_300MS_PAST,    TARGET_X_T_100MS_PAST,
-    TARGET_X_NOW,             TARGET_X_T_100MS_FUTURE,  TARGET_X_T_500MS_FUTURE,
-    TARGET_Y_T_900MS_PAST,    TARGET_Y_T_300MS_PAST,    TARGET_Y_T_100MS_PAST,
-    TARGET_Y_NOW,             TARGET_Y_T_100MS_FUTURE,  TARGET_Y_T_500MS_FUTURE,
-    TARGET_Z_T_900MS_PAST,    TARGET_Z_T_300MS_PAST,    TARGET_Z_T_100MS_PAST,
-    TARGET_Z_NOW,             TARGET_Z_T_100MS_FUTURE,  TARGET_Z_T_500MS_FUTURE,
-    DIST_T_900MS_PAST,        DIST_T_300MS_PAST,        DIST_T_100MS_PAST,
-    DIST_NOW,                 DIST_T_100MS_FUTURE,      DIST_T_500MS_FUTURE,
-    CLOSING_RATE,
-    QUAT_W, QUAT_X, QUAT_Y, QUAT_Z,
-    AIRSPEED,
-    GYRO_P, GYRO_Q, GYRO_R,
-    COUNT  // 33
-};
+std::array<float, kNNInputCount> inputs{};
+
+// Beacon observations (gathered from history ring per FR-005)
+const auto& obs_l_now = beacon_history_left[NOW_SLOT];
+inputs[static_cast<size_t>(NNInput::BEACON_L_X_NOW)] = obs_l_now.screen_x;
+inputs[static_cast<size_t>(NNInput::BEACON_L_Y_NOW)] = obs_l_now.screen_y;
+inputs[static_cast<size_t>(NNInput::BEACON_L_CEP_NOW)] = obs_l_now.cep;
+// ... (each history slot, each channel, each beacon)
+
+// Aircraft state
+inputs[static_cast<size_t>(NNInput::QUAT_W)] = chase_state.orientation.w();
+// ... 
+
+// Pass to NN forward-pass:
+nn_evaluate(inputs.data(), kNNInputCount, ...);
 ```
 
-(Note: US1's past-only experiment shifts the time semantics of these slots without changing the enum count — same names, different time meaning per `nn_inputs.h` comment.)
+## Cross-platform mirroring
 
-### Tracker-mode inputs (`TrackerSensorInput`, 44 entries)
+The same `nn_inputs.h` header is consumed by:
 
-Per [data-model.md §6.1](../data-model.md):
+1. **autoc desktop training binary** — primary consumer.
+2. **xiao firmware** — same header included; `msplink.cpp` populates `inputs[]` with on-device perception output (FR-006 full-scope rolled-in BACKLOG item lands this in M2).
+3. **`tools/aircraft_state_extractor.cc`** (M11a) — reads NN inputs from M2 dmps; column headers in CSV use `nameOf(NNInput::...)`.
+4. **`specs/019-improved-crrcsim/sim_response.py`** — parses `data.dat` headers using the same canonical names emitted by autoc.
+
+Since the header is the single source of truth for both name and index, schema changes propagate by recompile + automatic header consumption — no parallel updates across files.
+
+## Data.dat header emission
+
+`autoc.cc` emits the data.dat header by walking `kNNInputMeta`:
 
 ```cpp
-enum class TrackerSensorInput : int {
-    BEACON_L_X_T_500MS_PAST, BEACON_L_Y_T_500MS_PAST, BEACON_L_VISIBLE_T_500MS_PAST,
-    BEACON_L_X_T_400MS_PAST, BEACON_L_Y_T_400MS_PAST, BEACON_L_VISIBLE_T_400MS_PAST,
-    BEACON_L_X_T_300MS_PAST, BEACON_L_Y_T_300MS_PAST, BEACON_L_VISIBLE_T_300MS_PAST,
-    BEACON_L_X_T_200MS_PAST, BEACON_L_Y_T_200MS_PAST, BEACON_L_VISIBLE_T_200MS_PAST,
-    BEACON_L_X_T_100MS_PAST, BEACON_L_Y_T_100MS_PAST, BEACON_L_VISIBLE_T_100MS_PAST,
-    BEACON_L_X_NOW,          BEACON_L_Y_NOW,          BEACON_L_VISIBLE_NOW,
-    BEACON_R_X_T_500MS_PAST, BEACON_R_Y_T_500MS_PAST, BEACON_R_VISIBLE_T_500MS_PAST,
-    BEACON_R_X_T_400MS_PAST, BEACON_R_Y_T_400MS_PAST, BEACON_R_VISIBLE_T_400MS_PAST,
-    BEACON_R_X_T_300MS_PAST, BEACON_R_Y_T_300MS_PAST, BEACON_R_VISIBLE_T_300MS_PAST,
-    BEACON_R_X_T_200MS_PAST, BEACON_R_Y_T_200MS_PAST, BEACON_R_VISIBLE_T_200MS_PAST,
-    BEACON_R_X_T_100MS_PAST, BEACON_R_Y_T_100MS_PAST, BEACON_R_VISIBLE_T_100MS_PAST,
-    BEACON_R_X_NOW,          BEACON_R_Y_NOW,          BEACON_R_VISIBLE_NOW,
-    QUAT_W, QUAT_X, QUAT_Y, QUAT_Z,
-    AIRSPEED,
-    GYRO_P, GYRO_Q, GYRO_R,
-    COUNT  // 44
-};
+for (size_t i = 0; i < kNNInputCount; ++i) {
+  out << kNNInputMeta[i].name;
+  if (i + 1 < kNNInputCount) out << "\t";
+}
+out << "\n";
 ```
 
-## Per-input metadata table (compile-time)
+The Python parser (`sim_response.py`) reads the header line and indexes by name match — no hardcoded column positions.
 
-```cpp
-struct SensorInputDescriptor {
-    const char* name;        // for ablation tool, logging, debug
-    const char* unit;        // "rad/s", "m", "screen-frac", etc.
-    float min_value;         // valid range lower bound
-    float max_value;         // valid range upper bound
-    bool is_categorical;     // true for VISIBLE flags (binary)
-};
+## Compile-time invariants
 
-constexpr SensorInputDescriptor kPathgenSensorMeta[] = {
-    {"TARGET_X_T_900MS_PAST", "unit-vec", -1.0f, +1.0f, false},
-    // ... 33 entries
-};
+- `static_assert(NNInput::COUNT == TRACKER_INPUT_COUNT)` — wires the enum count to the topology's expected weight count. Adding / removing an input forces the topology weight count to be updated in lockstep, or the build fails.
+- `kNNInputMeta` array size must match `NNInput::COUNT` (asserted by the static array declaration).
 
-constexpr SensorInputDescriptor kTrackerSensorMeta[] = {
-    {"BEACON_L_X_T_500MS_PAST", "screen-frac", -1.0f, +1.0f, false},
-    // ...
-    {"BEACON_L_VISIBLE_T_500MS_PAST", "binary", 0.0f, 1.0f, true},
-    // ... 44 entries
-};
-```
+## Test coverage
 
-## Compile-time topology
+`tests/nn_sensor_interface_tests.cc` (M2 deliverable):
+- Round-trip name → enum → name identity.
+- `nameOf(BEACON_L_CEP_NOW) == "BEACON_L_CEP_NOW"`.
+- `kNNInputCount == 44` (matches FR-006).
+- `kNNInputMeta` entries align with enum positions (parallel-array integrity).
 
-```cpp
-template<typename SensorEnum>
-struct SensorInputs {
-    float values[static_cast<int>(SensorEnum::COUNT)];
+`tests/contract_evaluator_tests.cc` (updated in M2):
+- Existing pathgen-mode evaluator still passes against the new typed gather; behavior-identical.
 
-    constexpr float& operator[](SensorEnum input) {
-        return values[static_cast<int>(input)];
-    }
-};
+## Backwards-compatibility note (Constitution III)
 
-constexpr int NN_INPUT_COUNT_PATHGEN = static_cast<int>(PathgenSensorInput::COUNT);  // 33
-constexpr int NN_INPUT_COUNT_TRACKER = static_cast<int>(TrackerSensorInput::COUNT);  // 44
+This is a clean-cut replacement of the magic-number `float[]` indexing pattern. No backwards-compat shim is provided — all consumer sites are updated in M2 (full files-to-touch list per [BACKLOG.md type-safe sensor interface entry](../../BACKLOG.md)). Any code reaching for index `5` instead of `BEACON_L_CEP_TM5` is a bug; build-time errors flag it during the M2 cutover.
 
-// Mode selector — runtime or compile-time per plan §2.4 decision
-constexpr int NN_INPUT_COUNT = (TRAINING_MODE == PATHGEN) ? NN_INPUT_COUNT_PATHGEN : NN_INPUT_COUNT_TRACKER;
-```
+## Citations
 
-## Migration touchpoints
-
-Per R7 research, the refactor touches **12 files / ~270-330 LOC**:
-
-| File | Migration scope |
-|---|---|
-| `include/autoc/nn/nn_inputs.h` | Replace `NNInputs` struct with enum-indexed `SensorInputs<PathgenSensorInput>` template instance |
-| `include/autoc/nn/sensor_interface.h` (NEW) | Enum definitions + descriptor table + topology constants |
-| `src/nn/nn_input_computation.cc` | Migrate field-name accesses to enum-indexed `inputs[QUAT_W]` etc. |
-| `src/autoc.cc` data.dat header + format string | Auto-generate from descriptor table (DRY) |
-| `tests/contract_evaluator_tests.cc` | Update topology assertions to use named constants |
-| `tests/nn_evaluator_tests.cc` | Same |
-| `xiao/src/msplink.cpp` | Migrate xiao-side input gathering to typed interface |
-| `xiao/src/generated/nn_program_generated.cpp` | Regenerated by `nn2cpp` (auto) |
-| `tools/nn2cpp.cc` | Emit enum-aware C code |
-| `specs/019-improved-crrcsim/sim_response.py` | Auto-generate from descriptor table OR pin to enum names |
-| `include/autoc/eval/aircraft_state.h` | `nnInputs_` array sizing uses `NN_INPUT_COUNT` constant |
-| `include/autoc/autoc.h` | Remove duplicate magic-number defines (DISTANCE_TARGET etc.) — single source of truth in sensor_interface.h |
-
-## Validation rules
-
-The producer (input gathering code) MUST:
-- Initialize all entries in the SensorInputs array per tick — no uninitialized reads
-- Set each input within its declared `[min_value, max_value]` range; out-of-range values trigger a debug-build assert
-- For categorical flags, write exactly 0.0f or 1.0f
-
-The consumer (NN forward-pass) MUST:
-- Read inputs only via the typed enum interface, not raw float[] indexing
-- The compile-time topology constant MUST equal `static_cast<int>(EnumName::COUNT)` — checked by static_assert
-
-## Backward compatibility
-
-- **Pathgen-mode behavior**: identical to today. Same 33-input layout, same per-input semantics, same data.dat schema. The refactor is purely a re-typing of how the inputs are accessed in code; the on-disk and on-wire representations are unchanged.
-- **Tracker-mode behavior**: net-new. 44-input layout co-exists in tree but is only active when `TrainingMode = TRACKER`.
-
-## Test surface
-
-`tests/nn_sensor_interface_tests.cc` (NEW for 029, lands in Phase 0):
-
-| Test | Assertion |
-|---|---|
-| `EnumCount_MatchesPathgenLayout` | `static_cast<int>(PathgenSensorInput::COUNT) == 33` |
-| `EnumCount_MatchesTrackerLayout` | `static_cast<int>(TrackerSensorInput::COUNT) == 44` |
-| `RoundtripInputs_PathgenIdentity` | Set every pathgen input to a unique known value, read each back via the typed interface, all match |
-| `RoundtripInputs_TrackerIdentity` | Same for tracker mode |
-| `MetadataLookup_NamesMatchEnum` | For each enum value, `kPathgenSensorMeta[(int)e].name` exists and matches the enum name string |
-| `RangeValidation_OutOfRangeAsserts` | Debug build: writing 99.0 to an input with max=1.0 triggers assert |
-| `BackwardCompat_DataDatHeader_Stable` | The data.dat file header generated from the new descriptor table is byte-identical to the old hand-coded header (for pathgen mode) |
-
-## Why land in Phase 0 (before any tracker-mode-specific work)
-
-Per R7 research:
-- Doing the refactor *as part of* tracker-mode work mixes two failure modes (interface bug vs tracker-mode semantic bug) — debugging becomes harder
-- Doing the refactor *after* tracker-mode-specific code lands creates strictly more total work — every tracker-mode-specific access has to be re-typed, doubling the migration surface
-- FR-006's name-based ablation (`--zero-input BEACON_L_*`) is *load-bearing* for the genome ablation tool (separate BACKLOG item) — that tool needs the type-safe interface to work
-
-So Phase 0 of 029 implementation is: type-safe sensor interface PR. No tracker-mode-specific code in this PR. Build green, all 028 tests pass, xiao build green. Then Phase 2.2 onward proceeds.
+- 030 spec FR-006 (concrete naming requirements + dynamic ranges)
+- research.md R4 (enum + constexpr metadata pattern)
+- BACKLOG.md "[NEXT] Type-Safe NN Sensor Interface" (full files-to-touch list)
+- [Constitution III](../../../.specify/memory/constitution.md) — no compatibility shims

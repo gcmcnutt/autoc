@@ -1,231 +1,165 @@
-# 029 — Quickstart (operator walkthrough)
+# 030 — Quickstart (smoke-test runbook)
 
-End-to-end recipe for executing the 029 phases. Audience: operator running through the implementation after `/speckit.tasks` produces tasks.md.
+End-to-end recipe for executing the 030 v1 smoke test (D13's four deliverables) once `/speckit.tasks` has produced `tasks.md` and the milestones M1–M9 have landed.
+
+> **Scope**: this quickstart is the **smoke-test runbook**. Earlier development milestones (M1–M9) each have their own visible-checkpoint procedures inside [plan.md](./plan.md); use those during the build-up. This document is the M10 operator walkthrough — "how do I run the smoke test once the implementation milestones are green."
 
 ## Prerequisites
 
-- Branch `029-tracker-mode` checked out, working tree clean
-- 028 codebase at the more-rnn3 commit or later (`git log` shows the more-rnn3 baseline run committed)
-- A completed pathgen-mode source training run (more-rnn3 final or a successor) with S3 .dmp files available at a known path
-- `bash scripts/rebuild.sh` green on the 028 baseline
+- M1–M9 all green per [plan.md](./plan.md). In particular:
+  - `bash scripts/rebuild.sh` succeeds (autoc + crrcsim + tools).
+  - `cd xiao && pio run -e xiaoblesense_arduinocore_mbed` succeeds.
+  - All test suites green: `cd build && ctest --output-on-failure`.
+- An M1 source dmp identified — recommended: `pastonly3` gen-N from a recent run, available at:
+  `s3://<bucket>/autoc-storage/autoc-9223370259105171692-2026-05-02T19:20:04.115Z/gen<N>.dmp`
+  Pick a single scenario index whose source-scenario crash flag is clean and whose duration is ≥30 seconds.
+- AWS credentials configured if pulling from S3 (or download dmp to local disk; both paths supported per FR-011).
 
-## Phase 1 — US1 past-only baseline experiment
+## Steps
 
-**Runs in parallel with the 028 flight wait. Single-file change, then a full training run.**
+### 1. Configure `autoc-tracker.ini`
 
-### 1.1 Edit time-sample distribution
+Copy the v1 baseline template and populate:
 
-```bash
-# Edit nn_inputs.h comment + nn_input_computation.cc time offsets per plan §1.1, §1.2
-# Old time offsets: [-0.9, -0.3, -0.1, 0, +0.1, +0.5]
-# New time offsets: [-0.5, -0.4, -0.3, -0.2, -0.1, 0]
+```ini
+[Source]
+TrackerSourceRun = autoc-storage/autoc-9223370259105171692-2026-05-02T19:20:04.115Z/gen9609.dmp
+; v1 smoke-test slice (per Clarifications 2026-05-04): 6 paths × 20 winds = 120 scenarios.
+; Cross-product subsetting; concrete syntax to be locked in plan phase.
+TrackerPathSubset = 0,1,2,3,4,5
+TrackerWindSubset = 0-19
+
+[TrackingFitness]
+TrailDistance = 3.048             ; 10 ft, FR-008 v1 default
+LowSpeedTrailThreshold = 2.0      ; R10 v1 default
+LowSpeedTrailHysteresis = 0.5
+
+[CrashHull]
+CrashHullShape = SPHERE
+CrashHullRadius = 1.0             ; FR-008b v1 default
+PCrashGen0 = 0.0                  ; R3 curriculum
+PCrashGenRamp = 100
+PCrashGenPlateau = 200
+PCrashPlateau = 0.30
+
+[Arena]
+FlightArenaRadius = 80.0          ; R2 v1 default
+FlightArenaFloorAGL = 5.0
+FlightArenaCeilingAGL = 100.0
+
+[Camera]                          ; D10 v1 baseline
+CameraCount = 1
+CameraFOVHorizontal = 120.0
+CameraFOVVertical = 90.0
+CameraFrameRateHz = 30
+CameraLatencyMs = 0
+CameraMountOffsetX = 0.0
+CameraMountOffsetY = 0.0
+CameraMountOffsetZ = -0.05
+
+[Beacon]                          ; D1 v1 baseline (270° outward, hb1 wingspan)
+BeaconLeftWavelength = 850
+BeaconRightWavelength = 940
+BeaconEmissionConeDeg = 270
+BeaconLeftMountY = -0.45
+BeaconRightMountY = +0.45
+
+[Population]
+PopulationSize = 5000             ; full diversity per Clarifications 2026-05-04
+NumGenerations = 100              ; compressed from converged-run 600+
+; Variation-curriculum step count = 10 (parameter name TBD in plan phase)
+Seed = 42                         ; deterministic
 ```
 
-The change is: in `src/nn/nn_input_computation.cc`, find the array of time offsets (used to look up rabbit position at past/future odometer values) and replace with the new past-only distribution. In `include/autoc/nn/nn_inputs.h`, update the `// Time samples:` comment to match.
-
-### 1.2 Build + verify tests
+### 2. Launch tracker-mode autoc
 
 ```bash
-bash scripts/rebuild.sh                                      # green
-ctest --output-on-failure                                    # all 12 tests pass
-cd xiao && ~/.platformio/penv/bin/pio run -e xiaoblesense_arduinocore_mbed   # green (constitutional req)
+cd /home/gmcnutt/autoc
+stdbuf -oL -eL build/autoc -i autoc-tracker.ini 2>&1 | tee logs/autoc-030-smoke-001.log
 ```
 
-### 1.3 Launch the past-only training run
+**Expected log lines** (first ~20 seconds):
+```
+Loading source dmp: autoc-storage/.../gen9609.dmp
+  → 245 scenarios, [scenario 17 selected per TrackerScenarioSubset]
+  → samples=312 ticks (~31.2s), variation: pathVariant=2 windVariant=14 windSeed=...
+Tracker mode initialized.
+Generation 0: pop=100, scenario=17 [single]
+  best=...  avg=...  ...
+```
+
+### 3. Watch fitness progress
+
+The smoke-test signal: **fitness curve does *something* — descends, plateaus, or fails informatively**.
+
+Plausible outcomes:
+- **Descending** (fitness improves over gens): the loop is closing. Promising.
+- **Plateau early** (fitness flat-lines after ~5 gens): controller can't break out of initial random behavior. Could mean: arena too tight, p_crash too aggressive (despite curriculum), or tracker-mode fitness landscape pathologically flat.
+- **Crashing fast** (most scenarios terminate within 1-2 seconds): `p_crash` might be firing too often despite curriculum, or arena is too tight, or initial chase pose puts the chase craft outside the arena.
+- **NaN / Inf** (fitness diverges): math bug in projection or trail-rabbit; check the latest M5 / M7 contract test outputs.
+
+### 4. Inspect the M2 dmp
+
+Tracker-mode best-of-gen is uploaded to S3 with run-id specific to this smoke run. Find it:
+```bash
+aws s3 ls s3://<bucket>/autoc-storage/autoc-<NEW-RUN-ID>/
+```
+
+Pull a recent gen's dmp:
+```bash
+aws s3 cp s3://<bucket>/autoc-storage/autoc-<NEW-RUN-ID>/gen49.dmp /tmp/smoke-gen49.dmp
+```
+
+Quick sanity check via the per-tick dmp extractor (M11a):
+```bash
+build/aircraft_state_extractor --in /tmp/smoke-gen49.dmp --out /tmp/smoke-gen49.csv
+head -5 /tmp/smoke-gen49.csv  # confirm columns include BEACON_L_X_NOW, BEACON_L_CEP_NOW, etc.
+```
+
+### 5. Renderer playback (the 4th deliverable)
 
 ```bash
-nohup ./build/autoc -c autoc.ini > logs/autoc-029-pastonly.log 2>&1 &
-# Path A config: pop 5000, gens 600, recurrent NN, single seed
-# Run name convention: more-rnn4-pastonly
+build/renderer -i autoc-tracker.ini -k autoc-storage/autoc-<NEW-RUN-ID>/gen49.dmp
 ```
 
-### 1.4 Monitor every 50 gens
+**Expected display**:
+- 3rd-person view: chase craft + target craft both visible, target wingtip beacons rendered as colored points.
+- Camera-POV mini-panel (in the HUD overlay area near throttle/control state): two dots (left / right beacons) at their projected screen positions; CEP visualized as ellipse spread per D15 v1 commit.
+- Per-tick scrub controls work: pause / step-forward / step-backward.
+- Switch to 1st-person camera-POV mode: full-screen render from chase camera with beacons visible.
 
-```bash
-python3 specs/028-deeper-rnn/plot_evolution_progress.py \
-    --focus more-rnn4-pastonly:data.stc \
-    --total-gens 800 \
-    --compare more-rnn3:logs/autoc-028-more-rnn3.log \
-    --compare cadence7-redux:logs/autoc-027-cadence7redux.log \
-    --out specs/029-tracker-mode/pastonly_evolution.png
-```
+**Smoke-test green** = the renderer animates the M2 result end-to-end without errors. Doesn't require the controller to be *good* — just that the loop closes.
 
-Watch fitness slope and per-axis aggressiveness vs more-rnn3.
+### 6. Capture findings
 
-### 1.5 At gen 600 — analyze + decide
+The smoke-test deliverable is qualitative + the four boxes checked, not a benchmark number. Record:
+- Source dmp identifier, scenario index, M2 run-id.
+- Fitness curve shape (descending / plateau / pathological).
+- Renderer screenshots (3rd-person + camera-POV).
+- Any sentinel events: arena egresses, crash-hull strikes, NaN propagations, build issues.
 
-```bash
-# Compute fixed-eval fitness
-./build/autoc --eval -c autoc-eval.ini --weights gen_600.dat
+Write a short `flight-results/030-smoke-<date>/SMOKE_REPORT.md` with the above. (Yes, even though no flight happened — using the same `flight-results/` taxonomy keeps the analysis pipeline uniform.)
 
-# Per-axis aggressiveness
-awk 'NR==1 || /^[0-9]+ [0-9]+ 00[01234]\/00:/' data.dat > /tmp/pastonly_starter_paths.dat
-python3 specs/028-deeper-rnn/plot_per_axis_time_series.py \
-    --in /tmp/pastonly_starter_paths.dat --label more-rnn4-pastonly \
-    --total-gens 800 --pop-size 5000 \
-    --out specs/029-tracker-mode/pastonly_per_axis.png
+### 7. Decide what's next
 
-# Write outcome
-$EDITOR specs/029-tracker-mode/pastonly_outcome.md
-# Pass: late-plateau fitness within ±10 % of more-rnn3, per-axis pattern matches
-# Fail: regression > 10 %, or per-axis pattern anomalous
-```
+Per [plan.md M11+](./plan.md):
+- If smoke green and signal interesting → **continue to M11a (per-tick dmp extractor) + M11b (eval fitness Bug 2 fix) + M11c (tracker-specific analytics)**. These are the post-smoke ramp items proposed for "030 done line."
+- If smoke green but signal weird (e.g., fitness plateaus immediately) → **debug** using the per-tick extractor + renderer error bars. The bug is somewhere in M3–M9; the analytics tooling lets you narrow it down.
+- If smoke red (loop doesn't close) → **fix the failing milestone**. The granular checkpoints (M1 through M9) make this localized rather than a forest-fire debug.
 
-**Gate**: PASS → proceed to Phase 2. FAIL → investigate alternative time distributions per plan §1.6 fallback list before declaring "no-lookahead doesn't work."
+## What success looks like
 
-## Phase 2 — US2 substrate
+Per D13 the four checkbox items:
+- ✓ Autoc loaded an M1 dmp and ran tracker mode against it.
+- ✓ Single scenario per `autoc-tracker.ini`.
+- ✓ Results saved (M2 dmp + per-gen logs).
+- ✓ Renderer animated the M2 result.
 
-### 2.1 Type-safe sensor interface refactor (lands first)
+That's the floor. "030 done" sits some distance above it; plan-research has proposed `030 done = M10 + M11a + M11b + M11c`.
 
-Per [contracts/nn_sensor_interface.md](./contracts/nn_sensor_interface.md). ~270-330 LOC refactor across 12 files.
+## Citations
 
-```bash
-# Land as a single PR before tracker-mode-specific work begins
-# Verify all existing 028 tests still pass with refactored interface
-ctest --output-on-failure
-# Verify xiao build green
-cd xiao && pio run -e xiaoblesense_arduinocore_mbed
-# Verify training run produces identical fitness to pre-refactor baseline (smoke test)
-nohup ./build/autoc -c autoc.ini > logs/autoc-029-refactor-smoke.log 2>&1 &
-# After ~50 gens, compare fitness to a more-rnn3 prefix at same gen
-```
-
-### 2.2 crrcsim multi-aircraft accessor
-
-Per [research.md R4](./research.md). Reuses existing `CRRC_AirplaneSim_Playback`. Add `Robots::getRobotFDM(int idx)` accessor to `crrcsim/src/mod_robots/robots.{h,cpp}`. ~5 LOC change.
-
-```bash
-bash scripts/rebuild.sh
-ctest --output-on-failure
-```
-
-### 2.3 dmp-to-playback converter
-
-Per [contracts/playback_file_format.md](./contracts/playback_file_format.md) and [research.md R2](./research.md).
-
-```bash
-# Build the new tool
-make -j8 dmp_to_playback
-
-# Convert a source pathgen run's gen N into a 245-entry playback library
-./build/dmp_to_playback \
-    --source-run "more-rnn3-2026-04-26T..." \
-    --source-gen 600 \
-    --output-dir libraries/more-rnn3-gen600/
-
-# Verify
-ls libraries/more-rnn3-gen600/    # 245 .crrclog files + library_metadata.json
-python3 specs/029-tracker-mode/scripts/validate_library.py libraries/more-rnn3-gen600/
-```
-
-### 2.4 RobotPathProvider + tracker-mode autoc.ini
-
-Per plan §2.4. Modify `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp` to spawn the playback aircraft per scenario and wire the RobotPathProvider into the eval pipeline. New `autoc-tracker.ini` config.
-
-```bash
-# Smoke test — tracker mode launches end-to-end with placeholder zero-beacon-input
-nohup ./build/autoc -c autoc-tracker.ini > logs/autoc-029-substrate-smoke.log 2>&1 &
-# Watch first 5 gens — fitness will be uniformly bad (NN sees no target signal yet)
-# Determinism check: re-run with same seed → identical fitness
-```
-
-### 2.5 Tracker-mode EvalResults schema bump
-
-Per [contracts/tracker_dmp_schema.md](./contracts/tracker_dmp_schema.md). Modify `include/autoc/rpc/protocol.h`. Bump cereal class version per project policy.
-
-```bash
-bash scripts/rebuild.sh
-ctest --output-on-failure
-```
-
-**Phase 2 exit gate**: tracker-mode autoc launches end-to-end, second aircraft visibly replays from library, fitness reported (uniformly bad), build green, all tests pass, xiao build green, determinism preserved.
-
-## Phase 3 — US3 camera + beacon projection
-
-### 3.1 Build the projection module
-
-Per [contracts/beacon_projection_api.md](./contracts/beacon_projection_api.md) and [research.md R3](./research.md). ~30-50 LOC in pure Eigen.
-
-### 3.2 Wire beacon projection into per-tick input gathering
-
-Per data-model.md §6.1. The 44-input tracker-mode layout replaces the 33-input pathgen layout when `TrainingMode = TRACKER`.
-
-### 3.3 Frame buffer / history window
-
-Per data-model.md §8. Per-camera ring buffer holding last ~16 frames at 30 Hz; sample at offsets `[-0.5, -0.4, -0.3, -0.2, -0.1, now]` per NN tick.
-
-### 3.4 First short tracker-mode training
-
-```bash
-# Edit autoc-tracker.ini for v1 baseline camera config
-# (planar pinhole, 120° FOV, single forward-mounted, 30 Hz, 0 ms latency)
-nohup ./build/autoc -c autoc-tracker.ini > logs/autoc-029-tracker-baseline-50gen.log 2>&1 &
-# Target: 50-100 gens, demonstrate sane fitness descent + visual lock signal
-```
-
-### 3.5 Camera-config sweep (US3)
-
-```bash
-# For each variant (FOV 60° / 90° / 120°, mount nose / canopy, frame rate 30 / 60):
-#   - Edit constexpr camera config in include/autoc/eval/camera_config.h
-#   - Rebuild
-#   - Launch short run (50 gens)
-#   - Compare per-axis aggressiveness
-# Document results in specs/029-tracker-mode/us3_camera_sweep.md
-```
-
-**Phase 3 exit gate**: at v1 baseline config, 50-100 gen run produces sane fitness descent + ≥ 70 % visual-lock fraction. ≥3 camera-config variants compared.
-
-## Phase 4 — US4 long-run training
-
-```bash
-# Choose v1 baseline from US3 results, finalize autoc-tracker.ini
-nohup ./build/autoc -c autoc-tracker.ini > logs/autoc-029-tracker-base.log 2>&1 &
-# Path A config: pop 5000, gens 600, recurrent NN, single seed
-# Run name: tracker-base
-```
-
-Monitor / analyze with the existing 028 telemetry tooling (works unchanged per FR-014). Outcome doc: `specs/029-tracker-mode/tracker-base_outcome.md` documenting whether SC-003 / SC-004 / SC-005 / SC-006 pass.
-
-## Phase 5 — US5 renderer dual-mode + US6 review
-
-### 5.1 Renderer dual-mode
-
-Per FR-012 / FR-012a. Modify `tools/renderer.cc` for tracker-mode `.dmp` loading + 3rd-person/1st-person view selector + per-tick scrub controls.
-
-```bash
-./build/renderer --tracker-dump path/to/tracker_gen600.dmp
-# Toggle 3rd-person / 1st-person camera-POV with keyboard shortcut
-# Use scrub controls to step per tick
-```
-
-### 5.2 Architectural review
-
-Code review at end of Phase 4 per US6. Confirm perception-to-NN interface separation (sim-beacon-projection module is replaceable by future real-perception module without retraining). Document outcome.
-
-## Phase 6 — Close
-
-```bash
-# Update BACKLOG.md — mark rolled-in items complete
-$EDITOR specs/BACKLOG.md
-#   - Mark Type-Safe NN Sensor Interface as complete
-#   - Mark Renderer Playback Enhancements (per-tick scrub) as complete
-#   - Add findings cross-reference
-
-# Findings doc
-$EDITOR specs/029-tracker-mode/findings.md
-#   - Summarize US1 past-only result, US3 camera-sweep result, US4 long-run result
-#   - List open questions for next milestone (real-target tracking)
-
-# Memory updates
-$EDITOR ~/.claude/projects/-home-gmcnutt-autoc/memory/MEMORY.md
-#   - Update post_028_routing memory: 029 outcome + next routing
-```
-
-## Troubleshooting
-
-- **Phase 1 build break after time-offset edit**: most likely the time-offsets array isn't a free-standing constant; might be inlined. Search for `0.9` / `0.3` / `0.1` in `nn_input_computation.cc` and verify all 6 offset values are updated consistently.
-- **Phase 2.3 dmp-to-playback fails to deserialize**: check the source dmp path is local OR S3 client is configured (autoc.ini has S3 credentials). Per R2, the converter links autoc_common which loads ConfigManager.
-- **Phase 2.4 substrate smoke fails — fitness diverges across runs with same seed**: determinism break. Most likely the playback library is being loaded with a non-deterministic order (filesystem readdir). Sort entries by index before assigning to scenarios.
-- **Phase 3 first tracker run — fitness flat at gen 0 baseline**: NN sees garbage beacon coords (projection bug). Use the camera-POV renderer mode to see what the controller is "seeing" — beacons should project to expected screen positions for known target poses.
-- **Phase 4 long-run fitness regresses vs more-rnn3**: expected partly — tracker mode is harder than pathgen mode (sparse signal, no lookahead). The bar is "trained controller maintains visual lock ≥80 % of ticks" not "matches pathgen fitness." Use SC-004's lock-fraction metric, not raw pathgen-comparable fitness.
+- 030 spec D13 (smoke-test framing)
+- 030 spec FR-001, FR-008, FR-008b, FR-011, FR-015, FR-016 (the v1-locked-in commitments this runbook exercises)
+- [plan.md](./plan.md) milestones M1–M9 (smoke-test prerequisites)
+- [research.md](./research.md) R1–R10 (architectural decisions baked into v1 defaults above)

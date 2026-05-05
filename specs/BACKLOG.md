@@ -1,6 +1,59 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-04-26
+**Last Updated**: 2026-05-04
+
+---
+
+## 030 spin-offs (deferred from 030 spec at plan-research scoping)
+
+Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 2026-05-04, before plan-research begins. These were architecturally part of the 030 epic but earned defer-status under the smoke-test-first scoping (D13 / D16). Some are 031 (sibling-feature) candidates, some are pure backlog. Tagging as such; final 030/031 split is plan-research's call.
+
+### [031 CANDIDATE] Parallel perception-front-end — camera pixels → (x, y, CEP)
+
+- **Trigger**: real-flight beacon hardware build / virtual-beacon flight test (staged-path row 5+).
+- **Scope**: the FPGA / DSP pipeline that bridges raw camera pixels to the `(x, y, CEP)` triple 030 consumes — thresholded centroid extraction per color channel, cluster-spread (CEP) computation, threshold-fail sentinel emission. **Includes**: prop-arc occlusion modeling (rolling-shutter resonance with prop RPM, banding artifacts at certain RPMs, intermittent global-shutter occlusion at non-resonant rates); airframe self-occlusion mesh refinement beyond 030 v1's coarse body proxy; LED wavelength + emission-cone tolerance characterization.
+- **Why parallel rather than 030-internal**: shares only the `(x, y, CEP)` interface contract with 030; the engineering surface (FPGA design, threshold tuning, color-channel separation, real-camera characterization) is image-domain work that runs alongside 030's controller-side training without touching it. The two features inform each other through the contract: 030's per-scenario PRNG variation experiments tell perception-front-end what camera-spec tolerances need to be met; perception-front-end tells 030 what int8 noise floor and CEP magnitude distribution to actually quantize with.
+- **Source design notes**: 030 spec D7 (DMP versioning + parallel feature), D10 (camera v1 baseline + prop-occlusion deferral).
+- **Files likely**: new `src/perception/` module (or top-level `perception/` peer to `crrcsim/`), new spec dir `specs/031-perception-front-end/` when this unparks.
+
+### [031 CANDIDATE] Variable-rate / real-flight source robustness
+
+- **Trigger**: real-flight-recorded trajectories become available (post-virtual-beacon flight test).
+- **Scope**: exercise the FR-018 timing model under realistic xiao+INAV telemetry jitter and dropped samples. Confirm determinism end-to-end at non-real-time sim speeds (contract test). 030 v1 timing model is *built to handle* variable-rate sources but is *exercised* only at uniform-rate pathgen-derived sources.
+- **Source design notes**: 030 D14 (timing-model exploration row).
+
+### [031 CANDIDATE] Library curation + turn-direction mirror-pairing
+
+- **Trigger**: when 030 smoke-test green and operator wants real-target-class generalization, OR when the controller fails an OOD turn-direction test in early eval.
+- **Scope**: library composition tooling — mirror-pair every recorded trajectory into a left-turn / right-turn matched set during ingest (flip Y in NED + flip roll quat + flip rcData[0]); cross-source-run mixing (sim + real, geometry-filtered); auto-bootstrapping (winners-of-tracker-runs feed back into the library). All currently in 030 spec's Out of Scope or C1 / C5 open considerations; collecting them here.
+- **Source design notes**: 030 spec C1 (turn-direction symmetry trap), C5 (pathgen vs library decision matrix).
+- **Why deferred from 030**: not load-bearing for the smoke test; matters once the operator wants generalization beyond what a single source dmp delivers.
+
+### [031 CANDIDATE] Renderer "exotic goodies" — reverse-projection + dphi-overlay + crash-strike viz
+
+- **Trigger**: post-smoke-test, when operator finds analytics-experimentation needs them to debug specific failures.
+- **Scope** (from 030 D15):
+  - **Reverse-projection overlay** — given chase pose + recorded perception output `(x, y, CEP)`, compute via reverse camera model (inverting aberrations + int8 quantization, propagating CEP into a 3D uncertainty cone) where the controller "thinks" the target is. Compare to where M1 target actually is (also in M2 dmp per FR-015). Visualizes perception error in 3D — directly diagnostic for "lost fitness because of perception, or because of control?"
+  - **Old-style dphi/dtheta overlay** — from chase pose + M1 target's true position, compute what pathgen-mode's old `(dphi, dtheta, dist)` projection would have shown, render alongside the new beacon view. Comparison tool for debugging whether the new representation delivers equivalent or richer information than the old.
+  - **Crash-hull strike visualization** — mark hull entries (and `p_crash` fires) in 3rd-person view; aids hull-curriculum tuning.
+- **What stays in 030 v1 from D15**: error bars on the camera-POV display (CEP as visible ellipse spread) — cheap, directly load-bearing for smoke-test signal-or-not assessment.
+- **Why deferred**: research-grade analytics; not required for smoke-test 4th deliverable.
+
+### [030 v1+] Live two-aircraft display in crrcsim (RobotProgrammable + mod_robots)
+
+- **Trigger**: when operator wants to *watch training in progress* live in crrcsim's 3D viewer (vs after-the-fact in renderer playback), OR when the 031-candidate parallel perception-front-end needs a real visual rendering of the target craft to feed image-domain experiments.
+- **Scope**: new `crrcsim/src/mod_robots/robot_programmable.{h,cc}` — `RobotBase` subclass consuming an in-memory pose stream pushed from autoc; `Robots::AddRobot` integration so autoc-side registers the programmable target per scenario; per-scenario teardown / reset. ~150 LOC sketch per [reference_crrcsim_mod_robots.md](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_crrcsim_mod_robots.md).
+- **Why deferred from 030 v1**: the smoke test (D13) computes virtual beacons strictly as math from `(chase pose, target pose in autoc memory)` — no live in-crrcsim two-aircraft display needed. Renderer 3rd-person view (FR-012) draws both aircraft from the M2 dmp's copied `targetTrajectoryList` (FR-015 self-containedness) using its own VTK actors. Adding the multi-aircraft crrcsim substrate to v1 would expand scope without serving the smoke test.
+- **Source design notes**: 030 spec FR-002 (v1 deferral note); 030 plan M4 (deferred milestone description); research.md R1 (decision rationale).
+
+### [BACKLOG] Multi-camera variant experiments
+
+- 030 v1 ships single-camera. Multi-camera *interface* is in v1 (per FR-003b — independent per-camera parameter blocks, no assumption of matching configs). *Exercising* the interface is backlog: asymmetric wide+narrow, stereoscopic, wide+telephoto with parallax offset, forward+downward-tilted secondary. Trigger: when 030 smoke-test green and operator wants to use the sim as a camera-spec sandbox (US3-style sweeps) for hardware-design decisions.
+
+### [BACKLOG] Minisim retire / stub / remove
+
+- Project-level decision surfaced by 030 scoping, captured in 030 D12. Three options: ignore (default), stub, remove. Decision happens at the moment a 030 schema change first forces a touch on `tools/minisim.cc`. Default-to-ignore until then; if 030 plan-phase work hits minisim, upgrade to remove rather than spend porting cost.
+- Files: `tools/minisim.cc`, `CMakeLists.txt:100-106`, audit `tests/` for hard dependencies.
 
 ---
 
@@ -315,6 +368,41 @@ Remaining 015 work:
   elite is dumped to S3); extracting per-tick PidInternals (not in
   EvalResults today — would need another schema add); replicating data.dat
   byte-for-byte (just the columns the per-axis analysis needs).
+
+### [NEXT] Snapshot / resume training mid-run + adaptive gen-budget
+- **Problem**: Path A config (pop 5000, gens 800, NNSigmaFloor 0.05) reliably
+  hits sigma-floor around gen 500-550 across recent runs (more-rnn3, pastonly2,
+  pastonly3). Once at floor, fitness drift over the remaining 250-300 gens is
+  small (a few percent) — pure-exploitation refinement that could either be
+  (a) skipped (terminating earlier saves ~24h compute per run) or (b) extended
+  beyond 800 if the late-plateau is still moving (rare, but happens).
+- **Today's blocker**: no checkpoint/resume mechanism. Each training run starts
+  from gen 0; can't re-launch from gen 600 to extend, and can't kill at gen
+  600 with confidence that "this is already the answer." So operator
+  uniformly trains to gen 800 to confirm plateau is real even when the
+  middle-third would have been definitive — wasted compute.
+- **Long-term solution** (two parts):
+  1. **Periodic checkpoint dump** — every N gens (say N=50), serialize the
+     full population (NNGenome[]) to disk + log gen state. Same `cereal`
+     stack as S3 dumps, just population-wide instead of best-only. ~1-2 GB
+     per checkpoint at pop=5000 × 1923 weights — manageable rotation policy.
+  2. **`--resume <checkpoint.dat>`** flag on autoc — load population, set
+     gen counter, continue. Identical PRNG seeding semantics (one of the
+     fields in the checkpoint).
+- **Adaptive gen budget** (smaller follow-on): given checkpointing exists,
+  add a runtime termination heuristic — e.g., "if last-N-gens fitness slope
+  < threshold AND sigma at floor for ≥ M gens, stop." Operator-overridable.
+  Saves the wasted late-plateau gens automatically.
+- **Trigger**: when a 029-class run produces a clearly-converged controller
+  before gen 800 AND the operator wants to run a *follow-up experiment*
+  (variation in 025, derived features in 029-T061, etc.) and would benefit
+  from "warm-start from the converged checkpoint" rather than re-training
+  from gen 0. Concrete instance: pastonly3 may hit clean plateau by gen
+  600 of 800, but operator continued because no resume mechanism exists.
+- **Out of scope for v1**: distributed checkpointing across worker nodes
+  (single-machine training only); checkpoint-format versioning (tracker-
+  mode-aware); selective restart (e.g., load weights but reset variation
+  ramp).
 
 ### [NEXT] Make pathgen.h Portable for Embedded
 - Single pathgen.h that works on both desktop and embedded
