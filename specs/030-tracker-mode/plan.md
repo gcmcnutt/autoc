@@ -1,14 +1,14 @@
 # 030 — Implementation Plan (Tracker Mode — beacon-camera target tracking via flight playback)
 
 **Branch**: TBD (to be created when implementation begins; current scoping work happens on `029-no-future-arch`) | **Date**: 2026-05-04 (fresh rewrite per operator scoping pass) | **Spec**: [spec.md](./spec.md)
-**Input**: [`spec.md`](./spec.md) (28 FRs, 16 design notes), [`research.md`](./research.md) (this plan's research output), [BACKLOG.md "030 spin-offs"](../BACKLOG.md) (031 candidates and pure-backlog defers)
+**Input**: [`spec.md`](./spec.md) (29 FRs, 16 design notes), [`research.md`](./research.md) (this plan's research output), [BACKLOG.md "030 spin-offs"](../BACKLOG.md) (031 candidates and pure-backlog defers)
 **Status**: Plan-research phase — no implementation work has started.
 
 ## Summary
 
 030 introduces a **second autoc training mode** (sibling to pathgen mode) that trains a controller to track another aircraft via a simulated wingtip-beacon camera, using a recorded prior-run S3 dmp file as the target-trajectory source. The control NN's output remains pitch / roll / throttle; its inputs are the analytic projection of two outward-facing 270° wingtip beacons through a configurable camera model (v1: planar pinhole at 120° FOV, 30 Hz, single forward-mounted on top of wing-chord), collapsed at the perception interface to **`(x, y, CEP)`** per beacon (FR-005) — mirroring the FPGA centroid + cluster-spread output the eventual real-hardware perception pipeline produces (the 031-candidate parallel feature; see [BACKLOG.md](../BACKLOG.md)).
 
-The implementation is structured as a **smoke-test-first milestone ramp** (per spec D13 / D16). The "v1 done" floor is the four smoke-test deliverables: run M2 from an M1 file → single-path config → save results → renderer animates the M2 result. Above that floor, post-smoke-test analytics experimentation refines the tracking architecture and is the part of 030 most likely to bracket between "smoke green" and "030 declared done." Items past 030 done line move to 031 (BACKLOG roll-out already in place).
+The implementation is structured as a **smoke-test-first milestone ramp** (per spec D13 / D16). The "v1 done" floor is the four smoke-test deliverables: run M2 from an M1 file → 120-scenario slice (6 paths × 20 winds) per `autoc-tracker.ini` → save results → renderer animates the M2 result. Above that floor, post-smoke-test analytics experimentation refines the tracking architecture and is the part of 030 most likely to bracket between "smoke green" and "030 declared done." Items past 030 done line move to 031 (BACKLOG roll-out already in place).
 
 ## Technical Context
 
@@ -18,9 +18,9 @@ The implementation is structured as a **smoke-test-first milestone ramp** (per s
 **Testing**: GoogleTest contract tests for type-safe sensor interface, beacon projection determinism, FR-018 timing-loop determinism, dmp version round-trip; existing pathgen-mode test suite must continue to pass (Constitution Principle II — Build Stability)
 **Target Platform**: Linux desktop for autoc + crrcsim + renderer (training-time); xiao deploy is post-v1 and is a 031+ concern
 **Project Type**: multi-component embedded-aware C++ tree (autoc evolution engine + crrcsim FDM + renderer + xiao firmware), single repo
-**Performance Goals**: smoke-test single-path × small population → CPU-feasible in minutes-to-hours per run; full-scale multi-path × full-pop training is post-v1 and is gated by the [GPU-Native Evaluation backlog item](../BACKLOG.md) (re-flagged at v1→v2 boundary, NOT a v1 prereq per D13)
+**Performance Goals**: smoke-test slice = **6 paths × 20 winds = 120 scenarios × pop 5000 × 100 gens × 10-step variation curriculum** (per spec D13 + Session 2026-05-04 Q2) → CPU-feasible in hours per run; full-scale converged training (245-294 scenarios × 600+ gens) is post-v1 and is gated by the [GPU-Native Evaluation backlog item](../BACKLOG.md) (re-flagged at v1→v2 boundary, NOT a v1 prereq per D13)
 **Constraints**: Constitution V (versioned persistence) — first dmp schema bump lands here; Constitution III (no compatibility shims) — type-safe sensor interface is a clean cut, FR-006 names replace magic-number indexing; Constitution II (build stability) — every milestone must keep autoc+crrcsim+xiao building (the rolled-in mod_inputdev linkage fix, [BACKLOG.md "[NEXT] crrcsim mod_inputdev"](../BACKLOG.md), is M1 prerequisite work)
-**Scale/Scope**: source dmps from pastonly3 / more-rnn3-class runs (~245-294 scenarios per gen, multi-tick aircraftStateList per scenario); v1 smoke test exercises 1 scenario at small population for signal-or-not.
+**Scale/Scope**: source dmps from pastonly3 / more-rnn3-class runs (~245-294 scenarios per gen, multi-tick aircraftStateList per scenario); v1 smoke test exercises a **120-scenario slice (6 paths × 20 winds) at population 5000 × 100 gens** (per spec D13 + Session 2026-05-04 Q2) for signal-or-not. Population diversity is load-bearing; gens compress vs converged-run scale; full-dmp coverage is post-smoke.
 
 ## Constitution Check
 
@@ -32,7 +32,7 @@ Constitution version 1.1.0 (Last Amended 2026-05-04 to add Principle V).
 |---|---|---|
 | **I. Testing-First** | PASS | Each milestone (below) names contract / integration tests it lands. Existing pathgen-mode test suite must remain green at every milestone (regression invariant). |
 | **II. Build Stability** | PASS | M1 lands the mod_inputdev linkage fix as the *first* implementation work, before any new file in `src/nn/` or `src/eval/` is added — otherwise the next addition silently breaks the crrcsim build at link (the 028 telemetry incident). Every subsequent milestone passes `bash scripts/rebuild.sh` and `cd xiao && pio run -e xiaoblesense_arduinocore_mbed`. |
-| **III. No Compatibility Shims** | PASS | FR-006 type-safe sensor interface is a clean replacement for magic-number `float[]` indexing — full files-to-touch (sim + xiao + tests + scripts), no backwards-compat shim. FR-015 dmp schema bump is greenfield: pre-versioning dmps are pre-Constitution-V and treated as version-0 with documented assumption (per FR-015a). No re-export / wrapper layer. |
+| **III. No Compatibility Shims** | PASS | FR-006 type-safe sensor interface is a clean replacement for magic-number `float[]` indexing — full files-to-touch (sim + xiao + tests + scripts), no backwards-compat shim. FR-015 dmp schema bump is greenfield: historical dmps already carry version 1 via the existing `CEREAL_CLASS_VERSION(EvalResults, 1)`, so no pre-versioning tail exists (per Session 2026-05-04 Q5); M2 freeze bumps to version 2. No re-export / wrapper layer. |
 | **IV. Unified Build** | PASS | `mod_inputdev` linkage fix routes crrcsim's `mod_inputdev` to link `autoc_common` rather than cherry-picking sources — restores Principle IV's "single source of truth" property. |
 | **V. Versioned Persistence Artifacts** | PASS | First load-bearing application of the principle: tracker-mode dmp schema bump lands with FR-015a (version field embedded; readers attempt back-compat then fail loud). Establishes the pattern for future `.dmp` evolution. |
 
@@ -147,13 +147,13 @@ Each milestone has a "what works after this is green" answer (the visible checkp
 
 **Work**:
 1. crrcsim `mod_inputdev` rolled-in BACKLOG fix: replace cherry-picked `${CMAKE_SOURCE_DIR}/src/nn/evaluator.cc` etc. lines with `target_link_libraries(mod_inputdev autoc_common)`. Audit for duplicate-symbol issues. (`crrcsim/src/mod_inputdev/CMakeLists.txt:21-23`)
-2. Add the FR-015a dmp version field (single integer, embedded at a stable offset) to the existing `EvalResults` cereal schema. Pre-versioning dmps in S3 are read with documented version-0 assumption. Version increments are reserved for the M8 schema bump.
+2. Anchor the FR-015a dmp version field. The existing `CEREAL_CLASS_VERSION(EvalResults, 1)` in [`include/autoc/rpc/protocol.h`](../../include/autoc/rpc/protocol.h) means historical dmps already carry version 1 — **no "pre-versioning" tail exists in practice** (per Session 2026-05-04 Q5). Land a contract test that anchors the constant at version 1 (T005) and fails loudly on accidental drift; the explicit M2 schema bump to version 2 lands in M8.
 
 **Tests**: build-only — no functional tests. Existing pathgen-mode test suite stays green.
 
 **Visible checkpoint**: green build on a fresh checkout; one-line `git log` showing the linkage fix + version-field add.
 
-### M2 — Type-safe NN sensor interface scaffolding (FR-006 full scope)
+### M2 — Type-safe NN sensor interface + pluggable mode dispatch (FR-006 + FR-019 full scope)
 
 **What works after**: pathgen-mode runs unchanged with the new typed interface; magic-number indexing into NN inputs is gone from the entire codebase (sim + xiao + tests + analysis scripts).
 
@@ -176,16 +176,16 @@ Each milestone has a "what works after this is green" answer (the visible checkp
 
 ### M3 — Source M1 dmp loader (FR-001)
 
-**What works after**: a CLI invocation reads a real S3 dmp from a prior pastonly3 / more-rnn3 run and prints per-scenario summary stats (scenario count, tick count per scenario, joint-PRNG variation params, target-craft pose extents). Standalone, no autoc-side integration yet.
+**What works after**: a CLI invocation reads a real S3 dmp from a prior pastonly3 / more-rnn3 run **directly via the existing S3 client** (no preprocess-into-local-file step) and prints per-scenario summary stats (scenario count, tick count per scenario, joint-PRNG variation params, target-craft pose extents). Standalone, no autoc-side integration yet.
 
 **Work**:
-1. Wire `EvalResults` cereal load into autoc startup (or initially into a standalone tool, then graduate). Pattern follows `tools/nnextractor.cc:177-192`.
+1. Wire `EvalResults` cereal load into autoc startup (or initially into a standalone tool, then graduate). Pattern follows `tools/nnextractor.cc:177-192` — which already accepts an S3 key directly. **The production load path is S3-key-driven**; dmps are not copied into local file system as a precondition for tracker-mode runs. Local file paths are accepted as an offline-testing convenience but are not the canonical input form.
 2. Indexed in-memory representation: `vector<SourceScenarioTrajectory>` keyed by scenario index; each entry carries per-tick pose + the joint-PRNG variation parameters.
-3. Per FR-011 source-key-string parsing: accept `autoc-storage/<run-id>/gen<N>.dmp` form, round-tripping with xiao-log convention.
+3. Per FR-011 source-key-string parsing: accept `autoc-storage/<run-id>/gen<N>.dmp` form (this IS the S3 key — bucket `autoc-storage`, key `<run-id>/gen<N>.dmp`), round-tripping with xiao-log convention.
 
-**Tests**: integration test loading a known dmp file (small fixture committed to test data, or pulled from a known S3 prefix); contract test for the source-key-string parser.
+**Tests**: integration test loading a known fixture dmp (small file committed to `tests/fixtures/` for offline-deterministic test execution — explicitly NOT representative of the production load path, which is S3-key-driven); contract test for the source-key-string parser.
 
-**Visible checkpoint**: command-line `tools/source_dmp_inspect <path>` prints scenario count, mean-tick-count, sample target-craft pose at tick 0 and tick mid. Operator can sanity-check dmp shape before any tracker-mode run launches.
+**Visible checkpoint**: command-line `tools/source_dmp_inspect autoc-storage/<run-id>/gen<N>.dmp` (i.e., feed it the S3 key directly) prints scenario count, mean-tick-count, sample target-craft pose at tick 0 and tick mid. Operator can sanity-check dmp shape before any tracker-mode run launches — no local-cache step required.
 
 ### M4 — [DEFERRED to post-v1] Two-aircraft sim infrastructure in crrcsim
 
@@ -226,7 +226,7 @@ Per the existing `mod_robots` reference research ([reference_crrcsim_mod_robots.
 **What works after**: autoc launched with `-i autoc-tracker.ini` enters tracker mode; the FR-018 M1-timestamp-driven main loop drives one chase-craft iteration per source-data sample; pathgen mode unchanged.
 
 **Work**:
-1. New `autoc-tracker.ini` parser entries: `TrackerSourceRun`, `TrackerScenarioSubset` (single scenario for v1), `TrailDistance` (default 10ft = 3.048m), `CrashHullShape` + `CrashHullRadius` + `pCrash` (defaults from R3 decision), `ArenaRadius` + `ArenaFloorAGL`, etc.
+1. New `autoc-tracker.ini` parser entries: `TrackerSourceRun`, `TrackerPathSubset` + `TrackerWindSubset` (cross-product subsetting per FR-011 — load-bearing for v1; smoke slice = `TrackerPathSubset = 0,1,2,3,4,5` + `TrackerWindSubset = 0-19` = 120 scenarios), `TrailDistance` (default 10ft = 3.048m), `CrashHullShape` + `CrashHullRadius` + `pCrash` (defaults from R3 decision), `ArenaRadius` + `ArenaFloorAGL`, etc.
 2. Mode dispatch in autoc.cc: pathgen vs tracker by config-file content. Mutual exclusion enforced (D4).
 3. FR-018 main loop refactor — the strategy-pattern split decided in M0/R5. Worker contract unchanged; per-tick stepping logic differs.
 4. Source-dmp wired in via M3's loader at autoc startup.
@@ -252,13 +252,14 @@ Per the existing `mod_robots` reference research ([reference_crrcsim_mod_robots.
 
 ### M8 — Tracker-mode dmp output (FR-015 + FR-015a)
 
-**What works after**: tracker-mode best-of-gen produces a self-contained `.dmp` file (per FR-015's two embedded classes: per-tick beacon `(x, y, CEP)` projection state + camera pose; copied target-craft trajectory from the source). Pre-versioning pathgen dmps still readable (FR-015a back-compat).
+**What works after**: tracker-mode best-of-gen produces a self-contained `.dmp` file (per FR-015's two embedded classes: per-tick beacon `(x, y, CEP)` projection state + camera pose; copied target-craft trajectory from the source) and writes it to S3 under the **same bucket as the source (`autoc-storage`), separate run-id** (per US2 Independent Test + spec D13). Pathgen v1 dmps still readable (FR-015a back-compat).
 
 **Work**:
 1. `EvalResults` schema extension — camera view data, target trajectory copy.
-2. Version-field bump (Constitution V).
-3. Read-side adjustments: pathgen-mode renderer still loads pathgen dmps; tracker-mode renderer (M9) loads tracker dmps.
-4. Round-trip serialize/deserialize tests.
+2. Version-field bump (Constitution V) — single bump from v=1 to v=2 at this milestone-boundary freeze. **Intra-development churn during M5–M7 does NOT bump sub-versions** (per Session 2026-05-04 Q5 milestone-boundary versioning rule); the schema is in flux through M5–M7 and frozen here.
+3. Output S3 key convention: `autoc-storage/<030-run-id>/gen<N>.dmp` — same shape as source, separate run-id. The 030 run's run-id is independent from any source-run id and is generated per autoc launch.
+4. Read-side adjustments: pathgen-mode renderer still loads pathgen v1 dmps; tracker-mode renderer (M9) loads tracker v2 dmps.
+5. Round-trip serialize/deserialize tests.
 
 **Tests**: `tracker_dmp_roundtrip_tests.cc` — serialize/deserialize identity, version field handling, pre-versioning dmp falls through to documented version-0.
 
@@ -283,9 +284,9 @@ Per the existing `mod_robots` reference research ([reference_crrcsim_mod_robots.
 **What works after**: end-to-end loop closes on a real M1 source dmp + real tracker-mode autoc run + real renderer playback. Fitness curve does *something* — descends, plateaus, or fails informatively.
 
 **Work**:
-1. Pick an M1 source dmp (pastonly3 gen-N, single scenario index).
-2. Configure `autoc-tracker.ini` for that scenario, default trail / hull / quantization / arena.
-3. Launch autoc, run a small population × small generations.
+1. Pick an M1 source dmp by S3 key (e.g. `autoc-storage/pastonly3-<id>/gen391.dmp`) — no local-cache preprocess step.
+2. Configure `autoc-tracker.ini` with `TrackerSourceRun = <S3 key>`, the smoke slice (6 paths × 20 winds = 120 scenarios per Session 2026-05-04 Q2), default trail / hull / quantization / arena.
+3. Launch autoc, run **population 5000 × 100 gens × 10-step variation curriculum** (per spec D13). Output dmps land at `autoc-storage/<030-run-id>/gen<N>.dmp` (same bucket, separate run-id).
 4. Observe results in renderer.
 5. Compute per-axis aggressiveness + tracker-specific telemetry from the M2 dmp output stream.
 6. Capture findings.

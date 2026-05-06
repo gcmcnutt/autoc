@@ -30,7 +30,7 @@ Single-repo C++ tree (per plan.md Project Structure):
 **Purpose**: Prerequisite work to receive 030 changes. M0 (plan-research) already complete.
 
 - [ ] T001 Create branch `030-tracker-mode` from current `029-no-future-arch`; document branch creation in commit message referencing this plan
-- [ ] T002 [P] Pull latest source M1 dmp from S3 to local fixture path (`tests/fixtures/source_dmp_pastonly3_gen391.dmp` or similar) for use in M3 integration tests; document the source-run-id + gen used as fixture provenance
+- [ ] T002 [P] Pull latest source M1 dmp from S3 to local fixture path (`tests/fixtures/source_dmp_pastonly3_gen391.dmp` or similar) **for offline-deterministic test fixtures only** (T020 contract test consumes this) — NOT the production load path; production tracker-mode runs read the source dmp directly from S3 by key. Document the source-run-id + gen used as fixture provenance
 
 ---
 
@@ -75,15 +75,16 @@ Single-repo C++ tree (per plan.md Project Structure):
 
 **Independent Test**: Per quickstart.md — launch `build/autoc -i autoc-tracker.ini`; expect log lines showing source dmp loaded, scenario slice (6 paths × 20 winds = 120 scenarios) distributed, gen 0 evaluations executing, gen 1+ fitness statistics improving over baseline.
 
-**Maps to plan.md milestones**: M3 (source dmp loader) → M5 (projection — M4 deferred per Q4 clarification) → M6 (autoc-tracker.ini + main loop) → M7 (trail rabbit + crash hull + arena fitness).
+**Maps to plan.md milestones**: M3 (source dmp loader) → M5 (projection — M4 deferred per FR-002 v1 deferral note + plan §M4) → M6 (autoc-tracker.ini + main loop) → M7 (trail rabbit + crash hull + arena fitness).
 
 ### M3 — Source M1 dmp loader (FR-001)
 
-- [ ] T020 [P] [US2] Contract test `tests/source_dmp_loading_tests.cc` — load fixture pastonly3 dmp from T002; assert scenario count, monotonic timestamps, quat magnitude in `[0.99, 1.01]`, position bounded < 10 km; reject truncated scenarios (< `MIN_SCENARIO_TICKS = 30`); validate S3 key parser round-trip
+- [ ] T020 [P] [US2] Contract test `tests/source_dmp_loading_tests.cc` — load fixture pastonly3 dmp from T002 (offline-deterministic; the production load path is S3-key-driven via the existing `nnextractor` pattern); assert scenario count, monotonic timestamps, quat magnitude in `[0.99, 1.01]`, position bounded < 10 km; reject truncated scenarios (< `MIN_SCENARIO_TICKS = 30`); validate S3 key parser round-trip on `autoc-storage/<run-id>/gen<N>.dmp` form
 - [ ] T021 [P] [US2] Define [`include/autoc/eval/source_trajectory.h`](../../include/autoc/eval/source_trajectory.h) — `SourceTickSample` struct (simTimeMsec, position, orientation, velocity, angularRate) + `SourceScenarioTrajectory` struct (scenarioIndex, variation, samples[])
-- [ ] T022 [US2] Implement `loadSourceDmp(s3_key_or_path)` in [`src/eval/source_dmp_loader.cc`](../../src/eval/source_dmp_loader.cc) following `tools/nnextractor.cc:177-192` cereal pattern; throws on Constitution V version mismatch (loud-fail per FR-015a)
+- [ ] T022 [US2] Implement `loadSourceDmp(s3_key_or_path)` in [`src/eval/source_dmp_loader.cc`](../../src/eval/source_dmp_loader.cc) following `tools/nnextractor.cc:177-192` cereal pattern — accepts an S3 key (production path) and streams the dmp directly via the existing S3 client; local file paths accepted as offline-test convenience but not the canonical input; throws on Constitution V version mismatch (loud-fail per FR-015a)
 - [ ] T023 [P] [US2] Implement `filterByScenarioIndex()` for the path × wind subset selection per FR-011 clarification (cross-product subsetting)
-- [ ] T024 [US2] Add standalone CLI tool `tools/source_dmp_inspect.cc` that loads a source dmp and prints per-scenario summary (count, tick count, sample target pose at tick 0 and middle); operator sanity-check before any tracker-mode run
+- [ ] T023a [P] [US2] Implement `filterCrashedSourceScenarios()` per FR-013 — at source-dmp load time, filter out scenarios where the source run's aircraft crashed mid-scenario (detected via terminal-tick crash flag in source `EvalResults`). v1 default: **skip** (filter out entirely), simpler than truncate. Log the count of filtered scenarios. Wire ahead of T023's path × wind subsetting so the cross-product operates on clean scenarios only. Contract assertion: filtered scenarios are absent from the resulting `vector<SourceScenarioTrajectory>`
+- [ ] T024 [US2] Add standalone CLI tool `tools/source_dmp_inspect.cc` that loads a source dmp **directly by S3 key** (e.g. `tools/source_dmp_inspect autoc-storage/<run-id>/gen391.dmp` — no local-cache step required) and prints per-scenario summary (count, tick count, sample target pose at tick 0 and middle); local file paths accepted as offline-test convenience; operator sanity-check before any tracker-mode run
 
 ### M5 — Beacon projection module (FR-003 + FR-004 + FR-005 + FR-007 + FR-017)
 
@@ -97,18 +98,18 @@ Single-repo C++ tree (per plan.md Project Structure):
 
 ### M6 — Tracker-mode autoc.ini + main-loop branch (FR-011 + FR-018 + FR-019)
 
-- [ ] T032 [P] [US2] Contract test `tests/timing_model_tests.cc` — FR-018 determinism: same source dmp + same seed → bit-identical M2 trajectory across two invocations regardless of sim-clock speed; variable-rate source samples (synthetic 50 ms / 73 ms / 100 ms intervals) handled correctly without interpolation drift
+- [ ] T032 [P] [US2] Contract test `tests/timing_model_tests.cc` — FR-018 + FR-009 determinism: same source dmp + same seed → bit-identical M2 trajectory across two invocations regardless of sim-clock speed; variable-rate source samples (synthetic 50 ms / 73 ms / 100 ms intervals) handled correctly without interpolation drift
 - [ ] T033 [P] [US2] Define `autoc-tracker.ini` template in [`autoc-tracker.ini.template`](../../autoc-tracker.ini.template) at repo root with v1 default values per quickstart.md (source key, scenario subset = 6 paths × 20 winds, trail = 3.048 m, crash hull = 1m sphere with curriculum p_crash, arena = 80m radius / 5m floor / 100m ceiling, camera + beacon configs)
 - [ ] T034 [US2] Extend [`src/eval/config.cc`](../../src/eval/config.cc) inih-based parser to read tracker-specific sections (`[Source]`, `[TrackingFitness]`, `[CrashHull]`, `[Arena]`, `[Camera]`, `[Beacon]` per data-model.md §2); add mutual-exclusion validation (tracker-only fields rejected in pathgen mode and vice versa)
 - [ ] T035 [US2] Add mode dispatch in [`src/autoc.cc`](../../src/autoc.cc) — config-file detection determines pathgen vs tracker; instantiates the right `gather_inputs()` strategy (FR-019), the right typed enum, and the right `ScenarioStepper` strategy (R5)
 - [ ] T036 [US2] Refactor existing pathgen per-tick loop in [`src/autoc.cc`](../../src/autoc.cc) into `PathgenStepper : public ScenarioStepper` (no behavior change; existing tests stay green — regression-tight)
 - [ ] T037 [US2] Implement `TrackerStepper : public ScenarioStepper` in [`src/eval/tracker_stepper.cc`](../../src/eval/tracker_stepper.cc) — drives per-tick loop off M1 source timestamps per FR-018; advances target state from `SourceScenarioTrajectory.sample(t_i)`; calls `projectBeacon()` for each (camera, beacon) pair; populates NN inputs via `gather_tracker_inputs()`; runs NN forward pass; advances chase-craft physics until `t_{i+1}`
-- [ ] T038 [US2] Wire source dmp loading at autoc startup (T022) to populate `vector<SourceScenarioTrajectory>` available to the worker contract; per-scenario distribution to workers analogous to pathgen
+- [ ] T038 [US2] Wire source dmp loading at autoc startup (T022) to populate `vector<SourceScenarioTrajectory>` available to the worker contract; per-scenario distribution to workers analogous to pathgen. Preserves FR-010 joint-PRNG variation model — source-scenario-index becomes one of the joint axes alongside wind/entry/craft (which are inherited from the source recording per FR-001)
 
 ### M7 — Tracker-mode fitness (FR-008 + FR-008a + FR-008b + FR-016)
 
 - [ ] T039 [P] [US2] Contract test `tests/trail_rabbit_tests.cc` — FR-008 math identity (`rabbit = target_pos - velocity_unit × 3.048`); FR-008a degenerate-velocity fallback per R10 (hard-switch at 2 m/s with hysteresis ±0.5; v1 source data unconditional velocity-trail asserted)
-- [ ] T040 [P] [US2] Contract test `tests/crash_hull_tests.cc` — FR-008b sphere-intersection identity at boundary tangent / inside / outside; `p_crash` curriculum (gen 0 → 0.0 firing rate; gen 200 → 0.30 firing rate within deterministic seed); mode-gated (pathgen scenarios never invoke hull check)
+- [ ] T040 [P] [US2] Contract test `tests/crash_hull_tests.cc` — FR-008b sphere-intersection identity at boundary tangent / inside / outside; `p_crash` curriculum per the schedule resolved in [research.md R3](./research.md#r3--p_crash-v1-default) (curriculum-anneal 0.0 → 0.30 by gen 200 within deterministic seed); mode-gated (pathgen scenarios never invoke hull check)
 - [ ] T041 [P] [US2] Contract test `tests/arena_tests.cc` — FR-016 boundary checks: chase outside radius → egress with `RADIUS` flag; below floor → `FLOOR`; above ceiling → `CEILING`; scenario-terminating per Q3 clarification; `HOME_X/Y/Z/DIST` typed input population correctness
 - [ ] T042 [P] [US2] Define + implement [`include/autoc/eval/trail_rabbit.h`](../../include/autoc/eval/trail_rabbit.h) + [`src/eval/trail_rabbit.cc`](../../src/eval/trail_rabbit.cc) — `computeTrailRabbit()` per data-model.md §6
 - [ ] T043 [P] [US2] Define + implement [`include/autoc/eval/crash_hull.h`](../../include/autoc/eval/crash_hull.h) + [`src/eval/crash_hull.cc`](../../src/eval/crash_hull.cc) — `isInsideHull()` + `didCrashFire()` with curriculum-anneal `p_crash` per R3
@@ -133,13 +134,13 @@ Single-repo C++ tree (per plan.md Project Structure):
 - [ ] T047 [P] [US5] Contract test `tests/tracker_dmp_roundtrip_tests.cc` — `EvalResults` v2 schema serialize/deserialize identity; v1 (pathgen) dmp loads with `cameraViewList` + `targetTrajectoryList` empty; future-version dmp throws cleanly; M2-dmp self-containedness (renderer-mock loads only the M2 dmp, no M1 source needed)
 - [ ] T048 [US5] Extend `EvalResults` schema in [`include/autoc/rpc/protocol.h`](../../include/autoc/rpc/protocol.h) per data-model.md §8 — add `cameraViewList[scenario][tick]` + `targetTrajectoryList[scenario][tick]` + `arenaEgressCount[scenario]` + `hullStrikeCount[scenario]`; bump `CEREAL_CLASS_VERSION(EvalResults, 2)` (FR-015a M1 → M2 boundary per Q5 milestone-versioning principle)
 - [ ] T049 [US5] Define `CameraViewSample` and `CopiedTargetSample` structs in [`include/autoc/rpc/protocol.h`](../../include/autoc/rpc/protocol.h) with cereal `serialize()` methods
-- [ ] T050 [US5] Wire M2 dmp output: `TrackerStepper` (T037) records per-tick `CameraViewSample` (camera pose + 2 `BeaconObservation`) and per-tick `CopiedTargetSample` (copied from `SourceScenarioTrajectory.sample(t_i)`, including computed `trail_rabbit_position` from T042 and `inside_crash_hull` flag from T043) into the eval results
+- [ ] T050 [US5] Wire M2 dmp output: `TrackerStepper` (T037) records per-tick `CameraViewSample` (camera pose + 2 `BeaconObservation`) and per-tick `CopiedTargetSample` (copied from `SourceScenarioTrajectory.sample(t_i)`, including computed `trail_rabbit_position` from T042 and `inside_crash_hull` flag from T043) into the eval results. Output dmps written to S3 at `autoc-storage/<030-run-id>/gen<N>.dmp` — same bucket as source, separate run-id (per US2 Independent Test + spec D13)
 
 ### M9 — Renderer tracker-mode playback (FR-012 + FR-012a)
 
 - [ ] T051 [P] [US5] Smoke test `tests/renderer_tracker_smoke_tests.cc` — renderer loads a fixture tracker-mode dmp; assertions on scene actor count (chase + target = 2), HUD overlay slot existence; existing pathgen-renderer tests stay green (regression invariant)
 - [ ] T052 [US5] Add tracker-mode dmp loader path in [`tools/renderer.cc`](../../tools/renderer.cc) — version-field dispatch (v1 → existing pathgen renderer path; v2 → new tracker renderer path per Q5/FR-015a)
-- [ ] T053 [US5] Implement 3rd-person view in [`tools/renderer.cc`](../../tools/renderer.cc) — chase craft (existing) + target craft (NEW VTK actor reading `targetTrajectoryList` per FR-015 self-containedness — NO crrcsim mod_robots dependency per Q4 deferral); beacons rendered on target wingtips at hb1 body-frame positions; FOV cone drawn from chase camera mount
+- [ ] T053 [US5] Implement 3rd-person view in [`tools/renderer.cc`](../../tools/renderer.cc) — chase craft (existing) + target craft (NEW VTK actor reading `targetTrajectoryList` per FR-015 self-containedness — NO crrcsim mod_robots dependency per FR-002 v1 deferral note + plan §M4); beacons rendered on target wingtips at hb1 body-frame positions; FOV cone drawn from chase camera mount
 - [ ] T054 [US5] Implement 1st-person camera-POV view in [`tools/renderer.cc`](../../tools/renderer.cc) — render scene through chase camera using recorded camera pose + FOV from M2 dmp; beacons appear as colored points at projected `(screen_x, screen_y)` from `cameraViewList`
 - [ ] T055 [US5] Implement camera-POV mini-panel as HUD overlay in [`tools/renderer.cc`](../../tools/renderer.cc) — small 2D rectangle near throttle/control-state; renders current-tick beacon positions; sentinel-CEP visually distinguishable (dimmed dot or absent); follows existing HUD-visibility logic (D5 — NOT always-on, slots into existing toggle system)
 - [ ] T056 [US5] Implement CEP error-bar visualization in 1st-person + mini-panel — render CEP as ellipse spread around each projected beacon centroid (D15 v1 commit — committed for v1 because it's load-bearing for smoke-test signal-or-not assessment)
@@ -164,7 +165,7 @@ Single-repo C++ tree (per plan.md Project Structure):
 - [ ] T060 [US4] Execute smoke run: `stdbuf -oL -eL build/autoc -i autoc-tracker.ini 2>&1 | tee logs/autoc-030-smoke-001.log`
 - [ ] T061 [US4] Per quickstart.md step 4 — pull a recent gen's dmp from S3, sanity-check via per-tick dmp extractor (depends on T064 from M11a but can be cursory until then)
 - [ ] T062 [US4] Per quickstart.md step 5 — load M2 dmp into renderer, verify all four D13 deliverables visually green (autoc loaded M1 ✓; single-slice scenario per ini ✓; results saved ✓; renderer animated M2 ✓)
-- [ ] T063 [US4] Capture findings per quickstart.md step 6 — write `flight-results/030-smoke-<date>/SMOKE_REPORT.md` with: source dmp ID + scenario slice + new-run-id; fitness curve shape (descending / plateau / pathological); renderer screenshots; sentinel events (arena egresses / hull strikes / NaN propagations / build issues)
+- [ ] T063 [US4] Capture findings per quickstart.md step 6 — write `eval-results/030-smoke-<date>/SMOKE_REPORT.md` (sim-only smoke; `flight-results/` is reserved for real-flight artifacts) with: source dmp S3 key + scenario slice + 030-run-id; fitness curve shape (descending / plateau / pathological); renderer screenshots; sentinel events (arena egresses / hull strikes / NaN propagations / build issues)
 
 **Checkpoint**: SMOKE TEST GREEN means 030 v1 floor is hit. Decision per D13: continue to Phase 6 analytics (the "030 done" ramp) OR debug failing milestone.
 
@@ -188,7 +189,7 @@ Single-repo C++ tree (per plan.md Project Structure):
 
 ### M11c — Tracker-specific analytics (the six instrumentation items from R11)
 
-- [ ] T068 [P] Implement per-tick output saturation + per-axis aggressiveness analytics in `specs/030-tracker-mode/per_axis_tracker_analytics.py` — reads M2 dmp via T064, emits per-scenario output saturation rates and per-axis dCtrl + ⟨|out|⟩ statistics
+- [ ] T068 [P] Implement per-tick output saturation + per-axis aggressiveness analytics (FR-014) in `specs/030-tracker-mode/per_axis_tracker_analytics.py` — reads M2 dmp via T064, emits per-scenario output saturation rates and per-axis dCtrl + ⟨|out|⟩ statistics; pathgen-mode tooling applies unchanged per FR-014
 - [ ] T069 [P] Implement CEP-sentinel-rate vs output-magnitude correlation analytics (the load-bearing R12 dead-reckoning diagnostic) in `specs/030-tracker-mode/cep_sentinel_analytics.py` — slices each scenario into visible / sentinel-burst / post-sentinel-recovery segments; emits tracking-error trajectory comparison
 - [ ] T070 [P] Implement chase-quat-extreme-event flag + chase-rotation-vs-beacon-motion correlation in `specs/030-tracker-mode/chase_attitude_analytics.py` — detects if controller mis-attributes chase rotation to target motion
 - [ ] T071 [P] Implement inter-beacon angle change rate histogram in `specs/030-tracker-mode/aliasing_analytics.py` — measures Trouble 8 roll-rate aliasing per R10 trouble list
