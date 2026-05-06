@@ -29,8 +29,8 @@ Single-repo C++ tree (per plan.md Project Structure):
 
 **Purpose**: Prerequisite work to receive 030 changes. M0 (plan-research) already complete.
 
-- [ ] T001 Create branch `030-tracker-mode` from current `029-no-future-arch`; document branch creation in commit message referencing this plan
-- [ ] T002 [P] Pull latest source M1 dmp from S3 to local fixture path (`tests/fixtures/source_dmp_pastonly3_gen391.dmp` or similar) **for offline-deterministic test fixtures only** (T020 contract test consumes this) — NOT the production load path; production tracker-mode runs read the source dmp directly from S3 by key. Document the source-run-id + gen used as fixture provenance
+- [X] T001 Create branch `030-tracker-mode` from current `029-no-future-arch`; document branch creation in commit message referencing this plan _(verified — branch rooted at origin/main `0b12070` = Merge PR #3 from 029-no-future-arch; descends from 029 work)_
+- [X] T002 [P] ~~Pull latest source M1 dmp from S3 to local fixture path~~ — **dropped 2026-05-06**. Approach revised: tests are hermetic via synthetic in-code fixtures (T020 generates an `EvalResults` programmatically with cereal, no aws-CLI dependency). Real-dmp testing happens in T020a integration test against the embedded S3 client (`ConfigManager::getS3Client()` per `src/util/config.cc:133`), gated on credential availability. Reference run for any post-implementation operator smoke: `autoc-9223370259105171692-2026-05-02T19:20:04.115Z/gen9200.dmp` (pastonly3 gen 800 = "latest by search-order default")
 
 ---
 
@@ -42,10 +42,10 @@ Single-repo C++ tree (per plan.md Project Structure):
 
 ### M1 — Build precondition + dmp version-field groundwork
 
-- [ ] T003 Replace cherry-picked source compilation in [`crrcsim/src/mod_inputdev/CMakeLists.txt:21-23`](../../crrcsim/src/mod_inputdev/CMakeLists.txt) with `target_link_libraries(mod_inputdev autoc_common)`; remove the three cherry-picked .cc lines; verify `bash scripts/rebuild.sh` clean
-- [ ] T004 Audit any duplicate-symbol issues exposed by T003's autoc_common link; reconcile by moving offending definitions out of headers if necessary
-- [ ] T005 [P] Confirm `CEREAL_CLASS_VERSION(EvalResults, 1)` already in [`include/autoc/rpc/protocol.h`](../../include/autoc/rpc/protocol.h) (it is per R8 finding); add a contract test `tests/cereal_version_anchor_tests.cc` that fails loudly if the version constant changes without an explicit task to bump it (catches accidental version drift)
-- [ ] T006 Verify `cd xiao && pio run -e xiaoblesense_arduinocore_mbed` clean after T003 to ensure xiao build is unaffected
+- [X] T003 Replace cherry-picked source compilation in [`crrcsim/src/mod_inputdev/CMakeLists.txt:21-23`](../../crrcsim/src/mod_inputdev/CMakeLists.txt) with `target_link_libraries(mod_inputdev autoc_common)`; remove the three cherry-picked .cc lines; verify `bash scripts/rebuild.sh` clean _(edit applied 2026-05-06; build verification pending operator run)_
+- [X] T004 Audit any duplicate-symbol issues exposed by T003's autoc_common link; reconcile by moving offending definitions out of headers if necessary _(2026-05-06: clean build, no duplicate-symbol or undefined-reference errors; static-archive linker stops transitive .o pull at evaluator/serialization/sensor_math + their direct deps, so AWS deps from autoc_common's config.cc never reach crrcsim)_
+- [X] T005 [P] Confirm `CEREAL_CLASS_VERSION(EvalResults, 1)` already in [`include/autoc/rpc/protocol.h`](../../include/autoc/rpc/protocol.h) (it is per R8 finding); add a contract test `tests/cereal_version_anchor_tests.cc` that fails loudly if the version constant changes without an explicit task to bump it (catches accidental version drift) _(2026-05-06: tests/cereal_version_anchor_tests.cc added; anchors EvalResults / ScenarioMetadata / EvalData all at version 1; wired into CMakeLists.txt + run_autoc_tests)_
+- [X] T006 Verify `cd xiao && pio run -e xiaoblesense_arduinocore_mbed` clean after T003 to ensure xiao build is unaffected _(2026-05-06: SUCCESS, 44.2% flash; only pre-existing third-party warnings)_
 
 ### M2 — Type-safe NN sensor interface (FR-006, FR-019 scaffolding)
 
@@ -79,7 +79,8 @@ Single-repo C++ tree (per plan.md Project Structure):
 
 ### M3 — Source M1 dmp loader (FR-001)
 
-- [ ] T020 [P] [US2] Contract test `tests/source_dmp_loading_tests.cc` — load fixture pastonly3 dmp from T002 (offline-deterministic; the production load path is S3-key-driven via the existing `nnextractor` pattern); assert scenario count, monotonic timestamps, quat magnitude in `[0.99, 1.01]`, position bounded < 10 km; reject truncated scenarios (< `MIN_SCENARIO_TICKS = 30`); validate S3 key parser round-trip on `autoc-storage/<run-id>/gen<N>.dmp` form
+- [ ] T020 [P] [US2] Contract test `tests/source_dmp_loading_tests.cc` — **hermetic via synthetic fixture**: in-test, build an `EvalResults` programmatically with 2-3 scenarios × ~10 ticks × known quat/pos values, serialize via cereal to a tmp path, then load it back through `loadSourceDmp(tmp_path)`. Assert exact-match against the synthetic content; assert scenario count, monotonic timestamps, quat magnitude in `[0.99, 1.01]`, position bounded < 10 km; reject truncated scenarios (< `MIN_SCENARIO_TICKS = 30`); validate S3 key parser round-trip on `autoc-storage/<run-id>/gen<N>.dmp` form. No aws-CLI / no S3 / no committed binary fixture
+- [ ] T020a [US2] Integration test `tests/source_dmp_s3_integration_tests.cc` — gated on env var `AUTOC_S3_TESTS=1`; loads a real dmp by S3 key via the embedded `ConfigManager::getS3Client()` (per `src/util/config.cc:133`) following the `tools/nnextractor.cc:98-166` pattern. Skips silently when env var unset. Reference S3 key: `autoc-9223370259105171692-2026-05-02T19:20:04.115Z/gen9200.dmp`. This test exercises the production load path end-to-end
 - [ ] T021 [P] [US2] Define [`include/autoc/eval/source_trajectory.h`](../../include/autoc/eval/source_trajectory.h) — `SourceTickSample` struct (simTimeMsec, position, orientation, velocity, angularRate) + `SourceScenarioTrajectory` struct (scenarioIndex, variation, samples[])
 - [ ] T022 [US2] Implement `loadSourceDmp(s3_key_or_path)` in [`src/eval/source_dmp_loader.cc`](../../src/eval/source_dmp_loader.cc) following `tools/nnextractor.cc:177-192` cereal pattern — accepts an S3 key (production path) and streams the dmp directly via the existing S3 client; local file paths accepted as offline-test convenience but not the canonical input; throws on Constitution V version mismatch (loud-fail per FR-015a)
 - [ ] T023 [P] [US2] Implement `filterByScenarioIndex()` for the path × wind subset selection per FR-011 clarification (cross-product subsetting)
