@@ -54,6 +54,12 @@ constexpr int NN_INPUT_COUNT = sizeof(NNInputs) / sizeof(float);
 struct SensorInputMeta {
     const char* name;          // enum name as string (e.g. "TARGET_X_TM5")
     const char* display_name;  // data.dat header column label (e.g. "tgX-5")
+    int header_width;          // data.dat column width incl. leading separator
+                               // space (matches the corresponding `% N.Mf`
+                               // format spec in src/autoc.cc per-tick line:
+                               // 7 = " % 6.Xf", 8 = " % 7.Xf"). Right-aligned
+                               // header text uses this; static text and format
+                               // string must remain mutually consistent.
 };
 
 // ----------------------------------------------------------------------------
@@ -72,18 +78,18 @@ enum class PathgenInput : uint16_t {
 };
 
 constexpr SensorInputMeta kPathgenInputMeta[] = {
-    {"TARGET_X_TM5", "tgX-5"}, {"TARGET_X_TM4", "tgX-4"}, {"TARGET_X_TM3", "tgX-3"},
-    {"TARGET_X_TM2", "tgX-2"}, {"TARGET_X_TM1", "tgX-1"}, {"TARGET_X_NOW", "tgX0"},
-    {"TARGET_Y_TM5", "tgY-5"}, {"TARGET_Y_TM4", "tgY-4"}, {"TARGET_Y_TM3", "tgY-3"},
-    {"TARGET_Y_TM2", "tgY-2"}, {"TARGET_Y_TM1", "tgY-1"}, {"TARGET_Y_NOW", "tgY0"},
-    {"TARGET_Z_TM5", "tgZ-5"}, {"TARGET_Z_TM4", "tgZ-4"}, {"TARGET_Z_TM3", "tgZ-3"},
-    {"TARGET_Z_TM2", "tgZ-2"}, {"TARGET_Z_TM1", "tgZ-1"}, {"TARGET_Z_NOW", "tgZ0"},
-    {"DIST_TM5",     "ds-5"},  {"DIST_TM4",     "ds-4"},  {"DIST_TM3",     "ds-3"},
-    {"DIST_TM2",     "ds-2"},  {"DIST_TM1",     "ds-1"},  {"DIST_NOW",     "ds0"},
-    {"CLOSING_RATE", "dd/dt"},
-    {"QUAT_W", "qw"}, {"QUAT_X", "qx"}, {"QUAT_Y", "qy"}, {"QUAT_Z", "qz"},
-    {"AIRSPEED", "vel"},
-    {"GYRO_P", "gyrP"}, {"GYRO_Q", "gyrQ"}, {"GYRO_R", "gyrR"},
+    {"TARGET_X_TM5", "tgX-5", 7}, {"TARGET_X_TM4", "tgX-4", 7}, {"TARGET_X_TM3", "tgX-3", 7},
+    {"TARGET_X_TM2", "tgX-2", 7}, {"TARGET_X_TM1", "tgX-1", 7}, {"TARGET_X_NOW", "tgX0",  7},
+    {"TARGET_Y_TM5", "tgY-5", 7}, {"TARGET_Y_TM4", "tgY-4", 7}, {"TARGET_Y_TM3", "tgY-3", 7},
+    {"TARGET_Y_TM2", "tgY-2", 7}, {"TARGET_Y_TM1", "tgY-1", 7}, {"TARGET_Y_NOW", "tgY0",  7},
+    {"TARGET_Z_TM5", "tgZ-5", 7}, {"TARGET_Z_TM4", "tgZ-4", 7}, {"TARGET_Z_TM3", "tgZ-3", 7},
+    {"TARGET_Z_TM2", "tgZ-2", 7}, {"TARGET_Z_TM1", "tgZ-1", 7}, {"TARGET_Z_NOW", "tgZ0",  7},
+    {"DIST_TM5",     "ds-5",  7}, {"DIST_TM4",     "ds-4",  7}, {"DIST_TM3",     "ds-3",  7},
+    {"DIST_TM2",     "ds-2",  7}, {"DIST_TM1",     "ds-1",  7}, {"DIST_NOW",     "ds0",   7},
+    {"CLOSING_RATE", "dd/dt", 7},
+    {"QUAT_W", "qw", 8}, {"QUAT_X", "qx", 8}, {"QUAT_Y", "qy", 8}, {"QUAT_Z", "qz", 8},
+    {"AIRSPEED", "vel", 8},
+    {"GYRO_P", "gyrP", 7}, {"GYRO_Q", "gyrQ", 7}, {"GYRO_R", "gyrR", 7},
 };
 
 static_assert(static_cast<size_t>(PathgenInput::COUNT) ==
@@ -114,23 +120,25 @@ enum class TrackerInput : uint16_t {
     COUNT
 };
 
+// Tracker meta header_widths are placeholders (7 each) — actual data.dat
+// tracker-mode column widths land in M5 alongside the projection module.
 constexpr SensorInputMeta kTrackerInputMeta[] = {
-    {"BEACON_L_X_TM5", "blX-5"},   {"BEACON_L_X_TM4", "blX-4"},   {"BEACON_L_X_TM3", "blX-3"},
-    {"BEACON_L_X_TM2", "blX-2"},   {"BEACON_L_X_TM1", "blX-1"},   {"BEACON_L_X_NOW", "blX0"},
-    {"BEACON_L_Y_TM5", "blY-5"},   {"BEACON_L_Y_TM4", "blY-4"},   {"BEACON_L_Y_TM3", "blY-3"},
-    {"BEACON_L_Y_TM2", "blY-2"},   {"BEACON_L_Y_TM1", "blY-1"},   {"BEACON_L_Y_NOW", "blY0"},
-    {"BEACON_L_CEP_TM5", "blC-5"}, {"BEACON_L_CEP_TM4", "blC-4"}, {"BEACON_L_CEP_TM3", "blC-3"},
-    {"BEACON_L_CEP_TM2", "blC-2"}, {"BEACON_L_CEP_TM1", "blC-1"}, {"BEACON_L_CEP_NOW", "blC0"},
-    {"BEACON_R_X_TM5", "brX-5"},   {"BEACON_R_X_TM4", "brX-4"},   {"BEACON_R_X_TM3", "brX-3"},
-    {"BEACON_R_X_TM2", "brX-2"},   {"BEACON_R_X_TM1", "brX-1"},   {"BEACON_R_X_NOW", "brX0"},
-    {"BEACON_R_Y_TM5", "brY-5"},   {"BEACON_R_Y_TM4", "brY-4"},   {"BEACON_R_Y_TM3", "brY-3"},
-    {"BEACON_R_Y_TM2", "brY-2"},   {"BEACON_R_Y_TM1", "brY-1"},   {"BEACON_R_Y_NOW", "brY0"},
-    {"BEACON_R_CEP_TM5", "brC-5"}, {"BEACON_R_CEP_TM4", "brC-4"}, {"BEACON_R_CEP_TM3", "brC-3"},
-    {"BEACON_R_CEP_TM2", "brC-2"}, {"BEACON_R_CEP_TM1", "brC-1"}, {"BEACON_R_CEP_NOW", "brC0"},
-    {"QUAT_W", "qw"}, {"QUAT_X", "qx"}, {"QUAT_Y", "qy"}, {"QUAT_Z", "qz"},
-    {"AIRSPEED", "vel"},
-    {"GYRO_P", "gyrP"}, {"GYRO_Q", "gyrQ"}, {"GYRO_R", "gyrR"},
-    {"HOME_X", "homX"}, {"HOME_Y", "homY"}, {"HOME_Z", "homZ"}, {"HOME_DIST", "homD"},
+    {"BEACON_L_X_TM5", "blX-5", 7},   {"BEACON_L_X_TM4", "blX-4", 7},   {"BEACON_L_X_TM3", "blX-3", 7},
+    {"BEACON_L_X_TM2", "blX-2", 7},   {"BEACON_L_X_TM1", "blX-1", 7},   {"BEACON_L_X_NOW", "blX0",  7},
+    {"BEACON_L_Y_TM5", "blY-5", 7},   {"BEACON_L_Y_TM4", "blY-4", 7},   {"BEACON_L_Y_TM3", "blY-3", 7},
+    {"BEACON_L_Y_TM2", "blY-2", 7},   {"BEACON_L_Y_TM1", "blY-1", 7},   {"BEACON_L_Y_NOW", "blY0",  7},
+    {"BEACON_L_CEP_TM5", "blC-5", 7}, {"BEACON_L_CEP_TM4", "blC-4", 7}, {"BEACON_L_CEP_TM3", "blC-3", 7},
+    {"BEACON_L_CEP_TM2", "blC-2", 7}, {"BEACON_L_CEP_TM1", "blC-1", 7}, {"BEACON_L_CEP_NOW", "blC0",  7},
+    {"BEACON_R_X_TM5", "brX-5", 7},   {"BEACON_R_X_TM4", "brX-4", 7},   {"BEACON_R_X_TM3", "brX-3", 7},
+    {"BEACON_R_X_TM2", "brX-2", 7},   {"BEACON_R_X_TM1", "brX-1", 7},   {"BEACON_R_X_NOW", "brX0",  7},
+    {"BEACON_R_Y_TM5", "brY-5", 7},   {"BEACON_R_Y_TM4", "brY-4", 7},   {"BEACON_R_Y_TM3", "brY-3", 7},
+    {"BEACON_R_Y_TM2", "brY-2", 7},   {"BEACON_R_Y_TM1", "brY-1", 7},   {"BEACON_R_Y_NOW", "brY0",  7},
+    {"BEACON_R_CEP_TM5", "brC-5", 7}, {"BEACON_R_CEP_TM4", "brC-4", 7}, {"BEACON_R_CEP_TM3", "brC-3", 7},
+    {"BEACON_R_CEP_TM2", "brC-2", 7}, {"BEACON_R_CEP_TM1", "brC-1", 7}, {"BEACON_R_CEP_NOW", "brC0",  7},
+    {"QUAT_W", "qw", 8}, {"QUAT_X", "qx", 8}, {"QUAT_Y", "qy", 8}, {"QUAT_Z", "qz", 8},
+    {"AIRSPEED", "vel", 8},
+    {"GYRO_P", "gyrP", 7}, {"GYRO_Q", "gyrQ", 7}, {"GYRO_R", "gyrR", 7},
+    {"HOME_X", "homX", 7}, {"HOME_Y", "homY", 7}, {"HOME_Z", "homZ", 7}, {"HOME_DIST", "homD", 7},
 };
 
 static_assert(static_cast<size_t>(TrackerInput::COUNT) ==

@@ -641,15 +641,17 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       gp_scalar dhome = (home - aircraftPosition).norm();
 
       if (printHeader) {
-        fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx"
-             << "  tgX-5  tgX-4  tgX-3  tgX-2  tgX-1   tgX0"
-             << "  tgY-5  tgY-4  tgY-3  tgY-2  tgY-1   tgY0"
-             << "  tgZ-5  tgZ-4  tgZ-3  tgZ-2  tgZ-1   tgZ0"
-             << "   ds-5   ds-4   ds-3   ds-2   ds-1    ds0"
-             << "  dd/dt"
-             << "      qw      qx      qy      qz"
-             << "     vel   gyrP   gyrQ   gyrR"
-             << "   outPt   outRl   outTh"
+        fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx";
+        // 030 M2b.2: NN input-column header walks kPathgenInputMeta (FR-006
+        // typed sensor interface) — the meta is the source of truth for
+        // both column label and width. Output is byte-identical to the
+        // prior literal strings; the regression invariant is byte-equality
+        // of data.dat under rebuild-perf.sh on the same seed.
+        for (size_t i = 0; i < sizeof(kPathgenInputMeta) / sizeof(SensorInputMeta); ++i) {
+            fout << std::setw(kPathgenInputMeta[i].header_width)
+                 << kPathgenInputMeta[i].display_name;
+        }
+        fout << "   outPt   outRl   outTh"
              << "    pathX    pathY    pathZ"
              << "        X        Y        Z"
              << "    vxBdy    vyBdy    vzBdy"

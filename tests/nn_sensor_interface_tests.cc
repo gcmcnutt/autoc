@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 #include <cstring>
+#include <iomanip>
+#include <sstream>
 
 #include "autoc/nn/nn_inputs.h"
 
@@ -109,4 +111,43 @@ TEST(NNSensorInterface, PathgenDisplayNamesMatchExistingHeader) {
     EXPECT_STREQ(kPathgenInputMeta[static_cast<int>(PathgenInput::AIRSPEED)].display_name, "vel");
     EXPECT_STREQ(kPathgenInputMeta[static_cast<int>(PathgenInput::GYRO_P)].display_name, "gyrP");
     EXPECT_STREQ(kPathgenInputMeta[static_cast<int>(PathgenInput::GYRO_R)].display_name, "gyrR");
+}
+
+TEST(NNSensorInterface, PathgenHeaderWidthsMatchFormatString) {
+    // header_width values must match the corresponding format spec in
+    // src/autoc.cc per-tick line emitter so meta-walk header lines up
+    // with %N.Mf data columns. Pathgen layout per format string at
+    // src/autoc.cc:677-683:
+    //   target_x/y/z[6]: " % 6.3f" → 7-wide
+    //   dist[6]:         " % 6.1f" → 7-wide
+    //   closing_rate:    " % 6.1f" → 7-wide
+    //   quat[4]:         " % 7.4f" → 8-wide
+    //   airspeed:        " % 7.4f" → 8-wide
+    //   gyro_p/q/r:      " % 6.3f" → 7-wide
+    EXPECT_EQ(kPathgenInputMeta[static_cast<int>(PathgenInput::TARGET_X_TM5)].header_width, 7);
+    EXPECT_EQ(kPathgenInputMeta[static_cast<int>(PathgenInput::DIST_NOW)].header_width, 7);
+    EXPECT_EQ(kPathgenInputMeta[static_cast<int>(PathgenInput::CLOSING_RATE)].header_width, 7);
+    EXPECT_EQ(kPathgenInputMeta[static_cast<int>(PathgenInput::QUAT_W)].header_width, 8);
+    EXPECT_EQ(kPathgenInputMeta[static_cast<int>(PathgenInput::AIRSPEED)].header_width, 8);
+    EXPECT_EQ(kPathgenInputMeta[static_cast<int>(PathgenInput::GYRO_P)].header_width, 7);
+}
+
+TEST(NNSensorInterface, PathgenMetaWalkProducesExistingHeaderText) {
+    // Byte-identity gate: meta-walk concat must equal the literal header
+    // strings the pre-M2b autoc.cc emitted. Future drift in either the
+    // meta array OR the autoc.cc emitter is caught here.
+    std::ostringstream walk;
+    for (size_t i = 0; i < sizeof(kPathgenInputMeta) / sizeof(SensorInputMeta); ++i) {
+        walk << std::setw(kPathgenInputMeta[i].header_width)
+             << kPathgenInputMeta[i].display_name;
+    }
+    const std::string expected =
+        "  tgX-5  tgX-4  tgX-3  tgX-2  tgX-1   tgX0"
+        "  tgY-5  tgY-4  tgY-3  tgY-2  tgY-1   tgY0"
+        "  tgZ-5  tgZ-4  tgZ-3  tgZ-2  tgZ-1   tgZ0"
+        "   ds-5   ds-4   ds-3   ds-2   ds-1    ds0"
+        "  dd/dt"
+        "      qw      qx      qy      qz"
+        "     vel   gyrP   gyrQ   gyrR";
+    EXPECT_EQ(walk.str(), expected);
 }
