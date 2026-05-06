@@ -93,6 +93,7 @@ add_library(autoc_common STATIC
     src/nn/serialization.cc
     src/nn/population.cc
     src/nn/telemetry.cc
+    src/nn/mode.cc
 )
 target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen)
 

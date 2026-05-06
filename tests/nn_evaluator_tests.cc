@@ -380,4 +380,4 @@ TEST(NNInputLayout, InputCountMatchesTopology) {
     EXPECT_EQ(NN_INPUT_COUNT, 33);
 }
 
-// Note: Full nn_gather_inputs test requires AircraftState + PathProvider.
+// Note: Full gather_pathgen_inputs test requires AircraftState + PathProvider.

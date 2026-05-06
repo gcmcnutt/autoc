@@ -90,9 +90,13 @@ gp_scalar fast_tanh(gp_scalar x);
 // Xavier/Glorot weight initialization
 void nn_xavier_init(NNGenome& genome);
 
-// Gather NN_INPUT_COUNT sensor inputs from aircraft state (raw, no normalization)
-void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
-                      NNInputs& inputs);
+// Gather pathgen-mode NN sensor inputs (PathgenInput::COUNT = 33 floats) from
+// aircraft state (raw, no normalization). Renamed from nn_gather_inputs in
+// 030 M2b — the typed function name is the FR-006 + FR-019 pluggable-mode
+// dispatch contract (see autoc/nn/mode.h kPathgenMode strategy bundle).
+// Body unchanged from the pre-rename nn_gather_inputs (FP-bit-exact).
+void gather_pathgen_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
+                           NNInputs& inputs);
 
 #include "autoc/eval/backend.h"
 

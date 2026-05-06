@@ -308,9 +308,9 @@ void nn_xavier_init(NNGenome& genome) {
 // [5, 4, 3, 2, 1, 0] = [-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now]
 static const int HIST_PAST[] = {5, 4, 3, 2, 1, 0};
 
-void nn_gather_inputs([[maybe_unused]] PathProvider& pathProvider,
-                      AircraftState& aircraftState,
-                      NNInputs& inputs) {
+void gather_pathgen_inputs([[maybe_unused]] PathProvider& pathProvider,
+                           AircraftState& aircraftState,
+                           NNInputs& inputs) {
     // target_x/y/z[0-5]: past history (direction cosines from recorded history)
     for (int i = 0; i < 6; i++) {
         gp_vec3 dir = aircraftState.getHistoricalTargetDir(HIST_PAST[i]);
@@ -391,7 +391,7 @@ long long NNControllerBackend::telemetrySampleCount() const {
 
 void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& pathProvider) {
     NNInputs inputs = {};
-    nn_gather_inputs(pathProvider, aircraftState, inputs);
+    gather_pathgen_inputs(pathProvider, aircraftState, inputs);
 
     float outputs[NN_OUTPUT_COUNT];
     if (hidden_state_.empty()) {

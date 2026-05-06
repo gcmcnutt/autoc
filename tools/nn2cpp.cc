@@ -120,7 +120,7 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     // Main function
     code << "gp_scalar " << functionName << "(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {\n";
     code << "    NNInputs inputs = {};\n";
-    code << "    nn_gather_inputs(pathProvider, aircraftState, inputs);\n\n";
+    code << "    gather_pathgen_inputs(pathProvider, aircraftState, inputs);\n\n";
     code << "    float outputs[" << genome.topology.back() << "];\n";
     if (any_recurrent) {
         code << "    nn_forward_recurrent(nn_weights, getTopology(), getRecurrent(),\n";
@@ -186,7 +186,7 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     int max_layer = *std::max_element(genome.topology.begin(), genome.topology.end());
     code << "gp_scalar " << functionName << "(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {\n";
     code << "    NNInputs inputs = {};\n";
-    code << "    nn_gather_inputs(pathProvider, aircraftState, inputs);\n";
+    code << "    gather_pathgen_inputs(pathProvider, aircraftState, inputs);\n";
     code << "    const float* input_floats = reinterpret_cast<const float*>(&inputs);\n\n";
 
     // Layer buffers — fixed-size on stack
