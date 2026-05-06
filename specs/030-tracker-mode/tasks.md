@@ -63,7 +63,9 @@ Single-repo C++ tree (per plan.md Project Structure):
 - [ ] T016 [P] Update [`specs/019-improved-crrcsim/sim_response.py`](../../specs/019-improved-crrcsim/sim_response.py) parser to key off enum-derived header names (no hardcoded column positions)
 - [ ] T017 [P] Update [`xiao/src/msplink.cpp`](../../xiao/src/msplink.cpp) to use the typed enum mirror; preprocessor-select active mode per FR-019 compile-time selection (`-DAUTOC_MODE=PATHGEN` for v1 xiao deploy)
 - [ ] T018 [P] Update [`include/autoc/eval/aircraft_state.h`](../../include/autoc/eval/aircraft_state.h) `nnInputs_` array typing + serialization to preserve typed names
-- [ ] T019 Run a pathgen-mode training smoke (single scenario, 5 gens) post-M2 and verify `data.dat` is byte-identical to a pre-M2 reference run (regression invariant)
+- [ ] T019 Regression-tight gate post-M2 — **two complementary checks**, both built with `bash scripts/rebuild-perf.sh` (the FP-deterministic build, per [memory: reference_perf_build_reproducibility](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_perf_build_reproducibility.md); `rebuild.sh` debug builds intentionally produce different FP values and are NOT regression baselines):
+  1. **byte-identical data.dat**: short pathgen-mode training (single scenario, 5 gens) post-M2 produces byte-identical `data.dat` to a pre-M2 reference run on the same seed.
+  2. **eval-vs-training fitness equivalence**: `autoc -i autoc-eval.ini` on a pre-M2 training dmp's extracted `nn_weights.dat` reproduces the dmp's embedded `Stored fitness` to displayed precision (e.g., the 2026-05-06 baseline `gen9999.dmp` shows `NN Eval fitness: -55944.664164 == Stored fitness: -55944.664164`). Any drift signals an FP-perturbing change introduced by the typed-sensor refactor.
 
 **Checkpoint**: M1 + M2 complete. Build is clean; type-safe scaffolding is in place; pathgen mode unchanged. User-story implementation can begin.
 
