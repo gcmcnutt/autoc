@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "autoc/eval/trail_rabbit.h"  // M7b — real trail-rabbit math
+
 namespace autoc::eval {
 
 TrackerStepper::TrackerStepper(NNControllerBackend& nn,
@@ -166,14 +168,19 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     last_camera_view_.beacon_left = left;
     last_camera_view_.beacon_right = right;
 
-    // Target sample copied verbatim from the source SourceTickSample;
-    // trail_rabbit_position + inside_crash_hull are M7 deliverables and
-    // get sentinel defaults (rabbit = target position, no hull strike)
-    // until the M7 fitness wiring lands.
+    // Target sample copied verbatim from the source SourceTickSample.
+    // 030 M7b: trail_rabbit_position now uses the real
+    // computeTrailRabbit() function (FR-008 simplified shape per
+    // Session 2026-05-07 Q1: target_pos − velocity_unit × trail_distance,
+    // degenerate fallback rabbit ≡ target_pos when |velocity| < 1e-3).
+    // inside_crash_hull defaults to false until M7c lands the hull check.
+    // Trail distance currently uses the kDefaultTrailDistance compile-time
+    // constant; M7d's FitnessComputer wire-up plumbs the configurable
+    // TrailDistance from autoc-tracker.ini through EvalData.
     last_target_sample_.position = target.position;
     last_target_sample_.orientation = target.orientation;
     last_target_sample_.velocity = target.velocity;
-    last_target_sample_.trail_rabbit_position = target.position;
+    last_target_sample_.trail_rabbit_position = computeTrailRabbit(target);
     last_target_sample_.inside_crash_hull = false;
 }
 

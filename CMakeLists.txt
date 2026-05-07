@@ -92,6 +92,7 @@ add_library(autoc_common STATIC
     src/eval/source_dmp_loader.cc
     src/eval/camera_projection.cc
     src/eval/arena.cc
+    src/eval/trail_rabbit.cc
     src/eval/pathgen_stepper.cc
     src/eval/tracker_stepper.cc
     src/nn/evaluator.cc
@@ -184,6 +185,9 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(arena_tests tests/arena_tests.cc)
   target_link_libraries(arena_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(trail_rabbit_tests tests/trail_rabbit_tests.cc)
+  target_link_libraries(trail_rabbit_tests GTest::gtest GTest::gtest_main autoc_common)
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -206,6 +210,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME gather_tracker_inputs_tests COMMAND gather_tracker_inputs_tests)
   add_test(NAME tracker_dmp_roundtrip_tests COMMAND tracker_dmp_roundtrip_tests)
   add_test(NAME arena_tests COMMAND arena_tests)
+  add_test(NAME trail_rabbit_tests COMMAND trail_rabbit_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -221,6 +226,7 @@ if(ENABLE_AUTOC_TESTS)
             gather_tracker_inputs_tests
             tracker_dmp_roundtrip_tests
             arena_tests
+            trail_rabbit_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -241,6 +247,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND gather_tracker_inputs_tests --gtest_brief=1
     COMMAND tracker_dmp_roundtrip_tests --gtest_brief=1
     COMMAND arena_tests --gtest_brief=1
+    COMMAND trail_rabbit_tests --gtest_brief=1
   )
 endif()
 
