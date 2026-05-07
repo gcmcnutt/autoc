@@ -10,6 +10,25 @@ description: "030 — Tracker Mode — task list (fresh rewrite 2026-05-04 again
 
 **Organization**: Tasks grouped by user story per the speckit template, but phase ordering follows plan.md's smoke-test-first milestone ramp (M0 done → M1 → M2 → M3 → M5 → M6 → M7 → M8 → M9 → M10 → M11). The active user stories for v1 are **US2 (gateway / training launch)**, **US4 (signal-or-not — smoke test)**, **US5 (renderer inspection)**. US1 is already complete in 029-no-future-arch and is excluded from this task list. **US3 (camera-config experimentation)** and **US6 (real-target-tracking bridge)** are deferred from v1 per D13 / D15 — see [BACKLOG.md "030 spin-offs"](../BACKLOG.md) for the 031-candidate routing.
 
+---
+
+> ## ⏸ Session pause — 2026-05-06
+>
+> **Status**: M1 + M2 + M3 complete (12 commits on `030-tracker-mode` branch, latest is the M3-status doc commit). Eval-vs-training fitness bitwise `-55944.664164` under `rebuild-perf.sh` baseline `gen9200.dmp`. Operator independently re-verified post-M3: fresh nnextractor + nn2cpp regenerate cleanly + eval still bitwise; xiao pio still SUCCESS.
+>
+> **Next session pickup**: **M5 — Beacon projection module** (T025–T031). The first M3-loader consumer, and the first place `TrackerInput` enum slots become load-bearing (BEACON_L_X_NOW, BEACON_L_CEP_NOW, etc.). Resolves R6 (CEP encoding) + R7 (int8 quantization math) from research.md. v1 baseline per spec D10: planar pinhole, 120° FOV, 30 Hz, top-of-wing-chord mount; beacon emission cones 270° outward at wingtip body-frame positions per FR-004.
+>
+> **Suggested M5 sub-checkpoints**:
+> - **M5a** — `camera_config.h` + `beacon_config.h` config structs (v1 fixed; PRNG-varied placeholders); test scaffolding.
+> - **M5b** — Analytic pinhole projection + AirframeProxy ray-box self-occlusion (D10 first-order fidelity).
+> - **M5c** — CEP encoding (R6) + int8 quantization round-trip (R7) + sentinel handling.
+>
+> Regression-tight gate at every M5 sub-checkpoint: rebuild-perf.sh + autoc-eval bitwise. M5 adds new code on a separate path, so regression invariant should hold trivially throughout.
+>
+> **Open principle locked in by M3a discovery** (per [memory: feedback_honest_dmp_recording](../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_honest_dmp_recording.md)): at every dmp schema-bump boundary, audit `AircraftState::serialize()` against the full sensor inventory. The M8 v=2 schema bump (T048) carries this audit — gyroRates and any other transient-only fields land as serialized fields then.
+
+---
+
 ## Format: `[ID] [P?] [Story?] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies on incomplete tasks)
@@ -135,7 +154,7 @@ Single-repo C++ tree (per plan.md Project Structure):
 ### M8 — Tracker-mode dmp output (FR-015 + FR-015a)
 
 - [ ] T047 [P] [US5] Contract test `tests/tracker_dmp_roundtrip_tests.cc` — `EvalResults` v2 schema serialize/deserialize identity; v1 (pathgen) dmp loads with `cameraViewList` + `targetTrajectoryList` empty; future-version dmp throws cleanly; M2-dmp self-containedness (renderer-mock loads only the M2 dmp, no M1 source needed)
-- [ ] T048 [US5] Extend `EvalResults` schema in [`include/autoc/rpc/protocol.h`](../../include/autoc/rpc/protocol.h) per data-model.md §8 — add `cameraViewList[scenario][tick]` + `targetTrajectoryList[scenario][tick]` + `arenaEgressCount[scenario]` + `hullStrikeCount[scenario]`; bump `CEREAL_CLASS_VERSION(EvalResults, 2)` (FR-015a M1 → M2 boundary per Q5 milestone-versioning principle)
+- [ ] T048 [US5] Extend `EvalResults` schema in [`include/autoc/rpc/protocol.h`](../../include/autoc/rpc/protocol.h) per data-model.md §8 — add `cameraViewList[scenario][tick]` + `targetTrajectoryList[scenario][tick]` + `arenaEgressCount[scenario]` + `hullStrikeCount[scenario]`; bump `CEREAL_CLASS_VERSION(EvalResults, 2)` (FR-015a M1 → M2 boundary per Q5 milestone-versioning principle). **Honest-recording audit** (per [memory: feedback_honest_dmp_recording](../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_honest_dmp_recording.md), 2026-05-06): at the v2 boundary, audit `AircraftState::serialize()` against the full sensor inventory (PathgenInput / TrackerInput meta arrays + key derived fields like `gyroRates_`); add the omitted fields rather than inheriting v1's partial coverage; default to always-on serialization rather than `hasNNData_`-gated optional. The 030 M3a regression caught the gyroRates omission; this is the right boundary to fix it.
 - [ ] T049 [US5] Define `CameraViewSample` and `CopiedTargetSample` structs in [`include/autoc/rpc/protocol.h`](../../include/autoc/rpc/protocol.h) with cereal `serialize()` methods
 - [ ] T050 [US5] Wire M2 dmp output: `TrackerStepper` (T037) records per-tick `CameraViewSample` (camera pose + 2 `BeaconObservation`) and per-tick `CopiedTargetSample` (copied from `SourceScenarioTrajectory.sample(t_i)`, including computed `trail_rabbit_position` from T042 and `inside_crash_hull` flag from T043) into the eval results. Output dmps written to S3 at `autoc-storage/<030-run-id>/gen<N>.dmp` — same bucket as source, separate run-id (per US2 Independent Test + spec D13)
 
