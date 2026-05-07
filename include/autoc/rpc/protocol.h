@@ -219,6 +219,45 @@ struct DebugSample {
   }
 };
 
+// 030 M8a — Per-tick perception sample recorded into v=2 dmps (FR-015).
+// One CameraViewSample per camera per NN tick; v1 = single forward camera
+// so per-tick is a single sample. Carries camera world-pose (so the
+// renderer can place a frustum) + the two BeaconObservations the chase
+// craft saw. Self-contained per FR-015 — renderer reads M2 dmp only,
+// never reaches back into M1 source dmp.
+struct CameraViewSample {
+    gp_vec3 camera_pose_world_pos = gp_vec3::Zero();
+    gp_quat camera_pose_world_orient = gp_quat::Identity();
+    float camera_fov_h_deg = 120.0f;   // raw-ok: cereal byte-format member (M8 v=2 dmp schema)
+    float camera_fov_v_deg = 90.0f;    // raw-ok: cereal byte-format member (M8 v=2 dmp schema)
+    autoc::eval::BeaconObservation beacon_left{};
+    autoc::eval::BeaconObservation beacon_right{};
+
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(camera_pose_world_pos, camera_pose_world_orient,
+           camera_fov_h_deg, camera_fov_v_deg,
+           beacon_left, beacon_right);
+    }
+};
+
+// 030 M8a — Per-tick target trajectory copy (FR-015 self-containedness).
+// Copied from SourceScenarioTrajectory.samples[i] at the matching sim_time;
+// `trail_rabbit_position` is computed by M7 (defaults to position when M7
+// hasn't landed); `inside_crash_hull` is M7 telemetry (default false).
+struct CopiedTargetSample {
+    gp_vec3 position = gp_vec3::Zero();
+    gp_quat orientation = gp_quat::Identity();
+    gp_vec3 velocity = gp_vec3::Zero();
+    gp_vec3 trail_rabbit_position = gp_vec3::Zero();  // FR-008 — M7 wires
+    bool inside_crash_hull = false;                    // FR-008b — M7 wires
+
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(position, orientation, velocity, trail_rabbit_position, inside_crash_hull);
+    }
+};
+
 struct EvalResults {
   std::vector<char> gp;
   uint64_t gpHash = 0;  // FNV-1a hash of gp buffer for verification
@@ -233,11 +272,29 @@ struct EvalResults {
   int workerPid = 0;
   int workerEvalCounter = 0;  // Incremented per evaluation on the worker
 
+  // 030 M8a — Tracker-mode v=2 fields (FR-015). Empty in pathgen-mode dmps;
+  // populated by TrackerStepper at M8b. cameraViewList[scenario][tick]
+  // and targetTrajectoryList[scenario][tick] parallel aircraftStateList's
+  // per-scenario per-tick indexing. arenaEgressCount + hullStrikeCount
+  // are per-scenario telemetry counters wired by M7.
+  std::vector<std::vector<CameraViewSample>> cameraViewList;
+  std::vector<std::vector<CopiedTargetSample>> targetTrajectoryList;
+  std::vector<int> arenaEgressCount;  // M7 — per-scenario count of arena egress events
+  std::vector<int> hullStrikeCount;   // M7 — per-scenario count of crash-hull p_crash fires
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
     ar(gp, gpHash, crashReasonList, pathList, aircraftStateList,
        scenario, scenarioList, debugSamples, physicsTrace,
        workerId, workerPid, workerEvalCounter);
+    if (version >= 2) {
+      // 030 M8a — tracker-mode v=2 schema additions. v=1 dmps (pathgen
+      // historical) read with these vectors empty; v=2 readers see full
+      // population. Constitution V loud-fail behavior for v=3 lands via
+      // cereal's class-version mechanism (verified in
+      // tests/tracker_dmp_roundtrip_tests.cc).
+      ar(cameraViewList, targetTrajectoryList, arenaEgressCount, hullStrikeCount);
+    }
   }
 
   void clear() {
@@ -321,7 +378,12 @@ struct EvalResults {
     }
   }
 };
-CEREAL_CLASS_VERSION(EvalResults, 1)
+// 030 M8a — bumped 1 → 2 for tracker-mode dmp output (FR-015a + Constitution V).
+// v=1 dmps still readable: cameraViewList / targetTrajectoryList /
+// arenaEgressCount / hullStrikeCount remain empty when reading v=1.
+// v=3+ dmps fail loudly via cereal's class-version mechanism — caller
+// should treat as a Constitution V "schema mismatch" loud-fail trigger.
+CEREAL_CLASS_VERSION(EvalResults, 2)
 
 struct WorkerContext {
   std::unique_ptr<TcpSocket> socket;

@@ -175,6 +175,9 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(gather_tracker_inputs_tests tests/gather_tracker_inputs_tests.cc)
   target_link_libraries(gather_tracker_inputs_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(tracker_dmp_roundtrip_tests tests/tracker_dmp_roundtrip_tests.cc)
+  target_link_libraries(tracker_dmp_roundtrip_tests GTest::gtest GTest::gtest_main autoc_common)
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -195,6 +198,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME beacon_projection_tests COMMAND beacon_projection_tests)
   add_test(NAME contract_tracker_config_tests COMMAND contract_tracker_config_tests)
   add_test(NAME gather_tracker_inputs_tests COMMAND gather_tracker_inputs_tests)
+  add_test(NAME tracker_dmp_roundtrip_tests COMMAND tracker_dmp_roundtrip_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -208,6 +212,7 @@ if(ENABLE_AUTOC_TESTS)
             beacon_projection_tests
             contract_tracker_config_tests
             gather_tracker_inputs_tests
+            tracker_dmp_roundtrip_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -226,6 +231,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND beacon_projection_tests --gtest_brief=1
     COMMAND contract_tracker_config_tests --gtest_brief=1
     COMMAND gather_tracker_inputs_tests --gtest_brief=1
+    COMMAND tracker_dmp_roundtrip_tests --gtest_brief=1
   )
 endif()
 

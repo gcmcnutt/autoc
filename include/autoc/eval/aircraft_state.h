@@ -472,7 +472,26 @@ struct AircraftState {
       ar(thisPathIndex, dRelVel, velocity, aircraft_orientation, position,
          pitchCommand, rollCommand, throttleCommand, simTimeMsec, wind_velocity,
          rabbitPosition, hasNNData_);
-      if (hasNNData_) {
+
+      // 030 M8a — Honest-recording audit at v=2 schema-bump boundary
+      // (per memory:feedback_honest_dmp_recording). v=1 had a gyroRates_
+      // gap (the 030 M3a regression caught it during source dmp loading
+      // when SourceTickSample needed angular rates and discovered the
+      // field wasn't persisted). v=2 closes the gap.
+      //
+      // raw-ok: gyroRates_ is gp_vec3 (Eigen-typed); cereal byte-format
+      // is governed by the existing free-function save/load handlers
+      // for gp_vec3 in protocol.h.
+      if (version >= 2) {
+        ar(gyroRates_);
+      }
+
+      // NN data block: v=1 gated on hasNNData_; v=2 always-on per the
+      // honest-recording principle (the field IS what the NN saw, so
+      // recording it unconditionally removes the silent-truncation
+      // failure mode that hasNNData_=false enabled).
+      const bool readNNData = (version >= 2) ? true : hasNNData_;
+      if (readNNData) {
         uint32_t inputCount = NN_INPUT_COUNT;
         uint32_t outputCount = NN_OUTPUT_COUNT;
         ar(inputCount, outputCount);
@@ -485,7 +504,7 @@ struct AircraftState {
             " outputs=" + std::to_string(NN_OUTPUT_COUNT) +
             ". Regenerate training data with current binary.");
         }
-        float* rawInputs = reinterpret_cast<float*>(&nnInputs_);
+        float* rawInputs = reinterpret_cast<float*>(&nnInputs_);  // raw-ok: NN-byte-format buffer
         for (uint32_t i = 0; i < inputCount; i++)
           ar(rawInputs[i]);
         for (uint32_t i = 0; i < outputCount; i++)
@@ -497,7 +516,10 @@ struct AircraftState {
 #endif
 };
 #ifndef ARDUINO
-CEREAL_CLASS_VERSION(AircraftState, 1)
+// 030 M8a — bumped 1 → 2 for honest-recording audit (gyroRates_ added,
+// NN data switched to always-on instead of hasNNData_-gated). v=1 read
+// path unchanged (regression-tight invariant for gen9200.dmp baseline).
+CEREAL_CLASS_VERSION(AircraftState, 2)
 #endif
 
 // Physics trace entry - captures complete FDM state at a single timestep

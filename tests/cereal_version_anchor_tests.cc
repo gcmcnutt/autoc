@@ -1,23 +1,34 @@
 // Cereal class-version anchor — Constitution Principle V (Versioned Persistence Artifacts).
 //
-// Anchors the M1 (pathgen-mode dmp) frozen schema at version 1. Fires loud if the
-// CEREAL_CLASS_VERSION constant in protocol.h drifts without an explicit task to bump
-// it (T048 in tasks.md performs the M1 → M2 boundary bump to version 2 at the M8
-// freeze). Per spec FR-015a + Session 2026-05-04 Q5: versioning gates are at milestone
-// boundaries, NOT arbitrary commits — intra-development churn during M5–M7 does not
-// bump sub-versions; the freeze happens once at M8.
+// Anchors persistence-format versions at known points so accidental drift fails loud.
+// 030 M8a (2026-05-06) bumped EvalResults v=1 → v=2 (cameraViewList +
+// targetTrajectoryList + arenaEgressCount + hullStrikeCount fields per FR-015) and
+// AircraftState v=1 → v=2 (gyroRates_ field added + NN data always-on per the
+// honest-recording audit, per memory:feedback_honest_dmp_recording). Per spec
+// FR-015a + Session 2026-05-04 Q5: versioning gates are at milestone boundaries,
+// NOT arbitrary commits — intra-development churn does not bump sub-versions;
+// freezes happen at milestone boundaries.
 
 #include <gtest/gtest.h>
 #include <cstdint>
 
 #include "autoc/rpc/protocol.h"
+#include "autoc/eval/aircraft_state.h"
 
-TEST(CerealVersionAnchor, EvalResultsAtVersion1) {
-    EXPECT_EQ(cereal::detail::Version<EvalResults>::version, 1u)
-        << "EvalResults schema version drifted from 1. If this is intentional "
-           "(e.g., M8 freeze bumping to version 2), update this anchor test alongside "
-           "the CEREAL_CLASS_VERSION(EvalResults, ...) edit in protocol.h. Do NOT bump "
-           "intra-development per Constitution V + Session 2026-05-04 Q5.";
+TEST(CerealVersionAnchor, EvalResultsAtVersion2) {
+    EXPECT_EQ(cereal::detail::Version<EvalResults>::version, 2u)
+        << "EvalResults schema version drifted from 2 (the M8a tracker-mode bump). "
+           "If this is intentional (e.g., a future v=3 schema), update this anchor "
+           "test alongside the CEREAL_CLASS_VERSION(EvalResults, ...) edit in "
+           "protocol.h. Do NOT bump intra-development per Constitution V + Session "
+           "2026-05-04 Q5.";
+}
+
+TEST(CerealVersionAnchor, AircraftStateAtVersion2) {
+    EXPECT_EQ(cereal::detail::Version<AircraftState>::version, 2u)
+        << "AircraftState schema version drifted from 2 (the M8a honest-recording "
+           "bump — gyroRates_ added, NN data always-on). If this is intentional, "
+           "update this anchor alongside the CEREAL_CLASS_VERSION edit.";
 }
 
 TEST(CerealVersionAnchor, ScenarioMetadataAtVersion1) {

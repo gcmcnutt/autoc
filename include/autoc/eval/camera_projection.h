@@ -47,6 +47,16 @@ struct BeaconObservation {
     int8_t raw_x_int8;
     int8_t raw_y_int8;
     int8_t raw_cep_int8;  // INT8_MIN ⇔ invisible
+
+    // 030 M8a — cereal serialize for v=2 dmp output (cameraViewList).
+    // Wire-format note: the int8 raw_* fields are the canonical state;
+    // the fp32 dequantized values are derived from them at render-time.
+    // Both are serialized for renderer convenience (no dequantize cost
+    // in the playback path).
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(screen_x, screen_y, cep, raw_x_int8, raw_y_int8, raw_cep_int8);
+    }
 };
 
 // Coarse axis-aligned-box proxy for the chase craft's airframe, expressed
