@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "autoc/eval/crash_hull.h"     // M7c — geometric inside-hull telemetry
 #include "autoc/eval/trail_rabbit.h"  // M7b — real trail-rabbit math
 
 namespace autoc::eval {
@@ -173,15 +174,19 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     // computeTrailRabbit() function (FR-008 simplified shape per
     // Session 2026-05-07 Q1: target_pos − velocity_unit × trail_distance,
     // degenerate fallback rabbit ≡ target_pos when |velocity| < 1e-3).
-    // inside_crash_hull defaults to false until M7c lands the hull check.
-    // Trail distance currently uses the kDefaultTrailDistance compile-time
-    // constant; M7d's FitnessComputer wire-up plumbs the configurable
-    // TrailDistance from autoc-tracker.ini through EvalData.
+    // 030 M7c: inside_crash_hull is the GEOMETRIC inside-hull check
+    // (sphere intersection at default 1m radius). Probabilistic firing
+    // + scenario termination are M7d's responsibility — this flag is
+    // per-tick telemetry for renderer / inspect / M11c analytics.
+    // Both trail_distance + hull_radius currently use compile-time
+    // defaults; M7d plumbs the configurable values from autoc-tracker.ini
+    // through EvalData.
     last_target_sample_.position = target.position;
     last_target_sample_.orientation = target.orientation;
     last_target_sample_.velocity = target.velocity;
     last_target_sample_.trail_rabbit_position = computeTrailRabbit(target);
-    last_target_sample_.inside_crash_hull = false;
+    last_target_sample_.inside_crash_hull =
+        isInsideHull(CrashHull{}, state_.getPosition(), target.position);
 }
 
 CrashReason TrackerStepper::stepOnce() {
