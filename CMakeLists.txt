@@ -103,12 +103,14 @@ add_executable(minisim tools/minisim.cc)
 add_executable(renderer tools/renderer.cc)
 add_executable(nnextractor tools/nnextractor.cc)
 add_executable(nn2cpp tools/nn2cpp.cc)
+add_executable(source_dmp_inspect tools/source_dmp_inspect.cc)
 
 target_link_libraries(autoc autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(minisim autoc_common)
 target_link_libraries(renderer autoc_common ${VTK_LIBRARIES} ${AWSSDK_LIBRARIES})
 target_link_libraries(nnextractor autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(nn2cpp autoc_common)
+target_link_libraries(source_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
 
 if(ENABLE_AUTOC_TESTS)
   add_executable(nn_evaluator_tests tests/nn_evaluator_tests.cc)
@@ -156,6 +158,9 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(source_dmp_loading_tests tests/source_dmp_loading_tests.cc)
   target_link_libraries(source_dmp_loading_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
 
+  add_executable(source_dmp_s3_integration_tests tests/source_dmp_s3_integration_tests.cc)
+  target_link_libraries(source_dmp_s3_integration_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -172,6 +177,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME cereal_version_anchor_tests COMMAND cereal_version_anchor_tests)
   add_test(NAME nn_sensor_interface_tests COMMAND nn_sensor_interface_tests)
   add_test(NAME source_dmp_loading_tests COMMAND source_dmp_loading_tests)
+  add_test(NAME source_dmp_s3_integration_tests COMMAND source_dmp_s3_integration_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -181,7 +187,7 @@ if(ENABLE_AUTOC_TESTS)
             contract_evolution_tests rpc_transport_tests
             msplink_quat_convention_tests nn_telemetry_tests
             cereal_version_anchor_tests nn_sensor_interface_tests
-            source_dmp_loading_tests
+            source_dmp_loading_tests source_dmp_s3_integration_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -196,6 +202,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND cereal_version_anchor_tests --gtest_brief=1
     COMMAND nn_sensor_interface_tests --gtest_brief=1
     COMMAND source_dmp_loading_tests --gtest_brief=1
+    COMMAND source_dmp_s3_integration_tests --gtest_brief=1
   )
 endif()
 
