@@ -110,13 +110,13 @@ Single-repo C++ tree (per plan.md Project Structure):
 
 ### M5 — Beacon projection module (FR-003 + FR-004 + FR-005 + FR-007 + FR-017)
 
-- [ ] T025 [P] [US2] Contract test `tests/beacon_projection_tests.cc` — known-geometry assertions: target dead-ahead → `(x≈0, y≈0, cep≈0)`; target left-edge → `screen_x≈-1, cep elevated`; target behind → sentinel; target occluded by airframe proxy → sentinel; target outside emission cone (tail-on aspect) → sentinel
-- [ ] T026 [P] [US2] Contract test (continuation of T025) — int8 round-trip: `dequantize_xy(quantize_xy(x))` within `1/127` step for visible values; `dequantize_cep(quantize_cep(any_value >= 1.25)) == kCepSentinelFloat (1.5f)` exactly
-- [ ] T027 [P] [US2] Define [`include/autoc/eval/camera_config.h`](../../include/autoc/eval/camera_config.h) — `CameraConfig` struct with v1 baseline values (planar pinhole, 120° FOV, 30 Hz, top-of-wing-chord mount); compile-time-fixed fields + PRNG-varied placeholders (sigmas at zero in v1)
-- [ ] T028 [P] [US2] Define [`include/autoc/eval/beacon_config.h`](../../include/autoc/eval/beacon_config.h) — `BeaconConfig` struct with v1 baseline (270° outward emission cone, hb1 wingtip body-frame positions ±0.45 m on Y axis, distinct IR wavelengths)
-- [ ] T029 [P] [US2] Define [`include/autoc/eval/camera_projection.h`](../../include/autoc/eval/camera_projection.h) — `BeaconObservation` struct (NN-facing fp32 + raw int8 raw_*_int8 fields); `ProjectionInput` struct; quantize / dequantize helpers + `kCepSentinelThreshold (1.25f)` / `kCepSentinelFloat (1.5f)` constants
-- [ ] T030 [US2] Implement `projectBeacon(input)` in [`src/eval/camera_projection.cc`](../../src/eval/camera_projection.cc) per the contract math in `contracts/beacon_projection_api.md` — Eigen-based analytic pinhole projection, FOV / behind / emission-cone / airframe-proxy occlusion sentinel checks, CEP linear encoding [0, 1] with edge-factor, int8 quantize + dequantize round-trip
-- [ ] T031 [US2] Implement `AirframeProxy` ray-box intersection in [`src/eval/camera_projection.cc`](../../src/eval/camera_projection.cc); v1 default proxy = hb1 fuselage + wing AABB; coarse but calibrated against operator's reference video as plan-research deliverable
+- [X] T025 [P] [US2] Contract test `tests/beacon_projection_tests.cc` — known-geometry assertions: target dead-ahead → `(x≈0, y≈0, cep≈0)`; target left-edge → `screen_x≈-1, cep elevated`; target behind → sentinel; target occluded by airframe proxy → sentinel; target outside emission cone (tail-on aspect) → sentinel _(M5 / 2026-05-06: 16 assertions across geometry / sentinel / quantization / determinism — all green; rebuild-perf.sh + autoc-eval bitwise gate confirmed by operator)_
+- [X] T026 [P] [US2] Contract test (continuation of T025) — int8 round-trip: `dequantize_xy(quantize_xy(x))` within `1/127` step for visible values; `dequantize_cep(quantize_cep(any_value >= 1.25)) == kCepSentinelFloat (1.5f)` exactly _(M5 / 2026-05-06: included in beacon_projection_tests.cc; XyRoundTripWithinOneStep + CepVisibleRoundTripWithinOneStep + CepSentinelExactRoundTrip + XyClampsOutOfRangeInputs all green)_
+- [X] T027 [P] [US2] Define [`include/autoc/eval/camera_config.h`](../../include/autoc/eval/camera_config.h) — `CameraConfig` struct with v1 baseline values (planar pinhole, 120° FOV, 30 Hz, top-of-wing-chord mount); compile-time-fixed fields + PRNG-varied placeholders (sigmas at zero in v1) _(M5 / 2026-05-06: gp_scalar for FOV/frame-rate/latency, gp_vec3/gp_quat for mount; PRNG-varied placeholders in place at zero sigma)_
+- [X] T028 [P] [US2] Define [`include/autoc/eval/beacon_config.h`](../../include/autoc/eval/beacon_config.h) — `BeaconConfig` struct with v1 baseline (270° outward emission cone, hb1 wingtip body-frame positions ±0.45 m on Y axis, distinct IR wavelengths) _(M5 / 2026-05-06)_
+- [X] T029 [P] [US2] Define [`include/autoc/eval/camera_projection.h`](../../include/autoc/eval/camera_projection.h) — `BeaconObservation` struct (NN-facing fp32 + raw int8 raw_*_int8 fields); `ProjectionInput` struct; quantize / dequantize helpers + `kCepSentinelThreshold (1.25f)` / `kCepSentinelFloat (1.5f)` constants _(M5 / 2026-05-06)_
+- [X] T030 [US2] Implement `projectBeacon(input)` in [`src/eval/camera_projection.cc`](../../src/eval/camera_projection.cc) per the contract math in `contracts/beacon_projection_api.md` — Eigen-based analytic pinhole projection, FOV / behind / emission-cone / airframe-proxy occlusion sentinel checks, CEP linear encoding [0, 1] with edge-factor, int8 quantize + dequantize round-trip _(M5 / 2026-05-06: NED body-frame convention adapted from contract's z-forward convention — body +x = optical axis; documented in header. autoc_common adds camera_projection.cc; rebuild-perf.sh + autoc-eval bitwise on baseline gen9200.dmp confirmed clean)_
+- [X] T031 [US2] Implement `AirframeProxy` ray-box intersection in [`src/eval/camera_projection.cc`](../../src/eval/camera_projection.cc); v1 default proxy = hb1 fuselage + wing AABB; coarse but calibrated against operator's reference video as plan-research deliverable _(M5 / 2026-05-06: slab-method ray-AABB; defaultAirframeProxyHB1() helper for v1 default; per-test custom proxy override exercises hit / miss / segment-ends-before-box edge cases)_
 
 ### M6 — Tracker-mode autoc.ini + main-loop branch (FR-011 + FR-018 + FR-019)
 
@@ -228,8 +228,14 @@ Single-repo C++ tree (per plan.md Project Structure):
 - [ ] T073 [P] Update `CLAUDE.md` agent context with 030 v1 entry — note the smoke-test outcome + which R-question response was triggered (if any)
 - [ ] T074 [P] Write `specs/030-tracker-mode/outcome.md` documenting smoke-test results, R10/R11/R12 diagnostic readings, and recommended next direction (more 030 work / unpark 031 / unpark 025 / re-fly converged pastonly3 with tracker mode)
 - [ ] T075 Code review pass: ensure no temporary scaffolding left in tree (no `TODO` comments without ticket links; no commented-out blocks; no stale references to the obsolete `(x, y, visible)` interface or `RobotProgrammable`-in-v1 path)
-- [ ] T076 Constitution compliance audit: Principle I (every new module has a contract test); Principle II (autoc + crrcsim + xiao all build clean); Principle III (no shims left); Principle IV (mod_inputdev linkage stays clean post-implementation); Principle V (CEREAL_CLASS_VERSION = 2 confirmed at milestone freeze)
+- [ ] T076 Constitution compliance audit: Principle I (every new module has a contract test); Principle II (autoc + crrcsim + xiao all build clean); Principle III (no shims left); Principle IV (mod_inputdev linkage stays clean post-implementation); Principle V (CEREAL_CLASS_VERSION = 2 confirmed at milestone freeze); Principle VI (no unannotated raw `float`/`double` in 030's diff under `src/eval/`, `src/nn/`, `include/autoc/eval/`, `include/autoc/nn/` — see T078 for the codebase-wide backfill, separate scope)
 - [ ] T077 [P] Document plan-research's "030 done" decision in [`specs/BACKLOG.md`](../BACKLOG.md) — confirm which 031-CANDIDATE entries should unpark next (perception-front-end / variable-rate / library curation / renderer exotic goodies); cross-reference any items that smoke-test signal pulled forward into v1 (per D15's "may extract cheap-and-load-bearing items" note)
+- [ ] T078 **Type-domain audit (codebase-wide backfill — Principle VI)** — scan all of `src/eval/`, `src/nn/`, `include/autoc/eval/`, `include/autoc/nn/` for raw `float` / `double` declarations; for each hit, decide alias-vs-keep per the Principle VI domain table + whitelist (NN byte buffers, hardware-protocol fields, cereal byte-format members, host-only metadata, library-imposed signatures). Convert eligible sites to `gp_scalar` / `gp_fitness` / `gp_vec3` / `gp_quat`; annotate intentional raw-type sites with `// raw-ok: <reason>`. Run regression-tight gate (`bash scripts/rebuild-perf.sh` + `autoc -i autoc-eval.ini` bitwise on baseline `gen9200.dmp`) — type-alias edits SHOULD be no-ops, any FP drift = uncovered semantic difference and gets investigated before merge. Cross-reference [`project_scalar_type_audit_backlog.md`](../../.claude/projects/-home-gmcnutt-autoc/memory/project_scalar_type_audit_backlog.md) memory; on completion, that backlog entry transitions to "Resolved". Audit grep one-liner per Principle VI:
+
+  ```bash
+  grep -nE '\b(float|double)\b' src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/ \
+    | grep -v -E '// raw-ok:'
+  ```
 
 ---
 
@@ -333,7 +339,7 @@ Concurrent: T064 (extractor) + T065 (per-axis port) + T066/T067 (Bug 2) +
 
 ## Validation summary
 
-**Format compliance**: All 77 tasks follow the strict `- [ ] [TaskID] [P?] [Story?] Description with file path` format per the template. Setup / Foundational / Polish phases have no `[Story]` label; user-story phases (Phase 3 / 4 / 5) all carry `[US2]` / `[US5]` / `[US4]` labels.
+**Format compliance**: All 78 tasks follow the strict `- [ ] [TaskID] [P?] [Story?] Description with file path` format per the template. Setup / Foundational / Polish phases have no `[Story]` label; user-story phases (Phase 3 / 4 / 5) all carry `[US2]` / `[US5]` / `[US4]` labels.
 
 **Test coverage**: Constitution Principle I satisfied — every new module has a contract or smoke test (T005, T007, T008, T020, T025, T026, T032, T039, T040, T041, T047, T051, T067 = 13 distinct test files). Tests inline with implementation per phase, NOT optional.
 
@@ -345,6 +351,6 @@ Concurrent: T064 (extractor) + T065 (per-axis port) + T066/T067 (Bug 2) +
 
 **Parallel opportunities identified**: ~40 of 77 tasks (~52%) marked [P], dominated by independent-file changes within each milestone (different .h / .cc / Python script files) and intra-phase test-vs-implementation parallelism.
 
-**Total task count**: 77 tasks across 7 phases.
+**Total task count**: 78 tasks across 7 phases.
 
 **Task count per user story**: US2 = 27 tasks (Phase 3), US5 = 12 tasks (Phase 4), US4 = 5 tasks (Phase 5). Foundational + Setup + Analytics + Polish = 33 tasks.

@@ -84,6 +84,69 @@ flight behavior weeks later) makes the loud-fail rule strongly preferred.
 gen-log lines, xiao flash log text). Those are human-readable, short-lived, and tolerate
 parser drift via grep-pattern liberality.
 
+### VI. Type-Domain Discipline
+
+Eval-pipeline scalars are `gp_scalar`. Geometric quantities are `gp_vec3` / `gp_quat`.
+Fitness accumulation is `gp_fitness`. Raw `float` / `double` is reserved for cases where
+on-disk byte format, hardware protocol, or library-imposed signature outranks alias
+documentation, and each such case MUST be annotated `// raw-ok: <reason>` at the
+declaration site.
+
+**Domain definitions:**
+
+| Alias | Underlying | Domain |
+|---|---|---|
+| `gp_scalar` | `float` | Eval-pipeline scalars: anything flowing into NN forward-pass, `gp_vec3` / `gp_quat` arithmetic, or down to flight hardware (xiao). |
+| `gp_vec3` / `gp_quat` | `Eigen::Matrix<float,3,1>` / `Eigen::Quaternion<float>` | Any 3D geometric quantity — position, velocity, axis, attitude. |
+| `gp_fitness` | `double` | Fitness accumulation across ticks/scenarios; per-axis aggregates summing many small contributions; ranking-decisive numerics in `FitnessComputer` and selection. |
+
+**Whitelist** (raw `float` / `double` permitted, `// raw-ok: <reason>` required at site):
+
+- NN byte-format buffers (`float[N]` where N is layout-locked by `NNInputs` / cereal serialization)
+- Hardware-protocol fields (MSP, INAV blackbox, cereal byte-format struct members) where on-disk byte layout outranks alias documentation
+- Host-only metadata that never crosses into eval or fitness math (logging timestamps, plot axis labels, file paths, debug print formatting)
+- Library-imposed signatures (`std::chrono` durations, `time_t`, etc.)
+
+**Verification — the question this principle is designed to answer:**
+
+> *"Did we drift or miss a use of `gp_scalar` / `gp_fitness` / `gp_vec3` / `gp_quat`?"*
+
+A reviewer (or assistant at `/speckit.implement` time) MUST be able to answer **yes** or
+**no** in finite time by running, from repo root:
+
+```bash
+grep -nE '\b(float|double)\b' src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/ \
+  | grep -v -E '// raw-ok:'
+```
+
+Each remaining hit MUST either (a) be justified with a `// raw-ok: <reason>` annotation
+at the declaration site or (b) be converted to the appropriate alias. The grep IS the
+audit; the comment IS the justification record. An unannotated raw `float` / `double` in
+eval / nn / fitness code is the violation, regardless of whether it produces an
+observable bug.
+
+**Verification cadence:**
+
+- **Per-milestone (mandatory)**: every `/speckit.implement` closing report runs the grep
+  on the touched paths and either annotates or converts before marking the milestone
+  complete. No milestone is "done" with unannotated raw-type hits in its diff.
+- **Codebase-wide backfill (one-time)**: a separate audit-pass spec backfills existing
+  violations across the tree. Until that lands, the principle is enforced incrementally
+  on touched code.
+- **Periodic sanity (optional)**: a CI job or pre-commit hook running the grep + denylist
+  closes the loop without operator intervention.
+
+**Rationale**: A `double` holding fitness adjacent to raw-`float` accumulator code
+produces silent precision drift in selection rankings that compounds across generations
+into wrong-direction evolution. A raw `float` for a beacon mount that should have been
+`gp_scalar` doesn't trip Eigen template type-mismatch — it silently implicit-converts at
+the call site, doing slightly different rounding than the canonical pipeline path.
+Neither failure mode produces a compile error, a test failure, or even an obviously-wrong
+number; they produce a *different* training trajectory that nobody can attribute to the
+missed alias months later. The aliases exist precisely because that class of bug is
+undetectable after the fact — the only defense is a pre-merge type-domain audit, and the
+audit is only tractable if the convention is universal in eval / nn / fitness code.
+
 ## Architecture
 
 - **C++17**, CMake, Eigen, cereal (serialization), GoogleTest
@@ -96,4 +159,4 @@ parser drift via grep-pattern liberality.
 
 Constitution supersedes all other practices. Amendments require documentation and rationale.
 
-**Version**: 1.1.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-05-04 (Principle V added)
+**Version**: 1.2.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-05-06 (Principle VI added — Type-Domain Discipline)
