@@ -52,7 +52,8 @@ TEST(TrackerConfig, SourceDmpKeysParseAsStrings) {
     std::string ini =
         "TrackerSourceRun = autoc-storage/run-id-foo/gen9200.dmp\n"
         "TrackerPathSubset = 0,1,2,3,4,5\n"
-        "TrackerWindSubset = 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19\n";
+        "TrackerWindSubset = 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19\n"
+        "TrackerSourcePreRollSec = 0.7\n";
     std::string path = writeTempIni("tracker_source.ini", ini);
     INIReader reader(path);
     ASSERT_EQ(reader.ParseError(), 0);
@@ -61,6 +62,7 @@ TEST(TrackerConfig, SourceDmpKeysParseAsStrings) {
     EXPECT_EQ(reader.Get("", "TrackerPathSubset", ""), "0,1,2,3,4,5");
     // "0,1,...,19" — 20 indices, 19 commas, mix of 1- and 2-digit ⇒ 49 chars.
     EXPECT_EQ(reader.Get("", "TrackerWindSubset", "").size(), 49u);
+    EXPECT_DOUBLE_EQ(reader.GetReal("", "TrackerSourcePreRollSec", -1.0), 0.7);
 }
 
 // ---------------------------------------------------------------------------

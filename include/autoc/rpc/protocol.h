@@ -120,6 +120,13 @@ struct EvalData {
   autoc::eval::AirframeProxy airframeProxy;
   gp_vec3 homeWorld = gp_vec3::Zero();
 
+  // 030 M8b geometry-fix — source pre-roll. Worker skips the first N
+  // source-tick samples before chase starts evolving so source has a
+  // head start. Computed at autoc-side from
+  // ConfigManager::config->trackerSourcePreRollSec / 0.1; pre-converted
+  // to ticks to keep the worker math integer.
+  int trackerSourcePreRollTicks = 0;
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
     ar(gp, gpHash, isEliteReeval);
@@ -128,7 +135,7 @@ struct EvalData {
     controllerType = static_cast<ControllerType>(ct);
     ar(pathList, scenario, scenarioList, rabbitSpeedConfig, mode);
     ar(sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
-       airframeProxy, homeWorld);
+       airframeProxy, homeWorld, trackerSourcePreRollTicks);
   }
 
   void sanitizePaths() {
@@ -310,6 +317,11 @@ struct EvalResults {
     workerId = -1;
     workerPid = 0;
     workerEvalCounter = 0;
+    // 030 M8a — tracker-mode v=2 fields.
+    cameraViewList.clear();
+    targetTrajectoryList.clear();
+    arenaEgressCount.clear();
+    hullStrikeCount.clear();
   }
 
   void dump(std::ostream& os) {

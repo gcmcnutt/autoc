@@ -28,7 +28,7 @@
 #include "autoc/eval/scenario_stepper.h"
 #include "autoc/eval/source_trajectory.h"
 #include "autoc/nn/evaluator.h"          // NNControllerBackend, TrackerHistoryWindow
-#include "autoc/rpc/protocol.h"          // CrashReason, ScenarioMetadata
+#include "autoc/rpc/protocol.h"          // CrashReason, ScenarioMetadata, CameraViewSample, CopiedTargetSample
 #include "autoc/types.h"
 
 namespace autoc::eval {
@@ -43,15 +43,24 @@ public:
                    const BeaconConfig& beacon_left = BeaconConfig{},
                    const BeaconConfig& beacon_right = BeaconConfig{},
                    const AirframeProxy& airframe = defaultAirframeProxyHB1(),
-                   const gp_vec3& home_world = gp_vec3::Zero());
+                   const gp_vec3& home_world = gp_vec3::Zero(),
+                   int pre_roll_ticks = 0);
 
     void initScenario() override;
     CrashReason stepOnce() override;
     unsigned long durationMsec() const override { return duration_msec_; }
 
+    // 030 M8b — Per-tick recorded outputs for the v=2 dmp output stream.
+    // Populated by projectAndShiftHistory each step; minisim worker reads
+    // after each successful step and push_backs into evalResults's
+    // cameraViewList / targetTrajectoryList.
+    const CameraViewSample& lastCameraView() const { return last_camera_view_; }
+    const CopiedTargetSample& lastTargetSample() const { return last_target_sample_; }
+
 private:
     // Project both beacons against the current target sample, push into
-    // history, write the most-recent slot.
+    // history, write the most-recent slot. Also populates
+    // last_camera_view_ + last_target_sample_ for M8b dmp output.
     void projectAndShiftHistory(const SourceTickSample& target);
 
     NNControllerBackend& nn_;
@@ -71,8 +80,19 @@ private:
 
     // Source-tick cursor. Each stepOnce consumes source_.samples[cursor_],
     // advances physics until the next sample's simTimeMsec, then increments.
+    // initScenario sets cursor_ = pre_roll_ticks_ so the first NN tick
+    // sees source already advanced (M8b geometry fix).
     size_t cursor_ = 0;
     unsigned long duration_msec_ = 0;
+
+    // Source pre-roll: number of source ticks to skip before chase starts
+    // evolving. 0 = no pre-roll (legacy / tests). Default in production is
+    // ~5 ticks (0.5 sec at 100ms NN cadence) per autoc-tracker.ini.
+    int pre_roll_ticks_ = 0;
+
+    // 030 M8b — Per-tick recorded outputs (M2 dmp v=2 schema).
+    CameraViewSample last_camera_view_{};
+    CopiedTargetSample last_target_sample_{};
 };
 
 }  // namespace autoc::eval

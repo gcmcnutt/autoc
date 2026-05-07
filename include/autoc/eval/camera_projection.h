@@ -59,18 +59,33 @@ struct BeaconObservation {
     }
 };
 
+// Compile-time toggle for airframe self-occlusion (D10). FALSE for v1 sim
+// runs because the placeholder hb1 proxy is too coarse — flip back to
+// true once real airframe geometry is calibrated. Operator routing
+// 2026-05-07: occlusion will be permanently ON once sim training shifts
+// to real-flight prep, so a runtime knob would be lifecycle drag — one
+// compile-time constant is all that's needed.
+constexpr bool kAirframeOcclusionEnabled = false;
+
 // Coarse axis-aligned-box proxy for the chase craft's airframe, expressed
 // in chase body frame. Used for self-occlusion testing (D10): a ray from
 // `camera_mount_chase_body` to `beacon_in_chase_body` that intersects the
 // box registers the beacon as occluded (sentinel).
+//
+// `enabled` is set per-proxy; defaults to `true` so test-side proxies
+// constructed via `AirframeProxy{box_min, box_max}` directly continue to
+// exercise the occlusion-fires path in tests/beacon_projection_tests.cc.
+// Production-side proxies come from `defaultAirframeProxyHB1()` which
+// inherits the compile-time `kAirframeOcclusionEnabled` (currently false).
 struct AirframeProxy {
     gp_vec3 box_min_chase_body;
     gp_vec3 box_max_chase_body;
+    bool enabled = true;
 
-    // 030 M6e — cereal serialize for EvalData wire-protocol carry.
+    // 030 M6e + M8b — cereal serialize for EvalData wire-protocol carry.
     template <class Archive>
     void serialize(Archive& ar) {
-        ar(box_min_chase_body, box_max_chase_body);
+        ar(box_min_chase_body, box_max_chase_body, enabled);
     }
 };
 
@@ -85,10 +100,11 @@ struct AirframeProxy {
 // Eigen matrices aren't `constexpr`-compatible, so this is a function that
 // constructs the proxy on demand.
 inline AirframeProxy defaultAirframeProxyHB1() {
-    return AirframeProxy{
-        gp_vec3(-0.6f, -0.6f, -0.05f),
-        gp_vec3(+0.4f, +0.6f, +0.20f)
-    };
+    AirframeProxy p;
+    p.box_min_chase_body = gp_vec3(-0.6f, -0.6f, -0.05f);
+    p.box_max_chase_body = gp_vec3(+0.4f, +0.6f, +0.20f);
+    p.enabled = kAirframeOcclusionEnabled;
+    return p;
 }
 
 // Full input to the projection module.

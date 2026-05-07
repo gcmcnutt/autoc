@@ -111,15 +111,18 @@ bool contains(const std::vector<int>& xs, int v) {
 
 }  // namespace
 
+EvalResults loadEvalResultsDmp(const std::string& path_or_key) {
+    // Path resolution: prefer local file if it exists (offline-test path);
+    // otherwise treat as S3 key (production path per FR-011).
+    return std::filesystem::exists(path_or_key)
+               ? loadFromLocalFile(path_or_key)
+               : loadFromS3(path_or_key);
+}
+
 std::vector<SourceScenarioTrajectory> loadSourceDmp(
     const std::string& path_or_key) {
 
-    // Path resolution: prefer local file if it exists (offline-test path);
-    // otherwise treat as S3 key (production path per FR-011).
-    EvalResults source =
-        std::filesystem::exists(path_or_key)
-            ? loadFromLocalFile(path_or_key)
-            : loadFromS3(path_or_key);
+    EvalResults source = loadEvalResultsDmp(path_or_key);
 
     const size_t scenarioCount = source.aircraftStateList.size();
     if (scenarioCount == 0) {

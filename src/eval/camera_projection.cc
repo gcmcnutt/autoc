@@ -153,8 +153,11 @@ BeaconObservation projectBeacon(const ProjectionInput& input) {
     }
 
     // Step 4c — self-occlusion via airframe proxy. Ray from camera mount
-    // to beacon-in-body intersects the AABB ⇒ occluded.
-    if (rayHitsProxy(input.camera_mount_chase_body,
+    // to beacon-in-body intersects the AABB ⇒ occluded. Skipped when the
+    // proxy is disabled (transparent airframe — default in production
+    // tracker mode until real airframe geometry is calibrated).
+    if (input.chase_airframe.enabled &&
+        rayHitsProxy(input.camera_mount_chase_body,
                      beacon_in_chase_body,
                      input.chase_airframe)) {
         return sentinelObservation();

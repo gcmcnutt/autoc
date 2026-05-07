@@ -881,11 +881,21 @@ static EvalData buildEvalData(const EvalJob& job) {
                     static_cast<gp_scalar>(cfg.beaconRightMountZ));
         evalData.beaconRightConfig.emission_axis_body = gp_vec3(0.0f, +1.0f, 0.0f);
 
-        // Airframe proxy: v1 default hb1 AABB.
+        // Airframe proxy: v1 placeholder hb1 AABB. `enabled` is a
+        // compile-time constant in camera_projection.h
+        // (kAirframeOcclusionEnabled, currently false until real airframe
+        // geometry is calibrated — flip to true in one place once
+        // operator delivers the real geometry).
         evalData.airframeProxy = autoc::eval::defaultAirframeProxyHB1();
 
         // Home: virtual world origin (matches initialPosition convention).
         evalData.homeWorld = gp_vec3::Zero();
+
+        // 030 M8b geometry fix — source pre-roll. Convert seconds to ticks
+        // at the 100ms NN cadence (SIM_TIME_STEP_MSEC = 100).
+        const double tickSec = static_cast<double>(SIM_TIME_STEP_MSEC) / 1000.0;
+        evalData.trackerSourcePreRollTicks =
+            std::max(0, static_cast<int>(cfg.trackerSourcePreRollSec / tickSec));
     }
 
     return evalData;
@@ -1425,6 +1435,8 @@ int main(int argc, char** argv)
     *logger.info() << "TrackerSourceRun: " << cfg.trackerSourceRun << endl;
     *logger.info() << "TrackerPathSubset: " << cfg.trackerPathSubset << endl;
     *logger.info() << "TrackerWindSubset: " << cfg.trackerWindSubset << endl;
+    *logger.info() << "TrackerSourcePreRollSec: " << cfg.trackerSourcePreRollSec
+                   << " (" << static_cast<int>(cfg.trackerSourcePreRollSec * 10) << " ticks @ 100ms NN cadence)" << endl;
     *logger.info() << "TrailDistance: " << cfg.trailDistance
                    << "  LowSpeedTrailThreshold: " << cfg.lowSpeedTrailThreshold
                    << "  Hysteresis: " << cfg.lowSpeedTrailHysteresis << endl;
@@ -1446,6 +1458,9 @@ int main(int argc, char** argv)
                    << cfg.cameraMountOffsetX << ", "
                    << cfg.cameraMountOffsetY << ", "
                    << cfg.cameraMountOffsetZ << ") m (body, NED)" << endl;
+    *logger.info() << "AirframeOcclusion (compile-time): "
+                   << (autoc::eval::kAirframeOcclusionEnabled ? "enabled" : "DISABLED (transparent)")
+                   << " — see camera_projection.h kAirframeOcclusionEnabled" << endl;
     *logger.info() << "BeaconLeft: wavelength=" << cfg.beaconLeftWavelengthNm
                    << "nm  emissionCone=" << cfg.beaconEmissionConeDeg
                    << "deg  mount=("
@@ -1483,6 +1498,38 @@ int main(int argc, char** argv)
                         "scenario after filtering; got 0. Check TrackerSourceRun "
                         "and subset config." << endl;
       exit(1);
+    }
+
+    // 030 M8b geometry fix — validate that each scenario has enough
+    // runway after pre-roll for chase to actually evolve. Pre-roll
+    // consumes the first N source ticks; chase needs >= MIN_SCENARIO_TICKS
+    // remaining (3 sec at 100ms NN cadence per data-model.md §1).
+    {
+      const double tickSec = static_cast<double>(SIM_TIME_STEP_MSEC) / 1000.0;
+      const int preRollTicks =
+          std::max(0, static_cast<int>(cfg.trackerSourcePreRollSec / tickSec));
+      const int minRemaining = MIN_SCENARIO_TICKS;
+      const int minSourceTicks = preRollTicks + minRemaining;
+      int shortCount = 0;
+      for (const auto& traj : gSourceTrajectoryList) {
+        if (static_cast<int>(traj.samples.size()) < minSourceTicks) {
+          ++shortCount;
+        }
+      }
+      if (shortCount > 0) {
+        *logger.info() << "FATAL ERROR: " << shortCount
+                       << " of " << gSourceTrajectoryList.size()
+                       << " source scenario(s) have fewer than "
+                       << minSourceTicks << " ticks (pre-roll "
+                       << preRollTicks << " + chase runway "
+                       << minRemaining << "). Reduce TrackerSourcePreRollSec "
+                          "or filter out short source scenarios." << endl;
+        exit(1);
+      }
+      *logger.info() << "Source pre-roll: " << cfg.trackerSourcePreRollSec
+                     << "s (" << preRollTicks << " ticks); chase runway >= "
+                     << minRemaining << " ticks confirmed across all "
+                     << gSourceTrajectoryList.size() << " scenarios." << endl;
     }
   }
 
@@ -1565,6 +1612,21 @@ int main(int argc, char** argv)
 
   std::string startTime = generate_iso8601_timestamp();
   auto runStartTime = std::chrono::steady_clock::now();
+
+  // 030 M8b — explicit output-bucket logging (operator request 2026-05-07).
+  // Same run-id, profile, and bucket are used across pathgen training,
+  // pathgen eval, tracker training, and (eventual) tracker eval modes —
+  // single log line covers all four. Per-gen training dmps land at
+  // <prefix>/gen<10000-gen>.dmp (reverse-time so newest gen lists first);
+  // eval-mode dmps at gen9999.dmp.
+  //
+  // Format `profile:bucket/key` matches nnextractor's genome.source
+  // provenance convention so the prefix string is copy-pastable across
+  // tools (renderer / *_dmp_inspect / nnextractor accept this form).
+  *logger.info() << "Output S3 prefix: " << cfg.s3Profile << ":" << cfg.s3Bucket
+                 << "/" << startTime << "/  (gen<N>.dmp per-gen; gen9999.dmp for eval mode)"
+                 << endl;
+  *logger.info() << "Run ID: " << startTime << endl;
   auto lastThroughputTime = runStartTime;
   uint64_t lastSimRunCount = 0;
   auto logGenerationStats = [&](int genIndex) {

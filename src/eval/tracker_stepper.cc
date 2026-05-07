@@ -7,6 +7,7 @@
 
 #include "autoc/eval/tracker_stepper.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace autoc::eval {
@@ -19,7 +20,8 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                const BeaconConfig& beacon_left,
                                const BeaconConfig& beacon_right,
                                const AirframeProxy& airframe,
-                               const gp_vec3& home_world)
+                               const gp_vec3& home_world,
+                               int pre_roll_ticks)
     : nn_(nn),
       state_(state),
       source_(source),
@@ -31,7 +33,8 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
       home_world_(home_world),
       history_{},
       cursor_(0),
-      duration_msec_(0) {}
+      duration_msec_(0),
+      pre_roll_ticks_(pre_roll_ticks) {}
 
 void TrackerStepper::initScenario() {
     nn_.reset();  // zero recurrent state at scenario start (no-op for feedforward)
@@ -58,26 +61,54 @@ void TrackerStepper::initScenario() {
                            SIM_INITIAL_THROTTLE,
                            0};
 
-    // Pre-fill beacon history with the first source tick's projection so
-    // the NN sees a consistent 6-slot window at the first NN evaluation
-    // (parallels pathgen's resetHistory).
-    cursor_ = 0;
     duration_msec_ = 0;
+
+    // 030 M8b geometry fix — source pre-roll. Source craft plays forward
+    // pre_roll_ticks_ samples while chase sits at its M1-style entry
+    // pose, so source has a head start and is in chase's forward FOV
+    // when chase starts evolving. NN's 6-slot history is populated from
+    // the last 6 source ticks of the pre-roll window.
+    //
+    // History layout after warm-start (pre_roll_ticks_ = N >= 6):
+    //   slot 0 (oldest, t-0.5s) = source[N-6]  vs chase[init]
+    //   slot 1 (t-0.4s)         = source[N-5]  vs chase[init]
+    //   ...
+    //   slot 5 (now, t-0.0s)    = source[N-1]  vs chase[init]
+    //
+    // For N < 6, the older slots replicate source[0]'s projection. For
+    // N == 0, all 6 slots replicate source[0] (legacy behavior).
+    cursor_ = 0;  // projectAndShiftHistory uses chase[init]; cursor advances
+                  // through source samples for the warm-start projections.
     if (!source_.samples.empty()) {
-        const SourceTickSample& first = source_.samples.front();
-        projectAndShiftHistory(first);
-        // After the first projection, all 6 slots hold the same observation
-        // (shift-and-overwrite was called once above; copy the "now" value
-        // backward across the older slots for warm-start).
-        for (int i = 0; i < 5; ++i) {
-            history_.left_x[i] = history_.left_x[5];      // raw-ok: NN-byte-format primitive
-            history_.left_y[i] = history_.left_y[5];      // raw-ok: NN-byte-format primitive
-            history_.left_cep[i] = history_.left_cep[5];  // raw-ok: NN-byte-format primitive
-            history_.right_x[i] = history_.right_x[5];    // raw-ok: NN-byte-format primitive
-            history_.right_y[i] = history_.right_y[5];    // raw-ok: NN-byte-format primitive
-            history_.right_cep[i] = history_.right_cep[5];// raw-ok: NN-byte-format primitive
+        const int pre_roll = std::max(0, pre_roll_ticks_);
+        const int kHistory = 6;
+        // Replicate source[0] for the front-fill when pre_roll < 6 (older
+        // slots get duplicated source[0] projection).
+        const int replicate_count = (pre_roll < kHistory) ? (kHistory - pre_roll) : 0;
+        const int real_start =
+            (pre_roll >= kHistory) ? (pre_roll - kHistory) : 0;
+
+        for (int r = 0; r < replicate_count; ++r) {
+            projectAndShiftHistory(source_.samples[0]);
+        }
+        for (int k = real_start; k < pre_roll; ++k) {
+            const size_t idx = static_cast<size_t>(k);
+            if (idx < source_.samples.size()) {
+                projectAndShiftHistory(source_.samples[idx]);
+            }
+        }
+        // If pre_roll == 0, no real samples projected above — replicate
+        // source[0] across all 6 slots so the NN sees a non-zero history.
+        if (pre_roll == 0) {
+            // The replicate_count loop already ran 6 times for pre_roll==0
+            // (kHistory - 0 = 6), so no extra work. Validated by the math:
+            // replicate_count=6, real_start=0, real loop body skipped.
         }
     }
+
+    // Cursor starts at pre_roll_ticks so stepOnce #1 consumes
+    // source[pre_roll_ticks] (the first non-pre-roll sample).
+    cursor_ = static_cast<size_t>(std::max(0, pre_roll_ticks_));
 }
 
 void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
@@ -122,6 +153,28 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     history_.right_x[5] = right.screen_x;     // raw-ok: NN-byte-format primitive
     history_.right_y[5] = right.screen_y;     // raw-ok: NN-byte-format primitive
     history_.right_cep[5] = right.cep;        // raw-ok: NN-byte-format primitive
+
+    // 030 M8b — Per-tick recording for v=2 dmp output (FR-015).
+    // Camera world-pose: chase_position + chase_orient * camera_mount;
+    // chase_orient * camera_orient gives the camera frame in world coords.
+    last_camera_view_.camera_pose_world_pos =
+        state_.getPosition() + state_.getOrientation() * camera_.mount_offset_body;
+    last_camera_view_.camera_pose_world_orient =
+        state_.getOrientation() * camera_.mount_orientation_body;
+    last_camera_view_.camera_fov_h_deg = static_cast<float>(camera_.fov_h_deg);   // raw-ok: cereal byte-format member (CameraViewSample fp32 contract)
+    last_camera_view_.camera_fov_v_deg = static_cast<float>(camera_.fov_v_deg);   // raw-ok: cereal byte-format member (CameraViewSample fp32 contract)
+    last_camera_view_.beacon_left = left;
+    last_camera_view_.beacon_right = right;
+
+    // Target sample copied verbatim from the source SourceTickSample;
+    // trail_rabbit_position + inside_crash_hull are M7 deliverables and
+    // get sentinel defaults (rabbit = target position, no hull strike)
+    // until the M7 fitness wiring lands.
+    last_target_sample_.position = target.position;
+    last_target_sample_.orientation = target.orientation;
+    last_target_sample_.velocity = target.velocity;
+    last_target_sample_.trail_rabbit_position = target.position;
+    last_target_sample_.inside_crash_hull = false;
 }
 
 CrashReason TrackerStepper::stepOnce() {
@@ -129,6 +182,8 @@ CrashReason TrackerStepper::stepOnce() {
     if (cursor_ >= source_.samples.size()) {
         return CrashReason::TimeLimit;
     }
+
+    CrashReason crash = CrashReason::None;
 
     // Current source tick's target state.
     const SourceTickSample& target = source_.samples[cursor_];
@@ -151,15 +206,19 @@ CrashReason TrackerStepper::stepOnce() {
     duration_msec_ += SIM_TIME_STEP_MSEC;
     state_.setSimTimeMsec(duration_msec_);
 
-    // M6d does NOT yet wire arena egress (FR-016) or crash hull (FR-008b).
-    // Both land at M7 (tracker-mode FitnessComputer integration). For now
-    // the only termination is source exhaustion (TimeLimit) above.
+    // 030 M8b — arena out-of-bounds via shared check (same M1 envelope
+    // pathgen uses; see scenario_stepper.h::checkAircraftOOB). M7 lands
+    // the FR-016 config-driven arena.h with per-scenario egress-kind
+    // telemetry counters (T041-T044). Crash hull (FR-008b) is also M7.
+    crash = checkAircraftOOB(state_);
 
     ++cursor_;
+    // Source exhaustion (TimeLimit) overrides Eval — last-write-wins
+    // matches PathgenStepper's RabbitComplete > TimeLimit > Eval pattern.
     if (cursor_ >= source_.samples.size()) {
-        return CrashReason::TimeLimit;
+        crash = CrashReason::TimeLimit;
     }
-    return CrashReason::None;
+    return crash;
 }
 
 }  // namespace autoc::eval

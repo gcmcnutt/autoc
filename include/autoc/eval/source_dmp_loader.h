@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "autoc/eval/source_trajectory.h"
-#include "autoc/rpc/protocol.h"  // CrashReason
+#include "autoc/rpc/protocol.h"  // CrashReason, EvalResults
 
 // Load a source M1 dmp from a path-or-S3-key.
 //
@@ -45,6 +45,13 @@
 //   - position bounded < 10 km from origin (sanity check).
 std::vector<SourceScenarioTrajectory> loadSourceDmp(
     const std::string& path_or_key);
+
+// 030 M8b — Lower-level: load the raw EvalResults from S3 / local path
+// without the SourceScenarioTrajectory transformation. Used by inspector
+// tools that want full v=2 access (cameraViewList, targetTrajectoryList,
+// arenaEgressCount, hullStrikeCount). Same path-resolution + Constitution V
+// loud-fail semantics as loadSourceDmp; differs only in the return type.
+EvalResults loadEvalResultsDmp(const std::string& path_or_key);
 
 // Filter out source scenarios where the source aircraft terminally
 // crashed mid-scenario (CrashReason::Boot/Sim/Eval per protocol.h

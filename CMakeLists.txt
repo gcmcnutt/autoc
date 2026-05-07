@@ -107,6 +107,7 @@ add_executable(renderer tools/renderer.cc)
 add_executable(nnextractor tools/nnextractor.cc)
 add_executable(nn2cpp tools/nn2cpp.cc)
 add_executable(source_dmp_inspect tools/source_dmp_inspect.cc)
+add_executable(tracker_dmp_inspect tools/tracker_dmp_inspect.cc)
 
 target_link_libraries(autoc autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(minisim autoc_common)
@@ -114,6 +115,7 @@ target_link_libraries(renderer autoc_common ${VTK_LIBRARIES} ${AWSSDK_LIBRARIES}
 target_link_libraries(nnextractor autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(nn2cpp autoc_common)
 target_link_libraries(source_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
+target_link_libraries(tracker_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
 
 if(ENABLE_AUTOC_TESTS)
   add_executable(nn_evaluator_tests tests/nn_evaluator_tests.cc)

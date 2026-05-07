@@ -127,17 +127,11 @@ CrashReason PathgenStepper::stepOnce() {
     gp_scalar dtSec = static_cast<gp_scalar>(SIM_TIME_STEP_MSEC) / 1000.0f;
     state_.setRabbitOdometer(state_.getRabbitOdometer() + rabbit_speed_ * dtSec);
 
-    // Crash detection: reconstruct raw position for OOB bounds check.
-    // Position is virtual (Z≈0). Raw = virtual + (0,0,SIM_INITIAL_ALTITUDE).
-    gp_vec3 rawForOOB =
-        state_.getPosition() + gp_vec3(0.0f, 0.0f, SIM_INITIAL_ALTITUDE);
-    gp_scalar distanceFromOrigin =
-        std::sqrt(rawForOOB[0] * rawForOOB[0] + rawForOOB[1] * rawForOOB[1]);
-    if (rawForOOB[2] < (SIM_MAX_ELEVATION) ||
-        rawForOOB[2] > (SIM_MIN_ELEVATION) ||
-        distanceFromOrigin > SIM_PATH_RADIUS_LIMIT) {
-        crash = CrashReason::Eval;
-    }
+    // Arena out-of-bounds check (030 M8b extraction). Body byte-identical
+    // to the prior inline block via inline expansion of checkAircraftOOB
+    // at -O3 (regression-tight invariant). M2 tracker mode now uses the
+    // same shared check — see scenario_stepper.h.
+    crash = checkAircraftOOB(state_);
 
     // Advance path index by scanning distanceFromStart against rabbit odometer.
     while (state_.getThisPathIndex() < static_cast<int>(path_.size()) - 2 &&

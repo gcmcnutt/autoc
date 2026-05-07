@@ -56,6 +56,32 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - Files: `tools/minisim.cc`, `CMakeLists.txt:100-106`, audit `tests/` for hard dependencies.
 - **Update 2026-05-06**: trigger fired during 030 M6a (PathgenStepper extraction) + M6c/d/e (tracker-mode dispatch wired in minisim per session 2026-05-06 routing decision). Per operator call, minisim stays alive through v1 tracker mode rather than retiring. Retirement decision now contingent on 030 smoke outcome.
 
+### [BACKLOG] Airframe self-occlusion calibration (re-enable D10)
+
+- **Surfaced 030 M8b (2026-05-07)**: spec D10 specifies airframe self-occlusion via a chase-body-frame AABB proxy; ray from camera to beacon hitting the proxy ⇒ beacon flagged occluded (sentinel). The placeholder hb1 proxy used through M5/M6/M8 is too coarse — `box ∈ [(-0.6, -0.6, -0.05), (+0.4, +0.6, +0.20)]` puts the camera mount (`z=-0.05`) **exactly on the proxy top boundary**, so any forward-and-slightly-down ray (the geometry seen at every M8b smoke tick) clips the proxy at t=0 and exits via the wing leading edge. Result: every beacon flags occluded for the first half-meter of any descending ray.
+- **Workaround in M8b**: compile-time constant `kAirframeOcclusionEnabled = false` in `include/autoc/eval/camera_projection.h`. Production tracker mode currently runs **transparent** (no occlusion check). Per operator routing 2026-05-07: this is intentionally compile-time, not a runtime knob — once sim training shifts to real-flight prep, occlusion is on forever, so a .ini knob would just be lifecycle drag. One-line code change to flip when ready.
+- **What's needed to flip back on**:
+  - **(a) Real airframe geometry from operator** — actual hb1 fuselage + wing dimensions, not the placeholder. Operator committed to providing post-M8.
+  - **(b) Camera mount with clearance** — either physical mast above wing top OR a tighter proxy that doesn't include the wing leading edge. Spec D10 may need refinement on what "top-of-wing-chord mount" means in the model.
+  - **(c) Multi-shape proxy** — fuselage + wings as separate AABBs (or a coarse mesh) instead of a single union AABB. The single-AABB pessimism is the proximate cause; even with real dimensions, the bounding box of "fuselage + extended wings" includes a lot of empty space the camera CAN see through.
+- **Test impact when re-enabling**: `tests/beacon_projection_tests.cc::AirframeProxyOccludesEmitsSentinel` and `AirframeProxyMissesDoesNotOcclude` construct AirframeProxy{} directly with `enabled` defaulting to `true` in the struct, so they exercise the occlusion-fires path regardless of the production constant. No test changes needed when flipping the constant.
+- **Files**: `include/autoc/eval/camera_projection.h` (compile-time `kAirframeOcclusionEnabled` + `defaultAirframeProxyHB1()`), `src/eval/camera_projection.cc` (`projectBeacon` step 4c gates on `input.chase_airframe.enabled`).
+- **Trigger to act**: when operator delivers real airframe geometry, or when smoke-test signal indicates training is hurt by the lack of occlusion (NN exploits an "X-ray vision" loophole that won't exist on the real hardware).
+
+### [BACKLOG] M1 vs M2 dmp disambiguation in S3
+
+- **Surfaced 030 M8b (2026-05-06)**: pathgen-mode (M1, source) dmps and tracker-mode (M2, output) dmps share the same S3 bucket (`autoc-storage`) and the same key shape (`<run-id>/genN.dmp`). The run-id format is identical (`autoc-<seed>-<timestamp>Z`) for both — there's no way to tell them apart from the key alone.
+- **Why it matters**:
+  - Tools that auto-pick "latest run, last gen" (renderer's no-key default, nnextractor's no-keyname default) will silently pick the WRONG kind. A v=2 tracker dmp picked by a v=1-only consumer (renderer pre-M9) chokes on `cameraViewList`; a v=1 source dmp picked by a tracker-aware consumer succeeds but misleads ("cameraViewList: empty (pathgen-mode dmp)" — operator wonders if their tracker run failed to record).
+  - As more tracker runs accumulate alongside pathgen runs, the auto-pick mode becomes a coin flip.
+- **Options**:
+  - **(A) Run-id prefix convention**: tracker-mode autoc generates run-ids like `tracker-<seed>-<timestamp>Z` instead of `autoc-<seed>-<timestamp>Z`. Tools filter on prefix when auto-picking. Smallest change, easy to grep, doesn't break existing v=1 runs (they keep the old prefix).
+  - **(B) Subdirectory split**: `autoc-storage/tracker/<id>/genN.dmp` vs `autoc-storage/<id>/genN.dmp`. Cleaner separation but more change.
+  - **(C) Inline version suffix**: `genN-v2.dmp` per-file. Simplest filter rule but spreads the convention across every dmp filename.
+  - **(D) Load + dispatch on cereal version field**: auto-pick scans S3 ListObjects, opens a few candidate files, picks the most-recent matching the wanted version. Wasteful for "auto-pick latest" since LIST is fast but GET is per-file.
+- **My lean**: (A) — autoc reads `Mode = tracker` and prepends `tracker-` to its generated run-id. Operator-friendly grep + tools' auto-pick stays simple (`prefix=autoc-` for pathgen, `prefix=tracker-` for tracker).
+- **Trigger to act**: when a non-trivial tracker run history accumulates AND the operator is mixing pathgen + tracker runs in the same workflow. Until then, manual key specification works around it.
+
 ### [BACKLOG] AutocConfig auto-print / extensible parameter dump
 
 - **Surfaced 030 M6e (2026-05-06)**: `src/autoc.cc` startup logging is hand-coded `*logger.info() << "Key: " << cfg.field << endl` for every AutocConfig field. Adding the 030 tracker-mode block (~30 new fields across Source / Trail / CrashHull / Arena / Camera / Beacon) made the fragility obvious — every new knob requires both an AutocConfig field add, a parser line in `src/util/config.cc`, AND a manual print line in `autoc.cc`'s startup dump. Three-place edit per knob.

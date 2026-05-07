@@ -7,12 +7,17 @@
 // of scenario 0. Operator sanity-check before any tracker-mode run.
 //
 // Usage:
-//   build/source_dmp_inspect <path_or_s3_key> [--config autoc.ini]
+//   build/source_dmp_inspect <path_or_s3_key> [-i autoc.ini]
+//
+// Convention: `-i <ini>` is the project-wide config-file flag (matches
+// `autoc -i …` and the other tools). `--config` stays as a long-form
+// alias for back-compat but `-i` is the canonical surface in docs and
+// new help text.
 //
 // Examples:
-//   build/source_dmp_inspect autoc-storage/<run-id>/gen9999.dmp
+//   build/source_dmp_inspect <run-id>/gen9999.dmp
 //   build/source_dmp_inspect tests/fixtures/local.dmp
-//   build/source_dmp_inspect <key> --config autoc-tracker.ini
+//   build/source_dmp_inspect <key> -i autoc-tracker.ini
 
 #include <getopt.h>
 
@@ -32,10 +37,12 @@ namespace {
 
 void printUsage(const char* prog) {
     std::cerr <<
-        "Usage: " << prog << " <path_or_s3_key> [--config autoc.ini]\n"
+        "Usage: " << prog << " <path_or_s3_key> [-i autoc.ini]\n"
         "  Loads a source M1 dmp and prints scenario-summary stats.\n"
-        "  S3 key form (canonical): autoc-storage/<run-id>/gen<N>.dmp\n"
-        "  Local-file form (offline-test): any path that exists on disk.\n";
+        "  S3 key form (canonical): <run-id>/gen<N>.dmp (bucket from .ini)\n"
+        "  Local-file form (offline-test): any path that exists on disk.\n"
+        "  -i <ini>      Config file (default autoc.ini). `--config` is\n"
+        "                kept as a long-form alias.\n";
 }
 
 // Print per-tick sample on a single line — keeps output compact for CLI scan.

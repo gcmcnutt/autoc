@@ -157,6 +157,10 @@ public:
         // Path stays at canonical origin (Z=0); origin offset bridges raw→virtual
         std::vector<Path> path = evalData.pathList.at(i);
         std::vector<AircraftState> aircraftStateSteps;
+        // 030 M8b — per-tick recording for tracker-mode dmp (FR-015).
+        // Empty for pathgen scenarios; populated for tracker scenarios.
+        std::vector<CameraViewSample> cameraViewSteps;
+        std::vector<CopiedTargetSample> targetSampleSteps;
 
         ScenarioMetadata scenarioMeta = scenarioForPathIndex(evalData, static_cast<size_t>(i));
         CrashReason crashReason = CrashReason::None;
@@ -185,13 +189,21 @@ public:
                 evalData.beaconLeftConfig,
                 evalData.beaconRightConfig,
                 evalData.airframeProxy,
-                evalData.homeWorld);
+                evalData.homeWorld,
+                evalData.trackerSourcePreRollTicks);
             stepper.initScenario();
             aircraftStateSteps.push_back(aircraftState);
+            // 030 M8b — record initial-tick projection (initScenario
+            // warm-starts history with the first source tick's
+            // projection, populating lastCameraView / lastTargetSample).
+            cameraViewSteps.push_back(stepper.lastCameraView());
+            targetSampleSteps.push_back(stepper.lastTargetSample());
 
             while (crashReason == CrashReason::None) {
               crashReason = stepper.stepOnce();
               aircraftStateSteps.push_back(aircraftState);
+              cameraViewSteps.push_back(stepper.lastCameraView());
+              targetSampleSteps.push_back(stepper.lastTargetSample());
             }
           }
         } else {
@@ -214,12 +226,19 @@ public:
         evalResults.pathList.push_back(path);
         evalResults.aircraftStateList.push_back(aircraftStateSteps);
         evalResults.crashReasonList.push_back(crashReason);
+        // 030 M8b — push per-tick tracker recording (empty in pathgen mode).
+        // Renderer / per-tick extractor dispatches on cameraViewList[i]
+        // empty-vs-populated to decide pathgen vs tracker render.
+        evalResults.cameraViewList.push_back(cameraViewSteps);
+        evalResults.targetTrajectoryList.push_back(targetSampleSteps);
       }
 
       sendRPC(socket_, evalResults);
 
       evalResults.pathList.clear();
       evalResults.aircraftStateList.clear();
+      evalResults.cameraViewList.clear();
+      evalResults.targetTrajectoryList.clear();
       evalResults.crashReasonList.clear();
       evalResults.scenarioList.clear();
     }
