@@ -166,6 +166,11 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(beacon_projection_tests tests/beacon_projection_tests.cc)
   target_link_libraries(beacon_projection_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(contract_tracker_config_tests tests/contract_tracker_config_tests.cc)
+  target_link_libraries(contract_tracker_config_tests GTest::gtest GTest::gtest_main autoc_common)
+  target_compile_definitions(contract_tracker_config_tests PRIVATE
+    AUTOC_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -184,6 +189,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME source_dmp_loading_tests COMMAND source_dmp_loading_tests)
   add_test(NAME source_dmp_s3_integration_tests COMMAND source_dmp_s3_integration_tests)
   add_test(NAME beacon_projection_tests COMMAND beacon_projection_tests)
+  add_test(NAME contract_tracker_config_tests COMMAND contract_tracker_config_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -195,6 +201,7 @@ if(ENABLE_AUTOC_TESTS)
             cereal_version_anchor_tests nn_sensor_interface_tests
             source_dmp_loading_tests source_dmp_s3_integration_tests
             beacon_projection_tests
+            contract_tracker_config_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -211,6 +218,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND source_dmp_loading_tests --gtest_brief=1
     COMMAND source_dmp_s3_integration_tests --gtest_brief=1
     COMMAND beacon_projection_tests --gtest_brief=1
+    COMMAND contract_tracker_config_tests --gtest_brief=1
   )
 endif()
 

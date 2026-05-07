@@ -107,6 +107,73 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
     config->rabbitSpeedCycleMin = reader.GetReal("", "RabbitSpeedCycleMin", config->rabbitSpeedCycleMin);
     config->rabbitSpeedCycleMax = reader.GetReal("", "RabbitSpeedCycleMax", config->rabbitSpeedCycleMax);
 
+    // === 030 TRACKER MODE (FR-011 + FR-019) =============================
+    config->mode = reader.Get("", "Mode", config->mode);
+
+    // Tracker source dmp + scenario subset
+    config->trackerSourceRun = reader.Get("", "TrackerSourceRun", config->trackerSourceRun);
+    config->trackerPathSubset = reader.Get("", "TrackerPathSubset", config->trackerPathSubset);
+    config->trackerWindSubset = reader.Get("", "TrackerWindSubset", config->trackerWindSubset);
+
+    // Tracker fitness: trail rabbit
+    config->trailDistance = reader.GetReal("", "TrailDistance", config->trailDistance);
+    config->lowSpeedTrailThreshold = reader.GetReal("", "LowSpeedTrailThreshold", config->lowSpeedTrailThreshold);
+    config->lowSpeedTrailHysteresis = reader.GetReal("", "LowSpeedTrailHysteresis", config->lowSpeedTrailHysteresis);
+
+    // Tracker fitness: crash hull
+    config->crashHullShape = reader.Get("", "CrashHullShape", config->crashHullShape);
+    config->crashHullRadius = reader.GetReal("", "CrashHullRadius", config->crashHullRadius);
+    config->pCrashGen0 = reader.GetReal("", "PCrashGen0", config->pCrashGen0);
+    config->pCrashGenRamp = static_cast<int>(reader.GetInteger("", "PCrashGenRamp", config->pCrashGenRamp));
+    config->pCrashGenPlateau = static_cast<int>(reader.GetInteger("", "PCrashGenPlateau", config->pCrashGenPlateau));
+    config->pCrashPlateau = reader.GetReal("", "PCrashPlateau", config->pCrashPlateau);
+
+    // Tracker arena
+    config->flightArenaRadius = reader.GetReal("", "FlightArenaRadius", config->flightArenaRadius);
+    config->flightArenaFloorAGL = reader.GetReal("", "FlightArenaFloorAGL", config->flightArenaFloorAGL);
+    config->flightArenaCeilingAGL = reader.GetReal("", "FlightArenaCeilingAGL", config->flightArenaCeilingAGL);
+
+    // Camera config
+    config->cameraCount = static_cast<int>(reader.GetInteger("", "CameraCount", config->cameraCount));
+    config->cameraFOVHorizontalDeg = reader.GetReal("", "CameraFOVHorizontalDeg", config->cameraFOVHorizontalDeg);
+    config->cameraFOVVerticalDeg = reader.GetReal("", "CameraFOVVerticalDeg", config->cameraFOVVerticalDeg);
+    config->cameraFrameRateHz = reader.GetReal("", "CameraFrameRateHz", config->cameraFrameRateHz);
+    config->cameraLatencyMs = reader.GetReal("", "CameraLatencyMs", config->cameraLatencyMs);
+    config->cameraMountOffsetX = reader.GetReal("", "CameraMountOffsetX", config->cameraMountOffsetX);
+    config->cameraMountOffsetY = reader.GetReal("", "CameraMountOffsetY", config->cameraMountOffsetY);
+    config->cameraMountOffsetZ = reader.GetReal("", "CameraMountOffsetZ", config->cameraMountOffsetZ);
+
+    // Beacon config
+    config->beaconLeftWavelengthNm = static_cast<int>(reader.GetInteger("", "BeaconLeftWavelengthNm", config->beaconLeftWavelengthNm));
+    config->beaconRightWavelengthNm = static_cast<int>(reader.GetInteger("", "BeaconRightWavelengthNm", config->beaconRightWavelengthNm));
+    config->beaconEmissionConeDeg = reader.GetReal("", "BeaconEmissionConeDeg", config->beaconEmissionConeDeg);
+    config->beaconLeftMountX = reader.GetReal("", "BeaconLeftMountX", config->beaconLeftMountX);
+    config->beaconLeftMountY = reader.GetReal("", "BeaconLeftMountY", config->beaconLeftMountY);
+    config->beaconLeftMountZ = reader.GetReal("", "BeaconLeftMountZ", config->beaconLeftMountZ);
+    config->beaconRightMountX = reader.GetReal("", "BeaconRightMountX", config->beaconRightMountX);
+    config->beaconRightMountY = reader.GetReal("", "BeaconRightMountY", config->beaconRightMountY);
+    config->beaconRightMountZ = reader.GetReal("", "BeaconRightMountZ", config->beaconRightMountZ);
+
+    // === Mode validation (loud-fail per FR-011 mutual-exclusion) =======
+    // Pathgen-mode: anything goes; tracker-* fields are inert defaults.
+    // Tracker-mode: TrackerSourceRun is required; loud-fail if missing.
+    // Strict mutual-exclusion of pathgen-only fields in tracker mode is
+    // soft for v1 (warn on misconfig rather than reject) — the inih
+    // reader doesn't expose "was this key in the file vs defaulted",
+    // and most pathgen fields (RabbitSpeed*, Selection*, Demetic*) are
+    // shared across modes anyway.
+    if (config->mode != "pathgen" && config->mode != "tracker") {
+        out << "FATAL ERROR: Mode = '" << config->mode
+            << "' invalid; must be 'pathgen' or 'tracker'" << std::endl;
+        exit(1);
+    }
+    if (config->mode == "tracker" && config->trackerSourceRun.empty()) {
+        out << "FATAL ERROR: Mode = tracker requires TrackerSourceRun "
+            << "(S3 key 'autoc-storage/<run-id>/gen<N>.dmp' or local path)"
+            << std::endl;
+        exit(1);
+    }
+
     // Print S3 configuration
     if (config->s3Profile != "default") {
         out << "S3 Configuration: Using MinIO S3 (profile: " << config->s3Profile << ", bucket: " << config->s3Bucket << ")" << std::endl;
