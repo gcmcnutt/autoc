@@ -89,6 +89,7 @@ add_library(autoc_common STATIC
     src/eval/fitness_decomposition.cc
     src/eval/selection.cc
     src/eval/eval_logger.cc
+    src/eval/source_dmp_loader.cc
     src/nn/evaluator.cc
     src/nn/serialization.cc
     src/nn/population.cc
@@ -152,6 +153,9 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(nn_sensor_interface_tests tests/nn_sensor_interface_tests.cc)
   target_link_libraries(nn_sensor_interface_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(source_dmp_loading_tests tests/source_dmp_loading_tests.cc)
+  target_link_libraries(source_dmp_loading_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -167,6 +171,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME nn_telemetry_tests COMMAND nn_telemetry_tests)
   add_test(NAME cereal_version_anchor_tests COMMAND cereal_version_anchor_tests)
   add_test(NAME nn_sensor_interface_tests COMMAND nn_sensor_interface_tests)
+  add_test(NAME source_dmp_loading_tests COMMAND source_dmp_loading_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -176,6 +181,7 @@ if(ENABLE_AUTOC_TESTS)
             contract_evolution_tests rpc_transport_tests
             msplink_quat_convention_tests nn_telemetry_tests
             cereal_version_anchor_tests nn_sensor_interface_tests
+            source_dmp_loading_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -189,6 +195,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND msplink_quat_convention_tests --gtest_brief=1
     COMMAND cereal_version_anchor_tests --gtest_brief=1
     COMMAND nn_sensor_interface_tests --gtest_brief=1
+    COMMAND source_dmp_loading_tests --gtest_brief=1
   )
 endif()
 
