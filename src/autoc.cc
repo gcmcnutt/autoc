@@ -747,6 +747,11 @@ struct EvalJob {
 static EvalData buildEvalData(const EvalJob& job) {
     EvalData evalData;
     evalData.controllerType = ControllerType::NEURAL_NET;
+    // 030 M6c — pass active mode to the worker so it picks the right
+    // ScenarioStepper. ConfigManager has already validated mode ∈
+    // {pathgen, tracker} at startup; default in the EvalData struct is
+    // "pathgen" so any pre-M6c worker still does the right thing.
+    evalData.mode = ConfigManager::getConfig().mode;
     evalData.gp.assign(reinterpret_cast<const char*>(job.nnData.data()),
                        reinterpret_cast<const char*>(job.nnData.data() + job.nnData.size()));
     evalData.gpHash = hashByteVector(evalData.gp);

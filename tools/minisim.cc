@@ -140,24 +140,48 @@ public:
       // genomes use this same instance with an empty hidden state buffer.
       NNControllerBackend nnBackend(nnGenome);
 
-      // Evaluate each path. Per-tick logic lives behind the ScenarioStepper
-      // strategy (030 M6a / FR-019) — pathgen-mode wraps the prior
-      // path-following body byte-identically; tracker-mode (M6d) lands a
-      // sibling stepper that drives off recorded source trajectories.
+      // Evaluate each scenario. Per-tick logic lives behind the
+      // ScenarioStepper strategy (030 M6a / FR-019). Mode dispatch (M6c):
+      // EvalData::mode selects PathgenStepper vs TrackerStepper. Tracker
+      // mode is wire-protocol-only in M6c — TrackerStepper lands at M6d
+      // and source trajectories at M6e; until then, tracker scenarios
+      // exit cleanly with a clear log so operator can verify the mode
+      // signal flows end-to-end.
+      const std::string& evalMode = evalData.mode;
+      if (evalCounter == 1) {
+        std::cerr << "[MINISIM] worker=" << workerId
+                  << " mode=" << evalMode << std::endl;
+      }
       for (int i = 0; i < static_cast<int>(evalData.pathList.size()); i++) {
         // Path stays at canonical origin (Z=0); origin offset bridges raw→virtual
         std::vector<Path> path = evalData.pathList.at(i);
         std::vector<AircraftState> aircraftStateSteps;
 
         ScenarioMetadata scenarioMeta = scenarioForPathIndex(evalData, static_cast<size_t>(i));
-        autoc::eval::PathgenStepper stepper(nnBackend, aircraftState, path, scenarioMeta);
-        stepper.initScenario();
-        aircraftStateSteps.push_back(aircraftState);
-
         CrashReason crashReason = CrashReason::None;
-        while (crashReason == CrashReason::None) {
-          crashReason = stepper.stepOnce();
+
+        if (evalMode == "tracker") {
+          // M6c stub — tracker-mode runtime support lands at M6d/e.
+          // Log once per worker, return Eval crash so the scenario is
+          // recorded as failed without spending sim time.
+          if (i == 0 && evalCounter == 1) {
+            std::cerr << "[MINISIM] tracker mode received — TrackerStepper "
+                         "+ source trajectory not yet wired (M6d/M6e); "
+                         "scenarios will record as Eval-crash."
+                      << std::endl;
+          }
+          aircraftStateSteps.push_back(aircraftState);  // empty initial state
+          crashReason = CrashReason::Eval;
+        } else {
+          // pathgen-mode (default): existing behavior, byte-identical to M6a.
+          autoc::eval::PathgenStepper stepper(nnBackend, aircraftState, path, scenarioMeta);
+          stepper.initScenario();
           aircraftStateSteps.push_back(aircraftState);
+
+          while (crashReason == CrashReason::None) {
+            crashReason = stepper.stepOnce();
+            aircraftStateSteps.push_back(aircraftState);
+          }
         }
 
         {

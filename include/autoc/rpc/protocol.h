@@ -134,13 +134,19 @@ struct EvalData {
   std::vector<ScenarioMetadata> scenarioList;
   RabbitSpeedConfig rabbitSpeedConfig = RabbitSpeedConfig::defaultConfig();
 
+  // 030 M6c — runtime mode dispatch (FR-019). Worker selects PathgenStepper
+  // vs TrackerStepper based on this field. "pathgen" is the default to
+  // preserve existing pathgen-only behavior across the M6c plumbing commit.
+  // "tracker" fires the source-trajectory-driven per-tick path (M6d/e).
+  std::string mode = "pathgen";
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
     ar(gp, gpHash, isEliteReeval);
     int ct = static_cast<int>(controllerType);
     ar(ct);
     controllerType = static_cast<ControllerType>(ct);
-    ar(pathList, scenario, scenarioList, rabbitSpeedConfig);
+    ar(pathList, scenario, scenarioList, rabbitSpeedConfig, mode);
   }
 
   void sanitizePaths() {

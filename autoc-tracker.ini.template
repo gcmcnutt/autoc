@@ -48,9 +48,16 @@ SelectionMode                   = lexicase
 # =============================================================================
 # SIMULATION
 # =============================================================================
+# 030 v1 routing (per session 2026-05-06): tracker mode runs through minisim,
+# not crrcsim. The strategy-pattern split (PathgenStepper / TrackerStepper) is
+# wired in minisim only; crrcsim's mod_inputdev still has its own per-tick
+# loop and is mode-blind. Pathgen training continues to use crrcsim default;
+# tracker training overrides MinisimProgram to point at the kinematic worker.
+# Tradeoff: no FDM realism for the smoke test (no wind, simplified aero).
+# Mirroring the strategy-pattern split into mod_inputdev is post-v1 backlog.
 EvalThreads                     = 20
 MinisimPortOverride             = 0
-MinisimProgram                  = ./scripts/crrcsim.sh
+MinisimProgram                  = ./build/minisim
 
 # RNG seed (-1 for time-based)
 Seed                            = -1
