@@ -91,6 +91,7 @@ add_library(autoc_common STATIC
     src/eval/eval_logger.cc
     src/eval/source_dmp_loader.cc
     src/eval/camera_projection.cc
+    src/eval/pathgen_stepper.cc
     src/nn/evaluator.cc
     src/nn/serialization.cc
     src/nn/population.cc

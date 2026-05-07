@@ -9,6 +9,7 @@
 
 #include "autoc/rpc/protocol.h"
 #include "autoc/autoc.h"
+#include "autoc/eval/pathgen_stepper.h"
 #include "autoc/eval/sensor_math.h"
 #include "autoc/nn/nn_input_computation.h"
 #include "autoc/nn/serialization.h"
@@ -139,133 +140,28 @@ public:
       // genomes use this same instance with an empty hidden state buffer.
       NNControllerBackend nnBackend(nnGenome);
 
-      // Evaluate each path
+      // Evaluate each path. Per-tick logic lives behind the ScenarioStepper
+      // strategy (030 M6a / FR-019) — pathgen-mode wraps the prior
+      // path-following body byte-identically; tracker-mode (M6d) lands a
+      // sibling stepper that drives off recorded source trajectories.
       for (int i = 0; i < static_cast<int>(evalData.pathList.size()); i++) {
         // Path stays at canonical origin (Z=0); origin offset bridges raw→virtual
         std::vector<Path> path = evalData.pathList.at(i);
         std::vector<AircraftState> aircraftStateSteps;
-        nnBackend.reset();  // zero recurrent state at span start (no-op for feedforward)
 
-        // Fixed initial orientation and position for deterministic evaluation
-        // Virtual coordinates: start at origin (0,0,0). Path also at virtual origin.
-        gp_quat aircraft_orientation = gp_quat(Eigen::AngleAxis<gp_scalar>(static_cast<gp_scalar>(M_PI), gp_vec3::UnitZ())) *
-          gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitY())) *
-          gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitX()));
-        gp_vec3 initialPosition(0.0f, 0.0f, 0.0f);  // virtual origin
-        gp_vec3 initial_velocity = aircraft_orientation * gp_vec3(SIM_INITIAL_VELOCITY, 0.0f, 0.0f);
-
-        aircraftState = AircraftState{ 0, SIM_INITIAL_VELOCITY, initial_velocity, aircraft_orientation, initialPosition, 0.0f, 0.0f, SIM_INITIAL_THROTTLE, 0 };
-        {
-          gp_vec3 tangent;
-          if (path.size() > 1)
-            tangent = path[1].start - path[0].start;
-          else
-            tangent = gp_vec3::UnitX();
-          double tn = tangent.norm();
-          if (tn > 1e-6) tangent = tangent / tn;
-          else tangent = gp_vec3::UnitX();
-          aircraftState.resetHistory(path[0].start, tangent);
-        }
-        aircraftState.setRabbitOdometer(0.0f);
-
-        // Get rabbit speed from scenario metadata
-        gp_scalar rabbitSpeed = SIM_INITIAL_VELOCITY;  // default
-        {
-          ScenarioMetadata meta = scenarioForPathIndex(evalData, static_cast<size_t>(i));
-          if (meta.rabbitSpeed > 0.0f) {
-            rabbitSpeed = static_cast<gp_scalar>(meta.rabbitSpeed);
-          }
-        }
-        aircraftState.setRabbitSpeed(rabbitSpeed);
-
-        // Set initial rabbit position (odometer=0 = first path point)
-        {
-          VectorPathProvider pathProvider(path, 0);
-          gp_vec3 rabbitPos = getInterpolatedTargetPosition(pathProvider, 0.0f, 0.0f);
-          aircraftState.setRabbitPosition(rabbitPos);
-        }
+        ScenarioMetadata scenarioMeta = scenarioForPathIndex(evalData, static_cast<size_t>(i));
+        autoc::eval::PathgenStepper stepper(nnBackend, aircraftState, path, scenarioMeta);
+        stepper.initScenario();
         aircraftStateSteps.push_back(aircraftState);
 
-        unsigned long int duration_msec = 0;
         CrashReason crashReason = CrashReason::None;
-
         while (crashReason == CrashReason::None) {
-
-          // Capture temporal history before NN evaluation
-          {
-            VectorPathProvider pathProvider(path, aircraftState.getThisPathIndex());
-            gp_scalar rabbitOdo = aircraftState.getRabbitOdometer();
-            gp_vec3 targetPos = getInterpolatedTargetPosition(
-                pathProvider, rabbitOdo, 0.0f);
-            gp_vec3 craftToTarget = targetPos - aircraftState.getPosition();
-            gp_vec3 target_local = aircraftState.getOrientation().inverse() * craftToTarget;
-            float distance = static_cast<float>(target_local.norm());
-
-            // Path tangent for singularity fallback
-            gp_vec3 posAhead = getInterpolatedTargetPosition(pathProvider, rabbitOdo, 0.5f);
-            gp_vec3 tangent = posAhead - targetPos;
-            double tn = tangent.norm();
-            gp_vec3 tangent_body = (tn > 1e-6)
-                ? aircraftState.getOrientation().inverse() * (tangent / tn)
-                : gp_vec3::UnitX();
-
-            gp_vec3 dir = computeTargetDir(target_local, distance, tangent_body);
-            aircraftState.setRabbitPosition(targetPos);
-            aircraftState.recordErrorHistory(dir, distance, duration_msec);
-          }
-
-          // Run NN controller (per-span instance, see above)
-          {
-            VectorPathProvider pathProvider(path, aircraftState.getThisPathIndex());
-            nnBackend.evaluate(aircraftState, pathProvider);
-          }
-
-          // Advance aircraft state
-          aircraftState.minisimAdvanceState(SIM_TIME_STEP_MSEC);
-          duration_msec += SIM_TIME_STEP_MSEC;
-          aircraftState.setSimTimeMsec(duration_msec);
-
-          // Advance rabbit odometer
-          gp_scalar dtSec = static_cast<gp_scalar>(SIM_TIME_STEP_MSEC) / 1000.0f;
-          aircraftState.setRabbitOdometer(aircraftState.getRabbitOdometer() + rabbitSpeed * dtSec);
-
-          // Crash detection: reconstruct raw position for OOB bounds check.
-          // Position is virtual (Z≈0). Raw = virtual + (0,0,SIM_INITIAL_ALTITUDE).
-          gp_vec3 rawForOOB = aircraftState.getPosition() + gp_vec3(0.0f, 0.0f, SIM_INITIAL_ALTITUDE);
-          gp_scalar distanceFromOrigin = std::sqrt(rawForOOB[0] * rawForOOB[0] +
-            rawForOOB[1] * rawForOOB[1]);
-          if (rawForOOB[2] < (SIM_MAX_ELEVATION) ||
-            rawForOOB[2] > (SIM_MIN_ELEVATION) ||
-            distanceFromOrigin > SIM_PATH_RADIUS_LIMIT) {
-            crashReason = CrashReason::Eval;
-          }
-
-          // Advance path index by scanning distanceFromStart against rabbit odometer
-          while (aircraftState.getThisPathIndex() < static_cast<int>(path.size()) - 2 &&
-                 path.at(aircraftState.getThisPathIndex()).distanceFromStart < aircraftState.getRabbitOdometer()) {
-            aircraftState.setThisPathIndex(aircraftState.getThisPathIndex() + 1);
-          }
-
-          // Update rabbit position to match advanced odometer (for renderer error bars)
-          {
-            VectorPathProvider pathProvider(path, aircraftState.getThisPathIndex());
-            gp_vec3 rabbitPos = getInterpolatedTargetPosition(
-                pathProvider, aircraftState.getRabbitOdometer(), 0.0f);
-            aircraftState.setRabbitPosition(rabbitPos);
-          }
-
+          crashReason = stepper.stepOnce();
           aircraftStateSteps.push_back(aircraftState);
-
-          if (duration_msec >= SIM_TOTAL_TIME_MSEC) {
-            crashReason = CrashReason::TimeLimit;
-          }
-          if (aircraftState.getThisPathIndex() >= static_cast<int>(path.size()) - 2) {
-            crashReason = CrashReason::RabbitComplete;
-          }
         }
 
         {
-          ScenarioMetadata meta = scenarioForPathIndex(evalData, static_cast<size_t>(i));
+          ScenarioMetadata meta = scenarioMeta;
           meta.originOffset = gp_vec3(0.0f, 0.0f, SIM_INITIAL_ALTITUDE);  // raw→virtual offset for renderer
           evalResults.scenarioList.push_back(meta);
         }
