@@ -238,6 +238,15 @@ public:
         // empty-vs-populated to decide pathgen vs tracker render.
         evalResults.cameraViewList.push_back(cameraViewSteps);
         evalResults.targetTrajectoryList.push_back(targetSampleSteps);
+        // 030 M7d.a — per-scenario counters. Arena egress: in tracker mode,
+        // CrashReason::Eval is sourced exclusively from checkArenaBounds (no
+        // other Eval source today), so derive directly. Pathgen pushes 0
+        // (no arena.h enforcement on M1 envelope). Hull-strike count is 0
+        // until M7d.b wires probabilistic firing.
+        const int arena_egress = (evalMode == "tracker"
+                                  && crashReason == CrashReason::Eval) ? 1 : 0;
+        evalResults.arenaEgressCount.push_back(arena_egress);
+        evalResults.hullStrikeCount.push_back(0);
       }
 
       sendRPC(socket_, evalResults);

@@ -57,28 +57,59 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         // Previous tangent for last-waypoint fallback
         gp_vec3 prevTangent = gp_vec3::UnitX();
 
+        // 030 M7d.a — tracker scenarios populate targetTrajectoryList in
+        // minisim; pathgen scenarios leave it empty. Branch on data presence
+        // to avoid a separate mode field. Pathgen path below is unchanged
+        // (bitwise-preserved against the M1 regression gate).
+        const bool is_tracker =
+            (i < evalResults.targetTrajectoryList.size()
+             && !evalResults.targetTrajectoryList.at(i).empty());
+
         int stepIndex = 0;
         while (++stepIndex < static_cast<int>(aircraftStates.size())) {
             auto& stepState = aircraftStates.at(stepIndex);
-            int pathIndex = std::clamp(stepState.getThisPathIndex(), 0,
-                                       static_cast<int>(path.size()) - 1);
 
             gp_vec3 aircraftPosition = stepState.getPosition();
-            gp_vec3 rabbitPosition = path.at(pathIndex).start;
-
-            // Path tangent: direction rabbit is traveling
+            gp_vec3 rabbitPosition;
             gp_vec3 tangent;
-            if (pathIndex + 1 < static_cast<int>(path.size())) {
-                tangent = (path.at(pathIndex + 1).start - path.at(pathIndex).start);
-                double tn = tangent.norm();
-                if (tn > 0.01) {
-                    tangent = tangent / tn;
+
+            if (is_tracker) {
+                // Tracker: rabbit = trail-rabbit position trailing target's
+                // velocity vector (M7b); tangent = target velocity unit.
+                // targetTrajectoryList[i] is parallel-indexed with
+                // aircraftStateList[i] (both pushed in lockstep by minisim).
+                const std::vector<CopiedTargetSample>& targets =
+                    evalResults.targetTrajectoryList.at(i);
+                int targetIndex = std::clamp(stepIndex, 0,
+                                             static_cast<int>(targets.size()) - 1);
+                const CopiedTargetSample& target = targets.at(targetIndex);
+                rabbitPosition = target.trail_rabbit_position;
+                gp_vec3 vel = target.velocity;
+                double vn = vel.norm();
+                if (vn > 0.01) {
+                    tangent = vel / vn;
                     prevTangent = tangent;
                 } else {
-                    tangent = prevTangent;
+                    tangent = prevTangent;  // degenerate target velocity
                 }
             } else {
-                tangent = prevTangent;  // Last waypoint: reuse previous
+                int pathIndex = std::clamp(stepState.getThisPathIndex(), 0,
+                                           static_cast<int>(path.size()) - 1);
+                rabbitPosition = path.at(pathIndex).start;
+
+                // Path tangent: direction rabbit is traveling
+                if (pathIndex + 1 < static_cast<int>(path.size())) {
+                    tangent = (path.at(pathIndex + 1).start - path.at(pathIndex).start);
+                    double tn = tangent.norm();
+                    if (tn > 0.01) {
+                        tangent = tangent / tn;
+                        prevTangent = tangent;
+                    } else {
+                        tangent = prevTangent;
+                    }
+                } else {
+                    tangent = prevTangent;  // Last waypoint: reuse previous
+                }
             }
 
             // Decompose aircraft-rabbit offset into along-track and cross-track
