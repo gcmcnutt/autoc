@@ -54,6 +54,18 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 
 - Project-level decision surfaced by 030 scoping, captured in 030 D12. Three options: ignore (default), stub, remove. Decision happens at the moment a 030 schema change first forces a touch on `tools/minisim.cc`. Default-to-ignore until then; if 030 plan-phase work hits minisim, upgrade to remove rather than spend porting cost.
 - Files: `tools/minisim.cc`, `CMakeLists.txt:100-106`, audit `tests/` for hard dependencies.
+- **Update 2026-05-06**: trigger fired during 030 M6a (PathgenStepper extraction) + M6c/d/e (tracker-mode dispatch wired in minisim per session 2026-05-06 routing decision). Per operator call, minisim stays alive through v1 tracker mode rather than retiring. Retirement decision now contingent on 030 smoke outcome.
+
+### [BACKLOG] AutocConfig auto-print / extensible parameter dump
+
+- **Surfaced 030 M6e (2026-05-06)**: `src/autoc.cc` startup logging is hand-coded `*logger.info() << "Key: " << cfg.field << endl` for every AutocConfig field. Adding the 030 tracker-mode block (~30 new fields across Source / Trail / CrashHull / Arena / Camera / Beacon) made the fragility obvious — every new knob requires both an AutocConfig field add, a parser line in `src/util/config.cc`, AND a manual print line in `autoc.cc`'s startup dump. Three-place edit per knob.
+- **Why it matters**: future feature work (M7 tracker fitness, 031+ camera-config experimentation, etc.) will keep adding knobs. Drift between "config printed" and "config used" is silent — operator looks at the log, doesn't see the new field, assumes default; meanwhile the new knob is active in the run.
+- **Options**:
+  - **X-macro list** (`#define AUTOC_CONFIG_FIELDS(X) X(int, populationSize, 500) X(int, numberOfGenerations, 50) ...`): single source of truth, generates field decl + parse + print. Familiar pattern (already in tree for some structures?) but adds preprocessor density.
+  - **Cereal-to-text adapter**: AutocConfig already could carry a `serialize` template; adding a JSON-archive output pass produces a structured dump for free. Cleaner from a typesystem perspective but requires cereal/json or hand-rolling.
+  - **Reflection-via-tuple-of-members**: C++17 alternative — compile-time list of `std::tuple<std::string_view, MemberPtr>` pairs that print(field) + parse(field) iterate over. Modern but more complex to set up.
+- **Trigger to act**: when the next milestone adds 5+ knobs (likely M7 tracker fitness), before the manual-print drift bites.
+- Files: `include/autoc/util/config.h`, `src/util/config.cc`, `src/autoc.cc:1402-1462` (startup print block).
 
 ---
 

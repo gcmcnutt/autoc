@@ -158,18 +158,20 @@ TEST(TrackerConfig, BeaconConfigParses) {
 }
 
 // ---------------------------------------------------------------------------
-// autoc-tracker.ini.template — verify the canonical reference parses clean.
+// autoc-tracker.ini — verify the canonical operator file parses clean.
 // ---------------------------------------------------------------------------
 
-TEST(TrackerConfig, IniTemplateParsesClean) {
-    // The repo-root template is the canonical reference; if it ever fails
-    // to parse, smoke-test runs would fail too. CMake passes the source
-    // dir so the test runs from any CWD.
-    const std::string template_path =
-        std::string(AUTOC_SOURCE_DIR) + "/autoc-tracker.ini.template";
-    INIReader reader(template_path);
+TEST(TrackerConfig, OperatorIniParsesClean) {
+    // The repo-root autoc-tracker.ini is the canonical operator-runnable
+    // file (mirrors autoc.ini section structure for side-by-side diff,
+    // smoke values for fast visual iteration). If it ever fails to parse,
+    // smoke-test runs would fail too. CMake passes the source dir so the
+    // test runs from any CWD.
+    const std::string ini_path =
+        std::string(AUTOC_SOURCE_DIR) + "/autoc-tracker.ini";
+    INIReader reader(ini_path);
     ASSERT_EQ(reader.ParseError(), 0)
-        << "autoc-tracker.ini.template must parse cleanly: " << template_path;
+        << "autoc-tracker.ini must parse cleanly: " << ini_path;
     EXPECT_EQ(reader.Get("", "Mode", ""), "tracker");
     EXPECT_FALSE(reader.Get("", "TrackerSourceRun", "").empty());
     EXPECT_EQ(reader.Get("", "CrashHullShape", ""), "SPHERE");

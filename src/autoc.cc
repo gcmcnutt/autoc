@@ -1399,6 +1399,10 @@ int main(int argc, char** argv)
   threadPool = new ThreadPool(ConfigManager::getConfig());
 
   // Print the configuration
+  // TODO: hand-coded enumeration is fragile as autoc.ini grows; backlog
+  // entry "[BACKLOG] AutocConfig auto-print" tracks the extensibility
+  // refactor (member-list macro / cereal-to-text dump / etc).
+  *logger.info() << "Mode: " << cfg.mode << endl;
   *logger.info() << "Config: pop=" << cfg.populationSize
                  << " gens=" << cfg.numberOfGenerations << endl;
   *logger.info() << "SimNumPathsPerGen: " << cfg.simNumPathsPerGen << endl;
@@ -1414,6 +1418,47 @@ int main(int argc, char** argv)
   *logger.info() << "EnableEntryVariations: " << cfg.enableEntryVariations << endl;
   *logger.info() << "EnableWindVariations: " << cfg.enableWindVariations << endl;
   *logger.info() << "EnableRabbitSpeedVariations: " << cfg.enableRabbitSpeedVariations << endl;
+
+  // 030 M6e — tracker-mode parameter dump (only when active).
+  if (cfg.mode == "tracker") {
+    *logger.info() << "=== Tracker-mode parameters ===" << endl;
+    *logger.info() << "TrackerSourceRun: " << cfg.trackerSourceRun << endl;
+    *logger.info() << "TrackerPathSubset: " << cfg.trackerPathSubset << endl;
+    *logger.info() << "TrackerWindSubset: " << cfg.trackerWindSubset << endl;
+    *logger.info() << "TrailDistance: " << cfg.trailDistance
+                   << "  LowSpeedTrailThreshold: " << cfg.lowSpeedTrailThreshold
+                   << "  Hysteresis: " << cfg.lowSpeedTrailHysteresis << endl;
+    *logger.info() << "CrashHull: shape=" << cfg.crashHullShape
+                   << " radius=" << cfg.crashHullRadius
+                   << " p_crash{gen0=" << cfg.pCrashGen0
+                   << ", ramp=" << cfg.pCrashGenRamp
+                   << ", plateauStart=" << cfg.pCrashGenPlateau
+                   << ", plateau=" << cfg.pCrashPlateau << "}" << endl;
+    *logger.info() << "FlightArena: radius=" << cfg.flightArenaRadius
+                   << " floorAGL=" << cfg.flightArenaFloorAGL
+                   << " ceilingAGL=" << cfg.flightArenaCeilingAGL << endl;
+    *logger.info() << "Camera: count=" << cfg.cameraCount
+                   << " fov_h=" << cfg.cameraFOVHorizontalDeg
+                   << " fov_v=" << cfg.cameraFOVVerticalDeg
+                   << " fps=" << cfg.cameraFrameRateHz
+                   << " latency_ms=" << cfg.cameraLatencyMs << endl;
+    *logger.info() << "  CameraMount: ("
+                   << cfg.cameraMountOffsetX << ", "
+                   << cfg.cameraMountOffsetY << ", "
+                   << cfg.cameraMountOffsetZ << ") m (body, NED)" << endl;
+    *logger.info() << "BeaconLeft: wavelength=" << cfg.beaconLeftWavelengthNm
+                   << "nm  emissionCone=" << cfg.beaconEmissionConeDeg
+                   << "deg  mount=("
+                   << cfg.beaconLeftMountX << ", "
+                   << cfg.beaconLeftMountY << ", "
+                   << cfg.beaconLeftMountZ << ")" << endl;
+    *logger.info() << "BeaconRight: wavelength=" << cfg.beaconRightWavelengthNm
+                   << "nm  mount=("
+                   << cfg.beaconRightMountX << ", "
+                   << cfg.beaconRightMountY << ", "
+                   << cfg.beaconRightMountZ << ")" << endl;
+    *logger.info() << "===============================" << endl;
+  }
 
   // 030 M6e — load source dmp at startup for tracker mode (FR-001 + FR-011).
   // Apply path × wind subset; result is the canonical per-scenario source-
