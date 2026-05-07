@@ -1,9 +1,12 @@
 #include "autoc/nn/mode.h"
 #include "autoc/nn/evaluator.h"
 #include "autoc/nn/nn_inputs.h"
+#include "autoc/nn/topology.h"
+#include "autoc/util/config.h"
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -34,10 +37,31 @@ const ModeStrategy kPathgenMode = {
     &gather_pathgen_inputs,
     static_cast<int>(PathgenInput::COUNT),
     "pathgen",
+    NN_TOPOLOGY,
+    NN_RECURRENT,
+    NN_NUM_LAYERS,
+    NN_WEIGHT_COUNT,
+    NN_HIDDEN_STATE_COUNT,
+    NN_TOPOLOGY_STRING,
 };
 
 const ModeStrategy kTrackerMode = {
     &gather_tracker_inputs_signature_mismatch_guard,
     static_cast<int>(TrackerInput::COUNT),
     "tracker",
+    TRACKER_NN_TOPOLOGY,
+    TRACKER_NN_RECURRENT,
+    TRACKER_NN_NUM_LAYERS,
+    TRACKER_NN_WEIGHT_COUNT,
+    TRACKER_NN_HIDDEN_STATE_COUNT,
+    TRACKER_NN_TOPOLOGY_STRING,
 };
+
+const ModeStrategy& getActiveModeStrategy() {
+    return getModeStrategyByName(ConfigManager::getConfig().mode.c_str());
+}
+
+const ModeStrategy& getModeStrategyByName(const char* name) {
+    if (std::strcmp(name, "tracker") == 0) return kTrackerMode;
+    return kPathgenMode;  // default for "pathgen" or any unrecognized name
+}

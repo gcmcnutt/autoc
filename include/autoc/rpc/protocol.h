@@ -27,6 +27,7 @@
 
 #include "autoc/util/socket_wrapper.h"
 #include "autoc/eval/aircraft_state.h"
+#include "autoc/eval/arena.h"               // FlightArena (030 M7a)
 #include "autoc/eval/beacon_config.h"
 #include "autoc/eval/camera_config.h"
 #include "autoc/eval/camera_projection.h"   // AirframeProxy
@@ -118,7 +119,11 @@ struct EvalData {
   autoc::eval::BeaconConfig beaconLeftConfig;
   autoc::eval::BeaconConfig beaconRightConfig;
   autoc::eval::AirframeProxy airframeProxy;
-  gp_vec3 homeWorld = gp_vec3::Zero();
+  // 030 M7a — replaces M6e's homeWorld scalar with full FlightArena
+  // (cylinder + floor + ceiling) shared between gather_tracker_inputs
+  // (NN input slot 44) and TrackerStepper's per-tick OOB termination
+  // check. Single source of truth per Session 2026-05-07 Q1.
+  autoc::eval::FlightArena flightArena;
 
   // 030 M8b geometry-fix — source pre-roll. Worker skips the first N
   // source-tick samples before chase starts evolving so source has a
@@ -135,7 +140,7 @@ struct EvalData {
     controllerType = static_cast<ControllerType>(ct);
     ar(pathList, scenario, scenarioList, rabbitSpeedConfig, mode);
     ar(sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
-       airframeProxy, homeWorld, trackerSourcePreRollTicks);
+       airframeProxy, flightArena, trackerSourcePreRollTicks);
   }
 
   void sanitizePaths() {
@@ -148,21 +153,10 @@ struct EvalData {
 };
 CEREAL_CLASS_VERSION(EvalData, 1)
 
-enum class CrashReason {
-  None,             // Still flying
-  Boot,             // Startup/initialization error
-  Sim,              // Physics crash (ground impact, structural failure)
-  Eval,             // Out of bounds (too far, too low, too high)
-  TimeLimit,        // Simulation time cap reached (was: Time)
-  RabbitComplete,   // Rabbit reached end of path — normal completion (was: Distance)
-};
-
-// Is this a real crash (penalizable) or normal termination?
-inline bool isCrash(CrashReason reason) {
-  return reason == CrashReason::Boot ||
-         reason == CrashReason::Sim ||
-         reason == CrashReason::Eval;
-}
+// CrashReason factored out to its own header (030 M7a) to break the
+// circular include between protocol.h and arena.h. Existing consumers
+// of protocol.h see the type unchanged via this re-include.
+#include "autoc/rpc/crash_reason.h"
 
 std::string crashReasonToString(CrashReason type);
 

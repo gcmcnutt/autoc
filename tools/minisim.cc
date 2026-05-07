@@ -12,6 +12,7 @@
 #include "autoc/eval/pathgen_stepper.h"
 #include "autoc/eval/tracker_stepper.h"
 #include "autoc/eval/sensor_math.h"
+#include "autoc/nn/mode.h"               // 030 M7a — getModeStrategyByName
 #include "autoc/nn/nn_input_computation.h"
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
@@ -111,13 +112,19 @@ public:
         continue;
       }
 
-      // Validate topology matches compiled-in expectations
+      // Validate topology matches the active mode's compile-time expectation
+      // (030 M7a — FR-019 runtime mode dispatch). Pathgen genomes are
+      // 33-input, tracker genomes are 45-input; minisim picks the
+      // expected shape from the active ModeStrategy.
       {
-        std::vector<int> expectedTopology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+        const ModeStrategy& mode = getModeStrategyByName(evalData.mode.c_str());
+        std::vector<int> expectedTopology(mode.topology, mode.topology + mode.num_layers);
         if (nnGenome.topology != expectedTopology) {
-          std::cerr << "[MINISIM] NN topology mismatch: file has "
-                    << nnGenome.weights.size() << " weights but binary expects "
-                    << NN_WEIGHT_COUNT << " (" << NN_TOPOLOGY_STRING << ")" << std::endl;
+          std::cerr << "[MINISIM] NN topology mismatch (mode=" << mode.name << "): "
+                    << "file has " << nnGenome.weights.size()
+                    << " weights but binary expects "
+                    << mode.weight_count << " (" << mode.topology_string << ")"
+                    << std::endl;
           continue;
         }
       }
@@ -189,7 +196,7 @@ public:
                 evalData.beaconLeftConfig,
                 evalData.beaconRightConfig,
                 evalData.airframeProxy,
-                evalData.homeWorld,
+                evalData.flightArena,
                 evalData.trackerSourcePreRollTicks);
             stepper.initScenario();
             aircraftStateSteps.push_back(aircraftState);

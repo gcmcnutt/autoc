@@ -22,15 +22,39 @@ struct NNInputs;
 struct ModeStrategy {
     // Gather mode-specific NN sensor inputs. Pathgen: 33 floats matching
     // NNInputs struct field order (see include/autoc/nn/nn_inputs.h).
-    // Tracker: lands in M5 alongside projection module + tracker NNInputs
-    // storage; for now kTrackerMode's gather is a stub that aborts loudly.
+    // Tracker: gather happens via gather_tracker_inputs(...) which has
+    // a different signature (takes TrackerInputs + history + arena);
+    // dispatched at the ScenarioStepper level (TrackerStepper.stepOnce),
+    // not through this bundle. The function pointer below is a guard
+    // rail that aborts loud if pathgen-style dispatch ever fires for
+    // tracker mode (caller bug — should be using TrackerStepper).
     void (*gather_inputs)(PathProvider& pathProvider,
                           AircraftState& aircraftState,
                           NNInputs& inputs);
 
-    int input_count;     // PathgenInput::COUNT (33) or TrackerInput::COUNT (48)
+    int input_count;     // PathgenInput::COUNT (33) or TrackerInput::COUNT (45)
     const char* name;    // "pathgen" | "tracker"
+
+    // 030 M7a — Topology metadata for runtime mode-select (FR-019). Both
+    // bundles carry a pointer to the mode's compile-time topology array
+    // + recurrent flag array + total weight count + hidden state count
+    // + topology string. Consumed by autoc.cc population init,
+    // minisim genome validation, and startup logging.
+    const int* topology;             // {input, hidden1, hidden2, output}
+    const bool* recurrent;           // per-layer recurrent flag
+    int num_layers;                  // 4 in v1
+    int weight_count;                // total feedforward + recurrent W_hh
+    int hidden_state_count;          // total recurrent state floats
+    const char* topology_string;     // "33,32,16r,3" or "45,32,16r,3"
 };
 
 extern const ModeStrategy kPathgenMode;
 extern const ModeStrategy kTrackerMode;
+
+// 030 M7a — Active mode lookup helper for autoc-side runtime dispatch.
+// Reads ConfigManager and returns the matching strategy bundle. Called
+// at autoc startup (population init + topology validation) — NOT in the
+// hot path (per-tick gather goes through PathgenStepper / TrackerStepper
+// directly).
+const ModeStrategy& getActiveModeStrategy();
+const ModeStrategy& getModeStrategyByName(const char* name);

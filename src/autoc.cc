@@ -33,6 +33,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/pathgen.h"
 #include "autoc/util/config.h"
 #include "autoc/eval/variation_generator.h"
+#include "autoc/nn/mode.h"           // 030 M7a — getActiveModeStrategy
 #include "autoc/nn/population.h"
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
@@ -572,15 +573,19 @@ void newHandler()
   exit(1);
 }
 
-// Get compiled topology as std::vector (needed by NNPopulation API)
+// Get topology for the active mode (030 M7a runtime mode-select per FR-019).
+// Pathgen mode → NN_TOPOLOGY (33 input); tracker mode → TRACKER_NN_TOPOLOGY
+// (45 input). Read by population init + topology logging.
 static std::vector<int> getCompiledTopology() {
-  return std::vector<int>(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+  const ModeStrategy& mode = getActiveModeStrategy();
+  return std::vector<int>(mode.topology, mode.topology + mode.num_layers);
 }
 
-// Get compiled recurrent-layer flags as std::vector (spec 027, D-simple).
+// Get recurrent-layer flags for the active mode (spec 027, D-simple).
 static std::vector<uint8_t> getCompiledRecurrent() {
-  std::vector<uint8_t> r(NN_NUM_LAYERS);
-  for (int i = 0; i < NN_NUM_LAYERS; i++) r[i] = NN_RECURRENT[i] ? 1 : 0;
+  const ModeStrategy& mode = getActiveModeStrategy();
+  std::vector<uint8_t> r(mode.num_layers);
+  for (int i = 0; i < mode.num_layers; i++) r[i] = mode.recurrent[i] ? 1 : 0;
   return r;
 }
 
@@ -888,8 +893,13 @@ static EvalData buildEvalData(const EvalJob& job) {
         // operator delivers the real geometry).
         evalData.airframeProxy = autoc::eval::defaultAirframeProxyHB1();
 
-        // Home: virtual world origin (matches initialPosition convention).
-        evalData.homeWorld = gp_vec3::Zero();
+        // 030 M7a — FlightArena (FR-016 + Session 2026-05-07 Q1): same
+        // struct feeds gather_tracker_inputs (NN slot 44 ray-projection
+        // input) AND TrackerStepper's per-tick OOB termination check.
+        // Single source of truth.
+        evalData.flightArena.radius_m = static_cast<gp_scalar>(cfg.flightArenaRadius);
+        evalData.flightArena.floor_agl_m = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
+        evalData.flightArena.ceiling_agl_m = static_cast<gp_scalar>(cfg.flightArenaCeilingAGL);
 
         // 030 M8b geometry fix — source pre-roll. Convert seconds to ticks
         // at the 100ms NN cadence (SIM_TIME_STEP_MSEC = 100).
@@ -938,9 +948,12 @@ static void runNNEvaluation(
     exit(1);
   }
 
-  // Validate topology matches compiled-in expectations
+  // Validate topology matches the active mode's compile-time expectation
+  // (030 M7a — runtime mode-select per FR-019). Eval-mode loads a
+  // weight file that must match the .ini's Mode (pathgen → 33 / tracker → 45).
   {
-    std::vector<int> expectedTopology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+    const ModeStrategy& mode = getActiveModeStrategy();
+    std::vector<int> expectedTopology(mode.topology, mode.topology + mode.num_layers);
     if (genome.topology != expectedTopology) {
       std::ostringstream fileTopo, compiledTopo;
       for (size_t i = 0; i < genome.topology.size(); i++) {
@@ -1088,8 +1101,11 @@ static void runNNEvolution(
 
 
   *logger.info() << "NN Evolution mode" << endl;
-  *logger.info() << "  Topology: " << NN_TOPOLOGY_STRING
-                 << " (" << NN_WEIGHT_COUNT << " weights)" << endl;
+  {
+    const ModeStrategy& mode = getActiveModeStrategy();
+    *logger.info() << "  Topology: " << mode.topology_string
+                   << " (" << mode.weight_count << " weights, mode=" << mode.name << ")" << endl;
+  }
   *logger.info() << "  Population: " << popSize << endl;
   *logger.info() << "  Generations: " << numGens << endl;
   *logger.info() << "  MutationSigma: " << cfg.nnMutationSigma << endl;

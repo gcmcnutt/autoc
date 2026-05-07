@@ -20,7 +20,7 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                const BeaconConfig& beacon_left,
                                const BeaconConfig& beacon_right,
                                const AirframeProxy& airframe,
-                               const gp_vec3& home_world,
+                               const FlightArena& arena,
                                int pre_roll_ticks)
     : nn_(nn),
       state_(state),
@@ -30,7 +30,7 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
       beacon_left_(beacon_left),
       beacon_right_(beacon_right),
       airframe_(airframe),
-      home_world_(home_world),
+      arena_(arena),
       history_{},
       cursor_(0),
       duration_msec_(0),
@@ -193,7 +193,7 @@ CrashReason TrackerStepper::stepOnce() {
 
     // Step 2: gather tracker NN inputs.
     TrackerInputs inputs = {};
-    gather_tracker_inputs(state_, history_, home_world_, inputs);
+    gather_tracker_inputs(state_, history_, arena_, inputs);
 
     // Step 3: NN forward pass → control commands.
     nn_.evaluateTracker(state_, inputs);
@@ -206,11 +206,18 @@ CrashReason TrackerStepper::stepOnce() {
     duration_msec_ += SIM_TIME_STEP_MSEC;
     state_.setSimTimeMsec(duration_msec_);
 
-    // 030 M8b — arena out-of-bounds via shared check (same M1 envelope
-    // pathgen uses; see scenario_stepper.h::checkAircraftOOB). M7 lands
-    // the FR-016 config-driven arena.h with per-scenario egress-kind
-    // telemetry counters (T041-T044). Crash hull (FR-008b) is also M7.
-    crash = checkAircraftOOB(state_);
+    // 030 M7a — arena out-of-bounds via FR-016 config-driven arena.h.
+    // Same FlightArena that fed `gather_tracker_inputs` slot 44 — single
+    // source of truth between NN input AND egress termination per
+    // Session 2026-05-07 Q1. Replaces the M8b shim's checkAircraftOOB
+    // for tracker mode (pathgen keeps M1 hardcoded path). Crash hull
+    // (FR-008b) lands at M7c.
+    {
+        const ArenaEgressKind egress = checkArenaBounds(state_, arena_);
+        if (egress != ArenaEgressKind::NONE) {
+            crash = arenaEgressToCrashReason(egress);
+        }
+    }
 
     ++cursor_;
     // Source exhaustion (TimeLimit) overrides Eval — last-write-wins

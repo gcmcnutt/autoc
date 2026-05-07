@@ -99,12 +99,14 @@ static_assert(static_cast<int>(PathgenInput::COUNT) == NN_INPUT_COUNT,
               "PathgenInput::COUNT must equal NN_INPUT_COUNT (NNInputs struct size)");
 
 // ----------------------------------------------------------------------------
-// TrackerInput — 48 inputs (FR-006 + FR-016 arena-awareness, Session 2026-05-04).
+// TrackerInput — 45 inputs (FR-006 + FR-016 + Session 2026-05-07 Q1 simplification).
 //   36 beacon (left + right × 6 history slots × {x, y, CEP})
 //    8 aircraft state (quat 4 + airspeed 1 + gyro 3)
-//    4 arena-awareness (HOME_{X,Y,Z,DIST})
-// Display names defer to M5 when projection module + data.dat tracker-mode
-// columns are wired (placeholder strings for now).
+//    1 arena-awareness (DIST_TO_BOUNDARY_ALONG_VEL — single ray-projection
+//      scalar shared with arena.h::distanceToBoundary())
+// Was 48 in the 2026-05-04 shape (HOME_X/Y/Z + HOME_DIST); simplified per
+// Session 2026-05-07 Q1 — cylinder-shaped arena needs cylinder-shaped
+// signal, single source of truth with the OOB termination check.
 // ----------------------------------------------------------------------------
 enum class TrackerInput : uint16_t {
     BEACON_L_X_TM5 = 0, BEACON_L_X_TM4, BEACON_L_X_TM3, BEACON_L_X_TM2, BEACON_L_X_TM1, BEACON_L_X_NOW,
@@ -116,7 +118,7 @@ enum class TrackerInput : uint16_t {
     QUAT_W, QUAT_X, QUAT_Y, QUAT_Z,
     AIRSPEED,
     GYRO_P, GYRO_Q, GYRO_R,
-    HOME_X, HOME_Y, HOME_Z, HOME_DIST,
+    DIST_TO_BOUNDARY_ALONG_VEL,
     COUNT
 };
 
@@ -138,14 +140,14 @@ constexpr SensorInputMeta kTrackerInputMeta[] = {
     {"QUAT_W", "qw", 8}, {"QUAT_X", "qx", 8}, {"QUAT_Y", "qy", 8}, {"QUAT_Z", "qz", 8},
     {"AIRSPEED", "vel", 8},
     {"GYRO_P", "gyrP", 7}, {"GYRO_Q", "gyrQ", 7}, {"GYRO_R", "gyrR", 7},
-    {"HOME_X", "homX", 7}, {"HOME_Y", "homY", 7}, {"HOME_Z", "homZ", 7}, {"HOME_DIST", "homD", 7},
+    {"DIST_TO_BOUNDARY_ALONG_VEL", "dBnd", 8},
 };
 
 static_assert(static_cast<size_t>(TrackerInput::COUNT) ==
               sizeof(kTrackerInputMeta) / sizeof(SensorInputMeta),
               "TrackerInput enum count must match kTrackerInputMeta length");
-static_assert(static_cast<int>(TrackerInput::COUNT) == 48,
-              "TrackerInput::COUNT must equal 48 per FR-006 + FR-016 (36 beacon + 8 state + 4 arena)");
+static_assert(static_cast<int>(TrackerInput::COUNT) == 45,
+              "TrackerInput::COUNT must equal 45 per Session 2026-05-07 Q1 (36 beacon + 8 state + 1 arena)");
 
 // 030 M6d — Tracker-mode NN input storage struct (FR-006 + FR-016).
 //
@@ -170,14 +172,14 @@ struct TrackerInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xi
     float airspeed;                         // raw-ok: NN-byte-format buffer (m/s)
     float gyro_p, gyro_q, gyro_r;           // raw-ok: NN-byte-format buffer (rad/s, body-frame)
 
-    // 4 arena-awareness inputs (FR-016): unit vector from chase to home
-    // expressed in chase body frame, plus distance to home.
-    float home_x, home_y, home_z;           // raw-ok: NN-byte-format buffer (unit vec, body frame)
-    float home_dist;                        // raw-ok: NN-byte-format buffer (m)
+    // 1 arena-awareness input (FR-016 + Session 2026-05-07 Q1): meters
+    // along chase velocity vector to nearest cylinder/floor/ceiling
+    // intersection. Single source of truth with arena.h::distanceToBoundary().
+    float dist_to_boundary_along_vel;        // raw-ok: NN-byte-format buffer (m)
 };
 
-static_assert(sizeof(TrackerInputs) == 48 * sizeof(float),
-              "TrackerInputs layout must be contiguous float[48] with no padding");
+static_assert(sizeof(TrackerInputs) == 45 * sizeof(float),
+              "TrackerInputs layout must be contiguous float[45] with no padding");
 static_assert(alignof(TrackerInputs) == alignof(float),
               "TrackerInputs must be float-aligned for matrix multiply");
 static_assert(static_cast<int>(TrackerInput::COUNT) ==

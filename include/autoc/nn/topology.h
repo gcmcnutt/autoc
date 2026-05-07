@@ -79,4 +79,50 @@ constexpr int NN_HIDDEN_STATE_COUNT =
 // Recurrent layers marked with a trailing 'r'.
 constexpr const char* NN_TOPOLOGY_STRING = "33,32,16r,3";
 
+// ============================================================================
+// 030 M7a — Tracker-mode topology (FR-019 runtime mode dispatch + Session
+// 2026-05-07 Q1 simplification). Parallel constants for autoc's runtime
+// mode-select on desktop (one binary supports both modes); xiao firmware
+// uses compile-time -DAUTOC_MODE per FR-019 to pick one.
+//
+// Same hidden sizes as pathgen (32 + 16 recurrent), only input layer
+// width differs. Weight count: (45·32+32) + (32·16+16) + (16·3+3) +
+// 16·16 (W_hh recurrent on hidden2) = 1472 + 528 + 51 + 256 = 2307.
+// ============================================================================
+
+constexpr int TRACKER_NN_INPUT_COUNT = static_cast<int>(TrackerInput::COUNT);  // 45
+constexpr int TRACKER_NN_HIDDEN1_SIZE = 32;
+constexpr int TRACKER_NN_HIDDEN2_SIZE = 16;
+constexpr int TRACKER_NN_OUTPUT_COUNT = 3;
+constexpr int TRACKER_NN_NUM_LAYERS = 4;
+
+constexpr int TRACKER_NN_TOPOLOGY[TRACKER_NN_NUM_LAYERS] = {
+    TRACKER_NN_INPUT_COUNT,
+    TRACKER_NN_HIDDEN1_SIZE,
+    TRACKER_NN_HIDDEN2_SIZE,
+    TRACKER_NN_OUTPUT_COUNT
+};
+
+// Same recurrent flag pattern as pathgen — hidden2 (16-wide) is recurrent.
+constexpr bool TRACKER_NN_RECURRENT[TRACKER_NN_NUM_LAYERS] = {
+    false, false, true, false
+};
+
+constexpr int TRACKER_NN_WEIGHT_COUNT =
+    (TRACKER_NN_INPUT_COUNT * TRACKER_NN_HIDDEN1_SIZE + TRACKER_NN_HIDDEN1_SIZE) +
+    (TRACKER_NN_HIDDEN1_SIZE * TRACKER_NN_HIDDEN2_SIZE + TRACKER_NN_HIDDEN2_SIZE) +
+    (TRACKER_NN_HIDDEN2_SIZE * TRACKER_NN_OUTPUT_COUNT + TRACKER_NN_OUTPUT_COUNT) +
+    (TRACKER_NN_RECURRENT[1] ? TRACKER_NN_HIDDEN1_SIZE * TRACKER_NN_HIDDEN1_SIZE : 0) +
+    (TRACKER_NN_RECURRENT[2] ? TRACKER_NN_HIDDEN2_SIZE * TRACKER_NN_HIDDEN2_SIZE : 0) +
+    (TRACKER_NN_RECURRENT[3] ? TRACKER_NN_OUTPUT_COUNT  * TRACKER_NN_OUTPUT_COUNT  : 0);
+static_assert(TRACKER_NN_WEIGHT_COUNT == 2307,
+              "Tracker weight count arithmetic inconsistent (45·32+32 + 32·16+16 + 16·3+3 + 16·16 = 2307)");
+
+constexpr int TRACKER_NN_HIDDEN_STATE_COUNT =
+    (TRACKER_NN_RECURRENT[1] ? TRACKER_NN_HIDDEN1_SIZE : 0) +
+    (TRACKER_NN_RECURRENT[2] ? TRACKER_NN_HIDDEN2_SIZE : 0) +
+    (TRACKER_NN_RECURRENT[3] ? TRACKER_NN_OUTPUT_COUNT  : 0);
+
+constexpr const char* TRACKER_NN_TOPOLOGY_STRING = "45,32,16r,3";
+
 #endif

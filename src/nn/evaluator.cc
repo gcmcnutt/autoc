@@ -1,6 +1,7 @@
 #include "autoc/nn/evaluator.h"
 #include "autoc/nn/topology.h"
 #include "autoc/nn/nn_input_computation.h"
+#include "autoc/eval/arena.h"          // 030 M7a — FlightArena + distanceToBoundary
 #include "autoc/eval/sensor_math.h"
 #include "autoc/util/rng.h"
 #include <cmath>
@@ -418,10 +419,16 @@ void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& p
 // ============================================================
 // 030 M6d — Tracker mode (FR-006 + FR-016 + FR-019)
 // ============================================================
+// Wrapped in #ifndef ARDUINO because xiao firmware cherry-picks this
+// .cc but doesn't need tracker-mode dispatch (xiao = pathgen-only per
+// FR-019 compile-time mode select). gather_tracker_inputs uses arena.h
+// which keeps things cereal-free but transitively pulls in the
+// FlightArena type definition; bodies are desktop-only.
+#ifndef ARDUINO
 
 void gather_tracker_inputs(const AircraftState& chase,
                            const TrackerHistoryWindow& history,
-                           const gp_vec3& home_world,
+                           const autoc::eval::FlightArena& arena,
                            TrackerInputs& out) {
     // Beacon history: 6 slots per channel, copied as-is. Caller (TrackerStepper)
     // owns the ordering — index 0 = oldest (-0.5s), index 5 = "now".
@@ -454,26 +461,16 @@ void gather_tracker_inputs(const AircraftState& chase,
         out.gyro_r = static_cast<float>(gyro.z());
     }
 
-    // Arena-awareness inputs (FR-016): unit vector from chase to home,
-    // expressed in chase body frame, plus distance to home. Singularity at
-    // chase==home is handled by emitting a zero direction vector + zero
-    // distance — NN sees "we're at home, no direction signal".
-    {
-        const gp_vec3 home_to_chase = home_world - chase.getPosition();
-        const gp_scalar dist_world = home_to_chase.norm();
-        out.home_dist = static_cast<float>(dist_world);  // raw-ok: NN-byte-format primitive
-        if (dist_world > static_cast<gp_scalar>(1e-6)) {
-            const gp_vec3 home_in_body =
-                chase.getOrientation().inverse() * (home_to_chase / dist_world);
-            out.home_x = static_cast<float>(home_in_body.x());  // raw-ok: NN-byte-format primitive
-            out.home_y = static_cast<float>(home_in_body.y());  // raw-ok: NN-byte-format primitive
-            out.home_z = static_cast<float>(home_in_body.z());  // raw-ok: NN-byte-format primitive
-        } else {
-            out.home_x = 0.0f;  // raw-ok: NN-byte-format primitive
-            out.home_y = 0.0f;  // raw-ok: NN-byte-format primitive
-            out.home_z = 0.0f;  // raw-ok: NN-byte-format primitive
-        }
-    }
+    // 030 M7a — Arena-awareness input (FR-016 + Session 2026-05-07 Q1):
+    // single ray-projection scalar shared with arena.h's per-tick OOB
+    // termination check. Meters of safe forward flight along chase
+    // velocity vector before ray intersects cylinder wall, floor, or
+    // ceiling. NN learns "small number = trouble; turn-recovery direction
+    // implicit from body attitude / quat / gyro" per Session 2026-05-07.
+    out.dist_to_boundary_along_vel = static_cast<float>(   // raw-ok: NN-byte-format primitive
+        autoc::eval::distanceToBoundary(chase.getPosition(),
+                                         chase.getVelocity(),
+                                         arena));
 }
 
 void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,
@@ -500,6 +497,8 @@ void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,
     // Honest-recording audit per memory:feedback_honest_dmp_recording lands
     // at the v=2 schema-bump boundary.
 }
+
+#endif  // ARDUINO — end of tracker-mode block (M6d/M7a)
 
 // ============================================================
 // Test helpers

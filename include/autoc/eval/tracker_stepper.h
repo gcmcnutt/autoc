@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "autoc/eval/aircraft_state.h"
+#include "autoc/eval/arena.h"             // FlightArena, checkArenaBounds
 #include "autoc/eval/beacon_config.h"
 #include "autoc/eval/camera_config.h"
 #include "autoc/eval/camera_projection.h"
@@ -43,7 +44,7 @@ public:
                    const BeaconConfig& beacon_left = BeaconConfig{},
                    const BeaconConfig& beacon_right = BeaconConfig{},
                    const AirframeProxy& airframe = defaultAirframeProxyHB1(),
-                   const gp_vec3& home_world = gp_vec3::Zero(),
+                   const FlightArena& arena = FlightArena{},
                    int pre_roll_ticks = 0);
 
     void initScenario() override;
@@ -72,7 +73,7 @@ private:
     BeaconConfig beacon_left_;
     BeaconConfig beacon_right_;
     AirframeProxy airframe_;
-    gp_vec3 home_world_;
+    FlightArena arena_;
 
     // 6-slot beacon history per channel. Index 0 is oldest, index 5 is
     // "now". Shift-left on each push (cheap — 6 floats × 6 channels).

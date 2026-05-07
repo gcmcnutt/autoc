@@ -29,9 +29,11 @@ TEST(NNSensorInterface, PathgenInputCountMatchesNNInputs) {
     EXPECT_EQ(pathgen_meta_size(), 33u);
 }
 
-TEST(NNSensorInterface, TrackerInputCountIs48) {
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 48);
-    EXPECT_EQ(tracker_meta_size(), 48u);
+TEST(NNSensorInterface, TrackerInputCountIs45) {
+    // 030 M7a Session 2026-05-07 Q1: was 48 with HOME_X/Y/Z/HOME_DIST,
+    // now 45 with single DIST_TO_BOUNDARY_ALONG_VEL.
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 45);
+    EXPECT_EQ(tracker_meta_size(), 45u);
 }
 
 TEST(NNSensorInterface, PathgenMetaWellFormed) {
@@ -73,7 +75,8 @@ TEST(NNSensorInterface, PathgenAnchorPositions) {
 }
 
 TEST(NNSensorInterface, TrackerAnchorPositions) {
-    // Anchor positions per FR-006 + FR-016: 36 beacon + 8 state + 4 arena.
+    // Anchor positions per FR-006 + FR-016 + Session 2026-05-07 Q1:
+    // 36 beacon + 8 state + 1 arena = 45 inputs. (was 48 with HOME_X/Y/Z/DIST.)
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_L_X_TM5), 0);
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_L_CEP_NOW), 17);
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_R_X_TM5), 18);
@@ -81,8 +84,8 @@ TEST(NNSensorInterface, TrackerAnchorPositions) {
     EXPECT_EQ(static_cast<int>(TrackerInput::QUAT_W), 36);
     EXPECT_EQ(static_cast<int>(TrackerInput::AIRSPEED), 40);
     EXPECT_EQ(static_cast<int>(TrackerInput::GYRO_P), 41);
-    EXPECT_EQ(static_cast<int>(TrackerInput::HOME_X), 44);
-    EXPECT_EQ(static_cast<int>(TrackerInput::HOME_DIST), 47);
+    EXPECT_EQ(static_cast<int>(TrackerInput::DIST_TO_BOUNDARY_ALONG_VEL), 44);
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 45);
 }
 
 TEST(NNSensorInterface, PathgenMetaNamesMatchAnchors) {
