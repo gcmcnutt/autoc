@@ -20,11 +20,17 @@ enum class CrashReason {
     Eval,             // Out of bounds (too far, too low, too high)
     TimeLimit,        // Simulation time cap reached (was: Time)
     RabbitComplete,   // Rabbit reached end of path — normal completion (was: Distance)
+    // 030 M7d.b — tracker-mode crash-hull strike (FR-008b). Probabilistic
+    // fire when chase is inside the hull and Bernoulli(p_crash_this_gen)
+    // succeeds. Distinct from Eval (arena egress) so renderer / inspect
+    // can attribute terminator without cross-referencing counters.
+    HullStrike,       // Crash hull strike — chase intersected target hull (tracker-mode only)
 };
 
 // Is this a real crash (penalizable) or normal termination?
 inline bool isCrash(CrashReason reason) {
     return reason == CrashReason::Boot ||
            reason == CrashReason::Sim ||
-           reason == CrashReason::Eval;
+           reason == CrashReason::Eval ||
+           reason == CrashReason::HullStrike;
 }

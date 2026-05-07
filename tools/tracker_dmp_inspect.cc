@@ -59,6 +59,7 @@ const char* crashReasonName(CrashReason r) {
         case CrashReason::Eval:           return "Eval";
         case CrashReason::TimeLimit:      return "TimeLimit";
         case CrashReason::RabbitComplete: return "RabbitComplete";
+        case CrashReason::HullStrike:     return "HullStrike";
     }
     return "?";
 }

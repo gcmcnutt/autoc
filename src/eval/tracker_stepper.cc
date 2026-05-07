@@ -24,7 +24,11 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                const BeaconConfig& beacon_right,
                                const AirframeProxy& airframe,
                                const FlightArena& arena,
-                               int pre_roll_ticks)
+                               int pre_roll_ticks,
+                               const CrashHull& crash_hull,
+                               gp_scalar p_crash_this_gen,
+                               uint32_t prng_seed,
+                               gp_scalar trail_distance)
     : nn_(nn),
       state_(state),
       source_(source),
@@ -37,7 +41,16 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
       history_{},
       cursor_(0),
       duration_msec_(0),
-      pre_roll_ticks_(pre_roll_ticks) {}
+      pre_roll_ticks_(pre_roll_ticks),
+      crash_hull_(crash_hull),
+      p_crash_this_gen_(p_crash_this_gen),
+      // Park-Miller LCG requires non-zero seed in [1, 2^31-2]. Map seed=0
+      // (and any seed at/above the modulus) deterministically into the
+      // valid range; OR with 1 to ensure non-zero.
+      prng_state_(((prng_seed == 0 ? 0xC0FFEEu
+                                   : prng_seed % 0x7FFFFFFFu)) | 1u),
+      hull_fired_count_(0),
+      trail_distance_(trail_distance) {}
 
 void TrackerStepper::initScenario() {
     nn_.reset();  // zero recurrent state at scenario start (no-op for feedforward)
@@ -184,9 +197,10 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     last_target_sample_.position = target.position;
     last_target_sample_.orientation = target.orientation;
     last_target_sample_.velocity = target.velocity;
-    last_target_sample_.trail_rabbit_position = computeTrailRabbit(target);
+    last_target_sample_.trail_rabbit_position =
+        computeTrailRabbit(target, trail_distance_);
     last_target_sample_.inside_crash_hull =
-        isInsideHull(CrashHull{}, state_.getPosition(), target.position);
+        isInsideHull(crash_hull_, state_.getPosition(), target.position);
 }
 
 CrashReason TrackerStepper::stepOnce() {
@@ -222,12 +236,27 @@ CrashReason TrackerStepper::stepOnce() {
     // Same FlightArena that fed `gather_tracker_inputs` slot 44 — single
     // source of truth between NN input AND egress termination per
     // Session 2026-05-07 Q1. Replaces the M8b shim's checkAircraftOOB
-    // for tracker mode (pathgen keeps M1 hardcoded path). Crash hull
-    // (FR-008b) lands at M7c.
+    // for tracker mode (pathgen keeps M1 hardcoded path).
     {
         const ArenaEgressKind egress = checkArenaBounds(state_, arena_);
         if (egress != ArenaEgressKind::NONE) {
             crash = arenaEgressToCrashReason(egress);
+        }
+    }
+
+    // 030 M7d.b — Crash hull strike (FR-008b). Post-physics chase position
+    // vs this tick's target position. didCrashFire short-circuits when
+    // outside hull (no PRNG draw consumed), so the per-scenario stream
+    // only advances on actual inside-hull ticks. p_crash_this_gen_ comes
+    // from autoc-side pCrashForGen(gen, ...) — worker stays gen-unaware.
+    // Arena-egress wins if both fire on the same tick (egress is a
+    // boundary fault, hull strike is target-relative — egress means we
+    // already left the operational envelope).
+    if (crash == CrashReason::None) {
+        if (didCrashFire(crash_hull_, state_.getPosition(), target.position,
+                         p_crash_this_gen_, prng_state_)) {
+            crash = CrashReason::HullStrike;
+            ++hull_fired_count_;
         }
     }
 

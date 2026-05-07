@@ -132,6 +132,15 @@ struct EvalData {
   // to ticks to keep the worker math integer.
   int trackerSourcePreRollTicks = 0;
 
+  // 030 M7d.b — crash-hull + trail-rabbit per-job parameters (FR-008
+  // + FR-008b). pCrashThisGen pre-computed at autoc-side via
+  // pCrashForGen(gen, ...) so worker stays gen-unaware. crashHullRadius
+  // + trailDistance plumbed from cfg so the operator can re-tune via
+  // autoc-tracker.ini without rebuilding workers.
+  gp_scalar pCrashThisGen = static_cast<gp_scalar>(0.0);
+  gp_scalar crashHullRadius = static_cast<gp_scalar>(1.0);
+  gp_scalar trailDistance = static_cast<gp_scalar>(3.048);
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
     ar(gp, gpHash, isEliteReeval);
@@ -140,7 +149,8 @@ struct EvalData {
     controllerType = static_cast<ControllerType>(ct);
     ar(pathList, scenario, scenarioList, rabbitSpeedConfig, mode);
     ar(sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
-       airframeProxy, flightArena, trackerSourcePreRollTicks);
+       airframeProxy, flightArena, trackerSourcePreRollTicks,
+       pCrashThisGen, crashHullRadius, trailDistance);
   }
 
   void sanitizePaths() {

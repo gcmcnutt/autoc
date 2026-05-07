@@ -21,11 +21,15 @@
 
 #include <vector>
 
+#include <cstdint>
+#include <vector>
+
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/eval/arena.h"             // FlightArena, checkArenaBounds
 #include "autoc/eval/beacon_config.h"
 #include "autoc/eval/camera_config.h"
 #include "autoc/eval/camera_projection.h"
+#include "autoc/eval/crash_hull.h"        // M7d.b — CrashHull config + didCrashFire
 #include "autoc/eval/scenario_stepper.h"
 #include "autoc/eval/source_trajectory.h"
 #include "autoc/nn/evaluator.h"          // NNControllerBackend, TrackerHistoryWindow
@@ -45,7 +49,11 @@ public:
                    const BeaconConfig& beacon_right = BeaconConfig{},
                    const AirframeProxy& airframe = defaultAirframeProxyHB1(),
                    const FlightArena& arena = FlightArena{},
-                   int pre_roll_ticks = 0);
+                   int pre_roll_ticks = 0,
+                   const CrashHull& crash_hull = CrashHull{},
+                   gp_scalar p_crash_this_gen = static_cast<gp_scalar>(0.0),
+                   uint32_t prng_seed = 0,
+                   gp_scalar trail_distance = static_cast<gp_scalar>(3.048));
 
     void initScenario() override;
     CrashReason stepOnce() override;
@@ -57,6 +65,11 @@ public:
     // cameraViewList / targetTrajectoryList.
     const CameraViewSample& lastCameraView() const { return last_camera_view_; }
     const CopiedTargetSample& lastTargetSample() const { return last_target_sample_; }
+
+    // 030 M7d.b — Crash-hull strike count for this scenario. 0 normally;
+    // 1 if didCrashFire returned true (scenario terminates on first fire,
+    // so the count is bounded). Returned to minisim for hullStrikeCount[i].
+    int hullFiredCount() const { return hull_fired_count_; }
 
 private:
     // Project both beacons against the current target sample, push into
@@ -74,6 +87,16 @@ private:
     BeaconConfig beacon_right_;
     AirframeProxy airframe_;
     FlightArena arena_;
+
+    // 030 M7d.b — Crash hull (FR-008b). Geometry inside-hull check + per-tick
+    // Bernoulli draw against p_crash_this_gen using a per-scenario PRNG
+    // seeded at construction time (deterministic across runs). On fire:
+    // CrashReason::HullStrike, scenario terminates, hull_fired_count_++.
+    CrashHull crash_hull_;
+    gp_scalar p_crash_this_gen_ = static_cast<gp_scalar>(0.0);
+    uint32_t prng_state_ = 0;
+    int hull_fired_count_ = 0;
+    gp_scalar trail_distance_ = static_cast<gp_scalar>(3.048);
 
     // 6-slot beacon history per channel. Index 0 is oldest, index 5 is
     // "now". Shift-left on each push (cheap — 6 floats × 6 channels).

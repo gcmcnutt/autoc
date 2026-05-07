@@ -30,6 +30,7 @@ std::string crashReasonToString(CrashReason type) {
   case CrashReason::Eval: return "Eval";
   case CrashReason::TimeLimit: return "TimeLimit";
   case CrashReason::RabbitComplete: return "RabbitComplete";
+  case CrashReason::HullStrike: return "HullStrike";
   default: return "*?*";
   }
 }
@@ -171,6 +172,7 @@ public:
 
         ScenarioMetadata scenarioMeta = scenarioForPathIndex(evalData, static_cast<size_t>(i));
         CrashReason crashReason = CrashReason::None;
+        int tracker_hull_fired = 0;  // 030 M7d.b — set by tracker branch
 
         if (evalMode == "tracker") {
           // M6e — TrackerStepper integration. EvalData::sourceList[i]
@@ -190,6 +192,16 @@ public:
             crashReason = CrashReason::Eval;
           } else {
             const SourceScenarioTrajectory& source = evalData.sourceList[i];
+
+            // 030 M7d.b — CrashHull config from EvalData::crashHullRadius
+            // (radius_m configurable via autoc-tracker.ini; SPHERE shape
+            // hardcoded for v1, AABB_HB1 / MESH_AIRFRAME reserved). PRNG
+            // seed = scenarioSequence cast to u32 — deterministic per
+            // scenario, stream-isolated across scenarios.
+            autoc::eval::CrashHull crashHull;
+            crashHull.sphere_radius_m = evalData.crashHullRadius;
+            const uint32_t prngSeed =
+                static_cast<uint32_t>(scenarioMeta.scenarioSequence);
             autoc::eval::TrackerStepper stepper(
                 nnBackend, aircraftState, source, scenarioMeta,
                 evalData.cameraConfig,
@@ -197,7 +209,11 @@ public:
                 evalData.beaconRightConfig,
                 evalData.airframeProxy,
                 evalData.flightArena,
-                evalData.trackerSourcePreRollTicks);
+                evalData.trackerSourcePreRollTicks,
+                crashHull,
+                evalData.pCrashThisGen,
+                prngSeed,
+                evalData.trailDistance);
             stepper.initScenario();
             aircraftStateSteps.push_back(aircraftState);
             // 030 M8b — record initial-tick projection (initScenario
@@ -212,6 +228,11 @@ public:
               cameraViewSteps.push_back(stepper.lastCameraView());
               targetSampleSteps.push_back(stepper.lastTargetSample());
             }
+
+            // 030 M7d.b — capture hull-fired count for hullStrikeCount[i]
+            // pushback below. 0 typically; 1 if didCrashFire returned true
+            // (scenario terminated with HullStrike).
+            tracker_hull_fired = stepper.hullFiredCount();
           }
         } else {
           // pathgen-mode (default): existing behavior, byte-identical to M6a.
@@ -238,15 +259,16 @@ public:
         // empty-vs-populated to decide pathgen vs tracker render.
         evalResults.cameraViewList.push_back(cameraViewSteps);
         evalResults.targetTrajectoryList.push_back(targetSampleSteps);
-        // 030 M7d.a — per-scenario counters. Arena egress: in tracker mode,
-        // CrashReason::Eval is sourced exclusively from checkArenaBounds (no
-        // other Eval source today), so derive directly. Pathgen pushes 0
-        // (no arena.h enforcement on M1 envelope). Hull-strike count is 0
-        // until M7d.b wires probabilistic firing.
+        // 030 M7d.a/b — per-scenario counters. Arena egress: in tracker
+        // mode, CrashReason::Eval is sourced exclusively from
+        // checkArenaBounds (no other Eval source today), so derive
+        // directly. Pathgen pushes 0 (no arena.h enforcement on M1
+        // envelope). Hull-strike count: TrackerStepper.hullFiredCount()
+        // returns 0 or 1 (scenario terminates on first fire). Pathgen 0.
         const int arena_egress = (evalMode == "tracker"
                                   && crashReason == CrashReason::Eval) ? 1 : 0;
         evalResults.arenaEgressCount.push_back(arena_egress);
-        evalResults.hullStrikeCount.push_back(0);
+        evalResults.hullStrikeCount.push_back(tracker_hull_fired);
       }
 
       sendRPC(socket_, evalResults);

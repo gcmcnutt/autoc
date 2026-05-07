@@ -42,6 +42,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/fitness_decomposition.h"
 #include "autoc/eval/selection.h"
 #include "autoc/eval/source_dmp_loader.h"  // 030 M6e tracker mode
+#include "autoc/eval/crash_hull.h"         // 030 M7d.b — pCrashForGen
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
@@ -906,6 +907,19 @@ static EvalData buildEvalData(const EvalJob& job) {
         const double tickSec = static_cast<double>(SIM_TIME_STEP_MSEC) / 1000.0;
         evalData.trackerSourcePreRollTicks =
             std::max(0, static_cast<int>(cfg.trackerSourcePreRollSec / tickSec));
+
+        // 030 M7d.b — Crash hull + trail rabbit (FR-008 + FR-008b). p_crash
+        // for this gen is pre-computed here so the worker stays
+        // gen-unaware; the linear-ramp curriculum lives in pCrashForGen
+        // (M7c). Hull radius + trail distance ride along so the operator
+        // can re-tune autoc-tracker.ini without rebuilding workers.
+        evalData.pCrashThisGen = autoc::eval::pCrashForGen(
+            gCurrentGeneration,
+            cfg.pCrashGenRamp,
+            static_cast<gp_scalar>(cfg.pCrashGen0),
+            static_cast<gp_scalar>(cfg.pCrashPlateau));
+        evalData.crashHullRadius = static_cast<gp_scalar>(cfg.crashHullRadius);
+        evalData.trailDistance = static_cast<gp_scalar>(cfg.trailDistance);
     }
 
     return evalData;
