@@ -146,3 +146,40 @@ static_assert(static_cast<size_t>(TrackerInput::COUNT) ==
               "TrackerInput enum count must match kTrackerInputMeta length");
 static_assert(static_cast<int>(TrackerInput::COUNT) == 48,
               "TrackerInput::COUNT must equal 48 per FR-006 + FR-016 (36 beacon + 8 state + 4 arena)");
+
+// 030 M6d — Tracker-mode NN input storage struct (FR-006 + FR-016).
+//
+// CONSTITUTIONAL NOTE -- SERIALIZATION CONTRACT
+// Field declaration order IS the on-disk byte order for cereal, data.dat,
+// nn2cpp, and analysis tooling. Reordering fields is a format-breaking
+// change. DO NOT add padding or non-float members. Layout MUST match
+// TrackerInput enum order so reinterpret_cast<float*>(&trackerInputs)
+// agrees with enum-indexed access for the NN forward pass + the data.dat
+// header walk via kTrackerInputMeta.
+//
+// Time samples: [-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now] — 100ms grid.
+struct TrackerInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xiao-firmware-locked contract
+    float beacon_l_x[6];     // raw-ok: NN-byte-format buffer (per Principle VI whitelist: NN-byte-format buffers)
+    float beacon_l_y[6];     // raw-ok: NN-byte-format buffer
+    float beacon_l_cep[6];   // raw-ok: NN-byte-format buffer
+    float beacon_r_x[6];     // raw-ok: NN-byte-format buffer
+    float beacon_r_y[6];     // raw-ok: NN-byte-format buffer
+    float beacon_r_cep[6];   // raw-ok: NN-byte-format buffer
+
+    float quat_w, quat_x, quat_y, quat_z;  // raw-ok: NN-byte-format buffer
+    float airspeed;                         // raw-ok: NN-byte-format buffer (m/s)
+    float gyro_p, gyro_q, gyro_r;           // raw-ok: NN-byte-format buffer (rad/s, body-frame)
+
+    // 4 arena-awareness inputs (FR-016): unit vector from chase to home
+    // expressed in chase body frame, plus distance to home.
+    float home_x, home_y, home_z;           // raw-ok: NN-byte-format buffer (unit vec, body frame)
+    float home_dist;                        // raw-ok: NN-byte-format buffer (m)
+};
+
+static_assert(sizeof(TrackerInputs) == 48 * sizeof(float),
+              "TrackerInputs layout must be contiguous float[48] with no padding");
+static_assert(alignof(TrackerInputs) == alignof(float),
+              "TrackerInputs must be float-aligned for matrix multiply");
+static_assert(static_cast<int>(TrackerInput::COUNT) ==
+              sizeof(TrackerInputs) / sizeof(float),
+              "TrackerInputs struct size must match TrackerInput::COUNT");

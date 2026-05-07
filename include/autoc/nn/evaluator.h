@@ -98,6 +98,28 @@ void nn_xavier_init(NNGenome& genome);
 void gather_pathgen_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
                            NNInputs& inputs);
 
+// 030 M6d — Tracker-mode NN sensor input gather (FR-006 + FR-016 + FR-019).
+//
+// Six-slot beacon-observation history per channel (oldest at index 0,
+// "now" at index 5). Caller (TrackerStepper) owns + advances the history
+// across ticks; this function is pure: read history + chase state →
+// fill TrackerInputs.
+//
+// Replaces the M2b stub `gather_tracker_inputs_stub` in src/nn/mode.cc.
+struct TrackerHistoryWindow {  // raw-ok: NN-byte-format buffer
+    float left_x[6];      // raw-ok: NN-byte-format buffer
+    float left_y[6];      // raw-ok: NN-byte-format buffer
+    float left_cep[6];    // raw-ok: NN-byte-format buffer
+    float right_x[6];     // raw-ok: NN-byte-format buffer
+    float right_y[6];     // raw-ok: NN-byte-format buffer
+    float right_cep[6];   // raw-ok: NN-byte-format buffer
+};
+
+void gather_tracker_inputs(const AircraftState& chase,
+                           const TrackerHistoryWindow& history,
+                           const gp_vec3& home_world,
+                           TrackerInputs& out);
+
 #include "autoc/eval/backend.h"
 
 // NN controller backend — plugs into unified eval pipeline.
@@ -117,6 +139,12 @@ public:
 
     void evaluate(AircraftState& aircraftState, PathProvider& pathProvider) override;
     const char* getName() const override { return "NeuralNet"; }
+
+    // 030 M6d — Tracker-mode NN forward pass (FR-019). Parallel entry point
+    // to evaluate(); caller pre-gathers TrackerInputs (48 floats) and passes
+    // them in. Pathgen `evaluate` body is byte-identical pre-/post-M6d
+    // (regression-tight invariant) — `evaluateTracker` is purely additive.
+    void evaluateTracker(AircraftState& aircraftState, const TrackerInputs& inputs);
 
     // Zero the recurrent hidden state. Call on span/engage start.
     // No-op for feedforward networks.

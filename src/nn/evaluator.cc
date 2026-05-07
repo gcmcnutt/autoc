@@ -393,7 +393,7 @@ void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& p
     NNInputs inputs = {};
     gather_pathgen_inputs(pathProvider, aircraftState, inputs);
 
-    float outputs[NN_OUTPUT_COUNT];
+    float outputs[NN_OUTPUT_COUNT];  // raw-ok: NN-byte-format buffer (output of nn_forward, fp32 contract)
     if (hidden_state_.empty()) {
         nn_forward(genome_.weights.data(), genome_.topology,
                    reinterpret_cast<const float*>(&inputs), outputs);
@@ -413,6 +413,92 @@ void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& p
 
     // Capture actual NN I/O for diagnostics
     aircraftState.setNNData(inputs, outputs, NN_OUTPUT_COUNT);
+}
+
+// ============================================================
+// 030 M6d — Tracker mode (FR-006 + FR-016 + FR-019)
+// ============================================================
+
+void gather_tracker_inputs(const AircraftState& chase,
+                           const TrackerHistoryWindow& history,
+                           const gp_vec3& home_world,
+                           TrackerInputs& out) {
+    // Beacon history: 6 slots per channel, copied as-is. Caller (TrackerStepper)
+    // owns the ordering — index 0 = oldest (-0.5s), index 5 = "now".
+    for (int i = 0; i < 6; ++i) {
+        out.beacon_l_x[i]   = history.left_x[i];     // raw-ok: NN-byte-format primitive
+        out.beacon_l_y[i]   = history.left_y[i];     // raw-ok: NN-byte-format primitive
+        out.beacon_l_cep[i] = history.left_cep[i];   // raw-ok: NN-byte-format primitive
+        out.beacon_r_x[i]   = history.right_x[i];    // raw-ok: NN-byte-format primitive
+        out.beacon_r_y[i]   = history.right_y[i];    // raw-ok: NN-byte-format primitive
+        out.beacon_r_cep[i] = history.right_cep[i];  // raw-ok: NN-byte-format primitive
+    }
+
+    // Aircraft attitude quaternion (w, x, y, z) — unit norm, components in [-1,1].
+    {
+        gp_quat q = chase.getOrientation();
+        out.quat_w = static_cast<float>(q.w());
+        out.quat_x = static_cast<float>(q.x());
+        out.quat_y = static_cast<float>(q.y());
+        out.quat_z = static_cast<float>(q.z());
+    }
+
+    // Airspeed (m/s, raw).
+    out.airspeed = static_cast<float>(chase.getRelVel());
+
+    // Body-frame angular rates (rad/s, standard aerospace RHR).
+    {
+        gp_vec3 gyro = chase.getGyroRates();
+        out.gyro_p = static_cast<float>(gyro.x());
+        out.gyro_q = static_cast<float>(gyro.y());
+        out.gyro_r = static_cast<float>(gyro.z());
+    }
+
+    // Arena-awareness inputs (FR-016): unit vector from chase to home,
+    // expressed in chase body frame, plus distance to home. Singularity at
+    // chase==home is handled by emitting a zero direction vector + zero
+    // distance — NN sees "we're at home, no direction signal".
+    {
+        const gp_vec3 home_to_chase = home_world - chase.getPosition();
+        const gp_scalar dist_world = home_to_chase.norm();
+        out.home_dist = static_cast<float>(dist_world);  // raw-ok: NN-byte-format primitive
+        if (dist_world > static_cast<gp_scalar>(1e-6)) {
+            const gp_vec3 home_in_body =
+                chase.getOrientation().inverse() * (home_to_chase / dist_world);
+            out.home_x = static_cast<float>(home_in_body.x());  // raw-ok: NN-byte-format primitive
+            out.home_y = static_cast<float>(home_in_body.y());  // raw-ok: NN-byte-format primitive
+            out.home_z = static_cast<float>(home_in_body.z());  // raw-ok: NN-byte-format primitive
+        } else {
+            out.home_x = 0.0f;  // raw-ok: NN-byte-format primitive
+            out.home_y = 0.0f;  // raw-ok: NN-byte-format primitive
+            out.home_z = 0.0f;  // raw-ok: NN-byte-format primitive
+        }
+    }
+}
+
+void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,
+                                          const TrackerInputs& inputs) {
+    float outputs[NN_OUTPUT_COUNT];  // raw-ok: NN-byte-format buffer (output of nn_forward, fp32 contract)
+    if (hidden_state_.empty()) {
+        nn_forward(genome_.weights.data(), genome_.topology,
+                   reinterpret_cast<const float*>(&inputs), outputs);
+    } else {
+        RecurrentTelemetry* tlm = telemetry_capture_enabled_ ? &telemetry_ : nullptr;
+        nn_forward_recurrent(genome_.weights.data(), genome_.topology,
+                             genome_.recurrent,
+                             reinterpret_cast<const float*>(&inputs), outputs,
+                             hidden_state_.data(),
+                             tlm);
+    }
+
+    aircraftState.setPitchCommand(static_cast<gp_scalar>(outputs[0]));
+    aircraftState.setRollCommand(static_cast<gp_scalar>(outputs[1]));
+    aircraftState.setThrottleCommand(static_cast<gp_scalar>(outputs[2]));
+
+    // setNNData(TrackerInputs) is deferred to M8 (cameraViewList in dmp v=2);
+    // tracker-mode NN inputs aren't yet captured into the dmp output stream.
+    // Honest-recording audit per memory:feedback_honest_dmp_recording lands
+    // at the v=2 schema-bump boundary.
 }
 
 // ============================================================
