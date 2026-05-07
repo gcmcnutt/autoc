@@ -28,6 +28,12 @@ struct BeaconConfig {
     //   left  beacon: (0, -1, 0)
     //   right beacon: (0, +1, 0)
     gp_vec3 emission_axis_body{0.0f, -1.0f, 0.0f};
+
+    // 030 M6e — cereal serialize for EvalData wire-protocol carry.
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(wavelength_nm, emission_cone_deg, mount_body, emission_axis_body);
+    }
 };
 
 }  // namespace autoc::eval

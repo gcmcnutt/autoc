@@ -44,6 +44,16 @@ struct CameraConfig {
     // chase-body coordinates. Identity ⇒ camera frame == body frame, i.e.
     // optical axis is body +x (forward).
     gp_quat mount_orientation_body{1.0f, 0.0f, 0.0f, 0.0f};
+
+    // 030 M6e — cereal serialize for EvalData wire-protocol carry. Enum
+    // serialized as int (cereal doesn't handle enum class directly).
+    template <class Archive>
+    void serialize(Archive& ar) {
+        int proj = static_cast<int>(projection);
+        ar(proj, fov_h_deg, fov_v_deg, frame_rate_hz, latency_ms,
+           mount_offset_body, mount_orientation_body);
+        projection = static_cast<Projection>(proj);
+    }
 };
 
 }  // namespace autoc::eval

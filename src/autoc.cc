@@ -40,6 +40,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/fitness_computer.h"
 #include "autoc/eval/fitness_decomposition.h"
 #include "autoc/eval/selection.h"
+#include "autoc/eval/source_dmp_loader.h"  // 030 M6e tracker mode
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
@@ -53,6 +54,35 @@ using namespace std;
 
 std::vector<std::vector<Path>> generationPaths;
 std::vector<ScenarioDescriptor> generationScenarios;
+
+// 030 M6e — tracker-mode source trajectories (FR-001). Loaded once at
+// startup when Mode = tracker; empty in pathgen mode. Per-scenario
+// distribution to workers happens in buildEvalData.
+static std::vector<SourceScenarioTrajectory> gSourceTrajectoryList;
+
+// Parse a comma-separated index list (e.g. "0,1,2,3,4,5") into vector<int>.
+// Trims whitespace; returns empty vector for empty input. Invalid tokens
+// are skipped with a warning rather than failing — operator-friendly for
+// the tracker config's path/wind subset fields.
+static std::vector<int> parseCsvIndices(const std::string& csv) {
+    std::vector<int> out;
+    if (csv.empty()) return out;
+    std::stringstream ss(csv);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        // Trim leading/trailing whitespace.
+        size_t b = token.find_first_not_of(" \t");
+        size_t e = token.find_last_not_of(" \t");
+        if (b == std::string::npos) continue;
+        token = token.substr(b, e - b + 1);
+        try {
+            out.push_back(std::stoi(token));
+        } catch (...) {
+            std::cerr << "[parseCsvIndices] skipping invalid token '" << token << "'" << std::endl;
+        }
+    }
+    return out;
+}
 
 // VARIATIONS1: Global sigma parameters, initialized at startup from config
 static VariationSigmas gVariationSigmas = {0.0, 0.0, 0.0, 0.0, 0.0};
@@ -800,6 +830,64 @@ static EvalData buildEvalData(const EvalJob& job) {
         evalData.scenario = evalData.scenarioList.front();
     }
 
+    // 030 M6e — attach tracker-mode payload (FR-001 + FR-018). One source
+    // trajectory per pathList entry (parallel indexing). Camera/beacon/
+    // airframe configs come from the operator's autoc-tracker.ini, copied
+    // into the per-scenario job so the worker has everything it needs to
+    // run TrackerStepper without round-tripping back to autoc.
+    if (evalData.mode == "tracker") {
+        const auto& cfg = ConfigManager::getConfig();
+
+        // Match sourceList size to pathList size. Default v1 mapping:
+        // scenario i in pathList ↔ source[i % gSourceTrajectoryList.size()].
+        // The pathgen-side scenario distribution still drives pathList
+        // sizing; tracker mode rides on top with parallel source data.
+        evalData.sourceList.clear();
+        evalData.sourceList.reserve(evalData.pathList.size());
+        for (size_t i = 0; i < evalData.pathList.size(); ++i) {
+            const size_t srcIdx = gSourceTrajectoryList.empty()
+                ? 0u
+                : (i % gSourceTrajectoryList.size());
+            if (!gSourceTrajectoryList.empty()) {
+                evalData.sourceList.push_back(gSourceTrajectoryList[srcIdx]);
+            }
+        }
+
+        // Camera config from autoc-tracker.ini.
+        evalData.cameraConfig.fov_h_deg = static_cast<gp_scalar>(cfg.cameraFOVHorizontalDeg);
+        evalData.cameraConfig.fov_v_deg = static_cast<gp_scalar>(cfg.cameraFOVVerticalDeg);
+        evalData.cameraConfig.frame_rate_hz = static_cast<gp_scalar>(cfg.cameraFrameRateHz);
+        evalData.cameraConfig.latency_ms = static_cast<gp_scalar>(cfg.cameraLatencyMs);
+        evalData.cameraConfig.mount_offset_body =
+            gp_vec3(static_cast<gp_scalar>(cfg.cameraMountOffsetX),
+                    static_cast<gp_scalar>(cfg.cameraMountOffsetY),
+                    static_cast<gp_scalar>(cfg.cameraMountOffsetZ));
+        // mount_orientation_body left as identity (default).
+
+        // Beacon configs (left + right wingtips).
+        evalData.beaconLeftConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconLeftWavelengthNm);
+        evalData.beaconLeftConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
+        evalData.beaconLeftConfig.mount_body =
+            gp_vec3(static_cast<gp_scalar>(cfg.beaconLeftMountX),
+                    static_cast<gp_scalar>(cfg.beaconLeftMountY),
+                    static_cast<gp_scalar>(cfg.beaconLeftMountZ));
+        evalData.beaconLeftConfig.emission_axis_body = gp_vec3(0.0f, -1.0f, 0.0f);
+
+        evalData.beaconRightConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconRightWavelengthNm);
+        evalData.beaconRightConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
+        evalData.beaconRightConfig.mount_body =
+            gp_vec3(static_cast<gp_scalar>(cfg.beaconRightMountX),
+                    static_cast<gp_scalar>(cfg.beaconRightMountY),
+                    static_cast<gp_scalar>(cfg.beaconRightMountZ));
+        evalData.beaconRightConfig.emission_axis_body = gp_vec3(0.0f, +1.0f, 0.0f);
+
+        // Airframe proxy: v1 default hb1 AABB.
+        evalData.airframeProxy = autoc::eval::defaultAirframeProxyHB1();
+
+        // Home: virtual world origin (matches initialPosition convention).
+        evalData.homeWorld = gp_vec3::Zero();
+    }
+
     return evalData;
 }
 
@@ -1326,6 +1414,32 @@ int main(int argc, char** argv)
   *logger.info() << "EnableEntryVariations: " << cfg.enableEntryVariations << endl;
   *logger.info() << "EnableWindVariations: " << cfg.enableWindVariations << endl;
   *logger.info() << "EnableRabbitSpeedVariations: " << cfg.enableRabbitSpeedVariations << endl;
+
+  // 030 M6e — load source dmp at startup for tracker mode (FR-001 + FR-011).
+  // Apply path × wind subset; result is the canonical per-scenario source-
+  // trajectory bundle that buildEvalData attaches to each EvalData job.
+  // Pathgen mode skips this entirely.
+  // TODO M6e+: filterCrashedSourceScenarios needs crashReasonList from
+  // EvalResults — extend loadSourceDmp to return both, or accept that
+  // crashed source scenarios produce short trajectories handled by
+  // TrackerStepper's natural source-exhaustion termination.
+  if (cfg.mode == "tracker") {
+    *logger.info() << "Loading source dmp for tracker mode: " << cfg.trackerSourceRun << endl;
+    gSourceTrajectoryList = loadSourceDmp(cfg.trackerSourceRun);
+    *logger.info() << "  Loaded " << gSourceTrajectoryList.size() << " scenarios" << endl;
+    auto pathSubset = parseCsvIndices(cfg.trackerPathSubset);
+    auto windSubset = parseCsvIndices(cfg.trackerWindSubset);
+    gSourceTrajectoryList = filterByScenarioIndex(
+        gSourceTrajectoryList, pathSubset, windSubset);
+    *logger.info() << "  Final scenario count after subset filter: "
+                   << gSourceTrajectoryList.size() << endl;
+    if (gSourceTrajectoryList.empty()) {
+      *logger.info() << "FATAL ERROR: tracker mode requires at least one source "
+                        "scenario after filtering; got 0. Check TrackerSourceRun "
+                        "and subset config." << endl;
+      exit(1);
+    }
+  }
 
   // Initialize global variation parameters from config (degrees -> radians)
   // Store individual flags for selective application in populateVariationOffsets()

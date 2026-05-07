@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "autoc/types.h"
-#include "autoc/rpc/protocol.h"  // ScenarioMetadata
+#include "autoc/rpc/scenario_metadata.h"  // ScenarioMetadata (factored out 030 M6e)
 
 // Minimum tick count for a usable source scenario (3 seconds at 10 Hz NN
 // tick). Source scenarios shorter than this are typically truncated by
@@ -35,10 +35,16 @@ constexpr int MIN_SCENARIO_TICKS = 30;
 // samples; an explicit per-tick gyroRates serialization would land at the
 // M8 schema-bump-to-v2 boundary.
 struct SourceTickSample {
-    double simTimeMsec;       // M1 source timestamp (10 Hz nominal)
+    double simTimeMsec;       // raw-ok: cereal byte-format member (M1 source dmp + M6e EvalData transport). M1 source timestamp (10 Hz nominal)
     gp_vec3 position;         // target world position (NED, meters)
     gp_quat orientation;      // target body→world quat
     gp_vec3 velocity;         // target velocity (NED, m/s)
+
+    // 030 M6e — cereal serialize for EvalData wire-protocol carry.
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(simTimeMsec, position, orientation, velocity);
+    }
 };
 
 // One source scenario worth of target trajectory + the joint-PRNG variation
@@ -50,4 +56,10 @@ struct SourceScenarioTrajectory {
     int sourceScenarioIndex;            // index into source dmp's scenarioList
     ScenarioMetadata variation;         // copied from source dmp scenarioList[i]
     std::vector<SourceTickSample> samples;  // copied from aircraftStateList[i]
+
+    // 030 M6e — cereal serialize for EvalData wire-protocol carry.
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(sourceScenarioIndex, variation, samples);
+    }
 };

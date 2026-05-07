@@ -27,7 +27,14 @@
 
 #include "autoc/util/socket_wrapper.h"
 #include "autoc/eval/aircraft_state.h"
+#include "autoc/eval/beacon_config.h"
+#include "autoc/eval/camera_config.h"
+#include "autoc/eval/camera_projection.h"   // AirframeProxy
 #include "autoc/eval/variation_generator.h"
+// NOTE: include "autoc/eval/source_trajectory.h" lives AFTER
+// ScenarioMetadata is defined below — source_trajectory.h depends on
+// ScenarioMetadata as a member-by-value, so it must see the full type.
+// The deferred include is at the EvalData declaration point.
 
 // FNV-1a hash for serialized GP programs/bytecode (matches dtest tracker)
 inline uint64_t hashByteVector(const std::vector<char>& data) {
@@ -74,49 +81,11 @@ namespace cereal {
 }
 
 
-/*
- * here we send our requested paths to the sims
- */
-struct ScenarioMetadata {
-  int pathVariantIndex = -1;   // -1 = unset/aggregated
-  int windVariantIndex = -1;   // -1 = unset/aggregated
-  unsigned int windSeed = 0;
-  uint64_t scenarioSequence = 0;
-  uint64_t bakeoffSequence = 0;
-  bool enableDeterministicLogging = false;
-
-  // VARIATIONS1: Entry and wind direction offsets (computed by autoc, applied by crrcsim)
-  // All angles in radians, speed as multiplier
-  double entryHeadingOffset = 0.0;   // radians, offset from path tangent
-  double entryRollOffset = 0.0;      // radians, initial roll attitude
-  double entryPitchOffset = 0.0;     // radians, initial pitch attitude
-  double entrySpeedFactor = 1.0;     // multiplier on reference speed
-  double windDirectionOffset = 0.0;  // radians, offset from base wind direction
-
-  // Entry position offsets (see specs/005-entry-fitness-ramp)
-  double entryNorthOffset = 0.0;     // meters, NED North
-  double entryEastOffset = 0.0;      // meters, NED East
-  double entryAltOffset = 0.0;       // meters, NED Down (negative=up)
-
-  // Rabbit speed for odometer-based path traversal (m/s)
-  double rabbitSpeed = 0.0;          // 0 = use default SIM_INITIAL_VELOCITY
-  unsigned int rabbitSpeedSeed = 0;  // per-scenario seed for local speed profile PRNG
-
-  // Raw→virtual origin offset captured at test start (NED meters).
-  // Used by renderer to reconstruct raw positions for "all flights" display.
-  // See docs/COORDINATE_CONVENTIONS.md "Virtual Frame" section.
-  gp_vec3 originOffset = gp_vec3::Zero();
-
-  template<class Archive>
-  void serialize(Archive& ar, const std::uint32_t /*version*/) {
-    ar(pathVariantIndex, windVariantIndex, windSeed, scenarioSequence,
-       bakeoffSequence, enableDeterministicLogging, entryHeadingOffset,
-       entryRollOffset, entryPitchOffset, entrySpeedFactor,
-       windDirectionOffset, entryNorthOffset, entryEastOffset, entryAltOffset,
-       rabbitSpeed, rabbitSpeedSeed, originOffset);
-  }
-};
-CEREAL_CLASS_VERSION(ScenarioMetadata, 1)
+// ScenarioMetadata factored out to its own header (030 M6e) to break the
+// circular include between protocol.h and source_trajectory.h. Existing
+// consumers of protocol.h see the type unchanged via this re-include.
+#include "autoc/rpc/scenario_metadata.h"
+#include "autoc/eval/source_trajectory.h"
 
 // Controller type tag for RPC wire format
 enum class ControllerType : int {
@@ -140,6 +109,17 @@ struct EvalData {
   // "tracker" fires the source-trajectory-driven per-tick path (M6d/e).
   std::string mode = "pathgen";
 
+  // 030 M6e — tracker-mode per-scenario payload (FR-001 + FR-018). Empty
+  // when mode == "pathgen". When mode == "tracker", sourceList[i] is the
+  // source-craft trajectory the chase craft for scenario i tracks; the
+  // configs below are scenario-invariant (one set per worker job).
+  std::vector<SourceScenarioTrajectory> sourceList;
+  autoc::eval::CameraConfig cameraConfig;
+  autoc::eval::BeaconConfig beaconLeftConfig;
+  autoc::eval::BeaconConfig beaconRightConfig;
+  autoc::eval::AirframeProxy airframeProxy;
+  gp_vec3 homeWorld = gp_vec3::Zero();
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
     ar(gp, gpHash, isEliteReeval);
@@ -147,6 +127,8 @@ struct EvalData {
     ar(ct);
     controllerType = static_cast<ControllerType>(ct);
     ar(pathList, scenario, scenarioList, rabbitSpeedConfig, mode);
+    ar(sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
+       airframeProxy, homeWorld);
   }
 
   void sanitizePaths() {

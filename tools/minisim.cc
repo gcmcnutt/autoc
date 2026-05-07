@@ -10,6 +10,7 @@
 #include "autoc/rpc/protocol.h"
 #include "autoc/autoc.h"
 #include "autoc/eval/pathgen_stepper.h"
+#include "autoc/eval/tracker_stepper.h"
 #include "autoc/eval/sensor_math.h"
 #include "autoc/nn/nn_input_computation.h"
 #include "autoc/nn/serialization.h"
@@ -161,17 +162,38 @@ public:
         CrashReason crashReason = CrashReason::None;
 
         if (evalMode == "tracker") {
-          // M6c stub — tracker-mode runtime support lands at M6d/e.
-          // Log once per worker, return Eval crash so the scenario is
-          // recorded as failed without spending sim time.
-          if (i == 0 && evalCounter == 1) {
-            std::cerr << "[MINISIM] tracker mode received — TrackerStepper "
-                         "+ source trajectory not yet wired (M6d/M6e); "
-                         "scenarios will record as Eval-crash."
-                      << std::endl;
+          // M6e — TrackerStepper integration. EvalData::sourceList[i]
+          // carries this scenario's source trajectory; camera/beacon/
+          // airframe/home come from the per-job evalData configs. If
+          // sourceList is shorter than pathList (autoc populated fewer
+          // sources than scenarios), fall back to Eval-crash for that
+          // scenario rather than running with stale data.
+          if (static_cast<size_t>(i) >= evalData.sourceList.size()
+              || evalData.sourceList[i].samples.empty()) {
+            if (evalCounter == 1) {
+              std::cerr << "[MINISIM] tracker scenario " << i
+                        << " missing source trajectory; recording Eval-crash."
+                        << std::endl;
+            }
+            aircraftStateSteps.push_back(aircraftState);
+            crashReason = CrashReason::Eval;
+          } else {
+            const SourceScenarioTrajectory& source = evalData.sourceList[i];
+            autoc::eval::TrackerStepper stepper(
+                nnBackend, aircraftState, source, scenarioMeta,
+                evalData.cameraConfig,
+                evalData.beaconLeftConfig,
+                evalData.beaconRightConfig,
+                evalData.airframeProxy,
+                evalData.homeWorld);
+            stepper.initScenario();
+            aircraftStateSteps.push_back(aircraftState);
+
+            while (crashReason == CrashReason::None) {
+              crashReason = stepper.stepOnce();
+              aircraftStateSteps.push_back(aircraftState);
+            }
           }
-          aircraftStateSteps.push_back(aircraftState);  // empty initial state
-          crashReason = CrashReason::Eval;
         } else {
           // pathgen-mode (default): existing behavior, byte-identical to M6a.
           autoc::eval::PathgenStepper stepper(nnBackend, aircraftState, path, scenarioMeta);

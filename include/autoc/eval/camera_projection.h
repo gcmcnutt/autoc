@@ -56,6 +56,12 @@ struct BeaconObservation {
 struct AirframeProxy {
     gp_vec3 box_min_chase_body;
     gp_vec3 box_max_chase_body;
+
+    // 030 M6e — cereal serialize for EvalData wire-protocol carry.
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(box_min_chase_body, box_max_chase_body);
+    }
 };
 
 // Default v1 proxy for hb1: fuselage + wing AABB. Coarse — the projection
