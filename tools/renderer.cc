@@ -4049,6 +4049,17 @@ void Renderer::updatePlaybackAnimation() {
   bool hasSimData = !evalResults.pathList.empty() && !evalResults.aircraftStateList.empty();
 
   for (int i = 0; i < renderArenas; i++) {
+    // 030 M9b focus animation 2026-05-08: when focused on a single
+    // arena, skip per-arena work for all others. Frame rate at 300
+    // arenas was unsmooth — focus mode now animates only the focused
+    // arena. Other arenas keep their static-load tape (no clear since
+    // we just skip them; AppendPolyData retains last frame's input
+    // until next animation tick clears at the top of this function).
+    // To re-enable animate-all without changing camera, exit focus
+    // mode (existing toggleFocusMode keypress).
+    if (focusMode && i != focusArenaIndex) {
+      continue;
+    }
     vec3 offset = renderingOffset(i);
 
     std::vector<vec3> p;
