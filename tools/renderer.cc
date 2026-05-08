@@ -209,6 +209,47 @@ vtkSmartPointer<vtkPolyData> Renderer::createSegmentSet(vec3 offset, const std::
   return polyData;
 }
 
+// 030 M9b — Tracker-mode chase→target segments. Mirrors createSegmentSet
+// but reads target craft position from CopiedTargetSample (M2 dmp v=2)
+// instead of chase.getRabbitPosition() (which in pathgen is the
+// path-following rabbit, in tracker is whatever TrackerStepper recorded
+// — currently the trail rabbit, useful for fitness debugging but not
+// the operator-asked "craft to target" visualization).
+vtkSmartPointer<vtkPolyData> Renderer::createSegmentSetToTarget(vec3 offset,
+    const std::vector<AircraftState>& state,
+    const std::vector<CopiedTargetSample>& targets) {
+  vtkSmartPointer<vtkPolyData> polyData = vtkSmartPointer<vtkPolyData>::New();
+
+  size_t n = std::min(state.size(), targets.size());
+  if (n == 0) {
+    vtkSmartPointer<vtkPoints> emptyPoints = vtkSmartPointer<vtkPoints>::New();
+    polyData->SetPoints(emptyPoints);
+    return polyData;
+  }
+
+  vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
+  for (size_t i = 0; i < n; ++i) {
+    const auto& s = state.at(i);
+    vec3 chasePos = vec3{ s.getPosition()[0], s.getPosition()[1], s.getPosition()[2] } + offset;
+    const gp_vec3& tgt = targets.at(i).position;
+    vec3 targetPos = vec3{ tgt[0], tgt[1], tgt[2] } + offset;
+    points->InsertNextPoint(chasePos[0], chasePos[1], chasePos[2]);
+    points->InsertNextPoint(targetPos[0], targetPos[1], targetPos[2]);
+  }
+
+  vtkSmartPointer<vtkCellArray> lines = vtkSmartPointer<vtkCellArray>::New();
+  for (int i = 0; i < points->GetNumberOfPoints(); i += 2) {
+    vtkSmartPointer<vtkLine> line = vtkSmartPointer<vtkLine>::New();
+    line->GetPointIds()->SetId(0, i);
+    line->GetPointIds()->SetId(1, i + 1);
+    lines->InsertNextCell(line);
+  }
+
+  polyData->SetPoints(points);
+  polyData->SetLines(lines);
+  return polyData;
+}
+
 /*
  ** actual data is rendered as a tape with a top and bottom
  */
@@ -469,21 +510,31 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     if (!a.empty()) {
       this->actuals->AddInputData(createTapeSet(offset, a, stateToOrientation(evalResults.aircraftStateList[i])));
     }
-    if (!a.empty() && !p.empty()) {
-      this->segmentGaps->AddInputData(createSegmentSet(offset, evalResults.aircraftStateList[i], p));
-    }
-
-    // 030 M9b — Target-craft tape, populated from targetTrajectoryList
-    // when isTrackerMode_. Empty for pathgen-mode dmps. Same per-scenario
-    // `offset` so target tape lands in the same arena cell as chase tape.
-    if (this->isTrackerMode_
+    // 030 M9b — Target-craft tape + chase→target error bars, populated
+    // from targetTrajectoryList when isTrackerMode_. Empty for pathgen-
+    // mode dmps. Same per-scenario `offset` so target tape lands in the
+    // same arena cell as chase tape.
+    const bool tracker_scenario_has_target =
+        this->isTrackerMode_
         && i < static_cast<int>(evalResults.targetTrajectoryList.size())
-        && !evalResults.targetTrajectoryList[i].empty()) {
+        && !evalResults.targetTrajectoryList[i].empty();
+    if (tracker_scenario_has_target) {
       const auto& targetSamples = evalResults.targetTrajectoryList[i];
       std::vector<vec3> targetPositions = targetSamplesToVector(targetSamples);
       std::vector<vec3> targetOrientations = targetSamplesToOrientation(targetSamples);
       this->targetActuals->AddInputData(
           createTapeSet(offset, targetPositions, targetOrientations));
+      // Tracker mode: blue error bars chase→target (NOT chase→rabbit)
+      // per operator request 2026-05-08 — visualizes the actual
+      // tracking error rather than the trail-rabbit fitness construct.
+      if (!a.empty()) {
+        this->segmentGaps->AddInputData(
+            createSegmentSetToTarget(offset, evalResults.aircraftStateList[i], targetSamples));
+      }
+    } else if (!a.empty() && !p.empty()) {
+      // Pathgen mode (or tracker-without-target-fallback): legacy
+      // chase→rabbit path-error visualization.
+      this->segmentGaps->AddInputData(createSegmentSet(offset, evalResults.aircraftStateList[i], p));
     }
 
     // Create a plane source at z = 0
@@ -1208,14 +1259,14 @@ void Renderer::initialize() {
   targetProp->SetInterpolation(VTK_FLAT);
   targetProp->SetBackfaceCulling(false);
   targetProp->SetFrontfaceCulling(false);
-  targetProp->SetColor(0.7, 0.0, 1.0);   // Purple front face (top)
+  targetProp->SetColor(1.0, 0.0, 1.0);   // Magenta front face (top)
   targetProp->SetAmbient(0.1);
   targetProp->SetDiffuse(0.8);
   targetProp->SetSpecular(0.1);
   targetProp->SetSpecularPower(10);
   targetProp->SetOpacity(1.0);
   vtkNew<vtkProperty> targetBackProperty;
-  targetBackProperty->SetColor(0.4, 0.0, 0.6);  // Dark violet back face (bottom)
+  targetBackProperty->SetColor(0.0, 1.0, 0.5);  // Lime back face (bottom) — high contrast vs magenta for orientation
   targetBackProperty->SetAmbient(0.1);
   targetBackProperty->SetDiffuse(0.8);
   targetBackProperty->SetSpecular(0.1);
@@ -3999,6 +4050,8 @@ void Renderer::renderFullScene() {
   this->directRabbitData->RemoveAllInputs();
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->directRabbitData->AddInputData(e); }
   this->actuals->RemoveAllInputs();
+  this->targetActuals->RemoveAllInputs();  // 030 M9b
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetActuals->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
   this->blackboxHighlightTapes->RemoveAllInputs();
@@ -4040,7 +4093,26 @@ void Renderer::renderFullScene() {
     if (!a.empty()) {
       this->actuals->AddInputData(createTapeSet(offset, a, stateToOrientation(evalResults.aircraftStateList[i]))); // Full progress
     }
-    if (!a.empty() && !p.empty()) {
+
+    // 030 M9b — Target tape + chase→target error bars in renderFullScene
+    // (the alternate static-render path; mirrors updateGenerationDisplay's
+    // tracker-mode population so refreshing a full scene shows the target
+    // craft + chase→target lines, not chase→rabbit).
+    const bool tracker_scenario_has_target =
+        this->isTrackerMode_
+        && i < static_cast<int>(evalResults.targetTrajectoryList.size())
+        && !evalResults.targetTrajectoryList[i].empty();
+    if (tracker_scenario_has_target) {
+      const auto& targetSamples = evalResults.targetTrajectoryList[i];
+      std::vector<vec3> targetPositions = targetSamplesToVector(targetSamples);
+      std::vector<vec3> targetOrientations = targetSamplesToOrientation(targetSamples);
+      this->targetActuals->AddInputData(
+          createTapeSet(offset, targetPositions, targetOrientations));
+      if (!a.empty()) {
+        this->segmentGaps->AddInputData(
+            createSegmentSetToTarget(offset, evalResults.aircraftStateList[i], targetSamples));
+      }
+    } else if (!a.empty() && !p.empty()) {
       this->segmentGaps->AddInputData(createSegmentSet(offset, evalResults.aircraftStateList[i], p)); // Full progress
     }
     

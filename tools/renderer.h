@@ -215,6 +215,16 @@ private:
   vtkSmartPointer<vtkPolyData> createPointSet(gp_vec3 offset, const std::vector<gp_vec3> points, gp_scalar timeProgress);
   vtkSmartPointer<vtkPolyData> createSegmentSet(gp_vec3 offset, const std::vector<AircraftState> state, const std::vector<gp_vec3> end);
   vtkSmartPointer<vtkPolyData> createSegmentSet(gp_vec3 offset, const std::vector<AircraftState> state, const std::vector<gp_vec3> end, gp_scalar timeProgress);
+
+  // 030 M9b — Tracker-mode segment-set: per-tick line from chase position
+  // to TARGET craft position (CopiedTargetSample.position). Pathgen's
+  // createSegmentSet uses chase.getRabbitPosition() (path-following rabbit);
+  // tracker mode wants chase→target ground-truth visualization since the
+  // target is a real craft, not a synthetic path point. iterates in
+  // lockstep to min(state.size(), targets.size()).
+  vtkSmartPointer<vtkPolyData> createSegmentSetToTarget(gp_vec3 offset,
+      const std::vector<AircraftState>& state,
+      const std::vector<CopiedTargetSample>& targets);
   vtkSmartPointer<vtkPolyData> createTapeSet(gp_vec3 offset, const std::vector<gp_vec3> points, const std::vector<gp_vec3> normals);
   vtkSmartPointer<vtkPolyData> createTapeSet(gp_vec3 offset, const std::vector<gp_vec3> points, const std::vector<gp_vec3> normals, gp_scalar timeProgress);
   std::vector<gp_vec3> pathToVector(const std::vector<Path> path);
