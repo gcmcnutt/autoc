@@ -129,6 +129,18 @@ public:
   // true, instantiate target-craft + beacon + camera-POV actors;
   // when false, render the existing pathgen-only view unchanged.
   bool isTrackerMode_ = false;
+
+  // 030 M9b detail-toggle 2026-05-08: gates the M9b.2/M9b.3 debug-aid
+  // overlays (target-wingtip beacon glyphs + chase camera FOV pyramid
+  // wireframe). Default off — operator presses 'd' to show during
+  // troubleshooting. Tape ribbons + chase→target error bars remain
+  // always-visible. M1 pathgen mode unaffected.
+  bool trackerDetailVisible_ = false;
+
+public:
+  // 030 M9b — Toggle the detail-overlay actors. Called from the 'd'
+  // key handler in CustomInteractorStyle.
+  void toggleTrackerDetail();
   
   // Test span navigation state
   std::vector<TestSpan> testSpans;
@@ -337,6 +349,14 @@ protected:
     else if (key == "f") {
       if (renderer_) {
         renderer_->toggleFocusMode();
+      }
+    }
+    else if (key == "d") {
+      // 030 M9b — Toggle tracker-mode detail overlays (FOV pyramid +
+      // wingtip beacon glyphs). No-op in pathgen mode (those actors
+      // never have data anyway).
+      if (renderer_) {
+        renderer_->toggleTrackerDetail();
       }
     }
     else if (key == "Left") {

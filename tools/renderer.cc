@@ -1401,6 +1401,13 @@ void Renderer::initialize() {
   renderer->AddActor(targetBeaconLeftActor);   // 030 M9b.2 — red beacon trail (port)
   renderer->AddActor(targetBeaconRightActor);  // 030 M9b.2 — green beacon trail (starboard)
   renderer->AddActor(chaseCameraFovActor);     // 030 M9b.3 — yellow FOV pyramid
+
+  // 030 M9b detail-toggle 2026-05-08: hide the three debug-aid overlays
+  // by default. Operator presses 'd' to show during troubleshooting
+  // (toggleTrackerDetail flips these via SetVisibility 0/1).
+  targetBeaconLeftActor->SetVisibility(this->trackerDetailVisible_ ? 1 : 0);
+  targetBeaconRightActor->SetVisibility(this->trackerDetailVisible_ ? 1 : 0);
+  chaseCameraFovActor->SetVisibility(this->trackerDetailVisible_ ? 1 : 0);
   renderer->AddActor(actor3);  // Blue delta lines
   
   // Only add blackbox actors if there's blackbox data
@@ -1924,6 +1931,8 @@ int main(int argc, char** argv) {
   std::cout << "  SPACE - Toggle playback animation" << std::endl;
   std::cout << "  f - Focus camera on current arena" << std::endl;
   std::cout << "  Arrow keys - Move focus between arenas" << std::endl;
+  std::cout << "  d - Toggle tracker-mode detail overlays "
+               "(FOV pyramid + wingtip beacon trails)" << std::endl;
   if (renderer.inXiaoMode && !renderer.testSpans.empty()) {
     std::cout << "  t - Next test segment" << std::endl;
     std::cout << "  r - Previous test segment" << std::endl;
@@ -3385,6 +3394,26 @@ void Renderer::updateControlsPosition() {
     return;
   }
   updateControlsOverlay(lastControlsTime);
+}
+
+void Renderer::toggleTrackerDetail() {
+  trackerDetailVisible_ = !trackerDetailVisible_;
+  // Defensive null-checks — actors might not be constructed yet during
+  // very-early-load; harmless no-op when isTrackerMode_=false too.
+  if (targetBeaconLeftActor) {
+    targetBeaconLeftActor->SetVisibility(trackerDetailVisible_ ? 1 : 0);
+  }
+  if (targetBeaconRightActor) {
+    targetBeaconRightActor->SetVisibility(trackerDetailVisible_ ? 1 : 0);
+  }
+  if (chaseCameraFovActor) {
+    chaseCameraFovActor->SetVisibility(trackerDetailVisible_ ? 1 : 0);
+  }
+  std::cout << "[RENDERER] tracker detail overlays: "
+            << (trackerDetailVisible_ ? "ON" : "OFF") << std::endl;
+  if (renderWindow) {
+    renderWindow->Render();
+  }
 }
 
 void Renderer::toggleFocusMode() {
