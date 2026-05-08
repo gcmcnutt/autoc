@@ -180,6 +180,14 @@ private:
   vtkSmartPointer<vtkAppendPolyData> targetBeaconsLeft;
   vtkSmartPointer<vtkAppendPolyData> targetBeaconsRight;
 
+  // 030 M9b.3 — Chase camera FOV pyramid frustum, drawn from the
+  // latest visible tick's CameraViewSample (camera_pose_world_pos +
+  // _orient + fov_h/v). Wireframe lines: 4 edges from apex to corners
+  // at length 30m, plus 4 base lines closing the rectangular frustum.
+  // Visualizes "where is chase looking?" — operator can eyeball
+  // whether target sits inside or outside chase's FOV at any tick.
+  vtkSmartPointer<vtkAppendPolyData> chaseCameraFov;
+
   vtkSmartPointer<vtkActor> actor1;
   vtkSmartPointer<vtkActor> directRabbitActor;  // Magenta tube for direct rabbit ground truth
   vtkSmartPointer<vtkActor> actor2;
@@ -190,6 +198,7 @@ private:
   vtkSmartPointer<vtkActor> targetActor;   // 030 M9b — orange tape from targetTrajectoryList
   vtkSmartPointer<vtkActor> targetBeaconLeftActor;   // 030 M9b.2 — red sphere trail (port wingtip)
   vtkSmartPointer<vtkActor> targetBeaconRightActor;  // 030 M9b.2 — green sphere trail (starboard wingtip)
+  vtkSmartPointer<vtkActor> chaseCameraFovActor;     // 030 M9b.3 — yellow wireframe FOV pyramid
   std::vector<vtkSmartPointer<vtkActor>> arenaLabelActors;
   
   vtkSmartPointer<vtkTextActor> generationTextActor;
@@ -258,6 +267,16 @@ private:
   std::vector<gp_vec3> targetSamplesToBeaconPositions(
       const std::vector<CopiedTargetSample>& samples,
       const gp_vec3& beacon_mount_body);
+
+  // 030 M9b.3 — Build a wireframe pyramid frustum representing the
+  // chase camera FOV at one tick's pose. Apex = camera_pose_world_pos
+  // (+ offset). Axis = camera_pose_world_orient × +x. Half-extents at
+  // distance `length` (m): tan(fov_h/2)·length on right, tan(fov_v/2)·length
+  // on down. Returns vtkPolyData with 8 line segments (4 apex→corner
+  // edges + 4 base-rectangle lines). Caller appends to chaseCameraFov.
+  vtkSmartPointer<vtkPolyData> createFovPyramidLines(gp_vec3 offset,
+      const CameraViewSample& cam,
+      gp_scalar length);
   gp_fitness extractFitnessFromGP(const std::vector<char>& gpData);
   void createHighlightedFlightTapes(gp_vec3 offset);
   void createStopwatch();

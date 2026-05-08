@@ -461,6 +461,8 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsLeft->AddInputData(e); }
   this->targetBeaconsRight->RemoveAllInputs();  // 030 M9b.2
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsRight->AddInputData(e); }
+  this->chaseCameraFov->RemoveAllInputs();  // 030 M9b.3
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->chaseCameraFov->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->planeData->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
@@ -554,6 +556,15 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       std::vector<vec3> beaconRightWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconRightMountBody);
       this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
       this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
+      // 030 M9b.3 — FOV pyramid at the latest visible camera tick. For
+      // static load this is the final tick of the scenario; animation
+      // updates per-frame (see updatePlaybackAnimation).
+      if (i < static_cast<int>(evalResults.cameraViewList.size())
+          && !evalResults.cameraViewList[i].empty()) {
+        const auto& latestCam = evalResults.cameraViewList[i].back();
+        this->chaseCameraFov->AddInputData(
+            createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(30.0f)));
+      }
       // Tracker mode: blue error bars chase→target (NOT chase→rabbit)
       // per operator request 2026-05-08 — visualizes the actual
       // tracking error rather than the trail-rabbit fitness construct.
@@ -752,6 +763,7 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   this->targetActuals->Update();  // 030 M9b
   this->targetBeaconsLeft->Update();   // 030 M9b.2
   this->targetBeaconsRight->Update();  // 030 M9b.2
+  this->chaseCameraFov->Update();      // 030 M9b.3
   this->segmentGaps->Update();
 
   // Only update blackbox tapes if there's blackbox data
@@ -1115,6 +1127,7 @@ void Renderer::initialize() {
   targetActuals = vtkSmartPointer<vtkAppendPolyData>::New();  // 030 M9b
   targetBeaconsLeft = vtkSmartPointer<vtkAppendPolyData>::New();   // 030 M9b.2
   targetBeaconsRight = vtkSmartPointer<vtkAppendPolyData>::New();  // 030 M9b.2
+  chaseCameraFov = vtkSmartPointer<vtkAppendPolyData>::New();      // 030 M9b.3
 
   // Temporary until first update
   vtkNew<vtkPolyData> emptyPolyData;
@@ -1133,6 +1146,7 @@ void Renderer::initialize() {
   targetActuals->AddInputData(emptyPolyData);  // 030 M9b
   targetBeaconsLeft->AddInputData(emptyPolyData);   // 030 M9b.2
   targetBeaconsRight->AddInputData(emptyPolyData);  // 030 M9b.2
+  chaseCameraFov->AddInputData(emptyPolyData);      // 030 M9b.3
 
   // Update planeData to ensure it has an input port
   planeData->Update();
@@ -1340,6 +1354,17 @@ void Renderer::initialize() {
   targetBeaconRightActor->GetProperty()->SetColor(0.0, 1.0, 0.0);  // Green — starboard
   targetBeaconRightActor->GetProperty()->SetOpacity(0.9);
 
+  // 030 M9b.3 — Chase camera FOV pyramid wireframe. Yellow lines,
+  // semi-transparent. Single pyramid per scenario follows the latest
+  // visible chase camera tick — visualizes "is target in chase FOV?"
+  vtkNew<vtkPolyDataMapper> fovMapper;
+  fovMapper->SetInputConnection(chaseCameraFov->GetOutputPort());
+  chaseCameraFovActor = vtkSmartPointer<vtkActor>::New();
+  chaseCameraFovActor->SetMapper(fovMapper);
+  chaseCameraFovActor->GetProperty()->SetColor(1.0, 1.0, 0.0);  // Yellow
+  chaseCameraFovActor->GetProperty()->SetOpacity(0.45);
+  chaseCameraFovActor->GetProperty()->SetLineWidth(1.2);
+
   renderer->AddActor(planeActor);
   renderer->AddActor(actor1);  // Red path line (projected rabbit)
   renderer->AddActor(directRabbitActor);  // Magenta path (direct rabbit ground truth)
@@ -1347,6 +1372,7 @@ void Renderer::initialize() {
   renderer->AddActor(targetActor);  // 030 M9b — magenta/lime target-craft tape (tracker mode only)
   renderer->AddActor(targetBeaconLeftActor);   // 030 M9b.2 — red beacon trail (port)
   renderer->AddActor(targetBeaconRightActor);  // 030 M9b.2 — green beacon trail (starboard)
+  renderer->AddActor(chaseCameraFovActor);     // 030 M9b.3 — yellow FOV pyramid
   renderer->AddActor(actor3);  // Blue delta lines
   
   // Only add blackbox actors if there's blackbox data
@@ -1496,6 +1522,72 @@ std::vector<vec3> Renderer::targetSamplesToBeaconPositions(
     positions.push_back(s.position + s.orientation * beacon_mount_body);
   }
   return positions;
+}
+
+vtkSmartPointer<vtkPolyData> Renderer::createFovPyramidLines(vec3 offset,
+    const CameraViewSample& cam,
+    gp_scalar length) {
+  vtkSmartPointer<vtkPolyData> polyData = vtkSmartPointer<vtkPolyData>::New();
+  vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
+  vtkSmartPointer<vtkCellArray> lines = vtkSmartPointer<vtkCellArray>::New();
+
+  // Camera-frame basis: +x forward, +y right, +z down (NED body, M5
+  // convention). Half-extents at `length` distance: tan(fov/2) × length.
+  constexpr gp_scalar kPi = static_cast<gp_scalar>(3.14159265358979323846);
+  const gp_scalar half_h = std::tan(static_cast<gp_scalar>(cam.camera_fov_h_deg)
+                                    * (kPi / static_cast<gp_scalar>(360))) * length;
+  const gp_scalar half_v = std::tan(static_cast<gp_scalar>(cam.camera_fov_v_deg)
+                                    * (kPi / static_cast<gp_scalar>(360))) * length;
+
+  // Camera-frame corners at distance `length`.
+  const gp_vec3 cBR_cam(length, +half_h, +half_v);  // bottom-right
+  const gp_vec3 cBL_cam(length, -half_h, +half_v);  // bottom-left
+  const gp_vec3 cTL_cam(length, -half_h, -half_v);  // top-left
+  const gp_vec3 cTR_cam(length, +half_h, -half_v);  // top-right
+
+  // Rotate to world frame via camera quat, translate to camera world pos,
+  // then add per-arena offset for the renderer's tile layout.
+  auto toWorld = [&](const gp_vec3& cam_local) -> vec3 {
+    gp_vec3 world = cam.camera_pose_world_orient * cam_local
+                  + cam.camera_pose_world_pos;
+    return vec3{ world[0] + offset[0], world[1] + offset[1], world[2] + offset[2] };
+  };
+
+  vec3 apex = vec3{ cam.camera_pose_world_pos[0] + offset[0],
+                    cam.camera_pose_world_pos[1] + offset[1],
+                    cam.camera_pose_world_pos[2] + offset[2] };
+  vec3 cBR = toWorld(cBR_cam);
+  vec3 cBL = toWorld(cBL_cam);
+  vec3 cTL = toWorld(cTL_cam);
+  vec3 cTR = toWorld(cTR_cam);
+
+  vtkIdType idApex = points->InsertNextPoint(apex[0], apex[1], apex[2]);
+  vtkIdType idBR   = points->InsertNextPoint(cBR[0], cBR[1], cBR[2]);
+  vtkIdType idBL   = points->InsertNextPoint(cBL[0], cBL[1], cBL[2]);
+  vtkIdType idTL   = points->InsertNextPoint(cTL[0], cTL[1], cTL[2]);
+  vtkIdType idTR   = points->InsertNextPoint(cTR[0], cTR[1], cTR[2]);
+
+  auto addLine = [&](vtkIdType a, vtkIdType b) {
+    vtkSmartPointer<vtkLine> ln = vtkSmartPointer<vtkLine>::New();
+    ln->GetPointIds()->SetId(0, a);
+    ln->GetPointIds()->SetId(1, b);
+    lines->InsertNextCell(ln);
+  };
+
+  // 4 apex→corner edges
+  addLine(idApex, idBR);
+  addLine(idApex, idBL);
+  addLine(idApex, idTL);
+  addLine(idApex, idTR);
+  // 4 base-rectangle edges (BR→BL→TL→TR→BR)
+  addLine(idBR, idBL);
+  addLine(idBL, idTL);
+  addLine(idTL, idTR);
+  addLine(idTR, idBR);
+
+  polyData->SetPoints(points);
+  polyData->SetLines(lines);
+  return polyData;
 }
 
 std::vector<vec3> Renderer::stateToOrientation(std::vector<AircraftState> state) {
@@ -3663,6 +3755,8 @@ void Renderer::updatePlaybackAnimation() {
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsLeft->AddInputData(e); }
   this->targetBeaconsRight->RemoveAllInputs();  // 030 M9b.2
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsRight->AddInputData(e); }
+  this->chaseCameraFov->RemoveAllInputs();  // 030 M9b.3
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->chaseCameraFov->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
   this->blackboxHighlightTapes->RemoveAllInputs();
@@ -3809,6 +3903,18 @@ void Renderer::updatePlaybackAnimation() {
         std::vector<vec3> beaconRightWorld = targetSamplesToBeaconPositions(visibleTargets, kBeaconRightMountBody);
         this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
         this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
+        // 030 M9b.3 — FOV pyramid at the latest visible chase tick.
+        // cameraViewList[i] is index-parallel to aircraftStateList[i],
+        // so element [visibleStates.size()-1] is the matching tick.
+        if (i < static_cast<int>(evalResults.cameraViewList.size())
+            && !evalResults.cameraViewList[i].empty()
+            && !visibleStates.empty()) {
+          size_t camIdx = std::min(visibleStates.size() - 1,
+                                   evalResults.cameraViewList[i].size() - 1);
+          const auto& latestCam = evalResults.cameraViewList[i][camIdx];
+          this->chaseCameraFov->AddInputData(
+              createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(30.0f)));
+        }
       }
     }
 
@@ -4163,6 +4269,7 @@ void Renderer::updatePlaybackAnimation() {
   this->targetActuals->Update();  // 030 M9b
   this->targetBeaconsLeft->Update();   // 030 M9b.2
   this->targetBeaconsRight->Update();  // 030 M9b.2
+  this->chaseCameraFov->Update();      // 030 M9b.3
   this->segmentGaps->Update();
   if (!blackboxAircraftStates.empty()) {
     this->blackboxTapes->Update();
@@ -4201,6 +4308,8 @@ void Renderer::renderFullScene() {
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsLeft->AddInputData(e); }
   this->targetBeaconsRight->RemoveAllInputs();  // 030 M9b.2
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsRight->AddInputData(e); }
+  this->chaseCameraFov->RemoveAllInputs();  // 030 M9b.3
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->chaseCameraFov->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
   this->blackboxHighlightTapes->RemoveAllInputs();
@@ -4266,6 +4375,13 @@ void Renderer::renderFullScene() {
       std::vector<vec3> beaconRightWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconRightMountBody);
       this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
       this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
+      // 030 M9b.3 — FOV pyramid at the final-tick camera pose.
+      if (i < static_cast<int>(evalResults.cameraViewList.size())
+          && !evalResults.cameraViewList[i].empty()) {
+        const auto& latestCam = evalResults.cameraViewList[i].back();
+        this->chaseCameraFov->AddInputData(
+            createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(30.0f)));
+      }
       if (!a.empty()) {
         this->segmentGaps->AddInputData(
             createSegmentSetToTarget(offset, evalResults.aircraftStateList[i], targetSamples));
@@ -4558,6 +4674,7 @@ void Renderer::renderFullScene() {
   this->targetActuals->Update();  // 030 M9b
   this->targetBeaconsLeft->Update();   // 030 M9b.2
   this->targetBeaconsRight->Update();  // 030 M9b.2
+  this->chaseCameraFov->Update();      // 030 M9b.3
   this->segmentGaps->Update();
   if (!blackboxAircraftStates.empty()) {
     this->blackboxTapes->Update();
