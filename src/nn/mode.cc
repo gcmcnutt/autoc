@@ -2,6 +2,7 @@
 #include "autoc/nn/evaluator.h"
 #include "autoc/nn/nn_inputs.h"
 #include "autoc/nn/topology.h"
+#include "autoc/rpc/protocol.h"   // 030 M11.preA — Mode enum
 
 #include <cstdio>
 #include <cstdlib>
@@ -56,7 +57,12 @@ const ModeStrategy kTrackerMode = {
     TRACKER_NN_TOPOLOGY_STRING,
 };
 
+const ModeStrategy& getModeStrategy(Mode m) {
+    return (m == Mode::TRACKER) ? kTrackerMode : kPathgenMode;
+}
+
 const ModeStrategy& getModeStrategyByName(const char* name) {
-    if (std::strcmp(name, "tracker") == 0) return kTrackerMode;
-    return kPathgenMode;  // default for "pathgen" or any unrecognized name
+    // Route through the typed enum lookup so there's a single switch
+    // point — keeps the string-compare confined to this one helper.
+    return getModeStrategy(parseModeName(name ? name : ""));
 }

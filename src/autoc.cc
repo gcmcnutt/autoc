@@ -948,8 +948,10 @@ static EvalData buildEvalData(const EvalJob& job) {
     // 030 M6c — pass active mode to the worker so it picks the right
     // ScenarioStepper. ConfigManager has already validated mode ∈
     // {pathgen, tracker} at startup; default in the EvalData struct is
-    // "pathgen" so any pre-M6c worker still does the right thing.
-    evalData.mode = ConfigManager::getConfig().mode;
+    // PATHGEN so any pre-M6c worker still does the right thing.
+    // 030 M11.preA — String parsing happens here (one site); the wire
+    // format is now the typed Mode enum.
+    evalData.mode = parseModeName(ConfigManager::getConfig().mode);
     evalData.gp.assign(reinterpret_cast<const char*>(job.nnData.data()),
                        reinterpret_cast<const char*>(job.nnData.data() + job.nnData.size()));
     evalData.gpHash = hashByteVector(evalData.gp);
@@ -1003,7 +1005,7 @@ static EvalData buildEvalData(const EvalJob& job) {
     // airframe configs come from the operator's autoc-tracker.ini, copied
     // into the per-scenario job so the worker has everything it needs to
     // run TrackerStepper without round-tripping back to autoc.
-    if (evalData.mode == "tracker") {
+    if (evalData.mode == Mode::TRACKER) {
         const auto& cfg = ConfigManager::getConfig();
 
         // Match sourceList size to pathList size. Default v1 mapping:

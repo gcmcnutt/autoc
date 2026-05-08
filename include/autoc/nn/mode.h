@@ -51,4 +51,11 @@ struct ModeStrategy {
 extern const ModeStrategy kPathgenMode;
 extern const ModeStrategy kTrackerMode;
 
+// 030 M11.preA — Strategy lookup by typed Mode enum. Preferred entry
+// point post-migration. The Mode enum is defined in autoc/rpc/protocol.h.
+enum class Mode : int;  // forward decl
+const ModeStrategy& getModeStrategy(Mode m);
+
+// Legacy string-compare lookup, retained for autoc.ini parser path
+// (string-from-ini → ModeStrategy without an intermediate enum cast).
 const ModeStrategy& getModeStrategyByName(const char* name);

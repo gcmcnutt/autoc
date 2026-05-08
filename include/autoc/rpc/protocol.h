@@ -94,6 +94,28 @@ enum class ControllerType : int {
 };
 // cereal doesn't serialize enum class directly - use int wrapper
 
+// 030 M11.preA — Mode dispatch tag for RPC wire format. Replaces the
+// std::string mode that landed at M6c (operator routing 2026-05-08:
+// type-checked enum is safer + doesn't string-compare on every per-tick
+// branch). Cereal-serialized as int (same pattern as ControllerType
+// above). EvalData is RPC-only (NOT saved to dmps), so changing this
+// wire-format byte layout is safe — autoc + workers rebuild together
+// every commit.
+enum class Mode : int {
+  PATHGEN = 0,
+  TRACKER = 1
+};
+
+// String ↔ enum helpers (for AutocConfig parsing from autoc.ini text and
+// for human-readable log lines).
+inline Mode parseModeName(const std::string& name) {
+  if (name == "tracker") return Mode::TRACKER;
+  return Mode::PATHGEN;  // default for "pathgen" or any unrecognized value
+}
+inline const char* modeToString(Mode m) {
+  return (m == Mode::TRACKER) ? "tracker" : "pathgen";
+}
+
 struct EvalData {
   std::vector<char> gp;
   uint64_t gpHash = 0;  // FNV-1a hash of payload for verification
@@ -105,10 +127,13 @@ struct EvalData {
   RabbitSpeedConfig rabbitSpeedConfig = RabbitSpeedConfig::defaultConfig();
 
   // 030 M6c — runtime mode dispatch (FR-019). Worker selects PathgenStepper
-  // vs TrackerStepper based on this field. "pathgen" is the default to
-  // preserve existing pathgen-only behavior across the M6c plumbing commit.
-  // "tracker" fires the source-trajectory-driven per-tick path (M6d/e).
-  std::string mode = "pathgen";
+  // vs TrackerStepper based on this field. PATHGEN is the default to
+  // preserve existing pathgen-only behavior. TRACKER fires the source-
+  // trajectory-driven per-tick path (M6d/e).
+  // 030 M11.preA — migrated from std::string to typed enum (operator
+  // routing 2026-05-08). String parsing happens at AutocConfig load
+  // time; the wire format here is enum-int.
+  Mode mode = Mode::PATHGEN;
 
   // 030 M6e — tracker-mode per-scenario payload (FR-001 + FR-018). Empty
   // when mode == "pathgen". When mode == "tracker", sourceList[i] is the
@@ -147,7 +172,11 @@ struct EvalData {
     int ct = static_cast<int>(controllerType);
     ar(ct);
     controllerType = static_cast<ControllerType>(ct);
-    ar(pathList, scenario, scenarioList, rabbitSpeedConfig, mode);
+    // 030 M11.preA — Mode is now an enum; cereal serialize as int
+    // (same int-roundtrip pattern as ControllerType above).
+    int m = static_cast<int>(mode);
+    ar(pathList, scenario, scenarioList, rabbitSpeedConfig, m);
+    mode = static_cast<Mode>(m);
     ar(sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
        airframeProxy, flightArena, trackerSourcePreRollTicks,
        pCrashThisGen, crashHullRadius, trailDistance);

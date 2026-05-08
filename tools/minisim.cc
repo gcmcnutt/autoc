@@ -118,7 +118,7 @@ public:
       // 33-input, tracker genomes are 45-input; minisim picks the
       // expected shape from the active ModeStrategy.
       {
-        const ModeStrategy& mode = getModeStrategyByName(evalData.mode.c_str());
+        const ModeStrategy& mode = getModeStrategy(evalData.mode);
         std::vector<int> expectedTopology(mode.topology, mode.topology + mode.num_layers);
         if (nnGenome.topology != expectedTopology) {
           std::cerr << "[MINISIM] NN topology mismatch (mode=" << mode.name << "): "
@@ -156,10 +156,10 @@ public:
       // and source trajectories at M6e; until then, tracker scenarios
       // exit cleanly with a clear log so operator can verify the mode
       // signal flows end-to-end.
-      const std::string& evalMode = evalData.mode;
+      const Mode evalMode = evalData.mode;
       if (evalCounter == 1) {
         std::cerr << "[MINISIM] worker=" << workerId
-                  << " mode=" << evalMode << std::endl;
+                  << " mode=" << modeToString(evalMode) << std::endl;
       }
       for (int i = 0; i < static_cast<int>(evalData.pathList.size()); i++) {
         // Path stays at canonical origin (Z=0); origin offset bridges raw→virtual
@@ -174,7 +174,7 @@ public:
         CrashReason crashReason = CrashReason::None;
         int tracker_hull_fired = 0;  // 030 M7d.b — set by tracker branch
 
-        if (evalMode == "tracker") {
+        if (evalMode == Mode::TRACKER) {
           // M6e — TrackerStepper integration. EvalData::sourceList[i]
           // carries this scenario's source trajectory; camera/beacon/
           // airframe/home come from the per-job evalData configs. If
@@ -265,7 +265,7 @@ public:
         // directly. Pathgen pushes 0 (no arena.h enforcement on M1
         // envelope). Hull-strike count: TrackerStepper.hullFiredCount()
         // returns 0 or 1 (scenario terminates on first fire). Pathgen 0.
-        const int arena_egress = (evalMode == "tracker"
+        const int arena_egress = (evalMode == Mode::TRACKER
                                   && crashReason == CrashReason::Eval) ? 1 : 0;
         evalResults.arenaEgressCount.push_back(arena_egress);
         evalResults.hullStrikeCount.push_back(tracker_hull_fired);
