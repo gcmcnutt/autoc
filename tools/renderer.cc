@@ -504,7 +504,14 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     std::vector<vec3> p = pathToVector(evalResults.pathList[i]);
     std::vector<vec3> a = stateToVector(evalResults.aircraftStateList[i]);
 
-    if (!p.empty()) {
+    // 030 M9b — Tracker mode hides the red rabbit path entirely. The
+    // pathList lives in the v=2 dmp for renderer-pipeline backwards
+    // compat (M8 schema contract), but in tracker mode the chase
+    // doesn't follow that path semantically — the magenta target tape
+    // IS the source-of-truth reference. Operator routing 2026-05-08:
+    // hide rather than show as decoration to keep larger random-path
+    // scenarios visually clean.
+    if (!p.empty() && !this->isTrackerMode_) {
       this->paths->AddInputData(createPointSet(offset, p));
     }
     if (!a.empty()) {
@@ -3646,12 +3653,12 @@ void Renderer::updatePlaybackAnimation() {
     }
 
     // 030 M9b animation fix — mode-aware reveal logic. Three modes:
-    //   A) Pathgen (existing): rabbit-odometer-driven path reveal +
-    //      chase tape reveal + chase→rabbit-position blue segments
-    //   B) Tracker (new):      static red path (no reveal — odometer
-    //      isn't set in tracker mode) + chase tape reveal + target
-    //      tape reveal (index-parallel to chase) + chase→target
-    //      blue segments (instead of chase→rabbit)
+    //   A) Pathgen (existing): rabbit-odometer-driven red-path reveal
+    //      + chase tape reveal + chase→rabbit-position blue segments
+    //   B) Tracker (new):      red path HIDDEN (chase doesn't follow
+    //      it semantically; magenta target tape IS the source-of-truth
+    //      reference) + chase tape reveal + target tape reveal
+    //      (index-parallel to chase) + chase→target blue segments
     //   C) Xiao-only:          handled below by blackbox branch;
     //      hasSimData = false ⇒ this whole block adds empty data
     //
@@ -3664,17 +3671,14 @@ void Renderer::updatePlaybackAnimation() {
         && !evalResults.targetTrajectoryList[i].empty();
 
     // ---- Path reveal (red rabbit path) ----
+    // Tracker mode: visiblePathVector stays empty — no red dots. The
+    // pathList exists in the v=2 dmp for renderer-pipeline compat but
+    // is not semantically meaningful (chase doesn't follow it; magenta
+    // target tape is the actual source-of-truth reference). Operator
+    // routing 2026-05-08: hide rather than show as decoration.
     std::vector<vec3> visiblePathVector;
-    if (tracker_scenario_has_target) {
-      // Tracker mode: rabbitOdometer isn't set by TrackerStepper, so
-      // odometer-based reveal would show nothing. Show the full path
-      // statically as arena-reference decoration; chase doesn't follow
-      // it semantically anyway (FR-002 + FR-019).
-      if (hasSimData && i < static_cast<int>(evalResults.pathList.size())
-          && !evalResults.pathList[i].empty()) {
-        visiblePathVector = pathToVector(evalResults.pathList[i]);
-      }
-    } else if (hasSimData && i < static_cast<int>(evalResults.pathList.size())
+    if (!tracker_scenario_has_target
+        && hasSimData && i < static_cast<int>(evalResults.pathList.size())
                && !evalResults.pathList[i].empty()) {
       // Pathgen mode (existing): walk forward until
       // distanceFromStart > rabbitOdometer.
@@ -4136,8 +4140,12 @@ void Renderer::renderFullScene() {
     
     std::vector<vec3> p = pathToVector(evalResults.pathList[i]);
     std::vector<vec3> a = stateToVector(evalResults.aircraftStateList[i]);
-    
-    if (!p.empty()) {
+
+    // 030 M9b — Hide red path in tracker mode (parallel to
+    // updateGenerationDisplay + updatePlaybackAnimation). The pathList
+    // remains in the v=2 dmp for renderer-pipeline compat; magenta
+    // target tape is the actual source-of-truth reference.
+    if (!p.empty() && !this->isTrackerMode_) {
       this->paths->AddInputData(createPointSet(offset, p)); // Full progress (no timeProgress param)
     }
     if (!a.empty()) {
