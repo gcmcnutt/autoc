@@ -339,7 +339,7 @@ Concurrent: T064 (extractor) + T065 (per-axis port) + T066/T067 (Bug 2) +
 | M5 done | T025-T031 | Beacon projection contract tests green; can read each as documentation of perception output |
 | M6 done | T032-T038 | Tracker mode launches, runs gen 0 evaluations, log shows source dmp loaded + per-scenario distribution |
 | M7 done | T039-T046 | Tracker-mode short run produces sensible per-gen fitness numbers; extreme-parameter sanity checks break in expected directions |
-| M8 done | T047-T050 | An actual tracker-mode `.dmp` exists in S3 from a real run; `cereal` round-trips it; v2 version field embedded |
+| **M8 done ✓** 2026-05-07 | T047-T050 | An actual tracker-mode `.dmp` exists in S3 from a real run; `cereal` round-trips it; v2 version field embedded. **Wrap audit 2026-05-08**: all four [X], gyroRates_ honest-recording audit closed in-band, m91 production run gen 1-405 producing v=2 dmps continuously. Deferrals inside marked-X tasks: T047 FutureVersionLoudFail hermetic reproducer (cereal-mechanism-test, low-value until v=3 schema bump); T032/M6f timing_model_tests (031-candidate, not in M8 scope). |
 | M9 done | T051-T058 | Renderer plays M2 dmp end-to-end with all 4 view modes (3rd-person + camera-POV + mini-panel + CEP error bars) and per-tick scrub |
 | **M10 SMOKE GREEN** | T059-T063 | **All four D13 deliverables checked**; smoke-report written |
 | M11a-c done | T064-T072 | Operator has tools to localize R10/R11/R12 trouble responses from smoke-test data |
