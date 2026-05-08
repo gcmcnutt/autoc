@@ -438,6 +438,11 @@ bool Renderer::updateGenerationDisplay(int newGen) {
 
   // Clear the existing data
   this->paths->RemoveAllInputs();
+  // 030 M9b — Empty fallback for `paths`. In tracker mode the per-scenario
+  // populate skips paths (red rabbit path hidden), so without this empty
+  // input the vtkAppendPolyData would have 0 connections and fail with
+  // "Input port 0 ... has 0 connections but is not optional".
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->paths->AddInputData(e); }
   this->directRabbitData->RemoveAllInputs();
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->directRabbitData->AddInputData(e); }
   this->actuals->RemoveAllInputs();
@@ -4101,6 +4106,10 @@ void Renderer::updatePlaybackAnimation() {
 void Renderer::renderFullScene() {
   // Clear existing data
   this->paths->RemoveAllInputs();
+  // 030 M9b — Empty fallback for `paths` (tracker mode hides the red
+  // rabbit path; without this empty input vtkAppendPolyData would
+  // have 0 connections).
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->paths->AddInputData(e); }
   this->directRabbitData->RemoveAllInputs();
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->directRabbitData->AddInputData(e); }
   this->actuals->RemoveAllInputs();
