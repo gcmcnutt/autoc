@@ -337,6 +337,53 @@ bool Renderer::updateGenerationDisplay(int newGen) {
           state.setRabbitPosition(rp);
         }
       }
+
+      // 030 M9a — Tracker-mode dmp version dispatch (T052, FR-015a).
+      // v=1 dmps (pathgen historical) and v=2-pathgen dmps (post-M8a
+      // schema bump but pathgen-mode runs) load with cameraViewList +
+      // targetTrajectoryList empty — existing pathgen render path runs
+      // unchanged. v=2-tracker dmps (autoc-tracker.ini training output)
+      // load with both populated — sets isTrackerMode_ for downstream
+      // M9b/c/d render-path branching. Constitution V loud-fail on
+      // future-version dmps already handled by cereal's class-version
+      // mechanism in serialize().
+      const bool tracker_data_present =
+          !evalResults.cameraViewList.empty()
+          && !evalResults.targetTrajectoryList.empty();
+      this->isTrackerMode_ = tracker_data_present;
+
+      if (tracker_data_present) {
+        // Apply virtual→display Z offset to target trajectory positions
+        // (parallel to aircraftStateList above). targetTrajectoryList[i][k]
+        // is a copy of the source-craft pose at scenario i tick k; M9b's
+        // target-craft VTK actor reads these positions and needs them in
+        // the same display-altitude frame as the chase-craft actor.
+        // trail_rabbit_position is also virtual-frame; shift to match.
+        for (auto& targetList : evalResults.targetTrajectoryList) {
+          for (auto& target : targetList) {
+            target.position[2] += SIM_INITIAL_ALTITUDE;
+            target.trail_rabbit_position[2] += SIM_INITIAL_ALTITUDE;
+          }
+        }
+        // Camera world pose in cameraViewList[][].camera_pose_world_pos
+        // is the chase-craft camera mount position — also virtual-frame.
+        for (auto& cvList : evalResults.cameraViewList) {
+          for (auto& cv : cvList) {
+            cv.camera_pose_world_pos[2] += SIM_INITIAL_ALTITUDE;
+          }
+        }
+        std::cerr << "[RENDERER] tracker-mode dmp loaded: "
+                  << evalResults.cameraViewList.size() << " scenarios, "
+                  << "first scenario " << evalResults.cameraViewList[0].size()
+                  << " ticks (cameraViewList + targetTrajectoryList populated). "
+                  << "M9b target-craft + beacons render path: TODO."
+                  << std::endl;
+      } else {
+        std::cerr << "[RENDERER] pathgen-mode dmp loaded: "
+                  << evalResults.aircraftStateList.size() << " scenarios "
+                  << "(cameraViewList empty — pathgen render path)."
+                  << std::endl;
+      }
     }
     catch (const std::exception& e) {
       std::cerr << "Error during deserialization: " << e.what() << std::endl;

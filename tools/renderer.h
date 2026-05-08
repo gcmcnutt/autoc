@@ -118,10 +118,17 @@ public:
   void focusMoveDown();
 
   int genNumber = 0;
-  
+
   // Store current generation and fitness for resize updates
   int currentGeneration = 0;
   gp_fitness currentFitness = 0.0;
+
+  // 030 M9a — Set true at dmp load when EvalResults v=2 fields are
+  // populated (cameraViewList + targetTrajectoryList non-empty), false
+  // otherwise. Drives downstream M9b/c/d render-path branching: when
+  // true, instantiate target-craft + beacon + camera-POV actors;
+  // when false, render the existing pathgen-only view unchanged.
+  bool isTrackerMode_ = false;
   
   // Test span navigation state
   std::vector<TestSpan> testSpans;
