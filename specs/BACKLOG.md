@@ -39,12 +39,19 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **What stays in 030 v1 from D15**: error bars on the camera-POV display (CEP as visible ellipse spread) — cheap, directly load-bearing for smoke-test signal-or-not assessment.
 - **Why deferred**: research-grade analytics; not required for smoke-test 4th deliverable.
 
-### [030 v1+] Live two-aircraft display in crrcsim (RobotProgrammable + mod_robots)
+### [030 v1 — UNPARKED 2026-05-08] CRRCSim mod_inputdev tracker integration (M11.preA)
 
-- **Trigger**: when operator wants to *watch training in progress* live in crrcsim's 3D viewer (vs after-the-fact in renderer playback), OR when the 031-candidate parallel perception-front-end needs a real visual rendering of the target craft to feed image-domain experiments.
-- **Scope**: new `crrcsim/src/mod_robots/robot_programmable.{h,cc}` — `RobotBase` subclass consuming an in-memory pose stream pushed from autoc; `Robots::AddRobot` integration so autoc-side registers the programmable target per scenario; per-scenario teardown / reset. ~150 LOC sketch per [reference_crrcsim_mod_robots.md](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_crrcsim_mod_robots.md).
-- **Why deferred from 030 v1**: the smoke test (D13) computes virtual beacons strictly as math from `(chase pose, target pose in autoc memory)` — no live in-crrcsim two-aircraft display needed. Renderer 3rd-person view (FR-012) draws both aircraft from the M2 dmp's copied `targetTrajectoryList` (FR-015 self-containedness) using its own VTK actors. Adding the multi-aircraft crrcsim substrate to v1 would expand scope without serving the smoke test.
-- **Source design notes**: 030 spec FR-002 (v1 deferral note); 030 plan M4 (deferred milestone description); research.md R1 (decision rationale).
+- **Status**: UNPARKED. Routing decision 2026-05-08: m91 minisim run showed loop closes structurally, but smoke results that matter for sim-to-real must run on FDM-driven physics. Pulling crrcsim integration forward from `[030 v1+]` BACKLOG into v1 path before formal smoke + analytics.
+- **Scope**: mirror M6a-M6e strategy split (`PathgenStepper` / `TrackerStepper`) into `crrcsim/src/mod_inputdev/inputdev.cpp`. Sub-checkpoints T079-T083 in `specs/030-tracker-mode/tasks.md` Phase 6.
+- **Trigger satisfied**: minisim m91 informal smoke green; operator routing 2026-05-08 chose FDM-grade smoke as v1 acceptance.
+- **Why this entry stays separate from M11.preB**: mod_inputdev integration (M11.preA) = make tracker training WORK on FDM. mod_robots/RobotProgrammable (M11.preB, below) = make two-aircraft display VISIBLE during training. They're orthogonal; M11.preA is load-bearing for v1 smoke, M11.preB is optional.
+
+### [030 v1 — UNPARKED 2026-05-08] Live two-aircraft display in crrcsim (RobotProgrammable + mod_robots) — M11.preB
+
+- **Status**: UNPARKED, optional. Land alongside M11.preA only if operator wants to watch tracker training in crrcsim's 3D viewer mid-run (rather than playback the M2 dmp via the M9 renderer after-the-fact).
+- **Trigger**: M11.preA outcome — if FDM-grade smoke needs live visual debugging, M11.preB unblocks it. Otherwise defer further (post-v1).
+- **Scope**: new `crrcsim/src/mod_robots/robot_programmable.{h,cc}` — `RobotBase` subclass consuming an in-memory pose stream pushed from autoc; `Robots::AddRobot` integration so autoc-side registers the programmable target per scenario; per-scenario teardown / reset. ~150 LOC sketch per [reference_crrcsim_mod_robots.md](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_crrcsim_mod_robots.md). Sub-checkpoints T084-T085 in `specs/030-tracker-mode/tasks.md` Phase 6.
+- **Source design notes**: 030 spec FR-002 (original v1 deferral note); 030 plan M4 (was deferred milestone description); research.md R1 (decision rationale).
 
 ### [BACKLOG] Multi-camera variant experiments
 
@@ -599,6 +606,25 @@ Remaining 015 work:
   `include/autoc/eval/aircraft_state.h` + cereal serialization (if capturing),
   `src/eval/fitness_computer.cc` (export the per-step multiplier alongside the
   streak update — it's already computed, just discarded).
+
+### [DEFERRED 2026-05-08] Renderer 1st-person camera-POV view (was 030 T054)
+
+- **Trigger**: when operator wants to *deeply inspect* one scenario from the chase craft's POV — full main-viewport render through the camera's pose+FOV. Beacons appear as colored points at projected `(screen_x, screen_y)` at full screen scale (vs the small mini-panel).
+- **Why deferred from 030 v1**: the M9b mini-panel HUD (T055/commit 58cf328) covers the load-bearing "what does the NN see?" question for smoke-test signal-or-not. Full 1st-person view is research-grade analytics — useful when diagnosing a specific failure (e.g., "did the chase fly into a sentinel-rich scenario?") but not required to declare v1 done.
+- **Scope**: second VTK renderer (or split-screen overlay) using chase camera pose from `cameraViewList[i][k].camera_pose_world_pos` + orientation as VTK camera; FOV deg → projection matrix; render full scene (target craft + arena + plane). Beacon dots already projected by M5 — render at fullscreen coords matching mini-panel.
+- **Files likely**: `tools/renderer.cc` only. Roughly 150-300 LOC.
+
+### [DEFERRED 2026-05-08] Renderer scrub controls (was 030 T057, rolled-in from earlier 028 entry)
+
+- **Trigger**: when operator needs frame-by-frame inspection — pause / step-forward-one-tick / step-backward-one-tick. Animation already auto-pauses on left-click for camera interaction; full scrub adds tick-by-tick navigation.
+- **Why deferred from 030 v1**: not load-bearing for smoke-test signal-or-not. Current pause-on-click + scrolling through generations covers the typical diagnostic workflow.
+- See also the older "[NEXT] Renderer Playback Enhancements" entry below for scope notes.
+
+### [DEFERRED 2026-05-08] Renderer streak/multiplier overlay (was 030 T058, rolled-in from earlier 028 entry)
+
+- **Trigger**: when operator wants per-tick `streakCount` + `multiplier` shown alongside the rendered aircraft. Today `EvalResults` carries scenario-aggregates only.
+- **Why deferred from 030 v1**: optional; smoke-test fitness signal reads from the gen-level fitness curve directly via `data.stc` + `plot_evolution_progress.py`.
+- See "[NEXT] Renderer Playback Enhancements" entry below for the schema-bump-vs-resynthesize tradeoff.
 
 ### [DEFERRED] Blackbox Rendering Improvements
 - Select path + blackbox log for comparisons, FPV mode
