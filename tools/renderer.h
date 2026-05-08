@@ -211,6 +211,18 @@ private:
   vtkSmartPointer<vtkActor> targetBeaconLeftActor;   // 030 M9b.2 — red sphere trail (port wingtip)
   vtkSmartPointer<vtkActor> targetBeaconRightActor;  // 030 M9b.2 — green sphere trail (starboard wingtip)
   vtkSmartPointer<vtkActor> chaseCameraFovActor;     // 030 M9b.3 — yellow wireframe FOV pyramid
+
+  // 030 M9b camera-POV mini-screen 2026-05-08 (operator's "original ask").
+  // 2D HUD overlay rectangle near top-left of window. Aspect ratio matches
+  // the camera FOV ratio (h/v from CameraViewSample) so the +1/-1 mapping
+  // is geometrically accurate — rolling craft ahead of chase doesn't warp.
+  // Up to 2 colored splat dots (red port + green starboard) at the
+  // beacons' (screen_x, screen_y) per current visible tick. Splat radius
+  // scales with CEP — sharp dots when CEP ≈ 0, fuzzy when ≈ 1. Sentinel
+  // CEP ⇒ no dot rendered (beacon out of view).
+  vtkSmartPointer<vtkActor2D> cameraPOVPanelOutline;
+  vtkSmartPointer<vtkActor2D> cameraPOVBeaconLeftDot;
+  vtkSmartPointer<vtkActor2D> cameraPOVBeaconRightDot;
   std::vector<vtkSmartPointer<vtkActor>> arenaLabelActors;
   
   vtkSmartPointer<vtkTextActor> generationTextActor;
@@ -295,6 +307,10 @@ private:
   void updateStopwatch(gp_scalar currentTime);
   void createControlsOverlay();
   void updateControlsOverlay(gp_scalar currentTime);
+  // 030 M9b camera-POV mini-screen — 2D HUD rectangle showing what the
+  // chase NN sees (projected beacon centroids + CEP-sized splat dots).
+  void createCameraPOVMiniPanel();
+  void updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex);
   void updateControlsPosition();
   bool getControlStateAtTime(gp_scalar currentTime, gp_scalar& pitch, gp_scalar& roll, gp_scalar& throttle, int arenaIndex, bool& usedBlackbox, const AircraftState*& chosenState);
   void setFocusArena(int arenaIdx);

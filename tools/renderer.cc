@@ -1481,6 +1481,7 @@ void Renderer::initialize() {
   createStopwatch();
   // Create control HUD (initially hidden)
   createControlsOverlay();
+  createCameraPOVMiniPanel();  // 030 M9b — camera-POV mini-screen actors
 
   // render
   renderWindow->Render();
@@ -2886,6 +2887,183 @@ void Renderer::createControlsOverlay() {
   velocityActor->GetTextProperty()->SetJustificationToLeft();
 }
 
+// 030 M9b camera-POV mini-screen — 2D HUD rectangle representing what
+// the chase NN's camera sees. Aspect ratio = fov_h/fov_v from each
+// tick's CameraViewSample (so x/y span is geometrically accurate; a
+// rolling craft ahead of chase doesn't warp). Two colored splat dots
+// at projected (screen_x, screen_y); splat radius scales with CEP.
+void Renderer::createCameraPOVMiniPanel() {
+  cameraPOVPanelOutline = vtkSmartPointer<vtkActor2D>::New();
+  vtkNew<vtkPolyDataMapper2D> outlineMapper;
+  outlineMapper->SetInputData(vtkSmartPointer<vtkPolyData>::New());
+  cameraPOVPanelOutline->SetMapper(outlineMapper);
+  cameraPOVPanelOutline->GetProperty()->SetColor(1.0, 1.0, 1.0);
+  cameraPOVPanelOutline->GetProperty()->SetOpacity(0.85);
+
+  cameraPOVBeaconLeftDot = vtkSmartPointer<vtkActor2D>::New();
+  vtkNew<vtkPolyDataMapper2D> leftDotMapper;
+  leftDotMapper->SetInputData(vtkSmartPointer<vtkPolyData>::New());
+  cameraPOVBeaconLeftDot->SetMapper(leftDotMapper);
+  cameraPOVBeaconLeftDot->GetProperty()->SetColor(1.0, 0.2, 0.2);  // Red — port (matches wingtip glyph)
+  cameraPOVBeaconLeftDot->GetProperty()->SetOpacity(0.85);
+
+  cameraPOVBeaconRightDot = vtkSmartPointer<vtkActor2D>::New();
+  vtkNew<vtkPolyDataMapper2D> rightDotMapper;
+  rightDotMapper->SetInputData(vtkSmartPointer<vtkPolyData>::New());
+  cameraPOVBeaconRightDot->SetMapper(rightDotMapper);
+  cameraPOVBeaconRightDot->GetProperty()->SetColor(0.2, 1.0, 0.2);  // Green — starboard
+  cameraPOVBeaconRightDot->GetProperty()->SetOpacity(0.85);
+}
+
+void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
+  if (!renderWindow || !cameraPOVPanelOutline ||
+      !cameraPOVBeaconLeftDot || !cameraPOVBeaconRightDot) {
+    return;
+  }
+
+  // Hide the panel when not in tracker mode, when controls hidden, or
+  // when no per-tick camera data exists for this arena.
+  auto hideAll = [&]() {
+    cameraPOVPanelOutline->SetVisibility(0);
+    cameraPOVBeaconLeftDot->SetVisibility(0);
+    cameraPOVBeaconRightDot->SetVisibility(0);
+  };
+
+  if (!isTrackerMode_ || !controlsVisible) {
+    hideAll();
+    return;
+  }
+  if (arenaIndex < 0 ||
+      arenaIndex >= static_cast<int>(evalResults.cameraViewList.size())) {
+    hideAll();
+    return;
+  }
+  const auto& camList = evalResults.cameraViewList[arenaIndex];
+  if (camList.empty()) {
+    hideAll();
+    return;
+  }
+
+  // Find the current visible tick by aircraftStateList timestamp
+  // (cameraViewList is index-parallel per M8b contract).
+  size_t camIdx = 0;
+  if (arenaIndex < static_cast<int>(evalResults.aircraftStateList.size())) {
+    const auto& states = evalResults.aircraftStateList[arenaIndex];
+    for (size_t i = 0; i < states.size(); ++i) {
+      gp_scalar t = static_cast<gp_scalar>(states[i].getSimTimeMsec()) /
+                    static_cast<gp_scalar>(1000.0f);
+      if (t > currentTime) break;
+      camIdx = i;
+    }
+    if (camIdx >= camList.size()) camIdx = camList.size() - 1;
+  } else {
+    camIdx = camList.size() - 1;
+  }
+
+  const CameraViewSample& cam = camList[camIdx];
+
+  // Window-coord rectangle. Top-left area, away from the right-side
+  // existing HUD (clock/stick/throttle/attitude/velocity bar).
+  int* windowSize = renderWindow->GetSize();
+  scalar rectWidth = static_cast<scalar>(220.0f);
+  // Aspect: rect_w / rect_h = tan(fov_h/2) / tan(fov_v/2). Approximate
+  // with linear ratio for cheap geometry; the exact tan ratio matters
+  // only for true angular fidelity — the linear approximation keeps
+  // x/y normalized [-1,+1] mapping geometrically consistent which is
+  // the load-bearing property the operator asked for.
+  scalar fov_h = std::max(static_cast<scalar>(1.0f),
+                          static_cast<scalar>(cam.camera_fov_h_deg));
+  scalar fov_v = std::max(static_cast<scalar>(1.0f),
+                          static_cast<scalar>(cam.camera_fov_v_deg));
+  scalar rectHeight = rectWidth * (fov_v / fov_h);
+  scalar xLeft = static_cast<scalar>(30.0f);
+  scalar xRight = xLeft + rectWidth;
+  scalar yTop = static_cast<scalar>(windowSize[1]) - static_cast<scalar>(40.0f);
+  scalar yBottom = yTop - rectHeight;
+
+  // Build outline polydata (4 edges + crosshair through center)
+  vtkNew<vtkPoints> outlinePoints;
+  vtkNew<vtkCellArray> outlineLines;
+  vtkIdType bl = outlinePoints->InsertNextPoint(xLeft, yBottom, 0);
+  vtkIdType br = outlinePoints->InsertNextPoint(xRight, yBottom, 0);
+  vtkIdType tr = outlinePoints->InsertNextPoint(xRight, yTop, 0);
+  vtkIdType tl = outlinePoints->InsertNextPoint(xLeft, yTop, 0);
+  scalar xMid = (xLeft + xRight) * 0.5f;
+  scalar yMid = (yTop + yBottom) * 0.5f;
+  vtkIdType cTop    = outlinePoints->InsertNextPoint(xMid, yTop, 0);
+  vtkIdType cBot    = outlinePoints->InsertNextPoint(xMid, yBottom, 0);
+  vtkIdType cLeft   = outlinePoints->InsertNextPoint(xLeft, yMid, 0);
+  vtkIdType cRight  = outlinePoints->InsertNextPoint(xRight, yMid, 0);
+  auto addLine = [&](vtkIdType a, vtkIdType b) {
+    vtkNew<vtkLine> ln;
+    ln->GetPointIds()->SetId(0, a);
+    ln->GetPointIds()->SetId(1, b);
+    outlineLines->InsertNextCell(ln);
+  };
+  // Frame
+  addLine(bl, br); addLine(br, tr); addLine(tr, tl); addLine(tl, bl);
+  // Center crosshair (subtle origin reference)
+  addLine(cTop, cBot); addLine(cLeft, cRight);
+
+  vtkNew<vtkPolyData> outlinePoly;
+  outlinePoly->SetPoints(outlinePoints);
+  outlinePoly->SetLines(outlineLines);
+  vtkPolyDataMapper2D::SafeDownCast(cameraPOVPanelOutline->GetMapper())
+      ->SetInputData(outlinePoly);
+  cameraPOVPanelOutline->SetVisibility(1);
+
+  // Build a CEP-sized splat at one beacon's projected position, set
+  // it on the actor. Sentinel CEP ⇒ hide the actor (beacon invisible
+  // this tick).
+  auto buildBeaconDot = [&](const autoc::eval::BeaconObservation& obs,
+                            vtkActor2D* actor) {
+    if (obs.cep >= autoc::eval::kCepSentinelThreshold || !actor) {
+      if (actor) actor->SetVisibility(0);
+      return;
+    }
+    // Map (screen_x, screen_y) ∈ [-1,+1] to window coords.
+    // Image-coord convention: screen_y positive = down in image →
+    // lower window-y (bottom of rect).
+    scalar xWin = xLeft + (static_cast<scalar>(obs.screen_x) +
+                           static_cast<scalar>(1.0f)) * 0.5f *
+                          (xRight - xLeft);
+    scalar yWin = yTop - (static_cast<scalar>(obs.screen_y) +
+                          static_cast<scalar>(1.0f)) * 0.5f *
+                         (yTop - yBottom);
+
+    // Splat radius (CEP=0 → 2px sharp; CEP=1 → 18px fuzzy)
+    scalar radius = static_cast<scalar>(2.0f) +
+                    static_cast<scalar>(16.0f) * static_cast<scalar>(obs.cep);
+
+    // Build a 16-segment filled polygon (disk) at (xWin, yWin)
+    constexpr int kSegments = 16;
+    vtkNew<vtkPoints> dotPoints;
+    vtkNew<vtkCellArray> dotPolys;
+    vtkNew<vtkPolygon> polygon;
+    polygon->GetPointIds()->SetNumberOfIds(kSegments);
+    for (int s = 0; s < kSegments; ++s) {
+      scalar angle = static_cast<scalar>(2.0f * M_PI) *
+                     static_cast<scalar>(s) /
+                     static_cast<scalar>(kSegments);
+      scalar px = xWin + radius * std::cos(angle);
+      scalar py = yWin + radius * std::sin(angle);
+      vtkIdType pid = dotPoints->InsertNextPoint(px, py, 0);
+      polygon->GetPointIds()->SetId(s, pid);
+    }
+    dotPolys->InsertNextCell(polygon);
+
+    vtkNew<vtkPolyData> dotPoly;
+    dotPoly->SetPoints(dotPoints);
+    dotPoly->SetPolys(dotPolys);
+    vtkPolyDataMapper2D::SafeDownCast(actor->GetMapper())
+        ->SetInputData(dotPoly);
+    actor->SetVisibility(1);
+  };
+
+  buildBeaconDot(cam.beacon_left, cameraPOVBeaconLeftDot);
+  buildBeaconDot(cam.beacon_right, cameraPOVBeaconRightDot);
+}
+
 void Renderer::updateStopwatch(gp_scalar currentTime) {
   if (!stopwatchActor || !stopwatchTimeActor) return;
   
@@ -3065,6 +3243,12 @@ void Renderer::updateControlsOverlay(gp_scalar currentTime) {
   }
 
   int selectedArena = focusMode ? focusArenaIndex : 0;
+
+  // 030 M9b — Camera-POV mini-screen update (no-op in pathgen mode).
+  // Always called when HUD is visible so the panel reflects the current
+  // tick's beacon projections + CEP. Self-hides when not tracker mode.
+  updateCameraPOVMiniPanel(currentTime, selectedArena);
+
   bool usedBlackbox = false;
   const AircraftState* chosenState = nullptr;
 
@@ -3717,8 +3901,14 @@ void Renderer::togglePlaybackAnimation() {
     renderer->AddActor2D(attitudeGroundActor);
     renderer->AddActor2D(attitudeOutlineActor);
     renderer->AddActor2D(velocityActor);
+    // 030 M9b — Camera-POV mini-screen overlays (initially invisible
+    // until updateCameraPOVMiniPanel populates them with tracker data
+    // each frame).
+    renderer->AddActor2D(cameraPOVPanelOutline);
+    renderer->AddActor2D(cameraPOVBeaconLeftDot);
+    renderer->AddActor2D(cameraPOVBeaconRightDot);
   }
-    
+
     std::cout << "Real-time playback animation started" << std::endl;
     // Start with first animation frame
     updatePlaybackAnimation();
