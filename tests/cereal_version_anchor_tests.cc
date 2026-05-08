@@ -26,9 +26,11 @@ TEST(CerealVersionAnchor, EvalResultsAtVersion2) {
 
 TEST(CerealVersionAnchor, AircraftStateAtVersion2) {
     EXPECT_EQ(cereal::detail::Version<AircraftState>::version, 2u)
-        << "AircraftState schema version drifted from 2 (the M8a honest-recording "
-           "bump — gyroRates_ added, NN data always-on). If this is intentional, "
-           "update this anchor alongside the CEREAL_CLASS_VERSION edit.";
+        << "AircraftState schema version drifted from 2. M8a (2026-05-06) bumped "
+           "1 → 2 for the honest-recording audit (gyroRates_ added, NN data "
+           "always-on). M9.preA (2026-05-07) added trackerInputs_ in-place at "
+           "v=2 per user 'while inside M2 we don't need backward compat — old "
+           "ones will be obsolete'. v=1 read path unchanged (gen9200.dmp gate).";
 }
 
 TEST(CerealVersionAnchor, ScenarioMetadataAtVersion1) {

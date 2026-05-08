@@ -492,10 +492,12 @@ void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,
     aircraftState.setRollCommand(static_cast<gp_scalar>(outputs[1]));
     aircraftState.setThrottleCommand(static_cast<gp_scalar>(outputs[2]));
 
-    // setNNData(TrackerInputs) is deferred to M8 (cameraViewList in dmp v=2);
-    // tracker-mode NN inputs aren't yet captured into the dmp output stream.
-    // Honest-recording audit per memory:feedback_honest_dmp_recording lands
-    // at the v=2 schema-bump boundary.
+    // 030 M9.preA (2026-05-07) — Capture TrackerInputs + outputs into
+    // AircraftState for honest data.dat / dmp recording. Closes the
+    // M6d/M8a deferral. AircraftState v=3 carries trackerInputs_ as a
+    // parallel slot to nnInputs_ (only one populated per mode); cereal
+    // serialize at v=3 writes both, consumer code dispatches on mode.
+    aircraftState.setNNData(inputs, outputs, NN_OUTPUT_COUNT);
 }
 
 #endif  // ARDUINO — end of tracker-mode block (M6d/M7a)

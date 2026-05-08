@@ -598,8 +598,155 @@ static double computeNNFitness(EvalResults& evalResults) {
   return aggregateRawFitness(scenarioScores);
 }
 
+// 030 M9.preA — Tracker-mode per-scenario data.dat writer. Reads
+// trackerInputs_ from AircraftState (M9.preA capture), targetTrajectoryList
+// for trail-rabbit fitness columns, and inside_crash_hull telemetry. Walks
+// kTrackerInputMeta for column headers (45 inputs vs pathgen's 33).
+//
+// Pathgen-mode scenarios route through the original inline body in
+// logEvalResults — bitwise-preserved against gen9200.dmp regression gate.
+static void logEvalResultsScenarioTracker(std::ofstream& fout,
+                                           EvalResults& results,
+                                           size_t scenarioIdx,
+                                           bool& printHeader) {
+  auto& aircraftStates = results.aircraftStateList.at(scenarioIdx);
+  const auto& targets = results.targetTrajectoryList.at(scenarioIdx);
+  if (aircraftStates.empty() || targets.empty()) return;
+
+  uint64_t scenarioSequence = 0;
+  uint64_t bakeoffSequence = 0;
+  int pathVariantIndex = 0;
+  int windVariantIndex = 0;
+  if (scenarioIdx < results.scenarioList.size()) {
+    scenarioSequence = results.scenarioList.at(scenarioIdx).scenarioSequence;
+    bakeoffSequence = results.scenarioList.at(scenarioIdx).bakeoffSequence;
+    pathVariantIndex = results.scenarioList.at(scenarioIdx).pathVariantIndex;
+    windVariantIndex = results.scenarioList.at(scenarioIdx).windVariantIndex;
+  }
+
+  const AutocConfig& cfg = ConfigManager::getConfig();
+  int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
+  if (streakStepsToMax < 1) streakStepsToMax = 1;
+  FitnessComputer logFC(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
+                        cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
+  logFC.resetStreak();
+
+  gp_vec3 prevTangent = gp_vec3::UnitX();
+  int simulation_steps = 0;
+
+  int stepIndex = 0;
+  while (++stepIndex < static_cast<int>(aircraftStates.size())) {
+    auto& stepState = aircraftStates.at(stepIndex);
+    gp_vec3 aircraftPosition = stepState.getPosition();
+
+    // Tracker fitness: rabbit = trail_rabbit_position; tangent = target velocity unit.
+    // Mirrors fitness_decomposition.cc tracker branch.
+    int tIdx = std::clamp(stepIndex, 0, static_cast<int>(targets.size()) - 1);
+    const CopiedTargetSample& target = targets.at(tIdx);
+    gp_vec3 rabbitPosition = target.trail_rabbit_position;
+
+    gp_vec3 tangent;
+    {
+      gp_vec3 vel = target.velocity;
+      double vn = vel.norm();
+      if (vn > 0.01) { tangent = vel / vn; prevTangent = tangent; }
+      else { tangent = prevTangent; }
+    }
+
+    gp_vec3 offset = aircraftPosition - rabbitPosition;
+    double along = offset.dot(tangent);
+    gp_vec3 lateral = offset - along * tangent;
+    double lateralDist = lateral.norm();
+    double distance = offset.norm();
+
+    double stepPoints = logFC.computeStepScore(along, lateralDist);
+    double multipliedScore = logFC.applyStreak(stepPoints);
+    double mult = (stepPoints > 0.0) ? multipliedScore / stepPoints : 1.0;
+
+    simulation_steps++;
+
+    gp_vec3 velocity_body = stepState.getOrientation().inverse() * stepState.getVelocity();
+    gp_vec3 home(0, 0, 0);
+    gp_scalar dhome = (home - aircraftPosition).norm();
+
+    if (printHeader) {
+      fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx";
+      // 030 M9.preA — Tracker NN input column headers via kTrackerInputMeta
+      // (45 inputs: 36 beacon + 4 quat + airspeed + 3 gyro + 1 dist-to-boundary).
+      for (size_t k = 0; k < sizeof(kTrackerInputMeta) / sizeof(SensorInputMeta); ++k) {
+        fout << std::setw(kTrackerInputMeta[k].header_width)
+             << kTrackerInputMeta[k].display_name;
+      }
+      fout << "   outPt   outRl   outTh"
+           << "      tgX      tgY      tgZ"     // target craft position
+           << "      trX      trY      trZ"     // trail-rabbit position (target − vel_unit × 3.048)
+           << "        X        Y        Z"     // chase position
+           << "    vxBdy    vyBdy    vzBdy"
+           << "    dhome     dist   along   stpPt    mult  rampSc hull"
+           << "\n";
+      printHeader = false;
+    }
+
+    const TrackerInputs& trIn = stepState.getTrackerInputs();
+    const float* in = reinterpret_cast<const float*>(&trIn);  // raw-ok: NN-byte-format read
+    const float* out = stepState.getNNOutputs();
+    const int hull = target.inside_crash_hull ? 1 : 0;
+
+    char outbuf[3072];
+    int n = snprintf(outbuf, sizeof(outbuf),
+      "%06llu %06llu %03d/%02d:%04d: %06ld %3d",
+      static_cast<unsigned long long>(scenarioSequence),
+      static_cast<unsigned long long>(bakeoffSequence),
+      pathVariantIndex, windVariantIndex, simulation_steps,
+      stepState.getSimTimeMsec(), tIdx);
+    // 36 beacon inputs (width 7, 3 decimals)
+    for (int k = 0; k < 36; ++k) {
+      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 6.3f", in[k]);
+    }
+    // 4 quat (width 8, 4 decimals)
+    for (int k = 36; k < 40; ++k) {
+      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 7.4f", in[k]);
+    }
+    // airspeed (width 8, 3 decimals)
+    n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 7.3f", in[40]);
+    // 3 gyro (width 7, 3 decimals)
+    for (int k = 41; k < 44; ++k) {
+      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 6.3f", in[k]);
+    }
+    // dist-to-boundary (width 8, 2 decimals — meters, range 0..1000)
+    n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 7.2f", in[44]);
+    // 3 NN outputs
+    n += snprintf(outbuf + n, sizeof(outbuf) - n,
+      " % 7.4f % 7.4f % 7.4f", out[0], out[1], out[2]);
+    // tgX/Y/Z, trX/Y/Z, X/Y/Z, vxBdy/vyBdy/vzBdy
+    n += snprintf(outbuf + n, sizeof(outbuf) - n,
+      " % 8.2f % 8.2f % 8.2f"
+      " % 8.2f % 8.2f % 8.2f"
+      " % 8.2f % 8.2f % 8.2f"
+      " % 8.2f % 8.2f % 8.2f",
+      target.position[0], target.position[1], target.position[2],
+      target.trail_rabbit_position[0], target.trail_rabbit_position[1], target.trail_rabbit_position[2],
+      stepState.getPosition()[0], stepState.getPosition()[1], stepState.getPosition()[2],
+      velocity_body.x(), velocity_body.y(), velocity_body.z());
+    // dhome, dist, along, stpPt, mult, rampSc, hull
+    n += snprintf(outbuf + n, sizeof(outbuf) - n,
+      " % 8.2f % 8.3f % 7.2f % 7.4f % 6.2f % 7.3f %4d\n",
+      dhome,
+      static_cast<gp_scalar>(distance),
+      static_cast<gp_scalar>(along),
+      static_cast<gp_scalar>(stepPoints),
+      static_cast<gp_scalar>(mult),
+      static_cast<gp_scalar>(computeVariationScale()),
+      hull);
+    fout << outbuf;
+  }
+}
+
 // Log per-step data from EvalResults to data.dat
-// NN mode: actual NN inputs (normalized) and outputs captured in minisim, then diagnostics
+// NN mode: actual NN inputs (normalized) and outputs captured in minisim, then diagnostics.
+// 030 M9.preA: dispatches per-scenario on targetTrajectoryList non-empty
+// (tracker scenarios route to the helper above; pathgen scenarios use
+// the inline body — bitwise-preserved against gen9200.dmp regression gate).
 static void logEvalResults(std::ofstream& fout, EvalResults& results) {
   bool printHeader = true;
 
@@ -607,6 +754,15 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
     auto& path = results.pathList.at(i);
     auto& aircraftStates = results.aircraftStateList.at(i);
     if (path.empty() || aircraftStates.empty()) continue;
+
+    // 030 M9.preA — tracker dispatch (same data-presence trick as
+    // fitness_decomposition.cc::computeScenarioScores).
+    const bool is_tracker = i < results.targetTrajectoryList.size()
+                            && !results.targetTrajectoryList[i].empty();
+    if (is_tracker) {
+      logEvalResultsScenarioTracker(fout, results, i, printHeader);
+      continue;
+    }
 
     uint64_t scenarioSequence = 0;
     uint64_t bakeoffSequence = 0;
