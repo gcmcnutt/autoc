@@ -1575,11 +1575,24 @@ vtkSmartPointer<vtkPolyData> Renderer::createFovPyramidLines(vec3 offset,
   const gp_scalar half_v = std::tan(static_cast<gp_scalar>(cam.camera_fov_v_deg)
                                     * (kPi / static_cast<gp_scalar>(360))) * length;
 
-  // Camera-frame corners at distance `length`.
+  // Camera-frame corners at distance `length`. Body convention:
+  //   +x forward, +y right, +z down ⇒ "top" of frame at z = -half_v.
   const gp_vec3 cBR_cam(length, +half_h, +half_v);  // bottom-right
   const gp_vec3 cBL_cam(length, -half_h, +half_v);  // bottom-left
   const gp_vec3 cTL_cam(length, -half_h, -half_v);  // top-left
   const gp_vec3 cTR_cam(length, +half_h, -half_v);  // top-right
+
+  // 030 M9b — Up-vector flag. Vertical line + small horizontal crossbar
+  // at the top-edge midpoint, extending in the body -z direction.
+  // Tracks chase roll directly: as the craft banks, this "T" rotates
+  // with the pyramid so operator can see "which way is up" at a glance.
+  // Flag height = 40% of half_v; crossbar = 25% of half_h.
+  const gp_scalar flagLen = static_cast<gp_scalar>(0.40) * half_v;
+  const gp_scalar barHalf = static_cast<gp_scalar>(0.25) * half_h;
+  const gp_vec3 flagBase_cam(length, static_cast<gp_scalar>(0), -half_v);
+  const gp_vec3 flagTip_cam (length, static_cast<gp_scalar>(0), -half_v - flagLen);
+  const gp_vec3 barL_cam    (length, -barHalf, -half_v - flagLen);
+  const gp_vec3 barR_cam    (length, +barHalf, -half_v - flagLen);
 
   // Rotate to world frame via camera quat, translate to camera world pos,
   // then add per-arena offset for the renderer's tile layout.
@@ -1597,11 +1610,20 @@ vtkSmartPointer<vtkPolyData> Renderer::createFovPyramidLines(vec3 offset,
   vec3 cTL = toWorld(cTL_cam);
   vec3 cTR = toWorld(cTR_cam);
 
+  vec3 flagBase = toWorld(flagBase_cam);
+  vec3 flagTip  = toWorld(flagTip_cam);
+  vec3 barL     = toWorld(barL_cam);
+  vec3 barR     = toWorld(barR_cam);
+
   vtkIdType idApex = points->InsertNextPoint(apex[0], apex[1], apex[2]);
   vtkIdType idBR   = points->InsertNextPoint(cBR[0], cBR[1], cBR[2]);
   vtkIdType idBL   = points->InsertNextPoint(cBL[0], cBL[1], cBL[2]);
   vtkIdType idTL   = points->InsertNextPoint(cTL[0], cTL[1], cTL[2]);
   vtkIdType idTR   = points->InsertNextPoint(cTR[0], cTR[1], cTR[2]);
+  vtkIdType idFlagBase = points->InsertNextPoint(flagBase[0], flagBase[1], flagBase[2]);
+  vtkIdType idFlagTip  = points->InsertNextPoint(flagTip[0],  flagTip[1],  flagTip[2]);
+  vtkIdType idBarL     = points->InsertNextPoint(barL[0],     barL[1],     barL[2]);
+  vtkIdType idBarR     = points->InsertNextPoint(barR[0],     barR[1],     barR[2]);
 
   auto addLine = [&](vtkIdType a, vtkIdType b) {
     vtkSmartPointer<vtkLine> ln = vtkSmartPointer<vtkLine>::New();
@@ -1620,6 +1642,9 @@ vtkSmartPointer<vtkPolyData> Renderer::createFovPyramidLines(vec3 offset,
   addLine(idBL, idTL);
   addLine(idTL, idTR);
   addLine(idTR, idBR);
+  // 030 M9b — Up-vector flag (vertical post + crossbar) on top-edge midpoint
+  addLine(idFlagBase, idFlagTip);
+  addLine(idBarL,     idBarR);
 
   polyData->SetPoints(points);
   polyData->SetLines(lines);
