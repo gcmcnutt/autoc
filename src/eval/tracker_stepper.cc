@@ -55,20 +55,41 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
 void TrackerStepper::initScenario() {
     nn_.reset();  // zero recurrent state at scenario start (no-op for feedforward)
 
-    // Initial chase pose. M6d: same orientation/position convention as
-    // pathgen (virtual origin, identity orientation modulo 180° about Z to
-    // face the target). M6e may revisit when source-scenario entry params
-    // (joint-PRNG variation) wire through.
+    // Chase orientation: M1-style 180° yaw about Z so chase faces world -x
+    // (= "south" in NED). Source dmps were recorded in this convention;
+    // chase here matches.
     gp_quat aircraft_orientation =
         gp_quat(Eigen::AngleAxis<gp_scalar>(static_cast<gp_scalar>(M_PI), gp_vec3::UnitZ())) *
         gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitY())) *
         gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitX()));
-    gp_vec3 initialPosition(0.0f, 0.0f, 0.0f);
-    gp_vec3 initial_velocity =
-        aircraft_orientation * gp_vec3(SIM_INITIAL_VELOCITY, 0.0f, 0.0f);
+
+    // 030 Session 2026-05-07 geometry simplification — chase initializes
+    // 10ft north of source's tick-0 position with source's tick-0 velocity
+    // copied verbatim. Source dmp positions stay raw (renderer shows the
+    // north offset directly). At tick 0:
+    //   - source effectively at (0,0,0) (raw dmp tick 0, untouched)
+    //   - chase at (+trail_distance, 0, 0) — 10ft north = behind source's
+    //     velocity heading
+    //   - chase velocity = source[0].velocity — eliminates the
+    //     SIM_INITIAL_VELOCITY=20 spike that drops to ~13 by tick 1
+    //   - trail rabbit ≈ chase position → near-zero error at tick 0
+    //   - real tracking starts at tick 1; no warmup-window free streak
+    // For empty-source fallback (defensive — minisim guards against this
+    // ahead of TrackerStepper construction): legacy M1 init at virtual
+    // origin + 20 m/s spike.
+    const bool source_has_samples = !source_.samples.empty();
+    gp_vec3 initialPosition = source_has_samples
+        ? gp_vec3(trail_distance_, 0.0f, 0.0f)
+        : gp_vec3(0.0f, 0.0f, 0.0f);
+    gp_vec3 initial_velocity = source_has_samples
+        ? source_.samples.front().velocity
+        : aircraft_orientation * gp_vec3(SIM_INITIAL_VELOCITY, 0.0f, 0.0f);
+    gp_scalar initial_rel_vel = source_has_samples
+        ? static_cast<gp_scalar>(initial_velocity.norm())
+        : SIM_INITIAL_VELOCITY;
 
     state_ = AircraftState{0,
-                           SIM_INITIAL_VELOCITY,
+                           initial_rel_vel,
                            initial_velocity,
                            aircraft_orientation,
                            initialPosition,
