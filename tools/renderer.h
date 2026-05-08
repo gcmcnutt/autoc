@@ -172,6 +172,14 @@ private:
   // the 3rd-person view. Empty + invisible for pathgen-mode dmps.
   vtkSmartPointer<vtkAppendPolyData> targetActuals;
 
+  // 030 M9b.2 — Per-tick beacon world positions on target wingtips,
+  // navigation-light convention (RED port = left, GREEN starboard =
+  // right). Glyphed as small spheres. Per-tick trail visualizes target
+  // craft body roll — beacons trace banking turns, providing
+  // orientation context beyond what the tape ribbon alone shows.
+  vtkSmartPointer<vtkAppendPolyData> targetBeaconsLeft;
+  vtkSmartPointer<vtkAppendPolyData> targetBeaconsRight;
+
   vtkSmartPointer<vtkActor> actor1;
   vtkSmartPointer<vtkActor> directRabbitActor;  // Magenta tube for direct rabbit ground truth
   vtkSmartPointer<vtkActor> actor2;
@@ -180,6 +188,8 @@ private:
   vtkSmartPointer<vtkActor> blackboxHighlightActor;  // For highlighted test spans
   vtkSmartPointer<vtkActor> xiaoVecActor;  // For xiao vec arrows
   vtkSmartPointer<vtkActor> targetActor;   // 030 M9b — orange tape from targetTrajectoryList
+  vtkSmartPointer<vtkActor> targetBeaconLeftActor;   // 030 M9b.2 — red sphere trail (port wingtip)
+  vtkSmartPointer<vtkActor> targetBeaconRightActor;  // 030 M9b.2 — green sphere trail (starboard wingtip)
   std::vector<vtkSmartPointer<vtkActor>> arenaLabelActors;
   
   vtkSmartPointer<vtkTextActor> generationTextActor;
@@ -239,6 +249,15 @@ private:
   // as the chase tape.
   std::vector<gp_vec3> targetSamplesToVector(const std::vector<CopiedTargetSample>& samples);
   std::vector<gp_vec3> targetSamplesToOrientation(const std::vector<CopiedTargetSample>& samples);
+
+  // 030 M9b.2 — Compute per-tick beacon world positions on the target
+  // craft. World pos = target.position + target.orientation × mount_body.
+  // Mount offsets are hardcoded to autoc-tracker.ini v1 defaults; if
+  // BeaconLeftMountY / BeaconRightMountY change in the .ini, update
+  // kBeaconLeftMountBody / kBeaconRightMountBody constants in renderer.cc.
+  std::vector<gp_vec3> targetSamplesToBeaconPositions(
+      const std::vector<CopiedTargetSample>& samples,
+      const gp_vec3& beacon_mount_body);
   gp_fitness extractFitnessFromGP(const std::vector<char>& gpData);
   void createHighlightedFlightTapes(gp_vec3 offset);
   void createStopwatch();

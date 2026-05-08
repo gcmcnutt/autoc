@@ -43,6 +43,15 @@ EvalResults evalResults;
 std::string computedKeyName = "";
 Renderer renderer;
 
+// 030 M9b.2 — Target beacon mount positions in target body frame.
+// Hardcoded to autoc-tracker.ini v1 defaults (BeaconLeftMountY = -0.45,
+// BeaconRightMountY = +0.45). EvalResults doesn't carry BeaconConfig
+// (it's worker-input-only via EvalData), so renderer can't auto-read
+// from the dmp. If you change BeaconLeft/RightMountY in the .ini,
+// update these constants and rebuild renderer.
+static const gp_vec3 kBeaconLeftMountBody  = gp_vec3(0.0f, -0.45f, 0.0f);
+static const gp_vec3 kBeaconRightMountBody = gp_vec3(0.0f, +0.45f, 0.0f);
+
 // Flight-trace render globals (populated from xiao log; legacy "blackbox*"
 // naming retained because it's load-bearing throughout the rendering path.
 // The INAV blackbox CSV playback mode was removed 2026-04-20 — T203.)
@@ -448,6 +457,10 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   this->actuals->RemoveAllInputs();
   this->targetActuals->RemoveAllInputs();  // 030 M9b
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetActuals->AddInputData(e); }
+  this->targetBeaconsLeft->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsLeft->AddInputData(e); }
+  this->targetBeaconsRight->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsRight->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->planeData->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
@@ -536,6 +549,11 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       std::vector<vec3> targetOrientations = targetSamplesToOrientation(targetSamples);
       this->targetActuals->AddInputData(
           createTapeSet(offset, targetPositions, targetOrientations));
+      // 030 M9b.2 — Beacon trail glyphs (red port + green starboard).
+      std::vector<vec3> beaconLeftWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconLeftMountBody);
+      std::vector<vec3> beaconRightWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconRightMountBody);
+      this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
+      this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
       // Tracker mode: blue error bars chase→target (NOT chase→rabbit)
       // per operator request 2026-05-08 — visualizes the actual
       // tracking error rather than the trail-rabbit fitness construct.
@@ -732,6 +750,8 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   this->paths->Update();
   this->actuals->Update();
   this->targetActuals->Update();  // 030 M9b
+  this->targetBeaconsLeft->Update();   // 030 M9b.2
+  this->targetBeaconsRight->Update();  // 030 M9b.2
   this->segmentGaps->Update();
 
   // Only update blackbox tapes if there's blackbox data
@@ -1093,6 +1113,8 @@ void Renderer::initialize() {
   xiaoVecArrows = vtkSmartPointer<vtkAppendPolyData>::New();
   directRabbitData = vtkSmartPointer<vtkAppendPolyData>::New();
   targetActuals = vtkSmartPointer<vtkAppendPolyData>::New();  // 030 M9b
+  targetBeaconsLeft = vtkSmartPointer<vtkAppendPolyData>::New();   // 030 M9b.2
+  targetBeaconsRight = vtkSmartPointer<vtkAppendPolyData>::New();  // 030 M9b.2
 
   // Temporary until first update
   vtkNew<vtkPolyData> emptyPolyData;
@@ -1109,6 +1131,8 @@ void Renderer::initialize() {
   xiaoVecArrows->AddInputData(emptyPolyData);
   directRabbitData->AddInputData(emptyPolyData);
   targetActuals->AddInputData(emptyPolyData);  // 030 M9b
+  targetBeaconsLeft->AddInputData(emptyPolyData);   // 030 M9b.2
+  targetBeaconsRight->AddInputData(emptyPolyData);  // 030 M9b.2
 
   // Update planeData to ensure it has an input port
   planeData->Update();
@@ -1286,11 +1310,43 @@ void Renderer::initialize() {
   targetBackProperty->SetOpacity(1.0);
   targetActor->SetBackfaceProperty(targetBackProperty);
 
+  // 030 M9b.2 — Beacon glyph trail. Small spheres at each tick's
+  // beacon world position; navigation-light convention (RED port,
+  // GREEN starboard). Trail visualizes target craft body roll —
+  // wingtip beacons trace the bank angle of every turn, giving
+  // orientation context that the tape ribbon alone doesn't show.
+  vtkNew<vtkSphereSource> beaconSphere;
+  beaconSphere->SetRadius(0.15);  // Small dotted-trail aesthetic
+  beaconSphere->SetPhiResolution(8);
+  beaconSphere->SetThetaResolution(8);
+
+  vtkNew<vtkGlyph3D> beaconLeftGlyphs;
+  beaconLeftGlyphs->SetInputConnection(targetBeaconsLeft->GetOutputPort());
+  beaconLeftGlyphs->SetSourceConnection(beaconSphere->GetOutputPort());
+  vtkNew<vtkPolyDataMapper> beaconLeftMapper;
+  beaconLeftMapper->SetInputConnection(beaconLeftGlyphs->GetOutputPort());
+  targetBeaconLeftActor = vtkSmartPointer<vtkActor>::New();
+  targetBeaconLeftActor->SetMapper(beaconLeftMapper);
+  targetBeaconLeftActor->GetProperty()->SetColor(1.0, 0.0, 0.0);  // Red — port
+  targetBeaconLeftActor->GetProperty()->SetOpacity(0.9);
+
+  vtkNew<vtkGlyph3D> beaconRightGlyphs;
+  beaconRightGlyphs->SetInputConnection(targetBeaconsRight->GetOutputPort());
+  beaconRightGlyphs->SetSourceConnection(beaconSphere->GetOutputPort());
+  vtkNew<vtkPolyDataMapper> beaconRightMapper;
+  beaconRightMapper->SetInputConnection(beaconRightGlyphs->GetOutputPort());
+  targetBeaconRightActor = vtkSmartPointer<vtkActor>::New();
+  targetBeaconRightActor->SetMapper(beaconRightMapper);
+  targetBeaconRightActor->GetProperty()->SetColor(0.0, 1.0, 0.0);  // Green — starboard
+  targetBeaconRightActor->GetProperty()->SetOpacity(0.9);
+
   renderer->AddActor(planeActor);
   renderer->AddActor(actor1);  // Red path line (projected rabbit)
   renderer->AddActor(directRabbitActor);  // Magenta path (direct rabbit ground truth)
   renderer->AddActor(actor2);  // Yellow flight tape
-  renderer->AddActor(targetActor);  // 030 M9b — purple target-craft tape (tracker mode only)
+  renderer->AddActor(targetActor);  // 030 M9b — magenta/lime target-craft tape (tracker mode only)
+  renderer->AddActor(targetBeaconLeftActor);   // 030 M9b.2 — red beacon trail (port)
+  renderer->AddActor(targetBeaconRightActor);  // 030 M9b.2 — green beacon trail (starboard)
   renderer->AddActor(actor3);  // Blue delta lines
   
   // Only add blackbox actors if there's blackbox data
@@ -1425,6 +1481,21 @@ std::vector<vec3> Renderer::targetSamplesToOrientation(const std::vector<CopiedT
     points.push_back(s.orientation * -vec3::UnitZ());
   }
   return points;
+}
+
+std::vector<vec3> Renderer::targetSamplesToBeaconPositions(
+    const std::vector<CopiedTargetSample>& samples,
+    const vec3& beacon_mount_body) {
+  std::vector<vec3> positions;
+  positions.reserve(samples.size());
+  for (const auto& s : samples) {
+    // World pos = target_pos + target_quat × beacon_body_mount.
+    // Eigen quaternion-vector multiply rotates the vector through the
+    // quat; this is the same operation as stateToOrientation but
+    // applied to a wingtip offset rather than UnitZ.
+    positions.push_back(s.position + s.orientation * beacon_mount_body);
+  }
+  return positions;
 }
 
 std::vector<vec3> Renderer::stateToOrientation(std::vector<AircraftState> state) {
@@ -3588,6 +3659,10 @@ void Renderer::updatePlaybackAnimation() {
   this->actuals->RemoveAllInputs();
   this->targetActuals->RemoveAllInputs();  // 030 M9b animation fix
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetActuals->AddInputData(e); }
+  this->targetBeaconsLeft->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsLeft->AddInputData(e); }
+  this->targetBeaconsRight->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsRight->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
   this->blackboxHighlightTapes->RemoveAllInputs();
@@ -3729,6 +3804,11 @@ void Renderer::updatePlaybackAnimation() {
         std::vector<vec3> targetOrientations = targetSamplesToOrientation(visibleTargets);
         this->targetActuals->AddInputData(
             createTapeSet(offset, targetPositions, targetOrientations));
+        // 030 M9b.2 — Beacon trail revealed in lockstep with target tape.
+        std::vector<vec3> beaconLeftWorld = targetSamplesToBeaconPositions(visibleTargets, kBeaconLeftMountBody);
+        std::vector<vec3> beaconRightWorld = targetSamplesToBeaconPositions(visibleTargets, kBeaconRightMountBody);
+        this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
+        this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
       }
     }
 
@@ -4081,6 +4161,8 @@ void Renderer::updatePlaybackAnimation() {
   this->paths->Update();
   this->actuals->Update();
   this->targetActuals->Update();  // 030 M9b
+  this->targetBeaconsLeft->Update();   // 030 M9b.2
+  this->targetBeaconsRight->Update();  // 030 M9b.2
   this->segmentGaps->Update();
   if (!blackboxAircraftStates.empty()) {
     this->blackboxTapes->Update();
@@ -4115,6 +4197,10 @@ void Renderer::renderFullScene() {
   this->actuals->RemoveAllInputs();
   this->targetActuals->RemoveAllInputs();  // 030 M9b
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetActuals->AddInputData(e); }
+  this->targetBeaconsLeft->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsLeft->AddInputData(e); }
+  this->targetBeaconsRight->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsRight->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
   this->blackboxHighlightTapes->RemoveAllInputs();
@@ -4175,6 +4261,11 @@ void Renderer::renderFullScene() {
       std::vector<vec3> targetOrientations = targetSamplesToOrientation(targetSamples);
       this->targetActuals->AddInputData(
           createTapeSet(offset, targetPositions, targetOrientations));
+      // 030 M9b.2 — Beacon trail glyphs.
+      std::vector<vec3> beaconLeftWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconLeftMountBody);
+      std::vector<vec3> beaconRightWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconRightMountBody);
+      this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
+      this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
       if (!a.empty()) {
         this->segmentGaps->AddInputData(
             createSegmentSetToTarget(offset, evalResults.aircraftStateList[i], targetSamples));
@@ -4465,6 +4556,8 @@ void Renderer::renderFullScene() {
   this->paths->Update();
   this->actuals->Update();
   this->targetActuals->Update();  // 030 M9b
+  this->targetBeaconsLeft->Update();   // 030 M9b.2
+  this->targetBeaconsRight->Update();  // 030 M9b.2
   this->segmentGaps->Update();
   if (!blackboxAircraftStates.empty()) {
     this->blackboxTapes->Update();
