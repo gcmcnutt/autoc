@@ -574,6 +574,12 @@ void newHandler()
   exit(1);
 }
 
+// Bridge config → mode lookup. Lives here (not in mode.cc) to keep mode.cc
+// free of the ConfigManager / AWS SDK dependency chain.
+static const ModeStrategy& getActiveModeStrategy() {
+  return getModeStrategyByName(ConfigManager::getConfig().mode.c_str());
+}
+
 // Get topology for the active mode (030 M7a runtime mode-select per FR-019).
 // Pathgen mode → NN_TOPOLOGY (33 input); tracker mode → TRACKER_NN_TOPOLOGY
 // (45 input). Read by population init + topology logging.

@@ -2,7 +2,6 @@
 #include "autoc/nn/evaluator.h"
 #include "autoc/nn/nn_inputs.h"
 #include "autoc/nn/topology.h"
-#include "autoc/util/config.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -56,10 +55,6 @@ const ModeStrategy kTrackerMode = {
     TRACKER_NN_HIDDEN_STATE_COUNT,
     TRACKER_NN_TOPOLOGY_STRING,
 };
-
-const ModeStrategy& getActiveModeStrategy() {
-    return getModeStrategyByName(ConfigManager::getConfig().mode.c_str());
-}
 
 const ModeStrategy& getModeStrategyByName(const char* name) {
     if (std::strcmp(name, "tracker") == 0) return kTrackerMode;

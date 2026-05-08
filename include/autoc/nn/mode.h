@@ -51,10 +51,4 @@ struct ModeStrategy {
 extern const ModeStrategy kPathgenMode;
 extern const ModeStrategy kTrackerMode;
 
-// 030 M7a — Active mode lookup helper for autoc-side runtime dispatch.
-// Reads ConfigManager and returns the matching strategy bundle. Called
-// at autoc startup (population init + topology validation) — NOT in the
-// hot path (per-tick gather goes through PathgenStepper / TrackerStepper
-// directly).
-const ModeStrategy& getActiveModeStrategy();
 const ModeStrategy& getModeStrategyByName(const char* name);
