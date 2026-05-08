@@ -3574,6 +3574,8 @@ void Renderer::updatePlaybackAnimation() {
   this->directRabbitData->RemoveAllInputs();
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->directRabbitData->AddInputData(e); }
   this->actuals->RemoveAllInputs();
+  this->targetActuals->RemoveAllInputs();  // 030 M9b animation fix
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetActuals->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
   this->blackboxHighlightTapes->RemoveAllInputs();
@@ -3643,11 +3645,39 @@ void Renderer::updatePlaybackAnimation() {
       }
     }
 
-    // Odometer-based path reveal: show path segments up to the rabbit's current position.
-    // The rabbit odometer (meters along path) is stored in each AircraftState.
-    // Walk forward from the start until distanceFromStart >= rabbitOdometer.
+    // 030 M9b animation fix — mode-aware reveal logic. Three modes:
+    //   A) Pathgen (existing): rabbit-odometer-driven path reveal +
+    //      chase tape reveal + chase→rabbit-position blue segments
+    //   B) Tracker (new):      static red path (no reveal — odometer
+    //      isn't set in tracker mode) + chase tape reveal + target
+    //      tape reveal (index-parallel to chase) + chase→target
+    //      blue segments (instead of chase→rabbit)
+    //   C) Xiao-only:          handled below by blackbox branch;
+    //      hasSimData = false ⇒ this whole block adds empty data
+    //
+    // For both A and B, chase tape reveal is identical
+    // (visibleStates already filtered above by simTimeMsec).
+
+    const bool tracker_scenario_has_target =
+        this->isTrackerMode_
+        && i < static_cast<int>(evalResults.targetTrajectoryList.size())
+        && !evalResults.targetTrajectoryList[i].empty();
+
+    // ---- Path reveal (red rabbit path) ----
     std::vector<vec3> visiblePathVector;
-    if (hasSimData && i < static_cast<int>(evalResults.pathList.size()) && !evalResults.pathList[i].empty()) {
+    if (tracker_scenario_has_target) {
+      // Tracker mode: rabbitOdometer isn't set by TrackerStepper, so
+      // odometer-based reveal would show nothing. Show the full path
+      // statically as arena-reference decoration; chase doesn't follow
+      // it semantically anyway (FR-002 + FR-019).
+      if (hasSimData && i < static_cast<int>(evalResults.pathList.size())
+          && !evalResults.pathList[i].empty()) {
+        visiblePathVector = pathToVector(evalResults.pathList[i]);
+      }
+    } else if (hasSimData && i < static_cast<int>(evalResults.pathList.size())
+               && !evalResults.pathList[i].empty()) {
+      // Pathgen mode (existing): walk forward until
+      // distanceFromStart > rabbitOdometer.
       scalar rabbitOdo = 0.0f;
       if (!visibleStates.empty()) {
         rabbitOdo = static_cast<scalar>(visibleStates.back().getRabbitOdometer());
@@ -3671,33 +3701,53 @@ void Renderer::updatePlaybackAnimation() {
     // Always add path data (empty if no visible path) to prevent VTK warnings
     this->paths->AddInputData(createPointSet(offset, visiblePathVector));
 
-    // Always add aircraft data (empty if no visible states) to prevent VTK warnings
+    // ---- Chase tape reveal (mode-agnostic) ----
     this->actuals->AddInputData(createTapeSet(offset, visibleStateVector,
       visibleStates.empty() ? std::vector<vec3>() : stateToOrientation(visibleStates)));
 
-    // Add segment gaps only if we have visible states and the full path exists
-    if (hasSimData && i < static_cast<int>(evalResults.pathList.size()) && !visibleStates.empty() && !evalResults.pathList[i].empty()) {
-      // Use full path for segment connections (aircraft states reference original path indices)
-      std::vector<vec3> fullPathVector = pathToVector(evalResults.pathList[i]);
+    // ---- Tracker-mode target tape reveal (NEW) ----
+    // targetTrajectoryList[i][k] is index-parallel to aircraftStateList[i][k]
+    // per the M8b recording contract — same number of ticks and same
+    // simTimeMsec semantics. Reveal in lockstep by truncating to the
+    // count of visibleStates.
+    std::vector<CopiedTargetSample> visibleTargets;
+    if (tracker_scenario_has_target) {
+      const auto& fullTargets = evalResults.targetTrajectoryList[i];
+      size_t n = std::min(visibleStates.size(), fullTargets.size());
+      visibleTargets.assign(fullTargets.begin(), fullTargets.begin() + n);
+      if (!visibleTargets.empty()) {
+        std::vector<vec3> targetPositions = targetSamplesToVector(visibleTargets);
+        std::vector<vec3> targetOrientations = targetSamplesToOrientation(visibleTargets);
+        this->targetActuals->AddInputData(
+            createTapeSet(offset, targetPositions, targetOrientations));
+      }
+    }
 
-      // Further filter visible states to only include those with valid path references
+    // ---- Blue segments: chase→target (tracker) or chase→rabbit (pathgen) ----
+    if (tracker_scenario_has_target && !visibleTargets.empty() && !visibleStates.empty()) {
+      // Tracker mode: chase position → target.position per tick.
+      this->segmentGaps->AddInputData(
+          createSegmentSetToTarget(offset, visibleStates, visibleTargets));
+    } else if (hasSimData && i < static_cast<int>(evalResults.pathList.size())
+               && !visibleStates.empty() && !evalResults.pathList[i].empty()) {
+      // Pathgen mode (existing): chase → rabbit position from
+      // AircraftState.getRabbitPosition(); validates path-index reference.
+      std::vector<vec3> fullPathVector = pathToVector(evalResults.pathList[i]);
       std::vector<AircraftState> validStates;
       for (const auto& state : visibleStates) {
         if (state.getThisPathIndex() < fullPathVector.size()) {
           validStates.push_back(state);
         }
       }
-
       if (!validStates.empty()) {
         this->segmentGaps->AddInputData(createSegmentSet(offset, validStates, fullPathVector));
       } else {
-        // Add empty segment gaps to prevent VTK warnings
         std::vector<AircraftState> emptyStates;
         std::vector<vec3> emptyPath;
         this->segmentGaps->AddInputData(createSegmentSet(offset, emptyStates, emptyPath));
       }
     } else {
-      // Add empty segment gaps to prevent VTK warnings
+      // No-data fallback: empty segment data prevents VTK pipeline warnings.
       std::vector<AircraftState> emptyStates;
       std::vector<vec3> emptyPath;
       this->segmentGaps->AddInputData(createSegmentSet(offset, emptyStates, emptyPath));
