@@ -402,6 +402,27 @@ bool Renderer::updateGenerationDisplay(int newGen) {
           && !evalResults.targetTrajectoryList.empty();
       this->isTrackerMode_ = tracker_data_present;
 
+      // 030 M9b color routing 2026-05-08: in tracker mode, actor2
+      // (chase tape from aircraftStateList) is the NEW M2 chase being
+      // trained — give it the new magenta/lime color. targetActor
+      // (source recording = M1 chase replayed) keeps the historical
+      // orange/cyan. In pathgen mode, restore actor2's orange/cyan
+      // since aircraftStateList there IS the M1 chase. Mode-flip is
+      // safe at load time — Render() picks up the property change.
+      if (actor2 && actor2->GetProperty()) {
+        if (tracker_data_present) {
+          actor2->GetProperty()->SetColor(1.0, 0.0, 1.0);  // Magenta front
+          if (actor2->GetBackfaceProperty()) {
+            actor2->GetBackfaceProperty()->SetColor(0.0, 1.0, 0.5);  // Lime back
+          }
+        } else {
+          actor2->GetProperty()->SetColor(1.0, 0.7, 0.0);  // Orange front (M1 default)
+          if (actor2->GetBackfaceProperty()) {
+            actor2->GetBackfaceProperty()->SetColor(0.0, 1.0, 1.0);  // Cyan back (M1 default)
+          }
+        }
+      }
+
       if (tracker_data_present) {
         // Apply virtual→display Z offset to target trajectory positions
         // (parallel to aircraftStateList above). targetTrajectoryList[i][k]
@@ -1309,14 +1330,21 @@ void Renderer::initialize() {
   targetProp->SetInterpolation(VTK_FLAT);
   targetProp->SetBackfaceCulling(false);
   targetProp->SetFrontfaceCulling(false);
-  targetProp->SetColor(1.0, 0.0, 1.0);   // Magenta front face (top)
+  // 030 M9b color routing 2026-05-08: target tape inherits orange/cyan
+  // (was chase tape's color in M1 mode) because the M2 source IS an
+  // M1 chase recording playing in role of rabbit — visual identity
+  // stays consistent with "this is an M1-chase trajectory" across
+  // modes. The new M2 chase craft (the controller under test) gets
+  // the magenta/lime color, applied to actor2 in updateGenerationDisplay
+  // when isTrackerMode_=true. M1 mode actor2 stays orange/cyan.
+  targetProp->SetColor(1.0, 0.7, 0.0);   // Orange front face (top) — was actor2's M1 color
   targetProp->SetAmbient(0.1);
   targetProp->SetDiffuse(0.8);
   targetProp->SetSpecular(0.1);
   targetProp->SetSpecularPower(10);
   targetProp->SetOpacity(1.0);
   vtkNew<vtkProperty> targetBackProperty;
-  targetBackProperty->SetColor(0.0, 1.0, 0.5);  // Lime back face (bottom) — high contrast vs magenta for orientation
+  targetBackProperty->SetColor(0.0, 1.0, 1.0);  // Cyan back face (bottom) — was actor2's M1 back color
   targetBackProperty->SetAmbient(0.1);
   targetBackProperty->SetDiffuse(0.8);
   targetBackProperty->SetSpecular(0.1);
