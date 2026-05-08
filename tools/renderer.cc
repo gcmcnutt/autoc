@@ -584,7 +584,7 @@ bool Renderer::updateGenerationDisplay(int newGen) {
           && !evalResults.cameraViewList[i].empty()) {
         const auto& latestCam = evalResults.cameraViewList[i].back();
         this->chaseCameraFov->AddInputData(
-            createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(30.0f)));
+            createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(10.0f)));
       }
       // Tracker mode: blue error bars chase→target (NOT chase→rabbit)
       // per operator request 2026-05-08 — visualizes the actual
@@ -4196,7 +4196,7 @@ void Renderer::updatePlaybackAnimation() {
                                    evalResults.cameraViewList[i].size() - 1);
           const auto& latestCam = evalResults.cameraViewList[i][camIdx];
           this->chaseCameraFov->AddInputData(
-              createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(30.0f)));
+              createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(10.0f)));
         }
       }
     }
@@ -4663,7 +4663,7 @@ void Renderer::renderFullScene() {
           && !evalResults.cameraViewList[i].empty()) {
         const auto& latestCam = evalResults.cameraViewList[i].back();
         this->chaseCameraFov->AddInputData(
-            createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(30.0f)));
+            createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(10.0f)));
       }
       if (!a.empty()) {
         this->segmentGaps->AddInputData(
