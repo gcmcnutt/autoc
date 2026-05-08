@@ -400,6 +400,8 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   this->directRabbitData->RemoveAllInputs();
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->directRabbitData->AddInputData(e); }
   this->actuals->RemoveAllInputs();
+  this->targetActuals->RemoveAllInputs();  // 030 M9b
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetActuals->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->planeData->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
@@ -469,6 +471,19 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     }
     if (!a.empty() && !p.empty()) {
       this->segmentGaps->AddInputData(createSegmentSet(offset, evalResults.aircraftStateList[i], p));
+    }
+
+    // 030 M9b — Target-craft tape, populated from targetTrajectoryList
+    // when isTrackerMode_. Empty for pathgen-mode dmps. Same per-scenario
+    // `offset` so target tape lands in the same arena cell as chase tape.
+    if (this->isTrackerMode_
+        && i < static_cast<int>(evalResults.targetTrajectoryList.size())
+        && !evalResults.targetTrajectoryList[i].empty()) {
+      const auto& targetSamples = evalResults.targetTrajectoryList[i];
+      std::vector<vec3> targetPositions = targetSamplesToVector(targetSamples);
+      std::vector<vec3> targetOrientations = targetSamplesToOrientation(targetSamples);
+      this->targetActuals->AddInputData(
+          createTapeSet(offset, targetPositions, targetOrientations));
     }
 
     // Create a plane source at z = 0
@@ -653,8 +668,9 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   this->planeData->Update();
   this->paths->Update();
   this->actuals->Update();
+  this->targetActuals->Update();  // 030 M9b
   this->segmentGaps->Update();
-  
+
   // Only update blackbox tapes if there's blackbox data
   if (!blackboxAircraftStates.empty()) {
     this->blackboxTapes->Update();
@@ -1013,6 +1029,7 @@ void Renderer::initialize() {
   blackboxHighlightTapes = vtkSmartPointer<vtkAppendPolyData>::New();
   xiaoVecArrows = vtkSmartPointer<vtkAppendPolyData>::New();
   directRabbitData = vtkSmartPointer<vtkAppendPolyData>::New();
+  targetActuals = vtkSmartPointer<vtkAppendPolyData>::New();  // 030 M9b
 
   // Temporary until first update
   vtkNew<vtkPolyData> emptyPolyData;
@@ -1028,6 +1045,7 @@ void Renderer::initialize() {
   blackboxHighlightTapes->AddInputData(emptyPolyData);
   xiaoVecArrows->AddInputData(emptyPolyData);
   directRabbitData->AddInputData(emptyPolyData);
+  targetActuals->AddInputData(emptyPolyData);  // 030 M9b
 
   // Update planeData to ensure it has an input port
   planeData->Update();
@@ -1177,10 +1195,39 @@ void Renderer::initialize() {
   // Set the back face property
   actor2->SetBackfaceProperty(backProperty);
 
+  // 030 M9b — Target-craft tape actor. Distinct purple/violet color
+  // scheme so chase (orange front / cyan back) and target read as
+  // clearly different ribbons in the 3rd-person view. Empty input
+  // for pathgen-mode dmps ⇒ nothing renders, no perf cost.
+  vtkNew<vtkPolyDataMapper> targetMapper;
+  targetMapper->SetInputConnection(targetActuals->GetOutputPort());
+  targetActor = vtkSmartPointer<vtkActor>::New();
+  targetActor->SetMapper(targetMapper);
+  vtkProperty* targetProp = targetActor->GetProperty();
+  targetProp->SetLighting(true);
+  targetProp->SetInterpolation(VTK_FLAT);
+  targetProp->SetBackfaceCulling(false);
+  targetProp->SetFrontfaceCulling(false);
+  targetProp->SetColor(0.7, 0.0, 1.0);   // Purple front face (top)
+  targetProp->SetAmbient(0.1);
+  targetProp->SetDiffuse(0.8);
+  targetProp->SetSpecular(0.1);
+  targetProp->SetSpecularPower(10);
+  targetProp->SetOpacity(1.0);
+  vtkNew<vtkProperty> targetBackProperty;
+  targetBackProperty->SetColor(0.4, 0.0, 0.6);  // Dark violet back face (bottom)
+  targetBackProperty->SetAmbient(0.1);
+  targetBackProperty->SetDiffuse(0.8);
+  targetBackProperty->SetSpecular(0.1);
+  targetBackProperty->SetSpecularPower(10);
+  targetBackProperty->SetOpacity(1.0);
+  targetActor->SetBackfaceProperty(targetBackProperty);
+
   renderer->AddActor(planeActor);
   renderer->AddActor(actor1);  // Red path line (projected rabbit)
   renderer->AddActor(directRabbitActor);  // Magenta path (direct rabbit ground truth)
   renderer->AddActor(actor2);  // Yellow flight tape
+  renderer->AddActor(targetActor);  // 030 M9b — purple target-craft tape (tracker mode only)
   renderer->AddActor(actor3);  // Blue delta lines
   
   // Only add blackbox actors if there's blackbox data
@@ -1292,6 +1339,27 @@ std::vector<vec3> Renderer::stateToVector(std::vector<AircraftState> state) {
   std::vector<vec3> points;
   for (const auto& s : state) {
     points.push_back(s.getPosition());
+  }
+  return points;
+}
+
+std::vector<vec3> Renderer::targetSamplesToVector(const std::vector<CopiedTargetSample>& samples) {
+  std::vector<vec3> points;
+  points.reserve(samples.size());
+  for (const auto& s : samples) {
+    points.push_back(s.position);
+  }
+  return points;
+}
+
+std::vector<vec3> Renderer::targetSamplesToOrientation(const std::vector<CopiedTargetSample>& samples) {
+  std::vector<vec3> points;
+  points.reserve(samples.size());
+  for (const auto& s : samples) {
+    // Mirror stateToOrientation — body -Z is the world-up direction
+    // for ribbon orientation. Source dmps use the same 180°-yaw
+    // convention as chase, so this works for both.
+    points.push_back(s.orientation * -vec3::UnitZ());
   }
   return points;
 }
@@ -3902,6 +3970,7 @@ void Renderer::updatePlaybackAnimation() {
   // Update all pipelines
   this->paths->Update();
   this->actuals->Update();
+  this->targetActuals->Update();  // 030 M9b
   this->segmentGaps->Update();
   if (!blackboxAircraftStates.empty()) {
     this->blackboxTapes->Update();
@@ -4256,6 +4325,7 @@ void Renderer::renderFullScene() {
   this->planeData->Update();
   this->paths->Update();
   this->actuals->Update();
+  this->targetActuals->Update();  // 030 M9b
   this->segmentGaps->Update();
   if (!blackboxAircraftStates.empty()) {
     this->blackboxTapes->Update();

@@ -165,6 +165,13 @@ private:
   vtkSmartPointer<vtkAppendPolyData> xiaoVecArrows;  // For xiao vec vectors
   vtkSmartPointer<vtkAppendPolyData> directRabbitData;  // Direct rabbit from log rabbit=[x,y,z]
 
+  // 030 M9b — Target-craft trajectory tape, populated from
+  // targetTrajectoryList when isTrackerMode_ at load time. Mirrors
+  // `actuals` (chase-craft tape); shares createTapeSet() pipeline.
+  // Distinct color (orange) so chase + target read as two ribbons in
+  // the 3rd-person view. Empty + invisible for pathgen-mode dmps.
+  vtkSmartPointer<vtkAppendPolyData> targetActuals;
+
   vtkSmartPointer<vtkActor> actor1;
   vtkSmartPointer<vtkActor> directRabbitActor;  // Magenta tube for direct rabbit ground truth
   vtkSmartPointer<vtkActor> actor2;
@@ -172,6 +179,7 @@ private:
   vtkSmartPointer<vtkActor> blackboxActor;
   vtkSmartPointer<vtkActor> blackboxHighlightActor;  // For highlighted test spans
   vtkSmartPointer<vtkActor> xiaoVecActor;  // For xiao vec arrows
+  vtkSmartPointer<vtkActor> targetActor;   // 030 M9b — orange tape from targetTrajectoryList
   std::vector<vtkSmartPointer<vtkActor>> arenaLabelActors;
   
   vtkSmartPointer<vtkTextActor> generationTextActor;
@@ -212,6 +220,15 @@ private:
   std::vector<gp_vec3> pathToVector(const std::vector<Path> path);
   std::vector<gp_vec3> stateToVector(const std::vector<AircraftState> path);
   std::vector<gp_vec3> stateToOrientation(const std::vector<AircraftState> state);
+
+  // 030 M9b — Tracker-mode target-craft tape helpers. Symmetric with
+  // stateToVector / stateToOrientation but consume CopiedTargetSample
+  // (targetTrajectoryList[scenario][tick]) instead of AircraftState.
+  // Returns world-frame positions / body-up vectors so createTapeSet's
+  // existing pipeline renders the target tape with the same geometry
+  // as the chase tape.
+  std::vector<gp_vec3> targetSamplesToVector(const std::vector<CopiedTargetSample>& samples);
+  std::vector<gp_vec3> targetSamplesToOrientation(const std::vector<CopiedTargetSample>& samples);
   gp_fitness extractFitnessFromGP(const std::vector<char>& gpData);
   void createHighlightedFlightTapes(gp_vec3 offset);
   void createStopwatch();
