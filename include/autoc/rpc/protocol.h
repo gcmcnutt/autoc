@@ -116,55 +116,93 @@ inline const char* modeToString(Mode m) {
   return (m == Mode::TRACKER) ? "tracker" : "pathgen";
 }
 
+// 030 V1 priming (UNPARKED 2026-05-08, "Worker-side scenario priming +
+// (deferred V2) LRU demand-fetch") — first RPC every worker receives,
+// once per worker, immediately after TCP accept. Carries scenario-shaped
+// invariants that don't vary per-eval or per-gen, so they don't have to
+// ride along with every per-individual EvalData. Eliminates the ~8.5 MB
+// sourceList × 5000-individual queue inflation that OOM'd a 128 GB box
+// before gen 1 in tracker training. See specs/BACKLOG.md "Worker-side
+// scenario priming" entry for the V1/V2 split.
+//
+// 030 V1.5 (2026-05-08) — extended with pathList + scenarioMetaList.
+// gPathSeed is run-constant (set once at startup), so generateSmoothPaths
+// produces byte-identical output every gen — no reason to copy it 5000×
+// per gen into per-eval EvalDatas. Same for scenario variation offsets
+// (pre-fetched joint-PRNG draws, deterministic per scenario index). Both
+// hoisted here. Per-eval EvalData collapses to ~50 B.
+//
+// Wire format: not stored on disk (RPC-only, like EvalData), so adding /
+// removing fields is a same-rebuild change. No CEREAL_CLASS_VERSION.
+struct WorkerInit {
+  // Mode is run-static once .ini is parsed; worker uses it for all
+  // dispatch instead of carrying it on each EvalData. Cereal-serialized
+  // as int (same roundtrip pattern as ControllerType).
+  Mode mode = Mode::PATHGEN;
+
+  // 030 tracker-mode source library (FR-001 + FR-018). Empty in pathgen
+  // mode. Worker-resident; per-eval EvalData refers to entries by index
+  // into this list rather than copying samples.
+  std::vector<SourceScenarioTrajectory> sourceList;
+
+  // Scenario-invariant tracker configs (FR-003, FR-004, FR-008, FR-008b,
+  // FR-016). All populated from autoc-tracker.ini once at startup;
+  // none vary per-individual or per-generation.
+  autoc::eval::CameraConfig cameraConfig;
+  autoc::eval::BeaconConfig beaconLeftConfig;
+  autoc::eval::BeaconConfig beaconRightConfig;
+  autoc::eval::AirframeProxy airframeProxy;
+  autoc::eval::FlightArena flightArena;
+
+  // 030 M8b geometry-fix — source pre-roll (in NN-cadence ticks).
+  int trackerSourcePreRollTicks = 0;
+
+  // 030 M7d.b — crash-hull + trail-rabbit static params. Note
+  // pCrashThisGen is NOT here; it ramps per-gen and stays in EvalData.
+  gp_scalar crashHullRadius = static_cast<gp_scalar>(1.0);
+  gp_scalar trailDistance = static_cast<gp_scalar>(3.048);
+
+  // 030 V1.5 — run-static scenario library. Built once at startup from
+  // generateSmoothPaths(gPathSeed) + the joint-PRNG variation table; the
+  // worker dispatches per-eval scenarios by indexing into these in
+  // lockstep (pathList[i] is parallel-indexed with scenarioMetaList[i]).
+  // scenarioMetaList carries entry offsets at FULL SCALE; the worker
+  // applies the per-eval variation_scale via applyVariationScale before
+  // running each scenario.
+  std::vector<std::vector<Path>> pathList;
+  std::vector<ScenarioMetadata> scenarioMetaList;
+
+  template<class Archive>
+  void serialize(Archive& ar) {
+    int m = static_cast<int>(mode);
+    ar(m, sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
+       airframeProxy, flightArena, trackerSourcePreRollTicks,
+       crashHullRadius, trailDistance,
+       pathList, scenarioMetaList);
+    mode = static_cast<Mode>(m);
+  }
+};
+
+// 030 V1.5 (2026-05-08) — slimmed per-eval EvalData. With pathList /
+// scenarioMetaList moved to WorkerInit, per-eval payload collapses to
+// NN bytes + a handful of per-eval scalars (~50 B). Eliminates ~7 MB
+// pathList × 5000-individual queue inflation per gen and ~1.47M
+// brk-arena allocations per gen (294 inner-vec copies × 5000 evals);
+// expected autoc residual drops from ~25 GB to a few GB.
 struct EvalData {
   std::vector<char> gp;
   uint64_t gpHash = 0;  // FNV-1a hash of payload for verification
   bool isEliteReeval = false;
   ControllerType controllerType = ControllerType::NEURAL_NET;
-  std::vector<std::vector<Path>> pathList;
-  ScenarioMetadata scenario;
-  std::vector<ScenarioMetadata> scenarioList;
   RabbitSpeedConfig rabbitSpeedConfig = RabbitSpeedConfig::defaultConfig();
 
-  // 030 M6c — runtime mode dispatch (FR-019). Worker selects PathgenStepper
-  // vs TrackerStepper based on this field. PATHGEN is the default to
-  // preserve existing pathgen-only behavior. TRACKER fires the source-
-  // trajectory-driven per-tick path (M6d/e).
-  // 030 M11.preA — migrated from std::string to typed enum (operator
-  // routing 2026-05-08). String parsing happens at AutocConfig load
-  // time; the wire format here is enum-int.
-  Mode mode = Mode::PATHGEN;
-
-  // 030 M6e — tracker-mode per-scenario payload (FR-001 + FR-018). Empty
-  // when mode == "pathgen". When mode == "tracker", sourceList[i] is the
-  // source-craft trajectory the chase craft for scenario i tracks; the
-  // configs below are scenario-invariant (one set per worker job).
-  std::vector<SourceScenarioTrajectory> sourceList;
-  autoc::eval::CameraConfig cameraConfig;
-  autoc::eval::BeaconConfig beaconLeftConfig;
-  autoc::eval::BeaconConfig beaconRightConfig;
-  autoc::eval::AirframeProxy airframeProxy;
-  // 030 M7a — replaces M6e's homeWorld scalar with full FlightArena
-  // (cylinder + floor + ceiling) shared between gather_tracker_inputs
-  // (NN input slot 44) and TrackerStepper's per-tick OOB termination
-  // check. Single source of truth per Session 2026-05-07 Q1.
-  autoc::eval::FlightArena flightArena;
-
-  // 030 M8b geometry-fix — source pre-roll. Worker skips the first N
-  // source-tick samples before chase starts evolving so source has a
-  // head start. Computed at autoc-side from
-  // ConfigManager::config->trackerSourcePreRollSec / 0.1; pre-converted
-  // to ticks to keep the worker math integer.
-  int trackerSourcePreRollTicks = 0;
-
-  // 030 M7d.b — crash-hull + trail-rabbit per-job parameters (FR-008
-  // + FR-008b). pCrashThisGen pre-computed at autoc-side via
-  // pCrashForGen(gen, ...) so worker stays gen-unaware. crashHullRadius
-  // + trailDistance plumbed from cfg so the operator can re-tune via
-  // autoc-tracker.ini without rebuilding workers.
-  gp_scalar pCrashThisGen = static_cast<gp_scalar>(0.0);
-  gp_scalar crashHullRadius = static_cast<gp_scalar>(1.0);
-  gp_scalar trailDistance = static_cast<gp_scalar>(3.048);
+  // 030 V1.5 — per-eval scalars. Worker reconstructs the full per-eval
+  // ScenarioMetadata for each scenario by copying init_.scenarioMetaList[i],
+  // overriding scenarioSequence + enableDeterministicLogging from these
+  // fields, and calling applyVariationScale(meta, variationScale).
+  uint64_t scenarioSequence = 0;
+  gp_scalar pCrashThisGen = static_cast<gp_scalar>(0.0);  // 030 M7d.b — gen-varying ramp
+  gp_scalar variationScale = static_cast<gp_scalar>(1.0); // 030 V1.5 — gen-varying ramp [0..1]
 
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
@@ -172,22 +210,7 @@ struct EvalData {
     int ct = static_cast<int>(controllerType);
     ar(ct);
     controllerType = static_cast<ControllerType>(ct);
-    // 030 M11.preA — Mode is now an enum; cereal serialize as int
-    // (same int-roundtrip pattern as ControllerType above).
-    int m = static_cast<int>(mode);
-    ar(pathList, scenario, scenarioList, rabbitSpeedConfig, m);
-    mode = static_cast<Mode>(m);
-    ar(sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
-       airframeProxy, flightArena, trackerSourcePreRollTicks,
-       pCrashThisGen, crashHullRadius, trailDistance);
-  }
-
-  void sanitizePaths() {
-    for (auto& pathGroup : pathList) {
-      for (auto& path : pathGroup) {
-        path.sanitize();
-      }
-    }
+    ar(rabbitSpeedConfig, scenarioSequence, pCrashThisGen, variationScale);
   }
 };
 CEREAL_CLASS_VERSION(EvalData, 1)

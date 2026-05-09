@@ -18,6 +18,7 @@
 #include <sys/wait.h>
 
 #include "autoc/autoc.h"
+#include "autoc/rpc/protocol.h"  // 030 V1 priming — WorkerInit + sendRPC
 #include "autoc/util/config.h"
 #include "autoc/util/logger.h"
 #include "autoc/util/socket_wrapper.h"
@@ -34,6 +35,14 @@ private:
   bool stop;
   std::atomic<int> active_tasks{ 0 };
   std::atomic<int> tasks_in_queue{ 0 };
+
+  // 030 V1 priming (2026-05-08) — sent to each worker once after TCP
+  // accept, before any per-eval RPC. Carries scenario-shaped invariants
+  // that no longer ride along with every per-individual EvalData (mode,
+  // sourceList, camera/beacon/airframe/flightArena, crashHull/trail/
+  // pre-roll). Worker caches; per-eval EvalData is now ~50–100 KB instead
+  // of ~8.5 MB. See specs/BACKLOG.md "Worker-side scenario priming".
+  WorkerInit prime_data_;
 
   void worker(int id, AutocConfig& extraCfg) {
     auto& context = *worker_contexts[id];
@@ -78,8 +87,17 @@ private:
       context.childPid = pid;
     }
 
-    // Accept connection from minisim
+    // Accept connection from minisim — this is the worker's "phone home"
+    // (the child process initiates a TCP connect; this accept returns
+    // when the socket is up).
     context.socket = acceptor.accept();
+
+    // 030 V1 priming — first action after the worker phones home: send
+    // the once-per-worker WorkerInit. The child process's first
+    // receiveRPC<WorkerInit>() unblocks here. This is the simpler
+    // one-shot version of the V2 LRU demand-fetch callback channel
+    // (deferred — see specs/BACKLOG.md).
+    sendRPC(*context.socket, prime_data_);
 
     while (true) {
       std::function<void(WorkerContext&)> task;
@@ -97,7 +115,12 @@ private:
   }
 
 public:
-  ThreadPool(AutocConfig& extraCfg) : stop(false) {
+  // 030 V1 priming — `primeData` is sent to each worker once right after
+  // its TCP accept. autoc-side caller MUST construct it AFTER loading the
+  // tracker source dmp (gSourceTrajectoryList) so the library is ready;
+  // for pathgen mode an empty WorkerInit is fine.
+  ThreadPool(AutocConfig& extraCfg, WorkerInit primeData = WorkerInit{})
+      : stop(false), prime_data_(std::move(primeData)) {
     worker_contexts.reserve(extraCfg.evalThreads);
     for (int i = 0; i < extraCfg.evalThreads; ++i) {
       worker_contexts.push_back(std::make_unique<WorkerContext>());

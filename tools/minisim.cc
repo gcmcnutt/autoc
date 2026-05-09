@@ -10,6 +10,7 @@
 #include "autoc/rpc/protocol.h"
 #include "autoc/autoc.h"
 #include "autoc/eval/pathgen_stepper.h"
+#include "autoc/eval/scenario_meta_apply.h"  // 030 V1.5 — applyVariationScale
 #include "autoc/eval/tracker_stepper.h"
 #include "autoc/eval/sensor_math.h"
 #include "autoc/nn/mode.h"               // 030 M7a — getModeStrategyByName
@@ -37,26 +38,25 @@ std::string crashReasonToString(CrashReason type) {
 
 namespace {
 
-void ensureScenarioMetadata(EvalData& evalData) {
-  if (evalData.scenarioList.size() == evalData.pathList.size()) {
-    return;
-  }
-  evalData.scenarioList.assign(evalData.pathList.size(), evalData.scenario);
-  for (size_t idx = 0; idx < evalData.scenarioList.size(); ++idx) {
-    if (evalData.scenarioList[idx].pathVariantIndex < 0) {
-      evalData.scenarioList[idx].pathVariantIndex = static_cast<int>(idx);
-    }
-  }
-}
-
-ScenarioMetadata scenarioForPathIndex(const EvalData& evalData, size_t idx) {
-  if (idx < evalData.scenarioList.size()) {
-    return evalData.scenarioList.at(idx);
-  }
-  ScenarioMetadata meta = evalData.scenario;
-  if (meta.pathVariantIndex < 0) {
+// 030 V1.5 — build the per-eval ScenarioMetadata for scenario index idx
+// by copying the cached base meta from init_.scenarioMetaList[idx],
+// overriding the per-eval fields (scenarioSequence,
+// enableDeterministicLogging) from EvalData, then applying the per-eval
+// variation_scale. Byte-equivalent to the legacy autoc-side
+// populateVariationOffsets path; preserves training fitness determinism.
+ScenarioMetadata makePerEvalMeta(const WorkerInit& init,
+                                 const EvalData& evalData,
+                                 size_t idx) {
+  ScenarioMetadata meta;
+  if (idx < init.scenarioMetaList.size()) {
+    meta = init.scenarioMetaList[idx];
+  } else {
     meta.pathVariantIndex = static_cast<int>(idx);
   }
+  meta.scenarioSequence = evalData.scenarioSequence;
+  meta.bakeoffSequence = 0;
+  meta.enableDeterministicLogging = evalData.isEliteReeval;
+  autoc::eval::applyVariationScale(meta, evalData.variationScale);
   return meta;
 }
 
@@ -68,6 +68,19 @@ public:
     socket_.connect("localhost", port);
     workerPid = static_cast<int>(getpid());
     workerId = id;
+
+    // 030 V1 priming (2026-05-08) — first RPC after TCP connect is
+    // WorkerInit (sent by autoc's ThreadPool right after our accept on
+    // the other side). Cache mode + source library + camera/beacon/
+    // airframe/flightArena/preroll/crashHull/trail locally; per-eval
+    // EvalData no longer carries them. See specs/BACKLOG.md
+    // "Worker-side scenario priming" entry. Loud-fail if the priming
+    // RPC fails — we can't run without it.
+    init_ = receiveRPC<WorkerInit>(socket_);
+    std::cerr << "[MINISIM] worker=" << workerId
+              << " primed mode=" << modeToString(init_.mode)
+              << " sourceList=" << init_.sourceList.size() << " scenarios"
+              << std::endl;
   }
 
   void run() {
@@ -90,17 +103,14 @@ public:
                   << std::endl;
       }
 
-      ensureScenarioMetadata(evalData);
-
       evalResults.gp = evalData.gp;
       evalResults.gpHash = localGpHash;
-      if (!evalData.scenarioList.empty()) {
-        evalResults.scenario = evalData.scenarioList.front();
-      } else {
-        evalResults.scenario = evalData.scenario;
-      }
+      // 030 V1.5 — scenario library is worker-resident in init_; per-eval
+      // EvalData no longer carries pathList / scenarioList. Reserve based
+      // on the cached pathList size.
+      const size_t numScenarios = init_.pathList.size();
       evalResults.scenarioList.clear();
-      evalResults.scenarioList.reserve(evalData.scenarioList.size());
+      evalResults.scenarioList.reserve(numScenarios);
 
       // Deserialize NN genome
       NNGenome nnGenome;
@@ -116,9 +126,11 @@ public:
       // Validate topology matches the active mode's compile-time expectation
       // (030 M7a — FR-019 runtime mode dispatch). Pathgen genomes are
       // 33-input, tracker genomes are 45-input; minisim picks the
-      // expected shape from the active ModeStrategy.
+      // expected shape from the active ModeStrategy. 030 V1 priming —
+      // mode now comes from init_ (sent once at startup), not per-eval.
+      const Mode evalMode = init_.mode;
       {
-        const ModeStrategy& mode = getModeStrategy(evalData.mode);
+        const ModeStrategy& mode = getModeStrategy(evalMode);
         std::vector<int> expectedTopology(mode.topology, mode.topology + mode.num_layers);
         if (nnGenome.topology != expectedTopology) {
           std::cerr << "[MINISIM] NN topology mismatch (mode=" << mode.name << "): "
@@ -143,99 +155,84 @@ public:
                   << std::endl;
       }
 
-      // Per-span NN controller — constructed once per span so the
-      // recurrent hidden state (spec 027 D-simple) persists across ticks
-      // within a scenario. reset() called at span start. Feedforward
-      // genomes use this same instance with an empty hidden state buffer.
       NNControllerBackend nnBackend(nnGenome);
 
-      // Evaluate each scenario. Per-tick logic lives behind the
-      // ScenarioStepper strategy (030 M6a / FR-019). Mode dispatch (M6c):
-      // EvalData::mode selects PathgenStepper vs TrackerStepper. Tracker
-      // mode is wire-protocol-only in M6c — TrackerStepper lands at M6d
-      // and source trajectories at M6e; until then, tracker scenarios
-      // exit cleanly with a clear log so operator can verify the mode
-      // signal flows end-to-end.
-      const Mode evalMode = evalData.mode;
-      if (evalCounter == 1) {
-        std::cerr << "[MINISIM] worker=" << workerId
-                  << " mode=" << modeToString(evalMode) << std::endl;
-      }
-      for (int i = 0; i < static_cast<int>(evalData.pathList.size()); i++) {
-        // Path stays at canonical origin (Z=0); origin offset bridges raw→virtual
-        std::vector<Path> path = evalData.pathList.at(i);
+      // 030 V1.5 — set evalResults.scenario from the first per-eval meta
+      // we'll build below (kept for downstream renderer/log compat).
+      bool firstScenarioSet = false;
+
+      for (int i = 0; i < static_cast<int>(numScenarios); i++) {
+        const std::vector<Path>& path = init_.pathList.at(i);
         std::vector<AircraftState> aircraftStateSteps;
-        // 030 M8b — per-tick recording for tracker-mode dmp (FR-015).
-        // Empty for pathgen scenarios; populated for tracker scenarios.
         std::vector<CameraViewSample> cameraViewSteps;
         std::vector<CopiedTargetSample> targetSampleSteps;
 
-        ScenarioMetadata scenarioMeta = scenarioForPathIndex(evalData, static_cast<size_t>(i));
+        ScenarioMetadata scenarioMeta = makePerEvalMeta(init_, evalData, static_cast<size_t>(i));
+        if (!firstScenarioSet) {
+          evalResults.scenario = scenarioMeta;
+          firstScenarioSet = true;
+        }
         CrashReason crashReason = CrashReason::None;
-        int tracker_hull_fired = 0;  // 030 M7d.b — set by tracker branch
+        int tracker_hull_fired = 0;
 
         if (evalMode == Mode::TRACKER) {
-          // M6e — TrackerStepper integration. EvalData::sourceList[i]
-          // carries this scenario's source trajectory; camera/beacon/
-          // airframe/home come from the per-job evalData configs. If
-          // sourceList is shorter than pathList (autoc populated fewer
-          // sources than scenarios), fall back to Eval-crash for that
-          // scenario rather than running with stale data.
-          if (static_cast<size_t>(i) >= evalData.sourceList.size()
-              || evalData.sourceList[i].samples.empty()) {
+          // 030 V1 priming — source library is worker-resident in init_.
+          // Index by scenario position with modulo wrap-around (preserves
+          // the pre-priming mapping where evalData.sourceList[i] was
+          // gSourceTrajectoryList[i % gSourceTrajectoryList.size()]).
+          if (init_.sourceList.empty()) {
             if (evalCounter == 1) {
-              std::cerr << "[MINISIM] tracker scenario " << i
-                        << " missing source trajectory; recording Eval-crash."
-                        << std::endl;
+              std::cerr << "[MINISIM] tracker mode but priming sourceList empty;"
+                        << " recording Eval-crash for scenario " << i << std::endl;
             }
             aircraftStateSteps.push_back(aircraftState);
             crashReason = CrashReason::Eval;
           } else {
-            const SourceScenarioTrajectory& source = evalData.sourceList[i];
+            const size_t srcIdx = static_cast<size_t>(i) % init_.sourceList.size();
+            const SourceScenarioTrajectory& source = init_.sourceList[srcIdx];
 
-            // 030 M7d.b — CrashHull config from EvalData::crashHullRadius
-            // (radius_m configurable via autoc-tracker.ini; SPHERE shape
-            // hardcoded for v1, AABB_HB1 / MESH_AIRFRAME reserved). PRNG
-            // seed = scenarioSequence cast to u32 — deterministic per
-            // scenario, stream-isolated across scenarios.
-            autoc::eval::CrashHull crashHull;
-            crashHull.sphere_radius_m = evalData.crashHullRadius;
-            const uint32_t prngSeed =
-                static_cast<uint32_t>(scenarioMeta.scenarioSequence);
-            autoc::eval::TrackerStepper stepper(
-                nnBackend, aircraftState, source, scenarioMeta,
-                evalData.cameraConfig,
-                evalData.beaconLeftConfig,
-                evalData.beaconRightConfig,
-                evalData.airframeProxy,
-                evalData.flightArena,
-                evalData.trackerSourcePreRollTicks,
-                crashHull,
-                evalData.pCrashThisGen,
-                prngSeed,
-                evalData.trailDistance);
-            stepper.initScenario();
-            aircraftStateSteps.push_back(aircraftState);
-            // 030 M8b — record initial-tick projection (initScenario
-            // warm-starts history with the first source tick's
-            // projection, populating lastCameraView / lastTargetSample).
-            cameraViewSteps.push_back(stepper.lastCameraView());
-            targetSampleSteps.push_back(stepper.lastTargetSample());
-
-            while (crashReason == CrashReason::None) {
-              crashReason = stepper.stepOnce();
+            if (source.samples.empty()) {
+              if (evalCounter == 1) {
+                std::cerr << "[MINISIM] tracker scenario " << i
+                          << " (srcIdx=" << srcIdx << ") source samples empty;"
+                          << " recording Eval-crash." << std::endl;
+              }
+              aircraftStateSteps.push_back(aircraftState);
+              crashReason = CrashReason::Eval;
+            } else {
+              autoc::eval::CrashHull crashHull;
+              crashHull.sphere_radius_m = init_.crashHullRadius;
+              const uint32_t prngSeed =
+                  static_cast<uint32_t>(scenarioMeta.scenarioSequence);
+              autoc::eval::TrackerStepper stepper(
+                  nnBackend, aircraftState, source, scenarioMeta,
+                  init_.cameraConfig,
+                  init_.beaconLeftConfig,
+                  init_.beaconRightConfig,
+                  init_.airframeProxy,
+                  init_.flightArena,
+                  init_.trackerSourcePreRollTicks,
+                  crashHull,
+                  evalData.pCrashThisGen,
+                  prngSeed,
+                  init_.trailDistance);
+              stepper.initScenario();
               aircraftStateSteps.push_back(aircraftState);
               cameraViewSteps.push_back(stepper.lastCameraView());
               targetSampleSteps.push_back(stepper.lastTargetSample());
-            }
 
-            // 030 M7d.b — capture hull-fired count for hullStrikeCount[i]
-            // pushback below. 0 typically; 1 if didCrashFire returned true
-            // (scenario terminated with HullStrike).
-            tracker_hull_fired = stepper.hullFiredCount();
+              while (crashReason == CrashReason::None) {
+                crashReason = stepper.stepOnce();
+                aircraftStateSteps.push_back(aircraftState);
+                cameraViewSteps.push_back(stepper.lastCameraView());
+                targetSampleSteps.push_back(stepper.lastTargetSample());
+              }
+
+              tracker_hull_fired = stepper.hullFiredCount();
+            }
           }
         } else {
-          // pathgen-mode (default): existing behavior, byte-identical to M6a.
+          // pathgen-mode (default): byte-identical to M6a.
           autoc::eval::PathgenStepper stepper(nnBackend, aircraftState, path, scenarioMeta);
           stepper.initScenario();
           aircraftStateSteps.push_back(aircraftState);
@@ -248,23 +245,14 @@ public:
 
         {
           ScenarioMetadata meta = scenarioMeta;
-          meta.originOffset = gp_vec3(0.0f, 0.0f, SIM_INITIAL_ALTITUDE);  // raw→virtual offset for renderer
+          meta.originOffset = gp_vec3(0.0f, 0.0f, SIM_INITIAL_ALTITUDE);
           evalResults.scenarioList.push_back(meta);
         }
-        evalResults.pathList.push_back(path);
+        evalResults.pathList.push_back(path);  // 030 V1.5 — copied from init_.pathList[i]
         evalResults.aircraftStateList.push_back(aircraftStateSteps);
         evalResults.crashReasonList.push_back(crashReason);
-        // 030 M8b — push per-tick tracker recording (empty in pathgen mode).
-        // Renderer / per-tick extractor dispatches on cameraViewList[i]
-        // empty-vs-populated to decide pathgen vs tracker render.
         evalResults.cameraViewList.push_back(cameraViewSteps);
         evalResults.targetTrajectoryList.push_back(targetSampleSteps);
-        // 030 M7d.a/b — per-scenario counters. Arena egress: in tracker
-        // mode, CrashReason::Eval is sourced exclusively from
-        // checkArenaBounds (no other Eval source today), so derive
-        // directly. Pathgen pushes 0 (no arena.h enforcement on M1
-        // envelope). Hull-strike count: TrackerStepper.hullFiredCount()
-        // returns 0 or 1 (scenario terminates on first fire). Pathgen 0.
         const int arena_egress = (evalMode == Mode::TRACKER
                                   && crashReason == CrashReason::Eval) ? 1 : 0;
         evalResults.arenaEgressCount.push_back(arena_egress);
@@ -284,6 +272,7 @@ public:
 
 private:
   TcpSocket socket_;
+  WorkerInit init_;
   int workerPid = 0;
   int workerId = 0;
   int evalCounter = 0;

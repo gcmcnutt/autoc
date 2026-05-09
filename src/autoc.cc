@@ -939,19 +939,141 @@ struct EvalJob {
     EvalPurpose purpose;
 };
 
-// Build a fully-populated EvalData ready for sanitizePaths() + sendRPC().
-// Reads globals: gRabbitSpeedConfig, gScenarioVariations (via populateVariationOffsets),
-// computeVariationScale(), globalScenarioCounter.
+// 030 V1 + V1.5 priming (2026-05-08) — build the once-per-worker WorkerInit
+// from the loaded source library + cfg + run-static path-generation +
+// scenario variation table. Sent during ThreadPool worker startup (right
+// after each worker's TCP accept), then cached on the worker side.
+// Eliminates the per-eval sourceList copy explosion (V1) AND the per-eval
+// pathList / scenarioList copy explosion (V1.5) that pinned ~25 GB
+// resident on autoc at pop=5000 tracker training. See specs/BACKLOG.md
+// "Worker-side scenario priming" entry.
+//
+// V1.5 preconditions: caller MUST have already invoked
+// generateSmoothPaths + rebuildGenerationScenarios + prefetchAllVariations
+// at startup, so generationScenarios[0] is populated. Pathgen-mode
+// WorkerInit gets the scenario library too (it varies per-mode only in
+// what's tracker-specific — sourceList stays empty for pathgen).
+static WorkerInit buildWorkerInit() {
+    const auto& cfg = ConfigManager::getConfig();
+    WorkerInit init;
+    init.mode = parseModeName(cfg.mode);
+
+    // 030 V1.5 — run-static scenario library shared by both modes.
+    // generateSmoothPaths(gPathSeed) is byte-identical every gen, so we
+    // copy it exactly once into WorkerInit. scenarioMetaList carries
+    // entry offsets at FULL SCALE (scale=1.0); the worker applies the
+    // per-eval variation_scale via applyVariationScale before each eval.
+    if (!generationScenarios.empty()) {
+        const auto& scen = generationScenarios.front();
+        init.pathList = scen.pathList;
+        // Sanitize once at autoc-side before shipping (was previously
+        // EvalData::sanitizePaths called per-eval; same fix-NaN logic,
+        // applied once instead of 5000×).
+        for (auto& pathGroup : init.pathList) {
+            for (auto& path : pathGroup) {
+                path.sanitize();
+            }
+        }
+
+        const size_t numWindScenarios = std::max<size_t>(scen.windScenarios.size(), 1u);
+        init.scenarioMetaList.reserve(scen.pathList.size());
+        for (size_t idx = 0; idx < scen.pathList.size(); ++idx) {
+            ScenarioMetadata meta;
+            meta.bakeoffSequence = 0;
+            meta.enableDeterministicLogging = false;  // overridden per-eval
+
+            // Path-major layout: pathIdx = idx / numWinds; windIdx = idx % numWinds.
+            // (Matches rebuildGenerationScenarios non-demetic case.)
+            const size_t pathIdx = (numWindScenarios > 0)
+                ? idx / numWindScenarios : idx;
+            const size_t windIdx = (numWindScenarios > 0)
+                ? idx % numWindScenarios : 0;
+            meta.pathVariantIndex = static_cast<int>(pathIdx);
+            if (windIdx < scen.windScenarios.size()) {
+                meta.windVariantIndex = scen.windScenarios[windIdx].windVariantIndex;
+                meta.windSeed = scen.windScenarios[windIdx].windSeed;
+            }
+            // Pre-populate entry offsets at full scale from the joint-PRNG
+            // variation table. Worker scales per-eval via applyVariationScale.
+            if (windIdx < gScenarioVariations.size()) {
+                const auto& v = gScenarioVariations[windIdx].entryOffsets;
+                meta.entryHeadingOffset = v.entryHeadingOffset;
+                meta.entryRollOffset = v.entryRollOffset;
+                meta.entryPitchOffset = v.entryPitchOffset;
+                meta.entrySpeedFactor = v.entrySpeedFactor;
+                meta.windDirectionOffset = v.windDirectionOffset;
+                meta.entryNorthOffset = v.entryNorthOffset;
+                meta.entryEastOffset = v.entryEastOffset;
+                meta.entryAltOffset = v.entryAltOffset;
+                meta.rabbitSpeedSeed = gScenarioVariations[windIdx].rabbitSpeedSeed;
+            }
+            meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
+            init.scenarioMetaList.push_back(meta);
+        }
+    }
+
+    if (init.mode != Mode::TRACKER) {
+        return init;
+    }
+
+    // 030 tracker library — copy the entire deduplicated source-trajectory
+    // list once. Worker indexes into init.sourceList by scenario index;
+    // per-eval EvalData no longer carries trajectory bytes.
+    init.sourceList = gSourceTrajectoryList;
+
+    init.cameraConfig.fov_h_deg = static_cast<gp_scalar>(cfg.cameraFOVHorizontalDeg);
+    init.cameraConfig.fov_v_deg = static_cast<gp_scalar>(cfg.cameraFOVVerticalDeg);
+    init.cameraConfig.frame_rate_hz = static_cast<gp_scalar>(cfg.cameraFrameRateHz);
+    init.cameraConfig.latency_ms = static_cast<gp_scalar>(cfg.cameraLatencyMs);
+    init.cameraConfig.mount_offset_body =
+        gp_vec3(static_cast<gp_scalar>(cfg.cameraMountOffsetX),
+                static_cast<gp_scalar>(cfg.cameraMountOffsetY),
+                static_cast<gp_scalar>(cfg.cameraMountOffsetZ));
+
+    init.beaconLeftConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconLeftWavelengthNm);
+    init.beaconLeftConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
+    init.beaconLeftConfig.mount_body =
+        gp_vec3(static_cast<gp_scalar>(cfg.beaconLeftMountX),
+                static_cast<gp_scalar>(cfg.beaconLeftMountY),
+                static_cast<gp_scalar>(cfg.beaconLeftMountZ));
+    init.beaconLeftConfig.emission_axis_body = gp_vec3(0.0f, -1.0f, 0.0f);
+
+    init.beaconRightConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconRightWavelengthNm);
+    init.beaconRightConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
+    init.beaconRightConfig.mount_body =
+        gp_vec3(static_cast<gp_scalar>(cfg.beaconRightMountX),
+                static_cast<gp_scalar>(cfg.beaconRightMountY),
+                static_cast<gp_scalar>(cfg.beaconRightMountZ));
+    init.beaconRightConfig.emission_axis_body = gp_vec3(0.0f, +1.0f, 0.0f);
+
+    init.airframeProxy = autoc::eval::defaultAirframeProxyHB1();
+
+    init.flightArena.radius_m = static_cast<gp_scalar>(cfg.flightArenaRadius);
+    init.flightArena.floor_agl_m = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
+    init.flightArena.ceiling_agl_m = static_cast<gp_scalar>(cfg.flightArenaCeilingAGL);
+
+    const double tickSec = static_cast<double>(SIM_TIME_STEP_MSEC) / 1000.0;
+    init.trackerSourcePreRollTicks =
+        std::max(0, static_cast<int>(cfg.trackerSourcePreRollSec / tickSec));
+
+    init.crashHullRadius = static_cast<gp_scalar>(cfg.crashHullRadius);
+    init.trailDistance = static_cast<gp_scalar>(cfg.trailDistance);
+
+    return init;
+}
+
+// 030 V1 + V1.5 priming (2026-05-08) — slim per-eval EvalData. The
+// scenario library (pathList + scenarioMetaList) lives on the worker
+// (cached from WorkerInit at startup); EvalData carries only NN bytes +
+// per-eval/per-gen scalars. ~50 B per EvalData instead of ~7 MB.
+//
+// Worker-side reconstruction per scenario: copy init_.scenarioMetaList[i],
+// override scenarioSequence + enableDeterministicLogging from this
+// EvalData, then call applyVariationScale(meta, evalData.variationScale)
+// — byte-equivalent to the legacy populateVariationOffsets path.
 static EvalData buildEvalData(const EvalJob& job) {
     EvalData evalData;
     evalData.controllerType = ControllerType::NEURAL_NET;
-    // 030 M6c — pass active mode to the worker so it picks the right
-    // ScenarioStepper. ConfigManager has already validated mode ∈
-    // {pathgen, tracker} at startup; default in the EvalData struct is
-    // PATHGEN so any pre-M6c worker still does the right thing.
-    // 030 M11.preA — String parsing happens here (one site); the wire
-    // format is now the typed Mode enum.
-    evalData.mode = parseModeName(ConfigManager::getConfig().mode);
     evalData.gp.assign(reinterpret_cast<const char*>(job.nnData.data()),
                        reinterpret_cast<const char*>(job.nnData.data() + job.nnData.size()));
     evalData.gpHash = hashByteVector(evalData.gp);
@@ -959,131 +1081,26 @@ static EvalData buildEvalData(const EvalJob& job) {
     // Bug 4 fix: StandaloneEval and EliteReeval both get elite treatment
     evalData.isEliteReeval = (job.purpose != EvalPurpose::Training);
 
-    // Bug 3 fix: ALWAYS set rabbitSpeedConfig from the global (was missing in eval path)
+    // Bug 3 fix: ALWAYS set rabbitSpeedConfig from the global (was missing in eval path).
+    // rabbitSpeedConfig is gen-varying (sigma scaled by computeVariationScale)
+    // so it stays in EvalData — small struct, cost is negligible.
     evalData.rabbitSpeedConfig = gRabbitSpeedConfig;
     evalData.rabbitSpeedConfig.sigma = gRabbitSpeedConfig.sigma * computeVariationScale();
 
-    evalData.pathList = job.scenario.pathList;
+    evalData.scenarioSequence =
+        globalScenarioCounter.fetch_add(1, std::memory_order_relaxed) + 1;
+    evalData.variationScale = static_cast<gp_scalar>(computeVariationScale());
 
-    uint64_t scenarioSequence = globalScenarioCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-    evalData.scenario.scenarioSequence = scenarioSequence;
-    evalData.scenario.bakeoffSequence = 0;
-
-    // Build scenario list (single canonical copy — was 3 copies with drift)
-    evalData.scenarioList.clear();
-    evalData.scenarioList.reserve(job.scenario.pathList.size());
-    for (size_t idx = 0; idx < job.scenario.pathList.size(); ++idx) {
-        ScenarioMetadata meta;
-        meta.scenarioSequence = scenarioSequence;
-        // Bug 4 fix: enable deterministic logging for non-training purposes
-        meta.enableDeterministicLogging = (job.purpose != EvalPurpose::Training);
-        meta.bakeoffSequence = 0;
-
-        size_t numWindScenarios = job.scenario.windScenarios.size();
-        if (numWindScenarios > 0 && job.scenario.pathList.size() > 0) {
-            size_t pathIdx = idx / numWindScenarios;
-            size_t windIdx = idx % numWindScenarios;
-            meta.pathVariantIndex = static_cast<int>(pathIdx);
-            if (windIdx < job.scenario.windScenarios.size()) {
-                meta.windVariantIndex = job.scenario.windScenarios[windIdx].windVariantIndex;
-                meta.windSeed = job.scenario.windScenarios[windIdx].windSeed;
-            }
-        } else {
-            meta.pathVariantIndex = static_cast<int>(idx);
-        }
-
-        populateVariationOffsets(meta);
-        meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
-        evalData.scenarioList.push_back(meta);
-    }
-    if (!evalData.scenarioList.empty()) {
-        evalData.scenario = evalData.scenarioList.front();
-    }
-
-    // 030 M6e — attach tracker-mode payload (FR-001 + FR-018). One source
-    // trajectory per pathList entry (parallel indexing). Camera/beacon/
-    // airframe configs come from the operator's autoc-tracker.ini, copied
-    // into the per-scenario job so the worker has everything it needs to
-    // run TrackerStepper without round-tripping back to autoc.
-    if (evalData.mode == Mode::TRACKER) {
+    // 030 M7d.b — pCrashThisGen ramps per-gen via pCrashForGen (linear
+    // curriculum, plateau-cap). Worker-side crashHullRadius / trailDistance /
+    // SPHERE shape come from WorkerInit. Pathgen-mode leaves it at 0.
+    if (parseModeName(ConfigManager::getConfig().mode) == Mode::TRACKER) {
         const auto& cfg = ConfigManager::getConfig();
-
-        // Match sourceList size to pathList size. Default v1 mapping:
-        // scenario i in pathList ↔ source[i % gSourceTrajectoryList.size()].
-        // The pathgen-side scenario distribution still drives pathList
-        // sizing; tracker mode rides on top with parallel source data.
-        evalData.sourceList.clear();
-        evalData.sourceList.reserve(evalData.pathList.size());
-        for (size_t i = 0; i < evalData.pathList.size(); ++i) {
-            const size_t srcIdx = gSourceTrajectoryList.empty()
-                ? 0u
-                : (i % gSourceTrajectoryList.size());
-            if (!gSourceTrajectoryList.empty()) {
-                evalData.sourceList.push_back(gSourceTrajectoryList[srcIdx]);
-            }
-        }
-
-        // Camera config from autoc-tracker.ini.
-        evalData.cameraConfig.fov_h_deg = static_cast<gp_scalar>(cfg.cameraFOVHorizontalDeg);
-        evalData.cameraConfig.fov_v_deg = static_cast<gp_scalar>(cfg.cameraFOVVerticalDeg);
-        evalData.cameraConfig.frame_rate_hz = static_cast<gp_scalar>(cfg.cameraFrameRateHz);
-        evalData.cameraConfig.latency_ms = static_cast<gp_scalar>(cfg.cameraLatencyMs);
-        evalData.cameraConfig.mount_offset_body =
-            gp_vec3(static_cast<gp_scalar>(cfg.cameraMountOffsetX),
-                    static_cast<gp_scalar>(cfg.cameraMountOffsetY),
-                    static_cast<gp_scalar>(cfg.cameraMountOffsetZ));
-        // mount_orientation_body left as identity (default).
-
-        // Beacon configs (left + right wingtips).
-        evalData.beaconLeftConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconLeftWavelengthNm);
-        evalData.beaconLeftConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
-        evalData.beaconLeftConfig.mount_body =
-            gp_vec3(static_cast<gp_scalar>(cfg.beaconLeftMountX),
-                    static_cast<gp_scalar>(cfg.beaconLeftMountY),
-                    static_cast<gp_scalar>(cfg.beaconLeftMountZ));
-        evalData.beaconLeftConfig.emission_axis_body = gp_vec3(0.0f, -1.0f, 0.0f);
-
-        evalData.beaconRightConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconRightWavelengthNm);
-        evalData.beaconRightConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
-        evalData.beaconRightConfig.mount_body =
-            gp_vec3(static_cast<gp_scalar>(cfg.beaconRightMountX),
-                    static_cast<gp_scalar>(cfg.beaconRightMountY),
-                    static_cast<gp_scalar>(cfg.beaconRightMountZ));
-        evalData.beaconRightConfig.emission_axis_body = gp_vec3(0.0f, +1.0f, 0.0f);
-
-        // Airframe proxy: v1 placeholder hb1 AABB. `enabled` is a
-        // compile-time constant in camera_projection.h
-        // (kAirframeOcclusionEnabled, currently false until real airframe
-        // geometry is calibrated — flip to true in one place once
-        // operator delivers the real geometry).
-        evalData.airframeProxy = autoc::eval::defaultAirframeProxyHB1();
-
-        // 030 M7a — FlightArena (FR-016 + Session 2026-05-07 Q1): same
-        // struct feeds gather_tracker_inputs (NN slot 44 ray-projection
-        // input) AND TrackerStepper's per-tick OOB termination check.
-        // Single source of truth.
-        evalData.flightArena.radius_m = static_cast<gp_scalar>(cfg.flightArenaRadius);
-        evalData.flightArena.floor_agl_m = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
-        evalData.flightArena.ceiling_agl_m = static_cast<gp_scalar>(cfg.flightArenaCeilingAGL);
-
-        // 030 M8b geometry fix — source pre-roll. Convert seconds to ticks
-        // at the 100ms NN cadence (SIM_TIME_STEP_MSEC = 100).
-        const double tickSec = static_cast<double>(SIM_TIME_STEP_MSEC) / 1000.0;
-        evalData.trackerSourcePreRollTicks =
-            std::max(0, static_cast<int>(cfg.trackerSourcePreRollSec / tickSec));
-
-        // 030 M7d.b — Crash hull + trail rabbit (FR-008 + FR-008b). p_crash
-        // for this gen is pre-computed here so the worker stays
-        // gen-unaware; the linear-ramp curriculum lives in pCrashForGen
-        // (M7c). Hull radius + trail distance ride along so the operator
-        // can re-tune autoc-tracker.ini without rebuilding workers.
         evalData.pCrashThisGen = autoc::eval::pCrashForGen(
             gCurrentGeneration,
             cfg.pCrashGenRamp,
             static_cast<gp_scalar>(cfg.pCrashGen0),
             static_cast<gp_scalar>(cfg.pCrashPlateau));
-        evalData.crashHullRadius = static_cast<gp_scalar>(cfg.crashHullRadius);
-        evalData.trailDistance = static_cast<gp_scalar>(cfg.trailDistance);
     }
 
     return evalData;
@@ -1176,7 +1193,6 @@ static void runNNEvaluation(
   // TODO T044: iterate all scenarios for Bug 5 fix
   const ScenarioDescriptor& scenario = scenarioForIndex(0);
   EvalData evalData = buildEvalData({scenario, nnData, EvalPurpose::StandaloneEval});
-  evalData.sanitizePaths();
 
   // Send to minisim and get results
   auto evalDataPtr = std::make_shared<EvalData>(std::move(evalData));
@@ -1322,12 +1338,12 @@ static void runNNEvolution(
     // RAMP_LANDSCAPE: Update current generation for variation scaling
     gCurrentGeneration = gen;
 
-    // Generate paths for this generation
-    generationPaths = generateSmoothPaths(const_cast<char*>(cfg.generatorMethod.c_str()),
-                                          cfg.simNumPathsPerGen,
-                                          SIM_PATH_BOUNDS, SIM_PATH_BOUNDS,
-                                          gPathSeed);
-    rebuildGenerationScenarios(generationPaths);
+    // 030 V1.5 (2026-05-08) — generateSmoothPaths + rebuildGenerationScenarios
+    // formerly fired here every gen. They produce byte-identical output
+    // every generation (gPathSeed is run-constant), so they were hoisted
+    // to a single call at startup. Workers received the resulting
+    // pathList + scenarioMetaList once via WorkerInit; per-eval EvalData
+    // no longer carries them.
 
     // Evaluate each individual
     for (int ind = 0; ind < popSize; ind++) {
@@ -1340,7 +1356,6 @@ static void runNNEvolution(
       // Build EvalData
       const ScenarioDescriptor& scenario = scenarioForIndex(ind % generationScenarios.size());
       EvalData evalData = buildEvalData({scenario, nnData, EvalPurpose::Training});
-      evalData.sanitizePaths();
 
       // Send to minisim worker via ThreadPool
       auto evalDataPtr = std::make_shared<EvalData>(std::move(evalData));
@@ -1386,7 +1401,6 @@ static void runNNEvolution(
 
       const ScenarioDescriptor& scenario = scenarioForIndex(bestIdx % generationScenarios.size());
       EvalData evalData = buildEvalData({scenario, nnData, EvalPurpose::EliteReeval});
-      evalData.sanitizePaths();
 
       auto evalDataPtr = std::make_shared<EvalData>(std::move(evalData));
       EvalResults bestResults;
@@ -1599,8 +1613,15 @@ int main(int argc, char** argv)
   Aws::SDKOptions options;
   Aws::InitAPI(options);
 
-  // initialize workers
-  threadPool = new ThreadPool(ConfigManager::getConfig());
+  // 030 V1 priming (2026-05-08) — ThreadPool construction MOVED below
+  // (was here at startup, now after loadSourceDmp). Workers are primed
+  // with WorkerInit at startup (one-shot RPC right after each worker's
+  // TCP accept), so the source-trajectory library + camera/beacon/
+  // airframe/flightArena configs MUST be ready before the threadpool
+  // launches its workers. Tracker training previously OOM'd a 128 GB
+  // box pre-gen-1 because every per-individual EvalData carried a deep
+  // copy of the ~8.5 MB source library. See specs/BACKLOG.md
+  // "Worker-side scenario priming" entry.
 
   // Print the configuration
   // TODO: hand-coded enumeration is fragile as autoc.ini grows; backlog
@@ -1726,6 +1747,15 @@ int main(int argc, char** argv)
                      << gSourceTrajectoryList.size() << " scenarios." << endl;
     }
   }
+
+  // 030 V1.5 priming (2026-05-08) — ThreadPool construction MOVED below,
+  // past the prefetchAllVariations + generateSmoothPaths +
+  // rebuildGenerationScenarios block. buildWorkerInit reads from those
+  // globals (gScenarioVariations + generationScenarios), so the path
+  // library + variation table must exist before workers spawn. They were
+  // formerly called inside the gen loop too — V1.5 hoists them to a
+  // single startup call (gPathSeed is run-constant, output is byte-
+  // identical every gen anyway).
 
   // Initialize global variation parameters from config (degrees -> radians)
   // Store individual flags for selective application in populateVariationOffsets()
@@ -1870,6 +1900,21 @@ int main(int argc, char** argv)
                  << " totalEvaluations=" << generationScenarios.size() * windsPerPath
                  << endl;
   warnIfScenarioMismatch();
+
+  // 030 V1 + V1.5 priming — initialize workers NOW that all run-static
+  // state (gSourceTrajectoryList, gScenarioVariations, generationScenarios
+  // / generationPaths) is populated. buildWorkerInit pulls from those
+  // globals to construct the once-per-worker payload (sourceList,
+  // pathList, scenarioMetaList, tracker configs); workers cache it and
+  // per-eval EvalData stays at ~50 B.
+  *logger.info() << "Priming workers (mode=" << cfg.mode
+                 << ", pathList=" << generationScenarios.front().pathList.size()
+                 << " scenarios"
+                 << (parseModeName(cfg.mode) == Mode::TRACKER
+                         ? (", sourceList=" + std::to_string(gSourceTrajectoryList.size()))
+                         : std::string())
+                 << ")..." << endl;
+  threadPool = new ThreadPool(ConfigManager::getConfig(), buildWorkerInit());
 
   if (cfg.evaluateMode) {
     // NN evaluation mode: load weight file, evaluate, report fitness
