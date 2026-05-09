@@ -63,23 +63,26 @@ void TrackerStepper::initScenario() {
         gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitY())) *
         gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitX()));
 
-    // 030 Session 2026-05-07 geometry simplification — chase initializes
-    // 10ft north of source's tick-0 position with source's tick-0 velocity
-    // copied verbatim. Source dmp positions stay raw (renderer shows the
-    // north offset directly). At tick 0:
+    // 030 V1.5 (2026-05-09 chase-init-geometry fix) — chase initializes
+    // 1.5 × trail_distance NORTH of source's tick-0 position. Source dmp
+    // positions stay raw (rabbit/source coordinates are dmp-as-recorded;
+    // the only thing offset is chase). At tick 0:
     //   - source effectively at (0,0,0) (raw dmp tick 0, untouched)
-    //   - chase at (+trail_distance, 0, 0) — 10ft north = behind source's
-    //     velocity heading
+    //   - trail rabbit  = source - velocity_unit × trail_distance
+    //                   = (0,0,0) - (-1,0,0)×3.048 = (+3.048, 0, 0)
+    //   - chase init    = (+1.5 × trail_distance, 0, 0) = (+4.572, 0, 0)
+    //   - chase is +0.5 × trail_distance BEHIND rabbit on the safe-cone
+    //     side (along<0, distScaleBehind=7m gentle decay) → tick-0 score
+    //     ≈ 0.955, real signal not the knife-edge of AT-rabbit
     //   - chase velocity = source[0].velocity — eliminates the
     //     SIM_INITIAL_VELOCITY=20 spike that drops to ~13 by tick 1
-    //   - trail rabbit ≈ chase position → near-zero error at tick 0
-    //   - real tracking starts at tick 1; no warmup-window free streak
+    // Pre-fix used 1.0 × trail_distance (chase AT rabbit, knife-edge).
     // For empty-source fallback (defensive — minisim guards against this
     // ahead of TrackerStepper construction): legacy M1 init at virtual
     // origin + 20 m/s spike.
     const bool source_has_samples = !source_.samples.empty();
     gp_vec3 initialPosition = source_has_samples
-        ? gp_vec3(trail_distance_, 0.0f, 0.0f)
+        ? gp_vec3(static_cast<gp_scalar>(1.5) * trail_distance_, 0.0f, 0.0f)
         : gp_vec3(0.0f, 0.0f, 0.0f);
     gp_vec3 initial_velocity = source_has_samples
         ? source_.samples.front().velocity

@@ -106,8 +106,11 @@ TrackerStepper makeStepperWithSource(NNControllerBackend& nn,
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// Position: chase starts trail_distance "north" (= world +x) of source's
-// tick-0 position when source is non-empty.
+// Position: chase starts 1.5 × trail_distance "north" (= world +x) of source's
+// tick-0 position when source is non-empty. The 1.5× multiplier (rather than
+// 1.0×) places chase 0.5 × trail_distance BEHIND trail rabbit on the
+// safe-cone side — gentle distScaleBehind=7m gradient, tick-0 score ≈ 0.955,
+// real signal not the AT-rabbit knife-edge. Pre-2026-05-09 was 1.0×.
 // ---------------------------------------------------------------------------
 
 TEST(TrackerStepperInit, ChasePositionIsNorthOfSourceByTrailDistance) {
@@ -122,8 +125,9 @@ TEST(TrackerStepperInit, ChasePositionIsNorthOfSourceByTrailDistance) {
     TrackerStepper stepper = makeStepperWithSource(nn, state, source);
     stepper.initScenario();
 
-    // Chase at (+trail_distance, 0, 0). With trail_distance = 3.048 (10ft).
-    EXPECT_NEAR(state.getPosition().x(), 3.048f, 1e-5f);
+    // Chase at (+1.5 × trail_distance, 0, 0). With trail_distance = 3.048 (10ft):
+    // 1.5 × 3.048 = 4.572 m.
+    EXPECT_NEAR(state.getPosition().x(), 4.572f, 1e-5f);
     EXPECT_NEAR(state.getPosition().y(), 0.0f, 1e-5f);
     EXPECT_NEAR(state.getPosition().z(), 0.0f, 1e-5f);
 }
