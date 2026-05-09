@@ -220,7 +220,7 @@ Single-repo C++ tree (per plan.md Project Structure):
 
 **Maps to**: M11.preA (crrcsim mod_inputdev tracker integration) + M11.preB (live two-aircraft display, optional) + M11a-c (per-tick dmp extractor + bug fixes + tracker-specific analytics).
 
-### M11.preA — CRRCSim tracker-mode integration (was M4-deferred BACKLOG; pulled forward 2026-05-08)
+### M11.preA — CRRCSim tracker-mode integration (was M4-deferred BACKLOG; pulled forward 2026-05-08) ✓ DONE 2026-05-08
 
 **Goal**: Mirror the M6a-M6e strategy-pattern split (`PathgenStepper` / `TrackerStepper`) from minisim into `crrcsim/src/mod_inputdev/inputdev.cpp` so FDM-driven tracker training is selectable via `MinisimProgram = ./scripts/crrcsim.sh` in autoc-tracker.ini.
 
@@ -231,13 +231,42 @@ Single-repo C++ tree (per plan.md Project Structure):
 - Per `feedback_no_cereal_versioning.md` and project routing: post-tracker-v1 wants real-flight prep, not more kinematic training
 
 **Sub-checkpoints** (proposed sequencing — operator decides):
-- [ ] T079 [US4] Audit `crrcsim/src/mod_inputdev/inputdev.cpp` per-tick loop + extract the equivalent of `PathgenStepper` into a `ScenarioStepper` strategy interface (mirrors `include/autoc/eval/scenario_stepper.h` from M6a) — regression-tight: bitwise pathgen-mode crrcsim training before/after
-- [ ] T080 [US4] Wire `EvalData::mode` consumption + `TrackerStepper`-equivalent body in `mod_inputdev` — source-trajectory-driven per-tick, beacon projection via M5 `projectBeacon`, NN forward via `evaluateTracker`, FDM advance for chase craft physics
-- [ ] T081 [US4] Plumb `cameraConfig` / `beaconLeftConfig` / `beaconRightConfig` / `flightArena` / source trajectories through `mod_inputdev` from EvalData (parallel to minisim's wiring at M6e)
-- [ ] T082 [US4] Smoke run with crrcsim: `MinisimProgram = ./scripts/crrcsim.sh` in `autoc-tracker.ini`, full overnight run, compare fitness curve shape vs m91 minisim baseline; dmps written to S3 with separate run-id
+- [x] T079 [US4] Audit `crrcsim/src/mod_inputdev/inputdev.cpp` per-tick loop + extract the equivalent of `PathgenStepper` into a `ScenarioStepper` strategy interface (mirrors `include/autoc/eval/scenario_stepper.h` from M6a) — regression-tight: bitwise pathgen-mode crrcsim training before/after
+- [x] T080 [US4] Wire `EvalData::mode` consumption + `TrackerStepper`-equivalent body in `mod_inputdev` — source-trajectory-driven per-tick, beacon projection via M5 `projectBeacon`, NN forward via `evaluateTracker`, FDM advance for chase craft physics
+- [x] T081 [US4] Plumb `cameraConfig` / `beaconLeftConfig` / `beaconRightConfig` / `flightArena` / source trajectories through `mod_inputdev` from EvalData (parallel to minisim's wiring at M6e)
+- [x] T082 [US4] Smoke run with crrcsim: `MinisimProgram = ./scripts/crrcsim.sh` in `autoc-tracker.ini`, full overnight run, compare fitness curve shape vs m91 minisim baseline; dmps written to S3 with separate run-id
 - [ ] T083 [US4] Capture findings — write `eval-results/030-smoke-<date>/SMOKE_REPORT.md` per T063 spec; this is the formal D13 smoke check (FDM-grade), supersedes the m91 informal probe
 
 **Checkpoint M11.preA**: tracker training runs on crrcsim FDM, formal smoke green or diagnosed.
+
+### M11.preA.1 — Worker-init priming + correctness fixes (2026-05-08) ✓ DONE
+
+Surfaced during M11.preA scaling: pop=5000 / 294-scenario tracker training OOM'd a 128 GB box before gen 1 because `EvalData` carried a deep-copy `sourceList` per-eval (~8.5 MB × 5000 individuals = ~42 GB queued) AND a `pathList` per-eval (~7 MB × 5000 = ~35 GB). Fixed via two layered priming refactors plus two crrcsim correctness bugs found during scaling.
+
+**V1 priming — once-per-worker WorkerInit RPC**:
+- [x] New `WorkerInit` struct ([include/autoc/rpc/protocol.h](../../include/autoc/rpc/protocol.h)) carrying `sourceList`, camera/beacon/airframe/flightArena configs, crashHull/trail/pre-roll. Sent once per worker right after TCP accept (the "phone home" handshake), before the eval loop.
+- [x] `ThreadPool` ctor takes a `WorkerInit` by value; worker thread `sendRPC`s it to its child after `acceptor.accept()` ([include/autoc/util/threadpool.h](../../include/autoc/util/threadpool.h)).
+- [x] Workers cache locally; minisim ([tools/minisim.cc](../../tools/minisim.cc)) + crrcsim mod_inputdev both receive at startup.
+- [x] `EvalData` shed those fields; `buildEvalData` no longer attaches sourceList per-eval.
+
+**V1.5 priming — pathList + scenarioMetaList run-static priming**:
+- [x] `gPathSeed` is run-constant, so `generateSmoothPaths` produces byte-identical output every gen — hoisted out of the gen loop in [src/autoc.cc](../../src/autoc.cc) to a one-time startup call. Same for `rebuildGenerationScenarios` + `prefetchAllVariations`.
+- [x] `WorkerInit` extended with `pathList` (294 entries) + `scenarioMetaList` (294 entries pre-populated with full-scale entry offsets from joint-PRNG variation table).
+- [x] `EvalData` slimmed to ~50 B: NN bytes + `gpHash` + `controllerType` + `isEliteReeval` + `scenarioSequence` + `pCrashThisGen` + `variationScale` + `rabbitSpeedConfig`. No more pathList / scenarioList per-eval.
+- [x] Workers reconstruct per-eval `ScenarioMetadata` via `makePerEvalMeta(init_, evalData, idx)` that copies cached base meta + applies per-eval `variationScale` via the new shared helper [include/autoc/eval/scenario_meta_apply.h](../../include/autoc/eval/scenario_meta_apply.h).
+
+**crrcsim worker-side correctness fixes** (pre-existing M11.preA bugs surfaced by V1.5 scaling):
+- [x] `evalResults.cameraViewList` / `targetTrajectoryList` / `arenaEgressCount` / `hullStrikeCount` were never cleared post-`sendRPC` — accumulated 294 entries × N evals on each worker, bloating evalResults by ~140 GB across 20 workers before gen 1 finished. Mirror minisim's clear pattern in [crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp](../../crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp) post-send block.
+- [x] **Tracker arena egress / hull strike were silently ignored**: `helper.tick()` set `crashReason` from `checkArenaBounds` / `didCrashFire`, but the function had ALREADY passed its early-exit save-+-return block (helper runs LATER in the function). Symptom: chase craft flew to dhome=758 m vs 80 m arena, alt below ground, never recorded a crash. Fixed by refactoring save-+-return into a `finalizeScenarioOnCrash` lambda + adding a second checkpoint after the NN tick block (post-`aircraftStates.push_back`). Same egress-tick capture pattern as minisim's `stepOnce`-then-push.
+
+**Validated 2026-05-08 smoke (autoc-tracker.ini, pop=5000 / 294 scenarios)**:
+- minisim total memory: 26 GB → 6 GB; gen 1 ELITE_SAME at -3476 (intermittent gen 1/9-10/18-19 ELITE_DIVERGED at small ~15-32 unit deltas — pre-existing FP determinism gap unmasked by V1.5's lower allocation churn, NOT introduced by it; tracked as separate investigation)
+- crrcsim total memory: OOM'd at 97 GB → 5 GB; gen wallclock 5:47 → 0:61 (production scale 60-70s expectation matched); sim rate 3,855 → 22,744 sims/sec (5.9× speedup from OOB fix); gens 1-4 all ELITE_SAME (no crrcsim-side determinism gap observed in this run)
+
+**Backlog cross-references**:
+- specs/BACKLOG.md `[030 v1 — UNPARKED 2026-05-08] Worker-side scenario priming` — V1 + V1.5 both shipped; V2 LRU demand-fetch deferred until libraries evolve within a run
+- specs/BACKLOG.md `[NEXT] Trim EvalResults on the return path — score-only for non-elite` — orthogonal follow-on, deferred per operator routing 2026-05-08 ("ok as it is streamed back")
+- [project_worker_init_priming.md](../../.claude/projects/-home-gmcnutt-autoc/memory/project_worker_init_priming.md) — never put scenario-shaped fields in per-eval `EvalData`; they go in `WorkerInit`
 
 ### M11.preB — Live two-aircraft display in crrcsim (optional, only if M11.preA needs visual mid-training)
 
