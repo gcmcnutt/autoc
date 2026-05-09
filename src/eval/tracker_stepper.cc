@@ -265,21 +265,22 @@ CrashReason TrackerStepper::stepOnce() {
         }
     }
 
-    // 030 M7d.b — Crash hull strike (FR-008b). Post-physics chase position
-    // vs this tick's target position. didCrashFire short-circuits when
-    // outside hull (no PRNG draw consumed), so the per-scenario stream
-    // only advances on actual inside-hull ticks. p_crash_this_gen_ comes
-    // from autoc-side pCrashForGen(gen, ...) — worker stays gen-unaware.
-    // Arena-egress wins if both fire on the same tick (egress is a
-    // boundary fault, hull strike is target-relative — egress means we
-    // already left the operational envelope).
-    if (crash == CrashReason::None) {
-        if (didCrashFire(crash_hull_, state_.getPosition(), target.position,
-                         p_crash_this_gen_, prng_state_)) {
-            crash = CrashReason::HullStrike;
-            ++hull_fired_count_;
-        }
-    }
+    // 030 V1.5 (2026-05-09) — Crash-hull DISABLED in code while we sort
+    // determinism back out. Skipping the didCrashFire call entirely so it
+    // can't consume from the per-scenario PRNG stream regardless of
+    // p_crash_this_gen_ / hull radius config. Re-enable by un-commenting
+    // the block below once determinism contract is verified across the
+    // V1.5 priming + OOB-egress code path. p_crash_this_gen_ + prng_state_
+    // are still maintained on the struct (cheap, no consumption) so a
+    // later flip-back is one-line.
+    //
+    // if (crash == CrashReason::None) {
+    //     if (didCrashFire(crash_hull_, state_.getPosition(), target.position,
+    //                      p_crash_this_gen_, prng_state_)) {
+    //         crash = CrashReason::HullStrike;
+    //         ++hull_fired_count_;
+    //     }
+    // }
 
     ++cursor_;
     // Source exhaustion (TimeLimit) overrides Eval — last-write-wins

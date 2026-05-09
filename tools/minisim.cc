@@ -202,8 +202,13 @@ public:
             } else {
               autoc::eval::CrashHull crashHull;
               crashHull.sphere_radius_m = init_.crashHullRadius;
+              // 030 V1.5 determinism fix (2026-05-09) — seed crash-hull
+              // PRNG from windSeed (stable per-scenario), not
+              // scenarioSequence (monotonic counter that differs between
+              // training-eval and elite-reeval of the same scenario,
+              // producing divergent didCrashFire draws).
               const uint32_t prngSeed =
-                  static_cast<uint32_t>(scenarioMeta.scenarioSequence);
+                  static_cast<uint32_t>(scenarioMeta.windSeed);
               autoc::eval::TrackerStepper stepper(
                   nnBackend, aircraftState, source, scenarioMeta,
                   init_.cameraConfig,
