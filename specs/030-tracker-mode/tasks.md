@@ -268,6 +268,52 @@ Surfaced during M11.preA scaling: pop=5000 / 294-scenario tracker training OOM'd
 - specs/BACKLOG.md `[NEXT] Trim EvalResults on the return path — score-only for non-elite` — orthogonal follow-on, deferred per operator routing 2026-05-08 ("ok as it is streamed back")
 - [project_worker_init_priming.md](../../.claude/projects/-home-gmcnutt-autoc/memory/project_worker_init_priming.md) — never put scenario-shaped fields in per-eval `EvalData`; they go in `WorkerInit`
 
+### M11.preA.2 — NN input transforms + pop=6000 + chase-init bias (2026-05-09) ✓ DONE
+
+Surfaced post-M11.preA.1 during smoke14a → smoke14b on autoc-tracker.ini:
+- [x] **NN input transforms** ([include/autoc/nn/nn_inputs.h](../../include/autoc/nn/nn_inputs.h) constants + [src/nn/evaluator.cc](../../src/nn/evaluator.cc) `gather_tracker_inputs`):
+  - `airspeed`: raw m/s → cruise-normalized (`relVel / kCruiseSpeed_mps=13.0`). Range ≈ [0, 2]; chase at cruise = 1.0.
+  - `dist_to_boundary_along_vel`: raw meters → `tanh(d / kDistToBoundaryScale_m=20.0)`. Sized to bracket the chase's ~10-15 m emergency-180° turn budget; 10m→0.46, 20m→0.76, 30m→0.91. Polarity: dBnd→0 = at the wall, dBnd→1 = far from wall.
+  - Gyro stays raw rad/s (already NN-friendly).
+  - TrackerInputs struct unchanged at float[45]; data.dat byte format unchanged. Old genomes incompatible (greenfield, no backward compat).
+- [x] **Population**: pop=5000 → 6000 in autoc-tracker.ini + autoc-tracker-minisim.ini to recover 029-baseline density given tracker variations expand the scenario factorial.
+- [x] **Chase-init bias**: chase placed at +1.5×`trail_distance` north of source[0] (was 1.0× pre-2026-05-09 — knife-edge at trail rabbit). Plus crrcsim sign-flip fix in [inputdev_autoc.cpp:498-525](../../crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp#L498-L525) — `crrc_main.cpp:258` does `posX += -Global::entryNorthOffset`, so `trackerInitBiasNorth_m` ships negative through the boundary.
+- [x] **Conventions docs** ([docs/COORDINATE_CONVENTIONS.md](../../docs/COORDINATE_CONVENTIONS.md)): new "030 Tracker-Mode NN Inputs (45 floats)" table with units/ranges/source per slot; new "Camera-POV HUD projection" subsection documenting verified NDC→HUD mapping. [docs/sensor-pipeline.md](../../docs/sensor-pipeline.md) scope-banner: M0/M1 23-input pathgen-only.
+
+**Validated 2026-05-09 (smoke14b, autoc-tracker.ini pop=6000)**: 98 gens, 98 NN_ELITE_SAME, 0 DIVERGED through variation-ramps at gen 40 + gen 80. Determinism contract holds clean across cruise-norm + tanh-dist + larger pop. Fitness climb -4474→-14315 (3.2× over 98 gens), accelerating-shape consistent with no-future-input training.
+
+**Sim-rate slowdown observed** (logged for follow-up): gen-1 11553/sec → gen-98 2620/sec (4.4× drop). Two layered effects:
+- 030 starts ~2× slower per-tick than 029 pastonly3 baseline (tracker-mode adds 2× projectBeacon + arena ray-cast + 6-history shift + larger 45-float input vector)
+- 030's better inputs make scenarios survive longer earlier (gen ~30 hits 97% OK vs 029 reaching that around gen 100), so total ticks/gen scale up faster
+
+### M11.preA.3 — Hull-crash deterministic re-enable + PCrash collapse (2026-05-10) ✓ DONE
+
+Surfaced post-smoke14b: crash-hull was disabled in code (V1.5 kill-switch comment block in tracker_stepper.cc + crrcsim_tracker_helper.cpp) while determinism contract was being restored. With determinism now confirmed clean across smoke14b's 98-gen bake (P1 windSeed seed fix verified), re-enable with simplified deterministic config.
+
+- [x] **Replaced 4-param ramp** (PCrashGen0 / PCrashGenRamp / PCrashGenPlateau / PCrashPlateau) with single fixed `CrashHullProbability=0.10` (Bernoulli per NN tick at 10 Hz; ~50% chance of dying within 7 ticks once inside the 1m sphere). Removes per-gen state that complicated determinism debugging.
+- [x] **Added `EnableCrashHullVariations`** (default 0) for symmetry with the other Enable* knobs in the ini, located beside them. Reserved for per-scenario radius/probability variation; logic not yet wired (both 0 and 1 currently produce identical fixed-prob behavior).
+- [x] **Re-enabled `didCrashFire`** in [src/eval/tracker_stepper.cc](../../src/eval/tracker_stepper.cc) and [crrcsim_tracker_helper.cpp](../../crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp). PRNG seed = windSeed (P1 fix, train↔elite stable).
+- [x] **Removed `pCrashForGen()`** function + 6 ramp-curriculum tests; CrashHullFire tests already cover Bernoulli probability handling.
+
+### M11.wrap — Wrap-up + post-bake follow-ups (planning) — pending operator triage
+
+The "must-do to declare 030 v1 done" pieces:
+- [ ] T083 [US4] Capture findings — write `eval-results/030-smoke-2026-05-10/SMOKE_REPORT.md`: smoke14b outcome (98 gens 0 DIVERGED, fitness curve, sim-rate slowdown analysis, recommended follow-ons). Replaces the deferred M11.preA T063 smoke report.
+- [ ] T086 [US4] **Profiling pass** to characterize tracker-mode per-tick cost: run a clean `bash scripts/rebuild-perf.sh` (operator-driven sanity check; debug-build is ~4× slower per the default config), then `perf record -F 99 -p <crrcsim-worker-pid> -g -- sleep 30` mid-bake (gen 5+ so post-startup steady-state); flat-profile the top 20 functions. Compare to a 029 pathgen-mode baseline at same gen. Hot-spot candidates: `projectBeacon` (2× per tick), `distanceToBoundary` ray-cast, gather_tracker_inputs history shift, `nn_forward` matrix mul, EvalResults serialization on the return path. Output: `specs/030-tracker-mode/profile-2026-05-10.txt` with the flat profile + a one-paragraph diagnosis.
+- [ ] T087 [US4] **Trim EvalResults on the return path** (already in BACKLOG as `[NEXT]` — pulled forward to v1 after smoke14b sim-rate observations). Per-tick `aircraftStateList` + `cameraViewList` + `targetTrajectoryList` + `debugSamples` + `physicsTrace` ship back from worker for every individual; for non-elite individuals, only summary fitness is needed. Gate full payload on `isEliteReeval` flag (already on EvalData). Re-measure sim rate post-trim.
+- [ ] T073 [P] Update `CLAUDE.md` agent context with 030 v1 entry — note the smoke-test outcome + which R-question response was triggered (if any).
+- [ ] T074 [P] Write `specs/030-tracker-mode/outcome.md` documenting smoke-test results, R10/R11/R12 diagnostic readings, and recommended next direction.
+- [ ] T075 Code review pass: ensure no temporary scaffolding left in tree.
+- [ ] T076 Constitution compliance audit (Principles I-VI for the 030 diff).
+- [ ] T077 [P] Document plan-research's "030 done" decision in [BACKLOG.md](../BACKLOG.md) — confirm which 031-CANDIDATE entries should unpark next.
+
+**Routing decisions (defer to backlog, not v1-blocking)**:
+- T064-T072 analytics scripts (aircraft_state_extractor, per_axis tracker analytics, CEP-sentinel correlation, attitude correlation, aliasing histogram, convergence auto-flag) → 031 CANDIDATE
+- T078 type-domain audit → already a separate backlog entry (`project_scalar_type_audit_backlog.md`); leave parked
+- T051 renderer tracker smoke test → low-value, defer to backlog
+- T008 mode_dispatch_tests → low-value, defer
+- T066-T067 eval-fitness bug fix → orthogonal, file as standalone backlog ticket
+
 ### M11.preB — Live two-aircraft display in crrcsim (optional, only if M11.preA needs visual mid-training)
 
 - [ ] T084 [US4] `crrcsim/src/mod_robots/robot_programmable.{h,cc}` — RobotBase subclass consuming an in-memory pose stream pushed from autoc per the [reference_crrcsim_mod_robots.md](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_crrcsim_mod_robots.md) memory (~150 LOC sketch). Mostly orthogonal to M11.preA (which is mod_inputdev-side); M11.preB lets operator watch two-aircraft training live in crrcsim's 3D view rather than after-the-fact via the M2 dmp + renderer
