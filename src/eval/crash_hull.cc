@@ -63,17 +63,4 @@ bool didCrashFire(const CrashHull& hull,
     return u < p_crash_this_tick;
 }
 
-gp_scalar pCrashForGen(int gen,
-                       int plateau_gen,
-                       gp_scalar gen0_value,
-                       gp_scalar plateau_value) {
-    if (gen <= 0) return gen0_value;
-    if (gen >= plateau_gen) return plateau_value;
-    if (plateau_gen <= 0) return plateau_value;  // defensive: degenerate
-    // Linear ramp gen0_value → plateau_value across [0, plateau_gen].
-    const gp_scalar t =
-        static_cast<gp_scalar>(gen) / static_cast<gp_scalar>(plateau_gen);
-    return gen0_value + (plateau_value - gen0_value) * t;
-}
-
 }  // namespace autoc::eval

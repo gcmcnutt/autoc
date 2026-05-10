@@ -123,11 +123,20 @@ struct AutocConfig {
     // Shape: "SPHERE" only in v1; "AABB_HB1"/"MESH_AIRFRAME" reserved.
     std::string crashHullShape = "SPHERE";
     double crashHullRadius = 1.0;           // m
-    // p_crash curriculum: 0 → linear-ramp by genRamp → plateau by genPlateau.
-    double pCrashGen0 = 0.0;
-    int pCrashGenRamp = 100;
-    int pCrashGenPlateau = 200;
-    double pCrashPlateau = 0.30;
+    // 030 M11.preA.3 (2026-05-10): replaced 4-param ramp curriculum with a
+    // single fixed Bernoulli probability per NN tick (10Hz). The ramp added
+    // determinism risk (per-gen state) and made debugging awkward. Fixed
+    // probability ⇒ deterministic per (scenario, gen) given windSeed PRNG.
+    // 0.10 default = ~"50% chance of dying within 7 ticks (~0.7s) inside
+    // hull" → strong incentive to keep target outside the 1m sphere.
+    double crashHullProbability = 0.10;
+    // Reserved for per-scenario hull-radius / probability variation.
+    // Symmetry knob with EnableEntryVariations / EnableWindVariations /
+    // EnableRabbitSpeedVariations. When the variation logic ships,
+    // setting this to 1 will let the joint PRNG perturb radius /
+    // probability per scenario; until then both 0 and 1 produce the
+    // fixed crashHullProbability + crashHullRadius above.
+    bool enableCrashHullVariations = false;
 
     // --- Tracker arena (FR-016) ---
     double flightArenaRadius = 80.0;        // m horizontal

@@ -1091,16 +1091,14 @@ static EvalData buildEvalData(const EvalJob& job) {
         globalScenarioCounter.fetch_add(1, std::memory_order_relaxed) + 1;
     evalData.variationScale = static_cast<gp_scalar>(computeVariationScale());
 
-    // 030 M7d.b — pCrashThisGen ramps per-gen via pCrashForGen (linear
-    // curriculum, plateau-cap). Worker-side crashHullRadius / trailDistance /
-    // SPHERE shape come from WorkerInit. Pathgen-mode leaves it at 0.
+    // 030 M11.preA.3 (2026-05-10) — pCrashThisGen is now a fixed Bernoulli
+    // probability per NN tick (10Hz), no per-gen ramp. Constant across the
+    // run gives deterministic per-(scenario, gen) crash-hull outcomes given
+    // the windSeed-seeded PRNG. Worker-side crashHullRadius + SPHERE shape
+    // come from WorkerInit. Pathgen-mode leaves it at 0.
     if (parseModeName(ConfigManager::getConfig().mode) == Mode::TRACKER) {
         const auto& cfg = ConfigManager::getConfig();
-        evalData.pCrashThisGen = autoc::eval::pCrashForGen(
-            gCurrentGeneration,
-            cfg.pCrashGenRamp,
-            static_cast<gp_scalar>(cfg.pCrashGen0),
-            static_cast<gp_scalar>(cfg.pCrashPlateau));
+        evalData.pCrashThisGen = static_cast<gp_scalar>(cfg.crashHullProbability);
     }
 
     return evalData;
@@ -1657,10 +1655,8 @@ int main(int argc, char** argv)
                    << "  Hysteresis: " << cfg.lowSpeedTrailHysteresis << endl;
     *logger.info() << "CrashHull: shape=" << cfg.crashHullShape
                    << " radius=" << cfg.crashHullRadius
-                   << " p_crash{gen0=" << cfg.pCrashGen0
-                   << ", ramp=" << cfg.pCrashGenRamp
-                   << ", plateauStart=" << cfg.pCrashGenPlateau
-                   << ", plateau=" << cfg.pCrashPlateau << "}" << endl;
+                   << " p_crash=" << cfg.crashHullProbability
+                   << " variations=" << (cfg.enableCrashHullVariations ? 1 : 0) << endl;
     *logger.info() << "FlightArena: radius=" << cfg.flightArenaRadius
                    << " floorAGL=" << cfg.flightArenaFloorAGL
                    << " ceilingAGL=" << cfg.flightArenaCeilingAGL << endl;

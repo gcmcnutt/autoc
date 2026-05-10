@@ -19,7 +19,6 @@ using autoc::eval::CrashHull;
 using autoc::eval::CrashHullShape;
 using autoc::eval::didCrashFire;
 using autoc::eval::isInsideHull;
-using autoc::eval::pCrashForGen;
 
 // ---------------------------------------------------------------------------
 // isInsideHull — sphere intersection identity
@@ -128,39 +127,8 @@ TEST(CrashHullFire, PartialProbabilityBernoulliRateMatches) {
     EXPECT_LT(fired_count, 400);
 }
 
-// ---------------------------------------------------------------------------
-// pCrashForGen — curriculum-anneal schedule (R3)
-// ---------------------------------------------------------------------------
-
-TEST(PCrashCurriculum, Gen0ReturnsZero) {
-    EXPECT_FLOAT_EQ(pCrashForGen(0), 0.0f);
-}
-
-TEST(PCrashCurriculum, NegativeGenClampedToGen0) {
-    EXPECT_FLOAT_EQ(pCrashForGen(-5), 0.0f);
-}
-
-TEST(PCrashCurriculum, PlateauGenReachesPlateauValue) {
-    EXPECT_FLOAT_EQ(pCrashForGen(200), 0.30f);
-}
-
-TEST(PCrashCurriculum, BeyondPlateauStaysAtPlateau) {
-    EXPECT_FLOAT_EQ(pCrashForGen(500), 0.30f);
-    EXPECT_FLOAT_EQ(pCrashForGen(9999), 0.30f);
-}
-
-TEST(PCrashCurriculum, MidRampLinearInterpolation) {
-    // Gen 100 = halfway → 0.15.
-    EXPECT_FLOAT_EQ(pCrashForGen(100), 0.15f);
-    // Gen 50 = quarter → 0.075.
-    EXPECT_FLOAT_EQ(pCrashForGen(50), 0.075f);
-}
-
-TEST(PCrashCurriculum, ConfigurablePlateauAndValue) {
-    // Custom curriculum: gen0=0.05, plateau at gen 50 = 0.50.
-    EXPECT_FLOAT_EQ(pCrashForGen(0, /*plateau_gen=*/50,
-                                  /*gen0=*/0.05f, /*plateau=*/0.50f),
-                     0.05f);
-    EXPECT_FLOAT_EQ(pCrashForGen(50, 50, 0.05f, 0.50f), 0.50f);
-    EXPECT_FLOAT_EQ(pCrashForGen(25, 50, 0.05f, 0.50f), 0.275f);  // halfway
-}
+// 030 M11.preA.3 (2026-05-10): pCrashForGen() removed in favor of a single
+// fixed CrashHullProbability config knob (set in autoc.cc → EvalData →
+// didCrashFire). The curriculum ramp tests below are intentionally gone;
+// didCrashFire's probability handling is already covered by the
+// CrashHullDidFire tests above (uses the constant p_crash_this_tick).

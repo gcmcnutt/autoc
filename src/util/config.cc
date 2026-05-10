@@ -124,10 +124,8 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
     // Tracker fitness: crash hull
     config->crashHullShape = reader.Get("", "CrashHullShape", config->crashHullShape);
     config->crashHullRadius = reader.GetReal("", "CrashHullRadius", config->crashHullRadius);
-    config->pCrashGen0 = reader.GetReal("", "PCrashGen0", config->pCrashGen0);
-    config->pCrashGenRamp = static_cast<int>(reader.GetInteger("", "PCrashGenRamp", config->pCrashGenRamp));
-    config->pCrashGenPlateau = static_cast<int>(reader.GetInteger("", "PCrashGenPlateau", config->pCrashGenPlateau));
-    config->pCrashPlateau = reader.GetReal("", "PCrashPlateau", config->pCrashPlateau);
+    config->crashHullProbability = reader.GetReal("", "CrashHullProbability", config->crashHullProbability);
+    config->enableCrashHullVariations = reader.GetBoolean("", "EnableCrashHullVariations", config->enableCrashHullVariations);
 
     // Tracker arena
     config->flightArenaRadius = reader.GetReal("", "FlightArenaRadius", config->flightArenaRadius);

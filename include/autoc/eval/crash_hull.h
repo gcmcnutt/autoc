@@ -56,17 +56,10 @@ bool didCrashFire(const CrashHull& hull,
                   gp_scalar p_crash_this_tick,
                   uint32_t& prng_state);
 
-// Curriculum-anneal `p_crash` per generation (R3 v1 default schedule).
-// Linear ramp from `gen0_value` (default 0.0 — leniency) to
-// `plateau_value` (default 0.30) across generations [0, plateau_gen].
-// After plateau_gen, returns `plateau_value` constant.
-//
-// Smooths the early-gen exploration penalty: gen 0 has 0% probabilistic
-// crash (chase can practice intercepting without dying), late gens have
-// 30% crash-on-intercept (pressure to maintain in-trail aspect).
-gp_scalar pCrashForGen(int gen,
-                       int plateau_gen = 200,
-                       gp_scalar gen0_value = static_cast<gp_scalar>(0.0),
-                       gp_scalar plateau_value = static_cast<gp_scalar>(0.30));
+// 030 M11.preA.3 (2026-05-10) — pCrashForGen() removed. Replaced by a
+// fixed Bernoulli probability per NN tick (config.crashHullProbability,
+// wired in autoc.cc → EvalData.pCrashThisGen → didCrashFire). The
+// curriculum ramp added per-gen state that complicated determinism
+// debugging; fixed prob is deterministic per (scenario, windSeed).
 
 }  // namespace autoc::eval

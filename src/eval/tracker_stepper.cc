@@ -268,22 +268,18 @@ CrashReason TrackerStepper::stepOnce() {
         }
     }
 
-    // 030 V1.5 (2026-05-09) — Crash-hull DISABLED in code while we sort
-    // determinism back out. Skipping the didCrashFire call entirely so it
-    // can't consume from the per-scenario PRNG stream regardless of
-    // p_crash_this_gen_ / hull radius config. Re-enable by un-commenting
-    // the block below once determinism contract is verified across the
-    // V1.5 priming + OOB-egress code path. p_crash_this_gen_ + prng_state_
-    // are still maintained on the struct (cheap, no consumption) so a
-    // later flip-back is one-line.
-    //
-    // if (crash == CrashReason::None) {
-    //     if (didCrashFire(crash_hull_, state_.getPosition(), target.position,
-    //                      p_crash_this_gen_, prng_state_)) {
-    //         crash = CrashReason::HullStrike;
-    //         ++hull_fired_count_;
-    //     }
-    // }
+    // 030 M11.preA.3 (2026-05-10) — Crash-hull RE-ENABLED with deterministic
+    // fixed-probability Bernoulli (no curriculum ramp). Seed comes from
+    // windSeed (P1 fix, stable across train/elite-reeval). prng_state_ is
+    // consumed only when chase is INSIDE the hull AND p_crash > 0, so cost
+    // for late-pop NNs that don't enter the hull is zero.
+    if (crash == CrashReason::None) {
+        if (didCrashFire(crash_hull_, state_.getPosition(), target.position,
+                         p_crash_this_gen_, prng_state_)) {
+            crash = CrashReason::HullStrike;
+            ++hull_fired_count_;
+        }
+    }
 
     ++cursor_;
     // Source exhaustion (TimeLimit) overrides Eval — last-write-wins
