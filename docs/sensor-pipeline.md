@@ -1,9 +1,19 @@
 # Sensor Pipeline: INAV → Xiao → NN → Servos
 
+> **⚠️ SCOPE: pathgen mode (M0/M1) only.**
+> This document was last verified 2026-03-21 against the **23-input pathgen NN**
+> (rabbit direction-cosines + distance + chase Euler/quat + relVel + dDist/dt + …).
+> The 030 **tracker-mode NN has 45 different inputs** (36 wingtip-beacon NDC slots
+> with 6-tick history + chase quat + cruise-normalized airspeed + body gyro +
+> tanh-saturated dist-to-boundary). For tracker-mode see
+> [COORDINATE_CONVENTIONS.md → 030 Tracker-Mode NN Inputs](COORDINATE_CONVENTIONS.md#030-tracker-mode-nn-inputs-45-floats).
+> Xiao firmware does NOT implement tracker-mode yet (see BACKLOG).
+
 **Last verified**: 2026-03-21 against flight data from 2026-03-20
 
 This document traces every value conversion from INAV sensors through to NN inputs
-and from NN outputs back to servo commands. Reference: `docs/COORDINATE_CONVENTIONS.md`.
+and from NN outputs back to servo commands, **for the pathgen-mode NN only**.
+Reference: `docs/COORDINATE_CONVENTIONS.md`.
 
 ---
 

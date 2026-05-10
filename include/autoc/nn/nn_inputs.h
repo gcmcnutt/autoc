@@ -2,6 +2,31 @@
 #include <cstddef>
 #include <cstdint>
 
+// 030 M11.preA.2 (2026-05-09) — Tracker-mode input normalization constants.
+//
+// Applied in gather_tracker_inputs (src/nn/evaluator.cc). These rescale the
+// raw chase-state values into NN-friendly ranges:
+//
+//   - Cruise-normalized airspeed: hb1 cruises ~13 m/s; chase at cruise ⇒ 1.0.
+//     Replaces raw m/s. Range becomes ≈ [0, 2].
+//
+//   - Soft-saturated dist_to_boundary: cylinder always contains chase in sim
+//     (top + ceiling), so distanceToBoundary ≥ 0 by construction. Raw meters
+//     (range [0, ~tens]) is replaced by tanh(d / scale). With scale=20 (M11.preA.2
+//     bump from 10 → 20 on 2026-05-09 to match craft's ~10-15m emergency-turn
+//     budget): 10m → 0.46, 15m → 0.64, 20m → 0.76, 30m → 0.91, 40m → 0.96.
+//     NN gets meaningful gradient over ~2 turn-radii of warning instead of
+//     reacting only inside the commit zone. Smooth NN-space saturation; the
+//     world-frame safety layer (true OOB envelope, eventually for real flight)
+//     is a separate future addition that operates on raw distance, not NN input.
+//
+// NOT a layout change — TrackerInputs struct stays float[45]. Old genomes
+// trained against raw airspeed/dist are NOT portable across this normalization
+// (greenfield, no backward compat per project policy). data.dat byte format
+// unchanged.
+constexpr float kCruiseSpeed_mps = 13.0f;
+constexpr float kDistToBoundaryScale_m = 20.0f;
+
 // CONSTITUTIONAL NOTE -- SERIALIZATION CONTRACT
 // Field declaration order IS the on-disk byte order for cereal, data.dat,
 // nn2cpp, and sim_response.py. Reordering fields is a format-breaking change.
@@ -169,13 +194,16 @@ struct TrackerInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xi
     float beacon_r_cep[6];   // raw-ok: NN-byte-format buffer
 
     float quat_w, quat_x, quat_y, quat_z;  // raw-ok: NN-byte-format buffer
-    float airspeed;                         // raw-ok: NN-byte-format buffer (m/s)
-    float gyro_p, gyro_q, gyro_r;           // raw-ok: NN-byte-format buffer (rad/s, body-frame)
+    float airspeed;                         // raw-ok: NN-byte-format buffer — M11.preA.2: cruise-normalized (relVel / kCruiseSpeed_mps), dimensionless ≈[0,2]
+    float gyro_p, gyro_q, gyro_r;           // raw-ok: NN-byte-format buffer (rad/s, body-frame, aerospace RHR)
 
-    // 1 arena-awareness input (FR-016 + Session 2026-05-07 Q1): meters
-    // along chase velocity vector to nearest cylinder/floor/ceiling
-    // intersection. Single source of truth with arena.h::distanceToBoundary().
-    float dist_to_boundary_along_vel;        // raw-ok: NN-byte-format buffer (m)
+    // 1 arena-awareness input (FR-016 + Session 2026-05-07 Q1):
+    // M11.preA.2 — soft-saturated tanh(d / kDistToBoundaryScale_m). Raw d
+    // is the meters-along-velocity to nearest cylinder/floor/ceiling
+    // intersection (autoc::eval::distanceToBoundary). Soft-sat keeps the
+    // gradient sharp near the boundary and saturates at ~1 far from it;
+    // the safety layer is a separate world-frame addition (deferred).
+    float dist_to_boundary_along_vel;        // raw-ok: NN-byte-format buffer — dimensionless tanh, [0,1)
 };
 
 static_assert(sizeof(TrackerInputs) == 45 * sizeof(float),

@@ -1,6 +1,7 @@
 #include "autoc/nn/evaluator.h"
 #include "autoc/nn/topology.h"
 #include "autoc/nn/nn_input_computation.h"
+#include "autoc/nn/nn_inputs.h"        // 030 M11.preA.2 — kCruiseSpeed_mps, kDistToBoundaryScale_m
 #include "autoc/eval/arena.h"          // 030 M7a — FlightArena + distanceToBoundary
 #include "autoc/eval/sensor_math.h"
 #include "autoc/util/rng.h"
@@ -450,8 +451,9 @@ void gather_tracker_inputs(const AircraftState& chase,
         out.quat_z = static_cast<float>(q.z());
     }
 
-    // Airspeed (m/s, raw).
-    out.airspeed = static_cast<float>(chase.getRelVel());
+    // 030 M11.preA.2 — Cruise-normalized airspeed (was raw m/s pre-2026-05-09).
+    // Chase at hb1 cruise (~13 m/s) ⇒ 1.0; range becomes ≈ [0, 2].
+    out.airspeed = static_cast<float>(chase.getRelVel()) / kCruiseSpeed_mps;
 
     // Body-frame angular rates (rad/s, standard aerospace RHR).
     {
@@ -461,16 +463,20 @@ void gather_tracker_inputs(const AircraftState& chase,
         out.gyro_r = static_cast<float>(gyro.z());
     }
 
-    // 030 M7a — Arena-awareness input (FR-016 + Session 2026-05-07 Q1):
-    // single ray-projection scalar shared with arena.h's per-tick OOB
-    // termination check. Meters of safe forward flight along chase
-    // velocity vector before ray intersects cylinder wall, floor, or
-    // ceiling. NN learns "small number = trouble; turn-recovery direction
-    // implicit from body attitude / quat / gyro" per Session 2026-05-07.
-    out.dist_to_boundary_along_vel = static_cast<float>(   // raw-ok: NN-byte-format primitive
+    // 030 M7a / M11.preA.2 — Arena-awareness input (FR-016).
+    // Underlying geometry: ray-projection scalar shared with arena.h's
+    // per-tick OOB termination check. Meters of safe forward flight along
+    // chase velocity vector before ray intersects cylinder wall, floor,
+    // or ceiling. M11.preA.2 wraps in tanh(d/scale) so the NN sees a
+    // dimensionless [0, 1) signal: sharp gradient near the boundary,
+    // saturated when far. (Cylinder always contains chase in sim, so
+    // distance ≥ 0 by construction. Real-world safety layer is a separate
+    // future addition that operates on raw distance, not NN input.)
+    const float dist_raw = static_cast<float>(   // raw-ok: NN-byte-format primitive
         autoc::eval::distanceToBoundary(chase.getPosition(),
                                          chase.getVelocity(),
                                          arena));
+    out.dist_to_boundary_along_vel = std::tanh(dist_raw / kDistToBoundaryScale_m);
 }
 
 void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,

@@ -16,6 +16,17 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **Source design notes**: 030 spec D7 (DMP versioning + parallel feature), D10 (camera v1 baseline + prop-occlusion deferral).
 - **Files likely**: new `src/perception/` module (or top-level `perception/` peer to `crrcsim/`), new spec dir `specs/031-perception-front-end/` when this unparks.
 
+### [031 RESEARCH] Perception representation — event-camera + non-linear / dual-FOV optics
+
+- **Trigger**: research thread for post-beacon perception (when 031 perception-front-end above unparks, or sooner if the 030 dual-camera variant experiment needs it). Capture as research now so it informs the camera-spec → resolution-budget conversation when we leave beacons.
+- **Question 1 — Event-camera representation**: today the NN sees `(x, y, CEP) × history×6` for each wingtip beacon — a sampled raster of an underlying image-plane process. Once we drop beacons for full-image perception, the natural representation becomes either a dense pixel grid (huge input dim) or an event-stream representation (per-pixel intensity-change events with timestamp + polarity, native to event cameras / DVS sensors). Event-camera reps are sparse, latency-friendly, and naturally encode motion direction; they may be a better match for the controller's cone-tracking task than dense rasters.
+- **Question 2 — Optics with non-uniform angular resolution**: a 120° FOV with uniform pixel pitch wastes resolution on the edges where the target rarely sits, and starves the center where it does. Two candidate architectures:
+  - **Dual-camera**: wide (~180°) for acquire/orbit-recovery + narrow (~60°) for hi-res tracking. NN sees both feeds (concatenated or as separate channels). Mirrors how birds-of-prey use peripheral + foveal vision.
+  - **Single non-linear lens**: fisheye / log-polar / panomorph optics that compress edges and expand the center on the same sensor. Lower hardware cost, but introduces lens calibration and non-linear NDC math; the NN has to learn the warp implicitly.
+- **What the early minisim playback informed**: the 120° FOV + raw-NDC-projection presentation gives narrow beacon spacing close-in (~0.26 NDC at 10ft), and the controller learned an emergent orbit-to-reacquire when the target left the FOV — useful evidence that the current rep gets some way, but reacquisition cost in crrcsim's harder dynamics may push the topology budget higher than 030 v1 plans for. A richer rep (event stream) or smarter optics (dual-FOV / non-linear) could lower that topology demand instead.
+- **Why research-track, not implementation**: needs a dataset + simulator camera model upgrade (or recorded event-camera bench data) before any controller work; coupled to the 031 perception-front-end FPGA / DSP scoping.
+- **Source design notes**: this thread; 030 D10 (single-camera v1 baseline that this would supersede); see also `[BACKLOG] Multi-camera variant experiments` below for the controller-side experiment shell once a camera spec is chosen.
+
 ### [031 CANDIDATE] Variable-rate / real-flight source robustness
 
 - **Trigger**: real-flight-recorded trajectories become available (post-virtual-beacon flight test).
@@ -52,6 +63,17 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **Trigger**: M11.preA outcome — if FDM-grade smoke needs live visual debugging, M11.preB unblocks it. Otherwise defer further (post-v1).
 - **Scope**: new `crrcsim/src/mod_robots/robot_programmable.{h,cc}` — `RobotBase` subclass consuming an in-memory pose stream pushed from autoc; `Robots::AddRobot` integration so autoc-side registers the programmable target per scenario; per-scenario teardown / reset. ~150 LOC sketch per [reference_crrcsim_mod_robots.md](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_crrcsim_mod_robots.md). Sub-checkpoints T084-T085 in `specs/030-tracker-mode/tasks.md` Phase 6.
 - **Source design notes**: 030 spec FR-002 (original v1 deferral note); 030 plan M4 (was deferred milestone description); research.md R1 (decision rationale).
+
+### [030 v1+ — POST-FLIGHT-PROOF] Xiao tracker-mode prototype (own milestone)
+
+- **Status**: parked at v1+. Xiao firmware currently has zero 030 tracker-mode awareness — `TrackerInputs`, `gather_tracker_inputs`, mode select, and beacon source are all absent. Confirmed 2026-05-09: `grep -rn 'TrackerInput\|gather_tracker\|TRACKER' xiao/src` returns empty; `gather_tracker_inputs` is gated `#ifndef ARDUINO` in [src/nn/evaluator.cc:427](../src/nn/evaluator.cc#L427) so it's intentionally excluded from the xiao build.
+- **Trigger**: serious training results in sim with cruise-norm + dist-tanh inputs (post-2026-05-09). Don't ship to xiao before the desktop signal proves the architecture.
+- **Scope** (≈M11.preB-sized, not a patch):
+  1. Compile-time mode select: `-DAUTOC_MODE=TRACKER` plumbing in xiao/PlatformIO; cherry-pick `TrackerInputs` struct + `kCruiseSpeed_mps` + `kDistToBoundaryScale_m` constants from [include/autoc/nn/nn_inputs.h](../include/autoc/nn/nn_inputs.h).
+  2. Beacon source: either fake (synthesized from a target pose stream over MSP for bench-only verification) or real (xiao camera SoM + perception front-end — much bigger lift, ties into the 031 perception-front-end backlog item).
+  3. Port `gather_tracker_inputs` body to ARDUINO build (currently excluded). Distance-to-boundary needs an arena-config source on xiao; consider hard-coding for v1 since real flight has no cylinder.
+  4. Renderer / blackbox parity for tracker NN log lines (currently only pathgen format is parsed by [tools/renderer.cc:2239](../tools/renderer.cc#L2239)).
+- **Why parked**: tracker-mode v1 is sim-only (no hardware deployment in this milestone). Premature xiao porting risks debugging firmware against unstable sim-side inputs. Once cruise-norm + tanh saturation prove out in long bakes, snapshot the contract and port as one coherent piece.
 
 ### [BACKLOG] Multi-camera variant experiments
 

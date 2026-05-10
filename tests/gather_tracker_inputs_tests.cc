@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstring>
 
 #include "autoc/eval/aircraft_state.h"
@@ -80,7 +81,8 @@ TEST(GatherTrackerInputs, FillsAircraftStateFieldsFromAircraftState) {
     EXPECT_FLOAT_EQ(out.quat_x, 0.0f);
     EXPECT_FLOAT_EQ(out.quat_y, 0.0f);
     EXPECT_FLOAT_EQ(out.quat_z, 0.0f);
-    EXPECT_FLOAT_EQ(out.airspeed, 12.5f);
+    // M11.preA.2: cruise-normalized airspeed (relVel / kCruiseSpeed_mps = 13).
+    EXPECT_FLOAT_EQ(out.airspeed, 12.5f / kCruiseSpeed_mps);
 }
 
 TEST(GatherTrackerInputs, DistToBoundaryComputedFromArenaAndVelocity) {
@@ -95,9 +97,12 @@ TEST(GatherTrackerInputs, DistToBoundaryComputedFromArenaAndVelocity) {
     TrackerInputs out{};
     gather_tracker_inputs(chase, history, arena, out);
 
-    // dist_to_boundary should be ~70m (wall hit, no floor/ceiling intersection
-    // since velocity vz = 0).
-    EXPECT_NEAR(out.dist_to_boundary_along_vel, 70.0f, 0.5f);
+    // M11.preA.2: dist_to_boundary is now tanh(d / kDistToBoundaryScale_m).
+    // d_raw ≈ 70m (wall hit, no floor/ceiling intersection since vz = 0).
+    // tanh(70/20) = tanh(3.5) ≈ 0.998 (saturated, far from boundary).
+    EXPECT_NEAR(out.dist_to_boundary_along_vel,
+                std::tanh(70.0f / kDistToBoundaryScale_m), 1e-4f);
+    EXPECT_GT(out.dist_to_boundary_along_vel, 0.99f);
 }
 
 TEST(GatherTrackerInputs, DistToBoundaryWithDescendingVelocityHitsFloor) {
@@ -119,9 +124,36 @@ TEST(GatherTrackerInputs, DistToBoundaryWithDescendingVelocityHitsFloor) {
     TrackerInputs out{};
     gather_tracker_inputs(chase, history, arena, out);
 
-    // Either floor (~44.7m) or wall (~70/0.894=78.3m) — whichever is closer.
-    // Floor is closer. Allow tolerance for floating-point.
-    EXPECT_NEAR(out.dist_to_boundary_along_vel, 44.7f, 1.0f);
+    // M11.preA.2: tanh-saturated. d_raw ≈ 44.7m → tanh(44.7/20) = tanh(2.235)
+    // ≈ 0.977 (still saturated; would need chase within ~10-20m of boundary
+    // to see gradient under scale=20). Floor (~44.7m) is closer than wall.
+    EXPECT_NEAR(out.dist_to_boundary_along_vel,
+                std::tanh(44.7f / kDistToBoundaryScale_m), 1e-3f);
+    EXPECT_GT(out.dist_to_boundary_along_vel, 0.95f);
+}
+
+// 030 M11.preA.2 — soft-sat shape exercised in the gradient region. Place
+// chase 10m from the wall along velocity so d_raw ≈ 10m → tanh(10/20) = tanh(0.5)
+// ≈ 0.462. Verifies the NN sees a meaningful sub-1.0 signal as it approaches
+// the boundary (which is the whole point of the tanh wrap). With scale=20
+// the gradient region spans ~0-30m, matching the craft's ~10-15m emergency-
+// turn budget.
+TEST(GatherTrackerInputs, DistToBoundarySoftSatShapeNearWall) {
+    // Arena defaults: 80m radius. Place chase at virtual (70, 0, 0) with
+    // velocity (10, 0, 0). Wall ahead at +x: 80 - 70 = 10m along +X.
+    AircraftState chase{0, /*relVel=*/10.0f,
+                        gp_vec3(10.0f, 0.0f, 0.0f),
+                        gp_quat::Identity(),
+                        gp_vec3(70.0f, 0.0f, 0.0f),
+                        0.0f, 0.0f, 0.0f, 0};
+    TrackerHistoryWindow history{};
+    FlightArena arena;
+    TrackerInputs out{};
+    gather_tracker_inputs(chase, history, arena, out);
+
+    EXPECT_NEAR(out.dist_to_boundary_along_vel,
+                std::tanh(10.0f / kDistToBoundaryScale_m), 1e-3f);
+    EXPECT_NEAR(out.dist_to_boundary_along_vel, 0.4621f, 1e-3f);
 }
 
 // reinterpret_cast<float*>(&trackerInputs) is the path nn_forward uses;

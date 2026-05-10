@@ -129,6 +129,67 @@ tests in `tests/msplink_quat_convention_tests.cc`.
   Distance is a separate scalar input in metres. See
   `include/autoc/nn/nn_input_computation.h` for the canonical implementation.
 
+## 030 Tracker-Mode NN Inputs (45 floats)
+
+Tracker-mode NN sees a flat `float[45]` ([include/autoc/nn/nn_inputs.h](../include/autoc/nn/nn_inputs.h),
+populated by `gather_tracker_inputs` in
+[src/nn/evaluator.cc](../src/nn/evaluator.cc)). Same struct + transforms feed
+autoc-side training, minisim, and the crrcsim worker — single source of truth
+gated by `#ifndef ARDUINO`. Xiao firmware does NOT yet implement tracker-mode
+(see BACKLOG).
+
+| Slot      | Field                       | Meaning                                                   | Units / range                  | Source                                  |
+|-----------|-----------------------------|-----------------------------------------------------------|--------------------------------|-----------------------------------------|
+| 0–5       | `beacon_l_x[6]`             | Port (red) wingtip beacon screen x, history -0.5s…now     | NDC [-1, +1], +x = pilot right | `projectBeacon`, image-coord            |
+| 6–11      | `beacon_l_y[6]`             | Port wingtip beacon screen y, history                     | NDC [-1, +1], +y = pilot down  | `projectBeacon`, image-coord            |
+| 12–17     | `beacon_l_cep[6]`           | Port beacon CEP (uncertainty), history                    | [0, 1]; sentinel ⇒ `INT8_MIN`  | `projectBeacon` (max-edge distance proxy)|
+| 18–23     | `beacon_r_x[6]`             | Starboard (green) wingtip beacon screen x, history        | same as `beacon_l_x`            | `projectBeacon`                         |
+| 24–29     | `beacon_r_y[6]`             | Starboard wingtip beacon screen y, history                | same as `beacon_l_y`            | `projectBeacon`                         |
+| 30–35     | `beacon_r_cep[6]`           | Starboard beacon CEP, history                             | same as `beacon_l_cep`          | `projectBeacon`                         |
+| 36–39     | `quat_w/x/y/z`              | Chase body→world quaternion (Hamilton, w-first)           | unit-norm, components ±1       | `chase.getOrientation()`                |
+| 40        | `airspeed`                  | Chase airspeed, **cruise-normalized** (M11.preA.2)        | dimensionless, ≈ [0, 2]; cruise=1 | `chase.getRelVel() / kCruiseSpeed_mps` |
+| 41–43     | `gyro_p/q/r`                | Body-frame angular rates (aerospace RHR)                  | rad/s; standard ranges ±10     | `chase.getGyroRates()` (x=p roll, y=q pitch, z=r yaw) |
+| 44        | `dist_to_boundary_along_vel`| Soft-saturated forward-flight margin to arena (M11.preA.2)| dimensionless [0, 1)            | `tanh(distanceToBoundary(...) / kDistToBoundaryScale_m)` |
+
+**Time samples on the 6-slot history**: `[-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now]` on a 100ms NN cadence. Slot index 0 = oldest, slot 5 = "now". Pre-fill replicates source[0] × 6 at `initScenario` so first NN tick sees a coherent stationary-source history.
+
+**Normalization constants** (`include/autoc/nn/nn_inputs.h`):
+- `kCruiseSpeed_mps = 13.0f` — hb1 cruise estimate; chase airspeed = cruise → input = 1.0.
+- `kDistToBoundaryScale_m = 20.0f` — `tanh(d/20)`: 10m→0.46, 15m→0.64, 20m→0.76, 30m→0.91, 40m→0.96. Sized to put the meaningful-gradient band around 1-2× the craft's ~10-15m emergency-180° turn budget so the NN gets *anticipatory* warning, not a reactive cliff inside the commit zone. Polarity: `dBnd → 0 = at the wall`, `dBnd → 1 = far from wall`. (`distanceToBoundary` itself is non-negative as long as the chase remains inside the cylinder, which it always does in sim — the cylinder has both top and ceiling. This input is a **soft saturation in NN space**, not a real-world safety layer; the safety layer remains a future addition that will operate in world coordinates.)
+
+**Greenfield value-only changes**: cruise-norm + tanh on dist_to_boundary change the values seen by the NN but NOT the byte layout (`TrackerInputs` struct is still 45×float). data.dat schema is binary-equivalent; existing genomes from prior runs are not portable across the input-transform change (expected — no backward compat per project policy).
+
+### Camera-POV HUD projection (renderer mini-screen)
+
+[tools/renderer.cc:2915-3090](../tools/renderer.cc#L2915-L3090) shows a 2D "HUD"
+rectangle in the upper-left of the renderer when the operator views a
+tracker-mode dump. The two splat dots are the projected wingtip beacons —
+**red = port (left wing), green = starboard (right wing)** — drawn at radii
+proportional to CEP.
+
+The mapping is direct from the NN-input convention:
+
+| NN screen coord | Body / NED meaning            | HUD pixel mapping                       |
+|-----------------|-------------------------------|-----------------------------------------|
+| `screen_x = -1` | Beacon at left FOV edge       | Left edge of HUD rect (`xLeft`)         |
+| `screen_x = +1` | Beacon at right FOV edge      | Right edge of HUD rect (`xRight`)       |
+| `screen_y = -1` | Beacon at top FOV edge        | **Top** of HUD rect (`yTop`)            |
+| `screen_y = +1` | Beacon at bottom FOV edge     | **Bottom** of HUD rect (`yBottom`)      |
+
+Source convention from `projectBeacon`
+([src/eval/camera_projection.cc:166-175](../src/eval/camera_projection.cc#L166-L175)):
+camera frame is +x forward, +y right, +z down (NED-like body frame). The
+projection writes `screen_x = camera.y / camera.x / tan(fov_h/2)` (right
+positive) and `screen_y = camera.z / camera.x / tan(fov_v/2)` (down positive,
+standard image-coord). Therefore a target craft **below** the chase optical
+axis (camera.z > 0) projects with positive `screen_y`, which the renderer
+maps to the **bottom** of the HUD rect — the operator sees the dot below
+the centerline crosshair, matching real camera/cockpit-window geometry. No
+inversion in any axis. Verified against the tick-0 frames of the M11.preA
+crrcsim runs (chase faces world –x, target ahead-and-below at tick 0 →
+dots below center, port red on chase's right when target is heading away,
+matches operator inspection 2026-05-09).
+
 ## Control Command Polarity & Scaling
 - GP program outputs are clamped in the range **−1 … 1** for pitch, roll,
   throttle.  

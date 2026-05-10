@@ -269,7 +269,7 @@ def main():
     ax_fit.set_title(title)
     ax_fit.set_xlim(0, args.total_gens)
     ax_fit.grid(True, linewidth=0.4, alpha=0.4)
-    ax_fit.legend(loc="lower left", framealpha=0.9, fontsize=9)
+    ax_fit.legend(loc="upper right", framealpha=0.9, fontsize=9)
 
     # --- Panel 2: streak ---
     ax_streak.plot(f["gens"], f["streak"], "tab:purple", linewidth=1.6,
