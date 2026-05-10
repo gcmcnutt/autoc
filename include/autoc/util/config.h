@@ -130,13 +130,6 @@ struct AutocConfig {
     // 0.10 default = ~"50% chance of dying within 7 ticks (~0.7s) inside
     // hull" → strong incentive to keep target outside the 1m sphere.
     double crashHullProbability = 0.10;
-    // Reserved for per-scenario hull-radius / probability variation.
-    // Symmetry knob with EnableEntryVariations / EnableWindVariations /
-    // EnableRabbitSpeedVariations. When the variation logic ships,
-    // setting this to 1 will let the joint PRNG perturb radius /
-    // probability per scenario; until then both 0 and 1 produce the
-    // fixed crashHullProbability + crashHullRadius above.
-    bool enableCrashHullVariations = false;
 
     // --- Tracker arena (FR-016) ---
     double flightArenaRadius = 80.0;        // m horizontal

@@ -125,7 +125,6 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
     config->crashHullShape = reader.Get("", "CrashHullShape", config->crashHullShape);
     config->crashHullRadius = reader.GetReal("", "CrashHullRadius", config->crashHullRadius);
     config->crashHullProbability = reader.GetReal("", "CrashHullProbability", config->crashHullProbability);
-    config->enableCrashHullVariations = reader.GetBoolean("", "EnableCrashHullVariations", config->enableCrashHullVariations);
 
     // Tracker arena
     config->flightArenaRadius = reader.GetReal("", "FlightArenaRadius", config->flightArenaRadius);

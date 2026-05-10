@@ -1655,8 +1655,7 @@ int main(int argc, char** argv)
                    << "  Hysteresis: " << cfg.lowSpeedTrailHysteresis << endl;
     *logger.info() << "CrashHull: shape=" << cfg.crashHullShape
                    << " radius=" << cfg.crashHullRadius
-                   << " p_crash=" << cfg.crashHullProbability
-                   << " variations=" << (cfg.enableCrashHullVariations ? 1 : 0) << endl;
+                   << " p_crash=" << cfg.crashHullProbability << endl;
     *logger.info() << "FlightArena: radius=" << cfg.flightArenaRadius
                    << " floorAGL=" << cfg.flightArenaFloorAGL
                    << " ceilingAGL=" << cfg.flightArenaCeilingAGL << endl;
