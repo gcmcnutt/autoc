@@ -70,11 +70,15 @@ LOG_GEN_RE = re.compile(
     r"Gen\s+(\d+)\s+Best=(-?\d+\.?\d*)\s+Avg=(-?\d+\.?\d*)\s+Worst=(-?\d+\.?\d*)\s+Sigma=(\d+\.?\d*)"
 )
 
-# Crash log line: "  [N] CRASH score=…" / "  [N] OK score=…" — per-scenario
-# rows emitted right after each "Gen N Best=…" header. Tracker-mode adds
-# HullStrike as a fourth crash kind on top of Eval/TimeLimit/RabbitComplete
-# but the regex still treats anything-non-OK as CRASH for the rate panel.
-SCENARIO_RESULT_RE = re.compile(r"\s+\[(\d+)\]\s+(CRASH|OK)\s+score=")
+# Modern log gen-boundary marker (post-028): `NN_ELITE_SAME: gen=N fitness=…`
+# or `NN_ELITE_DIVERGED: gen=N …`. Legacy logs used `Gen N Best=…` (above).
+NN_ELITE_RE = re.compile(r"NN_ELITE_(?:SAME|DIVERGED):\s+gen=(\d+)")
+
+# Crash log line: "  [N] CRASH score=…" / "  [N] CRASH reason=Eval score=…" /
+# "  [N] OK …" — per-scenario rows emitted right after each gen marker.
+# Tracker-mode (M11.preA.2+) adds the optional `reason=<CrashReason>` field
+# between CRASH/OK and score=; regex tolerates either format.
+SCENARIO_RESULT_RE = re.compile(r"\s+\[(\d+)\]\s+(CRASH|OK)(?:\s+reason=\w+)?\s+score=")
 
 
 def _parse_float_or_nan(s):
@@ -151,7 +155,7 @@ def load_crashes(path: Path):
             rows["rate"].append(100.0 * crashes / total)
 
     for line in path.read_text().splitlines():
-        m = LOG_GEN_RE.search(line)
+        m = LOG_GEN_RE.search(line) or NN_ELITE_RE.search(line)
         if m:
             flush()
             cur_gen = int(m.group(1))

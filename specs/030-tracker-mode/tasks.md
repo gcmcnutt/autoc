@@ -297,49 +297,115 @@ Surfaced post-smoke14b: crash-hull was disabled in code (V1.5 kill-switch commen
 
 ### M11.wrap — Wrap-up + post-bake follow-ups (planning) — pending operator triage
 
-The "must-do to declare 030 v1 done" pieces:
-- [ ] T083 [US4] Capture findings — write `eval-results/030-smoke-2026-05-10/SMOKE_REPORT.md`: smoke14b outcome (98 gens 0 DIVERGED, fitness curve, sim-rate slowdown analysis, recommended follow-ons). Replaces the deferred M11.preA T063 smoke report.
-- [ ] T086 [US4] **Profiling pass** to characterize tracker-mode per-tick cost: run a clean `bash scripts/rebuild-perf.sh` (operator-driven sanity check; debug-build is ~4× slower per the default config), then `perf record -F 99 -p <crrcsim-worker-pid> -g -- sleep 30` mid-bake (gen 5+ so post-startup steady-state); flat-profile the top 20 functions. Compare to a 029 pathgen-mode baseline at same gen. Hot-spot candidates: `projectBeacon` (2× per tick), `distanceToBoundary` ray-cast, gather_tracker_inputs history shift, `nn_forward` matrix mul, EvalResults serialization on the return path. Output: `specs/030-tracker-mode/profile-2026-05-10.txt` with the flat profile + a one-paragraph diagnosis.
-- [ ] T087 [US4] **Trim EvalResults on the return path** (already in BACKLOG as `[NEXT]` — pulled forward to v1 after smoke14b sim-rate observations). Per-tick `aircraftStateList` + `cameraViewList` + `targetTrajectoryList` + `debugSamples` + `physicsTrace` ship back from worker for every individual; for non-elite individuals, only summary fitness is needed. Gate full payload on `isEliteReeval` flag (already on EvalData). Re-measure sim rate post-trim.
-- [ ] T073 [P] Update `CLAUDE.md` agent context with 030 v1 entry — note the smoke-test outcome + which R-question response was triggered (if any).
-- [ ] T074 [P] Write `specs/030-tracker-mode/outcome.md` documenting smoke-test results, R10/R11/R12 diagnostic readings, and recommended next direction.
+**v1 closeout — locked 2026-05-10** (must-do to declare 030 v1 done):
+- [ ] T083 [US4] Capture findings — write `eval-results/030-smoke-2026-05-10/SMOKE_REPORT.md`: smoke14b/smoke15 outcomes (gens 0 DIVERGED, fitness curve, hull-on determinism vindicating P1 windSeed fix, autoc-eval-tracker.ini bitwise-eval-validates). Replaces the deferred M11.preA T063 smoke report.
+- [X] T066 [P] **Eval-mode dmp fitness display fix (Bug 2)** — **already in tree since commit fe0fae9 (023 train/eval scenario dedup, Apr 2026)**. `src/autoc.cc:1238` does `genome.fitness = fitness;` before `nn_serialize(genome, updatedNnData)` and the cereal `BinaryOutputArchive` write at line 1253. _(2026-05-11 audit during M11.wrap diagnostics batch confirmed the fix is live; no further work needed.)_
+- [X] T067 [P] **Contract test `tests/eval_fitness_bug2_tests.cc`** — **closing without test** (2026-05-11). The Bug 2 fix is a one-line assignment (`genome.fitness = fitness`) immediately before cereal serialization at `src/autoc.cc:1238`. Any unit test would either assert that the one line is present (trivially) or require a full end-to-end run with file I/O and mock S3 — out of unit-test scope. Visual inspection of the call ordering at the serialize site is the right correctness check.
+- [ ] T073 [P] Update `CLAUDE.md` agent context with 030 v1 entry.
+- [ ] T074 [P] Write `specs/030-tracker-mode/outcome.md` documenting smoke-test results + recommended next direction (= 031 optical path per handoff doc).
 - [ ] T075 Code review pass: ensure no temporary scaffolding left in tree.
 - [ ] T076 Constitution compliance audit (Principles I-VI for the 030 diff).
-- [ ] T077 [P] Document plan-research's "030 done" decision in [BACKLOG.md](../BACKLOG.md) — confirm which 031-CANDIDATE entries should unpark next.
+- [ ] T077 [P] Document the post-030 feature routing in [BACKLOG.md](../BACKLOG.md):
+  - **031 = optical perception front-end** per [docs/aircraft_tracker_handoff.md](../../docs/aircraft_tracker_handoff.md) (FPGA-based beacon detection + camera pipeline producing `(x, y, CEP)` for the M2 NN). The handoff doc is the architectural source; spec drafted at [specs/031-beacon-camera/spec.md](../031-beacon-camera/spec.md) (phase 1 — LED pyramid + camera/filter + raw-frame recording; phase 2-4 = FPGA / protocol / integration deferred).
+  - **032 = tracker NN enhancements (derived pose features)** at [specs/032-tracker-nn-enhancements/spec.md](../032-tracker-nn-enhancements/spec.md). Letter-to-ourselves form documenting the M2 plateau diagnosis (input information content is the bottleneck, not architecture / compute / determinism) and the proposed first-experiment scope: beacon-code identity propagation + derived pose features (range, closing-rate, bearing-rate, line-tilt). Controller-side change only; no hardware dependency; can ship in parallel with 031 hardware bring-up.
+  - **M3 (research-track)**: full target identification + pose estimation via dedicated perception loop (CNN/transformer + temporal prior) — supersedes 032's hand-crafted features. Long-term placeholder, no spec yet.
 
-**Routing decisions (defer to backlog, not v1-blocking)**:
-- T064-T072 analytics scripts (aircraft_state_extractor, per_axis tracker analytics, CEP-sentinel correlation, attitude correlation, aliasing histogram, convergence auto-flag) → 031 CANDIDATE
+**Shelved 2026-05-10** (operator routing — perf is acceptable post-smoke15, divergence analysis tools not load-bearing for v1):
+- ~~T086 Profiling pass~~ — shelved. Current per-tick cost is good enough; revisit only if a future bake stalls on throughput.
+- ~~T087 Trim EvalResults on return path~~ — shelved. Stubbed analysis path that EvalResults supports (divergence reconstruction) isn't being used; not worth the surgery now. The BACKLOG `[NEXT]` entry stays parked until divergence analysis becomes load-bearing.
+
+**Routing decisions (defer to backlog, not v1-blocking)** — confirmed 2026-05-10:
+- T064-T072 analytics scripts (aircraft_state_extractor, per_axis tracker analytics, CEP-sentinel correlation, attitude correlation, aliasing histogram, convergence auto-flag) → 031 CANDIDATE — fold into 031 perception spec or post-031 analytics work
 - T078 type-domain audit → already a separate backlog entry (`project_scalar_type_audit_backlog.md`); leave parked
-- T051 renderer tracker smoke test → low-value, defer to backlog
+- T051 renderer tracker smoke test → low-value (manual renderer validation has covered the surface every smoke run; renderer code stable since M8/M9), defer to backlog
 - T008 mode_dispatch_tests → low-value, defer
-- T066-T067 eval-fitness bug fix → orthogonal, file as standalone backlog ticket
+- T084-T085 M11.preB live two-aircraft display → BACKLOG `[030 v1 — UNPARKED 2026-05-08] Live two-aircraft display`; M11.preA outcome did not require visual mid-training, defer
+- [POLISH] **`scripts/eval_suite.sh` mode-aware refactor** — surfaced 2026-05-10 after confirming M2 tracker eval bitwise-matches training. The script is currently M1-only: `EVAL_BASE_INI=autoc-eval.ini` hardcoded, tier overrides use M1 path methods (`aeroStandard` / `progressiveDistance` / `longSequential` / `random`) that don't apply to tracker mode (tracker has `TrackerSourceRun` + `TrackerPathSubset` / `TrackerWindSubset`). Want: a mode flag `-m {m1,m2}` (default m1 for back-compat) that selects:
+  - M1: `EVAL_BASE_INI=autoc-eval.ini`, tier overrides as today
+  - M2: `EVAL_BASE_INI=autoc-eval-tracker.ini`, tier overrides re-mapped to tracker concepts — tier0 = same TrackerSourceRun + full subset (bitwise repro); tier1 = same source, alternate scenario subset; tier2 = alternate TrackerSourceRun (generalization to a different recorded flight); tier3 = stress sigmas on entry/wind variations + alternate source. M2 NN weight filename also differs (`nn_weights-tracker.dat` per the eval ini default). Output dirs may also need an `m1-` / `m2-` prefix to avoid path collision when running both modes back-to-back on the same operator workstation.
+  - **M2 stress depends on M1 path variety** (2026-05-10 operator note): tracker has no synthetic path generator — its scenarios are bounded by whichever source dmp is supplied. To stress M2 with harder trajectories (sharper turns, longer engagements, novel geometries), you first run M1 eval with `progressiveDistance` / `longSequential` / `random` path methods to PRODUCE the source dmps, then point M2 eval at those dmps via `TrackerSourceRun`. So the M2 stress tier really depends on a curated library of M1-generated source dmps + variation sigma sweeps. Library curation is already a 031-CANDIDATE backlog item (turn-direction mirror pairing, cross-source mixing); this just makes it load-bearing for M2 stress-eval rather than purely a 031 nice-to-have.
+  - **Validated 2026-05-10**: operator ran an M1 random-path eval (6 paths × 5 variations = 30 source flights), fed each into M2 eval 1:1 — works end-to-end. **Concrete CLI shape for M2 eval**: the load-bearing input is the **M1 eval output dmp** (which carries the 6×5 paths + their wind/entry variation seeds). M2 eval then mirrors that geometry — same path count, same wind subset, same variation seeds — so the per-scenario test surface is identical between M1 and M2. The script's M2 tier overrides should therefore key off the M1 dmp + scenario shape, NOT independently re-generate paths.
+- [POLISH] **Eval-bucket split — may be unnecessary if M2 follows M1-eval workflow** — surfaced 2026-05-10. Original framing: eval needs to READ source dmp + `nn_weights*.dat` from training bucket (`autoc-storage`) but WRITE results to eval bucket (`autoc-eval-arm`), conflated by the single `S3Bucket` knob. **Workflow alternative (operator note 2026-05-10)**: standardize M2 source dmps to come from **M1 eval-mode stress runs** (M1 eval with `PathGeneratorMethod=random` etc. generates harder paths) rather than from M1 training. Both M1-eval output AND M2-eval output then naturally live in `autoc-eval-arm`, and M2 eval's `S3Bucket = autoc-eval-arm` handles both read + write cleanly. Bucket split becomes unnecessary; the v1 case (M2 reading M1-training pastonly3 gen9200 from `autoc-storage`) is the only outlier. Decide post-v1: either ship a separate `S3ReadBucket` / `S3WriteBucket` config split, or adopt the workflow convention + document the v1 outlier as historical. Don't touch during training either way.
+- [X] **`#GenDiag` fov/cone dead-code in streak-break classifier** — surfaced 2026-05-11, fixed 2026-05-11 (option a, remove dead branches). Removed:
+  - `loss_vis_fov` + `loss_vis_cone` fields from `TrackerDiag` (include/autoc/eval/fitness_decomposition.h)
+  - The unreachable `if (stepPoints >= fc.getStreakThreshold())` branch in `computeScenarioScores` (src/eval/fitness_decomposition.cc:275-295)
+  - The `targetInChaseCameraFOV` helper and its feeder camera-pose locals (`cam_pos`, `cam_orient`, `fov_h`, `fov_v`, `have_cam`)
+  - `total_fov`, `total_cone` accumulators + `fov=` / `cone=` fields from `#GenDiag` emission (src/autoc.cc:1604, 1614-1615, 1631-1633)
+  - `fov=` / `cone=` fields from per-scenario `loss=[...]` log line (training-mode + eval-mode log sites)
+  - `fov` / `cone` panels from `specs/030-tracker-mode/plot_gen_diag.py` stacked-area plot
+  
+  Rationale (sketch from polish task): streak counter resets only when `stepPoints < streakThreshold` (see [applyStreak](../../src/eval/fitness_computer.cc#L57-L67)), so at the streak-break tick `stepPoints < threshold` BY DEFINITION — the visibility branch's guard `stepPoints >= threshold` was always false. Visibility events captured separately via `avgVis` + `maxLost` (still in #GenDiag). Build + 11 crash_hull + 6 gather_tracker_inputs tests green. Pop=5000 set at the same time, postdiag2 bake launched.
+- [X] **Remove dead `TrackerSourcePreRollSec` knob** — surfaced 2026-05-10, completed 2026-05-11 during M11.wrap diagnostics batch. Scrubbed: ini removal (autoc-tracker.ini + autoc-tracker-minisim.ini + autoc-eval-tracker.ini), config field (`trackerSourcePreRollSec` removed from include/autoc/util/config.h), loader call (src/util/config.cc), WorkerInit field (`trackerSourcePreRollTicks` removed from protocol.h), TrackerStepper ctor + `pre_roll_ticks_` member + initScenario pre-roll loop (replaced with simple replicate-source[0]×6 history pre-fill, since pre_roll was always 0 in production), autoc.cc plumbing (3 sites), minisim.cc wiring, tests/contract_tracker_config_tests.cc + tests/tracker_stepper_init_tests.cc fixture updates. Also folded in: `crashReasonToString` deduped (was in minisim.cc + crrcsim's inputdev_autoc.cpp, now inline in include/autoc/rpc/crash_reason.h). Full incremental build clean, all 24 tests pass.
+- [X] **Per-scenario diagnostics enhancement** — surfaced 2026-05-10, completed 2026-05-11 during M11.wrap diagnostics batch. Delivered:
+  - **Crash-reason in per-scenario log**: `[N] CRASH reason=HullStrike score=…` / `[N] OK reason=TimeLimit score=…` at both training-mode and eval-mode log sites. ScenarioScore now carries `crashReason` (CrashReason enum) populated in `src/eval/fitness_decomposition.cc`.
+  - **Per-gen `#GenCrash` aggregate** in data.stc: counts of {hullStrike, eval, sim, boot, timeLimit, rabbitComplete, none} across the elite's scenario set. Surfaces hull-strike vs arena-egress vs timeout distribution without dmp inspection.
+  - **Forward-looking diagnostic slots** delivered via T088 (below) since they all flow through the same per-tick computation: lost-sight run length (`max_lost_sight_run`), spiraling (`spiral_ratio` = mean |gyro|/|vel|), thrashing (`thrash_rate_pt` / `thrash_rate_rl` = transitions/sec where |dout| > 0.5).
+  - **Container decision**: computed post-worker in `fitness_decomposition.cc` from existing `aircraftStateList` + `targetTrajectoryList` + `cameraViewList`. No schema bump, no `data.crash` companion file needed — diag travels with `ScenarioScore` (in-process only). Surfaced via per-scenario log continuation line and per-gen `#GenDiag` aggregate in data.stc.
 
-### M11.preB — Live two-aircraft display in crrcsim (optional, only if M11.preA needs visual mid-training)
+- [X] T088 [P] **Streak-loss reason counters + range/overrun stats** — implemented 2026-05-11 as part of the M11.wrap diagnostics batch. All 6-reason taxonomy (geom.too_far / geom.angle / geom.overshoot / vis.fov / vis.cone / hull) + range/closure/overrun stats + 327-330 forward-looking slots delivered. Land sites:
+  - **`include/autoc/eval/fitness_computer.h`**: new `decomposeStepScore()` method returning {score, distTermSq, angleTermSq, ahead}. `computeStepScore` now delegates to it (bitwise identical numerics; pathgen regression gate unaffected). Added `getStreakCount()` + `getStreakThreshold()` getters.
+  - **`include/autoc/eval/fitness_decomposition.h`**: new `TrackerDiag` struct embedded in `ScenarioScore`; zero-initialized in pathgen mode.
+  - **`src/eval/fitness_decomposition.cc`**: per-tick loop now classifies each streak-loss transition (`prevStreakCount > 0 → curStreakCount == 0`) into one of the six buckets. `vis.fov` vs `vis.cone` distinguished by re-projecting target position into chase camera frustum via `targetInChaseCameraFOV()` helper. Range/closure/overrun stats + lost-sight / spiral / thrash accumulators populated in same loop. Post-loop aggregation finalizes median/p95 via `percentileSorted()`.
+  - **`src/autoc.cc`**: per-scenario log emission gets a tracker-mode continuation line printing `vis=…/inRamp=…/rng=[min/med/p95]/loss=[far/ang/over/fov/cone/hull]/over[flips/maxClose]/fwd[lostMax/spiral/thrPt/thrRl]`. Per-gen `#GenDiag` aggregate emitted to data.stc next to `#NNGen` / `#GenCrash`.
+  - **Observation-only**: no effect on fitness or selection. Pathgen regression gate unaffected (all new code under `if (is_tracker)`).
+  - **First-experiment value**: re-run smoke15 final dmp through `autoc -i autoc-eval-tracker.ini` to read out which `loss.*` cause dominates. Decision tree per T088 draft: dominant `fov + over` ⇒ overrun/FOV cutoff confirmed (route to dx/dy explicit derivatives or non-linear screen mapping); dominant `angle` ⇒ control bandwidth limited (route to bigger NN); dominant `cone` ⇒ target aspect (beacon emission re-spec).
+- [ ] T088 [BACKLOG] **Streak-loss reason counters + range/overrun stats** — surfaced 2026-05-11 from smoke15-hullon plateau analysis (g262 elite at -16.8K vs M1 pastonly3 -32K at same gen). Per-scenario stats today (`score=… maxStrk=… strkSteps=… maxMult=…`) say a streak broke but not WHY; with the leading hypothesis being overrun-driven FOV exit (chase has 0.47°/step int8 angular resolution but ~no range discrimination at tail-chase aspect since beacons project near-coincident), we need geometry-vs-perception separation on every streak-loss event. Companion to the 327-330 entry; both fold into one combined PR post-bake.
+  - **Geometry oracle = cone-fitness ramp itself** (not a hard angular cone). Reuse `FitnessComputer::computeStepScore(along, lateralDist) ≥ streakThreshold_` (= 0.5 in current ini) as the streak-eligibility check on every tick. Honest to actual selection pressure; no parallel threshold to drift.
+  - **Taxonomy** — on each tick that transitions `streakCount > 0 → 0`:
+    - `geom.too_far` — `(dist/distScale)²` term dominates `computeStepScore < 0.5` (chase fell behind / drifted laterally)
+    - `geom.angle` — `(angle_clamped/coneAngle)²` term dominates (chase off the tail-chase line)
+    - `geom.overshoot` — `along > 0` (chase forward of rabbit, sharp `distScaleAhead=2.0` ramp — overrun signature)
+    - `vis.fov` — `computeStepScore ≥ 0.5` (geometry eligible) but both beacons project outside [-1, +1] image plane
+    - `vis.cone` — geometry eligible but emission-cone occludes both beacons (target aspect)
+    - `hull` — scenario terminated by hull-strike fire this tick (mutually exclusive, scenario ends)
+  - **Per-scenario aggregates** added to the elite per-gen log (additive line, doesn't break existing parsers):
+    ```
+    [N] OK score=… maxStrk=… strkSteps=… maxMult=…
+        vis=X.XX inFitRamp=X.XX range: min=X.X med=X.X p95=X.X
+        loss: far=N angle=N over=N fov=N cone=N hull=N
+        overrun: closureFlips=N maxClosureRate=X.X
+    ```
+    - `vis` = fraction of ticks ≥1 beacon visible; `inFitRamp` = fraction with `computeStepScore ≥ 0.5` regardless of visibility (separates "wrong place" from "right place but blind")
+    - `range.min/med/p95` = chase→target distance distribution (catches stand-off + overrun in one stat)
+    - `overrun.closureFlips` = sign reversals of `d(range)/dt` (overshoot-then-recover signature); `maxClosureRate` = peak signed closure speed
+  - **Per-gen aggregate** (one line per generation, parallel to existing `Gen N  Best=… Avg=… Worst=…`):
+    ```
+    Gen N  Vis=X.XX  InRamp=X.XX  RngMed=X.X  Loss: far=A.A% angle=A.A% over=A.A% fov=A.A% cone=A.A% hull=A.A%  ClosureFlips=X.X
+    ```
+  - **Patch surface** (additive only; no NN-input shape change, no fitness path change, no retrain required):
+    - [include/autoc/eval/fitness_computer.h](../../include/autoc/eval/fitness_computer.h) — add `decomposeStepScore(along, lateral) -> {score, distTerm, angleTerm}` so the classifier picks the dominant geometry term without recomputing
+    - [src/eval/tracker_stepper.cc](../../src/eval/tracker_stepper.cc) — instrument the streak-loss path in the scenario step loop (prev-tick streak state, classify on transition, accumulate counters, track range + closure rate + sign flips). New `TrackerScenarioDiag` struct populated per scenario
+    - [include/autoc/rpc/protocol.h](../../include/autoc/rpc/protocol.h) — add `TrackerScenarioDiag` to `EvalResults` (v=3 candidate) OR carry via the `data.crash` companion file proposed in the 327-330 backlog entry — **decide container before splitting work**; combining with that entry into one schema bump is cheaper than two
+    - [src/autoc.cc](../../src/autoc.cc) — emit new per-scenario + per-gen aggregate lines in the elite-reporting block
+  - **Bitwise eval gate**: pre-instrumentation training dmp must produce identical fitness numbers under `autoc -i autoc-eval-tracker.ini`. Instrumentation is observation-only; if numbers shift the patch is wrong.
+  - **First-experiment value**: re-run smoke15 final dmp through eval-mode with the instrumentation and check which `loss.*` cause dominates. Decision tree:
+    - `loss.fov` + `loss.over` dominate ⇒ overrun + FOV cutoff confirmed; route to dx/dy explicit-derivative inputs (cheap, ~4 new TrackerInput slots) and/or non-linear screen_x/y mapping (031 path — touches the xiao hardware-locked int8 wire format, so coordinate)
+    - `loss.angle` dominates ⇒ control-bandwidth / topology limited; route to bigger NN (45→64→32r→3) trial
+    - `loss.cone` dominates ⇒ target aspect kills lock; route to beacon-emission-cone re-spec or beacon mount-axis sweep (already a 031-CANDIDATE)
+  - **Sequencing**: do not start while smoke15 is baking. Lands as part of M11.wrap instrumentation batch alongside the 327-330 per-scenario crash-reason + `data.crash` items; share the schema bump if the container decision lands on `EvalResults` v=3 rather than the companion file.
 
-- [ ] T084 [US4] `crrcsim/src/mod_robots/robot_programmable.{h,cc}` — RobotBase subclass consuming an in-memory pose stream pushed from autoc per the [reference_crrcsim_mod_robots.md](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_crrcsim_mod_robots.md) memory (~150 LOC sketch). Mostly orthogonal to M11.preA (which is mod_inputdev-side); M11.preB lets operator watch two-aircraft training live in crrcsim's 3D view rather than after-the-fact via the M2 dmp + renderer
-- [ ] T085 [US4] `Robots::AddRobot` integration so autoc-side registers the programmable target per scenario; per-scenario teardown / reset
+### M11.preB — Live two-aircraft display in crrcsim — **deferred to BACKLOG 2026-05-10**
 
-**Checkpoint M11.preB**: optional — defer if M11.preA outcomes don't need it.
+M11.preA outcomes did not require visual mid-training (smoke14b/smoke15 dmp-replay-via-M9-renderer carried the operator-inspection burden cleanly). T084-T085 remain unimplemented; both live in the BACKLOG `[030 v1 — UNPARKED 2026-05-08] Live two-aircraft display` entry and unpark only if a future training scenario surfaces a need for live two-aircraft debugging. Do not touch as part of v1 closeout.
 
 ### M11a — Per-tick dmp extractor (rolled-in BACKLOG entry)
 
 - [ ] T064 [P] Implement `tools/aircraft_state_extractor.cc` — read tracker-mode dmps, emit CSV with new column set per data-model.md §8 (chase per-tick state + beacon `(x, y, CEP)` per camera + camera pose + target-craft pose + trail-rabbit position + arena-egress flag + hull-strike flag); version-field dispatch handles both v1 (pathgen) and v2 (tracker) sources
 - [ ] T065 [P] Adapt `specs/029-no-future-arch/plot_per_axis_time_series.py` to consume the new column set; existing data.dat path stays usable for pathgen-mode runs
 
-### M11b — Eval Fitness Bug 2 fix (rolled-in BACKLOG entry)
+### M11b — Eval Fitness Bug 2 fix (rolled-in BACKLOG entry) — **folded into M11.wrap 2026-05-10**
 
-- [ ] T066 [P] Bug fix in [`src/autoc.cc`](../../src/autoc.cc) eval-mode dump path — update `genome.fitness` with eval result before serializing to `evalResults.gp` (or alternatively store eval fitness in a separate `evalResults` field); renderer's fitness display reflects the eval-mode tracker fitness, NOT the gen's training-time fitness
-- [ ] T067 [P] Contract test `tests/eval_fitness_bug2_tests.cc` — eval-mode run produces a dmp where `genome.fitness` matches the eval-computed fitness, not the training-time pre-eval value; regression-locks the bug
+T066 + T067 are now tracked in the M11.wrap v1 closeout list above (small fix + regression test, no reason to keep as a separate milestone since v1 cleanup absorbs both). This section preserved as a pointer; do not re-implement here.
 
-### M11c — Tracker-specific analytics (the six instrumentation items from R11)
+### M11a — Per-tick dmp extractor — **deferred to BACKLOG 2026-05-10**
 
-- [ ] T068 [P] Implement per-tick output saturation + per-axis aggressiveness analytics (FR-014) in `specs/030-tracker-mode/per_axis_tracker_analytics.py` — reads M2 dmp via T064, emits per-scenario output saturation rates and per-axis dCtrl + ⟨|out|⟩ statistics; pathgen-mode tooling applies unchanged per FR-014
-- [ ] T069 [P] Implement CEP-sentinel-rate vs output-magnitude correlation analytics (the load-bearing R12 dead-reckoning diagnostic) in `specs/030-tracker-mode/cep_sentinel_analytics.py` — slices each scenario into visible / sentinel-burst / post-sentinel-recovery segments; emits tracking-error trajectory comparison
-- [ ] T070 [P] Implement chase-quat-extreme-event flag + chase-rotation-vs-beacon-motion correlation in `specs/030-tracker-mode/chase_attitude_analytics.py` — detects if controller mis-attributes chase rotation to target motion
-- [ ] T071 [P] Implement inter-beacon angle change rate histogram in `specs/030-tracker-mode/aliasing_analytics.py` — measures Trouble 8 roll-rate aliasing per R10 trouble list
-- [ ] T072 [P] Implement mean-target-screen-distance trajectory + fitness-vs-gen plateau auto-flag in `specs/030-tracker-mode/convergence_analytics.py` — auto-flags when 50-gen rolling fitness improvement < 1%
+T064-T065 (aircraft_state_extractor + 029 plot adaptation). Original Q4 ceiling included these, but smoke14b/smoke15 inspection has been served by direct data.dat parsing + the live plot scripts (`plot_evolution_progress.py`, `plot_per_axis_time_series.py`, `per_axis_aggressiveness.py`). The CSV extractor + adapted 029 plot would be useful once M2 has enough converged runs to warrant cross-run comparison tooling. Routes to BACKLOG `[031 CANDIDATE]` analytics bundle. Do not touch as part of v1 closeout.
 
-**Checkpoint**: Phase 6 complete = "030 done" per Q4 ceiling decision (M10 + M11a + M11b + M11c). Beyond this, all candidates are 031-CANDIDATE BACKLOG entries.
+### M11c — Tracker-specific analytics — **deferred to BACKLOG 2026-05-10**
+
+T068-T072 (per-axis saturation, CEP-sentinel correlation, attitude correlation, aliasing histogram, convergence auto-flag). The R10/R11/R12 diagnostic surface was justified pre-smoke when we didn't know which failure modes would dominate. smoke15 has clean determinism + steady fitness climb, so dead-reckoning / aliasing / convergence stalls haven't manifested yet. Routes to BACKLOG `[031 CANDIDATE]` analytics bundle alongside M11a. Trigger to unpark: a future training run hits a plateau where these diagnostics would materially answer "why."
+
+**Checkpoint update 2026-05-10**: Q4's original ceiling was `M10 + M11a + M11b + M11c` = "030 done." Operator-routed cutdown: **v1 = M10 + M11.preA.{1,2,3} + M11.wrap (with Bug 2 folded in)**. M11a + M11c → BACKLOG analytics bundle; M11.preB → BACKLOG live-display; T086/T087 → shelved; T078 → separate codebase-wide audit backlog entry; T051/T008 → low-value defers. Beyond v1 closeout, all candidates are 031-CANDIDATE BACKLOG entries — see `T077` for the routing decision.
 
 ---
 

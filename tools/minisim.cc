@@ -23,19 +23,6 @@ using namespace std;
 // Global aircraft state (declared extern in autoc.h)
 AircraftState aircraftState;
 
-std::string crashReasonToString(CrashReason type) {
-  switch (type) {
-  case CrashReason::None: return "None";
-  case CrashReason::Boot: return "Boot";
-  case CrashReason::Sim: return "Sim";
-  case CrashReason::Eval: return "Eval";
-  case CrashReason::TimeLimit: return "TimeLimit";
-  case CrashReason::RabbitComplete: return "RabbitComplete";
-  case CrashReason::HullStrike: return "HullStrike";
-  default: return "*?*";
-  }
-}
-
 namespace {
 
 // 030 V1.5 — build the per-eval ScenarioMetadata for scenario index idx
@@ -216,7 +203,6 @@ public:
                   init_.beaconRightConfig,
                   init_.airframeProxy,
                   init_.flightArena,
-                  init_.trackerSourcePreRollTicks,
                   crashHull,
                   evalData.pCrashThisGen,
                   prngSeed,

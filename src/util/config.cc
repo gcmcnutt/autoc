@@ -114,7 +114,6 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
     config->trackerSourceRun = reader.Get("", "TrackerSourceRun", config->trackerSourceRun);
     config->trackerPathSubset = reader.Get("", "TrackerPathSubset", config->trackerPathSubset);
     config->trackerWindSubset = reader.Get("", "TrackerWindSubset", config->trackerWindSubset);
-    config->trackerSourcePreRollSec = reader.GetReal("", "TrackerSourcePreRollSec", config->trackerSourcePreRollSec);
 
     // Tracker fitness: trail rabbit
     config->trailDistance = reader.GetReal("", "TrailDistance", config->trailDistance);

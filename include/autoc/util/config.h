@@ -103,17 +103,6 @@ struct AutocConfig {
     // Empty = all. Cross-product with TrackerPathSubset per FR-011.
     std::string trackerWindSubset;
 
-    // Source pre-roll: source craft plays forward this many seconds before
-    // chase starts evolving — gives source a head start so chase has
-    // something in its forward FOV at NN tick 0. Solves the "chase init
-    // velocity > source init velocity" overtake problem and the "both at
-    // origin" degenerate case at tick 0. Chase entry stays M1-style
-    // (origin + 180° yaw + entry variations); only the source-tick cursor
-    // is offset. NN warm-start history is filled with the last 6 source
-    // ticks of the pre-roll window so the recurrent state has real
-    // beacon-observation context on its first eval.
-    double trackerSourcePreRollSec = 0.5;  // 100ms NN cadence ⇒ 5 ticks default
-
     // --- Tracker fitness: trail rabbit (FR-008 + FR-008a + R10) ---
     double trailDistance = 3.048;          // m; 10 ft per FR-008
     double lowSpeedTrailThreshold = 2.0;   // m/s; below ⇒ nose-trail per R10

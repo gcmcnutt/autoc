@@ -1052,10 +1052,6 @@ static WorkerInit buildWorkerInit() {
     init.flightArena.floor_agl_m = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
     init.flightArena.ceiling_agl_m = static_cast<gp_scalar>(cfg.flightArenaCeilingAGL);
 
-    const double tickSec = static_cast<double>(SIM_TIME_STEP_MSEC) / 1000.0;
-    init.trackerSourcePreRollTicks =
-        std::max(0, static_cast<int>(cfg.trackerSourcePreRollSec / tickSec));
-
     init.crashHullRadius = static_cast<gp_scalar>(cfg.crashHullRadius);
     init.trailDistance = static_cast<gp_scalar>(cfg.trailDistance);
 
@@ -1221,15 +1217,38 @@ static void runNNEvaluation(
 
   // Per-scenario breakdown (same format as training loop)
   *logger.info() << "  Scenarios: " << endl;
+  const bool isTrackerMode = (cfg.mode == "tracker");
   for (size_t s = 0; s < evalScenarioScores.size(); s++) {
     const auto& sc = evalScenarioScores[s];
     *logger.info() << "  [" << s << "] "
                    << (sc.crashed ? "CRASH" : "OK")
+                   << " reason=" << crashReasonToString(sc.crashReason)
                    << " score=" << std::fixed << std::setprecision(2) << -sc.score
                    << " maxStrk=" << sc.maxStreak
                    << " strkSteps=" << sc.totalStreakSteps
                    << " maxMult=" << std::setprecision(1) << sc.maxMultiplier
                    << endl;
+    // 030 M11.wrap T088 + 327-330 — tracker-mode per-scenario diagnostics.
+    // Emitted as indented continuation line; suppressed in pathgen mode.
+    if (isTrackerMode) {
+      const auto& d = sc.tracker_diag;
+      *logger.info() << "      "
+                     << "vis=" << std::fixed << std::setprecision(2) << d.vis_frac
+                     << " inRamp=" << d.in_fit_ramp_frac
+                     << " rng=[" << std::setprecision(1)
+                     << d.range_min << "/" << d.range_med << "/" << d.range_p95 << "]"
+                     << " loss=[far=" << d.loss_geom_too_far
+                     << " ang=" << d.loss_geom_angle
+                     << " over=" << d.loss_geom_overshoot
+                     << " hull=" << d.loss_hull << "]"
+                     << " over[flips=" << d.closure_flips
+                     << " maxClose=" << std::setprecision(1) << d.max_closure_rate << "]"
+                     << " fwd[lostMax=" << d.max_lost_sight_run
+                     << " spiral=" << std::setprecision(3) << d.spiral_ratio
+                     << " thrPt=" << std::setprecision(1) << d.thrash_rate_pt
+                     << " thrRl=" << d.thrash_rate_rl << "]"
+                     << endl;
+    }
   }
 
   globalSimRunCounter.fetch_add(evalResults.pathList.size(), std::memory_order_relaxed);
@@ -1467,17 +1486,39 @@ static void runNNEvolution(
 
     // Log per-scenario decomposition for best individual
     const auto& bestScores = pop.individuals[bestIdx].scenario_scores;
+    const bool isTrackerModeLoop = (cfg.mode == "tracker");
     if (!bestScores.empty()) {
       *logger.info() << "  Scenarios: ";
       for (size_t s = 0; s < bestScores.size(); s++) {
         const auto& sc = bestScores[s];
         *logger.info() << "  [" << s << "] "
                        << (sc.crashed ? "CRASH" : "OK")
+                       << " reason=" << crashReasonToString(sc.crashReason)
                        << " score=" << std::fixed << std::setprecision(2) << -sc.score
                        << " maxStrk=" << sc.maxStreak
                        << " strkSteps=" << sc.totalStreakSteps
                        << " maxMult=" << std::setprecision(1) << sc.maxMultiplier
                        << endl;
+        // 030 M11.wrap T088 + 327-330 — tracker-mode per-scenario diagnostics.
+        if (isTrackerModeLoop) {
+          const auto& d = sc.tracker_diag;
+          *logger.info() << "      "
+                         << "vis=" << std::fixed << std::setprecision(2) << d.vis_frac
+                         << " inRamp=" << d.in_fit_ramp_frac
+                         << " rng=[" << std::setprecision(1)
+                         << d.range_min << "/" << d.range_med << "/" << d.range_p95 << "]"
+                         << " loss=[far=" << d.loss_geom_too_far
+                         << " ang=" << d.loss_geom_angle
+                         << " over=" << d.loss_geom_overshoot
+                         << " hull=" << d.loss_hull << "]"
+                         << " over[flips=" << d.closure_flips
+                         << " maxClose=" << std::setprecision(1) << d.max_closure_rate << "]"
+                         << " fwd[lostMax=" << d.max_lost_sight_run
+                         << " spiral=" << std::setprecision(3) << d.spiral_ratio
+                         << " thrPt=" << std::setprecision(1) << d.thrash_rate_pt
+                         << " thrRl=" << d.thrash_rate_rl << "]"
+                         << endl;
+        }
       }
     }
 
@@ -1523,6 +1564,83 @@ static void runNNEvolution(
          << " w_xh1_cv=" << std::setprecision(4) << blockStats.w_xh1_cv
          << " w_hh_cv=" << std::setprecision(4) << blockStats.w_hh_cv
          << std::endl;
+
+    // 030 M11.wrap diagnostics — per-gen CrashReason aggregate over the elite's
+    // scenario set. Surfaces hull-strike vs arena-egress vs timeout distribution
+    // without requiring dmp inspection. crashReason populated in fitness_decomposition.cc.
+    {
+      int cnt_none = 0, cnt_boot = 0, cnt_sim = 0, cnt_eval = 0;
+      int cnt_timeLimit = 0, cnt_rabbitComplete = 0, cnt_hullStrike = 0;
+      for (const auto& sc : bestScores) {
+        switch (sc.crashReason) {
+          case CrashReason::None:           cnt_none++; break;
+          case CrashReason::Boot:           cnt_boot++; break;
+          case CrashReason::Sim:            cnt_sim++; break;
+          case CrashReason::Eval:           cnt_eval++; break;
+          case CrashReason::TimeLimit:      cnt_timeLimit++; break;
+          case CrashReason::RabbitComplete: cnt_rabbitComplete++; break;
+          case CrashReason::HullStrike:     cnt_hullStrike++; break;
+        }
+      }
+      bout << "#GenCrash gen=" << gen
+           << " hullStrike=" << cnt_hullStrike
+           << " eval=" << cnt_eval
+           << " sim=" << cnt_sim
+           << " boot=" << cnt_boot
+           << " timeLimit=" << cnt_timeLimit
+           << " rabbitComplete=" << cnt_rabbitComplete
+           << " none=" << cnt_none
+           << " total=" << static_cast<int>(bestScores.size())
+           << std::endl;
+    }
+    // 030 M11.wrap T088 + 327-330 — per-gen tracker-mode diag aggregate. Sums
+    // streak-loss counters + means visibility / range / forward-looking stats
+    // across the elite's scenario set. Pathgen-mode mode skips emission.
+    if (isTrackerModeLoop && !bestScores.empty()) {
+      long total_far=0, total_ang=0, total_over=0, total_hull=0;
+      long total_flips=0;
+      double vis_sum=0, ramp_sum=0, rng_min_sum=0, rng_med_sum=0, rng_p95_sum=0;
+      double max_close_max=0, lost_max_max=0;
+      double spiral_sum=0, thr_pt_sum=0, thr_rl_sum=0;
+      for (const auto& sc : bestScores) {
+        const auto& d = sc.tracker_diag;
+        total_far += d.loss_geom_too_far;
+        total_ang += d.loss_geom_angle;
+        total_over += d.loss_geom_overshoot;
+        total_hull += d.loss_hull;
+        total_flips += d.closure_flips;
+        vis_sum += d.vis_frac;
+        ramp_sum += d.in_fit_ramp_frac;
+        rng_min_sum += d.range_min;
+        rng_med_sum += d.range_med;
+        rng_p95_sum += d.range_p95;
+        if (std::abs(d.max_closure_rate) > std::abs(max_close_max)) max_close_max = d.max_closure_rate;
+        if (d.max_lost_sight_run > lost_max_max) lost_max_max = d.max_lost_sight_run;
+        spiral_sum += d.spiral_ratio;
+        thr_pt_sum += d.thrash_rate_pt;
+        thr_rl_sum += d.thrash_rate_rl;
+      }
+      const double N = static_cast<double>(bestScores.size());
+      long loss_total = total_far + total_ang + total_over + total_hull;
+      bout << "#GenDiag gen=" << gen
+           << " loss_total=" << loss_total
+           << " far=" << total_far
+           << " angle=" << total_ang
+           << " over=" << total_over
+           << " hull=" << total_hull
+           << " avgVis=" << std::fixed << std::setprecision(3) << (vis_sum / N)
+           << " avgInRamp=" << (ramp_sum / N)
+           << " avgRngMin=" << std::setprecision(2) << (rng_min_sum / N)
+           << " avgRngMed=" << (rng_med_sum / N)
+           << " avgRngP95=" << (rng_p95_sum / N)
+           << " avgFlips=" << std::setprecision(2) << (static_cast<double>(total_flips) / N)
+           << " maxClose=" << std::setprecision(2) << max_close_max
+           << " maxLost=" << static_cast<int>(lost_max_max)
+           << " avgSpiral=" << std::setprecision(4) << (spiral_sum / N)
+           << " avgThrPt=" << std::setprecision(2) << (thr_pt_sum / N)
+           << " avgThrRl=" << (thr_rl_sum / N)
+           << std::endl;
+    }
     bout.flush();
 
     logGenerationStats(gen);
@@ -1648,8 +1766,6 @@ int main(int argc, char** argv)
     *logger.info() << "TrackerSourceRun: " << cfg.trackerSourceRun << endl;
     *logger.info() << "TrackerPathSubset: " << cfg.trackerPathSubset << endl;
     *logger.info() << "TrackerWindSubset: " << cfg.trackerWindSubset << endl;
-    *logger.info() << "TrackerSourcePreRollSec: " << cfg.trackerSourcePreRollSec
-                   << " (" << static_cast<int>(cfg.trackerSourcePreRollSec * 10) << " ticks @ 100ms NN cadence)" << endl;
     *logger.info() << "TrailDistance: " << cfg.trailDistance
                    << "  LowSpeedTrailThreshold: " << cfg.lowSpeedTrailThreshold
                    << "  Hysteresis: " << cfg.lowSpeedTrailHysteresis << endl;
@@ -1710,19 +1826,15 @@ int main(int argc, char** argv)
       exit(1);
     }
 
-    // 030 M8b geometry fix — validate that each scenario has enough
-    // runway after pre-roll for chase to actually evolve. Pre-roll
-    // consumes the first N source ticks; chase needs >= MIN_SCENARIO_TICKS
-    // remaining (3 sec at 100ms NN cadence per data-model.md §1).
+    // Validate each source scenario has at least MIN_SCENARIO_TICKS runway
+    // (3 sec at 100ms NN cadence per data-model.md §1). Post-PreRollSec-
+    // removal: chase consumes source from sample 0, so the full source
+    // duration is available.
     {
-      const double tickSec = static_cast<double>(SIM_TIME_STEP_MSEC) / 1000.0;
-      const int preRollTicks =
-          std::max(0, static_cast<int>(cfg.trackerSourcePreRollSec / tickSec));
       const int minRemaining = MIN_SCENARIO_TICKS;
-      const int minSourceTicks = preRollTicks + minRemaining;
       int shortCount = 0;
       for (const auto& traj : gSourceTrajectoryList) {
-        if (static_cast<int>(traj.samples.size()) < minSourceTicks) {
+        if (static_cast<int>(traj.samples.size()) < minRemaining) {
           ++shortCount;
         }
       }
@@ -1730,15 +1842,12 @@ int main(int argc, char** argv)
         *logger.info() << "FATAL ERROR: " << shortCount
                        << " of " << gSourceTrajectoryList.size()
                        << " source scenario(s) have fewer than "
-                       << minSourceTicks << " ticks (pre-roll "
-                       << preRollTicks << " + chase runway "
-                       << minRemaining << "). Reduce TrackerSourcePreRollSec "
-                          "or filter out short source scenarios." << endl;
+                       << minRemaining << " ticks. Filter out short source "
+                          "scenarios." << endl;
         exit(1);
       }
-      *logger.info() << "Source pre-roll: " << cfg.trackerSourcePreRollSec
-                     << "s (" << preRollTicks << " ticks); chase runway >= "
-                     << minRemaining << " ticks confirmed across all "
+      *logger.info() << "Source runway >= " << minRemaining
+                     << " ticks confirmed across all "
                      << gSourceTrajectoryList.size() << " scenarios." << endl;
     }
   }

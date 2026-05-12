@@ -49,7 +49,6 @@ public:
                    const BeaconConfig& beacon_right = BeaconConfig{},
                    const AirframeProxy& airframe = defaultAirframeProxyHB1(),
                    const FlightArena& arena = FlightArena{},
-                   int pre_roll_ticks = 0,
                    const CrashHull& crash_hull = CrashHull{},
                    gp_scalar p_crash_this_gen = static_cast<gp_scalar>(0.0),
                    uint32_t prng_seed = 0,
@@ -104,15 +103,10 @@ private:
 
     // Source-tick cursor. Each stepOnce consumes source_.samples[cursor_],
     // advances physics until the next sample's simTimeMsec, then increments.
-    // initScenario sets cursor_ = pre_roll_ticks_ so the first NN tick
-    // sees source already advanced (M8b geometry fix).
+    // initScenario sets cursor_ = 0; chase-init geometry (2026-05-07
+    // Session Q1) replaced the original pre-roll warm-start.
     size_t cursor_ = 0;
     unsigned long duration_msec_ = 0;
-
-    // Source pre-roll: number of source ticks to skip before chase starts
-    // evolving. 0 = no pre-roll (legacy / tests). Default in production is
-    // ~5 ticks (0.5 sec at 100ms NN cadence) per autoc-tracker.ini.
-    int pre_roll_ticks_ = 0;
 
     // 030 M8b — Per-tick recorded outputs (M2 dmp v=2 schema).
     CameraViewSample last_camera_view_{};

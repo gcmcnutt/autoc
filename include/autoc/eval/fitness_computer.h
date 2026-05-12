@@ -37,6 +37,19 @@ public:
     // Returns: stepPoints in (0, 1], 1.0 at rabbit position.
     double computeStepScore(double along, double lateralDist) const;
 
+    // 030 M11.wrap diagnostics — decompose stepScore into its terms so callers
+    // can attribute "why score is low" (geom.too_far vs geom.angle vs ahead).
+    // distTermSq = (distance / distScale)^2  (uses distScaleAhead when along > 0)
+    // angleTermSq = (angle_clamped / coneAngle)^2
+    // score is the same value computeStepScore returns.
+    struct ScoreTerms {
+        double score;       // 1 / (1 + distTermSq + angleTermSq)
+        double distTermSq;  // (dist / distScale)^2
+        double angleTermSq; // (angle_clamped / coneAngle)^2
+        bool ahead;         // along > 0 (chase forward of rabbit)
+    };
+    ScoreTerms decomposeStepScore(double along, double lateralDist) const;
+
     // Update streak state and return stepPoints * multiplier.
     // Streak increments if stepPoints >= threshold, hard-resets otherwise.
     double applyStreak(double stepPoints);
@@ -47,7 +60,9 @@ public:
     // Diagnostics
     int getMaxStreak() const { return maxStreak_; }
     int getStreakSteps() const { return totalStreakSteps_; }
+    int getStreakCount() const { return streakCount_; }
     double getMaxMultiplier() const { return maxMultiplier_; }
+    double getStreakThreshold() const { return streakThreshold_; }
 
 private:
     double distScaleBehind_;  // m, distance half-decay when behind rabbit (forgiving)

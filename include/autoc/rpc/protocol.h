@@ -154,9 +154,6 @@ struct WorkerInit {
   autoc::eval::AirframeProxy airframeProxy;
   autoc::eval::FlightArena flightArena;
 
-  // 030 M8b geometry-fix — source pre-roll (in NN-cadence ticks).
-  int trackerSourcePreRollTicks = 0;
-
   // 030 M7d.b — crash-hull + trail-rabbit static params. Note
   // pCrashThisGen is NOT here; it ramps per-gen and stays in EvalData.
   gp_scalar crashHullRadius = static_cast<gp_scalar>(1.0);
@@ -176,7 +173,7 @@ struct WorkerInit {
   void serialize(Archive& ar) {
     int m = static_cast<int>(mode);
     ar(m, sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
-       airframeProxy, flightArena, trackerSourcePreRollTicks,
+       airframeProxy, flightArena,
        crashHullRadius, trailDistance,
        pathList, scenarioMetaList);
     mode = static_cast<Mode>(m);
@@ -217,10 +214,9 @@ CEREAL_CLASS_VERSION(EvalData, 1)
 
 // CrashReason factored out to its own header (030 M7a) to break the
 // circular include between protocol.h and arena.h. Existing consumers
-// of protocol.h see the type unchanged via this re-include.
+// of protocol.h see the type unchanged via this re-include. crash_reason.h
+// also provides inline crashReasonToString / crashReasonToCStr.
 #include "autoc/rpc/crash_reason.h"
-
-std::string crashReasonToString(CrashReason type);
 
 struct DebugSample {
   int pathIndex = -1;

@@ -24,7 +24,6 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                const BeaconConfig& beacon_right,
                                const AirframeProxy& airframe,
                                const FlightArena& arena,
-                               int pre_roll_ticks,
                                const CrashHull& crash_hull,
                                gp_scalar p_crash_this_gen,
                                uint32_t prng_seed,
@@ -41,7 +40,6 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
       history_{},
       cursor_(0),
       duration_msec_(0),
-      pre_roll_ticks_(pre_roll_ticks),
       crash_hull_(crash_hull),
       p_crash_this_gen_(p_crash_this_gen),
       // Park-Miller LCG requires non-zero seed in [1, 2^31-2]. Map seed=0
@@ -103,52 +101,17 @@ void TrackerStepper::initScenario() {
 
     duration_msec_ = 0;
 
-    // 030 M8b geometry fix — source pre-roll. Source craft plays forward
-    // pre_roll_ticks_ samples while chase sits at its M1-style entry
-    // pose, so source has a head start and is in chase's forward FOV
-    // when chase starts evolving. NN's 6-slot history is populated from
-    // the last 6 source ticks of the pre-roll window.
-    //
-    // History layout after warm-start (pre_roll_ticks_ = N >= 6):
-    //   slot 0 (oldest, t-0.5s) = source[N-6]  vs chase[init]
-    //   slot 1 (t-0.4s)         = source[N-5]  vs chase[init]
-    //   ...
-    //   slot 5 (now, t-0.0s)    = source[N-1]  vs chase[init]
-    //
-    // For N < 6, the older slots replicate source[0]'s projection. For
-    // N == 0, all 6 slots replicate source[0] (legacy behavior).
-    cursor_ = 0;  // projectAndShiftHistory uses chase[init]; cursor advances
-                  // through source samples for the warm-start projections.
+    // History pre-fill (M8b shape, post-PreRollSec-removal 2026-05-11). The
+    // pre-roll feature was retired by the 2026-05-07 chase-init geometry
+    // simplification — production has always run with pre_roll = 0. Behavior
+    // preserved: replicate source[0]'s projection across all 6 history slots
+    // so the NN sees a populated, non-zero history at tick 1.
+    cursor_ = 0;
     if (!source_.samples.empty()) {
-        const int pre_roll = std::max(0, pre_roll_ticks_);
-        const int kHistory = 6;
-        // Replicate source[0] for the front-fill when pre_roll < 6 (older
-        // slots get duplicated source[0] projection).
-        const int replicate_count = (pre_roll < kHistory) ? (kHistory - pre_roll) : 0;
-        const int real_start =
-            (pre_roll >= kHistory) ? (pre_roll - kHistory) : 0;
-
-        for (int r = 0; r < replicate_count; ++r) {
+        for (int r = 0; r < 6; ++r) {
             projectAndShiftHistory(source_.samples[0]);
         }
-        for (int k = real_start; k < pre_roll; ++k) {
-            const size_t idx = static_cast<size_t>(k);
-            if (idx < source_.samples.size()) {
-                projectAndShiftHistory(source_.samples[idx]);
-            }
-        }
-        // If pre_roll == 0, no real samples projected above — replicate
-        // source[0] across all 6 slots so the NN sees a non-zero history.
-        if (pre_roll == 0) {
-            // The replicate_count loop already ran 6 times for pre_roll==0
-            // (kHistory - 0 = 6), so no extra work. Validated by the math:
-            // replicate_count=6, real_start=0, real loop body skipped.
-        }
     }
-
-    // Cursor starts at pre_roll_ticks so stepOnce #1 consumes
-    // source[pre_roll_ticks] (the first non-pre-roll sample).
-    cursor_ = static_cast<size_t>(std::max(0, pre_roll_ticks_));
 }
 
 void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {

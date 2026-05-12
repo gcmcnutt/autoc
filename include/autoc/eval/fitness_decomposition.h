@@ -3,6 +3,7 @@
 #include <vector>
 #include "autoc/types.h"
 #include "autoc/eval/fitness_computer.h"
+#include "autoc/rpc/crash_reason.h"
 
 // Forward declaration — full definition in rpc/protocol.h
 struct EvalResults;
@@ -28,11 +29,48 @@ struct EvalResults;
 // tracking" objective: be on the path with surfaces near center and
 // throttle at minimum. Lexicase uses each dimension as its own test case
 // per scenario; no weighting, no fine-tuning, multi-objective.
+// 030 M11.wrap T088 — tracker-mode per-scenario diagnostics.
+// Populated only when computeScenarioScores runs the tracker branch;
+// pathgen scenarios leave this zero-initialized. All fields observation-only
+// (no selection pressure).
+struct TrackerDiag {
+    // Streak-loss reason counters (T088 — GEOMETRIC streak-break taxonomy, polish
+    // 2026-05-11). Incremented on each tick where streakCount transitions > 0 → 0;
+    // exactly one bucket per event. NOTE: a previous version included
+    // `loss_vis_fov` / `loss_vis_cone` for visibility-driven breaks, but the
+    // streak counter is reset only via `stepPoints < streakThreshold` (see
+    // FitnessComputer::applyStreak), so the visibility branch was unreachable
+    // dead code. Visibility events are captured separately via `vis_frac` +
+    // `max_lost_sight_run` below.
+    int loss_geom_too_far = 0;     // computeStepScore < threshold, distTermSq dominates
+    int loss_geom_angle = 0;       // computeStepScore < threshold, angleTermSq dominates
+    int loss_geom_overshoot = 0;   // along > 0 (chase forward of rabbit, sharp ahead-ramp)
+    int loss_hull = 0;             // hull strike fired this tick (scenario-terminating; max 1)
+
+    // Visibility + ramp eligibility (per-scenario fractions, [0,1]).
+    float vis_frac = 0.0f;         // ticks with ≥1 beacon visible / total ticks
+    float in_fit_ramp_frac = 0.0f; // ticks computeStepScore ≥ threshold / total ticks
+
+    // Range / closure / overrun stats (chase→target).
+    float range_min = 0.0f;        // m, min chase→target distance over scenario
+    float range_med = 0.0f;        // m, median
+    float range_p95 = 0.0f;        // m, 95th percentile
+    int closure_flips = 0;         // sign reversals of d(range)/dt (overshoot-recover count)
+    float max_closure_rate = 0.0f; // m/s, peak signed closure rate (+= closing)
+
+    // Forward-looking diagnostics (327-330 backlog entry).
+    int max_lost_sight_run = 0;    // ticks, longest run of "both beacons sentinel"
+    float spiral_ratio = 0.0f;     // mean per-tick |gyro| / max(|vel|, 1) — high = spiraling
+    float thrash_rate_pt = 0.0f;   // pitch-axis transitions per second (|d(out_pt)| > 0.5)
+    float thrash_rate_rl = 0.0f;   // roll-axis transitions per second
+};
+
 struct ScenarioScore {
     gp_fitness score;            // Tracking (negated accumulated points, lower = better)
     gp_fitness stability_score;  // Per-tick (|out_pt|-1) + (|out_rl|-1) summed; lower = better
     gp_fitness energy_score;     // Per-tick (out_th - 1) / 2 summed; lower = better
     bool crashed;
+    CrashReason crashReason;     // 030 M11.wrap diagnostics — full terminate reason mirror of `crashed` (which is just isCrash(crashReason))
     int steps_completed;
     int steps_total;
 
@@ -41,9 +79,13 @@ struct ScenarioScore {
     int totalStreakSteps;
     gp_fitness maxMultiplier;
 
+    // 030 M11.wrap — tracker-mode diagnostics; zero in pathgen mode.
+    TrackerDiag tracker_diag;
+
     ScenarioScore()
         : score(0.0), stability_score(0.0), energy_score(0.0),
-          crashed(false), steps_completed(0), steps_total(0),
+          crashed(false), crashReason(CrashReason::None),
+          steps_completed(0), steps_total(0),
           maxStreak(0), totalStreakSteps(0), maxMultiplier(1.0) {}
 };
 

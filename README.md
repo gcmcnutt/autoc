@@ -71,3 +71,6 @@ specs/               # Feature specifications
 Evolution checkpoints stored in S3:
 - Key format: `autoc-{timestamp}/gen{number}.dmp`
 - Configure bucket/profile in `autoc.ini`
+
+# pending next pre 030 weights
+default:autoc-storage/autoc-9223370259105171692-2026-05-02T19:20:04.115Z/gen9200.dmp

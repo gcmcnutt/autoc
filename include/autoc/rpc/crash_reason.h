@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 // 030 M7a — CrashReason factored out of protocol.h to break the
 // circular include path between protocol.h and arena.h.
 //
@@ -33,4 +35,22 @@ inline bool isCrash(CrashReason reason) {
            reason == CrashReason::Sim ||
            reason == CrashReason::Eval ||
            reason == CrashReason::HullStrike;
+}
+
+// Inline so both autoc + minisim see the definition (was duplicated in tools/minisim.cc).
+inline const char* crashReasonToCStr(CrashReason type) {
+    switch (type) {
+        case CrashReason::None:           return "None";
+        case CrashReason::Boot:           return "Boot";
+        case CrashReason::Sim:            return "Sim";
+        case CrashReason::Eval:           return "Eval";
+        case CrashReason::TimeLimit:      return "TimeLimit";
+        case CrashReason::RabbitComplete: return "RabbitComplete";
+        case CrashReason::HullStrike:     return "HullStrike";
+    }
+    return "*?*";
+}
+
+inline std::string crashReasonToString(CrashReason type) {
+    return std::string(crashReasonToCStr(type));
 }
