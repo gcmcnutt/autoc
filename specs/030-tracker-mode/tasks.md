@@ -295,6 +295,32 @@ Surfaced post-smoke14b: crash-hull was disabled in code (V1.5 kill-switch commen
 - [x] **Re-enabled `didCrashFire`** in [src/eval/tracker_stepper.cc](../../src/eval/tracker_stepper.cc) and [crrcsim_tracker_helper.cpp](../../crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp). PRNG seed = windSeed (P1 fix, train↔elite stable).
 - [x] **Removed `pCrashForGen()`** function + 6 ramp-curriculum tests; CrashHullFire tests already cover Bernoulli probability handling.
 
+### M11.preA.5 — postdiag2 closure + T-102 32r topology experiment (2026-05-13) — in flight
+
+postdiag2 baked 542 gens on the current 030 baseline (45 → 32 → 16r → 3, pop=5000, fov/cone dead-code fix). Operator-stopped at gen 542 once the plateau was clear (~-17K best fitness; trajectory flat from gen 450 onward). Full outcome captured in [postdiag2_report.md](postdiag2_report.md).
+
+**Key finding**: M2 v1 ceiling sits at -17K vs M1 pathgen's -50K on the same topology + cone fitness. The 3× gap is real and reproducible. Several plausible binding constraints; testing them in order (smallest bet first):
+
+1. **Recurrent state capacity** — current 16r layer has 256 W_hh weights to maintain target prior across visibility cycles. **T-102 tests this in 030**: bump to 32r (1024 W_hh weights, 4× capacity), same inputs, same source dmp.
+2. **Visibility-time signal richness** (deferred to 032): the NN sees raw NDC + history but doesn't see derived geometric primitives (angular width = range proxy; beacon-pair tilt = roll proxy).
+3. **FOV-induced blindness** (hypothesis, deferred): M2 is blind 30% of ticks vs M1's infinite-FOV oracle bearing. Would surface only if (1) + (2) don't close the gap.
+
+The 32r bump stays in **030 v1 baseline tuning** — it's not a feature, it's the right topology for the current input shape. 032 starts from whichever 030 baseline is current when 032 unparks.
+
+**T-102 implementation tasks** (operator workflow: claude drafts code → operator reviews + builds → claude runs):
+- [ ] Change `TRACKER_NN_HIDDEN2_SIZE` from 16 → 32 in [include/autoc/nn/topology.h](../../include/autoc/nn/topology.h) (single constant cascading through `TRACKER_NN_TOPOLOGY`, `TRACKER_NN_WEIGHT_COUNT`, `TRACKER_NN_RECURRENT_STATE_COUNT`).
+- [ ] Update `static_assert(TRACKER_NN_WEIGHT_COUNT == ...)` to new value: 45·32+32 + 32·32+32 + 32·3+3 + 32·32 = 1440+32 + 1024+32 + 96+3 + 1024 = **3,651** (was 2,307 at 16r). Recurrent W_hh contribution: 256 → 1024 (+768 weights).
+- [ ] Re-run pop=5000 against the same source dmp (pastonly3 gen9200), same autoc-tracker.ini settings.
+- [ ] Compare fitness ceiling to postdiag2's -17K. Outcome routing:
+  - **Meaningful lift** (e.g., -19K+) → state capacity was binding; 32r becomes the new 030 baseline; 032 starts from there.
+  - **Flat near -17K** → state capacity NOT binding; 032 (visibility-time signal richness via span/tilt features) becomes the next experiment.
+
+### Dropped from v1 closeout 2026-05-13 (per operator routing post-postdiag2)
+
+- T-100 (TrackerScenarioVariationSource=dmp knob): joint-PRNG has unconditional consumers (rabbitSpeedSeed draw is unconditional per src/autoc.cc:229). Partial match unachievable; full match requires auditing every PRNG consumer. Drop entirely.
+- T-101 (chase-init-at-origin): not informative without T-100 (matched conditions). Drop.
+- T-103 (hull-imminent NN inputs `inside_hull_now` + `dist_to_hull_along_vel`): defer until after T-102 result. If 32r alone reduces hull-strike rate by integrating better trajectory prior, T-103 unnecessary.
+
 ### M11.wrap — Wrap-up + post-bake follow-ups (planning) — pending operator triage
 
 **v1 closeout — locked 2026-05-10** (must-do to declare 030 v1 done):
