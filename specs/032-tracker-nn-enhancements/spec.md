@@ -48,21 +48,29 @@ Streak-break reasons (post-polish, geometric-only taxonomy):
 
 avgFlips = 17 / scenario, avgSpiral = 0.28 — chase uses banking aggressively to chase angular cues. Roll-axis aggressiveness (avgThrRl = 7.25) is 2× pitch-axis (avgThrPt = 4.00). Visible in playback as repeated transits through the cone without locking.
 
-### 1.3 First-principles cause — open hypothesis list (2026-05-13 update)
+### 1.3 First-principles cause — open hypothesis list (2026-05-13, updated 2026-05-15)
 
 **Original framing** (this spec v1, 2026-05-11): 2-point projection front-back ambiguity was the binding constraint.
 
 **Operator challenge** (2026-05-13): M1 pathgen reached -50K WITHOUT pose info either. M1's inputs were body-frame bearing unit vec + range scalar + closing-rate scalar — NO target heading, NO target attitude, NO target velocity vector. Pose ambiguity therefore cannot be THE dominant constraint, because M1 hit -50K without it.
 
-This spec no longer asserts a single locked diagnosis. The plateau has multiple plausible binding constraints; **032's job is to test them in order**, smallest-bet-first. Candidate ordering (operator-routed 2026-05-13):
+**T-102 result (2026-05-15)**: 030 baseline tuning bumped recurrent topology 16r → 32r (4× W_hh capacity, 256 → 1024 weights). Run baked to gen 540+ against the same source dmp; **best fitness at 32r is consistently 700-1500 points WORSE than 16r at every comparable gen**. State capacity is NOT the binding constraint either. See [postdiag3_report.md](../030-tracker-mode/postdiag3_report.md). The 030 baseline reverts to 16r; 032 starts from there.
 
-| candidate | hypothesis | first test in 032 |
-|---|---|---|
-| Visibility-time signal richness | NN sees raw NDC + history but doesn't see derived geometric primitives (angular width = range proxy; beacon-pair tilt = roll proxy). M1 had bearing/range as scalars; M2 must learn them from int8-quantized NDC pairs across 6-tick history. | **Phase 1**: add span (width) + span-rate + tilt (angle) as new NN inputs. Same NN topology. |
-| FOV-induced blindness | M2 is blind 30% of ticks (`avgVis ≈ 0.7`); M1 had infinite-FOV oracle bearing. Long blind runs (maxLost ~90 ticks) require dead-reckoning that the perception loop can't help with. | **Phase 2** (only if Phase 1 doesn't lift the ceiling): wider camera FOV, or richer dead-reckoning state inside the NN. |
-| Front-back pose ambiguity | 2 beacons project the same way for target heading-toward vs heading-away. Cannot lead target without disambiguation. | **Deferred**: M3 perception loop with temporal pose prior, or hardware addition of a 3rd beacon (operator-rejected for 030/031/032). |
+**Operator playback observations on postdiag3 (2026-05-15)** — two patterns that directly motivate 032's phase 1 feature set:
 
-The 030 NN topology bump 16r → 32r is **030 baseline tuning** (NOT a 032 feature) and runs ahead of this spec; if 32r alone meaningfully closes the M1↔M2 gap, this spec's first-experiment scope shrinks accordingly.
+1. **Overruns persist regardless of generation.** Chase passes through the cone and shoots past. Diagnosis: chase has no absolute-distance signal — only apparent point separation between the 4 NDC beacons. With known target geometry, angular separation IS a direct range proxy, but the NN has to learn that mapping implicitly from 4 NDC pairs across 6 ticks of history. **032's `span` + `span-rate` features expose this signal explicitly.**
+2. **Chaos shuffles instead of refining.** Small best-fitness increments (~100 points) come paired with radical per-scenario behavior changes — overruns happen in different places, chaos pattern reshuffles, but the *amount* of chaos is conserved. Classic GA-stuck-in-local-optima signature: the gradient surface is too ambiguous for selection to reward incremental tightening, so it trades failure modes rather than refining within a strategy. **A cleaner "closer/farther" gradient (span-rate) should smooth the landscape enough for incremental refinement.**
+
+Both observations point at the same upstream cause: input-vector information content, not architecture or capacity. This is the strongest evidence yet that **phase 1 (visibility-time signal richness) is the right place to start**.
+
+| candidate | hypothesis | first test in 032 | status |
+|---|---|---|---|
+| Visibility-time signal richness | NN sees raw NDC + history but doesn't see derived geometric primitives (angular width = range proxy; beacon-pair tilt = roll proxy). M1 had bearing/range as scalars; M2 must learn them from int8-quantized NDC pairs across 6-tick history. | **Phase 1**: add span (width) + span-rate + tilt (angle) as new NN inputs. Same 16r topology. | **strongest candidate after T-102 + postdiag3 playback obs (2026-05-15)** |
+| FOV-induced blindness | M2 is blind 30% of ticks (`avgVis ≈ 0.7`); M1 had infinite-FOV oracle bearing. Long blind runs (maxLost ~90 ticks) require dead-reckoning that the perception loop can't help with. | **Phase 2** (only if Phase 1 doesn't lift the ceiling): wider camera FOV, or richer dead-reckoning state inside the NN. | not falsified, but not yet primary suspect |
+| Front-back pose ambiguity | 2 beacons project the same way for target heading-toward vs heading-away. Cannot lead target without disambiguation. | **Deferred**: M3 perception loop with temporal pose prior, or hardware addition of a 3rd beacon (operator-rejected for 030/031/032). | dropped from M3 conviction by M1's -50K-without-pose result; phase 4 / M3 only if span/tilt + FOV widening both miss |
+| ~~Recurrent state capacity~~ | ~~16r W_hh insufficient to maintain target prior across visibility cycles~~ | ~~030 baseline tuning (M11.preA.5 T-102)~~ | **falsified 2026-05-15 — 32r is *worse* than 16r at every gen** |
+
+030 NN topology stays at 16r for v1 baseline (32r reverted post-T-102). 032 phase 1 layers derived perceptual inputs on top of the 16r topology.
 
 This was previewed in the 030 spec opening: see [specs/030-tracker-mode/spec.md](../030-tracker-mode/spec.md) pose-estimation framing section.
 
@@ -96,11 +104,11 @@ This is mostly a contract change in the gather pipeline; the FPGA-side code-corr
 
 Compute these in `gather_tracker_inputs` from the beacon pair, feed as new input slots alongside the existing 45. **Key constraint: no physical-unit calibration. Everything is fraction-of-full-scale or angle-of-screen-line, so the same input transform works in sim AND in real flight without per-craft wingspan-calibration overhead.**
 
-| feature | value | range | history? |
-|---|---|---|---|
-| **Beacon-pair span** (unitless, screen-fraction) | distance between port and starboard beacon centroids on the NDC image plane — `‖(x_r,y_r) − (x_l,y_l)‖` | ~0 (far) → ~2 (beacons at opposite screen edges) | yes, 6-tick |
-| **Span-rate** (unitless, span Δ per tick) | tick-to-tick change in beacon-pair span | small, signed (positive = approaching, negative = receding) | "now" only |
-| **Target tilt** (radians) | angle of the line from red (port) → green (starboard) beacon, measured CCW from screen +x axis. **Independent of chase attitude** (it's a pure image-plane measurement). | ±π | "now" only |
+| feature | value | range | history? | input slots |
+|---|---|---|---|---|
+| **Beacon-pair span** (unitless, screen-fraction) | distance between port and starboard beacon centroids on the NDC image plane — `‖(x_r,y_r) − (x_l,y_l)‖` | ~0 (far) → ~2 (beacons at opposite screen edges) | yes, 6-tick | 6 |
+| **Span-rate** (unitless, span Δ per chase tick) | tick-to-tick change in beacon-pair span (one chase tick = 100ms @ 10Hz) | small, signed (positive = approaching, negative = receding) | "now" only | 1 |
+| **Target tilt** (sin θ, cos θ pair) | image-plane angle θ of the line from port (red) → starboard (green) beacon. **Convention: θ = 0 when chase + target wings are level relative to each other** (port→starboard line projects horizontally with port on chase-image-left). Encoded as `(sin θ, cos θ)` to remove the ±π wraparound discontinuity. | each component [-1, 1] | "now" only | 2 |
 
 **Notes on the design:**
 
@@ -108,13 +116,19 @@ Compute these in `gather_tracker_inputs` from the beacon pair, feed as new input
 
 - **Why span-rate is "now" only**: the 6-tick beacon-pair span history already encodes the rate implicitly. Adding span-rate as an explicit single scalar gives the NN a "right now is target approaching or receding" cheap-to-consume input without forcing it to backprop a finite difference through six raw values. History on span is for trend; rate is for immediate.
 
-- **Why target tilt is "now" only and image-plane-absolute, not chase-attitude-corrected**: the chase NN already has its own attitude (quat_w/x/y/z) as inputs. If it wants chase-corrected target tilt, it can derive it. Feeding raw image-plane tilt keeps the input simple and matches what an FPGA-side blob major-axis would emit naturally. **Tilt does NOT disambiguate target front-back** (a target heading toward chase banking left looks the same as a target heading away banking right in image-plane tilt alone) — that ambiguity is acknowledged and accepted for 032.
+- **Why tilt is encoded as (sin θ, cos θ) and NOT raw radians**: a raw-radian tilt wraps at ±π — roll the chase aircraft through inverted relative to the target and the input jumps from near +π to near -π in a single tick. NN activations don't like that discontinuity: gradients across the wrap are meaningless and the network has to learn two disjoint regimes for what is physically the same maneuver. The (sin θ, cos θ) pair is the standard NN angle encoding — continuous through the wrap (sin ±π = 0, cos ±π = -1; both smooth), bounded in [-1, 1], and the network can trivially recover θ via `atan2(sin, cos)` if it wants the linear form. Cost: 2 input slots instead of 1; worth it.
+
+- **Why tilt convention is "wings-level relative to target = 0"**: gives the chase NN a clean reference point. When chase is rolled the same as target (e.g., both wings-level in formation), tilt = 0 — no input pressure on the controller. When chase is rolled relative to target, tilt is non-zero proportional to relative roll. This complements the existing absolute-world chase-attitude inputs (`quat_w/x/y/z`): those say "I'm rolled in the world"; tilt says "I'm rolled relative to target". The NN can use the combination to separate the two regimes.
+
+- **Why tilt is "now" only**: image-plane tilt history would be redundant with the 6-tick beacon-pair NDC history (which already records the geometry that determines tilt). If tilt-rate becomes load-bearing as a target-maneuver leading indicator, add it as a single "now" scalar — but not in this iteration.
+
+- **Tilt does NOT disambiguate target front-back**. A target heading toward chase banking left looks the same as a target heading away banking right in image-plane tilt alone — that ambiguity is acknowledged and accepted for 032 (deferred to M3 perception loop).
 
 - **Beacon size is NOT a separate input**. The CEP value already encodes beacon-detection-quality / uncertainty. We treat beacons as point sources + CEP, matching the renderer's mini-panel splat representation. No major-axis-orientation, no blob area, no σ_xx/σ_yy. (If FPGA later emits those, they could feed a richer 032 variant — but not in this iteration.)
 
-- **NOT in this iteration**: bearing-rate vector (dMidpoint/dt), explicit closing-rate scalar, beacon area/major-axis. The bearing-rate signal is implicit in the 6-tick beacon position history. We're keeping the 032 feature set tight to test whether **span + span-rate + tilt** alone moves the avgInRamp ceiling — if so we get a clean result attribution; if not, that argues for the next-level addition.
+- **NOT in this iteration**: bearing-rate vector (dMidpoint/dt), explicit closing-rate scalar, tilt-rate scalar, beacon area/major-axis. The bearing-rate signal is implicit in the 6-tick beacon position history. We're keeping the 032 feature set tight to test whether **span + span-rate + tilt** alone moves the avgInRamp ceiling — if so we get a clean result attribution; if not, that argues for the next-level addition.
 
-Topology impact: NN input layer grows from **45 → 53** (6 span + 1 span-rate + 1 tilt). Weight count grows ~16%; modest.
+Topology impact: NN input layer grows from **45 → 54** (6 span + 1 span-rate + 2 tilt sin/cos). Weight count grows ~20%; modest.
 
 ### 1.6 What's acknowledged + accepted in 032 scope
 
@@ -126,15 +140,15 @@ Topology impact: NN input layer grows from **45 → 53** (6 span + 1 span-rate +
 
 ## 2. Proposed 032 scope (controller-side only)
 
-**030 baseline tuning runs ahead of 032** and may shift the starting point: the 16r → 32r recurrent topology bump is sequenced as 030 work (M11.preA.5). 032 starts against whichever 030 baseline is current.
+**030 baseline tuning is done** (M11.preA.5 T-102 closed 2026-05-15). The 16r → 32r experiment falsified the state-capacity hypothesis (32r is worse, not better — see [postdiag3_report.md](../030-tracker-mode/postdiag3_report.md)). **032 starts from postdiag2's 16r baseline.** Phase 1 features layer on top of the 16r topology — no architecture change.
 
 032 includes ONLY changes that can ship without hardware or FPGA work:
 
 - **(A) Beacon identity propagation** — gather pipeline change. Port-beacon NDC always in the L slots, starboard always in R, regardless of which is on which image side. Zero input-vector size change.
-- **(B) Three derived perceptual features**:
-  - `beacon_pair_span[6]` — unitless screen-fraction, 6-tick history (target's apparent width on screen — encodes range without wingspan calibration)
-  - `span_rate` — "now" only (target's apparent expansion/contraction rate — encodes closing rate)
-  - `target_tilt` — radians on the image plane, "now" only (line angle from red→green beacon, NOT chase-attitude-corrected)
+- **(B) Three derived perceptual features** (9 new input slots total):
+  - `beacon_pair_span[6]` — unitless screen-fraction, 6-tick history at 10Hz = 600ms trend window (target's apparent width on screen — encodes range without wingspan calibration)
+  - `span_rate` — "now" only, single scalar (target's apparent expansion/contraction rate per chase tick — encodes closing rate)
+  - `target_tilt` — encoded as `(sin θ, cos θ)` pair, "now" only, 2 scalars. Convention: θ = 0 when chase + target wings are level relative to each other. Sin/cos encoding avoids the ±π wraparound discontinuity that would otherwise break NN gradients when chase rolls past inverted-relative-to-target.
 - **(C)** Update sim noise / occasion-of-error models so the perceptual features see realistic real-flight error envelopes (beacon detection jitter, occasional sentinel under maneuver, etc.) — gated on bench evidence from 031 phase-1 recordings when they land.
 
 If 032 phase (A) + (B) lifts the fitness ceiling meaningfully → hypothesis "visibility-time signal richness was binding" confirmed; ship. If ceiling stays flat → FOV-blindness or pose-ambiguity hypotheses earn their place; design a follow-on then.
@@ -146,7 +160,7 @@ If 032 phase (A) + (B) lifts the fitness ceiling meaningfully → hypothesis "vi
 - **Beacon size / blob shape / major-axis as inputs** (CEP already encodes detection quality / spread)
 - **Bearing-rate vector or explicit closing-rate scalar** (implicit in 6-tick history of beacon positions + the new span[6])
 - **3rd beacon on target** (operator decision 2026-05-11: rejected; pose recovery is M3 territory via a richer perception loop, not via more beacons)
-- **NN topology / architecture change** (use 030's existing 32→16r→3 hidden layers; just wider input layer 45→53)
+- **NN topology / architecture change** (use 030's existing 32→16r→3 hidden layers; just wider input layer 45→54). Note: T-102 (M11.preA.5) falsified the state-capacity hypothesis, so 16r is the empirically-best baseline. A 16r-vs-32r A/B with phase-1 features installed is a candidate side-experiment if features alone don't lift the ceiling enough.
 - **Front-back ambiguity resolution** (acknowledged + accepted for 032; deferred to M3 — see §1.6 below)
 
 ## 3. Open questions (operator triage before /clarify)
@@ -159,11 +173,11 @@ Option C: ignore identity, just use code-ID-derived ordering and call it good.
 
 Default: A (no input-vector size change, identity baked into ordering convention).
 
-### Q2 — Which derived features get 6-tick history vs "now"-only? (locked 2026-05-11)
+### Q2 — Which derived features get 6-tick history vs "now"-only? (locked 2026-05-11, refined 2026-05-15)
 
-- `beacon_pair_span`: **6-tick history** (trend matters; span shrinks as target accelerates away)
-- `span_rate`: **"now" only** (the trend lives in span[6]; rate is the immediate-action input)
-- `target_tilt`: **"now" only** (image-plane tilt at the current instant; tilt-history would be redundant with raw beacon position history)
+- `beacon_pair_span`: **6-tick history** (trend matters; span shrinks as target accelerates away). 6 ticks × 100ms = 600ms window at 10Hz chase rate.
+- `span_rate`: **"now" only**, single scalar (the trend lives in span[6]; rate is the immediate-action input)
+- `target_tilt`: **"now" only**, encoded as `(sin θ, cos θ)` pair (2 scalars). Convention: θ = 0 when chase + target are wings-level relative to each other. Sin/cos encoding chosen over raw radians to avoid the ±π wraparound discontinuity at chase-relative-inverted attitudes; the NN can recover θ via `atan2(sin, cos)` internally if it wants the linear angle. Tilt history would be redundant with the raw beacon-pair NDC history.
 
 ### Q3 — Calibration / unit conversion concerns? (locked 2026-05-11 — NONE)
 
@@ -171,7 +185,7 @@ Everything is fraction-of-screen or angle-on-screen. No wingspan input, no per-c
 
 ### Q4 — Does 032 break the 030 wire contract?
 
-030's TrackerInputs is float[45] — a load-bearing serialization contract per the 030 spec FR-006 + FR-019. 032 grows it to **float[53]** (45 + 6 span-history + 1 span-rate + 1 tilt). That's a struct extension; needs a CEREAL_CLASS_VERSION bump or a parallel TrackerInputsV2 struct. **Per the project policy** ([feedback_no_cereal_versioning](../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_no_cereal_versioning.md)) we don't bump CEREAL — so 032 is a greenfield change. Old genomes from 030 are not portable, which matches the "input-transform changes break weight portability" pattern established in M11.preA.2.
+030's TrackerInputs is float[45] — a load-bearing serialization contract per the 030 spec FR-006 + FR-019. 032 grows it to **float[54]** (45 + 6 span-history + 1 span-rate + 2 tilt-sin-cos). That's a struct extension; needs a CEREAL_CLASS_VERSION bump or a parallel TrackerInputsV2 struct. **Per the project policy** ([feedback_no_cereal_versioning](../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_no_cereal_versioning.md)) we don't bump CEREAL — so 032 is a greenfield change. Old genomes from 030 are not portable, which matches the "input-transform changes break weight portability" pattern established in M11.preA.2.
 
 ### Q5 — When to attempt 032?
 

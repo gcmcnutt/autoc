@@ -308,12 +308,30 @@ postdiag2 baked 542 gens on the current 030 baseline (45 → 32 → 16r → 3, p
 The 32r bump stays in **030 v1 baseline tuning** — it's not a feature, it's the right topology for the current input shape. 032 starts from whichever 030 baseline is current when 032 unparks.
 
 **T-102 implementation tasks** (operator workflow: claude drafts code → operator reviews + builds → claude runs):
-- [ ] Change `TRACKER_NN_HIDDEN2_SIZE` from 16 → 32 in [include/autoc/nn/topology.h](../../include/autoc/nn/topology.h) (single constant cascading through `TRACKER_NN_TOPOLOGY`, `TRACKER_NN_WEIGHT_COUNT`, `TRACKER_NN_RECURRENT_STATE_COUNT`).
-- [ ] Update `static_assert(TRACKER_NN_WEIGHT_COUNT == ...)` to new value: 45·32+32 + 32·32+32 + 32·3+3 + 32·32 = 1440+32 + 1024+32 + 96+3 + 1024 = **3,651** (was 2,307 at 16r). Recurrent W_hh contribution: 256 → 1024 (+768 weights).
-- [ ] Re-run pop=5000 against the same source dmp (pastonly3 gen9200), same autoc-tracker.ini settings.
-- [ ] Compare fitness ceiling to postdiag2's -17K. Outcome routing:
-  - **Meaningful lift** (e.g., -19K+) → state capacity was binding; 32r becomes the new 030 baseline; 032 starts from there.
-  - **Flat near -17K** → state capacity NOT binding; 032 (visibility-time signal richness via span/tilt features) becomes the next experiment.
+- [X] Change `TRACKER_NN_HIDDEN2_SIZE` from 16 → 32 in [include/autoc/nn/topology.h](../../include/autoc/nn/topology.h) (single constant cascading through `TRACKER_NN_TOPOLOGY`, `TRACKER_NN_WEIGHT_COUNT`, `TRACKER_NN_RECURRENT_STATE_COUNT`).
+- [X] Update `static_assert(TRACKER_NN_WEIGHT_COUNT == ...)` to new value: 45·32+32 + 32·32+32 + 32·3+3 + 32·32 = 1440+32 + 1024+32 + 96+3 + 1024 = **3,651** (was 2,307 at 16r). Recurrent W_hh contribution: 256 → 1024 (+768 weights).
+- [X] Re-run pop=5000 against the same source dmp (pastonly3 gen9200), same autoc-tracker.ini settings.
+- [X] Compare fitness ceiling to postdiag2's -17K — see outcome below.
+
+**T-102 outcome — FINAL (2026-05-15, operator-stopped at gen 544)** — capacity is NOT the binding constraint. Full report: [postdiag3_report.md](postdiag3_report.md).
+
+| run | topology | weights | best fitness | gen of best | gens baked |
+|---|---|---|---|---|---|
+| postdiag2 | 45→32→16r→3 | 2,307 | **-17,060** | 517 | 542 (operator-stopped) |
+| postdiag3 | 45→32→**32r**→3 | 3,651 | -16,382 | 519 | 544 (operator-stopped) |
+
+postdiag3 (32r) was consistently ~700-1500 points WORSE than postdiag2 (16r) at every comparable gen through gen 544. 4× recurrent W_hh capacity (256→1024 weights) produced no fitness lift; the GA could not exploit the extra capacity within the variation-pressure budget. Determinism contract held at the larger weight count (544/544 SAME, 0 DIVERGED). Operator qualitative read from playback at gen 522: **tracking flights are visibly good, but (a) overruns persist** (no absolute-distance signal — only apparent NDC beacon-pair separation) **and (b) per-scenario behavior chaotically reshuffles on small fitness ticks rather than incrementally tightening** (classic GA-stuck-in-local-optima signature with an ambiguous input gradient). Neither pattern is addressable by adding state capacity; both are addressable by adding disambiguating perceptual inputs.
+
+Additional observation (2026-05-15, distinct failure mode): chase loses sight → high-pitch spiral → drifts until wall (hull-strike rate climbing in plateau zone). RNN's 16r hidden state isn't learning informed lost-sight patrol from the 6-tick beacon history (600ms window at 10Hz vs 9s typical lost-sight intervals — history is 15× too short). Phase-1 features (span/tilt) collapse to zero when blind, so they don't address this. Filed as 032 phase-2 candidate (lost-sight patrol sensors: `vis_now`, `ticks_since_seen`, `last_*` frozen-at-loss snapshots) — distinct from phase 1's chase-mode focus.
+
+Routing decision: **drop back to 16r as the v1 baseline**. 032 starts from postdiag2's 16r baseline with phase-1 features layered on top. The three qualitative observations (no absolute-distance signal → overruns; chaos shuffling → ambiguous gradient; uninformed lost-sight patrol → wall) all motivate input-information enhancements, not architecture.
+
+**Revert step** (in this commit batch, before 032 phase-1 code lands):
+- [X] Revert `TRACKER_NN_HIDDEN2_SIZE` to 16 in [include/autoc/nn/topology.h](../../include/autoc/nn/topology.h); restore weight-count assert to 2,307. *(to be executed during pre-commit cleanup — see "Pre-032 commit batch" below)*
+
+### Pre-032 commit batch (2026-05-15) — 030 v1 sealed-for-this-purpose
+
+The 030 v1 baseline is the postdiag2 (16r) weights. Trunk topology reverts to 16r before commit. M11.wrap follow-ups (T083 SMOKE_REPORT, T073 CLAUDE.md, T074 outcome.md, T075 code review, T076 constitution audit, T077 BACKLOG routing) remain queued but are not gates on 032 phase-1 code lands — they can be folded in alongside 032 work.
 
 ### Dropped from v1 closeout 2026-05-13 (per operator routing post-postdiag2)
 

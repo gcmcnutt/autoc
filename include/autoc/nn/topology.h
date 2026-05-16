@@ -85,9 +85,12 @@ constexpr const char* NN_TOPOLOGY_STRING = "33,32,16r,3";
 // mode-select on desktop (one binary supports both modes); xiao firmware
 // uses compile-time -DAUTOC_MODE per FR-019 to pick one.
 //
-// Same hidden sizes as pathgen (32 + 16 recurrent), only input layer
-// width differs. Weight count: (45·32+32) + (32·16+16) + (16·3+3) +
-// 16·16 (W_hh recurrent on hidden2) = 1472 + 528 + 51 + 256 = 2307.
+// 2026-05-15 — M11.preA.5 T-102 closed: 16r baseline restored.
+// 32r experiment ran to gen 544 (postdiag3); was consistently 700-1500 points
+// WORSE than 16r baseline (postdiag2 -17060 vs postdiag3 -16382 best fitness).
+// State capacity is NOT the binding constraint on the M2 plateau. Per
+// postdiag3_report.md, 032 (derived perceptual features) is the next move,
+// not bigger NN. Weight count restored to 2307; topology back to 45,32,16r,3.
 // ============================================================================
 
 constexpr int TRACKER_NN_INPUT_COUNT = static_cast<int>(TrackerInput::COUNT);  // 45
