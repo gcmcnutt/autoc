@@ -177,3 +177,51 @@ TEST(TrackerConfig, OperatorIniParsesClean) {
     EXPECT_EQ(reader.Get("", "CrashHullShape", ""), "SPHERE");
     EXPECT_DOUBLE_EQ(reader.GetReal("", "FlightArenaRadius", 0.0), 80.0);
 }
+
+// ---------------------------------------------------------------------------
+// 032 PHASE 1 — [DerivedFeatures] section
+// ---------------------------------------------------------------------------
+
+TEST(TrackerConfig, DerivedFeaturesDefaultsWhenSectionAbsent) {
+    // If the [DerivedFeatures] section is absent entirely, the loader falls
+    // back to the compiled-in default (CepGateThreshold = 1.25). Verify
+    // the parser returns the user-supplied default when the key isn't in
+    // the file.
+    const std::string ini =
+        "Mode = tracker\n"
+        "TrackerSourceRun = some/key.dmp\n";
+    std::string path = writeTempIni("derived_default.ini", ini);
+    INIReader reader(path);
+    ASSERT_EQ(reader.ParseError(), 0);
+    EXPECT_DOUBLE_EQ(reader.GetReal("DerivedFeatures", "CepGateThreshold", 1.25), 1.25);
+}
+
+TEST(TrackerConfig, DerivedFeaturesExplicitValuesParse) {
+    const std::string ini =
+        "Mode = tracker\n"
+        "TrackerSourceRun = some/key.dmp\n"
+        "[DerivedFeatures]\n"
+        "CepGateThreshold = 0.75\n";
+    std::string path = writeTempIni("derived_explicit.ini", ini);
+    INIReader reader(path);
+    ASSERT_EQ(reader.ParseError(), 0);
+    EXPECT_DOUBLE_EQ(reader.GetReal("DerivedFeatures", "CepGateThreshold", 1.25), 0.75);
+}
+
+TEST(TrackerConfig, DerivedFeaturesAtCanonicalDefault) {
+    // Spec Q4 + research.md R2 lock the default at 1.25 (matches
+    // kCepSentinelThreshold). The repo-root autoc-tracker.ini ships with
+    // CepGateThreshold = 1.25. This is the gate against accidental ini
+    // drift.
+    const std::string ini_path =
+        std::string(AUTOC_SOURCE_DIR) + "/autoc-tracker.ini";
+    INIReader reader(ini_path);
+    ASSERT_EQ(reader.ParseError(), 0);
+    EXPECT_DOUBLE_EQ(reader.GetReal("DerivedFeatures", "CepGateThreshold", -1.0), 1.25);
+}
+
+// Out-of-range CepGateThreshold loud-fail is enforced via the ConfigManager
+// loud-fail path (calls exit(1) with a clear error) — covered by manual
+// operator runs at startup, not unit-testable without a process fork. The
+// INIReader-level parse succeeds for any double value; the range check
+// lives in src/util/config.cc per contracts/ini_schema.md.

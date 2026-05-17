@@ -159,6 +159,15 @@ struct WorkerInit {
   gp_scalar crashHullRadius = static_cast<gp_scalar>(1.0);
   gp_scalar trailDistance = static_cast<gp_scalar>(3.048);
 
+  // 032 phase 1 — CepGateThreshold for derived-feature gating. Read from
+  // autoc-tracker.ini [DerivedFeatures] CepGateThreshold (default 1.25,
+  // matches kCepSentinelThreshold). Same value drives both the autoc
+  // minisim path (via ConfigManager in-process) and the crrcsim worker
+  // path (via this field — workers are separate processes with no
+  // ConfigManager). Per spec.md Q4 + research.md R2 + contracts/
+  // ini_schema.md.
+  gp_scalar cepGateThreshold = static_cast<gp_scalar>(1.25);
+
   // 030 V1.5 — run-static scenario library. Built once at startup from
   // generateSmoothPaths(gPathSeed) + the joint-PRNG variation table; the
   // worker dispatches per-eval scenarios by indexing into these in
@@ -175,7 +184,8 @@ struct WorkerInit {
     ar(m, sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
        airframeProxy, flightArena,
        crashHullRadius, trailDistance,
-       pathList, scenarioMetaList);
+       pathList, scenarioMetaList,
+       cepGateThreshold);
     mode = static_cast<Mode>(m);
   }
 };

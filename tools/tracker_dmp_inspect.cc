@@ -108,6 +108,22 @@ void printTarget(const char* label, const CopiedTargetSample& t) {
               << "  hull=" << (t.inside_crash_hull ? "INSIDE" : "outside") << "\n";
 }
 
+// 032 phase 1 — print the 9 derived perceptual feature slots from the per-tick
+// TrackerInputs (serialized into AircraftState at v=2). Useful for the
+// minisim/crrcsim smoke verification: confirm slots 45..53 carry non-trivial
+// values across ticks before kicking off the production bake.
+void printDerivedFeatures(const char* label, const TrackerInputs& inputs) {
+    std::cout << "  " << label << " derived: span[6]=[";
+    for (int i = 0; i < 6; ++i) {
+        std::cout << std::fixed << std::setprecision(4) << inputs.beacon_pair_span[i];
+        if (i < 5) std::cout << ", ";
+    }
+    std::cout << "]  span_rate=" << std::fixed << std::setprecision(4) << inputs.span_rate
+              << "  tilt=(sin " << std::fixed << std::setprecision(4) << inputs.target_tilt_sin
+              << ", cos " << std::fixed << std::setprecision(4) << inputs.target_tilt_cos
+              << ")\n";
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -229,6 +245,17 @@ int main(int argc, char* argv[]) {
             printTarget("first ", tt0.front());
             if (tt0.size() >= 3) printTarget("middle", tt0[tt0.size() / 2]);
             printTarget("last  ", tt0.back());
+        }
+
+        // 032 phase 1 — per-tick derived perceptual features (slots 45..53
+        // of TrackerInputs). Serialized into AircraftState at dmp v=2.
+        // Smoke verification: confirm non-trivial values across ticks.
+        if (!r.aircraftStateList.empty() && !r.aircraftStateList[0].empty()) {
+            const auto& as0 = r.aircraftStateList[0];
+            std::cout << "\nScenario 0 derived perceptual features (032 phase 1 — slots 45..53):\n";
+            printDerivedFeatures("first ", as0.front().getTrackerInputs());
+            if (as0.size() >= 3) printDerivedFeatures("middle", as0[as0.size() / 2].getTrackerInputs());
+            printDerivedFeatures("last  ", as0.back().getTrackerInputs());
         }
     } catch (const std::exception& e) {
         std::cerr << "ERROR: " << e.what() << "\n";

@@ -721,6 +721,15 @@ static void logEvalResultsScenarioTracker(std::ofstream& fout,
     }
     // dist-to-boundary (width 8, 2 decimals — meters, range 0..1000)
     n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 7.2f", in[44]);
+    // 032 phase 1 — derived perceptual features (slots 45..53; widths match
+    // kTrackerInputMeta header_width=7):
+    //   45..50 beacon_pair_span[6]  — raw NDC distance, [0, ~2.83]
+    //      51   span_rate           — one-tick diff, signed
+    //      52   target_tilt_sin     — [-1, +1]
+    //      53   target_tilt_cos     — [-1, +1]
+    for (int k = 45; k < 54; ++k) {
+      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 6.3f", in[k]);
+    }
     // 3 NN outputs
     n += snprintf(outbuf + n, sizeof(outbuf) - n,
       " % 7.4f % 7.4f % 7.4f", out[0], out[1], out[2]);
@@ -1054,6 +1063,7 @@ static WorkerInit buildWorkerInit() {
 
     init.crashHullRadius = static_cast<gp_scalar>(cfg.crashHullRadius);
     init.trailDistance = static_cast<gp_scalar>(cfg.trailDistance);
+    init.cepGateThreshold = static_cast<gp_scalar>(cfg.cepGateThreshold);
 
     return init;
 }

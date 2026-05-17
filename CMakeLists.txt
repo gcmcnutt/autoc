@@ -195,6 +195,9 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(crash_hull_tests tests/crash_hull_tests.cc)
   target_link_libraries(crash_hull_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(derived_features_tests tests/derived_features_tests.cc)
+  target_link_libraries(derived_features_tests GTest::gtest GTest::gtest_main autoc_common)
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -220,6 +223,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME arena_tests COMMAND arena_tests)
   add_test(NAME trail_rabbit_tests COMMAND trail_rabbit_tests)
   add_test(NAME crash_hull_tests COMMAND crash_hull_tests)
+  add_test(NAME derived_features_tests COMMAND derived_features_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -238,6 +242,7 @@ if(ENABLE_AUTOC_TESTS)
             arena_tests
             trail_rabbit_tests
             crash_hull_tests
+            derived_features_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -261,6 +266,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND arena_tests --gtest_brief=1
     COMMAND trail_rabbit_tests --gtest_brief=1
     COMMAND crash_hull_tests --gtest_brief=1
+    COMMAND derived_features_tests --gtest_brief=1
   )
 endif()
 

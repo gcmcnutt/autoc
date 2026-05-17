@@ -1,14 +1,26 @@
 # Feature Specification: 032 Tracker NN Enhancements — Derived Pose Features
 
-**Feature Branch**: TBD (currently parked; drafted in 030 branch during M11.wrap)
+**Feature Branch**: `032-tracker-nn-enhancements` (active 2026-05-15)
 **Created**: 2026-05-11
-**Status**: DRAFT — letter-to-ourselves capturing 030 v1 outcome + first-principles diagnosis of why M2 plateaus. No /clarify, /plan, or /tasks yet.
+**Status**: ACTIVE — /clarify in progress 2026-05-15.
+
+## Clarifications
+
+### Session 2026-05-15
+- Q: Is Feature A (beacon identity-stable ordering) in phase 1, or deferred? → A: IN phase 1 — single bake tests identity-stable ordering AND the 3 new derived features together (A + B).
+- Q: Quantified success threshold for phase 1? → A: avgInRamp ≥ 0.15 at plateau (vs current ~0.07). Underlying story: overrun reduction — the new sensors expose range/closing/tilt explicitly so the chase stops shooting past target.
+- Q: Span-rate formula? → A: one-tick diff `span[now] − span[now-1]`. Low-latency, raw signal. Smoothed trend already lives in the span[6] history slot.
+- Q: Missing-beacon handling for new derived features? → A: **CEP-threshold gated** — if EITHER beacon's CEP exceeds a threshold (treat as missing/untrusted), substitute the **neutral reference values** representing "target straight ahead, in formation, no action needed": tilt `(sin θ, cos θ) = (0, 1)` (θ=0, wings-level relative); span = 0; span-rate = 0. Apply this convention uniformly across minisim / crrcsim impls (phase 1 scope). Document the rule in `docs/COORDINATE_CONVENTIONS.md` and `docs/sensor-pipeline.md` as part of phase 1 deliverables — **purpose of the doc updates is xiao-migration prep**: phase 1 ships minisim + crrcsim only; capturing the convention now keeps the future xiao tracker-mode port wire-equivalent without archaeology. (CEP threshold value itself is a config knob — set during /plan or implementation.) Note: existing 030 NDC slot handling also gets re-evaluated under this convention as part of Feature A's identity-stable ordering work, since both must be consistent.
+- Q: History init at scenario start (`beacon_pair_span[6]` before tick 0)? → A: **Follow the existing point-history convention** — derived feature histories mirror whatever the existing 030 NDC point histories do at scenario start (currently replicate-first-valid in tracker_stepper.cc). Single convention covers both old and new history buffers. CEP-gating from Q4 layers on top during normal-operation blind ticks; scenario-start init is purely about pre-tick-0 buffer fill.
+- Q: How is "plateau" defined for the phase 1 success criterion `avgInRamp ≥ 0.15 at plateau`? → A: **Match 030 reference protocol** — bake to ≥ 322 gens (smoke15 reference length), read avgInRamp averaged over the last 50 gens. Same protocol used to call the 030 -17k plateau; keeps phase-1 cross-comparable with the reference run without inventing new stability infrastructure.
+- Q: Borderline-result decision rule (avgInRamp between 0.10 and 0.15)? → A: **Partial-band attribution bakes.** Three outcome bands: (i) plateau-avgInRamp ≥ 0.15 → phase 1 success, move on. (ii) 0.10 ≤ plateau-avgInRamp < 0.15 → partial signal; run two follow-on bakes (A-only: identity-stable ordering without derived features; B-only: derived features without identity-stable ordering) using the same 322-gen / last-50 plateau protocol, to attribute which sub-feature carried the lift. THEN decide phase-2 routing based on which sub-feature looks load-bearing. (iii) plateau-avgInRamp < 0.10 → clean miss; route to phase 2 (FOV-blindness / lost-sight patrol) or M3-grade perception without intermediate isolation bakes.
+- Q: Phase 1 per-feature observability requirements? → A: **Defer to existing convention** — data.dat already records all NN inputs + outputs, and the 9 new derived-feature input slots must be captured under that convention. The 032 schema bump (45 → 54) is a dmp-honesty audit boundary per [feedback_honest_dmp_recording](../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_honest_dmp_recording.md): the dmp format must also capture all inputs + outputs, including the 9 new slots — any gap (or rationale for one) gets reconciled as part of phase 1. Additional troubleshooting telemetry beyond inputs/outputs is NOT pre-committed at spec time; added during implementation/operation if a specific diagnostic need surfaces.
 
 > **Why this exists**: 030 M2 tracker training (smoke14b, smoke15, postdiag1, postdiag2) reaches fitness around **-17,000** and plateaus. M1 pathgen reached -50,000+ on similar source trajectories. The gap is NOT NN topology, training compute, or determinism (all confirmed clean). The gap is **information content of the NN input vector**. This spec captures what we learned during 030 and outlines the derived-input changes that 032 would attack.
 
 ## Boundary lines
 
-032 is a **controller-side feature** that adds derived perceptual features to the existing tracker NN input vector. It does NOT change hardware, does NOT change the optical front end, does NOT add new sensors. It re-derives information from the SAME 2-beacon-pair-NDC + history input shape that 030 ships with.
+032 is a **controller-side feature** that adds derived perceptual features to the existing tracker NN input vector. It does NOT change hardware, does NOT change the optical front end, does NOT add new *physical* sensors (no new beacons, no new camera, no new IMU channels). It re-derives information from the SAME 2-beacon-pair-NDC + history input shape that 030 ships with — the new input slots are *computed* features over the existing optical front end.
 
 | Feature | Scope | Status |
 |---|---|---|
@@ -107,7 +119,7 @@ Compute these in `gather_tracker_inputs` from the beacon pair, feed as new input
 | feature | value | range | history? | input slots |
 |---|---|---|---|---|
 | **Beacon-pair span** (unitless, screen-fraction) | distance between port and starboard beacon centroids on the NDC image plane — `‖(x_r,y_r) − (x_l,y_l)‖` | ~0 (far) → ~2 (beacons at opposite screen edges) | yes, 6-tick | 6 |
-| **Span-rate** (unitless, span Δ per chase tick) | tick-to-tick change in beacon-pair span (one chase tick = 100ms @ 10Hz) | small, signed (positive = approaching, negative = receding) | "now" only | 1 |
+| **Span-rate** (unitless, span Δ per chase tick) | one-tick diff: `span[now] − span[now-1]` (one chase tick = 100ms @ 10Hz). Low-latency raw signal; smoothed trend lives in span[6] history. | small, signed (positive = approaching, negative = receding) | "now" only | 1 |
 | **Target tilt** (sin θ, cos θ pair) | image-plane angle θ of the line from port (red) → starboard (green) beacon. **Convention: θ = 0 when chase + target wings are level relative to each other** (port→starboard line projects horizontally with port on chase-image-left). Encoded as `(sin θ, cos θ)` to remove the ±π wraparound discontinuity. | each component [-1, 1] | "now" only | 2 |
 
 **Notes on the design:**
@@ -128,6 +140,17 @@ Compute these in `gather_tracker_inputs` from the beacon pair, feed as new input
 
 - **NOT in this iteration**: bearing-rate vector (dMidpoint/dt), explicit closing-rate scalar, tilt-rate scalar, beacon area/major-axis. The bearing-rate signal is implicit in the 6-tick beacon position history. We're keeping the 032 feature set tight to test whether **span + span-rate + tilt** alone moves the avgInRamp ceiling — if so we get a clean result attribution; if not, that argues for the next-level addition.
 
+- **Missing-beacon convention** (locked 2026-05-15 via /clarify Q4): each tick, `gather_tracker_inputs` checks each beacon's CEP. If EITHER beacon's CEP exceeds a config-tunable threshold (treat as untrusted detection), the derived features substitute their **neutral reference values** representing "target straight ahead, in formation":
+  - `target_tilt`: `(sin θ, cos θ) = (0, 1)` — θ = 0, wings-level relative, no roll pressure
+  - `beacon_pair_span`: 0 — "no closing-distance signal"
+  - `span_rate`: 0 — "no relative motion"
+
+  These are the inputs that produce no controller-side action pressure. Phase 1 includes propagating this CEP-gating convention through the existing 18 NDC slots too (consistent treatment with Feature A's identity-stable ordering work). Cross-impl invariant: minisim, crrcsim, and any future xiao tracker-mode path apply the SAME CEP threshold + SAME substitution values. Documented in `docs/COORDINATE_CONVENTIONS.md` (sensor pipeline section) and `docs/sensor-pipeline.md` as a phase 1 deliverable.
+
+  *Implication for phase-2 lost-sight patrol*: this convention deliberately gives the NN "everything's fine" inputs during blind ticks — it cannot distinguish "actually fine" from "blind, fine-looking inputs are masking it." Phase 2 will need explicit `vis_now` / `ticks_since_seen` signals on top to enable patrol behavior. Acknowledged tradeoff: phase 1 treats blind ticks as no-action zones; phase 2 unlocks patrol learning.
+
+- **History init at scenario start** (locked 2026-05-15 via /clarify Q5): `beacon_pair_span[6]` follows the SAME convention as the existing 030 NDC point histories at scenario start. The current pattern is replicate-first-valid (`tracker_stepper.cc` `projectAndShiftHistory()` and the scenario-init pre-fill); span[6] mirrors it. If the existing convention is later revised (e.g., to switch to CEP-gated neutral fill at scenario start too), the derived-feature histories follow. The intent: a single load-bearing convention spans all history buffers — old and new — so that minisim / crrcsim / xiao remain wire-equivalent.
+
 Topology impact: NN input layer grows from **45 → 54** (6 span + 1 span-rate + 2 tilt sin/cos). Weight count grows ~20%; modest.
 
 ### 1.6 What's acknowledged + accepted in 032 scope
@@ -135,6 +158,25 @@ Topology impact: NN input layer grows from **45 → 54** (6 span + 1 span-rate +
 - **Front-back ambiguity is acknowledged and accepted** for 032. Resolving it cleanly requires either (a) a 3rd target beacon (operator-rejected — adds hardware, doesn't match real-flight ambition) or (b) a perception loop that integrates pose over time (M3-track research, deferred). 032 tests whether richer image-plane features + the existing 6-tick history give the NN enough signal to *predict* (not just react) within the ambiguity envelope. Result is either "ambiguity wasn't the load-bearing constraint" or "we hit a different ceiling and now know we need M3-grade perception."
 - **Simulator has oracle access to BOTH chase AND target attitude.** The chase NN's `quat_w/x/y/z` inputs already see chase attitude; target attitude is in the source dmp and the simulator's projection. We can use both oracles **for training-time analysis / ground-truth comparison** (e.g., "what target tilt does the simulator's beacon-pair-on-image-plane reproduce vs the ground-truth target.q_EB roll component?") but the NN itself sees ONLY the derived perceptual inputs. No oracle leakage into the controller.
 - **The trajectory we're on**: 2 coded beacons (030 / 032) → eventually non-broadcast visible-light identification + pose recovery (M3). 032 is the last stop before perception becomes its own feature.
+
+### 1.7 Sensor modality vs sensor fault — distinction for the next iteration (2026-05-16)
+
+A critical framing note added during 032 phase 1 implementation: **beacon invisibility in this design is a MODALITY, not a SIGNAL LOSS**.
+
+Beacons aren't omni-directional. With 270° emission cones mounted on wingtips, certain target attitudes / chase-relative geometries naturally render one or both beacons out of the chase camera's view (target heading directly away, target rolled past inverted, target outside FOV laterally, etc.). When the chase sees only the starboard beacon for several ticks, that's not a sensor failure — it's information: target's port wing is occluded from chase's viewpoint, telling us something about relative attitude.
+
+**Phase 1 (current) treats all blindness uniformly** — both-beacon-visible triggers full derived-feature computation; either-beacon-gated substitutes neutral values across all derived slots. That's the simplest correct-when-both-visible behavior, accepted as a phase-1 tradeoff.
+
+**The NEXT iteration of sensors / synthetic sensors should distinguish modality from loss.** Goals:
+- **Better turn prediction**: extract intent from partial-visibility patterns (e.g., "we're seeing only the starboard wing → target is rolling left, anticipate the turn")
+- **Better intercept**: maintain meaningful lead computation using single-beacon bearing + history when only one beacon is visible
+- **Continued operation with one sensor visible**: degrade gracefully from "full pose info" → "half pose info, fall back to bearing + last-known span/tilt" → "no info, patrol"
+- **Soft-fail semantics**: substitute degraded but useful inputs (last-known with staleness flag) instead of jumping to neutral
+- **Per-beacon timers + history**: `ticks_since_seen_left`, `ticks_since_seen_right` as independent counters; last-known per-beacon NDC retained across short gaps for interpolation
+
+**NOT in scope yet**: sensor-fault robustness (cross-checking independent sensors against each other). That's a later milestone, predicated on having multiple independent sensor modalities to cross-check. For now we assume the optical front end is honest; the only "failure mode" is geometry-driven invisibility.
+
+This note is forward-looking — captured here so the next sensor-architecture spec (032 phase 2, or a successor) has the design constraints + goals already articulated. The phase-1 implementation lives with the uniform-blindness simplification; the design space for richer modality handling is documented and queued.
 
 ---
 
@@ -145,13 +187,22 @@ Topology impact: NN input layer grows from **45 → 54** (6 span + 1 span-rate +
 032 includes ONLY changes that can ship without hardware or FPGA work:
 
 - **(A) Beacon identity propagation** — gather pipeline change. Port-beacon NDC always in the L slots, starboard always in R, regardless of which is on which image side. Zero input-vector size change.
-- **(B) Three derived perceptual features** (9 new input slots total):
+- **(B) Three derived perceptual features** (9 new input slots total — all must be recorded in both data.dat and dmp per the inputs+outputs honesty invariant, locked 2026-05-15 via /clarify Q8; 032's schema bump is the audit boundary):
   - `beacon_pair_span[6]` — unitless screen-fraction, 6-tick history at 10Hz = 600ms trend window (target's apparent width on screen — encodes range without wingspan calibration)
   - `span_rate` — "now" only, single scalar (target's apparent expansion/contraction rate per chase tick — encodes closing rate)
   - `target_tilt` — encoded as `(sin θ, cos θ)` pair, "now" only, 2 scalars. Convention: θ = 0 when chase + target wings are level relative to each other. Sin/cos encoding avoids the ±π wraparound discontinuity that would otherwise break NN gradients when chase rolls past inverted-relative-to-target.
 - **(C)** Update sim noise / occasion-of-error models so the perceptual features see realistic real-flight error envelopes (beacon detection jitter, occasional sentinel under maneuver, etc.) — gated on bench evidence from 031 phase-1 recordings when they land.
 
-If 032 phase (A) + (B) lifts the fitness ceiling meaningfully → hypothesis "visibility-time signal richness was binding" confirmed; ship. If ceiling stays flat → FOV-blindness or pose-ambiguity hypotheses earn their place; design a follow-on then.
+**Phase 1 (locked 2026-05-15)** ships (A) + (B) together in a single bake:
+- (A) **Beacon identity-stable ordering**: existing 6-tick beacon-NDC history slots change semantics — port-side beacon always in L slots, starboard always in R slots, regardless of which is on which image side at any given tick. Zero input-vector size change; reinterprets existing 18 input slots. (Old 030 weights are not portable across this reorder — fine, we're greenfield-training anyway.)
+- (B) **Three derived perceptual features** appended to the input vector (45 → 54).
+
+Single bake then tests whether the combined feature set lifts the ceiling. **Phase 1 success threshold (locked 2026-05-15 via /clarify Q2): avgInRamp ≥ 0.15 at plateau** (vs current ~0.07 ceiling — see Appendix A). **Plateau read protocol (locked 2026-05-15 via /clarify Q6): bake to ≥ 322 gens (matches smoke15 reference length), then average avgInRamp over the last 50 gens — that average is the success number.** avgInRamp is the symptom-level metric: chase currently spends 93% of ticks out of the cone; doubling time-in-cone is the bar for "phase 1 worked." Underlying story is overrun reduction — the new sensors expose range/closing/tilt explicitly so the chase stops shooting past target. Best-fitness number is a secondary signal (variation-ramp pressure makes cross-run fitness comparisons noisy per [project_late_run_fitness_interpretation](../../.claude/projects/-home-gmcnutt-autoc/memory/project_late_run_fitness_interpretation.md)).
+
+**Outcome decision rule (locked 2026-05-15 via /clarify Q7)**:
+- **≥ 0.15** → phase 1 success; advance to closeout, then operator decides next milestone (031 hardware, M3 perception, or 030-related follow-ups).
+- **0.10 ≤ avgInRamp < 0.15** → partial signal. Run TWO follow-on bakes using the same 322-gen / last-50-gen plateau protocol: (i) **A-only** = identity-stable ordering enabled, derived features disabled; (ii) **B-only** = identity-stable ordering reverted to NDC-x-sort, derived features enabled. Attribution decides whether to refine A, refine B, or escalate to phase 2.
+- **< 0.10** → clean miss; route to phase 2 (FOV-blindness / lost-sight patrol) or M3-grade perception without intermediate isolation bakes.
 
 032 explicitly **DOES NOT** include:
 - **Calibration of any input to physical units** — everything is fraction-of-screen or angle-on-screen. Same transform sim ↔ real flight.
@@ -201,12 +252,15 @@ This section lists items originally filed in other specs/backlogs that fit bette
 
 - *(none yet — first pass at 032 scoping. Add items as they surface during v1 closeout or post-bake analysis.)*
 
-## 5. Status as of draft
+## 5. Status
 
 - **Draft created**: 2026-05-11 alongside postdiag2 overnight bake
-- **/clarify**: not run; gated on 030 v1 closeout completion
-- **/plan**: not started
-- **First experiment**: when 032 unparks, start with feature (A) alone — beacon identity propagation, ZERO input-vector size change. Measure whether front-back ambiguity reduction alone shifts the plateau. Add (B) only if (A) doesn't move the needle.
+- **Branch active**: 2026-05-15 (`032-tracker-nn-enhancements`, after 030 T-102 closeout commit 8bfad02)
+- **/clarify**: completed 2026-05-15 (8 questions answered total — initial pass Q1-Q5, second pass Q6-Q8; see Clarifications section at top)
+- **/plan**: not started — next step
+- **First experiment** (locked 2026-05-15 via /clarify Q1): phase 1 ships (A) + (B) together — beacon identity-stable ordering PLUS the 3 new derived features in a single bake. Earlier draft framing ("start with A alone") superseded; rationale was avoiding confounded attribution, but the operator decision is that the combined surface is the right phase-1 test.
+- **Phase-1 implementation surface** (confirmed 2026-05-15): minisim + crrcsim only; xiao tracker-mode port is NOT phase 1, but the conventions docs (`docs/COORDINATE_CONVENTIONS.md`, `docs/sensor-pipeline.md`) get updated in phase 1 specifically to make that future xiao port wire-equivalent.
+- **Topology**: phase 1 holds 16r (T-102 result stands). 16r → 32r resizing is a contingency, NOT a phase-1 step — only revisited if (a) phase-1 plateau-avgInRamp falls in the 0.10–0.15 partial band AND attribution bakes (per Q7 rule) point to under-capacity rather than under-signal, or (b) a future phase explicitly chooses to retest state capacity with the richer input vector installed.
 
 ---
 
@@ -227,4 +281,4 @@ Quick numbers (smoke15 final, gens 1→322):
 
 The "converged" trajectory of every metric past gen ~100 is the signature: more compute doesn't move it because the controller has already extracted everything it can from the input space. The 7% in-ramp rate is the bound the input information content imposes.
 
-If 032 (A) alone gets avgInRamp meaningfully above 0.07 — even to 0.15 — that's evidence the front-back disambiguation was the binding constraint. If it doesn't move, that argues for (B) or deferring to M3 / richer perception.
+**Locked 2026-05-15 via /clarify Q2**: phase 1 success threshold is **avgInRamp ≥ 0.15 at plateau** (~2× current ceiling). **Plateau read (locked 2026-05-15 via /clarify Q6): bake ≥ 322 gens, average avgInRamp over last 50 gens.** **Outcome rule (locked 2026-05-15 via /clarify Q7): ≥0.15 = success; 0.10–0.15 = partial → A-only + B-only attribution bakes; <0.10 = clean miss → route to phase 2 / M3.** Earlier framing of "Feature A alone" superseded by Q1 (phase 1 = A + B together).

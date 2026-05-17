@@ -151,6 +151,18 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
     config->beaconRightMountY = reader.GetReal("", "BeaconRightMountY", config->beaconRightMountY);
     config->beaconRightMountZ = reader.GetReal("", "BeaconRightMountZ", config->beaconRightMountZ);
 
+    // === 032 PHASE 1 — DERIVED PERCEPTUAL FEATURES =====================
+    // [DerivedFeatures] section. Loud-fail on out-of-range threshold.
+    config->cepGateThreshold = reader.GetReal("DerivedFeatures", "CepGateThreshold", config->cepGateThreshold);
+    if (config->cepGateThreshold < 0.0 || config->cepGateThreshold > 2.0) {
+        out << "FATAL ERROR: [DerivedFeatures] CepGateThreshold = "
+            << config->cepGateThreshold
+            << " is out of range [0.0, 2.0]. Defaults to 1.25 (matches "
+            << "kCepSentinelThreshold). Per specs/032-tracker-nn-enhancements"
+            << "/contracts/ini_schema.md." << std::endl;
+        exit(1);
+    }
+
     // === Mode validation (loud-fail per FR-011 mutual-exclusion) =======
     // Pathgen-mode: anything goes; tracker-* fields are inert defaults.
     // Tracker-mode: TrackerSourceRun is required; loud-fail if missing.

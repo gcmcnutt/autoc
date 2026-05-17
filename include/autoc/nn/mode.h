@@ -32,7 +32,7 @@ struct ModeStrategy {
                           AircraftState& aircraftState,
                           NNInputs& inputs);
 
-    int input_count;     // PathgenInput::COUNT (33) or TrackerInput::COUNT (45)
+    int input_count;     // PathgenInput::COUNT (33) or TrackerInput::COUNT (54)
     const char* name;    // "pathgen" | "tracker"
 
     // 030 M7a — Topology metadata for runtime mode-select (FR-019). Both
@@ -45,7 +45,7 @@ struct ModeStrategy {
     int num_layers;                  // 4 in v1
     int weight_count;                // total feedforward + recurrent W_hh
     int hidden_state_count;          // total recurrent state floats
-    const char* topology_string;     // "33,32,16r,3" or "45,32,16r,3"
+    const char* topology_string;     // "33,32,16r,3" or "54,32,16r,3"
 };
 
 extern const ModeStrategy kPathgenMode;

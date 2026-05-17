@@ -145,6 +145,16 @@ struct AutocConfig {
     double beaconRightMountX = 0.0;
     double beaconRightMountY = +0.45;       // right wingtip (body +y)
     double beaconRightMountZ = 0.0;
+
+    // === 032 PHASE 1 — DERIVED PERCEPTUAL FEATURES =====================
+    // [DerivedFeatures] section in autoc-tracker.ini. Inert in pathgen mode
+    // (no derived-feature slots in PathgenInputs). Per spec.md Q4 +
+    // contracts/ini_schema.md.
+    //
+    // CepGateThreshold: substitute neutral values for derived features
+    // when EITHER beacon's CEP at the current tick is >= this. Default
+    // matches kCepSentinelThreshold (1.25) from camera_projection.h.
+    double cepGateThreshold = 1.25;
 };
 
 class ConfigManager {

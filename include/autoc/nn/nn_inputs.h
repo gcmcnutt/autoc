@@ -144,6 +144,12 @@ enum class TrackerInput : uint16_t {
     AIRSPEED,
     GYRO_P, GYRO_Q, GYRO_R,
     DIST_TO_BOUNDARY_ALONG_VEL,
+    // ----- 032 PHASE 1 NEW SLOTS (45..53) -----
+    BEACON_PAIR_SPAN_TM5, BEACON_PAIR_SPAN_TM4, BEACON_PAIR_SPAN_TM3,
+    BEACON_PAIR_SPAN_TM2, BEACON_PAIR_SPAN_TM1, BEACON_PAIR_SPAN_NOW,
+    SPAN_RATE,
+    TARGET_TILT_SIN,
+    TARGET_TILT_COS,
     COUNT
 };
 
@@ -166,13 +172,20 @@ constexpr SensorInputMeta kTrackerInputMeta[] = {
     {"AIRSPEED", "vel", 8},
     {"GYRO_P", "gyrP", 7}, {"GYRO_Q", "gyrQ", 7}, {"GYRO_R", "gyrR", 7},
     {"DIST_TO_BOUNDARY_ALONG_VEL", "dBnd", 8},
+    // ----- 032 PHASE 1 NEW META (slots 45..53) -----
+    {"BEACON_PAIR_SPAN_TM5", "spn-5", 7}, {"BEACON_PAIR_SPAN_TM4", "spn-4", 7},
+    {"BEACON_PAIR_SPAN_TM3", "spn-3", 7}, {"BEACON_PAIR_SPAN_TM2", "spn-2", 7},
+    {"BEACON_PAIR_SPAN_TM1", "spn-1", 7}, {"BEACON_PAIR_SPAN_NOW", "spn0",  7},
+    {"SPAN_RATE",            "dspn",  7},
+    {"TARGET_TILT_SIN",      "tltS",  7},
+    {"TARGET_TILT_COS",      "tltC",  7},
 };
 
 static_assert(static_cast<size_t>(TrackerInput::COUNT) ==
               sizeof(kTrackerInputMeta) / sizeof(SensorInputMeta),
               "TrackerInput enum count must match kTrackerInputMeta length");
-static_assert(static_cast<int>(TrackerInput::COUNT) == 45,
-              "TrackerInput::COUNT must equal 45 per Session 2026-05-07 Q1 (36 beacon + 8 state + 1 arena)");
+static_assert(static_cast<int>(TrackerInput::COUNT) == 54,
+              "TrackerInput::COUNT must equal 54 per 032 phase 1 (36 beacon + 8 state + 1 arena + 9 derived)");
 
 // 030 M6d — Tracker-mode NN input storage struct (FR-006 + FR-016).
 //
@@ -204,10 +217,27 @@ struct TrackerInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xi
     // gradient sharp near the boundary and saturates at ~1 far from it;
     // the safety layer is a separate world-frame addition (deferred).
     float dist_to_boundary_along_vel;        // raw-ok: NN-byte-format buffer — dimensionless tanh, [0,1)
+
+    // ----- 032 PHASE 1 — derived perceptual features (FR per spec.md §1.5) -----
+    // beacon_pair_span: raw Euclidean distance between port + starboard
+    // beacon centroids in the NDC (x, y) coordinate frame — `sqrt(dx² + dy²)`
+    // with no scaling, no normalization, no clipping. Same units as
+    // BeaconObservation::screen_x/y. 6-tick history (100ms grid).
+    // Substituted to 0.0 per-tick when EITHER beacon's CEP at "now"
+    // >= CepGateThreshold.
+    float beacon_pair_span[6];   // raw-ok: NN-byte-format buffer
+    // span_rate: one-tick raw diff = span[5] - span[4]. Signed.
+    float span_rate;             // raw-ok: NN-byte-format buffer
+    // target_tilt encoded as (sin θ, cos θ) where θ = atan2(y_r-y_l, x_r-x_l)
+    // over NDC. θ = 0 ⇔ port→starboard line is horizontal in image plane (chase
+    // and target wings level relative). Substituted to (0, 1) per-tick when
+    // CEP-gated OR when beacon pair is geometrically degenerate (<1e-4 in NDC).
+    float target_tilt_sin;       // raw-ok: NN-byte-format buffer
+    float target_tilt_cos;       // raw-ok: NN-byte-format buffer
 };
 
-static_assert(sizeof(TrackerInputs) == 45 * sizeof(float),
-              "TrackerInputs layout must be contiguous float[45] with no padding");
+static_assert(sizeof(TrackerInputs) == 54 * sizeof(float),
+              "TrackerInputs layout must be contiguous float[54] with no padding");
 static_assert(alignof(TrackerInputs) == alignof(float),
               "TrackerInputs must be float-aligned for matrix multiply");
 static_assert(static_cast<int>(TrackerInput::COUNT) ==

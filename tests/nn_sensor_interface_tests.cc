@@ -29,11 +29,12 @@ TEST(NNSensorInterface, PathgenInputCountMatchesNNInputs) {
     EXPECT_EQ(pathgen_meta_size(), 33u);
 }
 
-TEST(NNSensorInterface, TrackerInputCountIs45) {
+TEST(NNSensorInterface, TrackerInputCountIs54) {
     // 030 M7a Session 2026-05-07 Q1: was 48 with HOME_X/Y/Z/HOME_DIST,
-    // now 45 with single DIST_TO_BOUNDARY_ALONG_VEL.
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 45);
-    EXPECT_EQ(tracker_meta_size(), 45u);
+    // then 45 with single DIST_TO_BOUNDARY_ALONG_VEL.
+    // 032 phase 1: 45 + 9 derived (span[6] + span_rate + tilt sin/cos) = 54.
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 54);
+    EXPECT_EQ(tracker_meta_size(), 54u);
 }
 
 TEST(NNSensorInterface, PathgenMetaWellFormed) {
@@ -75,8 +76,8 @@ TEST(NNSensorInterface, PathgenAnchorPositions) {
 }
 
 TEST(NNSensorInterface, TrackerAnchorPositions) {
-    // Anchor positions per FR-006 + FR-016 + Session 2026-05-07 Q1:
-    // 36 beacon + 8 state + 1 arena = 45 inputs. (was 48 with HOME_X/Y/Z/DIST.)
+    // Anchor positions per FR-006 + FR-016 + Session 2026-05-07 Q1 + 032 phase 1:
+    // 36 beacon + 8 state + 1 arena + 9 derived = 54 inputs.
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_L_X_TM5), 0);
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_L_CEP_NOW), 17);
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_R_X_TM5), 18);
@@ -85,7 +86,42 @@ TEST(NNSensorInterface, TrackerAnchorPositions) {
     EXPECT_EQ(static_cast<int>(TrackerInput::AIRSPEED), 40);
     EXPECT_EQ(static_cast<int>(TrackerInput::GYRO_P), 41);
     EXPECT_EQ(static_cast<int>(TrackerInput::DIST_TO_BOUNDARY_ALONG_VEL), 44);
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 45);
+    // 032 phase 1 — derived perceptual features at slots 45..53
+    EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_PAIR_SPAN_TM5), 45);
+    EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_PAIR_SPAN_NOW), 50);
+    EXPECT_EQ(static_cast<int>(TrackerInput::SPAN_RATE), 51);
+    EXPECT_EQ(static_cast<int>(TrackerInput::TARGET_TILT_SIN), 52);
+    EXPECT_EQ(static_cast<int>(TrackerInput::TARGET_TILT_COS), 53);
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 54);
+}
+
+TEST(NNSensorInterface, TrackerDerivedFeatureNamesCanonical) {
+    // 032 phase 1 — name round-trip for the 9 new slots. Catches drift
+    // between the enum and kTrackerInputMeta name strings.
+    EXPECT_STREQ(kTrackerInputMeta[static_cast<int>(TrackerInput::BEACON_PAIR_SPAN_TM5)].name,
+                 "BEACON_PAIR_SPAN_TM5");
+    EXPECT_STREQ(kTrackerInputMeta[static_cast<int>(TrackerInput::BEACON_PAIR_SPAN_NOW)].name,
+                 "BEACON_PAIR_SPAN_NOW");
+    EXPECT_STREQ(kTrackerInputMeta[static_cast<int>(TrackerInput::SPAN_RATE)].name,
+                 "SPAN_RATE");
+    EXPECT_STREQ(kTrackerInputMeta[static_cast<int>(TrackerInput::TARGET_TILT_SIN)].name,
+                 "TARGET_TILT_SIN");
+    EXPECT_STREQ(kTrackerInputMeta[static_cast<int>(TrackerInput::TARGET_TILT_COS)].name,
+                 "TARGET_TILT_COS");
+}
+
+TEST(NNSensorInterface, TrackerDerivedFeatureDisplayNamesCanonical) {
+    // 032 phase 1 — data.dat column header labels for the 9 new slots.
+    EXPECT_STREQ(kTrackerInputMeta[static_cast<int>(TrackerInput::BEACON_PAIR_SPAN_TM5)].display_name,
+                 "spn-5");
+    EXPECT_STREQ(kTrackerInputMeta[static_cast<int>(TrackerInput::BEACON_PAIR_SPAN_NOW)].display_name,
+                 "spn0");
+    EXPECT_STREQ(kTrackerInputMeta[static_cast<int>(TrackerInput::SPAN_RATE)].display_name,
+                 "dspn");
+    EXPECT_STREQ(kTrackerInputMeta[static_cast<int>(TrackerInput::TARGET_TILT_SIN)].display_name,
+                 "tltS");
+    EXPECT_STREQ(kTrackerInputMeta[static_cast<int>(TrackerInput::TARGET_TILT_COS)].display_name,
+                 "tltC");
 }
 
 TEST(NNSensorInterface, PathgenMetaNamesMatchAnchors) {

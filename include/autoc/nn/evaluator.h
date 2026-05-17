@@ -116,6 +116,14 @@ struct TrackerHistoryWindow {  // raw-ok: NN-byte-format buffer
     float right_x[6];     // raw-ok: NN-byte-format buffer
     float right_y[6];     // raw-ok: NN-byte-format buffer
     float right_cep[6];   // raw-ok: NN-byte-format buffer
+
+    // 032 PHASE 1 — Cached beacon-pair span across the history window.
+    // Span = ||right.xy - left.xy|| in NDC, computed and CEP-gated at
+    // projection time (src/eval/tracker_stepper.cc::projectAndShiftHistory
+    // and the crrcsim mirror). Cached here so gather_tracker_inputs reads
+    // it via the same memcpy pattern as the NDC channels — single
+    // computation site, consistent CEP-gating semantics.
+    float span[6];        // raw-ok: NN-byte-format buffer
 };
 
 // Forward declaration so this header doesn't pull in arena.h transitively

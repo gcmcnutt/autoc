@@ -10,8 +10,11 @@
 #include <algorithm>
 #include <cmath>
 
+#include "autoc/eval/camera_projection.h"  // kCepSentinelThreshold (032 default gate)
 #include "autoc/eval/crash_hull.h"     // M7c — geometric inside-hull telemetry
+#include "autoc/eval/derived_features.h"  // 032 phase 1 — compute_pair_span
 #include "autoc/eval/trail_rabbit.h"  // M7b — real trail-rabbit math
+#include "autoc/util/config.h"  // 032 phase 1 — CepGateThreshold knob
 
 namespace autoc::eval {
 
@@ -123,6 +126,7 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
         history_.right_x[i] = history_.right_x[i + 1];    // raw-ok: NN-byte-format primitive
         history_.right_y[i] = history_.right_y[i + 1];    // raw-ok: NN-byte-format primitive
         history_.right_cep[i] = history_.right_cep[i + 1];// raw-ok: NN-byte-format primitive
+        history_.span[i] = history_.span[i + 1];          // raw-ok: NN-byte-format primitive — 032 NEW
     }
 
     // Build projection inputs for both beacons. Camera mount + orientation
@@ -156,6 +160,29 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     history_.right_x[5] = right.screen_x;     // raw-ok: NN-byte-format primitive
     history_.right_y[5] = right.screen_y;     // raw-ok: NN-byte-format primitive
     history_.right_cep[5] = right.cep;        // raw-ok: NN-byte-format primitive
+
+    // 032 PHASE 1 — Cache beacon-pair span at the current tick. CEP-gated:
+    // if EITHER beacon's CEP exceeds the configured threshold, substitute
+    // neutral 0.0 (= "no closing-distance signal"). Per spec Q4 + R2.
+    // Reading ConfigManager here keeps single source of truth with the
+    // gather-side gating decision in gather_tracker_inputs.
+    const float cep_gate_threshold = static_cast<float>(
+        ConfigManager::isInitialized()
+            ? ConfigManager::getConfig().cepGateThreshold
+            : 1.25);
+    const bool cep_gated =
+        left.cep >= cep_gate_threshold ||
+        right.cep >= cep_gate_threshold;
+    if (cep_gated) {
+        history_.span[5] = 0.0f;
+    } else {
+        history_.span[5] = static_cast<float>(  // raw-ok: NN-byte-format slot write
+            autoc::eval::compute_pair_span(
+                static_cast<gp_scalar>(left.screen_x),
+                static_cast<gp_scalar>(left.screen_y),
+                static_cast<gp_scalar>(right.screen_x),
+                static_cast<gp_scalar>(right.screen_y)));
+    }
 
     // 030 M8b — Per-tick recording for v=2 dmp output (FR-015).
     // Camera world-pose: chase_position + chase_orient * camera_mount;

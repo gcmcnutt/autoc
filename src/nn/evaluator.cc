@@ -3,7 +3,9 @@
 #include "autoc/nn/nn_input_computation.h"
 #include "autoc/nn/nn_inputs.h"        // 030 M11.preA.2 — kCruiseSpeed_mps, kDistToBoundaryScale_m
 #include "autoc/eval/arena.h"          // 030 M7a — FlightArena + distanceToBoundary
+#include "autoc/eval/derived_features.h"  // 032 phase 1 — compute_tilt
 #include "autoc/eval/sensor_math.h"
+#include "autoc/util/config.h"         // 032 phase 1 — CepGateThreshold + EnableDerivedFeatures
 #include "autoc/util/rng.h"
 #include <cmath>
 #include <array>
@@ -477,6 +479,53 @@ void gather_tracker_inputs(const AircraftState& chase,
                                          chase.getVelocity(),
                                          arena));
     out.dist_to_boundary_along_vel = std::tanh(dist_raw / kDistToBoundaryScale_m);
+
+    // ====================================================================
+    // 032 PHASE 1 — Derived perceptual features (slots 45..53)
+    // ====================================================================
+    // Reads CepGateThreshold from ConfigManager (loaded at startup). Same
+    // value is consumed by projectAndShiftHistory's span computation so
+    // both call sites apply identical gating semantics.
+    const bool config_ready = ConfigManager::isInitialized();
+    const float cep_gate_threshold = static_cast<float>(
+        config_ready ? ConfigManager::getConfig().cepGateThreshold : 1.25);
+
+    // (1) beacon_pair_span[6] — copy cached values from history.span.
+    // Span was computed + CEP-gated upstream in projectAndShiftHistory; we
+    // just forward it here. Single computation site avoids divergent gating
+    // semantics between the autoc minisim and crrcsim helper paths.
+    for (int i = 0; i < 6; ++i) {
+        out.beacon_pair_span[i] = history.span[i];  // raw-ok: NN-byte-format primitive
+    }
+
+    // (2) span_rate — one-tick raw diff. No own CEP-gate; mechanically
+    // derives from history.span[5] - history.span[4]. Per spec Q3 + R3 +
+    // data-model.md §3.1: visibility transitions produce signed step
+    // artifacts (acquired-then-lost → negative, lost-then-acquired →
+    // positive). Documented as intentional.
+    out.span_rate = history.span[5] - history.span[4];  // raw-ok: NN-byte-format primitive
+
+    // (3) target_tilt — (sin θ, cos θ) over the port→starboard NDC line.
+    // CEP-gate at "now": if EITHER beacon is untrusted, substitute neutral
+    // (0, 1) = "wings level relative, no roll pressure". Degenerate-pair
+    // guard inside compute_tilt handles the geometric edge case.
+    const bool cep_gated_now =
+        history.left_cep[5] >= cep_gate_threshold ||
+        history.right_cep[5] >= cep_gate_threshold;
+    if (cep_gated_now) {
+        out.target_tilt_sin = 0.0f;     // raw-ok: NN-byte-format primitive
+        out.target_tilt_cos = 1.0f;     // raw-ok: NN-byte-format primitive
+    } else {
+        // Intermediates use gp_scalar per Constitution VI (eval-pipeline
+        // scalars). NN-byte-format conversion happens at the slot writes.
+        const autoc::eval::TiltSinCos tilt = autoc::eval::compute_tilt(
+            static_cast<gp_scalar>(history.left_x[5]),
+            static_cast<gp_scalar>(history.left_y[5]),
+            static_cast<gp_scalar>(history.right_x[5]),
+            static_cast<gp_scalar>(history.right_y[5]));
+        out.target_tilt_sin = static_cast<float>(tilt.sin);  // raw-ok: NN-byte-format slot write
+        out.target_tilt_cos = static_cast<float>(tilt.cos);  // raw-ok: NN-byte-format slot write
+    }
 }
 
 void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,
