@@ -19,3 +19,6 @@ xiao/build/
 xiao/src/generated/*
 !xiao/src/generated/README.md
 *.pyc
+
+# Claude Code per-user state (auto-memory, projects)
+.claude/
