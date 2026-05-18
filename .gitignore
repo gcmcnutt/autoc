@@ -22,3 +22,40 @@ xiao/src/generated/*
 
 # Claude Code per-user state (auto-memory, projects)
 .claude/
+
+# 031-beacon-camera — Python tooling artifacts
+tools/**/.venv/
+tools/beacon-loader/.pytest_cache/
+tools/beacon-loader/**/__pycache__/
+tools/beacon-loader/**/*.egg-info/
+tools/beacon-viewer/.pytest_cache/
+tools/beacon-viewer/**/__pycache__/
+tools/beacon-viewer/**/*.egg-info/
+tools/nfr4-clockdrift-sim/__pycache__/
+tools/nfr4-clockdrift-sim/*.png
+tools/nfr4-clockdrift-sim/*.npz
+tools/nfr4-clockdrift-sim/results.json
+# (simulation-results.md is intentionally TRACKED — it's the decision document
+# referenced by spec.md's NFR-4 Decisions-Locked entry.)
+
+# 031-beacon-camera — Embedded firmware build artifacts
+firmware/beacon-pod/src/*.o
+firmware/beacon-pod/*.elf
+firmware/beacon-pod/*.hex
+firmware/beacon-pod/*.map
+
+# 031-beacon-camera — FPGA gateware build outputs (Lattice Propel/Radiant)
+firmware/flight-recorder/propel-project/impl/
+firmware/flight-recorder/propel-project/obj/
+firmware/flight-recorder/propel-project/build/
+firmware/flight-recorder/propel-project/*.bit
+firmware/flight-recorder/propel-project/*.jed
+firmware/flight-recorder/propel-project/*.gen/
+firmware/flight-recorder/propel-project/.lattice/
+firmware/flight-recorder/tb/work/
+
+# 031-beacon-camera — Recorded clips (large files; archive externally)
+specs/031-beacon-camera/clips/*.clip
+specs/031-beacon-camera/clips/*.json
+!specs/031-beacon-camera/clips/MANIFEST.md
+!specs/031-beacon-camera/clips/.gitkeep
