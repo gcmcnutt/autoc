@@ -159,6 +159,50 @@ Topology impact: NN input layer grows from **45 → 54** (6 span + 1 span-rate +
 - **Simulator has oracle access to BOTH chase AND target attitude.** The chase NN's `quat_w/x/y/z` inputs already see chase attitude; target attitude is in the source dmp and the simulator's projection. We can use both oracles **for training-time analysis / ground-truth comparison** (e.g., "what target tilt does the simulator's beacon-pair-on-image-plane reproduce vs the ground-truth target.q_EB roll component?") but the NN itself sees ONLY the derived perceptual inputs. No oracle leakage into the controller.
 - **The trajectory we're on**: 2 coded beacons (030 / 032) → eventually non-broadcast visible-light identification + pose recovery (M3). 032 is the last stop before perception becomes its own feature.
 
+### 1.8 Hull-strike escalation pattern — reward-shape experiment candidate (2026-05-17)
+
+Discovered during 032 phase-1 bake monitoring. **Hull-strike rate grows monotonically as the controller improves**, in both 030 and 032 — and 032 escalates ~3× faster than 030 thanks to the new sensors enabling tighter close-in tracking.
+
+Per-gen `reason=HullStrike` count, 50-gen window averages, comparing the two bakes side-by-side:
+
+| 50-gen window | 030 postdiag2 | 032 killed-at-173 | ratio |
+|---|---|---|---|
+| 1–50 | 1.00 | 1.12 | ~equal |
+| 51–100 | 2.14 | **5.78** | 2.7× |
+| 101–150 | 3.34 | **9.70** | 2.9× |
+| 151–200 | 2.60 | **9.97** (n=31) | 3.8× |
+| 201–250 | 2.98 | — | — |
+| 251–300 | 4.62 | — | — |
+| 301–350 | 7.56 | — | — |
+| 351–400 | 6.66 | — | — |
+| 401–450 | 7.36 | — | — |
+| 451–500 | 9.20 | — | — |
+| 501–550 | 11.26 (n=42) | — | — |
+
+**Reading**: 030 alone shows the trend (1.0 → 11.3 over 500 gens, ~11×). 032 hits the same trajectory ~3× faster because the added closing-rate + wingspan inputs let the NN tighten standoff distance more aggressively earlier.
+
+**Why this happens (fitness math)**:
+- Reward is in-cone ticks × streak multiplier (up to 5×). Compounding upside.
+- Hull-crash cost: scenario terminates → forfeit remaining points in *that* scenario only. Bounded loss (one scenario out of ~294).
+- Net: aggressive close-tracking with occasional hull crashes is fitness-positive at scale. Evolution finds it cheaper to crash sometimes than to back off everywhere.
+
+The `CrashHullProbability=0.10` per-tick Bernoulli (≈50% chance of crash within 7 ticks inside hull) is already non-trivial — but evolution still routes around it as the streak-fitness upside grows.
+
+**Phase-1b candidate experiment** (parallel to Q7 attribution bake — also contingent on phase-1 plateau outcome):
+
+| Option | Cost | Likely effect |
+|---|---|---|
+| **A. Kamikaze multiplicative penalty** on hull crash — scenario's accumulated score × 0.5 (or other configurable α ∈ [0, 1])  | trivial — one-line in scenario aggregator, plus an ini knob (e.g. `HullCrashScoreFactor`) | "You got close and died" → half the work doesn't count. Multiplicative scales with how much was already earned, so high-skill aggressive close-trackers feel it more than incidental brush-by crashes. Preserves partial credit for early-scenario progress |
+| **B. Raise `CrashHullProbability`** 0.10 → 0.30 | one ini value | stronger probabilistic enforcement |
+| **C. Reduce `FitStreakMultiplierMax`** 5.0 → 3.0 | one ini value | lowers in-ramp upside relative to hull cost; may also slow convergence |
+| **D. Expand `CrashHullRadius`** 1.0m → 1.5m | one ini value | larger no-fly zone, forces more standoff |
+
+Operator preference (2026-05-17): **Option A with α = 0.5** as cleanest first try — the kamikaze framing is intuitive (a crash that comes after a long good tracking run loses half its value; a crash near scenario start loses very little because little was earned yet — appropriately mild), orthogonal to cone shape and streak math, single ini knob. **Option B** as strong alternative if A doesn't bite enough.
+
+**Decision protocol**: defer to post-phase-1 closeout. Whichever phase-1 outcome routes (success / partial / miss per Q7), the hull-penalty experiment is a candidate variant. If phase-1 plateau-avgInRamp ≥ 0.15 (success), the hull-penalty experiment becomes "can we get the same or better avgInRamp with fewer hull strikes" (efficiency / safety win). If partial / miss, it joins the attribution-bake matrix.
+
+**Forward implication for real-flight deployment**: a controller trained with high hull-strike tolerance will collide with the target in real flight. The hull-penalty knob is also the gate between "good sim numbers" and "safe enough to flight-test." Worth doing before xiao deployment regardless of phase-1 outcome.
+
 ### 1.7 Sensor modality vs sensor fault — distinction for the next iteration (2026-05-16)
 
 A critical framing note added during 032 phase 1 implementation: **beacon invisibility in this design is a MODALITY, not a SIGNAL LOSS**.
@@ -251,6 +295,11 @@ Both signals expected within days. 032 likely is the most efficient next step (c
 This section lists items originally filed in other specs/backlogs that fit better in 032:
 
 - *(none yet — first pass at 032 scoping. Add items as they surface during v1 closeout or post-bake analysis.)*
+
+### 4.1 Open follow-ups during 032
+
+- **Project-memory location decision** (2026-05-17): currently `~/.claude/projects/-home-gmcnutt-autoc/memory/` is per-user, per-host, git-ignored. Operator preference is to move toward Option B (in-repo, e.g., `docs/project_memory/`) or Option C (hybrid: shared in-repo + personal local) so memory propagates to other hosts via git pull. Leaning B (single operator, no privacy issue) or C (future-proof if a second collaborator joins). Decide before phase-1 closeout so the memory created during the bake (post-mortem findings, follow-ons) lands in the right place from the start. See gitignore commit `129b1f0` discussion.
+- **Hull-strike escalation + kamikaze penalty experiment** (2026-05-17): see §1.8. Phase-1b candidate; run after phase-1 closeout. Operator-preferred form is multiplicative ½-of-accumulated-score penalty on hull crash (kamikaze framing). Gates safe-enough-for-real-flight deployment regardless of phase-1 plateau outcome. Tasks: US3 in tasks.md.
 
 ## 5. Status
 

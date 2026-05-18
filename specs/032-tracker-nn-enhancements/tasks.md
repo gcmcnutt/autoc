@@ -136,6 +136,35 @@ Implementation cadence (operator preference 2026-05-16): land the **minisim path
 
 ---
 
+## Phase 4b: User Story 3 — Kamikaze hull-crash penalty experiment (Priority: P2, CONTINGENT/PARALLEL to US2)
+
+**Goal**: Address the hull-strike escalation finding (spec.md §1.8) — controllers learn that aggressive close-tracking with occasional hull crashes is fitness-positive at scale; that's both a sim-fitness pathology AND a deal-breaker for safe real-flight deployment. Test whether a multiplicative ½-of-accumulated-score penalty on hull crash (kamikaze framing) shifts evolution toward equal-or-better tracking with fewer crashes.
+
+**Independent Test**: Bake completes ≥322 gens with kamikaze penalty active; per-gen hull-strike count compared against US1 baseline (no penalty) at matched gen windows; plateau-avgInRamp also compared. Success criteria: hull-strike rate reduced ≥2× at gen 300+ vs US1, with plateau-avgInRamp degraded by <20%. (Sharper criteria can be set when operator looks at the US1 trajectory.)
+
+**ONLY EXECUTE after US1 closeout** (T031 outcome.md written). Independent of US1 outcome — runs regardless of SUCCESS / PARTIAL / MISS, because the hull-penalty is also gating real-flight safety, not just plateau quality.
+
+### Implementation for User Story 3
+
+- [ ] T043 [US3] Add `HullCrashScoreFactor` to `[CrashHull]` section of [autoc-tracker.ini](autoc-tracker.ini) (default 1.0 = no change, US1 behavior; experiment value 0.5 = half the work doesn't count on crash). Mirror the addition in [autoc-tracker-minisim.ini](autoc-tracker-minisim.ini)
+- [ ] T044 [US3] Add `hullCrashScoreFactor` field to `AutocConfig` in [include/autoc/util/config.h](include/autoc/util/config.h) (default 1.0); parse + range-check [0.0, 1.0] in [src/util/config.cc](src/util/config.cc); loud-fail on out-of-range
+- [ ] T045 [US3] Thread `hullCrashScoreFactor` into the scenario aggregator. Locate the scenario-score reduction site in `computeScenarioScores` / `aggregateRawFitness` (grep `src/eval/` for the scoring path); when `crashReason == HullStrike`, multiply the accumulated scenario score by `hullCrashScoreFactor` before aggregation. Per-scenario (NOT per-tick) decision
+- [ ] T046 [US3] Wire `hullCrashScoreFactor` through `WorkerInit` (crrcsim worker is separate process; no ConfigManager). Mirror the pattern from T008's `cepGateThreshold` wiring
+- [ ] T047 [US3] Add unit test in [tests/fitness_decomposition_tests.cc](tests/fitness_decomposition_tests.cc) or new `tests/hull_penalty_tests.cc`: synthetic scenario ending in HullStrike with accumulated score S → factor 0.5 → aggregated = 0.5 × S; factor 1.0 → aggregated = S (no change, US1 behavior)
+- [ ] T048 [US3] Add contract test in [tests/contract_tracker_config_tests.cc](tests/contract_tracker_config_tests.cc): default 1.0; explicit 0.5 parses; out-of-range (e.g., -0.1, 1.5) loud-fails at startup
+- [ ] T049 [US3] Build + test suite green (`cd build && make -j8`); regression-gate via `bash scripts/rebuild-perf.sh` — M1 (pathgen, no hull) must remain bitwise-equal; M2 with `HullCrashScoreFactor = 1.0` (default) must remain bitwise-equal to US1's outcome
+- [ ] T050 [US3] Set [autoc-tracker.ini](autoc-tracker.ini) `[CrashHull] HullCrashScoreFactor = 0.5`. Launch the experiment bake (operator-driven, NOT autonomous): `nohup stdbuf -oL -eL ./build/autoc -i autoc-tracker.ini > logs/autoc-032-phase1b-kamikaze-crrcsim.log 2>&1 < /dev/null & disown`. Same source dmp, pop, gens as US1's bake (T028) — only difference is the penalty factor
+- [ ] T051 [US3] Bake ≥322 gens; compute plateau-avgInRamp (last 50 gens avg, same protocol as T029); also extract per-gen hull-strike count via the awk in spec.md §1.8 table
+- [ ] T052 [US3] Update [specs/032-tracker-nn-enhancements/outcome.md](specs/032-tracker-nn-enhancements/outcome.md) with:
+   - US3 plateau-avgInRamp vs US1 plateau-avgInRamp
+   - per-gen hull-strike trajectory comparison (US3 vs US1 at gen 50/100/200/300+ windows)
+   - decision: kamikaze penalty wins / loses / mixed; route to xiao deployment from US1 or US3 NN
+- [ ] T053 [US3] Revert [autoc-tracker.ini](autoc-tracker.ini) to `HullCrashScoreFactor = 1.0` (don't commit experiment-state as default; if US3 wins, raise it as a separate config decision)
+
+**Checkpoint**: Hull-penalty experiment decided. Real-flight-safe NN identified (either US1's or US3's). Either way, document the trade-off in outcome.md for the next sensor-architecture iteration to inherit.
+
+---
+
 ## Phase 5: Polish & Cross-Cutting Concerns
 
 **Purpose**: Closeout artifacts, audits, and optional refactoring.
