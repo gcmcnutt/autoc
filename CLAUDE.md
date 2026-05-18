@@ -1,6 +1,6 @@
 # autoc Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-05-16
+Auto-generated from all feature plans. Last updated: 2026-05-17
 
 ## Active Technologies
 - C++17 (renderer, shared code), Python 3.11 (analysis scripts) + Eigen (math), VTK (renderer), cereal (data.dat parsing), blackbox-tools (INAV decode) (018-flight-analysis)
@@ -46,7 +46,6 @@ C++17: Follow standard conventions
 ## Recent Changes
 - 032-tracker-nn-enhancements: Added C++17 (autoc, crrcsim), Python 3.11 (analysis/inspection scripts) + Eigen (vec3/quat math), cereal (NN serialization, EvalData wire-protocol), inih (autoc-tracker.ini parsing), GoogleTest (unit + contract tests), CRRCSim LaRCSim FDM (crrcsim bake path)
 - 029-no-future-arch: Added C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis) + Eigen (vec3/quat math), cereal (NN serialization), inih (autoc.ini), GoogleTest, CRRCSim LaRCSim FDM
-- 029-tracker-mode: Added C++17 (autoc, crrcsim, xiao), Python 3.11 (analysis scripts, conversion tools) + Eigen (vec3 / quat / matrix-vector math, projection geometry), cereal (NN serialization, EvalResults schema, new tracker-mode dump format), inih (autoc.ini parsing), GoogleTest (unit/contract tests), CRRCSim LaRCSim FDM (sim physics)
 
 
 <!-- MANUAL ADDITIONS START -->
