@@ -3,7 +3,13 @@
 **Audit date**: 2026-05-18
 **Status**: Cart-ready for ordering. Spec corrections (§0) queued as task **T007a** to apply before US1 hand-build.
 
-> **Print this for the order phase.** Check off each line as it's ordered + received. Cart letters group items by vendor for batched checkout.
+> **Print this for the order phase, then update the markdown as parts arrive.** Cart letters group items by vendor for batched checkout.
+>
+> **Per-line tracking convention** (BOM lines in Carts §A through §F):
+> - Top-level `- [ ]` = **ordered** (check when placed at the vendor's cart)
+> - Sub-bullet `- [ ] received` = **received** (check when in hand) + free-text **notes** for substitutions, backorders, bin codes, anything worth recording
+>
+> Both checkboxes render as clickable items on GitHub + work as plain `[X]`/`[ ]` toggles when editing the markdown directly. The `notes:` line is free text — record vendor part numbers if substituted, bin codes confirmed at checkout, defects on receipt, etc.
 
 ---
 
@@ -60,30 +66,48 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
 =========================================================================
 ```
 
-- [ ] **A1**  LM3410**X**MF-NOPB ×6 — boost LED driver, SOT-23-5, 1.6 MHz, **NOT -Y** ........... ~$15
-- [ ] **A2**  ATTINY412-SSFR ×6 — ATtiny412 SOIC-8 (production-pod MCU) ........................... ~$4
-- [ ] **A3**  DM080104 ×1 — ATtiny412 Curiosity Nano dev kit (first-flash bring-up; one-time) ..... ~$10
-- [ ] **A4**  Voltage supervisor 3.3V trip, open-drain ×6 — pick one in stock:
-  - MCP1316T-29LE/OT (Microchip), OR
-  - TPS3839K33DBVR (TI), OR
-  - APX803-31SAG (Diodes) .......................................................................... ~$3
-- [ ] **A5**  22 µH shielded SMD inductor, I_sat ≥1.5 A ×6 — Coilcraft DR0810-223ML or similar ... ~$7
-- [ ] **A6**  MBR130T1G Schottky 1A 30V ×6 ......................................................... ~$2
-- [ ] **A7**  0.62 Ω 1% 1206 sense resistor ×6 .................................................... ~$3
-- [ ] **A8**  4.7 µF / 25 V X7R 1206 (V_LED bulk) ×6 .............................................. ~$3
-- [ ] **A9**  22 µF / 10 V X7R 1210 (V_BAT bulk) ×6 ............................................... ~$3
-- [ ] **A10** 1 µF X7R 0603 ×12 .................................................................... ~$1
-- [ ] **A11** 100 nF X7R 0603 ×30 (MCU decoupling, supervisor decoupling, driver-VIN) ............. ~$2
-- [ ] **A12** 2.2 µF X7R 0603 (boost-driver VIN decoupling) ×6 .................................... ~$1
-- [ ] **A13** 10 kΩ 0603 (DIM-line pull-up per §0.2) ×6 ........................................... <$1
-- [ ] **A14** JST-PH 2.0 mm 2-pin THT socket ×6 — S2B-PH-K-S or equivalent ...................... ~$2
-- [ ] **A15** 0603 green visible-light LED ×6 (mandatory diagnostic per FR-1.2.1) ................. ~$1
-- [ ] **A16** 1 kΩ 0603 (diagnostic LED series R) ×6 .............................................. <$1
-- [ ] **A17** SOT-23-to-DIP adapter PCBs ×12 — Schmartboard 204-0008-01 or generic Amazon ........ ~$6
-- [ ] **A18** Perfboard, 25×25 mm cuts ×1 sheet — Vector Electronics 169P44WE ..................... ~$8
-- [ ] **A19** USB-UART adapter ×1 (FT232 / CP2102) — for serialUPDI to bare ATtiny412 ............. ~$8
-- [ ] **A20** 4.7 kΩ resistor ×3 — serialUPDI pull-up .............................................. <$1
-- [ ] **A21** Header pins 0.1" male ×1 strip — for UPDI programming hookup ......................... ~$2
+- [ ] **A1**  LM3410**X**MF-NOPB ×6 — boost LED driver, SOT-23-5, 1.6 MHz, **NOT -Y** — ~$15
+  - [ ] received  •  notes:
+- [ ] **A2**  ATTINY412-SSFR ×6 — ATtiny412 SOIC-8 (production-pod MCU) — ~$4
+  - [ ] received  •  notes:
+- [ ] **A3**  DM080104 ×1 — ATtiny412 Curiosity Nano dev kit (first-flash bring-up; one-time) — ~$10
+  - [ ] received  •  notes:
+- [ ] **A4**  Voltage supervisor 3.3 V trip, open-drain ×6 — pick one in stock: MCP1316T-29LE/OT (Microchip), TPS3839K33DBVR (TI), or APX803-31SAG (Diodes) — ~$3
+  - [ ] received  •  notes (which part chosen):
+- [ ] **A5**  22 µH shielded SMD inductor, I_sat ≥1.5 A ×6 — Coilcraft DR0810-223ML or similar — ~$7
+  - [ ] received  •  notes:
+- [ ] **A6**  MBR130T1G Schottky 1 A 30 V ×6 — ~$2
+  - [ ] received  •  notes:
+- [ ] **A7**  0.62 Ω 1% 1206 sense resistor ×6 — ~$3
+  - [ ] received  •  notes:
+- [ ] **A8**  4.7 µF / 25 V X7R 1206 (V_LED bulk) ×6 — ~$3
+  - [ ] received  •  notes:
+- [ ] **A9**  22 µF / 10 V X7R 1210 (V_BAT bulk) ×6 — ~$3
+  - [ ] received  •  notes:
+- [ ] **A10** 1 µF X7R 0603 ×12 — ~$1
+  - [ ] received  •  notes:
+- [ ] **A11** 100 nF X7R 0603 ×30 (MCU decoupling, supervisor decoupling, driver-VIN) — ~$2
+  - [ ] received  •  notes:
+- [ ] **A12** 2.2 µF X7R 0603 (boost-driver VIN decoupling) ×6 — ~$1
+  - [ ] received  •  notes:
+- [ ] **A13** 10 kΩ 0603 (DIM-line pull-up per §0.2) ×6 — <$1
+  - [ ] received  •  notes:
+- [ ] **A14** JST-PH 2.0 mm 2-pin THT socket ×6 — S2B-PH-K-S or equivalent — ~$2
+  - [ ] received  •  notes:
+- [ ] **A15** 0603 green visible-light LED ×6 (mandatory diagnostic per FR-1.2.1) — ~$1
+  - [ ] received  •  notes:
+- [ ] **A16** 1 kΩ 0603 (diagnostic LED series R) ×6 — <$1
+  - [ ] received  •  notes:
+- [ ] **A17** SOT-23-to-DIP adapter PCBs ×12 — Schmartboard 204-0008-01 or generic Amazon — ~$6
+  - [ ] received  •  notes:
+- [ ] **A18** Perfboard, 25 × 25 mm cuts ×1 sheet — Vector Electronics 169P44WE — ~$8
+  - [ ] received  •  notes:
+- [ ] **A19** USB-UART adapter ×1 (FT232 / CP2102) — for serialUPDI to bare ATtiny412 — ~$8
+  - [ ] received  •  notes:
+- [ ] **A20** 4.7 kΩ resistor ×3 — serialUPDI pull-up — <$1
+  - [ ] received  •  notes:
+- [ ] **A21** Header pins 0.1" male ×1 strip — for UPDI programming hookup — ~$2
+  - [ ] received  •  notes:
 
 **Cart A subtotal**: ~$80
 
@@ -97,7 +121,8 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
 =========================================================================
 ```
 
-- [ ] **B1**  Lumileds L1IZ-0850000000000 ×20 — Luxeon IR Compact 850 nm, DigiKey **7243418** ... ~$54
+- [ ] **B1**  Lumileds L1IZ-0850000000000 ×20 — Luxeon IR Compact 850 nm, DigiKey **7243418** — ~$54
+  - [ ] received  •  notes (bin code confirmed at checkout / actual HPBW from datasheet):
   - **At checkout**: confirm the wavelength bin code suffix. Need **850 ± 5 nm bin** for filter match.
   - **Datasheet**: DS190 (Lumileds direct: <https://lumileds.com/wp-content/uploads/files/DS190.pdf>)
   - DigiKey product page lists 150° "viewing angle" — verify HPBW vs the spec's 130° claim from the datasheet appendix; if different, [`plot_led_configs.py`](plot_led_configs.py) re-run may be warranted.
@@ -114,11 +139,14 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
 =========================================================================
 ```
 
-- [ ] **C1**  1S LiPo, 100 mAh, 20C, JST-PH 2.0 pigtail ×6 — Tinywhoop-class (B083NWXLTK or
-              BetaFPV / EMAX equivalent) ......................................................... ~$18
-- [ ] **C2**  1S USB-pigtail LiPo charger ×1 (if not in stock) — ISDT N8 / HOTA D6 / generic ..... ~$15
-- [ ] **C3**  32 AWG magnet wire ×1 roll — Belden 8051 or equivalent (~10 m) ..................... ~$8
-- [ ] **C4**  Double-back tape OR velcro hook+loop ×1 roll — 3M VHB or generic ................... ~$10
+- [ ] **C1**  1S LiPo, 100 mAh, 20C, JST-PH 2.0 pigtail ×6 — Tinywhoop-class (B083NWXLTK or BetaFPV / EMAX equivalent) — ~$18
+  - [ ] received  •  notes (actual capacity / vendor / measured weight):
+- [ ] **C2**  1S USB-pigtail LiPo charger ×1 (if not in stock) — ISDT N8 / HOTA D6 / generic — ~$15
+  - [ ] received  •  notes:
+- [ ] **C3**  32 AWG magnet wire ×1 roll — Belden 8051 or equivalent (~10 m) — ~$8
+  - [ ] received  •  notes:
+- [ ] **C4**  Double-back tape OR velcro hook+loop ×1 roll — 3M VHB or generic — ~$10
+  - [ ] received  •  notes:
 
 **Cart C subtotal**: ~$50
 
@@ -132,20 +160,26 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
 =========================================================================
 ```
 
-- [ ] **D1**  Arducam B0162 OV9281 1MP Global Shutter MIPI module ×1 + 1 spare ................. ~$70
-- [ ] **D2**  Arducam B0264 USB-UVC Camera Shield ×1 + 1 spare (bench-mode UVC streaming) ...... ~$90
-- [ ] **D3**  Lattice CrossLink-NX-EVN board (LIFCL-40-EVN) ×1 — Lattice direct or Mouser ..... ~$300-400
-  - **At order**: confirm onboard HyperRAM / SDRAM (need ≥6 MB for FR-2.5 ring), microSD slot
-    with 4-bit SDIO, USB-C port. Vendor pages 403'd in audit; verify from latticesemi.com user guide.
-- [ ] **D4**  m12lenses.com PT-02120 145° M12 fisheye lens ×1 + 1 spare ........................ ~$60
+- [ ] **D1**  Arducam B0162 OV9281 1MP Global Shutter MIPI module ×1 + 1 spare — ~$70
+  - [ ] received  •  notes:
+- [ ] **D2**  Arducam B0264 USB-UVC Camera Shield ×1 + 1 spare (bench-mode UVC streaming) — ~$90
+  - [ ] received  •  notes (MIPI flex shipped with kit? Y/N):
+- [ ] **D3**  Lattice CrossLink-NX-EVN board (LIFCL-40-EVN) ×1 — Lattice direct or Mouser — ~$300-400
+  - [ ] received  •  notes (onboard memory part + capacity confirmed; SDIO + USB-C confirmed):
+  - **At order**: confirm onboard HyperRAM / SDRAM (need ≥6 MB for FR-2.5 ring), microSD slot with 4-bit SDIO, USB-C port. Vendor pages 403'd in audit; verify from latticesemi.com user guide.
+- [ ] **D4**  m12lenses.com PT-02120 145° M12 fisheye lens ×1 + 1 spare — ~$60
+  - [ ] received  •  notes (IR-cut filter present? Y/N — check at T044):
   - **First-receiver check (task T044)**: confirm absence of IR-cut filter.
-- [ ] **D5**  850 nm bandpass filter ×1 + 1 spare — pick whichever is in stock:
-  - Edmund Optics #65-679 (10 mm dia, 850 ± 5 nm CWL, 10 nm FWHM), OR
-  - Thorlabs FB850-10 (1" dia, 850 ± 2 nm CWL, 10 ± 2 nm FWHM) ................................ ~$140-180
-- [ ] **D6**  SanDisk Extreme Pro V30 microSD 64 GB ×2 + 1 spare ................................ ~$75
-- [ ] **D7**  Pololu D24V10F5 5V 1A buck ×1 + 1 spare ........................................... ~$20
-- [ ] **D8**  MIPI flex cable (if not shipped with B0264 kit) ×1 + 1 spare ...................... ~$10
-- [ ] **D9**  XT60 pigtail for carrier-LiPo input to Pololu buck ×1 ............................. ~$5
+- [ ] **D5**  850 nm bandpass filter ×1 + 1 spare — Edmund Optics #65-679 (10 mm dia, 850 ± 5 nm CWL, 10 nm FWHM) OR Thorlabs FB850-10 (1" dia, 850 ± 2 nm CWL, 10 ± 2 nm FWHM) — ~$140-180
+  - [ ] received  •  notes (which vendor / CWL + FWHM as labeled):
+- [ ] **D6**  SanDisk Extreme Pro V30 microSD 64 GB ×2 + 1 spare — ~$75
+  - [ ] received  •  notes:
+- [ ] **D7**  Pololu D24V10F5 5V 1A buck ×1 + 1 spare — ~$20
+  - [ ] received  •  notes:
+- [ ] **D8**  MIPI flex cable (if not shipped with B0264 kit) ×1 + 1 spare — ~$10
+  - [ ] received  •  notes (length, connector type, only if D2 didn't include it):
+- [ ] **D9**  XT60 pigtail for carrier-LiPo input to Pololu buck ×1 — ~$5
+  - [ ] received  •  notes:
 
 **Cart D subtotal**: ~$770-930 (heavily Lattice + filter dominated)
 
@@ -159,14 +193,13 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
 =========================================================================
 ```
 
-- [ ] **E1**  Commonlands custom M12 lens — email `contact@commonlands.com`:
-  > "Quote request: M12 lens, 120° HFOV, F/2.0, NIR-corrected for 850 nm.
-  > Integrated bandpass filter: CWL = 850 ± 5 nm, FWHM ≤ 30 nm (10 nm preferred).
-  > Quantity: 1 prototype + quote for production volume."
-  - Expected lead time: 4-6 weeks.
-- [ ] **E2**  OmniVision OG0VA — contact OmniVision OEM channel:
-  > "Inquiry: OG0VA bare-die or CameraCubeChip module availability for prototype
-  > quantity (1-5 units). Lead time + MOQ?"
+- [ ] **E1**  Commonlands custom M12 lens — **inquiry sent** to `contact@commonlands.com`
+  - [ ] received  •  notes (quote $$ / lead-week / actual ship date):
+  - > "Quote request: M12 lens, 120° HFOV, F/2.0, NIR-corrected for 850 nm. Integrated bandpass filter: CWL = 850 ± 5 nm, FWHM ≤ 30 nm (10 nm preferred). Quantity: 1 prototype + quote for production volume."
+  - Expected lead time: 4-6 weeks. (Top-level checkbox = inquiry SENT; received = lens delivered.)
+- [ ] **E2**  OmniVision OG0VA — **inquiry sent** to OmniVision OEM channel
+  - [ ] received  •  notes (MOQ, lead, vendor used, or "deferred — sticking with OV9281"):
+  - > "Inquiry: OG0VA bare-die or CameraCubeChip module availability for prototype quantity (1-5 units). Lead time + MOQ?"
   - Alternative: contact a design-house reseller (Leopard Imaging, e-con Systems).
   - Phase 1 ships on OV9281+B0162 from §D; OG0VA is the optional upgrade.
 
@@ -189,22 +222,24 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
 =========================================================================
 ```
 
-- [ ] **F1**  IR photodiode, 850 nm peak, fast response — pick ONE primary + 1 backup:
-  - **Vishay BPW34** ×4 (silicon PIN PD, 5 mm through-hole, ~$1.50 each), OR
-  - **Osram SFH 213 FA** ×4 (with daylight filter built in, ~$2 each — better for outdoor sun),
-    OR
-  - **Vishay BPV10NF** ×4 (NPN phototransistor, ~$1 each — single-component analog out) ...... ~$6-10
-- [ ] **F2**  **TI OPT101P** ×2 — integrated photodiode + transimpedance amp, 14 kHz BW,
-              voltage output, single-supply 2.7-36 V. Ideal "drop into breadboard + scope" sensor ... ~$10
-- [ ] **F3**  1 MΩ 0603 SMT OR 1 MΩ 1/4 W axial ×4 — load resistor for bare-PD path ............ <$1
-- [ ] **F4**  0.1 µF film/ceramic ×4 — DC-block for AC-coupled scope view of beacon modulation .. <$1
-- [ ] **F5**  LM393 dual comparator ×2 — converts analog PD signal → digital edge for FPGA input  ~$1
-              (alternative: 74HC14 hex Schmitt-trigger inverter ×1 ............................... ~$0.50)
-- [ ] **F6**  Solderless breadboard, 400-tie-point ×1 ............................................ ~$5
-- [ ] **F7**  Jumper wire kit (M-M, M-F) ........................................................ ~$8
-- [ ] **F8**  9 V battery + clip OR 5V USB-power supply ×1 — bench supply for OPT101 or
-              comparator (often you have this) .................................................. ~$3
-- [ ] **F9**  3 mm acrylic + standoffs (optional — mount PD facing pod at known distance) ........ ~$5
+- [ ] **F1**  IR photodiode, 850 nm peak, fast response — pick ONE primary + 1 backup: Vishay BPW34 ×4 (silicon PIN PD, 5 mm THT, ~$1.50 each), Osram SFH 213 FA ×4 (with daylight filter built in, ~$2 each — better for outdoor sun), OR Vishay BPV10NF ×4 (NPN phototransistor, ~$1 each — single-component analog out) — ~$6-10
+  - [ ] received  •  notes (which part chosen):
+- [ ] **F2**  TI **OPT101P** ×2 — integrated photodiode + transimpedance amp, 14 kHz BW, voltage output, single-supply 2.7-36 V. Ideal "drop into breadboard + scope" sensor — ~$10
+  - [ ] received  •  notes:
+- [ ] **F3**  1 MΩ 0603 SMT OR 1 MΩ 1/4 W axial ×4 — load resistor for bare-PD path — <$1
+  - [ ] received  •  notes:
+- [ ] **F4**  0.1 µF film/ceramic ×4 — DC-block for AC-coupled scope view of beacon modulation — <$1
+  - [ ] received  •  notes:
+- [ ] **F5**  LM393 dual comparator ×2 — converts analog PD signal → digital edge for FPGA input — ~$1 (alternative: 74HC14 hex Schmitt-trigger inverter ×1 — ~$0.50)
+  - [ ] received  •  notes (LM393 or 74HC14):
+- [ ] **F6**  Solderless breadboard, 400-tie-point ×1 — ~$5
+  - [ ] received  •  notes:
+- [ ] **F7**  Jumper wire kit (M-M, M-F) — ~$8
+  - [ ] received  •  notes:
+- [ ] **F8**  9 V battery + clip OR 5V USB-power supply ×1 — bench supply for OPT101 or comparator (often you have this) — ~$3
+  - [ ] received  •  notes:
+- [ ] **F9**  3 mm acrylic + standoffs (optional — mount PD facing pod at known distance) — ~$5
+  - [ ] received  •  notes:
 
 **Cart F subtotal**: ~$30-40 — cheapest cart, fastest ship (2-day Amazon Prime + DigiKey 2-day for parts).
 
