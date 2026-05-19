@@ -13,18 +13,19 @@ Time budget: ~2 hours including soldering.
 1. **Print the half-cube enclosure**: from `cad/beacon-half-cube.stl` on any FDM printer (PLA, ~30% infill, no support, 0.2 mm layer). Verify the 5 LED indents are clear; the inboard battery cavity slides in a fresh 1S 100 mAh pack with friction-fit retention.
 2. **Cut a 25 × 25 mm perfboard** to fit the cube's interior PCB shelf. Pre-drill a 1 mm hole at each LED indent's interior wall for LED-lead routing.
 3. **Solder the boost driver subassembly**:
-   - LM3410-Y on SOT-23-to-DIP adapter at the cube's outboard end.
+   - **LM3410X** (NOT LM3410Y — datasheet has them swapped vs the prior spec) on SOT-23-to-DIP adapter at the cube's outboard end.
    - 22 µH inductor + MBR130 Schottky + 4.7 µF output cap in the standard boost topology around the IC.
-   - 0.62 Ω sense resistor between LED-string return and the LM3410-Y FB pin.
+   - 0.62 Ω sense resistor between LED-string return and the LM3410X FB pin.
 4. **Solder the MCU subassembly**:
    - ATtiny412 on adapter (or use a Curiosity Nano dev module for first build with flying leads).
    - 1 µF + 100 nF V_BAT decoupling.
-   - Wire the DIM-out GPIO directly to the LM3410-Y DIM pin (no resistor needed — DIM is high-impedance input).
+   - Wire the DIM-out GPIO to the LM3410X DIM pin. **Configure the MCU GPIO as open-drain in firmware** so it joins the wired-AND topology on DIM (chip=1 releases to high-Z; chip=0 drives LOW).
    - Wire 2× code-select GPIOs to jumper pads (solder a bridge for "0" bits; leave open for "1" bits).
-5. **Solder the supervisor + UVLO chain**:
-   - Voltage supervisor IC (MCP1316T or equivalent) on adapter.
-   - Open-drain output to the LM3410-Y EN pin via a 10 kΩ pull-up to V_BAT.
-   - Result: supervisor pulls EN LOW at 3.3 V trip; releases (open-drain) above 3.4 V.
+5. **Solder the supervisor + UVLO chain** (DIM-wired-AND topology — corrected 2026-05-18 per LM3410 datasheet — LM3410 has NO separate EN pin, DIM is the only shutdown control):
+   - Voltage supervisor IC (MCP1316T or equivalent, **open-drain output required**) on adapter.
+   - Connect supervisor open-drain output to the **LM3410X DIM pin** (same node as the MCU GPIO).
+   - Add a **10 kΩ pull-up resistor from DIM to V_BAT**.
+   - Result: when V_BAT > 3.3 V the supervisor releases (high-Z), pull-up holds DIM HIGH unless the MCU's open-drain GPIO pulls it LOW per the code LUT. When V_BAT ≤ 3.3 V the supervisor pulls DIM LOW, forcing the LM3410X into ~80 nA shutdown regardless of MCU state.
 6. **Solder the 5 LEDs**: Lumileds L1IZ at each indent, leads routed back through the pre-drilled holes to PCB pads. Wire in series: apex → side1 → side2 → side3 → side4 → sense-resistor return. Use 32-AWG solid magnet wire for compactness.
 7. **Solder the diagnostic LED + JST-PH socket** on the inboard face. Diagnostic LED is parallel to the MCU's DIM-out GPIO (same edge timing → blink at 100 Hz when emitting).
 8. **Flash the firmware**: `cd firmware/beacon-pod && make flash CODE_ID=0` (pod A) or `CODE_ID=1` (pod B). UPDI cable connects to the ATtiny412's UPDI pin during programming only.
@@ -32,7 +33,7 @@ Time budget: ~2 hours including soldering.
    - Insert a charged 1S battery.
    - Scope-probe the LED-string current sense resistor: expect 100 Hz chip rate, 15-chip code period (150 ms), 7-8 ON chips out of 15, 0/300 mA clean transitions.
    - Visually confirm diagnostic LED blinks at chip rate.
-   - Probe the LM3410-Y output rail: expect ~9.5 V stable when DIM is HIGH, drops to ~0 V (output cap discharge) when DIM is LOW.
+   - Probe the LM3410X output rail: expect ~9.5 V stable when DIM is HIGH, drops to ~0 V (output cap discharge) when DIM is LOW.
    - Capture 200 ms of DIM waveform → `firmware/beacon-pod/tests/scope-trace-decode.py` → expect `PASS: code 0` (or whatever was flashed).
 10. **Pull the battery**: confirm all LED emission stops within ≤50 ms (FR-1.7 #2).
 

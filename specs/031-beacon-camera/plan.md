@@ -38,7 +38,7 @@ Phase 1 of 031 delivers a **bench- and field-runnable beacon-camera setup that r
 - **CAD**: **FreeCAD MCP server** — invoked from Claude Code at P1 execution time, produces STEP + STL files. FreeCAD project files (`.FCStd`) checked into `cad/source/`.
 
 **Primary Dependencies**:
-- **Hardware (beacon)**: Lumileds L1IZ-0850000000000 ×5, TI LM3410-Y, ATtiny412, voltage supervisor IC, 22 µH shielded SMD inductor, MBR130 Schottky, 1S LiPo 100 mAh JST-PH 2.0 pack, decoupling caps, code-select jumpers (or CUI DSM-02), 0603 diagnostic LED. Hand-prototype substitutes: Pololu / SparkFun / Adafruit breakouts (see R5).
+- **Hardware (beacon)**: Lumileds L1IZ-0850000000000 ×5, TI LM3410-X, ATtiny412, voltage supervisor IC, 22 µH shielded SMD inductor, MBR130 Schottky, 1S LiPo 100 mAh JST-PH 2.0 pack, decoupling caps, code-select jumpers (or CUI DSM-02), 0603 diagnostic LED. Hand-prototype substitutes: Pololu / SparkFun / Adafruit breakouts (see R5).
 - **Hardware (recorder)**: Lattice CrossLink-NX-EVN (LIFCL-40-9BG400C), OmniVision OG0VA (primary) or OV9281 via Arducam B0162 (backup), Commonlands custom M12 NIR-corrected 120° lens with integrated 850 ± 5 nm CWL / ≤30 nm FWHM bandpass filter (prototype path: m12lenses.com PT-02120 + Edmund Optics #65-679 or Thorlabs FB850-10), SanDisk Extreme Pro microSD V30 (240 fps) / V60 (480 fps), Pololu D24V10F5 5V buck.
 - **Software**: `numpy` (loader), `pytest` (loader contract test), `cereal` (only if a C++ schema is added — not currently planned), `inih` (N/A this phase).
 - **Sourcing channels**: DigiKey / Mouser (most parts), Arducam direct (B0162), Lattice direct (EVN board), OmniVision OEM channel for OG0VA, Commonlands direct for custom lens.
@@ -56,7 +56,7 @@ Phase 1 of 031 delivers a **bench- and field-runnable beacon-camera setup that r
 - **Hardware bench-verifications (FR-3.x)**: stand-in for the constitution's "tests" — physical measurements with documented PASS/FAIL criteria (EMC, eye-safety, UVLO, orthogonality, emission pattern). Bench log per FR-5.2 is the test-result-of-record.
 
 **Target Platform**:
-- **Beacon pod**: ATtiny412 + LM3410-Y boost driver hand-wired inside a 3D-printed half-cube enclosure, tape-mounted to a flat ~2.5 cm wing-tip outboard face (target craft: hb1-class or any RC fixed-wing with wing-tip access).
+- **Beacon pod**: ATtiny412 + LM3410-X boost driver hand-wired inside a 3D-printed half-cube enclosure, tape-mounted to a flat ~2.5 cm wing-tip outboard face (target craft: hb1-class or any RC fixed-wing with wing-tip access).
 - **Recorder**: Lattice CrossLink-NX-EVN + camera module, **double-back-tape (or velcro) mounted** to whatever surface a carrier craft offers. First flights: **test quad, hb1, or any platform with ~100 g payload margin** — mount-on-whatever-flies is the explicit design intent.
 - **Ground**: Linux PC (operator workstation) for Python loader + analysis.
 
@@ -210,7 +210,7 @@ Top-level research items identified during Technical Context fill:
 | R2 | ATtiny412 toolchain: avr-gcc + serialUPDI cable (DIY) vs Microchip MPLAB X + PICkit (commercial)? |
 | R3 | Lattice CrossLink-NX-EVN onboard SDRAM/HyperRAM part + capacity + DMA path — sufficient for the 6 MB ring buffer? |
 | R4 | OG0VA OEM-channel sourcing reality (lead time + MOQ) — gates the P2/P3 decision to ship OG0VA primary or OV9281 backup |
-| R5 | Hand-prototype breakouts: identify Adafruit / SparkFun / Pololu / DigiKey breakouts for LM3410-Y (or compatible), ATtiny412, and the voltage supervisor — must fit in the 2.5 × 2.5 × 1.3 cm enclosure |
+| R5 | Hand-prototype breakouts: identify Adafruit / SparkFun / Pololu / DigiKey breakouts for LM3410-X (or compatible), ATtiny412, and the voltage supervisor — must fit in the 2.5 × 2.5 × 1.3 cm enclosure |
 | R6 | Commonlands lens lead time + Edmund/Thorlabs filter availability + the m12lenses.com PT-02120 IR-cut status — drives the lens-side P2 schedule |
 | R7 | NFR-4 clock-drift simulation: numpy vs GNU Radio vs Matlab; pick the one with fastest "write a matched filter sweep" path |
 | R8 | 1S LiPo 100 mAh pack: confirm Amazon B083NWXLTK or pick a named DigiKey-stocked equivalent for supply-chain reliability |

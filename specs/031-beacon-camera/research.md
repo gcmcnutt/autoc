@@ -86,7 +86,7 @@ Identify the tool names + argument schema once the MCP is connected so Phase 1 e
 
 | BOM line | Hand-prototype candidate | Notes |
 |---|---|---|
-| **TI LM3410-Y boost LED driver** | **Adafruit-style boost driver breakout** (LM3410 or similar) — likely not stocked as a named breakout; **fallback**: solder the LM3410-Y bare SOT-23-5 to a SOT-23-to-DIP adapter + dead-bug build on perfboard. **Alt**: **Pololu / SparkFun "constant-current LED driver" boards** (PT4115, AL8807, etc.) — if a substitute IC is acceptable for hand-prototype, use it. | The LM3410-Y is not a "common breakout" part; bare-SOT-23 + adapter is the most likely path. |
+| **TI LM3410-X boost LED driver** | **Adafruit-style boost driver breakout** (LM3410 or similar) — likely not stocked as a named breakout; **fallback**: solder the LM3410-X bare SOT-23-5 to a SOT-23-to-DIP adapter + dead-bug build on perfboard. **Alt**: **Pololu / SparkFun "constant-current LED driver" boards** (PT4115, AL8807, etc.) — if a substitute IC is acceptable for hand-prototype, use it. | The LM3410-X is not a "common breakout" part; bare-SOT-23 + adapter is the most likely path. |
 | **ATtiny412 MCU** | **Adafruit ATtiny breakout** (if stocked) OR **Microchip ATtiny412 Curiosity Nano** (~$10, includes UPDI programmer + USB) | The Curiosity Nano is the recommended bring-up board — has the MCU + UPDI + USB in one. Solder a flying-wire harness for DIM + code-select. |
 | **Voltage supervisor IC (MCP1316T)** | Bare-SOT-23-5 on adapter; dead-bug on perfboard | Same pattern as LM3410. |
 | **22 µH shielded inductor** | Through-hole equivalent (Coilcraft DR0810 or similar through-hole 22 µH) for prototype; SMT for final | Through-hole simplifies hand-wiring. |

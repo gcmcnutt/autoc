@@ -262,19 +262,19 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
 
 Per §0 above, before US1 hand-build (T032) the following edits must be applied. This is the punch-list for task T007a:
 
-- [ ] **I1** spec.md FR-1.2 ASCII diagram: replace `EN ←─ supervisor` + `DIM ←─ MCU` with `DIM ←─ wired-AND (MCU push-pull HIGH + supervisor open-drain LOW + 10 kΩ pull-up to V_BAT)`.
+- [X] **I1** spec.md FR-1.2 ASCII diagram: replace `EN ←─ supervisor` + `DIM ←─ MCU` with `DIM ←─ wired-AND (MCU push-pull HIGH + supervisor open-drain LOW + 10 kΩ pull-up to V_BAT)`.
 - [ ] **I2** spec.md FR-1.2.1 BOM driver-IC row:
   - "TI LM3410-Y (primary, 1.6 MHz fsw)" → "TI LM3410**X** (primary, 1.6 MHz fsw)"
   - Remove "EN pin held HIGH by supervisor" claim; replace with DIM-wired-AND wording
   - "up to 38 V output" → "up to 24 V output (V_SW abs max per datasheet)"
   - "1.6 A peak switch" → "2.8 A typ switch current limit"
-- [ ] **I3** spec.md FR-1.7 #4 UVLO contract: supervisor open-drain output gates DIM (not EN); MCU's GPIO is overridden low when supervisor trips; under UVLO the whole IC enters 80 nA shutdown.
-- [ ] **I4** spec.md Decisions-Locked LED-drive topology row: similar wiring correction + LM3410-X.
-- [ ] **I5** spec.md Clarifications Session 2026-05-17 "warm/strict-on/off" Q&A: revise the "boost stays warm via supervisor-held EN" framing to "DIM-only control with 20 µs soft-start (negligible at 100 Hz chip rate, satisfies the strict-on/off design intent)".
-- [ ] **I6** contracts/mcu-firmware-contract.md: update the LM3410-Y/EN/DIM wiring paragraph; firmware itself unchanged (MCU still writes one GPIO at chip rate).
-- [ ] **I7** plan.md: any mentions of LM3410-Y → LM3410-X.
+- [X] **I3** spec.md FR-1.7 #4 UVLO contract: supervisor open-drain output gates DIM (not EN); MCU's GPIO is overridden low when supervisor trips; under UVLO the whole IC enters 80 nA shutdown.
+- [X] **I4** spec.md Decisions-Locked LED-drive topology row: similar wiring correction + LM3410-X.
+- [X] **I5** spec.md Clarifications Session 2026-05-17 "warm/strict-on/off" Q&A: revise the "boost stays warm via supervisor-held EN" framing to "DIM-only control with 20 µs soft-start (negligible at 100 Hz chip rate, satisfies the strict-on/off design intent)". *(Applied to the Decisions-Locked row attribution since that's where the warm/strict-on/off phrase actually lived.)*
+- [X] **I6** contracts/mcu-firmware-contract.md: update the LM3410-Y/EN/DIM wiring paragraph; firmware itself unchanged (MCU still writes one GPIO at chip rate). *(Added open-drain emulation to the ISR + boot sequence + DIM signal table + diagnostic LED clarification + "what MCU does NOT do" bullet.)*
+- [X] **I7** plan.md: any mentions of LM3410-Y → LM3410-X.
 
-Estimated effort: ~20 minutes of mechanical edits. Output: one commit titled `fix(031 phase 1): LM3410-Y → -X + DIM-only architecture per datasheet audit`.
+**T007a COMPLETED 2026-05-18**. All 7 punch-list items applied. Final verification grep returned only intentional **negations** ("NOT LM3410Y", "no separate EN", "no DC contention path") in production text. Historical references to the bug remain only in this verified-bom.md §0 (intentional — explains why corrections were needed) and tasks.md T007/T007a entries (intentional — task history record).
 
 ---
 
