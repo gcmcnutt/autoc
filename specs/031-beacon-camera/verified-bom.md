@@ -10,6 +10,8 @@
 > - Sub-bullet `- [ ] received` = **received** (check when in hand) + free-text **notes** for substitutions, backorders, bin codes, anything worth recording
 >
 > Both checkboxes render as clickable items on GitHub + work as plain `[X]`/`[ ]` toggles when editing the markdown directly. The `notes:` line is free text — record vendor part numbers if substituted, bin codes confirmed at checkout, defects on receipt, etc.
+>
+> **Cross-check each part against its in-circuit role** via the wire-level [`schematic.md`](schematic.md) — refdes ↔ BOM-line table + per-net connection list + ASCII schematic. Use at receiving to confirm package + pinout match before soldering.
 
 ---
 
@@ -66,30 +68,30 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
 =========================================================================
 ```
 
-- [ ] **A1**  LM3410**X**MF-NOPB ×6 — boost LED driver, SOT-23-5, 1.6 MHz, **NOT -Y** — ~$15
+- [6] **A1**  LM3410**X**MF-NOPB ×6 — boost LED driver, SOT-23-5, 1.6 MHz, **NOT -Y** — ~$15
   - [ ] received  •  notes:
 - [ ] **A2**  ATTINY412-SSFR ×6 — ATtiny412 SOIC-8 (production-pod MCU) — ~$4
   - [ ] received  •  notes:
-- [ ] **A3**  DM080104 ×1 — ATtiny412 Curiosity Nano dev kit (first-flash bring-up; one-time) — ~$10
+- [1] **A3**  DM080104 ×1 — ATtiny412 Curiosity Nano dev kit (first-flash bring-up; one-time) — ~$10
   - [ ] received  •  notes:
-- [ ] **A4**  Voltage supervisor 3.3 V trip, open-drain ×6 — pick one in stock: MCP1316T-29LE/OT (Microchip), TPS3839K33DBVR (TI), or APX803-31SAG (Diodes) — ~$3
-  - [ ] received  •  notes (which part chosen):
+- [6] **A4**  Voltage supervisor 3.3 V trip, open-drain ×6 — pick one in stock: MCP1316T-29LE/OT (Microchip), TPS3839K33DBVR (TI), or APX803-31SAG (Diodes) — ~$3
+  - [ ] received  •  notes (which part chosen): MCP1316T-29LE/OT
 - [ ] **A5**  22 µH shielded SMD inductor, I_sat ≥1.5 A ×6 — Coilcraft DR0810-223ML or similar — ~$7
   - [ ] received  •  notes:
-- [ ] **A6**  MBR130T1G Schottky 1 A 30 V ×6 — ~$2
-  - [ ] received  •  notes:
-- [ ] **A7**  0.62 Ω 1% 1206 sense resistor ×6 — ~$3
-  - [ ] received  •  notes:
-- [ ] **A8**  4.7 µF / 25 V X7R 1206 (V_LED bulk) ×6 — ~$3
-  - [ ] received  •  notes:
-- [ ] **A9**  22 µF / 10 V X7R 1210 (V_BAT bulk) ×6 — ~$3
-  - [ ] received  •  notes:
-- [ ] **A10** 1 µF X7R 0603 ×12 — ~$1
-  - [ ] received  •  notes:
+- [10] **A6**  MBR130T1G Schottky 1 A 30 V ×6 — ~$2
+  - [ ] received  •  notes: MBR130T3G
+- [10] **A7**  0.62 Ω 1% 1206 sense resistor ×6 — ~$3
+  - [ ] received  •  notes: CRL1206-FW-R620ELF
+- [10] **A8**  4.7 µF / 25 V X7R 1206 (V_LED bulk) ×6 — ~$3
+  - [ ] received  •  notes: CL31B475KAHNNNE
+- [10] **A9**  22 µF / 10 V X7R 1210 (V_BAT bulk) ×6 — ~$3
+  - [ ] received  •  notes: C3225X7R1A226K230AC
+- [50] **A10** 1 µF X7R 0603 ×12 — ~$1
+  - [ ] received  •  notes: CL10B105KP8NNNC
 - [ ] **A11** 100 nF X7R 0603 ×30 (MCU decoupling, supervisor decoupling, driver-VIN) — ~$2
   - [ ] received  •  notes:
-- [ ] **A12** 2.2 µF X7R 0603 (boost-driver VIN decoupling) ×6 — ~$1
-  - [ ] received  •  notes:
+- [10] **A12** 2.2 µF X7R 0603 (boost-driver VIN decoupling) ×6 — ~$1
+  - [ ] received  •  notes: CL10B225KP8NNNC
 - [ ] **A13** 10 kΩ 0603 (DIM-line pull-up per §0.2) ×6 — <$1
   - [ ] received  •  notes:
 - [ ] **A14** JST-PH 2.0 mm 2-pin THT socket ×6 — S2B-PH-K-S or equivalent — ~$2
