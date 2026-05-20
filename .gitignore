@@ -59,3 +59,8 @@ specs/031-beacon-camera/clips/*.clip
 specs/031-beacon-camera/clips/*.json
 !specs/031-beacon-camera/clips/MANIFEST.md
 !specs/031-beacon-camera/clips/.gitkeep
+
+# 031-beacon-camera — KiCad personal/local state
+cad/**/*.kicad_prl
+cad/**/*-backups/
+cad/**/fp-info-cache
