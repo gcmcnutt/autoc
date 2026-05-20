@@ -1,8 +1,58 @@
 # Quickstart — 031 Beacon-Camera Phase 1
 
-Three end-to-end walk-throughs. None require a printed PCB.
+Four end-to-end walk-throughs. None require a printed PCB. **Section (0) is a recommended pre-flight** that validates the boost-converter and MCU gold-code generation on a breadboard before committing parts and time to the cube-mounted perfboard build in §(a).
 
 > Prereqs assumed: Linux PC, `avr-gcc`, `pymcuprog`, `python3.11`, Lattice Propel + Radiant installed, USB-UART cable, parts from `verified-bom.md` in hand, 3D-printed half-cube enclosures from `cad/beacon-half-cube.stl`.
+
+---
+
+## (0) Phase 1a eval-board pre-flight (recommended before §(a))
+
+Time budget: ~3 hours including breadboard wiring, the one-time XNANO mod, and scope setup. The eval substitutes the ATtiny412 + UPDI + 1S LiPo sub-assembly with a Microchip **ATtiny416-XNANO** evaluation kit (mEDBG-over-USB programmer + USB-CDC virtual COM + edge-connector breakout — all on one board) **while keeping the same TPS3839 supervisor** as the target circuit. The XNANO's USB-5V is isolated from the target rail via a one-time cut of an internal 0Ω strap (R100), so we can ramp the bench supply down to demonstrate the low-voltage cutout without losing mEDBG debug.
+
+Validates three orthogonal properties before committing to perfboard layout:
+
+1. **Firmware-side gold-code generation** on real silicon — see "firmware portability" below.
+2. **Boost-converter regulation** — constant-current loop regulates the 5-LED string at 306 mA via the 0.62 Ω sense resistor; V_LED auto-regulates to ~10 V.
+3. **Low-voltage cutout** — slowly ramp VIN down past ~3.0 V, U3 (TPS3839) trips, DIM goes LOW, LEDs go dark. Restore voltage → clean restart.
+
+**Schematic + BOM live in [`cad/beacon-eval/`](../../cad/beacon-eval/)** (separate from the cube pod):
+
+- [`cad/beacon-eval/beacon-eval-schematic.png`](../../cad/beacon-eval/beacon-eval-schematic.png) (also `.pdf`) — printable schematic
+- [`cad/beacon-eval/beacon-eval.kicad_sch`](../../cad/beacon-eval/beacon-eval.kicad_sch) — KiCad 10 source
+- [`cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md) — eval-only BOM. Most lines reuse the parent target BOM (LM3410X, L1, D1, R1, R2, C1, C5, C6, **TPS3839 supervisor**, 5× L1IZ-0850); additions are the XNANO eval kit (DigiKey `ATTINY416-XNANO-ND`, ~$11), one extra 100 nF cap (C7 supervisor decoupling), and a few rig consumables.
+
+### Firmware portability — ATtiny412 ↔ ATtiny416, same source under PlatformIO
+
+The eval restricts pin assignments to **only the GPIOs common to both chips: `PA0`, `PA1`, `PA2`, `PA3`, `PA6`, `PA7`**. Pins PA4/PA5 and all PB*/PC* on the ATtiny416 are off-limits — they don't exist on the ATtiny412. This means the same `.c` source compiles for both targets with no `#ifdef` pin remapping; just rebuild with a different `[env:...]` in `platformio.ini`:
+
+```ini
+[env:beacon-eval]
+platform = atmelmegaavr
+board = ATtiny416_xnano       ; megaTinyCore
+upload_protocol = xplainedmini_updi   ; XNANO mEDBG over USB
+
+[env:beacon-target]
+platform = atmelmegaavr
+board = ATtiny412              ; production hardware
+upload_protocol = serialupdi   ; or jtag2updi
+```
+
+Critical pin: **PA3 = DIM control** (open-drain GPIO that pulls DIM low to disable the boost). Same pin on both chips, same firmware bit, same JTAG2UPDI flash. The eval cannot lie about firmware behavior.
+
+### Bring-up summary (full sequence in the BOM doc)
+
+1. **One-time XNANO mod**: cut R100 (0Ω strap) inside the XNANO board to isolate VTG from USB-5V. Verify continuity is broken.
+2. **Build the analog sub-assembly** on perfboard / SOT-23-to-DIP adapters: U1 (LM3410X) + L1 (22 µH) + D1 (MBR130) + C1 (4.7 µF) + R1 (0.62 Ω) + R2 (10 k) + C5 (2.2 µF) + C6 (100 nF), with the boost switching loop physically tight. **U3 (TPS3839) + C7 (100 nF)** mount adjacent, with U3.RESET wired into DIM alongside R2.bot and U1.DIM (wired-AND topology, matches target).
+3. **Hand-reflow 5× L1IZ-0850** in series on a small carrier PCB (OSH Park ~$5/3 boards), or stripboard fallback.
+4. **Wire to breadboard**: J2 ← bench 5 V/3 A; J3 ↔ LED carrier; XNANO J200.1 (VTG) ↔ VIN_5V rail; XNANO J200.5 (PA3) ↔ DIM net; XNANO J200.20 (GND) ↔ common ground.
+5. **Power-on smoke test** (no firmware): R2 pull-up holds DIM HIGH, U3 releases (VIN > 3.0 V), boost runs. V_LED ramps to ~10 V, LEDs glow IR (visible on phone camera), V across R1 = 190 mV ± 5%.
+6. **Low-V cutout test**: ramp bench supply VIN down. At ~3.0 V, U3 trip → DIM LOW → LEDs dark. Restore VIN → clean restart. mEDBG over USB stays alive throughout (independent power domain).
+7. **Flash gold-code firmware to ATtiny416** via XNANO mEDBG: `pio run -e beacon-eval -t upload`.
+8. **Verify on scope**: DIM signal at U1.4 shows 4-code PN sequence at chip rate; current envelope across R1 tracks DIM with spec'd transitions.
+9. **Rebuild for target**: `pio run -e beacon-target` produces the same binary (just different fuses) — proceed to §(a).
+
+**Out of scope for §(0)** (defer to §(a)): battery + charge protection, cube enclosure mechanical assembly, perfboard EMI layout / SW-node loop area, eye-safety photometric polar plot, paired-pod orthogonality verification.
 
 ---
 
