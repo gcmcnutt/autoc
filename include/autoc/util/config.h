@@ -154,7 +154,7 @@ struct AutocConfig {
     // CepGateThreshold: substitute neutral values for derived features
     // when EITHER beacon's CEP at the current tick is >= this. Default
     // matches kCepSentinelThreshold (1.25) from camera_projection.h.
-    double cepGateThreshold = 1.25;
+    double cepGateThreshold = 1.25;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to float at the eval-pipeline consumption boundary
 };
 
 class ConfigManager {

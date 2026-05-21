@@ -487,7 +487,7 @@ void gather_tracker_inputs(const AircraftState& chase,
     // value is consumed by projectAndShiftHistory's span computation so
     // both call sites apply identical gating semantics.
     const bool config_ready = ConfigManager::isInitialized();
-    const float cep_gate_threshold = static_cast<float>(
+    const float cep_gate_threshold = static_cast<float>(   // raw-ok: NN-byte-format comparison boundary — compared against history.left/right_cep which are NN-byte-format primitives
         config_ready ? ConfigManager::getConfig().cepGateThreshold : 1.25);
 
     // (1) beacon_pair_span[6] — copy cached values from history.span.

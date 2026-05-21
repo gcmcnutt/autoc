@@ -166,7 +166,7 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     // neutral 0.0 (= "no closing-distance signal"). Per spec Q4 + R2.
     // Reading ConfigManager here keeps single source of truth with the
     // gather-side gating decision in gather_tracker_inputs.
-    const float cep_gate_threshold = static_cast<float>(
+    const float cep_gate_threshold = static_cast<float>(   // raw-ok: NN-byte-format comparison boundary — compared against BeaconObservation::cep which is float (cereal byte-format member)
         ConfigManager::isInitialized()
             ? ConfigManager::getConfig().cepGateThreshold
             : 1.25);
