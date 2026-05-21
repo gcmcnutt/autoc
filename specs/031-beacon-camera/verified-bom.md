@@ -46,7 +46,7 @@ Spec/plan calls **LM3410-Y** the 1.6 MHz variant. Datasheet says:
 
 Spec says "supervisor holds EN HIGH, MCU drives DIM". Datasheet (page 3 Pin Functions): SOT-23-5 has only `SW, GND, FB, VIN, DIM` — no EN. DIM is *"Dimming and shutdown control input. Logic high enables operation."*
 
-**Corrected wiring**: supervisor open-drain output + MCU push-pull GPIO both wire onto DIM via a pull-up resistor (wired-AND). Soft-start = 20 µs (datasheet page 5, SU parameter) is 0.2% of a 10 ms chip → no design impact at 100 Hz chip rate.
+**Wiring** *(revised 2026-05-20 per FR-1.7 #4 / R11; was supervisor open-drain + MCU open-drain wired-AND with pull-up to V_BAT)*: MCU PA3 push-pull active-HIGH drives DIM directly. R2 10 kΩ pulls DIM **DOWN to GND** (topological failsafe: PA3 high-Z → DIM LOW → LM3410X shutdown). No supervisor IC. Soft-start = 20 µs (datasheet page 5, SU parameter) is 0.2% of a 10 ms chip → no design impact at 100 Hz chip rate.
 
 ### §0.3 — V_OUT max is 24 V (spec said 38 V)
 
@@ -74,8 +74,7 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
   - [ ] received  •  notes:
 - [1] **A3**  DM080104 ×1 — ATtiny412 Curiosity Nano dev kit (first-flash bring-up; one-time) — ~$10
   - [ ] received  •  notes:
-- [6] **A4**  Voltage supervisor 3.3 V trip, open-drain ×6 — pick one in stock: MCP1316T-29LE/OT (Microchip), TPS3839K33DBVR (TI), or APX803-31SAG (Diodes) — ~$3
-  - [ ] received  •  notes (which part chosen): MCP1316T-29LE/OT
+- ~~**A4** Voltage supervisor 3.3 V trip, open-drain~~ *(removed 2026-05-20 per FR-1.7 #4 / R11: UVLO now via firmware ADC + topological failsafe + WDT; no supervisor IC. If you had received MCP1316T parts from a prior order, set aside as spare — not used in revised design.)*
 - [ ] **A5**  22 µH shielded SMD inductor, I_sat ≥1.5 A ×6 — Coilcraft DR0810-223ML or similar — ~$7
   - [ ] received  •  notes:
 - [10] **A6**  MBR130T1G Schottky 1 A 30 V ×6 — ~$2
@@ -88,11 +87,11 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
   - [ ] received  •  notes: C3225X7R1A226K230AC
 - [50] **A10** 1 µF X7R 0603 ×12 — ~$1
   - [ ] received  •  notes: CL10B105KP8NNNC
-- [ ] **A11** 100 nF X7R 0603 ×30 (MCU decoupling, supervisor decoupling, driver-VIN) — ~$2
+- [ ] **A11** 100 nF X7R 0603 ×30 (MCU decoupling, driver-VIN; *supervisor decoupling line removed 2026-05-20 per R11*) — ~$2
   - [ ] received  •  notes:
 - [10] **A12** 2.2 µF X7R 0603 (boost-driver VIN decoupling) ×6 — ~$1
   - [ ] received  •  notes: CL10B225KP8NNNC
-- [ ] **A13** 10 kΩ 0603 (DIM-line pull-up per §0.2) ×6 — <$1
+- [ ] **A13** 10 kΩ 0603 (DIM-line **pull-DOWN to GND** per §0.2 — *revised 2026-05-20 per FR-1.7 #4 / R11; was pull-up to V_BAT*) ×6 — <$1
   - [ ] received  •  notes:
 - [ ] **A14** JST-PH 2.0 mm 2-pin THT socket ×6 — S2B-PH-K-S or equivalent — ~$2
   - [ ] received  •  notes:

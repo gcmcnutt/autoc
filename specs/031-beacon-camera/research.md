@@ -45,6 +45,7 @@ Identify the tool names + argument schema once the MCP is connected so Phase 1 e
 **Alternatives considered**:
 - **Microchip MPLAB X + PICkit 4**: commercial / proprietary IDE, but the most "supported" path. Rejected because (a) MPLAB X is heavyweight for a 4-file firmware project, (b) PICkit 4 is ~$80, (c) serialUPDI is well-documented and works.
 - **Arduino IDE with megaTinyCore**: easier setup, but adds Arduino abstractions over what is a pure register-poke firmware. Rejected as over-abstracted for a 100 Hz timer ISR + GPIO write.
+- **PlatformIO + megaTinyCore** (noted in `cad/beacon-eval/` commit 4321ec5 as a "build the same source for ATtiny416_xnano (eval) and ATtiny412 (target)" path): **POSSIBLE REVISIT** *(noted 2026-05-20)*. Attractive for the eval-vs-target portability story but the same Arduino-abstraction concern applies; also adds a PlatformIO config file + the megaTinyCore dependency. Defer the decision to P1a firmware bring-up — if avr-gcc + serialUPDI proves clunky for the dual-target build, switch to PlatformIO then. Either way the same source code (per the PA0/1/2/3/6/7 portability discipline) compiles.
 
 **Build artifacts**: `firmware/beacon-pod/Makefile` invokes `avr-gcc -mmcu=attiny412` and produces a `.hex`; `make flash` invokes `pymcuprog write -t uart -d attiny412 -u /dev/ttyUSB0 -f beacon-pod.hex`.
 
@@ -199,6 +200,160 @@ Identify the tool names + argument schema once the MCP is connected so Phase 1 e
 
 ---
 
+## R11 — Undervoltage Cutoff + LED-Driver Failsafe (1S LiPo brown-out protection)
+
+**Decision**: **Topological failsafe + firmware ADC undervoltage cutoff + watchdog timer.** Three layers, no supervisor IC, no divider resistors. Specifically:
+
+1. **Schematic change** — invert `R2` (10 kΩ on DIM net) from pull-UP to V_BAT to **pull-DOWN to GND**. Any MCU-offline state (reset, boot, brown-out, hang-in-input-mode) leaves DIM low → LM3410X in 80 nA shutdown → **LEDs OFF**.
+2. **Firmware ADC undervoltage cutoff** — measure V_BAT via the ATtiny412's internal 1.1 V bandgap reference (zero external parts), trip at 3.6 V firmware-set threshold (which corresponds to ~3.5 V real V_BAT after Vref drift + sag), drive PA3 LOW, halt the MCU.
+3. **Watchdog timer** — ~250 ms timeout, petted in the main loop. If firmware hangs (including the rare "hangs while driving PA3 HIGH" case), WDT resets the MCU within 250 ms; PA3 returns to high-Z; the inverted topology pulls DIM low; LEDs OFF.
+
+**Context**: The beacon runs directly off a 1S LiPo (3.0 – 4.2 V) with no LDO. The LM3410X boost LED driver is a constant-current regulator that will keep pulling the same ~306 mA from the battery as VIN sags — eventually causing a battery undervoltage event that can damage the cell (LiPo cycle-life degrades sharply below ~3.0 V) and may brown out the MCU. Need a deterministic cutoff that kills the LED driver before the battery is over-discharged. Operator-locked threshold: **≥ 3.5 V** (rest-voltage 30%-SOC reserve; sag-corrected trip is ~3.4 V under load).
+
+**Why this beats a dedicated supervisor IC** (per the FR-1.7 #4 spec-revision discussion 2026-05-20):
+
+| Aspect | Dedicated supervisor (original FR-1.7 #4) | This (topology + ADC + WDT) |
+|---|---|---|
+| BOM | +1 IC + decoupling cap + (often) divider resistors | **0 parts** (R2 already in the BOM, just routed differently) |
+| Threshold flexibility | Fixed-suffix variants (TPS3839 caps at 3.08 V then jumps to 4.38 V — no 3.5 V part exists in the family) | **Firmware-set, exact**, tunable without re-spinning hardware |
+| Cost | $0.30 – $0.80 + footprint area on the cube perfboard | $0 |
+| MCU-offline coverage | Hardware-only (the supervisor is independent of MCU) | **Topological** (the schematic itself is the failsafe; covers reset / boot / brown-out / hang-in-input-mode) |
+| Hang-while-driving-HIGH coverage | Hardware (supervisor still trips) | **WDT-bounded** (250 ms timeout → MCU reset → PA3 high-Z → topology takes over) |
+| Defense in depth | One layer (supervisor) | **Three layers** (topology + ADC threshold + WDT) |
+
+**Schematic change detail — the inverted DIM topology**:
+
+Original (per current schematic + spec FR-1.2.1 BOM table):
+```
+V_BAT ──┬── R2 (10 kΩ) ──┬── DIM (LM3410X pin 4)
+        │                │
+        │                └── MCU PA3 (open-drain emulated: release for chip=1, LOW for chip=0)
+        │
+        └── LM3410X VIN
+```
+DIM default with PA3 high-Z = HIGH → LEDs ON. **Wrong polarity for failsafe.**
+
+Revised:
+```
+DIM (LM3410X pin 4) ──┬── R2 (10 kΩ) ── GND
+                      │
+                      └── MCU PA3 (push-pull active-HIGH: HIGH for chip=1, LOW for chip=0)
+```
+DIM default with PA3 high-Z = LOW → LEDs OFF. **Correct failsafe polarity.** Single trace change. Same R2 value (10 kΩ stays — sets the DIM pull-down current at ~0.4 mA when PA3 drives HIGH, which is fine; LM3410X DIM input current is ~100 nA, negligible).
+
+Firmware change is symmetric: PA3 configured as **push-pull output**, drive HIGH for chip=1, LOW for chip=0. No more open-drain emulation needed.
+
+**MCU-offline truth table** (the failsafe guarantee):
+
+| MCU state | PA3 hardware state | DIM (with new R2 pull-DOWN) | LM3410X | LEDs |
+|---|---|---|---|---|
+| Normal operation, chip=1 | drive HIGH | HIGH | running | ON |
+| Normal operation, chip=0 | drive LOW (or release) | LOW | shutdown | OFF |
+| Reset (any source: POR, BOD, WDT, software) | input/high-Z | LOW (pulled down) | shutdown | **OFF** ✓ |
+| Boot (before firmware configures DDR) | input/high-Z | LOW (pulled down) | shutdown | **OFF** ✓ |
+| Brown-out (V_BAT < BOD ~2.6 V) | held in reset → high-Z | LOW (pulled down) | shutdown | **OFF** ✓ |
+| Firmware hang in input mode | input/high-Z | LOW (pulled down) | shutdown | **OFF** ✓ |
+| Firmware hang while driving HIGH | held HIGH **briefly** | HIGH ⚠️ | running ⚠️ | ON ⚠️ |
+|   ↳ after ≤ 250 ms WDT timeout: | reset → high-Z | LOW (pulled down) | shutdown | **OFF** ✓ |
+
+The single non-self-protecting failure mode ("MCU hangs while driving PA3 HIGH") is **bounded to ≤ 250 ms by WDT** — well below the timescale at which a 1S LiPo discharges meaningfully.
+
+**Implementation pattern** (firmware, ≈ 40 lines of C):
+
+```
+init:
+    fuses: BODLEVEL = ~2.6 V (provides MCU reset before V_BAT damages cell)
+    WDT.CTRLA = PERIOD_256CLK  // ~256 ms timeout
+    PA3 DDR  = output, push-pull
+    PA3 OUT  = LOW             // safe state until UV check passes
+    ADC config: Vref = VDD, input channel = internal 1.1 V bandgap
+
+low-V check (run once after boot, before enabling code modulation):
+    sample ADC; vbat_mV = 1126400 / raw
+    if vbat_mV < 3600: enter SLEEP_POWER_DOWN  // refuse to start
+
+main loop:
+    drive chip pattern on PA3 at 100 Hz
+    WDT.STATUS = 0xA5   // pet the watchdog
+    every 100 ms (timer ISR):
+        sample ADC
+        if vbat_mV < 3600 for 5 consecutive ticks (= 500 ms):
+            PA3 = LOW                       // explicit shutdown
+            sleep mode = POWER_DOWN         // ~100 nA hold, only battery removal wakes
+```
+
+**Trade-offs accepted**:
+
+- **Internal 1.1 V reference factory accuracy: ±3 % @ 25 °C, ±4 % over temp.** At 3.5 V real threshold, worst-case measurement error is ±140 mV. **Mitigation**: firmware trip at **3.6 V** (not 3.5 V) so even worst-case Vref drift still leaves actual V_BAT ≥ ~3.46 V at cutoff. Optional per-unit cal pass: bench-measure offset → store in EEPROM.
+- **Cutoff response time** ≈ 500 ms debounce (vs supervisor's µs). Acceptable — battery sag is a seconds-scale phenomenon, not µs.
+- **Hang-while-driving-HIGH window**: ≤ 250 ms (WDT period) of "LEDs stay on past true cutoff threshold." At 306 mA worst-case continuous LED draw, that's ≤ 0.02 mAh per hang event ≈ ≤ 0.02 % of a 100 mAh pack. Negligible.
+
+**BOM impact (target pod, `cad/beacon-pod/`)**:
+
+- **REMOVE**: U3 supervisor (was MCP1316T-29HE / TPS3839K33 / APX803-31SAG candidates in the original BOM). Saves 1 SOT-23 footprint + sourcing line.
+- **REMOVE**: supervisor decoupling cap (per spec FR-1.2.1 BOM table line "Supervisor decoupling 100 nF"). Saves 1 0603 footprint.
+- **REWIRE only** (no part change): R2 (10 kΩ DIM pull-up → DIM pull-down). Same part, opposite endpoint. Update FR-1.2.1 BOM-table description from "to V_BAT" → "to GND".
+- **No other parts change** — MCU PA3 still the sole driver of DIM (was already the sole non-supervisor driver), just push-pull active-HIGH instead of open-drain emulated.
+
+**BOM impact (eval rig, `cad/beacon-eval/`)**: same — remove U3 (TPS3839L30DBVT line) + C7 + flip R2 routing. Eval rig should mirror the final target topology so the eval validates exactly what ships.
+
+**Discovered errors in current `verified-bom-eval.md` that this revision moots**:
+
+1. `TPS3839L30DBVT` — listed threshold "3.0 V" is wrong; per TPS3839 datasheet (SBVS193C) L30 = **2.63 V** not 3.0 V.
+2. Package `DBVT` (SOT-23-5) doesn't exist for TPS3839 — only `DBZ` (SOT-23-3) or `DQN` (X2SON-4).
+3. RESET output is push-pull, not open-drain — would bus-contend with MCU PA3 on the original wired-AND DIM topology.
+
+All three errors disappear with U3 removed.
+
+**Spec changes required** (queued for explicit operator sign-off before landing):
+
+- **FR-1.7 #4** — rewrite from "mandatory hardware-level UVLO at 3.3 V, MCU-independent, supervisor IC" to "firmware ADC cutoff at 3.5 V real + topological failsafe via DIM pull-down + WDT-bounded hang protection." Draft in scratch under [R11.A] below.
+- **FR-1.2.1 BOM table** — delete "Voltage supervisor" + "Supervisor decoupling" rows; update "DIM-line pull-up" row → "DIM-line pull-DOWN to GND"; update MCU row to remove "MCU does NOT participate in the UVLO cutoff path" sentence (it now is the cutoff path).
+- **`spec.md` text-narrative §241-276 ASCII schematic** — redraw without the supervisor branch on DIM; document the new truth table.
+- **§122 pre-flight checklist** — change "(c) hardware UVLO at 3.3 V confirmed per FR-1.7 #4" → "(c) firmware UVLO + WDT bench-verified per FR-1.7 #4."
+- **§423 battery-runtime calculation** — adjust from "4.2 V → 3.3 V UVLO" → "4.2 V → 3.5 V UVLO" (~10 % capacity reserved instead of ~5 %; revised runtime ~12 min instead of 13 min).
+
+**NEEDS-EXEC-RESEARCH at P1a (firmware bring-up)**:
+
+- Confirm ATtiny412 ADC channel number for the internal 1.1 V reference (datasheet §30 — MUXPOS register encoding).
+- Confirm exact BODLEVEL fuse value for ~2.6 V trip and that BOD operates in chosen sleep mode.
+- Confirm WDT behavior in target sleep mode (some MCUs gate WDT off in deep sleep — we need WDT running during normal operation, not in the post-cutoff sleep state).
+- Bench-verify the inverted topology end-to-end: ramp bench supply down on the eval rig (after R100 cut + R2 reroute), confirm LEDs cut off cleanly at firmware threshold, then physically reset the eval-board MCU mid-emission and confirm LEDs go off within the WDT period.
+- Bench-calibrate Vref accuracy per board after assembly; record offset → store in EEPROM byte 0x00 for runtime correction (optional precision pass).
+
+**Alternatives considered + rejected (this revision)**:
+
+- **Original R11 v1 (firmware-only ADC, no topology change)**: rejected — leaves the failsafe direction wrong (high-Z = LEDs ON). Violates FR-1.7 #4 intent even with BOD backstop, because BOD reset still leaves PA3 high-Z → DIM HIGH → LEDs ON during the boot window before firmware re-asserts PA3 LOW.
+- **Dedicated supervisor IC (TPS3700 / MCP1317T / similar)**: rejected — adds BOM cost + footprint area to solve a problem the topology + WDT already covers at zero parts cost. The original spec rationale (hardware-only fail-safe) is satisfied differently — by the schematic-level pull-down topology — rather than by an external chip.
+- **Hybrid (supervisor at 3.0 V + firmware at 3.5 V)**: rejected — gives strictly better cell protection in the hang-while-driving-HIGH window, but the operator-accepted trade-off is "WDT bounds the damage to ≤ 0.02 % per incident, simpler BOM wins" (see Spec Revision FR-1.7 #4 above).
+- **Analog Comparator hardware-trigger mode**: rejected — would require external R-divider on a GPIO (defeats BOM savings) AND limit available GPIOs. Bandgap-via-ADC is strictly better.
+
+---
+
+### [R11.A] Draft replacement text for spec.md §458 — FR-1.7 #4
+
+*(For operator review. Replace the existing "4. Battery low-voltage cutoff (LiPo protection — safety-critical):" paragraph; everything else in FR-1.7 stays as-is.)*
+
+> 4. **Battery low-voltage cutoff (LiPo protection — safety-critical)** *(revised 2026-05-20 per R11)*: the pod SHALL stop driving the LEDs when the 1S cell drops to **3.5 V** (firm UVLO threshold). This cutoff is implemented as **three defense-in-depth layers**, none requiring an external supervisor IC. Implementation contract:
+>
+>    a. **Topological failsafe** (Layer 1, always-on): the LM3410X DIM net is held LOW by a 10 kΩ resistor to GND. The MCU drives DIM HIGH (push-pull) to enable the LED string; any MCU-offline state (POR, BOD reset, WDT reset, software reset, brown-out, or firmware hang in GPIO input mode) leaves PA3 high-impedance, R2 pulls DIM low, and the LM3410X enters its ~80 nA shutdown state. **This is the primary fail-safe** — the schematic topology itself prevents stranded-LED-on conditions.
+>
+>    b. **Firmware ADC cutoff** (Layer 2, normal-operation): the MCU samples its supply voltage every 100 ms via the internal 1.1 V bandgap reference channel (ratiometric measurement: V_BAT = 1.1 V × 1024 / ADC_raw, using V_BAT itself as Vref). On 5 consecutive readings below **3.6 V threshold** (firmware-set; 100 mV margin above the 3.5 V spec to absorb Vref ±4 % drift), the MCU drives PA3 LOW and enters POWER_DOWN sleep (~100 nA hold). Wake-up only on battery removal + re-insertion.
+>
+>    c. **Watchdog timer** (Layer 3, hang-protection): the MCU's internal WDT is enabled with a **≤ 250 ms timeout**, petted in the main loop. If firmware hangs while PA3 is driving HIGH (the only Layer 1 fail-safe gap), WDT resets the MCU within 250 ms; PA3 returns to high-Z; Layer 1 takes over. **Maximum "stranded LEDs on past true UVLO" window: 250 ms ≈ 0.02 mAh ≈ 0.02 % of a 100 mAh pack.**
+>
+>    **Threshold**: **3.5 V real V_BAT** (firmware trip set at 3.6 V to absorb Vref drift) with implicit hysteresis (once tripped, MCU stays in POWER_DOWN sleep — no re-engagement until battery removal cycles power).
+>
+>    **Reasoning for 3.5 V vs original 3.3 V** (revised 2026-05-20): 3.5 V at rest ≈ ~20 % SOC; under-load sag-corrected trip is ~3.4 V → ~10 % SOC. Preserves cell cycle-life better than the 3.3 V threshold (which approached 5 % SOC under load) and gives the operator a "land now" warning window before complete cutoff. Runtime cost: ~1 min off the original ~13 min estimate per 100 mAh pack.
+>
+>    **Reasoning for firmware + WDT vs original "hardware supervisor IC, MCU-independent"** (revised 2026-05-20): the *intent* of MCU-independent UVLO — that no firmware failure mode strands the LED driver running — is preserved by the topological-failsafe layer (R2 pull-down + push-pull active-HIGH MCU GPIO). MCU is the cutoff path, but the schematic is the failsafe. The only non-self-protecting failure case (MCU hangs while actively driving HIGH) is bounded by the WDT to ≤ 250 ms / ≤ 0.02 % cell impact per incident. Operator-accepted trade-off: simpler BOM (no supervisor IC, no decoupling cap) + tunable threshold (no part-suffix decoding hazard) at the cost of accepting per-hang ≤ 0.02 % cell wear.
+>
+>    **NOT a separate supervisor IC**: previous wording mandating MCP1316T / TPS3839 / APX803 is withdrawn. Those parts may not exist at the required 3.5 V threshold in the right package + output-type combination (the TPS3839 family caps at 3.08 V then jumps to 4.38 V; the family is also push-pull, not open-drain as the original wired-AND topology required). Going firmware-side avoids the part-survey rabbit-hole entirely.
+>
+>    **Bench-verify**: (a) on the eval rig (`cad/beacon-eval/`, after R100 cut + R2 reroute), ramp the bench supply down from 4.0 V to 3.0 V; scope the LM3410X DIM pin + V_LED rail to confirm cutoff at 3.5 V real V_BAT with the 500 ms debounce window; (b) physically issue a soft-reset to the MCU mid-emission, confirm DIM goes low within ≤ 1 ms (POR delay) + WDT period ≤ 250 ms ≈ ≤ 250 ms total; (c) verify post-cutoff battery quiescent current is < 100 µA (MCU sleep + LM3410X shutdown + dim-line resistor leakage).
+
+---
+
 ## Summary of P1 critical-path resolutions
 
 | Item | Resolved | Outstanding (NEEDS-EXEC-RESEARCH) |
@@ -213,5 +368,6 @@ Identify the tool names + argument schema once the MCP is connected so Phase 1 e
 | R8 1S LiPo | Tinywhoop 1S 100 mAh, JST-PH 2.0, multiple-vendor | Confirm Amazon B083NWXLTK availability |
 | R9 Lattice toolchain | Propel (P1) | Confirm Propel reference designs target LIFCL-40 |
 | R10 FreeCAD MCP invocation | FreeCAD MCP (primary), `freecadcmd` scripted fallback | Confirm MCP tool schema at exec |
+| R11 Undervoltage cutoff | **Topological failsafe (DIM pull-DOWN to GND) + firmware ADC at 3.6 V + WDT ≤ 250 ms** (no supervisor IC, no decoupling cap, R2 just rewired) | Confirm ADC MUXPOS for bandgap channel + BODLEVEL fuse + WDT behavior in target sleep mode at P1a firmware bring-up. Pending spec edit on FR-1.7 #4 per draft [R11.A] |
 
 **Net**: 3 items are fully resolved (R2, R7); 7 items have a *decision* with exec-time confirmation needed (R1, R3, R4, R5, R6, R8, R9, R10). None are blocking the plan structure — all P1 contracts can be written now; vendor / part details get plugged in as the audit completes.

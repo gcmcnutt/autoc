@@ -38,7 +38,7 @@ Phase 1 of 031 delivers a **bench- and field-runnable beacon-camera setup that r
 - **CAD**: **FreeCAD MCP server** — invoked from Claude Code at P1 execution time, produces STEP + STL files. FreeCAD project files (`.FCStd`) checked into `cad/source/`.
 
 **Primary Dependencies**:
-- **Hardware (beacon)**: Lumileds L1IZ-0850000000000 ×5, TI LM3410-X, ATtiny412, voltage supervisor IC, 22 µH shielded SMD inductor, MBR130 Schottky, 1S LiPo 100 mAh JST-PH 2.0 pack, decoupling caps, code-select jumpers (or CUI DSM-02), 0603 diagnostic LED. Hand-prototype substitutes: Pololu / SparkFun / Adafruit breakouts (see R5).
+- **Hardware (beacon)**: Lumileds L1IZ-0850000000000 ×5, TI LM3410-X, ATtiny412, 22 µH shielded SMD inductor, MBR130 Schottky, 1S LiPo 100 mAh JST-PH 2.0 pack, decoupling caps, code-select jumpers (or CUI DSM-02), 0603 diagnostic LED. Hand-prototype substitutes: Pololu / SparkFun / Adafruit breakouts (see R5). *(revised 2026-05-20 per FR-1.7 #4 / R11: external voltage supervisor IC removed — UVLO is now firmware ADC + topological failsafe + WDT.)*
 - **Hardware (recorder)**: Lattice CrossLink-NX-EVN (LIFCL-40-9BG400C), OmniVision OG0VA (primary) or OV9281 via Arducam B0162 (backup), Commonlands custom M12 NIR-corrected 120° lens with integrated 850 ± 5 nm CWL / ≤30 nm FWHM bandpass filter (prototype path: m12lenses.com PT-02120 + Edmund Optics #65-679 or Thorlabs FB850-10), SanDisk Extreme Pro microSD V30 (240 fps) / V60 (480 fps), Pololu D24V10F5 5V buck.
 - **Software**: `numpy` (loader), `pytest` (loader contract test), `cereal` (only if a C++ schema is added — not currently planned), `inih` (N/A this phase).
 - **Sourcing channels**: DigiKey / Mouser (most parts), Arducam direct (B0162), Lattice direct (EVN board), OmniVision OEM channel for OG0VA, Commonlands direct for custom lens.
@@ -72,7 +72,7 @@ Phase 1 of 031 delivers a **bench- and field-runnable beacon-camera setup that r
 - Per-pod mass ≤6 g (target 4.5–5 g per FR-1.2.1 BOM).
 - Recorder system mass ~70–100 g (carrier-craft path; production-weight optimization is deferred to 031-integration).
 - EMI: gyro broadband RMS bump ≤3 dB, RSSI drop ≤2 dB, link-quality drop ≤5 % (FR-3.3).
-- Hardware-level LiPo UVLO at 3.3 V ±50 mV, MCU-independent (FR-1.7 #4).
+- LiPo UVLO at 3.5 V real V_BAT (firmware ADC trip at 3.6 V) + topological failsafe (DIM pull-down to GND) + WDT ≤ 250 ms (FR-1.7 #4, revised 2026-05-20 per R11).
 - Beacon MCU clock drift ±5 % bounded; NFR-4 simulation chooses crystal vs multi-hypothesis correlator before PCB freeze.
 - Eye safety: IEC 62471 RG0 at ≤10 s exposure @ 200 mm (FR-1.7 + US6 gate).
 - LED + filter + sensor wavelength binning: all at 850 ± 5 nm CWL (FR-1.1 + FR-2.2).
@@ -210,7 +210,7 @@ Top-level research items identified during Technical Context fill:
 | R2 | ATtiny412 toolchain: avr-gcc + serialUPDI cable (DIY) vs Microchip MPLAB X + PICkit (commercial)? |
 | R3 | Lattice CrossLink-NX-EVN onboard SDRAM/HyperRAM part + capacity + DMA path — sufficient for the 6 MB ring buffer? |
 | R4 | OG0VA OEM-channel sourcing reality (lead time + MOQ) — gates the P2/P3 decision to ship OG0VA primary or OV9281 backup |
-| R5 | Hand-prototype breakouts: identify Adafruit / SparkFun / Pololu / DigiKey breakouts for LM3410-X (or compatible), ATtiny412, and the voltage supervisor — must fit in the 2.5 × 2.5 × 1.3 cm enclosure |
+| R5 | Hand-prototype breakouts: identify Adafruit / SparkFun / Pololu / DigiKey breakouts for LM3410-X (or compatible) and ATtiny412 — must fit in the 2.5 × 2.5 × 1.3 cm enclosure. *(revised 2026-05-20 per R11: voltage supervisor IC dropped from BOM, no breakout needed.)* |
 | R6 | Commonlands lens lead time + Edmund/Thorlabs filter availability + the m12lenses.com PT-02120 IR-cut status — drives the lens-side P2 schedule |
 | R7 | NFR-4 clock-drift simulation: numpy vs GNU Radio vs Matlab; pick the one with fastest "write a matched filter sweep" path |
 | R8 | 1S LiPo 100 mAh pack: confirm Amazon B083NWXLTK or pick a named DigiKey-stocked equivalent for supply-chain reliability |
