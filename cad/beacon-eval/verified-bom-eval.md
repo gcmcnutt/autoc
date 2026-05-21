@@ -8,7 +8,7 @@
 >
 > **What this is NOT**: a battery-powered, EMI-tight target-pod assembly. The cube enclosure, magnet-wire LED harness, and final perfboard EMI layout are explicitly out of scope for Phase 1a — they're part of Phase 1 §(a). This rig validates *components, topology, and firmware* before we commit to perfboard layout.
 >
-> ⚠️ **Revised 2026-05-20 per FR-1.7 #4 / R11**: the TPS3839 supervisor IC (U3) and its decoupling cap (C7) are **removed** from the design; UVLO is now firmware ADC on the ATtiny416's internal 1.1 V bandgap (zero external parts) + a topological pull-DOWN of DIM to GND (so any MCU-offline state = LEDs OFF) + watchdog timer (≤ 250 ms timeout). The KiCad schematic file still shows the old supervisor topology pending edit. BOM lines below reflect the revised parts list — **do NOT order the supervisor (EV-A11) or the extra 100 nF cap for it (one of the two listed under EV-A10)**.
+> ⚠️ **Revised 2026-05-20 per FR-1.7 #4 / R11**: the TPS3839 supervisor IC (U3) and its decoupling cap (C7) are **removed** from the design; UVLO is now firmware ADC on the ATtiny416's internal 1.1 V bandgap (zero external parts) + a topological pull-DOWN of DIM to GND (so any MCU-offline state = LEDs OFF) + watchdog timer (≤ 250 ms timeout). The KiCad schematic was updated in commit `c30a9b6` to match — supervisor branch deleted, R2 flipped to pull-down. BOM lines below reflect the revised parts list — **do NOT order the supervisor (EV-A11) or the extra 100 nF cap for it (the second 100 nF that was listed under EV-A10)**.
 
 ---
 
@@ -100,6 +100,8 @@ Pin role assignments (identical on both chips):
 - [ ] **EV-A10 = target A11** 100 nF 0603 X7R (boost VIN HF decoupling C6), qty 1. Reuse generic from parent A11. *(Revised 2026-05-20 per R11: was qty 2 to cover supervisor decoupling C7; supervisor removed → qty 1 only.)*
   - [ ] received — notes:
 - ~~**EV-A11** TI TPS3839L30DBVT 3.0 V open-drain voltage supervisor~~ *(removed 2026-05-20 per FR-1.7 #4 / R11: UVLO via firmware ADC + topological failsafe + WDT — no supervisor IC needed. Additionally, the previous BOM line had three errors that the removal moots: TPS3839L30 = 2.63 V not 3.0 V per datasheet; DBVT package code doesn't exist (only DBZ SOT-23-3 or DQN X2SON-4); TPS3839 output is push-pull not open-drain.)*
+- [ ] **EV-A12 = target A14** JST-PH 2.0 mm 2-pin THT socket (JST `S2B-PH-K-S` or equiv) — battery / bench-supply input header J2 on the eval, mates with the flight battery's standard JST-PH 2-pin pigtail. **Reuse from target order** (parent BOM Cart §A line A14; +1 spare). On the eval, plug in either a charged 1S LiPo (for battery-as-switch testing) or a bench-supply harness with a JST-PH male connector (for controlled VIN ramps during firmware-ADC cutoff verification).
+  - [ ] received — notes:
 
 ### Cart §EV-B — DigiKey (Lumileds — match target order)
 
@@ -108,7 +110,7 @@ Pin role assignments (identical on both chips):
 
 ### Cart §EV-C — OSH Park / JLCPCB (LED carrier PCB)
 
-- [ ] **EV-C1** Custom 2-layer PCB carrier for 5× L1IZ-0850 in series with a 2-pin 0.1″ header that mates with J3 on the eval breadboard rig. Dimensions ~20 × 60 mm. **Action**: produce a small KiCad PCB layout (separate task — not in this Phase-1a scope; deferred until eval needs the carrier physically built). Initial validation can be done with **flying-lead** L1IZ reflows on a stripboard if PCB lead time is a blocker.
+- [ ] **EV-C1** Custom 2-layer PCB carrier for 5× L1IZ-0850 in series with a 2-pin 0.1″ header that ties into the V_LED net and the FB-sense return on the eval rig. Dimensions ~20 × 60 mm. **Action**: produce a small KiCad PCB layout (separate task — not in this Phase-1a scope; deferred until eval needs the carrier physically built). Initial validation can be done with **flying-lead** L1IZ reflows on a stripboard or perfboard if PCB lead time is a blocker. *(Revised 2026-05-20: schematic no longer has a dedicated J3 carrier connector; LEDs wire directly into the V_LED → FB chain. The carrier PCB just bridges the V_LED out to the LED-string-anode net and the LED-string-cathode back to FB-sense.)*
   - [ ] received — notes:
 
 ### Cart §EV-D — Amazon / on-hand (rig consumables)
@@ -133,7 +135,7 @@ Pin role assignments (identical on both chips):
 1. **Cut R100 on the XNANO** (one-time mod). Verify with a multimeter: continuity between USB-5V test point and VTG (J200.1) should be **broken** after the cut.
 2. **Solder the boost-converter sub-assembly** onto a SOT-23-to-DIP perfboard or stripboard: U1 (LM3410X) + L1 + D1 + C1 + R1 + R2 + C5 + C6, in a tight switching-loop topology (U1↔L1↔D1↔C1↔GND loop physically <5 mm if possible — FR-1.6 EMI mitigation). **R2 wires from U1.DIM to GND (pull-DOWN, not pull-up to V_BAT)** *(revised 2026-05-20 per R11)*. No supervisor IC.
 3. **Hand-reflow 5× L1IZ-0850** in series on a small carrier PCB (OSH Park, ~$5 for 3 boards), or a stripboard fallback.
-4. **Wire to breadboard**: bench supply 5 V/3 A → J2 (VIN_5V rail), LED carrier → J3, XNANO J200.1 (VTG) → VIN_5V rail, XNANO J200.5 (PA3) → DIM net, XNANO J200.20 (GND) → common ground rail.
+4. **Wire to breadboard** *(revised 2026-05-20)*: bench supply 5 V/3 A (or 1S LiPo on its JST-PH pigtail) → **J2** (the new JST-PH 2-pin socket) which feeds the VIN_5V rail. LED-string carrier ties V_LED node → 5× LED series chain → FB-sense node. XNANO J200.1 (VTG, after R100 cut) → VIN_5V rail; XNANO J200.5 (PA3) → DIM net; XNANO J200.20 (GND) → common ground rail. (Bench supply and XNANO VTG both end up on the same VIN_5V net — either source works; the R100 cut just decouples USB from VTG so VTG follows VIN_5V instead.)
 5. **Power-on smoke test** *(revised 2026-05-20 per R11)* — with no firmware loaded, the MCU's PA3 is high-Z by default, R2 pulls DIM LOW, U1 is in shutdown, LEDs are OFF. *This is the failsafe in action.* To smoke-test the boost: temporarily jumper PA3 to V_BAT directly (manually overriding the topological failsafe):
    - Set bench supply to 5 V, current limit 1.5 A.
    - Jumper U1.DIM directly to V_BAT (bypasses MCU + R2).
