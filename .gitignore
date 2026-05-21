@@ -64,6 +64,7 @@ specs/031-beacon-camera/clips/*.json
 cad/**/*.kicad_prl
 cad/**/*-backups/
 cad/**/fp-info-cache
+cad/**/~*.lck
 
 # VS Code Local History extension cache
 **/.history/
