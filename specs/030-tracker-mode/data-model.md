@@ -17,7 +17,12 @@ struct SourceTickSample {
   gp_vec3 position;               // target world position (NED, meters)
   gp_quat orientation;            // target body→world quat
   gp_vec3 velocity;               // target velocity (NED, m/s)
-  gp_vec3 angularRate;            // target body rates (p, q, r, rad/s)
+  // angularRate intentionally omitted in v1 — the v1 cereal schema
+  // (CEREAL_CLASS_VERSION(AircraftState, 1)) does NOT serialize gyroRates_;
+  // it's a transient field set per-tick from physics but not persisted.
+  // M5+ analytics that need target body rates can numerically differentiate
+  // orientation across consecutive samples; an explicit per-tick gyroRates
+  // serialization would land at the M8 schema-bump-to-v2 boundary.
 };
 
 struct SourceScenarioTrajectory {

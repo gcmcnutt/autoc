@@ -12,8 +12,8 @@ End-to-end recipe for executing the 030 v1 smoke test (D13's four deliverables) 
   - All test suites green: `cd build && ctest --output-on-failure`.
 - An M1 source dmp identified — recommended: `pastonly3` gen-N from a recent run, available at:
   `s3://<bucket>/autoc-storage/autoc-9223370259105171692-2026-05-02T19:20:04.115Z/gen<N>.dmp`
-  Pick a single scenario index whose source-scenario crash flag is clean and whose duration is ≥30 seconds.
-- AWS credentials configured if pulling from S3 (or download dmp to local disk; both paths supported per FR-011).
+  The smoke slice (per Clarifications 2026-05-04) is `TrackerPathSubset = 0..5` × `TrackerWindSubset = 0..19` = 120 scenarios; ensure the source-run's path family covers paths 0-5 and that those scenarios are non-truncated (≥ `MIN_SCENARIO_TICKS = 30` per T020). Filtering of source scenarios with terminal crashes is per FR-013 (resolution pending C1 — see [plan.md M3](./plan.md#m3) and [tasks.md](./tasks.md)).
+- AWS credentials configured — production load path is **S3-key-driven** (the `TrackerSourceRun = autoc-storage/<run-id>/gen<N>.dmp` form IS the S3 key, streamed directly). Local file paths are accepted as offline-test convenience but are not the canonical input.
 
 ## Steps
 
@@ -81,10 +81,11 @@ stdbuf -oL -eL build/autoc -i autoc-tracker.ini 2>&1 | tee logs/autoc-030-smoke-
 **Expected log lines** (first ~20 seconds):
 ```
 Loading source dmp: autoc-storage/.../gen9609.dmp
-  → 245 scenarios, [scenario 17 selected per TrackerScenarioSubset]
-  → samples=312 ticks (~31.2s), variation: pathVariant=2 windVariant=14 windSeed=...
+  → 245 scenarios, slicing TrackerPathSubset=0,1,2,3,4,5 × TrackerWindSubset=0-19 → 120 scenarios
+  → terminal-crashed source scenarios filtered out per FR-013 (count: N)
+  → mean samples=312 ticks (~31.2s)
 Tracker mode initialized.
-Generation 0: pop=100, scenario=17 [single]
+Generation 0: pop=5000, scenarios=120
   best=...  avg=...  ...
 ```
 
@@ -138,7 +139,7 @@ The smoke-test deliverable is qualitative + the four boxes checked, not a benchm
 - Renderer screenshots (3rd-person + camera-POV).
 - Any sentinel events: arena egresses, crash-hull strikes, NaN propagations, build issues.
 
-Write a short `flight-results/030-smoke-<date>/SMOKE_REPORT.md` with the above. (Yes, even though no flight happened — using the same `flight-results/` taxonomy keeps the analysis pipeline uniform.)
+Write a short `eval-results/030-smoke-<date>/SMOKE_REPORT.md` with the above. M10 is sim-only; `flight-results/` is reserved for real-flight artifacts.
 
 ### 7. Decide what's next
 

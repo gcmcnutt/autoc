@@ -27,7 +27,15 @@
 
 #include "autoc/util/socket_wrapper.h"
 #include "autoc/eval/aircraft_state.h"
+#include "autoc/eval/arena.h"               // FlightArena (030 M7a)
+#include "autoc/eval/beacon_config.h"
+#include "autoc/eval/camera_config.h"
+#include "autoc/eval/camera_projection.h"   // AirframeProxy
 #include "autoc/eval/variation_generator.h"
+// NOTE: include "autoc/eval/source_trajectory.h" lives AFTER
+// ScenarioMetadata is defined below — source_trajectory.h depends on
+// ScenarioMetadata as a member-by-value, so it must see the full type.
+// The deferred include is at the EvalData declaration point.
 
 // FNV-1a hash for serialized GP programs/bytecode (matches dtest tracker)
 inline uint64_t hashByteVector(const std::vector<char>& data) {
@@ -74,49 +82,11 @@ namespace cereal {
 }
 
 
-/*
- * here we send our requested paths to the sims
- */
-struct ScenarioMetadata {
-  int pathVariantIndex = -1;   // -1 = unset/aggregated
-  int windVariantIndex = -1;   // -1 = unset/aggregated
-  unsigned int windSeed = 0;
-  uint64_t scenarioSequence = 0;
-  uint64_t bakeoffSequence = 0;
-  bool enableDeterministicLogging = false;
-
-  // VARIATIONS1: Entry and wind direction offsets (computed by autoc, applied by crrcsim)
-  // All angles in radians, speed as multiplier
-  double entryHeadingOffset = 0.0;   // radians, offset from path tangent
-  double entryRollOffset = 0.0;      // radians, initial roll attitude
-  double entryPitchOffset = 0.0;     // radians, initial pitch attitude
-  double entrySpeedFactor = 1.0;     // multiplier on reference speed
-  double windDirectionOffset = 0.0;  // radians, offset from base wind direction
-
-  // Entry position offsets (see specs/005-entry-fitness-ramp)
-  double entryNorthOffset = 0.0;     // meters, NED North
-  double entryEastOffset = 0.0;      // meters, NED East
-  double entryAltOffset = 0.0;       // meters, NED Down (negative=up)
-
-  // Rabbit speed for odometer-based path traversal (m/s)
-  double rabbitSpeed = 0.0;          // 0 = use default SIM_INITIAL_VELOCITY
-  unsigned int rabbitSpeedSeed = 0;  // per-scenario seed for local speed profile PRNG
-
-  // Raw→virtual origin offset captured at test start (NED meters).
-  // Used by renderer to reconstruct raw positions for "all flights" display.
-  // See docs/COORDINATE_CONVENTIONS.md "Virtual Frame" section.
-  gp_vec3 originOffset = gp_vec3::Zero();
-
-  template<class Archive>
-  void serialize(Archive& ar, const std::uint32_t /*version*/) {
-    ar(pathVariantIndex, windVariantIndex, windSeed, scenarioSequence,
-       bakeoffSequence, enableDeterministicLogging, entryHeadingOffset,
-       entryRollOffset, entryPitchOffset, entrySpeedFactor,
-       windDirectionOffset, entryNorthOffset, entryEastOffset, entryAltOffset,
-       rabbitSpeed, rabbitSpeedSeed, originOffset);
-  }
-};
-CEREAL_CLASS_VERSION(ScenarioMetadata, 1)
+// ScenarioMetadata factored out to its own header (030 M6e) to break the
+// circular include between protocol.h and source_trajectory.h. Existing
+// consumers of protocol.h see the type unchanged via this re-include.
+#include "autoc/rpc/scenario_metadata.h"
+#include "autoc/eval/source_trajectory.h"
 
 // Controller type tag for RPC wire format
 enum class ControllerType : int {
@@ -124,15 +94,122 @@ enum class ControllerType : int {
 };
 // cereal doesn't serialize enum class directly - use int wrapper
 
+// 030 M11.preA — Mode dispatch tag for RPC wire format. Replaces the
+// std::string mode that landed at M6c (operator routing 2026-05-08:
+// type-checked enum is safer + doesn't string-compare on every per-tick
+// branch). Cereal-serialized as int (same pattern as ControllerType
+// above). EvalData is RPC-only (NOT saved to dmps), so changing this
+// wire-format byte layout is safe — autoc + workers rebuild together
+// every commit.
+enum class Mode : int {
+  PATHGEN = 0,
+  TRACKER = 1
+};
+
+// String ↔ enum helpers (for AutocConfig parsing from autoc.ini text and
+// for human-readable log lines).
+inline Mode parseModeName(const std::string& name) {
+  if (name == "tracker") return Mode::TRACKER;
+  return Mode::PATHGEN;  // default for "pathgen" or any unrecognized value
+}
+inline const char* modeToString(Mode m) {
+  return (m == Mode::TRACKER) ? "tracker" : "pathgen";
+}
+
+// 030 V1 priming (UNPARKED 2026-05-08, "Worker-side scenario priming +
+// (deferred V2) LRU demand-fetch") — first RPC every worker receives,
+// once per worker, immediately after TCP accept. Carries scenario-shaped
+// invariants that don't vary per-eval or per-gen, so they don't have to
+// ride along with every per-individual EvalData. Eliminates the ~8.5 MB
+// sourceList × 5000-individual queue inflation that OOM'd a 128 GB box
+// before gen 1 in tracker training. See specs/BACKLOG.md "Worker-side
+// scenario priming" entry for the V1/V2 split.
+//
+// 030 V1.5 (2026-05-08) — extended with pathList + scenarioMetaList.
+// gPathSeed is run-constant (set once at startup), so generateSmoothPaths
+// produces byte-identical output every gen — no reason to copy it 5000×
+// per gen into per-eval EvalDatas. Same for scenario variation offsets
+// (pre-fetched joint-PRNG draws, deterministic per scenario index). Both
+// hoisted here. Per-eval EvalData collapses to ~50 B.
+//
+// Wire format: not stored on disk (RPC-only, like EvalData), so adding /
+// removing fields is a same-rebuild change. No CEREAL_CLASS_VERSION.
+struct WorkerInit {
+  // Mode is run-static once .ini is parsed; worker uses it for all
+  // dispatch instead of carrying it on each EvalData. Cereal-serialized
+  // as int (same roundtrip pattern as ControllerType).
+  Mode mode = Mode::PATHGEN;
+
+  // 030 tracker-mode source library (FR-001 + FR-018). Empty in pathgen
+  // mode. Worker-resident; per-eval EvalData refers to entries by index
+  // into this list rather than copying samples.
+  std::vector<SourceScenarioTrajectory> sourceList;
+
+  // Scenario-invariant tracker configs (FR-003, FR-004, FR-008, FR-008b,
+  // FR-016). All populated from autoc-tracker.ini once at startup;
+  // none vary per-individual or per-generation.
+  autoc::eval::CameraConfig cameraConfig;
+  autoc::eval::BeaconConfig beaconLeftConfig;
+  autoc::eval::BeaconConfig beaconRightConfig;
+  autoc::eval::AirframeProxy airframeProxy;
+  autoc::eval::FlightArena flightArena;
+
+  // 030 M7d.b — crash-hull + trail-rabbit static params. Note
+  // pCrashThisGen is NOT here; it ramps per-gen and stays in EvalData.
+  gp_scalar crashHullRadius = static_cast<gp_scalar>(1.0);
+  gp_scalar trailDistance = static_cast<gp_scalar>(3.048);
+
+  // 032 phase 1 — CepGateThreshold for derived-feature gating. Read from
+  // autoc-tracker.ini [DerivedFeatures] CepGateThreshold (default 1.25,
+  // matches kCepSentinelThreshold). Same value drives both the autoc
+  // minisim path (via ConfigManager in-process) and the crrcsim worker
+  // path (via this field — workers are separate processes with no
+  // ConfigManager). Per spec.md Q4 + research.md R2 + contracts/
+  // ini_schema.md.
+  gp_scalar cepGateThreshold = static_cast<gp_scalar>(1.25);
+
+  // 030 V1.5 — run-static scenario library. Built once at startup from
+  // generateSmoothPaths(gPathSeed) + the joint-PRNG variation table; the
+  // worker dispatches per-eval scenarios by indexing into these in
+  // lockstep (pathList[i] is parallel-indexed with scenarioMetaList[i]).
+  // scenarioMetaList carries entry offsets at FULL SCALE; the worker
+  // applies the per-eval variation_scale via applyVariationScale before
+  // running each scenario.
+  std::vector<std::vector<Path>> pathList;
+  std::vector<ScenarioMetadata> scenarioMetaList;
+
+  template<class Archive>
+  void serialize(Archive& ar) {
+    int m = static_cast<int>(mode);
+    ar(m, sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
+       airframeProxy, flightArena,
+       crashHullRadius, trailDistance,
+       pathList, scenarioMetaList,
+       cepGateThreshold);
+    mode = static_cast<Mode>(m);
+  }
+};
+
+// 030 V1.5 (2026-05-08) — slimmed per-eval EvalData. With pathList /
+// scenarioMetaList moved to WorkerInit, per-eval payload collapses to
+// NN bytes + a handful of per-eval scalars (~50 B). Eliminates ~7 MB
+// pathList × 5000-individual queue inflation per gen and ~1.47M
+// brk-arena allocations per gen (294 inner-vec copies × 5000 evals);
+// expected autoc residual drops from ~25 GB to a few GB.
 struct EvalData {
   std::vector<char> gp;
   uint64_t gpHash = 0;  // FNV-1a hash of payload for verification
   bool isEliteReeval = false;
   ControllerType controllerType = ControllerType::NEURAL_NET;
-  std::vector<std::vector<Path>> pathList;
-  ScenarioMetadata scenario;
-  std::vector<ScenarioMetadata> scenarioList;
   RabbitSpeedConfig rabbitSpeedConfig = RabbitSpeedConfig::defaultConfig();
+
+  // 030 V1.5 — per-eval scalars. Worker reconstructs the full per-eval
+  // ScenarioMetadata for each scenario by copying init_.scenarioMetaList[i],
+  // overriding scenarioSequence + enableDeterministicLogging from these
+  // fields, and calling applyVariationScale(meta, variationScale).
+  uint64_t scenarioSequence = 0;
+  gp_scalar pCrashThisGen = static_cast<gp_scalar>(0.0);  // 030 M7d.b — gen-varying ramp
+  gp_scalar variationScale = static_cast<gp_scalar>(1.0); // 030 V1.5 — gen-varying ramp [0..1]
 
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
@@ -140,36 +217,16 @@ struct EvalData {
     int ct = static_cast<int>(controllerType);
     ar(ct);
     controllerType = static_cast<ControllerType>(ct);
-    ar(pathList, scenario, scenarioList, rabbitSpeedConfig);
-  }
-
-  void sanitizePaths() {
-    for (auto& pathGroup : pathList) {
-      for (auto& path : pathGroup) {
-        path.sanitize();
-      }
-    }
+    ar(rabbitSpeedConfig, scenarioSequence, pCrashThisGen, variationScale);
   }
 };
 CEREAL_CLASS_VERSION(EvalData, 1)
 
-enum class CrashReason {
-  None,             // Still flying
-  Boot,             // Startup/initialization error
-  Sim,              // Physics crash (ground impact, structural failure)
-  Eval,             // Out of bounds (too far, too low, too high)
-  TimeLimit,        // Simulation time cap reached (was: Time)
-  RabbitComplete,   // Rabbit reached end of path — normal completion (was: Distance)
-};
-
-// Is this a real crash (penalizable) or normal termination?
-inline bool isCrash(CrashReason reason) {
-  return reason == CrashReason::Boot ||
-         reason == CrashReason::Sim ||
-         reason == CrashReason::Eval;
-}
-
-std::string crashReasonToString(CrashReason type);
+// CrashReason factored out to its own header (030 M7a) to break the
+// circular include between protocol.h and arena.h. Existing consumers
+// of protocol.h see the type unchanged via this re-include. crash_reason.h
+// also provides inline crashReasonToString / crashReasonToCStr.
+#include "autoc/rpc/crash_reason.h"
 
 struct DebugSample {
   int pathIndex = -1;
@@ -231,6 +288,45 @@ struct DebugSample {
   }
 };
 
+// 030 M8a — Per-tick perception sample recorded into v=2 dmps (FR-015).
+// One CameraViewSample per camera per NN tick; v1 = single forward camera
+// so per-tick is a single sample. Carries camera world-pose (so the
+// renderer can place a frustum) + the two BeaconObservations the chase
+// craft saw. Self-contained per FR-015 — renderer reads M2 dmp only,
+// never reaches back into M1 source dmp.
+struct CameraViewSample {
+    gp_vec3 camera_pose_world_pos = gp_vec3::Zero();
+    gp_quat camera_pose_world_orient = gp_quat::Identity();
+    float camera_fov_h_deg = 120.0f;   // raw-ok: cereal byte-format member (M8 v=2 dmp schema)
+    float camera_fov_v_deg = 90.0f;    // raw-ok: cereal byte-format member (M8 v=2 dmp schema)
+    autoc::eval::BeaconObservation beacon_left{};
+    autoc::eval::BeaconObservation beacon_right{};
+
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(camera_pose_world_pos, camera_pose_world_orient,
+           camera_fov_h_deg, camera_fov_v_deg,
+           beacon_left, beacon_right);
+    }
+};
+
+// 030 M8a — Per-tick target trajectory copy (FR-015 self-containedness).
+// Copied from SourceScenarioTrajectory.samples[i] at the matching sim_time;
+// `trail_rabbit_position` is computed by M7 (defaults to position when M7
+// hasn't landed); `inside_crash_hull` is M7 telemetry (default false).
+struct CopiedTargetSample {
+    gp_vec3 position = gp_vec3::Zero();
+    gp_quat orientation = gp_quat::Identity();
+    gp_vec3 velocity = gp_vec3::Zero();
+    gp_vec3 trail_rabbit_position = gp_vec3::Zero();  // FR-008 — M7 wires
+    bool inside_crash_hull = false;                    // FR-008b — M7 wires
+
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(position, orientation, velocity, trail_rabbit_position, inside_crash_hull);
+    }
+};
+
 struct EvalResults {
   std::vector<char> gp;
   uint64_t gpHash = 0;  // FNV-1a hash of gp buffer for verification
@@ -245,11 +341,29 @@ struct EvalResults {
   int workerPid = 0;
   int workerEvalCounter = 0;  // Incremented per evaluation on the worker
 
+  // 030 M8a — Tracker-mode v=2 fields (FR-015). Empty in pathgen-mode dmps;
+  // populated by TrackerStepper at M8b. cameraViewList[scenario][tick]
+  // and targetTrajectoryList[scenario][tick] parallel aircraftStateList's
+  // per-scenario per-tick indexing. arenaEgressCount + hullStrikeCount
+  // are per-scenario telemetry counters wired by M7.
+  std::vector<std::vector<CameraViewSample>> cameraViewList;
+  std::vector<std::vector<CopiedTargetSample>> targetTrajectoryList;
+  std::vector<int> arenaEgressCount;  // M7 — per-scenario count of arena egress events
+  std::vector<int> hullStrikeCount;   // M7 — per-scenario count of crash-hull p_crash fires
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
     ar(gp, gpHash, crashReasonList, pathList, aircraftStateList,
        scenario, scenarioList, debugSamples, physicsTrace,
        workerId, workerPid, workerEvalCounter);
+    if (version >= 2) {
+      // 030 M8a — tracker-mode v=2 schema additions. v=1 dmps (pathgen
+      // historical) read with these vectors empty; v=2 readers see full
+      // population. Constitution V loud-fail behavior for v=3 lands via
+      // cereal's class-version mechanism (verified in
+      // tests/tracker_dmp_roundtrip_tests.cc).
+      ar(cameraViewList, targetTrajectoryList, arenaEgressCount, hullStrikeCount);
+    }
   }
 
   void clear() {
@@ -265,6 +379,11 @@ struct EvalResults {
     workerId = -1;
     workerPid = 0;
     workerEvalCounter = 0;
+    // 030 M8a — tracker-mode v=2 fields.
+    cameraViewList.clear();
+    targetTrajectoryList.clear();
+    arenaEgressCount.clear();
+    hullStrikeCount.clear();
   }
 
   void dump(std::ostream& os) {
@@ -333,7 +452,12 @@ struct EvalResults {
     }
   }
 };
-CEREAL_CLASS_VERSION(EvalResults, 1)
+// 030 M8a — bumped 1 → 2 for tracker-mode dmp output (FR-015a + Constitution V).
+// v=1 dmps still readable: cameraViewList / targetTrajectoryList /
+// arenaEgressCount / hullStrikeCount remain empty when reading v=1.
+// v=3+ dmps fail loudly via cereal's class-version mechanism — caller
+// should treat as a Constitution V "schema mismatch" loud-fail trigger.
+CEREAL_CLASS_VERSION(EvalResults, 2)
 
 struct WorkerContext {
   std::unique_ptr<TcpSocket> socket;

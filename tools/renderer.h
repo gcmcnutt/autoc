@@ -118,10 +118,29 @@ public:
   void focusMoveDown();
 
   int genNumber = 0;
-  
+
   // Store current generation and fitness for resize updates
   int currentGeneration = 0;
   gp_fitness currentFitness = 0.0;
+
+  // 030 M9a — Set true at dmp load when EvalResults v=2 fields are
+  // populated (cameraViewList + targetTrajectoryList non-empty), false
+  // otherwise. Drives downstream M9b/c/d render-path branching: when
+  // true, instantiate target-craft + beacon + camera-POV actors;
+  // when false, render the existing pathgen-only view unchanged.
+  bool isTrackerMode_ = false;
+
+  // 030 M9b detail-toggle 2026-05-08: gates the M9b.2/M9b.3 debug-aid
+  // overlays (target-wingtip beacon glyphs + chase camera FOV pyramid
+  // wireframe). Default off — operator presses 'd' to show during
+  // troubleshooting. Tape ribbons + chase→target error bars remain
+  // always-visible. M1 pathgen mode unaffected.
+  bool trackerDetailVisible_ = false;
+
+public:
+  // 030 M9b — Toggle the detail-overlay actors. Called from the 'd'
+  // key handler in CustomInteractorStyle.
+  void toggleTrackerDetail();
   
   // Test span navigation state
   std::vector<TestSpan> testSpans;
@@ -158,6 +177,29 @@ private:
   vtkSmartPointer<vtkAppendPolyData> xiaoVecArrows;  // For xiao vec vectors
   vtkSmartPointer<vtkAppendPolyData> directRabbitData;  // Direct rabbit from log rabbit=[x,y,z]
 
+  // 030 M9b — Target-craft trajectory tape, populated from
+  // targetTrajectoryList when isTrackerMode_ at load time. Mirrors
+  // `actuals` (chase-craft tape); shares createTapeSet() pipeline.
+  // Distinct color (orange) so chase + target read as two ribbons in
+  // the 3rd-person view. Empty + invisible for pathgen-mode dmps.
+  vtkSmartPointer<vtkAppendPolyData> targetActuals;
+
+  // 030 M9b.2 — Per-tick beacon world positions on target wingtips,
+  // navigation-light convention (RED port = left, GREEN starboard =
+  // right). Glyphed as small spheres. Per-tick trail visualizes target
+  // craft body roll — beacons trace banking turns, providing
+  // orientation context beyond what the tape ribbon alone shows.
+  vtkSmartPointer<vtkAppendPolyData> targetBeaconsLeft;
+  vtkSmartPointer<vtkAppendPolyData> targetBeaconsRight;
+
+  // 030 M9b.3 — Chase camera FOV pyramid frustum, drawn from the
+  // latest visible tick's CameraViewSample (camera_pose_world_pos +
+  // _orient + fov_h/v). Wireframe lines: 4 edges from apex to corners
+  // at length 30m, plus 4 base lines closing the rectangular frustum.
+  // Visualizes "where is chase looking?" — operator can eyeball
+  // whether target sits inside or outside chase's FOV at any tick.
+  vtkSmartPointer<vtkAppendPolyData> chaseCameraFov;
+
   vtkSmartPointer<vtkActor> actor1;
   vtkSmartPointer<vtkActor> directRabbitActor;  // Magenta tube for direct rabbit ground truth
   vtkSmartPointer<vtkActor> actor2;
@@ -165,6 +207,22 @@ private:
   vtkSmartPointer<vtkActor> blackboxActor;
   vtkSmartPointer<vtkActor> blackboxHighlightActor;  // For highlighted test spans
   vtkSmartPointer<vtkActor> xiaoVecActor;  // For xiao vec arrows
+  vtkSmartPointer<vtkActor> targetActor;   // 030 M9b — orange tape from targetTrajectoryList
+  vtkSmartPointer<vtkActor> targetBeaconLeftActor;   // 030 M9b.2 — red sphere trail (port wingtip)
+  vtkSmartPointer<vtkActor> targetBeaconRightActor;  // 030 M9b.2 — green sphere trail (starboard wingtip)
+  vtkSmartPointer<vtkActor> chaseCameraFovActor;     // 030 M9b.3 — yellow wireframe FOV pyramid
+
+  // 030 M9b camera-POV mini-screen 2026-05-08 (operator's "original ask").
+  // 2D HUD overlay rectangle near top-left of window. Aspect ratio matches
+  // the camera FOV ratio (h/v from CameraViewSample) so the +1/-1 mapping
+  // is geometrically accurate — rolling craft ahead of chase doesn't warp.
+  // Up to 2 colored splat dots (red port + green starboard) at the
+  // beacons' (screen_x, screen_y) per current visible tick. Splat radius
+  // scales with CEP — sharp dots when CEP ≈ 0, fuzzy when ≈ 1. Sentinel
+  // CEP ⇒ no dot rendered (beacon out of view).
+  vtkSmartPointer<vtkActor2D> cameraPOVPanelOutline;
+  vtkSmartPointer<vtkActor2D> cameraPOVBeaconLeftDot;
+  vtkSmartPointer<vtkActor2D> cameraPOVBeaconRightDot;
   std::vector<vtkSmartPointer<vtkActor>> arenaLabelActors;
   
   vtkSmartPointer<vtkTextActor> generationTextActor;
@@ -200,17 +258,59 @@ private:
   vtkSmartPointer<vtkPolyData> createPointSet(gp_vec3 offset, const std::vector<gp_vec3> points, gp_scalar timeProgress);
   vtkSmartPointer<vtkPolyData> createSegmentSet(gp_vec3 offset, const std::vector<AircraftState> state, const std::vector<gp_vec3> end);
   vtkSmartPointer<vtkPolyData> createSegmentSet(gp_vec3 offset, const std::vector<AircraftState> state, const std::vector<gp_vec3> end, gp_scalar timeProgress);
+
+  // 030 M9b — Tracker-mode segment-set: per-tick line from chase position
+  // to TARGET craft position (CopiedTargetSample.position). Pathgen's
+  // createSegmentSet uses chase.getRabbitPosition() (path-following rabbit);
+  // tracker mode wants chase→target ground-truth visualization since the
+  // target is a real craft, not a synthetic path point. iterates in
+  // lockstep to min(state.size(), targets.size()).
+  vtkSmartPointer<vtkPolyData> createSegmentSetToTarget(gp_vec3 offset,
+      const std::vector<AircraftState>& state,
+      const std::vector<CopiedTargetSample>& targets);
   vtkSmartPointer<vtkPolyData> createTapeSet(gp_vec3 offset, const std::vector<gp_vec3> points, const std::vector<gp_vec3> normals);
   vtkSmartPointer<vtkPolyData> createTapeSet(gp_vec3 offset, const std::vector<gp_vec3> points, const std::vector<gp_vec3> normals, gp_scalar timeProgress);
   std::vector<gp_vec3> pathToVector(const std::vector<Path> path);
   std::vector<gp_vec3> stateToVector(const std::vector<AircraftState> path);
   std::vector<gp_vec3> stateToOrientation(const std::vector<AircraftState> state);
+
+  // 030 M9b — Tracker-mode target-craft tape helpers. Symmetric with
+  // stateToVector / stateToOrientation but consume CopiedTargetSample
+  // (targetTrajectoryList[scenario][tick]) instead of AircraftState.
+  // Returns world-frame positions / body-up vectors so createTapeSet's
+  // existing pipeline renders the target tape with the same geometry
+  // as the chase tape.
+  std::vector<gp_vec3> targetSamplesToVector(const std::vector<CopiedTargetSample>& samples);
+  std::vector<gp_vec3> targetSamplesToOrientation(const std::vector<CopiedTargetSample>& samples);
+
+  // 030 M9b.2 — Compute per-tick beacon world positions on the target
+  // craft. World pos = target.position + target.orientation × mount_body.
+  // Mount offsets are hardcoded to autoc-tracker.ini v1 defaults; if
+  // BeaconLeftMountY / BeaconRightMountY change in the .ini, update
+  // kBeaconLeftMountBody / kBeaconRightMountBody constants in renderer.cc.
+  std::vector<gp_vec3> targetSamplesToBeaconPositions(
+      const std::vector<CopiedTargetSample>& samples,
+      const gp_vec3& beacon_mount_body);
+
+  // 030 M9b.3 — Build a wireframe pyramid frustum representing the
+  // chase camera FOV at one tick's pose. Apex = camera_pose_world_pos
+  // (+ offset). Axis = camera_pose_world_orient × +x. Half-extents at
+  // distance `length` (m): tan(fov_h/2)·length on right, tan(fov_v/2)·length
+  // on down. Returns vtkPolyData with 8 line segments (4 apex→corner
+  // edges + 4 base-rectangle lines). Caller appends to chaseCameraFov.
+  vtkSmartPointer<vtkPolyData> createFovPyramidLines(gp_vec3 offset,
+      const CameraViewSample& cam,
+      gp_scalar length);
   gp_fitness extractFitnessFromGP(const std::vector<char>& gpData);
   void createHighlightedFlightTapes(gp_vec3 offset);
   void createStopwatch();
   void updateStopwatch(gp_scalar currentTime);
   void createControlsOverlay();
   void updateControlsOverlay(gp_scalar currentTime);
+  // 030 M9b camera-POV mini-screen — 2D HUD rectangle showing what the
+  // chase NN sees (projected beacon centroids + CEP-sized splat dots).
+  void createCameraPOVMiniPanel();
+  void updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex);
   void updateControlsPosition();
   bool getControlStateAtTime(gp_scalar currentTime, gp_scalar& pitch, gp_scalar& roll, gp_scalar& throttle, int arenaIndex, bool& usedBlackbox, const AircraftState*& chosenState);
   void setFocusArena(int arenaIdx);
@@ -265,6 +365,14 @@ protected:
     else if (key == "f") {
       if (renderer_) {
         renderer_->toggleFocusMode();
+      }
+    }
+    else if (key == "d") {
+      // 030 M9b — Toggle tracker-mode detail overlays (FOV pyramid +
+      // wingtip beacon glyphs). No-op in pathgen mode (those actors
+      // never have data anyway).
+      if (renderer_) {
+        renderer_->toggleTrackerDetail();
       }
     }
     else if (key == "Left") {

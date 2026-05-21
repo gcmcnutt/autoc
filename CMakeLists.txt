@@ -89,10 +89,18 @@ add_library(autoc_common STATIC
     src/eval/fitness_decomposition.cc
     src/eval/selection.cc
     src/eval/eval_logger.cc
+    src/eval/source_dmp_loader.cc
+    src/eval/camera_projection.cc
+    src/eval/arena.cc
+    src/eval/trail_rabbit.cc
+    src/eval/crash_hull.cc
+    src/eval/pathgen_stepper.cc
+    src/eval/tracker_stepper.cc
     src/nn/evaluator.cc
     src/nn/serialization.cc
     src/nn/population.cc
     src/nn/telemetry.cc
+    src/nn/mode.cc
 )
 target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen)
 
@@ -101,12 +109,16 @@ add_executable(minisim tools/minisim.cc)
 add_executable(renderer tools/renderer.cc)
 add_executable(nnextractor tools/nnextractor.cc)
 add_executable(nn2cpp tools/nn2cpp.cc)
+add_executable(source_dmp_inspect tools/source_dmp_inspect.cc)
+add_executable(tracker_dmp_inspect tools/tracker_dmp_inspect.cc)
 
 target_link_libraries(autoc autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(minisim autoc_common)
 target_link_libraries(renderer autoc_common ${VTK_LIBRARIES} ${AWSSDK_LIBRARIES})
 target_link_libraries(nnextractor autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(nn2cpp autoc_common)
+target_link_libraries(source_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
+target_link_libraries(tracker_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
 
 if(ENABLE_AUTOC_TESTS)
   add_executable(nn_evaluator_tests tests/nn_evaluator_tests.cc)
@@ -145,6 +157,47 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(nn_telemetry_tests tests/nn_telemetry_tests.cc)
   target_link_libraries(nn_telemetry_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(cereal_version_anchor_tests tests/cereal_version_anchor_tests.cc)
+  target_link_libraries(cereal_version_anchor_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(nn_sensor_interface_tests tests/nn_sensor_interface_tests.cc)
+  target_link_libraries(nn_sensor_interface_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(source_dmp_loading_tests tests/source_dmp_loading_tests.cc)
+  target_link_libraries(source_dmp_loading_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+
+  add_executable(source_dmp_s3_integration_tests tests/source_dmp_s3_integration_tests.cc)
+  target_link_libraries(source_dmp_s3_integration_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+
+  add_executable(beacon_projection_tests tests/beacon_projection_tests.cc)
+  target_link_libraries(beacon_projection_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(contract_tracker_config_tests tests/contract_tracker_config_tests.cc)
+  target_link_libraries(contract_tracker_config_tests GTest::gtest GTest::gtest_main autoc_common)
+  target_compile_definitions(contract_tracker_config_tests PRIVATE
+    AUTOC_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+  add_executable(gather_tracker_inputs_tests tests/gather_tracker_inputs_tests.cc)
+  target_link_libraries(gather_tracker_inputs_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(tracker_dmp_roundtrip_tests tests/tracker_dmp_roundtrip_tests.cc)
+  target_link_libraries(tracker_dmp_roundtrip_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(tracker_stepper_init_tests tests/tracker_stepper_init_tests.cc)
+  target_link_libraries(tracker_stepper_init_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(arena_tests tests/arena_tests.cc)
+  target_link_libraries(arena_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(trail_rabbit_tests tests/trail_rabbit_tests.cc)
+  target_link_libraries(trail_rabbit_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(crash_hull_tests tests/crash_hull_tests.cc)
+  target_link_libraries(crash_hull_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(derived_features_tests tests/derived_features_tests.cc)
+  target_link_libraries(derived_features_tests GTest::gtest GTest::gtest_main autoc_common)
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -158,6 +211,19 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME rpc_transport_tests COMMAND rpc_transport_tests)
   add_test(NAME msplink_quat_convention_tests COMMAND msplink_quat_convention_tests)
   add_test(NAME nn_telemetry_tests COMMAND nn_telemetry_tests)
+  add_test(NAME cereal_version_anchor_tests COMMAND cereal_version_anchor_tests)
+  add_test(NAME nn_sensor_interface_tests COMMAND nn_sensor_interface_tests)
+  add_test(NAME source_dmp_loading_tests COMMAND source_dmp_loading_tests)
+  add_test(NAME source_dmp_s3_integration_tests COMMAND source_dmp_s3_integration_tests)
+  add_test(NAME beacon_projection_tests COMMAND beacon_projection_tests)
+  add_test(NAME contract_tracker_config_tests COMMAND contract_tracker_config_tests)
+  add_test(NAME gather_tracker_inputs_tests COMMAND gather_tracker_inputs_tests)
+  add_test(NAME tracker_dmp_roundtrip_tests COMMAND tracker_dmp_roundtrip_tests)
+  add_test(NAME tracker_stepper_init_tests COMMAND tracker_stepper_init_tests)
+  add_test(NAME arena_tests COMMAND arena_tests)
+  add_test(NAME trail_rabbit_tests COMMAND trail_rabbit_tests)
+  add_test(NAME crash_hull_tests COMMAND crash_hull_tests)
+  add_test(NAME derived_features_tests COMMAND derived_features_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -166,6 +232,17 @@ if(ENABLE_AUTOC_TESTS)
             contract_evaluator_tests contract_config_tests
             contract_evolution_tests rpc_transport_tests
             msplink_quat_convention_tests nn_telemetry_tests
+            cereal_version_anchor_tests nn_sensor_interface_tests
+            source_dmp_loading_tests source_dmp_s3_integration_tests
+            beacon_projection_tests
+            contract_tracker_config_tests
+            gather_tracker_inputs_tests
+            tracker_dmp_roundtrip_tests
+            tracker_stepper_init_tests
+            arena_tests
+            trail_rabbit_tests
+            crash_hull_tests
+            derived_features_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -177,6 +254,19 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND contract_evolution_tests --gtest_brief=1
     COMMAND rpc_transport_tests --gtest_brief=1
     COMMAND msplink_quat_convention_tests --gtest_brief=1
+    COMMAND cereal_version_anchor_tests --gtest_brief=1
+    COMMAND nn_sensor_interface_tests --gtest_brief=1
+    COMMAND source_dmp_loading_tests --gtest_brief=1
+    COMMAND source_dmp_s3_integration_tests --gtest_brief=1
+    COMMAND beacon_projection_tests --gtest_brief=1
+    COMMAND contract_tracker_config_tests --gtest_brief=1
+    COMMAND gather_tracker_inputs_tests --gtest_brief=1
+    COMMAND tracker_dmp_roundtrip_tests --gtest_brief=1
+    COMMAND tracker_stepper_init_tests --gtest_brief=1
+    COMMAND arena_tests --gtest_brief=1
+    COMMAND trail_rabbit_tests --gtest_brief=1
+    COMMAND crash_hull_tests --gtest_brief=1
+    COMMAND derived_features_tests --gtest_brief=1
   )
 endif()
 

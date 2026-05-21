@@ -291,14 +291,33 @@ struct AircraftState {
     gp_vec3 getGyroRates() const { return gyroRates_; }
     void setGyroRates(const gp_vec3& rates) { gyroRates_ = rates; }
 
-    // NN I/O capture — record what the NN actually saw and produced
+    // NN I/O capture — record what the NN actually saw and produced.
+    //
+    // 030 M9.preA (2026-05-07): Two parallel input slots — `nnInputs_` for
+    // pathgen mode (33 floats per `NNInputs`), `trackerInputs_` for tracker
+    // mode (45 floats per `TrackerInputs`). Only the active mode's slot
+    // gets populated; the other stays zero-initialized. This closes the
+    // M6d/M8a deferral at evaluator.cc:495 ("setNNData(TrackerInputs)
+    // is deferred to M8") — necessary for honest data.dat capture +
+    // proper diagnostic stability/energy in tracker mode (per
+    // memory:feedback_honest_dmp_recording).
+    //
+    // The two-slot design keeps pathgen byte-identical (nnInputs_ unchanged)
+    // while extending tracker honesty. Cereal v=3 writes both slots; the
+    // ~45 extra floats per state × ~58K states/dmp ≈ 10MB cost is acceptable.
     void setNNData(const NNInputs& inputs, const float* outputs, int numOutputs) {
       nnInputs_ = inputs;
       for (int i = 0; i < NN_OUTPUT_COUNT && i < numOutputs; i++) nnOutputs_[i] = outputs[i];
       hasNNData_ = true;
     }
+    void setNNData(const TrackerInputs& inputs, const float* outputs, int numOutputs) {
+      trackerInputs_ = inputs;
+      for (int i = 0; i < NN_OUTPUT_COUNT && i < numOutputs; i++) nnOutputs_[i] = outputs[i];
+      hasNNData_ = true;
+    }
     bool hasNNData() const { return hasNNData_; }
     const NNInputs& getNNInputs() const { return nnInputs_; }
+    const TrackerInputs& getTrackerInputs() const { return trackerInputs_; }
     const float* getNNOutputs() const { return nnOutputs_; }
 
     // ACRO PID per-tick internals (see PidInternals).
@@ -450,9 +469,13 @@ struct AircraftState {
     // Body-frame angular rates (rad/s, standard aerospace RHR)
     gp_vec3 gyroRates_ = gp_vec3::Zero();
 
-    // NN I/O capture — actual values presented to/produced by the neural net
-    NNInputs nnInputs_ = {};                 // Normalized inputs as NN sees them
-    float nnOutputs_[NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs
+    // NN I/O capture — actual values presented to/produced by the neural net.
+    // Pathgen-mode populates nnInputs_ (33 floats); tracker-mode populates
+    // trackerInputs_ (45 floats). The other stays zero-initialized. Mode
+    // dispatch happens at consumer sites (data.dat writer, fitness_decomposition).
+    NNInputs nnInputs_ = {};                 // Pathgen NN inputs (NNInputs struct = 33 floats)
+    TrackerInputs trackerInputs_ = {};       // 030 M9.preA — Tracker NN inputs (45 floats)
+    float nnOutputs_[NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs (mode-agnostic)
     bool hasNNData_ = false;
 
     // ACRO PID per-tick snapshot (always populated when PID runs)
@@ -472,7 +495,26 @@ struct AircraftState {
       ar(thisPathIndex, dRelVel, velocity, aircraft_orientation, position,
          pitchCommand, rollCommand, throttleCommand, simTimeMsec, wind_velocity,
          rabbitPosition, hasNNData_);
-      if (hasNNData_) {
+
+      // 030 M8a — Honest-recording audit at v=2 schema-bump boundary
+      // (per memory:feedback_honest_dmp_recording). v=1 had a gyroRates_
+      // gap (the 030 M3a regression caught it during source dmp loading
+      // when SourceTickSample needed angular rates and discovered the
+      // field wasn't persisted). v=2 closes the gap.
+      //
+      // raw-ok: gyroRates_ is gp_vec3 (Eigen-typed); cereal byte-format
+      // is governed by the existing free-function save/load handlers
+      // for gp_vec3 in protocol.h.
+      if (version >= 2) {
+        ar(gyroRates_);
+      }
+
+      // NN data block: v=1 gated on hasNNData_; v=2 always-on per the
+      // honest-recording principle (the field IS what the NN saw, so
+      // recording it unconditionally removes the silent-truncation
+      // failure mode that hasNNData_=false enabled).
+      const bool readNNData = (version >= 2) ? true : hasNNData_;
+      if (readNNData) {
         uint32_t inputCount = NN_INPUT_COUNT;
         uint32_t outputCount = NN_OUTPUT_COUNT;
         ar(inputCount, outputCount);
@@ -485,7 +527,7 @@ struct AircraftState {
             " outputs=" + std::to_string(NN_OUTPUT_COUNT) +
             ". Regenerate training data with current binary.");
         }
-        float* rawInputs = reinterpret_cast<float*>(&nnInputs_);
+        float* rawInputs = reinterpret_cast<float*>(&nnInputs_);  // raw-ok: NN-byte-format buffer
         for (uint32_t i = 0; i < inputCount; i++)
           ar(rawInputs[i]);
         for (uint32_t i = 0; i < outputCount; i++)
@@ -493,11 +535,49 @@ struct AircraftState {
       }
       ar(rabbitOdometer_, rabbitSpeed_);
       ar(pidInternals_);
+
+      // 030 M9.preA (2026-05-07) — Tracker NN inputs (45 floats per
+      // TrackerInputs struct). Closes the evaluator.cc:495 deferral so
+      // tracker mode dmps carry honest perception captures alongside
+      // pathgen's NNInputs slot. Added in-place at v=2 (no version bump)
+      // per user feedback "while inside M2 we don't need backward
+      // compatibility — old ones will be obsolete". Earlier v=2 tracker
+      // dmps from before this commit do not have this block and become
+      // unreadable; pathgen v=1 dmps (gen9200.dmp baseline) skip the
+      // block via the version >= 2 guard, so the regression gate holds.
+      // The block is ALWAYS written at v=2 regardless of mode —
+      // pathgen's trackerInputs_ stays zero-init (consumer dispatches
+      // on mode, not on field-population).
+      if (version >= 2) {
+        uint32_t trackerInputCount = static_cast<uint32_t>(TrackerInput::COUNT);
+        ar(trackerInputCount);
+        if (trackerInputCount != static_cast<uint32_t>(TrackerInput::COUNT)) {
+          throw std::runtime_error(
+            "AircraftState deserialization: TrackerInput topology mismatch — "
+            "serialized count=" + std::to_string(trackerInputCount) +
+            " but compiled with TrackerInput::COUNT=" +
+            std::to_string(static_cast<int>(TrackerInput::COUNT)) +
+            ". Regenerate training data with current binary.");
+        }
+        float* rawTracker = reinterpret_cast<float*>(&trackerInputs_);  // raw-ok: NN-byte-format buffer
+        for (uint32_t i = 0; i < trackerInputCount; i++)
+          ar(rawTracker[i]);
+      }
     }
 #endif
 };
 #ifndef ARDUINO
-CEREAL_CLASS_VERSION(AircraftState, 1)
+// 030 M8a (2026-05-06) — bumped 1 → 2 for honest-recording audit
+// (gyroRates_ added, NN data switched to always-on instead of
+// hasNNData_-gated). v=1 read path unchanged (regression-tight invariant
+// for gen9200.dmp baseline).
+//
+// 030 M9.preA (2026-05-07) — STAYS at v=2; trackerInputs_ field added
+// in-place to the v=2 schema per user feedback "while inside M2 we
+// don't need backward compatibility — old ones will be obsolete".
+// v=2 dmps written before M9.preA become unreadable; v=1 path
+// (gen9200.dmp regression gate) is unaffected.
+CEREAL_CLASS_VERSION(AircraftState, 2)
 #endif
 
 // Physics trace entry - captures complete FDM state at a single timestep

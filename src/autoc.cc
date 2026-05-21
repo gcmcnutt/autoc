@@ -33,6 +33,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/pathgen.h"
 #include "autoc/util/config.h"
 #include "autoc/eval/variation_generator.h"
+#include "autoc/nn/mode.h"           // 030 M7a — getActiveModeStrategy
 #include "autoc/nn/population.h"
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
@@ -40,6 +41,8 @@ From skeleton/skeleton.cc
 #include "autoc/eval/fitness_computer.h"
 #include "autoc/eval/fitness_decomposition.h"
 #include "autoc/eval/selection.h"
+#include "autoc/eval/source_dmp_loader.h"  // 030 M6e tracker mode
+#include "autoc/eval/crash_hull.h"         // 030 M7d.b — pCrashForGen
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
@@ -53,6 +56,35 @@ using namespace std;
 
 std::vector<std::vector<Path>> generationPaths;
 std::vector<ScenarioDescriptor> generationScenarios;
+
+// 030 M6e — tracker-mode source trajectories (FR-001). Loaded once at
+// startup when Mode = tracker; empty in pathgen mode. Per-scenario
+// distribution to workers happens in buildEvalData.
+static std::vector<SourceScenarioTrajectory> gSourceTrajectoryList;
+
+// Parse a comma-separated index list (e.g. "0,1,2,3,4,5") into vector<int>.
+// Trims whitespace; returns empty vector for empty input. Invalid tokens
+// are skipped with a warning rather than failing — operator-friendly for
+// the tracker config's path/wind subset fields.
+static std::vector<int> parseCsvIndices(const std::string& csv) {
+    std::vector<int> out;
+    if (csv.empty()) return out;
+    std::stringstream ss(csv);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        // Trim leading/trailing whitespace.
+        size_t b = token.find_first_not_of(" \t");
+        size_t e = token.find_last_not_of(" \t");
+        if (b == std::string::npos) continue;
+        token = token.substr(b, e - b + 1);
+        try {
+            out.push_back(std::stoi(token));
+        } catch (...) {
+            std::cerr << "[parseCsvIndices] skipping invalid token '" << token << "'" << std::endl;
+        }
+    }
+    return out;
+}
 
 // VARIATIONS1: Global sigma parameters, initialized at startup from config
 static VariationSigmas gVariationSigmas = {0.0, 0.0, 0.0, 0.0, 0.0};
@@ -542,15 +574,25 @@ void newHandler()
   exit(1);
 }
 
-// Get compiled topology as std::vector (needed by NNPopulation API)
-static std::vector<int> getCompiledTopology() {
-  return std::vector<int>(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+// Bridge config → mode lookup. Lives here (not in mode.cc) to keep mode.cc
+// free of the ConfigManager / AWS SDK dependency chain.
+static const ModeStrategy& getActiveModeStrategy() {
+  return getModeStrategyByName(ConfigManager::getConfig().mode.c_str());
 }
 
-// Get compiled recurrent-layer flags as std::vector (spec 027, D-simple).
+// Get topology for the active mode (030 M7a runtime mode-select per FR-019).
+// Pathgen mode → NN_TOPOLOGY (33 input); tracker mode → TRACKER_NN_TOPOLOGY
+// (45 input). Read by population init + topology logging.
+static std::vector<int> getCompiledTopology() {
+  const ModeStrategy& mode = getActiveModeStrategy();
+  return std::vector<int>(mode.topology, mode.topology + mode.num_layers);
+}
+
+// Get recurrent-layer flags for the active mode (spec 027, D-simple).
 static std::vector<uint8_t> getCompiledRecurrent() {
-  std::vector<uint8_t> r(NN_NUM_LAYERS);
-  for (int i = 0; i < NN_NUM_LAYERS; i++) r[i] = NN_RECURRENT[i] ? 1 : 0;
+  const ModeStrategy& mode = getActiveModeStrategy();
+  std::vector<uint8_t> r(mode.num_layers);
+  for (int i = 0; i < mode.num_layers; i++) r[i] = mode.recurrent[i] ? 1 : 0;
   return r;
 }
 
@@ -562,8 +604,164 @@ static double computeNNFitness(EvalResults& evalResults) {
   return aggregateRawFitness(scenarioScores);
 }
 
+// 030 M9.preA — Tracker-mode per-scenario data.dat writer. Reads
+// trackerInputs_ from AircraftState (M9.preA capture), targetTrajectoryList
+// for trail-rabbit fitness columns, and inside_crash_hull telemetry. Walks
+// kTrackerInputMeta for column headers (45 inputs vs pathgen's 33).
+//
+// Pathgen-mode scenarios route through the original inline body in
+// logEvalResults — bitwise-preserved against gen9200.dmp regression gate.
+static void logEvalResultsScenarioTracker(std::ofstream& fout,
+                                           EvalResults& results,
+                                           size_t scenarioIdx,
+                                           bool& printHeader) {
+  auto& aircraftStates = results.aircraftStateList.at(scenarioIdx);
+  const auto& targets = results.targetTrajectoryList.at(scenarioIdx);
+  if (aircraftStates.empty() || targets.empty()) return;
+
+  uint64_t scenarioSequence = 0;
+  uint64_t bakeoffSequence = 0;
+  int pathVariantIndex = 0;
+  int windVariantIndex = 0;
+  if (scenarioIdx < results.scenarioList.size()) {
+    scenarioSequence = results.scenarioList.at(scenarioIdx).scenarioSequence;
+    bakeoffSequence = results.scenarioList.at(scenarioIdx).bakeoffSequence;
+    pathVariantIndex = results.scenarioList.at(scenarioIdx).pathVariantIndex;
+    windVariantIndex = results.scenarioList.at(scenarioIdx).windVariantIndex;
+  }
+
+  const AutocConfig& cfg = ConfigManager::getConfig();
+  int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
+  if (streakStepsToMax < 1) streakStepsToMax = 1;
+  FitnessComputer logFC(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
+                        cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
+  logFC.resetStreak();
+
+  gp_vec3 prevTangent = gp_vec3::UnitX();
+  int simulation_steps = 0;
+
+  int stepIndex = 0;
+  while (++stepIndex < static_cast<int>(aircraftStates.size())) {
+    auto& stepState = aircraftStates.at(stepIndex);
+    gp_vec3 aircraftPosition = stepState.getPosition();
+
+    // Tracker fitness: rabbit = trail_rabbit_position; tangent = target velocity unit.
+    // Mirrors fitness_decomposition.cc tracker branch.
+    int tIdx = std::clamp(stepIndex, 0, static_cast<int>(targets.size()) - 1);
+    const CopiedTargetSample& target = targets.at(tIdx);
+    gp_vec3 rabbitPosition = target.trail_rabbit_position;
+
+    gp_vec3 tangent;
+    {
+      gp_vec3 vel = target.velocity;
+      double vn = vel.norm();
+      if (vn > 0.01) { tangent = vel / vn; prevTangent = tangent; }
+      else { tangent = prevTangent; }
+    }
+
+    gp_vec3 offset = aircraftPosition - rabbitPosition;
+    double along = offset.dot(tangent);
+    gp_vec3 lateral = offset - along * tangent;
+    double lateralDist = lateral.norm();
+    double distance = offset.norm();
+
+    double stepPoints = logFC.computeStepScore(along, lateralDist);
+    double multipliedScore = logFC.applyStreak(stepPoints);
+    double mult = (stepPoints > 0.0) ? multipliedScore / stepPoints : 1.0;
+
+    simulation_steps++;
+
+    gp_vec3 velocity_body = stepState.getOrientation().inverse() * stepState.getVelocity();
+    gp_vec3 home(0, 0, 0);
+    gp_scalar dhome = (home - aircraftPosition).norm();
+
+    if (printHeader) {
+      fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx";
+      // 030 M9.preA — Tracker NN input column headers via kTrackerInputMeta
+      // (45 inputs: 36 beacon + 4 quat + airspeed + 3 gyro + 1 dist-to-boundary).
+      for (size_t k = 0; k < sizeof(kTrackerInputMeta) / sizeof(SensorInputMeta); ++k) {
+        fout << std::setw(kTrackerInputMeta[k].header_width)
+             << kTrackerInputMeta[k].display_name;
+      }
+      fout << "   outPt   outRl   outTh"
+           << "      tgX      tgY      tgZ"     // target craft position
+           << "      trX      trY      trZ"     // trail-rabbit position (target − vel_unit × 3.048)
+           << "        X        Y        Z"     // chase position
+           << "    vxBdy    vyBdy    vzBdy"
+           << "    dhome     dist   along   stpPt    mult  rampSc hull"
+           << "\n";
+      printHeader = false;
+    }
+
+    const TrackerInputs& trIn = stepState.getTrackerInputs();
+    const float* in = reinterpret_cast<const float*>(&trIn);  // raw-ok: NN-byte-format read
+    const float* out = stepState.getNNOutputs();
+    const int hull = target.inside_crash_hull ? 1 : 0;
+
+    char outbuf[3072];
+    int n = snprintf(outbuf, sizeof(outbuf),
+      "%06llu %06llu %03d/%02d:%04d: %06ld %3d",
+      static_cast<unsigned long long>(scenarioSequence),
+      static_cast<unsigned long long>(bakeoffSequence),
+      pathVariantIndex, windVariantIndex, simulation_steps,
+      stepState.getSimTimeMsec(), tIdx);
+    // 36 beacon inputs (width 7, 3 decimals)
+    for (int k = 0; k < 36; ++k) {
+      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 6.3f", in[k]);
+    }
+    // 4 quat (width 8, 4 decimals)
+    for (int k = 36; k < 40; ++k) {
+      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 7.4f", in[k]);
+    }
+    // airspeed (width 8, 3 decimals)
+    n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 7.3f", in[40]);
+    // 3 gyro (width 7, 3 decimals)
+    for (int k = 41; k < 44; ++k) {
+      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 6.3f", in[k]);
+    }
+    // dist-to-boundary (width 8, 2 decimals — meters, range 0..1000)
+    n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 7.2f", in[44]);
+    // 032 phase 1 — derived perceptual features (slots 45..53; widths match
+    // kTrackerInputMeta header_width=7):
+    //   45..50 beacon_pair_span[6]  — raw NDC distance, [0, ~2.83]
+    //      51   span_rate           — one-tick diff, signed
+    //      52   target_tilt_sin     — [-1, +1]
+    //      53   target_tilt_cos     — [-1, +1]
+    for (int k = 45; k < 54; ++k) {
+      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 6.3f", in[k]);
+    }
+    // 3 NN outputs
+    n += snprintf(outbuf + n, sizeof(outbuf) - n,
+      " % 7.4f % 7.4f % 7.4f", out[0], out[1], out[2]);
+    // tgX/Y/Z, trX/Y/Z, X/Y/Z, vxBdy/vyBdy/vzBdy
+    n += snprintf(outbuf + n, sizeof(outbuf) - n,
+      " % 8.2f % 8.2f % 8.2f"
+      " % 8.2f % 8.2f % 8.2f"
+      " % 8.2f % 8.2f % 8.2f"
+      " % 8.2f % 8.2f % 8.2f",
+      target.position[0], target.position[1], target.position[2],
+      target.trail_rabbit_position[0], target.trail_rabbit_position[1], target.trail_rabbit_position[2],
+      stepState.getPosition()[0], stepState.getPosition()[1], stepState.getPosition()[2],
+      velocity_body.x(), velocity_body.y(), velocity_body.z());
+    // dhome, dist, along, stpPt, mult, rampSc, hull
+    n += snprintf(outbuf + n, sizeof(outbuf) - n,
+      " % 8.2f % 8.3f % 7.2f % 7.4f % 6.2f % 7.3f %4d\n",
+      dhome,
+      static_cast<gp_scalar>(distance),
+      static_cast<gp_scalar>(along),
+      static_cast<gp_scalar>(stepPoints),
+      static_cast<gp_scalar>(mult),
+      static_cast<gp_scalar>(computeVariationScale()),
+      hull);
+    fout << outbuf;
+  }
+}
+
 // Log per-step data from EvalResults to data.dat
-// NN mode: actual NN inputs (normalized) and outputs captured in minisim, then diagnostics
+// NN mode: actual NN inputs (normalized) and outputs captured in minisim, then diagnostics.
+// 030 M9.preA: dispatches per-scenario on targetTrajectoryList non-empty
+// (tracker scenarios route to the helper above; pathgen scenarios use
+// the inline body — bitwise-preserved against gen9200.dmp regression gate).
 static void logEvalResults(std::ofstream& fout, EvalResults& results) {
   bool printHeader = true;
 
@@ -571,6 +769,15 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
     auto& path = results.pathList.at(i);
     auto& aircraftStates = results.aircraftStateList.at(i);
     if (path.empty() || aircraftStates.empty()) continue;
+
+    // 030 M9.preA — tracker dispatch (same data-presence trick as
+    // fitness_decomposition.cc::computeScenarioScores).
+    const bool is_tracker = i < results.targetTrajectoryList.size()
+                            && !results.targetTrajectoryList[i].empty();
+    if (is_tracker) {
+      logEvalResultsScenarioTracker(fout, results, i, printHeader);
+      continue;
+    }
 
     uint64_t scenarioSequence = 0;
     uint64_t bakeoffSequence = 0;
@@ -641,15 +848,17 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
       gp_scalar dhome = (home - aircraftPosition).norm();
 
       if (printHeader) {
-        fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx"
-             << "  tgX-5  tgX-4  tgX-3  tgX-2  tgX-1   tgX0"
-             << "  tgY-5  tgY-4  tgY-3  tgY-2  tgY-1   tgY0"
-             << "  tgZ-5  tgZ-4  tgZ-3  tgZ-2  tgZ-1   tgZ0"
-             << "   ds-5   ds-4   ds-3   ds-2   ds-1    ds0"
-             << "  dd/dt"
-             << "      qw      qx      qy      qz"
-             << "     vel   gyrP   gyrQ   gyrR"
-             << "   outPt   outRl   outTh"
+        fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx";
+        // 030 M2b.2: NN input-column header walks kPathgenInputMeta (FR-006
+        // typed sensor interface) — the meta is the source of truth for
+        // both column label and width. Output is byte-identical to the
+        // prior literal strings; the regression invariant is byte-equality
+        // of data.dat under rebuild-perf.sh on the same seed.
+        for (size_t i = 0; i < sizeof(kPathgenInputMeta) / sizeof(SensorInputMeta); ++i) {
+            fout << std::setw(kPathgenInputMeta[i].header_width)
+                 << kPathgenInputMeta[i].display_name;
+        }
+        fout << "   outPt   outRl   outTh"
              << "    pathX    pathY    pathZ"
              << "        X        Y        Z"
              << "    vxBdy    vyBdy    vzBdy"
@@ -739,9 +948,135 @@ struct EvalJob {
     EvalPurpose purpose;
 };
 
-// Build a fully-populated EvalData ready for sanitizePaths() + sendRPC().
-// Reads globals: gRabbitSpeedConfig, gScenarioVariations (via populateVariationOffsets),
-// computeVariationScale(), globalScenarioCounter.
+// 030 V1 + V1.5 priming (2026-05-08) — build the once-per-worker WorkerInit
+// from the loaded source library + cfg + run-static path-generation +
+// scenario variation table. Sent during ThreadPool worker startup (right
+// after each worker's TCP accept), then cached on the worker side.
+// Eliminates the per-eval sourceList copy explosion (V1) AND the per-eval
+// pathList / scenarioList copy explosion (V1.5) that pinned ~25 GB
+// resident on autoc at pop=5000 tracker training. See specs/BACKLOG.md
+// "Worker-side scenario priming" entry.
+//
+// V1.5 preconditions: caller MUST have already invoked
+// generateSmoothPaths + rebuildGenerationScenarios + prefetchAllVariations
+// at startup, so generationScenarios[0] is populated. Pathgen-mode
+// WorkerInit gets the scenario library too (it varies per-mode only in
+// what's tracker-specific — sourceList stays empty for pathgen).
+static WorkerInit buildWorkerInit() {
+    const auto& cfg = ConfigManager::getConfig();
+    WorkerInit init;
+    init.mode = parseModeName(cfg.mode);
+
+    // 030 V1.5 — run-static scenario library shared by both modes.
+    // generateSmoothPaths(gPathSeed) is byte-identical every gen, so we
+    // copy it exactly once into WorkerInit. scenarioMetaList carries
+    // entry offsets at FULL SCALE (scale=1.0); the worker applies the
+    // per-eval variation_scale via applyVariationScale before each eval.
+    if (!generationScenarios.empty()) {
+        const auto& scen = generationScenarios.front();
+        init.pathList = scen.pathList;
+        // Sanitize once at autoc-side before shipping (was previously
+        // EvalData::sanitizePaths called per-eval; same fix-NaN logic,
+        // applied once instead of 5000×).
+        for (auto& pathGroup : init.pathList) {
+            for (auto& path : pathGroup) {
+                path.sanitize();
+            }
+        }
+
+        const size_t numWindScenarios = std::max<size_t>(scen.windScenarios.size(), 1u);
+        init.scenarioMetaList.reserve(scen.pathList.size());
+        for (size_t idx = 0; idx < scen.pathList.size(); ++idx) {
+            ScenarioMetadata meta;
+            meta.bakeoffSequence = 0;
+            meta.enableDeterministicLogging = false;  // overridden per-eval
+
+            // Path-major layout: pathIdx = idx / numWinds; windIdx = idx % numWinds.
+            // (Matches rebuildGenerationScenarios non-demetic case.)
+            const size_t pathIdx = (numWindScenarios > 0)
+                ? idx / numWindScenarios : idx;
+            const size_t windIdx = (numWindScenarios > 0)
+                ? idx % numWindScenarios : 0;
+            meta.pathVariantIndex = static_cast<int>(pathIdx);
+            if (windIdx < scen.windScenarios.size()) {
+                meta.windVariantIndex = scen.windScenarios[windIdx].windVariantIndex;
+                meta.windSeed = scen.windScenarios[windIdx].windSeed;
+            }
+            // Pre-populate entry offsets at full scale from the joint-PRNG
+            // variation table. Worker scales per-eval via applyVariationScale.
+            if (windIdx < gScenarioVariations.size()) {
+                const auto& v = gScenarioVariations[windIdx].entryOffsets;
+                meta.entryHeadingOffset = v.entryHeadingOffset;
+                meta.entryRollOffset = v.entryRollOffset;
+                meta.entryPitchOffset = v.entryPitchOffset;
+                meta.entrySpeedFactor = v.entrySpeedFactor;
+                meta.windDirectionOffset = v.windDirectionOffset;
+                meta.entryNorthOffset = v.entryNorthOffset;
+                meta.entryEastOffset = v.entryEastOffset;
+                meta.entryAltOffset = v.entryAltOffset;
+                meta.rabbitSpeedSeed = gScenarioVariations[windIdx].rabbitSpeedSeed;
+            }
+            meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
+            init.scenarioMetaList.push_back(meta);
+        }
+    }
+
+    if (init.mode != Mode::TRACKER) {
+        return init;
+    }
+
+    // 030 tracker library — copy the entire deduplicated source-trajectory
+    // list once. Worker indexes into init.sourceList by scenario index;
+    // per-eval EvalData no longer carries trajectory bytes.
+    init.sourceList = gSourceTrajectoryList;
+
+    init.cameraConfig.fov_h_deg = static_cast<gp_scalar>(cfg.cameraFOVHorizontalDeg);
+    init.cameraConfig.fov_v_deg = static_cast<gp_scalar>(cfg.cameraFOVVerticalDeg);
+    init.cameraConfig.frame_rate_hz = static_cast<gp_scalar>(cfg.cameraFrameRateHz);
+    init.cameraConfig.latency_ms = static_cast<gp_scalar>(cfg.cameraLatencyMs);
+    init.cameraConfig.mount_offset_body =
+        gp_vec3(static_cast<gp_scalar>(cfg.cameraMountOffsetX),
+                static_cast<gp_scalar>(cfg.cameraMountOffsetY),
+                static_cast<gp_scalar>(cfg.cameraMountOffsetZ));
+
+    init.beaconLeftConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconLeftWavelengthNm);
+    init.beaconLeftConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
+    init.beaconLeftConfig.mount_body =
+        gp_vec3(static_cast<gp_scalar>(cfg.beaconLeftMountX),
+                static_cast<gp_scalar>(cfg.beaconLeftMountY),
+                static_cast<gp_scalar>(cfg.beaconLeftMountZ));
+    init.beaconLeftConfig.emission_axis_body = gp_vec3(0.0f, -1.0f, 0.0f);
+
+    init.beaconRightConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconRightWavelengthNm);
+    init.beaconRightConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
+    init.beaconRightConfig.mount_body =
+        gp_vec3(static_cast<gp_scalar>(cfg.beaconRightMountX),
+                static_cast<gp_scalar>(cfg.beaconRightMountY),
+                static_cast<gp_scalar>(cfg.beaconRightMountZ));
+    init.beaconRightConfig.emission_axis_body = gp_vec3(0.0f, +1.0f, 0.0f);
+
+    init.airframeProxy = autoc::eval::defaultAirframeProxyHB1();
+
+    init.flightArena.radius_m = static_cast<gp_scalar>(cfg.flightArenaRadius);
+    init.flightArena.floor_agl_m = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
+    init.flightArena.ceiling_agl_m = static_cast<gp_scalar>(cfg.flightArenaCeilingAGL);
+
+    init.crashHullRadius = static_cast<gp_scalar>(cfg.crashHullRadius);
+    init.trailDistance = static_cast<gp_scalar>(cfg.trailDistance);
+    init.cepGateThreshold = static_cast<gp_scalar>(cfg.cepGateThreshold);
+
+    return init;
+}
+
+// 030 V1 + V1.5 priming (2026-05-08) — slim per-eval EvalData. The
+// scenario library (pathList + scenarioMetaList) lives on the worker
+// (cached from WorkerInit at startup); EvalData carries only NN bytes +
+// per-eval/per-gen scalars. ~50 B per EvalData instead of ~7 MB.
+//
+// Worker-side reconstruction per scenario: copy init_.scenarioMetaList[i],
+// override scenarioSequence + enableDeterministicLogging from this
+// EvalData, then call applyVariationScale(meta, evalData.variationScale)
+// — byte-equivalent to the legacy populateVariationOffsets path.
 static EvalData buildEvalData(const EvalJob& job) {
     EvalData evalData;
     evalData.controllerType = ControllerType::NEURAL_NET;
@@ -752,45 +1087,24 @@ static EvalData buildEvalData(const EvalJob& job) {
     // Bug 4 fix: StandaloneEval and EliteReeval both get elite treatment
     evalData.isEliteReeval = (job.purpose != EvalPurpose::Training);
 
-    // Bug 3 fix: ALWAYS set rabbitSpeedConfig from the global (was missing in eval path)
+    // Bug 3 fix: ALWAYS set rabbitSpeedConfig from the global (was missing in eval path).
+    // rabbitSpeedConfig is gen-varying (sigma scaled by computeVariationScale)
+    // so it stays in EvalData — small struct, cost is negligible.
     evalData.rabbitSpeedConfig = gRabbitSpeedConfig;
     evalData.rabbitSpeedConfig.sigma = gRabbitSpeedConfig.sigma * computeVariationScale();
 
-    evalData.pathList = job.scenario.pathList;
+    evalData.scenarioSequence =
+        globalScenarioCounter.fetch_add(1, std::memory_order_relaxed) + 1;
+    evalData.variationScale = static_cast<gp_scalar>(computeVariationScale());
 
-    uint64_t scenarioSequence = globalScenarioCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-    evalData.scenario.scenarioSequence = scenarioSequence;
-    evalData.scenario.bakeoffSequence = 0;
-
-    // Build scenario list (single canonical copy — was 3 copies with drift)
-    evalData.scenarioList.clear();
-    evalData.scenarioList.reserve(job.scenario.pathList.size());
-    for (size_t idx = 0; idx < job.scenario.pathList.size(); ++idx) {
-        ScenarioMetadata meta;
-        meta.scenarioSequence = scenarioSequence;
-        // Bug 4 fix: enable deterministic logging for non-training purposes
-        meta.enableDeterministicLogging = (job.purpose != EvalPurpose::Training);
-        meta.bakeoffSequence = 0;
-
-        size_t numWindScenarios = job.scenario.windScenarios.size();
-        if (numWindScenarios > 0 && job.scenario.pathList.size() > 0) {
-            size_t pathIdx = idx / numWindScenarios;
-            size_t windIdx = idx % numWindScenarios;
-            meta.pathVariantIndex = static_cast<int>(pathIdx);
-            if (windIdx < job.scenario.windScenarios.size()) {
-                meta.windVariantIndex = job.scenario.windScenarios[windIdx].windVariantIndex;
-                meta.windSeed = job.scenario.windScenarios[windIdx].windSeed;
-            }
-        } else {
-            meta.pathVariantIndex = static_cast<int>(idx);
-        }
-
-        populateVariationOffsets(meta);
-        meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
-        evalData.scenarioList.push_back(meta);
-    }
-    if (!evalData.scenarioList.empty()) {
-        evalData.scenario = evalData.scenarioList.front();
+    // 030 M11.preA.3 (2026-05-10) — pCrashThisGen is now a fixed Bernoulli
+    // probability per NN tick (10Hz), no per-gen ramp. Constant across the
+    // run gives deterministic per-(scenario, gen) crash-hull outcomes given
+    // the windSeed-seeded PRNG. Worker-side crashHullRadius + SPHERE shape
+    // come from WorkerInit. Pathgen-mode leaves it at 0.
+    if (parseModeName(ConfigManager::getConfig().mode) == Mode::TRACKER) {
+        const auto& cfg = ConfigManager::getConfig();
+        evalData.pCrashThisGen = static_cast<gp_scalar>(cfg.crashHullProbability);
     }
 
     return evalData;
@@ -833,9 +1147,12 @@ static void runNNEvaluation(
     exit(1);
   }
 
-  // Validate topology matches compiled-in expectations
+  // Validate topology matches the active mode's compile-time expectation
+  // (030 M7a — runtime mode-select per FR-019). Eval-mode loads a
+  // weight file that must match the .ini's Mode (pathgen → 33 / tracker → 45).
   {
-    std::vector<int> expectedTopology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+    const ModeStrategy& mode = getActiveModeStrategy();
+    std::vector<int> expectedTopology(mode.topology, mode.topology + mode.num_layers);
     if (genome.topology != expectedTopology) {
       std::ostringstream fileTopo, compiledTopo;
       for (size_t i = 0; i < genome.topology.size(); i++) {
@@ -880,7 +1197,6 @@ static void runNNEvaluation(
   // TODO T044: iterate all scenarios for Bug 5 fix
   const ScenarioDescriptor& scenario = scenarioForIndex(0);
   EvalData evalData = buildEvalData({scenario, nnData, EvalPurpose::StandaloneEval});
-  evalData.sanitizePaths();
 
   // Send to minisim and get results
   auto evalDataPtr = std::make_shared<EvalData>(std::move(evalData));
@@ -911,15 +1227,38 @@ static void runNNEvaluation(
 
   // Per-scenario breakdown (same format as training loop)
   *logger.info() << "  Scenarios: " << endl;
+  const bool isTrackerMode = (cfg.mode == "tracker");
   for (size_t s = 0; s < evalScenarioScores.size(); s++) {
     const auto& sc = evalScenarioScores[s];
     *logger.info() << "  [" << s << "] "
                    << (sc.crashed ? "CRASH" : "OK")
+                   << " reason=" << crashReasonToString(sc.crashReason)
                    << " score=" << std::fixed << std::setprecision(2) << -sc.score
                    << " maxStrk=" << sc.maxStreak
                    << " strkSteps=" << sc.totalStreakSteps
                    << " maxMult=" << std::setprecision(1) << sc.maxMultiplier
                    << endl;
+    // 030 M11.wrap T088 + 327-330 — tracker-mode per-scenario diagnostics.
+    // Emitted as indented continuation line; suppressed in pathgen mode.
+    if (isTrackerMode) {
+      const auto& d = sc.tracker_diag;
+      *logger.info() << "      "
+                     << "vis=" << std::fixed << std::setprecision(2) << d.vis_frac
+                     << " inRamp=" << d.in_fit_ramp_frac
+                     << " rng=[" << std::setprecision(1)
+                     << d.range_min << "/" << d.range_med << "/" << d.range_p95 << "]"
+                     << " loss=[far=" << d.loss_geom_too_far
+                     << " ang=" << d.loss_geom_angle
+                     << " over=" << d.loss_geom_overshoot
+                     << " hull=" << d.loss_hull << "]"
+                     << " over[flips=" << d.closure_flips
+                     << " maxClose=" << std::setprecision(1) << d.max_closure_rate << "]"
+                     << " fwd[lostMax=" << d.max_lost_sight_run
+                     << " spiral=" << std::setprecision(3) << d.spiral_ratio
+                     << " thrPt=" << std::setprecision(1) << d.thrash_rate_pt
+                     << " thrRl=" << d.thrash_rate_rl << "]"
+                     << endl;
+    }
   }
 
   globalSimRunCounter.fetch_add(evalResults.pathList.size(), std::memory_order_relaxed);
@@ -983,8 +1322,11 @@ static void runNNEvolution(
 
 
   *logger.info() << "NN Evolution mode" << endl;
-  *logger.info() << "  Topology: " << NN_TOPOLOGY_STRING
-                 << " (" << NN_WEIGHT_COUNT << " weights)" << endl;
+  {
+    const ModeStrategy& mode = getActiveModeStrategy();
+    *logger.info() << "  Topology: " << mode.topology_string
+                   << " (" << mode.weight_count << " weights, mode=" << mode.name << ")" << endl;
+  }
   *logger.info() << "  Population: " << popSize << endl;
   *logger.info() << "  Generations: " << numGens << endl;
   *logger.info() << "  MutationSigma: " << cfg.nnMutationSigma << endl;
@@ -1023,12 +1365,12 @@ static void runNNEvolution(
     // RAMP_LANDSCAPE: Update current generation for variation scaling
     gCurrentGeneration = gen;
 
-    // Generate paths for this generation
-    generationPaths = generateSmoothPaths(const_cast<char*>(cfg.generatorMethod.c_str()),
-                                          cfg.simNumPathsPerGen,
-                                          SIM_PATH_BOUNDS, SIM_PATH_BOUNDS,
-                                          gPathSeed);
-    rebuildGenerationScenarios(generationPaths);
+    // 030 V1.5 (2026-05-08) — generateSmoothPaths + rebuildGenerationScenarios
+    // formerly fired here every gen. They produce byte-identical output
+    // every generation (gPathSeed is run-constant), so they were hoisted
+    // to a single call at startup. Workers received the resulting
+    // pathList + scenarioMetaList once via WorkerInit; per-eval EvalData
+    // no longer carries them.
 
     // Evaluate each individual
     for (int ind = 0; ind < popSize; ind++) {
@@ -1041,7 +1383,6 @@ static void runNNEvolution(
       // Build EvalData
       const ScenarioDescriptor& scenario = scenarioForIndex(ind % generationScenarios.size());
       EvalData evalData = buildEvalData({scenario, nnData, EvalPurpose::Training});
-      evalData.sanitizePaths();
 
       // Send to minisim worker via ThreadPool
       auto evalDataPtr = std::make_shared<EvalData>(std::move(evalData));
@@ -1087,7 +1428,6 @@ static void runNNEvolution(
 
       const ScenarioDescriptor& scenario = scenarioForIndex(bestIdx % generationScenarios.size());
       EvalData evalData = buildEvalData({scenario, nnData, EvalPurpose::EliteReeval});
-      evalData.sanitizePaths();
 
       auto evalDataPtr = std::make_shared<EvalData>(std::move(evalData));
       EvalResults bestResults;
@@ -1156,17 +1496,39 @@ static void runNNEvolution(
 
     // Log per-scenario decomposition for best individual
     const auto& bestScores = pop.individuals[bestIdx].scenario_scores;
+    const bool isTrackerModeLoop = (cfg.mode == "tracker");
     if (!bestScores.empty()) {
       *logger.info() << "  Scenarios: ";
       for (size_t s = 0; s < bestScores.size(); s++) {
         const auto& sc = bestScores[s];
         *logger.info() << "  [" << s << "] "
                        << (sc.crashed ? "CRASH" : "OK")
+                       << " reason=" << crashReasonToString(sc.crashReason)
                        << " score=" << std::fixed << std::setprecision(2) << -sc.score
                        << " maxStrk=" << sc.maxStreak
                        << " strkSteps=" << sc.totalStreakSteps
                        << " maxMult=" << std::setprecision(1) << sc.maxMultiplier
                        << endl;
+        // 030 M11.wrap T088 + 327-330 — tracker-mode per-scenario diagnostics.
+        if (isTrackerModeLoop) {
+          const auto& d = sc.tracker_diag;
+          *logger.info() << "      "
+                         << "vis=" << std::fixed << std::setprecision(2) << d.vis_frac
+                         << " inRamp=" << d.in_fit_ramp_frac
+                         << " rng=[" << std::setprecision(1)
+                         << d.range_min << "/" << d.range_med << "/" << d.range_p95 << "]"
+                         << " loss=[far=" << d.loss_geom_too_far
+                         << " ang=" << d.loss_geom_angle
+                         << " over=" << d.loss_geom_overshoot
+                         << " hull=" << d.loss_hull << "]"
+                         << " over[flips=" << d.closure_flips
+                         << " maxClose=" << std::setprecision(1) << d.max_closure_rate << "]"
+                         << " fwd[lostMax=" << d.max_lost_sight_run
+                         << " spiral=" << std::setprecision(3) << d.spiral_ratio
+                         << " thrPt=" << std::setprecision(1) << d.thrash_rate_pt
+                         << " thrRl=" << d.thrash_rate_rl << "]"
+                         << endl;
+        }
       }
     }
 
@@ -1212,6 +1574,83 @@ static void runNNEvolution(
          << " w_xh1_cv=" << std::setprecision(4) << blockStats.w_xh1_cv
          << " w_hh_cv=" << std::setprecision(4) << blockStats.w_hh_cv
          << std::endl;
+
+    // 030 M11.wrap diagnostics — per-gen CrashReason aggregate over the elite's
+    // scenario set. Surfaces hull-strike vs arena-egress vs timeout distribution
+    // without requiring dmp inspection. crashReason populated in fitness_decomposition.cc.
+    {
+      int cnt_none = 0, cnt_boot = 0, cnt_sim = 0, cnt_eval = 0;
+      int cnt_timeLimit = 0, cnt_rabbitComplete = 0, cnt_hullStrike = 0;
+      for (const auto& sc : bestScores) {
+        switch (sc.crashReason) {
+          case CrashReason::None:           cnt_none++; break;
+          case CrashReason::Boot:           cnt_boot++; break;
+          case CrashReason::Sim:            cnt_sim++; break;
+          case CrashReason::Eval:           cnt_eval++; break;
+          case CrashReason::TimeLimit:      cnt_timeLimit++; break;
+          case CrashReason::RabbitComplete: cnt_rabbitComplete++; break;
+          case CrashReason::HullStrike:     cnt_hullStrike++; break;
+        }
+      }
+      bout << "#GenCrash gen=" << gen
+           << " hullStrike=" << cnt_hullStrike
+           << " eval=" << cnt_eval
+           << " sim=" << cnt_sim
+           << " boot=" << cnt_boot
+           << " timeLimit=" << cnt_timeLimit
+           << " rabbitComplete=" << cnt_rabbitComplete
+           << " none=" << cnt_none
+           << " total=" << static_cast<int>(bestScores.size())
+           << std::endl;
+    }
+    // 030 M11.wrap T088 + 327-330 — per-gen tracker-mode diag aggregate. Sums
+    // streak-loss counters + means visibility / range / forward-looking stats
+    // across the elite's scenario set. Pathgen-mode mode skips emission.
+    if (isTrackerModeLoop && !bestScores.empty()) {
+      long total_far=0, total_ang=0, total_over=0, total_hull=0;
+      long total_flips=0;
+      double vis_sum=0, ramp_sum=0, rng_min_sum=0, rng_med_sum=0, rng_p95_sum=0;
+      double max_close_max=0, lost_max_max=0;
+      double spiral_sum=0, thr_pt_sum=0, thr_rl_sum=0;
+      for (const auto& sc : bestScores) {
+        const auto& d = sc.tracker_diag;
+        total_far += d.loss_geom_too_far;
+        total_ang += d.loss_geom_angle;
+        total_over += d.loss_geom_overshoot;
+        total_hull += d.loss_hull;
+        total_flips += d.closure_flips;
+        vis_sum += d.vis_frac;
+        ramp_sum += d.in_fit_ramp_frac;
+        rng_min_sum += d.range_min;
+        rng_med_sum += d.range_med;
+        rng_p95_sum += d.range_p95;
+        if (std::abs(d.max_closure_rate) > std::abs(max_close_max)) max_close_max = d.max_closure_rate;
+        if (d.max_lost_sight_run > lost_max_max) lost_max_max = d.max_lost_sight_run;
+        spiral_sum += d.spiral_ratio;
+        thr_pt_sum += d.thrash_rate_pt;
+        thr_rl_sum += d.thrash_rate_rl;
+      }
+      const double N = static_cast<double>(bestScores.size());
+      long loss_total = total_far + total_ang + total_over + total_hull;
+      bout << "#GenDiag gen=" << gen
+           << " loss_total=" << loss_total
+           << " far=" << total_far
+           << " angle=" << total_ang
+           << " over=" << total_over
+           << " hull=" << total_hull
+           << " avgVis=" << std::fixed << std::setprecision(3) << (vis_sum / N)
+           << " avgInRamp=" << (ramp_sum / N)
+           << " avgRngMin=" << std::setprecision(2) << (rng_min_sum / N)
+           << " avgRngMed=" << (rng_med_sum / N)
+           << " avgRngP95=" << (rng_p95_sum / N)
+           << " avgFlips=" << std::setprecision(2) << (static_cast<double>(total_flips) / N)
+           << " maxClose=" << std::setprecision(2) << max_close_max
+           << " maxLost=" << static_cast<int>(lost_max_max)
+           << " avgSpiral=" << std::setprecision(4) << (spiral_sum / N)
+           << " avgThrPt=" << std::setprecision(2) << (thr_pt_sum / N)
+           << " avgThrRl=" << (thr_rl_sum / N)
+           << std::endl;
+    }
     bout.flush();
 
     logGenerationStats(gen);
@@ -1300,10 +1739,21 @@ int main(int argc, char** argv)
   Aws::SDKOptions options;
   Aws::InitAPI(options);
 
-  // initialize workers
-  threadPool = new ThreadPool(ConfigManager::getConfig());
+  // 030 V1 priming (2026-05-08) — ThreadPool construction MOVED below
+  // (was here at startup, now after loadSourceDmp). Workers are primed
+  // with WorkerInit at startup (one-shot RPC right after each worker's
+  // TCP accept), so the source-trajectory library + camera/beacon/
+  // airframe/flightArena configs MUST be ready before the threadpool
+  // launches its workers. Tracker training previously OOM'd a 128 GB
+  // box pre-gen-1 because every per-individual EvalData carried a deep
+  // copy of the ~8.5 MB source library. See specs/BACKLOG.md
+  // "Worker-side scenario priming" entry.
 
   // Print the configuration
+  // TODO: hand-coded enumeration is fragile as autoc.ini grows; backlog
+  // entry "[BACKLOG] AutocConfig auto-print" tracks the extensibility
+  // refactor (member-list macro / cereal-to-text dump / etc).
+  *logger.info() << "Mode: " << cfg.mode << endl;
   *logger.info() << "Config: pop=" << cfg.populationSize
                  << " gens=" << cfg.numberOfGenerations << endl;
   *logger.info() << "SimNumPathsPerGen: " << cfg.simNumPathsPerGen << endl;
@@ -1319,6 +1769,107 @@ int main(int argc, char** argv)
   *logger.info() << "EnableEntryVariations: " << cfg.enableEntryVariations << endl;
   *logger.info() << "EnableWindVariations: " << cfg.enableWindVariations << endl;
   *logger.info() << "EnableRabbitSpeedVariations: " << cfg.enableRabbitSpeedVariations << endl;
+
+  // 030 M6e — tracker-mode parameter dump (only when active).
+  if (cfg.mode == "tracker") {
+    *logger.info() << "=== Tracker-mode parameters ===" << endl;
+    *logger.info() << "TrackerSourceRun: " << cfg.trackerSourceRun << endl;
+    *logger.info() << "TrackerPathSubset: " << cfg.trackerPathSubset << endl;
+    *logger.info() << "TrackerWindSubset: " << cfg.trackerWindSubset << endl;
+    *logger.info() << "TrailDistance: " << cfg.trailDistance
+                   << "  LowSpeedTrailThreshold: " << cfg.lowSpeedTrailThreshold
+                   << "  Hysteresis: " << cfg.lowSpeedTrailHysteresis << endl;
+    *logger.info() << "CrashHull: shape=" << cfg.crashHullShape
+                   << " radius=" << cfg.crashHullRadius
+                   << " p_crash=" << cfg.crashHullProbability << endl;
+    *logger.info() << "FlightArena: radius=" << cfg.flightArenaRadius
+                   << " floorAGL=" << cfg.flightArenaFloorAGL
+                   << " ceilingAGL=" << cfg.flightArenaCeilingAGL << endl;
+    *logger.info() << "Camera: count=" << cfg.cameraCount
+                   << " fov_h=" << cfg.cameraFOVHorizontalDeg
+                   << " fov_v=" << cfg.cameraFOVVerticalDeg
+                   << " fps=" << cfg.cameraFrameRateHz
+                   << " latency_ms=" << cfg.cameraLatencyMs << endl;
+    *logger.info() << "  CameraMount: ("
+                   << cfg.cameraMountOffsetX << ", "
+                   << cfg.cameraMountOffsetY << ", "
+                   << cfg.cameraMountOffsetZ << ") m (body, NED)" << endl;
+    *logger.info() << "AirframeOcclusion (compile-time): "
+                   << (autoc::eval::kAirframeOcclusionEnabled ? "enabled" : "DISABLED (transparent)")
+                   << " — see camera_projection.h kAirframeOcclusionEnabled" << endl;
+    *logger.info() << "BeaconLeft: wavelength=" << cfg.beaconLeftWavelengthNm
+                   << "nm  emissionCone=" << cfg.beaconEmissionConeDeg
+                   << "deg  mount=("
+                   << cfg.beaconLeftMountX << ", "
+                   << cfg.beaconLeftMountY << ", "
+                   << cfg.beaconLeftMountZ << ")" << endl;
+    *logger.info() << "BeaconRight: wavelength=" << cfg.beaconRightWavelengthNm
+                   << "nm  mount=("
+                   << cfg.beaconRightMountX << ", "
+                   << cfg.beaconRightMountY << ", "
+                   << cfg.beaconRightMountZ << ")" << endl;
+    *logger.info() << "===============================" << endl;
+  }
+
+  // 030 M6e — load source dmp at startup for tracker mode (FR-001 + FR-011).
+  // Apply path × wind subset; result is the canonical per-scenario source-
+  // trajectory bundle that buildEvalData attaches to each EvalData job.
+  // Pathgen mode skips this entirely.
+  // TODO M6e+: filterCrashedSourceScenarios needs crashReasonList from
+  // EvalResults — extend loadSourceDmp to return both, or accept that
+  // crashed source scenarios produce short trajectories handled by
+  // TrackerStepper's natural source-exhaustion termination.
+  if (cfg.mode == "tracker") {
+    *logger.info() << "Loading source dmp for tracker mode: " << cfg.trackerSourceRun << endl;
+    gSourceTrajectoryList = loadSourceDmp(cfg.trackerSourceRun);
+    *logger.info() << "  Loaded " << gSourceTrajectoryList.size() << " scenarios" << endl;
+    auto pathSubset = parseCsvIndices(cfg.trackerPathSubset);
+    auto windSubset = parseCsvIndices(cfg.trackerWindSubset);
+    gSourceTrajectoryList = filterByScenarioIndex(
+        gSourceTrajectoryList, pathSubset, windSubset);
+    *logger.info() << "  Final scenario count after subset filter: "
+                   << gSourceTrajectoryList.size() << endl;
+    if (gSourceTrajectoryList.empty()) {
+      *logger.info() << "FATAL ERROR: tracker mode requires at least one source "
+                        "scenario after filtering; got 0. Check TrackerSourceRun "
+                        "and subset config." << endl;
+      exit(1);
+    }
+
+    // Validate each source scenario has at least MIN_SCENARIO_TICKS runway
+    // (3 sec at 100ms NN cadence per data-model.md §1). Post-PreRollSec-
+    // removal: chase consumes source from sample 0, so the full source
+    // duration is available.
+    {
+      const int minRemaining = MIN_SCENARIO_TICKS;
+      int shortCount = 0;
+      for (const auto& traj : gSourceTrajectoryList) {
+        if (static_cast<int>(traj.samples.size()) < minRemaining) {
+          ++shortCount;
+        }
+      }
+      if (shortCount > 0) {
+        *logger.info() << "FATAL ERROR: " << shortCount
+                       << " of " << gSourceTrajectoryList.size()
+                       << " source scenario(s) have fewer than "
+                       << minRemaining << " ticks. Filter out short source "
+                          "scenarios." << endl;
+        exit(1);
+      }
+      *logger.info() << "Source runway >= " << minRemaining
+                     << " ticks confirmed across all "
+                     << gSourceTrajectoryList.size() << " scenarios." << endl;
+    }
+  }
+
+  // 030 V1.5 priming (2026-05-08) — ThreadPool construction MOVED below,
+  // past the prefetchAllVariations + generateSmoothPaths +
+  // rebuildGenerationScenarios block. buildWorkerInit reads from those
+  // globals (gScenarioVariations + generationScenarios), so the path
+  // library + variation table must exist before workers spawn. They were
+  // formerly called inside the gen loop too — V1.5 hoists them to a
+  // single startup call (gPathSeed is run-constant, output is byte-
+  // identical every gen anyway).
 
   // Initialize global variation parameters from config (degrees -> radians)
   // Store individual flags for selective application in populateVariationOffsets()
@@ -1399,6 +1950,21 @@ int main(int argc, char** argv)
 
   std::string startTime = generate_iso8601_timestamp();
   auto runStartTime = std::chrono::steady_clock::now();
+
+  // 030 M8b — explicit output-bucket logging (operator request 2026-05-07).
+  // Same run-id, profile, and bucket are used across pathgen training,
+  // pathgen eval, tracker training, and (eventual) tracker eval modes —
+  // single log line covers all four. Per-gen training dmps land at
+  // <prefix>/gen<10000-gen>.dmp (reverse-time so newest gen lists first);
+  // eval-mode dmps at gen9999.dmp.
+  //
+  // Format `profile:bucket/key` matches nnextractor's genome.source
+  // provenance convention so the prefix string is copy-pastable across
+  // tools (renderer / *_dmp_inspect / nnextractor accept this form).
+  *logger.info() << "Output S3 prefix: " << cfg.s3Profile << ":" << cfg.s3Bucket
+                 << "/" << startTime << "/  (gen<N>.dmp per-gen; gen9999.dmp for eval mode)"
+                 << endl;
+  *logger.info() << "Run ID: " << startTime << endl;
   auto lastThroughputTime = runStartTime;
   uint64_t lastSimRunCount = 0;
   auto logGenerationStats = [&](int genIndex) {
@@ -1448,6 +2014,21 @@ int main(int argc, char** argv)
                  << " totalEvaluations=" << generationScenarios.size() * windsPerPath
                  << endl;
   warnIfScenarioMismatch();
+
+  // 030 V1 + V1.5 priming — initialize workers NOW that all run-static
+  // state (gSourceTrajectoryList, gScenarioVariations, generationScenarios
+  // / generationPaths) is populated. buildWorkerInit pulls from those
+  // globals to construct the once-per-worker payload (sourceList,
+  // pathList, scenarioMetaList, tracker configs); workers cache it and
+  // per-eval EvalData stays at ~50 B.
+  *logger.info() << "Priming workers (mode=" << cfg.mode
+                 << ", pathList=" << generationScenarios.front().pathList.size()
+                 << " scenarios"
+                 << (parseModeName(cfg.mode) == Mode::TRACKER
+                         ? (", sourceList=" + std::to_string(gSourceTrajectoryList.size()))
+                         : std::string())
+                 << ")..." << endl;
+  threadPool = new ThreadPool(ConfigManager::getConfig(), buildWorkerInit());
 
   if (cfg.evaluateMode) {
     // NN evaluation mode: load weight file, evaluate, report fitness

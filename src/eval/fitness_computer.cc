@@ -12,6 +12,10 @@ FitnessComputer::FitnessComputer(double distScaleBehind, double distScaleAhead, 
       streakMultMax_(streakMultMax) {}
 
 double FitnessComputer::computeStepScore(double along, double lateralDist) const {
+    return decomposeStepScore(along, lateralDist).score;
+}
+
+FitnessComputer::ScoreTerms FitnessComputer::decomposeStepScore(double along, double lateralDist) const {
     // Polar (conical) form with directional distance scaling and clamped angle.
     //   distance     = sqrt(along² + lateralDist²)
     //   angle        = acos(-along / distance)   [0 = behind, π = ahead]
@@ -21,9 +25,12 @@ double FitnessComputer::computeStepScore(double along, double lateralDist) const
     //
     // The clamp at π/2 prevents the angle term from saturating ahead, so the
     // (small) ahead distance scale carries the gradient when overshooting.
+    ScoreTerms t;
+    t.ahead = (along > 0.0);
     double distance = std::sqrt(along * along + lateralDist * lateralDist);
     if (distance < 1e-6) {
-        return 1.0;  // At the rabbit position
+        t.score = 1.0; t.distTermSq = 0.0; t.angleTermSq = 0.0;
+        return t;  // At the rabbit position
     }
     // Angle from "directly behind" direction (-tangent).
     double cosAngle = -along / distance;
@@ -41,8 +48,10 @@ double FitnessComputer::computeStepScore(double along, double lateralDist) const
 
     double effDist  = distance / distScale;
     double effAngle = angleClamped / coneAngleRad_;
-    double effTotalSq = effDist * effDist + effAngle * effAngle;
-    return 1.0 / (1.0 + effTotalSq);
+    t.distTermSq  = effDist * effDist;
+    t.angleTermSq = effAngle * effAngle;
+    t.score = 1.0 / (1.0 + t.distTermSq + t.angleTermSq);
+    return t;
 }
 
 double FitnessComputer::applyStreak(double stepPoints) {

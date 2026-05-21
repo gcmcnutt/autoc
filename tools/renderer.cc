@@ -43,6 +43,15 @@ EvalResults evalResults;
 std::string computedKeyName = "";
 Renderer renderer;
 
+// 030 M9b.2 — Target beacon mount positions in target body frame.
+// Hardcoded to autoc-tracker.ini v1 defaults (BeaconLeftMountY = -0.45,
+// BeaconRightMountY = +0.45). EvalResults doesn't carry BeaconConfig
+// (it's worker-input-only via EvalData), so renderer can't auto-read
+// from the dmp. If you change BeaconLeft/RightMountY in the .ini,
+// update these constants and rebuild renderer.
+static const gp_vec3 kBeaconLeftMountBody  = gp_vec3(0.0f, -0.45f, 0.0f);
+static const gp_vec3 kBeaconRightMountBody = gp_vec3(0.0f, +0.45f, 0.0f);
+
 // Flight-trace render globals (populated from xiao log; legacy "blackbox*"
 // naming retained because it's load-bearing throughout the rendering path.
 // The INAV blackbox CSV playback mode was removed 2026-04-20 — T203.)
@@ -209,6 +218,47 @@ vtkSmartPointer<vtkPolyData> Renderer::createSegmentSet(vec3 offset, const std::
   return polyData;
 }
 
+// 030 M9b — Tracker-mode chase→target segments. Mirrors createSegmentSet
+// but reads target craft position from CopiedTargetSample (M2 dmp v=2)
+// instead of chase.getRabbitPosition() (which in pathgen is the
+// path-following rabbit, in tracker is whatever TrackerStepper recorded
+// — currently the trail rabbit, useful for fitness debugging but not
+// the operator-asked "craft to target" visualization).
+vtkSmartPointer<vtkPolyData> Renderer::createSegmentSetToTarget(vec3 offset,
+    const std::vector<AircraftState>& state,
+    const std::vector<CopiedTargetSample>& targets) {
+  vtkSmartPointer<vtkPolyData> polyData = vtkSmartPointer<vtkPolyData>::New();
+
+  size_t n = std::min(state.size(), targets.size());
+  if (n == 0) {
+    vtkSmartPointer<vtkPoints> emptyPoints = vtkSmartPointer<vtkPoints>::New();
+    polyData->SetPoints(emptyPoints);
+    return polyData;
+  }
+
+  vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
+  for (size_t i = 0; i < n; ++i) {
+    const auto& s = state.at(i);
+    vec3 chasePos = vec3{ s.getPosition()[0], s.getPosition()[1], s.getPosition()[2] } + offset;
+    const gp_vec3& tgt = targets.at(i).position;
+    vec3 targetPos = vec3{ tgt[0], tgt[1], tgt[2] } + offset;
+    points->InsertNextPoint(chasePos[0], chasePos[1], chasePos[2]);
+    points->InsertNextPoint(targetPos[0], targetPos[1], targetPos[2]);
+  }
+
+  vtkSmartPointer<vtkCellArray> lines = vtkSmartPointer<vtkCellArray>::New();
+  for (int i = 0; i < points->GetNumberOfPoints(); i += 2) {
+    vtkSmartPointer<vtkLine> line = vtkSmartPointer<vtkLine>::New();
+    line->GetPointIds()->SetId(0, i);
+    line->GetPointIds()->SetId(1, i + 1);
+    lines->InsertNextCell(line);
+  }
+
+  polyData->SetPoints(points);
+  polyData->SetLines(lines);
+  return polyData;
+}
+
 /*
  ** actual data is rendered as a tape with a top and bottom
  */
@@ -337,6 +387,74 @@ bool Renderer::updateGenerationDisplay(int newGen) {
           state.setRabbitPosition(rp);
         }
       }
+
+      // 030 M9a — Tracker-mode dmp version dispatch (T052, FR-015a).
+      // v=1 dmps (pathgen historical) and v=2-pathgen dmps (post-M8a
+      // schema bump but pathgen-mode runs) load with cameraViewList +
+      // targetTrajectoryList empty — existing pathgen render path runs
+      // unchanged. v=2-tracker dmps (autoc-tracker.ini training output)
+      // load with both populated — sets isTrackerMode_ for downstream
+      // M9b/c/d render-path branching. Constitution V loud-fail on
+      // future-version dmps already handled by cereal's class-version
+      // mechanism in serialize().
+      const bool tracker_data_present =
+          !evalResults.cameraViewList.empty()
+          && !evalResults.targetTrajectoryList.empty();
+      this->isTrackerMode_ = tracker_data_present;
+
+      // 030 M9b color routing 2026-05-08: in tracker mode, actor2
+      // (chase tape from aircraftStateList) is the NEW M2 chase being
+      // trained — give it the new magenta/lime color. targetActor
+      // (source recording = M1 chase replayed) keeps the historical
+      // orange/cyan. In pathgen mode, restore actor2's orange/cyan
+      // since aircraftStateList there IS the M1 chase. Mode-flip is
+      // safe at load time — Render() picks up the property change.
+      if (actor2 && actor2->GetProperty()) {
+        if (tracker_data_present) {
+          actor2->GetProperty()->SetColor(1.0, 0.0, 1.0);  // Magenta front
+          if (actor2->GetBackfaceProperty()) {
+            actor2->GetBackfaceProperty()->SetColor(0.0, 1.0, 0.5);  // Lime back
+          }
+        } else {
+          actor2->GetProperty()->SetColor(1.0, 0.7, 0.0);  // Orange front (M1 default)
+          if (actor2->GetBackfaceProperty()) {
+            actor2->GetBackfaceProperty()->SetColor(0.0, 1.0, 1.0);  // Cyan back (M1 default)
+          }
+        }
+      }
+
+      if (tracker_data_present) {
+        // Apply virtual→display Z offset to target trajectory positions
+        // (parallel to aircraftStateList above). targetTrajectoryList[i][k]
+        // is a copy of the source-craft pose at scenario i tick k; M9b's
+        // target-craft VTK actor reads these positions and needs them in
+        // the same display-altitude frame as the chase-craft actor.
+        // trail_rabbit_position is also virtual-frame; shift to match.
+        for (auto& targetList : evalResults.targetTrajectoryList) {
+          for (auto& target : targetList) {
+            target.position[2] += SIM_INITIAL_ALTITUDE;
+            target.trail_rabbit_position[2] += SIM_INITIAL_ALTITUDE;
+          }
+        }
+        // Camera world pose in cameraViewList[][].camera_pose_world_pos
+        // is the chase-craft camera mount position — also virtual-frame.
+        for (auto& cvList : evalResults.cameraViewList) {
+          for (auto& cv : cvList) {
+            cv.camera_pose_world_pos[2] += SIM_INITIAL_ALTITUDE;
+          }
+        }
+        std::cerr << "[RENDERER] tracker-mode dmp loaded: "
+                  << evalResults.cameraViewList.size() << " scenarios, "
+                  << "first scenario " << evalResults.cameraViewList[0].size()
+                  << " ticks (cameraViewList + targetTrajectoryList populated). "
+                  << "M9b target-craft + beacons render path: TODO."
+                  << std::endl;
+      } else {
+        std::cerr << "[RENDERER] pathgen-mode dmp loaded: "
+                  << evalResults.aircraftStateList.size() << " scenarios "
+                  << "(cameraViewList empty — pathgen render path)."
+                  << std::endl;
+      }
     }
     catch (const std::exception& e) {
       std::cerr << "Error during deserialization: " << e.what() << std::endl;
@@ -350,9 +468,22 @@ bool Renderer::updateGenerationDisplay(int newGen) {
 
   // Clear the existing data
   this->paths->RemoveAllInputs();
+  // 030 M9b — Empty fallback for `paths`. In tracker mode the per-scenario
+  // populate skips paths (red rabbit path hidden), so without this empty
+  // input the vtkAppendPolyData would have 0 connections and fail with
+  // "Input port 0 ... has 0 connections but is not optional".
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->paths->AddInputData(e); }
   this->directRabbitData->RemoveAllInputs();
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->directRabbitData->AddInputData(e); }
   this->actuals->RemoveAllInputs();
+  this->targetActuals->RemoveAllInputs();  // 030 M9b
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetActuals->AddInputData(e); }
+  this->targetBeaconsLeft->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsLeft->AddInputData(e); }
+  this->targetBeaconsRight->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsRight->AddInputData(e); }
+  this->chaseCameraFov->RemoveAllInputs();  // 030 M9b.3
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->chaseCameraFov->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->planeData->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
@@ -414,13 +545,57 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     std::vector<vec3> p = pathToVector(evalResults.pathList[i]);
     std::vector<vec3> a = stateToVector(evalResults.aircraftStateList[i]);
 
-    if (!p.empty()) {
+    // 030 M9b — Tracker mode hides the red rabbit path entirely. The
+    // pathList lives in the v=2 dmp for renderer-pipeline backwards
+    // compat (M8 schema contract), but in tracker mode the chase
+    // doesn't follow that path semantically — the magenta target tape
+    // IS the source-of-truth reference. Operator routing 2026-05-08:
+    // hide rather than show as decoration to keep larger random-path
+    // scenarios visually clean.
+    if (!p.empty() && !this->isTrackerMode_) {
       this->paths->AddInputData(createPointSet(offset, p));
     }
     if (!a.empty()) {
       this->actuals->AddInputData(createTapeSet(offset, a, stateToOrientation(evalResults.aircraftStateList[i])));
     }
-    if (!a.empty() && !p.empty()) {
+    // 030 M9b — Target-craft tape + chase→target error bars, populated
+    // from targetTrajectoryList when isTrackerMode_. Empty for pathgen-
+    // mode dmps. Same per-scenario `offset` so target tape lands in the
+    // same arena cell as chase tape.
+    const bool tracker_scenario_has_target =
+        this->isTrackerMode_
+        && i < static_cast<int>(evalResults.targetTrajectoryList.size())
+        && !evalResults.targetTrajectoryList[i].empty();
+    if (tracker_scenario_has_target) {
+      const auto& targetSamples = evalResults.targetTrajectoryList[i];
+      std::vector<vec3> targetPositions = targetSamplesToVector(targetSamples);
+      std::vector<vec3> targetOrientations = targetSamplesToOrientation(targetSamples);
+      this->targetActuals->AddInputData(
+          createTapeSet(offset, targetPositions, targetOrientations));
+      // 030 M9b.2 — Beacon trail glyphs (red port + green starboard).
+      std::vector<vec3> beaconLeftWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconLeftMountBody);
+      std::vector<vec3> beaconRightWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconRightMountBody);
+      this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
+      this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
+      // 030 M9b.3 — FOV pyramid at the latest visible camera tick. For
+      // static load this is the final tick of the scenario; animation
+      // updates per-frame (see updatePlaybackAnimation).
+      if (i < static_cast<int>(evalResults.cameraViewList.size())
+          && !evalResults.cameraViewList[i].empty()) {
+        const auto& latestCam = evalResults.cameraViewList[i].back();
+        this->chaseCameraFov->AddInputData(
+            createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(10.0f)));
+      }
+      // Tracker mode: blue error bars chase→target (NOT chase→rabbit)
+      // per operator request 2026-05-08 — visualizes the actual
+      // tracking error rather than the trail-rabbit fitness construct.
+      if (!a.empty()) {
+        this->segmentGaps->AddInputData(
+            createSegmentSetToTarget(offset, evalResults.aircraftStateList[i], targetSamples));
+      }
+    } else if (!a.empty() && !p.empty()) {
+      // Pathgen mode (or tracker-without-target-fallback): legacy
+      // chase→rabbit path-error visualization.
       this->segmentGaps->AddInputData(createSegmentSet(offset, evalResults.aircraftStateList[i], p));
     }
 
@@ -606,8 +781,12 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   this->planeData->Update();
   this->paths->Update();
   this->actuals->Update();
+  this->targetActuals->Update();  // 030 M9b
+  this->targetBeaconsLeft->Update();   // 030 M9b.2
+  this->targetBeaconsRight->Update();  // 030 M9b.2
+  this->chaseCameraFov->Update();      // 030 M9b.3
   this->segmentGaps->Update();
-  
+
   // Only update blackbox tapes if there's blackbox data
   if (!blackboxAircraftStates.empty()) {
     this->blackboxTapes->Update();
@@ -966,6 +1145,10 @@ void Renderer::initialize() {
   blackboxHighlightTapes = vtkSmartPointer<vtkAppendPolyData>::New();
   xiaoVecArrows = vtkSmartPointer<vtkAppendPolyData>::New();
   directRabbitData = vtkSmartPointer<vtkAppendPolyData>::New();
+  targetActuals = vtkSmartPointer<vtkAppendPolyData>::New();  // 030 M9b
+  targetBeaconsLeft = vtkSmartPointer<vtkAppendPolyData>::New();   // 030 M9b.2
+  targetBeaconsRight = vtkSmartPointer<vtkAppendPolyData>::New();  // 030 M9b.2
+  chaseCameraFov = vtkSmartPointer<vtkAppendPolyData>::New();      // 030 M9b.3
 
   // Temporary until first update
   vtkNew<vtkPolyData> emptyPolyData;
@@ -981,6 +1164,10 @@ void Renderer::initialize() {
   blackboxHighlightTapes->AddInputData(emptyPolyData);
   xiaoVecArrows->AddInputData(emptyPolyData);
   directRabbitData->AddInputData(emptyPolyData);
+  targetActuals->AddInputData(emptyPolyData);  // 030 M9b
+  targetBeaconsLeft->AddInputData(emptyPolyData);   // 030 M9b.2
+  targetBeaconsRight->AddInputData(emptyPolyData);  // 030 M9b.2
+  chaseCameraFov->AddInputData(emptyPolyData);      // 030 M9b.3
 
   // Update planeData to ensure it has an input port
   planeData->Update();
@@ -1130,10 +1317,97 @@ void Renderer::initialize() {
   // Set the back face property
   actor2->SetBackfaceProperty(backProperty);
 
+  // 030 M9b — Target-craft tape actor. Distinct purple/violet color
+  // scheme so chase (orange front / cyan back) and target read as
+  // clearly different ribbons in the 3rd-person view. Empty input
+  // for pathgen-mode dmps ⇒ nothing renders, no perf cost.
+  vtkNew<vtkPolyDataMapper> targetMapper;
+  targetMapper->SetInputConnection(targetActuals->GetOutputPort());
+  targetActor = vtkSmartPointer<vtkActor>::New();
+  targetActor->SetMapper(targetMapper);
+  vtkProperty* targetProp = targetActor->GetProperty();
+  targetProp->SetLighting(true);
+  targetProp->SetInterpolation(VTK_FLAT);
+  targetProp->SetBackfaceCulling(false);
+  targetProp->SetFrontfaceCulling(false);
+  // 030 M9b color routing 2026-05-08: target tape inherits orange/cyan
+  // (was chase tape's color in M1 mode) because the M2 source IS an
+  // M1 chase recording playing in role of rabbit — visual identity
+  // stays consistent with "this is an M1-chase trajectory" across
+  // modes. The new M2 chase craft (the controller under test) gets
+  // the magenta/lime color, applied to actor2 in updateGenerationDisplay
+  // when isTrackerMode_=true. M1 mode actor2 stays orange/cyan.
+  targetProp->SetColor(1.0, 0.7, 0.0);   // Orange front face (top) — was actor2's M1 color
+  targetProp->SetAmbient(0.1);
+  targetProp->SetDiffuse(0.8);
+  targetProp->SetSpecular(0.1);
+  targetProp->SetSpecularPower(10);
+  targetProp->SetOpacity(1.0);
+  vtkNew<vtkProperty> targetBackProperty;
+  targetBackProperty->SetColor(0.0, 1.0, 1.0);  // Cyan back face (bottom) — was actor2's M1 back color
+  targetBackProperty->SetAmbient(0.1);
+  targetBackProperty->SetDiffuse(0.8);
+  targetBackProperty->SetSpecular(0.1);
+  targetBackProperty->SetSpecularPower(10);
+  targetBackProperty->SetOpacity(1.0);
+  targetActor->SetBackfaceProperty(targetBackProperty);
+
+  // 030 M9b.2 — Beacon glyph trail. Small spheres at each tick's
+  // beacon world position; navigation-light convention (RED port,
+  // GREEN starboard). Trail visualizes target craft body roll —
+  // wingtip beacons trace the bank angle of every turn, giving
+  // orientation context that the tape ribbon alone doesn't show.
+  vtkNew<vtkSphereSource> beaconSphere;
+  beaconSphere->SetRadius(0.15);  // Small dotted-trail aesthetic
+  beaconSphere->SetPhiResolution(8);
+  beaconSphere->SetThetaResolution(8);
+
+  vtkNew<vtkGlyph3D> beaconLeftGlyphs;
+  beaconLeftGlyphs->SetInputConnection(targetBeaconsLeft->GetOutputPort());
+  beaconLeftGlyphs->SetSourceConnection(beaconSphere->GetOutputPort());
+  vtkNew<vtkPolyDataMapper> beaconLeftMapper;
+  beaconLeftMapper->SetInputConnection(beaconLeftGlyphs->GetOutputPort());
+  targetBeaconLeftActor = vtkSmartPointer<vtkActor>::New();
+  targetBeaconLeftActor->SetMapper(beaconLeftMapper);
+  targetBeaconLeftActor->GetProperty()->SetColor(1.0, 0.0, 0.0);  // Red — port
+  targetBeaconLeftActor->GetProperty()->SetOpacity(0.9);
+
+  vtkNew<vtkGlyph3D> beaconRightGlyphs;
+  beaconRightGlyphs->SetInputConnection(targetBeaconsRight->GetOutputPort());
+  beaconRightGlyphs->SetSourceConnection(beaconSphere->GetOutputPort());
+  vtkNew<vtkPolyDataMapper> beaconRightMapper;
+  beaconRightMapper->SetInputConnection(beaconRightGlyphs->GetOutputPort());
+  targetBeaconRightActor = vtkSmartPointer<vtkActor>::New();
+  targetBeaconRightActor->SetMapper(beaconRightMapper);
+  targetBeaconRightActor->GetProperty()->SetColor(0.0, 1.0, 0.0);  // Green — starboard
+  targetBeaconRightActor->GetProperty()->SetOpacity(0.9);
+
+  // 030 M9b.3 — Chase camera FOV pyramid wireframe. Yellow lines,
+  // semi-transparent. Single pyramid per scenario follows the latest
+  // visible chase camera tick — visualizes "is target in chase FOV?"
+  vtkNew<vtkPolyDataMapper> fovMapper;
+  fovMapper->SetInputConnection(chaseCameraFov->GetOutputPort());
+  chaseCameraFovActor = vtkSmartPointer<vtkActor>::New();
+  chaseCameraFovActor->SetMapper(fovMapper);
+  chaseCameraFovActor->GetProperty()->SetColor(1.0, 1.0, 0.0);  // Yellow
+  chaseCameraFovActor->GetProperty()->SetOpacity(0.45);
+  chaseCameraFovActor->GetProperty()->SetLineWidth(1.2);
+
   renderer->AddActor(planeActor);
   renderer->AddActor(actor1);  // Red path line (projected rabbit)
   renderer->AddActor(directRabbitActor);  // Magenta path (direct rabbit ground truth)
   renderer->AddActor(actor2);  // Yellow flight tape
+  renderer->AddActor(targetActor);  // 030 M9b — magenta/lime target-craft tape (tracker mode only)
+  renderer->AddActor(targetBeaconLeftActor);   // 030 M9b.2 — red beacon trail (port)
+  renderer->AddActor(targetBeaconRightActor);  // 030 M9b.2 — green beacon trail (starboard)
+  renderer->AddActor(chaseCameraFovActor);     // 030 M9b.3 — yellow FOV pyramid
+
+  // 030 M9b detail-toggle 2026-05-08: hide the three debug-aid overlays
+  // by default. Operator presses 'd' to show during troubleshooting
+  // (toggleTrackerDetail flips these via SetVisibility 0/1).
+  targetBeaconLeftActor->SetVisibility(this->trackerDetailVisible_ ? 1 : 0);
+  targetBeaconRightActor->SetVisibility(this->trackerDetailVisible_ ? 1 : 0);
+  chaseCameraFovActor->SetVisibility(this->trackerDetailVisible_ ? 1 : 0);
   renderer->AddActor(actor3);  // Blue delta lines
   
   // Only add blackbox actors if there's blackbox data
@@ -1207,6 +1481,7 @@ void Renderer::initialize() {
   createStopwatch();
   // Create control HUD (initially hidden)
   createControlsOverlay();
+  createCameraPOVMiniPanel();  // 030 M9b — camera-POV mini-screen actors
 
   // render
   renderWindow->Render();
@@ -1247,6 +1522,133 @@ std::vector<vec3> Renderer::stateToVector(std::vector<AircraftState> state) {
     points.push_back(s.getPosition());
   }
   return points;
+}
+
+std::vector<vec3> Renderer::targetSamplesToVector(const std::vector<CopiedTargetSample>& samples) {
+  std::vector<vec3> points;
+  points.reserve(samples.size());
+  for (const auto& s : samples) {
+    points.push_back(s.position);
+  }
+  return points;
+}
+
+std::vector<vec3> Renderer::targetSamplesToOrientation(const std::vector<CopiedTargetSample>& samples) {
+  std::vector<vec3> points;
+  points.reserve(samples.size());
+  for (const auto& s : samples) {
+    // Mirror stateToOrientation — body -Z is the world-up direction
+    // for ribbon orientation. Source dmps use the same 180°-yaw
+    // convention as chase, so this works for both.
+    points.push_back(s.orientation * -vec3::UnitZ());
+  }
+  return points;
+}
+
+std::vector<vec3> Renderer::targetSamplesToBeaconPositions(
+    const std::vector<CopiedTargetSample>& samples,
+    const vec3& beacon_mount_body) {
+  std::vector<vec3> positions;
+  positions.reserve(samples.size());
+  for (const auto& s : samples) {
+    // World pos = target_pos + target_quat × beacon_body_mount.
+    // Eigen quaternion-vector multiply rotates the vector through the
+    // quat; this is the same operation as stateToOrientation but
+    // applied to a wingtip offset rather than UnitZ.
+    positions.push_back(s.position + s.orientation * beacon_mount_body);
+  }
+  return positions;
+}
+
+vtkSmartPointer<vtkPolyData> Renderer::createFovPyramidLines(vec3 offset,
+    const CameraViewSample& cam,
+    gp_scalar length) {
+  vtkSmartPointer<vtkPolyData> polyData = vtkSmartPointer<vtkPolyData>::New();
+  vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
+  vtkSmartPointer<vtkCellArray> lines = vtkSmartPointer<vtkCellArray>::New();
+
+  // Camera-frame basis: +x forward, +y right, +z down (NED body, M5
+  // convention). Half-extents at `length` distance: tan(fov/2) × length.
+  constexpr gp_scalar kPi = static_cast<gp_scalar>(3.14159265358979323846);
+  const gp_scalar half_h = std::tan(static_cast<gp_scalar>(cam.camera_fov_h_deg)
+                                    * (kPi / static_cast<gp_scalar>(360))) * length;
+  const gp_scalar half_v = std::tan(static_cast<gp_scalar>(cam.camera_fov_v_deg)
+                                    * (kPi / static_cast<gp_scalar>(360))) * length;
+
+  // Camera-frame corners at distance `length`. Body convention:
+  //   +x forward, +y right, +z down ⇒ "top" of frame at z = -half_v.
+  const gp_vec3 cBR_cam(length, +half_h, +half_v);  // bottom-right
+  const gp_vec3 cBL_cam(length, -half_h, +half_v);  // bottom-left
+  const gp_vec3 cTL_cam(length, -half_h, -half_v);  // top-left
+  const gp_vec3 cTR_cam(length, +half_h, -half_v);  // top-right
+
+  // 030 M9b — Up-vector flag. Vertical line + small horizontal crossbar
+  // at the top-edge midpoint, extending in the body -z direction.
+  // Tracks chase roll directly: as the craft banks, this "T" rotates
+  // with the pyramid so operator can see "which way is up" at a glance.
+  // Flag height = 40% of half_v; crossbar = 25% of half_h.
+  const gp_scalar flagLen = static_cast<gp_scalar>(0.40) * half_v;
+  const gp_scalar barHalf = static_cast<gp_scalar>(0.25) * half_h;
+  const gp_vec3 flagBase_cam(length, static_cast<gp_scalar>(0), -half_v);
+  const gp_vec3 flagTip_cam (length, static_cast<gp_scalar>(0), -half_v - flagLen);
+  const gp_vec3 barL_cam    (length, -barHalf, -half_v - flagLen);
+  const gp_vec3 barR_cam    (length, +barHalf, -half_v - flagLen);
+
+  // Rotate to world frame via camera quat, translate to camera world pos,
+  // then add per-arena offset for the renderer's tile layout.
+  auto toWorld = [&](const gp_vec3& cam_local) -> vec3 {
+    gp_vec3 world = cam.camera_pose_world_orient * cam_local
+                  + cam.camera_pose_world_pos;
+    return vec3{ world[0] + offset[0], world[1] + offset[1], world[2] + offset[2] };
+  };
+
+  vec3 apex = vec3{ cam.camera_pose_world_pos[0] + offset[0],
+                    cam.camera_pose_world_pos[1] + offset[1],
+                    cam.camera_pose_world_pos[2] + offset[2] };
+  vec3 cBR = toWorld(cBR_cam);
+  vec3 cBL = toWorld(cBL_cam);
+  vec3 cTL = toWorld(cTL_cam);
+  vec3 cTR = toWorld(cTR_cam);
+
+  vec3 flagBase = toWorld(flagBase_cam);
+  vec3 flagTip  = toWorld(flagTip_cam);
+  vec3 barL     = toWorld(barL_cam);
+  vec3 barR     = toWorld(barR_cam);
+
+  vtkIdType idApex = points->InsertNextPoint(apex[0], apex[1], apex[2]);
+  vtkIdType idBR   = points->InsertNextPoint(cBR[0], cBR[1], cBR[2]);
+  vtkIdType idBL   = points->InsertNextPoint(cBL[0], cBL[1], cBL[2]);
+  vtkIdType idTL   = points->InsertNextPoint(cTL[0], cTL[1], cTL[2]);
+  vtkIdType idTR   = points->InsertNextPoint(cTR[0], cTR[1], cTR[2]);
+  vtkIdType idFlagBase = points->InsertNextPoint(flagBase[0], flagBase[1], flagBase[2]);
+  vtkIdType idFlagTip  = points->InsertNextPoint(flagTip[0],  flagTip[1],  flagTip[2]);
+  vtkIdType idBarL     = points->InsertNextPoint(barL[0],     barL[1],     barL[2]);
+  vtkIdType idBarR     = points->InsertNextPoint(barR[0],     barR[1],     barR[2]);
+
+  auto addLine = [&](vtkIdType a, vtkIdType b) {
+    vtkSmartPointer<vtkLine> ln = vtkSmartPointer<vtkLine>::New();
+    ln->GetPointIds()->SetId(0, a);
+    ln->GetPointIds()->SetId(1, b);
+    lines->InsertNextCell(ln);
+  };
+
+  // 4 apex→corner edges
+  addLine(idApex, idBR);
+  addLine(idApex, idBL);
+  addLine(idApex, idTL);
+  addLine(idApex, idTR);
+  // 4 base-rectangle edges (BR→BL→TL→TR→BR)
+  addLine(idBR, idBL);
+  addLine(idBL, idTL);
+  addLine(idTL, idTR);
+  addLine(idTR, idBR);
+  // 030 M9b — Up-vector flag (vertical post + crossbar) on top-edge midpoint
+  addLine(idFlagBase, idFlagTip);
+  addLine(idBarL,     idBarR);
+
+  polyData->SetPoints(points);
+  polyData->SetLines(lines);
+  return polyData;
 }
 
 std::vector<vec3> Renderer::stateToOrientation(std::vector<AircraftState> state) {
@@ -1555,6 +1957,8 @@ int main(int argc, char** argv) {
   std::cout << "  SPACE - Toggle playback animation" << std::endl;
   std::cout << "  f - Focus camera on current arena" << std::endl;
   std::cout << "  Arrow keys - Move focus between arenas" << std::endl;
+  std::cout << "  d - Toggle tracker-mode detail overlays "
+               "(FOV pyramid + wingtip beacon trails)" << std::endl;
   if (renderer.inXiaoMode && !renderer.testSpans.empty()) {
     std::cout << "  t - Next test segment" << std::endl;
     std::cout << "  r - Previous test segment" << std::endl;
@@ -2508,6 +2912,183 @@ void Renderer::createControlsOverlay() {
   velocityActor->GetTextProperty()->SetJustificationToLeft();
 }
 
+// 030 M9b camera-POV mini-screen — 2D HUD rectangle representing what
+// the chase NN's camera sees. Aspect ratio = fov_h/fov_v from each
+// tick's CameraViewSample (so x/y span is geometrically accurate; a
+// rolling craft ahead of chase doesn't warp). Two colored splat dots
+// at projected (screen_x, screen_y); splat radius scales with CEP.
+void Renderer::createCameraPOVMiniPanel() {
+  cameraPOVPanelOutline = vtkSmartPointer<vtkActor2D>::New();
+  vtkNew<vtkPolyDataMapper2D> outlineMapper;
+  outlineMapper->SetInputData(vtkSmartPointer<vtkPolyData>::New());
+  cameraPOVPanelOutline->SetMapper(outlineMapper);
+  cameraPOVPanelOutline->GetProperty()->SetColor(1.0, 1.0, 1.0);
+  cameraPOVPanelOutline->GetProperty()->SetOpacity(0.85);
+
+  cameraPOVBeaconLeftDot = vtkSmartPointer<vtkActor2D>::New();
+  vtkNew<vtkPolyDataMapper2D> leftDotMapper;
+  leftDotMapper->SetInputData(vtkSmartPointer<vtkPolyData>::New());
+  cameraPOVBeaconLeftDot->SetMapper(leftDotMapper);
+  cameraPOVBeaconLeftDot->GetProperty()->SetColor(1.0, 0.2, 0.2);  // Red — port (matches wingtip glyph)
+  cameraPOVBeaconLeftDot->GetProperty()->SetOpacity(0.85);
+
+  cameraPOVBeaconRightDot = vtkSmartPointer<vtkActor2D>::New();
+  vtkNew<vtkPolyDataMapper2D> rightDotMapper;
+  rightDotMapper->SetInputData(vtkSmartPointer<vtkPolyData>::New());
+  cameraPOVBeaconRightDot->SetMapper(rightDotMapper);
+  cameraPOVBeaconRightDot->GetProperty()->SetColor(0.2, 1.0, 0.2);  // Green — starboard
+  cameraPOVBeaconRightDot->GetProperty()->SetOpacity(0.85);
+}
+
+void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
+  if (!renderWindow || !cameraPOVPanelOutline ||
+      !cameraPOVBeaconLeftDot || !cameraPOVBeaconRightDot) {
+    return;
+  }
+
+  // Hide the panel when not in tracker mode, when controls hidden, or
+  // when no per-tick camera data exists for this arena.
+  auto hideAll = [&]() {
+    cameraPOVPanelOutline->SetVisibility(0);
+    cameraPOVBeaconLeftDot->SetVisibility(0);
+    cameraPOVBeaconRightDot->SetVisibility(0);
+  };
+
+  if (!isTrackerMode_ || !controlsVisible) {
+    hideAll();
+    return;
+  }
+  if (arenaIndex < 0 ||
+      arenaIndex >= static_cast<int>(evalResults.cameraViewList.size())) {
+    hideAll();
+    return;
+  }
+  const auto& camList = evalResults.cameraViewList[arenaIndex];
+  if (camList.empty()) {
+    hideAll();
+    return;
+  }
+
+  // Find the current visible tick by aircraftStateList timestamp
+  // (cameraViewList is index-parallel per M8b contract).
+  size_t camIdx = 0;
+  if (arenaIndex < static_cast<int>(evalResults.aircraftStateList.size())) {
+    const auto& states = evalResults.aircraftStateList[arenaIndex];
+    for (size_t i = 0; i < states.size(); ++i) {
+      gp_scalar t = static_cast<gp_scalar>(states[i].getSimTimeMsec()) /
+                    static_cast<gp_scalar>(1000.0f);
+      if (t > currentTime) break;
+      camIdx = i;
+    }
+    if (camIdx >= camList.size()) camIdx = camList.size() - 1;
+  } else {
+    camIdx = camList.size() - 1;
+  }
+
+  const CameraViewSample& cam = camList[camIdx];
+
+  // Window-coord rectangle. Top-left area, away from the right-side
+  // existing HUD (clock/stick/throttle/attitude/velocity bar).
+  int* windowSize = renderWindow->GetSize();
+  scalar rectWidth = static_cast<scalar>(220.0f);
+  // Aspect: rect_w / rect_h = tan(fov_h/2) / tan(fov_v/2). Approximate
+  // with linear ratio for cheap geometry; the exact tan ratio matters
+  // only for true angular fidelity — the linear approximation keeps
+  // x/y normalized [-1,+1] mapping geometrically consistent which is
+  // the load-bearing property the operator asked for.
+  scalar fov_h = std::max(static_cast<scalar>(1.0f),
+                          static_cast<scalar>(cam.camera_fov_h_deg));
+  scalar fov_v = std::max(static_cast<scalar>(1.0f),
+                          static_cast<scalar>(cam.camera_fov_v_deg));
+  scalar rectHeight = rectWidth * (fov_v / fov_h);
+  scalar xLeft = static_cast<scalar>(30.0f);
+  scalar xRight = xLeft + rectWidth;
+  scalar yTop = static_cast<scalar>(windowSize[1]) - static_cast<scalar>(40.0f);
+  scalar yBottom = yTop - rectHeight;
+
+  // Build outline polydata (4 edges + crosshair through center)
+  vtkNew<vtkPoints> outlinePoints;
+  vtkNew<vtkCellArray> outlineLines;
+  vtkIdType bl = outlinePoints->InsertNextPoint(xLeft, yBottom, 0);
+  vtkIdType br = outlinePoints->InsertNextPoint(xRight, yBottom, 0);
+  vtkIdType tr = outlinePoints->InsertNextPoint(xRight, yTop, 0);
+  vtkIdType tl = outlinePoints->InsertNextPoint(xLeft, yTop, 0);
+  scalar xMid = (xLeft + xRight) * 0.5f;
+  scalar yMid = (yTop + yBottom) * 0.5f;
+  vtkIdType cTop    = outlinePoints->InsertNextPoint(xMid, yTop, 0);
+  vtkIdType cBot    = outlinePoints->InsertNextPoint(xMid, yBottom, 0);
+  vtkIdType cLeft   = outlinePoints->InsertNextPoint(xLeft, yMid, 0);
+  vtkIdType cRight  = outlinePoints->InsertNextPoint(xRight, yMid, 0);
+  auto addLine = [&](vtkIdType a, vtkIdType b) {
+    vtkNew<vtkLine> ln;
+    ln->GetPointIds()->SetId(0, a);
+    ln->GetPointIds()->SetId(1, b);
+    outlineLines->InsertNextCell(ln);
+  };
+  // Frame
+  addLine(bl, br); addLine(br, tr); addLine(tr, tl); addLine(tl, bl);
+  // Center crosshair (subtle origin reference)
+  addLine(cTop, cBot); addLine(cLeft, cRight);
+
+  vtkNew<vtkPolyData> outlinePoly;
+  outlinePoly->SetPoints(outlinePoints);
+  outlinePoly->SetLines(outlineLines);
+  vtkPolyDataMapper2D::SafeDownCast(cameraPOVPanelOutline->GetMapper())
+      ->SetInputData(outlinePoly);
+  cameraPOVPanelOutline->SetVisibility(1);
+
+  // Build a CEP-sized splat at one beacon's projected position, set
+  // it on the actor. Sentinel CEP ⇒ hide the actor (beacon invisible
+  // this tick).
+  auto buildBeaconDot = [&](const autoc::eval::BeaconObservation& obs,
+                            vtkActor2D* actor) {
+    if (obs.cep >= autoc::eval::kCepSentinelThreshold || !actor) {
+      if (actor) actor->SetVisibility(0);
+      return;
+    }
+    // Map (screen_x, screen_y) ∈ [-1,+1] to window coords.
+    // Image-coord convention: screen_y positive = down in image →
+    // lower window-y (bottom of rect).
+    scalar xWin = xLeft + (static_cast<scalar>(obs.screen_x) +
+                           static_cast<scalar>(1.0f)) * 0.5f *
+                          (xRight - xLeft);
+    scalar yWin = yTop - (static_cast<scalar>(obs.screen_y) +
+                          static_cast<scalar>(1.0f)) * 0.5f *
+                         (yTop - yBottom);
+
+    // Splat radius (CEP=0 → 2px sharp; CEP=1 → 18px fuzzy)
+    scalar radius = static_cast<scalar>(2.0f) +
+                    static_cast<scalar>(16.0f) * static_cast<scalar>(obs.cep);
+
+    // Build a 16-segment filled polygon (disk) at (xWin, yWin)
+    constexpr int kSegments = 16;
+    vtkNew<vtkPoints> dotPoints;
+    vtkNew<vtkCellArray> dotPolys;
+    vtkNew<vtkPolygon> polygon;
+    polygon->GetPointIds()->SetNumberOfIds(kSegments);
+    for (int s = 0; s < kSegments; ++s) {
+      scalar angle = static_cast<scalar>(2.0f * M_PI) *
+                     static_cast<scalar>(s) /
+                     static_cast<scalar>(kSegments);
+      scalar px = xWin + radius * std::cos(angle);
+      scalar py = yWin + radius * std::sin(angle);
+      vtkIdType pid = dotPoints->InsertNextPoint(px, py, 0);
+      polygon->GetPointIds()->SetId(s, pid);
+    }
+    dotPolys->InsertNextCell(polygon);
+
+    vtkNew<vtkPolyData> dotPoly;
+    dotPoly->SetPoints(dotPoints);
+    dotPoly->SetPolys(dotPolys);
+    vtkPolyDataMapper2D::SafeDownCast(actor->GetMapper())
+        ->SetInputData(dotPoly);
+    actor->SetVisibility(1);
+  };
+
+  buildBeaconDot(cam.beacon_left, cameraPOVBeaconLeftDot);
+  buildBeaconDot(cam.beacon_right, cameraPOVBeaconRightDot);
+}
+
 void Renderer::updateStopwatch(gp_scalar currentTime) {
   if (!stopwatchActor || !stopwatchTimeActor) return;
   
@@ -2687,6 +3268,12 @@ void Renderer::updateControlsOverlay(gp_scalar currentTime) {
   }
 
   int selectedArena = focusMode ? focusArenaIndex : 0;
+
+  // 030 M9b — Camera-POV mini-screen update (no-op in pathgen mode).
+  // Always called when HUD is visible so the panel reflects the current
+  // tick's beacon projections + CEP. Self-hides when not tracker mode.
+  updateCameraPOVMiniPanel(currentTime, selectedArena);
+
   bool usedBlackbox = false;
   const AircraftState* chosenState = nullptr;
 
@@ -3018,6 +3605,26 @@ void Renderer::updateControlsPosition() {
   updateControlsOverlay(lastControlsTime);
 }
 
+void Renderer::toggleTrackerDetail() {
+  trackerDetailVisible_ = !trackerDetailVisible_;
+  // Defensive null-checks — actors might not be constructed yet during
+  // very-early-load; harmless no-op when isTrackerMode_=false too.
+  if (targetBeaconLeftActor) {
+    targetBeaconLeftActor->SetVisibility(trackerDetailVisible_ ? 1 : 0);
+  }
+  if (targetBeaconRightActor) {
+    targetBeaconRightActor->SetVisibility(trackerDetailVisible_ ? 1 : 0);
+  }
+  if (chaseCameraFovActor) {
+    chaseCameraFovActor->SetVisibility(trackerDetailVisible_ ? 1 : 0);
+  }
+  std::cout << "[RENDERER] tracker detail overlays: "
+            << (trackerDetailVisible_ ? "ON" : "OFF") << std::endl;
+  if (renderWindow) {
+    renderWindow->Render();
+  }
+}
+
 void Renderer::toggleFocusMode() {
   // Handle xiao-only mode where there are no evalResults but we have blackbox data
   if (inXiaoOnlyMode && !blackboxAircraftStates.empty()) {
@@ -3319,8 +3926,14 @@ void Renderer::togglePlaybackAnimation() {
     renderer->AddActor2D(attitudeGroundActor);
     renderer->AddActor2D(attitudeOutlineActor);
     renderer->AddActor2D(velocityActor);
+    // 030 M9b — Camera-POV mini-screen overlays (initially invisible
+    // until updateCameraPOVMiniPanel populates them with tracker data
+    // each frame).
+    renderer->AddActor2D(cameraPOVPanelOutline);
+    renderer->AddActor2D(cameraPOVBeaconLeftDot);
+    renderer->AddActor2D(cameraPOVBeaconRightDot);
   }
-    
+
     std::cout << "Real-time playback animation started" << std::endl;
     // Start with first animation frame
     updatePlaybackAnimation();
@@ -3408,6 +4021,14 @@ void Renderer::updatePlaybackAnimation() {
   this->directRabbitData->RemoveAllInputs();
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->directRabbitData->AddInputData(e); }
   this->actuals->RemoveAllInputs();
+  this->targetActuals->RemoveAllInputs();  // 030 M9b animation fix
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetActuals->AddInputData(e); }
+  this->targetBeaconsLeft->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsLeft->AddInputData(e); }
+  this->targetBeaconsRight->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsRight->AddInputData(e); }
+  this->chaseCameraFov->RemoveAllInputs();  // 030 M9b.3
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->chaseCameraFov->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
   this->blackboxHighlightTapes->RemoveAllInputs();
@@ -3453,6 +4074,17 @@ void Renderer::updatePlaybackAnimation() {
   bool hasSimData = !evalResults.pathList.empty() && !evalResults.aircraftStateList.empty();
 
   for (int i = 0; i < renderArenas; i++) {
+    // 030 M9b focus animation 2026-05-08: when focused on a single
+    // arena, skip per-arena work for all others. Frame rate at 300
+    // arenas was unsmooth — focus mode now animates only the focused
+    // arena. Other arenas keep their static-load tape (no clear since
+    // we just skip them; AppendPolyData retains last frame's input
+    // until next animation tick clears at the top of this function).
+    // To re-enable animate-all without changing camera, exit focus
+    // mode (existing toggleFocusMode keypress).
+    if (focusMode && i != focusArenaIndex) {
+      continue;
+    }
     vec3 offset = renderingOffset(i);
 
     std::vector<vec3> p;
@@ -3477,11 +4109,36 @@ void Renderer::updatePlaybackAnimation() {
       }
     }
 
-    // Odometer-based path reveal: show path segments up to the rabbit's current position.
-    // The rabbit odometer (meters along path) is stored in each AircraftState.
-    // Walk forward from the start until distanceFromStart >= rabbitOdometer.
+    // 030 M9b animation fix — mode-aware reveal logic. Three modes:
+    //   A) Pathgen (existing): rabbit-odometer-driven red-path reveal
+    //      + chase tape reveal + chase→rabbit-position blue segments
+    //   B) Tracker (new):      red path HIDDEN (chase doesn't follow
+    //      it semantically; magenta target tape IS the source-of-truth
+    //      reference) + chase tape reveal + target tape reveal
+    //      (index-parallel to chase) + chase→target blue segments
+    //   C) Xiao-only:          handled below by blackbox branch;
+    //      hasSimData = false ⇒ this whole block adds empty data
+    //
+    // For both A and B, chase tape reveal is identical
+    // (visibleStates already filtered above by simTimeMsec).
+
+    const bool tracker_scenario_has_target =
+        this->isTrackerMode_
+        && i < static_cast<int>(evalResults.targetTrajectoryList.size())
+        && !evalResults.targetTrajectoryList[i].empty();
+
+    // ---- Path reveal (red rabbit path) ----
+    // Tracker mode: visiblePathVector stays empty — no red dots. The
+    // pathList exists in the v=2 dmp for renderer-pipeline compat but
+    // is not semantically meaningful (chase doesn't follow it; magenta
+    // target tape is the actual source-of-truth reference). Operator
+    // routing 2026-05-08: hide rather than show as decoration.
     std::vector<vec3> visiblePathVector;
-    if (hasSimData && i < static_cast<int>(evalResults.pathList.size()) && !evalResults.pathList[i].empty()) {
+    if (!tracker_scenario_has_target
+        && hasSimData && i < static_cast<int>(evalResults.pathList.size())
+               && !evalResults.pathList[i].empty()) {
+      // Pathgen mode (existing): walk forward until
+      // distanceFromStart > rabbitOdometer.
       scalar rabbitOdo = 0.0f;
       if (!visibleStates.empty()) {
         rabbitOdo = static_cast<scalar>(visibleStates.back().getRabbitOdometer());
@@ -3505,33 +4162,70 @@ void Renderer::updatePlaybackAnimation() {
     // Always add path data (empty if no visible path) to prevent VTK warnings
     this->paths->AddInputData(createPointSet(offset, visiblePathVector));
 
-    // Always add aircraft data (empty if no visible states) to prevent VTK warnings
+    // ---- Chase tape reveal (mode-agnostic) ----
     this->actuals->AddInputData(createTapeSet(offset, visibleStateVector,
       visibleStates.empty() ? std::vector<vec3>() : stateToOrientation(visibleStates)));
 
-    // Add segment gaps only if we have visible states and the full path exists
-    if (hasSimData && i < static_cast<int>(evalResults.pathList.size()) && !visibleStates.empty() && !evalResults.pathList[i].empty()) {
-      // Use full path for segment connections (aircraft states reference original path indices)
-      std::vector<vec3> fullPathVector = pathToVector(evalResults.pathList[i]);
+    // ---- Tracker-mode target tape reveal (NEW) ----
+    // targetTrajectoryList[i][k] is index-parallel to aircraftStateList[i][k]
+    // per the M8b recording contract — same number of ticks and same
+    // simTimeMsec semantics. Reveal in lockstep by truncating to the
+    // count of visibleStates.
+    std::vector<CopiedTargetSample> visibleTargets;
+    if (tracker_scenario_has_target) {
+      const auto& fullTargets = evalResults.targetTrajectoryList[i];
+      size_t n = std::min(visibleStates.size(), fullTargets.size());
+      visibleTargets.assign(fullTargets.begin(), fullTargets.begin() + n);
+      if (!visibleTargets.empty()) {
+        std::vector<vec3> targetPositions = targetSamplesToVector(visibleTargets);
+        std::vector<vec3> targetOrientations = targetSamplesToOrientation(visibleTargets);
+        this->targetActuals->AddInputData(
+            createTapeSet(offset, targetPositions, targetOrientations));
+        // 030 M9b.2 — Beacon trail revealed in lockstep with target tape.
+        std::vector<vec3> beaconLeftWorld = targetSamplesToBeaconPositions(visibleTargets, kBeaconLeftMountBody);
+        std::vector<vec3> beaconRightWorld = targetSamplesToBeaconPositions(visibleTargets, kBeaconRightMountBody);
+        this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
+        this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
+        // 030 M9b.3 — FOV pyramid at the latest visible chase tick.
+        // cameraViewList[i] is index-parallel to aircraftStateList[i],
+        // so element [visibleStates.size()-1] is the matching tick.
+        if (i < static_cast<int>(evalResults.cameraViewList.size())
+            && !evalResults.cameraViewList[i].empty()
+            && !visibleStates.empty()) {
+          size_t camIdx = std::min(visibleStates.size() - 1,
+                                   evalResults.cameraViewList[i].size() - 1);
+          const auto& latestCam = evalResults.cameraViewList[i][camIdx];
+          this->chaseCameraFov->AddInputData(
+              createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(10.0f)));
+        }
+      }
+    }
 
-      // Further filter visible states to only include those with valid path references
+    // ---- Blue segments: chase→target (tracker) or chase→rabbit (pathgen) ----
+    if (tracker_scenario_has_target && !visibleTargets.empty() && !visibleStates.empty()) {
+      // Tracker mode: chase position → target.position per tick.
+      this->segmentGaps->AddInputData(
+          createSegmentSetToTarget(offset, visibleStates, visibleTargets));
+    } else if (hasSimData && i < static_cast<int>(evalResults.pathList.size())
+               && !visibleStates.empty() && !evalResults.pathList[i].empty()) {
+      // Pathgen mode (existing): chase → rabbit position from
+      // AircraftState.getRabbitPosition(); validates path-index reference.
+      std::vector<vec3> fullPathVector = pathToVector(evalResults.pathList[i]);
       std::vector<AircraftState> validStates;
       for (const auto& state : visibleStates) {
         if (state.getThisPathIndex() < fullPathVector.size()) {
           validStates.push_back(state);
         }
       }
-
       if (!validStates.empty()) {
         this->segmentGaps->AddInputData(createSegmentSet(offset, validStates, fullPathVector));
       } else {
-        // Add empty segment gaps to prevent VTK warnings
         std::vector<AircraftState> emptyStates;
         std::vector<vec3> emptyPath;
         this->segmentGaps->AddInputData(createSegmentSet(offset, emptyStates, emptyPath));
       }
     } else {
-      // Add empty segment gaps to prevent VTK warnings
+      // No-data fallback: empty segment data prevents VTK pipeline warnings.
       std::vector<AircraftState> emptyStates;
       std::vector<vec3> emptyPath;
       this->segmentGaps->AddInputData(createSegmentSet(offset, emptyStates, emptyPath));
@@ -3855,6 +4549,10 @@ void Renderer::updatePlaybackAnimation() {
   // Update all pipelines
   this->paths->Update();
   this->actuals->Update();
+  this->targetActuals->Update();  // 030 M9b
+  this->targetBeaconsLeft->Update();   // 030 M9b.2
+  this->targetBeaconsRight->Update();  // 030 M9b.2
+  this->chaseCameraFov->Update();      // 030 M9b.3
   this->segmentGaps->Update();
   if (!blackboxAircraftStates.empty()) {
     this->blackboxTapes->Update();
@@ -3880,9 +4578,21 @@ void Renderer::updatePlaybackAnimation() {
 void Renderer::renderFullScene() {
   // Clear existing data
   this->paths->RemoveAllInputs();
+  // 030 M9b — Empty fallback for `paths` (tracker mode hides the red
+  // rabbit path; without this empty input vtkAppendPolyData would
+  // have 0 connections).
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->paths->AddInputData(e); }
   this->directRabbitData->RemoveAllInputs();
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->directRabbitData->AddInputData(e); }
   this->actuals->RemoveAllInputs();
+  this->targetActuals->RemoveAllInputs();  // 030 M9b
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetActuals->AddInputData(e); }
+  this->targetBeaconsLeft->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsLeft->AddInputData(e); }
+  this->targetBeaconsRight->RemoveAllInputs();  // 030 M9b.2
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->targetBeaconsRight->AddInputData(e); }
+  this->chaseCameraFov->RemoveAllInputs();  // 030 M9b.3
+  { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->chaseCameraFov->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
   this->blackboxHighlightTapes->RemoveAllInputs();
@@ -3917,14 +4627,49 @@ void Renderer::renderFullScene() {
     
     std::vector<vec3> p = pathToVector(evalResults.pathList[i]);
     std::vector<vec3> a = stateToVector(evalResults.aircraftStateList[i]);
-    
-    if (!p.empty()) {
+
+    // 030 M9b — Hide red path in tracker mode (parallel to
+    // updateGenerationDisplay + updatePlaybackAnimation). The pathList
+    // remains in the v=2 dmp for renderer-pipeline compat; magenta
+    // target tape is the actual source-of-truth reference.
+    if (!p.empty() && !this->isTrackerMode_) {
       this->paths->AddInputData(createPointSet(offset, p)); // Full progress (no timeProgress param)
     }
     if (!a.empty()) {
       this->actuals->AddInputData(createTapeSet(offset, a, stateToOrientation(evalResults.aircraftStateList[i]))); // Full progress
     }
-    if (!a.empty() && !p.empty()) {
+
+    // 030 M9b — Target tape + chase→target error bars in renderFullScene
+    // (the alternate static-render path; mirrors updateGenerationDisplay's
+    // tracker-mode population so refreshing a full scene shows the target
+    // craft + chase→target lines, not chase→rabbit).
+    const bool tracker_scenario_has_target =
+        this->isTrackerMode_
+        && i < static_cast<int>(evalResults.targetTrajectoryList.size())
+        && !evalResults.targetTrajectoryList[i].empty();
+    if (tracker_scenario_has_target) {
+      const auto& targetSamples = evalResults.targetTrajectoryList[i];
+      std::vector<vec3> targetPositions = targetSamplesToVector(targetSamples);
+      std::vector<vec3> targetOrientations = targetSamplesToOrientation(targetSamples);
+      this->targetActuals->AddInputData(
+          createTapeSet(offset, targetPositions, targetOrientations));
+      // 030 M9b.2 — Beacon trail glyphs.
+      std::vector<vec3> beaconLeftWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconLeftMountBody);
+      std::vector<vec3> beaconRightWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconRightMountBody);
+      this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
+      this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
+      // 030 M9b.3 — FOV pyramid at the final-tick camera pose.
+      if (i < static_cast<int>(evalResults.cameraViewList.size())
+          && !evalResults.cameraViewList[i].empty()) {
+        const auto& latestCam = evalResults.cameraViewList[i].back();
+        this->chaseCameraFov->AddInputData(
+            createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(10.0f)));
+      }
+      if (!a.empty()) {
+        this->segmentGaps->AddInputData(
+            createSegmentSetToTarget(offset, evalResults.aircraftStateList[i], targetSamples));
+      }
+    } else if (!a.empty() && !p.empty()) {
       this->segmentGaps->AddInputData(createSegmentSet(offset, evalResults.aircraftStateList[i], p)); // Full progress
     }
     
@@ -4209,6 +4954,10 @@ void Renderer::renderFullScene() {
   this->planeData->Update();
   this->paths->Update();
   this->actuals->Update();
+  this->targetActuals->Update();  // 030 M9b
+  this->targetBeaconsLeft->Update();   // 030 M9b.2
+  this->targetBeaconsRight->Update();  // 030 M9b.2
+  this->chaseCameraFov->Update();      // 030 M9b.3
   this->segmentGaps->Update();
   if (!blackboxAircraftStates.empty()) {
     this->blackboxTapes->Update();

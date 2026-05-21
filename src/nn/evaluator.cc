@@ -1,7 +1,11 @@
 #include "autoc/nn/evaluator.h"
 #include "autoc/nn/topology.h"
 #include "autoc/nn/nn_input_computation.h"
+#include "autoc/nn/nn_inputs.h"        // 030 M11.preA.2 — kCruiseSpeed_mps, kDistToBoundaryScale_m
+#include "autoc/eval/arena.h"          // 030 M7a — FlightArena + distanceToBoundary
+#include "autoc/eval/derived_features.h"  // 032 phase 1 — compute_tilt
 #include "autoc/eval/sensor_math.h"
+#include "autoc/util/config.h"         // 032 phase 1 — CepGateThreshold + EnableDerivedFeatures
 #include "autoc/util/rng.h"
 #include <cmath>
 #include <array>
@@ -308,9 +312,9 @@ void nn_xavier_init(NNGenome& genome) {
 // [5, 4, 3, 2, 1, 0] = [-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now]
 static const int HIST_PAST[] = {5, 4, 3, 2, 1, 0};
 
-void nn_gather_inputs([[maybe_unused]] PathProvider& pathProvider,
-                      AircraftState& aircraftState,
-                      NNInputs& inputs) {
+void gather_pathgen_inputs([[maybe_unused]] PathProvider& pathProvider,
+                           AircraftState& aircraftState,
+                           NNInputs& inputs) {
     // target_x/y/z[0-5]: past history (direction cosines from recorded history)
     for (int i = 0; i < 6; i++) {
         gp_vec3 dir = aircraftState.getHistoricalTargetDir(HIST_PAST[i]);
@@ -391,9 +395,9 @@ long long NNControllerBackend::telemetrySampleCount() const {
 
 void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& pathProvider) {
     NNInputs inputs = {};
-    nn_gather_inputs(pathProvider, aircraftState, inputs);
+    gather_pathgen_inputs(pathProvider, aircraftState, inputs);
 
-    float outputs[NN_OUTPUT_COUNT];
+    float outputs[NN_OUTPUT_COUNT];  // raw-ok: NN-byte-format buffer (output of nn_forward, fp32 contract)
     if (hidden_state_.empty()) {
         nn_forward(genome_.weights.data(), genome_.topology,
                    reinterpret_cast<const float*>(&inputs), outputs);
@@ -414,6 +418,144 @@ void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& p
     // Capture actual NN I/O for diagnostics
     aircraftState.setNNData(inputs, outputs, NN_OUTPUT_COUNT);
 }
+
+// ============================================================
+// 030 M6d — Tracker mode (FR-006 + FR-016 + FR-019)
+// ============================================================
+// Wrapped in #ifndef ARDUINO because xiao firmware cherry-picks this
+// .cc but doesn't need tracker-mode dispatch (xiao = pathgen-only per
+// FR-019 compile-time mode select). gather_tracker_inputs uses arena.h
+// which keeps things cereal-free but transitively pulls in the
+// FlightArena type definition; bodies are desktop-only.
+#ifndef ARDUINO
+
+void gather_tracker_inputs(const AircraftState& chase,
+                           const TrackerHistoryWindow& history,
+                           const autoc::eval::FlightArena& arena,
+                           TrackerInputs& out) {
+    // Beacon history: 6 slots per channel, copied as-is. Caller (TrackerStepper)
+    // owns the ordering — index 0 = oldest (-0.5s), index 5 = "now".
+    for (int i = 0; i < 6; ++i) {
+        out.beacon_l_x[i]   = history.left_x[i];     // raw-ok: NN-byte-format primitive
+        out.beacon_l_y[i]   = history.left_y[i];     // raw-ok: NN-byte-format primitive
+        out.beacon_l_cep[i] = history.left_cep[i];   // raw-ok: NN-byte-format primitive
+        out.beacon_r_x[i]   = history.right_x[i];    // raw-ok: NN-byte-format primitive
+        out.beacon_r_y[i]   = history.right_y[i];    // raw-ok: NN-byte-format primitive
+        out.beacon_r_cep[i] = history.right_cep[i];  // raw-ok: NN-byte-format primitive
+    }
+
+    // Aircraft attitude quaternion (w, x, y, z) — unit norm, components in [-1,1].
+    {
+        gp_quat q = chase.getOrientation();
+        out.quat_w = static_cast<float>(q.w());
+        out.quat_x = static_cast<float>(q.x());
+        out.quat_y = static_cast<float>(q.y());
+        out.quat_z = static_cast<float>(q.z());
+    }
+
+    // 030 M11.preA.2 — Cruise-normalized airspeed (was raw m/s pre-2026-05-09).
+    // Chase at hb1 cruise (~13 m/s) ⇒ 1.0; range becomes ≈ [0, 2].
+    out.airspeed = static_cast<float>(chase.getRelVel()) / kCruiseSpeed_mps;
+
+    // Body-frame angular rates (rad/s, standard aerospace RHR).
+    {
+        gp_vec3 gyro = chase.getGyroRates();
+        out.gyro_p = static_cast<float>(gyro.x());
+        out.gyro_q = static_cast<float>(gyro.y());
+        out.gyro_r = static_cast<float>(gyro.z());
+    }
+
+    // 030 M7a / M11.preA.2 — Arena-awareness input (FR-016).
+    // Underlying geometry: ray-projection scalar shared with arena.h's
+    // per-tick OOB termination check. Meters of safe forward flight along
+    // chase velocity vector before ray intersects cylinder wall, floor,
+    // or ceiling. M11.preA.2 wraps in tanh(d/scale) so the NN sees a
+    // dimensionless [0, 1) signal: sharp gradient near the boundary,
+    // saturated when far. (Cylinder always contains chase in sim, so
+    // distance ≥ 0 by construction. Real-world safety layer is a separate
+    // future addition that operates on raw distance, not NN input.)
+    const float dist_raw = static_cast<float>(   // raw-ok: NN-byte-format primitive
+        autoc::eval::distanceToBoundary(chase.getPosition(),
+                                         chase.getVelocity(),
+                                         arena));
+    out.dist_to_boundary_along_vel = std::tanh(dist_raw / kDistToBoundaryScale_m);
+
+    // ====================================================================
+    // 032 PHASE 1 — Derived perceptual features (slots 45..53)
+    // ====================================================================
+    // Reads CepGateThreshold from ConfigManager (loaded at startup). Same
+    // value is consumed by projectAndShiftHistory's span computation so
+    // both call sites apply identical gating semantics.
+    const bool config_ready = ConfigManager::isInitialized();
+    const float cep_gate_threshold = static_cast<float>(   // raw-ok: NN-byte-format comparison boundary — compared against history.left/right_cep which are NN-byte-format primitives
+        config_ready ? ConfigManager::getConfig().cepGateThreshold : 1.25);
+
+    // (1) beacon_pair_span[6] — copy cached values from history.span.
+    // Span was computed + CEP-gated upstream in projectAndShiftHistory; we
+    // just forward it here. Single computation site avoids divergent gating
+    // semantics between the autoc minisim and crrcsim helper paths.
+    for (int i = 0; i < 6; ++i) {
+        out.beacon_pair_span[i] = history.span[i];  // raw-ok: NN-byte-format primitive
+    }
+
+    // (2) span_rate — one-tick raw diff. No own CEP-gate; mechanically
+    // derives from history.span[5] - history.span[4]. Per spec Q3 + R3 +
+    // data-model.md §3.1: visibility transitions produce signed step
+    // artifacts (acquired-then-lost → negative, lost-then-acquired →
+    // positive). Documented as intentional.
+    out.span_rate = history.span[5] - history.span[4];  // raw-ok: NN-byte-format primitive
+
+    // (3) target_tilt — (sin θ, cos θ) over the port→starboard NDC line.
+    // CEP-gate at "now": if EITHER beacon is untrusted, substitute neutral
+    // (0, 1) = "wings level relative, no roll pressure". Degenerate-pair
+    // guard inside compute_tilt handles the geometric edge case.
+    const bool cep_gated_now =
+        history.left_cep[5] >= cep_gate_threshold ||
+        history.right_cep[5] >= cep_gate_threshold;
+    if (cep_gated_now) {
+        out.target_tilt_sin = 0.0f;     // raw-ok: NN-byte-format primitive
+        out.target_tilt_cos = 1.0f;     // raw-ok: NN-byte-format primitive
+    } else {
+        // Intermediates use gp_scalar per Constitution VI (eval-pipeline
+        // scalars). NN-byte-format conversion happens at the slot writes.
+        const autoc::eval::TiltSinCos tilt = autoc::eval::compute_tilt(
+            static_cast<gp_scalar>(history.left_x[5]),
+            static_cast<gp_scalar>(history.left_y[5]),
+            static_cast<gp_scalar>(history.right_x[5]),
+            static_cast<gp_scalar>(history.right_y[5]));
+        out.target_tilt_sin = static_cast<float>(tilt.sin);  // raw-ok: NN-byte-format slot write
+        out.target_tilt_cos = static_cast<float>(tilt.cos);  // raw-ok: NN-byte-format slot write
+    }
+}
+
+void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,
+                                          const TrackerInputs& inputs) {
+    float outputs[NN_OUTPUT_COUNT];  // raw-ok: NN-byte-format buffer (output of nn_forward, fp32 contract)
+    if (hidden_state_.empty()) {
+        nn_forward(genome_.weights.data(), genome_.topology,
+                   reinterpret_cast<const float*>(&inputs), outputs);
+    } else {
+        RecurrentTelemetry* tlm = telemetry_capture_enabled_ ? &telemetry_ : nullptr;
+        nn_forward_recurrent(genome_.weights.data(), genome_.topology,
+                             genome_.recurrent,
+                             reinterpret_cast<const float*>(&inputs), outputs,
+                             hidden_state_.data(),
+                             tlm);
+    }
+
+    aircraftState.setPitchCommand(static_cast<gp_scalar>(outputs[0]));
+    aircraftState.setRollCommand(static_cast<gp_scalar>(outputs[1]));
+    aircraftState.setThrottleCommand(static_cast<gp_scalar>(outputs[2]));
+
+    // 030 M9.preA (2026-05-07) — Capture TrackerInputs + outputs into
+    // AircraftState for honest data.dat / dmp recording. Closes the
+    // M6d/M8a deferral. AircraftState v=3 carries trackerInputs_ as a
+    // parallel slot to nnInputs_ (only one populated per mode); cereal
+    // serialize at v=3 writes both, consumer code dispatches on mode.
+    aircraftState.setNNData(inputs, outputs, NN_OUTPUT_COUNT);
+}
+
+#endif  // ARDUINO — end of tracker-mode block (M6d/M7a)
 
 // ============================================================
 // Test helpers

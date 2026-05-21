@@ -9,7 +9,11 @@
 
 #include "autoc/rpc/protocol.h"
 #include "autoc/autoc.h"
+#include "autoc/eval/pathgen_stepper.h"
+#include "autoc/eval/scenario_meta_apply.h"  // 030 V1.5 — applyVariationScale
+#include "autoc/eval/tracker_stepper.h"
 #include "autoc/eval/sensor_math.h"
+#include "autoc/nn/mode.h"               // 030 M7a — getModeStrategyByName
 #include "autoc/nn/nn_input_computation.h"
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
@@ -19,40 +23,27 @@ using namespace std;
 // Global aircraft state (declared extern in autoc.h)
 AircraftState aircraftState;
 
-std::string crashReasonToString(CrashReason type) {
-  switch (type) {
-  case CrashReason::None: return "None";
-  case CrashReason::Boot: return "Boot";
-  case CrashReason::Sim: return "Sim";
-  case CrashReason::Eval: return "Eval";
-  case CrashReason::TimeLimit: return "TimeLimit";
-  case CrashReason::RabbitComplete: return "RabbitComplete";
-  default: return "*?*";
-  }
-}
-
 namespace {
 
-void ensureScenarioMetadata(EvalData& evalData) {
-  if (evalData.scenarioList.size() == evalData.pathList.size()) {
-    return;
-  }
-  evalData.scenarioList.assign(evalData.pathList.size(), evalData.scenario);
-  for (size_t idx = 0; idx < evalData.scenarioList.size(); ++idx) {
-    if (evalData.scenarioList[idx].pathVariantIndex < 0) {
-      evalData.scenarioList[idx].pathVariantIndex = static_cast<int>(idx);
-    }
-  }
-}
-
-ScenarioMetadata scenarioForPathIndex(const EvalData& evalData, size_t idx) {
-  if (idx < evalData.scenarioList.size()) {
-    return evalData.scenarioList.at(idx);
-  }
-  ScenarioMetadata meta = evalData.scenario;
-  if (meta.pathVariantIndex < 0) {
+// 030 V1.5 — build the per-eval ScenarioMetadata for scenario index idx
+// by copying the cached base meta from init_.scenarioMetaList[idx],
+// overriding the per-eval fields (scenarioSequence,
+// enableDeterministicLogging) from EvalData, then applying the per-eval
+// variation_scale. Byte-equivalent to the legacy autoc-side
+// populateVariationOffsets path; preserves training fitness determinism.
+ScenarioMetadata makePerEvalMeta(const WorkerInit& init,
+                                 const EvalData& evalData,
+                                 size_t idx) {
+  ScenarioMetadata meta;
+  if (idx < init.scenarioMetaList.size()) {
+    meta = init.scenarioMetaList[idx];
+  } else {
     meta.pathVariantIndex = static_cast<int>(idx);
   }
+  meta.scenarioSequence = evalData.scenarioSequence;
+  meta.bakeoffSequence = 0;
+  meta.enableDeterministicLogging = evalData.isEliteReeval;
+  autoc::eval::applyVariationScale(meta, evalData.variationScale);
   return meta;
 }
 
@@ -64,6 +55,19 @@ public:
     socket_.connect("localhost", port);
     workerPid = static_cast<int>(getpid());
     workerId = id;
+
+    // 030 V1 priming (2026-05-08) — first RPC after TCP connect is
+    // WorkerInit (sent by autoc's ThreadPool right after our accept on
+    // the other side). Cache mode + source library + camera/beacon/
+    // airframe/flightArena/preroll/crashHull/trail locally; per-eval
+    // EvalData no longer carries them. See specs/BACKLOG.md
+    // "Worker-side scenario priming" entry. Loud-fail if the priming
+    // RPC fails — we can't run without it.
+    init_ = receiveRPC<WorkerInit>(socket_);
+    std::cerr << "[MINISIM] worker=" << workerId
+              << " primed mode=" << modeToString(init_.mode)
+              << " sourceList=" << init_.sourceList.size() << " scenarios"
+              << std::endl;
   }
 
   void run() {
@@ -86,17 +90,14 @@ public:
                   << std::endl;
       }
 
-      ensureScenarioMetadata(evalData);
-
       evalResults.gp = evalData.gp;
       evalResults.gpHash = localGpHash;
-      if (!evalData.scenarioList.empty()) {
-        evalResults.scenario = evalData.scenarioList.front();
-      } else {
-        evalResults.scenario = evalData.scenario;
-      }
+      // 030 V1.5 — scenario library is worker-resident in init_; per-eval
+      // EvalData no longer carries pathList / scenarioList. Reserve based
+      // on the cached pathList size.
+      const size_t numScenarios = init_.pathList.size();
       evalResults.scenarioList.clear();
-      evalResults.scenarioList.reserve(evalData.scenarioList.size());
+      evalResults.scenarioList.reserve(numScenarios);
 
       // Deserialize NN genome
       NNGenome nnGenome;
@@ -109,13 +110,21 @@ public:
         continue;
       }
 
-      // Validate topology matches compiled-in expectations
+      // Validate topology matches the active mode's compile-time expectation
+      // (030 M7a — FR-019 runtime mode dispatch). Pathgen genomes are
+      // 33-input, tracker genomes are 45-input; minisim picks the
+      // expected shape from the active ModeStrategy. 030 V1 priming —
+      // mode now comes from init_ (sent once at startup), not per-eval.
+      const Mode evalMode = init_.mode;
       {
-        std::vector<int> expectedTopology(NN_TOPOLOGY, NN_TOPOLOGY + NN_NUM_LAYERS);
+        const ModeStrategy& mode = getModeStrategy(evalMode);
+        std::vector<int> expectedTopology(mode.topology, mode.topology + mode.num_layers);
         if (nnGenome.topology != expectedTopology) {
-          std::cerr << "[MINISIM] NN topology mismatch: file has "
-                    << nnGenome.weights.size() << " weights but binary expects "
-                    << NN_WEIGHT_COUNT << " (" << NN_TOPOLOGY_STRING << ")" << std::endl;
+          std::cerr << "[MINISIM] NN topology mismatch (mode=" << mode.name << "): "
+                    << "file has " << nnGenome.weights.size()
+                    << " weights but binary expects "
+                    << mode.weight_count << " (" << mode.topology_string << ")"
+                    << std::endl;
           continue;
         }
       }
@@ -133,151 +142,120 @@ public:
                   << std::endl;
       }
 
-      // Per-span NN controller — constructed once per span so the
-      // recurrent hidden state (spec 027 D-simple) persists across ticks
-      // within a scenario. reset() called at span start. Feedforward
-      // genomes use this same instance with an empty hidden state buffer.
       NNControllerBackend nnBackend(nnGenome);
 
-      // Evaluate each path
-      for (int i = 0; i < static_cast<int>(evalData.pathList.size()); i++) {
-        // Path stays at canonical origin (Z=0); origin offset bridges raw→virtual
-        std::vector<Path> path = evalData.pathList.at(i);
+      // 030 V1.5 — set evalResults.scenario from the first per-eval meta
+      // we'll build below (kept for downstream renderer/log compat).
+      bool firstScenarioSet = false;
+
+      for (int i = 0; i < static_cast<int>(numScenarios); i++) {
+        const std::vector<Path>& path = init_.pathList.at(i);
         std::vector<AircraftState> aircraftStateSteps;
-        nnBackend.reset();  // zero recurrent state at span start (no-op for feedforward)
+        std::vector<CameraViewSample> cameraViewSteps;
+        std::vector<CopiedTargetSample> targetSampleSteps;
 
-        // Fixed initial orientation and position for deterministic evaluation
-        // Virtual coordinates: start at origin (0,0,0). Path also at virtual origin.
-        gp_quat aircraft_orientation = gp_quat(Eigen::AngleAxis<gp_scalar>(static_cast<gp_scalar>(M_PI), gp_vec3::UnitZ())) *
-          gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitY())) *
-          gp_quat(Eigen::AngleAxis<gp_scalar>(0, gp_vec3::UnitX()));
-        gp_vec3 initialPosition(0.0f, 0.0f, 0.0f);  // virtual origin
-        gp_vec3 initial_velocity = aircraft_orientation * gp_vec3(SIM_INITIAL_VELOCITY, 0.0f, 0.0f);
-
-        aircraftState = AircraftState{ 0, SIM_INITIAL_VELOCITY, initial_velocity, aircraft_orientation, initialPosition, 0.0f, 0.0f, SIM_INITIAL_THROTTLE, 0 };
-        {
-          gp_vec3 tangent;
-          if (path.size() > 1)
-            tangent = path[1].start - path[0].start;
-          else
-            tangent = gp_vec3::UnitX();
-          double tn = tangent.norm();
-          if (tn > 1e-6) tangent = tangent / tn;
-          else tangent = gp_vec3::UnitX();
-          aircraftState.resetHistory(path[0].start, tangent);
+        ScenarioMetadata scenarioMeta = makePerEvalMeta(init_, evalData, static_cast<size_t>(i));
+        if (!firstScenarioSet) {
+          evalResults.scenario = scenarioMeta;
+          firstScenarioSet = true;
         }
-        aircraftState.setRabbitOdometer(0.0f);
-
-        // Get rabbit speed from scenario metadata
-        gp_scalar rabbitSpeed = SIM_INITIAL_VELOCITY;  // default
-        {
-          ScenarioMetadata meta = scenarioForPathIndex(evalData, static_cast<size_t>(i));
-          if (meta.rabbitSpeed > 0.0f) {
-            rabbitSpeed = static_cast<gp_scalar>(meta.rabbitSpeed);
-          }
-        }
-        aircraftState.setRabbitSpeed(rabbitSpeed);
-
-        // Set initial rabbit position (odometer=0 = first path point)
-        {
-          VectorPathProvider pathProvider(path, 0);
-          gp_vec3 rabbitPos = getInterpolatedTargetPosition(pathProvider, 0.0f, 0.0f);
-          aircraftState.setRabbitPosition(rabbitPos);
-        }
-        aircraftStateSteps.push_back(aircraftState);
-
-        unsigned long int duration_msec = 0;
         CrashReason crashReason = CrashReason::None;
+        int tracker_hull_fired = 0;
 
-        while (crashReason == CrashReason::None) {
-
-          // Capture temporal history before NN evaluation
-          {
-            VectorPathProvider pathProvider(path, aircraftState.getThisPathIndex());
-            gp_scalar rabbitOdo = aircraftState.getRabbitOdometer();
-            gp_vec3 targetPos = getInterpolatedTargetPosition(
-                pathProvider, rabbitOdo, 0.0f);
-            gp_vec3 craftToTarget = targetPos - aircraftState.getPosition();
-            gp_vec3 target_local = aircraftState.getOrientation().inverse() * craftToTarget;
-            float distance = static_cast<float>(target_local.norm());
-
-            // Path tangent for singularity fallback
-            gp_vec3 posAhead = getInterpolatedTargetPosition(pathProvider, rabbitOdo, 0.5f);
-            gp_vec3 tangent = posAhead - targetPos;
-            double tn = tangent.norm();
-            gp_vec3 tangent_body = (tn > 1e-6)
-                ? aircraftState.getOrientation().inverse() * (tangent / tn)
-                : gp_vec3::UnitX();
-
-            gp_vec3 dir = computeTargetDir(target_local, distance, tangent_body);
-            aircraftState.setRabbitPosition(targetPos);
-            aircraftState.recordErrorHistory(dir, distance, duration_msec);
-          }
-
-          // Run NN controller (per-span instance, see above)
-          {
-            VectorPathProvider pathProvider(path, aircraftState.getThisPathIndex());
-            nnBackend.evaluate(aircraftState, pathProvider);
-          }
-
-          // Advance aircraft state
-          aircraftState.minisimAdvanceState(SIM_TIME_STEP_MSEC);
-          duration_msec += SIM_TIME_STEP_MSEC;
-          aircraftState.setSimTimeMsec(duration_msec);
-
-          // Advance rabbit odometer
-          gp_scalar dtSec = static_cast<gp_scalar>(SIM_TIME_STEP_MSEC) / 1000.0f;
-          aircraftState.setRabbitOdometer(aircraftState.getRabbitOdometer() + rabbitSpeed * dtSec);
-
-          // Crash detection: reconstruct raw position for OOB bounds check.
-          // Position is virtual (Z≈0). Raw = virtual + (0,0,SIM_INITIAL_ALTITUDE).
-          gp_vec3 rawForOOB = aircraftState.getPosition() + gp_vec3(0.0f, 0.0f, SIM_INITIAL_ALTITUDE);
-          gp_scalar distanceFromOrigin = std::sqrt(rawForOOB[0] * rawForOOB[0] +
-            rawForOOB[1] * rawForOOB[1]);
-          if (rawForOOB[2] < (SIM_MAX_ELEVATION) ||
-            rawForOOB[2] > (SIM_MIN_ELEVATION) ||
-            distanceFromOrigin > SIM_PATH_RADIUS_LIMIT) {
+        if (evalMode == Mode::TRACKER) {
+          // 030 V1 priming — source library is worker-resident in init_.
+          // Index by scenario position with modulo wrap-around (preserves
+          // the pre-priming mapping where evalData.sourceList[i] was
+          // gSourceTrajectoryList[i % gSourceTrajectoryList.size()]).
+          if (init_.sourceList.empty()) {
+            if (evalCounter == 1) {
+              std::cerr << "[MINISIM] tracker mode but priming sourceList empty;"
+                        << " recording Eval-crash for scenario " << i << std::endl;
+            }
+            aircraftStateSteps.push_back(aircraftState);
             crashReason = CrashReason::Eval;
-          }
+          } else {
+            const size_t srcIdx = static_cast<size_t>(i) % init_.sourceList.size();
+            const SourceScenarioTrajectory& source = init_.sourceList[srcIdx];
 
-          // Advance path index by scanning distanceFromStart against rabbit odometer
-          while (aircraftState.getThisPathIndex() < static_cast<int>(path.size()) - 2 &&
-                 path.at(aircraftState.getThisPathIndex()).distanceFromStart < aircraftState.getRabbitOdometer()) {
-            aircraftState.setThisPathIndex(aircraftState.getThisPathIndex() + 1);
-          }
+            if (source.samples.empty()) {
+              if (evalCounter == 1) {
+                std::cerr << "[MINISIM] tracker scenario " << i
+                          << " (srcIdx=" << srcIdx << ") source samples empty;"
+                          << " recording Eval-crash." << std::endl;
+              }
+              aircraftStateSteps.push_back(aircraftState);
+              crashReason = CrashReason::Eval;
+            } else {
+              autoc::eval::CrashHull crashHull;
+              crashHull.sphere_radius_m = init_.crashHullRadius;
+              // 030 V1.5 determinism fix (2026-05-09) — seed crash-hull
+              // PRNG from windSeed (stable per-scenario), not
+              // scenarioSequence (monotonic counter that differs between
+              // training-eval and elite-reeval of the same scenario,
+              // producing divergent didCrashFire draws).
+              const uint32_t prngSeed =
+                  static_cast<uint32_t>(scenarioMeta.windSeed);
+              autoc::eval::TrackerStepper stepper(
+                  nnBackend, aircraftState, source, scenarioMeta,
+                  init_.cameraConfig,
+                  init_.beaconLeftConfig,
+                  init_.beaconRightConfig,
+                  init_.airframeProxy,
+                  init_.flightArena,
+                  crashHull,
+                  evalData.pCrashThisGen,
+                  prngSeed,
+                  init_.trailDistance);
+              stepper.initScenario();
+              aircraftStateSteps.push_back(aircraftState);
+              cameraViewSteps.push_back(stepper.lastCameraView());
+              targetSampleSteps.push_back(stepper.lastTargetSample());
 
-          // Update rabbit position to match advanced odometer (for renderer error bars)
-          {
-            VectorPathProvider pathProvider(path, aircraftState.getThisPathIndex());
-            gp_vec3 rabbitPos = getInterpolatedTargetPosition(
-                pathProvider, aircraftState.getRabbitOdometer(), 0.0f);
-            aircraftState.setRabbitPosition(rabbitPos);
-          }
+              while (crashReason == CrashReason::None) {
+                crashReason = stepper.stepOnce();
+                aircraftStateSteps.push_back(aircraftState);
+                cameraViewSteps.push_back(stepper.lastCameraView());
+                targetSampleSteps.push_back(stepper.lastTargetSample());
+              }
 
+              tracker_hull_fired = stepper.hullFiredCount();
+            }
+          }
+        } else {
+          // pathgen-mode (default): byte-identical to M6a.
+          autoc::eval::PathgenStepper stepper(nnBackend, aircraftState, path, scenarioMeta);
+          stepper.initScenario();
           aircraftStateSteps.push_back(aircraftState);
 
-          if (duration_msec >= SIM_TOTAL_TIME_MSEC) {
-            crashReason = CrashReason::TimeLimit;
-          }
-          if (aircraftState.getThisPathIndex() >= static_cast<int>(path.size()) - 2) {
-            crashReason = CrashReason::RabbitComplete;
+          while (crashReason == CrashReason::None) {
+            crashReason = stepper.stepOnce();
+            aircraftStateSteps.push_back(aircraftState);
           }
         }
 
         {
-          ScenarioMetadata meta = scenarioForPathIndex(evalData, static_cast<size_t>(i));
-          meta.originOffset = gp_vec3(0.0f, 0.0f, SIM_INITIAL_ALTITUDE);  // raw→virtual offset for renderer
+          ScenarioMetadata meta = scenarioMeta;
+          meta.originOffset = gp_vec3(0.0f, 0.0f, SIM_INITIAL_ALTITUDE);
           evalResults.scenarioList.push_back(meta);
         }
-        evalResults.pathList.push_back(path);
+        evalResults.pathList.push_back(path);  // 030 V1.5 — copied from init_.pathList[i]
         evalResults.aircraftStateList.push_back(aircraftStateSteps);
         evalResults.crashReasonList.push_back(crashReason);
+        evalResults.cameraViewList.push_back(cameraViewSteps);
+        evalResults.targetTrajectoryList.push_back(targetSampleSteps);
+        const int arena_egress = (evalMode == Mode::TRACKER
+                                  && crashReason == CrashReason::Eval) ? 1 : 0;
+        evalResults.arenaEgressCount.push_back(arena_egress);
+        evalResults.hullStrikeCount.push_back(tracker_hull_fired);
       }
 
       sendRPC(socket_, evalResults);
 
       evalResults.pathList.clear();
       evalResults.aircraftStateList.clear();
+      evalResults.cameraViewList.clear();
+      evalResults.targetTrajectoryList.clear();
       evalResults.crashReasonList.clear();
       evalResults.scenarioList.clear();
     }
@@ -285,6 +263,7 @@ public:
 
 private:
   TcpSocket socket_;
+  WorkerInit init_;
   int workerPid = 0;
   int workerId = 0;
   int evalCounter = 0;

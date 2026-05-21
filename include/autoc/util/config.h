@@ -84,6 +84,77 @@ struct AutocConfig {
     double rabbitSpeedMax = 25.0;
     double rabbitSpeedCycleMin = 0.5;
     double rabbitSpeedCycleMax = 5.0;
+
+    // === 030 TRACKER MODE (FR-011 + FR-019) =============================
+    // Mode dispatch — "pathgen" (default, original autoc.ini behavior) or
+    // "tracker" (this file launches tracker-mode training against a
+    // recorded source dmp). All `tracker*` / `crashHull*` / `arena*` /
+    // `camera*` / `beacon*` fields below are inert when mode == "pathgen".
+
+    std::string mode = "pathgen";
+
+    // --- Tracker source dmp + scenario subset (FR-001 + FR-011) ---
+    // S3 key form: "<run-id>/gen<N>.dmp" (resolved against `s3Bucket`),
+    // or absolute / relative local file path for offline-test convenience.
+    std::string trackerSourceRun;
+    // Comma-separated path-variant indices (e.g. "0,1,2,3,4,5"). Empty = all.
+    std::string trackerPathSubset;
+    // Comma-separated wind-variant indices (e.g. "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19").
+    // Empty = all. Cross-product with TrackerPathSubset per FR-011.
+    std::string trackerWindSubset;
+
+    // --- Tracker fitness: trail rabbit (FR-008 + FR-008a + R10) ---
+    double trailDistance = 3.048;          // m; 10 ft per FR-008
+    double lowSpeedTrailThreshold = 2.0;   // m/s; below ⇒ nose-trail per R10
+    double lowSpeedTrailHysteresis = 0.5;  // m/s; ±band around threshold
+
+    // --- Tracker fitness: crash hull (FR-008b + R3) ---
+    // Shape: "SPHERE" only in v1; "AABB_HB1"/"MESH_AIRFRAME" reserved.
+    std::string crashHullShape = "SPHERE";
+    double crashHullRadius = 1.0;           // m
+    // 030 M11.preA.3 (2026-05-10): replaced 4-param ramp curriculum with a
+    // single fixed Bernoulli probability per NN tick (10Hz). The ramp added
+    // determinism risk (per-gen state) and made debugging awkward. Fixed
+    // probability ⇒ deterministic per (scenario, gen) given windSeed PRNG.
+    // 0.10 default = ~"50% chance of dying within 7 ticks (~0.7s) inside
+    // hull" → strong incentive to keep target outside the 1m sphere.
+    double crashHullProbability = 0.10;
+
+    // --- Tracker arena (FR-016) ---
+    double flightArenaRadius = 80.0;        // m horizontal
+    double flightArenaFloorAGL = 5.0;       // m AGL hard floor
+    double flightArenaCeilingAGL = 100.0;   // m AGL ceiling
+
+    // --- Camera config (FR-003) ---
+    int cameraCount = 1;
+    double cameraFOVHorizontalDeg = 120.0;
+    double cameraFOVVerticalDeg = 90.0;
+    double cameraFrameRateHz = 30.0;
+    double cameraLatencyMs = 0.0;
+    double cameraMountOffsetX = 0.0;
+    double cameraMountOffsetY = 0.0;
+    double cameraMountOffsetZ = -0.05;      // m above wing surface (NED, +Z down)
+
+    // --- Beacon config (FR-004) ---
+    int beaconLeftWavelengthNm = 850;
+    int beaconRightWavelengthNm = 940;
+    double beaconEmissionConeDeg = 270.0;
+    double beaconLeftMountX = 0.0;
+    double beaconLeftMountY = -0.45;        // left wingtip (body -y)
+    double beaconLeftMountZ = 0.0;
+    double beaconRightMountX = 0.0;
+    double beaconRightMountY = +0.45;       // right wingtip (body +y)
+    double beaconRightMountZ = 0.0;
+
+    // === 032 PHASE 1 — DERIVED PERCEPTUAL FEATURES =====================
+    // [DerivedFeatures] section in autoc-tracker.ini. Inert in pathgen mode
+    // (no derived-feature slots in PathgenInputs). Per spec.md Q4 +
+    // contracts/ini_schema.md.
+    //
+    // CepGateThreshold: substitute neutral values for derived features
+    // when EITHER beacon's CEP at the current tick is >= this. Default
+    // matches kCepSentinelThreshold (1.25) from camera_projection.h.
+    double cepGateThreshold = 1.25;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to float at the eval-pipeline consumption boundary
 };
 
 class ConfigManager {

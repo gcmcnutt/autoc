@@ -90,9 +90,51 @@ gp_scalar fast_tanh(gp_scalar x);
 // Xavier/Glorot weight initialization
 void nn_xavier_init(NNGenome& genome);
 
-// Gather NN_INPUT_COUNT sensor inputs from aircraft state (raw, no normalization)
-void nn_gather_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
-                      NNInputs& inputs);
+// Gather pathgen-mode NN sensor inputs (PathgenInput::COUNT = 33 floats) from
+// aircraft state (raw, no normalization). Renamed from nn_gather_inputs in
+// 030 M2b — the typed function name is the FR-006 + FR-019 pluggable-mode
+// dispatch contract (see autoc/nn/mode.h kPathgenMode strategy bundle).
+// Body unchanged from the pre-rename nn_gather_inputs (FP-bit-exact).
+void gather_pathgen_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
+                           NNInputs& inputs);
+
+// 030 M6d — Tracker-mode NN sensor input gather (FR-006 + FR-016 + FR-019).
+// 030 M7a — Reshape to use arena.h::distanceToBoundary for slot 44
+// (Session 2026-05-07 Q1: drop HOME_X/Y/Z/HOME_DIST, add single
+// DIST_TO_BOUNDARY_ALONG_VEL).
+//
+// Six-slot beacon-observation history per channel (oldest at index 0,
+// "now" at index 5). Caller (TrackerStepper) owns + advances the history
+// across ticks; this function is pure: read history + chase state +
+// arena → fill TrackerInputs.
+//
+// Replaces the M2b stub `gather_tracker_inputs_stub` in src/nn/mode.cc.
+struct TrackerHistoryWindow {  // raw-ok: NN-byte-format buffer
+    float left_x[6];      // raw-ok: NN-byte-format buffer
+    float left_y[6];      // raw-ok: NN-byte-format buffer
+    float left_cep[6];    // raw-ok: NN-byte-format buffer
+    float right_x[6];     // raw-ok: NN-byte-format buffer
+    float right_y[6];     // raw-ok: NN-byte-format buffer
+    float right_cep[6];   // raw-ok: NN-byte-format buffer
+
+    // 032 PHASE 1 — Cached beacon-pair span across the history window.
+    // Span = ||right.xy - left.xy|| in NDC, computed and CEP-gated at
+    // projection time (src/eval/tracker_stepper.cc::projectAndShiftHistory
+    // and the crrcsim mirror). Cached here so gather_tracker_inputs reads
+    // it via the same memcpy pattern as the NDC channels — single
+    // computation site, consistent CEP-gating semantics.
+    float span[6];        // raw-ok: NN-byte-format buffer
+};
+
+// Forward declaration so this header doesn't pull in arena.h transitively
+// (xiao firmware's cherry-pick build path). gather_tracker_inputs is
+// declared here for autoc desktop; xiao firmware uses pathgen mode only.
+namespace autoc { namespace eval { struct FlightArena; } }
+
+void gather_tracker_inputs(const AircraftState& chase,
+                           const TrackerHistoryWindow& history,
+                           const autoc::eval::FlightArena& arena,
+                           TrackerInputs& out);
 
 #include "autoc/eval/backend.h"
 
@@ -113,6 +155,12 @@ public:
 
     void evaluate(AircraftState& aircraftState, PathProvider& pathProvider) override;
     const char* getName() const override { return "NeuralNet"; }
+
+    // 030 M6d — Tracker-mode NN forward pass (FR-019). Parallel entry point
+    // to evaluate(); caller pre-gathers TrackerInputs (48 floats) and passes
+    // them in. Pathgen `evaluate` body is byte-identical pre-/post-M6d
+    // (regression-tight invariant) — `evaluateTracker` is purely additive.
+    void evaluateTracker(AircraftState& aircraftState, const TrackerInputs& inputs);
 
     // Zero the recurrent hidden state. Call on span/engage start.
     // No-op for feedforward networks.

@@ -9,9 +9,9 @@ Absorbs from 023:
 - Effort lexicase (T123–T136) → integrate into Change 5 Option A (chatter penalty)
 - 2-dim lexicase tests (P3 T-TEST-4) → add alongside effort lexicase implementation
 
-## Status (2026-04-22)
+## Status (2026-04-22, with 2026-05-20 update during 032 closeout)
 
-**BLOCKED on 026-nn-temporal-state.** Flight-20260422 showed the
+**2026-04-22 — BLOCKED on 026-nn-temporal-state.** Flight-20260422 showed the
 cadence7 NN collapses to full-throw bang-bang as the trained policy —
 with current single-pass instantaneous-input MLP topology, evolution
 lacks the machinery to build smoother control. Adding craft variations
@@ -23,6 +23,19 @@ and the flight report at
 
 The work described below is scoped and valid — it just doesn't start
 until 026 produces a smoother baseline to vary against.
+
+**2026-05-20 update — Change 5 (Control Smoothness Pressure) MOVED to 033.**
+
+The smoothness portion of this spec (Change 5 / Options A/B/C) has been promoted into a standalone spec: [**033-m1-smooth-plus-variations**](../033-m1-smooth-plus-variations/spec.md). Rationale:
+
+- 026 (recurrent NN) + 027/028 (lexicase smoothness path) landed but bang-bang persisted on real flight (0517 pastonly3 FLIGHT_REPORT) — confirms 025 Problem-Statement-#2 ("No smoothness pressure in the objective") is still live and is now the binding constraint for next M1 progression
+- 032 phase-1 closeout (2026-05-20) added the same finding from the M2 side — "the objective IS kamikaze" — same root cause: reward function rewards aggressive evolution against airframe limits with no penalty for aggression
+- 033 §2.B reformulates 025's Change-5 Option C as a **multiplicative-on-stepPoints** form (penalty floor 0.5, axis-agnostic motion aggregate) — preserves streak compounding dynamics while pressuring smoothness, with research-step to validate the floor value before committing to a full-scale bake
+- 033 phase 3 (post-flight-validation) also picks up M2 smoothness + kamikaze, inheriting from the 032 phase-1 SUCCESS NN baseline (54-input sensor suite believed-good, doesn't need re-doing)
+
+**What stays in 025**: Changes 1-3 (craft parameter variations, trim offsets, authority limit). These are now sequenced AFTER 033's smoothness lands in M1 + flies — operator routing 2026-05-20: "craft and camera variations as an addon" post-033. 025 is the natural home for craft variations once 033's smoother controller is the new baseline to vary against.
+
+**Camera variations**: NO existing spec — only backlog mentions. 034/035 candidate after 033 + 025 land. The 031-beacon-camera spec covers HARDWARE variations (LED pyramid, optical filter); per-scenario camera-PARAMETER variations (FOV jitter, mount offset perturbation, lens distortion noise) need their own spec when that work activates.
 
 ## Problem Statement
 

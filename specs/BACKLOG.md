@@ -16,6 +16,17 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **Source design notes**: 030 spec D7 (DMP versioning + parallel feature), D10 (camera v1 baseline + prop-occlusion deferral).
 - **Files likely**: new `src/perception/` module (or top-level `perception/` peer to `crrcsim/`), new spec dir `specs/031-perception-front-end/` when this unparks.
 
+### [031 RESEARCH] Perception representation — event-camera + non-linear / dual-FOV optics
+
+- **Trigger**: research thread for post-beacon perception (when 031 perception-front-end above unparks, or sooner if the 030 dual-camera variant experiment needs it). Capture as research now so it informs the camera-spec → resolution-budget conversation when we leave beacons.
+- **Question 1 — Event-camera representation**: today the NN sees `(x, y, CEP) × history×6` for each wingtip beacon — a sampled raster of an underlying image-plane process. Once we drop beacons for full-image perception, the natural representation becomes either a dense pixel grid (huge input dim) or an event-stream representation (per-pixel intensity-change events with timestamp + polarity, native to event cameras / DVS sensors). Event-camera reps are sparse, latency-friendly, and naturally encode motion direction; they may be a better match for the controller's cone-tracking task than dense rasters.
+- **Question 2 — Optics with non-uniform angular resolution**: a 120° FOV with uniform pixel pitch wastes resolution on the edges where the target rarely sits, and starves the center where it does. Two candidate architectures:
+  - **Dual-camera**: wide (~180°) for acquire/orbit-recovery + narrow (~60°) for hi-res tracking. NN sees both feeds (concatenated or as separate channels). Mirrors how birds-of-prey use peripheral + foveal vision.
+  - **Single non-linear lens**: fisheye / log-polar / panomorph optics that compress edges and expand the center on the same sensor. Lower hardware cost, but introduces lens calibration and non-linear NDC math; the NN has to learn the warp implicitly.
+- **What the early minisim playback informed**: the 120° FOV + raw-NDC-projection presentation gives narrow beacon spacing close-in (~0.26 NDC at 10ft), and the controller learned an emergent orbit-to-reacquire when the target left the FOV — useful evidence that the current rep gets some way, but reacquisition cost in crrcsim's harder dynamics may push the topology budget higher than 030 v1 plans for. A richer rep (event stream) or smarter optics (dual-FOV / non-linear) could lower that topology demand instead.
+- **Why research-track, not implementation**: needs a dataset + simulator camera model upgrade (or recorded event-camera bench data) before any controller work; coupled to the 031 perception-front-end FPGA / DSP scoping.
+- **Source design notes**: this thread; 030 D10 (single-camera v1 baseline that this would supersede); see also `[BACKLOG] Multi-camera variant experiments` below for the controller-side experiment shell once a camera spec is chosen.
+
 ### [031 CANDIDATE] Variable-rate / real-flight source robustness
 
 - **Trigger**: real-flight-recorded trajectories become available (post-virtual-beacon flight test).
@@ -39,12 +50,31 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **What stays in 030 v1 from D15**: error bars on the camera-POV display (CEP as visible ellipse spread) — cheap, directly load-bearing for smoke-test signal-or-not assessment.
 - **Why deferred**: research-grade analytics; not required for smoke-test 4th deliverable.
 
-### [030 v1+] Live two-aircraft display in crrcsim (RobotProgrammable + mod_robots)
+### [030 v1 — UNPARKED 2026-05-08] CRRCSim mod_inputdev tracker integration (M11.preA)
 
-- **Trigger**: when operator wants to *watch training in progress* live in crrcsim's 3D viewer (vs after-the-fact in renderer playback), OR when the 031-candidate parallel perception-front-end needs a real visual rendering of the target craft to feed image-domain experiments.
-- **Scope**: new `crrcsim/src/mod_robots/robot_programmable.{h,cc}` — `RobotBase` subclass consuming an in-memory pose stream pushed from autoc; `Robots::AddRobot` integration so autoc-side registers the programmable target per scenario; per-scenario teardown / reset. ~150 LOC sketch per [reference_crrcsim_mod_robots.md](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_crrcsim_mod_robots.md).
-- **Why deferred from 030 v1**: the smoke test (D13) computes virtual beacons strictly as math from `(chase pose, target pose in autoc memory)` — no live in-crrcsim two-aircraft display needed. Renderer 3rd-person view (FR-012) draws both aircraft from the M2 dmp's copied `targetTrajectoryList` (FR-015 self-containedness) using its own VTK actors. Adding the multi-aircraft crrcsim substrate to v1 would expand scope without serving the smoke test.
-- **Source design notes**: 030 spec FR-002 (v1 deferral note); 030 plan M4 (deferred milestone description); research.md R1 (decision rationale).
+- **Status**: UNPARKED. Routing decision 2026-05-08: m91 minisim run showed loop closes structurally, but smoke results that matter for sim-to-real must run on FDM-driven physics. Pulling crrcsim integration forward from `[030 v1+]` BACKLOG into v1 path before formal smoke + analytics.
+- **Scope**: mirror M6a-M6e strategy split (`PathgenStepper` / `TrackerStepper`) into `crrcsim/src/mod_inputdev/inputdev.cpp`. Sub-checkpoints T079-T083 in `specs/030-tracker-mode/tasks.md` Phase 6.
+- **Trigger satisfied**: minisim m91 informal smoke green; operator routing 2026-05-08 chose FDM-grade smoke as v1 acceptance.
+- **Why this entry stays separate from M11.preB**: mod_inputdev integration (M11.preA) = make tracker training WORK on FDM. mod_robots/RobotProgrammable (M11.preB, below) = make two-aircraft display VISIBLE during training. They're orthogonal; M11.preA is load-bearing for v1 smoke, M11.preB is optional.
+
+### [030 v1 — UNPARKED 2026-05-08] Live two-aircraft display in crrcsim (RobotProgrammable + mod_robots) — M11.preB
+
+- **Status**: UNPARKED, optional. Land alongside M11.preA only if operator wants to watch tracker training in crrcsim's 3D viewer mid-run (rather than playback the M2 dmp via the M9 renderer after-the-fact).
+- **Trigger**: M11.preA outcome — if FDM-grade smoke needs live visual debugging, M11.preB unblocks it. Otherwise defer further (post-v1).
+- **Scope**: new `crrcsim/src/mod_robots/robot_programmable.{h,cc}` — `RobotBase` subclass consuming an in-memory pose stream pushed from autoc; `Robots::AddRobot` integration so autoc-side registers the programmable target per scenario; per-scenario teardown / reset. ~150 LOC sketch per [reference_crrcsim_mod_robots.md](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_crrcsim_mod_robots.md). Sub-checkpoints T084-T085 in `specs/030-tracker-mode/tasks.md` Phase 6.
+- **Source design notes**: 030 spec FR-002 (original v1 deferral note); 030 plan M4 (was deferred milestone description); research.md R1 (decision rationale).
+
+### [030 v1+ — POST-FLIGHT-PROOF] Xiao tracker-mode prototype (own milestone)
+
+- **Status**: parked at v1+. Xiao firmware currently has zero 030 tracker-mode awareness — `TrackerInputs`, `gather_tracker_inputs`, mode select, and beacon source are all absent. Confirmed 2026-05-09: `grep -rn 'TrackerInput\|gather_tracker\|TRACKER' xiao/src` returns empty; `gather_tracker_inputs` is gated `#ifndef ARDUINO` in [src/nn/evaluator.cc:427](../src/nn/evaluator.cc#L427) so it's intentionally excluded from the xiao build.
+- **Trigger**: serious training results in sim with cruise-norm + dist-tanh inputs (post-2026-05-09). Don't ship to xiao before the desktop signal proves the architecture.
+- **Scope** (≈M11.preB-sized, not a patch):
+  1. Compile-time mode select: `-DAUTOC_MODE=TRACKER` plumbing in xiao/PlatformIO; cherry-pick `TrackerInputs` struct + `kCruiseSpeed_mps` + `kDistToBoundaryScale_m` constants from [include/autoc/nn/nn_inputs.h](../include/autoc/nn/nn_inputs.h).
+  2. Beacon source: either fake (synthesized from a target pose stream over MSP for bench-only verification) or real (xiao camera SoM + perception front-end — much bigger lift, ties into the 031 perception-front-end backlog item).
+  3. Port `gather_tracker_inputs` body to ARDUINO build (currently excluded). Distance-to-boundary needs an arena-config source on xiao; consider hard-coding for v1 since real flight has no cylinder.
+  4. Renderer / blackbox parity for tracker NN log lines (currently only pathgen format is parsed by [tools/renderer.cc:2239](../tools/renderer.cc#L2239)).
+- **Why parked**: tracker-mode v1 is sim-only (no hardware deployment in this milestone). Premature xiao porting risks debugging firmware against unstable sim-side inputs. Once cruise-norm + tanh saturation prove out in long bakes, snapshot the contract and port as one coherent piece.
+- **Bundle: xiao NN-forward-pass codegen optimization** (filed 2026-05-13). Surfaced from real-flight xiao log line `MSP pipeline: eval=2.3/2.6/7.4ms` for the 1923-weight pathgen NN. Pure-MAC estimate on Cortex-M4F @ 64 MHz is ~0.37 ms; actual measured mean is 2.6 ms = **~6.5× overhead** beyond pure MAC. The bottleneck is the generic table-driven loop in `nn_forward_recurrent` ([src/nn/evaluator.cc:160-249](../src/nn/evaluator.cc#L160-L249)): `std::vector::size()` + `operator[]` indirect lookups in hot loops, `getTopology()` + `getRecurrent()` building std::vector from static arrays each call, `fast_tanh()` function-call overhead per neuron, telemetry-pointer null-check per neuron, buffer-swap pointer dance per layer, generic 64-wide stack-scratch + heap-fallback path. Replace with true straight-line codegen that emits unrolled MAC sequences with weights as inline `.rodata` immediates, tanh inlined as polynomial. Estimated 3-5× speedup on Cortex-M4F (compiler can keep weights in FPU registers, no vector indirection, no function-call overhead). Becomes load-bearing as NN topology grows (T-102 32r tracker, 032 wider inputs, eventual M3 CNN/transformer). Tool change: `tools/nn2cpp.cc` emits straight-line code per (layer, neuron) instead of writing the existing table-driven shim.
 
 ### [BACKLOG] Multi-camera variant experiments
 
@@ -54,6 +84,44 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 
 - Project-level decision surfaced by 030 scoping, captured in 030 D12. Three options: ignore (default), stub, remove. Decision happens at the moment a 030 schema change first forces a touch on `tools/minisim.cc`. Default-to-ignore until then; if 030 plan-phase work hits minisim, upgrade to remove rather than spend porting cost.
 - Files: `tools/minisim.cc`, `CMakeLists.txt:100-106`, audit `tests/` for hard dependencies.
+- **Update 2026-05-06**: trigger fired during 030 M6a (PathgenStepper extraction) + M6c/d/e (tracker-mode dispatch wired in minisim per session 2026-05-06 routing decision). Per operator call, minisim stays alive through v1 tracker mode rather than retiring. Retirement decision now contingent on 030 smoke outcome.
+
+### [BACKLOG] Airframe self-occlusion calibration (re-enable D10)
+
+- **Surfaced 030 M8b (2026-05-07)**: spec D10 specifies airframe self-occlusion via a chase-body-frame AABB proxy; ray from camera to beacon hitting the proxy ⇒ beacon flagged occluded (sentinel). The placeholder hb1 proxy used through M5/M6/M8 is too coarse — `box ∈ [(-0.6, -0.6, -0.05), (+0.4, +0.6, +0.20)]` puts the camera mount (`z=-0.05`) **exactly on the proxy top boundary**, so any forward-and-slightly-down ray (the geometry seen at every M8b smoke tick) clips the proxy at t=0 and exits via the wing leading edge. Result: every beacon flags occluded for the first half-meter of any descending ray.
+- **Workaround in M8b**: compile-time constant `kAirframeOcclusionEnabled = false` in `include/autoc/eval/camera_projection.h`. Production tracker mode currently runs **transparent** (no occlusion check). Per operator routing 2026-05-07: this is intentionally compile-time, not a runtime knob — once sim training shifts to real-flight prep, occlusion is on forever, so a .ini knob would just be lifecycle drag. One-line code change to flip when ready.
+- **What's needed to flip back on**:
+  - **(a) Real airframe geometry from operator** — actual hb1 fuselage + wing dimensions, not the placeholder. Operator committed to providing post-M8.
+  - **(b) Camera mount with clearance** — either physical mast above wing top OR a tighter proxy that doesn't include the wing leading edge. Spec D10 may need refinement on what "top-of-wing-chord mount" means in the model.
+  - **(c) Multi-shape proxy** — fuselage + wings as separate AABBs (or a coarse mesh) instead of a single union AABB. The single-AABB pessimism is the proximate cause; even with real dimensions, the bounding box of "fuselage + extended wings" includes a lot of empty space the camera CAN see through.
+- **Test impact when re-enabling**: `tests/beacon_projection_tests.cc::AirframeProxyOccludesEmitsSentinel` and `AirframeProxyMissesDoesNotOcclude` construct AirframeProxy{} directly with `enabled` defaulting to `true` in the struct, so they exercise the occlusion-fires path regardless of the production constant. No test changes needed when flipping the constant.
+- **Files**: `include/autoc/eval/camera_projection.h` (compile-time `kAirframeOcclusionEnabled` + `defaultAirframeProxyHB1()`), `src/eval/camera_projection.cc` (`projectBeacon` step 4c gates on `input.chase_airframe.enabled`).
+- **Trigger to act**: when operator delivers real airframe geometry, or when smoke-test signal indicates training is hurt by the lack of occlusion (NN exploits an "X-ray vision" loophole that won't exist on the real hardware).
+
+### [BACKLOG] M1 vs M2 dmp disambiguation in S3
+
+- **Surfaced 030 M8b (2026-05-06)**: pathgen-mode (M1, source) dmps and tracker-mode (M2, output) dmps share the same S3 bucket (`autoc-storage`) and the same key shape (`<run-id>/genN.dmp`). The run-id format is identical (`autoc-<seed>-<timestamp>Z`) for both — there's no way to tell them apart from the key alone.
+- **Why it matters**:
+  - Tools that auto-pick "latest run, last gen" (renderer's no-key default, nnextractor's no-keyname default) will silently pick the WRONG kind. A v=2 tracker dmp picked by a v=1-only consumer (renderer pre-M9) chokes on `cameraViewList`; a v=1 source dmp picked by a tracker-aware consumer succeeds but misleads ("cameraViewList: empty (pathgen-mode dmp)" — operator wonders if their tracker run failed to record).
+  - As more tracker runs accumulate alongside pathgen runs, the auto-pick mode becomes a coin flip.
+- **Options**:
+  - **(A) Run-id prefix convention**: tracker-mode autoc generates run-ids like `tracker-<seed>-<timestamp>Z` instead of `autoc-<seed>-<timestamp>Z`. Tools filter on prefix when auto-picking. Smallest change, easy to grep, doesn't break existing v=1 runs (they keep the old prefix).
+  - **(B) Subdirectory split**: `autoc-storage/tracker/<id>/genN.dmp` vs `autoc-storage/<id>/genN.dmp`. Cleaner separation but more change.
+  - **(C) Inline version suffix**: `genN-v2.dmp` per-file. Simplest filter rule but spreads the convention across every dmp filename.
+  - **(D) Load + dispatch on cereal version field**: auto-pick scans S3 ListObjects, opens a few candidate files, picks the most-recent matching the wanted version. Wasteful for "auto-pick latest" since LIST is fast but GET is per-file.
+- **My lean**: (A) — autoc reads `Mode = tracker` and prepends `tracker-` to its generated run-id. Operator-friendly grep + tools' auto-pick stays simple (`prefix=autoc-` for pathgen, `prefix=tracker-` for tracker).
+- **Trigger to act**: when a non-trivial tracker run history accumulates AND the operator is mixing pathgen + tracker runs in the same workflow. Until then, manual key specification works around it.
+
+### [BACKLOG] AutocConfig auto-print / extensible parameter dump
+
+- **Surfaced 030 M6e (2026-05-06)**: `src/autoc.cc` startup logging is hand-coded `*logger.info() << "Key: " << cfg.field << endl` for every AutocConfig field. Adding the 030 tracker-mode block (~30 new fields across Source / Trail / CrashHull / Arena / Camera / Beacon) made the fragility obvious — every new knob requires both an AutocConfig field add, a parser line in `src/util/config.cc`, AND a manual print line in `autoc.cc`'s startup dump. Three-place edit per knob.
+- **Why it matters**: future feature work (M7 tracker fitness, 031+ camera-config experimentation, etc.) will keep adding knobs. Drift between "config printed" and "config used" is silent — operator looks at the log, doesn't see the new field, assumes default; meanwhile the new knob is active in the run.
+- **Options**:
+  - **X-macro list** (`#define AUTOC_CONFIG_FIELDS(X) X(int, populationSize, 500) X(int, numberOfGenerations, 50) ...`): single source of truth, generates field decl + parse + print. Familiar pattern (already in tree for some structures?) but adds preprocessor density.
+  - **Cereal-to-text adapter**: AutocConfig already could carry a `serialize` template; adding a JSON-archive output pass produces a structured dump for free. Cleaner from a typesystem perspective but requires cereal/json or hand-rolling.
+  - **Reflection-via-tuple-of-members**: C++17 alternative — compile-time list of `std::tuple<std::string_view, MemberPtr>` pairs that print(field) + parse(field) iterate over. Modern but more complex to set up.
+- **Trigger to act**: when the next milestone adds 5+ knobs (likely M7 tracker fitness), before the manual-print drift bites.
+- Files: `include/autoc/util/config.h`, `src/util/config.cc`, `src/autoc.cc:1402-1462` (startup print block).
 
 ---
 
@@ -313,10 +381,37 @@ Remaining 015 work:
   - In `computeScenarioScores()`, interpolate threshold = min + (max-min) * computeVariationScale()
   - FitnessComputer constructor takes the interpolated threshold
 
-### [NEXT] Batch and Cache Deterministic Scenarios
-- With 150+ scenarios per individual, serializing full table per eval is expensive
-- Send scenario table once at generation start, cache in crrcsim
-- Reduces per-eval serialization from O(scenarios × individual) to O(individual)
+### [030 v1 — UNPARKED 2026-05-08] Worker-side scenario priming + (deferred V2) LRU demand-fetch
+
+- **Status**: UNPARKED. Forced into v1 path by 030 tracker-mode working-set explosion. Two-stage scope: V1 = static priming at worker init (this milestone); V2 = LRU + autoc-callback demand-fetch (deferred until libraries evolve over time).
+- **Trigger fired 2026-05-08**: tracker training run (`autoc-tracker.ini`, pop=5000, 294 source scenarios, 20 threads) OOM'd on a 128 GB machine **before gen 1 finished**. Root cause: each per-individual `EvalData` now carries a deep copy of the full source library in `EvalData.sourceList` (`src/autoc.cc:1015-1024`) — ~8.5 MB per `EvalData` (294 SourceScenarioTrajectory × ~600 ticks × 48 B `SourceTickSample`). The unbounded `ThreadPool::enqueue` (`include/autoc/util/threadpool.h:120`) queues all 5000 individuals' EvalData up front, each pinned alive by a `shared_ptr` capture in the lambda — 5000 × 8.5 MB ≈ **42 GB of sourceList copies in flight**, plus push_back deep-copy churn on the autoc side and serialize/deserialize cost on every RPC. M1 pathgen runs (same pop, same threads, e.g. `gen9540.dmp` at gen 460 in the latest pop=5000 minisim run, 42 MB on disk) fit comfortably in 128 GB because pathgen `EvalData` is ~50–100 KB per individual; tracker mode is 80–170× heavier per-eval **even though the output dmp is the same size** — the explosion lives in the per-eval RPC, not the artifact.
+- **Why it can't wait**: training stalls on this exact config until either V1 lands or pop is dropped (which would invalidate scale comparison vs M1). V1 is the smallest unblock — the 294-scenario library is deterministic and fits in worker RAM 1×, not 5000×.
+
+#### V1 — Init-time priming (FORCED-NOW, this milestone)
+- **Approach**: new `WorkerInit` RPC sent once per worker right after the worker's TCP accept (worker fork is in `threadpool.h:60-79`). Carries everything currently scenario-invariant in `EvalData`: `sourceList`, `cameraConfig`, `beaconLeftConfig`/`Right`, `airframeProxy`, `flightArena`, `rabbitSpeedConfig`, `crashHullRadius`, `trailDistance`. Worker caches in process-local state.
+- Per-eval `EvalData` shrinks to: NN bytes (`gp` + `gpHash`), `controllerType`, `mode`, `isEliteReeval`, `pathList` (still per-gen), `scenarioList` (still per-gen), `pCrashThisGen` (gen-varying), `trackerSourcePreRollTicks`, plus scenario index references into the worker-resident library — drops the ~8.5 MB sourceList payload entirely. ~50–100 KB per `EvalData`, matching pathgen's footprint.
+- Memory footprint: 5000 × 8.5 MB → 20 × 8.5 MB = **160 MB instead of 42 GB**. Wire bandwidth drops 80×.
+- **Scope: BOTH minisim AND crrcsim mod_inputdev need the new RPC.** Minisim path stays alive through 030 v1 (per the [Minisim retire / stub / remove] entry above) and is currently the only working tracker path (M11.preA crrcsim integration not yet smoke-green). Both ends need symmetric `WorkerInit` handling. Files: `include/autoc/rpc/protocol.h` (new RPC type + `EvalData` field migration), `src/autoc.cc` (`buildEvalData` + threadpool dispatch), `tools/minisim.cc` (worker-side cache + dispatch shim), `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp` + `CrrcsimTrackerHelper`.
+- **Determinism**: scenarios are deterministic from joint-PRNG seeds (per [project_variation_design_principles.md](../.claude/projects/-home-gmcnutt-autoc/memory/project_variation_design_principles.md)). Static priming is correct as long as the library is stable across the run; library-evolves-over-time is the V2 trigger.
+- **Sizing in the limit**: this is "send everything except the NN once at init." Same shape as the [BACKLOG] AutocConfig auto-print — anything that doesn't change per-eval should not be in per-eval RPC.
+- **Out of scope for V1**: variable-rate / real-flight source robustness ([031 CANDIDATE] above) — V1 priming assumes a static deterministic library. Library curation / mirror-pairing ([031 CANDIDATE] above) — same.
+
+#### V2 — LRU demand-fetch with autoc callback (DEFERRED)
+- **When V1 isn't enough**: when the scenario library itself evolves over time — e.g., [project_library_based_training.md](../.claude/projects/-home-gmcnutt-autoc/memory/project_library_based_training.md) (winners-promote-into-library), or curriculum schedules that swap library subsets per phase, or scenarios > worker RAM (e.g., 10K+ entries in a future-extreme config). In those regimes "ship everything once at init" no longer holds.
+- **Approach**: workers maintain an LRU cache keyed by `(scenarioId, libraryEpoch)`. On `EvalData` receive, worker looks up referenced scenarios in cache; on miss, fires a synchronous callback RPC to autoc requesting the missing entries; autoc serves from `gSourceTrajectoryList` (or its evolved equivalent). LRU evicts least-recent on capacity pressure. Sketch in `specs/archive/ZZZ-SCALEUP.md:1045-1055` (LocalScenarioCache prior art) — same pattern, smaller-scope first.
+- **Why it stays deferred until needed**: LRU + bidirectional callback adds protocol complexity (a worker can now initiate an RPC to autoc, which means autoc grows a worker-init request handler thread or non-blocking reactor). V1 buys us the working set; V2's complexity is only justified when the library-evolves regime actually shows up.
+- **Trigger to unpark V2**: first concrete milestone that requires a library that mutates within a run. Most likely: library-based-training milestone, or a 031 source-evolution feature.
+
+- **Closes existing [NEXT] entry**: prior 3-bullet placeholder ("Send scenario table once at generation start, cache in crrcsim") subsumed and retired by V1 above.
+
+### [NEXT] Trim EvalResults on the return path — score-only for non-elite
+- **Sibling to** the [030 v1 — UNPARKED] "Worker-side scenario priming" entry above. Priming reduced **autoc → sim** transport; this entry reduces **sim → autoc** transport. Same family (cut wire size for the 5000-individual-per-gen hot path), different direction.
+- **Surfaced 2026-05-08 priming smoke**: with priming wired (queue spike eliminated), autoc-side residual working set still sits at ~23–26 GB at pop=5000 / 294-scenario tracker training. Operator observation: the sim→autoc EvalResults are heavy on the way back too — per-tick `aircraftStateList` + `cameraViewList` + `targetTrajectoryList` for 294 scenarios × ~600 ticks ≈ 76+ MB serialized per individual. The non-elite training path collapses all of that into ~24 bytes per scenario via `computeScenarioScores` and discards the rest.
+- **Approach**: add an `EvalResultsLite` (or equivalent) carrying only `crashReasonList`, `arenaEgressCount`, `hullStrikeCount`, scenarioList, and a pre-computed `std::vector<ScenarioScore>` (worker-side `computeScenarioScores`). Send `EvalResultsLite` for training evals; full `EvalResults` only when `isEliteReeval` (the elite is the only one whose per-tick state is dumped to S3). Worker already branches on `isEliteReeval` for `debugSamples` / `physicsTrace` — extend that branch to also gate per-tick state.
+- **Memory benefit**: peak transient receiveRPC path drops from ~76 MB × 20 concurrent workers to ~tens of KB. ~3 GB of resident `WorkerContext.evalResults` collapses to ~MB. Combined with the `receiveRPC` triple-copy (vector + string + istringstream + deserialized object) the transient saving could be 8–10 GB on autoc. Won't fix all of the 25 GB — heap fragmentation, AWS SDK buffering, and S3 PutObject upload buffering for elite dmps are separate — but should take a meaningful bite out of it.
+- **Scope: BOTH minisim AND crrcsim mod_inputdev** for the same reason as priming (minisim is still the only working tracker path).
+- **Out of scope for v1**: changing dmp on-disk format. Elite-reeval still produces the full v=2 EvalResults dump as today; we're trimming the wire payload, not the artifact.
+- **Trigger**: after priming validates at production scale and operator wants to push autoc-side memory further down. Naturally pairs with the V2 LRU demand-fetch direction in the priming entry — if we're refactoring the protocol anyway, do both directions in the same wire-format pass.
 
 ### [DEFERRED] Output Cleanup
 - OutputDir config key, auto-created run subdirectory, clean eval prefix naming
@@ -561,6 +656,25 @@ Remaining 015 work:
   `include/autoc/eval/aircraft_state.h` + cereal serialization (if capturing),
   `src/eval/fitness_computer.cc` (export the per-step multiplier alongside the
   streak update — it's already computed, just discarded).
+
+### [DEFERRED 2026-05-08] Renderer 1st-person camera-POV view (was 030 T054)
+
+- **Trigger**: when operator wants to *deeply inspect* one scenario from the chase craft's POV — full main-viewport render through the camera's pose+FOV. Beacons appear as colored points at projected `(screen_x, screen_y)` at full screen scale (vs the small mini-panel).
+- **Why deferred from 030 v1**: the M9b mini-panel HUD (T055/commit 58cf328) covers the load-bearing "what does the NN see?" question for smoke-test signal-or-not. Full 1st-person view is research-grade analytics — useful when diagnosing a specific failure (e.g., "did the chase fly into a sentinel-rich scenario?") but not required to declare v1 done.
+- **Scope**: second VTK renderer (or split-screen overlay) using chase camera pose from `cameraViewList[i][k].camera_pose_world_pos` + orientation as VTK camera; FOV deg → projection matrix; render full scene (target craft + arena + plane). Beacon dots already projected by M5 — render at fullscreen coords matching mini-panel.
+- **Files likely**: `tools/renderer.cc` only. Roughly 150-300 LOC.
+
+### [DEFERRED 2026-05-08] Renderer scrub controls (was 030 T057, rolled-in from earlier 028 entry)
+
+- **Trigger**: when operator needs frame-by-frame inspection — pause / step-forward-one-tick / step-backward-one-tick. Animation already auto-pauses on left-click for camera interaction; full scrub adds tick-by-tick navigation.
+- **Why deferred from 030 v1**: not load-bearing for smoke-test signal-or-not. Current pause-on-click + scrolling through generations covers the typical diagnostic workflow.
+- See also the older "[NEXT] Renderer Playback Enhancements" entry below for scope notes.
+
+### [DEFERRED 2026-05-08] Renderer streak/multiplier overlay (was 030 T058, rolled-in from earlier 028 entry)
+
+- **Trigger**: when operator wants per-tick `streakCount` + `multiplier` shown alongside the rendered aircraft. Today `EvalResults` carries scenario-aggregates only.
+- **Why deferred from 030 v1**: optional; smoke-test fitness signal reads from the gen-level fitness curve directly via `data.stc` + `plot_evolution_progress.py`.
+- See "[NEXT] Renderer Playback Enhancements" entry below for the schema-bump-vs-resynthesize tradeoff.
 
 ### [DEFERRED] Blackbox Rendering Improvements
 - Select path + blackbox log for comparisons, FPV mode
