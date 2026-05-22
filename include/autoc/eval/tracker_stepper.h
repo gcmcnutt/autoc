@@ -30,6 +30,7 @@
 #include "autoc/eval/camera_config.h"
 #include "autoc/eval/camera_projection.h"
 #include "autoc/eval/crash_hull.h"        // M7d.b — CrashHull config + didCrashFire
+#include "autoc/eval/derived_features.h"  // 033 §2.B — SmoothnessMotionMode
 #include "autoc/eval/scenario_stepper.h"
 #include "autoc/eval/source_trajectory.h"
 #include "autoc/nn/evaluator.h"          // NNControllerBackend, TrackerHistoryWindow
@@ -40,19 +41,29 @@ namespace autoc::eval {
 
 class TrackerStepper : public ScenarioStepper {
 public:
+    // No parameter defaults per Constitution III + M2-era no-fallback
+    // policy: every caller passes every argument explicitly. Production
+    // call sites: tools/minisim.cc:199 (TrackerStepper construction with
+    // live WorkerInit values). Tests: tests/tracker_stepper_init_tests.cc
+    // (passes default-constructed config + explicit 1.0/Pythagorean
+    // smoothness — explicit, not defaulted).
     TrackerStepper(NNControllerBackend& nn,
                    AircraftState& state,
                    const SourceScenarioTrajectory& source,
                    const ScenarioMetadata& scenario_meta,
-                   const CameraConfig& camera = CameraConfig{},
-                   const BeaconConfig& beacon_left = BeaconConfig{},
-                   const BeaconConfig& beacon_right = BeaconConfig{},
-                   const AirframeProxy& airframe = defaultAirframeProxyHB1(),
-                   const FlightArena& arena = FlightArena{},
-                   const CrashHull& crash_hull = CrashHull{},
-                   gp_scalar p_crash_this_gen = static_cast<gp_scalar>(0.0),
-                   uint32_t prng_seed = 0,
-                   gp_scalar trail_distance = static_cast<gp_scalar>(3.048));
+                   const CameraConfig& camera,
+                   const BeaconConfig& beacon_left,
+                   const BeaconConfig& beacon_right,
+                   const AirframeProxy& airframe,
+                   const FlightArena& arena,
+                   const CrashHull& crash_hull,
+                   gp_scalar p_crash_this_gen,
+                   uint32_t prng_seed,
+                   gp_scalar trail_distance,
+                   // 033 §2.B — smoothness floor + motion mode (per-run
+                   // config) propagated from WorkerInit by minisim.cc.
+                   gp_scalar smoothness_floor,
+                   SmoothnessMotionMode smoothness_mode);
 
     void initScenario() override;
     CrashReason stepOnce() override;
@@ -111,6 +122,15 @@ private:
     // 030 M8b — Per-tick recorded outputs (M2 dmp v=2 schema).
     CameraViewSample last_camera_view_{};
     CopiedTargetSample last_target_sample_{};
+
+    // 033 §2.B — per-tick smoothness state. prev_out_valid_ false at
+    // scenario start; first-tick factor = 1.0 per contract.
+    gp_scalar smoothness_floor_ = static_cast<gp_scalar>(1.0);
+    SmoothnessMotionMode smoothness_mode_ = SmoothnessMotionMode::Pythagorean;
+    gp_scalar prev_out_pt_ = static_cast<gp_scalar>(0.0);
+    gp_scalar prev_out_rl_ = static_cast<gp_scalar>(0.0);
+    gp_scalar prev_out_th_ = static_cast<gp_scalar>(0.0);
+    bool prev_out_valid_ = false;
 };
 
 }  // namespace autoc::eval

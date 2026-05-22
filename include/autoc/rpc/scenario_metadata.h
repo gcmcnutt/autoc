@@ -26,10 +26,18 @@
 struct ScenarioMetadata {
     int pathVariantIndex = -1;   // -1 = unset/aggregated
     int windVariantIndex = -1;   // -1 = unset/aggregated
-    unsigned int windSeed = 0;
     uint64_t scenarioSequence = 0;
     uint64_t bakeoffSequence = 0;
     bool enableDeterministicLogging = false;
+
+    // 033 §2.A — per-scenario master-derived seed. Sole per-scenario PRNG
+    // input post-033. Consumers reconstruct ScenarioRootPRNG from this and
+    // derive 5 class sub-PRNGs (wind/rabbit/entry/craft/camera) via
+    // autoc::util::deriveClassSubSeeds(). Sufficient for full replay; per-
+    // class sub-seeds are NOT persisted (derived deterministically). Pre-
+    // 033 windSeed + rabbitSpeedSeed fields removed in same PR per spec
+    // Clarifications 2026-05-21 (Constitution III: no compatibility shims).
+    uint64_t scenarioSeed = 0;
 
     // VARIATIONS1: Entry and wind direction offsets (computed by autoc, applied by crrcsim)
     // All angles in radians, speed as multiplier
@@ -46,7 +54,8 @@ struct ScenarioMetadata {
 
     // Rabbit speed for odometer-based path traversal (m/s)
     double rabbitSpeed = 0.0;          // 0 = use default SIM_INITIAL_VELOCITY
-    unsigned int rabbitSpeedSeed = 0;  // per-scenario seed for local speed profile PRNG
+    // (033) rabbitSpeedSeed removed: worker derives the rabbit-class PRNG
+    // seed from scenarioSeed via deriveClassSubSeeds() → .rabbit slot.
 
     // Raw→virtual origin offset captured at test start (NED meters).
     // Used by renderer to reconstruct raw positions for "all flights" display.
@@ -55,11 +64,15 @@ struct ScenarioMetadata {
 
     template<class Archive>
     void serialize(Archive& ar, const std::uint32_t /*version*/) {
-        ar(pathVariantIndex, windVariantIndex, windSeed, scenarioSequence,
+        // 033 cleanup: windSeed + rabbitSpeedSeed REMOVED from the walk.
+        // scenarioSeed at the end (appended in T006). Old pre-033 dmps
+        // fail-loud on cereal length mismatch — Constitution III no-shim +
+        // Constitution V loud-fail safety net (intentional break).
+        ar(pathVariantIndex, windVariantIndex, scenarioSequence,
            bakeoffSequence, enableDeterministicLogging, entryHeadingOffset,
            entryRollOffset, entryPitchOffset, entrySpeedFactor,
            windDirectionOffset, entryNorthOffset, entryEastOffset, entryAltOffset,
-           rabbitSpeed, rabbitSpeedSeed, originOffset);
+           rabbitSpeed, originOffset, scenarioSeed);
     }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)

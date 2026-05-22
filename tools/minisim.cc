@@ -13,6 +13,7 @@
 #include "autoc/eval/scenario_meta_apply.h"  // 030 V1.5 — applyVariationScale
 #include "autoc/eval/tracker_stepper.h"
 #include "autoc/eval/sensor_math.h"
+#include "autoc/util/scenario_prng.h"  // 033 — deriveClassSubSeeds
 #include "autoc/nn/mode.h"               // 030 M7a — getModeStrategyByName
 #include "autoc/nn/nn_input_computation.h"
 #include "autoc/nn/serialization.h"
@@ -189,13 +190,29 @@ public:
             } else {
               autoc::eval::CrashHull crashHull;
               crashHull.sphere_radius_m = init_.crashHullRadius;
-              // 030 V1.5 determinism fix (2026-05-09) — seed crash-hull
-              // PRNG from windSeed (stable per-scenario), not
-              // scenarioSequence (monotonic counter that differs between
-              // training-eval and elite-reeval of the same scenario,
-              // producing divergent didCrashFire draws).
-              const uint32_t prngSeed =
-                  static_cast<uint32_t>(scenarioMeta.windSeed);
+              // 033 cleanup — crash-hull PRNG seed now derives from the
+              // RABBIT class sub-PRNG (per contracts/scenario_prng_chain.md
+              // — M2 crash-hull is a rabbit-class consumer). Pre-033 used
+              // ScenarioMetadata.windSeed; that field has been removed.
+              // Deriving from meta.scenarioSeed via deriveClassSubSeeds
+              // gives stable per-(path, wind) determinism — same scenario
+              // gets identical crash-hull draws across train/elite-reeval.
+              const auto subseeds =
+                  autoc::util::deriveClassSubSeeds(scenarioMeta.scenarioSeed);
+              const uint32_t prngSeed = subseeds.rabbit;
+              // 033 §2.B — decode WorkerInit wire-format motion mode
+              // (uint8) → autoc::eval::SmoothnessMotionMode enum at
+              // scenario-construct boundary. Floor passes through as
+              // gp_scalar. Mode validation already done at autoc-side
+              // ini parse; defensive default below for any unrecognized
+              // wire value.
+              autoc::eval::SmoothnessMotionMode smoothMode =
+                  autoc::eval::SmoothnessMotionMode::Pythagorean;
+              switch (init_.smoothnessMotionMode) {
+                  case 1: smoothMode = autoc::eval::SmoothnessMotionMode::Sum; break;
+                  case 2: smoothMode = autoc::eval::SmoothnessMotionMode::Max; break;
+                  default: smoothMode = autoc::eval::SmoothnessMotionMode::Pythagorean; break;
+              }
               autoc::eval::TrackerStepper stepper(
                   nnBackend, aircraftState, source, scenarioMeta,
                   init_.cameraConfig,
@@ -206,7 +223,9 @@ public:
                   crashHull,
                   evalData.pCrashThisGen,
                   prngSeed,
-                  init_.trailDistance);
+                  init_.trailDistance,
+                  init_.smoothnessPenaltyFloor,
+                  smoothMode);
               stepper.initScenario();
               aircraftStateSteps.push_back(aircraftState);
               cameraViewSteps.push_back(stepper.lastCameraView());
@@ -223,8 +242,18 @@ public:
             }
           }
         } else {
-          // pathgen-mode (default): byte-identical to M6a.
-          autoc::eval::PathgenStepper stepper(nnBackend, aircraftState, path, scenarioMeta);
+          // pathgen-mode (default). 033 §2.B — wires smoothness floor +
+          // motion mode from WorkerInit (decoded from wire-format uint8).
+          autoc::eval::SmoothnessMotionMode pgSmoothMode =
+              autoc::eval::SmoothnessMotionMode::Pythagorean;
+          switch (init_.smoothnessMotionMode) {
+              case 1: pgSmoothMode = autoc::eval::SmoothnessMotionMode::Sum; break;
+              case 2: pgSmoothMode = autoc::eval::SmoothnessMotionMode::Max; break;
+              default: pgSmoothMode = autoc::eval::SmoothnessMotionMode::Pythagorean; break;
+          }
+          autoc::eval::PathgenStepper stepper(
+              nnBackend, aircraftState, path, scenarioMeta,
+              init_.smoothnessPenaltyFloor, pgSmoothMode);
           stepper.initScenario();
           aircraftStateSteps.push_back(aircraftState);
 
@@ -242,8 +271,21 @@ public:
         evalResults.pathList.push_back(path);  // 030 V1.5 — copied from init_.pathList[i]
         evalResults.aircraftStateList.push_back(aircraftStateSteps);
         evalResults.crashReasonList.push_back(crashReason);
-        evalResults.cameraViewList.push_back(cameraViewSteps);
-        evalResults.targetTrajectoryList.push_back(targetSampleSteps);
+        // 033 troubleshooting 2026-05-22 — bug fix: cameraViewList +
+        // targetTrajectoryList are TRACKER-MODE-ONLY per the EvalResults
+        // contract (protocol.h:359 "Empty in pathgen-mode dmps"). Prior
+        // unconditional push_back of (empty in pathgen) inner vectors
+        // produced an outer-vector-non-empty dmp that the renderer
+        // (renderer.cc:400-402 dispatches on outer-vector emptiness)
+        // mis-classified as tracker mode → rabbit/path render path
+        // skipped. Worker-side fix preserves the documented contract;
+        // autoc-side fitness_decomposition + data.dat already correctly
+        // check inner-vec emptiness via `is_tracker`, so this fix is
+        // additive (no autoc-side ripple).
+        if (evalMode == Mode::TRACKER) {
+            evalResults.cameraViewList.push_back(cameraViewSteps);
+            evalResults.targetTrajectoryList.push_back(targetSampleSteps);
+        }
         const int arena_egress = (evalMode == Mode::TRACKER
                                   && crashReason == CrashReason::Eval) ? 1 : 0;
         evalResults.arenaEgressCount.push_back(arena_egress);

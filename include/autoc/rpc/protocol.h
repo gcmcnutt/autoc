@@ -168,6 +168,16 @@ struct WorkerInit {
   // ini_schema.md.
   gp_scalar cepGateThreshold = static_cast<gp_scalar>(1.25);
 
+  // 033 §2.B — per-tick smoothness penalty knobs. Same value drives both
+  // the autoc-side minisim path (via ConfigManager in-process) and the
+  // separate-process crrcsim worker (via this field — workers have no
+  // ConfigManager). Per spec.md §2.B + contracts/ini_schema.md "WorkerInit
+  // propagation". 1.0 = back-compat no-op; 0.5 = phase-1 YOLO start.
+  gp_scalar smoothnessPenaltyFloor = static_cast<gp_scalar>(1.0);
+  // Wire-stable uint8 enum mapping: 0=Pythagorean, 1=Sum, 2=Max. Worker
+  // decodes back to autoc::eval::SmoothnessMotionMode at scenario init.
+  uint8_t smoothnessMotionMode = 0;
+
   // 030 V1.5 — run-static scenario library. Built once at startup from
   // generateSmoothPaths(gPathSeed) + the joint-PRNG variation table; the
   // worker dispatches per-eval scenarios by indexing into these in
@@ -185,7 +195,12 @@ struct WorkerInit {
        airframeProxy, flightArena,
        crashHullRadius, trailDistance,
        pathList, scenarioMetaList,
-       cepGateThreshold);
+       cepGateThreshold,
+       // 033 §2.B — appended at end of WorkerInit serialize per project
+       // no-cereal-versioning policy. Pre-033 workers (separate binary)
+       // fail-loud on cereal length mismatch — already expected since
+       // ScenarioMetadata.scenarioSeed grows the wire too.
+       smoothnessPenaltyFloor, smoothnessMotionMode);
     mode = static_cast<Mode>(m);
   }
 };
@@ -351,6 +366,17 @@ struct EvalResults {
   std::vector<int> arenaEgressCount;  // M7 — per-scenario count of arena egress events
   std::vector<int> hullStrikeCount;   // M7 — per-scenario count of crash-hull p_crash fires
 
+  // 033 §2.A + §2.B — Provenance header. Makes a dmp self-describing for
+  // analysis: any operator picking up a 033-era dmp can read off the
+  // master seed (full-run reproduction) and reward shape (smoothness
+  // floor + motion mode) without needing the matching log file or ini.
+  // Populated autoc-side in buildEvalData / per-scenario EvalResults
+  // construction; the value is set once per run, copies into every
+  // emitted dmp.
+  uint64_t effectiveMasterSeed = 0;                              // 033 §2.A — MasterPRNG.init() input
+  gp_scalar smoothnessPenaltyFloor = static_cast<gp_scalar>(1.0); // 033 §2.B — 1.0 = no penalty
+  uint8_t smoothnessMotionMode = 0;                              // 033 §2.B — 0=Pythagorean, 1=Sum, 2=Max
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
     ar(gp, gpHash, crashReasonList, pathList, aircraftStateList,
@@ -363,6 +389,14 @@ struct EvalResults {
       // cereal's class-version mechanism (verified in
       // tests/tracker_dmp_roundtrip_tests.cc).
       ar(cameraViewList, targetTrajectoryList, arenaEgressCount, hullStrikeCount);
+
+      // 033 §2.A + §2.B — provenance header. Appended at end of v=2
+      // block per project no-cereal-versioning policy. Pre-033 v=2 dmps
+      // fail-loud on cereal length mismatch (matches the AircraftState
+      // smoothnessFactor_ + ScenarioMetadata.scenarioSeed schema grow
+      // that lands in the same PR). Constitution III no-shim policy +
+      // Constitution V loud-fail safety net.
+      ar(effectiveMasterSeed, smoothnessPenaltyFloor, smoothnessMotionMode);
     }
   }
 
@@ -384,6 +418,10 @@ struct EvalResults {
     targetTrajectoryList.clear();
     arenaEgressCount.clear();
     hullStrikeCount.clear();
+    // 033 §2.A + §2.B — provenance header reset to "no-context" defaults.
+    effectiveMasterSeed = 0;
+    smoothnessPenaltyFloor = static_cast<gp_scalar>(1.0);
+    smoothnessMotionMode = 0;
   }
 
   void dump(std::ostream& os) {
@@ -392,14 +430,19 @@ struct EvalResults {
       crashReasonList.size(), pathList.size(), aircraftStateList.size());
     os << buf;
 
-    snprintf(buf, sizeof(buf), "Scenario: pathVariant=%d windVariant=%d windSeed=%u seq=%llu bake=%llu\n",
-      scenario.pathVariantIndex, scenario.windVariantIndex, scenario.windSeed,
+    // 033 cleanup: windSeed display swapped for scenarioSeed (the new
+    // per-scenario PRNG root). All class sub-seeds derive from this via
+    // deriveClassSubSeeds.
+    snprintf(buf, sizeof(buf), "Scenario: pathVariant=%d windVariant=%d scenarioSeed=0x%016llx seq=%llu bake=%llu\n",
+      scenario.pathVariantIndex, scenario.windVariantIndex,
+      static_cast<unsigned long long>(scenario.scenarioSeed),
       static_cast<unsigned long long>(scenario.scenarioSequence),
       static_cast<unsigned long long>(scenario.bakeoffSequence));
     os << buf;
     for (size_t i = 0; i < scenarioList.size(); ++i) {
-      snprintf(buf, sizeof(buf), "  Scenario[%zu]: pathVariant=%d windVariant=%d windSeed=%u seq=%llu bake=%llu\n",
-        i, scenarioList[i].pathVariantIndex, scenarioList[i].windVariantIndex, scenarioList[i].windSeed,
+      snprintf(buf, sizeof(buf), "  Scenario[%zu]: pathVariant=%d windVariant=%d scenarioSeed=0x%016llx seq=%llu bake=%llu\n",
+        i, scenarioList[i].pathVariantIndex, scenarioList[i].windVariantIndex,
+        static_cast<unsigned long long>(scenarioList[i].scenarioSeed),
         static_cast<unsigned long long>(scenarioList[i].scenarioSequence),
         static_cast<unsigned long long>(scenarioList[i].bakeoffSequence));
       os << buf;

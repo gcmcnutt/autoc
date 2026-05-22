@@ -55,7 +55,9 @@ EvalResults makeSyntheticEvalResults(int numScenarios, int ticksPer,
         ScenarioMetadata& meta = results.scenarioList[s];
         meta.pathVariantIndex = s % 6;          // 0..5 cycling
         meta.windVariantIndex = s % 4;          // 0..3 cycling
-        meta.windSeed = static_cast<unsigned int>(0x1000 + s);
+        // 033 cleanup: windSeed removed; use scenarioSeed as the per-
+        // scenario PRNG-derivation root.
+        meta.scenarioSeed = static_cast<uint64_t>(0x1000ull + s);
         meta.scenarioSequence = static_cast<uint64_t>(100 + s);
 
         auto& ticks = results.aircraftStateList[s];
@@ -102,8 +104,8 @@ TEST(SourceDmpLoading, RoundTripSyntheticFixture) {
         EXPECT_EQ(traj.sourceScenarioIndex, s);
         EXPECT_EQ(traj.variation.pathVariantIndex, s % 6);
         EXPECT_EQ(traj.variation.windVariantIndex, s % 4);
-        EXPECT_EQ(traj.variation.windSeed,
-                  static_cast<unsigned int>(0x1000 + s));
+        EXPECT_EQ(traj.variation.scenarioSeed,
+                  static_cast<uint64_t>(0x1000ull + s));
         ASSERT_EQ(static_cast<int>(traj.samples.size()), kTicks);
         for (int t = 0; t < kTicks; ++t) {
             const auto& sample = traj.samples[t];

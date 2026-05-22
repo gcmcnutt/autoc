@@ -43,6 +43,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/selection.h"
 #include "autoc/eval/source_dmp_loader.h"  // 030 M6e tracker mode
 #include "autoc/eval/crash_hull.h"         // 030 M7d.b — pCrashForGen
+#include "autoc/util/scenario_prng.h"      // 033 §2.A — master/scenario/class PRNG chain
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
@@ -84,6 +85,59 @@ static std::vector<int> parseCsvIndices(const std::string& csv) {
         }
     }
     return out;
+}
+
+// 033 §2.A — Master PRNG instance + scenarioSeed[K] table.
+//
+// gMasterPRNG is the single instance per autoc run. Init chain at startup:
+//   1. effectiveSeed = (cfg.seed == -1) ? wall_clock : cfg.seed
+//   2. gMasterPRNG.init(effectiveSeed)
+//   3. rng::seed(gMasterPRNG.next())            — NN-evolution stream
+//   4. gScenarioSeedTable[K] = gMasterPRNG.next()  for K in [0, M_total)
+//
+// gScenarioSeedTable.size() == paths × windScenarioCount (path-major
+// linear index, matching scenarioMetaList layout). Populated by
+// populateScenarioSeedTable() once the scenario count is known.
+// scenarioSeed[K]==0 is converted to kSeedZeroSentinel before insert
+// (Park-Miller breaks at zero).
+static autoc::util::MasterPRNG gMasterPRNG;
+static std::vector<uint64_t> gScenarioSeedTable;
+// 033 §2.A — Originally-passed effective master seed (for dmp provenance).
+// Captured at autoc startup right before gMasterPRNG.init(); used to
+// populate EvalResults.effectiveMasterSeed so the dmp is self-describing.
+static uint64_t gEffectiveMasterSeed = 0;
+
+// 033 §2.A + §2.B — Stamp the dmp provenance header right before serialize.
+// Records the master seed + smoothness reward shape that produced this dmp.
+// Operator inspection of a dmp reads these to know "what produced this run".
+// gEffectiveMasterSeed is populated at autoc startup; smoothness fields are
+// pulled live from ConfigManager (the active config drives the bake).
+static void stampEvalResultsProvenance(EvalResults& results) {
+    results.effectiveMasterSeed = gEffectiveMasterSeed;
+    const AutocConfig& cfg = ConfigManager::getConfig();
+    results.smoothnessPenaltyFloor = static_cast<gp_scalar>(cfg.smoothnessPenaltyFloor);
+    if      (cfg.smoothnessMotionMode == "pythagorean") results.smoothnessMotionMode = 0;
+    else if (cfg.smoothnessMotionMode == "sum")         results.smoothnessMotionMode = 1;
+    else if (cfg.smoothnessMotionMode == "max")         results.smoothnessMotionMode = 2;
+    else                                                results.smoothnessMotionMode = 0;
+}
+
+// Compute (and cache) the scenarioSeed table once the per-run scenario
+// count is known. Called from a single site after rebuildGenerationScenarios.
+// Re-population is a no-op (table only built once per run).
+static void populateScenarioSeedTable(size_t totalScenarioCount) {
+    if (!gScenarioSeedTable.empty()) return;  // already populated this run
+    gScenarioSeedTable.reserve(totalScenarioCount);
+    for (size_t k = 0; k < totalScenarioCount; ++k) {
+        uint64_t s = gMasterPRNG.next();
+        if (s == 0) s = autoc::util::kSeedZeroSentinel;  // Park-Miller zero guard
+        gScenarioSeedTable.push_back(s);
+    }
+    *logger.info() << "Populated scenarioSeedTable: " << totalScenarioCount
+                   << " entries (first=0x" << std::hex
+                   << gScenarioSeedTable.front() << ", last=0x"
+                   << gScenarioSeedTable.back() << ")"
+                   << std::dec << std::endl;
 }
 
 // VARIATIONS1: Global sigma parameters, initialized at startup from config
@@ -133,11 +187,14 @@ static float computeVariationScale() {
 
 /**
  * Pre-computed variations for a single scenario (wind variant).
- * Generated from GPrand() at startup, reused every generation.
+ * 033 cleanup: windSeed + rabbitSpeedSeed removed. Worker derives all
+ * per-class seeds from meta.scenarioSeed via deriveClassSubSeeds()
+ * (see autoc/util/scenario_prng.h). The entryOffsets values are
+ * computed autoc-side from entryPRNG (deterministic per scenarioSeed)
+ * and propagated to the worker via ScenarioMetadata for variation_scale
+ * application.
  */
 struct ScenarioVariations {
-    unsigned int windSeed;                      // Seed for crrcsim CRRC_Random
-    unsigned int rabbitSpeedSeed;               // Seed for local rabbit speed profile PRNG
     VariationOffsets entryOffsets;              // Heading, roll, pitch, speed, windDir
 };
 
@@ -147,27 +204,51 @@ static unsigned int gPathSeed = 0;        // Derived from GPrand() or RandomPath
 static bool gPathSeedFromOverride = false;// True if RandomPathSeedB was used
 
 /**
- * Pre-fetch all scenario variations from rng at startup.
- * Called once before evolution begins.
+ * Pre-fetch all scenario variations from class-scoped PRNGs at startup.
+ * Called once before evolution begins, AFTER populateScenarioSeedTable().
  *
- * When a variation type is disabled, we still consume GPrand values to maintain
- * deterministic PRNG sequence, but store defaults in the table instead.
- * This way the table contains the actual values to send to sims - no filtering needed.
+ * 033 §2.A — Class PRNG semantics (transitional phase-2 state):
+ *   - For each wind variant K in [0, numScenarios), derive class sub-PRNG
+ *     seeds from gScenarioSeedTable[K] (path-major layout: K = path 0 ×
+ *     winds + windIdx maps to windIdx-th master draw for path 0).
+ *   - 5 class sub-seeds derived in append-only order: wind, rabbit,
+ *     entry, craft (seeded but unused), camera (seeded but unused).
+ *   - Entry-class draws (cone/roll/speed/position) consume from entryPRNG.
+ *   - windDirectionOffset (wind-class per spec.md §2.A) consumes from windPRNG.
+ *   - sv.windSeed = windPRNG.next() (uint32_t for crrcsim CRRC_Random seed).
+ *   - sv.rabbitSpeedSeed = rabbitPRNG.next() (uint32_t for worker-side speed
+ *     profile generator + crash-hull PRNG).
+ *
+ * Disabled-flag handling: each variation class still DRAWS to advance its
+ * PRNG (so a future en/disable doesn't perturb the seed table for unrelated
+ * classes), but the drawn variation VALUES are replaced by defaults before
+ * insertion into sv. This realizes the "draw-and-discard" semantics of
+ * spec.md §2.E for the per-wind transitional table. Wind-class shared-seed
+ * fallback (all scenarios = same wind when disabled) preserved.
+ *
+ * NOTE: full per-(path, wind) variation table lands in the cleanup pass
+ * (gScenarioVariations grows to size = paths × windScenarioCount). This
+ * function STILL produces a per-wind table during the transitional state.
+ *
+ * Preconditions: populateScenarioSeedTable() called first (so the seed
+ * table is non-empty). rng::* is the NN-evolution stream and is NOT
+ * consumed here (per spec.md §2.A NN-evolution / variation PRNG split).
  *
  * @param numScenarios       Number of wind scenarios (windScenarioCount from config)
  * @param sigmas             Variation sigma parameters
- * @param rabbitCfg          Rabbit speed configuration
- * @param randomPathSeedB    Override path seed (-1 = derive from GPrand)
- * @param enableEntry        If false, store default entry offsets (0.0, 1.0 for speed)
- * @param enableWind         If false, store default wind offset (0.0)
+ * @param rabbitCfg          Rabbit speed configuration (unused — kept for ABI)
+ * @param randomPathSeedB    Override path seed (-1 = derive from rng::* NN stream)
+ * @param enableEntry        If false, store default entry offsets but still draw
+ * @param enableWind         If false, store default wind offset but still draw
  */
 static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigmas,
-                                   const RabbitSpeedConfig& rabbitCfg, int randomPathSeedB,
+                                   const RabbitSpeedConfig& /*rabbitCfg*/, int randomPathSeedB,
                                    bool enableEntry, bool enableWind) {
     gScenarioVariations.clear();
     gScenarioVariations.reserve(numScenarios);
 
-    // Derive pathSeed (unless overridden by config)
+    // Path seed derivation stays on the NN-evolution rng::* stream (it
+    // controls evolution-side path generation, not per-scenario variation).
     if (randomPathSeedB == -1) {
         gPathSeed = static_cast<unsigned int>(rng::randLong());
         gPathSeedFromOverride = false;
@@ -176,39 +257,52 @@ static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigma
         gPathSeedFromOverride = true;
     }
 
-    double totalDurationSec = SIM_TOTAL_TIME_MSEC / 1000.0;
+    if (gScenarioSeedTable.empty()) {
+        *logger.info() << "WARNING: prefetchAllVariations called before "
+                          "populateScenarioSeedTable; variations will be "
+                          "incorrectly seeded" << endl;
+    }
 
-    // When wind variations disabled, use same seed for all scenarios (identical thermals/gusts)
-    // Still consume GPrand to maintain deterministic sequence
-    unsigned int baseWindSeed = static_cast<unsigned int>(rng::randLong());
+    // 033 cleanup: with windSeed/rabbitSpeedSeed removed from
+    // gScenarioVariations + ScenarioMetadata, autoc-side prefetch only
+    // needs to compute the entry-class variation OFFSETS that the worker
+    // applies via applyVariationScale. Per-class PRNG seeds (wind, rabbit,
+    // entry, craft, camera) are derived ON THE WORKER from meta.scenarioSeed
+    // via deriveClassSubSeeds() — eliminating the autoc→worker propagation
+    // of the wind/rabbit-speed integer seeds.
+    //
+    // We still construct the entryPRNG autoc-side because the entry-pose
+    // OFFSETS are computed here (so the variation_scale can be applied
+    // worker-side via applyVariationScale). The wind/rabbit class PRNGs
+    // need no autoc-side draws under the cleaned-up architecture.
 
     for (int i = 0; i < numScenarios; i++) {
         ScenarioVariations sv;
 
-        // Wind seed for crrcsim: unique per scenario if enabled, same for all if disabled
-        if (enableWind) {
-            sv.windSeed = (i == 0) ? baseWindSeed : static_cast<unsigned int>(rng::randLong());
-        } else {
-            // Disabled: all scenarios use same seed (identical thermals/gusts)
-            // Still consume GPrand to keep PRNG sequence deterministic
-            if (i > 0) { (void)rng::randLong(); }
-            sv.windSeed = baseWindSeed;
-        }
+        // Construct per-scenario ScenarioRootPRNG from the K-th scenario
+        // seed (transitional indexing: K = i, treating wind-variant i as
+        // mapping to the path-0/wind-i scenario).
+        const uint64_t scenarioSeed = (i < static_cast<int>(gScenarioSeedTable.size()))
+            ? gScenarioSeedTable[i] : autoc::util::kSeedZeroSentinel;
+        const autoc::util::ClassSubSeeds subseeds =
+            autoc::util::deriveClassSubSeeds(scenarioSeed);
 
-        // Entry/wind variations: always consume GPrand to maintain deterministic sequence,
-        // but store defaults if that variation type is disabled
-        VariationOffsets generated = generateVariationsFromGPrand(sigmas);
+        // Entry-class draws: cone/roll/speed/position. Always advance the
+        // entryPRNG to honor draw-and-discard when enableEntry=false.
+        autoc::util::ClassPRNG entryPRNG(subseeds.entry);
+        VariationOffsets entryDraw =
+            generateEntryVariationsFromClassPRNG(entryPRNG, sigmas);
 
         if (enableEntry) {
-            sv.entryOffsets.entryHeadingOffset = generated.entryHeadingOffset;
-            sv.entryOffsets.entryRollOffset = generated.entryRollOffset;
-            sv.entryOffsets.entryPitchOffset = generated.entryPitchOffset;
-            sv.entryOffsets.entrySpeedFactor = generated.entrySpeedFactor;
-            sv.entryOffsets.entryNorthOffset = generated.entryNorthOffset;
-            sv.entryOffsets.entryEastOffset = generated.entryEastOffset;
-            sv.entryOffsets.entryAltOffset = generated.entryAltOffset;
+            sv.entryOffsets.entryHeadingOffset = entryDraw.entryHeadingOffset;
+            sv.entryOffsets.entryRollOffset = entryDraw.entryRollOffset;
+            sv.entryOffsets.entryPitchOffset = entryDraw.entryPitchOffset;
+            sv.entryOffsets.entrySpeedFactor = entryDraw.entrySpeedFactor;
+            sv.entryOffsets.entryNorthOffset = entryDraw.entryNorthOffset;
+            sv.entryOffsets.entryEastOffset = entryDraw.entryEastOffset;
+            sv.entryOffsets.entryAltOffset = entryDraw.entryAltOffset;
         } else {
-            // Defaults: no offset
+            // Defaults: no offset (entryPRNG already advanced above)
             sv.entryOffsets.entryHeadingOffset = 0.0;
             sv.entryOffsets.entryRollOffset = 0.0;
             sv.entryOffsets.entryPitchOffset = 0.0;
@@ -218,15 +312,17 @@ static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigma
             sv.entryOffsets.entryAltOffset = 0.0;
         }
 
-        if (enableWind) {
-            sv.entryOffsets.windDirectionOffset = generated.windDirectionOffset;
-        } else {
-            // Default: no offset
-            sv.entryOffsets.windDirectionOffset = 0.0;
-        }
-
-        // Rabbit speed: derive a per-scenario seed (profile generated locally by sim)
-        sv.rabbitSpeedSeed = static_cast<unsigned int>(rng::randLong());
+        // Wind-class windDirectionOffset (static per-scenario rotation of
+        // base wind heading). Drawn from windPRNG; advance regardless of
+        // enableWind to honor draw-and-discard semantics. NOTE: this is
+        // separate from the worker-side windPRNG.next() that seeds
+        // CRRC_Random — both use windPRNG seeded identically from
+        // subseeds.wind, but their draws are independent (different
+        // ClassPRNG instances at different consumer sites).
+        autoc::util::ClassPRNG windPRNG(subseeds.wind);
+        const double drawnWindDir =
+            windDirectionOffsetFromClassPRNG(windPRNG, sigmas.windDirectionSigma);
+        sv.entryOffsets.windDirectionOffset = enableWind ? drawnWindDir : 0.0;
 
         gScenarioVariations.push_back(std::move(sv));
     }
@@ -245,16 +341,20 @@ static void logPrefetchedVariations(int numScenarios, long seed) {
     *logger.info() << "Scenarios: " << numScenarios << endl;
     *logger.info() << endl;
 
-    *logger.info() << "Scenario  WindSeed    RabbitSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°" << endl;
-    *logger.info() << "--------  ----------  ----------  --------  ------  ------  ------  --------  ------  -----  -----" << endl;
+    // 033 cleanup: WindSeed + RabbitSeed columns removed (worker derives
+    // them from meta.scenarioSeed via deriveClassSubSeeds). ScenarioSeed
+    // is the master-derived per-scenario seed and is the new replay-key.
+    *logger.info() << "Scenario       ScenarioSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°" << endl;
+    *logger.info() << "--------  -----------------  --------  ------  ------  ------  --------  ------  -----  -----" << endl;
 
     for (int i = 0; i < numScenarios; i++) {
         const auto& sv = gScenarioVariations[i];
+        const uint64_t scenarioSeed = (i < static_cast<int>(gScenarioSeedTable.size()))
+            ? gScenarioSeedTable[i] : 0ull;
 
         std::ostringstream line;
         line << std::setw(4) << i << "      "
-             << "0x" << std::hex << std::setw(8) << std::setfill('0') << sv.windSeed
-             << "  0x" << std::setw(8) << std::setfill('0') << sv.rabbitSpeedSeed
+             << "0x" << std::hex << std::setw(16) << std::setfill('0') << scenarioSeed
              << std::dec << std::setfill(' ')
              << "  " << std::setw(7) << std::fixed << std::setprecision(2) << radToDeg(sv.entryOffsets.entryHeadingOffset)
              << "  " << std::setw(6) << radToDeg(sv.entryOffsets.entryRollOffset)
@@ -317,8 +417,8 @@ static void populateVariationOffsets(ScenarioMetadata& meta) {
     meta.entryEastOffset = eastScaled;
     meta.entryAltOffset = altScaled;
 
-    // Rabbit speed seed for local profile generation (sigma=0 → constant speed automatically)
-    meta.rabbitSpeedSeed = gScenarioVariations[windIdx].rabbitSpeedSeed;
+    // (033 cleanup) rabbitSpeedSeed assignment removed — field deleted
+    // from ScenarioMetadata; worker derives via deriveClassSubSeeds.
   }
   // If windIdx out of range, leave defaults (shouldn't happen)
 }
@@ -352,21 +452,16 @@ void rebuildGenerationScenarios(const std::vector<std::vector<Path>>& basePaths)
   const AutocConfig& cfg = ConfigManager::getConfig();
   int windScenarioCount = std::max(cfg.windScenarioCount, 1);
 
-  // Use pre-fetched windSeeds from gScenarioVariations (single PRNG architecture)
-  // Fallback to 0 if pre-fetch hasn't run yet (shouldn't happen in normal flow)
-  auto getWindSeed = [&](int windIdx) -> unsigned int {
-    if (windIdx < static_cast<int>(gScenarioVariations.size())) {
-      return gScenarioVariations[windIdx].windSeed;
-    }
-    return 0;  // Fallback (shouldn't happen)
-  };
+  // 033 cleanup: getWindSeed lambda removed (windSeed field gone from
+  // ScenarioVariations + WindScenarioConfig + ScenarioDescriptor).
+  // ScenarioDescriptor/WindScenarioConfig now carry only windVariantIndex;
+  // worker derives per-class seeds from meta.scenarioSeed at scenario start.
 
   if (basePaths.empty()) {
     ScenarioDescriptor scenario;
     scenario.pathList = basePaths;
     scenario.windVariantIndex = 0;
-    scenario.windSeed = getWindSeed(0);
-    scenario.windScenarios.push_back({getWindSeed(0), 0});
+    scenario.windScenarios.push_back({0});
     generationScenarios.push_back(std::move(scenario));
     return;
   }
@@ -382,15 +477,12 @@ void rebuildGenerationScenarios(const std::vector<std::vector<Path>>& basePaths)
       for (int windIdx = 0; windIdx < windScenarioCount; ++windIdx) {
         scenario.pathList.push_back(basePaths[pathIdx]);
         WindScenarioConfig windScenario;
-        windScenario.windSeed = getWindSeed(windIdx);
         windScenario.windVariantIndex = windIdx;
         scenario.windScenarios.push_back(windScenario);
       }
       if (!scenario.windScenarios.empty()) {
-        scenario.windSeed = scenario.windScenarios.front().windSeed;
         scenario.windVariantIndex = scenario.windScenarios.front().windVariantIndex;
       } else {
-        scenario.windSeed = getWindSeed(0);
         scenario.windVariantIndex = 0;
       }
       generationScenarios.push_back(std::move(scenario));
@@ -403,7 +495,6 @@ void rebuildGenerationScenarios(const std::vector<std::vector<Path>>& basePaths)
     // Build wind scenarios list first
     for (int windIdx = 0; windIdx < windScenarioCount; ++windIdx) {
       WindScenarioConfig windScenario;
-      windScenario.windSeed = getWindSeed(windIdx);
       windScenario.windVariantIndex = windIdx;
       scenario.windScenarios.push_back(windScenario);
     }
@@ -416,10 +507,8 @@ void rebuildGenerationScenarios(const std::vector<std::vector<Path>>& basePaths)
     }
 
     if (!scenario.windScenarios.empty()) {
-      scenario.windSeed = scenario.windScenarios.front().windSeed;
       scenario.windVariantIndex = scenario.windScenarios.front().windVariantIndex;
     } else {
-      scenario.windSeed = getWindSeed(0);
       scenario.windVariantIndex = 0;
     }
     generationScenarios.push_back(std::move(scenario));
@@ -428,9 +517,8 @@ void rebuildGenerationScenarios(const std::vector<std::vector<Path>>& basePaths)
   if (generationScenarios.empty()) {
     ScenarioDescriptor scenario;
     scenario.windVariantIndex = 0;
-    scenario.windSeed = getWindSeed(0);
     scenario.pathList = basePaths;
-    scenario.windScenarios.push_back({getWindSeed(0), 0});
+    scenario.windScenarios.push_back({0});
     generationScenarios.push_back(std::move(scenario));
   }
 
@@ -666,7 +754,13 @@ static void logEvalResultsScenarioTracker(std::ofstream& fout,
     double distance = offset.norm();
 
     double stepPoints = logFC.computeStepScore(along, lateralDist);
-    double multipliedScore = logFC.applyStreak(stepPoints);
+    // 033 §2.B — per-tick smoothness factor read from the AircraftState the
+    // stepper wrote during simulation. Single source of truth: same factor
+    // is used for fitness_decomposition (autoc-side) and this data.dat
+    // logger. 1.0 = no penalty / first tick / smoothness disabled.
+    const double smoothness_factor =
+        static_cast<double>(stepState.getSmoothnessFactor());
+    double multipliedScore = logFC.applyStreak(stepPoints, smoothness_factor);
     double mult = (stepPoints > 0.0) ? multipliedScore / stepPoints : 1.0;
 
     simulation_steps++;
@@ -684,6 +778,7 @@ static void logEvalResultsScenarioTracker(std::ofstream& fout,
              << kTrackerInputMeta[k].display_name;
       }
       fout << "   outPt   outRl   outTh"
+           << "   smooth"                       // 033 §2.B — per-tick smoothness factor
            << "      tgX      tgY      tgZ"     // target craft position
            << "      trX      trY      trZ"     // trail-rabbit position (target − vel_unit × 3.048)
            << "        X        Y        Z"     // chase position
@@ -733,6 +828,9 @@ static void logEvalResultsScenarioTracker(std::ofstream& fout,
     // 3 NN outputs
     n += snprintf(outbuf + n, sizeof(outbuf) - n,
       " % 7.4f % 7.4f % 7.4f", out[0], out[1], out[2]);
+    // 033 §2.B — smoothness factor (width 8, 4 decimals; range [floor, 1.0])
+    n += snprintf(outbuf + n, sizeof(outbuf) - n,
+      " % 7.4f", static_cast<gp_scalar>(smoothness_factor));
     // tgX/Y/Z, trX/Y/Z, X/Y/Z, vxBdy/vyBdy/vzBdy
     n += snprintf(outbuf + n, sizeof(outbuf) - n,
       " % 8.2f % 8.2f % 8.2f"
@@ -831,9 +929,16 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
 
       // Step score + streak (mirrors fitness computation)
       double stepPoints = logFC.computeStepScore(along, lateralDist);
-      double multipliedScore = logFC.applyStreak(stepPoints);
-      // Recover actual multiplier from the score ratio
-      double mult = (stepPoints > 0.0) ? multipliedScore / stepPoints : 1.0;
+      // 033 §2.B — per-tick smoothness factor from AircraftState (single
+      // source of truth: the stepper computed and stored it during sim).
+      const double smoothness_factor =
+          static_cast<double>(stepState.getSmoothnessFactor());
+      double multipliedScore = logFC.applyStreak(stepPoints, smoothness_factor);
+      // Recover actual multiplier from the score ratio (factor-out the
+      // smoothness discount so `mult` retains its pre-033 semantic of
+      // "streak multiplier only").
+      double mult = (stepPoints > 0.0 && smoothness_factor > 0.0)
+          ? multipliedScore / (stepPoints * smoothness_factor) : 1.0;
 
       simulation_steps++;
 
@@ -859,6 +964,7 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
                  << kPathgenInputMeta[i].display_name;
         }
         fout << "   outPt   outRl   outTh"
+             << "   smooth"                       // 033 §2.B — per-tick smoothness factor
              << "    pathX    pathY    pathZ"
              << "        X        Y        Z"
              << "    vxBdy    vyBdy    vzBdy"
@@ -891,6 +997,7 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         " % 7.4f % 7.4f % 7.4f % 7.4f"
         " % 7.4f % 6.3f % 6.3f % 6.3f"
         " % 7.4f % 7.4f % 7.4f"
+        " % 7.4f"                                 // 033 §2.B — smooth column
         " % 8.2f % 8.2f % 8.2f"
         " % 8.2f % 8.2f % 8.2f"
         " % 8.2f % 8.2f % 8.2f"
@@ -911,6 +1018,7 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         in[25], in[26], in[27], in[28],
         in[29], in[30], in[31], in[32],
         out[0], out[1], out[2],
+        static_cast<gp_scalar>(smoothness_factor),       // 033 §2.B
         path.at(pathIndex).start[0],
         path.at(pathIndex).start[1],
         path.at(pathIndex).start[2],
@@ -1000,9 +1108,18 @@ static WorkerInit buildWorkerInit() {
             meta.pathVariantIndex = static_cast<int>(pathIdx);
             if (windIdx < scen.windScenarios.size()) {
                 meta.windVariantIndex = scen.windScenarios[windIdx].windVariantIndex;
-                meta.windSeed = scen.windScenarios[windIdx].windSeed;
+                // (033 cleanup) meta.windSeed assignment removed — field
+                // deleted from ScenarioMetadata. Worker derives the wind
+                // sub-seed from meta.scenarioSeed via deriveClassSubSeeds.
             }
-            // Pre-populate entry offsets at full scale from the joint-PRNG
+            // 033 §2.A — record the master-derived per-(path, wind)
+            // scenarioSeed in meta. ScenarioRootPRNG on the worker side
+            // reconstructs all 5 class sub-PRNGs from this single value.
+            // Per spec.md Clarifications Q3 (sufficient for full replay).
+            if (idx < gScenarioSeedTable.size()) {
+                meta.scenarioSeed = gScenarioSeedTable[idx];
+            }
+            // Pre-populate entry offsets at full scale from the
             // variation table. Worker scales per-eval via applyVariationScale.
             if (windIdx < gScenarioVariations.size()) {
                 const auto& v = gScenarioVariations[windIdx].entryOffsets;
@@ -1014,12 +1131,28 @@ static WorkerInit buildWorkerInit() {
                 meta.entryNorthOffset = v.entryNorthOffset;
                 meta.entryEastOffset = v.entryEastOffset;
                 meta.entryAltOffset = v.entryAltOffset;
-                meta.rabbitSpeedSeed = gScenarioVariations[windIdx].rabbitSpeedSeed;
+                // (033 cleanup) rabbitSpeedSeed assignment removed — field
+                // deleted from ScenarioMetadata + ScenarioVariations.
+                // Worker derives rabbit-class PRNG seed from
+                // meta.scenarioSeed via deriveClassSubSeeds.
             }
             meta.rabbitSpeed = gRabbitSpeedConfig.nominal;
             init.scenarioMetaList.push_back(meta);
         }
     }
+
+    // 033 §2.B — propagate smoothness knobs to crrcsim worker (separate
+    // process, no ConfigManager). HOISTED before the tracker-only early
+    // return below — smoothness applies to BOTH M1 pathgen and M2 tracker
+    // workers (the per-tick compute lives in both pathgen + tracker
+    // branches of inputdev_autoc.cpp). Encode string motion mode to
+    // uint8 enum for wire stability. Validation already done at ini-parse
+    // time; unrecognized strings can't reach here.
+    init.smoothnessPenaltyFloor = static_cast<gp_scalar>(cfg.smoothnessPenaltyFloor);
+    if      (cfg.smoothnessMotionMode == "pythagorean") init.smoothnessMotionMode = 0;
+    else if (cfg.smoothnessMotionMode == "sum")         init.smoothnessMotionMode = 1;
+    else if (cfg.smoothnessMotionMode == "max")         init.smoothnessMotionMode = 2;
+    else                                                init.smoothnessMotionMode = 0;  // defensive default
 
     if (init.mode != Mode::TRACKER) {
         return init;
@@ -1065,6 +1198,8 @@ static WorkerInit buildWorkerInit() {
     init.trailDistance = static_cast<gp_scalar>(cfg.trailDistance);
     init.cepGateThreshold = static_cast<gp_scalar>(cfg.cepGateThreshold);
 
+    // (033 smoothness propagation hoisted above the tracker-only return.)
+
     return init;
 }
 
@@ -1100,8 +1235,9 @@ static EvalData buildEvalData(const EvalJob& job) {
     // 030 M11.preA.3 (2026-05-10) — pCrashThisGen is now a fixed Bernoulli
     // probability per NN tick (10Hz), no per-gen ramp. Constant across the
     // run gives deterministic per-(scenario, gen) crash-hull outcomes given
-    // the windSeed-seeded PRNG. Worker-side crashHullRadius + SPHERE shape
-    // come from WorkerInit. Pathgen-mode leaves it at 0.
+    // the rabbit-class-PRNG-seeded crash-hull PRNG (033 — was windSeed pre-
+    // cleanup). Worker-side crashHullRadius + SPHERE shape come from
+    // WorkerInit. Pathgen-mode leaves it at 0.
     if (parseModeName(ConfigManager::getConfig().mode) == Mode::TRACKER) {
         const auto& cfg = ConfigManager::getConfig();
         evalData.pCrashThisGen = static_cast<gp_scalar>(cfg.crashHullProbability);
@@ -1274,6 +1410,7 @@ static void runNNEvaluation(
   evalResults.gp.assign(reinterpret_cast<const char*>(updatedNnData.data()),
                         reinterpret_cast<const char*>(updatedNnData.data() + updatedNnData.size()));
   evalResults.gpHash = hashByteVector(evalResults.gp);
+  stampEvalResultsProvenance(evalResults);  // 033 §2.A + §2.B
   {
     std::string keyName = startTime + "/gen9999.dmp";
     auto s3Client = ConfigManager::getS3Client();
@@ -1461,6 +1598,7 @@ static void runNNEvolution(
       bestResults.gp.assign(reinterpret_cast<const char*>(nnData.data()),
                             reinterpret_cast<const char*>(nnData.data() + nnData.size()));
       bestResults.gpHash = hashByteVector(bestResults.gp);
+      stampEvalResultsProvenance(bestResults);  // 033 §2.A + §2.B
 
       // Save to S3 as cereal-serialized EvalResults
       {
@@ -1725,7 +1863,21 @@ int main(int argc, char** argv)
   ConfigManager::initialize(configFile, *logger.info());
   const AutocConfig& cfg = ConfigManager::getConfig();
 
-  // RNG seed: -1 means time-based
+  // 033 §2.A — Master seed → autoc-NN-PRNG seed + scenarioSeed[K] table.
+  //
+  // Init chain (per spec.md Clarifications Q3 + contracts/scenario_prng_chain.md):
+  //   effectiveSeed = (cfg.seed == -1) ? wall_clock : cfg.seed
+  //   MasterPRNG.init(effectiveSeed)
+  //     ├── .next() → rng::seed (autoc-NN-evolution stream — population init,
+  //     │            mutation, crossover, selection; isolated from variations)
+  //     └── .next() × M_total → gScenarioSeedTable[0..M_total-1]
+  //
+  // M_total = paths × windScenarioCount (path-major linear scenario index).
+  // Note: in this transitional phase-2 state, gScenarioVariations[] remains
+  // indexed per-wind (size = windScenarioCount); cleanup pass next will
+  // expand to per-(path, wind) indexing per spec.md §2.A. ScenarioMetadata.
+  // scenarioSeed records the FULL per-K seed for downstream replay even
+  // before the variation table is per-K.
   long seed;
   if (cfg.seed == -1) {
     seed = static_cast<long>(time(NULL));
@@ -1733,7 +1885,26 @@ int main(int argc, char** argv)
   } else {
     seed = static_cast<long>(cfg.seed);
   }
-  rng::seed(static_cast<uint64_t>(seed));
+  const uint64_t effectiveMasterSeed = static_cast<uint64_t>(seed);
+  *logger.info() << "Effective master seed: " << effectiveMasterSeed
+                 << " (operator: copy this value into eval-mode ini Seed=N to "
+                    "reproduce this run bit-deterministically)" << endl;
+
+  // MasterPRNG drives both the autoc-side NN-evolution seed AND the per-
+  // scenario seed table. First draw → rng::seed (NN evo); subsequent
+  // draws populate scenarioSeedTable. See research.md R6 for the
+  // separation rationale.
+  gEffectiveMasterSeed = effectiveMasterSeed;  // dmp provenance — recorded into EvalResults at serialize time
+  autoc::util::MasterPRNG masterPRNG;
+  masterPRNG.init(effectiveMasterSeed);
+
+  rng::seed(masterPRNG.next());
+
+  // scenarioSeedTable will be sized + populated AFTER scenario count is
+  // known (path × wind cross product is computed downstream in scenario-
+  // build). populateScenarioSeedTable() below is called once that count
+  // is known. Stash masterPRNG on the global side for that later call.
+  gMasterPRNG = std::move(masterPRNG);
 
   // AWS setup
   Aws::SDKOptions options;
@@ -1918,10 +2089,22 @@ int main(int argc, char** argv)
                    << (100.0 / totalSteps) << "% per step)" << endl;
   }
 
-  // SINGLE PRNG ARCHITECTURE: Pre-fetch all scenario variations from GPrand()
-  // This consumes from GPrand() BEFORE GP evolution, ensuring deterministic sequence
-  // When a variation type is disabled, defaults are stored in the table (not filtered later)
+  // 033 §2.A — Populate gScenarioSeedTable BEFORE prefetchAllVariations,
+  // since the new class-PRNG-based prefetch consumes from per-scenario
+  // ScenarioRootPRNGs derived from scenarioSeed[K]. Total scenario count
+  // = paths × winds (path-major layout, matching scenarioMetaList).
   int windScenarioCount = std::max(cfg.windScenarioCount, 1);
+  const size_t totalScenarioCount =
+      static_cast<size_t>(std::max(cfg.simNumPathsPerGen, 1)) *
+      static_cast<size_t>(windScenarioCount);
+  populateScenarioSeedTable(totalScenarioCount);
+
+  // Pre-fetch all scenario variations from class-scoped PRNGs derived
+  // from scenarioSeed[K]. Transitional phase-2 state: gScenarioVariations
+  // still indexed per-wind (size = windScenarioCount); per-(path, wind)
+  // expansion lands in the cleanup pass. When a variation type is disabled,
+  // defaults are stored in the table BUT the class PRNG still draws (draw-
+  // and-discard per spec §2.E + Clarifications 2026-05-21).
   prefetchAllVariations(windScenarioCount, gVariationSigmas, gRabbitSpeedConfig,
                         cfg.randomPathSeedB,
                         gEnableEntryVariations, gEnableWindVariations);

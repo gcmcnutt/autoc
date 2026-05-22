@@ -99,7 +99,14 @@ TrackerStepper makeStepperWithSource(NNControllerBackend& nn,
                           CrashHull{},
                           /*p_crash_this_gen=*/0.0f,
                           /*prng_seed=*/0,
-                          /*trail_distance=*/3.048f);
+                          /*trail_distance=*/3.048f,
+                          // 033 §2.B — explicit no-penalty smoothness
+                          // (test exercises init-geometry only; smoothness
+                          // off keeps the contract regression-tight to
+                          // pre-033 init behavior). Per Constitution III
+                          // + M2 no-fallback policy.
+                          /*smoothness_floor=*/static_cast<gp_scalar>(1.0),
+                          autoc::eval::SmoothnessMotionMode::Pythagorean);
 }
 
 }  // namespace

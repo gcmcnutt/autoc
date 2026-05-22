@@ -4,6 +4,19 @@
 **Created**: 2026-05-19
 **Status**: DRAFT — operator-initiated during 032 phase-1 bake monitoring
 
+## Clarifications
+
+### Session 2026-05-21
+- Q: Legacy `windSeed` field disposition after 033 phase 1? → A: **Remove `windSeed` in 033 PR**. Delete the field from `ScenarioMetadata` entirely. `windPRNG.next()` (derived from `scenarioSeed`) becomes the sole wind seed source. Per Constitution III (no shims, no vestigial coexistence). Cereal length-mismatch loud-fail on old dmps is already expected for the `scenarioSeedList` add; the `windSeed` removal piggybacks on the same break.
+- Q: Enable-flag scope for inert classes (craft / camera) in 033 phase 1? → A: **Only wire the 3 currently-active classes** (wind / rabbit / entry) with `Enable<X>Variations=0` draw-and-discard semantics. Do NOT add `EnableCraftVariations` / `EnableCameraVariations` knobs now. `craftPRNG` and `cameraPRNG` are still SEEDED at scenario init (slots 3 and 4 of the `scenarioRoot.next()` chain per T020) but have no consumer; the append-only contract is preserved because the SEED derivation order is fixed in 033. When 025 (craft) and 034 (camera) un-park, their PRs add the Enable knob + draw-and-discard + consumer atomically — wind/rabbit/entry seeds and replays of pre-025/034 bakes are unaffected.
+
+### Session 2026-05-20
+- Q: Phase-1 success criterion for "reasonably tracking" — what's the M1 floor? → A: M1-specific (not M2). Three concrete gates: (i) **continued learning** (best-fitness still trending UP gen-over-gen at the smoothness-on plateau — no "do nothing" stall), (ii) **streak% ≥ 2/3 of 029 pastonly3 baseline streak%** (the smoothness penalty discounts stepPoints up to 50% but streak compound still applies; if controller is too sluggish to maintain streaks, this drops; 2/3 is the iterate-or-advance gate), (iii) **best-fitness in same range as 029 baseline** (not catastrophically lower). Materially better per-axis aggressiveness numbers complete the picture.
+- Q: PRNG sub-consumer reset boundary — per-gen / streaming / per-scenario? → A: **Per-scenario** — every scenario, ALL sub-PRNGs reseed from a scenario-derived seed (tied to master). Inside a scenario, sub-PRNGs advance normally. Scenario K is bit-identical every time it runs across gens, modes, and variation-enable states. M2's `rabbitPRNG` (rabbit speed in M1, crash-hull in M2) and `windPRNG` draw the same values as M1 — only what's USED differs, not what's DRAWN. Eval pipeline becomes bit-deterministic on (NN, scenario-seed). NN-evolution PRNG is a separate stream, unaffected by scenario sub-PRNGs.
+- Q: Master-seed default + init chain? → A: **Keep `Seed = -1` (time-based)** as today's default; `Seed = N` reproduces a prior run by copying the printed seed. Init chain: `MasterPRNG.init(masterSeed)` → first `.next()` seeds the autoc-side NN-evolution PRNG → next M draws produce `scenarioSeed[0..M-1]`. Per scenario K: scenarioSeed[K] seeds a local scenario-master-PRNG → consume N values to seed the N variation sub-PRNGs (slot-by-slot). Sub-PRNGs then advance normally during the scenario. Adding a new variation slot doesn't disturb existing seeds.
+- Q: Smoothness motion aggregate default (Pythagorean / sum / max)? → A: **Pythagorean** `sqrt(Δpt² + Δrl² + Δth²)` (L2 norm). `motion_max = sqrt(12) ≈ 3.46`. Single-axis bang-bang gets factor ≈ 0.71; all-3 simultaneous bang-bang gets the full 0.5 penalty. Standard L2 "magnitude-of-motion" interpretation; smoother gradient than L1 sum or L∞ max. `SmoothnessMotionMode` ini knob retained for later experimentation but default is Pythagorean.
+- Q: Three operator-volunteered refinements (placement, sub-PRNG structure, dmp recording)? → A: **(a) Penalty placement = worker-side** at the per-step fitness computation site (where `stepPoints` is computed, before `applyStreak`). No autoc-side state needed; per-tick local computation from NN output Δ. **(b) Sub-PRNG structure organized by VARIATION CLASS not per-variable slot**: `master → {autoc PRNG, scenarioSeed[K] → {wind PRNG, rabbit PRNG, entry PRNG, craft PRNG (future), camera PRNG (future)}}`. Multiple variables within a class share that class's PRNG; adding a new variable in an existing class doesn't disturb existing seeds; adding a new CLASS appends to the end. **(c) Record `scenarioSeed[K]` in the .dmp** per-scenario, alongside the existing variation-ramp scale field. Scenario seed alone is sufficient for full replay (workers re-derive class PRNGs deterministically from it); no need to record per-class sub-seeds. **(d) M2 phase-2 success criteria** intentionally deferred — phase 1 may not work and phase-2 design lands on phase-1 data.
+
 ## Boundary lines
 
 033 is a **reward-shape + variation-determinism** feature that addresses three problems exposed by 029/030/032 bakes + the 0517 real flight:
@@ -64,36 +77,76 @@ Four work items, all controller-side (no hardware, no FPGA, no perception change
 
 **Problem**: today's per-scenario variation is computed by sequentially consuming a joint-PRNG state. If feature X is disabled (e.g., M2 doesn't use rabbit-speed variations), its PRNG slot is **not consumed** — so the downstream consumers (wind, entry cone) get different values than they would if X were enabled. This makes M1 ↔ M2 ablation impossible without re-running both ends.
 
-**Solution**: master-seed + sub-consumer architecture.
+**Solution**: master-seed → per-scenario sub-PRNG architecture (clarified 2026-05-20).
 
-- **Master seed** (per-run): seeds a `MasterPRNG` instance at run init.
-- **Sub-consumer slots** (fixed enumeration, frozen contract):
-  | Slot | Purpose | Consumed by |
-  |---|---|---|
-  | 0 | Wind direction | M1 + M2 |
-  | 1 | Wind strength | M1 + M2 |
-  | 2 | Entry cone sigma | M1 + M2 |
-  | 3 | Entry roll sigma | M1 + M2 |
-  | 4 | Entry speed sigma | M1 + M2 |
-  | 5 | Entry position radius | M1 + M2 |
-  | 6 | Entry position alt | M1 + M2 |
-  | 7 | Rabbit speed (target speed in pathgen) | M1 only — but slot is consumed in M2 too (to keep downstream slot states aligned) |
-  | 8 | Crash hull PRNG seed | M2 only (and consumed in M1 even if hull is off) |
-  | 9+ | reserved for future variation features (craft variations, camera variations, etc.) |
+**Core determinism contract**: scenario K must be **bit-identical** every time it runs, regardless of gen, mode, or which variation features are enabled. Same wind, same rabbit profile, same future craft/camera variations. This is the gate for full reproducibility — "same NN + same scenario seed → bit-deterministic output."
 
-- **Each sub-consumer** is a separate PRNG seeded deterministically from `MasterPRNG.next()` — so its sequence is independent of whether other sub-consumers are active.
+**Init chain** (clarified 2026-05-20 — keeps existing `Seed = -1 | N` ini convention; sub-PRNGs organized by VARIATION CLASS, not per-variable slot):
 
-- **Per-scenario variation generation**: scenario N draws from sub-consumer K's Nth output, regardless of which other sub-consumers exist or are active.
+```
+Seed (autoc.ini / autoc-tracker.ini)
+  ├─ -1 → use wall clock; effective seed value is printed at run start (operator copies into a later eval-mode ini to reproduce)
+  └─ N  → use N directly (typically copied from a prior bake's startup line)
 
-- **Result**: M1 and M2 bakes with the same master seed see the **same wind, entry cone, speed, position variations** across scenarios — only the controller-relevant draws differ. Cross-feature ablation becomes a clean A/B.
+masterSeed = effective Seed value
+  → MasterPRNG.init(masterSeed)
+    → MasterPRNG.next() → seed for autoc-side NN-evolution PRNG (population init, mutation, crossover, selection — all unrelated to scenario variation)
+    → MasterPRNG.next() repeated M times → scenarioSeed[0..M-1] (one seed per scenario in the table; M = num_scenarios)
 
-- **Wind replay within a scenario**: the per-scenario wind realization (gust profile over time, thermal vortex placement) should also be deterministic per (scenario, master-seed) pair. Today CRRCSim's wind is per-frame stochastic from a separate PRNG — needs to be reseeded per-scenario from sub-consumer 0 (wind direction) so that replays of the same scenario produce identical wind.
+per scenario K (on the worker side, every time scenario K runs):
+  scenarioSeed[K] → seed local "scenario root PRNG" → derive one sub-PRNG seed per VARIATION CLASS:
+    windPRNG.seed   = scenarioRootPRNG.next()    # wind class — direction, strength, gust profile, vortex placement all consume from this single stream
+    rabbitPRNG.seed = scenarioRootPRNG.next()    # rabbit class — speed, hull (M2), entry-rabbit-state details
+    craftPRNG.seed  = scenarioRootPRNG.next()    # craft class (future 025 work) — mass, drag, prop perturbations
+    cameraPRNG.seed = scenarioRootPRNG.next()    # camera class (future 034/035 work) — FOV jitter, mount offset, lens distortion
+    # entry-pose draws (entry cone, entry roll, entry speed, entry position) consume from a dedicated "entry" PRNG OR are grouped with one of the above — plan-phase decides
+  Each class PRNG advances normally as its variation type consumes draws during the scenario.
+```
+
+**Key change vs earlier slot-per-variable framing**: sub-PRNGs are organized by VARIATION CLASS (wind, rabbit, craft, camera, ...). Multiple variables within a class share one sub-PRNG (e.g., wind direction + wind strength + per-tick gust profile all consume from windPRNG). Adding a new variable in an existing class adds another draw inside that class's PRNG — doesn't add a new sub-PRNG seed slot. Adding a new CLASS adds a slot.
+
+Key properties guaranteed by this chain:
+- **`Seed = -1` ↔ `Seed = <printed-value>` round-trips**: copy the value from training run's first log line into eval mode's ini → bit-identical replay (today's contract; 033 preserves it)
+- **NN-evolution PRNG and variation PRNG never cross streams**: separate first-draw and separate downstream consumers
+- **Adding a new variation slot (N+1)** just consumes one more `scenarioMasterPRNG.next()` per scenario; doesn't disturb earlier slots; doesn't change existing scenario seeds. Future craft/camera additions slot in cleanly
+- **Cross-mode replay**: M1 and M2 of scenario K both initialize subPRNG[K] from the same `scenarioSeed[K]` → same wind, etc. Only the SLOT-CONSUMER differs (M1 uses `rabbitPRNG` for rabbit-speed segments; M2 uses `rabbitPRNG` for crash-hull. Both modes seed it identically; only downstream consumption diverges per-mode)
+- **Scenario seed table**: 033 introduces `scenarioSeed[K]` as a `uint64_t` field on `ScenarioMetadata`. The legacy `windSeed` field (the pre-033 per-scenario seed source for CRRCSim wind) is **removed in the same PR** — `windPRNG.next()` (derived from `scenarioSeed[K]`) becomes the sole wind seed source. Per Constitution III, no coexistence / shim path.
+- **Sub-PRNG classes** (variation classes per scenario; each class is its own deterministic stream, seeded from `scenarioRootPRNG.next()`):
+  | Class | What it draws | Active in M1 | Active in M2 |
+  |---|---|---|---|
+  | wind   | Wind direction + strength + per-tick gust profile + thermal vortex placement | ✓ | ✓ |
+  | rabbit | Rabbit/target speed segments + crash-hull PRNG (when hull is on) | ✓ | ✓ (hull-only effective) |
+  | entry  | Entry cone sigma + entry roll + entry speed + entry position | ✓ | ✓ |
+  | craft  | Mass / drag / prop perturbations (currently inert; future 025 work) | future | future |
+  | camera | FOV / mount offset / lens distortion perturbations (currently inert; future 034/035 work) | n/a (no camera) | future |
+  | reserved | Future variation classes — sim-tick jitter, etc. — append-only | | |
+
+  **Append-only contract**: adding a new variation CLASS appends a new sub-PRNG seed draw at the END of the per-scenario init sequence. Existing classes' seeds (and therefore their per-scenario values) don't change. Reproducibility of old runs preserved.
+
+- **Reset boundary** (the architecture-defining decision): at the **start of each scenario**, ALL sub-PRNGs are reseeded from the scenario seed (e.g., `subPRNG[K].seed = derive(scenarioSeed, K)`). **NOT per-gen, NOT streaming across gens** — strictly per-scenario.
+
+- **Within scenario**: each sub-PRNG advances normally as its variation type consumes draws. Wind sub-PRNG (slot 0) might be tapped every sim tick for gust profile; rabbit-speed sub-PRNG (slot 7) might be tapped a few times per scenario for piecewise speed segments. Variable per-scenario consumption is fine — the sub-PRNG just advances naturally.
+
+- **Result — full per-scenario determinism**:
+  - Scenario K's wind/rabbit/entry/etc. are bit-identical at every gen
+  - Scenario K seen by M2 has the **same wind** as scenario K seen by M1 (because `windPRNG` is seeded identically regardless of mode; only `rabbitPRNG` consumers differ in what's USED, not what's DRAWN)
+  - Two runs with same master seed produce identical training trajectories (modulo NN-evolution PRNG noise — see below)
+
+- **Wind replay within a scenario**: CRRCSim's wind currently uses a per-frame stochastic process from a separate PRNG. Under 033, CRRCSim's wind PRNG is reseeded **at scenario start** from `windPRNG` (which itself was just reset from scenario seed). Replays of the same scenario produce identical wind gust profiles tick-by-tick.
+
+- **NN-evolution PRNG is separate**: autoc-side population creation, mutation, crossover, and selection consume their own PRNG stream (unrelated to scenario variation). It's seeded from master at autoc startup but is otherwise unaffected by 033's scenario sub-PRNG architecture. Wire-protocol-wise, autoc sends (NN bytes, scenario seed) to the worker; the worker reconstructs all scenario PRNGs from that seed alone. NN PRNG and variation PRNG never cross streams.
+
+- **Eval determinism corollary**: same NN + same scenario seed through the eval pipeline → bit-deterministic output. This is the regression-test contract — `eval_results(NN, scenarioK) === eval_results(NN, scenarioK)` always.
+
+- **Per-scenario seed recorded in .dmp** (clarified 2026-05-20): every scenario's record in the .dmp gets its `scenarioSeed[K]` value persisted, **alongside the existing per-scenario variation-ramp scale field** (`computeVariationScale()` result, currently recorded per spec [019] / [030] convention). The scenario seed is sufficient for full replay — given (NN bytes, scenarioSeed[K]), the worker can deterministically re-init all class PRNGs and reproduce the scenario bit-for-bit. We don't separately record per-class sub-seeds because they're trivially derivable from the scenario seed.
 
 ### 2.B M1 smoothness fitness penalty — multiplicative on stepPoints
 
 **Goal**: penalize bang-bang within the M1 objective function so evolution selects for smooth controllers — without throwing away the streak-multiplier dynamics that drive convergence.
 
 **Operator-preferred form (2026-05-19)**: a multiplicative penalty factor on per-tick `stepPoints` BEFORE the streak multiplier is applied. Smooth controllers get full credit (×1); bang-bang controllers get half credit (×0.5).
+
+**Placement (clarified 2026-05-20)**: **worker-side**, at the per-step fitness computation site (where `stepPoints` is computed and before `applyStreak` runs). The penalty derivation is local to the per-tick NN output Δ — no autoc-side state needed. Worker computes `final_step_score = step_score × smoothness_factor × streak_multiplier` per tick; autoc-side fitness aggregation receives the already-discounted scores. Implementation site: `FitnessComputer::applyStreak()` in [src/eval/fitness_computer.cc](../../src/eval/fitness_computer.cc) (or its per-tick caller) — plan-phase confirms exact insertion point.
 
 ```text
 per_tick_motion = aggregate(|Δoutput[pt]|, |Δoutput[rl]|, |Δoutput[th]|)
@@ -116,7 +169,7 @@ Where `motion_max` is:
 - **Preserves streak dynamics**: the streak multiplier still compounds as normal; smooth controllers get more streak gain than bang-bang ones at the same in-cone progress. Doesn't disrupt the fitness-shape evolution has been optimizing against.
 - **Bounded penalty (floor at 0.5)**: avoids the "controller learns to do nothing" failure mode that an unbounded subtract risks. The penalty is informative (lose up to half) but not annihilating.
 - **Penalty is zero when controller is at rest**: matches physical intuition — no control input = no airframe wear = no penalty. Aggressive controllers that need to be aggressive (high-roll turns inside the cone) still get rewarded, just less per tick.
-- **Tunable form**: ini knob `SmoothnessPenaltyFloor` (default 0.5; raise to 0.7 for mild penalty, lower to 0.3 for harsh) + `SmoothnessMotionMode` (`"pythagorean"` vs `"sum"`).
+- **Tunable form**: ini knob `SmoothnessPenaltyFloor` (default 0.5; raise to 0.7 for mild penalty, lower to 0.3 for harsh) + `SmoothnessMotionMode` (default `"pythagorean"` per /clarify 2026-05-20; alternatives `"sum"` / `"max"` available as knobs but not phase-1 default).
 - **Single knob**, axis-agnostic — no per-axis tuning needed. If roll dominates bang-bang historically, that's where most of the penalty lands automatically.
 
 **Test design**: instrument the existing 030/032 bake data.dat per-tick to compute what `smoothness_factor` distribution looks like with `floor=0.5`. Expectation: late-gen elites with bang-bang signature will see floors of 0.5-0.7 per tick on bang-bang axes, costing significant fraction of streak compound. That's the signal evolution should follow.
@@ -125,16 +178,22 @@ Where `motion_max` is:
 
 **Success criterion**: the per-axis aggressiveness chart ([per_axis_aggressiveness.py](../030-tracker-mode/per_axis_aggressiveness.py)) shows dCtrl ≤ 0.27 per-axis with sum-over-axes ≤ 0.80 (the existing 028 spec-gate budget). Phase-1 readiness gate: those budgets met at training plateau AND held through eval-reeval AND replayed cleanly in the mezzanine real flight.
 
-**Concrete baseline for A/B**: §1.3 establishes that M1 pastonly3 (029) and M2 032-phase-1 closeout produce **the same control-aggressiveness signature** (same "room" of the per-axis chart — both bang-bang, both well outside the 028 spec-gate budget). That paired baseline is what 033's smoothness experiment is compared against — not an estimate, not a target — concrete measured numbers from two existing runs. The 033 phase-1 NN must show:
-- **Reasonably tracking** (avgInRamp within some delta of M1 or M2 baseline depending on which mode is bake; exact delta TBD via /clarify, but on the order of "not catastrophic collapse" — e.g., ≥ 0.05 if baseline was 0.07-0.16)
-- **Materially better per-axis numbers** vs the M1/M2 baseline pair — dCtrl ≤ 0.27 budget being the tight target, but even partial movement (e.g., dropping from sum 1.4 toward 0.8) is informative phase-1 signal
-- Tracking-vs-smoothness frontier is acceptable: a slight tracking degradation in exchange for major smoothness gain is the desired tradeoff for real-flight deployment, since the M2 0517-flight evidence was the bang-bang signature was the actual airframe-flyability blocker, not the tracking number
+**Concrete baseline for A/B (M1-flavored, since phase 1 bakes M1)**: §1.3 establishes that M1 pastonly3 (029) and M2 032-phase-1 closeout produce **the same control-aggressiveness signature** (same "room" of the per-axis chart — both bang-bang, both well outside the 028 spec-gate budget). That paired baseline is what 033's smoothness experiment is compared against — not an estimate, not a target — concrete measured numbers from two existing runs.
+
+Phase-1 success criteria (clarified 2026-05-20 — **M1-specific, not M2**):
+- **Continued learning** — best-fitness curve still trends UP gen-over-gen at the smoothness-on plateau. No "controller learns to do nothing" failure mode where evolution stalls or regresses.
+- **Streak% ≥ 2/3 of 029 pastonly3 baseline streak%** — the smoothness penalty discounts per-tick stepPoints by up to 50%, but streak-multiplier dynamics still apply. If the controller becomes too sluggish to maintain streaks (because it's not banking quickly enough to chase rabbit turns), streak% drops. The 2/3-of-baseline floor is the "still tracking acceptably" gate. Iterate on floor / motion-mode if streak% falls below.
+- **Best-fitness in the same range as 029 pastonly3 baseline** — not catastrophically lower. The smoothness term reshapes the fitness landscape but shouldn't lower the achievable maximum by an order of magnitude.
+- **Materially better per-axis aggressiveness numbers** vs the 029 pastonly3 baseline — dCtrl ≤ 0.27 budget being the tight target, but even partial movement (e.g., dropping from sum ≈1.4 toward 0.8) is informative phase-1 signal.
+- Tracking-vs-smoothness frontier is acceptable: a slight tracking degradation in exchange for major smoothness gain is the desired tradeoff for real-flight deployment, since the 0517-flight evidence was that the bang-bang signature is the actual airframe-flyability blocker, not the tracking number.
+
+**M2 phase-2 criteria** (deferred to /clarify before phase 2 starts): expected to be avgInRamp-based against the 032 baseline (0.158), but precise threshold set after phase 1 lands and we know whether smoothness shifted M2 baselines too.
 
 **Mezzanine test — real flight**: per operator routing 2026-05-19, the real-flight validation is the gate between 033 phase 1 (smoothness alone in M1) and 033 phase 2 (M2 work). A successful real flight with reduced bang-bang signature on the airframe is the qualifier to move on.
 
 ### 2.C M2 inherits the smoothness objective
 
-Same `SmoothnessPenaltyK` term added to M2 fitness. No code change beyond what 2B introduces — the per-tick `Δoutput` penalty is mode-agnostic (just reads the NN's outputs, identical for M1 and M2).
+Same `SmoothnessPenaltyFloor` knob (per §2.B) applies to M2 fitness. No code change beyond what 2B introduces — the per-tick `Δoutput` penalty is mode-agnostic (just reads the NN's outputs, identical for M1 and M2).
 
 **Test**: M2 trained with the smoothness penalty should show reduced bang-bang in pitch/roll/throttle time series + reduced hull-strike rate (because aggressive overshoot now costs fitness in addition to the kamikaze penalty from 2D).
 

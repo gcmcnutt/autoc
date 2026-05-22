@@ -30,7 +30,9 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                const CrashHull& crash_hull,
                                gp_scalar p_crash_this_gen,
                                uint32_t prng_seed,
-                               gp_scalar trail_distance)
+                               gp_scalar trail_distance,
+                               gp_scalar smoothness_floor,
+                               SmoothnessMotionMode smoothness_mode)
     : nn_(nn),
       state_(state),
       source_(source),
@@ -51,7 +53,9 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
       prng_state_(((prng_seed == 0 ? 0xC0FFEEu
                                    : prng_seed % 0x7FFFFFFFu)) | 1u),
       hull_fired_count_(0),
-      trail_distance_(trail_distance) {}
+      trail_distance_(trail_distance),
+      smoothness_floor_(smoothness_floor),
+      smoothness_mode_(smoothness_mode) {}
 
 void TrackerStepper::initScenario() {
     nn_.reset();  // zero recurrent state at scenario start (no-op for feedforward)
@@ -115,6 +119,14 @@ void TrackerStepper::initScenario() {
             projectAndShiftHistory(source_.samples[0]);
         }
     }
+
+    // 033 §2.B — reset per-tick smoothness state. First-tick factor = 1.0
+    // (no false-positive penalty on scenario entry). Per
+    // contracts/smoothness_factor.md.
+    prev_out_valid_ = false;
+    prev_out_pt_ = static_cast<gp_scalar>(0.0);
+    prev_out_rl_ = static_cast<gp_scalar>(0.0);
+    prev_out_th_ = static_cast<gp_scalar>(0.0);
 }
 
 void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
@@ -238,6 +250,31 @@ CrashReason TrackerStepper::stepOnce() {
     // Step 3: NN forward pass → control commands.
     nn_.evaluateTracker(state_, inputs);
 
+    // 033 §2.B — compute per-tick smoothness factor from NN-output Δs vs
+    // previous tick, store on AircraftState for downstream fitness +
+    // data.dat (single source of truth). First-tick path: prev_out_valid_
+    // = false → Δs all zero → factor = 1.0 (no penalty).
+    {
+        const gp_scalar curr_pt = state_.getPitchCommand();
+        const gp_scalar curr_rl = state_.getRollCommand();
+        const gp_scalar curr_th = state_.getThrottleCommand();
+        gp_scalar dpt = static_cast<gp_scalar>(0.0);
+        gp_scalar drl = static_cast<gp_scalar>(0.0);
+        gp_scalar dth = static_cast<gp_scalar>(0.0);
+        if (prev_out_valid_) {
+            dpt = curr_pt - prev_out_pt_;
+            drl = curr_rl - prev_out_rl_;
+            dth = curr_th - prev_out_th_;
+        }
+        const gp_scalar factor = compute_smoothness_factor(
+            dpt, drl, dth, smoothness_floor_, smoothness_mode_);
+        state_.setSmoothnessFactor(factor);
+        prev_out_pt_ = curr_pt;
+        prev_out_rl_ = curr_rl;
+        prev_out_th_ = curr_th;
+        prev_out_valid_ = true;
+    }
+
     // Step 4: advance chase physics. M6d simplification: one
     // SIM_TIME_STEP_MSEC step per source tick (assumes source nominal 100ms
     // tick interval, which matches pastonly3 source dmps). Variable-rate
@@ -260,7 +297,9 @@ CrashReason TrackerStepper::stepOnce() {
 
     // 030 M11.preA.3 (2026-05-10) — Crash-hull RE-ENABLED with deterministic
     // fixed-probability Bernoulli (no curriculum ramp). Seed comes from
-    // windSeed (P1 fix, stable across train/elite-reeval). prng_state_ is
+    // the rabbit-class sub-PRNG (033 cleanup; pre-cleanup used windSeed —
+    // see contracts/scenario_prng_chain.md crash-hull as rabbit-class
+    // consumer). Stable across train/elite-reeval. prng_state_ is
     // consumed only when chase is INSIDE the hull AND p_crash > 0, so cost
     // for late-pop NNs that don't enter the hull is zero.
     if (crash == CrashReason::None) {

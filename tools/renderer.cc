@@ -518,10 +518,11 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       meta = evalResults.scenarioList[i];
     } else {
       meta.pathVariantIndex = i;
-      if (meta.windSeed == 0 && meta.windVariantIndex == 0 && evalResults.scenario.windSeed != 0) {
-        meta.windSeed = evalResults.scenario.windSeed;
-        meta.windVariantIndex = evalResults.scenario.windVariantIndex;
-      }
+      // 033 cleanup: windSeed back-fill removed (field gone). The per-
+      // scenario scenarioSeed roundtrips via scenarioList[i] when
+      // hasPerPathMetadata; pre-perPathMetadata dmps would have all
+      // scenarios sharing evalResults.scenario.scenarioSeed which is
+      // already correct via the parent meta assignment above.
     }
 
     vec3 finalPos = vec3::Zero();
@@ -534,7 +535,9 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     std::cout << "  Arena " << i
               << " pathIdx=" << meta.pathVariantIndex
               << " windIdx=" << meta.windVariantIndex
-              << " windSeed=" << meta.windSeed
+              << " scenarioSeed=0x" << std::hex << std::setw(16)
+              << std::setfill('0') << meta.scenarioSeed
+              << std::dec << std::setfill(' ')
               << " finalXYZ=" << finalPos.transpose() << std::endl;
   }
 
@@ -645,7 +648,12 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       labelStream << "  Path " << meta.pathVariantIndex;
     }
     labelStream << "  Wind " << meta.windVariantIndex;
-    labelStream << "\nSeed " << meta.windSeed;
+    // 033: scenarioSeed replaces windSeed in label (top 8 hex digits for
+    // visual brevity; full value in console "Arena summary" output above).
+    labelStream << "\nSeed 0x" << std::hex << std::setw(8)
+                << std::setfill('0')
+                << static_cast<uint32_t>(meta.scenarioSeed >> 32)
+                << std::dec << std::setfill(' ');
 
     scalar labelScale = static_cast<scalar>(6.0f * 0.5f);
     scalar textOffsetX = static_cast<scalar>(45.0f);

@@ -115,7 +115,7 @@ struct AutocConfig {
     // 030 M11.preA.3 (2026-05-10): replaced 4-param ramp curriculum with a
     // single fixed Bernoulli probability per NN tick (10Hz). The ramp added
     // determinism risk (per-gen state) and made debugging awkward. Fixed
-    // probability ⇒ deterministic per (scenario, gen) given windSeed PRNG.
+    // probability ⇒ deterministic per (scenario, gen) given the scenarioSeed-derived rabbit-class PRNG.
     // 0.10 default = ~"50% chance of dying within 7 ticks (~0.7s) inside
     // hull" → strong incentive to keep target outside the 1m sphere.
     double crashHullProbability = 0.10;
@@ -155,6 +155,26 @@ struct AutocConfig {
     // when EITHER beacon's CEP at the current tick is >= this. Default
     // matches kCepSentinelThreshold (1.25) from camera_projection.h.
     double cepGateThreshold = 1.25;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to float at the eval-pipeline consumption boundary
+
+    // === 033 PHASE 1 — Multiplicative smoothness penalty =================
+    // [Smoothness] section in autoc*.ini. Worker-side per-tick factor
+    // applied to stepPoints BEFORE the streak multiplier inside
+    // FitnessComputer::applyStreak() — see spec.md §2.B and
+    // contracts/{smoothness_factor,ini_schema}.md.
+    //
+    // SmoothnessPenaltyFloor: lower bound of the factor.
+    //   1.0 = no penalty (back-compat / regression-test mode)
+    //   0.5 = phase-1 YOLO start (operator-preferred per Clarifications Q4)
+    // Range: [0.0, 1.0]. Loud-fail at ini-parse time on out-of-range.
+    double smoothnessPenaltyFloor = 0.5;  // raw-ok: ini-loaded config-struct field — cast to gp_scalar at the per-tick consumption boundary
+
+    // SmoothnessMotionMode: how the per-tick Δoutput vector aggregates into
+    // the scalar "motion" term. Wire-stable string at ini boundary; parsed
+    // to autoc::eval::SmoothnessMotionMode enum at ConfigManager::load().
+    //   "pythagorean" (default) — L2 norm; motion_max = sqrt(12) ≈ 3.464
+    //   "sum"                   — L1; motion_max = 6.0
+    //   "max"                   — L∞; motion_max = 2.0
+    std::string smoothnessMotionMode = "pythagorean";
 };
 
 class ConfigManager {

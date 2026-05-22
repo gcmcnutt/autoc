@@ -152,14 +152,46 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
     config->beaconRightMountZ = reader.GetReal("", "BeaconRightMountZ", config->beaconRightMountZ);
 
     // === 032 PHASE 1 — DERIVED PERCEPTUAL FEATURES =====================
-    // [DerivedFeatures] section. Loud-fail on out-of-range threshold.
-    config->cepGateThreshold = reader.GetReal("DerivedFeatures", "CepGateThreshold", config->cepGateThreshold);
+    // Flat key per autoc-tracker.ini convention (default section, matches
+    // the rest of the autoc/autoc-tracker config style). Loud-fail on
+    // out-of-range threshold. The [DerivedFeatures] section header was
+    // removed from the ini files (033 cleanup); this parse now reads from
+    // the default section.
+    config->cepGateThreshold = reader.GetReal("", "CepGateThreshold", config->cepGateThreshold);
     if (config->cepGateThreshold < 0.0 || config->cepGateThreshold > 2.0) {
-        out << "FATAL ERROR: [DerivedFeatures] CepGateThreshold = "
+        out << "FATAL ERROR: CepGateThreshold = "
             << config->cepGateThreshold
             << " is out of range [0.0, 2.0]. Defaults to 1.25 (matches "
             << "kCepSentinelThreshold). Per specs/032-tracker-nn-enhancements"
             << "/contracts/ini_schema.md." << std::endl;
+        exit(1);
+    }
+
+    // === 033 PHASE 1 — MULTIPLICATIVE SMOOTHNESS PENALTY ================
+    // Flat keys (no section header) per autoc.ini convention. Loud-fail on
+    // out-of-range floor or unknown motion-mode string. See contracts/
+    // ini_schema.md "Parsing behavior". Defaults: floor=0.5 + pythagorean
+    // (operator-preferred phase-1 YOLO start per spec.md Clarifications Q4).
+    config->smoothnessPenaltyFloor =
+        reader.GetReal("", "SmoothnessPenaltyFloor", config->smoothnessPenaltyFloor);
+    if (config->smoothnessPenaltyFloor < 0.0 || config->smoothnessPenaltyFloor > 1.0) {
+        out << "FATAL ERROR: SmoothnessPenaltyFloor = "
+            << config->smoothnessPenaltyFloor
+            << " is out of range [0.0, 1.0]. Per spec.md §2.B + contracts/"
+               "ini_schema.md (1.0 disables penalty; 0.5 = phase-1 YOLO start)."
+            << std::endl;
+        exit(1);
+    }
+    config->smoothnessMotionMode =
+        reader.Get("", "SmoothnessMotionMode", config->smoothnessMotionMode);
+    if (config->smoothnessMotionMode != "pythagorean" &&
+        config->smoothnessMotionMode != "sum" &&
+        config->smoothnessMotionMode != "max") {
+        out << "FATAL ERROR: SmoothnessMotionMode = '"
+            << config->smoothnessMotionMode
+            << "' is invalid; must be 'pythagorean' (default L2),"
+               " 'sum' (L1), or 'max' (L∞). Per contracts/ini_schema.md."
+            << std::endl;
         exit(1);
     }
 

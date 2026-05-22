@@ -119,15 +119,16 @@ int main(int argc, char* argv[]) {
                   << " mean=" << std::fixed << std::setprecision(1) << meanT
                   << " max=" << maxT << "\n";
 
-        // Path × wind variation distribution (smoke-slice readiness check).
-        std::cout << "Variation axes (joint-PRNG params per FR-010):\n";
+        // Path × wind variation distribution (033: per-scenario master-derived
+        // scenarioSeed replaces the pre-033 joint-PRNG windSeed).
+        std::cout << "Variation axes (033 per-scenario master-derived seeds):\n";
         for (size_t i = 0; i < std::min(trajectories.size(), size_t{5}); ++i) {
             const auto& v = trajectories[i].variation;
             std::cout << "  scenario " << std::setw(3) << i
                       << ": pathVar=" << std::setw(2) << v.pathVariantIndex
                       << " windVar=" << std::setw(2) << v.windVariantIndex
-                      << " windSeed=0x" << std::hex << std::setw(8)
-                      << std::setfill('0') << v.windSeed
+                      << " scenarioSeed=0x" << std::hex << std::setw(16)
+                      << std::setfill('0') << v.scenarioSeed
                       << std::dec << std::setfill(' ') << "\n";
         }
         if (trajectories.size() > 5) {

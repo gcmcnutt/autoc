@@ -320,6 +320,17 @@ struct AircraftState {
     const TrackerInputs& getTrackerInputs() const { return trackerInputs_; }
     const float* getNNOutputs() const { return nnOutputs_; }
 
+    // 033 §2.B — Per-tick smoothness factor applied to stepPoints inside
+    // FitnessComputer::applyStreak BEFORE the streak multiplier. Worker
+    // (stepper) computes this from NN-output Δs vs previous tick and
+    // stores here; autoc-side fitness_decomposition + data.dat logger
+    // read it back. 1.0 = no penalty (first tick of scenario, no prior
+    // output to diff against, OR floor=1.0 disabling the term). Lower
+    // values (down to floor in autoc.ini) = bang-bang penalty.
+    // Range: [SmoothnessPenaltyFloor, 1.0].
+    gp_scalar getSmoothnessFactor() const { return smoothnessFactor_; }
+    void setSmoothnessFactor(gp_scalar f) { smoothnessFactor_ = f; }
+
     // ACRO PID per-tick internals (see PidInternals).
     void setPidInternals(const PidInternals& p) { pidInternals_ = p; }
     const PidInternals& getPidInternals() const { return pidInternals_; }
@@ -478,6 +489,10 @@ struct AircraftState {
     float nnOutputs_[NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs (mode-agnostic)
     bool hasNNData_ = false;
 
+    // 033 §2.B — per-tick smoothness factor (stepper writes; fitness +
+    // data.dat read). Defaults to 1.0 = no penalty.
+    gp_scalar smoothnessFactor_ = static_cast<gp_scalar>(1.0);
+
     // ACRO PID per-tick snapshot (always populated when PID runs)
     PidInternals pidInternals_;
 
@@ -562,6 +577,14 @@ struct AircraftState {
         float* rawTracker = reinterpret_cast<float*>(&trackerInputs_);  // raw-ok: NN-byte-format buffer
         for (uint32_t i = 0; i < trackerInputCount; i++)
           ar(rawTracker[i]);
+      }
+
+      // 033 §2.B — per-tick smoothness factor. Appended at end per
+      // project no-cereal-versioning policy. Pre-033 v=2 dmps lacking
+      // this field fail-loud on cereal length mismatch (Constitution V
+      // exemption + Constitution III no-shim). Always written at v=2.
+      if (version >= 2) {
+        ar(smoothnessFactor_);
       }
     }
 #endif

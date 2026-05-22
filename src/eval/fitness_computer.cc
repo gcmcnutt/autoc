@@ -54,7 +54,12 @@ FitnessComputer::ScoreTerms FitnessComputer::decomposeStepScore(double along, do
     return t;
 }
 
-double FitnessComputer::applyStreak(double stepPoints) {
+double FitnessComputer::applyStreak(double stepPoints, double smoothness_factor) {
+    // Streak state update is THRESHOLD-based on unpenalized stepPoints —
+    // smoothness factor discounts the returned value but doesn't perturb
+    // the consecutive-tick streak counter. Operator-visible intent: a
+    // sluggish-but-on-rabbit controller still earns streak credit; the
+    // smoothness factor just reduces how much each in-streak tick is worth.
     if (stepPoints >= streakThreshold_) {
         streakCount_ = std::min(streakCount_ + 1, streakStepsToMax_);
         totalStreakSteps_++;
@@ -64,7 +69,11 @@ double FitnessComputer::applyStreak(double stepPoints) {
     maxStreak_ = std::max(maxStreak_, streakCount_);
     double multiplier = 1.0 + (streakMultMax_ - 1.0) * static_cast<double>(streakCount_) / static_cast<double>(streakStepsToMax_);
     maxMultiplier_ = std::max(maxMultiplier_, multiplier);
-    return stepPoints * multiplier;
+    // 033 §2.B: multiplication ORDER is the contract per
+    // contracts/smoothness_factor.md "Multiplication order is the contract"
+    //   final_step = stepPoints × smoothness_factor × streak_multiplier
+    // Operational reading: discount per-tick value FIRST, THEN compound.
+    return stepPoints * smoothness_factor * multiplier;
 }
 
 void FitnessComputer::resetStreak() {

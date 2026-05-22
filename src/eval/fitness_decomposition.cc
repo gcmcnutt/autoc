@@ -166,7 +166,14 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             // pathgen-mode regression-gate is unaffected.
             auto terms = fc.decomposeStepScore(along, lateralDist);
             double stepPoints = terms.score;
-            double multipliedScore = fc.applyStreak(stepPoints);
+            // 033 §2.B — per-tick smoothness factor is computed by the
+            // stepper (worker-side per-tick) and stored on AircraftState.
+            // Read it here for fitness application; the per-tick value is
+            // a pure function of the NN-output Δs so a re-derivation at
+            // analysis time would produce the same number.
+            const double smoothness_factor =
+                static_cast<double>(stepState.getSmoothnessFactor());
+            double multipliedScore = fc.applyStreak(stepPoints, smoothness_factor);
             accumulatedScore += multipliedScore;
 
             simulation_steps++;

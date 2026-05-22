@@ -19,6 +19,7 @@
 #include <cmath>
 #include <vector>
 #include "autoc/util/rng.h"
+#include "autoc/util/scenario_prng.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -51,7 +52,8 @@ struct VariationSigmas {
     }
 };
 
-// Derived variation values - computed from windSeed, stored in ScenarioMetadata
+// Derived variation values — computed from scenarioSeed-derived class PRNGs (033),
+// stored in ScenarioMetadata. Per-scenario; worker applies variation_scale.
 struct VariationOffsets {
     double entryHeadingOffset;  // radians
     double entryRollOffset;     // radians
@@ -67,7 +69,7 @@ struct VariationOffsets {
  * Generate all variations from a seed and sigma parameters.
  * Uses simple LCG PRNG for deterministic, reproducible results.
  *
- * @param seed       The random seed (e.g., windSeed from config)
+ * @param seed       The random seed (legacy LCG path; 033 callers use generateEntryVariationsFromClassPRNG)
  * @param sigmas     Gaussian sigma values for each variation dimension
  * @return           Computed variation offsets
  */
@@ -254,8 +256,70 @@ inline double getSpeedAtTime(const std::vector<RabbitSpeedPoint>& profile, doubl
 }
 
 // ============================================================================
-// GPrand-based generators for single PRNG architecture
+// 033 §2.A — Class-PRNG-based generators
+//
+// New post-033 path: variations draw from class-scoped ClassPRNG streams
+// derived from per-scenario `scenarioSeed[K]` (see autoc/util/scenario_prng.h).
+// Entry-class draws (cone / roll / speed / position) consume from entryPRNG;
+// wind-direction static offset consumes from windPRNG (per spec.md §2.A
+// variation-class table: wind class includes wind direction, gust profile,
+// etc; entry class is the entry-pose set).
+//
+// These coexist with the legacy GPrand-based generators below during the
+// 033 phase-1 transitional period (per spec.md Clarifications 2026-05-21);
+// the GPrand-based path is removed in the consumer-rewire cleanup pass
+// once all callers route through scenarioSeed.
+// ============================================================================
+
+// Entry-class portion of generateVariations: cone sigma → heading + pitch,
+// roll, speed factor, cylindrical position (N/E + altitude). Does NOT
+// include `windDirectionOffset` (wind-class — see
+// `windDirectionFromClassPRNG` below).
+inline VariationOffsets generateEntryVariationsFromClassPRNG(
+        autoc::util::ClassPRNG& entryPRNG, const VariationSigmas& sigmas) {
+    VariationOffsets v;
+    v.windDirectionOffset = 0.0;  // wind-class draw is separate
+
+    // Cone deviation: same math as generateVariations() / generateVariationsFromGPrand()
+    {
+        double coneAngle = std::fabs(entryPRNG.nextGaussian(sigmas.coneSigma));
+        double azimuth = entryPRNG.nextDouble() * 2.0 * M_PI;
+        double sinC = std::sin(coneAngle), cosC = std::cos(coneAngle);
+        double sinA = std::sin(azimuth), cosA = std::cos(azimuth);
+        v.entryHeadingOffset = std::atan2(sinC * cosA, cosC);
+        v.entryPitchOffset = -std::asin(sinC * sinA);
+    }
+    v.entryRollOffset = entryPRNG.nextGaussian(sigmas.rollSigma);
+    v.entrySpeedFactor = 1.0 + entryPRNG.nextGaussian(sigmas.speedSigma);
+
+    if (sigmas.positionRadiusSigma > 0.0) {
+        double radius = std::fabs(entryPRNG.nextGaussian(sigmas.positionRadiusSigma));
+        double angle = entryPRNG.nextDouble() * 2.0 * M_PI;
+        v.entryNorthOffset = radius * std::cos(angle);
+        v.entryEastOffset = radius * std::sin(angle);
+    }
+    if (sigmas.positionAltSigma > 0.0) {
+        v.entryAltOffset = entryPRNG.nextGaussian(sigmas.positionAltSigma);
+    }
+    return v;
+}
+
+// Wind-class draw: static per-scenario wind direction offset (radians).
+// Applied to the base wind heading by the worker. Does NOT advance the
+// per-frame wind PRNG (that's CRRC_Random, seeded separately from
+// windPRNG.next() — typically the draw BEFORE this one in the worker
+// flow). Spec.md §2.A wind class → "Wind direction + strength + per-tick
+// gust profile + thermal vortex placement".
+inline double windDirectionOffsetFromClassPRNG(
+        autoc::util::ClassPRNG& windPRNG, double sigma) {
+    return windPRNG.nextGaussian(sigma);
+}
+
+// ============================================================================
+// LEGACY: GPrand-based generators for single PRNG architecture
 // These consume from GPrand() instead of using a local LCG
+// 033 §2.A: deprecated; removed once consumer rewires land (see
+// specs/033-m1-smooth-plus-variations/tasks.md cleanup pass).
 // ============================================================================
 
 /**

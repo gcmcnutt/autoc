@@ -18,11 +18,15 @@ namespace autoc::eval {
 PathgenStepper::PathgenStepper(NNControllerBackend& nn,
                                AircraftState& state,
                                const std::vector<Path>& path,
-                               const ScenarioMetadata& scenario_meta)
+                               const ScenarioMetadata& scenario_meta,
+                               gp_scalar smoothness_floor,
+                               SmoothnessMotionMode smoothness_mode)
     : nn_(nn),
       state_(state),
       path_(path),
-      scenario_meta_(scenario_meta) {}
+      scenario_meta_(scenario_meta),
+      smoothness_floor_(smoothness_floor),
+      smoothness_mode_(smoothness_mode) {}
 
 void PathgenStepper::initScenario() {
     nn_.reset();  // zero recurrent state at span start (no-op for feedforward)
@@ -76,6 +80,14 @@ void PathgenStepper::initScenario() {
     }
 
     duration_msec_ = 0;
+
+    // 033 §2.B — reset per-tick smoothness tracking. First tick of next
+    // scenario gets factor = 1.0 (no "false-positive" penalty on scenario
+    // entry). Per contracts/smoothness_factor.md "First tick of scenario".
+    prev_out_valid_ = false;
+    prev_out_pt_ = static_cast<gp_scalar>(0.0);
+    prev_out_rl_ = static_cast<gp_scalar>(0.0);
+    prev_out_th_ = static_cast<gp_scalar>(0.0);
 }
 
 CrashReason PathgenStepper::stepOnce() {
@@ -116,6 +128,32 @@ CrashReason PathgenStepper::stepOnce() {
     {
         VectorPathProvider pathProvider(path_, state_.getThisPathIndex());
         nn_.evaluate(state_, pathProvider);
+    }
+
+    // 033 §2.B — compute per-tick smoothness factor from NN-output Δs vs
+    // previous tick, then stash on AircraftState for downstream fitness +
+    // data.dat consumption (single source of truth). First-tick path:
+    // prev_out_valid_ = false → Δs all zero → factor = 1.0 (no penalty).
+    {
+        const gp_scalar curr_pt = state_.getPitchCommand();
+        const gp_scalar curr_rl = state_.getRollCommand();
+        const gp_scalar curr_th = state_.getThrottleCommand();
+        gp_scalar dpt = static_cast<gp_scalar>(0.0);
+        gp_scalar drl = static_cast<gp_scalar>(0.0);
+        gp_scalar dth = static_cast<gp_scalar>(0.0);
+        if (prev_out_valid_) {
+            dpt = curr_pt - prev_out_pt_;
+            drl = curr_rl - prev_out_rl_;
+            dth = curr_th - prev_out_th_;
+        }
+        const gp_scalar factor = compute_smoothness_factor(
+            dpt, drl, dth, smoothness_floor_, smoothness_mode_);
+        state_.setSmoothnessFactor(factor);
+        // Update prev_out for next tick (post-saturation; matches contract).
+        prev_out_pt_ = curr_pt;
+        prev_out_rl_ = curr_rl;
+        prev_out_th_ = curr_th;
+        prev_out_valid_ = true;
     }
 
     // Advance aircraft state.
