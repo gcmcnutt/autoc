@@ -60,6 +60,7 @@ public:
                    gp_scalar p_crash_this_gen,
                    uint32_t prng_seed,
                    gp_scalar trail_distance,
+                   gp_scalar cep_gate_threshold,
                    // 033 §2.B — smoothness floor + motion mode (per-run
                    // config) propagated from WorkerInit by minisim.cc.
                    gp_scalar smoothness_floor,
@@ -103,10 +104,11 @@ private:
     // seeded at construction time (deterministic across runs). On fire:
     // CrashReason::HullStrike, scenario terminates, hull_fired_count_++.
     CrashHull crash_hull_;
-    gp_scalar p_crash_this_gen_ = static_cast<gp_scalar>(0.0);
-    uint32_t prng_state_ = 0;
-    int hull_fired_count_ = 0;
-    gp_scalar trail_distance_ = static_cast<gp_scalar>(3.048);
+    gp_scalar p_crash_this_gen_;
+    uint32_t prng_state_;
+    int hull_fired_count_;
+    gp_scalar trail_distance_;
+    gp_scalar cep_gate_threshold_;
 
     // 6-slot beacon history per channel. Index 0 is oldest, index 5 is
     // "now". Shift-left on each push (cheap — 6 floats × 6 channels).

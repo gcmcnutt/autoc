@@ -14,7 +14,6 @@
 #include "autoc/eval/crash_hull.h"     // M7c — geometric inside-hull telemetry
 #include "autoc/eval/derived_features.h"  // 032 phase 1 — compute_pair_span
 #include "autoc/eval/trail_rabbit.h"  // M7b — real trail-rabbit math
-#include "autoc/util/config.h"  // 032 phase 1 — CepGateThreshold knob
 
 namespace autoc::eval {
 
@@ -31,6 +30,7 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                gp_scalar p_crash_this_gen,
                                uint32_t prng_seed,
                                gp_scalar trail_distance,
+                               gp_scalar cep_gate_threshold,
                                gp_scalar smoothness_floor,
                                SmoothnessMotionMode smoothness_mode)
     : nn_(nn),
@@ -54,6 +54,7 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                    : prng_seed % 0x7FFFFFFFu)) | 1u),
       hull_fired_count_(0),
       trail_distance_(trail_distance),
+      cep_gate_threshold_(cep_gate_threshold),
       smoothness_floor_(smoothness_floor),
       smoothness_mode_(smoothness_mode) {}
 
@@ -176,15 +177,10 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     // 032 PHASE 1 — Cache beacon-pair span at the current tick. CEP-gated:
     // if EITHER beacon's CEP exceeds the configured threshold, substitute
     // neutral 0.0 (= "no closing-distance signal"). Per spec Q4 + R2.
-    // Reading ConfigManager here keeps single source of truth with the
-    // gather-side gating decision in gather_tracker_inputs.
-    const float cep_gate_threshold = static_cast<float>(   // raw-ok: NN-byte-format comparison boundary — compared against BeaconObservation::cep which is float (cereal byte-format member)
-        ConfigManager::isInitialized()
-            ? ConfigManager::getConfig().cepGateThreshold
-            : 1.25);
+    const float cep_gate = static_cast<float>(cep_gate_threshold_);  // raw-ok: NN-byte-format comparison boundary
     const bool cep_gated =
-        left.cep >= cep_gate_threshold ||
-        right.cep >= cep_gate_threshold;
+        left.cep >= cep_gate ||
+        right.cep >= cep_gate;
     if (cep_gated) {
         history_.span[5] = 0.0f;
     } else {
@@ -245,7 +241,8 @@ CrashReason TrackerStepper::stepOnce() {
 
     // Step 2: gather tracker NN inputs.
     TrackerInputs inputs = {};
-    gather_tracker_inputs(state_, history_, arena_, inputs);
+    gather_tracker_inputs(state_, history_, arena_,
+                          static_cast<float>(cep_gate_threshold_), inputs);
 
     // Step 3: NN forward pass → control commands.
     nn_.evaluateTracker(state_, inputs);

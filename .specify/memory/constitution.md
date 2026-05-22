@@ -147,6 +147,31 @@ missed alias months later. The aliases exist precisely because that class of bug
 undetectable after the fact — the only defense is a pre-merge type-domain audit, and the
 audit is only tractable if the convention is universal in eval / nn / fitness code.
 
+### VII. No Silent Fallback Defaults
+
+Member variables that receive values from constructor parameters MUST NOT carry in-class
+default initializers. The constructor's initializer list is the single assignment site; if
+a new constructor omits a member, the compiler must flag it rather than silently falling
+back to a stale default.
+
+**Permitted exceptions** (must be annotated `// default-ok: <reason>` at the declaration):
+
+- Counters and accumulators that genuinely reset each use (e.g., `int count_ = 0;`)
+- Sentinel / flag states that have a universally correct initial value
+  (e.g., `bool prev_out_valid_ = false;`)
+
+**Rationale**: The 032 `cepGateThreshold` bug demonstrated this failure mode exactly.
+`evaluator.cc` and `tracker_stepper.cc` fell back to a hardcoded `1.25` default instead of
+reading the value from `WorkerInit`, producing correct-looking but semantically wrong
+results on any configuration where the operator had set a different threshold. The fallback
+was invisible — no compile error, no test failure, no runtime warning. Removing in-class
+defaults for constructor-supplied values ensures the compiler catches the omission.
+
+**Scope**: applies to all classes in the eval / nn / fitness / stepper pipeline where
+values flow from `WorkerInit`, `EvalData`, `ScenarioMetadata`, or `.ini` config. Does NOT
+apply to plain-old-data structs used purely as wire-format containers (e.g.,
+`TrackerHistoryWindow`), where zero-initialization via `{}` is the intended contract.
+
 ## Architecture
 
 - **C++17**, CMake, Eigen, cereal (serialization), GoogleTest
@@ -159,4 +184,4 @@ audit is only tractable if the convention is universal in eval / nn / fitness co
 
 Constitution supersedes all other practices. Amendments require documentation and rationale.
 
-**Version**: 1.2.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-05-06 (Principle VI added — Type-Domain Discipline)
+**Version**: 1.3.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-05-22 (Principle VII added — No Silent Fallback Defaults)

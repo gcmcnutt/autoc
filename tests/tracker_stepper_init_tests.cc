@@ -100,6 +100,7 @@ TrackerStepper makeStepperWithSource(NNControllerBackend& nn,
                           /*p_crash_this_gen=*/0.0f,
                           /*prng_seed=*/0,
                           /*trail_distance=*/3.048f,
+                          /*cep_gate_threshold=*/1.25f,
                           // 033 §2.B — explicit no-penalty smoothness
                           // (test exercises init-geometry only; smoothness
                           // off keeps the contract regression-tight to

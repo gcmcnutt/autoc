@@ -224,6 +224,7 @@ public:
                   evalData.pCrashThisGen,
                   prngSeed,
                   init_.trailDistance,
+                  init_.cepGateThreshold,
                   init_.smoothnessPenaltyFloor,
                   smoothMode);
               stepper.initScenario();
