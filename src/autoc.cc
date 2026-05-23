@@ -241,6 +241,15 @@ static bool gPathSeedFromOverride = false;// True if RandomPathSeedB was used
  * @param enableEntry        If false, store default entry offsets but still draw
  * @param enableWind         If false, store default wind offset but still draw
  */
+// TODO (033 T056, end of feature): `numScenarios` is `windScenarioCount`
+// (49), not `paths × windScenarioCount` (294). Entry pose + wind direction
+// offsets get computed once per wind index and SHARED across all 6 paths
+// (see buildWorkerInit's gScenarioVariations[windIdx] lookup). Side-effect:
+// a config of paths=1 with windScenarios=6 runs the same scenario 6×
+// instead of 6 distinct variations of one path. Worker-side rabbit profile
+// + CRRC sim seed are already per-K (deriveClassSubSeeds from per-K
+// scenarioSeed), so only the autoc-side entry+wind table is under-indexed.
+// Cleanup: size by paths × winds, index by linear K.
 static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigmas,
                                    const RabbitSpeedConfig& /*rabbitCfg*/, int randomPathSeedB,
                                    bool enableEntry, bool enableWind) {
