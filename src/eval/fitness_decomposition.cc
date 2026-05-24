@@ -171,9 +171,14 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             // Read it here for fitness application; the per-tick value is
             // a pure function of the NN-output Δs so a re-derivation at
             // analysis time would produce the same number.
-            const double smoothness_factor =
-                static_cast<double>(stepState.getSmoothnessFactor());
-            double multipliedScore = fc.applyStreak(stepPoints, smoothness_factor);
+            // const double smoothness_factor =
+            //     static_cast<double>(stepState.getSmoothnessFactor());
+            // SMOOTHNESS BYPASS 2026-05-23 — paranoid removal: the
+            // multiplicative penalty is also stripped from the math inside
+            // FitnessComputer::applyStreak (see fitness_computer.cc:~76).
+            // The literal 1.0 below is irrelevant — applyStreak ignores it —
+            // but keeping the parameter avoids touching the signature.
+            double multipliedScore = fc.applyStreak(stepPoints, 1.0);
             accumulatedScore += multipliedScore;
 
             simulation_steps++;

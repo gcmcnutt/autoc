@@ -73,7 +73,15 @@ double FitnessComputer::applyStreak(double stepPoints, double smoothness_factor)
     // contracts/smoothness_factor.md "Multiplication order is the contract"
     //   final_step = stepPoints × smoothness_factor × streak_multiplier
     // Operational reading: discount per-tick value FIRST, THEN compound.
-    return stepPoints * smoothness_factor * multiplier;
+    //
+    // SMOOTHNESS BYPASS 2026-05-23 — paranoid removal. Even when the caller
+    // passes 1.0, we do NOT trust the multiplicand path through this term;
+    // strip it from the math entirely so fitness reduces to the 029 form
+    // `stepPoints * multiplier`. Parameter remains in the signature only so
+    // call sites compile unchanged; intentionally unused.
+    // return stepPoints * smoothness_factor * multiplier;  // 033 form (disabled)
+    (void)smoothness_factor;
+    return stepPoints * multiplier;  // 029 form — smoothness OUT of fitness math
 }
 
 void FitnessComputer::resetStreak() {
