@@ -1,7 +1,9 @@
 build/
 logs/
 *.dat
-*.stc
+# Ignore the live training-output data.stc in the workspace root, but allow
+# committed reference .stc snapshots under specs/ (e.g. pop8000-wind36-r*-data.stc)
+/*.stc
 # Ignore CSVs in root (decoded blackbox) but not in flight-results/
 /*.csv
 nn_weights.dat
