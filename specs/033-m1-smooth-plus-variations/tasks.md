@@ -7,6 +7,17 @@
 
 **Organization**: Tasks grouped by user story. **US1 + US2 = phase-1 (033 bake target)**. **US3 + US4 = phase-2 (gated on mezzanine real-flight test pass)**.
 
+## WRAP — 2026-05-29 (see [outcome.md](./outcome.md))
+
+**033 is wrapped.** Decision: keep US1 (PRNG) as the new M1 baseline; US2 (scalar smoothness penalty) **failed and is stubbed no-op**; US3/US4 stay deferred. Do NOT abandon-to-032 — that would discard validated PRNG work.
+
+- **US1 (PRNG replay architecture)** — ✅ SHIPPED + VALIDATED. Closeout bake (`pop=8000/wind=36`, seed 1779919143) is a strong climber (gen 568: Best −39,948 = −185/scenario, avgMaxStreak 37.9, Sigma at floor — within ~3% of pastonly3 per-scenario). Bit-exact M1→M1 replay confirmed 2026-05-28. Multi-PRNG retained (debuggability; doesn't hurt).
+- **US2 (M1 smoothness penalty)** — ❌ SCALAR APPROACH FAILED ([project_scalar_multiobjective_collapse]); plumbing fully wired across all transports but configured no-op (floor=1.0). **Re-scoped**: the real secondary objective is **energy minimization (already plumbed: `energy_score`), NOT smoothness** — so the smoothness apparatus is removal-candidate dead code, routed to 034.
+- **Improved baseline**: `pop=8000/wind=36` adopted as pathgen default (2/3 climbers vs recent 1/4). Basin lottery still ~1:3 (intrinsic). See BACKLOG "M1 basin-landscape protocol."
+- **T053 (outcome.md)** — ✅ done.
+
+**Routed to 034** (remove smoothness plumbing; revisit energy as a lexicase objective — dig deeper, it underperformed before; T056 if anything; T057 banner-prints-all-keys; T058 seed-width 64→32). US3/US4 remain 033-phase-2 (gated on M2 mezzanine flight).
+
 ## Status snapshot — 2026-05-22
 
 - **Phase A complete** (autoc-side PRNG cleanup + crrcsim worker rewire + per-tick smoothness mirror in both pathgen + tracker workers). All tests green (`scenario_prng_tests` + extended `derived_features_tests` + extended `fitness_computer_tests` + tracker dmp roundtrip).
@@ -169,7 +180,7 @@ Single-project mono-tree per plan.md §Project Structure. autoc-side under `incl
 
 - [ ] T051 [P] Update `CLAUDE.md` "Active Technologies" + "Recent Changes" entries to mark 033 as in-flight (the agent-context script will do most of this; verify the entry matches the 033 surface)
 - [ ] T052 [P] Operator-facing doc cross-link: ensure `docs/variation-prng.md` (created in T023) is linked from `docs/COORDINATE_CONVENTIONS.md` and from spec.md §2.E
-- [ ] T053 Phase-1 closeout snapshot at `specs/033-m1-smooth-plus-variations/outcome.md` capturing bake result (mirror 032's outcome.md layout) — operator-triggered AFTER bake completes
+- [x] T053 Phase-1 closeout snapshot at `specs/033-m1-smooth-plus-variations/outcome.md` — DONE 2026-05-29 (wrap summary + 034 routing; closeout bake gen 568, strong climber)
 - [ ] T054 Type-domain `gp_scalar` audit per Constitution VI on US2 surface (`compute_smoothness_factor`, `applyStreak` smoothness_factor param, per-tick `dpt/drl/dth` in stepper) — grep `float` in 033-touched files; document any unavoidable raw-`float` boundaries
 - [ ] T055 [P] Add `[Penalty]` section + kamikaze knob to `autoc.ini` (M1) for symmetry, even though M1 has no hull (default = inert)
 - [ ] T056 Expand `gScenarioVariations` from per-wind to per-(path, wind). Today `prefetchAllVariations(windScenarioCount, …)` only computes 49 entry/wind offsets ([src/autoc.cc:2108](../../src/autoc.cc#L2108)) and `gScenarioVariations[windIdx]` is shared across all 6 paths ([src/autoc.cc:1124-1133](../../src/autoc.cc#L1124-L1133)). Side-effect: a config of `SimNumPathsPerGeneration=1` with `WindScenarios=6` would run the same scenario 6× rather than 6 distinct variations of one path. Worker-side rabbit profile + CRRC sim seed already are per-K (294 unique), but autoc-side entry pose + wind direction offset are not. Fix is to size `gScenarioVariations` to `paths × winds`, index by linear `K`, and update the autoc-side comment that calls today's behavior "transitional phase-2 state." Touches: `prefetchAllVariations` loop bound, `gScenarioVariations` indexing in `buildWorkerInit` + `populateVariationOffsets` + `logPrefetchedVariations`.
