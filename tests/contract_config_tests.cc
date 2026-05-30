@@ -10,6 +10,12 @@
 #include <fstream>
 #include <string>
 #include <cstdio>
+#include <set>
+#include <vector>
+#include <type_traits>
+#include <cstdint>
+
+#include "autoc/util/config.h"  // 034 FR-010 — AUTOC_CONFIG_FIELDS macro
 
 // For now we test the contract by writing a temp ini file and verifying
 // that key names and value types are correct. The actual parser will change
@@ -170,4 +176,50 @@ TEST(ContractConfig, NewKeysFromSpec014) {
         if (!line.empty()) count++;
     }
     EXPECT_EQ(count, 7);
+}
+
+// ============================================================
+// 034 FR-010 — AUTOC_CONFIG_FIELDS single-source integrity
+// ============================================================
+// The macro drives BOTH config.cc parse and autoc.cc startup print, so a
+// run's exact config is always recoverable from its log. These guards catch
+// accidental macro corruption (dupes / count drift). A field added to the
+// struct but omitted from the macro is caught at the integration layer by the
+// before/after byte-identical eval (it would silently parse to its default).
+TEST(ContractConfig, ConfigFieldsMacroKeysUnique) {
+    std::vector<std::string> keys;
+#define X(type, field, key) keys.push_back(key);
+    AUTOC_CONFIG_FIELDS(X)
+#undef X
+    const std::set<std::string> uniq(keys.begin(), keys.end());
+    EXPECT_EQ(uniq.size(), keys.size())
+        << "duplicate ini key in AUTOC_CONFIG_FIELDS (parse/print single source)";
+}
+
+TEST(ContractConfig, ConfigFieldsMacroCount) {
+    size_t n = 0;
+#define X(type, field, key) ++n;
+    AUTOC_CONFIG_FIELDS(X)
+#undef X
+    // Bump this when knobs are added/removed (e.g. US4 craft variations add 6).
+    EXPECT_EQ(n, 80u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+                         "expected count and confirm parse+print still match";
+}
+
+// ============================================================
+// 034 FR-011 — Seed width for lossless paste-back
+// ============================================================
+// The operator copies a logged `effectiveMasterSeed` (uint64-surfaced) into
+// `Seed=N` to reproduce a run bit-deterministically. `Seed` must be 64-bit so
+// values > 2^31-1 (which `time(NULL)` produces after 2038, and pasted seeds
+// may) round-trip without truncation. Stays signed for the -1 auto-sentinel.
+TEST(ContractConfig, SeedFieldWideForPasteBack_FR011) {
+    EXPECT_GE(sizeof(AutocConfig::seed), 8u)
+        << "Seed must be 64-bit for lossless paste-back of effectiveMasterSeed";
+    EXPECT_TRUE(std::is_signed<decltype(AutocConfig::seed)>::value)
+        << "Seed must stay signed so -1 (auto wall-clock) sentinel works";
+    // A representative > INT_MAX seed is representable + round-trips through the field.
+    AutocConfig cfg;
+    cfg.seed = INT64_C(3000000000);  // > 2^31-1
+    EXPECT_EQ(cfg.seed, INT64_C(3000000000));
 }

@@ -13,7 +13,7 @@
 //   6. Advance chase-craft physics until next source tick.
 //
 // Symmetric with PathgenStepper (M6a). The strategy-pattern split means
-// the worker (minisim) selects one or the other based on EvalData::mode.
+// the worker selects one or the other based on EvalData::mode.
 //
 // Source trajectory + camera/beacon/home configuration are passed at
 // construction. M6d uses compile-time-default CameraConfig / BeaconConfig
@@ -30,7 +30,7 @@
 #include "autoc/eval/camera_config.h"
 #include "autoc/eval/camera_projection.h"
 #include "autoc/eval/crash_hull.h"        // M7d.b — CrashHull config + didCrashFire
-#include "autoc/eval/derived_features.h"  // 033 §2.B — SmoothnessMotionMode
+#include "autoc/eval/derived_features.h"  // 032 — compute_pair_span / compute_tilt
 #include "autoc/eval/scenario_stepper.h"
 #include "autoc/eval/source_trajectory.h"
 #include "autoc/nn/evaluator.h"          // NNControllerBackend, TrackerHistoryWindow
@@ -42,11 +42,9 @@ namespace autoc::eval {
 class TrackerStepper : public ScenarioStepper {
 public:
     // No parameter defaults per Constitution III + M2-era no-fallback
-    // policy: every caller passes every argument explicitly. Production
-    // call sites: tools/minisim.cc:199 (TrackerStepper construction with
-    // live WorkerInit values). Tests: tests/tracker_stepper_init_tests.cc
-    // (passes default-constructed config + explicit 1.0/Pythagorean
-    // smoothness — explicit, not defaulted).
+    // policy: every caller passes every argument explicitly. Call sites:
+    // tests/tracker_stepper_init_tests.cc; the crrcsim worker mirrors this
+    // contract in CrrcsimTrackerHelper.
     TrackerStepper(NNControllerBackend& nn,
                    AircraftState& state,
                    const SourceScenarioTrajectory& source,
@@ -60,18 +58,14 @@ public:
                    gp_scalar p_crash_this_gen,
                    uint32_t prng_seed,
                    gp_scalar trail_distance,
-                   gp_scalar cep_gate_threshold,
-                   // 033 §2.B — smoothness floor + motion mode (per-run
-                   // config) propagated from WorkerInit by minisim.cc.
-                   gp_scalar smoothness_floor,
-                   SmoothnessMotionMode smoothness_mode);
+                   gp_scalar cep_gate_threshold);
 
     void initScenario() override;
     CrashReason stepOnce() override;
     unsigned long durationMsec() const override { return duration_msec_; }
 
     // 030 M8b — Per-tick recorded outputs for the v=2 dmp output stream.
-    // Populated by projectAndShiftHistory each step; minisim worker reads
+    // Populated by projectAndShiftHistory each step; the worker reads
     // after each successful step and push_backs into evalResults's
     // cameraViewList / targetTrajectoryList.
     const CameraViewSample& lastCameraView() const { return last_camera_view_; }
@@ -79,7 +73,7 @@ public:
 
     // 030 M7d.b — Crash-hull strike count for this scenario. 0 normally;
     // 1 if didCrashFire returned true (scenario terminates on first fire,
-    // so the count is bounded). Returned to minisim for hullStrikeCount[i].
+    // so the count is bounded). Returned to the worker for hullStrikeCount[i].
     int hullFiredCount() const { return hull_fired_count_; }
 
 private:
@@ -124,15 +118,6 @@ private:
     // 030 M8b — Per-tick recorded outputs (M2 dmp v=2 schema).
     CameraViewSample last_camera_view_{};
     CopiedTargetSample last_target_sample_{};
-
-    // 033 §2.B — per-tick smoothness state. prev_out_valid_ false at
-    // scenario start; first-tick factor = 1.0 per contract.
-    gp_scalar smoothness_floor_ = static_cast<gp_scalar>(1.0);
-    SmoothnessMotionMode smoothness_mode_ = SmoothnessMotionMode::Pythagorean;
-    gp_scalar prev_out_pt_ = static_cast<gp_scalar>(0.0);
-    gp_scalar prev_out_rl_ = static_cast<gp_scalar>(0.0);
-    gp_scalar prev_out_th_ = static_cast<gp_scalar>(0.0);
-    bool prev_out_valid_ = false;
 };
 
 }  // namespace autoc::eval

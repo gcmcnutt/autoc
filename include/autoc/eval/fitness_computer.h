@@ -50,23 +50,10 @@ public:
     };
     ScoreTerms decomposeStepScore(double along, double lateralDist) const;
 
-    // Update streak state and return stepPoints × smoothness_factor × streak_multiplier.
-    //
-    // 033 §2.B — smoothness_factor in [0, 1] is the per-tick multiplicative
-    // discount on stepPoints applied BEFORE the streak multiplier. Worker
-    // (stepper) computes the factor from per-tick NN-output Δs and stores
-    // it on AircraftState; this function reads it via the caller's argument.
-    //
-    // NO DEFAULT VALUE per Constitution III (no compatibility shims):
-    // every existing call site is updated in the 033 PR to pass an
-    // explicit factor (production: per-tick computed value; unit tests
-    // exercising streak machinery in isolation: explicit 1.0).
+    // Update streak state and return stepPoints × streak_multiplier.
     //
     // Streak: increments if stepPoints >= threshold, hard-resets otherwise.
-    // Streak state update is independent of smoothness_factor (factor only
-    // discounts the returned scalar; doesn't perturb the consecutive-tick
-    // streak counter).
-    double applyStreak(double stepPoints, double smoothness_factor);
+    double applyStreak(double stepPoints);
 
     // Reset streak and diagnostics (call at start of each scenario).
     void resetStreak();

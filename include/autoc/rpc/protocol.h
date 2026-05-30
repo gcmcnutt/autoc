@@ -1,6 +1,6 @@
 /* test sim for aircraft */
-#ifndef MINISIM_H
-#define MINISIM_H
+#ifndef AUTOC_PROTOCOL_H
+#define AUTOC_PROTOCOL_H
 
 #include <vector>
 #include <iostream>
@@ -162,21 +162,11 @@ struct WorkerInit {
   // 032 phase 1 — CepGateThreshold for derived-feature gating. Read from
   // autoc-tracker.ini [DerivedFeatures] CepGateThreshold (default 1.25,
   // matches kCepSentinelThreshold). Same value drives both the autoc
-  // minisim path (via ConfigManager in-process) and the crrcsim worker
+  // crrcsim worker path via this field (workers are separate processes
   // path (via this field — workers are separate processes with no
   // ConfigManager). Per spec.md Q4 + research.md R2 + contracts/
   // ini_schema.md.
   gp_scalar cepGateThreshold = static_cast<gp_scalar>(1.25);
-
-  // 033 §2.B — per-tick smoothness penalty knobs. Same value drives both
-  // the autoc-side minisim path (via ConfigManager in-process) and the
-  // separate-process crrcsim worker (via this field — workers have no
-  // ConfigManager). Per spec.md §2.B + contracts/ini_schema.md "WorkerInit
-  // propagation". 1.0 = back-compat no-op; 0.5 = phase-1 YOLO start.
-  gp_scalar smoothnessPenaltyFloor = static_cast<gp_scalar>(1.0);
-  // Wire-stable uint8 enum mapping: 0=Pythagorean, 1=Sum, 2=Max. Worker
-  // decodes back to autoc::eval::SmoothnessMotionMode at scenario init.
-  uint8_t smoothnessMotionMode = 0;
 
   // 030 V1.5 — run-static scenario library. Built once at startup from
   // generateSmoothPaths(gPathSeed) + the joint-PRNG variation table; the
@@ -195,12 +185,7 @@ struct WorkerInit {
        airframeProxy, flightArena,
        crashHullRadius, trailDistance,
        pathList, scenarioMetaList,
-       cepGateThreshold,
-       // 033 §2.B — appended at end of WorkerInit serialize per project
-       // no-cereal-versioning policy. Pre-033 workers (separate binary)
-       // fail-loud on cereal length mismatch — already expected since
-       // ScenarioMetadata.scenarioSeed grows the wire too.
-       smoothnessPenaltyFloor, smoothnessMotionMode);
+       cepGateThreshold);
     mode = static_cast<Mode>(m);
   }
 };
@@ -367,15 +352,11 @@ struct EvalResults {
   std::vector<int> hullStrikeCount;   // M7 — per-scenario count of crash-hull p_crash fires
 
   // 033 §2.A + §2.B — Provenance header. Makes a dmp self-describing for
-  // analysis: any operator picking up a 033-era dmp can read off the
-  // master seed (full-run reproduction) and reward shape (smoothness
-  // floor + motion mode) without needing the matching log file or ini.
-  // Populated autoc-side in buildEvalData / per-scenario EvalResults
-  // construction; the value is set once per run, copies into every
+  // analysis: any operator picking up a dmp can read off the master seed
+  // (full-run reproduction) without needing the matching log file or ini.
+  // Populated autoc-side; the value is set once per run, copies into every
   // emitted dmp.
   uint64_t effectiveMasterSeed = 0;                              // 033 §2.A — MasterPRNG.init() input
-  gp_scalar smoothnessPenaltyFloor = static_cast<gp_scalar>(1.0); // 033 §2.B — 1.0 = no penalty
-  uint8_t smoothnessMotionMode = 0;                              // 033 §2.B — 0=Pythagorean, 1=Sum, 2=Max
 
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
@@ -390,13 +371,10 @@ struct EvalResults {
       // tests/tracker_dmp_roundtrip_tests.cc).
       ar(cameraViewList, targetTrajectoryList, arenaEgressCount, hullStrikeCount);
 
-      // 033 §2.A + §2.B — provenance header. Appended at end of v=2
-      // block per project no-cereal-versioning policy. Pre-033 v=2 dmps
-      // fail-loud on cereal length mismatch (matches the AircraftState
-      // smoothnessFactor_ + ScenarioMetadata.scenarioSeed schema grow
-      // that lands in the same PR). Constitution III no-shim policy +
-      // Constitution V loud-fail safety net.
-      ar(effectiveMasterSeed, smoothnessPenaltyFloor, smoothnessMotionMode);
+      // 033 §2.A — master-seed provenance. Appended at end of v=2 block per
+      // project no-cereal-versioning policy; old dmps are orphaned by the
+      // training reset (M2-era no-version-revision policy).
+      ar(effectiveMasterSeed);
     }
   }
 
@@ -418,10 +396,8 @@ struct EvalResults {
     targetTrajectoryList.clear();
     arenaEgressCount.clear();
     hullStrikeCount.clear();
-    // 033 §2.A + §2.B — provenance header reset to "no-context" defaults.
+    // 033 §2.A — provenance header reset to "no-context" default.
     effectiveMasterSeed = 0;
-    smoothnessPenaltyFloor = static_cast<gp_scalar>(1.0);
-    smoothnessMotionMode = 0;
   }
 
   void dump(std::ostream& os) {

@@ -147,7 +147,7 @@ The 033 phase 1 implementation lands in two slices to keep the diff reviewable:
 - crrcsim worker (`inputdev_autoc.cpp` + `crrcsim_tracker_helper.cpp`) reconstructs `ScenarioRootPRNG` per scenario start; routes `windPRNG.next()` into `SimStateHandler::reset(uint32_t)`
 - Replay tests (`tests/wind_replay_tests.cc`, `tests/eval_mode_replay_tests.cc`)
 
-During the transitional state the OLD legacy fields are still populated (from new class-PRNG-derived values), so downstream consumers (minisim, crrcsim, renderer) continue to work unchanged.
+During the transitional state the OLD legacy fields are still populated (from new class-PRNG-derived values), so downstream consumers (crrcsim, renderer) continue to work unchanged.
 
 ## Citations
 

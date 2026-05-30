@@ -190,7 +190,7 @@ TEST(FitnessComputer022, ScoreDifferentScales) {
 TEST(FitnessComputer022, StreakFirstStep) {
     auto fc = makeDefault();
     fc.resetStreak();
-    double result = fc.applyStreak(0.8, 1.0);
+    double result = fc.applyStreak(0.8);
     EXPECT_NEAR(result, 0.8 * (1.0 + 4.0 * 1.0 / STREAK_STEPS), 1e-10);
 }
 
@@ -199,7 +199,7 @@ TEST(FitnessComputer022, StreakBuildsToMax) {
     fc.resetStreak();
     double result = 0.0;
     for (int i = 0; i < STREAK_STEPS; i++) {
-        result = fc.applyStreak(0.8, 1.0);
+        result = fc.applyStreak(0.8);
     }
     EXPECT_NEAR(result, 0.8 * 5.0, 1e-10);
 }
@@ -209,7 +209,7 @@ TEST(FitnessComputer022, StreakCapsAtMax) {
     fc.resetStreak();
     double result = 0.0;
     for (int i = 0; i < STREAK_STEPS + 10; i++) {
-        result = fc.applyStreak(0.8, 1.0);
+        result = fc.applyStreak(0.8);
     }
     EXPECT_NEAR(result, 0.8 * 5.0, 1e-10);
 }
@@ -218,23 +218,23 @@ TEST(FitnessComputer022, StreakHardReset) {
     auto fc = makeDefault();
     fc.resetStreak();
     for (int i = 0; i < 10; i++) {
-        fc.applyStreak(0.8, 1.0);
+        fc.applyStreak(0.8);
     }
-    fc.applyStreak(0.1, 1.0);  // below threshold → reset
-    double result = fc.applyStreak(0.8, 1.0);
+    fc.applyStreak(0.1);  // below threshold → reset
+    double result = fc.applyStreak(0.8);
     EXPECT_NEAR(result, 0.8 * (1.0 + 4.0 * 1.0 / STREAK_STEPS), 1e-10);
 }
 
 TEST(FitnessComputer022, StreakThresholdBoundary) {
     auto fc = makeDefault();
     fc.resetStreak();
-    fc.applyStreak(0.50, 1.0);
-    double at_threshold = fc.applyStreak(0.50, 1.0);
+    fc.applyStreak(0.50);
+    double at_threshold = fc.applyStreak(0.50);
     EXPECT_GT(at_threshold, 0.50);
 
     fc.resetStreak();
-    fc.applyStreak(0.499, 1.0);
-    double below = fc.applyStreak(0.499, 1.0);
+    fc.applyStreak(0.499);
+    double below = fc.applyStreak(0.499);
     EXPECT_NEAR(below, 0.499, 1e-10);
 }
 
@@ -242,34 +242,34 @@ TEST(FitnessComputer022, StreakMultiplierLinearity) {
     auto fc = makeDefault();
     fc.resetStreak();
     for (int i = 0; i < 12; i++) {
-        fc.applyStreak(0.8, 1.0);
+        fc.applyStreak(0.8);
     }
-    double result = fc.applyStreak(0.8, 1.0);
+    double result = fc.applyStreak(0.8);
     EXPECT_NEAR(result, 0.8 * (1.0 + 4.0 * 13.0 / STREAK_STEPS), 1e-10);
 }
 
 TEST(FitnessComputer022, DiagnosticMaxStreak) {
     auto fc = makeDefault();
     fc.resetStreak();
-    for (int i = 0; i < 5; i++) fc.applyStreak(0.8, 1.0);
-    fc.applyStreak(0.1, 1.0);
-    for (int i = 0; i < 10; i++) fc.applyStreak(0.8, 1.0);
+    for (int i = 0; i < 5; i++) fc.applyStreak(0.8);
+    fc.applyStreak(0.1);
+    for (int i = 0; i < 10; i++) fc.applyStreak(0.8);
     EXPECT_EQ(fc.getMaxStreak(), 10);
 }
 
 TEST(FitnessComputer022, DiagnosticTotalStreakSteps) {
     auto fc = makeDefault();
     fc.resetStreak();
-    for (int i = 0; i < 5; i++) fc.applyStreak(0.8, 1.0);
-    fc.applyStreak(0.1, 1.0);
-    for (int i = 0; i < 10; i++) fc.applyStreak(0.8, 1.0);
+    for (int i = 0; i < 5; i++) fc.applyStreak(0.8);
+    fc.applyStreak(0.1);
+    for (int i = 0; i < 10; i++) fc.applyStreak(0.8);
     EXPECT_EQ(fc.getStreakSteps(), 15);
 }
 
 TEST(FitnessComputer022, DiagnosticMaxMultiplier) {
     auto fc = makeDefault();
     fc.resetStreak();
-    for (int i = 0; i < 10; i++) fc.applyStreak(0.8, 1.0);
+    for (int i = 0; i < 10; i++) fc.applyStreak(0.8);
     EXPECT_NEAR(fc.getMaxMultiplier(), 1.0 + 4.0 * 10.0 / STREAK_STEPS, 1e-10);
 }
 
@@ -280,8 +280,8 @@ TEST(FitnessComputer022, StreakRateIndependence) {
     fc50.resetStreak();
     fc25.resetStreak();
 
-    for (int i = 0; i < 50; i++) fc50.applyStreak(0.8, 1.0);
-    for (int i = 0; i < 25; i++) fc25.applyStreak(0.8, 1.0);
+    for (int i = 0; i < 50; i++) fc50.applyStreak(0.8);
+    for (int i = 0; i < 25; i++) fc25.applyStreak(0.8);
     EXPECT_NEAR(fc50.getMaxMultiplier(), 5.0, 1e-10);
     EXPECT_NEAR(fc25.getMaxMultiplier(), 5.0, 1e-10);
 }
@@ -289,7 +289,7 @@ TEST(FitnessComputer022, StreakRateIndependence) {
 TEST(FitnessComputer022, ResetClearsDiagnostics) {
     auto fc = makeDefault();
     fc.resetStreak();
-    for (int i = 0; i < 10; i++) fc.applyStreak(0.8, 1.0);
+    for (int i = 0; i < 10; i++) fc.applyStreak(0.8);
     EXPECT_EQ(fc.getMaxStreak(), 10);
     EXPECT_EQ(fc.getStreakSteps(), 10);
     EXPECT_GT(fc.getMaxMultiplier(), 1.0);
@@ -298,99 +298,4 @@ TEST(FitnessComputer022, ResetClearsDiagnostics) {
     EXPECT_EQ(fc.getMaxStreak(), 0);
     EXPECT_EQ(fc.getStreakSteps(), 0);
     EXPECT_NEAR(fc.getMaxMultiplier(), 1.0, 1e-10);
-}
-
-// ========================================================================
-// 033 §2.B — Multiplicative smoothness penalty (TDD red+green sweeps)
-// ========================================================================
-
-TEST(FitnessComputer033Smoothness, FactorOneIsBackCompat) {
-    // smoothness_factor = 1.0 should bit-equal the pre-033 applyStreak(stepPoints)
-    // behavior for any input.
-    auto fc = makeDefault();
-    fc.resetStreak();
-    const double baseline = fc.applyStreak(0.8, 1.0);
-    // Re-run a fresh fitness computer and confirm identical output.
-    auto fc2 = makeDefault();
-    fc2.resetStreak();
-    const double check = fc2.applyStreak(0.8, 1.0);
-    EXPECT_DOUBLE_EQ(baseline, check);
-    // Verify the streak machinery is the same — getMaxStreak == 1 after one
-    // above-threshold tick.
-    EXPECT_EQ(fc.getMaxStreak(), 1);
-}
-
-// DISABLED 2026-05-23 — 033 smoothness contract intentionally bypassed in
-// fitness_computer.cc::applyStreak (paranoid removal during -20k plateau
-// investigation). Re-enable by reverting that bypass.
-TEST(FitnessComputer033Smoothness, DISABLED_FactorHalvesStepPoints) {
-    // smoothness_factor=0.5 → output should be exactly half of factor=1.0 output
-    // for the same stepPoints + same streak state.
-    auto fc_full = makeDefault();
-    auto fc_half = makeDefault();
-    fc_full.resetStreak();
-    fc_half.resetStreak();
-    const double full = fc_full.applyStreak(0.8, 1.0);
-    const double half = fc_half.applyStreak(0.8, 0.5);
-    EXPECT_DOUBLE_EQ(half, full * 0.5);
-}
-
-TEST(FitnessComputer033Smoothness, StreakStateIndependentOfFactor) {
-    // The factor discounts the returned scalar but MUST NOT perturb the
-    // consecutive-tick streak counter or other diagnostics.
-    auto fc_full = makeDefault();
-    auto fc_disc = makeDefault();
-    fc_full.resetStreak();
-    fc_disc.resetStreak();
-    for (int i = 0; i < 5; i++) {
-        fc_full.applyStreak(0.8, 1.0);
-        fc_disc.applyStreak(0.8, 0.3);  // heavy discount
-    }
-    EXPECT_EQ(fc_full.getMaxStreak(), fc_disc.getMaxStreak());
-    EXPECT_EQ(fc_full.getStreakSteps(), fc_disc.getStreakSteps());
-    // Note: getMaxMultiplier tracks the streak-multiplier curve, which is
-    // ALSO independent of the smoothness factor (factor is multiplied on
-    // the RETURN value, not on the multiplier itself).
-    EXPECT_NEAR(fc_full.getMaxMultiplier(), fc_disc.getMaxMultiplier(), 1e-12);
-}
-
-// DISABLED 2026-05-23 — see FactorHalvesStepPoints note (smoothness bypass).
-TEST(FitnessComputer033Smoothness, DISABLED_ZeroFactorAnnihilatesStep) {
-    // smoothness_factor = 0.0 (allowed at floor=0.0 — extreme operator setting
-    // per ini_schema.md range check). Output should be exactly 0.0 regardless
-    // of stepPoints or streak state.
-    auto fc = makeDefault();
-    fc.resetStreak();
-    for (int i = 0; i < 10; i++) fc.applyStreak(0.8, 1.0);  // build streak
-    const double zeroed = fc.applyStreak(0.8, 0.0);
-    EXPECT_DOUBLE_EQ(zeroed, 0.0);
-    // Streak machinery still works on the next non-zero call.
-    const double next = fc.applyStreak(0.8, 1.0);
-    EXPECT_GT(next, 0.8);  // streak still active → multiplier > 1
-}
-
-// DISABLED 2026-05-23 — see FactorHalvesStepPoints note (smoothness bypass).
-TEST(FitnessComputer033Smoothness, DISABLED_MultiplicationOrderContractFinalStep) {
-    // Per contracts/smoothness_factor.md "Multiplication order is the contract":
-    //   final_step = stepPoints × smoothness_factor × streak_multiplier
-    // Verify the actual product (operator analysis script reproduces this number).
-    auto fc = makeDefault();
-    fc.resetStreak();
-    // Build streak to halfway (multiplier midway between 1 and STREAK_MULT_MAX).
-    for (int i = 0; i < STREAK_STEPS / 2; i++) fc.applyStreak(0.8, 1.0);
-    const double current_mult =
-        1.0 + (STREAK_MULT_MAX - 1.0) *
-              static_cast<double>(STREAK_STEPS / 2) /
-              static_cast<double>(STREAK_STEPS);
-    const double stepPoints = 0.8;
-    const double smoothness = 0.7;
-    const double result = fc.applyStreak(stepPoints, smoothness);
-    // Expected: 0.8 × 0.7 × (next-step multiplier, which is one streak step
-    // beyond the loop end).
-    const double next_mult =
-        1.0 + (STREAK_MULT_MAX - 1.0) *
-              static_cast<double>(STREAK_STEPS / 2 + 1) /
-              static_cast<double>(STREAK_STEPS);
-    EXPECT_NEAR(result, stepPoints * smoothness * next_mult, 1e-10);
-    (void)current_mult;  // unused — kept as documentation of streak state
 }

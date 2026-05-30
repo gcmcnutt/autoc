@@ -37,7 +37,7 @@ struct ScenarioDescriptor {
   int windVariantIndex = -1;   // -1 = unset/aggregated
 };
 
-// Global aircraft state used by minisim evaluation loop
+// Global aircraft state used by the evaluation loop
 extern AircraftState aircraftState;
 
 #endif

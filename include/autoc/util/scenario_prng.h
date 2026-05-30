@@ -123,7 +123,7 @@ private:
 
 // Derive the 5 class sub-seeds from a scenarioSeed. Pure function;
 // deterministic; identical output for identical input across processes
-// (autoc-side prefetch + crrcsim worker + minisim worker all see the
+// (autoc-side prefetch + crrcsim worker (all workers) see the
 // same tuple given the same scenarioSeed). Per spec.md §2.A.
 inline ClassSubSeeds deriveClassSubSeeds(uint64_t scenarioSeed) {
     ScenarioRootPRNG root(scenarioSeed);

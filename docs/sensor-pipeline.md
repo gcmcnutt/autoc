@@ -323,7 +323,7 @@ aircraft model mismatch), NOT coordinate convention errors.
 
 Tracker mode is an alternate evaluation pipeline parallel to the M1 pathgen path documented in §1–§10. It feeds the **same NN forward-pass machinery** with a **different sensor surface** — instead of synthesized bearing-to-target scalars (`dPhi/dTheta/dist`), tracker mode projects two physical wingtip beacons through a chase-mounted camera and presents the NN with **NDC beacon observations plus chase attitude/state + derived perceptual features**.
 
-Today this is sim-only — autoc desktop training (minisim path) + crrcsim worker. Xiao firmware does NOT yet implement tracker mode; this section is the **xiao-migration prep contract** so when xiao tracker support lands, it inherits the sim invariants exactly.
+Today this is sim-only — autoc desktop training via the crrcsim worker. Xiao firmware does NOT yet implement tracker mode; this section is the **xiao-migration prep contract** so when xiao tracker support lands, it inherits the sim invariants exactly.
 
 ### 11.1 Input vector shape (54 floats — 032 phase 1)
 
@@ -340,7 +340,7 @@ Full layout in [COORDINATE_CONVENTIONS.md §"030/032 Tracker-Mode NN Inputs"](CO
 
 `beacon_l_*` slots ALWAYS carry the **port** beacon (target body −y mount, red wingtip). `beacon_r_*` slots ALWAYS carry the **starboard** beacon (target body +y mount, green wingtip). This is **independent of which beacon lands on which image side** at any given tick — target heading away swaps image sides; the slot mapping does not swap.
 
-**Sim enforcement (current)**: `tracker_stepper.cc::projectAndShiftHistory` (autoc minisim) and `crrcsim_tracker_helper.cpp::projectAndShiftHistory` (crrcsim worker) both construct projections using `beacon_left_` config → store in `left` local → write to `history_.left_*`. No NDC-x sort. The mapping is by mount identity, period.
+**Sim enforcement (current)**: `tracker_stepper.cc::projectAndShiftHistory` (autoc reference impl) and `crrcsim_tracker_helper.cpp::projectAndShiftHistory` (crrcsim worker) both construct projections using `beacon_left_` config → store in `left` local → write to `history_.left_*`. No NDC-x sort. The mapping is by mount identity, period.
 
 **Xiao migration contract** (for when xiao tracker-mode lands):
 - FPGA emits per-detection `(x, y, CEP, code_id)` tuples

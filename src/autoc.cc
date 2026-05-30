@@ -107,19 +107,12 @@ static std::vector<uint64_t> gScenarioSeedTable;
 // populate EvalResults.effectiveMasterSeed so the dmp is self-describing.
 static uint64_t gEffectiveMasterSeed = 0;
 
-// 033 §2.A + §2.B — Stamp the dmp provenance header right before serialize.
-// Records the master seed + smoothness reward shape that produced this dmp.
-// Operator inspection of a dmp reads these to know "what produced this run".
-// gEffectiveMasterSeed is populated at autoc startup; smoothness fields are
-// pulled live from ConfigManager (the active config drives the bake).
+// 033 §2.A — Stamp the dmp provenance header right before serialize.
+// Records the master seed that produced this dmp. Operator inspection of a
+// dmp reads this to know "what produced this run". gEffectiveMasterSeed is
+// populated at autoc startup.
 static void stampEvalResultsProvenance(EvalResults& results) {
     results.effectiveMasterSeed = gEffectiveMasterSeed;
-    const AutocConfig& cfg = ConfigManager::getConfig();
-    results.smoothnessPenaltyFloor = static_cast<gp_scalar>(cfg.smoothnessPenaltyFloor);
-    if      (cfg.smoothnessMotionMode == "pythagorean") results.smoothnessMotionMode = 0;
-    else if (cfg.smoothnessMotionMode == "sum")         results.smoothnessMotionMode = 1;
-    else if (cfg.smoothnessMotionMode == "max")         results.smoothnessMotionMode = 2;
-    else                                                results.smoothnessMotionMode = 0;
 }
 
 // Compute (and cache) the scenarioSeed table once the per-run scenario
@@ -207,10 +200,10 @@ static bool gPathSeedFromOverride = false;// True if RandomPathSeedB was used
  * Pre-fetch all scenario variations from class-scoped PRNGs at startup.
  * Called once before evolution begins, AFTER populateScenarioSeedTable().
  *
- * 033 §2.A — Class PRNG semantics (transitional phase-2 state):
- *   - For each wind variant K in [0, numScenarios), derive class sub-PRNG
- *     seeds from gScenarioSeedTable[K] (path-major layout: K = path 0 ×
- *     winds + windIdx maps to windIdx-th master draw for path 0).
+ * 033 §2.A — Class PRNG semantics (034 FR-012: per-(path, wind)):
+ *   - For each scenario K in [0, numScenarios) where numScenarios =
+ *     paths × winds, derive class sub-PRNG seeds from gScenarioSeedTable[K]
+ *     (path-major layout: K = pathIdx × winds + windIdx).
  *   - 5 class sub-seeds derived in append-only order: wind, rabbit,
  *     entry, craft (seeded but unused), camera (seeded but unused).
  *   - Entry-class draws (cone/roll/speed/position) consume from entryPRNG.
@@ -223,33 +216,28 @@ static bool gPathSeedFromOverride = false;// True if RandomPathSeedB was used
  * PRNG (so a future en/disable doesn't perturb the seed table for unrelated
  * classes), but the drawn variation VALUES are replaced by defaults before
  * insertion into sv. This realizes the "draw-and-discard" semantics of
- * spec.md §2.E for the per-wind transitional table. Wind-class shared-seed
- * fallback (all scenarios = same wind when disabled) preserved.
+ * spec.md §2.E. Wind-class shared-seed fallback (all scenarios = same wind
+ * when disabled) preserved.
  *
- * NOTE: full per-(path, wind) variation table lands in the cleanup pass
- * (gScenarioVariations grows to size = paths × windScenarioCount). This
- * function STILL produces a per-wind table during the transitional state.
+ * 034 FR-012 — full per-(path, wind) variation table: `numScenarios` is the
+ * TOTAL scenario count (paths × windScenarioCount). gScenarioVariations[K] is
+ * indexed by the SAME linear path-major K as gScenarioSeedTable[K] and
+ * scenarioMetaList[K], so entry-pose + wind-direction offsets are derived from
+ * each scenario's own scenarioSeed — distinct per (path, wind), not shared
+ * across paths. (Previously sized per-wind, which reused path-0's offsets for
+ * all paths; closed in 034.)
  *
  * Preconditions: populateScenarioSeedTable() called first (so the seed
  * table is non-empty). rng::* is the NN-evolution stream and is NOT
  * consumed here (per spec.md §2.A NN-evolution / variation PRNG split).
  *
- * @param numScenarios       Number of wind scenarios (windScenarioCount from config)
+ * @param numScenarios       Total scenario count = paths × windScenarioCount
  * @param sigmas             Variation sigma parameters
  * @param rabbitCfg          Rabbit speed configuration (unused — kept for ABI)
  * @param randomPathSeedB    Override path seed (-1 = derive from rng::* NN stream)
  * @param enableEntry        If false, store default entry offsets but still draw
  * @param enableWind         If false, store default wind offset but still draw
  */
-// TODO (033 T056, end of feature): `numScenarios` is `windScenarioCount`
-// (49), not `paths × windScenarioCount` (294). Entry pose + wind direction
-// offsets get computed once per wind index and SHARED across all 6 paths
-// (see buildWorkerInit's gScenarioVariations[windIdx] lookup). Side-effect:
-// a config of paths=1 with windScenarios=6 runs the same scenario 6×
-// instead of 6 distinct variations of one path. Worker-side rabbit profile
-// + CRRC sim seed are already per-K (deriveClassSubSeeds from per-K
-// scenarioSeed), so only the autoc-side entry+wind table is under-indexed.
-// Cleanup: size by paths × winds, index by linear K.
 static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigmas,
                                    const RabbitSpeedConfig& /*rabbitCfg*/, int randomPathSeedB,
                                    bool enableEntry, bool enableWind) {
@@ -289,8 +277,9 @@ static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigma
         ScenarioVariations sv;
 
         // Construct per-scenario ScenarioRootPRNG from the K-th scenario
-        // seed (transitional indexing: K = i, treating wind-variant i as
-        // mapping to the path-0/wind-i scenario).
+        // seed. 034 FR-012: K is the linear path-major scenario index
+        // (paths × winds), parallel to gScenarioSeedTable + scenarioMetaList,
+        // so each (path, wind) gets its own entry/wind offsets.
         const uint64_t scenarioSeed = (i < static_cast<int>(gScenarioSeedTable.size()))
             ? gScenarioSeedTable[i] : autoc::util::kSeedZeroSentinel;
         const autoc::util::ClassSubSeeds subseeds =
@@ -341,7 +330,7 @@ static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigma
  * Log pre-fetched variations at startup for verification.
  * Format matches spec in SINGLE_PRNG.md.
  */
-static void logPrefetchedVariations(int numScenarios, long seed) {
+static void logPrefetchedVariations(int numScenarios, int64_t seed) {
     *logger.info() << endl;
     *logger.info() << "=== Pre-fetched Scenario Variations (Seed=" << seed << ") ===" << endl;
     *logger.info() << "PathSeed: " << gPathSeed
@@ -382,57 +371,7 @@ static void logPrefetchedVariations(int numScenarios, long seed) {
     *logger.info() << endl;
 }
 
-// Helper to populate variation offsets in ScenarioMetadata from pre-fetched table
-// Table already contains correct values: defaults when disabled, variations when enabled
-// (filtering is done at prefetch time, not here)
-// RAMP_LANDSCAPE: Offsets are scaled by computeVariationScale() for gradual introduction
-static void populateVariationOffsets(ScenarioMetadata& meta) {
-  int windIdx = meta.windVariantIndex;
-  if (windIdx >= 0 && windIdx < static_cast<int>(gScenarioVariations.size())) {
-    const auto& v = gScenarioVariations[windIdx].entryOffsets;
-
-    // Get current scale (0.0 to 1.0 over training)
-    float scale = computeVariationScale();
-
-    // Angular offsets: scale toward 0
-    meta.entryHeadingOffset = v.entryHeadingOffset * scale;
-    meta.entryRollOffset = v.entryRollOffset * scale;
-    meta.entryPitchOffset = v.entryPitchOffset * scale;
-    meta.windDirectionOffset = v.windDirectionOffset * scale;
-
-    // Speed factor: interpolate from 1.0 toward pre-computed value
-    // At scale=0: factor=1.0 (nominal), at scale=1: factor=pre-computed
-    meta.entrySpeedFactor = 1.0 + scale * (v.entrySpeedFactor - 1.0);
-
-    // Position offsets: scale and clamp to safe arena bounds
-    // RAMP_LANDSCAPE scaling applies here too (gradual introduction)
-    double northScaled = v.entryNorthOffset * scale;
-    double eastScaled = v.entryEastOffset * scale;
-    double altScaled = v.entryAltOffset * scale;
-
-    // Clamp horizontal to safe radius
-    double horizDist = sqrt(northScaled * northScaled + eastScaled * eastScaled);
-    if (horizDist > ENTRY_SAFE_RADIUS) {
-      double clampFactor = ENTRY_SAFE_RADIUS / horizDist;
-      northScaled *= clampFactor;
-      eastScaled *= clampFactor;
-    }
-
-    // Clamp altitude to safe NED bounds (ENTRY_SAFE_ALT_MAX < ENTRY_SAFE_ALT_MIN since NED Down)
-    if (altScaled < ENTRY_SAFE_ALT_MAX) altScaled = ENTRY_SAFE_ALT_MAX;
-    if (altScaled > ENTRY_SAFE_ALT_MIN) altScaled = ENTRY_SAFE_ALT_MIN;
-
-    meta.entryNorthOffset = northScaled;
-    meta.entryEastOffset = eastScaled;
-    meta.entryAltOffset = altScaled;
-
-    // (033 cleanup) rabbitSpeedSeed assignment removed — field deleted
-    // from ScenarioMetadata; worker derives via deriveClassSubSeeds.
-  }
-  // If windIdx out of range, leave defaults (shouldn't happen)
-}
-
-// Rabbit speed is now applied at runtime via odometer advancement in minisim.
+// Rabbit speed is now applied at runtime via odometer advancement in the worker.
 // The applySpeedProfileToPath function has been removed as part of the
 // odometer-based path traversal refactor.
 std::atomic_ulong nanDetector = 0;
@@ -649,12 +588,15 @@ void warnIfScenarioMismatch() {
 
 } // namespace
 
-std::string generate_iso8601_timestamp() {
+// 034 FR-015 — run-id prefix is caller-supplied so M1 (pathgen) and M2
+// (tracker) dmps in the same S3 bucket are distinguishable by prefix
+// ("autoc-" vs "tracker-"). The mode→prefix decision stays at the call site.
+std::string generate_iso8601_timestamp(const std::string& runIdPrefix) {
   auto now = std::chrono::system_clock::now();
   auto ms_since_epoch = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
   auto itt = std::chrono::system_clock::to_time_t(now);
   std::ostringstream ss;
-  ss << "autoc-" << INT64_MAX - ms_since_epoch << '-';
+  ss << runIdPrefix << INT64_MAX - ms_since_epoch << '-';
   ss << std::put_time(std::gmtime(&itt), "%FT%T");
   auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
   ss << '.' << std::setfill('0') << std::setw(3) << milliseconds.count() << 'Z';
@@ -763,13 +705,7 @@ static void logEvalResultsScenarioTracker(std::ofstream& fout,
     double distance = offset.norm();
 
     double stepPoints = logFC.computeStepScore(along, lateralDist);
-    // 033 §2.B — per-tick smoothness factor read from the AircraftState the
-    // stepper wrote during simulation. Single source of truth: same factor
-    // is used for fitness_decomposition (autoc-side) and this data.dat
-    // logger. 1.0 = no penalty / first tick / smoothness disabled.
-    const double smoothness_factor =
-        static_cast<double>(stepState.getSmoothnessFactor());
-    double multipliedScore = logFC.applyStreak(stepPoints, smoothness_factor);
+    double multipliedScore = logFC.applyStreak(stepPoints);
     double mult = (stepPoints > 0.0) ? multipliedScore / stepPoints : 1.0;
 
     simulation_steps++;
@@ -787,7 +723,6 @@ static void logEvalResultsScenarioTracker(std::ofstream& fout,
              << kTrackerInputMeta[k].display_name;
       }
       fout << "   outPt   outRl   outTh"
-           << "   smooth"                       // 033 §2.B — per-tick smoothness factor
            << "      tgX      tgY      tgZ"     // target craft position
            << "      trX      trY      trZ"     // trail-rabbit position (target − vel_unit × 3.048)
            << "        X        Y        Z"     // chase position
@@ -837,9 +772,6 @@ static void logEvalResultsScenarioTracker(std::ofstream& fout,
     // 3 NN outputs
     n += snprintf(outbuf + n, sizeof(outbuf) - n,
       " % 7.4f % 7.4f % 7.4f", out[0], out[1], out[2]);
-    // 033 §2.B — smoothness factor (width 8, 4 decimals; range [floor, 1.0])
-    n += snprintf(outbuf + n, sizeof(outbuf) - n,
-      " % 7.4f", static_cast<gp_scalar>(smoothness_factor));
     // tgX/Y/Z, trX/Y/Z, X/Y/Z, vxBdy/vyBdy/vzBdy
     n += snprintf(outbuf + n, sizeof(outbuf) - n,
       " % 8.2f % 8.2f % 8.2f"
@@ -865,7 +797,7 @@ static void logEvalResultsScenarioTracker(std::ofstream& fout,
 }
 
 // Log per-step data from EvalResults to data.dat
-// NN mode: actual NN inputs (normalized) and outputs captured in minisim, then diagnostics.
+// NN mode: actual NN inputs (normalized) and outputs captured in the worker, then diagnostics.
 // 030 M9.preA: dispatches per-scenario on targetTrajectoryList non-empty
 // (tracker scenarios route to the helper above; pathgen scenarios use
 // the inline body — bitwise-preserved against gen9200.dmp regression gate).
@@ -938,16 +870,10 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
 
       // Step score + streak (mirrors fitness computation)
       double stepPoints = logFC.computeStepScore(along, lateralDist);
-      // 033 §2.B — per-tick smoothness factor from AircraftState (single
-      // source of truth: the stepper computed and stored it during sim).
-      const double smoothness_factor =
-          static_cast<double>(stepState.getSmoothnessFactor());
-      double multipliedScore = logFC.applyStreak(stepPoints, smoothness_factor);
-      // Recover actual multiplier from the score ratio (factor-out the
-      // smoothness discount so `mult` retains its pre-033 semantic of
-      // "streak multiplier only").
-      double mult = (stepPoints > 0.0 && smoothness_factor > 0.0)
-          ? multipliedScore / (stepPoints * smoothness_factor) : 1.0;
+      double multipliedScore = logFC.applyStreak(stepPoints);
+      // Recover the streak multiplier from the score ratio.
+      double mult = (stepPoints > 0.0)
+          ? multipliedScore / stepPoints : 1.0;
 
       simulation_steps++;
 
@@ -973,7 +899,6 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
                  << kPathgenInputMeta[i].display_name;
         }
         fout << "   outPt   outRl   outTh"
-             << "   smooth"                       // 033 §2.B — per-tick smoothness factor
              << "    pathX    pathY    pathZ"
              << "        X        Y        Z"
              << "    vxBdy    vyBdy    vzBdy"
@@ -1006,7 +931,6 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         " % 7.4f % 7.4f % 7.4f % 7.4f"
         " % 7.4f % 6.3f % 6.3f % 6.3f"
         " % 7.4f % 7.4f % 7.4f"
-        " % 7.4f"                                 // 033 §2.B — smooth column
         " % 8.2f % 8.2f % 8.2f"
         " % 8.2f % 8.2f % 8.2f"
         " % 8.2f % 8.2f % 8.2f"
@@ -1027,7 +951,6 @@ static void logEvalResults(std::ofstream& fout, EvalResults& results) {
         in[25], in[26], in[27], in[28],
         in[29], in[30], in[31], in[32],
         out[0], out[1], out[2],
-        static_cast<gp_scalar>(smoothness_factor),       // 033 §2.B
         path.at(pathIndex).start[0],
         path.at(pathIndex).start[1],
         path.at(pathIndex).start[2],
@@ -1128,10 +1051,13 @@ static WorkerInit buildWorkerInit() {
             if (idx < gScenarioSeedTable.size()) {
                 meta.scenarioSeed = gScenarioSeedTable[idx];
             }
-            // Pre-populate entry offsets at full scale from the
-            // variation table. Worker scales per-eval via applyVariationScale.
-            if (windIdx < gScenarioVariations.size()) {
-                const auto& v = gScenarioVariations[windIdx].entryOffsets;
+            // Pre-populate entry offsets at full scale from the variation
+            // table. 034 FR-012: index by the linear path-major scenario K
+            // (= idx), so each (path, wind) gets its own offsets derived from
+            // its own scenarioSeed (was windIdx → path-0 offsets shared).
+            // Worker scales per-eval via applyVariationScale.
+            if (idx < gScenarioVariations.size()) {
+                const auto& v = gScenarioVariations[idx].entryOffsets;
                 meta.entryHeadingOffset = v.entryHeadingOffset;
                 meta.entryRollOffset = v.entryRollOffset;
                 meta.entryPitchOffset = v.entryPitchOffset;
@@ -1149,19 +1075,6 @@ static WorkerInit buildWorkerInit() {
             init.scenarioMetaList.push_back(meta);
         }
     }
-
-    // 033 §2.B — propagate smoothness knobs to crrcsim worker (separate
-    // process, no ConfigManager). HOISTED before the tracker-only early
-    // return below — smoothness applies to BOTH M1 pathgen and M2 tracker
-    // workers (the per-tick compute lives in both pathgen + tracker
-    // branches of inputdev_autoc.cpp). Encode string motion mode to
-    // uint8 enum for wire stability. Validation already done at ini-parse
-    // time; unrecognized strings can't reach here.
-    init.smoothnessPenaltyFloor = static_cast<gp_scalar>(cfg.smoothnessPenaltyFloor);
-    if      (cfg.smoothnessMotionMode == "pythagorean") init.smoothnessMotionMode = 0;
-    else if (cfg.smoothnessMotionMode == "sum")         init.smoothnessMotionMode = 1;
-    else if (cfg.smoothnessMotionMode == "max")         init.smoothnessMotionMode = 2;
-    else                                                init.smoothnessMotionMode = 0;  // defensive default
 
     if (init.mode != Mode::TRACKER) {
         return init;
@@ -1206,8 +1119,6 @@ static WorkerInit buildWorkerInit() {
     init.crashHullRadius = static_cast<gp_scalar>(cfg.crashHullRadius);
     init.trailDistance = static_cast<gp_scalar>(cfg.trailDistance);
     init.cepGateThreshold = static_cast<gp_scalar>(cfg.cepGateThreshold);
-
-    // (033 smoothness propagation hoisted above the tracker-only return.)
 
     return init;
 }
@@ -1335,7 +1246,7 @@ static void runNNEvaluation(
   // matching NumberOfGenerations and VariationRampStep between train/eval configs).
   gEvalVariationScaleOverride = genome.variation_scale;
 
-  // Serialize genome for RPC (same format minisim expects)
+  // Serialize genome for RPC (same format the worker expects)
   std::vector<uint8_t> nnData;
   nn_serialize(genome, nnData);
 
@@ -1343,7 +1254,7 @@ static void runNNEvaluation(
   const ScenarioDescriptor& scenario = scenarioForIndex(0);
   EvalData evalData = buildEvalData({scenario, nnData, EvalPurpose::StandaloneEval});
 
-  // Send to minisim and get results
+  // Send to the worker and get results
   auto evalDataPtr = std::make_shared<EvalData>(std::move(evalData));
   EvalResults evalResults;
   threadPool->enqueue([evalDataPtr, &evalResults](WorkerContext& context) {
@@ -1530,7 +1441,7 @@ static void runNNEvolution(
       const ScenarioDescriptor& scenario = scenarioForIndex(ind % generationScenarios.size());
       EvalData evalData = buildEvalData({scenario, nnData, EvalPurpose::Training});
 
-      // Send to minisim worker via ThreadPool
+      // Send to the worker via ThreadPool
       auto evalDataPtr = std::make_shared<EvalData>(std::move(evalData));
       threadPool->enqueue([&genome, evalDataPtr](WorkerContext& context) {
         sendRPC(*context.socket, *evalDataPtr);
@@ -1882,17 +1793,17 @@ int main(int argc, char** argv)
   //     └── .next() × M_total → gScenarioSeedTable[0..M_total-1]
   //
   // M_total = paths × windScenarioCount (path-major linear scenario index).
-  // Note: in this transitional phase-2 state, gScenarioVariations[] remains
-  // indexed per-wind (size = windScenarioCount); cleanup pass next will
-  // expand to per-(path, wind) indexing per spec.md §2.A. ScenarioMetadata.
-  // scenarioSeed records the FULL per-K seed for downstream replay even
-  // before the variation table is per-K.
-  long seed;
+  // 034 FR-012: gScenarioVariations[] is per-(path, wind) — sized M_total and
+  // indexed by the linear K, parallel to gScenarioSeedTable + scenarioMetaList.
+  // Each scenario's entry/wind offsets derive from its own scenarioSeed.
+  // 034 FR-011 — int64_t end-to-end so a logged effectiveMasterSeed pasted
+  // back into Seed=N round-trips without truncation (cfg.seed is now int64_t).
+  int64_t seed;
   if (cfg.seed == -1) {
-    seed = static_cast<long>(time(NULL));
+    seed = static_cast<int64_t>(time(NULL));
     *logger.info() << "Seed: -1 (auto) -> " << seed << endl;
   } else {
-    seed = static_cast<long>(cfg.seed);
+    seed = cfg.seed;
   }
   const uint64_t effectiveMasterSeed = static_cast<uint64_t>(seed);
   *logger.info() << "Effective master seed: " << effectiveMasterSeed
@@ -1929,66 +1840,20 @@ int main(int argc, char** argv)
   // copy of the ~8.5 MB source library. See specs/BACKLOG.md
   // "Worker-side scenario priming" entry.
 
-  // Print the configuration
-  // TODO: hand-coded enumeration is fragile as autoc.ini grows; backlog
-  // entry "[BACKLOG] AutocConfig auto-print" tracks the extensibility
-  // refactor (member-list macro / cereal-to-text dump / etc).
-  *logger.info() << "Mode: " << cfg.mode << endl;
-  *logger.info() << "Config: pop=" << cfg.populationSize
-                 << " gens=" << cfg.numberOfGenerations << endl;
-  *logger.info() << "SimNumPathsPerGen: " << cfg.simNumPathsPerGen << endl;
-  *logger.info() << "EvalThreads: " << cfg.evalThreads << endl;
-  *logger.info() << "MinisimProgram: " << cfg.minisimProgram << endl;
-  *logger.info() << "MinisimPortOverride: " << cfg.minisimPortOverride << endl;
-  *logger.info() << "EvaluateMode: " << cfg.evaluateMode << endl;
-  *logger.info() << "WindScenarios: " << cfg.windScenarioCount << endl;
-  *logger.info() << "Seed: " << cfg.seed << endl;
-  *logger.info() << "RandomPathSeedB: " << cfg.randomPathSeedB << endl;
-
-  // Log VARIATIONS1 settings and initialize global sigmas
-  *logger.info() << "EnableEntryVariations: " << cfg.enableEntryVariations << endl;
-  *logger.info() << "EnableWindVariations: " << cfg.enableWindVariations << endl;
-  *logger.info() << "EnableRabbitSpeedVariations: " << cfg.enableRabbitSpeedVariations << endl;
-
-  // 030 M6e — tracker-mode parameter dump (only when active).
+  // Print the configuration. 034 FR-010 — auto-print EVERY active config key
+  // from the single-source AUTOC_CONFIG_FIELDS macro (config.h). Adding a knob
+  // there auto-parses (config.cc) AND auto-prints here — a run's exact config
+  // is always recoverable from its log alone, with no hand-maintained print
+  // line to drift. (Tracker-mode keys print their inert defaults in pathgen.)
+  *logger.info() << "=== AutocConfig ===" << endl;
+#define X(type, field, key) *logger.info() << key << ": " << cfg.field << endl;
+  AUTOC_CONFIG_FIELDS(X)
+#undef X
+  // Compile-time (non-ini) occlusion state — tracker-relevant only.
   if (cfg.mode == "tracker") {
-    *logger.info() << "=== Tracker-mode parameters ===" << endl;
-    *logger.info() << "TrackerSourceRun: " << cfg.trackerSourceRun << endl;
-    *logger.info() << "TrackerPathSubset: " << cfg.trackerPathSubset << endl;
-    *logger.info() << "TrackerWindSubset: " << cfg.trackerWindSubset << endl;
-    *logger.info() << "TrailDistance: " << cfg.trailDistance
-                   << "  LowSpeedTrailThreshold: " << cfg.lowSpeedTrailThreshold
-                   << "  Hysteresis: " << cfg.lowSpeedTrailHysteresis << endl;
-    *logger.info() << "CrashHull: shape=" << cfg.crashHullShape
-                   << " radius=" << cfg.crashHullRadius
-                   << " p_crash=" << cfg.crashHullProbability << endl;
-    *logger.info() << "FlightArena: radius=" << cfg.flightArenaRadius
-                   << " floorAGL=" << cfg.flightArenaFloorAGL
-                   << " ceilingAGL=" << cfg.flightArenaCeilingAGL << endl;
-    *logger.info() << "Camera: count=" << cfg.cameraCount
-                   << " fov_h=" << cfg.cameraFOVHorizontalDeg
-                   << " fov_v=" << cfg.cameraFOVVerticalDeg
-                   << " fps=" << cfg.cameraFrameRateHz
-                   << " latency_ms=" << cfg.cameraLatencyMs << endl;
-    *logger.info() << "  CameraMount: ("
-                   << cfg.cameraMountOffsetX << ", "
-                   << cfg.cameraMountOffsetY << ", "
-                   << cfg.cameraMountOffsetZ << ") m (body, NED)" << endl;
     *logger.info() << "AirframeOcclusion (compile-time): "
                    << (autoc::eval::kAirframeOcclusionEnabled ? "enabled" : "DISABLED (transparent)")
                    << " — see camera_projection.h kAirframeOcclusionEnabled" << endl;
-    *logger.info() << "BeaconLeft: wavelength=" << cfg.beaconLeftWavelengthNm
-                   << "nm  emissionCone=" << cfg.beaconEmissionConeDeg
-                   << "deg  mount=("
-                   << cfg.beaconLeftMountX << ", "
-                   << cfg.beaconLeftMountY << ", "
-                   << cfg.beaconLeftMountZ << ")" << endl;
-    *logger.info() << "BeaconRight: wavelength=" << cfg.beaconRightWavelengthNm
-                   << "nm  mount=("
-                   << cfg.beaconRightMountX << ", "
-                   << cfg.beaconRightMountY << ", "
-                   << cfg.beaconRightMountZ << ")" << endl;
-    *logger.info() << "===============================" << endl;
   }
 
   // 030 M6e — load source dmp at startup for tracker mode (FR-001 + FR-011).
@@ -2109,12 +1974,13 @@ int main(int argc, char** argv)
   populateScenarioSeedTable(totalScenarioCount);
 
   // Pre-fetch all scenario variations from class-scoped PRNGs derived
-  // from scenarioSeed[K]. Transitional phase-2 state: gScenarioVariations
-  // still indexed per-wind (size = windScenarioCount); per-(path, wind)
-  // expansion lands in the cleanup pass. When a variation type is disabled,
-  // defaults are stored in the table BUT the class PRNG still draws (draw-
-  // and-discard per spec §2.E + Clarifications 2026-05-21).
-  prefetchAllVariations(windScenarioCount, gVariationSigmas, gRabbitSpeedConfig,
+  // from scenarioSeed[K]. 034 FR-012: per-(path, wind) — gScenarioVariations
+  // is sized totalScenarioCount (paths × winds) and indexed by the linear
+  // path-major K, so each (path, wind) gets distinct entry/wind offsets.
+  // When a variation type is disabled, defaults are stored in the table BUT
+  // the class PRNG still draws (draw-and-discard per spec §2.E + Clarifications
+  // 2026-05-21).
+  prefetchAllVariations(static_cast<int>(totalScenarioCount), gVariationSigmas, gRabbitSpeedConfig,
                         cfg.randomPathSeedB,
                         gEnableEntryVariations, gEnableWindVariations);
 
@@ -2125,7 +1991,7 @@ int main(int argc, char** argv)
                  << "wind=" << cfg.windDirectionSigma << "° "
                  << "posR=" << cfg.entryPositionRadiusSigma << "m "
                  << "posAlt=" << cfg.entryPositionAltSigma << "m" << endl;
-  logPrefetchedVariations(windScenarioCount, seed);
+  logPrefetchedVariations(static_cast<int>(totalScenarioCount), seed);
 
   // Open the main output file for the data and statistics file.
   // First set up names for data file.  Remember we should delete the
@@ -2140,7 +2006,10 @@ int main(int argc, char** argv)
   // Set fixed-point notation for statistics file
   bout << std::fixed << std::setprecision(6);
 
-  std::string startTime = generate_iso8601_timestamp();
+  // 034 FR-015 — tracker (M2) runs get a "tracker-" run-id prefix so they're
+  // distinguishable from pathgen (M1) "autoc-" runs in the shared S3 bucket.
+  std::string startTime = generate_iso8601_timestamp(
+      cfg.mode == "tracker" ? "tracker-" : "autoc-");
   auto runStartTime = std::chrono::steady_clock::now();
 
   // 030 M8b — explicit output-bucket logging (operator request 2026-05-07).
@@ -2203,7 +2072,7 @@ int main(int argc, char** argv)
                  << cfg.simNumPathsPerGen
                  << " windsPerPath=" << windsPerPath
                  << " dispatchScenarios=" << generationScenarios.size()
-                 << " totalEvaluations=" << generationScenarios.size() * windsPerPath
+                 << " evalsPerIndividual=" << cfg.simNumPathsPerGen * windsPerPath
                  << endl;
   warnIfScenarioMismatch();
 

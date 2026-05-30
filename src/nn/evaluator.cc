@@ -487,7 +487,7 @@ void gather_tracker_inputs(const AircraftState& chase,
     // (1) beacon_pair_span[6] — copy cached values from history.span.
     // Span was computed + CEP-gated upstream in projectAndShiftHistory; we
     // just forward it here. Single computation site avoids divergent gating
-    // semantics between the autoc minisim and crrcsim helper paths.
+    // semantics between the autoc reference and crrcsim helper paths.
     for (int i = 0; i < 6; ++i) {
         out.beacon_pair_span[i] = history.span[i];  // raw-ok: NN-byte-format primitive
     }

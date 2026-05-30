@@ -110,7 +110,7 @@ void printTarget(const char* label, const CopiedTargetSample& t) {
 
 // 032 phase 1 — print the 9 derived perceptual feature slots from the per-tick
 // TrackerInputs (serialized into AircraftState at v=2). Useful for the
-// minisim/crrcsim smoke verification: confirm slots 45..53 carry non-trivial
+// crrcsim smoke verification: confirm slots 45..53 carry non-trivial
 // values across ticks before kicking off the production bake.
 void printDerivedFeatures(const char* label, const TrackerInputs& inputs) {
     std::cout << "  " << label << " derived: span[6]=[";

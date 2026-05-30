@@ -175,7 +175,7 @@ apply to plain-old-data structs used purely as wire-format containers (e.g.,
 ## Architecture
 
 - **C++17**, CMake, Eigen, cereal (serialization), GoogleTest
-- **Desktop** (train): autoc evolution engine + minisim or crrcsim FDM
+- **Desktop** (train): autoc evolution engine + crrcsim FDM (sole worker since 034; minisim retired)
 - **Embedded** (deploy): xiao — Seeed XIAO BLE Sense via PlatformIO
 - **Three components**: autoc (evolution), crrcsim (flight dynamics), xiao (embedded target)
 - **NN-only**: GP tree evolution has been removed. NN01 binary format is the sole controller format.

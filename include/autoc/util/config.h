@@ -4,6 +4,7 @@
 #include <string>
 #include <iostream>
 #include <memory>
+#include <cstdint>
 
 // Forward declarations
 namespace Aws { namespace S3 { class S3Client; } }
@@ -30,8 +31,8 @@ struct AutocConfig {
     int simNumPathsPerGen = 1;
     std::string generatorMethod = "classic";
     int evalThreads = 1;
-    std::string minisimProgram = "./build/minisim";
-    unsigned short minisimPortOverride = 0;
+    std::string workerProgram = "./scripts/crrcsim.sh";
+    unsigned short workerPortOverride = 0;
 
     // --- S3 ---
     std::string s3Bucket = "autoc-storage";
@@ -43,7 +44,12 @@ struct AutocConfig {
     // --- Scenarios ---
     int windScenarioCount = 1;
     int randomPathSeedB = 67890;
-    int seed = -1;
+    // 034 FR-011 — int64_t (not int) so the operator can paste a logged
+    // `effectiveMasterSeed` (uint64-surfaced, may exceed 2^31-1; `time(NULL)`
+    // does after 2038) into `Seed=N` and reproduce the run without truncation.
+    // -1 = wall-clock auto-seed. Widening preserves the value (and thus the
+    // PRNG sequence) for every in-range seed.
+    int64_t seed = -1;
 
     // --- Demetic grouping (scenario assignment) ---
     int demeticGrouping = 0;
@@ -155,27 +161,98 @@ struct AutocConfig {
     // when EITHER beacon's CEP at the current tick is >= this. Default
     // matches kCepSentinelThreshold (1.25) from camera_projection.h.
     double cepGateThreshold = 1.25;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to float at the eval-pipeline consumption boundary
-
-    // === 033 PHASE 1 — Multiplicative smoothness penalty =================
-    // [Smoothness] section in autoc*.ini. Worker-side per-tick factor
-    // applied to stepPoints BEFORE the streak multiplier inside
-    // FitnessComputer::applyStreak() — see spec.md §2.B and
-    // contracts/{smoothness_factor,ini_schema}.md.
-    //
-    // SmoothnessPenaltyFloor: lower bound of the factor.
-    //   1.0 = no penalty (back-compat / regression-test mode)
-    //   0.5 = phase-1 YOLO start (operator-preferred per Clarifications Q4)
-    // Range: [0.0, 1.0]. Loud-fail at ini-parse time on out-of-range.
-    double smoothnessPenaltyFloor = 0.5;  // raw-ok: ini-loaded config-struct field — cast to gp_scalar at the per-tick consumption boundary
-
-    // SmoothnessMotionMode: how the per-tick Δoutput vector aggregates into
-    // the scalar "motion" term. Wire-stable string at ini boundary; parsed
-    // to autoc::eval::SmoothnessMotionMode enum at ConfigManager::load().
-    //   "pythagorean" (default) — L2 norm; motion_max = sqrt(12) ≈ 3.464
-    //   "sum"                   — L1; motion_max = 6.0
-    //   "max"                   — L∞; motion_max = 2.0
-    std::string smoothnessMotionMode = "pythagorean";
 };
+
+// 034 FR-010 — single source of truth for config parse + startup print.
+// X(type, field, "IniKey") for every AutocConfig field that maps 1:1 to an
+// ini key via inih (int/unsigned short → GetInteger, double → GetReal,
+// std::string → Get). config.cc expands this to parse and autoc.cc expands it
+// to print, so parse and the startup banner CANNOT drift — adding a knob here
+// auto-parses AND auto-prints with no hand-maintained print line. Defaults +
+// doc comments live on the struct above; post-parse validation (cepGateThreshold
+// range, Mode enum) stays explicit in config.cc after the macro expansion.
+// Order mirrors the struct sections for readability.
+#define AUTOC_CONFIG_FIELDS(X) \
+    X(int,            populationSize,            "PopulationSize") \
+    X(int,            numberOfGenerations,       "NumberOfGenerations") \
+    X(double,         crossoverProbability,      "CrossoverProbability") \
+    X(double,         creationProbability,       "CreationProbability") \
+    X(int,            tournamentSize,            "TournamentSize") \
+    X(double,         swapMutationProbability,   "SwapMutationProbability") \
+    X(int,            addBestToNewPopulation,    "AddBestToNewPopulation") \
+    X(double,         nnMutationSigma,           "NNMutationSigma") \
+    X(double,         nnCrossoverAlpha,          "NNCrossoverAlpha") \
+    X(double,         nnSigmaFloor,              "NNSigmaFloor") \
+    X(std::string,    nnWeightFile,              "NNWeightFile") \
+    X(std::string,    nnInitMethod,              "NNInitMethod") \
+    X(int,            simNumPathsPerGen,         "SimNumPathsPerGeneration") \
+    X(std::string,    generatorMethod,           "PathGeneratorMethod") \
+    X(int,            evalThreads,               "EvalThreads") \
+    X(std::string,    workerProgram,             "WorkerProgram") \
+    X(unsigned short, workerPortOverride,        "WorkerPortOverride") \
+    X(std::string,    s3Bucket,                  "S3Bucket") \
+    X(std::string,    s3Profile,                 "S3Profile") \
+    X(int,            evaluateMode,              "EvaluateMode") \
+    X(int,            windScenarioCount,         "WindScenarios") \
+    X(int,            randomPathSeedB,           "RandomPathSeedB") \
+    X(int64_t,        seed,                      "Seed") \
+    X(int,            demeticGrouping,           "DemeticGrouping") \
+    X(int,            demeSize,                  "DemeSize") \
+    X(double,         demeticMigProbability,     "DemeticMigProbability") \
+    X(int,            enableEntryVariations,     "EnableEntryVariations") \
+    X(int,            enableWindVariations,      "EnableWindVariations") \
+    X(int,            enableRabbitSpeedVariations, "EnableRabbitSpeedVariations") \
+    X(double,         entryConeSigma,            "EntryConeSigma") \
+    X(double,         entryRollSigma,            "EntryRollSigma") \
+    X(double,         entrySpeedSigma,           "EntrySpeedSigma") \
+    X(double,         windDirectionSigma,        "WindDirectionSigma") \
+    X(double,         entryPositionRadiusSigma,  "EntryPositionRadiusSigma") \
+    X(double,         entryPositionAltSigma,     "EntryPositionAltSigma") \
+    X(int,            variationRampStep,         "VariationRampStep") \
+    X(std::string,    selectionMode,             "SelectionMode") \
+    X(double,         fitDistScaleBehind,        "FitDistScaleBehind") \
+    X(double,         fitDistScaleAhead,         "FitDistScaleAhead") \
+    X(double,         fitConeAngleDeg,           "FitConeAngleDeg") \
+    X(double,         fitStreakThreshold,        "FitStreakThreshold") \
+    X(double,         fitStreakRampSec,          "FitStreakRampSec") \
+    X(double,         fitStreakMultiplierMax,    "FitStreakMultiplierMax") \
+    X(double,         rabbitSpeedNominal,        "RabbitSpeedNominal") \
+    X(double,         rabbitSpeedSigma,          "RabbitSpeedSigma") \
+    X(double,         rabbitSpeedMin,            "RabbitSpeedMin") \
+    X(double,         rabbitSpeedMax,            "RabbitSpeedMax") \
+    X(double,         rabbitSpeedCycleMin,       "RabbitSpeedCycleMin") \
+    X(double,         rabbitSpeedCycleMax,       "RabbitSpeedCycleMax") \
+    X(std::string,    mode,                      "Mode") \
+    X(std::string,    trackerSourceRun,          "TrackerSourceRun") \
+    X(std::string,    trackerPathSubset,         "TrackerPathSubset") \
+    X(std::string,    trackerWindSubset,         "TrackerWindSubset") \
+    X(double,         trailDistance,             "TrailDistance") \
+    X(double,         lowSpeedTrailThreshold,    "LowSpeedTrailThreshold") \
+    X(double,         lowSpeedTrailHysteresis,   "LowSpeedTrailHysteresis") \
+    X(std::string,    crashHullShape,            "CrashHullShape") \
+    X(double,         crashHullRadius,           "CrashHullRadius") \
+    X(double,         crashHullProbability,      "CrashHullProbability") \
+    X(double,         flightArenaRadius,         "FlightArenaRadius") \
+    X(double,         flightArenaFloorAGL,       "FlightArenaFloorAGL") \
+    X(double,         flightArenaCeilingAGL,     "FlightArenaCeilingAGL") \
+    X(int,            cameraCount,               "CameraCount") \
+    X(double,         cameraFOVHorizontalDeg,    "CameraFOVHorizontalDeg") \
+    X(double,         cameraFOVVerticalDeg,      "CameraFOVVerticalDeg") \
+    X(double,         cameraFrameRateHz,         "CameraFrameRateHz") \
+    X(double,         cameraLatencyMs,           "CameraLatencyMs") \
+    X(double,         cameraMountOffsetX,        "CameraMountOffsetX") \
+    X(double,         cameraMountOffsetY,        "CameraMountOffsetY") \
+    X(double,         cameraMountOffsetZ,        "CameraMountOffsetZ") \
+    X(int,            beaconLeftWavelengthNm,    "BeaconLeftWavelengthNm") \
+    X(int,            beaconRightWavelengthNm,   "BeaconRightWavelengthNm") \
+    X(double,         beaconEmissionConeDeg,     "BeaconEmissionConeDeg") \
+    X(double,         beaconLeftMountX,          "BeaconLeftMountX") \
+    X(double,         beaconLeftMountY,          "BeaconLeftMountY") \
+    X(double,         beaconLeftMountZ,          "BeaconLeftMountZ") \
+    X(double,         beaconRightMountX,         "BeaconRightMountX") \
+    X(double,         beaconRightMountY,         "BeaconRightMountY") \
+    X(double,         beaconRightMountZ,         "BeaconRightMountZ") \
+    X(double,         cepGateThreshold,          "CepGateThreshold")
 
 class ConfigManager {
 public:

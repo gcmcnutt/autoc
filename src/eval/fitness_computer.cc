@@ -54,12 +54,9 @@ FitnessComputer::ScoreTerms FitnessComputer::decomposeStepScore(double along, do
     return t;
 }
 
-double FitnessComputer::applyStreak(double stepPoints, double smoothness_factor) {
-    // Streak state update is THRESHOLD-based on unpenalized stepPoints —
-    // smoothness factor discounts the returned value but doesn't perturb
-    // the consecutive-tick streak counter. Operator-visible intent: a
-    // sluggish-but-on-rabbit controller still earns streak credit; the
-    // smoothness factor just reduces how much each in-streak tick is worth.
+double FitnessComputer::applyStreak(double stepPoints) {
+    // Streak state update is THRESHOLD-based on stepPoints. Operator-visible
+    // intent: a sluggish-but-on-rabbit controller still earns streak credit.
     if (stepPoints >= streakThreshold_) {
         streakCount_ = std::min(streakCount_ + 1, streakStepsToMax_);
         totalStreakSteps_++;
@@ -69,19 +66,7 @@ double FitnessComputer::applyStreak(double stepPoints, double smoothness_factor)
     maxStreak_ = std::max(maxStreak_, streakCount_);
     double multiplier = 1.0 + (streakMultMax_ - 1.0) * static_cast<double>(streakCount_) / static_cast<double>(streakStepsToMax_);
     maxMultiplier_ = std::max(maxMultiplier_, multiplier);
-    // 033 §2.B: multiplication ORDER is the contract per
-    // contracts/smoothness_factor.md "Multiplication order is the contract"
-    //   final_step = stepPoints × smoothness_factor × streak_multiplier
-    // Operational reading: discount per-tick value FIRST, THEN compound.
-    //
-    // SMOOTHNESS BYPASS 2026-05-23 — paranoid removal. Even when the caller
-    // passes 1.0, we do NOT trust the multiplicand path through this term;
-    // strip it from the math entirely so fitness reduces to the 029 form
-    // `stepPoints * multiplier`. Parameter remains in the signature only so
-    // call sites compile unchanged; intentionally unused.
-    // return stepPoints * smoothness_factor * multiplier;  // 033 form (disabled)
-    (void)smoothness_factor;
-    return stepPoints * multiplier;  // 029 form — smoothness OUT of fitness math
+    return stepPoints * multiplier;
 }
 
 void FitnessComputer::resetStreak() {

@@ -78,7 +78,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         gp_vec3 prevTangent = gp_vec3::UnitX();
 
         // 030 M7d.a — tracker scenarios populate targetTrajectoryList in
-        // minisim; pathgen scenarios leave it empty. Branch on data presence
+        // the worker; pathgen scenarios leave it empty. Branch on data presence
         // to avoid a separate mode field. Pathgen path below is unchanged
         // (bitwise-preserved against the M1 regression gate).
         const bool is_tracker =
@@ -119,7 +119,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                 // Tracker: rabbit = trail-rabbit position trailing target's
                 // velocity vector (M7b); tangent = target velocity unit.
                 // targetTrajectoryList[i] is parallel-indexed with
-                // aircraftStateList[i] (both pushed in lockstep by minisim).
+                // aircraftStateList[i] (both pushed in lockstep by the worker).
                 const std::vector<CopiedTargetSample>& targets =
                     evalResults.targetTrajectoryList.at(i);
                 int targetIndex = std::clamp(stepIndex, 0,
@@ -166,19 +166,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             // pathgen-mode regression-gate is unaffected.
             auto terms = fc.decomposeStepScore(along, lateralDist);
             double stepPoints = terms.score;
-            // 033 §2.B — per-tick smoothness factor is computed by the
-            // stepper (worker-side per-tick) and stored on AircraftState.
-            // Read it here for fitness application; the per-tick value is
-            // a pure function of the NN-output Δs so a re-derivation at
-            // analysis time would produce the same number.
-            // const double smoothness_factor =
-            //     static_cast<double>(stepState.getSmoothnessFactor());
-            // SMOOTHNESS BYPASS 2026-05-23 — paranoid removal: the
-            // multiplicative penalty is also stripped from the math inside
-            // FitnessComputer::applyStreak (see fitness_computer.cc:~76).
-            // The literal 1.0 below is irrelevant — applyStreak ignores it —
-            // but keeping the parameter avoids touching the signature.
-            double multipliedScore = fc.applyStreak(stepPoints, 1.0);
+            double multipliedScore = fc.applyStreak(stepPoints);
             accumulatedScore += multipliedScore;
 
             simulation_steps++;

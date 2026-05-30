@@ -96,7 +96,7 @@ inline double read_le_double(const uint8_t* data, size_t& pos) {
 // These will eventually live in autoc/rpc_protocol.h
 // ============================================================
 
-// Request: autoc → minisim
+// Request: autoc → worker
 struct EvalRequest {
     static constexpr char MAGIC[4] = {'E', 'V', 'A', 'L'};
     static constexpr uint32_t VERSION = 1;
@@ -182,7 +182,7 @@ struct EvalRequest {
 
 constexpr char EvalRequest::MAGIC[4];
 
-// Response: minisim → autoc
+// Response: worker → autoc
 struct EvalResponse {
     static constexpr char MAGIC[4] = {'R', 'S', 'L', 'T'};
     static constexpr uint32_t VERSION = 1;

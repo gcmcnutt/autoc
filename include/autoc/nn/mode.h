@@ -39,7 +39,7 @@ struct ModeStrategy {
     // bundles carry a pointer to the mode's compile-time topology array
     // + recurrent flag array + total weight count + hidden state count
     // + topology string. Consumed by autoc.cc population init,
-    // minisim genome validation, and startup logging.
+    // worker genome validation, and startup logging.
     const int* topology;             // {input, hidden1, hidden2, output}
     const bool* recurrent;           // per-layer recurrent flag
     int num_layers;                  // 4 in v1

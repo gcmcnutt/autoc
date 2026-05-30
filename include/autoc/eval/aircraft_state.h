@@ -257,7 +257,7 @@ struct AircraftState {
     void setPosition(gp_vec3 pos) { position = pos; }
 
     // Position is always in virtual coordinates (origin at test start).
-    // Producers (CRRCSim, minisim, xiao) convert raw→virtual at boundary.
+    // Producers (CRRCSim, xiao) convert raw→virtual at boundary.
     // See docs/COORDINATE_CONVENTIONS.md "Virtual Frame" section.
 
     unsigned long int getSimTimeMsec() const { return simTimeMsec; }
@@ -319,17 +319,6 @@ struct AircraftState {
     const NNInputs& getNNInputs() const { return nnInputs_; }
     const TrackerInputs& getTrackerInputs() const { return trackerInputs_; }
     const float* getNNOutputs() const { return nnOutputs_; }
-
-    // 033 §2.B — Per-tick smoothness factor applied to stepPoints inside
-    // FitnessComputer::applyStreak BEFORE the streak multiplier. Worker
-    // (stepper) computes this from NN-output Δs vs previous tick and
-    // stores here; autoc-side fitness_decomposition + data.dat logger
-    // read it back. 1.0 = no penalty (first tick of scenario, no prior
-    // output to diff against, OR floor=1.0 disabling the term). Lower
-    // values (down to floor in autoc.ini) = bang-bang penalty.
-    // Range: [SmoothnessPenaltyFloor, 1.0].
-    gp_scalar getSmoothnessFactor() const { return smoothnessFactor_; }
-    void setSmoothnessFactor(gp_scalar f) { smoothnessFactor_ = f; }
 
     // ACRO PID per-tick internals (see PidInternals).
     void setPidInternals(const PidInternals& p) { pidInternals_ = p; }
@@ -402,7 +391,7 @@ struct AircraftState {
       }
     }
 
-    void minisimAdvanceState(gp_scalar dt) {
+    void advanceState(gp_scalar dt) {
       gp_scalar dtSec = dt / 1000.0f;
 
       // get current roll state, compute left/right force (positive roll is right)
@@ -489,10 +478,6 @@ struct AircraftState {
     float nnOutputs_[NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs (mode-agnostic)
     bool hasNNData_ = false;
 
-    // 033 §2.B — per-tick smoothness factor (stepper writes; fitness +
-    // data.dat read). Defaults to 1.0 = no penalty.
-    gp_scalar smoothnessFactor_ = static_cast<gp_scalar>(1.0);
-
     // ACRO PID per-tick snapshot (always populated when PID runs)
     PidInternals pidInternals_;
 
@@ -577,14 +562,6 @@ struct AircraftState {
         float* rawTracker = reinterpret_cast<float*>(&trackerInputs_);  // raw-ok: NN-byte-format buffer
         for (uint32_t i = 0; i < trackerInputCount; i++)
           ar(rawTracker[i]);
-      }
-
-      // 033 §2.B — per-tick smoothness factor. Appended at end per
-      // project no-cereal-versioning policy. Pre-033 v=2 dmps lacking
-      // this field fail-loud on cereal length mismatch (Constitution V
-      // exemption + Constitution III no-shim). Always written at v=2.
-      if (version >= 2) {
-        ar(smoothnessFactor_);
       }
     }
 #endif

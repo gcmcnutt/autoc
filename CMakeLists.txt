@@ -95,7 +95,6 @@ add_library(autoc_common STATIC
     src/eval/arena.cc
     src/eval/trail_rabbit.cc
     src/eval/crash_hull.cc
-    src/eval/pathgen_stepper.cc
     src/eval/tracker_stepper.cc
     src/nn/evaluator.cc
     src/nn/serialization.cc
@@ -106,7 +105,6 @@ add_library(autoc_common STATIC
 target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen)
 
 add_executable(autoc src/autoc.cc)
-add_executable(minisim tools/minisim.cc)
 add_executable(renderer tools/renderer.cc)
 add_executable(nnextractor tools/nnextractor.cc)
 add_executable(nn2cpp tools/nn2cpp.cc)
@@ -114,7 +112,6 @@ add_executable(source_dmp_inspect tools/source_dmp_inspect.cc)
 add_executable(tracker_dmp_inspect tools/tracker_dmp_inspect.cc)
 
 target_link_libraries(autoc autoc_common ${AWSSDK_LIBRARIES})
-target_link_libraries(minisim autoc_common)
 target_link_libraries(renderer autoc_common ${VTK_LIBRARIES} ${AWSSDK_LIBRARIES})
 target_link_libraries(nnextractor autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(nn2cpp autoc_common)

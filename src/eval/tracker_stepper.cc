@@ -30,9 +30,7 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                gp_scalar p_crash_this_gen,
                                uint32_t prng_seed,
                                gp_scalar trail_distance,
-                               gp_scalar cep_gate_threshold,
-                               gp_scalar smoothness_floor,
-                               SmoothnessMotionMode smoothness_mode)
+                               gp_scalar cep_gate_threshold)
     : nn_(nn),
       state_(state),
       source_(source),
@@ -54,9 +52,7 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                    : prng_seed % 0x7FFFFFFFu)) | 1u),
       hull_fired_count_(0),
       trail_distance_(trail_distance),
-      cep_gate_threshold_(cep_gate_threshold),
-      smoothness_floor_(smoothness_floor),
-      smoothness_mode_(smoothness_mode) {}
+      cep_gate_threshold_(cep_gate_threshold) {}
 
 void TrackerStepper::initScenario() {
     nn_.reset();  // zero recurrent state at scenario start (no-op for feedforward)
@@ -83,7 +79,7 @@ void TrackerStepper::initScenario() {
     //   - chase velocity = source[0].velocity — eliminates the
     //     SIM_INITIAL_VELOCITY=20 spike that drops to ~13 by tick 1
     // Pre-fix used 1.0 × trail_distance (chase AT rabbit, knife-edge).
-    // For empty-source fallback (defensive — minisim guards against this
+    // For empty-source fallback (defensive — the worker guards against this
     // ahead of TrackerStepper construction): legacy M1 init at virtual
     // origin + 20 m/s spike.
     const bool source_has_samples = !source_.samples.empty();
@@ -120,14 +116,6 @@ void TrackerStepper::initScenario() {
             projectAndShiftHistory(source_.samples[0]);
         }
     }
-
-    // 033 §2.B — reset per-tick smoothness state. First-tick factor = 1.0
-    // (no false-positive penalty on scenario entry). Per
-    // contracts/smoothness_factor.md.
-    prev_out_valid_ = false;
-    prev_out_pt_ = static_cast<gp_scalar>(0.0);
-    prev_out_rl_ = static_cast<gp_scalar>(0.0);
-    prev_out_th_ = static_cast<gp_scalar>(0.0);
 }
 
 void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
@@ -247,36 +235,11 @@ CrashReason TrackerStepper::stepOnce() {
     // Step 3: NN forward pass → control commands.
     nn_.evaluateTracker(state_, inputs);
 
-    // 033 §2.B — compute per-tick smoothness factor from NN-output Δs vs
-    // previous tick, store on AircraftState for downstream fitness +
-    // data.dat (single source of truth). First-tick path: prev_out_valid_
-    // = false → Δs all zero → factor = 1.0 (no penalty).
-    {
-        const gp_scalar curr_pt = state_.getPitchCommand();
-        const gp_scalar curr_rl = state_.getRollCommand();
-        const gp_scalar curr_th = state_.getThrottleCommand();
-        gp_scalar dpt = static_cast<gp_scalar>(0.0);
-        gp_scalar drl = static_cast<gp_scalar>(0.0);
-        gp_scalar dth = static_cast<gp_scalar>(0.0);
-        if (prev_out_valid_) {
-            dpt = curr_pt - prev_out_pt_;
-            drl = curr_rl - prev_out_rl_;
-            dth = curr_th - prev_out_th_;
-        }
-        const gp_scalar factor = compute_smoothness_factor(
-            dpt, drl, dth, smoothness_floor_, smoothness_mode_);
-        state_.setSmoothnessFactor(factor);
-        prev_out_pt_ = curr_pt;
-        prev_out_rl_ = curr_rl;
-        prev_out_th_ = curr_th;
-        prev_out_valid_ = true;
-    }
-
     // Step 4: advance chase physics. M6d simplification: one
     // SIM_TIME_STEP_MSEC step per source tick (assumes source nominal 100ms
     // tick interval, which matches pastonly3 source dmps). Variable-rate
     // source handling lands at FR-018 / M6f timing_model_tests.
-    state_.minisimAdvanceState(SIM_TIME_STEP_MSEC);
+    state_.advanceState(SIM_TIME_STEP_MSEC);
     duration_msec_ += SIM_TIME_STEP_MSEC;
     state_.setSimTimeMsec(duration_msec_);
 

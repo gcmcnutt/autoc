@@ -6,6 +6,7 @@
 // end-to-end D4 replay test lives in eval_mode_replay_tests.cc).
 
 #include "autoc/util/scenario_prng.h"
+#include "autoc/eval/variation_generator.h"  // 034 FR-012 — per-(path,wind) entry offsets
 
 #include <gtest/gtest.h>
 
@@ -287,4 +288,41 @@ TEST(ClassPRNG, GaussianReproducibleSequence) {
     for (int i = 0; i < 100; ++i) {
         EXPECT_DOUBLE_EQ(a.nextGaussian(1.5), b.nextGaussian(1.5));
     }
+}
+
+// 034 FR-012 — per-(path, wind) variation table. Two scenarios at the SAME
+// wind index but DIFFERENT path index must receive distinct entry-pose
+// offsets: the path-major seed table gives each (path, wind) its own
+// scenarioSeed, so the entry-class offsets derived from it differ. Pre-034 the
+// autoc-side table was indexed per-wind (size = windScenarioCount), so paths
+// 1..N silently reused path-0's offsets. This guards that regression — the
+// fix sizes gScenarioVariations by paths × winds and indexes by the linear
+// path-major K (matching gScenarioSeedTable + scenarioMetaList).
+TEST(ScenarioPrngChain, FR012_PerPathSameWindEntryOffsetsDistinct) {
+    constexpr size_t PATHS = 2, WINDS = 3;
+    // Path-major linear table: K = pathIdx * WINDS + windIdx (production layout).
+    const auto table = buildScenarioSeedTable(0x1234ABCDull, PATHS * WINDS);
+    const VariationSigmas sig =
+        VariationSigmas::fromDegrees(/*cone=*/30, /*roll=*/30, /*speed=*/0.1,
+                                     /*windDir=*/45);
+
+    auto entryFor = [&](size_t pathIdx, size_t windIdx) {
+        const uint64_t seed = table[pathIdx * WINDS + windIdx];
+        ClassPRNG e(autoc::util::deriveClassSubSeeds(seed).entry);
+        return generateEntryVariationsFromClassPRNG(e, sig);
+    };
+
+    constexpr size_t W = 1;  // fixed wind index, vary path
+    const VariationOffsets p0 = entryFor(0, W);
+    const VariationOffsets p1 = entryFor(1, W);
+
+    // Distinct across paths at the same wind — the FR-012 fix.
+    EXPECT_NE(p0.entryHeadingOffset, p1.entryHeadingOffset);
+    EXPECT_NE(p0.entryRollOffset, p1.entryRollOffset);
+    EXPECT_NE(p0.entrySpeedFactor, p1.entrySpeedFactor);
+
+    // Determinism sanity: same (path, wind) reproduces bit-for-bit.
+    const VariationOffsets p0_again = entryFor(0, W);
+    EXPECT_DOUBLE_EQ(p0.entryHeadingOffset, p0_again.entryHeadingOffset);
+    EXPECT_DOUBLE_EQ(p0.entryRollOffset, p0_again.entryRollOffset);
 }
