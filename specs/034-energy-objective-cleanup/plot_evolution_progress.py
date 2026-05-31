@@ -78,6 +78,13 @@ LOG_GEN_RE = re.compile(
 # or `NN_ELITE_DIVERGED: gen=N …`. Legacy logs used `Gen N Best=…` (above).
 NN_ELITE_RE = re.compile(r"NN_ELITE_(?:SAME|DIVERGED):\s+gen=(\d+)")
 
+# Variant that also captures the fitness — used by load_log when a .log file
+# carries no #NNGen / `Gen N Best=` markers but does have the elite-tick line.
+# Sigma is absent in this line, so the comparison loses sigma overlay but
+# still gives best-fitness over gens.
+NN_ELITE_BEST_RE = re.compile(
+    r"NN_ELITE_(?:SAME|DIVERGED):\s+gen=(\d+)\s+fitness=(-?\d+\.?\d*)")
+
 # Crash log line: "  [N] CRASH score=…" / "  [N] CRASH reason=Eval score=…" /
 # "  [N] OK …" — per-scenario rows emitted right after each gen marker.
 # Tracker-mode (M11.preA.2+) adds the optional `reason=<CrashReason>` field
@@ -118,11 +125,12 @@ def load_stc(path: Path):
 
 
 def load_log(path: Path):
-    """Load comparator best-fitness trajectory. Auto-detects whether the file
-    is a .stc / log emitting `#NNGen gen=N best=...` (post-028 format) or the
-    legacy `Gen N Best=...` worker log lines (pre-028). Tries NNGen first;
-    falls back to LOG_GEN_RE if no NNGen lines found. This lets --compare
-    accept both .stc files (newer runs) and .log files (older runs)."""
+    """Load comparator best-fitness trajectory. Auto-detects format in order:
+      1. `#NNGen gen=N best=...` (post-028 .stc / log) — has sigma.
+      2. `Gen N Best=...` (pre-028 worker logs) — has sigma.
+      3. `NN_ELITE_(SAME|DIVERGED): gen=N fitness=X` (current autoc.log) —
+         sigma absent (NaN), best-fitness still plottable.
+    Tries each in order, stops at the first one with hits."""
     rows = dict(gens=[], best=[], sigma=[])
     text = path.read_text()
     for line in text.splitlines():
@@ -141,6 +149,15 @@ def load_log(path: Path):
         rows["gens"].append(int(m.group(1)))
         rows["best"].append(float(m.group(2)))
         rows["sigma"].append(float(m.group(5)))
+    if rows["gens"]:
+        return rows
+    for line in text.splitlines():
+        m = NN_ELITE_BEST_RE.search(line)
+        if not m:
+            continue
+        rows["gens"].append(int(m.group(1)))
+        rows["best"].append(float(m.group(2)))
+        rows["sigma"].append(float("nan"))
     return rows
 
 

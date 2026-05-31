@@ -139,6 +139,19 @@ description: "Task list for 034 — M1/M2 Cleanup + Craft Variations → Flight 
 - [ ] T050 [P] Update `CLAUDE.md` Recent Changes for 034 (already auto-updated; verify accuracy).
 - [ ] T051 Run `specs/034-energy-objective-cleanup/quickstart.md` verification gates end-to-end (grep gates, no-op check) before the US5 bakes.
 
+### Data.stc retirement (single-source telemetry)
+
+**Goal**: kill the `data.stc` breadcrumb file. Per-gen telemetry currently lives in two places (`data.stc` for offline plot scripts, stdout `.log` for live observation); fold the six gen-tagged lines into the logger so the `.log` is the sole source. No C++ consumer reads `data.stc` (renderer doesn't either — verified); only the Python plot scripts use it. Logger adds timestamp+level prefix which actually *helps* (wall-clock correlation), and existing plot-script regexes use `re.search` so the prefix doesn't break parsing.
+
+**Why land before US5**: the US5 bakes produce the artifacts that the post-bake outcome doc parses; the cleanup must be live before then to avoid retro-fitting outcome scripts.
+
+- [ ] T052 [Cleanup] Migrate the six `bout << "#…"` write sites in `src/autoc.cc` to `*logger.info() << "#…"` (keep the `#NNEval` / `#NNGen` / `#GenCrash` / `#GenDiag` / `#GenSimStats` / `#SimRuns` marker tokens unchanged for grep stability): lines 1359, 1621, 1653, 1693, 2040, 2106. Delete the `bout` ofstream declaration (`src/autoc.cc:379`), the `strStatFile` open/close (`:2002-2007`), and the `bout.flush()` calls (`:1712, 2046, 2107`). Constitution III: clean cut, no back-compat dual-write.
+- [ ] T053 [P] [Cleanup] Update `specs/034-energy-objective-cleanup/plot_evolution_progress.py` `--focus` / `--compare` defaults + docstrings to point at `.log` files instead of `data.stc`; remove the .log NN_ELITE fallback path added 2026-05-30 (no longer needed once `#NNGen` lives in the .log). Same updates to `per_axis_aggressiveness.py` + `plot_per_axis_time_series.py` only where they reference .stc (they primarily read `data.dat`, so likely no-op besides docstrings).
+- [ ] T054 [P] [Cleanup] Strip `.stc` from: `include/autoc/eval/eval_logger.h:7` header comment, the eval-pipeline `eval-data.stc` paste-back baseline reference in `specs/034-energy-objective-cleanup/quickstart.md:33`, and `.gitignore` `/*.stc` rule (now dead — no .stc files will be produced).
+- [ ] T055 [Cleanup] (operator-run) Run a short bake (≥10 gens) and confirm: (a) no `data.stc` / `eval-data.stc` produced in workspace; (b) the 6 marker lines appear in `logs/autoc-<run>.log` at expected cadence; (c) `plot_evolution_progress.py` against the new .log produces the same panels as the .stc-based version did.
+
+**Checkpoint**: single source of telemetry, no orphaned breadcrumb file, plot scripts read the same .log as live tail.
+
 ---
 
 ## Dependencies & Execution Order

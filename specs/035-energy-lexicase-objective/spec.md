@@ -15,6 +15,31 @@
 
 **Dependency:** 035 builds on the 034-delivered baseline (minisim gone, smoothness gone, craft variations in, tech-debt fold-ins done). The energy bake is compared against the 033/034 tracking-only baseline.
 
+## Prerequisites (pre-035, before US1)
+
+### Retire data.dat — S3 dmps become the sole per-run trace
+
+**Rationale:** Today every training run writes a multi-GB `data.dat` (text per-tick trace of the elite) alongside an S3 dmp per gen. The dmp is a cereal-serialized `EvalResults` containing essentially the same elite trajectory (`aircraftStateList` per-tick, `pathList`, `scenarioMetaList`, `crashReasonList`, tracker-mode camera/target lists). S3 dmps are already unique per run and persist longer than the workspace `data.dat`. Maintaining the text duplicate adds I/O cost, disk pressure, and a divergence surface (every schema bump must update both writers).
+
+The 034-era trade ("keep data.dat for Python analysis tools, it streams cheaply") expires now that 035 introduces new per-scenario axes (energy_score, MAD-relative epsilon stats) that would otherwise need to be added to *both* writers. Single source of truth wins.
+
+**Approach:** drop the data.dat writer entirely; add any data.dat-only columns to the dmp schema (greenfield, no cereal version bump per project policy); build a `dmp-dump` CLI that reads a `.dmp` (from local file or S3 stdin) and emits the same text-column format the Python plot scripts already consume. Python tools invoke the CLI (`dmp-dump < x.dmp | python3 plot_…py`) instead of streaming data.dat directly.
+
+**Functional Requirements (pre-035):**
+
+- **FR-P01**: `EvalResults` MUST carry every data.dat field that isn't trivially recomputable from `aircraftStateList[scenario][tick]` + `pathList`. Audit columns: NN inputs/outputs/position/quat/body-velocity/PID-internals/rabbit-speed are already in `AircraftState`; the **derived group** (dhome, dist, along, stepPoints, mult, rampSc) is NOT — decide per-column whether to (a) add to AircraftState/ScenarioMetadata as stored state or (b) recompute in the dumper from existing dmp content. Default: recompute unless the path-following math is too coupled to autoc internals.
+- **FR-P02**: A new CLI tool MUST fetch a `.dmp` directly from S3 (given an S3 URI or bucket+key) and stream a semi-human-readable, easily-parseable representation to stdout. Format SHOULD be CSV for per-tick time-series rows (one row per scenario × tick, columns named for `aircraftStateList` fields + derived dhome/dist/along/etc.) and YAML for the per-run/per-scenario metadata block (`scenarioMetaList`, `crashReasonList`, gp hash, provenance), with a header that segregates the two. Local-file input MAY be supported as a developer convenience but S3 is the primary mode (since S3 is the authoritative per-run trace post-data.dat retirement).
+- **FR-P03**: The Python analysis scripts in `specs/03[2-5]*/*.py` MUST be updated to consume the dumper's CSV/YAML output (subprocess invocation or piped stdin) — no direct data.dat dependency remaining, and no byte-compat with the legacy `data.dat` format is required (the scripts get rewritten to use the new column names directly).
+- **FR-P04**: The `rebuild-perf.sh` M1→M1 replay regression gate MUST swap from `data.dat`-byte equality to dmp-byte equality (or per-scenario-score byte equality if dmps carry non-deterministic metadata like upload timestamps). The byte-exact replay property itself is non-negotiable.
+- **FR-P05**: All `data.dat` plumbing MUST be removed from `src/autoc.cc` (the `fout` ofstream, `logEvalResults` writer, `strOutFile` open, pathgen + tracker header emission). Constitution III: clean cut, no dual-write.
+- **FR-P06**: The `.gitignore` `*.dat` rule, `include/autoc/eval/eval_logger.h` comment, and any spec/doc reference to `data.dat` as a live artifact MUST be updated.
+
+**Acceptance:** a short bake produces zero `data.dat` files; `dmp-dump` invoked against a gen dmp produces output the existing plot scripts consume without modification (beyond input-source plumbing); `rebuild-perf.sh` gate passes via dmp byte-equality.
+
+**Out of scope (deferred to a later iteration):**
+- Self-describing dmp format / cross-version compatibility — current cereal is positional; OK for now, document the limitation.
+- A Python-native cereal reader — the CLI dumper as text bridge is sufficient; native Python deserialization is nice-to-have, not gating.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Determine whether energy works as a lexicase secondary objective (Priority: P1)
