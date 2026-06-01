@@ -178,6 +178,25 @@ struct WorkerInit {
   std::vector<std::vector<Path>> pathList;
   std::vector<ScenarioMetadata> scenarioMetaList;
 
+  // 034 Phase 7 (2026-05-31) — worker needs to know the EnableWindVariations
+  // policy to gate the per-scenario CRRC_Random seed. Pre-034: the worker
+  // unconditionally seeded the wind simulator from
+  // `ClassPRNG(deriveClassSubSeeds(scenarioSeed).wind).next()` regardless
+  // of the autoc-side enable flag, so per-tick gusts/thermals VARIED across
+  // scenarios even when `EnableWindVariations=0`. That broke the craft-
+  // isolation experiment (US5 / autoc-craft-only.ini), where the user
+  // expected all 36 scenarios to fly in identical wind/gust environments.
+  // When this flag is false, inputdev_autoc uses a fixed constant
+  // (kDisabledWindSeed = 0xC0FFEEu) for Global::Simulation->reset() so
+  // every scenario sees the same wind/gust sequence. The autoc-side
+  // windPRNG draw still happens (draw-and-discard, matches entry/wind
+  // contract) so toggling the flag doesn't shift other-class draws.
+  // Entry-class variations are already gated via meta.entry* = 0 from
+  // autoc-side prefetchAllVariations; rabbit-class variations are gated
+  // via cfg.sigma = 0 → generateSpeedProfile short-circuit. Neither needs
+  // a separate enable flag here.
+  bool enableWindVariations = true;
+
   template<class Archive>
   void serialize(Archive& ar) {
     int m = static_cast<int>(mode);
@@ -185,7 +204,8 @@ struct WorkerInit {
        airframeProxy, flightArena,
        crashHullRadius, trailDistance,
        pathList, scenarioMetaList,
-       cepGateThreshold);
+       cepGateThreshold,
+       enableWindVariations);  // 034 Phase 7 — appended, no version bump
     mode = static_cast<Mode>(m);
   }
 };

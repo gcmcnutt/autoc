@@ -1092,6 +1092,14 @@ static WorkerInit buildWorkerInit() {
     WorkerInit init;
     init.mode = parseModeName(cfg.mode);
 
+    // 034 Phase 7 — worker-side wind gate. autoc-side already zeros
+    // meta.windDirectionOffset when EnableWindVariations=0, but the worker
+    // (inputdev_autoc) independently derives a per-scenario wind seed for
+    // CRRC_Random; pass the flag through so the worker can collapse all
+    // scenarios to a shared fixed wind seed when disabled. See protocol.h
+    // for the full rationale.
+    init.enableWindVariations = (cfg.enableWindVariations != 0);
+
     // 030 V1.5 — run-static scenario library shared by both modes.
     // generateSmoothPaths(gPathSeed) is byte-identical every gen, so we
     // copy it exactly once into WorkerInit. scenarioMetaList carries
