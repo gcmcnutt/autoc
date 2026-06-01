@@ -202,8 +202,9 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     AUTOC_CONFIG_FIELDS(X)
 #undef X
     // Bump this when knobs are added/removed. 034 US4 added 6 craft sigmas
-    // (craftCG/Drag/Trim/Thrust/PitchEff/RollEff) → 80 + 6 = 86.
-    EXPECT_EQ(n, 86u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // (craftCG/Drag/Trim/Thrust/PitchEff/RollEff) → 86; then the
+    // EnableCraftVariations master-disable knob → 87.
+    EXPECT_EQ(n, 87u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

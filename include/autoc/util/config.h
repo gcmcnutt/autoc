@@ -70,17 +70,31 @@ struct AutocConfig {
     double entryPositionAltSigma = 0.0;
 
     // --- 034 US4 craft variations (per-scenario airframe parameter draws) ---
-    // Static-per-scenario, non-ramping (NOT scaled by computeVariationScale).
-    // 0.0 sigma → no-op: every scenario gets nominal airframe. Non-zero sigma
-    // → Gaussian draw at scenario init via craft-class PRNG seeded from
-    // deriveClassSubSeeds(scenarioSeed).craft. CG/trim are absolute units;
-    // drag/thrust/pitch-eff/roll-eff are fractional (so 0.05 = ±5%).
-    double craftCGSigma = 0.0;          // m — CG arm Gaussian sigma
-    double craftDragSigma = 0.0;        // fraction — CD_prof fractional sigma
-    double craftTrimSigma = 0.0;        // rad — Cm_0 trim Gaussian sigma
-    double craftThrustSigma = 0.0;      // fraction — maxThrust fractional sigma
-    double craftPitchEffSigma = 0.0;    // fraction — pitch-authority fractional sigma
-    double craftRollEffSigma = 0.0;     // fraction — roll-authority fractional sigma
+    // EnableCraftVariations is the macro-level disable (parallels
+    // EnableEntry/Wind/RabbitSpeed). When 0, the craft-class PRNG is still
+    // advanced (draw-and-discard semantics) but the drawn deltas are zeroed
+    // before being written into ScenarioMetadata — same dataflow as
+    // enableEntry=0. Sigma=0 is a finer-grained no-op on a single axis.
+    //
+    // Defaults mirror the entry/wind pattern: enable flag = 0 (off until
+    // operator opts in via ini) but sigma values are SENSIBLE non-zero
+    // numbers so that a missing-from-ini key still produces meaningful
+    // diversity instead of a silent no-op. Per-class units:
+    //   craftCGSigma         dimensionless (chord-fraction / MAC units —
+    //                        not meters: CRRCSim's CG_arm in XML is
+    //                        dimensionless, e.g. hb1_streamer = 0.28)
+    //   craftDragSigma       fractional multiplier on CD_prof (0.05 = ±5%)
+    //   craftTrimSigma       rad — Cm_0 trim Gaussian sigma
+    //   craftThrustSigma     fractional multiplier on engine thrust
+    //   craftPitchEffSigma   fractional multiplier on Cm_de/CL_de
+    //   craftRollEffSigma    fractional multiplier on Cl_da
+    int enableCraftVariations = 0;
+    double craftCGSigma = 0.02;        // ~±7% MAC at hb1_streamer CG_arm=0.28
+    double craftDragSigma = 0.05;      // ±5% CD_prof
+    double craftTrimSigma = 0.02;      // ±1.15° pitch trim
+    double craftThrustSigma = 0.05;    // ±5% maxThrust
+    double craftPitchEffSigma = 0.05;  // ±5% pitch authority
+    double craftRollEffSigma = 0.05;   // ±5% roll authority
 
     // --- Variation landscape ramp ---
     int variationRampStep = 0;
@@ -221,6 +235,7 @@ struct AutocConfig {
     X(double,         windDirectionSigma,        "WindDirectionSigma") \
     X(double,         entryPositionRadiusSigma,  "EntryPositionRadiusSigma") \
     X(double,         entryPositionAltSigma,     "EntryPositionAltSigma") \
+    X(int,            enableCraftVariations,     "EnableCraftVariations") \
     X(double,         craftCGSigma,              "CraftCGSigma") \
     X(double,         craftDragSigma,            "CraftDragSigma") \
     X(double,         craftTrimSigma,            "CraftTrimSigma") \

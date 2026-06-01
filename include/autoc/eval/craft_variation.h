@@ -25,7 +25,7 @@ namespace autoc::eval {
  * intrinsic units (NOT fractions of nominal except where noted) so the
  * caller doesn't need a per-axis multiplier.
  *
- *   craftCGSigma         meters     — CG arm offset Gaussian sigma
+ *   craftCGSigma         dimensionless — CG arm Gaussian sigma (CRRCSim's CG_arm is in MAC/chord-fraction units; hb1_streamer nominal ≈ 0.28)
  *   craftDragSigma       fraction   — CD_prof fractional sigma (so 0.05 = ±5%)
  *   craftTrimSigma       radians    — Cm_0 trim Gaussian sigma
  *   craftThrustSigma     fraction   — maxThrust fractional sigma (centered at 1.0)
@@ -36,6 +36,11 @@ namespace autoc::eval {
  * axis is a true no-op (every draw → 0.0 delta / 1.0 scale).
  */
 struct CraftSigmas {
+    // raw-ok: ini-loaded config-struct fields — inih::GetReal returns double;
+    // gp_scalar conversion happens at the consumption boundary in
+    // generateCraftFromClassPRNG when the drawn value is written into
+    // ScenarioMetadata (which is gp_scalar throughout). Mirrors the
+    // VariationSigmas struct convention in variation_generator.h.
     double craftCGSigma = 0.0;
     double craftDragSigma = 0.0;
     double craftTrimSigma = 0.0;

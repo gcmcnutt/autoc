@@ -136,9 +136,11 @@ static void populateScenarioSeedTable(size_t totalScenarioCount) {
 
 // VARIATIONS1: Global sigma parameters, initialized at startup from config
 static VariationSigmas gVariationSigmas = {0.0, 0.0, 0.0, 0.0, 0.0};
-// 034 US4 — craft-class sigmas, initialized at startup from config (no enable
-// flag: all-σ=0 is the no-op switch).
+// 034 US4 — craft-class sigmas, initialized at startup from config. The
+// EnableCraftVariations master disable parallels EnableEntry/Wind/Rabbit
+// (draw-and-discard when off — PRNG advances, deltas zeroed before write).
 static autoc::eval::CraftSigmas gCraftSigmas;
+static bool gEnableCraftVariations = false;
 // Individual variation enable flags (from config)
 static bool gEnableEntryVariations = false;
 static bool gEnableWindVariations = false;
@@ -246,10 +248,13 @@ static bool gPathSeedFromOverride = false;// True if RandomPathSeedB was used
  * @param randomPathSeedB    Override path seed (-1 = derive from rng::* NN stream)
  * @param enableEntry        If false, store default entry offsets but still draw
  * @param enableWind         If false, store default wind offset but still draw
+ * @param enableCraft        If false, store default (zero) craft deltas + 1.0
+ *                           thrust scale but still draw (PRNG advance preserves
+ *                           cross-class determinism — see entry/wind precedent)
  */
 static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigmas,
                                    const RabbitSpeedConfig& /*rabbitCfg*/, int randomPathSeedB,
-                                   bool enableEntry, bool enableWind) {
+                                   bool enableEntry, bool enableWind, bool enableCraft) {
     gScenarioVariations.clear();
     gScenarioVariations.reserve(numScenarios);
 
@@ -331,15 +336,22 @@ static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigma
             windDirectionOffsetFromClassPRNG(windPRNG, sigmas.windDirectionSigma);
         sv.entryOffsets.windDirectionOffset = enableWind ? drawnWindDir : 0.0;
 
-        // 034 US4 — craft-class draws. No enable flag: all-σ=0 is the no-op
-        // switch (every draw collapses to delta=0 / scale=1). The PRNG is
-        // ALWAYS advanced regardless of σ so changing one sigma later doesn't
-        // shift other classes' draws. Full-magnitude here; worker-side
-        // applyVariationScale() ramps per eval (matches entry/wind pipeline).
+        // 034 US4 — craft-class draws. The PRNG is ALWAYS advanced (draw-
+        // and-discard semantics matching entry/wind) so toggling
+        // EnableCraftVariations doesn't shift other classes' draws. Off ⇒
+        // zero out the deltas (and 1.0 thrust scale) before writing.
+        // Full-magnitude here; worker-side applyVariationScale() ramps per
+        // eval. Sigma=0 on a single axis is a finer-grained no-op below
+        // generateCraftFromClassPRNG (gaussian(0, 0) = 0).
         autoc::util::ClassPRNG craftPRNG(subseeds.craft);
         sv.craftSeed = subseeds.craft;
-        sv.craftDeltas = autoc::eval::generateCraftFromClassPRNG(
-            craftPRNG, gCraftSigmas);
+        autoc::eval::CraftDeltas craftDraw =
+            autoc::eval::generateCraftFromClassPRNG(craftPRNG, gCraftSigmas);
+        if (enableCraft) {
+            sv.craftDeltas = craftDraw;
+        } else {
+            sv.craftDeltas = autoc::eval::CraftDeltas{};  // zeros + 1.0 thrust
+        }
 
         gScenarioVariations.push_back(std::move(sv));
     }
@@ -368,28 +380,28 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
     // 1.0 + computeVariationScale(gen) × (drawn − 1.0) for craftThrustScale.
     // Operator can compute applied at any gen from this table plus the
     // per-gen rampSc value already emitted in data.dat / log lines.
-    // Craft columns omitted when all sigmas == 0 (no-op mode) to keep the
-    // table narrow for the common case.
-    const bool any_craft_sigma =
-        (gCraftSigmas.craftCGSigma       > 0.0)
-        || (gCraftSigmas.craftDragSigma     > 0.0)
-        || (gCraftSigmas.craftTrimSigma     > 0.0)
-        || (gCraftSigmas.craftThrustSigma   > 0.0)
-        || (gCraftSigmas.craftPitchEffSigma > 0.0)
-        || (gCraftSigmas.craftRollEffSigma  > 0.0);
+    // Craft columns omitted when craft is disabled (EnableCraftVariations=0)
+    // or all sigmas == 0 (no-op mode) to keep the table narrow.
+    const bool any_craft_active = gEnableCraftVariations
+        && ((gCraftSigmas.craftCGSigma       > 0.0)
+            || (gCraftSigmas.craftDragSigma     > 0.0)
+            || (gCraftSigmas.craftTrimSigma     > 0.0)
+            || (gCraftSigmas.craftThrustSigma   > 0.0)
+            || (gCraftSigmas.craftPitchEffSigma > 0.0)
+            || (gCraftSigmas.craftRollEffSigma  > 0.0));
 
     {
         std::ostringstream hdr;
         hdr << "Scenario       ScenarioSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°";
-        if (any_craft_sigma) {
-            hdr << "       cgM     drag    trim°    thrSc   pitEff   rolEff    CraftSeed";
+        if (any_craft_active) {
+            hdr << "       cgU     drag    trim°    thrSc   pitEff   rolEff    CraftSeed";
         }
         *logger.info() << hdr.str() << endl;
     }
     {
         std::ostringstream sep;
         sep << "--------  -----------------  --------  ------  ------  ------  --------  ------  -----  -----";
-        if (any_craft_sigma) {
+        if (any_craft_active) {
             sep << "  --------  -------  -------  -------  -------  -------  -----------";
         }
         *logger.info() << sep.str() << endl;
@@ -417,13 +429,13 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
              << std::setw(7) << o.entryEastOffset
              << std::setw(7) << o.entryAltOffset;
 
-        if (any_craft_sigma) {
+        if (any_craft_active) {
             // 034 US4 — drawn (full-magnitude) craft values per scenario.
             // cg in meters, drag/pitEff/rolEff as fractions, trim in degrees
             // (rad in struct, displayed °), thrSc as multiplier (1.0 = nominal).
             const auto& cd = sv.craftDeltas;
             line << "  " << std::setprecision(4)
-                 << std::setw(8) << static_cast<double>(cd.craftCGDelta)        // m
+                 << std::setw(8) << static_cast<double>(cd.craftCGDelta)        // dimensionless (CG_arm MAC units)
                  << "  " << std::setprecision(4)
                  << std::setw(7) << static_cast<double>(cd.craftDragDelta)      // fraction
                  << "  " << std::setprecision(2)
@@ -2012,9 +2024,13 @@ int main(int argc, char** argv)
       cfg.entryPositionAltSigma      // meters (no conversion needed)
   );
 
-  // 034 US4 — craft-class sigmas. No degree→radian conversion (CG is meters,
-  // trim is radians as configured, others are fractions). All-zero defaults
-  // from the ini are the operative no-op switch.
+  // 034 US4 — craft-class sigmas + master enable flag. No degree→radian
+  // conversion (CG is dimensionless CRRCSim units, trim is radians as
+  // configured, others are fractions). EnableCraftVariations is the
+  // macro-level disable that matches the entry/wind/rabbit pattern; when
+  // off, the PRNG still advances per-scenario (draw-and-discard) and the
+  // drawn deltas are zeroed before reaching the FDM.
+  gEnableCraftVariations = (cfg.enableCraftVariations != 0);
   gCraftSigmas.craftCGSigma       = cfg.craftCGSigma;
   gCraftSigmas.craftDragSigma     = cfg.craftDragSigma;
   gCraftSigmas.craftTrimSigma     = cfg.craftTrimSigma;
@@ -2075,7 +2091,8 @@ int main(int argc, char** argv)
   // 2026-05-21).
   prefetchAllVariations(static_cast<int>(totalScenarioCount), gVariationSigmas, gRabbitSpeedConfig,
                         cfg.randomPathSeedB,
-                        gEnableEntryVariations, gEnableWindVariations);
+                        gEnableEntryVariations, gEnableWindVariations,
+                        gEnableCraftVariations);
 
   // Log pre-fetched variations for verification
   *logger.info() << "Sigmas: cone=" << cfg.entryConeSigma << "° "

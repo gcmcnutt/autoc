@@ -76,7 +76,7 @@ struct ScenarioMetadata {
     // craftSeed is the persistence root for replay (the per-scenario PRNG
     // seed that drove these draws — recorded so a dmp alone reconstructs the
     // airframe state without the master seed). gp_scalar per Constitution VI.
-    gp_scalar craftCGDelta = static_cast<gp_scalar>(0.0);       // CG arm offset (m)
+    gp_scalar craftCGDelta = static_cast<gp_scalar>(0.0);       // CG arm offset (dimensionless CRRCSim MAC units)
     gp_scalar craftDragDelta = static_cast<gp_scalar>(0.0);     // CD_prof fractional Δ (≈ ±5%)
     gp_scalar craftTrimDelta = static_cast<gp_scalar>(0.0);     // Cm_0 trim offset (rad)
     gp_scalar craftThrustScale = static_cast<gp_scalar>(1.0);   // engine maxThrust multiplier
