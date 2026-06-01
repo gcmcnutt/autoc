@@ -62,17 +62,47 @@ struct ScenarioMetadata {
     // See docs/COORDINATE_CONVENTIONS.md "Virtual Frame" section.
     gp_vec3 originOffset = gp_vec3::Zero();
 
+    // 034 US4 — craft variations (per-scenario airframe parameter draws).
+    // Drawn at full magnitude per scenarioSeed (deterministic / replay
+    // invariant); the per-eval applied magnitude is scaled by applyVariationScale()
+    // — same pipeline as wind/entry. Training: scale = computeVariationScale(gen);
+    // eval: scale = genome.variation_scale (saved in weight file, replayed via
+    // gEvalVariationScaleOverride — not 100%, not recomputed).
+    //
+    // Defaults are no-op semantics: 0.0 deltas and 1.0 scale leave the FDM at
+    // its nominal airframe. Worker derives the craft-class PRNG seed from
+    // scenarioSeed via deriveClassSubSeeds().craft and writes the draws here
+    // for the FDM to apply at scenario init (after the per-eval scale).
+    // craftSeed is the persistence root for replay (the per-scenario PRNG
+    // seed that drove these draws — recorded so a dmp alone reconstructs the
+    // airframe state without the master seed). gp_scalar per Constitution VI.
+    gp_scalar craftCGDelta = static_cast<gp_scalar>(0.0);       // CG arm offset (m)
+    gp_scalar craftDragDelta = static_cast<gp_scalar>(0.0);     // CD_prof fractional Δ (≈ ±5%)
+    gp_scalar craftTrimDelta = static_cast<gp_scalar>(0.0);     // Cm_0 trim offset (rad)
+    gp_scalar craftThrustScale = static_cast<gp_scalar>(1.0);   // engine maxThrust multiplier
+    gp_scalar craftPitchEffDelta = static_cast<gp_scalar>(0.0); // pitch authority fractional Δ
+    gp_scalar craftRollEffDelta = static_cast<gp_scalar>(0.0);  // roll authority fractional Δ
+    uint32_t craftSeed = 0;                                     // craft-class PRNG seed (replay root)
+    // FR-020: future cameraSeed insertion point — append `uint32_t cameraSeed`
+    // here after craftSeed when the camera-variation class lands. Order
+    // matters (wire byte position); keep new seeds appended, not interleaved.
+
     template<class Archive>
     void serialize(Archive& ar, const std::uint32_t /*version*/) {
         // 033 cleanup: windSeed + rabbitSpeedSeed REMOVED from the walk.
         // scenarioSeed at the end (appended in T006). Old pre-033 dmps
         // fail-loud on cereal length mismatch — Constitution III no-shim +
         // Constitution V loud-fail safety net (intentional break).
+        // 034 US4 craft variations appended after scenarioSeed per project
+        // no-cereal-versioning policy: greenfield wire growth, no version
+        // bump; old 034-pre-US4 dmps fail-loud on length mismatch.
         ar(pathVariantIndex, windVariantIndex, scenarioSequence,
            bakeoffSequence, enableDeterministicLogging, entryHeadingOffset,
            entryRollOffset, entryPitchOffset, entrySpeedFactor,
            windDirectionOffset, entryNorthOffset, entryEastOffset, entryAltOffset,
-           rabbitSpeed, originOffset, scenarioSeed);
+           rabbitSpeed, originOffset, scenarioSeed,
+           craftCGDelta, craftDragDelta, craftTrimDelta, craftThrustScale,
+           craftPitchEffDelta, craftRollEffDelta, craftSeed);
     }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)

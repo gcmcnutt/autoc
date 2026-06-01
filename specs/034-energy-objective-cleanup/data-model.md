@@ -35,7 +35,7 @@
 ### `AutocConfig` (`include/autoc/util/config.h`)
 - **REMOVE**: `smoothnessPenaltyFloor` (double), `smoothnessMotionMode` (string) + their parse (`config.cc:170-191`).
 - **RENAME**: `minisimProgram` → `workerProgram`, `minisimPortOverride` → `workerPortOverride` (clean, no alias).
-- **ADD** (US4): craft-variation magnitude knobs — fractional-σ Gaussian, non-ramping:
+- **ADD** (US4): craft-variation magnitude knobs — fractional-σ Gaussian, ramped via shared `applyVariationScale()`:
   - `gp_scalar craftCGSigma`, `craftDragSigma`, `craftTrimSigma`, `craftThrustSigma`, `craftPitchEffSigma`, `craftRollEffSigma`. Default 0.0 in `.ini` = no-op. (No servo-lag sigma — deferred.)
 - **X-macro target**: the struct + parse + startup-print become a single `AUTOC_CONFIG_FIELDS(X)` list (US3 #1). Field count ~82 + craft knobs.
 
@@ -55,9 +55,9 @@ Mirror the existing `Global::entry*Offset` pattern — add `Global::craftCGDelta
 
 ## Validation rules
 - **No-op**: every σ = 0 → all deltas exactly 0 (additive) / 1.0 (multiplicative) → bit-identical to nominal craft (FR-021, SC-004).
-- **Determinism**: `craftSeed` = a class sub-seed from `deriveClassSubSeeds(scenarioSeed)`; same `scenarioSeed` → same craft draw bit-for-bit (FR-018, SC-005). Non-ramping: deltas NOT scaled by `computeVariationScale()` (FR-019).
+- **Determinism**: `craftSeed` = a class sub-seed from `deriveClassSubSeeds(scenarioSeed)`; same `scenarioSeed` → same craft draw bit-for-bit (FR-018, SC-005). Ramping: drawn deltas are stored at full magnitude in `ScenarioMetadata`; `applyVariationScale()` scales them per eval (FR-019). Eval mode replays the saved `genome.variation_scale` exactly — same mechanism as wind/entry.
 - **Type domain**: all craft scalars `gp_scalar`; FDM coefficient targets (`CD_prof`, `Cm_0`, `CG_arm`) are CRRCSim-native `double`/`SCALAR` — the autoc→crrcsim boundary is the `raw-ok` annotation site if a cast is needed.
 - **No version ceremony**: no version-field bump on transport or dmp; old dmps orphaned by training reset (not migrated). No bespoke fail-loud contract test added — rely on normal cereal error paths if a stale dmp is loaded.
 
 ## State transitions
-None (craft params are static per scenario; applied once at scenario init, constant through the run).
+Craft params are static per scenario (one Gaussian draw at startup, deterministic per `scenarioSeed`). The per-eval `applyVariationScale()` adjusts the *applied* magnitude based on `genome.variation_scale` (training: gen-based ramp; eval: saved scale replay). The FDM applies the final scaled deltas once at scenario init and they remain constant through the trajectory.

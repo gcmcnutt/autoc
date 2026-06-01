@@ -33,6 +33,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/pathgen.h"
 #include "autoc/util/config.h"
 #include "autoc/eval/variation_generator.h"
+#include "autoc/eval/craft_variation.h"      // 034 US4 — craft-class draws
 #include "autoc/nn/mode.h"           // 030 M7a — getActiveModeStrategy
 #include "autoc/nn/population.h"
 #include "autoc/nn/serialization.h"
@@ -135,6 +136,9 @@ static void populateScenarioSeedTable(size_t totalScenarioCount) {
 
 // VARIATIONS1: Global sigma parameters, initialized at startup from config
 static VariationSigmas gVariationSigmas = {0.0, 0.0, 0.0, 0.0, 0.0};
+// 034 US4 — craft-class sigmas, initialized at startup from config (no enable
+// flag: all-σ=0 is the no-op switch).
+static autoc::eval::CraftSigmas gCraftSigmas;
 // Individual variation enable flags (from config)
 static bool gEnableEntryVariations = false;
 static bool gEnableWindVariations = false;
@@ -189,6 +193,11 @@ static float computeVariationScale() {
  */
 struct ScenarioVariations {
     VariationOffsets entryOffsets;              // Heading, roll, pitch, speed, windDir
+    // 034 US4 — full-magnitude craft draw + the class sub-seed that produced
+    // it. Copied to ScenarioMetadata at per-eval construction; the worker
+    // scales via applyVariationScale() before passing to the FDM.
+    autoc::eval::CraftDeltas craftDeltas;
+    uint32_t craftSeed = 0;                     // = deriveClassSubSeeds(scenarioSeed).craft
 };
 
 // Global pre-computed table (indexed by wind scenario index 0..N-1)
@@ -322,6 +331,16 @@ static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigma
             windDirectionOffsetFromClassPRNG(windPRNG, sigmas.windDirectionSigma);
         sv.entryOffsets.windDirectionOffset = enableWind ? drawnWindDir : 0.0;
 
+        // 034 US4 — craft-class draws. No enable flag: all-σ=0 is the no-op
+        // switch (every draw collapses to delta=0 / scale=1). The PRNG is
+        // ALWAYS advanced regardless of σ so changing one sigma later doesn't
+        // shift other classes' draws. Full-magnitude here; worker-side
+        // applyVariationScale() ramps per eval (matches entry/wind pipeline).
+        autoc::util::ClassPRNG craftPRNG(subseeds.craft);
+        sv.craftSeed = subseeds.craft;
+        sv.craftDeltas = autoc::eval::generateCraftFromClassPRNG(
+            craftPRNG, gCraftSigmas);
+
         gScenarioVariations.push_back(std::move(sv));
     }
 }
@@ -342,8 +361,39 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
     // 033 cleanup: WindSeed + RabbitSeed columns removed (worker derives
     // them from meta.scenarioSeed via deriveClassSubSeeds). ScenarioSeed
     // is the master-derived per-scenario seed and is the new replay-key.
-    *logger.info() << "Scenario       ScenarioSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°" << endl;
-    *logger.info() << "--------  -----------------  --------  ------  ------  ------  --------  ------  -----  -----" << endl;
+    //
+    // 034 US4: appended Craft columns + CraftSeed at the right. Values are
+    // DRAWN at full magnitude (variation_scale = 1.0); the per-eval APPLIED
+    // value is drawn × computeVariationScale(gen) for additives, or
+    // 1.0 + computeVariationScale(gen) × (drawn − 1.0) for craftThrustScale.
+    // Operator can compute applied at any gen from this table plus the
+    // per-gen rampSc value already emitted in data.dat / log lines.
+    // Craft columns omitted when all sigmas == 0 (no-op mode) to keep the
+    // table narrow for the common case.
+    const bool any_craft_sigma =
+        (gCraftSigmas.craftCGSigma       > 0.0)
+        || (gCraftSigmas.craftDragSigma     > 0.0)
+        || (gCraftSigmas.craftTrimSigma     > 0.0)
+        || (gCraftSigmas.craftThrustSigma   > 0.0)
+        || (gCraftSigmas.craftPitchEffSigma > 0.0)
+        || (gCraftSigmas.craftRollEffSigma  > 0.0);
+
+    {
+        std::ostringstream hdr;
+        hdr << "Scenario       ScenarioSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°";
+        if (any_craft_sigma) {
+            hdr << "       cgM     drag    trim°    thrSc   pitEff   rolEff    CraftSeed";
+        }
+        *logger.info() << hdr.str() << endl;
+    }
+    {
+        std::ostringstream sep;
+        sep << "--------  -----------------  --------  ------  ------  ------  --------  ------  -----  -----";
+        if (any_craft_sigma) {
+            sep << "  --------  -------  -------  -------  -------  -------  -----------";
+        }
+        *logger.info() << sep.str() << endl;
+    }
 
     for (int i = 0; i < numScenarios; i++) {
         const auto& sv = gScenarioVariations[i];
@@ -366,6 +416,29 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
              << std::setw(6) << o.entryNorthOffset
              << std::setw(7) << o.entryEastOffset
              << std::setw(7) << o.entryAltOffset;
+
+        if (any_craft_sigma) {
+            // 034 US4 — drawn (full-magnitude) craft values per scenario.
+            // cg in meters, drag/pitEff/rolEff as fractions, trim in degrees
+            // (rad in struct, displayed °), thrSc as multiplier (1.0 = nominal).
+            const auto& cd = sv.craftDeltas;
+            line << "  " << std::setprecision(4)
+                 << std::setw(8) << static_cast<double>(cd.craftCGDelta)        // m
+                 << "  " << std::setprecision(4)
+                 << std::setw(7) << static_cast<double>(cd.craftDragDelta)      // fraction
+                 << "  " << std::setprecision(2)
+                 << std::setw(7) << radToDeg(static_cast<double>(cd.craftTrimDelta)) // deg
+                 << "  " << std::setprecision(4)
+                 << std::setw(7) << static_cast<double>(cd.craftThrustScale)    // multiplier
+                 << "  " << std::setprecision(4)
+                 << std::setw(7) << static_cast<double>(cd.craftPitchEffDelta)  // fraction
+                 << "  " << std::setprecision(4)
+                 << std::setw(7) << static_cast<double>(cd.craftRollEffDelta)   // fraction
+                 << "  0x" << std::hex << std::setw(8) << std::setfill('0')
+                 << sv.craftSeed
+                 << std::dec << std::setfill(' ');
+        }
+
         *logger.info() << line.str() << endl;
     }
     *logger.info() << endl;
@@ -1066,6 +1139,16 @@ static WorkerInit buildWorkerInit() {
                 meta.entryNorthOffset = v.entryNorthOffset;
                 meta.entryEastOffset = v.entryEastOffset;
                 meta.entryAltOffset = v.entryAltOffset;
+                // 034 US4 — full-magnitude craft draws copied here; worker
+                // will scale via applyVariationScale before passing to FDM.
+                const auto& cd = gScenarioVariations[idx].craftDeltas;
+                meta.craftCGDelta = cd.craftCGDelta;
+                meta.craftDragDelta = cd.craftDragDelta;
+                meta.craftTrimDelta = cd.craftTrimDelta;
+                meta.craftThrustScale = cd.craftThrustScale;
+                meta.craftPitchEffDelta = cd.craftPitchEffDelta;
+                meta.craftRollEffDelta = cd.craftRollEffDelta;
+                meta.craftSeed = gScenarioVariations[idx].craftSeed;
                 // (033 cleanup) rabbitSpeedSeed assignment removed — field
                 // deleted from ScenarioMetadata + ScenarioVariations.
                 // Worker derives rabbit-class PRNG seed from
@@ -1928,6 +2011,16 @@ int main(int argc, char** argv)
       cfg.entryPositionRadiusSigma,  // meters (no conversion needed)
       cfg.entryPositionAltSigma      // meters (no conversion needed)
   );
+
+  // 034 US4 — craft-class sigmas. No degree→radian conversion (CG is meters,
+  // trim is radians as configured, others are fractions). All-zero defaults
+  // from the ini are the operative no-op switch.
+  gCraftSigmas.craftCGSigma       = cfg.craftCGSigma;
+  gCraftSigmas.craftDragSigma     = cfg.craftDragSigma;
+  gCraftSigmas.craftTrimSigma     = cfg.craftTrimSigma;
+  gCraftSigmas.craftThrustSigma   = cfg.craftThrustSigma;
+  gCraftSigmas.craftPitchEffSigma = cfg.craftPitchEffSigma;
+  gCraftSigmas.craftRollEffSigma  = cfg.craftRollEffSigma;
 
   // Initialize global rabbit speed config.
   // EnableRabbitSpeedVariations=0 forces sigma=0 regardless of the .ini value

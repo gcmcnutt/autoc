@@ -16,14 +16,27 @@
 *(Servo-lag time-constant deferred per D1 — not in 034.)*
 
 - Magnitude = **fractional Gaussian σ** (multiplicative on each param's nominal). σ=0 → exactly nominal.
-- **Non-ramping**: NOT multiplied by `computeVariationScale()` — full magnitude from gen 0.
+- **Ramping**: drawn deltas stored at full magnitude in `ScenarioMetadata`; **per-eval `applyVariationScale()` scales them** (additive deltas toward 0, `craftThrustScale` toward 1.0 — same pattern as `entryHeadingOffset` / `entrySpeedFactor`). Training: scale = `computeVariationScale(gen)`. Eval: scale = `genome.variation_scale` saved in weight file (replays training-time scale exactly via `gEvalVariationScaleOverride`).
 
 ## Sampling (autoc-side, `craft_variation.{h,cc}`)
 
-- Draw from `deriveClassSubSeeds(scenarioSeed).<craftClass>` → deterministic per scenario.
-- Each param: `delta_i = gaussian(0, sigma_i)` → realized as additive (CG, trim) or multiplicative (drag, thrust) at the FDM site.
-- Output: populate `ScenarioMetadata.{craftCGDelta, craftDragDelta, craftTrimDelta, craftThrustScale[, craftServoTau], craftSeed}`.
+- Draw from `deriveClassSubSeeds(scenarioSeed).craft` → deterministic per scenario.
+- Each param: `delta_i = gaussian(0, sigma_i)` → realized as additive (CG, trim, pitch-eff, roll-eff, drag) or multiplicative (thrust) at the FDM site.
+- Output: populate `ScenarioMetadata.{craftCGDelta, craftDragDelta, craftTrimDelta, craftThrustScale, craftPitchEffDelta, craftRollEffDelta, craftSeed}` at full magnitude (scale=1.0). Per-eval scaling happens later via `applyVariationScale()`.
 - All `gp_scalar` (Constitution VI).
+
+## Scaling (worker-side, extends `applyVariationScale()`)
+
+Same call as for entry/wind — workers call `applyVariationScale(meta, evalData.variationScale)` once before each eval. The function scales each craft delta:
+
+```cpp
+meta.craftCGDelta *= scale;
+meta.craftDragDelta *= scale;
+meta.craftTrimDelta *= scale;
+meta.craftPitchEffDelta *= scale;
+meta.craftRollEffDelta *= scale;
+meta.craftThrustScale = 1.0 + scale * (meta.craftThrustScale - 1.0);  // interpolate toward 1.0
+```
 
 ## Application (crrcsim-side)
 
@@ -42,8 +55,9 @@ Per-scenario reset hook (`inputdev_autoc.cpp:494-520` → `Global::craft*` → `
 ## Invariants (test assertions)
 
 1. **No-op**: all σ=0 ⇒ per-scenario fitness byte-identical to nominal (FR-021, SC-004).
-2. **Determinism**: same `scenarioSeed` ⇒ identical craft draw + identical trajectory (FR-018, SC-005).
+2. **Determinism (draw)**: same `scenarioSeed` ⇒ identical *drawn* deltas in `ScenarioMetadata` bit-for-bit (FR-018, SC-005).
 3. **Replay gate**: bit-exact M1→M1 replay (validated in 033) survives craft-seed cascade addition (SC-005).
-4. **Non-ramping**: delta at gen 0 == delta at gen N for a fixed scenario seed (FR-019).
-5. **Reproducible draw**: `craftSeed` round-trips through dmp `ScenarioMetadata` (FR-020).
-6. **Camera-seed forward-compat**: appending a future `cameraSeed` requires no other schema change.
+4. **Ramp (training)**: applied delta at gen 1 ≈ `0 * drawn`; applied delta at late gen ≈ `1 * drawn`. The drawn delta itself is identical across gens for a fixed seed.
+5. **Ramp (eval)**: eval mode replays `genome.variation_scale` exactly (via `gEvalVariationScaleOverride`); applied craft delta matches the gen-of-save scale bit-for-bit, NOT recomputed and NOT 100%.
+6. **Reproducible draw**: `craftSeed` round-trips through dmp `ScenarioMetadata` (FR-020).
+7. **Camera-seed forward-compat**: appending a future `cameraSeed` requires no other schema change.

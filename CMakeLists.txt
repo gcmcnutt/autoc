@@ -199,6 +199,10 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(scenario_prng_tests tests/scenario_prng_tests.cc)
   target_link_libraries(scenario_prng_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  # 034 US4 — craft variation contract tests (T043).
+  add_executable(craft_variation_tests tests/craft_variation_tests.cc)
+  target_link_libraries(craft_variation_tests GTest::gtest GTest::gtest_main autoc_common)
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -226,6 +230,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME crash_hull_tests COMMAND crash_hull_tests)
   add_test(NAME derived_features_tests COMMAND derived_features_tests)
   add_test(NAME scenario_prng_tests COMMAND scenario_prng_tests)
+  add_test(NAME craft_variation_tests COMMAND craft_variation_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -246,6 +251,7 @@ if(ENABLE_AUTOC_TESTS)
             crash_hull_tests
             derived_features_tests
             scenario_prng_tests
+            craft_variation_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -271,6 +277,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND crash_hull_tests --gtest_brief=1
     COMMAND derived_features_tests --gtest_brief=1
     COMMAND scenario_prng_tests --gtest_brief=1
+    COMMAND craft_variation_tests --gtest_brief=1
   )
 endif()
 
