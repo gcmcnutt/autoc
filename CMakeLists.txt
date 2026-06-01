@@ -203,6 +203,10 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(craft_variation_tests tests/craft_variation_tests.cc)
   target_link_libraries(craft_variation_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  # 034 US3 — run-id prefix routing test (T034).
+  add_executable(run_id_prefix_tests tests/run_id_prefix_tests.cc)
+  target_link_libraries(run_id_prefix_tests GTest::gtest GTest::gtest_main autoc_common)
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -231,6 +235,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME derived_features_tests COMMAND derived_features_tests)
   add_test(NAME scenario_prng_tests COMMAND scenario_prng_tests)
   add_test(NAME craft_variation_tests COMMAND craft_variation_tests)
+  add_test(NAME run_id_prefix_tests COMMAND run_id_prefix_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -252,6 +257,7 @@ if(ENABLE_AUTOC_TESTS)
             derived_features_tests
             scenario_prng_tests
             craft_variation_tests
+            run_id_prefix_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -278,6 +284,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND derived_features_tests --gtest_brief=1
     COMMAND scenario_prng_tests --gtest_brief=1
     COMMAND craft_variation_tests --gtest_brief=1
+    COMMAND run_id_prefix_tests --gtest_brief=1
   )
 endif()
 

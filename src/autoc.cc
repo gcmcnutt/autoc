@@ -45,6 +45,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/source_dmp_loader.h"  // 030 M6e tracker mode
 #include "autoc/eval/crash_hull.h"         // 030 M7d.b — pCrashForGen
 #include "autoc/util/scenario_prng.h"      // 033 §2.A — master/scenario/class PRNG chain
+#include "autoc/util/run_id.h"             // 034 FR-015 — mode→run-id prefix routing
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
@@ -2127,7 +2128,7 @@ int main(int argc, char** argv)
   // 034 FR-015 — tracker (M2) runs get a "tracker-" run-id prefix so they're
   // distinguishable from pathgen (M1) "autoc-" runs in the shared S3 bucket.
   std::string startTime = generate_iso8601_timestamp(
-      cfg.mode == "tracker" ? "tracker-" : "autoc-");
+      autoc::runIdPrefixForMode(cfg.mode));
   auto runStartTime = std::chrono::steady_clock::now();
 
   // 030 M8b — explicit output-bucket logging (operator request 2026-05-07).

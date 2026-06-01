@@ -36,17 +36,17 @@ namespace autoc::eval {
  * axis is a true no-op (every draw → 0.0 delta / 1.0 scale).
  */
 struct CraftSigmas {
-    // raw-ok: ini-loaded config-struct fields — inih::GetReal returns double;
+    // ini-loaded config-struct fields — inih::GetReal yields a 64-bit real;
     // gp_scalar conversion happens at the consumption boundary in
     // generateCraftFromClassPRNG when the drawn value is written into
-    // ScenarioMetadata (which is gp_scalar throughout). Mirrors the
-    // VariationSigmas struct convention in variation_generator.h.
-    double craftCGSigma = 0.0;
-    double craftDragSigma = 0.0;
-    double craftTrimSigma = 0.0;
-    double craftThrustSigma = 0.0;
-    double craftPitchEffSigma = 0.0;
-    double craftRollEffSigma = 0.0;
+    // ScenarioMetadata (gp_scalar throughout). Mirrors the VariationSigmas
+    // struct convention in variation_generator.h.
+    double craftCGSigma = 0.0;        // raw-ok: ini config-struct field (double per inih::GetReal)
+    double craftDragSigma = 0.0;      // raw-ok: ini config-struct field (double per inih::GetReal)
+    double craftTrimSigma = 0.0;      // raw-ok: ini config-struct field (double per inih::GetReal)
+    double craftThrustSigma = 0.0;    // raw-ok: ini config-struct field (double per inih::GetReal)
+    double craftPitchEffSigma = 0.0;  // raw-ok: ini config-struct field (double per inih::GetReal)
+    double craftRollEffSigma = 0.0;   // raw-ok: ini config-struct field (double per inih::GetReal)
 };
 
 /**

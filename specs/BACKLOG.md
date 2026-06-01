@@ -99,8 +99,9 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **Files**: `include/autoc/eval/camera_projection.h` (compile-time `kAirframeOcclusionEnabled` + `defaultAirframeProxyHB1()`), `src/eval/camera_projection.cc` (`projectBeacon` step 4c gates on `input.chase_airframe.enabled`).
 - **Trigger to act**: when operator delivers real airframe geometry, or when smoke-test signal indicates training is hurt by the lack of occlusion (NN exploits an "X-ray vision" loophole that won't exist on the real hardware).
 
-### [BACKLOG] M1 vs M2 dmp disambiguation in S3
+### [BACKLOG] ~~M1 vs M2 dmp disambiguation in S3~~ → **034 US3 DONE** (2026-05-31)
 
+- **CLOSED 2026-05-31 (034 US3 / T033)**: chose option (A) run-id prefix. The run-id prefix is now caller-supplied per mode at the call site (`src/autoc.cc`): `tracker-` when `cfg.mode=="tracker"`, else `autoc-`. The mode→prefix decision is factored into the pure `autoc::runIdPrefixForMode()` (`include/autoc/util/run_id.h`) and unit-tested (`tests/run_id_prefix_tests.cc`, T034). Existing v=1 runs keep their `autoc-` prefix (no break).
 - **Surfaced 030 M8b (2026-05-06)**: pathgen-mode (M1, source) dmps and tracker-mode (M2, output) dmps share the same S3 bucket (`autoc-storage`) and the same key shape (`<run-id>/genN.dmp`). The run-id format is identical (`autoc-<seed>-<timestamp>Z`) for both — there's no way to tell them apart from the key alone.
 - **Why it matters**:
   - Tools that auto-pick "latest run, last gen" (renderer's no-key default, nnextractor's no-keyname default) will silently pick the WRONG kind. A v=2 tracker dmp picked by a v=1-only consumer (renderer pre-M9) chokes on `cameraViewList`; a v=1 source dmp picked by a tracker-aware consumer succeeds but misleads ("cameraViewList: empty (pathgen-mode dmp)" — operator wonders if their tracker run failed to record).
@@ -113,8 +114,9 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **My lean**: (A) — autoc reads `Mode = tracker` and prepends `tracker-` to its generated run-id. Operator-friendly grep + tools' auto-pick stays simple (`prefix=autoc-` for pathgen, `prefix=tracker-` for tracker).
 - **Trigger to act**: when a non-trivial tracker run history accumulates AND the operator is mixing pathgen + tracker runs in the same workflow. Until then, manual key specification works around it.
 
-### [BACKLOG] AutocConfig auto-print / extensible parameter dump
+### [BACKLOG] ~~AutocConfig auto-print / extensible parameter dump~~ → **034 US3 DONE** (2026-05-31)
 
+- **CLOSED 2026-05-31 (034 US3 / T027)**: chose the X-macro option. `AUTOC_CONFIG_FIELDS(X)` is now the single-source field list; `include/autoc/util/config.h` (decl), `src/util/config.cc` (parse), and the `src/autoc.cc` startup print block all generate from it — the three-place edit is gone. The 034 craft σ knobs + `EnableCraftVariations` flag (T038) were added by editing the one macro list. A config-dump test asserts every active key prints (T028).
 - **Surfaced 030 M6e (2026-05-06)**: `src/autoc.cc` startup logging is hand-coded `*logger.info() << "Key: " << cfg.field << endl` for every AutocConfig field. Adding the 030 tracker-mode block (~30 new fields across Source / Trail / CrashHull / Arena / Camera / Beacon) made the fragility obvious — every new knob requires both an AutocConfig field add, a parser line in `src/util/config.cc`, AND a manual print line in `autoc.cc`'s startup dump. Three-place edit per knob.
 - **Why it matters**: future feature work (M7 tracker fitness, 031+ camera-config experimentation, etc.) will keep adding knobs. Drift between "config printed" and "config used" is silent — operator looks at the log, doesn't see the new field, assumes default; meanwhile the new knob is active in the run.
 - **Options**:
@@ -216,7 +218,7 @@ random geometries, and 120% envelope stress. Controller has significant headroom
 Remaining 015 work:
 - Phase 7: Xiao-GP sensor sync (blocker for flight test) ← NEXT
 - ~~Phase 6: Aircraft parameter variation (sim-to-real)~~ → **034 US4 DONE** (2026-05-31): per-scenario CG / drag / trim / thrust / pitch-eff / roll-eff via the ScenarioMetadata craft-class draw + ramped applyVariationScale; see `specs/034-energy-objective-cleanup/`
-- Phase 8: Polish (data.stc, arena layout, legacy tearout, memory leak check) → **partially 034** (minisim retired US1, smoothness retired US2, X-macro US3); data.stc retirement queued as 034 T052–T055 / 035 prereqs
+- Phase 8: Polish (data.stc, arena layout, legacy tearout, memory leak check) → **partially 034**: minisim retired (US1), smoothness retired (US2), and the US3 fold-ins landed — config X-macro auto-print, right-sized seed cascade, per-(path,wind) variation-table resolution, S3 run-id mode prefix, lighter eval return path. FR-013 (crash-hull PRNG) and FR-014 (mod_inputdev link) were dropped from 034 as **already-satisfied in-tree** (D2 — verified, no work needed). data.stc retirement queued as 034 T052–T055 / 035 prereqs.
 
 ---
 

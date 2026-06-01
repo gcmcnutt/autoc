@@ -16,9 +16,11 @@ cd xiao && pio run -e xiaoblesense_arduinocore_mbed  # xiao still compiles (no 0
 grep -rn minisim CMakeLists.txt tests/ src/ tools/ include/ | grep -v '// historical'   # → empty
 ls tools/minisim.cc                                                                       # → not found
 
-# US2 — smoothness gone (live refs only; historical comments/033-dir analysis OK)
+# US2 — smoothness gone (live refs only; historical comments/033-dir analysis OK).
+# crrcsim's two "display smoothness" comments (crrc_main.cpp, CTime.cpp) are the
+# render-loop frame pacing, unrelated to the NN motion-smoothness penalty — excluded.
 grep -rniE 'smoothness|SmoothnessPenaltyFloor|smoothnessFactor|compute_smoothness_factor' \
-  src/ include/ tools/ crrcsim/src | grep -v 'historical\|specs/033'                       # → empty
+  src/ include/ tools/ crrcsim/src | grep -v 'historical\|specs/033\|display smoothness'    # → empty
 
 # Constitution VI — type-domain audit on touched paths
 grep -nE '\b(float|double)\b' src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/ | grep -v '// raw-ok:'
