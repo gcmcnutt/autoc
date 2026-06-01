@@ -462,7 +462,6 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
 // odometer-based path traversal refactor.
 std::atomic_ulong nanDetector = 0;
 std::ofstream fout;
-std::ofstream bout;
 std::atomic<uint64_t> globalScenarioCounter{0};
 std::atomic<uint64_t> globalSimRunCounter{0};
 
@@ -1273,8 +1272,7 @@ static EvalData buildEvalData(const EvalJob& job) {
 // NN evaluation mode: load weight file, run through scenarios, report fitness
 static void runNNEvaluation(
     const std::string& startTime,
-    std::ofstream& fout,
-    std::ofstream& bout
+    std::ofstream& fout
 ) {
   const AutocConfig& cfg = ConfigManager::getConfig();
 
@@ -1459,8 +1457,8 @@ static void runNNEvaluation(
   *logger.info() << "NN Eval fitness: " << std::fixed << std::setprecision(6) << fitness << endl;
   *logger.info() << "Stored fitness:  " << std::fixed << std::setprecision(6) << storedFitness << endl;
 
-  // Log to statistics file
-  bout << "#NNEval fitness=" << std::fixed << std::setprecision(6) << fitness
+  // Per-gen telemetry marker — single source is the .log (data.stc retired, T052).
+  *logger.info() << "#NNEval fitness=" << std::fixed << std::setprecision(6) << fitness
        << " storedFitness=" << storedFitness
        << " weightFile=" << cfg.nnWeightFile
        << " scenarios=" << evalResults.pathList.size()
@@ -1472,7 +1470,6 @@ static void runNNEvolution(
     const std::string& startTime,
     const std::chrono::steady_clock::time_point& runStartTime,
     std::ofstream& fout,
-    std::ofstream& bout,
     const std::function<void(int)>& logGenerationStats
 ) {
   const AutocConfig& cfg = ConfigManager::getConfig();
@@ -1721,8 +1718,8 @@ static void runNNEvolution(
     const double whh_xh_ratio = compute_synthetic_activation_ratio(pop.individuals[bestIdx]);
     const PopulationBlockStats blockStats = compute_population_block_stats(pop.individuals);
 
-    // Log to statistics file
-    bout << "#NNGen gen=" << gen
+    // Per-gen telemetry markers — single source is the .log (data.stc retired, T052).
+    *logger.info() << "#NNGen gen=" << gen
          << " best=" << std::fixed << std::setprecision(6) << minFitness
          << " avg=" << avgFitness
          << " worst=" << maxFitness
@@ -1754,7 +1751,7 @@ static void runNNEvolution(
           case CrashReason::HullStrike:     cnt_hullStrike++; break;
         }
       }
-      bout << "#GenCrash gen=" << gen
+      *logger.info() << "#GenCrash gen=" << gen
            << " hullStrike=" << cnt_hullStrike
            << " eval=" << cnt_eval
            << " sim=" << cnt_sim
@@ -1794,7 +1791,7 @@ static void runNNEvolution(
       }
       const double N = static_cast<double>(bestScores.size());
       long loss_total = total_far + total_ang + total_over + total_hull;
-      bout << "#GenDiag gen=" << gen
+      *logger.info() << "#GenDiag gen=" << gen
            << " loss_total=" << loss_total
            << " far=" << total_far
            << " angle=" << total_ang
@@ -1813,7 +1810,6 @@ static void runNNEvolution(
            << " avgThrRl=" << (thr_rl_sum / N)
            << std::endl;
     }
-    bout.flush();
 
     logGenerationStats(gen);
 
@@ -2115,15 +2111,10 @@ int main(int argc, char** argv)
   // Open the main output file for the data and statistics file.
   // First set up names for data file.  Remember we should delete the
   // string from the stream, well just a few bytes
-  ostringstream strOutFile, strStatFile;
+  ostringstream strOutFile;
   const char* filePrefix = cfg.evaluateMode ? "eval-" : "";
   strOutFile << filePrefix << "data.dat" << ends;
-  strStatFile << filePrefix << "data.stc" << ends;
   fout.open(strOutFile.str());
-  bout.open(strStatFile.str());
-
-  // Set fixed-point notation for statistics file
-  bout << std::fixed << std::setprecision(6);
 
   // 034 FR-015 — tracker (M2) runs get a "tracker-" run-id prefix so they're
   // distinguishable from pathgen (M1) "autoc-" runs in the shared S3 bucket.
@@ -2155,14 +2146,13 @@ int main(int argc, char** argv)
     gp_scalar rate = (deltaSec > static_cast<gp_scalar>(0.0f))
       ? static_cast<gp_scalar>(deltaRuns) / deltaSec
       : static_cast<gp_scalar>(0.0f);
-    bout << std::fixed << std::setprecision(2)
+    *logger.info() << std::fixed << std::setprecision(2)
          << "#GenSimStats gen=" << genIndex
          << " sims=" << deltaRuns
          << " total=" << currentRuns
          << " durationSec=" << deltaSec
          << " rate=" << rate
          << std::setprecision(6) << std::endl;
-    bout.flush();
     lastThroughputTime = now;
     lastSimRunCount = currentRuns;
   };
@@ -2212,18 +2202,17 @@ int main(int argc, char** argv)
 
   if (cfg.evaluateMode) {
     // NN evaluation mode: load weight file, evaluate, report fitness
-    runNNEvaluation(startTime, fout, bout);
+    runNNEvaluation(startTime, fout);
   } else {
     // NN evolution mode
-    runNNEvolution(startTime, runStartTime, fout, bout, logGenerationStats);
+    runNNEvolution(startTime, runStartTime, fout, logGenerationStats);
   }
 
 
   uint64_t totalRuns = globalSimRunCounter.load(std::memory_order_relaxed);
   gp_scalar durationSec = std::chrono::duration<gp_scalar>(std::chrono::steady_clock::now() - runStartTime).count();
   gp_scalar simsPerSec = (durationSec > static_cast<gp_scalar>(0.0f)) ? static_cast<gp_scalar>(totalRuns) / durationSec : static_cast<gp_scalar>(0.0f);
-  bout << "#SimRuns " << totalRuns << " DurationSec " << durationSec << std::endl;
-  bout.flush();
+  *logger.info() << "#SimRuns " << totalRuns << " DurationSec " << durationSec << std::endl;
   *logger.info() << std::fixed << std::setprecision(2)
                  << "Simulation throughput: " << totalRuns << " runs in "
                  << durationSec << "s (" << simsPerSec << " sims/s)" << std::defaultfloat << std::endl;

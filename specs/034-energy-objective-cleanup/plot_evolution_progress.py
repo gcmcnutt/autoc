@@ -3,8 +3,12 @@
 
 Adapted from `specs/032-tracker-nn-enhancements/plot_evolution_progress.py`
 (which evolved from 029's plot). Same `#NNGen gen=N best=... streak=... ...`
-data.stc line format and panel structure; defaults retargeted for the
-033 M1 phase-1 bake.
+line format and panel structure. As of 034 T052 the `#NNGen` lines (and the
+other gen markers) live in the run **.log** — the data.stc breadcrumb file
+was retired — so the focus input is now a `.log`. The regex uses `re.search`,
+so the logger's `<timestamp>: <info>` prefix is ignored. Historical committed
+`.stc` snapshots still parse identically (same `#NNGen` token) and remain
+valid `--compare` inputs.
 
 Use this to compare the 033 M1 smoothness-on run head-to-head against
 the 029 pastonly3 baseline (M1 smoothness-off, same 6-path × 49-wind
@@ -32,15 +36,14 @@ Panels (right column):
 
 Usage:
     python3 plot_evolution_progress.py
-        --focus 033-m1:data.stc
+        --focus 034-craft:logs/autoc-034-craft-confirm.log
         --compare 029-pastonly3:specs/029-no-future-arch/pastonly3.stc
-        [--out specs/033-m1-smooth-plus-variations/evolution_progress.png]
+        [--out specs/034-energy-objective-cleanup/evolution_progress.png]
         [--total-gens 800]
         [--title STR]
-        [--crash-log logs/autoc-033-phase1.log]
+        [--crash-log logs/autoc-034-craft-confirm.log]
 
-    Default focus: 033-m1:data.stc
-    Default out:   specs/033-m1-smooth-plus-variations/evolution_progress.png
+    Default focus: newest logs/autoc-*.log (the live run's log)
     Default total-gens: 800 (matches autoc.ini production scale)
 """
 
@@ -76,14 +79,8 @@ LOG_GEN_RE = re.compile(
 
 # Modern log gen-boundary marker (post-028): `NN_ELITE_SAME: gen=N fitness=…`
 # or `NN_ELITE_DIVERGED: gen=N …`. Legacy logs used `Gen N Best=…` (above).
+# Still used by load_crashes() as a per-gen boundary marker in the .log.
 NN_ELITE_RE = re.compile(r"NN_ELITE_(?:SAME|DIVERGED):\s+gen=(\d+)")
-
-# Variant that also captures the fitness — used by load_log when a .log file
-# carries no #NNGen / `Gen N Best=` markers but does have the elite-tick line.
-# Sigma is absent in this line, so the comparison loses sigma overlay but
-# still gives best-fitness over gens.
-NN_ELITE_BEST_RE = re.compile(
-    r"NN_ELITE_(?:SAME|DIVERGED):\s+gen=(\d+)\s+fitness=(-?\d+\.?\d*)")
 
 # Crash log line: "  [N] CRASH score=…" / "  [N] CRASH reason=Eval score=…" /
 # "  [N] OK …" — per-scenario rows emitted right after each gen marker.
@@ -207,12 +204,22 @@ def _all_nan(xs):
     return all(math.isnan(x) for x in xs)
 
 
+def _newest_run_log():
+    """Newest logs/autoc-*.log — the live run's log (post-034-T052 the #NNGen
+    markers live there, not in data.stc)."""
+    logs = sorted(Path("logs").glob("autoc-*.log"), key=lambda p: p.stat().st_mtime)
+    return logs[-1] if logs else None
+
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--focus", type=parse_pair, default=("034-energy-cleanup", Path("data.stc")),
-                   help="focus run NAME:STC_PATH (default 034-energy-cleanup:data.stc)")
+    p.add_argument("--focus", type=parse_pair, default=None,
+                   help="focus run NAME:LOG_PATH — the run .log carrying #NNGen "
+                        "lines (default: newest logs/autoc-*.log). A historical "
+                        ".stc snapshot also works (same #NNGen token).")
     p.add_argument("--compare", type=parse_pair, action="append", default=[],
-                   help="comparison run NAME:STC_PATH (may repeat). Pass "
+                   help="comparison run NAME:PATH (may repeat) — a run .log or a "
+                        "committed .stc snapshot. Pass "
                         "033-pop8000-wind36-r1:specs/033-m1-smooth-plus-variations/pop8000-wind36-r1-data.stc "
                         "for the smoothness-stub baseline at the same pop/wind scale.")
     p.add_argument("--run-name", default="034-phase1",
@@ -235,9 +242,15 @@ def main():
     if args.out is None:
         args.out = Path(f"specs/034-energy-objective-cleanup/{args.run_name}_evolution_progress.png")
 
-    focus_name, focus_path = args.focus
+    if args.focus is None:
+        newest = _newest_run_log()
+        if newest is None:
+            raise SystemExit("no --focus given and no logs/autoc-*.log found")
+        focus_name, focus_path = newest.stem, newest
+    else:
+        focus_name, focus_path = args.focus
     if not focus_path.is_file():
-        raise SystemExit(f"focus stc not found: {focus_path}")
+        raise SystemExit(f"focus log not found: {focus_path}")
     f = load_stc(focus_path)
     if not f["gens"]:
         raise SystemExit(f"no #NNGen lines in {focus_path}")

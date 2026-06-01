@@ -32,7 +32,8 @@ Smoothness was already bypassed, so a fixed-seed M1 eval must match pre-removal 
 
 ```bash
 # before removal (tag/stash), and after — compare per-scenario fitness
-./build/autoc -i autoc-eval.ini   # capture data.stc per-scenario fitness; diff before vs after
+./build/autoc -i autoc-eval.ini   # grep the eval-mode #NNEval line from the run .log; diff before vs after
+                                  # (per-gen stats now live in the .log, not eval-data.stc — retired T052)
 ```
 
 ## Craft-variation checks (SC-004 / SC-005)

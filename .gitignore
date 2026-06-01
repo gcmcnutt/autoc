@@ -1,8 +1,10 @@
 build/
 logs/
 *.dat
-# Ignore the live training-output data.stc in the workspace root, but allow
-# committed reference .stc snapshots under specs/ (e.g. pop8000-wind36-r*-data.stc)
+# data.stc retired in 034 T052 — autoc no longer PRODUCES root .stc, but this
+# rule stays to keep the now-orphaned pre-T052 root data.stc/eval-data.stc (and
+# any stragglers) out of commits. Committed reference snapshots under specs/ are
+# unaffected (the rule is root-anchored).
 /*.stc
 # Ignore CSVs in root (decoded blackbox) but not in flight-results/
 /*.csv
