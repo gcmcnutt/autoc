@@ -79,8 +79,16 @@ LOG_GEN_RE = re.compile(
 
 # Modern log gen-boundary marker (post-028): `NN_ELITE_SAME: gen=N fitness=…`
 # or `NN_ELITE_DIVERGED: gen=N …`. Legacy logs used `Gen N Best=…` (above).
-# Still used by load_crashes() as a per-gen boundary marker in the .log.
+# Used by load_crashes() as a per-gen boundary marker in the .log.
 NN_ELITE_RE = re.compile(r"NN_ELITE_(?:SAME|DIVERGED):\s+gen=(\d+)")
+
+# Variant capturing fitness too — REQUIRED for --compare against historical
+# runs (e.g. 029 pastonly3) whose .log predates #NNGen-in-log and carries only
+# the NN_ELITE elite-tick line. Sigma is absent there (NaN), best-fitness still
+# plottable. (Restored 2026-06-02: T053 removed this, but cross-run comparison
+# to pre-T052 logs needs it; the FOCUS loader still prefers #NNGen.)
+NN_ELITE_BEST_RE = re.compile(
+    r"NN_ELITE_(?:SAME|DIVERGED):\s+gen=(\d+)\s+fitness=(-?\d+\.?\d*)")
 
 # Crash log line: "  [N] CRASH score=…" / "  [N] CRASH reason=Eval score=…" /
 # "  [N] OK …" — per-scenario rows emitted right after each gen marker.
