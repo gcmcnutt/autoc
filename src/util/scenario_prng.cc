@@ -91,9 +91,16 @@ double ClassPRNG::nextDouble() {
 }
 
 double ClassPRNG::nextGaussian(double sigma) {
+    // Truncated normal: bound the standard-normal sample to ±kGaussianSigmaClamp
+    // before scaling (see scenario_prng.h). Both Box-Muller outputs are clamped
+    // so the cached branch is bounded identically.
+    auto clampZ = [](double z) {
+        return z < -kGaussianSigmaClamp ? -kGaussianSigmaClamp
+             : z >  kGaussianSigmaClamp ?  kGaussianSigmaClamp : z;
+    };
     if (gaussianCached_) {
         gaussianCached_ = false;
-        return gaussianCache_ * sigma;
+        return clampZ(gaussianCache_) * sigma;
     }
     // Standard Box-Muller: two uniforms → two N(0,1) samples; return one,
     // cache the other. u1 nudged off zero to avoid log(0).
@@ -105,7 +112,7 @@ double ClassPRNG::nextGaussian(double sigma) {
     const double z1 = r * std::sin(theta);
     gaussianCache_ = z1;
     gaussianCached_ = true;
-    return z0 * sigma;
+    return clampZ(z0) * sigma;
 }
 
 }  // namespace util

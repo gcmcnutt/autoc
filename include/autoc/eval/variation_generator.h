@@ -82,11 +82,15 @@ inline VariationOffsets generateVariations(unsigned int seed, const VariationSig
         return static_cast<double>((seed >> 16) & 0x7FFF) / 32768.0;
     };
 
-    // Box-Muller transform for Gaussian sampling
+    // Box-Muller transform for Gaussian sampling, truncated to
+    // ±kGaussianSigmaClamp σ (see scenario_prng.h) — bounds entry/wind/pos
+    // draws to a sane range without changing the PRNG draw count.
     auto gaussian = [&nextDouble](double sigma) -> double {
         double u1 = nextDouble() * 0.999 + 0.001;  // avoid log(0)
         double u2 = nextDouble();
         double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
+        z = z < -autoc::util::kGaussianSigmaClamp ? -autoc::util::kGaussianSigmaClamp
+          : z >  autoc::util::kGaussianSigmaClamp ?  autoc::util::kGaussianSigmaClamp : z;
         return z * sigma;
     };
 
@@ -186,11 +190,15 @@ inline std::vector<RabbitSpeedPoint> generateSpeedProfile(
         return static_cast<double>((seed >> 16) & 0x7FFF) / 32768.0;
     };
 
-    // Box-Muller for Gaussian sampling
+    // Box-Muller for Gaussian sampling, truncated to ±kGaussianSigmaClamp σ
+    // (see scenario_prng.h). Rabbit speed also keeps its absolute [min,max]
+    // clamp below — the truncation just removes the extreme tail first.
     auto gaussian = [&nextDouble](double mean, double sigma) -> double {
         double u1 = nextDouble() * 0.999 + 0.001;  // avoid log(0)
         double u2 = nextDouble();
         double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
+        z = z < -autoc::util::kGaussianSigmaClamp ? -autoc::util::kGaussianSigmaClamp
+          : z >  autoc::util::kGaussianSigmaClamp ?  autoc::util::kGaussianSigmaClamp : z;
         return mean + z * sigma;
     };
 
@@ -283,6 +291,11 @@ inline VariationOffsets generateEntryVariationsFromClassPRNG(
     // Cone deviation: same math as generateVariations() / generateVariationsFromGPrand()
     {
         double coneAngle = std::fabs(entryPRNG.nextGaussian(sigmas.coneSigma));
+        // Forward-cone guard (see kEntryConeMaxRad rationale in generateVariations):
+        // the ±2.5σ truncation in nextGaussian keeps this ≤75° at σ=30°, but cap
+        // at 80° unconditionally so the nose can never enter the rear hemisphere.
+        constexpr double kEntryConeMaxRad = 80.0 * M_PI / 180.0;
+        if (coneAngle > kEntryConeMaxRad) coneAngle = kEntryConeMaxRad;
         double azimuth = entryPRNG.nextDouble() * 2.0 * M_PI;
         double sinC = std::sin(coneAngle), cosC = std::cos(coneAngle);
         double sinA = std::sin(azimuth), cosA = std::cos(azimuth);

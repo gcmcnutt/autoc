@@ -326,3 +326,34 @@ TEST(ScenarioPrngChain, FR012_PerPathSameWindEntryOffsetsDistinct) {
     EXPECT_DOUBLE_EQ(p0.entryHeadingOffset, p0_again.entryHeadingOffset);
     EXPECT_DOUBLE_EQ(p0.entryRollOffset, p0_again.entryRollOffset);
 }
+
+// 034 entry-extreme fix — truncated-normal clamp invariant.
+// Every ClassPRNG::nextGaussian draw must be bounded to ±kGaussianSigmaClamp·σ,
+// and the entry cone half-angle must never enter the rear hemisphere (≤80°),
+// so no scenario can draw the backward/inverted entry that arena12 hit.
+TEST(GaussianClamp, NextGaussianBoundedToSigmaClamp) {
+    ClassPRNG g(0xBEEF1234u);
+    const double sigma = 30.0;
+    const double bound = autoc::util::kGaussianSigmaClamp * sigma;
+    for (int i = 0; i < 200000; ++i) {
+        const double z = g.nextGaussian(sigma);
+        EXPECT_LE(std::fabs(z), bound + 1e-9) << "draw " << i << " = " << z;
+    }
+}
+
+TEST(GaussianClamp, EntryConeStaysForwardHemisphere) {
+    // Even with a deliberately huge cone sigma, the forward-cone guard must
+    // keep cosC > 0 (nose in the forward hemisphere) for every scenario.
+    constexpr int PATHS = 6, WINDS = 49;
+    const auto table = buildScenarioSeedTable(0xC0FFEEull, PATHS * WINDS);
+    const VariationSigmas sig =
+        VariationSigmas::fromDegrees(/*cone=*/90, /*roll=*/30, /*speed=*/0.1,
+                                     /*windDir=*/45);
+    for (size_t s = 0; s < table.size(); ++s) {
+        ClassPRNG e(autoc::util::deriveClassSubSeeds(table[s]).entry);
+        const VariationOffsets v = generateEntryVariationsFromClassPRNG(e, sig);
+        // |heading| < 90° AND |pitch| < 90° ⟺ nose is forward of the wing line.
+        EXPECT_LT(std::fabs(v.entryHeadingOffset), M_PI / 2.0)
+            << "scenario " << s << " heading=" << v.entryHeadingOffset;
+    }
+}

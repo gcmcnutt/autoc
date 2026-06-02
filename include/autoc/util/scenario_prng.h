@@ -38,6 +38,16 @@
 namespace autoc {
 namespace util {
 
+// Truncated-normal clamp. EVERY Gaussian draw in the variation pipeline
+// (ClassPRNG::nextGaussian + the LCG gaussians in variation_generator.h) is
+// bounded to ±kGaussianSigmaClamp standard deviations of the standard normal
+// before scaling by the per-knob sigma. This keeps each variation's range
+// proportional to its configured sigma while cutting the crazy tail — e.g.
+// the >3σ cone draw that put arena12 at a 106° (backward-facing) entry.
+// Clamp rather than resample so the PRNG draw COUNT per call stays fixed and
+// the frozen draw-order / bit-exact-replay contract is preserved.
+constexpr double kGaussianSigmaClamp = 2.5;
+
 // Park-Miller LCG step — pure helper, exposed for unit testing.
 // state' = (state * 48271) mod 0x7FFFFFFF
 // Period: 2^31 - 2. Stable, single-precision, classic.
