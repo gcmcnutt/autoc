@@ -76,11 +76,24 @@ The project wants controllers that minimize energy in addition to tracking. This
 - **FR-006**: The investigation MUST guard against degenerate energy wins (energy improved only by abandoning tracking) — tracking-quality non-regression is a required condition for an "energy works" verdict.
 - **FR-007**: The open question (throttle-proxy energy vs richer total-energy = altitude+airspeed) MUST be resolved with a go/no-go recommendation for a follow-on, informed by the bake outcome.
 - **FR-008**: Whether the `stability_score` axis (`selection.cc:68`) is also re-enabled MUST be an explicit decision recorded with rationale (not left ambiguous).
+- **FR-009**: 035 MUST optimize the **energy dimension, NOT smoothness**. Do not add a control-rate / bang-bang penalty. Smoothness is an emergent *consequence* of minimizing energy (aggressive maneuvering → induced drag → energy cost), not a target in its own right. The 034 origm1-5000×49 run already self-smoothed (roll-rate halved in the back half) under a pure tracking objective with no smoothness term — evidence that the search drifts toward smooth on its own, so the lever to add is energy, not a smoothness whip. (Prior scalar smoothness/penalty attempts *dulled* the system — see discussion below.)
+
+### Design discussion — measuring total energy input (operator, 2026-06-03)
+
+The energy metric is the central design question of 035 (supersedes the throttle-proxy placeholder in FR-007 / Key Entities). Direction:
+
+- **Quantity to minimize = total energy *input*, summed over time** — `Σ_t energy_consumed(t)`. Energy *consumed*, not a control-amplitude proxy. Start with the consumed-energy integral as the v1 metric.
+- **Energy input is probably a non-linear function of throttle**, not the linear `Σ(out_th − 1)` placeholder. Motor/prop power draw rises super-linearly with throttle; the metric should reflect that (e.g. a convex function of throttle command, or the FDM's actual electrical/shaft power if exposed).
+- **Induced drag is part of the cost.** Aggressive maneuvering (tight turns, high-AoA) burns energy via induced drag even at constant throttle — and the LaRCSim FDM already simulates it. So a *measured* energy term naturally charges for bang-bang on every axis, which is exactly why no separate smoothness penalty is needed (FR-009).
+- **Optionally fold in mechanical-energy state** — potential energy (altitude) and kinetic (airspeed). A craft that trades altitude/speed for tracking is spending stored energy; a full accounting is `Δ(PE+KE) + work_in`. **But start simple**: consumed-energy-over-time first; add the PE/KE state terms only if the throttle-integral metric proves insufficient (this is the richer-total-energy go/no-go of FR-007).
+- **Why lexicase, and the "dulling" risk.** Several prior approaches that made "more energy = worse" *dulled the whole system* — the scalar 033 smoothness-penalty floor collapsed the controller into a Pareto corner ([project_scalar_multiobjective_collapse](../../.claude/projects/-home-gmcnutt-autoc/memory/project_scalar_multiobjective_collapse.md)), and energy-as-penalty underperformed in 027/028. The bet for 035 is that **lexicase keeps energy as a separate selection dimension** (some test cases select on energy, others on tracking) rather than a scalar discount on tracking — so it can pull energy down without dulling the tracking drive. If lexicase *also* dulls it, that's a key negative result.
+- **Timing (consider for design):** bang-bang may be useful *early* (aggressive basin-finding) and only wasteful *late* — the 034 run found its basin rough then smoothed. So energy pressure may want to **ramp in late** (like the variation ramp) rather than apply from gen 0, to avoid suppressing early exploration.
+- **M2 motivation:** tracking mode is intrinsically high-energy (a chase craft maneuvers continuously to follow an erratic target), and real-flight battery is a hard constraint — so the energy dimension matters *more* for M2/deployment than for smooth pathgen courses. This is the deployment reason 035 is load-bearing.
 
 ### Key Entities
 
 - **Secondary objective**: a per-scenario score axis (energy_score, optionally stability_score) used as a lexicase test case alongside the tracking score — distinct from a scalar penalty folded into one number.
-- **energy_score**: per-scenario `Σ(out_th − 1)/2`, already computed + emitted to data.stc; lower = better (less throttle).
+- **energy_score**: the per-scenario energy metric. The existing `Σ(out_th − 1)/2` (linear throttle proxy, already computed/emitted) is a **placeholder starting point** — see the "measuring total energy input" discussion above: v1 should move toward a consumed-energy-over-time integral with a non-linear throttle term (and induced drag captured by the FDM), with PE/KE state terms as a later option. Lower = better (less energy).
 - **MAD-relative epsilon**: lexicase pass/fail threshold scaled by the median-absolute-deviation of per-scenario scores, replacing the constant 0.5.
 - **Baseline**: the 034-delivered tracking-only run (pop=8000/wind=36 + craft variations) that energy bakes are compared against.
 
