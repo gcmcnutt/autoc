@@ -164,24 +164,6 @@ flip to re-enable) or "investigate before retraining":
 - `Σ_t (out_th-1)/2` per scenario, on `ScenarioScore`. Same plumbing
   pattern as stability above; same restore path.
 
-### [035-family] M2 hull-crash-cost lexicase axis — strengthen the kamikaze penalty
-
-- **Problem** (`project_hull_escalation_finding`): in tracker bakes, hull-crashes grow
-  *monotonically with skill* (030: 1→11/gen; 032: ~3× faster) — the chase craft learns to
-  fly *into* the target as tracking sharpens. **Gates real-flight deployment.**
-- **Origin / why homeless**: scoped as "033 phase-2" (M2 inheritance + kamikaze penalty,
-  gated on the M2 mezzanine flight pass — `034/spec.md:216`, `033/plan.md`), but stranded
-  when 033 was superseded. Until now it lived only in the memory + stale 033/017 refs — no
-  live BACKLOG/spec home.
-- **Approach**: a per-scenario crash cost as **another lexicase axis**, NOT a scalar penalty
-  (same lesson as energy/stability — scalar composition collapses to a Pareto corner, see
-  `project_scalar_multiobjective_collapse`). Candidate metric: `scenario_score × 0.5` on hull
-  strike, or a dedicated `crash_cost` field on `ScenarioScore`. Sits alongside the energy +
-  stability axes in the 035 multi-objective framework.
-- **Routing**: this is a **fitness-dimension** item → **035-family, NOT 036** (036 = demetic
-  islands / selection structure, not objectives). **Trigger**: the M2 run surfaces the
-  hull-escalation rate; fold the crash-cost axis into 035's lexicase work (FR-008-adjacent).
-
 ### [NEXT — 028] rnn1/2/3 failure-mode disambiguation
 
 - Required prework before any 028 retraining. Four candidate
