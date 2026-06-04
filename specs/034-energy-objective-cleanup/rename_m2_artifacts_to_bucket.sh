@@ -25,7 +25,7 @@ PROFILE="${AWS_PROFILE:-default}"
 SRC_BUCKET="autoc-storage"
 RUN_ID="9223370256301596645-2026-06-04T06:06:19.162Z"   # the in-flight M2 run
 SRC_PREFIX="tracker-${RUN_ID}"                            # current (T033) naming
-DST_BUCKET="${M2_BUCKET:-autoc-storage-tracker}"          # <-- SET to the real M2 bucket (env M2_BUCKET=... overrides)
+DST_BUCKET="${M2_BUCKET:-autoc-storage-tracker}"          # M2 train bucket (confirmed 2026-06-04; env M2_BUCKET=... overrides)
 DST_PREFIX="autoc-${RUN_ID}"                              # "as before" naming the selector expects
 DRY_RUN="${DRY_RUN:-1}"                                   # 1 = preview only; DRY_RUN=0 to execute
 # -----------------------------------------------------------------------------

@@ -51,7 +51,9 @@ train each get their own bucket; **run-id naming + the selector stay as before**
 (`autoc-` prefix, `SetPrefix("autoc-")`) — the *bucket* is the discriminator, so
 the T033 `tracker-` prefix is retired (cosmetic at most). M3 follows the same
 pattern. (Per-run config already carries `S3Bucket`, so this is a config change,
-not a schema change.)
+not a schema change.) Interim bucket names are ad-hoc — M1 `autoc-storage`, M2
+`autoc-storage-tracker`, eval `autoc-eval-arm`; **adopt a cleaner uniform per-mode
+naming convention as part of FR-P07** (don't churn the existing buckets until then).
 
 **Pre-035 prerequisites (do before US1):**
 - **FR-P07 — normalize the S3 run-selector into one common function.** The
