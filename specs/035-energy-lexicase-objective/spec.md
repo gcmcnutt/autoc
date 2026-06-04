@@ -67,6 +67,13 @@ naming convention as part of FR-P07** (don't churn the existing buckets until th
   retention/expiration policy (training + eval + per-mode buckets) so old dmps
   auto-clean without manual pruning. Apply uniformly to `autoc-storage`, the new
   per-mode train buckets, `autoc-eval-arm`, and future M3.
+- **IAM blocker (2026-06-04):** the `autoc-generator` IAM user lacks
+  `s3:CreateBucket`, `s3:GetBucketLocation`, and `s3:GetObjectTagging` — so it
+  cannot provision the per-mode buckets or set lifecycle, and managed
+  (multipart) copies fail unless run with `--copy-props none`. Provisioning the
+  buckets + lifecycle (FR-P08) and the per-mode split need an admin/role with
+  the S3 management actions; until then M2 stays on `autoc-storage` with the
+  in-place copy-rename workaround.
 
 **Out of scope for the rename:** the in-flight M2 run (run-id
 `tracker-9223370256301596645-2026-06-04T06:06:19.162Z` in `autoc-storage`) is a

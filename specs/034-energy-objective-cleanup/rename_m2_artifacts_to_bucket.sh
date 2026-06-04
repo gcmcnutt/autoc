@@ -25,7 +25,7 @@ PROFILE="${AWS_PROFILE:-default}"
 SRC_BUCKET="autoc-storage"
 RUN_ID="9223370256301596645-2026-06-04T06:06:19.162Z"   # the in-flight M2 run
 SRC_PREFIX="tracker-${RUN_ID}"                            # current (T033) naming
-DST_BUCKET="${M2_BUCKET:-autoc-storage-tracker}"          # M2 train bucket (confirmed 2026-06-04; env M2_BUCKET=... overrides)
+DST_BUCKET="${M2_BUCKET:-autoc-storage}"                  # SAME bucket — autoc-storage-tracker not yet provisioned (IAM lacks CreateBucket); env M2_BUCKET=... overrides
 DST_PREFIX="autoc-${RUN_ID}"                              # "as before" naming the selector expects
 DRY_RUN="${DRY_RUN:-1}"                                   # 1 = preview only; DRY_RUN=0 to execute
 # -----------------------------------------------------------------------------
@@ -42,10 +42,14 @@ aws --profile "${PROFILE}" s3 ls "s3://${SRC_BUCKET}/${SRC_PREFIX}/" | grep -c '
 # the bucket isn't provisioned yet (may need --region):
 # aws --profile "${PROFILE}" s3 mb "s3://${DST_BUCKET}"
 
+# --copy-props none: skip tag/metadata copy. REQUIRED here — the autoc-generator
+# IAM user lacks s3:GetObjectTagging, which the default managed (multipart) copy
+# calls to preserve tags, so without this every copy fails AccessDenied.
 SYNC_ARGS=(--profile "${PROFILE}" s3 sync
            "s3://${SRC_BUCKET}/${SRC_PREFIX}/"
            "s3://${DST_BUCKET}/${DST_PREFIX}/"
-           --exclude '*' --include 'gen*.dmp')
+           --exclude '*' --include 'gen*.dmp'
+           --copy-props none)
 
 if [[ "${DRY_RUN}" == "1" ]]; then
   echo "=== DRY RUN (add --dryrun preview) ==="
