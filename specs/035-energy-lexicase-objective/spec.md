@@ -40,6 +40,38 @@ The 034-era trade ("keep data.dat for Python analysis tools, it streams cheaply"
 - Self-describing dmp format / cross-version compatibility — current cereal is positional; OK for now, document the limitation.
 - A Python-native cereal reader — the CLI dumper as text bridge is sufficient; native Python deserialization is nice-to-have, not gating.
 
+### S3 storage contract — per-mode buckets + normalized selector + lifecycle
+
+**Decision (2026-06-04):** M1/M2 dmps are effectively *polymorphic* (pathgen vs
+tracker `EvalResults` carry different fields), and sharing one bucket with a
+run-id prefix (`autoc-`/`tracker-`, T033) broke the auto-selectors. New contract:
+**one bucket per mode**, mirroring the eval split (eval already uses
+`autoc-eval-arm` vs training `autoc-storage`). M1 train, M2 train, (future) M3
+train each get their own bucket; **run-id naming + the selector stay as before**
+(`autoc-` prefix, `SetPrefix("autoc-")`) — the *bucket* is the discriminator, so
+the T033 `tracker-` prefix is retired (cosmetic at most). M3 follows the same
+pattern. (Per-run config already carries `S3Bucket`, so this is a config change,
+not a schema change.)
+
+**Pre-035 prerequisites (do before US1):**
+- **FR-P07 — normalize the S3 run-selector into one common function.** The
+  "latest run / latest gen" logic is currently duplicated and hardcoded to
+  `autoc-` in `tools/nnextractor.cc` (≈48,105) and `tools/renderer.cc`
+  (≈1779,1898) (and any future tool). Extract a single shared helper
+  (`extractGenNumber` + `findLatestRun(bucket)`) — bucket-relative, prefix-
+  agnostic — and route all tools through it. (This is why the in-flight M2 needs
+  a manual artifact rename — see below — to avoid a code rebuild now.)
+- **FR-P08 — S3 object lifecycle that "just works," set on ALL buckets.** A
+  retention/expiration policy (training + eval + per-mode buckets) so old dmps
+  auto-clean without manual pruning. Apply uniformly to `autoc-storage`, the new
+  per-mode train buckets, `autoc-eval-arm`, and future M3.
+
+**Out of scope for the rename:** the in-flight M2 run (run-id
+`tracker-9223370256301596645-2026-06-04T06:06:19.162Z` in `autoc-storage`) is a
+one-off; its artifacts get copy-renamed to the M2 bucket with `autoc-` naming via
+`specs/034-energy-objective-cleanup/rename_m2_artifacts_to_bucket.sh` so the
+current (unchanged) selector finds them — no code rebuild.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Determine whether energy works as a lexicase secondary objective (Priority: P1)
