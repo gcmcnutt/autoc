@@ -67,13 +67,18 @@ naming convention as part of FR-P07** (don't churn the existing buckets until th
   retention/expiration policy (training + eval + per-mode buckets) so old dmps
   auto-clean without manual pruning. Apply uniformly to `autoc-storage`, the new
   per-mode train buckets, `autoc-eval-arm`, and future M3.
-- **IAM blocker (2026-06-04):** the `autoc-generator` IAM user lacks
-  `s3:CreateBucket`, `s3:GetBucketLocation`, and `s3:GetObjectTagging` — so it
-  cannot provision the per-mode buckets or set lifecycle, and managed
-  (multipart) copies fail unless run with `--copy-props none`. Provisioning the
-  buckets + lifecycle (FR-P08) and the per-mode split need an admin/role with
-  the S3 management actions; until then M2 stays on `autoc-storage` with the
-  in-place copy-rename workaround.
+- **Manual S3 admin setup (pre-035, done by an admin role — NOT the
+  `autoc-generator` IAM user, which lacks `s3:CreateBucket`,
+  `s3:GetBucketLocation`, `s3:GetObjectTagging`):**
+  1. **Create the per-mode buckets** (M1 / M2 / M3 train + reuse eval), manually.
+  2. **Set the lifecycle policy** (FR-P08) on every bucket.
+  3. **Set/grant object tagging** so managed multipart copies work normally
+     (no `--copy-props none` workaround needed).
+  4. **Update the ini files** (`S3Bucket` per mode) to point at the new buckets,
+     going forward.
+  Until that's done, M2 stays on `autoc-storage` and its `tracker-` run-ids are
+  copy-renamed in place to `autoc-<id>` via the 034 rename script (with
+  `--copy-props none`) so the unchanged selector finds them.
 
 **Out of scope for the rename:** the in-flight M2 run (run-id
 `tracker-9223370256301596645-2026-06-04T06:06:19.162Z` in `autoc-storage`) is a
