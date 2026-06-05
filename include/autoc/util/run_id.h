@@ -2,18 +2,18 @@
 
 #include <string>
 
-// 034 FR-015 (T033/T034) — run-id prefix routing.
+// 034 FR-015 → 035 FR-P07b — run-id prefix.
 //
-// M1 (pathgen) and M2 (tracker) runs share one S3 bucket, so their run-ids
-// (and the dmp keys under them) must be distinguishable by a leading prefix:
-// pathgen runs get "autoc-", tracker runs get "tracker-". The mode→prefix
-// decision lives in this pure function so it is unit-testable in isolation
-// (generate_iso8601_timestamp itself lives in autoc.cc alongside main() and
-// is not linkable into the test binary).
+// Originally (034 T033) M1/M2 shared one bucket and were distinguished by a
+// leading run-id prefix ("autoc-" vs "tracker-"). 035's per-mode-bucket
+// contract makes the BUCKET the discriminator, so the run-id prefix is now
+// UNIFORM ("autoc-") for every mode — the selector's SetPrefix("autoc-")
+// then matches every mode's runs in its own bucket. The `tracker-` branch is
+// retired. Kept as a function (taking mode) for call-site stability.
 namespace autoc {
 
-inline std::string runIdPrefixForMode(const std::string& mode) {
-  return mode == "tracker" ? "tracker-" : "autoc-";
+inline std::string runIdPrefixForMode(const std::string& /*mode*/) {
+  return "autoc-";  // FR-P07b: uniform across modes; bucket is the discriminator
 }
 
 }  // namespace autoc

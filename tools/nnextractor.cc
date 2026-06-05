@@ -21,6 +21,7 @@
 #include "autoc/rpc/protocol.h"
 #include "autoc/nn/serialization.h"
 #include "autoc/util/config.h"
+#include "autoc/util/s3_run_selector.h"  // 035 FR-P07 shared selector
 
 void printUsage(const char* progName) {
   std::cout << "Usage: " << progName << " [OPTIONS]\n";
@@ -42,18 +43,8 @@ void printUsage(const char* progName) {
   std::cout << "  " << progName << " -o my_weights.dat        # Custom output file\n";
 }
 
-// Extract the generation number from the S3 key
-// S3 keys use 10000-gen for reverse sort order; convert back to real gen number
-int extractGenNumber(const std::string& input) {
-  std::regex pattern("autoc-.*\\/gen(\\d+)\\.dmp");
-  std::smatch matches;
-
-  if (std::regex_search(input, matches, pattern) && matches.size() > 1) {
-    return 10000 - std::stoi(matches[1].str());
-  }
-
-  return -1;
-}
+// 035 FR-P07 — gen-number parsing + run/gen selection now live in the shared
+// autoc::s3_run_selector (autoc/util/s3_run_selector.h); local copy removed.
 
 int main(int argc, char** argv) {
   static struct option long_options[] = {
@@ -98,65 +89,22 @@ int main(int argc, char** argv) {
   auto s3_client = ConfigManager::getS3Client();
   std::string bucket = ConfigManager::getConfig().s3Bucket;
 
-  // Find latest run if not specified
-  if (computedKeyName.empty()) {
-    Aws::S3::Model::ListObjectsV2Request listFolders;
-    listFolders.SetBucket(bucket);
-    listFolders.SetPrefix("autoc-");
-    listFolders.SetDelimiter("/");
-
-    bool isTruncated = false;
-    do {
-      auto outcome = s3_client->ListObjectsV2(listFolders);
-      if (!outcome.IsSuccess()) {
-        std::cerr << "Error listing S3 objects: " << outcome.GetError().GetMessage() << std::endl;
-        return 1;
-      }
-      const auto& result = outcome.GetResult();
-      for (const auto& commonPrefix : result.GetCommonPrefixes()) {
-        computedKeyName = commonPrefix.GetPrefix();
-        break;
-      }
-      isTruncated = result.GetIsTruncated();
-      if (isTruncated) {
-        listFolders.SetContinuationToken(result.GetNextContinuationToken());
-      }
-    } while (isTruncated);
-  }
-
-  if (computedKeyName.empty()) {
-    std::cerr << "No autoc runs found in S3 bucket: " << bucket << std::endl;
-    return 1;
-  }
-
-  // Find target generation
+  // 035 FR-P07 — run/gen selection via the shared selector (fail-loud).
+  // -k may be given without a trailing slash; normalize so gen lookup works.
   std::string keyName;
-  if (specifiedGeneration >= 0) {
-    keyName = computedKeyName + "gen" + std::to_string(specifiedGeneration) + ".dmp";
-  } else {
-    Aws::S3::Model::ListObjectsV2Request listItem;
-    listItem.SetBucket(bucket);
-    listItem.SetPrefix(computedKeyName + "gen");
-    bool isTruncated = false;
-    do {
-      auto outcome = s3_client->ListObjectsV2(listItem);
-      if (!outcome.IsSuccess()) {
-        std::cerr << "Error listing generations: " << outcome.GetError().GetMessage() << std::endl;
-        return 1;
-      }
-      for (const auto& object : outcome.GetResult().GetContents()) {
-        keyName = object.GetKey();
-        break;
-      }
-      isTruncated = outcome.GetResult().GetIsTruncated();
-      if (isTruncated) {
-        listItem.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-      }
-    } while (isTruncated);
-  }
-
-  if (keyName.empty()) {
-    std::cerr << "No generation data found for run: " << computedKeyName << std::endl;
+  try {
+    if (!computedKeyName.empty() && computedKeyName.back() != '/') computedKeyName += '/';
+    if (computedKeyName.empty()) {
+      computedKeyName = autoc::findLatestRun(*s3_client, bucket);
+    }
+    if (specifiedGeneration >= 0) {
+      // -g passes the raw file gen number (10000 - actualGen), as before.
+      keyName = computedKeyName + "gen" + std::to_string(specifiedGeneration) + ".dmp";
+    } else {
+      keyName = autoc::findLatestGenKey(*s3_client, bucket, computedKeyName);
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "Run-selector error: " << e.what() << std::endl;
     return 1;
   }
 
@@ -227,7 +175,7 @@ int main(int argc, char** argv) {
   file.close();
 
   // Print summary
-  int generation = extractGenNumber(keyName);
+  int generation = autoc::extractGenNumber(keyName);
   std::cout << "\nExtracted NN genome to: " << outputFile << std::endl;
   std::cout << "  S3 Key:    " << keyName << std::endl;
   std::cout << "  Generation: " << generation << std::endl;
