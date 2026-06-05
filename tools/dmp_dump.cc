@@ -134,12 +134,18 @@ int main(int argc, char** argv) {
       auto s3 = ConfigManager::getS3Client();
       if (!s3) throw std::runtime_error("no S3 client (check ini profile/creds)");
       if (key.empty() || key.back() == '/') {
-        // run prefix: pick the requested gen, else the latest.
+        // Resolve run + gen. Empty key = "no run given" → pick the LATEST run
+        // first (else findLatestGenKey would scan the whole bucket and return
+        // the max gen across ALL runs, not the newest run's gen).
+        std::string runPrefix = key;
+        if (runPrefix.empty()) {
+          runPrefix = autoc::findLatestRun(*s3, bucket);  // FR-P07
+          std::cerr << "dmp-dump: latest run = " << runPrefix << std::endl;
+        }
         if (specifiedGen >= 0) {
-          if (!key.empty() && key.back() != '/') key += '/';
-          key += "gen" + std::to_string(10000 - specifiedGen) + ".dmp.zst";
+          key = runPrefix + "gen" + std::to_string(10000 - specifiedGen) + ".dmp.zst";
         } else {
-          key = autoc::findLatestGenKey(*s3, bucket, key);
+          key = autoc::findLatestGenKey(*s3, bucket, runPrefix);
         }
       }
       blob = autoc::s3GetDmpBlob(*s3, bucket, key);
