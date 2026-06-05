@@ -462,7 +462,6 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
 // The applySpeedProfileToPath function has been removed as part of the
 // odometer-based path traversal refactor.
 std::atomic_ulong nanDetector = 0;
-std::ofstream fout;
 std::atomic<uint64_t> globalScenarioCounter{0};
 std::atomic<uint64_t> globalSimRunCounter{0};
 
@@ -729,337 +728,9 @@ static double computeNNFitness(EvalResults& evalResults) {
   return aggregateRawFitness(scenarioScores);
 }
 
-// 030 M9.preA — Tracker-mode per-scenario data.dat writer. Reads
-// trackerInputs_ from AircraftState (M9.preA capture), targetTrajectoryList
-// for trail-rabbit fitness columns, and inside_crash_hull telemetry. Walks
-// kTrackerInputMeta for column headers (45 inputs vs pathgen's 33).
-//
-// Pathgen-mode scenarios route through the original inline body in
-// logEvalResults — bitwise-preserved against gen9200.dmp regression gate.
-static void logEvalResultsScenarioTracker(std::ofstream& fout,
-                                           EvalResults& results,
-                                           size_t scenarioIdx,
-                                           bool& printHeader) {
-  auto& aircraftStates = results.aircraftStateList.at(scenarioIdx);
-  const auto& targets = results.targetTrajectoryList.at(scenarioIdx);
-  if (aircraftStates.empty() || targets.empty()) return;
-
-  uint64_t scenarioSequence = 0;
-  uint64_t bakeoffSequence = 0;
-  int pathVariantIndex = 0;
-  int windVariantIndex = 0;
-  if (scenarioIdx < results.scenarioList.size()) {
-    scenarioSequence = results.scenarioList.at(scenarioIdx).scenarioSequence;
-    bakeoffSequence = results.scenarioList.at(scenarioIdx).bakeoffSequence;
-    pathVariantIndex = results.scenarioList.at(scenarioIdx).pathVariantIndex;
-    windVariantIndex = results.scenarioList.at(scenarioIdx).windVariantIndex;
-  }
-
-  const AutocConfig& cfg = ConfigManager::getConfig();
-  int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
-  if (streakStepsToMax < 1) streakStepsToMax = 1;
-  FitnessComputer logFC(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
-                        cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
-  logFC.resetStreak();
-
-  gp_vec3 prevTangent = gp_vec3::UnitX();
-  int simulation_steps = 0;
-
-  int stepIndex = 0;
-  while (++stepIndex < static_cast<int>(aircraftStates.size())) {
-    auto& stepState = aircraftStates.at(stepIndex);
-    gp_vec3 aircraftPosition = stepState.getPosition();
-
-    // Tracker fitness: rabbit = trail_rabbit_position; tangent = target velocity unit.
-    // Mirrors fitness_decomposition.cc tracker branch.
-    int tIdx = std::clamp(stepIndex, 0, static_cast<int>(targets.size()) - 1);
-    const CopiedTargetSample& target = targets.at(tIdx);
-    gp_vec3 rabbitPosition = target.trail_rabbit_position;
-
-    gp_vec3 tangent;
-    {
-      gp_vec3 vel = target.velocity;
-      double vn = vel.norm();
-      if (vn > 0.01) { tangent = vel / vn; prevTangent = tangent; }
-      else { tangent = prevTangent; }
-    }
-
-    gp_vec3 offset = aircraftPosition - rabbitPosition;
-    double along = offset.dot(tangent);
-    gp_vec3 lateral = offset - along * tangent;
-    double lateralDist = lateral.norm();
-    double distance = offset.norm();
-
-    double stepPoints = logFC.computeStepScore(along, lateralDist);
-    double multipliedScore = logFC.applyStreak(stepPoints);
-    double mult = (stepPoints > 0.0) ? multipliedScore / stepPoints : 1.0;
-
-    simulation_steps++;
-
-    gp_vec3 velocity_body = stepState.getOrientation().inverse() * stepState.getVelocity();
-    gp_vec3 home(0, 0, 0);
-    gp_scalar dhome = (home - aircraftPosition).norm();
-
-    if (printHeader) {
-      fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx";
-      // 030 M9.preA — Tracker NN input column headers via kTrackerInputMeta
-      // (45 inputs: 36 beacon + 4 quat + airspeed + 3 gyro + 1 dist-to-boundary).
-      for (size_t k = 0; k < sizeof(kTrackerInputMeta) / sizeof(SensorInputMeta); ++k) {
-        fout << std::setw(kTrackerInputMeta[k].header_width)
-             << kTrackerInputMeta[k].display_name;
-      }
-      fout << "   outPt   outRl   outTh"
-           << "      tgX      tgY      tgZ"     // target craft position
-           << "      trX      trY      trZ"     // trail-rabbit position (target − vel_unit × 3.048)
-           << "        X        Y        Z"     // chase position
-           << "    vxBdy    vyBdy    vzBdy"
-           << "    dhome     dist   along   stpPt    mult  rampSc hull"
-           << "\n";
-      printHeader = false;
-    }
-
-    const TrackerInputs& trIn = stepState.getTrackerInputs();
-    const float* in = reinterpret_cast<const float*>(&trIn);  // raw-ok: NN-byte-format read
-    const float* out = stepState.getNNOutputs();
-    const int hull = target.inside_crash_hull ? 1 : 0;
-
-    char outbuf[3072];
-    int n = snprintf(outbuf, sizeof(outbuf),
-      "%06llu %06llu %03d/%02d:%04d: %06ld %3d",
-      static_cast<unsigned long long>(scenarioSequence),
-      static_cast<unsigned long long>(bakeoffSequence),
-      pathVariantIndex, windVariantIndex, simulation_steps,
-      stepState.getSimTimeMsec(), tIdx);
-    // 36 beacon inputs (width 7, 3 decimals)
-    for (int k = 0; k < 36; ++k) {
-      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 6.3f", in[k]);
-    }
-    // 4 quat (width 8, 4 decimals)
-    for (int k = 36; k < 40; ++k) {
-      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 7.4f", in[k]);
-    }
-    // airspeed (width 8, 3 decimals)
-    n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 7.3f", in[40]);
-    // 3 gyro (width 7, 3 decimals)
-    for (int k = 41; k < 44; ++k) {
-      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 6.3f", in[k]);
-    }
-    // dist-to-boundary (width 8, 2 decimals — meters, range 0..1000)
-    n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 7.2f", in[44]);
-    // 032 phase 1 — derived perceptual features (slots 45..53; widths match
-    // kTrackerInputMeta header_width=7):
-    //   45..50 beacon_pair_span[6]  — raw NDC distance, [0, ~2.83]
-    //      51   span_rate           — one-tick diff, signed
-    //      52   target_tilt_sin     — [-1, +1]
-    //      53   target_tilt_cos     — [-1, +1]
-    for (int k = 45; k < 54; ++k) {
-      n += snprintf(outbuf + n, sizeof(outbuf) - n, " % 6.3f", in[k]);
-    }
-    // 3 NN outputs
-    n += snprintf(outbuf + n, sizeof(outbuf) - n,
-      " % 7.4f % 7.4f % 7.4f", out[0], out[1], out[2]);
-    // tgX/Y/Z, trX/Y/Z, X/Y/Z, vxBdy/vyBdy/vzBdy
-    n += snprintf(outbuf + n, sizeof(outbuf) - n,
-      " % 8.2f % 8.2f % 8.2f"
-      " % 8.2f % 8.2f % 8.2f"
-      " % 8.2f % 8.2f % 8.2f"
-      " % 8.2f % 8.2f % 8.2f",
-      target.position[0], target.position[1], target.position[2],
-      target.trail_rabbit_position[0], target.trail_rabbit_position[1], target.trail_rabbit_position[2],
-      stepState.getPosition()[0], stepState.getPosition()[1], stepState.getPosition()[2],
-      velocity_body.x(), velocity_body.y(), velocity_body.z());
-    // dhome, dist, along, stpPt, mult, rampSc, hull
-    n += snprintf(outbuf + n, sizeof(outbuf) - n,
-      " % 8.2f % 8.3f % 7.2f % 7.4f % 6.2f % 7.3f %4d\n",
-      dhome,
-      static_cast<gp_scalar>(distance),
-      static_cast<gp_scalar>(along),
-      static_cast<gp_scalar>(stepPoints),
-      static_cast<gp_scalar>(mult),
-      static_cast<gp_scalar>(computeVariationScale()),
-      hull);
-    fout << outbuf;
-  }
-}
-
-// Log per-step data from EvalResults to data.dat
-// NN mode: actual NN inputs (normalized) and outputs captured in the worker, then diagnostics.
-// 030 M9.preA: dispatches per-scenario on targetTrajectoryList non-empty
-// (tracker scenarios route to the helper above; pathgen scenarios use
-// the inline body — bitwise-preserved against gen9200.dmp regression gate).
-static void logEvalResults(std::ofstream& fout, EvalResults& results) {
-  bool printHeader = true;
-
-  for (size_t i = 0; i < results.pathList.size(); i++) {
-    auto& path = results.pathList.at(i);
-    auto& aircraftStates = results.aircraftStateList.at(i);
-    if (path.empty() || aircraftStates.empty()) continue;
-
-    // 030 M9.preA — tracker dispatch (same data-presence trick as
-    // fitness_decomposition.cc::computeScenarioScores).
-    const bool is_tracker = i < results.targetTrajectoryList.size()
-                            && !results.targetTrajectoryList[i].empty();
-    if (is_tracker) {
-      logEvalResultsScenarioTracker(fout, results, i, printHeader);
-      continue;
-    }
-
-    uint64_t scenarioSequence = 0;
-    uint64_t bakeoffSequence = 0;
-    int pathVariantIndex = 0;
-    int windVariantIndex = 0;
-    if (i < results.scenarioList.size()) {
-      scenarioSequence = results.scenarioList.at(i).scenarioSequence;
-      bakeoffSequence = results.scenarioList.at(i).bakeoffSequence;
-      pathVariantIndex = results.scenarioList.at(i).pathVariantIndex;
-      windVariantIndex = results.scenarioList.at(i).windVariantIndex;
-    }
-
-    // Position is already virtual (converted at producer boundary).
-    // No manual offset subtraction needed.
-
-    // Fitness computer for logging (mirrors fitness_decomposition.cc)
-    const AutocConfig& cfg = ConfigManager::getConfig();
-    int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
-    if (streakStepsToMax < 1) streakStepsToMax = 1;
-    FitnessComputer logFC(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
-                          cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
-    logFC.resetStreak();
-
-    gp_vec3 prevTangent = gp_vec3::UnitX();
-    int simulation_steps = 0;
-
-    int stepIndex = 0;
-    while (++stepIndex < static_cast<int>(aircraftStates.size())) {
-      auto& stepState = aircraftStates.at(stepIndex);
-      int pathIndex = std::clamp(stepState.getThisPathIndex(), 0, static_cast<int>(path.size()) - 1);
-
-      gp_vec3 aircraftPosition = stepState.getPosition();
-
-      // Path tangent (same as fitness_decomposition.cc)
-      gp_vec3 tangent;
-      if (pathIndex + 1 < static_cast<int>(path.size())) {
-        tangent = (path.at(pathIndex + 1).start - path.at(pathIndex).start);
-        double tn = tangent.norm();
-        if (tn > 0.01) { tangent = tangent / tn; prevTangent = tangent; }
-        else { tangent = prevTangent; }
-      } else {
-        tangent = prevTangent;
-      }
-
-      // Along/cross decomposition
-      gp_vec3 offset = aircraftPosition - path.at(pathIndex).start;
-      double along = offset.dot(tangent);
-      gp_vec3 lateral = offset - along * tangent;
-      double lateralDist = lateral.norm();
-      double distance = offset.norm();
-
-      // Step score + streak (mirrors fitness computation)
-      double stepPoints = logFC.computeStepScore(along, lateralDist);
-      double multipliedScore = logFC.applyStreak(stepPoints);
-      // Recover the streak multiplier from the score ratio.
-      double mult = (stepPoints > 0.0)
-          ? multipliedScore / stepPoints : 1.0;
-
-      simulation_steps++;
-
-      // Rabbit velocity
-      gp_scalar rabbitVel = stepState.getRabbitSpeed();
-
-      // Body-frame velocity
-      gp_vec3 velocity_body = stepState.getOrientation().inverse() * stepState.getVelocity();
-
-      // Distance to home
-      gp_vec3 home(0, 0, 0);
-      gp_scalar dhome = (home - aircraftPosition).norm();
-
-      if (printHeader) {
-        fout << "  Scn   Bake Pth/Wnd:Step:  Time Idx";
-        // 030 M2b.2: NN input-column header walks kPathgenInputMeta (FR-006
-        // typed sensor interface) — the meta is the source of truth for
-        // both column label and width. Output is byte-identical to the
-        // prior literal strings; the regression invariant is byte-equality
-        // of data.dat under rebuild-perf.sh on the same seed.
-        for (size_t i = 0; i < sizeof(kPathgenInputMeta) / sizeof(SensorInputMeta); ++i) {
-            fout << std::setw(kPathgenInputMeta[i].header_width)
-                 << kPathgenInputMeta[i].display_name;
-        }
-        fout << "   outPt   outRl   outTh"
-             << "    pathX    pathY    pathZ"
-             << "        X        Y        Z"
-             << "    vxBdy    vyBdy    vzBdy"
-             << "    dhome     dist   along   rabVl   stpPt    mult  rampSc"
-             // 026 ACRO PID per-axis internals (zero when PidInternals absent).
-             // rateCmd/rateAch in rad/s; pid* terms post-scale (sum ≈ pre-clamp
-             // surface output); pidInt = integrator state (rad);
-             // pidSat bitmask (bit0=pitch, bit1=roll).
-             << " rateCmdP rateCmdQ rateAchP rateAchQ"
-             << " pidFF_P pidFF_Q pidP_P pidP_Q pidI_P pidI_Q"
-             << " pidIntP pidIntQ pidSat"
-             << "\n";
-        printHeader = false;
-      }
-
-      const NNInputs& nnIn = stepState.getNNInputs();
-      const float* in = reinterpret_cast<const float*>(&nnIn);
-      const float* out = stepState.getNNOutputs();
-
-      const PidInternals& pidRow = stepState.getPidInternals();
-
-      char outbuf[2560];
-      sprintf(outbuf,
-        "%06llu %06llu %03d/%02d:%04d: %06ld %3d"
-        " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"
-        " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"
-        " % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f % 6.3f"
-        " % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f % 6.1f"
-        " % 6.1f"
-        " % 7.4f % 7.4f % 7.4f % 7.4f"
-        " % 7.4f % 6.3f % 6.3f % 6.3f"
-        " % 7.4f % 7.4f % 7.4f"
-        " % 8.2f % 8.2f % 8.2f"
-        " % 8.2f % 8.2f % 8.2f"
-        " % 8.2f % 8.2f % 8.2f"
-        " % 8.2f % 8.3f % 7.2f % 7.1f % 7.4f % 6.2f % 7.3f"
-        " % 7.3f % 7.3f % 7.3f % 7.3f"
-        " % 7.4f % 7.4f % 7.4f % 7.4f % 7.4f % 7.4f"
-        " % 7.4f % 7.4f %1u"
-        "\n",
-        static_cast<unsigned long long>(scenarioSequence),
-        static_cast<unsigned long long>(bakeoffSequence),
-        pathVariantIndex, windVariantIndex, simulation_steps,
-        stepState.getSimTimeMsec(), pathIndex,
-        in[0], in[1], in[2], in[3], in[4], in[5],
-        in[6], in[7], in[8], in[9], in[10], in[11],
-        in[12], in[13], in[14], in[15], in[16], in[17],
-        in[18], in[19], in[20], in[21], in[22], in[23],
-        in[24],
-        in[25], in[26], in[27], in[28],
-        in[29], in[30], in[31], in[32],
-        out[0], out[1], out[2],
-        path.at(pathIndex).start[0],
-        path.at(pathIndex).start[1],
-        path.at(pathIndex).start[2],
-        stepState.getPosition()[0],
-        stepState.getPosition()[1],
-        stepState.getPosition()[2],
-        velocity_body.x(), velocity_body.y(), velocity_body.z(),
-        dhome,
-        static_cast<gp_scalar>(distance),
-        static_cast<gp_scalar>(along),
-        rabbitVel,
-        static_cast<gp_scalar>(stepPoints),
-        static_cast<gp_scalar>(mult),
-        static_cast<gp_scalar>(computeVariationScale()),
-        pidRow.rateCmdP, pidRow.rateCmdQ, pidRow.rateAchP, pidRow.rateAchQ,
-        pidRow.ffP, pidRow.ffQ, pidRow.pP, pidRow.pQ, pidRow.iP, pidRow.iQ,
-        pidRow.intP, pidRow.intQ, static_cast<unsigned>(pidRow.sat)
-      );
-      fout << outbuf;
-    }
-  }
-  fout.flush();
-}
+// 035 FR-P05 — the per-step data.dat writer (logEvalResults +
+// logEvalResultsScenarioTracker) is retired; the S3 dmp is now the single
+// training-trace artifact, inspected via the dmp-dump tool (FR-P06).
 
 // Purpose of each caller for buildEvalData()
 enum class EvalPurpose {
@@ -1272,8 +943,7 @@ static EvalData buildEvalData(const EvalJob& job) {
 
 // NN evaluation mode: load weight file, run through scenarios, report fitness
 static void runNNEvaluation(
-    const std::string& startTime,
-    std::ofstream& fout
+    const std::string& startTime
 ) {
   const AutocConfig& cfg = ConfigManager::getConfig();
 
@@ -1381,9 +1051,7 @@ static void runNNEvaluation(
     *logger.info() << "NN_EVAL_SAME: fitness=" << std::fixed << std::setprecision(6) << fitness << endl;
   }
 
-  // Log per-step data to data.dat
-  logEvalResults(fout, evalResults);
-
+  // 035 FR-P05 — per-step data.dat retired; the dmp is the training trace.
   // Per-scenario breakdown (same format as training loop)
   *logger.info() << "  Scenarios: " << endl;
   const bool isTrackerMode = (cfg.mode == "tracker");
@@ -1465,7 +1133,6 @@ static void runNNEvaluation(
 static void runNNEvolution(
     const std::string& startTime,
     const std::chrono::steady_clock::time_point& runStartTime,
-    std::ofstream& fout,
     const std::function<void(int)>& logGenerationStats
 ) {
   const AutocConfig& cfg = ConfigManager::getConfig();
@@ -1592,8 +1259,7 @@ static void runNNEvolution(
       });
       threadPool->wait_for_tasks();
 
-      logEvalResults(fout, bestResults);
-
+      // 035 FR-P05 — per-step data.dat retired; the dmp is the training trace.
       // Determinism check: re-eval fitness must match stored fitness exactly (T106)
       auto reevalScores = computeScenarioScores(bestResults);
       double reevalFitness = aggregateRawFitness(reevalScores);
@@ -2096,13 +1762,8 @@ int main(int argc, char** argv)
                  << "posAlt=" << cfg.entryPositionAltSigma << "m" << endl;
   logPrefetchedVariations(static_cast<int>(totalScenarioCount), seed);
 
-  // Open the main output file for the data and statistics file.
-  // First set up names for data file.  Remember we should delete the
-  // string from the stream, well just a few bytes
-  ostringstream strOutFile;
-  const char* filePrefix = cfg.evaluateMode ? "eval-" : "";
-  strOutFile << filePrefix << "data.dat" << ends;
-  fout.open(strOutFile.str());
+  // 035 FR-P05 — data.dat output file retired; the dmp (S3) is the single
+  // training-trace artifact, inspected post-hoc via the dmp-dump tool.
 
   // 034 FR-015 — tracker (M2) runs get a "tracker-" run-id prefix so they're
   // distinguishable from pathgen (M1) "autoc-" runs in the shared S3 bucket.
@@ -2190,10 +1851,10 @@ int main(int argc, char** argv)
 
   if (cfg.evaluateMode) {
     // NN evaluation mode: load weight file, evaluate, report fitness
-    runNNEvaluation(startTime, fout);
+    runNNEvaluation(startTime);
   } else {
     // NN evolution mode
-    runNNEvolution(startTime, runStartTime, fout, logGenerationStats);
+    runNNEvolution(startTime, runStartTime, logGenerationStats);
   }
 
 
