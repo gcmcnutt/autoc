@@ -114,10 +114,12 @@ add_executable(nnextractor tools/nnextractor.cc)
 add_executable(nn2cpp tools/nn2cpp.cc)
 add_executable(source_dmp_inspect tools/source_dmp_inspect.cc)
 add_executable(tracker_dmp_inspect tools/tracker_dmp_inspect.cc)
+add_executable(dmp-dump tools/dmp_dump.cc)  # 035 FR-P02/P06
 
 target_link_libraries(autoc autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(renderer autoc_common ${VTK_LIBRARIES} ${AWSSDK_LIBRARIES})
 target_link_libraries(nnextractor autoc_common ${AWSSDK_LIBRARIES})
+target_link_libraries(dmp-dump autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(nn2cpp autoc_common)
 target_link_libraries(source_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(tracker_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
@@ -215,6 +217,10 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(s3_run_selector_tests tests/s3_run_selector_tests.cc)
   target_link_libraries(s3_run_selector_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
 
+  # 035 FR-P09 — zstd round-trip + ratio spike for the dmp boundary.
+  add_executable(dmp_dump_tests tests/dmp_dump_tests.cc)
+  target_link_libraries(dmp_dump_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -245,6 +251,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME craft_variation_tests COMMAND craft_variation_tests)
   add_test(NAME run_id_prefix_tests COMMAND run_id_prefix_tests)
   add_test(NAME s3_run_selector_tests COMMAND s3_run_selector_tests)
+  add_test(NAME dmp_dump_tests COMMAND dmp_dump_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -268,6 +275,7 @@ if(ENABLE_AUTOC_TESTS)
             craft_variation_tests
             run_id_prefix_tests
             s3_run_selector_tests
+            dmp_dump_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -296,6 +304,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND craft_variation_tests --gtest_brief=1
     COMMAND run_id_prefix_tests --gtest_brief=1
     COMMAND s3_run_selector_tests --gtest_brief=1
+    COMMAND dmp_dump_tests --gtest_brief=1
   )
 endif()
 
