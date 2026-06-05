@@ -1109,7 +1109,8 @@ static void runNNEvaluation(
       std::ostringstream oss(std::ios::binary);
       { cereal::BinaryOutputArchive oa(oss); oa(evalResults); }
       // FR-P09/P10 compress+tag+upload via the shared S3 dmp I/O.
-      std::string err = autoc::s3PutDmpBlob(*s3Client, cfg.s3Bucket, keyName, oss.str());
+      std::string err = autoc::s3PutDmpBlob(*s3Client, cfg.s3Bucket, keyName, oss.str(),
+                                            cfg.s3ObjectTagging);
       if (!err.empty()) {
         *logger.warn() << "S3 upload failed: " << err << endl;
       } else {
@@ -1291,7 +1292,8 @@ static void runNNEvolution(
           std::ostringstream oss(std::ios::binary);
           { cereal::BinaryOutputArchive oa(oss); oa(bestResults); }
           // FR-P09/P10 compress+tag+upload via the shared S3 dmp I/O.
-          std::string err = autoc::s3PutDmpBlob(*s3Client, cfg.s3Bucket, keyName, oss.str());
+          std::string err = autoc::s3PutDmpBlob(*s3Client, cfg.s3Bucket, keyName, oss.str(),
+                                                cfg.s3ObjectTagging);
           if (!err.empty()) {
             *logger.warn() << "S3 upload failed: " << err << endl;
           }

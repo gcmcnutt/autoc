@@ -36,6 +36,12 @@ struct AutocConfig {
 
     // --- S3 ---
     std::string s3Bucket = "autoc-storage";
+    // 035 FR-P10 — object tag applied at dmp PutObject (e.g. "retain=expire").
+    // Empty = no tagging (default): the lifecycle/tagging cutover needs the
+    // admin IAM grant s3:PutObjectTagging (T021); until then a non-empty value
+    // would make EVERY upload fail AccessDenied. Set in the per-mode inis once
+    // the grant + buckets land (T022).
+    std::string s3ObjectTagging = "";
     std::string s3Profile = "default";
 
     // --- Eval mode ---
@@ -221,6 +227,7 @@ struct AutocConfig {
     X(std::string,    workerProgram,             "WorkerProgram") \
     X(unsigned short, workerPortOverride,        "WorkerPortOverride") \
     X(std::string,    s3Bucket,                  "S3Bucket") \
+    X(std::string,    s3ObjectTagging,           "S3ObjectTagging") \
     X(std::string,    s3Profile,                 "S3Profile") \
     X(int,            evaluateMode,              "EvaluateMode") \
     X(int,            windScenarioCount,         "WindScenarios") \

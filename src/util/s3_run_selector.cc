@@ -122,14 +122,15 @@ std::string s3GetDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
 }
 
 std::string s3PutDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
-                         const std::string& key, const std::string& blob) {
+                         const std::string& key, const std::string& blob,
+                         const std::string& tagging) {
     auto stream = Aws::MakeShared<Aws::StringStream>("s3PutDmpBlob");
     *stream << zstdCompress(blob);  // FR-P09
     Aws::S3::Model::PutObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetBody(stream);
-    req.SetTagging("retain=expire");  // FR-P10 — ephemeral by default
+    if (!tagging.empty()) req.SetTagging(tagging);  // FR-P10 — needs s3:PutObjectTagging
     auto outcome = s3.PutObject(req);
     return outcome.IsSuccess() ? std::string() : outcome.GetError().GetMessage();
 }

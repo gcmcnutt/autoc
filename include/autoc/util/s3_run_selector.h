@@ -53,10 +53,13 @@ std::string findLatestGenKey(const Aws::S3::S3Client& s3, const std::string& buc
 std::string s3GetDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
                          const std::string& key);
 
-// zstd-compress `blob` and upload to bucket/key (key should end ".dmp.zst"),
-// tagging the object retain=expire (FR-P10). Returns "" on success, else the
-// error message — caller chooses warn-and-continue (training) vs fail.
+// zstd-compress `blob` and upload to bucket/key (key should end ".dmp.zst").
+// If `tagging` is non-empty it's applied as the object tag (FR-P10, e.g.
+// "retain=expire") — needs IAM s3:PutObjectTagging, so callers pass "" until
+// that grant lands (else AccessDenied fails the put). Returns "" on success,
+// else the error message — caller chooses warn-and-continue (training) vs fail.
 std::string s3PutDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
-                         const std::string& key, const std::string& blob);
+                         const std::string& key, const std::string& blob,
+                         const std::string& tagging);
 
 }  // namespace autoc
