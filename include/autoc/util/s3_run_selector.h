@@ -44,6 +44,11 @@ std::string findLatestRun(const Aws::S3::S3Client& s3, const std::string& bucket
 std::string findLatestGenKey(const Aws::S3::S3Client& s3, const std::string& bucket,
                              const std::string& runPrefix);
 
+// All gen-dmp keys under `runPrefix`, sorted ASCENDING by actualGen (gen 1,2,…).
+// For per-gen run-summary analytics straight off the dmps. Empty if none.
+std::vector<std::string> listRunGenKeys(const Aws::S3::S3Client& s3, const std::string& bucket,
+                                        const std::string& runPrefix);
+
 // --- compressed dmp I/O (FR-P09/P10) — ONE shared path for every tool --------
 // Compress/inflate + tag live here so autoc.cc, source_dmp_loader, nnextractor,
 // and renderer all leverage the same code (no per-site zstd/get/put boilerplate).

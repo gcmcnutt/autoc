@@ -52,6 +52,11 @@ void printUsage(const char* prog) {
     "  --gen N        select gen N (actualGen) when given an S3 run prefix\n"
     "  --meta-only    emit only the YAML metadata block\n"
     "  --csv-only     emit only the CSV block\n"
+    "  --run-summary  per-gen aggregate CSV over ALL gens in the run (S3 only):\n"
+    "                 gen,best_fitness,mean_energy,mean_stability,mean_streak,\n"
+    "                 crashes,aggr_pitch,aggr_roll,aggr_throttle,scenarios.\n"
+    "                 Analytics off the dmps (not the log). Pair with --stride N.\n"
+    "  --stride N     run-summary: sample every Nth gen (default 1)\n"
     "  -i, --config   ini for S3 creds + fitness params (default autoc.ini)\n"
     "  -h, --help     this message\n"
     "\n"
@@ -92,6 +97,79 @@ float genomeVariationScale(const EvalResults& r) {
   return g.variation_scale;
 }
 
+// Global per-axis aggressiveness (dctrl/mag) over an elite dmp's full trajectory
+// set — the single-scalar-per-gen form of per_axis_aggressiveness.
+struct AxisAggr { double pt, rl, th; };
+AxisAggr computeAggr(const EvalResults& r) {
+  double sd[3] = {0, 0, 0}, sm[3] = {0, 0, 0};
+  long cd[3] = {0, 0, 0}, cm[3] = {0, 0, 0};
+  for (const auto& states : r.aircraftStateList) {
+    for (size_t t = 0; t < states.size(); ++t) {
+      const float* o = states[t].getNNOutputs();
+      for (int a = 0; a < 3; ++a) { sm[a] += std::abs(o[a]); cm[a]++; }
+      if (t > 0) {
+        const float* p = states[t - 1].getNNOutputs();
+        for (int a = 0; a < 3; ++a) { sd[a] += std::abs(o[a] - p[a]); cd[a]++; }
+      }
+    }
+  }
+  auto ratio = [](double sumD, long cD, double sumM, long cM) {
+    const double mag = cM ? sumM / cM : 0.0;
+    const double dc = cD ? sumD / cD : 0.0;
+    return mag > 1e-9 ? dc / mag : 0.0;
+  };
+  return {ratio(sd[0], cd[0], sm[0], cm[0]), ratio(sd[1], cd[1], sm[1], cm[1]),
+          ratio(sd[2], cd[2], sm[2], cm[2])};
+}
+
+// Iterate every (stride-th) gen dmp in a run and emit a per-gen aggregate CSV —
+// the "analytics off the log" path: best fitness + energy/stability/streak +
+// crash count + per-axis aggressiveness, all recomputed from the elite dmps.
+int doRunSummary(const Aws::S3::S3Client& s3, const std::string& bucket,
+                 std::string runPrefix, int stride) {
+  if (!runPrefix.empty() && runPrefix.back() != '/') {
+    const auto slash = runPrefix.rfind('/');           // a gen key → strip to run
+    runPrefix = (slash == std::string::npos) ? "" : runPrefix.substr(0, slash + 1);
+  }
+  if (runPrefix.empty()) {
+    runPrefix = autoc::findLatestRun(s3, bucket);
+    std::cerr << "dmp-dump: latest run = " << runPrefix << std::endl;
+  }
+  const auto keys = autoc::listRunGenKeys(s3, bucket, runPrefix);
+  if (stride < 1) stride = 1;
+  std::cerr << "dmp-dump: run-summary over " << keys.size() << " gens (stride "
+            << stride << ") in " << runPrefix << std::endl;
+  std::cout << "gen,best_fitness,mean_energy,mean_stability,mean_streak,crashes,"
+               "aggr_pitch,aggr_roll,aggr_throttle,scenarios\n";
+  for (size_t i = 0; i < keys.size(); i += stride) {
+    const std::string& k = keys[i];
+    const int gen = autoc::extractGenNumber(k);
+    EvalResults r;
+    try {
+      const std::string b = autoc::s3GetDmpBlob(s3, bucket, k);
+      std::istringstream iss(b, std::ios::binary);
+      cereal::BinaryInputArchive ia(iss);
+      ia(r);
+    } catch (const std::exception& e) {
+      std::cerr << "  gen " << gen << " skipped: " << e.what() << std::endl;
+      continue;
+    }
+    const auto sc = computeScenarioScores(r);
+    double me = 0, ms = 0, mk = 0; int cr = 0;
+    for (const auto& s : sc) { me += s.energy_score; ms += s.stability_score;
+                               mk += s.maxStreak; if (s.crashed) cr++; }
+    const double N = sc.empty() ? 1.0 : static_cast<double>(sc.size());
+    const AxisAggr ag = computeAggr(r);
+    printf("%d,%.6f,%.4f,%.4f,%.4f,%d,%.4f,%.4f,%.4f,%zu\n",
+           gen, aggregateRawFitness(sc), me / N, ms / N, mk / N, cr,
+           ag.pt, ag.rl, ag.th, sc.size());
+    fflush(stdout);
+    if ((i / stride) % 10 == 0)
+      std::cerr << "  ... gen " << gen << " (" << (i + 1) << "/" << keys.size() << ")\n";
+  }
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -99,19 +177,24 @@ int main(int argc, char** argv) {
     {"gen", required_argument, 0, 'g'},
     {"meta-only", no_argument, 0, 'm'},
     {"csv-only", no_argument, 0, 'c'},
+    {"run-summary", no_argument, 0, 's'},
+    {"stride", required_argument, 0, 'S'},
     {"config", required_argument, 0, 'i'},
     {"help", no_argument, 0, 'h'},
     {0, 0, 0, 0}
   };
   int specifiedGen = -1;
-  bool metaOnly = false, csvOnly = false;
+  bool metaOnly = false, csvOnly = false, runSummary = false;
+  int stride = 1;
   std::string configFile = "autoc.ini";
   int idx = 0, opt;
-  while ((opt = getopt_long(argc, argv, "g:mci:h", long_options, &idx)) != -1) {
+  while ((opt = getopt_long(argc, argv, "g:mcsS:i:h", long_options, &idx)) != -1) {
     switch (opt) {
       case 'g': specifiedGen = std::stoi(optarg); break;
       case 'm': metaOnly = true; break;
       case 'c': csvOnly = true; break;
+      case 's': runSummary = true; break;
+      case 'S': stride = std::stoi(optarg); break;
       case 'i': configFile = optarg; break;
       case 'h': printUsage(argv[0]); return 0;
       default: printUsage(argv[0]); return 1;
@@ -133,6 +216,11 @@ int main(int argc, char** argv) {
       awsInit = true;
       auto s3 = ConfigManager::getS3Client();
       if (!s3) throw std::runtime_error("no S3 client (check ini profile/creds)");
+      if (runSummary) {
+        const int rc = doRunSummary(*s3, bucket, key, stride);  // per-gen CSV → stdout
+        Aws::ShutdownAPI(awsOptions);
+        return rc;
+      }
       if (key.empty() || key.back() == '/') {
         // Resolve run + gen. Empty key = "no run given" → pick the LATEST run
         // first (else findLatestGenKey would scan the whole bucket and return

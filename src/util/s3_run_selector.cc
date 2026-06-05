@@ -1,9 +1,11 @@
 // 035 FR-P07 / FR-P07b — shared S3 run-selector implementation.
 #include "autoc/util/s3_run_selector.h"
 
+#include <algorithm>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 #include <aws/core/Aws.h>
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
@@ -103,6 +105,22 @@ std::string findLatestGenKey(const Aws::S3::S3Client& s3, const std::string& buc
                                  " (bucket " + bucket + ")");
     }
     return latest;
+}
+
+std::vector<std::string> listRunGenKeys(const Aws::S3::S3Client& s3, const std::string& bucket,
+                                        const std::string& runPrefix) {
+    const auto keys = listAll(s3, bucket, runPrefix, /*wantCommonPrefixes=*/false);
+    std::vector<std::pair<int, std::string>> g;
+    for (const auto& k : keys) {
+        const int n = extractGenNumber(k);
+        if (n >= 0) g.emplace_back(n, k);
+    }
+    std::sort(g.begin(), g.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::vector<std::string> out;
+    out.reserve(g.size());
+    for (const auto& p : g) out.push_back(p.second);
+    return out;
 }
 
 std::string s3GetDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
