@@ -62,7 +62,16 @@ Single project: `src/`, `tools/`, `tests/`, `include/autoc/` at repo root.
 - [ ] T018 Set object `Tagging: retain=expire` on both PutObject sites in `src/autoc.cc` (≈1448, ≈1640) (FR-P10). *(Sequence after T009 — same code region.)*
 - [ ] T019 [P] Add `S3Bucket` (per-mode) + `LexicaseEpsilonMode` keys to the `AUTOC_CONFIG_FIELDS(X)` macro in `include/autoc/util/config.h` + `src/util/config.cc`; the 034 config-dump test (T028-era) covers them automatically (FR-P08 decl; FR-003 decl).
 - [ ] T020 [P] Add a repo note documenting the `autoc-pin` manual one-liner (`aws s3api put-object-tagging … retain=keep`) and the pinned-prefix-in-outcome-doc rule (FR-P12, Principle VIII). `contracts/lifecycle-policy.json` already committed.
-- [ ] T021 **[Admin prereq — non-code, tracked]** Create buckets `autoc-m1` / `autoc-m2` / `autoc-eval`; grant `s3:PutObjectTagging` + `s3:GetObjectTagging` to IAM user `autoc-generator`; apply `contracts/lifecycle-policy.json` to each (+ legacy `autoc-storage`); re-tag milestone runs `retain=keep` (LETTER §1 table). Gates the bucket-cutover only — code/GATE can run on old buckets first (R6).
+- [ ] T021 **[Admin prereq — non-code, tracked]** Create buckets `autoc-m1` / `autoc-m2` / `autoc-eval`; grant `s3:PutObjectTagging` + `s3:GetObjectTagging` to IAM user `autoc-generator`; apply `contracts/lifecycle-policy.json` to each (+ legacy `autoc-storage`); re-tag the milestone runs below `retain=keep` BEFORE lifecycle goes live. Gates the bucket-cutover only — code/GATE can run on old buckets first (R6).
+
+  **Milestone-pin list (must NOT expire — from the 2026-06-02 admin retention pass):**
+  | S3 prefix | run | why keep |
+  |---|---|---|
+  | `autoc-9223370259105171692-2026-05-02…` | pastonly3 (029 M1) | first M2 pass; flew 5/3 & 5/17; source for 032-phase1 |
+  | `autoc-9223370257807536859-2026-05-17…` | 032-phase1 (M2) | big tracker milestone; baked from pastonly3; **035 M2 baseline (FR-005b)** |
+  | `autoc-9223370256935631488-2026-05-27…` | 033-pop8000-wind36-r1 (M1) | live `autoc-tracker.ini` source (gen9432.dmp) |
+  | `autoc-9223370259246861370-2026-05-01…` | pastonly2 (029 M1) | 029 baseline, gen 800 |
+  | `autoc-9223370259505713290-2026-04-28…` | gen-800 orphan | no reference found; kept provisionally, may be tossed |
 - [ ] T022 Flip `S3Bucket` per ini to `autoc-m1` / `autoc-m2` / `autoc-eval` (`autoc.ini`, `autoc-basic-m1.ini`, `autoc-tracker.ini`, `autoc-eval.ini`, `autoc-eval-tracker.ini`, `autoc-eval-visual.ini`) per `contracts/ini-config.md` — config-only, after T021.
 
 ### A4 — Correctness fixes / verifications (FR-P13, P14)
