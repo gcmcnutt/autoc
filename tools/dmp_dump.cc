@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
   try {
     std::string bucket, key;
     if (parseS3Uri(input, bucket, key)) {
-      ConfigManager::initialize(configFile);   // S3 creds + fitness params
+      ConfigManager::initialize(configFile, std::cerr);   // S3 creds + fitness params (chatter→stderr, keep stdout clean for CSV/YAML)
       Aws::InitAPI(awsOptions);
       awsInit = true;
       auto s3 = ConfigManager::getS3Client();
@@ -146,7 +146,7 @@ int main(int argc, char** argv) {
       srcBucket = bucket; srcKey = key;
     } else {
       // local file — still need fitness params for derived columns.
-      ConfigManager::initialize(configFile);
+      ConfigManager::initialize(configFile, std::cerr);
       blob = readLocalFile(input);
       srcBucket = "(local)"; srcKey = input;
     }
