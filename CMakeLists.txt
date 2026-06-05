@@ -7,6 +7,8 @@ option(BUILD_CRRCSIM "Build CRRCSim flight dynamics model" ON)
 find_package(VTK REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(AWSSDK REQUIRED COMPONENTS core s3)
+# 035 FR-P09 — zstd for dmp compression on the serialization boundary.
+find_library(ZSTD_LIBRARY NAMES zstd REQUIRED)
 
 include(FetchContent)
 
@@ -84,6 +86,8 @@ add_library(autoc_common STATIC
     src/util/config.cc
     src/util/logger.cc
     src/util/scenario_prng.cc
+    src/util/s3_run_selector.cc
+
     src/eval/pathgen.cc
     src/eval/sensor_math.cc
     src/eval/fitness_computer.cc
@@ -102,7 +106,7 @@ add_library(autoc_common STATIC
     src/nn/telemetry.cc
     src/nn/mode.cc
 )
-target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen)
+target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen ${ZSTD_LIBRARY})
 
 add_executable(autoc src/autoc.cc)
 add_executable(renderer tools/renderer.cc)
@@ -207,6 +211,10 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(run_id_prefix_tests tests/run_id_prefix_tests.cc)
   target_link_libraries(run_id_prefix_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  # 035 FR-P07 — shared S3 run-selector tests (pulls s3_run_selector.o → needs AWSSDK).
+  add_executable(s3_run_selector_tests tests/s3_run_selector_tests.cc)
+  target_link_libraries(s3_run_selector_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -236,6 +244,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME scenario_prng_tests COMMAND scenario_prng_tests)
   add_test(NAME craft_variation_tests COMMAND craft_variation_tests)
   add_test(NAME run_id_prefix_tests COMMAND run_id_prefix_tests)
+  add_test(NAME s3_run_selector_tests COMMAND s3_run_selector_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -258,6 +267,7 @@ if(ENABLE_AUTOC_TESTS)
             scenario_prng_tests
             craft_variation_tests
             run_id_prefix_tests
+            s3_run_selector_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -285,6 +295,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND scenario_prng_tests --gtest_brief=1
     COMMAND craft_variation_tests --gtest_brief=1
     COMMAND run_id_prefix_tests --gtest_brief=1
+    COMMAND s3_run_selector_tests --gtest_brief=1
   )
 endif()
 
