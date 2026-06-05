@@ -27,8 +27,8 @@ Single project: `src/`, `tools/`, `tests/`, `include/autoc/` at repo root.
 
 **Purpose**: dependency + new build targets so later tasks compile.
 
-- [ ] T001 Add libzstd to top-level `CMakeLists.txt` (`find_library`/`find_package` for zstd) and link it into `autoc_common` so crrcsim `mod_inputdev` inherits it transitively (Principle IV; R4).
-- [ ] T002 [P] Register new build targets in `CMakeLists.txt`: `tools/dmp_dump.cc` → `dmp-dump` binary; `src/util/s3_run_selector.cc` → `autoc_common`; new test files (`tests/s3_run_selector_tests.cc`, `tests/dmp_dump_tests.cc`, `tests/energy_metric_tests.cc`).
+- [X] T001 Add libzstd to top-level `CMakeLists.txt` (`find_library`/`find_package` for zstd) and link it into `autoc_common` so crrcsim `mod_inputdev` inherits it transitively (Principle IV; R4).
+- [X] T002 [P] Register new build targets in `CMakeLists.txt`: `tools/dmp_dump.cc` → `dmp-dump` binary; `src/util/s3_run_selector.cc` → `autoc_common`; new test files (`tests/s3_run_selector_tests.cc`, `tests/dmp_dump_tests.cc`, `tests/energy_metric_tests.cc`).
 
 ---
 
@@ -38,30 +38,30 @@ Single project: `src/`, `tools/`, `tests/`, `include/autoc/` at repo root.
 
 ### A1 — Shared S3 selector + uniform run-id naming (FR-P07 / FR-P07b)
 
-- [ ] T003 [P] Write `tests/s3_run_selector_tests.cc` (MUST fail first): `extractGenNumber` inverts `10000−N` for `.dmp` and `.dmp.zst`, rejects malformed keys; latest-run / latest-gen over a synthetic key list; uniform-prefix matching (legacy `tracker-` key NOT matched). Per `contracts/s3-selector.md`.
-- [ ] T004 Implement `src/util/s3_run_selector.{h,cc}`: `extractGenNumber` (inverts encoding, `.zst`-aware), `findLatestRun(bucket)`, `findLatestGenKey(...)` — bucket-relative, prefix `"autoc-"`, fail-loud on empty.
-- [ ] T005 Route `tools/nnextractor.cc` (≈47, ≈105) through `s3_run_selector`; delete its local `extractGenNumber` + `SetPrefix("autoc-")` duplication.
-- [ ] T006 Route `tools/renderer.cc` (≈1778, ≈1898) through `s3_run_selector`; **fix the `extractGenNumber` invert bug** by deleting the local (non-inverting) copy.
-- [ ] T007 Collapse `autoc::runIdPrefixForMode` in `include/autoc/util/run_id.h` to uniform `"autoc-"` for ALL modes (retire the `tracker-` branch); update the header comment and `tests/run_id_prefix_tests.cc` (FR-P07b).
+- [X] T003 [P] Write `tests/s3_run_selector_tests.cc` (MUST fail first): `extractGenNumber` inverts `10000−N` for `.dmp` and `.dmp.zst`, rejects malformed keys; latest-run / latest-gen over a synthetic key list; uniform-prefix matching (legacy `tracker-` key NOT matched). Per `contracts/s3-selector.md`.
+- [X] T004 Implement `src/util/s3_run_selector.{h,cc}`: `extractGenNumber` (inverts encoding, `.zst`-aware), `findLatestRun(bucket)`, `findLatestGenKey(...)` — bucket-relative, prefix `"autoc-"`, fail-loud on empty.
+- [X] T005 Route `tools/nnextractor.cc` (≈47, ≈105) through `s3_run_selector`; delete its local `extractGenNumber` + `SetPrefix("autoc-")` duplication.
+- [ ] T006 Route `tools/renderer.cc` (≈1778, ≈1898) through `s3_run_selector`; **fix the `extractGenNumber` invert bug** by deleting the local (non-inverting) copy. _(DEFERRED post-GATE: renderer is a viewer, not on the GATE test path; its raw-file-number nav model needs a focused pass. Recover raw as `10000 - autoc::extractGenNumber(key)` at the extract sites.)_
+- [X] T007 Collapse `autoc::runIdPrefixForMode` in `include/autoc/util/run_id.h` to uniform `"autoc-"` for ALL modes (retire the `tracker-` branch); update the header comment and `tests/run_id_prefix_tests.cc` (FR-P07b).
 
 ### A2 — data.dat retirement + dmp schema + zstd + dmp-dump (FR-P01–P06, P09)
 
-- [ ] T008 [P] Write a zstd round-trip unit test (in `tests/dmp_dump_tests.cc`, MUST fail first): compress→decompress a cereal blob is byte-identical; assert + report ratio (R4 spike-as-test).
-- [ ] T009 Add zstd compress (level 19) at the cereal-write boundary in `src/autoc.cc` (both PutObject sites ≈1448 eval, ≈1640 per-gen); key suffix becomes `gen<N>.dmp.zst`.
-- [ ] T010 Add zstd inflate on read in `src/eval/source_dmp_loader.cc` (≈71): `.zst` → `ZSTD_decompress`, legacy `.dmp` → passthrough; fail-loud on corrupt/missing (Principle V/VII).
-- [ ] T011 Add `.zst` inflate to the dmp fetch paths in `tools/nnextractor.cc` and `tools/renderer.cc` (via the shared selector + decompress).
-- [ ] T012 Remove ALL `data.dat` writer plumbing from `src/autoc.cc`: `fout` ofstream (≈2114–2117), `logEvalResults` + `logEvalResultsScenarioTracker` (≈738–884, ≈989–1052), `strOutFile` open, pathgen+tracker header emission. Clean cut, no dual-write (FR-P05, Constitution III).
-- [ ] T013 [P] Update `.gitignore` (`*.dat` rule), the `include/autoc/eval/eval_logger.h` comment, and any spec/doc reference to `data.dat` as a live artifact (FR-P06).
-- [ ] T014 Implement `tools/dmp_dump.cc` per `contracts/dmp-dump-cli.md`: S3 URI (primary) + local input, `.zst` auto-inflate, YAML metadata block + CSV per-tick body, recompute derived columns (`dhome/dist/along/stpPt/mult/rampSc`, `hull` in tracker mode) via shared `autoc_common` math; fail-loud on load error (FR-P01/P02).
-- [ ] T015 Write `tests/dmp_dump_tests.cc` (column-parity + format): derived columns match the retired-writer math on a fixture dmp; YAML/CSV blocks segregated; fail-loud on missing key.
-- [ ] T016 Repoint `specs/03[2-5]*/*.py` plot scripts **and `specs/029-no-future-arch/plot_per_axis_time_series.py`** (the gate consumer + FR-005 per-axis energy comparator) from `data.dat` to `dmp-dump` CSV/YAML (subprocess/pipe, new column names — no byte-compat with legacy format) (FR-P03).
-- [ ] T017 Update the `scripts/` rebuild-perf gate documentation: the bit-replay gate compares **per-scenario `ScenarioScore` bytes**, not whole-dmp (dmps carry non-deterministic provenance timestamps) (FR-P04 / R3).
+- [X] T008 [P] Write a zstd round-trip unit test (in `tests/dmp_dump_tests.cc`, MUST fail first): compress→decompress a cereal blob is byte-identical; assert + report ratio (R4 spike-as-test).
+- [X] T009 Add zstd compress (level 19) at the cereal-write boundary in `src/autoc.cc` (both PutObject sites ≈1448 eval, ≈1640 per-gen); key suffix becomes `gen<N>.dmp.zst`.
+- [X] T010 Add zstd inflate on read in `src/eval/source_dmp_loader.cc` (≈71): `.zst` → `ZSTD_decompress`, legacy `.dmp` → passthrough; fail-loud on corrupt/missing (Principle V/VII).
+- [~] T011 Add `.zst` inflate to the dmp fetch paths in `tools/nnextractor.cc` and `tools/renderer.cc` (via the shared selector + decompress). _(nnextractor + source_dmp_loader DONE — inflate is centralized in `s3GetDmpBlob`, so all read sites that route through it get it free; renderer half DEFERRED with T006.)_
+- [X] T012 Remove ALL `data.dat` writer plumbing from `src/autoc.cc`: `fout` ofstream (≈2114–2117), `logEvalResults` + `logEvalResultsScenarioTracker` (≈738–884, ≈989–1052), `strOutFile` open, pathgen+tracker header emission. Clean cut, no dual-write (FR-P05, Constitution III).
+- [X] T013 [P] Update `.gitignore` (`*.dat` rule), the `include/autoc/eval/eval_logger.h` comment, and any spec/doc reference to `data.dat` as a live artifact (FR-P06).
+- [X] T014 Implement `tools/dmp_dump.cc` per `contracts/dmp-dump-cli.md`: S3 URI (primary) + local input, `.zst` auto-inflate, YAML metadata block + CSV per-tick body, recompute derived columns (`dhome/dist/along/stpPt/mult/rampSc`, `hull` in tracker mode) via shared `autoc_common` math; fail-loud on load error (FR-P01/P02).
+- [X] T015 Write `tests/dmp_dump_tests.cc` (column-parity + format): derived columns match the retired-writer math on a fixture dmp; YAML/CSV blocks segregated; fail-loud on missing key.
+- [X] T016 Repoint `specs/03[2-5]*/*.py` plot scripts **and `specs/029-no-future-arch/plot_per_axis_time_series.py`** (the gate consumer + FR-005 per-axis energy comparator) from `data.dat` to `dmp-dump` CSV/YAML (subprocess/pipe, new column names — no byte-compat with legacy format) (FR-P03).
+- [X] T017 Update the `scripts/` rebuild-perf gate documentation: the bit-replay gate compares **per-scenario `ScenarioScore` bytes**, not whole-dmp (dmps carry non-deterministic provenance timestamps) (FR-P04 / R3).
 
 ### A3 — Per-mode buckets + tagging + lifecycle + ini (FR-P08, P10–P12)
 
-- [ ] T018 Set object `Tagging: retain=expire` on both PutObject sites in `src/autoc.cc` (≈1448, ≈1640) (FR-P10). *(Sequence after T009 — same code region.)*
-- [ ] T019 [P] Add `S3Bucket` (per-mode) + `LexicaseEpsilonMode` keys to the `AUTOC_CONFIG_FIELDS(X)` macro in `include/autoc/util/config.h` + `src/util/config.cc`; the 034 config-dump test (T028-era) covers them automatically (FR-P08 decl; FR-003 decl).
-- [ ] T020 [P] Add a repo note documenting the `autoc-pin` manual one-liner (`aws s3api put-object-tagging … retain=keep`) and the pinned-prefix-in-outcome-doc rule (FR-P12, Principle VIII). `contracts/lifecycle-policy.json` already committed.
+- [X] T018 Set object `Tagging: retain=expire` on both PutObject sites in `src/autoc.cc` (≈1448, ≈1640) (FR-P10). *(Sequence after T009 — same code region.)*
+- [X] T019 [P] Add `S3Bucket` (per-mode) + `LexicaseEpsilonMode` keys to the `AUTOC_CONFIG_FIELDS(X)` macro in `include/autoc/util/config.h` + `src/util/config.cc`; the 034 config-dump test (T028-era) covers them automatically (FR-P08 decl; FR-003 decl).
+- [X] T020 [P] Add a repo note documenting the `autoc-pin` manual one-liner (`aws s3api put-object-tagging … retain=keep`) and the pinned-prefix-in-outcome-doc rule (FR-P12, Principle VIII). `contracts/lifecycle-policy.json` already committed.
 - [ ] T021 **[Admin prereq — non-code, tracked]** Create buckets `autoc-m1` / `autoc-m2` / `autoc-eval`; grant `s3:PutObjectTagging` + `s3:GetObjectTagging` to IAM user `autoc-generator`; apply `contracts/lifecycle-policy.json` to each (+ legacy `autoc-storage`); re-tag the milestone runs below `retain=keep` BEFORE lifecycle goes live. Gates the bucket-cutover only — code/GATE can run on old buckets first (R6).
 
   **Milestone-pin list (must NOT expire — from the 2026-06-02 admin retention pass):**
@@ -76,8 +76,8 @@ Single project: `src/`, `tools/`, `tests/`, `include/autoc/` at repo root.
 
 ### A4 — Correctness fixes / verifications (FR-P13, P14)
 
-- [ ] T023 [P] Repoint `TrackerSourceRun` in `autoc-eval-tracker.ini:42` to the live M2 source (the `autoc-tracker.ini` source, in `autoc-m2` post-migration); confirm the loader fails loud on a missing key (FR-P13). **End-to-end check:** run `autoc-eval-tracker.ini` once so the repointed source actually loads (GATE-3 runs `autoc-tracker.ini`, a different file, so FR-P13 is otherwise unexercised by the gate) (closes analyze C2).
-- [ ] T024 [P] Verify eval Bug 3 (rabbitSpeedConfig set, `src/autoc.cc:1248-1252`) and Bug 2 (genome.fitness overwrite, `:1370`/`:1425`) still hold — already fixed in 034; covered by the basic-eval GATE, no code change expected (FR-P14).
+- [X] T023 [P] Repoint `TrackerSourceRun` in `autoc-eval-tracker.ini:42` to the live M2 source (the `autoc-tracker.ini` source, in `autoc-m2` post-migration); confirm the loader fails loud on a missing key (FR-P13). **End-to-end check:** run `autoc-eval-tracker.ini` once so the repointed source actually loads (GATE-3 runs `autoc-tracker.ini`, a different file, so FR-P13 is otherwise unexercised by the gate) (closes analyze C2).
+- [X] T024 [P] Verify eval Bug 3 (rabbitSpeedConfig set, `src/autoc.cc:1248-1252`) and Bug 2 (genome.fitness overwrite, `:1370`/`:1425`) still hold — already fixed in 034; covered by the basic-eval GATE, no code change expected (FR-P14). _(VERIFIED post-refactor: Bug3 at autoc.cc:920-924 — rabbitSpeedConfig always set; Bug2 at :1041 storedFitness saved before :1094 overwrite. Both intact.)_
 
 ### ✅ VERIFICATION GATE (operator-run — quickstart §GATE)
 
