@@ -101,6 +101,9 @@ struct AutocConfig {
 
     // --- Selection strategy (015) ---
     std::string selectionMode = "sum";  // "sum", "minimax", "lexicase"
+    // 035 FR-003 — lexicase epsilon scaling: "constant" (legacy fixed 0.5) or
+    // "mad" (MAD-relative per-scenario). Declared now; MAD impl lands in US1.
+    std::string lexicaseEpsilonMode = "constant";
 
     // --- Fitness: point-accumulation scoring (022, conical surface V4) ---
     double fitDistScaleBehind = 7.0;     // Distance half-decay when behind rabbit (m)
@@ -244,6 +247,7 @@ struct AutocConfig {
     X(double,         craftRollEffSigma,         "CraftRollEffSigma") \
     X(int,            variationRampStep,         "VariationRampStep") \
     X(std::string,    selectionMode,             "SelectionMode") \
+    X(std::string,    lexicaseEpsilonMode,       "LexicaseEpsilonMode") \
     X(double,         fitDistScaleBehind,        "FitDistScaleBehind") \
     X(double,         fitDistScaleAhead,         "FitDistScaleAhead") \
     X(double,         fitConeAngleDeg,           "FitConeAngleDeg") \
