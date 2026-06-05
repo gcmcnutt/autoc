@@ -46,6 +46,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/crash_hull.h"         // 030 M7d.b — pCrashForGen
 #include "autoc/util/scenario_prng.h"      // 033 §2.A — master/scenario/class PRNG chain
 #include "autoc/util/run_id.h"             // 034 FR-015 — mode→run-id prefix routing
+#include "autoc/util/s3_run_selector.h"    // 035 FR-P07/P09/P10 — shared S3 dmp I/O
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
@@ -1434,20 +1435,15 @@ static void runNNEvaluation(
   evalResults.gpHash = hashByteVector(evalResults.gp);
   stampEvalResultsProvenance(evalResults);  // 033 §2.A + §2.B
   {
-    std::string keyName = startTime + "/gen9999.dmp";
+    std::string keyName = startTime + "/gen9999.dmp.zst";  // 035 FR-P09 — compressed
     auto s3Client = ConfigManager::getS3Client();
     if (s3Client) {
       std::ostringstream oss(std::ios::binary);
       { cereal::BinaryOutputArchive oa(oss); oa(evalResults); }
-      auto stream = Aws::MakeShared<Aws::StringStream>("PutObject");
-      *stream << oss.str();
-      Aws::S3::Model::PutObjectRequest request;
-      request.SetBucket(cfg.s3Bucket);
-      request.SetKey(keyName);
-      request.SetBody(stream);
-      auto outcome = s3Client->PutObject(request);
-      if (!outcome.IsSuccess()) {
-        *logger.warn() << "S3 upload failed: " << outcome.GetError().GetMessage() << endl;
+      // FR-P09/P10 compress+tag+upload via the shared S3 dmp I/O.
+      std::string err = autoc::s3PutDmpBlob(*s3Client, cfg.s3Bucket, keyName, oss.str());
+      if (!err.empty()) {
+        *logger.warn() << "S3 upload failed: " << err << endl;
       } else {
         *logger.info() << "S3 upload: " << keyName << endl;
       }
@@ -1623,23 +1619,15 @@ static void runNNEvolution(
 
       // Save to S3 as cereal-serialized EvalResults
       {
-        std::string keyName = startTime + "/gen" + std::to_string(10000 - gen) + ".dmp";
+        std::string keyName = startTime + "/gen" + std::to_string(10000 - gen) + ".dmp.zst";  // 035 FR-P09
         auto s3Client = ConfigManager::getS3Client();
         if (s3Client) {
           std::ostringstream oss(std::ios::binary);
           { cereal::BinaryOutputArchive oa(oss); oa(bestResults); }
-
-          auto stream = Aws::MakeShared<Aws::StringStream>("PutObject");
-          *stream << oss.str();
-
-          Aws::S3::Model::PutObjectRequest request;
-          request.SetBucket(cfg.s3Bucket);
-          request.SetKey(keyName);
-          request.SetBody(stream);
-
-          auto outcome = s3Client->PutObject(request);
-          if (!outcome.IsSuccess()) {
-            *logger.warn() << "S3 upload failed: " << outcome.GetError().GetMessage() << endl;
+          // FR-P09/P10 compress+tag+upload via the shared S3 dmp I/O.
+          std::string err = autoc::s3PutDmpBlob(*s3Client, cfg.s3Bucket, keyName, oss.str());
+          if (!err.empty()) {
+            *logger.warn() << "S3 upload failed: " << err << endl;
           }
         }
       }

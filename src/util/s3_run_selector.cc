@@ -2,10 +2,17 @@
 #include "autoc/util/s3_run_selector.h"
 
 #include <regex>
+#include <sstream>
 #include <stdexcept>
 
+#include <aws/core/Aws.h>
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
 #include <aws/s3/S3Client.h>
+#include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/PutObjectRequest.h>
+
+#include "autoc/util/zstd_io.h"  // FR-P09 compress/inflate primitive
 
 namespace autoc {
 
@@ -96,6 +103,35 @@ std::string findLatestGenKey(const Aws::S3::S3Client& s3, const std::string& buc
                                  " (bucket " + bucket + ")");
     }
     return latest;
+}
+
+std::string s3GetDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
+                         const std::string& key) {
+    Aws::S3::Model::GetObjectRequest req;
+    req.SetBucket(bucket);
+    req.SetKey(key);
+    auto outcome = s3.GetObject(req);
+    if (!outcome.IsSuccess()) {
+        throw std::runtime_error("S3 GetObject failed for s3://" + bucket + "/" + key +
+                                 ": " + outcome.GetError().GetMessage());
+    }
+    std::ostringstream oss;
+    oss << outcome.GetResult().GetBody().rdbuf();
+    std::string body = oss.str();
+    return isZstdKey(key) ? zstdDecompress(body) : body;  // FR-P09 inflate legacy-safe
+}
+
+std::string s3PutDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
+                         const std::string& key, const std::string& blob) {
+    auto stream = Aws::MakeShared<Aws::StringStream>("s3PutDmpBlob");
+    *stream << zstdCompress(blob);  // FR-P09
+    Aws::S3::Model::PutObjectRequest req;
+    req.SetBucket(bucket);
+    req.SetKey(key);
+    req.SetBody(stream);
+    req.SetTagging("retain=expire");  // FR-P10 — ephemeral by default
+    auto outcome = s3.PutObject(req);
+    return outcome.IsSuccess() ? std::string() : outcome.GetError().GetMessage();
 }
 
 }  // namespace autoc

@@ -44,4 +44,19 @@ std::string findLatestRun(const Aws::S3::S3Client& s3, const std::string& bucket
 std::string findLatestGenKey(const Aws::S3::S3Client& s3, const std::string& bucket,
                              const std::string& runPrefix);
 
+// --- compressed dmp I/O (FR-P09/P10) — ONE shared path for every tool --------
+// Compress/inflate + tag live here so autoc.cc, source_dmp_loader, nnextractor,
+// and renderer all leverage the same code (no per-site zstd/get/put boilerplate).
+
+// Download bucket/key and return the raw cereal blob, inflating if key ends
+// ".zst" (FR-P09). Fail-loud: throws std::runtime_error on S3 error (read path).
+std::string s3GetDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
+                         const std::string& key);
+
+// zstd-compress `blob` and upload to bucket/key (key should end ".dmp.zst"),
+// tagging the object retain=expire (FR-P10). Returns "" on success, else the
+// error message — caller chooses warn-and-continue (training) vs fail.
+std::string s3PutDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
+                         const std::string& key, const std::string& blob);
+
 }  // namespace autoc

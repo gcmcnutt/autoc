@@ -110,33 +110,17 @@ int main(int argc, char** argv) {
 
   std::cout << "Fetching: " << keyName << " from " << bucket << std::endl;
 
-  // Fetch from S3
-  Aws::S3::Model::GetObjectRequest request;
-  request.SetBucket(bucket);
-  request.SetKey(keyName);
-  auto outcome = s3_client->GetObject(request);
-
-  if (!outcome.IsSuccess()) {
-    std::cerr << "Error retrieving " << keyName << ": " << outcome.GetError().GetMessage() << std::endl;
-    return 1;
-  }
-
-  // Deserialize EvalResults
+  // Fetch + inflate via the shared S3 dmp I/O (035 FR-P09), then deserialize.
   EvalResults evalResults;
-  {
-    std::ostringstream oss;
-    oss << outcome.GetResult().GetBody().rdbuf();
-    std::string retrievedData = oss.str();
-
-    try {
-      std::istringstream iss(retrievedData, std::ios::binary);
-      cereal::BinaryInputArchive ia(iss);
-      ia(evalResults);
-    }
-    catch (const std::exception& e) {
-      std::cerr << "Error deserializing EvalResults: " << e.what() << std::endl;
-      return 1;
-    }
+  try {
+    std::string retrievedData = autoc::s3GetDmpBlob(*s3_client, bucket, keyName);
+    std::istringstream iss(retrievedData, std::ios::binary);
+    cereal::BinaryInputArchive ia(iss);
+    ia(evalResults);
+  }
+  catch (const std::exception& e) {
+    std::cerr << "Error fetching/deserializing " << keyName << ": " << e.what() << std::endl;
+    return 1;
   }
 
   // Extract NN genome from .gp field
