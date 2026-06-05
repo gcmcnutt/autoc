@@ -224,6 +224,17 @@ Remaining 015 work:
 
 ## Future Features (separate from 015)
 
+### [FUTURE FEATURE — split from 035, 2026-06-04] Hull-crash-cost as a lexicase fitness dimension (M1/M2)
+
+- **Origin**: split out of 035 FR-008b. Energy is 035's job; hull-crash-cost earns its own feature because its penalty design is the hard part.
+- **Problem**: in tracker (M2) bakes, hull-strikes grow *monotonically with tracking skill* (030: ~1→11/gen; 032: ~3× faster) — the chase learns to fly *into* the target as it sharpens. This **gates real-flight deployment**. It is a *fitness dimension* (NOT 036/island-selection work). Applies to **M1 and M2 and beyond** — energy + crash incentives are both wanted across modes.
+- **Design constraints (operator, 2026-06-04) — the hard part this feature MUST solve**:
+  1. **Not a score-stop.** The penalty must NOT merely zero/halt the scenario score on crash.
+  2. **Not a flat scalar.** An early crash is worse than a late crash — *any* crash is bad, but timing must register (crash at tick 5 vs tick 500 must be distinguishable). A scalar discount also re-creates the 033 Pareto-corner collapse trap (`project_scalar_multiobjective_collapse`).
+  3. **Credit assignment is the core difficulty.** A single individual that crashes in only ~1 of ~300 scenarios is hard to penalize: across the scenario set its one crash barely differentiates it from clean-flying siblings under lexicase (one crash-case among 300 rarely becomes the deciding test case), so a naive per-scenario `crash_cost` gets drowned out. The feature must make a rare-but-fatal crash *selection-decisive* without collapsing to a scalar.
+- **Candidate metrics to evaluate (none chosen)**: dedicated `crash_cost` field on `ScenarioScore` with time-to-crash weighting; a per-individual crash-rate aggregate axis (fraction of scenarios with a strike) so a 1/300 crash still registers population-wide; a lexicase crash-priority pass / dominance rule that elevates any crash above tracking ties.
+- **Source**: 035 spec FR-008b + Clarifications 2026-06-04; `#GenCrash hullStrike=N` telemetry from 035's M2 baseline run quantifies the current escalation rate and seeds this spec.
+
 ### [DEFERRED] Selection Strategy Alternatives
 - NSGA-II Pareto: non-dominated sort on (tracking RMSE, energy, worst-case spread)
 - Rank-based fitness shaping: CMA-ES style rank-derived weights

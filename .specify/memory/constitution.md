@@ -172,6 +172,39 @@ values flow from `WorkerInit`, `EvalData`, `ScenarioMetadata`, or `.ini` config.
 apply to plain-old-data structs used purely as wire-format containers (e.g.,
 `TrackerHistoryWindow`), where zero-initialization via `{}` is the intended contract.
 
+### VIII. Training-Artifact Lifecycle & Retention
+
+S3-resident training artifacts (per-gen `.dmp` dumps) are storage that costs money and grows
+without bound. They MUST be ephemeral by default and preserved only by deliberate act.
+
+1. **Ephemeral by default.** Every uploaded run dump MUST be tagged `retain=expire` at
+   `PutObject` time and is auto-deleted by the bucket lifecycle policy 30 days after creation.
+   Training output is disposable unless explicitly promoted.
+2. **Explicit pinning.** A run is preserved only by tagging its objects `retain=keep`.
+   Milestones — flown controllers, M2/M3 source libraries, documented baselines — MUST be
+   pinned, and the pin recorded (with its S3 prefix) in the relevant spec's outcome report.
+3. **Provenance lives in the repo, not the bucket.** Flight reports and outcome docs cite the
+   exact S3 prefix; the bucket is not a system of record. A bucket that loses an unpinned run
+   to expiry MUST never lose the *knowledge* of a run that mattered.
+4. **Uniform naming, bucket-as-discriminator.** Per-mode buckets (`autoc-m1`, `autoc-m2`,
+   `autoc-eval`, future `autoc-m3`) hold artifacts under an **identical** run-id + filename
+   convention (`<run-id>/gen<N>.dmp[.zst]`); the bucket — not a name prefix — distinguishes
+   mode. Tools resolve "latest run / latest gen" through one shared, bucket-relative,
+   prefix-agnostic selector.
+5. **Compression on upload.** Dumps MUST be zstd-compressed at the serialization boundary once
+   the loader supports transparent inflation; the read path accepts both `.dmp.zst` and legacy
+   `.dmp`.
+6. **Fail-loud loader (reinforces VII).** The dump loader MUST error on a missing
+   `TrackerSourceRun` key rather than silently substituting a fallback. A dangling source
+   pointer is a hard stop, not a default.
+
+**Rationale**: `autoc-storage` reached ~868 GB / ~84% of the AWS bill before a tag-driven
+30-day retention scheme was installed (LETTER-s3-retention.md, 2026-06-02). The
+no-tag-never-deleted lifecycle is fail-safe by design — unmarked objects are never matched —
+so the risk is a milestone silently expiring, which (2) and (3) guard against by making pinning
+deliberate and provenance repo-resident. Compression (5) compounds with retention: ~3× on
+float-weight dumps on top of the 30-day cap.
+
 ## Architecture
 
 - **C++17**, CMake, Eigen, cereal (serialization), GoogleTest
@@ -184,4 +217,4 @@ apply to plain-old-data structs used purely as wire-format containers (e.g.,
 
 Constitution supersedes all other practices. Amendments require documentation and rationale.
 
-**Version**: 1.3.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-05-22 (Principle VII added — No Silent Fallback Defaults)
+**Version**: 1.4.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-06-04 (Principle VIII added — Training-Artifact Lifecycle & Retention)
