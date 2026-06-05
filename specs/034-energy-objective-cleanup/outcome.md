@@ -46,17 +46,23 @@ train → S3 dmp → nnextractor → eval reproduces fitness to the last digit, 
 
 (dmp naming confirmed `gen<10000−N>.dmp`.) FP-deterministic replay holds on the current clamped binary.
 
-## M2 readiness
+## M2 run (t7) — ran, validated, and surfaced the hull-escalation baseline
 
-- **`autoc-tracker.ini`** staged: matches `autoc.ini` (pop 5000, 6×49, all variations, ramp 40), `TrackerSourceRun = …/gen9410.dmp` (gen 590).
-- **PRNG audit clean** (see prior session note): all M2 variation PRNGs derive from the master seed via `deriveClassSubSeeds(meta.scenarioSeed)` (scenarioSeed = `gMasterPRNG.next()`); the M1 source dmp contributes trajectory only, no recorded seed; crash-hull is rabbit-class-seeded (v1.5 fix). M2 is reproducible from its own `Seed=N`.
+The M2 tracker bake against the origm1 gen-590 source (`autoc-tracker.ini`: pop 5000, 6×49=294 scenarios, 54-input/2595-weight tracker NN, run-id `tracker-…301596645…`, master seed `1780553172`) ran to **gen 251** then was stopped (point made; full 800 gens not needed). Plots: `034-t7-m2-tracker-origm1_*`.
+
+- **PRNG audit clean** — all M2 variation PRNGs derive from the master seed via `deriveClassSubSeeds(meta.scenarioSeed)`; the M1 source dmp contributes trajectory only (no recorded seed); crash-hull is rabbit-class-seeded (v1.5 fix). Reproducible from its own `Seed=N`.
+- **Competitive tracker** — tracked **032-phase1** (the *identical* 54-input NN) curve-for-curve, slightly ahead (gen 240: −17,766 vs −17,310), and both **crush the older 030 NN** (which plateaued ~−17k by gen 400). So it's a best-in-class tracker on the current objective.
+- **Hull-escalation is the headline** — hull-strikes grow with tracking skill: within the run 9→17→**21/294**, and **across runs** 030 ~4.8% → 032 5.8% → **t7 ~7–8%** (highest, because it chases the *sharper* origm1 source). The controller increasingly flies *into* the target as it sharpens — the deployment blocker and the concrete motivation for the **035 crash-cost lexicase axis** (spec FR-008b). More gens would sharpen tracking and push hull *up*, not down — which is why it was stopped.
+
+## S3 storage contract (emergent)
+
+The T033 `autoc-`/`tracker-` run-id prefix broke the auto-selectors (`nnextractor`/`renderer` hardcode `SetPrefix("autoc-")`). Decision: **one bucket per mode** (M1/M2/M3 each own bucket, mirroring eval's `autoc-eval-arm`); run-id naming + selector stay `autoc-` (bucket is the discriminator). **Blocked:** the `autoc-generator` IAM user lacks `CreateBucket`/`GetBucketLocation`/`GetObjectTagging`, so per-mode buckets + lifecycle need a manual admin step (→ 035 pre-work FR-P07/P08). Interim: the t7 run's dmps were copy-renamed in place `tracker-<id>`→`autoc-<id>` in `autoc-storage` (`rename_m2_artifacts_to_bucket.sh`, `--copy-props none`) so the unchanged selector finds it.
 
 ## Status of tasks
 
-All `tasks.md` items closed (T001–T055); T035/T036 explicitly deferred to backlog (fitness-to-worker refactor, not a gate). `autoc-eval.ini` / `autoc-tracker.ini` edits held uncommitted pending M2 start. The crrcsim `windSeed` debug-log fix is committed (source) but unbuilt — lands at the next rebuild.
+All `tasks.md` items closed (T001–T055); T035/T036 deferred to backlog (fitness-to-worker refactor). All inis committed. The crrcsim `windSeed` debug-log fix is committed AND built (rebuilt 2026-06-04). **034 is a wrap.**
 
-## Next
+## Next → 035
 
-1. **M2 run** against `gen9410.dmp` (operator).
-2. **Routing decision:** fold the smoothness rework into 035, or keep it standalone? (This run self-smoothed under a pure tracking objective — argues for going 034 → 035 directly.)
-3. **035 energy-as-lexicase** — design discussion captured in `specs/035-energy-lexicase-objective/spec.md` (measure total energy input: non-linear throttle + induced drag, lexicase not scalar, energy-not-smoothness; M2 is high-energy → energy objective matters most there).
+1. **035 pre-work**: retire data.dat → S3 dmp + dmp-dump CLI; **FR-P07** one shared prefix/bucket-agnostic run-selector (+ better `034-t<N>` lexicographic naming, + per-mode buckets once an admin provisions them); **FR-P08** S3 object-lifecycle on all buckets.
+2. **035 core**: **energy** as a real lexicase axis (measure total energy input — non-linear throttle + induced drag — lexicase not scalar, energy-not-smoothness), **and likely the hull-crash penalty** (FR-008b) as a sibling lexicase axis — the t7 run just quantified why it's needed.
