@@ -58,13 +58,13 @@ std::vector<std::string> listRunGenKeys(const Aws::S3::S3Client& s3, const std::
 std::string s3GetDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
                          const std::string& key);
 
-// zstd-compress `blob` and upload to bucket/key (key should end ".dmp.zst").
-// If `tagging` is non-empty it's applied as the object tag (FR-P10, e.g.
-// "retain=expire") — needs IAM s3:PutObjectTagging, so callers pass "" until
-// that grant lands (else AccessDenied fails the put). Returns "" on success,
-// else the error message — caller chooses warn-and-continue (training) vs fail.
-std::string s3PutDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
-                         const std::string& key, const std::string& blob,
-                         const std::string& tagging);
+// zstd-compress `blob` and upload to bucket/key (key should end ".dmp.zst"),
+// always tagging the object retain=expire (FR-P10) so the bucket lifecycle can
+// reap it. Needs IAM s3:PutObject + s3:PutObjectTagging (the tag rides the same
+// PutObject). Fail-loud: throws std::runtime_error on any S3 error — no
+// warn-and-continue (Constitution VII). Milestone runs are re-tagged
+// retain=keep out-of-band.
+void s3PutDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
+                  const std::string& key, const std::string& blob);
 
 }  // namespace autoc

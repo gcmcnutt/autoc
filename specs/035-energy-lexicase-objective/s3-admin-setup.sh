@@ -9,8 +9,8 @@
 # Paste into a system with IAM admin (this host's default profile = autoc-generator,
 # which cannot do iam:PutUserPolicy). Self-contained; review before running.
 #
-# After this: T022 (flip S3Bucket per ini to autoc-m1/m2/eval) and set
-# S3ObjectTagging=retain=expire in the per-mode inis.
+# After this: T022 (flip S3Bucket per ini to autoc-m1/m2/eval). The retain=expire
+# object tag is hardcoded in s3PutDmpBlob (fail-fast) — no ini knob to set.
 set -euo pipefail
 
 IAM_USER="autoc-generator"

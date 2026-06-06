@@ -80,3 +80,57 @@ just the S3/ini changes keeps the merge clean.
 ## State at handoff (HEAD `26010a3`)
 - GATE-1 green; energy axis + convex metric committed; dmp-dump `--run-summary` lands analytics on
   the dmps; constitution v1.5.0 (build-discipline). Training logs live in `logs/` (gitignored).
+
+---
+
+# APPENDIX — admin-side done (2026-06-05, return handoff)
+
+Executed on the admin-authed host (IAM user `gmcnutt`). Account `499918285206`, region
+`us-west-2`. **You (US1 side) pull this, then verify + continue.** Steps 1–4 below are LIVE in AWS
+(not git-revertible); the rest are uncommitted repo edits in this push.
+
+### AWS mutations applied (live)
+1. **IAM** — added inline policy `autoc-s3-rw-tagging` to `autoc-generator`:
+   ListBucket/GetBucketLocation + Get/Put/Delete/Get+PutObjectTagging on
+   `autoc-m1/m2/eval/storage/eval-arm`. Additive — the existing `autoc-generator` (SQS) and
+   `autoc-s3` (storage/eval-arm RW) policies are untouched. The `s3-admin-setup.sh` script ran as-is.
+2. **Lifecycle** — applied `retain=expire`→30d to `autoc-m1`, `autoc-m2`, `autoc-eval`.
+   **The letter's "likely already done" was WRONG**: only `autoc-storage` had a lifecycle rule;
+   the three per-mode buckets had none. Without this, the `retain=expire` tag is inert. `eval-arm`
+   still has no lifecycle (out of scope; eval-arm is being retired).
+3. **Milestone pin** — the live M2 source prefix `autoc-9223370256441628515…` (incl. `gen9410.dmp`)
+   was UNTAGGED (the 2026-06-02 pass pinned the other four, not this one). Tagged its whole prefix
+   `retain=keep`.
+4. **Verify probe** — as `autoc-generator`: `put-object … --tagging retain=expire` + `get-object-
+   tagging` + `delete-object` on `autoc-m1` all succeed (were AccessDenied before step 1).
+
+### Repo edits in this push
+5. **Tagging reworked (NOT the letter's plan — owner directive).** The `S3ObjectTagging` ini/config
+   knob is **torn out**. `s3PutDmpBlob` now **hardcodes `retain=expire`** and **throws on any
+   PutObject/tag failure** (fail-fast, Constitution VII) — the old warn-and-continue at both
+   `src/autoc.cc` call sites is gone. So: no ini tagging line to set, and a missing IAM grant aborts
+   the run loudly instead of silently uploading untagged. Config field count 88 (was 89);
+   `tests/contract_config_tests.cc` updated + green. Files: `src/util/s3_run_selector.{cc,h}`,
+   `src/autoc.cc`, `include/autoc/util/config.h`, the test, and this doc set.
+   **Heads-up for your merge:** I touched `config.h` (removed the `s3ObjectTagging` field + X-macro
+   row + bumped the count test). If your pending **T034 MAD-ε** adds a config knob, expect a small
+   conflict in the `AUTOC_CONFIG_FIELDS` block + the count assertion — trivial to reconcile.
+6. **T022 — all six inis flipped** (owner OK'd flipping tracker too, since fresh energy-objective
+   bakes supersede the old source): `autoc.ini`+`autoc-basic-m1.ini`→`autoc-m1`;
+   `autoc-eval.ini`+`autoc-eval-visual.ini`→`autoc-eval`; `autoc-tracker.ini`→`autoc-m2`;
+   `autoc-eval-tracker.ini`→`autoc-eval`. Stale pre-bucket comments in the tracker inis refreshed.
+
+### ⚠ Tracker source caveat (was the letter's GOTCHA; flipped anyway by directive)
+`source_dmp_loader` reads `TrackerSourceRun` from `S3Bucket` (no separate `TrackerSourceBucket`).
+The current `TrackerSourceRun = autoc-9223370256441628515-…/gen9410.dmp` lives in **autoc-storage**,
+so running `autoc-tracker.ini` (now `autoc-m2`) or `autoc-eval-tracker.ini` (now `autoc-eval`)
+**will fail-loud until you repoint `TrackerSourceRun` to the fresh energy-objective M1 source and
+ensure that dmp is present in autoc-m2 / autoc-eval.** I did NOT copy the stale gen9410 source over
+(it's about to be obsolete). The M1/eval inis have no such coupling and are ready now.
+
+### Still to do on your side
+- **Verify a short M1 bake** (letter step 5): few gens of `autoc.ini`, confirm `gen<N>.dmp.zst`
+  lands in `autoc-m1` tagged `retain=expire` (`get-object-tagging`), no upload errors. I built
+  `autoc` + ran the config contract tests (green) but did NOT run an end-to-end bake.
+- Mark **T021 + T022 done** in `tasks.md`. Reconcile the merge if T034 touched `config.h`.
+- **Delete this letter** once verified.
