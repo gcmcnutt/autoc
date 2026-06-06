@@ -31,7 +31,7 @@ TEST(Selection022, LexicaseBestScore) {
 
     std::map<int, int> counts;
     for (int i = 0; i < 1000; i++) {
-        int selected = lexicase_select(scores, 3);
+        int selected = lexicase_select(scores, 3, false);
         counts[selected]++;
     }
 
@@ -49,7 +49,7 @@ TEST(Selection022, LexicaseTieBreaking) {
 
     std::map<int, int> counts;
     for (int i = 0; i < 1000; i++) {
-        int selected = lexicase_select(scores, 2);
+        int selected = lexicase_select(scores, 2, false);
         counts[selected]++;
     }
 
@@ -68,7 +68,7 @@ TEST(Selection022, LexicasePerScenarioDifferentiation) {
 
     std::map<int, int> counts;
     for (int i = 0; i < 1000; i++) {
-        int selected = lexicase_select(scores, 2);
+        int selected = lexicase_select(scores, 2, false);
         counts[selected]++;
     }
 
@@ -149,12 +149,13 @@ static std::vector<std::vector<ScenarioScore>> makeScoresThreeDim(
     return all;
 }
 
-// CADENCE7-REDUX: tests below renamed DISABLED_ for the diagnostic build
-// (lexicase pool is tracking-only). Restore names to re-enable when
-// stability/energy lexicase dimensions are turned back on.
+// 035 US1: the energy lexicase axis is ON (FR-001), so the energy tests below
+// are re-enabled. Stability stays OFF (FR-008), so the two stability tests now
+// assert that stability is NOT a selection axis (rather than a stability
+// tiebreak). Re-introduce the tiebreak assertions if the stability axis lands.
 
 // Equal tracking, different energy: lower-energy must win in aggregate.
-TEST(Selection027, DISABLED_EnergyBreaksTrackingTie) {
+TEST(Selection027, EnergyBreaksTrackingTie) {
     // Two individuals, same tracking on 2 scenarios; individual 0 is efficient
     // (energy ≈ -90, almost-no-throttle); individual 1 wasteful (≈ -10, full
     // throttle).
@@ -165,7 +166,7 @@ TEST(Selection027, DISABLED_EnergyBreaksTrackingTie) {
 
     std::map<int, int> counts;
     for (int i = 0; i < 2000; i++) {
-        int selected = lexicase_select(scores, 2);
+        int selected = lexicase_select(scores, 2, false);
         counts[selected]++;
     }
     // The efficient individual should dominate — every energy round
@@ -177,7 +178,7 @@ TEST(Selection027, DISABLED_EnergyBreaksTrackingTie) {
 // Tradeoff: A tracks better but burns energy; B tracks worse but efficient.
 // Lexicase with shuffled test-case order should let BOTH survive across
 // many selections (each wins on a different dimension).
-TEST(Selection027, DISABLED_TradeoffBothSurvive) {
+TEST(Selection027, TradeoffBothSurvive) {
     auto scores = makeScoresWithEnergy(2, 2,
         /*tracking*/ {{-100.0, -100.0}, { -30.0,  -30.0}},
         /*energy*/   {{ -10.0,  -10.0}, { -90.0,  -90.0}}
@@ -185,7 +186,7 @@ TEST(Selection027, DISABLED_TradeoffBothSurvive) {
 
     std::map<int, int> counts;
     for (int i = 0; i < 2000; i++) {
-        int selected = lexicase_select(scores, 2);
+        int selected = lexicase_select(scores, 2, false);
         counts[selected]++;
     }
     // Both should get meaningful wins.
@@ -202,7 +203,7 @@ TEST(Selection027, EqualEnergyFallsThroughToTracking) {
 
     std::map<int, int> counts;
     for (int i = 0; i < 2000; i++) {
-        int selected = lexicase_select(scores, 3);
+        int selected = lexicase_select(scores, 3, false);
         counts[selected]++;
     }
     // Best-tracking (individual 0) should dominate — energy ties pass
@@ -215,43 +216,81 @@ TEST(Selection027, EqualEnergyFallsThroughToTracking) {
 // 027 v4: stability test cases (third lexicase dimension)
 // ============================================================
 
-// Equal tracking + energy, different stability: stable surfaces win.
-TEST(Selection027v4, DISABLED_StabilityBreaksTrackingTie) {
-    // Two individuals, same tracking + same energy on 2 scenarios;
-    // individual 0 has stable (centered) surfaces, 1 has saturated.
+// FR-008: stability axis OFF — a stability-only difference must NOT drive
+// selection. Equal tracking + equal energy → ~uniform regardless of stability.
+TEST(Selection027v4, StabilityOffDoesNotBreakTie) {
     auto scores = makeScoresThreeDim(2, 2,
         /*tracking*/  {{-50.0, -50.0}, {-50.0, -50.0}},
-        /*stability*/ {{-90.0, -90.0}, {-10.0, -10.0}},   // 0 = surfaces near center
+        /*stability*/ {{-90.0, -90.0}, {-10.0, -10.0}},   // differ — but axis is OFF
         /*energy*/    {{-50.0, -50.0}, {-50.0, -50.0}}
     );
 
     std::map<int, int> counts;
     for (int i = 0; i < 2000; i++) {
-        int selected = lexicase_select(scores, 2);
+        int selected = lexicase_select(scores, 2, false);
         counts[selected]++;
     }
-    EXPECT_GT(counts[0], counts[1] * 3)
-        << "stable=" << counts[0] << " saturated=" << counts[1];
+    // Neither dominates — stability is not a selection axis (FR-008).
+    EXPECT_GT(counts[0], 600) << "ind0=" << counts[0];
+    EXPECT_GT(counts[1], 600) << "ind1=" << counts[1];
 }
 
-// Three-way tradeoff: each individual is best on one dimension.
-// Lexicase shuffle should let all three survive.
-TEST(Selection027v4, DISABLED_ThreeWayTradeoffAllSurvive) {
+// FR-008: with stability OFF the three-way (tracking/stability/energy) tradeoff
+// collapses to tracking-vs-energy. The stability-only specialist (ind1) is best
+// at nothing and is suppressed; ind0 (best tracking) and ind2 (best energy) win.
+TEST(Selection027v4, EnergyTrackingTradeoffSurvivesStabilityOff) {
     auto scores = makeScoresThreeDim(3, 2,
         /*tracking*/  {{-100.0, -100.0}, { -30.0,  -30.0}, { -30.0,  -30.0}},
-        /*stability*/ {{ -10.0,  -10.0}, { -90.0,  -90.0}, { -10.0,  -10.0}},
+        /*stability*/ {{ -10.0,  -10.0}, { -90.0,  -90.0}, { -10.0,  -10.0}},  // OFF
         /*energy*/    {{ -10.0,  -10.0}, { -10.0,  -10.0}, { -90.0,  -90.0}}
     );
 
     std::map<int, int> counts;
     for (int i = 0; i < 3000; i++) {
-        int selected = lexicase_select(scores, 3);
+        int selected = lexicase_select(scores, 3, false);
         counts[selected]++;
     }
-    // Each should land above a reasonable floor — not perfectly equal
-    // due to tracking having larger absolute scale, but each must win
-    // its dimension regularly.
+    // Best-tracker and best-energy survive; the stability-only specialist does not.
     EXPECT_GT(counts[0], 200) << "best-tracker wins = " << counts[0];
-    EXPECT_GT(counts[1], 200) << "best-stability wins = " << counts[1];
     EXPECT_GT(counts[2], 200) << "best-energy wins = " << counts[2];
+    EXPECT_LT(counts[1], counts[0]) << "stability-only specialist suppressed = " << counts[1];
+    EXPECT_LT(counts[1], counts[2]) << "stability-only specialist suppressed = " << counts[1];
+}
+
+// ============================================================
+// 035 FR-003 — MAD-relative epsilon (T031)
+// ============================================================
+
+// Same scores, different survivor sets per mode. Constant epsilon is the
+// RELATIVE term max(0.5, |best|·0.05); at |best|=100 that's 5 (wide). MAD over
+// a tight cluster is much smaller, so MAD filters where constant does not.
+// (energy_score defaults 0 → energy axis is a universal tie; tracking drives it.)
+TEST(Selection035MadEpsilon, MadNarrowsVsConstantRelative) {
+    auto scores = makeScores(3, 1, {{-100.0}, {-98.0}, {-97.0}});
+
+    // Constant: eps=max(0.5,|−100|·0.05)=5 → all within best+5=-95 → ~uniform.
+    std::map<int, int> c;
+    for (int i = 0; i < 3000; i++) c[lexicase_select(scores, 3, /*mad=*/false)]++;
+    EXPECT_GT(c[0], 300); EXPECT_GT(c[1], 300); EXPECT_GT(c[2], 300)
+        << "constant relative eps (5) keeps all three";
+
+    // MAD: values {-100,-98,-97}, median -98, |dev| {2,0,1}, MAD=1 → survivors
+    // ≤ best+1 = -99 → ONLY ind0.
+    std::map<int, int> m;
+    for (int i = 0; i < 3000; i++) m[lexicase_select(scores, 3, /*mad=*/true)]++;
+    EXPECT_GT(m[0], 2700) << "mad: tight MAD=1 keeps only the best";
+    EXPECT_EQ(m[1], 0); EXPECT_EQ(m[2], 0);
+}
+
+// Constant mode pins the historical fixed-0.5 floor (SC-003: bit-reproducible
+// path; the rebuild-perf replay gate is the full guarantee). Small magnitudes so
+// |best|·0.05 < 0.5 and the floor governs.
+TEST(Selection035MadEpsilon, ConstantFloorIsHalf) {
+    auto scores = makeScores(3, 1, {{-5.0}, {-4.6}, {-4.0}});
+    // best=-5, eps=max(0.5, 0.25)=0.5 → survivors ≤ -4.5: ind0,ind1 in; ind2 out.
+    std::map<int, int> c;
+    for (int i = 0; i < 3000; i++) c[lexicase_select(scores, 3, /*mad=*/false)]++;
+    EXPECT_GT(c[0], 100) << "ind0 best";
+    EXPECT_GT(c[1], 100) << "ind1(-4.6) within the 0.5 floor";
+    EXPECT_EQ(c[2], 0) << "ind2(-4.0) outside the 0.5 floor";
 }

@@ -1487,8 +1487,11 @@ static void runNNEvolution(
         for (int i = 0; i < popSize; i++) {
           allScores[i] = pop.individuals[i].scenario_scores;
         }
-        evoParams.select = [allScores](const NNPopulation&) {
-          return lexicase_select(allScores, static_cast<int>(allScores.size()));
+        // 035 FR-003 — MAD-relative epsilon when LexicaseEpsilonMode=mad,
+        // else the constant 0.5-floor path (bit-reproduces prior runs).
+        const bool useMadEps = (cfg.lexicaseEpsilonMode == "mad");
+        evoParams.select = [allScores, useMadEps](const NNPopulation&) {
+          return lexicase_select(allScores, static_cast<int>(allScores.size()), useMadEps);
         };
       } else if (selMode == SelectionMode::MINIMAX) {
         // Recompute fitness as minimax for tournament selection
