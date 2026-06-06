@@ -1,3 +1,23 @@
+<!--
+SYNC IMPACT REPORT
+Version change: 1.4.0 → 1.5.0 (MINOR — materially expanded Principle IV with a new MUST rule)
+Modified principles:
+  - IV. Unified Build — added authoritative "Build discipline" clause: a CMakeLists.txt change
+    (new target/dependency/link/test registration) MUST be built with a clean
+    scripts/rebuild-perf.sh, not an incremental `cmake -S . -B build` reconfigure; source-only
+    edits use incremental `cmake --build build --target <t>`. Was previously scattered in agent
+    memory (feedback_incremental_build_default) / CLAUDE.md and only implied here.
+Added sections: none
+Removed sections: none
+Templates / dependent artifacts:
+  - .specify/templates/plan-template.md — ✅ no change needed (Constitution Check validates
+    against all principles generically; the new clause is enforced automatically).
+  - .specify/templates/tasks-template.md, spec-template.md — ✅ no change needed (no hardcoded
+    build steps; generic).
+  - Agent memory (feedback_incremental_build_default) + specs/035 quickstart.md — ✅ now defer to
+    this principle as the single authority.
+Follow-up TODOs: none
+-->
 # AutoC Constitution
 
 ## Core Principles
@@ -42,6 +62,20 @@ wrappers, re-exports, or unused variable renames. Every file must justify its ex
 The top-level CMakeLists.txt is the single source of truth. Shared dependencies (cereal,
 GoogleTest, inih) are declared once via FetchContent and inherited by subdirectories.
 crrcsim builds as `add_subdirectory(crrcsim)`. No duplicate dependency declarations.
+
+**Build discipline**: a change to `CMakeLists.txt` (a new target, dependency, link, or test
+registration) MUST be built with a clean `scripts/rebuild-perf.sh` (PERFORMANCE_BUILD,
+single-threaded for FP determinism) — NOT an incremental `cmake -S . -B build` reconfigure — so
+the optimized build, link graph, and `run_autoc_tests` registration regenerate coherently.
+Source-only edits use incremental `cmake --build build --target <t>`. The operator drives the
+clean rebuild.
+
+**Rationale**: an incremental reconfigure after a CMakeLists.txt edit can leave stale link state
+and miss test registration; `rebuild-perf.sh` is also the FP-deterministic basis for the
+bit-replay regression gate. This is the build-*coherence* rule and is distinct from the
+Principle II `rebuild.sh` compile-and-test correctness gate. The rule is binding here because
+agent memory (`feedback_incremental_build_default`) is advisory, not authoritative — the
+constitution is the single source.
 
 ### V. Versioned Persistence Artifacts
 
@@ -217,4 +251,4 @@ float-weight dumps on top of the 30-day cap.
 
 Constitution supersedes all other practices. Amendments require documentation and rationale.
 
-**Version**: 1.4.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-06-04 (Principle VIII added — Training-Artifact Lifecycle & Retention)
+**Version**: 1.5.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-06-05 (Principle IV — authoritative build-discipline rule: CMake change → clean rebuild-perf.sh)
