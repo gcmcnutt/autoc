@@ -221,6 +221,10 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(dmp_dump_tests tests/dmp_dump_tests.cc)
   target_link_libraries(dmp_dump_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
 
+  # 035 FR-001b/R1 (US1) — convex throttle-energy metric.
+  add_executable(energy_metric_tests tests/energy_metric_tests.cc)
+  target_link_libraries(energy_metric_tests GTest::gtest GTest::gtest_main autoc_common)
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -252,6 +256,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME run_id_prefix_tests COMMAND run_id_prefix_tests)
   add_test(NAME s3_run_selector_tests COMMAND s3_run_selector_tests)
   add_test(NAME dmp_dump_tests COMMAND dmp_dump_tests)
+  add_test(NAME energy_metric_tests COMMAND energy_metric_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -276,6 +281,7 @@ if(ENABLE_AUTOC_TESTS)
             run_id_prefix_tests
             s3_run_selector_tests
             dmp_dump_tests
+            energy_metric_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -305,6 +311,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND run_id_prefix_tests --gtest_brief=1
     COMMAND s3_run_selector_tests --gtest_brief=1
     COMMAND dmp_dump_tests --gtest_brief=1
+    COMMAND energy_metric_tests --gtest_brief=1
   )
 endif()
 

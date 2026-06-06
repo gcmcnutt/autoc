@@ -177,7 +177,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                 const gp_fitness abs_pt = std::abs(static_cast<gp_fitness>(out[0]));
                 const gp_fitness abs_rl = std::abs(static_cast<gp_fitness>(out[1]));
                 stabilityAccum += (abs_pt - 1.0) + (abs_rl - 1.0);
-                energyAccum    += (static_cast<gp_fitness>(out[2]) - 1.0) / 2.0;
+                energyAccum    += throttleEnergyStep(static_cast<gp_fitness>(out[2]));  // 035 FR-001b/R1 convex
             }
 
             // 030 M11.wrap T088 + 327-330 — tracker-mode diagnostic

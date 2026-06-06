@@ -63,10 +63,14 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
     pool.reserve(num_scenarios);
     for (int s = 0; s < num_scenarios; s++) {
         pool.push_back({s, &ScenarioScore::score,           0.5});
-        // CADENCE7-REDUX (diagnostic): tracking-only pool to reproduce cadence7
-        // exactly. Restore the two below for any 027-style multi-objective run.
+        // 035 FR-008: stability_score axis stays OFF — it's a control-amplitude
+        // whip; smoothness must EMERGE from energy via induced drag (FR-009),
+        // and it would confound the energy verdict.
         // pool.push_back({s, &ScenarioScore::stability_score, 0.5});
-        // pool.push_back({s, &ScenarioScore::energy_score,    0.5});
+        // 035 FR-001: energy axis ON (gen-0 unconditional) — per-scenario convex
+        // throttle energy (FR-001b). Throttle is decoupled from pitch/roll, so
+        // adding this axis trivially satisfies the FR-002 axis-independence ask.
+        pool.push_back({s, &ScenarioScore::energy_score,    0.5});
     }
 
     // Start with all candidates
