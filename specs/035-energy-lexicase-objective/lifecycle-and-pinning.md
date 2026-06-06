@@ -1,17 +1,17 @@
 # Lifecycle & Pinning — autoc S3 dmps (035 FR-P10–P12, Principle VIII)
 
 Training dmps are **ephemeral by default**. `src/autoc.cc` tags every uploaded
-dmp with the `S3ObjectTagging` ini value at PutObject (via `s3PutDmpBlob`,
-FR-P10) — set it to `retain=expire`; the bucket lifecycle policy
-(`contracts/lifecycle-policy.json`) then expires those objects after the
-configured window.
-
-> **Gating:** `S3ObjectTagging` defaults to **empty** (no tag). Tagging needs
-> the IAM grant `s3:PutObjectTagging` on the bucket (admin prereq T021) — with
-> a non-empty value but no grant, *every* PutObject fails AccessDenied. Leave it
-> empty until the grant + per-mode buckets land, then set `retain=expire` in the
-> per-mode inis (T022). This keeps per-gen dmp churn from
+dmp `retain=expire` at PutObject (hardcoded in `s3PutDmpBlob`, FR-P10); the
+bucket lifecycle policy (`contracts/lifecycle-policy.json`) then expires those
+objects after the configured window. This keeps per-gen dmp churn from
 accumulating cost while milestone runs are kept explicitly.
+
+> **Fail-fast (Constitution VII):** tagging is not configurable and there is no
+> warn-and-continue. The tag rides the PutObject, so it needs the IAM grant
+> `s3:PutObject` + `s3:PutObjectTagging` on the bucket (admin prereq T021);
+> without it `s3PutDmpBlob` throws and the run aborts rather than silently
+> uploading untagged (or not at all). The grant + per-mode buckets + lifecycle
+> are now in place (T021), so the ini bucket flip (T022) is live.
 
 ## Pinning a run so it never expires (`autoc-pin`)
 
