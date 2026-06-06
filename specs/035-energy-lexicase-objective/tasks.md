@@ -103,16 +103,16 @@ material regression) and (b) `energy_score` (material improvement). A clear yes 
 
 ### Tests for User Story 1 (write FIRST, ensure they FAIL)
 
-- [ ] T029 [P] [US1] Write `tests/energy_metric_tests.cc`: convex `energy_score = Σ((out_th+1)/2)²` is ≥0 and monotone-increasing in throttle; matches data-model/R1 formula on hand-computed fixtures.
-- [ ] T030 [P] [US1] Re-enable the 4 `DISABLED_` Selection027 tests in `tests/selection_tests.cc` (`:157` EnergyBreaksTrackingTie, `:180` TradeoffBothSurvive, `:219` StabilityBreaksTrackingTie, `:239` ThreeWayTradeoffAllSurvive); update assertions for the active energy axis (FR-004 / SC-004).
-- [ ] T031 [P] [US1] Add a MAD-epsilon test to `tests/selection_tests.cc`: MAD-relative pass/fail behavior, and `LexicaseEpsilonMode=constant` reproduces the fixed-0.5 path bit-for-bit (FR-003 / SC-003).
+- [X] T029 [P] [US1] Write `tests/energy_metric_tests.cc`: convex `energy_score = Σ((out_th+1)/2)²` is ≥0 and monotone-increasing in throttle; matches data-model/R1 formula on hand-computed fixtures.
+- [X] T030 [P] [US1] Re-enable the 4 `DISABLED_` Selection027 tests in `tests/selection_tests.cc` (`:157` EnergyBreaksTrackingTie, `:180` TradeoffBothSurvive, `:219` StabilityBreaksTrackingTie, `:239` ThreeWayTradeoffAllSurvive); update assertions for the active energy axis (FR-004 / SC-004).
+- [X] T031 [P] [US1] Add a MAD-epsilon test to `tests/selection_tests.cc`: MAD-relative pass/fail behavior, and `LexicaseEpsilonMode=constant` reproduces the fixed-0.5 path bit-for-bit (FR-003 / SC-003).
 
 ### Implementation for User Story 1
 
-- [ ] T032 [US1] Change `energy_score` computation in `src/eval/fitness_decomposition.cc:174-181` to the convex throttle integral `Σ((out_th+1)/2)²` (`gp_fitness`), replacing the linear sign-wrong placeholder (FR-001b / R1).
-- [ ] T033 [US1] Activate the energy lexicase axis in `src/eval/selection.cc:69` (uncomment, gen-0 unconditional pool entry); keep `stability_score` (`:68`) commented OFF (FR-001 / FR-002 trivially satisfied — energy is throttle-separate; FR-008 OFF).
-- [ ] T034 [US1] Implement MAD-relative epsilon in `src/eval/selection.cc` (per-axis MAD over surviving candidates) gated by `LexicaseEpsilonMode`; preserve the constant-0.5 path exactly (FR-003 / R2). *(After T031 turns green.)*
-- [ ] T035 [US1] Run the Principle-VI type-domain grep on the touched `src/eval/` paths; annotate `// raw-ok:` or convert any raw `float`/`double` in the energy/MAD math.
+- [X] T032 [US1] Change `energy_score` computation in `src/eval/fitness_decomposition.cc:174-181` to the convex throttle integral `Σ((out_th+1)/2)²` (`gp_fitness`), replacing the linear sign-wrong placeholder (FR-001b / R1).
+- [X] T033 [US1] Activate the energy lexicase axis in `src/eval/selection.cc:69` (uncomment, gen-0 unconditional pool entry); keep `stability_score` (`:68`) commented OFF (FR-001 / FR-002 trivially satisfied — energy is throttle-separate; FR-008 OFF).
+- [X] T034 [US1] Implement MAD-relative epsilon in `src/eval/selection.cc` (per-axis MAD over surviving candidates) gated by `LexicaseEpsilonMode`; preserve the constant-0.5 path exactly (FR-003 / R2). *(After T031 turns green.)*
+- [X] T035 [US1] Run the Principle-VI type-domain grep on the touched `src/eval/` paths; annotate `// raw-ok:` or convert any raw `float`/`double` in the energy/MAD math.
 
 ### Bakes & verdict (operator-run)
 
