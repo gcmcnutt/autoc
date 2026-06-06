@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""035 FR-P03/FR-005 — per-axis time series + aggressiveness from dmp-dump CSV.
+"""035 M1 per-axis aggressiveness time-series — pt/rl/th evolution across gens.
 
-New 035 consumer of the dmp-dump CSV contract (the pre-035 plot scripts are
-historical and left untouched). Reads `dmp-dump ... --csv-only` output and
-emits a per-axis (pitch/roll/throttle) time-series PNG plus the per-axis
-aggressiveness comparator dCtrl/<|out|> — the config-stable signal used to
-compare runs across variation ramps (project_late_run_fitness_interpretation).
+New 035 consumer matching the 034 format's TOP TWO panels (the over-generations
+bang-bang + saturation detectors). Reads `dmp-dump --run-summary` CSV (per-gen
+dctrl_/mag_ columns) instead of the retired data.dat — the pre-035 data.dat-fed
+script is historical, left untouched.
 
-Stdlib csv + numpy + matplotlib only (no pandas). Usage:
-    dmp-dump s3://autoc-m1/<run>/gen<N>.dmp.zst --csv-only \\
-        | python3 plot_per_axis_time_series.py -o out.png
-    python3 plot_per_axis_time_series.py csv_file.csv -o out.png [--scenario K]
+Watch dCtrl per axis trend DOWN over gens (the energy objective's goal) and mag
+stay off the full-throw ceiling. Per axis because bang-bang lives on one axis
+(roll for the RNN topology); the slope tells which axis is refining vs stuck.
+
+(The 034 chart's bottom two per-path airframe-rotation-rate panels are a
+follow-on — they need per-path data the run-summary doesn't emit yet.)
+
+Stdlib csv + numpy + matplotlib. Usage:
+    dmp-dump s3://autoc-m1/<run>/ --run-summary | python3 plot_per_axis_time_series.py -o out.png
+    python3 plot_per_axis_time_series.py run_summary.csv -o out.png --label <name>
 """
 import argparse
 import csv
@@ -21,76 +26,73 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-AXES = [("out_pt", "pitch"), ("out_rl", "roll"), ("out_th", "throttle")]
+AXES = [("pitch", "tab:red"), ("roll", "tab:blue"), ("throttle", "tab:green")]
+DCTRL_BUDGET = 0.27   # per-axis goal (sum-over-axes ≤ 0.80)
+MAG_BUDGET = 0.67     # per-axis goal (sum-over-axes ≤ 2.00)
 
 
-def aggressiveness(out: np.ndarray) -> float:
-    """dCtrl/<|out|>: mean abs tick-to-tick change over mean abs output.
-    Variation-stable per-axis comparator (->1 bang-bang, ->0 smooth)."""
-    if out.size < 2:
-        return float("nan")
-    mag = np.mean(np.abs(out))
-    return float(np.mean(np.abs(np.diff(out))) / mag) if mag > 1e-9 else float("nan")
-
-
-def load_csv(src):
-    """Return dict of column-name -> np.ndarray(float) from a dmp-dump CSV."""
+def load(src):
     reader = csv.DictReader(src)
-    cols = {name: [] for name in (reader.fieldnames or [])}
+    cols = {n: [] for n in (reader.fieldnames or [])}
     for row in reader:
         for k, v in row.items():
             cols[k].append(v)
-    return {k: np.array([float(x) if x not in ("", None) else np.nan for x in vs])
-            for k, vs in cols.items()}
+    return {k: np.array([float(x) for x in v]) for k, v in cols.items()}
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("csv", nargs="?", default="-",
-                    help="dmp-dump --csv-only file, or '-' for stdin")
+                    help="dmp-dump --run-summary CSV, or '-' for stdin")
     ap.add_argument("-o", "--output", default="per_axis_time_series.png")
-    ap.add_argument("--scenario", type=int, default=None,
-                    help="plot a single scenario index (default: first)")
+    ap.add_argument("--label", default="run")
+    ap.add_argument("--total-gens", type=int, default=None)
     args = ap.parse_args()
 
     fh = sys.stdin if args.csv == "-" else open(args.csv, newline="")
     try:
-        data = load_csv(fh)
+        d = load(fh)
     finally:
         if fh is not sys.stdin:
             fh.close()
 
-    for col, _ in AXES + [("scenario", ""), ("tick", "")]:
-        if col not in data:
-            sys.stderr.write(f"error: column '{col}' not in CSV "
-                             f"(got {list(data.keys())})\n")
-            return 1
-
-    # Per-axis aggressiveness over the WHOLE run (all scenarios) — the headline.
-    print("per-axis aggressiveness dCtrl/<|out|> (all scenarios):")
-    for col, name in AXES:
-        print(f"  {name:8s} {aggressiveness(data[col]):.4f}")
-
-    scen = data["scenario"]
-    sc = args.scenario if args.scenario is not None else int(scen[0])
-    mask = scen == sc
-    if not mask.any():
-        sys.stderr.write(f"error: scenario {sc} not present\n")
+    need = ["gen"] + [f"dctrl_{n}" for n, _ in AXES] + [f"mag_{n}" for n, _ in AXES]
+    miss = [c for c in need if c not in d]
+    if miss:
+        sys.stderr.write(f"error: CSV missing {miss} — needs dmp-dump --run-summary "
+                         f"(got {list(d.keys())})\n")
         return 1
-    n_scen = len(np.unique(scen))
+    gen = d["gen"]
 
-    fig, axs = plt.subplots(3, 1, figsize=(11, 8), sharex=True)
-    tick = data["tick"][mask]
-    for ax, (col, name) in zip(axs, AXES):
-        out = data[col][mask]
-        ax.plot(tick, out, lw=0.8)
-        ax.set_ylabel(f"{name}\n(out, tanh)")
-        ax.axhline(0, color="k", lw=0.4, alpha=0.4)
-        ax.grid(True, alpha=0.3)
-        ax.text(0.99, 0.95, f"aggr={aggressiveness(out):.3f}",
-                transform=ax.transAxes, ha="right", va="top", fontsize=8)
-    axs[-1].set_xlabel("tick")
-    axs[0].set_title(f"Per-axis NN output — scenario {sc} ({n_scen} scenarios in run)")
+    fig, axes = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
+
+    # Panel 1 — change rate (bang-bang detector)
+    for name, color in AXES:
+        axes[0].plot(gen, d[f"dctrl_{name}"], label=name, color=color, lw=1.0)
+    axes[0].axhline(DCTRL_BUDGET, color="gray", linestyle="--", linewidth=0.8,
+                    label=f"per-axis budget {DCTRL_BUDGET} (sum 0.80)")
+    axes[0].set_ylabel("Mean |dctrl| per tick\n(slick rate)")
+    axes[0].set_title("top: change rate (bang-bang detector) — watch dCtrl trend DOWN")
+    axes[0].legend(fontsize=8, loc="upper right")
+    axes[0].grid(True, linewidth=0.3, alpha=0.4)
+
+    # Panel 2 — amplitude (saturation detector)
+    for name, color in AXES:
+        axes[1].plot(gen, d[f"mag_{name}"], label=name, color=color, lw=1.0)
+    axes[1].axhline(MAG_BUDGET, color="gray", linestyle="--", linewidth=0.8,
+                    label=f"per-axis budget {MAG_BUDGET} (sum 2.00)")
+    axes[1].axhline(1.0, color="black", linestyle=":", linewidth=0.8,
+                    label="full-throw ceiling 1.0")
+    axes[1].set_ylabel("Mean |out| per tick\n(amplitude)")
+    axes[1].set_xlabel("Generation")
+    axes[1].set_title("bottom: amplitude (saturation detector)")
+    axes[1].legend(fontsize=8, loc="upper right")
+    axes[1].grid(True, linewidth=0.3, alpha=0.4)
+
+    if args.total_gens:
+        axes[1].set_xlim(0, args.total_gens)
+
+    fig.suptitle(f"{args.label} — per-axis aggressiveness time series", fontsize=12)
     fig.tight_layout()
     fig.savefig(args.output, dpi=110)
     print(f"wrote {args.output}")

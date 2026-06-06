@@ -2,24 +2,17 @@
 """035 M1 per-axis control aggressiveness — single-generation snapshot.
 
 New 035 consumer of the dmp-dump CSV contract (the pre-035 data.dat-fed
-per_axis_aggressiveness.py is historical and left untouched). Same analysis as
-032/033/029: for one generation's trajectories (one per path/wind scenario),
-per axis X in {pt, rl, th}:
+per_axis_aggressiveness.py is historical, left untouched). Format matches the
+034 6-panel chart EXACTLY (3 axes × {<|Δ|>, <|out|>}) including the spec-gate
+**budget goal lines** — only the data source changes (dmp-dump CSV, not data.dat).
 
+Per axis X in {pt, rl, th}, per scenario:
     dctrl_X[scn] = mean_t |out_X[t] - out_X[t-1]|     (tick-to-tick change)
-    mag_X[scn]   = mean_t |out_X[t]|                  (output magnitude)
-
-Why per-axis: routing needs to know WHICH axis the elite is bang-bang on, not
-the sum across axes (different controllers bang-bang on different axes).
-
-Output:
-- Text: per-axis mean ± std across scenarios + quantiles (the success-criterion
-  numbers; compare a 035 elite vs a baseline elite by running twice).
-- PNG: 6 histograms (3 axes x {dctrl, mag}), one bar per scenario.
+    mag_X[scn]   = mean_t |out_X[t]|                  (output amplitude)
 
 Stdlib csv + numpy + matplotlib (no pandas). Usage:
-    dmp-dump s3://autoc-m1/<run>/gen<N>.dmp.zst --csv-only \\
-        | python3 per_axis_aggressiveness.py -o out.png --label <name>
+    dmp-dump s3://autoc-m1/<run>/ --csv-only \\
+        | python3 per_axis_aggressiveness.py --label <name> --gen <N> -o out.png
     python3 per_axis_aggressiveness.py csv_file.csv -o out.png
 """
 import argparse
@@ -31,7 +24,15 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-AXES = [("out_pt", "pitch"), ("out_rl", "roll"), ("out_th", "throttle")]
+# axis col, label, color (matches 034)
+AXES = [("out_pt", "pitch", "tab:red"),
+        ("out_rl", "roll", "tab:blue"),
+        ("out_th", "throttle", "tab:green")]
+
+# Spec-gate per-axis budgets (sum-over-axes ≤ 0.80 dctrl / ≤ 2.00 amplitude),
+# the dashed "goal" lines — same as 034 so runs compare directly.
+DCTRL_BUDGET = 0.27   # ~ 0.80 / 3
+MAG_BUDGET = 0.67     # ~ 2.00 / 3
 
 
 def load_csv(src):
@@ -39,7 +40,7 @@ def load_csv(src):
     need = {"scenario", "out_pt", "out_rl", "out_th"}
     missing = need - set(reader.fieldnames or [])
     if missing:
-        sys.stderr.write(f"error: CSV missing columns {sorted(missing)} "
+        sys.stderr.write(f"error: CSV missing {sorted(missing)} "
                          f"(got {reader.fieldnames})\n")
         sys.exit(1)
     rows = {"scenario": [], "out_pt": [], "out_rl": [], "out_th": []}
@@ -51,7 +52,7 @@ def load_csv(src):
 
 
 def per_scenario(data, col):
-    """Return (dctrl[], mag[]) arrays, one entry per scenario."""
+    """(dctrl[], mag[]) — one entry per scenario."""
     scen = data["scenario"]
     dctrl, mag = [], []
     for sc in np.unique(scen):
@@ -64,12 +65,24 @@ def per_scenario(data, col):
     return np.array(dctrl), np.array(mag)
 
 
+def summarize(vals, label, budget):
+    n = len(vals)
+    if n == 0:
+        print(f"  {label:8s} (no data)")
+        return
+    over = int(np.sum(vals > budget))
+    print(f"  {label:8s} mean {np.mean(vals):.3f} ± {np.std(vals):.3f}   "
+          f"p50/p95 {np.median(vals):.3f}/{np.percentile(vals, 95):.3f}   "
+          f"({over}/{n}={100*over/n:.0f}% over budget {budget})")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("csv", nargs="?", default="-",
                     help="dmp-dump --csv-only file, or '-' for stdin")
     ap.add_argument("-o", "--output", default="per_axis_aggressiveness.png")
     ap.add_argument("--label", default="run")
+    ap.add_argument("--gen", type=int, default=-1, help="gen for the title")
     args = ap.parse_args()
 
     fh = sys.stdin if args.csv == "-" else open(args.csv, newline="")
@@ -79,34 +92,51 @@ def main() -> int:
         if fh is not sys.stdin:
             fh.close()
 
-    n_scen = len(np.unique(data["scenario"]))
-    print(f"=== {args.label}: per-axis aggressiveness, {n_scen} scenarios ===")
-    print(f"{'axis':8s} {'dctrl mean±std':>20s} {'mag mean±std':>20s} "
-          f"{'dctrl p50/p95':>16s}")
-    stats = {}
-    for col, name in AXES:
-        dctrl, mag = per_scenario(data, col)
-        stats[name] = (dctrl, mag)
-        print(f"{name:8s} {np.mean(dctrl):8.4f}±{np.std(dctrl):<7.4f}    "
-              f"{np.mean(mag):8.4f}±{np.std(mag):<7.4f}   "
-              f"{np.median(dctrl):6.4f}/{np.percentile(dctrl,95):6.4f}")
+    n_scenarios = len(np.unique(data["scenario"]))
+    aggr = {name: per_scenario(data, col) for col, name, _ in AXES}
 
-    fig, axes = plt.subplots(3, 2, figsize=(13, 9))
-    for row, (col, name) in enumerate(AXES):
-        dctrl, mag = stats[name]
-        for c, (vals, what) in enumerate([(dctrl, "dctrl |Δout|"), (mag, "mag |out|")]):
-            ax = axes[row][c]
-            ax.hist(vals, bins=30, color="steelblue", alpha=0.8)
-            ax.axvline(np.mean(vals), color="crimson", lw=1.2,
-                       label=f"mean {np.mean(vals):.3f}")
-            ax.set_title(f"{name} — {what}")
-            ax.set_ylabel("scenarios")
-            ax.legend(fontsize=8)
-            ax.grid(True, alpha=0.3)
-    fig.suptitle(f"{args.label} — per-axis aggressiveness ({n_scen} scenarios)")
+    gen_str = f"gen {args.gen}" if args.gen >= 0 else "latest gen"
+    print(f"=== {args.label}: per-axis aggressiveness, {gen_str} "
+          f"({n_scenarios} scenarios) ===")
+    print("  --- dctrl <|Δ|> per axis ---")
+    for _, name, _ in AXES:
+        summarize(aggr[name][0], name, DCTRL_BUDGET)
+    print("  --- amplitude <|out|> per axis ---")
+    for _, name, _ in AXES:
+        summarize(aggr[name][1], name, MAG_BUDGET)
+    print(f"\n  Spec-gate per-axis budgets: dctrl ≤ {DCTRL_BUDGET}, "
+          f"amplitude ≤ {MAG_BUDGET}  (sum-over-axes ≤ 0.80 / ≤ 2.00)")
+
+    # 6 panels: 3 axes × {dctrl, mag}. Matches 034.
+    fig, axes = plt.subplots(3, 2, figsize=(13, 9), sharex=False)
+    for i, (col, name, color) in enumerate(AXES):
+        dvals, mvals = aggr[name]
+        ax_d, ax_m = axes[i]
+        ax_d.hist(dvals, bins=40, color=color, alpha=0.75, edgecolor="white")
+        ax_d.axvline(DCTRL_BUDGET, color="gray", linestyle="--", linewidth=0.8,
+                     label=f"budget {DCTRL_BUDGET}")
+        ax_d.axvline(np.mean(dvals), color="black", linestyle="-", linewidth=0.8,
+                     label=f"mean {np.mean(dvals):.3f}")
+        ax_d.set_xlabel(f"{name} <|Δ|>")
+        ax_d.set_ylabel("scenario count")
+        ax_d.legend(fontsize=8, loc="upper right")
+        ax_d.grid(True, linewidth=0.3, alpha=0.4)
+
+        ax_m.hist(mvals, bins=40, color=color, alpha=0.75, edgecolor="white")
+        ax_m.axvline(MAG_BUDGET, color="gray", linestyle="--", linewidth=0.8,
+                     label=f"budget {MAG_BUDGET}")
+        ax_m.axvline(np.mean(mvals), color="black", linestyle="-", linewidth=0.8,
+                     label=f"mean {np.mean(mvals):.3f}")
+        ax_m.set_xlabel(f"{name} <|out|>")
+        ax_m.set_ylabel("scenario count")
+        ax_m.legend(fontsize=8, loc="upper right")
+        ax_m.grid(True, linewidth=0.3, alpha=0.4)
+
+    fig.suptitle(f"{args.label} — per-axis aggressiveness, {gen_str} "
+                 f"({n_scenarios} scenarios)", fontsize=12)
     fig.tight_layout()
     fig.savefig(args.output, dpi=110)
-    print(f"wrote {args.output}")
+    print(f"\nwrote {args.output}", file=sys.stderr)
     return 0
 
 

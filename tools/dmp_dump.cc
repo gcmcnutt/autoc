@@ -99,7 +99,10 @@ float genomeVariationScale(const EvalResults& r) {
 
 // Global per-axis aggressiveness (dctrl/mag) over an elite dmp's full trajectory
 // set — the single-scalar-per-gen form of per_axis_aggressiveness.
-struct AxisAggr { double pt, rl, th; };
+struct AxisAggr {
+  double dctrl[3], mag[3];                        // [0]=pitch [1]=roll [2]=throttle
+  double ratio(int a) const { return mag[a] > 1e-9 ? dctrl[a] / mag[a] : 0.0; }
+};
 AxisAggr computeAggr(const EvalResults& r) {
   double sd[3] = {0, 0, 0}, sm[3] = {0, 0, 0};
   long cd[3] = {0, 0, 0}, cm[3] = {0, 0, 0};
@@ -113,13 +116,12 @@ AxisAggr computeAggr(const EvalResults& r) {
       }
     }
   }
-  auto ratio = [](double sumD, long cD, double sumM, long cM) {
-    const double mag = cM ? sumM / cM : 0.0;
-    const double dc = cD ? sumD / cD : 0.0;
-    return mag > 1e-9 ? dc / mag : 0.0;
-  };
-  return {ratio(sd[0], cd[0], sm[0], cm[0]), ratio(sd[1], cd[1], sm[1], cm[1]),
-          ratio(sd[2], cd[2], sm[2], cm[2])};
+  AxisAggr ag;
+  for (int a = 0; a < 3; ++a) {
+    ag.dctrl[a] = cd[a] ? sd[a] / cd[a] : 0.0;
+    ag.mag[a]   = cm[a] ? sm[a] / cm[a] : 0.0;
+  }
+  return ag;
 }
 
 // Iterate every (stride-th) gen dmp in a run and emit a per-gen aggregate CSV —
@@ -140,7 +142,9 @@ int doRunSummary(const Aws::S3::S3Client& s3, const std::string& bucket,
   std::cerr << "dmp-dump: run-summary over " << keys.size() << " gens (stride "
             << stride << ") in " << runPrefix << std::endl;
   std::cout << "gen,best_fitness,mean_energy,mean_stability,mean_streak,crashes,"
-               "aggr_pitch,aggr_roll,aggr_throttle,scenarios\n";
+               "aggr_pitch,aggr_roll,aggr_throttle,"
+               "dctrl_pitch,dctrl_roll,dctrl_throttle,"
+               "mag_pitch,mag_roll,mag_throttle,scenarios\n";
   for (size_t i = 0; i < keys.size(); i += stride) {
     const std::string& k = keys[i];
     const int gen = autoc::extractGenNumber(k);
@@ -160,9 +164,11 @@ int doRunSummary(const Aws::S3::S3Client& s3, const std::string& bucket,
                                mk += s.maxStreak; if (s.crashed) cr++; }
     const double N = sc.empty() ? 1.0 : static_cast<double>(sc.size());
     const AxisAggr ag = computeAggr(r);
-    printf("%d,%.6f,%.4f,%.4f,%.4f,%d,%.4f,%.4f,%.4f,%zu\n",
+    printf("%d,%.6f,%.4f,%.4f,%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%zu\n",
            gen, aggregateRawFitness(sc), me / N, ms / N, mk / N, cr,
-           ag.pt, ag.rl, ag.th, sc.size());
+           ag.ratio(0), ag.ratio(1), ag.ratio(2),
+           ag.dctrl[0], ag.dctrl[1], ag.dctrl[2], ag.mag[0], ag.mag[1], ag.mag[2],
+           sc.size());
     fflush(stdout);
     if ((i / stride) % 10 == 0)
       std::cerr << "  ... gen " << gen << " (" << (i + 1) << "/" << keys.size() << ")\n";
