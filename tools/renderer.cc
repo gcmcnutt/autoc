@@ -12,6 +12,7 @@
 
 #include "renderer.h"
 #include "autoc/util/config.h"
+#include "autoc/util/s3_run_selector.h"  // s3GetDmpBlob (FR-P09 zstd-aware fetch)
 #include "autoc/autoc.h"
 #include "autoc/eval/aircraft_state.h"
 
@@ -351,17 +352,27 @@ vtkSmartPointer<vtkPolyData> Renderer::createTapeSet(vec3 offset, const std::vec
  */
 bool Renderer::updateGenerationDisplay(int newGen) {
   // now do initial fetch
-  Aws::S3::Model::GetObjectRequest request;
-  request.SetBucket(ConfigManager::getConfig().s3Bucket);
-  std::string keyName = computedKeyName + "gen" + std::to_string(newGen) + ".dmp";
-  request.SetKey(keyName);
-  auto outcome = getS3Client()->GetObject(request);
-  std::cerr << "Fetched " << keyName << " result " << outcome.IsSuccess() << std::endl;
-  if (outcome.IsSuccess()) {
-    std::ostringstream oss;
-    oss << outcome.GetResult().GetBody().rdbuf();
-    std::string retrievedData = oss.str();
-
+  // 035 FR-P09 — dmps are zstd-compressed (gen<N>.dmp.zst); s3GetDmpBlob
+  // inflates by key suffix. Prefer the compressed key, fall back to the
+  // legacy uncompressed .dmp for pre-035 runs.
+  const std::string& s3Bucket = ConfigManager::getConfig().s3Bucket;
+  const std::string keyBase = computedKeyName + "gen" + std::to_string(newGen);
+  std::string keyName = keyBase + ".dmp.zst";
+  std::string retrievedData;
+  try {
+    retrievedData = autoc::s3GetDmpBlob(*getS3Client(), s3Bucket, keyName);
+  } catch (const std::exception&) {
+    keyName = keyBase + ".dmp";  // legacy uncompressed
+    try {
+      retrievedData = autoc::s3GetDmpBlob(*getS3Client(), s3Bucket, keyName);
+    } catch (const std::exception& e) {
+      std::cerr << "Error retrieving object " << keyBase
+                << ".dmp[.zst] from S3: " << e.what() << std::endl;
+      return false;
+    }
+  }
+  std::cerr << "Fetched " << keyName << std::endl;
+  {
     // Deserialize the data
     try {
       std::istringstream iss(retrievedData, std::ios::binary);
@@ -460,10 +471,6 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       std::cerr << "Error during deserialization: " << e.what() << std::endl;
       return false;
     }
-  }
-  else {
-    std::cerr << "Error retrieving object " << keyName << " from S3: " << outcome.GetError().GetMessage() << std::endl;
-    return false;
   }
 
   // Clear the existing data
