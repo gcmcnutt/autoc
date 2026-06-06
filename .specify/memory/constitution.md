@@ -1,21 +1,20 @@
 <!--
 SYNC IMPACT REPORT
-Version change: 1.4.0 → 1.5.0 (MINOR — materially expanded Principle IV with a new MUST rule)
-Modified principles:
-  - IV. Unified Build — added authoritative "Build discipline" clause: a CMakeLists.txt change
-    (new target/dependency/link/test registration) MUST be built with a clean
-    scripts/rebuild-perf.sh, not an incremental `cmake -S . -B build` reconfigure; source-only
-    edits use incremental `cmake --build build --target <t>`. Was previously scattered in agent
-    memory (feedback_incremental_build_default) / CLAUDE.md and only implied here.
-Added sections: none
+Version change: 1.5.0 → 1.6.0 (MINOR — added Principle IX: Detached Training Launch)
+Modified principles: none
+Added sections:
+  - IX. Detached Training Launch — training MUST be started via scripts/train.sh (detached
+    session via setsid, reparented to systemd --user, nohup, line-buffered, cores enabled,
+    unique logfile). Assistants MUST NOT launch via the Bash-tool run_in_background mechanism,
+    which the harness reaps at agent-session end (silently killed t4 gen 278, t5 gen 152 on
+    2026-06-06). Codifies what was scattered in agent memory (reference_autoc_launch_command,
+    now retired in favor of this principle + the script).
 Removed sections: none
 Templates / dependent artifacts:
-  - .specify/templates/plan-template.md — ✅ no change needed (Constitution Check validates
-    against all principles generically; the new clause is enforced automatically).
-  - .specify/templates/tasks-template.md, spec-template.md — ✅ no change needed (no hardcoded
-    build steps; generic).
-  - Agent memory (feedback_incremental_build_default) + specs/035 quickstart.md — ✅ now defer to
-    this principle as the single authority.
+  - .specify/templates/plan-template.md, tasks-template.md, spec-template.md — ✅ no change
+    needed (generic Constitution Check; no hardcoded launch steps).
+  - Agent memory: reference_autoc_launch_command.md retired (tossed); project_autoc_worker_crash
+    now defers to this principle for the launch fix.
 Follow-up TODOs: none
 -->
 # AutoC Constitution
@@ -239,6 +238,39 @@ so the risk is a milestone silently expiring, which (2) and (3) guard against by
 deliberate and provenance repo-resident. Compression (5) compounds with retention: ~3× on
 float-weight dumps on top of the 30-day cap.
 
+### IX. Detached Training Launch
+
+Training runs MUST be started via `scripts/train.sh <ini-file> <logfile>`. The script is the
+single authoritative launch path; it starts autoc:
+
+- **Detached** — `setsid` into its own session with no controlling tty, reparenting to
+  `systemd --user`, plus `nohup`. The run survives terminal/SSH teardown **and** agent-session
+  teardown.
+- **Line-buffered** — `nohup stdbuf -oL -eL <binary>` (stdbuf innermost), so `tail -f` sees
+  per-gen lines as they happen.
+- **Core-enabled** — `ulimit -c unlimited` for autoc and its inherited crrcsim workers.
+- **Non-clobbering** — refuses to overwrite an existing logfile; one unique log per run.
+  Multiple concurrent runs against the same ini are permitted (reduce per-run worker count as
+  needed).
+
+**Assistants/agents MUST NOT launch training via a session-bound mechanism** — specifically not
+the Bash-tool `run_in_background` task, nor a foreground shell job. Harness-tracked background
+tasks are owned by the agent session and are signalled dead (group SIGTERM/SIGKILL) when that
+session ends, clears, or is superseded.
+
+**Rationale**: runs t4 (died gen 278) and t5 (died gen 152) on 2026-06-06 were killed mid-run
+with **no error in the log, no core, and flat memory** — not a code bug. The log is the
+process's stderr, so an uncaught C++ throw would have printed `terminate called … what(): …`
+into it; it did not, and the log ended on a clean line. The harness background-task wrapper
+output was 0 bytes (vs the `… Aborted …` a genuine internal crash leaves), proving an external
+group signal: the harness reaping its own agent-owned background tasks. These were launched by
+the assistant via `run_in_background`; the operator's own `nohup … &` terminal launches never
+had the problem because they are owned by a long-lived login. `nohup` alone is insufficient
+(it only ignores SIGHUP, not the harness's SIGTERM/SIGKILL); the fix is full detachment via a
+non-tracked `setsid` launch — exactly what `scripts/train.sh` encapsulates. Core dumps are also
+re-enabled per-run because the system `ulimit -c` default was silently reset (driver/software
+update), leaving recent crashes with no core for diagnosis.
+
 ## Architecture
 
 - **C++17**, CMake, Eigen, cereal (serialization), GoogleTest
@@ -251,4 +283,4 @@ float-weight dumps on top of the 30-day cap.
 
 Constitution supersedes all other practices. Amendments require documentation and rationale.
 
-**Version**: 1.5.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-06-05 (Principle IV — authoritative build-discipline rule: CMake change → clean rebuild-perf.sh)
+**Version**: 1.6.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-06-06 (Principle IX — Detached Training Launch: training MUST go through scripts/train.sh; never the agent's run_in_background)
