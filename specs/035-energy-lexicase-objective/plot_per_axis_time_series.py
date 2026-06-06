@@ -63,8 +63,9 @@ def main() -> int:
                          f"(got {list(d.keys())})\n")
         return 1
     gen = d["gen"]
+    n_paths = sum(1 for p in range(6) if f"path{p}_rollrate" in d)
 
-    fig, axes = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
+    fig, axes = plt.subplots(4, 1, figsize=(11, 14), sharex=True)
 
     # Panel 1 — change rate (bang-bang detector)
     for name, color in AXES:
@@ -72,7 +73,7 @@ def main() -> int:
     axes[0].axhline(DCTRL_BUDGET, color="gray", linestyle="--", linewidth=0.8,
                     label=f"per-axis budget {DCTRL_BUDGET} (sum 0.80)")
     axes[0].set_ylabel("Mean |dctrl| per tick\n(slick rate)")
-    axes[0].set_title("top: change rate (bang-bang detector) — watch dCtrl trend DOWN")
+    axes[0].set_title("change rate (bang-bang detector) — watch dCtrl trend DOWN")
     axes[0].legend(fontsize=8, loc="upper right")
     axes[0].grid(True, linewidth=0.3, alpha=0.4)
 
@@ -84,15 +85,29 @@ def main() -> int:
     axes[1].axhline(1.0, color="black", linestyle=":", linewidth=0.8,
                     label="full-throw ceiling 1.0")
     axes[1].set_ylabel("Mean |out| per tick\n(amplitude)")
-    axes[1].set_xlabel("Generation")
-    axes[1].set_title("bottom: amplitude (saturation detector)")
+    axes[1].set_title("amplitude (saturation detector)")
     axes[1].legend(fontsize=8, loc="upper right")
     axes[1].grid(True, linewidth=0.3, alpha=0.4)
 
-    if args.total_gens:
-        axes[1].set_xlim(0, args.total_gens)
+    # Panels 3 & 4 — per-path airframe rotation rate (deg/sec)
+    path_colors = plt.cm.tab10(np.linspace(0, 1, max(n_paths, 1)))
+    for which, ax, lbl in [("rollrate", axes[2], "roll"), ("pitchrate", axes[3], "pitch")]:
+        for p in range(n_paths):
+            col = f"path{p}_{which}"
+            if col in d:
+                ax.plot(gen, d[col], label=f"path {p}", color=path_colors[p], lw=0.9)
+        ax.set_ylabel(f"per-path {lbl} rate\n(deg/sec)")
+        ax.set_title(f"per-path airframe {lbl}-rotation RATE (deg/sec, normalized by duration)")
+        ax.legend(fontsize=7, loc="upper right", ncol=2)
+        ax.grid(True, linewidth=0.3, alpha=0.4)
+    axes[3].set_xlabel("Generation")
 
-    fig.suptitle(f"{args.label} — per-axis aggressiveness time series", fontsize=12)
+    if args.total_gens:
+        axes[3].set_xlim(0, args.total_gens)
+
+    fig.suptitle(f"{args.label} — per-axis aggressiveness time series\n"
+                 f"top: change rate (bang-bang) / amplitude (saturation); "
+                 f"bottom: per-path airframe rotation rate", fontsize=12)
     fig.tight_layout()
     fig.savefig(args.output, dpi=110)
     print(f"wrote {args.output}")

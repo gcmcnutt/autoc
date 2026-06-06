@@ -124,6 +124,50 @@ AxisAggr computeAggr(const EvalResults& r) {
   return ag;
 }
 
+// quat → (roll_deg, pitch_deg), aerospace Tait-Bryan ZYX (matches 034 plot).
+void quatToRollPitchDeg(const gp_quat& q, double& roll_deg, double& pitch_deg) {
+  const double qw = q.w(), qx = q.x(), qy = q.y(), qz = q.z();
+  const double sinr = 2.0 * (qw * qx + qy * qz);
+  const double cosr = 1.0 - 2.0 * (qx * qx + qy * qy);
+  double sinp = 2.0 * (qw * qy - qz * qx);
+  sinp = std::max(-1.0, std::min(1.0, sinp));
+  roll_deg = std::atan2(sinr, cosr) * 180.0 / M_PI;
+  pitch_deg = std::asin(sinp) * 180.0 / M_PI;
+}
+double unwrapDeg(double d) {
+  while (d > 180.0) d -= 360.0;
+  while (d <= -180.0) d += 360.0;
+  return d;
+}
+
+// Per-path (0..5) airframe rotation rate (deg/sec): per scenario, total
+// |Δroll|/|Δpitch| over ticks ÷ duration; mean over that path's wind variants.
+constexpr int kMaxPaths = 6;
+struct PerPathRates { double roll[kMaxPaths] = {0}; double pitch[kMaxPaths] = {0}; };
+PerPathRates computePerPathRates(const EvalResults& r) {
+  const double dt = SIM_TIME_STEP_MSEC / 1000.0;
+  double sr[kMaxPaths] = {0}, sp[kMaxPaths] = {0};
+  int n[kMaxPaths] = {0};
+  for (size_t i = 0; i < r.aircraftStateList.size(); ++i) {
+    const auto& states = r.aircraftStateList[i];
+    if (states.size() < 2) continue;
+    const int path = (i < r.scenarioList.size()) ? r.scenarioList[i].pathVariantIndex : -1;
+    if (path < 0 || path >= kMaxPaths) continue;
+    double droll = 0, dpitch = 0, lastR = 0, lastP = 0; bool have = false;
+    for (size_t t = 0; t < states.size(); ++t) {
+      double rd, pd; quatToRollPitchDeg(states[t].getOrientation(), rd, pd);
+      if (have) { droll += std::abs(unwrapDeg(rd - lastR)); dpitch += std::abs(pd - lastP); }
+      lastR = rd; lastP = pd; have = true;
+    }
+    const double dur = states.size() * dt;
+    sr[path] += droll / dur; sp[path] += dpitch / dur; n[path]++;
+  }
+  PerPathRates pr;
+  for (int p = 0; p < kMaxPaths; ++p)
+    if (n[p]) { pr.roll[p] = sr[p] / n[p]; pr.pitch[p] = sp[p] / n[p]; }
+  return pr;
+}
+
 // Iterate every (stride-th) gen dmp in a run and emit a per-gen aggregate CSV —
 // the "analytics off the log" path: best fitness + energy/stability/streak +
 // crash count + per-axis aggressiveness, all recomputed from the elite dmps.
@@ -144,7 +188,11 @@ int doRunSummary(const Aws::S3::S3Client& s3, const std::string& bucket,
   std::cout << "gen,best_fitness,mean_energy,mean_stability,mean_streak,crashes,"
                "aggr_pitch,aggr_roll,aggr_throttle,"
                "dctrl_pitch,dctrl_roll,dctrl_throttle,"
-               "mag_pitch,mag_roll,mag_throttle,scenarios\n";
+               "mag_pitch,mag_roll,mag_throttle,"
+               "path0_rollrate,path1_rollrate,path2_rollrate,path3_rollrate,"
+               "path4_rollrate,path5_rollrate,"
+               "path0_pitchrate,path1_pitchrate,path2_pitchrate,path3_pitchrate,"
+               "path4_pitchrate,path5_pitchrate,scenarios\n";
   for (size_t i = 0; i < keys.size(); i += stride) {
     const std::string& k = keys[i];
     const int gen = autoc::extractGenNumber(k);
@@ -164,11 +212,14 @@ int doRunSummary(const Aws::S3::S3Client& s3, const std::string& bucket,
                                mk += s.maxStreak; if (s.crashed) cr++; }
     const double N = sc.empty() ? 1.0 : static_cast<double>(sc.size());
     const AxisAggr ag = computeAggr(r);
-    printf("%d,%.6f,%.4f,%.4f,%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%zu\n",
+    const PerPathRates pp = computePerPathRates(r);
+    printf("%d,%.6f,%.4f,%.4f,%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,",
            gen, aggregateRawFitness(sc), me / N, ms / N, mk / N, cr,
            ag.ratio(0), ag.ratio(1), ag.ratio(2),
-           ag.dctrl[0], ag.dctrl[1], ag.dctrl[2], ag.mag[0], ag.mag[1], ag.mag[2],
-           sc.size());
+           ag.dctrl[0], ag.dctrl[1], ag.dctrl[2], ag.mag[0], ag.mag[1], ag.mag[2]);
+    for (int p = 0; p < kMaxPaths; ++p) printf("%.3f,", pp.roll[p]);
+    for (int p = 0; p < kMaxPaths; ++p) printf("%.3f,", pp.pitch[p]);
+    printf("%zu\n", sc.size());
     fflush(stdout);
     if ((i / stride) % 10 == 0)
       std::cerr << "  ... gen " << gen << " (" << (i + 1) << "/" << keys.size() << ")\n";

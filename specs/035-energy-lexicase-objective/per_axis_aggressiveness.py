@@ -112,7 +112,7 @@ def main() -> int:
     for i, (col, name, color) in enumerate(AXES):
         dvals, mvals = aggr[name]
         ax_d, ax_m = axes[i]
-        ax_d.hist(dvals, bins=40, color=color, alpha=0.75, edgecolor="white")
+        ax_d.hist(dvals, bins=24, color=color, alpha=0.75, edgecolor="white")
         ax_d.axvline(DCTRL_BUDGET, color="gray", linestyle="--", linewidth=0.8,
                      label=f"budget {DCTRL_BUDGET}")
         ax_d.axvline(np.mean(dvals), color="black", linestyle="-", linewidth=0.8,
@@ -122,7 +122,7 @@ def main() -> int:
         ax_d.legend(fontsize=8, loc="upper right")
         ax_d.grid(True, linewidth=0.3, alpha=0.4)
 
-        ax_m.hist(mvals, bins=40, color=color, alpha=0.75, edgecolor="white")
+        ax_m.hist(mvals, bins=24, color=color, alpha=0.75, edgecolor="white")
         ax_m.axvline(MAG_BUDGET, color="gray", linestyle="--", linewidth=0.8,
                      label=f"budget {MAG_BUDGET}")
         ax_m.axvline(np.mean(mvals), color="black", linestyle="-", linewidth=0.8,
