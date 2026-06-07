@@ -66,6 +66,29 @@ python3 $D/plot_per_axis_time_series.py /tmp/t_summary.csv --label "$NAME" \
   data.dat, so a dmp-dump-fed 035 port is still a backlog item (needs tracker
   target/beacon columns).
 
+## Progress proxy: gen duration ≈ fitness (log-only, free)
+
+Per-gen wall-clock (`durationSec` in `#GenSimStats`) is an almost-linear readout of population
+fitness — no dmp fetch needed. On t6 (035, gens 1–586): **corr(duration, avg fitness) = −0.95,
+corr(duration, best fitness) = −0.97, corr(duration, rabbitComplete) = +0.72.** Mechanism: better
+fitness → controllers survive longer → more sim-timesteps per eval → longer gen / lower `rate`.
+
+| rabbitComplete | mean gen duration | mean avg-fitness |
+|---|---|---|
+| 0 (all crash)  | ~67 s  | −1205 |
+| 250–290        | ~144 s | −3876 |
+| 290–295        | ~188 s | −6906 |
+
+Uses:
+- **Watch the slowing gen time as a live progress signal** — rising duration = still improving; a
+  **plateau in duration ≈ fine-tuning has flattened**. Read it straight from the `.log`, no analytics run.
+- Duration tracks **best fitness (−0.97) even better than the completion count (+0.72)** — once
+  ~290/294 complete, the count saturates but flights keep deepening, so duration stays sensitive in
+  the fine-tuning tail.
+- Caveats: the variation ramp inflates late-run fitness, and **concurrent analytics
+  (`--run-summary` S3 fetches, plotting) steal CPU and add per-gen duration spikes** — don't read a
+  spike as a fitness change if you were running reports against the live run.
+
 ## Notes
 - `dmp-dump` config chatter goes to stderr; stdout is pure CSV/YAML — safe to pipe.
 - The per-axis budget goal lines are `dctrl ≤ 0.27`, `mag ≤ 0.67` (sum-over-axes
