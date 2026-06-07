@@ -219,6 +219,40 @@ autoc-convention cross-check (does the local LSM6DS3, run through `inavQuatToAer
 the "convention coherence is mandatory" gate in the fusion section, and the reason 037 can't skip
 straight to flying the local loop. Related: `project_xiao_imu_crosscheck`, `project_board_alignment`.
 
+## Testing & validation methodology
+
+Same **activate → capture → confirm** loop as the flight-results bracket (and 021's cross-check
+intent): bring the local-IMU path up **first as a logged cross-check running alongside the live
+INAV path** (don't hand it control yet), fly, capture flight results, and confirm the local fusion
+agrees with INAV (attitude/heading/convention) within tolerance — *then* promote it to driving the
+fast loop. The 021 convention cross-check is the gate; this is how it gets exercised on real data.
+That means logging **both** streams simultaneously (local IMU + INAV) at high rate for comparison —
+which drives the prework below.
+
+## Prerequisite prework — Xiao recording format (blackbox-style packed)
+
+**Likely a prerequisite prework task before 037 proper.** Today's xiao log is a verbose
+human-readable **text dump** (`#seq millis inav_ms i Nav State: pos=… quat=… gyro=…`, ~328-char
+lines, one monolithic line per tick). At 20–50 Hz, with multi-tier signals and **dual-stream
+cross-check logging** (local + INAV side-by-side), data volume explodes past what the text dump and
+QSPI-flash write budget can sustain. Move to a **blackbox-style differential, packed binary
+format** (à la INAV blackbox):
+
+- **Variable frame *type*** — distinct record types per rate tier (fast IMU frame, intermediate
+  position/nav frame, slow attitude-resync frame; plus a cross-check frame pairing local vs INAV),
+  rather than one fat line carrying everything every tick.
+- **Variable frame *rate*** — each frame type emitted at its own tier cadence (fast IMU at the
+  control rate, position intermediate, attitude slow), not fixed per-tick.
+- **Compact / differential encoding** — delta against the previous frame of that type +
+  varint/bitpack, to fit flash and sustain the high write rate; periodic keyframes for resync.
+- **Shared decode discipline** — keep one authoritative writer/reader pair so xiao ↔
+  renderer/analysis don't drift (`project_log_format_shared_parser`); the join-analysis tooling
+  (`join_flight_analysis.py`) must be able to decode the packed format.
+
+Rationale: the whole point of 037's testing form is collecting *a lot more* data (higher rate, more
+signals, two IMU streams) — the text dump can't carry it, so the format change gates the validation
+flights. Track as prework T-prereq.
+
 ## Out of scope (v1)
 
 - Objective/fitness changes (035 territory — the loop rate is the lever here, not the objective).
