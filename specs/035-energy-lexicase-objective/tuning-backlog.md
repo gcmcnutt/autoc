@@ -37,37 +37,51 @@ Aggressiveness is NOT equally expensive per axis:
 2. **Throttle — moderate, mostly averaged.** PWM/electric: energy ≈ time-average duty cycle, so
    command wiggle ≈ holding the mean. Real extra cost (motor inrush, prop spin-up inertia, ESC
    switching) is **un-modeled**.
-3. **Roll — least, indirect.** Ailerons redistribute lift; cost is 2nd-order adverse-yaw /
-   sideslip drag, also **under-modeled**.
+3. **Roll — least, but still charged.** Ailerons redistribute lift; the *direct* cost is
+   `CD_AIsq*aileron²` drag, which the FDM DOES model (`CD_AIsq=0.05`, = elevator). The indirect
+   adverse-yaw/sideslip cost is small by design (`Cn_da=-0.010`) — correct for a rudderless
+   foam flying wing, not an omission. See the FDM check below.
 
-Consequence: the controller dumps aggressiveness on exactly the two axes whose real costs are
-under-modeled (roll, throttle) while respecting the one the sim prices correctly (pitch). Where
-the sim is accurate it behaves; the roll+throttle "free lunch" is partly the sim under-charging.
+Consequence (revised after the FDM check): roll is NOT a free axis — aileron drag is modeled and
+equals elevator drag. So roll bang-bang is likely **genuinely near-optimal**, not a sim-under-
+charging artifact. The only plausibly-under-modeled cost is the **throttle transient** (power
+model, not aero). Pitch is priced correctly (induced drag), which is why the controller respects
+it.
 
-## Direction: fix the MODELLING, not the penalty knobs
+## FDM check (2026-06-06): the aero costs are already modeled and tuned
 
-The goal is **proper incentive — or better, proper modelling** — NOT hand-tuning a per-axis
-dctrl budget. A weighted dctrl penalty is a non-physical proxy; composing scalar smoothness
-penalties is exactly the corner-collapse trap of [[project_scalar_multiobjective_collapse]].
-Get the physics right and the existing energy objective disincentivizes the expensive axes by
-construction; the per-axis dctrl/mag readouts then stay **diagnostics, not objectives**.
+Examined `crrcsim/src/mod_fdm/fdm_larcsim/fdm_larcsim.cpp` + `crrcsim/models/hb1_streamer.xml`.
+The "roll is an under-charged free axis" premise does **not** hold:
 
-Priority order:
+- **Aileron drag is modeled and non-trivial:** `CD_all` includes `CD_AIsq*aileron²` with
+  **`CD_AIsq = 0.05` — equal to `CD_ELsq` (elevator) = 0.05** (induced `CD_CLsq=0.04`,
+  `CD_prof=0.15`, `CD_stall=0.10`). Full-aileron costs ~0.05 CD, on par with parasitic drag.
+  Roll is NOT free.
+- **Yaw is fully modeled:** `Cn_b=0.07` (weathervane), `Cn_p=-0.008` (adverse yaw from roll
+  rate, ×CL/CL_0), `Cn_r=-0.04` (damping), `Cn_dr=0` (no rudder), `Cn_da=-0.010` (adverse yaw
+  from aileron). Adverse yaw is *deliberately small* per the 018→023 sim-to-real tuning history
+  in the file — physically correct for a **rudderless foam flying wing with elevons**, not an
+  omission.
+- Craft variations already perturb `CD_prof` via `craftDragDelta`.
 
-1. **(Best) Model the real per-axis energy costs**, so "energy" in the objective = true energy:
-   - aileron profile + adverse-yaw / sideslip drag → charges roll aggressiveness (currently the
-     under-charged "free" axis the controller exploits),
-   - a throttle-transient term: motor inrush + prop spin-up inertia + ESC switching → charges
-     throttle cycling (today ≈ free because energy ≈ PWM time-average).
-   Pitch/induced-drag is already modeled accurately by LaRCSim, which is why the controller
-   already respects pitch. Close the two gaps and the incentive self-corrects. These are the
-   "revisit pre-hardware retraining" sim-fidelity items — same pattern as
-   [[project_cep_realism_backlog]].
-2. **(If a control-effort term is still needed) derive it from physical energy**, per-axis,
-   from the drag/power model above — not an arbitrary uniform or hand-weighted dctrl budget.
-3. **(Deprecated) hand-weighting the flat 0.27 dctrl budget.** Recorded only to mark it as the
-   wrong frame: it tunes a proxy and invites scalar-collapse. Use dctrl/mag purely to *measure*
-   whether the modelling fix worked.
+**Conclusion: this is "close enough."** Roll bang-bang is therefore most likely **genuinely
+near-optimal** — the controller pays the aileron-drag toll and the maneuvering benefit still
+wins — not a fidelity artifact. Do NOT hand-weight a per-axis dctrl budget: it's a non-physical
+proxy and the corner-collapse trap of [[project_scalar_multiobjective_collapse]]. dctrl/mag stay
+**diagnostics, not objectives.**
+
+## What actually remains
+
+1. **Throttle transient (the one real gap).** Spin-up/inrush + prop inertia + ESC switching
+   live in the separate power model (`mod_fdm/power`), not the aero above, and are likely
+   un-modeled (energy ≈ PWM time-average). Already downgraded by operator (mostly PWM). Verify
+   if/when it matters — a "revisit pre-hardware" item like [[project_cep_realism_backlog]].
+2. **If bang-bang is optimal but we want manned feel** → that's a **deliberate damping
+   incentive** (a design choice), NOT a fidelity fix. Defer; discuss explicitly when/if we
+   decide we want it. Do not pre-emptively penalize.
+3. **(Open) does the autoc energy fitness actually integrate this aero drag?** The FDM charges
+   it; confirm the fitness "energy" term reflects the resulting airspeed/altitude loss so the
+   modeled cost actually reaches selection. (Quick check, not assumed.)
 
 ## Verification
 - **Maturity-matched re-comparison.** Re-run the t6-vs-034-test4 per-axis comparison at t6
