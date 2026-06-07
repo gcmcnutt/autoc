@@ -90,6 +90,29 @@ proxy and the corner-collapse trap of [[project_scalar_multiobjective_collapse]]
 - After any modelling fix, the *test* is whether roll/throttle aggressiveness drops **without**
   an added smoothness penalty — i.e. the energy objective alone now charges for it.
 
+## Bang-bang is roll-only and partly a 10 Hz artifact (2026-06-07)
+
+Per-tick command traces (t6 gen 494, 10 Hz loop = evalIntervalMsec=100):
+
+| axis | dctrl | % sat >0.9 | sign-flips/tick | lag-1 autocorr |
+|---|---|---|---|---|
+| roll | 1.07 | 61% | 0.56 | **−0.24** (anti-persistent) |
+| pitch | 0.37 | 0% | 0.26 | +0.44 (smooth) |
+| throttle | 0.18 | 97% | 0.08 | +0.80 (pinned-high, smooth) |
+
+Only **roll** is bang-bang — held saturated banks interleaved with hard ±1 reversals.
+Pitch and throttle are coherent/smooth. At 10 Hz with a saturating roll command and
+airframe roll inertia/damping (`Cl_p=-0.47`), the ±1 dither is partly the controller
+synthesizing intermediate average roll (PWM-like); the airframe low-passes it to a
+bounded ~155 deg/s, so the *command* looks violent but the *motion* doesn't. deg/sec
+rates are airframe-limited (~150–200 roll across all regimes) — the objective only
+trims them ~15–20%, it can't change the airframe envelope.
+
+**The lever to smooth roll is a faster control loop, not the objective.** Tracking is
+already met at 10 Hz (0% crash, 294/294 on hard courses) — this is headroom, not a fix.
+Tracked as [[project_20hz_control_loop]]: 20 Hz, blocker = INAV MSP serial latency,
+candidate = Xiao onboard IMU as high-rate source with a slow INAV sync loop.
+
 ## Watch items as t6 matures
 - **pitch amplitude** must stay low (it's the real energy term); fine if pitch *dctrl* rises so
   long as amplitude doesn't follow it back up.
