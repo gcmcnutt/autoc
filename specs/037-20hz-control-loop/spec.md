@@ -43,6 +43,16 @@ gen 800). Findings that anchor this feature:
 - **Flight ran at ~10 Hz** (engage spans 170 evals/18.4 s, 219 evals/23.8 s ≈ 9.2 Hz; ~100 ms
   between log ticks). Confirms current real rate = 10 Hz. (The flight report says "~20 Hz" in
   places, but its own engage table and raw timestamps are 10 Hz — treat as 10 Hz.)
+- **Measured MSP pipeline (xiao log, May-17):** `fetch = 6.9/12.6/25.6 ms`,
+  `eval = 2.3/2.7/7.4 ms`, `send = 7.0/9.2/12.2 ms`, `total = 16.6/24.4/39.1 ms` (min/avg/max per
+  100 ms tick). **The attitude FETCH from INAV over MSP serial (12.6 ms avg / 25.6 ms max) is the
+  input bottleneck** — there is currently *no* onboard-IMU read (no LSM6DS3/I2C/TWIM code in the
+  tree; all state comes from `MSP2_AUTOC_STATE`).
+- **Budget math:** 10 Hz (100 ms) — total 24/39 ms, slack. 20 Hz (50 ms) — feasible, tight at
+  worst (~78% of tick). **50 Hz (20 ms) — impossible over MSP:** fetch 12.6 + eval 2.7 + send 9.2
+  = 24.4 ms avg > 20 ms. So onboard IMU (12.6 → ~0.3 ms via TWIM EasyDMA + LSM6DS3 FIFO/data-ready
+  INT) is **required** for 50 Hz, after which the **9.2 ms MSP command *send*** becomes the next
+  limiter.
 - **Sim-to-real is confirmed on the bang-bang.** Per-axis sign-flip rate matches across a sim
   controller (035 t6, energy-lexicase) and this real flight (pastonly3, 029) — *different
   objective, arch, generation, and sim-vs-real*, yet: roll **56% (sim) ≈ 57% (real, path 0)**,
@@ -75,6 +85,68 @@ onboard IMU (LSM6DS3). Extend it from AHRS cross-check (`project_xiao_imu_crossc
   correction, absolute datum) at whatever rate the MSP serial sustains.
 - Net: high-rate local IMU drives the fast control tick; low-rate INAV sync supplies the absolute
   reference — **decouples control rate from MSP serial rate.**
+
+### Hardware capability — what the nRF52840 + LSM6DS3 can actually do (to be bench-confirmed)
+
+**Latency to raw attitude (vs the 12.6 ms MSP fetch it replaces):**
+- I2C burst read (accel+gyro = 12 B) via nRF52840 **TWIM EasyDMA** @ 400 kHz ≈ **0.3–0.5 ms**,
+  CPU-free (DMA straight to a RAM buffer). LSM6DS3 also has FIFO + data-ready INT for
+  interrupt-driven pulls.
+- LSM6DS3 internal digital-filter **group delay** ≈ 0.5–2 ms depending on ODR/bandwidth (the real
+  unknown — bench-measure at the chosen ODR).
+- → raw attitude available in **~1–2 ms vs 12.6 ms over MSP (~10×).**
+
+**Compute (M4F @ 64 MHz, hardware FPU):**
+- AHRS fusion (Madgwick/Mahony complementary): a few hundred FLOPs/update ≈ **10–50 µs** — negligible.
+- NN forward pass already measured at `eval = 2.7 ms avg / 7.4 ms max` — comfortably inside a 20 ms
+  (50 Hz) tick. Compute is **not** the limiter.
+
+**The real constraint is architectural, not compute or IMU-read latency:**
+- The local IMU gives **attitude + angular rate + linear accel only** — NOT position/velocity
+  relative to the rabbit. The NN's target geometry (tX/tY/tZ, distance) depends on aircraft
+  **position**, which comes from INAV's nav fusion (GPS+baro+IMU) over MSP at the slow rate.
+- No magnetometer (6-axis IMU) → local **yaw drifts** → needs the INAV sync loop for heading.
+  Roll/pitch from accel+gyro are solid (and roll is the bang-bang axis we care about).
+- ⇒ A 50 Hz local loop has **fresh attitude/rates at 50 Hz but stale position/target between INAV
+  updates.** Resolution is a **two-rate split**: fast attitude inner loop (local IMU) + slow
+  target/position outer loop (INAV), with position dead-reckoned from the local IMU between syncs.
+  Ties to the two-loop perception/control architecture (`project_perception_control_two_loop`).
+  The bang-bang axis (roll attitude) is exactly the fast-attitude-driven part, so it benefits most.
+
+**Latency analysis to run (the gating work):** bench-measure (a) I2C+filter latency at the target
+ODR, (b) fusion update time, (c) the command-*send* path (9.2 ms today — the next limiter once
+fetch is local), and (d) the acceptable staleness of position/target at the outer-loop rate.
+
+### Fusion scheme — local IMU + INAV sync (candidates)
+
+Keep the heavy EKF **in INAV**; the xiao runs a **lightweight complementary / loosely-coupled
+aiding** filter that treats INAV as truth and uses the local IMU only to fill the fast gaps. This
+is classic loosely-coupled INS aiding (INAV = aided solution, slow & authoritative; local IMU =
+high-rate inertial propagation), not a fresh full EKF on the xiao.
+
+- **Attitude (the 50 Hz path):** propagate the quaternion at 50 Hz by integrating the **local
+  gyro**; level roll/pitch with the **local accel** (Mahony/Madgwick — its integral term doubles
+  as a **gyro-bias estimator**). At each slow INAV sync, blend toward INAV's fused quaternion
+  (small-gain complementary correction). Roll/pitch are locally observable from gravity, so they
+  stay tight between syncs; **yaw is NOT locally observable on a 6-axis IMU**, so absolute heading
+  must come from INAV's mag/GPS-aided estimate at the sync — local gyro only carries yaw between
+  syncs (drift bounded by sync rate).
+- **Latency compensation (the easy-to-get-wrong part):** INAV's synced attitude is *stale* by the
+  time it arrives (~12.6 ms fetch + send). Don't blend toward the stale value directly — first
+  **forward-propagate INAV's attitude to "now" with the local gyro** (time-align via the MSP
+  `timestamp_us` the system already keys on), then correct. Skipping this re-injects the very lag
+  we're removing.
+- **Position/velocity:** INAV position is the authority; between syncs hold/dead-reckon from INAV
+  velocity + local accel (accel position dead-reckon is only good for ~tens of ms — fine at a
+  10–20 Hz outer-loop sync, useless longer).
+- **Convention coherence is mandatory:** local-IMU and INAV frames must agree
+  (`autoc::imu::inavQuatToAerospaceEB` boundary + `project_board_alignment`) — a frame/sign
+  mismatch between the two IMUs would be silent and corrupt the blend.
+
+Minimal-viable variant: since **roll attitude is the bang-bang axis and is locally observable**, a
+first cut can run just local accel+gyro complementary for roll/pitch + gyro-propagated yaw, INAV
+for everything else — capturing most of the 50 Hz benefit on the axis that needs it before
+building the full two-rate stack.
 
 ## Open questions / dependencies
 
