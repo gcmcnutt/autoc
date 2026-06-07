@@ -181,6 +181,33 @@ RNN build its own integrator** from hidden state (035 t6 shows live recurrence, 
 control/smoothing terms. Don't reintroduce manual control terms to paper over bang-bang; give the
 evolved controller a faster clock and let it use it.
 
+## Required research — signal rate tiers
+
+Operator framing (2026-06-07): signals split into **three rate tiers**, not two. The naive
+assumption (attitude fast, position slow) is backwards on the drift physics — single-integrated
+attitude (gyro) holds far better than double-integrated position (accel), so attitude needs only a
+*slow* absolute resync while position needs *intermediate* bridging.
+
+| tier | signals | source / rate | rationale |
+|---|---|---|---|
+| **Fast** | linear **accel** + angular **rate** (gyro) | local IMU @ control rate (20–50 Hz) | low-latency primary; "great" off the local IMU; drives the fast control tick |
+| **Intermediate (bridge)** | **position**, velocity, airspeed, other nav-derived | INAV poll at an intermediate rate, **dead-reckoned/bridged** between polls | accel→position double-integration drifts in ~tens of ms, so position can't ride the slow tier — needs intermediate INAV updates to stay usable |
+| **Slow (resync)** | **attitude** absolute correction (+ heading/yaw) | INAV **slow poll** | local gyro+accel complementary propagates attitude well between corrections; only a slow absolute drift/yaw resync is needed |
+
+**Research questions to answer (bench + sim):**
+1. **Attitude resync interval:** how slow can the INAV attitude poll be before the local
+   complementary filter's drift (gyro bias × interval, yaw especially) exceeds tracking tolerance?
+   Sets the slow-tier rate.
+2. **Position bridge rate:** what INAV position-poll rate keeps the dead-reckon bridge accurate
+   enough for the rabbit-relative geometry (tX/tY/tZ, distance)? Sets the intermediate-tier rate.
+3. **Signal placement:** classify every NN input (airspeed, gyro, quat, pos, vel, target cosines,
+   distances) into fast / intermediate / slow — which are local, which bridged, which resynced.
+4. **NN consumption model:** the NN currently takes all inputs in one forward pass per tick — does
+   it tolerate mixed-freshness inputs (fast attitude + bridged position) directly, or does this
+   force the two-loop split (`project_perception_control_two_loop`)?
+5. Per-tier MSP poll cost vs the measured 12.6 ms fetch / 9.2 ms send budget (which MSP requests
+   carry which tier, and at what rate the serial link sustains them).
+
 ## Out of scope (v1)
 
 - Objective/fitness changes (035 territory — the loop rate is the lever here, not the objective).
