@@ -110,8 +110,9 @@ trims them ~15–20%, it can't change the airframe envelope.
 
 **The lever to smooth roll is a faster control loop, not the objective.** Tracking is
 already met at 10 Hz (0% crash, 294/294 on hard courses) — this is headroom, not a fix.
-Tracked as [[project_20hz_control_loop]]: 20 Hz, blocker = INAV MSP serial latency,
-candidate = Xiao onboard IMU as high-rate source with a slow INAV sync loop.
+Tracked as feature **037** (`specs/037-20hz-control-loop/spec.md`): 20 Hz, blocker =
+INAV MSP serial latency, candidate = Xiao onboard IMU as high-rate source with a slow
+INAV sync loop.
 
 ## Watch items as t6 matures
 - **pitch amplitude** must stay low (it's the real energy term); fine if pitch *dctrl* rises so
