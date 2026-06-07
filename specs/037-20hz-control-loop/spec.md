@@ -208,6 +208,17 @@ attitude (gyro) holds far better than double-integrated position (accel), so att
 5. Per-tier MSP poll cost vs the measured 12.6 ms fetch / 9.2 ms send budget (which MSP requests
    carry which tier, and at what rate the serial link sustains them).
 
+**Prior art / prerequisite — feature 021 (`specs/021-xiao-ahrs-crosscheck/`).** The local-IMU path
+this feature depends on was first scoped there: the **Xiao local LSM6DS3 as an independent
+cross-check source** (021 §"Accelerometer / gravity vector", line 66) and a **Xiao onboard AHRS
+(LSM6DS3 + Madgwick)** — both **deferred to 022 and never executed** (021 line 242; board-alignment
+investigation T501 deferred with it, line 243). 037 promotes that deferred work from *cross-check*
+to *primary high-rate source*, so 021's open items become **prerequisites**: the IMU-transform →
+autoc-convention cross-check (does the local LSM6DS3, run through `inavQuatToAerospaceEB` /
+`docs/COORDINATE_CONVENTIONS.md`, agree with INAV's attitude?) must be done *first* — it's exactly
+the "convention coherence is mandatory" gate in the fusion section, and the reason 037 can't skip
+straight to flying the local loop. Related: `project_xiao_imu_crosscheck`, `project_board_alignment`.
+
 ## Out of scope (v1)
 
 - Objective/fitness changes (035 territory — the loop rate is the lever here, not the objective).
