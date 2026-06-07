@@ -208,16 +208,35 @@ attitude (gyro) holds far better than double-integrated position (accel), so att
 5. Per-tier MSP poll cost vs the measured 12.6 ms fetch / 9.2 ms send budget (which MSP requests
    carry which tier, and at what rate the serial link sustains them).
 
-**Prior art / prerequisite — feature 021 (`specs/021-xiao-ahrs-crosscheck/`).** The local-IMU path
-this feature depends on was first scoped there: the **Xiao local LSM6DS3 as an independent
-cross-check source** (021 §"Accelerometer / gravity vector", line 66) and a **Xiao onboard AHRS
-(LSM6DS3 + Madgwick)** — both **deferred to 022 and never executed** (021 line 242; board-alignment
-investigation T501 deferred with it, line 243). 037 promotes that deferred work from *cross-check*
-to *primary high-rate source*, so 021's open items become **prerequisites**: the IMU-transform →
-autoc-convention cross-check (does the local LSM6DS3, run through `inavQuatToAerospaceEB` /
-`docs/COORDINATE_CONVENTIONS.md`, agree with INAV's attitude?) must be done *first* — it's exactly
-the "convention coherence is mandatory" gate in the fusion section, and the reason 037 can't skip
-straight to flying the local loop. Related: `project_xiao_imu_crosscheck`, `project_board_alignment`.
+**Prior art — feature 021 (`specs/021-xiao-ahrs-crosscheck/`).** 021 *intended* to capture the
+IMU-transform → autoc-convention mapping; that transform was since **found independently and lives
+in current code** (`autoc::imu::inavQuatToAerospaceEB` + `docs/COORDINATE_CONVENTIONS.md`) — so
+**current code is the source of truth for the transform**, not 021's planned work. What 021 left
+undone (deferred to 022, never executed) is the *execution*: standing up the Xiao local LSM6DS3 +
+onboard AHRS and cross-checking it against INAV. 037 promotes that from cross-check to primary
+high-rate source. Related: `project_xiao_imu_crosscheck`, `project_board_alignment`.
+
+### Alignment: auto-calibrate from INAV (primary) — not manual settings
+
+The Xiao's physical **mounting orientation is arbitrary** and must not depend on hand-entered
+board-alignment settings. **Primary approach: auto-calibrate the local-IMU → aircraft-body rotation
+from INAV** — during a brief calibration window, solve the fixed rotation that best maps the local
+LSM6DS3 attitude/gravity onto INAV's authoritative attitude, *regardless of how the Xiao is
+mounted*. Manual alignment settings are a fallback/sanity consideration only, not the path. This
+supersedes the manual-settings framing of `project_board_alignment` for this feature: the Xiao
+should learn its own orientation from INAV, continuously sane-checked by the same slow attitude
+resync that anchors the fusion. (Convention coherence — the `inavQuatToAerospaceEB` boundary — is
+still mandatory; auto-cal solves the *mounting* rotation on top of the *convention* transform.)
+
+### Future direction — Xiao standalone, past M2
+
+Design the rate-tier sources to be **swappable**, anticipating a post-M2 world where the **Xiao is
+the only processor in the loop** (no INAV). There, the tiers re-source: attitude + rates stay
+local (IMU + onboard AHRS), and **position comes from a directly-hooked GPS** (position-only — we
+don't need INAV's full nav, just the GPS fix to fill the intermediate position-bridge tier). So the
+intermediate tier's source is INAV-now / direct-GPS-later, and the slow attitude-resync (INAV
+today) would fall away when INAV does — replaced by the local AHRS standing alone with GPS-aided
+position. Keep the architecture from hard-wiring INAV as the only possible source for any tier.
 
 ## Testing & validation methodology
 
