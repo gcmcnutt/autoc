@@ -319,6 +319,25 @@ Rationale: the whole point of 037's testing form is collecting *a lot more* data
 signals, two IMU streams) — the text dump can't carry it, so the format change gates the validation
 flights. Track as prework T-prereq.
 
+## Prerequisite prework — tighten the entry-variation envelope (operator, 2026-06-08)
+
+Before the 037 retraining sweep (10/20/50 Hz), **tighten the entry-variation caps to ±45° entry
+angle and ±15% speed** (from today's ±75° / ±25%). Current caps come from `EntryConeSigma=30°` and
+`EntrySpeedSigma=0.10` × the global `kGaussianSigmaClamp=2.5` (truncated normal) → ±75° cone / ±25%
+speed. That tail admits **near-unrecoverable 2.5σ corner entries** — e.g. t6 M1 source scenarios 93
+(~75° cone, −52° pitch) and 271 (−25% speed cap, −52° pitch) augered in within 15–16 ticks. Those
+corners waste training/tracking budget and produce degenerate source trajectories.
+
+Targets: **±45° entry angle, ±15% speed.** Mechanism options (decide at implementation):
+- lower the sigmas so 2.5σ lands at the cap (`EntryConeSigma` 30→18°, `EntrySpeedSigma` 0.10→0.06), or
+- keep sigmas and add a dedicated hard cap (clip at 45° / 15%, ≈1.5σ), or
+- lower `kGaussianSigmaClamp` (affects all variation classes — least targeted).
+
+Caveat: this changes the M1 difficulty distribution, so M1 results before/after aren't directly
+comparable — do it as a clean step, not mid-bake. Why 037: the loop-rate sweep already requires M1
+retrains, so fold the envelope tightening into that retraining pass rather than spending a separate
+bake on it.
+
 ## Out of scope (v1)
 
 - Objective/fitness changes (035 territory — the loop rate is the lever here, not the objective).

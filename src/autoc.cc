@@ -1633,29 +1633,36 @@ int main(int argc, char** argv)
       exit(1);
     }
 
-    // Validate each source scenario has at least MIN_SCENARIO_TICKS runway
-    // (3 sec at 100ms NN cadence per data-model.md §1). Post-PreRollSec-
-    // removal: chase consumes source from sample 0, so the full source
-    // duration is available.
+    // Each source scenario needs at least MIN_SCENARIO_TICKS runway (3 sec at
+    // 100ms NN cadence per data-model.md §1). Scenarios shorter than that are
+    // degenerate — extreme 2.5σ entry-corner trajectories the source controller
+    // couldn't fly long enough to be a trackable target (035 M2: a library-based
+    // source from an M1 run routinely has a few corner-crash flights). SKIP them
+    // rather than fail (operator decision 2026-06-08); fail only if none survive.
     {
       const int minRemaining = MIN_SCENARIO_TICKS;
-      int shortCount = 0;
-      for (const auto& traj : gSourceTrajectoryList) {
-        if (static_cast<int>(traj.samples.size()) < minRemaining) {
-          ++shortCount;
+      const size_t before = gSourceTrajectoryList.size();
+      for (size_t i = 0; i < gSourceTrajectoryList.size(); ++i) {
+        if (static_cast<int>(gSourceTrajectoryList[i].samples.size()) < minRemaining) {
+          *logger.info() << "  Skipping short source scenario idx=" << i << " ("
+                         << gSourceTrajectoryList[i].samples.size() << " ticks < "
+                         << minRemaining << " — degenerate corner-crash entry)" << endl;
         }
       }
-      if (shortCount > 0) {
-        *logger.info() << "FATAL ERROR: " << shortCount
-                       << " of " << gSourceTrajectoryList.size()
-                       << " source scenario(s) have fewer than "
-                       << minRemaining << " ticks. Filter out short source "
-                          "scenarios." << endl;
+      gSourceTrajectoryList.erase(
+          std::remove_if(gSourceTrajectoryList.begin(), gSourceTrajectoryList.end(),
+              [minRemaining](const SourceScenarioTrajectory& t) {
+                return static_cast<int>(t.samples.size()) < minRemaining;
+              }),
+          gSourceTrajectoryList.end());
+      if (gSourceTrajectoryList.empty()) {
+        *logger.info() << "FATAL ERROR: all source scenarios shorter than "
+                       << minRemaining << " ticks; nothing to track." << endl;
         exit(1);
       }
-      *logger.info() << "Source runway >= " << minRemaining
-                     << " ticks confirmed across all "
-                     << gSourceTrajectoryList.size() << " scenarios." << endl;
+      *logger.info() << "Source runway: dropped " << (before - gSourceTrajectoryList.size())
+                     << " short scenario(s); " << gSourceTrajectoryList.size()
+                     << " scenarios >= " << minRemaining << " ticks remain." << endl;
     }
   }
 
