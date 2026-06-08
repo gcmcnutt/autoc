@@ -195,6 +195,21 @@ its 200 Hz FDM is high-fidelity (it shows what each control rate would actually 
 This front-loads the 50 Hz question into the M1 sim work we're doing first, and makes it empirical
 rather than a guess.
 
+**Note — actuation cadence: the hardware is already fast; 10 Hz NN is the slow element.** From the
+2026-05-17 blackbox header: INAV FC inner loop **2 kHz** (`looptime:500`µs), **motor PWM 400 Hz**
+(`motor_pwm_rate:400`), servos ~50 Hz (INAV analog default; `servo_pwm_rate` not in this header —
+**verify**, may be digital/higher). Our autoc NN override sits on top at just **10 Hz**.
+Implications:
+- The actuation chain (2 kHz FC / 400 Hz motor / ~50 Hz servo) is **5–200× faster than the NN
+  loop**, so the bang-bang is unambiguously a **control-rate (NN-sampling) artifact, not
+  actuation-limited** — the hardware can faithfully execute a much faster NN loop. The craft is
+  "quite responsive" (measured cmd→gyro ~12 ms is consistent with a fast servo + responsive
+  airframe), so actuation is *not* a barrier to 20/50 Hz.
+- **~50 Hz servo = the natural actuation-matched ceiling for NN control.** For an analog 50 Hz
+  servo there's no point commanding faster than its frame, so the 10/20/50 sweep spans
+  current → servo-matched, and **50 Hz is the principled top end** (revisit if servos are digital
+  at e.g. 330 Hz). Confirm the actual `servo_pwm_rate` — it sets the true ceiling.
+
 ## Stretch: 50 Hz (local-IMU only)
 
 A **50 Hz** loop (20 ms tick) may be feasible **if the loop runs entirely off the Xiao's onboard
