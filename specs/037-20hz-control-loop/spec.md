@@ -163,6 +163,38 @@ building the full two-rate stack.
   slack at 20 Hz (≈4× faster than the 50 ms tick). Grounds the 20 Hz target; becomes binding at
   50 Hz (see stretch).
 
+## Aliasing analysis — should we jump straight to 50 Hz? (sim-sweep first)
+
+Cadences in this build (`autoc_config.xml` + the worker cadence log):
+- **FDM physics: dt = 0.005 s = 200 Hz** (Nyquist 100 Hz). High-fidelity; the power/motor model
+  sub-integrates finer. (Not 250 — config overrides crrcsim's ~360 Hz default down to 200.)
+- Outer cycle 50 ms (20 Hz); **NN control eval 100 ms = 10 Hz → 20 FDM steps per NN command (ZOH)**.
+
+**Where aliasing is — and isn't:**
+- **The FDM is NOT the aliasing risk.** At 200 Hz it oversamples the 10 Hz command 20×; the held
+  command integrates cleanly and the FDM faithfully represents airframe dynamics to ~100 Hz.
+- **The aliasing risk is the CONTROL loop.** The NN samples state at 10 Hz → **Nyquist 5 Hz**. The
+  roll bang-bang (sign-flips ~56% of ticks ≈ 2.8–5 Hz) sits **at/near that 5 Hz control Nyquist** —
+  the classic signature of an under-sampled *saturating* loop **dithering** because it wants finer
+  authority than 100 ms resolution allows. So the bang-bang is plausibly partly a **control-rate
+  aliasing/dither artifact**, not purely airframe-optimal.
+
+**Decision: don't jump to 50 Hz — sim-sweep first.** The sim is the right oracle precisely because
+its 200 Hz FDM is high-fidelity (it shows what each control rate would actually experience).
+- **Experiment (M1 sim, cheap, no hardware): retrain at 10 / 20 / 50 Hz control** — the bang-bang
+  is cadence-dependent, so *retrain* at each rate (don't replay the 10 Hz NN), same FDM, and measure
+  roll dctrl / sign-flip. Find the knee where the dither de-aliases.
+  - Clears at **20 Hz** (Nyquist 10 Hz resolves the ~5 Hz oscillation) → 20 Hz suffices, and we
+    avoid the 50 Hz local-IMU/latency cost.
+  - Persists at 20 Hz → 50 Hz justified.
+- **Sim-fidelity caveat for the 50 Hz arm:** at 50 Hz control the 200 Hz FDM is only **4×
+  oversampled** (4 steps/command) — too coarse to trust the result. Raise the FDM rate
+  (dt ≤ 0.002 = ≥500 Hz) for the 50 Hz arm to keep ≥10× oversample and avoid control↔FDM
+  interaction artifacts. 20 Hz is clean at the current 200 Hz (10× oversample).
+
+This front-loads the 50 Hz question into the M1 sim work we're doing first, and makes it empirical
+rather than a guess.
+
 ## Stretch: 50 Hz (local-IMU only)
 
 A **50 Hz** loop (20 ms tick) may be feasible **if the loop runs entirely off the Xiao's onboard
