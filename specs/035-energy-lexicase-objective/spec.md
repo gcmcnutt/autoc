@@ -268,3 +268,11 @@ The energy metric is the central design question of 035 (supersedes the throttle
 - Demetic / island-model GA for basin escape — separate BACKLOG research entry (the energy axis is the cheap first attack on the same stuck basin).
 - Craft/camera variation work — owned by 034 (craft) and a later iteration (camera).
 - Changing NN topology or the tracking fitness surface (conical scoring).
+- **`dmp-dump` re-fetch avoidance (analytics perf).** `--run-summary` re-pulls every gen's dmp
+  from S3 on each call (~1.6 s/gen), painful when re-plotting a live, growing run.
+  - **DONE (2026-06-07, interim):** `dmp-dump --run-summary --since-gen N` skips gens < N (header
+    suppressed) so you fetch only new gens and append to a cached CSV — t6 regen at gen 670 with
+    1–565 cached fetched only ~104 new gens (**2.5 min vs ~15 min**). Workflow in `docs/REPORTS.md`.
+  - **Still deferred:** a transparent per-dmp `/tmp/<run-id>/` cache that makes re-fetch avoidance
+    automatic (no `--since-gen` bookkeeping). Tracked in agent memory
+    `project_dmp_driven_analytics_backlog`.
