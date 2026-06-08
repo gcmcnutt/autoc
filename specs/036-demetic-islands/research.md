@@ -1,6 +1,7 @@
 # Research: Demetic Islands for Basin-Diversity Preservation
 
-**Status**: Mini-research / decision input (2026-05-30). Not yet a feature spec.
+**Status**: **BACKLOGGED 2026-06-07** (see Decision below). Mini-research / decision input
+(2026-05-30). Not yet a feature spec.
 **Triggered by**: 034 test4 spiral-attractor lock confirmed at gen 139 (throttle pinned at 0.999, roll relaxed but rotation-rate stable). Reopens the question of whether maintaining multiple GA subpopulations could simultaneously hold the spiral basin **and** the rare non-spiral basin we've seen ~1/3 of the time.
 
 ## Motivation
@@ -103,6 +104,18 @@ Reasoning:
 - **036 islands attack the population-structure level** — orthogonal to 035's selection-rule change. Whether or not 035 finds an energy-axis win, the basin-diversity problem and bang-bang lock are likely still live, and islands are the next tool that addresses them at the right level.
 
 So this is **back-pocket research now**, but **not contingent on 035** — it's queued. Picked up after 035's outcome doc, with the live 034/035 bake telemetry informing the predictions in the section above.
+
+## Decision (2026-06-07): backlog 036; route 037 next
+
+After reviewing live 035 evidence, **036 is backlogged** (not the next feature). Rationale — its three motivations have all weakened or moved elsewhere:
+
+- **Basin-lottery urgency is undercut by the live M1 run.** 035 t6 (pop 5000 / wind 49 — the production config) climbed *cleanly* to gen 665+, 0% crash, 294/294, steady — **no stall**. Consistent with [[project_m1_basin_lottery_actual_rate]] (the stuck runs were a pop=8000/wind=36 scaling artifact, not intrinsic at this config). The acute "~33% stuck" pain 036 targets is not biting at the production config right now.
+- **Scalar-collapse is already handled by 035** (lexicase — the most-causal intervention, as noted above).
+- **Spiral-lock / bang-bang now has a more direct lever: feature 037.** We established the roll bang-bang is largely a **10 Hz control-loop artifact**, not purely a population-diversity problem (per-tick traces + sim↔real match; see `specs/037-20hz-control-loop/`). The faster-loop lever attacks it at a more direct level than population structure.
+
+036 loses nothing by backlogging: this research.md is intact and it was already queued to start only *after* the 035 outcome doc. **037 is the higher-value next thread** (airframe wear + manned feel + the gate to flying M2; concrete design + prework already drafted).
+
+**Re-activation trigger:** un-backlog 036 if the **M2 energy bake (T037 in 035) proves lottery-prone** — stalls / dead neurons, which T037 explicitly warns about — **or** if spiral-lock remains the dominant limiter after 035 *and* 037 land. M2 is where the lottery is most likely to actually bite, so let the M2 bake be the decider.
 
 ## Open questions
 

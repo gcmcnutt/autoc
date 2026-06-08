@@ -94,3 +94,15 @@ Uses:
 - The per-axis budget goal lines are `dctrl ≤ 0.27`, `mag ≤ 0.67` (sum-over-axes
   ≤ 0.80 / ≤ 2.00), the smooth-control target shared with 034.
 - `--run-summary` over a long run is many S3 fetches; use `--stride N` to sample.
+- **Incremental run-summary (avoid re-fetching cached gens):** `--run-summary --since-gen N`
+  skips gens `< N` (and suppresses the header), so you fetch only new gens and append to a cached
+  CSV. Workflow when re-plotting a still-growing run:
+  ```bash
+  LAST=$(tail -1 /tmp/run_summary.csv | cut -d, -f1)          # highest cached gen
+  cp /tmp/run_summary.csv /tmp/merged.csv
+  ./build/dmp-dump s3://autoc-m1/ --run-summary --since-gen $((LAST+1)) -i autoc.ini >> /tmp/merged.csv
+  head -1 /tmp/merged.csv > /tmp/sorted.csv                    # dedup + numeric sort by gen
+  tail -n +2 /tmp/merged.csv | sort -t, -k1,1n -u >> /tmp/sorted.csv
+  ```
+  e.g. re-plotting t6 at gen 670 with gens 1–565 cached fetched only ~104 new gens: **2.5 min vs
+  ~15 min**. (A transparent per-dmp `/tmp` cache is still backlog — this is the manual interim.)

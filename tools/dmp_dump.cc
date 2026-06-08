@@ -57,6 +57,8 @@ void printUsage(const char* prog) {
     "                 crashes,aggr_pitch,aggr_roll,aggr_throttle,scenarios.\n"
     "                 Analytics off the dmps (not the log). Pair with --stride N.\n"
     "  --stride N     run-summary: sample every Nth gen (default 1)\n"
+    "  --since-gen N  run-summary: skip gens < N (header suppressed) — incremental:\n"
+    "                 fetch only new gens and append to a cached CSV\n"
     "  -i, --config   ini for S3 creds + fitness params (default autoc.ini)\n"
     "  -h, --help     this message\n"
     "\n"
@@ -172,7 +174,7 @@ PerPathRates computePerPathRates(const EvalResults& r) {
 // the "analytics off the log" path: best fitness + energy/stability/streak +
 // crash count + per-axis aggressiveness, all recomputed from the elite dmps.
 int doRunSummary(const Aws::S3::S3Client& s3, const std::string& bucket,
-                 std::string runPrefix, int stride) {
+                 std::string runPrefix, int stride, int sinceGen) {
   if (!runPrefix.empty() && runPrefix.back() != '/') {
     const auto slash = runPrefix.rfind('/');           // a gen key → strip to run
     runPrefix = (slash == std::string::npos) ? "" : runPrefix.substr(0, slash + 1);
@@ -185,17 +187,22 @@ int doRunSummary(const Aws::S3::S3Client& s3, const std::string& bucket,
   if (stride < 1) stride = 1;
   std::cerr << "dmp-dump: run-summary over " << keys.size() << " gens (stride "
             << stride << ") in " << runPrefix << std::endl;
-  std::cout << "gen,best_fitness,mean_energy,mean_stability,mean_streak,crashes,"
-               "aggr_pitch,aggr_roll,aggr_throttle,"
-               "dctrl_pitch,dctrl_roll,dctrl_throttle,"
-               "mag_pitch,mag_roll,mag_throttle,"
-               "path0_rollrate,path1_rollrate,path2_rollrate,path3_rollrate,"
-               "path4_rollrate,path5_rollrate,"
-               "path0_pitchrate,path1_pitchrate,path2_pitchrate,path3_pitchrate,"
-               "path4_pitchrate,path5_pitchrate,scenarios\n";
+  // --since-gen N skips gens < N (incremental: fetch only new gens and merge
+  // with a cached CSV). Header suppressed when set so output is append-ready.
+  if (sinceGen <= 0) {
+    std::cout << "gen,best_fitness,mean_energy,mean_stability,mean_streak,crashes,"
+                 "aggr_pitch,aggr_roll,aggr_throttle,"
+                 "dctrl_pitch,dctrl_roll,dctrl_throttle,"
+                 "mag_pitch,mag_roll,mag_throttle,"
+                 "path0_rollrate,path1_rollrate,path2_rollrate,path3_rollrate,"
+                 "path4_rollrate,path5_rollrate,"
+                 "path0_pitchrate,path1_pitchrate,path2_pitchrate,path3_pitchrate,"
+                 "path4_pitchrate,path5_pitchrate,scenarios\n";
+  }
   for (size_t i = 0; i < keys.size(); i += stride) {
     const std::string& k = keys[i];
     const int gen = autoc::extractGenNumber(k);
+    if (sinceGen > 0 && gen < sinceGen) continue;   // already cached → skip S3 GET
     EvalResults r;
     try {
       const std::string b = autoc::s3GetDmpBlob(s3, bucket, k);
@@ -236,6 +243,7 @@ int main(int argc, char** argv) {
     {"csv-only", no_argument, 0, 'c'},
     {"run-summary", no_argument, 0, 's'},
     {"stride", required_argument, 0, 'S'},
+    {"since-gen", required_argument, 0, 'G'},
     {"config", required_argument, 0, 'i'},
     {"help", no_argument, 0, 'h'},
     {0, 0, 0, 0}
@@ -243,15 +251,17 @@ int main(int argc, char** argv) {
   int specifiedGen = -1;
   bool metaOnly = false, csvOnly = false, runSummary = false;
   int stride = 1;
+  int sinceGen = 0;
   std::string configFile = "autoc.ini";
   int idx = 0, opt;
-  while ((opt = getopt_long(argc, argv, "g:mcsS:i:h", long_options, &idx)) != -1) {
+  while ((opt = getopt_long(argc, argv, "g:mcsS:G:i:h", long_options, &idx)) != -1) {
     switch (opt) {
       case 'g': specifiedGen = std::stoi(optarg); break;
       case 'm': metaOnly = true; break;
       case 'c': csvOnly = true; break;
       case 's': runSummary = true; break;
       case 'S': stride = std::stoi(optarg); break;
+      case 'G': sinceGen = std::stoi(optarg); break;
       case 'i': configFile = optarg; break;
       case 'h': printUsage(argv[0]); return 0;
       default: printUsage(argv[0]); return 1;
@@ -274,7 +284,7 @@ int main(int argc, char** argv) {
       auto s3 = ConfigManager::getS3Client();
       if (!s3) throw std::runtime_error("no S3 client (check ini profile/creds)");
       if (runSummary) {
-        const int rc = doRunSummary(*s3, bucket, key, stride);  // per-gen CSV → stdout
+        const int rc = doRunSummary(*s3, bucket, key, stride, sinceGen);  // per-gen CSV → stdout
         Aws::ShutdownAPI(awsOptions);
         return rc;
       }
