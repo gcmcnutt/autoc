@@ -90,7 +90,15 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
     }
     if (config->mode == "tracker" && config->trackerSourceRun.empty()) {
         out << "FATAL ERROR: Mode = tracker requires TrackerSourceRun "
-            << "(S3 key 'autoc-storage/<run-id>/gen<N>.dmp' or local path)"
+            << "(S3 key '<run-id>/gen<N>.dmp[.zst]' or local path)"
+            << std::endl;
+        exit(1);
+    }
+    // 035: source bucket is explicit (M2 source = an M1 run in autoc-m1, distinct
+    // from s3Bucket=autoc-m2 output). No silent fallback to s3Bucket.
+    if (config->mode == "tracker" && config->trackerSourceBucket.empty()) {
+        out << "FATAL ERROR: Mode = tracker requires TrackerSourceBucket "
+            << "(bucket holding TrackerSourceRun, e.g. autoc-m1; no s3Bucket fallback)"
             << std::endl;
         exit(1);
     }

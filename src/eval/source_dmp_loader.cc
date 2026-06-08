@@ -64,7 +64,9 @@ EvalResults loadFromS3(const std::string& s3_key) {
             "loadSourceDmp: no S3 client available. ConfigManager not"
             " initialized? Aws::InitAPI() not called?");
     }
-    const std::string bucket = ConfigManager::getConfig().s3Bucket;
+    // 035: source reads from trackerSourceBucket (e.g. autoc-m1), NOT s3Bucket
+    // (autoc-m2 = M2 output). Validated non-empty in tracker mode by ConfigManager.
+    const std::string bucket = ConfigManager::getConfig().trackerSourceBucket;
 
     // FR-P09 — fetch + inflate via the shared S3 dmp I/O (fail-loud on S3 error).
     std::string body = autoc::s3GetDmpBlob(*s3_client, bucket, s3_key);

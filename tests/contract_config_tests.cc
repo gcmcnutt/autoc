@@ -205,8 +205,9 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // (craftCG/Drag/Trim/Thrust/PitchEff/RollEff) → 86; then the
     // EnableCraftVariations master-disable knob → 87; 035 FR-003 added
     // LexicaseEpsilonMode → 88; 035 FR-P10 added S3ObjectTagging → 89, then
-    // removed it (tagging is now hardcoded retain=expire, fail-fast) → 88.
-    EXPECT_EQ(n, 88u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // removed it (tagging is now hardcoded retain=expire, fail-fast) → 88;
+    // 035 M2 added TrackerSourceBucket → 89.
+    EXPECT_EQ(n, 89u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

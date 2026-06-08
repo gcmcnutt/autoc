@@ -130,9 +130,13 @@ struct AutocConfig {
     std::string mode = "pathgen";
 
     // --- Tracker source dmp + scenario subset (FR-001 + FR-011) ---
-    // S3 key form: "<run-id>/gen<N>.dmp" (resolved against `s3Bucket`),
+    // S3 key form: "<run-id>/gen<N>.dmp" (resolved against `trackerSourceBucket`),
     // or absolute / relative local file path for offline-test convenience.
     std::string trackerSourceRun;
+    // Bucket holding the source dmp. 035: M2 tracks an M1 run, so the source lives
+    // in autoc-m1 while M2 output goes to s3Bucket (autoc-m2). Required in tracker
+    // mode; NO fallback to s3Bucket (M2-era no-silent-default policy).
+    std::string trackerSourceBucket;
     // Comma-separated path-variant indices (e.g. "0,1,2,3,4,5"). Empty = all.
     std::string trackerPathSubset;
     // Comma-separated wind-variant indices (e.g. "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19").
@@ -262,6 +266,7 @@ struct AutocConfig {
     X(double,         rabbitSpeedCycleMax,       "RabbitSpeedCycleMax") \
     X(std::string,    mode,                      "Mode") \
     X(std::string,    trackerSourceRun,          "TrackerSourceRun") \
+    X(std::string,    trackerSourceBucket,       "TrackerSourceBucket") \
     X(std::string,    trackerPathSubset,         "TrackerPathSubset") \
     X(std::string,    trackerWindSubset,         "TrackerWindSubset") \
     X(double,         trailDistance,             "TrailDistance") \
