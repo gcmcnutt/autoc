@@ -36,6 +36,8 @@
 #include "autoc/util/scenario_prng.h"         // deriveClassSubSeeds
 #include "autoc/eval/fitness_decomposition.h" // computeScenarioScores, ScenarioScore
 #include "autoc/eval/fitness_computer.h"      // FitnessComputer (derived columns)
+#include "autoc/eval/derived_features.h"      // compute_pair_span, compute_tilt (032 NN inputs)
+#include "autoc/eval/camera_projection.h"     // kCepSentinelThreshold (CEP gate)
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/nn/serialization.h"           // nn_detect_format / nn_deserialize
 #include "autoc/nn/evaluator.h"               // NNGenome (variation_scale)
@@ -64,8 +66,12 @@ void printUsage(const char* prog) {
     "\n"
     "CSV columns (pathgen): scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,\n"
     "  pitchCmd,rollCmd,thrCmd,out_pt,out_rl,out_th,dhome,dist,along,stpPt,mult,rampSc\n"
-    "CSV columns (tracker): ...,out_th,dhome,rampSc,hull  (path-relative\n"
-    "  derived columns are pathgen-only; hull = inside_crash_hull).\n";
+    "CSV columns (tracker): ...,out_th,dhome,rampSc,hull,\n"
+    "  tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC  (path-relative\n"
+    "  derived columns are pathgen-only; hull = inside_crash_hull; tg*=target\n"
+    "  pos, tr*=trail-rabbit pos, spn0/dspn=beacon-pair span + 1-tick diff,\n"
+    "  blC0/brC0=left/right beacon cep, tltS/tltC=target tilt sin/cos; the\n"
+    "  span/tilt sensors are CEP-gated with the default sentinel threshold).\n";
 }
 
 // Parse "s3://bucket/key..." into (bucket, key). Returns false if not an s3 uri.
@@ -383,7 +389,7 @@ int main(int argc, char** argv) {
   // Header (mode-specific: path-relative derived columns are pathgen-only).
   std::cout << "scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,"
                "pitchCmd,rollCmd,thrCmd,out_pt,out_rl,out_th,dhome";
-  if (isTracker) std::cout << ",rampSc,hull\n";
+  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC\n";
   else           std::cout << ",dist,along,stpPt,mult,rampSc\n";
 
   const AutocConfig& cfg = ConfigManager::getConfig();
@@ -402,6 +408,8 @@ int main(int argc, char** argv) {
                        cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
     fc.resetStreak();
     gp_vec3 prevTangent = gp_vec3::UnitX();
+    double prevSpan = 0.0;  // tracker spn0 at ti-1, for dspn (0 at first emitted tick)
+    bool havePrevSpan = false;
 
     for (size_t ti = 1; ti < states.size(); ++ti) {
       const auto& st = states[ti];
@@ -424,8 +432,52 @@ int main(int argc, char** argv) {
 
       if (sceneTracker) {
         const auto& targets = results.targetTrajectoryList[si];
-        const int hull = (!targets.empty() && targets.at(std::min(ti, targets.size() - 1)).inside_crash_hull) ? 1 : 0;
-        std::cout << "," << rampSc << "," << hull << "\n";
+        const size_t tgi = std::min(ti, targets.size() - 1);
+        const int hull = (!targets.empty() && targets.at(tgi).inside_crash_hull) ? 1 : 0;
+
+        // Target + trail-rabbit pose (0s if the trajectory list is missing/empty).
+        gp_vec3 tg = gp_vec3::Zero(), tr = gp_vec3::Zero();
+        if (!targets.empty()) {
+          tg = targets.at(tgi).position;
+          tr = targets.at(tgi).trail_rabbit_position;
+        }
+
+        // Beacon-derived sensors (spn0/dspn/tltS/tltC) — CEP-gated to match the
+        // 032 NN-input semantics. The gate uses the default sentinel threshold
+        // (cepGateThreshold isn't carried in EvalResults).
+        double spn0 = 0.0, tltS = 0.0, tltC = 1.0;
+        double blC0 = 0.0, brC0 = 0.0;
+        const bool haveCam = si < results.cameraViewList.size()
+                             && !results.cameraViewList[si].empty();
+        if (haveCam) {
+          const auto& cams = results.cameraViewList[si];
+          const auto& cv = cams.at(std::min(ti, cams.size() - 1));
+          const auto& bl = cv.beacon_left;
+          const auto& br = cv.beacon_right;
+          blC0 = bl.cep;
+          brC0 = br.cep;
+          const bool gated = (bl.cep >= autoc::eval::kCepSentinelThreshold)
+                          || (br.cep >= autoc::eval::kCepSentinelThreshold);
+          if (!gated) {
+            spn0 = autoc::eval::compute_pair_span(bl.screen_x, bl.screen_y,
+                                                  br.screen_x, br.screen_y);
+            const auto t = autoc::eval::compute_tilt(bl.screen_x, bl.screen_y,
+                                                     br.screen_x, br.screen_y);
+            tltS = t.sin;
+            tltC = t.cos;
+          }
+        }
+        const double dspn = havePrevSpan ? (spn0 - prevSpan) : 0.0;
+        prevSpan = spn0;
+        havePrevSpan = true;
+
+        char tb[320];
+        int tn = snprintf(tb, sizeof(tb),
+          ",%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+          rampSc, hull,
+          tg.x(), tg.y(), tg.z(), tr.x(), tr.y(), tr.z(),
+          spn0, dspn, blC0, brC0, tltS, tltC);
+        std::cout.write(tb, tn);
       } else if (path && !path->empty()) {
         const int pIdx = std::clamp(st.getThisPathIndex(), 0,
                                     static_cast<int>(path->size()) - 1);

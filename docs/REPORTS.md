@@ -62,9 +62,17 @@ python3 $D/plot_per_axis_time_series.py /tmp/t_summary.csv --label "$NAME" \
 - **gen_diag** — `python3 specs/034-energy-objective-cleanup/plot_gen_diag.py
   --in $LOG --label $NAME --out …_gen_diag.png` (parses `#GenDiag`, **tracker
   only** — M1 logs don't emit it).
-- **intercept_analysis** — closure/sensor chart; the pre-035 script reads
-  data.dat, so a dmp-dump-fed 035 port is still a backlog item (needs tracker
-  target/beacon columns).
+- **intercept_analysis** (7-panel closure-dynamics + sensor-utility chart,
+  **tracker only**: A closest-approach traces, B/C outTh-vs-spn0/dspn policy,
+  D spn0-vs-dist sensor fidelity, E encounter histogram, F hull-strikes, G
+  near-misses) — one gen, from `--csv-only` (the tracker CSV carries
+  `tgX..tgZ,trX..trZ,spn0,dspn,blC0,brC0,tltS,tltC`):
+```bash
+./build/dmp-dump "$RUN" --csv-only -i autoc-tracker.ini > /tmp/t.csv
+python3 specs/035-energy-lexicase-objective/intercept_analysis.py --csv /tmp/t.csv \
+  --label "$NAME" --gen "$GEN" \
+  -o specs/035-energy-lexicase-objective/${NAME}_intercept_analysis.png
+```
 
 ## Progress proxy: gen duration ≈ fitness (log-only, free)
 
