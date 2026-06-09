@@ -1,0 +1,370 @@
+---
+description: "Task list for 037 Faster Control Loop (10 Hz → projected ~20 Hz)"
+---
+
+# Tasks: Faster Control Loop (10 Hz → projected harmonic ~20 Hz)
+
+**Input**: Design documents from `/home/gmcnutt/autoc/specs/037-20hz-control-loop/`
+**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/, quickstart.md
+
+**Tests**: INCLUDED — Constitution Principle I (Testing-First) requires tests for mainline-promoted
+code. Firmware bring-up (US2/US3) uses bench/flight acceptance plus host-unit tests for the pure
+fusion/auto-cal math.
+
+**Organization**: by user story = spec phase. **US1 = Phase A** (sim M1 go/no-go, the MVP). **US1b =
+Phase A M2** (tracker retrain, gated on US1 signal). **US2 = Phase B** (embedded ~20 Hz). **US3 =
+Phase C** (50 Hz stretch). Phase 0 research is Foundational (gates US1).
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: parallelizable (different files, no dependency on an incomplete task)
+- **[Story]**: US1/US1b/US2/US3; Setup, Prework, Foundational, Polish carry no story label
+- Exact file paths included.
+
+## Prework index (the spec's "Prerequisite prework" items — where each lives)
+
+| Prework | Spec section | Task | Phase | Why there |
+|---|---|---|---|---|
+| **P1** entry-envelope sigma tighten | "tighten the entry-variation envelope" | **T006** | Prework | config edit; must land as a clean step *before* the US1 retrain (T026) |
+| **P2** slim autoc training logfile | "slim the autoc training logfile" | **T005** | Prework | cleanup; do alongside P1 (after verifying dmp reconstructability) |
+| **P3** fix short-source skip (keep 294 1:1) | "fix the short-source skip" | **T004** | Prework | tracker-mode bugfix; **gates any clean M2 bake** (035 M2 rerun + US1b) |
+| **P4** renderer focus-mode single-arena | "renderer focus-mode single-arena" | **T007** | Prework | **moved early (operator 2026-06-09): at 40/50 Hz the renderer steps every arena and becomes unusable for inspecting high-rate runs — needed to *use* the sim in US1** |
+| **P5** Xiao packed-logging format | "Xiao recording format (packed)" | **T038** | US2 | xiao firmware; operator-deferred to Phase B, after the US1 M1 signal |
+
+## Path Conventions
+
+Multi-component repo: `crrcsim/` (FDM + inputdev), `src/` + `include/autoc/` (autoc eval/nn), `xiao/`
+(firmware), `tests/` (GoogleTest), `specs/037-20hz-control-loop/` (feature one-off scripts +
+research artifacts per `feedback_scripts_dir_scope`).
+
+---
+
+## Phase 1: Setup (Shared Infrastructure)
+
+**Purpose**: the cadence knob, the measurement tool, and test scaffolding everything else uses.
+
+- [ ] T001 Add a single-source-of-truth control-rate config key read from `.ini`/CLI (not the
+  `AUTOC_EVAL_INTERVAL_MSEC` env var) and make `gEvalUpdateIntervalMsec`
+  (`crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.{h,cpp}`) and `SIM_TIME_STEP_MSEC`
+  (`include/autoc/eval/aircraft_state.h:39`) derive from / assert-equal it; keep the startup
+  cadence-triple assertion (`inputdev_autoc.cpp:297-316`). No in-class default (Principle VII). Per
+  contracts/cadence-config.md + research.md R6.
+- [ ] T002 [P] New de-alias analysis script (dmp-dump-based, NOT a historical script —
+  `feedback_historical_scripts_immutable`) computing per-axis roll **lag-1 autocorr, sign-flip rate,
+  saturation %, dctrl** in `specs/037-20hz-control-loop/dealias_metrics.py`; reads t6 as the 10 Hz
+  baseline reference.
+- [ ] T003 [P] Test scaffolding: create `tests/test_cadence_invariance.cc` and
+  `tests/test_tick_rescale.cc` skeletons + register in the GoogleTest target (CMakeLists; operator-driven
+  `rebuild-perf.sh` after the registration edit per Constitution IV).
+
+**Checkpoint**: cadence is a first-class configurable knob; the gate metric is measurable.
+
+---
+
+## Phase 2: Prework / Cleanup (do early — independent of the bake)
+
+**Purpose**: the spec's standalone "Prerequisite prework" cleanup that should land BEFORE the main
+work, not trail it. P1/P2/P3/P4 here; P5→US2 (xiao firmware, deferred by design — see prework index).
+These are independent of the Phase-0 research and can run in parallel with it.
+
+- [ ] T004 [P] **P3 — fix the short-source skip**: revert the `c95887e` erase; keep `gSourceTrajectoryList`
+  at **294 (1:1 with the scenario slots)** and **neutralize the 2 short corner-crash scenarios in place**
+  (score as corner-crash / exclude their fitness) so `slot % 294 = slot` holds. Touch `src/autoc.cc` +
+  the worker map (`crrcsim/.../inputdev_autoc.cpp:700`). **Gate: must precede any clean M2 bake** (035 M2
+  rerun / US1b). Tracker-mode only; doesn't affect M1.
+- [ ] T005 [P] **P2 — slim the autoc training logfile**: drop the per-scenario `[N] OK/CRASH` lines
+  (294/gen) + per-scenario decomposition from the autoc training `.log`, **only after verifying** the
+  elite per-scenario data is reconstructable from the gen `.dmp` via `dmp-dump`. Keep the per-gen
+  `#NNGen`/`#GenCrash`/`#GenSimStats` summary. (`project_dmp_driven_analytics_backlog` direction.)
+- [ ] T006 [P] **P1 — tighten the entry-variation envelope**: in `include/autoc/util/config.h:63,65` set
+  `entryConeSigma 30→18` (⇒ 2.5σ = 45°) and `entrySpeedSigma 0.10→0.05–0.06` (⇒ 2.5σ ≈ 12.5–15%); clamp
+  stays 2.5σ — do NOT add a new hard cap (existing `kEntryConeMaxRad=80°` becomes moot). Update the
+  load/log in `src/autoc.cc`. Clean step coordinated with the US1 retrain (T026); t6 stays the baseline
+  (Q3 caveat). **MUST precede T026.**
+- [ ] T007 [P] **P4 — renderer focus-mode single-arena**: in playback focus mode the renderer currently
+  still steps **every** arena; change it to process **only the focused arena** (skip per-tick
+  update/step for non-focused arenas, not just skip draw). **Moved early** because at 40/50 Hz the
+  all-arena step makes the renderer too slow to *use* for inspecting high-rate runs — this is what keeps
+  the sim usable during the US1 retrain/inspection, not just a Phase-C compute win. Scope: the
+  visualization/playback renderer path (confirm whether eval-visual sampling also benefits).
+
+**Checkpoint**: the tree is clean for a reproducible bake; the M2-gating bug is fixed; the M1 difficulty
+envelope is set; the renderer stays usable at the higher sim rates.
+
+---
+
+## Phase 3: Foundational — Phase 0 research (Blocking Prerequisites for US1)
+
+**Purpose**: produce the smoothing theory + projected cadence + derived-bundle decisions that GATE the
+bake. **⚠️ No US1 retrain begins until T008 + T011 + T012 complete.**
+
+- [ ] T008 **Smoothing theory (RT — GATES the bake)**: extract roll-subsidence τ_roll from the FDM
+  step-response trace (`crrcsim/src/mod_fdm/fdm_larcsim/fdm_larcsim.cpp` trace-capture path) + `Cl_p=-0.47`;
+  inspect **raw pre-tanh roll drive** in the t6 traces; produce the per-axis (A) smooths / (B) relay
+  prediction + command-vs-motion target. Write to research.md RT. A (B) verdict = cheap no-go, STOP
+  before any bake.
+- [ ] T009 [P] R2 camera fps grid + AGC/exposure budget for VD55G1 (primary) / OV9281 (backup): reachable
+  fps-vs-window curve (PLL/HTS/VTS), fixed-exposure/gain beacon operating point; co-resolve with 031
+  shortlist (`docs/aircraft_tracker_handoff.md` §4). → research.md R2.
+- [ ] T010 [P] R3 transport ceiling: measure MSP read+write at 115200 and at a bumped baud
+  (921600/1M) on the real harness; document the per-tick budget + baud-vs-SPI recommendation. →
+  research.md R3, contracts/transport-link.md. Update `project_sim_latency`.
+- [ ] T011 R1 **projected NN loop rate**: from T008/T009/T010 + servo/IMU responsiveness, enumerate the
+  collision-avoiding selectable-rate shortlist and pick the projected rate we'd fly. → research.md R1.
+  (depends T008, T009, T010)
+- [ ] T012 R5 **history time-basis decision**: choose the log/time-spaced lag set; compute the new
+  `NN_INPUT_COUNT` (M1) and tracker input count (M2); record the Principle-V layout note. →
+  research.md R5 + data-model.md §2, contracts/nn-input-layout.md.
+- [ ] T013 [P] Tick-rescale audit sign-off: confirm the research.md audit table against current code
+  (`src/eval/fitness_decomposition.cc:179-180,206-244`, `src/nn/evaluator.cc:310-334`) — list every term
+  to change and its rescale rule before touching code.
+
+**Checkpoint**: rate projected, bundle defined, theory predicts smooth-or-not. US1 can begin.
+
+---
+
+## Phase 4: User Story 1 — Phase A sim M1 retrain & de-alias gate (Priority: P1) 🎯 MVP
+
+**Goal**: retrain M1 at the projected rate with the derived bundle and confirm the smoothing theory
+against the de-alias gate — the whole-feature go/no-go, sim-only, no firmware.
+
+**Independent Test**: at the projected rate, roll lag-1 autocorr negative→≥0 AND sign-flip −≥20 pts
+(t6 56%→≤36%) at tracking within noise of historical t6 10 Hz (Clarifications Q1/Q3), matching the
+theory's (A)/(B) prediction.
+
+### Tests for User Story 1 (write first, ensure they FAIL) ⚠️
+
+- [ ] T014 [P] [US1] Cadence-invariance test in `tests/test_cadence_invariance.cc`: stability + energy
+  totals for a fixed synthetic trajectory are ~equal at 10 Hz vs the projected rate (within FP).
+- [ ] T015 [P] [US1] Tick-rescale test in `tests/test_tick_rescale.cc`: `closing_rate` for a known dDist
+  is correct at two intervals; engage-delay ticks = `ceil(EngageDelayMs/controlIntervalMsec)` at 10/20/50.
+- [ ] T016 [P] [US1] NN-layout round-trip + fail-loud test in `tests/test_nn_layout.cc`: write/read a dmp
+  at the new layout byte-identical; an old-layout dmp triggers a clear fail-loud error (Principle V).
+
+### Implementation for User Story 1
+
+- [ ] T017 [US1] Set the projected cadence (T011) via the T001 config; bump FDM rate in
+  `crrcsim/autoc_config.xml` (`dt` for ≥10× oversample; 2 kHz matches INAV) and keep `fps` integral with
+  the cadence triple. Per contracts/cadence-config.md.
+- [ ] T018 [P] [US1] Tick-rescale: normalize the per-tick **stability/energy accumulators**
+  (`src/eval/fitness_decomposition.cc:179-180`) to per-second / rate-invariant; types `gp_fitness`.
+- [ ] T019 [P] [US1] Tick-rescale: replace the hardcoded `/0.1f` closing-rate divisor with the actual dt
+  in `src/nn/evaluator.cc:310-334`; verify closure/thrash semantics (`fitness_decomposition.cc:206-244`).
+- [ ] T020 [US1] Implement the **rate-independent engage delay** (`ticks = ceil(EngageDelayMs /
+  controlIntervalMsec)`) per `specs/023-ood-and-engage-fixes/contracts/engage_delay.md` in `src/autoc.cc`
+  / the stepper (new — not yet in code); no in-class default (Principle VII).
+- [ ] T021 [US1] Implement the **history time-basis** (T012 lag set) in `include/autoc/nn/nn_inputs.h`
+  (update M1 layout + `NN_INPUT_COUNT` + static_assert) and the gather in `src/nn/evaluator.cc`
+  (`HIST_PAST[]`/`gather_pathgen_inputs`); update `include/autoc/nn/topology.h` (M1 topology + weight
+  count). fp32 kept.
+- [ ] T022 [US1] Mirror the history time-basis for tracker (M2): `include/autoc/nn/evaluator.h`
+  (`TrackerHistoryWindow`), `src/eval/tracker_stepper.cc` (`projectAndShiftHistory`),
+  `include/autoc/nn/nn_inputs.h` (tracker layout + count), topology.h. Keep sim/firmware layout shared.
+  (Code-coherence now; the M2 *retrain* that validates it is gated US1b.)
+- [ ] T023 [US1] Fail-loud dmp loader on layout/`NN_INPUT_COUNT` mismatch (no cereal version bump per
+  `feedback_no_cereal_versioning`; Principle V) + honest recording of all inputs+outputs at the new
+  boundary (`feedback_honest_dmp_recording`).
+- [ ] T024 [US1] Latency/jitter model: retarget `COMPUTE_LATENCY` to the projected loop's measured latency
+  (T010) + add cadence-jitter so training is dt-tolerant (020); re-derive sim PID filter cutoffs
+  (`rc_filter_lpf`/`gyro_lpf`/`dterm_lpf`) for the new outer rate (026). Per research.md bundle.
+- [ ] T025 [US1] Build + verify tests pass: `bash scripts/rebuild.sh` (Principle II) and operator-driven
+  `rebuild-perf.sh` if CMakeLists changed (Constitution IV); T014–T016 now pass.
+- [ ] T026 [US1] Retrain M1 at the projected rate with the bundle (after T004/T006 prework) via
+  `scripts/train.sh <ini> <logfile>` (Principle IX — never agent `run_in_background`); name
+  `autoc-037-t<N>-m1-<rate>...` (`feedback_artifact_naming_convention`); tag dumps `retain=expire`
+  (Principle VIII).
+- [ ] T027 [US1] Measure the gate with `dealias_metrics.py` (T002) on the run dmp vs t6 (fixed-eval per
+  `project_late_run_fitness_interpretation`); confirm vs the T008 theory prediction. Record the go/no-go.
+- [ ] T028 [US1] **Milestone close**: type-domain grep audit on US1-touched `src/eval/ src/nn/` (Principle
+  VI per-milestone — annotate `// raw-ok:` or convert) + operator-driven bit-replay regression gate at
+  the unchanged 10 Hz config (no regression from the refactor).
+
+**Checkpoint (MVP)**: a defended smooth-vs-relocate verdict at a hardware-projected cadence, clean per
+the constitution. **Clears → US1b (M2) and/or US2; persists → US3; not a clear win → STOP** before
+firmware (cheap no-go).
+
+---
+
+## Phase 5: User Story 1b — Phase A M2 tracker cadence retrain (Priority: P1, GATED on US1 signal)
+
+**Goal**: carry the cadence win into tracker mode — retrain M2 at the projected cadence on the
+already-implemented M2 layout/rescale. **In scope ONLY IF US1 (T027) shows a sensible higher-rate
+signal** (operator, 2026-06-09); skipped otherwise.
+
+**Independent Test**: M2 at the projected cadence holds tracking (crash % / on-track parity with the M2
+baseline) with the per-axis de-alias improvement the theory predicted.
+
+- [ ] T029 [US1b] Retrain M2 (tracker) at the projected cadence via `scripts/train.sh` — requires the P3
+  short-source fix (T004) for a clean M2 bake and the M2 layout/rescale (T022). Name
+  `autoc-037-t<N>-m2-<rate>...`; tag `retain=expire` (Principle VIII).
+- [ ] T030 [US1b] Measure M2 de-alias + tracking vs the M2 baseline with `dealias_metrics.py`; confirm vs
+  the theory; record the go/no-go for carrying M2 to flight. Per-milestone type-audit on any
+  M2-specific touched code (Principle VI).
+
+**Checkpoint**: M2 validated (or declined) at the projected cadence. Gate decides whether the flown
+controller (US2) is M1, M2, or both.
+
+---
+
+## Phase 6: User Story 2 — Phase B embedded ~20 Hz (Priority: P2)
+
+**Goal**: run a fresh ~20 Hz control tick on real hardware (local-IMU fast loop + INAV slow sync),
+validated against INAV, producing the flown controller. **GATED on US1 clearing at ~20 Hz.**
+
+**Independent Test**: local-IMU fusion agrees with INAV (attitude/heading/convention) within tolerance in
+a logged cross-check flight; then promoted, the 20 Hz loop holds (no `ctl loop` overruns) and sim↔real
+de-alias matches.
+
+### Tests for User Story 2 (host-unit, the pure math) ⚠️
+
+- [ ] T031 [P] [US2] Host-unit tests for the fusion/auto-cal math in `tests/test_imu_fusion.cc`:
+  quaternion gyro propagation, complementary blend, **latency forward-propagation** to "now", and the
+  auto-cal rotation solve — pure functions, testable off-target (Constitution I before promotion).
+
+### Implementation for User Story 2
+
+- [ ] T032 [US2] Execute the **021 convention cross-check** (`autoc::imu::inavQuatToAerospaceEB` boundary)
+  — the Phase-B prerequisite gate.
+- [ ] T033 [US2] Raise the link baud on both ends (`xiao/src/msplink.cpp:342 Serial1.begin`, INAV
+  `inav-hb1.cfg` MSP port) per T010; re-measure read+write fits the 20 Hz budget
+  (contracts/transport-link.md).
+- [ ] T034 [US2] INAV-side: command override + state serve at 20 Hz; keep CH6=manual semantics.
+- [ ] T035 [US2] New `xiao/src/imu_local.{cpp,h}`: LSM6DS3 TWIM-DMA read + completion ISR (tail-safe,
+  double-buffered) — there is currently NO onboard-IMU code.
+- [ ] T036 [US2] Complementary/loosely-coupled fusion: local gyro propagation + accel leveling +
+  gyro-bias estimate; INAV slow-sync blend with **latency compensation** (forward-propagate stale INAV
+  attitude to "now" via MSP `timestamp_us` before blend). Per spec Fusion scheme. (math covered by T031)
+- [ ] T037 [US2] Three rate tiers (data-model §5): fast local IMU @ control rate; intermediate INAV
+  position poll (dead-reckon bridge); slow INAV attitude resync. Auto-calibrate local-IMU→body rotation
+  from INAV (not manual board-alignment).
+- [ ] T038 [US2] **P5 — packed dual-stream log** (contracts/packed-log-format.md): variable frame
+  type/rate, delta+varint, pre-erased async-DMA ring fixing the blocking `flash_logger.cpp:666-713`
+  tail; shared writer/reader + `join_flight_analysis.py` decode. Also firmware history layout in lockstep
+  with the sim (T021/T022).
+- [ ] T039 [US2] Set `xiao/include/main.h` `MSP_NN_EVAL_DIVISOR=1` (20 Hz NN) once T033/T036 fit the tick.
+- [ ] T040 [US2] Validation: `activate → capture → confirm` (local-IMU logged beside INAV) → promote →
+  flight test → sim↔real de-alias confirm. Pin the flown controller S3 prefix in the outcome doc
+  (Principle VIII).
+
+**Checkpoint**: a flown ~20 Hz controller with confirmed sim↔real smoothing.
+
+---
+
+## Phase 7: User Story 3 — Phase C 50 Hz stretch (Priority: P3)
+
+**Goal**: reach 50 Hz (20 ms tick) with a bounded eval + tail-safe real-time loop. **GATED on US1
+showing 20 Hz insufficient.**
+
+**Independent Test**: 50 Hz loop sustains within budget on-target (eval ≤ defended budget; no tick
+overrun under worst-case jitter), and the 50 Hz sim arm (FDM ≥500 Hz) clears the de-alias gate.
+
+### Implementation for User Story 3
+
+- [ ] T041 [P] [US3] R4 cycle-count harness (contracts/eval-cycle-harness.md): a `xiao/` bench target
+  running the codegen'd unrolled M1/M2 forward, counting `DWT->CYCCNT` for {macs, +tanh (expf vs
+  poly/LUT), +gather}; off-target op-counter cross-check. Emits the defended eval budget. (Cheap;
+  runnable early/parallel.)
+- [ ] T042 [US3] Unroll + fast-tanh the NN forward (`xiao/src/generated/nn_program_generated.cpp` →
+  codegen'd straight-line FMA, fp32) guided by T041; M1 33→32→16→3, M2 54→32→16→3.
+- [ ] T043 [US3] Real-time slot scheduling (collect→process→output→log) with control-critical slots
+  preempt-protected; dt-aware processing via `inavSampleTimeMsec`; degrade logging under overrun.
+- [ ] T044 [US3] Tail-bounding: async QSPI flash (no in-loop erase), NVIC priorities so the control tick
+  isn't preempted, DMA completion ISRs; instrument sub-phase timestamps to attribute the 7.4 ms tail.
+  (Renderer single-arena cleanup is prework T007.)
+- [ ] T045 [US3] Validate the 50 Hz sim arm at FDM ≥500 Hz (≥10× oversample) clears the gate; on-target
+  budget check.
+
+**Checkpoint**: 50 Hz viable and justified, or documented as unnecessary (20 Hz sufficed).
+
+---
+
+## Phase 8: Polish & Cross-Cutting Concerns
+
+- [ ] T046 [P] Final type-domain grep audit (Principle VI) across all touched `src/eval/ src/nn/
+  include/autoc/eval/ include/autoc/nn/` (closes any per-milestone gaps from T028/T030).
+- [ ] T047 [P] 031 write-back: fold the chosen control rate into `docs/aircraft_tracker_handoff.md` as the
+  acquisition-budget input; carry the per-beacon independent-correlator requirement (R7).
+- [ ] T048 Outcome doc + memory: write `specs/037-20hz-control-loop/outcome.md` (theory verdict, projected
+  rate, M1 + M2 gate results, pinned S3 prefixes); update project memory (rate lineage, smoothing-theory
+  result).
+
+---
+
+## Dependencies & Execution Order
+
+### Phase dependencies
+
+- **Setup (P1)**: no deps — start immediately.
+- **Prework (P2)**: independent of Foundational; run in parallel. **T004 (P3) gates any clean M2 bake
+  (US1b T029)**; **T006 (P1) MUST precede the US1 retrain T026**; **T007 (P4 renderer) before inspecting
+  any ≥40 Hz sim run**.
+- **Foundational (P3)**: after Setup; **T008+T011+T012 BLOCK US1**. T009/T010 feed T011.
+- **US1 / Phase A M1 (P4)**: after Foundational (+ T006 prework; T007 for high-rate inspection). The MVP.
+  Its gate (T027) BLOCKS US1b/US2/US3. Closes with T028 (per-milestone audit + regression gate).
+- **US1b / Phase A M2 (P5)**: GATED on US1 showing a sensible signal (T027). Needs T004 + T022.
+- **US2 / Phase B (P6)**: after US1 clears at ~20 Hz.
+- **US3 / Phase C (P7)**: after US1 shows 20 Hz insufficient (T041 may start early/parallel).
+- **Polish (P8)**: after their phase.
+
+### Critical gate chain
+
+`T008 (theory) → T011 (projected rate) → T017–T024 (bundle) → T026 (retrain) → T027 (gate) →
+{US1b M2 | US2 20 Hz | US3 50 Hz}`
+
+### Within US1
+
+Tests (T014–T016) written first and FAIL → cadence/FDM (T017) → rescale (T018–T020) → history layout
+(T021–T023) → latency model (T024) → build (T025) → retrain (T026, needs T004/T006) → measure (T027) →
+milestone close (T028).
+
+### Parallel opportunities
+
+- Setup: T002, T003 [P].
+- Prework: T004, T005, T006, T007 all [P] — and parallel with Foundational research.
+- Foundational: T009, T010 [P] (then T011); T013 [P].
+- US1 tests: T014, T015, T016 [P]. US1 impl: T018, T019 [P] (different files).
+- US2: T031 [P]. US3: T041 [P]. Polish: T046, T047 [P].
+
+---
+
+## Parallel Example: Prework + Foundational together
+
+```bash
+# Prework cleanup (independent) runs alongside Phase-0 research:
+Task: "P3 fix short-source skip in src/autoc.cc + inputdev_autoc.cpp:700"
+Task: "P2 slim autoc training logfile (after dmp-reconstructability check)"
+Task: "P1 tighten entry sigmas in include/autoc/util/config.h"
+Task: "P4 renderer focus-mode single-arena in the crrcsim viewer path"
+Task: "RT smoothing theory → research.md"
+Task: "R2 camera fps grid + AGC → research.md"
+Task: "R3 transport ceiling → research.md"
+```
+
+---
+
+## Implementation Strategy
+
+### MVP first (US1 / Phase A M1 only)
+
+1. Phase 1 Setup → 2. Phase 2 Prework/Cleanup → 3. Phase 3 Foundational (RT theory may no-go here
+cheaply) → 4. Phase 4 US1 → 5. **STOP & VALIDATE**: the de-alias gate vs the theory prediction →
+6. decide US1b (M2) / US2 / US3 / stop.
+
+### Incremental delivery
+
+US1 (sim M1 go/no-go + the rate decision) → US1b (M2 retrain, if signal) → US2 (flown 20 Hz) → US3
+(50 Hz only if needed). Each is independently testable; US1b/US2/US3 are gated on US1's result.
+
+---
+
+## Notes
+
+- [P] = different files, no incomplete-task dependency.
+- **Prework is its own early phase now** (P1/P2/P3/P4 — P4 moved up because the all-arena renderer is
+  unusable at ≥40 Hz); only P5 (xiao packed log) stays deferred to US2 (see index).
+- **US1b (M2) is gated-in-scope**: retrained only if US1 (M1) shows a sensible higher-rate signal.
+- Theory (T008) is the true gate — it can kill the feature cheaply before any bake.
+- The cadence change is a *bundle* (cadence + latency/jitter + history buckets + FDM), not one knob.
+- Principle V: the history-layout change is greenfield (no cereal bump) but fail-loud on read.
+- Principle VI audit runs **per milestone** (T028 US1, T030 US1b, T046 final), not only at the end.
+- Operator drives the regression gate and clean rebuilds; never rebuild during a live training run.

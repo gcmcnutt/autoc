@@ -1,6 +1,6 @@
 # autoc Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-04
+Auto-generated from all feature plans. Last updated: 2026-06-09
 
 ## Active Technologies
 - C++17 (renderer, shared code), Python 3.11 (analysis scripts) + Eigen (math), VTK (renderer), cereal (data.dat parsing), blackbox-tools (INAV decode) (018-flight-analysis)
@@ -31,6 +31,7 @@ Auto-generated from all feature plans. Last updated: 2026-06-04
 - file-based — `data.dat` (per-tick trace), `data.stc` (per-gen aggregate), S3 `.dmp` (cereal `EvalResults`); greenfield schema change (no cereal version bump per project practice; readers fail-loud per Constitution V) (034-energy-objective-cleanup)
 - C++17 (autoc, crrcsim), Python 3.11 (analysis/plot scripts) + Eigen (vec3/quat), cereal (NN + EvalResults + dmp serialization), inih (035-energy-lexicase-objective)
 - S3 per-mode buckets `autoc-m1` / `autoc-m2` / `autoc-eval` (run-id naming uniform (035-energy-lexicase-objective)
+- C++17 (autoc, crrcsim), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analysis) + Eigen (vec3/quat), cereal (NN + EvalResults + dmp), inih (ini), GoogleTest, (037-20hz-control-loop)
 
 - C++17 + Eigen, cereal (serialization), inih (config), GoogleTest (015-nn-training-improvements)
 
@@ -50,9 +51,9 @@ tests/
 C++17: Follow standard conventions
 
 ## Recent Changes
+- 037-20hz-control-loop: Added C++17 (autoc, crrcsim), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analysis) + Eigen (vec3/quat), cereal (NN + EvalResults + dmp), inih (ini), GoogleTest,
 - 035-energy-lexicase-objective: Added C++17 (autoc, crrcsim), Python 3.11 (analysis/plot scripts) + Eigen (vec3/quat), cereal (NN + EvalResults + dmp serialization), inih
 - 034-energy-objective-cleanup: Added C++17 (autoc, crrcsim), Python 3.11 (analysis scripts) + Eigen (vec3/quat), cereal (NN + EvalResults + dmp serialization), inih (ini parsing), GoogleTest (unit/contract), CRRCSim LaRCSim FDM
-- 033-m1-smooth-plus-variations: Added C++17 (autoc, crrcsim), Python 3.11 (analysis scripts) + Eigen (vec3/quat math), cereal (NN serialization, EvalResults wire-protocol + dmp), inih (ini parsing), GoogleTest (unit + contract tests), CRRCSim LaRCSim FDM
 
 
 <!-- MANUAL ADDITIONS START -->
