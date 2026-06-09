@@ -50,8 +50,9 @@ public:
     };
     ScoreTerms decomposeStepScore(double along, double lateralDist) const;
 
-    // Update streak state and return stepPoints * multiplier.
-    // Streak increments if stepPoints >= threshold, hard-resets otherwise.
+    // Update streak state and return stepPoints × streak_multiplier.
+    //
+    // Streak: increments if stepPoints >= threshold, hard-resets otherwise.
     double applyStreak(double stepPoints);
 
     // Reset streak and diagnostics (call at start of each scenario).

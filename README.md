@@ -7,8 +7,7 @@ AutoC evolves neural network controllers for autonomous RC aircraft flight. It u
 | Component | Description |
 |-----------|-------------|
 | **autoc** | Main evolution engine — multi-threaded population evaluation |
-| **minisim** | Lightweight aircraft physics simulation (training) |
-| **crrcsim** | Full flight dynamics model (CRRCSim fork, validation) |
+| **crrcsim** | Full flight dynamics model (CRRCSim fork) — the sole training worker |
 | **renderer** | VTK-based 3D flight path visualization |
 | **nnextractor** | Extract NN weights from evolution checkpoints |
 | **nn2cpp** | Generate embedded C++ from trained NN weights |
@@ -59,7 +58,7 @@ PathGeneratorMethod=random
 ```
 include/autoc/       # Headers (nn/, eval/, util/, rpc/)
 src/                 # Core source (autoc.cc, nn/, eval/, util/)
-tools/               # minisim, renderer, nnextractor, nn2cpp
+tools/               # renderer, nnextractor, nn2cpp, *_dmp_inspect
 tests/               # Unit + contract tests (GoogleTest)
 crrcsim/             # CRRCSim FDM (git submodule)
 xiao/                # Embedded target (PlatformIO)

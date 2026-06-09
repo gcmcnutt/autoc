@@ -316,3 +316,64 @@ aircraft model mismatch), NOT coordinate convention errors.
 - T221b: Use MANUAL mode (eliminates PID rate tracking, closer to sim's direct control)
 - T221c: Synchronized send loop (reduces pipeline latency from ~48ms to ~5ms)
 - T221a: Remove unnecessary 200ms arm countdown
+
+---
+
+## 11. Tracker-Mode Sensor Pipeline (030 + 032)
+
+Tracker mode is an alternate evaluation pipeline parallel to the M1 pathgen path documented in §1–§10. It feeds the **same NN forward-pass machinery** with a **different sensor surface** — instead of synthesized bearing-to-target scalars (`dPhi/dTheta/dist`), tracker mode projects two physical wingtip beacons through a chase-mounted camera and presents the NN with **NDC beacon observations plus chase attitude/state + derived perceptual features**.
+
+Today this is sim-only — autoc desktop training via the crrcsim worker. Xiao firmware does NOT yet implement tracker mode; this section is the **xiao-migration prep contract** so when xiao tracker support lands, it inherits the sim invariants exactly.
+
+### 11.1 Input vector shape (54 floats — 032 phase 1)
+
+Full layout in [COORDINATE_CONVENTIONS.md §"030/032 Tracker-Mode NN Inputs"](COORDINATE_CONVENTIONS.md). Headline:
+
+| Slots | What | Source |
+|---|---|---|
+| 0–35  | 2 beacons × {x, y, CEP} × 6-tick history (100ms grid) | `projectBeacon` (per-tick) → shifted history ring |
+| 36–43 | Chase quat (4) + cruise-normalized airspeed (1) + body gyro (3) | `chase.getOrientation/getRelVel/getGyroRates` |
+| 44    | Soft-saturated forward arena margin | `tanh(distanceToBoundary / kDistToBoundaryScale_m)` |
+| 45–53 | **032 phase 1 derived features**: beacon-pair span ×6 history, span_rate, target_tilt (sin, cos) | `compute_pair_span` + `compute_tilt` in `include/autoc/eval/derived_features.h` |
+
+### 11.2 Identity-stable beacon slot mapping (Feature A invariant)
+
+`beacon_l_*` slots ALWAYS carry the **port** beacon (target body −y mount, red wingtip). `beacon_r_*` slots ALWAYS carry the **starboard** beacon (target body +y mount, green wingtip). This is **independent of which beacon lands on which image side** at any given tick — target heading away swaps image sides; the slot mapping does not swap.
+
+**Sim enforcement (current)**: `tracker_stepper.cc::projectAndShiftHistory` (autoc reference impl) and `crrcsim_tracker_helper.cpp::projectAndShiftHistory` (crrcsim worker) both construct projections using `beacon_left_` config → store in `left` local → write to `history_.left_*`. No NDC-x sort. The mapping is by mount identity, period.
+
+**Xiao migration contract** (for when xiao tracker-mode lands):
+- FPGA emits per-detection `(x, y, CEP, code_id)` tuples
+- Xiao firmware MUST map `code_id → {port, starboard}` via the Gold-code-to-physical-port table (build-time constant in xiao firmware, or MSP-configured)
+- Xiao firmware MUST populate `TrackerInputs::beacon_l_*` from the port-keyed detection and `beacon_r_*` from the starboard-keyed detection, regardless of image-plane position
+- Xiao firmware MUST NEVER sort by image-plane `x` or by `code_id` numeric value
+- When a code is undetected for the current frame, populate the slot with the CEP-sentinel pattern (`screen_x = 0, screen_y = 0, cep = kCepSentinelFloat`) — same convention as sim's invisible-beacon case
+
+**Why this matters**: if port/starboard swap between consecutive ticks, the NN sees apparent +180° tilt flips on otherwise-steady target → contradictory gradients → no tilt-based learning possible. The contract test in `tests/gather_tracker_inputs_tests.cc` guards against accidental sim-side regression.
+
+### 11.3 CEP-gating + neutral-substitution rule (032 phase 1 Q4)
+
+The new 032 derived features (`beacon_pair_span[6]`, `span_rate`, `target_tilt_sin/cos`) are **CEP-gated per-tick**: if EITHER beacon's CEP at the current tick is ≥ `CepGateThreshold` (default 1.25, matching `kCepSentinelThreshold` from `camera_projection.h`), the derived features are **substituted with neutral values**:
+
+| Derived feature | Neutral value (CEP-gated) | Meaning |
+|---|---|---|
+| `beacon_pair_span[5]` (now) | 0.0 | "no closing-distance signal" |
+| `span_rate` | 0.0 (derives mechanically from `span[5] - span[4]`) | "no relative motion signal" |
+| `target_tilt_sin` | 0.0 | "no roll signal" |
+| `target_tilt_cos` | 1.0 | "wings level relative — no roll-pressure on controller" |
+
+Together these represent "target straight ahead, in formation, no action needed." The NN gets quiet inputs during blind ticks rather than misleading non-zero values.
+
+**Gate threshold knob**: `[DerivedFeatures] CepGateThreshold` in `autoc-tracker.ini` (default 1.25). Lower values gate more aggressively on noisy-but-present detections. Threaded to the crrcsim worker via `WorkerInit.cepGateThreshold` (workers are separate processes; no ConfigManager).
+
+**Consequence acknowledged in 032 phase 1**: this convention deliberately gives the NN "everything's fine" inputs during blind ticks — it cannot distinguish "actually fine" from "blind, fine-looking inputs are masking it." Phase-2 lost-sight patrol would add explicit `vis_now` / `ticks_since_seen` signals on top. Captured in 032 spec.md §1.5.
+
+### 11.4 Modality vs fault — design framing for the next sensor iteration
+
+Beacon invisibility in this design is a **MODALITY** (geometry-driven, 270° wingtip emission cones + target-relative attitude), NOT a sensor fault. Many target attitudes naturally hide one or both beacons. Next-iteration sensor work should extract intent from partial visibility (single-beacon bearing + history, soft-fail substitution, per-beacon staleness timers), NOT engineer for fault robustness (that's a multi-sensor-era problem). Captured in 032 spec.md §1.7 and project memory `project_sensor_modality_vs_fault.md`.
+
+### 11.5 History pre-fill at scenario start
+
+`initScenario` calls `projectAndShiftHistory(source.samples[0])` six times to pre-fill the 6-tick history with a replicated tick-0 projection (so the NN's first real tick sees a coherent stationary-source history, not a step from zero). The 032 phase-1 span history (`history.span[6]`) inherits this convention automatically — same projection runs six times, span is computed inside `projectAndShiftHistory`, so all 6 history slots get the same first-valid span value at tick 0.
+
+If the first tick is CEP-gated (e.g., starting geometry has target out of camera FOV), the neutral substitution applies during the pre-fill loop just as it would during normal-operation ticks — single convention covers both. No special-case "scenario-start neutral fill" branch.

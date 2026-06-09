@@ -42,10 +42,24 @@ const char* selectionModeToString(SelectionMode mode) {
 // each test case scores against.
 namespace {
     using ScoreField = gp_fitness ScenarioScore::*;
+
+    // Median of fitness values (sorts in place). Empty → 0.
+    gp_fitness median_inplace(std::vector<gp_fitness>& v) {
+        if (v.empty()) return 0.0;
+        std::sort(v.begin(), v.end());
+        const size_t n = v.size();
+        return (n & 1) ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
+    }
+    // 035 FR-003/R2 — MAD = median(|x − median(x)|), the per-axis epsilon in mad mode.
+    gp_fitness computeMAD(std::vector<gp_fitness> vals) {
+        const gp_fitness med = median_inplace(vals);
+        for (gp_fitness& x : vals) x = std::abs(x - med);
+        return median_inplace(vals);
+    }
 }
 
 int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
-                    int pop_size, double epsilon) {
+                    int pop_size, bool use_mad_epsilon, double epsilon) {
     if (pop_size <= 0) return 0;
     int num_scenarios = all_scores.empty() ? 0 : static_cast<int>(all_scores[0].size());
     if (num_scenarios == 0) {
@@ -63,10 +77,14 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
     pool.reserve(num_scenarios);
     for (int s = 0; s < num_scenarios; s++) {
         pool.push_back({s, &ScenarioScore::score,           0.5});
-        // CADENCE7-REDUX (diagnostic): tracking-only pool to reproduce cadence7
-        // exactly. Restore the two below for any 027-style multi-objective run.
+        // 035 FR-008: stability_score axis stays OFF — it's a control-amplitude
+        // whip; smoothness must EMERGE from energy via induced drag (FR-009),
+        // and it would confound the energy verdict.
         // pool.push_back({s, &ScenarioScore::stability_score, 0.5});
-        // pool.push_back({s, &ScenarioScore::energy_score,    0.5});
+        // 035 FR-001: energy axis ON (gen-0 unconditional) — per-scenario convex
+        // throttle energy (FR-001b). Throttle is decoupled from pitch/roll, so
+        // adding this axis trivially satisfies the FR-002 axis-independence ask.
+        pool.push_back({s, &ScenarioScore::energy_score,    0.5});
     }
 
     // Start with all candidates
@@ -88,8 +106,24 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
             }
         }
 
-        // Keep candidates within epsilon of best (relative * |best| floored at absolute)
-        double score_epsilon = std::max(tc.epsilon_floor, std::abs(best_score) * epsilon);
+        // Keep candidates within epsilon of best. Constant mode: |best|·relative
+        // floored at the absolute 0.5 (bit-identical to prior runs). MAD mode
+        // (035 FR-003): per-axis MAD of the field over the alive candidate set,
+        // recomputed each test case.
+        gp_fitness score_epsilon;
+        if (use_mad_epsilon) {
+            std::vector<gp_fitness> vals;
+            vals.reserve(candidates.size());
+            for (int idx : candidates) {
+                if (idx < static_cast<int>(all_scores.size()) &&
+                    tc.scenario < static_cast<int>(all_scores[idx].size())) {
+                    vals.push_back(all_scores[idx][tc.scenario].*(tc.field));
+                }
+            }
+            score_epsilon = computeMAD(std::move(vals));
+        } else {
+            score_epsilon = std::max(tc.epsilon_floor, std::abs(best_score) * epsilon);
+        }
         std::vector<int> survivors;
         for (int idx : candidates) {
             if (idx < static_cast<int>(all_scores.size()) &&

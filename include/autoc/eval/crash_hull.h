@@ -60,6 +60,6 @@ bool didCrashFire(const CrashHull& hull,
 // fixed Bernoulli probability per NN tick (config.crashHullProbability,
 // wired in autoc.cc → EvalData.pCrashThisGen → didCrashFire). The
 // curriculum ramp added per-gen state that complicated determinism
-// debugging; fixed prob is deterministic per (scenario, windSeed).
+// debugging; fixed prob is deterministic per (scenario, scenarioSeed-derived rabbit subseed).
 
 }  // namespace autoc::eval

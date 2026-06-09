@@ -78,7 +78,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         gp_vec3 prevTangent = gp_vec3::UnitX();
 
         // 030 M7d.a — tracker scenarios populate targetTrajectoryList in
-        // minisim; pathgen scenarios leave it empty. Branch on data presence
+        // the worker; pathgen scenarios leave it empty. Branch on data presence
         // to avoid a separate mode field. Pathgen path below is unchanged
         // (bitwise-preserved against the M1 regression gate).
         const bool is_tracker =
@@ -119,7 +119,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                 // Tracker: rabbit = trail-rabbit position trailing target's
                 // velocity vector (M7b); tangent = target velocity unit.
                 // targetTrajectoryList[i] is parallel-indexed with
-                // aircraftStateList[i] (both pushed in lockstep by minisim).
+                // aircraftStateList[i] (both pushed in lockstep by the worker).
                 const std::vector<CopiedTargetSample>& targets =
                     evalResults.targetTrajectoryList.at(i);
                 int targetIndex = std::clamp(stepIndex, 0,
@@ -177,7 +177,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                 const gp_fitness abs_pt = std::abs(static_cast<gp_fitness>(out[0]));
                 const gp_fitness abs_rl = std::abs(static_cast<gp_fitness>(out[1]));
                 stabilityAccum += (abs_pt - 1.0) + (abs_rl - 1.0);
-                energyAccum    += (static_cast<gp_fitness>(out[2]) - 1.0) / 2.0;
+                energyAccum    += throttleEnergyStep(static_cast<gp_fitness>(out[2]));  // 035 FR-001b/R1 convex
             }
 
             // 030 M11.wrap T088 + 327-330 — tracker-mode diagnostic

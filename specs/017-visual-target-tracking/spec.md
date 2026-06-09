@@ -1,5 +1,27 @@
 # Feature 017: Visual Target Tracking — Beacon-Guided Pursuit
 
+> **2026-05-20 status review during 032 closeout**: This spec is the **original** beacon-guided pursuit vision (written before the spec sequence diverged). Its phases have landed across multiple downstream specs:
+>
+> | 017 phase (planned) | Where it landed (actual) | Status |
+> |---|---|---|
+> | **Phase 1** — Recorded lead trajectories from 015 NN | **029** (no-future-arch produced converged M1 NN; dmps consumed as M2 source) + **030 M1→M2 source-dmp loader** | ✅ shipped |
+> | **Phase 2** — Vision sensor simulation (beacon projection in crrcsim) | **030 M5** (`projectBeacon`, camera + beacon configs, CEP-quantization sentinel) | ✅ shipped |
+> | **Phase 3** — Vision NN training (sim-to-sim) | **030** (tracker-mode NN at 45 floats: 36 beacon NDC + 8 chase state + 1 arena) + **032 phase 1** (extended to 54 floats with `beacon_pair_span[6]`, `span_rate`, `target_tilt`) | ✅ shipped — 032 closeout 2026-05-20 plateau-avgInRamp 0.158 (2.25× lift over 030 baseline) |
+> | **Phase 4** — Flight hardware (LED pyramid, camera, optical filter) | **031** (`031-beacon-camera`, parked pre-hardware-order) + **xiao tracker port** (NOT yet — deferred per 032 §1.5; conventions captured in `docs/COORDINATE_CONVENTIONS.md` + `docs/sensor-pipeline.md` §11) | ⏸ parked / partial |
+>
+> **What 017 was right about**: sensor-dimensionality estimate (~83 inputs) is close to 032's 54-slot reality (smaller than 017's guess because 017 assumed stereo camera; production uses single camera + identity-stable beacon labeling). Risk assessment row "beacon pixels insufficient for range" was prescient — 032 phase 1's `beacon_pair_span` directly addressed that risk by adding range proxy (sensors are sufficient per 032 outcome.md §4.1).
+>
+> **What 017 missed / wrong**: GPU dependency estimate ("Phase 3 blocking dependency") proved unnecessary — 030/032 trained at scale (1.18B sims, 4.4k sims/sec) on CPU. The Blackwell-GPU path described is not a current dependency.
+>
+> **What's still ahead**: 017's Phase 4 (flight hardware) is real-flight pursuit of a beacon-equipped target — gated on 031 hardware bring-up + xiao tracker-mode port. The other phases are shipped or have spec successors. Treat 017 itself as **historical** — design discussion lives in 030/032 today; flight-hardware design lives in 031.
+>
+> **Cross-cutting follow-ons to 017's vision** (now tracked in their own specs):
+> - **033** ([../033-m1-smooth-plus-variations/spec.md](../033-m1-smooth-plus-variations/spec.md)) — reward-shape work (smoothness penalty + kamikaze) addressing 0517 flight bang-bang signature + 032 §1.8 hull-escalation
+> - **025** ([../025-craft-variations/spec.md](../025-craft-variations/spec.md)) — craft parameter variations (mass, drag, prop, trim) — adds robustness training surface
+> - Camera variations: NO existing spec; some backlog notes only (see [../BACKLOG.md](../BACKLOG.md)). Candidate 034/035 after 033 lands.
+
+---
+
 ## Vision
 
 Train an NN that can follow another aircraft using only camera imagery of

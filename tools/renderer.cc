@@ -12,6 +12,7 @@
 
 #include "renderer.h"
 #include "autoc/util/config.h"
+#include "autoc/util/s3_run_selector.h"  // s3GetDmpBlob (FR-P09 zstd-aware fetch)
 #include "autoc/autoc.h"
 #include "autoc/eval/aircraft_state.h"
 
@@ -351,17 +352,27 @@ vtkSmartPointer<vtkPolyData> Renderer::createTapeSet(vec3 offset, const std::vec
  */
 bool Renderer::updateGenerationDisplay(int newGen) {
   // now do initial fetch
-  Aws::S3::Model::GetObjectRequest request;
-  request.SetBucket(ConfigManager::getConfig().s3Bucket);
-  std::string keyName = computedKeyName + "gen" + std::to_string(newGen) + ".dmp";
-  request.SetKey(keyName);
-  auto outcome = getS3Client()->GetObject(request);
-  std::cerr << "Fetched " << keyName << " result " << outcome.IsSuccess() << std::endl;
-  if (outcome.IsSuccess()) {
-    std::ostringstream oss;
-    oss << outcome.GetResult().GetBody().rdbuf();
-    std::string retrievedData = oss.str();
-
+  // 035 FR-P09 — dmps are zstd-compressed (gen<N>.dmp.zst); s3GetDmpBlob
+  // inflates by key suffix. Prefer the compressed key, fall back to the
+  // legacy uncompressed .dmp for pre-035 runs.
+  const std::string& s3Bucket = ConfigManager::getConfig().s3Bucket;
+  const std::string keyBase = computedKeyName + "gen" + std::to_string(newGen);
+  std::string keyName = keyBase + ".dmp.zst";
+  std::string retrievedData;
+  try {
+    retrievedData = autoc::s3GetDmpBlob(*getS3Client(), s3Bucket, keyName);
+  } catch (const std::exception&) {
+    keyName = keyBase + ".dmp";  // legacy uncompressed
+    try {
+      retrievedData = autoc::s3GetDmpBlob(*getS3Client(), s3Bucket, keyName);
+    } catch (const std::exception& e) {
+      std::cerr << "Error retrieving object " << keyBase
+                << ".dmp[.zst] from S3: " << e.what() << std::endl;
+      return false;
+    }
+  }
+  std::cerr << "Fetched " << keyName << std::endl;
+  {
     // Deserialize the data
     try {
       std::istringstream iss(retrievedData, std::ios::binary);
@@ -461,10 +472,6 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       return false;
     }
   }
-  else {
-    std::cerr << "Error retrieving object " << keyName << " from S3: " << outcome.GetError().GetMessage() << std::endl;
-    return false;
-  }
 
   // Clear the existing data
   this->paths->RemoveAllInputs();
@@ -518,10 +525,11 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       meta = evalResults.scenarioList[i];
     } else {
       meta.pathVariantIndex = i;
-      if (meta.windSeed == 0 && meta.windVariantIndex == 0 && evalResults.scenario.windSeed != 0) {
-        meta.windSeed = evalResults.scenario.windSeed;
-        meta.windVariantIndex = evalResults.scenario.windVariantIndex;
-      }
+      // 033 cleanup: windSeed back-fill removed (field gone). The per-
+      // scenario scenarioSeed roundtrips via scenarioList[i] when
+      // hasPerPathMetadata; pre-perPathMetadata dmps would have all
+      // scenarios sharing evalResults.scenario.scenarioSeed which is
+      // already correct via the parent meta assignment above.
     }
 
     vec3 finalPos = vec3::Zero();
@@ -534,7 +542,9 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     std::cout << "  Arena " << i
               << " pathIdx=" << meta.pathVariantIndex
               << " windIdx=" << meta.windVariantIndex
-              << " windSeed=" << meta.windSeed
+              << " scenarioSeed=0x" << std::hex << std::setw(16)
+              << std::setfill('0') << meta.scenarioSeed
+              << std::dec << std::setfill(' ')
               << " finalXYZ=" << finalPos.transpose() << std::endl;
   }
 
@@ -645,7 +655,12 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       labelStream << "  Path " << meta.pathVariantIndex;
     }
     labelStream << "  Wind " << meta.windVariantIndex;
-    labelStream << "\nSeed " << meta.windSeed;
+    // 033: scenarioSeed replaces windSeed in label (top 8 hex digits for
+    // visual brevity; full value in console "Arena summary" output above).
+    labelStream << "\nSeed 0x" << std::hex << std::setw(8)
+                << std::setfill('0')
+                << static_cast<uint32_t>(meta.scenarioSeed >> 32)
+                << std::dec << std::setfill(' ');
 
     scalar labelScale = static_cast<scalar>(6.0f * 0.5f);
     scalar textOffsetX = static_cast<scalar>(45.0f);

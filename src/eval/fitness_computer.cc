@@ -55,6 +55,8 @@ FitnessComputer::ScoreTerms FitnessComputer::decomposeStepScore(double along, do
 }
 
 double FitnessComputer::applyStreak(double stepPoints) {
+    // Streak state update is THRESHOLD-based on stepPoints. Operator-visible
+    // intent: a sluggish-but-on-rabbit controller still earns streak credit.
     if (stepPoints >= streakThreshold_) {
         streakCount_ = std::min(streakCount_ + 1, streakStepsToMax_);
         totalStreakSteps_++;

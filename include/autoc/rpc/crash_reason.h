@@ -37,7 +37,7 @@ inline bool isCrash(CrashReason reason) {
            reason == CrashReason::HullStrike;
 }
 
-// Inline so both autoc + minisim see the definition (was duplicated in tools/minisim.cc).
+// Inline so both autoc + the worker see the definition.  // historical: was formerly duplicated in the now-removed tools/minisim.cc (034 US1).
 inline const char* crashReasonToCStr(CrashReason type) {
     switch (type) {
         case CrashReason::None:           return "None";

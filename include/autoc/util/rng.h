@@ -5,9 +5,21 @@
 #include <cmath>
 #include <cstdint>
 
-// Global PRNG — single instance for deterministic evolution.
+// Global PRNG — single instance for deterministic NN-evolution draws.
+//
 // Replaces GPrand()/GPsrand()/GPRandomPercent() from libgp.a.
-// Seed via rng_seed() at startup for reproducible runs.
+//
+// 033 §2.A — Variation PRNG separation: post-033 this stream is dedicated
+// to AUTOC-side NN-evolution (population init, mutation, crossover,
+// selection). Per-scenario variation (wind/rabbit/entry/craft/camera)
+// consumes from class-scoped PRNGs derived from `scenarioSeed[K]` via
+// `autoc/util/scenario_prng.h` — NOT from this stream. The two streams
+// never cross. See specs/033-m1-smooth-plus-variations/contracts/
+// scenario_prng_chain.md (D-contracts) and research.md R6.
+//
+// rng::seed() is called ONCE at autoc startup from `MasterPRNG.next()`,
+// not directly from `cfg.seed`. The first MasterPRNG draw seeds this
+// stream; subsequent draws populate the scenario seed table.
 
 namespace rng {
 

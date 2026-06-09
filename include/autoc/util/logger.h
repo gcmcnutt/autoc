@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <memory>
+#include <mutex>
 #include <chrono>
 #include <iomanip>
 #include <ctime>
@@ -29,15 +30,28 @@ class LogStream : public std::ostream {
       return 0;
     }
     void flush_line() {
+      if (buffer_.empty()) return;
       auto now = std::chrono::system_clock::now();
       auto t = std::chrono::system_clock::to_time_t(now);
       std::tm tm{};
       localtime_r(&t, &tm);
+      char ts[20];
+      std::strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm);
       static const char* names[] = {"trace","debug","info","warning","error","fatal"};
-      std::cerr << std::put_time(&tm, "%Y-%m-%d %H:%M:%S")
-                << ": <" << names[static_cast<int>(level_)] << "> "
-                << buffer_;
-      if (!buffer_.empty() && buffer_.back() != '\n') std::cerr << '\n';
+      // Assemble the whole line in a local buffer first, then write under a
+      // global mutex so concurrent worker-thread log calls cannot interleave
+      // at the std::cerr level (single write() syscall + serialized access).
+      std::string line;
+      line.reserve(40 + buffer_.size());
+      line.append(ts);
+      line.append(": <");
+      line.append(names[static_cast<int>(level_)]);
+      line.append("> ");
+      line.append(buffer_);
+      if (line.back() != '\n') line.push_back('\n');
+      static std::mutex m;
+      std::lock_guard<std::mutex> lk(m);
+      std::cerr.write(line.data(), static_cast<std::streamsize>(line.size()));
       buffer_.clear();
     }
   public:

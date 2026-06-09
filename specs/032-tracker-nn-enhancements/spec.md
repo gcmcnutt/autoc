@@ -203,6 +203,16 @@ Operator preference (2026-05-17): **Option A with α = 0.5** as cleanest first t
 
 **Forward implication for real-flight deployment**: a controller trained with high hull-strike tolerance will collide with the target in real flight. The hull-penalty knob is also the gate between "good sim numbers" and "safe enough to flight-test." Worth doing before xiao deployment regardless of phase-1 outcome.
 
+**Reframe 2026-05-18 — "the objective IS kamikaze"** (added after gen 100 vs gen 400 intercept-analysis side-by-side):
+
+Comparing two well-separated training points (gens 100 and 400, both post variation-ramp) showed the NN is **doing the same kamikaze strategy with sharper execution**, not evolving toward "back off when close". The 21% avgInRamp gain across those 300 gens is bang-bang sharpening — the controller learning to hit the cone more precisely with the same plowthrough policy, not adopting a new policy. Cross-cutting takeaway:
+
+- **Sensors are sufficient** (sensor-utility Panel B in [intercept_analysis](./autoc-032-phase1-crrcsim_intercept_analysis_gen400.png) shows the NN already weakly modulates throttle with spn0; Panel D confirms the k/dist sensor fit is clean). What's missing is reward gradient.
+- **More compute won't fix this** — evolution against the current objective will optimize to kamikaze however many gens you give it. US3 (kamikaze penalty) is the necessary intervention; sensor-side fixes alone wouldn't help.
+- **This pattern also applies to M1 pathgen**: the bang-bang signature documented in [project_bangbang_axis_migration](../../.claude/projects/-home-gmcnutt-autoc/memory/project_bangbang_axis_migration.md) — confirmed in the 029 pastonly3 0517 flight ([FLIGHT_REPORT](../../flight-results/flight-20260517/FLIGHT_REPORT.md)) — is the SAME root cause: aggressive evolution against airframe limits with no penalty for the aggression. **M1 objective-function review is a sibling follow-up** to US3, queued for after M2's kamikaze experiment settles.
+
+The general principle: anywhere the reward is "be aggressive at any cost", evolution converges to aggressive-as-possible solutions that are unsafe to fly. This is a reward-shaping issue, not a sensor-architecture or topology issue.
+
 ### 1.7 Sensor modality vs sensor fault — distinction for the next iteration (2026-05-16)
 
 A critical framing note added during 032 phase 1 implementation: **beacon invisibility in this design is a MODALITY, not a SIGNAL LOSS**.
@@ -299,7 +309,8 @@ This section lists items originally filed in other specs/backlogs that fit bette
 ### 4.1 Open follow-ups during 032
 
 - **Project-memory location decision** (2026-05-17): currently `~/.claude/projects/-home-gmcnutt-autoc/memory/` is per-user, per-host, git-ignored. Operator preference is to move toward Option B (in-repo, e.g., `docs/project_memory/`) or Option C (hybrid: shared in-repo + personal local) so memory propagates to other hosts via git pull. Leaning B (single operator, no privacy issue) or C (future-proof if a second collaborator joins). Decide before phase-1 closeout so the memory created during the bake (post-mortem findings, follow-ons) lands in the right place from the start. See gitignore commit `129b1f0` discussion.
-- **Hull-strike escalation + kamikaze penalty experiment** (2026-05-17): see §1.8. Phase-1b candidate; run after phase-1 closeout. Operator-preferred form is multiplicative ½-of-accumulated-score penalty on hull crash (kamikaze framing). Gates safe-enough-for-real-flight deployment regardless of phase-1 plateau outcome. Tasks: US3 in tasks.md.
+- **Hull-strike escalation + kamikaze penalty experiment** (2026-05-17): see §1.8. Phase-1b candidate; run after phase-1 closeout. Operator-preferred form is multiplicative ½-of-accumulated-score penalty on hull crash (kamikaze framing). Gates safe-enough-for-real-flight deployment regardless of phase-1 plateau outcome. Tasks: US3 in tasks.md. **Promoted 2026-05-19** to first-class objective in [033-m1-smooth-plus-variations](../033-m1-smooth-plus-variations/spec.md) §2.D (033 may try the stronger `HullCrashScoreFactor = 0` first; if too aggressive, back off).
+- **033 spec drafted 2026-05-19** ([../033-m1-smooth-plus-variations/spec.md](../033-m1-smooth-plus-variations/spec.md)): three follow-ups identified during 032 phase-1 bake monitoring fold into 033 — (a) replay-friendly variation PRNG architecture to make cross-run ablations clean (the wind-confound concern raised when comparing 032 to 030/032-killed), (b) M1 smoothness penalty addressing the 0517-flight-confirmed bang-bang signature, (c) M2 inherits the smoothness penalty + the kamikaze penalty from this spec. 032 phase-1 closeout (US1 outcome.md) is the first 033 readiness signal.
 
 ## 5. Status
 

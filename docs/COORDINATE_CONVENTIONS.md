@@ -100,7 +100,7 @@ tests in `tests/msplink_quat_convention_tests.cc`.
     aerospace q_EB requires flipping qy and qz — the T042 `(w, x, -y, -z)`
     transform in `inavQuatToAerospaceEB`. Applied once at `msplink.cpp`
     and in the renderer's INAV-blackbox loader. Nothing downstream
-    (NN evaluator, CRRCSim bridge, minisim) needs to worry about
+    (NN evaluator, CRRCSim bridge) needs to worry about
     direction — it receives aerospace `q_EB` by contract. Caveat: the
     transformed quat is not kinematically valid — see the "CRITICAL"
     section above for forbidden vs allowed uses.
@@ -129,14 +129,16 @@ tests in `tests/msplink_quat_convention_tests.cc`.
   Distance is a separate scalar input in metres. See
   `include/autoc/nn/nn_input_computation.h` for the canonical implementation.
 
-## 030 Tracker-Mode NN Inputs (45 floats)
+## 030/032 Tracker-Mode NN Inputs (54 floats)
 
-Tracker-mode NN sees a flat `float[45]` ([include/autoc/nn/nn_inputs.h](../include/autoc/nn/nn_inputs.h),
+Tracker-mode NN sees a flat `float[54]` ([include/autoc/nn/nn_inputs.h](../include/autoc/nn/nn_inputs.h),
 populated by `gather_tracker_inputs` in
 [src/nn/evaluator.cc](../src/nn/evaluator.cc)). Same struct + transforms feed
-autoc-side training, minisim, and the crrcsim worker — single source of truth
+autoc-side training and the crrcsim worker — single source of truth
 gated by `#ifndef ARDUINO`. Xiao firmware does NOT yet implement tracker-mode
 (see BACKLOG).
+
+**Schema growth history**: 45 floats in 030 baseline → **54 floats in 032 phase 1** (9 derived perceptual features added). 030 dmps no longer load against the 032 binary (M2 greenfield policy, no backward compat — cereal length-mismatch fails loudly).
 
 | Slot      | Field                       | Meaning                                                   | Units / range                  | Source                                  |
 |-----------|-----------------------------|-----------------------------------------------------------|--------------------------------|-----------------------------------------|
@@ -150,6 +152,29 @@ gated by `#ifndef ARDUINO`. Xiao firmware does NOT yet implement tracker-mode
 | 40        | `airspeed`                  | Chase airspeed, **cruise-normalized** (M11.preA.2)        | dimensionless, ≈ [0, 2]; cruise=1 | `chase.getRelVel() / kCruiseSpeed_mps` |
 | 41–43     | `gyro_p/q/r`                | Body-frame angular rates (aerospace RHR)                  | rad/s; standard ranges ±10     | `chase.getGyroRates()` (x=p roll, y=q pitch, z=r yaw) |
 | 44        | `dist_to_boundary_along_vel`| Soft-saturated forward-flight margin to arena (M11.preA.2)| dimensionless [0, 1)            | `tanh(distanceToBoundary(...) / kDistToBoundaryScale_m)` |
+| **45–50** | `beacon_pair_span[6]`       | **032 phase 1** — raw NDC Euclidean distance between port + starboard beacon centroids, 6-tick history. Inverse-distance proxy (bigger span = closer target). CEP-gated at "now" tick: substitute 0 if EITHER beacon's CEP ≥ `CepGateThreshold` | NDC, ~[0, 2.83] (geometric max); units same as `beacon_*_x/y` | `compute_pair_span(left.xy, right.xy)` in [include/autoc/eval/derived_features.h](../include/autoc/eval/derived_features.h); CEP-gating in [src/eval/tracker_stepper.cc](../src/eval/tracker_stepper.cc) `projectAndShiftHistory` (mirrored in [crrcsim_tracker_helper.cpp](../crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp)) |
+| **51**    | `span_rate`                 | **032 phase 1** — `span[5] - span[4]` one-tick raw diff (no scaling, no smoothing). Closure-rate proxy (+ve = approaching) | NDC/tick, signed | [src/nn/evaluator.cc](../src/nn/evaluator.cc) `gather_tracker_inputs` |
+| **52**    | `target_tilt_sin`           | **032 phase 1** — sin(θ) where θ = atan2(dy, dx) over port→starboard NDC line. θ = 0 ⇔ chase + target wings level relative. CEP-gate + geometric-degenerate guard substitute (sin, cos) = (0, 1) | dimensionless [-1, +1] | `compute_tilt(left.xy, right.xy)` in [derived_features.h](../include/autoc/eval/derived_features.h) |
+| **53**    | `target_tilt_cos`           | **032 phase 1** — cos(θ); paired with slot 52 to avoid the ±π wraparound discontinuity of raw angle. NN can recover θ = atan2(sin, cos) internally if needed | dimensionless [-1, +1] | same as slot 52 |
+
+### Beacon identity-stable ordering invariant (Feature A)
+
+**Constitutional**: `beacon_l_*` slots ALWAYS carry the port-beacon (target body −y mount, red wingtip) projection; `beacon_r_*` slots ALWAYS carry the starboard-beacon (target body +y mount, green wingtip) projection. This is true regardless of which beacon lands on which side of the image plane at any given tick (e.g., target heading away from chase swaps image sides; the slot mapping does NOT swap).
+
+In sim this is already enforced by the mount-keyed projection pipeline ([tracker_stepper.cc](../src/eval/tracker_stepper.cc) and [crrcsim_tracker_helper.cpp](../crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp) both project `beacon_left_` → `left` → `history.left_*` by construction; no NDC-x re-sort happens). For future **xiao tracker-mode port** (deferred), the FPGA emits per-detection `(x, y, CEP, code_id)` tuples; xiao firmware MUST map `code_id → {port, starboard}` via Gold-code identity (configured at xiao build time) and NEVER sort by image-plane position. Contract test in [tests/gather_tracker_inputs_tests.cc](../tests/gather_tracker_inputs_tests.cc) guards against accidental sim-side regression.
+
+Failure mode if this contract breaks: the NN would see apparent +180° tilt flips between consecutive ticks even when target is flying steadily → contradictory gradient → no tilt-based learning possible. Identity-stable ordering preserves the geometric continuity the recurrent state can build on.
+
+### Tilt convention (032 phase 1)
+
+θ = `atan2(right.y − left.y, right.x − left.x)` over the NDC port→starboard line, measured in image-plane coordinates.
+
+- θ = 0 ⇔ wings level relative to chase (port→starboard line projects horizontally with port on the image-plane-left side, dy = 0, dx > 0)
+- θ = +π/2 ⇔ target rolled 90° CW relative to chase (port below image center, starboard above)
+- θ = −π/2 ⇔ target rolled 90° CCW relative to chase
+- θ wraps continuously through ±π (sin/cos encoding handles the wraparound — gradients stay meaningful)
+
+This complements the chase's existing absolute-world attitude inputs (`quat_w/x/y/z`, slots 36-39). The chase NN gets both "I'm rolled in the world" (quat) and "I'm rolled relative to target" (tilt) and can separate them.
 
 **Time samples on the 6-slot history**: `[-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now]` on a 100ms NN cadence. Slot index 0 = oldest, slot 5 = "now". Pre-fill replicates source[0] × 6 at `initScenario` so first NN tick sees a coherent stationary-source history.
 

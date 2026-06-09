@@ -20,9 +20,11 @@ struct EvalResults;
 // - `stability_score` (027 v4): time pitch/roll surfaces spend off-center.
 //   Σ_t (|out_pt_t| - 1) + (|out_rl_t| - 1) over completed ticks. Each tick
 //   contributes -2 (both surfaces centered, ideal) to 0 (both saturated, worst).
-// - `energy_score` (027 v3): time throttle is on.
-//   Σ_t (out_th_t - 1) / 2 over completed ticks. Each tick contributes
-//   -1 (no throttle) to 0 (full throttle).
+// - `energy_score` (035 FR-001b/R1): convex throttle-command integral.
+//   Σ_t ((out_th_t + 1) / 2)² over completed ticks — out_th∈[-1,1] mapped to a
+//   [0,1] throttle fraction, squared (super-linear). Each tick contributes
+//   0 (idle) to 1 (full throttle). ≥0, lower = better. (Replaces the 027 v3
+//   linear sign-wrong placeholder `Σ(out_th−1)/2`.)
 //
 // All three additive per tick AND per scenario — no normalization,
 // no streak amplification on the physics terms. The "all-attitude smooth
@@ -88,6 +90,14 @@ struct ScenarioScore {
           steps_completed(0), steps_total(0),
           maxStreak(0), totalStreakSteps(0), maxMultiplier(1.0) {}
 };
+
+// 035 FR-001b/R1 — per-tick convex throttle energy. out_th∈[-1,1] (tanh NN
+// output) → [0,1] throttle fraction, squared (super-linear). ≥0, lower=better.
+// Pure + inline so the formula is unit-testable in isolation (energy_metric_tests).
+inline gp_fitness throttleEnergyStep(gp_fitness out_th) {
+    const gp_fitness thr = (out_th + static_cast<gp_fitness>(1.0)) * static_cast<gp_fitness>(0.5);
+    return thr * thr;
+}
 
 // Compute per-scenario scores from EvalResults using point-accumulation fitness.
 // variationScale: 0.0 (no variations) to 1.0 (full variations), used for streak threshold ramp.

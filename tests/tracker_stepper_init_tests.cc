@@ -9,9 +9,9 @@
 //   - chase init velocity = source.samples.front().velocity (world-frame
 //     copy) — eliminates the SIM_INITIAL_VELOCITY=20 → 13 spike that
 //     dominated tick-0 NN inputs
-//   - chase init relVel scalar = velocity.norm() — keeps minisim's
+//   - chase init relVel scalar = velocity.norm() — keeps the worker's
 //     dRelVel-from-throttle math consistent with the velocity vector
-//   - empty-source fallback (defensive — minisim guards against this
+//   - empty-source fallback (defensive — worker guards against this
 //     ahead of construction): legacy origin + SIM_INITIAL_VELOCITY × forward
 //   - chase orientation = M1-style 180° yaw about Z (faces world -x)
 //
@@ -99,7 +99,8 @@ TrackerStepper makeStepperWithSource(NNControllerBackend& nn,
                           CrashHull{},
                           /*p_crash_this_gen=*/0.0f,
                           /*prng_seed=*/0,
-                          /*trail_distance=*/3.048f);
+                          /*trail_distance=*/3.048f,
+                          /*cep_gate_threshold=*/1.25f);
 }
 
 }  // namespace
@@ -208,7 +209,7 @@ TEST(TrackerStepperInit, ChaseOrientationIs180YawAboutZ) {
 
 // ---------------------------------------------------------------------------
 // Empty-source fallback: legacy origin + SIM_INITIAL_VELOCITY × world-(-x).
-// Defensive path — minisim won't construct TrackerStepper with empty source
+// Defensive path — worker won't construct TrackerStepper with empty source
 // in production (it falls back to Eval-crash) — but the fallback ensures
 // initScenario is well-defined for unit/integration tests that bypass that
 // guard.

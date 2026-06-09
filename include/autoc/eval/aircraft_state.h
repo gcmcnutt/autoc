@@ -257,7 +257,7 @@ struct AircraftState {
     void setPosition(gp_vec3 pos) { position = pos; }
 
     // Position is always in virtual coordinates (origin at test start).
-    // Producers (CRRCSim, minisim, xiao) convert raw→virtual at boundary.
+    // Producers (CRRCSim, xiao) convert raw→virtual at boundary.
     // See docs/COORDINATE_CONVENTIONS.md "Virtual Frame" section.
 
     unsigned long int getSimTimeMsec() const { return simTimeMsec; }
@@ -391,7 +391,7 @@ struct AircraftState {
       }
     }
 
-    void minisimAdvanceState(gp_scalar dt) {
+    void advanceState(gp_scalar dt) {
       gp_scalar dtSec = dt / 1000.0f;
 
       // get current roll state, compute left/right force (positive roll is right)

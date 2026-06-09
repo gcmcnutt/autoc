@@ -1,5 +1,5 @@
 // sensor_math.h — Navigation sensor functions for temporal history recording
-// Shared between minisim (history capture) and NN evaluator (reads history buffers)
+// Shared between the worker (history capture) and NN evaluator (reads history buffers)
 // Extracted from gp_evaluator_portable during GP removal (014-nn-training-signal)
 //
 // 023: executeGetDPhi/executeGetDTheta removed — NN inputs now use direction
