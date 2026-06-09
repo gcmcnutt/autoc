@@ -14,7 +14,6 @@
 #include "autoc/eval/crash_hull.h"     // M7c — geometric inside-hull telemetry
 #include "autoc/eval/derived_features.h"  // 032 phase 1 — compute_pair_span
 #include "autoc/eval/trail_rabbit.h"  // M7b — real trail-rabbit math
-#include "autoc/util/config.h"  // 032 phase 1 — CepGateThreshold knob
 
 namespace autoc::eval {
 
@@ -30,7 +29,8 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                const CrashHull& crash_hull,
                                gp_scalar p_crash_this_gen,
                                uint32_t prng_seed,
-                               gp_scalar trail_distance)
+                               gp_scalar trail_distance,
+                               gp_scalar cep_gate_threshold)
     : nn_(nn),
       state_(state),
       source_(source),
@@ -51,7 +51,8 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
       prng_state_(((prng_seed == 0 ? 0xC0FFEEu
                                    : prng_seed % 0x7FFFFFFFu)) | 1u),
       hull_fired_count_(0),
-      trail_distance_(trail_distance) {}
+      trail_distance_(trail_distance),
+      cep_gate_threshold_(cep_gate_threshold) {}
 
 void TrackerStepper::initScenario() {
     nn_.reset();  // zero recurrent state at scenario start (no-op for feedforward)
@@ -78,7 +79,7 @@ void TrackerStepper::initScenario() {
     //   - chase velocity = source[0].velocity — eliminates the
     //     SIM_INITIAL_VELOCITY=20 spike that drops to ~13 by tick 1
     // Pre-fix used 1.0 × trail_distance (chase AT rabbit, knife-edge).
-    // For empty-source fallback (defensive — minisim guards against this
+    // For empty-source fallback (defensive — the worker guards against this
     // ahead of TrackerStepper construction): legacy M1 init at virtual
     // origin + 20 m/s spike.
     const bool source_has_samples = !source_.samples.empty();
@@ -164,15 +165,10 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     // 032 PHASE 1 — Cache beacon-pair span at the current tick. CEP-gated:
     // if EITHER beacon's CEP exceeds the configured threshold, substitute
     // neutral 0.0 (= "no closing-distance signal"). Per spec Q4 + R2.
-    // Reading ConfigManager here keeps single source of truth with the
-    // gather-side gating decision in gather_tracker_inputs.
-    const float cep_gate_threshold = static_cast<float>(   // raw-ok: NN-byte-format comparison boundary — compared against BeaconObservation::cep which is float (cereal byte-format member)
-        ConfigManager::isInitialized()
-            ? ConfigManager::getConfig().cepGateThreshold
-            : 1.25);
+    const float cep_gate = static_cast<float>(cep_gate_threshold_);  // raw-ok: NN-byte-format comparison boundary
     const bool cep_gated =
-        left.cep >= cep_gate_threshold ||
-        right.cep >= cep_gate_threshold;
+        left.cep >= cep_gate ||
+        right.cep >= cep_gate;
     if (cep_gated) {
         history_.span[5] = 0.0f;
     } else {
@@ -233,7 +229,8 @@ CrashReason TrackerStepper::stepOnce() {
 
     // Step 2: gather tracker NN inputs.
     TrackerInputs inputs = {};
-    gather_tracker_inputs(state_, history_, arena_, inputs);
+    gather_tracker_inputs(state_, history_, arena_,
+                          static_cast<float>(cep_gate_threshold_), inputs);
 
     // Step 3: NN forward pass → control commands.
     nn_.evaluateTracker(state_, inputs);
@@ -242,7 +239,7 @@ CrashReason TrackerStepper::stepOnce() {
     // SIM_TIME_STEP_MSEC step per source tick (assumes source nominal 100ms
     // tick interval, which matches pastonly3 source dmps). Variable-rate
     // source handling lands at FR-018 / M6f timing_model_tests.
-    state_.minisimAdvanceState(SIM_TIME_STEP_MSEC);
+    state_.advanceState(SIM_TIME_STEP_MSEC);
     duration_msec_ += SIM_TIME_STEP_MSEC;
     state_.setSimTimeMsec(duration_msec_);
 
@@ -260,7 +257,9 @@ CrashReason TrackerStepper::stepOnce() {
 
     // 030 M11.preA.3 (2026-05-10) — Crash-hull RE-ENABLED with deterministic
     // fixed-probability Bernoulli (no curriculum ramp). Seed comes from
-    // windSeed (P1 fix, stable across train/elite-reeval). prng_state_ is
+    // the rabbit-class sub-PRNG (033 cleanup; pre-cleanup used windSeed —
+    // see contracts/scenario_prng_chain.md crash-hull as rabbit-class
+    // consumer). Stable across train/elite-reeval. prng_state_ is
     // consumed only when chase is INSIDE the hull AND p_crash > 0, so cost
     // for late-pop NNs that don't enter the hull is zero.
     if (crash == CrashReason::None) {

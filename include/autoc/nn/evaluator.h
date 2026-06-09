@@ -134,6 +134,7 @@ namespace autoc { namespace eval { struct FlightArena; } }
 void gather_tracker_inputs(const AircraftState& chase,
                            const TrackerHistoryWindow& history,
                            const autoc::eval::FlightArena& arena,
+                           float cep_gate_threshold,
                            TrackerInputs& out);
 
 #include "autoc/eval/backend.h"

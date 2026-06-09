@@ -1,4 +1,4 @@
 [submodule "crrcsim"]
 	path = crrcsim
 	url = https://github.com/gcmcnutt/CRRCsim.git
-	branch = 032-tracker-nn-enhancements
+	branch = 034-energy-objective-cleanup

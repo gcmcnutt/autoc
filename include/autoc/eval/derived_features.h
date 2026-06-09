@@ -3,7 +3,7 @@
 // 032 PHASE 1 — Derived perceptual features (beacon_pair_span, target_tilt).
 //
 // Pure, header-only math primitives consumed by:
-//   - src/eval/tracker_stepper.cc       (autoc minisim projectAndShiftHistory)
+//   - src/eval/tracker_stepper.cc       (autoc tracker_stepper projectAndShiftHistory)
 //   - src/nn/evaluator.cc               (gather_tracker_inputs)
 //   - crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp (mirror)
 //
@@ -15,6 +15,7 @@
 // See specs/032-tracker-nn-enhancements/contracts/gather_tracker_inputs_v54.md
 // and spec.md Clarifications Q4 (CEP-gating) + research.md R4 (tilt math).
 
+#include <algorithm>
 #include <cmath>
 
 #include "autoc/types.h"

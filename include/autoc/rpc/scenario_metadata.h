@@ -26,10 +26,18 @@
 struct ScenarioMetadata {
     int pathVariantIndex = -1;   // -1 = unset/aggregated
     int windVariantIndex = -1;   // -1 = unset/aggregated
-    unsigned int windSeed = 0;
     uint64_t scenarioSequence = 0;
     uint64_t bakeoffSequence = 0;
     bool enableDeterministicLogging = false;
+
+    // 033 §2.A — per-scenario master-derived seed. Sole per-scenario PRNG
+    // input post-033. Consumers reconstruct ScenarioRootPRNG from this and
+    // derive 5 class sub-PRNGs (wind/rabbit/entry/craft/camera) via
+    // autoc::util::deriveClassSubSeeds(). Sufficient for full replay; per-
+    // class sub-seeds are NOT persisted (derived deterministically). Pre-
+    // 033 windSeed + rabbitSpeedSeed fields removed in same PR per spec
+    // Clarifications 2026-05-21 (Constitution III: no compatibility shims).
+    uint64_t scenarioSeed = 0;
 
     // VARIATIONS1: Entry and wind direction offsets (computed by autoc, applied by crrcsim)
     // All angles in radians, speed as multiplier
@@ -46,20 +54,55 @@ struct ScenarioMetadata {
 
     // Rabbit speed for odometer-based path traversal (m/s)
     double rabbitSpeed = 0.0;          // 0 = use default SIM_INITIAL_VELOCITY
-    unsigned int rabbitSpeedSeed = 0;  // per-scenario seed for local speed profile PRNG
+    // (033) rabbitSpeedSeed removed: worker derives the rabbit-class PRNG
+    // seed from scenarioSeed via deriveClassSubSeeds() → .rabbit slot.
 
     // Raw→virtual origin offset captured at test start (NED meters).
     // Used by renderer to reconstruct raw positions for "all flights" display.
     // See docs/COORDINATE_CONVENTIONS.md "Virtual Frame" section.
     gp_vec3 originOffset = gp_vec3::Zero();
 
+    // 034 US4 — craft variations (per-scenario airframe parameter draws).
+    // Drawn at full magnitude per scenarioSeed (deterministic / replay
+    // invariant); the per-eval applied magnitude is scaled by applyVariationScale()
+    // — same pipeline as wind/entry. Training: scale = computeVariationScale(gen);
+    // eval: scale = genome.variation_scale (saved in weight file, replayed via
+    // gEvalVariationScaleOverride — not 100%, not recomputed).
+    //
+    // Defaults are no-op semantics: 0.0 deltas and 1.0 scale leave the FDM at
+    // its nominal airframe. Worker derives the craft-class PRNG seed from
+    // scenarioSeed via deriveClassSubSeeds().craft and writes the draws here
+    // for the FDM to apply at scenario init (after the per-eval scale).
+    // craftSeed is the persistence root for replay (the per-scenario PRNG
+    // seed that drove these draws — recorded so a dmp alone reconstructs the
+    // airframe state without the master seed). gp_scalar per Constitution VI.
+    gp_scalar craftCGDelta = static_cast<gp_scalar>(0.0);       // CG arm offset (dimensionless CRRCSim MAC units)
+    gp_scalar craftDragDelta = static_cast<gp_scalar>(0.0);     // CD_prof fractional Δ (≈ ±5%)
+    gp_scalar craftTrimDelta = static_cast<gp_scalar>(0.0);     // Cm_0 trim offset (rad)
+    gp_scalar craftThrustScale = static_cast<gp_scalar>(1.0);   // engine maxThrust multiplier
+    gp_scalar craftPitchEffDelta = static_cast<gp_scalar>(0.0); // pitch authority fractional Δ
+    gp_scalar craftRollEffDelta = static_cast<gp_scalar>(0.0);  // roll authority fractional Δ
+    uint32_t craftSeed = 0;                                     // craft-class PRNG seed (replay root)
+    // FR-020: future cameraSeed insertion point — append `uint32_t cameraSeed`
+    // here after craftSeed when the camera-variation class lands. Order
+    // matters (wire byte position); keep new seeds appended, not interleaved.
+
     template<class Archive>
     void serialize(Archive& ar, const std::uint32_t /*version*/) {
-        ar(pathVariantIndex, windVariantIndex, windSeed, scenarioSequence,
+        // 033 cleanup: windSeed + rabbitSpeedSeed REMOVED from the walk.
+        // scenarioSeed at the end (appended in T006). Old pre-033 dmps
+        // fail-loud on cereal length mismatch — Constitution III no-shim +
+        // Constitution V loud-fail safety net (intentional break).
+        // 034 US4 craft variations appended after scenarioSeed per project
+        // no-cereal-versioning policy: greenfield wire growth, no version
+        // bump; old 034-pre-US4 dmps fail-loud on length mismatch.
+        ar(pathVariantIndex, windVariantIndex, scenarioSequence,
            bakeoffSequence, enableDeterministicLogging, entryHeadingOffset,
            entryRollOffset, entryPitchOffset, entrySpeedFactor,
            windDirectionOffset, entryNorthOffset, entryEastOffset, entryAltOffset,
-           rabbitSpeed, rabbitSpeedSeed, originOffset);
+           rabbitSpeed, originOffset, scenarioSeed,
+           craftCGDelta, craftDragDelta, craftTrimDelta, craftThrustScale,
+           craftPitchEffDelta, craftRollEffDelta, craftSeed);
     }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)

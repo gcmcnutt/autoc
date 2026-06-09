@@ -1,5 +1,5 @@
 /**
- * Thread pool that spawns minisim child processes and communicates via TCP sockets.
+ * Thread pool that spawns crrcsim worker child processes and communicates via TCP sockets.
  */
 #pragma once
 
@@ -49,14 +49,14 @@ private:
     context.workerId = id;
 
     // Bind a listening socket (port=0 for ephemeral)
-    TcpAcceptor acceptor(extraCfg.minisimPortOverride);
+    TcpAcceptor acceptor(extraCfg.workerPortOverride);
     unsigned short port_ = acceptor.port();
 
-    if (extraCfg.minisimPortOverride > 0) {
+    if (extraCfg.workerPortOverride > 0) {
       *logger.info() << "Now manually launch sim on port " << port_ << endl;
     }
     else {
-      std::string subprocess_path = extraCfg.minisimProgram;
+      std::string subprocess_path = extraCfg.workerProgram;
       *logger.info() << "Launching: [" << id << "] " << subprocess_path << " " << port_ << endl;
 
       // Deterministic stagger to avoid simultaneous launches
@@ -65,7 +65,7 @@ private:
         std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
       }
 
-      // Fork + exec the minisim process
+      // Fork + exec the worker process
       pid_t pid = fork();
       if (pid < 0) {
         *logger.error() << "fork() failed for worker " << id << ": " << strerror(errno) << endl;
@@ -87,7 +87,7 @@ private:
       context.childPid = pid;
     }
 
-    // Accept connection from minisim — this is the worker's "phone home"
+    // Accept connection from the worker — this is the worker's "phone home"
     // (the child process initiates a TCP connect; this accept returns
     // when the socket is up).
     context.socket = acceptor.accept();

@@ -16,6 +16,11 @@ threshold in `inputdev_autoc.cpp:341`.
 
 ## Columns (in order)
 
+> **History note (034):** the interim 033 `smooth` column (between `outPt outRl outTh`
+> and `pathX pathY pathZ`) was removed in 034 — the smooth-free ordering below is current
+> again. (This doc otherwise reflects the 024-era with-future slot naming; the past-only
+> 029 layout is the live one — see `specs/029-no-future-arch/`.)
+
 ```
 Scn  Bake  Pth/Wnd:Step:  Time  Idx  tgX-9 tgX-3 tgX-1 tgX0 tgX+1 tgX+5
   tgY-9 tgY-3 tgY-1 tgY0 tgY+1 tgY+5  tgZ-9 tgZ-3 tgZ-1 tgZ0 tgZ+1 tgZ+5

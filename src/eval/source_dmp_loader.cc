@@ -16,7 +16,8 @@
 #include <cereal/archives/binary.hpp>
 
 #include <aws/s3/S3Client.h>
-#include <aws/s3/model/GetObjectRequest.h>
+
+#include "autoc/util/s3_run_selector.h"  // 035 FR-P09 — shared S3 dmp I/O
 
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/rpc/protocol.h"
@@ -63,21 +64,12 @@ EvalResults loadFromS3(const std::string& s3_key) {
             "loadSourceDmp: no S3 client available. ConfigManager not"
             " initialized? Aws::InitAPI() not called?");
     }
-    const std::string bucket = ConfigManager::getConfig().s3Bucket;
+    // 035: source reads from trackerSourceBucket (e.g. autoc-m1), NOT s3Bucket
+    // (autoc-m2 = M2 output). Validated non-empty in tracker mode by ConfigManager.
+    const std::string bucket = ConfigManager::getConfig().trackerSourceBucket;
 
-    Aws::S3::Model::GetObjectRequest request;
-    request.SetBucket(bucket);
-    request.SetKey(s3_key);
-    auto outcome = s3_client->GetObject(request);
-    if (!outcome.IsSuccess()) {
-        throw std::runtime_error(
-            "loadSourceDmp: S3 GetObject failed for s3://" + bucket + "/" +
-            s3_key + ": " + outcome.GetError().GetMessage());
-    }
-
-    std::ostringstream oss;
-    oss << outcome.GetResult().GetBody().rdbuf();
-    std::string body = oss.str();
+    // FR-P09 — fetch + inflate via the shared S3 dmp I/O (fail-loud on S3 error).
+    std::string body = autoc::s3GetDmpBlob(*s3_client, bucket, s3_key);
 
     try {
         std::istringstream iss(body, std::ios::binary);

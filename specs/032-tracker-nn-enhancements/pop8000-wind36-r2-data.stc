@@ -1,0 +1,1266 @@
+#NNGen gen=1 best=-1715.095478 avg=-788.030840 worst=-614.476335 bestSigma=0.200000 avgMaxStreak=1.0 pctInStreak=1.6 stability=-13866.93 energy=-5257.54 whh_xh_ratio=0.4358 w_xh0_cv=0.0235 w_xh1_cv=0.0335 w_hh_cv=0.0469
+#GenCrash gen=1 hullStrike=0 eval=209 sim=0 boot=0 timeLimit=0 rabbitComplete=7 none=0 total=216
+#GenSimStats gen=1 sims=1728216 total=1728216 durationSec=70.62 rate=24473.71
+#NNGen gen=2 best=-1715.095478 avg=-796.992193 worst=-615.222765 bestSigma=0.200000 avgMaxStreak=1.0 pctInStreak=1.6 stability=-13866.93 energy=-5257.54 whh_xh_ratio=0.4358 w_xh0_cv=0.0762 w_xh1_cv=0.0796 w_hh_cv=0.0978
+#GenCrash gen=2 hullStrike=0 eval=209 sim=0 boot=0 timeLimit=0 rabbitComplete=7 none=0 total=216
+#GenSimStats gen=2 sims=1728216 total=3456432 durationSec=70.80 rate=24409.73
+#NNGen gen=3 best=-1715.095478 avg=-797.380347 worst=-613.641256 bestSigma=0.200000 avgMaxStreak=1.0 pctInStreak=1.6 stability=-13866.93 energy=-5257.54 whh_xh_ratio=0.4358 w_xh0_cv=0.1021 w_xh1_cv=0.1045 w_hh_cv=0.1228
+#GenCrash gen=3 hullStrike=0 eval=209 sim=0 boot=0 timeLimit=0 rabbitComplete=7 none=0 total=216
+#GenSimStats gen=3 sims=1728216 total=5184648 durationSec=88.10 rate=19616.72
+#NNGen gen=4 best=-1715.095478 avg=-792.719703 worst=-612.119608 bestSigma=0.200000 avgMaxStreak=1.0 pctInStreak=1.6 stability=-13866.93 energy=-5257.54 whh_xh_ratio=0.4358 w_xh0_cv=0.1312 w_xh1_cv=0.1332 w_hh_cv=0.1552
+#GenCrash gen=4 hullStrike=0 eval=209 sim=0 boot=0 timeLimit=0 rabbitComplete=7 none=0 total=216
+#GenSimStats gen=4 sims=1728216 total=6912864 durationSec=70.97 rate=24352.84
+#NNGen gen=5 best=-1715.095478 avg=-797.118887 worst=-610.039694 bestSigma=0.200000 avgMaxStreak=1.0 pctInStreak=1.6 stability=-13866.93 energy=-5257.54 whh_xh_ratio=0.4358 w_xh0_cv=0.1443 w_xh1_cv=0.1462 w_hh_cv=0.1662
+#GenCrash gen=5 hullStrike=0 eval=209 sim=0 boot=0 timeLimit=0 rabbitComplete=7 none=0 total=216
+#GenSimStats gen=5 sims=1728216 total=8641080 durationSec=71.12 rate=24299.69
+#NNGen gen=6 best=-1715.095478 avg=-803.399381 worst=-611.257354 bestSigma=0.200000 avgMaxStreak=1.0 pctInStreak=1.6 stability=-13866.93 energy=-5257.54 whh_xh_ratio=0.4358 w_xh0_cv=0.1459 w_xh1_cv=0.1462 w_hh_cv=0.1679
+#GenCrash gen=6 hullStrike=0 eval=209 sim=0 boot=0 timeLimit=0 rabbitComplete=7 none=0 total=216
+#GenSimStats gen=6 sims=1728216 total=10369296 durationSec=72.10 rate=23970.36
+#NNGen gen=7 best=-1715.095478 avg=-805.199354 worst=-613.100125 bestSigma=0.200000 avgMaxStreak=1.0 pctInStreak=1.6 stability=-13866.93 energy=-5257.54 whh_xh_ratio=0.4358 w_xh0_cv=0.1501 w_xh1_cv=0.1465 w_hh_cv=0.1692
+#GenCrash gen=7 hullStrike=0 eval=209 sim=0 boot=0 timeLimit=0 rabbitComplete=7 none=0 total=216
+#GenSimStats gen=7 sims=1728216 total=12097512 durationSec=83.01 rate=20818.69
+#NNGen gen=8 best=-1749.193256 avg=-795.703602 worst=-612.999892 bestSigma=0.200000 avgMaxStreak=0.5 pctInStreak=0.3 stability=-37878.82 energy=-6639.53 whh_xh_ratio=0.4365 w_xh0_cv=0.1519 w_xh1_cv=0.1505 w_hh_cv=0.1741
+#GenCrash gen=8 hullStrike=0 eval=193 sim=0 boot=0 timeLimit=0 rabbitComplete=23 none=0 total=216
+#GenSimStats gen=8 sims=1728216 total=13825728 durationSec=95.42 rate=18111.55
+#NNGen gen=9 best=-1749.193256 avg=-797.096680 worst=-613.045411 bestSigma=0.200000 avgMaxStreak=0.5 pctInStreak=0.3 stability=-37878.82 energy=-6639.53 whh_xh_ratio=0.4365 w_xh0_cv=0.1640 w_xh1_cv=0.1645 w_hh_cv=0.1892
+#GenCrash gen=9 hullStrike=0 eval=193 sim=0 boot=0 timeLimit=0 rabbitComplete=23 none=0 total=216
+#GenSimStats gen=9 sims=1728216 total=15553944 durationSec=74.46 rate=23210.20
+#NNGen gen=10 best=-1749.193256 avg=-792.233651 worst=-611.853719 bestSigma=0.200000 avgMaxStreak=0.5 pctInStreak=0.3 stability=-37878.82 energy=-6639.53 whh_xh_ratio=0.4365 w_xh0_cv=0.1576 w_xh1_cv=0.1613 w_hh_cv=0.1782
+#GenCrash gen=10 hullStrike=0 eval=193 sim=0 boot=0 timeLimit=0 rabbitComplete=23 none=0 total=216
+#GenSimStats gen=10 sims=1728216 total=17282160 durationSec=75.37 rate=22929.87
+#NNGen gen=11 best=-1749.193256 avg=-799.083137 worst=-615.618655 bestSigma=0.200000 avgMaxStreak=0.5 pctInStreak=0.3 stability=-37878.82 energy=-6639.53 whh_xh_ratio=0.4365 w_xh0_cv=0.1663 w_xh1_cv=0.1700 w_hh_cv=0.1840
+#GenCrash gen=11 hullStrike=0 eval=193 sim=0 boot=0 timeLimit=0 rabbitComplete=23 none=0 total=216
+#GenSimStats gen=11 sims=1728216 total=19010376 durationSec=93.28 rate=18527.58
+#NNGen gen=12 best=-1749.193256 avg=-795.592774 worst=-611.026419 bestSigma=0.200000 avgMaxStreak=0.5 pctInStreak=0.3 stability=-37878.82 energy=-6639.53 whh_xh_ratio=0.4365 w_xh0_cv=0.1525 w_xh1_cv=0.1541 w_hh_cv=0.1674
+#GenCrash gen=12 hullStrike=0 eval=193 sim=0 boot=0 timeLimit=0 rabbitComplete=23 none=0 total=216
+#GenSimStats gen=12 sims=1728216 total=20738592 durationSec=87.41 rate=19772.49
+#NNGen gen=13 best=-1749.193256 avg=-796.373447 worst=-611.892149 bestSigma=0.200000 avgMaxStreak=0.5 pctInStreak=0.3 stability=-37878.82 energy=-6639.53 whh_xh_ratio=0.4365 w_xh0_cv=0.1572 w_xh1_cv=0.1557 w_hh_cv=0.1737
+#GenCrash gen=13 hullStrike=0 eval=193 sim=0 boot=0 timeLimit=0 rabbitComplete=23 none=0 total=216
+#GenSimStats gen=13 sims=1728216 total=22466808 durationSec=94.17 rate=18351.54
+#NNGen gen=14 best=-1749.193256 avg=-800.994416 worst=-611.481039 bestSigma=0.200000 avgMaxStreak=0.5 pctInStreak=0.3 stability=-37878.82 energy=-6639.53 whh_xh_ratio=0.4365 w_xh0_cv=0.1680 w_xh1_cv=0.1641 w_hh_cv=0.1832
+#GenCrash gen=14 hullStrike=0 eval=193 sim=0 boot=0 timeLimit=0 rabbitComplete=23 none=0 total=216
+#GenSimStats gen=14 sims=1728216 total=24195024 durationSec=95.04 rate=18183.33
+#NNGen gen=15 best=-1749.193256 avg=-802.025180 worst=-615.177725 bestSigma=0.200000 avgMaxStreak=0.5 pctInStreak=0.3 stability=-37878.82 energy=-6639.53 whh_xh_ratio=0.4365 w_xh0_cv=0.1521 w_xh1_cv=0.1502 w_hh_cv=0.1685
+#GenCrash gen=15 hullStrike=0 eval=193 sim=0 boot=0 timeLimit=0 rabbitComplete=23 none=0 total=216
+#GenSimStats gen=15 sims=1728216 total=25923240 durationSec=75.98 rate=22745.72
+#NNGen gen=16 best=-1749.193256 avg=-804.797742 worst=-611.015521 bestSigma=0.200000 avgMaxStreak=0.5 pctInStreak=0.3 stability=-37878.82 energy=-6639.53 whh_xh_ratio=0.4365 w_xh0_cv=0.1628 w_xh1_cv=0.1591 w_hh_cv=0.1810
+#GenCrash gen=16 hullStrike=0 eval=193 sim=0 boot=0 timeLimit=0 rabbitComplete=23 none=0 total=216
+#GenSimStats gen=16 sims=1728216 total=27651456 durationSec=76.00 rate=22738.19
+#NNGen gen=17 best=-1749.193256 avg=-801.674810 worst=-609.377687 bestSigma=0.200000 avgMaxStreak=0.5 pctInStreak=0.3 stability=-37878.82 energy=-6639.53 whh_xh_ratio=0.4365 w_xh0_cv=0.1605 w_xh1_cv=0.1589 w_hh_cv=0.1791
+#GenCrash gen=17 hullStrike=0 eval=193 sim=0 boot=0 timeLimit=0 rabbitComplete=23 none=0 total=216
+#GenSimStats gen=17 sims=1728216 total=29379672 durationSec=94.58 rate=18272.63
+#NNGen gen=18 best=-1769.055825 avg=-804.569014 worst=-613.575453 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1679 w_xh1_cv=0.1641 w_hh_cv=0.1873
+#GenCrash gen=18 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=18 sims=1728216 total=31107888 durationSec=74.37 rate=23236.74
+#NNGen gen=19 best=-1769.055825 avg=-805.168664 worst=-615.679824 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1837 w_xh1_cv=0.1778 w_hh_cv=0.2033
+#GenCrash gen=19 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=19 sims=1728216 total=32836104 durationSec=93.83 rate=18418.44
+#NNGen gen=20 best=-1769.055825 avg=-803.898064 worst=-606.381880 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1896 w_xh1_cv=0.1818 w_hh_cv=0.2112
+#GenCrash gen=20 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=20 sims=1728216 total=34564320 durationSec=74.34 rate=23248.32
+#NNGen gen=21 best=-1769.055825 avg=-798.505986 worst=-612.323633 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1628 w_xh1_cv=0.1592 w_hh_cv=0.1830
+#GenCrash gen=21 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=21 sims=1728216 total=36292536 durationSec=75.42 rate=22914.94
+#NNGen gen=22 best=-1769.055825 avg=-803.841901 worst=-612.397950 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1676 w_xh1_cv=0.1640 w_hh_cv=0.1887
+#GenCrash gen=22 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=22 sims=1728216 total=38020752 durationSec=89.87 rate=19231.19
+#NNGen gen=23 best=-1769.055825 avg=-805.827612 worst=-609.785034 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1696 w_xh1_cv=0.1658 w_hh_cv=0.1918
+#GenCrash gen=23 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=23 sims=1728216 total=39748968 durationSec=76.76 rate=22514.16
+#NNGen gen=24 best=-1769.055825 avg=-806.023653 worst=-614.011766 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1743 w_xh1_cv=0.1700 w_hh_cv=0.1963
+#GenCrash gen=24 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=24 sims=1728216 total=41477184 durationSec=75.96 rate=22753.09
+#NNGen gen=25 best=-1769.055825 avg=-803.125707 worst=-608.076089 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1721 w_xh1_cv=0.1691 w_hh_cv=0.1927
+#GenCrash gen=25 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=25 sims=1728216 total=43205400 durationSec=90.24 rate=19150.40
+#NNGen gen=26 best=-1769.055825 avg=-809.385908 worst=-612.820557 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1755 w_xh1_cv=0.1762 w_hh_cv=0.1983
+#GenCrash gen=26 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=26 sims=1728216 total=44933616 durationSec=75.95 rate=22754.50
+#NNGen gen=27 best=-1769.055825 avg=-803.115656 worst=-616.614292 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1755 w_xh1_cv=0.1755 w_hh_cv=0.1986
+#GenCrash gen=27 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=27 sims=1728216 total=46661832 durationSec=76.19 rate=22683.24
+#NNGen gen=28 best=-1769.055825 avg=-796.961012 worst=-612.723581 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1602 w_xh1_cv=0.1606 w_hh_cv=0.1812
+#GenCrash gen=28 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=28 sims=1728216 total=48390048 durationSec=75.13 rate=23004.03
+#NNGen gen=29 best=-1769.055825 avg=-798.848522 worst=-614.567926 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1729 w_xh1_cv=0.1729 w_hh_cv=0.1943
+#GenCrash gen=29 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=29 sims=1728216 total=50118264 durationSec=81.21 rate=21280.88
+#NNGen gen=30 best=-1769.055825 avg=-796.794620 worst=-611.221144 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1679 w_xh1_cv=0.1674 w_hh_cv=0.1836
+#GenCrash gen=30 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=30 sims=1728216 total=51846480 durationSec=88.43 rate=19543.43
+#NNGen gen=31 best=-1769.055825 avg=-797.997849 worst=-611.400680 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1592 w_xh1_cv=0.1593 w_hh_cv=0.1747
+#GenCrash gen=31 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=31 sims=1728216 total=53574696 durationSec=91.53 rate=18882.05
+#NNGen gen=32 best=-1769.055825 avg=-799.631822 worst=-613.005642 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1605 w_xh1_cv=0.1599 w_hh_cv=0.1773
+#GenCrash gen=32 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=32 sims=1728216 total=55302912 durationSec=76.65 rate=22546.19
+#NNGen gen=33 best=-1769.055825 avg=-796.829054 worst=-609.718411 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1659 w_xh1_cv=0.1649 w_hh_cv=0.1890
+#GenCrash gen=33 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=33 sims=1728216 total=57031128 durationSec=76.22 rate=22674.06
+#NNGen gen=34 best=-1769.055825 avg=-795.426340 worst=-611.912768 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1686 w_xh1_cv=0.1677 w_hh_cv=0.1888
+#GenCrash gen=34 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=34 sims=1728216 total=58759344 durationSec=86.12 rate=20066.83
+#NNGen gen=35 best=-1769.055825 avg=-804.341674 worst=-606.001672 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1633 w_xh1_cv=0.1620 w_hh_cv=0.1784
+#GenCrash gen=35 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=35 sims=1728216 total=60487560 durationSec=76.68 rate=22538.96
+#NNGen gen=36 best=-1769.055825 avg=-809.884780 worst=-611.308282 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1660 w_xh1_cv=0.1650 w_hh_cv=0.1803
+#GenCrash gen=36 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=36 sims=1728216 total=62215776 durationSec=90.16 rate=19168.68
+#NNGen gen=37 best=-1769.055825 avg=-815.214965 worst=-611.947708 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1609 w_xh1_cv=0.1603 w_hh_cv=0.1749
+#GenCrash gen=37 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=37 sims=1728216 total=63943992 durationSec=87.90 rate=19660.27
+#NNGen gen=38 best=-1769.055825 avg=-814.342226 worst=-612.155019 bestSigma=0.200000 avgMaxStreak=0.4 pctInStreak=0.6 stability=-15950.43 energy=-4991.64 whh_xh_ratio=0.3437 w_xh0_cv=0.1656 w_xh1_cv=0.1665 w_hh_cv=0.1795
+#GenCrash gen=38 hullStrike=0 eval=216 sim=0 boot=0 timeLimit=0 rabbitComplete=0 none=0 total=216
+#GenSimStats gen=38 sims=1728216 total=65672208 durationSec=84.16 rate=20534.65
+#NNGen gen=39 best=-1974.808267 avg=-818.304970 worst=-612.042891 bestSigma=0.187086 avgMaxStreak=0.5 pctInStreak=0.3 stability=-30562.61 energy=-739.82 whh_xh_ratio=0.7289 w_xh0_cv=0.1628 w_xh1_cv=0.1624 w_hh_cv=0.1748
+#GenCrash gen=39 hullStrike=0 eval=139 sim=0 boot=0 timeLimit=0 rabbitComplete=77 none=0 total=216
+#GenSimStats gen=39 sims=1728216 total=67400424 durationSec=79.21 rate=21818.48
+#NNGen gen=40 best=-1974.808267 avg=-819.623542 worst=-612.452769 bestSigma=0.187086 avgMaxStreak=0.5 pctInStreak=0.3 stability=-30562.61 energy=-739.82 whh_xh_ratio=0.7289 w_xh0_cv=0.1648 w_xh1_cv=0.1634 w_hh_cv=0.1764
+#GenCrash gen=40 hullStrike=0 eval=139 sim=0 boot=0 timeLimit=0 rabbitComplete=77 none=0 total=216
+#GenSimStats gen=40 sims=1728216 total=69128640 durationSec=103.40 rate=16713.46
+#NNGen gen=41 best=-1973.951101 avg=-906.534881 worst=-706.068066 bestSigma=0.187086 avgMaxStreak=1.0 pctInStreak=0.7 stability=-28971.37 energy=-694.75 whh_xh_ratio=0.7289 w_xh0_cv=0.1454 w_xh1_cv=0.1440 w_hh_cv=0.1592
+#GenCrash gen=41 hullStrike=0 eval=143 sim=0 boot=0 timeLimit=0 rabbitComplete=73 none=0 total=216
+#GenSimStats gen=41 sims=1728216 total=70856856 durationSec=80.01 rate=21599.45
+#NNGen gen=42 best=-1973.951101 avg=-913.088470 worst=-707.963598 bestSigma=0.187086 avgMaxStreak=1.0 pctInStreak=0.7 stability=-28971.37 energy=-694.75 whh_xh_ratio=0.7289 w_xh0_cv=0.1690 w_xh1_cv=0.1648 w_hh_cv=0.1834
+#GenCrash gen=42 hullStrike=0 eval=143 sim=0 boot=0 timeLimit=0 rabbitComplete=73 none=0 total=216
+#GenSimStats gen=42 sims=1728216 total=72585072 durationSec=80.53 rate=21459.39
+#NNGen gen=43 best=-1973.951101 avg=-915.925705 worst=-703.924735 bestSigma=0.187086 avgMaxStreak=1.0 pctInStreak=0.7 stability=-28971.37 energy=-694.75 whh_xh_ratio=0.7289 w_xh0_cv=0.1543 w_xh1_cv=0.1514 w_hh_cv=0.1689
+#GenCrash gen=43 hullStrike=0 eval=143 sim=0 boot=0 timeLimit=0 rabbitComplete=73 none=0 total=216
+#GenSimStats gen=43 sims=1728216 total=74313288 durationSec=105.00 rate=16459.37
+#NNGen gen=44 best=-1973.951101 avg=-921.268445 worst=-704.443017 bestSigma=0.187086 avgMaxStreak=1.0 pctInStreak=0.7 stability=-28971.37 energy=-694.75 whh_xh_ratio=0.7289 w_xh0_cv=0.1396 w_xh1_cv=0.1384 w_hh_cv=0.1543
+#GenCrash gen=44 hullStrike=0 eval=143 sim=0 boot=0 timeLimit=0 rabbitComplete=73 none=0 total=216
+#GenSimStats gen=44 sims=1728216 total=76041504 durationSec=83.24 rate=20760.69
+#NNGen gen=45 best=-1973.951101 avg=-916.330659 worst=-704.427725 bestSigma=0.187086 avgMaxStreak=1.0 pctInStreak=0.7 stability=-28971.37 energy=-694.75 whh_xh_ratio=0.7289 w_xh0_cv=0.1428 w_xh1_cv=0.1419 w_hh_cv=0.1576
+#GenCrash gen=45 hullStrike=0 eval=143 sim=0 boot=0 timeLimit=0 rabbitComplete=73 none=0 total=216
+#GenSimStats gen=45 sims=1728216 total=77769720 durationSec=106.88 rate=16169.78
+#NNGen gen=46 best=-1997.835138 avg=-918.491988 worst=-702.879095 bestSigma=0.187235 avgMaxStreak=1.1 pctInStreak=1.4 stability=-17965.47 energy=-559.02 whh_xh_ratio=0.6490 w_xh0_cv=0.1421 w_xh1_cv=0.1422 w_hh_cv=0.1557
+#GenCrash gen=46 hullStrike=0 eval=191 sim=0 boot=0 timeLimit=0 rabbitComplete=25 none=0 total=216
+#GenSimStats gen=46 sims=1728216 total=79497936 durationSec=81.40 rate=21230.29
+#NNGen gen=47 best=-1997.835138 avg=-919.443196 worst=-708.275545 bestSigma=0.187235 avgMaxStreak=1.1 pctInStreak=1.4 stability=-17965.47 energy=-559.02 whh_xh_ratio=0.6490 w_xh0_cv=0.1427 w_xh1_cv=0.1419 w_hh_cv=0.1561
+#GenCrash gen=47 hullStrike=0 eval=191 sim=0 boot=0 timeLimit=0 rabbitComplete=25 none=0 total=216
+#GenSimStats gen=47 sims=1728216 total=81226152 durationSec=81.84 rate=21116.58
+#NNGen gen=48 best=-1997.835138 avg=-922.791011 worst=-704.564405 bestSigma=0.187235 avgMaxStreak=1.1 pctInStreak=1.4 stability=-17965.47 energy=-559.02 whh_xh_ratio=0.6490 w_xh0_cv=0.1425 w_xh1_cv=0.1418 w_hh_cv=0.1535
+#GenCrash gen=48 hullStrike=0 eval=191 sim=0 boot=0 timeLimit=0 rabbitComplete=25 none=0 total=216
+#GenSimStats gen=48 sims=1728216 total=82954368 durationSec=81.76 rate=21137.48
+#NNGen gen=49 best=-1997.835138 avg=-928.600426 worst=-708.248063 bestSigma=0.187235 avgMaxStreak=1.1 pctInStreak=1.4 stability=-17965.47 energy=-559.02 whh_xh_ratio=0.6490 w_xh0_cv=0.1416 w_xh1_cv=0.1412 w_hh_cv=0.1523
+#GenCrash gen=49 hullStrike=0 eval=191 sim=0 boot=0 timeLimit=0 rabbitComplete=25 none=0 total=216
+#GenSimStats gen=49 sims=1728216 total=84682584 durationSec=83.21 rate=20768.98
+#NNGen gen=50 best=-1997.835138 avg=-931.399672 worst=-711.979556 bestSigma=0.187235 avgMaxStreak=1.1 pctInStreak=1.4 stability=-17965.47 energy=-559.02 whh_xh_ratio=0.6490 w_xh0_cv=0.1467 w_xh1_cv=0.1458 w_hh_cv=0.1579
+#GenCrash gen=50 hullStrike=0 eval=191 sim=0 boot=0 timeLimit=0 rabbitComplete=25 none=0 total=216
+#GenSimStats gen=50 sims=1728216 total=86410800 durationSec=97.43 rate=17738.69
+#NNGen gen=51 best=-1997.835138 avg=-943.208115 worst=-706.000330 bestSigma=0.187235 avgMaxStreak=1.1 pctInStreak=1.4 stability=-17965.47 energy=-559.02 whh_xh_ratio=0.6490 w_xh0_cv=0.1457 w_xh1_cv=0.1437 w_hh_cv=0.1567
+#GenCrash gen=51 hullStrike=0 eval=191 sim=0 boot=0 timeLimit=0 rabbitComplete=25 none=0 total=216
+#GenSimStats gen=51 sims=1728216 total=88139016 durationSec=84.70 rate=20403.45
+#NNGen gen=52 best=-1997.835138 avg=-944.594552 worst=-707.587480 bestSigma=0.187235 avgMaxStreak=1.1 pctInStreak=1.4 stability=-17965.47 energy=-559.02 whh_xh_ratio=0.6490 w_xh0_cv=0.1432 w_xh1_cv=0.1406 w_hh_cv=0.1529
+#GenCrash gen=52 hullStrike=0 eval=191 sim=0 boot=0 timeLimit=0 rabbitComplete=25 none=0 total=216
+#GenSimStats gen=52 sims=1728216 total=89867232 durationSec=85.18 rate=20289.78
+#NNGen gen=53 best=-2153.591790 avg=-949.672846 worst=-709.535220 bestSigma=0.192010 avgMaxStreak=0.9 pctInStreak=0.5 stability=-20462.90 energy=-1548.63 whh_xh_ratio=0.9754 w_xh0_cv=0.1534 w_xh1_cv=0.1506 w_hh_cv=0.1647
+#GenCrash gen=53 hullStrike=0 eval=76 sim=0 boot=0 timeLimit=0 rabbitComplete=140 none=0 total=216
+#GenSimStats gen=53 sims=1728216 total=91595448 durationSec=117.69 rate=14684.50
+#NNGen gen=54 best=-2153.591790 avg=-962.736355 worst=-713.014280 bestSigma=0.192010 avgMaxStreak=0.9 pctInStreak=0.5 stability=-20462.90 energy=-1548.63 whh_xh_ratio=0.9754 w_xh0_cv=0.1487 w_xh1_cv=0.1465 w_hh_cv=0.1594
+#GenCrash gen=54 hullStrike=0 eval=76 sim=0 boot=0 timeLimit=0 rabbitComplete=140 none=0 total=216
+#GenSimStats gen=54 sims=1728216 total=93323664 durationSec=88.22 rate=19590.12
+#NNGen gen=55 best=-3138.224345 avg=-976.306278 worst=-711.791076 bestSigma=0.186339 avgMaxStreak=1.0 pctInStreak=0.6 stability=-28226.79 energy=-463.97 whh_xh_ratio=0.6353 w_xh0_cv=0.1394 w_xh1_cv=0.1382 w_hh_cv=0.1499
+#GenCrash gen=55 hullStrike=0 eval=110 sim=0 boot=0 timeLimit=0 rabbitComplete=106 none=0 total=216
+#GenSimStats gen=55 sims=1728216 total=95051880 durationSec=116.89 rate=14785.20
+#NNGen gen=56 best=-3138.224345 avg=-979.530130 worst=-712.394886 bestSigma=0.186339 avgMaxStreak=1.0 pctInStreak=0.6 stability=-28226.79 energy=-463.97 whh_xh_ratio=0.6353 w_xh0_cv=0.1565 w_xh1_cv=0.1495 w_hh_cv=0.1704
+#GenCrash gen=56 hullStrike=0 eval=110 sim=0 boot=0 timeLimit=0 rabbitComplete=106 none=0 total=216
+#GenSimStats gen=56 sims=1728216 total=96780096 durationSec=91.02 rate=18986.26
+#NNGen gen=57 best=-3138.224345 avg=-987.775651 worst=-711.962125 bestSigma=0.186339 avgMaxStreak=1.0 pctInStreak=0.6 stability=-28226.79 energy=-463.97 whh_xh_ratio=0.6353 w_xh0_cv=0.1609 w_xh1_cv=0.1508 w_hh_cv=0.1735
+#GenCrash gen=57 hullStrike=0 eval=110 sim=0 boot=0 timeLimit=0 rabbitComplete=106 none=0 total=216
+#GenSimStats gen=57 sims=1728216 total=98508312 durationSec=91.23 rate=18944.04
+#NNGen gen=58 best=-3138.224345 avg=-994.196507 worst=-711.875259 bestSigma=0.186339 avgMaxStreak=1.0 pctInStreak=0.6 stability=-28226.79 energy=-463.97 whh_xh_ratio=0.6353 w_xh0_cv=0.1497 w_xh1_cv=0.1422 w_hh_cv=0.1605
+#GenCrash gen=58 hullStrike=0 eval=110 sim=0 boot=0 timeLimit=0 rabbitComplete=106 none=0 total=216
+#GenSimStats gen=58 sims=1728216 total=100236528 durationSec=93.67 rate=18450.44
+#NNGen gen=59 best=-3138.224345 avg=-989.197711 worst=-713.020216 bestSigma=0.186339 avgMaxStreak=1.0 pctInStreak=0.6 stability=-28226.79 energy=-463.97 whh_xh_ratio=0.6353 w_xh0_cv=0.1542 w_xh1_cv=0.1498 w_hh_cv=0.1644
+#GenCrash gen=59 hullStrike=0 eval=110 sim=0 boot=0 timeLimit=0 rabbitComplete=106 none=0 total=216
+#GenSimStats gen=59 sims=1728216 total=101964744 durationSec=92.97 rate=18589.58
+#NNGen gen=60 best=-3476.052971 avg=-1018.169349 worst=-714.809848 bestSigma=0.185465 avgMaxStreak=1.1 pctInStreak=0.7 stability=-28599.56 energy=-177.98 whh_xh_ratio=0.4888 w_xh0_cv=0.1539 w_xh1_cv=0.1516 w_hh_cv=0.1642
+#GenCrash gen=60 hullStrike=0 eval=100 sim=0 boot=0 timeLimit=0 rabbitComplete=116 none=0 total=216
+#GenSimStats gen=60 sims=1728216 total=103692960 durationSec=94.82 rate=18225.46
+#NNGen gen=61 best=-3917.240615 avg=-1027.947834 worst=-711.015383 bestSigma=0.185666 avgMaxStreak=1.1 pctInStreak=0.6 stability=-25827.48 energy=-159.47 whh_xh_ratio=0.7537 w_xh0_cv=0.1548 w_xh1_cv=0.1535 w_hh_cv=0.1642
+#GenCrash gen=61 hullStrike=0 eval=76 sim=0 boot=0 timeLimit=0 rabbitComplete=140 none=0 total=216
+#GenSimStats gen=61 sims=1728216 total=105421176 durationSec=97.87 rate=17659.12
+#NNGen gen=62 best=-3917.240615 avg=-1039.298200 worst=-711.608110 bestSigma=0.185666 avgMaxStreak=1.1 pctInStreak=0.6 stability=-25827.48 energy=-159.47 whh_xh_ratio=0.7537 w_xh0_cv=0.1548 w_xh1_cv=0.1521 w_hh_cv=0.1640
+#GenCrash gen=62 hullStrike=0 eval=76 sim=0 boot=0 timeLimit=0 rabbitComplete=140 none=0 total=216
+#GenSimStats gen=62 sims=1728216 total=107149392 durationSec=99.13 rate=17433.41
+#NNGen gen=63 best=-3917.240615 avg=-1064.555771 worst=-718.287674 bestSigma=0.185666 avgMaxStreak=1.1 pctInStreak=0.6 stability=-25827.48 energy=-159.47 whh_xh_ratio=0.7537 w_xh0_cv=0.1578 w_xh1_cv=0.1548 w_hh_cv=0.1670
+#GenCrash gen=63 hullStrike=0 eval=76 sim=0 boot=0 timeLimit=0 rabbitComplete=140 none=0 total=216
+#GenSimStats gen=63 sims=1728216 total=108877608 durationSec=127.87 rate=13515.14
+#NNGen gen=64 best=-4273.979854 avg=-1078.029398 worst=-714.797355 bestSigma=0.185077 avgMaxStreak=0.9 pctInStreak=0.5 stability=-18998.40 energy=-190.84 whh_xh_ratio=0.5961 w_xh0_cv=0.1453 w_xh1_cv=0.1432 w_hh_cv=0.1537
+#GenCrash gen=64 hullStrike=0 eval=48 sim=0 boot=0 timeLimit=0 rabbitComplete=168 none=0 total=216
+#GenSimStats gen=64 sims=1728216 total=110605824 durationSec=121.42 rate=14232.94
+#NNGen gen=65 best=-4725.356210 avg=-1071.839594 worst=-714.629412 bestSigma=0.188793 avgMaxStreak=1.2 pctInStreak=0.7 stability=-19163.71 energy=-1796.56 whh_xh_ratio=0.5806 w_xh0_cv=0.1561 w_xh1_cv=0.1541 w_hh_cv=0.1646
+#GenCrash gen=65 hullStrike=0 eval=60 sim=0 boot=0 timeLimit=0 rabbitComplete=156 none=0 total=216
+#GenSimStats gen=65 sims=1728216 total=112334040 durationSec=101.99 rate=16945.57
+#NNGen gen=66 best=-4725.356210 avg=-1083.018809 worst=-718.401053 bestSigma=0.188793 avgMaxStreak=1.2 pctInStreak=0.7 stability=-19163.71 energy=-1796.56 whh_xh_ratio=0.5806 w_xh0_cv=0.1615 w_xh1_cv=0.1593 w_hh_cv=0.1701
+#GenCrash gen=66 hullStrike=0 eval=60 sim=0 boot=0 timeLimit=0 rabbitComplete=156 none=0 total=216
+#GenSimStats gen=66 sims=1728216 total=114062256 durationSec=136.80 rate=12632.93
+#NNGen gen=67 best=-5085.179620 avg=-1097.622206 worst=-706.372916 bestSigma=0.187937 avgMaxStreak=1.0 pctInStreak=0.5 stability=-26267.16 energy=-1546.29 whh_xh_ratio=0.5249 w_xh0_cv=0.1634 w_xh1_cv=0.1611 w_hh_cv=0.1709
+#GenCrash gen=67 hullStrike=0 eval=46 sim=0 boot=0 timeLimit=0 rabbitComplete=170 none=0 total=216
+#GenSimStats gen=67 sims=1728216 total=115790472 durationSec=106.90 rate=16166.53
+#NNGen gen=68 best=-5085.179620 avg=-1110.698172 worst=-717.585330 bestSigma=0.187937 avgMaxStreak=1.0 pctInStreak=0.5 stability=-26267.16 energy=-1546.29 whh_xh_ratio=0.5249 w_xh0_cv=0.1607 w_xh1_cv=0.1589 w_hh_cv=0.1673
+#GenCrash gen=68 hullStrike=0 eval=46 sim=0 boot=0 timeLimit=0 rabbitComplete=170 none=0 total=216
+#GenSimStats gen=68 sims=1728216 total=117518688 durationSec=108.33 rate=15953.51
+#NNGen gen=69 best=-5085.179620 avg=-1128.441919 worst=-711.056343 bestSigma=0.187937 avgMaxStreak=1.0 pctInStreak=0.5 stability=-26267.16 energy=-1546.29 whh_xh_ratio=0.5249 w_xh0_cv=0.1525 w_xh1_cv=0.1510 w_hh_cv=0.1591
+#GenCrash gen=69 hullStrike=0 eval=46 sim=0 boot=0 timeLimit=0 rabbitComplete=170 none=0 total=216
+#GenSimStats gen=69 sims=1728216 total=119246904 durationSec=111.42 rate=15510.29
+#NNGen gen=70 best=-5817.780482 avg=-1170.103260 worst=-710.602321 bestSigma=0.184419 avgMaxStreak=1.7 pctInStreak=1.0 stability=-19433.44 energy=-2995.18 whh_xh_ratio=0.7046 w_xh0_cv=0.1589 w_xh1_cv=0.1576 w_hh_cv=0.1662
+#GenCrash gen=70 hullStrike=0 eval=40 sim=0 boot=0 timeLimit=0 rabbitComplete=176 none=0 total=216
+#GenSimStats gen=70 sims=1728216 total=120975120 durationSec=139.55 rate=12384.52
+#NNGen gen=71 best=-5817.780482 avg=-1167.111757 worst=-714.543738 bestSigma=0.184419 avgMaxStreak=1.7 pctInStreak=1.0 stability=-19433.44 energy=-2995.18 whh_xh_ratio=0.7046 w_xh0_cv=0.1646 w_xh1_cv=0.1621 w_hh_cv=0.1712
+#GenCrash gen=71 hullStrike=0 eval=40 sim=0 boot=0 timeLimit=0 rabbitComplete=176 none=0 total=216
+#GenSimStats gen=71 sims=1728216 total=122703336 durationSec=146.32 rate=11811.13
+#NNGen gen=72 best=-5817.780482 avg=-1173.210690 worst=-719.044203 bestSigma=0.184419 avgMaxStreak=1.7 pctInStreak=1.0 stability=-19433.44 energy=-2995.18 whh_xh_ratio=0.7046 w_xh0_cv=0.1615 w_xh1_cv=0.1592 w_hh_cv=0.1682
+#GenCrash gen=72 hullStrike=0 eval=40 sim=0 boot=0 timeLimit=0 rabbitComplete=176 none=0 total=216
+#GenSimStats gen=72 sims=1728216 total=124431552 durationSec=140.14 rate=12332.48
+#NNGen gen=73 best=-5817.780482 avg=-1183.074039 worst=-708.545040 bestSigma=0.184419 avgMaxStreak=1.7 pctInStreak=1.0 stability=-19433.44 energy=-2995.18 whh_xh_ratio=0.7046 w_xh0_cv=0.1610 w_xh1_cv=0.1589 w_hh_cv=0.1683
+#GenCrash gen=73 hullStrike=0 eval=40 sim=0 boot=0 timeLimit=0 rabbitComplete=176 none=0 total=216
+#GenSimStats gen=73 sims=1728216 total=126159768 durationSec=113.98 rate=15162.15
+#NNGen gen=74 best=-5817.780482 avg=-1193.035640 worst=-709.302667 bestSigma=0.184419 avgMaxStreak=1.7 pctInStreak=1.0 stability=-19433.44 energy=-2995.18 whh_xh_ratio=0.7046 w_xh0_cv=0.1569 w_xh1_cv=0.1545 w_hh_cv=0.1644
+#GenCrash gen=74 hullStrike=0 eval=40 sim=0 boot=0 timeLimit=0 rabbitComplete=176 none=0 total=216
+#GenSimStats gen=74 sims=1728216 total=127887984 durationSec=140.89 rate=12266.40
+#NNGen gen=75 best=-6194.238098 avg=-1208.087026 worst=-717.356954 bestSigma=0.194338 avgMaxStreak=2.4 pctInStreak=1.5 stability=-20089.50 energy=-6170.89 whh_xh_ratio=0.6340 w_xh0_cv=0.1522 w_xh1_cv=0.1497 w_hh_cv=0.1594
+#GenCrash gen=75 hullStrike=0 eval=53 sim=0 boot=0 timeLimit=0 rabbitComplete=163 none=0 total=216
+#GenSimStats gen=75 sims=1728216 total=129616200 durationSec=113.33 rate=15249.51
+#NNGen gen=76 best=-6194.238098 avg=-1247.160315 worst=-716.697376 bestSigma=0.194338 avgMaxStreak=2.4 pctInStreak=1.5 stability=-20089.50 energy=-6170.89 whh_xh_ratio=0.6340 w_xh0_cv=0.1550 w_xh1_cv=0.1515 w_hh_cv=0.1621
+#GenCrash gen=76 hullStrike=0 eval=53 sim=0 boot=0 timeLimit=0 rabbitComplete=163 none=0 total=216
+#GenSimStats gen=76 sims=1728216 total=131344416 durationSec=118.45 rate=14590.18
+#NNGen gen=77 best=-7646.558465 avg=-1265.392476 worst=-713.917768 bestSigma=0.179320 avgMaxStreak=2.2 pctInStreak=1.2 stability=-30707.35 energy=-3211.22 whh_xh_ratio=0.5764 w_xh0_cv=0.1684 w_xh1_cv=0.1638 w_hh_cv=0.1760
+#GenCrash gen=77 hullStrike=0 eval=6 sim=0 boot=0 timeLimit=0 rabbitComplete=210 none=0 total=216
+#GenSimStats gen=77 sims=1728216 total=133072632 durationSec=118.08 rate=14635.96
+#NNGen gen=78 best=-8198.857360 avg=-1286.749092 worst=-715.833473 bestSigma=0.187207 avgMaxStreak=2.7 pctInStreak=1.6 stability=-22605.75 energy=-6245.62 whh_xh_ratio=0.6453 w_xh0_cv=0.1653 w_xh1_cv=0.1614 w_hh_cv=0.1717
+#GenCrash gen=78 hullStrike=0 eval=24 sim=0 boot=0 timeLimit=0 rabbitComplete=192 none=0 total=216
+#GenSimStats gen=78 sims=1728216 total=134800848 durationSec=120.16 rate=14383.14
+#NNGen gen=79 best=-8198.857360 avg=-1346.346490 worst=-718.578529 bestSigma=0.187207 avgMaxStreak=2.7 pctInStreak=1.6 stability=-22605.75 energy=-6245.62 whh_xh_ratio=0.6453 w_xh0_cv=0.1572 w_xh1_cv=0.1536 w_hh_cv=0.1636
+#GenCrash gen=79 hullStrike=0 eval=24 sim=0 boot=0 timeLimit=0 rabbitComplete=192 none=0 total=216
+#GenSimStats gen=79 sims=1728216 total=136529064 durationSec=124.81 rate=13846.67
+#NNGen gen=80 best=-8198.857360 avg=-1357.106728 worst=-711.537139 bestSigma=0.187207 avgMaxStreak=2.7 pctInStreak=1.6 stability=-22605.75 energy=-6245.62 whh_xh_ratio=0.6453 w_xh0_cv=0.1578 w_xh1_cv=0.1548 w_hh_cv=0.1643
+#GenCrash gen=80 hullStrike=0 eval=24 sim=0 boot=0 timeLimit=0 rabbitComplete=192 none=0 total=216
+#GenSimStats gen=80 sims=1728216 total=138257280 durationSec=121.94 rate=14172.66
+#NNGen gen=81 best=-8344.048139 avg=-1423.083412 worst=-760.573244 bestSigma=0.187207 avgMaxStreak=2.7 pctInStreak=1.7 stability=-22366.08 energy=-6289.64 whh_xh_ratio=0.6453 w_xh0_cv=0.1616 w_xh1_cv=0.1595 w_hh_cv=0.1678
+#GenCrash gen=81 hullStrike=0 eval=18 sim=0 boot=0 timeLimit=0 rabbitComplete=198 none=0 total=216
+#GenSimStats gen=81 sims=1728216 total=139985496 durationSec=124.51 rate=13880.47
+#NNGen gen=82 best=-8344.048139 avg=-1444.762726 worst=-764.344624 bestSigma=0.187207 avgMaxStreak=2.7 pctInStreak=1.7 stability=-22366.08 energy=-6289.64 whh_xh_ratio=0.6453 w_xh0_cv=0.1575 w_xh1_cv=0.1555 w_hh_cv=0.1638
+#GenCrash gen=82 hullStrike=0 eval=18 sim=0 boot=0 timeLimit=0 rabbitComplete=198 none=0 total=216
+#GenSimStats gen=82 sims=1728216 total=141713712 durationSec=126.09 rate=13705.77
+#NNGen gen=83 best=-8344.048139 avg=-1483.642691 worst=-764.216557 bestSigma=0.187207 avgMaxStreak=2.7 pctInStreak=1.7 stability=-22366.08 energy=-6289.64 whh_xh_ratio=0.6453 w_xh0_cv=0.1572 w_xh1_cv=0.1553 w_hh_cv=0.1645
+#GenCrash gen=83 hullStrike=0 eval=18 sim=0 boot=0 timeLimit=0 rabbitComplete=198 none=0 total=216
+#GenSimStats gen=83 sims=1728216 total=143441928 durationSec=155.63 rate=11104.68
+#NNGen gen=84 best=-8344.048139 avg=-1506.860772 worst=-765.253505 bestSigma=0.187207 avgMaxStreak=2.7 pctInStreak=1.7 stability=-22366.08 energy=-6289.64 whh_xh_ratio=0.6453 w_xh0_cv=0.1677 w_xh1_cv=0.1647 w_hh_cv=0.1749
+#GenCrash gen=84 hullStrike=0 eval=18 sim=0 boot=0 timeLimit=0 rabbitComplete=198 none=0 total=216
+#GenSimStats gen=84 sims=1728216 total=145170144 durationSec=160.90 rate=10740.80
+#NNGen gen=85 best=-8344.048139 avg=-1570.753403 worst=-759.201024 bestSigma=0.187207 avgMaxStreak=2.7 pctInStreak=1.7 stability=-22366.08 energy=-6289.64 whh_xh_ratio=0.6453 w_xh0_cv=0.1578 w_xh1_cv=0.1553 w_hh_cv=0.1654
+#GenCrash gen=85 hullStrike=0 eval=18 sim=0 boot=0 timeLimit=0 rabbitComplete=198 none=0 total=216
+#GenSimStats gen=85 sims=1728216 total=146898360 durationSec=132.62 rate=13031.39
+#NNGen gen=86 best=-8344.048139 avg=-1634.151040 worst=-774.155700 bestSigma=0.187207 avgMaxStreak=2.7 pctInStreak=1.7 stability=-22366.08 energy=-6289.64 whh_xh_ratio=0.6453 w_xh0_cv=0.1626 w_xh1_cv=0.1602 w_hh_cv=0.1702
+#GenCrash gen=86 hullStrike=0 eval=18 sim=0 boot=0 timeLimit=0 rabbitComplete=198 none=0 total=216
+#GenSimStats gen=86 sims=1728216 total=148626576 durationSec=136.46 rate=12665.07
+#NNGen gen=87 best=-8344.048139 avg=-1649.227125 worst=-772.306966 bestSigma=0.187207 avgMaxStreak=2.7 pctInStreak=1.7 stability=-22366.08 energy=-6289.64 whh_xh_ratio=0.6453 w_xh0_cv=0.1624 w_xh1_cv=0.1606 w_hh_cv=0.1694
+#GenCrash gen=87 hullStrike=0 eval=18 sim=0 boot=0 timeLimit=0 rabbitComplete=198 none=0 total=216
+#GenSimStats gen=87 sims=1728216 total=150354792 durationSec=170.19 rate=10154.46
+#NNGen gen=88 best=-10290.509116 avg=-1684.125803 worst=-761.883769 bestSigma=0.182825 avgMaxStreak=4.1 pctInStreak=2.6 stability=-12666.05 energy=-7964.14 whh_xh_ratio=0.8555 w_xh0_cv=0.1654 w_xh1_cv=0.1635 w_hh_cv=0.1725
+#GenCrash gen=88 hullStrike=0 eval=14 sim=0 boot=0 timeLimit=0 rabbitComplete=202 none=0 total=216
+#GenSimStats gen=88 sims=1728216 total=152083008 durationSec=136.66 rate=12646.55
+#NNGen gen=89 best=-10290.509116 avg=-1777.508996 worst=-762.459973 bestSigma=0.182825 avgMaxStreak=4.1 pctInStreak=2.6 stability=-12666.05 energy=-7964.14 whh_xh_ratio=0.8555 w_xh0_cv=0.1641 w_xh1_cv=0.1619 w_hh_cv=0.1711
+#GenCrash gen=89 hullStrike=0 eval=14 sim=0 boot=0 timeLimit=0 rabbitComplete=202 none=0 total=216
+#GenSimStats gen=89 sims=1728216 total=153811224 durationSec=166.53 rate=10377.68
+#NNGen gen=90 best=-10290.509116 avg=-1858.928793 worst=-772.712559 bestSigma=0.182825 avgMaxStreak=4.1 pctInStreak=2.6 stability=-12666.05 energy=-7964.14 whh_xh_ratio=0.8555 w_xh0_cv=0.1595 w_xh1_cv=0.1572 w_hh_cv=0.1665
+#GenCrash gen=90 hullStrike=0 eval=14 sim=0 boot=0 timeLimit=0 rabbitComplete=202 none=0 total=216
+#GenSimStats gen=90 sims=1728216 total=155539440 durationSec=145.38 rate=11887.65
+#NNGen gen=91 best=-10290.509116 avg=-1869.129066 worst=-766.082797 bestSigma=0.182825 avgMaxStreak=4.1 pctInStreak=2.6 stability=-12666.05 energy=-7964.14 whh_xh_ratio=0.8555 w_xh0_cv=0.1642 w_xh1_cv=0.1619 w_hh_cv=0.1713
+#GenCrash gen=91 hullStrike=0 eval=14 sim=0 boot=0 timeLimit=0 rabbitComplete=202 none=0 total=216
+#GenSimStats gen=91 sims=1728216 total=157267656 durationSec=172.75 rate=10004.33
+#NNGen gen=92 best=-10290.509116 avg=-1886.587417 worst=-771.098148 bestSigma=0.182825 avgMaxStreak=4.1 pctInStreak=2.6 stability=-12666.05 energy=-7964.14 whh_xh_ratio=0.8555 w_xh0_cv=0.1681 w_xh1_cv=0.1656 w_hh_cv=0.1749
+#GenCrash gen=92 hullStrike=0 eval=14 sim=0 boot=0 timeLimit=0 rabbitComplete=202 none=0 total=216
+#GenSimStats gen=92 sims=1728216 total=158995872 durationSec=179.50 rate=9628.01
+#NNGen gen=93 best=-10290.509116 avg=-1936.094940 worst=-766.000797 bestSigma=0.182825 avgMaxStreak=4.1 pctInStreak=2.6 stability=-12666.05 energy=-7964.14 whh_xh_ratio=0.8555 w_xh0_cv=0.1629 w_xh1_cv=0.1608 w_hh_cv=0.1693
+#GenCrash gen=93 hullStrike=0 eval=14 sim=0 boot=0 timeLimit=0 rabbitComplete=202 none=0 total=216
+#GenSimStats gen=93 sims=1728216 total=160724088 durationSec=174.27 rate=9917.14
+#NNGen gen=94 best=-10290.509116 avg=-1941.011130 worst=-764.653338 bestSigma=0.182825 avgMaxStreak=4.1 pctInStreak=2.6 stability=-12666.05 energy=-7964.14 whh_xh_ratio=0.8555 w_xh0_cv=0.1699 w_xh1_cv=0.1674 w_hh_cv=0.1768
+#GenCrash gen=94 hullStrike=0 eval=14 sim=0 boot=0 timeLimit=0 rabbitComplete=202 none=0 total=216
+#GenSimStats gen=94 sims=1728216 total=162452304 durationSec=151.72 rate=11390.86
+#NNGen gen=95 best=-10290.509116 avg=-1949.257666 worst=-773.830411 bestSigma=0.182825 avgMaxStreak=4.1 pctInStreak=2.6 stability=-12666.05 energy=-7964.14 whh_xh_ratio=0.8555 w_xh0_cv=0.1646 w_xh1_cv=0.1620 w_hh_cv=0.1711
+#GenCrash gen=95 hullStrike=0 eval=14 sim=0 boot=0 timeLimit=0 rabbitComplete=202 none=0 total=216
+#GenSimStats gen=95 sims=1728216 total=164180520 durationSec=151.24 rate=11427.10
+#NNGen gen=96 best=-11237.562563 avg=-1938.760906 worst=-774.710351 bestSigma=0.180680 avgMaxStreak=6.6 pctInStreak=5.1 stability=-20443.13 energy=-9434.34 whh_xh_ratio=0.6333 w_xh0_cv=0.1660 w_xh1_cv=0.1637 w_hh_cv=0.1729
+#GenCrash gen=96 hullStrike=0 eval=10 sim=0 boot=0 timeLimit=0 rabbitComplete=206 none=0 total=216
+#GenSimStats gen=96 sims=1728216 total=165908736 durationSec=178.47 rate=9683.44
+#NNGen gen=97 best=-11237.562563 avg=-2032.676473 worst=-769.818835 bestSigma=0.180680 avgMaxStreak=6.6 pctInStreak=5.1 stability=-20443.13 energy=-9434.34 whh_xh_ratio=0.6333 w_xh0_cv=0.1596 w_xh1_cv=0.1574 w_hh_cv=0.1661
+#GenCrash gen=97 hullStrike=0 eval=10 sim=0 boot=0 timeLimit=0 rabbitComplete=206 none=0 total=216
+#GenSimStats gen=97 sims=1728216 total=167636952 durationSec=154.57 rate=11180.61
+#NNGen gen=98 best=-11237.562563 avg=-2050.232752 worst=-770.999450 bestSigma=0.180680 avgMaxStreak=6.6 pctInStreak=5.1 stability=-20443.13 energy=-9434.34 whh_xh_ratio=0.6333 w_xh0_cv=0.1596 w_xh1_cv=0.1572 w_hh_cv=0.1661
+#GenCrash gen=98 hullStrike=0 eval=10 sim=0 boot=0 timeLimit=0 rabbitComplete=206 none=0 total=216
+#GenSimStats gen=98 sims=1728216 total=169365168 durationSec=178.11 rate=9702.98
+#NNGen gen=99 best=-11237.562563 avg=-2055.370125 worst=-760.694674 bestSigma=0.180680 avgMaxStreak=6.6 pctInStreak=5.1 stability=-20443.13 energy=-9434.34 whh_xh_ratio=0.6333 w_xh0_cv=0.1602 w_xh1_cv=0.1578 w_hh_cv=0.1668
+#GenCrash gen=99 hullStrike=0 eval=10 sim=0 boot=0 timeLimit=0 rabbitComplete=206 none=0 total=216
+#GenSimStats gen=99 sims=1728216 total=171093384 durationSec=154.00 rate=11222.15
+#NNGen gen=100 best=-11237.562563 avg=-2068.537658 worst=-764.151192 bestSigma=0.180680 avgMaxStreak=6.6 pctInStreak=5.1 stability=-20443.13 energy=-9434.34 whh_xh_ratio=0.6333 w_xh0_cv=0.1621 w_xh1_cv=0.1599 w_hh_cv=0.1690
+#GenCrash gen=100 hullStrike=0 eval=10 sim=0 boot=0 timeLimit=0 rabbitComplete=206 none=0 total=216
+#GenSimStats gen=100 sims=1728216 total=172821600 durationSec=153.58 rate=11253.18
+#NNGen gen=101 best=-11716.274562 avg=-2081.667623 worst=-771.826684 bestSigma=0.180009 avgMaxStreak=5.2 pctInStreak=3.5 stability=-17390.16 energy=-11113.68 whh_xh_ratio=0.5057 w_xh0_cv=0.1680 w_xh1_cv=0.1654 w_hh_cv=0.1751
+#GenCrash gen=101 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=101 sims=1728216 total=174549816 durationSec=189.79 rate=9105.99
+#NNGen gen=102 best=-11716.274562 avg=-2143.739121 worst=-765.100805 bestSigma=0.180009 avgMaxStreak=5.2 pctInStreak=3.5 stability=-17390.16 energy=-11113.68 whh_xh_ratio=0.5057 w_xh0_cv=0.1689 w_xh1_cv=0.1663 w_hh_cv=0.1757
+#GenCrash gen=102 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=102 sims=1728216 total=176278032 durationSec=190.23 rate=9084.79
+#NNGen gen=103 best=-11716.274562 avg=-2129.940054 worst=-759.841413 bestSigma=0.180009 avgMaxStreak=5.2 pctInStreak=3.5 stability=-17390.16 energy=-11113.68 whh_xh_ratio=0.5057 w_xh0_cv=0.1655 w_xh1_cv=0.1629 w_hh_cv=0.1723
+#GenCrash gen=103 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=103 sims=1728216 total=178006248 durationSec=200.18 rate=8633.18
+#NNGen gen=104 best=-11716.274562 avg=-2174.732029 worst=-760.275958 bestSigma=0.180009 avgMaxStreak=5.2 pctInStreak=3.5 stability=-17390.16 energy=-11113.68 whh_xh_ratio=0.5057 w_xh0_cv=0.1599 w_xh1_cv=0.1574 w_hh_cv=0.1662
+#GenCrash gen=104 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=104 sims=1728216 total=179734464 durationSec=187.66 rate=9209.25
+#NNGen gen=105 best=-11716.274562 avg=-2181.846348 worst=-763.502679 bestSigma=0.180009 avgMaxStreak=5.2 pctInStreak=3.5 stability=-17390.16 energy=-11113.68 whh_xh_ratio=0.5057 w_xh0_cv=0.1674 w_xh1_cv=0.1645 w_hh_cv=0.1739
+#GenCrash gen=105 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=105 sims=1728216 total=181462680 durationSec=165.44 rate=10446.43
+#NNGen gen=106 best=-11716.274562 avg=-2204.781914 worst=-775.993879 bestSigma=0.180009 avgMaxStreak=5.2 pctInStreak=3.5 stability=-17390.16 energy=-11113.68 whh_xh_ratio=0.5057 w_xh0_cv=0.1632 w_xh1_cv=0.1602 w_hh_cv=0.1694
+#GenCrash gen=106 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=106 sims=1728216 total=183190896 durationSec=189.85 rate=9103.17
+#NNGen gen=107 best=-11716.274562 avg=-2290.704045 worst=-774.336399 bestSigma=0.180009 avgMaxStreak=5.2 pctInStreak=3.5 stability=-17390.16 energy=-11113.68 whh_xh_ratio=0.5057 w_xh0_cv=0.1706 w_xh1_cv=0.1676 w_hh_cv=0.1773
+#GenCrash gen=107 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=107 sims=1728216 total=184919112 durationSec=167.87 rate=10294.66
+#NNGen gen=108 best=-11716.274562 avg=-2277.303063 worst=-765.490979 bestSigma=0.180009 avgMaxStreak=5.2 pctInStreak=3.5 stability=-17390.16 energy=-11113.68 whh_xh_ratio=0.5057 w_xh0_cv=0.1573 w_xh1_cv=0.1546 w_hh_cv=0.1636
+#GenCrash gen=108 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=108 sims=1728216 total=186647328 durationSec=200.38 rate=8624.76
+#NNGen gen=109 best=-11789.270892 avg=-2308.042717 worst=-754.043591 bestSigma=0.179633 avgMaxStreak=6.5 pctInStreak=5.2 stability=-13405.40 energy=-9453.37 whh_xh_ratio=0.7100 w_xh0_cv=0.1561 w_xh1_cv=0.1533 w_hh_cv=0.1629
+#GenCrash gen=109 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=109 sims=1728216 total=188375544 durationSec=200.50 rate=8619.33
+#NNGen gen=110 best=-11789.270892 avg=-2346.786827 worst=-774.726478 bestSigma=0.179633 avgMaxStreak=6.5 pctInStreak=5.2 stability=-13405.40 energy=-9453.37 whh_xh_ratio=0.7100 w_xh0_cv=0.1619 w_xh1_cv=0.1585 w_hh_cv=0.1686
+#GenCrash gen=110 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=110 sims=1728216 total=190103760 durationSec=168.71 rate=10243.91
+#NNGen gen=111 best=-11789.270892 avg=-2372.252587 worst=-767.308291 bestSigma=0.179633 avgMaxStreak=6.5 pctInStreak=5.2 stability=-13405.40 energy=-9453.37 whh_xh_ratio=0.7100 w_xh0_cv=0.1654 w_xh1_cv=0.1618 w_hh_cv=0.1714
+#GenCrash gen=111 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=111 sims=1728216 total=191831976 durationSec=170.41 rate=10141.52
+#NNGen gen=112 best=-12352.335780 avg=-2516.503366 worst=-763.128117 bestSigma=0.172229 avgMaxStreak=7.9 pctInStreak=7.6 stability=-15582.80 energy=-7964.22 whh_xh_ratio=0.5010 w_xh0_cv=0.1682 w_xh1_cv=0.1646 w_hh_cv=0.1738
+#GenCrash gen=112 hullStrike=0 eval=9 sim=0 boot=0 timeLimit=0 rabbitComplete=207 none=0 total=216
+#GenSimStats gen=112 sims=1728216 total=193560192 durationSec=201.20 rate=8589.53
+#NNGen gen=113 best=-12352.335780 avg=-2518.403646 worst=-763.031635 bestSigma=0.172229 avgMaxStreak=7.9 pctInStreak=7.6 stability=-15582.80 energy=-7964.22 whh_xh_ratio=0.5010 w_xh0_cv=0.1705 w_xh1_cv=0.1663 w_hh_cv=0.1765
+#GenCrash gen=113 hullStrike=0 eval=9 sim=0 boot=0 timeLimit=0 rabbitComplete=207 none=0 total=216
+#GenSimStats gen=113 sims=1728216 total=195288408 durationSec=177.58 rate=9732.07
+#NNGen gen=114 best=-12352.335780 avg=-2413.370669 worst=-766.077490 bestSigma=0.172229 avgMaxStreak=7.9 pctInStreak=7.6 stability=-15582.80 energy=-7964.22 whh_xh_ratio=0.5010 w_xh0_cv=0.1612 w_xh1_cv=0.1579 w_hh_cv=0.1669
+#GenCrash gen=114 hullStrike=0 eval=9 sim=0 boot=0 timeLimit=0 rabbitComplete=207 none=0 total=216
+#GenSimStats gen=114 sims=1728216 total=197016624 durationSec=172.50 rate=10018.41
+#NNGen gen=115 best=-13202.121417 avg=-2434.040891 worst=-766.397658 bestSigma=0.181412 avgMaxStreak=9.0 pctInStreak=8.5 stability=-16429.82 energy=-9459.02 whh_xh_ratio=0.5175 w_xh0_cv=0.1733 w_xh1_cv=0.1692 w_hh_cv=0.1788
+#GenCrash gen=115 hullStrike=0 eval=6 sim=0 boot=0 timeLimit=0 rabbitComplete=210 none=0 total=216
+#GenSimStats gen=115 sims=1728216 total=198744840 durationSec=175.33 rate=9857.07
+#NNGen gen=116 best=-13202.121417 avg=-2486.791623 worst=-761.487188 bestSigma=0.181412 avgMaxStreak=9.0 pctInStreak=8.5 stability=-16429.82 energy=-9459.02 whh_xh_ratio=0.5175 w_xh0_cv=0.1653 w_xh1_cv=0.1629 w_hh_cv=0.1712
+#GenCrash gen=116 hullStrike=0 eval=6 sim=0 boot=0 timeLimit=0 rabbitComplete=210 none=0 total=216
+#GenSimStats gen=116 sims=1728216 total=200473056 durationSec=205.21 rate=8421.68
+#NNGen gen=117 best=-13202.121417 avg=-2444.392211 worst=-758.093867 bestSigma=0.181412 avgMaxStreak=9.0 pctInStreak=8.5 stability=-16429.82 energy=-9459.02 whh_xh_ratio=0.5175 w_xh0_cv=0.1722 w_xh1_cv=0.1708 w_hh_cv=0.1783
+#GenCrash gen=117 hullStrike=0 eval=6 sim=0 boot=0 timeLimit=0 rabbitComplete=210 none=0 total=216
+#GenSimStats gen=117 sims=1728216 total=202201272 durationSec=172.40 rate=10024.27
+#NNGen gen=118 best=-13441.207463 avg=-2529.443414 worst=-763.922227 bestSigma=0.176590 avgMaxStreak=8.5 pctInStreak=8.3 stability=-13583.17 energy=-11002.62 whh_xh_ratio=0.3875 w_xh0_cv=0.1697 w_xh1_cv=0.1695 w_hh_cv=0.1761
+#GenCrash gen=118 hullStrike=0 eval=8 sim=0 boot=0 timeLimit=0 rabbitComplete=208 none=0 total=216
+#GenSimStats gen=118 sims=1728216 total=203929488 durationSec=210.89 rate=8194.73
+#NNGen gen=119 best=-13441.207463 avg=-2459.730605 worst=-766.073874 bestSigma=0.176590 avgMaxStreak=8.5 pctInStreak=8.3 stability=-13583.17 energy=-11002.62 whh_xh_ratio=0.3875 w_xh0_cv=0.1658 w_xh1_cv=0.1655 w_hh_cv=0.1718
+#GenCrash gen=119 hullStrike=0 eval=8 sim=0 boot=0 timeLimit=0 rabbitComplete=208 none=0 total=216
+#GenSimStats gen=119 sims=1728216 total=205657704 durationSec=171.74 rate=10062.86
+#NNGen gen=120 best=-14738.446256 avg=-2522.246977 worst=-764.169412 bestSigma=0.181880 avgMaxStreak=10.4 pctInStreak=9.7 stability=-18702.87 energy=-12325.57 whh_xh_ratio=0.7382 w_xh0_cv=0.1673 w_xh1_cv=0.1660 w_hh_cv=0.1738
+#GenCrash gen=120 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=120 sims=1728216 total=207385920 durationSec=174.69 rate=9892.94
+#NNGen gen=121 best=-15018.164429 avg=-2609.199067 worst=-775.371938 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1600 w_xh1_cv=0.1587 w_hh_cv=0.1651
+#GenCrash gen=121 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=121 sims=1728216 total=209114136 durationSec=203.52 rate=8491.78
+#NNGen gen=122 best=-15018.164429 avg=-2587.841345 worst=-773.412491 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1661 w_xh1_cv=0.1652 w_hh_cv=0.1709
+#GenCrash gen=122 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=122 sims=1728216 total=210842352 durationSec=173.66 rate=9951.62
+#NNGen gen=123 best=-15018.164429 avg=-2554.858844 worst=-778.368527 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1761 w_xh1_cv=0.1752 w_hh_cv=0.1810
+#GenCrash gen=123 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=123 sims=1728216 total=212570568 durationSec=170.05 rate=10162.77
+#NNGen gen=124 best=-15018.164429 avg=-2510.894168 worst=-771.477060 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1744 w_xh1_cv=0.1734 w_hh_cv=0.1795
+#GenCrash gen=124 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=124 sims=1728216 total=214298784 durationSec=169.35 rate=10204.95
+#NNGen gen=125 best=-15018.164429 avg=-2575.910523 worst=-779.866551 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1692 w_xh1_cv=0.1682 w_hh_cv=0.1741
+#GenCrash gen=125 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=125 sims=1728216 total=216027000 durationSec=175.23 rate=9862.82
+#NNGen gen=126 best=-15018.164429 avg=-2575.694734 worst=-773.755771 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1613 w_xh1_cv=0.1602 w_hh_cv=0.1656
+#GenCrash gen=126 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=126 sims=1728216 total=217755216 durationSec=199.45 rate=8665.00
+#NNGen gen=127 best=-15018.164429 avg=-2609.378378 worst=-769.263068 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1664 w_xh1_cv=0.1652 w_hh_cv=0.1711
+#GenCrash gen=127 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=127 sims=1728216 total=219483432 durationSec=202.69 rate=8526.50
+#NNGen gen=128 best=-15018.164429 avg=-2538.909308 worst=-770.180279 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1728 w_xh1_cv=0.1717 w_hh_cv=0.1776
+#GenCrash gen=128 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=128 sims=1728216 total=221211648 durationSec=209.07 rate=8266.23
+#NNGen gen=129 best=-15018.164429 avg=-2523.220580 worst=-768.194035 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1687 w_xh1_cv=0.1676 w_hh_cv=0.1737
+#GenCrash gen=129 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=129 sims=1728216 total=222939864 durationSec=170.35 rate=10144.93
+#NNGen gen=130 best=-15018.164429 avg=-2605.946353 worst=-773.957026 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1690 w_xh1_cv=0.1681 w_hh_cv=0.1739
+#GenCrash gen=130 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=130 sims=1728216 total=224668080 durationSec=172.76 rate=10003.50
+#NNGen gen=131 best=-15018.164429 avg=-2556.352964 worst=-772.043553 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1697 w_xh1_cv=0.1686 w_hh_cv=0.1749
+#GenCrash gen=131 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=131 sims=1728216 total=226396296 durationSec=170.19 rate=10154.92
+#NNGen gen=132 best=-15018.164429 avg=-2555.610473 worst=-770.208516 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1663 w_xh1_cv=0.1656 w_hh_cv=0.1715
+#GenCrash gen=132 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=132 sims=1728216 total=228124512 durationSec=170.80 rate=10118.08
+#NNGen gen=133 best=-15018.164429 avg=-2555.398460 worst=-768.638004 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1764 w_xh1_cv=0.1754 w_hh_cv=0.1813
+#GenCrash gen=133 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=133 sims=1728216 total=229852728 durationSec=172.28 rate=10031.39
+#NNGen gen=134 best=-15018.164429 avg=-2542.706746 worst=-775.969520 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1679 w_xh1_cv=0.1670 w_hh_cv=0.1726
+#GenCrash gen=134 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=134 sims=1728216 total=231580944 durationSec=171.37 rate=10084.65
+#NNGen gen=135 best=-15018.164429 avg=-2651.368876 worst=-776.972869 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1611 w_xh1_cv=0.1602 w_hh_cv=0.1655
+#GenCrash gen=135 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=135 sims=1728216 total=233309160 durationSec=176.71 rate=9780.04
+#NNGen gen=136 best=-15018.164429 avg=-2537.152855 worst=-773.547561 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1670 w_xh1_cv=0.1659 w_hh_cv=0.1720
+#GenCrash gen=136 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=136 sims=1728216 total=235037376 durationSec=170.17 rate=10155.55
+#NNGen gen=137 best=-15018.164429 avg=-2598.971568 worst=-774.567797 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1736 w_xh1_cv=0.1730 w_hh_cv=0.1788
+#GenCrash gen=137 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=137 sims=1728216 total=236765592 durationSec=181.79 rate=9506.43
+#NNGen gen=138 best=-15018.164429 avg=-2571.309863 worst=-779.674312 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1619 w_xh1_cv=0.1615 w_hh_cv=0.1673
+#GenCrash gen=138 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=138 sims=1728216 total=238493808 durationSec=203.52 rate=8491.68
+#NNGen gen=139 best=-15018.164429 avg=-2556.115016 worst=-771.467125 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1698 w_xh1_cv=0.1694 w_hh_cv=0.1758
+#GenCrash gen=139 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=139 sims=1728216 total=240222024 durationSec=202.27 rate=8543.95
+#NNGen gen=140 best=-15018.164429 avg=-2527.913305 worst=-778.722064 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1657 w_xh1_cv=0.1653 w_hh_cv=0.1713
+#GenCrash gen=140 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=140 sims=1728216 total=241950240 durationSec=169.94 rate=10169.54
+#NNGen gen=141 best=-15018.164429 avg=-2482.850886 worst=-769.287806 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1683 w_xh1_cv=0.1679 w_hh_cv=0.1734
+#GenCrash gen=141 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=141 sims=1728216 total=243678456 durationSec=167.84 rate=10296.64
+#NNGen gen=142 best=-15018.164429 avg=-2552.724068 worst=-778.651968 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1715 w_xh1_cv=0.1709 w_hh_cv=0.1765
+#GenCrash gen=142 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=142 sims=1728216 total=245406672 durationSec=171.56 rate=10073.73
+#NNGen gen=143 best=-15018.164429 avg=-2599.235819 worst=-779.430063 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1719 w_xh1_cv=0.1709 w_hh_cv=0.1769
+#GenCrash gen=143 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=143 sims=1728216 total=247134888 durationSec=172.59 rate=10013.52
+#NNGen gen=144 best=-15018.164429 avg=-2590.937549 worst=-769.042000 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1732 w_xh1_cv=0.1724 w_hh_cv=0.1786
+#GenCrash gen=144 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=144 sims=1728216 total=248863104 durationSec=173.45 rate=9963.83
+#NNGen gen=145 best=-15018.164429 avg=-2610.267649 worst=-770.028882 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1668 w_xh1_cv=0.1660 w_hh_cv=0.1720
+#GenCrash gen=145 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=145 sims=1728216 total=250591320 durationSec=175.96 rate=9821.60
+#NNGen gen=146 best=-15018.164429 avg=-2562.475880 worst=-771.046972 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1662 w_xh1_cv=0.1649 w_hh_cv=0.1713
+#GenCrash gen=146 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=146 sims=1728216 total=252319536 durationSec=172.15 rate=10039.16
+#NNGen gen=147 best=-15018.164429 avg=-2572.132960 worst=-777.010668 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1723 w_xh1_cv=0.1707 w_hh_cv=0.1773
+#GenCrash gen=147 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=147 sims=1728216 total=254047752 durationSec=206.35 rate=8375.28
+#NNGen gen=148 best=-15018.164429 avg=-2591.213768 worst=-771.263654 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1674 w_xh1_cv=0.1659 w_hh_cv=0.1720
+#GenCrash gen=148 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=148 sims=1728216 total=255775968 durationSec=196.22 rate=8807.59
+#NNGen gen=149 best=-15018.164429 avg=-2520.226322 worst=-767.429025 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1677 w_xh1_cv=0.1663 w_hh_cv=0.1722
+#GenCrash gen=149 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=149 sims=1728216 total=257504184 durationSec=169.59 rate=10190.58
+#NNGen gen=150 best=-15018.164429 avg=-2531.460499 worst=-775.215443 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1709 w_xh1_cv=0.1695 w_hh_cv=0.1753
+#GenCrash gen=150 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=150 sims=1728216 total=259232400 durationSec=199.57 rate=8659.86
+#NNGen gen=151 best=-15018.164429 avg=-2596.133395 worst=-770.609188 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1639 w_xh1_cv=0.1625 w_hh_cv=0.1683
+#GenCrash gen=151 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=151 sims=1728216 total=260960616 durationSec=175.01 rate=9875.18
+#NNGen gen=152 best=-15018.164429 avg=-2587.936775 worst=-779.319362 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1604 w_xh1_cv=0.1591 w_hh_cv=0.1646
+#GenCrash gen=152 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=152 sims=1728216 total=262688832 durationSec=198.98 rate=8685.46
+#NNGen gen=153 best=-15018.164429 avg=-2653.680819 worst=-767.386604 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1705 w_xh1_cv=0.1693 w_hh_cv=0.1750
+#GenCrash gen=153 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=153 sims=1728216 total=264417048 durationSec=199.85 rate=8647.44
+#NNGen gen=154 best=-15018.164429 avg=-2680.375019 worst=-781.508939 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1661 w_xh1_cv=0.1652 w_hh_cv=0.1702
+#GenCrash gen=154 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=154 sims=1728216 total=266145264 durationSec=202.43 rate=8537.17
+#NNGen gen=155 best=-15018.164429 avg=-2693.813919 worst=-778.330954 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1742 w_xh1_cv=0.1733 w_hh_cv=0.1781
+#GenCrash gen=155 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=155 sims=1728216 total=267873480 durationSec=176.58 rate=9787.22
+#NNGen gen=156 best=-15018.164429 avg=-2708.494756 worst=-771.069046 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1684 w_xh1_cv=0.1678 w_hh_cv=0.1721
+#GenCrash gen=156 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=156 sims=1728216 total=269601696 durationSec=177.32 rate=9746.38
+#NNGen gen=157 best=-15018.164429 avg=-2669.963899 worst=-774.190288 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1689 w_xh1_cv=0.1680 w_hh_cv=0.1724
+#GenCrash gen=157 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=157 sims=1728216 total=271329912 durationSec=174.03 rate=9930.54
+#NNGen gen=158 best=-15018.164429 avg=-2651.086967 worst=-767.535639 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1741 w_xh1_cv=0.1736 w_hh_cv=0.1778
+#GenCrash gen=158 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=158 sims=1728216 total=273058128 durationSec=170.85 rate=10115.23
+#NNGen gen=159 best=-15018.164429 avg=-2688.857337 worst=-772.137218 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1646 w_xh1_cv=0.1643 w_hh_cv=0.1682
+#GenCrash gen=159 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=159 sims=1728216 total=274786344 durationSec=173.57 rate=9957.14
+#NNGen gen=160 best=-15018.164429 avg=-2822.734787 worst=-774.132265 bestSigma=0.175261 avgMaxStreak=11.7 pctInStreak=11.3 stability=-15836.92 energy=-12129.09 whh_xh_ratio=0.7069 w_xh0_cv=0.1671 w_xh1_cv=0.1669 w_hh_cv=0.1707
+#GenCrash gen=160 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=160 sims=1728216 total=276514560 durationSec=180.53 rate=9572.85
+#NNGen gen=161 best=-15037.805617 avg=-2801.338869 worst=-775.566022 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1740 w_xh1_cv=0.1739 w_hh_cv=0.1777
+#GenCrash gen=161 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=161 sims=1728216 total=278242776 durationSec=181.41 rate=9526.80
+#NNGen gen=162 best=-15037.805617 avg=-2745.290458 worst=-776.800221 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1723 w_xh1_cv=0.1721 w_hh_cv=0.1758
+#GenCrash gen=162 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=162 sims=1728216 total=279970992 durationSec=218.12 rate=7923.22
+#NNGen gen=163 best=-15037.805617 avg=-2775.651943 worst=-789.370414 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1719 w_xh1_cv=0.1718 w_hh_cv=0.1759
+#GenCrash gen=163 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=163 sims=1728216 total=281699208 durationSec=206.28 rate=8377.93
+#NNGen gen=164 best=-15037.805617 avg=-2866.435103 worst=-773.220287 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1761 w_xh1_cv=0.1760 w_hh_cv=0.1799
+#GenCrash gen=164 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=164 sims=1728216 total=283427424 durationSec=183.26 rate=9430.60
+#NNGen gen=165 best=-15037.805617 avg=-2781.621236 worst=-763.923366 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1704 w_xh1_cv=0.1703 w_hh_cv=0.1741
+#GenCrash gen=165 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=165 sims=1728216 total=285155640 durationSec=180.17 rate=9592.14
+#NNGen gen=166 best=-15037.805617 avg=-2777.413206 worst=-771.053595 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1758 w_xh1_cv=0.1756 w_hh_cv=0.1796
+#GenCrash gen=166 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=166 sims=1728216 total=286883856 durationSec=181.74 rate=9509.13
+#NNGen gen=167 best=-15037.805617 avg=-2747.506059 worst=-771.446657 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1658 w_xh1_cv=0.1656 w_hh_cv=0.1701
+#GenCrash gen=167 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=167 sims=1728216 total=288612072 durationSec=218.95 rate=7893.13
+#NNGen gen=168 best=-15037.805617 avg=-2790.971246 worst=-777.373026 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1778 w_xh1_cv=0.1776 w_hh_cv=0.1819
+#GenCrash gen=168 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=168 sims=1728216 total=290340288 durationSec=181.44 rate=9524.96
+#NNGen gen=169 best=-15037.805617 avg=-2838.267521 worst=-775.224878 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1746 w_xh1_cv=0.1747 w_hh_cv=0.1784
+#GenCrash gen=169 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=169 sims=1728216 total=292068504 durationSec=212.57 rate=8129.98
+#NNGen gen=170 best=-15037.805617 avg=-2821.939800 worst=-771.846149 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1750 w_xh1_cv=0.1748 w_hh_cv=0.1785
+#GenCrash gen=170 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=170 sims=1728216 total=293796720 durationSec=206.75 rate=8358.81
+#NNGen gen=171 best=-15037.805617 avg=-2818.644239 worst=-786.282664 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1712 w_xh1_cv=0.1708 w_hh_cv=0.1742
+#GenCrash gen=171 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=171 sims=1728216 total=295524936 durationSec=211.80 rate=8159.68
+#NNGen gen=172 best=-15037.805617 avg=-2913.034052 worst=-768.002703 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1721 w_xh1_cv=0.1718 w_hh_cv=0.1751
+#GenCrash gen=172 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=172 sims=1728216 total=297253152 durationSec=182.52 rate=9468.45
+#NNGen gen=173 best=-15037.805617 avg=-2978.381448 worst=-780.110877 bestSigma=0.175261 avgMaxStreak=11.8 pctInStreak=10.8 stability=-15896.04 energy=-12177.46 whh_xh_ratio=0.7069 w_xh0_cv=0.1671 w_xh1_cv=0.1668 w_hh_cv=0.1706
+#GenCrash gen=173 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=173 sims=1728216 total=298981368 durationSec=188.16 rate=9184.77
+#NNGen gen=174 best=-15438.342349 avg=-2990.862774 worst=-772.380600 bestSigma=0.167479 avgMaxStreak=10.9 pctInStreak=10.4 stability=-10120.17 energy=-10934.74 whh_xh_ratio=0.5295 w_xh0_cv=0.1703 w_xh1_cv=0.1698 w_hh_cv=0.1736
+#GenCrash gen=174 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=174 sims=1728216 total=300709584 durationSec=206.62 rate=8364.14
+#NNGen gen=175 best=-15438.342349 avg=-3072.368123 worst=-781.614382 bestSigma=0.167479 avgMaxStreak=10.9 pctInStreak=10.4 stability=-10120.17 energy=-10934.74 whh_xh_ratio=0.5295 w_xh0_cv=0.1718 w_xh1_cv=0.1711 w_hh_cv=0.1756
+#GenCrash gen=175 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=175 sims=1728216 total=302437800 durationSec=188.17 rate=9184.48
+#NNGen gen=176 best=-15438.342349 avg=-3182.995273 worst=-775.887166 bestSigma=0.167479 avgMaxStreak=10.9 pctInStreak=10.4 stability=-10120.17 energy=-10934.74 whh_xh_ratio=0.5295 w_xh0_cv=0.1653 w_xh1_cv=0.1649 w_hh_cv=0.1693
+#GenCrash gen=176 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=176 sims=1728216 total=304166016 durationSec=192.82 rate=8962.89
+#NNGen gen=177 best=-15438.342349 avg=-3134.543573 worst=-773.430038 bestSigma=0.167479 avgMaxStreak=10.9 pctInStreak=10.4 stability=-10120.17 energy=-10934.74 whh_xh_ratio=0.5295 w_xh0_cv=0.1777 w_xh1_cv=0.1770 w_hh_cv=0.1819
+#GenCrash gen=177 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=177 sims=1728216 total=305894232 durationSec=224.91 rate=7684.12
+#NNGen gen=178 best=-15438.342349 avg=-3116.324707 worst=-774.477943 bestSigma=0.167479 avgMaxStreak=10.9 pctInStreak=10.4 stability=-10120.17 energy=-10934.74 whh_xh_ratio=0.5295 w_xh0_cv=0.1754 w_xh1_cv=0.1746 w_hh_cv=0.1799
+#GenCrash gen=178 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=178 sims=1728216 total=307622448 durationSec=191.82 rate=9009.59
+#NNGen gen=179 best=-16750.799149 avg=-3218.623217 worst=-772.731750 bestSigma=0.163970 avgMaxStreak=12.0 pctInStreak=13.1 stability=-15639.79 energy=-12091.18 whh_xh_ratio=0.7134 w_xh0_cv=0.1676 w_xh1_cv=0.1672 w_hh_cv=0.1718
+#GenCrash gen=179 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=179 sims=1728216 total=309350664 durationSec=194.11 rate=8903.43
+#NNGen gen=180 best=-16750.799149 avg=-3278.884089 worst=-781.973679 bestSigma=0.163970 avgMaxStreak=12.0 pctInStreak=13.1 stability=-15639.79 energy=-12091.18 whh_xh_ratio=0.7134 w_xh0_cv=0.1713 w_xh1_cv=0.1706 w_hh_cv=0.1754
+#GenCrash gen=180 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=180 sims=1728216 total=311078880 durationSec=217.56 rate=7943.61
+#NNGen gen=181 best=-16750.799149 avg=-3224.827212 worst=-774.925528 bestSigma=0.163970 avgMaxStreak=12.0 pctInStreak=13.1 stability=-15639.79 energy=-12091.18 whh_xh_ratio=0.7134 w_xh0_cv=0.1682 w_xh1_cv=0.1677 w_hh_cv=0.1721
+#GenCrash gen=181 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=181 sims=1728216 total=312807096 durationSec=192.85 rate=8961.67
+#NNGen gen=182 best=-16750.799149 avg=-3356.590772 worst=-777.332816 bestSigma=0.163970 avgMaxStreak=12.0 pctInStreak=13.1 stability=-15639.79 energy=-12091.18 whh_xh_ratio=0.7134 w_xh0_cv=0.1725 w_xh1_cv=0.1720 w_hh_cv=0.1764
+#GenCrash gen=182 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=182 sims=1728216 total=314535312 durationSec=228.76 rate=7554.65
+#NNGen gen=183 best=-16750.799149 avg=-3458.915865 worst=-770.128223 bestSigma=0.163970 avgMaxStreak=12.0 pctInStreak=13.1 stability=-15639.79 energy=-12091.18 whh_xh_ratio=0.7134 w_xh0_cv=0.1715 w_xh1_cv=0.1711 w_hh_cv=0.1753
+#GenCrash gen=183 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=183 sims=1728216 total=316263528 durationSec=201.97 rate=8556.96
+#NNGen gen=184 best=-16750.799149 avg=-3449.378606 worst=-774.061923 bestSigma=0.163970 avgMaxStreak=12.0 pctInStreak=13.1 stability=-15639.79 energy=-12091.18 whh_xh_ratio=0.7134 w_xh0_cv=0.1709 w_xh1_cv=0.1706 w_hh_cv=0.1751
+#GenCrash gen=184 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=184 sims=1728216 total=317991744 durationSec=228.10 rate=7576.73
+#NNGen gen=185 best=-17414.494023 avg=-3514.625323 worst=-774.243859 bestSigma=0.162500 avgMaxStreak=15.5 pctInStreak=15.0 stability=-16691.57 energy=-12957.31 whh_xh_ratio=0.7588 w_xh0_cv=0.1683 w_xh1_cv=0.1684 w_hh_cv=0.1725
+#GenCrash gen=185 hullStrike=0 eval=6 sim=0 boot=0 timeLimit=0 rabbitComplete=210 none=0 total=216
+#GenSimStats gen=185 sims=1728216 total=319719960 durationSec=203.04 rate=8511.91
+#NNGen gen=186 best=-17414.494023 avg=-3540.385748 worst=-771.343667 bestSigma=0.162500 avgMaxStreak=15.5 pctInStreak=15.0 stability=-16691.57 energy=-12957.31 whh_xh_ratio=0.7588 w_xh0_cv=0.1648 w_xh1_cv=0.1648 w_hh_cv=0.1687
+#GenCrash gen=186 hullStrike=0 eval=6 sim=0 boot=0 timeLimit=0 rabbitComplete=210 none=0 total=216
+#GenSimStats gen=186 sims=1728216 total=321448176 durationSec=203.98 rate=8472.66
+#NNGen gen=187 best=-17622.703689 avg=-3540.265926 worst=-784.026920 bestSigma=0.156009 avgMaxStreak=14.5 pctInStreak=16.0 stability=-24621.30 energy=-12681.91 whh_xh_ratio=0.6403 w_xh0_cv=0.1659 w_xh1_cv=0.1659 w_hh_cv=0.1697
+#GenCrash gen=187 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=187 sims=1728216 total=323176392 durationSec=223.08 rate=7747.03
+#NNGen gen=188 best=-17622.703689 avg=-3622.375590 worst=-773.469413 bestSigma=0.156009 avgMaxStreak=14.5 pctInStreak=16.0 stability=-24621.30 energy=-12681.91 whh_xh_ratio=0.6403 w_xh0_cv=0.1690 w_xh1_cv=0.1688 w_hh_cv=0.1730
+#GenCrash gen=188 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=188 sims=1728216 total=324904608 durationSec=205.44 rate=8412.37
+#NNGen gen=189 best=-17977.507080 avg=-3557.566073 worst=-778.594074 bestSigma=0.157499 avgMaxStreak=16.3 pctInStreak=17.1 stability=-15089.51 energy=-9991.08 whh_xh_ratio=0.5933 w_xh0_cv=0.1738 w_xh1_cv=0.1735 w_hh_cv=0.1777
+#GenCrash gen=189 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=189 sims=1728216 total=326632824 durationSec=250.31 rate=6904.32
+#NNGen gen=190 best=-17977.507080 avg=-3649.204071 worst=-792.488694 bestSigma=0.157499 avgMaxStreak=16.3 pctInStreak=17.1 stability=-15089.51 energy=-9991.08 whh_xh_ratio=0.5933 w_xh0_cv=0.1770 w_xh1_cv=0.1768 w_hh_cv=0.1810
+#GenCrash gen=190 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=190 sims=1728216 total=328361040 durationSec=204.50 rate=8450.93
+#NNGen gen=191 best=-17977.507080 avg=-3750.877315 worst=-767.587433 bestSigma=0.157499 avgMaxStreak=16.3 pctInStreak=17.1 stability=-15089.51 energy=-9991.08 whh_xh_ratio=0.5933 w_xh0_cv=0.1719 w_xh1_cv=0.1716 w_hh_cv=0.1755
+#GenCrash gen=191 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=191 sims=1728216 total=330089256 durationSec=208.60 rate=8284.74
+#NNGen gen=192 best=-17977.507080 avg=-3794.908830 worst=-775.312331 bestSigma=0.157499 avgMaxStreak=16.3 pctInStreak=17.1 stability=-15089.51 energy=-9991.08 whh_xh_ratio=0.5933 w_xh0_cv=0.1788 w_xh1_cv=0.1784 w_hh_cv=0.1826
+#GenCrash gen=192 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=192 sims=1728216 total=331817472 durationSec=206.47 rate=8370.44
+#NNGen gen=193 best=-17977.507080 avg=-3732.949057 worst=-773.048025 bestSigma=0.157499 avgMaxStreak=16.3 pctInStreak=17.1 stability=-15089.51 energy=-9991.08 whh_xh_ratio=0.5933 w_xh0_cv=0.1801 w_xh1_cv=0.1796 w_hh_cv=0.1835
+#GenCrash gen=193 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=193 sims=1728216 total=333545688 durationSec=204.94 rate=8432.95
+#NNGen gen=194 best=-17977.507080 avg=-3732.929266 worst=-784.299529 bestSigma=0.157499 avgMaxStreak=16.3 pctInStreak=17.1 stability=-15089.51 energy=-9991.08 whh_xh_ratio=0.5933 w_xh0_cv=0.1716 w_xh1_cv=0.1710 w_hh_cv=0.1747
+#GenCrash gen=194 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=194 sims=1728216 total=335273904 durationSec=226.50 rate=7629.98
+#NNGen gen=195 best=-18080.007640 avg=-3694.270648 worst=-777.845837 bestSigma=0.155499 avgMaxStreak=14.0 pctInStreak=15.5 stability=-14657.64 energy=-12301.27 whh_xh_ratio=0.6045 w_xh0_cv=0.1686 w_xh1_cv=0.1682 w_hh_cv=0.1719
+#GenCrash gen=195 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=195 sims=1728216 total=337002120 durationSec=203.36 rate=8498.24
+#NNGen gen=196 best=-18080.007640 avg=-3712.196207 worst=-775.923875 bestSigma=0.155499 avgMaxStreak=14.0 pctInStreak=15.5 stability=-14657.64 energy=-12301.27 whh_xh_ratio=0.6045 w_xh0_cv=0.1674 w_xh1_cv=0.1670 w_hh_cv=0.1709
+#GenCrash gen=196 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=196 sims=1728216 total=338730336 durationSec=205.72 rate=8400.85
+#NNGen gen=197 best=-18080.007640 avg=-3707.058210 worst=-770.204978 bestSigma=0.155499 avgMaxStreak=14.0 pctInStreak=15.5 stability=-14657.64 energy=-12301.27 whh_xh_ratio=0.6045 w_xh0_cv=0.1644 w_xh1_cv=0.1640 w_hh_cv=0.1679
+#GenCrash gen=197 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=197 sims=1728216 total=340458552 durationSec=230.38 rate=7501.68
+#NNGen gen=198 best=-18080.007640 avg=-3752.205964 worst=-771.300668 bestSigma=0.155499 avgMaxStreak=14.0 pctInStreak=15.5 stability=-14657.64 energy=-12301.27 whh_xh_ratio=0.6045 w_xh0_cv=0.1754 w_xh1_cv=0.1750 w_hh_cv=0.1788
+#GenCrash gen=198 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=198 sims=1728216 total=342186768 durationSec=206.11 rate=8385.03
+#NNGen gen=199 best=-18080.007640 avg=-3787.115053 worst=-771.330100 bestSigma=0.155499 avgMaxStreak=14.0 pctInStreak=15.5 stability=-14657.64 energy=-12301.27 whh_xh_ratio=0.6045 w_xh0_cv=0.1707 w_xh1_cv=0.1702 w_hh_cv=0.1739
+#GenCrash gen=199 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=199 sims=1728216 total=343914984 durationSec=232.66 rate=7428.07
+#NNGen gen=200 best=-18609.824850 avg=-3706.656578 worst=-773.200846 bestSigma=0.152678 avgMaxStreak=16.6 pctInStreak=18.2 stability=-18801.52 energy=-9892.08 whh_xh_ratio=0.5934 w_xh0_cv=0.1753 w_xh1_cv=0.1746 w_hh_cv=0.1783
+#GenCrash gen=200 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=200 sims=1728216 total=345643200 durationSec=203.00 rate=8513.31
+#NNGen gen=201 best=-18247.663942 avg=-3704.869798 worst=-795.543375 bestSigma=0.152678 avgMaxStreak=15.8 pctInStreak=17.5 stability=-18890.56 energy=-9873.41 whh_xh_ratio=0.5934 w_xh0_cv=0.1676 w_xh1_cv=0.1673 w_hh_cv=0.1712
+#GenCrash gen=201 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=201 sims=1728216 total=347371416 durationSec=202.66 rate=8527.72
+#NNGen gen=202 best=-18247.663942 avg=-3782.645092 worst=-776.657424 bestSigma=0.152678 avgMaxStreak=15.8 pctInStreak=17.5 stability=-18890.56 energy=-9873.41 whh_xh_ratio=0.5934 w_xh0_cv=0.1717 w_xh1_cv=0.1712 w_hh_cv=0.1753
+#GenCrash gen=202 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=202 sims=1728216 total=349099632 durationSec=206.13 rate=8383.94
+#NNGen gen=203 best=-18247.663942 avg=-3871.209617 worst=-788.977979 bestSigma=0.152678 avgMaxStreak=15.8 pctInStreak=17.5 stability=-18890.56 energy=-9873.41 whh_xh_ratio=0.5934 w_xh0_cv=0.1746 w_xh1_cv=0.1738 w_hh_cv=0.1781
+#GenCrash gen=203 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=203 sims=1728216 total=350827848 durationSec=207.77 rate=8317.83
+#NNGen gen=204 best=-18247.663942 avg=-3916.090296 worst=-784.422113 bestSigma=0.152678 avgMaxStreak=15.8 pctInStreak=17.5 stability=-18890.56 energy=-9873.41 whh_xh_ratio=0.5934 w_xh0_cv=0.1747 w_xh1_cv=0.1739 w_hh_cv=0.1784
+#GenCrash gen=204 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=204 sims=1728216 total=352556064 durationSec=208.10 rate=8304.69
+#NNGen gen=205 best=-18247.663942 avg=-3805.476616 worst=-785.403629 bestSigma=0.152678 avgMaxStreak=15.8 pctInStreak=17.5 stability=-18890.56 energy=-9873.41 whh_xh_ratio=0.5934 w_xh0_cv=0.1756 w_xh1_cv=0.1747 w_hh_cv=0.1792
+#GenCrash gen=205 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=205 sims=1728216 total=354284280 durationSec=206.54 rate=8367.53
+#NNGen gen=206 best=-18247.663942 avg=-3892.001370 worst=-784.004034 bestSigma=0.152678 avgMaxStreak=15.8 pctInStreak=17.5 stability=-18890.56 energy=-9873.41 whh_xh_ratio=0.5934 w_xh0_cv=0.1705 w_xh1_cv=0.1696 w_hh_cv=0.1740
+#GenCrash gen=206 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=206 sims=1728216 total=356012496 durationSec=208.73 rate=8279.49
+#NNGen gen=207 best=-18247.663942 avg=-3868.056310 worst=-797.027654 bestSigma=0.152678 avgMaxStreak=15.8 pctInStreak=17.5 stability=-18890.56 energy=-9873.41 whh_xh_ratio=0.5934 w_xh0_cv=0.1666 w_xh1_cv=0.1657 w_hh_cv=0.1700
+#GenCrash gen=207 hullStrike=0 eval=3 sim=0 boot=0 timeLimit=0 rabbitComplete=213 none=0 total=216
+#GenSimStats gen=207 sims=1728216 total=357740712 durationSec=233.17 rate=7411.70
+#NNGen gen=208 best=-19364.104666 avg=-3845.329959 worst=-789.291843 bestSigma=0.159203 avgMaxStreak=17.9 pctInStreak=18.4 stability=-15573.03 energy=-10994.78 whh_xh_ratio=0.6386 w_xh0_cv=0.1800 w_xh1_cv=0.1791 w_hh_cv=0.1835
+#GenCrash gen=208 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=208 sims=1728216 total=359468928 durationSec=206.54 rate=8367.62
+#NNGen gen=209 best=-19364.104666 avg=-3991.129894 worst=-787.001643 bestSigma=0.159203 avgMaxStreak=17.9 pctInStreak=18.4 stability=-15573.03 energy=-10994.78 whh_xh_ratio=0.6386 w_xh0_cv=0.1694 w_xh1_cv=0.1686 w_hh_cv=0.1727
+#GenCrash gen=209 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=209 sims=1728216 total=361197144 durationSec=213.01 rate=8113.18
+#NNGen gen=210 best=-19364.104666 avg=-4026.848506 worst=-790.850513 bestSigma=0.159203 avgMaxStreak=17.9 pctInStreak=18.4 stability=-15573.03 energy=-10994.78 whh_xh_ratio=0.6386 w_xh0_cv=0.1738 w_xh1_cv=0.1730 w_hh_cv=0.1770
+#GenCrash gen=210 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=210 sims=1728216 total=362925360 durationSec=239.80 rate=7206.88
+#NNGen gen=211 best=-19364.104666 avg=-3919.057940 worst=-785.677671 bestSigma=0.159203 avgMaxStreak=17.9 pctInStreak=18.4 stability=-15573.03 energy=-10994.78 whh_xh_ratio=0.6386 w_xh0_cv=0.1737 w_xh1_cv=0.1728 w_hh_cv=0.1771
+#GenCrash gen=211 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=211 sims=1728216 total=364653576 durationSec=210.67 rate=8203.33
+#NNGen gen=212 best=-19364.104666 avg=-3999.192264 worst=-781.063637 bestSigma=0.159203 avgMaxStreak=17.9 pctInStreak=18.4 stability=-15573.03 energy=-10994.78 whh_xh_ratio=0.6386 w_xh0_cv=0.1623 w_xh1_cv=0.1614 w_hh_cv=0.1657
+#GenCrash gen=212 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=212 sims=1728216 total=366381792 durationSec=211.37 rate=8176.14
+#NNGen gen=213 best=-19364.104666 avg=-3938.064315 worst=-795.194291 bestSigma=0.159203 avgMaxStreak=17.9 pctInStreak=18.4 stability=-15573.03 energy=-10994.78 whh_xh_ratio=0.6386 w_xh0_cv=0.1734 w_xh1_cv=0.1726 w_hh_cv=0.1765
+#GenCrash gen=213 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=213 sims=1728216 total=368110008 durationSec=208.46 rate=8290.23
+#NNGen gen=214 best=-19364.104666 avg=-3914.531743 worst=-782.103196 bestSigma=0.159203 avgMaxStreak=17.9 pctInStreak=18.4 stability=-15573.03 energy=-10994.78 whh_xh_ratio=0.6386 w_xh0_cv=0.1671 w_xh1_cv=0.1663 w_hh_cv=0.1701
+#GenCrash gen=214 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=214 sims=1728216 total=369838224 durationSec=231.22 rate=7474.35
+#NNGen gen=215 best=-19364.104666 avg=-3971.015738 worst=-784.444753 bestSigma=0.159203 avgMaxStreak=17.9 pctInStreak=18.4 stability=-15573.03 energy=-10994.78 whh_xh_ratio=0.6386 w_xh0_cv=0.1656 w_xh1_cv=0.1646 w_hh_cv=0.1681
+#GenCrash gen=215 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=215 sims=1728216 total=371566440 durationSec=208.12 rate=8304.02
+#NNGen gen=216 best=-19364.104666 avg=-4065.966875 worst=-784.851205 bestSigma=0.159203 avgMaxStreak=17.9 pctInStreak=18.4 stability=-15573.03 energy=-10994.78 whh_xh_ratio=0.6386 w_xh0_cv=0.1707 w_xh1_cv=0.1700 w_hh_cv=0.1732
+#GenCrash gen=216 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=216 sims=1728216 total=373294656 durationSec=213.77 rate=8084.48
+#NNGen gen=217 best=-21068.145322 avg=-4083.628060 worst=-786.168502 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1738 w_xh1_cv=0.1731 w_hh_cv=0.1764
+#GenCrash gen=217 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=217 sims=1728216 total=375022872 durationSec=239.29 rate=7222.34
+#NNGen gen=218 best=-21068.145322 avg=-4056.780625 worst=-783.331335 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1777 w_xh1_cv=0.1771 w_hh_cv=0.1804
+#GenCrash gen=218 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=218 sims=1728216 total=376751088 durationSec=209.92 rate=8232.91
+#NNGen gen=219 best=-21068.145322 avg=-4063.486798 worst=-797.323587 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1734 w_xh1_cv=0.1728 w_hh_cv=0.1760
+#GenCrash gen=219 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=219 sims=1728216 total=378479304 durationSec=211.18 rate=8183.52
+#NNGen gen=220 best=-21068.145322 avg=-4186.333616 worst=-791.879997 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1718 w_xh1_cv=0.1711 w_hh_cv=0.1741
+#GenCrash gen=220 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=220 sims=1728216 total=380207520 durationSec=231.31 rate=7471.35
+#NNGen gen=221 best=-21068.145322 avg=-4260.036950 worst=-792.958000 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1758 w_xh1_cv=0.1749 w_hh_cv=0.1779
+#GenCrash gen=221 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=221 sims=1728216 total=381935736 durationSec=215.32 rate=8026.33
+#NNGen gen=222 best=-21068.145322 avg=-4232.930234 worst=-788.611984 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1711 w_xh1_cv=0.1705 w_hh_cv=0.1731
+#GenCrash gen=222 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=222 sims=1728216 total=383663952 durationSec=240.51 rate=7185.54
+#NNGen gen=223 best=-21068.145322 avg=-4253.312338 worst=-792.986729 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1701 w_xh1_cv=0.1690 w_hh_cv=0.1717
+#GenCrash gen=223 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=223 sims=1728216 total=385392168 durationSec=242.88 rate=7115.63
+#NNGen gen=224 best=-21068.145322 avg=-4381.685575 worst=-780.373629 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1720 w_xh1_cv=0.1713 w_hh_cv=0.1737
+#GenCrash gen=224 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=224 sims=1728216 total=387120384 durationSec=252.44 rate=6845.95
+#NNGen gen=225 best=-21068.145322 avg=-4346.789918 worst=-785.841620 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1659 w_xh1_cv=0.1652 w_hh_cv=0.1676
+#GenCrash gen=225 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=225 sims=1728216 total=388848600 durationSec=220.21 rate=7848.16
+#NNGen gen=226 best=-21068.145322 avg=-4317.525031 worst=-783.846045 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1750 w_xh1_cv=0.1741 w_hh_cv=0.1768
+#GenCrash gen=226 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=226 sims=1728216 total=390576816 durationSec=241.57 rate=7154.19
+#NNGen gen=227 best=-21068.145322 avg=-4350.802564 worst=-795.370782 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1765 w_xh1_cv=0.1757 w_hh_cv=0.1783
+#GenCrash gen=227 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=227 sims=1728216 total=392305032 durationSec=243.68 rate=7092.07
+#NNGen gen=228 best=-21068.145322 avg=-4295.748882 worst=-785.648070 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1734 w_xh1_cv=0.1725 w_hh_cv=0.1751
+#GenCrash gen=228 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=228 sims=1728216 total=394033248 durationSec=217.96 rate=7928.94
+#NNGen gen=229 best=-21068.145322 avg=-4423.758110 worst=-787.056076 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1731 w_xh1_cv=0.1724 w_hh_cv=0.1747
+#GenCrash gen=229 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=229 sims=1728216 total=395761464 durationSec=249.21 rate=6934.65
+#NNGen gen=230 best=-21068.145322 avg=-4407.120421 worst=-786.672928 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1683 w_xh1_cv=0.1676 w_hh_cv=0.1700
+#GenCrash gen=230 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=230 sims=1728216 total=397489680 durationSec=221.44 rate=7804.37
+#NNGen gen=231 best=-21068.145322 avg=-4248.400903 worst=-784.952470 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1724 w_xh1_cv=0.1720 w_hh_cv=0.1737
+#GenCrash gen=231 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=231 sims=1728216 total=399217896 durationSec=239.67 rate=7210.91
+#NNGen gen=232 best=-21068.145322 avg=-4351.059335 worst=-775.981956 bestSigma=0.153280 avgMaxStreak=21.1 pctInStreak=21.2 stability=-17015.77 energy=-11182.23 whh_xh_ratio=0.6300 w_xh0_cv=0.1753 w_xh1_cv=0.1751 w_hh_cv=0.1768
+#GenCrash gen=232 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=232 sims=1728216 total=400946112 durationSec=244.74 rate=7061.35
+#NNGen gen=233 best=-21131.490167 avg=-4266.553048 worst=-786.672765 bestSigma=0.152777 avgMaxStreak=20.8 pctInStreak=22.0 stability=-15285.47 energy=-11889.83 whh_xh_ratio=0.5506 w_xh0_cv=0.1673 w_xh1_cv=0.1668 w_hh_cv=0.1688
+#GenCrash gen=233 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=233 sims=1728216 total=402674328 durationSec=216.33 rate=7988.86
+#NNGen gen=234 best=-21131.490167 avg=-4212.986922 worst=-787.281676 bestSigma=0.152777 avgMaxStreak=20.8 pctInStreak=22.0 stability=-15285.47 energy=-11889.83 whh_xh_ratio=0.5506 w_xh0_cv=0.1747 w_xh1_cv=0.1742 w_hh_cv=0.1760
+#GenCrash gen=234 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=234 sims=1728216 total=404402544 durationSec=213.34 rate=8100.67
+#NNGen gen=235 best=-21131.490167 avg=-4305.812809 worst=-779.975690 bestSigma=0.152777 avgMaxStreak=20.8 pctInStreak=22.0 stability=-15285.47 energy=-11889.83 whh_xh_ratio=0.5506 w_xh0_cv=0.1695 w_xh1_cv=0.1689 w_hh_cv=0.1706
+#GenCrash gen=235 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=235 sims=1728216 total=406130760 durationSec=242.37 rate=7130.36
+#NNGen gen=236 best=-21131.490167 avg=-4415.896684 worst=-788.885906 bestSigma=0.152777 avgMaxStreak=20.8 pctInStreak=22.0 stability=-15285.47 energy=-11889.83 whh_xh_ratio=0.5506 w_xh0_cv=0.1717 w_xh1_cv=0.1713 w_hh_cv=0.1731
+#GenCrash gen=236 hullStrike=0 eval=4 sim=0 boot=0 timeLimit=0 rabbitComplete=212 none=0 total=216
+#GenSimStats gen=236 sims=1728216 total=407858976 durationSec=254.69 rate=6785.49
+#NNGen gen=237 best=-21292.870134 avg=-4437.974397 worst=-795.623132 bestSigma=0.151973 avgMaxStreak=20.2 pctInStreak=22.9 stability=-15853.35 energy=-11555.46 whh_xh_ratio=0.5081 w_xh0_cv=0.1690 w_xh1_cv=0.1685 w_hh_cv=0.1704
+#GenCrash gen=237 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=237 sims=1728216 total=409587192 durationSec=245.99 rate=7025.70
+#NNGen gen=238 best=-21801.814738 avg=-4399.169343 worst=-797.799954 bestSigma=0.151295 avgMaxStreak=21.7 pctInStreak=22.0 stability=-18694.06 energy=-10518.59 whh_xh_ratio=0.6637 w_xh0_cv=0.1689 w_xh1_cv=0.1683 w_hh_cv=0.1705
+#GenCrash gen=238 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=238 sims=1728216 total=411315408 durationSec=220.51 rate=7837.29
+#NNGen gen=239 best=-21801.814738 avg=-4471.709437 worst=-780.282395 bestSigma=0.151295 avgMaxStreak=21.7 pctInStreak=22.0 stability=-18694.06 energy=-10518.59 whh_xh_ratio=0.6637 w_xh0_cv=0.1733 w_xh1_cv=0.1726 w_hh_cv=0.1747
+#GenCrash gen=239 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=239 sims=1728216 total=413043624 durationSec=226.49 rate=7630.39
+#NNGen gen=240 best=-21801.814738 avg=-4528.282477 worst=-786.680794 bestSigma=0.151295 avgMaxStreak=21.7 pctInStreak=22.0 stability=-18694.06 energy=-10518.59 whh_xh_ratio=0.6637 w_xh0_cv=0.1781 w_xh1_cv=0.1774 w_hh_cv=0.1796
+#GenCrash gen=240 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=240 sims=1728216 total=414771840 durationSec=233.05 rate=7415.63
+#NNGen gen=241 best=-21361.821716 avg=-4490.088104 worst=-809.778666 bestSigma=0.151295 avgMaxStreak=20.8 pctInStreak=21.7 stability=-18641.88 energy=-10530.15 whh_xh_ratio=0.6637 w_xh0_cv=0.1757 w_xh1_cv=0.1751 w_hh_cv=0.1766
+#GenCrash gen=241 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=241 sims=1728216 total=416500056 durationSec=243.95 rate=7084.36
+#NNGen gen=242 best=-21361.821716 avg=-4484.388998 worst=-808.033379 bestSigma=0.151295 avgMaxStreak=20.8 pctInStreak=21.7 stability=-18641.88 energy=-10530.15 whh_xh_ratio=0.6637 w_xh0_cv=0.1708 w_xh1_cv=0.1701 w_hh_cv=0.1722
+#GenCrash gen=242 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=242 sims=1728216 total=418228272 durationSec=244.44 rate=7070.08
+#NNGen gen=243 best=-21361.821716 avg=-4400.783690 worst=-800.577326 bestSigma=0.151295 avgMaxStreak=20.8 pctInStreak=21.7 stability=-18641.88 energy=-10530.15 whh_xh_ratio=0.6637 w_xh0_cv=0.1735 w_xh1_cv=0.1727 w_hh_cv=0.1748
+#GenCrash gen=243 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=243 sims=1728216 total=419956488 durationSec=249.61 rate=6923.61
+#NNGen gen=244 best=-21361.821716 avg=-4433.464312 worst=-810.725822 bestSigma=0.151295 avgMaxStreak=20.8 pctInStreak=21.7 stability=-18641.88 energy=-10530.15 whh_xh_ratio=0.6637 w_xh0_cv=0.1602 w_xh1_cv=0.1597 w_hh_cv=0.1614
+#GenCrash gen=244 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=244 sims=1728216 total=421684704 durationSec=220.00 rate=7855.63
+#NNGen gen=245 best=-21361.821716 avg=-4439.914902 worst=-805.495704 bestSigma=0.151295 avgMaxStreak=20.8 pctInStreak=21.7 stability=-18641.88 energy=-10530.15 whh_xh_ratio=0.6637 w_xh0_cv=0.1773 w_xh1_cv=0.1765 w_hh_cv=0.1781
+#GenCrash gen=245 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=245 sims=1728216 total=423412920 durationSec=223.24 rate=7741.60
+#NNGen gen=246 best=-21361.821716 avg=-4485.182438 worst=-807.846822 bestSigma=0.151295 avgMaxStreak=20.8 pctInStreak=21.7 stability=-18641.88 energy=-10530.15 whh_xh_ratio=0.6637 w_xh0_cv=0.1700 w_xh1_cv=0.1693 w_hh_cv=0.1707
+#GenCrash gen=246 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=246 sims=1728216 total=425141136 durationSec=223.99 rate=7715.75
+#NNGen gen=247 best=-21361.821716 avg=-4432.489592 worst=-811.966252 bestSigma=0.151295 avgMaxStreak=20.8 pctInStreak=21.7 stability=-18641.88 energy=-10530.15 whh_xh_ratio=0.6637 w_xh0_cv=0.1710 w_xh1_cv=0.1704 w_hh_cv=0.1717
+#GenCrash gen=247 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=247 sims=1728216 total=426869352 durationSec=219.53 rate=7872.21
+#NNGen gen=248 best=-21361.821716 avg=-4568.536407 worst=-799.604389 bestSigma=0.151295 avgMaxStreak=20.8 pctInStreak=21.7 stability=-18641.88 energy=-10530.15 whh_xh_ratio=0.6637 w_xh0_cv=0.1714 w_xh1_cv=0.1711 w_hh_cv=0.1723
+#GenCrash gen=248 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=248 sims=1728216 total=428597568 durationSec=227.58 rate=7593.90
+#NNGen gen=249 best=-21361.821716 avg=-4638.243854 worst=-808.089089 bestSigma=0.151295 avgMaxStreak=20.8 pctInStreak=21.7 stability=-18641.88 energy=-10530.15 whh_xh_ratio=0.6637 w_xh0_cv=0.1710 w_xh1_cv=0.1704 w_hh_cv=0.1719
+#GenCrash gen=249 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=249 sims=1728216 total=430325784 durationSec=225.79 rate=7654.07
+#NNGen gen=250 best=-21361.821716 avg=-4600.682446 worst=-812.953280 bestSigma=0.151295 avgMaxStreak=20.8 pctInStreak=21.7 stability=-18641.88 energy=-10530.15 whh_xh_ratio=0.6637 w_xh0_cv=0.1770 w_xh1_cv=0.1766 w_hh_cv=0.1780
+#GenCrash gen=250 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=250 sims=1728216 total=432054000 durationSec=227.42 rate=7599.15
+#NNGen gen=251 best=-21819.445652 avg=-4768.395022 worst=-804.359587 bestSigma=0.149252 avgMaxStreak=22.3 pctInStreak=22.7 stability=-22562.51 energy=-12771.10 whh_xh_ratio=0.6818 w_xh0_cv=0.1696 w_xh1_cv=0.1691 w_hh_cv=0.1708
+#GenCrash gen=251 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=251 sims=1728216 total=433782216 durationSec=246.66 rate=7006.35
+#NNGen gen=252 best=-23919.716112 avg=-4728.673465 worst=-811.254583 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1732 w_xh1_cv=0.1727 w_hh_cv=0.1741
+#GenCrash gen=252 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=252 sims=1728216 total=435510432 durationSec=233.08 rate=7414.82
+#NNGen gen=253 best=-23919.716112 avg=-4601.154196 worst=-803.441346 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1652 w_xh1_cv=0.1647 w_hh_cv=0.1663
+#GenCrash gen=253 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=253 sims=1728216 total=437238648 durationSec=228.30 rate=7570.03
+#NNGen gen=254 best=-23919.716112 avg=-4661.382880 worst=-796.660581 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1824 w_xh1_cv=0.1819 w_hh_cv=0.1834
+#GenCrash gen=254 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=254 sims=1728216 total=438966864 durationSec=226.11 rate=7643.29
+#NNGen gen=255 best=-23919.716112 avg=-4750.982417 worst=-801.169485 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1756 w_xh1_cv=0.1748 w_hh_cv=0.1764
+#GenCrash gen=255 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=255 sims=1728216 total=440695080 durationSec=225.78 rate=7654.31
+#NNGen gen=256 best=-23919.716112 avg=-4824.343419 worst=-801.787604 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1751 w_xh1_cv=0.1744 w_hh_cv=0.1762
+#GenCrash gen=256 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=256 sims=1728216 total=442423296 durationSec=230.28 rate=7504.79
+#NNGen gen=257 best=-23919.716112 avg=-4808.924992 worst=-793.083546 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1738 w_xh1_cv=0.1731 w_hh_cv=0.1749
+#GenCrash gen=257 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=257 sims=1728216 total=444151512 durationSec=225.86 rate=7651.59
+#NNGen gen=258 best=-23919.716112 avg=-4787.555455 worst=-799.445978 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1677 w_xh1_cv=0.1669 w_hh_cv=0.1691
+#GenCrash gen=258 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=258 sims=1728216 total=445879728 durationSec=242.36 rate=7130.73
+#NNGen gen=259 best=-23919.716112 avg=-4951.433113 worst=-799.606641 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1737 w_xh1_cv=0.1730 w_hh_cv=0.1749
+#GenCrash gen=259 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=259 sims=1728216 total=447607944 durationSec=231.33 rate=7470.73
+#NNGen gen=260 best=-23919.716112 avg=-4934.382388 worst=-802.962204 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1729 w_xh1_cv=0.1720 w_hh_cv=0.1738
+#GenCrash gen=260 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=260 sims=1728216 total=449336160 durationSec=254.70 rate=6785.32
+#NNGen gen=261 best=-23919.716112 avg=-4945.190612 worst=-795.927823 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1710 w_xh1_cv=0.1702 w_hh_cv=0.1720
+#GenCrash gen=261 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=261 sims=1728216 total=451064376 durationSec=247.27 rate=6989.07
+#NNGen gen=262 best=-23919.716112 avg=-4870.883991 worst=-793.492338 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1786 w_xh1_cv=0.1779 w_hh_cv=0.1796
+#GenCrash gen=262 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=262 sims=1728216 total=452792592 durationSec=247.68 rate=6977.74
+#NNGen gen=263 best=-23919.716112 avg=-4938.944938 worst=-798.066150 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1784 w_xh1_cv=0.1777 w_hh_cv=0.1793
+#GenCrash gen=263 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=263 sims=1728216 total=454520808 durationSec=260.95 rate=6622.71
+#NNGen gen=264 best=-23919.716112 avg=-4848.067170 worst=-810.868790 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1769 w_xh1_cv=0.1761 w_hh_cv=0.1779
+#GenCrash gen=264 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=264 sims=1728216 total=456249024 durationSec=230.72 rate=7490.68
+#NNGen gen=265 best=-23919.716112 avg=-4720.524671 worst=-806.893107 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1615 w_xh1_cv=0.1613 w_hh_cv=0.1630
+#GenCrash gen=265 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=265 sims=1728216 total=457977240 durationSec=226.10 rate=7643.73
+#NNGen gen=266 best=-23919.716112 avg=-4679.100086 worst=-809.304086 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1676 w_xh1_cv=0.1672 w_hh_cv=0.1688
+#GenCrash gen=266 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=266 sims=1728216 total=459705456 durationSec=223.61 rate=7728.64
+#NNGen gen=267 best=-23919.716112 avg=-4772.584755 worst=-812.113604 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1789 w_xh1_cv=0.1784 w_hh_cv=0.1801
+#GenCrash gen=267 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=267 sims=1728216 total=461433672 durationSec=250.64 rate=6895.26
+#NNGen gen=268 best=-23919.716112 avg=-4879.269114 worst=-803.880822 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1732 w_xh1_cv=0.1727 w_hh_cv=0.1741
+#GenCrash gen=268 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=268 sims=1728216 total=463161888 durationSec=253.31 rate=6822.53
+#NNGen gen=269 best=-23919.716112 avg=-5089.841401 worst=-809.532607 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1780 w_xh1_cv=0.1773 w_hh_cv=0.1791
+#GenCrash gen=269 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=269 sims=1728216 total=464890104 durationSec=250.17 rate=6908.06
+#NNGen gen=270 best=-23919.716112 avg=-5013.840512 worst=-800.830438 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1729 w_xh1_cv=0.1721 w_hh_cv=0.1744
+#GenCrash gen=270 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=270 sims=1728216 total=466618320 durationSec=232.92 rate=7419.94
+#NNGen gen=271 best=-23919.716112 avg=-5133.839688 worst=-812.691871 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1705 w_xh1_cv=0.1698 w_hh_cv=0.1718
+#GenCrash gen=271 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=271 sims=1728216 total=468346536 durationSec=254.53 rate=6789.94
+#NNGen gen=272 best=-23919.716112 avg=-5145.081019 worst=-807.734098 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1791 w_xh1_cv=0.1781 w_hh_cv=0.1804
+#GenCrash gen=272 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=272 sims=1728216 total=470074752 durationSec=252.46 rate=6845.43
+#NNGen gen=273 best=-23919.716112 avg=-5068.060722 worst=-808.511521 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1712 w_xh1_cv=0.1703 w_hh_cv=0.1724
+#GenCrash gen=273 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=273 sims=1728216 total=471802968 durationSec=231.15 rate=7476.45
+#NNGen gen=274 best=-23919.716112 avg=-5241.535163 worst=-799.489664 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1789 w_xh1_cv=0.1780 w_hh_cv=0.1801
+#GenCrash gen=274 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=274 sims=1728216 total=473531184 durationSec=233.96 rate=7386.90
+#NNGen gen=275 best=-23919.716112 avg=-5166.435109 worst=-802.590457 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1776 w_xh1_cv=0.1768 w_hh_cv=0.1789
+#GenCrash gen=275 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=275 sims=1728216 total=475259400 durationSec=233.97 rate=7386.49
+#NNGen gen=276 best=-23919.716112 avg=-5221.184520 worst=-802.728216 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1730 w_xh1_cv=0.1722 w_hh_cv=0.1744
+#GenCrash gen=276 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=276 sims=1728216 total=476987616 durationSec=233.96 rate=7386.88
+#NNGen gen=277 best=-23919.716112 avg=-5227.917824 worst=-806.325958 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1738 w_xh1_cv=0.1731 w_hh_cv=0.1753
+#GenCrash gen=277 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=277 sims=1728216 total=478715832 durationSec=237.70 rate=7270.67
+#NNGen gen=278 best=-23919.716112 avg=-5202.682386 worst=-805.620796 bestSigma=0.141769 avgMaxStreak=23.4 pctInStreak=25.1 stability=-20778.14 energy=-11993.39 whh_xh_ratio=0.6085 w_xh0_cv=0.1692 w_xh1_cv=0.1685 w_hh_cv=0.1708
+#GenCrash gen=278 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=278 sims=1728216 total=480444048 durationSec=234.39 rate=7373.18
+#NNGen gen=279 best=-24211.794564 avg=-5290.083059 worst=-801.256227 bestSigma=0.138235 avgMaxStreak=23.7 pctInStreak=25.4 stability=-19489.64 energy=-11322.93 whh_xh_ratio=0.7362 w_xh0_cv=0.1747 w_xh1_cv=0.1739 w_hh_cv=0.1759
+#GenCrash gen=279 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=279 sims=1728216 total=482172264 durationSec=234.33 rate=7375.27
+#NNGen gen=280 best=-24211.794564 avg=-5166.761469 worst=-804.163674 bestSigma=0.138235 avgMaxStreak=23.7 pctInStreak=25.4 stability=-19489.64 energy=-11322.93 whh_xh_ratio=0.7362 w_xh0_cv=0.1794 w_xh1_cv=0.1786 w_hh_cv=0.1807
+#GenCrash gen=280 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=280 sims=1728216 total=483900480 durationSec=233.11 rate=7413.83
+#NNGen gen=281 best=-24320.458949 avg=-5147.558242 worst=-819.643410 bestSigma=0.138235 avgMaxStreak=24.7 pctInStreak=25.4 stability=-19448.15 energy=-11199.60 whh_xh_ratio=0.7362 w_xh0_cv=0.1706 w_xh1_cv=0.1698 w_hh_cv=0.1720
+#GenCrash gen=281 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=281 sims=1728216 total=485628696 durationSec=255.23 rate=6771.17
+#NNGen gen=282 best=-24320.458949 avg=-5143.860598 worst=-817.697809 bestSigma=0.138235 avgMaxStreak=24.7 pctInStreak=25.4 stability=-19448.15 energy=-11199.60 whh_xh_ratio=0.7362 w_xh0_cv=0.1637 w_xh1_cv=0.1628 w_hh_cv=0.1650
+#GenCrash gen=282 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=282 sims=1728216 total=487356912 durationSec=234.01 rate=7385.19
+#NNGen gen=283 best=-24320.458949 avg=-5140.627631 worst=-828.097928 bestSigma=0.138235 avgMaxStreak=24.7 pctInStreak=25.4 stability=-19448.15 energy=-11199.60 whh_xh_ratio=0.7362 w_xh0_cv=0.1717 w_xh1_cv=0.1708 w_hh_cv=0.1731
+#GenCrash gen=283 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=283 sims=1728216 total=489085128 durationSec=231.90 rate=7452.50
+#NNGen gen=284 best=-24320.458949 avg=-5240.008333 worst=-818.713835 bestSigma=0.138235 avgMaxStreak=24.7 pctInStreak=25.4 stability=-19448.15 energy=-11199.60 whh_xh_ratio=0.7362 w_xh0_cv=0.1745 w_xh1_cv=0.1736 w_hh_cv=0.1760
+#GenCrash gen=284 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=284 sims=1728216 total=490813344 durationSec=233.30 rate=7407.57
+#NNGen gen=285 best=-24320.458949 avg=-5140.206865 worst=-815.350562 bestSigma=0.138235 avgMaxStreak=24.7 pctInStreak=25.4 stability=-19448.15 energy=-11199.60 whh_xh_ratio=0.7362 w_xh0_cv=0.1714 w_xh1_cv=0.1705 w_hh_cv=0.1732
+#GenCrash gen=285 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=285 sims=1728216 total=492541560 durationSec=233.68 rate=7395.72
+#NNGen gen=286 best=-24320.458949 avg=-5077.520987 worst=-821.516702 bestSigma=0.138235 avgMaxStreak=24.7 pctInStreak=25.4 stability=-19448.15 energy=-11199.60 whh_xh_ratio=0.7362 w_xh0_cv=0.1822 w_xh1_cv=0.1811 w_hh_cv=0.1838
+#GenCrash gen=286 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=286 sims=1728216 total=494269776 durationSec=239.86 rate=7205.09
+#NNGen gen=287 best=-24320.458949 avg=-5173.593773 worst=-815.892678 bestSigma=0.138235 avgMaxStreak=24.7 pctInStreak=25.4 stability=-19448.15 energy=-11199.60 whh_xh_ratio=0.7362 w_xh0_cv=0.1760 w_xh1_cv=0.1749 w_hh_cv=0.1774
+#GenCrash gen=287 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=287 sims=1728216 total=495997992 durationSec=232.99 rate=7417.44
+#NNGen gen=288 best=-24411.189668 avg=-5077.014517 worst=-823.057471 bestSigma=0.140283 avgMaxStreak=26.8 pctInStreak=26.1 stability=-24840.89 energy=-12641.31 whh_xh_ratio=0.7138 w_xh0_cv=0.1741 w_xh1_cv=0.1734 w_hh_cv=0.1758
+#GenCrash gen=288 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=288 sims=1728216 total=497726208 durationSec=248.95 rate=6942.13
+#NNGen gen=289 best=-24411.189668 avg=-4960.301510 worst=-825.277202 bestSigma=0.140283 avgMaxStreak=26.8 pctInStreak=26.1 stability=-24840.89 energy=-12641.31 whh_xh_ratio=0.7138 w_xh0_cv=0.1755 w_xh1_cv=0.1746 w_hh_cv=0.1771
+#GenCrash gen=289 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=289 sims=1728216 total=499454424 durationSec=254.52 rate=6790.04
+#NNGen gen=290 best=-25015.833748 avg=-4918.273534 worst=-819.182408 bestSigma=0.131777 avgMaxStreak=26.0 pctInStreak=26.3 stability=-22066.23 energy=-13583.81 whh_xh_ratio=0.7008 w_xh0_cv=0.1685 w_xh1_cv=0.1676 w_hh_cv=0.1706
+#GenCrash gen=290 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=290 sims=1728216 total=501182640 durationSec=248.56 rate=6952.99
+#NNGen gen=291 best=-25015.833748 avg=-4862.626071 worst=-821.805849 bestSigma=0.131777 avgMaxStreak=26.0 pctInStreak=26.3 stability=-22066.23 energy=-13583.81 whh_xh_ratio=0.7008 w_xh0_cv=0.1754 w_xh1_cv=0.1745 w_hh_cv=0.1774
+#GenCrash gen=291 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=291 sims=1728216 total=502910856 durationSec=225.90 rate=7650.31
+#NNGen gen=292 best=-25800.515825 avg=-5019.813966 worst=-833.147586 bestSigma=0.131490 avgMaxStreak=27.6 pctInStreak=26.1 stability=-29000.67 energy=-14040.68 whh_xh_ratio=0.7162 w_xh0_cv=0.1740 w_xh1_cv=0.1729 w_hh_cv=0.1761
+#GenCrash gen=292 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=292 sims=1728216 total=504639072 durationSec=228.40 rate=7566.54
+#NNGen gen=293 best=-25800.515825 avg=-5074.457200 worst=-819.425240 bestSigma=0.131490 avgMaxStreak=27.6 pctInStreak=26.1 stability=-29000.67 energy=-14040.68 whh_xh_ratio=0.7162 w_xh0_cv=0.1772 w_xh1_cv=0.1761 w_hh_cv=0.1791
+#GenCrash gen=293 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=293 sims=1728216 total=506367288 durationSec=266.31 rate=6489.58
+#NNGen gen=294 best=-25800.515825 avg=-5168.012083 worst=-822.866590 bestSigma=0.131490 avgMaxStreak=27.6 pctInStreak=26.1 stability=-29000.67 energy=-14040.68 whh_xh_ratio=0.7162 w_xh0_cv=0.1806 w_xh1_cv=0.1791 w_hh_cv=0.1824
+#GenCrash gen=294 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=294 sims=1728216 total=508095504 durationSec=236.21 rate=7316.35
+#NNGen gen=295 best=-25975.780453 avg=-5156.074834 worst=-824.215846 bestSigma=0.129077 avgMaxStreak=27.4 pctInStreak=26.7 stability=-29817.38 energy=-13568.81 whh_xh_ratio=0.6823 w_xh0_cv=0.1813 w_xh1_cv=0.1799 w_hh_cv=0.1833
+#GenCrash gen=295 hullStrike=0 eval=6 sim=0 boot=0 timeLimit=0 rabbitComplete=210 none=0 total=216
+#GenSimStats gen=295 sims=1728216 total=509823720 durationSec=241.36 rate=7160.20
+#NNGen gen=296 best=-27863.358168 avg=-5208.041787 worst=-815.533010 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1830 w_xh1_cv=0.1816 w_hh_cv=0.1853
+#GenCrash gen=296 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=296 sims=1728216 total=511551936 durationSec=260.18 rate=6642.32
+#NNGen gen=297 best=-27863.358168 avg=-5358.259483 worst=-808.603647 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1764 w_xh1_cv=0.1752 w_hh_cv=0.1784
+#GenCrash gen=297 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=297 sims=1728216 total=513280152 durationSec=241.80 rate=7147.39
+#NNGen gen=298 best=-27863.358168 avg=-5640.053193 worst=-819.202167 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1766 w_xh1_cv=0.1750 w_hh_cv=0.1785
+#GenCrash gen=298 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=298 sims=1728216 total=515008368 durationSec=242.94 rate=7113.61
+#NNGen gen=299 best=-27863.358168 avg=-5640.697505 worst=-818.893991 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1809 w_xh1_cv=0.1792 w_hh_cv=0.1832
+#GenCrash gen=299 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=299 sims=1728216 total=516736584 durationSec=271.32 rate=6369.65
+#NNGen gen=300 best=-27863.358168 avg=-5843.521837 worst=-821.363974 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1810 w_xh1_cv=0.1794 w_hh_cv=0.1832
+#GenCrash gen=300 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=300 sims=1728216 total=518464800 durationSec=273.18 rate=6326.30
+#NNGen gen=301 best=-27863.358168 avg=-5960.186096 worst=-819.648979 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1754 w_xh1_cv=0.1737 w_hh_cv=0.1776
+#GenCrash gen=301 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=301 sims=1728216 total=520193016 durationSec=275.30 rate=6277.48
+#NNGen gen=302 best=-27863.358168 avg=-5765.813032 worst=-825.828837 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1801 w_xh1_cv=0.1781 w_hh_cv=0.1824
+#GenCrash gen=302 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=302 sims=1728216 total=521921232 durationSec=267.53 rate=6459.82
+#NNGen gen=303 best=-27863.358168 avg=-5833.004531 worst=-820.633319 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1802 w_xh1_cv=0.1783 w_hh_cv=0.1824
+#GenCrash gen=303 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=303 sims=1728216 total=523649448 durationSec=244.75 rate=7061.17
+#NNGen gen=304 best=-27863.358168 avg=-5772.937367 worst=-818.678358 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1652 w_xh1_cv=0.1637 w_hh_cv=0.1676
+#GenCrash gen=304 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=304 sims=1728216 total=525377664 durationSec=246.76 rate=7003.70
+#NNGen gen=305 best=-27863.358168 avg=-5873.017705 worst=-819.258971 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1658 w_xh1_cv=0.1641 w_hh_cv=0.1682
+#GenCrash gen=305 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=305 sims=1728216 total=527105880 durationSec=248.40 rate=6957.45
+#NNGen gen=306 best=-27863.358168 avg=-5954.657266 worst=-822.241362 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1731 w_xh1_cv=0.1713 w_hh_cv=0.1751
+#GenCrash gen=306 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=306 sims=1728216 total=528834096 durationSec=284.07 rate=6083.76
+#NNGen gen=307 best=-27863.358168 avg=-5943.601849 worst=-824.930031 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1683 w_xh1_cv=0.1665 w_hh_cv=0.1703
+#GenCrash gen=307 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=307 sims=1728216 total=530562312 durationSec=281.53 rate=6138.63
+#NNGen gen=308 best=-27863.358168 avg=-6087.858717 worst=-824.779552 bestSigma=0.127321 avgMaxStreak=27.5 pctInStreak=30.4 stability=-22397.52 energy=-13813.52 whh_xh_ratio=0.7283 w_xh0_cv=0.1711 w_xh1_cv=0.1692 w_hh_cv=0.1730
+#GenCrash gen=308 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=308 sims=1728216 total=532290528 durationSec=280.39 rate=6163.54
+#NNGen gen=309 best=-28679.277664 avg=-6239.597024 worst=-816.307218 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1764 w_xh1_cv=0.1746 w_hh_cv=0.1786
+#GenCrash gen=309 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=309 sims=1728216 total=534018744 durationSec=279.58 rate=6181.39
+#NNGen gen=310 best=-28679.277664 avg=-6055.148425 worst=-822.046818 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1778 w_xh1_cv=0.1758 w_hh_cv=0.1799
+#GenCrash gen=310 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=310 sims=1728216 total=535746960 durationSec=278.95 rate=6195.52
+#NNGen gen=311 best=-28679.277664 avg=-6117.337042 worst=-816.073334 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1761 w_xh1_cv=0.1742 w_hh_cv=0.1780
+#GenCrash gen=311 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=311 sims=1728216 total=537475176 durationSec=282.84 rate=6110.32
+#NNGen gen=312 best=-28679.277664 avg=-6080.259285 worst=-824.655318 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1713 w_xh1_cv=0.1692 w_hh_cv=0.1730
+#GenCrash gen=312 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=312 sims=1728216 total=539203392 durationSec=249.12 rate=6937.34
+#NNGen gen=313 best=-28679.277664 avg=-5835.188465 worst=-825.293422 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1855 w_xh1_cv=0.1831 w_hh_cv=0.1869
+#GenCrash gen=313 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=313 sims=1728216 total=540931608 durationSec=245.16 rate=7049.33
+#NNGen gen=314 best=-28679.277664 avg=-5959.911088 worst=-829.796575 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1690 w_xh1_cv=0.1667 w_hh_cv=0.1704
+#GenCrash gen=314 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=314 sims=1728216 total=542659824 durationSec=246.11 rate=7022.09
+#NNGen gen=315 best=-28679.277664 avg=-5827.806709 worst=-824.005901 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1785 w_xh1_cv=0.1759 w_hh_cv=0.1801
+#GenCrash gen=315 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=315 sims=1728216 total=544388040 durationSec=243.26 rate=7104.26
+#NNGen gen=316 best=-28679.277664 avg=-5871.885393 worst=-817.284865 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1742 w_xh1_cv=0.1715 w_hh_cv=0.1756
+#GenCrash gen=316 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=316 sims=1728216 total=546116256 durationSec=238.86 rate=7235.24
+#NNGen gen=317 best=-28679.277664 avg=-5829.886592 worst=-815.049173 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1715 w_xh1_cv=0.1690 w_hh_cv=0.1728
+#GenCrash gen=317 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=317 sims=1728216 total=547844472 durationSec=275.03 rate=6283.63
+#NNGen gen=318 best=-28679.277664 avg=-5892.459001 worst=-828.427296 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1762 w_xh1_cv=0.1738 w_hh_cv=0.1777
+#GenCrash gen=318 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=318 sims=1728216 total=549572688 durationSec=241.81 rate=7147.02
+#NNGen gen=319 best=-28679.277664 avg=-5825.317304 worst=-830.260072 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1800 w_xh1_cv=0.1772 w_hh_cv=0.1812
+#GenCrash gen=319 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=319 sims=1728216 total=551300904 durationSec=239.18 rate=7225.46
+#NNGen gen=320 best=-28679.277664 avg=-5811.412530 worst=-815.032779 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=32.4 stability=-28735.79 energy=-16023.94 whh_xh_ratio=0.7471 w_xh0_cv=0.1750 w_xh1_cv=0.1726 w_hh_cv=0.1765
+#GenCrash gen=320 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=320 sims=1728216 total=553029120 durationSec=239.39 rate=7219.29
+#NNGen gen=321 best=-27905.348096 avg=-6082.670472 worst=-844.223647 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=31.1 stability=-28659.71 energy=-15811.65 whh_xh_ratio=0.7471 w_xh0_cv=0.1717 w_xh1_cv=0.1691 w_hh_cv=0.1730
+#GenCrash gen=321 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=321 sims=1728216 total=554757336 durationSec=246.20 rate=7019.48
+#NNGen gen=322 best=-27905.348096 avg=-5796.868456 worst=-843.553168 bestSigma=0.122385 avgMaxStreak=28.6 pctInStreak=31.1 stability=-28659.71 energy=-15811.65 whh_xh_ratio=0.7471 w_xh0_cv=0.1765 w_xh1_cv=0.1738 w_hh_cv=0.1778
+#GenCrash gen=322 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=322 sims=1728216 total=556485552 durationSec=239.65 rate=7211.51
+#NNGen gen=323 best=-29459.860807 avg=-5764.320351 worst=-838.425652 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1672 w_xh1_cv=0.1648 w_hh_cv=0.1686
+#GenCrash gen=323 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=323 sims=1728216 total=558213768 durationSec=258.51 rate=6685.41
+#NNGen gen=324 best=-29459.860807 avg=-5897.130753 worst=-847.496068 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1681 w_xh1_cv=0.1656 w_hh_cv=0.1696
+#GenCrash gen=324 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=324 sims=1728216 total=559941984 durationSec=238.20 rate=7255.29
+#NNGen gen=325 best=-29459.860807 avg=-5820.362786 worst=-842.178753 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1737 w_xh1_cv=0.1710 w_hh_cv=0.1750
+#GenCrash gen=325 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=325 sims=1728216 total=561670200 durationSec=267.79 rate=6453.66
+#NNGen gen=326 best=-29459.860807 avg=-5958.566509 worst=-838.189406 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1734 w_xh1_cv=0.1707 w_hh_cv=0.1750
+#GenCrash gen=326 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=326 sims=1728216 total=563398416 durationSec=236.59 rate=7304.69
+#NNGen gen=327 best=-29459.860807 avg=-6108.694443 worst=-849.836505 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1768 w_xh1_cv=0.1742 w_hh_cv=0.1783
+#GenCrash gen=327 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=327 sims=1728216 total=565126632 durationSec=267.40 rate=6462.97
+#NNGen gen=328 best=-29459.860807 avg=-6106.839034 worst=-841.196173 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1735 w_xh1_cv=0.1709 w_hh_cv=0.1749
+#GenCrash gen=328 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=328 sims=1728216 total=566854848 durationSec=243.99 rate=7083.08
+#NNGen gen=329 best=-29459.860807 avg=-5914.503828 worst=-842.379570 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1774 w_xh1_cv=0.1748 w_hh_cv=0.1789
+#GenCrash gen=329 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=329 sims=1728216 total=568583064 durationSec=236.24 rate=7315.48
+#NNGen gen=330 best=-29459.860807 avg=-6105.534180 worst=-849.718637 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1854 w_xh1_cv=0.1825 w_hh_cv=0.1871
+#GenCrash gen=330 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=330 sims=1728216 total=570311280 durationSec=237.66 rate=7271.87
+#NNGen gen=331 best=-29459.860807 avg=-6100.497530 worst=-852.811739 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1766 w_xh1_cv=0.1739 w_hh_cv=0.1783
+#GenCrash gen=331 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=331 sims=1728216 total=572039496 durationSec=238.61 rate=7242.99
+#NNGen gen=332 best=-29459.860807 avg=-5978.551662 worst=-842.882125 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1758 w_xh1_cv=0.1731 w_hh_cv=0.1775
+#GenCrash gen=332 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=332 sims=1728216 total=573767712 durationSec=233.63 rate=7397.36
+#NNGen gen=333 best=-29459.860807 avg=-6179.973575 worst=-845.667033 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1722 w_xh1_cv=0.1696 w_hh_cv=0.1738
+#GenCrash gen=333 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=333 sims=1728216 total=575495928 durationSec=239.51 rate=7215.58
+#NNGen gen=334 best=-29459.860807 avg=-5997.729094 worst=-843.925436 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1874 w_xh1_cv=0.1844 w_hh_cv=0.1892
+#GenCrash gen=334 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=334 sims=1728216 total=577224144 durationSec=238.12 rate=7257.77
+#NNGen gen=335 best=-29459.860807 avg=-6126.985377 worst=-844.041669 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1742 w_xh1_cv=0.1716 w_hh_cv=0.1760
+#GenCrash gen=335 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=335 sims=1728216 total=578952360 durationSec=240.34 rate=7190.84
+#NNGen gen=336 best=-29459.860807 avg=-5966.133427 worst=-840.299724 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1786 w_xh1_cv=0.1758 w_hh_cv=0.1805
+#GenCrash gen=336 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=336 sims=1728216 total=580680576 durationSec=237.60 rate=7273.70
+#NNGen gen=337 best=-29459.860807 avg=-6005.669456 worst=-841.207493 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1729 w_xh1_cv=0.1702 w_hh_cv=0.1744
+#GenCrash gen=337 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=337 sims=1728216 total=582408792 durationSec=235.62 rate=7334.72
+#NNGen gen=338 best=-29459.860807 avg=-6094.291419 worst=-843.460717 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1707 w_xh1_cv=0.1681 w_hh_cv=0.1722
+#GenCrash gen=338 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=338 sims=1728216 total=584137008 durationSec=237.40 rate=7279.71
+#NNGen gen=339 best=-29459.860807 avg=-5907.733061 worst=-849.387443 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1710 w_xh1_cv=0.1684 w_hh_cv=0.1724
+#GenCrash gen=339 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=339 sims=1728216 total=585865224 durationSec=232.31 rate=7439.20
+#NNGen gen=340 best=-29459.860807 avg=-5911.294598 worst=-842.572625 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1772 w_xh1_cv=0.1745 w_hh_cv=0.1789
+#GenCrash gen=340 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=340 sims=1728216 total=587593440 durationSec=254.90 rate=6780.02
+#NNGen gen=341 best=-29459.860807 avg=-5761.564333 worst=-839.673402 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1785 w_xh1_cv=0.1759 w_hh_cv=0.1802
+#GenCrash gen=341 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=341 sims=1728216 total=589321656 durationSec=227.62 rate=7592.67
+#NNGen gen=342 best=-29459.860807 avg=-5923.276631 worst=-842.949099 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1856 w_xh1_cv=0.1829 w_hh_cv=0.1876
+#GenCrash gen=342 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=342 sims=1728216 total=591049872 durationSec=232.91 rate=7420.02
+#NNGen gen=343 best=-29459.860807 avg=-5815.748770 worst=-838.140977 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1824 w_xh1_cv=0.1797 w_hh_cv=0.1842
+#GenCrash gen=343 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=343 sims=1728216 total=592778088 durationSec=229.94 rate=7515.80
+#NNGen gen=344 best=-29459.860807 avg=-6130.665901 worst=-839.651478 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1771 w_xh1_cv=0.1743 w_hh_cv=0.1788
+#GenCrash gen=344 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=344 sims=1728216 total=594506304 durationSec=264.36 rate=6537.27
+#NNGen gen=345 best=-29459.860807 avg=-6106.150092 worst=-835.836294 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1791 w_xh1_cv=0.1765 w_hh_cv=0.1811
+#GenCrash gen=345 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=345 sims=1728216 total=596234520 durationSec=271.64 rate=6362.20
+#NNGen gen=346 best=-29459.860807 avg=-6019.055409 worst=-840.563166 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1807 w_xh1_cv=0.1780 w_hh_cv=0.1827
+#GenCrash gen=346 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=346 sims=1728216 total=597962736 durationSec=237.16 rate=7287.03
+#NNGen gen=347 best=-29459.860807 avg=-6137.289164 worst=-838.726999 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1764 w_xh1_cv=0.1736 w_hh_cv=0.1782
+#GenCrash gen=347 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=347 sims=1728216 total=599690952 durationSec=238.68 rate=7240.78
+#NNGen gen=348 best=-29459.860807 avg=-5940.218542 worst=-849.736488 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1729 w_xh1_cv=0.1703 w_hh_cv=0.1746
+#GenCrash gen=348 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=348 sims=1728216 total=601419168 durationSec=258.84 rate=6676.81
+#NNGen gen=349 best=-29459.860807 avg=-6169.158620 worst=-835.377297 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1792 w_xh1_cv=0.1765 w_hh_cv=0.1810
+#GenCrash gen=349 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=349 sims=1728216 total=603147384 durationSec=238.89 rate=7234.37
+#NNGen gen=350 best=-29459.860807 avg=-6245.368642 worst=-840.462016 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1751 w_xh1_cv=0.1722 w_hh_cv=0.1769
+#GenCrash gen=350 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=350 sims=1728216 total=604875600 durationSec=241.59 rate=7153.56
+#NNGen gen=351 best=-29459.860807 avg=-6131.052875 worst=-848.131244 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1773 w_xh1_cv=0.1746 w_hh_cv=0.1793
+#GenCrash gen=351 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=351 sims=1728216 total=606603816 durationSec=235.29 rate=7345.17
+#NNGen gen=352 best=-29459.860807 avg=-6310.241991 worst=-842.373130 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1809 w_xh1_cv=0.1782 w_hh_cv=0.1828
+#GenCrash gen=352 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=352 sims=1728216 total=608332032 durationSec=240.88 rate=7174.58
+#NNGen gen=353 best=-29459.860807 avg=-6326.979375 worst=-847.348919 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1809 w_xh1_cv=0.1782 w_hh_cv=0.1829
+#GenCrash gen=353 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=353 sims=1728216 total=610060248 durationSec=242.71 rate=7120.39
+#NNGen gen=354 best=-29459.860807 avg=-6456.992645 worst=-844.612107 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1725 w_xh1_cv=0.1701 w_hh_cv=0.1748
+#GenCrash gen=354 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=354 sims=1728216 total=611788464 durationSec=244.23 rate=7076.24
+#NNGen gen=355 best=-29459.860807 avg=-6482.158860 worst=-840.558411 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1710 w_xh1_cv=0.1686 w_hh_cv=0.1731
+#GenCrash gen=355 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=355 sims=1728216 total=613516680 durationSec=243.82 rate=7087.96
+#NNGen gen=356 best=-29459.860807 avg=-6711.632174 worst=-834.348712 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1718 w_xh1_cv=0.1694 w_hh_cv=0.1741
+#GenCrash gen=356 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=356 sims=1728216 total=615244896 durationSec=275.95 rate=6262.83
+#NNGen gen=357 best=-29459.860807 avg=-6624.665832 worst=-835.862974 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1779 w_xh1_cv=0.1753 w_hh_cv=0.1797
+#GenCrash gen=357 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=357 sims=1728216 total=616973112 durationSec=275.26 rate=6278.48
+#NNGen gen=358 best=-29459.860807 avg=-6244.526041 worst=-853.252974 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1857 w_xh1_cv=0.1831 w_hh_cv=0.1877
+#GenCrash gen=358 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=358 sims=1728216 total=618701328 durationSec=237.62 rate=7272.91
+#NNGen gen=359 best=-29459.860807 avg=-6326.841166 worst=-844.752587 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1730 w_xh1_cv=0.1705 w_hh_cv=0.1749
+#GenCrash gen=359 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=359 sims=1728216 total=620429544 durationSec=241.31 rate=7161.73
+#NNGen gen=360 best=-29459.860807 avg=-6304.825013 worst=-843.539728 bestSigma=0.121315 avgMaxStreak=30.3 pctInStreak=31.6 stability=-21740.05 energy=-13114.68 whh_xh_ratio=0.7941 w_xh0_cv=0.1764 w_xh1_cv=0.1737 w_hh_cv=0.1783
+#GenCrash gen=360 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=360 sims=1728216 total=622157760 durationSec=238.79 rate=7237.47
+#NNGen gen=361 best=-29102.468241 avg=-6473.048095 worst=-864.352188 bestSigma=0.121315 avgMaxStreak=28.7 pctInStreak=30.9 stability=-21718.44 energy=-13016.49 whh_xh_ratio=0.7941 w_xh0_cv=0.1742 w_xh1_cv=0.1717 w_hh_cv=0.1762
+#GenCrash gen=361 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=361 sims=1728216 total=623885976 durationSec=272.07 rate=6352.01
+#NNGen gen=362 best=-29102.468241 avg=-6332.188800 worst=-876.644627 bestSigma=0.121315 avgMaxStreak=28.7 pctInStreak=30.9 stability=-21718.44 energy=-13016.49 whh_xh_ratio=0.7941 w_xh0_cv=0.1747 w_xh1_cv=0.1723 w_hh_cv=0.1768
+#GenCrash gen=362 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=362 sims=1728216 total=625614192 durationSec=238.29 rate=7252.54
+#NNGen gen=363 best=-29102.468241 avg=-6508.994483 worst=-870.937689 bestSigma=0.121315 avgMaxStreak=28.7 pctInStreak=30.9 stability=-21718.44 energy=-13016.49 whh_xh_ratio=0.7941 w_xh0_cv=0.1751 w_xh1_cv=0.1725 w_hh_cv=0.1768
+#GenCrash gen=363 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=363 sims=1728216 total=627342408 durationSec=242.12 rate=7137.99
+#NNGen gen=364 best=-29102.468241 avg=-6312.947494 worst=-859.240620 bestSigma=0.121315 avgMaxStreak=28.7 pctInStreak=30.9 stability=-21718.44 energy=-13016.49 whh_xh_ratio=0.7941 w_xh0_cv=0.1779 w_xh1_cv=0.1755 w_hh_cv=0.1801
+#GenCrash gen=364 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=364 sims=1728216 total=629070624 durationSec=245.76 rate=7032.23
+#NNGen gen=365 best=-29102.468241 avg=-6679.667932 worst=-862.345226 bestSigma=0.121315 avgMaxStreak=28.7 pctInStreak=30.9 stability=-21718.44 energy=-13016.49 whh_xh_ratio=0.7941 w_xh0_cv=0.1745 w_xh1_cv=0.1720 w_hh_cv=0.1764
+#GenCrash gen=365 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=365 sims=1728216 total=630798840 durationSec=248.27 rate=6961.00
+#NNGen gen=366 best=-29102.468241 avg=-6752.117158 worst=-857.868439 bestSigma=0.121315 avgMaxStreak=28.7 pctInStreak=30.9 stability=-21718.44 energy=-13016.49 whh_xh_ratio=0.7941 w_xh0_cv=0.1722 w_xh1_cv=0.1697 w_hh_cv=0.1741
+#GenCrash gen=366 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=366 sims=1728216 total=632527056 durationSec=278.29 rate=6210.03
+#NNGen gen=367 best=-29102.468241 avg=-6665.999823 worst=-864.537374 bestSigma=0.121315 avgMaxStreak=28.7 pctInStreak=30.9 stability=-21718.44 energy=-13016.49 whh_xh_ratio=0.7941 w_xh0_cv=0.1742 w_xh1_cv=0.1718 w_hh_cv=0.1764
+#GenCrash gen=367 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=367 sims=1728216 total=634255272 durationSec=246.80 rate=7002.37
+#NNGen gen=368 best=-29102.468241 avg=-6771.154768 worst=-871.573271 bestSigma=0.121315 avgMaxStreak=28.7 pctInStreak=30.9 stability=-21718.44 energy=-13016.49 whh_xh_ratio=0.7941 w_xh0_cv=0.1803 w_xh1_cv=0.1777 w_hh_cv=0.1821
+#GenCrash gen=368 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=368 sims=1728216 total=635983488 durationSec=247.25 rate=6989.89
+#NNGen gen=369 best=-29102.468241 avg=-6760.748620 worst=-868.683837 bestSigma=0.121315 avgMaxStreak=28.7 pctInStreak=30.9 stability=-21718.44 energy=-13016.49 whh_xh_ratio=0.7941 w_xh0_cv=0.1671 w_xh1_cv=0.1648 w_hh_cv=0.1690
+#GenCrash gen=369 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=369 sims=1728216 total=637711704 durationSec=251.15 rate=6881.20
+#NNGen gen=370 best=-29543.273252 avg=-6431.692786 worst=-865.087127 bestSigma=0.113759 avgMaxStreak=29.0 pctInStreak=31.7 stability=-32817.08 energy=-15468.11 whh_xh_ratio=0.8137 w_xh0_cv=0.1706 w_xh1_cv=0.1683 w_hh_cv=0.1723
+#GenCrash gen=370 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=370 sims=1728216 total=639439920 durationSec=243.20 rate=7106.15
+#NNGen gen=371 best=-29543.273252 avg=-6554.920459 worst=-866.747129 bestSigma=0.113759 avgMaxStreak=29.0 pctInStreak=31.7 stability=-32817.08 energy=-15468.11 whh_xh_ratio=0.8137 w_xh0_cv=0.1820 w_xh1_cv=0.1794 w_hh_cv=0.1840
+#GenCrash gen=371 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=371 sims=1728216 total=641168136 durationSec=242.10 rate=7138.43
+#NNGen gen=372 best=-29543.273252 avg=-6598.127894 worst=-858.623108 bestSigma=0.113759 avgMaxStreak=29.0 pctInStreak=31.7 stability=-32817.08 energy=-15468.11 whh_xh_ratio=0.8137 w_xh0_cv=0.1728 w_xh1_cv=0.1701 w_hh_cv=0.1747
+#GenCrash gen=372 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=372 sims=1728216 total=642896352 durationSec=275.59 rate=6270.87
+#NNGen gen=373 best=-29543.273252 avg=-6671.158790 worst=-863.260395 bestSigma=0.113759 avgMaxStreak=29.0 pctInStreak=31.7 stability=-32817.08 energy=-15468.11 whh_xh_ratio=0.8137 w_xh0_cv=0.1837 w_xh1_cv=0.1809 w_hh_cv=0.1854
+#GenCrash gen=373 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=373 sims=1728216 total=644624568 durationSec=246.62 rate=7007.48
+#NNGen gen=374 best=-29543.273252 avg=-6729.010787 worst=-864.407326 bestSigma=0.113759 avgMaxStreak=29.0 pctInStreak=31.7 stability=-32817.08 energy=-15468.11 whh_xh_ratio=0.8137 w_xh0_cv=0.1765 w_xh1_cv=0.1739 w_hh_cv=0.1783
+#GenCrash gen=374 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=374 sims=1728216 total=646352784 durationSec=267.56 rate=6459.25
+#NNGen gen=375 best=-29902.549949 avg=-6562.741852 worst=-864.690715 bestSigma=0.112414 avgMaxStreak=29.9 pctInStreak=30.9 stability=-22591.99 energy=-13633.82 whh_xh_ratio=0.8126 w_xh0_cv=0.1762 w_xh1_cv=0.1736 w_hh_cv=0.1778
+#GenCrash gen=375 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=375 sims=1728216 total=648081000 durationSec=275.89 rate=6264.22
+#NNGen gen=376 best=-30035.672947 avg=-6611.190124 worst=-865.040244 bestSigma=0.112499 avgMaxStreak=30.8 pctInStreak=32.2 stability=-35903.43 energy=-16144.19 whh_xh_ratio=0.7630 w_xh0_cv=0.1781 w_xh1_cv=0.1755 w_hh_cv=0.1797
+#GenCrash gen=376 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=376 sims=1728216 total=649809216 durationSec=242.38 rate=7130.21
+#NNGen gen=377 best=-30035.672947 avg=-6717.458101 worst=-865.490828 bestSigma=0.112499 avgMaxStreak=30.8 pctInStreak=32.2 stability=-35903.43 energy=-16144.19 whh_xh_ratio=0.7630 w_xh0_cv=0.1763 w_xh1_cv=0.1736 w_hh_cv=0.1780
+#GenCrash gen=377 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=377 sims=1728216 total=651537432 durationSec=243.37 rate=7101.23
+#NNGen gen=378 best=-30035.672947 avg=-6769.495517 worst=-869.296647 bestSigma=0.112499 avgMaxStreak=30.8 pctInStreak=32.2 stability=-35903.43 energy=-16144.19 whh_xh_ratio=0.7630 w_xh0_cv=0.1709 w_xh1_cv=0.1685 w_hh_cv=0.1726
+#GenCrash gen=378 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=378 sims=1728216 total=653265648 durationSec=245.12 rate=7050.49
+#NNGen gen=379 best=-30035.672947 avg=-6530.896206 worst=-871.401234 bestSigma=0.112499 avgMaxStreak=30.8 pctInStreak=32.2 stability=-35903.43 energy=-16144.19 whh_xh_ratio=0.7630 w_xh0_cv=0.1862 w_xh1_cv=0.1833 w_hh_cv=0.1879
+#GenCrash gen=379 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=379 sims=1728216 total=654993864 durationSec=269.84 rate=6404.49
+#NNGen gen=380 best=-30035.672947 avg=-6660.590992 worst=-864.025745 bestSigma=0.112499 avgMaxStreak=30.8 pctInStreak=32.2 stability=-35903.43 energy=-16144.19 whh_xh_ratio=0.7630 w_xh0_cv=0.1796 w_xh1_cv=0.1770 w_hh_cv=0.1811
+#GenCrash gen=380 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=380 sims=1728216 total=656722080 durationSec=245.74 rate=7032.81
+#NNGen gen=381 best=-30035.672947 avg=-6646.151359 worst=-869.001616 bestSigma=0.112499 avgMaxStreak=30.8 pctInStreak=32.2 stability=-35903.43 energy=-16144.19 whh_xh_ratio=0.7630 w_xh0_cv=0.1737 w_xh1_cv=0.1712 w_hh_cv=0.1749
+#GenCrash gen=381 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=381 sims=1728216 total=658450296 durationSec=242.29 rate=7132.89
+#NNGen gen=382 best=-30035.672947 avg=-6978.527529 worst=-864.218931 bestSigma=0.112499 avgMaxStreak=30.8 pctInStreak=32.2 stability=-35903.43 energy=-16144.19 whh_xh_ratio=0.7630 w_xh0_cv=0.1742 w_xh1_cv=0.1715 w_hh_cv=0.1756
+#GenCrash gen=382 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=382 sims=1728216 total=660178512 durationSec=249.40 rate=6929.46
+#NNGen gen=383 best=-30068.377889 avg=-6966.450850 worst=-864.986069 bestSigma=0.111629 avgMaxStreak=30.4 pctInStreak=33.5 stability=-42417.63 energy=-15669.38 whh_xh_ratio=0.8870 w_xh0_cv=0.1669 w_xh1_cv=0.1645 w_hh_cv=0.1681
+#GenCrash gen=383 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=383 sims=1728216 total=661906728 durationSec=285.77 rate=6047.52
+#NNGen gen=384 best=-30068.377889 avg=-7143.800637 worst=-879.255119 bestSigma=0.111629 avgMaxStreak=30.4 pctInStreak=33.5 stability=-42417.63 energy=-15669.38 whh_xh_ratio=0.8870 w_xh0_cv=0.1718 w_xh1_cv=0.1694 w_hh_cv=0.1730
+#GenCrash gen=384 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=384 sims=1728216 total=663634944 durationSec=277.94 rate=6218.03
+#NNGen gen=385 best=-30068.377889 avg=-6949.732976 worst=-866.221712 bestSigma=0.111629 avgMaxStreak=30.4 pctInStreak=33.5 stability=-42417.63 energy=-15669.38 whh_xh_ratio=0.8870 w_xh0_cv=0.1745 w_xh1_cv=0.1718 w_hh_cv=0.1760
+#GenCrash gen=385 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=385 sims=1728216 total=665363160 durationSec=247.94 rate=6970.39
+#NNGen gen=386 best=-30522.160248 avg=-6928.101014 worst=-865.321308 bestSigma=0.103998 avgMaxStreak=30.7 pctInStreak=32.7 stability=-41200.39 energy=-15135.90 whh_xh_ratio=0.7605 w_xh0_cv=0.1822 w_xh1_cv=0.1795 w_hh_cv=0.1837
+#GenCrash gen=386 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=386 sims=1728216 total=667091376 durationSec=271.96 rate=6354.74
+#NNGen gen=387 best=-30522.160248 avg=-6846.209826 worst=-864.294323 bestSigma=0.103998 avgMaxStreak=30.7 pctInStreak=32.7 stability=-41200.39 energy=-15135.90 whh_xh_ratio=0.7605 w_xh0_cv=0.1871 w_xh1_cv=0.1843 w_hh_cv=0.1884
+#GenCrash gen=387 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=387 sims=1728216 total=668819592 durationSec=242.81 rate=7117.51
+#NNGen gen=388 best=-30522.160248 avg=-6775.572219 worst=-859.819106 bestSigma=0.103998 avgMaxStreak=30.7 pctInStreak=32.7 stability=-41200.39 energy=-15135.90 whh_xh_ratio=0.7605 w_xh0_cv=0.1786 w_xh1_cv=0.1760 w_hh_cv=0.1803
+#GenCrash gen=388 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=388 sims=1728216 total=670547808 durationSec=279.09 rate=6192.27
+#NNGen gen=389 best=-30522.160248 avg=-6791.805415 worst=-853.000547 bestSigma=0.103998 avgMaxStreak=30.7 pctInStreak=32.7 stability=-41200.39 energy=-15135.90 whh_xh_ratio=0.7605 w_xh0_cv=0.1786 w_xh1_cv=0.1759 w_hh_cv=0.1799
+#GenCrash gen=389 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=389 sims=1728216 total=672276024 durationSec=241.18 rate=7165.59
+#NNGen gen=390 best=-30522.160248 avg=-6824.958758 worst=-863.968710 bestSigma=0.103998 avgMaxStreak=30.7 pctInStreak=32.7 stability=-41200.39 energy=-15135.90 whh_xh_ratio=0.7605 w_xh0_cv=0.1823 w_xh1_cv=0.1796 w_hh_cv=0.1836
+#GenCrash gen=390 hullStrike=0 eval=1 sim=0 boot=0 timeLimit=0 rabbitComplete=215 none=0 total=216
+#GenSimStats gen=390 sims=1728216 total=674004240 durationSec=267.44 rate=6462.07
+#NNGen gen=391 best=-31139.694578 avg=-6838.545527 worst=-864.340893 bestSigma=0.106323 avgMaxStreak=30.3 pctInStreak=30.9 stability=-30370.04 energy=-14024.88 whh_xh_ratio=0.6638 w_xh0_cv=0.1772 w_xh1_cv=0.1747 w_hh_cv=0.1784
+#GenCrash gen=391 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=391 sims=1728216 total=675732456 durationSec=261.32 rate=6613.42
+#NNGen gen=392 best=-31139.694578 avg=-7007.023535 worst=-857.020584 bestSigma=0.106323 avgMaxStreak=30.3 pctInStreak=30.9 stability=-30370.04 energy=-14024.88 whh_xh_ratio=0.6638 w_xh0_cv=0.1792 w_xh1_cv=0.1766 w_hh_cv=0.1804
+#GenCrash gen=392 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=392 sims=1728216 total=677460672 durationSec=245.29 rate=7045.47
+#NNGen gen=393 best=-31911.765009 avg=-7107.852804 worst=-855.274872 bestSigma=0.107463 avgMaxStreak=31.6 pctInStreak=33.9 stability=-29238.35 energy=-14101.18 whh_xh_ratio=0.6893 w_xh0_cv=0.1807 w_xh1_cv=0.1781 w_hh_cv=0.1818
+#GenCrash gen=393 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=393 sims=1728216 total=679188888 durationSec=246.40 rate=7013.89
+#NNGen gen=394 best=-31911.765009 avg=-7317.023777 worst=-871.440994 bestSigma=0.107463 avgMaxStreak=31.6 pctInStreak=33.9 stability=-29238.35 energy=-14101.18 whh_xh_ratio=0.6893 w_xh0_cv=0.1797 w_xh1_cv=0.1770 w_hh_cv=0.1808
+#GenCrash gen=394 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=394 sims=1728216 total=680917104 durationSec=248.94 rate=6942.23
+#NNGen gen=395 best=-31911.765009 avg=-7450.110609 worst=-863.510730 bestSigma=0.107463 avgMaxStreak=31.6 pctInStreak=33.9 stability=-29238.35 energy=-14101.18 whh_xh_ratio=0.6893 w_xh0_cv=0.1780 w_xh1_cv=0.1753 w_hh_cv=0.1791
+#GenCrash gen=395 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=395 sims=1728216 total=682645320 durationSec=268.49 rate=6436.71
+#NNGen gen=396 best=-32021.172582 avg=-7285.082294 worst=-860.537672 bestSigma=0.104792 avgMaxStreak=30.8 pctInStreak=33.4 stability=-30836.53 energy=-13858.92 whh_xh_ratio=0.7642 w_xh0_cv=0.1808 w_xh1_cv=0.1780 w_hh_cv=0.1817
+#GenCrash gen=396 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=396 sims=1728216 total=684373536 durationSec=275.84 rate=6265.29
+#NNGen gen=397 best=-32021.172582 avg=-7384.969358 worst=-861.119033 bestSigma=0.104792 avgMaxStreak=30.8 pctInStreak=33.4 stability=-30836.53 energy=-13858.92 whh_xh_ratio=0.7642 w_xh0_cv=0.1735 w_xh1_cv=0.1709 w_hh_cv=0.1744
+#GenCrash gen=397 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=397 sims=1728216 total=686101752 durationSec=250.53 rate=6898.35
+#NNGen gen=398 best=-32021.172582 avg=-7297.921735 worst=-875.432661 bestSigma=0.104792 avgMaxStreak=30.8 pctInStreak=33.4 stability=-30836.53 energy=-13858.92 whh_xh_ratio=0.7642 w_xh0_cv=0.1747 w_xh1_cv=0.1720 w_hh_cv=0.1756
+#GenCrash gen=398 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=398 sims=1728216 total=687829968 durationSec=249.07 rate=6938.75
+#NNGen gen=399 best=-32345.508353 avg=-7325.560393 worst=-858.654223 bestSigma=0.101888 avgMaxStreak=31.8 pctInStreak=33.3 stability=-46053.58 energy=-15299.61 whh_xh_ratio=0.6745 w_xh0_cv=0.1842 w_xh1_cv=0.1814 w_hh_cv=0.1852
+#GenCrash gen=399 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=399 sims=1728216 total=689558184 durationSec=250.24 rate=6906.10
+#NNGen gen=400 best=-32388.118611 avg=-7565.757494 worst=-864.524896 bestSigma=0.102874 avgMaxStreak=31.4 pctInStreak=34.5 stability=-36137.52 energy=-15493.50 whh_xh_ratio=0.6383 w_xh0_cv=0.1658 w_xh1_cv=0.1633 w_hh_cv=0.1669
+#GenCrash gen=400 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=400 sims=1728216 total=691286400 durationSec=251.99 rate=6858.30
+#NNGen gen=401 best=-31613.237114 avg=-7396.740220 worst=-877.811709 bestSigma=0.102874 avgMaxStreak=31.1 pctInStreak=33.7 stability=-36436.67 energy=-15436.96 whh_xh_ratio=0.6383 w_xh0_cv=0.1750 w_xh1_cv=0.1724 w_hh_cv=0.1760
+#GenCrash gen=401 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=401 sims=1728216 total=693014616 durationSec=250.15 rate=6908.76
+#NNGen gen=402 best=-31613.237114 avg=-7510.153276 worst=-879.563604 bestSigma=0.102874 avgMaxStreak=31.1 pctInStreak=33.7 stability=-36436.67 energy=-15436.96 whh_xh_ratio=0.6383 w_xh0_cv=0.1819 w_xh1_cv=0.1792 w_hh_cv=0.1830
+#GenCrash gen=402 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=402 sims=1728216 total=694742832 durationSec=279.00 rate=6194.40
+#NNGen gen=403 best=-31907.355078 avg=-7563.757785 worst=-879.785853 bestSigma=0.101669 avgMaxStreak=32.0 pctInStreak=32.7 stability=-36075.66 energy=-15271.00 whh_xh_ratio=0.5817 w_xh0_cv=0.1834 w_xh1_cv=0.1807 w_hh_cv=0.1844
+#GenCrash gen=403 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=403 sims=1728216 total=696471048 durationSec=249.13 rate=6936.91
+#NNGen gen=404 best=-31907.355078 avg=-7593.692519 worst=-872.980962 bestSigma=0.101669 avgMaxStreak=32.0 pctInStreak=32.7 stability=-36075.66 energy=-15271.00 whh_xh_ratio=0.5817 w_xh0_cv=0.1782 w_xh1_cv=0.1754 w_hh_cv=0.1790
+#GenCrash gen=404 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=404 sims=1728216 total=698199264 durationSec=249.35 rate=6930.91
+#NNGen gen=405 best=-31907.355078 avg=-7731.711107 worst=-880.591687 bestSigma=0.101669 avgMaxStreak=32.0 pctInStreak=32.7 stability=-36075.66 energy=-15271.00 whh_xh_ratio=0.5817 w_xh0_cv=0.1817 w_xh1_cv=0.1791 w_hh_cv=0.1826
+#GenCrash gen=405 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=405 sims=1728216 total=699927480 durationSec=251.72 rate=6865.53
+#NNGen gen=406 best=-31907.355078 avg=-7936.812450 worst=-880.495392 bestSigma=0.101669 avgMaxStreak=32.0 pctInStreak=32.7 stability=-36075.66 energy=-15271.00 whh_xh_ratio=0.5817 w_xh0_cv=0.1810 w_xh1_cv=0.1783 w_hh_cv=0.1820
+#GenCrash gen=406 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=406 sims=1728216 total=701655696 durationSec=254.98 rate=6777.98
+#NNGen gen=407 best=-31907.355078 avg=-7837.055338 worst=-879.821257 bestSigma=0.101669 avgMaxStreak=32.0 pctInStreak=32.7 stability=-36075.66 energy=-15271.00 whh_xh_ratio=0.5817 w_xh0_cv=0.1729 w_xh1_cv=0.1704 w_hh_cv=0.1737
+#GenCrash gen=407 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=407 sims=1728216 total=703383912 durationSec=255.20 rate=6771.94
+#NNGen gen=408 best=-31907.355078 avg=-8078.224266 worst=-880.779171 bestSigma=0.101669 avgMaxStreak=32.0 pctInStreak=32.7 stability=-36075.66 energy=-15271.00 whh_xh_ratio=0.5817 w_xh0_cv=0.1803 w_xh1_cv=0.1775 w_hh_cv=0.1810
+#GenCrash gen=408 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=408 sims=1728216 total=705112128 durationSec=259.46 rate=6660.90
+#NNGen gen=409 best=-31907.355078 avg=-7770.093615 worst=-877.337221 bestSigma=0.101669 avgMaxStreak=32.0 pctInStreak=32.7 stability=-36075.66 energy=-15271.00 whh_xh_ratio=0.5817 w_xh0_cv=0.1828 w_xh1_cv=0.1801 w_hh_cv=0.1836
+#GenCrash gen=409 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=409 sims=1728216 total=706840344 durationSec=251.86 rate=6861.79
+#NNGen gen=410 best=-31907.355078 avg=-7903.936474 worst=-880.119645 bestSigma=0.101669 avgMaxStreak=32.0 pctInStreak=32.7 stability=-36075.66 energy=-15271.00 whh_xh_ratio=0.5817 w_xh0_cv=0.1764 w_xh1_cv=0.1737 w_hh_cv=0.1771
+#GenCrash gen=410 hullStrike=0 eval=2 sim=0 boot=0 timeLimit=0 rabbitComplete=214 none=0 total=216
+#GenSimStats gen=410 sims=1728216 total=708568560 durationSec=282.48 rate=6117.96
+#NNGen gen=411 best=-32447.157684 avg=-8152.256757 worst=-876.656390 bestSigma=0.099669 avgMaxStreak=33.3 pctInStreak=33.3 stability=-38235.70 energy=-16513.96 whh_xh_ratio=0.7237 w_xh0_cv=0.1751 w_xh1_cv=0.1723 w_hh_cv=0.1758
+#GenCrash gen=411 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=411 sims=1728216 total=710296776 durationSec=263.01 rate=6571.02
+#NNGen gen=412 best=-32447.157684 avg=-8165.613431 worst=-884.332688 bestSigma=0.099669 avgMaxStreak=33.3 pctInStreak=33.3 stability=-38235.70 energy=-16513.96 whh_xh_ratio=0.7237 w_xh0_cv=0.1808 w_xh1_cv=0.1778 w_hh_cv=0.1818
+#GenCrash gen=412 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=412 sims=1728216 total=712024992 durationSec=289.53 rate=5968.98
+#NNGen gen=413 best=-32447.157684 avg=-8432.480132 worst=-879.349712 bestSigma=0.099669 avgMaxStreak=33.3 pctInStreak=33.3 stability=-38235.70 energy=-16513.96 whh_xh_ratio=0.7237 w_xh0_cv=0.1775 w_xh1_cv=0.1745 w_hh_cv=0.1782
+#GenCrash gen=413 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=413 sims=1728216 total=713753208 durationSec=296.12 rate=5836.22
+#NNGen gen=414 best=-34166.871005 avg=-8498.263674 worst=-877.895201 bestSigma=0.097256 avgMaxStreak=33.1 pctInStreak=34.7 stability=-33412.60 energy=-14692.52 whh_xh_ratio=0.7352 w_xh0_cv=0.1767 w_xh1_cv=0.1737 w_hh_cv=0.1774
+#GenCrash gen=414 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=414 sims=1728216 total=715481424 durationSec=267.88 rate=6451.37
+#NNGen gen=415 best=-34166.871005 avg=-8513.828996 worst=-874.169958 bestSigma=0.097256 avgMaxStreak=33.1 pctInStreak=34.7 stability=-33412.60 energy=-14692.52 whh_xh_ratio=0.7352 w_xh0_cv=0.1837 w_xh1_cv=0.1804 w_hh_cv=0.1844
+#GenCrash gen=415 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=415 sims=1728216 total=717209640 durationSec=268.55 rate=6435.25
+#NNGen gen=416 best=-34166.871005 avg=-8418.444836 worst=-887.724581 bestSigma=0.097256 avgMaxStreak=33.1 pctInStreak=34.7 stability=-33412.60 energy=-14692.52 whh_xh_ratio=0.7352 w_xh0_cv=0.1842 w_xh1_cv=0.1808 w_hh_cv=0.1849
+#GenCrash gen=416 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=416 sims=1728216 total=718937856 durationSec=265.98 rate=6497.56
+#NNGen gen=417 best=-34166.871005 avg=-8381.338427 worst=-882.089392 bestSigma=0.097256 avgMaxStreak=33.1 pctInStreak=34.7 stability=-33412.60 energy=-14692.52 whh_xh_ratio=0.7352 w_xh0_cv=0.1762 w_xh1_cv=0.1730 w_hh_cv=0.1770
+#GenCrash gen=417 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=417 sims=1728216 total=720666072 durationSec=263.23 rate=6565.34
+#NNGen gen=418 best=-34166.871005 avg=-8510.396479 worst=-880.734066 bestSigma=0.097256 avgMaxStreak=33.1 pctInStreak=34.7 stability=-33412.60 energy=-14692.52 whh_xh_ratio=0.7352 w_xh0_cv=0.1772 w_xh1_cv=0.1741 w_hh_cv=0.1780
+#GenCrash gen=418 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=418 sims=1728216 total=722394288 durationSec=293.90 rate=5880.27
+#NNGen gen=419 best=-34166.871005 avg=-8598.316373 worst=-885.459939 bestSigma=0.097256 avgMaxStreak=33.1 pctInStreak=34.7 stability=-33412.60 energy=-14692.52 whh_xh_ratio=0.7352 w_xh0_cv=0.1816 w_xh1_cv=0.1782 w_hh_cv=0.1826
+#GenCrash gen=419 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=419 sims=1728216 total=724122504 durationSec=267.79 rate=6453.57
+#NNGen gen=420 best=-34166.871005 avg=-8491.270065 worst=-883.465886 bestSigma=0.097256 avgMaxStreak=33.1 pctInStreak=34.7 stability=-33412.60 energy=-14692.52 whh_xh_ratio=0.7352 w_xh0_cv=0.1783 w_xh1_cv=0.1750 w_hh_cv=0.1794
+#GenCrash gen=420 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=420 sims=1728216 total=725850720 durationSec=295.90 rate=5840.46
+#NNGen gen=421 best=-34166.871005 avg=-8742.224314 worst=-892.573963 bestSigma=0.097256 avgMaxStreak=33.1 pctInStreak=34.7 stability=-33412.60 energy=-14692.52 whh_xh_ratio=0.7352 w_xh0_cv=0.1790 w_xh1_cv=0.1756 w_hh_cv=0.1797
+#GenCrash gen=421 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=421 sims=1728216 total=727578936 durationSec=300.11 rate=5758.63
+#NNGen gen=422 best=-34166.871005 avg=-8703.565009 worst=-885.796956 bestSigma=0.097256 avgMaxStreak=33.1 pctInStreak=34.7 stability=-33412.60 energy=-14692.52 whh_xh_ratio=0.7352 w_xh0_cv=0.1760 w_xh1_cv=0.1728 w_hh_cv=0.1768
+#GenCrash gen=422 hullStrike=0 eval=0 sim=0 boot=0 timeLimit=0 rabbitComplete=216 none=0 total=216
+#GenSimStats gen=422 sims=1728216 total=729307152 durationSec=278.13 rate=6213.70

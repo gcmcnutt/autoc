@@ -100,7 +100,7 @@ tests in `tests/msplink_quat_convention_tests.cc`.
     aerospace q_EB requires flipping qy and qz — the T042 `(w, x, -y, -z)`
     transform in `inavQuatToAerospaceEB`. Applied once at `msplink.cpp`
     and in the renderer's INAV-blackbox loader. Nothing downstream
-    (NN evaluator, CRRCSim bridge, minisim) needs to worry about
+    (NN evaluator, CRRCSim bridge) needs to worry about
     direction — it receives aerospace `q_EB` by contract. Caveat: the
     transformed quat is not kinematically valid — see the "CRITICAL"
     section above for forbidden vs allowed uses.
@@ -134,7 +134,7 @@ tests in `tests/msplink_quat_convention_tests.cc`.
 Tracker-mode NN sees a flat `float[54]` ([include/autoc/nn/nn_inputs.h](../include/autoc/nn/nn_inputs.h),
 populated by `gather_tracker_inputs` in
 [src/nn/evaluator.cc](../src/nn/evaluator.cc)). Same struct + transforms feed
-autoc-side training, minisim, and the crrcsim worker — single source of truth
+autoc-side training and the crrcsim worker — single source of truth
 gated by `#ifndef ARDUINO`. Xiao firmware does NOT yet implement tracker-mode
 (see BACKLOG).
 

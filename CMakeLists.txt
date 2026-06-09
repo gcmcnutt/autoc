@@ -7,6 +7,8 @@ option(BUILD_CRRCSIM "Build CRRCSim flight dynamics model" ON)
 find_package(VTK REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(AWSSDK REQUIRED COMPONENTS core s3)
+# 035 FR-P09 — zstd for dmp compression on the serialization boundary.
+find_library(ZSTD_LIBRARY NAMES zstd REQUIRED)
 
 include(FetchContent)
 
@@ -83,6 +85,9 @@ add_compile_options(-Wno-write-strings)
 add_library(autoc_common STATIC
     src/util/config.cc
     src/util/logger.cc
+    src/util/scenario_prng.cc
+    src/util/s3_run_selector.cc
+
     src/eval/pathgen.cc
     src/eval/sensor_math.cc
     src/eval/fitness_computer.cc
@@ -94,7 +99,6 @@ add_library(autoc_common STATIC
     src/eval/arena.cc
     src/eval/trail_rabbit.cc
     src/eval/crash_hull.cc
-    src/eval/pathgen_stepper.cc
     src/eval/tracker_stepper.cc
     src/nn/evaluator.cc
     src/nn/serialization.cc
@@ -102,20 +106,20 @@ add_library(autoc_common STATIC
     src/nn/telemetry.cc
     src/nn/mode.cc
 )
-target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen)
+target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen ${ZSTD_LIBRARY})
 
 add_executable(autoc src/autoc.cc)
-add_executable(minisim tools/minisim.cc)
 add_executable(renderer tools/renderer.cc)
 add_executable(nnextractor tools/nnextractor.cc)
 add_executable(nn2cpp tools/nn2cpp.cc)
 add_executable(source_dmp_inspect tools/source_dmp_inspect.cc)
 add_executable(tracker_dmp_inspect tools/tracker_dmp_inspect.cc)
+add_executable(dmp-dump tools/dmp_dump.cc)  # 035 FR-P02/P06
 
 target_link_libraries(autoc autoc_common ${AWSSDK_LIBRARIES})
-target_link_libraries(minisim autoc_common)
 target_link_libraries(renderer autoc_common ${VTK_LIBRARIES} ${AWSSDK_LIBRARIES})
 target_link_libraries(nnextractor autoc_common ${AWSSDK_LIBRARIES})
+target_link_libraries(dmp-dump autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(nn2cpp autoc_common)
 target_link_libraries(source_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(tracker_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
@@ -137,16 +141,16 @@ if(ENABLE_AUTOC_TESTS)
   target_link_libraries(fitness_decomposition_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
 
   add_executable(selection_tests tests/selection_tests.cc)
-  target_link_libraries(selection_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(selection_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(contract_evaluator_tests tests/contract_evaluator_tests.cc)
   target_link_libraries(contract_evaluator_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(contract_config_tests tests/contract_config_tests.cc)
-  target_link_libraries(contract_config_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(contract_config_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(contract_evolution_tests tests/contract_evolution_tests.cc)
-  target_link_libraries(contract_evolution_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(contract_evolution_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(rpc_transport_tests tests/rpc_transport_tests.cc)
   target_link_libraries(rpc_transport_tests GTest::gtest GTest::gtest_main)
@@ -198,6 +202,29 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(derived_features_tests tests/derived_features_tests.cc)
   target_link_libraries(derived_features_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(scenario_prng_tests tests/scenario_prng_tests.cc)
+  target_link_libraries(scenario_prng_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  # 034 US4 — craft variation contract tests (T043).
+  add_executable(craft_variation_tests tests/craft_variation_tests.cc)
+  target_link_libraries(craft_variation_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  # 034 US3 — run-id prefix routing test (T034).
+  add_executable(run_id_prefix_tests tests/run_id_prefix_tests.cc)
+  target_link_libraries(run_id_prefix_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  # 035 FR-P07 — shared S3 run-selector tests (pulls s3_run_selector.o → needs AWSSDK).
+  add_executable(s3_run_selector_tests tests/s3_run_selector_tests.cc)
+  target_link_libraries(s3_run_selector_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+
+  # 035 FR-P09 — zstd round-trip + ratio spike for the dmp boundary.
+  add_executable(dmp_dump_tests tests/dmp_dump_tests.cc)
+  target_link_libraries(dmp_dump_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+
+  # 035 FR-001b/R1 (US1) — convex throttle-energy metric.
+  add_executable(energy_metric_tests tests/energy_metric_tests.cc)
+  target_link_libraries(energy_metric_tests GTest::gtest GTest::gtest_main autoc_common)
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -224,6 +251,12 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME trail_rabbit_tests COMMAND trail_rabbit_tests)
   add_test(NAME crash_hull_tests COMMAND crash_hull_tests)
   add_test(NAME derived_features_tests COMMAND derived_features_tests)
+  add_test(NAME scenario_prng_tests COMMAND scenario_prng_tests)
+  add_test(NAME craft_variation_tests COMMAND craft_variation_tests)
+  add_test(NAME run_id_prefix_tests COMMAND run_id_prefix_tests)
+  add_test(NAME s3_run_selector_tests COMMAND s3_run_selector_tests)
+  add_test(NAME dmp_dump_tests COMMAND dmp_dump_tests)
+  add_test(NAME energy_metric_tests COMMAND energy_metric_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -243,6 +276,12 @@ if(ENABLE_AUTOC_TESTS)
             trail_rabbit_tests
             crash_hull_tests
             derived_features_tests
+            scenario_prng_tests
+            craft_variation_tests
+            run_id_prefix_tests
+            s3_run_selector_tests
+            dmp_dump_tests
+            energy_metric_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -267,6 +306,12 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND trail_rabbit_tests --gtest_brief=1
     COMMAND crash_hull_tests --gtest_brief=1
     COMMAND derived_features_tests --gtest_brief=1
+    COMMAND scenario_prng_tests --gtest_brief=1
+    COMMAND craft_variation_tests --gtest_brief=1
+    COMMAND run_id_prefix_tests --gtest_brief=1
+    COMMAND s3_run_selector_tests --gtest_brief=1
+    COMMAND dmp_dump_tests --gtest_brief=1
+    COMMAND energy_metric_tests --gtest_brief=1
   )
 endif()
 

@@ -110,7 +110,7 @@ void printTarget(const char* label, const CopiedTargetSample& t) {
 
 // 032 phase 1 — print the 9 derived perceptual feature slots from the per-tick
 // TrackerInputs (serialized into AircraftState at v=2). Useful for the
-// minisim/crrcsim smoke verification: confirm slots 45..53 carry non-trivial
+// crrcsim smoke verification: confirm slots 45..53 carry non-trivial
 // values across ticks before kicking off the production bake.
 void printDerivedFeatures(const char* label, const TrackerInputs& inputs) {
     std::cout << "  " << label << " derived: span[6]=[";
@@ -190,6 +190,30 @@ int main(int argc, char* argv[]) {
         std::cout << "Ticks/scenario: min=" << minT
                   << " mean=" << std::fixed << std::setprecision(1) << meanT
                   << " max=" << maxT << "\n";
+
+        // 033 §2.A — per-scenario master-derived seed for replay. Each
+        // scenarioSeed is sufficient to reconstruct all 5 class sub-PRNGs
+        // (wind/rabbit/entry/craft/camera) deterministically via the chain
+        // in include/autoc/util/scenario_prng.h. Hex output so operator can
+        // feed a specific seed back into eval-mode replay.
+        if (!r.scenarioList.empty()) {
+            const size_t numToShow = std::min<size_t>(r.scenarioList.size(), 5);
+            std::cout << "scenarioSeed (033 §2.A) per scenario (showing first "
+                      << numToShow << " of " << r.scenarioList.size() << "):\n";
+            for (size_t k = 0; k < numToShow; ++k) {
+                std::cout << "  [" << std::setw(3) << k << "] 0x" << std::hex
+                          << std::setw(16) << std::setfill('0')
+                          << r.scenarioList[k].scenarioSeed
+                          << std::dec << std::setfill(' ') << "\n";
+            }
+            if (r.scenarioList.size() > numToShow) {
+                std::cout << "  ... (" << (r.scenarioList.size() - numToShow)
+                          << " more)\n";
+            }
+        } else {
+            std::cout << "scenarioList: empty (pre-033 dmp would fail-loud "
+                         "on cereal length mismatch before this point)\n";
+        }
 
         // v=2 schema-additions presence + parallel-indexing audit.
         const bool hasCameraView = !r.cameraViewList.empty();

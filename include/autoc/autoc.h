@@ -21,20 +21,23 @@ struct WorkerContext;
 #define ENTRY_SAFE_ALT_MIN static_cast<gp_scalar>(3.0f)       // shallowest: 3m below start (NED +)
 #define ENTRY_SAFE_ALT_MAX static_cast<gp_scalar>(-80.0f)     // deepest: 80m above start (NED -)
 
+// 033 cleanup: windSeed removed from both structs. Per-class PRNG seeds
+// (wind, rabbit, entry, craft, camera) are derived ON THE WORKER from
+// ScenarioMetadata.scenarioSeed via autoc::util::deriveClassSubSeeds().
+// These autoc-internal types now carry only the indexing data needed to
+// build the per-individual scenario library.
 struct WindScenarioConfig {
-  unsigned int windSeed = 0;
   int windVariantIndex = 0;
 };
 
 struct ScenarioDescriptor {
   std::vector<std::vector<Path>> pathList;
   std::vector<WindScenarioConfig> windScenarios;
-  unsigned int windSeed = 0;
   int pathVariantIndex = -1;   // -1 = unset/aggregated
   int windVariantIndex = -1;   // -1 = unset/aggregated
 };
 
-// Global aircraft state used by minisim evaluation loop
+// Global aircraft state used by the evaluation loop
 extern AircraftState aircraftState;
 
 #endif

@@ -51,6 +51,21 @@ inline void applyVariationScale(ScenarioMetadata& meta, gp_scalar scale) {
     meta.entryNorthOffset = northScaled;
     meta.entryEastOffset = eastScaled;
     meta.entryAltOffset = altScaled;
+
+    // 034 US4 — craft variation deltas: scale additive deltas toward 0 and
+    // the multiplicative thrust factor toward its nominal 1.0. Same shape as
+    // entry/wind: at scale=0 every field is exactly its nominal; at scale=1
+    // every field is its full drawn magnitude. The DRAW (autoc-side
+    // generateCraftFromClassPRNG) is full-magnitude and deterministic per
+    // scenarioSeed; this function does the per-eval ramping (training:
+    // computeVariationScale(gen); eval: replayed genome.variation_scale).
+    meta.craftCGDelta *= scale;
+    meta.craftDragDelta *= scale;
+    meta.craftTrimDelta *= scale;
+    meta.craftPitchEffDelta *= scale;
+    meta.craftRollEffDelta *= scale;
+    meta.craftThrustScale = static_cast<gp_scalar>(1.0)
+        + scale * (meta.craftThrustScale - static_cast<gp_scalar>(1.0));
 }
 
 }  // namespace autoc::eval

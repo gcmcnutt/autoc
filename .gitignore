@@ -1,7 +1,9 @@
 build/
 logs/
 *.dat
-*.stc
+# (data.stc retired in 034 T052 — autoc no longer produces root .stc, and the
+#  stale pre-T052 root data.stc/eval-data.stc were deleted, so no ignore rule
+#  is needed. Committed reference snapshots live under specs/.)
 # Ignore CSVs in root (decoded blackbox) but not in flight-results/
 /*.csv
 nn_weights.dat

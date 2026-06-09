@@ -5,7 +5,6 @@
 #include "autoc/eval/arena.h"          // 030 M7a — FlightArena + distanceToBoundary
 #include "autoc/eval/derived_features.h"  // 032 phase 1 — compute_tilt
 #include "autoc/eval/sensor_math.h"
-#include "autoc/util/config.h"         // 032 phase 1 — CepGateThreshold + EnableDerivedFeatures
 #include "autoc/util/rng.h"
 #include <cmath>
 #include <array>
@@ -432,6 +431,7 @@ void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& p
 void gather_tracker_inputs(const AircraftState& chase,
                            const TrackerHistoryWindow& history,
                            const autoc::eval::FlightArena& arena,
+                           float cep_gate_threshold,
                            TrackerInputs& out) {
     // Beacon history: 6 slots per channel, copied as-is. Caller (TrackerStepper)
     // owns the ordering — index 0 = oldest (-0.5s), index 5 = "now".
@@ -483,17 +483,11 @@ void gather_tracker_inputs(const AircraftState& chase,
     // ====================================================================
     // 032 PHASE 1 — Derived perceptual features (slots 45..53)
     // ====================================================================
-    // Reads CepGateThreshold from ConfigManager (loaded at startup). Same
-    // value is consumed by projectAndShiftHistory's span computation so
-    // both call sites apply identical gating semantics.
-    const bool config_ready = ConfigManager::isInitialized();
-    const float cep_gate_threshold = static_cast<float>(   // raw-ok: NN-byte-format comparison boundary — compared against history.left/right_cep which are NN-byte-format primitives
-        config_ready ? ConfigManager::getConfig().cepGateThreshold : 1.25);
 
     // (1) beacon_pair_span[6] — copy cached values from history.span.
     // Span was computed + CEP-gated upstream in projectAndShiftHistory; we
     // just forward it here. Single computation site avoids divergent gating
-    // semantics between the autoc minisim and crrcsim helper paths.
+    // semantics between the autoc reference and crrcsim helper paths.
     for (int i = 0; i < 6; ++i) {
         out.beacon_pair_span[i] = history.span[i];  // raw-ok: NN-byte-format primitive
     }

@@ -1,0 +1,13 @@
+{
+  "_comment": "FR-P08/P11 — tag-driven 30-day retention. Apply to autoc-m1, autoc-m2, autoc-eval (and legacy autoc-storage until it drains). retain=expire -> deleted at 30d; retain=keep -> preserved; untagged -> never matched (fail-safe). Admin-applied (autoc-generator lacks bucket-policy perms).",
+  "Rules": [
+    {
+      "ID": "expire-unmarked-runs-30d",
+      "Status": "Enabled",
+      "Filter": {
+        "Tag": { "Key": "retain", "Value": "expire" }
+      },
+      "Expiration": { "Days": 30 }
+    }
+  ]
+}

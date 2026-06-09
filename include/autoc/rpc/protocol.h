@@ -1,6 +1,6 @@
 /* test sim for aircraft */
-#ifndef MINISIM_H
-#define MINISIM_H
+#ifndef AUTOC_PROTOCOL_H
+#define AUTOC_PROTOCOL_H
 
 #include <vector>
 #include <iostream>
@@ -162,7 +162,7 @@ struct WorkerInit {
   // 032 phase 1 — CepGateThreshold for derived-feature gating. Read from
   // autoc-tracker.ini [DerivedFeatures] CepGateThreshold (default 1.25,
   // matches kCepSentinelThreshold). Same value drives both the autoc
-  // minisim path (via ConfigManager in-process) and the crrcsim worker
+  // crrcsim worker path via this field (workers are separate processes
   // path (via this field — workers are separate processes with no
   // ConfigManager). Per spec.md Q4 + research.md R2 + contracts/
   // ini_schema.md.
@@ -178,6 +178,25 @@ struct WorkerInit {
   std::vector<std::vector<Path>> pathList;
   std::vector<ScenarioMetadata> scenarioMetaList;
 
+  // 034 Phase 7 (2026-05-31) — worker needs to know the EnableWindVariations
+  // policy to gate the per-scenario CRRC_Random seed. Pre-034: the worker
+  // unconditionally seeded the wind simulator from
+  // `ClassPRNG(deriveClassSubSeeds(scenarioSeed).wind).next()` regardless
+  // of the autoc-side enable flag, so per-tick gusts/thermals VARIED across
+  // scenarios even when `EnableWindVariations=0`. That broke the craft-
+  // isolation experiment (US5 / autoc-craft-only.ini), where the user
+  // expected all 36 scenarios to fly in identical wind/gust environments.
+  // When this flag is false, inputdev_autoc uses a fixed constant
+  // (kDisabledWindSeed = 0xC0FFEEu) for Global::Simulation->reset() so
+  // every scenario sees the same wind/gust sequence. The autoc-side
+  // windPRNG draw still happens (draw-and-discard, matches entry/wind
+  // contract) so toggling the flag doesn't shift other-class draws.
+  // Entry-class variations are already gated via meta.entry* = 0 from
+  // autoc-side prefetchAllVariations; rabbit-class variations are gated
+  // via cfg.sigma = 0 → generateSpeedProfile short-circuit. Neither needs
+  // a separate enable flag here.
+  bool enableWindVariations = true;
+
   template<class Archive>
   void serialize(Archive& ar) {
     int m = static_cast<int>(mode);
@@ -185,7 +204,8 @@ struct WorkerInit {
        airframeProxy, flightArena,
        crashHullRadius, trailDistance,
        pathList, scenarioMetaList,
-       cepGateThreshold);
+       cepGateThreshold,
+       enableWindVariations);  // 034 Phase 7 — appended, no version bump
     mode = static_cast<Mode>(m);
   }
 };
@@ -351,6 +371,13 @@ struct EvalResults {
   std::vector<int> arenaEgressCount;  // M7 — per-scenario count of arena egress events
   std::vector<int> hullStrikeCount;   // M7 — per-scenario count of crash-hull p_crash fires
 
+  // 033 §2.A + §2.B — Provenance header. Makes a dmp self-describing for
+  // analysis: any operator picking up a dmp can read off the master seed
+  // (full-run reproduction) without needing the matching log file or ini.
+  // Populated autoc-side; the value is set once per run, copies into every
+  // emitted dmp.
+  uint64_t effectiveMasterSeed = 0;                              // 033 §2.A — MasterPRNG.init() input
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
     ar(gp, gpHash, crashReasonList, pathList, aircraftStateList,
@@ -363,6 +390,11 @@ struct EvalResults {
       // cereal's class-version mechanism (verified in
       // tests/tracker_dmp_roundtrip_tests.cc).
       ar(cameraViewList, targetTrajectoryList, arenaEgressCount, hullStrikeCount);
+
+      // 033 §2.A — master-seed provenance. Appended at end of v=2 block per
+      // project no-cereal-versioning policy; old dmps are orphaned by the
+      // training reset (M2-era no-version-revision policy).
+      ar(effectiveMasterSeed);
     }
   }
 
@@ -384,6 +416,8 @@ struct EvalResults {
     targetTrajectoryList.clear();
     arenaEgressCount.clear();
     hullStrikeCount.clear();
+    // 033 §2.A — provenance header reset to "no-context" default.
+    effectiveMasterSeed = 0;
   }
 
   void dump(std::ostream& os) {
@@ -392,14 +426,19 @@ struct EvalResults {
       crashReasonList.size(), pathList.size(), aircraftStateList.size());
     os << buf;
 
-    snprintf(buf, sizeof(buf), "Scenario: pathVariant=%d windVariant=%d windSeed=%u seq=%llu bake=%llu\n",
-      scenario.pathVariantIndex, scenario.windVariantIndex, scenario.windSeed,
+    // 033 cleanup: windSeed display swapped for scenarioSeed (the new
+    // per-scenario PRNG root). All class sub-seeds derive from this via
+    // deriveClassSubSeeds.
+    snprintf(buf, sizeof(buf), "Scenario: pathVariant=%d windVariant=%d scenarioSeed=0x%016llx seq=%llu bake=%llu\n",
+      scenario.pathVariantIndex, scenario.windVariantIndex,
+      static_cast<unsigned long long>(scenario.scenarioSeed),
       static_cast<unsigned long long>(scenario.scenarioSequence),
       static_cast<unsigned long long>(scenario.bakeoffSequence));
     os << buf;
     for (size_t i = 0; i < scenarioList.size(); ++i) {
-      snprintf(buf, sizeof(buf), "  Scenario[%zu]: pathVariant=%d windVariant=%d windSeed=%u seq=%llu bake=%llu\n",
-        i, scenarioList[i].pathVariantIndex, scenarioList[i].windVariantIndex, scenarioList[i].windSeed,
+      snprintf(buf, sizeof(buf), "  Scenario[%zu]: pathVariant=%d windVariant=%d scenarioSeed=0x%016llx seq=%llu bake=%llu\n",
+        i, scenarioList[i].pathVariantIndex, scenarioList[i].windVariantIndex,
+        static_cast<unsigned long long>(scenarioList[i].scenarioSeed),
         static_cast<unsigned long long>(scenarioList[i].scenarioSequence),
         static_cast<unsigned long long>(scenarioList[i].bakeoffSequence));
       os << buf;

@@ -156,3 +156,4 @@ TEST(DerivedFeaturesTilt, SinCosIdentityHolds) {
 // span_rate is mechanical subtraction at the call site; no helper needed.
 // The integration layer (gather_tracker_inputs_tests) covers it end-to-end.
 // ============================================================================
+

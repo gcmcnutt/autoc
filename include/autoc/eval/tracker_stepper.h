@@ -13,7 +13,7 @@
 //   6. Advance chase-craft physics until next source tick.
 //
 // Symmetric with PathgenStepper (M6a). The strategy-pattern split means
-// the worker (minisim) selects one or the other based on EvalData::mode.
+// the worker selects one or the other based on EvalData::mode.
 //
 // Source trajectory + camera/beacon/home configuration are passed at
 // construction. M6d uses compile-time-default CameraConfig / BeaconConfig
@@ -30,6 +30,7 @@
 #include "autoc/eval/camera_config.h"
 #include "autoc/eval/camera_projection.h"
 #include "autoc/eval/crash_hull.h"        // M7d.b — CrashHull config + didCrashFire
+#include "autoc/eval/derived_features.h"  // 032 — compute_pair_span / compute_tilt
 #include "autoc/eval/scenario_stepper.h"
 #include "autoc/eval/source_trajectory.h"
 #include "autoc/nn/evaluator.h"          // NNControllerBackend, TrackerHistoryWindow
@@ -40,26 +41,31 @@ namespace autoc::eval {
 
 class TrackerStepper : public ScenarioStepper {
 public:
+    // No parameter defaults per Constitution III + M2-era no-fallback
+    // policy: every caller passes every argument explicitly. Call sites:
+    // tests/tracker_stepper_init_tests.cc; the crrcsim worker mirrors this
+    // contract in CrrcsimTrackerHelper.
     TrackerStepper(NNControllerBackend& nn,
                    AircraftState& state,
                    const SourceScenarioTrajectory& source,
                    const ScenarioMetadata& scenario_meta,
-                   const CameraConfig& camera = CameraConfig{},
-                   const BeaconConfig& beacon_left = BeaconConfig{},
-                   const BeaconConfig& beacon_right = BeaconConfig{},
-                   const AirframeProxy& airframe = defaultAirframeProxyHB1(),
-                   const FlightArena& arena = FlightArena{},
-                   const CrashHull& crash_hull = CrashHull{},
-                   gp_scalar p_crash_this_gen = static_cast<gp_scalar>(0.0),
-                   uint32_t prng_seed = 0,
-                   gp_scalar trail_distance = static_cast<gp_scalar>(3.048));
+                   const CameraConfig& camera,
+                   const BeaconConfig& beacon_left,
+                   const BeaconConfig& beacon_right,
+                   const AirframeProxy& airframe,
+                   const FlightArena& arena,
+                   const CrashHull& crash_hull,
+                   gp_scalar p_crash_this_gen,
+                   uint32_t prng_seed,
+                   gp_scalar trail_distance,
+                   gp_scalar cep_gate_threshold);
 
     void initScenario() override;
     CrashReason stepOnce() override;
     unsigned long durationMsec() const override { return duration_msec_; }
 
     // 030 M8b — Per-tick recorded outputs for the v=2 dmp output stream.
-    // Populated by projectAndShiftHistory each step; minisim worker reads
+    // Populated by projectAndShiftHistory each step; the worker reads
     // after each successful step and push_backs into evalResults's
     // cameraViewList / targetTrajectoryList.
     const CameraViewSample& lastCameraView() const { return last_camera_view_; }
@@ -67,7 +73,7 @@ public:
 
     // 030 M7d.b — Crash-hull strike count for this scenario. 0 normally;
     // 1 if didCrashFire returned true (scenario terminates on first fire,
-    // so the count is bounded). Returned to minisim for hullStrikeCount[i].
+    // so the count is bounded). Returned to the worker for hullStrikeCount[i].
     int hullFiredCount() const { return hull_fired_count_; }
 
 private:
@@ -92,10 +98,11 @@ private:
     // seeded at construction time (deterministic across runs). On fire:
     // CrashReason::HullStrike, scenario terminates, hull_fired_count_++.
     CrashHull crash_hull_;
-    gp_scalar p_crash_this_gen_ = static_cast<gp_scalar>(0.0);
-    uint32_t prng_state_ = 0;
-    int hull_fired_count_ = 0;
-    gp_scalar trail_distance_ = static_cast<gp_scalar>(3.048);
+    gp_scalar p_crash_this_gen_;
+    uint32_t prng_state_;
+    int hull_fired_count_;
+    gp_scalar trail_distance_;
+    gp_scalar cep_gate_threshold_;
 
     // 6-slot beacon history per channel. Index 0 is oldest, index 5 is
     // "now". Shift-left on each push (cheap — 6 floats × 6 channels).

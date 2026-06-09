@@ -1,3 +1,22 @@
+<!--
+SYNC IMPACT REPORT
+Version change: 1.5.0 → 1.6.0 (MINOR — added Principle IX: Detached Training Launch)
+Modified principles: none
+Added sections:
+  - IX. Detached Training Launch — training MUST be started via scripts/train.sh (detached
+    session via setsid, reparented to systemd --user, nohup, line-buffered, cores enabled,
+    unique logfile). Assistants MUST NOT launch via the Bash-tool run_in_background mechanism,
+    which the harness reaps at agent-session end (silently killed t4 gen 278, t5 gen 152 on
+    2026-06-06). Codifies what was scattered in agent memory (reference_autoc_launch_command,
+    now retired in favor of this principle + the script).
+Removed sections: none
+Templates / dependent artifacts:
+  - .specify/templates/plan-template.md, tasks-template.md, spec-template.md — ✅ no change
+    needed (generic Constitution Check; no hardcoded launch steps).
+  - Agent memory: reference_autoc_launch_command.md retired (tossed); project_autoc_worker_crash
+    now defers to this principle for the launch fix.
+Follow-up TODOs: none
+-->
 # AutoC Constitution
 
 ## Core Principles
@@ -42,6 +61,20 @@ wrappers, re-exports, or unused variable renames. Every file must justify its ex
 The top-level CMakeLists.txt is the single source of truth. Shared dependencies (cereal,
 GoogleTest, inih) are declared once via FetchContent and inherited by subdirectories.
 crrcsim builds as `add_subdirectory(crrcsim)`. No duplicate dependency declarations.
+
+**Build discipline**: a change to `CMakeLists.txt` (a new target, dependency, link, or test
+registration) MUST be built with a clean `scripts/rebuild-perf.sh` (PERFORMANCE_BUILD,
+single-threaded for FP determinism) — NOT an incremental `cmake -S . -B build` reconfigure — so
+the optimized build, link graph, and `run_autoc_tests` registration regenerate coherently.
+Source-only edits use incremental `cmake --build build --target <t>`. The operator drives the
+clean rebuild.
+
+**Rationale**: an incremental reconfigure after a CMakeLists.txt edit can leave stale link state
+and miss test registration; `rebuild-perf.sh` is also the FP-deterministic basis for the
+bit-replay regression gate. This is the build-*coherence* rule and is distinct from the
+Principle II `rebuild.sh` compile-and-test correctness gate. The rule is binding here because
+agent memory (`feedback_incremental_build_default`) is advisory, not authoritative — the
+constitution is the single source.
 
 ### V. Versioned Persistence Artifacts
 
@@ -147,10 +180,101 @@ missed alias months later. The aliases exist precisely because that class of bug
 undetectable after the fact — the only defense is a pre-merge type-domain audit, and the
 audit is only tractable if the convention is universal in eval / nn / fitness code.
 
+### VII. No Silent Fallback Defaults
+
+Member variables that receive values from constructor parameters MUST NOT carry in-class
+default initializers. The constructor's initializer list is the single assignment site; if
+a new constructor omits a member, the compiler must flag it rather than silently falling
+back to a stale default.
+
+**Permitted exceptions** (must be annotated `// default-ok: <reason>` at the declaration):
+
+- Counters and accumulators that genuinely reset each use (e.g., `int count_ = 0;`)
+- Sentinel / flag states that have a universally correct initial value
+  (e.g., `bool prev_out_valid_ = false;`)
+
+**Rationale**: The 032 `cepGateThreshold` bug demonstrated this failure mode exactly.
+`evaluator.cc` and `tracker_stepper.cc` fell back to a hardcoded `1.25` default instead of
+reading the value from `WorkerInit`, producing correct-looking but semantically wrong
+results on any configuration where the operator had set a different threshold. The fallback
+was invisible — no compile error, no test failure, no runtime warning. Removing in-class
+defaults for constructor-supplied values ensures the compiler catches the omission.
+
+**Scope**: applies to all classes in the eval / nn / fitness / stepper pipeline where
+values flow from `WorkerInit`, `EvalData`, `ScenarioMetadata`, or `.ini` config. Does NOT
+apply to plain-old-data structs used purely as wire-format containers (e.g.,
+`TrackerHistoryWindow`), where zero-initialization via `{}` is the intended contract.
+
+### VIII. Training-Artifact Lifecycle & Retention
+
+S3-resident training artifacts (per-gen `.dmp` dumps) are storage that costs money and grows
+without bound. They MUST be ephemeral by default and preserved only by deliberate act.
+
+1. **Ephemeral by default.** Every uploaded run dump MUST be tagged `retain=expire` at
+   `PutObject` time and is auto-deleted by the bucket lifecycle policy 30 days after creation.
+   Training output is disposable unless explicitly promoted.
+2. **Explicit pinning.** A run is preserved only by tagging its objects `retain=keep`.
+   Milestones — flown controllers, M2/M3 source libraries, documented baselines — MUST be
+   pinned, and the pin recorded (with its S3 prefix) in the relevant spec's outcome report.
+3. **Provenance lives in the repo, not the bucket.** Flight reports and outcome docs cite the
+   exact S3 prefix; the bucket is not a system of record. A bucket that loses an unpinned run
+   to expiry MUST never lose the *knowledge* of a run that mattered.
+4. **Uniform naming, bucket-as-discriminator.** Per-mode buckets (`autoc-m1`, `autoc-m2`,
+   `autoc-eval`, future `autoc-m3`) hold artifacts under an **identical** run-id + filename
+   convention (`<run-id>/gen<N>.dmp[.zst]`); the bucket — not a name prefix — distinguishes
+   mode. Tools resolve "latest run / latest gen" through one shared, bucket-relative,
+   prefix-agnostic selector.
+5. **Compression on upload.** Dumps MUST be zstd-compressed at the serialization boundary once
+   the loader supports transparent inflation; the read path accepts both `.dmp.zst` and legacy
+   `.dmp`.
+6. **Fail-loud loader (reinforces VII).** The dump loader MUST error on a missing
+   `TrackerSourceRun` key rather than silently substituting a fallback. A dangling source
+   pointer is a hard stop, not a default.
+
+**Rationale**: `autoc-storage` reached ~868 GB / ~84% of the AWS bill before a tag-driven
+30-day retention scheme was installed (LETTER-s3-retention.md, 2026-06-02). The
+no-tag-never-deleted lifecycle is fail-safe by design — unmarked objects are never matched —
+so the risk is a milestone silently expiring, which (2) and (3) guard against by making pinning
+deliberate and provenance repo-resident. Compression (5) compounds with retention: ~3× on
+float-weight dumps on top of the 30-day cap.
+
+### IX. Detached Training Launch
+
+Training runs MUST be started via `scripts/train.sh <ini-file> <logfile>`. The script is the
+single authoritative launch path; it starts autoc:
+
+- **Detached** — `setsid` into its own session with no controlling tty, reparenting to
+  `systemd --user`, plus `nohup`. The run survives terminal/SSH teardown **and** agent-session
+  teardown.
+- **Line-buffered** — `nohup stdbuf -oL -eL <binary>` (stdbuf innermost), so `tail -f` sees
+  per-gen lines as they happen.
+- **Core-enabled** — `ulimit -c unlimited` for autoc and its inherited crrcsim workers.
+- **Non-clobbering** — refuses to overwrite an existing logfile; one unique log per run.
+  Multiple concurrent runs against the same ini are permitted (reduce per-run worker count as
+  needed).
+
+**Assistants/agents MUST NOT launch training via a session-bound mechanism** — specifically not
+the Bash-tool `run_in_background` task, nor a foreground shell job. Harness-tracked background
+tasks are owned by the agent session and are signalled dead (group SIGTERM/SIGKILL) when that
+session ends, clears, or is superseded.
+
+**Rationale**: runs t4 (died gen 278) and t5 (died gen 152) on 2026-06-06 were killed mid-run
+with **no error in the log, no core, and flat memory** — not a code bug. The log is the
+process's stderr, so an uncaught C++ throw would have printed `terminate called … what(): …`
+into it; it did not, and the log ended on a clean line. The harness background-task wrapper
+output was 0 bytes (vs the `… Aborted …` a genuine internal crash leaves), proving an external
+group signal: the harness reaping its own agent-owned background tasks. These were launched by
+the assistant via `run_in_background`; the operator's own `nohup … &` terminal launches never
+had the problem because they are owned by a long-lived login. `nohup` alone is insufficient
+(it only ignores SIGHUP, not the harness's SIGTERM/SIGKILL); the fix is full detachment via a
+non-tracked `setsid` launch — exactly what `scripts/train.sh` encapsulates. Core dumps are also
+re-enabled per-run because the system `ulimit -c` default was silently reset (driver/software
+update), leaving recent crashes with no core for diagnosis.
+
 ## Architecture
 
 - **C++17**, CMake, Eigen, cereal (serialization), GoogleTest
-- **Desktop** (train): autoc evolution engine + minisim or crrcsim FDM
+- **Desktop** (train): autoc evolution engine + crrcsim FDM (sole worker since 034; minisim retired)
 - **Embedded** (deploy): xiao — Seeed XIAO BLE Sense via PlatformIO
 - **Three components**: autoc (evolution), crrcsim (flight dynamics), xiao (embedded target)
 - **NN-only**: GP tree evolution has been removed. NN01 binary format is the sole controller format.
@@ -159,4 +283,4 @@ audit is only tractable if the convention is universal in eval / nn / fitness co
 
 Constitution supersedes all other practices. Amendments require documentation and rationale.
 
-**Version**: 1.2.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-05-06 (Principle VI added — Type-Domain Discipline)
+**Version**: 1.6.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-06-06 (Principle IX — Detached Training Launch: training MUST go through scripts/train.sh; never the agent's run_in_background)

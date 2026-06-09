@@ -1,0 +1,43 @@
+# .understandignore — patterns for files/dirs to exclude from analysis
+# Syntax: same as .gitignore (globs, # comments, ! negation, trailing / for dirs)
+#
+# Built-in defaults (always excluded): node_modules/, .git/, build/, obj/, *.lock, *.min.js, etc.
+#
+# Scope decision (2026-05-29): "Core autoc only" — the architecture authored in this repo.
+
+# --- Vendored / third-party FDM fork (CRRCSim) ---
+crrcsim/
+
+# --- Build artifacts ---
+build/
+xiao/.pio/
+xiao/build/
+xiao/src/generated/*
+
+# --- Feature spec / planning docs (historical planning artifacts, not architecture) ---
+specs/
+.specify/
+
+# --- Recorded flight logs / blackbox data (data artifacts, not architecture) ---
+flight-results/
+*.gpx
+*.event
+*.TXT
+
+# --- Tool's own output ---
+.understand-anything/
+
+# --- Binary / data / training artifacts ---
+*.dat
+*.stc
+*.csv
+*.pdf
+*.dmp
+nohup.out
+core.*
+
+# --- Logs ---
+logs/
+*.log
+*.pyc
+.claude/
