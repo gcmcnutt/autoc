@@ -1,6 +1,7 @@
 # 035 Outcome — Energy as a Lexicase Secondary Objective
 
-**Status**: M1 COMPLETE (2026-06-08). M2 pending (T037 bake from this build).
+**Status**: M1 COMPLETE (2026-06-08). M2 COMPLETE — qualitative (2026-06-08, t7; off-nominal
+scenario set, see M2 caveats). Clean M2 milestone bake deferred to the skip-fix (037 prework).
 
 ## M1 verdict: **ENERGY WORKS** (energy-lexicase, no tracking collapse)
 
@@ -71,7 +72,62 @@ aws s3api put-object-tagging --bucket autoc-m1 \
 ```
 **Pinned prefix:** `autoc-m1/autoc-9223370256079660488-2026-06-06T19:45:15.319Z/` (record here once tagged).
 
-## Next: M2 (T037)
-M2 energy bake (`autoc-tracker.ini`) from this same build — the lottery-prone mode and the real test
-of whether energy-as-lexicase generalizes. Compare vs the pinned M2 tracking-only baseline
-(032-phase1). Append the M2 verdict here.
+## M2 verdict: **ENERGY WORKS** (energy-lexicase generalizes to tracker mode — qualitative)
+
+Run **t7** = `s3://autoc-m2/` (tracker), `autoc-tracker.ini`, source `TrackerSourceRun=t6
+gen9200.dmp.zst` (the pinned M1 above), `LexicaseEpsilonMode=mad`, energy axis on, same seed family.
+Stopped early at **gen 207** ("close enough to proceed" — the qualitative verdict was clear; the run
+was not driven to convergence the way M1's 800-gen bake was).
+
+**Classification: M2 = energy-works.** Energy-as-lexicase did **not** collapse tracking in the
+lottery-prone tracker mode, and it produced the same energy-rational per-axis allocation as M1.
+
+### 1. No tracking collapse — energy generalizes to the harder mode
+Best climbed monotonically -4430 (gen 1) → -9258 (50) → -12143 (100) → **-14760** (207), with
+**268/294 scenarios completing** (12 hullStrike, 14 eval) and `avgMaxStreak` 9.0 / `pctInStreak` 8.5
+at the stop. Live recurrence held (`whh_xh_ratio` 0.66). This is the key US1 generalization result:
+the failure mode 027/028/033 feared (energy/smoothness pressure killing tracking) **did not occur**
+in tracker mode either.
+
+### 2. The energy signature in M2 is *smoothing*, not amplitude-shedding — and that's task-correct
+M1's energy win was throttle amplitude coming off the ceiling (`mag_throttle` 0.93 → 0.72). **M2 is
+different and instructive**: throttle climbed *to* the ceiling and stayed there (`mag_throttle` 0.20
+→ 0.94) but became **extremely smooth** — `dctrl_throttle` rose then fell hard to **0.088** (gen
+207), i.e. a near-constant high throttle, no pumping. The tracker task demands sustained power to
+chase a maneuvering target, so amplitude *can't* drop the way M1's could; instead energy-lexicase
+saved energy on the axis it still could — **change-rate** (no wasteful throttle pumping). Same
+objective, opposite-looking lever, both energy-rational for their task.
+
+### 3. Same per-axis allocation as M1 — roll carries the change-rate
+Per-axis at gen 207: `dctrl` pitch **0.61** / roll **1.38** / throttle **0.088**; `mag` pitch 0.86 /
+roll 0.83 / throttle 0.94. Identical pattern to M1: **lexicase smooths the energy-expensive axes
+(throttle especially, pitch moderately) and concentrates change-rate on roll** — the cheapest axis
+(aileron drag ≪ throttle power / induced drag) *and* the one whose bang-bang is the 10 Hz
+control-rate artifact (037 territory, not an objective failure). The allocation is selection-rule-
+caused and consistent across both modes — the headline result reproduces.
+
+### 4. Tracking quality vs baseline — comparable, NOT a clean win (and not claimed as one)
+The 034-m2 tracking baseline (gen 251, `autoc-034-m2-tracker-origm1`) reached `avgMaxStreak` **11.5**
+/ **278/294** / 9 hullStrike — *slightly better tracking* than t7's 9.0 / 268 / 12. But t7 ran
+**fewer gens (207 vs 251)** AND on the **off-nominal scenario set** (skip bug below), so this is not
+a fair head-to-head. The honest read is **"energy did not regress tracking out of the comparable
+band,"** not "energy improved tracking." A clean, converged M2 bake is needed for a real comparison.
+
+## M2 caveats (why this is qualitative, not a milestone)
+- **Off-nominal scenario set.** t7 ran with the short-source skip bug active (`c95887e`): the source
+  list was trimmed to 292 while the eval still iterated 294 slots, so `srcIdx = pathSelector %
+  sourceList.size()` reshuffled ~200 (variation, source) pairings and duplicated 2 sources. Tracking
+  quality numbers (268/294, hullStrike 12) are therefore **not clean or reproducible**. The
+  energy/per-axis *allocation* verdict is robust to this (it's a controller-behavior signature, not a
+  scenario-accounting artifact); the *tracking-quality* numbers are not.
+- **Stopped early (gen 207, n=1).** Not driven to convergence; M1 ran 800. Qualitative verdict only.
+- **Clean M2 milestone bake is deferred** to after the short-source skip fix (keep 294 1:1,
+  neutralize in place) — tracked as **037 prework** (`specs/037-20hz-control-loop/spec.md`,
+  "fix the short-source skip"). That rerun, not t7, is the pinnable M2 milestone.
+
+## Combined verdict
+**Energy-as-lexicase works in BOTH modes** — M1 (clean, converged, energy off the throttle ceiling)
+and M2 (qualitative, energy as throttle-smoothing under a power-hungry tracking task). The per-axis
+energy-rational allocation (smooth throttle+pitch, change-rate on cheap roll) reproduces across modes
+and is caused by the lexicase selection rule. US1 is satisfied. The remaining roll bang-bang is a
+control-rate artifact owned by 037, not an objective failure.
