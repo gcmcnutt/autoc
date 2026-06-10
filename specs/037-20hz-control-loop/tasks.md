@@ -416,6 +416,15 @@ T007, T008. T005 deferred to just-before-training (operator). Notes:
   throw/s) / tau_thrust 0.150 s, each Gaussian-drawn then CLAMPED to a positive physical range. Drawn
   values appear as new columns in the startup per-scenario variation table; sigmas auto-print via the
   config macro.
+- **Servo-composition fix (2026-06-09, found via the basic-m1 smoke test).** The first basic-m1 run
+  stalled (best plateaued, all-crash, avg flat) -- diagnosed to the servo filter COMPOUNDING slew x lag
+  (it slew-clamped the error THEN multiplied by the lag blend), so the effective servo rate was ~4x too
+  slow (~1.5 vs the intended 6 full-throw/s). Fixed in `fdm_larcsim.cpp`: exact dt-invariant lag
+  `1 - exp(-dt/tau)` with the slew cap applied to the lag STEP (independent, no compounding); tau sets the
+  response, slew only clips fast/large commands. Re-run is bit-deterministic (209/209 elite SAME, 0
+  diverged) and the population learns again. The smoke test also surfaced that the **thrust lag is
+  near-inert** -- it lags the `craftThrustScale` (~=1.0 multiplier), NOT the throttle->thrust path, so
+  spool-up fidelity is NOT yet modeled; left as a separate rework.
 
 **Determinism**: no new PRNG draws beyond the 3 appended craft draws (order unchanged); the FDM filter is
 pure dt arithmetic with per-scenario state reset. A no-variation run should differ from pre-037 only by
