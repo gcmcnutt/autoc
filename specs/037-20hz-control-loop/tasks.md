@@ -181,8 +181,9 @@ theory's (A)/(B) prediction.
   constants in the sim path). See research.md "T024 latency/jitter bundle status".
 - [X] T025 [US1] Build + verify tests pass (DONE 2026-06-10): clean `rebuild-perf.sh` (covers autoc +
   crrcsim) post-CMakeLists-change, then incremental `(cd build; make)` for the T005 follow-up — **all
-  34 suites green** under the perf build. The stage-1-commit (`9592dea`) 10 Hz bit-replay gate (T028)
-  remains operator-owned and OPEN.
+  34 suites green** under the perf build. The stage-1-commit (`9592dea`) 10 Hz bit-replay gate was
+  **WAIVED (operator 2026-06-10: "we are beyond 10 Hz now")** — 20 Hz is the baseline cadence going
+  forward; `9592dea` remains the checkout point if 10 Hz archaeology is ever needed.
 - [~] T026 [US1] Retrain M1 at 20 Hz — **RUNNING since 2026-06-10 11:38**:
   `scripts/train.sh autoc.ini logs/autoc-037-t6-m1-20hz.log` (pop 5000 / 800 gens / 6×49 scenarios /
   lexicase+MAD / seed 13337; dumps auto-tagged `retain=expire`). NOTE: "037-t6" is this 20 Hz bake;
@@ -192,8 +193,9 @@ theory's (A)/(B) prediction.
 - [ ] T027 [US1] Measure the gate with `dealias_metrics.py` (T002) on the run dmp vs t6 (fixed-eval per
   `project_late_run_fitness_interpretation`); confirm vs the T008 theory prediction. Record the go/no-go.
 - [ ] T028 [US1] **Milestone close**: type-domain grep audit on US1-touched `src/eval/ src/nn/` (Principle
-  VI per-milestone — annotate `// raw-ok:` or convert) + operator-driven bit-replay regression gate at
-  the unchanged 10 Hz config (no regression from the refactor).
+  VI per-milestone — annotate `// raw-ok:` or convert). The 10 Hz bit-replay leg is **WAIVED**
+  (operator 2026-06-10 — committed to 20 Hz; the smoke runs t4/t5 are the refactor's behavioral
+  evidence, and `9592dea` is the archaeology checkout if ever needed).
 
 **Checkpoint (MVP)**: a defended smooth-vs-relocate verdict at a hardware-projected cadence, clean per
 the constitution. **Clears → US1b (M2) and/or US2; persists → US3; not a clear win → STOP** before
@@ -479,5 +481,7 @@ stages so the 10 Hz bit-replay gate has a clean point:
   Killed at gen 173. Details in finding.md.
 - **T005 landed** (06364cd) after live dmp-dump reconstructability verification on the t5 dmp.
 - **T026 bake LAUNCHED 11:38**: `autoc-037-t6-m1-20hz` (pop 5000 / 800 gens / 294 scenarios).
-  Expect ~2× per-gen cost late-run (2000-tick scenarios). T028's 10 Hz bit-replay gate vs `9592dea`
-  still operator-open. Next: T027 `dealias_metrics.py` vs the 035-t6 recorded metrics.
+  Expect ~2× per-gen cost late-run (2000-tick scenarios). Gen 1-2 healthy: spread
+  -2280/-1251/-1004 on the historical scale, elite bit-SAME, ~75 s/gen, slim log confirmed.
+  **10 Hz bit-replay gate WAIVED** (operator: beyond 10 Hz now). Next: T027 `dealias_metrics.py`
+  vs the 035-t6 recorded metrics.
