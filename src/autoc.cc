@@ -1321,43 +1321,17 @@ static void runNNEvolution(
                    << "  Sigma=" << pop.individuals[bestIdx].mutation_sigma
                    << endl;
 
-    // Log per-scenario decomposition for best individual
+    // 037 T005 — per-scenario [N] OK/CRASH lines + tracker per-scenario
+    // diagnostics DROPPED from the training log (294 lines/gen). The elite
+    // per-scenario data is fully reconstructable from the gen .dmp via
+    // `dmp-dump --meta-only` (crash_reason, score, energy/stability,
+    // max_streak, streak_steps, max_multiplier, steps — verified against the
+    // t5 run 2026-06-10). Per-gen #NNGen/#GenCrash/#GenSimStats summaries
+    // below are unchanged. The one-shot EVAL-mode breakdown (evalGenome)
+    // keeps its per-scenario block. Per
+    // memory:project_dmp_driven_analytics_backlog.
     const auto& bestScores = pop.individuals[bestIdx].scenario_scores;
-    const bool isTrackerModeLoop = (cfg.mode == "tracker");
-    if (!bestScores.empty()) {
-      *logger.info() << "  Scenarios: ";
-      for (size_t s = 0; s < bestScores.size(); s++) {
-        const auto& sc = bestScores[s];
-        *logger.info() << "  [" << s << "] "
-                       << (sc.crashed ? "CRASH" : "OK")
-                       << " reason=" << crashReasonToString(sc.crashReason)
-                       << " score=" << std::fixed << std::setprecision(2) << -sc.score
-                       << " maxStrk=" << sc.maxStreak
-                       << " strkSteps=" << sc.totalStreakSteps
-                       << " maxMult=" << std::setprecision(1) << sc.maxMultiplier
-                       << endl;
-        // 030 M11.wrap T088 + 327-330 — tracker-mode per-scenario diagnostics.
-        if (isTrackerModeLoop) {
-          const auto& d = sc.tracker_diag;
-          *logger.info() << "      "
-                         << "vis=" << std::fixed << std::setprecision(2) << d.vis_frac
-                         << " inRamp=" << d.in_fit_ramp_frac
-                         << " rng=[" << std::setprecision(1)
-                         << d.range_min << "/" << d.range_med << "/" << d.range_p95 << "]"
-                         << " loss=[far=" << d.loss_geom_too_far
-                         << " ang=" << d.loss_geom_angle
-                         << " over=" << d.loss_geom_overshoot
-                         << " hull=" << d.loss_hull << "]"
-                         << " over[flips=" << d.closure_flips
-                         << " maxClose=" << std::setprecision(1) << d.max_closure_rate << "]"
-                         << " fwd[lostMax=" << d.max_lost_sight_run
-                         << " spiral=" << std::setprecision(3) << d.spiral_ratio
-                         << " thrPt=" << std::setprecision(1) << d.thrash_rate_pt
-                         << " thrRl=" << d.thrash_rate_rl << "]"
-                         << endl;
-        }
-      }
-    }
+    const bool isTrackerModeLoop = (cfg.mode == "tracker");  // #GenDiag (M2-only) below
 
     // Streak + stability + energy diagnostics for best individual.
     // stability and energy are SUMS of per-scenario scores (additive across

@@ -97,3 +97,39 @@ Hypothesis to test: at 20 Hz the NN **finesses** the realistic servo (smoother c
 tighter tracking, command de-alias) where 10 Hz **brute-forces** it. Before trusting
 the de-alias gate, resolve the servo-param skepticism above. The env-only-ramp baseline
 (to be re-run) is the 10 Hz reference for the comparison.
+
+## 20 Hz smoke runs (t4 FAIL / t5 PASS, 2026-06-10)
+
+**t4 (`autoc-037-t4-basic-m1-20hz`) — FAILED, found the second flip bug.** All 3000
+individuals scored an IDENTICAL -96.508202 (best=avg=worst, flat across gens, all-crash):
+NN commands never reached the surfaces. Root cause: the pending-command apply sat at the
+END of `getInputData`, AFTER eval staging — fine at `framesPerEval=2` (the eval frame
+staged, the in-between frame applied) but at `framesPerEval=1` (20 Hz) every frame
+re-staged `gPendingCommand` (pushing `readyTimeMsec` forward) before the apply could
+fire. **Fixed crrcsim `f81fd31`**: apply moved to frame top — behavior-identical at
+10 Hz, correct at any framesPerEval. (Pattern echo of the 36a94f3 servo bug: cadence
+plumbing that only ever ran at one rate hides order-of-operations bugs; the basic-m1
+smoke run caught both.)
+
+**t5 (`autoc-037-t5-basic-m1-20hz`) — PASS, 20 Hz learner validated.** pop 3000 /
+16 winds, perf build (autoc `c4767ed` + crrcsim `f81fd31`):
+
+| gen | t2 best (10 Hz) | t5 best (20 Hz) |
+|----:|----:|----:|
+| 1   | -187 | -201 |
+| 80  | ~-206 | -256 |
+| 120 | ~-175 | -280 |
+| 160 | -246  | **-403** |
+
+- Gen-1 magnitudes land on the historical scale (tick-rescale anchoring works:
+  best/avg/worst -201/-86/-66 vs t2's -187/-81/-62).
+- The climb starts EARLIER and goes FARTHER than 10 Hz — by gen 160 t5 is past where
+  t2 finished at gen 280 (-277). Consistent with the RT case-A prediction (50 ms tick
+  samples the 192 ms roll pole instead of aliasing it). ~9.5 s/gen (2000-tick scenarios
+  did not hurt wall-clock at this pop).
+- Killed at gen 173 (best -392.2) — diagnostic complete.
+
+**Open for the bake comparison**: the env-only-ramp 10 Hz reference re-run (above) never
+happened — we flipped to 20 Hz instead, and HEAD can no longer run 10 Hz without a
+checkout. De-alias gate (T027) uses the recorded 035-t6 metrics per Q1/Q3; if a
+matched-config 10 Hz reference is wanted, run it from stage-1 commit `9592dea`.

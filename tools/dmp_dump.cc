@@ -377,6 +377,12 @@ int main(int argc, char** argv) {
       std::cout << "    energy_score: " << s.energy_score << "\n";
       std::cout << "    stability_score: " << s.stability_score << "\n";
       std::cout << "    max_streak: " << s.maxStreak << "\n";
+      // 037 T005 — streak_steps + max_multiplier complete the per-scenario
+      // reconstructability set: with these, the dmp carries everything the
+      // training log's per-scenario [N] OK/CRASH lines carried, so those
+      // lines can be dropped from the log.
+      std::cout << "    streak_steps: " << s.totalStreakSteps << "\n";
+      std::cout << "    max_multiplier: " << s.maxMultiplier << "\n";
       std::cout << "    steps: " << s.steps_completed << "/" << s.steps_total << "\n";
     }
   }
