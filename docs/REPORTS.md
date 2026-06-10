@@ -8,7 +8,9 @@ the pre-035 `data.dat`-fed scripts are historical and untouched.
 ## Naming
 Artifacts collate lexicographically as `autoc-<feature>-t<N>-<details>`, e.g.
 `autoc-035-t4-m1-energy` — `t<N>` is the Nth experiment in the feature. Pass it
-as the plot `--label`/`--run-name`; output PNGs are `<name>_<report>.png`.
+as the plot `--label`/`--run-name`; output PNGs are `<name>_<report>.png` and
+land in the run's **feature** dir (`specs/<feature>/`), even when the script
+invoked lives in an earlier feature's dir.
 
 ## Inputs
 - **Run `.log`** (in `logs/`, gitignored) — carries `#NNGen` (per-gen best/avg/
@@ -35,11 +37,19 @@ GEN=$(grep '#NNGen gen=' "$LOG" | tail -1 | grep -oE 'gen=[0-9]+' | cut -d= -f2)
 
 **1. evolution_progress** (fitness/streak/sigma + crash panel) — from the `.log`:
 ```bash
-python3 specs/034-energy-objective-cleanup/plot_evolution_progress.py \
+# 037+ runs (T005 slimmed the log — crash panel now parses #GenCrash):
+python3 specs/037-20hz-control-loop/plot_evolution_progress.py \
   --focus "$NAME:$LOG" --run-name "$NAME" --crash-log "$LOG" \
   --total-gens 800 --out $D/${NAME}_evolution_progress.png
+# pre-037 logs (which still carry per-scenario [N] CRASH/OK lines): use
+# specs/034-energy-objective-cleanup/plot_evolution_progress.py unchanged.
 ```
-> `--crash-log` is required for the crash-rate panel (parses `#GenCrash`).
+> `--crash-log` is required for the crash-rate panel. **037 T005 removed the
+> per-scenario `[N] CRASH/OK` lines from the training log**, so the 037 script
+> derives the panel from the per-gen `#GenCrash` summary (crashes = hullStrike
+> + eval + sim + boot). Per-scenario detail now lives only in the dmp
+> (`dmp-dump --meta-only`: crash_reason, score, energy/stability, max_streak,
+> streak_steps, max_multiplier, steps).
 
 **2. per_axis_aggressiveness** (6-panel histogram + budget goal lines) — one gen,
 from `--csv-only`:
@@ -86,6 +96,10 @@ fitness → controllers survive longer → more sim-timesteps per eval → longe
 | 0 (all crash)  | ~67 s  | −1205 |
 | 250–290        | ~144 s | −3876 |
 | 290–295        | ~188 s | −6906 |
+
+> Table is the 10 Hz era (035-t6). At 20 Hz (037+) expect ~+20% duration at the
+> same regime (FDM substep cost is duration-based and unchanged; NN/RPC/recording
+> double): 037-t6 all-crash gens run ~75–80 s at the same pop 5000 / 294.
 
 Uses:
 - **Watch the slowing gen time as a live progress signal** — rising duration = still improving; a
