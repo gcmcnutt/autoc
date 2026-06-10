@@ -1,41 +1,66 @@
-// 037 T003 -- tick-rescale test scaffolding (skeleton).
+// 037 T015 -- tick-rescale tests (fills the T003 skeleton).
 //
-// Purpose (filled in by 037 T015):
-//   1. closing_rate for a known dDist is correct at two different control
-//      intervals -- i.e. the rate uses the ACTUAL dt, never a hardcoded 0.1f
-//      (037 T019 replaces the divisor in src/nn/evaluator.cc).
-//   2. the engage-delay tick count equals ceil(EngageDelayMs / controlIntervalMsec)
-//      at 10 / 20 / 50 Hz -- duration rate-independent (037 T020).
-//
-// This is a SKELETON (T003): registers the TU + CMake target. Real assertions
-// land in T015, which removes the GTEST_SKIP. Until then the case is SKIPPED
-// (not failed) so `run_autoc_tests` stays green.
-//
-// Per specs/037-20hz-control-loop/contracts/cadence-config.md "Tick-rescale".
+// Contract (contracts/cadence-config.md "Tick-rescale"):
+//   1. closing_rate for a known dDist is correct -- the rate divides by the
+//      ACTUAL history lag gap (100 ms by the R5 lag table), never an
+//      implicit one-tick assumption (037 T019). The test is written against
+//      physical values (m/s) so it holds at ANY compiled SIM_TIME_STEP_MSEC.
+//   2. the engage-delay tick count equals ceil(EngageDelayMs /
+//      controlIntervalMsec) at 10 / 20 / 50 Hz -- duration rate-independent
+//      (037 T020, shared engageDelayTicks helper in aircraft_state.h).
 
 #include <gtest/gtest.h>
+
 #include <cmath>
+
+#include "autoc/eval/aircraft_state.h"  // AircraftState, engageDelayTicks, SIM_TIME_STEP_MSEC
+#include "autoc/nn/evaluator.h"         // gather_pathgen_inputs
+#include "autoc/nn/nn_inputs.h"         // NNInputs
 
 namespace {
 
-// The rate-independent engage-delay formula under test (T020 will move the
-// real implementation into the stepper; this documents the contract).
-constexpr int engageDelayTicks(int engageDelayMs, int controlIntervalMsec) {
-  return (engageDelayMs + controlIntervalMsec - 1) / controlIntervalMsec;  // ceil
-}
+TEST(TickRescale, ClosingRateUsesActualLagDt) {
+  AircraftState st{0,
+                   20.0f,
+                   gp_vec3(20.0f, 0.0f, 0.0f),
+                   gp_quat::Identity(),
+                   gp_vec3::Zero(),
+                   0.0f,
+                   0.0f,
+                   0.0f,
+                   0};
 
-TEST(TickRescale, ClosingRateUsesActualDt) {
-  GTEST_SKIP() << "037 T015: closing_rate correct at two intervals -- pending "
-                  "T019 (replace hardcoded /0.1f with dt).";
+  // Linear approach at a known closing rate; fill the WHOLE history ring so
+  // every lag slot holds real (not warm-up-clamped) samples.
+  const double kClosingRate_mps = 20.0;
+  const double stepSec = SIM_TIME_STEP_MSEC / 1000.0;
+  const int n = AircraftState::HISTORY_SIZE + 4;
+  for (int k = 0; k < n; ++k) {
+    const double dist = 500.0 - kClosingRate_mps * stepSec * k;
+    st.recordErrorHistory(gp_vec3::UnitX(), static_cast<gp_scalar>(dist),
+                          static_cast<unsigned long>(k) * SIM_TIME_STEP_MSEC);
+  }
+
+  Path dummy{};
+  SinglePathProvider provider(dummy);
+  NNInputs in{};
+  gather_pathgen_inputs(provider, st, in);
+
+  // Positive = approaching; must recover the physical rate regardless of the
+  // compiled control interval (the lag pair spans 100 ms at every rate).
+  EXPECT_NEAR(kClosingRate_mps, in.closing_rate, 1e-3);
 }
 
 TEST(TickRescale, EngageDelayTicksRateIndependent) {
-  GTEST_SKIP() << "037 T015: assert engageDelayTicks(750, {100,50,20}) -- "
-                  "pending T020 engage-delay implementation.";
-  // Sketch of the intended assertions (kept compiled-but-skipped):
-  EXPECT_EQ(engageDelayTicks(750, 100), 8);
-  EXPECT_EQ(engageDelayTicks(750, 50), 15);
-  EXPECT_EQ(engageDelayTicks(750, 20), 38);
+  // 750 ms measured INAV handoff at 10 / 20 / 50 Hz.
+  EXPECT_EQ(8, engageDelayTicks(750, 100));   // ceil(7.5)
+  EXPECT_EQ(15, engageDelayTicks(750, 50));   // exact
+  EXPECT_EQ(38, engageDelayTicks(750, 20));   // ceil(37.5)
+
+  // Edges: zero delay = no window; sub-tick delay rounds up to one tick.
+  EXPECT_EQ(0, engageDelayTicks(0, 100));
+  EXPECT_EQ(1, engageDelayTicks(1, 100));
+  EXPECT_EQ(1, engageDelayTicks(100, 100));
 }
 
 }  // namespace

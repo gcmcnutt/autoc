@@ -383,7 +383,18 @@ Format per item: **Decision / Rationale / Alternatives considered / Output**.
   gate (T026/T027). These three new axes make that gate *honest* (an infinite-bandwidth actuator would
   over-state how cleanly 20 Hz de-aliases) but do not substitute for it.
 
-## R1. Projected cadence from candidate hardware (OPEN — gates the rate)
+## R1. Projected cadence from candidate hardware (DECIDED 2026-06-10 — 20 Hz for the Phase-A sim arm)
+
+> **DECISION (operator 2026-06-10): get going with 20 Hz now.** The Phase-A sim retrain runs at
+> **20 Hz (50 ms)**. Rationale: (a) RT verdict is GO with roll = case A (aliasing-dither), and the
+> Nyquist/τ_roll argument already justifies 2× over 10 Hz (τ_roll ≈ 192 ms vs the 100 ms tick);
+> (b) 20 Hz is the rate the existing hardware loop already *sends* at (`MSP_LOOP_INTERVAL_MSEC=50`,
+> `MSP_NN_EVAL_DIVISOR=2`), so the embedded path (US2) needs no new transport to reach it;
+> (c) the cadence triple holds with the **unchanged** sim config — `video.fps=20`, `Global::dt=0.005`
+> ⇒ cycleLength 50 ms, framesPerEval 1, and FDM oversample = (1/0.005)/(20 Hz) = 10× (meets the ≥10×
+> contract floor exactly; the 2 kHz FDM bump is deferred to the US3 50 Hz arm which requires it).
+> R2 (camera grid) and R3 (transport ceiling) stay OPEN — they gate the Phase-B *flown* rate and the
+> 50 Hz ceiling, not the sim go/no-go, and 20 Hz is reachable on today's link as measured.
 
 - **Decision (to produce)**: a **projected NN loop rate** (the cadence we'd actually fly) + a per-part
   clock table. Not pre-picked to 20/40/48 — **projected from what candidate/similar hardware can sustain**
@@ -446,7 +457,35 @@ Format per item: **Decision / Rationale / Alternatives considered / Output**.
 - **Output**: on-target `DWT->CYCCNT` numbers for (a) MACs, (b) +tanh (`expf` vs poly/LUT), (c) +gather,
   for M1 (1923 w) and M2 (2595 w); off-target op-counter cross-check; fp32 kept for parity.
 
-## R5. History time-basis (OPEN — settle in the Phase-A retrain)
+## R5. History time-basis (DECIDED 2026-06-10 — ms-based log-spaced lags, slot count unchanged)
+
+> **DECISION (2026-06-10, T012): history lags are defined in MILLISECONDS, log-spaced (octaves),
+> with the slot count kept at 6:**
+>
+> `kNNHistoryLagsMsec[6] = {1600, 800, 400, 200, 100, 0}`  (slot order TM5…NOW, oldest first)
+>
+> Tick offsets derive at compile time: `lagMsec / SIM_TIME_STEP_MSEC`, static_assert-ed integral.
+> At 50 ms ticks → `{32,16,8,4,2,0}`; at the legacy 100 ms tick the same set is `{16,8,4,2,1,0}` —
+> the lag set is genuinely **time-based and rate-invariant** across the 10/20 Hz family (50 Hz:
+> `{80,40,20,10,5,0}`).
+>
+> - **Window grows 0.5 s → 1.6 s** (the R5 complaint was the window being far too short vs
+>   lost-sight runs); recent motion keeps 100 ms granularity (lags 0/100/200 ms) for
+>   derivative quality, the far tail (400/800/1600 ms) carries trend.
+> - **`NN_INPUT_COUNT` stays 33 (M1) and 54 (M2)** — no topology/weight-count change, no nn2cpp or
+>   xiao layout churn; T021/T022 reduce to lag-index + ring-depth changes. Chosen over the
+>   Fibonacci 7-slot example (window only 0.65 s, count churn for no window gain).
+> - **Derivatives use the actual lag gap**: closing_rate and span_rate are computed over the
+>   NOW↔TM1 gap = 100 ms at every rate (so closing_rate keeps its historical 10 Hz semantics
+>   exactly; span_rate changes from a raw one-tick diff to a true per-second rate — M2 retrains
+>   from scratch anyway).
+> - **Fail-loud (Principle V)**: counts don't change, so the count check can't catch the semantic
+>   change. A `kNNHistoryLayoutVersion = 2` marker is serialized in the per-state NN block and
+>   checked on read (v1 = uniform tick lags {5..0}; old dmps throw a layout error — same
+>   no-backward-compat pattern as 030 M9.preA).
+> - Error-ring depth derives from the max lag: `HISTORY_SIZE = 1600/SIM_TIME_STEP_MSEC + 1`
+>   (= 33 at 50 ms). Tracker mirrors keep the 6-slot `TrackerHistoryWindow` as the gather view,
+>   materialized from a deeper per-stepper ring at the same lag offsets.
 
 - **Decision (lean, to confirm in retrain)**: move history to **time-based / log-spaced lags**, choosing
   N on a *time* basis — not "just add slots." Current: M1 6 slots (`nn_inputs.h:36-58`), M2 `span[6]` +
@@ -503,3 +542,37 @@ The cadence change is **not just the interval constant**. Confirmed per-tick/cad
 
 **Comparison discipline**: per `project_late_run_fitness_interpretation`, compare rates with fixed-eval
 and the variation-stable per-axis dctrl/sign-flip comparators, not raw training fitness.
+
+### T013 sign-off — full-tree buried-time-constant sweep (2026-06-10)
+
+Audit table above confirmed against code, with these ADDITIONS found by the sweep:
+
+| Term | Site | Verdict |
+|---|---|---|
+| **main per-tick path score** | `fitness_decomposition.cc:170` `accumulatedScore += multipliedScore` | **MISSING from the original table — must rescale.** stepPoints is a per-tick sample of instantaneous geometry; at 20 Hz the total ~doubles while `SIM_CRASH_PENALTY=300` stays fixed, silently halving the crash penalty's relative weight and breaking t6 comparability (Q1/Q3 gate needs "tracking within noise of t6"). Fix: `× kCadenceTickScale` alongside stability/energy. |
+| rescale anchor | (design) | Rescale anchor is **`kCadenceTickScale = SIM_TIME_STEP_MSEC/100`** (100 ms-tick-equivalent units), NOT `×dt` seconds: ×1.0 at 10 Hz is bitwise-exact (regression gate holds), totals stay on the historical scale, and the constant lexicase epsilon 0.5 (`project_lexicase_mad_epsilon`) keeps its meaning. |
+| M2 source-tick spacing | `tracker_stepper.cc:238-242` (and crrcsim mirror) | **NEW FINDING**: stepper advances chase one `SIM_TIME_STEP_MSEC` per **source tick**; source dmps are 10 Hz-recorded, so at 20 Hz an old source library plays the target at 2× speed *silently*. Fix: fail-loud spacing check (`SourceTickSample.simTimeMsec` deltas vs `SIM_TIME_STEP_MSEC`). M2 (US1b) needs a fresh 20 Hz source bake — already implied by the gate chain. |
+| rabbit speed-profile resolution | `variation_generator.h:221` `cycleDuration / 0.1` | **NO CHANGE** — waypoint resolution of a cosine-eased profile that is *time-interpolated* on read (`getSpeedAtTime`); cadence-independent geometry, and changing it would shift PRNG-independent profile shape. |
+| `MAX_OFFSET_STEPS = 10` | `aircraft_state.h:104` | **Dead constant** (no usages anywhere). Derive from time anyway (±1 s) so it can't rot if revived. |
+| `SIM_MAX_INTERVAL_MSEC` | `aircraft_state.h:42` | Already `SIM_TIME_STEP_MSEC × 5` — scales automatically. |
+| thrust lag blend | `fdm_larcsim.cpp:605` `min(1, dt/thrustTau)` | Linear blend vs servo's exact `1−exp(−dt/τ)`: at substep dt=5 ms / τ=150 ms the difference is 1.6% and the FDM substep doesn't change at 20 Hz — **not a cadence hazard**. Real gap (already in finding.md): thrust lag lags `craftThrustScale` (a ≈1.0 multiplier), not the throttle→thrust path, so spool-up is effectively unmodeled. Separate rework, not 037-blocking. |
+| engage delay | `inputdev_autoc.cpp:628` | Already `ceil(ms/interval)` rate-independent in crrcsim **pathgen** branch; tracker branch (both mirrors) has NO engage window — T020 adds it. |
+| servo/IMU sensor filters | (sweep) | No LPF/alpha constants in the sim command path; PidInternals is captured-but-inert (no live ACRO PID in sim). The `rc/gyro/dterm_lpf` cutoffs in T024 are INAV-side → Phase B. |
+| `SIM_TOTAL_TIME_MSEC = 100 s` | `aircraft_state.h:40` | Time-based, stays. Note: 2000 ticks/scenario at 20 Hz ⇒ ~2× eval compute per scenario (training wall-clock impact; operator may choose to shorten scenarios — NOT changed here). |
+| xiao firmware | `xiao/include/main.h:24-25` | `MSP_LOOP_INTERVAL_MSEC=50` already; `MSP_NN_EVAL_DIVISOR` 2→1 is **T039 (Phase B, gated)** — untouched now. |
+
+### Servo-constant provenance resolution (operator question 2026-06-10)
+
+The "90 ms vs 0.15 s" servo discrepancy **dissolves on inspection — three different constants**:
+
+- **τ_srv = 0.020 s** is the servo first-order lag (center; per-scenario draw 5–50 ms). Introduced
+  9c88216; anchored on the ≤17 ms blackbox sample floor + ~12 ms bench cmd→gyro + 50 Hz-servo
+  mechanics. *Upper estimate; bench step-test still TODO (finding.md).*
+- **~90 ms** is the **measured lumped cmd→roll-rate lag-to-peak** from the 13-flight xcorr
+  (median 101 ms, range 83–117): ≈ transport (≤17 ms) + servo (~20 ms) + roll build-up (~60-70 ms
+  of the τ_roll ≈ 192 ms airframe pole). It is a *composite measurement*, not a model constant —
+  and it **validates** the τ_srv-in-front-of-τ_roll decomposition.
+- **0.150 s is `tau_thr`** — the thrust/spool-up lag center (flight evidence: 477 ms 63% ground-speed
+  rise on the 2026-04-03 step, conservatively attributed mostly to airframe mass), NOT a servo
+  number. Pre-037 the FDM had **no** servo or thrust lag at all, so 0.15 was never an FDM-native
+  servo constant either.

@@ -41,6 +41,28 @@
 #define SIM_TIME_STEP_MSEC (100)
 #define SIM_MAX_INTERVAL_MSEC (SIM_TIME_STEP_MSEC * 5)
 
+// 037 T018 — cadence rescale anchor. Per-tick fitness accumulators
+// (path score, stability, energy) multiply by this so totals are
+// denominated in 100 ms-tick-equivalent units at ANY control rate:
+// ×1.0 at the historical 10 Hz (bitwise-exact no-op — the FP regression
+// gate holds), ×0.5 at 20 Hz, ×0.2 at 50 Hz. Anchored to the historical
+// tick rather than to seconds so totals stay on the t6 scale and the
+// constant lexicase epsilon (0.5) keeps its meaning
+// (project_lexicase_mad_epsilon). Parameterized form exists for the
+// cadence-invariance tests; production uses the compile-time constant.
+constexpr double cadenceTickScale(unsigned long intervalMsec) {
+  return static_cast<double>(intervalMsec) / 100.0;
+}
+constexpr double kCadenceTickScale = cadenceTickScale(SIM_TIME_STEP_MSEC);
+
+// 037 T020 — rate-independent engage-delay window (023 contract):
+// ticks = ceil(delayMsec / intervalMsec), so the coast DURATION is the
+// same wall-clock at every control rate. Shared by the crrcsim pathgen
+// branch, both tracker-stepper mirrors, and tick_rescale_tests.cc.
+constexpr int engageDelayTicks(unsigned long delayMsec, unsigned long intervalMsec) {
+  return static_cast<int>((delayMsec + intervalMsec - 1) / intervalMsec);
+}
+
 /*
  * some generic path information about routes
  */
