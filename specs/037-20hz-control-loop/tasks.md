@@ -78,10 +78,11 @@ These are independent of the Phase-0 research and can run in parallel with it.
   runs, so the skip footprint (touching fitness_decomposition/selection/#Gen) wasn't worth it. Touch
   `src/autoc.cc` only (keep-all + warn). **Gate: must precede any clean M2 bake** (035 M2 rerun / US1b).
   Tracker-mode only; doesn't affect M1.
-- [ ] T005 [P] **P2 — slim the autoc training logfile**: drop the per-scenario `[N] OK/CRASH` lines
-  (294/gen) + per-scenario decomposition from the autoc training `.log`, **only after verifying** the
-  elite per-scenario data is reconstructable from the gen `.dmp` via `dmp-dump`. Keep the per-gen
-  `#NNGen`/`#GenCrash`/`#GenSimStats` summary. (`project_dmp_driven_analytics_backlog` direction.)
+- [X] T005 [P] **P2 — slim the autoc training logfile** (DONE 2026-06-10, commit 06364cd): per-scenario
+  `[N] OK/CRASH` + tracker-diag lines dropped from the training loop. Reconstructability verified FIRST
+  against the live t5 S3 dmp; `dmp-dump --meta-only` gained the two missing fields (streak_steps,
+  max_multiplier). Per-gen `#NNGen`/`#GenCrash`/`#GenSimStats`/`#GenDiag` summaries + the eval-mode
+  one-shot breakdown unchanged. (`project_dmp_driven_analytics_backlog` direction.)
 - [X] T006 [P] **P1 — tighten the entry-variation envelope**: in `include/autoc/util/config.h:63,65` set
   `entryConeSigma 30→18` (⇒ 2.5σ = 45°) and `entrySpeedSigma 0.10→0.05–0.06` (⇒ 2.5σ ≈ 12.5–15%); clamp
   stays 2.5σ — do NOT add a new hard cap (existing `kEntryConeMaxRad=80°` becomes moot). Update the
@@ -178,14 +179,16 @@ theory's (A)/(B) prediction.
   truth, fits the 50 ms tick; re-measure at T010); cadence-jitter DEFERRED (needs a per-tick-PRNG
   determinism design pass); PID filter cutoffs are INAV-side → Phase B T034 (sweep found no live LPF
   constants in the sim path). See research.md "T024 latency/jitter bundle status".
-- [ ] T025 [US1] Build + verify tests pass: incremental build done 2026-06-10, **all 34 suites green**
-  (includes new nn_layout_tests; CMakeLists changed → operator-driven `rebuild-perf.sh` required,
-  Constitution IV). Operator still owns the clean `rebuild.sh` + the stage-1-commit 10 Hz bit-replay
-  gate (T028) + crrcsim rebuild (`crrcsim/build && make -j8`).
-- [ ] T026 [US1] Retrain M1 at the projected rate with the bundle (after T004/T006 prework) via
-  `scripts/train.sh <ini> <logfile>` (Principle IX — never agent `run_in_background`); name
-  `autoc-037-t<N>-m1-<rate>...` (`feedback_artifact_naming_convention`); tag dumps `retain=expire`
-  (Principle VIII).
+- [X] T025 [US1] Build + verify tests pass (DONE 2026-06-10): clean `rebuild-perf.sh` (covers autoc +
+  crrcsim) post-CMakeLists-change, then incremental `(cd build; make)` for the T005 follow-up — **all
+  34 suites green** under the perf build. The stage-1-commit (`9592dea`) 10 Hz bit-replay gate (T028)
+  remains operator-owned and OPEN.
+- [~] T026 [US1] Retrain M1 at 20 Hz — **RUNNING since 2026-06-10 11:38**:
+  `scripts/train.sh autoc.ini logs/autoc-037-t6-m1-20hz.log` (pop 5000 / 800 gens / 6×49 scenarios /
+  lexicase+MAD / seed 13337; dumps auto-tagged `retain=expire`). NOTE: "037-t6" is this 20 Hz bake;
+  the *de-alias baseline* "t6" in dealias_metrics.py is the 035 run `autoc-035-t6-m1-energy` — don't
+  conflate. Preceded by smoke runs t4 (FAIL → crrcsim f81fd31 command-starvation fix) and t5 (PASS,
+  climbs earlier/farther than 10 Hz — see finding.md).
 - [ ] T027 [US1] Measure the gate with `dealias_metrics.py` (T002) on the run dmp vs t6 (fixed-eval per
   `project_late_run_fitness_interpretation`); confirm vs the T008 theory prediction. Record the go/no-go.
 - [ ] T028 [US1] **Milestone close**: type-domain grep audit on US1-touched `src/eval/ src/nn/` (Principle
@@ -466,3 +469,15 @@ stages so the 10 Hz bit-replay gate has a clean point:
   per Q3, no replay. Old M2 source libraries fail loud on spacing — US1b needs a fresh 20 Hz
   source bake (already implied by the gate chain).
 - xiao untouched (Phase B): `MSP_NN_EVAL_DIVISOR` stays 2 until T039.
+
+**Update (later 2026-06-10): smoke runs + T005 + bake launch.**
+- **t4 smoke FAIL** → second flip bug found+fixed (crrcsim `f81fd31`): pending-command apply ran
+  after eval staging, so at framesPerEval=1 commands never reached the surfaces (3000 identical
+  fitnesses). Apply moved to frame top; behavior-identical at 10 Hz.
+- **t5 smoke PASS** (pop 3000/16 winds): historical-scale gen-1 spread, climb starts earlier and goes
+  farther than the 10 Hz t2 baseline (gen 160 best -403 vs -246; t2 finished gen 280 at -277).
+  Killed at gen 173. Details in finding.md.
+- **T005 landed** (06364cd) after live dmp-dump reconstructability verification on the t5 dmp.
+- **T026 bake LAUNCHED 11:38**: `autoc-037-t6-m1-20hz` (pop 5000 / 800 gens / 294 scenarios).
+  Expect ~2× per-gen cost late-run (2000-tick scenarios). T028's 10 Hz bit-replay gate vs `9592dea`
+  still operator-open. Next: T027 `dealias_metrics.py` vs the 035-t6 recorded metrics.

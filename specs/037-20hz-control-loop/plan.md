@@ -82,18 +82,22 @@ autoc evolution, crrcsim FDM, xiao firmware)
 | Xiao IMU | none (no LSM6DS3/TWIM) — confirmed | Phase B brings it up |
 | Xiao NN | `xiao/src/generated/nn_program_generated.cpp` → `nn_forward_recurrent` (library, looped) | Phase C unrolls |
 
-**NEEDS CLARIFICATION (→ Phase 0 research, all have defined deliverables in spec):**
+**NEEDS CLARIFICATION (→ Phase 0 research, all have defined deliverables in spec).**
+*Status 2026-06-10: 0/1/5/6 RESOLVED (research.md); 2/3/4 remain open and gate Phase B/C, not Phase A.*
 0. **Will a faster cadence smooth or just relocate bang-bang?** First-principles theory (τ_roll vs T; raw
    pre-tanh drive; command-vs-motion) predicting (A) smooths or (B) relay-persists. → research.md RT.
-   GATES the bake.
+   GATES the bake. **RESOLVED: GO, roll = case A (aliasing-dither).**
 1. The **projected** control rate from candidate-hardware capability (camera-grid + transport-bounded +
-   responsiveness), and its derived config **bundle**. → research.md R1/R2/R3.
-2. Camera reachable fps grid + exposure/AGC budget. → R2.
-3. Serial transport decision (baud bump vs SPI) + resulting read/write budget. → R3.
-4. Measured unrolled-NN eval budget (cycles/µs). → R4.
+   responsiveness), and its derived config **bundle**. → research.md R1/R2/R3. **RESOLVED: 20 Hz for the
+   Phase-A sim arm (operator 2026-06-10); R2/R3 stay open for the Phase-B flown rate.**
+2. Camera reachable fps grid + exposure/AGC budget. → R2. *(open — Phase B/031 co-resolve)*
+3. Serial transport decision (baud bump vs SPI) + resulting read/write budget. → R3. *(open — Phase B)*
+4. Measured unrolled-NN eval budget (cycles/µs). → R4. *(open — Phase C scope)*
 5. History time-basis: log-spaced vs more-slots vs time-resampled, and the chosen N. → R5.
+   **RESOLVED: ms-based log-spaced lags {1600,800,400,200,100,0}, slot count unchanged (33/54).**
 6. Whether `gEvalUpdateIntervalMsec`/`SIM_TIME_STEP_MSEC` should be unified and moved from env-var to
-   `.ini`/CLI per `feedback_cli_over_env_vars`. → R6.
+   `.ini`/CLI per `feedback_cli_over_env_vars`. → R6. **RESOLVED: ControlIntervalMsec ini key (T001);
+   in-struct default tracks SIM_TIME_STEP_MSEC (T017).**
 
 ## Constitution Check
 
