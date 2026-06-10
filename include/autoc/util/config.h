@@ -6,6 +6,8 @@
 #include <memory>
 #include <cstdint>
 
+#include "autoc/eval/aircraft_state.h"  // SIM_TIME_STEP_MSEC (cadence master)
+
 // Forward declarations
 namespace Aws { namespace S3 { class S3Client; } }
 
@@ -30,15 +32,17 @@ struct AutocConfig {
     // --- Simulation ---
     // 037 T001 -- control-loop cadence (ms). Single source of truth for the
     // NN/sensor interval, read from .ini (NOT the AUTOC_EVAL_INTERVAL_MSEC env
-    // var per feedback_cli_over_env_vars). Defaults to 100 like every other knob
-    // -- a missing key is NOT a fail-loud here: the value is auto-printed at
+    // var per feedback_cli_over_env_vars). Defaults like every other knob -- a
+    // missing key is NOT a fail-loud here: the value is auto-printed at
     // startup (AUTOC_CONFIG_FIELDS), so a defaulted cadence is auditable in the
-    // log, not silent. config.cc DOES fail-loud if it != SIM_TIME_STEP_MSEC, the
-    // compile-time constant every autoc tick-math term keys off -- the two must
-    // move together when retraining at a new rate. Threaded to the crrcsim worker
-    // via WorkerInit priming (workers have no ConfigManager). Per
-    // contracts/cadence-config.md + research.md R6.
-    int controlIntervalMsec = 100;
+    // log, not silent. 037 T017: the default tracks the compile-time master
+    // SIM_TIME_STEP_MSEC (was a literal 100, which broke every defaulted
+    // config at the 20 Hz flip). config.cc DOES fail-loud if an explicit .ini
+    // value != SIM_TIME_STEP_MSEC -- the two must move together when
+    // retraining at a new rate. Threaded to the crrcsim worker via WorkerInit
+    // priming (workers have no ConfigManager). Per contracts/cadence-config.md
+    // + research.md R6.
+    int controlIntervalMsec = SIM_TIME_STEP_MSEC;
     int simNumPathsPerGen = 1;
     std::string generatorMethod = "classic";
     int evalThreads = 1;

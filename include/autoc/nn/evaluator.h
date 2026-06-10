@@ -126,6 +126,58 @@ struct TrackerHistoryWindow {  // raw-ok: NN-byte-format buffer
     float span[6];        // raw-ok: NN-byte-format buffer
 };
 
+// 037 T022 — deep per-tick beacon-observation ring. With the R5 ms-based
+// lag set the 6 window slots are no longer the 6 most-recent ticks, so the
+// steppers keep every tick's observation in this ring (depth = deepest lag
+// in ticks + 1) and MATERIALIZE the 6-slot TrackerHistoryWindow gather-view
+// from it at the lag offsets each tick. Shared by both tracker mirrors
+// (src/eval/tracker_stepper.cc and crrcsim_tracker_helper.cpp) so the
+// per-tick semantics cannot drift. Warm-up clamps to the oldest available
+// record (mirrors AircraftState::getHistorical* CLAMP_DEF behavior).
+struct TrackerObservationRing {
+    struct Record {  // raw-ok: NN-byte-format staging (slots copy verbatim)
+        float left_x, left_y, left_cep;     // raw-ok: NN-byte-format staging
+        float right_x, right_y, right_cep;  // raw-ok: NN-byte-format staging
+        float span;                         // raw-ok: NN-byte-format staging
+    };
+    static constexpr int kDepth = (kNNHistoryLagsMsec[0] / SIM_TIME_STEP_MSEC) + 1;
+
+    Record ring[kDepth] = {};
+    int index = 0;  // next write position
+    int count = 0;  // valid records (0..kDepth)
+
+    void reset() {
+        index = 0;
+        count = 0;
+    }
+
+    void push(const Record& r) {
+        ring[index] = r;
+        index = (index + 1) % kDepth;
+        if (count < kDepth) ++count;
+    }
+
+    // n = lag in ticks; 0 = most recent. Clamps into the valid range.
+    const Record& at(int n) const {
+        n = CLAMP_DEF(n, 0, (count > 0 ? count : 1) - 1);
+        int idx = (index - 1 - n + 2 * kDepth) % kDepth;
+        return ring[idx];
+    }
+
+    void materialize(TrackerHistoryWindow& w) const {
+        for (int s = 0; s < 6; ++s) {
+            const Record& r = at(historyLagTicks(s));
+            w.left_x[s] = r.left_x;        // raw-ok: NN-byte-format primitive
+            w.left_y[s] = r.left_y;        // raw-ok: NN-byte-format primitive
+            w.left_cep[s] = r.left_cep;    // raw-ok: NN-byte-format primitive
+            w.right_x[s] = r.right_x;      // raw-ok: NN-byte-format primitive
+            w.right_y[s] = r.right_y;      // raw-ok: NN-byte-format primitive
+            w.right_cep[s] = r.right_cep;  // raw-ok: NN-byte-format primitive
+            w.span[s] = r.span;            // raw-ok: NN-byte-format primitive
+        }
+    }
+};
+
 // Forward declaration so this header doesn't pull in arena.h transitively
 // (xiao firmware's cherry-pick build path). gather_tracker_inputs is
 // declared here for autoc desktop; xiao firmware uses pathgen mode only.

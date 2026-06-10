@@ -561,6 +561,21 @@ Audit table above confirmed against code, with these ADDITIONS found by the swee
 | `SIM_TOTAL_TIME_MSEC = 100 s` | `aircraft_state.h:40` | Time-based, stays. Note: 2000 ticks/scenario at 20 Hz ⇒ ~2× eval compute per scenario (training wall-clock impact; operator may choose to shorten scenarios — NOT changed here). |
 | xiao firmware | `xiao/include/main.h:24-25` | `MSP_LOOP_INTERVAL_MSEC=50` already; `MSP_NN_EVAL_DIVISOR` 2→1 is **T039 (Phase B, gated)** — untouched now. |
 
+### T024 latency/jitter bundle status (2026-06-10)
+
+- **COMPUTE_LATENCY stays 30 ms** at the 20 Hz flip: the bench measurement (consolidated MSP
+  fetch 12 + eval 5 + send 12 ≈ 29 ms, `project_sim_latency`) is the best current truth for the
+  flown loop, and it fits the 50 ms tick. Re-measure at T010 (baud bump) and retarget then.
+- **Cadence-jitter: DEFERRED.** Per-tick jitter needs new per-tick PRNG draws, which collides with
+  the joint-PRNG-per-scenario determinism design (`project_variation_design_principles`) — it
+  needs its own design pass (per-scenario latency draw as an appended craft-class variation is
+  the likely shape). Not 20 Hz-blocking: dt-tolerance also comes from the 023 engage window +
+  entry variations already in the bundle.
+- **`rc/gyro/dterm_lpf` cutoffs: nothing to re-derive in the sim** — the sweep found no live LPF
+  constants in the sim command path (PidInternals is captured-but-inert; no ACRO PID runs in
+  crrcsim). Those cutoffs are INAV firmware settings → Phase B (T034) alongside the INAV-side
+  20 Hz work.
+
 ### Servo-constant provenance resolution (operator question 2026-06-10)
 
 The "90 ms vs 0.15 s" servo discrepancy **dissolves on inspection — three different constants**:

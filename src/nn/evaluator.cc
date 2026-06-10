@@ -291,25 +291,29 @@ void nn_xavier_init(NNGenome& genome) {
 // T040: Gather NN_INPUT_COUNT sensor inputs — raw, no normalization
 // ============================================================
 // Layout (33 inputs — 023 direction cosines, 029 US1 past-only redistribution):
-//  0- 5: target_x [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  body-frame unit-vec x
-//  6-11: target_y [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  body-frame unit-vec y
-// 12-17: target_z [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  body-frame unit-vec z
-// 18-23: dist     [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  raw metres
+//  0- 5: target_x [-1.6s,-0.8s,-0.4s,-0.2s,-0.1s,now]  body-frame unit-vec x
+//  6-11: target_y [-1.6s,-0.8s,-0.4s,-0.2s,-0.1s,now]  body-frame unit-vec y
+// 12-17: target_z [-1.6s,-0.8s,-0.4s,-0.2s,-0.1s,now]  body-frame unit-vec z
+// 18-23: dist     [-1.6s,-0.8s,-0.4s,-0.2s,-0.1s,now]  raw metres
 //    24: dDist/dt closing rate (m/s, positive = approaching)
 // 25-28: quaternion (w, x, y, z)                         [-1,1]
 //    29: airspeed (m/s)
 // 30-32: gyro rates (p, q, r) in rad/s                   standard aerospace RHR
 //
 // 029 US1 past-only redistribution: all 6 slots use recorded aircraft history
-// at tick offsets [5, 4, 3, 2, 1, 0]. Future-lookahead slots (+0.1s, +0.5s)
-// are dropped because tracker mode (the eventual consumer of this layout) has
-// no parametric path to look ahead on. PathProvider parameter is retained on
-// the signature for API stability across nn2cpp / xiao callers but is unused
-// here.
+// (no future lookahead — tracker mode, the eventual consumer of this layout,
+// has no parametric path to look ahead on). 037 R5: slot lag offsets now come
+// from the ms-based log-spaced table kNNHistoryLagsMsec (see HIST_PAST below),
+// replacing the former uniform one-tick offsets [5..0]. PathProvider parameter
+// is retained on the signature for API stability across nn2cpp / xiao callers
+// but is unused here.
 
-// History slot indices (tick offsets at SIM_TIME_STEP_MSEC = 100 ms):
-// [5, 4, 3, 2, 1, 0] = [-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now]
-static const int HIST_PAST[] = {5, 4, 3, 2, 1, 0};
+// History slot tick-offsets — 037 R5: derived from the ms-based log-spaced
+// lag table (kNNHistoryLagsMsec = {1600,800,400,200,100,0} ms), oldest
+// first. At 50 ms ticks: {32,16,8,4,2,0} = [-1.6s,-0.8s,-0.4s,-0.2s,-0.1s,now].
+static constexpr int HIST_PAST[] = {
+    historyLagTicks(0), historyLagTicks(1), historyLagTicks(2),
+    historyLagTicks(3), historyLagTicks(4), historyLagTicks(5)};
 
 void gather_pathgen_inputs([[maybe_unused]] PathProvider& pathProvider,
                            AircraftState& aircraftState,
@@ -326,11 +330,14 @@ void gather_pathgen_inputs([[maybe_unused]] PathProvider& pathProvider,
     for (int i = 0; i < 6; i++)
         inputs.dist[i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[i]));
 
-    // closing_rate: dDist/dt (m/s, positive = approaching)
+    // closing_rate: dDist/dt (m/s, positive = approaching). 037 T019: the
+    // rate spans the NOW↔TM1 lag gap (100 ms at EVERY cadence by the R5
+    // table) and divides by that actual gap — the former /0.1f literal was
+    // an implicit one-tick assumption that only held at 10 Hz.
     {
-        float dist_now  = static_cast<float>(aircraftState.getHistoricalDist(0));
-        float dist_prev = static_cast<float>(aircraftState.getHistoricalDist(1));
-        inputs.closing_rate = (dist_prev - dist_now) / 0.1f;  // divide by 0.1s tick
+        float dist_now  = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[5]));
+        float dist_prev = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[4]));
+        inputs.closing_rate = (dist_prev - dist_now) / kNNHistoryRecentGapSec;
     }
 
     // quaternion attitude (w, x, y, z) — unit norm, components in [-1,1]
@@ -492,12 +499,13 @@ void gather_tracker_inputs(const AircraftState& chase,
         out.beacon_pair_span[i] = history.span[i];  // raw-ok: NN-byte-format primitive
     }
 
-    // (2) span_rate — one-tick raw diff. No own CEP-gate; mechanically
-    // derives from history.span[5] - history.span[4]. Per spec Q3 + R3 +
+    // (2) span_rate — signed RATE (NDC-units/s) over the NOW↔TM1 lag gap
+    // (100 ms at every cadence; 037 T022 — was a raw one-tick diff). No own
+    // CEP-gate; mechanically derives from history.span. Per spec Q3 + R3 +
     // data-model.md §3.1: visibility transitions produce signed step
     // artifacts (acquired-then-lost → negative, lost-then-acquired →
     // positive). Documented as intentional.
-    out.span_rate = history.span[5] - history.span[4];  // raw-ok: NN-byte-format primitive
+    out.span_rate = (history.span[5] - history.span[4]) / kNNHistoryRecentGapSec;  // raw-ok: NN-byte-format primitive
 
     // (3) target_tilt — (sin θ, cos θ) over the port→starboard NDC line.
     // CEP-gate at "now": if EITHER beacon is untrusted, substitute neutral

@@ -232,6 +232,10 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(tick_rescale_tests tests/tick_rescale_tests.cc)
   target_link_libraries(tick_rescale_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  # 037 T016 -- NN-layout round-trip + history-layout fail-loud.
+  add_executable(nn_layout_tests tests/nn_layout_tests.cc)
+  target_link_libraries(nn_layout_tests GTest::gtest GTest::gtest_main autoc_common)
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -266,6 +270,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME energy_metric_tests COMMAND energy_metric_tests)
   add_test(NAME cadence_invariance_tests COMMAND cadence_invariance_tests)
   add_test(NAME tick_rescale_tests COMMAND tick_rescale_tests)
+  add_test(NAME nn_layout_tests COMMAND nn_layout_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -293,6 +298,7 @@ if(ENABLE_AUTOC_TESTS)
             energy_metric_tests
             cadence_invariance_tests
             tick_rescale_tests
+            nn_layout_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -300,6 +306,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND fitness_decomposition_tests --gtest_brief=1
     COMMAND cadence_invariance_tests --gtest_brief=1
     COMMAND tick_rescale_tests --gtest_brief=1
+    COMMAND nn_layout_tests --gtest_brief=1
     COMMAND selection_tests --gtest_brief=1
     COMMAND contract_evaluator_tests --gtest_brief=1
     COMMAND contract_config_tests --gtest_brief=1

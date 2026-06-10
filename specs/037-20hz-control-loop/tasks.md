@@ -115,13 +115,12 @@ bake. **⚠️ No US1 retrain begins until T008 + T011 + T012 complete.**
 - [ ] T010 [P] R3 transport ceiling: measure MSP read+write at 115200 and at a bumped baud
   (921600/1M) on the real harness; document the per-tick budget + baud-vs-SPI recommendation. →
   research.md R3, contracts/transport-link.md. Update `project_sim_latency`.
-- [ ] T011 R1 **projected NN loop rate**: from T008/T009/T010 + servo/IMU responsiveness, enumerate the
-  collision-avoiding selectable-rate shortlist and pick the projected rate we'd fly. → research.md R1.
-  (depends T008, T009, T010)
-- [ ] T012 R5 **history time-basis decision**: choose the log/time-spaced lag set; compute the new
-  `NN_INPUT_COUNT` (M1) and tracker input count (M2); record the Principle-V layout note. →
-  research.md R5 + data-model.md §2, contracts/nn-input-layout.md.
-- [ ] T013 [P] Tick-rescale audit sign-off: confirm the research.md audit table against current code
+- [X] T011 R1 **projected NN loop rate**: DECIDED 2026-06-10 — **20 Hz** (operator "get going with
+  20 Hz now"); R2/R3 stay open for the Phase-B flown rate, not the sim gate. → research.md R1.
+- [X] T012 R5 **history time-basis decision**: DECIDED 2026-06-10 — ms-based log-spaced lags
+  `{1600,800,400,200,100,0}`; `NN_INPUT_COUNT` stays 33 (M1) / 54 (M2); fail-loud via
+  `kNNHistoryLayoutVersion=2` serialized marker. → research.md R5.
+- [X] T013 [P] Tick-rescale audit sign-off: confirm the research.md audit table against current code
   (`src/eval/fitness_decomposition.cc:179-180,206-244`, `src/nn/evaluator.cc:310-334`) — list every term
   to change and its rescale rule before touching code.
 
@@ -140,41 +139,49 @@ theory's (A)/(B) prediction.
 
 ### Tests for User Story 1 (write first, ensure they FAIL) ⚠️
 
-- [ ] T014 [P] [US1] Cadence-invariance test in `tests/cadence_invariance_tests.cc`: stability + energy
+- [X] T014 [P] [US1] Cadence-invariance test in `tests/cadence_invariance_tests.cc`: stability + energy
   totals for a fixed synthetic trajectory are ~equal at 10 Hz vs the projected rate (within FP).
-- [ ] T015 [P] [US1] Tick-rescale test in `tests/tick_rescale_tests.cc`: `closing_rate` for a known dDist
+- [X] T015 [P] [US1] Tick-rescale test in `tests/tick_rescale_tests.cc`: `closing_rate` for a known dDist
   is correct at two intervals; engage-delay ticks = `ceil(EngageDelayMs/controlIntervalMsec)` at 10/20/50.
-- [ ] T016 [P] [US1] NN-layout round-trip + fail-loud test in `tests/nn_layout_tests.cc`: write/read a dmp
+- [X] T016 [P] [US1] NN-layout round-trip + fail-loud test in `tests/nn_layout_tests.cc`: write/read a dmp
   at the new layout byte-identical; an old-layout dmp triggers a clear fail-loud error (Principle V).
 
 ### Implementation for User Story 1
 
-- [ ] T017 [US1] Set the projected cadence (T011) via the T001 config; bump FDM rate in
-  `crrcsim/autoc_config.xml` (`dt` for ≥10× oversample; 2 kHz matches INAV) and keep `fps` integral with
-  the cadence triple. Per contracts/cadence-config.md.
-- [ ] T018 [P] [US1] Tick-rescale: normalize the per-tick **stability/energy accumulators**
-  (`src/eval/fitness_decomposition.cc:179-180`) to per-second / rate-invariant; types `gp_fitness`.
-- [ ] T019 [P] [US1] Tick-rescale: replace the hardcoded `/0.1f` closing-rate divisor with the actual dt
-  in `src/nn/evaluator.cc:310-334`; verify closure/thrash semantics (`fitness_decomposition.cc:206-244`).
-- [ ] T020 [US1] Implement the **rate-independent engage delay** (`ticks = ceil(EngageDelayMs /
-  controlIntervalMsec)`) per `specs/023-ood-and-engage-fixes/contracts/engage_delay.md` in `src/autoc.cc`
-  / the stepper (new — not yet in code); no in-class default (Principle VII).
-- [ ] T021 [US1] Implement the **history time-basis** (T012 lag set) in `include/autoc/nn/nn_inputs.h`
-  (update M1 layout + `NN_INPUT_COUNT` + static_assert) and the gather in `src/nn/evaluator.cc`
-  (`HIST_PAST[]`/`gather_pathgen_inputs`); update `include/autoc/nn/topology.h` (M1 topology + weight
-  count). fp32 kept.
-- [ ] T022 [US1] Mirror the history time-basis for tracker (M2): `include/autoc/nn/evaluator.h`
-  (`TrackerHistoryWindow`), `src/eval/tracker_stepper.cc` (`projectAndShiftHistory`),
-  `include/autoc/nn/nn_inputs.h` (tracker layout + count), topology.h. Keep sim/firmware layout shared.
-  (Code-coherence now; the M2 *retrain* that validates it is gated US1b.)
-- [ ] T023 [US1] Fail-loud dmp loader on layout/`NN_INPUT_COUNT` mismatch (no cereal version bump per
-  `feedback_no_cereal_versioning`; Principle V) + honest recording of all inputs+outputs at the new
-  boundary (`feedback_honest_dmp_recording`).
-- [ ] T024 [US1] Latency/jitter model: retarget `COMPUTE_LATENCY` to the projected loop's measured latency
-  (T010) + add cadence-jitter so training is dt-tolerant (020); re-derive sim PID filter cutoffs
-  (`rc_filter_lpf`/`gyro_lpf`/`dterm_lpf`) for the new outer rate (026). Per research.md bundle.
-- [ ] T025 [US1] Build + verify tests pass: `bash scripts/rebuild.sh` (Principle II) and operator-driven
-  `rebuild-perf.sh` if CMakeLists changed (Constitution IV); T014–T016 now pass.
+- [X] T017 [US1] Set the projected cadence: `SIM_TIME_STEP_MSEC` 100→50 + `ControlIntervalMsec=50` in
+  all 6 inis; in-struct config default now tracks the master. **No `autoc_config.xml` change needed at
+  20 Hz**: dt=0.005/fps=20 gives cycleLength 50 ms, framesPerEval 1, oversample exactly 10× (the 2 kHz
+  FDM bump is the US3 50 Hz arm's requirement). Per contracts/cadence-config.md.
+- [X] T018 [P] [US1] Tick-rescale: accumulators ×`kCadenceTickScale` (= interval/100 — anchored to the
+  historical 100 ms-tick scale, NOT ×dt, so the 10 Hz gate stays bitwise and lexicase ε=0.5 keeps its
+  meaning). **Scope grew at T013: the main per-tick path score also rescales** (was missing from the
+  audit table; crash-penalty weight would have silently halved).
+- [X] T019 [P] [US1] Tick-rescale: closing-rate divisor = the actual NOW↔TM1 lag gap
+  (`kNNHistoryRecentGapSec` = 100 ms at every cadence); closure/thrash already SIM_TIME_STEP-derived ✓.
+- [~] T020 [US1] Rate-independent engage delay: shared `engageDelayTicks()` ceil helper
+  (aircraft_state.h) + crrcsim pathgen branch routed through it (bitwise no-op). **Tracker-stepper
+  engage WINDOW deferred to US1b** (M2-fidelity only, gated; needs ctor plumbing through 6 call
+  sites — do with T029 prep).
+- [X] T021 [US1] History time-basis (M1): `kNNHistoryLagsMsec` table + `kNNHistoryLayoutVersion` in
+  nn_inputs.h; `HIST_PAST[]` derived (50 ms → {32,16,8,4,2,0}); `HISTORY_SIZE` derived (33);
+  static_assert lag integrality. `NN_INPUT_COUNT` stays 33 ⇒ NO topology/weight-count change (R5
+  chose slot-count-preserving lags); fp32 kept.
+- [X] T022 [US1] Tracker (M2) mirror: shared `TrackerObservationRing` (evaluator.h) materializes the
+  6-slot `TrackerHistoryWindow` view at the lag offsets in BOTH mirrors (tracker_stepper.cc +
+  crrcsim_tracker_helper.cpp); `span_rate` now a true rate over the 100 ms gap; **fail-loud
+  source-tick-spacing check** (old 10 Hz source libraries refuse to play at 2× speed). M2 retrain
+  gated US1b.
+- [X] T023 [US1] Fail-loud: `kNNHistoryLayoutVersion` marker serialized in the per-state NN block +
+  checked on read (counts didn't change, so the existing count check couldn't catch stale dmps); v=1
+  gen9200 baseline path untouched. Honest recording unchanged (all inputs+outputs already recorded).
+- [~] T024 [US1] Latency/jitter model — RESOLVED 2026-06-10 as: `COMPUTE_LATENCY` stays 30 ms (bench
+  truth, fits the 50 ms tick; re-measure at T010); cadence-jitter DEFERRED (needs a per-tick-PRNG
+  determinism design pass); PID filter cutoffs are INAV-side → Phase B T034 (sweep found no live LPF
+  constants in the sim path). See research.md "T024 latency/jitter bundle status".
+- [ ] T025 [US1] Build + verify tests pass: incremental build done 2026-06-10, **all 34 suites green**
+  (includes new nn_layout_tests; CMakeLists changed → operator-driven `rebuild-perf.sh` required,
+  Constitution IV). Operator still owns the clean `rebuild.sh` + the stage-1-commit 10 Hz bit-replay
+  gate (T028) + crrcsim rebuild (`crrcsim/build && make -j8`).
 - [ ] T026 [US1] Retrain M1 at the projected rate with the bundle (after T004/T006 prework) via
   `scripts/train.sh <ini> <logfile>` (Principle IX — never agent `run_in_background`); name
   `autoc-037-t<N>-m1-<rate>...` (`feedback_artifact_naming_convention`); tag dumps `retain=expire`
@@ -430,3 +437,32 @@ T007, T008. T005 deferred to just-before-training (operator). Notes:
 pure dt arithmetic with per-scenario state reset. A no-variation run should differ from pre-037 only by
 the new nominal lag model + the energy-curve change. **Operator's bitwise regression gate must confirm
 this after a clean build** (cross-component: autoc + crrcsim).
+
+---
+
+## Session implementation status (2026-06-10) — the 20 Hz flip
+
+**Done (T011–T019, T021–T023 + tests; T020/T024 partial — see task annotations):** committed in two
+stages so the 10 Hz bit-replay gate has a clean point:
+
+1. **Stage-1 commit (`9592dea`)** — rescale refactor, bitwise no-op at the 10 Hz config:
+   `kCadenceTickScale` on score/stability/energy accumulators (×1.0 exact at 100 ms), shared
+   `engageDelayTicks()`, T014/T015 tests, research decisions (R1=20 Hz, R5 lag set, T013 sign-off).
+   **Run the operator bit-replay gate against THIS commit** — the flip commit after it is
+   intentionally not bitwise (new lag semantics).
+2. **Stage-2 commit** — the flip: `SIM_TIME_STEP_MSEC=50`, inis=50, config default tracks the
+   master, ms-based history lags (M1 `HIST_PAST` {32,16,8,4,2,0}, ring depth 33), shared
+   `TrackerObservationRing` in both M2 mirrors, span_rate→rate, source-spacing fail-loud,
+   `kNNHistoryLayoutVersion=2` dmp marker, nn_layout_tests. All 34 suites green.
+
+**Notes for the operator:**
+- crrcsim needs its own rebuild (`cd crrcsim/build && make -j8` or the usual script) — agent built
+  autoc only per crrcsim/CLAUDE.md.
+- Two pre-existing `craft_variation_tests` failures (stale vs 88a52ea env-only-ramp) were updated to
+  the new contract — they were red BEFORE this session's changes (verified by stash).
+- `SIM_TOTAL_TIME_MSEC` stays 100 s ⇒ 2000 ticks/scenario at 20 Hz ⇒ ~2× eval compute per scenario.
+  Shortening scenarios is an open operator choice, NOT made here.
+- Old t6/10 Hz dmps now fail loud on read (layout marker) — rate comparison uses recorded metrics
+  per Q3, no replay. Old M2 source libraries fail loud on spacing — US1b needs a fresh 20 Hz
+  source bake (already implied by the gate chain).
+- xiao untouched (Phase B): `MSP_NN_EVAL_DIVISOR` stays 2 until T039.

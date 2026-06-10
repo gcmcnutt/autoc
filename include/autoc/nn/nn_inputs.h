@@ -27,14 +27,42 @@
 constexpr float kCruiseSpeed_mps = 13.0f;
 constexpr float kDistToBoundaryScale_m = 20.0f;
 
+// ============================================================================
+// 037 R5/T021 — History time-basis (ms-based, log-spaced lags)
+// ----------------------------------------------------------------------------
+// History lags are defined in MILLISECONDS, log-spaced (octaves), oldest
+// first; the slot order matches the *_TM5..NOW array layout below. Tick
+// offsets derive at the consumer (lagMsec / SIM_TIME_STEP_MSEC,
+// static_assert-ed integral in aircraft_state.h), so the time window
+// (1.6 s) is invariant across the 10/20/50 Hz cadence family:
+//   50 ms tick (20 Hz) → ticks {32,16,8,4,2,0}
+//  100 ms tick (10 Hz) → ticks {16,8,4,2,1,0}
+//   20 ms tick (50 Hz) → ticks {80,40,20,10,5,0}
+// Derivatives (closing_rate, span_rate) divide by the NOW↔TM1 gap
+// (kNNHistoryRecentGapSec = 100 ms), never an implicit one-tick assumption.
+constexpr int kNNHistoryLagsMsec[6] = {1600, 800, 400, 200, 100, 0};
+constexpr float kNNHistoryRecentGapSec =
+    static_cast<float>(kNNHistoryLagsMsec[4] - kNNHistoryLagsMsec[5]) / 1000.0f;
+
+// 037 T023 — fail-loud layout marker (Principle V). The slot COUNT did not
+// change at the R5 re-lag (NN_INPUT_COUNT stays 33, TrackerInput::COUNT
+// stays 54), so the existing count checks cannot catch the semantic
+// mismatch; this version is serialized in the per-state NN block
+// (aircraft_state.h) and checked on read.
+//   v1 = uniform one-tick lags {5,4,3,2,1,0} (pre-037, 100 ms grid)
+//   v2 = ms-based log-spaced lags {1600,800,400,200,100,0}
+constexpr uint32_t kNNHistoryLayoutVersion = 2;
+
 // CONSTITUTIONAL NOTE -- SERIALIZATION CONTRACT
 // Field declaration order IS the on-disk byte order for cereal, data.dat,
 // nn2cpp, and sim_response.py. Reordering fields is a format-breaking change.
 // DO NOT add padding or non-float members.
 
 struct NNInputs {
-    // Time samples: [-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now]
-    // 029 US1: past-only distribution, 100 ms uniform grid (no future lookahead).
+    // Time samples: [-1.6s, -0.8s, -0.4s, -0.2s, -0.1s, now]
+    // (kNNHistoryLagsMsec — 037 R5 ms-based log-spaced lags; past-only per
+    // 029 US1, no future lookahead. The *_TM5..NOW slot NAMES are lag-slot
+    // indices, not tick counts.)
     float target_x[6];   // body-frame unit-vec x component (was dPhi)
     float target_y[6];   // body-frame unit-vec y component (was dTheta partial)
     float target_z[6];   // body-frame unit-vec z component (NEW)
@@ -197,7 +225,8 @@ static_assert(static_cast<int>(TrackerInput::COUNT) == 54,
 // agrees with enum-indexed access for the NN forward pass + the data.dat
 // header walk via kTrackerInputMeta.
 //
-// Time samples: [-0.5s, -0.4s, -0.3s, -0.2s, -0.1s, now] — 100ms grid.
+// Time samples: [-1.6s, -0.8s, -0.4s, -0.2s, -0.1s, now] — kNNHistoryLagsMsec
+// (037 R5 ms-based log-spaced lags; slot names are lag-slot indices).
 struct TrackerInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xiao-firmware-locked contract
     float beacon_l_x[6];     // raw-ok: NN-byte-format buffer (per Principle VI whitelist: NN-byte-format buffers)
     float beacon_l_y[6];     // raw-ok: NN-byte-format buffer
@@ -222,11 +251,14 @@ struct TrackerInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xi
     // beacon_pair_span: raw Euclidean distance between port + starboard
     // beacon centroids in the NDC (x, y) coordinate frame — `sqrt(dx² + dy²)`
     // with no scaling, no normalization, no clipping. Same units as
-    // BeaconObservation::screen_x/y. 6-tick history (100ms grid).
+    // BeaconObservation::screen_x/y. 6-slot history at kNNHistoryLagsMsec.
     // Substituted to 0.0 per-tick when EITHER beacon's CEP at "now"
     // >= CepGateThreshold.
     float beacon_pair_span[6];   // raw-ok: NN-byte-format buffer
-    // span_rate: one-tick raw diff = span[5] - span[4]. Signed.
+    // span_rate: signed RATE (NDC-units/s) over the NOW↔TM1 lag gap =
+    // (span[5] - span[4]) / kNNHistoryRecentGapSec. 037 T022 changed this
+    // from a raw one-tick diff to a true per-second rate (cadence- and
+    // lag-invariant); M2 genomes retrain from scratch at the boundary.
     float span_rate;             // raw-ok: NN-byte-format buffer
     // target_tilt encoded as (sin θ, cos θ) where θ = atan2(y_r-y_l, x_r-x_l)
     // over NDC. θ = 0 ⇔ port→starboard line is horizontal in image plane (chase

@@ -9,6 +9,7 @@
 #include <string>
 #include "autoc/types.h"
 #include "autoc/nn/topology.h"
+#include "autoc/nn/nn_inputs.h"  // 037 R5 — kNNHistoryLagsMsec / layout version
 #include "autoc/nn/nn_input_computation.h"
 
 #ifndef ARDUINO
@@ -38,8 +39,30 @@
 #define SIM_MAX_ELEVATION static_cast<gp_scalar>(-120.0f)
 
 #define SIM_TOTAL_TIME_MSEC (100 * 1000)
-#define SIM_TIME_STEP_MSEC (100)
+// 037 T017 — control-loop cadence flipped 100 → 50 ms (10 → 20 Hz; R1
+// decision, operator 2026-06-10). This is the compile-time cadence MASTER;
+// ControlIntervalMsec in every .ini must equal it (config.cc fails loud
+// otherwise) and crrcsim derives gEvalUpdateIntervalMsec from it via
+// WorkerInit. The FDM config (crrcsim/autoc_config.xml dt=0.005, fps=20)
+// already satisfies the cadence triple at 50 ms: cycleLength 50 ms,
+// framesPerEval 1, FDM oversample exactly 10×.
+#define SIM_TIME_STEP_MSEC (50)
 #define SIM_MAX_INTERVAL_MSEC (SIM_TIME_STEP_MSEC * 5)
+
+// 037 R5/T021 — history lag table (ms-based; see nn_inputs.h). Lags must be
+// integral in ticks at the compiled cadence.
+constexpr bool historyLagsIntegral() {
+  for (int m : kNNHistoryLagsMsec) {
+    if (m % SIM_TIME_STEP_MSEC != 0) return false;
+  }
+  return true;
+}
+static_assert(historyLagsIntegral(),
+              "kNNHistoryLagsMsec entries must be integral multiples of "
+              "SIM_TIME_STEP_MSEC");
+constexpr int historyLagTicks(int slot) {
+  return kNNHistoryLagsMsec[slot] / SIM_TIME_STEP_MSEC;
+}
 
 // 037 T018 — cadence rescale anchor. Per-tick fitness accumulators
 // (path score, stability, energy) multiply by this so totals are
@@ -122,8 +145,10 @@ public:
 CEREAL_CLASS_VERSION(Path, 1)
 #endif
 
-// Maximum offset steps for path interpolation (±1 second at 100ms/step)
-constexpr int MAX_OFFSET_STEPS = 10;
+// Maximum offset steps for path interpolation (±1 second, time-derived).
+// 037 audit: currently UNUSED anywhere in the tree; derived from time so it
+// cannot rot at a cadence change if revived.
+constexpr int MAX_OFFSET_STEPS = 1000 / SIM_TIME_STEP_MSEC;
 
 // Portable path provider interface for unified GP evaluation
 // Abstracts path access for both vector and single-path environments
@@ -349,7 +374,10 @@ struct AircraftState {
     // =========================================================================
     // Temporal history for GP nodes - see specs/TEMPORAL_STATE.md
     // =========================================================================
-    static constexpr int HISTORY_SIZE = 10;  // 1 sec at 10Hz
+    // 037 R5 — ring depth derives from the deepest history lag (1.6 s):
+    // max lag in ticks + 1 (= 33 at 50 ms, 17 at 100 ms). Was a fixed 10
+    // ("1 sec at 10 Hz").
+    static constexpr int HISTORY_SIZE = (kNNHistoryLagsMsec[0] / SIM_TIME_STEP_MSEC) + 1;
 
     // Record current target direction and distance to history (call before NN eval each tick)
     void recordErrorHistory(const gp_vec3& targetDir, gp_scalar distance, unsigned long timeMs) {
@@ -548,6 +576,25 @@ struct AircraftState {
             " but compiled with inputs=" + std::to_string(NN_INPUT_COUNT) +
             " outputs=" + std::to_string(NN_OUTPUT_COUNT) +
             ". Regenerate training data with current binary.");
+        }
+
+        // 037 T023 — fail-loud history-layout marker (Principle V). The R5
+        // re-lag changed slot SEMANTICS without changing slot COUNTS, so the
+        // count check above cannot catch a stale dmp; this marker can. v=2
+        // dmps written before 037 hit this as a garbage uint32 (the first
+        // input float's bits) and throw — the intended loud failure. v=1
+        // streams (gen9200.dmp baseline) never reach here at version < 2.
+        if (version >= 2) {
+          uint32_t historyLayout = kNNHistoryLayoutVersion;
+          ar(historyLayout);
+          if (historyLayout != kNNHistoryLayoutVersion) {
+            throw std::runtime_error(
+              "AircraftState deserialization: NN history-layout mismatch — "
+              "serialized layout v" + std::to_string(historyLayout) +
+              " but compiled with v" + std::to_string(kNNHistoryLayoutVersion) +
+              " (037 R5 ms-based lags {1600,800,400,200,100,0}). Old dmps "
+              "are not replayable through the new layout.");
+          }
         }
         float* rawInputs = reinterpret_cast<float*>(&nnInputs_);  // raw-ok: NN-byte-format buffer
         for (uint32_t i = 0; i < inputCount; i++)
