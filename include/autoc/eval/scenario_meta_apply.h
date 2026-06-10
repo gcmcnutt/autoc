@@ -16,7 +16,6 @@
 #include <cmath>
 
 #include "autoc/autoc.h"  // ENTRY_SAFE_RADIUS, ENTRY_SAFE_ALT_MIN/MAX
-#include "autoc/eval/craft_variation.h"  // 037 kCraft*Center actuator-dynamics centers
 #include "autoc/rpc/scenario_metadata.h"
 #include "autoc/types.h"  // gp_scalar
 
@@ -53,33 +52,23 @@ inline void applyVariationScale(ScenarioMetadata& meta, gp_scalar scale) {
     meta.entryEastOffset = eastScaled;
     meta.entryAltOffset = altScaled;
 
-    // 034 US4 — craft variation deltas: scale additive deltas toward 0 and
-    // the multiplicative thrust factor toward its nominal 1.0. Same shape as
-    // entry/wind: at scale=0 every field is exactly its nominal; at scale=1
-    // every field is its full drawn magnitude. The DRAW (autoc-side
-    // generateCraftFromClassPRNG) is full-magnitude and deterministic per
-    // scenarioSeed; this function does the per-eval ramping (training:
-    // computeVariationScale(gen); eval: replayed genome.variation_scale).
-    meta.craftCGDelta *= scale;
-    meta.craftDragDelta *= scale;
-    meta.craftTrimDelta *= scale;
-    meta.craftPitchEffDelta *= scale;
-    meta.craftRollEffDelta *= scale;
-    meta.craftThrustScale = static_cast<gp_scalar>(1.0)
-        + scale * (meta.craftThrustScale - static_cast<gp_scalar>(1.0));
-
-    // 037 actuator-dynamics axes -- ABSOLUTE physical values centered at a
-    // nominal (kCraft*Center). Same interpolation shape as craftThrustScale,
-    // but the nominal is the physical center rather than 1.0: at scale=0 each
-    // collapses to its center (the nominal lag model); at scale=1 it is the
-    // full drawn value. center + scale*(value - center). Pure deterministic
-    // arithmetic -- no PRNG draws here (the draws happened once, upstream).
-    meta.craftServoTau = kCraftServoTauCenter
-        + scale * (meta.craftServoTau - kCraftServoTauCenter);
-    meta.craftServoSlew = kCraftServoSlewCenter
-        + scale * (meta.craftServoSlew - kCraftServoSlewCenter);
-    meta.craftThrustTau = kCraftThrustTauCenter
-        + scale * (meta.craftThrustTau - kCraftThrustTauCenter);
+    // 037 (operator 2026-06-10): craft variations are NOT ramped -- only the
+    // ENV variations above (entry pose, wind, position) ramp as a difficulty
+    // curriculum. Rationale: the ramp exists to keep a fresh random population
+    // from being killed by UNFLYABLE difficulty before it learns the core task,
+    // and that risk is environmental (extreme entry poses, big gusts), not the
+    // airframe. A varied craft -- CG/drag/trim/thrust/control-effectiveness plus
+    // the 037 actuator dynamics (servoTau/servoSlew/thrustTau) -- is still
+    // perfectly flyable; it is DIVERSITY, not difficulty. Ramping it would only
+    // delay fleet-robustness training to the hard end of the env curriculum and
+    // (for the dynamics) means physically-odd interpolation of a time constant.
+    // So craft is present at its FULL drawn magnitude from gen 0: the base meta
+    // already holds the full draws (generateCraftFromClassPRNG), so we leave the
+    // craft fields UNTOUCHED here -- `scale` affects ONLY the env fields above.
+    //
+    // NOTE: future CAMERA variations (tracker mode) are the same category --
+    // sensor/airframe diversity, not difficulty -- and should likewise NOT be
+    // ramped when they land.
 }
 
 }  // namespace autoc::eval
