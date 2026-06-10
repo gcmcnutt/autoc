@@ -481,7 +481,9 @@ stages so the 10 Hz bit-replay gate has a clean point:
   Killed at gen 173. Details in finding.md.
 - **T005 landed** (06364cd) after live dmp-dump reconstructability verification on the t5 dmp.
 - **T026 bake LAUNCHED 11:38**: `autoc-037-t6-m1-20hz` (pop 5000 / 800 gens / 294 scenarios).
-  Expect ~2× per-gen cost late-run (2000-tick scenarios). Gen 1-2 healthy: spread
+  Wall-clock impact of 2× ticks is modest (~20%, operator estimate): the FDM substep work — the
+  dominant cost — is duration-based and unchanged; only NN evals/RPC/per-tick recording double.
+  Gen 1-2 healthy: spread
   -2280/-1251/-1004 on the historical scale, elite bit-SAME, ~75 s/gen, slim log confirmed.
   **10 Hz bit-replay gate WAIVED** (operator: beyond 10 Hz now). Next: T027 `dealias_metrics.py`
   vs the 035-t6 recorded metrics.

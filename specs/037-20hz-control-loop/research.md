@@ -558,7 +558,7 @@ Audit table above confirmed against code, with these ADDITIONS found by the swee
 | thrust lag blend | `fdm_larcsim.cpp:605` `min(1, dt/thrustTau)` | Linear blend vs servo's exact `1−exp(−dt/τ)`: at substep dt=5 ms / τ=150 ms the difference is 1.6% and the FDM substep doesn't change at 20 Hz — **not a cadence hazard**. Real gap (already in finding.md): thrust lag lags `craftThrustScale` (a ≈1.0 multiplier), not the throttle→thrust path, so spool-up is effectively unmodeled. Separate rework, not 037-blocking. |
 | engage delay | `inputdev_autoc.cpp:628` | Already `ceil(ms/interval)` rate-independent in crrcsim **pathgen** branch; tracker branch (both mirrors) has NO engage window — T020 adds it. |
 | servo/IMU sensor filters | (sweep) | No LPF/alpha constants in the sim command path; PidInternals is captured-but-inert (no live ACRO PID in sim). The `rc/gyro/dterm_lpf` cutoffs in T024 are INAV-side → Phase B. |
-| `SIM_TOTAL_TIME_MSEC = 100 s` | `aircraft_state.h:40` | Time-based, stays. Note: 2000 ticks/scenario at 20 Hz ⇒ ~2× eval compute per scenario (training wall-clock impact; operator may choose to shorten scenarios — NOT changed here). |
+| `SIM_TOTAL_TIME_MSEC = 100 s` | `aircraft_state.h:40` | Time-based, stays. 2000 ticks/scenario at 20 Hz, but wall-clock impact is only ~20% (operator estimate): FDM substep work is duration-based and unchanged; only NN evals/RPC/recording double. |
 | xiao firmware | `xiao/include/main.h:24-25` | `MSP_LOOP_INTERVAL_MSEC=50` already; `MSP_NN_EVAL_DIVISOR` 2→1 is **T039 (Phase B, gated)** — untouched now. |
 
 ### T024 latency/jitter bundle status (2026-06-10)
