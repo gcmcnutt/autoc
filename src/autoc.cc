@@ -390,13 +390,16 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
             || (gCraftSigmas.craftTrimSigma     > 0.0)
             || (gCraftSigmas.craftThrustSigma   > 0.0)
             || (gCraftSigmas.craftPitchEffSigma > 0.0)
-            || (gCraftSigmas.craftRollEffSigma  > 0.0));
+            || (gCraftSigmas.craftRollEffSigma  > 0.0)
+            || (gCraftSigmas.craftServoTauSigma  > 0.0)   // 037 actuator dynamics
+            || (gCraftSigmas.craftServoSlewSigma > 0.0)
+            || (gCraftSigmas.craftThrustTauSigma > 0.0));
 
     {
         std::ostringstream hdr;
         hdr << "Scenario       ScenarioSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°";
         if (any_craft_active) {
-            hdr << "       cgU     drag    trim°    thrSc   pitEff   rolEff    CraftSeed";
+            hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svTau   svSlew   thrTau    CraftSeed";
         }
         *logger.info() << hdr.str() << endl;
     }
@@ -404,7 +407,7 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
         std::ostringstream sep;
         sep << "--------  -----------------  --------  ------  ------  ------  --------  ------  -----  -----";
         if (any_craft_active) {
-            sep << "  --------  -------  -------  -------  -------  -------  -----------";
+            sep << "  --------  -------  -------  -------  -------  -------  -------  -------  -------  -----------";
         }
         *logger.info() << sep.str() << endl;
     }
@@ -448,6 +451,12 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
                  << std::setw(7) << static_cast<double>(cd.craftPitchEffDelta)  // fraction
                  << "  " << std::setprecision(4)
                  << std::setw(7) << static_cast<double>(cd.craftRollEffDelta)   // fraction
+                 << "  " << std::setprecision(4)
+                 << std::setw(7) << static_cast<double>(cd.craftServoTau)       // 037: s (servo lag tau)
+                 << "  " << std::setprecision(3)
+                 << std::setw(7) << static_cast<double>(cd.craftServoSlew)      // 037: /s (servo slew)
+                 << "  " << std::setprecision(4)
+                 << std::setw(7) << static_cast<double>(cd.craftThrustTau)      // 037: s (thrust lag tau)
                  << "  0x" << std::hex << std::setw(8) << std::setfill('0')
                  << sv.craftSeed
                  << std::dec << std::setfill(' ');
@@ -764,6 +773,11 @@ static WorkerInit buildWorkerInit() {
     WorkerInit init;
     init.mode = parseModeName(cfg.mode);
 
+    // 037 T001 -- thread the validated control cadence to the worker (it has no
+    // ConfigManager). config.cc already asserted controlIntervalMsec > 0 and
+    // == SIM_TIME_STEP_MSEC at load, so this is a known-good value here.
+    init.controlIntervalMsec = static_cast<unsigned long>(cfg.controlIntervalMsec);
+
     // 034 Phase 7 — worker-side wind gate. autoc-side already zeros
     // meta.windDirectionOffset when EnableWindVariations=0, but the worker
     // (inputdev_autoc) independently derives a per-scenario wind seed for
@@ -840,6 +854,11 @@ static WorkerInit buildWorkerInit() {
                 meta.craftThrustScale = cd.craftThrustScale;
                 meta.craftPitchEffDelta = cd.craftPitchEffDelta;
                 meta.craftRollEffDelta = cd.craftRollEffDelta;
+                // 037 actuator-dynamics axes -- absolute physical values
+                // (center + clamped Gaussian); worker ramps toward center.
+                meta.craftServoTau = cd.craftServoTau;
+                meta.craftServoSlew = cd.craftServoSlew;
+                meta.craftThrustTau = cd.craftThrustTau;
                 meta.craftSeed = gScenarioVariations[idx].craftSeed;
                 // (033 cleanup) rabbitSpeedSeed assignment removed — field
                 // deleted from ScenarioMetadata + ScenarioVariations.
@@ -1632,38 +1651,9 @@ int main(int argc, char** argv)
                         "and subset config." << endl;
       exit(1);
     }
-
-    // Each source scenario needs at least MIN_SCENARIO_TICKS runway (3 sec at
-    // 100ms NN cadence per data-model.md §1). Scenarios shorter than that are
-    // degenerate — extreme 2.5σ entry-corner trajectories the source controller
-    // couldn't fly long enough to be a trackable target (035 M2: a library-based
-    // source from an M1 run routinely has a few corner-crash flights). SKIP them
-    // rather than fail (operator decision 2026-06-08); fail only if none survive.
-    {
-      const int minRemaining = MIN_SCENARIO_TICKS;
-      const size_t before = gSourceTrajectoryList.size();
-      for (size_t i = 0; i < gSourceTrajectoryList.size(); ++i) {
-        if (static_cast<int>(gSourceTrajectoryList[i].samples.size()) < minRemaining) {
-          *logger.info() << "  Skipping short source scenario idx=" << i << " ("
-                         << gSourceTrajectoryList[i].samples.size() << " ticks < "
-                         << minRemaining << " — degenerate corner-crash entry)" << endl;
-        }
-      }
-      gSourceTrajectoryList.erase(
-          std::remove_if(gSourceTrajectoryList.begin(), gSourceTrajectoryList.end(),
-              [minRemaining](const SourceScenarioTrajectory& t) {
-                return static_cast<int>(t.samples.size()) < minRemaining;
-              }),
-          gSourceTrajectoryList.end());
-      if (gSourceTrajectoryList.empty()) {
-        *logger.info() << "FATAL ERROR: all source scenarios shorter than "
-                       << minRemaining << " ticks; nothing to track." << endl;
-        exit(1);
-      }
-      *logger.info() << "Source runway: dropped " << (before - gSourceTrajectoryList.size())
-                     << " short scenario(s); " << gSourceTrajectoryList.size()
-                     << " scenarios >= " << minRemaining << " ticks remain." << endl;
-    }
+    // 037: short corner-crash sources (< MIN_SCENARIO_TICKS) are kept (1:1 with
+    // the 294 slots) and play through -- terminate cleanly via TimeLimit,
+    // contributing their short real fitness. No skip/erase (operator 2026-06-09).
   }
 
   // 030 V1.5 priming (2026-05-08) — ThreadPool construction MOVED below,
@@ -1701,6 +1691,10 @@ int main(int argc, char** argv)
   gCraftSigmas.craftThrustSigma   = cfg.craftThrustSigma;
   gCraftSigmas.craftPitchEffSigma = cfg.craftPitchEffSigma;
   gCraftSigmas.craftRollEffSigma  = cfg.craftRollEffSigma;
+  // 037 actuator-dynamics sigmas (servo lag tau / servo slew / thrust lag tau).
+  gCraftSigmas.craftServoTauSigma  = cfg.craftServoTauSigma;
+  gCraftSigmas.craftServoSlewSigma = cfg.craftServoSlewSigma;
+  gCraftSigmas.craftThrustTauSigma = cfg.craftThrustTauSigma;
 
   // Initialize global rabbit speed config.
   // EnableRabbitSpeedVariations=0 forces sigma=0 regardless of the .ini value

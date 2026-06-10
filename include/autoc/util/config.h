@@ -28,6 +28,17 @@ struct AutocConfig {
     std::string nnInitMethod = "xavier";
 
     // --- Simulation ---
+    // 037 T001 -- control-loop cadence (ms). Single source of truth for the
+    // NN/sensor interval, read from .ini (NOT the AUTOC_EVAL_INTERVAL_MSEC env
+    // var per feedback_cli_over_env_vars). Defaults to 100 like every other knob
+    // -- a missing key is NOT a fail-loud here: the value is auto-printed at
+    // startup (AUTOC_CONFIG_FIELDS), so a defaulted cadence is auditable in the
+    // log, not silent. config.cc DOES fail-loud if it != SIM_TIME_STEP_MSEC, the
+    // compile-time constant every autoc tick-math term keys off -- the two must
+    // move together when retraining at a new rate. Threaded to the crrcsim worker
+    // via WorkerInit priming (workers have no ConfigManager). Per
+    // contracts/cadence-config.md + research.md R6.
+    int controlIntervalMsec = 100;
     int simNumPathsPerGen = 1;
     std::string generatorMethod = "classic";
     int evalThreads = 1;
@@ -60,9 +71,15 @@ struct AutocConfig {
     int enableEntryVariations = 0;
     int enableWindVariations = 0;
     int enableRabbitSpeedVariations = 0;
-    double entryConeSigma = 30.0;     // degrees: half-angle of nose direction cone
+    // 037 T006 -- entry-envelope tighten. The Gaussian draw is clamped to
+    // +/-kGaussianSigmaClamp (2.5) sigma (scenario_prng.h), so these sigmas set
+    // the HARD limit at 2.5 sigma: cone 18 deg -> 45 deg max half-angle;
+    // speed 0.06 -> 15% max delta. Enforces the 45 deg / 15% envelope we agreed
+    // (was 30 deg / 10%). Folds into the Phase-A retrain (T026); t6 baseline
+    // keeps the old 30/0.1 in its eval inis.
+    double entryConeSigma = 18.0;     // degrees: half-angle of nose direction cone (2.5sigma = 45 deg)
     double entryRollSigma = 22.5;     // degrees: roll around body axis
-    double entrySpeedSigma = 0.1;
+    double entrySpeedSigma = 0.06;    // fraction (2.5sigma = 15% speed delta)
     double windDirectionSigma = 45.0;
 
     // --- Entry position variations ---
@@ -88,6 +105,19 @@ struct AutocConfig {
     //   craftThrustSigma     fractional multiplier on engine thrust
     //   craftPitchEffSigma   fractional multiplier on Cm_de/CL_de
     //   craftRollEffSigma    fractional multiplier on Cl_da
+    //
+    // 037 actuator-dynamics craft axes (DYNAMICS, not fractional multipliers
+    // like the six above -- each is a nominal physical CENTER plus a Gaussian
+    // delta, then clamped to a positive physical range at the draw site so the
+    // time constants never go non-positive). These three set the per-scenario
+    // tau_servo / slew_servo / tau_thrust used by the inputdev_autoc actuator
+    // filter (servo lag+slew, thrust lag) instead of the nominal constants:
+    //   craftServoTauSigma   seconds  -- servo first-order lag time constant
+    //                        sigma; center 0.020 s, clamped [0.005, 0.050]
+    //   craftServoSlewSigma  /second  -- servo slew-rate-limit sigma (full-
+    //                        throw/s, full-throw=1.0); center 6.0, clamp [3.0, 9.0]
+    //   craftThrustTauSigma  seconds  -- thrust first-order lag time constant
+    //                        sigma; center 0.150 s, clamped [0.050, 0.300]
     int enableCraftVariations = 0;
     double craftCGSigma = 0.02;        // ~±7% MAC at hb1_streamer CG_arm=0.28
     double craftDragSigma = 0.05;      // ±5% CD_prof
@@ -95,6 +125,9 @@ struct AutocConfig {
     double craftThrustSigma = 0.05;    // ±5% maxThrust
     double craftPitchEffSigma = 0.05;  // ±5% pitch authority
     double craftRollEffSigma = 0.05;   // ±5% roll authority
+    double craftServoTauSigma = 0.010;   // s, servo lag tau sigma (center 0.020s)
+    double craftServoSlewSigma = 2.0;    // /s, servo slew sigma (center 6.0 /s)
+    double craftThrustTauSigma = 0.060;  // s, thrust lag tau sigma (center 0.150s)
 
     // --- Variation landscape ramp ---
     int variationRampStep = 0;
@@ -219,6 +252,7 @@ struct AutocConfig {
     X(double,         nnSigmaFloor,              "NNSigmaFloor") \
     X(std::string,    nnWeightFile,              "NNWeightFile") \
     X(std::string,    nnInitMethod,              "NNInitMethod") \
+    X(int,            controlIntervalMsec,       "ControlIntervalMsec") \
     X(int,            simNumPathsPerGen,         "SimNumPathsPerGeneration") \
     X(std::string,    generatorMethod,           "PathGeneratorMethod") \
     X(int,            evalThreads,               "EvalThreads") \
@@ -249,6 +283,9 @@ struct AutocConfig {
     X(double,         craftThrustSigma,          "CraftThrustSigma") \
     X(double,         craftPitchEffSigma,        "CraftPitchEffSigma") \
     X(double,         craftRollEffSigma,         "CraftRollEffSigma") \
+    X(double,         craftServoTauSigma,        "CraftServoTauSigma") \
+    X(double,         craftServoSlewSigma,       "CraftServoSlewSigma") \
+    X(double,         craftThrustTauSigma,       "CraftThrustTauSigma") \
     X(int,            variationRampStep,         "VariationRampStep") \
     X(std::string,    selectionMode,             "SelectionMode") \
     X(std::string,    lexicaseEpsilonMode,       "LexicaseEpsilonMode") \

@@ -163,6 +163,21 @@ public:
   gp_scalar totalAnimationDuration = 10.0f; // total animation duration in seconds
   unsigned long animationTimerId = 0; // VTK timer ID for animation
 
+  // 037 P4 -- per-frame instrumentation for focused-vs-all-arenas
+  // measurement. Accumulates wall-clock CPU time spent in the per-tick
+  // arena step/update work and a render-traffic proxy (VTK Render()
+  // passes + points actually pushed into the AppendPolyData pipelines),
+  // then prints a periodic summary line. These quantify (a) STEP/UPDATE
+  // CPU cost and (b) in-process render traffic. True X11 bytes-on-wire
+  // cannot be measured in-process -- see the note in updatePlaybackAnimation
+  // for the external command to use (xtrace).
+  long instrFrameCount = 0;       // frames since last summary print
+  double instrStepMsSum = 0.0;    // sum of per-frame step-work ms
+  double instrStepMsMax = 0.0;    // worst per-frame step-work ms
+  long instrRenderPasses = 0;     // VTK Render() calls since last summary
+  long instrPointsPushed = 0;     // points fed into pipelines since last summary
+  static constexpr long kInstrSummaryEveryFrames = 30; // print cadence
+
   vtkSmartPointer<vtkRenderWindow> renderWindow;
   vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor;
 

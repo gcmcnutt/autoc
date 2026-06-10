@@ -43,19 +43,22 @@ research artifacts per `feedback_scripts_dir_scope`).
 
 **Purpose**: the cadence knob, the measurement tool, and test scaffolding everything else uses.
 
-- [ ] T001 Add a single-source-of-truth control-rate config key read from `.ini`/CLI (not the
+- [X] T001 Add a single-source-of-truth control-rate config key read from `.ini`/CLI (not the
   `AUTOC_EVAL_INTERVAL_MSEC` env var) and make `gEvalUpdateIntervalMsec`
   (`crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.{h,cpp}`) and `SIM_TIME_STEP_MSEC`
   (`include/autoc/eval/aircraft_state.h:39`) derive from / assert-equal it; keep the startup
-  cadence-triple assertion (`inputdev_autoc.cpp:297-316`). No in-class default (Principle VII). Per
-  contracts/cadence-config.md + research.md R6.
-- [ ] T002 [P] New de-alias analysis script (dmp-dump-based, NOT a historical script —
+  cadence-triple assertion (`inputdev_autoc.cpp:297-316`). **Defaults to 100 like every other knob**
+  (operator 2026-06-09 -- a missing key isn't fail-loud; it's auto-printed so auditable); config.cc DOES
+  fail-loud on `!= SIM_TIME_STEP_MSEC` (the real coherence invariant). Per contracts/cadence-config.md +
+  research.md R6.
+- [X] T002 [P] New de-alias analysis script (dmp-dump-based, NOT a historical script —
   `feedback_historical_scripts_immutable`) computing per-axis roll **lag-1 autocorr, sign-flip rate,
   saturation %, dctrl** in `specs/037-20hz-control-loop/dealias_metrics.py`; reads t6 as the 10 Hz
   baseline reference.
-- [ ] T003 [P] Test scaffolding: create `tests/test_cadence_invariance.cc` and
-  `tests/test_tick_rescale.cc` skeletons + register in the GoogleTest target (CMakeLists; operator-driven
-  `rebuild-perf.sh` after the registration edit per Constitution IV).
+- [X] T003 [P] Test scaffolding: create `tests/cadence_invariance_tests.cc` and
+  `tests/tick_rescale_tests.cc` skeletons + register in the GoogleTest target (CMakeLists; operator-driven
+  `rebuild-perf.sh` after the registration edit per Constitution IV). (Repo convention is the `*_tests.cc`
+  suffix, not the `test_*` prefix; skeletons `GTEST_SKIP` so `run_autoc_tests` stays green until T014/T015.)
 
 **Checkpoint**: cadence is a first-class configurable knob; the gate metric is measurable.
 
@@ -67,21 +70,24 @@ research artifacts per `feedback_scripts_dir_scope`).
 work, not trail it. P1/P2/P3/P4 here; P5→US2 (xiao firmware, deferred by design — see prework index).
 These are independent of the Phase-0 research and can run in parallel with it.
 
-- [ ] T004 [P] **P3 — fix the short-source skip**: revert the `c95887e` erase; keep `gSourceTrajectoryList`
-  at **294 (1:1 with the scenario slots)** and **neutralize the 2 short corner-crash scenarios in place**
-  (score as corner-crash / exclude their fitness) so `slot % 294 = slot` holds. Touch `src/autoc.cc` +
-  the worker map (`crrcsim/.../inputdev_autoc.cpp:700`). **Gate: must precede any clean M2 bake** (035 M2
-  rerun / US1b). Tracker-mode only; doesn't affect M1.
+- [X] T004 [P] **P3 — fix the short-source skip**: revert the `c95887e` erase; keep `gSourceTrajectoryList`
+  at **294 (1:1 with the scenario slots)** so `slot % 294 = slot` holds. **DECISION (operator 2026-06-09):
+  do NOT add skip/exclude machinery — just PLAY the short corner-crash scenarios THROUGH** (they terminate
+  cleanly via `CrashReason::TimeLimit`, contributing their short real fitness, garbage-in-garbage-out).
+  Rationale: with the tightened entry cone (T006) such degenerate sources are rare-to-absent in new M1
+  runs, so the skip footprint (touching fitness_decomposition/selection/#Gen) wasn't worth it. Touch
+  `src/autoc.cc` only (keep-all + warn). **Gate: must precede any clean M2 bake** (035 M2 rerun / US1b).
+  Tracker-mode only; doesn't affect M1.
 - [ ] T005 [P] **P2 — slim the autoc training logfile**: drop the per-scenario `[N] OK/CRASH` lines
   (294/gen) + per-scenario decomposition from the autoc training `.log`, **only after verifying** the
   elite per-scenario data is reconstructable from the gen `.dmp` via `dmp-dump`. Keep the per-gen
   `#NNGen`/`#GenCrash`/`#GenSimStats` summary. (`project_dmp_driven_analytics_backlog` direction.)
-- [ ] T006 [P] **P1 — tighten the entry-variation envelope**: in `include/autoc/util/config.h:63,65` set
+- [X] T006 [P] **P1 — tighten the entry-variation envelope**: in `include/autoc/util/config.h:63,65` set
   `entryConeSigma 30→18` (⇒ 2.5σ = 45°) and `entrySpeedSigma 0.10→0.05–0.06` (⇒ 2.5σ ≈ 12.5–15%); clamp
   stays 2.5σ — do NOT add a new hard cap (existing `kEntryConeMaxRad=80°` becomes moot). Update the
   load/log in `src/autoc.cc`. Clean step coordinated with the US1 retrain (T026); t6 stays the baseline
   (Q3 caveat). **MUST precede T026.**
-- [ ] T007 [P] **P4 — renderer focus-mode single-arena**: in playback focus mode the renderer currently
+- [X] T007 [P] **P4 — renderer focus-mode single-arena**: in playback focus mode the renderer currently
   still steps **every** arena; change it to process **only the focused arena** (skip per-tick
   update/step for non-focused arenas, not just skip draw). **Moved early** because at 40/50 Hz the
   all-arena step makes the renderer too slow to *use* for inspecting high-rate runs — this is what keeps
@@ -98,7 +104,7 @@ envelope is set; the renderer stays usable at the higher sim rates.
 **Purpose**: produce the smoothing theory + projected cadence + derived-bundle decisions that GATE the
 bake. **⚠️ No US1 retrain begins until T008 + T011 + T012 complete.**
 
-- [ ] T008 **Smoothing theory (RT — GATES the bake)**: extract roll-subsidence τ_roll from the FDM
+- [X] T008 **Smoothing theory (RT — GATES the bake)**: extract roll-subsidence τ_roll from the FDM
   step-response trace (`crrcsim/src/mod_fdm/fdm_larcsim/fdm_larcsim.cpp` trace-capture path) + `Cl_p=-0.47`;
   inspect **raw pre-tanh roll drive** in the t6 traces; produce the per-axis (A) smooths / (B) relay
   prediction + command-vs-motion target. Write to research.md RT. A (B) verdict = cheap no-go, STOP
@@ -134,11 +140,11 @@ theory's (A)/(B) prediction.
 
 ### Tests for User Story 1 (write first, ensure they FAIL) ⚠️
 
-- [ ] T014 [P] [US1] Cadence-invariance test in `tests/test_cadence_invariance.cc`: stability + energy
+- [ ] T014 [P] [US1] Cadence-invariance test in `tests/cadence_invariance_tests.cc`: stability + energy
   totals for a fixed synthetic trajectory are ~equal at 10 Hz vs the projected rate (within FP).
-- [ ] T015 [P] [US1] Tick-rescale test in `tests/test_tick_rescale.cc`: `closing_rate` for a known dDist
+- [ ] T015 [P] [US1] Tick-rescale test in `tests/tick_rescale_tests.cc`: `closing_rate` for a known dDist
   is correct at two intervals; engage-delay ticks = `ceil(EngageDelayMs/controlIntervalMsec)` at 10/20/50.
-- [ ] T016 [P] [US1] NN-layout round-trip + fail-loud test in `tests/test_nn_layout.cc`: write/read a dmp
+- [ ] T016 [P] [US1] NN-layout round-trip + fail-loud test in `tests/nn_layout_tests.cc`: write/read a dmp
   at the new layout byte-identical; an old-layout dmp triggers a clear fail-loud error (Principle V).
 
 ### Implementation for User Story 1
@@ -368,3 +374,50 @@ US1 (sim M1 go/no-go + the rate decision) → US1b (M2 retrain, if signal) → U
 - Principle V: the history-layout change is greenfield (no cereal bump) but fail-loud on read.
 - Principle VI audit runs **per milestone** (T028 US1, T030 US1b, T046 final), not only at the end.
 - Operator drives the regression gate and clean rebuilds; never rebuild during a live training run.
+
+---
+
+## Session implementation status + design decisions (2026-06-09)
+
+**Prework / Setup / theory done (uncommitted, awaiting a clean build):** T001, T002, T003, T004, T006,
+T007, T008. T005 deferred to just-before-training (operator). Notes:
+
+- **T004** final form is **play-through, no skip machinery** (operator 2026-06-09). The impact analysis
+  first led to a `skip`-flag exclude (ScenarioScore.skipped honored across fitness/lexicase/minimax/#Gen),
+  but that was REMOVED as over-engineered: short sources terminate cleanly via `CrashReason::TimeLimit`
+  (tracker_stepper.cc:218) and just contribute their short real fitness. The fix is now `src/autoc.cc`
+  only -- replace the `c95887e` erase with keep-all-294 + a warning; `computeScenarioScores` stays
+  single-arg; no `SourceScenarioTrajectory.skip`, no `ScenarioScore.skipped`. With the tightened entry
+  cone these degenerate sources should be rare-to-absent anyway.
+- **T008 gate = GO** (roll = case A, aliasing-dither) but with a real-flight caveat: the corpus shows
+  roll is NOT authority-capped (peaks 540-620 deg/s), so the verdict now rests on the Nyquist/tau_roll
+  under-sampling + the -0.24 anti-persistent autocorr, NOT "saturation is averaged." **The FDM
+  held-command roll step-response trace remains the one outstanding analytic validation.**
+
+**Sim-to-real fidelity work added this session (beyond the original task list; feeds the T024 bundle):**
+
+- **Energy curve** bumped `throttle^2 -> throttle^2.5` in `throttleEnergyStep` (closer to real prop
+  power; operator-chosen). `energy_metric_tests.cc` fixtures updated. NOTE: this shifts the 035 energy
+  objective landscape vs the t6 baseline (intended).
+- **Actuator dynamics (servo lag+slew + thrust lag) -- IMPLEMENTED INSIDE THE FDM.** Decision (operator
+  2026-06-09): the lag lives in `fdm_larcsim` at the **substep dt**, NOT the command path. Rationale:
+  tau_servo ~= 20 ms is <= the once-per-outer-frame command interval (20-100 ms), so a command-path
+  filter would settle ~instantly and barely model lag; the FDM substep loop (200 Hz -> 2 kHz at higher
+  cadences) resolves it; and it keeps actuator dynamics in the same layer the other craft variations
+  already modify (`Global::craft*`). Files: servo slew->lag on aileron/elevator + thrust first-order lag
+  in `crrcsim/src/mod_fdm/fdm_larcsim/fdm_larcsim.cpp` (state in `.h`, reset to neutral every
+  `initAirplaneState` for determinism); `Global::servoTau/servoSlew/thrustTau` (`crrcsim/src/global.*`)
+  set per-scenario in `inputdev_autoc.cpp` (mirrors the `craftCGDelta` path).
+- **The 3 dynamics params are craft variations** (evaluated: a ~4-craft fleet differs in servos/motors).
+  `CraftServoTauSigma`/`CraftServoSlewSigma`/`CraftThrustTauSigma` wired end-to-end exactly like
+  `craftThrustSigma` (config.h struct+macro, training inis only, `craft_variation.h` clamped draw
+  appended at the bottom -- draw order frozen for determinism, `scenario_metadata.h`, the ramp in
+  `scenario_meta_apply.h`, and the per-scenario apply). Centers tau_servo 0.020 s / slew 6.0 (full-
+  throw/s) / tau_thrust 0.150 s, each Gaussian-drawn then CLAMPED to a positive physical range. Drawn
+  values appear as new columns in the startup per-scenario variation table; sigmas auto-print via the
+  config macro.
+
+**Determinism**: no new PRNG draws beyond the 3 appended craft draws (order unchanged); the FDM filter is
+pure dt arithmetic with per-scenario state reset. A no-variation run should differ from pre-037 only by
+the new nominal lag model + the energy-curve change. **Operator's bitwise regression gate must confirm
+this after a clean build** (cross-component: autoc + crrcsim).

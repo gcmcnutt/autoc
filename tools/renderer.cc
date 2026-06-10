@@ -3988,7 +3988,18 @@ void Renderer::updatePlaybackAnimation() {
   // Path always drives the timing - find longest path duration across all arenas
   scalar primaryDuration = 0.0f;
   int maxArenas = evalResults.pathList.size();
+  // 037 P4 clock-stop-at-focus 2026-06-09: in focus mode the global clock
+  // used to run to the LONGEST arena's duration, so a focused short path
+  // (e.g. 10s) froze on screen while the clock ticked on to the longest
+  // arena (e.g. 40s+). When focused, the stop condition must be the
+  // FOCUSED arena's own duration, not the global max. Non-focus
+  // (all-arenas) behavior is unchanged: we still take the max over every
+  // arena. Exiting focus mode (focusMode=false) restores that full-
+  // duration playback automatically since this scan reverts to all arenas.
   for (int i = 0; i < maxArenas; i++) {
+    if (focusMode && i != focusArenaIndex) {
+      continue;  // focus mode: only the focused arena drives the clock
+    }
     if (!evalResults.pathList[i].empty()) {
       // Path is pure geometry now — derive duration from AircraftState timestamps
       // Use last aircraft state time as proxy for path duration
@@ -4019,7 +4030,13 @@ void Renderer::updatePlaybackAnimation() {
     updateControlsOverlay(currentSimTime);
   }
   
-  // Check if animation is complete
+  // Check if animation is complete. 037 P4: primaryDuration is now the
+  // focused arena's duration when focusMode is on (see scan above), so in
+  // focus mode this stops when the focused path ends rather than at the
+  // global max. Behavior choice = HOLD-AT-END, not loop: we clamp
+  // currentSimTime and clear isPlaybackActive, leaving the last focused
+  // frame frozen on screen. This matches the existing all-arenas
+  // semantics.
   if (primaryDuration > 0.0 && currentSimTime >= primaryDuration) {
     currentSimTime = primaryDuration;
     isPlaybackActive = false;
@@ -4028,8 +4045,17 @@ void Renderer::updatePlaybackAnimation() {
     if (stopwatchVisible) {
       updateStopwatch(currentSimTime);
     }
-    std::cout << "Playback animation completed (duration: " << primaryDuration << "s)" << std::endl;
+    std::cout << "Playback animation completed (duration: " << primaryDuration << "s"
+              << (focusMode ? ", focus mode: focused-arena clock" : "") << ")" << std::endl;
   }
+
+  // 037 P4 instrumentation: start of per-frame STEP/UPDATE work. Times
+  // the arena clear + per-arena reveal/geometry build + pipeline Update()
+  // calls, i.e. the CPU cost we want to compare focused-vs-all-arenas.
+  // The trailing renderWindow->Render() is excluded (counted separately
+  // as a render pass). instrPointsPushed below is the render-traffic proxy.
+  auto instrStepStart = std::chrono::steady_clock::now();
+  long instrFramePoints = 0;  // points pushed this frame (render-traffic proxy)
 
   // Clear existing data
   this->paths->RemoveAllInputs();
@@ -4581,9 +4607,66 @@ void Renderer::updatePlaybackAnimation() {
     }
   }
 
+  // 037 P4 render-traffic proxy: sum the points actually present in each
+  // pipeline's output after Update(). This is the geometry pushed toward
+  // the GPU/X server this frame and tracks the per-frame render cost that
+  // focus mode is meant to shrink. It is NOT the X11 byte count (see the
+  // external-tool note below).
+  auto addPts = [&instrFramePoints](vtkPolyData* pd) {
+    if (pd) instrFramePoints += static_cast<long>(pd->GetNumberOfPoints());
+  };
+  addPts(this->paths->GetOutput());
+  addPts(this->actuals->GetOutput());
+  addPts(this->targetActuals->GetOutput());
+  addPts(this->targetBeaconsLeft->GetOutput());
+  addPts(this->targetBeaconsRight->GetOutput());
+  addPts(this->chaseCameraFov->GetOutput());
+  addPts(this->segmentGaps->GetOutput());
+  if (!blackboxAircraftStates.empty()) {
+    addPts(this->blackboxTapes->GetOutput());
+    addPts(this->blackboxHighlightTapes->GetOutput());
+  }
+
+  // 037 P4: end of STEP/UPDATE timing window (excludes the Render() pass).
+  auto instrStepEnd = std::chrono::steady_clock::now();
+  double instrStepMs = static_cast<double>(
+      std::chrono::duration_cast<std::chrono::microseconds>(instrStepEnd - instrStepStart).count()) / 1000.0;
+  instrStepMsSum += instrStepMs;
+  if (instrStepMs > instrStepMsMax) instrStepMsMax = instrStepMs;
+  instrPointsPushed += instrFramePoints;
+
   // Render the scene
   renderWindow->Render();
-  
+  instrRenderPasses += 1;  // 037 P4: one render pass this frame
+
+  // 037 P4 periodic summary. Prints per-frame STEP/UPDATE CPU (avg + max
+  // over the window) and the render-traffic proxy (render passes + avg
+  // points pushed). Tagged with the current mode so focused-vs-all-arenas
+  // runs can be compared directly from stdout. For TRUE X11 bytes-on-wire
+  // (which cannot be measured in-process), wrap the renderer with xtrace:
+  //   xtrace -n -o /tmp/renderer.xtrace -- ./renderer <args>
+  // then summarize request bytes from the trace; alternatively run
+  // x11perf for a baseline, or LD_PRELOAD an XSetAfterFunction /
+  // _X11TransBytesWritten interposer to tally bytes per flush. The
+  // in-process counters here are a proxy, not the wire byte count.
+  instrFrameCount += 1;
+  if (instrFrameCount >= kInstrSummaryEveryFrames) {
+    double avgMs = instrStepMsSum / static_cast<double>(instrFrameCount);
+    double avgPts = static_cast<double>(instrPointsPushed) / static_cast<double>(instrFrameCount);
+    std::cout << "[037 P4 instr] mode=" << (focusMode ? "focus" : "all")
+              << " arenas=" << renderArenas
+              << " frames=" << instrFrameCount
+              << " step_ms avg=" << avgMs << " max=" << instrStepMsMax
+              << " render_passes=" << instrRenderPasses
+              << " pts/frame avg=" << avgPts
+              << std::endl;
+    instrFrameCount = 0;
+    instrStepMsSum = 0.0;
+    instrStepMsMax = 0.0;
+    instrRenderPasses = 0;
+    instrPointsPushed = 0;
+  }
+
   // Continue animation if still active (use one-shot timers like original)
   if (isPlaybackActive) {
     animationTimerId = renderWindowInteractor->CreateOneShotTimer(33); // 33ms = ~30fps
@@ -4638,8 +4721,21 @@ void Renderer::renderFullScene() {
   // Render with full progress (1.0) using existing data
   int maxArenas = evalResults.pathList.size();
   for (int i = 0; i < maxArenas; i++) {
+    // 037 P4 -- focus-mode arena gate (parallels updatePlaybackAnimation's
+    // line ~4100 skip). When focused on a single arena, rebuild geometry
+    // only for that arena. renderFullScene runs on pause/stop and refresh;
+    // at 40/50Hz control rates the per-arena tape rebuild over all arenas
+    // is too slow to use for inspecting a focused run. Non-focus (all-
+    // arenas) mode is unchanged. Other arenas keep their last-built
+    // static tape (AppendPolyData retains prior inputs cleared only at the
+    // top of this function -- but in focus mode they were never repopulated
+    // here, so they show empty until focus is exited; matches the
+    // animation path's behavior).
+    if (focusMode && i != focusArenaIndex) {
+      continue;
+    }
     vec3 offset = renderingOffset(i);
-    
+
     std::vector<vec3> p = pathToVector(evalResults.pathList[i]);
     std::vector<vec3> a = stateToVector(evalResults.aircraftStateList[i]);
 

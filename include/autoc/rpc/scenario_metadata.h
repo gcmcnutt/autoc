@@ -82,6 +82,13 @@ struct ScenarioMetadata {
     gp_scalar craftThrustScale = static_cast<gp_scalar>(1.0);   // engine maxThrust multiplier
     gp_scalar craftPitchEffDelta = static_cast<gp_scalar>(0.0); // pitch authority fractional Δ
     gp_scalar craftRollEffDelta = static_cast<gp_scalar>(0.0);  // roll authority fractional Δ
+    // 037 actuator-dynamics axes -- ABSOLUTE physical values (seconds / per-
+    // second), not deltas. Defaults = nominal centers so a no-craft scenario
+    // runs the nominal lag model. Set by inputdev_autoc on the per-scenario
+    // actuator filter (servo lag+slew, thrust lag) instead of the constants.
+    gp_scalar craftServoTau = static_cast<gp_scalar>(0.020);    // servo lag tau (s)
+    gp_scalar craftServoSlew = static_cast<gp_scalar>(6.0);     // servo slew rate (full-throw/s)
+    gp_scalar craftThrustTau = static_cast<gp_scalar>(0.150);   // thrust lag tau (s)
     uint32_t craftSeed = 0;                                     // craft-class PRNG seed (replay root)
     // FR-020: future cameraSeed insertion point — append `uint32_t cameraSeed`
     // here after craftSeed when the camera-variation class lands. Order
@@ -102,7 +109,9 @@ struct ScenarioMetadata {
            windDirectionOffset, entryNorthOffset, entryEastOffset, entryAltOffset,
            rabbitSpeed, originOffset, scenarioSeed,
            craftCGDelta, craftDragDelta, craftTrimDelta, craftThrustScale,
-           craftPitchEffDelta, craftRollEffDelta, craftSeed);
+           craftPitchEffDelta, craftRollEffDelta,
+           craftServoTau, craftServoSlew, craftThrustTau,  // 037 actuator dynamics
+           craftSeed);
     }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)

@@ -168,6 +168,13 @@ struct WorkerInit {
   // ini_schema.md.
   gp_scalar cepGateThreshold = static_cast<gp_scalar>(1.25);
 
+  // 037 T001 -- control-loop cadence (ms), set from ControlIntervalMsec in the
+  // .ini (autoc parent has the only ConfigManager). The crrcsim worker has no
+  // .ini access, so it takes its NN/sensor interval from here instead of the
+  // former AUTOC_EVAL_INTERVAL_MSEC env var. 0 = unset sentinel; the worker
+  // fail-louds on 0 (no silent fallback). Per contracts/cadence-config.md.
+  unsigned long controlIntervalMsec = 0;
+
   // 030 V1.5 — run-static scenario library. Built once at startup from
   // generateSmoothPaths(gPathSeed) + the joint-PRNG variation table; the
   // worker dispatches per-eval scenarios by indexing into these in
@@ -205,7 +212,8 @@ struct WorkerInit {
        crashHullRadius, trailDistance,
        pathList, scenarioMetaList,
        cepGateThreshold,
-       enableWindVariations);  // 034 Phase 7 — appended, no version bump
+       enableWindVariations,    // 034 Phase 7 -- appended, no version bump
+       controlIntervalMsec);    // 037 T001 -- appended, no version bump
     mode = static_cast<Mode>(m);
   }
 };

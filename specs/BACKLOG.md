@@ -126,6 +126,23 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **Trigger to act**: when the next milestone adds 5+ knobs (likely M7 tracker fitness), before the manual-print drift bites.
 - Files: `include/autoc/util/config.h`, `src/util/config.cc`, `src/autoc.cc:1402-1462` (startup print block).
 
+### [BACKLOG 037] Config system: stack INI files (base + overrides, last-value-wins)
+
+- **Surfaced 037 (2026-06-09)**: the six `autoc*.ini` files duplicate most keys, so any change (new key,
+  retuned value) must be hand-applied to each and they silently drift -- the 037 `ControlIntervalMsec`,
+  craft actuator-dynamics sigmas, and tightened entry sigmas each had to be touched in 3-6 files, and the
+  `autoc-eval-*.ini` copies lagged. inih only parses a single file.
+- **Want**: replace the single-file load with a config system that supports STACKING multiple INI files
+  in "last value wins" order, so e.g. `-i base.ini -i m2.ini -i eval.ini` composes (base + overrides).
+  The eval / visual / tracker variants then become thin override files over one base, eliminating drift.
+- **Options**: a small layered wrapper over inih (parse N files in order into one reader); or a more
+  standard library (toml++ / libconfig / cpptoml) if we also want typed sections. Whatever lib must still
+  feed the X-macro auto-parse/auto-print (`AUTOC_CONFIG_FIELDS`) and preserve determinism + the
+  fail-loud-on-missing-required-key behavior (e.g. `ControlIntervalMsec`).
+- **Care**: extend the existing single `-i` flag to a repeatable `-i` (order = precedence).
+- **Trigger to act**: the next time an ini-wide change has to be hand-applied across all six files.
+- Files: `src/util/config.cc` (load), `include/autoc/util/config.h`, the six `autoc*.ini`.
+
 ---
 
 ## 027 carry-forward → 028 deeper-rnn

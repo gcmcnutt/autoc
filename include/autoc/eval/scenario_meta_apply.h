@@ -16,6 +16,7 @@
 #include <cmath>
 
 #include "autoc/autoc.h"  // ENTRY_SAFE_RADIUS, ENTRY_SAFE_ALT_MIN/MAX
+#include "autoc/eval/craft_variation.h"  // 037 kCraft*Center actuator-dynamics centers
 #include "autoc/rpc/scenario_metadata.h"
 #include "autoc/types.h"  // gp_scalar
 
@@ -66,6 +67,19 @@ inline void applyVariationScale(ScenarioMetadata& meta, gp_scalar scale) {
     meta.craftRollEffDelta *= scale;
     meta.craftThrustScale = static_cast<gp_scalar>(1.0)
         + scale * (meta.craftThrustScale - static_cast<gp_scalar>(1.0));
+
+    // 037 actuator-dynamics axes -- ABSOLUTE physical values centered at a
+    // nominal (kCraft*Center). Same interpolation shape as craftThrustScale,
+    // but the nominal is the physical center rather than 1.0: at scale=0 each
+    // collapses to its center (the nominal lag model); at scale=1 it is the
+    // full drawn value. center + scale*(value - center). Pure deterministic
+    // arithmetic -- no PRNG draws here (the draws happened once, upstream).
+    meta.craftServoTau = kCraftServoTauCenter
+        + scale * (meta.craftServoTau - kCraftServoTauCenter);
+    meta.craftServoSlew = kCraftServoSlewCenter
+        + scale * (meta.craftServoSlew - kCraftServoSlewCenter);
+    meta.craftThrustTau = kCraftThrustTauCenter
+        + scale * (meta.craftThrustTau - kCraftThrustTauCenter);
 }
 
 }  // namespace autoc::eval

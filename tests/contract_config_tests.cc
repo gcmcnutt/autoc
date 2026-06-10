@@ -207,7 +207,7 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // LexicaseEpsilonMode → 88; 035 FR-P10 added S3ObjectTagging → 89, then
     // removed it (tagging is now hardcoded retain=expire, fail-fast) → 88;
     // 035 M2 added TrackerSourceBucket → 89.
-    EXPECT_EQ(n, 89u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    EXPECT_EQ(n, 93u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 
