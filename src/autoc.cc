@@ -399,7 +399,7 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
         std::ostringstream hdr;
         hdr << "Scenario       ScenarioSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°";
         if (any_craft_active) {
-            hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svTau   svSlew   thrTau    CraftSeed";
+            hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svTau   svSlew   thrTau   pwmPh    CraftSeed";
         }
         *logger.info() << hdr.str() << endl;
     }
@@ -407,7 +407,7 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
         std::ostringstream sep;
         sep << "--------  -----------------  --------  ------  ------  ------  --------  ------  -----  -----";
         if (any_craft_active) {
-            sep << "  --------  -------  -------  -------  -------  -------  -------  -------  -------  -----------";
+            sep << "  --------  -------  -------  -------  -------  -------  -------  -------  -------  -------  -----------";
         }
         *logger.info() << sep.str() << endl;
     }
@@ -457,6 +457,8 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
                  << std::setw(7) << static_cast<double>(cd.craftServoSlew)      // 037: /s (servo slew)
                  << "  " << std::setprecision(4)
                  << std::setw(7) << static_cast<double>(cd.craftThrustTau)      // 037: s (thrust lag tau)
+                 << "  " << std::setprecision(4)
+                 << std::setw(7) << static_cast<double>(cd.craftServoPwmPhase)  // 037 v2: s (PWM latch phase)
                  << "  0x" << std::hex << std::setw(8) << std::setfill('0')
                  << sv.craftSeed
                  << std::dec << std::setfill(' ');
@@ -786,6 +788,10 @@ static WorkerInit buildWorkerInit() {
     // for the full rationale.
     init.enableWindVariations = (cfg.enableWindVariations != 0);
 
+    // 037 servo v2 — in-FDM servo model switch (PWM latch + slew); the
+    // worker gates the fdm_larcsim servo block on it.
+    init.servoModelEnabled = (cfg.servoModelEnabled != 0);
+
     // 030 V1.5 — run-static scenario library shared by both modes.
     // generateSmoothPaths(gPathSeed) is byte-identical every gen, so we
     // copy it exactly once into WorkerInit. scenarioMetaList carries
@@ -859,6 +865,7 @@ static WorkerInit buildWorkerInit() {
                 meta.craftServoTau = cd.craftServoTau;
                 meta.craftServoSlew = cd.craftServoSlew;
                 meta.craftThrustTau = cd.craftThrustTau;
+                meta.craftServoPwmPhase = cd.craftServoPwmPhase;  // 037 servo v2
                 meta.craftSeed = gScenarioVariations[idx].craftSeed;
                 // (033 cleanup) rabbitSpeedSeed assignment removed — field
                 // deleted from ScenarioMetadata + ScenarioVariations.

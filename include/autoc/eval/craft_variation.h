@@ -29,12 +29,24 @@ namespace autoc::eval {
 // a pure 2.5-sigma draw on tau_servo would go negative, so the clamp is
 // MANDATORY. Centers/ranges are shared by the worker-side apply path
 // (scenario_meta_apply.h) so disabled / sigma=0 collapses to the center.
-constexpr gp_scalar kCraftServoTauCenter  = static_cast<gp_scalar>(0.020);  // s
+constexpr gp_scalar kCraftServoTauCenter  = static_cast<gp_scalar>(0.020);  // s (v2: drawn but UNUSED by the FDM — PWM latch replaces the lag)
 constexpr gp_scalar kCraftServoTauMin     = static_cast<gp_scalar>(0.005);  // s
 constexpr gp_scalar kCraftServoTauMax     = static_cast<gp_scalar>(0.050);  // s
-constexpr gp_scalar kCraftServoSlewCenter = static_cast<gp_scalar>(6.0);    // /s (full-throw/s)
-constexpr gp_scalar kCraftServoSlewMin    = static_cast<gp_scalar>(3.0);    // /s
-constexpr gp_scalar kCraftServoSlewMax    = static_cast<gp_scalar>(9.0);    // /s
+// 037 servo model v2 (operator 2026-06-11, post-t6/t7 A/B + DSM-44 datasheet
+// check in finding.md): the v1 lag-dominant model (tau 20 ms + slew 3–9,
+// shaded slow) capped tracking. v2 is datasheet-shaped: a 50 Hz PWM command
+// LATCH (per-scenario phase, 0–20 ms — the real dead-time) plus pure slew
+// derived from the measured transit: ~50–60 ms per 60° of travel once
+// latched, on a ~90° mechanical span (1000–2000 µs). center =
+// (60°/0.055 s)/90° ≈ 12.1 full-throw/s; clamp brackets a fast no-load
+// servo (16) down to a heavily loaded one (8).
+constexpr gp_scalar kServoTransitSecPer60Deg = static_cast<gp_scalar>(0.055);
+constexpr gp_scalar kServoMechSpanDeg        = static_cast<gp_scalar>(90.0);
+constexpr gp_scalar kCraftServoSlewCenter =
+    (static_cast<gp_scalar>(60.0) / kServoTransitSecPer60Deg) / kServoMechSpanDeg;  // ≈12.1 /s (full-throw/s)
+constexpr gp_scalar kCraftServoSlewMin    = static_cast<gp_scalar>(8.0);    // /s (heavy aero load)
+constexpr gp_scalar kCraftServoSlewMax    = static_cast<gp_scalar>(16.0);   // /s (fast no-load)
+constexpr gp_scalar kCraftServoPwmFrameSec = static_cast<gp_scalar>(0.020); // 50 Hz PWM command frame
 constexpr gp_scalar kCraftThrustTauCenter = static_cast<gp_scalar>(0.150);  // s
 constexpr gp_scalar kCraftThrustTauMin    = static_cast<gp_scalar>(0.050);  // s
 constexpr gp_scalar kCraftThrustTauMax    = static_cast<gp_scalar>(0.300);  // s
@@ -93,9 +105,14 @@ struct CraftDeltas {
     // Gaussian delta), NOT deltas. Default = nominal center so the disabled /
     // sigma=0 path collapses to the nominal lag model. The worker ramps these
     // toward the center per-eval (applyVariationScale), same as the others.
-    gp_scalar craftServoTau   = kCraftServoTauCenter;    // s
+    gp_scalar craftServoTau   = kCraftServoTauCenter;    // s (v2: unused by FDM)
     gp_scalar craftServoSlew  = kCraftServoSlewCenter;   // /s (full-throw/s)
     gp_scalar craftThrustTau  = kCraftThrustTauCenter;   // s
+    // 037 servo v2 -- per-scenario PWM latch phase, uniform [0, frame). An
+    // engage episode lands at an arbitrary offset within the 50 Hz command
+    // frame; this is the operator's "0-20 ms PWM lag jitter" (constant within
+    // a scenario -- command instants are periodic, so the phase IS the lag).
+    gp_scalar craftServoPwmPhase = static_cast<gp_scalar>(0.0);  // s, [0, 0.020)
 };
 
 /**
@@ -138,6 +155,12 @@ inline CraftDeltas generateCraftFromClassPRNG(
             + static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftThrustTauSigma));
         d.craftThrustTau = std::min(kCraftThrustTauMax, std::max(kCraftThrustTauMin, thrustTau));
     }
+    // 037 servo v2 -- PWM latch phase, APPENDED (draw order frozen). Drawn
+    // UNCONDITIONALLY (even when the servo model is disabled) so toggling
+    // ServoModelEnabled does not shift any other draw — same
+    // draw-and-discard convention as the wind-class gating.
+    d.craftServoPwmPhase = static_cast<gp_scalar>(craftPRNG.nextDouble())
+        * kCraftServoPwmFrameSec;
     return d;
 }
 

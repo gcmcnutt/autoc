@@ -74,6 +74,12 @@ struct AutocConfig {
     // --- Entry and wind direction variations ---
     int enableEntryVariations = 0;
     int enableWindVariations = 0;
+    // 037 servo v2 — in-FDM servo model master switch (PWM latch + slew).
+    // 0/1 like every enable knob; lets the t8 (off, 10 Hz confirm) / t9 (on,
+    // servo-v2) A/B pair differ by ini only, no rebuild. The per-scenario
+    // craft draws (incl. PWM phase) run regardless so toggling never shifts
+    // PRNG draw order.
+    int servoModelEnabled = 0;
     int enableRabbitSpeedVariations = 0;
     // 037 T006 -- entry-envelope tighten. The Gaussian draw is clamped to
     // +/-kGaussianSigmaClamp (2.5) sigma (scenario_prng.h), so these sigmas set
@@ -273,6 +279,7 @@ struct AutocConfig {
     X(double,         demeticMigProbability,     "DemeticMigProbability") \
     X(int,            enableEntryVariations,     "EnableEntryVariations") \
     X(int,            enableWindVariations,      "EnableWindVariations") \
+    X(int,            servoModelEnabled,         "ServoModelEnabled") \
     X(int,            enableRabbitSpeedVariations, "EnableRabbitSpeedVariations") \
     X(double,         entryConeSigma,            "EntryConeSigma") \
     X(double,         entryRollSigma,            "EntryRollSigma") \

@@ -86,10 +86,14 @@ struct ScenarioMetadata {
     // second), not deltas. Defaults = nominal centers so a no-craft scenario
     // runs the nominal lag model. Set by inputdev_autoc on the per-scenario
     // actuator filter (servo lag+slew, thrust lag) instead of the constants.
-    gp_scalar craftServoTau = static_cast<gp_scalar>(0.020);    // servo lag tau (s)
-    gp_scalar craftServoSlew = static_cast<gp_scalar>(6.0);     // servo slew rate (full-throw/s)
+    gp_scalar craftServoTau = static_cast<gp_scalar>(0.020);    // servo lag tau (s) — v2: unused by the FDM (kept for draw-order/wire stability)
+    gp_scalar craftServoSlew = static_cast<gp_scalar>(12.0);    // servo slew rate (full-throw/s; v2 center ≈12.1)
     gp_scalar craftThrustTau = static_cast<gp_scalar>(0.150);   // thrust lag tau (s)
     uint32_t craftSeed = 0;                                     // craft-class PRNG seed (replay root)
+    // 037 servo v2 — per-scenario 50 Hz PWM latch phase (s, uniform
+    // [0, 0.020)); the real command dead-time. Appended after craftSeed so
+    // the wire prefix is preserved (greenfield growth, no version bump).
+    gp_scalar craftServoPwmPhase = static_cast<gp_scalar>(0.0);
     // FR-020: future cameraSeed insertion point — append `uint32_t cameraSeed`
     // here after craftSeed when the camera-variation class lands. Order
     // matters (wire byte position); keep new seeds appended, not interleaved.
@@ -111,7 +115,8 @@ struct ScenarioMetadata {
            craftCGDelta, craftDragDelta, craftTrimDelta, craftThrustScale,
            craftPitchEffDelta, craftRollEffDelta,
            craftServoTau, craftServoSlew, craftThrustTau,  // 037 actuator dynamics
-           craftSeed);
+           craftSeed,
+           craftServoPwmPhase);  // 037 servo v2 -- appended, no version bump
     }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)

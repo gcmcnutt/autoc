@@ -305,9 +305,41 @@ overrun under worst-case jitter), and the 50 Hz sim arm (FDM ≥500 Hz) clears t
   include/autoc/eval/ include/autoc/nn/` (closes any per-milestone gaps from T028/T030).
 - [ ] T047 [P] 031 write-back: fold the chosen control rate into `docs/aircraft_tracker_handoff.md` as the
   acquisition-budget input; carry the per-beacon independent-correlator requirement (R7).
-- [ ] T048 Outcome doc + memory: write `specs/037-20hz-control-loop/outcome.md` (theory verdict, projected
-  rate, M1 + M2 gate results, pinned S3 prefixes); update project memory (rate lineage, smoothing-theory
-  result).
+- [X] T048 Outcome doc + memory: `outcome.md` written 2026-06-11 (case-B verdict, three-arm table,
+  pinned S3 prefixes, what-037-bought, route forward); project memory updated (cadence lineage,
+  servo-era metrics, bang-bang physics-migration, basin-robustness observation).
+
+---
+
+## Post-outcome track (2026-06-11): return to 10 Hz + servo model v2
+
+The cadence verdict (outcome.md) routes the next experiments to actuator-model fidelity at 10 Hz.
+Implemented after the d480241 checkpoint:
+
+- [X] P-O1 **10 Hz flip-back**: `SIM_TIME_STEP_MSEC` 50→100 (+outcome comment), `ControlIntervalMsec=100`
+  in all 6 inis. Lag set integral at 100 ms ({16,8,4,2,1,0}); cadence triple → framesPerEval=2.
+- [X] P-O2 **Servo model v2** (datasheet-shaped per finding.md DSM-44 check + operator spec):
+  - 50 Hz **PWM command latch** in fdm_larcsim (replaces the v1 #if-0 lag block): per-scenario phase
+    = uniform [0, 20) ms craft-class draw (`craftServoPwmPhase`, appended draw + ScenarioMetadata
+    field, drawn unconditionally so toggling never shifts PRNG order) — the real command dead-time.
+    Target FROZEN between latches (delays, doesn't smooth); timer/latch state reset per scenario.
+  - **Pure slew** toward the latched target: center re-derived from the 0.055 s/60° transit on a 90°
+    span ⇒ ≈12.1 full-throw/s (was 6.0, shaded slow), clamp 8–16 (was 3–9). NO first-order lag in
+    v2 — tau is still drawn (order stability) but unused by the FDM.
+  - **`ServoModelEnabled` ini knob** (int 0/1, default 0) → WorkerInit → `Global::servoModelEnabled`,
+    so the t8 (off) / t9 (on) A/B differs by ini only, no rebuild. autoc.ini carries the key =0.
+  - Variation table gains the `pwmPh` column; contract_config_tests field count 93→94.
+- [X] P-O3 Build green (incremental, perf tree), **all 34 suites pass**.
+- [ ] P-O4 **basic-m1 smoke ×2** (standing rule after loop plumbing — caught both prior cadence bugs):
+  servo OFF (validates the 10 Hz flip) and servo ON (exercises the new latch path; needs
+  `ServoModelEnabled=1` in autoc-basic-m1.ini for the second arm). Check: gen-1 population spread on
+  the historical scale, no identical-fitness signature, startup `servoModelEnabled=` line.
+- [ ] P-O5 **t8 — 10 Hz confirm bake** (servo OFF, autoc.ini as-is, seed 13337): expect ≈035-t6
+  signal ("roughly same, maybe more robust"); ALSO the crash-floor attribution run (if residual
+  crashes ≈ t7's ~13–23/294, the floor is config — craft-full/history — not cadence).
+- [ ] P-O6 **t9 — servo v2 bake** (`ServoModelEnabled=1`): "does a little honest filtering coexist
+  with tracking?" If yes → realistic servo compatible, smoothness routes to objective/perception/RNN.
+  If capped like t6 → even light filtering breaks the relay strategy; same routing, sharper evidence.
 
 ---
 

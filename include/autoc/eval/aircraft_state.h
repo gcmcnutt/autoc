@@ -39,14 +39,17 @@
 #define SIM_MAX_ELEVATION static_cast<gp_scalar>(-120.0f)
 
 #define SIM_TOTAL_TIME_MSEC (100 * 1000)
-// 037 T017 — control-loop cadence flipped 100 → 50 ms (10 → 20 Hz; R1
-// decision, operator 2026-06-10). This is the compile-time cadence MASTER;
-// ControlIntervalMsec in every .ini must equal it (config.cc fails loud
-// otherwise) and crrcsim derives gEvalUpdateIntervalMsec from it via
-// WorkerInit. The FDM config (crrcsim/autoc_config.xml dt=0.005, fps=20)
-// already satisfies the cadence triple at 50 ms: cycleLength 50 ms,
-// framesPerEval 1, FDM oversample exactly 10×.
-#define SIM_TIME_STEP_MSEC (50)
+// 037 OUTCOME — cadence returned 50 → 100 ms (back to 10 Hz; operator
+// 2026-06-11, see specs/037-20hz-control-loop/outcome.md). The 20 Hz A/B
+// (t6/t7) showed the converged bang-bang is objective-optimal, not a
+// sampling artifact — no de-alias benefit, so 10 Hz is the operating
+// cadence again, with the rest of the 037 bundle retained. This is the
+// compile-time cadence MASTER; ControlIntervalMsec in every .ini must equal
+// it (config.cc fails loud otherwise) and crrcsim derives
+// gEvalUpdateIntervalMsec from it via WorkerInit. The FDM config
+// (crrcsim/autoc_config.xml dt=0.005, fps=20) satisfies the cadence triple
+// at 100 ms: cycleLength 50 ms, framesPerEval 2, FDM oversample 20×.
+#define SIM_TIME_STEP_MSEC (100)
 #define SIM_MAX_INTERVAL_MSEC (SIM_TIME_STEP_MSEC * 5)
 
 // 037 R5/T021 — history lag table (ms-based; see nn_inputs.h). Lags must be

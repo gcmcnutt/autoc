@@ -84,9 +84,10 @@ the 90° case lands ≈6.3 ≈ the modeled center. Verdict on the params: the **
 bracket is reasonable but shaded SLOW** — no-load hardware sits at/above the bracket
 max, so t6 likely overstated the servo tracking cap somewhat. The transit spec is a
 slew figure; tau (small-signal lag) remains an upper-bound estimate at 20 ms (a digital
-micro's small-step response is likely well under). Open: confirm the actual span for
-1000–2000 µs + a loaded bench step test. (Does NOT move the t7 cadence verdict — the
-bang-bang returns with NO servo at all.)
+micro's small-step response is likely well under). Span for 1000–2000 µs **CONFIRMED
+90° (operator 2026-06-11)** — servo v2's `kServoMechSpanDeg = 90` stands (slew center
+≈12.1 full-throw/s, clamp 8–16). Still open: a loaded bench step test. (Does NOT move
+the t7 cadence verdict — the bang-bang returns with NO servo at all.)
 
 ## Variation ramp: env-only (craft NOT ramped)
 

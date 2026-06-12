@@ -204,6 +204,12 @@ struct WorkerInit {
   // a separate enable flag here.
   bool enableWindVariations = true;
 
+  // 037 servo v2 -- in-FDM servo model master switch (PWM latch + slew).
+  // Set from ServoModelEnabled in the .ini by the autoc parent; the worker
+  // gates the fdm_larcsim servo block on it. Per-scenario phase/slew draws
+  // run regardless (draw-and-discard, same convention as wind above).
+  bool servoModelEnabled = false;
+
   template<class Archive>
   void serialize(Archive& ar) {
     int m = static_cast<int>(mode);
@@ -213,7 +219,8 @@ struct WorkerInit {
        pathList, scenarioMetaList,
        cepGateThreshold,
        enableWindVariations,    // 034 Phase 7 -- appended, no version bump
-       controlIntervalMsec);    // 037 T001 -- appended, no version bump
+       controlIntervalMsec,     // 037 T001 -- appended, no version bump
+       servoModelEnabled);      // 037 servo v2 -- appended, no version bump
     mode = static_cast<Mode>(m);
   }
 };
