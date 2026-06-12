@@ -76,6 +76,18 @@ tightens dramatically without the servo, the servo is the (realistic) limiter an
 params matter; if even a fast servo stays loose, the limiter is elsewhere (fitness /
 cone / NN capacity).
 
+**DATASHEET CHECK (operator 2026-06-11)**: the actual craft servo is a **Power HD DSM-44
+digital micro** — transit spec **0.07 s / 60°** (no-load), controller maps the NN span
+linearly onto 1000–2000 µs. In sim units (full-throw/s) by mechanical span over that
+pulse range: 60°→14.3, **90° (typical)→9.5**, 120°→7.1; under aero load (~1.5× derate)
+the 90° case lands ≈6.3 ≈ the modeled center. Verdict on the params: the **3–9 draw
+bracket is reasonable but shaded SLOW** — no-load hardware sits at/above the bracket
+max, so t6 likely overstated the servo tracking cap somewhat. The transit spec is a
+slew figure; tau (small-signal lag) remains an upper-bound estimate at 20 ms (a digital
+micro's small-step response is likely well under). Open: confirm the actual span for
+1000–2000 µs + a loaded bench step test. (Does NOT move the t7 cadence verdict — the
+bang-bang returns with NO servo at all.)
+
 ## Variation ramp: env-only (craft NOT ramped)
 
 Decision (operator 2026-06-10): **only ENV variations ramp** (entry pose / wind /
@@ -133,3 +145,78 @@ smoke run caught both.)
 happened — we flipped to 20 Hz instead, and HEAD can no longer run 10 Hz without a
 checkout. De-alias gate (T027) uses the recorded 035-t6 metrics per Q1/Q3; if a
 matched-config 10 Hz reference is wanted, run it from stage-1 commit `9592dea`.
+
+## t6 bake (20 Hz + servo) — STOPPED at gen 267 for the t7 servo A/B (2026-06-10)
+
+`autoc-037-t6-m1-20hz`, S3 `autoc-m1/autoc-9223370255738048515-2026-06-10T18:38:47.292Z/`,
+gens 1-267, ~7.7 h, zero ELITE_DIVERGED. Final: best **-8,926**, 271/294 complete,
+avgMaxStreak 4.4, **pctInStreak 1.6%**, roll ac +0.65 / flips ~24% / sat 0%, throttle sat ~99%.
+
+- **vs the servo-matched 10 Hz arm (t3): clearly better** — passed t3's final best (-6,750 @368)
+  by gen ~200, 3.6× t3's completions at gen 125, roll coherent throughout (t3-style bang-bang
+  never formed), stability pressure lower (-44k vs t3's -52k trend).
+- **vs the no-servo 10 Hz reference (035-t6): much slower and tracking-limited** — 035-t6 hit
+  pctInStreak 7.1% by gen 200 / 14.3% by 300; t6 managed 1.6% at 267. Regime occupancy
+  (dynamics_progress.png): tracking band only ~2%, intercept plateaued ~45-48%, distance
+  floor ~19-20 m. The system **intercepts but cannot hold the tracking cone** — operator read:
+  limited tracking ability, likely a basin/halt pattern.
+- Confound unresolved by t6 alone: is the tracking cap the CADENCE (insufficient even at 20 Hz)
+  or the SERVO DAMPING (lag+slew making tight cone-holding physically hard)? t3 vs t6 says
+  20 Hz > 10 Hz *given* the servo; neither isolates the servo itself at 20 Hz.
+
+## t7 arm (overnight 2026-06-10): 20 Hz, servo lag+slew DISABLED
+
+Operator decision: comment out the in-FDM servo damping (`fdm_larcsim.cpp` `#if 0` block —
+applies to BOTH aileron/roll and elevator/pitch; throttle was never servo-filtered) to restore
+035-era idealized instant surfaces while keeping the full 20 Hz bundle (cadence, history basis,
+entry cone, env-only ramp, energy^2.5). Run name `autoc-037-t7-m1-20hz-noservo`.
+
+This is the finding.md "A/B (basic-m1 with the servo vs a near-instant servo)" TODO, run at
+full bake scale: **t7 vs 035-t6 isolates the cadence at matched (ideal) servo physics; t7 vs t6
+isolates the servo at matched 20 Hz.** Expected reads:
+- t7 tracks like 035-t6 (streak takeoff) WITH coherent roll → cadence helps, servo damping is
+  the tracking limiter → revisit servo params (the operator's standing skepticism above).
+- t7 tracks like 035-t6 but with 035-style bang-bang roll → 20 Hz alone doesn't de-alias;
+  the t6 coherence was servo-deadening (operator's caution) → re-think.
+- t7 still tracking-limited → the limiter is elsewhere (objective/cone/NN capacity), not servo.
+
+PRNG note: the per-scenario servoTau/servoSlew draws still execute (order preserved); the FDM
+just ignores them. Determinism structure identical to t6.
+
+## t7 verdict (gen ~463, 2026-06-11) + population-health note
+
+**Case B confirmed at convergence depth.** t7's roll reconverged to the 10 Hz controller as
+tracking deepened: gen 463 elite **lag1_ac −0.165, sign-flips 59.3%, dctrl 0.944** ≈ the 035-t6
+baseline (−0.24 / 56% / ~1.0). Both T027 gate legs FAIL in the cadence-isolated arm, at
+sub-parity tracking (pctInStreak 14.4 vs 22.0 at matched gen; streak holds 1.46 s vs 1.97 s
+wall-clock — NOTE: avgMaxStreak is tick-denominated, divide by 2 at 20 Hz before comparing).
+**Neither intervention (cadence ×2, servo realism) materially changed the craft's behavior —
+still bang-bang.** The relay strategy is objective/architecture-optimal, not a sampling artifact.
+
+**Population health (operator observation)**: at matched elite (best ≈ −22.4k), t7's population
+mass is much thinner than 035-t6's — avg −3.9k vs −4.6k (and ~2× gap at matched gens: −3.9k vs
+−7.1k at gen ~460), shorter gens despite +20% tick overhead, best-slope past gen 300 ≈ 60% of
+035-t6's. Two candidate mechanisms: (1) mutational brittleness at 20 Hz — recurrent/relay
+dynamics execute 2× per wall-clock second, so perturbations compound faster and offspring die
+early; (2) chopped streak holds deny the mid-tier the streak-multiplier amplification that
+deepens 035-t6's avg. A 20 Hz robustness tax on the evolution engine itself.
+
+## NEXT EXPERIMENT (t8 candidate, operator 2026-06-11): 10 Hz at HEAD config — the anchor arm
+
+Design: **back to 10 Hz, servo filter still OFF**, full bake, rough comparison to 035-t6 (and
+029/pastonly3 lineage, which the operator is re-reading):
+- `SIM_TIME_STEP_MSEC` 100 + all inis `ControlIntervalMsec=100` (cadence triple holds:
+  fps=20/dt=0.005 → framesPerEval=2, the pre-037 arrangement). Servo block stays `#if 0`.
+- Keeps the 037-era non-cadence config: **env-only ramp (craft NOT scaled, full magnitude from
+  gen 0)** including the new (inert, with filter off) actuator-dynamics draws; tightened entry
+  cone; energy^2.5; ms-based history lags (at 100 ms ticks = {16,8,4,2,1,0} — window 1.6 s, a
+  KNOWN diff vs 035's uniform 0.5 s window that can't be removed without another layout change).
+- **Question: does evolution look roughly like 035-t6?** t8 vs 035-t6 isolates the accumulated
+  non-cadence config drift at matched cadence; t8 vs t7 isolates cadence at matched config —
+  closing the comparison square (t6/t7/t8/035-t6).
+- Caveat: single runs carry the basin lottery (specs/BACKLOG "M1 basin-landscape": ~1/3 fresh
+  seeds stall; seeds don't transfer across builds) — "roughly the same" is the honest bar, and
+  a stall may need a reroll before reading config drift into it.
+
+Follow-on angle if t8 anchors cleanly: re-enable servo filtering (`#if 1`, possibly with the
+DSM-44-corrected slew center ~7–8) and look closer at the servo arm with trustworthy params.

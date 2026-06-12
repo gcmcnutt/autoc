@@ -184,14 +184,17 @@ theory's (A)/(B) prediction.
   34 suites green** under the perf build. The stage-1-commit (`9592dea`) 10 Hz bit-replay gate was
   **WAIVED (operator 2026-06-10: "we are beyond 10 Hz now")** — 20 Hz is the baseline cadence going
   forward; `9592dea` remains the checkout point if 10 Hz archaeology is ever needed.
-- [~] T026 [US1] Retrain M1 at 20 Hz — **RUNNING since 2026-06-10 11:38**:
+- [X] T026 [US1] Retrain M1 at 20 Hz — DONE (two arms, see outcome.md):
   `scripts/train.sh autoc.ini logs/autoc-037-t6-m1-20hz.log` (pop 5000 / 800 gens / 6×49 scenarios /
   lexicase+MAD / seed 13337; dumps auto-tagged `retain=expire`). NOTE: "037-t6" is this 20 Hz bake;
   the *de-alias baseline* "t6" in dealias_metrics.py is the 035 run `autoc-035-t6-m1-energy` — don't
   conflate. Preceded by smoke runs t4 (FAIL → crrcsim f81fd31 command-starvation fix) and t5 (PASS,
   climbs earlier/farther than 10 Hz — see finding.md).
-- [ ] T027 [US1] Measure the gate with `dealias_metrics.py` (T002) on the run dmp vs t6 (fixed-eval per
-  `project_late_run_fitness_interpretation`); confirm vs the T008 theory prediction. Record the go/no-go.
+- [X] T027 [US1] Measure the gate — **MEASURED, verdict NO-GO (RT case B)**: t7 (20 Hz, no servo)
+  converged-tracking roll ac −0.27 / flips 59% / dCtrl 0.94 ≈ the 10 Hz baseline (−0.24 / 56% /
+  ~1.0). Both gate legs FAIL at tracking depth; bang-bang is objective-optimal, not a sampling
+  artifact. t6 (20 Hz + servo) was smooth but tracking-capped (plant-imposed). Full three-arm
+  analysis + decision in outcome.md. **US1b / US2 / US3 are gated OFF.**
 - [ ] T028 [US1] **Milestone close**: type-domain grep audit on US1-touched `src/eval/ src/nn/` (Principle
   VI per-milestone — annotate `// raw-ok:` or convert). The 10 Hz bit-replay leg is **WAIVED**
   (operator 2026-06-10 — committed to 20 Hz; the smoke runs t4/t5 are the refactor's behavioral

@@ -324,6 +324,27 @@ Remaining 015 work:
 
 ## Infrastructure
 
+### Portable agent memory — repo-authoritative, ~/.claude as non-authoritative recall index (out of 032)
+
+- **Surfaced**: 032 ("memory location debate", open since phase 1); resolved in principle 2026-06-10
+  during the 037 t6 bake when the operator challenged storing project findings in the
+  machine-local `~/.claude/.../MEMORY.md` while the project runs on multiple machines/repos with
+  speckit as the documentation system.
+- **Principle (operator 2026-06-10)**: agent memory is a **summary/reference layer over the in-repo
+  specs — loaded automatically, but NEVER authoritative** for instructions, decisions, or project
+  facts. The repo (specs/, docs/, CLAUDE.md) is the single source of truth; memory entries should be
+  one-line hooks pointing at repo paths, so recall works without content forking.
+- **Scope when picked up**:
+  1. Migrate the `project_*` memories (bang-bang migration, servo-era metrics, spiral strategy,
+     basin lottery, …) into a versioned in-repo home (e.g. `docs/NOTES.md` / `docs/lessons/`),
+     leaving only pointer lines in `~/.claude` MEMORY.md.
+  2. Move agent-workflow preferences (never-push, build conventions, regression-gate ownership)
+     into the committed `CLAUDE.md` / `.claude/` so agents on every machine inherit them.
+  3. Keep truly machine-local facts (paths, local build quirks) as the only `~/.claude`-resident
+     content.
+- **Why it matters**: today's memory is invisible to the Windows-side agent, unversioned,
+  unreviewable, and prone to divergence from the specs it summarizes (two copies, one drifts).
+
 ### [NEXT — gated on r1/r2/r3 outcome] M1 basin-landscape protocol + improved pathgen baseline (pop=8000 / wind=36)
 
 - **Surfaced 2026-05-24/25**: 033 phase 1–4 stalls were initially read as a code regression in `acf732f` (033 PRNG rework + smoothness penalty). The 2026-05-24/25 bisect proved they're almost certainly **seed-luck, not code**:
