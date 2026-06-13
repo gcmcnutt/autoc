@@ -37,15 +37,25 @@ constexpr gp_scalar kCraftServoTauMax     = static_cast<gp_scalar>(0.050);  // s
 // shaded slow) capped tracking. v2 is datasheet-shaped: a 50 Hz PWM command
 // LATCH (per-scenario phase, 0–20 ms — the real dead-time) plus pure slew
 // derived from the measured transit: ~50–60 ms per 60° of travel once
-// latched, on a ~90° mechanical span (1000–2000 µs). center =
-// (60°/0.055 s)/90° ≈ 12.1 full-throw/s; clamp brackets a fast no-load
-// servo (16) down to a heavily loaded one (8).
+// latched, on a ~90° mechanical span (1000–2000 µs).
+//
+// UNITS (operator 2026-06-12, post-t8 audit): slew is in AUTOC command
+// units/s — the [-1, +1] NN/INAV span, full range = 2.0 units = the full
+// mechanical span. Platform code translates at its boundary (crrcsim
+// surfaces are [-0.5, +0.5] = command/2, hence its ×0.5 on the cap; INAV
+// would consume [-1,1] natively). center = (60°/0.055 s)/90° spans/s × 2.0
+// units/span ≈ 24.2 units/s (full-span transit 82.5 ms); clamp brackets a
+// fast no-load servo (32) down to a heavily loaded one (16). The pre-fix
+// center 12.1 was derived in spans/s but consumed as units/s — an
+// accidental 2×-slow servo (t6/t8 deadening; finding.md §t8-final).
 constexpr gp_scalar kServoTransitSecPer60Deg = static_cast<gp_scalar>(0.055);
 constexpr gp_scalar kServoMechSpanDeg        = static_cast<gp_scalar>(90.0);
+constexpr gp_scalar kServoSpanCommandUnits   = static_cast<gp_scalar>(2.0);  // [-1,1] full range
 constexpr gp_scalar kCraftServoSlewCenter =
-    (static_cast<gp_scalar>(60.0) / kServoTransitSecPer60Deg) / kServoMechSpanDeg;  // ≈12.1 /s (full-throw/s)
-constexpr gp_scalar kCraftServoSlewMin    = static_cast<gp_scalar>(8.0);    // /s (heavy aero load)
-constexpr gp_scalar kCraftServoSlewMax    = static_cast<gp_scalar>(16.0);   // /s (fast no-load)
+    (static_cast<gp_scalar>(60.0) / kServoTransitSecPer60Deg) / kServoMechSpanDeg
+    * kServoSpanCommandUnits;                                                // ≈24.2 /s (autoc [-1,1] units)
+constexpr gp_scalar kCraftServoSlewMin    = static_cast<gp_scalar>(16.0);   // /s (heavy aero load)
+constexpr gp_scalar kCraftServoSlewMax    = static_cast<gp_scalar>(32.0);   // /s (fast no-load)
 constexpr gp_scalar kCraftServoPwmFrameSec = static_cast<gp_scalar>(0.020); // 50 Hz PWM command frame
 constexpr gp_scalar kCraftThrustTauCenter = static_cast<gp_scalar>(0.150);  // s
 constexpr gp_scalar kCraftThrustTauMin    = static_cast<gp_scalar>(0.050);  // s

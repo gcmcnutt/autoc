@@ -221,3 +221,54 @@ Design: **back to 10 Hz, servo filter still OFF**, full bake, rough comparison t
 
 Follow-on angle if t8 anchors cleanly: re-enable servo filtering (`#if 1`, possibly with the
 DSM-44-corrected slew center ~7–8) and look closer at the servo arm with trustworthy params.
+
+## t8 final (gens 1–625, stopped 2026-06-12): servo v2 @ 10 Hz still deadens — but the model is 2× too slow
+
+**NOTE: the run executed as t8 is the P-O6 servo-ON arm** (`ServoModelEnabled=1`, auto seed
+1781238882), NOT the P-O5 servo-OFF anchor designed above — that anchor arm has still never run.
+S3: `autoc-m1/autoc-9223370255615893343-2026-06-12T04:34:42.464Z/`. PNGs (final, gen 625) in this dir.
+
+**Result: deadened, flat from gen 1.** pctInStreak never exceeded **2.9%** across all 626 gens
+(final 2.8%, avgMaxStreak 3.8 ticks = 0.38 s) vs 24.7% (035-t6 @610), 20.4% (t7 @610), 1.6%
+(t6/servo-v1 @267). Fitness ground to −11.8k on non-tracking components (proximity/energy/
+stability — occupancy t/i/p = 3/51/46%, mean dist 15 m: the craft *closes* but never holds the
+band). Per-axis @625: roll dctrl 0.36 / |out| 0.42 (mid-amplitude, plant-muted), throttle
+**pinned full** (|out| 0.996, sat 100%, dctrl 0.012), pitch 0.11/0.73. Roll lag1-ac +0.30 /
+flips 42% — partially plant-smoothed relay, not learned finesse. Crash floor 21/294 = 7.1%,
+same ballpark as t7's ~13–23/294 → floor tracks config (craft-full/history), not cadence.
+Unlike v1's hard cap, v2 grinds upward slowly — but 10× below the no-servo arms throughout.
+
+### Audit finding (2026-06-12): factor-2 slew unit mismatch — the v2 servo is twice the datasheet lag
+
+`include/autoc/eval/craft_variation.h:44-48` derives the slew center in **full-span/s**:
+`(60°/0.055 s)/90° ≈ 12.1` — i.e. 12.1 *90°-spans* per second, full-span transit 82.5 ms
+(the DSM-44 measurement). But the FDM consumes it in **half-span units**:
+`fdm_larcsim.cpp` `slewCap = 0.5 * servoSlew * dt` with surfaces on [−0.5, +0.5] (full span =
+1.0 surface units). Effective surface rate = 0.5×12.1 = **6.05 u/s → 165 ms full-span transit,
+2× slower than the datasheet servo** the constants file documents. v1 had the same mismatch
+(center 6.0 intended as derated span/s → effective 3.0 u/s → 333 ms transit), which is why t6's
+"pessimistic" servo was a hard cap — it was 2× more pessimistic than its own pessimistic params.
+
+Operating-point impact at 10 Hz relay control: a full command reversal needs 1.0 u; the bugged
+servo travels max 0.605 u per 100 ms tick → the surface **can never complete a reversal within a
+tick** and oscillates inside a ±0.30 envelope (~60% authority loss at relay frequency). With
+correct units it completes in 82.5 ms + ≤20 ms PWM latch ≈ within the tick — full authority,
+honest delay. The bug is qualitative exactly at the operating point P-O6 was asking about
+("does a little honest filtering coexist with tracking?") — **t8 did not answer that question;
+it tested a servo half the datasheet speed.**
+
+Fix (operator convention 2026-06-12): the slew number lives in **autoc command units/s** — the
+[-1,1] NN/INAV span, full range = 2.0 units = the mechanical span — and platform code translates
+at its boundary (crrcsim keeps its ×0.5 as the [-1,1]→[-0.5,0.5] surface conversion; INAV/xiao
+would consume [-1,1] natively). So the autoc side changes: `kCraftServoSlewCenter` ≈ **24.2**
+units/s (= 82.5 ms span transit), clamp **16–32** (125–62.5 ms transit, heavy-load to no-load),
+ini `CraftServoSlewSigma` 2.0→**4.0** (doubled with the units, same physical spread). FDM keeps
+the 0.5 but re-commented as the platform translation. Then **t9 = rerun this arm with the
+corrected servo** — that is the honest P-O6 experiment.
+
+Secondary fidelity notes (not t8 blockers, relevant once servos get honest): the throttle path
+has NO actuator model — `thrustTau` lags only the scenario-static `craftThrustScale`
+(`fdm_larcsim.cpp` engine(): a one-time ~0.5 s spool at scenario start, decorative thereafter);
+the NN throttle command is neither PWM-latched nor lagged. t6 showed relay muscle migrating to
+the un-lagged actuator — with corrected servos, an honest ESC/motor path (latch + spool on the
+*command*) is the next mask to close.

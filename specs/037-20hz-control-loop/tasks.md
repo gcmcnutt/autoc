@@ -334,12 +334,27 @@ Implemented after the d480241 checkpoint:
   servo OFF (validates the 10 Hz flip) and servo ON (exercises the new latch path; needs
   `ServoModelEnabled=1` in autoc-basic-m1.ini for the second arm). Check: gen-1 population spread on
   the historical scale, no identical-fitness signature, startup `servoModelEnabled=` line.
-- [ ] P-O5 **t8 — 10 Hz confirm bake** (servo OFF, autoc.ini as-is, seed 13337): expect ≈035-t6
+  **STATUS 2026-06-12: never run — t8 was launched directly. Still owed before t9 (and the slew-fix
+  rebuild re-triggers the standing rule anyway).**
+- [ ] P-O5 **10 Hz confirm bake** (servo OFF, autoc.ini as-is): expect ≈035-t6
   signal ("roughly same, maybe more robust"); ALSO the crash-floor attribution run (if residual
   crashes ≈ t7's ~13–23/294, the floor is config — craft-full/history — not cadence).
-- [ ] P-O6 **t9 — servo v2 bake** (`ServoModelEnabled=1`): "does a little honest filtering coexist
-  with tracking?" If yes → realistic servo compatible, smoothness routes to objective/perception/RNN.
-  If capped like t6 → even light filtering breaks the relay strategy; same routing, sharper evidence.
+  **STATUS 2026-06-12: SKIPPED — the run named t8 took the servo-ON arm instead. Crash-floor signal
+  partially recovered from t8 anyway (21/294 = 7.1% ≈ t7's floor, with servo on → floor is config,
+  not cadence). Arm remains unrun; demoted behind the t9 slew-fix rerun (t7 already vouches for the
+  non-servo bundle).**
+- [X] P-O6 **t8 — servo v2 bake** (`ServoModelEnabled=1`, gens 1–625, stopped 2026-06-12): "does a
+  little honest filtering coexist with tracking?" **RAN BUT DID NOT ANSWER THE QUESTION** — audit
+  found a factor-2 slew unit mismatch (craft_variation.h derives span/s; the FDM consumes
+  half-span/s → effective transit 165 ms vs the 82.5 ms datasheet servo), so t8 tested a servo 2×
+  slower than honest. Result on the bugged params: deadened flat (pctInStreak ≤2.9% all run vs
+  18–25% no-servo arms; throttle pinned 100%). Full analysis + fix in finding.md §t8-final.
+- [ ] P-O7 **slew unit fix + t9 — corrected servo v2 bake**: slew now expressed in autoc [-1,1]
+  command units/s (operator convention — INAV/xiao speak the same units; platform code translates,
+  crrcsim's ×0.5 = the surface conversion). `kCraftServoSlewCenter` ≈24.2 units/s, clamp 16–32,
+  ini sigma 2.0→4.0 (doubled with the units). basic-m1 smoke ×2 (P-O4), then rerun the servo-ON
+  arm as t9, same config as t8 otherwise. THIS is the honest P-O6 experiment: full reversal now
+  completes within a 100 ms tick (82.5 ms + ≤20 ms latch) — relay authority preserved, honest delay.
 
 ---
 
