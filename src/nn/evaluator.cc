@@ -291,10 +291,10 @@ void nn_xavier_init(NNGenome& genome) {
 // T040: Gather NN_INPUT_COUNT sensor inputs — raw, no normalization
 // ============================================================
 // Layout (33 inputs — 023 direction cosines, 029 US1 past-only redistribution):
-//  0- 5: target_x [-1.6s,-0.8s,-0.4s,-0.2s,-0.1s,now]  body-frame unit-vec x
-//  6-11: target_y [-1.6s,-0.8s,-0.4s,-0.2s,-0.1s,now]  body-frame unit-vec y
-// 12-17: target_z [-1.6s,-0.8s,-0.4s,-0.2s,-0.1s,now]  body-frame unit-vec z
-// 18-23: dist     [-1.6s,-0.8s,-0.4s,-0.2s,-0.1s,now]  raw metres
+//  0- 5: target_x [-0.8s,-0.4s,-0.2s,-0.1s,-0.05s,now]  body-frame unit-vec x
+//  6-11: target_y [-0.8s,-0.4s,-0.2s,-0.1s,-0.05s,now]  body-frame unit-vec y
+// 12-17: target_z [-0.8s,-0.4s,-0.2s,-0.1s,-0.05s,now]  body-frame unit-vec z
+// 18-23: dist     [-0.8s,-0.4s,-0.2s,-0.1s,-0.05s,now]  raw metres
 //    24: dDist/dt closing rate (m/s, positive = approaching)
 // 25-28: quaternion (w, x, y, z)                         [-1,1]
 //    29: airspeed (m/s)
@@ -308,9 +308,9 @@ void nn_xavier_init(NNGenome& genome) {
 // is retained on the signature for API stability across nn2cpp / xiao callers
 // but is unused here.
 
-// History slot tick-offsets — 037 R5: derived from the ms-based log-spaced
-// lag table (kNNHistoryLagsMsec = {1600,800,400,200,100,0} ms), oldest
-// first. At 50 ms ticks: {32,16,8,4,2,0} = [-1.6s,-0.8s,-0.4s,-0.2s,-0.1s,now].
+// History slot tick-offsets — derived from the ms-based log-spaced lag table
+// (kNNHistoryLagsMsec = {800,400,200,100,50,0} ms, t10 0.8 s window), oldest
+// first. At 50 ms ticks: {16,8,4,2,1,0} = [-0.8s,-0.4s,-0.2s,-0.1s,-0.05s,now].
 static constexpr int HIST_PAST[] = {
     historyLagTicks(0), historyLagTicks(1), historyLagTicks(2),
     historyLagTicks(3), historyLagTicks(4), historyLagTicks(5)};

@@ -391,15 +391,14 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
             || (gCraftSigmas.craftThrustSigma   > 0.0)
             || (gCraftSigmas.craftPitchEffSigma > 0.0)
             || (gCraftSigmas.craftRollEffSigma  > 0.0)
-            || (gCraftSigmas.craftServoTauSigma  > 0.0)   // 037 actuator dynamics
-            || (gCraftSigmas.craftServoSlewSigma > 0.0)
+            || (gCraftSigmas.craftServoSlewSigma > 0.0)   // 037 actuator dynamics
             || (gCraftSigmas.craftThrustTauSigma > 0.0));
 
     {
         std::ostringstream hdr;
         hdr << "Scenario       ScenarioSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°";
         if (any_craft_active) {
-            hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svTau   svSlew   thrTau   pwmPh    CraftSeed";
+            hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svSlew   thrTau   pwmPh    CraftSeed";
         }
         *logger.info() << hdr.str() << endl;
     }
@@ -451,10 +450,8 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
                  << std::setw(7) << static_cast<double>(cd.craftPitchEffDelta)  // fraction
                  << "  " << std::setprecision(4)
                  << std::setw(7) << static_cast<double>(cd.craftRollEffDelta)   // fraction
-                 << "  " << std::setprecision(4)
-                 << std::setw(7) << static_cast<double>(cd.craftServoTau)       // 037: s (servo lag tau)
                  << "  " << std::setprecision(3)
-                 << std::setw(7) << static_cast<double>(cd.craftServoSlew)      // 037: /s (servo slew)
+                 << std::setw(7) << static_cast<double>(cd.craftServoSlew)      // 037: /s (servo slew, autoc [-1,1] units)
                  << "  " << std::setprecision(4)
                  << std::setw(7) << static_cast<double>(cd.craftThrustTau)      // 037: s (thrust lag tau)
                  << "  " << std::setprecision(4)
@@ -862,7 +859,6 @@ static WorkerInit buildWorkerInit() {
                 meta.craftRollEffDelta = cd.craftRollEffDelta;
                 // 037 actuator-dynamics axes -- absolute physical values
                 // (center + clamped Gaussian); worker ramps toward center.
-                meta.craftServoTau = cd.craftServoTau;
                 meta.craftServoSlew = cd.craftServoSlew;
                 meta.craftThrustTau = cd.craftThrustTau;
                 meta.craftServoPwmPhase = cd.craftServoPwmPhase;  // 037 servo v2
@@ -1672,8 +1668,7 @@ int main(int argc, char** argv)
   gCraftSigmas.craftThrustSigma   = cfg.craftThrustSigma;
   gCraftSigmas.craftPitchEffSigma = cfg.craftPitchEffSigma;
   gCraftSigmas.craftRollEffSigma  = cfg.craftRollEffSigma;
-  // 037 actuator-dynamics sigmas (servo lag tau / servo slew / thrust lag tau).
-  gCraftSigmas.craftServoTauSigma  = cfg.craftServoTauSigma;
+  // 037 actuator-dynamics sigmas (servo slew / thrust lag tau).
   gCraftSigmas.craftServoSlewSigma = cfg.craftServoSlewSigma;
   gCraftSigmas.craftThrustTauSigma = cfg.craftThrustTauSigma;
 

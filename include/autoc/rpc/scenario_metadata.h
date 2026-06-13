@@ -82,12 +82,13 @@ struct ScenarioMetadata {
     gp_scalar craftThrustScale = static_cast<gp_scalar>(1.0);   // engine maxThrust multiplier
     gp_scalar craftPitchEffDelta = static_cast<gp_scalar>(0.0); // pitch authority fractional Δ
     gp_scalar craftRollEffDelta = static_cast<gp_scalar>(0.0);  // roll authority fractional Δ
-    // 037 actuator-dynamics axes -- ABSOLUTE physical values (seconds / per-
-    // second), not deltas. Defaults = nominal centers so a no-craft scenario
-    // runs the nominal lag model. Set by inputdev_autoc on the per-scenario
-    // actuator filter (servo lag+slew, thrust lag) instead of the constants.
-    gp_scalar craftServoTau = static_cast<gp_scalar>(0.020);    // servo lag tau (s) — v2: unused by the FDM (kept for draw-order/wire stability)
-    gp_scalar craftServoSlew = static_cast<gp_scalar>(12.0);    // servo slew rate (full-throw/s; v2 center ≈12.1)
+    // 037 actuator-dynamics axes -- ABSOLUTE physical values (per-second /
+    // seconds), not deltas. Defaults = nominal centers so a no-craft scenario
+    // runs the nominal model. Set by inputdev_autoc on the per-scenario
+    // actuator filter (servo slew, thrust lag) instead of the constants.
+    // (servo first-order tau removed 2026-06-12 — v2 PWM-latch+slew has no lag
+    // term; greenfield wire shrink, no version bump — old dmps fail-loud.)
+    gp_scalar craftServoSlew = static_cast<gp_scalar>(24.0);    // servo slew rate (autoc [-1,1] units/s; v2 center ≈24.2)
     gp_scalar craftThrustTau = static_cast<gp_scalar>(0.150);   // thrust lag tau (s)
     uint32_t craftSeed = 0;                                     // craft-class PRNG seed (replay root)
     // 037 servo v2 — per-scenario 50 Hz PWM latch phase (s, uniform
@@ -114,7 +115,7 @@ struct ScenarioMetadata {
            rabbitSpeed, originOffset, scenarioSeed,
            craftCGDelta, craftDragDelta, craftTrimDelta, craftThrustScale,
            craftPitchEffDelta, craftRollEffDelta,
-           craftServoTau, craftServoSlew, craftThrustTau,  // 037 actuator dynamics
+           craftServoSlew, craftThrustTau,  // 037 actuator dynamics (servoTau removed 2026-06-12)
            craftSeed,
            craftServoPwmPhase);  // 037 servo v2 -- appended, no version bump
     }

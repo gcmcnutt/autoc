@@ -119,15 +119,14 @@ struct AutocConfig {
     // 037 actuator-dynamics craft axes (DYNAMICS, not fractional multipliers
     // like the six above -- each is a nominal physical CENTER plus a Gaussian
     // delta, then clamped to a positive physical range at the draw site so the
-    // time constants never go non-positive). These three set the per-scenario
-    // tau_servo / slew_servo / tau_thrust used by the inputdev_autoc actuator
-    // filter (servo lag+slew, thrust lag) instead of the nominal constants:
-    //   craftServoTauSigma   seconds  -- servo first-order lag time constant
-    //                        sigma; center 0.020 s, clamped [0.005, 0.050]
-    //   craftServoSlewSigma  /second  -- servo slew-rate-limit sigma (full-
-    //                        throw/s, full-throw=1.0); center 6.0, clamp [3.0, 9.0]
+    // time constants never go non-positive). These set the per-scenario
+    // slew_servo / tau_thrust used by the inputdev_autoc actuator filter
+    // (servo slew, thrust lag) instead of the nominal constants:
+    //   craftServoSlewSigma  /second  -- servo slew-rate-limit sigma (autoc
+    //                        [-1,1] command units/s); center ≈24.2, clamp [16,32]
     //   craftThrustTauSigma  seconds  -- thrust first-order lag time constant
     //                        sigma; center 0.150 s, clamped [0.050, 0.300]
+    // (servo first-order tau removed 2026-06-12 — v2 has no lag term.)
     int enableCraftVariations = 0;
     double craftCGSigma = 0.02;        // ~±7% MAC at hb1_streamer CG_arm=0.28
     double craftDragSigma = 0.05;      // ±5% CD_prof
@@ -135,8 +134,7 @@ struct AutocConfig {
     double craftThrustSigma = 0.05;    // ±5% maxThrust
     double craftPitchEffSigma = 0.05;  // ±5% pitch authority
     double craftRollEffSigma = 0.05;   // ±5% roll authority
-    double craftServoTauSigma = 0.010;   // s, servo lag tau sigma (center 0.020s)
-    double craftServoSlewSigma = 2.0;    // /s, servo slew sigma (center 6.0 /s)
+    double craftServoSlewSigma = 4.0;    // /s, servo slew sigma (autoc [-1,1] units, center ≈24.2)
     double craftThrustTauSigma = 0.060;  // s, thrust lag tau sigma (center 0.150s)
 
     // --- Variation landscape ramp ---
@@ -294,7 +292,6 @@ struct AutocConfig {
     X(double,         craftThrustSigma,          "CraftThrustSigma") \
     X(double,         craftPitchEffSigma,        "CraftPitchEffSigma") \
     X(double,         craftRollEffSigma,         "CraftRollEffSigma") \
-    X(double,         craftServoTauSigma,        "CraftServoTauSigma") \
     X(double,         craftServoSlewSigma,       "CraftServoSlewSigma") \
     X(double,         craftThrustTauSigma,       "CraftThrustTauSigma") \
     X(int,            variationRampStep,         "VariationRampStep") \

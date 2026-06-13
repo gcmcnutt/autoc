@@ -58,7 +58,7 @@ inline void applyVariationScale(ScenarioMetadata& meta, gp_scalar scale) {
     // from being killed by UNFLYABLE difficulty before it learns the core task,
     // and that risk is environmental (extreme entry poses, big gusts), not the
     // airframe. A varied craft -- CG/drag/trim/thrust/control-effectiveness plus
-    // the 037 actuator dynamics (servoTau/servoSlew/thrustTau) -- is still
+    // the 037 actuator dynamics (servoSlew/thrustTau) -- is still
     // perfectly flyable; it is DIVERSITY, not difficulty. Ramping it would only
     // delay fleet-robustness training to the hard end of the env curriculum and
     // (for the dynamics) means physically-odd interpolation of a time constant.

@@ -349,12 +349,73 @@ Implemented after the d480241 checkpoint:
   half-span/s → effective transit 165 ms vs the 82.5 ms datasheet servo), so t8 tested a servo 2×
   slower than honest. Result on the bugged params: deadened flat (pctInStreak ≤2.9% all run vs
   18–25% no-servo arms; throttle pinned 100%). Full analysis + fix in finding.md §t8-final.
-- [ ] P-O7 **slew unit fix + t9 — corrected servo v2 bake**: slew now expressed in autoc [-1,1]
+- [X] P-O7 **slew unit fix + t9 — corrected servo v2 bake**: slew now expressed in autoc [-1,1]
   command units/s (operator convention — INAV/xiao speak the same units; platform code translates,
   crrcsim's ×0.5 = the surface conversion). `kCraftServoSlewCenter` ≈24.2 units/s, clamp 16–32,
-  ini sigma 2.0→4.0 (doubled with the units). basic-m1 smoke ×2 (P-O4), then rerun the servo-ON
-  arm as t9, same config as t8 otherwise. THIS is the honest P-O6 experiment: full reversal now
-  completes within a 100 ms tick (82.5 ms + ≤20 ms latch) — relay authority preserved, honest delay.
+  ini sigma 2.0→4.0 (doubled with the units). **t9 (autoc-037-t9-m1-10hz-servo2fix) RUNNING from
+  gen 0 on the fixed tree** (committed crrcsim 014100e / parent dd8c7be; 34 suites green; live-smoke
+  passed — svSlew draws 16–32 mean 24.39, pwmPh [0,20) ms, worker servoModelEnabled=true). THIS is
+  the honest P-O6 experiment: full reversal now completes within a 100 ms tick (82.5 ms + ≤20 ms
+  latch) — relay authority preserved, honest delay. **VERDICT @ gen 631 (stopped 2026-06-13): the
+  honest servo COEXISTS with tracking — P-O6 = YES.** pctInStreak climbed 0.8%@141 → 2.9%@243 (a
+  crash-shedding lull that looked like t8) → 9.4%@495 → 11.4%@631 (peak 12.7; avgMaxStreak 9.2t ≈
+  0.92 s; best −19721; track occ 11%, dist 11.2 m), vs t8's flat ≤2.9% all 625 gens. Cleared the
+  >5% discriminator @393. The 035-t6 *shape*, delayed; full relay across all axes @631 (not t8's
+  deadened park). t8's deadening was the unit bug, not an actuator ceiling. Full analysis +
+  comparison table in finding.md §t9-final. Servo-param FDM unit audit (operator request): svSlew
+  center 24.24 cmd-units/s → ×0.5 → 12.12 surf-units/s → 82.5 ms full-span transit = DSM-44 exact;
+  pwmPh/thrTau consumed in s; svTau drawn-but-unused (→ removed in P-O8).
+
+- [ ] P-O8 **svTau cleanup** (operator 2026-06-13: "kept to keep draw order really doesn't help —
+  clean it up before next training run"). The v2 servo first-order tau was drawn, shipped over the
+  wire, logged, and ramped — but the PWM-latch+slew FDM never reads it (confirmed by grep: zero
+  consumers). Removed end-to-end:
+  - `craft_variation.h`: dropped `kCraftServoTau{Center,Min,Max}` constants, the `craftServoTauSigma`
+    sigma field, the `craftServoTau` CraftDeltas field, and the **Gaussian draw** in
+    `generateCraftFromClassPRNG` (draw order shifts for svSlew/thrTau/pwmPh — fine cross-build).
+  - `scenario_metadata.h`: removed the `craftServoTau` wire field AND from the cereal walk →
+    greenfield wire shrink, no version bump. **Old t6–t9 dmps fail-loud on a rebuilt dmp-dump
+    (length mismatch) — capture any final t9 dmp analysis with the CURRENT build before rebuilding.**
+  - `config.h` + `contract_config_tests.cc`: dropped `CraftServoTauSigma` knob → config field count
+    **94→93** (test anchor updated).
+  - `autoc.cc`: removed from the sigma gate, the `svTau` log column, log value, meta assignment,
+    sigma config read. `scenario_meta_apply.h`: comment.
+  - crrcsim `global.{h,cpp}` + `inputdev_autoc.cpp`: removed `Global::servoTau` + its per-scenario
+    assignment. All 6 inis: `CraftServoTauSigma` key deleted.
+  - **STATUS 2026-06-13: t9 stopped @631, final dmps analyzed on the current build (PNGs +
+    finding.md §t9-final). Edits done, UNCOMMITTED + UNBUILT — staged together with P-O9 below.**
+
+- [ ] P-O9 **t10 — 20 Hz + 0.8 s history window** (operator 2026-06-13). Revisits the 037 cadence
+  NO-GO on a genuinely new basis (NOT a t6/t7 re-run): the t9 honest servo's 82.5 ms transit sits
+  between the 50/100 ms tick → at 20 Hz the actuator band-limits the relay physically; and close-in
+  tracking (LOS rate ∝ 1/range), which t9 only just entered, is where the one-tick transport delay
+  binds. Coupled with a 0.8 s history window (1.6 s "is an eternity for this regime"). Edits:
+  - `aircraft_state.h`: `SIM_TIME_STEP_MSEC` 100→50. All 6 inis: `ControlIntervalMsec`→50.
+  - `nn_inputs.h`: `kNNHistoryLagsMsec` {1600,800,400,200,100,0}→**{800,400,200,100,50,0}**; layout
+    marker **v2→v3** (semantic change the count checks can't catch — fail-loud on read). The 50 ms
+    finest slot doubles recent LOS-rate resolution and only lands on integer ticks at ≥20 Hz, so
+    **10 Hz now trips `historyLagsIntegral` by design** — cadence no longer a pure 2-knob flip.
+    `kNNHistoryRecentGapSec` auto-derives → 50 ms. evaluator.cc / nn_inputs.h doc comments updated.
+  - Why 20 not 24 Hz: 1000/24 = 41.667 ms breaks the integer-ms time base (would need a µs/float
+    cadence rewrite) AND its slots don't land on integer ticks; 20 Hz lands the exact requested 0.8 s
+    set for free. Camera 240/360/480-fps multiples are an embedded ingestion-rate property
+    (frames/tick), decoupled from sim control cadence — they don't force 24 Hz on the sim.
+  - **Falsifiable read:** 20 Hz should drop sign-flip% / raise lag-1 autocorr *selectively in the
+    tracking regime* (stpPt ≥ 0.5), not patrol. If it just gives a finer relay everywhere, the
+    cadence NO-GO holds even with the honest servo. Compare in SECONDS (streak diagnostics are
+    tick-denominated — 2× at 20 Hz) or via the cadenceTickScale-anchored totals (×0.5 at 20 Hz).
+  - **STATUS 2026-06-13: source/ini edits done, UNCOMMITTED + UNBUILT, staged with P-O8.** Gate:
+    commit (crrcsim 1st → parent pointer bump) → rebuild → 34 suites (config count 93; cadence_/
+    tick_rescale tests are symbolic, auto-adapt) → basic-m1 smoke ×2 → launch t10 (label
+    `autoc-037-t10-m1-20hz-08swin`). NOTE: t10 is NOT bitwise-comparable to the 10 Hz baseline
+    (cadence + lags + svTau schema all changed) — fresh baseline, operator drives the regression read.
+
+- [ ] P-O10 **t11 — servo/variation re-tune** (deferred from this batch to keep t10 deltas
+  attributable). Servo spreads model operating range, not unit variation: tighten svSlew to ~±10%
+  (sigma ~1.2, clamp ~[22,27] units/s) and set `pwmPh` from the actual flown `servo_pwm_rate`
+  (digital @200–333 Hz → [0,3..5) ms dead-time, not the 50 Hz [0,20) ms currently modeled — the
+  least-realistic number in the table). CG/drag/trim/pitchEff/rollEff stay. thrustTau wide but
+  near-inert until the throttle actuator path gets real. Run on whichever cadence t10 settles.
 
 ---
 

@@ -208,8 +208,9 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // removed it (tagging is now hardcoded retain=expire, fail-fast) → 88;
     // 035 M2 added TrackerSourceBucket → 89.
     // 037 added ControlIntervalMsec + actuator sigmas (→ 93); servo v2 added
-    // ServoModelEnabled → 94.
-    EXPECT_EQ(n, 94u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // ServoModelEnabled → 94; then servo v2 cleanup removed CraftServoTauSigma
+    // (dead — no lag term in the PWM-latch+slew model) → 93.
+    EXPECT_EQ(n, 93u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

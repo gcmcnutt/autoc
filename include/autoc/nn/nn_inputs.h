@@ -33,14 +33,19 @@ constexpr float kDistToBoundaryScale_m = 20.0f;
 // History lags are defined in MILLISECONDS, log-spaced (octaves), oldest
 // first; the slot order matches the *_TM5..NOW array layout below. Tick
 // offsets derive at the consumer (lagMsec / SIM_TIME_STEP_MSEC,
-// static_assert-ed integral in aircraft_state.h), so the time window
-// (1.6 s) is invariant across the 10/20/50 Hz cadence family:
-//   50 ms tick (20 Hz) → ticks {32,16,8,4,2,0}
-//  100 ms tick (10 Hz) → ticks {16,8,4,2,1,0}
-//   20 ms tick (50 Hz) → ticks {80,40,20,10,5,0}
+// static_assert-ed integral in aircraft_state.h).
+//
+// t10 (2026-06-13): window HALVED 1.6 s → 0.8 s (operator: 1.6 s is an
+// eternity for this regime, even in patrol) AND the finest slot tightened
+// 100 ms → 50 ms for close-in LOS-rate resolution. The 50 ms finest slot
+// only divides integer ticks at >=20 Hz, so this set is NOT 10 Hz-compatible
+// (a 10 Hz build trips historyLagsIntegral — intended):
+//   50 ms tick (20 Hz) → ticks {16,8,4,2,1,0}   ← t10 operating point
+//   25 ms tick (40 Hz) → ticks {32,16,8,4,2,0}
+//   10 ms tick (100 Hz)→ ticks {80,40,20,10,5,0}
 // Derivatives (closing_rate, span_rate) divide by the NOW↔TM1 gap
-// (kNNHistoryRecentGapSec = 100 ms), never an implicit one-tick assumption.
-constexpr int kNNHistoryLagsMsec[6] = {1600, 800, 400, 200, 100, 0};
+// (kNNHistoryRecentGapSec, now 50 ms), never an implicit one-tick assumption.
+constexpr int kNNHistoryLagsMsec[6] = {800, 400, 200, 100, 50, 0};
 constexpr float kNNHistoryRecentGapSec =
     static_cast<float>(kNNHistoryLagsMsec[4] - kNNHistoryLagsMsec[5]) / 1000.0f;
 
@@ -50,8 +55,9 @@ constexpr float kNNHistoryRecentGapSec =
 // mismatch; this version is serialized in the per-state NN block
 // (aircraft_state.h) and checked on read.
 //   v1 = uniform one-tick lags {5,4,3,2,1,0} (pre-037, 100 ms grid)
-//   v2 = ms-based log-spaced lags {1600,800,400,200,100,0}
-constexpr uint32_t kNNHistoryLayoutVersion = 2;
+//   v2 = ms-based log-spaced lags {1600,800,400,200,100,0} (1.6 s window)
+//   v3 = ms-based log-spaced lags {800,400,200,100,50,0}   (t10, 0.8 s window)
+constexpr uint32_t kNNHistoryLayoutVersion = 3;
 
 // CONSTITUTIONAL NOTE -- SERIALIZATION CONTRACT
 // Field declaration order IS the on-disk byte order for cereal, data.dat,
@@ -59,8 +65,8 @@ constexpr uint32_t kNNHistoryLayoutVersion = 2;
 // DO NOT add padding or non-float members.
 
 struct NNInputs {
-    // Time samples: [-1.6s, -0.8s, -0.4s, -0.2s, -0.1s, now]
-    // (kNNHistoryLagsMsec — 037 R5 ms-based log-spaced lags; past-only per
+    // Time samples: [-0.8s, -0.4s, -0.2s, -0.1s, -0.05s, now]
+    // (kNNHistoryLagsMsec — t10 0.8 s log-spaced lags; past-only per
     // 029 US1, no future lookahead. The *_TM5..NOW slot NAMES are lag-slot
     // indices, not tick counts.)
     float target_x[6];   // body-frame unit-vec x component (was dPhi)
@@ -225,8 +231,8 @@ static_assert(static_cast<int>(TrackerInput::COUNT) == 54,
 // agrees with enum-indexed access for the NN forward pass + the data.dat
 // header walk via kTrackerInputMeta.
 //
-// Time samples: [-1.6s, -0.8s, -0.4s, -0.2s, -0.1s, now] — kNNHistoryLagsMsec
-// (037 R5 ms-based log-spaced lags; slot names are lag-slot indices).
+// Time samples: [-0.8s, -0.4s, -0.2s, -0.1s, -0.05s, now] — kNNHistoryLagsMsec
+// (t10 0.8 s log-spaced lags; slot names are lag-slot indices).
 struct TrackerInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xiao-firmware-locked contract
     float beacon_l_x[6];     // raw-ok: NN-byte-format buffer (per Principle VI whitelist: NN-byte-format buffers)
     float beacon_l_y[6];     // raw-ok: NN-byte-format buffer

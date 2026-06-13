@@ -272,3 +272,68 @@ has NO actuator model — `thrustTau` lags only the scenario-static `craftThrust
 the NN throttle command is neither PWM-latched nor lagged. t6 showed relay muscle migrating to
 the un-lagged actuator — with corrected servos, an honest ESC/motor path (latch + spool on the
 *command*) is the next mask to close.
+
+## t9 final (gens 1–631, stopped 2026-06-13): the honest servo COEXISTS with tracking — P-O6 answered YES
+
+Corrected-servo bake (`ServoModelEnabled=1`, slew center ≈24.2 autoc-units/s, auto seed 1781311734).
+S3: `autoc-m1/autoc-9223370255543041233-2026-06-13T00:48:54.574Z/`. Final 4-PNG set in this dir.
+
+**Verdict: the datasheet-honest servo does NOT cap tracking — t8's deadening was the unit bug, not
+an intrinsic actuator ceiling.** Where t8 (2×-slow servo) sat flat at pctInStreak ≤2.9% for all 625
+gens, t9 climbed the 035-t6 *shape*, just delayed:
+
+| gen | pctInStreak | avgMaxStreak | best fit | crash | track occ | dist | character |
+|---|---|---|---|---|---|---|---|
+| 141 | 0.8% | ~1.5t | −3632 | 40.8% | 1% | 30 m | crash-shedding (pre-takeoff lull) |
+| 243 | 2.9% | ~1.6t | −9090 | 2.0% | 1% | 18 m | looked like t8 — throttle-parked |
+| 495 | 9.4% | 8.7t | −17528 | — | — | — | broke past the t8 ceiling |
+| **631** | **11.4%** (peak 12.7) | **9.2t (~0.92 s)** | **−19721** | 4.4% | **11%** | **11.2 m** | full relay, deepening |
+
+Threshold crossings: >3% @345, **>5% @393** (cleared the discriminator), >7%/>9% @493. The gen-243
+"leaning NO-GO" read was the crash-shedding lull before takeoff — the slow-start/accelerating shape
+the past-only arch produces ([[project_no_future_curve_shape]]); judging it dead at 243 would have
+been the exact error that memory warns against. Final per-axis @631: full relay across all three
+(pitch dctrl 0.39 dominant, roll 0.30, throttle pinned-but-chattering |out| 0.98) — the 035-t6
+*character*, not t8's deadened park. Still climbing at the stop (pctInStreak 11% vs 035-t6's ~24.7%
+@610 — t9 is mid-ascent, not plateaued).
+
+**Routing flip:** realistic actuator modeling is COMPATIBLE with this controller family. Smoothness/
+tracking work does not have to fight the servo model — which reopens loop-rate as a lever (see t10
+below) and keeps the remaining levers (perception fidelity, the R in RNN) on the table rather than
+forced. The 037 cadence NO-GO stands *as measured* (t6/t7), but it was measured before tracking got
+deep enough for close-in loop-delay to bind and with no honest-servo/loop interaction — conditions
+t9 now changes.
+
+## t10 (next): revisit 20 Hz on the new basis + 0.8 s history window
+
+Operator 2026-06-13. Two coupled changes, staged together because the integer-ms/integer-tick math
+ties them:
+
+1. **20 Hz** (`SIM_TIME_STEP_MSEC` 100→50, all 6 inis `ControlIntervalMsec`→50). New rationale, NOT
+   a re-run of the t6/t7 NO-GO: (a) the t9 honest servo's 82.5 ms full-span transit sits *between*
+   the 50 ms and 100 ms tick — at 20 Hz the actuator can't complete a reversal in one tick, so it
+   physically band-limits the relay (the smoothing lever, for free, from real hardware); (b) close-in
+   tracking (LOS rate ∝ 1/range), which t9 only just entered, is where the one-tick transport delay
+   finally binds. **Falsifiable:** 20 Hz should drop sign-flip% / raise lag-1 autocorr *selectively
+   in the tracking regime* (stpPt ≥ 0.5), not in patrol; if it just gives a finer relay everywhere,
+   the NO-GO holds even with the honest servo and we've spent one cheap sim run confirming it.
+2. **0.8 s history window** (`kNNHistoryLagsMsec` {1600,800,400,200,100,0}→{800,400,200,100,50,0},
+   layout marker v2→v3). Operator: 1.6 s is an eternity for this regime, even in patrol. The new
+   set's 50 ms finest slot DOUBLES recent LOS-rate resolution — and only lands on integer ticks at
+   ≥20 Hz, so 10 Hz now trips `historyLagsIntegral` by design (cadence no longer a pure 2-knob
+   flip; reverting to 10 Hz means reverting the lag set too).
+
+Why 20 not 24 Hz: 1000/24 = 41.667 ms — the time base is integer-ms throughout (`#define
+SIM_TIME_STEP_MSEC`, `m % SIM_TIME_STEP_MSEC`, `lagMsec / SIM_TIME_STEP_MSEC`), so 24 Hz needs a
+µs/float-cadence rewrite AND its slots don't land on integer ticks. 20 Hz lands the exact 0.8 s /
+6-slot log-spaced set the operator asked for, for free. The 240/360/480-fps camera multiples are an
+embedded *ingestion-rate* property (frames/tick), decoupled from the sim control cadence — they do
+not force 24 Hz control on the sim; a true 24 Hz control rate is a deliberate later µs-cadence item.
+
+**Deferred to t11 (kept separate so deltas stay attributable):** servo/variation re-tune — the
+servo spreads model *operating range*, not *unit* variation. svSlew clamp [16,32] (transit
+62.5–125 ms) is the load envelope, not manufacturing spread; for unit variation tighten to ~±10%
+(sigma ~1.2, clamp ~[22,27]). pwmPh [0,20) ms assumes a 50 Hz analog frame — a digital servo driven
+at 200–333 Hz has [0,3..5) ms dead-time; set it from the actual flown `servo_pwm_rate` (the single
+least-realistic number in the table). CG/drag/trim/pitchEff/rollEff are fine. thrustTau wide but
+near-inert until the throttle actuator path gets real.

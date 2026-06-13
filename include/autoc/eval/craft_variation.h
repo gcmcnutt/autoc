@@ -29,9 +29,6 @@ namespace autoc::eval {
 // a pure 2.5-sigma draw on tau_servo would go negative, so the clamp is
 // MANDATORY. Centers/ranges are shared by the worker-side apply path
 // (scenario_meta_apply.h) so disabled / sigma=0 collapses to the center.
-constexpr gp_scalar kCraftServoTauCenter  = static_cast<gp_scalar>(0.020);  // s (v2: drawn but UNUSED by the FDM — PWM latch replaces the lag)
-constexpr gp_scalar kCraftServoTauMin     = static_cast<gp_scalar>(0.005);  // s
-constexpr gp_scalar kCraftServoTauMax     = static_cast<gp_scalar>(0.050);  // s
 // 037 servo model v2 (operator 2026-06-11, post-t6/t7 A/B + DSM-44 datasheet
 // check in finding.md): the v1 lag-dominant model (tau 20 ms + slew 3–9,
 // shaded slow) capped tracking. v2 is datasheet-shaped: a 50 Hz PWM command
@@ -88,10 +85,11 @@ struct CraftSigmas {
     double craftThrustSigma = 0.0;    // raw-ok: ini config-struct field (double per inih::GetReal)
     double craftPitchEffSigma = 0.0;  // raw-ok: ini config-struct field (double per inih::GetReal)
     double craftRollEffSigma = 0.0;   // raw-ok: ini config-struct field (double per inih::GetReal)
-    // 037 actuator-dynamics axes -- sigma in intrinsic units (seconds for the
-    // tau axes, full-throw/s for slew). Center + clamp live in the constants
-    // above; these are just the per-scenario Gaussian widths.
-    double craftServoTauSigma = 0.0;  // raw-ok: ini config-struct field (double per inih::GetReal)
+    // 037 actuator-dynamics axes -- sigma in intrinsic units (autoc [-1,1]
+    // command-units/s for slew, seconds for the thrust tau). Center + clamp
+    // live in the constants above; these are just the per-scenario Gaussian
+    // widths. (servo first-order tau removed 2026-06-12 — v2 is a PWM latch +
+    // pure slew, no lag term; the dead draw is gone.)
     double craftServoSlewSigma = 0.0; // raw-ok: ini config-struct field (double per inih::GetReal)
     double craftThrustTauSigma = 0.0; // raw-ok: ini config-struct field (double per inih::GetReal)
 };
@@ -115,8 +113,7 @@ struct CraftDeltas {
     // Gaussian delta), NOT deltas. Default = nominal center so the disabled /
     // sigma=0 path collapses to the nominal lag model. The worker ramps these
     // toward the center per-eval (applyVariationScale), same as the others.
-    gp_scalar craftServoTau   = kCraftServoTauCenter;    // s (v2: unused by FDM)
-    gp_scalar craftServoSlew  = kCraftServoSlewCenter;   // /s (full-throw/s)
+    gp_scalar craftServoSlew  = kCraftServoSlewCenter;   // /s (autoc [-1,1] units)
     gp_scalar craftThrustTau  = kCraftThrustTauCenter;   // s
     // 037 servo v2 -- per-scenario PWM latch phase, uniform [0, frame). An
     // engage episode lands at an arbitrary offset within the 50 Hz command
@@ -147,16 +144,12 @@ inline CraftDeltas generateCraftFromClassPRNG(
     d.craftThrustScale   = static_cast<gp_scalar>(1.0 + craftPRNG.nextGaussian(sigmas.craftThrustSigma));
     d.craftPitchEffDelta = static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftPitchEffSigma));
     d.craftRollEffDelta  = static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftRollEffSigma));
-    // 037 actuator-dynamics axes -- APPENDED at the bottom (draw order frozen;
-    // see the contract note above). Each is center + Gaussian(sigma), then
-    // clamped to its positive physical range. The clamp is mandatory: a
-    // 2.5-sigma low draw on tau_servo (center 0.020, sigma 0.010) would reach
-    // -0.005 and produce a non-physical / unstable filter.
+    // 037 actuator-dynamics axes -- APPENDED at the bottom. Each is center +
+    // Gaussian(sigma), then clamped to its positive physical range. The clamp
+    // is mandatory: a 2.5-sigma low draw could otherwise reach a non-physical
+    // value. (servo first-order tau draw removed 2026-06-12 — v2 has no lag
+    // term; draw order shifts accordingly, which is fine cross-build.)
     {
-        gp_scalar servoTau = kCraftServoTauCenter
-            + static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftServoTauSigma));
-        d.craftServoTau = std::min(kCraftServoTauMax, std::max(kCraftServoTauMin, servoTau));
-
         gp_scalar servoSlew = kCraftServoSlewCenter
             + static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftServoSlewSigma));
         d.craftServoSlew = std::min(kCraftServoSlewMax, std::max(kCraftServoSlewMin, servoSlew));

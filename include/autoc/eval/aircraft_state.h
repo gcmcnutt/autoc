@@ -41,15 +41,23 @@
 #define SIM_TOTAL_TIME_MSEC (100 * 1000)
 // 037 OUTCOME — cadence returned 50 → 100 ms (back to 10 Hz; operator
 // 2026-06-11, see specs/037-20hz-control-loop/outcome.md). The 20 Hz A/B
-// (t6/t7) showed the converged bang-bang is objective-optimal, not a
-// sampling artifact — no de-alias benefit, so 10 Hz is the operating
-// cadence again, with the rest of the 037 bundle retained. This is the
+// (t6/t7) showed the converged bang-bang is objective-optimal at the depths
+// THEN reached. t10 (2026-06-13) revisits 20 Hz on a NEW basis: the t9
+// datasheet-honest servo (82.5 ms full-span transit) sits between the 50 ms
+// and 100 ms tick — at 20 Hz the actuator can't complete a reversal in one
+// tick, so it band-limits the relay physically, and the close-in tracking
+// regime (LOS rate ∝ 1/range) is where the one-tick transport delay finally
+// binds. Paired with the 0.8 s history window (kNNHistoryLagsMsec) whose
+// 50 ms finest slot only lands on integer ticks at >=20 Hz. This is the
 // compile-time cadence MASTER; ControlIntervalMsec in every .ini must equal
 // it (config.cc fails loud otherwise) and crrcsim derives
 // gEvalUpdateIntervalMsec from it via WorkerInit. The FDM config
 // (crrcsim/autoc_config.xml dt=0.005, fps=20) satisfies the cadence triple
-// at 100 ms: cycleLength 50 ms, framesPerEval 2, FDM oversample 20×.
-#define SIM_TIME_STEP_MSEC (100)
+// at 50 ms: cycleLength 50 ms, framesPerEval 1, FDM oversample 10×.
+// NOTE: reverting to 10 Hz now also requires reverting the 0.8 s lag set
+// (50 ms slot ∤ 100 ms tick → historyLagsIntegral static_assert fires —
+// intended fail-loud, no longer a pure 2-knob flip).
+#define SIM_TIME_STEP_MSEC (50)
 #define SIM_MAX_INTERVAL_MSEC (SIM_TIME_STEP_MSEC * 5)
 
 // 037 R5/T021 — history lag table (ms-based; see nn_inputs.h). Lags must be
@@ -377,9 +385,9 @@ struct AircraftState {
     // =========================================================================
     // Temporal history for GP nodes - see specs/TEMPORAL_STATE.md
     // =========================================================================
-    // 037 R5 — ring depth derives from the deepest history lag (1.6 s):
-    // max lag in ticks + 1 (= 33 at 50 ms, 17 at 100 ms). Was a fixed 10
-    // ("1 sec at 10 Hz").
+    // Ring depth derives from the deepest history lag (t10: 0.8 s):
+    // max lag in ticks + 1 (= 17 at 50 ms / 20 Hz). Was a fixed 10
+    // ("1 sec at 10 Hz") pre-037, then 33 at the 1.6 s window.
     static constexpr int HISTORY_SIZE = (kNNHistoryLagsMsec[0] / SIM_TIME_STEP_MSEC) + 1;
 
     // Record current target direction and distance to history (call before NN eval each tick)
@@ -595,8 +603,8 @@ struct AircraftState {
               "AircraftState deserialization: NN history-layout mismatch — "
               "serialized layout v" + std::to_string(historyLayout) +
               " but compiled with v" + std::to_string(kNNHistoryLayoutVersion) +
-              " (037 R5 ms-based lags {1600,800,400,200,100,0}). Old dmps "
-              "are not replayable through the new layout.");
+              " (t10 ms-based lags {800,400,200,100,50,0}, 0.8 s window). Old "
+              "dmps are not replayable through the new layout.");
           }
         }
         float* rawInputs = reinterpret_cast<float*>(&nnInputs_);  // raw-ok: NN-byte-format buffer
