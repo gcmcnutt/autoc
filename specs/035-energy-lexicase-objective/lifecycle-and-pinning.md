@@ -1,5 +1,11 @@
 # Lifecycle & Pinning — autoc S3 dmps (035 FR-P10–P12, Principle VIII)
 
+> **2026-06-15:** legacy buckets `autoc-storage` + `autoc-eval-arm` are being
+> **deleted** (best-M1-ever run supersedes the old milestones; M2-source loss
+> accepted). Active storage is now `autoc-m1`/`autoc-m2`/`autoc-eval` only.
+> Pending IAM narrowing + `s3-admin-setup.sh` cleanup — see
+> [/OPS_NOTES.md](../../OPS_NOTES.md).
+
 Training dmps are **ephemeral by default**. `src/autoc.cc` tags every uploaded
 dmp `retain=expire` at PutObject (hardcoded in `s3PutDmpBlob`, FR-P10); the
 bucket lifecycle policy (`contracts/lifecycle-policy.json`) then expires those
