@@ -3,6 +3,17 @@
 Operational / infra state that isn't derivable from code. Most recent first.
 Propagated via git so every working copy (and Claude instance) sees it.
 
+## 2026-06-15 — M2 tracker source repointed to t10 (the new best-ever M1)
+
+037 closed GO: **t10** (20 Hz + 0.8 s window + honest servo) is the best M1 ever
+(gen 800, best −52567.70, pctInStreak 39.6%, 294/294 crash-free, robust 96–100%
+on the eval-suite env sweep). It supersedes the 035-t6 M1 source the tracker inis
+pointed at. **`autoc-tracker.ini` + `autoc-eval-tracker.ini` `TrackerSourceRun`
+repointed** to `autoc-9223370255480237935-2026-06-13T18:15:37.872Z/gen9200.dmp.zst`
+(`TrackerSourceBucket=autoc-m1`, gen9200 = gen 800). Source pinned `retain=keep`.
+The old 035-t6 source (`autoc-…2026-06-06…/gen9200.dmp.zst`) is still in autoc-m1
+but no longer referenced. M2 (US1b) bake is being prepared off this.
+
 ## 2026-06-15 — S3 storage decommission + IAM narrowing
 
 **Decision (gcmcnutt):** the current M1 run is the best M1 ever and supersedes the
