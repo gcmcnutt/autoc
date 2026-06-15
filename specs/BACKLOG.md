@@ -324,6 +324,29 @@ Remaining 015 work:
 
 ## Infrastructure
 
+### Integer-ms `simTimeMsec` truncation — stamp by rounding / step-count (out of 037 M2 source-spacing)
+
+- **Surfaced**: 037 (2026-06-15), M2/t11 launch. The tracker source-spacing fail-loud rejected the
+  t10 source: its recorded tick gaps are 49/50/51 ms (first gap deterministically 49) even though
+  the true cadence is exactly 50 ms.
+- **Root cause**: `SimStateHandler::getSimulationTimeSinceReset()` returns
+  `(unsigned long)(sim_steps * Global::dt * 1000)` — the 200 Hz / 5 ms step clock **truncated** to
+  integer ms ([crrcsim/src/SimStateHandler.cpp:392](../crrcsim/src/SimStateHandler.cpp#L392)).
+  Combined with the `multiloop`/`dDeltaT` drift-corrector (lines 75-96), each control tick lands
+  just under a 50-multiple and truncates down to `xx9`, re-syncing to exact 50-multiples every few
+  ticks. So dmps store ±1 ms-jittered timestamps. (Same family as the crrcsim CLAUDE.md note:
+  "sim_steps counter is wall-clock dependent because multiloop varies.")
+- **Right fix**: stamp `simTimeMsec` cleanly — either **round** instead of truncate, or derive from
+  the integer step-count directly (`sim_steps * 1000 / stepsPerSec`), so a 20 Hz run records exact
+  50 ms gaps. Then the tracker source-spacing check could go back to a strict single-gap test.
+- **DEFERRED — interim shipped 2026-06-15**: the M2 source-spacing checks
+  ([crrcsim_tracker_helper.cpp](../crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp) +
+  [tracker_stepper.cc](../src/eval/tracker_stepper.cc)) now test the **average** gap
+  `(last-first)/(N-1)` (= 50.0 exactly, immune to the per-tick truncation jitter, still catches a
+  real 100 ms-vs-50 ms mismatch). This unblocks t11 without touching the recording format. The
+  proper stamp fix is a dmp-format/determinism change affecting every dmp — do it when a dmp break
+  is acceptable anyway (e.g. bundled with the self-describing-dmp item below).
+
 ### Self-describing dmp — record config block in every gen dmp (out of 037 P-O13)
 
 - **Surfaced**: 037 (2026-06-14), while building the renderer playback HUD (P-O12). Score replay in

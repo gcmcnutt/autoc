@@ -111,13 +111,21 @@ void TrackerStepper::initScenario() {
     // match the compiled cadence. stepOnce advances chase physics one
     // SIM_TIME_STEP_MSEC per SOURCE tick, so a 100 ms-recorded library run
     // at a 50 ms cadence would silently play the target at 2× speed.
+    // 2026-06-15: AVERAGE gap, not first gap — simTimeMsec is the 200 Hz/5 ms
+    // step clock TRUNCATED to integer ms, so a clean 50 ms source records
+    // 49/50/51 with the first gap always 49. (last-first)/(N-1) recovers 50.0
+    // and still catches a real mismatch (100 ms 10 Hz → 100). Proper fix =
+    // round/step-count the simTimeMsec stamp (BACKLOG). Mirrors
+    // crrcsim_tracker_helper.cpp.
     if (source_.samples.size() >= 2) {
-        const double gapMsec =
-            source_.samples[1].simTimeMsec - source_.samples[0].simTimeMsec;
-        if (std::lround(gapMsec) != SIM_TIME_STEP_MSEC) {
+        const auto& s = source_.samples;
+        const double avgGapMsec =
+            (s.back().simTimeMsec - s.front().simTimeMsec) /
+            static_cast<double>(s.size() - 1);
+        if (std::lround(avgGapMsec) != SIM_TIME_STEP_MSEC) {
             throw std::runtime_error(
-                "TrackerStepper: source trajectory tick spacing " +
-                std::to_string(gapMsec) + " ms != compiled SIM_TIME_STEP_MSEC " +
+                "TrackerStepper: source trajectory avg tick spacing " +
+                std::to_string(avgGapMsec) + " ms != compiled SIM_TIME_STEP_MSEC " +
                 std::to_string(SIM_TIME_STEP_MSEC) +
                 " ms — rebake the M2 source library at the current cadence.");
         }
