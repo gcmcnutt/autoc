@@ -246,7 +246,22 @@ private:
   vtkSmartPointer<vtkTextActor> fitnessValueActor;
   vtkSmartPointer<vtkTextActor> testTextActor;
   vtkSmartPointer<vtkTextActor> testValueActor;
-  
+
+  // 037 P-O12 — playback score HUD + chase-glyph streak viz. The score is an
+  // evaluation OUTPUT (not a controller input), replayed honestly through the
+  // same FitnessComputer math autoc/dmp_dump use (fit params via
+  // ConfigManager::getConfig(), already initialized from -i; kCadenceTickScale
+  // + SIM_TIME_STEP_MSEC are compile-time constants — renderer is built from
+  // the same tree as the run it renders).
+  vtkSmartPointer<vtkTextActor> scoreValueActor;   // total score (top)
+  vtkSmartPointer<vtkTextActor> multValueActor;    // streak ×multiplier (bottom), gray→red
+  vtkSmartPointer<vtkActor> chasePlaneActor;       // 3D paper-airplane glyph, nose at chase pos
+  vtkSmartPointer<vtkPolyData> chasePlanePolyData; // glyph geometry (built once)
+  void createChasePlaneGlyph();                    // build glyph polydata + actor
+  // running score to `currentTime` for `arena` (∑ stp×mult×kCadenceTickScale);
+  // sets outMult to the current ×multiplier (1.0 = no streak)
+  double replayScore(int arena, gp_scalar currentTime, double& outMult);
+
   // Stopwatch components
   vtkSmartPointer<vtkActor2D> stopwatchActor;
   vtkSmartPointer<vtkTextActor> stopwatchTimeActor;

@@ -337,3 +337,78 @@ servo spreads model *operating range*, not *unit* variation. svSlew clamp [16,32
 at 200–333 Hz has [0,3..5) ms dead-time; set it from the actual flown `servo_pwm_rate` (the single
 least-realistic number in the table). CG/drag/trim/pitchEff/rollEff are fine. thrustTau wide but
 near-inert until the throttle actuator path gets real.
+
+## t10 FINAL (gens 1–800, complete 2026-06-15): 20 Hz + 0.8 s window = best M1 controller in project history — VERDICT FLIPS to GO
+
+Run `autoc-037-t10-m1-20hz-08swin`, S3 `autoc-m1/autoc-9223370255480237935-2026-06-13T18:15:37.872Z/`
+(**pinned `retain=keep`**, 800 objs). 20 Hz cadence, 0.8 s log-spaced history `{800,400,200,100,50,0}`
+(layout v3), honest servo v2 (slew unit-fixed, ~24.2 cmd-units/s = 82.5 ms transit), craft variations
+full-from-gen-0, energy-lexicase, entry cone 18°. ~43.5 h wall-clock, 1.18 B sims, 7.5k sims/s.
+
+**Result — beats every prior M1 run on every rate-fair measure, including the no-handicap ones:**
+
+| run | Hz | servo | pctInStreak | best fit | avgMaxStreak | crash (elite) |
+|---|---|---|---|---|---|---|
+| 029-pastonly3 | 10 | ideal, loose entry, no craft | 36.7% | (diff obj) | 3.77 s | — |
+| 035-t6 | 10 | ideal | 29.4% | −37.7k | 2.4 s | 0% |
+| t9 | 10 | honest | 12.7% | −19.7k | 0.9 s | 7% |
+| **t10** | **20** | **honest** | **39.6% peak** (38.6 final) | **−53.6k peak** (−52.6k final) | **3.77 s** | **0% (294/294)** |
+
+t10 **exceeds 029-pastonly3's no-handicap ceiling** (39.6% > 36.7%) and matches its 3.77 s hold —
+while carrying the honest servo + tight 18° entry + full craft variations 029 never had — and the
+**final elite completes all 294 scenarios crash-free** (zero OOB, zero hull). Deeper fitness than the
+comparable 035-t6 (−52.6k vs −37.7k, same objective). Converged: bestSigma decayed monotonically to
+the floor (0.207→0.051) and pinned ~gen 641; fitness/streak bent horizontal in the high-30s.
+
+**Why this overturns the 037 NO-GO (and what it does NOT claim):** the original verdict (case B, t6/t7)
+was correct *for its conditions* — ideal-or-2×-bugged servo, shallow tracking depth, 1.6 s window.
+t10 changed three things together — **honest servo + 0.8 s window + deep convergence at 20 Hz** — and
+the controller family is no longer relay-capped. Attribution is NOT cleanly isolated to cadence: t10
+bundled the cadence flip with the 0.8 s history window (t9→t10 changed both), so "20 Hz alone" is not
+proven by this run — what IS proven is that **the integrated 20 Hz + 0.8 s + honest-servo config is a
+large, decisive win** over the 10 Hz + 1.6 s + honest-servo sibling (t9: 12.7% → t10: 39.6%).
+
+**Qualitative character (rate-FAIR signals + operator playback):** NOT spiraling (per-path roll-rate
+declined 230→125 deg/s as it improved, opposite of spiral-tightening); NOT saturating (roll
+saturation collapsed 46%→1%, pitch 46%→6%, throttle |out| 0.99→0.70 — surfaces off the rails);
+**smooth flown attitude** via servo low-pass of the relay command (operator: "far smoother, close
+across all paths including random"). Final per-axis within spec-gate budgets (sum dctrl 0.65 ≤ 0.80,
+sum mag 1.69 ≤ 2.00). CAVEAT: dctrl/autocorr/sign-flip are rate-confounded (per-tick), flattered at
+20 Hz — the smoothness claims rest on the rate-fair saturation/roll-rate/occupancy signals + playback,
+not the raw dctrl numbers; the P-O11 downsample comparator is the clean quantitative confirmation
+(deferred, doesn't change the verdict).
+
+**Crash tail evolution (per-path OOB, all Eval/no-hull):** gen 281 = 21 (path-5 ×10, path-2 ×6;
+paths 3/4 clean) → gen 642 = 9 (path-3 led, path-5 down to 2 — the OOD geometry got solved) → **gen
+800 elite = 0**. The residual through the run was OOB containment near-misses, not hull strikes; the
+final controller contains all geometries.
+
+**VERDICT: GO on 20 Hz (with the 0.8 s window + honest servo).** This is the operating config going
+forward. Routing: M2 trains on t10's recorded flights (required — M2 always trains on M1 actual paths,
+fresh 54-input NN, same knobs); the staged P-O11 report cleanups ride the same post-t10 rebuild.
+Memory `project_20hz_cadence_baseline` + this feature's `outcome.md` head are updated to the GO verdict.
+
+### t10 robustness — eval-suite sweep (2026-06-15, all tiers PASS)
+
+Ran `scripts/eval_suite.sh nn_weights.dat all` on the extracted t10 final genome (eval-ini is
+037-current; suite fixed this pass — tier0 `NN_EVAL_SAME/DIFFERENT` parsing + tier3 baselines
+rescaled to 037 sigmas + a `set -e` grep guard; craft/servo sigmas left at training per operator,
+this sweep varies the ENV envelope only):
+
+| tier | scenario | completion | note |
+|---|---|---|---|
+| tier0-repro | trained seed (294 scenarios) | 294/294 = 100% | **bitwise −52567.700465** — extract→eval determinism holds |
+| tier1 | novel seed, same geometry | 291/294 = 98.9% | |
+| tier2-progressive | novel path geom | 48/49 = 97.9% | |
+| tier2-long | novel path geom | 47/49 = 95.9% | |
+| tier2-random | 12×12 novel | 144/144 = 100% | |
+| tier3-stress | **120% of 037 env sigmas** (cone 21.6, roll 36, speed 0.072, wind 54, rabbit 2.4) | 142/144 = 98.6% | |
+| tier3-quiet | no-variation baseline | 1/1 = 100% | |
+
+**t10 holds 96–100% completion across novel seeds, novel path geometries, AND a 120%-of-training
+env envelope** — it generalizes well beyond the training distribution, not just memorizing the
+trained scenario table. The handful of misses are the same OOB containment near-misses seen through
+the run (no hull strikes). Confirms the gen-800 controller is robust, not seed-lucky. Caveat: this
+sweep stresses the ENV axes only; craft/servo robustness (wider fleet/actuator variation, slower
+servo center) is a separate sweep — the servo center is compile-time today, so a true servo-center
+sensitivity needs either a recompile or promoting `kCraftServoSlewCenter`/clamp to ini knobs.

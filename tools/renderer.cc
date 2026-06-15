@@ -15,6 +15,9 @@
 #include "autoc/util/s3_run_selector.h"  // s3GetDmpBlob (FR-P09 zstd-aware fetch)
 #include "autoc/autoc.h"
 #include "autoc/eval/aircraft_state.h"
+#include "autoc/eval/fitness_computer.h"   // 037 P-O12 — honest score replay (same math as dmp_dump)
+#include <vtkSphereSource.h>
+#include <vtkTriangle.h>
 
 #include <vtkTextActor.h>
 #include <vtkTextProperty.h>
@@ -1424,7 +1427,11 @@ void Renderer::initialize() {
   targetBeaconRightActor->SetVisibility(this->trackerDetailVisible_ ? 1 : 0);
   chaseCameraFovActor->SetVisibility(this->trackerDetailVisible_ ? 1 : 0);
   renderer->AddActor(actor3);  // Blue delta lines
-  
+
+  // 037 P-O12 — chase paper-airplane glyph (streak-colored attitude marker).
+  createChasePlaneGlyph();
+  renderer->AddActor(chasePlaneActor);
+
   // Only add blackbox actors if there's blackbox data
   if (!blackboxAircraftStates.empty()) {
     renderer->AddActor(blackboxActor);
@@ -1478,6 +1485,26 @@ void Renderer::initialize() {
   testValueActor->SetInput("-");
   renderer->AddActor2D(testValueActor);
 
+  // 037 P-O12 — playback score HUD: total score (top) + ×multiplier (bottom),
+  // positioned left of the control stick each frame in updateControlsOverlay.
+  // Hidden until playback; multiplier tinted gray→red to match the chase glyph.
+  scoreValueActor = vtkSmartPointer<vtkTextActor>::New();
+  scoreValueActor->GetTextProperty()->SetFontSize(20);
+  scoreValueActor->GetTextProperty()->SetColor(1.0, 1.0, 1.0);
+  scoreValueActor->GetTextProperty()->SetJustificationToRight();
+  scoreValueActor->GetTextProperty()->SetVerticalJustificationToCentered();
+  scoreValueActor->SetInput("0");
+  scoreValueActor->VisibilityOff();
+  renderer->AddActor2D(scoreValueActor);
+
+  multValueActor = vtkSmartPointer<vtkTextActor>::New();
+  multValueActor->GetTextProperty()->SetFontSize(20);
+  multValueActor->GetTextProperty()->SetColor(0.6, 0.6, 0.6);  // gray = no streak
+  multValueActor->GetTextProperty()->SetJustificationToRight();
+  multValueActor->GetTextProperty()->SetVerticalJustificationToCentered();
+  multValueActor->SetInput("x1.0");
+  multValueActor->VisibilityOff();
+  renderer->AddActor2D(multValueActor);
 
   // Set initial text display
   updateTextDisplay(0, 0.0);
@@ -2869,6 +2896,95 @@ void Renderer::createStopwatch() {
   stopwatchTimeActor->GetTextProperty()->SetJustificationToCentered();
 }
 
+// 037 P-O12 — running PATH score to `currentTime` for arena `arena`, replayed
+// through the SAME FitnessComputer math as autoc/dmp_dump so the HUD number IS
+// the recorded fitness (not a lookalike). Returns Σ(stp×mult×kCadenceTickScale)
+// over revealed ticks; sets outMult to the current ×multiplier. Mirrors
+// dmp_dump.cc's per-tick along/lateral→computeStepScore→applyStreak.
+// (Config from ConfigManager for now; switch to dmp-recorded config per P-O13.)
+double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) {
+  outMult = 1.0;
+  if (arena < 0 || arena >= static_cast<int>(evalResults.aircraftStateList.size())) return 0.0;
+  const std::vector<AircraftState>& states = evalResults.aircraftStateList[arena];
+  if (states.empty()) return 0.0;
+  if (arena >= static_cast<int>(evalResults.pathList.size())) return 0.0;
+  const std::vector<Path>& path = evalResults.pathList[arena];
+  if (path.empty()) return 0.0;
+
+  const AutocConfig& cfg = ConfigManager::getConfig();
+  int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
+  if (streakStepsToMax < 1) streakStepsToMax = 1;
+  FitnessComputer fc(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
+                     cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
+  fc.resetStreak();
+
+  const unsigned long curMs = static_cast<unsigned long>(currentTime * 1000.0f);
+  gp_vec3 prevTangent = gp_vec3::UnitX();
+  double score = 0.0;
+  for (size_t ti = 1; ti < states.size(); ++ti) {
+    if (states[ti].getSimTimeMsec() > curMs) break;
+    const gp_vec3 pos = states[ti].getPosition();
+    const int pIdx = std::clamp(states[ti].getThisPathIndex(), 0,
+                                static_cast<int>(path.size()) - 1);
+    gp_vec3 tangent;
+    if (pIdx + 1 < static_cast<int>(path.size())) {
+      tangent = path.at(pIdx + 1).start - path.at(pIdx).start;
+      double tn = tangent.norm();
+      if (tn > 0.01) { tangent /= tn; prevTangent = tangent; } else tangent = prevTangent;
+    } else tangent = prevTangent;
+    const gp_vec3 off = pos - path.at(pIdx).start;
+    const double along = off.dot(tangent);
+    const double lateral = (off - along * tangent).norm();
+    const double stp = fc.computeStepScore(along, lateral);
+    const double ms = fc.applyStreak(stp);
+    outMult = (stp > 0.0) ? ms / stp : 1.0;
+    score += ms * kCadenceTickScale;
+  }
+  return score;
+}
+
+// 037 P-O12 — chase paper-airplane glyph, oversized for the ~100 m arena
+// overview. Nose at the chase position (geometry built nose-at-origin, body
+// extends -x/back). Body frame = sim aerospace (x fwd, y right, z DOWN), so
+// the keel folds DOWN = +z, giving readable bank/pitch. Color (gray→red by
+// streak ×mult) is set per-frame in updateControlsOverlay; oriented there via
+// getOrientation(). Hidden until playback animates.
+void Renderer::createChasePlaneGlyph() {
+  const double L = 6.0;   // length (m), nose→tail
+  const double S = 2.0;   // half-span (m) → 4 m wingspan
+  const double K = 1.2;   // keel drop (m, +z = down in aerospace body frame)
+  vtkNew<vtkPoints> pts;
+  vtkIdType nose = pts->InsertNextPoint( 0.0, 0.0, 0.0);  // 0: nose (at chase pos)
+  vtkIdType tail = pts->InsertNextPoint(  -L, 0.0, 0.0);  // 1: tail center
+  vtkIdType lwt  = pts->InsertNextPoint(  -L,  -S, 0.0);  // 2: left wingtip (y left = -y)
+  vtkIdType rwt  = pts->InsertNextPoint(  -L,  +S, 0.0);  // 3: right wingtip
+  vtkIdType keel = pts->InsertNextPoint(  -L, 0.0,  K);   // 4: keel bottom (down)
+  vtkNew<vtkCellArray> tris;
+  auto tri = [&](vtkIdType a, vtkIdType b, vtkIdType c) {
+    vtkNew<vtkTriangle> t;
+    t->GetPointIds()->SetId(0, a); t->GetPointIds()->SetId(1, b); t->GetPointIds()->SetId(2, c);
+    tris->InsertNextCell(t);
+  };
+  tri(nose, lwt, tail);   // left wing
+  tri(nose, tail, rwt);   // right wing
+  tri(nose, tail, keel);  // keel / fuselage (hangs down)
+
+  chasePlanePolyData = vtkSmartPointer<vtkPolyData>::New();
+  chasePlanePolyData->SetPoints(pts);
+  chasePlanePolyData->SetPolys(tris);
+
+  vtkNew<vtkPolyDataMapper> glyphMapper;
+  glyphMapper->SetInputData(chasePlanePolyData);
+  chasePlaneActor = vtkSmartPointer<vtkActor>::New();
+  chasePlaneActor->SetMapper(glyphMapper);
+  chasePlaneActor->GetProperty()->SetColor(0.6, 0.6, 0.6);  // gray = no streak
+  chasePlaneActor->GetProperty()->SetAmbient(0.45);
+  chasePlaneActor->GetProperty()->SetDiffuse(0.7);
+  chasePlaneActor->GetProperty()->BackfaceCullingOff();
+  chasePlaneActor->VisibilityOff();   // revealed during playback animation
+  // NOTE: added to the scene by initialize() (the vtkRenderer is a local there).
+}
+
 void Renderer::createControlsOverlay() {
   // Outline (stick box, crosshair, throttle outline)
   controlOutlineActor = vtkSmartPointer<vtkActor2D>::New();
@@ -3611,6 +3727,61 @@ void Renderer::updateControlsOverlay(gp_scalar currentTime) {
     velocityActor->SetPosition(attitudeCenterX - attitudeRadius,
       attitudeCenterY + attitudeRadius + static_cast<scalar>(10.0f));
   }
+
+  // 037 P-O12 — running score + ×multiplier (left of the stick) and the
+  // chase paper-airplane glyph, colored gray→red by the streak multiplier.
+  {
+    double mult = 1.0;
+    double score = replayScore(selectedArena, currentTime, mult);
+    const double multMax = std::max(1.0001, ConfigManager::getConfig().fitStreakMultiplierMax);
+    double t = (mult - 1.0) / (multMax - 1.0);
+    t = (t < 0.0) ? 0.0 : (t > 1.0 ? 1.0 : t);   // 0 = gray, 1 = hot red
+    const double cr = 0.60 + 0.40 * t;            // gray (0.6,0.6,0.6) → red (1.0,0.1,0.1)
+    const double cg = 0.60 - 0.50 * t;
+    const double cb = 0.60 - 0.50 * t;
+
+    // Match the Path/Vel HUD font sizing (dynamic, clamped 8–16).
+    const int hudFont = std::max(8, std::min(16, static_cast<int>(windowSize[1] * 0.018)));
+    if (scoreValueActor) {
+      std::ostringstream ss; ss << "Score: " << static_cast<long long>(score + 0.5);
+      scoreValueActor->GetTextProperty()->SetFontSize(hudFont);
+      scoreValueActor->SetInput(ss.str().c_str());
+      scoreValueActor->SetPosition(stickLeft - static_cast<scalar>(18.0f),
+                                   stickCenterY + static_cast<scalar>(14.0f));
+      scoreValueActor->VisibilityOn();
+    }
+    if (multValueActor) {
+      std::ostringstream ms; ms << "x" << std::fixed << std::setprecision(1) << mult;
+      multValueActor->GetTextProperty()->SetFontSize(hudFont);
+      multValueActor->SetInput(ms.str().c_str());
+      multValueActor->GetTextProperty()->SetColor(cr, cg, cb);
+      multValueActor->SetPosition(stickLeft - static_cast<scalar>(18.0f),
+                                  stickCenterY - static_cast<scalar>(14.0f));
+      multValueActor->VisibilityOn();
+    }
+
+    if (chasePlaneActor) {
+      if (haveControls && chosenState) {
+        gp_vec3 p = chosenState->getPosition() + renderingOffset(selectedArena);
+        gp_quat q = chosenState->getOrientation();
+        q.normalize();
+        double w = q.w();
+        if (w < -1.0) w = -1.0; else if (w > 1.0) w = 1.0;
+        double angleDeg = 2.0 * std::acos(w) * 180.0 / M_PI;
+        double s = std::sqrt(std::max(0.0, 1.0 - w * w));
+        double ax = 1.0, ay = 0.0, az = 0.0;
+        if (s > 1e-6) { ax = q.x() / s; ay = q.y() / s; az = q.z() / s; }
+        vtkNew<vtkTransform> tf;
+        tf->Translate(static_cast<double>(p[0]), static_cast<double>(p[1]), static_cast<double>(p[2]));
+        tf->RotateWXYZ(angleDeg, ax, ay, az);
+        chasePlaneActor->SetUserTransform(tf);
+        chasePlaneActor->GetProperty()->SetColor(cr, cg, cb);
+        chasePlaneActor->VisibilityOn();
+      } else {
+        chasePlaneActor->VisibilityOff();
+      }
+    }
+  }
 }
 
 void Renderer::updateControlsPosition() {
@@ -3901,6 +4072,12 @@ void Renderer::hideStopwatch() {
         renderer->RemoveActor2D(velocityActor);
       }
     }
+    // 037 P-O12 — hide the score HUD + chase glyph with the rest of the HUD
+    // (arena flip / playback stop). They're visibility-toggled (re-enabled each
+    // frame by updateControlsOverlay during playback), so VisibilityOff here.
+    if (scoreValueActor) scoreValueActor->VisibilityOff();
+    if (multValueActor)  multValueActor->VisibilityOff();
+    if (chasePlaneActor) chasePlaneActor->VisibilityOff();
     stopwatchVisible = false;
     controlsVisible = false;
   }

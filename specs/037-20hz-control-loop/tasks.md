@@ -190,11 +190,19 @@ theory's (A)/(B) prediction.
   the *de-alias baseline* "t6" in dealias_metrics.py is the 035 run `autoc-035-t6-m1-energy` — don't
   conflate. Preceded by smoke runs t4 (FAIL → crrcsim f81fd31 command-starvation fix) and t5 (PASS,
   climbs earlier/farther than 10 Hz — see finding.md).
-- [X] T027 [US1] Measure the gate — **MEASURED, verdict NO-GO (RT case B)**: t7 (20 Hz, no servo)
-  converged-tracking roll ac −0.27 / flips 59% / dCtrl 0.94 ≈ the 10 Hz baseline (−0.24 / 56% /
-  ~1.0). Both gate legs FAIL at tracking depth; bang-bang is objective-optimal, not a sampling
-  artifact. t6 (20 Hz + servo) was smooth but tracking-capped (plant-imposed). Full three-arm
-  analysis + decision in outcome.md. **US1b / US2 / US3 are gated OFF.**
+- [X] T027 [US1] Measure the gate — **VERDICT FLIPPED 2026-06-15: GO** (the 2026-06-11 NO-GO held only
+  for its conditions — ideal/2×-bugged servo, shallow tracking, 1.6 s window). The post-outcome track
+  (t8 bugged-servo deadening → slew unit-fix → t9 10 Hz honest servo → **t10 20 Hz + 0.8 s window +
+  honest servo**) overturned it: t10 is the best M1 controller in project history — pctInStreak peak
+  **39.6%** (> 029's 36.7% no-handicap ceiling, > 035-t6's ideal-servo 29.4%), best **−52.6k**, 3.77 s
+  holds, **final elite 294/294 crash-free**, smooth flown attitude (no spiral; roll sat 46%→1%), and
+  **eval-suite robust 96–100% across novel seeds / novel paths / 120% env envelope**. Run pinned
+  `retain=keep`: `autoc-m1/autoc-9223370255480237935-2026-06-13T18:15:37.872Z/`. Full analysis:
+  finding.md §t10-FINAL + §t10-robustness; verdict in outcome.md (revised banner). Attribution caveat:
+  t10 bundled cadence + 0.8 s window (not isolated). **US1b (M2) now UNBLOCKED; US2/US3 remain
+  separate decisions.** (Original NO-GO three-arm writeup retained below for history.) ORIGINAL: t7
+  (20 Hz, no servo) converged-tracking roll ac −0.27 / flips 59% / dCtrl 0.94 ≈ the 10 Hz baseline
+  (−0.24 / 56% / ~1.0); both gate legs FAILED at tracking depth in the t6/t7 arms.
 - [ ] T028 [US1] **Milestone close**: type-domain grep audit on US1-touched `src/eval/ src/nn/` (Principle
   VI per-milestone — annotate `// raw-ok:` or convert). The 10 Hz bit-replay leg is **WAIVED**
   (operator 2026-06-10 — committed to 20 Hz; the smoke runs t4/t5 are the refactor's behavioral
@@ -206,11 +214,15 @@ firmware (cheap no-go).
 
 ---
 
-## Phase 5: User Story 1b — Phase A M2 tracker cadence retrain (Priority: P1, GATED on US1 signal)
+## Phase 5: User Story 1b — Phase A M2 tracker cadence retrain (Priority: P1, **UNBLOCKED 2026-06-15**)
 
-**Goal**: carry the cadence win into tracker mode — retrain M2 at the projected cadence on the
-already-implemented M2 layout/rescale. **In scope ONLY IF US1 (T027) shows a sensible higher-rate
-signal** (operator, 2026-06-09); skipped otherwise.
+**Goal**: carry the cadence win into tracker mode — retrain M2 at 20 Hz + 0.8 s window on the
+already-implemented M2 layout/rescale. **UNBLOCKED — US1 (T027) cleared GO via t10** (was "in scope
+only if US1 shows a sensible higher-rate signal"). **ACTIVE: operator preparing the M2 run now
+(2026-06-15).** M2 trains on t10's recorded flights as targets (M2 always trains on M1 actual paths,
+NOT pathgen; fresh 54-input NN; same 20 Hz / 0.8 s / honest-servo / energy-lexicase knobs). t10 is
+pinned `retain=keep` for exactly this. The staged P-O11 report cleanups + P-O10/t11 servo-variation
+re-tune ride the same post-t10 rebuild if/when one is needed.
 
 **Independent Test**: M2 at the projected cadence holds tracking (crash % / on-track parity with the M2
 baseline) with the per-axis de-alias improvement the theory predicted.
@@ -385,8 +397,14 @@ Implemented after the d480241 checkpoint:
   - **STATUS 2026-06-13: t9 stopped @631, final dmps analyzed on the current build (PNGs +
     finding.md §t9-final). Edits done, UNCOMMITTED + UNBUILT — staged together with P-O9 below.**
 
-- [ ] P-O9 **t10 — 20 Hz + 0.8 s history window** (operator 2026-06-13). Revisits the 037 cadence
-  NO-GO on a genuinely new basis (NOT a t6/t7 re-run): the t9 honest servo's 82.5 ms transit sits
+- [X] P-O9 **t10 — 20 Hz + 0.8 s history window — DONE 2026-06-15, the GO result.** Ran to the
+  gen-800 cap (~43.5 h): best −52.6k, pctInStreak peak **39.6%**, avgMaxStreak 3.77 s, **final elite
+  294/294 crash-free**, converged (bestSigma→floor). Beats every prior M1 (029/035-t6/t9) on every
+  rate-fair measure WITH the honest-servo/tight-entry/full-craft handicaps. eval-suite robustness all
+  7 tiers PASS (96–100% across novel seeds / novel paths / 120% env envelope; tier0 bitwise repro
+  −52567.700465). Pinned `retain=keep` (800 objs). Flipped the T027 verdict + outcome.md + memory to
+  GO. Final 4-PNG set + finding.md §t10-FINAL/§t10-robustness. **Design rationale (kept for record):**
+  the t9 honest servo's 82.5 ms transit sits
   between the 50/100 ms tick → at 20 Hz the actuator band-limits the relay physically; and close-in
   tracking (LOS rate ∝ 1/range), which t9 only just entered, is where the one-tick transport delay
   binds. Coupled with a 0.8 s history window (1.6 s "is an eternity for this regime"). Edits:
@@ -416,6 +434,78 @@ Implemented after the d480241 checkpoint:
   (digital @200–333 Hz → [0,3..5) ms dead-time, not the 50 Hz [0,20) ms currently modeled — the
   least-realistic number in the table). CG/drag/trim/pitchEff/rollEff stay. thrustTau wide but
   near-inert until the throttle actuator path gets real. Run on whichever cadence t10 settles.
+
+- [ ] P-O11 **time-denominate the rate-dependent reports** (operator 2026-06-13: "any of the 0.5
+  adjustments should be reasoned as fraction of time — relabel avgMaxStreak→avgMaxStreakSecs etc.
+  so the graph is reasoned"). NOT for t10 (continue as-is); a cleanup so FUTURE cadence-change
+  comparisons are rate-fair *by construction* instead of needing per-metric correction. Cross-rate
+  audit (2026-06-13) classified every reported value:
+  - **Already rate-fair** (keep): fitness/stability/energy (×kCadenceTickScale-anchored), pctInStreak,
+    bestSigma, NN weight CVs, crash counts, mag/amplitude, saturation%, occupancy (`stpPt≥0.5`),
+    distance, roll/pitch-rate (deg/sec).
+
+  **(a) REPORT-LAYER — Python/analysis only, NO rebuild; safe to do anytime (invalidate the
+  `/tmp/*_dynamics_cache.csv` files after, since occ rows recompute):**
+    - `dynamics_progress.py`: `CLOSE_SMOOTH_TICKS = 5` → time-based `CLOSE_SMOOTH_MS = 500`,
+      `k = round(CLOSE_SMOOTH_MS / tick_ms)`. Today's 5-tick d(dist) smoothing is 0.25 s @20 Hz vs
+      0.5 s @10 Hz — only shifts the intercept↔patrol sub-split (NOT tracking occupancy or the
+      total), but should be wall-clock for cross-rate fairness. (tick_ms inferable from the run ini
+      or a `--tick-ms` arg.)
+    - `dynamics_progress.py`: the 10 Hz reference lines (`ROLL_BASELINE_AC=-0.24`, `ROLL_BASELINE_FLIP
+      =56.0`, title "refs = 035-t6 10 Hz") are cosmetic but MISLEADING for a 20 Hz run — autocorr/
+      flip are rate-confounded, so a 20 Hz curve sitting "above" the 10 Hz baseline isn't a like-for-
+      like win. Relabel as "10 Hz ideal-servo ref (not rate-matched)" or gate them behind a flag.
+    - New **rate-fair smoothness comparator** (the t9↔t10 verdict tool): read both per-tick CSVs,
+      DOWNSAMPLE the 20 Hz one to the 10 Hz grid (every 2nd tick), restrict to `stpPt≥0.5` ticks,
+      report sign-flips/sec + fixed-100ms-lag autocorr + dctrl-per-sec at MATCHED tracking depth.
+    - Plot labels: `avgMaxStreak` axes → seconds.
+
+  **(b) TRAINING / RECORDING CODE — needs a rebuild; stage for the next build, do NOT touch mid-bake:**
+    - `autoc.cc` #NNGen emit: add `avgMaxStreakSecs` (= ticks × SIM_TIME_STEP_MSEC/1000) alongside
+      (or replacing) the tick count.
+    - `dmp_dump.cc` run-summary: emit `dctrl` as per-second slew (× rate) and add a streak-secs column.
+    - **Cadence-commit decision** (only when locking a rate): drop the three `× kCadenceTickScale`
+      multiplies ([fitness_decomposition.cc:176,188,189](../../src/eval/fitness_decomposition.cc#L176))
+      so training runs native — no-op @10 Hz, un-normalizes 20 Hz to native (fitness ~2×). Then
+      rescale `LexicaseEpsilon` 0.5→~1.0 in the inis (path/stability/energy ratio preserved → only ε
+      + absolute scale move). Leave the physical CONVERSIONS in the loop (streak-ramp sec→ticks,
+      engageDelay ms→ticks, history lags ms→ticks, dt — all correct rate-independent physics).
+    - throughput (`durationSec`/`rate`/`sims` in #GenSimStats) — leave; wall-clock by nature, not a
+      quality metric.
+
+  Sequence: (a) is free anytime; (b) rides the t11 (P-O10) rebuild or whenever a cadence is locked.
+    Report-layer Python needs no rebuild; the C++ emit changes ride the next build.
+
+- [X] P-O12 **renderer playback HUD + chase-glyph streak viz** (operator 2026-06-13/14). DONE +
+  tuned, built renderer-only (t10 undisturbed). The score is an evaluation OUTPUT, never a controller
+  input — pure instrumentation; driven by the SAME `FitnessComputer` replay dmp_dump uses
+  (`computeStepScore`→`applyStreak`, ×`kCadenceTickScale`) so the displayed score IS the fitness.
+  Shipped in `tools/renderer.{cc,h}`:
+  - **Paper-airplane chase glyph** — 6 m × 4 m delta, keel folded down (+z body), nose at the chase
+    position, oriented per-frame by `getOrientation()`, **colored gray→red by the live streak
+    ×multiplier**. Hidden until playback.
+  - **Score HUD** — `Score: <n>` (top) + `×mult` (bottom) left of the control stick, Path/Vel-matched
+    font (clamped 8–16), the ×mult tinted with the same gray→red ramp as the glyph.
+  - **Config from the ini** via `ConfigManager` for now (t10's own `autoc.ini`); flips to
+    dmp-recorded config if/when the self-describing-dmp backlog item lands.
+  - **Bullseye** ("lock-on reticle") = the one deferred sub-item — fast-follow when wanted.
+
+- [ ] P-O13 → **MOVED TO BACKLOG** (`specs/BACKLOG.md` → Infrastructure → "Self-describing dmp").
+  Recording the config block in every gen dmp is a fail-loud `EvalResults` schema change; **operator
+  2026-06-14: keep dmp binary compat for a while** (t10+ dmps stay readable across builds), so this
+  is deferred until a dmp format break is acceptable anyway. Renderer/dmp_dump keep reading config
+  from the ini in the meantime.
+
+- [X] P-O14 **eval-suite 037 fixes + t10 robustness sweep — DONE 2026-06-15.** `scripts/eval_suite.sh`
+  brought current: tier0 fitness-match parse → `NN_EVAL_SAME/DIFFERENT` format (was stale
+  `"NN Eval fitness:"`); `set -e` grep guard (no-match no longer aborts the script); tier3 stress
+  baselines rescaled to 037 sigmas (cone 18→21.6, speed 0.06→0.072; roll/wind/rabbit unchanged).
+  Craft/servo sigmas left at training per operator — this sweep stresses the ENV envelope only.
+  Eval-ini confirmed 037-current. Result: **all 7 tiers PASS on the t10 genome** (tier0 bitwise
+  −52567.700465; tier1 98.9%; tier2 95.9–100%; tier3-stress 98.6% @120% env; quiet 100%) — t10
+  generalizes 96–100% beyond its training distribution. finding.md §t10-robustness. NOTE: a true
+  servo-CENTER sensitivity sweep needs `kCraftServoSlewCenter`/clamp promoted to ini knobs (compile-
+  time today) — small enhancement, deferred.
 
 ---
 

@@ -324,6 +324,25 @@ Remaining 015 work:
 
 ## Infrastructure
 
+### Self-describing dmp — record config block in every gen dmp (out of 037 P-O13)
+
+- **Surfaced**: 037 (2026-06-14), while building the renderer playback HUD (P-O12). Score replay in
+  `dmp_dump.cc` and `tools/renderer.cc` reads fitness/cadence params (cone angle, dist scales, streak
+  threshold/ramp/mult, `kCadenceTickScale`) from the *current* `autoc.ini` via
+  `ConfigManager::getConfig()` — wrong if the ini drifts from the run that produced the dmp.
+- **Scope when picked up**: serialize the fitness/cadence config block into `EvalResults` (every
+  per-gen dmp — small fixed duplication, makes any dmp standalone-replayable; operator 2026-06-14).
+  Flip readers (dmp_dump, renderer, analysis) to **prefer dmp-recorded config, fall back to ini** for
+  pre-change dmps. The **only** remaining ini dependence is the S3 profile/bucket (bootstrap needed to
+  *fetch* the dmp).
+- **DEFERRED — keep dmp binary compat for now (operator 2026-06-14)**: this is a fail-loud
+  `EvalResults` schema change that breaks reading current dmps (t6–t10). The format is being held
+  stable for a while so t10+ dmps stay readable across builds; revisit when a dmp format break is
+  acceptable anyway (e.g. bundled with the next schema-touching feature).
+- **In the spirit of** `project_dmp_driven_analytics_backlog` (move analytics off the logfile/ini
+  onto the dmp). Touch: `EvalResults` serialize (autoc write), `dmp_dump.cc` + `tools/renderer.cc`
+  (read dmp-config-if-present else ConfigManager).
+
 ### Portable agent memory — repo-authoritative, ~/.claude as non-authoritative recall index (out of 032)
 
 - **Surfaced**: 032 ("memory location debate", open since phase 1); resolved in principle 2026-06-10

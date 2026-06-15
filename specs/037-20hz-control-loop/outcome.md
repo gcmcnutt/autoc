@@ -1,6 +1,22 @@
 # 037 Outcome: Faster Control Loop (10 Hz → 20 Hz)
 
-**Date**: 2026-06-11. **Verdict: NO-GO on cadence — RT case B.** The roll bang-bang is
+> **REVISED VERDICT — 2026-06-15: GO on 20 Hz** (with the 0.8 s history window + honest servo v2).
+> The original NO-GO below was correct *for its conditions* (t6/t7: ideal-or-2×-bugged servo, shallow
+> tracking, 1.6 s window). The post-outcome track overturned it: t8 (bugged-servo deadening) → slew
+> unit-fix → t9 (10 Hz honest servo) → **t10 (20 Hz + 0.8 s window + honest servo) = the best M1
+> controller in project history** — pctInStreak peak **39.6%** (> 029-pastonly3's 36.7% no-handicap
+> ceiling, > 035-t6's ideal-servo 29.4%), best **−52.6k**, 3.77 s holds, **final elite 294/294
+> crash-free**, smooth flown attitude (no spiral, roll saturation 46%→1%). Carries the honest servo +
+> tight 18° entry + full craft variations the older runs didn't. Run pinned `retain=keep`:
+> `autoc-m1/autoc-9223370255480237935-2026-06-13T18:15:37.872Z/` (t10, 800 gens). **20 Hz + 0.8 s is
+> the operating config going forward; US1b/M2 unblocked.** Attribution caveat: t10 bundled cadence +
+> window, so "20 Hz alone" isn't isolated — what's proven is the integrated config beats 10 Hz+1.6 s
+> (t9 12.7% → t10 39.6%). Full analysis: `finding.md` §t10-FINAL. The original NO-GO writeup is
+> retained below for the historical record.
+
+---
+
+**Date**: 2026-06-11. **Verdict (SUPERSEDED — see revised verdict above): NO-GO on cadence — RT case B.** The roll bang-bang is
 **objective/architecture-optimal, not a 10 Hz sampling artifact**. Doubling the control rate does
 not change the converged control character. Operator decision: **return to 10 Hz** (the 037 bundle
 stays); smoothness/tracking work routes to actuator-model fidelity, perception, and the recurrent
