@@ -373,6 +373,10 @@ int main(int argc, char** argv) {
       std::cout << "    seeds: {wind: " << sub.wind << ", rabbit: " << sub.rabbit
                 << ", entry: " << sub.entry << ", craft: " << sub.craft
                 << ", camera: " << sub.camera << "}\n";
+      // Full (un-ramped) per-scenario wind-direction offset draw, degrees.
+      // Applied wind = base_dir + offset × variationScale(gen) (run-level ramp_scale).
+      std::cout << "    wind_dir_offset_deg: "
+                << (results.scenarioList[i].windDirectionOffset * 180.0 / M_PI) << "\n";
       std::cout << "    crash_reason: " << crashReasonToString(s.crashReason) << "\n";
       std::cout << "    score: " << s.score << "\n";
       std::cout << "    energy_score: " << s.energy_score << "\n";
@@ -395,7 +399,7 @@ int main(int argc, char** argv) {
 
   // Header (mode-specific: path-relative derived columns are pathgen-only).
   std::cout << "scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,"
-               "pitchCmd,rollCmd,thrCmd,out_pt,out_rl,out_th,dhome";
+               "pitchCmd,rollCmd,thrCmd,out_pt,out_rl,out_th,dhome,wN,wE,wD";
   if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt\n";
   else           std::cout << ",dist,along,stpPt,mult,rampSc\n";
 
@@ -423,18 +427,19 @@ int main(int argc, char** argv) {
       const gp_vec3 pos = st.getPosition();
       const gp_quat q = st.getOrientation();
       const gp_vec3 vel = st.getVelocity();
+      const gp_vec3 wind = st.getWindVelocity();  // NED wind the craft flew through
       const float* out = st.getNNOutputs();
       const gp_scalar dhome = pos.norm();  // home = origin
 
       char buf[512];
       int n = snprintf(buf, sizeof(buf),
         "%zu,%zu,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,"
-        "%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.4f",
+        "%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f",
         si, ti, pos.x(), pos.y(), pos.z(),
         q.w(), q.x(), q.y(), q.z(),
         vel.x(), vel.y(), vel.z(),
         st.getPitchCommand(), st.getRollCommand(), st.getThrottleCommand(),
-        out[0], out[1], out[2], dhome);
+        out[0], out[1], out[2], dhome, wind.x(), wind.y(), wind.z());
       std::cout.write(buf, n);
 
       if (sceneTracker) {
