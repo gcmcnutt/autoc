@@ -2,8 +2,28 @@
 
 How the per-run PNGs are produced (035-onward). All analytics come from the
 **dmp** (via `dmp-dump`) or the run **`.log`** — `data.dat` is retired (035
-FR-P05). The current plot scripts live in `specs/035-energy-lexicase-objective/`;
-the pre-035 `data.dat`-fed scripts are historical and untouched.
+FR-P05). The pre-035 `data.dat`-fed scripts are historical and untouched.
+
+## Quick path (037+): one script
+
+The maintained dmp-fed plotters now live in **`src/analytics/`** and are driven by
+one wrapper (038 P0-C — the per-feature copies in `specs/034…`/`specs/035…` are
+the historical originals; 035-era ones stay put, the 037 copies were consolidated
+into `src/analytics/`):
+
+```bash
+scripts/generate_pngs.sh m1|m2 <logfile> [--out DIR] [--compare NAME:LOG ...]
+```
+
+It derives run-id / bucket / gen / config / name from the run `.log`, fetches the
+CSVs via `dmp-dump`, and emits the full set (m1 = 4 reports, m2 = 6). The
+run-summary + dynamics_progress S3 fetches are **incrementally cached** per
+`(run-id + dmp-dump build)` under `/tmp/generate_pngs_cache/`, so re-plotting a
+growing run only fetches new gens. `--compare NAME:LOG` overlays an earlier run's
+fitness-over-time on the evolution chart.
+
+The manual per-report recipes below remain valid (they document the individual
+plotter flags); the dmp-fed ones now resolve under `src/analytics/`.
 
 ## Naming
 Artifacts collate lexicographically as `autoc-<feature>-t<N>-<details>`, e.g.
@@ -38,7 +58,7 @@ GEN=$(grep '#NNGen gen=' "$LOG" | tail -1 | grep -oE 'gen=[0-9]+' | cut -d= -f2)
 **1. evolution_progress** (fitness/streak/sigma + crash panel) — from the `.log`:
 ```bash
 # 037+ runs (T005 slimmed the log — crash panel now parses #GenCrash):
-python3 specs/037-20hz-control-loop/plot_evolution_progress.py \
+python3 src/analytics/plot_evolution_progress.py \
   --focus "$NAME:$LOG" --run-name "$NAME" --crash-log "$LOG" \
   --total-gens 800 --out $D/${NAME}_evolution_progress.png
 # pre-037 logs (which still carry per-scenario [N] CRASH/OK lines): use

@@ -1,0 +1,4 @@
+# Maintained analytics deps for the dmp-fed run-report plotters (038 P0-C).
+# Drive via scripts/generate_pngs.sh; data comes from build/dmp-dump + the run .log.
+numpy
+matplotlib

@@ -243,6 +243,13 @@ Remaining 015 work:
 
 ### [FUTURE FEATURE — split from 035, 2026-06-04] Hull-crash-cost as a lexicase fitness dimension (M1/M2)
 
+> **→ 038 US1 candidate (2026-06-16)**: pulled into [specs/038-accurate-m2/spec.md](038-accurate-m2/spec.md)
+> as the headline. **Reframed there** per operator 2026-06-16: OOB keeps score-stop; hull gets a
+> **member-level** penalty — start with **×0.5 of the member's total fitness per strike** (death-penalty
+> as escalation), NOT a per-scenario lexicase axis and NOT scalar compositing. No tick-weighting (the
+> score-stop already encodes early-vs-late; the gap is the *late* banked crash). Clarify/dig deeper at
+> 038 plan phase.
+
 - **Origin**: split out of 035 FR-008b. Energy is 035's job; hull-crash-cost earns its own feature because its penalty design is the hard part.
 - **Problem**: in tracker (M2) bakes, hull-strikes grow *monotonically with tracking skill* (030: ~1→11/gen; 032: ~3× faster) — the chase learns to fly *into* the target as it sharpens. This **gates real-flight deployment**. It is a *fitness dimension* (NOT 036/island-selection work). Applies to **M1 and M2 and beyond** — energy + crash incentives are both wanted across modes.
 - **Design constraints (operator, 2026-06-04) — the hard part this feature MUST solve**:
@@ -326,6 +333,32 @@ Remaining 015 work:
 
 ### [BACKLOG 038] Standardize training reporting — one `scripts/` wrapper (logfile in → all PNGs out)
 
+> **→ 038 Phase-0 (P0-C) — IN PROGRESS (2026-06-16)**: building `scripts/generate_pngs.sh m1|m2
+> <logfile>` + a maintained analytics home `src/analytics/` (dmp-fed plotters + `requirements.txt`)
+> this session. See [specs/038-accurate-m2/spec.md](038-accurate-m2/spec.md) Phase 0.
+
+### Per-gen analytics store (SQLite) — retire the CSV run-summary cache (out of 038 P0-C)
+
+- **Surfaced 2026-06-16** building `generate_pngs.sh`: the incremental run-summary cache is a CSV file
+  per run-id, appended via `--since-gen`, deduped by gen with `sort -u`, keyed on (run-id + dmp-dump
+  build signature) to avoid splicing rows from different runs/builds. That's a relational table
+  reimplemented in bash — "we're close to a SQLite use case" (operator).
+- **Want**: a single SQLite DB of per-gen analytics. Schema sketch: `gen_summary(run_id, gen,
+  best_fitness, mean_energy, mean_stability, mean_streak, crashes, aggr_*, dctrl_*, mag_*,
+  path*_rollrate, path*_pitchrate, scenarios, mode, dmp_dump_sig, PRIMARY KEY(run_id, gen))`. Ingest =
+  `INSERT OR REPLACE` per gen (dmp-dump writes rows, or the script pipes them in); plotting + cross-run
+  comparison become `SELECT`s (the `--compare` overlay is then a `WHERE run_id IN (...)` instead of
+  re-scanning old `.log`s). `dmp_dump_sig` column makes a build-math change a row-level concern, not a
+  whole-file-invalidate.
+- **Why it's clean**: append-once-immutable per (run_id, gen) matches the dmp model; kills the
+  dedup-sort + file-key gymnastics; one queryable store for all runs; trivially supports
+  compare-N-runs and "latest run" selection.
+- **Relation**: extends [BACKLOG 038] reporting above + `project_dmp_driven_analytics_backlog`
+  (move analytics off logfile-parsing onto the dmp; /tmp dmp cache). Likely lands as a 038 follow-on
+  or its own small infra spec once the shell pipeline proves the report set.
+- **Trigger**: when the CSV-cache bookkeeping or cross-run comparison gets painful enough — or when the
+  dmp `/tmp` cache item is picked up (do them together).
+
 - **Surfaced**: 037 (2026-06-15/16), during 037-t11-m2 reporting. Generating the standard per-run
   PNGs ([docs/REPORTS.md](../docs/REPORTS.md)) is a hand-run sequence of `python3` calls scattered
   across `specs/034-…`, `specs/035-…`, `specs/037-…`, with the S3 run-id, gen number, mode, and
@@ -378,6 +411,10 @@ Remaining 015 work:
   is acceptable anyway (e.g. bundled with the self-describing-dmp item below).
 
 ### Self-describing dmp — record config block in every gen dmp (out of 037 P-O13)
+
+> **→ 038 P0-B candidate (2026-06-16, partial)**: 038 Phase-0 takes only the **renderer-side
+> config-hygiene slice** (renderer/replay reads fitness/cadence params from the run/dmp, not the live
+> `.ini`). The full `EvalResults` config-block serialization stays this item.
 
 - **Surfaced**: 037 (2026-06-14), while building the renderer playback HUD (P-O12). Score replay in
   `dmp_dump.cc` and `tools/renderer.cc` reads fitness/cadence params (cone angle, dist scales, streak
@@ -447,10 +484,13 @@ Remaining 015 work:
 - **Files**: `autoc.ini` (PopulationSize, WindScenarios), new `docs/basin-landscape-reference.md` (or wherever the operator routing prefers — possibly `specs/029-no-future-arch/` since the reference runs anchor there).
 - **Critical normalization caveat (surfaced 2026-05-25)**: `Best` / `Avg` / `Worst` in `data.stc` and the gen log line are **sums over the scenarios in that run's config** (paths × winds). Comparing absolute Best across runs with different `WindScenarios` or `SimNumPathsPerGeneration` is apples-to-oranges. r1 (pop=8000 / wind=36 / 216 scenarios) at gen 181 has Best −23,174 vs pastonly3 (5000 / 49 / 294 scenarios) at gen 181 ≈ −25,800; the raw numbers suggest r1 is behind, but per-scenario (−107.3/scen vs −87.8/scen) r1 is ~22% MORE negative — i.e., a stronger controller. avgMaxStreak / pctInStreak are already per-scenario and directly comparable (r1 was 2× pastonly3's at gen 100, still ahead at gen 181). For the reference doc + thresholds, normalize either by (a) using per-scenario averages as the universal currency, OR (b) rescaling the historical thresholds to the run's scenario count (e.g., −40k climbing at 294 scenarios → ~−29k at 216). The threshold values quoted above (≥ −40k climbing, ≤ −15k stuck) are 294-scenario-anchored; the doc must spell this out and provide a rescaling formula or per-scenario equivalents.
 - **Framing — this is "factory" investment, not control improvement (2026-05-27)**: the entire diversion from 029 through this basin work was *not* about making a better controller. M2 already has its own (different) NN topology and performed well on its own. The goal of all this is a **repeatable training environment** so M2 training can be clean and honest — being able to reproduce a source scenario's exact environment (wind/entry/rabbit at the exact tick) is what makes M2 fidelity analyzable. Mental model: this is the **factory ($$$) model** — the assembly line that produces controllers — which we keep refining as we improve control. The controller quality is the product; the determinism + basin reliability + reproducible-environment work is the tooling that lets the factory run without expensive re-rolls. Frame future "is this worth it?" decisions on this axis: does it make the factory cheaper/more reliable per controller produced, or does it improve the controller itself? Different budgets, different justifications.
-- **Forward loop — craft + camera variations into M1 (2026-05-27)**: somewhere in this sequence we go back and add **craft variations** and **camera variations (at least for seed)** into M1, to prepare the final generalization of the craft. The intent: M1 source trajectories should eventually span craft-parameter and camera-config diversity so that when M2 trains against them (in their own reproduced environments), the resulting controller generalizes across the real hardware envelope, not just one nominal airframe/camera. This is the "rinse/repeat" outer loop: improve the factory (determinism, basins, variation coverage) → produce a controller → learn → widen variation → repeat. The variation-budget table elsewhere in this entry (3 dim → 36–49 scenarios; 5–6 dim → 200–350 for pairwise) is the sizing guide for when craft+camera land and the dim count climbs to 5–6.
+- **Forward loop — craft + camera variations into M1 (2026-05-27)** *(camera-variations → 038 US2
+  candidate, 2026-06-16: pulled into 038; the source-side-vs-M2-side question is US2's opening spike)*:
+  somewhere in this sequence we go back and add **craft variations** and **camera variations (at least for seed)** into M1, to prepare the final generalization of the craft. The intent: M1 source trajectories should eventually span craft-parameter and camera-config diversity so that when M2 trains against them (in their own reproduced environments), the resulting controller generalizes across the real hardware envelope, not just one nominal airframe/camera. This is the "rinse/repeat" outer loop: improve the factory (determinism, basins, variation coverage) → produce a controller → learn → widen variation → repeat. The variation-budget table elsewhere in this entry (3 dim → 36–49 scenarios; 5–6 dim → 200–350 for pairwise) is the sizing guide for when craft+camera land and the dim count climbs to 5–6.
   - **Craft variations DONE 2026-05-31 (034 US4)**: 6 axes (CG / drag / trim / thrust scale / pitch-eff / roll-eff) plumbed through the `ScenarioMetadata.craft*` + `craftSeed` cascade, ramped via shared `applyVariationScale`, with eval-mode replay via `gEvalVariationScaleOverride`. Sensible σ defaults in autoc.ini + macro-disable knob `EnableCraftVariations`. Confirmation experiment ini (`autoc-craft-only.ini`) + per-scenario control × craft bias regression analysis = Phase 7 of 034. Camera variations are still pending (not in 034 scope — the cameraSeed insertion point is documented in `ScenarioMetadata` for a future feature).
 - **Broader context**: this investigation was a sidetrack from the M2-reproducibility line of work. The next moves on the main path:
-  1. **033 PRNG single-SHA bug hunt**: even with basin-lottery diagnosed, the `acf732f` (033 PRNG architecture rework) is still worth inspecting for a bug — particularly because phases 1–4 all stalled on what may have been *coincidentally* unlucky seeds but the PRNG cascade rework structurally changed the seed → scenario mapping. If there's a bug routing fresh seeds into a worse part of the basin landscape, finding it would matter for the M2 work.
+  1. **033 PRNG single-SHA bug hunt** *(→ 038 P0-A candidate, 2026-06-16: pulled into 038 Phase-0 as
+     the PRNG-validation prerequisite)*: even with basin-lottery diagnosed, the `acf732f` (033 PRNG architecture rework) is still worth inspecting for a bug — particularly because phases 1–4 all stalled on what may have been *coincidentally* unlucky seeds but the PRNG cascade rework structurally changed the seed → scenario mapping. If there's a bug routing fresh seeds into a worse part of the basin landscape, finding it would matter for the M2 work.
   2. **M2 sim playback parity with M1 — source replayed *in its own original environment*** (clarified 2026-05-27): the load-bearing experiment after the basin work. The key design point: an M1 source trajectory was produced under a specific joint-PRNG scenario = (path_index, wind_seed, entry_pose, rabbit-speed profile). The source path is *shaped by* that wind — it crabbed, drifted, and adjusted throttle for those exact gusts at those exact ticks. For realistic M2 (tracker) training, the chase aircraft must fly through the **same air mass at the same time** — i.e., the M2 sim replays the source's *original variation scenario* so the chase feels the identical wind/conditions while pursuing. Otherwise there's a physics mismatch: the source moved as if wind-blown, but the chase tracks it in different (or calm) air, which is not what happens when a real chase pursues a real target through one shared air mass.
      - **Why this depends on the PRNG work**: faithfully reproducing "the source scenario's environment" requires the scenario to be deterministically regenerable from its seeds. That is exactly what the 033 PRNG rework must get right. Validating 033's PRNG ("mostly working" via the pop8k/wind36 run on 033 code) is therefore the *prerequisite* for honest M2 training — if you can't reproduce a source scenario's wind/entry/rabbit faithfully, you can't put the chase in the same world the source flew through.
      - **The validation question**: if M2 results track M1's training-time signal closely (chase in source's own environment), the M2 architecture + perception pipeline are validated; if they diverge, perception or some other M2-side delta is leaking. The basin-landscape work is housekeeping that lets us cleanly attribute any M2 divergence to *code* rather than *seed luck*.

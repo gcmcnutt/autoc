@@ -590,6 +590,10 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       std::vector<vec3> beaconRightWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconRightMountBody);
       this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
       this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
+      // (No trail-rabbit marker: the target tape + wingtip-beacon glyphs already
+      // mark the target location + the far end of the chase→target error bars.
+      // The chase glyph turning red ≈10 ft behind — driven by the now-correct
+      // tracker ×mult in replayScore — is the trailing-position cue.)
       // 030 M9b.3 — FOV pyramid at the latest visible camera tick. For
       // static load this is the final tick of the scenario; animation
       // updates per-frame (see updatePlaybackAnimation).
@@ -2907,9 +2911,21 @@ double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) 
   if (arena < 0 || arena >= static_cast<int>(evalResults.aircraftStateList.size())) return 0.0;
   const std::vector<AircraftState>& states = evalResults.aircraftStateList[arena];
   if (states.empty()) return 0.0;
-  if (arena >= static_cast<int>(evalResults.pathList.size())) return 0.0;
-  const std::vector<Path>& path = evalResults.pathList[arena];
-  if (path.empty()) return 0.0;
+
+  // Mode dispatch: tracker iff this arena carries a target trajectory. Tracker
+  // dmps have NO pathList, so the score must replay against the trail-rabbit
+  // (target_pos − v̂·trail_distance) with the target-velocity tangent — exactly
+  // as fitness_decomposition.cc's tracker branch and dmp_dump.cc do. Before
+  // this branch existed, tracker runs fell through the pathgen-empty
+  // early-return and the HUD showed a flat ×1.0 (no streak) for every M2 run.
+  const bool isTracker = arena < static_cast<int>(evalResults.targetTrajectoryList.size())
+                         && !evalResults.targetTrajectoryList[arena].empty();
+  const std::vector<Path>* path = nullptr;
+  if (!isTracker) {
+    if (arena >= static_cast<int>(evalResults.pathList.size())) return 0.0;
+    path = &evalResults.pathList[arena];
+    if (path->empty()) return 0.0;
+  }
 
   const AutocConfig& cfg = ConfigManager::getConfig();
   int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
@@ -2924,15 +2940,27 @@ double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) 
   for (size_t ti = 1; ti < states.size(); ++ti) {
     if (states[ti].getSimTimeMsec() > curMs) break;
     const gp_vec3 pos = states[ti].getPosition();
-    const int pIdx = std::clamp(states[ti].getThisPathIndex(), 0,
-                                static_cast<int>(path.size()) - 1);
-    gp_vec3 tangent;
-    if (pIdx + 1 < static_cast<int>(path.size())) {
-      tangent = path.at(pIdx + 1).start - path.at(pIdx).start;
-      double tn = tangent.norm();
-      if (tn > 0.01) { tangent /= tn; prevTangent = tangent; } else tangent = prevTangent;
-    } else tangent = prevTangent;
-    const gp_vec3 off = pos - path.at(pIdx).start;
+    gp_vec3 tangent, anchor;
+    if (isTracker) {
+      // Trail-rabbit anchor + target-velocity tangent (both already shifted to
+      // display altitude in lockstep with `pos`, so the offset below cancels it).
+      const std::vector<CopiedTargetSample>& targets = evalResults.targetTrajectoryList[arena];
+      const size_t tgi = std::min(ti, targets.size() - 1);
+      anchor = targets[tgi].trail_rabbit_position;
+      const gp_vec3 tvel = targets[tgi].velocity;
+      const double vn = tvel.norm();
+      if (vn > 0.01) { tangent = tvel / vn; prevTangent = tangent; } else tangent = prevTangent;
+    } else {
+      const int pIdx = std::clamp(states[ti].getThisPathIndex(), 0,
+                                  static_cast<int>(path->size()) - 1);
+      if (pIdx + 1 < static_cast<int>(path->size())) {
+        tangent = path->at(pIdx + 1).start - path->at(pIdx).start;
+        double tn = tangent.norm();
+        if (tn > 0.01) { tangent /= tn; prevTangent = tangent; } else tangent = prevTangent;
+      } else tangent = prevTangent;
+      anchor = path->at(pIdx).start;
+    }
+    const gp_vec3 off = pos - anchor;
     const double along = off.dot(tangent);
     const double lateral = (off - along * tangent).norm();
     const double stp = fc.computeStepScore(along, lateral);
