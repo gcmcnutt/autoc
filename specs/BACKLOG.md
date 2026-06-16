@@ -261,6 +261,21 @@ Remaining 015 work:
 - **Sequencing (operator, 2026-06-08): after 037.** 037 is M1-smoothness / loop-rate focused (the faster-loop, smoother-M1 path); hull-crash-cost is the **M2-safety** fitness dimension and naturally follows once 037's faster-loop + local-IMU stack enables the M2 real-flight path it gates. Queue: 035 → 037 → hull-crash (036 islands stays back-pocket; un-backlog only if an M2 bake proves lottery-prone).
 - **Fresh evidence (2026-06-08)**: 035 M2 bake t7 (`autoc-…2026-06-08T15:44:25.312Z`) is logging the escalation live — `hullStrike=6/294` by gen 109 and climbing with tracking skill; its final hull-strike curve will be the up-to-date baseline for this feature's penalty design.
 
+### [DEFERRED — 031-fed] CEP realism — evolve the sim beacon-CEP model
+
+- **What**: the sim CEP (beacon localization uncertainty fed to the tracker NN) is a linear off-axis
+  geometric placeholder (`src/eval/camera_projection.cc` step 5). The **real** CEP is a classic
+  position-uncertainty (circular error probable) the camera DSP estimates, magnitude driven by
+  Gold-code decode/reacquisition confidence (partial decode ⇒ high CEP) + intermittency/occlusion +
+  apparent crossing-rate over the multi-frame code-acquisition window. Per-frame blur is low (global
+  shutter @~480 fps) but the ~150 ms code period is the smear window — NOT the frame rate.
+- **When**: revisit CEP modeling when 031's optical chain produces real footage — BEFORE any
+  tracker-NN retraining against real camera output. CEP is both an NN input AND the visibility gate.
+- **Detail**: sensor inventory + FR-011 (position- vs signal-quality) in
+  [specs/038-accurate-m2/spec.md](038-accurate-m2/spec.md).
+- **Note**: migrated here from machine-local `~/.claude` memory (doesn't travel cross-machine) per
+  Constitution X + the portable-agent-memory item.
+
 ### [DEFERRED] Selection Strategy Alternatives
 - NSGA-II Pareto: non-dominated sort on (tracking RMSE, energy, worst-case spread)
 - Rank-based fitness shaping: CMA-ES style rank-derived weights
