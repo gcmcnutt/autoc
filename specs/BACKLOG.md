@@ -387,6 +387,8 @@ Remaining 015 work:
   (and the co-sim-vs-playback-parity decision).
 - **Trigger**: before any wind-parity / two-sim co-eval decision that needs the true wind, or next time
   the record path is touched.
+- **→ 038 pre-work (2026-06-16)**: a recording change → fold into the 038 clean-slate dmp break, with
+  simTimeMsec stamping + self-describing dmp. Then re-run `wind_study.py` against the real gusty wind.
 
 ### [BACKLOG 038] Standardize training reporting — one `scripts/` wrapper (logfile in → all PNGs out)
 
@@ -446,6 +448,15 @@ Remaining 015 work:
 
 ### Integer-ms `simTimeMsec` truncation — stamp by rounding / step-count (out of 037 M2 source-spacing)
 
+> **→ 038 pre-work (2026-06-16)**: fold the stamp fix into 038 pre-work. 038 re-bakes M1/M2 anyway
+> (hull-crash fitness change + camera variations + the source-side spike) — that IS the "dmp break is
+> acceptable" moment this was waiting for. Bonus: `simTimeMsec` feeds the time-based NN history-lag
+> selection + the `span_rate` gap denominator, so today's ±1 ms jitter adds noise to the rate inputs;
+> exact 50 ms stamping cleans it. After the fix + a clean re-baked source, the M2 source-spacing check
+> reverts to a strict single-gap test. **NOTE**: CRRCSim **submodule** change (pointer-bump-first),
+> **determinism-affecting → retrain-from-scratch** — do it at the 038 clean-slate, NOT mid-bake (would
+> perturb the live t11).
+
 - **Surfaced**: 037 (2026-06-15), M2/t11 launch. The tracker source-spacing fail-loud rejected the
   t10 source: its recorded tick gaps are 49/50/51 ms (first gap deterministically 49) even though
   the true cadence is exactly 50 ms.
@@ -469,9 +480,10 @@ Remaining 015 work:
 
 ### Self-describing dmp — record config block in every gen dmp (out of 037 P-O13)
 
-> **→ 038 P0-B candidate (2026-06-16, partial)**: 038 Phase-0 takes only the **renderer-side
-> config-hygiene slice** (renderer/replay reads fitness/cadence params from the run/dmp, not the live
-> `.ini`). The full `EvalResults` config-block serialization stays this item.
+> **→ 038 P0-B — FULL version now viable (2026-06-16)**: 038 may break the dmp contract for a clean
+> re-bake (operator), so the full `EvalResults` config-block serialization can land here — not just
+> the renderer-config-hygiene slice. Bundle with the other clean-slate contract changes (simTimeMsec
+> stamping, wind_velocity recording) so there's one dmp break, not several.
 
 - **Surfaced**: 037 (2026-06-14), while building the renderer playback HUD (P-O12). Score replay in
   `dmp_dump.cc` and `tools/renderer.cc` reads fitness/cadence params (cone angle, dist scales, streak

@@ -171,10 +171,25 @@ an existing backlog thread; none is novel feature scope, but they de-risk the ba
   emits the full PNG report set (derive run-id/bucket/gen/mode from the log head). Lands the
   "[BACKLOG 038] Standardize training reporting" item; folds the dmp-fed plotters into a maintained
   analytics home with `pyproject`/`requirements`.
+- **P0-D — Clean-slate contract changes (ONE dmp break).** 038 re-bakes M1/M2 anyway, so it is the
+  agreed moment (operator 2026-06-16) to land all the deferred *rule-changing* items together — one
+  dmp/determinism break, retrain-from-scratch, no version bump (readers fail-loud). Absorbs:
+  - **simTimeMsec stamping** — round / derive from step-count so 20 Hz records exact 50 ms gaps
+    (CRRCSim submodule). Cleans the time-based NN history-lag + `span_rate` denominator jitter; lets
+    the M2 source-spacing check revert to a strict single-gap test.
+  - **Self-describing dmp** — serialize the fitness/cadence config block into `EvalResults` (the FULL
+    version, beyond P0-B's renderer slice), so a dmp is standalone-replayable.
+  - **`wind_velocity` recording** — populate it from crrcsim at record time (today zero), so the
+    realized gusty wind is auditable; then re-run `wind_study.py` against real wind.
+
+  (NOT the V1.5 crash-hull PRNG determinism — that was already fixed in the 033 cleanup, now seeds
+  from the per-scenario rabbit-class sub-seed; don't re-open it.)
 
 **Phase-0 acceptance**: P0-A produces a written verdict (clear / bug-found-and-fixed) with a
-determinism check; P0-B lets the renderer replay a pinned run without reading fitness params from the
-live `.ini`; P0-C reproduces today's 6-PNG M2 set from a single `scripts/<wrapper> <logfile>` call.
+determinism check; P0-B (subsumed by P0-D's self-describing dmp if that lands) lets the renderer replay
+a pinned run without the live `.ini`; P0-C reproduces today's 6-PNG M2 set from one `scripts/<wrapper>
+<logfile>` call; P0-D bakes a fresh source with exact 50 ms gaps, recorded wind, and a self-describing
+dmp — the strict source-spacing check passes.
 
 ## Stakeholders
 
@@ -309,10 +324,14 @@ spacing) vs the M1-matched layout at the same seed; the alt layout shows equal-o
 
 ### Edge Cases
 
-- **Hull penalty vs existing crash handling**: how does the member-level hull penalty compose with the
-  current `crashReason` handling (`fitness_decomposition.cc`)? OOB stays score-stop; the hull path must
-  apply the member-level penalty (A or B) without double-counting, and must cleanly distinguish a hull
-  strike from an OOB exit.
+- **Hull penalty vs existing `p_crash` curriculum**: a hull strike today only *fires* via a
+  curriculum-annealed Bernoulli(`p_crash`) draw (the crash-hull PRNG, per-scenario rabbit-class
+  seeded) — early gens forgiving, later strict. The new member-level penalty (US1) must compose with
+  that: does the penalty apply only when the strike *fires*, or whenever the chase enters the hull
+  (independent of `p_crash`)? Reconcile with the deferred **PCrash refactor** (collapse the 4-param
+  ramp `PCrashGen0/Ramp/Plateau/PCrashPlateau` into one `CrashHullProbability` + an
+  `EnableCrashHullVariations` flag) — natural to do alongside US1. Also: OOB stays score-stop; the
+  hull path applies the member-level penalty (A or B) without double-counting, distinct from OOB.
 - **Rare-crash decisiveness**: a single strike in ~1/300 scenarios must still be member-deciding — the
   member-level death-penalty/multiplier achieves this directly, without relying on a lone lexicase test
   case happening to become the decider.
