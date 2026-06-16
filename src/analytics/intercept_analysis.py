@@ -79,9 +79,10 @@ HULL_COLOR = "tab:red"      # 1m hull-strike reference line
 SIM_TIME_STEP_SEC = 0.05  # seconds per tick — default 20 Hz (50 ms). Set via --tick-sec
                           # (10 Hz historical runs: 0.1). Used for closing-rate m/s only.
 CEP_VISIBLE_THRESH = 1.25  # beacon cep < this ⇒ visible (== kCepSentinelThreshold)
-# Beacon-visibility brightness levels for the F/G traces: both tips visible = bright,
-# one = half, neither = dim. (level → alpha.)
-VIS_ALPHA = {2: 0.85, 1: 0.45, 0: 0.12}
+# Beacon-visibility colors for the F/G traces (saturated, discrete):
+# both tips visible = purple, one = green, none = red.
+VIS_COLORS = {2: "tab:purple", 1: "limegreen", 0: "red"}
+VIS_LABELS = {2: "both vis", 1: "one vis", 0: "none vis"}
 
 
 def _vis_level(data, lo, hi):
@@ -97,20 +98,19 @@ def _vis_level(data, lo, hi):
             + (br[:n] < CEP_VISIBLE_THRESH).astype(int))
 
 
-def _plot_vis_graded(ax, x, y, vis, base_color, lw=1.2):
-    """Plot y(x) as a polyline whose per-segment brightness (alpha) encodes beacon
-    visibility (vis level 2/1/0 → bright/half/dim). Falls back to a plain line if
+def _plot_vis_colored(ax, x, y, vis, lw=1.4):
+    """Plot y(x) as a polyline whose per-segment COLOR encodes beacon visibility
+    (both tips = purple, one = green, none = red), saturated. Plain gray line if
     vis is None. Each segment colored by the visibility at its start tick."""
     x = np.asarray(x, float); y = np.asarray(y, float)
     if vis is None or len(x) < 2:
-        ax.plot(x, y, color=base_color, alpha=0.5, linewidth=lw)
+        ax.plot(x, y, color="0.5", alpha=0.6, linewidth=lw)
         return
-    rgb = mcolors.to_rgba(base_color)[:3]
     pts = np.column_stack([x, y]).reshape(-1, 1, 2)
     segs = np.concatenate([pts[:-1], pts[1:]], axis=1)
     m = min(len(segs), len(vis))
-    colors = [(*rgb, VIS_ALPHA.get(int(vis[i]), 0.45)) for i in range(m)]
-    ax.add_collection(LineCollection(segs[:m], colors=colors, linewidths=lw),
+    colors = [VIS_COLORS.get(int(vis[i]), "0.5") for i in range(m)]
+    ax.add_collection(LineCollection(segs[:m], colors=colors, linewidths=lw, alpha=0.9),
                       autolim=True)
     ax.autoscale_view()
 
@@ -440,12 +440,13 @@ def panel_event_overlay(ax, scenarios, picks, align_mode, title, color):
             lo = max(0, anchor - 20)
             hi = min(n, anchor + 21)
         t_rel = np.arange(lo, hi) - anchor
-        # dist trace, brightness-graded by beacon visibility (bright=both tips,
-        # dim=none) — shows whether we lose sight near the strike / closest approach.
-        _plot_vis_graded(ax, t_rel, d[lo:hi], _vis_level(data, lo, hi), color, lw=1.1)
+        # dist trace, segment-colored by beacon visibility (purple=both tips,
+        # green=one, red=none) — shows whether we lose sight near the strike /
+        # closest approach.
+        _plot_vis_colored(ax, t_rel, d[lo:hi], _vis_level(data, lo, hi), lw=1.4)
         if "closing_rate" in data and len(data["closing_rate"]) >= hi:
-            ax2.plot(t_rel, data["closing_rate"][lo:hi], color=CR_COLOR,
-                     alpha=0.40, linewidth=0.9, linestyle=":")
+            ax2.plot(t_rel, data["closing_rate"][lo:hi], color="0.4",
+                     alpha=0.35, linewidth=0.8, linestyle=":")
         n_plotted += 1
     ax.axvline(0, color="k", linewidth=0.6, alpha=0.5)
     ax.axhline(1.0, color=HULL_COLOR, linewidth=0.8, alpha=0.7, linestyle="-.",
@@ -453,21 +454,20 @@ def panel_event_overlay(ax, scenarios, picks, align_mode, title, color):
     ax.axhline(3.048, color=TRAIL_COLOR, linewidth=0.8, alpha=0.7,
                linestyle="-.", label="fitness anchor 3.048m")
     ax2.axhline(0, color="gray", linewidth=0.4, alpha=0.4)
-    # visibility-brightness legend proxies (bright=both beacons, half=one, dim=none)
+    # beacon-visibility legend proxies (purple=both, green=one, red=none)
     from matplotlib.lines import Line2D
-    rgb = mcolors.to_rgba(color)[:3]
-    vis_handles = [Line2D([0], [0], color=(*rgb, VIS_ALPHA[2]), lw=2, label="both vis"),
-                   Line2D([0], [0], color=(*rgb, VIS_ALPHA[1]), lw=2, label="one vis"),
-                   Line2D([0], [0], color=(*rgb, VIS_ALPHA[0]), lw=2, label="none vis")]
+    vis_handles = [Line2D([0], [0], color=VIS_COLORS[k], lw=3, label=VIS_LABELS[k])
+                   for k in (2, 1, 0)]
     anchor_label = "strike" if align_mode == "last_tick" else "closest-target"
     ax.set_xlabel(f"tick (0 = {anchor_label})")
-    ax.set_ylabel("dist to target (m); line brightness = beacon vis", color=color)
-    ax2.set_ylabel("closing rate to target (m/s, dotted)", color=CR_COLOR)
+    ax.set_ylabel("dist to target (m); line color = beacon vis", color=color)
+    ax2.set_ylabel("closing rate (m/s, gray dotted)", color="0.4")
     ax.tick_params(axis="y", labelcolor=color)
-    ax2.tick_params(axis="y", labelcolor=CR_COLOR)
+    ax2.tick_params(axis="y", labelcolor="0.4")
     ax.set_title(f"{title} — n={n_plotted}", fontsize=10)
     h, _ = ax.get_legend_handles_labels()
-    ax.legend(handles=h + vis_handles, loc="upper right", fontsize=6, ncol=2)
+    ax.legend(handles=h + vis_handles, loc="upper right", fontsize=7,
+              framealpha=0.92).set_zorder(20)
     ax.grid(True, alpha=0.3)
     return n_plotted
 
