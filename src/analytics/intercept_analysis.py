@@ -51,6 +51,8 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+from matplotlib.collections import LineCollection
 import numpy as np
 
 
@@ -74,7 +76,43 @@ CR_COLOR = "#1B5E20"        # closing-rate trace (forest green, high contrast)
 TRAIL_COLOR = "tab:olive"   # 3.048m fitness-anchor reference line
 HULL_COLOR = "tab:red"      # 1m hull-strike reference line
 
-SIM_TIME_STEP_SEC = 0.1  # 100 ms per tick
+SIM_TIME_STEP_SEC = 0.05  # seconds per tick — default 20 Hz (50 ms). Set via --tick-sec
+                          # (10 Hz historical runs: 0.1). Used for closing-rate m/s only.
+CEP_VISIBLE_THRESH = 1.25  # beacon cep < this ⇒ visible (== kCepSentinelThreshold)
+# Beacon-visibility brightness levels for the F/G traces: both tips visible = bright,
+# one = half, neither = dim. (level → alpha.)
+VIS_ALPHA = {2: 0.85, 1: 0.45, 0: 0.12}
+
+
+def _vis_level(data, lo, hi):
+    """Per-tick beacon-visibility level over [lo:hi]: 2=both tips, 1=one, 0=none.
+    From blC0/brC0 (left/right beacon cep); a cep < CEP_VISIBLE_THRESH is visible.
+    Returns None if the cep columns are absent."""
+    if "blC0" not in data or "brC0" not in data:
+        return None
+    bl = np.asarray(data["blC0"])[lo:hi]
+    br = np.asarray(data["brC0"])[lo:hi]
+    n = min(len(bl), len(br))
+    return ((bl[:n] < CEP_VISIBLE_THRESH).astype(int)
+            + (br[:n] < CEP_VISIBLE_THRESH).astype(int))
+
+
+def _plot_vis_graded(ax, x, y, vis, base_color, lw=1.2):
+    """Plot y(x) as a polyline whose per-segment brightness (alpha) encodes beacon
+    visibility (vis level 2/1/0 → bright/half/dim). Falls back to a plain line if
+    vis is None. Each segment colored by the visibility at its start tick."""
+    x = np.asarray(x, float); y = np.asarray(y, float)
+    if vis is None or len(x) < 2:
+        ax.plot(x, y, color=base_color, alpha=0.5, linewidth=lw)
+        return
+    rgb = mcolors.to_rgba(base_color)[:3]
+    pts = np.column_stack([x, y]).reshape(-1, 1, 2)
+    segs = np.concatenate([pts[:-1], pts[1:]], axis=1)
+    m = min(len(segs), len(vis))
+    colors = [(*rgb, VIS_ALPHA.get(int(vis[i]), 0.45)) for i in range(m)]
+    ax.add_collection(LineCollection(segs[:m], colors=colors, linewidths=lw),
+                      autolim=True)
+    ax.autoscale_view()
 
 
 def _derive_extras(d):
@@ -402,7 +440,9 @@ def panel_event_overlay(ax, scenarios, picks, align_mode, title, color):
             lo = max(0, anchor - 20)
             hi = min(n, anchor + 21)
         t_rel = np.arange(lo, hi) - anchor
-        ax.plot(t_rel, d[lo:hi], color=color, alpha=0.5, linewidth=1.0)
+        # dist trace, brightness-graded by beacon visibility (bright=both tips,
+        # dim=none) — shows whether we lose sight near the strike / closest approach.
+        _plot_vis_graded(ax, t_rel, d[lo:hi], _vis_level(data, lo, hi), color, lw=1.1)
         if "closing_rate" in data and len(data["closing_rate"]) >= hi:
             ax2.plot(t_rel, data["closing_rate"][lo:hi], color=CR_COLOR,
                      alpha=0.40, linewidth=0.9, linestyle=":")
@@ -413,14 +453,21 @@ def panel_event_overlay(ax, scenarios, picks, align_mode, title, color):
     ax.axhline(3.048, color=TRAIL_COLOR, linewidth=0.8, alpha=0.7,
                linestyle="-.", label="fitness anchor 3.048m")
     ax2.axhline(0, color="gray", linewidth=0.4, alpha=0.4)
+    # visibility-brightness legend proxies (bright=both beacons, half=one, dim=none)
+    from matplotlib.lines import Line2D
+    rgb = mcolors.to_rgba(color)[:3]
+    vis_handles = [Line2D([0], [0], color=(*rgb, VIS_ALPHA[2]), lw=2, label="both vis"),
+                   Line2D([0], [0], color=(*rgb, VIS_ALPHA[1]), lw=2, label="one vis"),
+                   Line2D([0], [0], color=(*rgb, VIS_ALPHA[0]), lw=2, label="none vis")]
     anchor_label = "strike" if align_mode == "last_tick" else "closest-target"
     ax.set_xlabel(f"tick (0 = {anchor_label})")
-    ax.set_ylabel("dist to target (m)", color=color)
+    ax.set_ylabel("dist to target (m); line brightness = beacon vis", color=color)
     ax2.set_ylabel("closing rate to target (m/s, dotted)", color=CR_COLOR)
     ax.tick_params(axis="y", labelcolor=color)
     ax2.tick_params(axis="y", labelcolor=CR_COLOR)
     ax.set_title(f"{title} — n={n_plotted}", fontsize=10)
-    ax.legend(loc="upper right", fontsize=7)
+    h, _ = ax.get_legend_handles_labels()
+    ax.legend(handles=h + vis_handles, loc="upper right", fontsize=6, ncol=2)
     ax.grid(True, alpha=0.3)
     return n_plotted
 
@@ -441,7 +488,7 @@ def panel_d_sensor_fidelity(ax, scenarios):
         spn_all.append(data["spn0"])
         dist_all.append(data["dist_target"][:n])
         if "blC0" in data and "brC0" in data:
-            visible = (data["blC0"][:n] < 1.25) & (data["brC0"][:n] < 1.25)
+            visible = (data["blC0"][:n] < CEP_VISIBLE_THRESH) & (data["brC0"][:n] < CEP_VISIBLE_THRESH)
             vis_all.append(visible.astype(float))
         else:
             vis_all.append(np.ones(n))
@@ -511,6 +558,7 @@ def panel_e_min_dist_histogram(ax, scenarios):
 
 
 def main():
+    global SIM_TIME_STEP_SEC          # set from --tick-sec; closing-rate (m/s) divides by this
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", dest="csv", default="-",
                     help="dmp-dump --csv-only file, or '-' for stdin (default)")
@@ -521,11 +569,16 @@ def main():
                     help="Number of closest-approach scenarios to overlay in panel A")
     ap.add_argument("-o", "--out", type=Path, default=None,
                     help="default: specs/035-energy-lexicase-objective/<label>_intercept_analysis.png")
+    ap.add_argument("--tick-sec", type=float, default=SIM_TIME_STEP_SEC,
+                    help="seconds per control tick for closing-rate m/s (default 0.05 = 20 Hz; "
+                         "pass 0.1 for 10 Hz runs)")
     args = ap.parse_args()
     if args.out is None:  # derive from --label (lexicographic autoc-035-t<N>-<reason>)
         args.out = Path(f"specs/035-energy-lexicase-objective/{args.label}_intercept_analysis.png")
 
-    print(f"Reading dmp-dump CSV from {args.csv}...", file=sys.stderr)
+    SIM_TIME_STEP_SEC = args.tick_sec   # closing-rate (m/s) divides by this; must match run cadence
+
+    print(f"Reading dmp-dump CSV from {args.csv} (tick={SIM_TIME_STEP_SEC}s)...", file=sys.stderr)
     scenarios = load_dmp_dump_csv(args.csv)
     gen_str = str(args.gen) if args.gen >= 0 else "?"
     print(f"  gen = {gen_str}, scenarios = {len(scenarios)}", file=sys.stderr)

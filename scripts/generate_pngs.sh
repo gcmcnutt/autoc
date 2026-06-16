@@ -57,6 +57,12 @@ if [[ "$MODE" == "m1" ]]; then BUCKET=autoc-m1; INI="$REPO/autoc.ini";         e
                                BUCKET=autoc-m2; INI="$REPO/autoc-tracker.ini"; fi
 [[ -f "$INI" ]] || die "config not found: $INI"
 
+# Control cadence (sec/tick) from the run's config — feeds intercept_analysis's
+# closing-rate m/s so it's correct at 20 Hz (50 ms) vs 10 Hz (100 ms).
+CTRL_MSEC="$(grep -E '^[[:space:]]*ControlIntervalMsec' "$INI" | head -1 | sed -E 's/.*=[[:space:]]*([0-9]+).*/\1/')"
+[[ "$CTRL_MSEC" =~ ^[0-9]+$ ]] || CTRL_MSEC=50
+TICK_SEC="$(awk "BEGIN{printf \"%.4f\", $CTRL_MSEC/1000.0}")"
+
 NAME="$(basename "$LOG" .log)"
 RUNID="$(grep -E 'Run ID:' "$LOG" | tail -1 | sed -E 's/.*Run ID:[[:space:]]*//')"
 [[ -n "$RUNID" ]] || die "no 'Run ID:' line in $LOG"
@@ -73,7 +79,7 @@ mkdir -p "$OUT"
 
 echo "generate_pngs: mode=$MODE name=$NAME gen=$GEN bucket=$BUCKET"
 echo "  run=$RUN"
-echo "  out=$OUT  config=$(basename "$INI")  compare=$(( ${#COMPARE[@]} / 2 ))"
+echo "  out=$OUT  config=$(basename "$INI")  compare=$(( ${#COMPARE[@]} / 2 ))  tick=${TICK_SEC}s"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 TICK="$TMP/tick.csv"; SUMMARY="$TMP/summary.csv"
@@ -95,7 +101,10 @@ full_summary() {
 }
 if [[ "$USE_CACHE" == 1 && "$FORCE_FULL" == 0 && -s "$CACHE" ]]; then
   LAST="$(tail -1 "$CACHE" | cut -d, -f1)"
-  if [[ "$LAST" =~ ^[0-9]+$ && "$LAST" -lt "$GEN" ]]; then
+  if [[ "$LAST" =~ ^[0-9]+$ ]] && [[ "$LAST" -eq "$GEN" ]]; then
+    echo "  [dmp] run-summary cache complete @ gen $LAST — no fetch"
+    cp "$CACHE" "$SUMMARY"
+  elif [[ "$LAST" =~ ^[0-9]+$ ]] && [[ "$LAST" -lt "$GEN" ]]; then
     echo "  [dmp] run-summary incremental since gen $((LAST+1)) (cache @ gen $LAST) ..."
     cp "$CACHE" "$TMP/merged.csv"
     "$DMP" "$RUN" --run-summary --since-gen "$((LAST+1))" -i "$INI" >>"$TMP/merged.csv" 2>"$TMP/sum.err" \
@@ -103,8 +112,8 @@ if [[ "$USE_CACHE" == 1 && "$FORCE_FULL" == 0 && -s "$CACHE" ]]; then
     head -1 "$TMP/merged.csv" >"$SUMMARY"                                    # header (from cache)
     tail -n +2 "$TMP/merged.csv" | grep -vE '^gen,' | sort -t, -k1,1n -u >>"$SUMMARY"  # drop stray headers; dedup+numeric-sort by gen
   else
-    [[ "$LAST" =~ ^[0-9]+$ && "$LAST" -ge "$GEN" ]] && \
-      echo "  [cache] cached gen $LAST >= log gen $GEN — full refetch (cache ahead/suspect)"
+    [[ "$LAST" =~ ^[0-9]+$ ]] && \
+      echo "  [cache] cached gen $LAST > log gen $GEN — full refetch (cache ahead/suspect)"
     full_summary
   fi
 else
@@ -138,7 +147,7 @@ run dynamics_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$IN
 if [[ "$MODE" == "m2" ]]; then
   run plot_gen_diag.py --in "$LOG" --label "$NAME" --out "$OUT/${NAME}_gen_diag.png"
   run intercept_analysis.py --csv "$TICK" --label "$NAME" --gen "$GEN" \
-      -o "$OUT/${NAME}_intercept_analysis.png"
+      --tick-sec "$TICK_SEC" -o "$OUT/${NAME}_intercept_analysis.png"
 fi
 
 echo "generate_pngs: done — wrote to $OUT:"
