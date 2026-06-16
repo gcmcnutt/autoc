@@ -241,6 +241,31 @@ Remaining 015 work:
 
 ## Future Features (separate from 015)
 
+### [FUTURE FEATURE — depends on how M2 goes] Two-sim co-evaluation — live M1 target + evolving M2 chase (shared air)
+
+- **Idea (operator 2026-06-16)**: instead of M2 chasing a *recorded* M1 trajectory (forced playback
+  under the source's fixed, different wind), run **two live sims per scenario** — a **target** flying
+  the trained **M1 NN** (a robust generalist) and the **M2 chase** flying the evolving network — both
+  in the **same air mass**. The target adapts to the scenario's wind live, so target + chase share one
+  wind by construction; the playback-vs-wind-mismatch question dissolves, and the recorded-trajectory
+  dependency goes away.
+- **Evidence motivating it (2026-06-16 wind-mismatch study, `src/analytics/wind_study.py`)**: M1-source
+  vs M2-chase steady wind-DIRECTION offsets diverge ~38° mean (35% of scenarios >45°), yet that
+  mismatch is **uncorrelated** with per-scenario score (corr +0.03), tracking (−0.07), or completion
+  (the 20 incomplete avg 36° ≈ overall 35°). So reproducing M1's wind (the "M2 sim playback parity"
+  item below) looks **low-value** — co-sim makes wind shared regardless. **Caveat**: the study only
+  measured the *steady direction* offset; gusts/thermals are unrecorded (`wind_velocity`=0 — see the
+  recording-gap item in Infrastructure) — confirm before fully discounting playback parity.
+- **CRRCSim hook**: CRRCSim has a robot-craft notion (mod_robots / `RobotProgrammable` — see the
+  "[030 v1] Live two-aircraft display" item + [reference_crrcsim_mod_robots](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_crrcsim_mod_robots.md)).
+  Here the target would be a second **FDM-driven** craft running the M1 NN, not just a programmatic
+  pose stream.
+- **Cost/risk**: two FDMs + two NN forward passes per scenario tick → ~2× eval cost; determinism must
+  hold for both crafts; the M1 NN is fixed (constant per scenario, not evolving). Big lift, long-term.
+- **Trigger**: depending on how the current playback-M2 approach goes — if it plateaus too low, or the
+  gust component turns out to matter once `wind_velocity` is recorded. **Supersedes** the "M2 sim
+  playback parity" bullet if it lands.
+
 ### [FUTURE FEATURE — split from 035, 2026-06-04] Hull-crash-cost as a lexicase fitness dimension (M1/M2)
 
 > **→ 038 US1 candidate (2026-06-16)**: pulled into [specs/038-accurate-m2/spec.md](038-accurate-m2/spec.md)
@@ -345,6 +370,23 @@ Remaining 015 work:
 ---
 
 ## Infrastructure
+
+### `wind_velocity` not recorded in the dmp (honest-recording gap)
+
+- **Found 2026-06-16** (wind-study): `AircraftState::wind_velocity` is serialized but **never set** in
+  the crrcsim→AircraftState record path — it is **zero in every dmp** (M1 + M2). The actual wind lives
+  only inside crrcsim (`crrc_builtin_scenery.cpp` `flWindVel`/`effectiveWindDir` + gusts/thermals).
+- **Impact**: you can't audit the wind a craft actually flew through from the dmp. This blocked the
+  full (gusty) M1↔M2 wind-mismatch comparison — `src/analytics/wind_study.py` could only use the
+  steady `windDirectionOffset` from `ScenarioMetadata`, not the realized gusty wind. Violates
+  honest-recording ([feedback_honest_dmp_recording](../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_honest_dmp_recording.md))
+  for an environment input the controller implicitly experiences.
+- **Fix**: copy crrcsim's per-tick wind into `AircraftState::setWindVelocity()` at record time (getter
+  + setter already exist; `dmp_dump.cc` already emits `wN,wE,wD` columns — currently zeros). Then
+  re-run `wind_study.py` against the *actual* experienced wind to settle the wind-vs-tracking question
+  (and the co-sim-vs-playback-parity decision).
+- **Trigger**: before any wind-parity / two-sim co-eval decision that needs the true wind, or next time
+  the record path is touched.
 
 ### [BACKLOG 038] Standardize training reporting — one `scripts/` wrapper (logfile in → all PNGs out)
 
@@ -506,7 +548,14 @@ Remaining 015 work:
 - **Broader context**: this investigation was a sidetrack from the M2-reproducibility line of work. The next moves on the main path:
   1. **033 PRNG single-SHA bug hunt** *(→ 038 P0-A candidate, 2026-06-16: pulled into 038 Phase-0 as
      the PRNG-validation prerequisite)*: even with basin-lottery diagnosed, the `acf732f` (033 PRNG architecture rework) is still worth inspecting for a bug — particularly because phases 1–4 all stalled on what may have been *coincidentally* unlucky seeds but the PRNG cascade rework structurally changed the seed → scenario mapping. If there's a bug routing fresh seeds into a worse part of the basin landscape, finding it would matter for the M2 work.
-  2. **M2 sim playback parity with M1 — source replayed *in its own original environment*** (clarified 2026-05-27): the load-bearing experiment after the basin work. The key design point: an M1 source trajectory was produced under a specific joint-PRNG scenario = (path_index, wind_seed, entry_pose, rabbit-speed profile). The source path is *shaped by* that wind — it crabbed, drifted, and adjusted throttle for those exact gusts at those exact ticks. For realistic M2 (tracker) training, the chase aircraft must fly through the **same air mass at the same time** — i.e., the M2 sim replays the source's *original variation scenario* so the chase feels the identical wind/conditions while pursuing. Otherwise there's a physics mismatch: the source moved as if wind-blown, but the chase tracks it in different (or calm) air, which is not what happens when a real chase pursues a real target through one shared air mass.
+  2. **M2 sim playback parity with M1 — source replayed *in its own original environment*** (clarified 2026-05-27): the load-bearing experiment after the basin work.
+     > **UPDATE 2026-06-16 (wind-study, may downgrade this item)**: a per-scenario M1-vs-M2
+     > wind-direction comparison (`src/analytics/wind_study.py`) found the steady wind-direction
+     > offsets diverge a lot (~38° mean, 35% > 45°) but are **uncorrelated** with M2 per-scenario score
+     > (+0.03) or tracking (−0.07) — so steady-wind parity looks low-value. The **two-sim co-evaluation**
+     > feature (Future Features) is the more compelling alternative. Caveat: only the steady direction
+     > offset was measurable; the gusty `wind_velocity` is unrecorded (Infrastructure gap) — record it
+     > and re-test before finally ranking this item. The key design point: an M1 source trajectory was produced under a specific joint-PRNG scenario = (path_index, wind_seed, entry_pose, rabbit-speed profile). The source path is *shaped by* that wind — it crabbed, drifted, and adjusted throttle for those exact gusts at those exact ticks. For realistic M2 (tracker) training, the chase aircraft must fly through the **same air mass at the same time** — i.e., the M2 sim replays the source's *original variation scenario* so the chase feels the identical wind/conditions while pursuing. Otherwise there's a physics mismatch: the source moved as if wind-blown, but the chase tracks it in different (or calm) air, which is not what happens when a real chase pursues a real target through one shared air mass.
      - **Why this depends on the PRNG work**: faithfully reproducing "the source scenario's environment" requires the scenario to be deterministically regenerable from its seeds. That is exactly what the 033 PRNG rework must get right. Validating 033's PRNG ("mostly working" via the pop8k/wind36 run on 033 code) is therefore the *prerequisite* for honest M2 training — if you can't reproduce a source scenario's wind/entry/rabbit faithfully, you can't put the chase in the same world the source flew through.
      - **The validation question**: if M2 results track M1's training-time signal closely (chase in source's own environment), the M2 architecture + perception pipeline are validated; if they diverge, perception or some other M2-side delta is leaking. The basin-landscape work is housekeeping that lets us cleanly attribute any M2 divergence to *code* rather than *seed luck*.
      - **Sequencing**: this M2-parity run happens **before** smoothness is re-added (smoothness is a separate later objective; don't conflate it with the M2-fidelity question).
