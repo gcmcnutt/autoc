@@ -41,8 +41,13 @@ Usage:
         --cache /tmp/t6_dynamics_cache.csv \
         --label autoc-037-t6-m1-20hz -o out.png
 
-Stdlib csv + numpy + matplotlib. Pathgen/M1 CSV contract (needs columns
-scenario, out_pt, out_rl, out_th, dist).
+Stdlib csv + numpy + matplotlib. Works on both CSV schemas:
+  - M1 pathgen: needs scenario, out_pt, out_rl, out_th, dist, stpPt (full
+    report incl. the tracking-regime band).
+  - tracker/M2: scenario, out_pt, out_rl, out_th + chaser (px,py,pz) and
+    target (tgX,tgY,tgZ) positions — dist is derived as chaser→target and
+    the regime panel degrades to intercept/patrol (no per-tick stpPt exists
+    in the tracker dump).
 """
 import argparse
 import csv
@@ -73,6 +78,12 @@ ROLL_GATE_FLIP = 36.0
 # tolerate per-tick noise.
 TRACK_THRESHOLD = 0.5
 CLOSE_SMOOTH_TICKS = 5
+
+# Set by compute_gen_metrics: True if the per-tick CSV carried a `stpPt`
+# in-cone location metric (M1 pathgen), False if `dist` had to be derived
+# from chaser→target geometry and no per-tick tracking flag exists (tracker/
+# M2 dump — stpPt is absent there). Drives the regime-panel labelling.
+STPPT_AVAILABLE = True
 
 CACHE_FIELDS = (["gen"]
                 + [f"ac_{n}" for _, n, _ in AXES]
@@ -110,13 +121,36 @@ def sign_flip_pct(x):
     return 100.0 * float(np.mean(s[:-1][nz] != s[1:][nz]))
 
 
+def _scenario_dist(scn_rows):
+    """Per-tick distance for one scenario, generic across CSV schemas.
+
+    M1 pathgen dumps carry an on-disk `dist` (chaser→fitness-anchor); tracker/
+    M2 dumps don't — they carry absolute chaser (px,py,pz) and target
+    (tgX,tgY,tgZ) positions, so we derive chaser→target distance (the same
+    geometry intercept_analysis._derive_extras uses, and the physically
+    meaningful tracking measure)."""
+    k = scn_rows[0].keys()
+    if "dist" in k:
+        return np.array([float(r["dist"]) for r in scn_rows])
+    if all(c in k for c in ("px", "py", "pz", "tgX", "tgY", "tgZ")):
+        p = np.array([[float(r["px"]), float(r["py"]), float(r["pz"])]
+                      for r in scn_rows])
+        tg = np.array([[float(r["tgX"]), float(r["tgY"]), float(r["tgZ"])]
+                       for r in scn_rows])
+        return np.linalg.norm(p - tg, axis=1)
+    raise ValueError("CSV has neither `dist` nor chaser+target position "
+                     "columns to derive it from")
+
+
 def compute_gen_metrics(csv_text):
     """Mean-of-scenarios metrics for one generation's per-tick CSV."""
+    global STPPT_AVAILABLE
     rows = list(csv.DictReader(io.StringIO(csv_text)))
-    need = {"scenario", "out_pt", "out_rl", "out_th", "dist", "stpPt"}
+    need = {"scenario", "out_pt", "out_rl", "out_th"}
     if not rows or not need.issubset(rows[0].keys()):
-        raise ValueError("CSV missing pathgen columns "
+        raise ValueError("CSV missing required output columns "
                          f"(have: {sorted(rows[0].keys()) if rows else 'none'})")
+    STPPT_AVAILABLE = "stpPt" in rows[0]
     by_scn = per_scenario_series(rows)
 
     acs = {n: [] for _, n, _ in AXES}
@@ -131,14 +165,20 @@ def compute_gen_metrics(csv_text):
             acs[name].append(lag1_autocorr(x))
             flips[name].append(sign_flip_pct(x))
             sats[name].append(100.0 * float(np.mean(np.abs(x) >= SAT_KNEE)))
-        d = np.array([float(r["dist"]) for r in scn_rows])
+        d = _scenario_dist(scn_rows)
         dist_means.append(float(d.mean()))
         dist_all.extend(d.tolist())
 
         # Regime occupancy. tracking: stpPt >= threshold. Below: closing
-        # (smoothed d(dist) < 0) = intercept, else patrol.
-        sp = np.array([float(r["stpPt"]) for r in scn_rows])
-        tracking = sp >= TRACK_THRESHOLD
+        # (smoothed d(dist) < 0) = intercept, else patrol. When stpPt is
+        # absent (tracker/M2 dump) there is no per-tick in-cone flag, so
+        # nothing is classed "tracking" and ticks split closing→intercept /
+        # else→patrol on chaser→target distance alone.
+        if STPPT_AVAILABLE:
+            sp = np.array([float(r["stpPt"]) for r in scn_rows])
+            tracking = sp >= TRACK_THRESHOLD
+        else:
+            tracking = np.zeros(len(d), dtype=bool)
         if len(d) >= 2:
             dd = np.diff(d, prepend=d[0])
             k = min(CLOSE_SMOOTH_TICKS, len(dd))
@@ -149,7 +189,7 @@ def compute_gen_metrics(csv_text):
             closing = np.zeros(len(d), dtype=bool)
         intercept = ~tracking & closing
         patrol = ~tracking & ~closing
-        n = max(len(sp), 1)
+        n = max(len(d), 1)
         occ["track"].append(100.0 * float(tracking.sum()) / n)
         occ["intercept"].append(100.0 * float(intercept.sum()) / n)
         occ["patrol"].append(100.0 * float(patrol.sum()) / n)
@@ -283,16 +323,19 @@ def main():
                  fontsize=10)
 
     ax = axs[3]
+    track_lbl = ("tracking (stpPt ≥ 0.5)" if STPPT_AVAILABLE
+                 else "tracking (n/a — no stpPt in tracker dump)")
     ax.stackplot(G, series("occ_track"), series("occ_intercept"),
                  series("occ_patrol"),
-                 labels=["tracking (stpPt ≥ 0.5)", "intercept (closing)",
-                         "patrol"],
+                 labels=[track_lbl, "intercept (closing)", "patrol"],
                  colors=["tab:green", "tab:orange", "tab:gray"], alpha=0.8)
     ax.set_ylabel("% ticks")
     ax.set_ylim(0, 100)
     ax.legend(fontsize=8, loc="upper left")
-    ax.set_title("regime occupancy (progress = patrol → intercept → tracking)",
-                 fontsize=10)
+    regime_note = ("" if STPPT_AVAILABLE
+                   else " — tracker: intercept/patrol only")
+    ax.set_title("regime occupancy (progress = patrol → intercept → tracking)"
+                 + regime_note, fontsize=10)
 
     ax = axs[4]
     ax.plot(G, series("dist_mean"), color="tab:purple", label="mean dist")

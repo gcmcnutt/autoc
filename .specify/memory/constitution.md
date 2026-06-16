@@ -1,21 +1,27 @@
 <!--
 SYNC IMPACT REPORT
-Version change: 1.5.0 → 1.6.0 (MINOR — added Principle IX: Detached Training Launch)
+Version change: 1.6.0 → 1.7.0 (MINOR — added Principle X: Single Ordered Backlog)
 Modified principles: none
 Added sections:
+  - X. Single Ordered Backlog — project backlog lives in ONE ordered file (specs/BACKLOG.md);
+    new items are appended in order, never split into separate per-item .md files (which lose
+    their place in the ordering and get lost). Agent-memory backlog entries are non-authoritative
+    one-line pointers at most. Surfaced 2026-06-16 when the 038 reporting-standardization item was
+    first written as a standalone memory .md before being consolidated into BACKLOG.md.
+Removed sections: none
+Templates / dependent artifacts:
+  - .specify/templates/plan-template.md, tasks-template.md, spec-template.md — ✅ no change
+    needed (generic Constitution Check; no hardcoded backlog steps).
+  - specs/BACKLOG.md — remains the single backlog of record; 038 reporting item added there.
+Follow-up TODOs: none
+
+PRIOR (1.5.0 → 1.6.0, MINOR — added Principle IX: Detached Training Launch):
   - IX. Detached Training Launch — training MUST be started via scripts/train.sh (detached
     session via setsid, reparented to systemd --user, nohup, line-buffered, cores enabled,
     unique logfile). Assistants MUST NOT launch via the Bash-tool run_in_background mechanism,
     which the harness reaps at agent-session end (silently killed t4 gen 278, t5 gen 152 on
     2026-06-06). Codifies what was scattered in agent memory (reference_autoc_launch_command,
     now retired in favor of this principle + the script).
-Removed sections: none
-Templates / dependent artifacts:
-  - .specify/templates/plan-template.md, tasks-template.md, spec-template.md — ✅ no change
-    needed (generic Constitution Check; no hardcoded launch steps).
-  - Agent memory: reference_autoc_launch_command.md retired (tossed); project_autoc_worker_crash
-    now defers to this principle for the launch fix.
-Follow-up TODOs: none
 -->
 # AutoC Constitution
 
@@ -271,6 +277,28 @@ non-tracked `setsid` launch — exactly what `scripts/train.sh` encapsulates. Co
 re-enabled per-run because the system `ulimit -c` default was silently reset (driver/software
 update), leaving recent crashes with no core for diagnosis.
 
+### X. Single Ordered Backlog
+
+The project backlog lives in **one ordered file** — `specs/BACKLOG.md`. New backlog items MUST be
+appended to it, in order, under the appropriate section. Backlog items MUST NOT be written as
+separate per-item `.md` files.
+
+**Rationale**: a backlog split across many standalone files loses the one thing a backlog needs —
+a single, scannable ordering. Separate files have no inherent sequence, drift out of any index that
+references them, and get lost; a reader can no longer see "what's next" or "what's related" at a
+glance. One file keeps priority, grouping, and cross-references visible and reviewable in a single
+read.
+
+**Agent memory is not a backlog store.** Per the in-repo-authoritative-memory practice, a
+`~/.claude` memory entry for a backlog item is at most a **one-line pointer** at `specs/BACKLOG.md`
+(or a specific section) — never the authoritative item text, and never a parallel set of
+per-item files. When a backlog thought first lands in memory, it MUST be promoted into
+`specs/BACKLOG.md` and the memory reduced to a pointer.
+
+**Scope**: applies to forward-looking work items (deferred features, infra cleanups, research
+threads). Does NOT apply to per-feature task lists (`specs/<feature>/tasks.md`), which are the
+speckit work-breakdown for an active feature, nor to outcome/findings docs.
+
 ## Architecture
 
 - **C++17**, CMake, Eigen, cereal (serialization), GoogleTest
@@ -283,4 +311,4 @@ update), leaving recent crashes with no core for diagnosis.
 
 Constitution supersedes all other practices. Amendments require documentation and rationale.
 
-**Version**: 1.6.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-06-06 (Principle IX — Detached Training Launch: training MUST go through scripts/train.sh; never the agent's run_in_background)
+**Version**: 1.7.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-06-16 (Principle X — Single Ordered Backlog: project backlog lives in one ordered file, specs/BACKLOG.md; never scatter into per-item .md files)

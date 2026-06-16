@@ -324,6 +324,36 @@ Remaining 015 work:
 
 ## Infrastructure
 
+### [BACKLOG 038] Standardize training reporting — one `scripts/` wrapper (logfile in → all PNGs out)
+
+- **Surfaced**: 037 (2026-06-15/16), during 037-t11-m2 reporting. Generating the standard per-run
+  PNGs ([docs/REPORTS.md](../docs/REPORTS.md)) is a hand-run sequence of `python3` calls scattered
+  across `specs/034-…`, `specs/035-…`, `specs/037-…`, with the S3 run-id, gen number, mode, and
+  config (`autoc.ini` vs `autoc-tracker.ini`) threaded by hand each time. M1 = 4 reports; M2 = 6
+  (adds `gen_diag` + `intercept_analysis`). Now that reporting is routine, this wants to be one
+  command.
+- **Want**: a single shell script in **`scripts/`** (cross-version utility per the scripts-dir scope
+  rule) whose main param is just the **logfile name** (e.g. `logs/autoc-037-t11-m2.log`). It derives
+  everything else from the log — run-id + `S3Bucket` + `Mode` are printed near the log head, latest
+  gen from the last `#NNGen` — and calls the plotters to emit the full PNG set. "viola."
+- **Stabilize the plotters**: move the dmp-fed (035+) plot pythons out of the frozen feature dirs into
+  a **maintained analytics package** (e.g. `src/analytics/` or `analytics/`) so contract changes can
+  edit them in place. This is a deliberate carve-out from the historical-scripts-immutable rule: the
+  *pre-035 data.dat* scripts stay frozen; the dmp-fed set becomes the maintained, standardized one.
+  Add a **`pyproject.toml` / `requirements.txt`** (numpy, matplotlib) so the reporting env is
+  reproducible. Config via CLI flags, not env vars; config-file flag stays `-i`.
+- **Already-landed groundwork (2026-06-15, this session)**: `tools/dmp_dump.cc` now emits a per-tick
+  `stpPt` column for the **tracker** CSV (recomputed from the recorded target velocity + trail-rabbit,
+  exactly as `fitness_decomposition.cc` — derived not recorded, same as pathgen; no dmp/format
+  change, no run restart). `specs/037-20hz-control-loop/dynamics_progress.py` was made schema-generic
+  (derives chaser→target distance; the regime panel degrades to intercept/patrol when `stpPt` is
+  absent), so it now runs on M1 and M2. These are the kind of contract edits the standardized package
+  should own.
+- **Related**: the dmp-driven-analytics infra item below (default-to-latest-run, gen counts on
+  stderr, `/tmp` dmp cache) and the self-describing-dmp item are natural companions — a standardized
+  reporting front-end is where they'd surface.
+- **Trigger to act**: 038, or the next time a report has to be regenerated for a routine M1/M2 bake.
+
 ### Integer-ms `simTimeMsec` truncation — stamp by rounding / step-count (out of 037 M2 source-spacing)
 
 - **Surfaced**: 037 (2026-06-15), M2/t11 launch. The tracker source-spacing fail-loud rejected the
