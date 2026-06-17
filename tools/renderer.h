@@ -254,9 +254,10 @@ private:
   // + SIM_TIME_STEP_MSEC are compile-time constants — renderer is built from
   // the same tree as the run it renders).
   vtkSmartPointer<vtkTextActor> scoreValueActor;   // total score (top)
-  vtkSmartPointer<vtkTextActor> multValueActor;    // streak ×multiplier (bottom), gray→red
+  vtkSmartPointer<vtkTextActor> multValueActor;    // streak ×multiplier (bottom), grey→gold
   vtkSmartPointer<vtkActor> chasePlaneActor;       // 3D paper-airplane glyph, nose at chase pos
   vtkSmartPointer<vtkPolyData> chasePlanePolyData; // glyph geometry (built once)
+  vtkSmartPointer<vtkLookupTable> chaseStreakLut;  // gold(≤streak frac)→grey LUT; refilled per frame
   void createChasePlaneGlyph();                    // build glyph polydata + actor
   // running score to `currentTime` for `arena` (∑ stp×mult×kCadenceTickScale);
   // sets outMult to the current ×multiplier (1.0 = no streak)

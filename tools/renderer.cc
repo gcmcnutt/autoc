@@ -18,6 +18,9 @@
 #include "autoc/eval/fitness_computer.h"   // 037 P-O12 — honest score replay (same math as dmp_dump)
 #include <vtkSphereSource.h>
 #include <vtkTriangle.h>
+#include <vtkLookupTable.h>
+#include <vtkFloatArray.h>
+#include <vtkPointData.h>
 
 #include <vtkTextActor.h>
 #include <vtkTextProperty.h>
@@ -3001,11 +3004,37 @@ void Renderer::createChasePlaneGlyph() {
   chasePlanePolyData->SetPoints(pts);
   chasePlanePolyData->SetPolys(tris);
 
+  // Per-vertex nose→tail scalar (nose 0, everything aft 1) drives the streak
+  // "gold fill": a thresholded LUT (gold ≤ streak-fraction, grey above), texture-
+  // interpolated across each nose→aft triangle, gives a crisp gold boundary that
+  // rolls back as the streak multiplier climbs (full streak ⇒ whole craft gold).
+  vtkNew<vtkFloatArray> noseFrac;
+  noseFrac->SetName("streakFrac");
+  noseFrac->InsertNextValue(0.0f);  // 0 nose
+  noseFrac->InsertNextValue(1.0f);  // 1 tail
+  noseFrac->InsertNextValue(1.0f);  // 2 left wingtip
+  noseFrac->InsertNextValue(1.0f);  // 3 right wingtip
+  noseFrac->InsertNextValue(1.0f);  // 4 keel
+  chasePlanePolyData->GetPointData()->SetScalars(noseFrac);
+
+  chaseStreakLut = vtkSmartPointer<vtkLookupTable>::New();
+  chaseStreakLut->SetNumberOfTableValues(256);
+  chaseStreakLut->SetTableRange(0.0, 1.0);
+  for (int i = 0; i < 256; ++i)
+    chaseStreakLut->SetTableValue(i, 0.55, 0.55, 0.55, 1.0);  // all grey = no streak
+  chaseStreakLut->Build();
+
   vtkNew<vtkPolyDataMapper> glyphMapper;
   glyphMapper->SetInputData(chasePlanePolyData);
+  glyphMapper->SetLookupTable(chaseStreakLut);
+  glyphMapper->SetScalarModeToUsePointData();
+  glyphMapper->SetColorModeToMapScalars();
+  glyphMapper->SetScalarRange(0.0, 1.0);
+  glyphMapper->ScalarVisibilityOn();
+  glyphMapper->InterpolateScalarsBeforeMappingOn();  // crisp moving boundary (LUT as 1-D texture)
   chasePlaneActor = vtkSmartPointer<vtkActor>::New();
   chasePlaneActor->SetMapper(glyphMapper);
-  chasePlaneActor->GetProperty()->SetColor(0.6, 0.6, 0.6);  // gray = no streak
+  chasePlaneActor->GetProperty()->SetColor(0.6, 0.6, 0.6);  // (overridden by scalar LUT)
   chasePlaneActor->GetProperty()->SetAmbient(0.45);
   chasePlaneActor->GetProperty()->SetDiffuse(0.7);
   chasePlaneActor->GetProperty()->BackfaceCullingOff();
@@ -3763,10 +3792,10 @@ void Renderer::updateControlsOverlay(gp_scalar currentTime) {
     double score = replayScore(selectedArena, currentTime, mult);
     const double multMax = std::max(1.0001, ConfigManager::getConfig().fitStreakMultiplierMax);
     double t = (mult - 1.0) / (multMax - 1.0);
-    t = (t < 0.0) ? 0.0 : (t > 1.0 ? 1.0 : t);   // 0 = gray, 1 = hot red
-    const double cr = 0.60 + 0.40 * t;            // gray (0.6,0.6,0.6) → red (1.0,0.1,0.1)
-    const double cg = 0.60 - 0.50 * t;
-    const double cb = 0.60 - 0.50 * t;
+    t = (t < 0.0) ? 0.0 : (t > 1.0 ? 1.0 : t);   // 0 = grey, 1 = full streak
+    const double cr = 0.60 + 0.40 * t;            // grey (0.6,0.6,0.6) → gold (1.0,0.84,0.0)
+    const double cg = 0.60 + 0.24 * t;
+    const double cb = 0.60 - 0.60 * t;
 
     // Match the Path/Vel HUD font sizing (dynamic, clamped 8–16).
     const int hudFont = std::max(8, std::min(16, static_cast<int>(windowSize[1] * 0.018)));
@@ -3803,7 +3832,18 @@ void Renderer::updateControlsOverlay(gp_scalar currentTime) {
         tf->Translate(static_cast<double>(p[0]), static_cast<double>(p[1]), static_cast<double>(p[2]));
         tf->RotateWXYZ(angleDeg, ax, ay, az);
         chasePlaneActor->SetUserTransform(tf);
-        chasePlaneActor->GetProperty()->SetColor(cr, cg, cb);
+        // Gold streak fill: gold fills nose→tail as the streak fraction t (0..1,
+        // from the 1→5 multiplier) climbs — boundary at frac t, grey aft of it,
+        // full streak ⇒ whole craft gold. (Replaces the flat gray→red tint.)
+        if (chaseStreakLut) {
+          const int N = chaseStreakLut->GetNumberOfTableValues();
+          for (int i = 0; i < N; ++i) {
+            const double frac = (N > 1) ? static_cast<double>(i) / (N - 1) : 0.0;
+            if (frac <= t) chaseStreakLut->SetTableValue(i, 1.0, 0.84, 0.0, 1.0);   // gold
+            else           chaseStreakLut->SetTableValue(i, 0.55, 0.55, 0.55, 1.0); // grey
+          }
+          chaseStreakLut->Modified();
+        }
         chasePlaneActor->VisibilityOn();
       } else {
         chasePlaneActor->VisibilityOff();
