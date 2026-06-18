@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <cmath>          // 037: std::sqrt for the thr^2.5 energy curve
 #include "autoc/types.h"
 #include "autoc/eval/fitness_computer.h"
 #include "autoc/rpc/crash_reason.h"
@@ -91,12 +92,14 @@ struct ScenarioScore {
           maxStreak(0), totalStreakSteps(0), maxMultiplier(1.0) {}
 };
 
-// 035 FR-001b/R1 — per-tick convex throttle energy. out_th∈[-1,1] (tanh NN
-// output) → [0,1] throttle fraction, squared (super-linear). ≥0, lower=better.
+// 035 FR-001b/R1 -- per-tick convex throttle energy. out_th in [-1,1] (tanh NN
+// output) maps to a [0,1] throttle fraction. 037 (2026-06-09): curve is thr^2.5
+// (was thr^2) -- real prop input power ~ throttle^2.5..3; 2.5 chosen as the
+// closer-to-real "slightly different" curve. Still convex, >=0, lower=better.
 // Pure + inline so the formula is unit-testable in isolation (energy_metric_tests).
 inline gp_fitness throttleEnergyStep(gp_fitness out_th) {
     const gp_fitness thr = (out_th + static_cast<gp_fitness>(1.0)) * static_cast<gp_fitness>(0.5);
-    return thr * thr;
+    return thr * thr * std::sqrt(thr);  // thr^2.5
 }
 
 // Compute per-scenario scores from EvalResults using point-accumulation fitness.

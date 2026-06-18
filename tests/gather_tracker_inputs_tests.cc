@@ -230,7 +230,10 @@ TEST(GatherTrackerInputs, CopiesSpanHistoryIntoOutputSlots) {
     }
 }
 
-TEST(GatherTrackerInputs, SpanRateIsOneTickRawDiff) {
+TEST(GatherTrackerInputs, SpanRateIsRateOverRecentLagGap) {
+    // 037 T022 — span_rate is a true rate (NDC-units/s) over the NOW↔TM1
+    // lag gap (kNNHistoryRecentGapSec = 100 ms at every cadence); was a raw
+    // one-tick diff pre-037.
     AircraftState chase = makeChaseState();
     TrackerHistoryWindow history{};
     fillVisibleHistoryWithSpan(history, 0.0f, 0.0f, 0.5f, 0.0f);  // span = 0.5
@@ -238,7 +241,7 @@ TEST(GatherTrackerInputs, SpanRateIsOneTickRawDiff) {
     history.span[4] = 0.30f;
     TrackerInputs out{};
     gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
-    EXPECT_FLOAT_EQ(out.span_rate, 0.20f);  // 0.50 - 0.30
+    EXPECT_FLOAT_EQ(out.span_rate, 0.20f / kNNHistoryRecentGapSec);  // 2.0/s
 }
 
 TEST(GatherTrackerInputs, TiltAtMidRangeHorizontalPair) {

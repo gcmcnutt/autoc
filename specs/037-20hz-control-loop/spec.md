@@ -4,7 +4,8 @@
 `035` branch on 2026-06-07 since 035 is unmerged — split to its own branch off `main` when
 035 lands)
 **Created**: 2026-06-07
-**Status**: Draft (seeded from the 035 per-axis bang-bang analysis)
+**Status**: Draft (seeded from the 035 per-axis bang-bang analysis). **035 M2 is done as of
+2026-06-09 — Phase A (the sim rate sweep) is now unblocked and is the next step.**
 **Input**: Operator direction 2026-06-07 — promote the long-discussed 20 Hz control-loop idea
 to a feature, motivated by the 035 finding that roll bang-bang is largely a 10 Hz artifact.
 
@@ -64,8 +65,40 @@ gen 800). Findings that anchor this feature:
 
 ## Goal
 
-Run the NN control loop at **20 Hz** (50 ms tick) on the real aircraft, and confirm it reduces
-roll bang-bang / improves tracking fidelity without regressing the tracking goal.
+Run the NN control loop at a **faster cadence** — the rate **projected from candidate-hardware capability**
+(harmonics + transport + servo/IMU responsiveness; exact rate TBD per Clarifications Q2 and the Smoothing
+theory section) — on the real aircraft, and confirm it reduces roll bang-bang / improves tracking fidelity
+without regressing the tracking goal. **Premise check first:** before any bake, build a first-principles
+theory of *whether* a faster cadence smooths the command or merely relocates the bang-bang to the new
+Nyquist (see "Smoothing theory" below); train at the projected cadence with the *derived bundle* (cadence
++ latency/jitter model + history-bucket sizing + FDM rate), not a round 20 Hz for its own sake.
+
+## Clarifications
+
+### Session 2026-06-09
+
+- Q: What quantitative criterion defines the Phase-A "solid improvement" go/no-go? → A: **Composite
+  de-alias gate** — roll lag-1 autocorrelation goes from negative (t6: −0.24, anti-persistent dither)
+  to **≥ 0**, AND roll sign-flip rate drops **≥ 20 points** (t6: 56% → ≤ 36%), with tracking (crash %,
+  on-track %) within noise of the 10 Hz baseline. The autocorr sign change is the literal de-alias
+  signature; the sign-flip drop quantifies magnitude; the tracking clause enforces "at equal tracking."
+- Q: First concrete step — a single picked rate, or a sweep? → A: **The cycle rate is selected AFTER
+  the harmonic / frequency-tolerance research of the components** (camera, Xiao time-base, FPGA, servo,
+  the 115 kbaud send budget). Do **not** pre-pick 20/40/48; the research names the rate (which may be a
+  non-round value like 22/37/50), then the first M1 retrain runs at that researched rate. Research is a
+  hard predecessor of the retrain — not parallel to it.
+- Q: How to get the 10 Hz comparison baseline given the entry-envelope tightening (P1) changes M1
+  difficulty? → A: **Compare against the existing historical t6 10 Hz results as-is** — do NOT spend a
+  bake re-running a 10 Hz baseline at the new envelope. The de-alias metrics (autocorr, sign-flip) are
+  per-axis control character and are treated as robust to the envelope change; the envelope difference
+  is accepted as a documented caveat, not controlled for.
+- Q: Does the first rate retrain also change the NN history representation, or hold it constant? → A:
+  **Neither "hold constant" nor a simple swap — the rate change forces TWO coupled decisions that must
+  be settled as part of it:** (1) the **time-scale / number (N) of the history params** — 6 slots may
+  not be right at the new cadence (a longer/log-spaced window may be better); and (2) **every
+  tick-counted quantity must rescale for the longer-per-second tick budget — notably the streak
+  multipliers** (and any other reward/fitness term counted in ticks). The cadence change is therefore
+  not just `evalIntervalMsec`; it ripples into history depth and all tick-denominated training math.
 
 ## Rate selection — a harmonic family, not 10/20/50 (operator, 2026-06-08)
 
@@ -75,6 +108,17 @@ PWM, motor PWM, IMU ODR, TX. Rationale: we will **not synchronize clocks** acros
 FC (independent oscillators), so the protection against **low-frequency resonance/beating** is to make
 the *nominal* rates harmonically related — then any beat stays high-frequency/benign even under clock
 drift; incommensurate rates produce slow beats that alias into control and perception.
+
+**Correction — equal/near-equal nominal rates are the WORST case, not the safe case (operator,
+2026-06-09).** The harmonic argument above is incomplete. Two **unsynced** clocks at the **same**
+nominal rate (e.g. 48 Hz control vs 48 Hz something) do **not** stop beating — they beat at their tiny
+*difference* frequency. With ±5% RC oscillators that difference can be ~0, so the beat is **arbitrarily
+slow** — exactly the low-frequency resonance that aliases into control. "Line them up at 48/48" is
+therefore the danger zone, not the fix. So **harmonic-family ≠ beat-safe on its own**; demote it to a
+secondary consideration. The **primary** defense is *tolerating the slip* — **dt-aware control** + a
+**per-source self-syncing correlator** that locks to each clock's *actual* rate/phase. Pick rates that
+avoid landing two unsynced clocks on the same (or very close) nominal frequency; rely on tolerance, not
+nominal alignment, for safety.
 
 Anchored on the **480 fps** camera:
 - **Control rate ∈ exact divisors of 480**: 20 / 40 / 48 / 60 / 120 Hz divide cleanly; **50 Hz does
@@ -115,9 +159,52 @@ the candidates and reason from measured/datasheet tolerances — **we do not nee
 (we'll train with jitter and run a dt-aware loop), but we **do** need to know what frame/chirp/servo/
 control rates are physically sustainable.
 
+**This survey is a TWO-WAY feedback loop with 031 — candidate-hardware selection is shared (operator,
+2026-06-09).** The parts whose clock tolerances this survey needs — the **camera** and the **beacon-decoder
+FPGA** especially — are exactly the parts **031 is selecting**. So Phase 0 must **refer to 031's candidate
+hardware list** (`docs/aircraft_tracker_handoff.md` §4 names VD55G1/OV9281 and Lattice FPGA candidates)
+for the parts to characterize, and feed its findings *back* into 031: **037 → 031** the chosen control
+rate sets 031's acquisition/frame/chip budget; **031 → 037** the candidate parts' clock sources and
+fps/PLL/timing capabilities set what control/camera rates 037 can actually anchor on. Neither is
+upstream of the other — they **co-resolve**. We have **options** at both ends (multiple camera/FPGA
+candidates, a range of control rates), so Phase 0 picks the **jointly-feasible** point, not a 037-local
+optimum. Don't run this survey against nominal/placeholder parts — run it against 031's actual shortlist.
+
 **Frequency-tolerance survey — every clock in the loop (datasheet + bench):**
-- **Camera (proposed 480 fps part):** actual frame-rate tolerance/jitter and whether the frame clock is
-  free-running RC or crystal-locked. Sets the oversampling margin the gold-code correlator has to play with.
+- **Camera (proposed 480 fps part) — TWO questions: what rate can it actually be *programmed* to, and
+  how tightly does that rate *hold* (operator, 2026-06-09).**
+  - **Candidate parts (from `docs/aircraft_tracker_handoff.md`):** primary **ST VD55G1** (800×704 mono
+    global shutter), backup **OmniVision OV9281** (1280×800 mono GS); both hit **300+ fps at ~320×240**
+    crop/bin. Frame rate is set on the sensor, not externally.
+  - **Frame-rate selection — it's NEARLY CONTINUOUS, not a fixed menu (operator, 2026-06-09).** For these
+    OmniVision-style / ST sensors the frame period = `pixel_clock / (HTS × VTS)`, where **HTS** (line
+    length) and **VTS** (frame length lines, incl. dummy lines) are register-programmable in fine steps
+    and **pixel_clock** comes from `input clock (MCLK/XVCLK) × on-chip PLL mult/div`. So **almost any
+    rate is reachable** — 320, 410, 450, 460, 465, 470, 480 fps are all just different VTS values — not a
+    coarse 477-vs-484 quantization. The real *bounds* on the knob are: **(a) max pixel clock / PLL ceiling**
+    → sets the **fps ceiling** for a given active window (smaller ROI / binning ⇒ higher ceiling);
+    **(b) min HTS/VTS** for the active ROI → an upper fps cap; **(c) line/row time granularity** → the VTS
+    step size (sub-fps near these rates). Deliverable: the **fps-vs-window curve** for the chosen part
+    (e.g. max fps at 320×240 / 640×480) + the register recipe (PLL, HTS, VTS) for the selected rate — so
+    the control-rate anchor can be set to *any* convenient value in range, not snapped to a sensor menu.
+  - **AGC / exposure coupling — the frame rate caps exposure, which drives gain/AGC (operator,
+    2026-06-09).** Integration (exposure) time is bounded by the frame period: `t_exp ≤ frame_period −
+    readout_overhead`. Pushing fps up shrinks the max exposure, so for the same beacon irradiance the
+    sensor needs **more analog/digital gain** (AGC) → more read noise, lower SNR before correlation gain.
+    For beacon detection **AEC/AGC must be fixed/disabled** (no auto-hunting — a hunting exposure would
+    alias the pulsed beacon); pick a **fixed short exposure** (~1 ms to match the 1 kHz chip from the
+    handoff doc) and a **fixed gain** tuned to beacon irradiance at max range. So the frame-rate choice is
+    jointly constrained with the **exposure + gain + beacon-power + chip-rate** link budget (cross-ref the
+    handoff doc's §link-budget) — raising fps is not free; it spends exposure headroom. Quantify the
+    exposure/gain/SNR at the candidate rates and confirm the beacon link margin holds.
+  - **Frame-rate tolerance/jitter:** whether the frame clock is free-running RC or crystal-locked, and
+    its ±%. Sets the oversampling margin the gold-code correlator has to play with.
+  - **Consequence for rate selection:** because the camera rate is quantized and is the perception anchor,
+    **pick the camera's nearest reachable frame rate first, then program the other devices around it** —
+    every other device below can be set to a *differing*, freely-chosen rate (each within its own clock
+    accuracy), so they adapt to the camera, not vice-versa. Capture the actual camera grid value as the
+    anchor the control/servo/IMU rates are chosen against (avoiding equal/near-equal unsynced collisions
+    per the rate-selection correction).
 - **Xiao (nRF52840):** the control-tick time-base — is the loop timed off the 32.768 kHz crystal / HFXTAL
   (crystal, tight) or an internal RC (±%)? Determines how tightly the control rate itself holds.
 - **Lattice FPGA candidates (the beacon decoder):** each candidate's clock source tolerance (internal
@@ -125,6 +212,17 @@ control rates are physically sustainable.
   given the independent ±5% beacons above.
 - **INAV I/O:** crude but **not a constraint** — its sampling rate is large relative to our control rate,
   so its timing tolerance is a non-issue for rate selection (still matters for the MSP send budget below).
+
+**The serial link is a TWO-WAY limiter — read AND write share the 115 kbaud budget (operator,
+2026-06-09).** The link carries both directions: **read** INAV state (attitude/nav fetch, 12.6 ms avg /
+25.6 ms max) **and write** servo/command updates (9.2 ms avg / 12.2 ms max). Both compete for the same
+115 200-baud pipe, so the rate budget must account for the round trip, not just the send. Note: **MSP
+already forces servo updates faster than 10 Hz — we currently send at ~20 Hz with duplicate contents**
+(MSP override needs refreshing to hold; the command is re-sent even when unchanged). So the *send* path
+is already running at the 20 Hz target rate today — what 037 changes is making each send carry a *fresh*
+20 Hz NN command instead of a duplicate, plus moving the *read*/control tick to match. The send-rate
+ceiling question is therefore partly already answered (20 Hz sends are sustained now); the open part is
+whether read+write *together* at a fresh higher rate fit the link.
 
 **The binding limiter is the servo-update *send* rate over 115 kbaud (operator, 2026-06-08).** The real
 question isn't compute or IMU read — it's **how often we can actually push a servo/command update down
@@ -141,7 +239,33 @@ the link**. Today the command *send* path is **9.2 ms avg / 12.2 ms max** (May-1
 - Some of this was researched earlier (MSP consolidation, `project_sim_latency` 50→30 ms) — **update those
   numbers against the 115 kbaud send budget and the new rate target**, don't re-derive from scratch.
 
-Output: a table of {part → clock source → tolerance → implication for rate selection}, and a defended
+**115200 baud is a SOFT config limit, not a hardware ceiling — raising it is the cheapest transport win
+(operator question, 2026-06-09).** Today both the INAV side (`xiao/inav-hb1.cfg`: all `serial` ports set
+to `115200`, board `MATEKF722MINI` / STM32F722) and the Xiao (nRF52840 UARTE) are configured at 115 200
+baud — a conservative default, far below what either MCU's UART can do. So the 9.2 ms send / 12.6 ms
+fetch scale ~**inversely with baud**. Options, cheapest first:
+- **Raise the UART baud (no new wiring).** STM32F722 UARTs sustain ≫1 Mbaud; the nRF52840 UARTE supports
+  up to **1 Mbaud** standard (and non-standard higher). Bumping MSP from 115 200 → **921 600 / 1 M (≈8×)**
+  cuts the fetch/send to **~1.5 / ~1.2 ms** — likely removing the link as the binding limiter on its own,
+  before any local-IMU work. **Cheapest, highest-leverage; survey this FIRST.** (Confirm INAV MSP-port
+  baud override + nRF52840 UARTE max stable rate on the actual wiring/length.)
+- **Leaner frame.** Already partly done (`MSP2_AUTOC_STATE` consolidation); quantify residual MSP framing
+  overhead vs a minimal binary frame.
+- **Switch UART → SPI (big-bandwidth, needs wiring + protocol).** nRF52840 SPIM (high-speed instance) to
+  **~32 MHz**, STM32F7 SPI to ~25–50 MHz — order(s) of magnitude over any UART. The ceiling option if
+  raised-baud UART still isn't enough; costs an extra bus + a master/slave protocol.
+
+**Matching the sim FDM to the real INAV loop = 2 kHz, not 1000/1250 (operator question, 2026-06-09).**
+`xiao/inav-hb1.cfg` has `set looptime = 500` (µs) → INAV's gyro/PID loop runs at **2000 Hz**; the MPU6000
+gyro samples faster still (anti-alias LPF 250 Hz). So "FDM at the INAV rate" means **dt = 0.0005 s
+(2 kHz)**. That's a clean fidelity target: at 2 kHz FDM a 50 Hz control arm is **40× oversampled** (vs the
+≥10× minimum), well above the ≥500 Hz floor the 50 Hz arm otherwise needs — so running the sweep at
+2 kHz FDM moots the sim-fidelity caveat for all candidate control rates at once (cost: ~10× the current
+200 Hz FDM compute per eval — weigh against the renderer/focus-mode compute prework).
+
+Output: a table of {part → clock source → **programmable-rate grid** → tolerance → implication for rate
+selection}, the **camera's chosen reachable frame rate** (the anchor value, with its register recipe),
+the **link transport decision** (baud bump vs SPI, with the resulting fetch/send budget), and a defended
 **max sustainable control/send rate** that bounds the Phase-A sweep's upper arm.
 
 ## Phasing (A/B/C) — execution order; everything below sorts under a phase
@@ -150,29 +274,62 @@ Output: a table of {part → clock source → tolerance → implication for rate
 and the big firmware only follows if justified. Prework, open questions, and carried-in deps each
 sort under their phase:
 
-**Phase A — sim rate sweep (cheap, NO firmware/hardware; the go/no-go + rate gate). Runnable right
-after M2.**
-- Sweep: retrain M1 at **10/20/50 Hz**, measure bang-bang de-alias, **pick the rate** (→ Aliasing
-  analysis; Testing §sweep).
-- **First concrete step (operator, 2026-06-08): one M1 retrain at an initial rate strictly between 10
-  and 50 Hz** — a harmonic divisor of the camera/clock family (e.g. **20, 40, or 48 Hz**, see
-  Rate-selection), bounded above by the link-sustainable send rate from the clock/115 kbaud survey.
-  Don't open with the full 10/20/50 sweep — prove the lever on one intermediate rate first.
-- **Ripple-if-solid:** if that retrain is a **solid improvement** (roll dctrl/sign-flip de-aliases vs
-  10 Hz at equal tracking), it cascades two ways — (1) into **M1 flight prep** (the flown M1 in Phase
-  B moves to that cadence: COMPUTE_LATENCY model, PID cutoffs, engage-delay, Xiao loop all retarget to
-  it), and (2) into the **031 hardware design** (the chosen control rate fixes the camera/chirp/chip
-  acquisition budget). If it's *not* a clear win, that's the cheap no-go — stop before any firmware.
+**Phase A — theory + projected-cadence sim retrain (cheap, NO firmware/hardware; the go/no-go + rate
+gate). Runnable right after M2.**
+- **Step 0 — smoothing theory (gates the bake):** build the first-principles prediction of *whether* a
+  faster cadence smooths the roll command or just relocates bang-bang to the new Nyquist (τ_roll vs T;
+  raw pre-tanh drive near the knee vs deep saturation; command-vs-motion smoothness) — see the Smoothing
+  theory section. Output = a per-axis prediction the retrain then *confirms*. If the theory says (B)
+  relay-optimal / deep saturation, that's a cheap no-go *before* any bake (the lever would be
+  objective/airframe, out of scope).
+- **Step 1 — project the cadence from candidate hardware:** from the clock/harmonic survey + camera fps
+  grid + transport ceiling + servo/IMU responsiveness, enumerate the **selectable rates the real hardware
+  can hold** (collision-avoiding), and pick the **projected NN loop rate** we'd actually fly — not a round
+  20 Hz. (crrcsim can run any rate now — just the eval interval — so the sim *validates* the projected
+  rate without firmware; it may be a non-round value like **22/37/50 Hz**.)
+- **Step 2 — derive the training-config bundle** at that rate (these move together): **cadence** +
+  **synthetic latency/jitter model** (COMPUTE_LATENCY retargeted + cadence-jitter, train dt-tolerant) +
+  **history-bucket meaning & size** (log/time-spaced) + **FDM rate** (≥10× oversample). See Smoothing
+  theory §projected-cadence flow.
+- **Rate-selection order (Clarifications Q2):** research **projects** the rate; the sim retrain
+  **validates** it de-aliases against the theory's prediction. Research+theory lead, sim confirms — not
+  "sim picks, snap to harmonic after." First retrain runs the single projected rate; widen to a small
+  sweep only if borderline.
+- **M2 is complete (2026-06-09); this phase is the active next step.**
+- **Step 3 — retrain & confirm:** one M1 retrain at the projected rate with the derived bundle; prove the
+  lever on that one rate first (don't open with a full sweep), and check the result against Step 0's
+  prediction + the gate below.
+- **Go/no-go gate (Clarifications Q1):** a **solid improvement** = roll lag-1 autocorr crosses from
+  negative (t6 −0.24) to **≥ 0** AND roll sign-flip rate drops **≥ 20 pts** (t6 56% → ≤ 36%), with
+  tracking (crash %, on-track %) within noise of the **historical t6 10 Hz baseline** (Clarifications
+  Q3 — compare to t6 as-is; do NOT re-bake a 10 Hz baseline at the new envelope).
+- **Ripple-if-solid:** if that retrain clears the gate, it cascades two ways — (1) into **M1 flight
+  prep** (the flown M1 in Phase B moves to that cadence: COMPUTE_LATENCY model, PID cutoffs,
+  engage-delay, Xiao loop all retarget to it), and (2) into the **031 hardware design** (the chosen
+  control rate fixes the camera/chirp/chip acquisition budget). If it's *not* a clear win, that's the
+  cheap no-go — stop before any firmware.
 - Prework: **entry-envelope sigma tighten (45°/10–15%)** — folds into the retrains.
 - Carried-in deps: **COMPUTE_LATENCY model + jitter** (020); **re-derive sim PID filter cutoffs** (026).
-- Decide (not yet firmware): **history time-basis** (log-spaced vs more slots) — it's a training-input
-  change, settle it in the retrain.
+- **Two coupled cadence-dependent decisions to settle in the retrain (Clarifications Q4):** (1) the
+  **history params' time-scale / count N** — 6 fixed ticks may be wrong at the new cadence; choose the
+  window (log-spaced vs more slots vs time-based) on a time, not tick, basis; and (2) **rescale every
+  tick-counted training quantity for the new cycle time — notably the streak multipliers** (and any
+  other reward/fitness term denominated in ticks). The cadence change is NOT just `evalIntervalMsec`.
 - Sim-fidelity: bump FDM ≥500 Hz for the 50 Hz arm.
+- **M2 retrain is gated-in-scope (operator, 2026-06-09):** the Phase-A M2 (tracker) layout/rescale lands
+  with M1 for code coherence, but the **M2 *retrain* runs only IF the M1 retrain shows a sensible
+  higher-rate signal** — then M2 is retrained at the same projected cadence. (This is why the
+  short-source fix is prework: it gates the clean M2 bake.)
+- Prework moved early (operator, 2026-06-09): **renderer focus-mode single-arena** is **Phase-A prework**,
+  not Phase C — at ≥40 Hz the all-arena renderer is too slow to *use* for inspecting high-rate runs.
 
-**Phase B — embedded 20 Hz (037-proper). Gated on A picking 20 Hz; produces the flown M1.**
+**Phase B — embedded 20 Hz (037-proper). Gated on A picking 20 Hz; produces the flown controller (M1, or
+M2 if US1b cleared).**
 - Local-IMU TWIM-DMA read + AHRS fusion + three-tier rates + alignment auto-cal from INAV.
 - **Prerequisite: 021 convention cross-check** (execute).
-- Prework: **Xiao packed-logging format** (dual-stream high-rate flight log; tail-safe async-DMA).
+- Prework: **Xiao packed-logging format** (dual-stream high-rate flight log; tail-safe async-DMA) —
+  **deferred to here, after the Phase-A M1 signal is proven** (operator, 2026-06-09); not an up-front
+  037 prerequisite.
 - INAV: command override + state serve at 20 Hz.
 - History-rep firmware implementation (if A changed it) — sim/firmware layout in lockstep.
 - Testing: activate→capture→confirm (local-IMU logged beside INAV) → promote → flight test →
@@ -180,9 +337,12 @@ after M2.**
 
 **Phase C — 50 Hz stretch (gated: only if A shows 20 Hz insufficient).**
 - NN optimization: **unroll + fast-tanh** (M1 33→32→16→3, M2 54→32→16→3) — target the eval 7.4 ms max.
+- Research (cheap, parallel-to-A): **cycle-count harness for the unrolled forward** (on-target
+  `DWT->CYCCNT` + off-target op-counter) — measure the real eval budget before committing to the unroll
+  (Open design questions #3).
 - **Real-time slot scheduling** (cadence-jitter manage/tolerate) + **interrupt/DMA tail-bounding**
   (BLE quiesce, QSPI async, NVIC priorities).
-- Prework: **renderer focus-mode single-arena** (compute reduction matters most here).
+- (renderer focus-mode single-arena moved to Phase-A prework — see Phase A.)
 
 The detailed sections below are the reference; this index is the execution order. (Phase A is a
 candidate to split into its own small near-term feature.)
@@ -192,6 +352,10 @@ candidate to split into its own small near-term feature.)
 **IMU attitude latency from INAV over the slow MSP serial link.** Pulling attitude from INAV via
 MSP each control tick is the bottleneck for a faster loop. (Real-hardware cousin of the resolved
 sim-side `project_sim_latency` 50→30 ms MSP consolidation — here it's the physical serial rate.)
+**Note the link is bidirectional and both directions count:** the per-tick cost is *read* (state
+fetch) + *write* (servo/command send) sharing the same 115 kbaud budget — see the two-way limiter in
+the clock/115 kbaud survey. The Phase-B architecture target is the *read* path (move attitude onto the
+local IMU); the *write* path is already running at ~20 Hz (duplicate sends) today.
 
 ## Candidate architecture (to validate)
 
@@ -273,8 +437,10 @@ building the full two-rate stack.
 - **Retrain at 20 Hz cadence.** The current controllers were evolved at the 10 Hz sim cadence;
   the sim eval loop must move to 50 ms so sim and real match (the bang-bang structure itself is
   cadence-dependent). Sim/real cadence parity is a prerequisite for a fair real-flight test.
-- **Hypothesis to confirm:** 20 Hz actually reduces roll bang-bang (smoother command for the same
-  tracking) — measure dctrl/saturation/autocorr at 20 Hz vs 10 Hz, in sim and in flight.
+- **Hypothesis to confirm:** the faster cadence actually reduces roll bang-bang (smoother command for
+  the same tracking) — measure dctrl/saturation/autocorr vs 10 Hz, in sim and in flight. **Quantified
+  gate in Clarifications Q1:** roll lag-1 autocorr negative→≥0 AND sign-flip −≥20 pts (t6 56%→≤36%) at
+  non-regressed tracking vs the historical t6 10 Hz baseline (Q3).
 - **Servo reality:** ±1 roll reversals at 50 ms — confirm servo slew-rate / wear is acceptable
   (real servos have rate limits the sim airframe-inertia hides).
 - **Board-alignment coherence** between the Xiao IMU and INAV IMU (`project_board_alignment`).
@@ -329,6 +495,70 @@ Implications:
   servo there's no point commanding faster than its frame, so the 10/20/50 sweep spans
   current → servo-matched, and **50 Hz is the principled top end** (revisit if servos are digital
   at e.g. 330 Hz). Confirm the actual `servo_pwm_rate` — it sets the true ceiling.
+
+## Smoothing theory — will a faster cadence smooth, or just relocate bang-bang? (operator, 2026-06-09; GATES training)
+
+**Don't assume faster = smoother. Build the theory first, then project a cadence, then train.** A faster
+loop could just produce **20 Hz bang-bang** — the airframe damps a faster dither *even better* (inertia +
+servo low-pass), so a relay-style controller has every reason to keep saturating-and-flipping at the new
+Nyquist. We need a **first-principles reason** to believe the cadence change *smooths the command*, not
+merely relocates the dither, **before** spending a bake. Two competing hypotheses, with distinct
+predictions:
+
+- **(A) Aliasing / sub-resolution-dither.** The controller wants **intermediate** roll authority finer
+  than the 100 ms ZOH allows, so it **dithers** (PWM-like) to synthesize the average — the ±1 flips are a
+  *quantization-in-time* artifact. *Prediction:* given a finer clock, a retrained NN commands the
+  intermediate value directly → **saturation ↓, sign-flips ↓, autocorr → ≥0**. (This is the spec's
+  working hypothesis and the Aliasing analysis above.)
+- **(B) Relay / bang-bang-optimal.** Under the objective + airframe, true error-nulling control **is**
+  saturating relay control (min-time / sliding-mode); the airframe inertia+damping low-pass it regardless
+  of rate. *Prediction:* faster cadence → bang-bang **persists** (often at a *higher* flip frequency),
+  motion ~unchanged. Faster sampling refines the switching surface, it doesn't abandon it.
+
+**The discriminator — reason it out from the parts we already have, not a guess:**
+- **Airframe roll mode.** Extract the roll-subsidence time constant τ_roll from the FDM step response
+  (the trace-capture path already records the first ~35 physics steps) and from `Cl_p=-0.47`. Compare
+  τ_roll to the candidate tick T. If **T ≪ τ_roll** the airframe already integrates a held command
+  smoothly — so a *smooth* command is *available* to the controller; persistent dither then implies
+  hypothesis (B) unless something forces (A).
+- **NN pre-saturation drive.** Inspect the **raw pre-tanh activation** on the roll output in the existing
+  t6 traces. If |raw| sits **near the saturation knee** (the NN wants an intermediate value but high
+  output gain clamps it), that's (A) — a faster clock + retrain can lower effective gain and land in the
+  linear region. If |raw| is **deep into saturation** (genuinely wants max authority), that's (B) — no
+  clock will linearize it; the lever would be the objective/airframe (explicitly out of scope here).
+- **Servo/actuation reality.** Measured cmd→gyro ≈ 12 ms; the actuation chain (2 kHz FC / 400 Hz motor /
+  ~50 Hz servo) is far faster than the NN loop, so actuation is *not* the bottleneck — but a real ~50 Hz
+  analog servo **slew-limits**, which itself low-passes a fast dither (helping motion smoothness while the
+  *command* stays ugly). The theory must state what we're actually optimizing: **command** smoothness
+  (servo wear, manned-feel) vs **motion** smoothness (already airframe-limited).
+- **Expected outcome:** a defended prediction per axis — "faster cadence smooths roll because (A) holds:
+  τ_roll = X ms ≫ T, raw drive near the knee" **or** "won't smooth because (B): deep saturation / relay."
+  This prediction is what the Phase-A retrain *tests*, turning the bake into a confirmation rather than a
+  fishing trip.
+
+**Projected-cadence flow — set the rate from candidate hardware, then derive the whole training config.**
+We do **not** train at a round 20 Hz for its own sake; we train at the cadence the **candidate (or
+similar) hardware can actually sustain**, reasoned from first principles:
+
+1. **Selectable-cadence estimate** — from the clock/harmonic survey + camera fps grid + transport ceiling
+   + servo/IMU responsiveness, enumerate the **rates the real hardware can hold** (and which avoid
+   unsynced-clock collisions). This is a *rough but principled* shortlist, not a single number.
+2. **Pick the projected NN loop rate** from that shortlist (the rate we'd actually fly), guided by the
+   smoothing theory's prediction of where (A) starts to win.
+3. **Derive the training config bundle** at that rate — these move *together*, not independently:
+   - **the cadence** (`controlIntervalMsec` / `SIM_TIME_STEP_MSEC` / `gEvalUpdateIntervalMsec`);
+   - **the synthetic latency + jitter model** — `COMPUTE_LATENCY` retargeted to the projected loop's
+     measured latency (link read+write at the chosen baud + eval + fusion), plus the cadence-jitter the
+     real slot scheduler will exhibit (the 020 jitter item); train *with* that jitter so the NN is
+     dt-tolerant;
+   - **the history buffers** — their **meaning changes** (N ticks ≠ same seconds) and likely their
+     **bucket size / spacing** (log/time-spaced per Clarifications Q4 + Open-design #1);
+   - **the FDM rate** — raised to keep ≥10× oversample at the projected rate (≥500 Hz for ~50 Hz; 2 kHz
+     matches INAV).
+4. **Train** at the bundle and test the theory's prediction against the de-alias gate.
+
+So Phase A's first retrain is **"train at the projected-hardware cadence with the derived bundle,"** not
+"try 20 Hz." The theory + projection are the gate on *which* cadence and *why we expect it to help*.
 
 ## Stretch: 50 Hz (local-IMU only)
 
@@ -417,7 +647,14 @@ which drives the prework below.
 
 ## Prerequisite prework — Xiao recording format (blackbox-style packed)
 
-**Likely a prerequisite prework task before 037 proper.** Today's xiao log is a verbose
+**Deferred until after an improved-M1 signal (operator, 2026-06-09).** This is firmware/flight-log
+work, and the whole-feature go/no-go is the Phase-A sim retrain (no Xiao, no flight). Don't build the
+packed-logging format until the intermediate-rate M1 retrain shows a **solid improvement** — only then
+do the validation flights (and their dual-stream logging) become real. So this drops from "before 037
+proper" to "Phase B prework, scheduled after the Phase-A M1 lever is proven." (Was framed as an early
+prerequisite; the sim-first ordering makes it later.)
+
+**Originally framed as a prerequisite prework task before 037 proper.** Today's xiao log is a verbose
 human-readable **text dump** (`#seq millis inav_ms i Nav State: pos=… quat=… gyro=…`, ~328-char
 lines, one monolithic line per tick). At 20–50 Hz, with multi-tier signals and **dual-stream
 cross-check logging** (local + INAV side-by-side), data volume explodes past what the text dump and
@@ -476,11 +713,11 @@ In **playback focus mode** (the renderer displays only one arena), it currently 
 every arena**, even the invisible ones. Change it to **process only the focused arena** and skip
 all others entirely (no per-tick update/step compute for non-focused arenas, not just no draw).
 
-Why 037: at 20/50 Hz the per-sample compute budget tightens hard, and wasting cycles stepping
-invisible arenas eats into it. Cutting the renderer to the single focused arena reduces compute so
-higher-rate playback/sampling stays real-time. (Scope: the visualization/playback renderer path —
-confirm whether the saved cycles also help any eval-visual sampling path, or it's purely the
-viewer.)
+Why 037, and **why Phase-A prework (not Phase C) (operator, 2026-06-09):** at ≥40 Hz the all-arena
+renderer is too slow to *use* for inspecting the high-rate retrain runs — so this is sim-usability work
+that enables Phase A, not just a Phase-C compute win. Cutting the renderer to the single focused arena
+keeps higher-rate playback/sampling real-time. (Scope: the visualization/playback renderer path —
+confirm whether the saved cycles also help any eval-visual sampling path, or it's purely the viewer.)
 
 ## Prerequisite prework — fix the short-source skip (keep 294 1:1, neutralize in place)
 
@@ -519,16 +756,21 @@ single home for the 20/50 Hz thread:
 - **Two-loop different update rates** (perception 30–60 Hz / control 10 Hz,
   `project_perception_control_two_loop`; hardware budget `project_perception_hw_budget`; 30 Hz camera,
   030 plan) — 037's local-IMU-fast + slow-INAV-sync is the same two-rate family.
-- **Downstream → the 031 perception chain must correspond** (`docs/aircraft_tracker_handoff.md`). That
-  design budgets beacon acquisition at **≤ half the autopilot sample interval**, so a faster control
-  rate tightens it directly: 10→20→50 Hz = 100→50→20 ms interval ⇒ **≤50→25→10 ms acquisition**. That
-  cascades to **video frame rate** (operator now considering **480 fps as the standard** — high frame
-  oversampling per chip is what robust **gold-code detection + sync** needs), **chip rate** + **code
-  length** (≤7 chips for high-dynamics), all co-designed against the acquisition budget. Same Nyquist
-  discipline as the control-loop aliasing, one layer down — the camera must oversample the chirp to
-  decode/sync it. **If 037 picks 20/50 Hz, the 480 fps video rate + chirp/chip rate must correspond**
-  — fold the chosen control rate back into `aircraft_tracker_handoff.md` as the acquisition-budget
-  input. (031 is post-037 in the queue, but the rate is decided here.)
+- **↔ 031 perception chain — a TWO-WAY loop, not just downstream** (`docs/aircraft_tracker_handoff.md`).
+  **037 → 031:** the design budgets beacon acquisition at **≤ half the autopilot sample interval**, so a
+  faster control rate tightens it directly: 10→20→50 Hz = 100→50→20 ms interval ⇒ **≤50→25→10 ms
+  acquisition**. That cascades to **video frame rate** (operator now considering **480 fps as the
+  standard** — high frame oversampling per chip is what robust **gold-code detection + sync** needs),
+  **chip rate** + **code length** (≤7 chips for high-dynamics), all co-designed against the acquisition
+  budget. Same Nyquist discipline as the control-loop aliasing, one layer down — the camera must
+  oversample the chirp to decode/sync it. **031 → 037:** the **candidate hardware 031 is selecting (camera
+  part, decoder FPGA) sets the clock sources, fps/PLL grid, and tolerances** that bound what control/camera
+  rates 037 can anchor on (see the two-way-feedback note in "Required research — clock/frequency-tolerance
+  survey"). So the **Phase-0 hardware research is shared with 031's part-selection** and the two
+  **co-resolve to a jointly-feasible rate + part set** — fold the chosen control rate back into
+  `aircraft_tracker_handoff.md` as the acquisition-budget input, and pull 031's shortlist forward as the
+  parts to characterize. (031 is later in the queue, but the rate and the part shortlist are decided
+  jointly, here.)
   - **031 decoder requirement (from 037, 2026-06-08): the two beacons are mutually independent ±5%
     oscillators — decode each with its own self-syncing correlator.** The FPGA must NOT assume the two
     beacons share a clock, phase, or integer ratio; beacon-A and beacon-B chip rates can differ by ~10%
@@ -560,6 +802,17 @@ The loop-rate change reopens the NN representation and embedded-compute envelope
    - **(c) time-based resampling** — fixed-ms lags, decoupled from tick rate entirely.
    - Lean: move history to **time-based / log-spaced** rather than fixed ticks as part of the rate
      change; don't just add slots.
+   - **Resolved direction (Clarifications Q4, 2026-06-09):** treat the history depth as a decision to
+     **settle in the first rate retrain** — choose the window's **time-scale and count N on a time (not
+     tick) basis** (6 fixed ticks is likely wrong at the new cadence). This is one of the two coupled
+     cadence-dependent decisions; the other is item 1b below.
+   1b. **Tick-counted training quantities must rescale for the new cycle time (Clarifications Q4, NEW
+       2026-06-09).** The cadence change is not just `evalIntervalMsec` — **every reward/fitness term
+       denominated in ticks changes meaning when ticks-per-second changes, notably the streak
+       multipliers** (a streak counted in ticks accrues N× faster/slower at the new rate). Audit all
+       tick-counted quantities (streak multipliers, any windowed/accumulated reward, engage/settle
+       counters) and rescale them to the new cadence so training math is cadence-invariant. Settle this
+       in the same retrain as the history time-scale.
 2. **NN compute budget — use the MEASURED Xiao eval, not a theoretical floor.** The May-17 flight log
    measured `eval = 2.3 / **2.7** / **7.4** ms` (min/avg/max) on the Xiao at 10 Hz, where `eval` wraps
    **input-gather (33 inputs) + NN forward + output map** (`xiao/src/msplink.cpp:276–308`). Per-tick
@@ -584,6 +837,22 @@ The loop-rate change reopens the NN representation and embedded-compute envelope
    2.7 ms→~0.3 ms avg. (The **7.4 ms max tail is preemption/flash — item 4's job, not compute.**) Note
    `eval` = gather + forward, so optimizing spans BOTH — unroll/fast-tanh for the forward, and a look
    at the sensor-math gather. Keep fp32 for parity. (Bench-measure the split first to target effort.)
+   - **Research step — a standalone cycle-count harness for the unrolled forward (operator,
+     2026-06-09).** Before committing to the codegen/unroll work, write a **small program that measures
+     the max-throughput NN eval directly** rather than trusting the ~0.1 ms theoretical floor. Two
+     levels, do both:
+     - **On-target (ground truth):** a minimal nRF52840 sketch that runs the **codegen'd unrolled M1/M2
+       forward** in a tight loop and counts cycles with the **Cortex-M4 DWT cycle counter
+       (`DWT->CYCCNT`)** — report cycles/eval and µs/eval at 64 MHz, separately for (a) MACs only,
+       (b) + tanh (naive `expf` vs poly/LUT fast-tanh), (c) + input-gather (the sensor math). This
+       attributes the 2.7 ms→? budget to each sub-phase on the *real* core (right cache/flash-wait
+       behavior), which a paper FLOP count can't.
+     - **Off-target (fast iteration):** the same codegen'd C compiled on the host as a **cycle/op
+       counter** (count FMAs + transcendentals, or run under an M4 instruction-cost model) to iterate
+       layout/unroll variants quickly without a flash cycle, then confirm the winner on-target.
+     - Output: cycles/µs per (shape × tanh-impl × gather) → the **defended eval budget** for items 2–3
+       and the go/no-go on whether unrolling is even needed at the chosen control rate. Cheap, no flight
+       hardware beyond a Xiao on the bench; can run in parallel with Phase A. Keep fp32 for sim parity.
 4. **Interrupt / DMA impact on long-tail latency (the 7.4 ms max is almost certainly preemption, not
    compute).** Avg eval 2.7 ms vs max 7.4 ms = a ~5 ms jitter tail — on the nRF52840 that's
    preemption/stalls, and at 50 Hz the worst case matters more than the average (a 20 ms tick can't
@@ -629,4 +898,8 @@ The loop-rate change reopens the NN representation and embedded-compute envelope
 
 - Objective/fitness changes (035 territory — the loop rate is the lever here, not the objective).
 - Airframe roll-authority changes (the X-wing / different-airframe backlog).
-- 50 Hz (stretch above — gated on the latency analysis).
+
+Gated-but-planned (NOT excluded — full A/B/C plan, operator 2026-06-09): **M2 tracker retrain** (US1b,
+if the M1 signal is sensible) and **50 Hz** (US3/Phase C, only if 20 Hz proves insufficient + the
+latency analysis clears). These are conditional increments, not v1 commitments — listed so they're not
+read as out-of-scope.

@@ -390,13 +390,15 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
             || (gCraftSigmas.craftTrimSigma     > 0.0)
             || (gCraftSigmas.craftThrustSigma   > 0.0)
             || (gCraftSigmas.craftPitchEffSigma > 0.0)
-            || (gCraftSigmas.craftRollEffSigma  > 0.0));
+            || (gCraftSigmas.craftRollEffSigma  > 0.0)
+            || (gCraftSigmas.craftServoSlewSigma > 0.0)   // 037 actuator dynamics
+            || (gCraftSigmas.craftThrustTauSigma > 0.0));
 
     {
         std::ostringstream hdr;
         hdr << "Scenario       ScenarioSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°";
         if (any_craft_active) {
-            hdr << "       cgU     drag    trim°    thrSc   pitEff   rolEff    CraftSeed";
+            hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svSlew   thrTau   pwmPh    CraftSeed";
         }
         *logger.info() << hdr.str() << endl;
     }
@@ -404,7 +406,7 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
         std::ostringstream sep;
         sep << "--------  -----------------  --------  ------  ------  ------  --------  ------  -----  -----";
         if (any_craft_active) {
-            sep << "  --------  -------  -------  -------  -------  -------  -----------";
+            sep << "  --------  -------  -------  -------  -------  -------  -------  -------  -------  -------  -----------";
         }
         *logger.info() << sep.str() << endl;
     }
@@ -448,6 +450,12 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
                  << std::setw(7) << static_cast<double>(cd.craftPitchEffDelta)  // fraction
                  << "  " << std::setprecision(4)
                  << std::setw(7) << static_cast<double>(cd.craftRollEffDelta)   // fraction
+                 << "  " << std::setprecision(3)
+                 << std::setw(7) << static_cast<double>(cd.craftServoSlew)      // 037: /s (servo slew, autoc [-1,1] units)
+                 << "  " << std::setprecision(4)
+                 << std::setw(7) << static_cast<double>(cd.craftThrustTau)      // 037: s (thrust lag tau)
+                 << "  " << std::setprecision(4)
+                 << std::setw(7) << static_cast<double>(cd.craftServoPwmPhase)  // 037 v2: s (PWM latch phase)
                  << "  0x" << std::hex << std::setw(8) << std::setfill('0')
                  << sv.craftSeed
                  << std::dec << std::setfill(' ');
@@ -764,6 +772,11 @@ static WorkerInit buildWorkerInit() {
     WorkerInit init;
     init.mode = parseModeName(cfg.mode);
 
+    // 037 T001 -- thread the validated control cadence to the worker (it has no
+    // ConfigManager). config.cc already asserted controlIntervalMsec > 0 and
+    // == SIM_TIME_STEP_MSEC at load, so this is a known-good value here.
+    init.controlIntervalMsec = static_cast<unsigned long>(cfg.controlIntervalMsec);
+
     // 034 Phase 7 — worker-side wind gate. autoc-side already zeros
     // meta.windDirectionOffset when EnableWindVariations=0, but the worker
     // (inputdev_autoc) independently derives a per-scenario wind seed for
@@ -771,6 +784,10 @@ static WorkerInit buildWorkerInit() {
     // scenarios to a shared fixed wind seed when disabled. See protocol.h
     // for the full rationale.
     init.enableWindVariations = (cfg.enableWindVariations != 0);
+
+    // 037 servo v2 — in-FDM servo model switch (PWM latch + slew); the
+    // worker gates the fdm_larcsim servo block on it.
+    init.servoModelEnabled = (cfg.servoModelEnabled != 0);
 
     // 030 V1.5 — run-static scenario library shared by both modes.
     // generateSmoothPaths(gPathSeed) is byte-identical every gen, so we
@@ -840,6 +857,11 @@ static WorkerInit buildWorkerInit() {
                 meta.craftThrustScale = cd.craftThrustScale;
                 meta.craftPitchEffDelta = cd.craftPitchEffDelta;
                 meta.craftRollEffDelta = cd.craftRollEffDelta;
+                // 037 actuator-dynamics axes -- absolute physical values
+                // (center + clamped Gaussian); worker ramps toward center.
+                meta.craftServoSlew = cd.craftServoSlew;
+                meta.craftThrustTau = cd.craftThrustTau;
+                meta.craftServoPwmPhase = cd.craftServoPwmPhase;  // 037 servo v2
                 meta.craftSeed = gScenarioVariations[idx].craftSeed;
                 // (033 cleanup) rabbitSpeedSeed assignment removed — field
                 // deleted from ScenarioMetadata + ScenarioVariations.
@@ -1211,6 +1233,26 @@ static void runNNEvolution(
 
         // Compute decomposed fitness then aggregate
         genome.scenario_scores = computeScenarioScores(context.evalResults);
+        // 038 T001 — member-level hull-crash penalty (gated, default off). Multiply
+        // this member's per-scenario tracking score by factor^(#hull-strike scenarios)
+        // so a crasher's tracking advantage collapses (score is negative-lower-better;
+        // ×<1 pulls toward 0 = worse). Score axis only (energy untouched). Applied
+        // before aggregateRawFitness so it flows into fitness → elite/bestIdx →
+        // #GenCrash/dmp → lexicase allScores, consistently.
+        {
+          const AutocConfig& c = ConfigManager::getConfig();
+          if (c.enableHullCrashPenalty) {
+            int khull = 0;
+            for (const auto& s : genome.scenario_scores)
+              if (s.crashReason == CrashReason::HullStrike) ++khull;
+            if (khull > 0) {
+              gp_fitness mult = 1.0;
+              for (int j = 0; j < khull; ++j)
+                mult *= static_cast<gp_fitness>(c.hullCrashPenaltyFactor);
+              for (auto& s : genome.scenario_scores) s.score *= mult;
+            }
+          }
+        }
         genome.fitness = aggregateRawFitness(genome.scenario_scores);
       });
     }
@@ -1302,43 +1344,17 @@ static void runNNEvolution(
                    << "  Sigma=" << pop.individuals[bestIdx].mutation_sigma
                    << endl;
 
-    // Log per-scenario decomposition for best individual
+    // 037 T005 — per-scenario [N] OK/CRASH lines + tracker per-scenario
+    // diagnostics DROPPED from the training log (294 lines/gen). The elite
+    // per-scenario data is fully reconstructable from the gen .dmp via
+    // `dmp-dump --meta-only` (crash_reason, score, energy/stability,
+    // max_streak, streak_steps, max_multiplier, steps — verified against the
+    // t5 run 2026-06-10). Per-gen #NNGen/#GenCrash/#GenSimStats summaries
+    // below are unchanged. The one-shot EVAL-mode breakdown (evalGenome)
+    // keeps its per-scenario block. Per
+    // memory:project_dmp_driven_analytics_backlog.
     const auto& bestScores = pop.individuals[bestIdx].scenario_scores;
-    const bool isTrackerModeLoop = (cfg.mode == "tracker");
-    if (!bestScores.empty()) {
-      *logger.info() << "  Scenarios: ";
-      for (size_t s = 0; s < bestScores.size(); s++) {
-        const auto& sc = bestScores[s];
-        *logger.info() << "  [" << s << "] "
-                       << (sc.crashed ? "CRASH" : "OK")
-                       << " reason=" << crashReasonToString(sc.crashReason)
-                       << " score=" << std::fixed << std::setprecision(2) << -sc.score
-                       << " maxStrk=" << sc.maxStreak
-                       << " strkSteps=" << sc.totalStreakSteps
-                       << " maxMult=" << std::setprecision(1) << sc.maxMultiplier
-                       << endl;
-        // 030 M11.wrap T088 + 327-330 — tracker-mode per-scenario diagnostics.
-        if (isTrackerModeLoop) {
-          const auto& d = sc.tracker_diag;
-          *logger.info() << "      "
-                         << "vis=" << std::fixed << std::setprecision(2) << d.vis_frac
-                         << " inRamp=" << d.in_fit_ramp_frac
-                         << " rng=[" << std::setprecision(1)
-                         << d.range_min << "/" << d.range_med << "/" << d.range_p95 << "]"
-                         << " loss=[far=" << d.loss_geom_too_far
-                         << " ang=" << d.loss_geom_angle
-                         << " over=" << d.loss_geom_overshoot
-                         << " hull=" << d.loss_hull << "]"
-                         << " over[flips=" << d.closure_flips
-                         << " maxClose=" << std::setprecision(1) << d.max_closure_rate << "]"
-                         << " fwd[lostMax=" << d.max_lost_sight_run
-                         << " spiral=" << std::setprecision(3) << d.spiral_ratio
-                         << " thrPt=" << std::setprecision(1) << d.thrash_rate_pt
-                         << " thrRl=" << d.thrash_rate_rl << "]"
-                         << endl;
-        }
-      }
-    }
+    const bool isTrackerModeLoop = (cfg.mode == "tracker");  // #GenDiag (M2-only) below
 
     // Streak + stability + energy diagnostics for best individual.
     // stability and energy are SUMS of per-scenario scores (additive across
@@ -1632,38 +1648,9 @@ int main(int argc, char** argv)
                         "and subset config." << endl;
       exit(1);
     }
-
-    // Each source scenario needs at least MIN_SCENARIO_TICKS runway (3 sec at
-    // 100ms NN cadence per data-model.md §1). Scenarios shorter than that are
-    // degenerate — extreme 2.5σ entry-corner trajectories the source controller
-    // couldn't fly long enough to be a trackable target (035 M2: a library-based
-    // source from an M1 run routinely has a few corner-crash flights). SKIP them
-    // rather than fail (operator decision 2026-06-08); fail only if none survive.
-    {
-      const int minRemaining = MIN_SCENARIO_TICKS;
-      const size_t before = gSourceTrajectoryList.size();
-      for (size_t i = 0; i < gSourceTrajectoryList.size(); ++i) {
-        if (static_cast<int>(gSourceTrajectoryList[i].samples.size()) < minRemaining) {
-          *logger.info() << "  Skipping short source scenario idx=" << i << " ("
-                         << gSourceTrajectoryList[i].samples.size() << " ticks < "
-                         << minRemaining << " — degenerate corner-crash entry)" << endl;
-        }
-      }
-      gSourceTrajectoryList.erase(
-          std::remove_if(gSourceTrajectoryList.begin(), gSourceTrajectoryList.end(),
-              [minRemaining](const SourceScenarioTrajectory& t) {
-                return static_cast<int>(t.samples.size()) < minRemaining;
-              }),
-          gSourceTrajectoryList.end());
-      if (gSourceTrajectoryList.empty()) {
-        *logger.info() << "FATAL ERROR: all source scenarios shorter than "
-                       << minRemaining << " ticks; nothing to track." << endl;
-        exit(1);
-      }
-      *logger.info() << "Source runway: dropped " << (before - gSourceTrajectoryList.size())
-                     << " short scenario(s); " << gSourceTrajectoryList.size()
-                     << " scenarios >= " << minRemaining << " ticks remain." << endl;
-    }
+    // 037: short corner-crash sources (< MIN_SCENARIO_TICKS) are kept (1:1 with
+    // the 294 slots) and play through -- terminate cleanly via TimeLimit,
+    // contributing their short real fitness. No skip/erase (operator 2026-06-09).
   }
 
   // 030 V1.5 priming (2026-05-08) — ThreadPool construction MOVED below,
@@ -1701,6 +1688,9 @@ int main(int argc, char** argv)
   gCraftSigmas.craftThrustSigma   = cfg.craftThrustSigma;
   gCraftSigmas.craftPitchEffSigma = cfg.craftPitchEffSigma;
   gCraftSigmas.craftRollEffSigma  = cfg.craftRollEffSigma;
+  // 037 actuator-dynamics sigmas (servo slew / thrust lag tau).
+  gCraftSigmas.craftServoSlewSigma = cfg.craftServoSlewSigma;
+  gCraftSigmas.craftThrustTauSigma = cfg.craftThrustTauSigma;
 
   // Initialize global rabbit speed config.
   // EnableRabbitSpeedVariations=0 forces sigma=0 regardless of the .ini value

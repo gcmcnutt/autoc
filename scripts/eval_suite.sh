@@ -182,14 +182,24 @@ run_tier0() {
     local s3_key
     s3_key=$(grep "S3 upload:" "$outdir/console.log" 2>/dev/null | head -1 | awk '{print $NF}' | sed 's|/gen[0-9]*\.dmp$||')
 
-    # Extract eval fitness and stored fitness
-    local eval_fitness stored_fitness
-    eval_fitness=$(grep "NN Eval fitness:" "$outdir/console.log" | head -1 | awk '{print $NF}')
-    stored_fitness=$(grep "Stored fitness:" "$outdir/console.log" | head -1 | awk '{print $NF}')
-
-    local result="FAIL"
-    if [[ -n "$eval_fitness" && "$eval_fitness" == "$stored_fitness" ]]; then
+    # Extract eval vs stored fitness (035 FR-P05 format: autoc emits
+    # "NN_EVAL_SAME: fitness=X" on a bitwise match, else
+    # "NN_EVAL_DIFFERENT: eval=X stored=Y"). The bitwise match IS the gate.
+    local eval_fitness="" stored_fitness="" result="FAIL"
+    # `|| true` — these lines are absent when there's no stored fitness to
+    # compare (e.g. tier0 on an extracted nn_weights.dat, not a gen*.dmp);
+    # without the guard, grep's exit 1 trips `set -e` and the script dies.
+    local same_line diff_line
+    same_line=$(grep "NN_EVAL_SAME:" "$outdir/console.log" 2>/dev/null | head -1 || true)
+    diff_line=$(grep "NN_EVAL_DIFFERENT:" "$outdir/console.log" 2>/dev/null | head -1 || true)
+    if [[ -n "$same_line" ]]; then
+        eval_fitness=$(echo "$same_line" | sed -n 's/.*fitness=\(-\?[0-9.]*\).*/\1/p')
+        stored_fitness="$eval_fitness"
         result="PASS"
+    elif [[ -n "$diff_line" ]]; then
+        eval_fitness=$(echo "$diff_line" | sed -n 's/.*eval=\(-\?[0-9.]*\).*/\1/p')
+        stored_fitness=$(echo "$diff_line" | sed -n 's/.*stored=\(-\?[0-9.]*\).*/\1/p')
+        result="FAIL"
     fi
 
     cat > "$outdir/summary.txt" << SUMMARY
@@ -297,18 +307,20 @@ run_tier3() {
     echo "  TIER 3: Stress / Envelope"
     echo "=============================="
 
-    # Random at 120% of training sigmas
-    # Training: ConeSigma=30, RollSigma=30, SpeedSigma=0.1, WindDirSigma=45,
-    #           RabbitSpeedSigma=2.0, PositionRadius/Alt=0 (disabled)
+    # Random at 120% of *037* training ENV sigmas (craft/servo left at training
+    # values per operator 2026-06-15 — this tier stresses the env envelope only).
+    # 037 training: ConeSigma=18, RollSigma=30, SpeedSigma=0.06, WindDirSigma=45,
+    #               RabbitSpeedSigma=2.0, Position R/Alt=0 (disabled).
+    # 120%:         Cone=21.6, Roll=36, Speed=0.072, WindDir=54, Rabbit=2.4.
     make_eval_ini "$RESULTS_DIR/tier3-stress.ini" \
         "PathGeneratorMethod = random" \
         "SimNumPathsPerGeneration = 12" \
         "WindScenarios = 12" \
         "RandomPathSeedB = 99999" \
         "Seed = -1" \
-        "EntryConeSigma = 36" \
+        "EntryConeSigma = 21.6" \
         "EntryRollSigma = 36" \
-        "EntrySpeedSigma = 0.12" \
+        "EntrySpeedSigma = 0.072" \
         "WindDirectionSigma = 54" \
         "RabbitSpeedSigma = 2.4"
     run_eval "tier3-stress" "$RESULTS_DIR/tier3-stress.ini"

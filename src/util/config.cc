@@ -1,4 +1,5 @@
 #include "autoc/util/config.h"
+#include "autoc/eval/aircraft_state.h"   // 037 T001 -- SIM_TIME_STEP_MSEC (cadence master)
 #include <fstream>
 #include <cstdlib>
 #include <INIReader.h>
@@ -63,6 +64,24 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
 #define X(type, field, key) config->field = readIniField<type>(reader, key, config->field);
     AUTOC_CONFIG_FIELDS(X)
 #undef X
+
+    // === 037 T001 -- control-loop cadence coherence =====================
+    // ControlIntervalMsec defaults to 100 like every other knob (a missing key
+    // is fine -- it is auto-printed, so not a silent fallback). It MUST equal
+    // SIM_TIME_STEP_MSEC, the compile-time constant every autoc tick-denominated
+    // term keys off (closing rate, accumulators, history); SIM_TIME_STEP_MSEC
+    // stays the master because it sizes compile-time arrays / static_asserts.
+    // To retrain at a new rate, change SIM_TIME_STEP_MSEC AND ControlIntervalMsec
+    // together; this assert catches setting one without the other. Per
+    // contracts/cadence-config.md + research.md R6.
+    if (config->controlIntervalMsec != SIM_TIME_STEP_MSEC) {
+        out << "FATAL ERROR: ControlIntervalMsec = " << config->controlIntervalMsec
+            << " != SIM_TIME_STEP_MSEC = " << SIM_TIME_STEP_MSEC
+            << ". The .ini cadence and the compiled tick constant must agree "
+            << "(change both together when retraining at a new rate). Per "
+            << "contracts/cadence-config.md." << std::endl;
+        exit(1);
+    }
 
     // === 032 PHASE 1 — CepGateThreshold range validation ===============
     // (Parsed above via the macro; loud-fail on out-of-range here.)

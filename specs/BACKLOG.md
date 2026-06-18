@@ -126,6 +126,29 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **Trigger to act**: when the next milestone adds 5+ knobs (likely M7 tracker fitness), before the manual-print drift bites.
 - Files: `include/autoc/util/config.h`, `src/util/config.cc`, `src/autoc.cc:1402-1462` (startup print block).
 
+### [BACKLOG 037] Config system: stack INI files (base + overrides, last-value-wins)
+
+- **Surfaced 037 (2026-06-09)**: the six `autoc*.ini` files duplicate most keys, so any change (new key,
+  retuned value) must be hand-applied to each and they silently drift -- the 037 `ControlIntervalMsec`,
+  craft actuator-dynamics sigmas, and tightened entry sigmas each had to be touched in 3-6 files, and the
+  `autoc-eval-*.ini` copies lagged. inih only parses a single file.
+- **Want**: replace the single-file load with a config system that supports STACKING multiple INI files
+  in "last value wins" order, so e.g. `-i base.ini -i m2.ini -i eval.ini` composes (base + overrides).
+  The eval / visual / tracker variants then become thin override files over one base, eliminating drift.
+- **Options**: a small layered wrapper over inih (parse N files in order into one reader); or a more
+  standard library (toml++ / libconfig / cpptoml) if we also want typed sections. Whatever lib must still
+  feed the X-macro auto-parse/auto-print (`AUTOC_CONFIG_FIELDS`) and preserve determinism + the
+  fail-loud-on-missing-required-key behavior (e.g. `ControlIntervalMsec`).
+- **Care**: extend the existing single `-i` flag to a repeatable `-i` (order = precedence).
+- **Also want `[section]` grouping (2026-06-17)**: the flat key list has no structure, so related keys
+  drift apart and flags vs parameters blur — e.g. 038's `EnableHullCrashPenalty` (a flag, belongs with
+  the other `Enable*`) vs `HullCrashPenaltyFactor` (a parameter, belongs with the fitness/`Fit*` block)
+  had to be hand-placed into two different spots in all six files. A standard `[section]`-based reader
+  (toml++ / cpptoml) would let the schema express `[variations]` flags vs `[fitness]` params so
+  placement is structural, not manual. Pairs naturally with the layered-stack idea above.
+- **Trigger to act**: the next time an ini-wide change has to be hand-applied across all six files.
+- Files: `src/util/config.cc` (load), `include/autoc/util/config.h`, the six `autoc*.ini`.
+
 ---
 
 ## 027 carry-forward → 028 deeper-rnn
@@ -224,7 +247,39 @@ Remaining 015 work:
 
 ## Future Features (separate from 015)
 
+### [FUTURE FEATURE — depends on how M2 goes] Two-sim co-evaluation — live M1 target + evolving M2 chase (shared air)
+
+- **Idea (operator 2026-06-16)**: instead of M2 chasing a *recorded* M1 trajectory (forced playback
+  under the source's fixed, different wind), run **two live sims per scenario** — a **target** flying
+  the trained **M1 NN** (a robust generalist) and the **M2 chase** flying the evolving network — both
+  in the **same air mass**. The target adapts to the scenario's wind live, so target + chase share one
+  wind by construction; the playback-vs-wind-mismatch question dissolves, and the recorded-trajectory
+  dependency goes away.
+- **Evidence motivating it (2026-06-16 wind-mismatch study, `src/analytics/wind_study.py`)**: M1-source
+  vs M2-chase steady wind-DIRECTION offsets diverge ~38° mean (35% of scenarios >45°), yet that
+  mismatch is **uncorrelated** with per-scenario score (corr +0.03), tracking (−0.07), or completion
+  (the 20 incomplete avg 36° ≈ overall 35°). So reproducing M1's wind (the "M2 sim playback parity"
+  item below) looks **low-value** — co-sim makes wind shared regardless. **Caveat**: the study only
+  measured the *steady direction* offset; gusts/thermals are unrecorded (`wind_velocity`=0 — see the
+  recording-gap item in Infrastructure) — confirm before fully discounting playback parity.
+- **CRRCSim hook**: CRRCSim has a robot-craft notion (mod_robots / `RobotProgrammable` — see the
+  "[030 v1] Live two-aircraft display" item + [reference_crrcsim_mod_robots](../../.claude/projects/-home-gmcnutt-autoc/memory/reference_crrcsim_mod_robots.md)).
+  Here the target would be a second **FDM-driven** craft running the M1 NN, not just a programmatic
+  pose stream.
+- **Cost/risk**: two FDMs + two NN forward passes per scenario tick → ~2× eval cost; determinism must
+  hold for both crafts; the M1 NN is fixed (constant per scenario, not evolving). Big lift, long-term.
+- **Trigger**: depending on how the current playback-M2 approach goes — if it plateaus too low, or the
+  gust component turns out to matter once `wind_velocity` is recorded. **Supersedes** the "M2 sim
+  playback parity" bullet if it lands.
+
 ### [FUTURE FEATURE — split from 035, 2026-06-04] Hull-crash-cost as a lexicase fitness dimension (M1/M2)
+
+> **→ 038 US1 candidate (2026-06-16)**: pulled into [specs/038-accurate-m2/spec.md](038-accurate-m2/spec.md)
+> as the headline. **Reframed there** per operator 2026-06-16: OOB keeps score-stop; hull gets a
+> **member-level** penalty — start with **×0.5 of the member's total fitness per strike** (death-penalty
+> as escalation), NOT a per-scenario lexicase axis and NOT scalar compositing. No tick-weighting (the
+> score-stop already encodes early-vs-late; the gap is the *late* banked crash). Clarify/dig deeper at
+> 038 plan phase.
 
 - **Origin**: split out of 035 FR-008b. Energy is 035's job; hull-crash-cost earns its own feature because its penalty design is the hard part.
 - **Problem**: in tracker (M2) bakes, hull-strikes grow *monotonically with tracking skill* (030: ~1→11/gen; 032: ~3× faster) — the chase learns to fly *into* the target as it sharpens. This **gates real-flight deployment**. It is a *fitness dimension* (NOT 036/island-selection work). Applies to **M1 and M2 and beyond** — energy + crash incentives are both wanted across modes.
@@ -236,6 +291,21 @@ Remaining 015 work:
 - **Source**: 035 spec FR-008b + Clarifications 2026-06-04; `#GenCrash hullStrike=N` telemetry from 035's M2 baseline run quantifies the current escalation rate and seeds this spec.
 - **Sequencing (operator, 2026-06-08): after 037.** 037 is M1-smoothness / loop-rate focused (the faster-loop, smoother-M1 path); hull-crash-cost is the **M2-safety** fitness dimension and naturally follows once 037's faster-loop + local-IMU stack enables the M2 real-flight path it gates. Queue: 035 → 037 → hull-crash (036 islands stays back-pocket; un-backlog only if an M2 bake proves lottery-prone).
 - **Fresh evidence (2026-06-08)**: 035 M2 bake t7 (`autoc-…2026-06-08T15:44:25.312Z`) is logging the escalation live — `hullStrike=6/294` by gen 109 and climbing with tracking skill; its final hull-strike curve will be the up-to-date baseline for this feature's penalty design.
+
+### [DEFERRED — 031-fed] CEP realism — evolve the sim beacon-CEP model
+
+- **What**: the sim CEP (beacon localization uncertainty fed to the tracker NN) is a linear off-axis
+  geometric placeholder (`src/eval/camera_projection.cc` step 5). The **real** CEP is a classic
+  position-uncertainty (circular error probable) the camera DSP estimates, magnitude driven by
+  Gold-code decode/reacquisition confidence (partial decode ⇒ high CEP) + intermittency/occlusion +
+  apparent crossing-rate over the multi-frame code-acquisition window. Per-frame blur is low (global
+  shutter @~480 fps) but the ~150 ms code period is the smear window — NOT the frame rate.
+- **When**: revisit CEP modeling when 031's optical chain produces real footage — BEFORE any
+  tracker-NN retraining against real camera output. CEP is both an NN input AND the visibility gate.
+- **Detail**: sensor inventory + FR-011 (position- vs signal-quality) in
+  [specs/038-accurate-m2/spec.md](038-accurate-m2/spec.md).
+- **Note**: migrated here from machine-local `~/.claude` memory (doesn't travel cross-machine) per
+  Constitution X + the portable-agent-memory item.
 
 ### [DEFERRED] Selection Strategy Alternatives
 - NSGA-II Pareto: non-dominated sort on (tracking RMSE, energy, worst-case spread)
@@ -307,6 +377,158 @@ Remaining 015 work:
 
 ## Infrastructure
 
+### `wind_velocity` not recorded in the dmp (honest-recording gap)
+
+- **Found 2026-06-16** (wind-study): `AircraftState::wind_velocity` is serialized but **never set** in
+  the crrcsim→AircraftState record path — it is **zero in every dmp** (M1 + M2). The actual wind lives
+  only inside crrcsim (`crrc_builtin_scenery.cpp` `flWindVel`/`effectiveWindDir` + gusts/thermals).
+- **Impact**: you can't audit the wind a craft actually flew through from the dmp. This blocked the
+  full (gusty) M1↔M2 wind-mismatch comparison — `src/analytics/wind_study.py` could only use the
+  steady `windDirectionOffset` from `ScenarioMetadata`, not the realized gusty wind. Violates
+  honest-recording ([feedback_honest_dmp_recording](../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_honest_dmp_recording.md))
+  for an environment input the controller implicitly experiences.
+- **Fix**: copy crrcsim's per-tick wind into `AircraftState::setWindVelocity()` at record time (getter
+  + setter already exist; `dmp_dump.cc` already emits `wN,wE,wD` columns — currently zeros). Then
+  re-run `wind_study.py` against the *actual* experienced wind to settle the wind-vs-tracking question
+  (and the co-sim-vs-playback-parity decision).
+- **Trigger**: before any wind-parity / two-sim co-eval decision that needs the true wind, or next time
+  the record path is touched.
+- **→ 038 pre-work (2026-06-16)**: a recording change → fold into the 038 clean-slate dmp break, with
+  simTimeMsec stamping + self-describing dmp. Then re-run `wind_study.py` against the real gusty wind.
+
+### [BACKLOG 038] Standardize training reporting — one `scripts/` wrapper (logfile in → all PNGs out)
+
+> **→ 038 Phase-0 (P0-C) — IN PROGRESS (2026-06-16)**: building `scripts/generate_pngs.sh m1|m2
+> <logfile>` + a maintained analytics home `src/analytics/` (dmp-fed plotters + `requirements.txt`)
+> this session. See [specs/038-accurate-m2/spec.md](038-accurate-m2/spec.md) Phase 0.
+
+### Per-gen analytics store (SQLite) — retire the CSV run-summary cache (out of 038 P0-C)
+
+- **Surfaced 2026-06-16** building `generate_pngs.sh`: the incremental run-summary cache is a CSV file
+  per run-id, appended via `--since-gen`, deduped by gen with `sort -u`, keyed on (run-id + dmp-dump
+  build signature) to avoid splicing rows from different runs/builds. That's a relational table
+  reimplemented in bash — "we're close to a SQLite use case" (operator).
+- **Want**: a single SQLite DB of per-gen analytics. Schema sketch: `gen_summary(run_id, gen,
+  best_fitness, mean_energy, mean_stability, mean_streak, crashes, aggr_*, dctrl_*, mag_*,
+  path*_rollrate, path*_pitchrate, scenarios, mode, dmp_dump_sig, PRIMARY KEY(run_id, gen))`. Ingest =
+  `INSERT OR REPLACE` per gen (dmp-dump writes rows, or the script pipes them in); plotting + cross-run
+  comparison become `SELECT`s (the `--compare` overlay is then a `WHERE run_id IN (...)` instead of
+  re-scanning old `.log`s). `dmp_dump_sig` column makes a build-math change a row-level concern, not a
+  whole-file-invalidate.
+- **Why it's clean**: append-once-immutable per (run_id, gen) matches the dmp model; kills the
+  dedup-sort + file-key gymnastics; one queryable store for all runs; trivially supports
+  compare-N-runs and "latest run" selection.
+- **Relation**: extends [BACKLOG 038] reporting above + `project_dmp_driven_analytics_backlog`
+  (move analytics off logfile-parsing onto the dmp; /tmp dmp cache). Likely lands as a 038 follow-on
+  or its own small infra spec once the shell pipeline proves the report set.
+- **Trigger**: when the CSV-cache bookkeeping or cross-run comparison gets painful enough — or when the
+  dmp `/tmp` cache item is picked up (do them together).
+
+- **Surfaced**: 037 (2026-06-15/16), during 037-t11-m2 reporting. Generating the standard per-run
+  PNGs ([docs/REPORTS.md](../docs/REPORTS.md)) is a hand-run sequence of `python3` calls scattered
+  across `specs/034-…`, `specs/035-…`, `specs/037-…`, with the S3 run-id, gen number, mode, and
+  config (`autoc.ini` vs `autoc-tracker.ini`) threaded by hand each time. M1 = 4 reports; M2 = 6
+  (adds `gen_diag` + `intercept_analysis`). Now that reporting is routine, this wants to be one
+  command.
+- **Want**: a single shell script in **`scripts/`** (cross-version utility per the scripts-dir scope
+  rule) whose main param is just the **logfile name** (e.g. `logs/autoc-037-t11-m2.log`). It derives
+  everything else from the log — run-id + `S3Bucket` + `Mode` are printed near the log head, latest
+  gen from the last `#NNGen` — and calls the plotters to emit the full PNG set. "viola."
+- **Stabilize the plotters**: move the dmp-fed (035+) plot pythons out of the frozen feature dirs into
+  a **maintained analytics package** (e.g. `src/analytics/` or `analytics/`) so contract changes can
+  edit them in place. This is a deliberate carve-out from the historical-scripts-immutable rule: the
+  *pre-035 data.dat* scripts stay frozen; the dmp-fed set becomes the maintained, standardized one.
+  Add a **`pyproject.toml` / `requirements.txt`** (numpy, matplotlib) so the reporting env is
+  reproducible. Config via CLI flags, not env vars; config-file flag stays `-i`.
+- **Already-landed groundwork (2026-06-15, this session)**: `tools/dmp_dump.cc` now emits a per-tick
+  `stpPt` column for the **tracker** CSV (recomputed from the recorded target velocity + trail-rabbit,
+  exactly as `fitness_decomposition.cc` — derived not recorded, same as pathgen; no dmp/format
+  change, no run restart). `specs/037-20hz-control-loop/dynamics_progress.py` was made schema-generic
+  (derives chaser→target distance; the regime panel degrades to intercept/patrol when `stpPt` is
+  absent), so it now runs on M1 and M2. These are the kind of contract edits the standardized package
+  should own.
+- **Related**: the dmp-driven-analytics infra item below (default-to-latest-run, gen counts on
+  stderr, `/tmp` dmp cache) and the self-describing-dmp item are natural companions — a standardized
+  reporting front-end is where they'd surface.
+- **Trigger to act**: 038, or the next time a report has to be regenerated for a routine M1/M2 bake.
+
+### Integer-ms `simTimeMsec` truncation — stamp by rounding / step-count (out of 037 M2 source-spacing)
+
+> **→ 038 pre-work (2026-06-16)**: fold the stamp fix into 038 pre-work. 038 re-bakes M1/M2 anyway
+> (hull-crash fitness change + camera variations + the source-side spike) — that IS the "dmp break is
+> acceptable" moment this was waiting for. Bonus: `simTimeMsec` feeds the time-based NN history-lag
+> selection + the `span_rate` gap denominator, so today's ±1 ms jitter adds noise to the rate inputs;
+> exact 50 ms stamping cleans it. After the fix + a clean re-baked source, the M2 source-spacing check
+> reverts to a strict single-gap test. **NOTE**: CRRCSim **submodule** change (pointer-bump-first),
+> **determinism-affecting → retrain-from-scratch** — do it at the 038 clean-slate, NOT mid-bake (would
+> perturb the live t11).
+
+- **Surfaced**: 037 (2026-06-15), M2/t11 launch. The tracker source-spacing fail-loud rejected the
+  t10 source: its recorded tick gaps are 49/50/51 ms (first gap deterministically 49) even though
+  the true cadence is exactly 50 ms.
+- **Root cause**: `SimStateHandler::getSimulationTimeSinceReset()` returns
+  `(unsigned long)(sim_steps * Global::dt * 1000)` — the 200 Hz / 5 ms step clock **truncated** to
+  integer ms ([crrcsim/src/SimStateHandler.cpp:392](../crrcsim/src/SimStateHandler.cpp#L392)).
+  Combined with the `multiloop`/`dDeltaT` drift-corrector (lines 75-96), each control tick lands
+  just under a 50-multiple and truncates down to `xx9`, re-syncing to exact 50-multiples every few
+  ticks. So dmps store ±1 ms-jittered timestamps. (Same family as the crrcsim CLAUDE.md note:
+  "sim_steps counter is wall-clock dependent because multiloop varies.")
+- **Right fix**: stamp `simTimeMsec` cleanly — either **round** instead of truncate, or derive from
+  the integer step-count directly (`sim_steps * 1000 / stepsPerSec`), so a 20 Hz run records exact
+  50 ms gaps. Then the tracker source-spacing check could go back to a strict single-gap test.
+- **DEFERRED — interim shipped 2026-06-15**: the M2 source-spacing checks
+  ([crrcsim_tracker_helper.cpp](../crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp) +
+  [tracker_stepper.cc](../src/eval/tracker_stepper.cc)) now test the **average** gap
+  `(last-first)/(N-1)` (= 50.0 exactly, immune to the per-tick truncation jitter, still catches a
+  real 100 ms-vs-50 ms mismatch). This unblocks t11 without touching the recording format. The
+  proper stamp fix is a dmp-format/determinism change affecting every dmp — do it when a dmp break
+  is acceptable anyway (e.g. bundled with the self-describing-dmp item below).
+
+### Self-describing dmp — record config block in every gen dmp (out of 037 P-O13)
+
+> **→ 038 P0-B — FULL version now viable (2026-06-16)**: 038 may break the dmp contract for a clean
+> re-bake (operator), so the full `EvalResults` config-block serialization can land here — not just
+> the renderer-config-hygiene slice. Bundle with the other clean-slate contract changes (simTimeMsec
+> stamping, wind_velocity recording) so there's one dmp break, not several.
+
+- **Surfaced**: 037 (2026-06-14), while building the renderer playback HUD (P-O12). Score replay in
+  `dmp_dump.cc` and `tools/renderer.cc` reads fitness/cadence params (cone angle, dist scales, streak
+  threshold/ramp/mult, `kCadenceTickScale`) from the *current* `autoc.ini` via
+  `ConfigManager::getConfig()` — wrong if the ini drifts from the run that produced the dmp.
+- **Scope when picked up**: serialize the fitness/cadence config block into `EvalResults` (every
+  per-gen dmp — small fixed duplication, makes any dmp standalone-replayable; operator 2026-06-14).
+  Flip readers (dmp_dump, renderer, analysis) to **prefer dmp-recorded config, fall back to ini** for
+  pre-change dmps. The **only** remaining ini dependence is the S3 profile/bucket (bootstrap needed to
+  *fetch* the dmp).
+- **DEFERRED — keep dmp binary compat for now (operator 2026-06-14)**: this is a fail-loud
+  `EvalResults` schema change that breaks reading current dmps (t6–t10). The format is being held
+  stable for a while so t10+ dmps stay readable across builds; revisit when a dmp format break is
+  acceptable anyway (e.g. bundled with the next schema-touching feature).
+- **In the spirit of** `project_dmp_driven_analytics_backlog` (move analytics off the logfile/ini
+  onto the dmp). Touch: `EvalResults` serialize (autoc write), `dmp_dump.cc` + `tools/renderer.cc`
+  (read dmp-config-if-present else ConfigManager).
+
+### Portable agent memory — repo-authoritative, ~/.claude as non-authoritative recall index (out of 032)
+
+- **Surfaced**: 032 ("memory location debate", open since phase 1); resolved in principle 2026-06-10
+  during the 037 t6 bake when the operator challenged storing project findings in the
+  machine-local `~/.claude/.../MEMORY.md` while the project runs on multiple machines/repos with
+  speckit as the documentation system.
+- **Principle (operator 2026-06-10)**: agent memory is a **summary/reference layer over the in-repo
+  specs — loaded automatically, but NEVER authoritative** for instructions, decisions, or project
+  facts. The repo (specs/, docs/, CLAUDE.md) is the single source of truth; memory entries should be
+  one-line hooks pointing at repo paths, so recall works without content forking.
+- **Scope when picked up**:
+  1. Migrate the `project_*` memories (bang-bang migration, servo-era metrics, spiral strategy,
+     basin lottery, …) into a versioned in-repo home (e.g. `docs/NOTES.md` / `docs/lessons/`),
+     leaving only pointer lines in `~/.claude` MEMORY.md.
+  2. Move agent-workflow preferences (never-push, build conventions, regression-gate ownership)
+     into the committed `CLAUDE.md` / `.claude/` so agents on every machine inherit them.
+  3. Keep truly machine-local facts (paths, local build quirks) as the only `~/.claude`-resident
+     content.
+- **Why it matters**: today's memory is invisible to the Windows-side agent, unversioned,
+  unreviewable, and prone to divergence from the specs it summarizes (two copies, one drifts).
+
 ### [NEXT — gated on r1/r2/r3 outcome] M1 basin-landscape protocol + improved pathgen baseline (pop=8000 / wind=36)
 
 - **Surfaced 2026-05-24/25**: 033 phase 1–4 stalls were initially read as a code regression in `acf732f` (033 PRNG rework + smoothness penalty). The 2026-05-24/25 bisect proved they're almost certainly **seed-luck, not code**:
@@ -337,11 +559,21 @@ Remaining 015 work:
 - **Files**: `autoc.ini` (PopulationSize, WindScenarios), new `docs/basin-landscape-reference.md` (or wherever the operator routing prefers — possibly `specs/029-no-future-arch/` since the reference runs anchor there).
 - **Critical normalization caveat (surfaced 2026-05-25)**: `Best` / `Avg` / `Worst` in `data.stc` and the gen log line are **sums over the scenarios in that run's config** (paths × winds). Comparing absolute Best across runs with different `WindScenarios` or `SimNumPathsPerGeneration` is apples-to-oranges. r1 (pop=8000 / wind=36 / 216 scenarios) at gen 181 has Best −23,174 vs pastonly3 (5000 / 49 / 294 scenarios) at gen 181 ≈ −25,800; the raw numbers suggest r1 is behind, but per-scenario (−107.3/scen vs −87.8/scen) r1 is ~22% MORE negative — i.e., a stronger controller. avgMaxStreak / pctInStreak are already per-scenario and directly comparable (r1 was 2× pastonly3's at gen 100, still ahead at gen 181). For the reference doc + thresholds, normalize either by (a) using per-scenario averages as the universal currency, OR (b) rescaling the historical thresholds to the run's scenario count (e.g., −40k climbing at 294 scenarios → ~−29k at 216). The threshold values quoted above (≥ −40k climbing, ≤ −15k stuck) are 294-scenario-anchored; the doc must spell this out and provide a rescaling formula or per-scenario equivalents.
 - **Framing — this is "factory" investment, not control improvement (2026-05-27)**: the entire diversion from 029 through this basin work was *not* about making a better controller. M2 already has its own (different) NN topology and performed well on its own. The goal of all this is a **repeatable training environment** so M2 training can be clean and honest — being able to reproduce a source scenario's exact environment (wind/entry/rabbit at the exact tick) is what makes M2 fidelity analyzable. Mental model: this is the **factory ($$$) model** — the assembly line that produces controllers — which we keep refining as we improve control. The controller quality is the product; the determinism + basin reliability + reproducible-environment work is the tooling that lets the factory run without expensive re-rolls. Frame future "is this worth it?" decisions on this axis: does it make the factory cheaper/more reliable per controller produced, or does it improve the controller itself? Different budgets, different justifications.
-- **Forward loop — craft + camera variations into M1 (2026-05-27)**: somewhere in this sequence we go back and add **craft variations** and **camera variations (at least for seed)** into M1, to prepare the final generalization of the craft. The intent: M1 source trajectories should eventually span craft-parameter and camera-config diversity so that when M2 trains against them (in their own reproduced environments), the resulting controller generalizes across the real hardware envelope, not just one nominal airframe/camera. This is the "rinse/repeat" outer loop: improve the factory (determinism, basins, variation coverage) → produce a controller → learn → widen variation → repeat. The variation-budget table elsewhere in this entry (3 dim → 36–49 scenarios; 5–6 dim → 200–350 for pairwise) is the sizing guide for when craft+camera land and the dim count climbs to 5–6.
+- **Forward loop — craft + camera variations into M1 (2026-05-27)** *(camera-variations → 038 US2
+  candidate, 2026-06-16: pulled into 038; the source-side-vs-M2-side question is US2's opening spike)*:
+  somewhere in this sequence we go back and add **craft variations** and **camera variations (at least for seed)** into M1, to prepare the final generalization of the craft. The intent: M1 source trajectories should eventually span craft-parameter and camera-config diversity so that when M2 trains against them (in their own reproduced environments), the resulting controller generalizes across the real hardware envelope, not just one nominal airframe/camera. This is the "rinse/repeat" outer loop: improve the factory (determinism, basins, variation coverage) → produce a controller → learn → widen variation → repeat. The variation-budget table elsewhere in this entry (3 dim → 36–49 scenarios; 5–6 dim → 200–350 for pairwise) is the sizing guide for when craft+camera land and the dim count climbs to 5–6.
   - **Craft variations DONE 2026-05-31 (034 US4)**: 6 axes (CG / drag / trim / thrust scale / pitch-eff / roll-eff) plumbed through the `ScenarioMetadata.craft*` + `craftSeed` cascade, ramped via shared `applyVariationScale`, with eval-mode replay via `gEvalVariationScaleOverride`. Sensible σ defaults in autoc.ini + macro-disable knob `EnableCraftVariations`. Confirmation experiment ini (`autoc-craft-only.ini`) + per-scenario control × craft bias regression analysis = Phase 7 of 034. Camera variations are still pending (not in 034 scope — the cameraSeed insertion point is documented in `ScenarioMetadata` for a future feature).
 - **Broader context**: this investigation was a sidetrack from the M2-reproducibility line of work. The next moves on the main path:
-  1. **033 PRNG single-SHA bug hunt**: even with basin-lottery diagnosed, the `acf732f` (033 PRNG architecture rework) is still worth inspecting for a bug — particularly because phases 1–4 all stalled on what may have been *coincidentally* unlucky seeds but the PRNG cascade rework structurally changed the seed → scenario mapping. If there's a bug routing fresh seeds into a worse part of the basin landscape, finding it would matter for the M2 work.
-  2. **M2 sim playback parity with M1 — source replayed *in its own original environment*** (clarified 2026-05-27): the load-bearing experiment after the basin work. The key design point: an M1 source trajectory was produced under a specific joint-PRNG scenario = (path_index, wind_seed, entry_pose, rabbit-speed profile). The source path is *shaped by* that wind — it crabbed, drifted, and adjusted throttle for those exact gusts at those exact ticks. For realistic M2 (tracker) training, the chase aircraft must fly through the **same air mass at the same time** — i.e., the M2 sim replays the source's *original variation scenario* so the chase feels the identical wind/conditions while pursuing. Otherwise there's a physics mismatch: the source moved as if wind-blown, but the chase tracks it in different (or calm) air, which is not what happens when a real chase pursues a real target through one shared air mass.
+  1. **033 PRNG single-SHA bug hunt** *(→ 038 P0-A candidate, 2026-06-16: pulled into 038 Phase-0 as
+     the PRNG-validation prerequisite)*: even with basin-lottery diagnosed, the `acf732f` (033 PRNG architecture rework) is still worth inspecting for a bug — particularly because phases 1–4 all stalled on what may have been *coincidentally* unlucky seeds but the PRNG cascade rework structurally changed the seed → scenario mapping. If there's a bug routing fresh seeds into a worse part of the basin landscape, finding it would matter for the M2 work.
+  2. **M2 sim playback parity with M1 — source replayed *in its own original environment*** (clarified 2026-05-27): the load-bearing experiment after the basin work.
+     > **UPDATE 2026-06-16 (wind-study, may downgrade this item)**: a per-scenario M1-vs-M2
+     > wind-direction comparison (`src/analytics/wind_study.py`) found the steady wind-direction
+     > offsets diverge a lot (~38° mean, 35% > 45°) but are **uncorrelated** with M2 per-scenario score
+     > (+0.03) or tracking (−0.07) — so steady-wind parity looks low-value. The **two-sim co-evaluation**
+     > feature (Future Features) is the more compelling alternative. Caveat: only the steady direction
+     > offset was measurable; the gusty `wind_velocity` is unrecorded (Infrastructure gap) — record it
+     > and re-test before finally ranking this item. The key design point: an M1 source trajectory was produced under a specific joint-PRNG scenario = (path_index, wind_seed, entry_pose, rabbit-speed profile). The source path is *shaped by* that wind — it crabbed, drifted, and adjusted throttle for those exact gusts at those exact ticks. For realistic M2 (tracker) training, the chase aircraft must fly through the **same air mass at the same time** — i.e., the M2 sim replays the source's *original variation scenario* so the chase feels the identical wind/conditions while pursuing. Otherwise there's a physics mismatch: the source moved as if wind-blown, but the chase tracks it in different (or calm) air, which is not what happens when a real chase pursues a real target through one shared air mass.
      - **Why this depends on the PRNG work**: faithfully reproducing "the source scenario's environment" requires the scenario to be deterministically regenerable from its seeds. That is exactly what the 033 PRNG rework must get right. Validating 033's PRNG ("mostly working" via the pop8k/wind36 run on 033 code) is therefore the *prerequisite* for honest M2 training — if you can't reproduce a source scenario's wind/entry/rabbit faithfully, you can't put the chase in the same world the source flew through.
      - **The validation question**: if M2 results track M1's training-time signal closely (chase in source's own environment), the M2 architecture + perception pipeline are validated; if they diverge, perception or some other M2-side delta is leaking. The basin-landscape work is housekeeping that lets us cleanly attribute any M2 divergence to *code* rather than *seed luck*.
      - **Sequencing**: this M2-parity run happens **before** smoothness is re-added (smoothness is a separate later objective; don't conflate it with the M2-fidelity question).

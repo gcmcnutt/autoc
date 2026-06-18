@@ -15,6 +15,12 @@
 #include "autoc/util/s3_run_selector.h"  // s3GetDmpBlob (FR-P09 zstd-aware fetch)
 #include "autoc/autoc.h"
 #include "autoc/eval/aircraft_state.h"
+#include "autoc/eval/fitness_computer.h"   // 037 P-O12 — honest score replay (same math as dmp_dump)
+#include <vtkSphereSource.h>
+#include <vtkTriangle.h>
+#include <vtkLookupTable.h>
+#include <vtkFloatArray.h>
+#include <vtkPointData.h>
 
 #include <vtkTextActor.h>
 #include <vtkTextProperty.h>
@@ -587,6 +593,10 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       std::vector<vec3> beaconRightWorld = targetSamplesToBeaconPositions(targetSamples, kBeaconRightMountBody);
       this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
       this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
+      // (No trail-rabbit marker: the target tape + wingtip-beacon glyphs already
+      // mark the target location + the far end of the chase→target error bars.
+      // The chase glyph turning red ≈10 ft behind — driven by the now-correct
+      // tracker ×mult in replayScore — is the trailing-position cue.)
       // 030 M9b.3 — FOV pyramid at the latest visible camera tick. For
       // static load this is the final tick of the scenario; animation
       // updates per-frame (see updatePlaybackAnimation).
@@ -1424,7 +1434,11 @@ void Renderer::initialize() {
   targetBeaconRightActor->SetVisibility(this->trackerDetailVisible_ ? 1 : 0);
   chaseCameraFovActor->SetVisibility(this->trackerDetailVisible_ ? 1 : 0);
   renderer->AddActor(actor3);  // Blue delta lines
-  
+
+  // 037 P-O12 — chase paper-airplane glyph (streak-colored attitude marker).
+  createChasePlaneGlyph();
+  renderer->AddActor(chasePlaneActor);
+
   // Only add blackbox actors if there's blackbox data
   if (!blackboxAircraftStates.empty()) {
     renderer->AddActor(blackboxActor);
@@ -1478,6 +1492,26 @@ void Renderer::initialize() {
   testValueActor->SetInput("-");
   renderer->AddActor2D(testValueActor);
 
+  // 037 P-O12 — playback score HUD: total score (top) + ×multiplier (bottom),
+  // positioned left of the control stick each frame in updateControlsOverlay.
+  // Hidden until playback; multiplier tinted gray→red to match the chase glyph.
+  scoreValueActor = vtkSmartPointer<vtkTextActor>::New();
+  scoreValueActor->GetTextProperty()->SetFontSize(20);
+  scoreValueActor->GetTextProperty()->SetColor(1.0, 1.0, 1.0);
+  scoreValueActor->GetTextProperty()->SetJustificationToRight();
+  scoreValueActor->GetTextProperty()->SetVerticalJustificationToCentered();
+  scoreValueActor->SetInput("0");
+  scoreValueActor->VisibilityOff();
+  renderer->AddActor2D(scoreValueActor);
+
+  multValueActor = vtkSmartPointer<vtkTextActor>::New();
+  multValueActor->GetTextProperty()->SetFontSize(20);
+  multValueActor->GetTextProperty()->SetColor(0.6, 0.6, 0.6);  // gray = no streak
+  multValueActor->GetTextProperty()->SetJustificationToRight();
+  multValueActor->GetTextProperty()->SetVerticalJustificationToCentered();
+  multValueActor->SetInput("x1.0");
+  multValueActor->VisibilityOff();
+  renderer->AddActor2D(multValueActor);
 
   // Set initial text display
   updateTextDisplay(0, 0.0);
@@ -2869,6 +2903,145 @@ void Renderer::createStopwatch() {
   stopwatchTimeActor->GetTextProperty()->SetJustificationToCentered();
 }
 
+// 037 P-O12 — running PATH score to `currentTime` for arena `arena`, replayed
+// through the SAME FitnessComputer math as autoc/dmp_dump so the HUD number IS
+// the recorded fitness (not a lookalike). Returns Σ(stp×mult×kCadenceTickScale)
+// over revealed ticks; sets outMult to the current ×multiplier. Mirrors
+// dmp_dump.cc's per-tick along/lateral→computeStepScore→applyStreak.
+// (Config from ConfigManager for now; switch to dmp-recorded config per P-O13.)
+double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) {
+  outMult = 1.0;
+  if (arena < 0 || arena >= static_cast<int>(evalResults.aircraftStateList.size())) return 0.0;
+  const std::vector<AircraftState>& states = evalResults.aircraftStateList[arena];
+  if (states.empty()) return 0.0;
+
+  // Mode dispatch: tracker iff this arena carries a target trajectory. Tracker
+  // dmps have NO pathList, so the score must replay against the trail-rabbit
+  // (target_pos − v̂·trail_distance) with the target-velocity tangent — exactly
+  // as fitness_decomposition.cc's tracker branch and dmp_dump.cc do. Before
+  // this branch existed, tracker runs fell through the pathgen-empty
+  // early-return and the HUD showed a flat ×1.0 (no streak) for every M2 run.
+  const bool isTracker = arena < static_cast<int>(evalResults.targetTrajectoryList.size())
+                         && !evalResults.targetTrajectoryList[arena].empty();
+  const std::vector<Path>* path = nullptr;
+  if (!isTracker) {
+    if (arena >= static_cast<int>(evalResults.pathList.size())) return 0.0;
+    path = &evalResults.pathList[arena];
+    if (path->empty()) return 0.0;
+  }
+
+  const AutocConfig& cfg = ConfigManager::getConfig();
+  int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
+  if (streakStepsToMax < 1) streakStepsToMax = 1;
+  FitnessComputer fc(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
+                     cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
+  fc.resetStreak();
+
+  const unsigned long curMs = static_cast<unsigned long>(currentTime * 1000.0f);
+  gp_vec3 prevTangent = gp_vec3::UnitX();
+  double score = 0.0;
+  for (size_t ti = 1; ti < states.size(); ++ti) {
+    if (states[ti].getSimTimeMsec() > curMs) break;
+    const gp_vec3 pos = states[ti].getPosition();
+    gp_vec3 tangent, anchor;
+    if (isTracker) {
+      // Trail-rabbit anchor + target-velocity tangent (both already shifted to
+      // display altitude in lockstep with `pos`, so the offset below cancels it).
+      const std::vector<CopiedTargetSample>& targets = evalResults.targetTrajectoryList[arena];
+      const size_t tgi = std::min(ti, targets.size() - 1);
+      anchor = targets[tgi].trail_rabbit_position;
+      const gp_vec3 tvel = targets[tgi].velocity;
+      const double vn = tvel.norm();
+      if (vn > 0.01) { tangent = tvel / vn; prevTangent = tangent; } else tangent = prevTangent;
+    } else {
+      const int pIdx = std::clamp(states[ti].getThisPathIndex(), 0,
+                                  static_cast<int>(path->size()) - 1);
+      if (pIdx + 1 < static_cast<int>(path->size())) {
+        tangent = path->at(pIdx + 1).start - path->at(pIdx).start;
+        double tn = tangent.norm();
+        if (tn > 0.01) { tangent /= tn; prevTangent = tangent; } else tangent = prevTangent;
+      } else tangent = prevTangent;
+      anchor = path->at(pIdx).start;
+    }
+    const gp_vec3 off = pos - anchor;
+    const double along = off.dot(tangent);
+    const double lateral = (off - along * tangent).norm();
+    const double stp = fc.computeStepScore(along, lateral);
+    const double ms = fc.applyStreak(stp);
+    outMult = (stp > 0.0) ? ms / stp : 1.0;
+    score += ms * kCadenceTickScale;
+  }
+  return score;
+}
+
+// 037 P-O12 — chase paper-airplane glyph, oversized for the ~100 m arena
+// overview. Nose at the chase position (geometry built nose-at-origin, body
+// extends -x/back). Body frame = sim aerospace (x fwd, y right, z DOWN), so
+// the keel folds DOWN = +z, giving readable bank/pitch. Color (gray→red by
+// streak ×mult) is set per-frame in updateControlsOverlay; oriented there via
+// getOrientation(). Hidden until playback animates.
+void Renderer::createChasePlaneGlyph() {
+  const double L = 6.0;   // length (m), nose→tail
+  const double S = 2.0;   // half-span (m) → 4 m wingspan
+  const double K = 1.2;   // keel drop (m, +z = down in aerospace body frame)
+  vtkNew<vtkPoints> pts;
+  vtkIdType nose = pts->InsertNextPoint( 0.0, 0.0, 0.0);  // 0: nose (at chase pos)
+  vtkIdType tail = pts->InsertNextPoint(  -L, 0.0, 0.0);  // 1: tail center
+  vtkIdType lwt  = pts->InsertNextPoint(  -L,  -S, 0.0);  // 2: left wingtip (y left = -y)
+  vtkIdType rwt  = pts->InsertNextPoint(  -L,  +S, 0.0);  // 3: right wingtip
+  vtkIdType keel = pts->InsertNextPoint(  -L, 0.0,  K);   // 4: keel bottom (down)
+  vtkNew<vtkCellArray> tris;
+  auto tri = [&](vtkIdType a, vtkIdType b, vtkIdType c) {
+    vtkNew<vtkTriangle> t;
+    t->GetPointIds()->SetId(0, a); t->GetPointIds()->SetId(1, b); t->GetPointIds()->SetId(2, c);
+    tris->InsertNextCell(t);
+  };
+  tri(nose, lwt, tail);   // left wing
+  tri(nose, tail, rwt);   // right wing
+  tri(nose, tail, keel);  // keel / fuselage (hangs down)
+
+  chasePlanePolyData = vtkSmartPointer<vtkPolyData>::New();
+  chasePlanePolyData->SetPoints(pts);
+  chasePlanePolyData->SetPolys(tris);
+
+  // Per-vertex nose→tail scalar (nose 0, everything aft 1) drives the streak
+  // "gold fill": a thresholded LUT (gold ≤ streak-fraction, grey above), texture-
+  // interpolated across each nose→aft triangle, gives a crisp gold boundary that
+  // rolls back as the streak multiplier climbs (full streak ⇒ whole craft gold).
+  vtkNew<vtkFloatArray> noseFrac;
+  noseFrac->SetName("streakFrac");
+  noseFrac->InsertNextValue(0.0f);  // 0 nose
+  noseFrac->InsertNextValue(1.0f);  // 1 tail
+  noseFrac->InsertNextValue(1.0f);  // 2 left wingtip
+  noseFrac->InsertNextValue(1.0f);  // 3 right wingtip
+  noseFrac->InsertNextValue(1.0f);  // 4 keel
+  chasePlanePolyData->GetPointData()->SetScalars(noseFrac);
+
+  chaseStreakLut = vtkSmartPointer<vtkLookupTable>::New();
+  chaseStreakLut->SetNumberOfTableValues(256);
+  chaseStreakLut->SetTableRange(0.0, 1.0);
+  for (int i = 0; i < 256; ++i)
+    chaseStreakLut->SetTableValue(i, 0.55, 0.55, 0.55, 1.0);  // all grey = no streak
+  chaseStreakLut->Build();
+
+  vtkNew<vtkPolyDataMapper> glyphMapper;
+  glyphMapper->SetInputData(chasePlanePolyData);
+  glyphMapper->SetLookupTable(chaseStreakLut);
+  glyphMapper->SetScalarModeToUsePointData();
+  glyphMapper->SetColorModeToMapScalars();
+  glyphMapper->SetScalarRange(0.0, 1.0);
+  glyphMapper->ScalarVisibilityOn();
+  glyphMapper->InterpolateScalarsBeforeMappingOn();  // crisp moving boundary (LUT as 1-D texture)
+  chasePlaneActor = vtkSmartPointer<vtkActor>::New();
+  chasePlaneActor->SetMapper(glyphMapper);
+  chasePlaneActor->GetProperty()->SetColor(0.6, 0.6, 0.6);  // (overridden by scalar LUT)
+  chasePlaneActor->GetProperty()->SetAmbient(0.45);
+  chasePlaneActor->GetProperty()->SetDiffuse(0.7);
+  chasePlaneActor->GetProperty()->BackfaceCullingOff();
+  chasePlaneActor->VisibilityOff();   // revealed during playback animation
+  // NOTE: added to the scene by initialize() (the vtkRenderer is a local there).
+}
+
 void Renderer::createControlsOverlay() {
   // Outline (stick box, crosshair, throttle outline)
   controlOutlineActor = vtkSmartPointer<vtkActor2D>::New();
@@ -3611,6 +3784,72 @@ void Renderer::updateControlsOverlay(gp_scalar currentTime) {
     velocityActor->SetPosition(attitudeCenterX - attitudeRadius,
       attitudeCenterY + attitudeRadius + static_cast<scalar>(10.0f));
   }
+
+  // 037 P-O12 — running score + ×multiplier (left of the stick) and the
+  // chase paper-airplane glyph, colored gray→red by the streak multiplier.
+  {
+    double mult = 1.0;
+    double score = replayScore(selectedArena, currentTime, mult);
+    const double multMax = std::max(1.0001, ConfigManager::getConfig().fitStreakMultiplierMax);
+    double t = (mult - 1.0) / (multMax - 1.0);
+    t = (t < 0.0) ? 0.0 : (t > 1.0 ? 1.0 : t);   // 0 = grey, 1 = full streak
+    const double cr = 0.60 + 0.40 * t;            // grey (0.6,0.6,0.6) → gold (1.0,0.84,0.0)
+    const double cg = 0.60 + 0.24 * t;
+    const double cb = 0.60 - 0.60 * t;
+
+    // Match the Path/Vel HUD font sizing (dynamic, clamped 8–16).
+    const int hudFont = std::max(8, std::min(16, static_cast<int>(windowSize[1] * 0.018)));
+    if (scoreValueActor) {
+      std::ostringstream ss; ss << "Score: " << static_cast<long long>(score + 0.5);
+      scoreValueActor->GetTextProperty()->SetFontSize(hudFont);
+      scoreValueActor->SetInput(ss.str().c_str());
+      scoreValueActor->SetPosition(stickLeft - static_cast<scalar>(18.0f),
+                                   stickCenterY + static_cast<scalar>(14.0f));
+      scoreValueActor->VisibilityOn();
+    }
+    if (multValueActor) {
+      std::ostringstream ms; ms << "x" << std::fixed << std::setprecision(1) << mult;
+      multValueActor->GetTextProperty()->SetFontSize(hudFont);
+      multValueActor->SetInput(ms.str().c_str());
+      multValueActor->GetTextProperty()->SetColor(cr, cg, cb);
+      multValueActor->SetPosition(stickLeft - static_cast<scalar>(18.0f),
+                                  stickCenterY - static_cast<scalar>(14.0f));
+      multValueActor->VisibilityOn();
+    }
+
+    if (chasePlaneActor) {
+      if (haveControls && chosenState) {
+        gp_vec3 p = chosenState->getPosition() + renderingOffset(selectedArena);
+        gp_quat q = chosenState->getOrientation();
+        q.normalize();
+        double w = q.w();
+        if (w < -1.0) w = -1.0; else if (w > 1.0) w = 1.0;
+        double angleDeg = 2.0 * std::acos(w) * 180.0 / M_PI;
+        double s = std::sqrt(std::max(0.0, 1.0 - w * w));
+        double ax = 1.0, ay = 0.0, az = 0.0;
+        if (s > 1e-6) { ax = q.x() / s; ay = q.y() / s; az = q.z() / s; }
+        vtkNew<vtkTransform> tf;
+        tf->Translate(static_cast<double>(p[0]), static_cast<double>(p[1]), static_cast<double>(p[2]));
+        tf->RotateWXYZ(angleDeg, ax, ay, az);
+        chasePlaneActor->SetUserTransform(tf);
+        // Gold streak fill: gold fills nose→tail as the streak fraction t (0..1,
+        // from the 1→5 multiplier) climbs — boundary at frac t, grey aft of it,
+        // full streak ⇒ whole craft gold. (Replaces the flat gray→red tint.)
+        if (chaseStreakLut) {
+          const int N = chaseStreakLut->GetNumberOfTableValues();
+          for (int i = 0; i < N; ++i) {
+            const double frac = (N > 1) ? static_cast<double>(i) / (N - 1) : 0.0;
+            if (frac <= t) chaseStreakLut->SetTableValue(i, 1.0, 0.84, 0.0, 1.0);   // gold
+            else           chaseStreakLut->SetTableValue(i, 0.55, 0.55, 0.55, 1.0); // grey
+          }
+          chaseStreakLut->Modified();
+        }
+        chasePlaneActor->VisibilityOn();
+      } else {
+        chasePlaneActor->VisibilityOff();
+      }
+    }
+  }
 }
 
 void Renderer::updateControlsPosition() {
@@ -3901,6 +4140,12 @@ void Renderer::hideStopwatch() {
         renderer->RemoveActor2D(velocityActor);
       }
     }
+    // 037 P-O12 — hide the score HUD + chase glyph with the rest of the HUD
+    // (arena flip / playback stop). They're visibility-toggled (re-enabled each
+    // frame by updateControlsOverlay during playback), so VisibilityOff here.
+    if (scoreValueActor) scoreValueActor->VisibilityOff();
+    if (multValueActor)  multValueActor->VisibilityOff();
+    if (chasePlaneActor) chasePlaneActor->VisibilityOff();
     stopwatchVisible = false;
     controlsVisible = false;
   }
@@ -3988,7 +4233,18 @@ void Renderer::updatePlaybackAnimation() {
   // Path always drives the timing - find longest path duration across all arenas
   scalar primaryDuration = 0.0f;
   int maxArenas = evalResults.pathList.size();
+  // 037 P4 clock-stop-at-focus 2026-06-09: in focus mode the global clock
+  // used to run to the LONGEST arena's duration, so a focused short path
+  // (e.g. 10s) froze on screen while the clock ticked on to the longest
+  // arena (e.g. 40s+). When focused, the stop condition must be the
+  // FOCUSED arena's own duration, not the global max. Non-focus
+  // (all-arenas) behavior is unchanged: we still take the max over every
+  // arena. Exiting focus mode (focusMode=false) restores that full-
+  // duration playback automatically since this scan reverts to all arenas.
   for (int i = 0; i < maxArenas; i++) {
+    if (focusMode && i != focusArenaIndex) {
+      continue;  // focus mode: only the focused arena drives the clock
+    }
     if (!evalResults.pathList[i].empty()) {
       // Path is pure geometry now — derive duration from AircraftState timestamps
       // Use last aircraft state time as proxy for path duration
@@ -4019,7 +4275,13 @@ void Renderer::updatePlaybackAnimation() {
     updateControlsOverlay(currentSimTime);
   }
   
-  // Check if animation is complete
+  // Check if animation is complete. 037 P4: primaryDuration is now the
+  // focused arena's duration when focusMode is on (see scan above), so in
+  // focus mode this stops when the focused path ends rather than at the
+  // global max. Behavior choice = HOLD-AT-END, not loop: we clamp
+  // currentSimTime and clear isPlaybackActive, leaving the last focused
+  // frame frozen on screen. This matches the existing all-arenas
+  // semantics.
   if (primaryDuration > 0.0 && currentSimTime >= primaryDuration) {
     currentSimTime = primaryDuration;
     isPlaybackActive = false;
@@ -4028,8 +4290,17 @@ void Renderer::updatePlaybackAnimation() {
     if (stopwatchVisible) {
       updateStopwatch(currentSimTime);
     }
-    std::cout << "Playback animation completed (duration: " << primaryDuration << "s)" << std::endl;
+    std::cout << "Playback animation completed (duration: " << primaryDuration << "s"
+              << (focusMode ? ", focus mode: focused-arena clock" : "") << ")" << std::endl;
   }
+
+  // 037 P4 instrumentation: start of per-frame STEP/UPDATE work. Times
+  // the arena clear + per-arena reveal/geometry build + pipeline Update()
+  // calls, i.e. the CPU cost we want to compare focused-vs-all-arenas.
+  // The trailing renderWindow->Render() is excluded (counted separately
+  // as a render pass). instrPointsPushed below is the render-traffic proxy.
+  auto instrStepStart = std::chrono::steady_clock::now();
+  long instrFramePoints = 0;  // points pushed this frame (render-traffic proxy)
 
   // Clear existing data
   this->paths->RemoveAllInputs();
@@ -4581,9 +4852,66 @@ void Renderer::updatePlaybackAnimation() {
     }
   }
 
+  // 037 P4 render-traffic proxy: sum the points actually present in each
+  // pipeline's output after Update(). This is the geometry pushed toward
+  // the GPU/X server this frame and tracks the per-frame render cost that
+  // focus mode is meant to shrink. It is NOT the X11 byte count (see the
+  // external-tool note below).
+  auto addPts = [&instrFramePoints](vtkPolyData* pd) {
+    if (pd) instrFramePoints += static_cast<long>(pd->GetNumberOfPoints());
+  };
+  addPts(this->paths->GetOutput());
+  addPts(this->actuals->GetOutput());
+  addPts(this->targetActuals->GetOutput());
+  addPts(this->targetBeaconsLeft->GetOutput());
+  addPts(this->targetBeaconsRight->GetOutput());
+  addPts(this->chaseCameraFov->GetOutput());
+  addPts(this->segmentGaps->GetOutput());
+  if (!blackboxAircraftStates.empty()) {
+    addPts(this->blackboxTapes->GetOutput());
+    addPts(this->blackboxHighlightTapes->GetOutput());
+  }
+
+  // 037 P4: end of STEP/UPDATE timing window (excludes the Render() pass).
+  auto instrStepEnd = std::chrono::steady_clock::now();
+  double instrStepMs = static_cast<double>(
+      std::chrono::duration_cast<std::chrono::microseconds>(instrStepEnd - instrStepStart).count()) / 1000.0;
+  instrStepMsSum += instrStepMs;
+  if (instrStepMs > instrStepMsMax) instrStepMsMax = instrStepMs;
+  instrPointsPushed += instrFramePoints;
+
   // Render the scene
   renderWindow->Render();
-  
+  instrRenderPasses += 1;  // 037 P4: one render pass this frame
+
+  // 037 P4 periodic summary. Prints per-frame STEP/UPDATE CPU (avg + max
+  // over the window) and the render-traffic proxy (render passes + avg
+  // points pushed). Tagged with the current mode so focused-vs-all-arenas
+  // runs can be compared directly from stdout. For TRUE X11 bytes-on-wire
+  // (which cannot be measured in-process), wrap the renderer with xtrace:
+  //   xtrace -n -o /tmp/renderer.xtrace -- ./renderer <args>
+  // then summarize request bytes from the trace; alternatively run
+  // x11perf for a baseline, or LD_PRELOAD an XSetAfterFunction /
+  // _X11TransBytesWritten interposer to tally bytes per flush. The
+  // in-process counters here are a proxy, not the wire byte count.
+  instrFrameCount += 1;
+  if (instrFrameCount >= kInstrSummaryEveryFrames) {
+    double avgMs = instrStepMsSum / static_cast<double>(instrFrameCount);
+    double avgPts = static_cast<double>(instrPointsPushed) / static_cast<double>(instrFrameCount);
+    std::cout << "[037 P4 instr] mode=" << (focusMode ? "focus" : "all")
+              << " arenas=" << renderArenas
+              << " frames=" << instrFrameCount
+              << " step_ms avg=" << avgMs << " max=" << instrStepMsMax
+              << " render_passes=" << instrRenderPasses
+              << " pts/frame avg=" << avgPts
+              << std::endl;
+    instrFrameCount = 0;
+    instrStepMsSum = 0.0;
+    instrStepMsMax = 0.0;
+    instrRenderPasses = 0;
+    instrPointsPushed = 0;
+  }
+
   // Continue animation if still active (use one-shot timers like original)
   if (isPlaybackActive) {
     animationTimerId = renderWindowInteractor->CreateOneShotTimer(33); // 33ms = ~30fps
@@ -4638,8 +4966,21 @@ void Renderer::renderFullScene() {
   // Render with full progress (1.0) using existing data
   int maxArenas = evalResults.pathList.size();
   for (int i = 0; i < maxArenas; i++) {
+    // 037 P4 -- focus-mode arena gate (parallels updatePlaybackAnimation's
+    // line ~4100 skip). When focused on a single arena, rebuild geometry
+    // only for that arena. renderFullScene runs on pause/stop and refresh;
+    // at 40/50Hz control rates the per-arena tape rebuild over all arenas
+    // is too slow to use for inspecting a focused run. Non-focus (all-
+    // arenas) mode is unchanged. Other arenas keep their last-built
+    // static tape (AppendPolyData retains prior inputs cleared only at the
+    // top of this function -- but in focus mode they were never repopulated
+    // here, so they show empty until focus is exited; matches the
+    // animation path's behavior).
+    if (focusMode && i != focusArenaIndex) {
+      continue;
+    }
     vec3 offset = renderingOffset(i);
-    
+
     std::vector<vec3> p = pathToVector(evalResults.pathList[i]);
     std::vector<vec3> a = stateToVector(evalResults.aircraftStateList[i]);
 

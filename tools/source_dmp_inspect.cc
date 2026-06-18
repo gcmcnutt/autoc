@@ -22,9 +22,11 @@
 #include <getopt.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <iostream>
 #include <iomanip>
+#include <map>
 #include <numeric>
 #include <string>
 
@@ -143,6 +145,44 @@ int main(int argc, char* argv[]) {
             printTick("first", s0.samples.front());
             printTick("middle", s0.samples[s0.samples.size() / 2]);
             printTick("last", s0.samples.back());
+            std::cout << "  raw simTimeMsec[0..15]:";
+            for (size_t i = 0; i < std::min(s0.samples.size(), size_t{16}); ++i)
+                std::cout << " " << std::setprecision(1) << s0.samples[i].simTimeMsec;
+            std::cout << "\n";
+        }
+
+        // 037 M2 source-spacing diagnostic. The tracker fail-loud
+        // (crrcsim_tracker_helper.cpp / tracker_stepper.cc) compares ONLY
+        // samples[1]-samples[0] per scenario against SIM_TIME_STEP_MSEC. Report
+        // the real pattern: per-tick gap histogram across ALL ticks of ALL
+        // scenarios, plus the first-gap-per-scenario the check actually uses —
+        // so a relax decision is data-driven (systematic offset vs jitter).
+        {
+            std::map<long, size_t> gapHist;       // lround(gap ms) -> count (all gaps)
+            std::map<long, size_t> firstGapHist;  // lround(first gap) -> #scenarios
+            double gMin = 1e18, gMax = -1e18, gSum = 0.0; size_t gN = 0;
+            for (const auto& traj : trajectories) {
+                const auto& s = traj.samples;
+                if (s.size() >= 2)
+                    firstGapHist[std::lround(s[1].simTimeMsec - s[0].simTimeMsec)]++;
+                for (size_t i = 1; i < s.size(); ++i) {
+                    double g = s[i].simTimeMsec - s[i - 1].simTimeMsec;
+                    gapHist[std::lround(g)]++;
+                    gMin = std::min(gMin, g); gMax = std::max(gMax, g);
+                    gSum += g; ++gN;
+                }
+            }
+            std::cout << "\nTick-gap analysis (" << gN << " gaps across "
+                      << trajectories.size() << " scenarios):\n"
+                      << "  raw gap ms: min=" << std::setprecision(3) << gMin
+                      << " mean=" << (gN ? gSum / gN : 0.0)
+                      << " max=" << gMax << "\n"
+                      << "  rounded-gap histogram (ms : count):\n";
+            for (const auto& kv : gapHist)
+                std::cout << "    " << std::setw(4) << kv.first << " : " << kv.second << "\n";
+            std::cout << "  FIRST-gap per scenario (what the fail-loud checks) (ms : #scen):\n";
+            for (const auto& kv : firstGapHist)
+                std::cout << "    " << std::setw(4) << kv.first << " : " << kv.second << "\n";
         }
     } catch (const std::exception& e) {
         std::cerr << "ERROR: " << e.what() << "\n";

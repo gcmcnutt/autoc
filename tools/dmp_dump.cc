@@ -67,10 +67,11 @@ void printUsage(const char* prog) {
     "CSV columns (pathgen): scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,\n"
     "  pitchCmd,rollCmd,thrCmd,out_pt,out_rl,out_th,dhome,dist,along,stpPt,mult,rampSc\n"
     "CSV columns (tracker): ...,out_th,dhome,rampSc,hull,\n"
-    "  tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC  (path-relative\n"
+    "  tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt  (path-relative\n"
     "  derived columns are pathgen-only; hull = inside_crash_hull; tg*=target\n"
     "  pos, tr*=trail-rabbit pos, spn0/dspn=beacon-pair span + 1-tick diff,\n"
-    "  blC0/brC0=left/right beacon cep, tltS/tltC=target tilt sin/cos; the\n"
+    "  blC0/brC0=left/right beacon cep, tltS/tltC=target tilt sin/cos, stpPt=\n"
+    "  in-cone step score vs trail-rabbit (recomputed, tracking metric); the\n"
     "  span/tilt sensors are CEP-gated with the default sentinel threshold).\n";
 }
 
@@ -372,11 +373,21 @@ int main(int argc, char** argv) {
       std::cout << "    seeds: {wind: " << sub.wind << ", rabbit: " << sub.rabbit
                 << ", entry: " << sub.entry << ", craft: " << sub.craft
                 << ", camera: " << sub.camera << "}\n";
+      // Full (un-ramped) per-scenario wind-direction offset draw, degrees.
+      // Applied wind = base_dir + offset × variationScale(gen) (run-level ramp_scale).
+      std::cout << "    wind_dir_offset_deg: "
+                << (results.scenarioList[i].windDirectionOffset * 180.0 / M_PI) << "\n";
       std::cout << "    crash_reason: " << crashReasonToString(s.crashReason) << "\n";
       std::cout << "    score: " << s.score << "\n";
       std::cout << "    energy_score: " << s.energy_score << "\n";
       std::cout << "    stability_score: " << s.stability_score << "\n";
       std::cout << "    max_streak: " << s.maxStreak << "\n";
+      // 037 T005 — streak_steps + max_multiplier complete the per-scenario
+      // reconstructability set: with these, the dmp carries everything the
+      // training log's per-scenario [N] OK/CRASH lines carried, so those
+      // lines can be dropped from the log.
+      std::cout << "    streak_steps: " << s.totalStreakSteps << "\n";
+      std::cout << "    max_multiplier: " << s.maxMultiplier << "\n";
       std::cout << "    steps: " << s.steps_completed << "/" << s.steps_total << "\n";
     }
   }
@@ -388,8 +399,8 @@ int main(int argc, char** argv) {
 
   // Header (mode-specific: path-relative derived columns are pathgen-only).
   std::cout << "scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,"
-               "pitchCmd,rollCmd,thrCmd,out_pt,out_rl,out_th,dhome";
-  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC\n";
+               "pitchCmd,rollCmd,thrCmd,out_pt,out_rl,out_th,dhome,wN,wE,wD";
+  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt\n";
   else           std::cout << ",dist,along,stpPt,mult,rampSc\n";
 
   const AutocConfig& cfg = ConfigManager::getConfig();
@@ -416,18 +427,19 @@ int main(int argc, char** argv) {
       const gp_vec3 pos = st.getPosition();
       const gp_quat q = st.getOrientation();
       const gp_vec3 vel = st.getVelocity();
+      const gp_vec3 wind = st.getWindVelocity();  // NED wind the craft flew through
       const float* out = st.getNNOutputs();
       const gp_scalar dhome = pos.norm();  // home = origin
 
       char buf[512];
       int n = snprintf(buf, sizeof(buf),
         "%zu,%zu,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,"
-        "%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.4f",
+        "%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f",
         si, ti, pos.x(), pos.y(), pos.z(),
         q.w(), q.x(), q.y(), q.z(),
         vel.x(), vel.y(), vel.z(),
         st.getPitchCommand(), st.getRollCommand(), st.getThrottleCommand(),
-        out[0], out[1], out[2], dhome);
+        out[0], out[1], out[2], dhome, wind.x(), wind.y(), wind.z());
       std::cout.write(buf, n);
 
       if (sceneTracker) {
@@ -437,9 +449,25 @@ int main(int argc, char** argv) {
 
         // Target + trail-rabbit pose (0s if the trajectory list is missing/empty).
         gp_vec3 tg = gp_vec3::Zero(), tr = gp_vec3::Zero();
+        double stp = 0.0;  // in-cone step score (tracking metric)
         if (!targets.empty()) {
           tg = targets.at(tgi).position;
           tr = targets.at(tgi).trail_rabbit_position;
+          // Per-tick in-cone step score, recomputed from recorded target
+          // geometry EXACTLY as fitness_decomposition.cc's tracker branch:
+          // rabbit = trail-rabbit, tangent = target-velocity unit (prevTangent
+          // fallback when degenerate). This is the tracker counterpart to the
+          // pathgen `stpPt` column — derived, not recorded, like pathgen — so
+          // dynamics_progress et al. get a real per-tick tracking flag on M2.
+          const gp_vec3 tvel = targets.at(tgi).velocity;
+          const double vn = tvel.norm();
+          gp_vec3 tangent;
+          if (vn > 0.01) { tangent = tvel / vn; prevTangent = tangent; }
+          else           { tangent = prevTangent; }
+          const gp_vec3 offset = pos - tr;
+          const double along = offset.dot(tangent);
+          const double lateralDist = (offset - along * tangent).norm();
+          stp = fc.decomposeStepScore(along, lateralDist).score;
         }
 
         // Beacon-derived sensors (spn0/dspn/tltS/tltC) — CEP-gated to match the
@@ -473,10 +501,10 @@ int main(int argc, char** argv) {
 
         char tb[320];
         int tn = snprintf(tb, sizeof(tb),
-          ",%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+          ",%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
           rampSc, hull,
           tg.x(), tg.y(), tg.z(), tr.x(), tr.y(), tr.z(),
-          spn0, dspn, blC0, brC0, tltS, tltC);
+          spn0, dspn, blC0, brC0, tltS, tltC, stp);
         std::cout.write(tb, tn);
       } else if (path && !path->empty()) {
         const int pIdx = std::clamp(st.getThisPathIndex(), 0,

@@ -166,15 +166,20 @@ ScenarioMetadata makeMetaWithDraws() {
 
 }  // namespace
 
-TEST(CraftVariation, ScaleZeroCollapsesCraftToNominal) {
-    ScenarioMetadata m = makeMetaWithDraws();
+TEST(CraftVariation, ScaleZeroLeavesCraftAtFullDrawnMagnitude) {
+    // 88a52ea (operator 2026-06-09): env-only variation ramp — craft fields
+    // are NOT ramped and pass through applyVariationScale untouched at any
+    // scale (scenario_meta_apply.h). Pre-88a52ea this test asserted
+    // collapse-to-nominal at scale 0; stale assertion updated with 037.
+    ScenarioMetadata original = makeMetaWithDraws();
+    ScenarioMetadata m = original;
     applyVariationScale(m, static_cast<gp_scalar>(0.0));
-    EXPECT_FLOAT_EQ(m.craftCGDelta, static_cast<gp_scalar>(0.0));
-    EXPECT_FLOAT_EQ(m.craftDragDelta, static_cast<gp_scalar>(0.0));
-    EXPECT_FLOAT_EQ(m.craftTrimDelta, static_cast<gp_scalar>(0.0));
-    EXPECT_FLOAT_EQ(m.craftThrustScale, static_cast<gp_scalar>(1.0));
-    EXPECT_FLOAT_EQ(m.craftPitchEffDelta, static_cast<gp_scalar>(0.0));
-    EXPECT_FLOAT_EQ(m.craftRollEffDelta, static_cast<gp_scalar>(0.0));
+    EXPECT_FLOAT_EQ(m.craftCGDelta, original.craftCGDelta);
+    EXPECT_FLOAT_EQ(m.craftDragDelta, original.craftDragDelta);
+    EXPECT_FLOAT_EQ(m.craftTrimDelta, original.craftTrimDelta);
+    EXPECT_FLOAT_EQ(m.craftThrustScale, original.craftThrustScale);
+    EXPECT_FLOAT_EQ(m.craftPitchEffDelta, original.craftPitchEffDelta);
+    EXPECT_FLOAT_EQ(m.craftRollEffDelta, original.craftRollEffDelta);
 }
 
 TEST(CraftVariation, ScaleOneLeavesDrawsUnchanged) {
@@ -189,22 +194,20 @@ TEST(CraftVariation, ScaleOneLeavesDrawsUnchanged) {
     EXPECT_FLOAT_EQ(m.craftRollEffDelta, original.craftRollEffDelta);
 }
 
-TEST(CraftVariation, ScaleHalfHalvesAdditivesAndInterpolatesThrust) {
+TEST(CraftVariation, ScaleHalfLeavesCraftUntouched) {
+    // 88a52ea env-only ramp: partial scale does NOT halve craft additives
+    // nor interpolate thrust — craft fields are scale-invariant (see
+    // ScaleZeroLeavesCraftAtFullDrawnMagnitude above).
     ScenarioMetadata original = makeMetaWithDraws();
     ScenarioMetadata m = original;
-    const gp_scalar kHalf = static_cast<gp_scalar>(0.5);
-    applyVariationScale(m, kHalf);
+    applyVariationScale(m, static_cast<gp_scalar>(0.5));
 
-    EXPECT_NEAR(m.craftCGDelta, kHalf * original.craftCGDelta, kFloatEps);
-    EXPECT_NEAR(m.craftDragDelta, kHalf * original.craftDragDelta, kFloatEps);
-    EXPECT_NEAR(m.craftTrimDelta, kHalf * original.craftTrimDelta, kFloatEps);
-    EXPECT_NEAR(m.craftPitchEffDelta, kHalf * original.craftPitchEffDelta, kFloatEps);
-    EXPECT_NEAR(m.craftRollEffDelta, kHalf * original.craftRollEffDelta, kFloatEps);
-
-    // craftThrustScale: 1.0 + 0.5 * (1.10 - 1.0) = 1.05
-    const gp_scalar expected_thrust = static_cast<gp_scalar>(1.0)
-        + kHalf * (original.craftThrustScale - static_cast<gp_scalar>(1.0));
-    EXPECT_NEAR(m.craftThrustScale, expected_thrust, kFloatEps);
+    EXPECT_FLOAT_EQ(m.craftCGDelta, original.craftCGDelta);
+    EXPECT_FLOAT_EQ(m.craftDragDelta, original.craftDragDelta);
+    EXPECT_FLOAT_EQ(m.craftTrimDelta, original.craftTrimDelta);
+    EXPECT_FLOAT_EQ(m.craftPitchEffDelta, original.craftPitchEffDelta);
+    EXPECT_FLOAT_EQ(m.craftRollEffDelta, original.craftRollEffDelta);
+    EXPECT_FLOAT_EQ(m.craftThrustScale, original.craftThrustScale);
 }
 
 // ============================================================================
