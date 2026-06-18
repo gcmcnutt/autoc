@@ -71,6 +71,16 @@ hidden-1 (32-wide) is feedforward.
 032. Cost: bigger search space (basin-lottery/convergence) + xiao forward-pass time — pay only once
 the 16-dim limit bites. Do NOT widen blindly ahead of T001.
 
+> **Direct weight evidence DOWN-WEIGHTS 32r (2026-06-18, `src/analytics/rnn_capacity.py`)**: SVD of the
+> elite W_hh (16×16) on both t11 (g604) and t12 (g493) shows **effective rank ~10.7/16** (90% of the
+> dynamics in **8** modes), i.e. **~5–6 recurrent dims sit idle — the layer is NOT saturated**. The
+> rising whh_xh_ratio is *reliance*, not capacity exhaustion (a saturated layer would show eff-rank≈16,
+> flat spectrum). The penalty barely changed the structure (t11→t12 eff-rank 10.69→10.76, ρ 5.33→5.46,
+> ‖W_hh‖ 10.1→10.8) — it leans harder on the **same** modes, doesn't need new ones. So a bigger
+> recurrent layer would just add idle modes; the bottleneck (if any) is upstream (optical input /
+> policy), not recurrent width. **rnn_capacity is now part of the M2 report mix** (generate_pngs.sh,
+> M2-only) to watch eff-rank/spectral-radius over time — widen only if eff-rank climbs toward 16.
+
 ---
 
 ## (Deferred to /speckit.tasks) the rest of 038

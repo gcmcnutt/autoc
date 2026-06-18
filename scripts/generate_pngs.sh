@@ -17,7 +17,8 @@
 # name (basename minus .log = the plot --label).
 #
 # Reports: m1 = evolution_progress, per_axis_aggressiveness, per_axis_time_series,
-#          dynamics_progress (4).  m2 = those + gen_diag + intercept_analysis (6).
+#          dynamics_progress (4).  m2 = those + gen_diag + intercept_analysis +
+#          rnn_capacity (needs nnextractor+nn2cpp) + tactics (needs a --compare run) (8).
 #
 # INCREMENTAL run-summary: the per-gen aggregate is the slow part (one S3 dmp
 # fetch per gen). We cache it per run-id under $CACHE_DIR and use `dmp-dump
@@ -143,11 +144,38 @@ run plot_per_axis_time_series.py "$SUMMARY" --label "$NAME" --total-gens "$TOTAL
 run dynamics_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
     "${DYN_CACHE[@]}" --label "$NAME" -o "$OUT/${NAME}_dynamics_progress.png"
 
-# --- m2 (tracker) adds two ---
+# --- m2 (tracker) adds three ---
 if [[ "$MODE" == "m2" ]]; then
   run plot_gen_diag.py --in "$LOG" --label "$NAME" --out "$OUT/${NAME}_gen_diag.png"
   run intercept_analysis.py --csv "$TICK" --label "$NAME" --gen "$GEN" \
       --tick-sec "$TICK_SEC" -o "$OUT/${NAME}_intercept_analysis.png"
+  # rnn_capacity — W_hh utilization of the latest elite (pure weight SVD; extract
+  # genome via nnextractor→nn2cpp, no sim/sensor data). Watches whether the
+  # recurrent layer is saturated (eff-rank≈N → widen) or has spare capacity.
+  if [[ -x "$REPO/build/nnextractor" && -x "$REPO/build/nn2cpp" ]]; then
+    if "$REPO/build/nnextractor" -k "$RUNID" -o "$TMP/elite.dat" -i "$INI" >"$TMP/nnx.err" 2>&1 \
+       && "$REPO/build/nn2cpp" -i "$TMP/elite.dat" -o "$TMP/elite.cpp" >/dev/null 2>"$TMP/nn2.err"; then
+      run rnn_capacity.py --nn "$NAME:$TMP/elite.cpp" -o "$OUT/${NAME}_rnn_capacity.png"
+    else
+      echo "  [nn ] rnn_capacity skipped (nnextractor/nn2cpp failed):" >&2; tail -2 "$TMP/nnx.err" >&2
+    fi
+  else
+    echo "  [nn ] rnn_capacity skipped (build nnextractor + nn2cpp to enable)" >&2
+  fi
+  # tactics A/B — overlay this run vs the FIRST --compare run on the policy/encounter
+  # axes (intercept_compare). Needs the compare run's per-tick CSV at the matched gen,
+  # so we derive its run-id from the compare log (same form as the evolution overlay).
+  if [[ ${#COMPARE[@]} -ge 2 ]]; then
+    CSPEC="${COMPARE[1]}"; CNAME="${CSPEC%%:*}"; CLOG="${CSPEC#*:}"
+    CRUNID="$(grep -E 'Run ID:' "$CLOG" 2>/dev/null | tail -1 | sed -E 's/.*Run ID:[[:space:]]*//')"
+    if [[ -n "$CRUNID" ]] \
+       && "$DMP" "s3://$BUCKET/$CRUNID/" --csv-only --gen "$GEN" -i "$INI" >"$TMP/cmp_tick.csv" 2>"$TMP/cmp.err"; then
+      run intercept_compare.py --a "$CNAME:$TMP/cmp_tick.csv" --b "$NAME:$TICK" --gen "$GEN" \
+          -o "$OUT/${NAME}_tactics.png"
+    else
+      echo "  [plot] tactics skipped (compare run CSV @gen $GEN unavailable):" >&2; tail -1 "$TMP/cmp.err" 2>/dev/null >&2
+    fi
+  fi
 fi
 
 echo "generate_pngs: done — wrote to $OUT:"
