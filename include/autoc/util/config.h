@@ -128,6 +128,13 @@ struct AutocConfig {
     //                        sigma; center 0.150 s, clamped [0.050, 0.300]
     // (servo first-order tau removed 2026-06-12 — v2 has no lag term.)
     int enableCraftVariations = 0;
+    // 038 T001 — member-level hull-crash penalty (M2 safety experiment). When on,
+    // a member's per-scenario tracking `score` is multiplied by factor^(#hull-strike
+    // scenarios) before fitness/selection, so a crasher's tracking advantage
+    // collapses (score is negative-lower-better; ×<1 → toward 0 = worse). Penalizes
+    // the score axis only; energy untouched. Default off ⇒ bit-identical to pre-038.
+    int enableHullCrashPenalty = 0;
+    double hullCrashPenaltyFactor = 0.5;   // per-strike multiplier (0.5 = halve per hull strike)
     double craftCGSigma = 0.02;        // ~±7% MAC at hb1_streamer CG_arm=0.28
     double craftDragSigma = 0.05;      // ±5% CD_prof
     double craftTrimSigma = 0.02;      // ±1.15° pitch trim
@@ -286,6 +293,8 @@ struct AutocConfig {
     X(double,         entryPositionRadiusSigma,  "EntryPositionRadiusSigma") \
     X(double,         entryPositionAltSigma,     "EntryPositionAltSigma") \
     X(int,            enableCraftVariations,     "EnableCraftVariations") \
+    X(int,            enableHullCrashPenalty,    "EnableHullCrashPenalty") \
+    X(double,         hullCrashPenaltyFactor,    "HullCrashPenaltyFactor") \
     X(double,         craftCGSigma,              "CraftCGSigma") \
     X(double,         craftDragSigma,            "CraftDragSigma") \
     X(double,         craftTrimSigma,            "CraftTrimSigma") \

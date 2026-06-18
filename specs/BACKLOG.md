@@ -140,6 +140,12 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
   feed the X-macro auto-parse/auto-print (`AUTOC_CONFIG_FIELDS`) and preserve determinism + the
   fail-loud-on-missing-required-key behavior (e.g. `ControlIntervalMsec`).
 - **Care**: extend the existing single `-i` flag to a repeatable `-i` (order = precedence).
+- **Also want `[section]` grouping (2026-06-17)**: the flat key list has no structure, so related keys
+  drift apart and flags vs parameters blur — e.g. 038's `EnableHullCrashPenalty` (a flag, belongs with
+  the other `Enable*`) vs `HullCrashPenaltyFactor` (a parameter, belongs with the fitness/`Fit*` block)
+  had to be hand-placed into two different spots in all six files. A standard `[section]`-based reader
+  (toml++ / cpptoml) would let the schema express `[variations]` flags vs `[fitness]` params so
+  placement is structural, not manual. Pairs naturally with the layered-stack idea above.
 - **Trigger to act**: the next time an ini-wide change has to be hand-applied across all six files.
 - Files: `src/util/config.cc` (load), `include/autoc/util/config.h`, the six `autoc*.ini`.
 

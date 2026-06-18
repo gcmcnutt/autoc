@@ -1233,6 +1233,26 @@ static void runNNEvolution(
 
         // Compute decomposed fitness then aggregate
         genome.scenario_scores = computeScenarioScores(context.evalResults);
+        // 038 T001 — member-level hull-crash penalty (gated, default off). Multiply
+        // this member's per-scenario tracking score by factor^(#hull-strike scenarios)
+        // so a crasher's tracking advantage collapses (score is negative-lower-better;
+        // ×<1 pulls toward 0 = worse). Score axis only (energy untouched). Applied
+        // before aggregateRawFitness so it flows into fitness → elite/bestIdx →
+        // #GenCrash/dmp → lexicase allScores, consistently.
+        {
+          const AutocConfig& c = ConfigManager::getConfig();
+          if (c.enableHullCrashPenalty) {
+            int khull = 0;
+            for (const auto& s : genome.scenario_scores)
+              if (s.crashReason == CrashReason::HullStrike) ++khull;
+            if (khull > 0) {
+              gp_fitness mult = 1.0;
+              for (int j = 0; j < khull; ++j)
+                mult *= static_cast<gp_fitness>(c.hullCrashPenaltyFactor);
+              for (auto& s : genome.scenario_scores) s.score *= mult;
+            }
+          }
+        }
         genome.fitness = aggregateRawFitness(genome.scenario_scores);
       });
     }

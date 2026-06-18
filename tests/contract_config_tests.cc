@@ -210,7 +210,8 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // 037 added ControlIntervalMsec + actuator sigmas (→ 93); servo v2 added
     // ServoModelEnabled → 94; then servo v2 cleanup removed CraftServoTauSigma
     // (dead — no lag term in the PWM-latch+slew model) → 93.
-    EXPECT_EQ(n, 93u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // 038 T001 added EnableHullCrashPenalty + HullCrashPenaltyFactor → 95.
+    EXPECT_EQ(n, 95u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

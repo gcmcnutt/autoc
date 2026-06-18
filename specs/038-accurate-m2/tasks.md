@@ -45,8 +45,31 @@ via `scripts/train.sh` (Constitution IX). t11 keeps running as the penalty-OFF b
 - Read with `scripts/generate_pngs.sh m2` + a per-gen `#GenCrash hullStrike` trend; compare the two
   runs (the evolution `--compare` overlay).
 
-**Status**: PLANNED — awaiting go to implement (worktree build). Rule is the operator-confirmed first
-attempt; expect to iterate.
+**Status**: IN PROGRESS (impl). Rule is the operator-confirmed first attempt; expect to iterate.
+(t11 stopped at gen 604, so `build/autoc` is free — no worktree needed.)
+
+### T001 also doubles as the RNN-memory-capacity probe (whh_xh_ratio reasoning, 2026-06-17)
+
+Observed on t11 (M2): `whh_xh_ratio` (recurrent-path / input-path hidden activation magnitude,
+`compute_synthetic_activation_ratio`) climbed **0.39 → ~0.90 and was still rising at gen 600**, in
+lockstep with pctInStreak — whereas the **M1 source (t10) stayed flat ~0.45–0.49**. Reason: M2's
+target is FOV-limited (27% of ticks fully blind, **43% blind in the final 5 ticks before a hull
+strike** — see intercept F/G visibility panels), so the RNN must **predict through the blind gaps**;
+M1's rabbit is always "visible" so it rides live input. `w_hh_cv` diversified once early (~0.16) then
+stayed flat while the ratio kept rising → the 16-dim memory is being **scaled harder, not
+restructured**. Current recurrent capacity: **hidden-2 16-wide only** (16-dim state, 256 W_hh);
+hidden-1 (32-wide) is feedforward.
+
+**T001 is the cheapest discriminator for "do we need more RNN?":**
+- If the penalty **sustains** whh_xh_ratio AND holds tracking → the 16-dim memory can both track and
+  hedge-when-blind; no more RNN needed yet.
+- If it forces a trade-off (tracking tanks, or the ratio collapses/saturates because 16 units can't
+  predict-and-avoid at once) → that's the **bottleneck signal** → widen next.
+
+**Gated follow-on (only if T001 shows the squeeze): T00x — wider RNN ("32r").** hidden-2 16→32
+(32×32 W_hh) or make hidden-1 recurrent too — the 028-deeper-rnn lever; precedent in 030-postdiag3 /
+032. Cost: bigger search space (basin-lottery/convergence) + xiao forward-pass time — pay only once
+the 16-dim limit bites. Do NOT widen blindly ahead of T001.
 
 ---
 
