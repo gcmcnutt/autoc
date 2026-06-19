@@ -627,6 +627,33 @@ Remaining 015 work:
 - **Schema note (carried from the M2 discussion)**: the trimmed `SourceTickSample` ([source_trajectory.h:37](../include/autoc/eval/source_trajectory.h#L37)) drops `wind_velocity` and the control commands; the full `AircraftState` dmp ([aircraft_state.h:471](../include/autoc/eval/aircraft_state.h#L471)) keeps both. Mode (a) needs the control commands + entry pose, so playback re-eval must read the **full dmp**, not the trimmed transport library.
 - **Verdict on priority**: probably **not worth building for the M2-fidelity question alone** (generalization doesn't need it). But it has independent value as a **cross-version / cross-host determinism regression harness** — which is more relevant now that spec-kit work spans multiple hosts. Trigger: when a determinism question costs real debugging time (e.g., suspected non-determinism in a bake, or validating a build on host B reproduces host A's run), OR when M2-parity validation is actually undertaken.
 
+### [BACKLOG 038] Eval at forced variation scale — `EvalVariationScaleOverride` knob (robustness vs repeatability)
+
+- **Surfaced 2026-06-19** (operator) from the t14 curriculum-ramped crash penalty. Today **all** eval
+  runs (`EvaluateMode=1`) pin the variation scale to the value **recorded in the saved genome**
+  (`gEvalVariationScaleOverride = genome.variation_scale`, [src/autoc.cc](../src/autoc.cc) ~L1043;
+  `computeVariationScale()` returns it). That is deliberate — it reproduces the exact training
+  conditions for the **bitwise determinism gate** (repeatability). The cost: eval can only ever test a
+  controller at the scale it was *saved* at.
+- **The gap**: a run that **exits early** (before the ramp reaches 1.0 — ~gen 761 for the 800-gen
+  tracker config, `VariationRampStep=40`) saves an elite at **partial** scale, so its eval reproduces
+  that partial scale — never full variation. There is no way today to ask *"how does this controller
+  hold up at full variation?"*
+- **The knob**: an ini option (e.g. `EvalVariationScaleOverride = 1.0`, default = -1 → use the recorded
+  scale) that forces the eval scale, decoupling it from the genome's recorded value. Forced-scale eval
+  is **NOT bitwise-reproducible vs training** (different scale → different scenarios) — it's a *robustness
+  probe*, run **instead of** the repeatability gate, not alongside it. Two distinct eval purposes:
+  (1) repeatability (recorded scale, today's behavior, the bitwise gate); (2) robustness at a chosen
+  scale (forced, new).
+- **The fairness nuance (operator 2026-06-19)**: only meaningful for a **mature** elite. Running a
+  **gen-7** elite (trained at scale≈0) at full variation is unfair — wildly OOD for a controller that
+  never saw variation. A **gen-450** elite (trained under substantial variation) at full is a reasonable
+  robustness test. Hence a *knob* you opt into per-run, not a default — the operator judges whether the
+  elite is mature enough to warrant the forced-full eval.
+- **Scope**: small — gate the `gEvalVariationScaleOverride` assignment behind the config value (use the
+  override if ≥0, else fall back to the recorded `genome.variation_scale`). Fits 038's reporting/eval
+  cluster. **Hold code** (t14 is running; clean separate feature).
+
 ### [NEXT — post more-rnn3 completion] Genome ablation tool — generic weight/input editor + eval harness
 - **Trigger**: when more-rnn3 finishes 800-gen run. Run alongside the usual subjective robustness eval tests (the existing post-run set) to add a quantitative ablation dimension.
 - **Immediate use case**: answer the question "is the R in RNN actually helping, or is more-rnn3's outperformance just from +256 W_hh weights of capacity?" Take the more-rnn3 winning genome, **zero W_hh weights**, run eval pipeline, compare fitness.

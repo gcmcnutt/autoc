@@ -10,6 +10,7 @@ From skeleton/skeleton.cc
 #include <stdlib.h>
 #include <cstdlib>
 #include <math.h>
+#include <cmath>
 #include <new>
 #include <fstream>
 #include <algorithm>
@@ -175,6 +176,41 @@ static float computeVariationScale() {
 
     int stepIndex = (gCurrentGeneration - 1) / gVariationRampStep;  // 1-based gen
     return static_cast<float>(std::min(stepIndex, numSteps - 1)) / static_cast<float>(numSteps - 1);
+}
+
+// 038 T001 — member-level crash penalty, applied IN PLACE to a genome's per-scenario
+// tracking scores. MUST be called on EVERY path that turns scenario scores into a genome
+// fitness — population eval, elite determinism re-eval, AND eval-mode replay — so they all
+// compute identical fitness. (t14 bug: the penalty was applied in the population eval but
+// NOT the elite re-eval, so once it activated at the first ramp step the stored fitness
+// (penalized) and the re-eval fitness (un-penalized) diverged every gen → spurious
+// NN_ELITE_DIVERGED; the eval-mode gate would break the same way.) Score axis only (energy
+// untouched). Gated; curriculum-ramped via computeVariationScale() [0..1] (eval reuses the
+// stored variation_scale → reproducible); smooth; never clamps to 0.
+//   - HullStrike (RARE):  factor^(K_hull·scale)  (relaxed 0.5→0.75; decisive but not
+//     annihilating; fractional exponent ramps the bite in).
+//   - Eval/OOB (COMMON):  exp(−weight·scale·K_oob/N)  (smooth, never 0, monotonic). weight=0 → no-op.
+// See specs/038-accurate-m2/t12-retro.md.
+static void applyCrashPenalty(std::vector<ScenarioScore>& scores) {
+  const AutocConfig& c = ConfigManager::getConfig();
+  if (!c.enableHullCrashPenalty || scores.empty()) return;
+  int khull = 0, koob = 0;
+  for (const auto& s : scores) {
+    if (s.crashReason == CrashReason::HullStrike) ++khull;
+    else if (s.crashReason == CrashReason::Eval)   ++koob;
+  }
+  const double scale = static_cast<double>(computeVariationScale());  // [0..1] curriculum ramp
+  double mult = 1.0;
+  if (khull > 0)
+    mult *= std::pow(c.hullCrashPenaltyFactor, static_cast<double>(khull) * scale);
+  if (c.oobCrashPenaltyWeight > 0.0 && koob > 0) {
+    const double frac = static_cast<double>(koob) / static_cast<double>(scores.size());
+    mult *= std::exp(-c.oobCrashPenaltyWeight * scale * frac);
+  }
+  if (mult != 1.0) {
+    const gp_fitness m = static_cast<gp_fitness>(mult);
+    for (auto& s : scores) s.score *= m;
+  }
 }
 
 // ============================================================================
@@ -1060,6 +1096,10 @@ static void runNNEvaluation(
 
   // Compute decomposed fitness then aggregate
   auto evalScenarioScores = computeScenarioScores(evalResults);
+  // 038 T001 — same crash penalty as training (eval reuses the stored variation_scale via
+  // computeVariationScale's override), so eval-mode fitness reproduces the penalized training
+  // fitness for the bitwise gate.
+  applyCrashPenalty(evalScenarioScores);
   double storedFitness = genome.fitness;  // Save before overwrite (Bug 2 fix)
   double fitness = aggregateRawFitness(evalScenarioScores);
 
@@ -1233,42 +1273,9 @@ static void runNNEvolution(
 
         // Compute decomposed fitness then aggregate
         genome.scenario_scores = computeScenarioScores(context.evalResults);
-        // 038 T001 — member-level crash penalty (gated, default off). Multiply this
-        // member's per-scenario tracking score by a member-wide factor so a crasher's
-        // tracking advantage collapses (score is negative-lower-better; ×<1 pulls
-        // toward 0 = worse). Score axis only (energy untouched). Applied before
-        // aggregateRawFitness so it flows into fitness → elite/bestIdx → #GenCrash/dmp
-        // → lexicase allScores, consistently. Two crash classes, two SHAPES (t13, 038
-        // T001 iteration — see specs/038-accurate-m2/t12-retro.md):
-        //   - HullStrike (RARE): geometric per-strike factor^K_hull — one strike is
-        //     member-deciding. Relaxed 0.5→0.75 to stop annihilating crashers (which
-        //     sparsified the selection-landscape top → ragged plateau-hopping).
-        //   - Eval/OOB (COMMON): fraction-based rate term (1 − weight·K_oob/N) — smooth
-        //     and bounded; a geometric x^K_oob on a common, ramp-fluctuating count would
-        //     re-inject the selection whipsaw. weight=0 → no-op (M1 / t12 behavior).
-        {
-          const AutocConfig& c = ConfigManager::getConfig();
-          if (c.enableHullCrashPenalty) {
-            int khull = 0, koob = 0;
-            for (const auto& s : genome.scenario_scores) {
-              if (s.crashReason == CrashReason::HullStrike) ++khull;
-              else if (s.crashReason == CrashReason::Eval)   ++koob;
-            }
-            gp_fitness mult = 1.0;
-            for (int j = 0; j < khull; ++j)
-              mult *= static_cast<gp_fitness>(c.hullCrashPenaltyFactor);
-            if (c.oobCrashPenaltyWeight > 0.0 && !genome.scenario_scores.empty()) {
-              gp_fitness frac = static_cast<gp_fitness>(koob) /
-                                static_cast<gp_fitness>(genome.scenario_scores.size());
-              gp_fitness oobMult = static_cast<gp_fitness>(1.0) -
-                                   static_cast<gp_fitness>(c.oobCrashPenaltyWeight) * frac;
-              if (oobMult < 0.0) oobMult = 0.0;   // guard weight·frac > 1
-              mult *= oobMult;
-            }
-            if (mult != static_cast<gp_fitness>(1.0))
-              for (auto& s : genome.scenario_scores) s.score *= mult;
-          }
-        }
+        // 038 T001 — member-level crash penalty (see applyCrashPenalty + t12-retro.md).
+        // MUST also be applied identically in the elite re-eval + eval-mode paths.
+        applyCrashPenalty(genome.scenario_scores);
         genome.fitness = aggregateRawFitness(genome.scenario_scores);
       });
     }
@@ -1317,6 +1324,10 @@ static void runNNEvolution(
       // 035 FR-P05 — per-step data.dat retired; the dmp is the training trace.
       // Determinism check: re-eval fitness must match stored fitness exactly (T106)
       auto reevalScores = computeScenarioScores(bestResults);
+      // 038 T001 — apply the SAME crash penalty as the population eval, else a penalized
+      // elite's stored (penalized) fitness diverges from this (un-penalized) re-eval every
+      // gen once the ramp activates the penalty (the t14 NN_ELITE_DIVERGED bug).
+      applyCrashPenalty(reevalScores);
       double reevalFitness = aggregateRawFitness(reevalScores);
       double storedFitness = pop.individuals[bestIdx].fitness;
       if (!bitwiseEqual(reevalFitness, storedFitness)) {

@@ -134,8 +134,8 @@ struct AutocConfig {
     // collapses (score is negative-lower-better; ×<1 → toward 0 = worse). Penalizes
     // the score axis only; energy untouched. Default off ⇒ bit-identical to pre-038.
     int enableHullCrashPenalty = 0;
-    double hullCrashPenaltyFactor = 0.5;   // rare hull strikes: geometric factor^K_hull (t13 tracker = 0.75)
-    double oobCrashPenaltyWeight = 0.0;    // common OOB: fraction-based rate penalty mult ×= 1 − weight·(K_oob/N); 0 = off
+    double hullCrashPenaltyFactor = 0.5;   // rare hull strikes: factor^(K_hull·scale), scale=variationScale ramp (t14 tracker = 0.75)
+    double oobCrashPenaltyWeight = 0.0;    // common OOB: smooth decay exp(−weight·scale·K_oob/N), curriculum-ramped, never clamps; 0 = off
     double craftCGSigma = 0.02;        // ~±7% MAC at hb1_streamer CG_arm=0.28
     double craftDragSigma = 0.05;      // ±5% CD_prof
     double craftTrimSigma = 0.02;      // ±1.15° pitch trim

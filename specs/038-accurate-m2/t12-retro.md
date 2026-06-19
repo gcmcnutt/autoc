@@ -80,21 +80,34 @@ is the *success* mode. We should preserve it, not tune it away.
 
 ## 3. Top levers (ranked) — for the next run(s)
 
-### #1 — Restore the selection gradient: soften the hull penalty + give OOB a smooth cost  → **shipped as t13**
+### #1 — Restore the selection gradient: soften the hull penalty + give OOB a smooth cost
 The raggedness is the harsh `0.5^K_hull` *annihilating* crashers and sparsifying the landscape top (§1a) —
 **not** a constant-ε artifact (MAD-ε is already on and didn't smooth it). So #1 **restores a smooth
-gradient**, two changes (both landscape-shaping; MAD-ε stays on, unchanged):
-- **Relax the hull factor `0.5 → 0.75`** — crashers are penalized but not annihilated, so a gradient of
-  slightly-crashy-but-good trackers stays in contention at the top → less plateau-hopping, hull still
-  decisively discouraged.
-- **Add a *fraction-based* OOB cost** (`mult ×= 1 − w·K_oob/N`, `w=2.0`) — OOB stops being free, but as a
-  **smooth, bounded** rate term (not a `0.9^K` geometric, which would re-inject the whipsaw on a common
-  count). Gives clean members a smooth OOB-vs-tracking gradient instead of a flat tie. At t12's OOB rates
-  (frac 0.07–0.14) this is a ~14–28% hit; a clean low-OOB member is barely touched (~3%).
-- *Expected effect*: smoother fitness, less heavy-handedness, hull still ~0, OOB nudged down. **Does not
-  fix brittleness** — but stops the penalty from *manufacturing* selection noise on top of it.
-- **Implemented 2026-06-19** (t13): `src/autoc.cc` two-shape penalty + `OobCrashPenaltyWeight` knob;
-  tracker inis hull=0.75 / w=2.0; M1 inis w=0.0 (M1 bit-identical — penalty gated off). Operator launched.
+gradient**: relax the hull factor `0.5 → 0.75` (penalize, don't annihilate), and give OOB a smooth cost
+instead of being free. MAD-ε stays on, unchanged. **Does not fix brittleness** — but stops the penalty
+from *manufacturing* selection noise on top of it.
+
+**t13 (first attempt, 2026-06-19) — STOPPED at gen 7, instructive failure.** Used a *linear-clamped*
+OOB term `mult ×= max(0, 1 − w·K_oob/N)`, `w=2.0`, **un-ramped**. It **collapsed the early population**:
+the term hits 0 at 50% OOB and clamps everything above it to exactly 0, and in early gens *most* random
+members crash >50% OOB → gen-1 **avg fitness 0** vs t11/t12's ~−3000, worst pinned at 0. The clamp didn't
+trim the dead tail — it **flattened the bulk to an identical zero**, destroying the early selection
+gradient (only the elite + a sliver stayed non-zero). Confirmed the "don't kill the fresh population
+before it learns" failure with hard numbers.
+
+**t14 (the fix, 2026-06-19) — curriculum-ramped, smooth, never-clamped.** Both terms scaled by
+`scale = computeVariationScale()` ∈ [0,1]:
+- **Hull**: `factor^(K_hull · scale)`, `factor=0.75`. Early (scale≈0) → 1 (forgive the rare/noise early
+  strikes); late → full. Matches "hull rare early → skill-correlated late."
+- **OOB**: `exp(−w · scale · K_oob/N)`, `w=2.0`. Early → 1 (forgive the common random fly-out → **no
+  population collapse**); late → full. **Smooth exponential, never reaches 0**, monotonic in the OOB
+  rate → per-scenario ordering (selection signal) preserved at *every* crash rate. Matches "OOB common
+  early → should-be-gone late."
+- A single ramp direction (low→high) serves both because both want **forgive-early / enforce-late**.
+  Eval-mode reuses the stored `variation_scale` → bitwise-reproducible.
+- **Implemented**: `src/autoc.cc` (ramped two-shape penalty, `<cmath>`); tracker inis hull=0.75 / w=2.0;
+  M1 inis w=0.0 (M1 bit-identical — penalty gated off; note the hull term is moot for M1 anyway since
+  `HullStrike` is tracker-only). Build clean, contract tests pass. Ready for the operator to launch as t14.
 
 ### #2 — Reproduce M1's on-course wind (parity) — cheap falsification of the infeasibility tail
 Today the chase flies the t10 source paths in a **different** air mass than M1 recorded them in. On the
