@@ -1,6 +1,15 @@
 <!--
 SYNC IMPACT REPORT
-Version change: 1.6.0 → 1.7.0 (MINOR — added Principle X: Single Ordered Backlog)
+Version change: 1.7.0 → 1.8.0 (MINOR — added Pre-run build gate clause to Principle IX)
+Modified principles:
+  - IX. Detached Training Launch — added a Pre-run build gate precondition: before launching a
+    larger run, confirm a clean build + relevant tests (`cd build && make` for ordinary edits;
+    `rebuild.sh`/`rebuild-perf.sh` when the change touches FP-determinism or the eval-vs-training
+    bitwise gate). Codifies what was first (non-portably) written to agent memory as
+    feedback_prerun_build_gate; operator surfaced 2026-06-19 ("memory is not portable").
+Added sections: none (this cycle)
+
+PRIOR (1.6.0 → 1.7.0, MINOR — added Principle X: Single Ordered Backlog)
 Modified principles: none
 Added sections:
   - X. Single Ordered Backlog — project backlog lives in ONE ordered file (specs/BACKLOG.md);
@@ -264,6 +273,13 @@ the Bash-tool `run_in_background` task, nor a foreground shell job. Harness-trac
 tasks are owned by the agent session and are signalled dead (group SIGTERM/SIGKILL) when that
 session ends, clears, or is superseded.
 
+**Pre-run build gate**: before committing compute to a larger run, confirm a clean build + the
+relevant tests pass — `cd build && make` for ordinary code/config edits (fast incremental), or
+`rebuild.sh` / `rebuild-perf.sh` when the change could affect FP-determinism or the
+eval-vs-training bitwise gate (the reproducibility gate; pick by change scope). A larger run is
+expensive; a trivial build break or failing test found hours in wastes that compute. The pre-run
+gate is cheap insurance.
+
 **Rationale**: runs t4 (died gen 278) and t5 (died gen 152) on 2026-06-06 were killed mid-run
 with **no error in the log, no core, and flat memory** — not a code bug. The log is the
 process's stderr, so an uncaught C++ throw would have printed `terminate called … what(): …`
@@ -311,4 +327,4 @@ speckit work-breakdown for an active feature, nor to outcome/findings docs.
 
 Constitution supersedes all other practices. Amendments require documentation and rationale.
 
-**Version**: 1.7.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-06-16 (Principle X — Single Ordered Backlog: project backlog lives in one ordered file, specs/BACKLOG.md; never scatter into per-item .md files)
+**Version**: 1.8.0 | **Ratified**: 2026-03-16 | **Last Amended**: 2026-06-19 (Principle IX — added Pre-run build gate: confirm a clean build + relevant tests before a larger run; `make` for ordinary edits, `rebuild.sh`/`rebuild-perf.sh` for determinism-affecting changes)

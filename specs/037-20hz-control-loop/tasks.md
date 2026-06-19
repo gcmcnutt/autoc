@@ -241,6 +241,13 @@ controller (US2) is M1, M2, or both.
 
 ## Phase 6: User Story 2 — Phase B embedded ~20 Hz (Priority: P2)
 
+> **MOVED TO 039 (operator 2026-06-19): "push off the Xiao catch-up to 039."** The xiao M1-flight track
+> (US2 embedded ~20 Hz + US3 50 Hz below) is descoped from 037 and re-homed in
+> [specs/039-xiao-20hz-flight/spec.md](../039-xiao-20hz-flight/spec.md). 037's controller half is closed
+> (t10 M1 GO; t11/t12/t13 M2 retrains under 038). The tasks below (T031–T045) are retained for reference
+> but are **owned by 039**, not open 037 work. Rationale: keeps 037 a clean controller-cadence feature
+> and lets the firmware/flight-enablement track carry its own spec + acceptance.
+
 **Goal**: run a fresh ~20 Hz control tick on real hardware (local-IMU fast loop + INAV slow sync),
 validated against INAV, producing the flown controller. **GATED on US1 clearing at ~20 Hz.**
 

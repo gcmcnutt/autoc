@@ -292,6 +292,33 @@ Remaining 015 work:
 - **Sequencing (operator, 2026-06-08): after 037.** 037 is M1-smoothness / loop-rate focused (the faster-loop, smoother-M1 path); hull-crash-cost is the **M2-safety** fitness dimension and naturally follows once 037's faster-loop + local-IMU stack enables the M2 real-flight path it gates. Queue: 035 → 037 → hull-crash (036 islands stays back-pocket; un-backlog only if an M2 bake proves lottery-prone).
 - **Fresh evidence (2026-06-08)**: 035 M2 bake t7 (`autoc-…2026-06-08T15:44:25.312Z`) is logging the escalation live — `hullStrike=6/294` by gen 109 and climbing with tracking skill; its final hull-strike curve will be the up-to-date baseline for this feature's penalty design.
 
+### [STUDY — M2 fitness gradient, 2026-06-19] Negative reward when the chase gets *ahead* of the target
+
+> **→ 038 US5 (2026-06-19)**: pulled into [specs/038-accurate-m2/spec.md](038-accurate-m2/spec.md) as
+> US5 + FR-009 (signed-ahead reward, ini-switched). Kept here as the originating study notes.
+
+- **What**: study whether the tracking fitness should go genuinely **negative** when the chase
+  overshoots *past* the trail point and gets **ahead of** the target — not merely score lower. Today
+  the cone scoring is asymmetric (`FitDistScaleAhead=2.0` vs `FitDistScaleBehind=7.0`): being ahead
+  decays the (positive) reward faster than being behind, but it never crosses zero into a *penalty*.
+  Operator intuition (2026-06-19): "if you get ahead of chase the gradient actually goes negative" —
+  i.e. a region of the encounter where the *right* thing is for the controller to feel an actively
+  repelling gradient (you've blown past the rabbit / it's about to overrun you), not just a smaller
+  carrot.
+- **Why it matters now**: connects to the **t12 displacement finding** (038 T001) — the hull penalty
+  pushed the chase to hold a large standoff and bail OOB rather than risk getting close/ahead. A
+  fitness that explicitly *repels* the ahead-of-target geometry might shape the same safety behavior
+  through the reward gradient instead of (or alongside) the crash multiplier, and might reduce the
+  OOB flyaway by giving the controller a gradient to *follow back* into the trail position rather than
+  a cliff to flee from. Also relevant to the from-behind-overshoot blind spot (spec Edge Cases: a
+  forward camera can't perceive the overrun; a reward-shaping term is the only lever there).
+- **Open questions**: where exactly zero-crossing should sit (at the target? at the trail point + ε?);
+  whether a negative region destabilizes lexicase (negative + positive scenario scores mixing under
+  epsilon); interaction with the ahead/behind scale asymmetry (is this just `FitDistScaleAhead` going
+  steep enough to cross zero, or a separate signed term?); unitless/optical-only consistency (FR-008).
+- **Source**: operator review of t12 (037 hull-penalty run), 2026-06-19. A reward-shaping sibling to
+  the crash-penalty work; evaluate as an alternative/complement to the t13 dual-penalty exchange-rate.
+
 ### [DEFERRED — 031-fed] CEP realism — evolve the sim beacon-CEP model
 
 - **What**: the sim CEP (beacon localization uncertainty fed to the tracker NN) is a linear off-axis

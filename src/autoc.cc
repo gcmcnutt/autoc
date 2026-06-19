@@ -1233,24 +1233,40 @@ static void runNNEvolution(
 
         // Compute decomposed fitness then aggregate
         genome.scenario_scores = computeScenarioScores(context.evalResults);
-        // 038 T001 — member-level hull-crash penalty (gated, default off). Multiply
-        // this member's per-scenario tracking score by factor^(#hull-strike scenarios)
-        // so a crasher's tracking advantage collapses (score is negative-lower-better;
-        // ×<1 pulls toward 0 = worse). Score axis only (energy untouched). Applied
-        // before aggregateRawFitness so it flows into fitness → elite/bestIdx →
-        // #GenCrash/dmp → lexicase allScores, consistently.
+        // 038 T001 — member-level crash penalty (gated, default off). Multiply this
+        // member's per-scenario tracking score by a member-wide factor so a crasher's
+        // tracking advantage collapses (score is negative-lower-better; ×<1 pulls
+        // toward 0 = worse). Score axis only (energy untouched). Applied before
+        // aggregateRawFitness so it flows into fitness → elite/bestIdx → #GenCrash/dmp
+        // → lexicase allScores, consistently. Two crash classes, two SHAPES (t13, 038
+        // T001 iteration — see specs/038-accurate-m2/t12-retro.md):
+        //   - HullStrike (RARE): geometric per-strike factor^K_hull — one strike is
+        //     member-deciding. Relaxed 0.5→0.75 to stop annihilating crashers (which
+        //     sparsified the selection-landscape top → ragged plateau-hopping).
+        //   - Eval/OOB (COMMON): fraction-based rate term (1 − weight·K_oob/N) — smooth
+        //     and bounded; a geometric x^K_oob on a common, ramp-fluctuating count would
+        //     re-inject the selection whipsaw. weight=0 → no-op (M1 / t12 behavior).
         {
           const AutocConfig& c = ConfigManager::getConfig();
           if (c.enableHullCrashPenalty) {
-            int khull = 0;
-            for (const auto& s : genome.scenario_scores)
+            int khull = 0, koob = 0;
+            for (const auto& s : genome.scenario_scores) {
               if (s.crashReason == CrashReason::HullStrike) ++khull;
-            if (khull > 0) {
-              gp_fitness mult = 1.0;
-              for (int j = 0; j < khull; ++j)
-                mult *= static_cast<gp_fitness>(c.hullCrashPenaltyFactor);
-              for (auto& s : genome.scenario_scores) s.score *= mult;
+              else if (s.crashReason == CrashReason::Eval)   ++koob;
             }
+            gp_fitness mult = 1.0;
+            for (int j = 0; j < khull; ++j)
+              mult *= static_cast<gp_fitness>(c.hullCrashPenaltyFactor);
+            if (c.oobCrashPenaltyWeight > 0.0 && !genome.scenario_scores.empty()) {
+              gp_fitness frac = static_cast<gp_fitness>(koob) /
+                                static_cast<gp_fitness>(genome.scenario_scores.size());
+              gp_fitness oobMult = static_cast<gp_fitness>(1.0) -
+                                   static_cast<gp_fitness>(c.oobCrashPenaltyWeight) * frac;
+              if (oobMult < 0.0) oobMult = 0.0;   // guard weight·frac > 1
+              mult *= oobMult;
+            }
+            if (mult != static_cast<gp_fitness>(1.0))
+              for (auto& s : genome.scenario_scores) s.score *= mult;
           }
         }
         genome.fitness = aggregateRawFitness(genome.scenario_scores);

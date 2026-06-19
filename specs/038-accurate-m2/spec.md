@@ -322,6 +322,42 @@ spacing) vs the M1-matched layout at the same seed; the alt layout shows equal-o
 
 ---
 
+### US5 — Reward-gradient shaping: repel the chase when it gets *ahead* of the target (Priority: P2)
+
+As the operator, I want the tracking fitness to **actively repel** the chase when it overshoots *past*
+the trail point and gets **ahead of** the target — a negative-going gradient, not merely a smaller
+positive reward — so the controller has a gradient to *follow back* into the trail position instead of a
+cliff to flee from.
+
+**Why this priority**: surfaced directly by the t12 result (see [t12-retro.md](t12-retro.md)). The hull
+penalty made collisions decisively bad, but the controller's only escape was a large standoff + OOB
+flyaway — partly because today's cone scoring (`FitDistScaleAhead=2.0` vs `FitDistScaleBehind=7.0`) only
+*decays* the reward when ahead; it never crosses zero into a penalty, so "ahead/overshoot" has no
+restoring gradient. A signed reward could shape the same safety behavior **through the gradient** (track
+closely, don't overshoot, don't flee) rather than through the blunt crash multiplier — and it's the only
+lever that can address the **from-behind overshoot** blind spot (a forward camera can't perceive the
+overrun; reward-shaping selects against the *geometry*). Below US1 (the penalty is the immediate safety
+gate) but a strong complement to it — and a candidate to *reduce reliance* on penalty tuning ("tuning is
+trading, not solving").
+
+**Independent Test**: a bake with the signed-ahead reward vs the current decay-only cone at the same seed;
+the signed-reward controller holds the trail position with **fewer overshoots and a lower OOB/flyaway
+rate** at comparable tracking depth, determinism + bitwise replay preserved.
+
+**Acceptance Scenarios**:
+
+1. **Given** the chase is *behind* the target near the trail point, **When** fitness is scored, **Then**
+   behavior is unchanged from today (positive reward, decaying with distance).
+2. **Given** the chase overshoots *ahead* of the target, **When** fitness is scored, **Then** the reward
+   goes **negative** past a defined zero-crossing (at/just beyond the trail point), giving a restoring
+   gradient back toward the trail position.
+3. **Given** the signed reward lands, **When** lexicase selection runs, **Then** mixing negative and
+   positive per-scenario scores does not destabilize selection (epsilon/aggregation validated).
+4. **Given** the change, **When** an old run is replayed under the prior decay-only cone (ini switch),
+   **Then** historical behavior reproduces.
+
+---
+
 ### Edge Cases
 
 - **Hull penalty vs existing `p_crash` curriculum**: a hull strike today only *fires* via a
@@ -387,6 +423,15 @@ spacing) vs the M1-matched layout at the same seed; the alt layout shows equal-o
   needed, MUST stay optically-derived and unitless. **Accepted consequence**: a from-behind overshoot
   strike is unperceivable from a forward camera — the penalty selects against that geometry rather than
   teaching avoidance.
+
+### Reward-gradient shaping (US5)
+
+- **FR-009**: The tracking reward MAY become **negative** when the chase is *ahead of* the target (past
+  a configurable zero-crossing at/just beyond the trail point), giving a restoring gradient toward the
+  trail position rather than a decay-only-positive reward. Behind-the-target scoring is unchanged. Behind
+  an ini switch defaulting to the historical decay-only cone (reproducibility). MUST stay optically-/
+  geometrically-derived and unitless (consistent with FR-008), and MUST be validated to not destabilize
+  lexicase selection when negative and positive per-scenario scores mix (epsilon/aggregation).
 
 ### Camera variations (US2)
 
