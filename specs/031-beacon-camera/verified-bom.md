@@ -1,7 +1,8 @@
 # Verified BOM — 031 Beacon-Camera Phase 1 (Printable Order Checklist)
 
 **Audit date**: 2026-05-18
-**Status**: Cart-ready for ordering. Spec corrections (§0) queued as task **T007a** to apply before US1 hand-build.
+**Status**: ⚠️ **DEFERRED / LIKELY STALE (flagged 2026-06-17).** This is the **full camera-pipeline** Phase-1 BOM (camera + lens + filter + Lattice CrossLink-NX-EVN recorder + the cube-mounted target pod). 031 has since been **re-scoped to a 1-bit single-IR-sensor acquisition-research phase** (camera pipeline deferred), and the 20 Hz / 480 fps rethink has not been re-applied here — **do not order from this document as-is.** The current order target is the emitter→receiver bench loop: emitter = [`../../cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md), receiver = [`../../cad/beacon-receiver/eval-loop-bom.md`](../../cad/beacon-receiver/eval-loop-bom.md). Revisit/refresh this camera BOM when the camera phase un-parks.
+> _Original status (2026-05-18): Cart-ready for ordering. Spec corrections (§0) queued as task **T007a** to apply before US1 hand-build._
 
 > **Print this for the order phase, then update the markdown as parts arrive.** Cart letters group items by vendor for batched checkout.
 >

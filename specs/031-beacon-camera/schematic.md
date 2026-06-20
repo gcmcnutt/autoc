@@ -1,8 +1,8 @@
 # Beacon-Pod Schematic (wire-level)
 
 **Spec ref**: [FR-1.2 (driver topology)](spec.md), [FR-1.2.1 (BOM)](spec.md), [FR-1.7 #4 (UVLO contract)](spec.md), [verified-bom.md §A + §B + §C](verified-bom.md).
-**Status**: Phase-1 hand-prototype schematic — not a PCB design. Use to cross-check each ordered BOM line against its in-circuit role during receiving and hand-build.
-**Authoring date**: 2026-05-18 (post-T007a correction).
+**Status**: ⚠️ **STALE / PRE-R11 (flagged 2026-06-18) — DO NOT hand-build from this doc.** It still shows the **U3 supervisor (MCP1316), R2 as a pull-UP to V_BAT, and a 3-sink wired-AND DIM**. All of that was **superseded by R11** (2026-05-20): supervisor removed, UVLO is firmware-ADC + WDT, and **R2 is now a pull-DOWN from DIM to GND** (topological failsafe). The **authoritative, R11-correct, ERC-verified schematic is [`../../cad/beacon-eval/beacon-eval.kicad_sch`](../../cad/beacon-eval/beacon-eval.kicad_sch)** (verified 2026-06-18: `DIM` = R2/2 + U1/4 + J1/5; `R2/1` → GND; 0 ERC errors). This pod-level doc needs a full R11 rewrite before any production-pod build. _Original status: Phase-1 hand-prototype schematic — not a PCB design._
+**Authoring date**: 2026-05-18 (post-T007a correction; **pre-R11**).
 
 ## Reference-designator ↔ BOM-line cross-reference
 

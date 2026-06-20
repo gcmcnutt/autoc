@@ -123,11 +123,11 @@ Identify the tool names + argument schema once the MCP is connected so Phase 1 e
 
 ## R7 — NFR-4 Clock-Drift Simulation Tooling
 
-**Decision**: **plain `numpy` Python script** in `tools/nfr4-clockdrift-sim/`.
+**Decision**: **plain `numpy` Python script** in `specs/031-beacon-camera/nfr4-clockdrift-sim/`.
 
 **Rationale**: the simulation is small — a few hundred LOC. Generates a Gold-code template, applies chip-rate offset, generates a synthetic received signal at simulated SNR, runs matched-filter correlation across hypothesis offsets, computes acquisition probability via Monte Carlo. No need for GNU Radio or Matlab; numpy + scipy.signal cover everything.
 
-**Output**: `tools/nfr4-clockdrift-sim/sim.py` + a `simulation-results.md` doc with the decision (crystal vs multi-hypothesis vs internal-RC) recorded as a Decisions-Locked spec update.
+**Output**: `specs/031-beacon-camera/nfr4-clockdrift-sim/sim.py` + a `simulation-results.md` doc with the decision (crystal vs multi-hypothesis vs internal-RC) recorded as a Decisions-Locked spec update.
 
 **Alternatives considered**:
 - **GNU Radio**: overkill; the signal-processing graph is too simple to warrant the GNU Radio framework overhead.
@@ -364,7 +364,7 @@ All three errors disappear with U3 removed.
 | R4 OG0VA sourcing | Ship OV9281 / Arducam B0162 primary; OG0VA as later upgrade | OEM-channel inquiry for OG0VA |
 | R5 Hand-prototype | Curiosity Nano for MCU bring-up; bare-SOT-23 + adapter for ICs; perfboard 25 × 25 mm | Confirm Adafruit / SparkFun / Pololu currently-stocked breakouts |
 | R6 Lens | Commonlands custom (production); m12lenses + Edmund/Thorlabs (prototype) | Commonlands quote + lead time |
-| R7 NFR-4 sim | numpy script in `tools/nfr4-clockdrift-sim/` | None |
+| R7 NFR-4 sim | numpy script in `specs/031-beacon-camera/nfr4-clockdrift-sim/` | None |
 | R8 1S LiPo | Tinywhoop 1S 100 mAh, JST-PH 2.0, multiple-vendor | Confirm Amazon B083NWXLTK availability |
 | R9 Lattice toolchain | Propel (P1) | Confirm Propel reference designs target LIFCL-40 |
 | R10 FreeCAD MCP invocation | FreeCAD MCP (primary), `freecadcmd` scripted fallback | Confirm MCP tool schema at exec |

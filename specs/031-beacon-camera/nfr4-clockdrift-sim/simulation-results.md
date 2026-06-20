@@ -1,6 +1,6 @@
 # NFR-4 — Beacon MCU clock-drift simulation results
 
-**Generated**: 2026-05-18 by `tools/nfr4-clockdrift-sim/sim.py`
+**Generated**: 2026-05-18 by `specs/031-beacon-camera/nfr4-clockdrift-sim/sim.py`
 **Parameters**: N_CHIPS=15, nominal chip rate=100.0 Hz, camera fps=240.0, derated SNR=30.0 dB, acquisition threshold=13.0 dB, MC trials=1000 per point, RNG seed=42
 
 ## Decision

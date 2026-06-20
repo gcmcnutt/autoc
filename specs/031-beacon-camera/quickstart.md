@@ -118,7 +118,7 @@ Time budget: ~4 hours.
    - Power down the board cleanly (USB unplug).
    - Pull the SD card → mount on the PC → confirm `<session-id>.clip` + `<session-id>.json` are present + non-empty.
 6. **Ingest the test clip**:
-   - `cd tools/beacon-loader && pip install -e .`
+   - `cd specs/031-beacon-camera/beacon-loader && pip install -e .`
    - `python -c "from beacon_loader import load_clip; f, m = load_clip('/path/to/session.clip'); print(f.shape, m['recovered_frame_count'])"`
    - Expect output like `(7200, 240, 320) 7200` for a 30 s @ 240 fps clip.
 7. **Mount the recorder on the carrier craft**:
@@ -144,7 +144,7 @@ Time budget: 20 min.
 6. Pull SD card.
 7. On the PC:
    ```bash
-   cd tools/beacon-loader
+   cd specs/031-beacon-camera/beacon-loader
    python - <<'PY'
    from beacon_loader import load_clip
    import numpy as np

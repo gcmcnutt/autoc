@@ -263,7 +263,7 @@ def title_block(d: schemdraw.Drawing, x: float, y: float) -> None:
         "031-Beacon-Camera Phase 1 -- Beacon Pod Schematic", fontsize=14,
     ).at((x, y))
     d += elm.Label().label(
-        "Source: tools/beacon-schematic/draw.py    Refdes / BOM: schematic.md + verified-bom.md    Spec: FR-1.2 / FR-1.2.1 / FR-1.7",
+        "Source: specs/031-beacon-camera/beacon-schematic/draw.py    Refdes / BOM: schematic.md + verified-bom.md    Spec: FR-1.2 / FR-1.2.1 / FR-1.7",
         fontsize=9,
     ).at((x, y - 0.7)).color("gray")
     d += elm.Label().label(
@@ -278,7 +278,7 @@ def footer_block(d: schemdraw.Drawing, x: float, y: float) -> None:
         " - Power rails are drawn as labelled net-stubs (red = V_BAT, orange = V_LED, black = GND, green = DIM, blue = FB sense). All rail-tagged endpoints are bonded.\n"
         " - Hand-build order: boost loop (U1 + L1 + D1 + C1) tight FIRST, then MCU + supervisor decoupling close to V_BAT entry, then LED string + diag LED last.\n"
         " - Refdes labels match specs/031-beacon-camera/schematic.md (net list + connection tables there are the source of truth for hand-build).\n"
-        " - Regenerate this PNG/SVG/PDF by running: python3 tools/beacon-schematic/draw.py",
+        " - Regenerate this PNG/SVG/PDF by running: python3 specs/031-beacon-camera/beacon-schematic/draw.py",
         fontsize=8.5, halign="left",
     ).at((x, y)).color("dimgray")
 

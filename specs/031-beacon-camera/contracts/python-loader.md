@@ -1,8 +1,8 @@
 # Contract — Python Loader API (`beacon_loader`)
 
 **Spec ref**: FR-4.3
-**Reference impl**: `tools/beacon-loader/beacon_loader/loader.py`
-**Test ref**: `tools/beacon-loader/tests/test_loader_contract.py`
+**Reference impl**: `specs/031-beacon-camera/beacon-loader/beacon_loader/loader.py`
+**Test ref**: `specs/031-beacon-camera/beacon-loader/tests/test_loader_contract.py`
 
 ## Public API
 
