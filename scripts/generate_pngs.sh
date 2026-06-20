@@ -18,8 +18,9 @@
 #
 # Reports: m1 = evolution_progress, per_axis_aggressiveness, per_axis_time_series,
 #          dynamics_progress (4).  m2 = those + gen_diag + intercept_analysis +
-#          gen_runtime (log-only diversity/collapse proxy) + rnn_capacity (needs
-#          nnextractor+nn2cpp) + tactics (needs a --compare run) (9).
+#          gen_runtime (log-only diversity/collapse proxy) + score_by_path (per-path
+#          tracking-score distribution / generalization) + rnn_capacity (needs
+#          nnextractor+nn2cpp) + tactics (needs a --compare run) (10).
 #
 # INCREMENTAL run-summary: the per-gen aggregate is the slow part (one S3 dmp
 # fetch per gen). We cache it per run-id under $CACHE_DIR and use `dmp-dump
@@ -157,6 +158,15 @@ if [[ "$MODE" == "m2" ]]; then
   GR_ARGS=( --run "$NAME:$LOG" )
   for ((i=1; i<${#COMPARE[@]}; i+=2)); do GR_ARGS+=( --run "${COMPARE[i]}" ); done
   run gen_runtime.py "${GR_ARGS[@]}" -o "$OUT/${NAME}_gen_runtime.png"
+
+  # score_by_path — per-path tracking-score distribution (M2 generalization proxy):
+  # raw box/strip per path + per-step (path-length-normalized) histograms per path.
+  # Needs per-scenario meta (path_variant + score + steps) → one --meta-only fetch.
+  if "$DMP" "$RUN" --meta-only -i "$INI" >"$TMP/meta.yaml" 2>"$TMP/meta.err"; then
+    run score_by_path.py --meta "$TMP/meta.yaml" --label "$NAME" -o "$OUT/${NAME}_score_by_path.png"
+  else
+    echo "  [plot] score_by_path skipped (meta-only fetch failed):" >&2; tail -1 "$TMP/meta.err" >&2
+  fi
 
   # Resolve the FIRST --compare run once (run-id from its log) — shared by the
   # rnn_capacity overlay (its elite NN) + the tactics overlay (its per-tick CSV).
