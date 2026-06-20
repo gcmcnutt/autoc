@@ -18,7 +18,8 @@
 #
 # Reports: m1 = evolution_progress, per_axis_aggressiveness, per_axis_time_series,
 #          dynamics_progress (4).  m2 = those + gen_diag + intercept_analysis +
-#          rnn_capacity (needs nnextractor+nn2cpp) + tactics (needs a --compare run) (8).
+#          gen_runtime (log-only diversity/collapse proxy) + rnn_capacity (needs
+#          nnextractor+nn2cpp) + tactics (needs a --compare run) (9).
 #
 # INCREMENTAL run-summary: the per-gen aggregate is the slow part (one S3 dmp
 # fetch per gen). We cache it per run-id under $CACHE_DIR and use `dmp-dump
@@ -149,6 +150,13 @@ if [[ "$MODE" == "m2" ]]; then
   run plot_gen_diag.py --in "$LOG" --label "$NAME" --out "$OUT/${NAME}_gen_diag.png"
   run intercept_analysis.py --csv "$TICK" --label "$NAME" --gen "$GEN" \
       --tick-sec "$TICK_SEC" -o "$OUT/${NAME}_intercept_analysis.png"
+
+  # gen_runtime — per-gen wall-clock curve (proxy for population diversity/collapse:
+  # rising = learning to fly full scenarios; flat-low/dropping = early-death/collapse).
+  # Log-only (no S3); overlays the current run + every --compare run's log.
+  GR_ARGS=( --run "$NAME:$LOG" )
+  for ((i=1; i<${#COMPARE[@]}; i+=2)); do GR_ARGS+=( --run "${COMPARE[i]}" ); done
+  run gen_runtime.py "${GR_ARGS[@]}" -o "$OUT/${NAME}_gen_runtime.png"
 
   # Resolve the FIRST --compare run once (run-id from its log) — shared by the
   # rnn_capacity overlay (its elite NN) + the tactics overlay (its per-tick CSV).
