@@ -146,8 +146,22 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
   had to be hand-placed into two different spots in all six files. A standard `[section]`-based reader
   (toml++ / cpptoml) would let the schema express `[variations]` flags vs `[fitness]` params so
   placement is structural, not manual. Pairs naturally with the layered-stack idea above.
+- **Also: decouple unit/contract tests from the production inis (2026-06-20)**. `contract_tracker_config_tests.cc`
+  reads the *mutable* repo-root `autoc-tracker.ini` and pins **tunable** values as "drift gates" —
+  `FlightArenaRadius==80`, `CepGateThreshold==1.25`, `BeaconEmissionConeDeg==270`, `BeaconLeftMountY==-0.45`,
+  … — so tuning any of them breaks the unit suite. Surfaced when changing `FitStreakThreshold` 0.5→0.3:
+  an over-long inline comment pushed that line past inih's 200-char `INI_MAX_LINE`, failing
+  `OperatorIniParsesClean` (good catch) — but it exposed that the suite is hostage to the file we
+  deliberately change. **Principle**: unit/contract tests validate the *parser + schema + loud-fail*
+  against **test-owned fixtures** (the `writeTempIni(...)` tests already do this correctly), never assert
+  mutable production values. **Fix**: strip the tunable-value pins; keep at most a minimal "production ini
+  parses clean + required structural keys present (`Mode`, `TrackerSourceRun`)" guardrail (or drop the
+  production-ini dependency entirely and rely on autoc's startup fail-loud + fixtures). Pairs with this
+  item because the layered base+override stack shrinks the production-ini surface a test would touch, and
+  a typed `[section]` schema makes "valid config" a structural property to fixture-test, not a value list.
 - **Trigger to act**: the next time an ini-wide change has to be hand-applied across all six files.
-- Files: `src/util/config.cc` (load), `include/autoc/util/config.h`, the six `autoc*.ini`.
+- Files: `src/util/config.cc` (load), `include/autoc/util/config.h`, `tests/contract_tracker_config_tests.cc`
+  (decouple from production ini), the six `autoc*.ini`.
 
 ---
 
