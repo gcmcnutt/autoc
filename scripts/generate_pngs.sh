@@ -163,7 +163,9 @@ if [[ "$MODE" == "m2" ]]; then
   # raw box/strip per path + per-step (path-length-normalized) histograms per path.
   # Needs per-scenario meta (path_variant + score + steps) → one --meta-only fetch.
   if "$DMP" "$RUN" --meta-only -i "$INI" >"$TMP/meta.yaml" 2>"$TMP/meta.err"; then
-    run score_by_path.py --meta "$TMP/meta.yaml" --label "$NAME" -o "$OUT/${NAME}_score_by_path.png"
+    # --csv adds the ground-truth per-tick tracking-error-distance panels (uses the tick.csv
+    # already fetched); right panels show ‖chase−trail‖ per path instead of per-step score.
+    run score_by_path.py --meta "$TMP/meta.yaml" --csv "$TICK" --label "$NAME" -o "$OUT/${NAME}_score_by_path.png"
   else
     echo "  [plot] score_by_path skipped (meta-only fetch failed):" >&2; tail -1 "$TMP/meta.err" >&2
   fi

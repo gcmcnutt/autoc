@@ -61,7 +61,27 @@ def per_step(rows, pv):
     return ps, crashed, np.array([r[1] for r in grp])
 
 
-def plot_single(name, gen, rows, out):
+NWIND = 49  # winds per path (6 paths x 49 = 294); path = scenario // NWIND
+
+
+def parse_tick(csv_path):
+    """Per-tick tracking error ‖chase − trail rabbit‖ from dmp-dump --csv-only, grouped by path.
+
+    This is the GROUND-TRUTH tracking measure (reward-shaping-invariant): how far the chase is
+    from the ideal trail point each tick. Returns {path_variant: np.array(err_meters)}.
+    """
+    import csv as _csv
+    by_path = {}
+    for r in _csv.DictReader(open(csv_path)):
+        pv = int(r["scenario"]) // NWIND
+        err = ((float(r["px"]) - float(r["trX"]))**2 +
+               (float(r["py"]) - float(r["trY"]))**2 +
+               (float(r["pz"]) - float(r["trZ"]))**2) ** 0.5
+        by_path.setdefault(pv, []).append(err)
+    return {pv: np.array(v) for pv, v in by_path.items()}
+
+
+def plot_single(name, gen, rows, out, tick=None):
     paths = sorted(set(r[0] for r in rows))
     colors = plt.cm.viridis(np.linspace(0, 0.85, len(paths)))
     ncol = (len(paths) + 1) // 2
@@ -86,18 +106,38 @@ def plot_single(name, gen, rows, out):
     ax.set_xlabel("path_variant"); ax.set_ylabel("raw per-scenario score (negative=better)")
     ax.set_title("raw score per path\n(box=IQR, dots=wind variants, ×=crash)", fontsize=9)
     ax.legend(fontsize=8, loc="lower left"); ax.grid(alpha=0.3, axis="y")
-    allps = np.concatenate([persteps[pv][0] for pv in paths]); lo, hi = np.percentile(allps, [1, 99])
-    bins = np.linspace(lo, hi, 22)
-    for i, pv in enumerate(paths):
-        a = axd[f"p{pv}"]; ps, crashed = persteps[pv]
-        a.hist(ps[~crashed], bins=bins, color=colors[i], alpha=0.8)
-        if crashed.any():
-            a.hist(ps[crashed], bins=bins, color="red", alpha=0.7)
-        a.axvline(np.median(ps), color="k", ls="--", lw=1)
-        a.set_title(f"path {pv}: med {np.median(ps):.3f}, σ {ps.std():.3f}", fontsize=8)
-        a.tick_params(labelsize=7); a.grid(alpha=0.25)
-    fig.supxlabel("per-step tracking score (score / steps flown) — path-length-normalized", fontsize=9)
-    fig.suptitle(f"{name} gen={gen}: per-path tracking-score distribution", fontsize=11)
+    if tick is not None:
+        # RIGHT = ground-truth per-tick tracking ERROR distance histograms (‖chase − trail rabbit‖),
+        # bucketed across every tick of each path's scenarios. Reward-shaping-invariant.
+        allv = np.concatenate([tick[pv] for pv in paths if pv in tick])
+        hi = np.percentile(allv, 99); bins = np.linspace(0, hi, 40)
+        print(f"--- per-tick tracking error ‖chase−trail‖ (m), by path (gen {gen}) ---")
+        for i, pv in enumerate(paths):
+            a = axd[f"p{pv}"]; e = tick.get(pv, np.array([0.0]))
+            a.hist(e, bins=bins, color=colors[i], alpha=0.85)
+            a.axvline(np.median(e), color="k", ls="--", lw=1.3)
+            a.axvline(3.048, color="green", ls="-", lw=1.1, alpha=0.7)   # trail distance ref
+            f5 = 100 * (e < 5).mean()
+            a.set_title(f"path {pv}: med {np.median(e):.1f}m, %<5m {f5:.0f}", fontsize=8)
+            a.tick_params(labelsize=7); a.grid(alpha=0.25)
+            print(f"  path {pv}: med {np.median(e):.1f}m  mean {e.mean():.1f}m  p90 {np.percentile(e,90):.1f}m  %<5m {f5:.0f}")
+        fig.supxlabel("per-tick tracking error: ‖chase − trail rabbit‖ (m)  "
+                      "[green=trail dist 3.0m; 0=perfect, large=far/lost]", fontsize=9)
+        fig.suptitle(f"{name} gen={gen}: raw score per path (left) + ground-truth per-tick "
+                     "tracking-error distribution by path (right)", fontsize=10)
+    else:
+        allps = np.concatenate([persteps[pv][0] for pv in paths]); lo, hi = np.percentile(allps, [1, 99])
+        bins = np.linspace(lo, hi, 22)
+        for i, pv in enumerate(paths):
+            a = axd[f"p{pv}"]; ps, crashed = persteps[pv]
+            a.hist(ps[~crashed], bins=bins, color=colors[i], alpha=0.8)
+            if crashed.any():
+                a.hist(ps[crashed], bins=bins, color="red", alpha=0.7)
+            a.axvline(np.median(ps), color="k", ls="--", lw=1)
+            a.set_title(f"path {pv}: med {np.median(ps):.3f}, σ {ps.std():.3f}", fontsize=8)
+            a.tick_params(labelsize=7); a.grid(alpha=0.25)
+        fig.supxlabel("per-step tracking score (score / steps flown) — path-length-normalized", fontsize=9)
+        fig.suptitle(f"{name} gen={gen}: per-path tracking-score distribution", fontsize=11)
     fig.tight_layout(); fig.savefig(out, dpi=110); print(f"\nwrote {out}")
 
 
@@ -146,6 +186,8 @@ def main():
     p.add_argument("--meta", help="single-run: dmp-dump --meta-only YAML")
     p.add_argument("--label", default="run")
     p.add_argument("--run", action="append", help="multi-run overlay: NAME:meta.yaml (repeatable)")
+    p.add_argument("--csv", help="single-run: dmp-dump --csv-only per-tick CSV → right panels show "
+                                 "ground-truth per-tick tracking-error distance by path (else per-step score)")
     p.add_argument("-o", "--out", required=True)
     args = p.parse_args()
 
@@ -165,7 +207,8 @@ def main():
         gen, rows = parse_meta(args.meta)
         if not rows:
             print("no scenarios parsed"); return
-        plot_single(args.label, gen, rows, args.out)
+        tick = parse_tick(args.csv) if args.csv else None
+        plot_single(args.label, gen, rows, args.out, tick=tick)
 
 
 if __name__ == "__main__":
