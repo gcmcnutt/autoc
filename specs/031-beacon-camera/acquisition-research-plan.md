@@ -3,7 +3,7 @@
 **Status**: DRAFT — research plan, 2026-06-18
 **Scope**: 031 is re-scoped to a **1-bit (single-IR-sensor) acquisition-research phase**. We characterize the *coded-beacon temporal/code channel* — acquisition time, signal quality, code separation, dropout tolerance — through real air, with a single photodiode receiver. **Localization (x, y) and the full camera pipeline are deferred** (a single detector has no spatial resolution; see §2). This plan governs the bench + field work the [emitter](../../cad/beacon-eval/verified-bom-eval.md) + [receiver](../../cad/beacon-receiver/eval-loop-bom.md) BOMs were ordered for.
 
-Hardware home: emitter `cad/beacon-eval/`, receiver `cad/beacon-receiver/`. Spec/research home: here.
+Hardware home: emitter `cad/beacon-eval/`, receiver `cad/beacon-receiver/`. Spec/research home: here. The deferred **camera pipeline is its own feature, `040` (camera redo)** — *emitters shared with 031*, single-sensor front end replaced by a camera + bigger FPGA; the old camera `spec.md`/`plan.md` are 040's reference. ("camera phase" throughout this doc = feature 040.)
 
 ---
 
@@ -70,9 +70,9 @@ Stage 0/1 stream to a laptop over UART (no SD). Airborne (Stage 3, PD-on-tracker
 
 ## 7. Coding / acquisition knobs to sweep (Stage 0/1)
 
-- **Chip rate**: baseline 100 Hz (150 ms / 15-chip period). Sweep 50–200 Hz. The FPGA/ADC oversample ~1000× so this is free to explore.
+- **Chip rate**: baseline **200 Hz** (480 fps / 2.4 frames-per-chip → 5 ms/chip, 75 ms / 15-chip period). Supersedes the spec's 100 Hz (which was 240 fps × 2.4 fpc). Sweep 100–240 Hz (Nyquist cap = fps/2 = 240 Hz at 480 fps). The single-PD bench oversamples ~1000× so chip rate is free to explore here; 200 Hz is the value representative of the camera era.
 - **Code length**: N=15 baseline (1-bit error tolerance, ~8-erasure track tolerance); 31-bit is the documented upgrade.
-- **Early / partial-code acquisition**: declare tentative lock at ~70 % of the code (~105 ms) — the lever that keeps re-acquisition inside the 20 Hz control budget (150 ms = 3 ticks @ 20 Hz). Measure detection-vs-false-alarm at partial integration.
+- **Early / partial-code acquisition**: declare tentative lock at ~70 % of the code (~55 ms) — the lever that keeps re-acquisition inside the 20 Hz control budget (75 ms full code = 1.5 ticks; ~70 % ≈ 1.1 ticks @ 200 Hz). Measure detection-vs-false-alarm at partial integration.
 - **Soft-decision + erasure-aware correlation**: flips cost 2, erasures cost 1 — mark saturated/faded chips as erasures. Measure the gain.
 - **Oversampling**: samples-per-chip vs acquisition reliability.
 
@@ -80,9 +80,9 @@ These are exactly what the sim (§9) predicts and the bench validates.
 
 ## 8. Deferred constraints (camera phase — keep visible)
 
-- **20 Hz control loop (037)**: acquisition latency in *control ticks* — 150 ms = 3 ticks @ 20 Hz. Early/partial acquisition is the lever.
-- **480 fps camera baseline**: sets fps/chip + Nyquist chip-rate ≤240 Hz; independent of this bench (which oversamples far beyond).
-- **CEP / 2-D apparent motion**: the real CEP driver (blob-crossing-rate over the ~150 ms decode window) — only exercisable with the pixel array. Feeds [`BACKLOG.md` "CEP realism"](BACKLOG.md) + `038-accurate-m2` sensor grounding. Deferred.
+- **20 Hz control loop (037)**: acquisition latency in *control ticks* — at the 200 Hz chip rate the full 15-chip code = 75 ms = **1.5 ticks** @ 20 Hz; early/partial acquisition trims it toward ~1 tick.
+- **480 fps camera baseline**: drives the **200 Hz chip-rate choice** (2.4 fpc); Nyquist caps chip rate ≤240 Hz. The single-PD bench oversamples far beyond, so it validates the choice rather than being bound by it.
+- **CEP / 2-D apparent motion**: the real CEP driver (blob-crossing-rate over the ~75 ms decode window) — only exercisable with the pixel array. Feeds [`BACKLOG.md` "CEP realism"](BACKLOG.md) + `038-accurate-m2` sensor grounding. **Note**: the single-PD bench *does* produce the *decode-confidence* half of CEP (correlation margin + dropout + lock ladder) — the two-component physical CEP model is captured in [`BACKLOG.md` "CEP — physical model"](BACKLOG.md) for a cleaner tracker-mode first pass (038). Deferred half = the spatial/apparent-motion term.
 - **Localization / camera pipeline**: deferred; the stale full-camera BOM is [`verified-bom.md`](verified-bom.md) (bannered).
 
 ## 9. Sim support (predict, then test)

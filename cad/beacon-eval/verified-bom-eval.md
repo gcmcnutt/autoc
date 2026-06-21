@@ -2,7 +2,7 @@
 
 **Audit date**: 2026-05-20
 **Status**: Bench bring-up rig. Verifies (a) MCU gold-code generation on real silicon, (b) boost-converter + LED-string electrical behavior matches spec, (c) low-voltage cutout via firmware ADC + topological failsafe + WDT *(revised 2026-05-20 per [research.md R11](../../specs/031-beacon-camera/research.md#r11--undervoltage-cutoff--led-driver-failsafe-1s-lipo-brown-out-protection); was "supervisor IC" before)*.
-**Schematic**: [`beacon-eval-schematic.png`](beacon-eval-schematic.png) (also [`beacon-eval-schematic.pdf`](beacon-eval-schematic.pdf); KiCad 10 source: [`beacon-eval.kicad_sch`](beacon-eval.kicad_sch))
+**Schematic**: [`beacon-eval-schematic.pdf`](beacon-eval-schematic.pdf) (KiCad 10 source: [`beacon-eval.kicad_sch`](beacon-eval.kicad_sch))
 
 > **What this is**: a *minimal*, *breadboarded* eval rig that uses the actual target Phase-1 beacon-pod circuit (LM3410X boost + sense-resistor LED driver + 5× Luxeon L1IZ-0850 IR LEDs in series) but **substitutes the ATtiny412 + UPDI + battery sub-assembly with a Microchip ATtiny416-XNANO evaluation kit**, with the XNANO's USB power isolated from the target rail via a one-time cut of an internal 0Ω strap.
 >
@@ -165,7 +165,7 @@ Pin role assignments (identical on both chips):
 
 ## Cross-reference
 
-- Schematic: [`beacon-eval-schematic.png`](beacon-eval-schematic.png) / [`beacon-eval-schematic.pdf`](beacon-eval-schematic.pdf) (KiCad 10.0.3 source `beacon-eval.kicad_sch`)
+- Schematic: [`beacon-eval-schematic.pdf`](beacon-eval-schematic.pdf) (KiCad 10.0.3 source `beacon-eval.kicad_sch`)
 - Custom symbols: [`beacon-eval.kicad_sym`](beacon-eval.kicad_sym) (LM3410X SOT-23-5)
 - Project lib table: [`sym-lib-table`](sym-lib-table)
 - Parent target BOM: [`../../specs/031-beacon-camera/verified-bom.md`](../../specs/031-beacon-camera/verified-bom.md)

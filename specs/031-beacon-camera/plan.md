@@ -3,6 +3,8 @@
 **Branch**: `031-beacon-camera` | **Date**: 2026-05-17 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/home/gmcnutt/autoc-beacon/specs/031-beacon-camera/spec.md`
 
+> ⚠️ **RE-SCOPED 2026-06-20**: this plan is the original **camera-pipeline** plan, now the **camera-redo feature `040`** (deferred). The active 031 plan is the **1-bit single-IR-sensor acquisition-research** arc in [`acquisition-research-plan.md`](acquisition-research-plan.md) (tasks = **Phase A** in [`tasks.md`](tasks.md)). Emitters are shared between 031 and 040.
+
 ## Summary
 
 Phase 1 of 031 delivers a **bench- and field-runnable beacon-camera setup that records raw video of two coded-IR beacons at flight-relevant ranges and dynamics** ([spec.md §Overview](./spec.md)). No simulator code is touched. No `(x, y, CEP)` extraction. No NN-in-the-loop. The deliverable is **photons → raw clip on SD card → Python-loadable numpy array** end-to-end, validated by one paired-craft test flight (US6).

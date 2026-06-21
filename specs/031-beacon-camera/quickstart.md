@@ -18,7 +18,7 @@ Validates three orthogonal properties before committing to perfboard layout:
 
 **Schematic + BOM live in [`cad/beacon-eval/`](../../cad/beacon-eval/)** (separate from the cube pod):
 
-- [`cad/beacon-eval/beacon-eval-schematic.png`](../../cad/beacon-eval/beacon-eval-schematic.png) (also `.pdf`) — printable schematic
+- [`cad/beacon-eval/beacon-eval-schematic.pdf`](../../cad/beacon-eval/beacon-eval-schematic.pdf) — printable schematic
 - [`cad/beacon-eval/beacon-eval.kicad_sch`](../../cad/beacon-eval/beacon-eval.kicad_sch) — KiCad 10 source
 - [`cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md) — eval-only BOM. Most lines reuse the parent target BOM (LM3410X, L1, D1, R1, R2, C1, C5, C6, **TPS3839 supervisor**, 5× L1IZ-0850); additions are the XNANO eval kit (DigiKey `ATTINY416-XNANO-ND`, ~$11), one extra 100 nF cap (C7 supervisor decoupling), and a few rig consumables.
 

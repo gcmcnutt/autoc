@@ -1,5 +1,20 @@
 # Tasks: 031 Beacon-Camera Optical Perception — Phase 1
 
+> ## ⚠️ RE-SCOPE (2026-06-20): 031 → 1-bit acquisition-research phase
+> 031 is now the **single-IR-sensor (1-bit) acquisition-research** effort — characterize coded-beacon
+> acquisition time / signal quality / dropout through real air with **one photodiode**. Active task arc =
+> **Phase A** below; design + rationale in [`acquisition-research-plan.md`](acquisition-research-plan.md).
+>
+> The full **camera pipeline is split out to a new feature, `040` (camera redo)** — *emitters unchanged*;
+> the single-sensor analog front end is replaced with a camera + bigger FPGA. (`039` is taken — xiao
+> catch-up on the other dev track.) So below: **Phase 3 US1 / Phase 4 US2 emitter-build + gold-code
+> firmware (T027–T031) CARRY into Phase A**; **Phase 5 US3 (camera) / Phase 6 US4 (recording) / Phase 7
+> US6 (flight) are DEFERRED → 040**; Phase 8 US5 (scenarios) partly carries (bench/field).
+>
+> ⚠️ Stale details in the deferred tasks (superseded by [`cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md) + R11):
+> LM3410-**Y**→**X**; voltage supervisor **removed** (firmware-ADC UVLO); UVLO **3.3 V→3.5 V**;
+> chip rate **100 Hz→200 Hz** (480 fps ÷ 2.4 fpc).
+
 **Input**: Design documents from `/home/gmcnutt/autoc-beacon/specs/031-beacon-camera/`
 **Prerequisites**: spec.md ✅, plan.md ✅, research.md ✅, data-model.md ✅, contracts/ ✅, quickstart.md ✅
 **Tests**: REQUIRED — Constitution Principle I (Testing-First) is binding; FR-3.x hardware bench-verifications are the test-of-record for optical/electrical claims; Python loader has explicit pytest contract + resilience tests.
@@ -116,6 +131,31 @@ Per the IR-sensor + scope + small-Lattice-FPGA strategy added 2026-05-18 — the
 
 ---
 
+## Phase A — 1-bit acquisition-research bench + field (ACTIVE) 🎯
+
+The active arc per [`acquisition-research-plan.md`](acquisition-research-plan.md) §4. Hardware ordered 2026-06-18/19 (one DigiKey checkout: emitter §EV-A/B + receiver front end); assembly imminent.
+
+### Emitter (reuse beacon-eval — carries from US1/US2)
+- [ ] A1 Build the emitter eval rig per [`cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md): one-time XNANO **R100 cut**; assemble **LM3410X** boost + 5× L1IZ-0850 series @ 306 mA + **R2 DIM pull-down** (R11 failsafe). Subs in hand: **SS1030** Schottky (SOD-123), **TDK B82464G4223M000** 22 µH inductor.
+- [ ] A2 MCU bring-up: build + flash the gold-code firmware (**T027–T031 carry over**) via the XNANO mEDBG (UPDI); scope-verify the Gold code at the **200 Hz** chip rate + 15-chip period (`scope-trace-decode.py`).
+
+### Single-IR-sensor receiver (new — `cad/beacon-receiver`)
+- [ ] A3 Build the receiver per the `cad/beacon-receiver` schematic: **BPV10NF → MCP6022 TIA** (Rf trimpot ∥ Cf) **→ MCP3201 ADC**, VBIAS R2/R3 divider + C2 bypass, **MCP1525** 2.5 V ref, decoupling. Power + SPI from the **STEP-MXO2** via J1 (GND=21, SPISO=23→U2/6, SCK=24→U2/7, CS=25→U2/5, +3V3=40).
+- [ ] A4 FPGA bring-up: **Lattice Diamond** on the STEP-MXO2 (MachXO2-1200) — hello-blink → MCP3201 SPI capture (hard-SPI or bit-bang) → sliding 15-chip matched filter → tentative/confirmed lock + UART telemetry to the laptop.
+
+### Bench
+- [ ] A5 **Stage 0 "hello gold code"**: 1 emitter → 1 PD (ND-attenuated, ~1 m) → laptop; recover the code; sweep chip rate / oversampling.
+- [ ] A6 **Stage 1 two-codes-one-detector**: 2 emitters (codes A/B) → 1 PD; confirm CDMA separation + cross-corr floor; measure acquisition time.
+
+### Field (occlusion-modulated acquisition vs range)
+- [ ] A7 Emitter on a craft, PD on the ground (cone + 850 nm bandpass); **modulate occlusion over the emitter and sweep range**; measure acquisition time + lock reliability + dropout stats vs range/aspect/sun. Compare to [`acquisition-sim/acquisition-results.md`](acquisition-sim/acquisition-results.md) predictions; log per FR-5.2.
+
+**Checkpoint Phase A**: coded beacon acquired through real air with a single photodiode; acquisition-time / reliability / dropout vs range characterized → feeds **040** (camera) coding + CEP design.
+
+---
+
+> **The phases below are the original camera-pipeline plan.** US1/US2 emitter tasks carry into Phase A (above); **US3 / US4 / US6 are DEFERRED → 040 (camera redo)**. Kept as history + the future arc.
+
 ## Phase 3: User Story 1 — Build single beacon pod (Priority: P1) 🎯 MVP foundation
 
 **Goal**: One assembled pod emits the canonical 15-bit Gold code at 100 Hz chip rate, runs on a 1S LiPo, passes FR-1.7 + FR-3.3 + FR-3.4 bench gates.
@@ -161,7 +201,7 @@ Per the IR-sensor + scope + small-Lattice-FPGA strategy added 2026-05-18 — the
 
 ---
 
-## Phase 5: User Story 3 — Build the receiver (camera + lens + filter, hand-held first) (Priority: P1)
+## Phase 5: User Story 3 — Build the receiver (camera + lens + filter, hand-held first) (Priority: P1) — ⚠️ DEFERRED → 040 (camera redo)
 
 **Goal**: Off-the-shelf USB-UVC camera + Python beacon-viewer providing live first-light + record-to-clip on the bench. (Multi-eval-board strategy per Session 2026-05-17.)
 
@@ -189,7 +229,7 @@ Per the IR-sensor + scope + small-Lattice-FPGA strategy added 2026-05-18 — the
 
 ---
 
-## Phase 6: User Story 4 — Raw-frame recording substrate (Priority: P1)
+## Phase 6: User Story 4 — Raw-frame recording substrate (Priority: P1) — ⚠️ DEFERRED → 040 (bench-mode laptop-stream covers Phase A; flight SD → 040)
 
 **Goal**: Lattice flight-mode recorder producing FR-4.2-compliant clips to SD; all Class 1/2/3 fault paths verified; heartbeat-blink liveness signal working.
 
@@ -228,7 +268,7 @@ Per the IR-sensor + scope + small-Lattice-FPGA strategy added 2026-05-18 — the
 
 ---
 
-## Phase 7: User Story 6 — Beacon Test Flight 1 (Priority: P1)
+## Phase 7: User Story 6 — Beacon Test Flight 1 (Priority: P1) — ⚠️ DEFERRED → 040 (camera-craft flight; the Phase-A single-PD field test (A7) is the near-term flight)
 
 **Goal**: One paired-craft outdoor flight session producing one clip that passes the US6 3-criterion acceptance gate.
 

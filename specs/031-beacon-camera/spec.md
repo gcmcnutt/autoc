@@ -3,7 +3,7 @@
 **Feature Branch**: TBD (likely `031-beacon-camera` when this is unparked; currently being drafted inside the `030-tracker-mode` working branch alongside the 030 v1 wrap)
 **Created**: 2026-05-10
 **Revised**: 2026-05-12 — operator firmed the beacon + camera + recording substrate; added a Beacon Test Flight 1 use case (paired-craft field recording) so the optical chain gets its first real-air test before any FPGA work
-**Status**: DRAFT — spec + clarify only, no plan/tasks yet. Bench experiments will iterate this heavily once hardware lands.
+**Status**: ⚠️ **RE-SCOPED 2026-06-20** — 031 is now the **1-bit single-IR-sensor acquisition-research phase**; the active plan is [`acquisition-research-plan.md`](acquisition-research-plan.md) and tasks are **Phase A** in [`tasks.md`](tasks.md). This spec (the full camera pipeline: camera + lens + filter + recorder + paired-craft flight) is the **camera-redo feature `040`** (emitters unchanged; single-sensor analog front end replaced with a camera + bigger FPGA). It remains the camera-phase reference; do not build the camera chain from it under 031. _(Original: DRAFT — spec + clarify only; bench experiments iterate it once hardware lands.)_
 **Input**:
 - [docs/aircraft_tracker_handoff.md](../../docs/aircraft_tracker_handoff.md) — architectural handoff doc; source of truth for phase-1 decisions until bench evidence re-litigates them.
 - [camera_considerations.md](camera_considerations.md) — sensor selection + link budget + Gold-code acquisition/tracking math; consumed by this spec for the camera + code-length decisions.

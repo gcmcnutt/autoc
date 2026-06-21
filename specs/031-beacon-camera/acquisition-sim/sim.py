@@ -36,8 +36,11 @@ import numpy as np
 # ===== Parameters =============================================================
 
 N_CHIPS = 15
-CHIP_RATE_HZ = 100.0                 # FR-1.3 firm
-CHIP_MS = 1000.0 / CHIP_RATE_HZ      # 10 ms/chip → full code = 150 ms
+CHIP_RATE_HZ = 200.0                 # 480 fps baseline / 2.4 frames-per-chip = 200 Hz
+                                     # (supersedes the spec's 100 Hz, which was 240 fps × 2.4 fpc).
+                                     # Single-PD bench oversamples ~1000× so it's chip-rate-agnostic;
+                                     # 200 Hz is the value representative of the 480 fps camera era.
+CHIP_MS = 1000.0 / CHIP_RATE_HZ      # 5 ms/chip → full code = 75 ms
 CTRL_TICK_MS = 50.0                  # 20 Hz control loop (037) — for "ticks to lock"
 DEPLOYED_CODES = [0, 1]              # beacon A=code 0, B=code 1 (cold search spans these)
 PER_CHIP_SNR_DB = [-6, -3, 0, 3, 6, 10]   # full-code post-corr ≈ per-chip + 10log10(15) = +11.8 dB
