@@ -8,15 +8,17 @@
 
 Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 2026-05-04, before plan-research begins. These were architecturally part of the 030 epic but earned defer-status under the smoke-test-first scoping (D13 / D16). Some are 031 (sibling-feature) candidates, some are pure backlog. Tagging as such; final 030/031 split is plan-research's call.
 
-### [031 CANDIDATE] Parallel perception-front-end — camera pixels → (x, y, CEP)
+### [040 — camera redo] Parallel perception-front-end — camera pixels → (x, y, CEP)
+
+> Re-homed to feature **040 (camera redo)** on 2026-06-20: 031 narrowed to the 1-bit single-IR-sensor acquisition-research phase; the camera pipeline (this item + the FOV/representation item below) is the separate 040 effort. Emitters are shared; 040 replaces the single-sensor analog front end with a camera + bigger FPGA. The old camera `specs/031-beacon-camera/spec.md`+`plan.md` are 040's reference.
 
 - **Trigger**: real-flight beacon hardware build / virtual-beacon flight test (staged-path row 5+).
 - **Scope**: the FPGA / DSP pipeline that bridges raw camera pixels to the `(x, y, CEP)` triple 030 consumes — thresholded centroid extraction per color channel, cluster-spread (CEP) computation, threshold-fail sentinel emission. **Includes**: prop-arc occlusion modeling (rolling-shutter resonance with prop RPM, banding artifacts at certain RPMs, intermittent global-shutter occlusion at non-resonant rates); airframe self-occlusion mesh refinement beyond 030 v1's coarse body proxy; LED wavelength + emission-cone tolerance characterization.
 - **Why parallel rather than 030-internal**: shares only the `(x, y, CEP)` interface contract with 030; the engineering surface (FPGA design, threshold tuning, color-channel separation, real-camera characterization) is image-domain work that runs alongside 030's controller-side training without touching it. The two features inform each other through the contract: 030's per-scenario PRNG variation experiments tell perception-front-end what camera-spec tolerances need to be met; perception-front-end tells 030 what int8 noise floor and CEP magnitude distribution to actually quantize with.
 - **Source design notes**: 030 spec D7 (DMP versioning + parallel feature), D10 (camera v1 baseline + prop-occlusion deferral).
-- **Files likely**: new `src/perception/` module (or top-level `perception/` peer to `crrcsim/`), new spec dir `specs/031-perception-front-end/` when this unparks.
+- **Files likely**: new `src/perception/` module (or top-level `perception/` peer to `crrcsim/`), new spec dir `specs/040-camera-redo/` when this unparks.
 
-### [031 RESEARCH] Perception representation — event-camera + non-linear / dual-FOV optics
+### [040 — camera redo / research] Perception representation — event-camera + non-linear / dual-FOV optics (FOV + variations input)
 
 - **Trigger**: research thread for post-beacon perception (when 031 perception-front-end above unparks, or sooner if the 030 dual-camera variant experiment needs it). Capture as research now so it informs the camera-spec → resolution-budget conversation when we leave beacons.
 - **Question 1 — Event-camera representation**: today the NN sees `(x, y, CEP) × history×6` for each wingtip beacon — a sampled raster of an underlying image-plane process. Once we drop beacons for full-image perception, the natural representation becomes either a dense pixel grid (huge input dim) or an event-stream representation (per-pixel intensity-change events with timestamp + polarity, native to event cameras / DVS sensors). Event-camera reps are sparse, latency-friendly, and naturally encode motion direction; they may be a better match for the controller's cone-tracking task than dense rasters.
@@ -347,6 +349,52 @@ Remaining 015 work:
   [specs/038-accurate-m2/spec.md](038-accurate-m2/spec.md).
 - **Note**: migrated here from machine-local `~/.claude` memory (doesn't travel cross-machine) per
   Constitution X + the portable-agent-memory item.
+
+### [031-fed] CEP — physical model (two-component) for a cleaner tracker-mode first pass
+
+Concrete physical CEP model derived from the **031 single-PD acquisition study**
+([`acquisition-sim/`](031-beacon-camera/acquisition-sim/acquisition-results.md) +
+[`acquisition-research-plan.md`](031-beacon-camera/acquisition-research-plan.md)).
+Replaces the linear off-axis placeholder with a CEP grounded in the code physics — usable
+**before real footage exists**. Intended pickup: **038** (or a tracker-mode follow-on) to give
+M2 a cleaner first-pass CEP. Builds on the item above.
+
+**CEP = combine(temporal decode-confidence, spatial apparent-motion):**
+
+1. **Temporal / decode-confidence** — measurable on the single-PD bench *now*:
+   - Driven by the Gold-code correlation **margin** `M = (peak − max_sidelobe)`, normalized by
+     integrated chips / noise floor.
+   - **Lock ladder**: `none → tentative (M > low) → confirmed (M > high, sustained ≥2 code periods)` —
+     the continuous, unsync'd, no-gap stream enables multi-period confirmation.
+   - **Inflated by**: dropout/erasure rate, partial-code fraction (early in a period), reacquisition.
+   - **Maps to CEP**: strong margin → small CEP; near-threshold → large/unstable CEP; lost → the
+     existing sentinel CEP (visibility gate).
+
+2. **Spatial / apparent-motion** — camera phase only (needs the 2D array):
+   - Blob displacement across pixels during the **~75 ms decode window** (200 Hz chip / 480 fps —
+     *updated from the 150 ms in the item above, which assumed the old 100 Hz / 240 fps*) → a spatial σ.
+     Worse at high body rate / close range / wide FOV (exactly where beacons also merge toward one pixel).
+
+**Quantitative shape to seed the CEP curve** (from the 031 sim):
+- CEP collapses with SNR margin: ≤0 dB/chip → lock <50 % over one period (large CEP); +6 dB/chip →
+  ~99 % in ~50 ms (small CEP).
+- **Erasure-aware**: a *wrong* chip costs ~2× a *missing* one → weight erasures below flips when
+  inflating CEP (mark fades/saturation as erasures, not guesses).
+- **Builds over time**: CEP starts high (tentative) and decreases as the code integrates / confirms
+  across periods — full code 75 ms = 1.5 ticks @ 20 Hz, early lock ~55 ms.
+- **Two-beacon CDMA**: an equal-amplitude second beacon sharing the detector/pixel costs ~1 SNR tier →
+  higher CEP when beacons merge.
+
+**First-pass implementation (038 / follow-on):**
+- Replace the linear placeholder (`src/eval/camera_projection.cc` step 5) with a **decode-confidence
+  CEP** — a monotonic map from a synthetic per-beacon "correlation-margin" proxy (derivable in sim from
+  range / aspect / occlusion) to CEP, shaped to the 031 sim curves. Cleaner than linear, grounded in the
+  code physics, no footage required.
+- Add the **apparent-motion spatial σ** when the camera lands (calibrated from real footage per the
+  item above). `CEP_total = combine(temporal, σ_motion)`.
+- **Calibration source**: the 031 single-PD field bench (Exp A/B) measures real margin / dropout /
+  time-to-confirm vs range / aspect / sun → the temporal-CEP calibration; apparent-motion σ comes later
+  with the camera. `(x, y, CEP)` NN interface unchanged throughout.
 
 ### [DEFERRED] Selection Strategy Alternatives
 - NSGA-II Pareto: non-dominated sort on (tracking RMSE, energy, worst-case spread)

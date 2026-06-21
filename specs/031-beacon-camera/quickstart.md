@@ -18,7 +18,7 @@ Validates three orthogonal properties before committing to perfboard layout:
 
 **Schematic + BOM live in [`cad/beacon-eval/`](../../cad/beacon-eval/)** (separate from the cube pod):
 
-- [`cad/beacon-eval/beacon-eval-schematic.png`](../../cad/beacon-eval/beacon-eval-schematic.png) (also `.pdf`) — printable schematic
+- [`cad/beacon-eval/beacon-eval-schematic.pdf`](../../cad/beacon-eval/beacon-eval-schematic.pdf) — printable schematic
 - [`cad/beacon-eval/beacon-eval.kicad_sch`](../../cad/beacon-eval/beacon-eval.kicad_sch) — KiCad 10 source
 - [`cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md) — eval-only BOM. Most lines reuse the parent target BOM (LM3410X, L1, D1, R1, R2, C1, C5, C6, **TPS3839 supervisor**, 5× L1IZ-0850); additions are the XNANO eval kit (DigiKey `ATTINY416-XNANO-ND`, ~$11), one extra 100 nF cap (C7 supervisor decoupling), and a few rig consumables.
 
@@ -118,7 +118,7 @@ Time budget: ~4 hours.
    - Power down the board cleanly (USB unplug).
    - Pull the SD card → mount on the PC → confirm `<session-id>.clip` + `<session-id>.json` are present + non-empty.
 6. **Ingest the test clip**:
-   - `cd tools/beacon-loader && pip install -e .`
+   - `cd specs/031-beacon-camera/beacon-loader && pip install -e .`
    - `python -c "from beacon_loader import load_clip; f, m = load_clip('/path/to/session.clip'); print(f.shape, m['recovered_frame_count'])"`
    - Expect output like `(7200, 240, 320) 7200` for a 30 s @ 240 fps clip.
 7. **Mount the recorder on the carrier craft**:
@@ -144,7 +144,7 @@ Time budget: 20 min.
 6. Pull SD card.
 7. On the PC:
    ```bash
-   cd tools/beacon-loader
+   cd specs/031-beacon-camera/beacon-loader
    python - <<'PY'
    from beacon_loader import load_clip
    import numpy as np

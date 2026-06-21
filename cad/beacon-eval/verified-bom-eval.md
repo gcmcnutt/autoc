@@ -2,13 +2,15 @@
 
 **Audit date**: 2026-05-20
 **Status**: Bench bring-up rig. Verifies (a) MCU gold-code generation on real silicon, (b) boost-converter + LED-string electrical behavior matches spec, (c) low-voltage cutout via firmware ADC + topological failsafe + WDT *(revised 2026-05-20 per [research.md R11](../../specs/031-beacon-camera/research.md#r11--undervoltage-cutoff--led-driver-failsafe-1s-lipo-brown-out-protection); was "supervisor IC" before)*.
-**Schematic**: [`beacon-eval-schematic.png`](beacon-eval-schematic.png) (also [`beacon-eval-schematic.pdf`](beacon-eval-schematic.pdf); KiCad 10 source: [`beacon-eval.kicad_sch`](beacon-eval.kicad_sch))
+**Schematic**: [`beacon-eval-schematic.pdf`](beacon-eval-schematic.pdf) (KiCad 10 source: [`beacon-eval.kicad_sch`](beacon-eval.kicad_sch))
 
 > **What this is**: a *minimal*, *breadboarded* eval rig that uses the actual target Phase-1 beacon-pod circuit (LM3410X boost + sense-resistor LED driver + 5× Luxeon L1IZ-0850 IR LEDs in series) but **substitutes the ATtiny412 + UPDI + battery sub-assembly with a Microchip ATtiny416-XNANO evaluation kit**, with the XNANO's USB power isolated from the target rail via a one-time cut of an internal 0Ω strap.
 >
 > **What this is NOT**: a battery-powered, EMI-tight target-pod assembly. The cube enclosure, magnet-wire LED harness, and final perfboard EMI layout are explicitly out of scope for Phase 1a — they're part of Phase 1 §(a). This rig validates *components, topology, and firmware* before we commit to perfboard layout.
 >
 > ⚠️ **Revised 2026-05-20 per FR-1.7 #4 / R11**: the TPS3839 supervisor IC (U3) and its decoupling cap (C7) are **removed** from the design; UVLO is now firmware ADC on the ATtiny416's internal 1.1 V bandgap (zero external parts) + a topological pull-DOWN of DIM to GND (so any MCU-offline state = LEDs OFF) + watchdog timer (≤ 250 ms timeout). The KiCad schematic was updated in commit `c30a9b6` to match — supervisor branch deleted, R2 flipped to pull-down. BOM lines below reflect the revised parts list — **do NOT order the supervisor (EV-A11) or the extra 100 nF cap for it (the second 100 nF that was listed under EV-A10)**.
+>
+> ➕ **Added 2026-06-17 (acquisition-research loop)**: the **single-IR-sensor receiver front-end** (photodiode → TIA → ADC → on-hand Lattice **STEP-MXO2** MachXO2; no purchase) is specified in [`../beacon-receiver/eval-loop-bom.md`](../beacon-receiver/eval-loop-bom.md). Its parts are all DigiKey — **batch that receiver cart with §EV-A here in one checkout** so the complete emitter→receiver loop orders together; receiver bring-up + the photometer→ADC→FPGA *physical simulation* then proceeds in parallel. The MachXO2 has **no analog input**, so the external ADC is the primary digitizer — amplitude capture is what enables the AGC / soft-decision / erasure / partial-acquisition studies (a comparator would discard it).
 
 ---
 
@@ -85,9 +87,9 @@ Pin role assignments (identical on both chips):
   - [ ] received — notes:
 - [ ] **EV-A3 = target A1** TI **LM3410XMF-NOPB** SOT-23-5 boost LED driver, qty 1. **Reuse from target order** (parent BOM Cart §A line A1; order +1 spare).
   - [ ] received — notes:
-- [ ] **EV-A4 = target A5** Coilcraft **DR0810-223ML** 22 µH shielded inductor, qty 1. **Reuse from target order** (parent A5; +1 spare).
+- [ ] **EV-A4 = target A5** **22 µH boost inductor, Isat ≥ 1.5 A** (boost peak ~1.2 A), qty 1 (+1 spare). **Primary (in stock, ordered): TDK/EPCOS `B82464G4223M000`** (22 µH ±20%, shielded SMD). Alt: Coilcraft `MSS1038-223MLC` (Isat 2.34 A, shielded). *(Original `DR0810-223ML` radial-THT appears non-stock/delisted as of 2026-06-18.)* ⚠️ Do NOT use Würth 7447745220 (only 1.05 A, backordered to Oct-2026). Any in-stock 22 µH @ Isat ≥ 1.5 A works; LM3410X also tolerates 10–15 µH @ ≥1.5 A as a fallback.
   - [ ] received — notes:
-- [ ] **EV-A5 = target A6** **MBR130T1G** Schottky SOD-123, qty 1. **Reuse from target order** (parent A6; +1 spare).
+- [ ] **EV-A5 = target A6** Schottky boost rectifier, qty 1 (+1 spare). Original **MBR130T1G** (SOD-123) **OUT OF STOCK 2026-06-18 → substitute Panjit `SS1030_R1_00001`** (DigiKey `3757-SS1030_R1_00001CT-ND`, 30 V Schottky, **SOD-123** — same package as MBR130). ✅ like-for-like boost rectifier; **confirm forward rating ≥ 1 A** (boost peak ~1.2 A; MBR130 was 1 A SOD-123).
   - [ ] received — notes:
 - [ ] **EV-A6 = target A7** 0.62 Ω 1% 1206 sense resistor (Vishay `CRL1206-FW-R620ELF` or equiv), qty 1. **Reuse from target order** (parent A7; +1 spare).
   - [ ] received — notes:
@@ -119,7 +121,7 @@ Pin role assignments (identical on both chips):
   - [ ] received — notes:
 - [ ] **EV-D2** Jumper wire kit (M-M, M-F, 10cm and 20cm assortment, ~$5). Likely on hand.
   - [ ] received — notes:
-- [ ] **EV-D3** SOT-23-5 to DIP-6 adapter board (for LM3410X breakout; SchmartBoard or Aries Electronics, ~$2 each, qty 2 to cover U1 plus one spare). DigiKey: `1188-1018-ND` or similar. *(Revised 2026-05-20 per R11: was qty 3 to cover U1 + U3; supervisor removed → qty 2 only.)*
+- [ ] **EV-D3** SOT-23-5→DIP adapter board (for LM3410X breakout), qty 2 (U1 + spare). DigiKey: **SchmalzTech `ST-SOT23-5`** (exact SOT-23-5), or Chip Quik **`PA0089`** / **`PCB3007-1`**, or SparkFun **`BOB-00717`** (a SOT-23-6 adapter also fits the 5-pin part — leave one pad unused). *(Corrected 2026-06-18: the prior `1188-1018-ND` was wrong — that DK number is an Olimex USB cable, not an adapter.)* *(Revised 2026-05-20 per R11: was qty 3 to cover U1 + U3; supervisor removed → qty 2 only.)*
   - [ ] received — notes:
 - [ ] **EV-D4** SOD-123 to DIP-2 adapter (for MBR130; or just solder the SOD-123 directly to a perfboard scrap with magnet wire). Likely on hand / ad-hoc.
   - [ ] received — notes:
@@ -163,7 +165,7 @@ Pin role assignments (identical on both chips):
 
 ## Cross-reference
 
-- Schematic: [`beacon-eval-schematic.png`](beacon-eval-schematic.png) / [`beacon-eval-schematic.pdf`](beacon-eval-schematic.pdf) (KiCad 10.0.3 source `beacon-eval.kicad_sch`)
+- Schematic: [`beacon-eval-schematic.pdf`](beacon-eval-schematic.pdf) (KiCad 10.0.3 source `beacon-eval.kicad_sch`)
 - Custom symbols: [`beacon-eval.kicad_sym`](beacon-eval.kicad_sym) (LM3410X SOT-23-5)
 - Project lib table: [`sym-lib-table`](sym-lib-table)
 - Parent target BOM: [`../../specs/031-beacon-camera/verified-bom.md`](../../specs/031-beacon-camera/verified-bom.md)

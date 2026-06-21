@@ -362,7 +362,7 @@ def _render_md(results: dict, decision: str, rationale: str) -> str:
     lines = [
         "# NFR-4 — Beacon MCU clock-drift simulation results",
         "",
-        f"**Generated**: 2026-05-18 by `tools/nfr4-clockdrift-sim/sim.py`",
+        f"**Generated**: 2026-05-18 by `specs/031-beacon-camera/nfr4-clockdrift-sim/sim.py`",
         f"**Parameters**: N_CHIPS={N_CHIPS}, nominal chip rate={NOMINAL_CHIP_RATE_HZ} Hz, "
         f"camera fps={SAMPLE_RATE_HZ}, derated SNR={DERATED_SNR_DB} dB, "
         f"acquisition threshold={ACQ_THRESHOLD_DB} dB, MC trials={MC_TRIALS} per point, RNG seed={RNG_SEED}",
