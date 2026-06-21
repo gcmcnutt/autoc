@@ -36,12 +36,18 @@
 - Q: 4-on-pyramid vs 5-on-cube — which LED arrangement gives "fairly even spread" across the 270° envelope? → A: **5-on-cube wins** per polar-plot analysis ([plot_led_configs.py](plot_led_configs.py)) — 0.41 min/max uniformity vs 0.00 (full nulls) for 45°-tilt pyramid or 0.10 for 60°-tilt pyramid. 5-on-cube has no nulls, leaks coverage past the design rim into the inboard direction, costs 25% more LEDs + total power. **Half-cube enclosure**: 2.5 × 2.5 × ~1 cm, mounted in **45° diamond orientation** on wing-tip top surface for reduced pressure drag (wedge frontal profile vs flat-face). LED part firmed: **Lumileds Luxeon IR Compact 850 nm — L1IZ-0850000000000** (DigiKey 7243418).
 - Q: 1 A per LED is too much power for the 5 V BEC ESC rail; can we cut power and/or run from raw battery? → A: **Yes — drop to 300 mA per LED** per the link-budget analysis (100 m daylight retains ~23 dB margin even at 100× real-world derating). Cuts per-pod power 5× (~2.85 W peak / ~1.43 W avg vs prior 14.5 W / 7.25 W). Power source: **dedicated 2-wire JST cable from main 3S pack** (not BEC, not shared with servos). EMI isolated from RC signal harness.
 - Q: With 15-bit Gold code, what's the sensible chip rate considering the 10 Hz FC sample rate? → A: **100 Hz chip rate (firm)** — 150 ms code period = ~1.5 FC samples cold acquisition. 240:100 = 12:5 non-integer ratio sidesteps the prior 48 Hz / 240 fps 5:1 integer-aliasing edge case. 2.4 frames-per-chip oversampling preserves matched-filter margin. Ongoing position-fix updates at 240 fps regardless (only CEP confidence is gated by code-period rate).
-- Q: Are there Microchip parts that manage PWM AND control a series of LEDs from outputs directly? → A: **No general-purpose MCU sources 300 mA per pin** — switching elements (FETs or LED driver ICs) are always required for power-class LEDs. **Topology A**: integrated LED driver IC (**Microchip MIC3232** primary / Diodes AL8807 alternate) handles 9-12.6 V input + CC switching to 5 parallel LEDs at 300 mA; ATtiny412 MCU does small-signal PWM control of the driver IC's DIM pin (Gold code + mode-select scaling). Single chip per duty (driver + MCU) keeps part count + PCB area + EMI sources minimal. Topology C (5 per-LED FETs gated by MCU GPIOs) noted as listed-alternate prototype path.
+- Q: Are there Microchip parts that manage PWM AND control a series of LEDs from outputs directly? → A: **No general-purpose MCU sources 300 mA per pin** — switching elements (FETs or LED driver ICs) are always required for power-class LEDs. **Topology A**: integrated LED driver IC (**Microchip MIC3232** primary / Diodes AL8807 alternate) handles 9-12.6 V input + CC switching to 5 parallel LEDs at 300 mA; ATtiny412 MCU does small-signal PWM control of the driver IC's DIM pin (Gold code + mode-select scaling). Single chip per duty (driver + MCU) keeps part count + PCB area + EMI sources minimal. Topology C (5 per-LED FETs gated by MCU GPIOs) noted as listed-alternate prototype path. **→ SUPERSEDED later same day (2026-05-14) by the "path C standalone-battery" clarification below**: Topology A's 9-12.6 V tethered-from-3S premise was dropped in favor of a 1S-battery boost driver (TI LM3410); MIC3232 is no longer the primary part. Topology A is preserved here only as design-history context.
 - Q: What's the beacon-channel reliability when MCU clock drifts ±5% across operating range? → A: **Plan-time analysis required (NFR-4)**: simulation across -5% to +5% chip-rate drift, computing post-correlation SNR loss + cold-acquisition probability + tracking probability at each step. The simulation picks the implementation: (a) external crystal on the beacon MCU (~$0.30, eliminates problem), (b) receiver-side multi-hypothesis matched filter (031-fpga gate cost), (c) factory-calibrated internal RC only if simulation shows 99% acquisition is met, or (d) both crystal + multi-hypothesis (defense in depth). Bench-verification follows the plan-time choice.
 - Q: M2 beacon effort is transitory (path forward is scene-recognition, not coded beacons). Can we drop the tethered + dual-mode design entirely and go with a standalone-battery pod? → A: **YES — path C**: standalone 1S-LiPo-powered pod with single-mode operation at 300 mA per LED (IEC 62471 RG0 at typical distances, no dual-mode safety contract needed). Manual on/off switch on the pod body for field activation. **2-bit solder jumpers or DIP switch** for Gold-code selection (supports 4 codes; phase 1 uses A/B). **1S 100 mAh battery**: ~2 g, ~14 min runtime per charge — single-flight runtime. Drop the tethered variant entirely from the spec; if a future heavier-power spec needs it, retrieve from git history. Eye-safety analysis at 300 mA: **RG0 at ≥30 cm for momentary glances, RG0 at ≥1 m unconditionally**. 5× power cut vs original 1 A design buys ~10× exposure-time safety margin.
 - Q: Does 15-bit at 240 fps give enough codes / error margin, or should we go to 31-bit + 480 fps now? → A: **Stay at 15-bit / 240 fps for this transitory M2 effort.** N=15 gives 17 codes in the family (4 used via 2-bit code-select, 13 reserved) and 1-bit error tolerance — sufficient at our 30+ dB derated link-budget margin. **31-bit + 480 fps is documented as the clean upgrade path** in FR-1.3 (5-bit error tolerance, 31 codes, same ~150 ms acquisition latency, doubled SD bandwidth). Future multi-beacon or harder-noise scenarios trigger the upgrade.
 - Note (operator 2026-05-12, post-Q5): **The phase-1 raw recordings are the input to acquisition-time / DSP / FPGA-pipeline simulations** for actual flight-DSP design — not just visualization or noise-cal. The Q10 follow-on will replay these clips through simulated correlators, AGC curves, and FPGA-pipeline Python models to characterize: acquisition latency under realistic photon flux, correlation SNR vs aspect angle, FOV-coverage utilization, beacon-intensity sufficiency at design range, pyramid-dimension trade-offs (e.g., is the 2.5 cm base too small to dissipate heat / spread the unlit cone correctly?), frame-rate adequacy under body-rate-induced motion blur. The "early phase is proving the beacon→camera chain" is **expected to be non-trivial** — the optical, mechanical, electrical, and timing variables interact in ways the link-budget math can't fully predict, and the recordings are how we surface that interaction.
 - Note (operator 2026-05-12, post-Q5): **The Lattice eval-board flight-recorder is fine for early eval on a larger carrier craft** (e.g., the hb1 or a larger trainer-class airframe with margin to lift the eval-board weight). It is **over the weight budget for the eventual target tracker craft**. When the perception loop moves toward production hardware (likely 031-integration or a dedicated small-form-factor follow-on), we will pursue **smaller setups or custom builds** (bare camera + small FPGA on flex PCB, or the bare-die OG-series sensor + custom carrier from camera_considerations.md). Phase 1 explicitly accepts the eval-board weight cost as the price of getting first-flight data fast and reusing the FPGA work for 031-fpga.
+
+### Session 2026-05-17 (post-/analyze + post-/plan refinements)
+
+- Q: Is the Phase 1 bench-mode (FR-4.1) USB-tethered recording path built as a custom FPGA gateware variant, or satisfied by a different mechanism? → A: **Multi-eval-board de-risk strategy.** Bench mode is satisfied by an **off-the-shelf USB-camera eval board** (Arducam B0264 UVC USB shield + OV9281 B0162 module, or equivalent UVC-compliant NIR-capable sensor module) feeding a host PC over UVC. This gives **live frame display + per-pixel inspection during first-light, optical-chain bring-up, EMI debugging, exposure tuning** — without requiring any Lattice FPGA gateware work. The bench-mode recording path (FR-4.1 + FR-4.2 file output) is a **Python script consuming UVC frames and writing the canonical `.clip` format**, so the loader contract is exercised end-to-end on the bench-mode path before flight gateware lands. The Lattice CrossLink-NX-EVN + bare-die camera is the **flight-mode** path (FR-4.1b), built in parallel and de-risked by the bench-mode optical proof. **Similarly**, the beacon firmware is brought up on a **Microchip ATtiny412 Curiosity Nano dev board** (~$10, USB-UPDI built-in) with breadboard wiring to the LED string + boost driver BEFORE the half-cube enclosure or hand-soldered pod exists. Each chunk of work proves out on its own eval board, then integrates.
+- Q: Does Phase 1 require procuring a calibrated NIR power meter (~$500–2000) to perform the FR-3.4 #3 IEC 62471 measurement, or can the measurement be deferred / substituted? → A: **Defer the formal calibrated measurement; use design-analysis + qualitative substitutes + an operator-only 1 m viewing rule.** The path C 300 mA design has ~10× exposure-time safety margin vs the prior 1 A design and is unconditionally RG0 at ≥1 m per the FR-1.7 link-budget table; the 200 mm bench measurement only matters for sustained close-range staring, which doesn't occur in operator-only Phase 1 work. Substitutes: (a) the FR-1.7 link-budget calculation IS the design-time eye-safety analysis; (b) a smartphone IR-camera qualitative check confirms the LED is emitting at expected brightness ("look bright but not saturating through the phone camera at 200 mm" passes); (c) a written 1 m minimum operator viewing rule enforced during bench + flight, eliminating the close-range exposure regime entirely. Document the deferral, the link-budget basis, the qualitative checks, and the operator rule in `eye-safety-measurements.md`. Phase 1 + US6 proceed without a calibrated meter. If 031-integration introduces spectator exposure or regulatory context, procure the meter then.
+- Q: How should the recorder detect / signal a soft-CPU hang mid-flight so the operator doesn't end up with a stale-green LED while no chunks are landing? → A: **Tie the status LED's "recording" blink directly to the main-loop chunk-flush event** — no hardware watchdog needed. Specifically: on every successful SDIO `CMD25` completion (the "chunk durable" event), the soft-CPU emits a short GREEN pulse (~100 ms ON) on the status LED. With ~1-sec chunks at 240 fps (1 Hz pulse rate) and ~0.5-sec chunks at 480 fps (2 Hz pulse rate), the operator sees a **visible heartbeat blink in the 1–4 Hz range** during normal recording. If the main loop hangs, the pulses stop firing — LED freezes at whatever state it was last set to (probably solid GREEN or solid off, but importantly *no blink*). Operator's visual cue is "blink = alive, no blink = problem", which is the simplest possible liveness signal and requires zero new hardware. Combines cleanly with the existing fault patterns (YELLOW 10 Hz blink = transient fault, RED solid = unrecoverable, etc.) which override the heartbeat pulse during fault states.
 
 ## Overview
 
@@ -69,10 +75,10 @@ Phase-1 has bench-developer-facing user stories only. No end-user-facing UI chan
 ### US1 — Build and verify a single beacon pod (priority: P1)
 
 **As** the bench operator,
-**I want to** assemble a 4-LED, 4-sided pyramid pod (~2.5 cm base) on a small driver board with code-modulated output,
+**I want to** assemble a **5-LED half-cube standalone-battery pod** (per FR-1.1 + FR-1.2) with code-modulated LED-string output,
 **so that** I can verify the optical emission pattern, mass budget, EMI signature, and code orthogonality before committing to a paired-beacon flight build.
 
-Acceptance: a single pod emits the canonical **15-bit** Gold code at the canonical chip rate, draws within the design power budget from a representative **3S LiPo** bus, weighs within the design mass budget, produces a visible-on-scope modulated NIR signal at >1 m distance through a smoke-glass filter (to confirm code is recoverable visually), and passes a bench EMC sanity check (no measurable degradation of a co-located FC's gyro noise floor / RC link RSSI when the beacon is powered).
+Acceptance: a single pod emits the canonical **15-bit** Gold code at the canonical **100 Hz** chip rate, runs on its own **1S LiPo** per FR-1.2, weighs within the FR-1.4 mass budget (≤6 g), produces a visible-on-scope modulated NIR signal at >1 m distance through an **ND attenuator** (to bring the scope-photodiode in-range without saturating; confirms code is recoverable optically), and passes the FR-3.3 bench EMC sanity check (with the pod sitting ~10 cm from a representative FC running INAV, the FC's gyro noise floor and RC RSSI show **no degradation > 3 dB** vs the beacon-OFF baseline).
 
 ### US2 — Build the paired-beacon target rig (priority: P1)
 
@@ -80,7 +86,7 @@ Acceptance: a single pod emits the canonical **15-bit** Gold code at the canonic
 **I want to** integrate two pods on a small target rig (workbench mock-up of wingtips at correct spacing, then onto a real RC airframe for outdoor bench),
 **so that** I can collect realistic two-beacon footage for simulator + downstream tooling.
 
-Acceptance: two pods running simultaneously with code A and code B respectively, mounted at hb1-wingtip spacing (~0.9 m), powered from a representative airframe DC bus, surviving moderate vibration. No firmware-level concerns yet — just photons in space.
+Acceptance: two pods running simultaneously with code A and code B respectively, mounted at hb1-wingtip spacing (~0.9 m), **each powered from its own 1S LiPo battery per FR-1.2** (no airframe connection), surviving moderate vibration. No firmware-level concerns yet — just photons in space.
 
 ### US3 — Build the receiver: camera + lens + filter, hand-held first (priority: P1)
 
@@ -113,11 +119,11 @@ Operational model (revised 2026-05-14 for path C standalone-battery pods):
 
 Pre-flight safety gate (path C — simplified):
 - FR-3.3 bench EMC sanity check PASS (no airframe-side coupling — mostly a formality);
-- FR-3.4 eye-safety verification (IEC 62471 RG0 at 200 mm + battery insert/remove behavior + UVLO confirmed) PASS;
+- FR-3.4 eye-safety verification PASS — specifically: (a) **Phase 1 eye-safety substitutes per FR-1.7 #3** — link-budget design analysis on file + smartphone-IR qualitative check done + operator-only 1 m minimum viewing rule in effect (formal IEC 62471 calibrated measurement deferred), (b) battery insert/remove behavior per FR-1.7 #1-2, (c) firmware UVLO at 3.5 V real + topological failsafe + WDT bench-verified per FR-1.7 #4 (revised 2026-05-20 per R11);
 - Two charged 1S batteries available (≥4.0 V each, per cell-checker reading) before flight.
 
 Pre-takeoff per-flight checklist:
-- Recorder status LED on tracker craft shows **GREEN-solid** (= actively writing to SD) BEFORE throttle-up.
+- Recorder status LED on tracker craft shows **GREEN heartbeat blink (~1–2 Hz pulse)** BEFORE throttle-up (= actively writing chunks to SD; per FR-2.6). A frozen LED with no observed blink = main-loop hung; do not throttle up.
 - Each beacon pod's diagnostic LED blinks at chip rate, confirming code generation after battery insertion.
 
 Acceptance (revised 2026-05-12 per clarification — infrastructure validation, not detection-performance):
@@ -154,11 +160,15 @@ Acceptance: a written bench-experiments log notes each session's setup + recorde
 
 Each pod SHALL include **5 LEDs arranged on the 5 outward-facing faces of a 3D-printed half-cube** ("half-cube" = a square base + 4 vertical side faces + 1 outboard apex face, like a cube with its inboard face removed and used as the mounting base). The half-cube SHALL be sized **2.5 cm × 2.5 cm square base × ~1.3 cm tall** (the box only protrudes ~1.3 cm from the wing-tip surface; the apex face is parallel to the wing-tip surface). Height of 1.3 cm accommodates the internal 1S LiPo battery + PCB stack-up per FR-1.2.1; the prior ~1 cm height was for the tethered variant without an internal battery. (Revised 2026-05-14: 4-LED pyramid → 5-LED half-cube; tethered → standalone-battery — see "Why 5-on-cube replaces 4-on-pyramid" below.)
 
-The 5 LEDs SHALL be positioned:
-1. **One LED on the outboard apex face** (beam axis along +X, the outboard direction).
-2. **Four LEDs on the 4 vertical side faces** (beam axes perpendicular to +X, at 90° azimuthal spacing around the outboard axis).
+The 5 LEDs SHALL be positioned so the combined emission pattern covers **270° spherically with the ~90° unlit cone pointed INBOARD toward the craft centerline** (behind the half-cube, into the battery + wing/fuselage stack):
 
-The combined emission pattern covers **270° spherically with the ~90° unlit cone pointed INBOARD toward the craft centerline** (behind the half-cube, into the wing/fuselage). From any external aspect — outboard, above, below, ahead, behind — the beacon SHALL be visible regardless of the tracker's relative attitude; only the fuselage-shadow direction is blind, and that direction is occluded by craft structure anyway.
+1. **One LED on the outboard apex face** — beam axis along **+Y, the outboard direction**, pointing directly away from the wing.
+2. **Four LEDs on the four side faces** of the half-cube, with the cube rotated **45° about the +Y outboard axis** (diamond orientation, see Mounting below). The resulting side-LED beam directions (in body frame, +X forward / +Y outboard / +Z up) are:
+   - **Upper-forward** (≈ +45° pitch with forward bias) — operator shorthand: "45° pitch up"
+   - **Lower-forward** (≈ −45° pitch with forward bias) — operator shorthand: "45° pitch down"
+   - **Upper-aft** and **Lower-aft** — operator shorthand: "the other two facing back"
+
+From any external aspect — outboard, above, below, ahead, behind — the beacon SHALL be visible regardless of the tracker's relative attitude; only the inboard fuselage-shadow direction is blind, and that direction is occluded by craft structure anyway.
 
 **Why 5-on-cube replaces 4-on-pyramid** (decision 2026-05-14):
 
@@ -172,10 +182,20 @@ Polar-plot analysis ([led_configs_polar.png](led_configs_polar.png), generated b
 
 The 5-on-cube has **no coverage nulls** anywhere in the 270° envelope. Trade-off: one more LED (25% more drive current + power + mass), lower peak intensity at the outboard apex (1.0 vs 3.0 relative — but apex peak gain only matters for direct-chase aspects, which 5-on-cube still illuminates strongly enough), and a slightly larger pod footprint. "Fairly even spread" is the load-bearing design goal.
 
-**Mounting**: the half-cube base SHALL be glued/taped to the wing-tip top surface **rotated 45° (diamond orientation)** — the cube edges of the square base align fore-up / aft-up / fore-down / aft-down rather than fore-aft-left-right. Rationale:
+**Mounting** (revised 2026-05-17 to capture wing-tip-flat geometry):
 
-- **Aerodynamics**: a square frontal face into the airstream presents a flat blunt obstacle (high pressure drag). A 45°-diamond orientation presents an edge into oncoming air — wedge-shaped frontal profile, substantially lower drag.
-- **LED beam orientation**: in diamond mount, the four side LEDs point fore-up / aft-up / aft-down / fore-down (covering the wing-tip quadrants symmetrically). The apex LED still points outboard.
+The target craft (hb1-class) has wing tips that present a **flat vertical outboard surface ~2.5 cm tall**. The pod assembly mounts to this surface as a **stacked battery-then-cube column** extending outboard:
+
+1. **The 1S LiPo battery sits flat against the wing-tip outboard face**, installed by **slide-in from the aft direction** into the pod enclosure (FR-1.2.1). The battery's broad flat side lies parallel to (and in contact with) the wing-tip face; the battery's footprint (~4 × 22 mm projected onto the wing-tip face) fits well within the 2.5 cm wing-tip height.
+2. **The half-cube enclosure sits directly outboard of the battery** — the cube's inboard face is the outboard wall of the battery cavity. The apex of the half-cube points **directly outboard (+Y)**.
+3. **The half-cube is rotated 45° about the +Y outboard axis** (diamond orientation). The cube edges of the square base align fore-up / aft-up / fore-down / aft-down rather than fore-aft-up-down. This produces the LED beam directions listed above (apex outboard + 4 LEDs at 45° pitch-up-forward / 45° pitch-down-forward / upper-aft / lower-aft).
+4. **Total outward protrusion**: battery thickness (~6 mm) + enclosure walls (~2 mm) + cube depth (~13 mm) ≈ **2-2.5 cm outboard** of the wing-tip surface.
+
+Rationale:
+
+- **Aerodynamics**: presenting a 45°-diamond edge (rather than a flat square face) into the airstream gives a wedge-shaped frontal profile and substantially lower pressure drag.
+- **Wing-tip face is the load-bearing mount surface**: gluing/taping the pod-enclosure base against the flat outboard tip face (rather than the top surface) gives a stiff symmetric mount, no asymmetric torque, and natural alignment of the +Y apex axis with the wing's outboard normal.
+- **Slide-in battery from aft**: allows battery swap between flights without removing the cube or disturbing the wing-tip mount. The aft direction is also the natural operator-access direction when the craft is parked.
 
 **LED part** (FR-1.1 firm choice, 2026-05-14): **Lumileds Luxeon IR Compact 850 nm — [L1IZ-0850000000000](https://www.digikey.com.mx/en/products/detail/lumileds/l1iz-0850000000000/7243418)**. Per-die: 130° HPBW, 1.3 W radiant @ 1 A drive (T_j = 25 °C), 2.0 × 1.6 mm SMT package, ~30 mg/die. OSRAM SFH 4725S (150° HPBW, ~1 W) is the mechanical-similar fallback if Lumileds availability slips.
 
@@ -218,31 +238,57 @@ Power + drive chain:
    ▼
 internal JST-PH 2.0 mm socket → 1S rail (V_BAT)
    │
-   │   ┌── voltage supervisor IC monitors V_BAT, gates boost EN at 3.3 V UVLO (FR-1.7)
-   │   │
-   ├── boost LED driver IC (e.g., TI LM3410) ─────────────────────┐
+   │  *(revised 2026-05-20 per FR-1.7 #4 / R11: supervisor IC removed; UVLO is now
+   │   firmware ADC + topological failsafe + WDT — see truth table below)*
+   │
+   ├── boost LED driver IC (TI LM3410X, SOT-23-5) ────────────────┐
    │      - V_BAT input (2.7-5.5 V), single-stage step-up         │
    │      - drives 5 LEDs IN SERIES (group Vf ~9.5 V at 300 mA)   │
    │      - constant-current output (sense resistor sets 300 mA)  │
-   │      - PWM-dimming input (DIM/EN pin) ←─ from MCU            │
-   │      - 1.6 A peak switch, ~90% efficiency single-stage       │
+   │      - DIM = SHUTDOWN control (no separate EN pin on LM3410):│
+   │           HIGH → driver active + boost runs + 300 mA LEDs    │
+   │           LOW  → full IC shutdown (~80 nA quiescent)         │
+   │      - Soft-start = 20 µs (datasheet SU) — negligible vs 10 ms chip period
+   │      - 2.8 A typ switch current limit, ~90% efficiency       │
    │                                                              ▼
    │                                          LED1 → LED2 → LED3 → LED4 → LED5
    │                                          (apex)  (side)  (side)  (side)  (side)
    │
-   └── ATtiny412 MCU runs directly off V_BAT (1.8-5.5 V tolerant — no LDO)
-          - 1 µF + 100 nF ceramic decoupling at MCU VCC to filter boost-switching transients
-          │
-          │ ─── 2-bit code-select read at boot (solder jumpers OR DIP switch) ────
-          │ ─── Gold-code PWM out at 100 Hz chip rate ──→ LED driver DIM pin ────→
-          ▼
-      (LED driver IC handles the CC switching; MCU does small-signal PWM dim + reads code-select)
-      (battery removal = V_BAT collapses = MCU loses power = LED driver loses dim signal = LEDs off)
+   ├── ATtiny412 MCU runs directly off V_BAT (1.8-5.5 V tolerant — no LDO)
+   │      - 1 µF + 100 nF ceramic decoupling at MCU VCC to filter boost-switching transients
+   │      - ADC0 samples internal 1.1 V bandgap every 100 ms (V_BAT = 1.1 × 1024 / raw)
+   │      - PA3 driven LOW + POWER_DOWN sleep on 5× consecutive < 3.6 V samples
+   │      - WDT enabled (~250 ms timeout), petted in main loop
+   │      │
+   │      │ ─── 2-bit code-select read at boot (solder jumpers OR DIP switch) ────
+   │      │ ─── Gold-code LUT bit at 100 Hz chip rate, GPIO push-pull active-HIGH:
+   │      │       chip = 1 → drive PA3 HIGH (DIM HIGH, LM3410X running)
+   │      │       chip = 0 → drive PA3 LOW  (DIM LOW, LM3410X shutdown)
+   │      ▼
+   │
+   └─────────── DIM line (topological failsafe via pull-DOWN) ───────────┐
+        MCU PA3 (push-pull active-HIGH, LSB of code LUT) ────────────────┤
+        10 kΩ pull-DOWN to GND  ─────────────────────────────────────────┤
+                                                                          ▼
+                                                              LM3410X DIM pin
+       
+      Truth table on DIM (revised 2026-05-20 per FR-1.7 #4 / R11):
+        MCU PA3 = HIGH (chip=1)                  → DIM=HIGH → LEDs ON
+        MCU PA3 = LOW  (chip=0)                  → DIM=LOW  → LEDs OFF
+        MCU PA3 = high-Z (reset / boot / hang)   → DIM=LOW  → LEDs OFF  (topological failsafe)
+        MCU drives HIGH but firmware hung        → ≤250 ms WDT reset → PA3 high-Z → LEDs OFF
+        V_BAT < 3.5 V real (firmware ADC trip)   → MCU drives PA3 LOW + sleeps → LEDs OFF
+        V_BAT collapses (battery removed)        → all rails dead → LEDs OFF
+       
+      (PA3 is push-pull active-HIGH; R2 pull-down to GND guarantees the safe state
+       in every MCU-offline condition. Schematic IS the failsafe — no supervisor
+       chip required. WDT bounds the only failure-mode gap (hang while driving HIGH)
+       to ≤250 ms ≈ ≤0.02 % of a 100 mAh pack worst-case.)
 ```
 
 Key topology choices:
 
-- **Single-stage boost LED driver IC** (e.g., **TI LM3410** or **TPS61169**) takes 1S LiPo directly, steps up to drive 5 LEDs **in series** at 300 mA constant current. Output voltage = 5 × LED Vf = ~9.5 V. Single chip handles input regulation + boost + CC switching.
+- **Single-stage boost LED driver IC** — **TI LM3410X** (primary, 1.6 MHz fsw — NOT LM3410Y which is 525 kHz) or **TI TPS61169** (alternate). Takes 1S LiPo directly, steps up to drive 5 LEDs **in series** at 300 mA constant current. Output voltage = 5 × LED Vf = ~9.5 V (well under the LM3410's 24 V V_SW absolute max). Single chip handles input regulation + boost + CC switching. DIM pin is the only shutdown/control input — no separate EN exists on LM3410.
 - **5 LEDs in series, not parallel**: boost LED drivers natively drive series strings — simpler topology, no per-LED ballast needed, ~90% efficiency single-stage. Failure mode: one LED open → all 5 go dark on that pod. Acceptable trade; pod is a replaceable unit.
 - **Battery-as-switch**: insertion of the 1S LiPo's JST-PH connector into the on-PCB socket powers the pod; removal disconnects all rails. No mechanical switch. Operator workflow: insert battery → pod runs the FR-1.3 Gold code for ~14 min until depletion; remove battery → pod off.
 - **No dual-mode safety contract**: at 300 mA the eye-safety analysis (FR-1.7) shows IEC 62471 RG0 at typical bench + flight distances. Single-mode operation at 300 mA is sufficient.
@@ -253,27 +299,26 @@ The "drop on any craft" use case is the deployment model: tape the pod to a wing
 
 #### FR-1.2.1 Driver BOM + dimensional fitment (revised 2026-05-14 for path C standalone-battery)
 
-The driver + battery SHALL fit inside the 2.5 × 2.5 × 1 cm half-cube enclosure (FR-1.1). Internal PCB area ~20 × 20 mm; component-stack height budget ~6 mm above the PCB. The 1S battery (~5 × 30 × 8 mm typical for a 300 mAh Tinywhoop-class pack) mounts either on the underside of the PCB (battery flat against the inboard-base wall) or in a separate compartment of the 3D-printed enclosure.
+The driver + battery SHALL fit inside the **2.5 × 2.5 × ~1.3 cm half-cube enclosure plus an inboard battery cavity** (FR-1.1). Internal PCB area ~20 × 20 mm; component-stack height budget ~6 mm above the PCB. The **1S 100 mAh Tinywhoop-class battery (~4 × 22 × 6 mm typical)** sits flat against the wing-tip outboard face in its own enclosure pocket on the inboard side of the PCB, slide-in from the aft direction (FR-1.1 Mounting).
 
 **Component BOM** (path C, standalone-battery, 2026-05-14):
 
 | Block | Part | Package | Footprint | Height | Notes |
 |---|---|---|---|---|---|
 | Battery | **1S LiPo, ~100 mAh, 20C** (e.g., generic Tinywhoop pack [Amazon B083NWXLTK](https://www.amazon.com/dp/B083NWXLTK) or equivalent — 100 mAh size) | flat pouch | ~4 × 22 × 6 mm | 6 mm | **~2 g**; **~14 min runtime per charge** at 50% duty (FR-1.4); standard 1S JST-PH 2.0 mm charge connector exits through inboard base. 20C × 0.1 Ah = 2 A continuous capability — well above the 0.86 A peak draw |
-| Boost LED driver IC | **TI LM3410-Y** (primary, 1.6 MHz fsw) / **TI TPS61169** (alternate, smaller package) | SOT-23-5 | 3 × 3 mm | 1.1 mm | 2.7–5.5 V input, up to 38 V output, 1.6 A internal switch; current-mode PWM; FB pin regulates LED current via external R_sense; DIM pin for PWM modulation (Gold code at 100 Hz); EN pin pulled by voltage supervisor for UVLO. **-Y (1.6 MHz)** variant enables the smaller 22 µH inductor. Built-in 2.5 V UVLO is **insufficient** for LiPo protection — the external supervisor handles the 3.3 V cutoff (FR-1.7 #4) |
+| Boost LED driver IC | **TI LM3410X (LM3410XMF-NOPB)** primary, 1.6 MHz fsw / **TI TPS61169** alternate | SOT-23-5 | 3 × 3 mm | 1.1 mm | 2.7–5.5 V input, up to 24 V V_SW abs max (datasheet §6.3); 2.8 A typ switch current limit (datasheet §6.5); current-mode PWM (internal boost regulator switching — NOT a dim PWM); FB pin regulates LED current via external R_sense. **DIM pin is the ONLY shutdown/dimming control — LM3410 has no separate EN pin.** *(revised 2026-05-20 per FR-1.7 #4 / R11)* DIM is wired to MCU PA3 (push-pull active-HIGH) with a 10 kΩ pull-down (R2) to GND. MCU drives DIM HIGH for chip=1 (LEDs ON), LOW or high-Z for chip=0 (LEDs OFF). Any MCU-offline state → PA3 high-Z → R2 pulls DIM LOW → LM3410X enters ~80 nA shutdown. DIM-driven shutdown puts the entire IC in ~80 nA quiescent (datasheet §6.5 I_Q-shutdown). Soft-start = 20 µs (datasheet §6.5 SU) — 0.2 % of the 10 ms chip period, no waveform impact. **LM3410X** (1.6 MHz) variant enables the smaller 22 µH inductor (NOT LM3410Y which is 525 kHz per datasheet §6.5 fsw table). Built-in V_IN UVLO (~2.3 V per datasheet §6.5) is **insufficient** as primary LiPo protection — the firmware ADC + topology + WDT defense per FR-1.7 #4 holds the 3.5 V cutoff |
 | LED current sense resistor | **0.62 Ω 1% 1206** (between LED string and FB pin) | 1206 | 3.2 × 1.6 mm | 0.6 mm | Sets LED current via the LM3410's 190 mV FB reference: I_LED = 190 mV / R_sense ≈ 300 mA. Dissipates ~57 mW peak / ~30 mW avg — easy 1206 |
 | Driver inductor | **22 µH shielded SMD, I_sat ≥ 1.5 A** | 4×4 mm | 4 × 4 mm | 1.8 mm | Peak inductor current ≈ 1.2 A at 1S → 9.5 V boost at 300 mA, 1.6 MHz fsw; **verify saturation rating** on the specific part before ordering |
 | Schottky diode | **1 A 30 V Schottky** (e.g., MBR130) | SOD-123 | 3.5 × 1.6 mm | 1.1 mm | Boost-mode rectifier diode; low V_F minimizes efficiency loss |
-| Bulk cap (V_LED output) | **4.7 µF / 25 V low-ESR ceramic** | X7R 1206 | 3.2 × 1.6 mm | 1.5 mm | Output stabilization at the 9.5 V LED-string rail; **verify after DC-bias derating** that effective capacitance meets the LM3410-Y stability requirement (datasheet specifies minimum effective C_out) |
+| Bulk cap (V_LED output) | **4.7 µF / 25 V low-ESR ceramic** | X7R 1206 | 3.2 × 1.6 mm | 1.5 mm | Output stabilization at the 9.5 V LED-string rail; **verify after DC-bias derating** that effective capacitance meets the LM3410X stability requirement (datasheet specifies minimum effective C_out) |
 | Bulk cap (V_bat input) | **22 µF / 10 V ceramic** | X7R 1210 | 3.2 × 2.5 mm | 1.5 mm | Input bypass for the 1S rail; protects against current spikes during switching |
-| MCU | **Microchip ATtiny412** | SOIC-8 | 5 × 4 mm | 1.5 mm | 8 pins: V+, GND, PWM-out (TCA0 to LED driver DIM pin), 2× code-select inputs, UPDI, reset, 1 spare. **Runs directly off V_BAT** (1.8-5.5 V operating range covers the 3.0-4.2 V LiPo swing); no LDO needed. Internal 20 MHz RC oscillator — see NFR-4 clock-drift requirements |
-| Voltage supervisor (LiPo UVLO, **safety-critical**) | **Microchip MCP1316T-29LE/OT** or **TI TPS3839K33** or **Diodes APX803-31SAG** | SOT23-5 or SOT-353 | 2.9 × 2.8 mm or 2.0 × 2.0 mm | 1.1 mm | Trips at 3.3 V with ~100 mV hysteresis (matches FR-1.7 #4 threshold); open-drain output pulls the boost driver's EN/SHDN pin low at undervoltage. Quiescent current <5 µA. **Hardware-level UVLO independent of MCU** — protects the 1S LiPo from over-discharge damage |
+| MCU | **Microchip ATtiny412** | SOIC-8 | 5 × 4 mm | 1.5 mm | 8 pins: V+, GND, **code-out GPIO (push-pull active-HIGH to LM3410X DIM at 100 Hz chip rate; no PWM peripheral required)**, 2× code-select inputs, UPDI, reset, 1 spare. **MCU IS the UVLO cutoff path** *(revised 2026-05-20 per FR-1.7 #4 / R11)* — samples V_BAT via internal 1.1 V bandgap on ADC0, drives PA3 LOW at 3.6 V firmware trip, enters POWER_DOWN sleep. WDT (≤ 250 ms timeout) bounds firmware-hang exposure. Topological failsafe (DIM pull-down to GND) covers all other MCU-offline cases. **Runs directly off V_BAT** (1.8-5.5 V operating range covers the 3.0-4.2 V LiPo swing); no LDO needed. Internal 20 MHz RC oscillator — see NFR-4 clock-drift requirements |
+| DIM-line pull-DOWN | **10 kΩ ±5 % 0603 to GND** *(revised 2026-05-20 per FR-1.7 #4 / R11 — was pull-up to V_BAT in original spec)* | 0603 | 1.6 × 0.8 mm | 0.5 mm | Holds DIM LOW (= LM3410X shutdown) when MCU PA3 is high-Z (reset, boot, brown-out, hang in input mode). MCU drives PA3 push-pull HIGH to enable LED string. **Schematic-level failsafe** — no firmware path between MCU-offline and LEDs-off; the topology guarantees it. R2 dissipation when PA3 driven HIGH: V_BAT² / 10 kΩ ≈ 1.4 mW @ 3.7 V nominal — negligible vs LED drive. 100 kΩ alternative for slightly lower active-state draw — only matters if every 100 µA counts for runtime |
 | Battery socket | **JST-PH 2.0 mm 2-pin SMT or THT socket** (battery's pigtail mates here) | THT or SMT | 5 × 2 mm | 5-6 mm above PCB | Mate/demate is the pod's power switch (FR-1.2). Battery is removed for charging in any standard 1S USB-LiPo charger |
 | Code-select jumpers | **2× solder jumpers** (PCB pads, no parts) OR **CUI DSM-02 SMT DIP switch** (2-position) | PCB / SMT | n/a / 4 × 5 mm | 0 / 2.5 mm | 2 bits → 4 Gold codes; MCU reads at boot. Jumpers cheaper/lighter (assembly-time); DIP switch operator-friendly in field |
 | MCU decoupling | **1 µF + 100 nF ceramic** at MCU VCC pin | 0603 | 1.6 × 0.8 mm | 0.5 mm | Filters boost-switching transients on V_BAT (no LDO PSRR to fall back on); place close to the MCU |
 | Boost-driver decoupling | 2.2 µF + 100 nF ceramic at boost driver VIN pin | 0603 | 1.6 × 0.8 mm | 0.5 mm | Local input bypass for the boost driver IC |
-| Supervisor decoupling | 100 nF ceramic at supervisor VCC pin | 0603 | 1.6 × 0.8 mm | 0.5 mm | Local bypass for the voltage supervisor |
-| Diagnostic LED (optional) | 0603 green visible-light LED | 0603 | 1.6 × 0.8 mm | 0.5 mm | Optional; blinks at chip rate for bench-side verification; uses ~3 mA |
+| Diagnostic LED (**mandatory** per US6 pre-flight check) | 0603 green visible-light LED | 0603 | 1.6 × 0.8 mm | 0.5 mm | Blinks at the Gold-code chip rate (100 Hz) for bench- and field-side verification that the pod is alive + emitting; uses ~3 mA. Visible through a small light-pipe slot on the pod enclosure's inboard face (operator-visible at pre-flight walk-around) |
 | Battery retention (mechanical, not PCB) | Friction-fit ribs in 3D-printed cavity OR elastic strap loop OR magnetic latch | n/a | n/a | n/a | Retains battery during flight vibration; plan-time decision based on bench iteration |
 
 **PCB layout sketch** (top-down view inside the half-cube — outboard apex is "up"):
@@ -322,7 +367,7 @@ side   │   │ JST-PH  │  ← battery pigtail       │   side
 **Total per-pod mass estimate** (path C standalone-battery, 100 mAh, no-LDO, 2026-05-14):
 - 5 × Luxeon LED dies: 5 × 30 mg = 150 mg
 - PCB (20×20 mm × 0.8 mm FR4): ~250 mg
-- All SMT components (boost driver + MCU + supervisor + caps + jumpers): ~160 mg (saves ~20 mg from dropping the LDO)
+- All SMT components (boost driver + MCU + caps + jumpers): ~150 mg (saves ~20 mg from dropping the LDO, ~10 mg from dropping the supervisor IC + its decoupling cap per FR-1.7 #4 revision)
 - **1S LiPo 100 mAh battery**: **~2 g**
 - 3D-printed half-cube + battery compartment (PLA, ~30% infill): ~1.8 g
 - Mounting tape/glue: ~0.3 g
@@ -362,7 +407,7 @@ The code generation contract (revised 2026-05-14 — chip rate firmed to 100 Hz;
 - **Duty cycle**: ~50% nominal (7-8 ON chips per 15-chip code; exact value falls out of the LFSR-derived Gold-code bit pattern). Per-LED current 300 mA peak when ON (FR-1.4).
 - **Phase**: **free-running, self-clocked** from the beacon MCU's internal timer. No sync to camera, no sync between the two pods, no externally-driven clock signal. The matched filter on the FPGA side tolerates the natural offset.
 - **Beacon MCU clock-drift tolerance**: see NFR-4 below. ±5% chip-rate drift (the worst case for the ATtiny412 internal RC oscillator across the industrial temperature range) translates to cumulative phase error over the 15-chip code period — the plan-time analysis SHALL determine whether this is workable with a single matched-filter hypothesis or whether multi-hypothesis correlation (or an external crystal on the beacon MCU) is needed.
-- **MCU workload**: one timer interrupt at 100 Hz + 15-bit LUT lookup + LED-driver-IC PWM-output toggle. <5 mW MCU power. Code generation is not the load-bearing complexity here; clock-drift tolerance is (NFR-4).
+- **MCU workload**: one timer interrupt at 100 Hz + 15-bit LUT bit lookup + single-GPIO write to the LED driver's DIM pin. **No PWM peripheral used — DIM is driven as a strict on/off digital signal carrying the current LUT bit; LED driver IC translates that to 0 mA or 300 mA on the LED string.** No dim control, no duty-cycle modulation, no analog filtering on the GPIO line. <5 mW MCU power. Code generation is not the load-bearing complexity here; clock-drift tolerance is (NFR-4).
 
 #### FR-1.4 Mass + power budget (revised 2026-05-14 for path C standalone-battery + 300 mA per-LED + 5 LEDs series)
 
@@ -373,10 +418,10 @@ Each pod is powered by **its own 1S LiPo battery** (100 mAh, 20C). No wires to t
 **Single-mode operation (path C, 2026-05-14)** — no dual-mode, no fail-safe contract:
 
 - **Per-LED**: 0.3 A × 1.9 V = **0.57 W instantaneous** when ON; 50% duty → **0.285 W average** per LED.
-- **Per pod, 5 LEDs in series**: total LED-string power = 5 × 0.57 W = **2.85 W instantaneous**, **~1.43 W average** across the 50% duty cycle, plus ~20 mW MCU + supervisor overhead (no LDO).
+- **Per pod, 5 LEDs in series**: total LED-string power = 5 × 0.57 W = **2.85 W instantaneous**, **~1.43 W average** across the 50% duty cycle, plus ~15 mW MCU overhead (no LDO, no supervisor IC — per FR-1.7 #4 revision 2026-05-20). R2 pull-down dissipation when PA3 driven HIGH ≈ 1.4 mW @ 3.7 V — negligible.
 - **From 1S LiPo**: boost LED driver steps 3.7 V (nominal) up to 9.5 V output at 300 mA constant current. Input power (at 90% boost efficiency) = output power / 0.9 = 1.43 / 0.9 = **~1.59 W avg from battery**.
 - **Battery input current avg**: 1.59 W / 3.7 V = **~430 mA average draw from 1S cell**.
-- **Battery runtime**: 100 mAh × 95% usable (4.2 V → 3.3 V UVLO cutoff per FR-1.7) ÷ 430 mA ≈ **~13 min per charge** at continuous 50% duty operation. (Slightly less than the 14 min "ideal-discharge" figure because the FR-1.7 UVLO leaves ~5% capacity unused for cell-storage safety.) Single-flight runtime; insert a fresh battery between flights. **Operator practice**: insert battery just before the airframe lifts off and pull it as soon as on the ground; prevents wasting cell capacity on idle ground time.
+- **Battery runtime**: 100 mAh × ~90 % usable (4.2 V → 3.5 V UVLO cutoff per FR-1.7 revised) ÷ 430 mA ≈ **~12 min per charge** at continuous 50% duty operation. (~1 min less than the original 13 min estimate because the revised 3.5 V cutoff reserves ~10 % capacity for cell-storage safety vs the original 3.3 V cutoff's ~5 %.) Single-flight runtime; insert a fresh battery between flights. **Operator practice**: insert battery just before the airframe lifts off and pull it as soon as on the ground; prevents wasting cell capacity on idle ground time.
 - **Battery peak draw**: at chip-ON instants, input current ≈ 9.5/3.7 × 0.3 / 0.9 = 0.86 A — well within the 20C × 0.1 Ah = 2 A continuous capability of the spec'd battery.
 - **Thermal envelope inside the half-cube**: 5 LEDs × 0.285 W = 1.43 W average; LED dies dissipate to ambient through the outer cube faces. PCB-side losses ~30 mW + boost-driver losses ~150 mW + driver-inductor losses ~50 mW = **~230 mW PCB-side dissipation**, negligible. Battery self-discharge during operation is negligible at 20C continuous capability. **Bench-validate** thermal soak nonetheless during FR-3.x.
 - **Link-budget headroom** (per the 100 m daylight analysis): single visible LED at 300 mA gives ~76 dB post-correlation SNR vs ~13 dB lock threshold = **~63 dB margin**. Even with 100× real-world derating (haze + dirty optics + off-axis + occlusion = −40 dB), retains **~23 dB margin** — comfortable.
@@ -387,25 +432,29 @@ The single-mode operation removes the prior dual-mode + fail-safe machinery. The
 
 The two pods together SHALL produce two orthogonal Gold codes whose cross-correlation, when recovered by demodulating a bench-camera clip with both pods illuminated simultaneously, is **≤ −15 dB** (handoff §5.5). Verification path:
 
-- (a) **Scope-level**: capture one pod's LED-anode (or sense-resistor) waveform on a fast scope, confirm the chip rate (48 Hz default, ~20 ms chip period) + 15-chip code period + correct Gold-code pattern;
+- (a) **Scope-level**: capture one pod's LED-string current (via sense-resistor) waveform on a fast scope, confirm the chip rate (**100 Hz, ~10 ms chip period**) + 15-chip code period (150 ms) + correct Gold-code pattern;
 - (b) **Photodiode-level**: pin a fast photodiode at 1 m, capture both pods' combined NIR signal, demodulate offline with both correlator templates, confirm A and B peak above each other's noise floor;
 - (c) **Camera-level**: record a bench clip via FR-4 with both pods, demodulate the per-pixel intensity time-series at each blob, confirm both codes recoverable with the expected cross-correlation floor.
 
 (a) is mandatory pre-shipment; (b) is a useful sanity check; (c) is what 031-fpga's Python golden model will reproduce against the same recorded clip.
 
-#### FR-1.6 EMI mitigation (new 2026-05-12)
+#### FR-1.6 EMI mitigation (revised 2026-05-14 for path C standalone-battery)
 
-The pulsed 4-LED group drive presents a **first-class EMI risk** to the rest of the airframe — to the FC's gyros, the ESC, the RC link, and the autopilot's MSP/UART links. The mechanism is the di/dt at FET switching edges: ~2 A swinging in tens of nanoseconds couples into nearby loops as voltage spikes and radiates as broadband noise. With **two pods on the same 3S LiPo flight pack**, the disturbance has a direct conducted path back to every other airframe consumer via the shared battery rails.
+The path C pod has **no wires to the airframe** — there is no conducted EMI path. The remaining EMI risk is **radiated emissions from the boost driver's switching node and the LED-string return loop**, coupling into either (a) the on-airframe flight controller / RC receiver at flight-typical distances (~30–60 cm wing-tip-to-FC), or (b) the other pod on the opposite wing (~1 m apart).
+
+Mechanism: the TI LM3410**X** boost driver (FR-1.2.1) switches at **1.6 MHz**; the switch node carries ~1 A swings at sub-µs edges. Without mitigation, the switch-node loop radiates a broadband spectrum extending into the VHF range. The LED-string output current is comparatively benign — constant-current DC at 300 mA, modulated only at the 100 Hz Gold-code chip rate (~10 ms chip period) — easy to filter.
 
 The design SHALL include the following mitigations as defaults, with bench EMC characterization (FR-3.3 below) validating the choices:
 
-1. **Slew-rate control at the FET gate**: gate resistor (typ. 100–470 Ω, bench-tune for waveform integrity vs. switching loss) to slow rise/fall edges to **a few hundred nanoseconds** (vs. the 10s of ns "natural" edge). Trades a small efficiency loss for dramatic reduction in conducted+radiated emissions. This is the single highest-leverage mitigation.
-2. **Local bulk capacitance** at the buck-regulator output: 47–100 µF low-ESR (ceramic or polymer) close to the FET drain, plus 1 µF + 100 nF ceramic decoupling, to source the chip-ON pulse current without forcing the buck to slew the bus rail.
-3. **Power-input π-filter** on the 11.1 V tail entering the pod: small ferrite bead (e.g., 100 Ω @ 100 MHz) in series + 10 µF + 100 nF to ground on both sides. Blocks the conducted return-path EMI from propagating back up the LiPo lead to the rest of the airframe.
-4. **Twisted-pair LED return** between buck output and the LED group: minimizes the radiating loop area on the highest-current path.
-5. **Pod-to-airframe wiring**: twisted-pair on the 11.1 V tail run; **separated routing** from the servo / ESC / RC-receiver signal harnesses inside the wing; entry into the fuselage on the opposite side of the FC from the RC-link antenna where physically possible.
-6. **Pod metal shielding (optional, bench-evaluable)**: a thin copper-foil or conductive-paint layer on the inside of the 3D-printed pyramid, grounded to the pod's negative rail, with cutouts only at the LED apertures. Reduces near-field coupling to nearby surfaces.
-7. **Chip-rate placement**: the 48 Hz default chip rate is *intentionally* well below the gyro filter cutoffs and the RC-link channel rate. Harmonics from FET-edge switching extend to MHz, however — those are what the bulk caps + π-filter target, not the chip rate itself.
+1. **Shielded inductor on the boost-driver switch node** (FR-1.2.1 BOM specifies a shielded 22 µH SMD inductor). Unshielded inductors radiate the full switching spectrum from the inductor body; shielded variants reduce this by ~10–20 dB.
+2. **Local bulk capacitance at the boost driver input + output**: 22 µF + 100 nF on the V_BAT input rail, 4.7 µF + 100 nF on the V_LED output rail (per FR-1.2.1 BOM). Sources the switching pulse current locally without driving radiated currents back through the battery / LED-string loops.
+3. **Compact PCB switch-node + LED-string layout**: place the boost-driver IC, inductor, and Schottky diode in a tight triangle on the PCB; route the 5-LED series-string output with minimal loop area (LED leads soldered direct to PCB pads, kept short). Twisted return-routing where wire lengths exist between PCB and LED indents in the cube faces.
+4. **Optional metal shielding inside the half-cube body**: a thin copper-foil or conductive-paint layer on the inside walls of the 3D-printed half-cube, grounded to the pod's V_BAT negative rail, with cutouts only at the 5 LED apertures. Reduces near-field radiated coupling to the FC if bench-EMC shows it is needed.
+5. **MCU decoupling**: 1 µF + 100 nF at the ATtiny412 VCC pin (per FR-1.2.1 BOM). Filters boost-switching transients on the shared V_BAT rail — important because the MCU runs directly off V_BAT with no LDO to provide PSRR isolation. *(revised 2026-05-20 per FR-1.7 #4 / R11: supervisor IC removed; no separate supervisor-decoupling cap needed.)*
+6. **Chip-rate placement**: the **100 Hz Gold-code chip rate** is well below typical FC gyro low-pass filter cutoffs (≥250 Hz) and well above the audio range. Neither the chip rate itself nor its low-order harmonics should couple into the gyro signal path. The boost-converter 1.6 MHz fundamental + harmonics are the radiated-EMI concern; they are what mitigations 1–4 target.
+7. **Pod-to-pod radiated coupling**: the two pods on opposite wings (~1 m apart) run identical boost converters at the same nominal 1.6 MHz fsw, but with **independent MCU clocks and independent battery rails** — no shared timing reference exists for the switching to lock into phase coherence. Cross-pod radiated coupling is therefore incoherent noise that averages out across the 15-chip Gold-code integration. FR-3.2 / FR-3.3 SHALL bench-validate that one pod's switching does not appear as a recoverable pattern in the other pod's recovered code.
+
+The standalone-battery topology eliminates all conducted-EMI paths that the prior tethered draft had to mitigate (shared 3S LiPo, FET-gate slew control, π-input filter on the airframe tail). The remaining mitigations target only the radiated coupling that any boost converter unavoidably produces.
 
 #### FR-1.7 Eye-safety analysis + manual on/off switch (revised 2026-05-14 for path C single-mode 300 mA)
 
@@ -429,21 +478,25 @@ The path C decision (single-mode 300 mA + standalone battery, no RC-PWM dual-mod
 **Battery-as-switch** (path C — no mechanical switch):
 
 - Insertion of the 1S LiPo's JST-PH pigtail into the on-PCB socket powers the pod. Removal disconnects all rails. Operator workflow: insert charged battery → pod boots in <100 ms → emits Gold code until depletion (~14 min) → operator removes spent battery → pod off.
-- A **diagnostic visible-light LED** (FR-1.2.1 optional component) blinks at the Gold-code chip rate when the pod is emitting, giving the operator an at-a-glance "the beacon is alive" indicator without needing IR-camera visualization.
+- A **diagnostic visible-light LED** (FR-1.2.1 — mandatory per US6 pre-flight check) blinks at the Gold-code chip rate when the pod is emitting, giving the operator an at-a-glance "the beacon is alive" indicator without needing IR-camera visualization.
 
 **Required pre-flight verifications**:
 
 1. **Power-on behavior on battery insertion**: pod boots into emitting state within ≤100 ms of JST-PH mate; diagnostic LED begins blinking at the chip rate. Bench-verify on first build.
 2. **Power-off on battery removal**: all LED emission stops within ≤50 ms of JST-PH demate. Bench-verify (no zombie emission from residual cap discharge — the boost driver's UVLO drops out cleanly).
-3. **IEC 62471 measurement at 200 mm**: bench-measure radiant exitance with a calibrated NIR power meter; confirm classification matches the table above (RG0 at ≤10 s exposure, ≥30 cm). Document the measurement in [`eye-safety-measurements.md`](eye-safety-measurements.md) in the spec dir before US6 flies.
-4. **Battery low-voltage cutoff (LiPo protection — safety-critical)**: the pod SHALL stop driving the LEDs when the 1S cell drops to **3.3 V** (firm UVLO threshold, see Decisions Locked). This is **mandatory hardware-level UVLO** — must trip independently of the MCU (so a crashed/hung MCU does not strand the boost driver still draining the cell into damage range). Implementation contract:
+3. **IEC 62471 classification — Phase 1 deferred** (revised 2026-05-17): formal calibrated-NIR-power-meter measurement at 200 mm is **deferred** to a future spec (031-integration or any milestone with spectator-exposure / regulatory context). Phase 1 relies on the **FR-1.7 link-budget design analysis** (the table above) as the eye-safety basis, supplemented by: (a) **qualitative smartphone-IR-camera check** at 200 mm — pod should appear bright but not pixel-saturated through a typical smartphone camera (most smartphones have IR sensitivity and act as a coarse photodetector); (b) **operator-only 1 m minimum viewing rule** during all bench + flight work — at ≥1 m the FR-1.7 table classifies the design as unconditionally RG0 for any exposure time. Document the deferral + the substitute checks + the operator rule in [`eye-safety-measurements.md`](eye-safety-measurements.md) before US6 flies.
+4. **Battery low-voltage cutoff (LiPo protection — safety-critical)** *(revised 2026-05-20 per [research.md R11](research.md#r11--undervoltage-cutoff--led-driver-failsafe-1s-lipo-brown-out-protection))*: the pod SHALL stop driving the LEDs when the 1S cell drops to **3.5 V** (firm UVLO threshold, real V_BAT). This cutoff is implemented as **three defense-in-depth layers**, none requiring an external supervisor IC. The *intent* of MCU-independent UVLO — that no firmware failure mode strands the LED driver running — is preserved by the topological-failsafe layer (the schematic is the failsafe, not a chip). Implementation contract:
 
-   - **Voltage supervisor IC** (e.g., **Microchip MCP1316T-29LE/OT**, **TI TPS3839K33**, **Diodes APX803-31SAG**) monitors the 1S rail and gates the boost LED driver's EN/SHDN pin. Open-drain output preferred so the supervisor pulls EN low at the trip point.
-   - **Threshold**: **3.3 V trip-low** with **~100 mV hysteresis** (re-enable above 3.4 V) to prevent chatter at the threshold.
-   - **Reasoning for 3.3 V vs 3.0 V**: 3.3 V is storage-safe — operator can pull the spent battery and let it sit overnight without immediate recharging, no cell damage. 3.0 V is the manufacturer-absolute minimum and would require immediate recharge to avoid storage damage. The runtime difference is small (~5% of charge capacity) and not worth the cell-handling risk.
-   - **NOT firmware-controlled**: the MCU does NOT participate in the cutoff path. Even if the MCU crashes, hangs, or runs invalid code, the boost driver SHALL still shut off at the supervisor threshold. The MCU MAY monitor a separate ADC reading of the 1S rail for diagnostic blink-codes (FR-1.2.1 optional diagnostic LED) but the supervisor is the load-bearing safety element.
-   - Boost driver candidates' built-in UVLO is **insufficient**: LM3410 has 2.5 V UVLO, TPS61169 ~2.5 V, AL8807 ~6 V (designed for higher-input applications) — none match the 3.3 V LiPo-safe threshold. External supervisor is required regardless of driver choice.
-   - **Bench-verify**: drop the cell voltage via a programmable supply or a discharge-down-to-cutoff bench test; scope the boost driver's switch node + LED current to confirm clean shutoff at 3.3 V; check no zombie drain after shutoff (battery current should drop to <100 µA quiescent supervisor + MCU sleep-mode consumption).
+   a. **Topological failsafe** (Layer 1, always-on): the LM3410X DIM net is held LOW by a 10 kΩ resistor (R2) to **GND**. The MCU drives DIM HIGH (push-pull active-HIGH) to enable the LED string; any MCU-offline state (POR, BOD reset, WDT reset, software reset, brown-out, or firmware hang in GPIO input mode) leaves PA3 high-impedance, R2 pulls DIM LOW, and the LM3410X enters its ~80 nA shutdown state (datasheet I_Q-shutdown). **This is the primary fail-safe** — the schematic topology itself prevents stranded-LED-on conditions.
+   b. **Firmware ADC cutoff** (Layer 2, normal-operation): the MCU samples V_BAT every 100 ms via the internal 1.1 V bandgap reference channel (ratiometric measurement using V_BAT as Vref: V_BAT = 1.1 V × 1024 / ADC_raw — **no external divider or GPIO required**). On 5 consecutive readings below **3.6 V threshold** (firmware-set; 100 mV margin above the 3.5 V spec to absorb Vref ±4 % drift), the MCU drives PA3 LOW and enters POWER_DOWN sleep (~100 nA hold). Wake-up only on battery removal + re-insertion.
+   c. **Watchdog timer** (Layer 3, hang-protection): the MCU's internal WDT is enabled with a **≤ 250 ms timeout**, petted in the main loop. If firmware hangs while PA3 is driving HIGH (the only Layer 1 fail-safe gap), WDT resets the MCU within 250 ms; PA3 returns to high-Z; Layer 1 takes over. **Maximum "stranded LEDs on past true UVLO" window: 250 ms ≈ 0.02 mAh ≈ 0.02 % of a 100 mAh pack.**
+
+   - **Threshold**: **3.5 V real V_BAT** (firmware trip set at 3.6 V to absorb Vref drift) with implicit hysteresis (once tripped, MCU stays in POWER_DOWN sleep — no re-engagement until battery removal cycles power).
+   - **Reasoning for 3.5 V vs original 3.3 V** (revised 2026-05-20): 3.5 V at rest ≈ ~20 % SOC; under-load sag-corrected trip is ~3.4 V → ~10 % SOC. Preserves cell cycle-life better than the original 3.3 V threshold (which approached 5 % SOC under load) and gives the operator a "land now" warning window before complete cutoff. Runtime cost: ~1 min off the previous ~13 min estimate per 100 mAh pack.
+   - **Reasoning for firmware + WDT vs original "hardware supervisor IC, MCU-independent"** (revised 2026-05-20): MCU is now the cutoff path, but the schematic is the failsafe. The only non-self-protecting failure case (MCU hangs while actively driving HIGH) is bounded by the WDT to ≤ 250 ms / ≤ 0.02 % cell impact per incident. Operator-accepted trade-off: simpler BOM (no supervisor IC, no decoupling cap) + tunable threshold (no part-suffix decoding hazard) at the cost of accepting per-hang ≤ 0.02 % cell wear.
+   - **NOT a separate supervisor IC**: previous wording mandating MCP1316T / TPS3839 / APX803 is **withdrawn**. Those parts don't reliably exist at the required 3.5 V threshold in the right package + output-type combination (the TPS3839 family caps at 3.08 V then jumps to 4.38 V; the family is also push-pull, not open-drain as the original wired-AND topology required). Going firmware-side avoids the part-survey rabbit-hole entirely.
+   - **Boost driver built-in V_IN UVLO is still insufficient as primary protection**: LM3410 trips at ~2.3 V (datasheet §6.5) — too low to prevent LiPo cell damage. The topology-plus-firmware-plus-WDT contract above is what holds the 3.5 V threshold; LM3410's own UVLO is a tertiary catch-all only.
+   - **Bench-verify**: (a) on the eval rig (`cad/beacon-eval/`, after R100 cut + R2 reroute), ramp the bench supply down from 4.0 V to 3.0 V; scope the LM3410X DIM pin + V_LED rail to confirm cutoff at 3.5 V real V_BAT with the 500 ms debounce window; (b) physically issue a soft-reset to the MCU mid-emission, confirm DIM goes low within ≤ 1 ms (POR delay) + WDT period ≤ 250 ms total; (c) verify post-cutoff battery quiescent current is < 100 µA (MCU sleep + LM3410X shutdown + R2 leakage with PA3 high-Z).
 
 ### FR-2 Camera + lens + filter
 
@@ -456,7 +509,7 @@ The camera SHALL be a **global-shutter mono image sensor** meeting all of:
 | 850 nm QE | ≥40% (≥60% preferred) — and **reasonably flat ±20 nm around 850 nm** (i.e., QE ≥40% at 830 nm and ≥40% at 870 nm) so LED-bin variation per FR-1.1 doesn't shift the link budget | camera_considerations.md link budget + FR-1.1 LED binning |
 | Shutter | Global only — rolling-shutter explicitly disqualified | handoff §3.2 (500°/s body rate → 17 px skew on rolling) |
 | Resolution mode | 320×240 cropped (ROI windowing preferred over binning for daylight) | FR-2.3 + handoff §6.1 |
-| Frame rate | ≥240 fps at 320×240 (firm); 480 fps support a strong plus (FR-2.3 dual-mode) | FR-2.3 |
+| Frame rate | ≥240 fps at 320×240 (firm baseline); **480 fps also required** per FR-2.3 dual-mode pipeline | FR-2.3 |
 | Interface | **MIPI CSI-2** (1- or 2-lane D-PHY); raw RGB-Bayer or raw-mono output | FR-2.5 (FPGA recorder ingest) |
 | AGC control | **Manual exposure + manual gain via I²C** (the FPGA recorder programs fixed settings per session; auto-AGC drift is explicitly disallowed because it perturbs the recorded photon-flux record) | FR-2.3 + camera_considerations.md §AGC dynamic behavior |
 | Bit depth | 8-bit and 10-bit raw modes both selectable | FR-2.3 |
@@ -506,7 +559,7 @@ ST VD55G1 was previously listed as primary; **dropped 2026-05-14** in favor of O
 
 Worst-case stack-up: an 850-bin LED at the low edge (845 nm) viewed through a filter at the high CWL edge (855 nm) would clip a fraction of the LED's emission. The 10-30 nm filter FWHM is wide enough to accommodate the binned LED emission spectrum even in worst-case mismatch, with ~50-70% transmission of the LED's photon output reaching the sensor. Wider filter (30 nm vs 10 nm) is more forgiving; narrower filter is better at daylight rejection. **Bench-validate** the actual LED-filter combination's transmission at the chosen bin before committing to phase-1 hardware.
 
-**Production path (firm): Commonlands custom M12 lens with integrated 850 nm bandpass filter** (`contact@commonlands.com`). Spec: 120° H FOV, F/2.0, NIR-corrected, 850 ± 10 nm bandpass in the housing. Integrated filter eliminates separate alignment step + saves ~0.5 g + minimizes glass count. Lead time: ~4-6 weeks typical for custom config; place the inquiry as a plan-time D (hardware-order) deliverable.
+**Production path (firm): Commonlands custom M12 lens with integrated 850 nm bandpass filter** (`contact@commonlands.com`). Spec: 120° H FOV, F/2.0, NIR-corrected; integrated bandpass filter with **CWL = 850 ± 5 nm** (matched to the FR-1.1 LED bin) and **FWHM ≤ 30 nm** (10 nm preferred for daylight rejection). Integrated filter eliminates separate alignment step + saves ~0.5 g + minimizes glass count. Lead time: ~4-6 weeks typical for custom config; place the inquiry as a plan-time D (hardware-order) deliverable.
 
 **Prototype path (for bench bring-up before Commonlands lands)**: stack two off-the-shelf parts:
 
@@ -540,7 +593,7 @@ The capture pipeline SHALL support **two operating modes, switchable at session 
 
 If the recorder host (FR-2.5) cannot sustain the chosen mode's data rate without dropping frames, that's a hardware-revisit, not a mode-compromise.
 
-**FR-2.4** The captured frames SHALL be time-tagged with monotonically increasing per-frame timestamps at microsecond resolution (typically the sensor or FPGA's own frame-counter + a derived us clock).
+**FR-2.4** The captured frames SHALL be time-tagged with **monotonically increasing per-frame timestamps at microsecond resolution**. The **authoritative clock source is the FPGA recorder's own free-running monotonic counter** (driven from the board oscillator), derived to microseconds at frame-arrival time. The sensor's own frame-counter (if any) MAY be additionally captured as an auxiliary field but is not the authoritative time source. **Wrap-around**: the counter SHALL be at least 64 bits wide at µs resolution (no wrap for ~580,000 years — effectively wrap-free for any flight session). The **per-chunk header timestamp** (per `data-format.md`) SHALL equal the per-frame timestamp of the first frame in that chunk.
 
 **FR-2.5 Onboard SD-flash recording for flight mode** (revised 2026-05-14)
 
@@ -591,11 +644,17 @@ The recorder host is **fed from the tracker's 3S LiPo**, NOT from a separate bat
 The flight-recorder firmware SHALL:
 
 - Use **4-bit SDIO @ ≥25 MHz** on the SD interface (≥12.5 MB/s theoretical; SDIO drivers in Lattice's Propel reference designs hit ~40 MB/s sustained in practice). **1-bit SPI mode is insufficient** (max ~10 MB/s — below the 240 fps 10-bit requirement).
-- Implement a **ring buffer in BRAM/LRAM** (≥250 ms / ~6 MB for 480 fps 10-bit) between MIPI ingest and SD write to absorb FAT flush latency.
+- Implement a **ring buffer** (≥250 ms / ~6 MB for 480 fps 10-bit) between MIPI ingest and SD write to absorb FAT flush latency. **Note**: the LIFCL-40's on-chip memory (2.5 Mb BRAM ≈ 320 KB + 168 Kb LRAM ≈ 21 KB) is insufficient for the full 6 MB ring buffer; the **EVN board's onboard SDRAM / HyperRAM (verify part + DMA path at plan time — Plan Dep A.8)** SHALL host the bulk ring storage, with BRAM/LRAM serving as the input-side double-buffer staging the MIPI burst into DRAM.
 - **Pre-allocate the clip file at session start** (avoids fragmentation-induced slowdown), write directly to pre-allocated sectors — bypassing FS-allocation bookkeeping on the hot path while keeping the recovered clip mountable as a normal file.
 - **Auto-start recording on power-up** (no operator action mid-flight); auto-stop on power-down or SD-full.
 - Write the FR-4.2 chunked format: independently-parseable ~1-second chunks (240 or 480 frames depending on mode + per-frame timestamp headers + chunk header), plus JSON sidecar.
-- **Mid-flight fault handling**: on fault (SD-full, write error, brown-out from a board-side voltage supervisor) — **immediate-truncate the current chunk + finalize the file**. Surviving chunks loadable by FR-4.3. No per-frame fsync.
+- **Mid-flight fault handling — reset and continue, not halt** (revised 2026-05-17). The recorder SHALL distinguish recoverable from unrecoverable faults and continue recording across recoverable ones:
+  - **Recoverable faults** (transient SDIO write error, ring-buffer overrun, sensor I²C drop-out): write a **fault-sentinel chunk** (zero-frame chunk with a fault-code field, per `contracts/data-format.md`) to mark the discontinuity, reset the affected subsystem (SD re-init / overrun counter reset / sensor I²C re-init), and **continue recording into the same .clip file**. Status LED transitions to YELLOW blinking during the reset (~100 ms) then back to GREEN-solid. Frame loss is bounded to the duration of the reset.
+  - **Unrecoverable faults** (SD-full, SD-removed, SDIO re-init repeatedly fails): write a final fault-sentinel chunk, finalize the file, set status LED RED-solid, stop. Operator pulls card.
+  - **Brown-out** (supervisor signal from a board-level UVLO): nothing the recorder firmware can do; power is being cut. The last in-flight chunk is lost up to the last SD `CMD25` completion (worst case ~1 second). Surviving chunks remain loadable.
+  - **No per-frame fsync** in any path — atomicity is at chunk granularity.
+
+The reset-and-continue path means a typical flight session produces **one .clip file with zero-or-more fault-sentinel chunks embedded** at the discontinuity points. The FR-4.3 loader skips fault-sentinel chunks cleanly and surfaces them in metadata as `fault_events[]` for ground analysis.
 - **Raw-LBA fallback** permitted if bench-benchmarking shows FS-mediated writes can't sustain the 480 fps 10-bit-packed rate (46 MB/s); use SD `CMD24`/`CMD25` direct sector writes paired with a host-side LBA-aware offload tool.
 
 Total storage for a typical 10-minute flight session: ~11 GB @ 240 fps 8-bit / ~14 GB @ 240 fps 10-bit / ~22 GB @ 480 fps 8-bit / ~28 GB @ 480 fps 10-bit. A 64 GB or 128 GB card gives multi-flight margin.
@@ -618,12 +677,13 @@ Pattern (following [xiao/src/util.cpp:15-32](../../xiao/src/util.cpp#L15) `heart
 |---|---|
 | Power-on / pre-init | RED solid (still bringing up sensor + filesystem) |
 | Initializing (sensor enumerated, FS mounted, clip pre-allocating) | GREEN blinking, 250 ms period (matches xiao `BLINK_INTERVAL_MSEC`) |
-| **Recording (writing to SD, no errors)** | **GREEN solid** — the "go for takeoff" signal |
-| Mid-flight write stall / frame drop / ring-buffer near-overrun | YELLOW or RED blinking, 100 ms period (rapid alert) |
+| **Recording (writing to SD, no errors)** | **GREEN heartbeat blink — short pulse (~100 ms ON) emitted on every successful SDIO chunk-flush (CMD25 completion)**. Visible cadence: ~1 Hz at 240 fps mode (1-sec chunks), ~2 Hz at 480 fps mode (0.5-sec chunks). **Pulses stopping = main-loop hung** — operator's primary liveness signal. The "go for takeoff" signal is the *first observed pulse after init*, not solid GREEN. (Revised 2026-05-17 — see Clarifications.) |
+| Mid-flight write stall / frame drop / ring-buffer near-overrun | YELLOW blinking, 100 ms period (rapid alert) — overrides the heartbeat blink during the fault window; returns to heartbeat blink after recovery |
 | Mid-flight unrecoverable error (SD full / write fault) | RED solid |
 | SD card missing or unreadable at boot | RED blinking, 250 ms period |
+| Main-loop hung (soft-CPU fault, no watchdog reset) | LED frozen at last commanded state (typically solid GREEN or solid off mid-pulse) — visible as **absence of heartbeat blink**. No active indicator change; the operator notices the missing blink. |
 
-The indicator SHALL be placed where the operator can see it during pre-flight walk-around without removing the camera mount cover or any wing tape (e.g., LED visible through a small light-pipe slot in the recorder housing, or mounted on an exposed face of the dev-kit board). Operator pre-flight checklist (FR-5.2 / US6 pre-flight safety gate) SHALL include "confirm GREEN-solid on recorder LED" before throttle-up.
+The indicator SHALL be placed where the operator can see it during pre-flight walk-around without removing the camera mount cover or any wing tape (e.g., LED visible through a small light-pipe slot in the recorder housing, or mounted on an exposed face of the dev-kit board). Operator pre-flight checklist (FR-5.2 / US6 pre-flight safety gate) SHALL include "**confirm GREEN heartbeat blink (~1–2 Hz pulse) on recorder LED**" before throttle-up — a single observed pulse + ongoing cadence is the "alive + recording" signal. (Revised 2026-05-17 from the prior GREEN-solid expectation.)
 
 The blink-code table SHALL be documented alongside this spec (`031-beacon-camera/recorder-status-codes.md` or equivalent quick-reference card) so a future operator unfamiliar with the build can interpret the LED at the flying field.
 
@@ -651,7 +711,7 @@ The flight-recorder system mounts to the tracker craft (hb1-class carrier per FR
 
 ### FR-3 Beacon-emission verification
 
-**FR-3.1** Bench-side, the operator SHALL be able to verify that the LED pyramid's emission pattern matches the design's **270° spherical coverage with unlit cone inboard** (FR-1.1) by rotating a single pod through both azimuth AND elevation in front of the camera at fixed distance, recording received signal vs. the two angles. The blind cone (apex pointed away from camera) SHALL be the only region with recovered signal below the lock threshold. (This is part of the US5 scenario set.)
+**FR-3.1** Bench-side, the operator SHALL be able to verify that the **5-LED half-cube's** emission pattern matches the design's **270° spherical coverage with unlit cone inboard** (FR-1.1) by rotating a single pod through both azimuth AND elevation in front of the camera at fixed distance, recording received signal vs. the two angles. The blind cone (inboard face pointed toward the camera) SHALL be the only region with recovered signal below the lock threshold. (This is part of the US5 scenario set.)
 
 **FR-3.2** Code orthogonality SHALL be bench-verifiable: with both pods on simultaneously at distinct codes, a recorded clip + Python-side demodulator SHALL show two recoverable signals with the expected cross-correlation floor.
 
@@ -660,10 +720,10 @@ The flight-recorder system mounts to the tracker craft (hb1-class carrier per FR
 With the standalone-battery design (path C), there is **no conducted EMI path between the pod and the airframe**. Only radiated emissions are possible — substantially easier to characterize and contain. Before any flight session in US6 (Beacon Test Flight 1), the operator SHALL perform a **bench EMC sanity check**:
 
 - Power one beacon pod from its 1S battery (no airframe connection). Mount it ~10 cm from a representative flight controller running the target firmware (INAV).
-- Compare against beacon-OFF baseline:
-  - **Gyro noise floor** (gyro spectrogram, blackbox log, or INAV's CLI `sensor_info` / gyro RMS reading) with the beacon OFF vs. ON. Acceptance: no measurable degradation at flight-typical distances (the pod will sit on the wing-tip, ~30-60 cm from a typical FC mount; bench-test at 10 cm is the conservative case).
-  - **RC link RSSI / link quality** with the beacon OFF vs. ON at the same RX/TX positions. Acceptance: no measurable degradation.
-  - **ESC behavior / throttle response** with the beacon switching. Acceptance: no twitches, no audible PWM disturbance.
+- Compare against beacon-OFF baseline (per-channel numeric thresholds — fail one, fail the gate):
+  - **Gyro noise floor** (gyro spectrogram, blackbox log, or INAV CLI `sensor_info` / gyro RMS): broadband gyro RMS increase ≤ **3 dB** vs beacon-OFF baseline at 10 cm distance (the pod will sit on the wing-tip, ~30-60 cm from a typical FC mount in flight, so 10 cm bench is the conservative case).
+  - **RC link RSSI / link quality**: RSSI drop ≤ **2 dB** and link-quality (LQ) drop ≤ **5 %** at the same RX/TX positions.
+  - **ESC behavior / throttle response**: no observable throttle twitches and no audible PWM disturbance with the beacon switching across at least one full Gold-code period.
 
 A FAIL SHALL block the test flight and trigger a redesign iteration on FR-1.6 mitigations (bulk-cap sizing, π-input filter, optional foil shielding of the cube interior). Document failures + remediation in the bench log per FR-5.2.
 
@@ -673,18 +733,32 @@ Before any flight session in US6, the operator SHALL bench-verify (per FR-1.7):
 
 1. **Power-on on battery insertion**: pod boots within ≤100 ms; diagnostic LED blinks at chip rate.
 2. **Power-off on battery removal**: all emission stops within ≤50 ms.
-3. **IEC 62471 classification at 200 mm**: measure radiant exitance with a calibrated NIR power meter; confirm RG0 at ≤10 s exposure per the FR-1.7 table. Document the measurement in [`eye-safety-measurements.md`](eye-safety-measurements.md) before US6 flies.
-4. **LiPo UVLO at 3.3 V** (safety-critical): with the pod powered from a programmable supply substituting for the cell, slowly ramp from 3.7 V → 3.0 V at a controlled rate; scope the boost driver's switch node + the LED current. Acceptance: clean shutoff at 3.3 V ± 50 mV, no zombie emission below threshold, no re-emission until supply rises above ~3.4 V (hysteresis). Confirm battery-side current drops to <100 µA after shutoff. Repeat with the actual LiPo discharging through normal use until cutoff to validate behavior end-to-end.
+3. **IEC 62471 classification — Phase 1 deferred** (revised 2026-05-17 per FR-1.7 #3): formal calibrated-meter measurement deferred. Perform the substitute checks: (a) smartphone-IR-camera qualitative confirmation that the pod is emitting at expected brightness at 200 mm (bright but not pixel-saturated); (b) document the operator-only 1 m minimum viewing rule applied during bench + US6. Record in [`eye-safety-measurements.md`](eye-safety-measurements.md) before US6 flies.
+4. **LiPo UVLO at 3.5 V real + WDT-bounded failsafe** *(revised 2026-05-20 per FR-1.7 #4 / R11)* (safety-critical): three sub-checks, all SHALL pass to clear flight gate.
 
-A FAIL in #1, #2, or #4 (the emission-correctness + LiPo-safety checks) SHALL block the test flight. A FAIL in #3 (eye safety classification above RG0) does NOT necessarily block flight but DOES inform the spectator-safety procedures for US6.
+   a. *Firmware ADC cutoff (Layer 2)*: with the pod powered from a programmable supply substituting for the cell, slowly ramp from 4.0 V → 3.0 V at a controlled rate; scope the LM3410X DIM pin + the LED current. Acceptance: clean shutoff at 3.5 V ± 100 mV real V_BAT (allowing for Vref drift), debounce window ≈ 500 ms; no re-emission until power cycles. Confirm battery-side current drops to <100 µA after shutoff.
+
+   b. *Topological failsafe (Layer 1)*: with the pod emitting at nominal V_BAT (~3.7 V), physically issue a soft-reset to the MCU (UPDI reset or programmed reset command). Acceptance: DIM goes LOW within ≤ 1 ms (POR delay); LM3410X enters shutdown; no re-emission until firmware re-engages.
+
+   c. *Watchdog timer (Layer 3)*: load a deliberately-hung firmware variant that drives PA3 HIGH in a tight loop without petting WDT. Acceptance: WDT triggers reset within the configured timeout (≤ 250 ms); after reset, DIM goes LOW (Layer 1 takes over).
+
+   Repeat (a) with the actual LiPo discharging through normal use until cutoff to validate end-to-end behavior.
+
+A FAIL in #1, #2, or #4 (the emission-correctness + LiPo-safety checks) SHALL block the test flight. #3 is informational under the Phase-1 deferral (the operator-only 1 m viewing rule + the FR-1.7 link-budget unconditional-RG0-at-1 m result is the binding eye-safety contract; the smartphone check is corroborative). Failures in the substitute checks should be investigated but do not block US6 unless they indicate the LEDs are not emitting at the expected power level (which is a separate FR-1.5 / FR-3.1 emission-pattern problem, not an eye-safety problem).
 
 ### FR-4 Raw-frame recording substrate
 
 (Revised 2026-05-12 — recording now supports two modes producing the same file format: bench-mode for indoor scenario sweeps; flight-mode for Beacon Test Flight 1 per US6. Flight-mode is the new addition; bench-mode is unchanged.)
 
-**FR-4.1 — bench mode (USB-tethered)** The bench recording system SHALL stream raw 320×240 mono frames at 240 fps + per-frame metadata to a host computer (USB / SDIO / Ethernet-tethered acceptable) for clips up to 60 seconds without dropping frames. Used for FR-3.1 / FR-3.2 / FR-5.1 indoor + outdoor bench sessions where a host PC is co-located.
+**FR-4.1 — bench mode (USB-tethered via UVC eval-camera)** (revised 2026-05-17 multi-eval-board strategy). The bench recording system SHALL use an **off-the-shelf UVC-compliant USB camera module** with a NIR-capable global-shutter sensor (default: Arducam B0264 USB-UVC shield + Arducam B0162 OV9281 sensor module, or equivalent), feeding **live frames + per-frame metadata to the host PC over USB-UVC** at 240 fps 320×240 (V4L2 on Linux, AVFoundation on macOS). A **`tools/beacon-viewer/` Python utility** SHALL provide:
+- Live-display of the streaming frames (per-pixel inspection, exposure/gain tuning, alignment + EMI debug);
+- **Optional record-to-file**: consume UVC frames and write the canonical FR-4.2 `.clip` format + JSON sidecar, exercising the same loader contract as flight mode.
 
-**FR-4.1b — flight mode (onboard SD)** The flight recording system SHALL record raw frames per FR-2.5 to an onboard SD-flash card, auto-starting on power-up and continuing for the full duration the camera is powered (up to SD-full). Used for US6 (Beacon Test Flight 1) and any future field session where tethering is not viable.
+Bench-mode is **completely decoupled from the Lattice flight-mode gateware** — it works as soon as the USB camera is in hand, before any FPGA bring-up. Used for FR-3.1 / FR-3.2 / FR-5.1 indoor + outdoor bench sessions where a host PC is co-located. **Frame-rate caveat**: UVC over USB 2.0 high-speed gives sustainable ~30-60 fps live display at 320×240; recording to disk can hit higher rates limited by the host's USB stack. The 240 fps + 480 fps high-rate modes are flight-mode (FR-4.1b) features — bench mode trades temporal resolution for instant-on usability.
+
+**FR-4.1b — flight mode (onboard SD via Lattice FPGA)** The flight recording system SHALL record raw frames per FR-2.5 to an onboard SD-flash card on the Lattice CrossLink-NX-EVN, auto-starting on power-up and continuing for the full duration the camera is powered (until SD-full or unrecoverable fault). Used for US6 (Beacon Test Flight 1) and any future field session where USB-tethering is not viable. The flight-mode firmware is the LIFCL-40 gateware path described in FR-2.5 + `contracts/fpga-recorder-contract.md`.
+
+**Both modes** SHARE the FR-4.2 file format + JSON sidecar contract — clips recorded via bench-mode UVC and via flight-mode FPGA are bit-identical in format and ingest identically via FR-4.3.
 
 **FR-4.2** Each recorded clip (bench or flight mode) SHALL produce two artifacts: (a) the binary frame stream as specified in the canonical [`data-format.md`](data-format.md) (chunked, versioned `format_version` field, raw 8-bit or 10-bit-packed pixels with per-frame + per-chunk timestamp headers), and (b) a JSON sidecar with per-clip metadata: clip-id, ISO-8601 start time, sensor model + firmware rev, lens + filter spec, capture resolution + fps + bit-depth, sensor exposure + gain settings, ambient-light qualifier (manually logged: indoor / outdoor / cloudy / direct-sun), range-to-target qualifier (manually logged or measured), pose qualifier (stationary / hand-panned / on-aircraft / **in-flight**), recording-mode qualifier (bench-tethered / flight-SD), notes free-text. **In-flight clips** SHALL additionally capture: target craft ID + beacon code IDs A/B + airframe configs + intended flight pattern + observed-from-ground notes.
 
@@ -694,7 +768,19 @@ The [`data-format.md`](data-format.md) doc is the **single source of truth** for
 
 ### FR-5 Operating-envelope characterization (phase-1 bench observations)
 
-**FR-5.1** A set of canonical bench scenarios SHALL be defined (close-range static / far-range static / hand-panned / outdoor-direct-sun / outdoor-cloudy / dim-indoor — exhaustive list TBD during execution but pre-agreed before the first session). Each scenario produces a recorded clip per FR-4.
+**FR-5.1** The starting set of canonical bench scenarios (operator may amend before the first session, with amendments recorded in the bench log per FR-5.2):
+
+- **S1 — close-range static** (1 m, indoor, dim ambient) — sanity check, expect strong signal on both beacons
+- **S2 — mid-range static** (10 m, indoor, mixed ambient) — typical bench distance
+- **S3 — far-range static** (50 m, outdoor, varies) — closer to the design 100 m
+- **S4 — hand-panned slow** (10 m, hand-rotating camera at ~30°/s) — exercises track-table predictor in follow-on FPGA work
+- **S5 — hand-panned fast** (10 m, hand-rotating at >100°/s) — approaches body-rate envelope
+- **S6 — direct-sun adversarial** (10 m, outdoor, sun within camera FOV) — exercises filter sun-rejection
+- **S7 — dim ambient adversarial** (10 m, dusk / late-evening) — exercises gain headroom
+- **S8 — beacon obscured / partial** (10 m, briefly occluding one beacon by hand) — exercises sentinel detection in follow-on
+- **S9 — paired-beacon close spatial proximity** (50 m, beacons appear ~1 px apart) — exercises CCA two-blob-merge case per handoff §6.11
+
+Each scenario produces one 30–60 s recorded clip per FR-4. The full set is the phase-1 "ship" artifact — substrate for every follow-on optical experiment.
 
 **FR-5.2** A written bench-log entry per session SHALL capture clip-id, scenario, observed qualitative behavior (beacon visible / blooming-on-sun / blob-mass-vs-range / motion-blur-onset-rate / etc.), and unresolved questions. The bench log is **the primary phase-1 deliverable**; it's the source of the iteration loop for the simulator's noise model and the FPGA pipeline's threshold tuning in follow-on specs.
 
@@ -706,8 +792,8 @@ The [`data-format.md`](data-format.md) doc is the **single source of truth** for
 - Per-pod LED power: **~1.43 W average / ~2.85 W peak** at 5 LEDs × 300 mA, 50% duty.
 - Per-pod battery draw: **~430 mA average from 1S cell** = **~14 min runtime per 100 mAh charge** (single flight session).
 - Two pods: completely electrically isolated from the airframe — no shared power, no shared signal. Each pod is on its own battery.
-- Camera + lens mass (for flight, enforced from US6 onwards): 2–3 g target.
-- Flight-mode recorder (camera + SD writer + battery if any): TBD when Q1 resolves to a specific platform; target ≤30 g for the tracker craft's installed payload.
+- Camera + lens mass (sensor module + M12 lens + filter): **2–3 g target** for the bare optical front end (achievable with the OG0VA bare-die path; the Arducam OV9281 backup is heavier).
+- Flight-mode recorder system (Lattice CrossLink-NX-EVN board + camera + lens + buck + cabling + enclosure): **~70–100 g**, per FR-2.7 BOM. **Carrier-craft path** — phase-1 explicitly accepts the eval-board weight cost on an hb1-class or trainer-class airframe (≥500 g AUW, ≥100 g payload margin). Production-flight-weight perception hardware (bare-die sensor + small FPGA on flex PCB) is a 031-integration follow-on, not phase 1 (Out-of-Scope section).
 - EMI envelope: bench-EMC-validated per FR-3.3 (single-mode, simplified) before any flight; no measurable degradation of FC gyro, RC link, or ESC behavior with beacons powered.
 - FPGA path (NOT phase 1): out of scope for this spec.
 
@@ -787,17 +873,17 @@ Each item is traceable to a handoff-doc section. They become "open" only if a ph
 | LED: Lumileds Luxeon IR Compact 850 nm | handoff §4.4 | 1.3 W radiant @ 1 A, 2.75 × 2.0 mm pkg, ~30 mg/die, pulsable to 5-10 A peak |
 | **LED arrangement: 5 LEDs on a 3D-printed half-cube (2.5×2.5×~1.3 cm); 1 LED on outboard apex face + 4 on vertical side faces; unlit cone INBOARD** | polar-plot analysis 2026-05-14 ([plot_led_configs.py](plot_led_configs.py)) | 270° spherical with only 2.4× min/max variation (vs nulls in the 4-on-pyramid design); fairly even spread per user direction |
 | **Pod mount orientation: half-cube base rotated 45° (diamond) on wing-tip** | user direction 2026-05-14 | Wedge frontal profile = roughly half the pressure drag of square-aligned face into airstream |
-| **LED drive topology: standalone-battery (path C), boost LED driver (TI LM3410 or TPS61169) drives 5 LEDs in series at 300 mA CC from 1S LiPo, ATtiny412 MCU does Gold-code PWM dimming, 2-bit code-select via solder jumpers or DIP switch. Battery insertion/removal is the power switch (no mechanical on/off)** | operator direction 2026-05-14 ("path C — keep it simple") | M2 effort is transitory; standalone design eliminates all airframe wiring + EMI envelope + dual-mode safety complexity. Battery-as-switch eliminates the on/off mechanism. Single-mode at 300 mA is IEC 62471 RG0 at typical viewing distances |
+| **LED drive topology: standalone-battery (path C), TI LM3410**X** (1.6 MHz, SOT-23-5) boost LED driver drives 5 LEDs in series at 300 mA CC from 1S LiPo. ATtiny412 MCU drives the LM3410X **DIM pin** (the only shutdown control — LM3410 has no separate EN) as a strict-on/off digital line at the 100 Hz chip rate (no PWM dim control), via a push-pull active-HIGH GPIO. 10 kΩ R2 pull-down on DIM to GND provides the topological failsafe (MCU-offline = LEDs OFF). 2-bit code-select via solder jumpers or DIP switch. Battery insertion/removal is the power switch (no mechanical on/off).** | operator direction 2026-05-14 / refinement 2026-05-17 ("the part should be warm with strictly on/off from code — when battery is in, blink. That's it.") / **architecture corrected 2026-05-18 per LM3410 datasheet (T007a)**: LM3410**X** has no separate EN pin, so the "warm" intent is satisfied via the IC's 20 µs soft-start (0.2 % of a 10 ms chip — negligible distortion) rather than a held-EN architecture / **revised 2026-05-20 per FR-1.7 #4 / R11**: supervisor IC removed (no TPS3839 / MCP1316 part exists at the 3.5 V threshold + open-drain combination); UVLO is now firmware ADC at 3.6 V + topological pull-down failsafe + WDT ≤ 250 ms; DIM topology inverted from pull-up to pull-down so MCU-offline = LEDs OFF. | M2 effort is transitory; standalone design eliminates all airframe wiring + EMI envelope + dual-mode safety complexity. Battery-as-switch eliminates the on/off mechanism. Single-mode at 300 mA is IEC 62471 RG0 at typical viewing distances. No PWM dimming hardware required at single-mode 300 mA — MCU output is a single push-pull GPIO carrying the LUT bit at chip rate. On firmware-detected UVLO, MCU drives DIM LOW + sleeps → LM3410X enters ~80 nA shutdown. |
 | **Per-LED current: 300 mA single-mode (down from 1 A dual-mode)** | link-budget + eye-safety revision 2026-05-14 | 100 m daylight detection retains ~23 dB margin even with 100× real-world derating; RG0 at ≥30 cm viewing distance with momentary exposure — no goggles needed for bench work, no dual-mode safety contract needed |
 | **Power source: integrated 1S LiPo 100 mAh, 20C (per pod)** | operator direction 2026-05-14 | ~2 g battery, ~14 min runtime per charge — enough for a single flight session. No wires to airframe, no shared EMI with RC link, no servo-port hijacking. Battery dominates the pod mass (~2 g out of ~5 g total) |
 | **Chip rate: 100 Hz** | clarification 2026-05-14 | 15-chip code period = 150 ms = ~1.5 FC samples cold acquisition. 240:100 = 12:5 non-integer ratio avoids the prior 5:1 aliasing edge case. 2.4 fpc oversampling preserves matched-filter margin |
 | **Code-select: 2-bit solder jumpers or 2-position DIP switch on the PCB, MCU reads at boot, supports 4 distinct N=15 Gold codes** | clarification 2026-05-14 | Cheap + visibly inspectable + lets one MCU firmware image serve all pods. Phase 1 uses codes 0 and 1 (one per wing); 2 and 3 reserved for future multi-beacon experiments |
-| **Beacon MCU clock-drift tolerance: ±5% per NFR-4** | clarification 2026-05-14 | ATtiny412 internal RC drifts ±5-10% across temperature; plan-time simulation determines whether external crystal (~$0.30, removes problem) or receiver-side multi-hypothesis matched filter (~5-10 hypotheses in 031-fpga) is needed to meet 99% cold-acquisition at worst-case drift |
-| **LiPo UVLO: 3.3 V hardware-level cutoff via voltage supervisor IC gating the boost driver EN pin, ~100 mV hysteresis, MCU-independent** | safety clarification 2026-05-14 | LiPo over-discharge (below 3.0 V) damages the cell and risks fire on next charge. Hardware supervisor (not firmware) ensures cutoff even if MCU crashes. 3.3 V is storage-safe — operator can leave spent battery overnight without immediate recharge. Built-in UVLO of common boost drivers (LM3410 at 2.5 V) is too low — external supervisor is mandatory regardless of driver choice |
+| **Beacon MCU clock-drift tolerance: ±5% per NFR-4 → internal RC only (no crystal, no multi-hypothesis)** | NFR-4 simulation 2026-05-18 (`tools/nfr4-clockdrift-sim/sim.py`, see `simulation-results.md`) | Single-hypothesis correlator at the FR-1.4 derated SNR (30 dB) achieves **100% worst-case cold-acquisition probability across −5% to +5% drift in 1% steps × 1000 MC trials**. Meets the 99% target by 1% margin even at worst-case drift. **Decision: (c) internal RC + factory calibration only** — no crystal part, no multi-hypothesis correlator in 031-fpga. Saves ~$0.30 in BOM + significant FPGA gates. Caveat: model is AWGN-only at 30 dB SNR; bench-validate per NFR-4 with deliberately-shifted MCU clocks before production-flight hardware. |
+| **LiPo UVLO: 3.5 V real cutoff via firmware ADC + topological failsafe (DIM pull-down to GND) + WDT ≤ 250 ms** *(revised 2026-05-20 per FR-1.7 #4 / R11; supersedes the original "3.3 V hardware supervisor IC, MCU-independent" decision)* | safety clarification 2026-05-14 / architecture corrected 2026-05-18 per LM3410 datasheet (T007a) / **revised 2026-05-20 per R11**: TPS3839 / MCP1316 family survey found no 3.5 V open-drain variant; firmware ADC + pull-down topology + WDT defends-in-depth at zero BOM cost | LiPo over-discharge (below 3.0 V) damages the cell. 3.5 V is the new storage-safe threshold (~20 % SOC rest, ~10 % sag-corrected) — operator can leave spent battery overnight without immediate recharge. Built-in V_IN UVLO of common boost drivers (LM3410 at ~2.3 V per datasheet §6.5) is too low. The MCU-independent intent of the original spec is preserved by the topology: DIM is pulled DOWN by R2 to GND, so any MCU-offline state (reset/boot/hang in input mode) → LEDs OFF. Only failure mode that requires firmware (hang while driving PA3 HIGH) is bounded by WDT to ≤ 250 ms / ≤ 0.02 % cell impact per incident |
 | **MCU runs directly off V_BAT (no LDO)** | simplification 2026-05-14 | ATtiny412 is 1.8-5.5 V tolerant — covers the 3.0-4.2 V LiPo swing without regulation. Drops the LDO part + its ~50 µA quiescent current; replaced by 1 µF + 100 nF MCU-decoupling caps to filter boost-switching transients on V_BAT. MCU on the 1S side (not 9.5 V boost output) avoids a bootstrap chicken-and-egg on startup |
 | **31-bit Gold codes + 480 fps as future upgrade path** | clarification 2026-05-14 | Clean path forward for future multi-beacon (>4) or stronger error tolerance (5-bit vs 1-bit at N=15). Stay at 15-bit / 240 fps for this transitory M2 effort. Documented in FR-1.3 |
 _(prior Decisions-Locked rows about "Pod power: shared with main 3S LiPo", "Pod connector: 3-wire RC servo", "Dual-mode operation" — all superseded by the 2026-05-14 path C standalone-battery design. See git history for the prior contracts.)_
-| Lens: Commonlands M12 NIR-corrected ~120° F/2.0 w/integrated 850 ± 10 nm filter | handoff §4.2 | Integrated filter saves separate alignment + mass; <8 µm focal shift visible→NIR |
+| Lens: Commonlands M12 NIR-corrected ~120° F/2.0 w/integrated bandpass (CWL = 850 ± 5 nm, FWHM ≤ 30 nm, 10 nm preferred) | handoff §4.2 | Integrated filter saves separate alignment + mass; <8 µm focal shift visible→NIR; CWL matched to FR-1.1 LED 850 nm bin |
 | **Sensor: OmniVision OG0VA (primary) / OV9281 via Arducam B0162 (backup)** | clarification 2026-05-14 | OG0VA is purpose-built for our use case (480 fps native at 320×240, 60% QE @ 850 nm, MIPI CSI-2, manual AGC). OV9281 is easier-to-source bench-bring-up path with same QE class. ST VD55G1 dropped — less NIR-specific ecosystem |
 | **Camera operating modes: 240 fps (baseline, 18.4-23 MB/s) + 480 fps (high-rate, 36.9-46 MB/s); both at 320×240 mono; 8-bit or 10-bit-packed selectable** | clarification 2026-05-14 | 240 fps is the FR-1.3 Gold-code-acquisition baseline; 480 fps supports future 31-bit codes + close-range motion-blur + AGC-dynamics studies. Both natively on OG0VA |
 | **Manual AGC: sensor auto-AGC explicitly DISABLED** | clarification 2026-05-14 | Auto-AGC would smear the photon-flux dynamics we're trying to record. FPGA configures fixed exposure + gain at session start via I²C |
@@ -830,21 +916,9 @@ After the 2026-05-14 path C refactor, most original questions are resolved (reco
 - Q7 (chip rate): **100 Hz firm; 15-bit Gold; 240 fps camera**.
 - Q9 (EMI tuning): **Path C eliminates the airframe-coupling EMI envelope; FR-3.3 becomes a one-step radiated-emissions check**.
 
-### Q3 — Bench scenario list (operator-amendable before first capture session)
+### Q3 — Bench scenario list — RESOLVED 2026-05-17
 
-Per FR-5.1 the scenarios are pre-agreed before the first capture session. Initial proposal (operator to amend):
-
-- **S1 — close-range static** (1 m, indoor, dim ambient) — sanity check, expect strong signal both beacons
-- **S2 — mid-range static** (10 m, indoor, mixed ambient) — typical bench distance
-- **S3 — far-range static** (50 m, outdoor, varies) — closer to the design 100 m
-- **S4 — hand-panned slow** (10 m, hand-rotating camera at ~30°/s) — exercises track-table predictor in follow-on FPGA work
-- **S5 — hand-panned fast** (10 m, hand-rotating at >100°/s) — approaches body-rate envelope
-- **S6 — direct-sun adversarial** (10 m, outdoor, sun within camera FOV) — exercises filter sun-rejection
-- **S7 — dim ambient adversarial** (10 m, dusk / late-evening) — exercises gain headroom
-- **S8 — beacon obscured / partial** (10 m, briefly occluding one beacon by hand) — exercises sentinel detection in follow-on
-- **S9 — paired-beacon close spatial proximity** (50 m, beacons appear ~1 px apart) — exercises CCA two-blob-merge case per handoff §6.11
-
-Each scenario produces one 30-60 s recorded clip per FR-4. The full set is the phase-1 "ship" artifact — substrate for every follow-on optical experiment.
+Scenario set S1–S9 promoted into **FR-5.1** as the firm starting set. Operator may amend before first capture session, with any change recorded in the bench log per FR-5.2.
 
 ### Q6 — 031 branch creation prerequisites
 
@@ -869,7 +943,7 @@ These are FR-5.1 bench scenarios + sensor-setup tasks. Results inform the final 
 
 Once US6 (Beacon Test Flight 1) lands footage, a follow-on feature consumes it. Default scope (revised 2026-05-12 per operator):
 
-**031-noise-cal + FOV/exposure + acquisition-time + AGC sims**: replays clips through correlator + AGC + FPGA-pipeline sims; produces a quantitative operating-envelope report; informs the next hardware-order decisions (lens FOV adjustment, beacon-power tuning, pyramid-dimension revision).
+**031-noise-cal + FOV/exposure + acquisition-time + AGC sims**: replays clips through correlator + AGC + FPGA-pipeline sims; produces a quantitative operating-envelope report; informs the next hardware-order decisions (lens FOV adjustment, beacon-power tuning, half-cube-dimension revision).
 
 The phase-1 raw recordings serve as input to:
 - **Acquisition-time simulations** — recorded clips through simulated correlators at various chip rates / code lengths / soft-decision thresholds
@@ -921,14 +995,14 @@ The pod is built around the battery + cube + LEDs. The recorder system is built 
 1. **Battery dimensions**: confirm the exact L × W × H of the chosen 1S 100 mAh 20C battery ([Amazon B083NWXLTK](https://www.amazon.com/dp/B083NWXLTK) or equivalent). Typical Tinywhoop-class packs are ~4 × 22 × 6 mm with a JST-PH 2.0 mm pigtail; verify by datasheet or physical measurement once the part is in hand.
 2. **JST-PH socket footprint**: pick a specific JST-PH 2.0 mm 2-pin socket part (THT or SMT), pin pitch + body dimensions + retention-strength rating.
 3. **Lumileds L1IZ-0850000000000 LED footprint + wavelength bin**: 2.0 × 1.6 mm SMT typical (Luxeon IR Compact datasheet). Confirm pad layout + thermal-pad requirements. **CRITICAL — wavelength binning**: order the **850 ± 5 nm bin specifically** (trailing digits of the full Lumileds order code encode the sub-bin). Verify the bin code at order time with the distributor / Lumileds direct; do NOT accept "any 0850 bin" — adjacent bins (830, 840, 860, 870 nm) will degrade the optical chain. Same care for the OSRAM SFH 4725S alternate.
-4. **LM3410-Y boost driver + supporting passives**: LM3410-Y datasheet → exact pinout, recommended inductor + Schottky + caps with their SMT footprints. Verify the 22 µH inductor's I_sat rating ≥1.5 A on the specific part.
+4. **LM3410X boost driver + supporting passives**: LM3410 datasheet (TI SNVS541H) — exact pinout (5 pins on SOT-23-5: SW/GND/FB/DIM/VIN — no separate EN), recommended inductor + Schottky + caps with their SMT footprints. Verify the 22 µH inductor's I_sat rating ≥1.5 A on the specific part.
 5. **ATtiny412 footprint**: SOIC-8, ~5 × 4 mm — confirm pad layout + recommended UPDI-programming-header placement.
-6. **Voltage supervisor (MCP1316T-29LE/OT or equivalent)**: SOT23-5 footprint, confirm open-drain output configuration.
+6. ~~Voltage supervisor (MCP1316T-29LE/OT or equivalent)~~ *(removed 2026-05-20 per FR-1.7 #4 / R11: supervisor IC eliminated; UVLO via firmware ADC + topological failsafe.)*
 7. **Code-select hardware**: pick between solder jumpers (PCB pads only) and a 2-position SMT DIP switch (CUI DSM-02 or equivalent — exact footprint).
 
 **Recorder system**:
 
-8. **Lattice CrossLink-NX-EVN (LIFCL-40-9BG400C) board dimensions + mounting holes**: confirm from board user guide; sizes the recorder enclosure.
+8. **Lattice CrossLink-NX-EVN (LIFCL-40-9BG400C) board dimensions, mounting holes, + onboard memory**: confirm from board user guide. Sizes the recorder enclosure. **Critical**: verify the EVN board's **onboard SDRAM / HyperRAM** (part number, capacity, interface, DMA path from the LIFCL-40 fabric) and confirm it is large + fast enough to host the FR-2.5 ring buffer (6 MB worst-case at 480 fps 10-bit + 46 MB/s sustained throughput). LIFCL-40 on-chip BRAM/LRAM alone (~340 KB) is insufficient.
 9. **OmniVision OG0VA / OV9281 module dimensions**: bare-die OG0VA via OEM contact (CameraCubeChip module 2.69 × 3.04 × 3.04 mm), OR Arducam B0162 board dimensions; choose based on sourcing reality at plan time.
 10. **Commonlands lens spec**: verify exact thread + housing dimensions, integrated-filter centering tolerance, focal length once specced. **CRITICAL — filter CWL match to LED bin**: confirm Commonlands' integrated bandpass filter CWL is **850 ± 5 nm**, matched to the FR-1.1 LED's 850 nm bin (FR-2.2 wavelength-matching table). If Commonlands offers binned CWL options, pick the one matching the LED bin within ±5 nm. For the prototype-path discrete filters (Edmund Optics #65-679, Thorlabs FB850-10), confirm CWL ±2 nm and FWHM 10 nm spec at order time.
 11. **MIPI flex cable**: 22-pin or 30-pin connector verification between the camera module and the FPGA board's MIPI input.
@@ -968,10 +1042,9 @@ The plan SHALL note the following as in-scope artifacts to be authored when impl
 - **Draft created**: 2026-05-10 alongside 030 v1 wrap
 - **Revised**: 2026-05-12 — operator firmed beacon (4× 1W, 4-sided pyramid, ~2.5 cm base, unlit cone inboard), code (15-bit Gold), camera (240 fps), recording substrate (dual mode: bench-tethered + onboard SD); added US6 (Beacon Test Flight 1); added FR-1.6 EMI + FR-3.3 EMC bench check; added Q9 (EMI tuning order) + Q10 (follow-on noise-cal scope)
 - **Revised**: 2026-05-14 — polar-plot-driven switch from 4-LED pyramid to **5-LED half-cube in 45° diamond mount** (Luxeon Compact L1IZ-0850000000000); chip rate firm at **100 Hz** (15-chip = 150 ms cold-acquisition); driver topology pass through three iterations (discrete buck + FET → Topology A integrated LED driver IC → **path C standalone-battery boost driver**); per-LED current cut **1 A → 300 mA** (link-budget retains 23 dB derated margin, IEC 62471 RG0 at typical distances); **dual-mode safety contract withdrawn** in favor of single-mode + manual on/off switch + IEC 62471 RG0 design; added NFR-4 (beacon clock-drift tolerance simulation, plan-time deliverable); documented 31-bit / 480 fps as future upgrade path
-- **/clarify**: not yet run
-- **/plan**: not yet generated; gated on /clarify + the three prereqs in Q6
-- **Hardware orders**: not yet placed; pending operator decision after /clarify resolves Q1-Q10
+- **/clarify**: run **2026-05-12** (Session 1: eye-safety dual-mode, SD-recorder status LED, clip-file durability, US6 acceptance floor, data-format doc + bit-depth) and **2026-05-14** (Session 2: 5-on-cube vs pyramid, Topology A → path C driver-IC progression, chip-rate 100 Hz firm, beacon clock-drift NFR-4, path C standalone-battery, 15-bit / 240 fps vs 31-bit / 480 fps trade)
+- **/analyze**: run 2026-05-17 (this session) — applied stale-text fixes from the post-path-C-refactor consistency pass
+- **/plan**: not yet generated; gated on the three prereqs in Q6 (030 v1 seal + hardware orders + /clarify done)
+- **Hardware orders**: not yet placed; pending operator decision after Plan Dependency D (hardware-order shortlist) lands
 - **Bench experiments**: not started; gated on hardware arrival
 - **Beacon Test Flight 1 (US6)**: not started; gated on bench experiments + EMC sanity check (FR-3.3)
-
-Until /clarify is run, treat every Q1-Q10 default as "operator's best guess at draft time" — likely to be revised.

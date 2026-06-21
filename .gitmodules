@@ -1,4 +1,4 @@
 [submodule "crrcsim"]
 	path = crrcsim
 	url = https://github.com/gcmcnutt/CRRCsim.git
-	branch = 034-energy-objective-cleanup
+	branch = 031-beacon-camera
