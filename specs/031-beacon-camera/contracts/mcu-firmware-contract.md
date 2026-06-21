@@ -29,6 +29,12 @@ ISR(TCA0_OVF_vect) {
     chip_idx = (chip_idx + 1) % 15;
     uint8_t bit = LUT[selected_code][chip_idx];
 
+    // Code-epoch SYNC marker on the spare GPIO (PA7) — bench scope aid only:
+    // HIGH for chip 0, LOW otherwise → one pulse per code period to trigger the
+    // scope on and time-align the Gold-code epoch (and the receiver capture).
+    if (chip_idx == 0) SYNC_PORT.OUTSET = (1 << SYNC_PIN);
+    else               SYNC_PORT.OUTCLR = (1 << SYNC_PIN);
+
     // DIM is open-drain emulated: chip=1 releases (DIR=input → high-Z, pull-up
     // holds DIM HIGH); chip=0 drives LOW (DIR=output + PORT.OUT was prearmed
     // LOW at boot). This is the wired-AND topology with the supervisor's
@@ -65,6 +71,15 @@ No PWM peripheral. No analog. No floating-point. No malloc. No watchdog reset pa
 | External | Solder jumper to GND for "0", float for "1" (or a 2-bit DSM-02 DIP switch) |
 | Sample time | Once at boot only (no runtime re-read) |
 | Encoding | LSB at one pin, MSB at the other → 4 codes (0..3); Phase 1 pods are 0 + 1 |
+
+## Scope-sync pin (bench-monitoring aid)
+
+| Property | Value |
+|---|---|
+| Pin | The remaining free 412 GPIO — **PA7** in the pod pin map (the pin not used by DIM / 2× code-select / diagnostic-LED / UPDI). *(On the XNANO eval, PA7 is currently code-select; free a pin by putting code-select on jumpers/PA1-PA2 or dropping the UART, or just probe whichever GPIO is spare in your build.)* |
+| Drive | Push-pull output; in the TCA0 ISR, **HIGH during chip 0, LOW otherwise** → one pulse per 15-chip code period, aligned to the code epoch (at 200 Hz: a 5 ms pulse every 75 ms). |
+| Purpose | **Oscilloscope trigger** — trigger on the SYNC edge for a stable, epoch-aligned view of the Gold code on DIM, and to time-align the receiver/ADC capture to the code start. Pure bench aid; **not part of the optical link** and not populated on a flight pod. |
+| Cost | ~2 ISR cycles; no extra hardware (route to a test pad / header pin). |
 
 ## Diagnostic-LED contract
 
