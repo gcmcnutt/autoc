@@ -18,9 +18,10 @@
 #
 # Reports: m1 = evolution_progress, per_axis_aggressiveness, per_axis_time_series,
 #          dynamics_progress (4).  m2 = those + gen_diag + intercept_analysis +
-#          gen_runtime (log-only diversity/collapse proxy) + score_by_path (per-path
-#          tracking-score distribution / generalization) + rnn_capacity (needs
-#          nnextractor+nn2cpp) + tactics (needs a --compare run) (10).
+#          gen_runtime (log-only diversity/collapse proxy) + mode_progress (per-gen
+#          perception/track/range/reacquire competence) + score_by_path (per-path
+#          tracking-score + error distance) + rnn_capacity (needs nnextractor+nn2cpp) +
+#          tactics (needs a --compare run) (11).
 #
 # INCREMENTAL run-summary: the per-gen aggregate is the slow part (one S3 dmp
 # fetch per gen). We cache it per run-id under $CACHE_DIR and use `dmp-dump
@@ -158,6 +159,10 @@ if [[ "$MODE" == "m2" ]]; then
   GR_ARGS=( --run "$NAME:$LOG" )
   for ((i=1; i<${#COMPARE[@]}; i+=2)); do GR_ARGS+=( --run "${COMPARE[i]}" ); done
   run gen_runtime.py "${GR_ARGS[@]}" -o "$OUT/${NAME}_gen_runtime.png"
+
+  # mode_progress — per-gen mode competence (perception/track/range/reacquire) from #GenDiag;
+  # log-only, same current+compares overlay. Plateau = competence ceiling.
+  run mode_progress.py "${GR_ARGS[@]}" -o "$OUT/${NAME}_mode_progress.png"
 
   # score_by_path — per-path tracking-score distribution (M2 generalization proxy):
   # raw box/strip per path + per-step (path-length-normalized) histograms per path.
