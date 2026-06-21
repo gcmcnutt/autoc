@@ -418,6 +418,14 @@ Remaining 015 work:
 
 ## Infrastructure
 
+### [037 close-out, 2026-06-21] Housekeeping carried forward from 037
+- **svTau cleanup** (P-O8): `svTau` kept only to preserve draw order — doesn't help; remove the dead path.
+- **Time-denominate the rate-dependent reports** (P-O11): raw tick-denominated streak metrics read 2× at
+  20 Hz; partly addressed by `--tick-sec` in the analytics, but the streak/avgMaxStreak fields should be
+  surfaced in seconds (or pctInStreak) consistently. Reporting hygiene.
+- **Type-domain grep audit** (T028/T046, Principle VI): grep `src/eval/ src/nn/` for float/double drift on
+  the 037-touched paths; confirm `gp_scalar`/`gp_fitness` convention. Cleanup, non-blocking.
+
 ### `wind_velocity` not recorded in the dmp (honest-recording gap)
 
 - **Found 2026-06-16** (wind-study): `AircraftState::wind_velocity` is serialized but **never set** in

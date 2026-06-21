@@ -11,6 +11,27 @@ description: "Task list for 037 Faster Control Loop (10 Hz → projected ~20 Hz)
 code. Firmware bring-up (US2/US3) uses bench/flight acceptance plus host-unit tests for the pure
 fusion/auto-cal math.
 
+---
+
+## ✅ 037 CLOSE-OUT (2026-06-21) — final disposition of all tasks
+
+037 is wrapped — see [wrap.md](wrap.md). Every remaining `- [ ]` checkbox below is dispositioned here;
+**nothing is left orphaned** (the boxes are kept as the historical record):
+
+| tasks | disposition |
+|---|---|
+| **US1** — 20 Hz M1 (T001–T027) | **DONE.** 20 Hz GO; t10 = best M1 ever (pinned). The cheap go/no-go delivered. |
+| **US1b** — M2 retrain (T029–T030) | **DONE / exceeded.** Superseded by the t11–t15 M2 de-risking arc (crash penalty validated; tracking-depth ceiling characterized). wrap.md §2–3. |
+| **US2 + US3 + R2/R3** — xiao 20/50 Hz (T009, T010, T031–T045) | **→ 039** (`039-xiao-20hz-flight`, already re-homed; Phase 6/7 banner). Firmware/flight-enablement, parallel track. |
+| **M2 architecture depth** — US4 temporal-memory + predictor, visibility reward | **→ 038** (NEW scope, not an old 037 task; wrap.md §5–6 is the bridge). |
+| **T047** — 031 write-back (20 Hz into `aircraft_tracker_handoff.md`) | **→ do during the 031 merge** (this branch flip). |
+| **P-O4** basic-m1 smoke, **P-O10** t11 re-tune | **DONE** during the t8–t15 work (smoke is now the standing loop-plumbing rule). |
+| **P-O5** 10 Hz confirm bake | **DROPPED** — 20 Hz is GO; the 10 Hz anchor isn't needed. |
+| **P-O8** svTau cleanup, **P-O11** time-denominate reports (partly via `--tick-sec`), **T028/T046** type-domain grep audits | **→ BACKLOG** (housekeeping; non-blocking — filed under 037 close-out). |
+| **P-O13** | already **→ BACKLOG** (self-describing dmp). |
+
+---
+
 **Organization**: by user story = spec phase. **US1 = Phase A** (sim M1 go/no-go, the MVP). **US1b =
 Phase A M2** (tracker retrain, gated on US1 signal). **US2 = Phase B** (embedded ~20 Hz). **US3 =
 Phase C** (50 Hz stretch). Phase 0 research is Foundational (gates US1).
