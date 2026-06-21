@@ -15,10 +15,48 @@
 // and different units (m for CG, rad for trim, fraction for the rest). The
 // math is small and inline so a header is sufficient.
 
+#include <algorithm>               // std::min / std::max (clamp of dynamics axes)
+
 #include "autoc/types.h"            // gp_scalar
 #include "autoc/util/scenario_prng.h"  // autoc::util::ClassPRNG
 
 namespace autoc::eval {
+
+// 037 actuator-dynamics craft axes -- nominal physical CENTERS and positive
+// physical clamp ranges. Unlike the six fractional/additive axes above, these
+// three are absolute physical quantities (a 4-craft fleet differs in
+// servos/motors). The Gaussian delta is added to the center, then clamped:
+// a pure 2.5-sigma draw on tau_servo would go negative, so the clamp is
+// MANDATORY. Centers/ranges are shared by the worker-side apply path
+// (scenario_meta_apply.h) so disabled / sigma=0 collapses to the center.
+// 037 servo model v2 (operator 2026-06-11, post-t6/t7 A/B + DSM-44 datasheet
+// check in finding.md): the v1 lag-dominant model (tau 20 ms + slew 3–9,
+// shaded slow) capped tracking. v2 is datasheet-shaped: a 50 Hz PWM command
+// LATCH (per-scenario phase, 0–20 ms — the real dead-time) plus pure slew
+// derived from the measured transit: ~50–60 ms per 60° of travel once
+// latched, on a ~90° mechanical span (1000–2000 µs).
+//
+// UNITS (operator 2026-06-12, post-t8 audit): slew is in AUTOC command
+// units/s — the [-1, +1] NN/INAV span, full range = 2.0 units = the full
+// mechanical span. Platform code translates at its boundary (crrcsim
+// surfaces are [-0.5, +0.5] = command/2, hence its ×0.5 on the cap; INAV
+// would consume [-1,1] natively). center = (60°/0.055 s)/90° spans/s × 2.0
+// units/span ≈ 24.2 units/s (full-span transit 82.5 ms); clamp brackets a
+// fast no-load servo (32) down to a heavily loaded one (16). The pre-fix
+// center 12.1 was derived in spans/s but consumed as units/s — an
+// accidental 2×-slow servo (t6/t8 deadening; finding.md §t8-final).
+constexpr gp_scalar kServoTransitSecPer60Deg = static_cast<gp_scalar>(0.055);
+constexpr gp_scalar kServoMechSpanDeg        = static_cast<gp_scalar>(90.0);
+constexpr gp_scalar kServoSpanCommandUnits   = static_cast<gp_scalar>(2.0);  // [-1,1] full range
+constexpr gp_scalar kCraftServoSlewCenter =
+    (static_cast<gp_scalar>(60.0) / kServoTransitSecPer60Deg) / kServoMechSpanDeg
+    * kServoSpanCommandUnits;                                                // ≈24.2 /s (autoc [-1,1] units)
+constexpr gp_scalar kCraftServoSlewMin    = static_cast<gp_scalar>(16.0);   // /s (heavy aero load)
+constexpr gp_scalar kCraftServoSlewMax    = static_cast<gp_scalar>(32.0);   // /s (fast no-load)
+constexpr gp_scalar kCraftServoPwmFrameSec = static_cast<gp_scalar>(0.020); // 50 Hz PWM command frame
+constexpr gp_scalar kCraftThrustTauCenter = static_cast<gp_scalar>(0.150);  // s
+constexpr gp_scalar kCraftThrustTauMin    = static_cast<gp_scalar>(0.050);  // s
+constexpr gp_scalar kCraftThrustTauMax    = static_cast<gp_scalar>(0.300);  // s
 
 /**
  * Sigma parameters for craft variation draws. All in their respective
@@ -47,6 +85,13 @@ struct CraftSigmas {
     double craftThrustSigma = 0.0;    // raw-ok: ini config-struct field (double per inih::GetReal)
     double craftPitchEffSigma = 0.0;  // raw-ok: ini config-struct field (double per inih::GetReal)
     double craftRollEffSigma = 0.0;   // raw-ok: ini config-struct field (double per inih::GetReal)
+    // 037 actuator-dynamics axes -- sigma in intrinsic units (autoc [-1,1]
+    // command-units/s for slew, seconds for the thrust tau). Center + clamp
+    // live in the constants above; these are just the per-scenario Gaussian
+    // widths. (servo first-order tau removed 2026-06-12 — v2 is a PWM latch +
+    // pure slew, no lag term; the dead draw is gone.)
+    double craftServoSlewSigma = 0.0; // raw-ok: ini config-struct field (double per inih::GetReal)
+    double craftThrustTauSigma = 0.0; // raw-ok: ini config-struct field (double per inih::GetReal)
 };
 
 /**
@@ -64,6 +109,17 @@ struct CraftDeltas {
     gp_scalar craftThrustScale = static_cast<gp_scalar>(1.0);
     gp_scalar craftPitchEffDelta = static_cast<gp_scalar>(0.0);
     gp_scalar craftRollEffDelta = static_cast<gp_scalar>(0.0);
+    // 037 actuator-dynamics axes -- ABSOLUTE physical values (center + clamped
+    // Gaussian delta), NOT deltas. Default = nominal center so the disabled /
+    // sigma=0 path collapses to the nominal lag model. The worker ramps these
+    // toward the center per-eval (applyVariationScale), same as the others.
+    gp_scalar craftServoSlew  = kCraftServoSlewCenter;   // /s (autoc [-1,1] units)
+    gp_scalar craftThrustTau  = kCraftThrustTauCenter;   // s
+    // 037 servo v2 -- per-scenario PWM latch phase, uniform [0, frame). An
+    // engage episode lands at an arbitrary offset within the 50 Hz command
+    // frame; this is the operator's "0-20 ms PWM lag jitter" (constant within
+    // a scenario -- command instants are periodic, so the phase IS the lag).
+    gp_scalar craftServoPwmPhase = static_cast<gp_scalar>(0.0);  // s, [0, 0.020)
 };
 
 /**
@@ -88,6 +144,26 @@ inline CraftDeltas generateCraftFromClassPRNG(
     d.craftThrustScale   = static_cast<gp_scalar>(1.0 + craftPRNG.nextGaussian(sigmas.craftThrustSigma));
     d.craftPitchEffDelta = static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftPitchEffSigma));
     d.craftRollEffDelta  = static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftRollEffSigma));
+    // 037 actuator-dynamics axes -- APPENDED at the bottom. Each is center +
+    // Gaussian(sigma), then clamped to its positive physical range. The clamp
+    // is mandatory: a 2.5-sigma low draw could otherwise reach a non-physical
+    // value. (servo first-order tau draw removed 2026-06-12 — v2 has no lag
+    // term; draw order shifts accordingly, which is fine cross-build.)
+    {
+        gp_scalar servoSlew = kCraftServoSlewCenter
+            + static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftServoSlewSigma));
+        d.craftServoSlew = std::min(kCraftServoSlewMax, std::max(kCraftServoSlewMin, servoSlew));
+
+        gp_scalar thrustTau = kCraftThrustTauCenter
+            + static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftThrustTauSigma));
+        d.craftThrustTau = std::min(kCraftThrustTauMax, std::max(kCraftThrustTauMin, thrustTau));
+    }
+    // 037 servo v2 -- PWM latch phase, APPENDED (draw order frozen). Drawn
+    // UNCONDITIONALLY (even when the servo model is disabled) so toggling
+    // ServoModelEnabled does not shift any other draw — same
+    // draw-and-discard convention as the wind-class gating.
+    d.craftServoPwmPhase = static_cast<gp_scalar>(craftPRNG.nextDouble())
+        * kCraftServoPwmFrameSec;
     return d;
 }
 

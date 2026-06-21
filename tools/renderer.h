@@ -163,6 +163,21 @@ public:
   gp_scalar totalAnimationDuration = 10.0f; // total animation duration in seconds
   unsigned long animationTimerId = 0; // VTK timer ID for animation
 
+  // 037 P4 -- per-frame instrumentation for focused-vs-all-arenas
+  // measurement. Accumulates wall-clock CPU time spent in the per-tick
+  // arena step/update work and a render-traffic proxy (VTK Render()
+  // passes + points actually pushed into the AppendPolyData pipelines),
+  // then prints a periodic summary line. These quantify (a) STEP/UPDATE
+  // CPU cost and (b) in-process render traffic. True X11 bytes-on-wire
+  // cannot be measured in-process -- see the note in updatePlaybackAnimation
+  // for the external command to use (xtrace).
+  long instrFrameCount = 0;       // frames since last summary print
+  double instrStepMsSum = 0.0;    // sum of per-frame step-work ms
+  double instrStepMsMax = 0.0;    // worst per-frame step-work ms
+  long instrRenderPasses = 0;     // VTK Render() calls since last summary
+  long instrPointsPushed = 0;     // points fed into pipelines since last summary
+  static constexpr long kInstrSummaryEveryFrames = 30; // print cadence
+
   vtkSmartPointer<vtkRenderWindow> renderWindow;
   vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor;
 
@@ -231,7 +246,23 @@ private:
   vtkSmartPointer<vtkTextActor> fitnessValueActor;
   vtkSmartPointer<vtkTextActor> testTextActor;
   vtkSmartPointer<vtkTextActor> testValueActor;
-  
+
+  // 037 P-O12 — playback score HUD + chase-glyph streak viz. The score is an
+  // evaluation OUTPUT (not a controller input), replayed honestly through the
+  // same FitnessComputer math autoc/dmp_dump use (fit params via
+  // ConfigManager::getConfig(), already initialized from -i; kCadenceTickScale
+  // + SIM_TIME_STEP_MSEC are compile-time constants — renderer is built from
+  // the same tree as the run it renders).
+  vtkSmartPointer<vtkTextActor> scoreValueActor;   // total score (top)
+  vtkSmartPointer<vtkTextActor> multValueActor;    // streak ×multiplier (bottom), grey→gold
+  vtkSmartPointer<vtkActor> chasePlaneActor;       // 3D paper-airplane glyph, nose at chase pos
+  vtkSmartPointer<vtkPolyData> chasePlanePolyData; // glyph geometry (built once)
+  vtkSmartPointer<vtkLookupTable> chaseStreakLut;  // gold(≤streak frac)→grey LUT; refilled per frame
+  void createChasePlaneGlyph();                    // build glyph polydata + actor
+  // running score to `currentTime` for `arena` (∑ stp×mult×kCadenceTickScale);
+  // sets outMult to the current ×multiplier (1.0 = no streak)
+  double replayScore(int arena, gp_scalar currentTime, double& outMult);
+
   // Stopwatch components
   vtkSmartPointer<vtkActor2D> stopwatchActor;
   vtkSmartPointer<vtkTextActor> stopwatchTimeActor;

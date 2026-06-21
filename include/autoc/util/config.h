@@ -6,6 +6,8 @@
 #include <memory>
 #include <cstdint>
 
+#include "autoc/eval/aircraft_state.h"  // SIM_TIME_STEP_MSEC (cadence master)
+
 // Forward declarations
 namespace Aws { namespace S3 { class S3Client; } }
 
@@ -28,6 +30,19 @@ struct AutocConfig {
     std::string nnInitMethod = "xavier";
 
     // --- Simulation ---
+    // 037 T001 -- control-loop cadence (ms). Single source of truth for the
+    // NN/sensor interval, read from .ini (NOT the AUTOC_EVAL_INTERVAL_MSEC env
+    // var per feedback_cli_over_env_vars). Defaults like every other knob -- a
+    // missing key is NOT a fail-loud here: the value is auto-printed at
+    // startup (AUTOC_CONFIG_FIELDS), so a defaulted cadence is auditable in the
+    // log, not silent. 037 T017: the default tracks the compile-time master
+    // SIM_TIME_STEP_MSEC (was a literal 100, which broke every defaulted
+    // config at the 20 Hz flip). config.cc DOES fail-loud if an explicit .ini
+    // value != SIM_TIME_STEP_MSEC -- the two must move together when
+    // retraining at a new rate. Threaded to the crrcsim worker via WorkerInit
+    // priming (workers have no ConfigManager). Per contracts/cadence-config.md
+    // + research.md R6.
+    int controlIntervalMsec = SIM_TIME_STEP_MSEC;
     int simNumPathsPerGen = 1;
     std::string generatorMethod = "classic";
     int evalThreads = 1;
@@ -59,10 +74,22 @@ struct AutocConfig {
     // --- Entry and wind direction variations ---
     int enableEntryVariations = 0;
     int enableWindVariations = 0;
+    // 037 servo v2 — in-FDM servo model master switch (PWM latch + slew).
+    // 0/1 like every enable knob; lets the t8 (off, 10 Hz confirm) / t9 (on,
+    // servo-v2) A/B pair differ by ini only, no rebuild. The per-scenario
+    // craft draws (incl. PWM phase) run regardless so toggling never shifts
+    // PRNG draw order.
+    int servoModelEnabled = 0;
     int enableRabbitSpeedVariations = 0;
-    double entryConeSigma = 30.0;     // degrees: half-angle of nose direction cone
+    // 037 T006 -- entry-envelope tighten. The Gaussian draw is clamped to
+    // +/-kGaussianSigmaClamp (2.5) sigma (scenario_prng.h), so these sigmas set
+    // the HARD limit at 2.5 sigma: cone 18 deg -> 45 deg max half-angle;
+    // speed 0.06 -> 15% max delta. Enforces the 45 deg / 15% envelope we agreed
+    // (was 30 deg / 10%). Folds into the Phase-A retrain (T026); t6 baseline
+    // keeps the old 30/0.1 in its eval inis.
+    double entryConeSigma = 18.0;     // degrees: half-angle of nose direction cone (2.5sigma = 45 deg)
     double entryRollSigma = 22.5;     // degrees: roll around body axis
-    double entrySpeedSigma = 0.1;
+    double entrySpeedSigma = 0.06;    // fraction (2.5sigma = 15% speed delta)
     double windDirectionSigma = 45.0;
 
     // --- Entry position variations ---
@@ -88,13 +115,35 @@ struct AutocConfig {
     //   craftThrustSigma     fractional multiplier on engine thrust
     //   craftPitchEffSigma   fractional multiplier on Cm_de/CL_de
     //   craftRollEffSigma    fractional multiplier on Cl_da
+    //
+    // 037 actuator-dynamics craft axes (DYNAMICS, not fractional multipliers
+    // like the six above -- each is a nominal physical CENTER plus a Gaussian
+    // delta, then clamped to a positive physical range at the draw site so the
+    // time constants never go non-positive). These set the per-scenario
+    // slew_servo / tau_thrust used by the inputdev_autoc actuator filter
+    // (servo slew, thrust lag) instead of the nominal constants:
+    //   craftServoSlewSigma  /second  -- servo slew-rate-limit sigma (autoc
+    //                        [-1,1] command units/s); center ≈24.2, clamp [16,32]
+    //   craftThrustTauSigma  seconds  -- thrust first-order lag time constant
+    //                        sigma; center 0.150 s, clamped [0.050, 0.300]
+    // (servo first-order tau removed 2026-06-12 — v2 has no lag term.)
     int enableCraftVariations = 0;
+    // 038 T001 — member-level hull-crash penalty (M2 safety experiment). When on,
+    // a member's per-scenario tracking `score` is multiplied by factor^(#hull-strike
+    // scenarios) before fitness/selection, so a crasher's tracking advantage
+    // collapses (score is negative-lower-better; ×<1 → toward 0 = worse). Penalizes
+    // the score axis only; energy untouched. Default off ⇒ bit-identical to pre-038.
+    int enableHullCrashPenalty = 0;
+    double hullCrashPenaltyFactor = 0.5;   // rare hull strikes: factor^(K_hull·scale), scale=variationScale ramp (t14 tracker = 0.75)
+    double oobCrashPenaltyWeight = 0.0;    // common OOB: smooth decay exp(−weight·scale·K_oob/N), curriculum-ramped, never clamps; 0 = off
     double craftCGSigma = 0.02;        // ~±7% MAC at hb1_streamer CG_arm=0.28
     double craftDragSigma = 0.05;      // ±5% CD_prof
     double craftTrimSigma = 0.02;      // ±1.15° pitch trim
     double craftThrustSigma = 0.05;    // ±5% maxThrust
     double craftPitchEffSigma = 0.05;  // ±5% pitch authority
     double craftRollEffSigma = 0.05;   // ±5% roll authority
+    double craftServoSlewSigma = 4.0;    // /s, servo slew sigma (autoc [-1,1] units, center ≈24.2)
+    double craftThrustTauSigma = 0.060;  // s, thrust lag tau sigma (center 0.150s)
 
     // --- Variation landscape ramp ---
     int variationRampStep = 0;
@@ -219,6 +268,7 @@ struct AutocConfig {
     X(double,         nnSigmaFloor,              "NNSigmaFloor") \
     X(std::string,    nnWeightFile,              "NNWeightFile") \
     X(std::string,    nnInitMethod,              "NNInitMethod") \
+    X(int,            controlIntervalMsec,       "ControlIntervalMsec") \
     X(int,            simNumPathsPerGen,         "SimNumPathsPerGeneration") \
     X(std::string,    generatorMethod,           "PathGeneratorMethod") \
     X(int,            evalThreads,               "EvalThreads") \
@@ -235,6 +285,7 @@ struct AutocConfig {
     X(double,         demeticMigProbability,     "DemeticMigProbability") \
     X(int,            enableEntryVariations,     "EnableEntryVariations") \
     X(int,            enableWindVariations,      "EnableWindVariations") \
+    X(int,            servoModelEnabled,         "ServoModelEnabled") \
     X(int,            enableRabbitSpeedVariations, "EnableRabbitSpeedVariations") \
     X(double,         entryConeSigma,            "EntryConeSigma") \
     X(double,         entryRollSigma,            "EntryRollSigma") \
@@ -243,12 +294,17 @@ struct AutocConfig {
     X(double,         entryPositionRadiusSigma,  "EntryPositionRadiusSigma") \
     X(double,         entryPositionAltSigma,     "EntryPositionAltSigma") \
     X(int,            enableCraftVariations,     "EnableCraftVariations") \
+    X(int,            enableHullCrashPenalty,    "EnableHullCrashPenalty") \
+    X(double,         hullCrashPenaltyFactor,    "HullCrashPenaltyFactor") \
+    X(double,         oobCrashPenaltyWeight,     "OobCrashPenaltyWeight") \
     X(double,         craftCGSigma,              "CraftCGSigma") \
     X(double,         craftDragSigma,            "CraftDragSigma") \
     X(double,         craftTrimSigma,            "CraftTrimSigma") \
     X(double,         craftThrustSigma,          "CraftThrustSigma") \
     X(double,         craftPitchEffSigma,        "CraftPitchEffSigma") \
     X(double,         craftRollEffSigma,         "CraftRollEffSigma") \
+    X(double,         craftServoSlewSigma,       "CraftServoSlewSigma") \
+    X(double,         craftThrustTauSigma,       "CraftThrustTauSigma") \
     X(int,            variationRampStep,         "VariationRampStep") \
     X(std::string,    selectionMode,             "SelectionMode") \
     X(std::string,    lexicaseEpsilonMode,       "LexicaseEpsilonMode") \

@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
+#include <string>
 
 #include "autoc/eval/camera_projection.h"  // kCepSentinelThreshold (032 default gate)
 #include "autoc/eval/crash_hull.h"     // M7c — geometric inside-hull telemetry
@@ -105,30 +107,49 @@ void TrackerStepper::initScenario() {
 
     duration_msec_ = 0;
 
+    // 037 T022 — fail loud on a source library whose tick spacing does not
+    // match the compiled cadence. stepOnce advances chase physics one
+    // SIM_TIME_STEP_MSEC per SOURCE tick, so a 100 ms-recorded library run
+    // at a 50 ms cadence would silently play the target at 2× speed.
+    // 2026-06-15: AVERAGE gap, not first gap — simTimeMsec is the 200 Hz/5 ms
+    // step clock TRUNCATED to integer ms, so a clean 50 ms source records
+    // 49/50/51 with the first gap always 49. (last-first)/(N-1) recovers 50.0
+    // and still catches a real mismatch (100 ms 10 Hz → 100). Proper fix =
+    // round/step-count the simTimeMsec stamp (BACKLOG). Mirrors
+    // crrcsim_tracker_helper.cpp.
+    if (source_.samples.size() >= 2) {
+        const auto& s = source_.samples;
+        const double avgGapMsec =
+            (s.back().simTimeMsec - s.front().simTimeMsec) /
+            static_cast<double>(s.size() - 1);
+        if (std::lround(avgGapMsec) != SIM_TIME_STEP_MSEC) {
+            throw std::runtime_error(
+                "TrackerStepper: source trajectory avg tick spacing " +
+                std::to_string(avgGapMsec) + " ms != compiled SIM_TIME_STEP_MSEC " +
+                std::to_string(SIM_TIME_STEP_MSEC) +
+                " ms — rebake the M2 source library at the current cadence.");
+        }
+    }
+
     // History pre-fill (M8b shape, post-PreRollSec-removal 2026-05-11). The
     // pre-roll feature was retired by the 2026-05-07 chase-init geometry
     // simplification — production has always run with pre_roll = 0. Behavior
-    // preserved: replicate source[0]'s projection across all 6 history slots
-    // so the NN sees a populated, non-zero history at tick 1.
+    // preserved: replicate source[0]'s projection across the WHOLE
+    // observation ring (037: depth grew with the R5 lag window) so the NN
+    // sees a populated, non-zero history at tick 1.
     cursor_ = 0;
+    obs_ring_.reset();
     if (!source_.samples.empty()) {
-        for (int r = 0; r < 6; ++r) {
+        for (int r = 0; r < TrackerObservationRing::kDepth; ++r) {
             projectAndShiftHistory(source_.samples[0]);
         }
     }
 }
 
 void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
-    // Shift slots [1..5] → [0..4]; new "now" lands at index 5.
-    for (int i = 0; i < 5; ++i) {
-        history_.left_x[i] = history_.left_x[i + 1];      // raw-ok: NN-byte-format primitive
-        history_.left_y[i] = history_.left_y[i + 1];      // raw-ok: NN-byte-format primitive
-        history_.left_cep[i] = history_.left_cep[i + 1];  // raw-ok: NN-byte-format primitive
-        history_.right_x[i] = history_.right_x[i + 1];    // raw-ok: NN-byte-format primitive
-        history_.right_y[i] = history_.right_y[i + 1];    // raw-ok: NN-byte-format primitive
-        history_.right_cep[i] = history_.right_cep[i + 1];// raw-ok: NN-byte-format primitive
-        history_.span[i] = history_.span[i + 1];          // raw-ok: NN-byte-format primitive — 032 NEW
-    }
+    // 037 T022 — observations land in the deep ring; the 6-slot gather view
+    // (history_) is materialized from the ring at the R5 lag offsets at the
+    // end of this function. (Pre-037: 6-slot shift-left register.)
 
     // Build projection inputs for both beacons. Camera mount + orientation
     // come from CameraConfig (chase body frame); beacons mount at
@@ -155,12 +176,13 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     proj.beacon = beacon_right_;
     BeaconObservation right = projectBeacon(proj);
 
-    history_.left_x[5] = left.screen_x;       // raw-ok: NN-byte-format primitive
-    history_.left_y[5] = left.screen_y;       // raw-ok: NN-byte-format primitive
-    history_.left_cep[5] = left.cep;          // raw-ok: NN-byte-format primitive
-    history_.right_x[5] = right.screen_x;     // raw-ok: NN-byte-format primitive
-    history_.right_y[5] = right.screen_y;     // raw-ok: NN-byte-format primitive
-    history_.right_cep[5] = right.cep;        // raw-ok: NN-byte-format primitive
+    TrackerObservationRing::Record rec;
+    rec.left_x = left.screen_x;       // raw-ok: NN-byte-format primitive
+    rec.left_y = left.screen_y;       // raw-ok: NN-byte-format primitive
+    rec.left_cep = left.cep;          // raw-ok: NN-byte-format primitive
+    rec.right_x = right.screen_x;     // raw-ok: NN-byte-format primitive
+    rec.right_y = right.screen_y;     // raw-ok: NN-byte-format primitive
+    rec.right_cep = right.cep;        // raw-ok: NN-byte-format primitive
 
     // 032 PHASE 1 — Cache beacon-pair span at the current tick. CEP-gated:
     // if EITHER beacon's CEP exceeds the configured threshold, substitute
@@ -170,15 +192,17 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
         left.cep >= cep_gate ||
         right.cep >= cep_gate;
     if (cep_gated) {
-        history_.span[5] = 0.0f;
+        rec.span = 0.0f;
     } else {
-        history_.span[5] = static_cast<float>(  // raw-ok: NN-byte-format slot write
+        rec.span = static_cast<float>(  // raw-ok: NN-byte-format slot write
             autoc::eval::compute_pair_span(
                 static_cast<gp_scalar>(left.screen_x),
                 static_cast<gp_scalar>(left.screen_y),
                 static_cast<gp_scalar>(right.screen_x),
                 static_cast<gp_scalar>(right.screen_y)));
     }
+    obs_ring_.push(rec);
+    obs_ring_.materialize(history_);
 
     // 030 M8b — Per-tick recording for v=2 dmp output (FR-015).
     // Camera world-pose: chase_position + chase_orient * camera_mount;

@@ -104,8 +104,10 @@ private:
     gp_scalar trail_distance_;
     gp_scalar cep_gate_threshold_;
 
-    // 6-slot beacon history per channel. Index 0 is oldest, index 5 is
-    // "now". Shift-left on each push (cheap — 6 floats × 6 channels).
+    // 037 T022 — deep per-tick observation ring (depth = deepest R5 lag in
+    // ticks + 1). history_ remains the 6-slot gather VIEW, materialized from
+    // the ring at the kNNHistoryLagsMsec offsets each tick.
+    TrackerObservationRing obs_ring_;
     TrackerHistoryWindow history_;
 
     // Source-tick cursor. Each stepOnce consumes source_.samples[cursor_],

@@ -1,21 +1,23 @@
-// 035 FR-001b/R1 (T029) — convex throttle-energy metric.
-// energy_score accumulates throttleEnergyStep(out_th) = ((out_th+1)/2)² per tick.
-// out_th∈[-1,1] (tanh NN output) maps to a [0,1] throttle fraction, squared.
+// 035 FR-001b/R1 (T029) -- convex throttle-energy metric.
+// energy_score accumulates throttleEnergyStep(out_th) = ((out_th+1)/2)^2.5 per
+// tick (037 2026-06-09: curve bumped from ^2 to ^2.5, closer to real prop power).
+// out_th in [-1,1] (tanh NN output) maps to a [0,1] throttle fraction.
 // Asserts the hand-computed fixtures, non-negativity, monotonicity, convexity.
 
 #include <gtest/gtest.h>
+#include <cmath>
 
 #include "autoc/eval/fitness_decomposition.h"
 
 namespace {
 
-// f(out_th) = ((out_th+1)/2)^2
+// f(out_th) = ((out_th+1)/2)^2.5  (037: was ^2)
 TEST(EnergyMetric, HandComputedFixtures) {
-  EXPECT_DOUBLE_EQ(throttleEnergyStep(-1.0), 0.0);    // idle → 0
-  EXPECT_DOUBLE_EQ(throttleEnergyStep(0.0), 0.25);    // mid (thr=0.5) → 0.25
-  EXPECT_DOUBLE_EQ(throttleEnergyStep(1.0), 1.0);     // full → 1
-  EXPECT_DOUBLE_EQ(throttleEnergyStep(-0.5), 0.0625); // thr=0.25 → 0.0625
-  EXPECT_DOUBLE_EQ(throttleEnergyStep(0.5), 0.5625);  // thr=0.75 → 0.5625
+  EXPECT_DOUBLE_EQ(throttleEnergyStep(-1.0), 0.0);                     // idle -> 0
+  EXPECT_DOUBLE_EQ(throttleEnergyStep(0.0), 0.25 * std::sqrt(0.5));    // thr=0.5  -> 0.5^2.5  ~ 0.17678
+  EXPECT_DOUBLE_EQ(throttleEnergyStep(1.0), 1.0);                      // full -> 1
+  EXPECT_DOUBLE_EQ(throttleEnergyStep(-0.5), 0.03125);                 // thr=0.25 -> 0.25^2.5
+  EXPECT_DOUBLE_EQ(throttleEnergyStep(0.5), 0.5625 * std::sqrt(0.75)); // thr=0.75 -> 0.75^2.5 ~ 0.48714
 }
 
 TEST(EnergyMetric, NonNegativeAndBounded) {

@@ -14,8 +14,10 @@
 set -euo pipefail
 
 IAM_USER="autoc-generator"
-# Buckets the user needs object + tagging + list perms on (per-mode + legacy in use):
-ALL_BUCKETS=(autoc-m1 autoc-m2 autoc-eval autoc-storage autoc-eval-arm)
+# Buckets the user needs object + tagging + list perms on (per-mode only).
+# 2026-06-15: legacy autoc-storage + autoc-eval-arm DELETED; dropped from scope
+# (and the standalone legacy `autoc-s3` inline policy was removed). See /OPS_NOTES.md.
+ALL_BUCKETS=(autoc-m1 autoc-m2 autoc-eval)
 
 echo "== grant autoc-generator: Get/Put/Delete + Get/PutObjectTagging + ListBucket =="
 bucket_arns=""; object_arns=""

@@ -167,7 +167,13 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             auto terms = fc.decomposeStepScore(along, lateralDist);
             double stepPoints = terms.score;
             double multipliedScore = fc.applyStreak(stepPoints);
-            accumulatedScore += multipliedScore;
+            // 037 T018 — ×kCadenceTickScale: per-tick samples of the
+            // instantaneous geometry accumulate in 100 ms-tick-equivalent
+            // units, so the total is cadence-invariant (and the fixed
+            // SIM_CRASH_PENALTY keeps its relative weight at 20 Hz).
+            // ×1.0 bitwise no-op at 10 Hz. Streak threshold/ramp operate
+            // on UNSCALED stepPoints above — geometry, not cadence.
+            accumulatedScore += multipliedScore * kCadenceTickScale;
 
             simulation_steps++;
 
@@ -176,8 +182,11 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                 const float* out = stepState.getNNOutputs();
                 const gp_fitness abs_pt = std::abs(static_cast<gp_fitness>(out[0]));
                 const gp_fitness abs_rl = std::abs(static_cast<gp_fitness>(out[1]));
-                stabilityAccum += (abs_pt - 1.0) + (abs_rl - 1.0);
-                energyAccum    += throttleEnergyStep(static_cast<gp_fitness>(out[2]));  // 035 FR-001b/R1 convex
+                // 037 T018 — ×kCadenceTickScale (see accumulatedScore note):
+                // stability/energy totals stay cadence-invariant on the
+                // historical 10 Hz scale; ×1.0 bitwise no-op at 10 Hz.
+                stabilityAccum += ((abs_pt - 1.0) + (abs_rl - 1.0)) * kCadenceTickScale;
+                energyAccum    += throttleEnergyStep(static_cast<gp_fitness>(out[2])) * kCadenceTickScale;  // 035 FR-001b/R1 convex
             }
 
             // 030 M11.wrap T088 + 327-330 — tracker-mode diagnostic

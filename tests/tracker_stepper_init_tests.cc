@@ -73,14 +73,15 @@ SourceScenarioTrajectory makeSyntheticSource(int tick_count,
     gp_vec3 pos(0.0f, 0.0f, 0.0f);
     for (int t = 0; t < tick_count; ++t) {
         traj.samples.push_back(makeSourceTickSample(
-            t * 100.0,                            // 100ms NN cadence
+            t * static_cast<double>(SIM_TIME_STEP_MSEC),  // compiled NN cadence
             pos,
             tick0_vel,
             gp_quat::Identity()));
-        // Advance position by velocity × 100ms for downstream realism;
+        // Advance position by velocity × one tick for downstream realism;
         // initScenario only reads samples[0] so later ticks don't matter
-        // for these tests.
-        pos += tick0_vel * 0.1f;
+        // for these tests. (037: spacing MUST equal SIM_TIME_STEP_MSEC —
+        // initScenario fails loud on mismatched source libraries.)
+        pos += tick0_vel * (SIM_TIME_STEP_MSEC / 1000.0f);
     }
     return traj;
 }
