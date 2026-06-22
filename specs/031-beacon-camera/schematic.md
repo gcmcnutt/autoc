@@ -272,7 +272,7 @@ When MCU is alive and emitting, D2 visibly blinks at the 100 Hz chip rate (opera
 7. Solder J1 (JST-PH socket) at the inboard face.
 8. Mount the 5 Lumileds in the cube face indents, wire in series with 32 AWG magnet wire (LED1 apex → LED2 → LED3 → LED4 → LED5 → R1 return).
 9. Wire D2 (diag LED) + R3 from U2 PA6 to inboard-face light-pipe slot.
-10. Bench-verify per [quickstart.md (a)](quickstart.md): insert battery → pod boots ≤100 ms with diag LED blinking → scope LED-string current per FR-1.5(a) → FR-1.7 UVLO bench → FR-3.3 EMC bench.
+10. Bench-verify per [quickstart.md (a)](../040-camera-redo/quickstart.md): insert battery → pod boots ≤100 ms with diag LED blinking → scope LED-string current per FR-1.5(a) → FR-1.7 UVLO bench → FR-3.3 EMC bench.
 
 ---
 

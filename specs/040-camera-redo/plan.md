@@ -1,19 +1,21 @@
 # Implementation Plan: 031 Beacon-Camera Optical Perception — Phase 1
 
-**Branch**: `031-beacon-camera` | **Date**: 2026-05-17 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/home/gmcnutt/autoc-beacon/specs/031-beacon-camera/spec.md`
+> **MOVED 2026-06-22: `specs/031-beacon-camera/` → here (`040-camera-redo/`).** This is the parked 040 camera-redo reference. **It predates the 031 1-bit acquisition phase and is very likely OUT OF DATE** — re-validate against 031 field findings + the 20 Hz / 480 fps / 200 Hz / 75 ms baseline before planning 040. The active 031 plan-of-record is [`../031-beacon-camera/acquisition-research-plan.md`](../031-beacon-camera/acquisition-research-plan.md). See [`README.md`](README.md).
 
-> ⚠️ **RE-SCOPED 2026-06-20**: this plan is the original **camera-pipeline** plan, now the **camera-redo feature `040`** (deferred). The active 031 plan is the **1-bit single-IR-sensor acquisition-research** arc in [`acquisition-research-plan.md`](acquisition-research-plan.md) (tasks = **Phase A** in [`tasks.md`](tasks.md)). Emitters are shared between 031 and 040.
+**Branch**: `031-beacon-camera` | **Date**: 2026-05-17 | **Spec**: [spec.md](../031-beacon-camera/spec.md)
+**Input**: Feature specification from `specs/031-beacon-camera/spec.md` (the shared emitter+camera mega-spec; stayed in 031)
+
+> ⚠️ **RE-SCOPED 2026-06-20**: this plan is the original **camera-pipeline** plan, now the **camera-redo feature `040`** (deferred). The active 031 plan is the **1-bit single-IR-sensor acquisition-research** arc in [`acquisition-research-plan.md`](../031-beacon-camera/acquisition-research-plan.md) (tasks = **Phase A** in [`tasks.md`](../031-beacon-camera/tasks.md)). Emitters are shared between 031 and 040.
 
 ## Summary
 
-Phase 1 of 031 delivers a **bench- and field-runnable beacon-camera setup that records raw video of two coded-IR beacons at flight-relevant ranges and dynamics** ([spec.md §Overview](./spec.md)). No simulator code is touched. No `(x, y, CEP)` extraction. No NN-in-the-loop. The deliverable is **photons → raw clip on SD card → Python-loadable numpy array** end-to-end, validated by one paired-craft test flight (US6).
+Phase 1 of 031 delivers a **bench- and field-runnable beacon-camera setup that records raw video of two coded-IR beacons at flight-relevant ranges and dynamics** ([spec.md §Overview](../031-beacon-camera/spec.md)). No simulator code is touched. No `(x, y, CEP)` extraction. No NN-in-the-loop. The deliverable is **photons → raw clip on SD card → Python-loadable numpy array** end-to-end, validated by one paired-craft test flight (US6).
 
 **Approach** — operator direction 2026-05-17:
 - **Multi-eval-board de-risk strategy**: prove each chunk of work on its own off-the-shelf eval board *before* the integrated hand-built path. Specifically:
   - **Beacon firmware** → bring up first on an ATtiny412 **Curiosity Nano** dev board + breadboard with the LED string + boost driver IC + scope. Validates timing + LUT-bit pattern + chip rate before any pod is hand-built.
   - **Camera + optical chain** → bring up first on an **off-the-shelf USB-UVC camera module** (Arducam B0264 USB shield + B0162 OV9281, or equivalent). Live-streams to a host PC, gives instant first-light + EMI debug + exposure tuning without any FPGA gateware effort. **This is the FR-4.1 bench-mode path** (see Clarifications Session 2026-05-17).
-  - **Recording format** → exercised end-to-end via a Python `specs/031-beacon-camera/beacon-viewer/` utility that consumes UVC frames + writes the canonical `.clip` format. Loader contract is round-tripped before flight gateware lands.
+  - **Recording format** → exercised end-to-end via a Python `specs/040-camera-redo/beacon-viewer/` utility that consumes UVC frames + writes the canonical `.clip` format. Loader contract is round-tripped before flight gateware lands.
   - **Flight-mode FPGA gateware** → the long-lead Lattice CrossLink-NX-EVN path (FR-4.1b) is built **in parallel** to the bench-mode work, de-risked by the bench-mode optical + format proofs.
 - **Hand-prototype first, no PCB spin** until the optical chain is proven on dev modules. The first beacon pod is point-to-point wiring on a perfboard inside the 3D-printed half-cube; PCB design is deferred to a follow-on or 031-integration.
 - **CAD-via-MCP** for the enclosure work — connect the **FreeCAD MCP server** at P1 execution time and use it as the back-part / mount-design mechanism. FreeCAD's parametric solid-modeling + native STEP/STL export is the chosen CAD toolchain.
@@ -24,7 +26,7 @@ Phase 1 of 031 delivers a **bench- and field-runnable beacon-camera setup that r
 
 | Phase | Output |
 |---|---|
-| **P1 — Design + audit + first-eval-board bring-up** | Verified BOM, hand-prototype build guide, CAD enclosure (STEP/STL via FreeCAD MCP), NFR-4 clock-drift simulation, `data-format.md`, `recorder-status-codes.md`, `eye-safety-measurements.md` (template). **Eval-board first-light**: USB-UVC camera (Arducam B0264 + B0162) running + Python `specs/031-beacon-camera/beacon-viewer/` displaying live frames + recording to `.clip` format; ATtiny412 Curiosity Nano blinking a test LED at the 100 Hz chip rate + verified by scope-trace decode. Optical and code paths proven on commodity eval boards before any hand-built hardware. |
+| **P1 — Design + audit + first-eval-board bring-up** | Verified BOM, hand-prototype build guide, CAD enclosure (STEP/STL via FreeCAD MCP), NFR-4 clock-drift simulation, `data-format.md`, `recorder-status-codes.md`, `eye-safety-measurements.md` (template). **Eval-board first-light**: USB-UVC camera (Arducam B0264 + B0162) running + Python `specs/040-camera-redo/beacon-viewer/` displaying live frames + recording to `.clip` format; ATtiny412 Curiosity Nano blinking a test LED at the 100 Hz chip rate + verified by scope-trace decode. Optical and code paths proven on commodity eval boards before any hand-built hardware. |
 | **P2 — Beacon hand-build + bench** | First pod hand-built per build guide; FR-3.3 EMC + FR-3.4 eye-safety + FR-1.7 UVLO verifications PASS; second pod built; FR-1.5 orthogonality verified. Bench-mode UVC camera from P1 is the verification rig (live-display of the pod's IR emission + recovered Gold code). |
 | **P3 — Flight-mode recorder build + bench scenario sweep** | Lattice EVN gateware (`firmware/flight-recorder/`) producing first frames to SD; FR-2.4/2.5/2.6/2.7 working; Class 1/2/3 fault-handling bench-injected + verified; FR-2.7 mount on a tape carrier. **Bench scenarios S1–S9 (FR-5.1)** recorded via two paths in parallel: (a) UVC bench-mode for fast iteration, (b) Lattice flight-mode for the flight-format proof. FR-4.3 Python loader ingests every clip from both paths. |
 | **P4 — US6 Beacon Test Flight 1** | One paired-craft session ≥5 min air time on flight-mode (Lattice EVN) recorder; clip passes the 3-criterion US6 acceptance gate |
@@ -96,7 +98,7 @@ Phase 1 of 031 delivers a **bench- and field-runnable beacon-camera setup that r
 | **I. Testing-First** | Python loader: pytest contract tests written before the loader implementation. MCU firmware: scope-trace decode is the hardware-side "test" for chip-rate + LUT correctness. FPGA gateware: ModelSim/VUnit testbench for the SD-record path. Hardware bench-verifications (FR-3.x) are the test-of-record for the optical/electrical claims; documented in `eye-safety-measurements.md` + bench log. | ✅ PASS |
 | **II. Build Stability** | Python loader integrates under existing tooling. Any C++ added (none planned in Phase 1) goes through `rebuild.sh` per constitution. FPGA bitstream + MCU firmware are out-of-tree builds — not in the `rebuild.sh` path. | ✅ PASS |
 | **III. No Compatibility Shims** | Greenfield. Format-version 1 of `data-format.md` is the only on-disk contract introduced. No back-compat wrappers anywhere. | ✅ PASS |
-| **IV. Unified Build** | Python loader sits in `specs/031-beacon-camera/beacon-loader/` or similar — does not duplicate cereal/inih/GoogleTest declarations. FPGA + MCU builds are explicitly separate (different toolchains; can't unify with CMake). | ✅ PASS |
+| **IV. Unified Build** | Python loader sits in `specs/040-camera-redo/beacon-loader/` or similar — does not duplicate cereal/inih/GoogleTest declarations. FPGA + MCU builds are explicitly separate (different toolchains; can't unify with CMake). | ✅ PASS |
 | **V. Versioned Persistence Artifacts** | **`data-format.md` is the on-ramp**: `format_version` uint16 at a stable parseable offset per chunk; FR-4.3 Python loader is the reference implementation with **fail-loud on version mismatch** (no silent default-init, no truncation). Write-side: FPGA recorder writes `format_version = 1` directly into each chunk header. Schema covers raw 8/10-bit, per-frame µs timestamp from FPGA monotonic counter, per-chunk header, JSON sidecar metadata. | ✅ PASS |
 | **VI. Type-Domain Discipline** | Phase 1 does NOT touch `src/eval/` or `src/nn/`. The Python loader returns `numpy.ndarray` (host-side, not eval-pipeline) — `gp_scalar` / `gp_vec3` / `gp_fitness` aliases are irrelevant. If 031-noise-cal (future) adds a C++ hook to consume clips inside the simulator, Principle VI applies there. | ✅ N/A this phase |
 
@@ -202,7 +204,7 @@ No constitution violations. Hand-prototype-instead-of-PCB is a *simplification* 
 
 ## Phase 0: Research
 
-See [research.md](./research.md) for the resolution of each NEEDS CLARIFICATION item.
+See [research.md](../031-beacon-camera/research.md) for the resolution of each NEEDS CLARIFICATION item. _(research.md stayed in 031 — it holds active emitter R1/R2 research.)_
 
 Top-level research items identified during Technical Context fill:
 

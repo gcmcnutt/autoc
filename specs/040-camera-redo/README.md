@@ -24,14 +24,20 @@ single-IR-sensor acquisition-research phase**. The relationship:
 
 ## Reference material (lives in 031, is 040's source-of-design)
 
-The original camera-phase design docs were drafted in `031-beacon-camera/` and remain there as 040's
-reference. **Do not build the camera chain from them under 031** — they are 040's to inherit:
+The camera-phase planning docs were **relocated here from `031-beacon-camera/` on 2026-06-22** (each
+carries a MOVED + likely-stale banner); the **shared emitter+camera origin docs stayed in 031** because
+the active emitter build still traces to them. **Do not build the camera chain from these without
+re-validating** — they predate the 031 1-bit phase and the 20 Hz / 480 fps / 200 Hz / 75 ms baseline.
 
-- [`../031-beacon-camera/spec.md`](../031-beacon-camera/spec.md) — full camera-pipeline spec (camera + lens + filter + recorder + paired-craft flight).
-- [`../031-beacon-camera/plan.md`](../031-beacon-camera/plan.md), [`data-model.md`](../031-beacon-camera/data-model.md), [`tasks.md`](../031-beacon-camera/tasks.md) — camera-phase planning artifacts.
-- [`../031-beacon-camera/camera_considerations.md`](../031-beacon-camera/camera_considerations.md) — sensor selection + link budget + Gold-code acquisition/tracking math.
-- [`../031-beacon-camera/verified-bom.md`](../031-beacon-camera/verified-bom.md) — full-camera BOM (bannered stale under 031; 040's starting BOM).
-- [`../031-beacon-camera/contracts/`](../031-beacon-camera/contracts/), [`recorder-status-codes.md`](../031-beacon-camera/recorder-status-codes.md), [`schematic.md`](../031-beacon-camera/schematic.md), [`quickstart.md`](../031-beacon-camera/quickstart.md).
+Relocated here (040's own):
+- [`plan.md`](plan.md), [`data-model.md`](data-model.md), [`quickstart.md`](quickstart.md), [`recorder-status-codes.md`](recorder-status-codes.md) — camera-phase planning artifacts (stale).
+- [`camera_considerations.md`](camera_considerations.md) — sensor selection + link budget + Gold-code acquisition/tracking math.
+- [`contracts/`](contracts/) — camera-clip + FPGA-recorder + loader/sidecar contracts.
+- [`beacon-viewer/`](beacon-viewer/), [`beacon-loader/`](beacon-loader/) — camera-clip viewer + loader.
+
+Stayed in 031 (shared emitter+camera; active emitter traces to them):
+- [`../031-beacon-camera/spec.md`](../031-beacon-camera/spec.md) — the mega-spec (emitter FR-1.x active + camera FR-2.x parked; rate-corrected + bannered).
+- [`../031-beacon-camera/verified-bom.md`](../031-beacon-camera/verified-bom.md) — shared BOM. [`schematic.md`](../031-beacon-camera/schematic.md) — emitter pod schematic. [`contracts/mcu-firmware-contract.md`](../031-beacon-camera/contracts/mcu-firmware-contract.md) — emitter firmware contract.
 
 ## Baseline correction to apply on unpark
 

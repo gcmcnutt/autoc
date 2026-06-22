@@ -15,7 +15,7 @@ This directory holds the Lattice Propel project for the 031-beacon-camera flight
    - RISC-V soft-CPU (Propel default core)
    - GPIO for status LED
 6. Add the Verilog modules from `../rtl/` to the source list.
-7. Wire the soft-CPU's main loop per [contracts/fpga-recorder-contract.md](../../../specs/031-beacon-camera/contracts/fpga-recorder-contract.md).
+7. Wire the soft-CPU's main loop per [contracts/fpga-recorder-contract.md](../../../specs/040-camera-redo/contracts/fpga-recorder-contract.md).
 8. Build the bitstream → flash to onboard flash via JTAG/USB.
 
 ## What's gitignored

@@ -1,5 +1,7 @@
 # Data Model — 031 Beacon-Camera Phase 1
 
+> **MOVED 2026-06-22 from `specs/031-beacon-camera/`. Parked 040 camera-redo reference — predates the 031 1-bit phase and is likely stale; re-validate (20 Hz / 480 fps / 200 Hz / 75 ms baseline + 031 field findings) on 040 restart. See [`README.md`](README.md).**
+
 The Phase-1 data model is dominated by the **recorded raw-clip artifact**. No database, no service entities — the model is a file format with a JSON sidecar.
 
 ## Entities

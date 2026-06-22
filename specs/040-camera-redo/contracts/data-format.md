@@ -1,7 +1,7 @@
 # Contract — `data-format.md` Canonical Chunked-Binary Clip Format (v1)
 
 **Spec ref**: FR-4.2, FR-4.3, Principle V (Versioned Persistence Artifacts)
-**Reference impl**: `specs/031-beacon-camera/beacon-loader/beacon_loader/chunk.py` (Phase 1) — the loader IS the executable spec
+**Reference impl**: `specs/040-camera-redo/beacon-loader/beacon_loader/chunk.py` (Phase 1) — the loader IS the executable spec
 
 This document is the **single source of truth for the byte layout** of recorded clips. Any change here MUST update both:
 1. The FR-4.3 Python loader implementation, AND

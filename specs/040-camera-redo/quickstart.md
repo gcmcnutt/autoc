@@ -1,5 +1,7 @@
 # Quickstart — 031 Beacon-Camera Phase 1
 
+> **MOVED 2026-06-22 from `specs/031-beacon-camera/`. Parked 040 camera-redo reference — predates the 031 1-bit phase and is likely stale; re-validate (20 Hz / 480 fps / 200 Hz / 75 ms baseline + 031 field findings) on 040 restart. See [`README.md`](README.md).**
+
 Four end-to-end walk-throughs. None require a printed PCB. **Section (0) is a recommended pre-flight** that validates the boost-converter and MCU gold-code generation on a breadboard before committing parts and time to the cube-mounted perfboard build in §(a).
 
 > Prereqs assumed: Linux PC, `avr-gcc`, `pymcuprog`, `python3.11`, Lattice Propel + Radiant installed, USB-UART cable, parts from `verified-bom.md` in hand, 3D-printed half-cube enclosures from `cad/beacon-half-cube.stl`.
@@ -118,7 +120,7 @@ Time budget: ~4 hours.
    - Power down the board cleanly (USB unplug).
    - Pull the SD card → mount on the PC → confirm `<session-id>.clip` + `<session-id>.json` are present + non-empty.
 6. **Ingest the test clip**:
-   - `cd specs/031-beacon-camera/beacon-loader && pip install -e .`
+   - `cd specs/040-camera-redo/beacon-loader && pip install -e .`
    - `python -c "from beacon_loader import load_clip; f, m = load_clip('/path/to/session.clip'); print(f.shape, m['recovered_frame_count'])"`
    - Expect output like `(7200, 240, 320) 7200` for a 30 s @ 240 fps clip.
 7. **Mount the recorder on the carrier craft**:
@@ -144,7 +146,7 @@ Time budget: 20 min.
 6. Pull SD card.
 7. On the PC:
    ```bash
-   cd specs/031-beacon-camera/beacon-loader
+   cd specs/040-camera-redo/beacon-loader
    python - <<'PY'
    from beacon_loader import load_clip
    import numpy as np
@@ -171,5 +173,5 @@ If steps 7-8 yield numpy arrays + non-zero brightness centered in the frame, the
 
 - **P2 bench gate**: FR-3.3 EMC + FR-3.4 eye-safety + FR-1.7 UVLO bench-verifies. Document in `eye-safety-measurements.md`.
 - **P3 bench gate**: complete S1-S9 scenario sweeps; one bench log entry per scenario.
-- **P4 US6**: paired-craft test flight — see [spec.md §US6](./spec.md) for the operational model + acceptance criteria.
+- **P4 US6**: paired-craft test flight — see [spec.md §US6](../031-beacon-camera/spec.md) for the operational model + acceptance criteria.
 - **P5 close-out**: write `SMOKE_REPORT.md` + `outcome.md`; tag the EVN gateware bitstream as the 031-fpga ingest input.

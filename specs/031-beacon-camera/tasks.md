@@ -11,6 +11,13 @@
 > firmware (T027–T031) CARRY into Phase A**; **Phase 5 US3 (camera) / Phase 6 US4 (recording) / Phase 7
 > US6 (flight) are DEFERRED → 040**; Phase 8 US5 (scenarios) partly carries (bench/field).
 >
+> 📦 **Doc relocation 2026-06-22**: the camera planning docs (`plan.md`, `data-model.md`, `quickstart.md`,
+> `recorder-status-codes.md`, `camera_considerations.md`), the camera `contracts/`, and the
+> **`beacon-loader/` + `beacon-viewer/` packages** moved to [`../040-camera-redo/`](../040-camera-redo/).
+> T0xx paths below that read `specs/031-beacon-camera/{beacon-loader,beacon-viewer,contracts/<camera>}`
+> are now under `specs/040-camera-redo/...` (stale-but-historical — completed/deferred camera tasks).
+> `spec.md` + `verified-bom.md` + `schematic.md` + `contracts/mcu-firmware-contract.md` stayed in 031.
+>
 > ⚠️ Stale details in the deferred tasks (superseded by [`cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md) + R11):
 > LM3410-**Y**→**X**; voltage supervisor **removed** (firmware-ADC UVLO); UVLO **3.3 V→3.5 V**;
 > chip rate **100 Hz→200 Hz** (480 fps ÷ 2.4 fpc).
@@ -29,7 +36,7 @@
 
 ## Path Conventions
 
-Multi-subtree per [plan.md](plan.md) Project Structure:
+Multi-subtree per [plan.md](../040-camera-redo/plan.md) Project Structure:
 
 ```
 firmware/

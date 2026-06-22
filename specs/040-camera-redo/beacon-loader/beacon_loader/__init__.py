@@ -5,7 +5,7 @@ Public API:
     iter_chunks(path) -> Iterator[ChunkRecord]
     validate_sidecar(sidecar_dict) -> None
 
-See specs/031-beacon-camera/contracts/python-loader.md for the full contract.
+See specs/040-camera-redo/contracts/python-loader.md for the full contract.
 """
 
 from beacon_loader.loader import (

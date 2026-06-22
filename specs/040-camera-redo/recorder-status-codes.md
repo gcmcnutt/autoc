@@ -1,5 +1,7 @@
 # Recorder Status-LED Reference Card
 
+> **MOVED 2026-06-22 from `specs/031-beacon-camera/`. Parked 040 camera-redo reference — predates the 031 1-bit phase and is likely stale; re-validate (20 Hz / 480 fps / 200 Hz / 75 ms baseline + 031 field findings) on 040 restart. See [`README.md`](README.md).**
+
 **FR ref**: FR-2.6 (status indicator) + Clarifications Session 2026-05-17 (heartbeat blink design).
 **Hardware**: Onboard R/G/B tri-color LED on the Lattice CrossLink-NX-EVN board, GPIO-driven by the soft-CPU.
 **Operator workflow**: glance at the LED before throttle-up. **GREEN heartbeat blink at ~1-2 Hz is the "go" signal**. Anything else = investigate.

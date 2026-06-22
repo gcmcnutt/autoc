@@ -1,5 +1,7 @@
 # Camera Considerations
 
+> **MOVED 2026-06-22 from `specs/031-beacon-camera/`. Parked 040 camera-redo reference — predates the 031 1-bit phase and is likely stale; re-validate (20 Hz / 480 fps / 200 Hz / 75 ms baseline + 031 field findings) on 040 restart. See [`README.md`](README.md).**
+
 Sensor selection and link-budget notes for the LED-beacon tracking system.
 
 ## Operating Assumptions

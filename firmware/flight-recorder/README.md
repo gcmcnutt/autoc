@@ -23,7 +23,7 @@ firmware/flight-recorder/
 
 ## Bring-up steps (operator)
 
-See [quickstart.md (b)](../../specs/031-beacon-camera/quickstart.md) for the full walk-through.
+See [quickstart.md (b)](../../specs/040-camera-redo/quickstart.md) for the full walk-through.
 
 1. Receive the CrossLink-NX-EVN board (Lattice direct / Mouser).
 2. Install Lattice Propel + Radiant + the LIFCL-40 device support pack.
