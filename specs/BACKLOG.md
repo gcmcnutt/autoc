@@ -148,8 +148,22 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
   had to be hand-placed into two different spots in all six files. A standard `[section]`-based reader
   (toml++ / cpptoml) would let the schema express `[variations]` flags vs `[fitness]` params so
   placement is structural, not manual. Pairs naturally with the layered-stack idea above.
+- **Also: decouple unit/contract tests from the production inis (2026-06-20)**. `contract_tracker_config_tests.cc`
+  reads the *mutable* repo-root `autoc-tracker.ini` and pins **tunable** values as "drift gates" —
+  `FlightArenaRadius==80`, `CepGateThreshold==1.25`, `BeaconEmissionConeDeg==270`, `BeaconLeftMountY==-0.45`,
+  … — so tuning any of them breaks the unit suite. Surfaced when changing `FitStreakThreshold` 0.5→0.3:
+  an over-long inline comment pushed that line past inih's 200-char `INI_MAX_LINE`, failing
+  `OperatorIniParsesClean` (good catch) — but it exposed that the suite is hostage to the file we
+  deliberately change. **Principle**: unit/contract tests validate the *parser + schema + loud-fail*
+  against **test-owned fixtures** (the `writeTempIni(...)` tests already do this correctly), never assert
+  mutable production values. **Fix**: strip the tunable-value pins; keep at most a minimal "production ini
+  parses clean + required structural keys present (`Mode`, `TrackerSourceRun`)" guardrail (or drop the
+  production-ini dependency entirely and rely on autoc's startup fail-loud + fixtures). Pairs with this
+  item because the layered base+override stack shrinks the production-ini surface a test would touch, and
+  a typed `[section]` schema makes "valid config" a structural property to fixture-test, not a value list.
 - **Trigger to act**: the next time an ini-wide change has to be hand-applied across all six files.
-- Files: `src/util/config.cc` (load), `include/autoc/util/config.h`, the six `autoc*.ini`.
+- Files: `src/util/config.cc` (load), `include/autoc/util/config.h`, `tests/contract_tracker_config_tests.cc`
+  (decouple from production ini), the six `autoc*.ini`.
 
 ---
 
@@ -294,6 +308,33 @@ Remaining 015 work:
 - **Sequencing (operator, 2026-06-08): after 037.** 037 is M1-smoothness / loop-rate focused (the faster-loop, smoother-M1 path); hull-crash-cost is the **M2-safety** fitness dimension and naturally follows once 037's faster-loop + local-IMU stack enables the M2 real-flight path it gates. Queue: 035 → 037 → hull-crash (036 islands stays back-pocket; un-backlog only if an M2 bake proves lottery-prone).
 - **Fresh evidence (2026-06-08)**: 035 M2 bake t7 (`autoc-…2026-06-08T15:44:25.312Z`) is logging the escalation live — `hullStrike=6/294` by gen 109 and climbing with tracking skill; its final hull-strike curve will be the up-to-date baseline for this feature's penalty design.
 
+### [STUDY — M2 fitness gradient, 2026-06-19] Negative reward when the chase gets *ahead* of the target
+
+> **→ 038 US5 (2026-06-19)**: pulled into [specs/038-accurate-m2/spec.md](038-accurate-m2/spec.md) as
+> US5 + FR-009 (signed-ahead reward, ini-switched). Kept here as the originating study notes.
+
+- **What**: study whether the tracking fitness should go genuinely **negative** when the chase
+  overshoots *past* the trail point and gets **ahead of** the target — not merely score lower. Today
+  the cone scoring is asymmetric (`FitDistScaleAhead=2.0` vs `FitDistScaleBehind=7.0`): being ahead
+  decays the (positive) reward faster than being behind, but it never crosses zero into a *penalty*.
+  Operator intuition (2026-06-19): "if you get ahead of chase the gradient actually goes negative" —
+  i.e. a region of the encounter where the *right* thing is for the controller to feel an actively
+  repelling gradient (you've blown past the rabbit / it's about to overrun you), not just a smaller
+  carrot.
+- **Why it matters now**: connects to the **t12 displacement finding** (038 T001) — the hull penalty
+  pushed the chase to hold a large standoff and bail OOB rather than risk getting close/ahead. A
+  fitness that explicitly *repels* the ahead-of-target geometry might shape the same safety behavior
+  through the reward gradient instead of (or alongside) the crash multiplier, and might reduce the
+  OOB flyaway by giving the controller a gradient to *follow back* into the trail position rather than
+  a cliff to flee from. Also relevant to the from-behind-overshoot blind spot (spec Edge Cases: a
+  forward camera can't perceive the overrun; a reward-shaping term is the only lever there).
+- **Open questions**: where exactly zero-crossing should sit (at the target? at the trail point + ε?);
+  whether a negative region destabilizes lexicase (negative + positive scenario scores mixing under
+  epsilon); interaction with the ahead/behind scale asymmetry (is this just `FitDistScaleAhead` going
+  steep enough to cross zero, or a separate signed term?); unitless/optical-only consistency (FR-008).
+- **Source**: operator review of t12 (037 hull-penalty run), 2026-06-19. A reward-shaping sibling to
+  the crash-penalty work; evaluate as an alternative/complement to the t13 dual-penalty exchange-rate.
+
 ### [DEFERRED — 031-fed] CEP realism — evolve the sim beacon-CEP model
 
 - **What**: the sim CEP (beacon localization uncertainty fed to the tracker NN) is a linear off-axis
@@ -424,6 +465,14 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 ---
 
 ## Infrastructure
+
+### [037 close-out, 2026-06-21] Housekeeping carried forward from 037
+- **svTau cleanup** (P-O8): `svTau` kept only to preserve draw order — doesn't help; remove the dead path.
+- **Time-denominate the rate-dependent reports** (P-O11): raw tick-denominated streak metrics read 2× at
+  20 Hz; partly addressed by `--tick-sec` in the analytics, but the streak/avgMaxStreak fields should be
+  surfaced in seconds (or pctInStreak) consistently. Reporting hygiene.
+- **Type-domain grep audit** (T028/T046, Principle VI): grep `src/eval/ src/nn/` for float/double drift on
+  the 037-touched paths; confirm `gp_scalar`/`gp_fitness` convention. Cleanup, non-blocking.
 
 ### `wind_velocity` not recorded in the dmp (honest-recording gap)
 
@@ -647,6 +696,33 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 - **Why it's a clean addition rather than bespoke tooling**: it's the same eval pipeline, just sourcing the scenario from a recorded dmp instead of the seed-regenerator. Reuses `source_dmp_loader` (already reads source dmps for tracker mode). The cross-version determinism question ("does today's build reproduce last month's recorded run?") and the M2-environment-parity question are the *same* mechanism.
 - **Schema note (carried from the M2 discussion)**: the trimmed `SourceTickSample` ([source_trajectory.h:37](../include/autoc/eval/source_trajectory.h#L37)) drops `wind_velocity` and the control commands; the full `AircraftState` dmp ([aircraft_state.h:471](../include/autoc/eval/aircraft_state.h#L471)) keeps both. Mode (a) needs the control commands + entry pose, so playback re-eval must read the **full dmp**, not the trimmed transport library.
 - **Verdict on priority**: probably **not worth building for the M2-fidelity question alone** (generalization doesn't need it). But it has independent value as a **cross-version / cross-host determinism regression harness** — which is more relevant now that spec-kit work spans multiple hosts. Trigger: when a determinism question costs real debugging time (e.g., suspected non-determinism in a bake, or validating a build on host B reproduces host A's run), OR when M2-parity validation is actually undertaken.
+
+### [BACKLOG 038] Eval at forced variation scale — `EvalVariationScaleOverride` knob (robustness vs repeatability)
+
+- **Surfaced 2026-06-19** (operator) from the t14 curriculum-ramped crash penalty. Today **all** eval
+  runs (`EvaluateMode=1`) pin the variation scale to the value **recorded in the saved genome**
+  (`gEvalVariationScaleOverride = genome.variation_scale`, [src/autoc.cc](../src/autoc.cc) ~L1043;
+  `computeVariationScale()` returns it). That is deliberate — it reproduces the exact training
+  conditions for the **bitwise determinism gate** (repeatability). The cost: eval can only ever test a
+  controller at the scale it was *saved* at.
+- **The gap**: a run that **exits early** (before the ramp reaches 1.0 — ~gen 761 for the 800-gen
+  tracker config, `VariationRampStep=40`) saves an elite at **partial** scale, so its eval reproduces
+  that partial scale — never full variation. There is no way today to ask *"how does this controller
+  hold up at full variation?"*
+- **The knob**: an ini option (e.g. `EvalVariationScaleOverride = 1.0`, default = -1 → use the recorded
+  scale) that forces the eval scale, decoupling it from the genome's recorded value. Forced-scale eval
+  is **NOT bitwise-reproducible vs training** (different scale → different scenarios) — it's a *robustness
+  probe*, run **instead of** the repeatability gate, not alongside it. Two distinct eval purposes:
+  (1) repeatability (recorded scale, today's behavior, the bitwise gate); (2) robustness at a chosen
+  scale (forced, new).
+- **The fairness nuance (operator 2026-06-19)**: only meaningful for a **mature** elite. Running a
+  **gen-7** elite (trained at scale≈0) at full variation is unfair — wildly OOD for a controller that
+  never saw variation. A **gen-450** elite (trained under substantial variation) at full is a reasonable
+  robustness test. Hence a *knob* you opt into per-run, not a default — the operator judges whether the
+  elite is mature enough to warrant the forced-full eval.
+- **Scope**: small — gate the `gEvalVariationScaleOverride` assignment behind the config value (use the
+  override if ≥0, else fall back to the recorded `genome.variation_scale`). Fits 038's reporting/eval
+  cluster. **Hold code** (t14 is running; clean separate feature).
 
 ### [NEXT — post more-rnn3 completion] Genome ablation tool — generic weight/input editor + eval harness
 - **Trigger**: when more-rnn3 finishes 800-gen run. Run alongside the usual subjective robustness eval tests (the existing post-run set) to add a quantitative ablation dimension.

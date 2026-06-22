@@ -17,7 +17,11 @@
 # name (basename minus .log = the plot --label).
 #
 # Reports: m1 = evolution_progress, per_axis_aggressiveness, per_axis_time_series,
-#          dynamics_progress (4).  m2 = those + gen_diag + intercept_analysis (6).
+#          dynamics_progress (4).  m2 = those + gen_diag + intercept_analysis +
+#          gen_runtime (log-only diversity/collapse proxy) + mode_progress (per-gen
+#          perception/track/range/reacquire competence) + score_by_path (per-path
+#          tracking-score + error distance) + rnn_capacity (needs nnextractor+nn2cpp) +
+#          tactics (needs a --compare run) (11).
 #
 # INCREMENTAL run-summary: the per-gen aggregate is the slow part (one S3 dmp
 # fetch per gen). We cache it per run-id under $CACHE_DIR and use `dmp-dump
@@ -143,11 +147,71 @@ run plot_per_axis_time_series.py "$SUMMARY" --label "$NAME" --total-gens "$TOTAL
 run dynamics_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
     "${DYN_CACHE[@]}" --label "$NAME" -o "$OUT/${NAME}_dynamics_progress.png"
 
-# --- m2 (tracker) adds two ---
+# --- m2 (tracker) adds: gen_diag, intercept_analysis, rnn_capacity, tactics ---
 if [[ "$MODE" == "m2" ]]; then
   run plot_gen_diag.py --in "$LOG" --label "$NAME" --out "$OUT/${NAME}_gen_diag.png"
   run intercept_analysis.py --csv "$TICK" --label "$NAME" --gen "$GEN" \
       --tick-sec "$TICK_SEC" -o "$OUT/${NAME}_intercept_analysis.png"
+
+  # gen_runtime — per-gen wall-clock curve (proxy for population diversity/collapse:
+  # rising = learning to fly full scenarios; flat-low/dropping = early-death/collapse).
+  # Log-only (no S3); overlays the current run + every --compare run's log.
+  GR_ARGS=( --run "$NAME:$LOG" )
+  for ((i=1; i<${#COMPARE[@]}; i+=2)); do GR_ARGS+=( --run "${COMPARE[i]}" ); done
+  run gen_runtime.py "${GR_ARGS[@]}" -o "$OUT/${NAME}_gen_runtime.png"
+
+  # mode_progress — per-gen mode competence (perception/track/range/reacquire) from #GenDiag;
+  # log-only, same current+compares overlay. Plateau = competence ceiling.
+  run mode_progress.py "${GR_ARGS[@]}" -o "$OUT/${NAME}_mode_progress.png"
+
+  # score_by_path — per-path tracking-score distribution (M2 generalization proxy):
+  # raw box/strip per path + per-step (path-length-normalized) histograms per path.
+  # Needs per-scenario meta (path_variant + score + steps) → one --meta-only fetch.
+  if "$DMP" "$RUN" --meta-only -i "$INI" >"$TMP/meta.yaml" 2>"$TMP/meta.err"; then
+    # --csv adds the ground-truth per-tick tracking-error-distance panels (uses the tick.csv
+    # already fetched); right panels show ‖chase−trail‖ per path instead of per-step score.
+    run score_by_path.py --meta "$TMP/meta.yaml" --csv "$TICK" --label "$NAME" -o "$OUT/${NAME}_score_by_path.png"
+  else
+    echo "  [plot] score_by_path skipped (meta-only fetch failed):" >&2; tail -1 "$TMP/meta.err" >&2
+  fi
+
+  # Resolve the FIRST --compare run once (run-id from its log) — shared by the
+  # rnn_capacity overlay (its elite NN) + the tactics overlay (its per-tick CSV).
+  CNAME=""; CLOG=""; CRUNID=""
+  if [[ ${#COMPARE[@]} -ge 2 ]]; then
+    CSPEC="${COMPARE[1]}"; CNAME="${CSPEC%%:*}"; CLOG="${CSPEC#*:}"
+    CRUNID="$(grep -E 'Run ID:' "$CLOG" 2>/dev/null | tail -1 | sed -E 's/.*Run ID:[[:space:]]*//')"
+  fi
+
+  # rnn_capacity — W_hh utilization (pure weight SVD; extract elite via
+  # nnextractor→nn2cpp, no sim/sensor data). Overlays the --compare run's elite
+  # too when given, so the report shows the A/B (eff-rank/spectrum) not just one run.
+  if [[ -x "$REPO/build/nnextractor" && -x "$REPO/build/nn2cpp" ]]; then
+    extract_nn() {  # <run-id> <out.cpp> ; returns 0 on success
+      "$REPO/build/nnextractor" -k "$1" -o "$TMP/$2.dat" -i "$INI" >"$TMP/$2.err" 2>&1 \
+        && "$REPO/build/nn2cpp" -i "$TMP/$2.dat" -o "$TMP/$2.cpp" >/dev/null 2>&1
+    }
+    if extract_nn "$RUNID" elite; then
+      CAP_ARGS=( --nn "$NAME:$TMP/elite.cpp" )
+      if [[ -n "$CRUNID" ]] && extract_nn "$CRUNID" cmp_elite; then
+        CAP_ARGS=( --nn "$CNAME:$TMP/cmp_elite.cpp" "${CAP_ARGS[@]}" )  # baseline first
+      fi
+      run rnn_capacity.py "${CAP_ARGS[@]}" -o "$OUT/${NAME}_rnn_capacity.png"
+    else
+      echo "  [nn ] rnn_capacity skipped (nnextractor/nn2cpp failed):" >&2; tail -2 "$TMP/elite.err" >&2
+    fi
+  else
+    echo "  [nn ] rnn_capacity skipped (build nnextractor + nn2cpp to enable)" >&2
+  fi
+
+  # tactics A/B — overlay this run vs the --compare run on the policy/encounter axes.
+  if [[ -n "$CRUNID" ]] \
+     && "$DMP" "s3://$BUCKET/$CRUNID/" --csv-only --gen "$GEN" -i "$INI" >"$TMP/cmp_tick.csv" 2>"$TMP/cmp.err"; then
+    run intercept_compare.py --a "$CNAME:$TMP/cmp_tick.csv" --b "$NAME:$TICK" --gen "$GEN" \
+        -o "$OUT/${NAME}_tactics.png"
+  elif [[ -n "$CRUNID" ]]; then
+    echo "  [plot] tactics skipped (compare run CSV @gen $GEN unavailable):" >&2; tail -1 "$TMP/cmp.err" 2>/dev/null >&2
+  fi
 fi
 
 echo "generate_pngs: done — wrote to $OUT:"
