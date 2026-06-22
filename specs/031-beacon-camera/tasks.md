@@ -96,7 +96,7 @@ Per the IR-sensor + scope + small-Lattice-FPGA strategy added 2026-05-18 — the
 
 - [ ] T012a Receive Cart §F IR-sensor parts. Confirm BPW34 / OPT101P / comparator on bench.
 - [ ] T012b Build the **scope-direct decode rig**: OPT101P (or BPW34 + 1 MΩ + 0.1 µF DC-block) on the breadboard; output to scope probe; bench-power the OPT101P from a 5 V supply. Aim at a flashlight (visible) to confirm the sensor responds.
-- [ ] T012c **Optional: build the FPGA-decode add-on** on the operator's **EIM Technology STEPFPGA / STEP-MXO2 education kit** (Lattice MachXO2-4000HE, 4320 LUTs, 9 LEDs, 4× 7-seg, 4 buttons + switches, USB-UART via CH340; confirmed 2026-05-18). Comparator (LM393 or 74HC14 from Cart F) reshapes the analog PD signal into a digital edge; route to a free GPIO header pin. Gateware (Verilog, ~100-200 LUTs out of 4320 = massive headroom):
+- [~] T012c ⚠️ **SUPERSEDED 2026-06-22 — comparator/hard-1-bit path DROPPED** (ADC soft-decision only, acquisition-research-plan §5; the camera-era "≥240 Hz" sampling is also stale). The active FPGA decode is **A4/A4a–c on the MCP3201 ADC path**. Kept below as history only. ~~**Optional: build the FPGA-decode add-on**~~ on the operator's **EIM Technology STEPFPGA / STEP-MXO2 education kit** (Lattice MachXO2-4000HE, 4320 LUTs, 9 LEDs, 4× 7-seg, 4 buttons + switches, USB-UART via CH340; confirmed 2026-05-18). Comparator (LM393 or 74HC14 from Cart F) reshapes the analog PD signal into a digital edge; route to a free GPIO header pin. Gateware (Verilog, ~100-200 LUTs out of 4320 = massive headroom):
   - Sample comparator GPIO at ≥240 Hz (divide MachXO2 clock down — board has 12 MHz crystal)
   - 4× parallel 15-chip Gold-code correlators (one per code 0-3) — sliding XOR + popcount → compare to lock threshold
   - LED output: light LED i when code i is locked; chip-count on 7-seg display
@@ -148,14 +148,21 @@ The active arc per [`acquisition-research-plan.md`](acquisition-research-plan.md
 
 ### Single-IR-sensor receiver (new — `cad/beacon-receiver`)
 - [ ] A3 Build the receiver per the `cad/beacon-receiver` schematic: **BPV10NF → MCP6022 TIA** (Rf trimpot ∥ Cf) **→ MCP3201 ADC**, VBIAS R2/R3 divider + C2 bypass, **MCP1525** 2.5 V ref, decoupling. Power + SPI from the **STEP-MXO2** via J1 (GND=21, SPISO=23→U2/6, SCK=24→U2/7, CS=25→U2/5, +3V3=40).
-- [ ] A4 FPGA bring-up: **Lattice Diamond** on the STEP-MXO2 (MachXO2-1200) — hello-blink → MCP3201 SPI capture (hard-SPI or bit-bang) → sliding 15-chip matched filter → tentative/confirmed lock + UART telemetry to the laptop.
+- [ ] A4 **FPGA toolchain verify (F1 — prove the loop before logic)**: Lattice Diamond on the **STEP-MXO2 (MachXO2-4000HE, 4320 LUTs)** — build→flash a hello-blink off the 12 MHz clock via WSL→Diamond interop + USB-JTAG. Confirms build + flash before any correlator RTL.
+- [ ] A4a **HDL co-sim harness (F2 — Principle I testing-first)**: `iverilog`/`vvp` testbench in `firmware/beacon-decoder-stepfpga/tb/`; extend `acquisition-sim/sim.py` to emit the ADC sample-stream stimulus + expected per-chip soft values + lock decisions; the testbench asserts the correlator (incl. the per-beacon DPLL of A4c) against the golden vectors. **MUST pass before A4c runs on hardware.**
+- [ ] A4b **MCP3201 SPI master + UART telemetry (F3)**: FPGA is SPI master to the MCP3201 (J1); stream raw/decimated ADC + lock state over UART (115200) to the laptop — live ADC envelope visible on the host.
+- [ ] A4c **Soft-decision correlator + per-beacon DPLL + lock FSM (F4/F5)**: erasure-aware sliding 15-chip matched filter for codes A/B; **two INDEPENDENT self-syncing chip-rate/phase loops — one DPLL per beacon — each searching+locking its own chip rate under ~10% inter-beacon drift** (acquisition-research-plan §5; do NOT assume a shared clock); tentative→confirmed lock ladder + early/partial-code (~70%) acquisition + per-beacon correlation-margin output. Verified in sim (A4a), then against a live emitter.
 
 ### Bench
 - [ ] A5 **Stage 0 "hello gold code"**: 1 emitter → 1 PD (ND-attenuated, ~1 m) → laptop; recover the code; sweep chip rate / oversampling.
-- [ ] A6 **Stage 1 two-codes-one-detector**: 2 emitters (codes A/B) → 1 PD; confirm CDMA separation + cross-corr floor; measure acquisition time.
+- [ ] A6 **Stage 1 two-codes-one-detector**: 2 emitters (codes A/B) → 1 PD; confirm CDMA separation + cross-corr floor; measure acquisition time **AND partial-code (~70%) lock + erasure-aware soft-decision gain** (§7); A/B must not leak into each other under the independent per-beacon clock drift (A4c).
 
-### Field (occlusion-modulated acquisition vs range)
-- [ ] A7 Emitter on a craft, PD on the ground (cone + 850 nm bandpass); **modulate occlusion over the emitter and sweep range**; measure acquisition time + lock reliability + dropout stats vs range/aspect/sun. Compare to [`acquisition-sim/acquisition-results.md`](acquisition-sim/acquisition-results.md) predictions; log per FR-5.2.
+**▣ Checkpoint (code, ahead of the field gate)**: Stage 0/1 working = hello-world up. Checkpoint firmware + gateware and **re-assess the hill** before the Stage-2 field work — is 031's scope right-sized or to be split? (plan.md M3→M4 boundary.)
+
+### Field — Stage 2 (031 GATE, ground; two experiments, different optics — §3)
+- [ ] A7a **Exp A — all-attitude lock maintenance** (~40° FOV: large-area PD + short lens, ~30–50 m): emitter on a craft, PD on the ground; **modulate occlusion / sweep aspect through rolls/banks/pitches**; measure dropout depth/duration (the real erasure rate) + lock reliability. These dropout stats set the final code-length + soft/erasure thresholds.
+- [ ] A7b **Exp B — max-range acquisition** (narrow-aimed, ~100 m: collection lens Ø25–50 mm + 850 nm bandpass + small PD): measure acquisition time + post-correlation SNR vs range at the design range.
+- **Stage-2 GATE (acquire-and-agree)**: across the range/aspect grid both codes acquire AND measured **post-correlation SNR-vs-range is within ≤3 dB of the §9 sim prediction** and **acquisition-time within ±30%** — compare to [`acquisition-sim/acquisition-results.md`](acquisition-sim/acquisition-results.md); log per FR-5.2. _(≤3 dB / ±30% is a first-bench-calibratable default, not contractual; exploratory — newly-surfaced issues are research output, not automatic gate failures.)_
 
 **Checkpoint Phase A**: coded beacon acquired through real air with a single photodiode; acquisition-time / reliability / dropout vs range characterized → feeds **040** (camera) coding + CEP design.
 

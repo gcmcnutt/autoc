@@ -59,16 +59,17 @@ FPGA proceed in parallel; the two meet at the bench (Stage 0).
 | **M2** | **Bench Stage 0 — hello gold code** | FPGA F4 vs a real single emitter, ~1 m, ND-attenuated | Scope + ADC show the 15-chip code; correlation peak clears noise; chip-rate / code / oversampling sweepable. |
 | **M3** | **Bench Stage 1 — two codes, one detector** | FPGA **F5** (two-code CDMA + early/partial acquisition) | Both codes (A/B) resolved from the summed signal, no cross-leak; cross-corr floor + acquisition time measured vs `sim.py`; partial-code (~70%) lock characterized. |
 | **▣ CHECKPOINT** | **Code checkpoint — ahead of the full plan** | — | Hello-world (Stage 0, ideally Stage 1) working; checkpoint firmware/gateware and **re-assess the hill** — is 031's full scope right-sized, or split? |
-| **M4** | **Ground field — Stage 2 (031 GATE)** | beacons on craft (static/taxi/hand-held), PD on ground + collection lens + filter | **Acquire-and-agree**: two-code acquisition across the planned range/aspect grid AND measured acquisition-time + SNR-vs-range agree with the [§9 sim](acquisition-research-plan.md) within **~few dB** (predict-then-test). Exploratory — newly-surfaced issues are research output, **not** automatic gate failures. |
+| **M4** | **Ground field — Stage 2 (031 GATE)** | beacons on craft (static/taxi/hand-held), PD on ground + collection lens + filter | **Acquire-and-agree**: two-code acquisition across the planned range/aspect grid AND measured **post-correlation SNR-vs-range within ≤3 dB of the [§9 sim](acquisition-research-plan.md)** and **acquisition-time within ±30%** (predict-then-test; ≤3 dB / ±30% is a first-bench-calibratable default, not contractual). Exploratory — newly-surfaced issues are research output, **not** automatic gate failures. |
 
 Milestone detail: FPGA F0–F5 in [fpga-toolchain-plan.md §4](fpga-toolchain-plan.md); emitter E1–E3 in [emitter-toolchain-plan.md §4](emitter-toolchain-plan.md); staged arc + pass criteria in [acquisition-research-plan.md §4](acquisition-research-plan.md). Executable tasks: [tasks.md](tasks.md) Phase A.
 
 ## Acceptance criteria (the gate)
 
 **031 passes at M4 (Stage 2).** Concretely: across the range/aspect grid the receiver acquires both codes,
-and the measured **acquisition-time** and **post-correlation SNR-vs-range** track the §9 sim prediction
-within ~few dB — closing the predict-then-test loop and proving the Gold-code design + basic FPGA
-correlator architecture in real air. Not a contractual probability number (breadboard/exploratory phase).
+and the measured **post-correlation SNR-vs-range** tracks the §9 sim prediction **within ≤3 dB** and
+**acquisition-time within ±30%** — closing the predict-then-test loop and proving the Gold-code design +
+basic FPGA correlator architecture in real air. The ≤3 dB / ±30% margin is a **first-bench-calibratable
+default**, not a contractual probability number (breadboard/exploratory phase).
 Each earlier milestone's "Done when" is its own gate (above).
 
 ## Out of scope / deferred

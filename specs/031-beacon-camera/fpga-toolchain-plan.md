@@ -108,14 +108,19 @@ gateware must tolerate both (running-mean removal handles the DC pedestal in eit
    (baseline ~100 kS/s ⇒ ~1000× oversampling of the 200 Hz chip; sweepable).
 3. **DC / AGC tracker** — running mean (IIR) → subtract → signed soft sample; track gain/scale for the
    soft-decision threshold. Handles both DC and AC coupling jumper settings.
-4. **Chip integrator** — accumulate samples-per-chip into one soft chip value at the (sweepable) chip rate
-   (baseline 200 Hz, 2.4 frames/chip in the camera era; here oversampled freely).
-5. **Soft-decision correlator** — sliding 15-chip Gold-code matched filter, **erasure-aware**
-   (flips cost 2, erasures cost 1 — mark saturated/faded chips as erasures), for codes A/B (extensible to
-   4 codes). Renormalize by valid-chip count.
-6. **Acquisition/lock FSM** — tentative → confirmed lock ladder; **early/partial-code acquisition** at ~70%
-   of the code (the lever that keeps re-acquisition inside the control-loop budget). Per-code lock + a
-   correlation-margin (SNR proxy) output.
+4. **Per-beacon chip tracking (DPLL ×2)** — **one independent self-syncing chip-rate/phase loop per
+   beacon** (acquisition-research-plan §5). The two emitters free-run on separate ±5% internal-RC
+   oscillators (~10% apart, drifting independently of each other *and* the receiver), so each beacon's
+   path searches + locks **its own** chip rate/phase and accumulates samples-per-chip on that recovered
+   timebase. **Do NOT assume a shared chip clock between the two beacons** — a single shared integrator
+   would alias their relative slip and break honest two-code separation. (Baseline 200 Hz; the single-PD
+   bench oversamples ~1000× so the per-beacon search is cheap.)
+5. **Soft-decision correlator (per beacon)** — sliding 15-chip Gold-code matched filter on **each beacon's
+   own recovered timebase**, **erasure-aware** (flips cost 2, erasures cost 1 — mark saturated/faded chips
+   as erasures), codes A/B (extensible to 4). Renormalize by valid-chip count.
+6. **Acquisition/lock FSM (per beacon)** — tentative → confirmed lock ladder; **early/partial-code
+   acquisition** at ~70% of the code (the lever that keeps re-acquisition inside the control-loop budget).
+   **Independent per-beacon** lock state + locked-rate value + correlation-margin (SNR proxy) output.
 7. **Telemetry** — UART @ 115200 streaming `{frame_counter, raw/decimated ADC, corr_A, corr_B, lock_state,
    margin}` to the host laptop (matches the Stage 0/1 "stream to laptop over UART" logging path).
 8. **Indicators** — LED per code-locked; 7-seg chip/lock readout for at-a-glance bench status.
