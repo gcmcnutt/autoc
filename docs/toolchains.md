@@ -22,7 +22,7 @@ Keep this current when a toolchain, host, or invocation path changes.
 | **autoc / crrcsim** (C++17) | CMake + GoogleTest, Eigen, cereal, inih | WSL native | `./rebuild.sh` (constitution: unified build) |
 | **Python 3.11** (analysis, sim, loaders) | venv / system py + numpy, pytest | WSL native | per-tool `pyproject.toml` / scripts |
 | **xiao** (telemetry/AHRS MCU) | PlatformIO (arduino-mbed) | WSL native | `pio run` in `xiao/` |
-| **Beacon emitter MCU** (031) | ATtiny412 — avr-gcc + serialUPDI (1-wire UPDI) | WSL native | `firmware/beacon-pod/Makefile`. *PlatformIO path for the emitter is a later option (operator note 2026-06-22).* |
+| **Beacon emitter MCU** (031) | ATtiny412 — avr-gcc + serialUPDI (1-wire UPDI) | WSL native | `firmware/beacon-pod/Makefile` (committed). *PlatformIO path (xiao-style, megaTinyCore) detailed as the later option in [`specs/031-beacon-camera/emitter-toolchain-plan.md`](../specs/031-beacon-camera/emitter-toolchain-plan.md).* |
 | **FPGA — 031 acquisition correlator** | **Lattice Diamond 3.14** (MachXO2 / STEP-MXO2, `LCMXO2-4000HE`) | **Windows host** (`C:\lscc\diamond\3.14`, licensed) | from WSL via interop: `pnmainc.exe <build.tcl>` (verified working). **Details: [`specs/031-beacon-camera/fpga-toolchain-plan.md`](../specs/031-beacon-camera/fpga-toolchain-plan.md)** |
 | **FPGA — HDL simulation** | `iverilog`/`vvp` (or Verilator) — open source | WSL native | golden vectors from `specs/031-beacon-camera/acquisition-sim/sim.py` |
 | **FPGA — 040 camera redo** (deferred) | Lattice **Radiant + Propel** (CrossLink-NX / LIFCL-40) | Windows host | **NOT installed** — install only when 040 restarts |

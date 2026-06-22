@@ -125,7 +125,7 @@ genuinely available on the aircraft. CEP is the one 031-fed model; no input is a
 | Inputs (count) | Derivation | Units | Real-flight source |
 |---|---|---|---|
 | beacon L/R x,y (24) | world→NDC beacon centroid | NDC, unitless [−1,1] | camera (031) — **position quality** |
-| beacon L/R CEP (12) | **classic CEP** — DSP position-uncertainty estimate; magnitude driven by decode/reacquisition confidence + intermittency + crossing-rate over the multi-frame code-acquisition window (per-frame blur low @480 fps global shutter; the ~150 ms code period is the smear window, not the fps) | unitless [0,1] + sentinel | 031 decode pipeline (sim = off-axis placeholder → evolve to decode-time/intermittency/crossing-rate) |
+| beacon L/R CEP (12) | **classic CEP** — DSP position-uncertainty estimate; magnitude driven by decode/reacquisition confidence + intermittency + crossing-rate over the multi-frame code-acquisition window (per-frame blur low @480 fps global shutter; the ~75 ms code period — 15 chips @ 200 Hz, 2.4 frames/chip @ 480 fps — is the smear window, not the fps) | unitless [0,1] + sentinel | 031 decode pipeline (sim = off-axis placeholder → evolve to decode-time/intermittency/crossing-rate) |
 | beacon_pair_span (6) | NDC `sqrt(dx²+dy²)` | NDC, unitless | derived from beacon positions |
 | span_rate (1) | NDC/s closure (037 T022) | ~unitless (NDC/s) | derived; finer at 20 Hz |
 | tilt sin/cos (2) | `atan2` over NDC | unitless [−1,1] | derived |
@@ -138,10 +138,10 @@ genuinely available on the aircraft. CEP is the one 031-fed model; no input is a
 - **CEP = classic CEP (position uncertainty), magnitude driven by signal quality + crossing-rate.**
   Real-flight CEP is a circular-error-probable estimate the camera DSP produces; its size tracks
   Gold-code decode/reacquisition confidence (partial decode ⇒ high CEP) + intermittency (occlusion) +
-  **apparent crossing-rate over the multi-frame code-acquisition window** (the code spans ~2.4
-  frames/bit × ~15–16 bits ≈ ~150 ms, so a fast cross smears the decode). Per-frame exposure blur is
-  low (global shutter @~480 fps), but the high fps does **not** remove the acquisition-window smear —
-  the code period sets it. Stays an NN input + the visibility gate. The sim's off-axis placeholder
+  **apparent crossing-rate over the multi-frame code-acquisition window** (the 15-chip code spans
+  ~2.4 frames/chip × 15 chips = 36 frames ≈ ~75 ms at 200 Hz chip rate / 480 fps, so a fast cross
+  smears the decode). Per-frame exposure blur is low (global shutter @~480 fps), but the high fps
+  does **not** remove the acquisition-window smear — the code period sets it. Stays an NN input + the visibility gate. The sim's off-axis placeholder
   should evolve toward a **decode-time + intermittency + crossing-rate** model (031-fed).
 - **dist_to_boundary STAYS** — a deliberate crutch: prevents flyaway and induces patrol mode. Real
   flight has AHRS+GPS position, but only the relative distance-to-boundary-**along-velocity** matters
@@ -441,8 +441,8 @@ rate** at comparable tracking depth, determinism + bitwise replay preserved.
   *distinct* quality axes: **position quality** (centroid x/y, intrinsics focal/FOV, extrinsics mount
   pose) and **signal quality** (CEP = the classic position-uncertainty estimate whose magnitude tracks
   decode/reacquisition confidence + intermittency + crossing-rate over the multi-frame code-acquisition
-  window; *not* static position jitter; per-frame blur low @480 fps global shutter but the ~150 ms code
-  period is the smear window). [NEEDS CLARIFICATION: exact list + σ defaults — seed from 031
+  window; *not* static position jitter; per-frame blur low @480 fps global shutter but the ~75 ms code
+  period — 15 chips @ 200 Hz, 2.4 frames/chip @ 480 fps — is the smear window). [NEEDS CLARIFICATION: exact list + σ defaults — seed from 031
   `camera_considerations.md`; the sim CEP model evolves from the off-axis placeholder toward a
   decode-time/intermittency/crossing-rate model as 031 lands.]
 - **FR-012**: Camera variation MUST be ramped via `applyVariationScale` and gated by an
