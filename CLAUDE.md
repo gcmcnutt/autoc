@@ -2,6 +2,13 @@
 
 Auto-generated from all feature plans. Last updated: 2026-06-09
 
+## Toolchains & Build Environment
+
+Host topology + how each toolchain is built/driven (WSL2 ↔ Windows interop, Lattice Diamond for the 031
+FPGA, avr-gcc/UPDI for the emitter, PlatformIO for xiao, training box, S3) lives in a fetch-on-demand doc:
+
+@docs/toolchains.md
+
 ## Active Technologies
 - C++17 (renderer, shared code), Python 3.11 (analysis scripts) + Eigen (math), VTK (renderer), cereal (data.dat parsing), blackbox-tools (INAV decode) (018-flight-analysis)
 - File-based — flight logs, blackbox CSVs, eval-results/ directories, S3 for training artifacts (018-flight-analysis)

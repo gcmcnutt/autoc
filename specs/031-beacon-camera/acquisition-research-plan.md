@@ -61,6 +61,7 @@ Stage 0/1 stream to a laptop over UART (no SD). Airborne (Stage 3, PD-on-tracker
 
 - **ADC is primary** (soft-decision + AGC + erasure); comparator is an optional hard-1-bit baseline. The MachXO2 has **no analog input**, so the external ADC is mandatory.
 - **StepFPGA = the correlator/acquisition engine** (hard-SPI to the ADC, sliding matched filter, tentative/confirmed lock, UART telemetry). Good practice for the eventual Lattice camera FPGA.
+- **Two beacons = two INDEPENDENT timing domains — decode each separately** (operator 2026-06-08, ex-handoff §6.8). The two wingtip emitters run off **separate ±5% internal-RC oscillators**, so their chip rates can differ by up to **~10%** and drift independently (of each other *and* of the receiver clock). The codes may be generated as a Gold pair, but at the **receiver** the summed signal must be decoded with a **separate, self-syncing chip-rate/phase loop per beacon** — each correlator searches and locks to *its own* actual chip rate, with its own DPLL and its own locked-rate value. Do **not** assume the two share a clock, phase, or integer ratio. This revises the "single LFSR pair" framing of [spec.md](spec.md) §5: the per-beacon independent lock is what makes the two-code CDMA separation (Stage 1) honest under real clock slip, and it is the receiver-side requirement the StepFPGA correlator must implement.
 - **Data rate is low** (~0.2 MB/s at 100 kS/s) — *not* a high-bandwidth-SD problem. That's a camera-phase issue (18–46 MB/s → CrossLink-NX + HyperRAM), deliberately out of scope here.
 
 ## 6. Logging
