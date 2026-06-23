@@ -1,0 +1,5 @@
+// Over-ask (300 MHz) so trce reports the true achievable Fmax of the CSA pipeline.
+IOBUF ALLPORTS IO_TYPE=LVCMOS33 ;
+LOCATE COMP "clk" SITE "C1"  ;
+LOCATE COMP "led" SITE "N13" ;
+FREQUENCY PORT "clk" 300.000000 MHz ;

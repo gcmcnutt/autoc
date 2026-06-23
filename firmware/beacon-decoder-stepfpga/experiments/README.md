@@ -62,6 +62,43 @@ swept by `run_mul.sh`. MachXO2 has **no hard multipliers**, so a 32×32 multiply
   does** (hundreds of MHz). On MachXO2, budget the correlator around the ~150 MHz fabric ceiling and keep
   arithmetic stages shallow / carry-save.
 
+## Carry-save multiplier — 100 MHz PROVEN (+ datasheet cross-check)
+
+`csa.v` / `run_csa.sh`: structural carry-save pipelined WxW multiplier (3:2 compressors, register every
+GROUP rows, final carry-propagate add). Measured (trce, worst-case, harness fixed — see below):
+
+| config | Fmax | LUT | REG |
+|---|---|---|---|
+| **W=32, GROUP=1** | **125 MHz** | 2330 (54%) | 2499 (54%) |
+| W=16, GROUP=1 | ~125 MHz | 535 (12%) | 698 (15%) |
+
+**100 MHz is proven** for a true 32×32 multiply; ~125 MHz achieved, approaching the ~150 MHz fabric ceiling.
+
+**Measurement gotcha (important):** the first CSA runs read 80–116 MHz — but the critical path was the **test
+harness**, not the multiplier: a single `led <= ^prod` (64→1 XOR) was 8.6 ns / **77% routing** (the wide fan-in
+routes across the chip). Pipelining that reduction (64→32→8→1) revealed the multiplier's true 125 MHz. Lesson:
+a wide output reduction can mask the DUT — pipeline/narrow it.
+
+**Datasheet cross-check** (MachXO2 Family Data Sheet p55–56, Register-to-Register Performance, HC/HE; trce
+reports the *worst-case* column):
+
+| block | typical (p55) | worst-case (p56) | our match |
+|---|---|---|---|
+| 16-bit adder | 297 MHz | **134 MHz** | W=16 CSA ≈ 125 MHz |
+| 64-bit counter | 161 MHz | **77 MHz** | the masked "80 MHz" CPA path |
+| 16-bit counter | 324 MHz | 148 MHz | fabric ceiling ≈ 150 MHz |
+| 16:1 MUX | 412 MHz | 191 MHz | — |
+
+Our empirical numbers line up with the datasheet's worst-case reg-to-reg figures — wide carry paths (64-bit)
+sit ~77 MHz, shallow logic ~134–150 MHz. The carry-save structure keeps the ripple short (only the final
+add), which is why a 32×32 CSA mult (125 MHz) beats a naive 64-bit ripple (~77 MHz).
+
+**Resource reality (the "2–4 correlators adds up fast" question):** one 32×32 CSA multiply ≈ **54%** of the
+4320-LUT part — so **only one full 32×32 fits**. A 16×16 is ~12% (several fit). For 2–4 correlators at 480 fps:
+keep multiplies narrow (correlation is MAC of small values), time-multiplex one multiplier, or lean on the
+**CrossLink-NX hard DSP blocks** for the 040 video channel. To push a 32×32 toward 150 MHz, pipeline the final
+CPA into ~16-bit chunks (134 MHz/chunk per the datasheet).
+
 ## Takeaway for the correlator
 - The toolchain **does** surface both edges loudly: a one-line max-Fmax + level-count for timing, a
   per-resource %/over-capacity table for fit. Build through `prj_run PAR` (no flash) is enough to get both.
