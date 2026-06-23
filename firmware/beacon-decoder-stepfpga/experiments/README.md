@@ -78,6 +78,11 @@ GROUP rows, final carry-propagate add). Measured (trce, worst-case, harness fixe
 **PLL at 108 MHz** (`fast_pll.v`, 12→108 MHz; production-style), streams LFSR operands, and compares each
 product to a golden `a*b` reference, counting mismatches (`deploy_selftest.sh` → flash). Result on the
 STEP-MXO2: PLL **locked**, **zero errors** — the multiplier computes correctly at 108 MHz on real silicon.
+**Also hardware-verified at 132 MHz** (PLL retuned `CLKFB_DIV` 9→11, 12×11=132 MHz; VCO 660): ripple clean,
+**zero errors** — beyond the 125 MHz worst-case bench figure (real silicon beats worst-case timing, and Fmax
+floats with placement). To probe the actual failure edge, push to 144/156 MHz (`CLKFB_DIV` 12/13, VCO ≤ 800).
+_Gotcha: a `timeout`-killed `pnmainc` leaves orphaned Windows `par.exe`/etc. holding file locks → next build
+can't clean the sandbox. Fix: `cmd.exe /c taskkill /F /IM par.exe …` + a fresh sandbox dir (or don't timeout)._
 (Note: the board LEDs are **active-low**; the display encodes status as motion/blink to stay polarity-robust
 — ripple = running-clean, all-blink = error. The combinational `a*b` reference is a multicycle path that
 settles during the operand hold-window — trce flags it "not met" but it's functionally correct; the CSA
