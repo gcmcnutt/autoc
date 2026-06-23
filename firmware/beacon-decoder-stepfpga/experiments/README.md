@@ -41,6 +41,27 @@ the 400 MHz ask (59 levels) vs 13.351 MHz under the 12.6 MHz ask (45 levels). Ti
 critical path *toward the active constraint*, so always read Fmax against the constraint you actually intend,
 and re-check after constraint changes.
 
+## Pipelined 32×32 multiplier — how fast? (100 MHz yes, 200 MHz no)
+
+`mul.v` (pipelined multiply, retiming-enabled in `mul_build.tcl`) + `ceiling.v` (fabric-ceiling probe),
+swept by `run_mul.sh`. MachXO2 has **no hard multipliers**, so a 32×32 multiply is pure fabric.
+
+| Design | Fmax | bound by |
+|---|---|---|
+| Combinational 32×32 multiply (`STAGES=1`) | **~33 MHz** | carry/ripple propagation through the partial-product adder tree + final ~64-bit CPA |
+| `a*b` + N output pipeline regs + Synplify retiming (`STAGES=8/16/32`) | **~27–34 MHz** (flat) | retiming did **not** restructure it — the soft multiplier is one blob; the output shift-register gives retiming no logic to move *between* stages |
+| Deep 1-LUT-level, no-carry pipeline (`ceiling.v`, 40 stages) | **~150 MHz** | raw fabric ceiling (FF + 1 LUT + routing) on this -4 part |
+
+**Conclusions:**
+- The combinational-multiply ceiling (~30 MHz) is **carry-propagation bound**, not register-bound — adding
+  *output* registers (even with `-retiming true`) doesn't help, because the registers sit after the blob.
+- The **fabric ceiling is ~150 MHz** here. So **100 MHz is reachable** for a multiply **only if** it is
+  **structurally carry-save pipelined** (3:2 compressors, ≤~1.5 LUT levels/stage, ripple broken, register
+  per row + a pipelined final CPA). **200 MHz is not reachable** on this part at any depth.
+- For genuine high-speed multiply, use **hard DSP blocks** — the MachXO2 has none; the **040 CrossLink-NX
+  does** (hundreds of MHz). On MachXO2, budget the correlator around the ~150 MHz fabric ceiling and keep
+  arithmetic stages shallow / carry-save.
+
 ## Takeaway for the correlator
 - The toolchain **does** surface both edges loudly: a one-line max-Fmax + level-count for timing, a
   per-resource %/over-capacity table for fit. Build through `prj_run PAR` (no flash) is enough to get both.

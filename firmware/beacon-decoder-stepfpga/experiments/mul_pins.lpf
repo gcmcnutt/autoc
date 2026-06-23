@@ -1,0 +1,6 @@
+// Over-ask the clock (300 MHz) so PAR pushes hard and trce reports the TRUE achievable Fmax per pipeline
+// depth (Fmax is placement-dependent — constrain above the ceiling to read the real max).
+IOBUF ALLPORTS IO_TYPE=LVCMOS33 ;
+LOCATE COMP "clk" SITE "C1"  ;
+LOCATE COMP "led" SITE "N13" ;
+FREQUENCY PORT "clk" 300.000000 MHz ;
