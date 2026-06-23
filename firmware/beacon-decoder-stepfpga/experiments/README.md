@@ -104,3 +104,11 @@ CPA into ~16-bit chunks (134 MHz/chunk per the datasheet).
   per-resource %/over-capacity table for fit. Build through `prj_run PAR` (no flash) is enough to get both.
 - When the correlator is written, gate it with a `FREQUENCY` constraint at the real control/sample clock and
   watch Levels + Fmax; watch LUT/carry/EBR % for the two-DPLL fit question.
+- **Throughput vs replication:** the CSA multiplier is *fully pipelined* (1 result/cycle, latency ≈ depth);
+  a too-slow final CPA is *pipelined* (split into ~16-bit chunks), not duplicated — throughput stays 1/cycle.
+  Carry a `valid` bit down a shift register of the same latency; an FSM is only for operand scheduling.
+- **Time-multiplex, don't replicate:** data rate is ~kHz (480 fps × oversampling), the multiplier is ~125 MHz
+  → hundreds of multiply-slots per sample. **One** pipelined multiplier, time-shared, serves all taps of all
+  correlators (MAC into per-correlator accumulators). Provision one (or a narrow one), not 2–4 — which
+  dissolves the "54% of the part per multiply" worry. Replicate only when you run out of cycles/sample (≈3
+  orders of magnitude of headroom here).
