@@ -23,7 +23,7 @@ Keep this current when a toolchain, host, or invocation path changes.
 | **Python 3.11** (analysis, sim, loaders) | venv / system py + numpy, pytest | WSL native | per-tool `pyproject.toml` / scripts |
 | **xiao** (telemetry/AHRS MCU) | PlatformIO (arduino-mbed) | WSL native | `pio run` in `xiao/` |
 | **Beacon emitter MCU** (031) | ATtiny412 — avr-gcc + serialUPDI (1-wire UPDI) | WSL native | `firmware/beacon-pod/Makefile` (committed). *PlatformIO path (xiao-style, megaTinyCore) detailed as the later option in [`specs/031-beacon-camera/emitter-toolchain-plan.md`](../specs/031-beacon-camera/emitter-toolchain-plan.md).* |
-| **FPGA — 031 acquisition correlator** | **Lattice Diamond 3.14** (MachXO2 / STEP-MXO2, `LCMXO2-4000HE`) | **Windows host** (`C:\lscc\diamond\3.14`, licensed) | from WSL via interop: `pnmainc.exe <build.tcl>` (verified working). **Details: [`specs/031-beacon-camera/fpga-toolchain-plan.md`](../specs/031-beacon-camera/fpga-toolchain-plan.md)** |
+| **FPGA — 031 acquisition correlator** | **Lattice Diamond 3.14** (MachXO2 / STEP-MXO2, `LCMXO2-4000HC`, CSBGA132) | **Windows host** (`C:\lscc\diamond\3.14`, licensed) | from WSL via interop: `pnmainc.exe <build.tcl>` (verified working). **Details: [`specs/031-beacon-camera/fpga-toolchain-plan.md`](../specs/031-beacon-camera/fpga-toolchain-plan.md)** |
 | **FPGA — HDL simulation** | `iverilog`/`vvp` (or Verilator) — open source | WSL native | golden vectors from `specs/031-beacon-camera/acquisition-sim/sim.py` |
 | **FPGA — 040 camera redo** (deferred) | Lattice **Radiant + Propel** (CrossLink-NX / LIFCL-40) | Windows host | **NOT installed** — install only when 040 restarts |
 
@@ -36,5 +36,8 @@ Keep this current when a toolchain, host, or invocation path changes.
 
 - The FPGA correlator (031) targets a board the operator already owns (STEP-MXO2). Diamond is the *correct*
   tool for it — Radiant is only for the deferred 040 camera path; don't conflate them.
-- Board programming (USB-JTAG) happens on the Windows side (Diamond owns the USB device); WSL needs no USB
-  passthrough.
+- Board programming is **STEPLink mass-storage, NOT JTAG**: the STEP-MXO2 enumerates as a USB drive
+  (Windows `D:\`, label **STEPLink**); **copy the `.jed` onto it → on-board flash + auto-restart**. No
+  Diamond Programmer / `ddtcmd`. Reachable from WSL at **`/mnt/d`** (drvfs), so the whole build→flash loop
+  can run from WSL (`cp build/<design>.jed /mnt/d/`). No `usbipd` / USB passthrough needed. _(Open: whether
+  `/mnt/d` auto-appears on connect or needs `sudo mount -t drvfs D: /mnt/d` — verify at F1, board connected.)_

@@ -1,0 +1,50 @@
+Starting: "prj_run Translate -impl threeN1"
+
+
+************************************************************
+**  Translate Design                                      **
+************************************************************
+
+edif2ngd  -l "MachXO2" -d LCMXO2-4000HC -path "C:/Users/gcmcn/OneDrive/Documents/FPGA/threeN1" -path "C:/Users/gcmcn/OneDrive/Documents/FPGA"   "C:/Users/gcmcn/OneDrive/Documents/FPGA/threeN1/threeN1_threeN1.edi" "threeN1_threeN1.ngo"   
+edif2ngd:  version Diamond (64-bit) 3.14.0.75.2
+
+Copyright (c) 1991-1994 by NeoCAD Inc. All rights reserved.
+Copyright (c) 1995 AT&T Corp.   All rights reserved.
+Copyright (c) 1995-2001 Lucent Technologies Inc.  All rights reserved.
+Copyright (c) 2001 Agere Systems   All rights reserved.
+Copyright (c) 2002-2024 Lattice Semiconductor Corporation,  All rights reserved.
+Writing the design to threeN1_threeN1.ngo...
+
+Total CPU Time: 0 secs  
+Total REAL Time: 0 secs  
+Peak Memory Usage: 13 MB
+
+
+ngdbuild  -a "MachXO2" -d LCMXO2-4000HC  -p "C:/lscc/diamond/3.14/ispfpga/xo2c00/data"  -p "C:/Users/gcmcn/OneDrive/Documents/FPGA/threeN1" -p "C:/Users/gcmcn/OneDrive/Documents/FPGA"  "threeN1_threeN1.ngo" "threeN1_threeN1.ngd"  	
+ngdbuild:  version Diamond (64-bit) 3.14.0.75.2
+
+Copyright (c) 1991-1994 by NeoCAD Inc. All rights reserved.
+Copyright (c) 1995 AT&T Corp.   All rights reserved.
+Copyright (c) 1995-2001 Lucent Technologies Inc.  All rights reserved.
+Copyright (c) 2001 Agere Systems   All rights reserved.
+Copyright (c) 2002-2024 Lattice Semiconductor Corporation,  All rights reserved.
+Reading 'threeN1_threeN1.ngo' ...
+Loading NGL library 'C:/lscc/diamond/3.14/ispfpga/xo2c00a/data/xo2alib.ngl'...
+Loading NGL library 'C:/lscc/diamond/3.14/ispfpga/xo2c00/data/xo2clib.ngl'...
+Loading NGL library 'C:/lscc/diamond/3.14/ispfpga/mg5g00/data/mg5glib.ngl'...
+Loading NGL library 'C:/lscc/diamond/3.14/ispfpga/or5g00/data/orc5glib.ngl'...
+
+
+Running DRC...
+
+DRC complete with no errors or warnings
+
+Design Results:
+    309 blocks expanded
+Complete the first expansion.
+Writing 'threeN1_threeN1.ngd' ...
+Total CPU Time: 0 secs 
+Total REAL Time: 0 secs 
+Peak Memory Usage: 20 MB
+
+Done: completed successfully

@@ -37,7 +37,7 @@ Hardware home: emitter `cad/beacon-eval/`, receiver `cad/beacon-receiver/`. Spec
 
 **Open research / de-risk items that feed the formal plan** (beyond the §10 empirical bench measurements):
 - **Emitter toolchain** — avr-gcc + serialUPDI vs PlatformIO-for-412 (step 3); confirm UPDI flashing on the breadboard.
-- **FPGA fit** — does **two-beacon independent-DPLL** decode (two self-syncing correlators under the ~10% inter-beacon drift of §5) fit the MachXO2-4000HE (4320 LUTs), or force time-multiplexing / a bigger part? (The "~1000× headroom" note in fpga §3 is about sample-rate oversampling, *not* two full correlators + DPLLs.)
+- **FPGA fit** — does **two-beacon independent-DPLL** decode (two self-syncing correlators under the ~10% inter-beacon drift of §5) fit the MachXO2-4000HC (4320 LUTs), or force time-multiplexing / a bigger part? (The "~1000× headroom" note in fpga §3 is about sample-rate oversampling, *not* two full correlators + DPLLs.)
 - **FPGA IP** — only the MachXO2 **PLL** is library IP (Diamond); the SPI master / DC-AGC / chip integrator / soft correlator / lock-FSM / UART are custom RTL ([fpga §3](fpga-toolchain-plan.md)).
 - **Analog front end** — TIA (MCP6022 / OPA381) + AC/DC-coupling + MCP3201 soft-sample quality (FPGA milestone F3; coupling default / sample rate / telemetry framing are [fpga §5 open decisions](fpga-toolchain-plan.md)).
 

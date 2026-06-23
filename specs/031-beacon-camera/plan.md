@@ -31,7 +31,7 @@ emitter (ATtiny412/UPDI) and FPGA (Diamond/MachXO2) toolchains the camera phase 
 ## Technical Context
 
 - **Emitter firmware**: C, **bare-metal (no Arduino/OS)** — avr-gcc + serialUPDI on ATtiny412 (build of record); PlatformIO is an optional bare-C wrapper, not adopted. See [emitter-toolchain-plan.md](emitter-toolchain-plan.md).
-- **FPGA gateware**: Verilog on **Lattice MachXO2-4000HE (STEP-MXO2)**, built on the Windows-host **Diamond** flow via WSL interop; HDL co-sim in `iverilog`/`vvp` against `acquisition-sim/sim.py` golden vectors. See [fpga-toolchain-plan.md](fpga-toolchain-plan.md).
+- **FPGA gateware**: Verilog on **Lattice MachXO2-4000HC (STEP-MXO2)**, built on the Windows-host **Diamond** flow via WSL interop; HDL co-sim in `iverilog`/`vvp` against `acquisition-sim/sim.py` golden vectors. See [fpga-toolchain-plan.md](fpga-toolchain-plan.md).
 - **Receiver chain**: `PD → TIA (MCP6022/OPA381) → [AC/DC-couple] → ADC (MCP3201) → StepFPGA correlator → UART telemetry`. **ADC soft-decision only — no comparator** (acquisition-research-plan §5).
 - **Two beacons = two independent timing domains** — per-beacon self-syncing chip-rate/phase loop (DPLL); do not assume shared clock/phase (acquisition-research-plan §5).
 - **Python 3.11**: `acquisition-sim/` (predict), `nfr4-clockdrift-sim/`, UART capture/analysis.
@@ -54,7 +54,7 @@ FPGA proceed in parallel; the two meet at the bench (Stage 0).
 
 | # | Milestone | Bundles | Done when (acceptance) |
 |---|---|---|---|
-| **M0** | **Toolchain verify** (de-risk first) | FPGA **F1** (Diamond→blink STEP-MXO2), Emitter **E1** (UPDI→blink ATtiny412) | Both flash loops confirmed on real hardware — a `.jed` builds from WSL and blinks; a `.hex` flashes via serialUPDI and blinks. Tooling proven before any logic. |
+| **M0** | **Toolchain verify** (de-risk first) | FPGA **F0.5** (replay known-good threeN1 via WSL→Diamond, no board) → **F1** (build + STEPLink-flash blink on STEP-MXO2); Emitter **E1** (UPDI→blink ATtiny412) | Build path proven on threeN1 (`.jed` matches the reference logs); then both flash loops confirmed on hardware — `.jed` copied to `/mnt/d` (STEPLink) blinks; `.hex` via serialUPDI blinks. Tooling proven before any logic. |
 | **M1** | **Firmware + gateware bring-up** | Emitter **E2** (200 Hz Gold-code ISR), **E3** (UVLO+WDT); FPGA **F2** (sim harness), **F3** (MCP3201 SPI master + UART), **F4** (soft correlator + lock FSM) | Emitter emits the scope-verified 15-chip / 5 ms-chip code; FPGA streams live ADC envelope over UART and locks to a single live emitter; margin/telemetry sane vs `sim.py`. |
 | **M2** | **Bench Stage 0 — hello gold code** | FPGA F4 vs a real single emitter, ~1 m, ND-attenuated | Scope + ADC show the 15-chip code; correlation peak clears noise; chip-rate / code / oversampling sweepable. |
 | **M3** | **Bench Stage 1 — two codes, one detector** | FPGA **F5** (two-code CDMA + early/partial acquisition) | Both codes (A/B) resolved from the summed signal, no cross-leak; cross-corr floor + acquisition time measured vs `sim.py`; partial-code (~70%) lock characterized. |
@@ -84,7 +84,7 @@ Each earlier milestone's "Done when" is its own gate (above).
 (Beyond the §10 empirical bench measurements — LED center wavelength, solar background, dropout envelope.)
 
 - **Emitter toolchain** — settled: bare-C avr-gcc/UPDI (Arduino/OS rejected); PlatformIO optional fallback.
-- **FPGA fit** — does two-beacon **independent-DPLL** decode fit the MachXO2-4000HE (4320 LUTs), or force
+- **FPGA fit** — does two-beacon **independent-DPLL** decode fit the MachXO2-4000HC (4320 LUTs), or force
   time-multiplexing / a bigger part? (The "~1000× headroom" note is about oversampling, not two correlators.)
 - **FPGA IP** — only the MachXO2 PLL is library IP (Diamond); the rest is custom RTL (fpga §3).
 - **Analog front end** — TIA + AC/DC-coupling + MCP3201 soft-sample quality (FPGA F3; fpga §5 open decisions).
