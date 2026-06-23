@@ -1,0 +1,12 @@
+// Board constraints for the STEP-MXO2 (LCMXO2-4000HC-4MG132C, LVCMOS33).
+// Sites from the threeN1 prior-art (source/pin_assignments.lpf): clk + the 8 user LEDs.
+IOBUF ALLPORTS IO_TYPE=LVCMOS33 ;
+LOCATE COMP "clk"     SITE "C1"  ;
+LOCATE COMP "LEDs[0]" SITE "N13" ;
+LOCATE COMP "LEDs[1]" SITE "M12" ;
+LOCATE COMP "LEDs[2]" SITE "P12" ;
+LOCATE COMP "LEDs[3]" SITE "M11" ;
+LOCATE COMP "LEDs[4]" SITE "P11" ;
+LOCATE COMP "LEDs[5]" SITE "N10" ;
+LOCATE COMP "LEDs[6]" SITE "N9"  ;
+LOCATE COMP "LEDs[7]" SITE "P9"  ;

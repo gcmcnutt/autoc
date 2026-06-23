@@ -39,8 +39,8 @@ Windows-side Claude session, no second checkout.** Verified working this session
   session would split-brain the checkout or pay `\\wsl$` UNC penalties for every git/build operation.
 - WSL **interop** lets this session invoke Windows `.exe` directly — Diamond's batch CLI runs from here.
 - Board programming is **STEPLink mass-storage, not JTAG** (see §3.5): the STEP-MXO2 mounts as a USB
-  drive; copying the `.jed` flashes it. Reachable from WSL at `/mnt/d` (drvfs), so no USB passthrough /
-  `usbipd` is needed either way.
+  drive; copying the `.jed` flashes it. **WSL cannot see `D:`** (verified 2026-06-23) — the flash is a
+  Windows-side `cmd.exe` copy over interop (§3.5); no USB passthrough / `usbipd` needed either way.
 - Fast HDL simulation uses **open-source tools in WSL** (license-free, scriptable, repo-test-friendly).
 
 ### The one trap, and how it's sidestepped
@@ -71,32 +71,36 @@ This satisfies the constitution's testing-first principle and the plan's "Python
 
 **Slow loop (minutes, Windows Diamond via interop)** — synthesis, place-and-route, timing, bitstream:
 `build.sh` syncs `rtl/` + `constraints/` to the `/mnt/c` sandbox, emits a Diamond Tcl script
-(`prj_create` for `LCMXO2-4000HC` / CSBGA132 / speed-4 / Commercial — exact part string from the threeN1
-`.ldf`; add sources, `prj_run Synthesis/Map/PAR/Export` — the exact stages confirmed by the §3.6 logs),
-runs it via `pnmainc.exe`, and copies the `.jed` + PAR/timing reports back into `build/`.
+(`prj_project new -dev LCMXO2-4000HC-4MG132C -synthesis synplify`; `prj_src add` sources;
+`prj_run Export -impl impl1 -task Jedecgen` — verified working, see §3.7), runs it via `pnmainc.exe`, and
+copies the `impl1/*.jed` + reports back into `build/`.
 
 **Program (STEPLink mass-storage — NOT JTAG)** — see §3.5. The STEP-MXO2 enumerates as a USB drive
 (Windows `D:\`, label **STEPLink**); **copy the `.jed` onto `D:\`** → it self-flashes + restarts. No Diamond
-Programmer, no `ddtcmd`, no JTAG. From WSL the volume is `/mnt/d`, so `build.sh` finishes the loop natively
-with `cp build/<design>.jed /mnt/d/`.
+Programmer, no `ddtcmd`, no JTAG. WSL cannot see `D:`, so `build.sh --flash` flashes with a Windows-side
+`cmd.exe /c copy /Y <jed> D:\` over interop (§3.5).
 
 Open-source fallback (no Diamond at all): `yosys + nextpnr-machxo2 + prjtrellis` runs fully in WSL. Keep as
 a backup; Diamond is primary for MachXO2 timing closure. Programming is copy-to-STEPLink either way.
 
-### 3.5 Programming path — STEPLink copy-to-drive (verified prior art)
+### 3.5 Programming path — STEPLink copy-to-drive via a Windows-side copy
 
 The board is **not** flashed over JTAG. When connected it presents a USB **mass-storage volume** (Windows
 `D:\`, label **STEPLink**); dropping a `.jed` onto it triggers the on-board flash + a device restart — the
-STEPFPGA education-kit convention. Implications for this repo's loop:
+STEPFPGA education-kit convention.
 
-- **Fully WSL-native**: `D:\` is reachable at **`/mnt/d`** (drvfs), so the build→flash loop never leaves
-  WSL: build via Diamond interop → `cp build/<design>.jed /mnt/d/`.
-- **Prior art (verified 2026-06-23)**: `C:\lscc\diamond` install confirmed; a complete worked example with
-  a Diamond-produced `.jed` lives at `C:\Users\gcmcn\OneDrive\Documents\FPGA\threeN1\threeN1_threeN1.jed`
-  (VHDL project) — programmed by copy-to-`D:\`.
-- **[VERIFY at F1, board connected]**: whether `/mnt/d` auto-appears when STEPLink connects, or needs a
-  one-time `sudo mount -t drvfs D: /mnt/d` (WSL2 auto-mounts fixed drives at boot; hot-plugged removable
-  media is less consistent). If manual, `build.sh` does the mount before the copy.
+- **WSL CANNOT see `D:` (verified 2026-06-23).** It is not auto-mounted and `sudo mount -t drvfs D: /mnt/d`
+  does not surface it (STEPLink is a non-standard removable volume). The board IS connected — `D:` exists
+  on the **Windows** side (`cmd.exe /c dir D:\` works) — WSL just can't reach it via drvfs.
+- **So the flash is a Windows-side copy over interop**, not a `/mnt/d` write:
+  `cmd.exe /c copy /Y stepfpga_impl1.jed D:\` (run with the shell CWD on `/mnt/c` so the relative filename
+  resolves and there's no UNC). This is what [`build.sh --flash`](../../firmware/beacon-decoder-stepfpga/build.sh) does.
+- **Prior art**: a complete Diamond-built `.jed` at
+  `C:\Users\gcmcn\OneDrive\Documents\FPGA\threeN1\threeN1_threeN1.jed` was programmed by copy-to-`D:\`.
+
+The build half of this loop is **VERIFIED end-to-end from WSL (2026-06-23)** — see §3.7 + the
+[`firmware/beacon-decoder-stepfpga/`](../../firmware/beacon-decoder-stepfpga/README.md) tree. The flash
+half is coded but pending a board-connected `--flash` run.
 
 ---
 
@@ -174,8 +178,8 @@ also fix the device string (LCMXO2-**4000HC** / CSBGA132 / speed-4 / Commercial)
 | # | Milestone | Done when |
 |---|---|---|
 | **F0** | **Scaffold** `firmware/beacon-decoder-stepfpga/{rtl,tb,constraints,build}` + README documenting the interop flow; `.gitignore` for `build/` artifacts. | Tree exists, mirrors `flight-recorder/` convention. |
-| **F0.5** | **Validate `prj_run`-from-WSL on the known-good threeN1 example** (research spike — operator ask: confirm the method drives from Claude Code in WSL → native Windows with source in a WSL working dir). Stage the threeN1 project into the `/mnt/c` build sandbox; author a `build.tcl` (`prj_open` + `prj_run Translate/Synthesis/Map/PAR/Export`); drive it via `pnmainc.exe` from WSL; check the license-env + working-dir are visible from a WSL-launched invocation. **No board needed.** | A `.jed` regenerates from the WSL-driven `pnmainc.exe` run and matches the [`toolchain-logs/`](toolchain-logs/) reference (same device LCMXO2-4000HC, 0 errors) — the build path is proven on a known-good design *before* writing our own RTL or touching the board. |
-| **F1** | **Prove the toolchain loop end-to-end** with a trivial design (blink an LED off a divided 12 MHz clock) — exercises `build.sh` sync → `pnmainc.exe` synth→map→par→export → copy-back → **`cp <design>.jed /mnt/d/` (STEPLink)** → board self-flashes + restarts → blink. **Also resolves the §3.5 [VERIFY]**: does `/mnt/d` auto-mount on connect or need `sudo mount -t drvfs D: /mnt/d`. | A `.jed` builds from WSL and the STEP-MXO2 blinks after a copy-to-`/mnt/d`; pin constraints + the STEPLink programming path confirmed *before* any correlator RTL. |
+| **F0.5** ✅ | **Validate `prj_run`-from-WSL** (research spike — drive Diamond from Claude Code in WSL → native Windows, source in a WSL tree). | **DONE 2026-06-23.** `pnmainc.exe` driven from WSL (CWD on `/mnt/c` → no UNC); `build.tcl` = `prj_project new` + `prj_src add` + `prj_run Export -task Jedecgen` → a valid `.jed`. License-env worked under interop. The threeN1 logs supplied device/flow/part; proven directly via the F1 blink. |
+| **F1** ✅ | **Prove the loop end-to-end** with a trivial design — `build.sh` sync (`cp -u`) → `pnmainc.exe` → `impl1/*.jed` copy-back → **`cmd.exe /c copy /Y *.jed D:\` (STEPLink)** → board self-flashes + restarts → blink. | **DONE 2026-06-23.** 8-LED ripple `blink` built from WSL, LEDs LOCATEd to real sites (N13…P9, clk=C1), flashed via the STEPLink Windows-copy — **operator confirmed the board blinking**. Incremental confirmed (no-op rerun skips; 1-line change → new `.jed`). Recipe: [`firmware/beacon-decoder-stepfpga/`](../../firmware/beacon-decoder-stepfpga/README.md). |
 | **F2** | **Sim harness** — `iverilog`/`vvp` installed in WSL; `sim.py` emits stimulus + golden vectors; a `*_tb.v` asserts a reference module against them; `sim.sh` runs it. | `sim.sh` passes a known-good correlator vector. |
 | **F3** | **MCP3201 SPI master** + UART telemetry — clock real samples off the board, stream raw ADC to the laptop. | Live ADC envelope visible on the host over UART. |
 | **F4** | **Soft-decision correlator + lock FSM** (§3 blocks 3–6), verified in sim (F2) then on hardware against a live emitter. | Lock LED tracks a real Gold-code emitter; margin/telemetry sane vs sim predictions. |
@@ -210,8 +214,25 @@ correct," so a toolchain problem never masquerades as a logic bug.
 - No Windows `sshd.exe` (irrelevant — interop replaces it).
 - Receiver FPGA interface confirmed from [`beacon-receiver-schematic.pdf`](../../cad/beacon-receiver/beacon-receiver-schematic.pdf):
   J1 = `{+3V3, GND, SPI_CS, SPI_CLK, SPI_DOUT}` to the MCP3201 (read-only 3-wire SPI).
-- **(2026-06-23) Programming model = STEPLink copy-to-drive** (operator prior art): `C:\lscc\diamond`
-  install confirmed; a complete Diamond-built example `.jed` exists at
-  `C:\Users\gcmcn\OneDrive\Documents\FPGA\threeN1\threeN1_threeN1.jed` (VHDL), flashed by copying onto the
-  STEPLink `D:\` volume. STEPLink not mounted during this check (board disconnected) → the `/mnt/d`
-  auto-mount-vs-`drvfs` question is the F1 board-connected to-do (§3.5).
+- **(2026-06-23) FULL loop verified from WSL** — see §3.7. `cmd.exe` interop works; `pnmainc.exe` builds a
+  `.jed` (CWD on `/mnt/c` to dodge UNC); **`D:` is NOT visible to WSL**, so the flash is a Windows-side
+  `cmd.exe /c copy /Y <jed> D:\`. An 8-LED-ripple `blink` was built + flashed end-to-end and the operator
+  confirmed the board blinking.
+
+## 3.7 Proven build/flash recipe (VERIFIED 2026-06-23)
+
+The make-or-break questions are answered — the whole loop runs from WSL with **no GUI, no JTAG**:
+
+1. **Chain-out**: WSL invokes `pnmainc.exe` (and `cmd.exe`) directly via binfmt interop. ✅
+2. **No-UNC**: run with the shell CWD on the `/mnt/c` sandbox so Windows sees `C:\…`, not `\\wsl$`. ✅
+3. **Build**: `prj_project new -dev LCMXO2-4000HC-4MG132C -synthesis synplify` → `prj_src add` → `prj_impl
+   option top` → **`prj_run Export -impl impl1 -task Jedecgen`** (Jedecgen, *not* Bitgen → `.bit`). Outputs
+   land in `impl1/`. ✅
+4. **Incremental**: `cp -u` source sync (not `cp -f`) keeps Diamond's mtime tracking — no-op rerun skips
+   ("Nothing is executed…"); a 1-line RTL change re-runs the chain and changes the `.jed`. ✅
+5. **Flash**: `cmd.exe /c copy /Y <jed> D:\` (WSL can't see `D:`). ✅ — operator-confirmed board blink.
+
+Source-of-truth + the runnable `build.sh`/`build.tcl` live in
+[`firmware/beacon-decoder-stepfpga/`](../../firmware/beacon-decoder-stepfpga/README.md). Remaining nuance:
+a 2nd `.lpf` added via `prj_src` is auto-excluded, so `build.tcl` injects the constraints into the active
+`<proj>.lpf` (only when changed, to preserve incremental).

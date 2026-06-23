@@ -38,6 +38,7 @@ Keep this current when a toolchain, host, or invocation path changes.
   tool for it — Radiant is only for the deferred 040 camera path; don't conflate them.
 - Board programming is **STEPLink mass-storage, NOT JTAG**: the STEP-MXO2 enumerates as a USB drive
   (Windows `D:\`, label **STEPLink**); **copy the `.jed` onto it → on-board flash + auto-restart**. No
-  Diamond Programmer / `ddtcmd`. Reachable from WSL at **`/mnt/d`** (drvfs), so the whole build→flash loop
-  can run from WSL (`cp build/<design>.jed /mnt/d/`). No `usbipd` / USB passthrough needed. _(Open: whether
-  `/mnt/d` auto-appears on connect or needs `sudo mount -t drvfs D: /mnt/d` — verify at F1, board connected.)_
+  Diamond Programmer / `ddtcmd`. **WSL cannot see `D:`** (not auto-mounted; `mount -t drvfs D: /mnt/d`
+  doesn't surface it) — so the flash is a **Windows-side copy over interop**: `cmd.exe /c copy /Y <jed> D:\`
+  (with CWD on `/mnt/c`). No `usbipd` needed. **VERIFIED end-to-end from WSL 2026-06-23** (build + flash) —
+  see [`firmware/beacon-decoder-stepfpga/`](../firmware/beacon-decoder-stepfpga/README.md).
