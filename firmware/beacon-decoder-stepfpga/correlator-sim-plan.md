@@ -17,10 +17,10 @@ early/partial ~70% acquisition, oversampling), NFR-4 (±5% drift).
 ## Block diagram (all in-FPGA)
 
 ```
-            ── emitter clock domain (free-running, ±5%-skewable) ──        ── correlator/DSP clock (PLL, stable) ──
- OSCH/PLL ─► chip-rate divider (nominal 200 Hz, ±5% via DIP) ─► Gold-code   │
-            LFSR/LUT (N=15, code A) ─┬─► raw code  ───────────────────────► GPIO  (scope: the chip stream)
-                                     ├─► epoch/index pulse (HIGH @ chip 0) ► GPIO  (scope: trigger / time-align)
+          ── emitter clock: internal OSCH (its ~±5% tol = the drift) ──   ── correlator clock: 12 MHz xtal → PLL ──
+ OSCH ─────► chip-rate divider (200 Hz; DIP can also force ±5% offset) ─► Gold-code   │
+            LFSR/LUT (N=15, code A) ─┬─► raw code  ───────────────────────► I/O 14  (scope: the chip stream)
+                                     ├─► epoch/index pulse (HIGH @ chip 0) ► I/O 15  (scope: trigger / time-align)
                                      └─► "optical+analog model" ─► simulated ADC ─► soft samples @~100 kS/s, 12-bit
                                           (attenuation, DC pedestal, noise,            (same word format as MCP3201)
                                            bit-flip / erasure injection)                       │
@@ -33,17 +33,20 @@ early/partial ~70% acquisition, oversampling), NFR-4 (±5% drift).
                                                                                    └───────────────────────────┘
 ```
 
-The emitter is **intentionally unsynchronized to the correlator** (free-running phase + an offset/selectable
-chip-rate divisor → models the real ±5% RC-oscillator independence). Higher-fidelity option: drive the
-emitter from a *second* PLL output at a slightly different frequency. The simulated ADC emits the **same
-soft-sample stream + word format the MCP3201 will** (acquisition-research-plan §5), so the correlator is
-bit-identical between sim and real — S7 just re-points its sample input.
+The emitter runs on the **internal OSCH oscillator** and the correlator on the **12 MHz crystal → PLL** —
+**two independent physical oscillators**, so the emitter is genuinely async to the correlator (the real
+condition). OSCH's own frequency tolerance (~±5%) **directly models the RC-oscillator drift (NFR-4)** — no
+contrived skew needed; a DIP can additionally force a controlled ±5% chip-rate offset for repeatable sweeps.
+The **simulated ADC generates the soft-sample stream directly from the code in-FPGA** (no physical
+square-wave emission/re-sampling) in the **same 12-bit word format the MCP3201 will** (acquisition-research-plan
+§5), so the correlator is bit-identical sim↔real — S7 just re-points its sample input. The raw code + epoch
+are still driven to **I/O 14 / I/O 15** for scope observability.
 
 ## Staged milestones
 
 | # | Build | Proves | Board shows |
 |---|---|---|---|
-| **S1** | **Synthetic emitter**: Gold code (N=15) @200 Hz chip on the emitter clock; epoch/index pulse + raw code on two GPIO | the code generator + timing (cf. acquisition Stage 0 "hello gold code", but in-FPGA) | scope on the two GPIOs: 15-chip code + epoch trigger |
+| **S1** | **Synthetic emitter** on internal OSCH: Gold code (N=15) @200 Hz chip; raw code → **I/O 14**, epoch/index pulse → **I/O 15** | the code generator + timing (cf. acquisition Stage 0 "hello gold code", but in-FPGA) | scope on I/O 14 (15-chip code) triggered off I/O 15 (epoch) |
 | **S2** | **Simulated ADC**: code → soft 12-bit samples @~100 kS/s (oversampled ~500×/chip) with DC pedestal + selectable noise | the sample source the correlator consumes; MCP3201 word format | 7-seg: live sample value / level |
 | **S3** | **Correlator (DUT)** on ONE code: chip integrator → sliding soft matched filter → tentative/confirmed lock FSM + correlation margin | acquisition works end-to-end in silicon (F4) | RGB[0]: red=no-lock / yellow=tentative / green=confirmed; 7-seg: margin (SNR proxy) |
 | **S4** | **Knobs**: DIP=code select; momentary=inject 1/2/3/4-bit errors per code period; DIP=noise level; UART `BCN` telemetry of {seq, sample, corr, lock, margin} | erasure/flip tolerance (§7), soft-decision gain; matches the host reader | 8 LEDs: per-chip hits; UART log via `host/monitor.sh` |
@@ -56,8 +59,9 @@ shippable correlator RTL (the A4a–c / F4–F5 work), just exercised by the syn
 
 ## Eval-board I/O map (STEP-MXO2)
 
-Output sites known from the threeN1 prior art; **input (switch) sites are TBD — look up in the StepFPGA
-board doc** (`docs/step-mxo2-lpc.pdf` / EIM docs) at S1.
+Output sites known from the threeN1 prior art. **Switch (DIP/momentary) input sites + the I/O-14/15 ball
+mapping are TBD** — from `docs/step-mxo2-lpc.pdf` (schematic; image-only, no text layer to extract) + the EIM
+pinout / pin-allocation drawings at <https://support.eimtechnology.com/documentation/stepfpga>. Resolve at S1.
 
 | Resource | Pins (known) | Proposed function |
 |---|---|---|
@@ -67,12 +71,15 @@ board doc** (`docs/step-mxo2-lpc.pdf` / EIM docs) at S1.
 | 4 DIP | **TBD** | [1:0] code select · [2] noise level · [3] clock-skew (−5/+5%) |
 | 4 momentary | **TBD** | [0] inject N-bit error (cycles 1→4) · [1] reset · [2] cycle display mode · [3] freeze/step |
 | USB-UART (COM3) | STEPLink CDC | `BCN` telemetry logs → `host/monitor.sh` (Windows-side read) |
+| Emitter epoch sync | board **I/O 15** (ball TBD) | scope trigger / receiver time-align |
+| Emitter gold code | board **I/O 14** (ball TBD) | scope: raw 200 Hz chip stream |
 
 ## Notes / decisions to settle at build time
 
-- **Clocks**: correlator on a stable PLL clock (modest — data rate is kHz; the multiplier headroom is proven).
-  Emitter on a free-running, skewable chip-rate divider (model ±5%); optionally a 2nd PLL output for true
-  domain independence. Mind clock-domain crossing on the sample handoff (the sim ADC is the clean boundary).
+- **Clocks**: correlator on the **12 MHz crystal → PLL** (stable; modest rate OK — data is kHz, multiplier
+  headroom proven). Emitter on the **internal OSCH** (a separate physical oscillator; its ~±5% tolerance *is*
+  the drift — NFR-4). The **simulated ADC is the clean clock-domain-crossing boundary** into the correlator.
+  (NB: pick a valid OSCH `NOM_FREQ` — "96.77" was rejected earlier; confirm the legal value list at S1.)
 - **Reuse the multiplier**: correlation = MAC; one **time-multiplexed** carry-save multiplier serves the taps
   (experiments showed ~kHz data vs ~125 MHz mult → hundreds of slots/sample). Don't replicate per tap.
 - **Resource budget**: keep the whole harness (2 emitters + 2 correlators + sim-ADC + I/O) within the part —
