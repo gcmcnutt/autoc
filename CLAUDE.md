@@ -5,9 +5,9 @@ Auto-generated from all feature plans. Last updated: 2026-06-09
 ## Toolchains & Build Environment
 
 Host topology + how each toolchain is built/driven (WSL2 ↔ Windows interop, Lattice Diamond for the 031
-FPGA, avr-gcc/UPDI for the emitter, PlatformIO for xiao, training box, S3) lives in a fetch-on-demand doc:
-
-@docs/toolchains.md
+FPGA, avr-gcc/UPDI for the emitter, PlatformIO for xiao, training box, S3) lives in a fetch-on-demand doc —
+read it when a toolchain / host / build-path question comes up (it is intentionally NOT `@`-imported, so it
+stays out of every prefix): [`docs/toolchains.md`](docs/toolchains.md)
 
 ## Active Technologies
 - C++17 (renderer, shared code), Python 3.11 (analysis scripts) + Eigen (math), VTK (renderer), cereal (data.dat parsing), blackbox-tools (INAV decode) (018-flight-analysis)
