@@ -2,6 +2,9 @@
 // Sites from the threeN1 prior-art (source/pin_assignments.lpf): clk + the 8 user LEDs.
 IOBUF ALLPORTS IO_TYPE=LVCMOS33 ;
 LOCATE COMP "clk"     SITE "C1"  ;
+// STEPLink USB-serial (U2 LPC): FPGA TX → U2 RXD = PT9A = ball A2 (host receives this).
+// (U2 TXD = PT11A = ball A3 would be the FPGA RX, unused here.)  Pad↔ball from our own .pad report.
+LOCATE COMP "uart"    SITE "A2"  ;
 LOCATE COMP "LEDs[0]" SITE "N13" ;
 LOCATE COMP "LEDs[1]" SITE "M12" ;
 LOCATE COMP "LEDs[2]" SITE "P12" ;

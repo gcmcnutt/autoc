@@ -1,54 +1,50 @@
-# host/ — StepFPGA telemetry reader (USB-serial → WSL)
+# host/ — StepFPGA telemetry reader
 
-Reads the correlator's UART telemetry (fpga-toolchain-plan §3.6 block 7) on the host. The frame contract is
-in [`beacon_telemetry/frame.py`](beacon_telemetry/frame.py); the gateware must emit it. Buildable + testable
-**now** against a mock — no hardware, no board needed.
+Reads the correlator's UART telemetry (fpga-toolchain-plan §3.6 block 7). Frame contract in
+[`beacon_telemetry/frame.py`](beacon_telemetry/frame.py); the gateware emits it. Parser + mock are testable
+with no hardware; the live read runs **on the Windows side via interop** (proven 2026-06-23).
 
 ```bash
 cd firmware/beacon-decoder-stepfpga/host
-python -m pytest tests/ -q              # parser + mock stream (no hardware)
-pip install -e .                        # installs pyserial + the `beacon-telemetry` CLI
-beacon-telemetry --port /dev/ttyACM0 --log run.log   # live (after usbipd attach, below)
+python3 -c "import tests.test_frame"   # or: pip install -e .[dev] && python3 -m pytest tests/   (no hardware)
+./monitor.sh COM3 5                    # LIVE: read COM3 on Windows for 5 s, print telemetry lines
+./monitor.sh COM3 20 | python3 -c 'import sys; from beacon_telemetry import frames_from_lines; \
+    [print(f) for f in frames_from_lines(sys.stdin)]'   # parse BCN frames (once the gateware emits them)
 ```
 
-## Getting the telemetry UART into WSL (usbipd)
+## Reading telemetry — Windows-side via interop (the proven path)
 
-The StepFPGA is a **composite USB device** (busid `2-1`, VID:PID `0d28:0204`): one cable = the STEPLink
-**`D:` flash volume** + the **telemetry UART (Windows COM3)** + CMSIS-DAP. WSL2 cannot reach a Windows COM
-port directly, so the UART is bridged with **usbipd-win**:
+The StepFPGA's UART is the LPC/STEPLink USB-CDC, **Windows COM3**. We read it **on Windows** and pipe the
+output into WSL — exactly like the build drives Diamond via interop:
 
-```powershell
-# 1. ONE-TIME, elevated PowerShell (Administrator) — share the device:
-usbipd bind --busid 2-1
-```
-```bash
-# 2. per session, from WSL (no admin) — map it into this WSL distro:
-usbipd.exe attach --wsl --busid 2-1
-ls /dev/ttyACM0                         # the UART appears here (CDC-ACM)
-# ... read telemetry ...
-usbipd.exe detach --busid 2-1           # release it back to Windows
-```
+- [`read_com.ps1`](read_com.ps1) — .NET `SerialPort` reader (115200 8N1, DTR on); [`monitor.sh`](monitor.sh)
+  is the WSL wrapper (`cp` to the `/mnt/c` sandbox → `powershell.exe -File`), counterpart to `../build.sh`.
+- **The board never leaves Windows**, so `D:` stays flashable (`../build.sh --flash`) *and* COM3 stays
+  readable at the same time. No usbipd, no detach/attach dance.
 
-### ⚠️ The `D:` vs telemetry trade-off (one device, two homes)
+**Verified 2026-06-23**: with the `blink` gateware emitting the LED byte as hex, `./monitor.sh` streamed
+`…E8 E9 EA … FF 00 01…` — code → FPGA → UART (pad A2) → LPC → COM3 → PowerShell → WSL.
 
-`usbipd attach` moves the **whole** composite into WSL — so while attached, **`D:` disappears from Windows**
-and [`../build.sh --flash`](../build.sh) (which copies the `.jed` to `D:\` on the Windows side) **won't work**.
-Work in two modes:
+### Why NOT usbipd-attach into WSL (rejected)
 
-| Mode | Device home | Do |
-|---|---|---|
-| **Flash** | Windows (detached) | `usbipd.exe detach --busid 2-1` → `./build.sh --flash` |
-| **Telemetry** | WSL (attached) | `usbipd.exe attach --wsl --busid 2-1` → `beacon-telemetry --port /dev/ttyACM0` |
+Two reasons, both hit live:
+1. The board is a **composite** device — `usbipd attach` pulls the **whole** thing into WSL, so **`D:`
+   leaves Windows** and flashing breaks (you'd have to detach to flash, re-attach to read).
+2. Worse, the **WSL `/dev/ttyACM0` CDC read hangs uninterruptibly** (no data ever surfaced; `timeout`
+   couldn't kill the read). The Windows-side read has neither problem.
 
-Flashing is occasional (gateware changes); telemetry is continuous during bench work — so the usual loop is
-**flash once → attach → observe**. *(Possible future simplification: when attached, the mass-storage also
-appears in WSL as a block device, so a fully-WSL flash-by-mount could replace the Windows copy — unproven,
-not needed yet.)*
+`beacon_telemetry.read_serial()` (pyserial on `/dev/ttyUSB*`) remains for a *non-composite* adapter that
+behaves under usbipd — e.g. the **emitter's** serialUPDI FT232 (a separate device, no `D:` tension). Decide
+its transport when that hardware lands; pymcuprog-on-Windows is the fallback if its WSL read also misbehaves.
 
-The same usbipd path serves the **emitter** bring-up: its serialUPDI USB-UART adapter (a separate device,
-arriving in a couple of days) gets its own `bind`/`attach` so `pymcuprog` can flash the ATtiny412 from WSL.
+## Frame contract (gateware → host)
+
+`BCN,seq,adc,corrA,lockA,marginA,corrB,lockB,marginB\n` — see [`frame.py`](beacon_telemetry/frame.py).
+`frames_from_lines()` parses any line source (Windows-read pipe, recorded log, or the mock), so the parser is
+transport-agnostic. The F1 `blink` emits a simpler `HH` hex line (proves the pipe); F3/F4 emit real BCN frames.
 
 ## Status
 
 - Parser + mock + tests: **done** (hardware-free).
-- Live read: ready, pending (a) the gateware emitting frames (FPGA F3) and (b) a usbipd `bind` (admin, once).
+- **Live transport: PROVEN** end-to-end via `monitor.sh` (Windows-side) against the `blink` telemetry build.
+- Pending: the gateware emitting real **BCN** frames (FPGA F3/F4) — then `monitor.sh | frames_from_lines`.
