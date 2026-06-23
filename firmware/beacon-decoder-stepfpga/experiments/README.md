@@ -74,6 +74,15 @@ GROUP rows, final carry-propagate add). Measured (trce, worst-case, harness fixe
 
 **100 MHz is proven** for a true 32×32 multiply; ~125 MHz achieved, approaching the ~150 MHz fabric ceiling.
 
+**Deployed + run on hardware (2026-06-23):** `selftest.v` clocks the CSA 32×32 multiplier from the
+**PLL at 108 MHz** (`fast_pll.v`, 12→108 MHz; production-style), streams LFSR operands, and compares each
+product to a golden `a*b` reference, counting mismatches (`deploy_selftest.sh` → flash). Result on the
+STEP-MXO2: PLL **locked**, **zero errors** — the multiplier computes correctly at 108 MHz on real silicon.
+(Note: the board LEDs are **active-low**; the display encodes status as motion/blink to stay polarity-robust
+— ripple = running-clean, all-blink = error. The combinational `a*b` reference is a multicycle path that
+settles during the operand hold-window — trce flags it "not met" but it's functionally correct; the CSA
+multiplier's own 108 MHz domain meets timing, internal max 150 MHz.)
+
 **Measurement gotcha (important):** the first CSA runs read 80–116 MHz — but the critical path was the **test
 harness**, not the multiplier: a single `led <= ^prod` (64→1 XOR) was 8.6 ns / **77% routing** (the wide fan-in
 routes across the chip). Pipelining that reduction (64→32→8→1) revealed the multiplier's true 125 MHz. Lesson:
