@@ -13,5 +13,7 @@ else {
 }
 $deadline = (Get-Date).AddSeconds($Seconds); $n = 0
 while((Get-Date) -lt $deadline){ try{ $line = $p.ReadLine(); Write-Output $line; $n++ } catch {} }
+if (-not $Local) { $p.Write([byte[]]@(0x2D),0,1) }                  # release override -> back to switches
+Start-Sleep -Milliseconds 20
 $p.Close()
 [Console]::Error.WriteLine(("--- mask=0x{0:X2}; {1} lines in {2}s ---" -f ($Mask -band 0x7F),$n,$Seconds))

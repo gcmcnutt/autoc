@@ -24,9 +24,9 @@ module s3_top (input clk12,
     dsw1<={dsw1[0],sw1}; dsw2<={dsw2[0],dip2}; dsw3<={dsw3[0],dip3}; dsw4<={dsw4[0],dip4};
     kb1<={kb1[0],~k1}; kb2<={kb2[0],~k2}; kb3<={kb3[0],~k3}; kb4<={kb4[0],~k4};
   end
-  wire enA    = remote ? cmd_reg[0] : ~dsw1[1];   // DIP/cmd: enable code A
-  wire enB    = remote ? cmd_reg[1] : ~dsw2[1];   //          enable code B
-  wire enN    = remote ? cmd_reg[2] : ~dsw3[1];   //          enable noise source
+  wire enA    = remote ? cmd_reg[0] : dsw1[1];    // DIP "ON" label = DISABLE (mute) -> source on when switch OFF
+  wire enB    = remote ? cmd_reg[1] : dsw2[1];
+  wire enN    = remote ? cmd_reg[2] : dsw3[1];
   wire einj1  = remote ? cmd_reg[3] : kb1[1];
   wire einj2  = remote ? cmd_reg[4] : kb2[1];
   wire eweak  = remote ? cmd_reg[5] : kb3[1];
@@ -212,8 +212,9 @@ module s3_top (input clk12,
   function [2:0] rgb(input [1:0] st, input bk);
     rgb = (st==LOCK) ? 3'b010 : (st==HOLD) ? (bk?3'b010:3'b000) : (st==ACQ) ? 3'b011 : 3'b001;
   endfunction
-  assign LEDl = ~rgb(st0, blink[21]);
-  assign LEDr = ~rgb(st1, blink[21]);
+  wire [2:0] rmt = remote ? 3'b100 : 3'b000;             // blue tint while REMOTE (USB override active)
+  assign LEDl = ~(rgb(st0, blink[21]) | rmt);
+  assign LEDr = ~(rgb(st1, blink[21]) | rmt);
   assign LEDs = ~{bar4(q0), bar4(q1)};
   assign d1   = seg7(q0);
   assign d2   = seg7(q1);
