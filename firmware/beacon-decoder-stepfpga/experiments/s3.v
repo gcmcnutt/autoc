@@ -14,7 +14,8 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
                output code_pin, output sync_pin,
                output spi_cs, output spi_sclk, output spi_do,
                output [7:0] LEDs, output [2:0] LEDl, output [2:0] LEDr,
-               output [6:0] d1, output [6:0] d2, output enableLd1, output enableLd2);
+               output [6:0] d1, output [6:0] d2, output enableLd1, output enableLd2,
+               output txd);                              // BCN telemetry UART -> pad A2 -> STEPLink -> COM3
 
   // =================== front end (identical to s2) ===================
   wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
@@ -190,4 +191,17 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
   assign d2   = seg7(q1);                                // 7-seg: CODE1 quality 0-9
   assign enableLd1 = 1'b0;                               // active-low digit enable (threeN1: enableL=0 = on)
   assign enableLd2 = 1'b0;
+
+  // =================== BCN telemetry (UART TX on pad A2 -> STEPLink -> COM3; host/ reads it) ===================
+  reg [13:0] seq = 0; reg [11:0] adc_l = 0;
+  always @(posedge clk12) if (valid) adc_l <= sample;
+  reg [18:0] tdiv = 0; reg tick = 0;
+  always @(posedge clk12)                                // emit ~30 Hz (12 MHz / 400000)
+    if (tdiv == 19'd399999) begin tdiv<=0; tick<=1'b1; seq<=(seq==14'd9999)?14'd0:seq+1'b1; end
+    else begin tdiv<=tdiv+1'b1; tick<=1'b0; end
+  wire [1:0] lka = (st0==SEARCH)?2'd0:(st0==ACQ)?2'd1:2'd2;   // frame lock: 0 no_lock / 1 tentative / 2 confirmed
+  wire [1:0] lkb = (st1==SEARCH)?2'd0:(st1==ACQ)?2'd1:2'd2;
+  bcn_tx u_bcn (.clk(clk12), .tick(tick), .seq(seq), .adc(adc_l),
+                .corrA(best0[19:0]), .lockA(lka), .marginA(q0),
+                .corrB(best1[19:0]), .lockB(lkb), .marginB(q1), .txd(txd));
 endmodule
