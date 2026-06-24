@@ -46,4 +46,5 @@ LOCATE COMP "d2[5]"    SITE "C11" ;
 LOCATE COMP "d2[6]"    SITE "A10" ;
 LOCATE COMP "enableLd1" SITE "C9" ;
 LOCATE COMP "enableLd2" SITE "A12" ;
-LOCATE COMP "txd"       SITE "A2" ;   // BCN telemetry UART -> STEPLink LPC -> COM3 (RX/cmd on A3 = next pass)
+LOCATE COMP "txd"       SITE "A2" ;   // BCN telemetry UART -> STEPLink LPC -> COM3
+LOCATE COMP "rxd"       SITE "A3" ;   // command UART <- STEPLink LPC <- COM3 (PT11a)

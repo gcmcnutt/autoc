@@ -15,10 +15,14 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
                output spi_cs, output spi_sclk, output spi_do,
                output [7:0] LEDs, output [2:0] LEDl, output [2:0] LEDr,
                output [6:0] d1, output [6:0] d2, output enableLd1, output enableLd2,
-               output txd);                              // BCN telemetry UART -> pad A2 -> STEPLink -> COM3
+               output txd,                               // BCN telemetry UART -> pad A2 -> STEPLink -> COM3
+               input  rxd);                              // command UART     <- pad A3 <- STEPLink <- COM3
 
   // =================== front end (identical to s2) ===================
   wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
+  reg [4:0] cmd_reg = 0;                                  // remote knobs over UART RX (latched in clk12, below)
+  reg [2:0] cmd_o0=0, cmd_o1=0;                           // sync code/inj1/inj2 into the emitter (oclk) domain
+  always @(posedge oclk) begin cmd_o0 <= cmd_reg[2:0]; cmd_o1 <= cmd_o0; end
   localparam [14:0] CODE0 = 15'b000001101111011, CODE1 = 15'b110011100000001;
   localparam integer EDIV = 266000;
   reg [18:0] edc = 0; reg [3:0] echip = 0;
@@ -35,8 +39,8 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
     tgtC <= (lfsr[11:8]==4'd15)?4'd0:lfsr[11:8];
   end
   reg [1:0] k1s=0, k2s=0; always @(posedge oclk) begin k1s<={k1s[0],~k1}; k2s<={k2s[0],~k2}; end
-  wire flip = (k1s[1] & (echip==tgtA)) | (k2s[1] & ((echip==tgtB) | (echip==tgtC)));
-  wire [14:0] esel = sw1 ? CODE1 : CODE0;
+  wire flip = ((k1s[1]|cmd_o1[1]) & (echip==tgtA)) | ((k2s[1]|cmd_o1[2]) & ((echip==tgtB) | (echip==tgtC)));
+  wire [14:0] esel = (sw1 | cmd_o1[0]) ? CODE1 : CODE0;
   wire ecode = esel[14-echip] ^ flip;
   assign code_pin = ecode;
   assign sync_pin = (echip == 4'd0);
@@ -44,8 +48,8 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
   reg [1:0] cdc = 0; always @(posedge clk12) cdc <= {cdc[0], ecode};
   wire code_rx = cdc[1];
   reg [1:0] k3s=0, k4s=0; always @(posedge clk12) begin k3s<={k3s[0],~k3}; k4s<={k4s[0],~k4}; end
-  wire [11:0] hi = k3s[1] ? 12'h550 : 12'hFF0;
-  wire [11:0] lo = k4s[1] ? 12'h400 : 12'h010;
+  wire [11:0] hi = (k3s[1]|cmd_reg[3]) ? 12'h550 : 12'hFF0;
+  wire [11:0] lo = (k4s[1]|cmd_reg[4]) ? 12'h400 : 12'h010;
   // analog-bandwidth model: low-pass the chip waveform so edges RAMP (band-limited PD/TIA), not ideal squares
   // -> edge samples land mid-ramp. IIR at clk12/8 (~1.5 MHz "analog" rate); LPF_SH sets the slew (~0.34 ms, a
   // mild pass — tunable knob for the A4d study, NOT a heavy smear).
@@ -203,12 +207,19 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
   assign enableLd1 = 1'b0;                               // active-low digit enable (threeN1: enableL=0 = on)
   assign enableLd2 = 1'b0;
 
+  // =================== command RX (UART on pad A3): latch knob byte 0x40-0x5F -> cmd_reg[4:0] ===================
+  // mask bits: [0]=code-select(B), [1]=inject-1-bit, [2]=inject-2-bit, [3]=weak-signal, [4]=high-floor.
+  // host sends chr(0x40 | mask); physical SW1/K1-K4 still OR in. 0x40-0x5F only -> newlines/noise ignored.
+  wire [7:0] rxb; wire rxv;
+  uart_rx #(.DIV(104)) u_rx (.clk(clk12), .rxd(rxd), .data(rxb), .valid(rxv));
+  always @(posedge clk12) if (rxv && (rxb[7:5]==3'b010)) cmd_reg <= rxb[4:0];
+
   // =================== BCN telemetry (UART TX on pad A2 -> STEPLink -> COM3; host/ reads it) ===================
   reg [13:0] seq = 0; reg [11:0] adc_l = 0;
   always @(posedge clk12) if (valid) adc_l <= sample;
   reg [18:0] tdiv = 0; reg tick = 0;
-  always @(posedge clk12)                                // emit ~30 Hz (12 MHz / 400000)
-    if (tdiv == 19'd399999) begin tdiv<=0; tick<=1'b1; seq<=(seq==14'd9999)?14'd0:seq+1'b1; end
+  always @(posedge clk12)                                // emit ~40 Hz (12 MHz / 300000) — control-loop family
+    if (tdiv == 19'd299999) begin tdiv<=0; tick<=1'b1; seq<=(seq==14'd9999)?14'd0:seq+1'b1; end
     else begin tdiv<=tdiv+1'b1; tick<=1'b0; end
   wire [1:0] lka = (st0==SEARCH)?2'd0:(st0==ACQ)?2'd1:2'd2;   // frame lock: 0 no_lock / 1 tentative / 2 confirmed
   wire [1:0] lkb = (st1==SEARCH)?2'd0:(st1==ACQ)?2'd1:2'd2;

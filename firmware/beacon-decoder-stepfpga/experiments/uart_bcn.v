@@ -22,6 +22,29 @@ module uart_tx #(parameter integer DIV = 104) (        // 12 MHz / 115200 = 104
   end
 endmodule
 
+// UART RX (115200 8N1) on pad A3 (STEPLink LPC). Outputs one byte + a 1-clk valid strobe; mid-bit sampled.
+module uart_rx #(parameter integer DIV = 104) (
+  input  wire clk, input wire rxd,
+  output reg [7:0] data, output reg valid);
+  reg [1:0] sy = 2'b11; wire rx = sy[1];
+  reg [3:0] st = 0; reg [7:0] cnt = 0; reg [7:0] sh = 0;
+  initial begin data = 0; valid = 0; end
+  always @(posedge clk) begin
+    sy <= {sy[0], rxd};
+    valid <= 1'b0;
+    case (st)
+      4'd0: if (!rx) begin st <= 4'd1; cnt <= 0; end                 // falling edge = start bit
+      4'd1: if (cnt == DIV/2) begin if (!rx) begin cnt<=0; st<=4'd2; end else st<=4'd0; end  // confirm mid-start
+            else cnt <= cnt + 1'b1;
+      default: if (cnt == DIV-1) begin
+                 cnt <= 0;
+                 if (st <= 4'd9) begin sh <= {rx, sh[7:1]}; st <= st + 1'b1; end   // 8 data bits, LSB first
+                 else begin if (rx) begin data <= sh; valid <= 1'b1; end st <= 4'd0; end  // stop bit
+               end else cnt <= cnt + 1'b1;
+    endcase
+  end
+endmodule
+
 module bcn_tx (
   input  wire clk, input wire tick,                    // tick = emit one frame
   input  wire [13:0] seq, input wire [11:0] adc,
