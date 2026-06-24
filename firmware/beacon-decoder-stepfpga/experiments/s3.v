@@ -1,18 +1,20 @@
-// S3a -- correlator (DUT) on ONE code, fed by the S2 sim front end (emitter -> injection -> virtual MCP3201
-// -> soft SPI reader). The decoded 480 Hz / 12-bit sample stream drives a soft matched filter: a 36-sample
-// sliding window (15 chips x 2.4 samples/chip) correlated against the SW1-selected code upsampled to a +/-1
-// template. The code is +/-1, so the matched filter is signed-accumulate -- no multiplier yet (that arrives
-// with soft-weighted templates). Per-period peak -> lock FSM.
+// S3c -- DUAL correlator: check BOTH Gold codes at once while emitting ONE. The S2 sim front end (emitter ->
+// injection -> virtual MCP3201 -> soft SPI) feeds two matched filters (CODE0 & CODE1 templates) sharing one
+// 36-sample window, DC estimate and energy; each has DC-removal + AGC (|corr|/energy match ratio) and its own
+// min-lock / limited-hold FSM. Only the emitted code's correlator should lock -> a live code-discrimination
+// test (the CDMA foundation for S6).
 //
-//   8 LEDs  : correlation bar-graph (thermometer) -- watch the peak rise on lock, collapse under errors/noise
-//   LEDl    : beacon-A lock -- red=no-lock, yellow=tentative, green=confirmed   (LEDr reserved for B / S6)
-//   P8 / N8 : emitter code (post-corruption) / clean epoch -- scope    SPI mirror on P3/M4/N4
-//   Knobs   : SW1 code A/B; K1/K2 inject 1/2 random chip flips; K3 weak signal; K4 high noise floor (= S2)
-//   7-seg margin number is S3b.
+//   7-seg d1/d2 : signal quality 0-9 for CODE0 / CODE1 (AGC match ratio)
+//   LEDl / LEDr : lock of CODE0 / CODE1  (red=search, yellow=acq, green=lock, green-blink=hold)
+//   8 LEDs      : q0 bar (left nibble) | q1 bar (right nibble)
+//   P8/N8       : emitted code (post-corruption) / clean epoch -- scope;  SPI mirror P3/M4/N4
+//   Knobs       : SW1 selects which code is EMITTED; K1/K2 1/2 random flips; K3 weak signal; K4 high floor
+//   Lock timing : MINLOCK=2 periods (~150 ms) to confirm, HOLDMAX=2 (~150 ms) before re-acquire
 module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
                output code_pin, output sync_pin,
                output spi_cs, output spi_sclk, output spi_do,
-               output [7:0] LEDs, output [2:0] LEDl, output [2:0] LEDr);
+               output [7:0] LEDs, output [2:0] LEDl, output [2:0] LEDr,
+               output [6:0] d1, output [6:0] d2, output enableLd1, output enableLd2);
 
   // =================== front end (identical to s2) ===================
   wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
@@ -45,7 +47,7 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
   wire [11:0] lo = k4s[1] ? 12'h400 : 12'h010;
   wire [11:0] adc_level = code_rx ? hi : lo;
 
-  localparam integer FDIV = 25000;        // 480 Hz sample cadence
+  localparam integer FDIV = 25000;
   reg [15:0] fdiv = 0; reg fetch = 1'b0;
   always @(posedge clk12)
     if (fdiv == FDIV-1) begin fdiv <= 0; fetch <= 1'b1; end else begin fdiv <= fdiv+1'b1; fetch <= 1'b0; end
@@ -55,9 +57,8 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
                                              .cs(cs), .sclk(sclk), .sample(sample), .valid(valid));
   assign spi_cs = cs; assign spi_sclk = sclk; assign spi_do = dout;
 
-  // =================== correlator (DUT) ===================
-  // 36-slot sample window (2.4 samples/chip x 15). slot->chip map (each chip spans 2 or 3 slots, avg 2.4):
-  function [3:0] mapchip(input [5:0] s);
+  // =================== dual correlator (DUT) ===================
+  function [3:0] mapchip(input [5:0] s);                  // 36 slots (2.4/chip) -> 15 chips
     case (s)
       6'd0,6'd1,6'd2:    mapchip=4'd0;  6'd3,6'd4:         mapchip=4'd1;
       6'd5,6'd6,6'd7:    mapchip=4'd2;  6'd8,6'd9:         mapchip=4'd3;
@@ -69,54 +70,124 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
       default:           mapchip=4'd14;
     endcase
   endfunction
+  function [6:0] seg7(input [3:0] q);                     // threeN1 map: {a,b,c,d,e,f,g} bit6..0, active-high
+    case (q)
+      4'd0: seg7=7'b1111110; 4'd1: seg7=7'b0110000; 4'd2: seg7=7'b1101101; 4'd3: seg7=7'b1111001;
+      4'd4: seg7=7'b0110011; 4'd5: seg7=7'b1011011; 4'd6: seg7=7'b1011111; 4'd7: seg7=7'b1110000;
+      4'd8: seg7=7'b1111111; default: seg7=7'b1111011;   // 9
+    endcase
+  endfunction
+  function [3:0] bar4(input [3:0] q);                     // coarse 4-LED thermometer of a 0-9 quality
+    bar4 = (q>=4'd8)?4'hF : (q>=4'd6)?4'h7 : (q>=4'd4)?4'h3 : (q>=4'd2)?4'h1 : 4'h0;
+  endfunction
 
-  integer i;
-  reg [11:0] win [0:35];
-  reg [5:0]  ai = 0;                       // accumulate slot index
-  reg        busy = 0;
-  reg signed [20:0] acc = 0, corr = 0;
-  reg        corr_rdy = 0;
-  wire       tmpl_ai = esel[14 - mapchip(ai)];           // +1 if code bit=1, else -1
+  reg [19:0] dc_acc = 0; wire [11:0] dc = dc_acc[19:8];
+  integer i; reg [11:0] win [0:35];
+  reg [5:0] ai = 0; reg busy = 0, rdy = 0;
+  reg signed [21:0] acc_c0=0, acc_c1=0, corr0=0, corr1=0;
+  reg        [21:0] acc_e =0, energy=0;
+  wire t0 = CODE0[14 - mapchip(ai)];
+  wire t1 = CODE1[14 - mapchip(ai)];
+  wire signed [12:0] dev  = $signed({1'b0, win[ai]}) - $signed({1'b0, dc});
+  wire signed [21:0] devx = dev;
+  wire        [11:0] dabs = dev[12] ? (~dev[11:0] + 1'b1) : dev[11:0];
   always @(posedge clk12) begin
-    corr_rdy <= 1'b0;
-    if (valid) begin                                      // shift window, kick the accumulate
+    rdy <= 1'b0;
+    if (valid) begin
       for (i=35; i>0; i=i-1) win[i] <= win[i-1];
       win[0] <= sample;
-      ai <= 0; acc <= 0; busy <= 1'b1;
-    end else if (busy) begin                              // one slot/cycle (36 << 25000 cycles available)
-      acc <= acc + (tmpl_ai ? $signed({9'd0, win[ai]}) : -$signed({9'd0, win[ai]}));
-      if (ai == 6'd35) begin corr <= acc; corr_rdy <= 1'b1; busy <= 1'b0; end
+      dc_acc <= dc_acc - {8'b0, dc} + {8'b0, sample};
+      ai <= 0; acc_c0 <= 0; acc_c1 <= 0; acc_e <= 0; busy <= 1'b1;
+    end else if (busy) begin
+      acc_c0 <= acc_c0 + (t0 ? devx : -devx);
+      acc_c1 <= acc_c1 + (t1 ? devx : -devx);
+      acc_e  <= acc_e + {10'b0, dabs};
+      if (ai == 6'd35) begin corr0<=acc_c0; corr1<=acc_c1; energy<=acc_e; rdy<=1'b1; busy<=1'b0; end
       else ai <= ai + 1'b1;
     end
   end
 
-  // per-period peak (max positive correlation over a 36-sample window)
-  localparam signed [20:0] THRESH = 21'sd35000;           // tune by watching the bar-graph
-  reg signed [20:0] peakacc = 0, peak = 0;
-  reg [5:0] pcnt = 0;
-  always @(posedge clk12) if (corr_rdy) begin
-    if (corr > peakacc) peakacc <= corr;
-    if (pcnt == 6'd35) begin peak <= (corr > peakacc) ? corr : peakacc; peakacc <= 0; pcnt <= 0; end
-    else pcnt <= pcnt + 1'b1;
+  // per-period peak |corr| for each code (order/polarity-invariant); shared peak energy
+  wire signed [21:0] a0 = corr0[21] ? -corr0 : corr0;
+  wire signed [21:0] a1 = corr1[21] ? -corr1 : corr1;
+  reg [21:0] pk0=0, pk1=0, pke=1, best0=0, best1=0, beste=1;
+  reg [5:0]  pcnt=0; reg pend=0;
+  always @(posedge clk12) begin
+    pend <= 1'b0;
+    if (rdy) begin
+      if (a0 > pk0) pk0 <= a0;
+      if (a1 > pk1) pk1 <= a1;
+      if (energy > pke) pke <= energy;
+      if (pcnt == 6'd35) begin
+        best0 <= (a0>pk0)?a0:pk0; best1 <= (a1>pk1)?a1:pk1;
+        beste <= ((energy>pke)?energy:pke) | 22'd1;
+        pk0<=0; pk1<=0; pke<=0; pcnt<=0; pend<=1'b1;
+      end else pcnt <= pcnt + 1'b1;
+    end
   end
 
-  // lock FSM: leaky hit counter over periods
-  wire period_end = corr_rdy & (pcnt == 6'd35);
-  reg [3:0] hitc = 0;
-  always @(posedge clk12) if (period_end) begin
-    if (peak > THRESH) begin if (hitc != 4'd8) hitc <= hitc + 1'b1; end
-    else                     if (hitc != 4'd0) hitc <= hitc - 1'b1;
+  // quality q in 0-9 = min(9, 9*|corr|/energy) -- the ACTUAL match level for each code (like the thermometer):
+  // the matching code reads ~9, the other reads its true cross-corr/noise level (~5) as a diagnostic hint.
+  // The lock FSM (GOOD), not the digit, does the binary discrimination. Sequential per code.
+  wire [24:0] n0_raw = (best0<<3)+best0;           // 9*best0
+  wire [24:0] n1_raw = (best1<<3)+best1;           // 9*best1
+  reg [24:0] num=0; reg [21:0] den=1; reg [3:0] cnt=0; reg [1:0] dstate=0;
+  reg [3:0] q0=0, q1=0; reg q0_rdy=0, q1_rdy=0;
+  always @(posedge clk12) begin
+    q0_rdy <= 1'b0; q1_rdy <= 1'b0;
+    case (dstate)
+      2'd0: if (pend) begin num <= n0_raw; den <= beste; cnt <= 0; dstate <= 2'd1; end
+      2'd1: if ((num >= {3'b0,den}) && (cnt < 4'd9)) begin num <= num - {3'b0,den}; cnt <= cnt + 1'b1; end
+            else begin q0 <= cnt; q0_rdy <= 1'b1; num <= n1_raw; den <= beste; cnt <= 0; dstate <= 2'd2; end
+      2'd2: if ((num >= {3'b0,den}) && (cnt < 4'd9)) begin num <= num - {3'b0,den}; cnt <= cnt + 1'b1; end
+            else begin q1 <= cnt; q1_rdy <= 1'b1; dstate <= 2'd0; end
+    endcase
   end
-  wire green = (hitc >= 4'd4), tent = (hitc >= 4'd1) & ~green;
+
+  // per-code lock FSM: min-lock-time to confirm, limited hold across short dropouts, then re-acquire
+  localparam [3:0] GOOD = 4'd6;        // q>=6 of 9: one notch above the Gold cross-corr floor (~5) so the
+                                       // wrong code never locks, but below a 1-bit-error level (~7) so a single
+                                       // flip rides through. (N=15 has a thin 5->7 margin; longer codes widen it.)
+  localparam [2:0] MINLOCK = 3'd2, HOLDMAX = 3'd2;
+  localparam [1:0] SEARCH=2'd0, ACQ=2'd1, LOCK=2'd2, HOLD=2'd3;
+  reg [1:0] st0=SEARCH, st1=SEARCH; reg [2:0] g0=0,b0=0,g1=0,b1=0;
+  always @(posedge clk12) if (q0_rdy) begin
+    if (q0 >= GOOD) case (st0)
+      SEARCH: begin st0<=ACQ; g0<=3'd1; end
+      ACQ:    if (g0>=MINLOCK-1) st0<=LOCK; else g0<=g0+1'b1;
+      LOCK:   b0<=0;
+      HOLD:   begin st0<=LOCK; b0<=0; end
+    endcase
+    else case (st0)
+      SEARCH: ; ACQ: begin st0<=SEARCH; g0<=0; end
+      LOCK:   begin st0<=HOLD; b0<=3'd1; end
+      HOLD:   if (b0>=HOLDMAX) begin st0<=SEARCH; g0<=0; b0<=0; end else b0<=b0+1'b1;
+    endcase
+  end
+  always @(posedge clk12) if (q1_rdy) begin
+    if (q1 >= GOOD) case (st1)
+      SEARCH: begin st1<=ACQ; g1<=3'd1; end
+      ACQ:    if (g1>=MINLOCK-1) st1<=LOCK; else g1<=g1+1'b1;
+      LOCK:   b1<=0;
+      HOLD:   begin st1<=LOCK; b1<=0; end
+    endcase
+    else case (st1)
+      SEARCH: ; ACQ: begin st1<=SEARCH; g1<=0; end
+      LOCK:   begin st1<=HOLD; b1<=3'd1; end
+      HOLD:   if (b1>=HOLDMAX) begin st1<=SEARCH; g1<=0; b1<=0; end else b1<=b1+1'b1;
+    endcase
+  end
 
   // =================== displays ===================
-  // bar-graph: thermometer of peak (active-low). ~8192 corr/LED -> full bar near the clean peak (~77k).
-  wire [3:0] lvl = (peak[20]) ? 4'd0 : (peak[19:13] > 7'd8 ? 4'd8 : peak[19:13]);
-  wire [7:0] bar = (8'hFF >> (4'd8 - lvl));               // lvl ones from LSB up
-  assign LEDs = ~bar;
-
-  // RGB[0] lock (assume LEDl[0]=R,[1]=G,[2]=B, active-low; remap if HW differs)
-  wire [2:0] rgb_on = green ? 3'b010 : tent ? 3'b011 : 3'b001;   // green / yellow(R+G) / red
-  assign LEDl = ~rgb_on;
-  assign LEDr = 3'b111;                                   // off (reserved for beacon B, S6)
+  reg [22:0] blink = 0; always @(posedge clk12) blink <= blink + 1'b1;
+  function [2:0] rgb(input [1:0] st, input bk);          // R=[0] G=[1] B=[2], active-high "on" mask
+    rgb = (st==LOCK) ? 3'b010 : (st==HOLD) ? (bk?3'b010:3'b000) : (st==ACQ) ? 3'b011 : 3'b001;
+  endfunction
+  assign LEDl = ~rgb(st0, blink[21]);                    // CODE0 lock (active-low LEDs)
+  assign LEDr = ~rgb(st1, blink[21]);                    // CODE1 lock
+  assign LEDs = ~{bar4(q0), bar4(q1)};                   // left nibble=q0 bar, right nibble=q1 bar
+  assign d1   = seg7(q0);                                // 7-seg: CODE0 quality 0-9
+  assign d2   = seg7(q1);                                // 7-seg: CODE1 quality 0-9
+  assign enableLd1 = 1'b0;                               // active-low digit enable (threeN1: enableL=0 = on)
+  assign enableLd2 = 1'b0;
 endmodule

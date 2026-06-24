@@ -27,6 +27,22 @@ LOCATE COMP "LEDs[7]"  SITE "P9"  ;
 LOCATE COMP "LEDl[0]"  SITE "M2"  ;   // RGB left — beacon-A lock (R/G/B)
 LOCATE COMP "LEDl[1]"  SITE "N2"  ;
 LOCATE COMP "LEDl[2]"  SITE "P2"  ;
-LOCATE COMP "LEDr[0]"  SITE "M3"  ;   // RGB right — reserved (beacon B / S6)
+LOCATE COMP "LEDr[0]"  SITE "M3"  ;   // RGB right — CODE1 lock
 LOCATE COMP "LEDr[1]"  SITE "N3"  ;
 LOCATE COMP "LEDr[2]"  SITE "P4"  ;
+LOCATE COMP "d1[0]"    SITE "A11" ;   // 7-seg digit 1 (CODE0 quality 0-9)
+LOCATE COMP "d1[1]"    SITE "B12" ;
+LOCATE COMP "d1[2]"    SITE "H2"  ;
+LOCATE COMP "d1[3]"    SITE "H1"  ;
+LOCATE COMP "d1[4]"    SITE "J1"  ;
+LOCATE COMP "d1[5]"    SITE "B14" ;
+LOCATE COMP "d1[6]"    SITE "C12" ;
+LOCATE COMP "d2[0]"    SITE "B9"  ;   // 7-seg digit 2 (CODE1 quality 0-9)
+LOCATE COMP "d2[1]"    SITE "A9"  ;
+LOCATE COMP "d2[2]"    SITE "E2"  ;
+LOCATE COMP "d2[3]"    SITE "E1"  ;
+LOCATE COMP "d2[4]"    SITE "F2"  ;
+LOCATE COMP "d2[5]"    SITE "C11" ;
+LOCATE COMP "d2[6]"    SITE "A10" ;
+LOCATE COMP "enableLd1" SITE "C9" ;
+LOCATE COMP "enableLd2" SITE "A12" ;
