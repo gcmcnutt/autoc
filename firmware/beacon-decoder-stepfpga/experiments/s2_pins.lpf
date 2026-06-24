@@ -5,6 +5,14 @@ FREQUENCY PORT "clk12" 12.000000 MHz ;
 LOCATE COMP "sw1"      SITE "M7"  ;
 LOCATE COMP "code_pin" SITE "P8"  ;   // I/O 14
 LOCATE COMP "sync_pin" SITE "N8"  ;   // I/O 15
+LOCATE COMP "k1"       SITE "L14" ;   // momentary K1 — inject 1 random bit flip / period
+LOCATE COMP "k2"       SITE "M13" ;   // momentary K2 — inject 2 random bit flips / period
+LOCATE COMP "k3"       SITE "M14" ;   // momentary K3 — weak signal (high -> 1/3)
+LOCATE COMP "k4"       SITE "N14" ;   // momentary K4 — high noise floor (low -> ~1/4 FS)
+IOBUF  PORT "k1" PULLMODE=UP ;
+IOBUF  PORT "k2" PULLMODE=UP ;
+IOBUF  PORT "k3" PULLMODE=UP ;
+IOBUF  PORT "k4" PULLMODE=UP ;
 LOCATE COMP "spi_cs"   SITE "P3"  ;   // SPI_CS   → real J1 header (scope now; → real MCP3201 at S7)
 LOCATE COMP "spi_sclk" SITE "M4"  ;   // SPI_SCLK → real J1
 LOCATE COMP "spi_do"   SITE "N4"  ;   // SPI_SO / DOUT (mirrored OUT for scope; becomes INPUT in real mode)
