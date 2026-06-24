@@ -48,7 +48,7 @@ are still driven to **I/O 14 / I/O 15** for scope observability.
 |---|---|---|---|
 | **S1** | **Synthetic emitter** on internal OSCH: Gold code (N=15) @200 Hz chip; raw code → **I/O 14**, epoch/index pulse → **I/O 15** | the code generator + timing (cf. acquisition Stage 0 "hello gold code", but in-FPGA) | scope on I/O 14 (15-chip code) triggered off I/O 15 (epoch) |
 | **S2 ✓** | **Simulated ADC + SPI** (done, HW-verified): code → 12-bit analog model → bit-exact virtual **MCP3201** read by a soft SPI master @ **480 Hz** sample (camera cadence, 2.4 samples/chip — *not* oversampled), SCLK 50 kHz. Shared `spi_mcp3201.v`; LFSR decode self-test (`mcp3201_test`) proves bit-exact fetch | the sample source + MCP3201 word-format/decode | s2: sample top byte on 8 LEDs; test: PASS walking-dot; scope CS=P3, SCLK=M4, DOUT=N4 |
-| **S3** | **Correlator (DUT)** on ONE code: chip integrator → sliding soft matched filter → tentative/confirmed lock FSM + correlation margin | acquisition works end-to-end in silicon (F4) | RGB[0]: red=no-lock / yellow=tentative / green=confirmed; 7-seg: margin (SNR proxy) |
+| **S3 ✓** | **Correlator (DUT)**: soft matched filter + DC-removal/**AGC** (signal-level-independent match ratio) + **min-lock / limited-hold FSM**; **dual correlator** checks BOTH codes at once (code discrimination, one signal emitted) | acquisition + AGC + discrimination in silicon (F4); HW-verified | 7-seg: per-code quality 0-9; RGB L/R: per-code lock (R/Y/G/green-blink-hold); 8 LEDs: q bars |
 | **S4** | **Knobs**: DIP=code select; momentary=inject 1/2/3/4-bit errors per code period; DIP=noise level; UART `BCN` telemetry of {seq, sample, corr, lock, margin} | erasure/flip tolerance (§7), soft-decision gain; matches the host reader | 8 LEDs: per-chip hits; UART log via `host/monitor.sh` |
 | **S5** | **Clock drift (NFR-4)**: skew the emitter chip rate ±5% (DIP-selected divisor); the correlator's **DPLL must lock to the emitter's own rate** | the per-beacon self-syncing DPLL under drift — the §5 load-bearing requirement | RGB[0]: still reaches green across ±5%; 7-seg: acquired-rate or acq-time |
 | **S6** | **Second emitter + code B** on an *independent* skewed clock, summed into the simulated ADC; **two independent correlators/DPLLs** | honest **two-code CDMA separation under real clock slip** (§5, Stage 1) — in-FPGA | RGB[0]=A lock, RGB[1]=B lock; both green = separated; 8 LEDs split A/B activity |
@@ -56,6 +56,25 @@ are still driven to **I/O 14 / I/O 15** for scope observability.
 
 S1–S6 need **no analog hardware** — pure FPGA, flashed/observed over the proven loop. S3+ is the actual
 shippable correlator RTL (the A4a–c / F4–F5 work), just exercised by the synthetic stimulus.
+
+## Hardening study (→ tasks **A4d**)
+
+S3 surfaced that **N=15 is likely under-spec** (thin cross-corr↔1-bit-error margin: floor q≈5 vs 1-bit q≈7),
+so this harness becomes the vehicle for the code-length / latency / dropout study (see
+[`specs/031-beacon-camera/tasks.md` §A4d](../../specs/031-beacon-camera/tasks.md)). Design target = a **soft
+confidence ramp, not a binary lock**, in three latency tiers (the camera-mode model — source first seen as
+event-camera-like pulses with apparent screen motion):
+
+- **Candidate** — low latency, **~½ code word** (partial correlation; e.g. an N=63 code after ~20 chips) → an
+  image predictor starts watching a screen region.
+- **Hard lock** — medium, **~1–2 code words**; rides through varied dropout lengths.
+- **Re-acquire** — fast, **a few bits** — drive through occlusion / sun / ground clutter / noise / **two
+  beacons on one pixel** / apparent image motion.
+
+**Key output:** minimum code length (+ chip/oversample) for confident acquisition + dropout hardening — the
+coding standard for 040's camera CEP. Corollary: with hard lock + motion predictors, **chip-rate need not be
+rigidly tied to camera frame rate**. Needs: partial/progressive correlator, a burst-error knob, and the S6
+second emitter — all on this harness.
 
 ## Eval-board I/O map (STEP-MXO2)
 
