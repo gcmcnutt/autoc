@@ -7,7 +7,7 @@ SB="/mnt/c/fpga-build/s2"
 cmd.exe /c "taskkill /F /IM par.exe /IM pnmainc.exe /IM map.exe /IM synpwrap.exe" 2>/dev/null || true
 usbipd.exe detach --busid 2-1 2>/dev/null || true; sleep 1
 rm -rf "$SB" 2>/dev/null; mkdir -p "$SB"
-cp "$HERE"/s2.v "$HERE"/s2_pins.lpf "$HERE"/s2_build.tcl "$SB"/
+cp "$HERE"/s2.v "$HERE"/spi_mcp3201.v "$HERE"/s2_pins.lpf "$HERE"/s2_build.tcl "$SB"/
 echo "[build] Diamond (Export → JEDEC)…"
 ( cd "$SB" && "$PNMAINC" s2_build.tcl ) >"$SB/build.log" 2>&1 || true
 JED="$SB/impl1/s2_impl1.jed"

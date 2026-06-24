@@ -1,13 +1,10 @@
-// S2 pins. Receiver clock = 12 MHz xtal on C1; emitter clock = internal OSCH (no pin).
+// MCP3201 decode self-test pins. Receiver clock = 12 MHz xtal on C1.
 IOBUF ALLPORTS IO_TYPE=LVCMOS33 ;
 LOCATE COMP "clk12"    SITE "C1"  ;
 FREQUENCY PORT "clk12" 12.000000 MHz ;
-LOCATE COMP "sw1"      SITE "M7"  ;
-LOCATE COMP "code_pin" SITE "P8"  ;   // I/O 14
-LOCATE COMP "sync_pin" SITE "N8"  ;   // I/O 15
-LOCATE COMP "spi_cs"   SITE "P3"  ;   // SPI_CS   → real J1 header (scope now; → real MCP3201 at S7)
+LOCATE COMP "spi_cs"   SITE "P3"  ;   // SPI_CS   → real J1 header (scope)
 LOCATE COMP "spi_sclk" SITE "M4"  ;   // SPI_SCLK → real J1
-LOCATE COMP "spi_do"   SITE "N4"  ;   // SPI_SO / DOUT (mirrored OUT for scope; becomes INPUT in real mode)
+LOCATE COMP "spi_do"   SITE "N4"  ;   // SPI_SO / DOUT (mirrored OUT for scope)
 LOCATE COMP "LEDs[0]"  SITE "N13" ;
 LOCATE COMP "LEDs[1]"  SITE "M12" ;
 LOCATE COMP "LEDs[2]"  SITE "P12" ;
