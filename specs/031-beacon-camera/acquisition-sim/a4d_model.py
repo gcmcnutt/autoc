@@ -16,6 +16,8 @@ N_LIST       = [15, 31, 63]                 # Gold code lengths (n = 4,5,6)
 CAMERA_FPS   = 480.0                         # baseline sample rate
 FPC          = 2.4                           # samples per chip (camera frames per chip)
 CHIP_BASE    = CAMERA_FPS / FPC             # 200 Hz at the camera frame rate
+CHIP_RATES   = [200, 240, 300]              # push nearer the noise floor: fpc = 480/rate = 2.4, 2.0, 1.6
+PER_SAMPLE_SNR_DB = 0.0                      # sensor per-frame SNR (fixed); proc gain/period = 10log10(N*fpc)
 MINLOCK      = 2                             # consecutive good periods to confirm (lock FSM)
 ACQ_GOAL_MS  = (100.0, 150.0)               # acquisition-time goal
 SKEW         = 0.05                          # +/-5% inter-beacon clock tolerance (OSCH RC)
@@ -54,6 +56,12 @@ def acq_latency_ms(N, per_chip_db, chip_rate):
     k = MINLOCK
     e_periods = k if p > 0.99999 else (p**(-k) - 1) / (1 - p)
     return e_periods * period_ms
+
+def fpc(cr):              return CAMERA_FPS / cr                  # camera frames (samples) per chip
+def nyq_verdict(f):
+    if f >= 2.3: return ">Nyquist — drift margin (every chip keeps ≥2 clean samples in any phase)"
+    if f >= 1.95: return "Nyquist — NO margin (unsync phase drift puts samples on chip edges)"
+    return "SUB-Nyquist — aliasing; chips can get 1 sample / land on the ramp"
 
 def chip_rate_for_goal(N, goal_ms):
     """chip rate so that MINLOCK periods (best-case confirm) fits the goal -> required sample rate (fps)."""
@@ -101,6 +109,38 @@ def main():
           f"{ACQ_GOAL_MS[0]:.0f}-{ACQ_GOAL_MS[1]:.0f} ms goal; N=31/63 hit the goal only with a faster camera "
           f"(table 1) OR partial/progressive correlation (½-code-word candidate)._\n")
 
+    print("## 4. Chip rate vs samples/chip @ fixed 480 fps — pushing nearer the noise floor\n")
+    print("Clocks are NOT synchronized, so the sample phase drifts through every chip — fpc>2 keeps a clean "
+          "sample in each chip regardless of phase. Holding per-sample SNR fixed, proc gain/period = "
+          "10log10(N·fpc) (fewer samples/period = nearer the floor).\n")
+    print("| chip rate | fpc | N=15 period | 2·period (confirm) | samples/period | gain/period | per-period SNR @0 dB/sample | sampling |")
+    print("|---|---|---|---|---|---|---|---|")
+    for cr in CHIP_RATES:
+        f = fpc(cr); M = 15 * f; per = 1000.0*15/cr
+        gain = 10*math.log10(M); pp = PER_SAMPLE_SNR_DB + gain
+        print(f"| {cr} Hz | {f:.1f} | {per:.0f} ms | {2*per:.0f} ms | {M:.0f} | +{gain:.1f} dB | {pp:+.1f} dB | {nyq_verdict(f)} |")
+    print(f"\n_Up-rate trades both ways: 300 Hz cuts N=15 confirm to ~100 ms (room for a longer code in the goal) "
+          f"but drops ~1.8 dB of per-period gain AND goes sub-Nyquist — risky with unsync clocks. 240 Hz (2.0 "
+          f"fpc) sits exactly at Nyquist (no drift margin). 200 Hz (2.4 fpc) keeps the unsync margin — why it "
+          f"was chosen. Net acquisition TIME to a confidence is ~rate-invariant (≈ samples/480 s); the rate "
+          f"mainly trades per-period strength vs decision granularity and sampling robustness._\n")
+
+    print("## 5. Frequency flywheel — coast through outages, fast re-acquire\n")
+    print("Clocks are unsync'd but STABLE, so once a per-beacon DPLL learns a beacon's RATE it stays valid "
+          "through a long outage: HOLD the frequency, dead-reckon the phase forward, and re-acquire is "
+          "phase-only (~MINLOCK periods) instead of a cold frequency+phase search. Coast limit = when the "
+          "held-rate error walks the predicted phase past the pull-in window (~1 chip).\n")
+    print("| coast | chips elapsed | Δf/f to stay <1 chip | <0.5 chip | lock time to measure (0.1-chip phase) |")
+    print("|---|---|---|---|---|")
+    for coast in [1.0, 10.0]:
+        chips = CHIP_BASE * coast
+        print(f"| {coast:.0f} s | {chips:.0f} | {100/chips:.3f}% | {50/chips:.3f}% | ~{0.1*coast:.1f} s of lock |")
+    print(f"\n_A 10 s coast needs the beacon rate known to ~0.05% — buyable from ~1 s of prior lock (measuring "
+          f"phase to ~0.1 chip), or less if the OSCH short-term stability beats its ±5% absolute tolerance "
+          f"(it does). Two time constants: **LOCK confidence** falls in ~150-300 ms (LOS → image predictor "
+          f"'lost'), but the **FREQUENCY MEMORY** persists ~10 s → re-acquire in ~MINLOCK periods. This is the "
+          f"design's answer to occlusion/sun/clutter: don't cold-restart — coast the rate, re-lock on phase._\n")
+
     print("## Conclusion\n")
     print("- **N=15** is the only length that meets the 100-150 ms acquisition goal at the 480 fps camera — but "
           "it has the weakest noise margin and the worst CDMA floor (0.60), matching the bench (two-signal+noise "
@@ -110,6 +150,10 @@ def main():
           "candidate detection to keep acquisition ≤150 ms, and a per-beacon DPLL for ±5% skew (walk >1 chip).")
     print("- **Decision lever:** code length is bought with sample rate (or partial correlation) + DPLL. The "
           "bench sweep (A4d-1) calibrates the absolute SNR axis; this model sets the expected shape.")
+    print("- **Frequency flywheel:** because the unsync'd clocks are stable, the DPLL holds each beacon's rate "
+          "through ~10 s outages and re-acquires phase-only (~MINLOCK periods) — so the slow part is the ONE "
+          "cold acquisition; occlusion/sun/clutter recoveries are fast. This relaxes the code-length/acq-time "
+          "tension: a longer (more robust) code costs latency only on the very first lock.")
 
 if __name__ == "__main__":
     main()
