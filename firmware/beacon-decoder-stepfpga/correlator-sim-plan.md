@@ -74,7 +74,8 @@ event-camera-like pulses with apparent screen motion):
 **Key output:** minimum code length (+ chip/oversample) for confident acquisition + dropout hardening — the
 coding standard for 040's camera CEP. Corollary: with hard lock + motion predictors, **chip-rate need not be
 rigidly tied to camera frame rate**. Needs: partial/progressive correlator, a burst-error knob, and the S6
-second emitter — all on this harness.
+second emitter — all on this harness. **Realism baseline:** the analog model is band-limited — chip edges
+**ramp** (low-pass PD/TIA, `s3.v` `LPF_SH`), so edge samples land mid-ramp; LPF cutoff is a sweepable knob.
 
 ## Eval-board I/O map (STEP-MXO2)
 

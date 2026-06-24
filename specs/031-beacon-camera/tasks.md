@@ -171,6 +171,8 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
 - [ ] A4d-5 **Two-signal (needs emitter B — A6 / S6)** — second OSCH-domain emitter summed into the virtual ADC; measure discrimination + acquisition + LOS under two simultaneous codes, independent drift, and **same-pixel summation**.
 - [ ] A4d-6 **Chip-rate ↔ frame-rate decoupling** — with hard lock + motion predictors, sweep chip:frame ratios; quantify the achievable flexibility for 040.
 
+**Modeling realism (harness baseline):** the analog model is **band-limited — chip edges RAMP** (low-pass PD/TIA, not ideal squares; `s3.v` `LPF_SH`), so edge samples land mid-ramp and correlation is modestly reduced. Treat the LPF cutoff as a sweepable realism knob alongside N, noise, and drift (a mild pass, not heavy smear).
+
 **Output → 040:** minimum code length + soft-confidence filter design + dropout/LOS thresholds + the chip/frame-rate envelope feed the camera coding + CEP design.
 
 ### Bench

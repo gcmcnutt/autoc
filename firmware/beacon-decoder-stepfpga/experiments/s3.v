@@ -46,7 +46,18 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
   reg [1:0] k3s=0, k4s=0; always @(posedge clk12) begin k3s<={k3s[0],~k3}; k4s<={k4s[0],~k4}; end
   wire [11:0] hi = k3s[1] ? 12'h550 : 12'hFF0;
   wire [11:0] lo = k4s[1] ? 12'h400 : 12'h010;
-  wire [11:0] adc_level = code_rx ? hi : lo;
+  // analog-bandwidth model: low-pass the chip waveform so edges RAMP (band-limited PD/TIA), not ideal squares
+  // -> edge samples land mid-ramp. IIR at clk12/8 (~1.5 MHz "analog" rate); LPF_SH sets the slew (~0.34 ms, a
+  // mild pass — tunable knob for the A4d study, NOT a heavy smear).
+  localparam integer LPF_SH = 9;
+  wire [19:0] tgt8 = {(code_rx ? hi : lo), 8'b0};        // 12.8 fixed-point chip target
+  reg  [19:0] aflt = 0; reg [2:0] lpf_div = 0;
+  always @(posedge clk12) begin
+    lpf_div <= lpf_div + 1'b1;
+    if (lpf_div == 3'd7)
+      aflt <= (tgt8 > aflt) ? aflt + ((tgt8 - aflt) >> LPF_SH) : aflt - ((aflt - tgt8) >> LPF_SH);
+  end
+  wire [11:0] adc_level = aflt[19:8];                     // band-limited (ramped) analog sample
 
   localparam integer FDIV = 25000;
   reg [15:0] fdiv = 0; reg fetch = 1'b0;
