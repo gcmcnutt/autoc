@@ -47,12 +47,12 @@ are still driven to **I/O 14 / I/O 15** for scope observability.
 | # | Build | Proves | Board shows |
 |---|---|---|---|
 | **S1** | **Synthetic emitter** on internal OSCH: Gold code (N=15) @200 Hz chip; raw code → **I/O 14**, epoch/index pulse → **I/O 15** | the code generator + timing (cf. acquisition Stage 0 "hello gold code", but in-FPGA) | scope on I/O 14 (15-chip code) triggered off I/O 15 (epoch) |
-| **S2** | **Simulated ADC**: code → soft 12-bit samples @~100 kS/s (oversampled ~500×/chip) with DC pedestal + selectable noise | the sample source the correlator consumes; MCP3201 word format | 7-seg: live sample value / level |
+| **S2 ✓** | **Simulated ADC + SPI** (done, HW-verified): code → 12-bit analog model → bit-exact virtual **MCP3201** read by a soft SPI master @ **480 Hz** sample (camera cadence, 2.4 samples/chip — *not* oversampled), SCLK 50 kHz. Shared `spi_mcp3201.v`; LFSR decode self-test (`mcp3201_test`) proves bit-exact fetch | the sample source + MCP3201 word-format/decode | s2: sample top byte on 8 LEDs; test: PASS walking-dot; scope CS=P3, SCLK=M4, DOUT=N4 |
 | **S3** | **Correlator (DUT)** on ONE code: chip integrator → sliding soft matched filter → tentative/confirmed lock FSM + correlation margin | acquisition works end-to-end in silicon (F4) | RGB[0]: red=no-lock / yellow=tentative / green=confirmed; 7-seg: margin (SNR proxy) |
 | **S4** | **Knobs**: DIP=code select; momentary=inject 1/2/3/4-bit errors per code period; DIP=noise level; UART `BCN` telemetry of {seq, sample, corr, lock, margin} | erasure/flip tolerance (§7), soft-decision gain; matches the host reader | 8 LEDs: per-chip hits; UART log via `host/monitor.sh` |
 | **S5** | **Clock drift (NFR-4)**: skew the emitter chip rate ±5% (DIP-selected divisor); the correlator's **DPLL must lock to the emitter's own rate** | the per-beacon self-syncing DPLL under drift — the §5 load-bearing requirement | RGB[0]: still reaches green across ±5%; 7-seg: acquired-rate or acq-time |
 | **S6** | **Second emitter + code B** on an *independent* skewed clock, summed into the simulated ADC; **two independent correlators/DPLLs** | honest **two-code CDMA separation under real clock slip** (§5, Stage 1) — in-FPGA | RGB[0]=A lock, RGB[1]=B lock; both green = separated; 8 LEDs split A/B activity |
-| **S7** | **Bridge to real HW**: replace the simulated ADC with the **MCP3201 SPI** front end (`cad/beacon-receiver`); correlator unchanged | the sim→real swap; feeds acquisition-research-plan Stages 0–2 | same display, now off real photons |
+| **S7** | **Bridge to real HW**: the soft MCP3201 SPI master is already real (S2) — just swap the virtual `mcp3201_model` for the **real MCP3201** on `cad/beacon-receiver` (DOUT → an input pad); correlator unchanged | the sim→real swap; feeds acquisition-research-plan Stages 0–2 | same display, now off real photons |
 
 S1–S6 need **no analog hardware** — pure FPGA, flashed/observed over the proven loop. S3+ is the actual
 shippable correlator RTL (the A4a–c / F4–F5 work), just exercised by the synthetic stimulus.
@@ -87,6 +87,12 @@ pinout / pin-allocation drawings at <https://support.eimtechnology.com/documenta
 - **Telemetry**: emit the existing `BCN,seq,adc,corrA,lockA,marginA,corrB,lockB,marginB` frame so the host
   `frames_from_lines` parser works unchanged.
 - **Active-low LEDs**: encode status as motion/color, not bare levels (lesson from the self-test).
+- **EFB hard-SPI — deferred to backlog** (decided 2026-06-23): the soft SPI master (`spi_mcp3201.v`) is the
+  design — HW-verified and ample for the kHz correlator. The MachXO2 EFB hardened SPI (IPexpress →
+  Architecture_Modules → EFB; WISHBONE-driven, see TN1205) is *not* needed here and is more likely repurposed
+  later for **buffered SD-card writes in the 1-diode flight receiver**. Revisit only if a hardware SPI offload
+  is actually required; the `mcp3201_model` is edge-driven so it can re-validate a hard block's paused-clock
+  read if we ever do.
 
 ## Relationship to the program plan
 
