@@ -32,8 +32,8 @@ module s3_top (input clk12,
   wire eweak  = remote ? cmd_reg[5] : kb3[1];
   wire efloor = remote ? cmd_reg[6] : kb4[1];
   reg signed [19:0] edivb_cmd = 20'sd266000;       // emitter-B divider set by the USB 'F' command (rate test)
-  wire [18:0] edivb_eff = remote ? edivb_cmd[18:0] // remote: 'F'-commanded rate; local: DIP4 skew ±3%
-                                 : (~dsw4[1] ? 19'd274227 : 19'd258252);
+  wire [18:0] edivb_eff = remote ? edivb_cmd[18:0] // remote: 'F'-commanded rate
+                                 : (dsw4[1] ? 19'd266000 : 19'd258252);  // local: DIP4 off=nominal / on=+3% skew
 
   // ============ emitters: internal OSCH; A & B at independent divisors -> real inter-beacon slip ============
   wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
