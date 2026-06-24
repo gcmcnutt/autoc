@@ -5,9 +5,9 @@ generates coded beacons, models the optical/analog channel, samples it through a
 the actual correlator (the DUT), and exposes everything on the board's I/O + a bidirectional USB link — so the
 beacon receiver can be developed and stress-tested with **no analog hardware**.
 
-- **Current build:** `experiments/s3.v` (top `s3_top`) + `spi_mcp3201.v` + `uart_bcn.v` — milestone **S6**
-  (two emitters + noise + DIP/USB control). Commit `e9ad591`.
-- **Resource:** **1708 / 4320 LUT4 (40 %)**, all timing met.
+- **Current build:** `experiments/s3.v` (top `s3_top`) + `spi_mcp3201.v` + `uart_bcn.v` — milestone **S6 + DPLL**
+  (two emitters + noise + DIP/USB control + per-code clock-estimation loop).
+- **Resource:** **2075 / 4320 LUT4 (48 %)**, all timing met.
 - **Plan / roadmap:** [`correlator-sim-plan.md`](correlator-sim-plan.md) · **research/study:**
   [`specs/031-beacon-camera/tasks.md` §A4d](../../specs/031-beacon-camera/tasks.md) · **predictive model:**
   [`specs/031-beacon-camera/acquisition-sim/a4d_model.py`](../../specs/031-beacon-camera/acquisition-sim/a4d_model.py)
@@ -100,6 +100,10 @@ CS (P3) against the emitter epoch (N8) to see the slip.
   1-bit-error level ~7).
 - **Discrimination:** only the emitted code locks; the other sits at its true cross-corr/noise level → live
   CDMA separation when both A and B are on.
+- **Per-code DPLL (clock estimation + flywheel):** an IIR mean of the per-period peak-phase slip estimates each
+  beacon's chip **rate** vs the precise xtal. Updates only while LOCKED → **frozen (held) through outages = the
+  frequency flywheel**. Reported in telemetry (`rateA`/`rateB`, offset-binary). HW-verified: tracks a commanded
+  emitter-B sweep 191→206 Hz monotonically (~3–5 Hz / calibration-grade); A↔B cross-pull visible at N=15.
 
 ---
 
@@ -125,8 +129,9 @@ CS (P3) against the emitter epoch (N8) to see the slip.
 - `+` (0x2B) → **REMOTE** (USB owns; switches ignored) — shown as a **blue tint** on both RGB LEDs.
 - `-` (0x2D) → **LOCAL** (switches resume).
 - `0x80 | mask` → 7-bit knob set: `[0]enA [1]enB [2]enN [3]inj-1bit [4]inj-2bit [5]weak [6]floor`.
-- Extensible to parametric commands (per-source magnitude, skew, SNR) later.
-- Driver: `host/cmd_read.sh <mask> [sec]` (sends `+`, mask, reads, releases `-`).
+- `F`(0x46) + value → set **emitter-B frequency** (~±10 % over the byte; value 128 = nominal) — for DPLL/rate testing.
+- Extensible to further parametric commands (per-source magnitude, skew, SNR) later.
+- Driver: `host/cmd_read.sh <mask> [sec]` / `cmd_read.ps1 -Mask -Freq -Local`.
 
 ---
 
@@ -145,8 +150,9 @@ CS (P3) against the emitter epoch (N8) to see the slip.
 ## 9. Telemetry + commands (USB-CDC, no usbipd — board stays on Windows)
 
 - **TX** `BCN` frame on **A2** → STEPLink LPC → **COM3**, 115200 8N1, **~40 Hz** (control-loop family):
-  `BCN,<seq>,<adc>,<corrA>,<lockA>,<marginA>,<corrB>,<lockB>,<marginB>\n`
-  (`lock` 0=no/1=tentative/2=confirmed; `margin` = the 0–9 quality).
+  `BCN,<seq>,<adc>,<corrA>,<lockA>,<marginA>,<corrB>,<lockB>,<marginB>,<rateA>,<rateB>\n`
+  (`lock` 0=no/1=tentative/2=confirmed; `margin` = the 0–9 quality; `rate` = DPLL rate, offset-binary →
+  `chip_rate_hz()` in the host parser).
 - **RX** commands on **A3**.
 - **Host tools** (`host/`): `monitor.sh` (read/log), `beacon_telemetry/` (parser + tests), `cmd_read.sh`
   (command + read), `transition.sh` (capture a lock edge for LOS/acquisition timing).
