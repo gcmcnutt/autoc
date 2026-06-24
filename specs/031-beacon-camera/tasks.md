@@ -145,6 +145,12 @@ The active arc per [`acquisition-research-plan.md`](acquisition-research-plan.md
 ### Emitter (reuse beacon-eval — carries from US1/US2)
 - [ ] A1 Build the emitter eval rig per [`cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md): one-time XNANO **R100 cut**; assemble **LM3410X** boost + 5× L1IZ-0850 series @ 306 mA + **R2 DIM pull-down** (R11 failsafe). Subs in hand: **SS1030** Schottky (SOD-123), **TDK B82464G4223M000** 22 µH inductor.
 - [ ] A2 MCU bring-up: build + flash the gold-code firmware (**T027–T031 carry over**) via the XNANO mEDBG (UPDI); scope-verify the Gold code at the **200 Hz** chip rate + 15-chip period (`scope-trace-decode.py`). **Add a code-epoch SYNC pulse on the spare GPIO (PA7), HIGH during chip 0**, as a scope trigger / receiver time-align — see `contracts/mcu-firmware-contract.md` §Scope-sync pin.
+- [ ] A2-osc **Emitter oscillator accuracy + stability study** (hardware arriving ~2026-06-25; first bench test): measure the ATtiny412 chip clock against a stable timebase (counter/scope, later the A4c DPLL). Four measures, different fixes:
+  1. **absolute rate + ±tolerance** (expected ±5% RC) — sets the cold-search freq span;
+  2. **short-term stability over ~10 s** — the **frequency-flywheel coast spec: <0.05%** ([`acquisition-sim/a4d_model.py`](acquisition-sim/a4d_model.py) §5);
+  3. **LED-load / code-correlated pulling** — does the rate shift between high-LED and low-LED chips as the battery-fed boost rail sags? (the worst case: frequency modulation *synchronous with the code*, which a DPLL can't average out) → fix by **isolating the MCU/osc supply** (LDO + bulk cap, off the LED boost rail) *before* reaching for a crystal;
+  4. **battery-droop drift + warm-up transient** over a run → crystal/ceramic resonator or external precision oscillator if needed.
+  **Gates** whether the internal RC suffices or the emitter needs a stable clock (the [plan.md open item](plan.md)). The A4d flywheel coast budget depends entirely on this.
 
 ### Single-IR-sensor receiver (new — `cad/beacon-receiver`)
 - [ ] A3 Build the receiver per the `cad/beacon-receiver` schematic: **BPV10NF → MCP6022 TIA** (Rf trimpot ∥ Cf) **→ MCP3201 ADC**, VBIAS R2/R3 divider + C2 bypass, **MCP1525** 2.5 V ref, decoupling. Power + SPI from the **STEP-MXO2** via J1 (GND=21, SPISO=23→U2/6, SCK=24→U2/7, CS=25→U2/5, +3V3=40).

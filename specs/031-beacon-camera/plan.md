@@ -97,5 +97,9 @@ Each earlier milestone's "Done when" is its own gate (above).
   beacon rate through the outage (~10 s). The estimator referenced to the xtal (ppm) hits the needed ~0.05%
   easily; the **real coast limit is the EMITTER oscillator's short-term drift** → characterize the RC OSCH over
   ~10 s (temp/vibration on the craft), or spec a **crystal-referenced emitter** if long coast is required.
+  **First bench test when the emitter HW lands (~2026-06-25): tasks.md A2-osc** — watch especially for
+  **LED-load / code-correlated pulling** (high-power LED switching sags the battery boost rail → pulls the RC
+  *in sync with the code*, the worst failure mode); likely cheapest fix is isolating the MCU/osc supply (LDO +
+  bulk) before a crystal.
 - **Analog front end** — TIA + AC/DC-coupling + MCP3201 soft-sample quality (FPGA F3; fpga §5 open decisions).
 </content>
