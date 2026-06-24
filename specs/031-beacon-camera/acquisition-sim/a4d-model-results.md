@@ -59,7 +59,7 @@ Clocks are unsync'd but STABLE, so once a per-beacon DPLL learns a beacon's RATE
 | 1 s | 200 | 0.500% | 0.250% | ~0.1 s of lock |
 | 10 s | 2000 | 0.050% | 0.025% | ~1.0 s of lock |
 
-_A 10 s coast needs the beacon rate known to ~0.05% — buyable from ~1 s of prior lock (measuring phase to ~0.1 chip), or less if the OSCH short-term stability beats its ±5% absolute tolerance (it does). Two time constants: **LOCK confidence** falls in ~150-300 ms (LOS → image predictor 'lost'), but the **FREQUENCY MEMORY** persists ~10 s → re-acquire in ~MINLOCK periods. This is the design's answer to occlusion/sun/clutter: don't cold-restart — coast the rate, re-lock on phase._
+_A 10 s coast needs the beacon rate known to ~0.05% — an AVERAGING problem, not a precision-clock one: the all-digital DPLL/NCO times the beacon epoch against the 12 MHz xtal (±20-50 ppm, ~10000× tighter than 0.05%), so ~1 s of lock suffices. The MachXO2 hard PLL (MHz clock-gen) plays NO role in tracking a 200 Hz symbol rate. The real coast limit is the EMITTER oscillator's short-term drift over the coast window: the RC OSCH (±5% absolute) must hold ~0.05% over ~10 s — likely OK but a SPEC to characterize; a crystal-referenced emitter buys long coast outright. Two time constants: **LOCK confidence** falls in ~150-300 ms (LOS → image predictor 'lost'), but **FREQUENCY MEMORY** persists ~10 s → re-acquire phase-only. The design's answer to occlusion/sun/clutter: coast the rate, re-lock on phase — don't cold-restart._
 
 ## Conclusion
 

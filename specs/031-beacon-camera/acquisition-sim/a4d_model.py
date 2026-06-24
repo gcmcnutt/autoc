@@ -135,11 +135,15 @@ def main():
     for coast in [1.0, 10.0]:
         chips = CHIP_BASE * coast
         print(f"| {coast:.0f} s | {chips:.0f} | {100/chips:.3f}% | {50/chips:.3f}% | ~{0.1*coast:.1f} s of lock |")
-    print(f"\n_A 10 s coast needs the beacon rate known to ~0.05% — buyable from ~1 s of prior lock (measuring "
-          f"phase to ~0.1 chip), or less if the OSCH short-term stability beats its ±5% absolute tolerance "
-          f"(it does). Two time constants: **LOCK confidence** falls in ~150-300 ms (LOS → image predictor "
-          f"'lost'), but the **FREQUENCY MEMORY** persists ~10 s → re-acquire in ~MINLOCK periods. This is the "
-          f"design's answer to occlusion/sun/clutter: don't cold-restart — coast the rate, re-lock on phase._\n")
+    print(f"\n_A 10 s coast needs the beacon rate known to ~0.05% — an AVERAGING problem, not a precision-clock "
+          f"one: the all-digital DPLL/NCO times the beacon epoch against the 12 MHz xtal (±20-50 ppm, ~10000× "
+          f"tighter than 0.05%), so ~1 s of lock suffices. The MachXO2 hard PLL (MHz clock-gen) plays NO role in "
+          f"tracking a 200 Hz symbol rate. The real coast limit is the EMITTER oscillator's short-term drift "
+          f"over the coast window: the RC OSCH (±5% absolute) must hold ~0.05% over ~10 s — likely OK but a SPEC "
+          f"to characterize; a crystal-referenced emitter buys long coast outright. Two time constants: **LOCK "
+          f"confidence** falls in ~150-300 ms (LOS → image predictor 'lost'), but **FREQUENCY MEMORY** persists "
+          f"~10 s → re-acquire phase-only. The design's answer to occlusion/sun/clutter: coast the rate, re-lock "
+          f"on phase — don't cold-restart._\n")
 
     print("## Conclusion\n")
     print("- **N=15** is the only length that meets the 100-150 ms acquisition goal at the 480 fps camera — but "
