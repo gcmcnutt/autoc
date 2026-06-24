@@ -33,7 +33,8 @@ module s3_top (input clk12,
   wire efloor = remote ? cmd_reg[6] : kb4[1];
   reg signed [19:0] edivb_cmd = 20'sd266000;       // emitter-B divider set by the USB 'F' command (rate test)
   wire [18:0] edivb_eff = remote ? edivb_cmd[18:0] // remote: 'F'-commanded rate
-                                 : (dsw4[1] ? 19'd266000 : 19'd258252);  // local: DIP4 off=nominal / on=+3% skew
+                                 : (dsw4[1] ? 19'd262000 : 19'd257000);  // B ALWAYS skewed vs A (real beacons
+                                 // never share a clock): DIP4 off ~+1.5% / on ~+3.5% -> they slip -> averaged
 
   // ============ emitters: internal OSCH; A & B at independent divisors -> real inter-beacon slip ============
   wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
@@ -123,12 +124,19 @@ module s3_top (input clk12,
 
   reg [19:0] dc_acc = 0; wire [11:0] dc = dc_acc[19:8];
   integer i; reg [11:0] win [0:L-1];
-  reg [6:0] ai = 0; reg busy = 0, rdy = 0;
-  reg [4:0] cchip = 0; reg [7:0] cacc = 0;               // incremental slot->chip (Bresenham): chip=floor(ai*N/L)
-  reg signed [21:0] acc_c0=0, acc_c1=0, corr0=0, corr1=0;
-  reg        [21:0] acc_e =0, energy=0;
-  wire t0 = CODE0[cchip];                                // time-reversed template (matches newest-first window;
-  wire t1 = CODE1[cchip];                                // N=15 was symmetric, N=31 is not -> must reverse)
+  // CLOSED-LOOP DPLL: per-code effective period Leff = L + (measured slip) -> the template's slot->chip advance
+  // (Bresenham) tracks the emitter's actual rate, keeping the long-window matched filter coherent under skew.
+  // Two passes (code 0 then code 1), each with its own Leff; energy (template-independent) computed in pass 0.
+  reg [6:0] ai = 0; reg busy = 0, rdy = 0, pass = 0;
+  reg [4:0] cchip = 0; reg [8:0] cacc = 0;
+  reg signed [21:0] acc_c=0, corr0=0, corr1=0;
+  reg        [21:0] acc_e=0, energy=0;
+  wire signed [17:0] sr0 = slip0 >>> SLIP_SH, sr1 = slip1 >>> SLIP_SH;          // mean slip (samples/period)
+  wire signed [5:0]  sc0 = (sr0 > 18'sd10) ? 6'sd10 : (sr0 < -18'sd10) ? -6'sd10 : sr0[5:0];   // clamp ±10
+  wire signed [5:0]  sc1 = (sr1 > 18'sd10) ? 6'sd10 : (sr1 < -18'sd10) ? -6'sd10 : sr1[5:0];
+  wire signed [9:0]  Leff0 = 10'sd74 + sc0, Leff1 = 10'sd74 + sc1;
+  wire        [8:0]  Leff  = pass ? Leff1[8:0] : Leff0[8:0];
+  wire tcode = pass ? CODE1[cchip] : CODE0[cchip];                              // time-reversed template
   wire signed [12:0] dev  = $signed({1'b0, win[ai]}) - $signed({1'b0, dc});
   wire signed [21:0] devx = dev;
   wire        [11:0] dabs = dev[12] ? (~dev[11:0] + 1'b1) : dev[11:0];
@@ -138,14 +146,16 @@ module s3_top (input clk12,
       for (i=L-1; i>0; i=i-1) win[i] <= win[i-1];
       win[0] <= sample;
       dc_acc <= dc_acc - {8'b0, dc} + {8'b0, sample};
-      ai <= 0; cchip <= 0; cacc <= 0; acc_c0 <= 0; acc_c1 <= 0; acc_e <= 0; busy <= 1'b1;
+      ai<=0; cchip<=0; cacc<=0; acc_c<=0; acc_e<=0; pass<=1'b0; busy<=1'b1;
     end else if (busy) begin
-      acc_c0 <= acc_c0 + (t0 ? devx : -devx);
-      acc_c1 <= acc_c1 + (t1 ? devx : -devx);
-      acc_e  <= acc_e + {10'b0, dabs};
-      if (cacc + N >= L) begin cacc <= cacc + N - L; cchip <= cchip + 1'b1; end else cacc <= cacc + N;
-      if (ai == L-1) begin corr0<=acc_c0; corr1<=acc_c1; energy<=acc_e; rdy<=1'b1; busy<=1'b0; end
-      else ai <= ai + 1'b1;
+      acc_c <= acc_c + (tcode ? devx : -devx);
+      if (~pass) acc_e <= acc_e + {10'b0, dabs};                               // energy in pass 0 only
+      if (cacc + N >= Leff) begin cacc <= cacc + N - Leff; if (cchip < N-1) cchip <= cchip + 1'b1; end
+      else cacc <= cacc + N;
+      if (ai == L-1) begin
+        if (~pass) begin corr0<=acc_c; energy<=acc_e; pass<=1'b1; ai<=0; cchip<=0; cacc<=0; acc_c<=0; end
+        else       begin corr1<=acc_c; rdy<=1'b1; busy<=1'b0; end
+      end else ai <= ai + 1'b1;
     end
   end
 
