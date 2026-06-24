@@ -24,16 +24,18 @@ MAGIC = "BCN"
 LOCK_NAMES = {0: "no_lock", 1: "tentative", 2: "confirmed"}
 RATE_BIAS = 32768          # offset-binary zero point
 RATE_SCALE = 32           # internal IIR scaling (slip << 5)
-NOM_SAMPLES_PER_PERIOD = 36.0
+N_CHIPS = 31              # gateware code length (keep in sync with s3.v localparam N)
+SAMPLE_HZ = 480.0
+NOM_SAMPLES_PER_PERIOD = round(2.4 * N_CHIPS)   # L in the gateware (74 for N=31)
 
 
 def chip_rate_hz(rate: int) -> float:
     """Recover the emitter chip rate (Hz) from a telemetry rate field. NOM (200 Hz) at rate==RATE_BIAS.
-    A faster emitter makes the correlation peak arrive earlier each period (negative phase-slip), so the
-    chip rate is 7200/(36 + slip)."""
+    A faster emitter makes the correlation peak arrive earlier each period (negative phase-slip), so
+    chip_rate = N*SAMPLE_HZ / (L + slip)."""
     slip = (rate - RATE_BIAS) / RATE_SCALE
     denom = NOM_SAMPLES_PER_PERIOD + slip
-    return 7200.0 / denom if denom else float("inf")
+    return N_CHIPS * SAMPLE_HZ / denom if denom else float("inf")
 
 
 @dataclass

@@ -5,9 +5,11 @@ generates coded beacons, models the optical/analog channel, samples it through a
 the actual correlator (the DUT), and exposes everything on the board's I/O + a bidirectional USB link — so the
 beacon receiver can be developed and stress-tested with **no analog hardware**.
 
-- **Current build:** `experiments/s3.v` (top `s3_top`) + `spi_mcp3201.v` + `uart_bcn.v` — milestone **S6 + DPLL**
-  (two emitters + noise + DIP/USB control + per-code clock-estimation loop).
-- **Resource:** **2075 / 4320 LUT4 (48 %)**, all timing met.
+- **Current build:** `experiments/s3.v` (top `s3_top`) + `spi_mcp3201.v` + `uart_bcn.v` — milestone **S6 + DPLL**,
+  parametrized code length **N=31** (two emitters + noise + DIP/USB control + per-code clock-estimation loop).
+- **Resource:** **2465 / 4320 LUT4 (57 %)** at N=31, all timing met.
+- **Code length is a localparam** (`N`, `L=round(2.4·N)`): N=15 was the first cut; **N=31 is current** (lower
+  cross-corr floor → cleaner two-code separation); N=63 is the next step (window grows further).
 - **Plan / roadmap:** [`correlator-sim-plan.md`](correlator-sim-plan.md) · **research/study:**
   [`specs/031-beacon-camera/tasks.md` §A4d](../../specs/031-beacon-camera/tasks.md) · **predictive model:**
   [`specs/031-beacon-camera/acquisition-sim/a4d_model.py`](../../specs/031-beacon-camera/acquisition-sim/a4d_model.py)
@@ -54,8 +56,8 @@ CS (P3) against the emitter epoch (N8) to see the slip.
 
 | Src | Code / model | Chip clock | Enable |
 |---|---|---|---|
-| **A** | Gold **CODE0** = `000001101111011` (15-bit) | OSCH / 266000 = **200 Hz** | DIP1 / cmd[0] |
-| **B** | Gold **CODE1** = `110011100000001` (15-bit) | OSCH / EDIV_B = **~194 Hz (−3 %)** or **~206 Hz (+3 %)** (DIP4) | DIP2 / cmd[1] |
+| **A** | Gold **CODE0** = `0000000100011011000011001110011` (N=31; preferred pair, xcorr {-9,-1,7}) | OSCH / 266000 = **200 Hz** chip | DIP1 / cmd[0] |
+| **B** | Gold **CODE1** = `0100011001100111100101001011110` (N=31) | OSCH / EDIV_B (skewed ±3% via DIP4, or USB `F` command) | DIP2 / cmd[1] |
 | **N** | per-sample white noise (LFSR, ~±512) | — | DIP3 / cmd[2] |
 
 - **2.4 samples per chip** at 480 Hz sampling (the camera-frame cadence; 200 Hz chip × 2.4 = 480).
@@ -96,8 +98,10 @@ CS (P3) against the emitter epoch (N8) to see the slip.
 - **AGC:** quality `q = |corr| / energy` → **signal-level independent** 0–9 match ratio. `|corr|` makes code
   bit-order & polarity irrelevant. (Weak signal / raised floor therefore stay locked.)
 - **Per-code lock FSM:** SEARCH → ACQUIRING (`MINLOCK=2` consecutive good periods to CONFIRM) → LOCKED → HOLD
-  (coast `HOLDMAX=2` bad periods) → re-acquire. `GOOD=6` of 9 (above the Gold cross-corr floor ~5, below a
-  1-bit-error level ~7).
+  (coast `HOLDMAX=2` bad periods) → re-acquire. `GOOD` threshold tracks the code: **5 at N=31** (floor ~3),
+  **6 at N=15** (floor ~5) — the lower floor of the longer code permits a lower threshold = more margin.
+- **Warm re-acquire (flywheel):** within ~10 s of a lock (coast window) the rate is still held → re-lock on the
+  FIRST good period (skips ACQ); cold (rate stale) needs `MINLOCK`.
 - **Discrimination:** only the emitted code locks; the other sits at its true cross-corr/noise level → live
   CDMA separation when both A and B are on.
 - **Per-code DPLL (clock estimation + flywheel):** an IIR mean of the per-period peak-phase slip estimates each
@@ -137,13 +141,37 @@ CS (P3) against the emitter epoch (N8) to see the slip.
 
 ## 8. Displays
 
+Everything keys off the per-code **quality** `q = min(9, 9·|corr|/energy)` — the AGC match ratio, signal-level
+independent. **Left side = code A, right side = code B**, for the RGB lights, the 7-seg digits, and the LED bars.
+
+**Quality value (q) scale** — shown on the 7-seg digits (range **0–9**):
+
+| q | meaning |
+|---|---|
+| **9** | clean lock (a realistic peak ratio ~0.9 maps to full-scale 9) — **green** |
+| **8** | strong lock — **green**; clean A+B two-code lands at 8–9 |
+| **5–7** | locked but **marginal — yellow** (errors / interference / noise being tolerated) |
+| **GOOD (5 @ N=31 / 6 @ N=15)** | lock threshold — at/above = lock |
+| **~3** | cross-correlation / noise floor — a *wrong* or absent code (N=31; was ~5 at N=15) |
+| **0** | no correlation |
+
 | Output | Pins | Meaning |
 |---|---|---|
-| **8 LEDs** | N13,M12,P12,M11,P11,N10,N9,P9 | q-bars: left nibble = code-A quality, right nibble = code-B |
-| **RGB left** | M2,N2,P2 | code-A lock: red=search · yellow=acquiring · green=locked · green-blink=hold · +blue=REMOTE |
-| **RGB right** | M3,N3,P4 | code-B lock (same scheme) |
-| **7-seg d1** | A11,B12,H2,H1,J1,B14,C12 (+enableLd1=C9) | code-A quality **0–9** (threeN1 segment map, active-high, enable active-low) |
-| **7-seg d2** | B9,A9,E2,E1,F2,C11,A10 (+enableLd2=A12) | code-B quality **0–9** |
+| **7-seg d2** (LEFT digit) | B9,A9,E2,E1,F2,C11,A10 (+enableLd2=A12) | **code A** quality 0–9 (matches the left lock light) |
+| **7-seg d1** (RIGHT digit) | A11,B12,H2,H1,J1,B14,C12 (+enableLd1=C9) | **code B** quality 0–9 (threeN1: d1 is the right digit) |
+| **8 LEDs** = two 4-LED thermometers | N13…P9 | left 4 = code A `q`, right 4 = code B `q`; lit count = **0**(q<2) **1**(2–3) **2**(4–5) **3**(6–7) **4**(q≥8) |
+| **RGB left** | M2,N2,P2 | **code A** lock state (below) |
+| **RGB right** | M3,N3,P4 | **code B** lock state |
+
+**RGB colors = lock HEALTH** (per code):
+
+| color | meaning |
+|---|---|
+| **red** | not locked — searching / no code present |
+| **yellow** | **locked but marginal** (q < `GREEN`=8): errors / interference / noise being tolerated (also the brief ACQUIRING flash) |
+| **green** | **strong lock** (q ≥ 8, clean) |
+| **blink** | HOLD — coasting through a dropout (blinks the current lock color) |
+| **+ blue tint** | REMOTE / USB override active (overlay, independent of lock) |
 
 ---
 

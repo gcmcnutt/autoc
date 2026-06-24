@@ -37,7 +37,9 @@ module s3_top (input clk12,
 
   // ============ emitters: internal OSCH; A & B at independent divisors -> real inter-beacon slip ============
   wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
-  localparam [14:0] CODE0 = 15'b000001101111011, CODE1 = 15'b110011100000001;
+  localparam integer N = 31, L = 74;                       // code length (chips); window = round(2.4·N) samples
+  localparam [30:0] CODE0 = 31'b0000000100011011000011001110011,   // N=31 Gold preferred pair (xcorr {-9,-1,7})
+                    CODE1 = 31'b0100011001100111100101001011110;
   reg [1:0] inj1o=0, inj2o=0;                     // inject bits synced into the emitter (oclk) domain
   reg [18:0] edivb_o1=19'd266000, edivb_o2=19'd266000;   // emitter-B divider synced into oclk
   always @(posedge oclk) begin
@@ -46,37 +48,41 @@ module s3_top (input clk12,
 
   // emitter A @ OSCH/266000 = 200 Hz, with random bit-error injection
   localparam integer EDIV_A = 266000;
-  reg [18:0] edcA=0; reg [3:0] echA=0; wire wrapA=(edcA==EDIV_A-1);
-  always @(posedge oclk) if (wrapA) begin edcA<=0; echA<=(echA==4'd14)?0:echA+1'b1; end else edcA<=edcA+1'b1;
+  reg [18:0] edcA=0; reg [4:0] echA=0; wire wrapA=(edcA==EDIV_A-1);
+  always @(posedge oclk) if (wrapA) begin edcA<=0; echA<=(echA==N-1)?5'd0:echA+1'b1; end else edcA<=edcA+1'b1;
   reg [15:0] lfsr=16'hACE1; always @(posedge oclk) lfsr<={lfsr[14:0],lfsr[15]^lfsr[13]^lfsr[12]^lfsr[10]};
-  reg [3:0] et0=0,et1=0,et2=0; wire eopA=wrapA&(echA==4'd14);
+  reg [4:0] et0=0,et1=0,et2=0; wire eopA=wrapA&(echA==N-1);     // random error chips (mod N)
   always @(posedge oclk) if (eopA) begin
-    et0<=(lfsr[3:0]==4'd15)?0:lfsr[3:0]; et1<=(lfsr[7:4]==4'd15)?0:lfsr[7:4]; et2<=(lfsr[11:8]==4'd15)?0:lfsr[11:8];
+    et0<=(lfsr[4:0]>=N)?5'd0:lfsr[4:0]; et1<=(lfsr[9:5]>=N)?5'd0:lfsr[9:5]; et2<=(lfsr[14:10]>=N)?5'd0:lfsr[14:10];
   end
   wire flipA = (inj1o[1]&(echA==et0)) | (inj2o[1]&((echA==et1)|(echA==et2)));
-  wire codeA = CODE0[14-echA] ^ flipA;
+  wire codeA = CODE0[N-1-echA] ^ flipA;
   assign code_pin = codeA;                         // I/O14 P8: code A (post-corruption)
-  assign sync_pin = (echA==4'd0);                  // I/O15 N8: code-A epoch
+  assign sync_pin = (echA==5'd0);                  // I/O15 N8: code-A epoch
 
   // emitter B @ OSCH/EDIV_B (skewed -> steady slip vs A and vs the receiver)
   wire [18:0] EDIV_B = edivb_o2;                             // emitter-B rate: DIP4 skew (local) or 'F' cmd (remote)
-  reg [18:0] edcB=0; reg [3:0] echB=0; wire wrapB=(edcB>=EDIV_B-1);
-  always @(posedge oclk) if (wrapB) begin edcB<=0; echB<=(echB==4'd14)?0:echB+1'b1; end else edcB<=edcB+1'b1;
-  reg [3:0] et0B=0,et1B=0,et2B=0; wire eopB=wrapB&(echB==4'd14);   // B's own random error positions (lfsr @ eopB)
+  reg [18:0] edcB=0; reg [4:0] echB=0; wire wrapB=(edcB>=EDIV_B-1);
+  always @(posedge oclk) if (wrapB) begin edcB<=0; echB<=(echB==N-1)?5'd0:echB+1'b1; end else edcB<=edcB+1'b1;
+  reg [4:0] et0B=0,et1B=0,et2B=0; wire eopB=wrapB&(echB==N-1);   // B's own random error positions (mod N)
   always @(posedge oclk) if (eopB) begin
-    et0B<=(lfsr[3:0]==4'd15)?0:lfsr[3:0]; et1B<=(lfsr[7:4]==4'd15)?0:lfsr[7:4]; et2B<=(lfsr[11:8]==4'd15)?0:lfsr[11:8];
+    et0B<=(lfsr[4:0]>=N)?5'd0:lfsr[4:0]; et1B<=(lfsr[9:5]>=N)?5'd0:lfsr[9:5]; et2B<=(lfsr[14:10]>=N)?5'd0:lfsr[14:10];
   end
   wire flipB = (inj1o[1]&(echB==et0B)) | (inj2o[1]&((echB==et1B)|(echB==et2B)));
-  wire codeB = CODE1[14-echB] ^ flipB;                        // inj now corrupts BOTH codes (independent positions)
+  wire codeB = CODE1[N-1-echB] ^ flipB;                       // inj corrupts BOTH codes (independent positions)
 
   // ============ analog front end: sum enabled sources, band-limit (ramp), add noise, clamp to 12-bit ============
   reg [1:0] cAs=0,cBs=0; always @(posedge clk12) begin cAs<={cAs[0],codeA}; cBs<={cBs[0],codeB}; end
   wire codeA_rx=cAs[1], codeB_rx=cBs[1];
-  localparam signed [15:0] PED=16'sd1536, AMP=16'sd600, AMPW=16'sd200;
-  wire signed [15:0] amp  = eweak ? AMPW : AMP;
-  wire signed [15:0] sigA = enA ? (codeA_rx ? amp : -amp) : 16'sd0;
-  wire signed [15:0] sigB = enB ? (codeB_rx ? amp : -amp) : 16'sd0;
-  wire signed [16:0] sigsum = PED + sigA + sigB;                 // pedestal + signals
+  // ANALOG per-source magnitudes (settable over USB: 'A'/'B'/'G' + value -> ×6). Graded + headroom so the sum
+  // is LINEAR in normal use (the 12-bit clamp is just ADC saturation at extremes), not a worst-case all-rails OR.
+  localparam signed [15:0] PED=16'sd1800;
+  reg [11:0] ampA_r=12'd750, ampB_r=12'd750, ampN_r=12'd400;   // equal default (symmetric); set asymmetric via 'A'/'B'
+  wire [11:0] ampA = eweak ? {2'b0,ampA_r[11:2]} : ampA_r;       // weak (K3) -> ~1/4 amplitude (range/aspect)
+  wire [11:0] ampB = eweak ? {2'b0,ampB_r[11:2]} : ampB_r;
+  wire signed [15:0] sigA = enA ? (codeA_rx ? $signed({4'b0,ampA}) : -$signed({4'b0,ampA})) : 16'sd0;
+  wire signed [15:0] sigB = enB ? (codeB_rx ? $signed({4'b0,ampB}) : -$signed({4'b0,ampB})) : 16'sd0;
+  wire signed [16:0] sigsum = PED + sigA + sigB;                 // pedestal + analog signals
   // band-limit (analog LPF -> ramped chip edges); IIR at clk12/8, 17.8 fixed-point
   localparam integer LPF_SH = 9;
   reg signed [25:0] aflt=0; reg [2:0] lpf_div=0;
@@ -85,7 +91,9 @@ module s3_top (input clk12,
   wire signed [16:0] sig_bl = aflt[25:8];
   // white noise per sample + optional DC floor
   reg [15:0] nlfsr=16'h1234; always @(posedge clk12) nlfsr<={nlfsr[14:0],nlfsr[15]^nlfsr[13]^nlfsr[12]^nlfsr[10]};
-  wire signed [16:0] nz = enN ? ($signed({1'b0,nlfsr[9:0]}) - 16'sd512) : 17'sd0;   // ~+/-512 (similar level)
+  wire signed [11:0] nctr = $signed({1'b0,nlfsr[10:0]}) - 12'sd1024;                 // ±1023 continuous random
+  wire signed [24:0] nscaled = nctr * $signed({1'b0,ampN_r});                        // scale to ±ampN (analog level)
+  wire signed [16:0] nz = enN ? (nscaled >>> 10) : 17'sd0;
   wire signed [16:0] fl = efloor ? 17'sd400 : 17'sd0;
   wire signed [18:0] adc_s = sig_bl + nz + fl;
   wire [11:0] adc_level = (adc_s < 0) ? 12'd0 : (adc_s > 19'sd4095) ? 12'd4095 : adc_s[11:0];
@@ -102,18 +110,6 @@ module s3_top (input clk12,
   assign spi_cs = cs; assign spi_sclk = sclk; assign spi_do = dout;
 
   // ============ dual correlator (DUT) ============
-  function [3:0] mapchip(input [5:0] s);                  // 36 slots (2.4/chip) -> 15 chips
-    case (s)
-      6'd0,6'd1,6'd2:    mapchip=4'd0;  6'd3,6'd4:         mapchip=4'd1;
-      6'd5,6'd6,6'd7:    mapchip=4'd2;  6'd8,6'd9:         mapchip=4'd3;
-      6'd10,6'd11:       mapchip=4'd4;  6'd12,6'd13,6'd14: mapchip=4'd5;
-      6'd15,6'd16:       mapchip=4'd6;  6'd17,6'd18,6'd19: mapchip=4'd7;
-      6'd20,6'd21:       mapchip=4'd8;  6'd22,6'd23:       mapchip=4'd9;
-      6'd24,6'd25,6'd26: mapchip=4'd10; 6'd27,6'd28:       mapchip=4'd11;
-      6'd29,6'd30,6'd31: mapchip=4'd12; 6'd32,6'd33:       mapchip=4'd13;
-      default:           mapchip=4'd14;
-    endcase
-  endfunction
   function [6:0] seg7(input [3:0] q);                     // threeN1 map: {a,b,c,d,e,f,g} bit6..0, active-high
     case (q)
       4'd0: seg7=7'b1111110; 4'd1: seg7=7'b0110000; 4'd2: seg7=7'b1101101; 4'd3: seg7=7'b1111001;
@@ -126,27 +122,29 @@ module s3_top (input clk12,
   endfunction
 
   reg [19:0] dc_acc = 0; wire [11:0] dc = dc_acc[19:8];
-  integer i; reg [11:0] win [0:35];
-  reg [5:0] ai = 0; reg busy = 0, rdy = 0;
+  integer i; reg [11:0] win [0:L-1];
+  reg [6:0] ai = 0; reg busy = 0, rdy = 0;
+  reg [4:0] cchip = 0; reg [7:0] cacc = 0;               // incremental slot->chip (Bresenham): chip=floor(ai*N/L)
   reg signed [21:0] acc_c0=0, acc_c1=0, corr0=0, corr1=0;
   reg        [21:0] acc_e =0, energy=0;
-  wire t0 = CODE0[14 - mapchip(ai)];
-  wire t1 = CODE1[14 - mapchip(ai)];
+  wire t0 = CODE0[cchip];                                // time-reversed template (matches newest-first window;
+  wire t1 = CODE1[cchip];                                // N=15 was symmetric, N=31 is not -> must reverse)
   wire signed [12:0] dev  = $signed({1'b0, win[ai]}) - $signed({1'b0, dc});
   wire signed [21:0] devx = dev;
   wire        [11:0] dabs = dev[12] ? (~dev[11:0] + 1'b1) : dev[11:0];
   always @(posedge clk12) begin
     rdy <= 1'b0;
     if (valid) begin
-      for (i=35; i>0; i=i-1) win[i] <= win[i-1];
+      for (i=L-1; i>0; i=i-1) win[i] <= win[i-1];
       win[0] <= sample;
       dc_acc <= dc_acc - {8'b0, dc} + {8'b0, sample};
-      ai <= 0; acc_c0 <= 0; acc_c1 <= 0; acc_e <= 0; busy <= 1'b1;
+      ai <= 0; cchip <= 0; cacc <= 0; acc_c0 <= 0; acc_c1 <= 0; acc_e <= 0; busy <= 1'b1;
     end else if (busy) begin
       acc_c0 <= acc_c0 + (t0 ? devx : -devx);
       acc_c1 <= acc_c1 + (t1 ? devx : -devx);
       acc_e  <= acc_e + {10'b0, dabs};
-      if (ai == 6'd35) begin corr0<=acc_c0; corr1<=acc_c1; energy<=acc_e; rdy<=1'b1; busy<=1'b0; end
+      if (cacc + N >= L) begin cacc <= cacc + N - L; cchip <= cchip + 1'b1; end else cacc <= cacc + N;
+      if (ai == L-1) begin corr0<=acc_c0; corr1<=acc_c1; energy<=acc_e; rdy<=1'b1; busy<=1'b0; end
       else ai <= ai + 1'b1;
     end
   end
@@ -154,15 +152,15 @@ module s3_top (input clk12,
   wire signed [21:0] a0 = corr0[21] ? -corr0 : corr0;
   wire signed [21:0] a1 = corr1[21] ? -corr1 : corr1;
   reg [21:0] pk0=0, pk1=0, pke=1, best0=0, best1=0, beste=1;
-  reg [5:0]  pkph0=0, pkph1=0, bestph0=0, bestph1=0;     // phase (0-35) of the peak — for the DPLL
-  reg [5:0]  pcnt=0; reg pend=0;
+  reg [6:0]  pkph0=0, pkph1=0, bestph0=0, bestph1=0;     // phase (0..L-1) of the peak — for the DPLL
+  reg [6:0]  pcnt=0; reg pend=0;
   always @(posedge clk12) begin
     pend <= 1'b0;
     if (rdy) begin
       if (a0 > pk0) begin pk0 <= a0; pkph0 <= pcnt; end
       if (a1 > pk1) begin pk1 <= a1; pkph1 <= pcnt; end
       if (energy > pke) pke <= energy;
-      if (pcnt == 6'd35) begin
+      if (pcnt == L-1) begin
         best0 <= (a0>pk0)?a0:pk0; best1 <= (a1>pk1)?a1:pk1;
         bestph0 <= (a0>pk0)?pcnt:pkph0; bestph1 <= (a1>pk1)?pcnt:pkph1;
         beste <= ((energy>pke)?energy:pke) | 22'd1;
@@ -172,8 +170,8 @@ module s3_top (input clk12,
   end
 
   // quality q in 0-9 = min(9, 9*|corr|/energy) -- ACTUAL match level per code (matched ~9, other ~cross/noise)
-  wire [24:0] n0_raw = (best0<<3)+best0;
-  wire [24:0] n1_raw = (best1<<3)+best1;
+  wire [24:0] n0_raw = (best0<<3)+(best0<<1);       // 10*best (realistic peak ratio ~0.9 -> full-scale 9)
+  wire [24:0] n1_raw = (best1<<3)+(best1<<1);
   reg [24:0] num=0; reg [21:0] den=1; reg [3:0] cnt=0; reg [1:0] dstate=0;
   reg [3:0] q0=0, q1=0; reg q0_rdy=0, q1_rdy=0;
   always @(posedge clk12) begin
@@ -188,13 +186,13 @@ module s3_top (input clk12,
   end
 
   // per-code lock FSM: min-lock to confirm, limited hold across short dropouts, then re-acquire
-  localparam [3:0] GOOD = 4'd6;
+  localparam [3:0] GOOD = 4'd5;        // N=31: cross-corr floor drops to q~3, so a lower threshold holds A+B
   localparam [2:0] MINLOCK = 3'd2, HOLDMAX = 3'd2;
   localparam [1:0] SEARCH=2'd0, ACQ=2'd1, LOCK=2'd2, HOLD=2'd3;
   reg [1:0] st0=SEARCH, st1=SEARCH; reg [2:0] g0=0,b0=0,g1=0,b1=0;
   // frequency flywheel: coast counts periods since lock; while < COASTMAX the rate is still held -> WARM
   // re-acquire (confirm on the FIRST good period instead of MINLOCK). Init stale so the first lock is COLD.
-  localparam [7:0] COASTMAX = 8'd133;          // ~10 s (133 periods @ 75 ms)
+  localparam [7:0] COASTMAX = 8'd65;           // ~10 s flywheel coast (65 periods @ ~154 ms for N=31)
   reg [7:0] coast0=8'd133, coast1=8'd133;
   wire warm0 = (coast0 < COASTMAX), warm1 = (coast1 < COASTMAX);
   always @(posedge clk12) if (q0_rdy) begin
@@ -228,12 +226,21 @@ module s3_top (input clk12,
 
   // ============ displays ============
   reg [22:0] blink = 0; always @(posedge clk12) blink <= blink + 1'b1;
-  function [2:0] rgb(input [1:0] st, input bk);
-    rgb = (st==LOCK) ? 3'b010 : (st==HOLD) ? (bk?3'b010:3'b000) : (st==ACQ) ? 3'b011 : 3'b001;
+  localparam [3:0] GREEN = 4'd8;                          // q>=GREEN = strong lock (green); GOOD..GREEN-1 = yellow
+  function [2:0] rgb(input [1:0] st, input [3:0] q, input bk);   // color = lock HEALTH
+    rgb = (st==LOCK) ? (q>=GREEN ? 3'b010 : 3'b011)             // locked: green if strong, yellow if marginal
+        : (st==HOLD) ? (bk ? (q>=GREEN?3'b010:3'b011) : 3'b000) // hold: blink the lock color (coasting)
+        : (st==ACQ)  ? 3'b011                                   // acquiring (brief)
+        :              3'b001;                                  // search = red
   endfunction
   wire [2:0] rmt = remote ? 3'b100 : 3'b000;             // blue tint while REMOTE (USB override active)
-  assign LEDl = ~(rgb(st0, blink[21]) | rmt);
-  assign LEDr = ~(rgb(st1, blink[21]) | rmt);
+  // PWM the RGB channels to balance color (green/blue out-shine red, so R+G read green) + dim for the eyes.
+  // Tunable: lower duty = dimmer channel. ~47 kHz (flicker-free).
+  reg [7:0] pwm = 0; always @(posedge clk12) pwm <= pwm + 1'b1;
+  localparam [7:0] DUTY_R = 8'd255, DUTY_G = 8'd128, DUTY_B = 8'd128;   // R full, G/B half-intensity (tweakable)
+  wire [2:0] pgate = {pwm < DUTY_B, pwm < DUTY_G, pwm < DUTY_R};      // {B,G,R} brightness windows
+  assign LEDl = ~((rgb(st0, q0, blink[21]) | rmt) & pgate);
+  assign LEDr = ~((rgb(st1, q1, blink[21]) | rmt) & pgate);
   assign LEDs = ~{bar4(q0), bar4(q1)};
   assign d1   = seg7(q1);            // right digit = code B (threeN1: d1 is the RIGHT digit)
   assign d2   = seg7(q0);            // left  digit = code A (q0) — matches LEDl (left = code A)
@@ -243,14 +250,23 @@ module s3_top (input clk12,
   // ============ command RX (UART on pad A3): '+'=remote on, '-'=off, 0x80|mask -> 7-bit knobs ============
   wire [7:0] rxb; wire rxv;
   uart_rx #(.DIV(104)) u_rx (.clk(clk12), .rxd(rxd), .data(rxb), .valid(rxv));
-  reg expF = 1'b0;
-  wire signed [19:0] fval = 20'sd266000 - ($signed({12'b0, rxb}) - 20'sd128) * 20'sd200;  // v:0..255 -> ~±10% rate
+  reg [7:0] pend_op = 8'h00;                       // opcode awaiting its value byte
+  wire signed [19:0] fval = 20'sd266000 - ($signed({12'b0, rxb}) - 20'sd128) * 20'sd200;  // 'F' value -> rate
+  wire [11:0] amp6 = (rxb << 2) + (rxb << 1);      // value -> amplitude ×6 (0..1530)
   always @(posedge clk12) if (rxv) begin
-    if      (expF)         begin edivb_cmd <= fval; expF <= 1'b0; end   // 'F' value byte -> emitter-B divider (rate)
-    else if (rxb == 8'h46) expF <= 1'b1;          // 'F' -> next byte sets emitter-B frequency (DPLL rate test)
-    else if (rxb == 8'h2B) remote <= 1'b1;        // '+'  REMOTE (USB owns)
-    else if (rxb == 8'h2D) remote <= 1'b0;        // '-'  LOCAL (switches own)
-    else if (rxb[7])       cmd_reg <= rxb[6:0];   // 0x80-0xFF -> 7-bit knob mask
+    if (pend_op != 8'h00) begin
+      case (pend_op)
+        8'h46: edivb_cmd <= fval;                  // 'F' emitter-B frequency (rate test)
+        8'h41: ampA_r   <= amp6;                   // 'A' code-A analog magnitude
+        8'h42: ampB_r   <= amp6;                   // 'B' code-B analog magnitude
+        8'h47: ampN_r   <= amp6;                   // 'G' noise analog magnitude
+      endcase
+      pend_op <= 8'h00;
+    end
+    else if (rxb == 8'h2B) remote <= 1'b1;         // '+'  REMOTE (USB owns)
+    else if (rxb == 8'h2D) remote <= 1'b0;         // '-'  LOCAL (switches own)
+    else if (rxb==8'h46 || rxb==8'h41 || rxb==8'h42 || rxb==8'h47) pend_op <= rxb;  // value-taking opcodes
+    else if (rxb[7])       cmd_reg <= rxb[6:0];    // 0x80-0xFF -> 7-bit knob mask
   end
 
   // ============ per-code DPLL: rate estimate from peak-phase slip (the frequency flywheel) ============
@@ -259,12 +275,12 @@ module s3_top (input clk12,
   //   slip = (rate-32768)/32 ;  chip_rate_Hz = 7200 / (36 - slip)   [36 = nominal samples per code period]
   localparam integer SLIP_SH = 5;                        // IIR ~32 periods (~2.4 s) of averaging
   reg pend_d = 0; always @(posedge clk12) pend_d <= pend;
-  reg [5:0] prev0=0, prev1=0;
+  reg [6:0] prev0=0, prev1=0;
   reg signed [17:0] slip0=0, slip1=0;
-  wire signed [6:0] raw0 = $signed({1'b0,bestph0}) - $signed({1'b0,prev0});
-  wire signed [6:0] raw1 = $signed({1'b0,bestph1}) - $signed({1'b0,prev1});
-  wire signed [6:0] dlt0 = (raw0 > 7'sd18) ? raw0-7'sd36 : (raw0 < -7'sd18) ? raw0+7'sd36 : raw0;   // unwrap ±18
-  wire signed [6:0] dlt1 = (raw1 > 7'sd18) ? raw1-7'sd36 : (raw1 < -7'sd18) ? raw1+7'sd36 : raw1;
+  wire signed [8:0] raw0 = $signed({2'b0,bestph0}) - $signed({2'b0,prev0});
+  wire signed [8:0] raw1 = $signed({2'b0,bestph1}) - $signed({2'b0,prev1});
+  wire signed [8:0] dlt0 = (raw0 > L/2) ? raw0-L : (raw0 < -(L/2)) ? raw0+L : raw0;   // unwrap to +/- L/2
+  wire signed [8:0] dlt1 = (raw1 > L/2) ? raw1-L : (raw1 < -(L/2)) ? raw1+L : raw1;
   wire lockedA = (st0==LOCK)||(st0==HOLD);
   wire lockedB = (st1==LOCK)||(st1==HOLD);
   wire signed [17:0] dlt0x = dlt0, dlt1x = dlt1;          // sign-extend (signed) — keep the IIR fully signed
