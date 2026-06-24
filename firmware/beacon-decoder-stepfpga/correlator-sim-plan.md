@@ -50,20 +50,18 @@ are still driven to **I/O 14 / I/O 15** for scope observability.
 | **S2 ✓** | **Simulated ADC + SPI** (done, HW-verified): code → 12-bit analog model → bit-exact virtual **MCP3201** read by a soft SPI master @ **480 Hz** sample (camera cadence, 2.4 samples/chip — *not* oversampled), SCLK 50 kHz. Shared `spi_mcp3201.v`; LFSR decode self-test (`mcp3201_test`) proves bit-exact fetch | the sample source + MCP3201 word-format/decode | s2: sample top byte on 8 LEDs; test: PASS walking-dot; scope CS=P3, SCLK=M4, DOUT=N4 |
 | **S3 ✓** | **Correlator (DUT)**: soft matched filter + DC-removal/**AGC** (signal-level-independent match ratio) + **min-lock / limited-hold FSM**; **dual correlator** checks BOTH codes at once (code discrimination, one signal emitted) | acquisition + AGC + discrimination in silicon (F4); HW-verified | 7-seg: per-code quality 0-9; RGB L/R: per-code lock (R/Y/G/green-blink-hold); 8 LEDs: q bars |
 | **S4 ✓** | **Knobs + telemetry + commands**: DIP1/2/3 = enable A/B/noise; momentary K1/K2 = 1/2 random bit flips, K3/K4 = weak/floor; **analog front end** (per-source settable magnitudes, continuous noise, headroom); **UART `BCN` telemetry** {seq, adc, corr/lock/margin/**rate** ×2} @40 Hz; **USB command override** (`+`/`-`/mask, `F`=B-freq, `A`/`B`/`G`=magnitudes) | erasure/flip + soft-decision; analog mixing; matches the host reader | 7-seg quality, RGB health (green/yellow/red, PWM-balanced), 8-LED bars; UART log via `host/monitor.sh`, drive via `host/cmd_read.sh` |
-| **S5 ◑** | **Clock drift (NFR-4) + DPLL**: emitter B skewable (DIP4 / USB `F`); per-code **DPLL estimates each rate** (peak-phase slip IIR) + **frequency flywheel** (held through outages → warm phase-only re-acquire) | the per-beacon self-syncing loop. **Done:** open-loop rate estimate + flywheel + warm re-acquire (HW-verified, tracks a commanded sweep). **Pending: CLOSE the loop** — feed the slip back to stretch the template rate for full coherent lock under skew at N=31 (the active next build) | rate in telemetry; warm re-acquire faster; RGB stays green across small skew |
+| **S5 ✓** | **Clock drift (NFR-4) + per-beacon DPLL**: emitter B skewable (DIP4 / USB `F`); per-code DPLL estimates each rate (peak-phase slip IIR), **frequency flywheel** (held through outages → warm phase-only re-acquire), and **CLOSED LOOP** — slip feeds back as `Leff=L+slip` to stretch the template's chip-advance to the emitter rate → coherent lock under skew | the per-beacon self-syncing loop — HW-verified: **B-only q9 across 0…±5 % skew** (open-loop was 9/8/7), rate tracked + reported, warm re-acquire faster | rate in telemetry; RGB green across skew |
 | **S6 ✓** | **Second emitter + code B** on an independent skewed OSCH divisor + a random-noise source, summed into the sim ADC; two correlators | **two-code CDMA separation under real clock slip** (§5, Stage 1) — HW-verified: at **N=31** A+B both lock green (q8), wrong/absent code at the q3 floor; A+B+noise degrades to yellow (marginal) | DIP1/2/3=enA/B/N + USB override; RGB L/R=A/B lock health; 7-seg=A/B quality |
 | **S7** | **Bridge to real HW**: the soft MCP3201 SPI master is already real (S2) — just swap the virtual `mcp3201_model` for the **real MCP3201** on `cad/beacon-receiver` (DOUT → an input pad); correlator unchanged | the sim→real swap; feeds acquisition-research-plan Stages 0–2 | same display, now off real photons |
 
 S1–S6 need **no analog hardware** — pure FPGA, flashed/observed over the proven loop. S3+ is the actual
 shippable correlator RTL (the A4a–c / F4–F5 work), just exercised by the synthetic stimulus.
 
-**Current state (2026-06-24):** S1–S4 ✓, S6 ✓, S5 ◑ — all in `experiments/s3.v` (top `s3_top`, ~2.5k LUT/57%
-at N=31) + `spi_mcp3201.v` + `uart_bcn.v`; full feature reference in [`SIM-FEATURES.md`](SIM-FEATURES.md).
-Code length is parametrized (**N=31** current; N=15 was the first cut, N=63 next). **Active build: close the DPLL
-loop** (S5) — the open-loop slip estimator + flywheel already track and report each rate; feeding the slip back
-to adjust the matched-filter chip-advance (Bresenham increment) will keep the long-window template aligned to a
-skewed emitter → full coherent lock at N=31/63 under drift (the model's coherent-integration step,
-[`acquisition-sim/a4d_model.py`](../../specs/031-beacon-camera/acquisition-sim/a4d_model.py)).
+**Current state (2026-06-24):** **S1–S6 ✓** — all in `experiments/s3.v` (top `s3_top`, ~2.5k LUT/57% at N=31)
++ `spi_mcp3201.v` + `uart_bcn.v`; full feature reference in [`SIM-FEATURES.md`](SIM-FEATURES.md). Code length is
+parametrized (**N=31** current; N=15 was the first cut, **N=63 next**). The DPLL loop is now **closed**
+(`Leff=L+slip` stretches the template to the emitter rate → coherent lock across ±5 % skew). **Next: N=63**
+(window grows ~2× — check fit) and S7 (swap the virtual ADC for the real MCP3201).
 
 ## Hardening study (→ tasks **A4d**)
 

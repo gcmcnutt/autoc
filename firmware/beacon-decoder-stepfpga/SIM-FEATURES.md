@@ -104,10 +104,14 @@ CS (P3) against the emitter epoch (N8) to see the slip.
   FIRST good period (skips ACQ); cold (rate stale) needs `MINLOCK`.
 - **Discrimination:** only the emitted code locks; the other sits at its true cross-corr/noise level → live
   CDMA separation when both A and B are on.
-- **Per-code DPLL (clock estimation + flywheel):** an IIR mean of the per-period peak-phase slip estimates each
-  beacon's chip **rate** vs the precise xtal. Updates only while LOCKED → **frozen (held) through outages = the
-  frequency flywheel**. Reported in telemetry (`rateA`/`rateB`, offset-binary). HW-verified: tracks a commanded
-  emitter-B sweep 191→206 Hz monotonically (~3–5 Hz / calibration-grade); A↔B cross-pull visible at N=15.
+- **Per-code DPLL (clock estimation + flywheel + CLOSED LOOP):** an IIR mean of the per-period peak-phase slip
+  estimates each beacon's chip **rate** vs the precise xtal; reported in telemetry (`rateA`/`rateB`). Updates
+  only while LOCKED → **frozen through outages = the frequency flywheel** (warm phase-only re-acquire). The loop
+  is **closed**: the slip feeds back as `Leff = L + slip` to stretch the matched-filter chip-advance to the
+  emitter's actual rate → **coherent lock under skew** (HW-verified: B-only **q9 across 0…±5 %** skew; two-pass
+  accumulate, one Leff per code). Two same-rate codes interfere statically (worse); a small skew lets them slip
+  → cross-corr averages → both green — so emitter B is always slightly skewed vs A by default (real beacons
+  never share a clock).
 
 ---
 
@@ -233,8 +237,7 @@ These are the N=15 numbers the **A4d code-length study** (N=31/63) aims to impro
 
 ## 13. Not yet implemented (roadmap)
 
-- **Per-beacon DPLL** + **frequency flywheel** (hold rate ~10 s through outages → phase-only re-acquire) — the
-  highest-value next RTL (A4c / A4d-2).
+- ~~Per-beacon DPLL + frequency flywheel + closed-loop skew tracking~~ — **done** (S5).
 - **Partial / progressive correlator** — ½-code-word candidate detection (low-latency acquire tier).
 - **Code-length parametrization** (N=31/63) — the A4d-1 sweep.
 - **Richer parametric commands** (per-source magnitude, skew, SNR) over the existing RX path.
