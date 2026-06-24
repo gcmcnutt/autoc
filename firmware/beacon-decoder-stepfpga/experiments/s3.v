@@ -3,7 +3,7 @@
 // from the DIP switches (local demo) OR over USB (richer control as we grow).
 //   DIP1 M7=enA   DIP2 M8=enB   DIP3 M9=enN   DIP4 M10=code-B clock skew (-3%/+3%)
 //   USB: '+'=REMOTE (USB owns) / '-'=LOCAL (switches own) / 0x80|mask = 7 knobs
-//        mask [0]enA [1]enB [2]enN [3]inj-1bit(A) [4]inj-2bit(A) [5]weak-signal [6]DC-floor
+//        mask [0]enA [1]enB [2]enN [3]inj-1bit(A&B) [4]inj-2bit(A&B) [5]weak-signal [6]DC-floor
 //   K1..K4 momentary = local inj-1bit / inj-2bit / weak / floor.  (Command mode will grow richer -- per-source
 //   magnitude, skew, etc.; the switches stay a simple local-demo subset.)
 //   7-seg d1/d2 = per-code quality 0-9; LEDl/LEDr = per-code lock; 8 LEDs = q bars; P8/N8 = code A / epoch.
@@ -57,7 +57,12 @@ module s3_top (input clk12,
   wire [18:0] EDIV_B = bsk[1] ? 19'd274227 : 19'd258252;     // ~194 Hz (-3%) / ~206 Hz (+3%)
   reg [18:0] edcB=0; reg [3:0] echB=0; wire wrapB=(edcB>=EDIV_B-1);
   always @(posedge oclk) if (wrapB) begin edcB<=0; echB<=(echB==4'd14)?0:echB+1'b1; end else edcB<=edcB+1'b1;
-  wire codeB = CODE1[14-echB];
+  reg [3:0] et0B=0,et1B=0,et2B=0; wire eopB=wrapB&(echB==4'd14);   // B's own random error positions (lfsr @ eopB)
+  always @(posedge oclk) if (eopB) begin
+    et0B<=(lfsr[3:0]==4'd15)?0:lfsr[3:0]; et1B<=(lfsr[7:4]==4'd15)?0:lfsr[7:4]; et2B<=(lfsr[11:8]==4'd15)?0:lfsr[11:8];
+  end
+  wire flipB = (inj1o[1]&(echB==et0B)) | (inj2o[1]&((echB==et1B)|(echB==et2B)));
+  wire codeB = CODE1[14-echB] ^ flipB;                        // inj now corrupts BOTH codes (independent positions)
 
   // ============ analog front end: sum enabled sources, band-limit (ramp), add noise, clamp to 12-bit ============
   reg [1:0] cAs=0,cBs=0; always @(posedge clk12) begin cAs<={cAs[0],codeA}; cBs<={cBs[0],codeB}; end
