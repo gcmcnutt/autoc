@@ -2,7 +2,14 @@
 IOBUF ALLPORTS IO_TYPE=LVCMOS33 ;
 LOCATE COMP "clk12"    SITE "C1"  ;
 FREQUENCY PORT "clk12" 12.000000 MHz ;
-LOCATE COMP "sw1"      SITE "M7"  ;
+LOCATE COMP "sw1"      SITE "M7"  ;   // DIP1 — enable code A
+LOCATE COMP "dip2"     SITE "M8"  ;   // DIP2 — enable code B
+LOCATE COMP "dip3"     SITE "M9"  ;   // DIP3 — enable noise source
+LOCATE COMP "dip4"     SITE "M10" ;   // DIP4 — code-B clock skew
+IOBUF  PORT "sw1"  PULLMODE=UP ;
+IOBUF  PORT "dip2" PULLMODE=UP ;
+IOBUF  PORT "dip3" PULLMODE=UP ;
+IOBUF  PORT "dip4" PULLMODE=UP ;
 LOCATE COMP "code_pin" SITE "P8"  ;   // I/O 14 — emitter code (post-corruption)
 LOCATE COMP "sync_pin" SITE "N8"  ;   // I/O 15 — clean epoch
 LOCATE COMP "k1"       SITE "L14" ;   // K1 — 1 random bit flip / period

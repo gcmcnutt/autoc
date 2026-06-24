@@ -1,68 +1,86 @@
-// S3c -- DUAL correlator: check BOTH Gold codes at once while emitting ONE. The S2 sim front end (emitter ->
-// injection -> virtual MCP3201 -> soft SPI) feeds two matched filters (CODE0 & CODE1 templates) sharing one
-// 36-sample window, DC estimate and energy; each has DC-removal + AGC (|corr|/energy match ratio) and its own
-// min-lock / limited-hold FSM. Only the emitted code's correlator should lock -> a live code-discrimination
-// test (the CDMA foundation for S6).
-//
-//   7-seg d1/d2 : signal quality 0-9 for CODE0 / CODE1 (AGC match ratio)
-//   LEDl / LEDr : lock of CODE0 / CODE1  (red=search, yellow=acq, green=lock, green-blink=hold)
-//   8 LEDs      : q0 bar (left nibble) | q1 bar (right nibble)
-//   P8/N8       : emitted code (post-corruption) / clean epoch -- scope;  SPI mirror P3/M4/N4
-//   Knobs       : SW1 selects which code is EMITTED; K1/K2 1/2 random flips; K3 weak signal; K4 high floor
-//   Lock timing : MINLOCK=2 periods (~150 ms) to confirm, HOLDMAX=2 (~150 ms) before re-acquire
-module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
+// S6 -- TWO emitters (codes A & B on independent skewed OSCH divisors) + a random-noise source, SUMMED into
+// the one virtual ADC; the dual correlator checks both codes -> live CDMA + noise-floor test. Sources enable
+// from the DIP switches (local demo) OR over USB (richer control as we grow).
+//   DIP1 M7=enA   DIP2 M8=enB   DIP3 M9=enN   DIP4 M10=code-B clock skew (-3%/+3%)
+//   USB: '+'=REMOTE (USB owns) / '-'=LOCAL (switches own) / 0x80|mask = 7 knobs
+//        mask [0]enA [1]enB [2]enN [3]inj-1bit(A) [4]inj-2bit(A) [5]weak-signal [6]DC-floor
+//   K1..K4 momentary = local inj-1bit / inj-2bit / weak / floor.  (Command mode will grow richer -- per-source
+//   magnitude, skew, etc.; the switches stay a simple local-demo subset.)
+//   7-seg d1/d2 = per-code quality 0-9; LEDl/LEDr = per-code lock; 8 LEDs = q bars; P8/N8 = code A / epoch.
+//   UART: TX telemetry on A2, RX commands on A3.
+module s3_top (input clk12,
+               input sw1, input dip2, input dip3, input dip4,   // DIP1(M7) DIP2(M8) DIP3(M9) DIP4(M10)
+               input k1, input k2, input k3, input k4,
                output code_pin, output sync_pin,
                output spi_cs, output spi_sclk, output spi_do,
                output [7:0] LEDs, output [2:0] LEDl, output [2:0] LEDr,
                output [6:0] d1, output [6:0] d2, output enableLd1, output enableLd2,
-               output txd,                               // BCN telemetry UART -> pad A2 -> STEPLink -> COM3
-               input  rxd);                              // command UART     <- pad A3 <- STEPLink <- COM3
+               output txd, input rxd);
 
-  // =================== front end (identical to s2) ===================
-  wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
-  reg [4:0] cmd_reg = 0;                                  // remote knobs over UART RX (latched in clk12, below)
-  reg [2:0] cmd_o0=0, cmd_o1=0;                           // sync code/inj1/inj2 into the emitter (oclk) domain
-  always @(posedge oclk) begin cmd_o0 <= cmd_reg[2:0]; cmd_o1 <= cmd_o0; end
-  localparam [14:0] CODE0 = 15'b000001101111011, CODE1 = 15'b110011100000001;
-  localparam integer EDIV = 266000;
-  reg [18:0] edc = 0; reg [3:0] echip = 0;
-  wire wrap = (edc == EDIV-1);
-  always @(posedge oclk)
-    if (wrap) begin edc <= 0; echip <= (echip==4'd14)?4'd0:echip+1'b1; end else edc <= edc+1'b1;
-  reg [15:0] lfsr = 16'hACE1;
-  always @(posedge oclk) lfsr <= {lfsr[14:0], lfsr[15]^lfsr[13]^lfsr[12]^lfsr[10]};
-  reg [3:0] tgtA=0, tgtB=0, tgtC=0;
-  wire eop = wrap & (echip==4'd14);
-  always @(posedge oclk) if (eop) begin
-    tgtA <= (lfsr[3:0] ==4'd15)?4'd0:lfsr[3:0];
-    tgtB <= (lfsr[7:4] ==4'd15)?4'd0:lfsr[7:4];
-    tgtC <= (lfsr[11:8]==4'd15)?4'd0:lfsr[11:8];
-  end
-  reg [1:0] k1s=0, k2s=0; always @(posedge oclk) begin k1s<={k1s[0],~k1}; k2s<={k2s[0],~k2}; end
-  wire flip = ((k1s[1]|cmd_o1[1]) & (echip==tgtA)) | ((k2s[1]|cmd_o1[2]) & ((echip==tgtB) | (echip==tgtC)));
-  wire [14:0] esel = (sw1 | cmd_o1[0]) ? CODE1 : CODE0;
-  wire ecode = esel[14-echip] ^ flip;
-  assign code_pin = ecode;
-  assign sync_pin = (echip == 4'd0);
-
-  reg [1:0] cdc = 0; always @(posedge clk12) cdc <= {cdc[0], ecode};
-  wire code_rx = cdc[1];
-  reg [1:0] k3s=0, k4s=0; always @(posedge clk12) begin k3s<={k3s[0],~k3}; k4s<={k4s[0],~k4}; end
-  wire [11:0] hi = (k3s[1]|cmd_reg[3]) ? 12'h550 : 12'hFF0;
-  wire [11:0] lo = (k4s[1]|cmd_reg[4]) ? 12'h400 : 12'h010;
-  // analog-bandwidth model: low-pass the chip waveform so edges RAMP (band-limited PD/TIA), not ideal squares
-  // -> edge samples land mid-ramp. IIR at clk12/8 (~1.5 MHz "analog" rate); LPF_SH sets the slew (~0.34 ms, a
-  // mild pass — tunable knob for the A4d study, NOT a heavy smear).
-  localparam integer LPF_SH = 9;
-  wire [19:0] tgt8 = {(code_rx ? hi : lo), 8'b0};        // 12.8 fixed-point chip target
-  reg  [19:0] aflt = 0; reg [2:0] lpf_div = 0;
+  // ============ control: physical switches/buttons (active-low, pulled up) + USB override ============
+  reg [6:0] cmd_reg = 0; reg remote = 0;
+  reg [1:0] dsw1=0,dsw2=0,dsw3=0,dsw4=0, kb1=0,kb2=0,kb3=0,kb4=0;
   always @(posedge clk12) begin
-    lpf_div <= lpf_div + 1'b1;
-    if (lpf_div == 3'd7)
-      aflt <= (tgt8 > aflt) ? aflt + ((tgt8 - aflt) >> LPF_SH) : aflt - ((aflt - tgt8) >> LPF_SH);
+    dsw1<={dsw1[0],sw1}; dsw2<={dsw2[0],dip2}; dsw3<={dsw3[0],dip3}; dsw4<={dsw4[0],dip4};
+    kb1<={kb1[0],~k1}; kb2<={kb2[0],~k2}; kb3<={kb3[0],~k3}; kb4<={kb4[0],~k4};
   end
-  wire [11:0] adc_level = aflt[19:8];                     // band-limited (ramped) analog sample
+  wire enA    = remote ? cmd_reg[0] : ~dsw1[1];   // DIP/cmd: enable code A
+  wire enB    = remote ? cmd_reg[1] : ~dsw2[1];   //          enable code B
+  wire enN    = remote ? cmd_reg[2] : ~dsw3[1];   //          enable noise source
+  wire einj1  = remote ? cmd_reg[3] : kb1[1];
+  wire einj2  = remote ? cmd_reg[4] : kb2[1];
+  wire eweak  = remote ? cmd_reg[5] : kb3[1];
+  wire efloor = remote ? cmd_reg[6] : kb4[1];
+  wire bskew  = ~dsw4[1];                          // DIP4: code-B clock skew (local; command later)
 
+  // ============ emitters: internal OSCH; A & B at independent divisors -> real inter-beacon slip ============
+  wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
+  localparam [14:0] CODE0 = 15'b000001101111011, CODE1 = 15'b110011100000001;
+  reg [1:0] inj1o=0, inj2o=0, bsk=0;              // inject + skew bits synced into the emitter (oclk) domain
+  always @(posedge oclk) begin inj1o<={inj1o[0],einj1}; inj2o<={inj2o[0],einj2}; bsk<={bsk[0],bskew}; end
+
+  // emitter A @ OSCH/266000 = 200 Hz, with random bit-error injection
+  localparam integer EDIV_A = 266000;
+  reg [18:0] edcA=0; reg [3:0] echA=0; wire wrapA=(edcA==EDIV_A-1);
+  always @(posedge oclk) if (wrapA) begin edcA<=0; echA<=(echA==4'd14)?0:echA+1'b1; end else edcA<=edcA+1'b1;
+  reg [15:0] lfsr=16'hACE1; always @(posedge oclk) lfsr<={lfsr[14:0],lfsr[15]^lfsr[13]^lfsr[12]^lfsr[10]};
+  reg [3:0] et0=0,et1=0,et2=0; wire eopA=wrapA&(echA==4'd14);
+  always @(posedge oclk) if (eopA) begin
+    et0<=(lfsr[3:0]==4'd15)?0:lfsr[3:0]; et1<=(lfsr[7:4]==4'd15)?0:lfsr[7:4]; et2<=(lfsr[11:8]==4'd15)?0:lfsr[11:8];
+  end
+  wire flipA = (inj1o[1]&(echA==et0)) | (inj2o[1]&((echA==et1)|(echA==et2)));
+  wire codeA = CODE0[14-echA] ^ flipA;
+  assign code_pin = codeA;                         // I/O14 P8: code A (post-corruption)
+  assign sync_pin = (echA==4'd0);                  // I/O15 N8: code-A epoch
+
+  // emitter B @ OSCH/EDIV_B (skewed -> steady slip vs A and vs the receiver)
+  wire [18:0] EDIV_B = bsk[1] ? 19'd274227 : 19'd258252;     // ~194 Hz (-3%) / ~206 Hz (+3%)
+  reg [18:0] edcB=0; reg [3:0] echB=0; wire wrapB=(edcB>=EDIV_B-1);
+  always @(posedge oclk) if (wrapB) begin edcB<=0; echB<=(echB==4'd14)?0:echB+1'b1; end else edcB<=edcB+1'b1;
+  wire codeB = CODE1[14-echB];
+
+  // ============ analog front end: sum enabled sources, band-limit (ramp), add noise, clamp to 12-bit ============
+  reg [1:0] cAs=0,cBs=0; always @(posedge clk12) begin cAs<={cAs[0],codeA}; cBs<={cBs[0],codeB}; end
+  wire codeA_rx=cAs[1], codeB_rx=cBs[1];
+  localparam signed [15:0] PED=16'sd1536, AMP=16'sd600, AMPW=16'sd200;
+  wire signed [15:0] amp  = eweak ? AMPW : AMP;
+  wire signed [15:0] sigA = enA ? (codeA_rx ? amp : -amp) : 16'sd0;
+  wire signed [15:0] sigB = enB ? (codeB_rx ? amp : -amp) : 16'sd0;
+  wire signed [16:0] sigsum = PED + sigA + sigB;                 // pedestal + signals
+  // band-limit (analog LPF -> ramped chip edges); IIR at clk12/8, 17.8 fixed-point
+  localparam integer LPF_SH = 9;
+  reg signed [25:0] aflt=0; reg [2:0] lpf_div=0;
+  wire signed [25:0] tgt = {sigsum, 8'b0};
+  always @(posedge clk12) begin lpf_div<=lpf_div+1'b1; if (lpf_div==3'd7) aflt<=aflt+((tgt-aflt)>>>LPF_SH); end
+  wire signed [16:0] sig_bl = aflt[25:8];
+  // white noise per sample + optional DC floor
+  reg [15:0] nlfsr=16'h1234; always @(posedge clk12) nlfsr<={nlfsr[14:0],nlfsr[15]^nlfsr[13]^nlfsr[12]^nlfsr[10]};
+  wire signed [16:0] nz = enN ? ($signed({1'b0,nlfsr[9:0]}) - 16'sd512) : 17'sd0;   // ~+/-512 (similar level)
+  wire signed [16:0] fl = efloor ? 17'sd400 : 17'sd0;
+  wire signed [18:0] adc_s = sig_bl + nz + fl;
+  wire [11:0] adc_level = (adc_s < 0) ? 12'd0 : (adc_s > 19'sd4095) ? 12'd4095 : adc_s[11:0];
+
+  // ============ virtual MCP3201 + soft SPI reader (480 Hz sample) ============
   localparam integer FDIV = 25000;
   reg [15:0] fdiv = 0; reg fetch = 1'b0;
   always @(posedge clk12)
@@ -73,7 +91,7 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
                                              .cs(cs), .sclk(sclk), .sample(sample), .valid(valid));
   assign spi_cs = cs; assign spi_sclk = sclk; assign spi_do = dout;
 
-  // =================== dual correlator (DUT) ===================
+  // ============ dual correlator (DUT) ============
   function [3:0] mapchip(input [5:0] s);                  // 36 slots (2.4/chip) -> 15 chips
     case (s)
       6'd0,6'd1,6'd2:    mapchip=4'd0;  6'd3,6'd4:         mapchip=4'd1;
@@ -90,10 +108,10 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
     case (q)
       4'd0: seg7=7'b1111110; 4'd1: seg7=7'b0110000; 4'd2: seg7=7'b1101101; 4'd3: seg7=7'b1111001;
       4'd4: seg7=7'b0110011; 4'd5: seg7=7'b1011011; 4'd6: seg7=7'b1011111; 4'd7: seg7=7'b1110000;
-      4'd8: seg7=7'b1111111; default: seg7=7'b1111011;   // 9
+      4'd8: seg7=7'b1111111; default: seg7=7'b1111011;
     endcase
   endfunction
-  function [3:0] bar4(input [3:0] q);                     // coarse 4-LED thermometer of a 0-9 quality
+  function [3:0] bar4(input [3:0] q);
     bar4 = (q>=4'd8)?4'hF : (q>=4'd6)?4'h7 : (q>=4'd4)?4'h3 : (q>=4'd2)?4'h1 : 4'h0;
   endfunction
 
@@ -123,7 +141,6 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
     end
   end
 
-  // per-period peak |corr| for each code (order/polarity-invariant); shared peak energy
   wire signed [21:0] a0 = corr0[21] ? -corr0 : corr0;
   wire signed [21:0] a1 = corr1[21] ? -corr1 : corr1;
   reg [21:0] pk0=0, pk1=0, pke=1, best0=0, best1=0, beste=1;
@@ -142,11 +159,9 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
     end
   end
 
-  // quality q in 0-9 = min(9, 9*|corr|/energy) -- the ACTUAL match level for each code (like the thermometer):
-  // the matching code reads ~9, the other reads its true cross-corr/noise level (~5) as a diagnostic hint.
-  // The lock FSM (GOOD), not the digit, does the binary discrimination. Sequential per code.
-  wire [24:0] n0_raw = (best0<<3)+best0;           // 9*best0
-  wire [24:0] n1_raw = (best1<<3)+best1;           // 9*best1
+  // quality q in 0-9 = min(9, 9*|corr|/energy) -- ACTUAL match level per code (matched ~9, other ~cross/noise)
+  wire [24:0] n0_raw = (best0<<3)+best0;
+  wire [24:0] n1_raw = (best1<<3)+best1;
   reg [24:0] num=0; reg [21:0] den=1; reg [3:0] cnt=0; reg [1:0] dstate=0;
   reg [3:0] q0=0, q1=0; reg q0_rdy=0, q1_rdy=0;
   always @(posedge clk12) begin
@@ -160,10 +175,8 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
     endcase
   end
 
-  // per-code lock FSM: min-lock-time to confirm, limited hold across short dropouts, then re-acquire
-  localparam [3:0] GOOD = 4'd6;        // q>=6 of 9: one notch above the Gold cross-corr floor (~5) so the
-                                       // wrong code never locks, but below a 1-bit-error level (~7) so a single
-                                       // flip rides through. (N=15 has a thin 5->7 margin; longer codes widen it.)
+  // per-code lock FSM: min-lock to confirm, limited hold across short dropouts, then re-acquire
+  localparam [3:0] GOOD = 4'd6;
   localparam [2:0] MINLOCK = 3'd2, HOLDMAX = 3'd2;
   localparam [1:0] SEARCH=2'd0, ACQ=2'd1, LOCK=2'd2, HOLD=2'd3;
   reg [1:0] st0=SEARCH, st1=SEARCH; reg [2:0] g0=0,b0=0,g1=0,b1=0;
@@ -194,34 +207,36 @@ module s3_top (input clk12, input sw1, input k1, input k2, input k3, input k4,
     endcase
   end
 
-  // =================== displays ===================
+  // ============ displays ============
   reg [22:0] blink = 0; always @(posedge clk12) blink <= blink + 1'b1;
-  function [2:0] rgb(input [1:0] st, input bk);          // R=[0] G=[1] B=[2], active-high "on" mask
+  function [2:0] rgb(input [1:0] st, input bk);
     rgb = (st==LOCK) ? 3'b010 : (st==HOLD) ? (bk?3'b010:3'b000) : (st==ACQ) ? 3'b011 : 3'b001;
   endfunction
-  assign LEDl = ~rgb(st0, blink[21]);                    // CODE0 lock (active-low LEDs)
-  assign LEDr = ~rgb(st1, blink[21]);                    // CODE1 lock
-  assign LEDs = ~{bar4(q0), bar4(q1)};                   // left nibble=q0 bar, right nibble=q1 bar
-  assign d1   = seg7(q0);                                // 7-seg: CODE0 quality 0-9
-  assign d2   = seg7(q1);                                // 7-seg: CODE1 quality 0-9
-  assign enableLd1 = 1'b0;                               // active-low digit enable (threeN1: enableL=0 = on)
+  assign LEDl = ~rgb(st0, blink[21]);
+  assign LEDr = ~rgb(st1, blink[21]);
+  assign LEDs = ~{bar4(q0), bar4(q1)};
+  assign d1   = seg7(q0);
+  assign d2   = seg7(q1);
+  assign enableLd1 = 1'b0;
   assign enableLd2 = 1'b0;
 
-  // =================== command RX (UART on pad A3): latch knob byte 0x40-0x5F -> cmd_reg[4:0] ===================
-  // mask bits: [0]=code-select(B), [1]=inject-1-bit, [2]=inject-2-bit, [3]=weak-signal, [4]=high-floor.
-  // host sends chr(0x40 | mask); physical SW1/K1-K4 still OR in. 0x40-0x5F only -> newlines/noise ignored.
+  // ============ command RX (UART on pad A3): '+'=remote on, '-'=off, 0x80|mask -> 7-bit knobs ============
   wire [7:0] rxb; wire rxv;
   uart_rx #(.DIV(104)) u_rx (.clk(clk12), .rxd(rxd), .data(rxb), .valid(rxv));
-  always @(posedge clk12) if (rxv && (rxb[7:5]==3'b010)) cmd_reg <= rxb[4:0];
+  always @(posedge clk12) if (rxv) begin
+    if      (rxb == 8'h2B) remote <= 1'b1;        // '+'  REMOTE (USB owns)
+    else if (rxb == 8'h2D) remote <= 1'b0;        // '-'  LOCAL (switches own)
+    else if (rxb[7])       cmd_reg <= rxb[6:0];   // 0x80-0xFF -> 7-bit knob mask
+  end
 
-  // =================== BCN telemetry (UART TX on pad A2 -> STEPLink -> COM3; host/ reads it) ===================
+  // ============ BCN telemetry (UART TX on pad A2 -> STEPLink -> COM3) ============
   reg [13:0] seq = 0; reg [11:0] adc_l = 0;
   always @(posedge clk12) if (valid) adc_l <= sample;
   reg [18:0] tdiv = 0; reg tick = 0;
-  always @(posedge clk12)                                // emit ~40 Hz (12 MHz / 300000) — control-loop family
+  always @(posedge clk12)                                // ~40 Hz (control-loop family)
     if (tdiv == 19'd299999) begin tdiv<=0; tick<=1'b1; seq<=(seq==14'd9999)?14'd0:seq+1'b1; end
     else begin tdiv<=tdiv+1'b1; tick<=1'b0; end
-  wire [1:0] lka = (st0==SEARCH)?2'd0:(st0==ACQ)?2'd1:2'd2;   // frame lock: 0 no_lock / 1 tentative / 2 confirmed
+  wire [1:0] lka = (st0==SEARCH)?2'd0:(st0==ACQ)?2'd1:2'd2;
   wire [1:0] lkb = (st1==SEARCH)?2'd0:(st1==ACQ)?2'd1:2'd2;
   bcn_tx u_bcn (.clk(clk12), .tick(tick), .seq(seq), .adc(adc_l),
                 .corrA(best0[19:0]), .lockA(lka), .marginA(q0),
