@@ -1,0 +1,32 @@
+// S3 pins. Receiver clock = 12 MHz xtal on C1; emitter clock = internal OSCH (no pin).
+IOBUF ALLPORTS IO_TYPE=LVCMOS33 ;
+LOCATE COMP "clk12"    SITE "C1"  ;
+FREQUENCY PORT "clk12" 12.000000 MHz ;
+LOCATE COMP "sw1"      SITE "M7"  ;
+LOCATE COMP "code_pin" SITE "P8"  ;   // I/O 14 — emitter code (post-corruption)
+LOCATE COMP "sync_pin" SITE "N8"  ;   // I/O 15 — clean epoch
+LOCATE COMP "k1"       SITE "L14" ;   // K1 — 1 random bit flip / period
+LOCATE COMP "k2"       SITE "M13" ;   // K2 — 2 random bit flips / period
+LOCATE COMP "k3"       SITE "M14" ;   // K3 — weak signal (high -> 1/3)
+LOCATE COMP "k4"       SITE "N14" ;   // K4 — high noise floor (low -> ~1/4 FS)
+IOBUF  PORT "k1" PULLMODE=UP ;
+IOBUF  PORT "k2" PULLMODE=UP ;
+IOBUF  PORT "k3" PULLMODE=UP ;
+IOBUF  PORT "k4" PULLMODE=UP ;
+LOCATE COMP "spi_cs"   SITE "P3"  ;   // SPI mirror for scope
+LOCATE COMP "spi_sclk" SITE "M4"  ;
+LOCATE COMP "spi_do"   SITE "N4"  ;
+LOCATE COMP "LEDs[0]"  SITE "N13" ;   // correlation bar-graph
+LOCATE COMP "LEDs[1]"  SITE "M12" ;
+LOCATE COMP "LEDs[2]"  SITE "P12" ;
+LOCATE COMP "LEDs[3]"  SITE "M11" ;
+LOCATE COMP "LEDs[4]"  SITE "P11" ;
+LOCATE COMP "LEDs[5]"  SITE "N10" ;
+LOCATE COMP "LEDs[6]"  SITE "N9"  ;
+LOCATE COMP "LEDs[7]"  SITE "P9"  ;
+LOCATE COMP "LEDl[0]"  SITE "M2"  ;   // RGB left — beacon-A lock (R/G/B)
+LOCATE COMP "LEDl[1]"  SITE "N2"  ;
+LOCATE COMP "LEDl[2]"  SITE "P2"  ;
+LOCATE COMP "LEDr[0]"  SITE "M3"  ;   // RGB right — reserved (beacon B / S6)
+LOCATE COMP "LEDr[1]"  SITE "N3"  ;
+LOCATE COMP "LEDr[2]"  SITE "P4"  ;
