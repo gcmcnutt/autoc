@@ -63,6 +63,8 @@ FPGA proceed in parallel; the two meet at the bench (Stage 0).
 
 Milestone detail: FPGA F0–F5 in [fpga-toolchain-plan.md §4](fpga-toolchain-plan.md); emitter E1–E3 in [emitter-toolchain-plan.md §4](emitter-toolchain-plan.md); staged arc + pass criteria in [acquisition-research-plan.md §4](acquisition-research-plan.md). Executable tasks: [tasks.md](tasks.md) Phase A.
 
+**Status (2026-06-24):** **M0 ✓.** **M1 largely met on the in-FPGA correlator-sim harness** (S1–S3c, [`firmware/beacon-decoder-stepfpga/correlator-sim-plan.md`](../../firmware/beacon-decoder-stepfpga/correlator-sim-plan.md)): emitter, virtual-MCP3201 + soft SPI, soft correlator + DC-removal/AGC + min-lock/limited-hold FSM + dual-code discrimination — all HW-verified. **Pending for M1:** UART **`BCN`** telemetry (host side done; FPGA side next — "establish the USB link", TX on pad **A2**; F3/S4), the **per-beacon DPLL**, and lock vs a **live** emitter. **M3** (two *simultaneous* emitters / true CDMA) + the **A4d** code-length/latency/dropout study are the next frontier; N=15 looks under-spec.
+
 ## Acceptance criteria (the gate)
 
 **031 passes at M4 (Stage 2).** Concretely: across the range/aspect grid the receiver acquires both codes,
@@ -84,8 +86,10 @@ Each earlier milestone's "Done when" is its own gate (above).
 (Beyond the §10 empirical bench measurements — LED center wavelength, solar background, dropout envelope.)
 
 - **Emitter toolchain** — settled: bare-C avr-gcc/UPDI (Arduino/OS rejected); PlatformIO optional fallback.
-- **FPGA fit** — does two-beacon **independent-DPLL** decode fit the MachXO2-4000HC (4320 LUTs), or force
-  time-multiplexing / a bigger part? (The "~1000× headroom" note is about oversampling, not two correlators.)
+- **FPGA fit** — **mostly answered (2026-06-24):** the **dual correlator (two codes, shared window/DC/energy,
+  no DPLL yet) fits in 1140 LUTs / 26 %** of the MachXO2-4000HC (S3c, HW-verified) — ample headroom. Open
+  remainder: the two **independent DPLLs** + a partial/progressive correlator on top; still expected to fit.
+  (The "~1000× headroom" note is about oversampling, not two correlators.)
 - **FPGA IP** — only the MachXO2 PLL is library IP (Diamond); the rest is custom RTL (fpga §3).
 - **Analog front end** — TIA + AC/DC-coupling + MCP3201 soft-sample quality (FPGA F3; fpga §5 open decisions).
 </content>
