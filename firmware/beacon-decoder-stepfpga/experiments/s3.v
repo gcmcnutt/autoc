@@ -31,13 +31,18 @@ module s3_top (input clk12,
   wire einj2  = remote ? cmd_reg[4] : kb2[1];
   wire eweak  = remote ? cmd_reg[5] : kb3[1];
   wire efloor = remote ? cmd_reg[6] : kb4[1];
-  wire bskew  = ~dsw4[1];                          // DIP4: code-B clock skew (local; command later)
+  reg signed [19:0] edivb_cmd = 20'sd266000;       // emitter-B divider set by the USB 'F' command (rate test)
+  wire [18:0] edivb_eff = remote ? edivb_cmd[18:0] // remote: 'F'-commanded rate; local: DIP4 skew ±3%
+                                 : (~dsw4[1] ? 19'd274227 : 19'd258252);
 
   // ============ emitters: internal OSCH; A & B at independent divisors -> real inter-beacon slip ============
   wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
   localparam [14:0] CODE0 = 15'b000001101111011, CODE1 = 15'b110011100000001;
-  reg [1:0] inj1o=0, inj2o=0, bsk=0;              // inject + skew bits synced into the emitter (oclk) domain
-  always @(posedge oclk) begin inj1o<={inj1o[0],einj1}; inj2o<={inj2o[0],einj2}; bsk<={bsk[0],bskew}; end
+  reg [1:0] inj1o=0, inj2o=0;                     // inject bits synced into the emitter (oclk) domain
+  reg [18:0] edivb_o1=19'd266000, edivb_o2=19'd266000;   // emitter-B divider synced into oclk
+  always @(posedge oclk) begin
+    inj1o<={inj1o[0],einj1}; inj2o<={inj2o[0],einj2}; edivb_o1<=edivb_eff; edivb_o2<=edivb_o1;
+  end
 
   // emitter A @ OSCH/266000 = 200 Hz, with random bit-error injection
   localparam integer EDIV_A = 266000;
@@ -54,7 +59,7 @@ module s3_top (input clk12,
   assign sync_pin = (echA==4'd0);                  // I/O15 N8: code-A epoch
 
   // emitter B @ OSCH/EDIV_B (skewed -> steady slip vs A and vs the receiver)
-  wire [18:0] EDIV_B = bsk[1] ? 19'd274227 : 19'd258252;     // ~194 Hz (-3%) / ~206 Hz (+3%)
+  wire [18:0] EDIV_B = edivb_o2;                             // emitter-B rate: DIP4 skew (local) or 'F' cmd (remote)
   reg [18:0] edcB=0; reg [3:0] echB=0; wire wrapB=(edcB>=EDIV_B-1);
   always @(posedge oclk) if (wrapB) begin edcB<=0; echB<=(echB==4'd14)?0:echB+1'b1; end else edcB<=edcB+1'b1;
   reg [3:0] et0B=0,et1B=0,et2B=0; wire eopB=wrapB&(echB==4'd14);   // B's own random error positions (lfsr @ eopB)
@@ -149,17 +154,19 @@ module s3_top (input clk12,
   wire signed [21:0] a0 = corr0[21] ? -corr0 : corr0;
   wire signed [21:0] a1 = corr1[21] ? -corr1 : corr1;
   reg [21:0] pk0=0, pk1=0, pke=1, best0=0, best1=0, beste=1;
+  reg [5:0]  pkph0=0, pkph1=0, bestph0=0, bestph1=0;     // phase (0-35) of the peak — for the DPLL
   reg [5:0]  pcnt=0; reg pend=0;
   always @(posedge clk12) begin
     pend <= 1'b0;
     if (rdy) begin
-      if (a0 > pk0) pk0 <= a0;
-      if (a1 > pk1) pk1 <= a1;
+      if (a0 > pk0) begin pk0 <= a0; pkph0 <= pcnt; end
+      if (a1 > pk1) begin pk1 <= a1; pkph1 <= pcnt; end
       if (energy > pke) pke <= energy;
       if (pcnt == 6'd35) begin
         best0 <= (a0>pk0)?a0:pk0; best1 <= (a1>pk1)?a1:pk1;
+        bestph0 <= (a0>pk0)?pcnt:pkph0; bestph1 <= (a1>pk1)?pcnt:pkph1;
         beste <= ((energy>pke)?energy:pke) | 22'd1;
-        pk0<=0; pk1<=0; pke<=0; pcnt<=0; pend<=1'b1;
+        pk0<=0; pk1<=0; pke<=0; pkph0<=0; pkph1<=0; pcnt<=0; pend<=1'b1;
       end else pcnt <= pcnt + 1'b1;
     end
   end
@@ -229,11 +236,40 @@ module s3_top (input clk12,
   // ============ command RX (UART on pad A3): '+'=remote on, '-'=off, 0x80|mask -> 7-bit knobs ============
   wire [7:0] rxb; wire rxv;
   uart_rx #(.DIV(104)) u_rx (.clk(clk12), .rxd(rxd), .data(rxb), .valid(rxv));
+  reg expF = 1'b0;
+  wire signed [19:0] fval = 20'sd266000 - ($signed({12'b0, rxb}) - 20'sd128) * 20'sd200;  // v:0..255 -> ~±10% rate
   always @(posedge clk12) if (rxv) begin
-    if      (rxb == 8'h2B) remote <= 1'b1;        // '+'  REMOTE (USB owns)
+    if      (expF)         begin edivb_cmd <= fval; expF <= 1'b0; end   // 'F' value byte -> emitter-B divider (rate)
+    else if (rxb == 8'h46) expF <= 1'b1;          // 'F' -> next byte sets emitter-B frequency (DPLL rate test)
+    else if (rxb == 8'h2B) remote <= 1'b1;        // '+'  REMOTE (USB owns)
     else if (rxb == 8'h2D) remote <= 1'b0;        // '-'  LOCAL (switches own)
     else if (rxb[7])       cmd_reg <= rxb[6:0];   // 0x80-0xFF -> 7-bit knob mask
   end
+
+  // ============ per-code DPLL: rate estimate from peak-phase slip (the frequency flywheel) ============
+  // IIR mean of the per-period peak-phase delta (samples/period); updates only while LOCKED -> FROZEN (held)
+  // through outages = the flywheel. Reported offset-binary: rate = 32768 + 32·(mean slip). Host recovers:
+  //   slip = (rate-32768)/32 ;  chip_rate_Hz = 7200 / (36 - slip)   [36 = nominal samples per code period]
+  localparam integer SLIP_SH = 5;                        // IIR ~32 periods (~2.4 s) of averaging
+  reg pend_d = 0; always @(posedge clk12) pend_d <= pend;
+  reg [5:0] prev0=0, prev1=0;
+  reg signed [17:0] slip0=0, slip1=0;
+  wire signed [6:0] raw0 = $signed({1'b0,bestph0}) - $signed({1'b0,prev0});
+  wire signed [6:0] raw1 = $signed({1'b0,bestph1}) - $signed({1'b0,prev1});
+  wire signed [6:0] dlt0 = (raw0 > 7'sd18) ? raw0-7'sd36 : (raw0 < -7'sd18) ? raw0+7'sd36 : raw0;   // unwrap ±18
+  wire signed [6:0] dlt1 = (raw1 > 7'sd18) ? raw1-7'sd36 : (raw1 < -7'sd18) ? raw1+7'sd36 : raw1;
+  wire lockedA = (st0==LOCK)||(st0==HOLD);
+  wire lockedB = (st1==LOCK)||(st1==HOLD);
+  wire signed [17:0] dlt0x = dlt0, dlt1x = dlt1;          // sign-extend (signed) — keep the IIR fully signed
+  always @(posedge clk12) if (pend_d) begin
+    prev0 <= bestph0; prev1 <= bestph1;
+    if (lockedA) slip0 <= slip0 - (slip0>>>SLIP_SH) + dlt0x;   // IIR; hold when unlocked = flywheel
+    if (lockedB) slip1 <= slip1 - (slip1>>>SLIP_SH) + dlt1x;
+  end
+  wire signed [18:0] r0raw = 19'sd32768 + slip0;
+  wire signed [18:0] r1raw = 19'sd32768 + slip1;
+  wire [15:0] rateA = (r0raw<0)?16'd0:(r0raw>19'sd65535)?16'd65535:r0raw[15:0];
+  wire [15:0] rateB = (r1raw<0)?16'd0:(r1raw>19'sd65535)?16'd65535:r1raw[15:0];
 
   // ============ BCN telemetry (UART TX on pad A2 -> STEPLink -> COM3) ============
   reg [13:0] seq = 0; reg [11:0] adc_l = 0;
@@ -246,5 +282,6 @@ module s3_top (input clk12,
   wire [1:0] lkb = (st1==SEARCH)?2'd0:(st1==ACQ)?2'd1:2'd2;
   bcn_tx u_bcn (.clk(clk12), .tick(tick), .seq(seq), .adc(adc_l),
                 .corrA(best0[19:0]), .lockA(lka), .marginA(q0),
-                .corrB(best1[19:0]), .lockB(lkb), .marginB(q1), .txd(txd));
+                .corrB(best1[19:0]), .lockB(lkb), .marginB(q1),
+                .rateA(rateA), .rateB(rateB), .txd(txd));
 endmodule
