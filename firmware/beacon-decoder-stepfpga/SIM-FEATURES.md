@@ -143,6 +143,8 @@ CS (P3) against the emitter epoch (N8) to see the slip.
 - `0x80 | mask` → 7-bit knob set: `[0]enA [1]enB [2]enN [3]inj-1bit [4]inj-2bit [5]weak [6]floor`.
 - `F`(0x46) + value → set **emitter-B frequency** (~±10 % over the byte; value 128 = nominal) — for DPLL/rate testing.
 - `A`(0x41)/`B`(0x42)/`G`(0x47) + value → set per-source **magnitude** (code A / code B / noise) — the analog channel model.
+- The `F`/`A`/`B`/`G` analog trims apply **only in REMOTE**; returning to LOCAL (`-`) reverts them to the reset
+  defaults (A/B=750, noise=400, B-skew per DIP4), so **manual operation always == power-on**.
 - `Z`(0x5A) → **flush the flywheel**: forget the DPLL rate (`slip→0`) and drop both locks (`st→SEARCH`, `coast→max`) →
   the very next acquire is **true-cold** (no warm 1-period shortcut). Use it to measure cold re-acquire vs the warm path.
 - Driver: `host/cmd_read.sh <mask> [sec]` / `cmd_read.ps1 -Mask -Freq -Flush -Local` / `cold.ps1` (lock→flush→measure).

@@ -78,9 +78,12 @@ module s3_top (input clk12,
   // ANALOG per-source magnitudes (settable over USB: 'A'/'B'/'G' + value -> ×6). Graded + headroom so the sum
   // is LINEAR in normal use (the 12-bit clamp is just ADC saturation at extremes), not a worst-case all-rails OR.
   localparam signed [15:0] PED=16'sd1800;
-  reg [11:0] ampA_r=12'd750, ampB_r=12'd750, ampN_r=12'd400;   // equal default (symmetric); set asymmetric via 'A'/'B'
-  wire [11:0] ampA = eweak ? {2'b0,ampA_r[11:2]} : ampA_r;       // weak (K3) -> ~1/4 amplitude (range/aspect)
-  wire [11:0] ampB = eweak ? {2'b0,ampB_r[11:2]} : ampB_r;
+  localparam [11:0] AMPA_DEF=12'd750, AMPB_DEF=12'd750, AMPN_DEF=12'd400;   // reset/LOCAL defaults (symmetric)
+  reg [11:0] ampA_r=AMPA_DEF, ampB_r=AMPB_DEF, ampN_r=AMPN_DEF;  // 'A'/'B'/'G' command targets (REMOTE only)
+  // LOCAL mode uses the reset defaults so manual operation == power-on (the 'A'/'B'/'G' trims apply only in REMOTE)
+  wire [11:0] ampA_e = remote ? ampA_r : AMPA_DEF, ampB_e = remote ? ampB_r : AMPB_DEF, ampN_e = remote ? ampN_r : AMPN_DEF;
+  wire [11:0] ampA = eweak ? {2'b0,ampA_e[11:2]} : ampA_e;       // weak (K3) -> ~1/4 amplitude (range/aspect)
+  wire [11:0] ampB = eweak ? {2'b0,ampB_e[11:2]} : ampB_e;
   wire signed [15:0] sigA = enA ? (codeA_rx ? $signed({4'b0,ampA}) : -$signed({4'b0,ampA})) : 16'sd0;
   wire signed [15:0] sigB = enB ? (codeB_rx ? $signed({4'b0,ampB}) : -$signed({4'b0,ampB})) : 16'sd0;
   wire signed [16:0] sigsum = PED + sigA + sigB;                 // pedestal + analog signals
@@ -93,7 +96,7 @@ module s3_top (input clk12,
   // white noise per sample + optional DC floor
   reg [15:0] nlfsr=16'h1234; always @(posedge clk12) nlfsr<={nlfsr[14:0],nlfsr[15]^nlfsr[13]^nlfsr[12]^nlfsr[10]};
   wire signed [11:0] nctr = $signed({1'b0,nlfsr[10:0]}) - 12'sd1024;                 // ±1023 continuous random
-  wire signed [24:0] nscaled = nctr * $signed({1'b0,ampN_r});                        // scale to ±ampN (analog level)
+  wire signed [24:0] nscaled = nctr * $signed({1'b0,ampN_e});                        // scale to ±ampN (analog level)
   wire signed [16:0] nz = enN ? (nscaled >>> 10) : 17'sd0;
   wire signed [16:0] fl = efloor ? 17'sd400 : 17'sd0;
   wire signed [18:0] adc_s = sig_bl + nz + fl;
