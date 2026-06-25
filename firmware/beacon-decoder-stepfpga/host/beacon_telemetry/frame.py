@@ -27,7 +27,7 @@ MAGIC = "BCN"
 LOCK_NAMES = {0: "no_lock", 1: "tentative", 2: "confirmed"}
 RATE_BIAS = 32768          # offset-binary zero point
 RATE_SCALE = 32           # internal IIR scaling (slip << 5)
-N_CHIPS = 63              # gateware code length (keep in sync with s3.v localparam N)
+N_CHIPS = 31              # gateware code length (keep in sync with s3.v localparam N)
 SAMPLE_HZ = 480.0
 NOM_SAMPLES_PER_PERIOD = round(2.4 * N_CHIPS)   # L in the gateware (74 for N=31)
 

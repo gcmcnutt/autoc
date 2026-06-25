@@ -57,14 +57,15 @@ are still driven to **I/O 14 / I/O 15** for scope observability.
 S1–S6 need **no analog hardware** — pure FPGA, flashed/observed over the proven loop. S3+ is the actual
 shippable correlator RTL (the A4a–c / F4–F5 work), just exercised by the synthetic stimulus.
 
-**Current state (2026-06-25):** **S1–S6 ✓** — all in `experiments/s3.v` (top `s3_top`, **3524 LUT/82 % at N=63**)
-+ `spi_mcp3201.v` + `uart_bcn.v`; full feature reference in [`SIM-FEATURES.md`](SIM-FEATURES.md). Code length is
-parametrized (**N=63** current; N=15/31 earlier cuts). The DPLL loop is **closed** (`Leff=L+slip` stretches the
-template to the emitter rate → coherent lock under skew *once locked*). An **on-chip recovery counter**
-(signal-return→confirmed-lock, since USB can't run fast) reports `recA`/`recB` in telemetry, and the `Z` command
-flushes the flywheel to force a **true-cold** acquire.
-**Next:** partial/progressive correlator (A4d-2, low-latency tier) + burst-error knob (A4d-3), then S7 (swap the
-virtual ADC for the real MCP3201).
+**Current state (2026-06-25):** **S1–S6 ✓** — all in `experiments/s3.v` (top `s3_top`, **3133 LUT/73 % at N=31**;
+N=63 build measured at 85 %). `N` is a localparam (8-bit phase / 6-bit chip counters sized for N≤63); **N=31 is
+the active build** for the latency-by-confidence phase (A4d-2). The DPLL loop is **closed** (`Leff=L+slip`) **and
+fast-acquiring**: on a *cold* lock edge it **snaps** slip to the steady-state estimate (`slip≈dlt·2^SLIP_SH`)
+instead of crawling there over the ~32-period IIR — cold full-quality now lands in **<1 s across ±4.5 % skew**
+(was ~10 s at N=63 / ~5 s at N=31 under RC-osc offset); warm re-locks keep the flywheel's held slip (no snap). An
+**on-chip recovery counter** reports `recA`/`recB`; the `Z` command flushes the flywheel for a **true-cold** acquire.
+**Next:** partial/progressive correlator (A4d-2, low-latency confidence tier) + burst-error knob (A4d-3), then S7
+(swap the virtual ADC for the real MCP3201).
 
 #### N=63 vs N=31 — measured wallclock (A4d-1, 2026-06-25)
 
@@ -86,6 +87,15 @@ where N=31's shorter window had margin. The fix is a shorter acquisition sub-win
 not more integration. (3) **This raises the value of a stable emitter clock at long codes:** a 20–50 ppm xtal both
 extends the flywheel coast (longer fast-re-acquire window) *and* removes the cold-skew cliff — re-enabling N=63's
 +3 dB gain + lower CDMA floor. With the loose OSCH RC (±5 %), N=63 cold acquire is marginal; with a xtal it's free.
+
+**Fast-acquire DPLL (2026-06-25, HW-verified at N=63 & N=31).** The slow part of cold acquire was *not* the lock
+(~0.5 s) but the **DPLL frequency pull-in**: the slip IIR (`SLIP_SH=5`, ~32 periods) crawled the rate estimate
+across the emitter↔rx offset, so q stayed yellow until it arrived (~10 s at N=63 / ~5 s at N=31, +3.5 % skew, RC
+osc). Fix: **snap-to-estimate** — on a *cold* lock edge, jump slip straight to `dlt·2^SLIP_SH` (the value the slow
+loop would converge to; `slip_ss ≈ dlt·32` verified empirically), then fine-track with the IIR. Result: **cold
+full-quality in <1 s across a ±5 % skew sweep** (was ~10 s); warm re-locks still keep the held flywheel slip. This
+does *not* move the ~±5 % cold-lock **cliff** (the snap needs an initial lock first — that needs a multi-`Leff`
+search, or is mooted by a stable xtal). Sweep data: `host/cold.ps1 -OnMask 2 -Freq <v>` over ±5 %.
 
 ## Hardening study (→ tasks **A4d**)
 

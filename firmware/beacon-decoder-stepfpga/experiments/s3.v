@@ -38,9 +38,9 @@ module s3_top (input clk12,
 
   // ============ emitters: internal OSCH; A & B at independent divisors -> real inter-beacon slip ============
   wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
-  localparam integer N = 63, L = 151;                      // code length (chips); window = round(2.4·N) samples
-  localparam [62:0] CODE0 = 63'b000000001110010000001111011011001110011101111011010111100011100,  // N=63 Gold preferred
-                    CODE1 = 63'b010000110110011011110011110001000010100000001110111110001111110;  // pair (xcorr {-17,-1,15})
+  localparam integer N = 31, L = 74;                       // code length (chips); window = round(2.4·N) samples
+  localparam [30:0] CODE0 = 31'b0000000100011011000011001110011,   // N=31 Gold preferred pair (xcorr {-9,-1,7})
+                    CODE1 = 31'b0100011001100111100101001011110;   // (N=63 codes in git @ 1bd3b4a if needed)
   reg [1:0] inj1o=0, inj2o=0;                     // inject bits synced into the emitter (oclk) domain
   reg [18:0] edivb_o1=19'd266000, edivb_o2=19'd266000;   // emitter-B divider synced into oclk
   always @(posedge oclk) begin
@@ -130,14 +130,14 @@ module s3_top (input clk12,
   // CLOSED-LOOP DPLL: per-code effective period Leff = L + (measured slip) -> the template's slot->chip advance
   // (Bresenham) tracks the emitter's actual rate, keeping the long-window matched filter coherent under skew.
   // Two passes (code 0 then code 1), each with its own Leff; energy (template-independent) computed in pass 0.
-  reg [7:0] ai = 0; reg busy = 0, rdy = 0, pass = 0;       // ai 0..L-1 (151) -> 8-bit
-  reg [5:0] cchip = 0; reg [8:0] cacc = 0;                 // cchip 0..N-1 (63) -> 6-bit
+  reg [7:0] ai = 0; reg busy = 0, rdy = 0, pass = 0;       // ai 0..L-1; 8-bit sized for N≤63 (L≤151)
+  reg [5:0] cchip = 0; reg [8:0] cacc = 0;                 // cchip 0..N-1; 6-bit sized for N≤63
   reg signed [21:0] acc_c=0, corr0=0, corr1=0;
   reg        [21:0] acc_e=0, energy=0;
   wire signed [17:0] sr0 = slip0 >>> SLIP_SH, sr1 = slip1 >>> SLIP_SH;          // mean slip (samples/period)
-  wire signed [5:0]  sc0 = (sr0 > 18'sd20) ? 6'sd20 : (sr0 < -18'sd20) ? -6'sd20 : sr0[5:0];   // clamp ±20 (N=63 walk 2×)
-  wire signed [5:0]  sc1 = (sr1 > 18'sd20) ? 6'sd20 : (sr1 < -18'sd20) ? -6'sd20 : sr1[5:0];
-  wire signed [9:0]  Leff0 = 10'sd151 + sc0, Leff1 = 10'sd151 + sc1;   // base L=151 (N=63)
+  wire signed [5:0]  sc0 = (sr0 > 18'sd10) ? 6'sd10 : (sr0 < -18'sd10) ? -6'sd10 : sr0[5:0];   // clamp ±10 (N=31)
+  wire signed [5:0]  sc1 = (sr1 > 18'sd10) ? 6'sd10 : (sr1 < -18'sd10) ? -6'sd10 : sr1[5:0];
+  wire signed [9:0]  Leff0 = 10'sd74 + sc0, Leff1 = 10'sd74 + sc1;   // base L=74 (N=31)
   wire        [8:0]  Leff  = pass ? Leff1[8:0] : Leff0[8:0];
   wire tcode = pass ? CODE1[cchip] : CODE0[cchip];                              // time-reversed template
   wire signed [12:0] dev  = $signed({1'b0, win[ai]}) - $signed({1'b0, dc});
@@ -165,8 +165,8 @@ module s3_top (input clk12,
   wire signed [21:0] a0 = corr0[21] ? -corr0 : corr0;
   wire signed [21:0] a1 = corr1[21] ? -corr1 : corr1;
   reg [21:0] pk0=0, pk1=0, pke=1, best0=0, best1=0, beste=1;
-  reg [7:0]  pkph0=0, pkph1=0, bestph0=0, bestph1=0;     // phase (0..L-1, 151) of the peak — for the DPLL (8-bit)
-  reg [7:0]  pcnt=0; reg pend=0;                          // phase counter 0..L-1 (151) -> 8-bit
+  reg [7:0]  pkph0=0, pkph1=0, bestph0=0, bestph1=0;     // peak phase 0..L-1; 8-bit sized for N≤63
+  reg [7:0]  pcnt=0; reg pend=0;                          // phase counter 0..L-1; 8-bit sized for N≤63
   always @(posedge clk12) begin
     pend <= 1'b0;
     if (rdy) begin
@@ -206,9 +206,9 @@ module s3_top (input clk12,
   // frequency flywheel: coast counts periods since lock; while < COASTMAX the rate is still held -> WARM
   // re-acquire (confirm on the FIRST good period instead of MINLOCK). Init stale so the first lock is COLD.
   // Coast window is WALLCLOCK-driven (set by emitter↔rx osc stability, NOT code length): hold the rate only as
-  // long as drift stays < ~½ chip. ~10 s with the OSCH RC -> 32 periods @ ~315 ms for N=63 (was 65 @ 154 ms for
-  // N=31). A stable xtal (20–50 ppm) on both ends would extend this dramatically -> far longer fast-re-acquire.
-  localparam [7:0] COASTMAX = 8'd32;
+  // long as drift stays < ~½ chip. ~10 s with the OSCH RC -> 65 periods @ ~154 ms for N=31 (32 @ ~315 ms at N=63).
+  // A stable xtal (20–50 ppm) on both ends would extend this dramatically -> far longer fast-re-acquire.
+  localparam [7:0] COASTMAX = 8'd65;
   reg [7:0] coast0=8'd133, coast1=8'd133;
   wire warm0 = (coast0 < COASTMAX), warm1 = (coast1 < COASTMAX);
   always @(posedge clk12) if (flush) begin st0<=SEARCH; coast0<=COASTMAX; g0<=0; b0<=0; end
@@ -293,11 +293,11 @@ module s3_top (input clk12,
   // ============ per-code DPLL: rate estimate from peak-phase slip (the frequency flywheel) ============
   // IIR mean of the per-period peak-phase delta (samples/period); updates only while LOCKED -> FROZEN (held)
   // through outages = the flywheel. Reported offset-binary: rate = 32768 + 32·(mean slip). Host recovers:
-  //   slip = (rate-32768)/32 ;  chip_rate_Hz = N·480 / (L + slip)   [N=63, L=151; faster emitter -> peak earlier
+  //   slip = (rate-32768)/32 ;  chip_rate_Hz = N·480 / (L + slip)   [N=31, L=74; faster emitter -> peak earlier
   //   -> negative slip -> higher chip_rate]. (See host/beacon_telemetry/frame.py chip_rate_hz().)
   localparam integer SLIP_SH = 5;                        // IIR ~32 periods (~2.4 s) of averaging
   reg pend_d = 0; always @(posedge clk12) pend_d <= pend;
-  reg [7:0] prev0=0, prev1=0;                            // peak phase 0..L-1 (151) -> 8-bit
+  reg [7:0] prev0=0, prev1=0;                            // peak phase 0..L-1; 8-bit sized for N≤63
   reg signed [17:0] slip0=0, slip1=0;
   wire signed [9:0] raw0 = $signed({2'b0,bestph0}) - $signed({2'b0,prev0});   // ±(L-1) -> 10-bit signed
   wire signed [9:0] raw1 = $signed({2'b0,bestph1}) - $signed({2'b0,prev1});
@@ -306,11 +306,18 @@ module s3_top (input clk12,
   wire lockedA = (st0==LOCK)||(st0==HOLD);
   wire lockedB = (st1==LOCK)||(st1==HOLD);
   wire signed [17:0] dlt0x = dlt0, dlt1x = dlt1;          // sign-extend (signed) — keep the IIR fully signed
-  always @(posedge clk12) if (flush) begin slip0<=0; slip1<=0; end  // 'Z' forgets the rate (keep prev: no slip kick)
+  // FAST-ACQUIRE (snap-to-estimate): the slow IIR (~32 periods) crawls the rate estimate across the emitter↔rx
+  // skew, so cold full-quality lags ~10 s at N=63 under RC-osc offset. On a COLD lock edge, SNAP slip to the
+  // steady-state estimate (slip_ss ≈ dlt·2^SLIP_SH — HW-verified) so it lands at the rate in ~1 period; the IIR
+  // then fine-tracks. WARM re-locks keep the flywheel's held slip (don't snap → no estimate thrown away).
+  reg lockedA_d=0, lockedB_d=0;
+  always @(posedge clk12) if (flush) begin slip0<=0; slip1<=0; lockedA_d<=0; lockedB_d<=0; end
   else if (pend_d) begin
-    prev0 <= bestph0; prev1 <= bestph1;
-    if (lockedA) slip0 <= slip0 - (slip0>>>SLIP_SH) + dlt0x;   // IIR; hold when unlocked = flywheel
-    if (lockedB) slip1 <= slip1 - (slip1>>>SLIP_SH) + dlt1x;
+    prev0 <= bestph0; prev1 <= bestph1; lockedA_d <= lockedA; lockedB_d <= lockedB;
+    if      (lockedA & ~lockedA_d & ~warm0) slip0 <= dlt0x <<< SLIP_SH;          // cold lock edge -> snap
+    else if (lockedA)                       slip0 <= slip0 - (slip0>>>SLIP_SH) + dlt0x;  // track (flywheel when unlocked)
+    if      (lockedB & ~lockedB_d & ~warm1) slip1 <= dlt1x <<< SLIP_SH;
+    else if (lockedB)                       slip1 <= slip1 - (slip1>>>SLIP_SH) + dlt1x;
   end
   wire signed [18:0] r0raw = 19'sd32768 + slip0;
   wire signed [18:0] r1raw = 19'sd32768 + slip1;
