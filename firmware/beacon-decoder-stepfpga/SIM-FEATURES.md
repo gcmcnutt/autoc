@@ -182,9 +182,11 @@ independent. **Left side = code A, right side = code B**, for the RGB lights, th
 ## 9. Telemetry + commands (USB-CDC, no usbipd — board stays on Windows)
 
 - **TX** `BCN` frame on **A2** → STEPLink LPC → **COM3**, 115200 8N1, **~40 Hz** (control-loop family):
-  `BCN,<seq>,<adc>,<corrA>,<lockA>,<marginA>,<corrB>,<lockB>,<marginB>,<rateA>,<rateB>\n`
-  (`lock` 0=no/1=tentative/2=confirmed; `margin` = the 0–9 quality; `rate` = DPLL rate, offset-binary →
-  `chip_rate_hz()` in the host parser).
+  `BCN,<seq>,<adc>,<corrA>,<lockA>,<marginA>,<corrB>,<lockB>,<marginB>,<rateA>,<rateB>,<recA>,<recB>\n`
+  (`lock` 0=no/1=tentative/2=confirmed; `margin` = 0–9 quality; `rate` = DPLL rate, offset-binary →
+  `chip_rate_hz()`; `rec` = **gateware-measured recovery latency in samples** signal-return→lock →
+  `recX_ms`/`recX_chips`. Measured on-chip since USB can't run fast; HW: recovery = 1–2 code words (31–62
+  chips) flat across 1–8 s dropouts).
 - **RX** commands on **A3**.
 - **Host tools** (`host/`): `monitor.sh` (read/log), `beacon_telemetry/` (parser + tests), `cmd_read.sh`
   (command + read), `transition.sh` (capture a lock edge for LOS/acquisition timing).

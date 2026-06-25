@@ -51,23 +51,24 @@ module bcn_tx (
   input  wire [19:0] corrA, input wire [1:0] lockA, input wire [3:0] marginA,
   input  wire [19:0] corrB, input wire [1:0] lockB, input wire [3:0] marginB,
   input  wire [15:0] rateA, input wire [15:0] rateB,   // DPLL rate (offset-binary; host subtracts 32768)
+  input  wire [15:0] recA,  input wire [15:0] recB,    // recovery latency (samples to last lock)
   output wire txd);
-  // Frame: BCN,seq4,adc4,corrA6,lockA1,marginA1,corrB6,lockB1,marginB1,rateA5,rateB5\n
+  // Frame: BCN,seq4,adc4,corrA6,lockA1,marginA1,corrB6,lockB1,marginB1,rateA5,rateB5,recA5,recB5\n
 
   function [27:0] p10(input [2:0] k);                  // 10^k, k=0..6
     case (k) 3'd0:p10=1; 3'd1:p10=10; 3'd2:p10=100; 3'd3:p10=1000;
              3'd4:p10=10000; 3'd5:p10=100000; default:p10=1000000; endcase
   endfunction
 
-  reg [7:0] lbuf [0:55];
+  reg [7:0] lbuf [0:63];
   integer j;
   initial begin
-    for (j=0;j<56;j=j+1) lbuf[j]=8'h20;
+    for (j=0;j<64;j=j+1) lbuf[j]=8'h20;
     lbuf[0]="B"; lbuf[1]="C"; lbuf[2]="N"; lbuf[3]=",";
     lbuf[8]=","; lbuf[13]=","; lbuf[20]=","; lbuf[22]=","; lbuf[24]=","; lbuf[31]=","; lbuf[33]=",";
-    lbuf[35]=","; lbuf[41]=","; lbuf[47]=8'h0A;         // ,rateA, ,rateB, newline
+    lbuf[35]=","; lbuf[41]=","; lbuf[47]=","; lbuf[53]=","; lbuf[59]=8'h0A;   // ,rateA,rateB,recA,recB,newline
   end
-  localparam integer LEN = 48;
+  localparam integer LEN = 60;
 
   reg [3:0]  fi = 0;                                    // field index 0..9
   reg [19:0] wv = 0;
@@ -93,8 +94,10 @@ module bcn_tx (
           4'd5: begin wv <= corrB;            w <= 3'd6; base <= 6'd25; end
           4'd6: begin wv <= {18'b0, lockB};   w <= 3'd1; base <= 6'd32; end
           4'd7: begin wv <= {16'b0, marginB}; w <= 3'd1; base <= 6'd34; end
-          4'd8: begin wv <= {4'b0, rateA};    w <= 3'd5; base <= 6'd36; end
-          default: begin wv <= {4'b0, rateB}; w <= 3'd5; base <= 6'd42; end
+          4'd8:  begin wv <= {4'b0, rateA}; w <= 3'd5; base <= 6'd36; end
+          4'd9:  begin wv <= {4'b0, rateB}; w <= 3'd5; base <= 6'd42; end
+          4'd10: begin wv <= {4'b0, recA};  w <= 3'd5; base <= 6'd48; end
+          default: begin wv <= {4'b0, recB}; w <= 3'd5; base <= 6'd54; end
         endcase
         state <= 2'd2;
       end
@@ -103,7 +106,7 @@ module bcn_tx (
         else begin
           lbuf[base+dp] <= "0" + digit; digit <= 0;
           if (dp == w-3'd1) begin
-            if (fi == 4'd9) begin si <= 0; state <= 2'd3; end
+            if (fi == 4'd11) begin si <= 0; state <= 2'd3; end
             else begin fi <= fi + 1'b1; state <= 2'd1; end
           end else dp <= dp + 1'b1;
         end

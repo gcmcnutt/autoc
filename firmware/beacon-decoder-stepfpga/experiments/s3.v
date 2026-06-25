@@ -304,6 +304,28 @@ module s3_top (input clk12,
   wire [15:0] rateA = (r0raw<0)?16'd0:(r0raw>19'sd65535)?16'd65535:r0raw[15:0];
   wire [15:0] rateB = (r1raw<0)?16'd0:(r1raw>19'sd65535)?16'd65535:r1raw[15:0];
 
+  // ============ recovery counters: SAMPLES from signal-return to confirmed lock (precise, measured on-chip
+  //              since USB can't run fast). q>=SIG_TH = "signal present" (above the q~3 floor). reclat holds the
+  //              latency of the LAST (re)acquisition; host: ms = rec*1000/480, chips = rec/2.4 ============
+  localparam [3:0] SIG_TH = 4'd4;
+  reg [15:0] reccntA=0, reclatA=0, reccntB=0, reclatB=0; reg recingA=0, recingB=0;
+  always @(posedge clk12) begin
+    if (valid & recingA) reccntA <= reccntA + 1'b1;
+    if (q0_rdy) begin
+      if (st0==LOCK) begin if (recingA) begin reclatA<=reccntA; recingA<=1'b0; end end   // locked -> latch
+      else if (q0 >= SIG_TH) begin if (~recingA) begin recingA<=1'b1; reccntA<=16'd0; end end  // signal present -> start
+      else recingA <= 1'b0;                                                              // no signal -> idle
+    end
+  end
+  always @(posedge clk12) begin
+    if (valid & recingB) reccntB <= reccntB + 1'b1;
+    if (q1_rdy) begin
+      if (st1==LOCK) begin if (recingB) begin reclatB<=reccntB; recingB<=1'b0; end end
+      else if (q1 >= SIG_TH) begin if (~recingB) begin recingB<=1'b1; reccntB<=16'd0; end end
+      else recingB <= 1'b0;
+    end
+  end
+
   // ============ BCN telemetry (UART TX on pad A2 -> STEPLink -> COM3) ============
   reg [13:0] seq = 0; reg [11:0] adc_l = 0;
   always @(posedge clk12) if (valid) adc_l <= sample;
@@ -316,5 +338,5 @@ module s3_top (input clk12,
   bcn_tx u_bcn (.clk(clk12), .tick(tick), .seq(seq), .adc(adc_l),
                 .corrA(best0[19:0]), .lockA(lka), .marginA(q0),
                 .corrB(best1[19:0]), .lockB(lkb), .marginB(q1),
-                .rateA(rateA), .rateB(rateB), .txd(txd));
+                .rateA(rateA), .rateB(rateB), .recA(reclatA), .recB(reclatB), .txd(txd));
 endmodule

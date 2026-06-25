@@ -4,7 +4,8 @@ ASCII, comma-separated, newline-terminated. ASCII is chosen for first bring-up: 
 serial terminal, trivial for the FPGA's lock-FSM to emit, and resync-tolerant (lock onto the MAGIC prefix
 after line noise). The gateware (fpga-toolchain-plan §3.6 block 7) MUST emit this; this module parses it.
 
-Line:  BCN,<seq>,<adc>,<corrA>,<lockA>,<marginA>,<corrB>,<lockB>,<marginB>,<rateA>,<rateB>\\n
+Line:  BCN,<seq>,<adc>,<corrA>,<lockA>,<marginA>,<corrB>,<lockB>,<marginB>,<rateA>,<rateB>,<recA>,<recB>\\n
+  recX     uint   recovery latency in SAMPLES (signal-return -> confirmed lock), gateware-measured; ms = rec/0.48
 
   seq      uint   frame counter (wraps; for drop detection)
   adc      int    latest raw/decimated ADC sample
@@ -50,13 +51,24 @@ class TelemetryFrame:
     marginB: int
     rateA: int = RATE_BIAS
     rateB: int = RATE_BIAS
+    recA: int = 0          # recovery latency, SAMPLES from signal-return to last lock (gateware-measured)
+    recB: int = 0
 
-    _ORDER = ("seq", "adc", "corrA", "lockA", "marginA", "corrB", "lockB", "marginB", "rateA", "rateB")
+    _ORDER = ("seq", "adc", "corrA", "lockA", "marginA", "corrB", "lockB", "marginB",
+              "rateA", "rateB", "recA", "recB")
 
     @property
     def chip_rate_a_hz(self) -> float: return chip_rate_hz(self.rateA)
     @property
     def chip_rate_b_hz(self) -> float: return chip_rate_hz(self.rateB)
+    @property
+    def recA_ms(self) -> float: return self.recA * 1000.0 / SAMPLE_HZ     # samples -> ms
+    @property
+    def recB_ms(self) -> float: return self.recB * 1000.0 / SAMPLE_HZ
+    @property
+    def recA_chips(self) -> float: return self.recA / 2.4                  # samples -> chips
+    @property
+    def recB_chips(self) -> float: return self.recB / 2.4
 
     @classmethod
     def parse(cls, line: str) -> "TelemetryFrame | None":
