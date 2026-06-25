@@ -86,6 +86,23 @@ rigidly tied to camera frame rate**. Needs: partial/progressive correlator, a bu
 second emitter — all on this harness. **Realism baseline:** the analog model is band-limited — chip edges
 **ramp** (low-pass PD/TIA, `s3.v` `LPF_SH`), so edge samples land mid-ramp; LPF cutoff is a sweepable knob.
 
+### Acquisition-confidence ramp → port to the sim (CEP model)
+
+The harness gives us the **empirical confidence curve** the autoc/crrcsim beacon model should reproduce. Two
+observable signals over time, both in telemetry:
+
+- **`q` (0–9)** — a *continuous SNR proxy* (match-ratio `9·|corr|/energy`, signal-level independent). HW-measured
+  ceilings: **clean ≈ 9**, **marginal (weak+noise) ≈ 5–7** (yellow, rides it without ever going green),
+  **wrong/absent code ≈ 3** (the N=31 cross-corr floor). This is the value to model as a function of
+  range/aspect/noise — *not* a binary detect.
+- **lock ladder** — confidence is *confirmed* by dwell, not by one sample: SEARCH → tentative once `q≥GOOD(5)` →
+  CONFIRMED after `MINLOCK` good periods. HW-measured **cold ≈ 2–3 code words**, **warm ≈ 1** (flywheel), and a
+  marginal SNR still confirms — it just sits in the yellow band.
+
+So the sim's beacon-acquisition CEP should be a **confidence that ramps over ~1–3 code words to an
+SNR-dependent ceiling** (with the flywheel shortening re-acquire), feeding the image predictor as a graded
+candidate→hard-lock signal — not a step function. (Empirical traces captured via `host/cold.ps1`.)
+
 ## Eval-board I/O map (STEP-MXO2)
 
 Output sites known from the threeN1 prior art. **Switch (DIP/momentary) input sites + the I/O-14/15 ball

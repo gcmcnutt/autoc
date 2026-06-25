@@ -12,8 +12,10 @@ Line:  BCN,<seq>,<adc>,<corrA>,<lockA>,<marginA>,<corrB>,<lockB>,<marginB>,<rate
   corrX    int    correlation peak for beacon X (A/B)
   lockX     0|1|2 lock state: 0=no_lock, 1=tentative, 2=confirmed   (the §3.6 lock ladder)
   marginX  int    correlation-margin / SNR proxy for beacon X (the 0-9 quality)
-  rateX    uint   DPLL rate estimate, offset-binary: slip = (rateX-32768)/32 ; chip_rate_Hz = 7200/(36-slip).
-                  Held (frozen) through outages = the frequency flywheel. 32768 = on the nominal 200 Hz.
+  rateX    uint   DPLL rate estimate, offset-binary: slip = (rateX-32768)/32 ; chip_rate_Hz = N*480/(L+slip)
+                  (N=31, L=74 -> see chip_rate_hz()). Held (frozen) through outages = the frequency flywheel.
+                  NB 32768 (slip=0) = the TEMPLATE nominal (L=74 samples/period = 201.08 Hz), because L rounds
+                  2.4*31=74.4 down; a locked 200 Hz emitter converges to slip~=+0.4 -> rate ~=32781 -> 200 Hz.
 
 Two beacons because two codes share the one detector (CDMA). Each beacon has its OWN lock/margin/rate (the
 per-beacon independent DPLL of acquisition-research-plan §5).

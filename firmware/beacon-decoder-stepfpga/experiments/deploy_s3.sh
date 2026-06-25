@@ -14,5 +14,5 @@ JED="$SB/impl1/s3_impl1.jed"
 if [ ! -f "$JED" ]; then echo "[build] NO .jed — log tail:"; tail -25 "$SB/build.log"; exit 1; fi
 grep -iE 'Number of LUT4s|All preferences were met|not met' "$SB/impl1/s3_impl1.mrp" "$SB/impl1/s3_impl1.twr" 2>/dev/null | grep -iE 'out of|preferences' | head -3
 echo "[flash] copy s3_impl1.jed → D:"; ( cd "$SB/impl1" && cmd.exe /c "copy /Y s3_impl1.jed D:\\" )
-echo "[done] 8 LEDs = correlation bar-graph; LEDl = lock (red/yellow/green). SW1 code A/B; K1-K4 stress."
+echo "[done] 8 LEDs = q bars (L4=codeA,R4=codeB); LEDl/LEDr = A/B lock (red/yel/grn). DIP1/2/3=mute A/B/noise, DIP4=B-skew; K1-K4=inj1/inj2/weak/floor."
 echo "       scope: P8=code, N8=epoch, P3/M4/N4=SPI."

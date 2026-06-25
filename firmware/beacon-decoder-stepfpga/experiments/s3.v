@@ -280,12 +280,15 @@ module s3_top (input clk12,
     else if (rxb==8'h46 || rxb==8'h41 || rxb==8'h42 || rxb==8'h47) pend_op <= rxb;  // value-taking opcodes
     else if (rxb[7])       cmd_reg <= rxb[6:0];    // 0x80-0xFF -> 7-bit knob mask
   end
-  reg flush = 1'b0; always @(posedge clk12) flush <= (rxv && rxb == 8'h5A);   // 'Z' = flush flywheel (true cold)
+  // 'Z' = flush flywheel (true cold). Gated on pend_op==0 so a VALUE byte that happens to be 0x5A (e.g. 'F'/'A'/
+  // 'B'/'G' arg = 90) is consumed as the arg above and does NOT spuriously flush.
+  reg flush = 1'b0; always @(posedge clk12) flush <= (rxv && rxb == 8'h5A && pend_op == 8'h00);
 
   // ============ per-code DPLL: rate estimate from peak-phase slip (the frequency flywheel) ============
   // IIR mean of the per-period peak-phase delta (samples/period); updates only while LOCKED -> FROZEN (held)
   // through outages = the flywheel. Reported offset-binary: rate = 32768 + 32·(mean slip). Host recovers:
-  //   slip = (rate-32768)/32 ;  chip_rate_Hz = 7200 / (36 - slip)   [36 = nominal samples per code period]
+  //   slip = (rate-32768)/32 ;  chip_rate_Hz = N·480 / (L + slip)   [N=31, L=74; faster emitter -> peak earlier
+  //   -> negative slip -> higher chip_rate]. (See host/beacon_telemetry/frame.py chip_rate_hz().)
   localparam integer SLIP_SH = 5;                        // IIR ~32 periods (~2.4 s) of averaging
   reg pend_d = 0; always @(posedge clk12) pend_d <= pend;
   reg [6:0] prev0=0, prev1=0;
