@@ -57,14 +57,35 @@ are still driven to **I/O 14 / I/O 15** for scope observability.
 S1–S6 need **no analog hardware** — pure FPGA, flashed/observed over the proven loop. S3+ is the actual
 shippable correlator RTL (the A4a–c / F4–F5 work), just exercised by the synthetic stimulus.
 
-**Current state (2026-06-24):** **S1–S6 ✓** — all in `experiments/s3.v` (top `s3_top`, ~2.5k LUT/57% at N=31)
+**Current state (2026-06-25):** **S1–S6 ✓** — all in `experiments/s3.v` (top `s3_top`, **3524 LUT/82 % at N=63**)
 + `spi_mcp3201.v` + `uart_bcn.v`; full feature reference in [`SIM-FEATURES.md`](SIM-FEATURES.md). Code length is
-parametrized (**N=31** current; N=15 was the first cut, **N=63 next**). The DPLL loop is now **closed**
-(`Leff=L+slip` stretches the template to the emitter rate → coherent lock across ±5 % skew). An **on-chip
-recovery counter** (signal-return→confirmed-lock, since USB can't run fast) reports `recA`/`recB` in telemetry,
-and the `Z` command flushes the flywheel to force a **true-cold** acquire. HW-measured: **WARM ≈ 1 code word
-(~150 ms)** (flywheel held), **TRUE-COLD ≈ 2 code words (62 chips / 308 ms)**; ±5 % skew adds nothing to cold.
-**Next: N=63** (window grows ~2× — check fit) and S7 (swap the virtual ADC for the real MCP3201).
+parametrized (**N=63** current; N=15/31 earlier cuts). The DPLL loop is **closed** (`Leff=L+slip` stretches the
+template to the emitter rate → coherent lock under skew *once locked*). An **on-chip recovery counter**
+(signal-return→confirmed-lock, since USB can't run fast) reports `recA`/`recB` in telemetry, and the `Z` command
+flushes the flywheel to force a **true-cold** acquire.
+**Next:** partial/progressive correlator (A4d-2, low-latency tier) + burst-error knob (A4d-3), then S7 (swap the
+virtual ADC for the real MCP3201).
+
+#### N=63 vs N=31 — measured wallclock (A4d-1, 2026-06-25)
+
+| metric | N=31 | N=63 |
+|---|---|---|
+| LUT4 fit (MachXO2-4000, 4320) | 57 % | **82 %** (N=127 won't fit) |
+| 1 code word @ 200 Hz chips | 154 ms | 315 ms |
+| **cold acquire** (flushed) | 2 words = **308 ms** | 2 words = **629 ms** |
+| **warm re-acquire** (flywheel, drop ≤8 s) | 1 word = **154 ms** | 1 word = **315 ms** (flat) |
+| **cold-skew tolerance** | rode +5 % | **~±5 % cliff** (locks +4.9 %, fails +5.3 %) |
+| CDMA cross-corr floor / proc-gain | 0.29 | 0.27 / **+3 dB** |
+
+**Findings.** (1) Acquisition latency scales **linearly with N** at fixed chip rate — 2× code = 2× wallclock; the
+flywheel still buys the 1-word warm shortcut. To hold the 100–150 ms cold goal at N=63 needs faster chips/sampling
+**or** the partial-correlation candidate tier (A4d-2). (2) The longer coherent window is **less Doppler-tolerant on
+COLD acquire**: the closed-loop DPLL only corrects `Leff` *after* lock (slip updates while LOCKED), so the initial
+cold lock runs the nominal template and smears under rate error — N=63 cliffs at ~±5 % (right at the NFR-4 edge),
+where N=31's shorter window had margin. The fix is a shorter acquisition sub-window or a multi-`Leff` cold search,
+not more integration. (3) **This raises the value of a stable emitter clock at long codes:** a 20–50 ppm xtal both
+extends the flywheel coast (longer fast-re-acquire window) *and* removes the cold-skew cliff — re-enabling N=63's
++3 dB gain + lower CDMA floor. With the loose OSCH RC (±5 %), N=63 cold acquire is marginal; with a xtal it's free.
 
 ## Hardening study (→ tasks **A4d**)
 

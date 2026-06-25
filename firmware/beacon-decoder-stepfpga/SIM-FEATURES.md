@@ -6,10 +6,11 @@ the actual correlator (the DUT), and exposes everything on the board's I/O + a b
 beacon receiver can be developed and stress-tested with **no analog hardware**.
 
 - **Current build:** `experiments/s3.v` (top `s3_top`) + `spi_mcp3201.v` + `uart_bcn.v` — milestone **S6 + DPLL**,
-  parametrized code length **N=31** (two emitters + noise + DIP/USB control + per-code clock-estimation loop).
-- **Resource:** **2465 / 4320 LUT4 (57 %)** at N=31, all timing met.
-- **Code length is a localparam** (`N`, `L=round(2.4·N)`): N=15 was the first cut; **N=31 is current** (lower
-  cross-corr floor → cleaner two-code separation); N=63 is the next step (window grows further).
+  parametrized code length **N=63** (two emitters + noise + DIP/USB control + per-code clock-estimation loop).
+- **Resource:** **3524 / 4320 LUT4 (82 %)** at N=63, all timing met (N=127 would not fit).
+- **Code length is a localparam** (`N`, `L=round(2.4·N)`): N=15/31 were earlier cuts; **N=63 is current** (+3 dB
+  proc-gain, CDMA floor 0.27). Tradeoff: cold acquire is 2× the N=31 wallclock (629 ms) and the cold-skew
+  tolerance tightens to ~±5 % — see the N=63-vs-N=31 table in [`correlator-sim-plan.md`](correlator-sim-plan.md).
 - **Plan / roadmap:** [`correlator-sim-plan.md`](correlator-sim-plan.md) · **research/study:**
   [`specs/031-beacon-camera/tasks.md` §A4d](../../specs/031-beacon-camera/tasks.md) · **predictive model:**
   [`specs/031-beacon-camera/acquisition-sim/a4d_model.py`](../../specs/031-beacon-camera/acquisition-sim/a4d_model.py)
@@ -29,7 +30,7 @@ beacon receiver can be developed and stress-tested with **no analog hardware**.
                                           virtual MCP3201 (bit-exact) ── soft SPI master (50 kHz, 480 Hz/sample)
                                                           │  CS/SCLK/DOUT mirrored to J1 (P3/M4/N4) for scope
                                                           ▼
-                                          DUAL correlator (DUT): 36-sample matched filter ×2 (CODE0, CODE1)
+                                          DUAL correlator (DUT): 151-sample matched filter ×2 (CODE0, CODE1)
                                           DC-removal + AGC ratio + per-code min-lock/limited-hold FSM
                                                           │
                        ┌──────────────────┬──────────────┼───────────────────┬─────────────────┐
@@ -56,8 +57,8 @@ CS (P3) against the emitter epoch (N8) to see the slip.
 
 | Src | Code / model | Chip clock | Enable |
 |---|---|---|---|
-| **A** | Gold **CODE0** = `0000000100011011000011001110011` (N=31; preferred pair, xcorr {-9,-1,7}) | OSCH / 266000 = **200 Hz** chip | DIP1 / cmd[0] |
-| **B** | Gold **CODE1** = `0100011001100111100101001011110` (N=31) | OSCH / EDIV_B (skewed ±3% via DIP4, or USB `F` command) | DIP2 / cmd[1] |
+| **A** | Gold **CODE0** = `000000001110010000001111011011001110011101111011010111100011100` (N=63; preferred pair, xcorr {-17,-1,15}) | OSCH / 266000 = **200 Hz** chip | DIP1 / cmd[0] |
+| **B** | Gold **CODE1** = `010000110110011011110011110001000010100000001110111110001111110` (N=63) | OSCH / EDIV_B (skewed via DIP4, or USB `F` command) | DIP2 / cmd[1] |
 | **N** | per-sample white noise (LFSR, ~±512) | — | DIP3 / cmd[2] |
 
 - **2.4 samples per chip** at 480 Hz sampling (the camera-frame cadence; 200 Hz chip × 2.4 = 480).
@@ -92,20 +93,22 @@ CS (P3) against the emitter epoch (N8) to see the slip.
 
 ## 6. Correlator (the DUT) — dual-code
 
-- **Matched filter ×2:** a 36-sample sliding window correlated against CODE0 and CODE1 (upsampled ±1 template,
+- **Matched filter ×2:** a 151-sample sliding window correlated against CODE0 and CODE1 (upsampled ±1 template,
   36→15 slot map). Signed-accumulate (no multiplier needed for a ±1 code); shared window/DC/energy.
 - **DC-removal:** slow IIR mean (τ ≈ 256 samples) subtracted before correlation.
 - **AGC:** quality `q = |corr| / energy` → **signal-level independent** 0–9 match ratio. `|corr|` makes code
   bit-order & polarity irrelevant. (Weak signal / raised floor therefore stay locked.)
 - **Per-code lock FSM:** SEARCH → ACQUIRING (`MINLOCK=2` consecutive good periods to CONFIRM) → LOCKED → HOLD
-  (coast `HOLDMAX=2` bad periods) → re-acquire. `GOOD` threshold tracks the code: **5 at N=31** (floor ~3),
+  (coast `HOLDMAX=2` bad periods) → re-acquire. `GOOD` threshold tracks the code: **5 at N=63/N=31** (floor ~3),
   **6 at N=15** (floor ~5) — the lower floor of the longer code permits a lower threshold = more margin.
-- **Warm re-acquire (flywheel):** within ~10 s of a lock (coast window) the rate is still held → re-lock on the
-  FIRST good period (skips ACQ); cold (rate stale) needs `MINLOCK`. **HW-measured (recovery counter):**
-  **WARM ≈ 1 code word (~150 ms)**, **TRUE-COLD ≈ 2 code words (62 chips / 308 ms)** — the flywheel buys ~1 code
-  word on every re-acquire inside the coast window. ±5 % skew adds *nothing* to the cold number (the nominal
-  template still confirms in 2 periods; the closed-loop DPLL refines quality afterward). True-cold is forced by
+- **Warm re-acquire (flywheel):** within the coast window (~10 s wallclock; `COASTMAX=32` periods @ N=63) the rate
+  is still held → re-lock on the FIRST good period (skips ACQ); cold (rate stale) needs `MINLOCK`. **HW-measured
+  (recovery counter), N=63:** **WARM ≈ 1 code word (315 ms)**, **TRUE-COLD ≈ 2 code words (629 ms)** — the flywheel
+  buys ~1 code word on every re-acquire inside the coast window (was 154/308 ms at N=31). True-cold is forced by
   the `Z` command (flush flywheel) — relevant for flight, where sun/reflections cause frequent loss/regain.
+  **Coast is wallclock-driven (emitter↔rx osc stability), not code length** — a 20–50 ppm xtal would extend it well
+  beyond 10 s. At N=63 cold acquire tolerates skew only to ~±5 % (the long coherent window smears before the DPLL
+  engages); a stable clock removes that cliff too. See the N=63-vs-N=31 table in `correlator-sim-plan.md`.
 - **Discrimination:** only the emitted code locks; the other sits at its true cross-corr/noise level → live
   CDMA separation when both A and B are on.
 - **Per-code DPLL (clock estimation + flywheel + CLOSED LOOP):** an IIR mean of the per-period peak-phase slip

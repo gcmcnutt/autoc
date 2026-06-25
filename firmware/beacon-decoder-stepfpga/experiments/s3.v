@@ -38,9 +38,9 @@ module s3_top (input clk12,
 
   // ============ emitters: internal OSCH; A & B at independent divisors -> real inter-beacon slip ============
   wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
-  localparam integer N = 31, L = 74;                       // code length (chips); window = round(2.4·N) samples
-  localparam [30:0] CODE0 = 31'b0000000100011011000011001110011,   // N=31 Gold preferred pair (xcorr {-9,-1,7})
-                    CODE1 = 31'b0100011001100111100101001011110;
+  localparam integer N = 63, L = 151;                      // code length (chips); window = round(2.4·N) samples
+  localparam [62:0] CODE0 = 63'b000000001110010000001111011011001110011101111011010111100011100,  // N=63 Gold preferred
+                    CODE1 = 63'b010000110110011011110011110001000010100000001110111110001111110;  // pair (xcorr {-17,-1,15})
   reg [1:0] inj1o=0, inj2o=0;                     // inject bits synced into the emitter (oclk) domain
   reg [18:0] edivb_o1=19'd266000, edivb_o2=19'd266000;   // emitter-B divider synced into oclk
   always @(posedge oclk) begin
@@ -49,25 +49,25 @@ module s3_top (input clk12,
 
   // emitter A @ OSCH/266000 = 200 Hz, with random bit-error injection
   localparam integer EDIV_A = 266000;
-  reg [18:0] edcA=0; reg [4:0] echA=0; wire wrapA=(edcA==EDIV_A-1);
-  always @(posedge oclk) if (wrapA) begin edcA<=0; echA<=(echA==N-1)?5'd0:echA+1'b1; end else edcA<=edcA+1'b1;
-  reg [15:0] lfsr=16'hACE1; always @(posedge oclk) lfsr<={lfsr[14:0],lfsr[15]^lfsr[13]^lfsr[12]^lfsr[10]};
-  reg [4:0] et0=0,et1=0,et2=0; wire eopA=wrapA&(echA==N-1);     // random error chips (mod N)
+  reg [18:0] edcA=0; reg [5:0] echA=0; wire wrapA=(edcA==EDIV_A-1);
+  always @(posedge oclk) if (wrapA) begin edcA<=0; echA<=(echA==N-1)?6'd0:echA+1'b1; end else edcA<=edcA+1'b1;
+  reg [17:0] lfsr=18'h1ACE1; always @(posedge oclk) lfsr<={lfsr[16:0],lfsr[17]^lfsr[10]^lfsr[7]^lfsr[0]};
+  reg [5:0] et0=0,et1=0,et2=0; wire eopA=wrapA&(echA==N-1);     // random error chips (mod N), 6-bit positions
   always @(posedge oclk) if (eopA) begin
-    et0<=(lfsr[4:0]>=N)?5'd0:lfsr[4:0]; et1<=(lfsr[9:5]>=N)?5'd0:lfsr[9:5]; et2<=(lfsr[14:10]>=N)?5'd0:lfsr[14:10];
+    et0<=(lfsr[5:0]>=N)?6'd0:lfsr[5:0]; et1<=(lfsr[11:6]>=N)?6'd0:lfsr[11:6]; et2<=(lfsr[17:12]>=N)?6'd0:lfsr[17:12];
   end
   wire flipA = (inj1o[1]&(echA==et0)) | (inj2o[1]&((echA==et1)|(echA==et2)));
   wire codeA = CODE0[N-1-echA] ^ flipA;
   assign code_pin = codeA;                         // I/O14 P8: code A (post-corruption)
-  assign sync_pin = (echA==5'd0);                  // I/O15 N8: code-A epoch
+  assign sync_pin = (echA==6'd0);                  // I/O15 N8: code-A epoch
 
   // emitter B @ OSCH/EDIV_B (skewed -> steady slip vs A and vs the receiver)
   wire [18:0] EDIV_B = edivb_o2;                             // emitter-B rate: DIP4 skew (local) or 'F' cmd (remote)
-  reg [18:0] edcB=0; reg [4:0] echB=0; wire wrapB=(edcB>=EDIV_B-1);
-  always @(posedge oclk) if (wrapB) begin edcB<=0; echB<=(echB==N-1)?5'd0:echB+1'b1; end else edcB<=edcB+1'b1;
-  reg [4:0] et0B=0,et1B=0,et2B=0; wire eopB=wrapB&(echB==N-1);   // B's own random error positions (mod N)
+  reg [18:0] edcB=0; reg [5:0] echB=0; wire wrapB=(edcB>=EDIV_B-1);
+  always @(posedge oclk) if (wrapB) begin edcB<=0; echB<=(echB==N-1)?6'd0:echB+1'b1; end else edcB<=edcB+1'b1;
+  reg [5:0] et0B=0,et1B=0,et2B=0; wire eopB=wrapB&(echB==N-1);   // B's own random error positions (mod N)
   always @(posedge oclk) if (eopB) begin
-    et0B<=(lfsr[4:0]>=N)?5'd0:lfsr[4:0]; et1B<=(lfsr[9:5]>=N)?5'd0:lfsr[9:5]; et2B<=(lfsr[14:10]>=N)?5'd0:lfsr[14:10];
+    et0B<=(lfsr[5:0]>=N)?6'd0:lfsr[5:0]; et1B<=(lfsr[11:6]>=N)?6'd0:lfsr[11:6]; et2B<=(lfsr[17:12]>=N)?6'd0:lfsr[17:12];
   end
   wire flipB = (inj1o[1]&(echB==et0B)) | (inj2o[1]&((echB==et1B)|(echB==et2B)));
   wire codeB = CODE1[N-1-echB] ^ flipB;                       // inj corrupts BOTH codes (independent positions)
@@ -130,14 +130,14 @@ module s3_top (input clk12,
   // CLOSED-LOOP DPLL: per-code effective period Leff = L + (measured slip) -> the template's slot->chip advance
   // (Bresenham) tracks the emitter's actual rate, keeping the long-window matched filter coherent under skew.
   // Two passes (code 0 then code 1), each with its own Leff; energy (template-independent) computed in pass 0.
-  reg [6:0] ai = 0; reg busy = 0, rdy = 0, pass = 0;
-  reg [4:0] cchip = 0; reg [8:0] cacc = 0;
+  reg [7:0] ai = 0; reg busy = 0, rdy = 0, pass = 0;       // ai 0..L-1 (151) -> 8-bit
+  reg [5:0] cchip = 0; reg [8:0] cacc = 0;                 // cchip 0..N-1 (63) -> 6-bit
   reg signed [21:0] acc_c=0, corr0=0, corr1=0;
   reg        [21:0] acc_e=0, energy=0;
   wire signed [17:0] sr0 = slip0 >>> SLIP_SH, sr1 = slip1 >>> SLIP_SH;          // mean slip (samples/period)
-  wire signed [5:0]  sc0 = (sr0 > 18'sd10) ? 6'sd10 : (sr0 < -18'sd10) ? -6'sd10 : sr0[5:0];   // clamp ±10
-  wire signed [5:0]  sc1 = (sr1 > 18'sd10) ? 6'sd10 : (sr1 < -18'sd10) ? -6'sd10 : sr1[5:0];
-  wire signed [9:0]  Leff0 = 10'sd74 + sc0, Leff1 = 10'sd74 + sc1;
+  wire signed [5:0]  sc0 = (sr0 > 18'sd20) ? 6'sd20 : (sr0 < -18'sd20) ? -6'sd20 : sr0[5:0];   // clamp ±20 (N=63 walk 2×)
+  wire signed [5:0]  sc1 = (sr1 > 18'sd20) ? 6'sd20 : (sr1 < -18'sd20) ? -6'sd20 : sr1[5:0];
+  wire signed [9:0]  Leff0 = 10'sd151 + sc0, Leff1 = 10'sd151 + sc1;   // base L=151 (N=63)
   wire        [8:0]  Leff  = pass ? Leff1[8:0] : Leff0[8:0];
   wire tcode = pass ? CODE1[cchip] : CODE0[cchip];                              // time-reversed template
   wire signed [12:0] dev  = $signed({1'b0, win[ai]}) - $signed({1'b0, dc});
@@ -165,8 +165,8 @@ module s3_top (input clk12,
   wire signed [21:0] a0 = corr0[21] ? -corr0 : corr0;
   wire signed [21:0] a1 = corr1[21] ? -corr1 : corr1;
   reg [21:0] pk0=0, pk1=0, pke=1, best0=0, best1=0, beste=1;
-  reg [6:0]  pkph0=0, pkph1=0, bestph0=0, bestph1=0;     // phase (0..L-1) of the peak — for the DPLL
-  reg [6:0]  pcnt=0; reg pend=0;
+  reg [7:0]  pkph0=0, pkph1=0, bestph0=0, bestph1=0;     // phase (0..L-1, 151) of the peak — for the DPLL (8-bit)
+  reg [7:0]  pcnt=0; reg pend=0;                          // phase counter 0..L-1 (151) -> 8-bit
   always @(posedge clk12) begin
     pend <= 1'b0;
     if (rdy) begin
@@ -205,7 +205,10 @@ module s3_top (input clk12,
   reg [1:0] st0=SEARCH, st1=SEARCH; reg [2:0] g0=0,b0=0,g1=0,b1=0;
   // frequency flywheel: coast counts periods since lock; while < COASTMAX the rate is still held -> WARM
   // re-acquire (confirm on the FIRST good period instead of MINLOCK). Init stale so the first lock is COLD.
-  localparam [7:0] COASTMAX = 8'd65;           // ~10 s flywheel coast (65 periods @ ~154 ms for N=31)
+  // Coast window is WALLCLOCK-driven (set by emitter↔rx osc stability, NOT code length): hold the rate only as
+  // long as drift stays < ~½ chip. ~10 s with the OSCH RC -> 32 periods @ ~315 ms for N=63 (was 65 @ 154 ms for
+  // N=31). A stable xtal (20–50 ppm) on both ends would extend this dramatically -> far longer fast-re-acquire.
+  localparam [7:0] COASTMAX = 8'd32;
   reg [7:0] coast0=8'd133, coast1=8'd133;
   wire warm0 = (coast0 < COASTMAX), warm1 = (coast1 < COASTMAX);
   always @(posedge clk12) if (flush) begin st0<=SEARCH; coast0<=COASTMAX; g0<=0; b0<=0; end
@@ -290,16 +293,16 @@ module s3_top (input clk12,
   // ============ per-code DPLL: rate estimate from peak-phase slip (the frequency flywheel) ============
   // IIR mean of the per-period peak-phase delta (samples/period); updates only while LOCKED -> FROZEN (held)
   // through outages = the flywheel. Reported offset-binary: rate = 32768 + 32·(mean slip). Host recovers:
-  //   slip = (rate-32768)/32 ;  chip_rate_Hz = N·480 / (L + slip)   [N=31, L=74; faster emitter -> peak earlier
+  //   slip = (rate-32768)/32 ;  chip_rate_Hz = N·480 / (L + slip)   [N=63, L=151; faster emitter -> peak earlier
   //   -> negative slip -> higher chip_rate]. (See host/beacon_telemetry/frame.py chip_rate_hz().)
   localparam integer SLIP_SH = 5;                        // IIR ~32 periods (~2.4 s) of averaging
   reg pend_d = 0; always @(posedge clk12) pend_d <= pend;
-  reg [6:0] prev0=0, prev1=0;
+  reg [7:0] prev0=0, prev1=0;                            // peak phase 0..L-1 (151) -> 8-bit
   reg signed [17:0] slip0=0, slip1=0;
-  wire signed [8:0] raw0 = $signed({2'b0,bestph0}) - $signed({2'b0,prev0});
-  wire signed [8:0] raw1 = $signed({2'b0,bestph1}) - $signed({2'b0,prev1});
-  wire signed [8:0] dlt0 = (raw0 > L/2) ? raw0-L : (raw0 < -(L/2)) ? raw0+L : raw0;   // unwrap to +/- L/2
-  wire signed [8:0] dlt1 = (raw1 > L/2) ? raw1-L : (raw1 < -(L/2)) ? raw1+L : raw1;
+  wire signed [9:0] raw0 = $signed({2'b0,bestph0}) - $signed({2'b0,prev0});   // ±(L-1) -> 10-bit signed
+  wire signed [9:0] raw1 = $signed({2'b0,bestph1}) - $signed({2'b0,prev1});
+  wire signed [9:0] dlt0 = (raw0 > L/2) ? raw0-L : (raw0 < -(L/2)) ? raw0+L : raw0;   // unwrap to +/- L/2
+  wire signed [9:0] dlt1 = (raw1 > L/2) ? raw1-L : (raw1 < -(L/2)) ? raw1+L : raw1;
   wire lockedA = (st0==LOCK)||(st0==HOLD);
   wire lockedB = (st1==LOCK)||(st1==HOLD);
   wire signed [17:0] dlt0x = dlt0, dlt1x = dlt1;          // sign-extend (signed) — keep the IIR fully signed
