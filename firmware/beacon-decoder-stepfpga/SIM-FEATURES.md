@@ -124,6 +124,46 @@ CS (P3) against the emitter epoch (N8) to see the slip.
   → cross-corr averages → both green — so emitter B is always slightly skewed vs A by default (real beacons
   never share a clock).
 
+### The algorithm as one system — *strong lock under dropouts*
+
+Everything above composes into a single lifecycle whose **only goal is to keep a confident lock while the signal
+flickers** (sun, reflections, occlusion, aspect, range, a second beacon on the pixel). Each stage exists to defend
+the lock against a different way of losing it:
+
+```
+   signal present                       signal degraded / gone
+   ──────────────►                      ──────────────►
+  SEARCH ──q≥GOOD──► ACQUIRE ──MINLOCK──► LOCK ──q<GOOD──► HOLD ──coast>HOLDMAX──► SEARCH
+            (cold)   │  snap rate         │ track          │ ride 2 periods         │ but rate is
+                     │  (fast-acquire)    │ (closed DPLL)   │ (the dropout buffer)   │ HELD (flywheel)
+                     ▼                    ▼                 ▼                        ▼
+              skip the freq search   Leff=L+slip keeps    partial-window corr     WARM re-lock: 1 good
+              (A-GPS-style aiding)   the long filter      survives short gaps     period, no MINLOCK,
+                                     coherent under skew                          no freq pull-in
+```
+
+1. **AGC (`q=|corr|/energy`)** — decouples "is it the code?" from "how bright?", so range/aspect swings don't
+   look like dropouts. This is what lets a *weak* return still confirm.
+2. **Lock ladder (MINLOCK)** — demands 2 consecutive good periods to CONFIRM → rejects noise false-alarms
+   (pure noise hit GOOD <1 % of frames, never twice running).
+3. **Fast-acquire snap** — on the cold lock edge, seed the chip-rate from the measured phase-walk so full quality
+   lands in <1 s instead of crawling the IIR for ~5–10 s (the RC-osc-offset tax). *Frequency-aiding.*
+4. **Closed-loop DPLL (`Leff=L+slip`)** — once locked, stretch the template to the emitter's true rate → the
+   long matched filter stays coherent under ±5 % skew (full proc-gain retained, not smeared away).
+5. **HOLD coast (HOLDMAX)** — ride 2 bad periods without dropping → absorbs short burst dropouts outright.
+6. **Frequency flywheel** — freeze the rate estimate through the outage (~10 s coast) → a re-acquire is
+   **phase-only**, hitting full quality on the first good period (no cold search, no pull-in).
+
+**Measured robustness (N=31, HW, 2026-06-25):**
+
+| stress | result |
+|---|---|
+| **single-code skew, cold** (A *or* B, ±5 %) | locks 0.2–0.3 s, **full-q ≤1.6 s across ±5 %** (fast-acquire) |
+| **burst dropout** (blank N consecutive chips, `K` cmd) | **HELD through ≤46 chips (~230 ms ≈ 1.5 code words)**; ≥62 chips drops but **warm re-acquire ~150–175 ms** |
+| **warm re-acquire** (within coast) | ~1 code word (154 ms), flat across multi-second outages |
+| **two equal-power codes, same rate** | both hold q≈8 (CDMA separation OK) |
+| **two equal-power codes, skewed** *(stress corner)* | one stays q9, the other can sag to q≈4 — CDMA energy-share / near-far; eased by unequal power (codes rarely equal-power on one pixel) — follow-up |
+
 ---
 
 ## 7. Controls
@@ -148,13 +188,17 @@ CS (P3) against the emitter epoch (N8) to see the slip.
 - `+` (0x2B) → **REMOTE** (USB owns; switches ignored) — shown as a **blue tint** on both RGB LEDs.
 - `-` (0x2D) → **LOCAL** (switches resume).
 - `0x80 | mask` → 7-bit knob set: `[0]enA [1]enB [2]enN [3]inj-1bit [4]inj-2bit [5]weak [6]floor`.
-- `F`(0x46) + value → set **emitter-B frequency** (~±10 % over the byte; value 128 = nominal) — for DPLL/rate testing.
+- `E`(0x45)/`F`(0x46) + value → set **emitter-A / emitter-B frequency** (~±10 % over the byte; value 128 = nominal)
+  — skew either beacon for DPLL/rate testing (independent clocks, the real two-RC-osc case).
 - `A`(0x41)/`B`(0x42)/`G`(0x47) + value → set per-source **magnitude** (code A / code B / noise) — the analog channel model.
-- The `F`/`A`/`B`/`G` analog trims apply **only in REMOTE**; returning to LOCAL (`-`) reverts them to the reset
-  defaults (A/B=750, noise=400, B-skew per DIP4), so **manual operation always == power-on**.
+- `K`(0x4B) + value → **burst-dropout span** in CHIPS: blank that many *consecutive* chips of **both** beacons once
+  per ~2.5 s window (distinct from the spread `inj-1/2bit`) — a measured occlusion to probe HOLD depth + re-acquire.
+- The `E`/`F`/`A`/`B`/`G`/`K` trims apply **only in REMOTE**; returning to LOCAL (`-`) reverts them to reset defaults
+  (A/B=750, noise=400, A=nominal, B-skew per DIP4, no burst), so **manual operation always == power-on**.
 - `Z`(0x5A) → **flush the flywheel**: forget the DPLL rate (`slip→0`) and drop both locks (`st→SEARCH`, `coast→max`) →
   the very next acquire is **true-cold** (no warm 1-period shortcut). Use it to measure cold re-acquire vs the warm path.
-- Driver: `host/cmd_read.sh <mask> [sec]` / `cmd_read.ps1 -Mask -Freq -Flush -Local` / `cold.ps1` (lock→flush→measure).
+- Drivers: `cmd_read.ps1 -Mask -Freq -Flush -Local` · `cold.ps1` (lock→flush→measure) · `robust.ps1 -FreqA -FreqB`
+  (skew A/B sweep) · `burst.ps1 -Span` (dropout-span sweep).
 
 ---
 

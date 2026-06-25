@@ -31,10 +31,14 @@ module s3_top (input clk12,
   wire einj2  = remote ? cmd_reg[4] : kb2[1];
   wire eweak  = remote ? cmd_reg[5] : kb3[1];
   wire efloor = remote ? cmd_reg[6] : kb4[1];
+  reg signed [19:0] ediva_cmd = 20'sd266000;       // emitter-A divider via USB 'E' command (skew A; LOCAL=nominal)
+  wire [18:0] ediva_eff = remote ? ediva_cmd[18:0] : 19'd266000;   // LOCAL: A is the nominal 200 Hz reference
   reg signed [19:0] edivb_cmd = 20'sd266000;       // emitter-B divider set by the USB 'F' command (rate test)
   wire [18:0] edivb_eff = remote ? edivb_cmd[18:0] // remote: 'F'-commanded rate
                                  : (dsw4[1] ? 19'd262000 : 19'd257000);  // B ALWAYS skewed vs A (real beacons
                                  // never share a clock): DIP4 off ~+1.5% / on ~+3.5% -> they slip -> averaged
+  reg [7:0] burst_cmd = 0;                          // USB 'K': dropout-span in CHIPS (periodic occlusion of A&B)
+  wire [7:0] burst_eff = remote ? burst_cmd : 8'd0; // LOCAL = no burst (power-on clean)
 
   // ============ emitters: internal OSCH; A & B at independent divisors -> real inter-beacon slip ============
   wire oclk; OSCH #(.NOM_FREQ("53.2")) osc (.STDBY(1'b0), .OSC(oclk), .SEDSTDBY());
@@ -42,14 +46,17 @@ module s3_top (input clk12,
   localparam [30:0] CODE0 = 31'b0000000100011011000011001110011,   // N=31 Gold preferred pair (xcorr {-9,-1,7})
                     CODE1 = 31'b0100011001100111100101001011110;   // (N=63 codes in git @ 1bd3b4a if needed)
   reg [1:0] inj1o=0, inj2o=0;                     // inject bits synced into the emitter (oclk) domain
-  reg [18:0] edivb_o1=19'd266000, edivb_o2=19'd266000;   // emitter-B divider synced into oclk
+  reg [18:0] ediva_o1=19'd266000, ediva_o2=19'd266000, edivb_o1=19'd266000, edivb_o2=19'd266000;  // dividers -> oclk
+  reg [7:0] burst_o1=0, burst_o2=0;              // burst span synced into oclk
   always @(posedge oclk) begin
-    inj1o<={inj1o[0],einj1}; inj2o<={inj2o[0],einj2}; edivb_o1<=edivb_eff; edivb_o2<=edivb_o1;
+    inj1o<={inj1o[0],einj1}; inj2o<={inj2o[0],einj2};
+    ediva_o1<=ediva_eff; ediva_o2<=ediva_o1; edivb_o1<=edivb_eff; edivb_o2<=edivb_o1;
+    burst_o1<=burst_eff; burst_o2<=burst_o1;
   end
 
-  // emitter A @ OSCH/266000 = 200 Hz, with random bit-error injection
-  localparam integer EDIV_A = 266000;
-  reg [18:0] edcA=0; reg [5:0] echA=0; wire wrapA=(edcA==EDIV_A-1);
+  // emitter A @ OSCH/EDIV_A (nominal 200 Hz, or skewed via USB 'E'), with random bit-error injection
+  wire [18:0] EDIV_A = ediva_o2;
+  reg [18:0] edcA=0; reg [5:0] echA=0; wire wrapA=(edcA>=EDIV_A-1);
   always @(posedge oclk) if (wrapA) begin edcA<=0; echA<=(echA==N-1)?6'd0:echA+1'b1; end else edcA<=edcA+1'b1;
   reg [17:0] lfsr=18'h1ACE1; always @(posedge oclk) lfsr<={lfsr[16:0],lfsr[17]^lfsr[10]^lfsr[7]^lfsr[0]};
   reg [5:0] et0=0,et1=0,et2=0; wire eopA=wrapA&(echA==N-1);     // random error chips (mod N), 6-bit positions
@@ -72,9 +79,17 @@ module s3_top (input clk12,
   wire flipB = (inj1o[1]&(echB==et0B)) | (inj2o[1]&((echB==et1B)|(echB==et2B)));
   wire codeB = CODE1[N-1-echB] ^ flipB;                       // inj corrupts BOTH codes (independent positions)
 
+  // ===== burst dropout (A4d-3): blank `burst` CONSECUTIVE chips once per BURST_WINDOW -> isolated occlusion =====
+  // (distinct from the spread 1/2-bit K1/K2 injectors). Models a beam-block / sun glint of a measured span; the
+  // FSM HOLD + flywheel must coast it. Both beacons squelched together (whole-scene occlusion). 'K' value = chips.
+  localparam integer BURST_WINDOW = 8*N;                      // ≈2.5 s @ N=31: one isolated burst per window
+  reg [9:0] dropcnt=0;
+  always @(posedge oclk) if (wrapA) dropcnt <= (dropcnt>=BURST_WINDOW-1) ? 10'd0 : dropcnt+1'b1;
+  wire blanked = (dropcnt < {2'b0, burst_o2});               // first `burst` chips of each window: signal gone
+
   // ============ analog front end: sum enabled sources, band-limit (ramp), add noise, clamp to 12-bit ============
-  reg [1:0] cAs=0,cBs=0; always @(posedge clk12) begin cAs<={cAs[0],codeA}; cBs<={cBs[0],codeB}; end
-  wire codeA_rx=cAs[1], codeB_rx=cBs[1];
+  reg [1:0] cAs=0,cBs=0,blk_s=0; always @(posedge clk12) begin cAs<={cAs[0],codeA}; cBs<={cBs[0],codeB}; blk_s<={blk_s[0],blanked}; end
+  wire codeA_rx=cAs[1], codeB_rx=cBs[1], blank_rx=blk_s[1];   // blank_rx = burst occlusion active (both beacons)
   // ANALOG per-source magnitudes (settable over USB: 'A'/'B'/'G' + value -> ×6). Graded + headroom so the sum
   // is LINEAR in normal use (the 12-bit clamp is just ADC saturation at extremes), not a worst-case all-rails OR.
   localparam signed [15:0] PED=16'sd1800;
@@ -84,8 +99,8 @@ module s3_top (input clk12,
   wire [11:0] ampA_e = remote ? ampA_r : AMPA_DEF, ampB_e = remote ? ampB_r : AMPB_DEF, ampN_e = remote ? ampN_r : AMPN_DEF;
   wire [11:0] ampA = eweak ? {2'b0,ampA_e[11:2]} : ampA_e;       // weak (K3) -> ~1/4 amplitude (range/aspect)
   wire [11:0] ampB = eweak ? {2'b0,ampB_e[11:2]} : ampB_e;
-  wire signed [15:0] sigA = enA ? (codeA_rx ? $signed({4'b0,ampA}) : -$signed({4'b0,ampA})) : 16'sd0;
-  wire signed [15:0] sigB = enB ? (codeB_rx ? $signed({4'b0,ampB}) : -$signed({4'b0,ampB})) : 16'sd0;
+  wire signed [15:0] sigA = (enA & ~blank_rx) ? (codeA_rx ? $signed({4'b0,ampA}) : -$signed({4'b0,ampA})) : 16'sd0;
+  wire signed [15:0] sigB = (enB & ~blank_rx) ? (codeB_rx ? $signed({4'b0,ampB}) : -$signed({4'b0,ampB})) : 16'sd0;
   wire signed [16:0] sigsum = PED + sigA + sigB;                 // pedestal + analog signals
   // band-limit (analog LPF -> ramped chip edges); IIR at clk12/8, 17.8 fixed-point
   localparam integer LPF_SH = 9;
@@ -274,16 +289,18 @@ module s3_top (input clk12,
   always @(posedge clk12) if (rxv) begin
     if (pend_op != 8'h00) begin
       case (pend_op)
+        8'h45: ediva_cmd <= fval;                  // 'E' emitter-A frequency (skew A, rate test)
         8'h46: edivb_cmd <= fval;                  // 'F' emitter-B frequency (rate test)
         8'h41: ampA_r   <= amp6;                   // 'A' code-A analog magnitude
         8'h42: ampB_r   <= amp6;                   // 'B' code-B analog magnitude
         8'h47: ampN_r   <= amp6;                   // 'G' noise analog magnitude
+        8'h4B: burst_cmd <= rxb;                   // 'K' dropout-burst span (chips)
       endcase
       pend_op <= 8'h00;
     end
     else if (rxb == 8'h2B) remote <= 1'b1;         // '+'  REMOTE (USB owns)
     else if (rxb == 8'h2D) remote <= 1'b0;         // '-'  LOCAL (switches own)
-    else if (rxb==8'h46 || rxb==8'h41 || rxb==8'h42 || rxb==8'h47) pend_op <= rxb;  // value-taking opcodes
+    else if (rxb==8'h45||rxb==8'h46||rxb==8'h41||rxb==8'h42||rxb==8'h47||rxb==8'h4B) pend_op <= rxb;  // value-taking opcodes
     else if (rxb[7])       cmd_reg <= rxb[6:0];    // 0x80-0xFF -> 7-bit knob mask
   end
   // 'Z' = flush flywheel (true cold). Gated on pend_op==0 so a VALUE byte that happens to be 0x5A (e.g. 'F'/'A'/
