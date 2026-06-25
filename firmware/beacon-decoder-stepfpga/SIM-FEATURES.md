@@ -101,7 +101,11 @@ CS (P3) against the emitter epoch (N8) to see the slip.
   (coast `HOLDMAX=2` bad periods) → re-acquire. `GOOD` threshold tracks the code: **5 at N=31** (floor ~3),
   **6 at N=15** (floor ~5) — the lower floor of the longer code permits a lower threshold = more margin.
 - **Warm re-acquire (flywheel):** within ~10 s of a lock (coast window) the rate is still held → re-lock on the
-  FIRST good period (skips ACQ); cold (rate stale) needs `MINLOCK`.
+  FIRST good period (skips ACQ); cold (rate stale) needs `MINLOCK`. **HW-measured (recovery counter):**
+  **WARM ≈ 1 code word (~150 ms)**, **TRUE-COLD ≈ 2 code words (62 chips / 308 ms)** — the flywheel buys ~1 code
+  word on every re-acquire inside the coast window. ±5 % skew adds *nothing* to the cold number (the nominal
+  template still confirms in 2 periods; the closed-loop DPLL refines quality afterward). True-cold is forced by
+  the `Z` command (flush flywheel) — relevant for flight, where sun/reflections cause frequent loss/regain.
 - **Discrimination:** only the emitted code locks; the other sits at its true cross-corr/noise level → live
   CDMA separation when both A and B are on.
 - **Per-code DPLL (clock estimation + flywheel + CLOSED LOOP):** an IIR mean of the per-period peak-phase slip
@@ -138,8 +142,10 @@ CS (P3) against the emitter epoch (N8) to see the slip.
 - `-` (0x2D) → **LOCAL** (switches resume).
 - `0x80 | mask` → 7-bit knob set: `[0]enA [1]enB [2]enN [3]inj-1bit [4]inj-2bit [5]weak [6]floor`.
 - `F`(0x46) + value → set **emitter-B frequency** (~±10 % over the byte; value 128 = nominal) — for DPLL/rate testing.
-- Extensible to further parametric commands (per-source magnitude, skew, SNR) later.
-- Driver: `host/cmd_read.sh <mask> [sec]` / `cmd_read.ps1 -Mask -Freq -Local`.
+- `A`(0x41)/`B`(0x42)/`G`(0x47) + value → set per-source **magnitude** (code A / code B / noise) — the analog channel model.
+- `Z`(0x5A) → **flush the flywheel**: forget the DPLL rate (`slip→0`) and drop both locks (`st→SEARCH`, `coast→max`) →
+  the very next acquire is **true-cold** (no warm 1-period shortcut). Use it to measure cold re-acquire vs the warm path.
+- Driver: `host/cmd_read.sh <mask> [sec]` / `cmd_read.ps1 -Mask -Freq -Flush -Local` / `cold.ps1` (lock→flush→measure).
 
 ---
 

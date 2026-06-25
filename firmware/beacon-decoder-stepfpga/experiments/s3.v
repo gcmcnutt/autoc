@@ -205,7 +205,8 @@ module s3_top (input clk12,
   localparam [7:0] COASTMAX = 8'd65;           // ~10 s flywheel coast (65 periods @ ~154 ms for N=31)
   reg [7:0] coast0=8'd133, coast1=8'd133;
   wire warm0 = (coast0 < COASTMAX), warm1 = (coast1 < COASTMAX);
-  always @(posedge clk12) if (q0_rdy) begin
+  always @(posedge clk12) if (flush) begin st0<=SEARCH; coast0<=COASTMAX; g0<=0; b0<=0; end
+  else if (q0_rdy) begin
     if (st0==LOCK) coast0<=8'd0; else if (coast0<COASTMAX) coast0<=coast0+1'b1;
     if (q0 >= GOOD) case (st0)
       SEARCH: if (warm0) st0<=LOCK; else begin st0<=ACQ; g0<=3'd1; end   // warm: 1-period re-lock (held rate)
@@ -219,7 +220,8 @@ module s3_top (input clk12,
       HOLD:   if (b0>=HOLDMAX) begin st0<=SEARCH; g0<=0; b0<=0; end else b0<=b0+1'b1;
     endcase
   end
-  always @(posedge clk12) if (q1_rdy) begin
+  always @(posedge clk12) if (flush) begin st1<=SEARCH; coast1<=COASTMAX; g1<=0; b1<=0; end
+  else if (q1_rdy) begin
     if (st1==LOCK) coast1<=8'd0; else if (coast1<COASTMAX) coast1<=coast1+1'b1;
     if (q1 >= GOOD) case (st1)
       SEARCH: if (warm1) st1<=LOCK; else begin st1<=ACQ; g1<=3'd1; end   // warm: 1-period re-lock (held rate)
@@ -278,6 +280,7 @@ module s3_top (input clk12,
     else if (rxb==8'h46 || rxb==8'h41 || rxb==8'h42 || rxb==8'h47) pend_op <= rxb;  // value-taking opcodes
     else if (rxb[7])       cmd_reg <= rxb[6:0];    // 0x80-0xFF -> 7-bit knob mask
   end
+  reg flush = 1'b0; always @(posedge clk12) flush <= (rxv && rxb == 8'h5A);   // 'Z' = flush flywheel (true cold)
 
   // ============ per-code DPLL: rate estimate from peak-phase slip (the frequency flywheel) ============
   // IIR mean of the per-period peak-phase delta (samples/period); updates only while LOCKED -> FROZEN (held)
@@ -294,7 +297,8 @@ module s3_top (input clk12,
   wire lockedA = (st0==LOCK)||(st0==HOLD);
   wire lockedB = (st1==LOCK)||(st1==HOLD);
   wire signed [17:0] dlt0x = dlt0, dlt1x = dlt1;          // sign-extend (signed) — keep the IIR fully signed
-  always @(posedge clk12) if (pend_d) begin
+  always @(posedge clk12) if (flush) begin slip0<=0; slip1<=0; end  // 'Z' forgets the rate (keep prev: no slip kick)
+  else if (pend_d) begin
     prev0 <= bestph0; prev1 <= bestph1;
     if (lockedA) slip0 <= slip0 - (slip0>>>SLIP_SH) + dlt0x;   // IIR; hold when unlocked = flywheel
     if (lockedB) slip1 <= slip1 - (slip1>>>SLIP_SH) + dlt1x;

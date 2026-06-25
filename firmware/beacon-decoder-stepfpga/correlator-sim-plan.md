@@ -60,8 +60,11 @@ shippable correlator RTL (the A4a–c / F4–F5 work), just exercised by the syn
 **Current state (2026-06-24):** **S1–S6 ✓** — all in `experiments/s3.v` (top `s3_top`, ~2.5k LUT/57% at N=31)
 + `spi_mcp3201.v` + `uart_bcn.v`; full feature reference in [`SIM-FEATURES.md`](SIM-FEATURES.md). Code length is
 parametrized (**N=31** current; N=15 was the first cut, **N=63 next**). The DPLL loop is now **closed**
-(`Leff=L+slip` stretches the template to the emitter rate → coherent lock across ±5 % skew). **Next: N=63**
-(window grows ~2× — check fit) and S7 (swap the virtual ADC for the real MCP3201).
+(`Leff=L+slip` stretches the template to the emitter rate → coherent lock across ±5 % skew). An **on-chip
+recovery counter** (signal-return→confirmed-lock, since USB can't run fast) reports `recA`/`recB` in telemetry,
+and the `Z` command flushes the flywheel to force a **true-cold** acquire. HW-measured: **WARM ≈ 1 code word
+(~150 ms)** (flywheel held), **TRUE-COLD ≈ 2 code words (62 chips / 308 ms)**; ±5 % skew adds nothing to cold.
+**Next: N=63** (window grows ~2× — check fit) and S7 (swap the virtual ADC for the real MCP3201).
 
 ## Hardening study (→ tasks **A4d**)
 
