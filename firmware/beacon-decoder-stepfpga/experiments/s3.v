@@ -149,6 +149,10 @@ module s3_top (input clk12,
   reg [5:0] cchip = 0; reg [8:0] cacc = 0;                 // cchip 0..N-1; 6-bit sized for N≤63
   reg signed [21:0] acc_c=0, corr0=0, corr1=0;
   reg        [21:0] acc_e=0, energy=0;
+  // [A4d-2 partial/progressive candidate INVESTIGATED & DEFERRED — see DESIGN.md §5: a ½-window candidate cannot
+  // be both early AND low-false-alarm at N=31 (½-window 3 dB gain deficit + a partial Gold code loses the full
+  // code's cross-corr bound → 50–70 % false-candidate on noise/wrong-code). The robust 3-level ladder ships;
+  // revisit the candidate at N=63 where the half is a full 31-chip code.]
   wire signed [17:0] sr0 = slip0 >>> SLIP_SH, sr1 = slip1 >>> SLIP_SH;          // mean slip (samples/period)
   wire signed [5:0]  sc0 = (sr0 > 18'sd10) ? 6'sd10 : (sr0 < -18'sd10) ? -6'sd10 : sr0[5:0];   // clamp ±10 (N=31)
   wire signed [5:0]  sc1 = (sr1 > 18'sd10) ? 6'sd10 : (sr1 < -18'sd10) ? -6'sd10 : sr1[5:0];
@@ -370,6 +374,7 @@ module s3_top (input clk12,
   always @(posedge clk12)                                // ~40 Hz (control-loop family)
     if (tdiv == 19'd299999) begin tdiv<=0; tick<=1'b1; seq<=(seq==14'd9999)?14'd0:seq+1'b1; end
     else begin tdiv<=tdiv+1'b1; tick<=1'b0; end
+  // confidence ladder: 0=no_lock, 1=tentative (ACQ), 2=confirmed (LOCK/HOLD)
   wire [1:0] lka = (st0==SEARCH)?2'd0:(st0==ACQ)?2'd1:2'd2;
   wire [1:0] lkb = (st1==SEARCH)?2'd0:(st1==ACQ)?2'd1:2'd2;
   bcn_tx u_bcn (.clk(clk12), .tick(tick), .seq(seq), .adc(adc_l),

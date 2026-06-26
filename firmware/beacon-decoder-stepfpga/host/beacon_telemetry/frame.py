@@ -24,7 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass, fields as _fields
 
 MAGIC = "BCN"
-LOCK_NAMES = {0: "no_lock", 1: "tentative", 2: "confirmed"}
+LOCK_NAMES = {0: "no_lock", 1: "tentative", 2: "confirmed"}   # the §3.6 lock ladder
+# (A4d-2 ½-word "candidate" tier investigated & deferred — too false-alarm-prone at N=31; see DESIGN.md §5.)
 RATE_BIAS = 32768          # offset-binary zero point
 RATE_SCALE = 32           # internal IIR scaling (slip << 5)
 N_CHIPS = 31              # gateware code length (keep in sync with s3.v localparam N)

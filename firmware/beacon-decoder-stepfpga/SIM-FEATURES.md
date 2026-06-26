@@ -11,9 +11,10 @@ beacon receiver can be developed and stress-tested with **no analog hardware**.
 - **Code length is a localparam** (`N`, `L=round(2.4·N)`; counters sized for N≤63): N=15 first cut, **N=31 active**
   (latency-by-confidence phase), N=63 measured (+3 dB proc-gain, CDMA floor 0.27, but 2× wallclock + ~±5 % cold-skew
   cliff) — see the N=63-vs-N=31 table in [`correlator-sim-plan.md`](correlator-sim-plan.md).
-- **Plan / roadmap:** [`correlator-sim-plan.md`](correlator-sim-plan.md) · **research/study:**
-  [`specs/031-beacon-camera/tasks.md` §A4d](../../specs/031-beacon-camera/tasks.md) · **predictive model:**
-  [`specs/031-beacon-camera/acquisition-sim/a4d_model.py`](../../specs/031-beacon-camera/acquisition-sim/a4d_model.py)
+- **Design rationale ("the full think"):** [`DESIGN.md`](DESIGN.md) · **acceptance test:** `host/acceptance.py`
+  (**17/17 pass**, N=31) · **plan / roadmap:** [`correlator-sim-plan.md`](correlator-sim-plan.md) ·
+  **research/study:** [`specs/031-beacon-camera/tasks.md` §A4d](../../specs/031-beacon-camera/tasks.md) ·
+  **predictive model:** [`specs/031-beacon-camera/acquisition-sim/a4d_model.py`](../../specs/031-beacon-camera/acquisition-sim/a4d_model.py)
 
 ---
 
@@ -299,7 +300,8 @@ These are the N=15 numbers the **A4d code-length study** (N=31/63) aims to impro
 ## 13. Not yet implemented (roadmap)
 
 - ~~Per-beacon DPLL + frequency flywheel + closed-loop skew tracking~~ — **done** (S5).
-- **Partial / progressive correlator** — ½-code-word candidate detection (low-latency acquire tier).
+- ~~**Partial / progressive correlator** — ½-code-word candidate~~ — **investigated & deferred** (A4d-2): too
+  false-alarm-prone at N=31 (partial Gold loses the cross-corr bound); revisit at N=63. See [`DESIGN.md` §5](DESIGN.md).
 - **Code-length parametrization** (N=31/63) — the A4d-1 sweep.
 - **Richer parametric commands** (per-source magnitude, skew, SNR) over the existing RX path.
 - **Hard EFB SPI** (deferred to backlog; soft SPI is sufficient — EFB likelier repurposed for SD-card writes).
