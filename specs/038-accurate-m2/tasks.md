@@ -3,11 +3,14 @@
 **Input**: Design documents from `/specs/038-accurate-m2/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
 
-**Execution model (operator 2026-06-27)**: tasks are a series of **gated milestones with distinct
-acceptance**, NOT a linear build list. Phase 0 (P0-A…P0-G) is deterministic prework. US1/US2/US3 are
-**empirical ablations** — each is a bake → judge → keep/escape loop. **Escape to `specs/BACKLOG.md` or a
-future feature is a first-class outcome at every 🚦 gate**: a lever that doesn't clear its gate closes as
-"ruled out / deferred" and does NOT block the feature. A real decision node (Phase 6) combines winners.
+**Execution model (operator 2026-06-27, refined 2026-06-30)**: tasks are a series of **gated milestones with
+distinct acceptance**, NOT a linear build list. Phase 0 (P0-A…P0-G) is deterministic prework. The generic
+architecture studies are **empirical ablations** — each a bake → judge → keep/escape loop. **Initial wave =
+US1 (deeper history) + US3 (predictor head)**, the "add state" levers; **US2 (two-timescale recurrence,
+Phase 4) is deferred to `specs/BACKLOG.md`** as a follow-on lever and is NOT launched in the initial wave
+(its tasks stay recorded for unpark). **Escape to `specs/BACKLOG.md` or a future feature is a first-class
+outcome at every 🚦 gate**: a lever that doesn't clear its gate closes as "ruled out / deferred" and does
+NOT block the feature. A real decision node (Phase 6) combines the winners of the initial wave.
 
 **Tests**: included where load-bearing (P0-A is a determinism-test deliverable; format changes regen
 fixtures; US4 needs a fitness/selection test). Ablation bakes are research spikes (Constitution I exemption)
@@ -20,6 +23,12 @@ the operator runs the eval-vs-training bitwise gate. Tasks marked **[OP]** are o
 - **[P]**: parallelizable (different files, no incomplete-dep)
 - **[Story]**: US1/US2/US3/US4 (Phase 0 + Polish have no story label)
 - **[OP]**: operator-gated (bake launch / regression gate / pin)
+
+> **"Phase" disambiguation** — the word is overloaded across the docs. This file's execution-phases
+> (Phase 1 Setup … Phase 8 Polish) map onto the **spec's program-phases** as: tasks Phase 1–2 = spec
+> **Phase 0** (prework / the one dmp break); tasks Phase 3–6 = spec **Phase 1** (RNN architecture studies);
+> tasks Phase 7 = spec **Phase 2** (M2 prototyping / US4). The plan's "Phase 0/1" are the speckit
+> research/design phases (already complete). When a gate or SC cites a "phase," resolve via this key.
 
 ---
 
@@ -62,7 +71,7 @@ baseline (T013) exists.** crrcsim submodule changes land pointer-bump-first (sub
 or median error; determinism + bitwise replay preserved.
 
 - [ ] T014 [US1] implement the deeper layout in `include/autoc/nn/nn_inputs.h:48` (start `{1600,800,400,200,100,50,0}`, 7 integral slots at 50 ms) + bump `kNNHistoryLayoutVersion`→4 (`nn_inputs.h:60`); update `kTrackerInputMeta`/`kPathgenInputMeta` if slot count changes (per [data-model.md](data-model.md) §1)
-- [ ] T015 [US1] propagate derived sizes: `HISTORY_SIZE` (`include/autoc/eval/aircraft_state.h:391`), `TrackerObservationRing::kDepth` (`include/autoc/nn/evaluator.h:143`), `HIST_PAST[]` (`src/nn/evaluator.cc:314`); regen `tests/nn_layout_tests.cc`, `tests/nn_evaluator_tests.cc`, `tests/tick_rescale_tests.cc`; regen xiao codegen per [contracts/xiao-nn-sync.md](contracts/xiao-nn-sync.md)
+- [ ] T015 [US1] propagate derived sizes: `HISTORY_SIZE` (`include/autoc/eval/aircraft_state.h:391`), `TrackerObservationRing::kDepth` (`include/autoc/nn/evaluator.h:143`), `HIST_PAST[]` (`src/nn/evaluator.cc:314`); **the +1 slot grows the NN input vector** (`TrackerInput::COUNT` 54→60, `NNInput::COUNT` for pathgen) → update `TRACKER_NN_TOPOLOGY[0]`/`NN_TOPOLOGY[0]` to the new COUNT in `include/autoc/nn/topology.h` and recompute `*_WEIGHT_COUNT`/`*_HIDDEN_STATE_COUNT` (input fan-in changes → weights change); confirm the `static_assert(sizeof(TrackerInputs)==COUNT*sizeof(float))` (per [data-model.md](data-model.md) §1 note + §2); regen `tests/nn_layout_tests.cc`, `tests/nn_evaluator_tests.cc`, `tests/tick_rescale_tests.cc`; regen xiao codegen per [contracts/xiao-nn-sync.md](contracts/xiao-nn-sync.md)
 - [ ] T016 [US1][OP] pre-run build gate + bitwise gate (`rebuild-perf.sh`)
 - [ ] T017 [US1][OP] bake M1 ablation `scripts/train.sh autoc.ini logs/autoc-038-t3-m1-hist1p6s.log`; judge with `scripts/generate_pngs.sh m1 <log> --compare baseline:<rebake-log>` against SC-001 (M1 ceiling, fixed-eval comparator)
 
@@ -74,7 +83,13 @@ close US1 as ruled-out. Does NOT block US2/US3.
 
 ---
 
-## Phase 4: US2 — Two-timescale recurrence (Priority: parallel ablation, M2-direct)
+## Phase 4: US2 — Two-timescale recurrence (DEFERRED-TO-START → `specs/BACKLOG.md`; not in the initial wave)
+
+> **Deferred out of the initial ablation wave (operator 2026-06-30).** US2 overlaps US1 (both add temporal
+> memory); the initial wave is US1+US3. T019–T022 below stay recorded as the launch-ready plan so the arm
+> can bake off the same post-P0-D baseline (T013) if unparked — pick up if US1+US3 don't move a ceiling, or
+> if "not enough state" persists. File the unpark trigger in `specs/BACKLOG.md` (T037). **Do not launch
+> T021/T022 in the initial wave.**
 
 **Goal**: a structural leaky-slow recurrent channel adds trajectory memory without widening W_hh.
 **Independent Test**: M2 bake with the slow channel vs single-timescale baseline at matched seed shows
@@ -97,7 +112,7 @@ network an explicit motion model.
 **Independent Test**: M2 bake with predictor vs control-only at matched seed; predicted optical state matches
 realized within a target error AND tracking depth/reacquire improves; determinism + replay preserved.
 
-- [ ] T023 [US3] grow output head 3→7 in `include/autoc/nn/topology.h` (`*_OUTPUT_COUNT`, `*_WEIGHT_COUNT`); resize `nnOutputs_[]` + deserialize output-count check in `include/autoc/eval/aircraft_state.h:580`; output buffers in `include/autoc/nn/evaluator.h` + `src/nn/evaluator.cc` (outputs[0..2]=control, [3..6]=predicted optical; aux not actuated)
+- [ ] T023 [US3] grow output head 3→7 in `include/autoc/nn/topology.h` (`*_OUTPUT_COUNT`, `*_WEIGHT_COUNT`); resize `nnOutputs_[]` + deserialize output-count check in `include/autoc/eval/aircraft_state.h:580`; output buffers in `include/autoc/nn/evaluator.h` + `src/nn/evaluator.cc` (outputs[0..2]=control, [3..6]=predicted optical; aux not actuated). **The dmp is the per-tick trace** (data.dat retired in 035 FR-P05); the resized `nnOutputs_` records the aux outputs honestly via `AircraftState` cereal, but the CSV dump tool has a hardcoded 3-output header — extend `out_pt,out_rl,out_th` in `tools/dmp_dump.cc:68` to surface the 4 aux columns so they're inspectable (honest-recording audit, [feedback_honest_dmp_recording])
 - [ ] T024 [US3] add `prediction_score` (`gp_fitness`, negated) to `ScenarioScore` in `include/autoc/eval/fitness_decomposition.h:71`; accumulate per-tick aux-vs-realized-next-tick optical error in `src/eval/fitness_decomposition.cc`; add it as a SEPARATE per-scenario axis in `src/eval/selection.cc` (NOT scalar-composited — per [contracts/lexicase-axis-and-reward.md](contracts/lexicase-axis-and-reward.md))
 - [ ] T025 [US3] add `EnablePredictorHead` knob to `AUTOC_CONFIG_FIELDS` in `include/autoc/util/config.h` (no in-class default per VII); verify `applyCrashPenalty` (`src/autoc.cc:181`) leaves `prediction_score` untouched; regen `tests/nn_*`, xiao codegen; add a prediction-axis selection unit test
 - [ ] T026 [US3][OP] pre-run build gate + bitwise gate
@@ -112,8 +127,8 @@ pretrain-then-evolve / longer-horizon / recurrent-head alternatives to BACKLOG, 
 
 **Purpose**: the branch point that can't be pre-sequenced — decide which ablation winners combine.
 
-- [ ] T028 [OP] judge US1/US2/US3 on the SC-001 ceilings (fixed-eval comparator, not raw late-run fitness per `project_late_run_fitness_interpretation`); record verdicts + every escape in `outcome.md`
-- [ ] T029 combine the winning structural levers into one architecture (merge the kept `topology.h`/`nn_inputs.h` changes); regenerate ALL NN test fixtures + xiao codegen; type-domain grep audit on the merged diff
+- [ ] T028 [OP] judge the initial-wave ablations **US1 + US3** on the SC-001 ceilings (fixed-eval comparator, not raw late-run fitness per `project_late_run_fitness_interpretation`); record verdicts + every escape in `outcome.md` (note the US2 deferral + its unpark trigger)
+- [ ] T029 combine the winning structural levers into one architecture (merge the kept `topology.h`/`nn_inputs.h` changes — up to a 2-way US1+US3 merge for the initial wave); regenerate ALL NN test fixtures + xiao codegen; type-domain grep audit on the merged diff
 - [ ] T030 [OP] pre-run build gate + bitwise gate, then bake the combined M2 `scripts/train.sh autoc-tracker.ini logs/autoc-038-t7-m2-combined.log`
 
 **🚦 Combine gate**: if NO ablation cleared its gate, the architecture thesis is unsupported at this depth →
@@ -143,7 +158,7 @@ record, file the binary-gate / ramped variant to BACKLOG, close US4 ruled-out.
 ## Phase 8: Polish & cross-cutting
 
 - [ ] T035 [P] final type-domain grep audit across ALL 038-touched `src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/` (Constitution VI per-milestone close); annotate/convert remaining hits
-- [ ] T036 [P] record the xiao firmware NN-contract update (FR-051) in `outcome.md` per [contracts/xiao-nn-sync.md](contracts/xiao-nn-sync.md) (input/output/topology/cadence sync points for the deferred tracker port)
+- [ ] T036 [P] record the xiao firmware NN-contract update (FR-033) in `outcome.md` per [contracts/xiao-nn-sync.md](contracts/xiao-nn-sync.md) (input/output/topology/cadence sync points for the deferred tracker port)
 - [ ] T037 write `specs/038-accurate-m2/outcome.md`: per-SC verdicts (SC-000…SC-005), the pinned milestone S3 prefix (Constitution VIII), and a consolidated list of all escapes routed to `specs/BACKLOG.md`
 - [ ] T038 [OP] confirm SC-000 (Phase 0 done) + SC-005 (bitwise gate green) + that US5 stays deferred in `specs/BACKLOG.md`
 
@@ -153,8 +168,8 @@ record, file the binary-gate / ramped variant to BACKLOG, close US4 ruled-out.
 
 - **Phase 1 (Setup)**: T001–T006 all independent — fully parallel.
 - **Phase 2 (Foundational, BLOCKING)**: T007/T008 (crrcsim) ∥ T009 (protocol) → T010 (readers) → T011 (fixtures) → T012 (gate) → T013 (baseline). T013 blocks ALL of Phase 3+.
-- **Phases 3/4/5 (ablations)**: independent of each other — US1, US2, US3 run **in parallel** off the T013 baseline (separate bakes; the operator paces concurrency). Each self-gates with escape.
-- **Phase 6 (decision)**: depends on whichever ablations completed (T017/T022/T027); T028→T029→T030.
+- **Phases 3 & 5 (initial-wave ablations)**: independent of each other — **US1 and US3 run in parallel** off the T013 baseline (separate bakes; the operator paces concurrency). Each self-gates with escape. **Phase 4 (US2) is deferred** — not launched in the initial wave (T021/T022 held for unpark).
+- **Phase 6 (decision)**: depends on the initial-wave ablations completed (T017/T027); T028→T029→T030.
 - **Phase 7 (US4)**: reward-only; can run any time after T013 (independent of the ablations), but final bake (T034) is best against the combined architecture (T030) if it exists.
 - **Phase 8 (Polish)**: after the milestones it documents.
 
@@ -162,7 +177,7 @@ record, file the binary-gate / ramped variant to BACKLOG, close US4 ruled-out.
 
 - Phase 1: T002–T006 in one batch (distinct files).
 - Phase 2: T007/T008/T009 concurrent (crrcsim ∥ protocol), then serialize T010→T013.
-- Phases 3–5: the three ablation bakes are the primary parallelism (operator-paced, separate logs/buckets).
+- Phases 3 & 5: the two initial-wave ablation bakes (US1 + US3) are the primary parallelism (operator-paced, separate logs/buckets). US2 (Phase 4) is deferred — not part of the initial parallelism.
 - US4 (Phase 7) can overlap the ablations (different files: fitness/selection vs topology).
 
 ## Implementation strategy (MVP + increments)

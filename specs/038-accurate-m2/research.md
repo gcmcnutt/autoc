@@ -188,7 +188,7 @@ without a re-bake gate, though it changes the fitness scale (use fixed-eval comp
 - *Ramp the visibility reward* via `applyVariationScale` — optional; start un-ramped (full from gen 0, like
   craft variations are diversity) and add a ramp only if early-gen pressure hurts.
 
-**Lexicase-stability check (FR-009 sibling)**: the new axis mixes with existing axes in `selection.cc`;
+**Lexicase-stability check (FR-010 sibling)**: the new axis mixes with existing axes in `selection.cc`;
 validate it doesn't destabilize selection (epsilon/aggregation) — especially if `visibility_score` spread
 differs in magnitude from `score`/`energy_score` (candidate trigger for the deferred MAD-ε, US3-spec/FR-032).
 
@@ -247,12 +247,16 @@ fixed in the 033 cleanup; seeds from the per-scenario rabbit-class sub-seed). Do
 
 ## 7. Cross-cutting decisions
 
-- **Ablation protocol (parallel, combine winners)**: bake US1/US2/US3 as independent variants off the SAME
-  post-P0-D baseline (same seed, same source), compare on the SC-001 ceilings + fixed-eval comparator, then
-  combine the winning structural changes into a single architecture for the final M2. Each ablation is a
-  research spike (Constitution I exemption) until mainlined.
-- **Mixed M1-first**: US1 (history) MUST show an M1 lift first (clean, no FOV confound). US2/US3 may go
-  straight to M2 (M1 has less to gain from recurrence-memory/predictor of an always-visible rabbit).
+- **Ablation protocol (parallel, combine winners)**: bake the **initial wave US1 + US3** as independent
+  variants off the SAME post-P0-D baseline (same seed, same source), compare on the SC-001 ceilings +
+  fixed-eval comparator, then combine the winning structural changes (≤2-way) into a single architecture for
+  the final M2. **US2 (two-timescale recurrence) is deferred to `specs/BACKLOG.md`** (refinement
+  2026-06-30 — overlaps US1; "add state" levers US1+US3 picked first); its starting config below stays
+  recorded so it bakes off the same baseline when unparked. Each ablation is a research spike (Constitution I
+  exemption) until mainlined.
+- **Mixed M1-first**: US1 (history) MUST show an M1 lift first (clean, no FOV confound). US3 (predictor) may
+  go straight to M2 (M1 has less to gain from a predictor of an always-visible rabbit). US2's §2 decision
+  retains its "M2-direct" note for the deferred arm.
 - **Regression gate per format change**: each format-breaking change runs through `rebuild-perf.sh` +
   the eval-vs-training bitwise `ScenarioScore` gate (operator-driven) before a larger bake; the pre-run
   build gate (Constitution IX) is the cheap insurance.

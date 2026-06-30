@@ -1,6 +1,25 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-05-04
+**Last Updated**: 2026-06-30
+
+---
+
+## 038 deferrals
+
+### [038 — follow-on lever, deferred 2026-06-30] US2 two-timescale recurrence (structural slow channel)
+
+Deferred out of 038's **initial ablation wave** (operator 2026-06-30). 038 picks the two "add state" levers
+— **US1 deeper history + US3 predictor head** — because a read of 037 leans "not enough state," and M2's
+long loss-of-signal windows (several seconds → effectively a re-acquire) reward levers that add trajectory
+state. **US2 (a fixed-leak slow recurrent channel) overlaps US1** (both add temporal memory) and is the
+least-orthogonal of the three generic studies, so it is held back rather than run in parallel.
+
+- **Launch-ready**: the starting config (hidden-2 16-wide fast + 8-wide fixed-leak slow, α≈0.9) and the
+  format-break surface are recorded at [specs/038-accurate-m2/research.md](038-accurate-m2/research.md) §2,
+  [data-model.md](038-accurate-m2/data-model.md) §2, and tasks **T019–T022** (held, not launched). It bakes
+  off the same post-P0-D baseline (038 T013) when unparked.
+- **Unpark trigger**: US1+US3 do **not** move an SC-001 ceiling, OR "not enough state" persists as the M2
+  bottleneck after they land. Then run T019–T022 as the next ablation arm (and re-open the combine node).
 
 ---
 

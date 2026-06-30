@@ -14,9 +14,11 @@ Scope settled at clarify (2026-06-27):
    standardized report script, the **one clean-slate dmp break** (simTimeMsec stamping + self-describing
    dmp + wind_velocity recording), 037 carry-forward housekeeping, the t15 streak-threshold revert
    (0.3→0.5), and the M1-re-bake expectation.
-2. **Generic RNN architecture studies** (US1 deeper/non-uniform history, US2 two-timescale recurrence,
-   US3 auxiliary target-predictor head) — run as **parallel independent ablations** off the same baseline,
-   then combine winners. **Mixed M1-first**: US1 gated on an M1 ablation; US2/US3 may go straight to M2.
+2. **Generic RNN architecture studies** — **initial wave US1 deeper/non-uniform history + US3 auxiliary
+   target-predictor head** (the "add state" levers, per Clarifications 2026-06-30), run as **parallel
+   independent ablations** off the same baseline, then combine winners. **US2 two-timescale recurrence is
+   deferred to `specs/BACKLOG.md`** as a follow-on lever (overlaps US1; unpark if US1+US3 don't move a
+   ceiling). **Mixed M1-first**: US1 gated on an M1 ablation; US3 may go straight to M2.
 3. **US4 visibility-maintenance reward** — the one FOV-specific deliverable; a new lexicase scenario axis.
 
 **Deferred to a follow-on**: US5 (camera variations + prediction-through-blindness), blocked on US3's
@@ -26,8 +28,12 @@ The technical approach is grounded in a full integration map (see [research.md](
 topology is compile-time `constexpr` in `topology.h`, history is `kNNHistoryLagsMsec` in `nn_inputs.h`,
 fitness flows through `FitnessComputer`/`computeScenarioScores`/`lexicase_select`, and the dmp contract is
 `EvalResults`/`AircraftState` cereal. Every architecture change is **format-breaking** (retrain from
-scratch, xiao contract update, no cereal version bump, fail-loud read) and is bundled into P0-D's single
-dmp break so there is exactly one determinism break for the whole feature.
+scratch, xiao contract update, no cereal version bump, fail-loud read). P0-D lands the **baseline**
+recording/determinism break (simTime + wind + self-describing dmp) once; each parallel ablation
+(US1/US2/US3) then diverges from that baseline as its **own** independent format variant (its own retrain +
+bitwise gate), and the Phase-6 combine merges the winning variants into the final format. So it is "one
+break philosophy" — clean-cut, no migration shims, old dmps orphaned at each step — not literally a single
+on-disk format for the whole feature.
 
 ## Technical Context
 

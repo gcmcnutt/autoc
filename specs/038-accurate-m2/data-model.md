@@ -100,8 +100,8 @@ control convention preserved).
   (`pool.push_back({s, &ScenarioScore::visibility_score, eps})`), **never scalar-composited into `score`**
   (sidesteps 033 Pareto collapse).
 
-**Recording**: if the new axes are persisted to the dmp (for `dmp-dump`/analytics, honest-recording FR-005
-sibling), that is part of the P0-D break. The `TrackerDiag` block already carries `vis_frac`/`max_lost_sight_run`
+**Recording**: if the new axes are persisted to the dmp (for `dmp-dump`/analytics, honest-recording per
+FR-031 / [feedback_honest_dmp_recording]), that is part of the P0-D break. The `TrackerDiag` block already carries `vis_frac`/`max_lost_sight_run`
 as diagnostics; US4 promotes visibility from diagnostic to selection axis.
 
 ---

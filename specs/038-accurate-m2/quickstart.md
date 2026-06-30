@@ -10,7 +10,9 @@ launches and the regression gate (Constitution IX; `feedback_operator_runs_regre
 
 ```
 Phase 0 (P0-A..G)  →  one P0-D dmp break + fresh M1 source re-bake  →  M2 baseline re-bake
-   →  parallel ablations (US1 M1-first, US2/US3 M2-direct)  →  combine winners  →  US4 visibility reward
+   →  initial-wave ablations: US1 (history, M1-first) + US3 (predictor, M2-direct)  in parallel
+   →  combine winners (≤2-way)  →  US4 visibility reward
+   [US2 two-timescale recurrence DEFERRED to specs/BACKLOG.md — unpark only if US1+US3 don't move a ceiling]
 ```
 
 ## 1. Phase 0

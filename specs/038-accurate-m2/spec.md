@@ -116,6 +116,17 @@ sequencing, M1-first policy, success gate) are settled in **Clarifications** bel
 - Q: What defines an 038 architecture win (primary acceptance metric)? → A: **Any one reward-invariant
   037 ceiling moves** (close-track %, median error, in-FOV %, or reacquire) — per SC-001.
 
+### Session 2026-06-30
+
+- Q: Run all three generic ablations (US1/US2/US3) in parallel, or pick a subset to start? → A: **Pick
+  US1 + US3 to start.** A read of 037 leans "not enough *state*" — and M2 has long loss-of-signal windows
+  (several seconds → effectively a re-acquire) — so the levers that add state win: **US1 deeper history**
+  (longer trajectory context) + **US3 predictor head** (explicit motion model). **US2 (two-timescale
+  recurrence) is deferred to `specs/BACKLOG.md` as a follow-on lever** — it overlaps US1 (both add temporal
+  memory) and is the least-orthogonal of the three; pick it up only if US1+US3 don't move the ceiling or if
+  more state is still the bottleneck. This refines (does not erase) the 2026-06-27 "parallel US1/US2/US3"
+  decision — the parallel-then-combine *protocol* stands, the initial wave is now two arms not three.
+
 ## Sensor inventory & sim→real grounding (carried reference, operator review 2026-06-16)
 
 All 54 M2 NN inputs are sim→real-grounded — ~83 % is unitless optical, every physical input is genuinely
@@ -201,10 +212,12 @@ recorded wind, and a self-describing dmp — the strict source-spacing check pas
 
 ## User Scenarios & Testing
 
-> **Scope and sequencing settled (Clarifications 2026-06-27):** 038 = generic studies **US1/US2/US3 run
-> as parallel independent ablations** off the same baseline (combine winners) **+ US4** visibility reward.
-> **M1-first is mixed**: required for US1 (history), optional for US2/US3. **US5 is deferred to a
-> follow-on.** Success gate = any one 037 ceiling moves (SC-001).
+> **Scope and sequencing settled (Clarifications 2026-06-27, refined 2026-06-30):** 038 = generic studies
+> run as parallel independent ablations off the same baseline (combine winners) **+ US4** visibility reward.
+> **Initial wave = US1 (deeper history) + US3 (predictor head)** — the "add state" levers picked for M2's
+> long loss-of-signal windows; **US2 (two-timescale recurrence) is deferred to `specs/BACKLOG.md`** as a
+> follow-on lever (overlaps US1). **M1-first is mixed**: required for US1 (history), optional for US3.
+> **US5 is deferred to a follow-on.** Success gate = any one 037 ceiling moves (SC-001).
 
 ### US1 — Deeper / non-uniform temporal history buffer (GENERIC, M1-first gate) (Priority: parallel ablation)
 
@@ -234,7 +247,13 @@ quality.]
 
 ---
 
-### US2 — Two-timescale recurrence (structural slow channel) (GENERIC, M2-direct allowed) (Priority: parallel ablation)
+### US2 — Two-timescale recurrence (structural slow channel) (GENERIC) — DEFERRED-TO-START (follow-on lever)
+
+> **Deferred out of the initial ablation wave (Clarifications 2026-06-30).** Recorded in `specs/BACKLOG.md`
+> as a follow-on lever, not a starting deliverable: it overlaps US1 (both add temporal memory) and is the
+> least-orthogonal of the three generic studies. Unparks if US1+US3 don't move a ceiling, or if "not enough
+> state" persists as the bottleneck after they land. The starting config + format surface stay recorded
+> below and in research.md §2 so the arm can launch off the same post-P0-D baseline when picked up.
 
 As the operator, I want a **structural leaky-slow recurrent channel** for trajectory memory alongside the
 existing fast hidden state, so the NN can hold a longer-horizon motion model without widening W_hh
@@ -358,15 +377,19 @@ source is blind to the chase camera).]
 - **FR-001**: The M2 (and M1) history layout — window depth, step count, lag spacing — MAY differ from
   today's shared `kNNHistoryLagsMsec`; a layout change is format-breaking (retrain, xiao contract update,
   no version bump) and MUST replay bitwise. [NEEDS RESEARCH: depth / count / spacing.]
-- **FR-002**: A two-timescale recurrence structure MAY be added without widening W_hh; it MUST preserve
-  determinism + bitwise replay. [NEEDS RESEARCH: structure.]
+- **FR-002** *(deferred-to-start — follow-on lever per Clarifications 2026-06-30)*: A two-timescale
+  recurrence structure MAY be added without widening W_hh; it MUST preserve determinism + bitwise replay.
+  Not in the initial ablation wave (overlaps FR-001); recorded for unpark. [NEEDS RESEARCH: structure.]
 - **FR-003**: An auxiliary target-predictor head MAY be added, trained via a lexicase prediction-accuracy
   objective (or pretrain-then-evolve hybrid) that composes with the existing tracking lexicase axes
   WITHOUT scalar-objective compositing (sidestep the 033 collapse). [NEEDS RESEARCH: head + objective.]
-- **FR-004**: The three generic studies (FR-001/002/003) MUST be run as **parallel independent ablations**
-  off the same baseline, then combined by winner. **M1-first is mixed**: FR-001 (history) MUST be
-  validated on an M1 ablation (no FOV confound) before layering onto M2; FR-002 (recurrence) and FR-003
-  (predictor) MAY go straight to M2.
+- **FR-004**: The generic studies MUST be run as **parallel independent ablations** off the same baseline,
+  then combined by winner. **The initial wave is FR-001 (history) + FR-003 (predictor)** — the "add state"
+  levers (Clarifications 2026-06-30); **FR-002 (two-timescale recurrence) is deferred to `specs/BACKLOG.md`**
+  as a follow-on lever and is NOT launched in the initial wave. **M1-first is mixed**: FR-001 (history) MUST
+  be validated on an M1 ablation (no FOV confound) before layering onto M2; FR-003 (predictor) MAY go
+  straight to M2. FR-002's starting config stays recorded (research.md §2) so it can launch off the same
+  baseline if unparked.
 
 ### M2 prototyping (FOV-specific — US4 in scope)
 - **FR-010**: A visibility-maintenance reward MAY be added (the one FOV-specific 038 deliverable); MUST
@@ -399,6 +422,11 @@ source is blind to the chase camera).]
 - **FR-032**: Lexicase MAD-relative epsilon stays available behind an ini switch (constant-0.5 default for
   reproducibility); promote only if the added objective dimensionality degrades selection signal
   (`project_lexicase_mad_epsilon`).
+- **FR-033**: Any format-breaking NN-input/output/topology/cadence change MUST keep the xiao firmware
+  contract coherent (regen `nn2cpp` codegen, rebuild `pio`, preserve the first-3-outputs-for-control
+  convention) and the update MUST be recorded in the outcome doc — even though the tracker port itself is
+  deferred (BACKLOG). The desktop/codegen contract stays correct so the deferred port inherits 038's
+  architecture cleanly. See [contracts/xiao-nn-sync.md](contracts/xiao-nn-sync.md).
 
 ### Key Entities
 - **History layout (revised)** — depth/count/spacing constant(s), possibly M2-specific; format-breaking.
@@ -420,9 +448,12 @@ source is blind to the chase camera).]
   ~11–13 %, median error down from ~17 m, in-FOV up from ~70 %, or reacquire (`maxLost`) shorter than
   8–10 s. The history study (US1) result MUST be demonstrated on an M1 ablation first; recurrence/predictor
   may show the lift directly on M2.
-- **SC-002 (supporting)**: The auxiliary predictor's predicted optical state matches the realized state
-  within a target error, and its presence improves tracking depth and/or reacquire (vs the control-only
-  baseline). Supporting evidence for SC-001, not the primary gate.
+- **SC-002 (supporting)**: The auxiliary predictor's predicted optical state matches the realized
+  next-tick state within a target error — the threshold is set at the US3 gate, but the comparator is
+  concrete: aux NDC error must beat the naive **persistence baseline** (predict "next = current") on the
+  same scenarios, i.e. the head demonstrably models motion rather than echoing the present. AND its
+  presence improves tracking depth and/or reacquire (vs the control-only baseline). Supporting evidence for
+  SC-001, not the primary gate.
 - **SC-003**: The US4 visibility-maintenance reward, when enabled, improves in-FOV fraction / shortens
   reacquire without destabilizing lexicase selection or regressing the carried crash penalty.
 - **SC-003b** *(deferred with US5)*: `EnableCameraVariations=0` ⇒ bit-identical to pre-038; on ⇒
@@ -454,9 +485,10 @@ source is blind to the chase camera).]
 
 1. **Phase 0** (P0-A PRNG, P0-B/P0-D renderer + self-describing dmp + simTime + wind, P0-C reporting) —
    front-matter; P0-D's one dmp break is the moment to land the format-breaking architecture inputs.
-2. **RNN architecture studies (generic)** — US1 history, US2 two-timescale, US3 predictor head run as
-   **parallel independent ablations** off the same baseline (then combine winners). **Mixed M1-first**:
-   US1 gated on an M1 ablation; US2/US3 may go straight to M2.
+2. **RNN architecture studies (generic)** — **initial wave US1 history + US3 predictor head** run as
+   **parallel independent ablations** off the same baseline (then combine winners). **US2 two-timescale
+   recurrence is deferred to `specs/BACKLOG.md`** as a follow-on lever (overlaps US1; unpark if US1+US3
+   don't move a ceiling). **Mixed M1-first**: US1 gated on an M1 ablation; US3 may go straight to M2.
 3. **M2 prototyping (FOV-specific) — US4 only** — visibility-maintenance reward; may proceed independently
    of the ablations (does not gate on the predictor). **US5 deferred to a follow-on** (needs US3's
    predictor + 031's incoming CEP rules).

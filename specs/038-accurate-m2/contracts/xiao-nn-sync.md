@@ -6,7 +6,7 @@
 038's NN-architecture changes must keep the embedded target (xiao) coherent with the desktop NN, even though
 the **tracker is not yet deployed to xiao** (pathgen-only firmware today; tracker port is deferred BACKLOG).
 This contract records the sync points so the codegen stays correct and the firmware contract is updated per
-FR-051.
+FR-033.
 
 ## Codegen is topology-agnostic, but compile-time constants are not
 
@@ -25,7 +25,7 @@ FR-051.
 2. Rebuild xiao (`cd xiao && pio run -e xiaoblesense_arduinocore_mbed`) — MUST compile (Constitution II).
 3. Confirm `generatedNNProgram()` signature in `nn_program.h` still matches the caller (control returns
    pitch/roll/throttle; aux outputs not actuated).
-4. Record the contract update in the outcome doc (FR-051: format-breaking NN-input change → xiao contract
+4. Record the contract update in the outcome doc (FR-033: format-breaking NN-input change → xiao contract
    updated, no cereal version bump, genomes retrain from scratch).
 
 ## Note
