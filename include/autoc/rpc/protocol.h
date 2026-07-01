@@ -362,6 +362,37 @@ struct CopiedTargetSample {
     }
 };
 
+// 038 P0-D-2 — self-describing run config. The fitness/cadence/crash-penalty
+// parameters that used to be read from the live .ini at replay/render time are
+// recorded into every dmp, so a dmp replays standalone even against a drifted
+// .ini (renderer + dmp_dump prefer this block — P0-B/T010). Populated
+// autoc-side once per run from AutocConfig + compiled cadence constants. Wire-
+// format record struct (rpc-layer, outside the gp_* eval/nn type-domain).
+struct RecordedRunConfig {
+  // fitness cone (AutocConfig fit* — config.h)
+  double fitDistScaleBehind = 0.0;
+  double fitDistScaleAhead = 0.0;
+  double fitConeAngleDeg = 0.0;
+  double fitStreakThreshold = 0.0;
+  double fitStreakRampSec = 0.0;
+  double fitStreakMultiplierMax = 0.0;
+  // cadence (compiled constants — aircraft_state.h)
+  int    simTimeStepMsec = 0;    // = SIM_TIME_STEP_MSEC
+  double cadenceTickScale = 0.0; // = kCadenceTickScale (derived)
+  // crash penalty (AutocConfig — config.h)
+  int    enableHullCrashPenalty = 0;
+  double hullCrashPenaltyFactor = 0.0;
+  double oobCrashPenaltyWeight = 0.0;
+
+  template<class Archive>
+  void serialize(Archive& ar) {
+    ar(fitDistScaleBehind, fitDistScaleAhead, fitConeAngleDeg,
+       fitStreakThreshold, fitStreakRampSec, fitStreakMultiplierMax,
+       simTimeStepMsec, cadenceTickScale,
+       enableHullCrashPenalty, hullCrashPenaltyFactor, oobCrashPenaltyWeight);
+  }
+};
+
 struct EvalResults {
   std::vector<char> gp;
   uint64_t gpHash = 0;  // FNV-1a hash of gp buffer for verification
@@ -393,6 +424,12 @@ struct EvalResults {
   // emitted dmp.
   uint64_t effectiveMasterSeed = 0;                              // 033 §2.A — MasterPRNG.init() input
 
+  // 038 P0-D-2 — self-describing run config (fitness cone / cadence / crash
+  // penalty). Appended at end of the v>=2 block per the no-cereal-versioning
+  // policy; old dmps orphaned by the training reset. Read by renderer/dmp_dump
+  // (T010) in preference to the live .ini.
+  RecordedRunConfig runConfig;
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
     ar(gp, gpHash, crashReasonList, pathList, aircraftStateList,
@@ -410,6 +447,10 @@ struct EvalResults {
       // project no-cereal-versioning policy; old dmps are orphaned by the
       // training reset (M2-era no-version-revision policy).
       ar(effectiveMasterSeed);
+
+      // 038 P0-D-2 — self-describing run config, appended after the master
+      // seed (same no-version-bump policy; old dmps orphaned by retrain).
+      ar(runConfig);
     }
   }
 
@@ -433,6 +474,8 @@ struct EvalResults {
     hullStrikeCount.clear();
     // 033 §2.A — provenance header reset to "no-context" default.
     effectiveMasterSeed = 0;
+    // 038 P0-D-2 — self-describing run config reset.
+    runConfig = RecordedRunConfig();
   }
 
   void dump(std::ostream& os) {

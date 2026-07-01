@@ -117,6 +117,22 @@ static uint64_t gEffectiveMasterSeed = 0;
 // populated at autoc startup.
 static void stampEvalResultsProvenance(EvalResults& results) {
     results.effectiveMasterSeed = gEffectiveMasterSeed;
+    // 038 P0-D-2 — stamp the self-describing run config (fitness cone / cadence /
+    // crash penalty) so the dmp replays standalone without the live .ini
+    // (renderer + dmp_dump prefer this block, P0-B/T010).
+    const AutocConfig& cfg = ConfigManager::getConfig();
+    RecordedRunConfig& rc = results.runConfig;
+    rc.fitDistScaleBehind     = cfg.fitDistScaleBehind;
+    rc.fitDistScaleAhead      = cfg.fitDistScaleAhead;
+    rc.fitConeAngleDeg        = cfg.fitConeAngleDeg;
+    rc.fitStreakThreshold     = cfg.fitStreakThreshold;
+    rc.fitStreakRampSec       = cfg.fitStreakRampSec;
+    rc.fitStreakMultiplierMax = cfg.fitStreakMultiplierMax;
+    rc.simTimeStepMsec        = SIM_TIME_STEP_MSEC;
+    rc.cadenceTickScale       = kCadenceTickScale;
+    rc.enableHullCrashPenalty = cfg.enableHullCrashPenalty;
+    rc.hullCrashPenaltyFactor = cfg.hullCrashPenaltyFactor;
+    rc.oobCrashPenaltyWeight  = cfg.oobCrashPenaltyWeight;
 }
 
 // Compute (and cache) the scenarioSeed table once the per-run scenario
