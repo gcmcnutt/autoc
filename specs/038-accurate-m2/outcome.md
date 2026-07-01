@@ -33,6 +33,37 @@ which is fine cross-build"; `scenario_metadata.h:118`). No residual draw-order p
 PRNG cascade. The only remaining `svTau` reference is in the historical `verify_037_metrics.py`, left
 untouched per the historical-scripts-immutable practice. No code change needed.
 
+### T007/T008/T009 (P0-D crrcsim + protocol) → **DONE** (2026-07-01)
+
+- **T007** (P0-D-1): `getSimulationTimeSinceReset()` rounds (`std::llround`) not truncates → exact 50 ms
+  gaps; strict single-gap source-spacing restored (crrcsim + tracker_stepper). ⚠️ [OP] confirm at the
+  rebuild-perf gate whether this settles the "identical-state/different-simTimeMsec" divergence noted in
+  crrcsim CLAUDE.md. Commit crrcsim `e6108cc`, parent `55fd4df`.
+- **T008** (P0-D-3): steady wind recorded via `eom01->getLastLocalAirmass()` (NED ft/s→m/s) → both modes.
+  ⚠️ [OP] re-run `wind_study.py` against a fresh bake to confirm the getter is populated.
+- **T009** (P0-D-2): `RecordedRunConfig` (fit cone / cadence / crash-penalty) appended to `EvalResults`
+  (no version bump), stamped from `ConfigManager::getConfig()`. Commit `0cf29cf`.
+
+### T009b (FR-P0H situational-awareness inputs) — **PART 1/2 DONE: layout** (2026-07-01, commit `3cd2bc9`)
+
+Layout only (Tracker 54→60, Pathgen 33→37; weight counts 2051 pathgen / 2787 tracker; topology strings).
+Population (part 2) is the next focused unit. **Recorded decisions for part 2**:
+- **(B) `inward_body`** = `orientation.inverse() * normalize(-pos_horizontal)` (radial-inward toward the
+  cylinder axis at the virtual-frame origin, body frame). Add a stateless `inwardBodyDirection()` helper to
+  `arena.h`/`arena.cc`; populate in gather_tracker (has arena) and gather_pathgen.
+- **Pathgen (B) arena plumb**: add `const FlightArena&` to `gather_pathgen_inputs`; `NNControllerBackend`
+  carries one from config (desktop); **nn2cpp bakes a compile-time `FlightArena{radius,floor,ceiling}`
+  literal from the run config** into the generated xiao firmware (operator 2026-07-01). Live-pathgen
+  firmware change (FR-033).
+- **(A) two-path state**: `time_since_seen` (tanh of blind-ticks) + `exit_dir` sin/cos (held last-seen NDC
+  centroid bearing). Single-source the update in a shared helper called by BOTH `TrackerStepper` and
+  `CrrcsimTrackerHelper`; **reset per scenario/engage** in both `initScenario` (FR-030 determinism).
+- **dmp_dump**: add the 6/4 new columns (honest recording).
+- Quaternion convention: world→body via `.inverse()` (matches `camera_projection.cc:117`,
+  `aircraft_state.h:440`).
+- ⚠️ layout compiles but gather funcs don't populate the new fields yet → **no bake until part 2 lands**
+  (uninitialized = non-deterministic); test fixtures with hardcoded 54/33/1923/2595 fail until T011.
+
 ### T005 / P0-E — type-domain grep audit → **AUDITED; conversions deferred** (2026-07-01)
 
 Grep on `src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/` returns ~430 unannotated
