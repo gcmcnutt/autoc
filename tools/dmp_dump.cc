@@ -61,7 +61,8 @@ void printUsage(const char* prog) {
     "  --stride N     run-summary: sample every Nth gen (default 1)\n"
     "  --since-gen N  run-summary: skip gens < N (header suppressed) — incremental:\n"
     "                 fetch only new gens and append to a cached CSV\n"
-    "  -i, --config   ini for S3 creds + fitness params (default autoc.ini)\n"
+    "  -i, --config   ini for S3 creds/bucket (default autoc.ini); fitness cone +\n"
+    "                 cadence now read from the dmp-recorded RecordedRunConfig\n"
     "  -h, --help     this message\n"
     "\n"
     "CSV columns (pathgen): scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,\n"
@@ -408,8 +409,14 @@ int main(int argc, char** argv) {
   if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt,inX,inY,inZ,tSee,exS,exC\n";
   else           std::cout << ",dist,along,stpPt,mult,rampSc,dBnd,inX,inY,inZ\n";
 
-  const AutocConfig& cfg = ConfigManager::getConfig();
-  int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
+  // 038 P0-B (T010): read the fitness cone / cadence from the dmp-recorded,
+  // self-describing RecordedRunConfig — NOT the live .ini. M2 greenfield: no
+  // fallback to ConfigManager (a pre-038 dmp with a zeroed runConfig is
+  // reproduced by checking out the matching code, not by reading today's ini).
+  // Only S3 bucket/profile still comes from ConfigManager.
+  const RecordedRunConfig& rc = results.runConfig;
+  const double dtSec = rc.simTimeStepMsec / 1000.0;
+  int streakStepsToMax = static_cast<int>(rc.fitStreakRampSec / dtSec);
   if (streakStepsToMax < 1) streakStepsToMax = 1;
 
   for (size_t si = 0; si < results.aircraftStateList.size(); ++si) {
@@ -420,8 +427,8 @@ int main(int argc, char** argv) {
     const std::vector<Path>* path =
         (si < results.pathList.size()) ? &results.pathList[si] : nullptr;
 
-    FitnessComputer fc(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
-                       cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
+    FitnessComputer fc(rc.fitDistScaleBehind, rc.fitDistScaleAhead, rc.fitConeAngleDeg,
+                       rc.fitStreakThreshold, streakStepsToMax, rc.fitStreakMultiplierMax);
     fc.resetStreak();
     gp_vec3 prevTangent = gp_vec3::UnitX();
     double prevSpan = 0.0;  // tracker spn0 at ti-1, for dspn (0 at first emitted tick)

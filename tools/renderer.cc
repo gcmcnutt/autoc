@@ -2905,10 +2905,12 @@ void Renderer::createStopwatch() {
 
 // 037 P-O12 — running PATH score to `currentTime` for arena `arena`, replayed
 // through the SAME FitnessComputer math as autoc/dmp_dump so the HUD number IS
-// the recorded fitness (not a lookalike). Returns Σ(stp×mult×kCadenceTickScale)
+// the recorded fitness (not a lookalike). Returns Σ(stp×mult×cadenceTickScale)
 // over revealed ticks; sets outMult to the current ×multiplier. Mirrors
 // dmp_dump.cc's per-tick along/lateral→computeStepScore→applyStreak.
-// (Config from ConfigManager for now; switch to dmp-recorded config per P-O13.)
+// 038 P0-B (T010): fitness cone + cadence come from the dmp-recorded,
+// self-describing RecordedRunConfig, NOT the live .ini (M2 greenfield — no
+// fallback; a pre-038 dmp is replayed by checking out the matching code).
 double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) {
   outMult = 1.0;
   if (arena < 0 || arena >= static_cast<int>(evalResults.aircraftStateList.size())) return 0.0;
@@ -2930,11 +2932,12 @@ double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) 
     if (path->empty()) return 0.0;
   }
 
-  const AutocConfig& cfg = ConfigManager::getConfig();
-  int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
+  const RecordedRunConfig& rc = evalResults.runConfig;
+  const double dtSec = rc.simTimeStepMsec / 1000.0;
+  int streakStepsToMax = static_cast<int>(rc.fitStreakRampSec / dtSec);
   if (streakStepsToMax < 1) streakStepsToMax = 1;
-  FitnessComputer fc(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
-                     cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
+  FitnessComputer fc(rc.fitDistScaleBehind, rc.fitDistScaleAhead, rc.fitConeAngleDeg,
+                     rc.fitStreakThreshold, streakStepsToMax, rc.fitStreakMultiplierMax);
   fc.resetStreak();
 
   const unsigned long curMs = static_cast<unsigned long>(currentTime * 1000.0f);
@@ -2969,7 +2972,7 @@ double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) 
     const double stp = fc.computeStepScore(along, lateral);
     const double ms = fc.applyStreak(stp);
     outMult = (stp > 0.0) ? ms / stp : 1.0;
-    score += ms * kCadenceTickScale;
+    score += ms * rc.cadenceTickScale;  // 038 P0-B — recorded cadence, not compiled kCadenceTickScale
   }
   return score;
 }
