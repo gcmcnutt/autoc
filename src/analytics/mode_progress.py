@@ -28,10 +28,12 @@ import matplotlib.pyplot as plt
 GD = re.compile(r"#GenDiag gen=(\d+).*?avgVis=([\d.]+).*?avgInRamp=([\d.]+).*?"
                 r"avgRngMed=([\d.]+).*?maxLost=(\d+)")
 
+# maxLost is tick-denominated in the log → reads 2× at 20 Hz vs 10 Hz. Converted
+# to SECONDS at parse time (× --tick-sec) so reacquire is cadence-comparable (038 T004).
 PANELS = [("avgVis", "target in FOV (perception)", 1),
           ("avgInRamp", "track occupancy (in streak ramp)", 2),
           ("avgRngMed", "median range to target (m)", 3),
-          ("maxLost", "worst blind streak (ticks)", 4)]
+          ("maxLost", "worst blind streak (s)", 4)]
 
 
 def parse(path):
@@ -59,6 +61,9 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--run", action="append", required=True, help="NAME:logfile (repeatable)")
     p.add_argument("-o", "--out", required=True)
+    p.add_argument("--tick-sec", type=float, default=0.05,
+                   help="control-loop cadence (sec/tick) — converts maxLost (blind-streak ticks) "
+                        "to SECONDS so reacquire is cadence-comparable (default 0.05 = 20 Hz).")
     args = p.parse_args()
 
     runs = []
@@ -66,6 +71,7 @@ def main():
         name, _, path = spec.partition(":")
         d = parse(path)
         if d:
+            d["maxLost"] = d["maxLost"] * args.tick_sec  # ticks → seconds (T004)
             runs.append((name, d))
     if not runs:
         print("no #GenDiag parsed"); return
@@ -86,7 +92,7 @@ def main():
     for name, d in runs:
         print(f"  {name:>5} gen{int(d['gen'][-1]):>4}: avgVis {d['avgVis'][-1]:.2f}  "
               f"avgInRamp {d['avgInRamp'][-1]:.2f}  avgRngMed {d['avgRngMed'][-1]:.1f}m  "
-              f"maxLost {int(d['maxLost'][-1])}")
+              f"maxLost {d['maxLost'][-1]:.1f}s")
     fig.suptitle("Per-generation mode competence (perception / track / range / reacquire) — "
                  "plateau = competence ceiling", fontsize=11)
     fig.tight_layout()

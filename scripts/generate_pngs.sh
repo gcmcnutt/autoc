@@ -62,7 +62,8 @@ if [[ "$MODE" == "m1" ]]; then BUCKET=autoc-m1; INI="$REPO/autoc.ini";         e
 [[ -f "$INI" ]] || die "config not found: $INI"
 
 # Control cadence (sec/tick) from the run's config — feeds intercept_analysis's
-# closing-rate m/s so it's correct at 20 Hz (50 ms) vs 10 Hz (100 ms).
+# closing-rate m/s AND time-denominates the tick-based streak metrics
+# (avgMaxStreak, maxLost → seconds) so 20 Hz (50 ms) vs 10 Hz (100 ms) compare.
 CTRL_MSEC="$(grep -E '^[[:space:]]*ControlIntervalMsec' "$INI" | head -1 | sed -E 's/.*=[[:space:]]*([0-9]+).*/\1/')"
 [[ "$CTRL_MSEC" =~ ^[0-9]+$ ]] || CTRL_MSEC=50
 TICK_SEC="$(awk "BEGIN{printf \"%.4f\", $CTRL_MSEC/1000.0}")"
@@ -138,7 +139,7 @@ run() { echo "  [plot] $1"; python3 "$AN/$@"; }
 
 # --- common (m1 + m2) ---
 run plot_evolution_progress.py --focus "$NAME:$LOG" --run-name "$NAME" \
-    --crash-log "$LOG" --total-gens "$TOTAL_GENS" "${COMPARE[@]}" \
+    --crash-log "$LOG" --total-gens "$TOTAL_GENS" --tick-sec "$TICK_SEC" "${COMPARE[@]}" \
     --out "$OUT/${NAME}_evolution_progress.png"
 run per_axis_aggressiveness.py "$TICK" --label "$NAME" --gen "$GEN" \
     -o "$OUT/${NAME}_per_axis_aggressiveness.png"
@@ -162,7 +163,7 @@ if [[ "$MODE" == "m2" ]]; then
 
   # mode_progress — per-gen mode competence (perception/track/range/reacquire) from #GenDiag;
   # log-only, same current+compares overlay. Plateau = competence ceiling.
-  run mode_progress.py "${GR_ARGS[@]}" -o "$OUT/${NAME}_mode_progress.png"
+  run mode_progress.py "${GR_ARGS[@]}" --tick-sec "$TICK_SEC" -o "$OUT/${NAME}_mode_progress.png"
 
   # score_by_path — per-path tracking-score distribution (M2 generalization proxy):
   # raw box/strip per path + per-step (path-length-normalized) histograms per path.
