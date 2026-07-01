@@ -64,6 +64,34 @@ Population (part 2) is the next focused unit. **Recorded decisions for part 2**:
 - ⚠️ layout compiles but gather funcs don't populate the new fields yet → **no bake until part 2 lands**
   (uninitialized = non-deterministic); test fixtures with hardcoded 54/33/1923/2595 fail until T011.
 
+#### T009b part-2 recon map (file:line — start here in a fresh /speckit.implement)
+
+- **(B) `inward_body` helper**: add `inwardBodyDirection(const gp_vec3& pos, const gp_quat& q)` decl to
+  `include/autoc/eval/arena.h` (near `distanceToBoundary`, ~line 98), body in `src/eval/arena.cc` (near
+  `distanceToBoundary` at `arena.cc:48`). Math: arena centered at virtual-frame origin (0,0,0); world
+  radial-inward = `normalize(-pos.x, -pos.y, 0)` (Zero if `hypot(x,y)<1e-6`); body = `q.inverse() *
+  inward_world`. Convention verified: world→body = `.inverse()` (`camera_projection.cc:117`,
+  `aircraft_state.h:440`).
+- **`gather_tracker_inputs`** (`src/nn/evaluator.cc:438`): populate (B) `inward_body_{x,y,z}` from
+  `chase.getPosition()`+`getOrientation()`; write (A) `time_since_seen`/`exit_dir_{sin,cos}` from values
+  passed by the caller. Existing `dist_to_boundary_along_vel` at `evaluator.cc:488`.
+  - callers: `src/eval/tracker_stepper.cc:254`, `crrcsim/.../crrcsim_tracker_helper.cpp:202`.
+- **`gather_pathgen_inputs`** (`src/nn/evaluator.cc:318`): add `const autoc::eval::FlightArena&` param;
+  populate (B) `dist_to_boundary` (via `distanceToBoundary`) + `inward_body`. NO (A) (M1 always visible).
+  - callers: `src/nn/evaluator.cc:404` (`NNControllerBackend::evaluate` — give the backend a `FlightArena`
+    member from config, `evaluator.h` ctor ~line 371); `tools/nn2cpp.cc:123,189` (codegen — **bake a
+    `FlightArena{radius,floor,ceiling}` literal from config** per operator decision).
+- **(A) two-path state** (`time_since_seen` = `tanh(blind_ticks·dt / ~2s)`; `exit_dir` = held NDC-centroid
+  bearing of `history.left/right_{x,y}[5]`, updated when a beacon is visible = `cep < cep_gate_threshold`,
+  `kCepSentinelThreshold` per `fitness_decomposition.cc:200`): single-source the per-tick update in a shared
+  helper; add members + **reset in `initScenario`** to both `TrackerStepper` (`tracker_stepper.h` +
+  `tracker_stepper.cc` ~108) and `CrrcsimTrackerHelper` (`crrcsim_tracker_helper.cpp` initScenario ~59-62).
+- **dmp_dump columns** (`tools/dmp_dump.cc`): add the 6 tracker + 4 pathgen input columns (honest recording).
+- **T011 fixtures to regen**: `tests/nn_layout_tests.cc`, `nn_evaluator_tests`, `nn_serialization_tests`,
+  `tick_rescale_tests`, NN01 fixtures (hardcoded 54/33/1923/2595); xiao codegen regen via `nn2cpp`.
+- **Build loop**: operator runs `cd build && make` (compiles + runs gtest) for source edits; `rebuild-perf.sh`
+  for the from-scratch determinism gate. No standalone test binary — `make` IS the unit-test run.
+
 ### T005 / P0-E — type-domain grep audit → **AUDITED; conversions deferred** (2026-07-01)
 
 Grep on `src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/` returns ~430 unannotated
