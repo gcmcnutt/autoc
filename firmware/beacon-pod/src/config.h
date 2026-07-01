@@ -38,5 +38,5 @@
 // ALTERNATE route TXD=PA1 / RXD=PA2 (NOT the default PB2/PB3), and the mEDBG tri-states these unless the host
 // asserts DTR (pyserial does by default). Lets a host script perturb the REAL emitter for closed-loop tests:
 // retune frequency, inject bit errors, blank chips (dropout). See main.c for the byte protocol.
-#define UART_BAUD      115200UL
-#define UART_BAUD_REG  ((uint16_t)((64UL * F_CPU_HZ) / (16UL * UART_BAUD)))   // async normal mode; = 694 @ 20 MHz
+#define UART_BAUD      38400UL       // modest rate: solid margin vs the RC-osc baud error (115200 showed MSB flips)
+#define UART_BAUD_REG  ((uint16_t)((64UL * F_CPU_HZ) / (16UL * UART_BAUD)))   // async normal mode; = 2083 @ 20 MHz

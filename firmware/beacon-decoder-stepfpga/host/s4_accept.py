@@ -11,13 +11,15 @@ Usage:  python3 s4_accept.py            # all
         python3 s4_accept.py synth      # synthetic regression only (no external HW)
         python3 s4_accept.py ext        # external-emitter only (needs the 416 wired)
 """
-import subprocess, sys, statistics
+import subprocess, sys, statistics, os, time
 from beacon_telemetry import TelemetryFrame
 from beacon_telemetry.frame import chip_rate_hz
 
 SB = "/mnt/c/fpga-build/stepfpga"
 FRAME_MS = 25
 CONFIRMED, TENTATIVE = 2, 1
+VENV_PY = os.path.expanduser("~/.venvs/avr/bin/python")   # has pyserial (for the emitter on /dev/ttyACM0)
+EMIT_PORT, EMIT_BAUD = "/dev/ttyACM0", 38400
 
 def run(**kw):
     args = ["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-File","scenario.ps1"]
@@ -25,6 +27,24 @@ def run(**kw):
     out = subprocess.run(args, cwd=SB, capture_output=True, text=True, timeout=120).stdout.splitlines()
     m = next((i for i,l in enumerate(out) if l.strip()=="MARK"), -1)
     return [f for f in (TelemetryFrame.parse(l) for l in out[m+1:]) if f]
+
+# ---- closed-loop helpers: command the emitter (ttyACM0) while driving/reading the FPGA (COM3) ----
+def emit(*b):   # send command bytes to the real emitter
+    subprocess.run([VENV_PY,"-c",
+        f"import serial;s=serial.Serial('{EMIT_PORT}',{EMIT_BAUD},timeout=1);s.write(bytes({list(b)}));s.close()"],
+        timeout=10)
+def _com3(ps):  # run an inline powershell against COM3; return stdout lines
+    full=("$p=New-Object System.IO.Ports.SerialPort COM3,115200,([System.IO.Ports.Parity]::None),8,"
+          "([System.IO.Ports.StopBits]::One);$p.ReadTimeout=1500;$p.Open();"+ps+"$p.Close()")
+    return subprocess.run(["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-Command",full],
+                          cwd=SB,capture_output=True,text=True,timeout=40).stdout.splitlines()
+def fpga_ext_on():  _com3("$p.Write([byte[]]@(0x2B),0,1);Start-Sleep -m 20;$p.Write([byte[]]@(0x58,1),0,2);$p.Write([byte[]]@(0x82),0,1);")  # remote, external code B, enB
+def fpga_release(): _com3("$p.Write([byte[]]@(0x2D),0,1);")
+def fpga_read(secs=4):
+    ls=_com3(f"$d=(Get-Date).AddSeconds({secs});while((Get-Date)-lt $d){{try{{Write-Output $p.ReadLine()}}catch{{}}}}")
+    return [f for f in (TelemetryFrame.parse(l) for l in ls) if f]
+def mean_rate(fr):
+    r=[chip_rate_hz(f.rateB) for f in fr if f.lockB>=CONFIRMED]; return statistics.mean(r) if r else None
 
 def lk(fr,ch): return [(f.lockA if ch=='A' else f.lockB) for f in fr]
 def held(fr,ch,lv): s=lk(fr,ch); return sum(v>=lv for v in s)/(len(s) or 1)
@@ -57,6 +77,25 @@ def c_ext_noise():
     fr=run(Ext=1,Mask=0b110,AmpN=120,Settle=8,Watch=6); h=held(fr,'B',CONFIRMED)
     return f"external + noise lock {h*100:.0f}%", (h>=0.5)
 
+# ---- CLOSED-LOOP (cl): command the real emitter, verify the FPGA responds. Needs the 416 wired + on ttyACM0. ----
+def c_cl_freq():
+    fpga_ext_on(); time.sleep(8)
+    emit(0x46,160); time.sleep(6); hi=mean_rate(fpga_read())     # emitter +~5%
+    emit(0x46,96);  time.sleep(6); lo=mean_rate(fpga_read())     # emitter -~5%
+    emit(0x52); fpga_release()
+    if hi is None or lo is None: return "freq track: lost lock", False
+    return f"emitter F+ →{hi:.1f} Hz, F- →{lo:.1f} Hz (DPLL tracks)", (hi>203.0 and lo<200.0)
+def c_cl_corrupt():
+    fpga_ext_on(); time.sleep(8)
+    emit(0x43,2); time.sleep(4); fr=fpga_read(5); emit(0x43,0); fpga_release()
+    h=held(fr,'B',CONFIRMED)
+    return f"emitter 2-bit corrupt: FPGA held confirmed {h*100:.0f}%", (h>=0.5)
+def c_cl_dropout():
+    fpga_ext_on(); time.sleep(8)
+    emit(0x44,10); time.sleep(4); fr=fpga_read(5); emit(0x44,0); fpga_release()
+    h=held(fr,'B',TENTATIVE)
+    return f"emitter dropout(10/word): FPGA stayed ≥tentative {h*100:.0f}%", (h>=0.5)
+
 CASES = [
   ("synth","Synthetic regression: time-to-signal",  c_synth_time),
   ("synth","Synthetic regression: B +5% skew",      c_synth_skewB),
@@ -64,6 +103,9 @@ CASES = [
   ("ext",  "External emitter: lock",                c_ext_lock),
   ("ext",  "External emitter: rate measurement",    c_ext_rate),
   ("ext",  "External emitter: holds under noise",   c_ext_noise),
+  ("cl",   "Closed-loop: emitter freq -> DPLL tracks", c_cl_freq),
+  ("cl",   "Closed-loop: emitter 2-bit corruption",    c_cl_corrupt),
+  ("cl",   "Closed-loop: emitter dropout",             c_cl_dropout),
 ]
 
 def main():
