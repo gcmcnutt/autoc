@@ -27,3 +27,9 @@
 #endif
 
 #define BM(pin)   (1u << (pin))
+
+// which Gold code this pod emits: 0 = code A (CODE0), 1 = code B (CODE1). Compile-time for now (later: the
+// PA1/PA2 code-select pins per mcu-firmware-contract). The 416 eval emits CODE B for the s4 hardware-in-loop test.
+#ifndef CODE_ID
+#  define CODE_ID  1
+#endif

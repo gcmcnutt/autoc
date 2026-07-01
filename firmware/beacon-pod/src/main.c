@@ -25,7 +25,7 @@ int main(void) {
     DIAG_PORT.DIRSET = BM(DIAG_PIN);
 
     // seed chip-0 outputs (bit N-1 = chip 0; SYNC high on chip 0)
-    dim_next  = (GOLD_CODE0 >> (GOLD_N - 1u)) & 1u;
+    dim_next  = (GOLD_CODE[CODE_ID] >> (GOLD_N - 1u)) & 1u;
     sync_next = 1u;
 
     // TCA0 -> exactly 200 Hz: F_CPU/16 / 6250 = 200.000 Hz
@@ -46,6 +46,6 @@ ISR(TCA0_OVF_vect) {
 
     // --- then advance + compute NEXT chip (its execution time does NOT move the edges above) ---
     if (++chip >= GOLD_N) { chip = 0; DIAG_PORT.OUTTGL = BM(DIAG_PIN); }   // heartbeat once per code word
-    dim_next  = (GOLD_CODE0 >> (GOLD_N - 1u - chip)) & 1u;
+    dim_next  = (GOLD_CODE[CODE_ID] >> (GOLD_N - 1u - chip)) & 1u;
     sync_next = (chip == 0);
 }
