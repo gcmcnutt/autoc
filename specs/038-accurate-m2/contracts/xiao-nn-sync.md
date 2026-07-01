@@ -3,10 +3,12 @@
 **Feature**: 038 | **Status**: design | **Consumers**: `tools/nn2cpp.cc`, `xiao/src/generated/`,
 `xiao/include/nn_program.h`.
 
-038's NN-architecture changes must keep the embedded target (xiao) coherent with the desktop NN, even though
-the **tracker is not yet deployed to xiao** (pathgen-only firmware today; tracker port is deferred BACKLOG).
-This contract records the sync points so the codegen stays correct and the firmware contract is updated per
-FR-033.
+038's NN-architecture changes must keep the embedded target (xiao) coherent with the desktop NN. **The
+deployed firmware is pathgen (M1)**, and 038 does change it: the FR-P0H **(B) arena-inward input lands on
+`NNInputs`**, so the live pathgen firmware gets a real input-count change requiring codegen regen + `pio run`
+rebuild/reflash **in this feature** (not deferred). The **tracker** port remains deferred (BACKLOG), so its
+input/output/topology/cadence sync points are recorded here for when it lands. This contract records both;
+the firmware contract is updated per FR-033.
 
 ## Codegen is topology-agnostic, but compile-time constants are not
 

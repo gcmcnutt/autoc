@@ -10,10 +10,11 @@ proved the depth is *architecture-capped, not reward-limited* (every reward knob
 relocated trade-offs; close-tracking stayed ~11–13 %, median error ~17 m, in-FOV ~70 %, reacquire 8–10 s).
 
 Scope settled at clarify (2026-06-27):
-1. **Phase 0 — prework / tech-debt** (P0-A…P0-G): 033 PRNG validation, renderer-reads-dmp config-hygiene,
+1. **Phase 0 — prework / tech-debt** (P0-A…P0-H): 033 PRNG validation, renderer-reads-dmp config-hygiene,
    standardized report script, the **one clean-slate dmp break** (simTimeMsec stamping + self-describing
-   dmp + wind_velocity recording), 037 carry-forward housekeeping, the t15 streak-threshold revert
-   (0.3→0.5), and the M1-re-bake expectation.
+   dmp + wind_velocity recording + **P0-H situational-awareness input enrichment**: target-lost
+   `time_since_seen`/exit-side + arena heading-to-inward cues, baseline not a lever, no reward tuning), 037
+   carry-forward housekeeping, the t15 streak-threshold revert (0.3→0.5), and the M1-re-bake expectation.
 2. **Generic RNN architecture studies** — **initial wave US1 deeper/non-uniform history + US3 auxiliary
    target-predictor head** (the "add state" levers, per Clarifications 2026-06-30), run as **parallel
    independent ablations** off the same baseline, then combine winners. **US2 two-timescale recurrence is

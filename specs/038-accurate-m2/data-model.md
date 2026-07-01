@@ -35,10 +35,12 @@ compile-time), NN01 genome weight count (input fan-in unchanged for history dept
 `TrackerInputs`/`NNInputs` beacon-history arrays → if slot count changes, struct size changes → ⬛).
 
 > Note: increasing history *slot count* (6→7) changes the per-beacon history arrays in `TrackerInputs`
-> (beacon_l_x[6]→[7], etc.) → `TrackerInput::COUNT` grows from 54 → 60 (6 beacon channels × +1 slot). That
-> is an NN input-count change (see §2). Keeping slot count at 6 but changing *spacing* avoids the input-count
-> change. The ablation choice (deeper window with more slots vs same-count denser) is a bake decision — both
-> are bundled into the one P0-D break regardless.
+> (beacon_l_x[6]→[7], etc.) → `TrackerInput::COUNT` grows by **+6** (6 beacon channels × +1 slot). That
+> is an NN input-count change (see §2). **NB: US1 branches from the FR-P0H-enriched baseline (§3b), so the
+> base is already > 54** — the growth is `enriched_COUNT + 6`, NOT the pre-038 "54 → 60" (that arithmetic
+> predates the enrichment; count the situational scalars once in the baseline, then the US1 slots on top).
+> Keeping slot count at 6 but changing *spacing* avoids the input-count change. The ablation choice (deeper
+> window with more slots vs same-count denser) is a bake decision — both are bundled into the one P0-D break.
 
 ---
 
@@ -46,7 +48,11 @@ compile-time), NN01 genome weight count (input fan-in unchanged for history dept
 
 **File**: `include/autoc/nn/topology.h` (both pathgen + tracker sections)
 
-| Constant | Current (tracker) | US2 slow-channel (start) | US3 predictor head (start) |
+> "Current" below is the **pre-038** topology. The input dim (`[0]`) grows in P0-D: `TRACKER_NN_TOPOLOGY[0]`
+> 54 → ~59 and `NN_TOPOLOGY[0]` (pathgen) 33 → ~36 from the FR-P0H situational-awareness inputs (§3b), then
+> further per the US1 history ablation (§1). Recompute weight counts off the enriched input dim.
+
+| Constant | Current (tracker, pre-038) | US2 slow-channel (start) | US3 predictor head (start) |
 |---|---|---|---|
 | `TRACKER_NN_TOPOLOGY` | `{54,32,16,3}` | `{54,32,(16+8)r,3}` | `{...,7}` (3 control + 4 aux optical) |
 | `*_OUTPUT_COUNT` | `3` | `3` | `7` |
@@ -73,12 +79,34 @@ control convention preserved).
 
 **File**: `include/autoc/nn/nn_inputs.h`
 
-- `TrackerInput::COUNT` (currently 54) changes ONLY if history slot count changes (§1) or US3 adds new
-  *inputs* (the starting US3 plan reuses existing inputs → no input change; only output count grows).
-- Field declaration order = on-disk byte order (cereal/data.dat/nn2cpp/sim_response). **No reordering, no
+- `TrackerInput::COUNT` (currently 54) changes when: history slot count changes (§1, US1 ablation), US3 adds
+  new *inputs* (starting US3 plan reuses existing inputs → no input change), **or the P0-D situational-
+  awareness enrichment (§3b, FR-P0H) adds its scalars to the baseline**.
+- Field declaration order = on-disk byte order (cereal/nn2cpp/sim_response). **No reordering, no
   padding, floats only** (Constitution VI byte-format note).
 - `static_assert(sizeof(TrackerInputs)==COUNT*sizeof(float))` enforces layout.
 - `kTrackerInputMeta[]` display-name table updated to match any new slots.
+
+## 3b. Situational-awareness inputs (P0-D baseline enrichment, FR-P0H) ⬛
+
+**File**: `include/autoc/nn/nn_inputs.h` — `TrackerInputs` gets (A)+(B); `NNInputs` (M1/pathgen) gets **(B)
+only** (Clarifications 2026-07-01 — both formats break, bundled into P0-D).
+
+Baseline enrichment (not an ablation lever) — appended to the input struct, current-tick/held-value (NOT
+per-slot historied → small count growth), all `gp_scalar`, real-flight-grounded.
+
+| Group | Fields (start) | Domain | Source | Applies to | Notes |
+|---|---|---|---|---|---|
+| (A) target-lost | `time_since_seen` (1), last-seen `exit_dir` sin/cos (2) | [0,1]/[−1,1] | optical (CEP-sentinel crossing in `tracker_stepper.cc`) | **M2 only** | decaying heuristic; NO stored world position; meaningless for M1's always-visible rabbit |
+| (B) arena-inward | heading-to-inward sin/cos (2), `time_to_boundary` (1, optional) | [−1,1]/[0,1) | GPS/AHRS ego-state vs fixed geofence center | **M1 + M2** | rotation/translation-relative, NOT raw (x,y); M1 = clean/fast read on the cue |
+
+- Input count grows ~5 (exact set is an impl choice); `TRACKER_NN_TOPOLOGY[0]`/`NN_TOPOLOGY[0]` +
+  `*_WEIGHT_COUNT` + `kTrackerInputMeta`/`kPathgenInputMeta` + `sizeof` static_assert all update (§3).
+- **Compounds with US1** (§1): if the US1 ablation *also* changes slot count, both land on the same P0-D
+  baseline format — count the situational scalars once (baseline) + the US1 slots (ablation variant).
+- **Recording**: part of `TrackerInputs` → serialized in the dmp; surface the new columns in `dmp_dump.cc`
+  (honest recording, `feedback_honest_dmp_recording`).
+- **No reward change**: FR-P0H adds inputs only; the existing penalty stack (cone + t14 OOB/hull) arbitrates.
 
 ---
 

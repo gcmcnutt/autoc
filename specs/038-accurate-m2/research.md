@@ -228,6 +228,32 @@ so a drifted `.ini` can't misrender a pinned run. The only remaining ini depende
 
 ---
 
+## 5b. Situational-awareness input enrichment (P0-D baseline, FR-P0H)
+
+**Decision**: fold two "which way to turn" input groups into the P0-D baseline (no reward tuning) — **(A)
+target-lost** (`time_since_seen` + last-seen exit-side/image-velocity) and **(B) arena-inward** (heading-to-
+inward sin/cos ± time-to-boundary). Baseline enrichment shared by all ablations, NOT a lever.
+
+**Rationale**: honest recalibration (operator 2026-06-30) of what history/prediction can do. In high-rate
+all-attitude maneuvering the history buffer is an **emergent-PID / derivative** substrate (rates for
+anti-overrun), NOT a multi-second target oracle — 4–5 s prediction is physically infeasible, so US1's 1.6 s
+is a derivative-context compromise and US3's predictor is a ~50 ms anti-overrun lookahead (US1/US3 rationale
+retuned in spec accordingly; US2 slow-recurrence deferral is *vindicated* — no multi-second memory is being
+attempted). The residual wants — turn-direction at loss-of-signal, and phase-independent boundary awareness
+("call off near the fence, re-engage") — are **input-representation**, not architecture: give the net the
+cues and let the (heavy-handed) penalty stack arbitrate.
+
+**Design choices**: (A) is a *decaying directional heuristic* (a stored world bearing drifts with
+ego-rotation — hence not a stored position; `time_since_seen` lets the net decay confidence). (B) is
+**rotation/translation-relative** (heading-to-inward *angle*, not raw `(x,y)`) to avoid arena-geometry
+overfit — symmetric with the target bearing+span shape, so one unified "target unless wall-close" policy can
+emerge. Both are current-tick/held (not historied) → small count growth; grounded (A) optical / (B) GPS/AHRS.
+
+**Success criterion (FR-P0H)**: enriched baseline vs old (037 t11/t14) M2 baseline — overrun down / boundary
+behavior improved — measured *before* the architecture ablations layer on top.
+
+---
+
 ## 6. P0-A — 033 PRNG cascade validation
 
 **Decision**: validate (don't redesign) the cascade. Run the existing D1–D5 contract tests

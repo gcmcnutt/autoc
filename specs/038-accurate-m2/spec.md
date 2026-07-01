@@ -59,8 +59,8 @@ cleanly (M1 or both), then layer the FOV-specific perception/visibility work ont
 - **Two-timescale recurrence** — a structural leaky-slow channel for trajectory memory (`rnn_capacity`
   says *structure, not width*).
 - **Auxiliary target-predictor head** — trained via a **lexicase prediction-accuracy objective**
-  (evolution-native, no backprop) or a gradient-pretrain-then-evolve hybrid. The pivot that also unlocks
-  planning.
+  (evolution-native, no backprop) or a gradient-pretrain-then-evolve hybrid. A short-horizon (~50 ms)
+  next-tick predictor for anti-overrun; a *possible* substrate for later planning, not a multi-second oracle.
 
 **M2-FOV-SPECIFIC — strictly the tracker's limited FOV** (does not apply to M1):
 - **Visibility-maintenance reward (US4 — IN SCOPE)** — fly to keep the target framed; M1 never goes blind.
@@ -127,12 +127,28 @@ sequencing, M1-first policy, success gate) are settled in **Clarifications** bel
   more state is still the bottleneck. This refines (does not erase) the 2026-06-27 "parallel US1/US2/US3"
   decision — the parallel-then-combine *protocol* stands, the initial wave is now two arms not three.
 
+### Session 2026-07-01
+
+- Q: Does the (B) arena-inward situational-awareness input land on M1/pathgen too, or M2-tracker only? → A:
+  **Both M1 and M2.** M1 is the clean/fast learner, so the arena sensor's value (and any efficiency gain in
+  boundary behavior) shows up *early on M1* — the same M1-first signal logic as US1. M1/pathgen's NN input
+  format therefore also breaks (bundled into the one P0-D break; M1 re-bakes and relearns with the cue).
+  **(A) target-lost stays tracker-only** (M1's rabbit is always visible → `time_since_seen`/exit-side are
+  meaningless for M1).
+- Q: If the enriched baseline shows no measurable overrun/boundary improvement, keep the inputs or revert? →
+  A: **Unconditional — keep regardless.** The inputs are cheap/safe/real-grounded and folded into the one
+  P0-D break every ablation bakes on; reverting would force a second format break + full re-bake. A null
+  result is recorded in `outcome.md` but triggers **no revert and no escape gate** (unlike the ablation
+  levers). "Good to have in general" — baseline, not a lever.
+
 ## Sensor inventory & sim→real grounding (carried reference, operator review 2026-06-16)
 
 All 54 M2 NN inputs are sim→real-grounded — ~83 % is unitless optical, every physical input is genuinely
 available on the aircraft, and CEP is the one 031-fed model. **Architecture changes (history depth,
 predictor head) alter how these inputs are *consumed over time*, not the input set** — except a
-history-layout change is a format-breaking NN-input change (retrain from scratch, xiao contract update).
+history-layout change is a format-breaking NN-input change (retrain from scratch, xiao contract update). The
+one deliberate *input-set* growth in 038 is the **situational-awareness enrichment** below (a small set of
+target-lost + arena-inward scalars, folded into the P0-D break) — baseline, not an architecture lever.
 
 | Inputs (count) | Derivation | Units | Real-flight source |
 |---|---|---|---|
@@ -149,7 +165,40 @@ history-layout change is a format-breaking NN-input change (retrain from scratch
 Design constraints that survive the reframe: **M2 stays optical-only** (no physical target-range / hull
 sensor — the predictor must infer range/closure from the two beacon points + span/span-rate, unitless);
 **avoid direct physical-unit conversions**; the predictor-head and history work must keep every NN input
-sim→real-grounded.
+sim→real-grounded. Note the optical-only invariant constrains **target perception** — not the aircraft's own
+ego/arena state (attitude, airspeed, arena geometry), which is legitimately GPS/AHRS-available.
+
+## Situational-awareness input enrichment (baseline, folded into P0-D) — operator 2026-06-30
+
+Two "which way to turn" needs that are **not** temporal-architecture problems (so not US1/US3 levers) but
+input-representation ones — added to the **shared baseline** via the P0-D format break, so every ablation
+inherits them. **No new reward tuning**: the existing penalty stack (tracking cone, t14 OOB smooth-cost +
+hull penalty) already presses *stay on track / don't exit the arena / really don't hit the craft*; 038 just
+gives the network the **sensory inputs to act on that pressure** and lets the (heavy-handed) evolutionary
+engine arbitrate — no hand-tuned mode logic.
+
+- **(A) Target-lost turn cue** — after the target drops out, *which way is a decent turn?* A `time_since_seen`
+  scalar (non-decaying — the one cue that survives optical flight) + the **last-seen exit-side / image-velocity
+  direction** (survives only briefly; the net learns to bank toward it and decay confidence via
+  `time_since_seen`). A **decaying directional heuristic, NOT a stored world-position** — a stored bearing
+  drifts with ego-rotation (which is *why* full 4–5 s prediction is off the table).
+- **(B) Arena / boundary awareness** — phase-independent (patrol, intercept, track all need it), and applied
+  to **both M1 and M2** (Clarifications 2026-07-01 — M1 is the clean/fast channel to read whether the sensor
+  helps + improves boundary efficiency; M1's NN format breaks too, bundled into P0-D). Today the only arena
+  input is `dist_to_boundary` (`tanh(d/20m)` along velocity): it says *how far to the wall ahead*, not *which
+  way to bank to get back inside*. Add a **heading-to-inward `sin/cos`** pair (angle from velocity heading to
+  arena center) — symmetric with the target bearing+span shape, so the net can learn one unified policy:
+  "turn toward target **unless** the wall is close, then bank inward" — the emergent call-off / re-engage.
+  Optionally **time-to-boundary** (`dist_to_boundary / airspeed`) for closure-awareness.
+
+**Grounding & discipline**: (A) is optical-derived, (B) is GPS/AHRS ego-state (arena center is a fixed
+geofence; position + heading are available) — nothing here is a magic target sensor, so **optical-only-for-
+the-target** holds. Kept **rotation/translation-relative** (heading-to-inward *angle*, not raw `(x,y)`) to
+preserve the minimal-crutch, anti-overfit philosophy. Current-tick / held-value scalars — **not** per-slot
+historied — so the input-count growth is small. **Baseline enrichment, NOT an ablation lever**: measured as
+enriched-baseline vs the old M2 baseline (does overrun drop / boundary behavior improve?), then US1/US3
+ablate temporal depth on top of it. **Unconditional** — kept regardless of the measurement (a null result is
+recorded, not reverted; no escape gate).
 
 ## Phase 0 — Prework / tech-debt (prerequisite, ahead of the architecture work)
 
@@ -174,6 +223,9 @@ feature scope, but they de-risk the bakes that follow. (Carried from the prior d
     version beyond P0-B's renderer slice), so a dmp is standalone-replayable.
   - **`wind_velocity` recording** — populate from crrcsim at record time (today zero), so realized gusty
     wind is auditable; re-run `wind_study.py` against real wind.
+  - **Situational-awareness inputs (operator 2026-06-30)** — the (A) target-lost + (B) arena-inward baseline
+    scalars (see "Situational-awareness input enrichment" above). A format-breaking NN-input *add* — folded
+    into this one break, real-grounded, no reward tuning, current-tick/held-value (not historied).
 
   (NOT the V1.5 crash-hull PRNG determinism — already fixed in the 033 cleanup; don't re-open.)
 
@@ -222,9 +274,14 @@ recorded wind, and a self-describing dmp — the strict source-spacing check pas
 ### US1 — Deeper / non-uniform temporal history buffer (GENERIC, M1-first gate) (Priority: parallel ablation)
 
 As the operator, I want the NN history buffer to be **deeper and non-uniformly spaced** (log / geometric
-lags, possibly back toward the 1.6 s window, possibly more than 6 steps) so the controller has richer
-trajectory context to predict a maneuvering target — provable on **M1 first** (no FOV confound), then
-inherited by M2.
+lags, possibly toward the 1.6 s window, possibly more than 6 steps) so the controller has richer
+**derivative/closure context** — lagged copies of the inputs let the RNN compute its own rates (span-rate,
+turn-rate, closure) and behave like an emergent PD/PID loop. **This is a short-horizon anti-overrun lever,
+NOT a 4–5 s target oracle**: in high-rate all-attitude maneuvering you *cannot* predict a target's position
+seconds out, and the buffer is deliberately **not** sized to bridge the multi-second blind gap (that would be
+prediction-through-blindness, deferred US5; the turn-at-loss cue is the situational-awareness
+`time_since_seen`/exit-side scalars, not history depth). 1.6 s is a compromise giving more derivative context,
+not a claim of gap-spanning sufficiency. Provable on **M1 first** (no FOV confound), then inherited by M2.
 
 **Sequencing**: the cheapest structural lever and a clean generic test, run as a parallel ablation —
 **but with a required M1-first gate** (validate on M1, no FOV confound, before layering onto M2). M1 and
@@ -271,15 +328,17 @@ structure (fixed-leak vs evolved time-constant), how it composes with the predic
 
 ### US3 — Auxiliary target-predictor head (GENERIC, the pivot, M2-direct allowed) (Priority: parallel ablation)
 
-As the operator, I want an **auxiliary head that predicts the target's near-future optical state** (the
-two beacon points / span trajectory), trained by a **lexicase prediction-accuracy objective**
-(evolution-native, no backprop) or a gradient-pretrain-then-evolve hybrid, so the controller carries an
-explicit motion model it can act on — the pivot that also unlocks planning and the reacquire-through-
-blindness work.
+As the operator, I want an **auxiliary head that predicts the target's *next-tick* optical state** (the two
+beacon points / span at +1 tick ≈ 50 ms), trained by a **lexicase prediction-accuracy objective**
+(evolution-native, no backprop) or a gradient-pretrain-then-evolve hybrid, so the controller carries a
+**short-horizon closure estimate it can act on to stop overrunning** ("am I about to overtake?"). **Scoped as
+a ~50 ms lookahead anti-overrun aid, not a multi-second motion model** — 4–5 s prediction is physically off
+the table (see US1); any reacquire-through-blindness benefit is a *possible* downstream bonus, not the claim
+here (that is deferred US5).
 
-**Sequencing**: the highest-leverage architecture change and the one that turns "track" into
-"predict-and-plan"; generic (a predictor helps M1 too) but **may go straight to M2** (M1-first optional
-per the mixed policy). Highest research risk. Runs as a parallel ablation.
+**Sequencing**: the highest-leverage architecture change — it sharpens "track" into "anticipate-closure";
+generic (a next-tick predictor helps M1 too) but **may go straight to M2** (M1-first optional per the mixed
+policy). Highest research risk. Runs as a parallel ablation.
 
 **Independent Test**: a bake with the predictor head + prediction objective vs the control-only baseline
 at the same seed; the predicted optical state matches the realized state within a target error AND
@@ -372,6 +431,17 @@ source is blind to the chase camera).]
   shaping stays switchable per FR-021, but 0.5 is the default going into the architecture studies).
 - **FR-P0G**: Prework that changes M1 architecture MUST be expected to trigger a fresh M1 source re-bake
   (and the M2 library re-bake from it); this is accepted scope, budgeted as an M1 run.
+- **FR-P0H**: The P0-D break MUST also land the **situational-awareness input enrichment** (baseline, NOT an
+  ablation lever): **(A)** a `time_since_seen` scalar + a last-seen exit-side / image-velocity cue
+  (optical-derived; a decaying heuristic, no stored world position) — **tracker-only** (meaningless for M1's
+  always-visible rabbit); and **(B)** a heading-to-inward `sin/cos` pair (± `time_to_boundary`) for
+  arena/boundary turn guidance (GPS/AHRS ego-state, rotation/translation-relative — NOT raw `(x,y)`) — on
+  **both M1/pathgen and M2/tracker** (Clarifications 2026-07-01; both NN input formats break, bundled into the
+  one P0-D break). It MUST stay determinism/bitwise-replay clean, add **NO** new reward tuning (the existing
+  penalty stack arbitrates), keep the **optical-only-for-the-target** invariant, be honestly recorded in the
+  dmp (surfaced by `dmp_dump`), and be measured as enriched-baseline vs the old baseline (M1 and M2 overrun /
+  boundary behavior — early M1 read on the arena cue). It is **unconditional** (Clarifications 2026-07-01):
+  kept regardless of the measurement; a null result is recorded but triggers no revert and no escape gate.
 
 ### RNN architecture studies (generic — US1/US2/US3)
 - **FR-001**: The M2 (and M1) history layout — window depth, step count, lag spacing — MAY differ from
@@ -442,7 +512,9 @@ source is blind to the chase camera).]
 
 - **SC-000**: Phase 0 done — 033 PRNG verdict + determinism check; renderer replays a pinned run without
   the live `.ini`'s fitness params; the full M2 PNG set regenerates from one `scripts/<wrapper> <logfile>`
-  call; a fresh source bakes with exact 50 ms gaps, recorded wind, self-describing dmp.
+  call; a fresh source bakes with exact 50 ms gaps, recorded wind, self-describing dmp; **and the FR-P0H
+  situational-awareness inputs are landed (M1+M2 baked on the enriched format, unit test green) with the
+  enriched-vs-old overrun/boundary read recorded** (unconditional — landed regardless of the read).
 - **SC-001 (PRIMARY GATE)**: At least one of the parallel architecture ablations (history / two-timescale /
   predictor) moves **at least one reward-invariant 037 ceiling** — close-tracking fraction up from
   ~11–13 %, median error down from ~17 m, in-FOV up from ~70 %, or reacquire (`maxLost`) shorter than
