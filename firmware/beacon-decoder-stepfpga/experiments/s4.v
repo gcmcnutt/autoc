@@ -38,7 +38,8 @@ module s4_top (input clk12,
   reg signed [19:0] ediva_cmd = 20'sd266000;       // emitter-A divider via USB 'E' command (skew A; LOCAL=nominal)
   wire [18:0] ediva_eff = remote ? ediva_cmd[18:0] : 19'd266000;   // LOCAL: A is the nominal 200 Hz reference
   reg signed [19:0] edivb_cmd = 20'sd266000;       // emitter-B divider set by the USB 'F' command (rate test)
-  wire extsel = dsw4[1];                           // DIP4: EXTERNAL emitter (open/default=1) vs SYNTHETIC code B
+  reg extsel_cmd = 1'b1;                            // 'X' cmd (REMOTE): 1=external emitter, 0=synthetic B (for host tests)
+  wire extsel = remote ? extsel_cmd : dsw4[1];     // DIP4 (LOCAL): EXTERNAL emitter (open/default=1) vs SYNTHETIC B
   wire [18:0] edivb_eff = remote ? edivb_cmd[18:0] // remote: 'F'-commanded rate (synthetic B only)
                                  : 19'd262000;      // fixed synthetic-B skew (~+1.5%); DIP4 now selects ext/synth
                                  // never share a clock): DIP4 off ~+1.5% / on ~+3.5% -> they slip -> averaged
@@ -307,12 +308,13 @@ module s4_top (input clk12,
         8'h42: ampB_r   <= amp6;                   // 'B' code-B analog magnitude
         8'h47: ampN_r   <= amp6;                   // 'G' noise analog magnitude
         8'h4B: burst_cmd <= rxb;                   // 'K' dropout-burst span (chips)
+        8'h58: extsel_cmd <= rxb[0];               // 'X' select code-B source: 1=external emitter, 0=synthetic
       endcase
       pend_op <= 8'h00;
     end
     else if (rxb == 8'h2B) remote <= 1'b1;         // '+'  REMOTE (USB owns)
     else if (rxb == 8'h2D) remote <= 1'b0;         // '-'  LOCAL (switches own)
-    else if (rxb==8'h45||rxb==8'h46||rxb==8'h41||rxb==8'h42||rxb==8'h47||rxb==8'h4B) pend_op <= rxb;  // value-taking opcodes
+    else if (rxb==8'h45||rxb==8'h46||rxb==8'h41||rxb==8'h42||rxb==8'h47||rxb==8'h4B||rxb==8'h58) pend_op <= rxb;  // value-taking opcodes
     else if (rxb[7])       cmd_reg <= rxb[6:0];    // 0x80-0xFF -> 7-bit knob mask
   end
   // 'Z' = flush flywheel (true cold). Gated on pend_op==0 so a VALUE byte that happens to be 0x5A (e.g. 'F'/'A'/
