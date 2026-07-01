@@ -115,3 +115,35 @@ which avr-gcc pymcuprog && \
 ```
 
 All three commands returning real paths (not "not found") = ready.
+
+---
+
+## ATtiny416 Xplained Nano (XNANO) — PlatformIO + on-board mEDBG (working bring-up, 2026-06-30)
+
+The **eval** path (distinct from the 412 serialUPDI above): `firmware/beacon-pod/platformio.ini` env `xnano416`,
+bare-C (no Arduino framework — `atmelmegaavr` provides the ATtiny device pack, so **no apt/avr-libc, no sudo**).
+Flashed through the board's on-board **mEDBG** debugger via `pymcuprog`.
+
+**One-time (per boot) — share the mEDBG into WSL.** The mEDBG is a *composite* device (HID debug + CDC COM),
+so a plain `usbipd bind` won't attach — it needs `--force`. In an **Administrator** PowerShell on Windows:
+```
+usbipd bind --force --busid <busid>     # <busid> = the 03eb:2145 device in `usbipd list` (persists across reboots)
+usbipd attach --wsl --busid <busid>     # re-run after each reboot (attach does not persist)
+```
+Confirm in WSL: `lsusb | grep 03eb` and `~/.venvs/avr/bin/pymcuprog ping -d attiny416` → `Ping response: 1E9221`.
+
+**pymcuprog** (system pip is PEP-668 locked, so use a venv):
+```
+python3 -m venv ~/.venvs/avr && ~/.venvs/avr/bin/pip install pymcuprog
+```
+
+**Build + flash** (xiao-style; open `firmware/beacon-pod/` as its own VS Code workspace folder for the PIO buttons):
+```
+~/.platformio/penv/bin/platformio run -e xnano416            # build (bare-C)
+~/.platformio/penv/bin/platformio run -e xnano416 -t upload  # → pymcuprog write via mEDBG → 416
+```
+LED0 = **PB5** (active-low), SW0 = PB4 (from the board def).
+
+**Debugging**: PlatformIO has **no hardware debug** for tinyAVR (board `debug:{}`). Real UPDI hardware debug
+(breakpoints/step/watch) = **MPLAB X on Windows** driving the mEDBG natively (no usbip). PIO `debug_tool=simavr`
+gives simulator-only stepping if desired.
