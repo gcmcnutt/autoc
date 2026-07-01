@@ -66,7 +66,7 @@ constexpr int NN_WEIGHT_COUNT =
     (NN_RECURRENT[1] ? NN_HIDDEN1_SIZE * NN_HIDDEN1_SIZE : 0) +
     (NN_RECURRENT[2] ? NN_HIDDEN2_SIZE * NN_HIDDEN2_SIZE : 0) +
     (NN_RECURRENT[3] ? NN_OUTPUT_COUNT  * NN_OUTPUT_COUNT  : 0);
-static_assert(NN_WEIGHT_COUNT == 1923, "Weight count arithmetic inconsistent (028 D-alone: 1667 FF + 256 W_hh)");
+static_assert(NN_WEIGHT_COUNT == 2051, "Weight count arithmetic inconsistent (038 FR-P0H: 33→37 inputs, +4×32=128 over the 028 1923)");
 
 // Total recurrent hidden-state floats across all recurrent layers.
 // Zero for pure-feedforward networks; 16 for the current 027 config.
@@ -77,7 +77,7 @@ constexpr int NN_HIDDEN_STATE_COUNT =
 
 // Topology as comma-separated string (for config logging/validation).
 // Recurrent layers marked with a trailing 'r'.
-constexpr const char* NN_TOPOLOGY_STRING = "33,32,16r,3";
+constexpr const char* NN_TOPOLOGY_STRING = "37,32,16r,3";
 
 // ============================================================================
 // 030 M7a — Tracker-mode topology (FR-019 runtime mode dispatch + Session
@@ -98,7 +98,7 @@ constexpr const char* NN_TOPOLOGY_STRING = "33,32,16r,3";
 // string updated to "54,32,16r,3".
 // ============================================================================
 
-constexpr int TRACKER_NN_INPUT_COUNT = static_cast<int>(TrackerInput::COUNT);  // 54 (032 phase 1)
+constexpr int TRACKER_NN_INPUT_COUNT = static_cast<int>(TrackerInput::COUNT);  // 60 (038 FR-P0H; 54 at 032 phase 1)
 constexpr int TRACKER_NN_HIDDEN1_SIZE = 32;
 constexpr int TRACKER_NN_HIDDEN2_SIZE = 16;
 constexpr int TRACKER_NN_OUTPUT_COUNT = 3;
@@ -123,14 +123,14 @@ constexpr int TRACKER_NN_WEIGHT_COUNT =
     (TRACKER_NN_RECURRENT[1] ? TRACKER_NN_HIDDEN1_SIZE * TRACKER_NN_HIDDEN1_SIZE : 0) +
     (TRACKER_NN_RECURRENT[2] ? TRACKER_NN_HIDDEN2_SIZE * TRACKER_NN_HIDDEN2_SIZE : 0) +
     (TRACKER_NN_RECURRENT[3] ? TRACKER_NN_OUTPUT_COUNT  * TRACKER_NN_OUTPUT_COUNT  : 0);
-static_assert(TRACKER_NN_WEIGHT_COUNT == 2595,
-              "Tracker weight count arithmetic inconsistent (54·32+32 + 32·16+16 + 16·3+3 + 16·16 = 2595)");
+static_assert(TRACKER_NN_WEIGHT_COUNT == 2787,
+              "Tracker weight count arithmetic inconsistent (038 FR-P0H: 60·32+32 + 32·16+16 + 16·3+3 + 16·16 = 2787; was 2595 at 54 inputs)");
 
 constexpr int TRACKER_NN_HIDDEN_STATE_COUNT =
     (TRACKER_NN_RECURRENT[1] ? TRACKER_NN_HIDDEN1_SIZE : 0) +
     (TRACKER_NN_RECURRENT[2] ? TRACKER_NN_HIDDEN2_SIZE : 0) +
     (TRACKER_NN_RECURRENT[3] ? TRACKER_NN_OUTPUT_COUNT  : 0);
 
-constexpr const char* TRACKER_NN_TOPOLOGY_STRING = "54,32,16r,3";
+constexpr const char* TRACKER_NN_TOPOLOGY_STRING = "60,32,16r,3";
 
 #endif
