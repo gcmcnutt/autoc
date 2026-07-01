@@ -317,6 +317,7 @@ static constexpr int HIST_PAST[] = {
 
 void gather_pathgen_inputs([[maybe_unused]] PathProvider& pathProvider,
                            AircraftState& aircraftState,
+                           const autoc::eval::FlightArena& arena,
                            NNInputs& inputs) {
     // target_x/y/z[0-5]: past history (direction cosines from recorded history)
     for (int i = 0; i < 6; i++) {
@@ -362,14 +363,31 @@ void gather_pathgen_inputs([[maybe_unused]] PathProvider& pathProvider,
         inputs.gyro_q = static_cast<float>(gyro.y());  // q (pitch rate, rad/s)
         inputs.gyro_r = static_cast<float>(gyro.z());  // r (yaw rate, rad/s)
     }
+
+    // ----- 038 P0-D FR-P0H arena-awareness (B) — M1 gets it too -----
+    // Same ray-projection + tanh(d / scale) as the tracker slot-44 input, plus
+    // the body-frame radial-inward unit vector. M1 never goes blind, so it
+    // carries only (B) — no (A) target-lost cues.
+    const float dist_raw = static_cast<float>(   // raw-ok: NN-byte-format primitive
+        autoc::eval::distanceToBoundary(aircraftState.getPosition(),
+                                        aircraftState.getVelocity(), arena));
+    inputs.dist_to_boundary = std::tanh(dist_raw / kDistToBoundaryScale_m);
+    {
+        const gp_vec3 inward = autoc::eval::inwardBodyDirection(
+            aircraftState.getPosition(), aircraftState.getOrientation());
+        inputs.inward_body_x = static_cast<float>(inward.x());
+        inputs.inward_body_y = static_cast<float>(inward.y());
+        inputs.inward_body_z = static_cast<float>(inward.z());
+    }
 }
 
 // ============================================================
 // T039: NNControllerBackend
 // ============================================================
 
-NNControllerBackend::NNControllerBackend(const NNGenome& genome)
-    : genome_(genome) {
+NNControllerBackend::NNControllerBackend(const NNGenome& genome,
+                                         const autoc::eval::FlightArena& arena)
+    : genome_(genome), arena_(arena) {
     // Allocate hidden-state buffer if any layer is recurrent. Zeros on construct.
     const int hs = nn_hidden_state_count(genome_.topology, genome_.recurrent);
     if (hs > 0) hidden_state_.assign(static_cast<size_t>(hs), 0.0f);
@@ -401,7 +419,7 @@ long long NNControllerBackend::telemetrySampleCount() const {
 
 void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& pathProvider) {
     NNInputs inputs = {};
-    gather_pathgen_inputs(pathProvider, aircraftState, inputs);
+    gather_pathgen_inputs(pathProvider, aircraftState, arena_, inputs);
 
     float outputs[NN_OUTPUT_COUNT];  // raw-ok: NN-byte-format buffer (output of nn_forward, fp32 contract)
     if (hidden_state_.empty()) {
@@ -439,6 +457,7 @@ void gather_tracker_inputs(const AircraftState& chase,
                            const TrackerHistoryWindow& history,
                            const autoc::eval::FlightArena& arena,
                            float cep_gate_threshold,
+                           const SituationalAwarenessState& sa,
                            TrackerInputs& out) {
     // Beacon history: 6 slots per channel, copied as-is. Caller (TrackerStepper)
     // owns the ordering — index 0 = oldest (-0.5s), index 5 = "now".
@@ -528,6 +547,27 @@ void gather_tracker_inputs(const AircraftState& chase,
         out.target_tilt_sin = static_cast<float>(tilt.sin);  // raw-ok: NN-byte-format slot write
         out.target_tilt_cos = static_cast<float>(tilt.cos);  // raw-ok: NN-byte-format slot write
     }
+
+    // ====================================================================
+    // 038 P0-D FR-P0H — situational-awareness inputs (slots 54..59)
+    // ====================================================================
+
+    // (B) arena-inward body-frame unit vector — radial toward the cylinder
+    // axis, rotated into the chase body frame. Pairs with
+    // dist_to_boundary_along_vel (magnitude/urgency) as a direction cue.
+    {
+        const gp_vec3 inward = autoc::eval::inwardBodyDirection(
+            chase.getPosition(), chase.getOrientation());
+        out.inward_body_x = static_cast<float>(inward.x());  // raw-ok: NN-byte-format slot write
+        out.inward_body_y = static_cast<float>(inward.y());  // raw-ok: NN-byte-format slot write
+        out.inward_body_z = static_cast<float>(inward.z());  // raw-ok: NN-byte-format slot write
+    }
+
+    // (A) target-lost cues (time_since_seen + held exit-bearing sin/cos) —
+    // written from the caller-owned, per-scenario-reset situational-awareness
+    // state. The stateful update is single-sourced in the stepper (shared rule
+    // between TrackerStepper and CrrcsimTrackerHelper).
+    sa.writeInputs(out);
 }
 
 void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,

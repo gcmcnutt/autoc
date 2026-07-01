@@ -110,6 +110,11 @@ private:
     TrackerObservationRing obs_ring_;
     TrackerHistoryWindow history_;
 
+    // 038 P0-D FR-P0H (A) — situational-awareness state (time_since_seen +
+    // held exit-bearing). Reset in initScenario, advanced each stepOnce from
+    // the "now" beacon observation. Shared update rule with CrrcsimTrackerHelper.
+    SituationalAwarenessState sa_state_;
+
     // Source-tick cursor. Each stepOnce consumes source_.samples[cursor_],
     // advances physics until the next sample's simTimeMsec, then increments.
     // initScenario sets cursor_ = 0; chase-init geometry (2026-05-07

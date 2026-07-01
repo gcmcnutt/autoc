@@ -137,6 +137,14 @@ void TrackerStepper::initScenario() {
     // sees a populated, non-zero history at tick 1.
     cursor_ = 0;
     obs_ring_.reset();
+
+    // 038 P0-D FR-P0H (A) — reset situational-awareness state per scenario
+    // (FR-030 determinism: un-reset blind-tick / exit-bearing state would leak
+    // across scenarios and break the bitwise gate). The state is advanced only
+    // on real ticks (stepOnce), NOT during the history pre-fill below, so it
+    // starts each scenario at "visible-now / neutral bearing".
+    sa_state_.reset();
+
     if (!source_.samples.empty()) {
         for (int r = 0; r < TrackerObservationRing::kDepth; ++r) {
             projectAndShiftHistory(source_.samples[0]);
@@ -249,10 +257,18 @@ CrashReason TrackerStepper::stepOnce() {
     // Step 1: project beacons + shift history.
     projectAndShiftHistory(target);
 
+    // Step 1b (038 P0-D FR-P0H): advance the situational-awareness state from
+    // the freshly-projected "now" beacon observation. Visibility uses the
+    // sentinel threshold (matches fitness_decomposition.cc). Single-sourced
+    // update rule mirrored in CrrcsimTrackerHelper::tick.
+    sa_state_.update(history_.left_x[5], history_.left_y[5], history_.left_cep[5],
+                     history_.right_x[5], history_.right_y[5], history_.right_cep[5],
+                     autoc::eval::kCepSentinelThreshold);
+
     // Step 2: gather tracker NN inputs.
     TrackerInputs inputs = {};
     gather_tracker_inputs(state_, history_, arena_,
-                          static_cast<float>(cep_gate_threshold_), inputs);
+                          static_cast<float>(cep_gate_threshold_), sa_state_, inputs);
 
     // Step 3: NN forward pass → control commands.
     nn_.evaluateTracker(state_, inputs);

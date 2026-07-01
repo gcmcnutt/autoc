@@ -400,8 +400,13 @@ int main(int argc, char** argv) {
   // Header (mode-specific: path-relative derived columns are pathgen-only).
   std::cout << "scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,"
                "pitchCmd,rollCmd,thrCmd,out_pt,out_rl,out_th,dhome,wN,wE,wD";
-  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt\n";
-  else           std::cout << ",dist,along,stpPt,mult,rampSc\n";
+  // 038 P0-D FR-P0H — situational-awareness NN inputs read straight from the
+  // recorded per-tick TrackerInputs/NNInputs (honest recording, not a
+  // reconstruction): tracker adds inX/inY/inZ (arena-inward body dir) +
+  // tSee/exS/exC (time-since-seen + held exit bearing); pathgen adds dBnd
+  // (dist-to-boundary tanh) + inX/inY/inZ.
+  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt,inX,inY,inZ,tSee,exS,exC\n";
+  else           std::cout << ",dist,along,stpPt,mult,rampSc,dBnd,inX,inY,inZ\n";
 
   const AutocConfig& cfg = ConfigManager::getConfig();
   int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
@@ -499,12 +504,18 @@ int main(int argc, char** argv) {
         prevSpan = spn0;
         havePrevSpan = true;
 
-        char tb[320];
+        // 038 P0-D FR-P0H — arena-inward + target-lost cues, read directly
+        // from the recorded TrackerInputs (honest recording).
+        const TrackerInputs& ti_in = st.getTrackerInputs();
+        char tb[512];
         int tn = snprintf(tb, sizeof(tb),
-          ",%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+          ",%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f"
+          ",%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
           rampSc, hull,
           tg.x(), tg.y(), tg.z(), tr.x(), tr.y(), tr.z(),
-          spn0, dspn, blC0, brC0, tltS, tltC, stp);
+          spn0, dspn, blC0, brC0, tltS, tltC, stp,
+          ti_in.inward_body_x, ti_in.inward_body_y, ti_in.inward_body_z,
+          ti_in.time_since_seen, ti_in.exit_dir_sin, ti_in.exit_dir_cos);
         std::cout.write(tb, tn);
       } else if (path && !path->empty()) {
         const int pIdx = std::clamp(st.getThisPathIndex(), 0,
@@ -521,12 +532,23 @@ int main(int argc, char** argv) {
         const double dist = offset.norm();
         const double stp = fc.computeStepScore(along, lateral);
         const double mult = (stp > 0.0) ? fc.applyStreak(stp) / stp : 1.0;
-        char d[160];
-        int dn = snprintf(d, sizeof(d), ",%.4f,%.4f,%.4f,%.4f,%.4f\n",
-                          dist, along, stp, mult, rampSc);
+        // 038 P0-D FR-P0H (B) — arena-awareness inputs from recorded NNInputs.
+        const NNInputs& nn_in = st.getNNInputs();
+        char d[256];
+        int dn = snprintf(d, sizeof(d), ",%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f\n",
+                          dist, along, stp, mult, rampSc,
+                          nn_in.dist_to_boundary, nn_in.inward_body_x,
+                          nn_in.inward_body_y, nn_in.inward_body_z);
         std::cout.write(d, dn);
       } else {
-        std::cout << ",,,,," << rampSc << "\n";
+        // 038 P0-D FR-P0H (B) — no path geometry, but the recorded NNInputs
+        // still carry the arena-awareness (B) inputs.
+        const NNInputs& nn_in = st.getNNInputs();
+        char d[128];
+        int dn = snprintf(d, sizeof(d), ",,,,,%.4f,%.6f,%.6f,%.6f,%.6f\n",
+                          rampSc, nn_in.dist_to_boundary, nn_in.inward_body_x,
+                          nn_in.inward_body_y, nn_in.inward_body_z);
+        std::cout.write(d, dn);
       }
     }
   }

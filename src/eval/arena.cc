@@ -86,4 +86,20 @@ gp_scalar distanceToBoundary(const gp_vec3& chase_pos,
     return std::min({t_wall, t_floor, t_ceil, kSafeBoundaryDistance});
 }
 
+gp_vec3 inwardBodyDirection(const gp_vec3& chase_pos,
+                            const gp_quat& chase_orientation) {
+    // World-frame radial-inward points from the chase's horizontal position
+    // toward the axis (0, 0); the arena axis is vertical so z stays zero.
+    const gp_scalar horiz = std::sqrt(chase_pos.x() * chase_pos.x() +
+                                      chase_pos.y() * chase_pos.y());
+    if (horiz < static_cast<gp_scalar>(1e-6)) {
+        return gp_vec3::Zero();  // on-axis — inward direction undefined
+    }
+    const gp_vec3 inward_world(-chase_pos.x() / horiz,
+                               -chase_pos.y() / horiz,
+                               static_cast<gp_scalar>(0));
+    // world→body rotation (see header — .inverse() convention).
+    return chase_orientation.inverse() * inward_world;
+}
+
 }  // namespace autoc::eval

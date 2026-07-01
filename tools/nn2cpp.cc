@@ -5,6 +5,7 @@
 #include <vector>
 #include <getopt.h>
 #include <cmath>
+#include <cstdio>
 #include <iomanip>
 #include <chrono>
 #include <ctime>
@@ -20,6 +21,9 @@ void printUsage(const char* progName) {
     std::cout << "  -o, --output FILE    Output C++ source file (default: nn_program_generated.cpp)\n";
     std::cout << "  -f, --function NAME  Generated function name (default: generatedNNProgram)\n";
     std::cout << "  -u, --unrolled       Generate unrolled layer code (default: use nn_forward)\n";
+    std::cout << "  -a, --arena R,F,C    Bake FlightArena radius,floorAGL,ceilingAGL (m) into the\n";
+    std::cout << "                       generated pathgen (B) inputs (default: 80,5,100 — the\n";
+    std::cout << "                       FlightArena struct defaults / autoc.ini M1 config)\n";
     std::cout << "  --help               Show this help message\n";
     std::cout << "\n";
     std::cout << "Generates C++ source with embedded NN weights for desktop and embedded deployment.\n";
@@ -31,9 +35,30 @@ void printUsage(const char* progName) {
     std::cout << "  " << progName << " -i nn_weights.dat -u   # unrolled layer loops\n";
 }
 
+// 038 P0-D FR-P0H (B): pathgen NN inputs now include arena-awareness
+// (dist_to_boundary + inward_body), so gather_pathgen_inputs needs a
+// FlightArena. On the desktop the backend holds one from the ini; the xiao
+// firmware has no ConfigManager, so nn2cpp bakes a compile-time literal from
+// these values (default = FlightArena struct defaults, override with -a).
+struct BakedArena {
+    double radius_m = 80.0;
+    double floor_agl_m = 5.0;
+    double ceiling_agl_m = 100.0;
+};
+
+// Emit the `static const autoc::eval::FlightArena arena{...};` line shared by
+// both codegen paths, immediately before the gather_pathgen_inputs call.
+static void emitBakedArena(std::stringstream& code, const BakedArena& a) {
+    code << "    // 038 P0-D FR-P0H (B) — arena-awareness inputs. Baked from the\n";
+    code << "    // run config at codegen time (xiao has no ConfigManager).\n";
+    code << "    static const autoc::eval::FlightArena arena{"
+         << std::fixed << std::setprecision(4)
+         << a.radius_m << ", " << a.floor_agl_m << ", " << a.ceiling_agl_m << "};\n";
+}
+
 // Generate code that uses the portable nn_forward() function with static weight array
 std::string generatePortableCode(const NNGenome& genome, const std::string& functionName,
-                                  const std::string& sourceFile) {
+                                  const std::string& sourceFile, const BakedArena& arena) {
     std::stringstream code;
 
     auto now = std::chrono::system_clock::now();
@@ -120,7 +145,8 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     // Main function
     code << "gp_scalar " << functionName << "(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {\n";
     code << "    NNInputs inputs = {};\n";
-    code << "    gather_pathgen_inputs(pathProvider, aircraftState, inputs);\n\n";
+    emitBakedArena(code, arena);
+    code << "    gather_pathgen_inputs(pathProvider, aircraftState, arena, inputs);\n\n";
     code << "    float outputs[" << genome.topology.back() << "];\n";
     if (any_recurrent) {
         code << "    nn_forward_recurrent(nn_weights, getTopology(), getRecurrent(),\n";
@@ -145,7 +171,7 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
 
 // Generate code with unrolled layer loops — no std::vector, no nn_forward call
 std::string generateUnrolledCode(const NNGenome& genome, const std::string& functionName,
-                                  const std::string& sourceFile) {
+                                  const std::string& sourceFile, const BakedArena& arena) {
     std::stringstream code;
 
     auto now = std::chrono::system_clock::now();
@@ -186,7 +212,8 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     int max_layer = *std::max_element(genome.topology.begin(), genome.topology.end());
     code << "gp_scalar " << functionName << "(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {\n";
     code << "    NNInputs inputs = {};\n";
-    code << "    gather_pathgen_inputs(pathProvider, aircraftState, inputs);\n";
+    emitBakedArena(code, arena);
+    code << "    gather_pathgen_inputs(pathProvider, aircraftState, arena, inputs);\n";
     code << "    const float* input_floats = reinterpret_cast<const float*>(&inputs);\n\n";
 
     // Layer buffers — fixed-size on stack
@@ -247,6 +274,7 @@ int main(int argc, char** argv) {
         {"output", required_argument, 0, 'o'},
         {"function", required_argument, 0, 'f'},
         {"unrolled", no_argument, 0, 'u'},
+        {"arena", required_argument, 0, 'a'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -255,15 +283,26 @@ int main(int argc, char** argv) {
     std::string outputFile = "nn_program_generated.cpp";
     std::string functionName = "generatedNNProgram";
     bool unrolled = false;
+    BakedArena arena;  // 038 P0-D — defaults 80/5/100 (FlightArena struct defaults)
     int option_index = 0;
     int c;
 
-    while ((c = getopt_long(argc, argv, "i:o:f:uh", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "i:o:f:ua:h", long_options, &option_index)) != -1) {
         switch (c) {
             case 'i': inputFile = optarg; break;
             case 'o': outputFile = optarg; break;
             case 'f': functionName = optarg; break;
             case 'u': unrolled = true; break;
+            case 'a': {
+                // Parse "radius,floor,ceiling" (meters). All three required.
+                if (std::sscanf(optarg, "%lf,%lf,%lf",
+                                &arena.radius_m, &arena.floor_agl_m,
+                                &arena.ceiling_agl_m) != 3) {
+                    std::cerr << "Error: -a expects R,F,C (e.g. -a 80,5,100)" << std::endl;
+                    return 1;
+                }
+                break;
+            }
             case 'h': printUsage(argv[0]); return 0;
             case '?': printUsage(argv[0]); return 1;
             default: break;
@@ -315,13 +354,13 @@ int main(int argc, char** argv) {
         genome.recurrent.end(), [](uint8_t v) { return v != 0; });
     std::string code;
     if (unrolled && !any_recurrent) {
-        code = generateUnrolledCode(genome, functionName, inputFile);
+        code = generateUnrolledCode(genome, functionName, inputFile, arena);
     } else {
         if (unrolled && any_recurrent) {
             std::cerr << "warning: -u (unrolled) not supported for recurrent genomes; "
                       << "falling back to portable emission." << std::endl;
         }
-        code = generatePortableCode(genome, functionName, inputFile);
+        code = generatePortableCode(genome, functionName, inputFile, arena);
     }
 
     // Write output

@@ -135,7 +135,7 @@ TEST(NNRecurrentForward, ResetZerosHiddenState) {
     nn_xavier_init(genome);
     EXPECT_EQ(static_cast<int>(genome.weights.size()), NN_WEIGHT_COUNT);
 
-    NNControllerBackend backend(genome);
+    NNControllerBackend backend(genome, autoc::eval::FlightArena{});
 
     // After construction, hidden state is internal — exercise reset() which is a no-op semantically
     // when state is already zeroed, so this test is mostly checking that reset() is callable and
@@ -364,7 +364,8 @@ TEST(NNForwardPass, Deterministic) {
 // T040: Input layout test (normalization removed — all inputs raw)
 // ============================================================
 
-// Input ordering (33 inputs — 023 direction cosines, 029 US1 past-only):
+// Input ordering (37 inputs — 023 direction cosines, 029 US1 past-only,
+// 038 FR-P0H arena-awareness (B) appended at 33..36):
 //  0- 5: target_x [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  body-frame unit-vec x
 //  6-11: target_y same                                    body-frame unit-vec y
 // 12-17: target_z same                                    body-frame unit-vec z
@@ -373,11 +374,13 @@ TEST(NNForwardPass, Deterministic) {
 // 25-28: quaternion (w,x,y,z)
 //    29: airspeed (m/s)
 // 30-32: gyro rates (p, q, r) in rad/s               standard aerospace RHR
+//    33: dist_to_boundary (tanh)                     038 FR-P0H (B)
+// 34-36: inward_body (x,y,z) body-frame radial-inward 038 FR-P0H (B)
 
 TEST(NNInputLayout, InputCountMatchesTopology) {
     // NN_INPUT_COUNT must equal the first layer of NN_TOPOLOGY
     EXPECT_EQ(NN_INPUT_COUNT, NN_TOPOLOGY[0]);
-    EXPECT_EQ(NN_INPUT_COUNT, 33);
+    EXPECT_EQ(NN_INPUT_COUNT, 37);
 }
 
 // Note: Full gather_pathgen_inputs test requires AircraftState + PathProvider.

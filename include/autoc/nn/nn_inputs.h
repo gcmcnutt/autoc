@@ -27,6 +27,13 @@
 constexpr float kCruiseSpeed_mps = 13.0f;
 constexpr float kDistToBoundaryScale_m = 20.0f;
 
+// 038 P0-D FR-P0H (A) — time-since-seen normalization. Blind-tick count × dt
+// (seconds) fed through tanh(t / kTimeSinceSeenScale_s): 1 s → 0.46, 2 s →
+// 0.76, 4 s → 0.96. Gives the tracker NN a graded "how long since the target
+// was last visible" signal that saturates within a few seconds of blindness;
+// 0.0 exactly when a beacon is visible this tick.
+constexpr float kTimeSinceSeenScale_s = 2.0f;
+
 // ============================================================================
 // 037 R5/T021 — History time-basis (ms-based, log-spaced lags)
 // ----------------------------------------------------------------------------
