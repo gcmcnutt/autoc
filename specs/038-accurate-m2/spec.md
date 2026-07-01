@@ -186,15 +186,20 @@ engine arbitrate — no hand-tuned mode logic.
   to **both M1 and M2** (Clarifications 2026-07-01 — M1 is the clean/fast channel to read whether the sensor
   helps + improves boundary efficiency; M1's NN format breaks too, bundled into P0-D). Today the only arena
   input is `dist_to_boundary` (`tanh(d/20m)` along velocity): it says *how far to the wall ahead*, not *which
-  way to bank to get back inside*. Add a **heading-to-inward `sin/cos`** pair (angle from velocity heading to
-  arena center) — symmetric with the target bearing+span shape, so the net can learn one unified policy:
-  "turn toward target **unless** the wall is close, then bank inward" — the emergent call-off / re-engage.
-  Optionally **time-to-boundary** (`dist_to_boundary / airspeed`) for closure-awareness.
+  way to bank to get back inside*. Add an **`inward_body` unit vector** — the world direction to arena center
+  rotated into the chase **body frame** (`chase_quat.conjugate() * normalize(center − pos)`), 3 direction-
+  cosine components — plus the existing **tanh** distance/urgency scalar. **Deliberately NOT a planar
+  `sin/cos` heading angle** (operator 2026-07-01): the chase flies all attitudes/orientations, so a heading
+  angle bakes in a reference "up" and drops the out-of-plane component when inverted/knife-edge; a body-frame
+  unit vector is direction cosines (already [−1,1], no trig/hyperbolic squash), singularity-free, and in the
+  frame the control surfaces act in — mirroring the body/camera-frame target bearing. The net can then learn
+  one unified policy: "turn toward target **unless** the wall is close, then bank toward `inward_body`" — the
+  emergent call-off / re-engage.
 
 **Grounding & discipline**: (A) is optical-derived, (B) is GPS/AHRS ego-state (arena center is a fixed
 geofence; position + heading are available) — nothing here is a magic target sensor, so **optical-only-for-
-the-target** holds. Kept **rotation/translation-relative** (heading-to-inward *angle*, not raw `(x,y)`) to
-preserve the minimal-crutch, anti-overfit philosophy. Current-tick / held-value scalars — **not** per-slot
+the-target** holds. Kept **rotation/translation-relative** (a body-frame inward *direction*, not raw
+`(x,y)`) to preserve the minimal-crutch, anti-overfit philosophy. Current-tick / held-value scalars — **not** per-slot
 historied — so the input-count growth is small. **Baseline enrichment, NOT an ablation lever**: measured as
 enriched-baseline vs the old M2 baseline (does overrun drop / boundary behavior improve?), then US1/US3
 ablate temporal depth on top of it. **Unconditional** — kept regardless of the measurement (a null result is
@@ -434,10 +439,12 @@ source is blind to the chase camera).]
 - **FR-P0H**: The P0-D break MUST also land the **situational-awareness input enrichment** (baseline, NOT an
   ablation lever): **(A)** a `time_since_seen` scalar + a last-seen exit-side / image-velocity cue
   (optical-derived; a decaying heuristic, no stored world position) — **tracker-only** (meaningless for M1's
-  always-visible rabbit); and **(B)** a heading-to-inward `sin/cos` pair (± `time_to_boundary`) for
-  arena/boundary turn guidance (GPS/AHRS ego-state, rotation/translation-relative — NOT raw `(x,y)`) — on
-  **both M1/pathgen and M2/tracker** (Clarifications 2026-07-01; both NN input formats break, bundled into the
-  one P0-D break). It MUST stay determinism/bitwise-replay clean, add **NO** new reward tuning (the existing
+  always-visible rabbit); and **(B)** an **`inward_body` unit vector** (3 body-frame direction cosines,
+  `chase_quat.conjugate() * normalize(center − pos)`) + the existing **tanh** `dist_to_boundary` for
+  arena/boundary turn guidance — **all-attitude-correct** (body-frame direction, NOT a planar `sin/cos`
+  heading angle that assumes a reference "up"; operator 2026-07-01), GPS/AHRS ego-state,
+  rotation/translation-relative (NOT raw `(x,y)`) — on **both M1/pathgen and M2/tracker** (Clarifications
+  2026-07-01; both NN input formats break, bundled into the one P0-D break). It MUST stay determinism/bitwise-replay clean, add **NO** new reward tuning (the existing
   penalty stack arbitrates), keep the **optical-only-for-the-target** invariant, be honestly recorded in the
   dmp (surfaced by `dmp_dump`), and be measured as enriched-baseline vs the old baseline (M1 and M2 overrun /
   boundary behavior — early M1 read on the arena cue). It is **unconditional** (Clarifications 2026-07-01):

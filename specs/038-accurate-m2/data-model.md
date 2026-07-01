@@ -97,8 +97,17 @@ per-slot historied → small count growth), all `gp_scalar`, real-flight-grounde
 
 | Group | Fields (start) | Domain | Source | Applies to | Notes |
 |---|---|---|---|---|---|
-| (A) target-lost | `time_since_seen` (1), last-seen `exit_dir` sin/cos (2) | [0,1]/[−1,1] | optical (CEP-sentinel crossing in `tracker_stepper.cc`) | **M2 only** | decaying heuristic; NO stored world position; meaningless for M1's always-visible rabbit |
-| (B) arena-inward | heading-to-inward sin/cos (2), `time_to_boundary` (1, optional) | [−1,1]/[0,1) | GPS/AHRS ego-state vs fixed geofence center | **M1 + M2** | rotation/translation-relative, NOT raw (x,y); M1 = clean/fast read on the cue |
+| (A) target-lost | `time_since_seen` (1), last-seen `exit_dir` sin/cos (2) | [0,1]/[−1,1] | optical (CEP-sentinel crossing in `tracker_stepper.cc`) | **M2 only** | decaying heuristic; NO stored world position; camera-frame 2D (already body-referenced → no all-attitude issue); meaningless for M1's always-visible rabbit |
+| (B) arena-inward | `inward_body` unit vec (3: x,y,z) + `dist_to_boundary` tanh (1) | [−1,1] / [0,1) | ego-state: chase quat rotates the world inward-direction into body frame; existing tanh distance | **M1 + M2** | **all-attitude-correct**: body-frame direction cosines (no reference "up"), NOT planar sin/cos; rotation/translation-relative, NOT raw (x,y) |
+
+**Why a body-frame unit vector, not planar `sin/cos` (operator 2026-07-01)**: the chase flies **all
+attitudes / all orientations**, so a heading-angle `sin/cos` bakes in a reference plane ("up") that doesn't
+exist inverted / knife-edge → it drops the out-of-plane component. The all-attitude-correct **direction**
+encoding is `inward_body = chase_quat.conjugate() * normalize(arena_center − pos)` — its 3 components are
+direction cosines, already in [−1,1] (no trig/hyperbolic squash needed), singularity-free, and in the
+body frame the control surfaces act in. Mirrors the target representation (beacon bearing is body/camera-
+frame, not a world angle). The **magnitude/urgency** term stays a **tanh** distance (hyperbolic is the right
+tool for a saturating distance — the existing `dist_to_boundary`, generalized to the true radial distance).
 
 - Input count grows ~5 (exact set is an impl choice); `TRACKER_NN_TOPOLOGY[0]`/`NN_TOPOLOGY[0]` +
   `*_WEIGHT_COUNT` + `kTrackerInputMeta`/`kPathgenInputMeta` + `sizeof` static_assert all update (§3).

@@ -231,8 +231,9 @@ so a drifted `.ini` can't misrender a pinned run. The only remaining ini depende
 ## 5b. Situational-awareness input enrichment (P0-D baseline, FR-P0H)
 
 **Decision**: fold two "which way to turn" input groups into the P0-D baseline (no reward tuning) — **(A)
-target-lost** (`time_since_seen` + last-seen exit-side/image-velocity) and **(B) arena-inward** (heading-to-
-inward sin/cos ± time-to-boundary). Baseline enrichment shared by all ablations, NOT a lever.
+target-lost** (`time_since_seen` + last-seen exit-side/image-velocity) and **(B) arena-inward**
+(`inward_body` body-frame unit vector + tanh `dist_to_boundary`). Baseline enrichment shared by all
+ablations, NOT a lever.
 
 **Rationale**: honest recalibration (operator 2026-06-30) of what history/prediction can do. In high-rate
 all-attitude maneuvering the history buffer is an **emergent-PID / derivative** substrate (rates for
@@ -244,10 +245,15 @@ attempted). The residual wants — turn-direction at loss-of-signal, and phase-i
 cues and let the (heavy-handed) penalty stack arbitrate.
 
 **Design choices**: (A) is a *decaying directional heuristic* (a stored world bearing drifts with
-ego-rotation — hence not a stored position; `time_since_seen` lets the net decay confidence). (B) is
-**rotation/translation-relative** (heading-to-inward *angle*, not raw `(x,y)`) to avoid arena-geometry
-overfit — symmetric with the target bearing+span shape, so one unified "target unless wall-close" policy can
-emerge. Both are current-tick/held (not historied) → small count growth; grounded (A) optical / (B) GPS/AHRS.
+ego-rotation — hence not a stored position; `time_since_seen` lets the net decay confidence). (B) is a
+**body-frame `inward_body` unit vector** (`chase_quat.conjugate() * normalize(center − pos)`) + tanh
+distance, **NOT a planar `sin/cos` heading angle** (operator 2026-07-01): the chase flies all
+attitudes/orientations, so a heading angle assumes a reference "up" and drops the out-of-plane component
+inverted/knife-edge. Body-frame direction cosines are already [−1,1] (no trig/hyperbolic squash),
+singularity-free, and in the actuator frame — mirroring the body/camera-frame target bearing; tanh stays the
+right tool for the distance/urgency magnitude. Rotation/translation-relative (not raw `(x,y)`) → avoids
+arena-geometry overfit. Both are current-tick/held (not historied) → small count growth; grounded (A)
+optical / (B) GPS/AHRS.
 
 **Success criterion (FR-P0H)**: enriched baseline vs old (037 t11/t14) M2 baseline — overrun down / boundary
 behavior improved — measured *before* the architecture ablations layer on top.
