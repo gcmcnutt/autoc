@@ -75,9 +75,9 @@ or median error; determinism + bitwise replay preserved.
 - [ ] T014 [US1] implement the deeper layout in `include/autoc/nn/nn_inputs.h:48` (start `{1600,800,400,200,100,50,0}`, 7 integral slots at 50 ms) + bump `kNNHistoryLayoutVersion`→4 (`nn_inputs.h:60`); update `kTrackerInputMeta`/`kPathgenInputMeta` if slot count changes (per [data-model.md](data-model.md) §1)
 - [ ] T015 [US1] propagate derived sizes: `HISTORY_SIZE` (`include/autoc/eval/aircraft_state.h:391`), `TrackerObservationRing::kDepth` (`include/autoc/nn/evaluator.h:143`), `HIST_PAST[]` (`src/nn/evaluator.cc:314`); **the +1 slot grows the NN input vector by 6 beacon channels** (`TrackerInput::COUNT` += 6, `NNInput::COUNT` for pathgen). **NB: US1 branches from the FR-P0H-enriched baseline (T013), so the base COUNT is already > 54** — compute from the enriched baseline, not the pre-038 `{54,32,16,3}` (the raw "54→60" no longer holds; it is `enriched_COUNT + 6`). Update `TRACKER_NN_TOPOLOGY[0]`/`NN_TOPOLOGY[0]` to the new COUNT in `include/autoc/nn/topology.h` and recompute `*_WEIGHT_COUNT`/`*_HIDDEN_STATE_COUNT` (input fan-in changes → weights change); confirm the `static_assert(sizeof(TrackerInputs)==COUNT*sizeof(float))` (per [data-model.md](data-model.md) §1 note + §2); regen `tests/nn_layout_tests.cc`, `tests/nn_evaluator_tests.cc`, `tests/tick_rescale_tests.cc`; regen xiao codegen per [contracts/xiao-nn-sync.md](contracts/xiao-nn-sync.md)
 - [ ] T016 [US1][OP] pre-run build gate + bitwise gate (`rebuild-perf.sh`)
-- [ ] T017 [US1][OP] bake M1 ablation `scripts/train.sh autoc.ini logs/autoc-038-t3-m1-hist1p6s.log`; judge with `scripts/generate_pngs.sh m1 <log> --compare baseline:<rebake-log>` against SC-001 (M1 ceiling, fixed-eval comparator)
+- [ ] T017 [US1][OP] bake M1 ablation `scripts/train.sh autoc.ini logs/autoc-038-t<N>-m1-hist1p6s.log` (t<N> = next free experiment number; t1/t2/t3 already consumed by rebake/basic-m1/baseline); judge with `scripts/generate_pngs.sh m1 <log> --compare baseline:logs/autoc-038-t3-m1-baseline.log` against SC-001 (M1 ceiling, fixed-eval comparator) **+ control-quality regression gate (co-equal, [project_038_regression_gate])**: no aggressiveness rise (roll ac / flip% / thr sat, per-axis ⟨|out|⟩) or bang-bang axis migration vs the t3 baseline — read `per_axis_aggressiveness` + `per_axis_time_series` from the same `--compare`
 
-**🚦 US1 gate**: if the deeper layout moves an M1 ceiling → **T018 (inherit to M2)**. If not → **escape**:
+**🚦 US1 gate**: if the deeper layout moves an M1 ceiling **AND holds control quality** (no aggressiveness rise / bang-bang axis migration vs t3, [project_038_regression_gate]) → **T018 (inherit to M2)**. Ceiling lift WITH a control-quality regression does NOT clear. If neither → **escape**:
 record the negative result in `outcome.md`, file the alternative spacing/depth options to `specs/BACKLOG.md`,
 close US1 as ruled-out. Does NOT block US2/US3.
 
@@ -100,7 +100,7 @@ better tracking and/or healthier `rnn_capacity` eff-rank at equal-or-fewer recur
 - [ ] T019 [US2] implement the slow channel in `include/autoc/nn/topology.h` (both pathgen + tracker sections): start hidden-2 16-wide fast + 8-wide fixed-leak slow (α≈0.9); update `NN_TOPOLOGY`/`TRACKER_NN_TOPOLOGY`, `NN_RECURRENT`, `*_WEIGHT_COUNT`, `*_HIDDEN_STATE_COUNT`, topology string (per [data-model.md](data-model.md) §2, [research.md](research.md) §2)
 - [ ] T020 [US2] implement the leaky-slow update + ensure `NNControllerBackend::reset()` zeros the slow channel (`src/nn/evaluator.cc` recurrent path, `include/autoc/nn/evaluator.h`); regen `tests/nn_layout_tests.cc`, `tests/nn_serialization_tests.cc`, xiao codegen
 - [ ] T021 [US2][OP] pre-run build gate + bitwise gate
-- [ ] T022 [US2][OP] bake M2 ablation `scripts/train.sh autoc-tracker.ini logs/autoc-038-t5-m2-slowchan.log`; judge vs baseline with `generate_pngs.sh m2 … --compare` (SC-001 + `rnn_capacity` eff-rank)
+- [ ] T022 [US2][OP] bake M2 ablation `scripts/train.sh autoc-tracker.ini logs/autoc-038-t<N>-m2-slowchan.log`; judge vs baseline with `generate_pngs.sh m2 … --compare` (SC-001 + `rnn_capacity` eff-rank) **+ control-quality regression gate ([project_038_regression_gate])**: no aggressiveness rise or bang-bang axis migration vs the M2 baseline (`per_axis_aggressiveness`/`per_axis_time_series`)
 
 **🚦 US2 gate**: clears if it moves a ceiling and/or eff-rank uses the new modes. Else **escape**: record,
 file evolved-time-constant / second-recurrent-layer alternatives to BACKLOG, close US2 ruled-out.
@@ -118,9 +118,9 @@ realized within a target error AND tracking depth/reacquire improves; determinis
 - [ ] T024 [US3] add `prediction_score` (`gp_fitness`, negated) to `ScenarioScore` in `include/autoc/eval/fitness_decomposition.h:71`; accumulate per-tick aux-vs-realized-next-tick optical error in `src/eval/fitness_decomposition.cc`; add it as a SEPARATE per-scenario axis in `src/eval/selection.cc` (NOT scalar-composited — per [contracts/lexicase-axis-and-reward.md](contracts/lexicase-axis-and-reward.md))
 - [ ] T025 [US3] add `EnablePredictorHead` knob to `AUTOC_CONFIG_FIELDS` in `include/autoc/util/config.h` (no in-class default per VII); verify `applyCrashPenalty` (`src/autoc.cc:181`) leaves `prediction_score` untouched; regen `tests/nn_*`, xiao codegen; add a prediction-axis selection unit test
 - [ ] T026 [US3][OP] pre-run build gate + bitwise gate
-- [ ] T027 [US3][OP] bake M2 ablation `scripts/train.sh autoc-tracker.ini logs/autoc-038-t6-m2-predhead.log`; judge vs SC-001 (depth/reacquire) + SC-002 (prediction accuracy)
+- [ ] T027 [US3][OP] bake M2 ablation `scripts/train.sh autoc-tracker.ini logs/autoc-038-t<N>-m2-predhead.log`; judge vs SC-001 (depth/reacquire) + SC-002 (prediction accuracy) **+ control-quality regression gate ([project_038_regression_gate])**: no aggressiveness rise or bang-bang axis migration vs the M2 baseline (`per_axis_aggressiveness`/`per_axis_time_series`)
 
-**🚦 US3 gate**: clears if predictor develops AND lifts a ceiling. Else **escape**: record, file
+**🚦 US3 gate**: clears if predictor develops AND lifts a ceiling **AND holds control quality** (no aggressiveness rise / bang-bang axis migration vs baseline, [project_038_regression_gate]). Else **escape**: record, file
 pretrain-then-evolve / longer-horizon / recurrent-head alternatives to BACKLOG, close US3 ruled-out.
 
 ---
@@ -129,7 +129,7 @@ pretrain-then-evolve / longer-horizon / recurrent-head alternatives to BACKLOG, 
 
 **Purpose**: the branch point that can't be pre-sequenced — decide which ablation winners combine.
 
-- [ ] T028 [OP] judge the initial-wave ablations **US1 + US3** on the SC-001 ceilings (fixed-eval comparator, not raw late-run fitness per `project_late_run_fitness_interpretation`); record verdicts + every escape in `outcome.md` (note the US2 deferral + its unpark trigger)
+- [ ] T028 [OP] judge the initial-wave ablations **US1 + US3** on the SC-001 ceilings (fixed-eval comparator, not raw late-run fitness per `project_late_run_fitness_interpretation`) **AND a co-equal control-quality regression gate ([project_038_regression_gate])** — a winner must lift its ceiling WITHOUT raising aggressiveness (roll ac / flip% / thr sat, per-axis ⟨|out|⟩) or migrating the bang-bang axis vs the t3 baseline (`per_axis_aggressiveness`/`per_axis_time_series`); a ceiling lift shipped with a control-quality regression is a net loss under "accurate-m2" and does NOT clear. Record verdicts + every escape in `outcome.md` (note the US2 deferral + its unpark trigger)
 - [ ] T029 combine the winning structural levers into one architecture (merge the kept `topology.h`/`nn_inputs.h` changes — up to a 2-way US1+US3 merge for the initial wave). **Reconcile the compounded counts**: final input dim = FR-P0H-enriched baseline + US1 history slots (if kept); final output dim = 3 + US3 aux (if kept); recompute `*_WEIGHT_COUNT`/`*_HIDDEN_STATE_COUNT` off both. Regenerate ALL NN test fixtures + xiao codegen; type-domain grep audit on the merged diff
 - [ ] T030 [OP] pre-run build gate + bitwise gate, then bake the combined M2 `scripts/train.sh autoc-tracker.ini logs/autoc-038-t7-m2-combined.log`
 
@@ -150,7 +150,7 @@ fixed-eval comparator). Can run against the combined architecture or the baselin
 - [ ] T031 [US4] add `visibility_score` (`gp_fitness`, negated) to `ScenarioScore` (`include/autoc/eval/fitness_decomposition.h:71`); accumulate per-tick from existing CEP/in-FOV data (`src/eval/fitness_decomposition.cc:196`, continuous in-FOV term × `kCadenceTickScale`); **M1/pathgen leaves it 0** (per [data-model.md](data-model.md) §4)
 - [ ] T032 [US4] add `visibility_score` as a SEPARATE lexicase axis in `src/eval/selection.cc`; add `EnableVisibilityReward` + reward-shape params to `AUTOC_CONFIG_FIELDS` (`include/autoc/util/config.h`, no in-class default per VII); verify `applyCrashPenalty` leaves `visibility_score` untouched
 - [ ] T033 [US4] add a fitness unit test (visibility term + M1=0 invariant) and a selection-stability check (mixing the new axis); if it destabilizes, promote MAD-ε behind its ini switch (FR-032) — else record the constant-0.5 baseline holds
-- [ ] T034 [US4][OP] pre-run build gate + bitwise gate, then bake `scripts/train.sh autoc-tracker.ini logs/autoc-038-t8-m2-vis.log`; judge vs SC-003 (in-FOV/reacquire) + SC-004 (crash penalty not regressed)
+- [ ] T034 [US4][OP] pre-run build gate + bitwise gate, then bake `scripts/train.sh autoc-tracker.ini logs/autoc-038-t<N>-m2-vis.log`; judge vs SC-003 (in-FOV/reacquire) + SC-004 (crash penalty not regressed) **+ control-quality regression gate ([project_038_regression_gate])**: the visibility reward must not raise aggressiveness or migrate the bang-bang axis vs baseline (`per_axis_aggressiveness`/`per_axis_time_series`)
 
 **🚦 US4 gate**: clears if it lifts in-FOV/reacquire without destabilizing selection. Else **escape**:
 record, file the binary-gate / ramped variant to BACKLOG, close US4 ruled-out.
