@@ -21,6 +21,29 @@ least-orthogonal of the three generic studies, so it is held back rather than ru
 - **Unpark trigger**: US1+US3 do **not** move an SC-001 ceiling, OR "not enough state" persists as the M2
   bottleneck after they land. Then run T019–T022 as the next ablation arm (and re-open the combine node).
 
+### [038 — direction, discuss-after-baselines 2026-07-03] Learnable feedback + self-history + larger search space
+
+**Lean (operator 2026-07-03)**: 038 favors **learnable feedback (internal memory / recurrence)** over piling
+on more **hand-built calibrated input features**. Spectrum: hand-built (`closing_rate`, `span_rate`,
+`dist_to_boundary`, `inward_body`, a proposed `jerk`/rate-history) → `US1` deeper history (hand-picked lags
+as inputs) → `US3` predictor (learned + hand-designed aux target) → **`US2` two-timescale recurrence (the
+net learns the feedback)**. The lean pulls toward the US2 end.
+
+- **Key asymmetry**: current config gives *deliberate history to the TARGET* (perception channels carry the
+  6-slot 0.8 s window) but **none to SELF** — `quat`/`airspeed`/`gyro` are instantaneous. Internal/self
+  memory is the gap. "Overrun" = the chase **overshooting the target** (pursuit dynamics), NOT arena egress;
+  the on-lean fix is learnable anticipatory feedback + more internal memory, NOT a hand-fed jerk sensor.
+- **Instinct**: the right combination is **larger search space (pop) + more internal memory (recurrence)** —
+  and those are the same coin: learnable feedback costs more evolutionary search (the +128-input FR-P0H
+  enrichment already delayed t3's takeoff ~100 gens; added recurrent capacity is similar-or-worse + the
+  basin lottery), so paying for it wants the pop/gen budget.
+- **Judging shift**: `rnn_capacity` eff-rank + the evolution-chart feedback panels (`whh_xh_ratio`, block CV)
+  become **primary "is it learning feedback" signals**, comparable to 037 — a ceiling lift with a *flat*
+  eff-rank is off-thesis. Reconsider the US2 deferral above against this lean (US2 is the most on-thesis
+  lever, yet it's the parked one).
+- **Trigger**: DISCUSS once the enriched M1 (t3) baseline **and its paired M2 baseline** have signal — then
+  read the feedback-evolution panels vs 037 and decide pop-size + whether to un-park US2 / add self-history.
+
 ---
 
 ## 030 spin-offs (deferred from 030 spec at plan-research scoping)
