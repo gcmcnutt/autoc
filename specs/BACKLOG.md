@@ -41,8 +41,28 @@ net learns the feedback)**. The lean pulls toward the US2 end.
   become **primary "is it learning feedback" signals**, comparable to 037 — a ceiling lift with a *flat*
   eff-rank is off-thesis. Reconsider the US2 deferral above against this lean (US2 is the most on-thesis
   lever, yet it's the parked one).
+- **History buffers are a FUDGE for weak internal memory (this inverts US1).** Historically internal-state
+  evolution (recurrence) was tried, didn't take, so "direct memory" — the 6-slot hand-built lag buffers —
+  was fudged in instead; it helped hugely and is why perception carries history. So **US1 (deeper history)
+  doubles down on the crutch**, off-lean. Corollary: if internal memory genuinely cracks, we can **shed the
+  raw input buffers** (the net evolves its own state) → smaller input vector, *less* enrichment tax. Cracking
+  memory is the lever that **removes** tech debt, not adds it.
+- **Candidate architecture — "deeper shift registers."** A middle path between free RNN and fixed input
+  buffers: a couple of deeper shift-register-like delay lines the net reads/writes, deeper than today's
+  single 16-wide recurrent layer (US2's two-timescale slow channel is one instance of this family).
+- **Escape hatch**: if learnable/structured memory doesn't take, **brute-force the input buffers** — the
+  known-to-work fallback (that's what the current history is).
+- **Sequencing decision (2026-07-03)**: lead the initial wave with **US3** (learnable anticipation → directly
+  targets M2 overrun / overshoot); **demote US1** to a gated M1-only control that must clear a *meaningful*
+  bar to justify its format-break + xiao tech debt, OR drop it in favor of **un-parking US2**. Judge on
+  *learnable-mechanism-used* (US3 predictor tracks realized optical state; US2 eff-rank / used modes), not
+  just "a number moved."
+- **Arc**: this supersedes the old "traditional inner-loop controller + SLM strategist" two-tier concept —
+  now end-to-end **"photons in, control out."** 038's systematic input changes + regression discipline gave
+  the good control-quality base to build the memory work on.
 - **Trigger**: DISCUSS once the enriched M1 (t3) baseline **and its paired M2 baseline** have signal — then
-  read the feedback-evolution panels vs 037 and decide pop-size + whether to un-park US2 / add self-history.
+  read the feedback-evolution panels vs 037 and decide pop-size + US2-unpark-vs-US1 + shed-buffers-if-memory-
+  cracks.
 
 ---
 
