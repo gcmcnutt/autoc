@@ -120,6 +120,38 @@ where the tax compounds over pop 5000 / 294 scenarios. Determinism unaffected: a
 (`autoc-basic-m1-eval.ini`, extract-from-live-gen) bit-matched training (second-order determinism holds).
 Overlay PNGs: `specs/038-accurate-m2/autoc-038-t2-basic-m1-diag_*.png` (`--compare 037-t5-20hz`).
 
+### T013 (M1 half) — enriched M1 baseline complete, ≈ parity with best-ever (2026-07-04)
+
+**t3 = `autoc-038-t3-m1-baseline`** (enriched full-M1, pop 5000, 20 Hz, aeroStandard 6×49=294, servo on,
+37in/2051w, 800 gens, ~44.7 h). **S3 pin (Constitution VIII)**: `autoc-m1/autoc-9223370253844606963-2026-07-02T16:36:08.844Z/`,
+master seed `1783010168`.
+
+**Result — ≈ parity with the best-ever un-enriched M1 (037 t10):**
+
+| final @800 (20 Hz) | best | streak | pctInStreak |
+|---|---|---|---|
+| t3 (37in, enriched) | −50,895 | 3.50 s (70.0) | 38.7% |
+| t10 (33in, best-ever) | −52,568 | 3.75 s (74.9) | 38.6% |
+
+~93% streak depth, **matched pctInStreak**, ~97% fitness. The +4 arena inputs cost ~100 gens of takeoff
+delay (inflection ~gen 300 vs t10's ~gen 200) but **no meaningful ceiling loss** — minimal-regression thesis
+CONFIRMED on M1. Second-order determinism holds (basic-m1 eval bit-match, T007 settled).
+
+**Control quality (per_axis_time_series, t3 vs t10) — clean baseline, two mild watch-flags:**
+Both trend |dCtrl| DOWN and converge near the 0.27 per-axis budget by end — **neither leaves an axis in hard
+bang-bang**. Deltas vs t10: (1) **dominant bang-bang axis migrated pitch→roll** (t10 final dCtrl pitch ~0.30
+busiest; t3 roll ~0.32 busiest) — both near budget, a mild lean not a runaway; (2) **t3's throttle is busier**
+(dCtrl ~0.25 vs t10's ~0.16 — t10 kept throttle nearly flat-smooth), plausibly the `dist_to_boundary` input
+driving more throttle response. Amplitude profiles near-identical (throttle sat ~0.68, roll drops ~0.45,
+pitch ~0.67). **Verdict: clean enough to be the regression yardstick**; the two deltas are the things
+ablations must not amplify.
+
+**Process note**: the enriched `dmp-dump` **cannot read t10's 33-input dmps** (topology mismatch — greenfield
+format break, working as designed). So t10's per-axis is the *committed 037 PNG* (visual reference only); the
+ablation regression baseline is **t3** (same 037→038 format as everything downstream).
+
+PNGs: `specs/038-accurate-m2/autoc-038-t3-m1-baseline_*.png` (`--compare 037-t10-best`).
+
 ### Pre-t3 de-risk — new inputs are real AND used, wind populated (2026-07-02)
 
 Before committing the ~2-day t3 bake, verified from the existing basic-m1 (t2) dmps:
