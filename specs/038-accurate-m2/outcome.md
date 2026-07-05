@@ -120,6 +120,43 @@ where the tax compounds over pop 5000 / 294 scenarios. Determinism unaffected: a
 (`autoc-basic-m1-eval.ini`, extract-from-live-gen) bit-matched training (second-order determinism holds).
 Overlay PNGs: `specs/038-accurate-m2/autoc-038-t2-basic-m1-diag_*.png` (`--compare 037-t5-20hz`).
 
+### T013 (M2 half) — enriched M2 baseline: sanity-check PASSED, reproduces the perception-capped ceiling (2026-07-05)
+
+**t4 = `autoc-038-t4-m2-baseline`** (autoc-tracker.ini, 60-input enriched tracker, pop 5000, 20 Hz,
+source = t3 gen800 repointed, **stopped at gen 307/800** — plateaued ~150 gens, US3 is the priority).
+**S3**: `autoc-m2/autoc-9223370253664873750-2026-07-04T18:31:42.057Z/`.
+
+**Launch gotcha (resolved)**: first attempt fail-loud-rejected t10's 33-input source dmp (topology
+mismatch — greenfield break, *why* T013 re-bakes M1 first). Repointed `TrackerSourceRun` → t3 gen9200. ✅
+
+**Sanity check PASSED** (first-ever live run of the enriched tracker path):
+- Tracker SA wiring (reset/update/writeInputs) runs clean through eval, 20 workers, zero crashes.
+- Source loads (37-input t3), tracker analytics populate, new M2 sensors sane + attended.
+- Clean + stable: **0 hull, 0 over**, avgVis ~73%, median range ~17 m, spiral ~0.30 — normal M2 behavior.
+
+**Result — plateaued at the perception-capped ceiling.** gen 307: best −14,033, avgMaxStreak 23.1
+(**1.16 s**), pctInStreak 8.4%. Flat since ~gen 150. vs 037 t11 (0.5-threshold baseline): t4's avgMaxStreak
+≈ t11's *final* (23.0) but pctInStreak trails (8.4 vs 12.2%) — long single streaks, thinner coverage.
+
+**Key finding — capacity is NOT the M2 limiter, information/anticipation is.** `rnn_capacity` over the run:
+eff-rank held ~11/16 (recurrence broadly engaged), **spectral radius inflated 2.5 → 5.7** (memory timescale
+growing) — while **tracking depth moved nothing** for ~150 gens. The net has memory, uses it, keeps growing
+it, and it doesn't convert to depth → the bottleneck is upstream (perception / what-to-anticipate). Direct
+motivation for **US3 (predictor head)** over more recurrence.
+
+**Overrun (FR-P0H payoff check)** — no isolable anti-*target*-overrun effect, as predicted. The visible
+difference (t4 **hull=0** throughout vs t11 **hull 4→23** growing; t4 median range 16.8 m vs t11's tighter
+13.6 m) is the **hull PENALTY** (t4 `EnableHullCrashPenalty=1`, t11 OFF) standing the chase off farther for
+safety — NOT the arena sensors (which sense the arena boundary, not the target, so can't reduce
+target-overshoot). `over` (overshoot loss) ~0 in both. Target-overrun remains a US3/anticipation problem.
+
+**Sensor note**: `exit_dir_sin/cos` assessed **low-value** (redundant with the beacon history inside the
+0.8 s window; unique info only for blind periods *longer* than the window, where a stale bearing is
+dubious in dynamic flight). To be **tossed** riding the US3 format break (free — US3 breaks the format
+anyway for the 3→7 output growth). `time_since_seen`, `span_rate`, `tilt` are keepers; `inward_body` too.
+
+PNGs: `specs/038-accurate-m2/autoc-038-t4-m2-baseline_*.png` (`--compare 037-t11 / 037-t15`).
+
 ### T013 (M1 half) — enriched M1 baseline complete, ≈ parity with best-ever (2026-07-04)
 
 **t3 = `autoc-038-t3-m1-baseline`** (enriched full-M1, pop 5000, 20 Hz, aeroStandard 6×49=294, servo on,
