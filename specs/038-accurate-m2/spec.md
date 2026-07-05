@@ -127,6 +127,23 @@ sequencing, M1-first policy, success gate) are settled in **Clarifications** bel
   more state is still the bottleneck. This refines (does not erase) the 2026-06-27 "parallel US1/US2/US3"
   decision — the parallel-then-combine *protocol* stands, the initial wave is now two arms not three.
 
+### Session 2026-07-05
+
+- Q: What does US3's aux head predict (target + frame + horizon)? → A: **Future beacon-pair `span` /
+  closure — ego-invariant, ~150 ms horizon.** Raw next-tick NDC *positions* were considered (A) then
+  rejected: they are ego-coupled, so predicting them beyond +1 tick forces the net to model AND subtract its
+  OWN future ego-rotation to isolate the target's image motion — a heavy, conflated burden (only clean at
+  +1 tick, which is shorter than the ~150 ms actuation lag → no actionable lead). `span` (beacon separation)
+  is ≈ invariant to camera rotation and changes only with **range**, so it IS the closure/overtake signal
+  AND needs **no ego-subtraction** — it predicts cleanly at the ~150 ms (≈ servo/throttle lag) horizon that
+  gives *actionable* anti-overrun lead. Aux outputs = the short-horizon span/closure trajectory (exact
+  vector = a plan detail). Scored vs realized span; MUST beat the persistence baseline (SC-002).
+- Q: Toss `exit_dir_sin/cos` from TrackerInputs, riding the US3 format break? → A: **Yes — toss it**
+  (tracker inputs **60 → 58**). Assessed low-value (redundant with the beacon history inside the 0.8 s
+  window; unique info only as a *stale* bearing during long blindness). US3 already breaks the tracker
+  format for the output head, so removal is free + on-thesis ("shed the hand-built fudge"). Keepers:
+  `time_since_seen`, `span`/`span_rate`/`tilt`, `inward_body`.
+
 ### Session 2026-07-01
 
 - Q: Does the (B) arena-inward situational-awareness input land on M1/pathgen too, or M2-tracker only? → A:
@@ -333,13 +350,17 @@ structure (fixed-leak vs evolved time-constant), how it composes with the predic
 
 ### US3 — Auxiliary target-predictor head (GENERIC, the pivot, M2-direct allowed) (Priority: parallel ablation)
 
-As the operator, I want an **auxiliary head that predicts the target's *next-tick* optical state** (the two
-beacon points / span at +1 tick ≈ 50 ms), trained by a **lexicase prediction-accuracy objective**
-(evolution-native, no backprop) or a gradient-pretrain-then-evolve hybrid, so the controller carries a
-**short-horizon closure estimate it can act on to stop overrunning** ("am I about to overtake?"). **Scoped as
-a ~50 ms lookahead anti-overrun aid, not a multi-second motion model** — 4–5 s prediction is physically off
-the table (see US1); any reacquire-through-blindness benefit is a *possible* downstream bonus, not the claim
-here (that is deferred US5).
+As the operator, I want an **auxiliary head that predicts the target's future beacon-pair `span` / closure**
+(**ego-invariant**, ~150 ms horizon ≈ servo/throttle actuation lag), trained by a **lexicase
+prediction-accuracy objective** (evolution-native, no backprop) or a gradient-pretrain-then-evolve hybrid, so
+the controller carries a **short-horizon closure estimate it can act on to stop overrunning** ("am I about to
+overtake?"). **Predict `span`, NOT raw NDC positions** (Clarifications 2026-07-05): raw positions are
+ego-coupled, so predicting them past +1 tick forces the net to model+subtract its own ego-rotation (heavy,
+conflated, and +1 tick is shorter than the actuation lag → no actionable lead). `span` is ≈ rotation-invariant
+and moves only with range, so it IS the closure signal and needs no ego-subtraction — clean to predict at the
+~150 ms horizon that gives *actionable* lead. **Scoped as a ~150 ms lookahead anti-overrun aid, not a
+multi-second motion model** — 4–5 s prediction is physically off the table (see US1); any
+reacquire-through-blindness benefit is a *possible* downstream bonus, not the claim here (deferred US5).
 
 **Sequencing**: the highest-leverage architecture change — it sharpens "track" into "anticipate-closure";
 generic (a next-tick predictor helps M1 too) but **may go straight to M2** (M1-first optional per the mixed
@@ -348,7 +369,9 @@ policy). Highest research risk. Runs as a parallel ablation.
 **Independent Test**: a bake with the predictor head + prediction objective vs the control-only baseline
 at the same seed; the predicted optical state matches the realized state within a target error AND
 tracking depth improves (or the predictor measurably aids reacquire on M2), determinism + replay
-preserved. [NEEDS RESEARCH: head shape, prediction target + horizon, lexicase prediction-accuracy
+preserved. [RESOLVED 2026-07-05: prediction target = ego-invariant beacon-pair `span`/closure; horizon
+≈ 150 ms (actuation lag). REMAINING RESEARCH: head shape + exact aux-output vector (span at which
+lags/rates), lexicase prediction-accuracy
 objective design (must compose with the existing tracking lexicase axes without re-creating the 033
 scalar-collapse), pretrain-then-evolve vs pure-evolve.]
 
@@ -437,9 +460,10 @@ source is blind to the chase camera).]
 - **FR-P0G**: Prework that changes M1 architecture MUST be expected to trigger a fresh M1 source re-bake
   (and the M2 library re-bake from it); this is accepted scope, budgeted as an M1 run.
 - **FR-P0H**: The P0-D break MUST also land the **situational-awareness input enrichment** (baseline, NOT an
-  ablation lever): **(A)** a `time_since_seen` scalar + a last-seen exit-side / image-velocity cue
-  (optical-derived; a decaying heuristic, no stored world position) — **tracker-only** (meaningless for M1's
-  always-visible rabbit); and **(B)** an **`inward_body` unit vector** (3 body-frame direction cosines,
+  ablation lever): **(A)** a `time_since_seen` scalar + a last-seen exit-side (`exit_dir_sin/cos`)
+  image cue (optical-derived; a decaying heuristic, no stored world position) — **tracker-only** (meaningless
+  for M1's always-visible rabbit). *(Update 2026-07-05: `exit_dir_sin/cos` assessed low-value and is
+  **removed** riding the US3 format break — Clarifications 2026-07-05; `time_since_seen` stays.)* And **(B)** an **`inward_body` unit vector** (3 body-frame direction cosines,
   `chase_quat.conjugate() * normalize(center − pos)`) + the existing **tanh** `dist_to_boundary` for
   arena/boundary turn guidance — **all-attitude-correct** (body-frame direction, NOT a planar `sin/cos`
   heading angle that assumes a reference "up"; operator 2026-07-01), GPS/AHRS ego-state,
@@ -527,10 +551,10 @@ source is blind to the chase camera).]
   ~11–13 %, median error down from ~17 m, in-FOV up from ~70 %, or reacquire (`maxLost`) shorter than
   8–10 s. The history study (US1) result MUST be demonstrated on an M1 ablation first; recurrence/predictor
   may show the lift directly on M2.
-- **SC-002 (supporting)**: The auxiliary predictor's predicted optical state matches the realized
-  next-tick state within a target error — the threshold is set at the US3 gate, but the comparator is
-  concrete: aux NDC error must beat the naive **persistence baseline** (predict "next = current") on the
-  same scenarios, i.e. the head demonstrably models motion rather than echoing the present. AND its
+- **SC-002 (supporting)**: The auxiliary predictor's predicted **span/closure** (~150 ms horizon) matches
+  the realized span within a target error — the threshold is set at the US3 gate, but the comparator is
+  concrete: aux **span** error must beat the naive **persistence baseline** (predict "next = current") on the
+  same scenarios, i.e. the head demonstrably models closure rather than echoing the present. AND its
   presence improves tracking depth and/or reacquire (vs the control-only baseline). Supporting evidence for
   SC-001, not the primary gate.
 - **SC-003**: The US4 visibility-maintenance reward, when enabled, improves in-FOV fraction / shortens
