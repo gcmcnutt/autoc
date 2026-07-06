@@ -222,6 +222,13 @@ public:
 // Forward declaration for AircraftState
 struct AircraftState;
 
+// 038 US3 — per-state NN-mode discriminator for the SPLIT dmp serialization.
+// Pathgen and tracker dmps each carry ONLY their own NN block (inputs+outputs),
+// so a format change to one mode does NOT invalidate the other's dmps (the M1
+// source library survives M2 format changes). Set by setNNData; serialized as a
+// uint8 that selects the block on read. uint8_t underlying = stable wire byte.
+enum class NNMode : std::uint8_t { Pathgen = 0, Tracker = 1 };
+
 // ACRO rate-PID per-tick internals captured from CRRCSim inputdev for
 // post-run analysis. Pitch/roll only; yaw passive (HB1 has no rudder).
 // All rates rad/s, integrators in rad. See spec 026.
@@ -363,15 +370,19 @@ struct AircraftState {
     // The two-slot design keeps pathgen byte-identical (nnInputs_ unchanged)
     // while extending tracker honesty. Cereal v=3 writes both slots; the
     // ~45 extra floats per state × ~58K states/dmp ≈ 10MB cost is acceptable.
+    // 038 US3 — nnOutputs_ holds up to TRACKER_NN_OUTPUT_COUNT (7): pathgen
+    // writes 3 (control), tracker writes 7 (3 control + 4 span-aux predictor).
     void setNNData(const NNInputs& inputs, const float* outputs, int numOutputs) {
       nnInputs_ = inputs;
-      for (int i = 0; i < NN_OUTPUT_COUNT && i < numOutputs; i++) nnOutputs_[i] = outputs[i];
+      for (int i = 0; i < TRACKER_NN_OUTPUT_COUNT && i < numOutputs; i++) nnOutputs_[i] = outputs[i];
       hasNNData_ = true;
+      nnMode_ = NNMode::Pathgen;
     }
     void setNNData(const TrackerInputs& inputs, const float* outputs, int numOutputs) {
       trackerInputs_ = inputs;
-      for (int i = 0; i < NN_OUTPUT_COUNT && i < numOutputs; i++) nnOutputs_[i] = outputs[i];
+      for (int i = 0; i < TRACKER_NN_OUTPUT_COUNT && i < numOutputs; i++) nnOutputs_[i] = outputs[i];
       hasNNData_ = true;
+      nnMode_ = NNMode::Tracker;
     }
     bool hasNNData() const { return hasNNData_; }
     const NNInputs& getNNInputs() const { return nnInputs_; }
@@ -534,10 +545,11 @@ struct AircraftState {
     // Pathgen-mode populates nnInputs_ (33 floats); tracker-mode populates
     // trackerInputs_ (45 floats). The other stays zero-initialized. Mode
     // dispatch happens at consumer sites (data.dat writer, fitness_decomposition).
-    NNInputs nnInputs_ = {};                 // Pathgen NN inputs (NNInputs struct = 33 floats)
-    TrackerInputs trackerInputs_ = {};       // 030 M9.preA — Tracker NN inputs (45 floats)
-    float nnOutputs_[NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs (mode-agnostic)
+    NNInputs nnInputs_ = {};                 // Pathgen NN inputs (NNInputs struct = 37 floats)
+    TrackerInputs trackerInputs_ = {};       // 030 M9.preA — Tracker NN inputs (58 floats)
+    float nnOutputs_[TRACKER_NN_OUTPUT_COUNT] = {0};  // Raw tanh outputs (mode-agnostic; 3 pathgen / 7 tracker w/ span-aux, 038 US3)
     bool hasNNData_ = false;
+    NNMode nnMode_ = NNMode::Pathgen;        // 038 US3 — set by setNNData; selects the serialized NN block
 
     // ACRO PID per-tick snapshot (always populated when PID runs)
     PidInternals pidInternals_;
@@ -570,31 +582,21 @@ struct AircraftState {
         ar(gyroRates_);
       }
 
-      // NN data block: v=1 gated on hasNNData_; v=2 always-on per the
-      // honest-recording principle (the field IS what the NN saw, so
-      // recording it unconditionally removes the silent-truncation
-      // failure mode that hasNNData_=false enabled).
+      // 038 US3 — SPLIT NN serialization (mode-separated). Pathgen and tracker
+      // dmps each carry ONLY their own NN block (inputs + outputs together),
+      // keyed on a per-state nnMode discriminator written first. A format change
+      // to one mode NO LONGER invalidates the other's dmps — critically, the M1
+      // pathgen SOURCE library survives M2/tracker format changes, so we stop
+      // re-baking the M1 source on every M2 iteration. Greenfield restructure
+      // (no cereal version bump per project policy; all pre-split dmps obsolete,
+      // one re-bake). The v=1 legacy gate is retained but dead (no v=1 dmps).
       const bool readNNData = (version >= 2) ? true : hasNNData_;
       if (readNNData) {
-        uint32_t inputCount = NN_INPUT_COUNT;
-        uint32_t outputCount = NN_OUTPUT_COUNT;
-        ar(inputCount, outputCount);
-        if (inputCount != NN_INPUT_COUNT || outputCount != NN_OUTPUT_COUNT) {
-          throw std::runtime_error(
-            "AircraftState deserialization: NN topology mismatch — "
-            "serialized inputs=" + std::to_string(inputCount) +
-            " outputs=" + std::to_string(outputCount) +
-            " but compiled with inputs=" + std::to_string(NN_INPUT_COUNT) +
-            " outputs=" + std::to_string(NN_OUTPUT_COUNT) +
-            ". Regenerate training data with current binary.");
-        }
+        uint8_t mode = static_cast<uint8_t>(nnMode_);
+        ar(mode);
+        nnMode_ = static_cast<NNMode>(mode);
 
-        // 037 T023 — fail-loud history-layout marker (Principle V). The R5
-        // re-lag changed slot SEMANTICS without changing slot COUNTS, so the
-        // count check above cannot catch a stale dmp; this marker can. v=2
-        // dmps written before 037 hit this as a garbage uint32 (the first
-        // input float's bits) and throw — the intended loud failure. v=1
-        // streams (gen9200.dmp baseline) never reach here at version < 2.
+        // 037 T023 — shared fail-loud history-layout marker (both modes).
         if (version >= 2) {
           uint32_t historyLayout = kNNHistoryLayoutVersion;
           ar(historyLayout);
@@ -607,42 +609,46 @@ struct AircraftState {
               "dmps are not replayable through the new layout.");
           }
         }
-        float* rawInputs = reinterpret_cast<float*>(&nnInputs_);  // raw-ok: NN-byte-format buffer
-        for (uint32_t i = 0; i < inputCount; i++)
-          ar(rawInputs[i]);
-        for (uint32_t i = 0; i < outputCount; i++)
-          ar(nnOutputs_[i]);
+
+        if (nnMode_ == NNMode::Tracker) {
+          // Tracker block: 58 inputs + 7 outputs (3 control + 4 span-aux).
+          uint32_t inputCount = static_cast<uint32_t>(TrackerInput::COUNT);
+          uint32_t outputCount = static_cast<uint32_t>(TRACKER_NN_OUTPUT_COUNT);
+          ar(inputCount, outputCount);
+          if (inputCount != static_cast<uint32_t>(TrackerInput::COUNT) ||
+              outputCount != static_cast<uint32_t>(TRACKER_NN_OUTPUT_COUNT)) {
+            throw std::runtime_error(
+              "AircraftState deserialization: TRACKER topology mismatch — "
+              "serialized inputs=" + std::to_string(inputCount) +
+              " outputs=" + std::to_string(outputCount) +
+              " but compiled with inputs=" + std::to_string(static_cast<int>(TrackerInput::COUNT)) +
+              " outputs=" + std::to_string(TRACKER_NN_OUTPUT_COUNT) +
+              ". Regenerate training data with current binary.");
+          }
+          float* rawTracker = reinterpret_cast<float*>(&trackerInputs_);  // raw-ok: NN-byte-format buffer
+          for (uint32_t i = 0; i < inputCount; i++) ar(rawTracker[i]);
+          for (uint32_t i = 0; i < outputCount; i++) ar(nnOutputs_[i]);
+        } else {
+          // Pathgen block: 37 inputs + 3 outputs.
+          uint32_t inputCount = NN_INPUT_COUNT;
+          uint32_t outputCount = NN_OUTPUT_COUNT;
+          ar(inputCount, outputCount);
+          if (inputCount != NN_INPUT_COUNT || outputCount != NN_OUTPUT_COUNT) {
+            throw std::runtime_error(
+              "AircraftState deserialization: PATHGEN topology mismatch — "
+              "serialized inputs=" + std::to_string(inputCount) +
+              " outputs=" + std::to_string(outputCount) +
+              " but compiled with inputs=" + std::to_string(NN_INPUT_COUNT) +
+              " outputs=" + std::to_string(NN_OUTPUT_COUNT) +
+              ". Regenerate training data with current binary.");
+          }
+          float* rawInputs = reinterpret_cast<float*>(&nnInputs_);  // raw-ok: NN-byte-format buffer
+          for (uint32_t i = 0; i < inputCount; i++) ar(rawInputs[i]);
+          for (uint32_t i = 0; i < outputCount; i++) ar(nnOutputs_[i]);
+        }
       }
       ar(rabbitOdometer_, rabbitSpeed_);
       ar(pidInternals_);
-
-      // 030 M9.preA (2026-05-07) — Tracker NN inputs (45 floats per
-      // TrackerInputs struct). Closes the evaluator.cc:495 deferral so
-      // tracker mode dmps carry honest perception captures alongside
-      // pathgen's NNInputs slot. Added in-place at v=2 (no version bump)
-      // per user feedback "while inside M2 we don't need backward
-      // compatibility — old ones will be obsolete". Earlier v=2 tracker
-      // dmps from before this commit do not have this block and become
-      // unreadable; pathgen v=1 dmps (gen9200.dmp baseline) skip the
-      // block via the version >= 2 guard, so the regression gate holds.
-      // The block is ALWAYS written at v=2 regardless of mode —
-      // pathgen's trackerInputs_ stays zero-init (consumer dispatches
-      // on mode, not on field-population).
-      if (version >= 2) {
-        uint32_t trackerInputCount = static_cast<uint32_t>(TrackerInput::COUNT);
-        ar(trackerInputCount);
-        if (trackerInputCount != static_cast<uint32_t>(TrackerInput::COUNT)) {
-          throw std::runtime_error(
-            "AircraftState deserialization: TrackerInput topology mismatch — "
-            "serialized count=" + std::to_string(trackerInputCount) +
-            " but compiled with TrackerInput::COUNT=" +
-            std::to_string(static_cast<int>(TrackerInput::COUNT)) +
-            ". Regenerate training data with current binary.");
-        }
-        float* rawTracker = reinterpret_cast<float*>(&trackerInputs_);  // raw-ok: NN-byte-format buffer
-        for (uint32_t i = 0; i < trackerInputCount; i++)
-          ar(rawTracker[i]);
-      }
     }
 #endif
 };

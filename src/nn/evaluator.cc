@@ -572,7 +572,10 @@ void gather_tracker_inputs(const AircraftState& chase,
 
 void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,
                                           const TrackerInputs& inputs) {
-    float outputs[NN_OUTPUT_COUNT];  // raw-ok: NN-byte-format buffer (output of nn_forward, fp32 contract)
+    // 038 US3 — tracker output head is 7: outputs[0..2] control (actuated),
+    // outputs[3..6] = span/closure predictor (aux, NOT actuated; scored on the
+    // prediction_score lexicase axis and recorded for honest capture).
+    float outputs[TRACKER_NN_OUTPUT_COUNT];  // raw-ok: NN-byte-format buffer (output of nn_forward, fp32 contract)
     if (hidden_state_.empty()) {
         nn_forward(genome_.weights.data(), genome_.topology,
                    reinterpret_cast<const float*>(&inputs), outputs);
@@ -585,16 +588,16 @@ void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,
                              tlm);
     }
 
+    // Only the first 3 outputs are actuated; the aux span-predictor outputs
+    // [3..6] are consumed post-hoc by the prediction_score fitness axis.
     aircraftState.setPitchCommand(static_cast<gp_scalar>(outputs[0]));
     aircraftState.setRollCommand(static_cast<gp_scalar>(outputs[1]));
     aircraftState.setThrottleCommand(static_cast<gp_scalar>(outputs[2]));
 
-    // 030 M9.preA (2026-05-07) — Capture TrackerInputs + outputs into
-    // AircraftState for honest data.dat / dmp recording. Closes the
-    // M6d/M8a deferral. AircraftState v=3 carries trackerInputs_ as a
-    // parallel slot to nnInputs_ (only one populated per mode); cereal
-    // serialize at v=3 writes both, consumer code dispatches on mode.
-    aircraftState.setNNData(inputs, outputs, NN_OUTPUT_COUNT);
+    // Capture TrackerInputs + all 7 outputs into AircraftState for honest dmp
+    // recording (control [0..2] via the pathgen output block, span-aux [3..6]
+    // via the tracker block — see AircraftState::serialize).
+    aircraftState.setNNData(inputs, outputs, TRACKER_NN_OUTPUT_COUNT);
 }
 
 #endif  // ARDUINO — end of tracker-mode block (M6d/M7a)

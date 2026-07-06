@@ -1542,8 +1542,13 @@ static void runNNEvolution(
         // 035 FR-003 — MAD-relative epsilon when LexicaseEpsilonMode=mad,
         // else the constant 0.5-floor path (bit-reproduces prior runs).
         const bool useMadEps = (cfg.lexicaseEpsilonMode == "mad");
-        evoParams.select = [allScores, useMadEps](const NNPopulation&) {
-          return lexicase_select(allScores, static_cast<int>(allScores.size()), useMadEps);
+        // 038 US3 — add the aux span/closure-prediction lexicase axis when the
+        // EnablePredictorHead ablation gate is on (tracker-only; harmless in
+        // pathgen where prediction_score is 0 for all candidates).
+        const bool includePredAxis = (cfg.enablePredictorHead != 0);
+        evoParams.select = [allScores, useMadEps, includePredAxis](const NNPopulation&) {
+          return lexicase_select(allScores, static_cast<int>(allScores.size()), useMadEps,
+                                 0.05, includePredAxis);
         };
       } else if (selMode == SelectionMode::MINIMAX) {
         // Recompute fitness as minimax for tournament selection

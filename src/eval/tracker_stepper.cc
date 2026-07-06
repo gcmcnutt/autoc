@@ -261,8 +261,7 @@ CrashReason TrackerStepper::stepOnce() {
     // the freshly-projected "now" beacon observation. Visibility uses the
     // sentinel threshold (matches fitness_decomposition.cc). Single-sourced
     // update rule mirrored in CrrcsimTrackerHelper::tick.
-    sa_state_.update(history_.left_x[5], history_.left_y[5], history_.left_cep[5],
-                     history_.right_x[5], history_.right_y[5], history_.right_cep[5],
+    sa_state_.update(history_.left_cep[5], history_.right_cep[5],
                      autoc::eval::kCepSentinelThreshold);
 
     // Step 2: gather tracker NN inputs.

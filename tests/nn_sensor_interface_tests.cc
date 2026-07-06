@@ -30,14 +30,14 @@ TEST(NNSensorInterface, PathgenInputCountMatchesNNInputs) {
     EXPECT_EQ(pathgen_meta_size(), 37u);
 }
 
-TEST(NNSensorInterface, TrackerInputCountIs60) {
+TEST(NNSensorInterface, TrackerInputCountIs58) {
     // 030 M7a Session 2026-05-07 Q1: was 48 with HOME_X/Y/Z/HOME_DIST,
     // then 45 with single DIST_TO_BOUNDARY_ALONG_VEL.
     // 032 phase 1: 45 + 9 derived (span[6] + span_rate + tilt sin/cos) = 54.
-    // 038 FR-P0H: 54 + 6 situational-awareness (time_since_seen + exit_dir
-    // sin/cos + inward_body xyz) = 60.
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 60);
-    EXPECT_EQ(tracker_meta_size(), 60u);
+    // 038 FR-P0H: 54 + 4 situational-awareness (time_since_seen + inward_body
+    // xyz) = 58. (exit_dir sin/cos removed 038 US3 2026-07-05.)
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 58);
+    EXPECT_EQ(tracker_meta_size(), 58u);
 }
 
 TEST(NNSensorInterface, PathgenMetaWellFormed) {
@@ -85,7 +85,7 @@ TEST(NNSensorInterface, PathgenAnchorPositions) {
 
 TEST(NNSensorInterface, TrackerAnchorPositions) {
     // Anchor positions per FR-006 + FR-016 + Session 2026-05-07 Q1 + 032 phase 1
-    // + 038 FR-P0H: 36 beacon + 8 state + 1 arena + 9 derived + 6 sit-awareness = 60.
+    // + 038 FR-P0H: 36 beacon + 8 state + 1 arena + 9 derived + 4 sit-awareness = 58.
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_L_X_TM5), 0);
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_L_CEP_NOW), 17);
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_R_X_TM5), 18);
@@ -100,14 +100,13 @@ TEST(NNSensorInterface, TrackerAnchorPositions) {
     EXPECT_EQ(static_cast<int>(TrackerInput::SPAN_RATE), 51);
     EXPECT_EQ(static_cast<int>(TrackerInput::TARGET_TILT_SIN), 52);
     EXPECT_EQ(static_cast<int>(TrackerInput::TARGET_TILT_COS), 53);
-    // 038 FR-P0H — situational-awareness inputs at slots 54..59
+    // 038 FR-P0H — situational-awareness inputs at slots 54..57
+    // (exit_dir sin/cos removed 038 US3 2026-07-05; inward_body shifts down 2).
     EXPECT_EQ(static_cast<int>(TrackerInput::TIME_SINCE_SEEN), 54);
-    EXPECT_EQ(static_cast<int>(TrackerInput::EXIT_DIR_SIN), 55);
-    EXPECT_EQ(static_cast<int>(TrackerInput::EXIT_DIR_COS), 56);
-    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_X), 57);
-    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_Y), 58);
-    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_Z), 59);
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 60);
+    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_X), 55);
+    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_Y), 56);
+    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_Z), 57);
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 58);
 }
 
 TEST(NNSensorInterface, TrackerDerivedFeatureNamesCanonical) {

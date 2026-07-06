@@ -191,51 +191,34 @@ struct TrackerObservationRing {
 // scenarios and breaks the FR-030 bitwise gate). Single-sourced here so
 // TrackerStepper and CrrcsimTrackerHelper — and dmp_dump's honest
 // reconstruction — share one update rule that cannot drift.
+// (038 US3 2026-07-05: exit_dir_sin/cos removed — low-value hand-built cue
+//  redundant with the beacon history in-window. State is now just the blind
+//  counter feeding time_since_seen.)
 struct SituationalAwarenessState {
     int blind_ticks = 0;         // consecutive ticks with no visible beacon
-    float exit_dir_sin = 0.0f;   // raw-ok: NN-byte-format staging — held last-seen bearing
-    float exit_dir_cos = 1.0f;   // raw-ok: NN-byte-format staging — neutral (0,1) until first sighting
 
     void reset() {
         blind_ticks = 0;
-        exit_dir_sin = 0.0f;
-        exit_dir_cos = 1.0f;
     }
 
     // Per-tick update from the "now" beacon observation. A beacon is
     // "visible" when its CEP is below the sentinel threshold (matches the
     // fitness_decomposition.cc:200 visibility definition; caller passes
-    // kCepSentinelThreshold). While visible: zero the blind counter and
-    // refresh the held exit-bearing from the beacon-pair NDC centroid. While
-    // blind: increment the counter and HOLD the last-seen bearing.
-    void update(float left_x, float left_y, float left_cep,
-                float right_x, float right_y, float right_cep,
-                float visible_cep_threshold) {
+    // kCepSentinelThreshold). Visible → zero the blind counter; blind →
+    // increment it.
+    void update(float left_cep, float right_cep, float visible_cep_threshold) {
         const bool visible = (left_cep  < visible_cep_threshold) ||
                              (right_cep < visible_cep_threshold);
-        if (!visible) {
-            ++blind_ticks;
-            return;
-        }
-        blind_ticks = 0;
-        const float cx = 0.5f * (left_x + right_x);
-        const float cy = 0.5f * (left_y + right_y);
-        const float mag = std::sqrt(cx * cx + cy * cy);
-        if (mag > 1e-6f) {
-            exit_dir_sin = cy / mag;
-            exit_dir_cos = cx / mag;
-        }
-        // else: centroid at image center — hold the previous bearing.
+        if (visible) blind_ticks = 0;
+        else         ++blind_ticks;
     }
 
-    // Write the three (A) slots into a TrackerInputs. time_since_seen =
+    // Write the (A) slot into a TrackerInputs. time_since_seen =
     // tanh(blind_seconds / kTimeSinceSeenScale_s); 0 exactly when visible now.
     void writeInputs(TrackerInputs& out) const {
         const float blind_seconds = static_cast<float>(blind_ticks) *
             (static_cast<float>(SIM_TIME_STEP_MSEC) / 1000.0f);
         out.time_since_seen = std::tanh(blind_seconds / kTimeSinceSeenScale_s);  // raw-ok: NN-byte-format slot write
-        out.exit_dir_sin = exit_dir_sin;   // raw-ok: NN-byte-format slot write
-        out.exit_dir_cos = exit_dir_cos;   // raw-ok: NN-byte-format slot write
     }
 };
 

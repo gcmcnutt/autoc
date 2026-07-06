@@ -23,7 +23,8 @@ const char* selectionModeToString(SelectionMode mode);
 //   use_mad_epsilon == true  (mad):      eps = per-axis MAD (median abs deviation)
 //                                        of the field over the surviving candidates.
 int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
-                    int pop_size, bool use_mad_epsilon, double epsilon = 0.05);
+                    int pop_size, bool use_mad_epsilon, double epsilon = 0.05,
+                    bool include_prediction_axis = false);  // 038 US3 — EnablePredictorHead gate
 
 // Minimax fitness: worst-case scenario drives selection.
 double minimax_fitness(const std::vector<ScenarioScore>& scores);

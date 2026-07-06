@@ -187,6 +187,9 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(situational_inputs_tests tests/situational_inputs_tests.cc)
   target_link_libraries(situational_inputs_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(predictor_head_tests tests/predictor_head_tests.cc)
+  target_link_libraries(predictor_head_tests GTest::gtest GTest::gtest_main autoc_common)
+
   add_executable(tracker_dmp_roundtrip_tests tests/tracker_dmp_roundtrip_tests.cc)
   target_link_libraries(tracker_dmp_roundtrip_tests GTest::gtest GTest::gtest_main autoc_common)
 
@@ -260,6 +263,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME contract_tracker_config_tests COMMAND contract_tracker_config_tests)
   add_test(NAME gather_tracker_inputs_tests COMMAND gather_tracker_inputs_tests)
   add_test(NAME situational_inputs_tests COMMAND situational_inputs_tests)
+  add_test(NAME predictor_head_tests COMMAND predictor_head_tests)
   add_test(NAME tracker_dmp_roundtrip_tests COMMAND tracker_dmp_roundtrip_tests)
   add_test(NAME tracker_stepper_init_tests COMMAND tracker_stepper_init_tests)
   add_test(NAME arena_tests COMMAND arena_tests)
@@ -289,6 +293,7 @@ if(ENABLE_AUTOC_TESTS)
             contract_tracker_config_tests
             gather_tracker_inputs_tests
             situational_inputs_tests
+            predictor_head_tests
             tracker_dmp_roundtrip_tests
             tracker_stepper_init_tests
             arena_tests
@@ -326,6 +331,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND contract_tracker_config_tests --gtest_brief=1
     COMMAND gather_tracker_inputs_tests --gtest_brief=1
     COMMAND situational_inputs_tests --gtest_brief=1
+    COMMAND predictor_head_tests --gtest_brief=1
     COMMAND tracker_dmp_roundtrip_tests --gtest_brief=1
     COMMAND tracker_stepper_init_tests --gtest_brief=1
     COMMAND arena_tests --gtest_brief=1

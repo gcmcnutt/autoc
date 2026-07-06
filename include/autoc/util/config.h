@@ -136,6 +136,11 @@ struct AutocConfig {
     int enableHullCrashPenalty = 0;
     double hullCrashPenaltyFactor = 0.5;   // rare hull strikes: factor^(K_hull·scale), scale=variationScale ramp (t14 tracker = 0.75)
     double oobCrashPenaltyWeight = 0.0;    // common OOB: smooth decay exp(−weight·scale·K_oob/N), curriculum-ramped, never clamps; 0 = off
+    // 038 US3 — auxiliary span/closure-predictor ablation gate (tracker-only).
+    // The 7-output tracker topology is compile-time; this knob toggles the
+    // prediction_score LEXICASE AXIS (isolates the objective from the topology
+    // change). 0 = baseline (aux head is dead weight, unscored); 1 = US3 bake.
+    int enablePredictorHead = 0;
     double craftCGSigma = 0.02;        // ~±7% MAC at hb1_streamer CG_arm=0.28
     double craftDragSigma = 0.05;      // ±5% CD_prof
     double craftTrimSigma = 0.02;      // ±1.15° pitch trim
@@ -295,6 +300,7 @@ struct AutocConfig {
     X(double,         entryPositionAltSigma,     "EntryPositionAltSigma") \
     X(int,            enableCraftVariations,     "EnableCraftVariations") \
     X(int,            enableHullCrashPenalty,    "EnableHullCrashPenalty") \
+    X(int,            enablePredictorHead,       "EnablePredictorHead") \
     X(double,         hullCrashPenaltyFactor,    "HullCrashPenaltyFactor") \
     X(double,         oobCrashPenaltyWeight,     "OobCrashPenaltyWeight") \
     X(double,         craftCGSigma,              "CraftCGSigma") \

@@ -110,7 +110,7 @@ TEST(SituationalInputs, InwardBodyOnAxisIsZero) {
 
 TEST(SituationalInputs, TimeSinceSeenZeroWhenVisible) {
     SituationalAwarenessState sa;
-    sa.update(0.6f, 0.8f, kSeenCep, 0.6f, 0.8f, kSeenCep, kCepSentinelThreshold);
+    sa.update(kSeenCep, kSeenCep, kCepSentinelThreshold);
     TrackerInputs out{};
     sa.writeInputs(out);
     EXPECT_FLOAT_EQ(out.time_since_seen, 0.0f);
@@ -119,9 +119,7 @@ TEST(SituationalInputs, TimeSinceSeenZeroWhenVisible) {
 TEST(SituationalInputs, TimeSinceSeenIncrementsWhileBlind) {
     SituationalAwarenessState sa;
     const int kBlind = 8;
-    for (int i = 0; i < kBlind; ++i) {
-        sa.update(0.0f, 0.0f, kBlindCep, 0.0f, 0.0f, kBlindCep, kCepSentinelThreshold);
-    }
+    for (int i = 0; i < kBlind; ++i) sa.update(kBlindCep, kBlindCep, kCepSentinelThreshold);
     TrackerInputs out{};
     sa.writeInputs(out);
     const float blindSec = kBlind * (SIM_TIME_STEP_MSEC / 1000.0f);
@@ -131,70 +129,36 @@ TEST(SituationalInputs, TimeSinceSeenIncrementsWhileBlind) {
 
 TEST(SituationalInputs, TimeSinceSeenResetsOnResighting) {
     SituationalAwarenessState sa;
-    for (int i = 0; i < 5; ++i) {
-        sa.update(0.0f, 0.0f, kBlindCep, 0.0f, 0.0f, kBlindCep, kCepSentinelThreshold);
-    }
+    for (int i = 0; i < 5; ++i) sa.update(kBlindCep, kBlindCep, kCepSentinelThreshold);
     // A single visible tick (CEP-sentinel crossing) zeroes the blind counter.
-    sa.update(0.6f, 0.8f, kSeenCep, 0.6f, 0.8f, kSeenCep, kCepSentinelThreshold);
+    sa.update(kSeenCep, kSeenCep, kCepSentinelThreshold);
     TrackerInputs out{};
     sa.writeInputs(out);
     EXPECT_FLOAT_EQ(out.time_since_seen, 0.0f);
 }
 
-TEST(SituationalInputs, ExitDirIsUnitBearingOfCentroidAndSignsMatch) {
-    SituationalAwarenessState sa;
-    // Beacon-pair centroid at (0.6, 0.8) → unit bearing (cos, sin) = (0.6, 0.8).
-    sa.update(0.6f, 0.8f, kSeenCep, 0.6f, 0.8f, kSeenCep, kCepSentinelThreshold);
-    TrackerInputs out{};
-    sa.writeInputs(out);
-    EXPECT_NEAR(out.exit_dir_cos, 0.6f, 1e-5);
-    EXPECT_NEAR(out.exit_dir_sin, 0.8f, 1e-5);
-    EXPECT_NEAR(std::hypot(out.exit_dir_sin, out.exit_dir_cos), 1.0f, 1e-5);
-}
+// (038 US3 2026-07-05: exit_dir sin/cos removed — the SA state is now just the
+//  blind counter feeding time_since_seen; the held-exit-bearing tests are gone.)
 
-TEST(SituationalInputs, ExitDirHeldThroughBlindness) {
+TEST(SituationalInputs, ResetClearsBlindCounter) {
     SituationalAwarenessState sa;
-    // Last seen with centroid to the RIGHT/UP → held bearing.
-    sa.update(0.6f, 0.8f, kSeenCep, 0.6f, 0.8f, kSeenCep, kCepSentinelThreshold);
-    TrackerInputs seen{};
-    sa.writeInputs(seen);
-    // Now go blind for a while — the held bearing must NOT drift.
-    for (int i = 0; i < 20; ++i) {
-        sa.update(-0.9f, -0.9f, kBlindCep, -0.9f, -0.9f, kBlindCep, kCepSentinelThreshold);
-    }
-    TrackerInputs blind{};
-    sa.writeInputs(blind);
-    EXPECT_FLOAT_EQ(blind.exit_dir_sin, seen.exit_dir_sin);
-    EXPECT_FLOAT_EQ(blind.exit_dir_cos, seen.exit_dir_cos);
-    EXPECT_GT(blind.time_since_seen, 0.0f);  // but time_since_seen did advance
-}
-
-TEST(SituationalInputs, ResetClearsToNeutral) {
-    SituationalAwarenessState sa;
-    for (int i = 0; i < 4; ++i)
-        sa.update(-0.5f, 0.5f, kSeenCep, -0.5f, 0.5f, kSeenCep, kCepSentinelThreshold);
-    for (int i = 0; i < 4; ++i)
-        sa.update(0.0f, 0.0f, kBlindCep, 0.0f, 0.0f, kBlindCep, kCepSentinelThreshold);
+    for (int i = 0; i < 8; ++i) sa.update(kBlindCep, kBlindCep, kCepSentinelThreshold);
     sa.reset();
     TrackerInputs out{};
     sa.writeInputs(out);
     EXPECT_FLOAT_EQ(out.time_since_seen, 0.0f);
-    EXPECT_FLOAT_EQ(out.exit_dir_sin, 0.0f);   // neutral bearing (0, 1)
-    EXPECT_FLOAT_EQ(out.exit_dir_cos, 1.0f);
 }
 
 // A single-visibility CEP crossing must flip the counter; test both edges.
 TEST(SituationalInputs, VisibilityUsesSentinelThresholdOnEitherBeacon) {
     SituationalAwarenessState sa;
     // Right beacon alone visible ⇒ still "seen".
-    for (int i = 0; i < 3; ++i)
-        sa.update(0.0f, 0.0f, kBlindCep, 0.3f, 0.4f, kSeenCep, kCepSentinelThreshold);
+    for (int i = 0; i < 3; ++i) sa.update(kBlindCep, kSeenCep, kCepSentinelThreshold);
     TrackerInputs out{};
     sa.writeInputs(out);
     EXPECT_FLOAT_EQ(out.time_since_seen, 0.0f);
     // Both at exactly the threshold ⇒ NOT seen (strict <).
-    sa.update(0.0f, 0.0f, kCepSentinelThreshold, 0.0f, 0.0f, kCepSentinelThreshold,
-              kCepSentinelThreshold);
+    sa.update(kCepSentinelThreshold, kCepSentinelThreshold, kCepSentinelThreshold);
     sa.writeInputs(out);
     EXPECT_GT(out.time_since_seen, 0.0f);
 }
@@ -210,18 +174,15 @@ TEST(SituationalInputs, IdenticalSequenceProducesIdenticalTrace) {
     a.reset();
     b.reset();
 
-    struct Obs { float lx, ly, lcep, rx, ry, rcep; };
+    struct Obs { float lcep, rcep; };
     const Obs seq[] = {
-        {0.6f, 0.8f, kSeenCep, 0.6f, 0.8f, kSeenCep},
-        {0.0f, 0.0f, kBlindCep, 0.0f, 0.0f, kBlindCep},
-        {0.0f, 0.0f, kBlindCep, 0.0f, 0.0f, kBlindCep},
-        {-0.3f, 0.2f, kSeenCep, -0.1f, 0.4f, kSeenCep},
-        {0.0f, 0.0f, kBlindCep, 0.5f, 0.5f, kSeenCep},  // right-only visible
-        {0.0f, 0.0f, kBlindCep, 0.0f, 0.0f, kBlindCep},
+        {kSeenCep, kSeenCep}, {kBlindCep, kBlindCep}, {kBlindCep, kBlindCep},
+        {kSeenCep, kSeenCep}, {kBlindCep, kSeenCep},  // right-only visible
+        {kBlindCep, kBlindCep},
     };
     for (const Obs& o : seq) {
-        a.update(o.lx, o.ly, o.lcep, o.rx, o.ry, o.rcep, kCepSentinelThreshold);
-        b.update(o.lx, o.ly, o.lcep, o.rx, o.ry, o.rcep, kCepSentinelThreshold);
+        a.update(o.lcep, o.rcep, kCepSentinelThreshold);
+        b.update(o.lcep, o.rcep, kCepSentinelThreshold);
         TrackerInputs ta{}, tb{};
         a.writeInputs(ta);
         b.writeInputs(tb);
@@ -240,9 +201,7 @@ TEST(SituationalInputs, GatherTrackerWritesBAndA) {
         uniformHistory(0.6f, 0.8f, kSeenCep, 0.6f, 0.8f, kSeenCep);
 
     SituationalAwarenessState sa;
-    sa.update(history.left_x[5], history.left_y[5], history.left_cep[5],
-              history.right_x[5], history.right_y[5], history.right_cep[5],
-              kCepSentinelThreshold);
+    sa.update(history.left_cep[5], history.right_cep[5], kCepSentinelThreshold);
 
     TrackerInputs out{};
     gather_tracker_inputs(chase, history, FlightArena{}, kCepSentinelThreshold, sa, out);
@@ -251,10 +210,8 @@ TEST(SituationalInputs, GatherTrackerWritesBAndA) {
     EXPECT_NEAR(out.inward_body_x, 0.0f, 1e-5);
     EXPECT_NEAR(out.inward_body_y, 1.0f, 1e-5);
     EXPECT_NEAR(out.inward_body_z, 0.0f, 1e-5);
-    // (A) visible now → time_since_seen 0, exit bearing = centroid unit vec.
+    // (A) visible now → time_since_seen 0.
     EXPECT_FLOAT_EQ(out.time_since_seen, 0.0f);
-    EXPECT_NEAR(out.exit_dir_cos, 0.6f, 1e-5);
-    EXPECT_NEAR(out.exit_dir_sin, 0.8f, 1e-5);
 }
 
 TEST(SituationalInputs, GatherPathgenWritesBOnly) {

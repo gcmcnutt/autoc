@@ -401,12 +401,13 @@ int main(int argc, char** argv) {
   // Header (mode-specific: path-relative derived columns are pathgen-only).
   std::cout << "scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,"
                "pitchCmd,rollCmd,thrCmd,out_pt,out_rl,out_th,dhome,wN,wE,wD";
-  // 038 P0-D FR-P0H — situational-awareness NN inputs read straight from the
-  // recorded per-tick TrackerInputs/NNInputs (honest recording, not a
-  // reconstruction): tracker adds inX/inY/inZ (arena-inward body dir) +
-  // tSee/exS/exC (time-since-seen + held exit bearing); pathgen adds dBnd
-  // (dist-to-boundary tanh) + inX/inY/inZ.
-  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt,inX,inY,inZ,tSee,exS,exC\n";
+  // 038 — honest recording read straight from the recorded per-tick
+  // TrackerInputs/NNInputs + tracker aux outputs: tracker adds inX/inY/inZ
+  // (arena-inward body dir) + tSee (time-since-seen) + the 038 US3 aux
+  // span-predictor OUTPUTS spP1/spP2/spP3 (predicted span @+50/+100/+150 ms) +
+  // spdR (predicted closure rate); pathgen adds dBnd (dist-to-boundary tanh) +
+  // inX/inY/inZ. (exit_dir removed 038 US3.)
+  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt,inX,inY,inZ,tSee,spP1,spP2,spP3,spdR\n";
   else           std::cout << ",dist,along,stpPt,mult,rampSc,dBnd,inX,inY,inZ\n";
 
   // 038 P0-B (T010): read the fitness cone / cadence from the dmp-recorded,
@@ -511,18 +512,18 @@ int main(int argc, char** argv) {
         prevSpan = spn0;
         havePrevSpan = true;
 
-        // 038 P0-D FR-P0H — arena-inward + target-lost cues, read directly
-        // from the recorded TrackerInputs (honest recording).
+        // 038 — arena-inward + time_since_seen (from recorded TrackerInputs) +
+        // the US3 aux span-predictor outputs out[3..6] (honest recording).
         const TrackerInputs& ti_in = st.getTrackerInputs();
         char tb[512];
         int tn = snprintf(tb, sizeof(tb),
           ",%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f"
-          ",%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+          ",%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
           rampSc, hull,
           tg.x(), tg.y(), tg.z(), tr.x(), tr.y(), tr.z(),
           spn0, dspn, blC0, brC0, tltS, tltC, stp,
           ti_in.inward_body_x, ti_in.inward_body_y, ti_in.inward_body_z,
-          ti_in.time_since_seen, ti_in.exit_dir_sin, ti_in.exit_dir_cos);
+          ti_in.time_since_seen, out[3], out[4], out[5], out[6]);
         std::cout.write(tb, tn);
       } else if (path && !path->empty()) {
         const int pIdx = std::clamp(st.getThisPathIndex(), 0,
