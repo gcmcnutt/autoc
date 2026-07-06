@@ -19,7 +19,7 @@
 In three orthogonal checks:
 
 1. **Gold-code generation** — ATtiny416 firmware drives DIM (PA3) with the 4-code PN-sequence at the spec'd chip rate. Verify on scope at U1 pin 4 (DIM).
-2. **Boost-stage regulation** — LM3410X drives the 5-LED string at constant 306 mA via the 0.62 Ω sense resistor. Verify V_LED ≈ 10 V (auto-regulated, not preset) at C1, and I_LED at R1 (scope across R1 should show 190 mV ± 5%).
+2. **Boost-stage regulation** — LM3410X drives the 5-LED string via the sense resistor at the FB reference (190 mV). **Bench value (2026-07): R1 = 3.74 Ω 1% → ~51 mA** (6× the field R_sense) to protect the un-heatsunk breadboard LED string from the field-power thermal load; **field/target value is 0.62 Ω → 306 mA**, restored once the SMT thermal carrier (EV-C1 / Luxeonstar SZ-01-R8-class MCPCB) is mounted. Verify I_LED at R1 (scope across R1 shows 190 mV ± 5% at either value; V_LED auto-regulates — ~11 V at the bench current, ~10 V at field).
 3. **Low-voltage cutout** *(revised 2026-05-20 per R11)* — slowly turn the bench supply down from 5 V. When VIN drops below the firmware threshold (3.6 V firmware-set, corresponds to 3.5 V real after Vref drift), the ATtiny416 firmware drives PA3 LOW + enters POWER_DOWN sleep, R2 (now pull-down to GND) ensures DIM stays LOW even after MCU sleeps, and the LED string goes dark within the ~500 ms ADC debounce window. mEDBG debug stays alive on its independent USB-5 V domain throughout. Also bench-verify: (a) physical MCU soft-reset mid-emission → LEDs off within ≤ 1 ms (POR + topology); (b) deliberately-hung firmware variant → WDT reset within ≤ 250 ms → LEDs off.
 
 End-to-end check: when DIM modulates per gold code, LED current envelope tracks the modulation with the spec'd turn-on/turn-off transitions (see [`spec.md`](../../specs/031-beacon-camera/spec.md) §FR-1).
@@ -91,7 +91,7 @@ Pin role assignments (identical on both chips):
   - [ ] received — notes:
 - [ ] **EV-A5 = target A6** Schottky boost rectifier, qty 1 (+1 spare). Original **MBR130T1G** (SOD-123) **OUT OF STOCK 2026-06-18 → substitute Panjit `SS1030_R1_00001`** (DigiKey `3757-SS1030_R1_00001CT-ND`, 30 V Schottky, **SOD-123** — same package as MBR130). ✅ like-for-like boost rectifier; **confirm forward rating ≥ 1 A** (boost peak ~1.2 A; MBR130 was 1 A SOD-123).
   - [ ] received — notes:
-- [ ] **EV-A6 = target A7** 0.62 Ω 1% 1206 sense resistor (Vishay `CRL1206-FW-R620ELF` or equiv), qty 1. **Reuse from target order** (parent A7; +1 spare).
+- [ ] **EV-A6 = target A7** sense resistor, 1206, qty 1. **Field/target: 0.62 Ω 1%** (Vishay `CRL1206-FW-R620ELF` or equiv → 306 mA) — reuse from target order (parent A7; +1 spare). **Bench de-rate (2026-07): fit 3.74 Ω 1% (6×) → ~51 mA** to protect the un-heatsunk breadboard LEDs; swap back to 0.62 Ω once the SMT thermal carrier is mounted.
   - [ ] received — notes:
 - [ ] **EV-A7 = target A13** 10 kΩ 0603 (DIM **pull-DOWN to GND** R2 — *revised 2026-05-20 per FR-1.7 #4 / R11; was pull-up to V_BAT*), qty 1. Reuse generic from parent A13.
   - [ ] received — notes:

@@ -52,6 +52,21 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **What stays in 030 v1 from D15**: error bars on the camera-POV display (CEP as visible ellipse spread) — cheap, directly load-bearing for smoke-test signal-or-not assessment.
 - **Why deferred**: research-grade analytics; not required for smoke-test 4th deliverable.
 
+### [031 — BACKLOG] OG0VA design-house inquiry (register spec + eval module)
+
+- **Trigger**: when the OG0VA moves from paper-primary to an actual bring-up target (camera/040 work resumes, or the emitter power/osc study needs the real integration-time + FSIN/STROBE timing).
+- **Scope**: OEM/design-house engagement (OmniVision direct, or Leopard Imaging / e-con) for (a) the full OG0VA register spec — exact integration-time min/granularity, FSIN/STROBE timing diagrams, gain map; (b) a stocked eval module or the OC0VA CameraCubeChip; (c) lead time + MOQ. Resolves research R4.
+- **Why deferred (2026-07)**: sticking with OG0VA on paper for now. The [product brief](https://www.ovt.com/wp-content/uploads/2022/06/OG0VA-PB-v1.3-WEB.pdf) (480 fps @ 320×240, 60% QE @ 850 nm, global shutter, FSIN frame-sync + built-in STROBE, 1-lane MIPI, manual gain) is enough to design against. Exposure range is bounded mechanically (~tens of µs → ~2 ms full-frame @ 480 fps); exact numbers only needed at bring-up.
+
+### [031 — STUDY] Code-derived shutter sync + sub-100% chip-on pulsing
+
+- **Trigger**: after the emitter power/cooling + RC-osc-stability bench is characterized; when the emitter pulse regime (peak / duty) is being optimized against the camera.
+- **Scope**: two coupled ideas —
+  - **Adaptive exposure gating**: acquire wide-open (max shutter, to *locate* signal), then once a code is decoded, derive a per-emitter chip-phase/sync pulse from the code decoder and *narrow* the camera exposure to just around the expected pulse — improving background rejection and letting the emitter run a short pulse. Each emitter has its own independent RC clock, so this is a per-code phase estimate; **two emitters = two independent clocks**, so one narrowed window can't serve both at once (harder, not impossible — interleave, or narrow only after single-target hand-off).
+  - **Sub-100% chip-on duty**: pulse the LED for only a fraction of each ON chip (e.g. 25%) instead of full-on, cutting average power / heat / di-dt (see the power-cooling budget thread). Bounded below by the async frame-capture floor (LED-on ≥ ~1 frame period so an un-synced camera never misses an ON chip); the code-derived sync above is what would let the pulse go *shorter* than that floor.
+- **Payoff**: lower emitter average power → cooler LEDs, longer runtime, smaller supply-load transient → **better RC-osc stability (the 031 objective)**. Trades against matched-filter oversampling margin; needs the FSIN/STROBE + decoder-phase plumbing.
+- **Flight caveat**: emitter (target craft) and camera (tracker craft) can't be genlocked in the air — the code-derived sync is receiver-side only (camera locks to the decoded code phase; emitter stays free-running).
+
 ### [030 v1 — UNPARKED 2026-05-08] CRRCSim mod_inputdev tracker integration (M11.preA)
 
 - **Status**: UNPARKED. Routing decision 2026-05-08: m91 minisim run showed loop closes structurally, but smoke results that matter for sim-to-real must run on FDM-driven physics. Pulling crrcsim integration forward from `[030 v1+]` BACKLOG into v1 path before formal smoke + analytics.
