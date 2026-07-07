@@ -227,7 +227,13 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - Files: `src/util/config.cc` (load), `include/autoc/util/config.h`, `tests/contract_tracker_config_tests.cc`
   (decouple from production ini), the six `autoc*.ini`.
 
-### [BACKLOG] Trainer-populated (write-through) analytics cache — kill the S3 re-fetch tax
+### [BACKLOG — pre-work for the feature after 039] Trainer-populated (write-through) analytics cache — kill the S3 re-fetch tax
+
+> **Scheduling (operator 2026-07-06)**: NOT an 038 item. Slate as pre-work / early task for the feature
+> *after* 039 (touches the trainer hot-path + analytics format + generate_pngs; wants its own careful
+> rebuild-perf pass, not a mid-038 insertion). Interim mitigation until then: `GENERATE_PNGS_CACHE=<persistent
+> path>` so the cache survives reboots.
+
 
 - **Surfaced 2026-07-06** (t5 PNG refreshes timing out on S3 fetch): `generate_pngs` derives the per-gen
   run-summary by pulling one dmp per gen from S3 and running `dmp-dump --run-summary`. During a live run
