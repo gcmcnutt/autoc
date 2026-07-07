@@ -227,6 +227,31 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - Files: `src/util/config.cc` (load), `include/autoc/util/config.h`, `tests/contract_tracker_config_tests.cc`
   (decouple from production ini), the six `autoc*.ini`.
 
+### [BACKLOG] Trainer-populated (write-through) analytics cache — kill the S3 re-fetch tax
+
+- **Surfaced 2026-07-06** (t5 PNG refreshes timing out on S3 fetch): `generate_pngs` derives the per-gen
+  run-summary by pulling one dmp per gen from S3 and running `dmp-dump --run-summary`. During a live run
+  (or right after a reboot wipes `/tmp/generate_pngs_cache`) that's hundreds of slow S3 round-trips for data
+  the **trainer already had in-memory** when it computed the gen.
+- **Want (operator 2026-07-06)**: have the **trainer append the per-gen run-summary row to the local cache
+  as it runs**, right after the S3 dmp upload — a write-through cache in the volatile dir. `generate_pngs`
+  then reads a warm cache and fetches nothing for gens the run produced; **S3 stays the source of truth /
+  fallback** (missing cache ⇒ re-derive from S3 exactly as today). Pure optimization, no new correctness
+  surface. Fixes the common case (live monitoring = always-warm cache); only post-reboot analysis of a
+  *finished* run re-fetches.
+- **Design**: factor the run-summary-row computation into ONE function used by both the trainer (live
+  append) and `dmp-dump --run-summary` (post-hoc/fallback) so a trainer-written row is byte-identical to a
+  dmp-derived one and can't drift. Write to the exact key `generate_pngs` reads
+  (`${CACHE_DIR}/<run-id>__dmp<DSIG>_summary.csv`); the DSIG (dmp-build signature) keying already guards
+  version splicing. Optionally also emit the `dynamics_progress` per-gen CSV row live (the other slow S3
+  path). Consider `GENERATE_PNGS_CACHE=<persistent path>` as the interim mitigation until this lands.
+- **Relates to**: `project_dmp_driven_analytics_backlog` ("run-summary slower than data.dat during live
+  runs; cache to avoid re-fetch") and the log-slimming goal (the trainer already logs most of these fields
+  in `#NNGen`/`#GenDiag`).
+- **Files**: `src/autoc.cc` (per-gen live append), a shared run-summary-row helper (new or in
+  `tools/dmp_dump.cc`'s run-summary path), `scripts/generate_pngs.sh` (already reads the cache — no change
+  beyond finding it warm).
+
 ---
 
 ## 027 carry-forward → 028 deeper-rnn
