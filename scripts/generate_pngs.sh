@@ -18,10 +18,12 @@
 #
 # Reports: m1 = evolution_progress, per_axis_aggressiveness, per_axis_time_series,
 #          dynamics_progress (4).  m2 = those + gen_diag + intercept_analysis +
+#          predictor_analysis (038 US3 span/closure-predictor: per-horizon +
+#          closure-rate error over gens + latest-gen calibration/regime detail) +
 #          gen_runtime (log-only diversity/collapse proxy) + mode_progress (per-gen
 #          perception/track/range/reacquire competence) + score_by_path (per-path
 #          tracking-score + error distance) + rnn_capacity (needs nnextractor+nn2cpp) +
-#          tactics (needs a --compare run) (11).
+#          tactics (needs a --compare run) (12).
 #
 # INCREMENTAL run-summary: the per-gen aggregate is the slow part (one S3 dmp
 # fetch per gen). We cache it per run-id under $CACHE_DIR and use `dmp-dump
@@ -130,9 +132,11 @@ if [[ "$USE_CACHE" == 1 ]]; then mkdir -p "$CACHE_DIR"; cp "$SUMMARY" "$CACHE"; 
 # S3 path. Give it its own per-(run-id + dmp-build) cache so it too only fetches
 # new gens on a re-plot.
 DYN_CACHE=()
+PRED_CACHE=()
 if [[ "$USE_CACHE" == 1 ]]; then
   mkdir -p "$CACHE_DIR"
   DYN_CACHE=( --cache "$CACHE_DIR/${SAFE}__dmp${DSIG}_dynamics.csv" )
+  PRED_CACHE=( --cache "$CACHE_DIR/${SAFE}__dmp${DSIG}_predictor.csv" )
 fi
 
 run() { echo "  [plot] $1"; python3 "$AN/$@"; }
@@ -153,6 +157,14 @@ if [[ "$MODE" == "m2" ]]; then
   run plot_gen_diag.py --in "$LOG" --label "$NAME" --out "$OUT/${NAME}_gen_diag.png"
   run intercept_analysis.py --csv "$TICK" --label "$NAME" --gen "$GEN" \
       --tick-sec "$TICK_SEC" -o "$OUT/${NAME}_intercept_analysis.png"
+
+  # predictor_analysis — 038 US3 span/closure-predictor: per-horizon (+50/100/150 ms)
+  # + closure-rate prediction error over generations (own gen-sweep cache, like
+  # dynamics) plus latest-gen calibration/regime detail from the tick.csv already
+  # fetched. Answers "is the aux head learning + does accuracy track depth".
+  run predictor_analysis.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
+      "${PRED_CACHE[@]}" --tick "$TICK" --tick-sec "$TICK_SEC" --label "$NAME" \
+      -o "$OUT/${NAME}_predictor_analysis.png"
 
   # gen_runtime — per-gen wall-clock curve (proxy for population diversity/collapse:
   # rising = learning to fly full scenarios; flat-low/dropping = early-death/collapse).

@@ -163,6 +163,24 @@ static bool gEnableCraftVariations = false;
 // Individual variation enable flags (from config)
 static bool gEnableEntryVariations = false;
 static bool gEnableWindVariations = false;
+// 038 t7 — when set (tracker-only), the CHASE derives its per-scenario
+// variation seed from the M1 SOURCE's recorded scenarioSeed (shared airspace)
+// instead of the fresh M2 gScenarioSeedTable. See chaseScenarioSeedAt().
+static bool gChaseUseSourceScenarioSeed = false;
+
+// Per-scenario seed the CHASE uses for variation-class derivation at path-major
+// index i. Default: the fresh M2 seed table. When gChaseUseSourceScenarioSeed
+// (t7), return the paired M1 source scenario's recorded scenarioSeed so the
+// chase's wind/thermal/gust/entry/craft/crash-hull match what the source flew
+// (NN mutation + camera stay on the M2 seed). Caller must ensure i is in range;
+// the startup guard enforces gSourceTrajectoryList.size() == gScenarioSeedTable
+// .size() whenever the knob is on, so both are indexable by the same i.
+static uint64_t chaseScenarioSeedAt(int i) {
+    if (gChaseUseSourceScenarioSeed) {
+        return gSourceTrajectoryList[i].variation.scenarioSeed;
+    }
+    return gScenarioSeedTable[i];
+}
 
 // Variable rabbit speed: Global config, initialized at startup from config
 static RabbitSpeedConfig gRabbitSpeedConfig = RabbitSpeedConfig::defaultConfig();
@@ -349,7 +367,7 @@ static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigma
         // (paths × winds), parallel to gScenarioSeedTable + scenarioMetaList,
         // so each (path, wind) gets its own entry/wind offsets.
         const uint64_t scenarioSeed = (i < static_cast<int>(gScenarioSeedTable.size()))
-            ? gScenarioSeedTable[i] : autoc::util::kSeedZeroSentinel;
+            ? chaseScenarioSeedAt(i) : autoc::util::kSeedZeroSentinel;
         const autoc::util::ClassSubSeeds subseeds =
             autoc::util::deriveClassSubSeeds(scenarioSeed);
 
@@ -466,7 +484,7 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
     for (int i = 0; i < numScenarios; i++) {
         const auto& sv = gScenarioVariations[i];
         const uint64_t scenarioSeed = (i < static_cast<int>(gScenarioSeedTable.size()))
-            ? gScenarioSeedTable[i] : 0ull;
+            ? chaseScenarioSeedAt(i) : 0ull;
 
         std::ostringstream line;
         line << std::setw(4) << i << "      "
@@ -883,7 +901,7 @@ static WorkerInit buildWorkerInit() {
             // reconstructs all 5 class sub-PRNGs from this single value.
             // Per spec.md Clarifications Q3 (sufficient for full replay).
             if (idx < gScenarioSeedTable.size()) {
-                meta.scenarioSeed = gScenarioSeedTable[idx];
+                meta.scenarioSeed = chaseScenarioSeedAt(static_cast<int>(idx));
             }
             // Pre-populate entry offsets at full scale from the variation
             // table. 034 FR-012: index by the linear path-major scenario K
@@ -1730,6 +1748,8 @@ int main(int argc, char** argv)
   // off, the PRNG still advances per-scenario (draw-and-discard) and the
   // drawn deltas are zeroed before reaching the FDM.
   gEnableCraftVariations = (cfg.enableCraftVariations != 0);
+  // 038 t7 — chase shares the M1 source's per-scenario airspace/airframe seed.
+  gChaseUseSourceScenarioSeed = (cfg.trackerChaseUseSourceScenarioSeed != 0);
   gCraftSigmas.craftCGSigma       = cfg.craftCGSigma;
   gCraftSigmas.craftDragSigma     = cfg.craftDragSigma;
   gCraftSigmas.craftTrimSigma     = cfg.craftTrimSigma;
@@ -1783,6 +1803,30 @@ int main(int argc, char** argv)
       static_cast<size_t>(std::max(cfg.simNumPathsPerGen, 1)) *
       static_cast<size_t>(windScenarioCount);
   populateScenarioSeedTable(totalScenarioCount);
+
+  // 038 t7 — chase-shares-source-airspace guard (Constitution V loud-fail).
+  // The swap in chaseScenarioSeedAt() pairs source scenario i with chase
+  // scenario i positionally, which is only valid when the source list is 1:1
+  // with the seed table (full path×wind, no subset). Tracker-only.
+  if (gChaseUseSourceScenarioSeed) {
+    if (cfg.mode != "tracker") {
+      *logger.info() << "FATAL ERROR: TrackerChaseUseSourceScenarioSeed=1 is "
+                        "tracker-only (mode=" << cfg.mode << ")." << endl;
+      exit(1);
+    }
+    if (gSourceTrajectoryList.size() != gScenarioSeedTable.size()) {
+      *logger.info() << "FATAL ERROR: TrackerChaseUseSourceScenarioSeed=1 "
+                        "requires the source list (" << gSourceTrajectoryList.size()
+                     << ") to be 1:1 with the scenario seed table ("
+                     << gScenarioSeedTable.size() << ") — use the full path×wind "
+                        "set (empty TrackerPathSubset/TrackerWindSubset)." << endl;
+      exit(1);
+    }
+    *logger.info() << "TrackerChaseUseSourceScenarioSeed=1: chase shares the M1 "
+                      "source's per-scenario wind/thermal/gust/entry/craft/"
+                      "crash-hull seeds (" << gScenarioSeedTable.size()
+                   << " scenarios); NN + camera stay on the M2 seed." << endl;
+  }
 
   // Pre-fetch all scenario variations from class-scoped PRNGs derived
   // from scenarioSeed[K]. 034 FR-012: per-(path, wind) — gScenarioVariations
