@@ -157,6 +157,78 @@ anyway for the 3→7 output growth). `time_since_seen`, `span_rate`, `tilt` are 
 
 PNGs: `specs/038-accurate-m2/autoc-038-t4-m2-baseline_*.png` (`--compare 037-t11 / 037-t15`).
 
+### US3 predictor — design rationale: forward-model the direct observable, not the target's state (2026-07-07)
+
+Core "why" behind the span/closure-predictor head, from the t6 predictor-analysis discussion:
+
+- **Predict the direct image-space observable, not the latent target state.** The aux head predicts
+  `beacon_pair_span` (on-screen wingtip separation) at +50/+100/+150 ms — i.e. it forward-models *the sensor
+  signal the chase will actually see*. It deliberately does **not** estimate the target's world-frame state
+  (position / velocity / attitude). That estimation is the hard **inverse** problem — monocular depth from a
+  beacon pair, ego-motion compensation, aspect disambiguation, filtering — and it forces a latent world
+  representation the controller doesn't need. Predicting the observable is *more direct and far more
+  achievable* (the achievability leg of [feedback_clear_objectives_not_tuning] /
+  `.claude/.../feedback_clear_objectives_not_tuning.md`): don't ask the net to solve for state it can't
+  cleanly observe; ask it to predict what it will directly perceive.
+- **What `span` means / is contaminated by.** Span = raw NDC distance between the two wingtip beacons
+  (`compute_pair_span`), dominated by **range** (closure proxy: closer ⇒ wider), modulated by **target
+  aspect** (foreshortening), and — because the sim projects rectilinearly (`screen = tan θ / tan(fov/2)`) —
+  by an **off-axis tan-stretch** (a fixed angular wingspan reads wider toward the frame edge). That last term
+  is an ego-pointing contamination; span is roll-invariant. The design-comment claim that span is
+  "ego-invariant" holds only near frame center.
+- **The forward-model is closed-loop.** Control (out[0..2]) and prediction (out[3..5]) share the recurrent
+  trunk, so "span@+150 ms" is "given the target dynamics in my hidden state **and the control I'm about to
+  apply**, how wide will the beacons be" — a forward-model of the *consequence* of relative motion, not an
+  external world state.
+- **If ever enriched, stay in the observable domain.** Span is a scalar that collapses range×aspect and
+  drops **bearing**. A richer "predict toward intercept" target would add future **centroid/bearing** and
+  **tilt** — but those are *also direct observables* ("where the blob will be on screen"), never world-state.
+  So the only real axis is *how much of the image-space observable to forward-model*; state estimation is
+  off the table by design. Operator: "span is nice, keep it."
+- **Follow-on (backlog, not now)**: switch the sim to a **spherical/equidistant** projection so span becomes
+  a clean angular quantity (removes the ego-contamination from the very thing we predict) — captured in
+  `specs/BACKLOG.md` → [040 — camera redo / research] Question 3. Model the *actual* chosen lens's projection
+  in sim once hardware is picked.
+
+Status: t6 (M2 predictor run, `EnablePredictorHead=1`, tracking t5 gen800) is the first test. An early read
+(gen ~120–150) looked encouraging — span-calibration diagonal emerging + near-horizon error bending down
+after a gen-~85 peak — but it **did not hold**; see the interim result below. Panel:
+`autoc-038-t6-m2-predictor_predictor_analysis.png`.
+
+### US3 predictor (t6) — result @ gen 344 (STOPPED 2026-07-08): predictor forms weakly at best, ceiling holds
+
+**t6 stopped at gen 344/800** (operator: freed the box for the t7 shared-env A/B — the env-seed question is
+now the priority; the variation-ramp back-half wildcard did not kick 318→344, best only −13670→−13382).
+It ran *past* t4's endpoint (307), so it's a clean predictor-vs-no-predictor read. Verdict:
+**anticipation via a passive span-predictor does not buy tracking depth.** Gen-344 final panel confirms the
+gen-318 read — in-streak error stayed *reversed* (0.50 vs out 0.45), closure-rate error *rose* to ~0.75,
+span still uncalibrated (vertical spray).
+
+- **Competence: t6 == t4.** Fully converged onto t4's perception-capped plateau on all four mode metrics —
+  perception ~0.70, track occupancy ~0.095, median range ~17 m, worst-blind ~8 s — despite the predictor +
+  enriched inputs + running 11 gens longer. Raw best fitness marginally better (−13670 vs t4 −14033) but the
+  honest competence comparators say *equal*. **No ceiling break.**
+- **Predictor: the encouraging early signals did not hold.** Aggregate per-horizon error stayed a noisy
+  plateau ~0.5–0.7 NDC and never approached the realized-span σ floor (~0.06). The gen-210 calibration
+  diagonal turned out **elite-dependent/transient** (gen-315 elite is back to a vertical ±1 spray). Most
+  tellingly, the **in-streak accuracy advantage reversed** — in<out (0.47 vs 0.56) at gen 210, the "loop
+  forming where tracking is good" signal, flipped to **in>out (0.62 vs 0.52) at gen 315**. The closure-rate
+  head is **saturating the ±1 tanh rails** (structural ceiling vs realized ±7–14 NDC/s).
+- **Read (architectural, not tuning):** a passive, **non-actuated** aux predictor head (out[3..6] never feed
+  control) under **weak tie-break lexicase selection** neither learns a robust forward-model nor lifts
+  depth. The shared-recurrent-trunk coupling hypothesis — that predicting span shapes a more anticipatory
+  hidden state the controller also reads — is **not bearing out**; t6 sits exactly on the predictor-less
+  baseline.
+- **Caveat:** gen ~318/800, pctInStreak ~8% — the **back-half variation-ramp** is the one remaining wildcard
+  (has kicked late takeoffs before: [project_no_future_curve_shape], [project_late_run_fitness_interpretation]).
+  Operator: let it run.
+- **Next-idea seeds** (operator thinking): (1) **spherical/equidistant projection** so `span` (|gap|) is
+  position-invariant — remove ego-contamination from the predicted signal (pulled forward from 040, see
+  BACKLOG top). (2) The deeper question this run raises: does prediction have to be **actuated / consumed by
+  control** (a two-loop or lead-computed input), not just a passive scored aux output, to change behavior at
+  all — i.e. is a *passive* forward-model objective structurally too weak to close the perception→control
+  loop.
+
 ### T013 (M1 half) — enriched M1 baseline complete, ≈ parity with best-ever (2026-07-04)
 
 **t3 = `autoc-038-t3-m1-baseline`** (enriched full-M1, pop 5000, 20 Hz, aeroStandard 6×49=294, servo on,

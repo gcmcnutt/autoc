@@ -6,6 +6,108 @@
 
 ## 038 deferrals
 
+### [038 US3 follow-on — PULLED FORWARD from 040, likely next step 2026-07-07] Spherical/equidistant projection so `span` (|gap|) means one thing everywhere on the display
+
+Surfaced by the t6 US3 predictor run (2026-07-07). The predictor forward-models the direct observable
+`beacon_pair_span`, but today's **rectilinear** sim projection (`screen = tan θ / tan(fov/2)`) makes the
+same angular wingspan read **wider toward the frame edge** — so `|gap|` depends on *where the target lands
+on screen*, an ego-pointing contamination in the very quantity we predict. **Direction (operator)**: switch
+the sim to a **spherical/equidistant** projection (`screen ∝ θ`) applied to **all** coordinates so `|gap|`
+is a clean, position-invariant angular quantity wherever the target sits; then model the *actual* chosen
+lens's projection once hardware is picked. This is an **objective-clarity** move (make the predicted signal
+mean one thing), not tuning — see [feedback_clear_objectives_not_tuning].
+
+- **Why now / next**: it directly sharpens the US3 forward-model (removes ego-contamination from `span`
+  before asking the net to anticipate it) and is the operator's leading candidate for the step after t6.
+- **Full rationale + blast radius**: recorded once at [040 — camera redo / research] **Question 3** below
+  (pulled forward here) and in [specs/038-accurate-m2/outcome.md](038-accurate-m2/outcome.md) → "US3
+  predictor — design rationale". Perception-representation change ⇒ all beacon NDC inputs + derived features
+  (span/tilt/span-rate) + CEP edge factor shift ⇒ M1/M2 source dmps invalidated, need a rebake (greenfield,
+  no cereal bump). Files: `src/eval/camera_projection.cc` (`screen_x/y`, FOV clip, CEP edge factor).
+- **Trigger**: after t6 (M2 US3 predictor) resolves — let it run first; late variation-ramp pressure can
+  still kick tracking depth ([project_no_future_curve_shape], [project_late_run_fitness_interpretation]).
+
+### [038 US3 follow-on — IMPLEMENTED + RUNNING as t7, 2026-07-08] Share the M1 source's env/craft seeds with the M2 chase (do the two craft fly the same airspace?)
+
+**STATUS 2026-07-08 — implemented, verified, baking as t7.** Knob `TrackerChaseUseSourceScenarioSeed`
+(config.h + `chaseScenarioSeedAt()` at the 3 seed sites in `src/autoc.cc` + loud-fail 1:1 guard; field-count
+test 97→98). Chose the **whole-`scenarioSeed` swap** (not per-class): the wind field is seeded worker-side
+from `meta.scenarioSeed` (`inputdev_autoc.cpp:618`), so sourcing wind forces whole-seed granularity — which
+covers wind/thermal/gust/entry/craft/crash-hull together; NN mutation + camera stay on the M2 seed. Gates
+passed: **(a) knob-off bit-identical** — eval reproduced t6 gen344 `-13382.484965` exactly (`NN_EVAL_SAME`);
+**(b) seed-sharing** — t7's scenario table == t5 source's, **294/294 seeds bit-identical**, ramp-independent
+(pre-scale draws); **(c) t7 determinism** — eval of t7 gen4 elite `NN_EVAL_SAME`. Run: `autoc-038-t7-m2-
+shared-env` (`autoc-m2/...9223370253324834099...`, master seed 1783529939, knob=1, same t5 gen800 source as
+t6). **Open**: judge t7 vs t6 on fixed-eval competence (does shared airspace lift fitness/depth off t4's
+plateau); per-class isolation (e.g. wind-only) is a follow-up needing a worker-side per-class seed override.
+
+**Hypothesis (operator, gen ~318 t6 read):** M2 tracking looks "not too bad given the far more complex path,"
+but the source path is the M1 **gen800** trajectory — recorded at ~full variation-ramp (scale mult ≈ 1.0):
+strongest wind/gust/thermal + craft + entry. Meanwhile the M2 **chase** draws its *own, independent*
+wind/thermal/gust/craft/entry from the fresh M2 seed — so **chase and target are in different air masses and
+different airframes.** Since environmental + craft effects are large fractions of craft speed, this mismatch
+may be inflating tracking error unphysically (the chase is fighting wind the target never flew, in a
+differently-performing craft). **Does it matter? — the whole question.**
+
+**What's already known (partial step 1 done 2026-07-08):**
+- All per-scenario variation derives from one `scenarioSeed` → `deriveClassSubSeeds()` → 5 sub-seeds, FROZEN
+  slot order **wind / rabbit / entry / craft / camera** (`include/autoc/util/scenario_prng.h:101`). Camera
+  slot already reserved (future).
+- The **M1 source dmp records `scenarioSeed` per scenario**, and `source_dmp_loader` already loads it into
+  `traj.variation` (`src/eval/source_dmp_loader.cc:138`) — but only `windVariantIndex` is consumed today. The
+  source's full variation provenance is loaded-but-unused (the "infra set, not used" the operator flagged).
+- Today the M2 chase's {wind, entry, craft} come from the **M2** `scenarioSeed`, independent of the source.
+
+**Research steps:**
+1. **Examine the seeds available from the M1 dmp** — confirm `scenarioList[i].scenarioSeed` (+ resolved
+   craft/entry/wind draws) is present and sufficient to reconstruct the source's wind/thermal/gust/craft
+   fields via `deriveClassSubSeeds`. (Mostly done above; verify craft draws + entry are fully recoverable,
+   not just the index.)
+2. **Determine the plumbing + per-class provenance split.** Which classes should the chase inherit from the
+   source vs draw fresh from M2:
+   - **wind/thermal/gust** — strongest case to SHARE (same air mass). Derive chase wind sub-seed from the
+     *source* `scenarioSeed_M1`.
+   - **craft** — debatable: share ⇒ chase ≈ target airframe/performance; fresh ⇒ chase is a different
+     aircraft. Operator leans "reconsider" given magnitude. Decide (and make it a knob).
+   - **entry** — likely stays M2 (chase's initial *relative* pose in the cone is inherently chase-specific,
+     not the target's own entry).
+   - **NN mutation + camera(future)** — always the fresh M2 seed (the evolving thing + M2-only perception).
+   - **ALSO resolve the magnitude/scale question**: sharing the *seed* isn't enough — the source flew at its
+     recorded `variationScale` (~1.0 at gen800), but the M2 chase applies its *own* ramp (≈0 early). To truly
+     share the air mass the chase's wind *magnitude* must also match the source's recorded scale, not the M2
+     ramp. Decide seed-only vs seed+scale.
+   - Identify the exact code point where the M2 worker seeds chase variations from `meta.scenarioSeed`
+     (`src/autoc.cc` worker meta assignment ~848–904 / `applyVariationScale`) — that's where the per-class
+     source-vs-M2 selection lands.
+3. **Do the change as an ini knob** (e.g. `TrackerShareSourceEnvSeed` / per-class flags) so it's an A/B, not
+   a fork — then run a **t7 alongside t6 on the same t5 gen800 source**, sharing ON, and compare tracking
+   competence (mode_progress: perception / range / blind-streak; per-axis control quality). Determinism +
+   replay must hold (`project_variation_design_principles`, `feedback_replay_scope_within_build`).
+
+**Verification (operator requirement 2026-07-08 — "prove the seeds give similar results even under ramp
+scaling"):** the seed-sharing is verifiable **ramp-independently**, because `ScenarioMetadata` records every
+variation draw at **raw full magnitude, pre-scale** (`include/autoc/rpc/scenario_metadata.h` — "Drawn at full
+magnitude per scenarioSeed... per-eval applied magnitude is scaled by `applyVariationScale()`"); `ramp_scale`
+only multiplies the APPLIED value worker-side, never the recorded draw. Acceptance test, needs no new tooling:
+- `dmp-dump --meta-only` on the **t5 source** and on **t7** both already emit, per scenario, the derived
+  `seeds: {wind, rabbit, entry, craft, camera}` sub-seeds + raw `wind_dir_offset_deg` + `ramp_scale`
+  (`tools/dmp_dump.cc:374`). With the knob ON, assert **t7's `wind`/`entry`/`craft` sub-seeds == t5's, and
+  `wind_dir_offset_deg` == t5's, per matched (path_variant, wind_variant) scenario** — bit-exact, at ANY gen,
+  because these are pre-scale. Sub-seed equality ⇒ every downstream draw is identical (pure fn of sub-seed +
+  sigmas). (Optionally extend `--meta-only` to also print the raw entry offsets + craft deltas for a
+  belt-and-suspenders check, but sub-seed equality is the rigorous primitive.)
+- **Ramp story to confirm, not fear**: applied_env = raw_draw × `ramp_scale`. The t5 source was recorded at
+  its gen800 `ramp_scale` ≈ 1.0; t7's chase applied env matches the source's **at scale 1.0** (t7's late gens
+  / eval) and is a *known fraction* (raw × scale) earlier. Operator accepted this ("scaling is an M2 process
+  thing... the final M2 path IS ramp=1"). So: seeds prove identical *fields*; scale is a separate, inspectable
+  multiplier — verify both from the one `--meta-only` dump.
+
+**Success = an answer to "does it matter":** t7 (shared airspace) vs t6 (independent) on the fixed-eval
+competence comparators. If shared-airspace lifts tracking, it's a source-of-truth fix, not tuning. Pairs
+with the spherical-projection item above (both sharpen *what the tracker is actually asked to do*). Files:
+`src/autoc.cc` (worker variation seeding), `src/eval/source_dmp_loader.cc`, `src/eval/tracker_stepper.cc`,
+`include/autoc/util/config.h` + the tracker inis (new knob).
+
 ### [038 — follow-on lever, deferred 2026-06-30] US2 two-timescale recurrence (structural slow channel)
 
 Deferred out of 038's **initial ablation wave** (operator 2026-06-30). 038 picks the two "add state" levers
@@ -87,6 +189,7 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **Question 2 — Optics with non-uniform angular resolution**: a 120° FOV with uniform pixel pitch wastes resolution on the edges where the target rarely sits, and starves the center where it does. Two candidate architectures:
   - **Dual-camera**: wide (~180°) for acquire/orbit-recovery + narrow (~60°) for hi-res tracking. NN sees both feeds (concatenated or as separate channels). Mirrors how birds-of-prey use peripheral + foveal vision.
   - **Single non-linear lens**: fisheye / log-polar / panomorph optics that compress edges and expand the center on the same sensor. Lower hardware cost, but introduces lens calibration and non-linear NDC math; the NN has to learn the warp implicitly.
+- **Question 3 — Projection model: go spherical/equidistant, not rectilinear (operator direction 2026-07-07)**. *[PULLED FORWARD 2026-07-07 as a likely near-term step after t6 — see the promoted entry under "038 deferrals" at the top of this file; full rationale + blast radius stay here.]* Today the sim projects rectilinearly (pinhole): `screen = tan(θ)/tan(fov/2)` ([camera_projection.cc:168](../src/eval/camera_projection.cc)). Because NDC ∝ `tan(θ)`, a *fixed angular* wingspan reads **larger toward the frame edge** than at center — so `beacon_pair_span` (and `tilt`, `span_rate`, the CEP edge factor, and every raw beacon NDC input) carries an **ego-pointing contamination**: where you aim the camera changes the reading. This surfaced in the 038 US3 span-predictor discussion (2026-07-07): it muddies "what span means" — span is *meant* to be a clean range×aspect closure signal, but the tan-stretch injects an ego term. **Direction**: switch the sim to a **spherical / equidistant** projection (`screen ∝ θ`) applied uniformly to **all** coordinates, so NDC is ∝ angle and span becomes ego-pointing-invariant (a clean angular quantity). Then, once real camera hardware is chosen, **model that specific lens's projection function** (rectilinear / equidistant / equisolid / panomorph) in sim to match — projection becomes a *modeled physical property of the chosen optic*, not an arbitrary sim convention, and lens choice becomes a first-class sim variable (ties to the dual-FOV / non-linear-lens options above). **Blast radius**: `camera_projection.cc` `screen_x/y` + the FOV clip + CEP edge factor; changes every beacon NDC input + all derived features → a perception-representation change, so M1/M2 source dmps are invalidated and need a rebake (greenfield, no cereal bump per project practice). Couples to [031-fed] CEP-realism below and `project_cep_realism_backlog`. Span itself stays the metric — operator: "span is nice, keep it"; this only makes it mean one thing everywhere.
 - **What the early minisim playback informed**: the 120° FOV + raw-NDC-projection presentation gives narrow beacon spacing close-in (~0.26 NDC at 10ft), and the controller learned an emergent orbit-to-reacquire when the target left the FOV — useful evidence that the current rep gets some way, but reacquisition cost in crrcsim's harder dynamics may push the topology budget higher than 030 v1 plans for. A richer rep (event stream) or smarter optics (dual-FOV / non-linear) could lower that topology demand instead.
 - **Why research-track, not implementation**: needs a dataset + simulator camera model upgrade (or recorded event-camera bench data) before any controller work; coupled to the 031 perception-front-end FPGA / DSP scoping.
 - **Source design notes**: this thread; 030 D10 (single-camera v1 baseline that this would supersede); see also `[BACKLOG] Multi-camera variant experiments` below for the controller-side experiment shell once a camera spec is chosen.
@@ -223,9 +326,20 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
   production-ini dependency entirely and rely on autoc's startup fail-loud + fixtures). Pairs with this
   item because the layered base+override stack shrinks the production-ini surface a test would touch, and
   a typed `[section]` schema makes "valid config" a structural property to fixture-test, not a value list.
+- **Recurred + two concrete asks (operator 2026-07-07)**: adding `EnablePredictorHead = 1` (038 US3)
+  with an explanatory inline comment made the tracker-ini line 216 bytes — past inih's ~200-char
+  `INI_MAX_LINE` — so autoc aborted at startup with a bare `FATAL ERROR: Cannot parse configuration
+  file 'autoc-tracker.ini'` (`src/util/config.cc:53-54`), **no line number, no reason**. Cost a bisect to
+  localize. Two fixes wanted, independently useful:
+  1. **Allow long lines**: raise or remove the `INI_MAX_LINE` cap (bump the inih define, or switch to a
+     reader that streams lines) so a legal `key = value  # long comment` never fails on length. Comments
+     documenting a knob shouldn't have to be truncated or moved off-line.
+  2. **Diagnose the fault**: `ini_parse` returns the offending 1-based line number in `ParseError()` —
+     surface it. The message should read `Cannot parse '<file>': line <N>: <the line text>` (+ a hint for
+     the common causes: over-length line, missing `=`, stray `[`), instead of the current opaque string.
 - **Trigger to act**: the next time an ini-wide change has to be hand-applied across all six files.
-- Files: `src/util/config.cc` (load), `include/autoc/util/config.h`, `tests/contract_tracker_config_tests.cc`
-  (decouple from production ini), the six `autoc*.ini`.
+- Files: `src/util/config.cc` (load + `ParseError()` line-number surfacing), `include/autoc/util/config.h`,
+  `tests/contract_tracker_config_tests.cc` (decouple from production ini), the six `autoc*.ini`.
 
 ### [BACKLOG — pre-work for the feature after 039] Trainer-populated (write-through) analytics cache — kill the S3 re-fetch tax
 
