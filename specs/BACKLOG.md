@@ -296,7 +296,18 @@ the noise-model home).
 - **Source design notes**: 030 spec C1 (turn-direction symmetry trap), C5 (pathgen vs library decision matrix).
 - **Why deferred from 030**: not load-bearing for the smoke test; matters once the operator wants generalization beyond what a single source dmp delivers.
 
-### [031 CANDIDATE] Renderer "exotic goodies" — reverse-projection + dphi-overlay + crash-strike viz
+### [031 CANDIDATE] Renderer "exotic goodies" — reverse-projection + dphi-overlay + crash-strike viz + FOV dome
+
+> **FOV-dome design (2026-07-09, deferred — reticle ticks landed instead)**: render the camera's angular
+> acceptance as an in-world spherical cap mounted on the chase (camera at center, radius a few m), beacon
+> dots ON the dome at their true ray directions. The t9 equidistant NDC inverts exactly:
+> `a=sx·fovh/2, b=sy·fovv/2, θ=√(a²+b²), dir=(a,b)/θ, ray=(cosθ, sinθ·dir_y, sinθ·dir_z)` → rotate by
+> chase/camera pose, `dot = cam_pos + R·ray`. Span = great-circle arc (constant size anywhere by
+> construction); dot-ray vs true-target ray makes perception error VISIBLE in 3-space (pairs with the
+> reverse-projection overlay below); the dome patch is the exact per-axis angular clip region and would
+> replace the FOV pyramid whose straight corners are now approximate (true corners reach ~75°). Interim
+> step DONE 2026-07-09: 15°-step angular reticle ticks on the 2D POV panel (even spacing == linear-in-angle
+> statement; `tools/renderer.cc` updateCameraPOVMiniPanel).
 
 - **Trigger**: post-smoke-test, when operator finds analytics-experimentation needs them to debug specific failures.
 - **Scope** (from 030 D15):

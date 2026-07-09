@@ -3182,11 +3182,11 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   // existing HUD (clock/stick/throttle/attitude/velocity bar).
   int* windowSize = renderWindow->GetSize();
   scalar rectWidth = static_cast<scalar>(220.0f);
-  // Aspect: rect_w / rect_h = tan(fov_h/2) / tan(fov_v/2). Approximate
-  // with linear ratio for cheap geometry; the exact tan ratio matters
-  // only for true angular fidelity — the linear approximation keeps
-  // x/y normalized [-1,+1] mapping geometrically consistent which is
-  // the load-bearing property the operator asked for.
+  // Aspect: rect_w / rect_h = fov_h / fov_v. Under the 038 t9 equidistant
+  // projection (NDC ∝ angle) this linear ratio is EXACT: degrees-per-pixel
+  // is uniform on both axes, so a fixed angular span reads the same pixel
+  // size anywhere on the panel. (Pre-t9 rectilinear playbacks rendered on
+  // the same panel carry their own tan-stretch in the recorded NDC.)
   scalar fov_h = std::max(static_cast<scalar>(1.0f),
                           static_cast<scalar>(cam.camera_fov_h_deg));
   scalar fov_v = std::max(static_cast<scalar>(1.0f),
@@ -3220,6 +3220,50 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   addLine(bl, br); addLine(br, tr); addLine(tr, tl); addLine(tl, bl);
   // Center crosshair (subtle origin reference)
   addLine(cTop, cBot); addLine(cLeft, cRight);
+
+  // 038 t9 — angular reticle: tick marks every 15° along both crosshair
+  // axes, positions derived from the FOV. Under the t9 equidistant NDC
+  // (screen ∝ angle) these constant-angle ticks are EVENLY spaced — the
+  // visual statement that the panel is linear in angle and a fixed angular
+  // span reads the same size anywhere in frame. (Replaying a pre-t9
+  // rectilinear dmp the same NDC ticks are NOT constant-angle — the uneven
+  // meaning is the tell that distinguishes old playbacks.) Ticks every 15°,
+  // taller at 30° multiples.
+  constexpr scalar kReticleStepDeg = static_cast<scalar>(15.0f);
+  auto addTick = [&](scalar ndc, bool horizontalAxis, bool major) {
+    const scalar half = major ? static_cast<scalar>(7.0f)
+                              : static_cast<scalar>(4.0f);
+    if (horizontalAxis) {
+      // Tick on the horizontal center line: vertical dash at x = ndc.
+      scalar xw = xLeft + (ndc + static_cast<scalar>(1.0f)) * 0.5f *
+                          (xRight - xLeft);
+      vtkIdType a = outlinePoints->InsertNextPoint(xw, yMid - half, 0);
+      vtkIdType b = outlinePoints->InsertNextPoint(xw, yMid + half, 0);
+      addLine(a, b);
+    } else {
+      // Tick on the vertical center line: horizontal dash at y = ndc
+      // (image convention: +ndc = down = lower window-y).
+      scalar yw = yTop - (ndc + static_cast<scalar>(1.0f)) * 0.5f *
+                         (yTop - yBottom);
+      vtkIdType a = outlinePoints->InsertNextPoint(xMid - half, yw, 0);
+      vtkIdType b = outlinePoints->InsertNextPoint(xMid + half, yw, 0);
+      addLine(a, b);
+    }
+  };
+  const scalar halfFovH = fov_h * static_cast<scalar>(0.5f);
+  const scalar halfFovV = fov_v * static_cast<scalar>(0.5f);
+  for (int k = 1; k * kReticleStepDeg < halfFovH; ++k) {
+    const scalar ndc = static_cast<scalar>(k) * kReticleStepDeg / halfFovH;
+    const bool major = (k % 2 == 0);  // 30° multiples
+    addTick(+ndc, true, major);
+    addTick(-ndc, true, major);
+  }
+  for (int k = 1; k * kReticleStepDeg < halfFovV; ++k) {
+    const scalar ndc = static_cast<scalar>(k) * kReticleStepDeg / halfFovV;
+    const bool major = (k % 2 == 0);
+    addTick(+ndc, false, major);
+    addTick(-ndc, false, major);
+  }
 
   vtkNew<vtkPolyData> outlinePoly;
   outlinePoly->SetPoints(outlinePoints);
