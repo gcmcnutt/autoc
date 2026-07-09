@@ -14,3 +14,10 @@ backup/ coreip/ dm/ synlog/ syntmp/ synwork/ *_synplify_tmp*.lpf Untitled.tpf*
 
 # IP-core regenerated outputs (keep the .ipx/.lpc spec under control; the rest regenerates via IPexpress)
 *.naf *.sort
+
+# HDL sim (iverilog) build artifacts — regenerable via sim/run.sh
+sim/*.vvp
+sim/*.vcd
+
+# host measurement outputs (per-bench; summaries go in docs/commits)
+host/results/

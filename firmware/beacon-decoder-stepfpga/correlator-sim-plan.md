@@ -5,7 +5,16 @@ on the STEP-MXO2 eval board — a **synthetic emitter** feeds a **simulated ADC*
 (the DUT), with the board's rich I/O for control + observation. This exercises the hard questions —
 acquisition time, dropout/erasure tolerance, **per-beacon independent clock drift (±5%, NFR-4)**, and
 **two-code CDMA separation (§5)** — *before* the `cad/beacon-receiver` analog front end exists. The ONLY
-change to go live is swapping the simulated ADC for the real MCP3201 (S7).
+change to go live is swapping the simulated ADC for the real MCP3201 (S7, done at s5).
+
+> **Two validation surfaces (updated 2026-07-08).** This doc describes **on-FPGA** validation (synthetic
+> stimulus feeding the correlator *on the board*) — the primary flow through s5. As of s6 there is also a
+> WSL-native **HDL simulation** harness — [`sim/`](sim/README.md) (`iverilog`, `sim/run.sh`) — for when the
+> board isn't in hand and for fast regression of datapath changes. It compiles the real RTL with a behavioral
+> `OSCH` stub and a `` `ifdef SIM `` ÷100 clock-scaling so a lock lands in a few ms of sim time (synthesized
+> bitstream unchanged). It was stood up to verify the **s6 circular-buffer RAM windows** decode correctly
+> (code A + code B both lock; K1/K2 injectors modulate margin) without a flash. Prefer HDL sim to prove
+> datapath equivalence; use the board for at-speed / analog-front-end / real-photon checks.
 
 Builds on the proven pieces: WSL→Diamond build/flash/monitor flow ([fpga-toolchain-plan.md](../../specs/031-beacon-camera/fpga-toolchain-plan.md)),
 PLL/OSCH clocking + at-speed run ([experiments/](experiments/)), the `BCN` UART telemetry contract +

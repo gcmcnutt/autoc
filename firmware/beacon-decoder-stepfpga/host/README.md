@@ -43,8 +43,23 @@ its transport when that hardware lands; pymcuprog-on-Windows is the fallback if 
 `frames_from_lines()` parses any line source (Windows-read pipe, recorded log, or the mock), so the parser is
 transport-agnostic. The F1 `blink` emits a simpler `HH` hex line (proves the pipe); F3/F4 emit real BCN frames.
 
+## Closed-loop tests vs the REAL emitter (s6+)
+
+The ATtiny416 emitter has its own USART0 command link (`'F'`=rate `'C'`=corrupt `'D'`=dropout `'R'`=reset,
+**38400** 8N1 on the XNANO mEDBG CDC — attach with `firmware/beacon-pod/attach-medbg.sh` → `/dev/ttyACM0`;
+**DTR must be asserted** or the mEDBG tri-states the bridge — use pyserial, not raw writes). With the emitter
+DIM wired to the receiver ADC, host scripts drive real perturbations and read the decoder's response on COM3:
+
+- [`recovery_sweep.py`](recovery_sweep.py) — **dropout→recovery characterization**. Clean-state methodology:
+  every trial starts from a verified locked baseline at nominal; one perturbation per trial (no compound
+  slews — a ±10% jump between skew states falsely drops lock). Signal loss = `D 0x1F` (all 31 chips blanked →
+  DIM held low), ladder 5 ms…8 s, ×N repeats to expose ratchets. Recovery measured from the telemetry seq
+  (40 Hz → 25 ms ticks), onset-anchored at the marginB collapse (±~1 code period). Results → `results/*.csv`.
+  Run: `~/.venvs/avr/bin/python recovery_sweep.py --repeats 3`
+
 ## Status
 
 - Parser + mock + tests: **done** (hardware-free).
 - **Live transport: PROVEN** end-to-end via `monitor.sh` (Windows-side) against the `blink` telemetry build.
-- Pending: the gateware emitting real **BCN** frames (FPGA F3/F4) — then `monitor.sh | frames_from_lines`.
+- **BCN frames + closed loop vs the real emitter: LIVE** (s6) — `monitor.sh`, `cmd_read.sh` (FPGA knobs),
+  `recovery_sweep.py` (emitter perturbations).
