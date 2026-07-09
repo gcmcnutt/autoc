@@ -66,7 +66,10 @@ HORIZON_COLOR = {50: "tab:green", 100: "tab:orange", 150: "tab:red"}
 # reverted to 0.5). Used only to split the latest-gen error by tracking regime.
 TRACK_THRESHOLD = 0.5
 
+# persist{ms} = the PERSISTENCE baseline |span(t) − span(t+h)| — the "predict
+# no change" bar. A predictor that can't beat persistence provides no signal.
 CACHE_FIELDS = ["gen", "err50", "err100", "err150", "err_rate",
+                "persist50", "persist100", "persist150",
                 "n_span_pairs", "n_rate_pairs", "span_scale"]
 
 
@@ -108,6 +111,7 @@ def gather_pairs(rows, tick_sec):
     by_scn = per_scenario_series(rows)
     span_pred = {ms: [] for ms in HORIZONS_MS}
     span_real = {ms: [] for ms in HORIZONS_MS}
+    span_now = {ms: [] for ms in HORIZONS_MS}   # span(t) per pair — persistence baseline
     rate_pred, rate_real = [], []
     err_tsee, err_stp, err150 = [], [], []
     span_vals = []
@@ -131,6 +135,7 @@ def gather_pairs(rows, tick_sec):
                     continue
                 span_pred[ms].append(pred[ms][t])
                 span_real[ms].append(spn0[ta])
+                span_now[ms].append(spn0[t])
                 if ms == 150:
                     err150.append(abs(pred[ms][t] - spn0[ta]))
                     err_tsee.append(tsee[t])
@@ -142,6 +147,7 @@ def gather_pairs(rows, tick_sec):
 
     out = {"span_pred": {ms: np.array(span_pred[ms]) for ms in HORIZONS_MS},
            "span_real": {ms: np.array(span_real[ms]) for ms in HORIZONS_MS},
+           "span_now": {ms: np.array(span_now[ms]) for ms in HORIZONS_MS},
            "rate_pred": np.array(rate_pred), "rate_real": np.array(rate_real),
            "err150": np.array(err150), "err_tsee": np.array(err_tsee),
            "err_stp": np.array(err_stp),
@@ -161,6 +167,8 @@ def compute_gen_metrics(csv_text, tick_sec):
     for ms in HORIZONS_MS:
         e = np.abs(p["span_pred"][ms] - p["span_real"][ms])
         rec[f"err{ms}"] = float(e.mean()) if e.size else float("nan")
+        pe = np.abs(p["span_now"][ms] - p["span_real"][ms])
+        rec[f"persist{ms}"] = float(pe.mean()) if pe.size else float("nan")
     rate_err = np.abs(p["rate_pred"] - p["rate_real"])
     rec["err_rate"] = float(rate_err.mean()) if rate_err.size else float("nan")
     rec["n_span_pairs"] = float(p["span_pred"][150].size)
@@ -239,6 +247,9 @@ def plot(data, detail, label, tick_sec, out):
             y = np.array([data[g].get(f"err{ms}", np.nan) for g in gens])
             ax.plot(ga, y, color=HORIZON_COLOR[ms], marker=".", ms=4,
                     label=f"+{ms} ms")
+            pb = np.array([data[g].get(f"persist{ms}", np.nan) for g in gens])
+            ax.plot(ga, pb, color=HORIZON_COLOR[ms], ls="--", lw=1, alpha=0.6,
+                    label=f"persistence +{ms} ms (no-change bar)")
         scale = np.array([data[g].get("span_scale", np.nan) for g in gens])
         ax.plot(ga, scale, color="0.6", ls=":", lw=1,
                 label="realized span σ (error floor ref)")
@@ -268,13 +279,18 @@ def plot(data, detail, label, tick_sec, out):
     dgen = detail.get("gen")
     if detail.get("pairs"):
         p = detail["pairs"]
-        means, errs = [], []
+        means, errs, persists = [], [], []
         for ms in HORIZONS_MS:
             e = np.abs(p["span_pred"][ms] - p["span_real"][ms])
             means.append(e.mean() if e.size else np.nan)
             errs.append(e.std() if e.size else 0.0)
+            pe = np.abs(p["span_now"][ms] - p["span_real"][ms])
+            persists.append(pe.mean() if pe.size else np.nan)
         ax.bar([str(m) for m in HORIZONS_MS], means, yerr=errs, capsize=4,
                color=[HORIZON_COLOR[m] for m in HORIZONS_MS], alpha=0.85)
+        ax.plot([str(m) for m in HORIZONS_MS], persists, color="k", ls="none",
+                marker="D", ms=7, label="persistence (no-change bar)")
+        ax.legend(fontsize=8)
     else:
         _note_empty(ax)
     ax.set_title(f"error vs horizon (gen {dgen})" if dgen else "error vs horizon")

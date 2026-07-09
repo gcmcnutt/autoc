@@ -2,15 +2,28 @@
 
 // 030 M5 — Beacon projection module (FR-005 + FR-007 + FR-017).
 //
-// Analytic pinhole projection of a wingtip beacon through the chase-craft
-// camera, collapsed to (x, y, CEP) per the perception interface contract.
+// Analytic EQUIDISTANT (f-theta / spherical) projection of a wingtip beacon
+// through the chase-craft camera, collapsed to (x, y, CEP) per the
+// perception interface contract. 038 t9: NDC ∝ angle off the optical axis
+// (was rectilinear tan(angle) pre-t9), so the beacon-pair span is a clean,
+// position-invariant angular quantity; swap in the real lens's projection
+// function here once camera hardware is chosen (BACKLOG 040 Q3).
+//
+// PHYSICAL-CAMERA ASSUMPTION (operator 2026-07-09): the hardware model is
+// still a CLASSIC PLANAR (rectilinear-lens) camera. A planar sensor reads
+// pixels ∝ tan(angle); the perception front-end (040: pixels → x,y,CEP)
+// applies the known intrinsics to remap pixel centroids to ANGLES — a
+// deterministic, information-free calibration step. The sim simply skips
+// the pixel stage and emits the angle domain directly. Angular NDC here is
+// a REPRESENTATION choice for the NN interface, not a fisheye-lens claim.
 // See `specs/030-tracker-mode/contracts/beacon_projection_api.md` and
 // `data-model.md` §4 for the source contract.
 //
 // Coordinate convention (chase body frame, NED): +x forward, +y right,
 // +z down. Camera optical axis = body +x by default; screen_x ∈ [-1, +1]
 // runs left→right (image right is positive); screen_y ∈ [-1, +1] runs
-// top→bottom (pixel-coord convention: image down is positive).
+// top→bottom (pixel-coord convention: image down is positive); ±1 is the
+// per-axis FOV edge in ANGLE (screen = θ·dir / (fov/2)).
 //
 // Determinism contract (FR-009): same `ProjectionInput` ⇒ bit-identical
 // `BeaconObservation` across invocations. No PRNG, no clock, no thread-

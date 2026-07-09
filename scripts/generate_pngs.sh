@@ -22,8 +22,9 @@
 #          closure-rate error over gens + latest-gen calibration/regime detail) +
 #          gen_runtime (log-only diversity/collapse proxy) + mode_progress (per-gen
 #          perception/track/range/reacquire competence) + score_by_path (per-path
-#          tracking-score + error distance) + rnn_capacity (needs nnextractor+nn2cpp) +
-#          tactics (needs a --compare run) (12).
+#          tracking-score + error distance) + rnn_capacity (needs nnextractor+nn2cpp) (11).
+#          With --compare, intercept_analysis overlays the compare run's B/C policy
+#          curves + E encounter histogram (A/B) — this replaced the separate tactics.png.
 #
 # INCREMENTAL run-summary: the per-gen aggregate is the slow part (one S3 dmp
 # fetch per gen). We cache it per run-id under $CACHE_DIR and use `dmp-dump
@@ -152,11 +153,27 @@ run plot_per_axis_time_series.py "$SUMMARY" --label "$NAME" --total-gens "$TOTAL
 run dynamics_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
     "${DYN_CACHE[@]}" --label "$NAME" -o "$OUT/${NAME}_dynamics_progress.png"
 
-# --- m2 (tracker) adds: gen_diag, intercept_analysis, rnn_capacity, tactics ---
+# --- m2 (tracker) adds: gen_diag, intercept_analysis (A/B-capable), rnn_capacity ---
 if [[ "$MODE" == "m2" ]]; then
   run plot_gen_diag.py --in "$LOG" --label "$NAME" --out "$OUT/${NAME}_gen_diag.png"
+
+  # Resolve the FIRST --compare run once (run-id from its log) — shared by the
+  # intercept_analysis A/B policy overlay + the rnn_capacity elite overlay.
+  # Fetch its per-tick CSV @ this gen for the intercept A/B (this folds in the
+  # retired intercept_compare/tactics report — the B/C/E overlay now lives in
+  # intercept_analysis itself).
+  CNAME=""; CLOG=""; CRUNID=""; INTERCEPT_CMP=()
+  if [[ ${#COMPARE[@]} -ge 2 ]]; then
+    CSPEC="${COMPARE[1]}"; CNAME="${CSPEC%%:*}"; CLOG="${CSPEC#*:}"
+    CRUNID="$(grep -E 'Run ID:' "$CLOG" 2>/dev/null | tail -1 | sed -E 's/.*Run ID:[[:space:]]*//')"
+    if [[ -n "$CRUNID" ]] && "$DMP" "s3://$BUCKET/$CRUNID/" --csv-only --gen "$GEN" -i "$INI" >"$TMP/cmp_tick.csv" 2>"$TMP/cmp.err"; then
+      INTERCEPT_CMP=( --compare "$CNAME:$TMP/cmp_tick.csv" )
+    elif [[ -n "$CRUNID" ]]; then
+      echo "  [plot] intercept A/B overlay skipped (compare CSV @gen $GEN unavailable):" >&2; tail -1 "$TMP/cmp.err" 2>/dev/null >&2
+    fi
+  fi
   run intercept_analysis.py --csv "$TICK" --label "$NAME" --gen "$GEN" \
-      --tick-sec "$TICK_SEC" -o "$OUT/${NAME}_intercept_analysis.png"
+      --tick-sec "$TICK_SEC" "${INTERCEPT_CMP[@]}" -o "$OUT/${NAME}_intercept_analysis.png"
 
   # predictor_analysis — 038 US3 span/closure-predictor: per-horizon (+50/100/150 ms)
   # + closure-rate prediction error over generations (own gen-sweep cache, like
@@ -188,14 +205,6 @@ if [[ "$MODE" == "m2" ]]; then
     echo "  [plot] score_by_path skipped (meta-only fetch failed):" >&2; tail -1 "$TMP/meta.err" >&2
   fi
 
-  # Resolve the FIRST --compare run once (run-id from its log) — shared by the
-  # rnn_capacity overlay (its elite NN) + the tactics overlay (its per-tick CSV).
-  CNAME=""; CLOG=""; CRUNID=""
-  if [[ ${#COMPARE[@]} -ge 2 ]]; then
-    CSPEC="${COMPARE[1]}"; CNAME="${CSPEC%%:*}"; CLOG="${CSPEC#*:}"
-    CRUNID="$(grep -E 'Run ID:' "$CLOG" 2>/dev/null | tail -1 | sed -E 's/.*Run ID:[[:space:]]*//')"
-  fi
-
   # rnn_capacity — W_hh utilization (pure weight SVD; extract elite via
   # nnextractor→nn2cpp, no sim/sensor data). Overlays the --compare run's elite
   # too when given, so the report shows the A/B (eff-rank/spectrum) not just one run.
@@ -217,14 +226,6 @@ if [[ "$MODE" == "m2" ]]; then
     echo "  [nn ] rnn_capacity skipped (build nnextractor + nn2cpp to enable)" >&2
   fi
 
-  # tactics A/B — overlay this run vs the --compare run on the policy/encounter axes.
-  if [[ -n "$CRUNID" ]] \
-     && "$DMP" "s3://$BUCKET/$CRUNID/" --csv-only --gen "$GEN" -i "$INI" >"$TMP/cmp_tick.csv" 2>"$TMP/cmp.err"; then
-    run intercept_compare.py --a "$CNAME:$TMP/cmp_tick.csv" --b "$NAME:$TICK" --gen "$GEN" \
-        -o "$OUT/${NAME}_tactics.png"
-  elif [[ -n "$CRUNID" ]]; then
-    echo "  [plot] tactics skipped (compare run CSV @gen $GEN unavailable):" >&2; tail -1 "$TMP/cmp.err" 2>/dev/null >&2
-  fi
 fi
 
 echo "generate_pngs: done — wrote to $OUT:"

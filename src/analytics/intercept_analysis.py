@@ -297,8 +297,14 @@ def panel_a_intercept_events(ax_dist, ax_cr, ax_th, scenarios, k=6):
     ax_th.set_xlabel("tick (0 = closest-target approach)")
 
 
-def panel_outTh_vs_sensor(ax, x_all, outTh_all, xlabel, title, n_bins=20):
-    """Throttle-only hexbin + binned mean + ±1σ ribbon vs a sensor."""
+def panel_outTh_vs_sensor(ax, x_all, outTh_all, xlabel, title, n_bins=20,
+                          cmp_x=None, cmp_y=None, cname=None):
+    """Throttle-only hexbin + binned mean + ±1σ ribbon vs a sensor.
+
+    When cmp_x/cmp_y/cname are given (A/B compare mode), the compare run's
+    binned mean is overlaid on the SAME bins (dashed purple) so the two runs'
+    emergent policy curves sit on one axis — folds in the retired
+    intercept_compare/tactics report."""
     if len(x_all) == 0:
         ax.text(0.5, 0.5, "no data", transform=ax.transAxes, ha="center")
         return
@@ -331,6 +337,20 @@ def panel_outTh_vs_sensor(ax, x_all, outTh_all, xlabel, title, n_bins=20):
         ax.fill_between(bin_centers[valid], means[valid] - stds[valid],
                         means[valid] + stds[valid], color="tab:red",
                         alpha=0.15, label="±1σ")
+    if cmp_x is not None and cname is not None:
+        cx = np.asarray(cmp_x); cy = np.asarray(cmp_y)
+        cmask = np.isfinite(cx) & np.isfinite(cy)
+        cx, cy = cx[cmask], cy[cmask]
+        cmeans = np.full(n_bins, np.nan)
+        for i in range(n_bins):
+            in_bin = (cx >= bins[i]) & (cx < bins[i + 1])
+            if in_bin.sum() >= 10:
+                cmeans[i] = cy[in_bin].mean()
+        cvalid = np.isfinite(cmeans)
+        if cvalid.sum() > 1:
+            ax.plot(bin_centers[cvalid], cmeans[cvalid], color="tab:purple",
+                    linewidth=2.0, linestyle="--",
+                    label=f"{cname} (compare mean)")
     ax.axhline(0, color="k", linewidth=0.4, alpha=0.4)
     ax.set_xlabel(xlabel)
     ax.set_ylabel("outTh (NN throttle)")
@@ -340,25 +360,41 @@ def panel_outTh_vs_sensor(ax, x_all, outTh_all, xlabel, title, n_bins=20):
     ax.set_ylim(-1.05, 1.05)
 
 
-def panel_e_encounter_histogram(ax, scenarios):
-    """Histogram of ALL encounter min-distances to target. An 'encounter' is
-    a local minimum in dist (≥0.5m prominence, ≥8 ticks separation). One
-    scenario can have several encounters (lap structure of figure-eight
-    paths). Counts events, not scenarios. Hull strikes populate the <1m tail."""
-    encounter_dists = []
+def _encounter_dists(scenarios):
+    """All encounter min-distances (local minima of dist_target, ≥0.5m
+    prominence, ≥8 ticks apart) pooled across scenarios."""
+    out = []
     for scn, data in scenarios.items():
         d = data.get("dist_target")
         if d is None or len(d) < 10:
             continue
         for i in find_local_minima(d, min_separation=8, min_prominence=0.5):
-            encounter_dists.append(float(d[i]))
-    if not encounter_dists:
+            out.append(float(d[i]))
+    return np.array(out)
+
+
+def panel_e_encounter_histogram(ax, scenarios, compare_scenarios=None, cname=None):
+    """Histogram of ALL encounter min-distances to target. An 'encounter' is
+    a local minimum in dist (≥0.5m prominence, ≥8 ticks separation). One
+    scenario can have several encounters (lap structure of figure-eight
+    paths). Counts events, not scenarios. Hull strikes populate the <1m tail.
+    When compare_scenarios/cname are given, the compare run's encounter
+    histogram is overlaid on SHARED bins (A/B mode)."""
+    arr = _encounter_dists(scenarios)
+    if arr.size == 0:
         ax.text(0.5, 0.5, "no encounters found", transform=ax.transAxes,
                 ha="center")
         return
-    arr = np.array(encounter_dists)
-    ax.hist(arr, bins=40, color="tab:blue", alpha=0.7, edgecolor="black",
-            linewidth=0.4)
+    carr = _encounter_dists(compare_scenarios) if compare_scenarios else None
+    hi = max(float(arr.max()),
+             float(carr.max()) if carr is not None and carr.size else 0.0)
+    bins = np.linspace(0, hi, 40)
+    this_lbl = "this run" if carr is not None else None
+    ax.hist(arr, bins=bins, color="tab:blue", alpha=0.6, edgecolor="black",
+            linewidth=0.4, label=this_lbl)
+    if carr is not None and carr.size:
+        ax.hist(carr, bins=bins, color="tab:red", alpha=0.45, edgecolor="black",
+                linewidth=0.3, label=f"{cname} (compare)")
     ax.axvline(1.0, color=HULL_COLOR, linewidth=1.4, linestyle="-",
                label="hull radius 1.0m")
     ax.axvline(3.048, color=TRAIL_COLOR, linewidth=1.4, linestyle="-.",
@@ -572,6 +608,10 @@ def main():
     ap.add_argument("--tick-sec", type=float, default=SIM_TIME_STEP_SEC,
                     help="seconds per control tick for closing-rate m/s (default 0.05 = 20 Hz; "
                          "pass 0.1 for 10 Hz runs)")
+    ap.add_argument("--compare", default=None,
+                    help="NAME:CSV of a second run's dmp-dump --csv-only @ the same gen; "
+                         "overlays its policy curves on B/C and encounter hist on E "
+                         "(A/B mode — replaces the old intercept_compare/tactics report)")
     args = ap.parse_args()
     if args.out is None:  # derive from --label (lexicographic autoc-035-t<N>-<reason>)
         args.out = Path(f"specs/035-energy-lexicase-objective/{args.label}_intercept_analysis.png")
@@ -616,6 +656,28 @@ def main():
     dspn_all = np.concatenate(dspn_all) if dspn_all else np.array([])
     outTh_all = np.concatenate(outTh_all) if outTh_all else np.array([])
 
+    # 038 t7 — optional A/B compare run (folds in the retired tactics report):
+    # aggregate the compare run's spn/dspn/outTh for the B/C policy overlays and
+    # keep its scenarios for the Panel E encounter-histogram overlay.
+    cname = None
+    cmp_scenarios = None
+    cmp_spn = cmp_dspn = cmp_outTh = None
+    if args.compare:
+        cname, cfile = args.compare.split(":", 1)
+        cmp_scenarios = load_dmp_dump_csv(cfile)
+        print(f"  compare = {cname}, scenarios = {len(cmp_scenarios)}", file=sys.stderr)
+        cs, cd, ct = [], [], []
+        for data in cmp_scenarios.values():
+            if "spn0" not in data or "outTh" not in data:
+                continue
+            n = min(len(data["spn0"]), len(data.get("dspn", [])), len(data["outTh"]))
+            if n == 0:
+                continue
+            cs.append(data["spn0"][:n]); cd.append(data["dspn"][:n]); ct.append(data["outTh"][:n])
+        cmp_spn = np.concatenate(cs) if cs else np.array([])
+        cmp_dspn = np.concatenate(cd) if cd else np.array([])
+        cmp_outTh = np.concatenate(ct) if ct else np.array([])
+
     # Classify scenarios for hull-strike vs near-miss comparison
     classifications = classify_scenarios(scenarios)
     hull_picks = [s for s, c in classifications.items() if c == "hull_strike"]
@@ -646,19 +708,23 @@ def main():
                              k=args.k_scenarios)
     panel_outTh_vs_sensor(ax_b, spn_all, outTh_all,
                           "spn0 (NDC, distance proxy: bigger = closer)",
-                          "Panel B — outTh vs spn0 (distance→throttle policy)")
+                          "Panel B — outTh vs spn0 (distance→throttle policy)",
+                          cmp_x=cmp_spn, cmp_y=cmp_outTh, cname=cname)
     panel_outTh_vs_sensor(ax_c, dspn_all, outTh_all,
                           "dspn (closure-rate proxy: +ve = approaching)",
-                          "Panel C — outTh vs dspn (closure→throttle policy)")
+                          "Panel C — outTh vs dspn (closure→throttle policy)",
+                          cmp_x=cmp_dspn, cmp_y=cmp_outTh, cname=cname)
     panel_d_sensor_fidelity(ax_d, scenarios)
-    panel_e_encounter_histogram(ax_e, scenarios)
+    panel_e_encounter_histogram(ax_e, scenarios,
+                                compare_scenarios=cmp_scenarios, cname=cname)
     panel_event_overlay(ax_f, scenarios, hull_picks, "last_tick",
                         "Panel F — HULL-STRIKE events", "tab:red")
     panel_event_overlay(ax_g, scenarios, miss_picks, "min_dist",
                         "Panel G — NEAR-MISS events (close + recovered)",
                         "tab:blue")
 
-    fig.suptitle(f"{args.label} — closure-dynamics + sensor-utility analysis  (gen {gen_str}, elite)",
+    ab = f"  vs {cname} (compare: B/C purple-dashed mean, E red hist)" if cname else ""
+    fig.suptitle(f"{args.label} — closure-dynamics + sensor-utility analysis  (gen {gen_str}, elite){ab}",
                  fontsize=12, y=0.995)
     fig.savefig(args.out, dpi=120, bbox_inches="tight")
     print(f"wrote {args.out}", file=sys.stderr)

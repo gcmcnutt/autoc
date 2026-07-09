@@ -92,9 +92,11 @@ TEST(BeaconProjectionGeometry, TargetDeadAheadProducesCenteredObservation) {
 
 TEST(BeaconProjectionGeometry, TargetAtRightFovEdgeApproachesPlusOne) {
     ProjectionInput in = makeBaselineInput();
-    // 120° H FOV ⇒ tan(60°) ≈ 1.732. Target at body (10, 17.32, 0) puts
-    // the beacon centroid at u = 17.32/10 = 1.732, exactly at the right
-    // edge. Set beacon mount to target origin to remove the wingtip bias.
+    // 120° H FOV ⇒ half-angle 60°. Target at body (10, 17.32, 0) puts the
+    // beacon ray at atan(17.32/10) = 60° off-axis — exactly the right edge
+    // (±1 at the FOV edge holds under BOTH the pre-t9 rectilinear and the
+    // 038 t9 equidistant projection, by construction). Set beacon mount to
+    // target origin to remove the wingtip bias.
     in.beacon_mount_target_body = gp_vec3(0.0f, 0.0f, 0.0f);
     in.beacon_emission_axis_target_body = gp_vec3(-1.0f, 0.0f, 0.0f);
     in.target_position_world = gp_vec3(10.0f, 17.32f, 0.0f);
@@ -117,6 +119,49 @@ TEST(BeaconProjectionGeometry, TargetAtLeftFovEdgeApproachesMinusOne) {
     EXPECT_NE(obs.cep, kCepSentinelFloat);
     EXPECT_NEAR(obs.screen_x, -1.0f, 0.01f);
     EXPECT_GT(obs.cep, 0.20f);
+}
+
+// ---------------------------------------------------------------------------
+// 038 t9 — Equidistant (f-theta) projection properties. NDC ∝ angle off the
+// optical axis (not tan), so a mid-field position reads as its angular
+// fraction of the half-FOV, and a fixed angular gap spans the same NDC
+// anywhere in frame (the rectilinear tan-stretch this replaced would read
+// an off-axis pair wider than a centered one).
+// ---------------------------------------------------------------------------
+
+TEST(BeaconProjectionGeometry, EquidistantMidAngleIsAngularRatio) {
+    ProjectionInput in = makeBaselineInput();
+    in.beacon_mount_target_body = gp_vec3(0.0f, 0.0f, 0.0f);
+    in.beacon_emission_axis_target_body = gp_vec3(-1.0f, 0.0f, 0.0f);
+    // 30° right of the optical axis at 10 m: (10·cos30°, 10·sin30°, 0).
+    in.target_position_world = gp_vec3(8.6603f, 5.0f, 0.0f);
+
+    BeaconObservation obs = projectBeacon(in);
+
+    EXPECT_NE(obs.cep, kCepSentinelFloat);
+    // Equidistant: 30°/60° = 0.5 (rectilinear tan30/tan60 read 0.333 here).
+    EXPECT_NEAR(obs.screen_x, 0.5f, 0.01f);
+    EXPECT_NEAR(obs.screen_y, 0.0f, 1.0f / 127.0f);
+}
+
+TEST(BeaconProjectionGeometry, EquidistantSpanIsPositionInvariant) {
+    // Same 6° angular gap, pure horizontal: pair centered on-axis vs 40°
+    // off-axis must span ≈ the same NDC (rectilinear read the off-axis
+    // pair ~70% wider — the ego-pointing contamination t9 removes).
+    auto obsAtDeg = [](float deg) {
+        ProjectionInput in = makeBaselineInput();
+        in.beacon_mount_target_body = gp_vec3(0.0f, 0.0f, 0.0f);
+        in.beacon_emission_axis_target_body = gp_vec3(-1.0f, 0.0f, 0.0f);
+        const float rad = deg * 3.14159265358979323846f / 180.0f;
+        in.target_position_world =
+            gp_vec3(10.0f * std::cos(rad), 10.0f * std::sin(rad), 0.0f);
+        return projectBeacon(in);
+    };
+    const float span_center = obsAtDeg(3.0f).screen_x - obsAtDeg(-3.0f).screen_x;
+    const float span_off = obsAtDeg(43.0f).screen_x - obsAtDeg(37.0f).screen_x;
+    // 6°/60° = 0.1 NDC; allow int8 quantization slack (steps of 1/127).
+    EXPECT_NEAR(span_center, 6.0f / 60.0f, 2.5f / 127.0f);
+    EXPECT_NEAR(span_off, span_center, 2.5f / 127.0f);
 }
 
 // ---------------------------------------------------------------------------
