@@ -229,6 +229,89 @@ span still uncalibrated (vertical spray).
   all — i.e. is a *passive* forward-model objective structurally too weak to close the perception→control
   loop.
 
+### t7 shared-source-env A/B — result @ gen 193 (STOPPED 2026-07-08): env fidelity ruled out as the ceiling cause
+
+**t7 = `autoc-038-t7-m2-shared-env`** (`autoc-m2/autoc-9223370253324834099-2026-07-08T16:59:01.708Z/`,
+master seed `1783529939`, `TrackerChaseUseSourceScenarioSeed=1`, same t5 gen800 source + predictor config as
+t6 — the ONLY difference vs t6 is shared vs independent env seeds). Stopped at gen 193, past t6's plateau
+onset (~gen 130), so the competence A/B is conclusive for this config. PNGs:
+`autoc-038-t7-m2-shared-env_*.png` (`--compare t6-indep-env`).
+
+- **Competence: t7 == t6 == t4.** All four mode metrics converged onto the same plateau — perception ~0.70,
+  track occupancy ~0.095, median range ~17 m, worst-blind ~7–8 s. Best fitness −13474 @ 193 ≈ t6's −13382 @
+  344 (and fitness is confounded anyway — different realized scenarios). **Sharing the source's airspace does
+  not lift the tracking ceiling.**
+- **Predictor: t7 ≈ t6.** Per-horizon error the same noisy ~0.55–0.75 plateau, span calibration still a
+  vertical spray, closure-rate still pinned at the ±1 tanh rails (realized ±7). A consistent air mass does
+  not make the passive span head learn either.
+- **What shared env DID buy (early)**: faster perception climb (~0.65 by gen 65 vs t6 ~0.58) and a much lower
+  early crash rate (14.6% @ gen 80 vs t6 ~59% @ gen 47) — the chase no longer dies to wind the target never
+  flew. Real, but transient: it changes the on-ramp, not the ceiling. Worth keeping ON for realism/cleanliness.
+- **Verdict**: the "good tracking but in beyond-physics envs" confound is **ruled out as the bottleneck** for
+  both depth and prediction. The M2 cap remains perception/architecture-limited — pointing back at
+  spherical-projection (clean observable) + actuated-prediction (close the loop).
+- **Known gap in t7's "sameness" (drives t8)**: t7 shared the *seed* but the chase still applied the M2
+  **variation-ramp scale** (≈0 early → 1 late), while the source flew at scale ≈1.0 — so the chase's realized
+  env only truly matched the source's late in the run. **t8 = t7 + `VariationRampStep=0`**
+  (`computeVariationScale`: ramp=0 ⇒ numSteps=0 ⇒ scale **pinned 1.0 from gen 1**) — the actually-identical
+  shared env, full magnitude from the start, at the cost of losing the easy-early curriculum (expect a harder
+  start / higher early crash; the ramp is a search-time nudge, not the objective, per
+  [feedback_clear_objectives_not_tuning]).
+
+### t8 full-ramp shared-env — result @ gen 240 (STOPPED 2026-07-09): curriculum ramp ruled out too; same shelf
+
+**t8 = `autoc-038-t8-m2-shared-env-fullramp`** (`autoc-m2/autoc-9223370253286427619-2026-07-09T03:39:08.188Z/`,
+master seed `1783568345`) = t7 + `VariationRampStep=0` (scale pinned 1.0 from gen 1 — the chase flies the
+source's *actually identical* full-magnitude air mass the whole run; t7 shared the seed but its ramp scaled
+the applied env down early). Stopped at gen 240 (best −13066.93, avgMaxStreak 21.8, pctInStreak 7.4% — still
+slowly improving, but spherical projection was judged the better use of the cycles). PNGs:
+`autoc-038-t8-m2-shared-env-fullramp_*.png` (`--compare t7-ramp40 + t6-indep-env`).
+
+- **Same shelf, again**: perception ~0.76 (top edge of the t4/t6/t7 band, reached ~80 gens sooner), median
+  range ~18–20 m, worst-blind ~7.5 s, occupancy ~0.08 (the one lag — holding streaks in full gusts is
+  harder). Best fitness under FULL difficulty ≈ t7's under ~21% difficulty — the curriculum ramp is not
+  earning its keep in this config (gen-1 crash was only 24% at full env).
+- **W_hh finding** (matched-age vs t7, single-variable): full-magnitude turbulence from gen 1 selected a
+  ~1.5–2× **uniformly amplified** recurrent spectrum (ρ 2.48→3.24) with IDENTICAL eff-rank (11.1 vs 11.2/16)
+  and unchanged whh/xh balance (~0.49) — gain up, structure unchanged. Capacity is not the binding
+  constraint; the same-sized brain just learned to fly harder air (and smoother: stability −16.5k vs t7's
+  −36.5k, energy 41.7k vs 53.9k).
+- **Predictor persistence-baseline finding (2026-07-09, panel upgrade)**: the "no-change" bar sits at
+  ≈0.01 NDC for all horizons — the head is ~50× worse than persistence AND the ≤150 ms span-prediction task
+  itself has ~no information content (persistence is below the σ-floor); the CEP gate also excludes blind
+  gaps — the one regime where prediction would pay. See BACKLOG "US3 predictor VERDICT + re-target design".
+- **AMENDMENT (operator, 2026-07-09) — first predictor signal, in CLOSURE RATE**: the gen-240 closure-rate
+  calibration is no longer a vertical blob — the cloud **leans along y=x** within the representable ±1 band,
+  and late-run per-horizon errors bent down (+150 ms ~0.45–0.5 around gens 200–240, closure-rate error
+  dipping to ~0.45–0.55 from its ~0.7 plateau). Still far from the persistence bar, but it is the first
+  structure any predictor head has shown. **With the t9 spherical (angular-span) target + a long run this
+  might get interesting** — a keep-watching reason for leaving the head AS-IS in t9.
+- **AMENDMENT (operator, 2026-07-09) — gen_runtime watch item**: t8's per-gen wall-clock rose to ~235 s/gen
+  by gen ~85 then went **flat through 240**, while t6/t7 kept climbing (~310–330 s/gen at matched gens,
+  t6 reaching ~400 by gen 345). Rising runtime = the population broadly surviving longer; t8's early flat
+  plateau at a LOWER level reads as **either rapid progress saturating early (elite fine, average
+  individuals dying fast under full-magnitude env) or a brittle low-diversity population** — the flat line
+  says population-wide survival stopped improving after ~gen 90 even as elite fitness kept creeping.
+  Watch this on t9 (same full-ramp config): if t9's curve also flattens low, consider it a
+  full-difficulty-from-gen-1 population-health cost to weigh against the faster perception on-ramp.
+- **038 arc closed on the env axis**: t7 (seeds) + t8 (seeds+magnitude) rule out env fidelity AND the
+  curriculum ramp as ceiling causes. Eliminated across 038: reward shaping (037 t11–t15), env fidelity,
+  situational sensors, passive predictor, recurrent capacity. **t9 = spherical/equidistant projection**
+  (predictor head kept AS-IS per operator — watch for any signal against the persistence bar), likely the
+  038 wrap; remaining levers (streak/envelope input, predictor re-target, US2) route to BACKLOG for the
+  next feature.
+
+### t5 M1 source rebake — PINNED `retain=keep` (2026-07-08): the M2 source library for t6/t7/t8
+
+**t5 = `autoc-038-t5-m1-source-rebake`** (enriched 37-input M1, pop 5000, 20 Hz, 6×49=294, 800 gens).
+**S3 pin (Constitution VIII)**: `autoc-m1/autoc-9223370253553029228-2026-07-06T01:35:46.579Z/` (800 dmps
+tagged `retain=keep` 2026-07-08), master seed `1783301746`. Gen 800 elite: best **−41083.52**,
+avgMaxStreak 61.5, pctInStreak 30.9%, 0 hull, 294/294 complete. `gen9200.dmp.zst` (= gen 800) is the
+**TrackerSourceRun for the entire US3/env-fidelity M2 series (t6, t7, t8)** — with
+`TrackerChaseUseSourceScenarioSeed=1` (t7/t8) its per-scenario `scenarioSeed`s are also the *chase's*
+env/craft/entry seeds, so this run is load-bearing beyond the trajectory itself. Pinned so the lifecycle
+never expires it while the M2 series (and any future re-eval) references it.
+
 ### T013 (M1 half) — enriched M1 baseline complete, ≈ parity with best-ever (2026-07-04)
 
 **t3 = `autoc-038-t3-m1-baseline`** (enriched full-M1, pop 5000, 20 Hz, aeroStandard 6×49=294, servo on,

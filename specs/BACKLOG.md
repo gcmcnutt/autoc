@@ -19,13 +19,29 @@ mean one thing), not tuning — see [feedback_clear_objectives_not_tuning].
 
 - **Why now / next**: it directly sharpens the US3 forward-model (removes ego-contamination from `span`
   before asking the net to anticipate it) and is the operator's leading candidate for the step after t6.
-- **Full rationale + blast radius**: recorded once at [040 — camera redo / research] **Question 3** below
-  (pulled forward here) and in [specs/038-accurate-m2/outcome.md](038-accurate-m2/outcome.md) → "US3
-  predictor — design rationale". Perception-representation change ⇒ all beacon NDC inputs + derived features
-  (span/tilt/span-rate) + CEP edge factor shift ⇒ M1/M2 source dmps invalidated, need a rebake (greenfield,
-  no cereal bump). Files: `src/eval/camera_projection.cc` (`screen_x/y`, FOV clip, CEP edge factor).
-- **Trigger**: after t6 (M2 US3 predictor) resolves — let it run first; late variation-ramp pressure can
-  still kick tracking depth ([project_no_future_curve_shape], [project_late_run_fitness_interpretation]).
+- **Full rationale**: recorded once at [040 — camera redo / research] **Question 3** below (pulled forward
+  here) and in [specs/038-accurate-m2/outcome.md](038-accurate-m2/outcome.md) → "US3 predictor — design
+  rationale".
+- **Implementation scoped (2026-07-09 recon — CHEAPER than first thought)**:
+  - **Blast radius correction**: NO M1 source rebake and NO format/schema break. Camera projection runs
+    CHASE-side at M2 train time (`TrackerStepper` → `projectBeacon`); the M1 source dmp records world-frame
+    trajectories only. `BeaconObservation` fields, input count (58), dmp schema all unchanged — this is a
+    pure semantic change of one function. Old M2 elites are invalid vs the new NDC (retrain = the next run
+    anyway); cross-projection comparability breaks, as expected.
+  - **Math (true equidistant / f-theta)** in `projectBeacon` (`src/eval/camera_projection.cc:166-182`):
+    replace `u = y/x, v = z/x` + `fovHalfTan` normalization with θ = atan2(√(y²+z²), x),
+    image-plane direction (y,z)/√(y²+z²), `screen_x = θ·dir_y/(fov_h/2 rad)`, `screen_y = θ·dir_z/(fov_v/2
+    rad)`; clip |screen|>1; keep the x≤0 early-out (also guards the θ→π degenerate direction) + add a
+    √(y²+z²)<eps center guard (→ 0,0). CEP edge factor + int8 quantization operate on NDC — unchanged.
+  - **Anchor tests survive**: FOV-edge geometries map to ±1 in BOTH projections by construction (e.g. the
+    existing `tan(60°)` edge test: equidistant gives 60°/60° = 1.0 too), center stays 0 — only mid-field
+    values move (30° off-axis: 0.333 rectilinear → 0.500 equidistant). Add NEW tests: mid-angle = angular
+    ratio, and the span-invariance property (same angular gap center vs off-axis ⇒ ≈same NDC span).
+  - **Residual anisotropy to document**: per-axis normalization (120°H/90°V) keeps ±1 = FOV edge but makes
+    span scale differ H-vs-V by the fixed ratio 60/45 — a KNOWN CONSTANT (tilt-coupled), unlike the
+    position-dependent tan-stretch being removed.
+- **Trigger**: operator 2026-07-09 — implement immediately after t8 stops (no build while it runs), as the
+  t9 config.
 
 ### [038 US3 follow-on — IMPLEMENTED + RUNNING as t7, 2026-07-08] Share the M1 source's env/craft seeds with the M2 chase (do the two craft fly the same airspace?)
 
@@ -107,6 +123,57 @@ competence comparators. If shared-airspace lifts tracking, it's a source-of-trut
 with the spherical-projection item above (both sharpen *what the tracker is actually asked to do*). Files:
 `src/autoc.cc` (worker variation seeding), `src/eval/source_dmp_loader.cc`, `src/eval/tracker_stepper.cc`,
 `include/autoc/util/config.h` + the tracker inis (new knob).
+
+### [038 follow-on — US3 predictor VERDICT + re-target design, 2026-07-09] Persistence baseline: the current prediction objective is structurally worthless — re-target to blindness-bridging horizons or drop the head
+
+**Finding (t8 data, persistence baseline added to predictor_analysis.py 2026-07-09)**: the "predict
+span(t+h)=span(t)" no-change bar sits at **≈0.01 NDC** for all three horizons (+50/100/150 ms) — the head's
+error is 0.4–0.7 (~50× worse), AND even a *perfect* head would add ~nothing (persistence is already below
+the σ-floor: span barely moves in 150 ms at 20 Hz). Compounding it, `computeSpanPredictionError` CEP-gates
+BOTH pair endpoints — **blind gaps are excluded from scoring**, i.e. the objective measures only the regime
+where prediction is information-free and skips the one (reacquire-through-blindness, the documented M2
+bottleneck) where a forward model would pay. Answer to the operator's keep-the-head question: **not as
+posed — structurally cannot provide useful signal.**
+
+- **Re-target design (if kept)**: (1) horizons 0.5–2 s where span/bearing autocorrelation actually decays;
+  (2) score across occlusion: pairs (t visible → t+h = reacquisition) — predict reappearance
+  bearing/span; persistence collapses there, information content is real, and it aims at the ~8 s
+  worst-blind problem; (3) CONSUME the forecast (feed aux outputs back as inputs / into the streak-proxy) —
+  t6 proved passive tie-break scoring doesn't couple to control.
+- **Else**: drop the aux head at the spherical-projection retrain (topology 7→3 back, or keep the wiring
+  and re-purpose the 4 slots for the re-targeted quantities).
+- Panel now carries the persistence bar permanently (dashed per-horizon + diamonds; cache schema grew, old
+  cache rows auto-refetch).
+
+### [038 follow-on — CANDIDATE sensor input, 2026-07-09] Streak/in-envelope input — close the reward↔observation gap
+
+**Operator (t8-era synthesis)**: we score streaks (the 5× multiplier is the dominant fitness shaping) but
+the NN has **no way to know it is in one** — no clean "you are in the tracking regimen, go tighter" signal.
+**The sharp version**: `FitStreakRampSec = 5.0 s`, but the NN's whole perceptual history window is **0.8 s**
+— the reward is conditioned on ~6× more history than the policy can observe (a Markov violation from the
+NN's seat). It cannot represent "how deep into the pocket am I", yet that's what the multiplier pays for.
+This is an objective-PRESENCE gap per [feedback_clear_objectives_not_tuning], not tuning.
+
+- **Design (camera-derived, deployable — operator: "rough equivalent from camera data")**: do NOT feed the
+  fitness machinery's true streak state (sim-only privilege, violates the direct-observable principle).
+  Instead derive from existing camera slots: `in_envelope(t)` = both beacons CEP-visible AND span within
+  [lo, hi] AND pair centroid within a centered radius; `streak_proxy(t)` = min(consecutive-in-envelope time
+  / 5 s, 1), resetting on dropout — one or two new tracker inputs (envelope flag + normalized duration).
+  Proxy needn't match stpPt exactly; it needs to correlate — the NN learns the mapping. ms-based ⇒
+  cadence-invariant. Works on real hardware (it's just camera history integration).
+- **Cheap**: tracker-only input growth (58→59/60) — the T023 split AircraftState serialize means **no M1
+  source rebake** (built exactly for this). Topology/fixture regen only.
+- **Relation to the other levers**: this is "perceptual history" targeted at the ONE quantity the reward
+  actually cares about — a features-version of US1/US2's longer memory, far cheaper than either. Pairs with
+  predictor-head improvements (both are "give the trunk the tracking-regime state").
+- **Context**: all M2 runs (t4/t6/t7/t8) learn fast then settle at ≈ the same fitness/competence regardless
+  of ramp, env sharing, extra sensors, predictor — eliminated so far: reward shaping (037 t11–t15), env
+  fidelity (t7/t8), situational sensors (t4), passive predictor (t6), W_hh capacity (rnn_capacity eff-rank
+  ~11/16 stable). Remaining suspects: perceptual history depth, NN representation, craft physical limits
+  (chase == target airframe ⇒ pure tail-chase of a max-performance gen-800 path can't close except by
+  corner-cutting; the ~17 m median floor may sit near the physics limit — "looks decent" in playback
+  supports this). Operator expectation: spherical projection + predictor polish = no big jump; this item is
+  in the same "sharpen, don't expect miracles" class.
 
 ### [038 — follow-on lever, deferred 2026-06-30] US2 two-timescale recurrence (structural slow channel)
 
@@ -193,6 +260,28 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **What the early minisim playback informed**: the 120° FOV + raw-NDC-projection presentation gives narrow beacon spacing close-in (~0.26 NDC at 10ft), and the controller learned an emergent orbit-to-reacquire when the target left the FOV — useful evidence that the current rep gets some way, but reacquisition cost in crrcsim's harder dynamics may push the topology budget higher than 030 v1 plans for. A richer rep (event stream) or smarter optics (dual-FOV / non-linear) could lower that topology demand instead.
 - **Why research-track, not implementation**: needs a dataset + simulator camera model upgrade (or recorded event-camera bench data) before any controller work; coupled to the 031 perception-front-end FPGA / DSP scoping.
 - **Source design notes**: this thread; 030 D10 (single-camera v1 baseline that this would supersede); see also `[BACKLOG] Multi-camera variant experiments` below for the controller-side experiment shell once a camera spec is chosen.
+
+### [BACKLOG — camera variations, scoped 2026-07-09] 5th PRNG class slot: mount-alignment 6-DOF first, then FOV/aberrations/noise
+
+**Operator scoping (2026-07-09, during the t9 equidistant-projection change)**: camera variations are
+**mostly an ALIGNMENT problem** — per-scenario **6-DOF camera-mount pose error** (3-axis rotation + 3-axis
+translation of `camera_mount_chase_body` / `camera_orientation_chase_body`) is the main axis; then "perhaps
+a little on FOV" (intrinsics tolerance), "maybe some aberrations" (residual lens-distortion after the
+front-end's planar→angle calibration remap — see the PHYSICAL-CAMERA ASSUMPTION note in
+`camera_projection.h`), and some perceptual noise (couples to the [031-fed] CEP-realism items, which stay
+the noise-model home).
+
+- **Plumbing is already reserved**: the `camera` class sub-seed is slot 5 of `deriveClassSubSeeds`
+  (FROZEN order wind/rabbit/entry/craft/camera, `scenario_prng.h`), and `ScenarioMetadata` has the
+  documented `cameraSeed` append point after `craftSeed`. Draw-and-discard convention like entry/wind/craft;
+  σ knobs in the ini per the craft-variation pattern. Camera stays on the M2 seed even under
+  `TrackerChaseUseSourceScenarioSeed=1` (chase-only perception).
+- **Why rotation alignment is the headline**: real-hardware precedent — the INAV board-alignment 170°-vs-180°
+  issue put a ~10° pitch bias into flight data ([project_board_alignment]); a mount-rotation error is exactly
+  that class of defect for the camera. Under the t9 ANGULAR NDC a camera-rotation misalignment ≈ a constant
+  additive NDC offset (clean, learnable robustness target — under rectilinear it was position-dependent).
+- **Trigger**: pre-real-hardware M2 training (the run whose controller flies a physical camera), or 040
+  front-end characterization telling us actual tolerance numbers — whichever first.
 
 ### [031 CANDIDATE] Variable-rate / real-flight source robustness
 
