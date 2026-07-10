@@ -60,11 +60,17 @@ Operator refinements (same session, volunteered):
   INAV blackbox + join analyses).
 - **Transport is ours to change**: the xiao↔INAV transport is a custom protocol — if the 20 Hz link
   budget is close, the query/response format itself is in scope for optimization.
-- **Arena floor safety clamp**: early flights run far higher than the training arena, but if flown
-  lower, the arena cylinder floor must be forced to ≥ 25 m altitude (bottom > Z = −25 m NED) so the
-  arena-floor pressure can never drag the craft toward the training-style 5 m AGL floor. Down the
-  line the arena becomes a geofence based on where we fly (not where we arm/engage) — that is
-  M2-era work (chasing a real target), out of scope here.
+- **Arena vertical rule (all NED, per `docs/COORDINATE_CONVENTIONS.md`; origin = arm point)**: the
+  vertical band re-centers on the engage altitude with training half-height K:
+  `ceiling_Z = z_engage − K`, `floor_Z = min(−25 m, z_engage + K)` — i.e., the floor sits K below
+  the engage altitude but never below 25 m above the **arm** origin (NED min = higher altitude).
+  Note the −25 m is relative to the arm point, NOT AGL/MSL — today's park is basically at sea
+  level, so keep track of the reference. Early flights run far higher than the training arena; the
+  clamp is the just-in-case for lower runs. Down the line the arena becomes a geofence based on
+  where we fly (not where we arm/engage) — M2-era work (chasing a real target), out of scope here.
+- **Console/log split (FR-014)**: rethink human console output — console carries significant events
+  only (armed / disarmed / downloading, etc. — mostly read on the bench or ground) plus a slow ~2 Hz
+  heartbeat; ALL control-loop data goes to the flash log only, saving loop cycles.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -250,9 +256,10 @@ comparison report against the same controller's sim baseline.
 - **FR-001**: The embedded NN program MUST be regenerated from the pinned 038 M1 elite weight file
   (37-input/2051-weight contract) with input gathering semantically identical to the desktop
   reference, including the situational-awareness inputs with training-size arena geometry
-  **re-centered at the span-engage point on each engage** (arena origin recorded in the flight log),
-  and with the arena cylinder floor clamped to **≥ 25 m altitude** (bottom > Z = −25 m NED) as a
-  safety override regardless of engage altitude.
+  **re-centered at the span-engage point on each engage** (arena origin recorded in the flight log).
+  Vertical band, all NED relative to the arm origin (`docs/COORDINATE_CONVENTIONS.md`), with K =
+  training arena half-height: `ceiling_Z = z_engage − K`, `floor_Z = min(−25 m, z_engage + K)` —
+  the floor follows the engage altitude but is clamped to at least 25 m above the arm point.
 - **FR-002**: Embedded evaluation MUST be verified on the stationary bench before flight: a full
   engaged span whose recorded logs show the generated path moving around the craft with all NN
   inputs/outputs evolving plausibly (correct ranges, no NaN/lockup, arena inputs reading
@@ -295,6 +302,9 @@ comparison report against the same controller's sim baseline.
   comparison MUST be produced as the feature's acceptance read.
 - **FR-013**: Pre-flight verification MUST confirm the safety envelope is unchanged (arming/mode-flip
   semantics, failsafe behavior) with the new firmware before the flight.
+- **FR-014**: Console output MUST be split from control-loop recording: the console carries
+  significant events only (armed / disarmed / downloading and similar, plus a slow ~2 Hz heartbeat),
+  and ALL control-loop data goes to the flash log only — no per-tick console printing in the loop.
 
 ### Key Entities
 
@@ -335,9 +345,10 @@ comparison report against the same controller's sim baseline.
   path if the latency research amends the sim model.
 - 20 Hz (50 ms tick) is the operating configuration (037 decision); 50 Hz remains a gated stretch
   goal outside this feature's success criteria.
-- The arena-relative inputs use the training-matching arena geometry (R=80 m, 5–100 m AGL),
-  re-centered at the span-engage point on each engage (per clarification; verified on the bench and
-  logged per the edge case above).
+- The arena-relative inputs use the training-size arena geometry re-centered at the span-engage
+  point on each engage; the vertical band follows the engage altitude (±K, training half-height)
+  with the floor clamped to ≥25 m above the arm origin — full NED rule in FR-001 (verified on the
+  bench and logged per the edge case above).
 - The slaved high-bandwidth local IMU is **deferred by default** (operator direction 2026-07-10);
   only the FR-006 verdict can pull it back in.
 - BLE is the only field retrieval path (no cable in the field); USB download stays on the backlog.
