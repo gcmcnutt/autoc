@@ -49,6 +49,23 @@ fixed flash budget and write-bandwidth ceiling).
   3–4 minutes each between flash clears (packs run short — the model drives the throttle hard), and
   high-bandwidth logging runs only during autoc engagement (spans), not the whole flight.
 
+Operator refinements (same session, volunteered):
+
+- **Compression research starts from completeness**: the first question is whether the log carries
+  ALL NN inputs + outputs + any other aux state — the flight-log equivalent of the honest-dmp
+  policy (all training state lives in the dmp; all flight state must live in the flight log). Format
+  and compression choices follow from that full field set, not the other way around.
+- **Latency research data source**: the logs in `flight-results/`, especially the two most recent
+  dates (`flight-20260503`, `flight-20260517`) — several flight logs each (xiao flight_log +
+  INAV blackbox + join analyses).
+- **Transport is ours to change**: the xiao↔INAV transport is a custom protocol — if the 20 Hz link
+  budget is close, the query/response format itself is in scope for optimization.
+- **Arena floor safety clamp**: early flights run far higher than the training arena, but if flown
+  lower, the arena cylinder floor must be forced to ≥ 25 m altitude (bottom > Z = −25 m NED) so the
+  arena-floor pressure can never drag the craft toward the training-style 5 m AGL floor. Down the
+  line the arena becomes a geofence based on where we fly (not where we arm/engage) — that is
+  M2-era work (chasing a real target), out of scope here.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Firmware catch-up to the 038 controller contract (Priority: P1)
@@ -233,7 +250,9 @@ comparison report against the same controller's sim baseline.
 - **FR-001**: The embedded NN program MUST be regenerated from the pinned 038 M1 elite weight file
   (37-input/2051-weight contract) with input gathering semantically identical to the desktop
   reference, including the situational-awareness inputs with training-size arena geometry
-  **re-centered at the span-engage point on each engage** (arena origin recorded in the flight log).
+  **re-centered at the span-engage point on each engage** (arena origin recorded in the flight log),
+  and with the arena cylinder floor clamped to **≥ 25 m altitude** (bottom > Z = −25 m NED) as a
+  safety override regardless of engage altitude.
 - **FR-002**: Embedded evaluation MUST be verified on the stationary bench before flight: a full
   engaged span whose recorded logs show the generated path moving around the craft with all NN
   inputs/outputs evolving plausibly (correct ranges, no NaN/lockup, arena inputs reading
@@ -241,8 +260,10 @@ comparison report against the same controller's sim baseline.
 - **FR-003**: The NN forward pass MUST be restructured (unrolled) so that measured per-tick evaluation
   cost on target leaves positive margin in the 20 Hz tick alongside gather, command send, and logging.
 - **FR-004**: The latency research MUST quantify real pipeline latency (components and tail) from
-  existing flight logs plus fresh bench measurements on the regenerated firmware, and state the sim's
-  currently modeled equivalents side-by-side.
+  the existing flight logs in `flight-results/` — especially the two most recent dates
+  (`flight-20260503`, `flight-20260517`: xiao flight logs + INAV blackbox + join analyses) — plus
+  fresh bench measurements on the regenerated firmware, and state the sim's currently modeled
+  equivalents side-by-side.
 - **FR-005**: A documented latency decision MUST result: sim model stands, or sim model is amended.
   There is no pre-set numeric trigger — the research delivers the measured-vs-modeled numbers plus a
   recommendation, and the operator decides at the research review. If amended, an M1 retrain on the
@@ -250,8 +271,11 @@ comparison report against the same controller's sim baseline.
   flight candidate.
 - **FR-006**: The latency research MUST explicitly answer whether the deferred high-bandwidth local
   IMU is required for the 20 Hz loop, on the record.
-- **FR-007**: The compression research MUST evaluate candidate log encodings (compact/differential
-  and/or lightweight general-purpose compression) against real recorded log content, with measured
+- **FR-007**: The compression research MUST begin with a completeness audit: enumerate the full
+  record the flight log must carry — ALL NN inputs and outputs plus any other aux state (timing
+  marks, engage/arena origin, warm-up/reset markers) — the flight-log equivalent of the honest-dmp
+  recording policy. Only then evaluate candidate encodings (compact/differential and/or lightweight
+  general-purpose compression) against that full field set on real recorded content, with measured
   ratio and write-bandwidth per candidate, and select a format on that evidence.
 - **FR-008**: The selected log format MUST sustain full-rate 20 Hz logging during autoc-engaged
   spans (high-bandwidth logging is engagement-scoped, not whole-flight) and fit **two flights of
@@ -263,7 +287,9 @@ comparison report against the same controller's sim baseline.
   clear/initialize flow MUST be preserved.
 - **FR-011**: The control loop MUST run the NN every tick at 20 Hz (no evaluation divisor) with the
   link provisioned for per-tick state read + command write; cadence and jitter MUST be measured and
-  bounded over a bench session covering several consecutive engagement-length (3–4 min) spans.
+  bounded over a bench session covering several consecutive engagement-length (3–4 min) spans. The
+  xiao↔INAV transport is a custom protocol: if the 20 Hz budget is tight, redesigning the
+  query/response format is in scope (not just the baud rate).
 - **FR-012**: The flight test MUST capture full 20 Hz logs sufficient to produce a per-axis
   sim-vs-real control-character comparison against the same controller's sim baseline, and that
   comparison MUST be produced as the feature's acceptance read.
@@ -330,3 +356,5 @@ comparison report against the same controller's sim baseline.
 - USB log download (BLE stays for field use).
 - The slaved high-bandwidth local IMU (unless FR-006 concludes it is required).
 - Any controller-cadence / fitness-function changes beyond the FR-005 latency-amended M1 rebake.
+- Geofence-style arena (boundary based on where we fly, not where we engage) — M2-era work for
+  chasing a real target; this feature uses engage-centered placement with the ≥25 m floor clamp.
