@@ -1,8 +1,39 @@
 # Feature Specification: 039 Xiao 20 Hz Flight — embedded control-loop catch-up
 
-**Feature Branch**: TBD (`039-xiao-20hz-flight` when unparked).
+**Feature Branch**: `039-xiao-20hz-flight` (unparked 2026-07-10, off merged-038 main `af6318e`;
+clean `rebuild-perf.sh` gate GREEN).
 **Created**: 2026-06-19.
 **Status**: DRAFT — re-homed from 037 (operator 2026-06-19: "push off the Xiao catch-up to 039").
+Operator scope direction added 2026-07-10 (see "Operator direction" below) — supersedes the carried-
+verbatim 037 scope where they conflict.
+
+## Operator direction (2026-07-10, pre-/speckit.specify discussion)
+
+**The 039 outcome**: a **flight test flying 038's M1** (t5 rebake elite, 37-in/2051-w) that **exhibits
+the smoothing we see in sim** — that smoothing is the primary motivator for 20 Hz. Everything else
+serves that flight.
+
+Scope calls:
+1. **Firmware is 029-vintage** — the 2026-05-17 flight flew 029 code. Regen to the 038 contract:
+   `nn_program_generated.cpp` (37-in/2051-w M1 topology), `arena.cc` in the xiao build,
+   `nn2cpp -a R,F,C` baked arena.
+2. **Pull the NN forward-pass unroll FORWARD** (was US3/T042) — we may want the loop unroll for eval
+   now, not gated behind 50 Hz (2051 weights at 20 Hz; known ~6.5× table-driven overhead).
+3. **Latency is the critical open ask**: do we need to **amend the sim latency model and RETRAIN M1**?
+   (Deferred until now.) Plan: experiment/bench the real 20 Hz loop latency first, fold in what we now
+   know about servo response (037 servo v2), then **rerun an M1 bake on the updated model** if the
+   numbers move. Prior bench: 30 ms with consolidated MSP ([project_sim_latency], pre-20 Hz).
+4. **Defer the slaved high-bandwidth local IMU** (LSM6DS3 fast loop, was US2's headline) **if system
+   latency allows** — per our research, prefer the INAV-state-driven 20 Hz loop without it; the latency
+   experiments in (3) decide.
+5. **BLE log download stays** (no cable in the field) — the USB-download backlog item is out of 039.
+6. **Log compression on storage is in scope** (packed format) — 20 Hz ≈ 2× log volume; flash budget is
+   the real constraint (023-era finding).
+7. **Packed-log contract correction (verified in code 2026-07-10)**: we are NOT erasing on the fly —
+   the data region is pre-erased only via the ground-triggered BLE `ERASE:ALL` (`bluetooth.cpp:184` →
+   `flashLoggerErase()`; logging is disabled until initialized), and the metadata flush already runs an
+   async erase state machine (`flash_logger.cpp:976-994`). The contract's "no in-loop erase" tail-risk
+   framing should be re-aimed at the residual blocking write/metadata path, not data-region erases.
 **Input**: 037 closed the M1 *controller* question (t10 GO at 20 Hz + 0.8 s window + honest servo). The
 remaining 037 work was always the **flight-enablement / firmware** track — get the xiao to actually run
 the 20 Hz control loop in real flight. That is engineering on a different surface (embedded firmware,
