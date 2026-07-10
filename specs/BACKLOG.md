@@ -1,6 +1,10 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-06-30
+**Last Updated**: 2026-07-10
+
+> **Routing (2026-07-10, 038 wrap)**: 038 closed — see [038 wrap](038-accurate-m2/wrap.md). Next feature
+> is **039 (xiao back in shape)**; the M2-depth items below (predictor elevation, streak-proxy input,
+> camera work) are **040** candidates.
 
 ---
 
@@ -41,7 +45,20 @@ mean one thing), not tuning — see [feedback_clear_objectives_not_tuning].
     span scale differ H-vs-V by the fixed ratio 60/45 — a KNOWN CONSTANT (tilt-coupled), unlike the
     position-dependent tan-stretch being removed.
 - **Trigger**: operator 2026-07-09 — implement immediately after t8 stops (no build while it runs), as the
-  t9 config.
+  t9 config. **DONE 2026-07-09 — baking as t9.**
+- **t9 early finding (2026-07-09, gen ~57) + HYBRID fallback design**: t9's evolution near-froze (elite
+  unreplaced ~57 gens, pop avg climbing ~5× slower than t8; ALL sensor pipelines verified clean — no
+  deg/rad/sign/range error, no NaN, span·dist ≈ 0.98 as equidistant predicts). Mechanistic read: the
+  rectilinear tan-stretch we removed was **accidentally a training aid** — NDC gradient at the frame EDGE
+  was ~2.3/rad under rect vs a flat 0.955/rad under equidistant, and the first skill every M2 bootstraps is
+  keep-in-frame (an edge phenomenon). Removing the ego-contamination also removed the edge alarm.
+  **Operator direction (2026-07-09)**: if t9 stays flat → **HYBRID**: x/y perception PLANAR (rectilinear —
+  edge amplification is a steering feature, and positions then match the classic planar sensor natively),
+  while **span (and the predictor target) goes spherical-only** — compute the true ANGLE between the two
+  beacon rays (reconstruct rays from NDC+FOV; great-circle separation), position-invariant AND free of the
+  per-axis H/V anisotropy the equidistant NDC span carries. Small delta: revert projectBeacon to rect, swap
+  compute_pair_span (+ span_rate + predictor realized-span) to the ray-angle form; same call sites.
+  Decision point: t9 @ gen ~150.
 
 ### [038 US3 follow-on — IMPLEMENTED + RUNNING as t7, 2026-07-08] Share the M1 source's env/craft seeds with the M2 chase (do the two craft fly the same airspace?)
 
@@ -142,6 +159,63 @@ posed — structurally cannot provide useful signal.**
   t6 proved passive tie-break scoring doesn't couple to control.
 - **Else**: drop the aux head at the spherical-projection retrain (topology 7→3 back, or keep the wiring
   and re-purpose the 4 slots for the re-targeted quantities).
+- **t9 UPDATE (2026-07-10) — small signal confirmed; operator decision: ELEVATE, WITHOUT TUNING.** Under
+  the t9 angular target, all four error curves (3 horizons + closure) grind down **monotonically**
+  post-takeoff (~0.74–0.86 @ gens 70–100 → 0.57–0.61 @ gen 331; closure dipping to 0.47) — the first run
+  with a consistent downward trend (t8 only oscillated). The tie-break axis CAN couple when the target is
+  honest; at ~−0.05/100 gens it's just ~900 gens too slow. Per [feedback_clear_objectives_not_tuning] the
+  elevation must be STRUCTURAL (presence/coupling), not coefficients:
+  1. **Consume the forecast** — feed aux outputs[3..6] back as NN inputs next tick (self-consumed forward
+     model; closes the perception→prediction→control loop that passive scoring never did);
+  2. **Promote the axis to first-class** — prediction as a full lexicase axis alongside score/energy
+     (structural presence change, not an ε/weight tweak);
+  3. **Re-target across blindness** (above) — score (t visible → t+h reacquisition) pairs where the
+     information content actually lives.
+  Candidate next-feature experiment: (1)+(3) together; (2) if the grind stays too slow.
+  **Experimental-condition note (operator 2026-07-10)**: keep the curriculum OFF (`VariationRampStep=0`,
+  the t8/t9 config) for these weak-signal experiments — a STATIONARY objective + bit determinism is what
+  lets a third-order selection signal accumulate over hundreds of gens instead of being washed by a
+  shifting landscape; t9's monotone grind is plausibly visible only because the ramp was off.
+
+### [038 follow-on — ~~BACKLOG~~ → **VALIDATED 2026-07-10 (t10, the 038 wrap exercise)**] M2 novel-path eval harness — measure M2 generalization
+
+**Ran end-to-end at 038 wrap (t10)**: t5 M1 elite → `autoc-eval.ini` `random` 7 paths × 7 winds seed −1
+(49/49 complete, per-scenario parity with training → M1 has no random-geometry gap) → repoint
+`autoc-eval-tracker.ini` at that dmp in `autoc-eval` → t9 M2 elite 49/49 complete, **zero hull/OOB**.
+Numbers + the read in [038 wrap §2](038-accurate-m2/wrap.md). **Metric lesson (operator)**: raw
+per-scenario score is length-confounded (random scenarios ~2× longer, 896 vs 451 steps) — compare
+**per-step rate** (0.076 vs 0.117 pts/step ≈ 65%) / pctInStreak (3.7% vs 7.5%) / error distance (same
+~17 m band); and the random class plays as a mostly-continuous random-intercept problem, so a lower
+streak fraction is partly path-class, not pure generalization. Harness is now config-only standing
+practice = the wrap-gate for future M2 features. Original scoping below (eval-mode `generate_pngs`
+comparator is the remaining nice-to-have).
+
+**Gap (operator)**: every M2 judgment to date — training fitness, fixed-eval repro, all t4–t9 comparisons —
+runs on the SAME 294 scenarios (the t5 source's 6 paths × 49 winds, and under
+`TrackerChaseUseSourceScenarioSeed=1` even the same realized env). There is **no way to evaluate an M2
+controller on paths/envs it never saw** — no OOD/robustness read exists for M2 the way path-5
+random-intercept serves M1 ([project_path5_random_intercept]).
+
+- **Canonical flow (operator 2026-07-10)** — the four-step pipeline that makes this a standing practice,
+  not a one-off:
+  1. **Run a real M1 training** (production bake) → pin the best M1.
+  2. **Run a FEW eval configurations on that best M1** (nnextractor → `EvaluateMode=1`; different
+     `RandomPathSeedB` / path mixes incl. the random-intercept class, fresh master seeds ⇒ different
+     wind/entry/craft draws) → each produces a source-format dmp saved in the **autoc-eval bucket**
+     (per-mode bucket contract; pin the keepers).
+  3. **Run the M2 training off the real M1** (the step-1 training source, as today).
+  4. **Eval the best M2 across the step-2 M1 eval results** (repoint `autoc-eval-tracker.ini`
+     `TrackerSourceRun`/`TrackerSourceBucket` at each; knob=1 keeps shared-airspace semantics) →
+     per-novel-source competence vs the training-set numbers = **the M2 robustness proxy**.
+  All deterministic given seeds ("we have strong determinism").
+- **Metric**: the generalization gap — mode_progress-class competence (perception / range / blind / streak)
+  on the novel set vs the training set, same elite. A robust M2 shows a small gap; a memorized one
+  collapses.
+- **Also enables**: honest cross-feature M2 comparisons (today's are all in-distribution), and the
+  train-across-multiple-sources robustness direction ([project_library_based_training], 031 library
+  curation).
+- Files: none new for v1 — it's config + operator workflow (bake novel M1 eval source → repoint M2 eval);
+  optionally a `generate_pngs.sh` eval-mode comparator later.
 - Panel now carries the persistence bar permanently (dashed per-horizon + diamonds; cache schema grew, old
   cache rows auto-refetch).
 

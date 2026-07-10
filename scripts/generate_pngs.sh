@@ -168,8 +168,13 @@ if [[ "$MODE" == "m2" ]]; then
     CRUNID="$(grep -E 'Run ID:' "$CLOG" 2>/dev/null | tail -1 | sed -E 's/.*Run ID:[[:space:]]*//')"
     if [[ -n "$CRUNID" ]] && "$DMP" "s3://$BUCKET/$CRUNID/" --csv-only --gen "$GEN" -i "$INI" >"$TMP/cmp_tick.csv" 2>"$TMP/cmp.err"; then
       INTERCEPT_CMP=( --compare "$CNAME:$TMP/cmp_tick.csv" )
+    elif [[ -n "$CRUNID" ]] && "$DMP" "s3://$BUCKET/$CRUNID/" --csv-only -i "$INI" >"$TMP/cmp_tick.csv" 2>"$TMP/cmp2.err"; then
+      # Compare run has no gen $GEN (it stopped earlier) — fall back to its
+      # LATEST gen so the B/C/E overlay still renders (its final policy).
+      echo "  [plot] intercept A/B overlay: compare has no gen $GEN — using its latest gen" >&2
+      INTERCEPT_CMP=( --compare "${CNAME}-final:$TMP/cmp_tick.csv" )
     elif [[ -n "$CRUNID" ]]; then
-      echo "  [plot] intercept A/B overlay skipped (compare CSV @gen $GEN unavailable):" >&2; tail -1 "$TMP/cmp.err" 2>/dev/null >&2
+      echo "  [plot] intercept A/B overlay skipped (compare CSV unavailable):" >&2; tail -1 "$TMP/cmp2.err" 2>/dev/null >&2
     fi
   fi
   run intercept_analysis.py --csv "$TICK" --label "$NAME" --gen "$GEN" \
