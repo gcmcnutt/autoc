@@ -1,87 +1,299 @@
 # Feature Specification: 039 Xiao 20 Hz Flight — embedded control-loop catch-up
 
-**Feature Branch**: `039-xiao-20hz-flight` (unparked 2026-07-10, off merged-038 main `af6318e`;
-clean `rebuild-perf.sh` gate GREEN).
-**Created**: 2026-06-19.
-**Status**: DRAFT — re-homed from 037 (operator 2026-06-19: "push off the Xiao catch-up to 039").
-Operator scope direction added 2026-07-10 (see "Operator direction" below) — supersedes the carried-
-verbatim 037 scope where they conflict.
-
-## Operator direction (2026-07-10, pre-/speckit.specify discussion)
-
-**The 039 outcome**: a **flight test flying 038's M1** (t5 rebake elite, 37-in/2051-w) that **exhibits
-the smoothing we see in sim** — that smoothing is the primary motivator for 20 Hz. Everything else
-serves that flight.
-
-Scope calls:
-1. **Firmware is 029-vintage** — the 2026-05-17 flight flew 029 code. Regen to the 038 contract:
-   `nn_program_generated.cpp` (37-in/2051-w M1 topology), `arena.cc` in the xiao build,
-   `nn2cpp -a R,F,C` baked arena.
-2. **Pull the NN forward-pass unroll FORWARD** (was US3/T042) — we may want the loop unroll for eval
-   now, not gated behind 50 Hz (2051 weights at 20 Hz; known ~6.5× table-driven overhead).
-3. **Latency is the critical open ask**: do we need to **amend the sim latency model and RETRAIN M1**?
-   (Deferred until now.) Plan: experiment/bench the real 20 Hz loop latency first, fold in what we now
-   know about servo response (037 servo v2), then **rerun an M1 bake on the updated model** if the
-   numbers move. Prior bench: 30 ms with consolidated MSP ([project_sim_latency], pre-20 Hz).
-4. **Defer the slaved high-bandwidth local IMU** (LSM6DS3 fast loop, was US2's headline) **if system
-   latency allows** — per our research, prefer the INAV-state-driven 20 Hz loop without it; the latency
-   experiments in (3) decide.
-5. **BLE log download stays** (no cable in the field) — the USB-download backlog item is out of 039.
-6. **Log compression on storage is in scope** (packed format) — 20 Hz ≈ 2× log volume; flash budget is
-   the real constraint (023-era finding).
-7. **Packed-log contract correction (verified in code 2026-07-10)**: we are NOT erasing on the fly —
-   the data region is pre-erased only via the ground-triggered BLE `ERASE:ALL` (`bluetooth.cpp:184` →
-   `flashLoggerErase()`; logging is disabled until initialized), and the metadata flush already runs an
-   async erase state machine (`flash_logger.cpp:976-994`). The contract's "no in-loop erase" tail-risk
-   framing should be re-aimed at the residual blocking write/metadata path, not data-region erases.
-**Input**: 037 closed the M1 *controller* question (t10 GO at 20 Hz + 0.8 s window + honest servo). The
-remaining 037 work was always the **flight-enablement / firmware** track — get the xiao to actually run
-the 20 Hz control loop in real flight. That is engineering on a different surface (embedded firmware,
-INAV link, real-time scheduling) than the controller-cadence feature, so it earns its own spec.
+**Feature Branch**: `039-xiao-20hz-flight` (pre-created 2026-07-10 off merged-038 main `af6318e`; clean
+`rebuild-perf.sh` gate GREEN)
+**Created**: 2026-06-19 (stub, re-homed from 037) · **Specified**: 2026-07-10
+**Status**: Draft
+**Input**: User description: "039 Xiao 20 Hz Flight — embedded control-loop catch-up … Outcome: a
+flight test flying 038's M1 elite (37-input/2051-weight, t5 rebake) at 20 Hz on the xiao, exhibiting
+the control smoothing we see in sim — the primary motivator for 20 Hz. Scope: (1) firmware regen from
+029-vintage to the 038 contract; (2) NN forward-pass unroll pulled forward; (3) LATENCY RESEARCH as a
+first-class story — examine old flight logs and what crrcsim simulates, then decide a plan of action
+(possibly amend the sim latency model and rerun an M1 bake; also decides the deferred local IMU);
+(4) COMPRESSION RESEARCH as a first-class story — packed log format AND open research on compression
+techniques to lower write bandwidth to flash; (5) the flight test itself with sim-vs-real smoothing
+comparison as the acceptance read. Primary research (latency + compression) structured to run during
+the planning phase."
 
 ## Overview
 
-Make the xiao run the evolved NN control loop at **20 Hz on real hardware** for an M1 flight, then push
-toward **50 Hz**. This is the bridge between "the sim says 20 Hz is GO" (037) and "we flew it." It runs
-**parallel to 038** (M2 robustness) and **031** (camera hardware) — an M1 flight does not need the camera.
+038 closed with the best-validated M1 controller to date (t5 rebake elite: enriched 37-input
+situational-awareness contract, ≈ parity with the best-ever 037 t10, novel-geometry generalization
+proven at wrap). The xiao still flies **029-vintage firmware** (last flight 2026-05-17) — two input-
+schema generations behind, at 10 Hz. 039 is the bridge: **fly 038's M1 at 20 Hz on real hardware and
+see the sim's control smoothing in the real flight logs** — that smoothing is the primary motivator
+for 20 Hz (037's finding). Two open questions are promoted to first-class research, run during the
+planning phase: **latency** (is the sim's compute-latency + servo-response model honest enough, or
+does M1 need a retrain on an amended model?) and **log compression** (20 Hz ≈ 2× log volume against a
+fixed flash budget and write-bandwidth ceiling).
 
-## Scope — carried verbatim from 037 Phases 6 & 7 (US2 + US3)
+## User Scenarios & Testing *(mandatory)*
 
-The dependency-ordered task breakdown already exists as 037 Phase 6 (US2) / Phase 7 (US3); it should be
-lifted into `specs/039-xiao-20hz-flight/tasks.md` at `/speckit.tasks` time. Headline content:
+### User Story 1 - Firmware catch-up to the 038 controller contract (Priority: P1)
 
-### US2 — Phase B: embedded ~20 Hz (Priority: P1 for 039)
-Run a fresh ~20 Hz control tick on real hardware (local-IMU fast loop + INAV slow sync), validated
-against INAV, producing the flown controller. Was 037 T031–T040:
-- **Local IMU** — `xiao/src/imu_local.{cpp,h}`: LSM6DS3 TWIM-DMA read + completion ISR; complementary /
-  loosely-coupled fusion (local gyro propagation + accel leveling + INAV-aided heading); resolves the
-  "do we trust the onboard IMU at control rate" question (037's local-IMU thread).
-- **021 convention cross-check** at the `autoc::imu::inavQuatToAerospaceEB` boundary (host-unit + logged).
-- **Link baud raise** on both ends (`xiao/src/msplink.cpp` Serial1.begin, INAV side) for the 20 Hz budget.
-- **INAV-side** command override + state serve at 20 Hz; keep CH6 = manual semantics.
-- **Three rate tiers** (fast local IMU @ control rate / intermediate INAV sync / slow telemetry).
-- **`MSP_NN_EVAL_DIVISOR=1`** (20 Hz NN) once the tick budget fits.
-- **Packed dual-stream log** (P5; `contracts/packed-log-format.md`) — local-IMU logged beside INAV.
-- **Validation**: `activate → capture → confirm` (local-IMU logged beside INAV) → promote → flight.
+The operator regenerates the xiao NN program from the pinned 038 M1 elite (37-input/2051-weight),
+brings the firmware's input gathering up to the 038 contract (including the new situational-awareness
+inputs), and pulls the NN forward-pass unroll forward from the 50 Hz stretch so evaluation cost is a
+non-issue at 20 Hz. Bench verification proves the embedded evaluation matches the desktop reference
+before anything flies.
 
-### US3 — 50 Hz (Priority: P2 for 039, gated on US2 at 20 Hz)
-Reach a 20 ms tick with a bounded, tail-safe real-time loop. Was 037 T041–T045:
-- **R4 cycle-count harness** (`xiao/` bench target) to measure the eval budget.
-- **Fully unroll + fast-tanh** the NN forward pass (`xiao/src/generated/nn_program_generated.cpp`).
-- **Real-time slot scheduling** (collect→process→output→log) with control-critical slots protected.
-- **Tail-bounding**: async QSPI flash (no in-loop erase), NVIC priorities so the control tick never
-  starves.
-- **Validate** the 50 Hz sim arm at FDM ≥500 Hz (≥10× oversample) clears the gate; then on-target.
+**Why this priority**: Nothing else in 039 can happen without it — the flight candidate cannot run on
+029-vintage firmware, and every downstream measurement (latency bench, tick budget, flight) uses this
+firmware.
 
-## Dependencies & Sequencing
-- **Upstream**: 037 t10 (the 20 Hz controller to flash) — done.
-- **Parallel, not blocking**: 038 (M2 robustness), 031 (camera). An M1 flight needs neither.
-- **Gating within 039**: US3 (50 Hz) gated on US2 (20 Hz) holding on-target.
+**Independent Test**: On the bench (no flight), feed a recorded input sequence through the xiao and
+through the desktop reference evaluator; outputs match within tolerance and per-tick evaluation time
+is measured and within budget.
+
+**Acceptance Scenarios**:
+
+1. **Given** the pinned 038 M1 weight file, **When** the firmware NN program is regenerated and built,
+   **Then** the xiao build compiles with the 038 input contract (situational-awareness inputs
+   included) and boots with the correct topology reported.
+2. **Given** a recorded flight-representative input sequence, **When** evaluated on xiao and on the
+   desktop reference, **Then** per-tick control outputs agree within an agreed numeric tolerance for
+   the full sequence (including recurrent-state warm-up from reset).
+3. **Given** the unrolled forward pass, **When** per-tick cost is measured on target, **Then** the
+   gather + evaluate + output path fits the 20 Hz tick with margin, and the measured cost is recorded
+   for the latency model.
+
+---
+
+### User Story 2 - Latency ground truth → plan of action (Priority: P1)
+
+The operator determines what the real control pipeline latency actually is and whether the simulator's
+latency + servo-response model is honest enough for the trained M1 to transfer. The research examines
+(a) existing/old flight logs for measured pipeline timing, (b) what crrcsim currently simulates
+(compute latency and the 037 servo v2 response model), and (c) fresh bench measurements from the
+regenerated 20 Hz firmware. The deliverable is a **decision**: either the sim model stands (fly the
+existing elite), or the model is amended and an M1 retrain is run on the updated model before the
+flight. The same numbers decide whether the deferred high-bandwidth local IMU is needed at all.
+
+**Why this priority**: This is the critical deferred ask. Flying a controller trained against a wrong
+latency model can mask or fake the smoothing result the whole feature exists to demonstrate — and a
+retrain is the longest-lead item in 039, so the decision must come early (planning-phase research).
+
+**Independent Test**: The decision memo exists with numbers: measured real pipeline latency
+(component-by-component), the sim's current modeled values, the delta, and the go/no-go on amending +
+retraining and on the local IMU. Testable without any flight.
+
+**Acceptance Scenarios**:
+
+1. **Given** old flight logs with pipeline timing evidence, **When** analyzed, **Then** the real
+   sensor→command latency is quantified with its components (state fetch, evaluation, command send,
+   actuation), including the tail behavior, at the 20 Hz cadence.
+2. **Given** the sim's current latency + servo-response parameters, **When** compared against the
+   measured values, **Then** the gap is stated numerically and a documented decision follows: model
+   stands / model amended.
+3. **Given** the decision is "amended", **When** the sim model is updated, **Then** an M1 bake on the
+   updated model is planned and run, and its elite passes the same parity gates as the t5 elite before
+   becoming the flight candidate.
+4. **Given** the measured latency budget, **When** evaluated against control-loop needs, **Then** the
+   local-IMU question is answered on the record (stays deferred / becomes necessary).
+
+---
+
+### User Story 3 - Flight logging that sustains 20 Hz (compression research + new format) (Priority: P2)
+
+The operator can log full flights at 20 Hz within the existing flash budget and write-bandwidth
+ceiling. Open research (planning phase) evaluates compression techniques and alternative log formats —
+compact/differential encodings and/or lightweight general-purpose compression — against real recorded
+log content, then the chosen format is implemented with a single authoritative writer/reader pair so
+ground tooling decodes it. Field retrieval stays over BLE (no cable in the field).
+
+**Why this priority**: 20 Hz roughly doubles log volume; the current verbose text format was already
+identified (023) as the real 20 Hz blocker — not NN compute. Without this, the flight in US5 cannot
+capture the full-flight evidence the smoothing comparison needs.
+
+**Independent Test**: Bench-log a sustained 20 Hz session; verify no control-tick interference from
+the write path, full-session capture within the flash budget, and lossless ground-side decode of the
+downloaded log.
+
+**Acceptance Scenarios**:
+
+1. **Given** representative recorded log content, **When** candidate encodings are evaluated, **Then**
+   measured compression ratio and write-bandwidth per candidate are documented and a format is chosen
+   on evidence.
+2. **Given** the implemented format, **When** logging a sustained 20 Hz bench session, **Then** the
+   write path (including metadata maintenance) never delays a control tick, and the flash budget
+   holds for at least a full flight's duration.
+3. **Given** a completed session, **When** downloaded over BLE and decoded on the ground, **Then** the
+   decoded stream is complete and field-for-field faithful, and the sim-to-real analysis tooling can
+   consume it.
+4. **Given** the pre-flight flash-clear flow (ground-triggered erase), **When** preparing for a
+   flight, **Then** the existing clear/initialize behavior is preserved (logging remains disabled
+   until initialized).
+
+---
+
+### User Story 4 - The 20 Hz control loop on real hardware (Priority: P2)
+
+The operator enables the full 20 Hz control tick on the xiao–INAV system: the NN evaluates every tick
+(no divisor), the link budget supports state-read + command-write at 20 Hz, and the loop holds its
+cadence under real conditions (bench, then flight-shaped bench with logging active).
+
+**Why this priority**: This is the cadence the controller was trained for; without it US5's smoothing
+read is confounded. It depends on US1 (firmware) and is informed by US2 (latency numbers) and US3
+(logging active during the loop).
+
+**Independent Test**: Bench session with the full stack active (state fetch, NN eval, command write,
+logging): measured tick cadence holds 20 Hz with bounded jitter and zero missed/overrun ticks over a
+flight-length session.
+
+**Acceptance Scenarios**:
+
+1. **Given** the regenerated firmware, **When** the NN evaluation divisor is set to every-tick and the
+   link rate is provisioned for 20 Hz, **Then** a flight-length bench run shows 20 Hz cadence held
+   with bounded jitter and no overruns.
+2. **Given** the 20 Hz loop with logging active, **When** running flight-shaped scenarios on the
+   bench, **Then** control-tick timing is unaffected by log writes (verified from the timing log
+   itself).
+
+---
+
+### User Story 5 - The M1 flight test: sim smoothing, for real (Priority: P1 — capstone, gated on US1–US4)
+
+The operator flies the 038 M1 (or its retrained successor if US2 amends the model) at 20 Hz, downloads
+the logs, and runs the sim-vs-real comparison. The acceptance read is **control smoothing**: the
+per-axis control character seen in the sim (the 037/038 aggressiveness envelope) shows up in the real
+flight — the primary motivator for 20 Hz.
+
+**Why this priority**: This is the 039 outcome; everything else exists to enable it. It is last only
+by dependency, not by value.
+
+**Independent Test**: A completed flight with full 20 Hz logs, plus a produced sim-vs-real per-axis
+comparison report against the same controller's sim baseline.
+
+**Acceptance Scenarios**:
+
+1. **Given** the flight candidate and the pre-flight checklist, **When** the flight is flown across
+   the standard test paths (including the OOD random-intercept path), **Then** the full flight is
+   captured at 20 Hz and retrieved in the field over BLE.
+2. **Given** the flight logs and the sim baseline for the same controller, **When** the per-axis
+   comparison is produced, **Then** real per-axis control activity (step-to-step change and amplitude
+   character) is consistent with the sim envelope, and qualitatively smoother than the 10 Hz-era
+   flights.
+3. **Given** the flight evidence, **When** the 039 outcome is judged, **Then** a documented verdict
+   states whether 20 Hz + the 038 controller exhibits sim-grade smoothing in reality, with the resid-
+   ual gaps named (feeding the next feature).
+
+---
+
+### Edge Cases
+
+- **Evaluation overrun at 20 Hz**: if a tick's gather+eval+send exceeds the tick under fault
+  conditions, the system must degrade predictably (skip/coalesce, never emit stale-mislabeled
+  commands) and the event must be visible in the log.
+- **Arena inputs in real flight**: the 038 contract includes arena-relative inputs
+  (distance-to-boundary, inward vector) that had no 029 equivalent. Real flight has no cylinder — the
+  baked arena geometry and its origin must be defined relative to the field (assumed: training-
+  matching arena centered on the arming/home origin) and verified pre-flight; a wrong origin
+  silently shifts these inputs across the whole flight.
+- **Recurrent warm-up at engage**: hidden state resets on span activation; the first ticks after
+  engage are warm-up. Bench parity (US1) must cover the reset/warm-up transient, and the flight
+  procedure should expect it at each engage.
+- **Latency research contradicts the sim badly**: if the measured latency invalidates the current
+  elite, the retrain becomes 039's long pole — the plan must sequence the flight after the retrain
+  rather than flying a known-mistrained controller (operator decision point).
+- **Compression underdelivers**: if no candidate format sustains full-rate dual-content logging within
+  the write budget, the log must rate-tier (full-rate control-critical fields, decimated telemetry)
+  rather than silently dropping frames.
+- **BLE retrieval of larger logs**: 20 Hz logs are ~2× larger; field download time over BLE must stay
+  practical for between-flight turnaround (compression helps here too — download is of compressed
+  content).
+
+## Requirements *(mandatory)*
+
+### Functional Requirements
+
+- **FR-001**: The embedded NN program MUST be regenerated from the pinned 038 M1 elite weight file
+  (37-input/2051-weight contract) with input gathering semantically identical to the desktop
+  reference, including the situational-awareness inputs and their baked arena geometry.
+- **FR-002**: Embedded evaluation MUST be verified against the desktop reference on a recorded input
+  sequence (including reset/warm-up) within a stated numeric tolerance, on the bench, before flight.
+- **FR-003**: The NN forward pass MUST be restructured (unrolled) so that measured per-tick evaluation
+  cost on target leaves positive margin in the 20 Hz tick alongside gather, command send, and logging.
+- **FR-004**: The latency research MUST quantify real pipeline latency (components and tail) from
+  existing flight logs plus fresh bench measurements on the regenerated firmware, and state the sim's
+  currently modeled equivalents side-by-side.
+- **FR-005**: A documented latency decision MUST result: sim model stands, or sim model is amended;
+  if amended, an M1 retrain on the amended model MUST be run and its elite passes the same
+  verification gates (FR-002) to become the flight candidate.
+- **FR-006**: The latency research MUST explicitly answer whether the deferred high-bandwidth local
+  IMU is required for the 20 Hz loop, on the record.
+- **FR-007**: The compression research MUST evaluate candidate log encodings (compact/differential
+  and/or lightweight general-purpose compression) against real recorded log content, with measured
+  ratio and write-bandwidth per candidate, and select a format on that evidence.
+- **FR-008**: The selected log format MUST sustain full 20 Hz logging for a flight-length session
+  within the flash capacity budget, with a write path (including metadata maintenance) that never
+  delays a control tick.
+- **FR-009**: The log format MUST have a single authoritative writer/reader pair; ground tooling
+  (including the sim-to-real analysis flow) MUST decode downloaded logs losslessly.
+- **FR-010**: Field log retrieval MUST remain over BLE; the existing ground-triggered flash
+  clear/initialize flow MUST be preserved.
+- **FR-011**: The control loop MUST run the NN every tick at 20 Hz (no evaluation divisor) with the
+  link provisioned for per-tick state read + command write; cadence and jitter MUST be measured and
+  bounded over a flight-length bench session.
+- **FR-012**: The flight test MUST capture full 20 Hz logs sufficient to produce a per-axis
+  sim-vs-real control-character comparison against the same controller's sim baseline, and that
+  comparison MUST be produced as the feature's acceptance read.
+- **FR-013**: Pre-flight verification MUST confirm the safety envelope is unchanged (arming/mode-flip
+  semantics, failsafe behavior) with the new firmware before the flight.
+
+### Key Entities
+
+- **Flight candidate**: the pinned 038 M1 elite weight set (or its retrained successor per FR-005);
+  identified by training run + generation; verified by bench parity before flash.
+- **Latency decision memo**: measured real latency components + sim-modeled values + the
+  stands/amended decision + the local-IMU verdict; the planning-phase research deliverable.
+- **Flight log (new format)**: the compressed/packed per-tick record (control inputs/outputs, state,
+  timing marks) with writer/reader pair; the evidence base for the smoothing comparison.
+- **Sim-vs-real comparison report**: per-axis control-character comparison (sim baseline vs flight)
+  for the flown controller; the 039 acceptance artifact.
+
+## Success Criteria *(mandatory)*
+
+### Measurable Outcomes
+
+- **SC-001**: The xiao evaluates the 038-contract M1 on the bench with outputs matching the desktop
+  reference within the agreed tolerance over a full recorded sequence, including warm-up.
+- **SC-002**: A flight-length session (bench and then flight) holds 20 Hz control cadence with zero
+  logging-induced tick overruns.
+- **SC-003**: A full flight at 20 Hz is captured end-to-end within the flash budget and retrieved in
+  the field over BLE with lossless decode — at a stored size at least 2× smaller per tick than the
+  current text format (so 20 Hz fits where 10 Hz text did).
+- **SC-004**: The latency decision memo exists with quantified real-vs-sim numbers and explicit
+  verdicts on (a) amend+retrain and (b) the local IMU — delivered during the planning phase, before
+  implementation locks the flight candidate.
+- **SC-005**: The flown flight's per-axis control activity falls within the sim envelope for the same
+  controller (the sim-vs-real report shows step-to-step change and amplitude character consistent
+  with sim, axis by axis), and is measurably smoother than the 10 Hz-era baseline flight.
+- **SC-006**: A documented 039 verdict states whether sim-grade smoothing was exhibited in real
+  flight, with residual gaps named.
+
+## Assumptions
+
+- The flight candidate defaults to the 038 t5 rebake elite; it is replaced only by the FR-005 retrain
+  path if the latency research amends the sim model.
+- 20 Hz (50 ms tick) is the operating configuration (037 decision); 50 Hz remains a gated stretch
+  goal outside this feature's success criteria.
+- The arena-relative inputs use the training-matching arena geometry centered on the arming/home
+  origin in real flight (verified pre-flight per the edge case above).
+- The slaved high-bandwidth local IMU is **deferred by default** (operator direction 2026-07-10);
+  only the FR-006 verdict can pull it back in.
+- BLE is the only field retrieval path (no cable in the field); USB download stays on the backlog.
+- Existing flash pre-erase behavior is the baseline: the data region is erased only by the
+  ground-triggered clear command, and logging is disabled until initialized (verified in code
+  2026-07-10) — the compression work targets density and write-path tail, not erase avoidance.
+- The primary research items (latency: US2; compression candidates: US3 scenario 1) are executed
+  during the planning phase (`/speckit.plan` research), so implementation starts with both decisions
+  made.
 
 ## Out of Scope
-- The M2 / tracker controller work (038).
-- Camera/beacon hardware + optics (031).
-- Any controller-cadence / fitness changes (037 closed that; 038 owns M2 fitness).
 
-> Detailed acceptance, contracts, and the T0xx task list live in 037 Phases 6–7 today; migrate them here
-> at plan/tasks time. This stub exists so the xiao track has a stable home per the 2026-06-19 descope.
+- The M2 / tracker controller work (038 closed; 040 owns M2 depth).
+- Camera/beacon hardware + optics (031/040).
+- 50 Hz on-target operation (gated stretch; only the eval-cost derisk (unroll) is pulled forward).
+- USB log download (BLE stays for field use).
+- The slaved high-bandwidth local IMU (unless FR-006 concludes it is required).
+- Any controller-cadence / fitness-function changes beyond the FR-005 latency-amended M1 rebake.
