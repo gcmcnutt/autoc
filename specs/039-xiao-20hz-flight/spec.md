@@ -27,6 +27,28 @@ planning phase: **latency** (is the sim's compute-latency + servo-response model
 does M1 need a retrain on an amended model?) and **log compression** (20 Hz ≈ 2× log volume against a
 fixed flash budget and write-bandwidth ceiling).
 
+## Clarifications
+
+### Session 2026-07-10
+
+- Q: How should the baked arena be placed for real flight (defines what the new dist-to-boundary /
+  inward-vector NN inputs read)? → A: Centered at the span-engage point (re-centered each engage),
+  training-size geometry — mirrors training entry semantics, where the craft is at the arena center
+  at scenario start.
+- Q: What makes the flight's smoothing read a PASS for SC-005? → A: Per-axis band vs sim — flight
+  per-axis dCtrl ⟨|Δu|⟩ and amplitude ⟨|out|⟩ within ±25% of the same controller's sim values, each
+  axis, plus qualitatively less bang-bang than the 2026-05-17 (10 Hz-era) flight.
+- Q: What parity tolerance gates the bench comparison between xiao and desktop NN evaluation? → A:
+  No numeric replay-parity harness — bench verification is observational: the firmware runs on the
+  stationary bench, a span engages, and the recorded logs show the generated path moving around the
+  craft with the NN inputs/outputs evolving sensibly (no NaN / lockup / implausible saturation).
+- Q: What measured-vs-modeled latency gap triggers amending the sim model + an M1 retrain? → A: No
+  pre-set rule — the operator decides at the research review with the measured numbers in hand; the
+  research deliverable is the numbers + a recommendation, not an automatic trigger.
+- Q: What flight duration must a full 20 Hz log capture within the flash budget? → A: ~2 flights of
+  3–4 minutes each between flash clears (packs run short — the model drives the throttle hard), and
+  high-bandwidth logging runs only during autoc engagement (spans), not the whole flight.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Firmware catch-up to the 038 controller contract (Priority: P1)
@@ -41,18 +63,19 @@ before anything flies.
 029-vintage firmware, and every downstream measurement (latency bench, tick budget, flight) uses this
 firmware.
 
-**Independent Test**: On the bench (no flight), feed a recorded input sequence through the xiao and
-through the desktop reference evaluator; outputs match within tolerance and per-tick evaluation time
-is measured and within budget.
+**Independent Test**: On the stationary bench (no flight), the firmware runs a full engaged span and
+the recorded logs show the generated path moving around the craft with NN inputs/outputs evolving
+sensibly; per-tick evaluation time is measured and within budget.
 
 **Acceptance Scenarios**:
 
 1. **Given** the pinned 038 M1 weight file, **When** the firmware NN program is regenerated and built,
    **Then** the xiao build compiles with the 038 input contract (situational-awareness inputs
    included) and boots with the correct topology reported.
-2. **Given** a recorded flight-representative input sequence, **When** evaluated on xiao and on the
-   desktop reference, **Then** per-tick control outputs agree within an agreed numeric tolerance for
-   the full sequence (including recurrent-state warm-up from reset).
+2. **Given** a stationary bench with the firmware live, **When** a span is engaged and run to
+   completion, **Then** the recorded logs show the path moving around the craft and all 37 inputs +
+   3 outputs evolving plausibly — correct ranges, no NaN, no lockup, arena inputs reading
+   center-of-arena values at engage (per the re-centering clarification).
 3. **Given** the unrolled forward pass, **When** per-tick cost is measured on target, **Then** the
    gather + evaluate + output path fits the 20 Hz tick with margin, and the measured cost is recorded
    for the latency model.
@@ -116,7 +139,7 @@ downloaded log.
    on evidence.
 2. **Given** the implemented format, **When** logging a sustained 20 Hz bench session, **Then** the
    write path (including metadata maintenance) never delays a control tick, and the flash budget
-   holds for at least a full flight's duration.
+   holds for two flights' engaged spans (2 × 3–4 min) without an intermediate clear.
 3. **Given** a completed session, **When** downloaded over BLE and decoded on the ground, **Then** the
    decoded stream is complete and field-for-field faithful, and the sim-to-real analysis tooling can
    consume it.
@@ -137,8 +160,8 @@ read is confounded. It depends on US1 (firmware) and is informed by US2 (latency
 (logging active during the loop).
 
 **Independent Test**: Bench session with the full stack active (state fetch, NN eval, command write,
-logging): measured tick cadence holds 20 Hz with bounded jitter and zero missed/overrun ticks over a
-flight-length session.
+logging): measured tick cadence holds 20 Hz with bounded jitter and zero missed/overrun ticks over an
+engagement-length session (several consecutive 3–4 min spans).
 
 **Acceptance Scenarios**:
 
@@ -185,13 +208,14 @@ comparison report against the same controller's sim baseline.
   conditions, the system must degrade predictably (skip/coalesce, never emit stale-mislabeled
   commands) and the event must be visible in the log.
 - **Arena inputs in real flight**: the 038 contract includes arena-relative inputs
-  (distance-to-boundary, inward vector) that had no 029 equivalent. Real flight has no cylinder — the
-  baked arena geometry and its origin must be defined relative to the field (assumed: training-
-  matching arena centered on the arming/home origin) and verified pre-flight; a wrong origin
-  silently shifts these inputs across the whole flight.
+  (distance-to-boundary, inward vector) that had no 029 equivalent. Real flight has no cylinder —
+  per clarification, the training-size arena is **re-centered at the span-engage point on each
+  engage** (mirroring training, where the craft starts at the arena center). The engage-time
+  re-centering must be verified on the bench (inputs read center-of-arena values at engage) and the
+  recorded arena origin must land in the log for post-flight analysis.
 - **Recurrent warm-up at engage**: hidden state resets on span activation; the first ticks after
-  engage are warm-up. Bench parity (US1) must cover the reset/warm-up transient, and the flight
-  procedure should expect it at each engage.
+  engage are warm-up. The bench span (US1) must include the engage/reset transient in its logs, and
+  the flight procedure should expect it at each engage.
 - **Latency research contradicts the sim badly**: if the measured latency invalidates the current
   elite, the retrain becomes 039's long pole — the plan must sequence the flight after the retrain
   rather than flying a known-mistrained controller (operator decision point).
@@ -208,32 +232,38 @@ comparison report against the same controller's sim baseline.
 
 - **FR-001**: The embedded NN program MUST be regenerated from the pinned 038 M1 elite weight file
   (37-input/2051-weight contract) with input gathering semantically identical to the desktop
-  reference, including the situational-awareness inputs and their baked arena geometry.
-- **FR-002**: Embedded evaluation MUST be verified against the desktop reference on a recorded input
-  sequence (including reset/warm-up) within a stated numeric tolerance, on the bench, before flight.
+  reference, including the situational-awareness inputs with training-size arena geometry
+  **re-centered at the span-engage point on each engage** (arena origin recorded in the flight log).
+- **FR-002**: Embedded evaluation MUST be verified on the stationary bench before flight: a full
+  engaged span whose recorded logs show the generated path moving around the craft with all NN
+  inputs/outputs evolving plausibly (correct ranges, no NaN/lockup, arena inputs reading
+  center-of-arena at engage) — observational verification, not a numeric replay harness.
 - **FR-003**: The NN forward pass MUST be restructured (unrolled) so that measured per-tick evaluation
   cost on target leaves positive margin in the 20 Hz tick alongside gather, command send, and logging.
 - **FR-004**: The latency research MUST quantify real pipeline latency (components and tail) from
   existing flight logs plus fresh bench measurements on the regenerated firmware, and state the sim's
   currently modeled equivalents side-by-side.
-- **FR-005**: A documented latency decision MUST result: sim model stands, or sim model is amended;
-  if amended, an M1 retrain on the amended model MUST be run and its elite passes the same
-  verification gates (FR-002) to become the flight candidate.
+- **FR-005**: A documented latency decision MUST result: sim model stands, or sim model is amended.
+  There is no pre-set numeric trigger — the research delivers the measured-vs-modeled numbers plus a
+  recommendation, and the operator decides at the research review. If amended, an M1 retrain on the
+  amended model MUST be run and its elite passes the same verification gates (FR-002) to become the
+  flight candidate.
 - **FR-006**: The latency research MUST explicitly answer whether the deferred high-bandwidth local
   IMU is required for the 20 Hz loop, on the record.
 - **FR-007**: The compression research MUST evaluate candidate log encodings (compact/differential
   and/or lightweight general-purpose compression) against real recorded log content, with measured
   ratio and write-bandwidth per candidate, and select a format on that evidence.
-- **FR-008**: The selected log format MUST sustain full 20 Hz logging for a flight-length session
-  within the flash capacity budget, with a write path (including metadata maintenance) that never
-  delays a control tick.
+- **FR-008**: The selected log format MUST sustain full-rate 20 Hz logging during autoc-engaged
+  spans (high-bandwidth logging is engagement-scoped, not whole-flight) and fit **two flights of
+  3–4 minutes each** in flash between ground clears, with a write path (including metadata
+  maintenance) that never delays a control tick.
 - **FR-009**: The log format MUST have a single authoritative writer/reader pair; ground tooling
   (including the sim-to-real analysis flow) MUST decode downloaded logs losslessly.
 - **FR-010**: Field log retrieval MUST remain over BLE; the existing ground-triggered flash
   clear/initialize flow MUST be preserved.
 - **FR-011**: The control loop MUST run the NN every tick at 20 Hz (no evaluation divisor) with the
   link provisioned for per-tick state read + command write; cadence and jitter MUST be measured and
-  bounded over a flight-length bench session.
+  bounded over a bench session covering several consecutive engagement-length (3–4 min) spans.
 - **FR-012**: The flight test MUST capture full 20 Hz logs sufficient to produce a per-axis
   sim-vs-real control-character comparison against the same controller's sim baseline, and that
   comparison MUST be produced as the feature's acceptance read.
@@ -255,19 +285,21 @@ comparison report against the same controller's sim baseline.
 
 ### Measurable Outcomes
 
-- **SC-001**: The xiao evaluates the 038-contract M1 on the bench with outputs matching the desktop
-  reference within the agreed tolerance over a full recorded sequence, including warm-up.
-- **SC-002**: A flight-length session (bench and then flight) holds 20 Hz control cadence with zero
-  logging-induced tick overruns.
-- **SC-003**: A full flight at 20 Hz is captured end-to-end within the flash budget and retrieved in
-  the field over BLE with lossless decode — at a stored size at least 2× smaller per tick than the
-  current text format (so 20 Hz fits where 10 Hz text did).
+- **SC-001**: The xiao runs the 038-contract M1 through a full engaged span on the stationary bench,
+  with recorded logs showing the path moving around the craft and all inputs/outputs plausible
+  (ranges, no NaN/lockup, engage-time arena re-centering visible).
+- **SC-002**: Engagement-length sessions (bench, then the real flights' engaged spans) hold 20 Hz
+  control cadence with zero logging-induced tick overruns.
+- **SC-003**: Two 3–4 minute flights' engaged spans at 20 Hz are captured end-to-end within the
+  flash budget (no ground clear between them) and retrieved in the field over BLE with lossless
+  decode — at a stored size at least 2× smaller per tick than the current text format (so 20 Hz
+  fits where 10 Hz text did).
 - **SC-004**: The latency decision memo exists with quantified real-vs-sim numbers and explicit
   verdicts on (a) amend+retrain and (b) the local IMU — delivered during the planning phase, before
   implementation locks the flight candidate.
-- **SC-005**: The flown flight's per-axis control activity falls within the sim envelope for the same
-  controller (the sim-vs-real report shows step-to-step change and amplitude character consistent
-  with sim, axis by axis), and is measurably smoother than the 10 Hz-era baseline flight.
+- **SC-005**: The flown flight's per-axis control activity matches the same controller's sim values
+  within a ±25% band, per axis, on both step-to-step change (dCtrl ⟨|Δu|⟩) and amplitude (⟨|out|⟩) —
+  and is qualitatively less bang-bang than the 2026-05-17 (10 Hz-era) baseline flight.
 - **SC-006**: A documented 039 verdict states whether sim-grade smoothing was exhibited in real
   flight, with residual gaps named.
 
@@ -277,8 +309,9 @@ comparison report against the same controller's sim baseline.
   path if the latency research amends the sim model.
 - 20 Hz (50 ms tick) is the operating configuration (037 decision); 50 Hz remains a gated stretch
   goal outside this feature's success criteria.
-- The arena-relative inputs use the training-matching arena geometry centered on the arming/home
-  origin in real flight (verified pre-flight per the edge case above).
+- The arena-relative inputs use the training-matching arena geometry (R=80 m, 5–100 m AGL),
+  re-centered at the span-engage point on each engage (per clarification; verified on the bench and
+  logged per the edge case above).
 - The slaved high-bandwidth local IMU is **deferred by default** (operator direction 2026-07-10);
   only the FR-006 verdict can pull it back in.
 - BLE is the only field retrieval path (no cable in the field); USB download stays on the backlog.

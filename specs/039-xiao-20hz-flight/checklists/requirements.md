@@ -35,9 +35,12 @@
   project-specific artifacts (xiao, INAV, BLE, crrcsim, M1 elite) because the "user" is the operator
   of this system and those ARE the domain nouns; no code-level details (file paths, function names,
   flags) appear in requirements or success criteria.
-- Numeric tolerances ("agreed tolerance", "bounded jitter") are deliberately deferred to planning-
-  phase contracts — the research stories (US2/US3) produce the numbers; each FR states what must be
-  measured and decided, which is testable.
+- Clarification session 2026-07-10 (5 questions) resolved: arena re-centering at span-engage; SC-005
+  pass band (±25% per-axis vs sim); bench verification is observational (no numeric replay harness);
+  latency retrain decision has no pre-set trigger (operator decides at research review); flash/log
+  budget = 2 × 3–4 min flights' engaged spans between clears, high-rate logging engagement-scoped.
+- "Bounded jitter" remains deliberately deferred to the planning-phase contracts (the latency
+  research produces the number).
 - Two decisions are structurally embedded rather than clarification markers: (a) flight candidate =
   t5 elite unless the latency research amends the model (FR-005 gate); (b) local IMU deferred unless
   FR-006 concludes otherwise. Both reflect explicit operator direction 2026-07-10.
