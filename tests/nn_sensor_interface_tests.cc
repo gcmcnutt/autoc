@@ -24,17 +24,20 @@ constexpr size_t tracker_meta_size() {
 }  // namespace
 
 TEST(NNSensorInterface, PathgenInputCountMatchesNNInputs) {
-    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 33);
+    // 038 FR-P0H (B): 33 → 37 (dist_to_boundary + inward_body xyz appended).
+    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 37);
     EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), NN_INPUT_COUNT);
-    EXPECT_EQ(pathgen_meta_size(), 33u);
+    EXPECT_EQ(pathgen_meta_size(), 37u);
 }
 
-TEST(NNSensorInterface, TrackerInputCountIs54) {
+TEST(NNSensorInterface, TrackerInputCountIs58) {
     // 030 M7a Session 2026-05-07 Q1: was 48 with HOME_X/Y/Z/HOME_DIST,
     // then 45 with single DIST_TO_BOUNDARY_ALONG_VEL.
     // 032 phase 1: 45 + 9 derived (span[6] + span_rate + tilt sin/cos) = 54.
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 54);
-    EXPECT_EQ(tracker_meta_size(), 54u);
+    // 038 FR-P0H: 54 + 4 situational-awareness (time_since_seen + inward_body
+    // xyz) = 58. (exit_dir sin/cos removed 038 US3 2026-07-05.)
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 58);
+    EXPECT_EQ(tracker_meta_size(), 58u);
 }
 
 TEST(NNSensorInterface, PathgenMetaWellFormed) {
@@ -73,11 +76,16 @@ TEST(NNSensorInterface, PathgenAnchorPositions) {
     EXPECT_EQ(static_cast<int>(PathgenInput::AIRSPEED), 29);
     EXPECT_EQ(static_cast<int>(PathgenInput::GYRO_P), 30);
     EXPECT_EQ(static_cast<int>(PathgenInput::GYRO_R), 32);
+    // 038 FR-P0H (B) — arena-awareness inputs at slots 33..36
+    EXPECT_EQ(static_cast<int>(PathgenInput::DIST_TO_BOUNDARY), 33);
+    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_X), 34);
+    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_Y), 35);
+    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_Z), 36);
 }
 
 TEST(NNSensorInterface, TrackerAnchorPositions) {
-    // Anchor positions per FR-006 + FR-016 + Session 2026-05-07 Q1 + 032 phase 1:
-    // 36 beacon + 8 state + 1 arena + 9 derived = 54 inputs.
+    // Anchor positions per FR-006 + FR-016 + Session 2026-05-07 Q1 + 032 phase 1
+    // + 038 FR-P0H: 36 beacon + 8 state + 1 arena + 9 derived + 4 sit-awareness = 58.
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_L_X_TM5), 0);
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_L_CEP_NOW), 17);
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_R_X_TM5), 18);
@@ -92,7 +100,13 @@ TEST(NNSensorInterface, TrackerAnchorPositions) {
     EXPECT_EQ(static_cast<int>(TrackerInput::SPAN_RATE), 51);
     EXPECT_EQ(static_cast<int>(TrackerInput::TARGET_TILT_SIN), 52);
     EXPECT_EQ(static_cast<int>(TrackerInput::TARGET_TILT_COS), 53);
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 54);
+    // 038 FR-P0H — situational-awareness inputs at slots 54..57
+    // (exit_dir sin/cos removed 038 US3 2026-07-05; inward_body shifts down 2).
+    EXPECT_EQ(static_cast<int>(TrackerInput::TIME_SINCE_SEEN), 54);
+    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_X), 55);
+    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_Y), 56);
+    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_Z), 57);
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 58);
 }
 
 TEST(NNSensorInterface, TrackerDerivedFeatureNamesCanonical) {
@@ -187,6 +201,8 @@ TEST(NNSensorInterface, PathgenMetaWalkProducesExistingHeaderText) {
         "   ds-5   ds-4   ds-3   ds-2   ds-1    ds0"
         "  dd/dt"
         "      qw      qx      qy      qz"
-        "     vel   gyrP   gyrQ   gyrR";
+        "     vel   gyrP   gyrQ   gyrR"
+        // 038 FR-P0H (B) arena-awareness columns (dBnd width 8, inX/Y/Z width 7)
+        "    dBnd    inX    inY    inZ";
     EXPECT_EQ(walk.str(), expected);
 }

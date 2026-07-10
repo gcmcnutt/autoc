@@ -58,7 +58,7 @@ TEST(GatherTrackerInputs, FillsHistoryFieldsInEnumOrder) {
     }
 
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
 
     for (int i = 0; i < 6; ++i) {
         EXPECT_FLOAT_EQ(out.beacon_l_x[i],   history.left_x[i])   << i;
@@ -74,7 +74,7 @@ TEST(GatherTrackerInputs, FillsAircraftStateFieldsFromAircraftState) {
     AircraftState chase = makeChaseState();
     TrackerHistoryWindow history{};
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
 
     // Quat: identity ⇒ (1, 0, 0, 0).
     EXPECT_FLOAT_EQ(out.quat_w, 1.0f);
@@ -95,7 +95,7 @@ TEST(GatherTrackerInputs, DistToBoundaryComputedFromArenaAndVelocity) {
     FlightArena arena;  // defaults: 80m radius, 5m floor, 100m ceiling
 
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, arena, 1.25f, out);
+    gather_tracker_inputs(chase, history, arena, 1.25f, SituationalAwarenessState{}, out);
 
     // M11.preA.2: dist_to_boundary is now tanh(d / kDistToBoundaryScale_m).
     // d_raw ≈ 70m (wall hit, no floor/ceiling intersection since vz = 0).
@@ -122,7 +122,7 @@ TEST(GatherTrackerInputs, DistToBoundaryWithDescendingVelocityHitsFloor) {
     TrackerHistoryWindow history{};
     FlightArena arena;
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, arena, 1.25f, out);
+    gather_tracker_inputs(chase, history, arena, 1.25f, SituationalAwarenessState{}, out);
 
     // M11.preA.2: tanh-saturated. d_raw ≈ 44.7m → tanh(44.7/20) = tanh(2.235)
     // ≈ 0.977 (still saturated; would need chase within ~10-20m of boundary
@@ -149,7 +149,7 @@ TEST(GatherTrackerInputs, DistToBoundarySoftSatShapeNearWall) {
     TrackerHistoryWindow history{};
     FlightArena arena;
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, arena, 1.25f, out);
+    gather_tracker_inputs(chase, history, arena, 1.25f, SituationalAwarenessState{}, out);
 
     EXPECT_NEAR(out.dist_to_boundary_along_vel,
                 std::tanh(10.0f / kDistToBoundaryScale_m), 1e-3f);
@@ -159,9 +159,10 @@ TEST(GatherTrackerInputs, DistToBoundarySoftSatShapeNearWall) {
 // reinterpret_cast<float*>(&trackerInputs) is the path nn_forward uses;
 // verify the struct can be safely treated as a flat float[54] post-032 phase 1.
 TEST(GatherTrackerInputs, LayoutIsContiguousFloat54) {
-    static_assert(sizeof(TrackerInputs) == 54 * sizeof(float),
-                  "TrackerInputs must be float[54] for nn_forward to consume "
-                  "(032 phase 1: 45 existing + 9 derived = 54)");
+    static_assert(sizeof(TrackerInputs) == 58 * sizeof(float),
+                  "TrackerInputs must be float[58] for nn_forward to consume "
+                  "(54 pre-038 + 038 FR-P0H: 1 target-lost + 3 arena-inward = 58; "
+                  "exit_dir removed 038 US3)");
 
     AircraftState chase = makeChaseState();
     TrackerHistoryWindow history{};
@@ -169,7 +170,7 @@ TEST(GatherTrackerInputs, LayoutIsContiguousFloat54) {
     history.right_cep[5] = 0.987f;
     history.span[3] = 0.456f;
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
 
     const float* flat = reinterpret_cast<const float*>(&out);
     // First slot should be beacon_l_x[0] per enum order.
@@ -224,7 +225,7 @@ TEST(GatherTrackerInputs, CopiesSpanHistoryIntoOutputSlots) {
         history.span[i] = 0.10f + 0.05f * i;  // 0.10, 0.15, 0.20, ...
     }
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
     for (int i = 0; i < 6; ++i) {
         EXPECT_FLOAT_EQ(out.beacon_pair_span[i], history.span[i]) << i;
     }
@@ -240,7 +241,7 @@ TEST(GatherTrackerInputs, SpanRateIsRateOverRecentLagGap) {
     history.span[5] = 0.50f;
     history.span[4] = 0.30f;
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
     EXPECT_FLOAT_EQ(out.span_rate, 0.20f / kNNHistoryRecentGapSec);  // 2.0/s
 }
 
@@ -251,7 +252,7 @@ TEST(GatherTrackerInputs, TiltAtMidRangeHorizontalPair) {
                                 -0.15f, 0.0f,   // port at image-left
                                  0.15f, 0.0f);  // starboard at image-right
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
     // θ = 0 → (sin, cos) = (0, 1)
     EXPECT_NEAR(out.target_tilt_sin, 0.0f, 1e-5f);
     EXPECT_NEAR(out.target_tilt_cos, 1.0f, 1e-5f);
@@ -266,7 +267,7 @@ TEST(GatherTrackerInputs, TiltRolledNinetyDegreesRelative) {
                                 0.0f, -0.15f,   // port below center
                                 0.0f, 0.15f);   // starboard above
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
     // θ = +π/2 → (sin, cos) = (1, 0)
     EXPECT_NEAR(out.target_tilt_sin, 1.0f, 1e-5f);
     EXPECT_NEAR(out.target_tilt_cos, 0.0f, 1e-5f);
@@ -279,7 +280,7 @@ TEST(GatherTrackerInputs, CepGatedLeftBeaconSubstitutesNeutral) {
     // Override LEFT cep at "now" to be sentinel (1.5 ≥ kCepGateThreshold).
     history.left_cep[5] = 1.5f;
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
     // span_now: gate substitution at gather layer would set to 0; here it's
     // sourced from history.span[5] (computed upstream in projectAndShift-
     // History). For the gather contract, what matters is the tilt + span_rate
@@ -295,7 +296,7 @@ TEST(GatherTrackerInputs, CepGatedRightBeaconAlsoSubstitutes) {
     fillVisibleHistoryWithSpan(history, -0.15f, 0.0f, 0.15f, 0.0f);
     history.right_cep[5] = 1.5f;  // RIGHT sentinel
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
     EXPECT_FLOAT_EQ(out.target_tilt_sin, 0.0f);
     EXPECT_FLOAT_EQ(out.target_tilt_cos, 1.0f);
 }
@@ -307,7 +308,7 @@ TEST(GatherTrackerInputs, BothBeaconsVisibleNoSubstitution) {
                                 0.0f, 0.0f,
                                 1.0f, 1.0f);  // diagonal pair, θ = π/4
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
     // θ = π/4 → (sin, cos) = (√2/2, √2/2) ≈ 0.707
     EXPECT_NEAR(out.target_tilt_sin, std::sqrt(0.5f), 1e-5f);
     EXPECT_NEAR(out.target_tilt_cos, std::sqrt(0.5f), 1e-5f);
@@ -320,8 +321,8 @@ TEST(GatherTrackerInputs, DeterministicAcrossConsecutiveCalls) {
     history.span[4] = 0.4f;
     history.span[5] = 0.45f;
     TrackerInputs a{}, b{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, a);
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, b);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, a);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, b);
     for (size_t i = 0; i < sizeof(TrackerInputs) / sizeof(float); ++i) {
         const float* fa = reinterpret_cast<const float*>(&a);
         const float* fb = reinterpret_cast<const float*>(&b);
@@ -358,7 +359,7 @@ TEST(GatherTrackerInputs, IdentityStablePassThrough) {
     history.left_cep[5] = 0.5f;
     history.right_cep[5] = 0.5f;
     TrackerInputs out{};
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
     EXPECT_FLOAT_EQ(out.beacon_l_x[5], -0.2f);
     EXPECT_FLOAT_EQ(out.beacon_r_x[5], 0.2f);
 
@@ -367,7 +368,7 @@ TEST(GatherTrackerInputs, IdentityStablePassThrough) {
     // gather must still forward left_* → beacon_l_* without sorting.
     history.left_x[5] = 0.2f;
     history.right_x[5] = -0.2f;
-    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, out);
+    gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
     EXPECT_FLOAT_EQ(out.beacon_l_x[5], 0.2f);   // port still on the left slot
     EXPECT_FLOAT_EQ(out.beacon_r_x[5], -0.2f);  // starboard still on the right slot
 }

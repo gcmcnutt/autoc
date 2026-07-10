@@ -24,3 +24,47 @@ xiao/src/generated/*
 
 # Claude Code per-user state (auto-memory, projects)
 .claude/
+
+# 031-beacon-camera — Python tooling artifacts (tools now live under specs/031-beacon-camera/)
+specs/031-beacon-camera/**/.venv/
+specs/031-beacon-camera/**/.pytest_cache/
+specs/031-beacon-camera/**/__pycache__/
+specs/031-beacon-camera/**/*.egg-info/
+# nfr4 sim outputs are regenerable artifacts (kept out of git, as before)
+specs/031-beacon-camera/nfr4-clockdrift-sim/*.png
+specs/031-beacon-camera/nfr4-clockdrift-sim/*.npz
+specs/031-beacon-camera/nfr4-clockdrift-sim/results.json
+# NOTE: acquisition-sim/*.png ARE committed (shared from GitHub)
+# (simulation-results.md is intentionally TRACKED — it's the decision document
+# referenced by spec.md's NFR-4 Decisions-Locked entry.)
+
+# 031-beacon-camera — Embedded firmware build artifacts
+firmware/beacon-pod/src/*.o
+firmware/beacon-pod/*.elf
+firmware/beacon-pod/*.hex
+firmware/beacon-pod/*.map
+
+# 031-beacon-camera — FPGA gateware build outputs (Lattice Propel/Radiant)
+firmware/flight-recorder/propel-project/impl/
+firmware/flight-recorder/propel-project/obj/
+firmware/flight-recorder/propel-project/build/
+firmware/flight-recorder/propel-project/*.bit
+firmware/flight-recorder/propel-project/*.jed
+firmware/flight-recorder/propel-project/*.gen/
+firmware/flight-recorder/propel-project/.lattice/
+firmware/flight-recorder/tb/work/
+
+# 031-beacon-camera — Recorded clips (large files; archive externally)
+specs/031-beacon-camera/clips/*.clip
+specs/031-beacon-camera/clips/*.json
+!specs/031-beacon-camera/clips/MANIFEST.md
+!specs/031-beacon-camera/clips/.gitkeep
+
+# 031-beacon-camera — KiCad personal/local state
+cad/**/*.kicad_prl
+cad/**/*-backups/
+cad/**/fp-info-cache
+cad/**/~*.lck
+
+# VS Code Local History extension cache
+**/.history/

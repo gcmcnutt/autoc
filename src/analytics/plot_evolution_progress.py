@@ -238,6 +238,10 @@ def main():
     p.add_argument("--total-gens", type=int, default=800,
                    help="x-axis extent + 40-gen variation-step markers (default 800 — "
                         "matches autoc.ini production scale)")
+    p.add_argument("--tick-sec", type=float, default=0.05,
+                   help="control-loop cadence (sec/tick) — avgMaxStreak is tick-denominated, so "
+                        "this converts it to SECONDS for cross-cadence comparison (default 0.05 = "
+                        "20 Hz; use 0.10 for 10 Hz logs). generate_pngs.sh passes the run's value.")
     p.add_argument("--title", default=None)
     p.add_argument("--crash-log", type=Path, default=None,
                    help="path to focus run's training log file (.log); when set, "
@@ -325,9 +329,12 @@ def main():
     ax_fit.legend(loc="upper right", framealpha=0.9, fontsize=9)
 
     # --- Panel 2: streak ---
-    ax_streak.plot(f["gens"], f["streak"], "tab:purple", linewidth=1.6,
-                   label=f"avgMaxStreak (final {f['streak'][-1]:.1f})")
-    ax_streak.set_ylabel("avgMaxStreak", color="tab:purple")
+    # avgMaxStreak is tick-denominated → reads 2× at 20 Hz vs 10 Hz. Convert to
+    # SECONDS (× tick_sec) so cross-cadence runs are comparable (038 P0-E / T004).
+    streak_sec = [s * args.tick_sec for s in f["streak"]]
+    ax_streak.plot(f["gens"], streak_sec, "tab:purple", linewidth=1.6,
+                   label=f"avgMaxStreak (final {streak_sec[-1]:.2f}s)")
+    ax_streak.set_ylabel(f"avgMaxStreak (s, {1.0/args.tick_sec:.0f} Hz)", color="tab:purple")
     ax_streak.tick_params(axis="y", labelcolor="tab:purple")
     ax_streak.grid(True, linewidth=0.4, alpha=0.4)
     axr = ax_streak.twinx()

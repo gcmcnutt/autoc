@@ -116,7 +116,7 @@ TrackerStepper makeStepperWithSource(NNControllerBackend& nn,
 
 TEST(TrackerStepperInit, ChasePositionIsNorthOfSourceByTrailDistance) {
     NNGenome genome = makeMinimalGenome();
-    NNControllerBackend nn(genome);
+    NNControllerBackend nn(genome, autoc::eval::FlightArena{});
     AircraftState state;
 
     // Source velocity (-12.77, -3.14, -1.23) m/s — matches pastonly3 tick 0.
@@ -139,7 +139,7 @@ TEST(TrackerStepperInit, ChasePositionIsNorthOfSourceByTrailDistance) {
 
 TEST(TrackerStepperInit, ChaseVelocityCopiedFromSourceTick0) {
     NNGenome genome = makeMinimalGenome();
-    NNControllerBackend nn(genome);
+    NNControllerBackend nn(genome, autoc::eval::FlightArena{});
     AircraftState state;
 
     const gp_vec3 src_vel(-12.77f, -3.14f, -1.23f);
@@ -159,7 +159,7 @@ TEST(TrackerStepperInit, ChaseVelocityCopiedFromSourceTick0) {
 
 TEST(TrackerStepperInit, ChaseRelVelMatchesVelocityMagnitude) {
     NNGenome genome = makeMinimalGenome();
-    NNControllerBackend nn(genome);
+    NNControllerBackend nn(genome, autoc::eval::FlightArena{});
     AircraftState state;
 
     const gp_vec3 src_vel(-12.77f, -3.14f, -1.23f);
@@ -183,7 +183,7 @@ TEST(TrackerStepperInit, ChaseRelVelMatchesVelocityMagnitude) {
 
 TEST(TrackerStepperInit, ChaseOrientationIs180YawAboutZ) {
     NNGenome genome = makeMinimalGenome();
-    NNControllerBackend nn(genome);
+    NNControllerBackend nn(genome, autoc::eval::FlightArena{});
     AircraftState state;
 
     SourceScenarioTrajectory source =
@@ -218,7 +218,7 @@ TEST(TrackerStepperInit, ChaseOrientationIs180YawAboutZ) {
 
 TEST(TrackerStepperInit, EmptySourceFallsBackToLegacyInit) {
     NNGenome genome = makeMinimalGenome();
-    NNControllerBackend nn(genome);
+    NNControllerBackend nn(genome, autoc::eval::FlightArena{});
     AircraftState state;
 
     SourceScenarioTrajectory empty_source;  // samples vector default-empty

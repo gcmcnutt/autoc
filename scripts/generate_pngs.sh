@@ -18,10 +18,13 @@
 #
 # Reports: m1 = evolution_progress, per_axis_aggressiveness, per_axis_time_series,
 #          dynamics_progress (4).  m2 = those + gen_diag + intercept_analysis +
+#          predictor_analysis (038 US3 span/closure-predictor: per-horizon +
+#          closure-rate error over gens + latest-gen calibration/regime detail) +
 #          gen_runtime (log-only diversity/collapse proxy) + mode_progress (per-gen
 #          perception/track/range/reacquire competence) + score_by_path (per-path
-#          tracking-score + error distance) + rnn_capacity (needs nnextractor+nn2cpp) +
-#          tactics (needs a --compare run) (11).
+#          tracking-score + error distance) + rnn_capacity (needs nnextractor+nn2cpp) (11).
+#          With --compare, intercept_analysis overlays the compare run's B/C policy
+#          curves + E encounter histogram (A/B) — this replaced the separate tactics.png.
 #
 # INCREMENTAL run-summary: the per-gen aggregate is the slow part (one S3 dmp
 # fetch per gen). We cache it per run-id under $CACHE_DIR and use `dmp-dump
@@ -62,7 +65,8 @@ if [[ "$MODE" == "m1" ]]; then BUCKET=autoc-m1; INI="$REPO/autoc.ini";         e
 [[ -f "$INI" ]] || die "config not found: $INI"
 
 # Control cadence (sec/tick) from the run's config — feeds intercept_analysis's
-# closing-rate m/s so it's correct at 20 Hz (50 ms) vs 10 Hz (100 ms).
+# closing-rate m/s AND time-denominates the tick-based streak metrics
+# (avgMaxStreak, maxLost → seconds) so 20 Hz (50 ms) vs 10 Hz (100 ms) compare.
 CTRL_MSEC="$(grep -E '^[[:space:]]*ControlIntervalMsec' "$INI" | head -1 | sed -E 's/.*=[[:space:]]*([0-9]+).*/\1/')"
 [[ "$CTRL_MSEC" =~ ^[0-9]+$ ]] || CTRL_MSEC=50
 TICK_SEC="$(awk "BEGIN{printf \"%.4f\", $CTRL_MSEC/1000.0}")"
@@ -129,16 +133,18 @@ if [[ "$USE_CACHE" == 1 ]]; then mkdir -p "$CACHE_DIR"; cp "$SUMMARY" "$CACHE"; 
 # S3 path. Give it its own per-(run-id + dmp-build) cache so it too only fetches
 # new gens on a re-plot.
 DYN_CACHE=()
+PRED_CACHE=()
 if [[ "$USE_CACHE" == 1 ]]; then
   mkdir -p "$CACHE_DIR"
   DYN_CACHE=( --cache "$CACHE_DIR/${SAFE}__dmp${DSIG}_dynamics.csv" )
+  PRED_CACHE=( --cache "$CACHE_DIR/${SAFE}__dmp${DSIG}_predictor.csv" )
 fi
 
 run() { echo "  [plot] $1"; python3 "$AN/$@"; }
 
 # --- common (m1 + m2) ---
 run plot_evolution_progress.py --focus "$NAME:$LOG" --run-name "$NAME" \
-    --crash-log "$LOG" --total-gens "$TOTAL_GENS" "${COMPARE[@]}" \
+    --crash-log "$LOG" --total-gens "$TOTAL_GENS" --tick-sec "$TICK_SEC" "${COMPARE[@]}" \
     --out "$OUT/${NAME}_evolution_progress.png"
 run per_axis_aggressiveness.py "$TICK" --label "$NAME" --gen "$GEN" \
     -o "$OUT/${NAME}_per_axis_aggressiveness.png"
@@ -147,11 +153,40 @@ run plot_per_axis_time_series.py "$SUMMARY" --label "$NAME" --total-gens "$TOTAL
 run dynamics_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
     "${DYN_CACHE[@]}" --label "$NAME" -o "$OUT/${NAME}_dynamics_progress.png"
 
-# --- m2 (tracker) adds: gen_diag, intercept_analysis, rnn_capacity, tactics ---
+# --- m2 (tracker) adds: gen_diag, intercept_analysis (A/B-capable), rnn_capacity ---
 if [[ "$MODE" == "m2" ]]; then
   run plot_gen_diag.py --in "$LOG" --label "$NAME" --out "$OUT/${NAME}_gen_diag.png"
+
+  # Resolve the FIRST --compare run once (run-id from its log) — shared by the
+  # intercept_analysis A/B policy overlay + the rnn_capacity elite overlay.
+  # Fetch its per-tick CSV @ this gen for the intercept A/B (this folds in the
+  # retired intercept_compare/tactics report — the B/C/E overlay now lives in
+  # intercept_analysis itself).
+  CNAME=""; CLOG=""; CRUNID=""; INTERCEPT_CMP=()
+  if [[ ${#COMPARE[@]} -ge 2 ]]; then
+    CSPEC="${COMPARE[1]}"; CNAME="${CSPEC%%:*}"; CLOG="${CSPEC#*:}"
+    CRUNID="$(grep -E 'Run ID:' "$CLOG" 2>/dev/null | tail -1 | sed -E 's/.*Run ID:[[:space:]]*//')"
+    if [[ -n "$CRUNID" ]] && "$DMP" "s3://$BUCKET/$CRUNID/" --csv-only --gen "$GEN" -i "$INI" >"$TMP/cmp_tick.csv" 2>"$TMP/cmp.err"; then
+      INTERCEPT_CMP=( --compare "$CNAME:$TMP/cmp_tick.csv" )
+    elif [[ -n "$CRUNID" ]] && "$DMP" "s3://$BUCKET/$CRUNID/" --csv-only -i "$INI" >"$TMP/cmp_tick.csv" 2>"$TMP/cmp2.err"; then
+      # Compare run has no gen $GEN (it stopped earlier) — fall back to its
+      # LATEST gen so the B/C/E overlay still renders (its final policy).
+      echo "  [plot] intercept A/B overlay: compare has no gen $GEN — using its latest gen" >&2
+      INTERCEPT_CMP=( --compare "${CNAME}-final:$TMP/cmp_tick.csv" )
+    elif [[ -n "$CRUNID" ]]; then
+      echo "  [plot] intercept A/B overlay skipped (compare CSV unavailable):" >&2; tail -1 "$TMP/cmp2.err" 2>/dev/null >&2
+    fi
+  fi
   run intercept_analysis.py --csv "$TICK" --label "$NAME" --gen "$GEN" \
-      --tick-sec "$TICK_SEC" -o "$OUT/${NAME}_intercept_analysis.png"
+      --tick-sec "$TICK_SEC" "${INTERCEPT_CMP[@]}" -o "$OUT/${NAME}_intercept_analysis.png"
+
+  # predictor_analysis — 038 US3 span/closure-predictor: per-horizon (+50/100/150 ms)
+  # + closure-rate prediction error over generations (own gen-sweep cache, like
+  # dynamics) plus latest-gen calibration/regime detail from the tick.csv already
+  # fetched. Answers "is the aux head learning + does accuracy track depth".
+  run predictor_analysis.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
+      "${PRED_CACHE[@]}" --tick "$TICK" --tick-sec "$TICK_SEC" --label "$NAME" \
+      -o "$OUT/${NAME}_predictor_analysis.png"
 
   # gen_runtime — per-gen wall-clock curve (proxy for population diversity/collapse:
   # rising = learning to fly full scenarios; flat-low/dropping = early-death/collapse).
@@ -162,7 +197,7 @@ if [[ "$MODE" == "m2" ]]; then
 
   # mode_progress — per-gen mode competence (perception/track/range/reacquire) from #GenDiag;
   # log-only, same current+compares overlay. Plateau = competence ceiling.
-  run mode_progress.py "${GR_ARGS[@]}" -o "$OUT/${NAME}_mode_progress.png"
+  run mode_progress.py "${GR_ARGS[@]}" --tick-sec "$TICK_SEC" -o "$OUT/${NAME}_mode_progress.png"
 
   # score_by_path — per-path tracking-score distribution (M2 generalization proxy):
   # raw box/strip per path + per-step (path-length-normalized) histograms per path.
@@ -173,14 +208,6 @@ if [[ "$MODE" == "m2" ]]; then
     run score_by_path.py --meta "$TMP/meta.yaml" --csv "$TICK" --label "$NAME" -o "$OUT/${NAME}_score_by_path.png"
   else
     echo "  [plot] score_by_path skipped (meta-only fetch failed):" >&2; tail -1 "$TMP/meta.err" >&2
-  fi
-
-  # Resolve the FIRST --compare run once (run-id from its log) — shared by the
-  # rnn_capacity overlay (its elite NN) + the tactics overlay (its per-tick CSV).
-  CNAME=""; CLOG=""; CRUNID=""
-  if [[ ${#COMPARE[@]} -ge 2 ]]; then
-    CSPEC="${COMPARE[1]}"; CNAME="${CSPEC%%:*}"; CLOG="${CSPEC#*:}"
-    CRUNID="$(grep -E 'Run ID:' "$CLOG" 2>/dev/null | tail -1 | sed -E 's/.*Run ID:[[:space:]]*//')"
   fi
 
   # rnn_capacity — W_hh utilization (pure weight SVD; extract elite via
@@ -204,14 +231,6 @@ if [[ "$MODE" == "m2" ]]; then
     echo "  [nn ] rnn_capacity skipped (build nnextractor + nn2cpp to enable)" >&2
   fi
 
-  # tactics A/B — overlay this run vs the --compare run on the policy/encounter axes.
-  if [[ -n "$CRUNID" ]] \
-     && "$DMP" "s3://$BUCKET/$CRUNID/" --csv-only --gen "$GEN" -i "$INI" >"$TMP/cmp_tick.csv" 2>"$TMP/cmp.err"; then
-    run intercept_compare.py --a "$CNAME:$TMP/cmp_tick.csv" --b "$NAME:$TICK" --gen "$GEN" \
-        -o "$OUT/${NAME}_tactics.png"
-  elif [[ -n "$CRUNID" ]]; then
-    echo "  [plot] tactics skipped (compare run CSV @gen $GEN unavailable):" >&2; tail -1 "$TMP/cmp.err" 2>/dev/null >&2
-  fi
 fi
 
 echo "generate_pngs: done — wrote to $OUT:"

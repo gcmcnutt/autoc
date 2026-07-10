@@ -2905,10 +2905,12 @@ void Renderer::createStopwatch() {
 
 // 037 P-O12 — running PATH score to `currentTime` for arena `arena`, replayed
 // through the SAME FitnessComputer math as autoc/dmp_dump so the HUD number IS
-// the recorded fitness (not a lookalike). Returns Σ(stp×mult×kCadenceTickScale)
+// the recorded fitness (not a lookalike). Returns Σ(stp×mult×cadenceTickScale)
 // over revealed ticks; sets outMult to the current ×multiplier. Mirrors
 // dmp_dump.cc's per-tick along/lateral→computeStepScore→applyStreak.
-// (Config from ConfigManager for now; switch to dmp-recorded config per P-O13.)
+// 038 P0-B (T010): fitness cone + cadence come from the dmp-recorded,
+// self-describing RecordedRunConfig, NOT the live .ini (M2 greenfield — no
+// fallback; a pre-038 dmp is replayed by checking out the matching code).
 double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) {
   outMult = 1.0;
   if (arena < 0 || arena >= static_cast<int>(evalResults.aircraftStateList.size())) return 0.0;
@@ -2930,11 +2932,12 @@ double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) 
     if (path->empty()) return 0.0;
   }
 
-  const AutocConfig& cfg = ConfigManager::getConfig();
-  int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
+  const RecordedRunConfig& rc = evalResults.runConfig;
+  const double dtSec = rc.simTimeStepMsec / 1000.0;
+  int streakStepsToMax = static_cast<int>(rc.fitStreakRampSec / dtSec);
   if (streakStepsToMax < 1) streakStepsToMax = 1;
-  FitnessComputer fc(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
-                     cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
+  FitnessComputer fc(rc.fitDistScaleBehind, rc.fitDistScaleAhead, rc.fitConeAngleDeg,
+                     rc.fitStreakThreshold, streakStepsToMax, rc.fitStreakMultiplierMax);
   fc.resetStreak();
 
   const unsigned long curMs = static_cast<unsigned long>(currentTime * 1000.0f);
@@ -2969,7 +2972,7 @@ double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) 
     const double stp = fc.computeStepScore(along, lateral);
     const double ms = fc.applyStreak(stp);
     outMult = (stp > 0.0) ? ms / stp : 1.0;
-    score += ms * kCadenceTickScale;
+    score += ms * rc.cadenceTickScale;  // 038 P0-B — recorded cadence, not compiled kCadenceTickScale
   }
   return score;
 }
@@ -3179,11 +3182,11 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   // existing HUD (clock/stick/throttle/attitude/velocity bar).
   int* windowSize = renderWindow->GetSize();
   scalar rectWidth = static_cast<scalar>(220.0f);
-  // Aspect: rect_w / rect_h = tan(fov_h/2) / tan(fov_v/2). Approximate
-  // with linear ratio for cheap geometry; the exact tan ratio matters
-  // only for true angular fidelity — the linear approximation keeps
-  // x/y normalized [-1,+1] mapping geometrically consistent which is
-  // the load-bearing property the operator asked for.
+  // Aspect: rect_w / rect_h = fov_h / fov_v. Under the 038 t9 equidistant
+  // projection (NDC ∝ angle) this linear ratio is EXACT: degrees-per-pixel
+  // is uniform on both axes, so a fixed angular span reads the same pixel
+  // size anywhere on the panel. (Pre-t9 rectilinear playbacks rendered on
+  // the same panel carry their own tan-stretch in the recorded NDC.)
   scalar fov_h = std::max(static_cast<scalar>(1.0f),
                           static_cast<scalar>(cam.camera_fov_h_deg));
   scalar fov_v = std::max(static_cast<scalar>(1.0f),
@@ -3217,6 +3220,50 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   addLine(bl, br); addLine(br, tr); addLine(tr, tl); addLine(tl, bl);
   // Center crosshair (subtle origin reference)
   addLine(cTop, cBot); addLine(cLeft, cRight);
+
+  // 038 t9 — angular reticle: tick marks every 15° along both crosshair
+  // axes, positions derived from the FOV. Under the t9 equidistant NDC
+  // (screen ∝ angle) these constant-angle ticks are EVENLY spaced — the
+  // visual statement that the panel is linear in angle and a fixed angular
+  // span reads the same size anywhere in frame. (Replaying a pre-t9
+  // rectilinear dmp the same NDC ticks are NOT constant-angle — the uneven
+  // meaning is the tell that distinguishes old playbacks.) Ticks every 15°,
+  // taller at 30° multiples.
+  constexpr scalar kReticleStepDeg = static_cast<scalar>(15.0f);
+  auto addTick = [&](scalar ndc, bool horizontalAxis, bool major) {
+    const scalar half = major ? static_cast<scalar>(7.0f)
+                              : static_cast<scalar>(4.0f);
+    if (horizontalAxis) {
+      // Tick on the horizontal center line: vertical dash at x = ndc.
+      scalar xw = xLeft + (ndc + static_cast<scalar>(1.0f)) * 0.5f *
+                          (xRight - xLeft);
+      vtkIdType a = outlinePoints->InsertNextPoint(xw, yMid - half, 0);
+      vtkIdType b = outlinePoints->InsertNextPoint(xw, yMid + half, 0);
+      addLine(a, b);
+    } else {
+      // Tick on the vertical center line: horizontal dash at y = ndc
+      // (image convention: +ndc = down = lower window-y).
+      scalar yw = yTop - (ndc + static_cast<scalar>(1.0f)) * 0.5f *
+                         (yTop - yBottom);
+      vtkIdType a = outlinePoints->InsertNextPoint(xMid - half, yw, 0);
+      vtkIdType b = outlinePoints->InsertNextPoint(xMid + half, yw, 0);
+      addLine(a, b);
+    }
+  };
+  const scalar halfFovH = fov_h * static_cast<scalar>(0.5f);
+  const scalar halfFovV = fov_v * static_cast<scalar>(0.5f);
+  for (int k = 1; k * kReticleStepDeg < halfFovH; ++k) {
+    const scalar ndc = static_cast<scalar>(k) * kReticleStepDeg / halfFovH;
+    const bool major = (k % 2 == 0);  // 30° multiples
+    addTick(+ndc, true, major);
+    addTick(-ndc, true, major);
+  }
+  for (int k = 1; k * kReticleStepDeg < halfFovV; ++k) {
+    const scalar ndc = static_cast<scalar>(k) * kReticleStepDeg / halfFovV;
+    const bool major = (k % 2 == 0);
+    addTick(+ndc, false, major);
+    addTick(-ndc, false, major);
+  }
 
   vtkNew<vtkPolyData> outlinePoly;
   outlinePoly->SetPoints(outlinePoints);

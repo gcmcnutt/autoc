@@ -1,6 +1,7 @@
 // 030 M5 — Beacon projection module (FR-005 + FR-007 + FR-017).
 //
-// Analytic pinhole projection, sentinel handling, int8 quantization round-
+// Analytic EQUIDISTANT (f-theta / spherical) projection (038 t9 — was
+// rectilinear/pinhole pre-t9), sentinel handling, int8 quantization round-
 // trip, and AirframeProxy ray–box self-occlusion. Uses the codebase's NED
 // body-frame convention (+x forward, +y right, +z down) directly; see
 // `include/autoc/eval/camera_projection.h` for the convention contract.
@@ -17,11 +18,11 @@ namespace {
 
 constexpr gp_scalar kPi = static_cast<gp_scalar>(3.14159265358979323846);
 
-// Convert full FOV (degrees) to tan(half-angle in radians). Used as the
-// projective half-extent so `screen_x = (camera.y / camera.x) / fov_limit`
-// lands exactly at ±1 when the beacon sits at the FOV edge.
-inline gp_scalar fovHalfTan(gp_scalar fov_full_deg) {
-    return std::tan(fov_full_deg * (kPi / static_cast<gp_scalar>(360)));
+// Convert full FOV (degrees) to the half-angle in radians. Equidistant
+// (f-theta) normalization: `screen = θ·dir / (fov/2)` lands exactly at ±1
+// when the beacon ray sits at the per-axis FOV edge.
+inline gp_scalar fovHalfRad(gp_scalar fov_full_deg) {
+    return fov_full_deg * (kPi / static_cast<gp_scalar>(360));
 }
 
 // Sentinel-emitting BeaconObservation: cep = kCepSentinelFloat,
@@ -163,23 +164,41 @@ BeaconObservation projectBeacon(const ProjectionInput& input) {
         return sentinelObservation();
     }
 
-    // Step 4d — outside FOV. Compute normalized screen coords and test.
+    // Step 4d — outside FOV. Equidistant (f-theta / spherical) projection,
+    // 038 t9: NDC is proportional to ANGLE off the optical axis, not
+    // tan(angle). A fixed angular separation (the beacon-pair span) then
+    // reads ≈ the same anywhere in frame (radial scale exactly 1;
+    // tangential ≤ θ/sinθ, +21% worst-case at 60°) — removing the
+    // rectilinear tan-stretch that inflated span toward the frame edge
+    // (ego-pointing contamination; see BACKLOG "spherical/equidistant
+    // projection" + outcome.md US3 design rationale).
     // Camera frame: +x forward, +y right, +z down. Convention:
-    //   screen_x  = (camera.y / camera.x) / tan(fov_h/2)   (right positive)
-    //   screen_y  = (camera.z / camera.x) / tan(fov_v/2)   (down positive,
-    //                                                       pixel-coord)
-    const gp_scalar fov_limit_h = fovHalfTan(input.camera.fov_h_deg);
-    const gp_scalar fov_limit_v = fovHalfTan(input.camera.fov_v_deg);
+    //   θ        = angle between the beacon ray and the optical axis (+x)
+    //   dir      = image-plane direction (y, z) / ‖(y, z)‖
+    //   screen_x = θ·dir_y / (fov_h/2)   (right positive)
+    //   screen_y = θ·dir_z / (fov_v/2)   (down positive, pixel-coord)
+    // Per-axis normalization keeps ±1 == the per-axis FOV edge; span picks
+    // up a FIXED h/v anisotropy (fov_h/fov_v) — a known constant coupled to
+    // tilt, unlike the position-dependent stretch removed here.
+    const gp_scalar fov_limit_h = fovHalfRad(input.camera.fov_h_deg);
+    const gp_scalar fov_limit_v = fovHalfRad(input.camera.fov_v_deg);
 
-    const gp_scalar u = beacon_in_camera.y() / beacon_in_camera.x();
-    const gp_scalar v = beacon_in_camera.z() / beacon_in_camera.x();
-
-    if (std::abs(u) > fov_limit_h || std::abs(v) > fov_limit_v) {
-        return sentinelObservation();
+    const gp_scalar ryz = std::sqrt(
+        beacon_in_camera.y() * beacon_in_camera.y() +
+        beacon_in_camera.z() * beacon_in_camera.z());
+    gp_scalar screen_x = static_cast<gp_scalar>(0);
+    gp_scalar screen_y = static_cast<gp_scalar>(0);
+    if (ryz > static_cast<gp_scalar>(1e-12)) {
+        // x > 0 guaranteed by the Step 4a early-out ⇒ θ ∈ (0, π/2).
+        const gp_scalar theta = std::atan2(ryz, beacon_in_camera.x());
+        screen_x = theta * (beacon_in_camera.y() / ryz) / fov_limit_h;
+        screen_y = theta * (beacon_in_camera.z() / ryz) / fov_limit_v;
     }
 
-    const gp_scalar screen_x = u / fov_limit_h;
-    const gp_scalar screen_y = v / fov_limit_v;
+    if (std::abs(screen_x) > static_cast<gp_scalar>(1) ||
+        std::abs(screen_y) > static_cast<gp_scalar>(1)) {
+        return sentinelObservation();
+    }
 
     // Step 5 — CEP (R6 v1 linear). Edge factor grows from 0 (frame center)
     // to 1 (frame edge); the 0.3 coefficient matches the data-model.md §4

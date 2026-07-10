@@ -99,4 +99,18 @@ gp_scalar distanceToBoundary(const gp_vec3& chase_pos,
                              const gp_vec3& chase_velocity,
                              const FlightArena& arena);
 
+// 038 P0-D FR-P0H (B) — arena-inward body-frame unit vector. Radial direction
+// toward the cylinder axis (the virtual-frame origin) at the chase's horizontal
+// position, rotated into the chase body frame. All-attitude and smooth (works
+// inverted / knife-edge), unlike a planar heading angle that assumes a
+// reference "up" and drops the out-of-plane component. Returns Zero when the
+// chase is on the axis (hypot(x, y) < 1e-6 — no defined inward direction).
+//
+// Convention: world→body = chase_orientation.inverse() (matches
+// camera_projection.cc:117 and aircraft_state.h:440). The arena axis is
+// vertical (world Z), so the world-frame inward vector has zero z-component;
+// the body-frame result gains all three cosines through the rotation.
+gp_vec3 inwardBodyDirection(const gp_vec3& chase_pos,
+                            const gp_quat& chase_orientation);
+
 }  // namespace autoc::eval

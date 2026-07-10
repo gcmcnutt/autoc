@@ -1,0 +1,21 @@
+# Maintained home for the dmp-fed run-report plotters (038 P0-C).
+#
+# These are run as standalone scripts via `scripts/generate_pngs.sh <mode> <log>`
+# (data from `build/dmp-dump` + the run `.log`), NOT pip-installed. This file
+# declares the runtime deps so `pip install -e .` (or `uv pip install .`) in a
+# venv reproduces the toolchain; it mirrors requirements.txt (kept for the
+# plain `pip install -r` path).
+
+[project]
+name = "autoc-analytics"
+version = "0.1.0"
+description = "dmp-fed run-report plotters for autoc training runs (038 P0-C toolkit)"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "matplotlib",
+]
+
+[tool.setuptools]
+# Scripts live flat in this dir (no package tree); nothing to auto-discover.
+py-modules = []

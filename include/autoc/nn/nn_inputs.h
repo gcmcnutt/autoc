@@ -27,6 +27,36 @@
 constexpr float kCruiseSpeed_mps = 13.0f;
 constexpr float kDistToBoundaryScale_m = 20.0f;
 
+// 038 P0-D FR-P0H (A) — time-since-seen normalization. Blind-tick count × dt
+// (seconds) fed through tanh(t / kTimeSinceSeenScale_s): 1 s → 0.46, 2 s →
+// 0.76, 4 s → 0.96. Gives the tracker NN a graded "how long since the target
+// was last visible" signal that saturates within a few seconds of blindness;
+// 0.0 exactly when a beacon is visible this tick.
+constexpr float kTimeSinceSeenScale_s = 2.0f;
+
+// ============================================================================
+// 038 US3 — auxiliary span/closure predictor head (TRACKER-ONLY).
+// ----------------------------------------------------------------------------
+// The aux NN outputs predict the beacon-pair `span` (closure) at fixed
+// MILLISECOND horizons — NOT raw NDC positions (Clarifications 2026-07-05):
+// span is ≈ invariant to camera rotation and moves only with range, so it IS
+// the closure/overtake signal and needs no ego-motion subtraction; it predicts
+// cleanly at the ~150 ms actuation-lag horizon that gives *actionable*
+// anti-overrun lead. Horizons are defined in MS (cadence-invariant, mirroring
+// kNNHistoryLagsMsec) so a cadence change (e.g. 20→25 Hz) re-derives the tick
+// offsets from the fixed physical horizons instead of silently shrinking the
+// lookahead. Tick derivation + integral-at-cadence static_assert live at the
+// consumer (src/eval/fitness_decomposition.cc), same pattern as historyLagTicks.
+//
+// Aux output vector (kNumSpanAuxOutputs = 4): predicted span at +50/+100/+150 ms
+// (kSpanPredictHorizonsMsec) + a predicted closure rate (span-rate, NDC/s).
+// Scored on a SEPARATE lexicase axis (prediction_score) vs the realized span,
+// must beat the persistence baseline (SC-002). NOT actuated.
+constexpr int kSpanPredictHorizonsMsec[] = {50, 100, 150};
+constexpr int kNumSpanPredictHorizons =
+    sizeof(kSpanPredictHorizonsMsec) / sizeof(kSpanPredictHorizonsMsec[0]);
+constexpr int kNumSpanAuxOutputs = kNumSpanPredictHorizons + 1;  // + 1 span-rate = 4
+
 // ============================================================================
 // 037 R5/T021 — History time-basis (ms-based, log-spaced lags)
 // ----------------------------------------------------------------------------
@@ -82,10 +112,16 @@ struct NNInputs {
     float gyro_p;        // rad/s, aerospace RHR
     float gyro_q;
     float gyro_r;
+    // ----- 038 P0-D FR-P0H arena-awareness (B) — M1 gets it too (clean/fast
+    // early read on the arena cue; M1 never goes blind so (A) is tracker-only).
+    float dist_to_boundary;  // raw-ok: NN-byte-format buffer — dimensionless tanh(d/scale), [0,1), along-velocity ray to arena bound
+    float inward_body_x;     // raw-ok: NN-byte-format buffer — body-frame radial-inward unit vec, chase_quat.conjugate()*normalize(center-pos)
+    float inward_body_y;     // raw-ok: NN-byte-format buffer
+    float inward_body_z;     // raw-ok: NN-byte-format buffer
 };
 
-static_assert(sizeof(NNInputs) == 33 * sizeof(float),
-              "NNInputs layout must be contiguous float[33] with no padding");
+static_assert(sizeof(NNInputs) == 37 * sizeof(float),
+              "NNInputs layout must be contiguous float[37] with no padding (33 pre-038 + 4 FR-P0H arena)");
 static_assert(alignof(NNInputs) == alignof(float),
               "NNInputs must be float-aligned for matrix multiply");
 
@@ -122,7 +158,8 @@ struct SensorInputMeta {
 };
 
 // ----------------------------------------------------------------------------
-// PathgenInput — 33 inputs, layout matches NNInputs struct field order.
+// PathgenInput — 37 inputs, layout matches NNInputs struct field order.
+// (33 pre-038 + 4 038 FR-P0H arena-awareness (B): dist_to_boundary + inward_body xyz)
 // ----------------------------------------------------------------------------
 enum class PathgenInput : uint16_t {
     TARGET_X_TM5 = 0, TARGET_X_TM4, TARGET_X_TM3, TARGET_X_TM2, TARGET_X_TM1, TARGET_X_NOW,
@@ -133,6 +170,9 @@ enum class PathgenInput : uint16_t {
     QUAT_W, QUAT_X, QUAT_Y, QUAT_Z,
     AIRSPEED,
     GYRO_P, GYRO_Q, GYRO_R,
+    // ----- 038 P0-D FR-P0H arena-awareness (B), M1 gets it too (33..36) -----
+    DIST_TO_BOUNDARY,
+    INWARD_BODY_X, INWARD_BODY_Y, INWARD_BODY_Z,
     COUNT
 };
 
@@ -149,6 +189,11 @@ constexpr SensorInputMeta kPathgenInputMeta[] = {
     {"QUAT_W", "qw", 8}, {"QUAT_X", "qx", 8}, {"QUAT_Y", "qy", 8}, {"QUAT_Z", "qz", 8},
     {"AIRSPEED", "vel", 8},
     {"GYRO_P", "gyrP", 7}, {"GYRO_Q", "gyrQ", 7}, {"GYRO_R", "gyrR", 7},
+    // ----- 038 P0-D FR-P0H arena-awareness meta (slots 33..36) -----
+    {"DIST_TO_BOUNDARY", "dBnd", 8},
+    {"INWARD_BODY_X",    "inX",  7},
+    {"INWARD_BODY_Y",    "inY",  7},
+    {"INWARD_BODY_Z",    "inZ",  7},
 };
 
 static_assert(static_cast<size_t>(PathgenInput::COUNT) ==
@@ -158,11 +203,14 @@ static_assert(static_cast<int>(PathgenInput::COUNT) == NN_INPUT_COUNT,
               "PathgenInput::COUNT must equal NN_INPUT_COUNT (NNInputs struct size)");
 
 // ----------------------------------------------------------------------------
-// TrackerInput — 45 inputs (FR-006 + FR-016 + Session 2026-05-07 Q1 simplification).
+// TrackerInput — 58 inputs (FR-006 + FR-016 + 032 phase 1 + 038 FR-P0H).
 //   36 beacon (left + right × 6 history slots × {x, y, CEP})
 //    8 aircraft state (quat 4 + airspeed 1 + gyro 3)
 //    1 arena-awareness (DIST_TO_BOUNDARY_ALONG_VEL — single ray-projection
 //      scalar shared with arena.h::distanceToBoundary())
+//    9 032 phase-1 derived (span×6 + span_rate + tilt sin/cos)
+//    4 038 FR-P0H situational-awareness (time_since_seen + inward_body x/y/z;
+//      exit_dir sin/cos removed 038 US3 2026-07-05)
 // Was 48 in the 2026-05-04 shape (HOME_X/Y/Z + HOME_DIST); simplified per
 // Session 2026-05-07 Q1 — cylinder-shaped arena needs cylinder-shaped
 // signal, single source of truth with the OOB termination check.
@@ -184,6 +232,15 @@ enum class TrackerInput : uint16_t {
     SPAN_RATE,
     TARGET_TILT_SIN,
     TARGET_TILT_COS,
+    // ----- 038 P0-D FR-P0H situational-awareness inputs (54..57) -----
+    // (A) target-lost cue (tracker only — M1's rabbit is always visible):
+    TIME_SINCE_SEEN,   // tanh-normalized ticks since any beacon last visible
+    // (038 US3, 2026-07-05: EXIT_DIR_SIN/COS removed — redundant with the beacon
+    //  history inside the 0.8 s window, stale beyond it; low-value hand-built cue.)
+    // (B) arena-inward body-frame unit vector (radial toward cylinder axis):
+    INWARD_BODY_X,     // chase_quat.conjugate()*normalize(center-pos), body frame
+    INWARD_BODY_Y,
+    INWARD_BODY_Z,
     COUNT
 };
 
@@ -213,13 +270,19 @@ constexpr SensorInputMeta kTrackerInputMeta[] = {
     {"SPAN_RATE",            "dspn",  7},
     {"TARGET_TILT_SIN",      "tltS",  7},
     {"TARGET_TILT_COS",      "tltC",  7},
+    // ----- 038 P0-D FR-P0H situational-awareness meta (slots 54..57) -----
+    {"TIME_SINCE_SEEN",      "tSee",  7},
+    {"INWARD_BODY_X",        "inX",   7},
+    {"INWARD_BODY_Y",        "inY",   7},
+    {"INWARD_BODY_Z",        "inZ",   7},
 };
 
 static_assert(static_cast<size_t>(TrackerInput::COUNT) ==
               sizeof(kTrackerInputMeta) / sizeof(SensorInputMeta),
               "TrackerInput enum count must match kTrackerInputMeta length");
-static_assert(static_cast<int>(TrackerInput::COUNT) == 54,
-              "TrackerInput::COUNT must equal 54 per 032 phase 1 (36 beacon + 8 state + 1 arena + 9 derived)");
+static_assert(static_cast<int>(TrackerInput::COUNT) == 58,
+              "TrackerInput::COUNT must equal 58 (54 pre-038 + 038 FR-P0H: 1 target-lost + 3 arena-inward; "
+              "exit_dir_sin/cos removed 038 US3)");
 
 // 030 M6d — Tracker-mode NN input storage struct (FR-006 + FR-016).
 //
@@ -272,10 +335,22 @@ struct TrackerInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xi
     // CEP-gated OR when beacon pair is geometrically degenerate (<1e-4 in NDC).
     float target_tilt_sin;       // raw-ok: NN-byte-format buffer
     float target_tilt_cos;       // raw-ok: NN-byte-format buffer
+
+    // ----- 038 P0-D FR-P0H situational-awareness (baseline enrichment) -----
+    // (A) target-lost cue (tracker only; M1's rabbit is always visible).
+    // Stateful (held/decaying), reset per scenario/engage in the stepper.
+    // (038 US3 2026-07-05: exit_dir_sin/cos removed — low-value hand-built cue.)
+    float time_since_seen;   // raw-ok: NN-byte-format buffer — tanh(ticks_lost·scale), [0,1); 0 = visible now
+    // (B) arena-inward body-frame unit vector — radial toward the cylinder axis,
+    // rotated into body frame by the chase quat (all-attitude, smooth). Paired
+    // with dist_to_boundary_along_vel above as the magnitude/urgency term.
+    float inward_body_x;     // raw-ok: NN-byte-format buffer — chase_quat.conjugate()*normalize(center-pos), body frame
+    float inward_body_y;     // raw-ok: NN-byte-format buffer
+    float inward_body_z;     // raw-ok: NN-byte-format buffer
 };
 
-static_assert(sizeof(TrackerInputs) == 54 * sizeof(float),
-              "TrackerInputs layout must be contiguous float[54] with no padding");
+static_assert(sizeof(TrackerInputs) == 58 * sizeof(float),
+              "TrackerInputs layout must be contiguous float[58] with no padding (exit_dir removed 038 US3)");
 static_assert(alignof(TrackerInputs) == alignof(float),
               "TrackerInputs must be float-aligned for matrix multiply");
 static_assert(static_cast<int>(TrackerInput::COUNT) ==
