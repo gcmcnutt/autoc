@@ -8,6 +8,31 @@
 
 ---
 
+## 039 deferrals
+
+### [039 — BACKLOG, set 2026-07-10] Redefine flight boundaries generally for open flying — not the training cylinder
+
+**Operator (during the 039 arena-placement clarifications)**: the training cylinder (R=80 m, ±K
+band, engage-centered) is a *training construct* the 039 firmware carries only so the 038 NN's
+arena inputs mean what they meant in training — its limits are **safety-only** this phase, and 039
+deliberately dropped even the min-elevation clamp (arm-too-low = operator error). Once we get to
+**open flying** (beyond the park test field; M2-era chasing of a real target), the boundary concept
+needs a general redefinition, NOT an extrapolation of the training cylinder:
+
+- **Geofence based on where we fly, not where we arm/engage** (the 039 spec's out-of-scope note) —
+  a boundary owned by the operation/airspace, decoupled from the NN's per-engage arena inputs.
+- Open questions to scope then: boundary shape/representation (cylinder vs polygon vs
+  terrain/altitude-aware), who enforces it (NN input pressure vs supervisor/failsafe layer vs
+  both), how the NN's trained arena-input semantics map onto an operational geofence (retrain with
+  geofence-shaped inputs vs translate at the input boundary), and the altitude reference
+  (arm-relative vs AGL/MSL — the 039 park≈sea-level shortcut won't survive terrain).
+- **Trigger**: first open-flying / real-target-chase planning (M2 flight era), or any flight site
+  where the engage-centered ±K construct stops matching the airspace we're allowed to use.
+- Links: 039 spec Clarifications (arena vertical rule, 2026-07-10) + Out of Scope (geofence note);
+  camera/M2 040 items below.
+
+---
+
 ## 038 deferrals
 
 ### [038 US3 follow-on — PULLED FORWARD from 040, likely next step 2026-07-07] Spherical/equidistant projection so `span` (|gap|) means one thing everywhere on the display
