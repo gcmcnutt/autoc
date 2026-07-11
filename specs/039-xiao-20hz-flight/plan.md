@@ -46,7 +46,7 @@ tool change, 1 ground decoder + comparison report
 
 - **I Testing-First**: new logic gets failing-first tests — nn2cpp unrolled-recurrent equivalence
   (desktop, bit-comparable same-order accumulation), engage-centered arena vertical rule (unit test
-  on the NED formula incl. the −25 m clamp), log format encode→decode round-trip (field-for-field
+  on the pure ±K NED formula), log format encode→decode round-trip (field-for-field
   with quantization tolerance), decoder rejection of wrong version byte. Firmware-only observational
   steps (bench span) are validation, not unit-testable — recorded per FR-002 as log review.
 - **II Build Stability**: xiao `pio run -e xiaoblesense_arduinocore_mbed` must compile at every
@@ -113,7 +113,7 @@ crrcsim/src/mod_inputdev/inputdev_autoc/*          # only if the operator's late
 
 tests/
 ├── nn2cpp_unroll_tests.cc     # unrolled ≡ table-driven on same weights (recurrent covered)
-├── arena_recenter_tests.cc    # engage-centered vertical rule + −25 m clamp (NED)
+├── arena_recenter_tests.cc    # engage-centered pure ±K vertical rule (NED, no clamp this phase)
 └── flightlog_roundtrip_tests.cc  # encode→decode field-for-field; version-byte loud-fail
 
 src/analytics/ (new script)    # flight-log decoder + per-axis sim-vs-real comparison report

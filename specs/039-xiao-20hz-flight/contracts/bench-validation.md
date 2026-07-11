@@ -11,18 +11,16 @@ Stationary bench, INAV live, full engaged span run to completion. The downloaded
 1. Boot banner reports the regenerated topology (37 in / 2051 w) + firmware_id/weight_id matching
    the intended candidate.
 2. EngageHeader present per span with the re-centered arena: origin ≈ bench position,
-   `ceiling_Z = z_engage − 47.5`, `floor_Z = min(−25, z_engage + 47.5)` (bench z_engage ≈ 0 ⇒
-   floor MUST clamp to −25 — the clamp is exercised on every bench run by construction).
+   `ceiling_Z = z_engage − 47.5`, `floor_Z = z_engage + 47.5` (pure ±K re-center — no
+   minimum-elevation clamp this phase; bench z_engage ≈ 0 ⇒ floor_Z ≈ +47.5, ceiling_Z ≈ −47.5).
 3. The generated path moves around the stationary craft: target-direction history + dist[6] evolve
    through the span; `recurrent_reset = 1` exactly on the first tick.
 4. All 37 inputs + 3 outputs plausible every tick: unit-vector components in [−1,1], quat
-   normalized, no NaN, no stuck outputs. Arena inputs read the **bench geometry honestly**:
-   horizontally at arena center (radial boundary ≈ R away), but **vertically BELOW the resolved
-   floor** — bench z_engage ≈ 0 gives a 25–47.5 m-altitude band, so `dist_to_boundary` reads the
-   outside-band/saturated value and `inward_body` points up. This is the PASS condition (it proves
-   the −25 clamp and the floor-pressure inputs); center-of-band vertical readings on the bench
-   would indicate the re-centering rule is implemented wrong. Flight note: a low-altitude engage
-   likewise biases the NN to climb — intended.
+   normalized, no NaN, no stuck outputs. Arena inputs read **center-of-arena** at engage — the
+   pure ±K re-center puts the bench craft at band center both horizontally (radial boundary ≈ R
+   away) and vertically (±47.5 m band centered on the bench). Off-center readings at engage
+   indicate the re-centering is implemented wrong. (The limits are safety-only this phase;
+   engaging too low in flight is operator error — undefined, not firmware-defended.)
 5. Zero decoder errors; tick_counter contiguous.
 
 ## FR-011 — 20 Hz cadence soak

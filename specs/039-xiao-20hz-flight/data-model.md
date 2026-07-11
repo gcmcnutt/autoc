@@ -37,7 +37,7 @@ FileHeader (once) → { EngageHeader → TickRecord × N }* → (event records i
 | engage_timestamp_ms | u32 | ms boot-relative | span start |
 | span_id | u16 | — | flight-unique, monotonically increasing |
 | arena_origin_ned[3] | f32×3 | m, NED rel. arm origin | the engage point; FR-001 re-centering provenance |
-| arena_floor_z / ceiling_z | f32×2 | m NED | RESOLVED values after the rule `floor=min(−25, z_e+K)`, `ceil=z_e−K` (K=47.5) — logged resolved, not just derivable |
+| arena_floor_z / ceiling_z | f32×2 | m NED | RESOLVED values after the pure ±K rule `floor=z_e+K`, `ceil=z_e−K` (K=47.5; no min-elevation clamp this phase) — logged resolved, not just derivable |
 | path_index | i16 | — | selected path at engage |
 
 ### 2.3 TickRecord (every control tick while engaged)

@@ -19,7 +19,7 @@ back to table-driven (check the emitted header comment).
 
 ```text
 flash → ground ERASE:ALL (initializes log) → engage a span on the stationary bench →
-BLE download → decode → review per FR-002 checklist (arena floor MUST read −25 clamp on bench)
+BLE download → decode → review per FR-002 checklist (center-of-arena readings; ±47.5 m band in EngageHeader)
 → then the FR-011 soak: several consecutive 3–4 min spans at divisor=1 (20 Hz)
 ```
 

@@ -60,14 +60,14 @@ Operator refinements (same session, volunteered):
   INAV blackbox + join analyses).
 - **Transport is ours to change**: the xiao↔INAV transport is a custom protocol — if the 20 Hz link
   budget is close, the query/response format itself is in scope for optimization.
-- **Arena vertical rule (all NED, per `docs/COORDINATE_CONVENTIONS.md`; origin = arm point)**: the
-  vertical band re-centers on the engage altitude with training half-height K:
-  `ceiling_Z = z_engage − K`, `floor_Z = min(−25 m, z_engage + K)` — i.e., the floor sits K below
-  the engage altitude but never below 25 m above the **arm** origin (NED min = higher altitude).
-  Note the −25 m is relative to the arm point, NOT AGL/MSL — today's park is basically at sea
-  level, so keep track of the reference. Early flights run far higher than the training arena; the
-  clamp is the just-in-case for lower runs. Down the line the arena becomes a geofence based on
-  where we fly (not where we arm/engage) — M2-era work (chasing a real target), out of scope here.
+- **Arena vertical rule (all NED, per `docs/COORDINATE_CONVENTIONS.md`) — SIMPLIFIED 2026-07-10
+  (supersedes the earlier −25 m clamp)**: pure ±K re-center around the engage point, sharing the
+  same virtual origin the rendered path starts from at autoc enable: `ceiling_Z = z_engage − K`,
+  `floor_Z = z_engage + K` (K = training half-height, 47.5 m). **No minimum-elevation clamp for
+  this phase** — the top/bottom limits are safety-only, and engaging too low is operator error
+  (undefined), not something the firmware defends. Keep tracking the altitude reference (arm
+  origin; today's park ≈ sea level). Down the line the arena becomes a geofence based on where we
+  fly (not where we arm/engage) — M2-era work (chasing a real target), out of scope here.
 - **Console/log split (FR-014)**: rethink human console output — console carries significant events
   only (armed / disarmed / downloading, etc. — mostly read on the bench or ground) plus a slow ~2 Hz
   heartbeat; ALL control-loop data goes to the flash log only, saving loop cycles.
@@ -98,9 +98,8 @@ sensibly; per-tick evaluation time is measured and within budget.
 2. **Given** a stationary bench with the firmware live, **When** a span is engaged and run to
    completion, **Then** the recorded logs show the path moving around the craft and all 37 inputs +
    3 outputs evolving plausibly — correct ranges, no NaN, no lockup, arena inputs reading
-   **horizontal-center** values at engage while the vertical inputs read **below-floor** (bench
-   z_engage ≈ 0 resolves the band to 25–47.5 m altitude, so the −25 m clamp and the floor-pressure
-   inputs are visibly exercised on every bench run).
+   center-of-arena values at engage (pure ±K re-center puts the bench craft at band center; the
+   EngageHeader shows `floor_Z = z_e + 47.5`, `ceiling_Z = z_e − 47.5`).
 3. **Given** the unrolled forward pass, **When** per-tick cost is measured on target, **Then** the
    gather + evaluate + output path fits the 20 Hz tick with margin, and the measured cost is recorded
    for the latency model.
@@ -258,17 +257,16 @@ comparison report against the same controller's sim baseline.
 - **FR-001**: The embedded NN program MUST be regenerated from the pinned 038 M1 elite weight file
   (37-input/2051-weight contract) with input gathering semantically identical to the desktop
   reference, including the situational-awareness inputs with training-size arena geometry
-  **re-centered at the span-engage point on each engage** (arena origin recorded in the flight log).
-  Vertical band, all NED relative to the arm origin (`docs/COORDINATE_CONVENTIONS.md`), with K =
-  training arena half-height: `ceiling_Z = z_engage − K`, `floor_Z = min(−25 m, z_engage + K)` —
-  the floor follows the engage altitude but is clamped to at least 25 m above the arm point.
+  **re-centered at the span-engage point on each engage** (arena origin recorded in the flight log;
+  same virtual origin the rendered path starts from). Vertical band, all NED
+  (`docs/COORDINATE_CONVENTIONS.md`), K = training arena half-height (47.5 m):
+  `ceiling_Z = z_engage − K`, `floor_Z = z_engage + K` — pure re-center, no minimum-elevation
+  clamp this phase (limits are safety-only; engaging too low is operator error).
 - **FR-002**: Embedded evaluation MUST be verified on the stationary bench before flight: a full
   engaged span whose recorded logs show the generated path moving around the craft with all NN
-  inputs/outputs evolving plausibly (correct ranges, no NaN/lockup; arena inputs at
-  horizontal-center with the vertical band clamped ABOVE the bench — the −25 m floor clamp is
-  exercised by construction) — observational verification, not a numeric replay harness.
-  Flight implication to note at review: a low-altitude engage puts the craft below the resolved
-  floor, biasing the NN to climb — the intended just-in-case behavior.
+  inputs/outputs evolving plausibly (correct ranges, no NaN/lockup; arena inputs reading
+  center-of-arena at engage — the pure ±K re-center puts the bench craft at band center) —
+  observational verification, not a numeric replay harness.
 - **FR-003**: The NN forward pass MUST be restructured (unrolled) so that measured per-tick evaluation
   cost on target leaves positive margin in the 20 Hz tick alongside gather, command send, and logging.
 - **FR-004**: The latency research MUST quantify real pipeline latency (components and tail) from
@@ -351,9 +349,9 @@ comparison report against the same controller's sim baseline.
 - 20 Hz (50 ms tick) is the operating configuration (037 decision); 50 Hz remains a gated stretch
   goal outside this feature's success criteria.
 - The arena-relative inputs use the training-size arena geometry re-centered at the span-engage
-  point on each engage; the vertical band follows the engage altitude (±K, training half-height)
-  with the floor clamped to ≥25 m above the arm origin — full NED rule in FR-001 (verified on the
-  bench and logged per the edge case above).
+  point on each engage; the vertical band is a pure ±K re-center around the engage altitude (no
+  minimum-elevation clamp this phase — engaging too low is operator error) — full NED rule in
+  FR-001 (verified on the bench and logged per the edge case above).
 - The slaved high-bandwidth local IMU is **deferred by default** (operator direction 2026-07-10);
   only the FR-006 verdict can pull it back in.
 - BLE is the only field retrieval path (no cable in the field); USB download stays on the backlog.
@@ -373,4 +371,4 @@ comparison report against the same controller's sim baseline.
 - The slaved high-bandwidth local IMU (unless FR-006 concludes it is required).
 - Any controller-cadence / fitness-function changes beyond the FR-005 latency-amended M1 rebake.
 - Geofence-style arena (boundary based on where we fly, not where we engage) — M2-era work for
-  chasing a real target; this feature uses engage-centered placement with the ≥25 m floor clamp.
+  chasing a real target; this feature uses pure engage-centered ±K placement (limits safety-only).

@@ -123,7 +123,8 @@ quantization QA finds a field that can't scale — costs the headroom).
 - Weight source: pinned t5 elite `autoc-m1/autoc-9223370253844606963-2026-07-02T16:36:08.844Z/`
   gen 800 (37,32,16r,3 → 2051 w).
 - **Gap 1 — engage-time arena**: nn2cpp bakes a *static const* FlightArena; FR-001 requires
-  re-centering per engage (`floor_Z = min(−25, z_engage+K)`, `ceiling_Z = z_engage−K`,
+  re-centering per engage (`floor_Z = z_engage+K`, `ceiling_Z = z_engage−K` — pure ±K, no
+  min-elevation clamp per the 2026-07-10 simplification,
   K = (ceiling−floor)/2 = **47.5 m** for the 80/5/100 training arena). **Decision**: the firmware
   holds a *mutable* engage-scoped FlightArena (recomputed in the span-activation path from
   `z_engage`), passed to `gather_pathgen_inputs` — nn2cpp's baked literal becomes the geometry

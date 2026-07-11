@@ -27,13 +27,13 @@ Hardware-in-the-loop tasks (bench, flight) are operator-driven; desktop tasks ar
 ## Phase 3: User Story 1 — Firmware catch-up to the 038 contract (P1) 🎯 MVP
 
 **Goal**: xiao runs the 37-in/2051-w elite with engage-centered arena; observational bench span passes.
-**Independent Test**: stationary bench span; logs show the path moving around the craft, all 37 inputs + 3 outputs plausible, arena floor clamped to −25 at bench altitude (contracts/bench-validation.md FR-002).
+**Independent Test**: stationary bench span; logs show the path moving around the craft, all 37 inputs + 3 outputs plausible, arena inputs at band center with the resolved ±47.5 m band in the EngageHeader (contracts/bench-validation.md FR-002).
 
-- [ ] T006 [P] [US1] Write FAILING test `tests/arena_recenter_tests.cc`: engage-centered vertical rule `ceiling_Z = z_engage − K`, `floor_Z = min(−25, z_engage + K)`, K = 47.5 m (NED, per `docs/COORDINATE_CONVENTIONS.md`); cases: bench z_e≈0 → floor clamps to −25; high engage z_e=−80 → floor −32.5; horizontal re-center at engage x/y
+- [ ] T006 [P] [US1] Write FAILING test `tests/arena_recenter_tests.cc`: engage-centered pure ±K rule `ceiling_Z = z_engage − K`, `floor_Z = z_engage + K`, K = 47.5 m (NED, per `docs/COORDINATE_CONVENTIONS.md`, no min-elevation clamp per 2026-07-10 simplification); cases: bench z_e≈0 → band ±47.5 centered on bench; high engage z_e=−80 → floor −32.5 / ceiling −127.5; horizontal re-center at engage x/y
 - [ ] T007 [US1] Implement the engage-scoped arena (D5): re-center helper (template geometry R/K + `engage_pos` → resolved `FlightArena`) in a shared xiao-safe header (`include/autoc/eval/arena.h` or adjacent), invoked in the span-activation path in `xiao/src/msplink.cpp`; hold the resolved arena for `gather_pathgen_inputs`; expose origin + resolved floor/ceiling for logging; NO in-class defaults (Constitution VII); T006 green
 - [ ] T008 [US1] Regenerate `xiao/src/generated/nn_program_generated.cpp`: `tools/nn2cpp -i nn_weights.dat -u -a 80,5,100 -o …` (arena literal = TEMPLATE only per D5); verify emitted header comment says unrolled + 37/2051
 - [ ] T009 [US1] Update xiao call sites for the 038 gather signature (arena param) in `xiao/src/msplink.cpp` (+ `xiao/include/nn_program.h` if the decl changed); extend the INTERIM text NN log line with the 4 new inputs (`dist_to_boundary`, `inward_body[3]`) + an engage line with arena origin/floors so the US1 bench is reviewable before US3 lands; boot banner reports topology + weight id; `pio run` green
-- [ ] T010 [US1] OPERATOR bench: FR-002 observational span per `contracts/bench-validation.md` §FR-002 (flash → ERASE:ALL → engage → download → checklist review incl. the −25 floor clamp); record the reviewed log reference in `specs/039-xiao-20hz-flight/outcome.md`
+- [ ] T010 [US1] OPERATOR bench: FR-002 observational span per `contracts/bench-validation.md` §FR-002 (flash → ERASE:ALL → engage → download → checklist review incl. center-of-arena readings + resolved ±K band in the EngageHeader); record the reviewed log reference in `specs/039-xiao-20hz-flight/outcome.md`
 
 **Checkpoint**: US1 delivers a flyable-at-10 Hz 038-contract firmware (MVP: the candidate runs on hardware).
 
