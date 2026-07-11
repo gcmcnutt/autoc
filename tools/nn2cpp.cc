@@ -40,25 +40,143 @@ void printUsage(const char* progName) {
 // FlightArena. On the desktop the backend holds one from the ini; the xiao
 // firmware has no ConfigManager, so nn2cpp bakes a compile-time literal from
 // these values (default = FlightArena struct defaults, override with -a).
+//
+// 039 D5: the baked literal is the geometry TEMPLATE, not the placement.
+// The generated code exposes it via generatedNNProgramArenaTemplate() and
+// gathers against an EXTERN `nnActiveArena()` the consumer must define —
+// the firmware re-centers per engage (resolveEngageArena), desktop harnesses
+// construct one explicitly. No definition ⇒ link failure (Constitution VII:
+// no silent fallback placement).
 struct BakedArena {
     double radius_m = 80.0;
     double floor_agl_m = 5.0;
     double ceiling_agl_m = 100.0;
 };
 
-// Emit the `static const autoc::eval::FlightArena arena{...};` line shared by
-// both codegen paths, immediately before the gather_pathgen_inputs call.
-static void emitBakedArena(std::stringstream& code, const BakedArena& a) {
-    code << "    // 038 P0-D FR-P0H (B) — arena-awareness inputs. Baked from the\n";
-    code << "    // run config at codegen time (xiao has no ConfigManager).\n";
-    code << "    static const autoc::eval::FlightArena arena{"
+// Emit the template accessor + the active-arena extern shared by both
+// codegen paths (039 D5).
+static void emitArenaContract(std::stringstream& code, const BakedArena& a) {
+    code << "// 039 D5 — arena geometry TEMPLATE from codegen (-a R,F,C). Placement is\n";
+    code << "// engage-scoped: the consumer owns the active arena (see nnActiveArena).\n";
+    code << "const autoc::eval::FlightArena& generatedNNProgramArenaTemplate() {\n";
+    code << "    static const autoc::eval::FlightArena t{"
          << std::fixed << std::setprecision(4)
-         << a.radius_m << ", " << a.floor_agl_m << ", " << a.ceiling_agl_m << "};\n";
+         << a.radius_m << "f, " << a.floor_agl_m << "f, " << a.ceiling_agl_m << "f};\n";
+    code << "    return t;\n";
+    code << "}\n\n";
+    code << "// Engage-scoped active arena — DEFINED BY THE CONSUMER (msplink.cpp on the\n";
+    code << "// xiao, the test harness on desktop). Missing definition fails the link.\n";
+    code << "extern const autoc::eval::FlightArena& nnActiveArena();\n\n";
+}
+
+// ============================================================
+// 039 — compact SHA-256 (FIPS 180-4) for weight/firmware ids.
+// Baked into the generated code so the flight log can tie a log
+// file to the exact firmware + weight set (data-model.md §2.1).
+// ============================================================
+namespace sha256impl {
+static const uint32_t K[64] = {
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2};
+static inline uint32_t rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
+}  // namespace sha256impl
+
+// SHA-256 of `data`; writes 32-byte digest to `out`.
+static void sha256(const uint8_t* data, size_t len, uint8_t out[32]) {
+    using namespace sha256impl;
+    uint32_t h[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+                     0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+    // Padded message: len + 1 + zeros + 8-byte big-endian bit length
+    size_t padded = ((len + 8) / 64 + 1) * 64;
+    std::vector<uint8_t> msg(padded, 0);
+    if (len > 0) std::copy(data, data + len, msg.begin());
+    msg[len] = 0x80;
+    uint64_t bits = static_cast<uint64_t>(len) * 8;
+    for (int i = 0; i < 8; i++) msg[padded - 1 - i] = static_cast<uint8_t>(bits >> (8 * i));
+
+    for (size_t off = 0; off < padded; off += 64) {
+        uint32_t w[64];
+        for (int i = 0; i < 16; i++) {
+            w[i] = (static_cast<uint32_t>(msg[off + 4*i]) << 24) |
+                   (static_cast<uint32_t>(msg[off + 4*i + 1]) << 16) |
+                   (static_cast<uint32_t>(msg[off + 4*i + 2]) << 8) |
+                   static_cast<uint32_t>(msg[off + 4*i + 3]);
+        }
+        for (int i = 16; i < 64; i++) {
+            uint32_t s0 = rotr(w[i-15], 7) ^ rotr(w[i-15], 18) ^ (w[i-15] >> 3);
+            uint32_t s1 = rotr(w[i-2], 17) ^ rotr(w[i-2], 19) ^ (w[i-2] >> 10);
+            w[i] = w[i-16] + s0 + w[i-7] + s1;
+        }
+        uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+        for (int i = 0; i < 64; i++) {
+            uint32_t S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);
+            uint32_t ch = (e & f) ^ (~e & g);
+            uint32_t t1 = hh + S1 + ch + K[i] + w[i];
+            uint32_t S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);
+            uint32_t mj = (a & b) ^ (a & c) ^ (b & c);
+            uint32_t t2 = S0 + mj;
+            hh=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
+        }
+        h[0]+=a; h[1]+=b; h[2]+=c; h[3]+=d; h[4]+=e; h[5]+=f; h[6]+=g; h[7]+=hh;
+    }
+    for (int i = 0; i < 8; i++) {
+        out[4*i]   = static_cast<uint8_t>(h[i] >> 24);
+        out[4*i+1] = static_cast<uint8_t>(h[i] >> 16);
+        out[4*i+2] = static_cast<uint8_t>(h[i] >> 8);
+        out[4*i+3] = static_cast<uint8_t>(h[i]);
+    }
+}
+
+// Emit the identity/metadata trailer appended to BOTH emissions (039):
+//   - generatedNNWeightId[8]:   first 8 bytes of SHA-256 of the weight file
+//   - generatedNNFirmwareId[8]: first 8 bytes of SHA-256 of the generated
+//     code text ABOVE this trailer (the trailer can't hash itself)
+//   - topology string + counts for the boot banner (039 US1)
+static void emitIdentityTrailer(std::stringstream& code, const NNGenome& genome,
+                                const std::vector<uint8_t>& weightFileBytes) {
+    uint8_t wid[32];
+    sha256(weightFileBytes.data(), weightFileBytes.size(), wid);
+    const std::string bodySoFar = code.str();
+    uint8_t fid[32];
+    sha256(reinterpret_cast<const uint8_t*>(bodySoFar.data()), bodySoFar.size(), fid);
+
+    std::ostringstream topo;
+    for (size_t i = 0; i < genome.topology.size(); i++) {
+        if (i > 0) topo << "->";
+        topo << genome.topology[i];
+        if (i < genome.recurrent.size() && genome.recurrent[i]) topo << "r";
+    }
+
+    code << "// 039 — identity trailer. firmware_id hashes the code text above this\n";
+    code << "// line (regenerating with identical inputs+tool reproduces it modulo the\n";
+    code << "// timestamp comment); weight_id hashes the input weight file bytes.\n";
+    auto emitId = [&code](const char* name, const uint8_t* id) {
+        code << "const uint8_t " << name << "[8] = {";
+        for (int i = 0; i < 8; i++) {
+            if (i > 0) code << ", ";
+            char b[8];
+            std::snprintf(b, sizeof(b), "0x%02x", id[i]);
+            code << b;
+        }
+        code << "};\n";
+    };
+    emitId("generatedNNWeightId", wid);
+    emitId("generatedNNFirmwareId", fid);
+    code << "const char* generatedNNTopologyString = \"" << topo.str() << "\";\n";
+    code << "const int generatedNNInputCount = " << genome.topology.front() << ";\n";
+    code << "const int generatedNNWeightCount = " << genome.weights.size() << ";\n";
 }
 
 // Generate code that uses the portable nn_forward() function with static weight array
 std::string generatePortableCode(const NNGenome& genome, const std::string& functionName,
-                                  const std::string& sourceFile, const BakedArena& arena) {
+                                  const std::string& sourceFile, const BakedArena& arena,
+                                  const std::vector<uint8_t>& weightFileBytes) {
     std::stringstream code;
 
     auto now = std::chrono::system_clock::now();
@@ -142,11 +260,12 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     code << "    for (int i = 0; i < nn_hidden_state_size; i++) nn_hidden_state[i] = 0.0f;\n";
     code << "}\n\n";
 
+    emitArenaContract(code, arena);
+
     // Main function
     code << "gp_scalar " << functionName << "(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {\n";
     code << "    NNInputs inputs = {};\n";
-    emitBakedArena(code, arena);
-    code << "    gather_pathgen_inputs(pathProvider, aircraftState, arena, inputs);\n\n";
+    code << "    gather_pathgen_inputs(pathProvider, aircraftState, nnActiveArena(), inputs);\n\n";
     code << "    float outputs[" << genome.topology.back() << "];\n";
     if (any_recurrent) {
         code << "    nn_forward_recurrent(nn_weights, getTopology(), getRecurrent(),\n";
@@ -166,12 +285,21 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     // Source identifier
     code << "const char* generatedNNProgramSource = \"" << genome.source << "\";\n";
 
+    emitIdentityTrailer(code, genome, weightFileBytes);
+
     return code.str();
 }
 
-// Generate code with unrolled layer loops — no std::vector, no nn_forward call
+// Generate code with unrolled layer loops — no std::vector, no nn_forward /
+// nn_forward_recurrent call. 039 D6: recurrent layers unroll with persistent
+// static hidden-state registers (h read during the layer MACs, committed
+// after the full layer — double-buffered via the out buffer, so no
+// read-after-write). Accumulation order matches nn_forward_recurrent
+// exactly: sum = (B[j] + Σ W·x) + (Σ W_hh·h), tanh via fast_tanh — the
+// desktop equivalence test asserts bit-identical outputs.
 std::string generateUnrolledCode(const NNGenome& genome, const std::string& functionName,
-                                  const std::string& sourceFile, const BakedArena& arena) {
+                                  const std::string& sourceFile, const BakedArena& arena,
+                                  const std::vector<uint8_t>& weightFileBytes) {
     std::stringstream code;
 
     auto now = std::chrono::system_clock::now();
@@ -189,6 +317,7 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     for (size_t i = 0; i < genome.topology.size(); i++) {
         if (i > 0) code << " -> ";
         code << genome.topology[i];
+        if (i < genome.recurrent.size() && genome.recurrent[i]) code << "r";
     }
     code << "\n";
     code << "//   Weights:     " << genome.weights.size() << "\n";
@@ -208,12 +337,42 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     }
     code << "};\n\n";
 
+    // 039 D6 — persistent recurrent state registers, one static array per
+    // recurrent layer, surviving between calls. W_hh blocks live at the tail
+    // of nn_weights (NNGenome layout), in layer-index order.
+    int ff_total = 0;
+    for (size_t i = 0; i + 1 < genome.topology.size(); i++) {
+        ff_total += genome.topology[i] * genome.topology[i + 1] + genome.topology[i + 1];
+    }
+    bool any_recurrent = false;
+    for (size_t l = 0; l < genome.topology.size() && l < genome.recurrent.size(); l++) {
+        if (genome.recurrent[l]) {
+            any_recurrent = true;
+            code << "// h state for recurrent layer " << l << " (size "
+                 << genome.topology[l] << ")\n";
+            code << "static float nn_h_l" << l << "[" << genome.topology[l] << "] = {0};\n";
+        }
+    }
+    if (any_recurrent) code << "\n";
+
+    // Reset hook: zero all recurrent state. Call at engage/span start
+    // (nn_reset semantics — same contract as the table-driven emission).
+    code << "void generatedNNProgramReset() {\n";
+    for (size_t l = 0; l < genome.topology.size() && l < genome.recurrent.size(); l++) {
+        if (genome.recurrent[l]) {
+            code << "    for (int i = 0; i < " << genome.topology[l]
+                 << "; i++) nn_h_l" << l << "[i] = 0.0f;\n";
+        }
+    }
+    code << "}\n\n";
+
+    emitArenaContract(code, arena);
+
     // Main function with unrolled loops
     int max_layer = *std::max_element(genome.topology.begin(), genome.topology.end());
     code << "gp_scalar " << functionName << "(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {\n";
     code << "    NNInputs inputs = {};\n";
-    emitBakedArena(code, arena);
-    code << "    gather_pathgen_inputs(pathProvider, aircraftState, arena, inputs);\n";
+    code << "    gather_pathgen_inputs(pathProvider, aircraftState, nnActiveArena(), inputs);\n";
     code << "    const float* input_floats = reinterpret_cast<const float*>(&inputs);\n\n";
 
     // Layer buffers — fixed-size on stack
@@ -223,29 +382,53 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     code << "    // Copy inputs\n";
     code << "    for (int i = 0; i < " << genome.topology.front() << "; i++) buf_a[i] = input_floats[i];\n\n";
 
-    // Unrolled layer computation
+    // Unrolled layer computation. Recurrent layers (039 D6): the out buffer
+    // doubles as the h_new staging area — h is READ throughout the j loop and
+    // committed only after the full layer, exactly nn_forward_recurrent's
+    // ordering (no read-after-write on h within a tick).
     int weight_offset = 0;
+    int whh_offset = 0;  // running offset into the W_hh tail (layer-index order)
     bool a_is_input = true;
     for (size_t layer = 0; layer + 1 < genome.topology.size(); layer++) {
         int in_size = genome.topology[layer];
         int out_size = genome.topology[layer + 1];
+        const bool out_is_recurrent = (layer + 1 < genome.recurrent.size())
+                                      && genome.recurrent[layer + 1];
         std::string in_buf = a_is_input ? "buf_a" : "buf_b";
         std::string out_buf = a_is_input ? "buf_b" : "buf_a";
+        std::string h_arr = "nn_h_l" + std::to_string(layer + 1);
 
-        code << "    // Layer " << layer << ": " << in_size << " -> " << out_size << "\n";
+        code << "    // Layer " << layer << ": " << in_size << " -> " << out_size
+             << (out_is_recurrent ? " (recurrent)" : "") << "\n";
         code << "    {\n";
         code << "        const float* W = nn_weights + " << weight_offset << ";\n";
         code << "        const float* B = nn_weights + " << (weight_offset + in_size * out_size) << ";\n";
+        if (out_is_recurrent) {
+            code << "        const float* Whh = nn_weights + " << (ff_total + whh_offset) << ";\n";
+        }
         code << "        for (int j = 0; j < " << out_size << "; j++) {\n";
         code << "            float sum = B[j];\n";
         code << "            for (int i = 0; i < " << in_size << "; i++) {\n";
         code << "                sum += W[j * " << in_size << " + i] * " << in_buf << "[i];\n";
         code << "            }\n";
+        if (out_is_recurrent) {
+            code << "            float hh = 0.0f;\n";
+            code << "            for (int i = 0; i < " << out_size << "; i++) {\n";
+            code << "                hh += Whh[j * " << out_size << " + i] * " << h_arr << "[i];\n";
+            code << "            }\n";
+            code << "            sum = sum + hh;\n";
+        }
         code << "            " << out_buf << "[j] = static_cast<float>(fast_tanh(static_cast<gp_scalar>(sum)));\n";
         code << "        }\n";
+        if (out_is_recurrent) {
+            code << "        // Commit h_t (after the full layer — double-buffered)\n";
+            code << "        for (int j = 0; j < " << out_size << "; j++) "
+                 << h_arr << "[j] = " << out_buf << "[j];\n";
+        }
         code << "    }\n\n";
 
         weight_offset += in_size * out_size + out_size;
+        if (out_is_recurrent) whh_offset += out_size * out_size;
         a_is_input = !a_is_input;
     }
 
@@ -264,6 +447,8 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
 
     // Source identifier
     code << "const char* generatedNNProgramSource = \"" << genome.source << "\";\n";
+
+    emitIdentityTrailer(code, genome, weightFileBytes);
 
     return code.str();
 }
@@ -345,22 +530,14 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Generate code. Note: unrolled-path emission for recurrent layers is
-    // not implemented (spec 027 deferred xiao port behind sim gate — once
-    // sim validates the architecture we'll spec the unrolled recurrent
-    // emission as part of that work). Fall back to portable if the genome
-    // has any recurrent layers.
-    const bool any_recurrent = std::any_of(genome.recurrent.begin(),
-        genome.recurrent.end(), [](uint8_t v) { return v != 0; });
+    // Generate code. 039 D6: -u covers recurrent genomes too (persistent
+    // static state registers + straight-line MACs) — the pre-039 table-driven
+    // fallback is gone.
     std::string code;
-    if (unrolled && !any_recurrent) {
-        code = generateUnrolledCode(genome, functionName, inputFile, arena);
+    if (unrolled) {
+        code = generateUnrolledCode(genome, functionName, inputFile, arena, data);
     } else {
-        if (unrolled && any_recurrent) {
-            std::cerr << "warning: -u (unrolled) not supported for recurrent genomes; "
-                      << "falling back to portable emission." << std::endl;
-        }
-        code = generatePortableCode(genome, functionName, inputFile, arena);
+        code = generatePortableCode(genome, functionName, inputFile, arena, data);
     }
 
     // Write output

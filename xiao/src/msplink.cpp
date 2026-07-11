@@ -24,6 +24,17 @@ static Path gp_path_segment; // Current path segment for NN evaluator
 static gp_vec3 test_origin_offset(0.0f, 0.0f, 0.0f);
 static bool test_origin_set = false;
 
+// 039 FR-001 / D5 — engage-scoped arena. Resolved in the span-activation
+// path (below) from the codegen template + the engage point, BEFORE
+// rabbit_active goes true; every NN eval reads it via nnActiveArena().
+// Zero-initialized static until the first engage — never read before then
+// (rabbit_active gates all consumers).
+static autoc::eval::EngageArena engage_arena = {};
+
+// Link-time contract with the generated NN code (039 D5): the consumer owns
+// the active arena. Returns the current span's resolved virtual-frame arena.
+const autoc::eval::FlightArena& nnActiveArena() { return engage_arena.virtual_arena; }
+
 // Nav Control Timing and State
 static unsigned long rabbit_start_time = 0;
 static volatile bool rabbit_active = false;
@@ -297,7 +308,7 @@ static void mspUpdateNavControl()
     aircraft_state.setRabbitPosition(targetPos);
     aircraft_state.recordErrorHistory(dir, dist_now, millis());
 
-    // Run NN: gathers 33 inputs, forward pass, sets pitch/roll/throttle commands
+    // Run NN: gathers 37 inputs (038 contract), forward pass, sets pitch/roll/throttle commands
     generatedNNProgram(pathProvider, aircraft_state, 0.0f);
 
     // Convert NN-controlled aircraft commands to MSP RC values and cache them
@@ -307,9 +318,11 @@ static void mspUpdateNavControl()
     updateCachedCommands(roll_cmd, pitch_cmd, throttle_cmd, eval_start_us);
     pipeEvalEndUs = micros();
 
-    // Log compact NN I/O: 33 inputs, 3 outputs (tanh), 3 RC commands
-    // Inputs (023 direction cosines):
-    //  [0-5]  target_x  body-frame unit-vec x (history + forecast)
+    // INTERIM per-tick NN I/O text line (039 T009): extended with the 4 new
+    // 038 arena-awareness inputs so the US1 bench is reviewable before the
+    // binary flight log (US3/T013) REPLACES this line entirely (FR-014).
+    // Inputs (023 direction cosines + 038 FR-P0H arena):
+    //  [0-5]  target_x  body-frame unit-vec x (past history)
     //  [6-11] target_y  body-frame unit-vec y
     //  [12-17] target_z body-frame unit-vec z
     //  [18-23] dist     raw metres
@@ -317,10 +330,12 @@ static void mspUpdateNavControl()
     //  [25-28] quat w,x,y,z
     //  [29]   airspeed (m/s)
     //  [30-32] gyro p,q,r (rad/s)
+    //  [33]   dist_to_boundary (tanh, dimensionless)
+    //  [34-36] inward_body x,y,z (body-frame unit vec)
     const float* in = reinterpret_cast<const float*>(&aircraft_state.getNNInputs());
     const float* out = aircraft_state.getNNOutputs();
     logPrint(INFO,
-             "NN: idx=%d tX=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tY=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tZ=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] d=[%.1f,%.1f,%.1f,%.1f,%.1f,%.1f] cr=%.2f q=[%.3f,%.3f,%.3f,%.3f] as=%.1f g=[%.2f,%.2f,%.2f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d] rabbit=[%.2f,%.2f,%.2f]",
+             "NN: idx=%d tX=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tY=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tZ=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] d=[%.1f,%.1f,%.1f,%.1f,%.1f,%.1f] cr=%.2f q=[%.3f,%.3f,%.3f,%.3f] as=%.1f g=[%.2f,%.2f,%.2f] dBnd=%.3f inw=[%.2f,%.2f,%.2f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d] rabbit=[%.2f,%.2f,%.2f]",
              current_path_index,
              in[0], in[1], in[2], in[3], in[4], in[5],       // target_x
              in[6], in[7], in[8], in[9], in[10], in[11],     // target_y
@@ -330,6 +345,8 @@ static void mspUpdateNavControl()
              in[25], in[26], in[27], in[28],                   // quaternion w,x,y,z
              in[29],                                           // airspeed
              in[30], in[31], in[32],                           // gyro p,q,r (rad/s)
+             in[33],                                           // dist_to_boundary (tanh)
+             in[34], in[35], in[36],                           // inward_body x,y,z
              out[0], out[1], out[2],                           // NN outputs (tanh)
              roll_cmd, pitch_cmd, throttle_cmd,                // RC commands
              targetPos.x(), targetPos.y(), targetPos.z());     // T080: rabbit ground-truth (virtual NED m)
@@ -342,6 +359,22 @@ void msplinkSetup()
   Serial1.begin(115200);
   msp.begin(Serial1, MSP_REPLY_TIMEOUT_MSEC);
   logPrint(INFO, "MSPLink Reader Started");
+
+  // 039 boot banner — candidate identity (FR-002 item 1): topology + ids
+  // baked by nn2cpp; must match the intended flight candidate.
+  {
+    const autoc::eval::FlightArena& tpl = generatedNNProgramArenaTemplate();
+    logPrint(INFO,
+             "NN candidate: topology=%s inputs=%d weights=%d weight_id=%02x%02x%02x%02x%02x%02x%02x%02x firmware_id=%02x%02x%02x%02x%02x%02x%02x%02x arenaTemplate=[R=%.0f F=%.0f C=%.0f]",
+             generatedNNTopologyString, generatedNNInputCount, generatedNNWeightCount,
+             generatedNNWeightId[0], generatedNNWeightId[1], generatedNNWeightId[2],
+             generatedNNWeightId[3], generatedNNWeightId[4], generatedNNWeightId[5],
+             generatedNNWeightId[6], generatedNNWeightId[7],
+             generatedNNFirmwareId[0], generatedNNFirmwareId[1], generatedNNFirmwareId[2],
+             generatedNNFirmwareId[3], generatedNNFirmwareId[4], generatedNNFirmwareId[5],
+             generatedNNFirmwareId[6], generatedNNFirmwareId[7],
+             tpl.radius_m, tpl.floor_agl_m, tpl.ceiling_agl_m);
+  }
 
   // set 'valid' values for now
   for (int i = 0; i < MSP_MAX_SUPPORTED_CHANNELS; i++)
@@ -481,6 +514,17 @@ void mspUpdateState()
         logPrint(WARNING, "*** Path was TRUNCATED at MAX_EMBEDDED_PATH_SEGMENTS=%d ***",
                  MAX_EMBEDDED_PATH_SEGMENTS);
       }
+
+      // 039 FR-001 — re-center the arena on the engage point (pure ±K rule)
+      // and zero the recurrent NN state (nn_reset) BEFORE the span goes live.
+      engage_arena = autoc::eval::resolveEngageArena(
+          generatedNNProgramArenaTemplate(), test_origin_offset);
+      generatedNNProgramReset();
+      logPrint(INFO,
+               "Engage: arena origin NED=[%.2f,%.2f,%.2f] floorZ=%.1f ceilZ=%.1f K=%.1f - NN state reset",
+               engage_arena.origin_ned.x(), engage_arena.origin_ned.y(),
+               engage_arena.origin_ned.z(), engage_arena.floor_z_ned,
+               engage_arena.ceiling_z_ned, engage_arena.half_band_m);
 
       rabbit_start_time = millis();
       rabbit_active = true;

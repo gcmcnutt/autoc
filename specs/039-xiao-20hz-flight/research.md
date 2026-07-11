@@ -120,7 +120,8 @@ quantization QA finds a field that can't scale — costs the headroom).
 - `tools/nn2cpp.cc` already emits the 038 contract: `-a R,F,C` baked-arena flag (lines 43-56),
   gather call with arena param; xiao build already pulls desktop `src/nn/evaluator.cc` +
   `src/eval/sensor_math.cc` (`xiao/platformio.ini:31-34`); `arena.h` is cereal-free/xiao-safe.
-- Weight source: pinned t5 elite `autoc-m1/autoc-9223370253844606963-2026-07-02T16:36:08.844Z/`
+- Weight source: pinned t5 elite `autoc-m1/autoc-9223370253553029228-2026-07-06T01:35:46.579Z/`
+  (run id corrected 2026-07-11, operator-confirmed)
   gen 800 (37,32,16r,3 → 2051 w).
 - **Gap 1 — engage-time arena**: nn2cpp bakes a *static const* FlightArena; FR-001 requires
   re-centering per engage (`floor_Z = z_engage+K`, `ceiling_Z = z_engage−K` — pure ±K, no

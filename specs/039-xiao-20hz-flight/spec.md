@@ -29,6 +29,14 @@ fixed flash budget and write-bandwidth ceiling).
 
 ## Clarifications
 
+### Session 2026-07-11 (implement-phase)
+
+- Terminology pinned (operator): there are TWO "arm"s — (1) INAV arm, which only sets INAV's home
+  position / local NED origin; (2) **xiao autoc arm** (the autoc-enable switch = span activation =
+  "engage" throughout this spec). The arena is anchored by (2): each autoc arm sets the virtual
+  arena cylinder around that world location. No special treatment for ground/AGL — position
+  (including sufficient elevation) is operator responsibility.
+
 ### Session 2026-07-10
 
 - Q: How should the baked arena be placed for real flight (defines what the new dist-to-boundary /

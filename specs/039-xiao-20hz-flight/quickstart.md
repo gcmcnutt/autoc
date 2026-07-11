@@ -6,7 +6,7 @@ The end-to-end operator path once implementation lands. Referenced files/contrac
 
 ```bash
 # extract the pinned t5 elite (autoc-m1 bucket, gen 800)
-build/nnextractor -k autoc-9223370253844606963-2026-07-02T16:36:08.844Z -o nn_weights.dat -i autoc.ini
+build/nnextractor -k autoc-9223370253553029228-2026-07-06T01:35:46.579Z -o nn_weights.dat -i autoc.ini
 # emit UNROLLED 37-in/2051-w code with the arena TEMPLATE (placement happens at engage, D5)
 tools/nn2cpp -i nn_weights.dat -u -a 80,5,100 -o xiao/src/generated/nn_program_generated.cpp
 cd xiao && pio run -e xiaoblesense_arduinocore_mbed   # Constitution II gate

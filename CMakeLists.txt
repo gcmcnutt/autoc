@@ -242,6 +242,21 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(nn_layout_tests tests/nn_layout_tests.cc)
   target_link_libraries(nn_layout_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  # 039 T006/T007 -- engage-scoped arena re-centering (FR-001, D5).
+  add_executable(arena_recenter_tests tests/arena_recenter_tests.cc)
+  target_link_libraries(arena_recenter_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  # 039 T003/T004 -- nn2cpp unrolled-recurrent emission equivalence (D6).
+  # Drives the real nn2cpp binary + g++ harness compiles; paths injected here.
+  add_executable(nn2cpp_unroll_tests tests/nn2cpp_unroll_tests.cc)
+  target_link_libraries(nn2cpp_unroll_tests GTest::gtest GTest::gtest_main autoc_common)
+  add_dependencies(nn2cpp_unroll_tests nn2cpp)
+  target_compile_definitions(nn2cpp_unroll_tests PRIVATE
+    NN2CPP_BIN="$<TARGET_FILE:nn2cpp>"
+    AUTOC_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    AUTOC_EIGEN_INC="${EIGEN3_INCLUDE_DIR}"
+    AUTOC_CEREAL_INC="${cereal_SOURCE_DIR}/include")
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -279,6 +294,8 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME cadence_invariance_tests COMMAND cadence_invariance_tests)
   add_test(NAME tick_rescale_tests COMMAND tick_rescale_tests)
   add_test(NAME nn_layout_tests COMMAND nn_layout_tests)
+  add_test(NAME nn2cpp_unroll_tests COMMAND nn2cpp_unroll_tests)
+  add_test(NAME arena_recenter_tests COMMAND arena_recenter_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -309,6 +326,8 @@ if(ENABLE_AUTOC_TESTS)
             cadence_invariance_tests
             tick_rescale_tests
             nn_layout_tests
+            arena_recenter_tests
+            nn2cpp_unroll_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -317,6 +336,8 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND cadence_invariance_tests --gtest_brief=1
     COMMAND tick_rescale_tests --gtest_brief=1
     COMMAND nn_layout_tests --gtest_brief=1
+    COMMAND arena_recenter_tests --gtest_brief=1
+    COMMAND nn2cpp_unroll_tests --gtest_brief=1
     COMMAND selection_tests --gtest_brief=1
     COMMAND contract_evaluator_tests --gtest_brief=1
     COMMAND contract_config_tests --gtest_brief=1

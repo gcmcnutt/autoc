@@ -9,7 +9,7 @@ records and validation rules.
 
 | field | value |
 |---|---|
-| weight source | pinned t5 elite: `autoc-m1/autoc-9223370253844606963-2026-07-02T16:36:08.844Z/` gen 800 (`retain=keep`) |
+| weight source | pinned t5 elite: `autoc-m1/autoc-9223370253553029228-2026-07-06T01:35:46.579Z/` gen 800 (`retain=keep`; operator-confirmed 2026-07-11 — supersedes the 07-02 run id in earlier drafts) |
 | topology | 37 → 32 → 16r → 3 (2051 weights) |
 | replacement rule | ONLY via FR-005: operator amends sim latency model → retrain → new elite pinned + recorded in outcome.md → re-verified per FR-002 before flash |
 
