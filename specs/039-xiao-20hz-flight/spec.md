@@ -98,7 +98,9 @@ sensibly; per-tick evaluation time is measured and within budget.
 2. **Given** a stationary bench with the firmware live, **When** a span is engaged and run to
    completion, **Then** the recorded logs show the path moving around the craft and all 37 inputs +
    3 outputs evolving plausibly — correct ranges, no NaN, no lockup, arena inputs reading
-   center-of-arena values at engage (per the re-centering clarification).
+   **horizontal-center** values at engage while the vertical inputs read **below-floor** (bench
+   z_engage ≈ 0 resolves the band to 25–47.5 m altitude, so the −25 m clamp and the floor-pressure
+   inputs are visibly exercised on every bench run).
 3. **Given** the unrolled forward pass, **When** per-tick cost is measured on target, **Then** the
    gather + evaluate + output path fits the 20 Hz tick with margin, and the measured cost is recorded
    for the latency model.
@@ -262,8 +264,11 @@ comparison report against the same controller's sim baseline.
   the floor follows the engage altitude but is clamped to at least 25 m above the arm point.
 - **FR-002**: Embedded evaluation MUST be verified on the stationary bench before flight: a full
   engaged span whose recorded logs show the generated path moving around the craft with all NN
-  inputs/outputs evolving plausibly (correct ranges, no NaN/lockup, arena inputs reading
-  center-of-arena at engage) — observational verification, not a numeric replay harness.
+  inputs/outputs evolving plausibly (correct ranges, no NaN/lockup; arena inputs at
+  horizontal-center with the vertical band clamped ABOVE the bench — the −25 m floor clamp is
+  exercised by construction) — observational verification, not a numeric replay harness.
+  Flight implication to note at review: a low-altitude engage puts the craft below the resolved
+  floor, biasing the NN to climb — the intended just-in-case behavior.
 - **FR-003**: The NN forward pass MUST be restructured (unrolled) so that measured per-tick evaluation
   cost on target leaves positive margin in the 20 Hz tick alongside gather, command send, and logging.
 - **FR-004**: The latency research MUST quantify real pipeline latency (components and tail) from

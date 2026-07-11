@@ -25,8 +25,8 @@ FileHeader (once) → { EngageHeader → TickRecord × N }* → (event records i
 |---|---|---|
 | magic | u32 | file identity ('A','F','L','1'-style; exact value in contract) |
 | format_version | u8 | **Constitution V**: reader loud-fails on unknown version |
-| firmware_id | u8[8] | short build hash — ties log to the flashed firmware |
-| weight_id | u8[8] | short hash of the NN weight set (candidate provenance) |
+| firmware_id | u8[8] | first 8 bytes of SHA-256 of the generated `nn_program_generated.cpp` (computed at regen time, baked as a constant) — ties log to the flashed firmware |
+| weight_id | u8[8] | first 8 bytes of SHA-256 of the extracted weight file (`nn_weights.dat`) — candidate provenance |
 | tick_ms | u16 | control tick (50 at 20 Hz) — makes the log rate self-describing |
 | scale_table_crc | u32 | guards decoder/scale-table agreement (scales are format-versioned) |
 

@@ -127,8 +127,10 @@ quantization QA finds a field that can't scale — costs the headroom).
   K = (ceiling−floor)/2 = **47.5 m** for the 80/5/100 training arena). **Decision**: the firmware
   holds a *mutable* engage-scoped FlightArena (recomputed in the span-activation path from
   `z_engage`), passed to `gather_pathgen_inputs` — nn2cpp's baked literal becomes the geometry
-  *template* (R, K), not the placement. Alternatives: keep static arena (violates FR-001);
-  change the gather signature (unnecessary — it already takes `const FlightArena&`).
+  *template*, not the placement. The template is passed as `-a R,F,C` (80,5,100 — same flag surface
+  as today); the firmware derives K = (C−F)/2 = **47.5 m** and applies the engage-time rule.
+  Alternatives: keep static arena (violates FR-001); change the gather signature (unnecessary — it
+  already takes `const FlightArena&`).
 - **Gap 2 — unroll doesn't cover recurrent**: `-u` falls back to table-driven when the genome has a
   recurrent layer (`tools/nn2cpp.cc:356-361`) — and the elite is 16r. **Decision (operator confirmed
   2026-07-10)**: implement unrolled-recurrent emission in nn2cpp — the recurrent part unrolls fine
