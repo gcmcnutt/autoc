@@ -18,10 +18,16 @@ Per-span MSP pipeline stats printed by the xiao (`xiao/src/msplink.cpp:146-151`;
 | send (MSP_SET_RAW_RC) | 8.9 ms | ~9.2 ms | 12.2–16.2 ms |
 | **total** | **24.2 ms** | — | **36–43 ms** |
 
-Tick cadence: 100.0 ms mean, 95.6–104.4 ms spread, zero overruns. Downstream of the xiao:
-INAV RC application ≈ 5 ms (estimate, not directly logged); servo ≈ 82.5 ms full-throw
-(DSM-44, 55 ms/60°), rcData→gyro-response correlation lag 10–12 ms
-(`flight-results/flight-20260517/FLIGHT_REPORT.md:174-182`).
+Tick cadence: 100.0 ms mean, 95.6–104.4 ms spread, zero overruns — and the firmware **already
+carries loop-health counters** (`ctl loop: ticks/overruns/resyncs/maxLate/avgLate` per span,
+`xiao/src/msplink.cpp:163-168`); 039 keeps them and moves them into the binary log (console is
+demoted per FR-014). Downstream of the xiao: INAV RC application ≈ 5 ms (estimate, not directly
+logged); servo ≈ 82.5 ms full-throw (DSM-44, 55 ms/60°), rcData→gyro-response correlation lag
+10–12 ms (`flight-results/flight-20260517/FLIGHT_REPORT.md:174-182`).
+**INAV RC filtering is intentionally not a factor** (operator: "we did a lot to set that to 0 vs
+modelling it") — config shows `rc_filter_lpf_hz = 250`, `rc_filter_auto = OFF`
+(`xiao/inav-hb1.cfg:1401-1403`): a 250 Hz cutoff is transparent (sub-ms group delay) at our command
+rates. The memo must NOT model or chase RC-filter lag.
 
 ### Modeled (crrcsim)
 
@@ -124,11 +130,15 @@ quantization QA finds a field that can't scale — costs the headroom).
   *template* (R, K), not the placement. Alternatives: keep static arena (violates FR-001);
   change the gather signature (unnecessary — it already takes `const FlightArena&`).
 - **Gap 2 — unroll doesn't cover recurrent**: `-u` falls back to table-driven when the genome has a
-  recurrent layer (`tools/nn2cpp.cc:356-361`) — and the elite is 16r. **Decision**: implement
-  unrolled-recurrent emission in nn2cpp (straight-line W_xh + W_hh MACs + hidden-state array), with
-  a desktop unit test asserting unrolled output ≡ table-driven output on the same weights (emit the
-  same accumulation order → bit-comparable on desktop). Expected on-target gain ≈ 2.6 ms → ~0.1 ms
-  class (037 eval-cycle-harness contract has the DWT cycle-count harness design).
+  recurrent layer (`tools/nn2cpp.cc:356-361`) — and the elite is 16r. **Decision (operator confirmed
+  2026-07-10)**: implement unrolled-recurrent emission in nn2cpp — the recurrent part unrolls fine
+  with **persistent intermediate state registers**: a static hidden-state array `h[16]` surviving
+  between calls (reset by `nn_reset()` at engage), each tick computing straight-line
+  `h_new[j] = tanh(Σ W_xh·x + Σ W_hh·h + b)` into a temp buffer then committing (double-buffered to
+  avoid read-after-write on `h`), exactly the table-driven semantics with the loops flattened.
+  Desktop unit test asserts unrolled output ≡ table-driven output on the same weights (same
+  accumulation order → bit-comparable on desktop). Expected on-target gain ≈ 2.6 ms → ~0.1 ms class
+  (037 eval-cycle-harness contract has the DWT cycle-count harness design).
 
 ### Transport budget (20 Hz)
 

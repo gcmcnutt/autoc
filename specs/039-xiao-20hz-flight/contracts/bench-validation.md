@@ -29,6 +29,8 @@ Full stack live (state fetch, NN eval every tick, RC send, binary logging): seve
 - Tick cadence 50 ms nominal; jitter bound REPORTED (the memo's bench section sets the number —
   research measured ±4.4 ms at 100 ms ticks as the prior).
 - Zero tick overruns attributable to logging or eval (drop/coalesce counters zero or explained).
+  The existing `loopStats` counters (ticks/overruns/resyncs/maxLate/avgLate) are the instrument —
+  verified present in the span-summary EventRecord of the downloaded log (not console-only).
 - Per-span MSP pipeline stats (fetch/eval/send) captured — these feed contracts/latency-memo.md §2.
 - DWT cycle-count measurement of the unrolled eval recorded once per image (037 eval-cycle-harness
   design: `DWT->CYCCNT`, M1 shape).

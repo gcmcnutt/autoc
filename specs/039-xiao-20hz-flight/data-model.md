@@ -69,7 +69,10 @@ Validation rules:
 
 Sparse, small: event code (u8) + timestamp + optional payload (arm/disarm, engage/disengage,
 fetch-timeout, log-buffer-overflow, heartbeat snapshot). Console itself prints only these +
-~2 Hz heartbeat (FR-014).
+~2 Hz heartbeat (FR-014). Includes a **span-summary event** at disengage carrying the loop-health
+counters (ticks, overruns, resyncs, maxLate, avgLate — today's `loopStats`, msplink.cpp:163-168)
+and the MSP pipeline stats (fetch/eval/send mean/95/max) — the latency memo's flight-side numbers
+come straight from these records.
 
 ## 3. Latency decision memo (US2 deliverable — contracts/latency-memo.md)
 

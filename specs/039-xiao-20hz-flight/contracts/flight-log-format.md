@@ -36,6 +36,14 @@ desktop code, so the shared artifact is this contract + the round-trip test).
   the sim-vs-real per-axis tooling (dCtrl/amplitude per axis).
 - Fail loud on version/CRC mismatch, truncated header, or impossible field counts; report (not
   hide) tick_counter gaps and drop counts.
+- **Ground tooling surfaces** (operator 2026-07-10): `xiao/web/flight_logger.html` must handle the
+  downloaded binary — at minimum download the `.bin` intact; decode-in-browser and/or a
+  dump-to-CSV export are the desired end state — AND the desktop decoder (`flightlog_decode.py`
+  class tool) provides the authoritative CSV path. The html and desktop decoders implement THIS
+  contract; no third format definition.
+- **Loop-health stats**: the existing per-span counters (ticks / overruns / resyncs / maxLate /
+  avgLate — `msplink.cpp:163-168`) MUST be carried in the log (span-summary EventRecord), since
+  the console line they print to is demoted by FR-014. Missed/overrun ticks stay observable.
 
 ## Tests (write first)
 

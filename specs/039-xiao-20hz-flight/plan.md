@@ -102,6 +102,8 @@ xiao/
 │                              # console split (events + 2 Hz heartbeat); pipeline timing capture
 ├── src/flash_logger.cpp       # binary record write path (encoder), engage header
 ├── src/bluetooth.cpp          # unchanged surface (DL/LIST/ERASE); downloads new format
+├── web/flight_logger.html     # UPDATED: handle the binary format (decode in-browser and/or
+│                              # CSV export; at minimum download the .bin intact for the desktop decoder)
 └── include/main.h             # MSP_NN_EVAL_DIVISOR 2 → 1; (optional) baud constant
 
 src/nn/evaluator.cc, include/autoc/eval/arena.h   # shared gather/arena (already 038-ready;
