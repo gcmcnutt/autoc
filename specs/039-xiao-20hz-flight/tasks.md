@@ -1,0 +1,120 @@
+# Tasks: 039 Xiao 20 Hz Flight — embedded control-loop catch-up
+
+**Input**: Design documents from `/specs/039-xiao-20hz-flight/`
+**Prerequisites**: plan.md, spec.md (5 stories + clarifications), research.md (D1–D7),
+data-model.md, contracts/ (flight-log-format, latency-memo, bench-validation), quickstart.md
+
+**Tests**: included — Constitution I (testing-first) + the contracts explicitly demand
+failing-first tests for the codegen equivalence, arena rule, and log round-trip.
+
+**Sequencing note (operator 2026-07-10)**: "implement first and then study actual latency" — so
+US3/US4 (log + 20 Hz) run BEFORE the US2 memo/review, even though US2 is P1. US5 is the capstone.
+Hardware-in-the-loop tasks (bench, flight) are operator-driven; desktop tasks are assistant-executable.
+
+## Phase 1: Setup
+
+- [ ] T001 Extract the pinned t5 elite (`autoc-m1/autoc-9223370253844606963-2026-07-02T16:36:08.844Z/`, gen 800) via `build/nnextractor` to `nn_weights.dat`; verify reported topology 37→32→16r→3 / 2051 weights
+- [ ] T002 [P] Baseline gate: confirm the UNMODIFIED xiao tree compiles — `cd xiao && pio run -e xiaoblesense_arduinocore_mbed` (Constitution II reference point before any 039 edits)
+
+## Phase 2: Foundational — nn2cpp unrolled-recurrent (blocks US1 regen; benefits US4 budget)
+
+- [ ] T003 Write FAILING test `tests/nn2cpp_unroll_tests.cc`: generate unrolled + table-driven code from the same recurrent genome (16r layer), assert per-tick outputs identical across a multi-tick sequence incl. `nn_reset()` (same accumulation order ⇒ bit-comparable on desktop); register target in `CMakeLists.txt`
+- [ ] T004 Implement unrolled-recurrent emission in `tools/nn2cpp.cc` (D6): persistent static `h[]` state registers, straight-line `W_xh·x + W_hh·h + b` MACs, double-buffered h commit (no read-after-write), `nn_reset()` zeroing, remove the `-u`+recurrent fallback at `tools/nn2cpp.cc:356-361`; T003 goes green
+- [ ] T005 Clean `rebuild-perf.sh` gate (OPERATOR — CMakeLists changed, Constitution IV) + full test suite green
+
+**Checkpoint**: `nn2cpp -u` emits working unrolled code for the t5 elite.
+
+## Phase 3: User Story 1 — Firmware catch-up to the 038 contract (P1) 🎯 MVP
+
+**Goal**: xiao runs the 37-in/2051-w elite with engage-centered arena; observational bench span passes.
+**Independent Test**: stationary bench span; logs show the path moving around the craft, all 37 inputs + 3 outputs plausible, arena floor clamped to −25 at bench altitude (contracts/bench-validation.md FR-002).
+
+- [ ] T006 [P] [US1] Write FAILING test `tests/arena_recenter_tests.cc`: engage-centered vertical rule `ceiling_Z = z_engage − K`, `floor_Z = min(−25, z_engage + K)`, K = 47.5 m (NED, per `docs/COORDINATE_CONVENTIONS.md`); cases: bench z_e≈0 → floor clamps to −25; high engage z_e=−80 → floor −32.5; horizontal re-center at engage x/y
+- [ ] T007 [US1] Implement the engage-scoped arena (D5): re-center helper (template geometry R/K + `engage_pos` → resolved `FlightArena`) in a shared xiao-safe header (`include/autoc/eval/arena.h` or adjacent), invoked in the span-activation path in `xiao/src/msplink.cpp`; hold the resolved arena for `gather_pathgen_inputs`; expose origin + resolved floor/ceiling for logging; NO in-class defaults (Constitution VII); T006 green
+- [ ] T008 [US1] Regenerate `xiao/src/generated/nn_program_generated.cpp`: `tools/nn2cpp -i nn_weights.dat -u -a 80,5,100 -o …` (arena literal = TEMPLATE only per D5); verify emitted header comment says unrolled + 37/2051
+- [ ] T009 [US1] Update xiao call sites for the 038 gather signature (arena param) in `xiao/src/msplink.cpp` (+ `xiao/include/nn_program.h` if the decl changed); extend the INTERIM text NN log line with the 4 new inputs (`dist_to_boundary`, `inward_body[3]`) + an engage line with arena origin/floors so the US1 bench is reviewable before US3 lands; boot banner reports topology + weight id; `pio run` green
+- [ ] T010 [US1] OPERATOR bench: FR-002 observational span per `contracts/bench-validation.md` §FR-002 (flash → ERASE:ALL → engage → download → checklist review incl. the −25 floor clamp); record the reviewed log reference in `specs/039-xiao-20hz-flight/outcome.md`
+
+**Checkpoint**: US1 delivers a flyable-at-10 Hz 038-contract firmware (MVP: the candidate runs on hardware).
+
+## Phase 4: User Story 3 — Flight logging that sustains 20 Hz (P2, pulled before US2 per sequencing note)
+
+**Goal**: versioned int16-packed binary log carrying all 37+3+aux; console = events + 2 Hz heartbeat.
+**Independent Test**: sustained bench logging session decodes losslessly, fits the 2-flight budget, zero tick interference (contracts/flight-log-format.md tests + bench).
+
+- [ ] T011 [P] [US3] Write FAILING tests `tests/flightlog_roundtrip_tests.cc` per contracts/flight-log-format.md §Tests: encode→decode field-for-field ≤ quantization step; version+1 and corrupted scale-CRC loud-fail; saturation (no wrap); static assert TickRecord ≤ 100 B; register in `CMakeLists.txt`
+- [ ] T012 [US3] Define the format as ONE shared self-contained header `xiao/include/flight_log_format.h` (FileHeader/EngageHeader/TickRecord/EventRecord structs, per-field scale tables, `format_version`, encode/decode inline fns — compilable by BOTH the xiao build and the desktop test target; wire-format fields `// raw-ok: hardware byte layout`); T011 compiles against it and goes green
+- [ ] T013 [US3] Implement the xiao write path: EngageHeader at span activation (origin + RESOLVED floors from T007), TickRecord per tick (post-gather input values — honest recording), span-summary EventRecord at disengage carrying `loopStats` (ticks/overruns/resyncs/maxLate/avgLate) + MSP pipeline stats, in `xiao/src/flash_logger.cpp` + `xiao/src/msplink.cpp`; drop/coalesce counter on buffer pressure (FR-008)
+- [ ] T014 [US3] Console split (FR-014) in `xiao/src/msplink.cpp` (+ logPrint call sites): DELETE the per-tick `NN:`/`Nav State:` text lines (incl. T009's interim extension — Constitution III, no parallel writers), keep events (arm/disarm/engage/disengage/errors) + ~2 Hz heartbeat
+- [ ] T015 [P] [US3] Desktop decoder `src/analytics/flightlog_decode.py`: reads `.bin` → CSV/dataframe; loud-fail on version/CRC; reports tick_counter gaps + drop counts; unit-check against a bench-produced file
+- [ ] T016 [P] [US3] Update `xiao/web/flight_logger.html`: download the `.bin` intact (rename/size handling), plus in-browser decode or CSV export implementing the same contract (no third format definition)
+- [ ] T017 [US3] OPERATOR bench: sustained logging session — budget math holds (~95 B/tick ⇒ ~0.9 MB for 2×4 min), BLE download, `flightlog_decode.py` lossless, zero logging-induced overruns in the span summary
+
+**Checkpoint**: complete honest flight record at 20 Hz volume, console quiet.
+
+## Phase 5: User Story 4 — 20 Hz control loop on hardware (P2)
+
+**Goal**: NN every tick at 20 Hz, cadence held with logging active; eval cost measured.
+**Independent Test**: FR-011 soak — several consecutive 3–4 min spans, zero overruns, stats captured (contracts/bench-validation.md §FR-011).
+
+- [ ] T018 [US4] Set `MSP_NN_EVAL_DIVISOR = 1` in `xiao/include/main.h` (50 ms loop already 20 Hz); confirm re-entry guard behavior at every-tick eval in `xiao/src/msplink.cpp:43-44`
+- [ ] T019 [P] [US4] DWT cycle-count measurement of the unrolled eval on target (037 `eval-cycle-harness` design: `DWT->CYCCNT`), one number per firmware image, written into the span-summary/boot log
+- [ ] T020 [US4] OPERATOR bench: FR-011 cadence soak per `contracts/bench-validation.md` — several consecutive 3–4 min engaged spans at 115200 baud; loopStats + fetch/eval/send captured in the log
+- [ ] T021 [US4] OPERATOR bench: baud-raise experiment — repeat one soak at 460800 (`xiao/src/msplink.cpp:342` + INAV side); record both baud's pipeline stats for the memo; keep whichever the operator picks after T023 (D7: latency lever, not bandwidth)
+
+**Checkpoint**: 20 Hz holding on hardware; all memo inputs measured.
+
+## Phase 6: User Story 2 — Latency ground truth → plan of action (P1, gated on US1/US3/US4 by design)
+
+**Goal**: the decision memo + operator review; flight candidate locked.
+**Independent Test**: memo exists with measured/modeled/gap + recommendation; operator decision recorded (contracts/latency-memo.md).
+
+- [ ] T022 [US2] Assemble the latency memo per `contracts/latency-memo.md` into `specs/039-xiao-20hz-flight/latency-memo-results.md`: 10 Hz-era numbers (research.md R1), 20 Hz bench numbers at both bauds (T020/T021), DWT eval cost (T019), modeled values + mechanism (COMPUTE_LATENCY 30 ms, servo v2), tail-vs-50 ms-tick analysis, recommendation (stands / amend+retrain / amend-without-retrain); NO RC-filter modeling (verified transparent)
+- [ ] T023 [US2] OPERATOR review: record the decision + FR-006 local-IMU verdict (research position: stays deferred) + baud choice in the memo results + outcome.md — this LOCKS the flight candidate
+- [ ] T024 [US2] CONDITIONAL (only if T023 = amend+retrain): update `COMPUTE_LATENCY_MSEC_DEFAULT` in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.h`, clean `rebuild-perf.sh` (OPERATOR), retrain M1 via `scripts/train.sh` (OPERATOR, Constitution IX), pin the elite (`retain=keep`) + record in outcome.md, regenerate firmware (repeat T008–T010 on the new weights)
+
+**Checkpoint**: flight candidate + configuration frozen.
+
+## Phase 7: User Story 5 — The M1 flight test (P1 capstone; gated on US1–US4 + T023)
+
+**Goal**: fly, capture, and judge sim-grade smoothing (SC-005/SC-006).
+**Independent Test**: completed flight with full 20 Hz logs + the per-axis comparison report.
+
+- [ ] T025 [US5] OPERATOR pre-flight: `project_preflight_checklist` + FR-013 safety envelope check (arming/mode-flip/failsafe unchanged — bench SBUS/LOS sanity), ground `ERASE:ALL`
+- [ ] T026 [US5] OPERATOR flight day: 2 × 3–4 min flights on one flash fill, spans across the standard paths incl. the OOD random-intercept path (TX button 6); BLE download in the field (~7 s)
+- [ ] T027 [US5] Comparison report `src/analytics/flight_vs_sim_axes.py`: decoded flight CSV vs the SAME candidate's sim per-axis baseline (038 per_axis tooling) → per-axis dCtrl ⟨|Δu|⟩ + amplitude ⟨|out|⟩ with the ±25% band drawn, plus bang-bang saturation % vs the 2026-05-17 flight; PNG artifact named `autoc-039-t<N>-flight-vs-sim_*` in the feature dir
+- [ ] T028 [US5] SC-006 verdict in `specs/039-xiao-20hz-flight/outcome.md`: smoothing exhibited yes/no per axis, residual gaps named; new deferrals appended to `specs/BACKLOG.md` (Constitution X)
+
+## Phase 8: Polish & Cross-Cutting
+
+- [ ] T029 [P] Constitution VI type-domain grep audit on 039-touched paths (`tools/nn2cpp.cc`, decoder boundary, any `src/`/`include/autoc/` touches): annotate `// raw-ok:` or convert
+- [ ] T030 Outcome hygiene: FR-002/FR-011 bench records, DWT number, memo decision, pinned-artifact prefixes all present in outcome.md; BACKLOG updated (delta+varint@50 Hz already filed)
+
+## Dependencies
+
+```
+Setup (T001,T002)
+  → Foundational (T003→T004→T005)                       [blocks T008]
+    → US1 (T006→T007→T008→T009→T010)                    🎯 MVP
+      → US3 (T011→T012→T013→T014; T015,T016 [P]; T017)  [T013 needs T007's resolved arena]
+        → US4 (T018; T019 [P]; T020→T021)               [soak logs via US3 format]
+          → US2 (T022→T023→[T024])                      [memo consumes T019/T020/T021]
+            → US5 (T025→T026→T027→T028)                 [T024 loops back to T008-T010 if retrain]
+Polish (T029,T030) — after US3 lands, finalize at end
+```
+
+## Parallel opportunities
+
+- T002 ∥ T001 (different surfaces)
+- T006 ∥ T003 (different test files) — then T007 waits on T006 only
+- T011 ∥ (US1 bench T010) — desktop vs hardware
+- T015 ∥ T016 (python decoder vs html) once T012 defines the header
+- T019 ∥ T018 bring-up; T029 anytime after US3
+
+## Implementation strategy
+
+**MVP = Phase 3 (US1)**: an 038-contract firmware verified on the bench — flyable at 10 Hz even if
+nothing else lands. Each later phase is an independently valuable increment: US3 (complete records +
+quiet console), US4 (the 20 Hz claim), US2 (the deferred latency answer), US5 (the feature's
+outcome). The operator-in-the-loop tasks (T005, T010, T017, T020, T021, T023, T024-run, T025, T026)
+are the natural session boundaries; desktop tasks between them are assistant-executable.
