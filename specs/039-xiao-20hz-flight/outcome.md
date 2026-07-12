@@ -39,6 +39,11 @@ operator read = **interrupt-servicing variance** (nRF52840 has no meaningful
 cache), not cache effects. Open before the memo: split gather vs forward-pass
 brackets to attribute the cost (candidate firmware tweak pre-T020 soak).
 
+**Visual**: [autoc-039-t1-bench-latency.png](autoc-039-t1-bench-latency.png) — tick-interval
+series + distribution + per-section min/avg/max vs the 10 Hz era. Read: interval spread
+(29–72 ms) is fetch jitter, not loop drift (maxLate 4 ms); fetch is the dominant,
+unchanged, wire-clocked term; total max 42.8 ms vs the 50 ms tick is the margin story.
+
 ## Memo-relevant early deltas vs the 10 Hz era (R1 table)
 
 | component | 10 Hz era mean/max | this bench mean/max |
