@@ -11,6 +11,13 @@ failing-first tests for the codegen equivalence, arena rule, and log round-trip.
 US3/US4 (log + 20 Hz) run BEFORE the US2 memo/review, even though US2 is P1. US5 is the capstone.
 Hardware-in-the-loop tasks (bench, flight) are operator-driven; desktop tasks are assistant-executable.
 
+**Status 2026-07-11 (end of implement session)**: T001–T019 + T029 DONE — firmware flashed and
+bench-validated (T010 FR-002 PASS, first hardware span: 111 ticks @ 20 Hz, 0 overruns/drops,
+outcome.md + autoc-039-t1-bench-latency.png). Remaining: T017/T020 soak (one combined bench
+session), T021 baud (optional lever, can defer past the first flight), T022 memo (assistant, needs
+soak numbers), T023 decision (flying the default t5 candidate = the "model stands" branch),
+T025–T026 flight (planned 2026-07-12), T027/T028 report+verdict (assistant, post-flight), T030 wrap.
+
 ## Phase 1: Setup
 
 - [X] T001 Extract the pinned t5 elite (`autoc-m1/autoc-9223370253553029228-2026-07-06T01:35:46.579Z/`, gen 800) via `build/nnextractor` to `nn_weights.dat`; verify reported topology 37→32→16r→3 / 2051 weights — operator pre-extracted; topology VERIFIED 37→32→16r→3 / 2051 w (run id corrected from the 07-02 draft value, operator-confirmed 2026-07-11)
