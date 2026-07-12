@@ -45,6 +45,12 @@ uint16_t flightLogTick(uint32_t timestamp_ms, const float inputs[flightlog::kNum
 // type/span bookkeeping + the ticks_logged/ticks_dropped counters and writes.
 void flightLogSpanSummary(flightlog::SpanSummary& summary);
 
+// Armed-but-not-engaged breadcrumb (raw INAV frame) — keeps the arm→disarm
+// trace continuous for the renderer's all-flight view. Call once per control
+// tick while armed and outside a span.
+void flightLogFlightState(uint32_t timestamp_ms, const float pos_raw[3],
+                          const float vel[3], const float quat_wxyz[4]);
+
 // Per-span logging health (feeds the span summary + bench review).
 uint32_t flightLogTicksLogged();
 uint32_t flightLogTicksDropped();

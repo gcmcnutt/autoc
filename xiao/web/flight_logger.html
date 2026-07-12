@@ -436,7 +436,7 @@
     // ------------------------------------------------------------------
     const FL_MAGIC = 0x314C4641, FL_VERSION = 2;
     const FL_NUM_IN = 37, FL_NUM_OUT = 3, FL_NUM_SCALED = 49;
-    const FL_SIZES = { 1: 224, 2: 29, 3: 114, 4: 10, 5: 103 };
+    const FL_SIZES = { 1: 224, 2: 29, 3: 114, 4: 10, 5: 103, 6: 25 };
     const FL_EVENTS = { 1: 'ARM', 2: 'DISARM', 3: 'ENGAGE', 4: 'DISENGAGE',
                         5: 'FETCH_TIMEOUT', 6: 'LOG_DROP', 7: 'FLASH_FULL' };
     const FL_INPUT_NAMES = [].concat(
@@ -453,7 +453,7 @@
 
     function decodeFlightLog(bytes) {
       const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      let pos = 0, header = null, scales = null;
+      let pos = 0, header = null, scales = null, flightStates = 0;
       const spans = [], events = [];
       let cur = null;
       while (pos < bytes.length) {
@@ -511,6 +511,8 @@
           events.push({ ts: dv.getUint32(pos + 1, true),
                         name: FL_EVENTS[code] || ('UNKNOWN_' + code),
                         value: dv.getUint32(pos + 6, true) });
+        } else if (t === 6) {                            // FlightState breadcrumb
+          flightStates++;
         } else if (t === 5) {                            // SpanSummary
           const u = o => dv.getUint32(pos + o, true);
           const s = { ts: u(1), span_id: dv.getUint16(pos + 5, true),
@@ -524,12 +526,12 @@
         }
         pos += size;
       }
-      if (!header) throw new Error('no FileHeader — not a v1 flight log');
-      return { header, spans, events };
+      if (!header) throw new Error('no FileHeader — not a valid flight log');
+      return { header, spans, events, flightStates };
     }
 
     function showDecodeSummary(d) {
-      let out = `decoded v1  tick=${d.header.tick_ms}ms  fw=${d.header.firmware_id}  wt=${d.header.weight_id}\n`;
+      let out = `decoded v2  tick=${d.header.tick_ms}ms  fw=${d.header.firmware_id}  wt=${d.header.weight_id}  breadcrumbs=${d.flightStates}\n`;
       for (const ev of d.events) out += `event t=${ev.ts} ${ev.name} value=${ev.value}\n`;
       for (const s of d.spans) {
         let gaps = 0;

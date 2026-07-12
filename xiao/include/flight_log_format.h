@@ -51,6 +51,7 @@ enum RecordType : uint8_t {
   kTick = 0x03,
   kEvent = 0x04,
   kSpanSummary = 0x05,
+  kFlightState = 0x06,  // armed-but-not-engaged breadcrumb (continuous 'a' trace)
 };
 
 // EventRecord codes (console-class events mirrored into the log, FR-014).
@@ -178,6 +179,19 @@ struct EventRecord {
   uint32_t value;         // code-specific payload
 };
 
+// Armed-but-not-engaged flight breadcrumb, written every control tick outside
+// autoc spans (the old text log's whole-flight "Nav State" role): keeps the
+// arm→disarm trace CONTINUOUS for the renderer's all-flight view. RAW INAV
+// frame (home/arm origin) — no engage offset applies. Reuses the tick scale
+// slots: pos → kScalePosBase, vel → kScaleVelBase, quat → kScaleUnit.
+struct FlightStateRecord {
+  uint8_t type;           // kFlightState
+  uint32_t timestamp_ms;
+  int16_t pos_raw[3];     // raw NED m (scale kScalePosM)
+  int16_t vel[3];         // NED m/s (scale kScaleSpeed)
+  int16_t quat[4];        // q_EB w,x,y,z (scale kScaleUnit)
+};
+
 // Span-summary at disengage: today's `loopStats` + MSP pipeline stats — the
 // latency memo's flight-side numbers come from these (contract "Loop-health
 // stats" clause; the console line they used to print is demoted by FR-014).
@@ -214,6 +228,8 @@ static_assert(sizeof(FileHeader) == 1 + 4 + 1 + 8 + 8 + 2 + 4 * kNumScaledFields
 static_assert(sizeof(EngageHeader) == 1 + 4 + 2 + 12 + 4 + 4 + 2,
               "EngageHeader must be packed");
 static_assert(sizeof(EventRecord) == 1 + 4 + 1 + 4, "EventRecord must be packed");
+static_assert(sizeof(FlightStateRecord) == 1 + 4 + 6 + 6 + 8,
+              "FlightStateRecord must be packed (25 B — ~500 B/s at 20 Hz outside spans)");
 
 // ---------------------------------------------------------------------------
 // Encode / decode helpers
@@ -309,6 +325,7 @@ inline size_t recordSizeForType(uint8_t type) {
     case kTick: return sizeof(TickRecord);
     case kEvent: return sizeof(EventRecord);
     case kSpanSummary: return sizeof(SpanSummary);
+    case kFlightState: return sizeof(FlightStateRecord);
     default: return 0;  // unknown — parse error
   }
 }

@@ -105,6 +105,12 @@ T025–T026 flight (planned 2026-07-12), T027/T028 report+verdict (assistant, po
   test parses the synthetic v2 file (1 span, states/vecs/path correct). NOTE: TickRecords are
   engagement-scoped, so the 'a' full-flight trace shows engaged segments only.
 
+- [X] T033 FlightState breadcrumbs (operator: old -x log covered INAV-arm→disarm) — 25 B raw-frame
+  pos/vel/quat record every tick while armed-not-engaged; renderer 'a' all-flight trace is
+  continuous again (spans highlighted in world coords, per-span views stay virtual-frame so error
+  bars are engage-relative); writer + tests + python (--flightpath CSV) + browser + renderer all
+  updated and cross-validated (13-state synthetic: 5 breadcrumbs + 8 ticks, span indices 5-12)
+
 ## Phase 8: Polish & Cross-Cutting
 
 - [X] T029 [P] Constitution VI type-domain grep audit on 039-touched paths (`tools/nn2cpp.cc`, decoder boundary, any `src/`/`include/autoc/` touches): annotate `// raw-ok:` or convert — DONE: arena.h/nn2cpp gp_scalar-clean; flight_log_format.h records section + flight_log.h carry raw-ok annotations; python/js decoders are the gp_scalar re-entry boundary

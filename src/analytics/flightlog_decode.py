@@ -26,7 +26,7 @@ FORMAT_VERSION = 2
 MAGIC = 0x314C4641  # "AFL1" little-endian
 
 # Record type bytes (flight_log_format.h RecordType)
-T_PAD, T_FILE, T_ENGAGE, T_TICK, T_EVENT, T_SUMMARY = 0, 1, 2, 3, 4, 5
+T_PAD, T_FILE, T_ENGAGE, T_TICK, T_EVENT, T_SUMMARY, T_FLIGHT = 0, 1, 2, 3, 4, 5, 6
 
 EVENT_NAMES = {
     1: "ARM", 2: "DISARM", 3: "ENGAGE", 4: "DISENGAGE",
@@ -43,6 +43,7 @@ ENGAGE_HDR = struct.Struct("<BIH3fffh")       # 29 B
 TICK_REC = struct.Struct("<BIH37h3h3h3h3hBb3HB")  # 114 B (v2: +pos/vel/rabbit)
 EVENT_REC = struct.Struct("<BIBI")            # 10 B
 SUMMARY_REC = struct.Struct("<BIH5I13I3I2II")  # 103 B
+FLIGHT_REC = struct.Struct("<BI3h3h4h")       # 25 B armed-not-engaged breadcrumb
 
 RECORD_SIZE = {
     T_FILE: FILE_HDR.size,
@@ -50,6 +51,7 @@ RECORD_SIZE = {
     T_TICK: TICK_REC.size,
     T_EVENT: EVENT_REC.size,
     T_SUMMARY: SUMMARY_REC.size,
+    T_FLIGHT: FLIGHT_REC.size,
 }
 
 # Column names: PathgenInput slot order (autoc/nn/nn_inputs.h enum names).
@@ -96,6 +98,7 @@ def decode(blob):
     spans = []
     events = []
     warnings = []
+    flight_states = []  # armed-not-engaged breadcrumbs (raw INAV frame)
     current = None  # span accumulator
 
     while pos < n:
@@ -190,6 +193,20 @@ def decode(blob):
                 "value": f[3],
             })
 
+        elif t == T_FLIGHT:
+            if scales is None:
+                fail("FlightState before FileHeader — stream corrupt")
+            f = FLIGHT_REC.unpack(raw)
+            flight_states.append({
+                "timestamp_ms": f[1],
+                "pos_raw_n": f[2] / scales[40], "pos_raw_e": f[3] / scales[41],
+                "pos_raw_d": f[4] / scales[42],
+                "vel_n": f[5] / scales[43], "vel_e": f[6] / scales[44],
+                "vel_d": f[7] / scales[45],
+                "quat_w": f[8] / 32767.0, "quat_x": f[9] / 32767.0,
+                "quat_y": f[10] / 32767.0, "quat_z": f[11] / 32767.0,
+            })
+
         elif t == T_SUMMARY:
             f = SUMMARY_REC.unpack(raw)
             summary = {"timestamp_ms": f[1], "span_id": f[2]}
@@ -200,8 +217,8 @@ def decode(blob):
                 warnings.append(f"span summary for span {f[2]} without matching engage")
 
     if header is None:
-        fail("no FileHeader found — not a v1 flight log (or empty download)")
-    return header, spans, events, warnings
+        fail("no FileHeader found — not a valid flight log (or empty download)")
+    return header, spans, events, warnings, flight_states
 
 
 def spans_orphan(spans):
@@ -211,7 +228,7 @@ def spans_orphan(spans):
     return spans[-1]["ticks"]
 
 
-def report(header, spans, events, warnings, out=sys.stderr):
+def report(header, spans, events, warnings, flight_states, out=sys.stderr):
     p = lambda *a: print(*a, file=out)
     p(f"flight log v{header['format_version']}  tick={header['tick_ms']} ms  "
       f"firmware_id={header['firmware_id']}  weight_id={header['weight_id']}")
@@ -254,7 +271,7 @@ def report(header, spans, events, warnings, out=sys.stderr):
     for w in warnings:
         p(f"  WARNING: {w}")
     p(f"  totals: {len(spans)} spans, {sum(len(s['ticks']) for s in spans)} ticks, "
-      f"{total_gaps} gaps")
+      f"{total_gaps} gaps, {len(flight_states)} flight-state breadcrumbs")
 
 
 def write_csv(spans, path):
@@ -275,16 +292,24 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("binfile", help="downloaded flight_NNN.bin")
     ap.add_argument("-o", "--output", help="tick CSV output path")
+    ap.add_argument("--flightpath", help="optional CSV of armed-not-engaged breadcrumbs (raw frame)")
     args = ap.parse_args()
 
     with open(args.binfile, "rb") as fh:
         blob = fh.read()
-    header, spans, events, warnings = decode(blob)
-    report(header, spans, events, warnings)
+    header, spans, events, warnings, flight_states = decode(blob)
+    report(header, spans, events, warnings, flight_states)
     if args.output:
         write_csv(spans, args.output)
         n = sum(len(s["ticks"]) for s in spans)
         print(f"wrote {n} ticks -> {args.output}", file=sys.stderr)
+    if args.flightpath and flight_states:
+        import csv as _csv
+        with open(args.flightpath, "w", newline="") as fh:
+            w = _csv.DictWriter(fh, fieldnames=list(flight_states[0].keys()))
+            w.writeheader()
+            w.writerows(flight_states)
+        print(f"wrote {len(flight_states)} flight states -> {args.flightpath}", file=sys.stderr)
 
 
 if __name__ == "__main__":

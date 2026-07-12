@@ -53,7 +53,8 @@ desktop code, so the shared artifact is this contract + the round-trip test).
   analysis (no INAV-blackbox join). Raw NED = virtual + EngageHeader origin. v1 existed
   only for the 039 bench validation (T010 artifact).
 - **Framing**: every record starts with a nonzero type byte (0x01 FileHeader 224 B, 0x02
-  EngageHeader 29 B, 0x03 TickRecord 114 B, 0x04 EventRecord 10 B, 0x05 SpanSummary 103 B);
+  EngageHeader 29 B, 0x03 TickRecord 114 B, 0x04 EventRecord 10 B, 0x05 SpanSummary 103 B,
+  0x06 FlightStateRecord 25 B);
   0x00 bytes BETWEEN records are flash-buffer word-alignment padding — decoders skip them.
   Unknown type or truncated record ⇒ loud parse failure.
 - **v2 scale table** (49 entries carried IN the FileHeader, CRC-32-guarded; slot order =
@@ -62,6 +63,11 @@ desktop code, so the shared artifact is this contract + the round-trip test).
   metres, ±1023.97 m); closing_rate + airspeed + vel → 256 (±128 m/s); gyro → 900
   (±36.4 rad/s); pos + rabbit → 16 (±2047.9 m, 6.25 cm). Encoder saturates symmetrically
   to ±32767 (never INT16_MIN, never wraps).
+- **FlightState breadcrumbs (0x06, operator 2026-07-11)**: while ARMED but not engaged, a
+  25 B record (raw-frame pos + vel + quat, tick scale slots) is written every control tick
+  (~500 B/s) so the arm→disarm trace stays CONTINUOUS for the renderer's all-flight view —
+  the old text log's whole-flight "Nav State" role. Engagement-scoped TickRecords remain
+  the only high-bandwidth content (FR-008 intent preserved: ~10 min armed ≈ 300 KB).
 - **Readers**: `src/analytics/flightlog_decode.py` (authoritative CSV), in-browser decode +
   CSV export in `xiao/web/flight_logger.html`, the renderer `-x` mode (`tools/renderer.cc`
   parseXiaoDataBinary — legacy text logs still route to the old parser by sniffing), and

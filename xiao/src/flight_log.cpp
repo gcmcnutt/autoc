@@ -119,6 +119,26 @@ uint16_t flightLogTick(uint32_t timestamp_ms, const float inputs[kNumInputs],
   return counter;
 }
 
+void flightLogFlightState(uint32_t timestamp_ms, const float pos_raw[3],
+                          const float vel[3], const float quat_wxyz[4]) {
+  if (!g_scalesInit) {
+    return;  // no FileHeader this flight — nothing to encode against
+  }
+  FlightStateRecord fs;
+  fs.type = kFlightState;
+  fs.timestamp_ms = timestamp_ms;
+  for (int i = 0; i < 3; i++) {
+    fs.pos_raw[i] = encodeScaled(pos_raw[i], g_scales[kScalePosBase + i]);
+    fs.vel[i] = encodeScaled(vel[i], g_scales[kScaleVelBase + i]);
+  }
+  for (int i = 0; i < 4; i++) {
+    fs.quat[i] = encodeScaled(quat_wxyz[i], kScaleUnit);
+  }
+  // Breadcrumbs are best-effort: a drop outside spans is invisible-cost
+  // (no tick_counter), and the span records are never displaced by them.
+  flashLoggerWriteBinary(&fs, sizeof(fs));
+}
+
 void flightLogSpanSummary(flightlog::SpanSummary& summary) {
   summary.type = kSpanSummary;
   summary.ticks_logged = g_ticksLogged;

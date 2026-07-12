@@ -196,6 +196,14 @@ TEST(FlightLogFormat, StreamWalkSkipsPaddingAndFailsLoudOnUnknownType) {
   ss.span_id = 1;
   ss.ticks = 42;
 
+  // Armed-not-engaged breadcrumb (raw frame), pre-span.
+  FlightStateRecord fs;
+  std::memset(&fs, 0, sizeof(fs));
+  fs.type = kFlightState;
+  fs.timestamp_ms = 119000;
+  fs.pos_raw[0] = encodeScaled(3.5f, t.scales[kScalePosBase]);
+  fs.quat[0] = encodeScaled(1.0f, kScaleUnit);
+
   // Assemble a stream with word-alignment padding (0x00) between records,
   // exactly what the flash buffer staging produces at buffer boundaries.
   std::vector<uint8_t> blob;
@@ -205,6 +213,8 @@ TEST(FlightLogFormat, StreamWalkSkipsPaddingAndFailsLoudOnUnknownType) {
   };
   append(&fh, sizeof(fh));
   blob.insert(blob.end(), 3, 0x00);  // padding
+  append(&fs, sizeof(fs));
+  append(&fs, sizeof(fs));
   append(&eh, sizeof(eh));
   for (int i = 0; i < 3; i++) {
     tick.tick_counter = static_cast<uint16_t>(i);
@@ -220,12 +230,18 @@ TEST(FlightLogFormat, StreamWalkSkipsPaddingAndFailsLoudOnUnknownType) {
   StreamWalker w(blob.data(), blob.size());
   const FileHeader* gotFh = nullptr;
   const EngageHeader* gotEh = nullptr;
-  int tickCount = 0, eventCount = 0, summaryCount = 0;
+  int tickCount = 0, eventCount = 0, summaryCount = 0, flightStateCount = 0;
   RecordView v;
   while (w.next(v)) {
     switch (v.type) {
       case kFileHeader: gotFh = v.as<FileHeader>(); break;
       case kEngageHeader: gotEh = v.as<EngageHeader>(); break;
+      case kFlightState: {
+        const FlightStateRecord* fr = v.as<FlightStateRecord>();
+        EXPECT_FLOAT_EQ(decodeScaled(fr->pos_raw[0], gotFh->scales[kScalePosBase]), 3.5f);
+        flightStateCount++;
+        break;
+      }
       case kTick: {
         const TickRecord* tr = v.as<TickRecord>();
         EXPECT_EQ(tr->tick_counter, tickCount);
@@ -247,6 +263,7 @@ TEST(FlightLogFormat, StreamWalkSkipsPaddingAndFailsLoudOnUnknownType) {
   EXPECT_EQ(tickCount, 3);
   EXPECT_EQ(eventCount, 1);
   EXPECT_EQ(summaryCount, 1);
+  EXPECT_EQ(flightStateCount, 2);
 
   // Unknown record type: loud parse failure (never a silent skip).
   std::vector<uint8_t> bad(blob);

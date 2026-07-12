@@ -748,6 +748,20 @@ void mspUpdateState()
   // the 1 Hz nav-state heartbeat instead (consoleHeartbeat above).
   consoleHeartbeat(hasServoActivation, pathSelectorIndex);
 
+  // Armed-but-not-engaged flight breadcrumb (raw INAV frame, 25 B/tick):
+  // keeps the arm→disarm trace continuous for the renderer's all-flight
+  // view; during spans the TickRecord carries the (virtual-frame) telemetry.
+  if (isArmed && !rabbit_active && state.autoc_state_valid)
+  {
+    gp_vec3 p_raw = neuVectorToNedMeters(state.autoc_state.pos);
+    gp_vec3 v_raw = neuVectorToNedMeters(state.autoc_state.vel);
+    gp_quat q_raw = neuQuaternionToNed(state.autoc_state.q);
+    const float fs_pos[3] = {(float)p_raw.x(), (float)p_raw.y(), (float)p_raw.z()};
+    const float fs_vel[3] = {(float)v_raw.x(), (float)v_raw.y(), (float)v_raw.z()};
+    const float fs_quat[4] = {(float)q_raw.w(), (float)q_raw.x(), (float)q_raw.y(), (float)q_raw.z()};
+    flightLogFlightState(millis(), fs_pos, fs_vel, fs_quat);
+  }
+
   // Update NN control and cache commands when enabled
   mspUpdateNavControl();
 }

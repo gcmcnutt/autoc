@@ -67,6 +67,12 @@ Validation rules:
 - `tick_counter` gaps ⇒ decoder reports dropped ticks (never silently interpolates).
 - Budget check: 114 B × 20 Hz × 480 s (2×4 min) ≈ **1.09 MB** ≤ 2.04 MB usable — ~47% headroom.
 
+### 2.3b FlightStateRecord (armed, outside spans — 25 B breadcrumb)
+
+Raw INAV-frame pos[3]/vel[3]/quat[4] (i16, tick scale slots) every control tick while armed
+but NOT engaged — keeps the arm→disarm trajectory continuous for the renderer's all-flight
+view (~500 B/s; ≈300 KB for 10 min armed). TickRecords remain the only in-span content.
+
 ### 2.4 EventRecord (console-class events into the log)
 
 Sparse, small: event code (u8) + timestamp + optional payload (arm/disarm, engage/disengage,

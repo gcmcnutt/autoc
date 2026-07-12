@@ -2693,6 +2693,50 @@ bool parseXiaoDataBinary(const std::string& xiaoLogPath) {
         closeSpan();
         break;
 
+      case kFlightState: {
+        // Armed-but-not-engaged breadcrumb (raw INAV frame): the connective
+        // tissue that keeps the 'a' all-flight trace continuous between spans.
+        if (!header) {
+          std::cerr << "flight log: FlightState before FileHeader — corrupt stream" << std::endl;
+          return false;
+        }
+        const FlightStateRecord* fs = v.as<FlightStateRecord>();
+        if (!flightStartSet) {
+          flightStartTimeMs = fs->timestamp_ms;
+          flightStartSet = true;
+        }
+        vec3 position(decodeScaled(fs->pos_raw[0], header->scales[kScalePosBase]),
+                      decodeScaled(fs->pos_raw[1], header->scales[kScalePosBase + 1]),
+                      decodeScaled(fs->pos_raw[2], header->scales[kScalePosBase + 2]));
+        vec3 velocity_vector(decodeScaled(fs->vel[0], header->scales[kScaleVelBase]),
+                             decodeScaled(fs->vel[1], header->scales[kScaleVelBase + 1]),
+                             decodeScaled(fs->vel[2], header->scales[kScaleVelBase + 2]));
+        quat earthToBody(decodeScaled(fs->quat[0], kScaleUnit),
+                         decodeScaled(fs->quat[1], kScaleUnit),
+                         decodeScaled(fs->quat[2], kScaleUnit),
+                         decodeScaled(fs->quat[3], kScaleUnit));
+        if (earthToBody.norm() > 0.0f) earthToBody.normalize();
+
+        bool addState = blackboxPoints.empty() ||
+                        (position - blackboxPoints.back()).norm() > static_cast<scalar>(0.01f);
+        navStateLineToStateIndex.push_back(addState ? fullBlackboxAircraftStates.size()
+                                                    : SIZE_MAX);
+        if (addState) {
+          blackboxPoints.push_back(position);
+          xiaoVirtualPositions.push_back(position);  // no engage frame outside spans
+          unsigned long absoluteTimeUs =
+              (unsigned long)(fs->timestamp_ms - flightStartTimeMs) * 1000UL;
+          AircraftState state(
+              static_cast<int>(blackboxAircraftStates.size()),
+              velocity_vector.norm(), velocity_vector, earthToBody, position,
+              0.0f, 0.0f, 0.0f, absoluteTimeUs);
+          blackboxAircraftStates.push_back(state);
+          fullBlackboxAircraftStates.push_back(state);
+          currentStateIdx++;
+        }
+        break;
+      }
+
       default:
         break;
     }
