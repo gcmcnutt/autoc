@@ -3004,8 +3004,17 @@ void Renderer::showAllFlight() {
   // Hide stopwatch when switching to full flight mode
   hideStopwatch();
 
-  // In xiao-only mode, translate positions so first arming point is at origin
-  if (inXiaoOnlyMode && !testSpans.empty() && !fullBlackboxAircraftStates.empty()) {
+  // Binary flight logs (039 v2): positions are already in INAV's raw frame,
+  // whose origin is INAV home (set at INAV first-arm) — exactly the "full
+  // flight relative to arm point at world origin" view. No translation.
+  if (inXiaoOnlyMode && xiaoBinaryLog && !fullBlackboxAircraftStates.empty()) {
+    blackboxAircraftStates = fullBlackboxAircraftStates;
+    std::cout << "All-flight mode: " << blackboxAircraftStates.size()
+              << " states in raw INAV frame (arm/home point at origin); "
+              << testSpans.size() << " spans highlighted" << std::endl;
+  }
+  // Legacy text logs: translate positions so first arming point is at origin
+  else if (inXiaoOnlyMode && !testSpans.empty() && !fullBlackboxAircraftStates.empty()) {
     // Get first arming point as the origin offset
     vec3 firstOrigin = testSpans[0].origin;
 
