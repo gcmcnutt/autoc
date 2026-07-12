@@ -38,7 +38,11 @@ namespace flightlog {
 
 // "AFL1" little-endian in the file ('A'=0x41 first byte on the wire).
 constexpr uint32_t kMagic = 0x314C4641u;
-constexpr uint8_t kFormatVersion = 1;
+// v2 (2026-07-11, pre-first-flight): TickRecord gains craft telemetry —
+// pos (virtual NED), vel, rabbit (ground-truth target) — so the flight log is
+// self-contained for the renderer (-x) and trajectory analysis without an
+// INAV-blackbox join. v1 existed only for the 039 bench (T010 record).
+constexpr uint8_t kFormatVersion = 2;
 
 enum RecordType : uint8_t {
   kPad = 0x00,          // buffer word-alignment filler — skipped, never emitted
@@ -72,14 +76,23 @@ enum EventCode : uint8_t {
 
 constexpr int kNumInputs = 37;
 constexpr int kNumOutputs = 3;
-constexpr int kNumScaledFields = kNumInputs + kNumOutputs;
+// v2 telemetry triples appended after the NN block (slot order below):
+// pos (virtual/engage-relative NED m), vel (NED m/s), rabbit (ground-truth
+// target position, virtual NED m — the path-follow "rabbit" the dir/dist
+// inputs were computed against).
+constexpr int kNumScaledFields = kNumInputs + kNumOutputs + 9;
+constexpr int kScalePosBase = 40;     // pos_n/e/d
+constexpr int kScaleVelBase = 43;     // vel_n/e/d
+constexpr int kScaleRabbitBase = 46;  // rabbit_n/e/d
 
 constexpr float kScaleUnit = 32767.0f;  // [-1,1]-bounded: unit vecs, quat, tanh, outputs
 constexpr float kScaleDistM = 32.0f;    // raw metres, ±1023.97 m, 1/32 m resolution
-constexpr float kScaleSpeed = 256.0f;   // m/s (closing rate, airspeed), ±128 m/s
+constexpr float kScaleSpeed = 256.0f;   // m/s (closing rate, airspeed, vel), ±128 m/s
 constexpr float kScaleGyro = 900.0f;    // rad/s, ±36.4 rad/s (~2085 dps), ~0.0011 rad/s res
+constexpr float kScalePosM = 16.0f;     // position m, ±2047.9 m, 6.25 cm resolution
+                                        // (engage-relative; 60 s span cap bounds excursion)
 
-// v1 writer scale table. The FileHeader CARRIES this table; decoders use the
+// v2 writer scale table. The FileHeader CARRIES this table; decoders use the
 // header copy (CRC-verified), not a compiled-in copy.
 inline void defaultScaleTable(float out[kNumScaledFields]) {
   for (int i = 0; i < 18; i++) out[i] = kScaleUnit;   // target_x/y/z[6] unit vecs
@@ -91,6 +104,11 @@ inline void defaultScaleTable(float out[kNumScaledFields]) {
   out[33] = kScaleUnit;                               // dist_to_boundary (tanh)
   for (int i = 34; i < 37; i++) out[i] = kScaleUnit;  // inward_body unit vec
   for (int i = 37; i < 40; i++) out[i] = kScaleUnit;  // NN outputs (tanh)
+  for (int i = 0; i < 3; i++) {
+    out[kScalePosBase + i] = kScalePosM;              // pos (virtual NED m)
+    out[kScaleVelBase + i] = kScaleSpeed;             // vel (NED m/s)
+    out[kScaleRabbitBase + i] = kScalePosM;           // rabbit (virtual NED m)
+  }
 }
 
 // CRC-32 (IEEE 802.3, poly 0xEDB88320, init/final-xor 0xFFFFFFFF). Bitwise —
@@ -142,8 +160,13 @@ struct TickRecord {
   uint16_t tick_counter;           // per-span, from 0; gaps ⇒ dropped ticks (reported)
   int16_t inputs[kNumInputs];      // post-gather values ACTUALLY fed to the NN (honest)
   int16_t outputs[kNumOutputs];    // NN outputs (roll, pitch, throttle), pre-RC-conversion
+  // v2 telemetry (renderer/trajectory self-containment): virtual = engage-
+  // relative NED; raw NED = virtual + EngageHeader.origin_ned.
+  int16_t pos[3];                  // craft position, virtual NED m (scale kScalePosM)
+  int16_t vel[3];                  // craft velocity, NED m/s (scale kScaleSpeed)
+  int16_t rabbit[3];               // ground-truth target position, virtual NED m
   uint8_t recurrent_reset;         // 1 exactly on the first tick after span activation
-  int8_t path_index;               // rabbit path segment index this tick
+  int8_t path_index;               // selected path (0-5) this span
   uint16_t rc_sent[3];             // raw MSP channel values sent (roll, pitch, throttle)
   uint8_t state_valid;             // MSP2_AUTOC_STATE fetch success this tick
 };
@@ -180,10 +203,11 @@ struct SpanSummary {
 
 #pragma pack(pop)
 
-// Budget arithmetic (contract "Tests" + FR-008): ≈95 B payload + framing.
-static_assert(sizeof(TickRecord) <= 100, "TickRecord must stay <= 100 B (flash budget)");
+// Budget arithmetic (contract "Tests" + FR-008): 114 B/tick ⇒ 2×4 min ≈ 1.09 MB
+// in the 2.04 MB region (~47% headroom).
+static_assert(sizeof(TickRecord) <= 120, "TickRecord must stay <= 120 B (flash budget)");
 static_assert(sizeof(TickRecord) ==
-                  1 + 4 + 2 + 2 * kNumInputs + 2 * kNumOutputs + 1 + 1 + 6 + 1,
+                  1 + 4 + 2 + 2 * kNumInputs + 2 * kNumOutputs + 18 + 1 + 1 + 6 + 1,
               "TickRecord must be packed (no compiler padding)");
 static_assert(sizeof(FileHeader) == 1 + 4 + 1 + 8 + 8 + 2 + 4 * kNumScaledFields + 4,
               "FileHeader must be packed");
@@ -231,22 +255,34 @@ inline ValidateResult validateFileHeader(const FileHeader& h) {
   return ValidateResult::kOk;
 }
 
-// Quantize the NN I/O block of a TickRecord (caller fills the aux fields).
+// Quantize the NN I/O + telemetry block of a TickRecord (caller fills aux).
 inline void encodeTick(const float inputs[kNumInputs],
-                       const float outputs[kNumOutputs],
+                       const float outputs[kNumOutputs], const float pos[3],
+                       const float vel[3], const float rabbit[3],
                        const float scales[kNumScaledFields], TickRecord& rec) {
   for (int i = 0; i < kNumInputs; i++)
     rec.inputs[i] = encodeScaled(inputs[i], scales[i]);
   for (int i = 0; i < kNumOutputs; i++)
     rec.outputs[i] = encodeScaled(outputs[i], scales[kNumInputs + i]);
+  for (int i = 0; i < 3; i++) {
+    rec.pos[i] = encodeScaled(pos[i], scales[kScalePosBase + i]);
+    rec.vel[i] = encodeScaled(vel[i], scales[kScaleVelBase + i]);
+    rec.rabbit[i] = encodeScaled(rabbit[i], scales[kScaleRabbitBase + i]);
+  }
 }
 
 inline void decodeTick(const TickRecord& rec, const float scales[kNumScaledFields],
-                       float inputs[kNumInputs], float outputs[kNumOutputs]) {
+                       float inputs[kNumInputs], float outputs[kNumOutputs],
+                       float pos[3], float vel[3], float rabbit[3]) {
   for (int i = 0; i < kNumInputs; i++)
     inputs[i] = decodeScaled(rec.inputs[i], scales[i]);
   for (int i = 0; i < kNumOutputs; i++)
     outputs[i] = decodeScaled(rec.outputs[i], scales[kNumInputs + i]);
+  for (int i = 0; i < 3; i++) {
+    pos[i] = decodeScaled(rec.pos[i], scales[kScalePosBase + i]);
+    vel[i] = decodeScaled(rec.vel[i], scales[kScaleVelBase + i]);
+    rabbit[i] = decodeScaled(rec.rabbit[i], scales[kScaleRabbitBase + i]);
+  }
 }
 
 // ---------------------------------------------------------------------------

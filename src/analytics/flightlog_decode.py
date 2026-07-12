@@ -22,7 +22,7 @@ import struct
 import sys
 import zlib
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 MAGIC = 0x314C4641  # "AFL1" little-endian
 
 # Record type bytes (flight_log_format.h RecordType)
@@ -34,13 +34,13 @@ EVENT_NAMES = {
 }
 
 NUM_INPUTS, NUM_OUTPUTS = 37, 3
-NUM_SCALED = NUM_INPUTS + NUM_OUTPUTS
+NUM_SCALED = NUM_INPUTS + NUM_OUTPUTS + 9  # v2: + pos[3], vel[3], rabbit[3]
 
 # Wire structs — little-endian, packed (raw-ok: hardware byte layout; this
 # decode boundary is where values return to float domain).
-FILE_HDR = struct.Struct("<BIB8s8sH40fI")     # 188 B
+FILE_HDR = struct.Struct("<BIB8s8sH49fI")     # 224 B (v2: 49 scale entries)
 ENGAGE_HDR = struct.Struct("<BIH3fffh")       # 29 B
-TICK_REC = struct.Struct("<BIH37h3hBb3HB")    # 96 B
+TICK_REC = struct.Struct("<BIH37h3h3h3h3hBb3HB")  # 114 B (v2: +pos/vel/rabbit)
 EVENT_REC = struct.Struct("<BIBI")            # 10 B
 SUMMARY_REC = struct.Struct("<BIH5I13I3I2II")  # 103 B
 
@@ -63,6 +63,8 @@ INPUT_NAMES = (
        "dist_to_boundary", "inward_body_x", "inward_body_y", "inward_body_z"]
 )
 OUTPUT_NAMES = ["out_roll", "out_pitch", "out_throttle"]
+TELEM_NAMES = ["pos_n", "pos_e", "pos_d", "vel_n", "vel_e", "vel_d",
+               "rabbit_n", "rabbit_e", "rabbit_d"]  # v2, scale slots 40..48
 
 SUMMARY_FIELDS = [
     "ticks", "overruns", "resyncs", "max_late_ms", "total_late_ms",
@@ -121,7 +123,7 @@ def decode(blob):
                 fail(f"format_version {version} not supported (decoder is v{FORMAT_VERSION}) "
                      f"— refusing best-effort parse")
             # CRC over the scale floats exactly as stored (little-endian bytes)
-            scale_bytes = raw[24:24 + 4 * NUM_SCALED]
+            scale_bytes = raw[24:24 + 4 * NUM_SCALED]  # 49 floats in v2
             if zlib.crc32(scale_bytes) & 0xFFFFFFFF != crc:
                 fail("scale_table_crc mismatch — header corrupt; refusing to decode")
             scales = scale_vals
@@ -155,10 +157,11 @@ def decode(blob):
             f = TICK_REC.unpack(raw)
             ts, counter = f[1], f[2]
             q_in = f[3:3 + NUM_INPUTS]
-            q_out = f[3 + NUM_INPUTS:3 + NUM_INPUTS + NUM_OUTPUTS]
-            reset, path_idx = f[43], f[44]
-            rc = f[45:48]
-            valid = f[48]
+            q_out = f[40:43]
+            q_telem = f[43:52]  # pos[3], vel[3], rabbit[3]
+            reset, path_idx = f[52], f[53]
+            rc = f[54:57]
+            valid = f[57]
             row = {"timestamp_ms": ts, "tick_counter": counter}
             if current is not None:
                 row["span_id"] = current["engage"]["span_id"]
@@ -169,6 +172,8 @@ def decode(blob):
                 row[name] = q_in[i] / scales[i]
             for i, name in enumerate(OUTPUT_NAMES):
                 row[name] = q_out[i] / scales[NUM_INPUTS + i]
+            for i, name in enumerate(TELEM_NAMES):
+                row[name] = q_telem[i] / scales[NUM_INPUTS + NUM_OUTPUTS + i]
             row.update({
                 "recurrent_reset": reset, "path_index": path_idx,
                 "rc_roll": rc[0], "rc_pitch": rc[1], "rc_throttle": rc[2],
@@ -255,6 +260,7 @@ def report(header, spans, events, warnings, out=sys.stderr):
 def write_csv(spans, path):
     import csv
     cols = (["span_id", "timestamp_ms", "tick_counter"] + INPUT_NAMES + OUTPUT_NAMES
+            + TELEM_NAMES
             + ["recurrent_reset", "path_index", "rc_roll", "rc_pitch", "rc_throttle",
                "state_valid"])
     with open(path, "w", newline="") as fh:

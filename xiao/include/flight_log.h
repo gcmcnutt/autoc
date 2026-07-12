@@ -32,9 +32,12 @@ void flightLogEngage(uint16_t span_id, uint32_t engage_timestamp_ms,
 
 // One control tick while engaged. inputs = the 37 post-gather values ACTUALLY
 // fed to the NN this tick (honest recording); outputs = the 3 NN outputs.
+// v2 telemetry: pos/vel = craft state (virtual NED / NED m/s), rabbit =
+// ground-truth target position (virtual NED) this tick.
 // Returns the per-span tick counter used (for callers that want it).
 uint16_t flightLogTick(uint32_t timestamp_ms, const float inputs[flightlog::kNumInputs],
                        const float outputs[flightlog::kNumOutputs],
+                       const float pos[3], const float vel[3], const float rabbit[3],
                        bool recurrent_reset, int8_t path_index,
                        const uint16_t rc_sent[3], bool state_valid);
 

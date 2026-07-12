@@ -9,6 +9,9 @@ latency memo decision, flight verdict). Bench artifacts under `eval-results/benc
 (11 KB, flight #1, span 1: 111 ticks @ 20 Hz, 5.5 s engaged, path 0 StraightAndLevel).
 Decoded clean by BOTH readers (desktop `flightlog_decode.py` + in-browser
 `flight_logger.html`) — identical span/summary numbers.
+*(Note: this artifact is format **v1**; tooling moved to v2 — pos/vel/rabbit telemetry —
+the same evening, pre-first-flight. Re-decoding it needs the v1 tooling at commit `94e5fde`;
+the analysis above and the t1 plot are the durable record.)*
 
 **Candidate identity** (banner ↔ FileHeader match): topology `37->32->16r->3`, 2051 w,
 `weight_id=32fb43986aaaf3d1`, `firmware_id=d229e6045ad55de1`, arena template 80/5/100,

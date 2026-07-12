@@ -434,9 +434,9 @@
     // specs/039-xiao-20hz-flight/contracts/flight-log-format.md (same wire
     // format as xiao/include/flight_log_format.h; loud-fail on version/CRC).
     // ------------------------------------------------------------------
-    const FL_MAGIC = 0x314C4641, FL_VERSION = 1;
-    const FL_NUM_IN = 37, FL_NUM_OUT = 3;
-    const FL_SIZES = { 1: 188, 2: 29, 3: 96, 4: 10, 5: 103 };
+    const FL_MAGIC = 0x314C4641, FL_VERSION = 2;
+    const FL_NUM_IN = 37, FL_NUM_OUT = 3, FL_NUM_SCALED = 49;
+    const FL_SIZES = { 1: 224, 2: 29, 3: 114, 4: 10, 5: 103 };
     const FL_EVENTS = { 1: 'ARM', 2: 'DISARM', 3: 'ENGAGE', 4: 'DISENGAGE',
                         5: 'FETCH_TIMEOUT', 6: 'LOG_DROP', 7: 'FLASH_FULL' };
     const FL_INPUT_NAMES = [].concat(
@@ -448,6 +448,8 @@
        'gyro_p', 'gyro_q', 'gyro_r',
        'dist_to_boundary', 'inward_body_x', 'inward_body_y', 'inward_body_z']);
     const FL_OUTPUT_NAMES = ['out_roll', 'out_pitch', 'out_throttle'];
+    const FL_TELEM_NAMES = ['pos_n', 'pos_e', 'pos_d', 'vel_n', 'vel_e', 'vel_d',
+                            'rabbit_n', 'rabbit_e', 'rabbit_d'];  // v2, scale slots 40..48
 
     function decodeFlightLog(bytes) {
       const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -466,11 +468,11 @@
           if (magic !== FL_MAGIC) throw new Error('bad magic — not a flight log');
           if (version !== FL_VERSION) throw new Error(
             `format_version ${version} unsupported (decoder is v${FL_VERSION})`);
-          const scaleBytes = bytes.subarray(pos + 24, pos + 24 + 4 * 40);
-          if (crc32(scaleBytes) !== dv.getUint32(pos + 184, true))
+          const scaleBytes = bytes.subarray(pos + 24, pos + 24 + 4 * FL_NUM_SCALED);
+          if (crc32(scaleBytes) !== dv.getUint32(pos + 24 + 4 * FL_NUM_SCALED, true))
             throw new Error('scale_table_crc mismatch — refusing to decode');
           scales = [];
-          for (let i = 0; i < 40; i++) scales.push(dv.getFloat32(pos + 24 + 4 * i, true));
+          for (let i = 0; i < FL_NUM_SCALED; i++) scales.push(dv.getFloat32(pos + 24 + 4 * i, true));
           const hex = (o, n) => Array.from(bytes.subarray(pos + o, pos + o + n))
             .map(b => b.toString(16).padStart(2, '0')).join('');
           header = { firmware_id: hex(6, 8), weight_id: hex(14, 8),
@@ -495,12 +497,14 @@
             row[FL_INPUT_NAMES[i]] = dv.getInt16(pos + 7 + 2 * i, true) / scales[i];
           for (let i = 0; i < FL_NUM_OUT; i++)
             row[FL_OUTPUT_NAMES[i]] = dv.getInt16(pos + 81 + 2 * i, true) / scales[FL_NUM_IN + i];
-          row.recurrent_reset = dv.getUint8(pos + 87);
-          row.path_index = dv.getInt8(pos + 88);
-          row.rc_roll = dv.getUint16(pos + 89, true);
-          row.rc_pitch = dv.getUint16(pos + 91, true);
-          row.rc_throttle = dv.getUint16(pos + 93, true);
-          row.state_valid = dv.getUint8(pos + 95);
+          for (let i = 0; i < 9; i++)   // v2: pos[3], vel[3], rabbit[3] at 87..105
+            row[FL_TELEM_NAMES[i]] = dv.getInt16(pos + 87 + 2 * i, true) / scales[40 + i];
+          row.recurrent_reset = dv.getUint8(pos + 105);
+          row.path_index = dv.getInt8(pos + 106);
+          row.rc_roll = dv.getUint16(pos + 107, true);
+          row.rc_pitch = dv.getUint16(pos + 109, true);
+          row.rc_throttle = dv.getUint16(pos + 111, true);
+          row.state_valid = dv.getUint8(pos + 113);
           if (cur) cur.ticks.push(row);
         } else if (t === 4) {                            // EventRecord
           const code = dv.getUint8(pos + 5);
@@ -552,7 +556,7 @@
       try { d = decodeFlightLog(lastDownload); }
       catch (e) { log('CSV export failed: ' + e.message); return; }
       const cols = ['span_id', 'timestamp_ms', 'tick_counter']
-        .concat(FL_INPUT_NAMES, FL_OUTPUT_NAMES,
+        .concat(FL_INPUT_NAMES, FL_OUTPUT_NAMES, FL_TELEM_NAMES,
                 ['recurrent_reset', 'path_index', 'rc_roll', 'rc_pitch', 'rc_throttle',
                  'state_valid']);
       const lines = [cols.join(',')];

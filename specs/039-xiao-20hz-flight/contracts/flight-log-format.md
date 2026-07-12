@@ -45,20 +45,27 @@ desktop code, so the shared artifact is this contract + the round-trip test).
   avgLate — `msplink.cpp:163-168`) MUST be carried in the log (span-summary EventRecord), since
   the console line they print to is demoted by FR-014. Missed/overrun ticks stay observable.
 
-## v1 wire notes (as implemented — `xiao/include/flight_log_format.h` is the byte-exact source)
+## v2 wire notes (as implemented — `xiao/include/flight_log_format.h` is the byte-exact source)
 
-- **Framing**: every record starts with a nonzero type byte (0x01 FileHeader 188 B, 0x02
-  EngageHeader 29 B, 0x03 TickRecord 96 B, 0x04 EventRecord 10 B, 0x05 SpanSummary 103 B);
+- **v2 (2026-07-11, pre-first-flight)**: TickRecord gains craft telemetry — `pos[3]`
+  (virtual/engage-relative NED m), `vel[3]` (NED m/s), `rabbit[3]` (ground-truth target,
+  virtual NED m) — making the log self-contained for the renderer (`-x`) and trajectory
+  analysis (no INAV-blackbox join). Raw NED = virtual + EngageHeader origin. v1 existed
+  only for the 039 bench validation (T010 artifact).
+- **Framing**: every record starts with a nonzero type byte (0x01 FileHeader 224 B, 0x02
+  EngageHeader 29 B, 0x03 TickRecord 114 B, 0x04 EventRecord 10 B, 0x05 SpanSummary 103 B);
   0x00 bytes BETWEEN records are flash-buffer word-alignment padding — decoders skip them.
   Unknown type or truncated record ⇒ loud parse failure.
-- **v1 scale table** (carried IN the FileHeader, CRC-32-guarded; slot order = PathgenInput
-  enum + 3 outputs): unit-bounded fields (target vecs, quat, dist_to_boundary, inward_body,
-  outputs) → 32767; dist[6] → 32 (raw metres, ±1023.97 m); closing_rate + airspeed → 256
-  (±128 m/s); gyro → 900 (±36.4 rad/s). Encoder saturates symmetrically to ±32767 (never
-  INT16_MIN, never wraps).
+- **v2 scale table** (49 entries carried IN the FileHeader, CRC-32-guarded; slot order =
+  PathgenInput enum + 3 outputs + pos[3] + vel[3] + rabbit[3]): unit-bounded fields
+  (target vecs, quat, dist_to_boundary, inward_body, outputs) → 32767; dist[6] → 32 (raw
+  metres, ±1023.97 m); closing_rate + airspeed + vel → 256 (±128 m/s); gyro → 900
+  (±36.4 rad/s); pos + rabbit → 16 (±2047.9 m, 6.25 cm). Encoder saturates symmetrically
+  to ±32767 (never INT16_MIN, never wraps).
 - **Readers**: `src/analytics/flightlog_decode.py` (authoritative CSV), in-browser decode +
-  CSV export in `xiao/web/flight_logger.html`, and the desktop round-trip test
-  `tests/flightlog_roundtrip_tests.cc` — all against this contract.
+  CSV export in `xiao/web/flight_logger.html`, the renderer `-x` mode (`tools/renderer.cc`
+  parseXiaoDataBinary — legacy text logs still route to the old parser by sniffing), and
+  the desktop round-trip test `tests/flightlog_roundtrip_tests.cc` — all against this contract.
 
 ## Tests (write first)
 
@@ -66,4 +73,4 @@ desktop code, so the shared artifact is this contract + the round-trip test).
   compiling the encoder source or a bit-identical reference implementation of this contract).
 - Version loud-fail: decoder rejects a header with version+1 and with a corrupted scale CRC.
 - Saturation: out-of-range input saturates (never wraps) and decodes to the rail value.
-- Budget arithmetic: static assert record size ≤ 100 B.
+- Budget arithmetic: static assert record size ≤ 120 B (v2: 114 B actual).

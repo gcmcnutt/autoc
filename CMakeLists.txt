@@ -118,6 +118,8 @@ add_executable(dmp-dump tools/dmp_dump.cc)  # 035 FR-P02/P06
 
 target_link_libraries(autoc autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(renderer autoc_common ${VTK_LIBRARIES} ${AWSSDK_LIBRARIES})
+# 039 T032: -x mode reads the binary flight log (shared format header)
+target_include_directories(renderer PRIVATE xiao/include)
 target_link_libraries(nnextractor autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(dmp-dump autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(nn2cpp autoc_common)

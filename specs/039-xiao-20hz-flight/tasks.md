@@ -92,6 +92,19 @@ T025–T026 flight (planned 2026-07-12), T027/T028 report+verdict (assistant, po
 - [ ] T027 [US5] Comparison report `src/analytics/flight_vs_sim_axes.py`: decoded flight CSV vs the SAME candidate's sim per-axis baseline (038 per_axis tooling) → per-axis dCtrl ⟨|Δu|⟩ + amplitude ⟨|out|⟩ with the ±25% band drawn, plus bang-bang saturation % vs the 2026-05-17 flight; PNG artifact named `autoc-039-t<N>-flight-vs-sim_*` in the feature dir
 - [ ] T028 [US5] SC-006 verdict in `specs/039-xiao-20hz-flight/outcome.md`: smoothing exhibited yes/no per axis, residual gaps named; new deferrals appended to `specs/BACKLOG.md` (Constitution X)
 
+## Phase 7b: Operator additions (2026-07-11, pre-first-flight)
+
+- [X] T031 Flight-log format v2 — TickRecord gains pos[3]/vel[3]/rabbit[3] telemetry (114 B/tick,
+  ~47% headroom) so the log is renderer/trajectory self-contained (no INAV-blackbox join); scale
+  table 49 entries; writer + desktop tests + python + in-browser decoders updated in lockstep,
+  all validated against a shared synthetic file; the v1 T010 bench artifact stays on record
+  (decode via commit 94e5fde if ever needed)
+- [X] T032 Renderer `-x` reads the binary flight log: `parseXiaoDataBinary()` (loud-fail on
+  version/CRC, spans from explicit Engage/SpanSummary records, rabbit reconstruction + direct
+  ground-truth rabbit), magic-sniff dispatch keeps legacy text logs rendering; headless smoke
+  test parses the synthetic v2 file (1 span, states/vecs/path correct). NOTE: TickRecords are
+  engagement-scoped, so the 'a' full-flight trace shows engaged segments only.
+
 ## Phase 8: Polish & Cross-Cutting
 
 - [X] T029 [P] Constitution VI type-domain grep audit on 039-touched paths (`tools/nn2cpp.cc`, decoder boundary, any `src/`/`include/autoc/` touches): annotate `// raw-ok:` or convert — DONE: arena.h/nn2cpp gp_scalar-clean; flight_log_format.h records section + flight_log.h carry raw-ok annotations; python/js decoders are the gp_scalar re-entry boundary

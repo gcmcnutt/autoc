@@ -429,12 +429,18 @@ static void mspUpdateNavControl()
     // ONLY — the interim NN: text line is deleted (no parallel writers,
     // Constitution III). Honest recording: the 37 floats are the post-gather
     // values the NN consumed this tick (NNInputs layout = PathgenInput slot
-    // order = the log's scale-table order).
+    // order = the log's scale-table order). v2 telemetry: craft pos/vel
+    // (virtual frame / NED) + ground-truth rabbit for the renderer.
     const float* in = reinterpret_cast<const float*>(&aircraft_state.getNNInputs());
     const float* out = aircraft_state.getNNOutputs();
     const uint16_t rc_sent[3] = {(uint16_t)roll_cmd, (uint16_t)pitch_cmd,
                                  (uint16_t)throttle_cmd};
-    flightLogTick(current_time, in, out, nn_warmup_tick,
+    const gp_vec3 craft_pos = aircraft_state.getPosition();
+    const gp_vec3 craft_vel = aircraft_state.getVelocity();
+    const float pos_t[3] = {(float)craft_pos.x(), (float)craft_pos.y(), (float)craft_pos.z()};
+    const float vel_t[3] = {(float)craft_vel.x(), (float)craft_vel.y(), (float)craft_vel.z()};
+    const float rabbit_t[3] = {(float)targetPos.x(), (float)targetPos.y(), (float)targetPos.z()};
+    flightLogTick(current_time, in, out, pos_t, vel_t, rabbit_t, nn_warmup_tick,
                   (int8_t)selected_path_index, rc_sent,
                   state.autoc_state_valid);
     nn_warmup_tick = false;

@@ -55,8 +55,9 @@ per-field scale from the contract's scale table. Raw types below are wire format
 | NN inputs — self state | quat[4] (q_EB), airspeed, gyro[3] (rad/s) | 8 | 16 B |
 | NN inputs — 038 situational | dist_to_boundary (tanh), inward_body[3] | 4 | 8 B |
 | NN outputs | roll, pitch, throttle (tanh) | 3 | 6 B |
+| v2 telemetry | pos[3] (virtual NED m, 1/16 m), vel[3] (NED m/s, 1/256), rabbit[3] (ground-truth target, virtual NED m) — renderer/trajectory self-containment | 9 | 18 B |
 | aux | recurrent_reset flag (u8), path_index (i8 = selected path 0-5), rc_sent[3] (u16×3), state_valid (u8) | 6 | 9 B |
-| **total** | | **48 fields + framing** | **96 B/tick** (static-asserted ≤ 100) |
+| **total** | | **57 fields + framing** | **114 B/tick** (static-asserted ≤ 120) |
 
 Validation rules:
 
@@ -64,7 +65,7 @@ Validation rules:
   shift) — honest-recording; no re-derivation on decode.
 - `recurrent_reset = 1` exactly on the first tick after span activation (warm-up marker).
 - `tick_counter` gaps ⇒ decoder reports dropped ticks (never silently interpolates).
-- Budget check: 96 B × 20 Hz × 480 s (2×4 min) ≈ **0.92 MB** ≤ 2.04 MB usable — ~55% headroom.
+- Budget check: 114 B × 20 Hz × 480 s (2×4 min) ≈ **1.09 MB** ≤ 2.04 MB usable — ~47% headroom.
 
 ### 2.4 EventRecord (console-class events into the log)
 

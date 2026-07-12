@@ -38,11 +38,14 @@ struct ScaleTableFixture {
 };
 
 TEST(FlightLogFormat, TickRecordBudget) {
-  // Contract: static assert record size ≤ 100 B (95-ish quantized + framing).
-  EXPECT_LE(sizeof(TickRecord), 100u);
+  // Contract (v2): static assert record size ≤ 120 B (114 B: NN block +
+  // pos/vel/rabbit telemetry + framing).
+  EXPECT_LE(sizeof(TickRecord), 120u);
   // Spot-check the packed layout didn't grow padding.
   EXPECT_EQ(sizeof(TickRecord),
-            1u + 4u + 2u + 2u * kNumInputs + 2u * kNumOutputs + 1u + 1u + 6u + 1u);
+            1u + 4u + 2u + 2u * kNumInputs + 2u * kNumOutputs + 18u + 1u + 1u + 6u + 1u);
+  // 2-flight budget: 114 B × 20 Hz × 480 s engaged ≈ 1.09 MB ≤ 2.04 MB region.
+  EXPECT_LE(sizeof(TickRecord) * 20u * 480u, 1200u * 1024u);
 }
 
 TEST(FlightLogFormat, RoundTripWithinQuantizationStep) {
@@ -62,14 +65,19 @@ TEST(FlightLogFormat, RoundTripWithinQuantizationStep) {
   inputs[34] = 0.1f; inputs[35] = -0.9f; inputs[36] = 0.3f;                   // inward_body
 
   float outputs[kNumOutputs] = {-0.335f, 0.998f, 0.0421f};
+  // v2 telemetry: engage-relative positions (metres), NED velocity (m/s)
+  float pos[3] = {-87.32f, 41.07f, -55.5f};
+  float vel[3] = {17.8f, -3.2f, 1.05f};
+  float rabbit[3] = {-90.11f, 44.9f, -61.02f};
 
   TickRecord rec;
   std::memset(&rec, 0, sizeof(rec));
   rec.type = kTick;
-  encodeTick(inputs, outputs, t.scales, rec);
+  encodeTick(inputs, outputs, pos, vel, rabbit, t.scales, rec);
 
   float back_in[kNumInputs], back_out[kNumOutputs];
-  decodeTick(rec, t.scales, back_in, back_out);
+  float back_pos[3], back_vel[3], back_rabbit[3];
+  decodeTick(rec, t.scales, back_in, back_out, back_pos, back_vel, back_rabbit);
 
   for (int i = 0; i < kNumInputs; i++) {
     const float step = 1.0f / t.scales[i];
@@ -79,6 +87,11 @@ TEST(FlightLogFormat, RoundTripWithinQuantizationStep) {
   for (int i = 0; i < kNumOutputs; i++) {
     const float step = 1.0f / t.scales[kNumInputs + i];
     EXPECT_LE(std::abs(back_out[i] - outputs[i]), step) << "output " << i;
+  }
+  for (int i = 0; i < 3; i++) {
+    EXPECT_LE(std::abs(back_pos[i] - pos[i]), 1.0f / kScalePosM) << "pos " << i;
+    EXPECT_LE(std::abs(back_vel[i] - vel[i]), 1.0f / kScaleSpeed) << "vel " << i;
+    EXPECT_LE(std::abs(back_rabbit[i] - rabbit[i]), 1.0f / kScalePosM) << "rabbit " << i;
   }
 }
 
@@ -160,13 +173,15 @@ TEST(FlightLogFormat, StreamWalkSkipsPaddingAndFailsLoudOnUnknownType) {
 
   ScaleTableFixture t;
   float in[kNumInputs] = {0}, out[kNumOutputs] = {0.1f, -0.2f, 0.3f};
+  float pos[3] = {1.0f, 2.0f, -30.0f}, vel[3] = {12.0f, 0.0f, -1.0f},
+        rabbit[3] = {5.0f, 6.0f, -32.0f};
   TickRecord tick;
   std::memset(&tick, 0, sizeof(tick));
   tick.type = kTick;
   tick.timestamp_ms = 120050;
   tick.tick_counter = 0;
   tick.recurrent_reset = 1;
-  encodeTick(in, out, t.scales, tick);
+  encodeTick(in, out, pos, vel, rabbit, t.scales, tick);
 
   EventRecord ev;
   ev.type = kEvent;

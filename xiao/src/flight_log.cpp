@@ -86,9 +86,10 @@ void flightLogEngage(uint16_t span_id, uint32_t engage_timestamp_ms,
 }
 
 uint16_t flightLogTick(uint32_t timestamp_ms, const float inputs[kNumInputs],
-                       const float outputs[kNumOutputs], bool recurrent_reset,
-                       int8_t path_index, const uint16_t rc_sent[3],
-                       bool state_valid) {
+                       const float outputs[kNumOutputs], const float pos[3],
+                       const float vel[3], const float rabbit[3],
+                       bool recurrent_reset, int8_t path_index,
+                       const uint16_t rc_sent[3], bool state_valid) {
   const uint16_t counter = g_tickCounter++;
   if (!g_scalesInit) {
     // FileHeader never got written (flash uninitialized) — nothing to encode
@@ -101,7 +102,7 @@ uint16_t flightLogTick(uint32_t timestamp_ms, const float inputs[kNumInputs],
   rec.type = kTick;
   rec.timestamp_ms = timestamp_ms;
   rec.tick_counter = counter;
-  encodeTick(inputs, outputs, g_scales, rec);
+  encodeTick(inputs, outputs, pos, vel, rabbit, g_scales, rec);
   rec.recurrent_reset = recurrent_reset ? 1 : 0;
   rec.path_index = path_index;
   rec.rc_sent[0] = rc_sent[0];
