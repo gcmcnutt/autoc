@@ -5,6 +5,7 @@
 #include <autoc/nn/nn_input_computation.h>
 #include <autoc/imu/inav_quat_convention.h>
 #include <nn_program.h>
+#include <flight_log.h>
 #include <mbed.h>
 #include <vector>
 #include <cmath>
@@ -39,6 +40,15 @@ const autoc::eval::FlightArena& nnActiveArena() { return engage_arena.virtual_ar
 static unsigned long rabbit_start_time = 0;
 static volatile bool rabbit_active = false;
 static int current_path_index = 0;
+
+// 039 US3 — binary flight-log span bookkeeping (flight_log_format.h).
+static uint16_t span_id_counter = 0;     // flight-unique, reset at arm
+static bool nn_warmup_tick = false;      // true for the first tick after engage (recurrent_reset marker)
+
+// 039 T019 — DWT cycle count of one unrolled NN eval; measured once per boot
+// at the first eval (one number per firmware image), carried in every
+// SpanSummary + reported on the console.
+static uint32_t dwt_eval_cycles = 0;
 constexpr gp_scalar XIAO_RABBIT_SPEED_MPS = 12.0f;  // Rabbit speed for xiao (m/s) — matches autoc.ini RabbitSpeedNominal
 static gp_scalar rabbit_odometer = 0.0f;             // Distance along path (meters)
 static int selected_path_index = 0;  // Path selected from RC channel (0-5)
@@ -151,6 +161,44 @@ static void stopAutoc(const char *reason, bool requireServoReset)
 
   if (wasRabbit)
   {
+    // 039 US3 — span-summary record: loopStats + MSP pipeline stats into the
+    // binary log (the latency memo's flight-side numbers, FR-011/FR-014 —
+    // the console lines below are event-class, once per span).
+    {
+      flightlog::SpanSummary ss;
+      memset(&ss, 0, sizeof(ss));
+      ss.timestamp_ms = millis();
+      ss.span_id = span_id_counter;
+      ss.ticks = loopStats.ticks;
+      ss.overruns = loopStats.overruns;
+      ss.resyncs = loopStats.resyncs;
+      ss.max_late_ms = loopStats.maxLateMs;
+      ss.total_late_ms = loopStats.totalLateMs;
+      ss.samples = pipelineStats.samples;
+      if (pipelineStats.samples > 0) {
+        ss.fetch_min_us = pipelineStats.fetchMinUs;
+        ss.fetch_avg_us = pipelineStats.fetchSumUs / pipelineStats.samples;
+        ss.fetch_max_us = pipelineStats.fetchMaxUs;
+        ss.eval_min_us = pipelineStats.evalMinUs;
+        ss.eval_avg_us = pipelineStats.evalSumUs / pipelineStats.samples;
+        ss.eval_max_us = pipelineStats.evalMaxUs;
+        ss.send_min_us = pipelineStats.sendMinUs;
+        ss.send_avg_us = pipelineStats.sendSumUs / pipelineStats.samples;
+        ss.send_max_us = pipelineStats.sendMaxUs;
+        ss.total_min_us = pipelineStats.totalMinUs;
+        ss.total_avg_us = pipelineStats.totalSumUs / pipelineStats.samples;
+        ss.total_max_us = pipelineStats.totalMaxUs;
+      }
+      if (pipelineStats.intervalCount > 0) {
+        ss.interval_min_us = pipelineStats.intervalMinUs;
+        ss.interval_avg_us = pipelineStats.intervalSumUs / pipelineStats.intervalCount;
+        ss.interval_max_us = pipelineStats.intervalMaxUs;
+      }
+      ss.dwt_eval_cycles = dwt_eval_cycles;
+      flightLogSpanSummary(ss);
+      flightLogEvent(flightlog::kEventDisengage, span_id_counter);
+    }
+
     // Log pipeline timing stats
     if (pipelineStats.samples > 0) {
       gp_scalar n = static_cast<gp_scalar>(pipelineStats.samples);
@@ -177,6 +225,11 @@ static void stopAutoc(const char *reason, bool requireServoReset)
         "ctl loop: ticks=%u overruns=%u resyncs=%u maxLate=%ums avgLate=%.2fms",
         loopStats.ticks, loopStats.overruns, loopStats.resyncs,
         loopStats.maxLateMs, avgLate);
+    }
+    // Logging health for the bench review (FR-008): drops must be visible.
+    if (flightLogTicksDropped() > 0) {
+      logPrint(WARNING, "flight log: %lu ticks logged, %lu DROPPED under buffer pressure",
+               (unsigned long)flightLogTicksLogged(), (unsigned long)flightLogTicksDropped());
     }
   }
 }
@@ -308,8 +361,18 @@ static void mspUpdateNavControl()
     aircraft_state.setRabbitPosition(targetPos);
     aircraft_state.recordErrorHistory(dir, dist_now, millis());
 
-    // Run NN: gathers 37 inputs (038 contract), forward pass, sets pitch/roll/throttle commands
-    generatedNNProgram(pathProvider, aircraft_state, 0.0f);
+    // Run NN: gathers 37 inputs (038 contract), forward pass, sets
+    // pitch/roll/throttle commands. T019: the first eval after boot is
+    // cycle-counted via DWT (one number per firmware image).
+    if (dwt_eval_cycles == 0) {
+      uint32_t c0 = DWT->CYCCNT;
+      generatedNNProgram(pathProvider, aircraft_state, 0.0f);
+      dwt_eval_cycles = DWT->CYCCNT - c0;
+      logPrint(INFO, "NN eval cost: %lu cycles (%.1f us @64MHz, gather+forward, unrolled)",
+               (unsigned long)dwt_eval_cycles, dwt_eval_cycles / 64.0f);
+    } else {
+      generatedNNProgram(pathProvider, aircraft_state, 0.0f);
+    }
 
     // Convert NN-controlled aircraft commands to MSP RC values and cache them
     int roll_cmd = convertRollToMSPChannel(aircraft_state.getRollCommand());
@@ -318,38 +381,19 @@ static void mspUpdateNavControl()
     updateCachedCommands(roll_cmd, pitch_cmd, throttle_cmd, eval_start_us);
     pipeEvalEndUs = micros();
 
-    // INTERIM per-tick NN I/O text line (039 T009): extended with the 4 new
-    // 038 arena-awareness inputs so the US1 bench is reviewable before the
-    // binary flight log (US3/T013) REPLACES this line entirely (FR-014).
-    // Inputs (023 direction cosines + 038 FR-P0H arena):
-    //  [0-5]  target_x  body-frame unit-vec x (past history)
-    //  [6-11] target_y  body-frame unit-vec y
-    //  [12-17] target_z body-frame unit-vec z
-    //  [18-23] dist     raw metres
-    //  [24]   closing_rate (m/s, + = approaching)
-    //  [25-28] quat w,x,y,z
-    //  [29]   airspeed (m/s)
-    //  [30-32] gyro p,q,r (rad/s)
-    //  [33]   dist_to_boundary (tanh, dimensionless)
-    //  [34-36] inward_body x,y,z (body-frame unit vec)
+    // 039 US3 (T013/FR-014): per-tick recording goes to the binary flight log
+    // ONLY — the interim NN: text line is deleted (no parallel writers,
+    // Constitution III). Honest recording: the 37 floats are the post-gather
+    // values the NN consumed this tick (NNInputs layout = PathgenInput slot
+    // order = the log's scale-table order).
     const float* in = reinterpret_cast<const float*>(&aircraft_state.getNNInputs());
     const float* out = aircraft_state.getNNOutputs();
-    logPrint(INFO,
-             "NN: idx=%d tX=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tY=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] tZ=[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f] d=[%.1f,%.1f,%.1f,%.1f,%.1f,%.1f] cr=%.2f q=[%.3f,%.3f,%.3f,%.3f] as=%.1f g=[%.2f,%.2f,%.2f] dBnd=%.3f inw=[%.2f,%.2f,%.2f] out=[%.3f,%.3f,%.3f] rc=[%d,%d,%d] rabbit=[%.2f,%.2f,%.2f]",
-             current_path_index,
-             in[0], in[1], in[2], in[3], in[4], in[5],       // target_x
-             in[6], in[7], in[8], in[9], in[10], in[11],     // target_y
-             in[12], in[13], in[14], in[15], in[16], in[17],  // target_z
-             in[18], in[19], in[20], in[21], in[22], in[23],  // dist
-             in[24],                                           // closing_rate
-             in[25], in[26], in[27], in[28],                   // quaternion w,x,y,z
-             in[29],                                           // airspeed
-             in[30], in[31], in[32],                           // gyro p,q,r (rad/s)
-             in[33],                                           // dist_to_boundary (tanh)
-             in[34], in[35], in[36],                           // inward_body x,y,z
-             out[0], out[1], out[2],                           // NN outputs (tanh)
-             roll_cmd, pitch_cmd, throttle_cmd,                // RC commands
-             targetPos.x(), targetPos.y(), targetPos.z());     // T080: rabbit ground-truth (virtual NED m)
+    const uint16_t rc_sent[3] = {(uint16_t)roll_cmd, (uint16_t)pitch_cmd,
+                                 (uint16_t)throttle_cmd};
+    flightLogTick(current_time, in, out, nn_warmup_tick,
+                  (int8_t)selected_path_index, rc_sent,
+                  state.autoc_state_valid);
+    nn_warmup_tick = false;
   }
 }
 
@@ -385,6 +429,12 @@ void msplinkSetup()
   // No ticker — single 20Hz loop in controllerUpdate() handles sends
   pipelineStats.reset();
   loopStats.reset();
+
+  // 039 T019 — enable the DWT cycle counter for the one-shot NN eval cost
+  // measurement (037 eval-cycle-harness design: DWT->CYCCNT, Cortex-M4).
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 }
 
 void mspUpdateState()
@@ -405,6 +455,7 @@ void mspUpdateState()
     {
       stopAutoc("MSP autoc state failure", true);
     }
+    flightLogEvent(flightlog::kEventFetchTimeout, 1);
     logPrint(ERROR, "*** CRITICAL: Failed to get MSP2_AUTOC_STATE - aborting MSP update cycle");
     return;
   }
@@ -435,9 +486,19 @@ void mspUpdateState()
       {
         logPrint(ERROR, "Flash logger failed to start new flight on arm");
       }
+      else
+      {
+        // 039 US3: FileHeader opens the flight file (identity + scale table);
+        // span ids restart per flight.
+        span_id_counter = 0;
+        flightLogBeginFile(generatedNNFirmwareId, generatedNNWeightId,
+                           MSP_LOOP_INTERVAL_MSEC);
+        flightLogEvent(flightlog::kEventArm, flashLoggerGetCurrentFlightNumber());
+      }
     }
     else
     {
+      flightLogEvent(flightlog::kEventDisarm, 0);  // before logging suspends
       flashLoggerEndFlight();
       blueToothSetEnabled(true);
     }
@@ -526,6 +587,22 @@ void mspUpdateState()
                engage_arena.origin_ned.z(), engage_arena.floor_z_ned,
                engage_arena.ceiling_z_ned, engage_arena.half_band_m);
 
+      // 039 US3 — EngageHeader with the RESOLVED arena (FR-001 provenance);
+      // the first tick after this carries recurrent_reset = 1.
+      span_id_counter++;
+      {
+        const float origin[3] = {
+            (float)engage_arena.origin_ned.x(),
+            (float)engage_arena.origin_ned.y(),
+            (float)engage_arena.origin_ned.z()};
+        flightLogEngage(span_id_counter, millis(), origin,
+                        (float)engage_arena.floor_z_ned,
+                        (float)engage_arena.ceiling_z_ned,
+                        (int16_t)pathIndex);
+        flightLogEvent(flightlog::kEventEngage, span_id_counter);
+      }
+      nn_warmup_tick = true;
+
       rabbit_start_time = millis();
       rabbit_active = true;
       rabbit_odometer = 0.0f;
@@ -591,44 +668,28 @@ void mspUpdateState()
   // Update aircraft state on every MSP cycle for continuous position/velocity tracking
   convertMSPStateToAircraftState(aircraft_state);
 
-  // Log raw vs origin-relative state for correlation
-  gp_vec3 pos_raw = gp_vec3::Zero();
-  gp_vec3 vel_raw = gp_vec3::Zero();
-  if (state.autoc_state_valid)
+  // 039 FR-014 console split: the per-tick "Nav State:" text line is DELETED
+  // (all control-loop data lives in the binary flight log). The console gets
+  // a ~2 Hz heartbeat with the human-relevant summary instead.
+  static unsigned long last_heartbeat_ms = 0;
+  unsigned long now_ms = millis();
+  if (now_ms - last_heartbeat_ms >= 500)
   {
-    pos_raw = neuVectorToNedMeters(state.autoc_state.pos);
-    vel_raw = neuVectorToNedMeters(state.autoc_state.vel);
+    last_heartbeat_ms = now_ms;
+    gp_vec3 pos_rel = aircraft_state.getPosition();
+    logPrint(INFO,
+             "hb: pos=[%.1f,%.1f,%.1f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d span=%u ticks=%lu drops=%lu",
+             pos_rel.x(), pos_rel.y(), pos_rel.z(),
+             state.isArmed() ? "Y" : "N",
+             state.isFailsafe() ? "Y" : "N",
+             hasServoActivation ? "Y" : "N",
+             state.autoc_enabled ? "Y" : "N",
+             rabbit_active ? "Y" : "N",
+             pathSelectorIndex,
+             (unsigned)span_id_counter,
+             (unsigned long)flightLogTicksLogged(),
+             (unsigned long)flightLogTicksDropped());
   }
-  else if (have_valid_position)
-  {
-    pos_raw = last_valid_position;
-  }
-  gp_vec3 pos_rel = aircraft_state.getPosition();
-  gp_vec3 vel_rel = aircraft_state.getVelocity();
-  gp_quat q = aircraft_state.getOrientation();
-  if (q.norm() > 0.0f)
-  {
-    q.normalize();
-  }
-  gp_vec3 gyro = aircraft_state.getGyroRates();  // aerospace convention (rad/s)
-  bool armed = state.isArmed();
-  bool failsafe = state.isFailsafe();
-
-  // Log post-boundary aerospace-convention state (quat q_EB, gyro RHR rad/s).
-  // Raw INAV values are still in the MSP stream / blackbox if needed for cross-check.
-  logPrint(INFO,
-           "Nav State: pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro=[%.2f,%.2f,%.2f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d",
-           pos_raw.x(), pos_raw.y(), pos_raw.z(),
-           pos_rel.x(), pos_rel.y(), pos_rel.z(),
-           vel_rel.x(), vel_rel.y(), vel_rel.z(),
-           q.w(), q.x(), q.y(), q.z(),
-           gyro.x(), gyro.y(), gyro.z(),
-           armed ? "Y" : "N",
-           failsafe ? "Y" : "N",
-           hasServoActivation ? "Y" : "N",
-           state.autoc_enabled ? "Y" : "N",
-           rabbit_active ? "Y" : "N",
-           pathSelectorIndex);
 
   // Update NN control and cache commands when enabled
   mspUpdateNavControl();

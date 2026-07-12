@@ -113,7 +113,10 @@
     <div>
       <button id="listBtn" onclick="listFiles()" disabled>List Flight Logs</button>
       <button id="eraseBtn" onclick="eraseAll()" disabled class="danger">Erase All Logs</button>
+      <button id="csvBtn" onclick="exportCsv()" disabled>Export Last Download as CSV</button>
     </div>
+
+    <div id="decodeSummary" style="font-family: monospace; white-space: pre-wrap; font-size: 12px;"></div>
 
     <ul id="fileList"></ul>
   </div>
@@ -153,6 +156,8 @@
     let downloadOffset = 0;
     let expectedFileSize = 0;
     let currentFlightNumber = 0;
+    let downloadFilename = 'flight_log.bin';
+    let lastDownload = null;   // verified .bin bytes kept for CSV export
 
     function log(msg) {
       document.getElementById('status').textContent = msg;
@@ -233,7 +238,7 @@
       log('Status: ' + value);
 
       if (value.startsWith('FILE:')) {
-        // Parse: FILE:flight_001.txt:12345
+        // Parse: FILE:flight_001.bin:12345
         const parts = value.substring(5).split(':');
         if (parts.length >= 2) {
           const filename = parts[0];
@@ -378,6 +383,7 @@
       try {
         downloadBuffer = null;
         downloadOffset = 0;
+        downloadFilename = filename;
         log('Starting download: ' + filename);
         updateProgress(0, 'Starting...');
 
@@ -397,18 +403,170 @@
         return;
       }
 
-      // CRC verification handles data integrity - no need to trim
-      const blob = new Blob([downloadBuffer.subarray(0, downloadOffset)], { type: 'text/plain' });
+      // 039 US3: the payload is the versioned binary flight log — save the
+      // .bin INTACT (the desktop decoder flightlog_decode.py is the
+      // authoritative CSV path; exportCsv() below implements the same
+      // contract for in-browser decode).
+      const bytes = downloadBuffer.slice(0, downloadOffset);
+      const blob = new Blob([bytes], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'flight_log_' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.txt';
+      a.download = 'flight_log_' + new Date().toISOString().slice(0,19).replace(/:/g,'-')
+                   + '_' + downloadFilename;
       a.click();
       URL.revokeObjectURL(url);
 
       log(`Download saved: ${downloadOffset} bytes`);
+      lastDownload = bytes;
+      document.getElementById('csvBtn').disabled = false;
+      try {
+        showDecodeSummary(decodeFlightLog(bytes));
+      } catch (e) {
+        document.getElementById('decodeSummary').textContent = 'Decode: ' + e.message;
+      }
       downloadBuffer = null;
       downloadOffset = 0;
+    }
+
+    // ------------------------------------------------------------------
+    // 039 US3 — in-browser decoder for the v1 binary flight log. Implements
+    // specs/039-xiao-20hz-flight/contracts/flight-log-format.md (same wire
+    // format as xiao/include/flight_log_format.h; loud-fail on version/CRC).
+    // ------------------------------------------------------------------
+    const FL_MAGIC = 0x314C4641, FL_VERSION = 1;
+    const FL_NUM_IN = 37, FL_NUM_OUT = 3;
+    const FL_SIZES = { 1: 188, 2: 29, 3: 96, 4: 10, 5: 103 };
+    const FL_EVENTS = { 1: 'ARM', 2: 'DISARM', 3: 'ENGAGE', 4: 'DISENGAGE',
+                        5: 'FETCH_TIMEOUT', 6: 'LOG_DROP', 7: 'FLASH_FULL' };
+    const FL_INPUT_NAMES = [].concat(
+      [...Array(6)].map((_, i) => 'target_x_' + i),
+      [...Array(6)].map((_, i) => 'target_y_' + i),
+      [...Array(6)].map((_, i) => 'target_z_' + i),
+      [...Array(6)].map((_, i) => 'dist_' + i),
+      ['closing_rate', 'quat_w', 'quat_x', 'quat_y', 'quat_z', 'airspeed',
+       'gyro_p', 'gyro_q', 'gyro_r',
+       'dist_to_boundary', 'inward_body_x', 'inward_body_y', 'inward_body_z']);
+    const FL_OUTPUT_NAMES = ['out_roll', 'out_pitch', 'out_throttle'];
+
+    function decodeFlightLog(bytes) {
+      const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      let pos = 0, header = null, scales = null;
+      const spans = [], events = [];
+      let cur = null;
+      while (pos < bytes.length) {
+        const t = bytes[pos];
+        if (t === 0) { pos++; continue; }               // padding
+        const size = FL_SIZES[t];
+        if (!size) throw new Error(`unknown record type 0x${t.toString(16)} at ${pos}`);
+        if (pos + size > bytes.length) throw new Error(`truncated record at ${pos}`);
+        if (t === 1) {                                   // FileHeader
+          const magic = dv.getUint32(pos + 1, true);
+          const version = dv.getUint8(pos + 5);
+          if (magic !== FL_MAGIC) throw new Error('bad magic — not a flight log');
+          if (version !== FL_VERSION) throw new Error(
+            `format_version ${version} unsupported (decoder is v${FL_VERSION})`);
+          const scaleBytes = bytes.subarray(pos + 24, pos + 24 + 4 * 40);
+          if (crc32(scaleBytes) !== dv.getUint32(pos + 184, true))
+            throw new Error('scale_table_crc mismatch — refusing to decode');
+          scales = [];
+          for (let i = 0; i < 40; i++) scales.push(dv.getFloat32(pos + 24 + 4 * i, true));
+          const hex = (o, n) => Array.from(bytes.subarray(pos + o, pos + o + n))
+            .map(b => b.toString(16).padStart(2, '0')).join('');
+          header = { firmware_id: hex(6, 8), weight_id: hex(14, 8),
+                     tick_ms: dv.getUint16(pos + 22, true) };
+        } else if (t === 2) {                            // EngageHeader
+          cur = { engage: {
+                    ts: dv.getUint32(pos + 1, true),
+                    span_id: dv.getUint16(pos + 5, true),
+                    origin: [dv.getFloat32(pos + 7, true), dv.getFloat32(pos + 11, true),
+                             dv.getFloat32(pos + 15, true)],
+                    floor_z: dv.getFloat32(pos + 19, true),
+                    ceiling_z: dv.getFloat32(pos + 23, true),
+                    path_index: dv.getInt16(pos + 27, true) },
+                  ticks: [], summary: null };
+          spans.push(cur);
+        } else if (t === 3) {                            // TickRecord
+          if (!scales) throw new Error('tick before FileHeader');
+          const row = { span_id: cur ? cur.engage.span_id : -1,
+                        timestamp_ms: dv.getUint32(pos + 1, true),
+                        tick_counter: dv.getUint16(pos + 5, true) };
+          for (let i = 0; i < FL_NUM_IN; i++)
+            row[FL_INPUT_NAMES[i]] = dv.getInt16(pos + 7 + 2 * i, true) / scales[i];
+          for (let i = 0; i < FL_NUM_OUT; i++)
+            row[FL_OUTPUT_NAMES[i]] = dv.getInt16(pos + 81 + 2 * i, true) / scales[FL_NUM_IN + i];
+          row.recurrent_reset = dv.getUint8(pos + 87);
+          row.path_index = dv.getInt8(pos + 88);
+          row.rc_roll = dv.getUint16(pos + 89, true);
+          row.rc_pitch = dv.getUint16(pos + 91, true);
+          row.rc_throttle = dv.getUint16(pos + 93, true);
+          row.state_valid = dv.getUint8(pos + 95);
+          if (cur) cur.ticks.push(row);
+        } else if (t === 4) {                            // EventRecord
+          const code = dv.getUint8(pos + 5);
+          events.push({ ts: dv.getUint32(pos + 1, true),
+                        name: FL_EVENTS[code] || ('UNKNOWN_' + code),
+                        value: dv.getUint32(pos + 6, true) });
+        } else if (t === 5) {                            // SpanSummary
+          const u = o => dv.getUint32(pos + o, true);
+          const s = { ts: u(1), span_id: dv.getUint16(pos + 5, true),
+                      ticks: u(7), overruns: u(11), resyncs: u(15),
+                      max_late_ms: u(19),
+                      fetch_avg_us: u(35), eval_avg_us: u(47), send_avg_us: u(59),
+                      total_avg_us: u(71), total_max_us: u(75),
+                      ticks_logged: u(91), ticks_dropped: u(95),
+                      dwt_eval_cycles: u(99) };
+          if (cur && cur.engage.span_id === s.span_id) cur.summary = s;
+        }
+        pos += size;
+      }
+      if (!header) throw new Error('no FileHeader — not a v1 flight log');
+      return { header, spans, events };
+    }
+
+    function showDecodeSummary(d) {
+      let out = `decoded v1  tick=${d.header.tick_ms}ms  fw=${d.header.firmware_id}  wt=${d.header.weight_id}\n`;
+      for (const ev of d.events) out += `event t=${ev.ts} ${ev.name} value=${ev.value}\n`;
+      for (const s of d.spans) {
+        let gaps = 0;
+        for (let i = 1; i < s.ticks.length; i++)
+          if (s.ticks[i].tick_counter - s.ticks[i - 1].tick_counter !== 1) gaps++;
+        out += `span ${s.engage.span_id}: ${s.ticks.length} ticks, path=${s.engage.path_index}, ` +
+               `origin=(${s.engage.origin.map(v => v.toFixed(1)).join(',')}), ` +
+               `floorZ=${s.engage.floor_z.toFixed(1)}, ceilZ=${s.engage.ceiling_z.toFixed(1)}` +
+               (gaps ? `, ${gaps} GAPS` : '') + '\n';
+        if (s.summary) {
+          out += `  overruns=${s.summary.overruns} maxLate=${s.summary.max_late_ms}ms ` +
+                 `fetch=${(s.summary.fetch_avg_us / 1000).toFixed(1)}ms ` +
+                 `eval=${(s.summary.eval_avg_us / 1000).toFixed(1)}ms ` +
+                 `send=${(s.summary.send_avg_us / 1000).toFixed(1)}ms ` +
+                 `dropped=${s.summary.ticks_dropped} dwtCycles=${s.summary.dwt_eval_cycles}\n`;
+        }
+      }
+      document.getElementById('decodeSummary').textContent = out;
+    }
+
+    function exportCsv() {
+      if (!lastDownload) { log('No verified download to export'); return; }
+      let d;
+      try { d = decodeFlightLog(lastDownload); }
+      catch (e) { log('CSV export failed: ' + e.message); return; }
+      const cols = ['span_id', 'timestamp_ms', 'tick_counter']
+        .concat(FL_INPUT_NAMES, FL_OUTPUT_NAMES,
+                ['recurrent_reset', 'path_index', 'rc_roll', 'rc_pitch', 'rc_throttle',
+                 'state_valid']);
+      const lines = [cols.join(',')];
+      for (const s of d.spans)
+        for (const row of s.ticks)
+          lines.push(cols.map(c => row[c]).join(','));
+      const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = downloadFilename.replace(/\.bin$/, '') + '_ticks.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+      log(`CSV exported: ${lines.length - 1} ticks`);
     }
 
     async function eraseAll() {

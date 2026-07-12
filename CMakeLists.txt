@@ -246,6 +246,13 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(arena_recenter_tests tests/arena_recenter_tests.cc)
   target_link_libraries(arena_recenter_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  # 039 T011/T012 -- versioned binary flight log round-trip (US3, FR-007/008/009).
+  # Compiles the SAME xiao/include/flight_log_format.h the firmware uses
+  # (single shared format definition; no autoc_common needed — self-contained).
+  add_executable(flightlog_roundtrip_tests tests/flightlog_roundtrip_tests.cc)
+  target_link_libraries(flightlog_roundtrip_tests GTest::gtest GTest::gtest_main)
+  target_include_directories(flightlog_roundtrip_tests PRIVATE xiao/include)
+
   # 039 T003/T004 -- nn2cpp unrolled-recurrent emission equivalence (D6).
   # Drives the real nn2cpp binary + g++ harness compiles; paths injected here.
   add_executable(nn2cpp_unroll_tests tests/nn2cpp_unroll_tests.cc)
@@ -296,6 +303,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME nn_layout_tests COMMAND nn_layout_tests)
   add_test(NAME nn2cpp_unroll_tests COMMAND nn2cpp_unroll_tests)
   add_test(NAME arena_recenter_tests COMMAND arena_recenter_tests)
+  add_test(NAME flightlog_roundtrip_tests COMMAND flightlog_roundtrip_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -328,6 +336,7 @@ if(ENABLE_AUTOC_TESTS)
             nn_layout_tests
             arena_recenter_tests
             nn2cpp_unroll_tests
+            flightlog_roundtrip_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -338,6 +347,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND nn_layout_tests --gtest_brief=1
     COMMAND arena_recenter_tests --gtest_brief=1
     COMMAND nn2cpp_unroll_tests --gtest_brief=1
+    COMMAND flightlog_roundtrip_tests --gtest_brief=1
     COMMAND selection_tests --gtest_brief=1
     COMMAND contract_evaluator_tests --gtest_brief=1
     COMMAND contract_config_tests --gtest_brief=1

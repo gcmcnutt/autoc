@@ -45,7 +45,11 @@ static LogLevel currentLogLevel = INFO;
 // Buffer for formatted output
 char logBuffer[512];
 
-// Logger function with variable arguments
+// Logger function with variable arguments.
+// 039 FR-014 console split: logPrint is CONSOLE-ONLY. Flash carries only the
+// versioned binary flight-log records (flight_log_format.h) — events worth
+// persisting go through flightLogEvent(), not here. No per-tick logPrint
+// call sites remain in the control loop.
 void logPrint(LogLevel level, const char* format, ...) {
   // Only print if level is high enough
   if (level < currentLogLevel) {
@@ -72,22 +76,12 @@ void logPrint(LogLevel level, const char* format, ...) {
   // Handle the variable arguments
   va_list args;
   va_start(args, format);
-  
+
   // First print to buffer
   vsnprintf(logBuffer, sizeof(logBuffer), format, args);
 
-  // Combine prefix and message for flash/Serial output
-  char flashBuffer[560]; // prefix(48) + logBuffer(512)
-  snprintf(flashBuffer, sizeof(flashBuffer), "%s%s", prefix, logBuffer);
-
-  // Write to flash logger and get monotonic message ID
-  uint32_t messageId = flashLoggerWrite(flashBuffer);
-
-  // Output to Serial with a shorter id prefix (6 digits, no '#')
-  char idPrefix[12];
-  snprintf(idPrefix, sizeof(idPrefix), "%06lu ", (unsigned long)(messageId % 1000000UL));
-  Serial.print(idPrefix);
-  Serial.println(flashBuffer);
+  Serial.print(prefix);
+  Serial.println(logBuffer);
 
   va_end(args);
 }

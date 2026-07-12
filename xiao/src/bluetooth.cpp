@@ -139,7 +139,7 @@ static void processLoggerCommand(const char* cmd) {
     // Parse flight number to find file size
     uint32_t flightNum = 0;
     uint32_t fileSize = 0;
-    if (sscanf(filename, "flight_%lu.txt", (unsigned long*)&flightNum) == 1) {
+    if (sscanf(filename, "flight_%lu.bin", (unsigned long*)&flightNum) == 1) {
       // Find this flight to get size
       int fileCount = flashLoggerGetFileCount();
       for (int i = 0; i < fileCount; i++) {

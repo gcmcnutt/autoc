@@ -48,14 +48,15 @@ per-field scale from the contract's scale table. Raw types below are wire format
 
 | group | fields | count | quantized size |
 |---|---|---|---|
+| framing | record type (u8) | 1 | 1 B |
 | timing | tick_timestamp_ms (u32), tick_counter (u16) | 2 | 6 B |
 | NN inputs — target dir history | target_x[6], target_y[6], target_z[6] (unit-vector components) | 18 | 36 B |
-| NN inputs — range | dist[6] (tanh-scaled), closing_rate | 7 | 14 B |
+| NN inputs — range | dist[6] (raw metres, scale 1/32 m — what the NN actually consumes), closing_rate | 7 | 14 B |
 | NN inputs — self state | quat[4] (q_EB), airspeed, gyro[3] (rad/s) | 8 | 16 B |
 | NN inputs — 038 situational | dist_to_boundary (tanh), inward_body[3] | 4 | 8 B |
 | NN outputs | roll, pitch, throttle (tanh) | 3 | 6 B |
-| aux | recurrent_reset flag (u8), path_index (i8), rc_sent[3] (u16×3), state_valid (u8) | 6 | 9 B |
-| **total** | | **48 fields** | **≈ 95 B/tick** |
+| aux | recurrent_reset flag (u8), path_index (i8 = selected path 0-5), rc_sent[3] (u16×3), state_valid (u8) | 6 | 9 B |
+| **total** | | **48 fields + framing** | **96 B/tick** (static-asserted ≤ 100) |
 
 Validation rules:
 
@@ -63,7 +64,7 @@ Validation rules:
   shift) — honest-recording; no re-derivation on decode.
 - `recurrent_reset = 1` exactly on the first tick after span activation (warm-up marker).
 - `tick_counter` gaps ⇒ decoder reports dropped ticks (never silently interpolates).
-- Budget check: 95 B × 20 Hz × 480 s (2×4 min) ≈ **0.91 MB** ≤ 2.04 MB usable — ~55% headroom.
+- Budget check: 96 B × 20 Hz × 480 s (2×4 min) ≈ **0.92 MB** ≤ 2.04 MB usable — ~55% headroom.
 
 ### 2.4 EventRecord (console-class events into the log)
 
