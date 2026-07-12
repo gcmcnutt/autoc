@@ -266,6 +266,49 @@ static uint32_t pipeTickStartUs = 0;
 static uint32_t pipeFetchEndUs = 0;
 static uint32_t pipeEvalEndUs = 0;
 
+// 039 FR-014 (operator 2026-07-11): 1 Hz console heartbeat carrying the old
+// per-tick "Nav State:" content — the base diagnostic to watch on the bench.
+// Called from BOTH the healthy path and the MSP-fetch-failure path (mspOK=N,
+// last-known state) so the console is never silent while the loop runs.
+// pathIdx = -1 when the selector could not be sampled this cycle.
+static void consoleHeartbeat(bool hasServoActivation, int pathIdx)
+{
+  static unsigned long last_heartbeat_ms = 0;
+  unsigned long now_ms = millis();
+  if (now_ms - last_heartbeat_ms < 1000)
+  {
+    return;
+  }
+  last_heartbeat_ms = now_ms;
+
+  gp_vec3 pos_raw = have_valid_position ? last_valid_position : gp_vec3::Zero();
+  gp_vec3 pos_rel = aircraft_state.getPosition();
+  gp_vec3 vel = aircraft_state.getVelocity();
+  gp_quat q = aircraft_state.getOrientation();
+  if (q.norm() > 0.0f)
+  {
+    q.normalize();
+  }
+  gp_vec3 gyro = aircraft_state.getGyroRates();  // aerospace convention (rad/s)
+  logPrint(INFO,
+           "hb: mspOK=%s pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro=[%.2f,%.2f,%.2f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d span=%u ticks=%lu drops=%lu",
+           state.autoc_state_valid ? "Y" : "N",
+           pos_raw.x(), pos_raw.y(), pos_raw.z(),
+           pos_rel.x(), pos_rel.y(), pos_rel.z(),
+           vel.x(), vel.y(), vel.z(),
+           q.w(), q.x(), q.y(), q.z(),
+           gyro.x(), gyro.y(), gyro.z(),
+           state.isArmed() ? "Y" : "N",
+           state.isFailsafe() ? "Y" : "N",
+           hasServoActivation ? "Y" : "N",
+           state.autoc_enabled ? "Y" : "N",
+           rabbit_active ? "Y" : "N",
+           pathIdx,
+           (unsigned)span_id_counter,
+           (unsigned long)flightLogTicksLogged(),
+           (unsigned long)flightLogTicksDropped());
+}
+
 static void mspUpdateNavControl()
 {
   // Check for disarm or failsafe conditions before NN control
@@ -456,7 +499,25 @@ void mspUpdateState()
       stopAutoc("MSP autoc state failure", true);
     }
     flightLogEvent(flightlog::kEventFetchTimeout, 1);
-    logPrint(ERROR, "*** CRITICAL: Failed to get MSP2_AUTOC_STATE - aborting MSP update cycle");
+    // Rate-limit the console error to 1 Hz (at divisor=1 this path fires at
+    // 20 Hz when INAV is absent — e.g. bench without the FC powered).
+    {
+      static unsigned long last_fetch_err_ms = 0;
+      static uint32_t fetch_errs_suppressed = 0;
+      unsigned long now_err_ms = millis();
+      if (now_err_ms - last_fetch_err_ms >= 1000)
+      {
+        logPrint(ERROR, "*** CRITICAL: Failed to get MSP2_AUTOC_STATE (%lu more suppressed) - aborting MSP update cycle",
+                 (unsigned long)fetch_errs_suppressed);
+        last_fetch_err_ms = now_err_ms;
+        fetch_errs_suppressed = 0;
+      }
+      else
+      {
+        fetch_errs_suppressed++;
+      }
+    }
+    consoleHeartbeat(false, -1);
     return;
   }
 
@@ -670,26 +731,8 @@ void mspUpdateState()
 
   // 039 FR-014 console split: the per-tick "Nav State:" text line is DELETED
   // (all control-loop data lives in the binary flight log). The console gets
-  // a ~2 Hz heartbeat with the human-relevant summary instead.
-  static unsigned long last_heartbeat_ms = 0;
-  unsigned long now_ms = millis();
-  if (now_ms - last_heartbeat_ms >= 500)
-  {
-    last_heartbeat_ms = now_ms;
-    gp_vec3 pos_rel = aircraft_state.getPosition();
-    logPrint(INFO,
-             "hb: pos=[%.1f,%.1f,%.1f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d span=%u ticks=%lu drops=%lu",
-             pos_rel.x(), pos_rel.y(), pos_rel.z(),
-             state.isArmed() ? "Y" : "N",
-             state.isFailsafe() ? "Y" : "N",
-             hasServoActivation ? "Y" : "N",
-             state.autoc_enabled ? "Y" : "N",
-             rabbit_active ? "Y" : "N",
-             pathSelectorIndex,
-             (unsigned)span_id_counter,
-             (unsigned long)flightLogTicksLogged(),
-             (unsigned long)flightLogTicksDropped());
-  }
+  // the 1 Hz nav-state heartbeat instead (consoleHeartbeat above).
+  consoleHeartbeat(hasServoActivation, pathSelectorIndex);
 
   // Update NN control and cache commands when enabled
   mspUpdateNavControl();
