@@ -290,14 +290,6 @@ static void consoleHeartbeat(bool hasServoActivation, int pathIdx)
   {
     q.normalize();
   }
-  // Re-surface the candidate banner while disarmed (see printCandidateBanner).
-  static unsigned long last_banner_ms = 0;
-  if (!state.isArmed() && now_ms - last_banner_ms >= 15000)
-  {
-    last_banner_ms = now_ms;
-    printCandidateBanner();
-  }
-
   gp_vec3 gyro = aircraft_state.getGyroRates();  // aerospace convention (rad/s)
   logPrint(INFO,
            "hb: mspOK=%s pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro=[%.2f,%.2f,%.2f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d span=%u ticks=%lu drops=%lu",
@@ -450,10 +442,10 @@ static void mspUpdateNavControl()
 }
 
 // 039 candidate identity banner (FR-002 item 1): topology + ids baked by
-// nn2cpp; must match the intended flight candidate. Printed at setup AND
-// re-printed every 15 s while disarmed (operator 2026-07-11: boot-time
-// prints are unseen — the monitor attaches after USB re-enumeration), so
-// attaching the console on the bench always shows it. Silent once armed.
+// nn2cpp; must match the intended flight candidate. Printed at setup and at
+// every autoc engage (operator 2026-07-11, matching the old switch-enable
+// identity print — boot-time output is unseen since the monitor attaches
+// after USB re-enumeration).
 static void printCandidateBanner()
 {
   const autoc::eval::FlightArena& tpl = generatedNNProgramArenaTemplate();
@@ -707,6 +699,7 @@ void mspUpdateState()
       state.autoc_enabled = true;
       servo_reset_required = false;
       analogWrite(GREEN_PIN, 0);
+      printCandidateBanner();
       logPrint(INFO, "NN Control: Switch enabled - origin NED=[%.2f, %.2f, %.2f] - program=%s",
                test_origin_offset.x(), test_origin_offset.y(), test_origin_offset.z(),
                generatedNNProgramSource);
