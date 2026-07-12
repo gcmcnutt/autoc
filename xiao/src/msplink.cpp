@@ -123,6 +123,7 @@ static bool was_system_armed = false;
 #define MSP_BUS_LOCK_TIMEOUT_USEC (MSP_REPLY_TIMEOUT_MSEC * 2000UL)
 
 // Forward declarations for MSP scheduling helpers
+static void printCandidateBanner();
 static void updateCachedCommands(int roll, int pitch, int throttle, uint32_t evalStartUs);
 static bool tryLockMspBusFromTask();
 static bool lockMspBusBlockingFromTask();
@@ -289,6 +290,14 @@ static void consoleHeartbeat(bool hasServoActivation, int pathIdx)
   {
     q.normalize();
   }
+  // Re-surface the candidate banner while disarmed (see printCandidateBanner).
+  static unsigned long last_banner_ms = 0;
+  if (!state.isArmed() && now_ms - last_banner_ms >= 15000)
+  {
+    last_banner_ms = now_ms;
+    printCandidateBanner();
+  }
+
   gp_vec3 gyro = aircraft_state.getGyroRates();  // aerospace convention (rad/s)
   logPrint(INFO,
            "hb: mspOK=%s pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro=[%.2f,%.2f,%.2f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d span=%u ticks=%lu drops=%lu",
@@ -440,6 +449,26 @@ static void mspUpdateNavControl()
   }
 }
 
+// 039 candidate identity banner (FR-002 item 1): topology + ids baked by
+// nn2cpp; must match the intended flight candidate. Printed at setup AND
+// re-printed every 15 s while disarmed (operator 2026-07-11: boot-time
+// prints are unseen — the monitor attaches after USB re-enumeration), so
+// attaching the console on the bench always shows it. Silent once armed.
+static void printCandidateBanner()
+{
+  const autoc::eval::FlightArena& tpl = generatedNNProgramArenaTemplate();
+  logPrint(INFO,
+           "NN candidate: topology=%s inputs=%d weights=%d weight_id=%02x%02x%02x%02x%02x%02x%02x%02x firmware_id=%02x%02x%02x%02x%02x%02x%02x%02x arenaTemplate=[R=%.0f F=%.0f C=%.0f]",
+           generatedNNTopologyString, generatedNNInputCount, generatedNNWeightCount,
+           generatedNNWeightId[0], generatedNNWeightId[1], generatedNNWeightId[2],
+           generatedNNWeightId[3], generatedNNWeightId[4], generatedNNWeightId[5],
+           generatedNNWeightId[6], generatedNNWeightId[7],
+           generatedNNFirmwareId[0], generatedNNFirmwareId[1], generatedNNFirmwareId[2],
+           generatedNNFirmwareId[3], generatedNNFirmwareId[4], generatedNNFirmwareId[5],
+           generatedNNFirmwareId[6], generatedNNFirmwareId[7],
+           tpl.radius_m, tpl.floor_agl_m, tpl.ceiling_agl_m);
+}
+
 void msplinkSetup()
 {
   // Initialize MSPLink input serial1 port
@@ -447,21 +476,7 @@ void msplinkSetup()
   msp.begin(Serial1, MSP_REPLY_TIMEOUT_MSEC);
   logPrint(INFO, "MSPLink Reader Started");
 
-  // 039 boot banner — candidate identity (FR-002 item 1): topology + ids
-  // baked by nn2cpp; must match the intended flight candidate.
-  {
-    const autoc::eval::FlightArena& tpl = generatedNNProgramArenaTemplate();
-    logPrint(INFO,
-             "NN candidate: topology=%s inputs=%d weights=%d weight_id=%02x%02x%02x%02x%02x%02x%02x%02x firmware_id=%02x%02x%02x%02x%02x%02x%02x%02x arenaTemplate=[R=%.0f F=%.0f C=%.0f]",
-             generatedNNTopologyString, generatedNNInputCount, generatedNNWeightCount,
-             generatedNNWeightId[0], generatedNNWeightId[1], generatedNNWeightId[2],
-             generatedNNWeightId[3], generatedNNWeightId[4], generatedNNWeightId[5],
-             generatedNNWeightId[6], generatedNNWeightId[7],
-             generatedNNFirmwareId[0], generatedNNFirmwareId[1], generatedNNFirmwareId[2],
-             generatedNNFirmwareId[3], generatedNNFirmwareId[4], generatedNNFirmwareId[5],
-             generatedNNFirmwareId[6], generatedNNFirmwareId[7],
-             tpl.radius_m, tpl.floor_agl_m, tpl.ceiling_agl_m);
-  }
+  printCandidateBanner();
 
   // set 'valid' values for now
   for (int i = 0; i < MSP_MAX_SUPPORTED_CHANNELS; i++)
