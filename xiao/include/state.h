@@ -33,7 +33,13 @@ public:
   bool altitude_valid;
   bool waypoint_valid;
 
-  msp_autoc_state_t autoc_state;  // consolidated nav + status + rc
+  // alignas(4): msp_autoc_state_t is packed (align 1), so without this the
+  // member lands at offset 11 and q[]/pos[]/vel[] are misaligned. Callers
+  // decay those arrays to plain pointers (neuQuaternionToNed et al.), and
+  // -Ofast emits VLDR there, which HardFaults on unaligned addresses. All
+  // word-sized fields inside the struct sit at 4-byte offsets, so aligning
+  // the base is sufficient — keep it that way if fields change.
+  alignas(4) msp_autoc_state_t autoc_state;  // consolidated nav + status + rc
   msp_altitude_t altitude;
   msp_waypoint_t waypoint;
 
