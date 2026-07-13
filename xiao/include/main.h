@@ -6,6 +6,7 @@
 #include "MSP.h"
 #include "state.h"
 #include "flash_logger.h"
+#include "fault_guard.h"
 #include <autoc/types.h>
 
 // Forward declarations

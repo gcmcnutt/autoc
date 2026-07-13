@@ -651,6 +651,9 @@ static bool qspiEraseBlocking(uint32_t addr, nrf_qspi_erase_len_t len) {
     return false;
   }
   while (nrfx_qspi_mem_busy_check()) {
+    // A 64 KB block erase can take ~2 s — the only legitimate stall on the
+    // order of the WDT period, so feed it here (fault_guard.h).
+    faultGuardFeed();
     delayMicroseconds(100);
   }
   return true;
