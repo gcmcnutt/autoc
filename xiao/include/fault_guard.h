@@ -22,7 +22,13 @@
 
 // Watchdog period. Control loop is 50 ms; worst legitimate stall between
 // feeds is a 64 KB QSPI block erase (~2 s spec max), fed per-operation.
-constexpr uint32_t kWdtTimeoutS = 4;
+// 30 s, NOT shorter: the nRF52 WDT keeps counting through the 1200-baud-touch
+// soft reset into the UF2 bootloader, and this board's bootloader does NOT
+// feed it (bench 2026-07-12: a 4 s dog killed USB DFU mid-write — RESETREAS
+// DOG set, app region left erased). 30 s covers a full ~24 s DFU. In-flight
+// cost is small: INAV's MSP-RC failsafe hands the pilot control as soon as
+// the xiao goes quiet; the dog only bounds time-to-recovery of autoc.
+constexpr uint32_t kWdtTimeoutS = 30;
 
 // FIRST line of setup(): install capture vectors, snapshot + clear the
 // .noinit fault record and POWER->RESETREAS. Must run before anything that
