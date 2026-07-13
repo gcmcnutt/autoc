@@ -52,7 +52,17 @@ desktop code, so the shared artifact is this contract + the round-trip test).
   virtual NED m) — making the log self-contained for the renderer (`-x`) and trajectory
   analysis (no INAV-blackbox join). Raw NED = virtual + EngageHeader origin. v1 existed
   only for the 039 bench validation (T010 artifact).
-- **Framing**: every record starts with a nonzero type byte (0x01 FileHeader 224 B, 0x02
+- **v3 (2026-07-12, arm→disarm self-containment for the INAV correlation run)**: FileHeader
+  gains `program[96]` (nn2cpp program-source string, NUL-padded — the human-readable identity
+  behind `weight_id`; header grows 224→320 B). EventRecord codes 8–11 added:
+  8 `DISENGAGE_REASON` (value = DisengageReason enum: 1 servo switch, 2 failsafe, 3 disarmed,
+  4 timeout, 5 path complete, 6 MSP state failure, 7 missing local state, 8 autoc cancelled —
+  written right after `DISENGAGE`), 9 `FAILSAFE` (value 1 enter / 0 clear), 10 `SERVO_SWITCH`
+  (value 1 active / 0 released; both flag events seed initial state right after `ARM`, then
+  log transitions while armed), 11 `INAV_CLOCK` (value = INAV ms sampled at this record's
+  `timestamp_ms` xiao ms — a correlation anchor pair; emitted at arm/engage/disengage/disarm,
+  giving 2+2·spans anchors to fit offset+drift against INAV blackbox time).
+- **Framing**: every record starts with a nonzero type byte (0x01 FileHeader 320 B, 0x02
   EngageHeader 29 B, 0x03 TickRecord 114 B, 0x04 EventRecord 10 B, 0x05 SpanSummary 103 B,
   0x06 FlightStateRecord 25 B);
   0x00 bytes BETWEEN records are flash-buffer word-alignment padding — decoders skip them.

@@ -41,9 +41,9 @@ static void flushDropNotice(uint32_t timestamp_ms) {
 }
 
 void flightLogBeginFile(const uint8_t firmware_id[8], const uint8_t weight_id[8],
-                        uint16_t tick_ms) {
+                        const char* program, uint16_t tick_ms) {
   FileHeader h;
-  initFileHeader(h, firmware_id, weight_id, tick_ms);
+  initFileHeader(h, firmware_id, weight_id, program, tick_ms);
   memcpy(g_scales, h.scales, sizeof(g_scales));
   g_scalesInit = true;
   g_pendingDropNotice = 0;

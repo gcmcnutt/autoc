@@ -117,6 +117,10 @@ LoopStats loopStats;
 static gp_vec3 last_valid_position(0.0f, 0.0f, 0.0f);
 static bool have_valid_position = false;
 static bool was_system_armed = false;
+// v3 flag-transition events: last states WRITTEN to the flight log (seeded
+// right after kEventArm so transitions decode without prior context).
+static bool logged_failsafe_state = false;
+static bool logged_servo_state = false;
 
 // Safety timeout for single test run (60 seconds max per run)
 #define GP_MAX_SINGLE_RUN_MSEC (60 * 1000)
@@ -137,7 +141,25 @@ static void resetPositionHistory()
   have_valid_position = false;
 }
 
-static void stopAutoc(const char *reason, bool requireServoReset)
+// Console string for a DisengageReason (the enum is what goes into the
+// v3 kEventDisengageReason record; the string is display-only).
+static const char* disengageReasonStr(flightlog::DisengageReason reason)
+{
+  switch (reason)
+  {
+    case flightlog::kReasonServoSwitch: return "servo switch";
+    case flightlog::kReasonFailsafe: return "failsafe";
+    case flightlog::kReasonDisarmed: return "disarmed";
+    case flightlog::kReasonTimeout: return "timeout";
+    case flightlog::kReasonPathComplete: return "path complete";
+    case flightlog::kReasonMspStateFailure: return "MSP autoc state failure";
+    case flightlog::kReasonMissingLocalState: return "missing local state";
+    case flightlog::kReasonAutocCancelled: return "autoc cancelled";
+    default: return "unknown";
+  }
+}
+
+static void stopAutoc(flightlog::DisengageReason reason, bool requireServoReset)
 {
   bool wasAutoc = state.autoc_enabled;
   bool wasRabbit = rabbit_active;
@@ -157,7 +179,8 @@ static void stopAutoc(const char *reason, bool requireServoReset)
 
   if (wasAutoc || wasRabbit || (requireServoReset && !latchBefore))
   {
-    logPrint(INFO, "Nav Control: Autoc disabled (%s) - pilot has control", reason);
+    logPrint(INFO, "Nav Control: Autoc disabled (%s) - pilot has control",
+             disengageReasonStr(reason));
   }
 
   if (wasRabbit)
@@ -198,6 +221,9 @@ static void stopAutoc(const char *reason, bool requireServoReset)
       ss.dwt_eval_cycles = dwt_eval_cycles;
       flightLogSpanSummary(ss);
       flightLogEvent(flightlog::kEventDisengage, span_id_counter);
+      // v3: why the span ended + an INAV clock anchor at the boundary
+      flightLogEvent(flightlog::kEventDisengageReason, reason);
+      flightLogEvent(flightlog::kEventInavClock, (uint32_t)state.inavSampleTimeMsec);
     }
 
     // Log pipeline timing stats
@@ -330,7 +356,7 @@ static void mspUpdateNavControl()
       {
         logPrint(INFO, "Nav Control: Aircraft disarmed (%.1fs) - disabling autoc", test_run_duration * GP_INV_1000);
       }
-      stopAutoc(isFailsafe ? "failsafe" : "disarmed", true);
+      stopAutoc(isFailsafe ? flightlog::kReasonFailsafe : flightlog::kReasonDisarmed, true);
       return;
     }
   }
@@ -349,7 +375,7 @@ static void mspUpdateNavControl()
   if (elapsed_msec > GP_MAX_SINGLE_RUN_MSEC)
   {
     logPrint(INFO, "Nav Control: Test run timeout (%.1fs) - stopping rabbit", elapsed_msec * GP_INV_1000);
-    stopAutoc("timeout", true);
+    stopAutoc(flightlog::kReasonTimeout, true);
     return;
   }
 
@@ -364,7 +390,7 @@ static void mspUpdateNavControl()
   if (current_path_index >= (int)flight_path.size() - 1)
   {
     logPrint(INFO, "Nav Control: End of path reached (%.1fs) - stopping rabbit", elapsed_msec * GP_INV_1000);
-    stopAutoc("path complete", true);
+    stopAutoc(flightlog::kReasonPathComplete, true);
     return;
   }
 
@@ -509,7 +535,7 @@ void mspUpdateState()
   {
     if (state.autoc_enabled || rabbit_active)
     {
-      stopAutoc("MSP autoc state failure", true);
+      stopAutoc(flightlog::kReasonMspStateFailure, true);
     }
     flightLogEvent(flightlog::kEventFetchTimeout, 1);
     // Rate-limit the console error to 1 Hz (at divisor=1 this path fires at
@@ -566,13 +592,23 @@ void mspUpdateState()
         // span ids restart per flight.
         span_id_counter = 0;
         flightLogBeginFile(generatedNNFirmwareId, generatedNNWeightId,
-                           MSP_LOOP_INTERVAL_MSEC);
+                           generatedNNProgramSource, MSP_LOOP_INTERVAL_MSEC);
         flightLogEvent(flightlog::kEventArm, flashLoggerGetCurrentFlightNumber());
+        // v3 arm→disarm self-containment: INAV clock anchor pair + initial
+        // failsafe/servo states (transitions are logged as they happen).
+        flightLogEvent(flightlog::kEventInavClock, (uint32_t)state.inavSampleTimeMsec);
+        logged_failsafe_state = state.isFailsafe();
+        logged_servo_state = state.autoc_state_valid &&
+                             state.rcChannel(MSP_ARM_CHANNEL) > MSP_ARMED_THRESHOLD;
+        flightLogEvent(flightlog::kEventFailsafe, logged_failsafe_state ? 1 : 0);
+        flightLogEvent(flightlog::kEventServoSwitch, logged_servo_state ? 1 : 0);
       }
     }
     else
     {
-      flightLogEvent(flightlog::kEventDisarm, 0);  // before logging suspends
+      // v3: closing INAV clock anchor, then disarm — before logging suspends
+      flightLogEvent(flightlog::kEventInavClock, (uint32_t)state.inavSampleTimeMsec);
+      flightLogEvent(flightlog::kEventDisarm, 0);
       flashLoggerEndFlight();
       blueToothSetEnabled(true);
     }
@@ -582,9 +618,25 @@ void mspUpdateState()
   // then, check the servo channel to see if can auto-enable
   bool hasServoActivation = state.autoc_state_valid && state.rcChannel(MSP_ARM_CHANNEL) > MSP_ARMED_THRESHOLD;
 
+  // v3: failsafe / servo-switch transition events while the flight file is open
+  if (isArmed)
+  {
+    const bool fs_now = state.isFailsafe();
+    if (fs_now != logged_failsafe_state)
+    {
+      logged_failsafe_state = fs_now;
+      flightLogEvent(flightlog::kEventFailsafe, fs_now ? 1 : 0);
+    }
+    if (hasServoActivation != logged_servo_state)
+    {
+      logged_servo_state = hasServoActivation;
+      flightLogEvent(flightlog::kEventServoSwitch, hasServoActivation ? 1 : 0);
+    }
+  }
+
   if (!isArmed && (state.autoc_enabled || rabbit_active))
   {
-    stopAutoc("disarmed", true);
+    stopAutoc(flightlog::kReasonDisarmed, true);
   }
 
   bool hadServoLatch = servo_reset_required;
@@ -674,6 +726,8 @@ void mspUpdateState()
                         (float)engage_arena.ceiling_z_ned,
                         (int16_t)pathIndex);
         flightLogEvent(flightlog::kEventEngage, span_id_counter);
+        // v3: INAV clock anchor at the engage boundary
+        flightLogEvent(flightlog::kEventInavClock, (uint32_t)state.inavSampleTimeMsec);
       }
       nn_warmup_tick = true;
 
@@ -712,7 +766,7 @@ void mspUpdateState()
     }
     else
     {
-      stopAutoc("missing local state", true);
+      stopAutoc(flightlog::kReasonMissingLocalState, true);
       logPrint(ERROR, "*** FATAL: No valid local state available for NN control - cannot enable autoc");
     }
   }
@@ -725,15 +779,15 @@ void mspUpdateState()
     }
     if (!isArmed)
     {
-      stopAutoc("disarmed", true);
+      stopAutoc(flightlog::kReasonDisarmed, true);
     }
     else if (!hasServoActivation)
     {
-      stopAutoc("servo switch", false);
+      stopAutoc(flightlog::kReasonServoSwitch, false);
     }
     else
     {
-      stopAutoc("autoc cancelled", true);
+      stopAutoc(flightlog::kReasonAutocCancelled, true);
     }
   }
 

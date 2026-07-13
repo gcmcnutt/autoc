@@ -16,9 +16,10 @@
 #include "flight_log_format.h"
 
 // Write the FileHeader. Call once per flight file, right after
-// flashLoggerBeginFlight() succeeds (arm transition).
+// flashLoggerBeginFlight() succeeds (arm transition). program = nn2cpp
+// program-source string (v3 provenance; truncated to 95 chars in the header).
 void flightLogBeginFile(const uint8_t firmware_id[8], const uint8_t weight_id[8],
-                        uint16_t tick_ms);
+                        const char* program, uint16_t tick_ms);
 
 // Sparse console-class event into the log (also independently logPrint'd to
 // the console by the caller when human-relevant).

@@ -22,7 +22,7 @@ import struct
 import sys
 import zlib
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 MAGIC = 0x314C4641  # "AFL1" little-endian
 
 # Record type bytes (flight_log_format.h RecordType)
@@ -31,6 +31,18 @@ T_PAD, T_FILE, T_ENGAGE, T_TICK, T_EVENT, T_SUMMARY, T_FLIGHT = 0, 1, 2, 3, 4, 5
 EVENT_NAMES = {
     1: "ARM", 2: "DISARM", 3: "ENGAGE", 4: "DISENGAGE",
     5: "FETCH_TIMEOUT", 6: "LOG_DROP", 7: "FLASH_FULL",
+    # v3 arm→disarm self-containment
+    8: "DISENGAGE_REASON",  # value: DisengageReason enum (REASON_NAMES)
+    9: "FAILSAFE",          # value: 1 entered / 0 cleared
+    10: "SERVO_SWITCH",     # value: 1 active / 0 released
+    11: "INAV_CLOCK",       # value: INAV ms at this record's timestamp_ms (xiao ms)
+}
+
+# kEventDisengageReason values (flight_log_format.h DisengageReason)
+REASON_NAMES = {
+    0: "unknown", 1: "servo switch", 2: "failsafe", 3: "disarmed",
+    4: "timeout", 5: "path complete", 6: "MSP state failure",
+    7: "missing local state", 8: "autoc cancelled",
 }
 
 NUM_INPUTS, NUM_OUTPUTS = 37, 3
@@ -38,7 +50,7 @@ NUM_SCALED = NUM_INPUTS + NUM_OUTPUTS + 9  # v2: + pos[3], vel[3], rabbit[3]
 
 # Wire structs — little-endian, packed (raw-ok: hardware byte layout; this
 # decode boundary is where values return to float domain).
-FILE_HDR = struct.Struct("<BIB8s8sH49fI")     # 224 B (v2: 49 scale entries)
+FILE_HDR = struct.Struct("<BIB8s8s96sH49fI")  # 320 B (v3: + program[96])
 ENGAGE_HDR = struct.Struct("<BIH3fffh")       # 29 B
 TICK_REC = struct.Struct("<BIH37h3h3h3h3hBb3HB")  # 114 B (v2: +pos/vel/rabbit)
 EVENT_REC = struct.Struct("<BIBI")            # 10 B
@@ -118,7 +130,7 @@ def decode(blob):
 
         if t == T_FILE:
             f = FILE_HDR.unpack(raw)
-            (_, magic, version, fw_id, wt_id, tick_ms), rest = f[:6], f[6:]
+            (_, magic, version, fw_id, wt_id, program, tick_ms), rest = f[:7], f[7:]
             scale_vals, crc = rest[:NUM_SCALED], rest[NUM_SCALED]
             if magic != MAGIC:
                 fail(f"bad magic 0x{magic:08x} (want 0x{MAGIC:08x}) — not a flight log")
@@ -126,7 +138,7 @@ def decode(blob):
                 fail(f"format_version {version} not supported (decoder is v{FORMAT_VERSION}) "
                      f"— refusing best-effort parse")
             # CRC over the scale floats exactly as stored (little-endian bytes)
-            scale_bytes = raw[24:24 + 4 * NUM_SCALED]  # 49 floats in v2
+            scale_bytes = raw[120:120 + 4 * NUM_SCALED]  # v3: program[96] precedes scales
             if zlib.crc32(scale_bytes) & 0xFFFFFFFF != crc:
                 fail("scale_table_crc mismatch — header corrupt; refusing to decode")
             scales = scale_vals
@@ -134,6 +146,7 @@ def decode(blob):
                 "format_version": version,
                 "firmware_id": fw_id.hex(),
                 "weight_id": wt_id.hex(),
+                "program": program.split(b"\x00", 1)[0].decode(errors="replace"),
                 "tick_ms": tick_ms,
             }
 
@@ -232,8 +245,12 @@ def report(header, spans, events, warnings, flight_states, out=sys.stderr):
     p = lambda *a: print(*a, file=out)
     p(f"flight log v{header['format_version']}  tick={header['tick_ms']} ms  "
       f"firmware_id={header['firmware_id']}  weight_id={header['weight_id']}")
+    p(f"  program: {header['program']}")
     for ev in events:
-        p(f"  event t={ev['timestamp_ms']:>9} {ev['name']:<14} value={ev['value']}")
+        annot = ""
+        if ev["code"] == 8:  # DISENGAGE_REASON
+            annot = f"  ({REASON_NAMES.get(ev['value'], '?')})"
+        p(f"  event t={ev['timestamp_ms']:>9} {ev['name']:<16} value={ev['value']}{annot}")
     total_gaps = 0
     for s in spans:
         e = s["engage"]

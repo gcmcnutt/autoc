@@ -99,7 +99,7 @@ TEST(FlightLogFormat, FileHeaderValidatesCleanAndRejectsVersionBump) {
   uint8_t fw[8] = {1, 2, 3, 4, 5, 6, 7, 8};
   uint8_t wt[8] = {9, 10, 11, 12, 13, 14, 15, 16};
   FileHeader h;
-  initFileHeader(h, fw, wt, /*tick_ms=*/50);
+  initFileHeader(h, fw, wt, "test:program/gen0000.dmp.zst", /*tick_ms=*/50);
 
   EXPECT_EQ(validateFileHeader(h), ValidateResult::kOk);
   EXPECT_EQ(h.magic, kMagic);
@@ -107,6 +107,9 @@ TEST(FlightLogFormat, FileHeaderValidatesCleanAndRejectsVersionBump) {
   EXPECT_EQ(h.tick_ms, 50);
   EXPECT_EQ(0, std::memcmp(h.firmware_id, fw, 8));
   EXPECT_EQ(0, std::memcmp(h.weight_id, wt, 8));
+  // v3: program string round-trips NUL-terminated (and NUL-padded to 96).
+  EXPECT_STREQ(h.program, "test:program/gen0000.dmp.zst");
+  EXPECT_EQ(h.program[sizeof(h.program) - 1], '\0');
 
   // Contract: decoder rejects a header with version+1 — loud, not best-effort.
   FileHeader bumped = h;
@@ -122,7 +125,7 @@ TEST(FlightLogFormat, FileHeaderValidatesCleanAndRejectsVersionBump) {
 TEST(FlightLogFormat, ScaleTableCrcLoudFail) {
   uint8_t fw[8] = {0}, wt[8] = {0};
   FileHeader h;
-  initFileHeader(h, fw, wt, 50);
+  initFileHeader(h, fw, wt, "test:program/gen0000.dmp.zst", 50);
   ASSERT_EQ(validateFileHeader(h), ValidateResult::kOk);
 
   // Corrupt one scale entry: the stored CRC no longer matches.
@@ -131,7 +134,7 @@ TEST(FlightLogFormat, ScaleTableCrcLoudFail) {
 
   // Corrupt the CRC itself over an intact table: same loud failure.
   FileHeader h2;
-  initFileHeader(h2, fw, wt, 50);
+  initFileHeader(h2, fw, wt, "test:program/gen0000.dmp.zst", 50);
   h2.scale_table_crc ^= 0xDEADBEEF;
   EXPECT_EQ(validateFileHeader(h2), ValidateResult::kBadScaleCrc);
 }
@@ -159,7 +162,7 @@ TEST(FlightLogFormat, SaturationNeverWraps) {
 TEST(FlightLogFormat, StreamWalkSkipsPaddingAndFailsLoudOnUnknownType) {
   uint8_t fw[8] = {0xAA}, wt[8] = {0xBB};
   FileHeader fh;
-  initFileHeader(fh, fw, wt, 50);
+  initFileHeader(fh, fw, wt, "test:program/gen0000.dmp.zst", 50);
 
   EngageHeader eh;
   std::memset(&eh, 0, sizeof(eh));

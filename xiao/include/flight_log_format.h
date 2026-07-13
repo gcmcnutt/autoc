@@ -42,7 +42,13 @@ constexpr uint32_t kMagic = 0x314C4641u;
 // pos (virtual NED), vel, rabbit (ground-truth target) — so the flight log is
 // self-contained for the renderer (-x) and trajectory analysis without an
 // INAV-blackbox join. v1 existed only for the 039 bench (T010 record).
-constexpr uint8_t kFormatVersion = 2;
+// v3 (2026-07-12, arm→disarm self-containment for the INAV correlation run):
+// FileHeader gains program[96] (nn2cpp program-source string — the human-
+// readable identity behind weight_id); EventCodes 8-11 add disengage reason,
+// failsafe + servo-switch transitions, and INAV-clock anchor pairs
+// (EventRecord.timestamp_ms = xiao clock, value = INAV ms — fit offset/drift
+// against blackbox time).
+constexpr uint8_t kFormatVersion = 3;
 
 enum RecordType : uint8_t {
   kPad = 0x00,          // buffer word-alignment filler — skipped, never emitted
@@ -63,6 +69,28 @@ enum EventCode : uint8_t {
   kEventFetchTimeout = 5,  // value: consecutive-failure count
   kEventLogDrop = 6,       // value: records dropped under buffer pressure (FR-008)
   kEventFlashFull = 7,     // value: bytes written when full hit
+  // v3 arm→disarm self-containment:
+  kEventDisengageReason = 8,  // value: DisengageReason — written right after kEventDisengage
+  kEventFailsafe = 9,         // value: 1 = entered failsafe, 0 = cleared (while armed;
+                              //   initial state emitted right after kEventArm)
+  kEventServoSwitch = 10,     // value: 1 = servo/autoc switch active, 0 = released
+                              //   (initial state emitted right after kEventArm)
+  kEventInavClock = 11,       // value: INAV clock ms (autoc_state.timestamp_us/1000) sampled
+                              //   at this record's timestamp_ms (xiao clock) — correlation
+                              //   anchor pair; emitted at arm/engage/disengage/disarm
+};
+
+// kEventDisengageReason values (mirrors stopAutoc console strings).
+enum DisengageReason : uint8_t {
+  kReasonUnknown = 0,
+  kReasonServoSwitch = 1,      // pilot released the autoc switch
+  kReasonFailsafe = 2,
+  kReasonDisarmed = 3,
+  kReasonTimeout = 4,          // test-run duration elapsed
+  kReasonPathComplete = 5,
+  kReasonMspStateFailure = 6,  // MSP2_AUTOC_STATE fetch failed while engaged
+  kReasonMissingLocalState = 7,
+  kReasonAutocCancelled = 8,
 };
 
 // ---------------------------------------------------------------------------
@@ -140,6 +168,9 @@ struct FileHeader {
   uint8_t format_version;              // kFormatVersion; reader loud-fails on mismatch
   uint8_t firmware_id[8];              // SHA-256[0..7] of generated NN source (nn2cpp)
   uint8_t weight_id[8];                // SHA-256[0..7] of the weight file (nn2cpp)
+  char program[96];                    // v3: nn2cpp program-source string (NUL-padded,
+                                       //   truncated if longer) — human-readable identity
+                                       //   behind weight_id, e.g. "default:autoc-m1/.../genNNNN.dmp.zst"
   uint16_t tick_ms;                    // control tick (50 at 20 Hz) — rate self-describing
   float scales[kNumScaledFields];      // the quantization table used by THIS file
   uint32_t scale_table_crc;            // crc32 over `scales` bytes
@@ -223,7 +254,7 @@ static_assert(sizeof(TickRecord) <= 120, "TickRecord must stay <= 120 B (flash b
 static_assert(sizeof(TickRecord) ==
                   1 + 4 + 2 + 2 * kNumInputs + 2 * kNumOutputs + 18 + 1 + 1 + 6 + 1,
               "TickRecord must be packed (no compiler padding)");
-static_assert(sizeof(FileHeader) == 1 + 4 + 1 + 8 + 8 + 2 + 4 * kNumScaledFields + 4,
+static_assert(sizeof(FileHeader) == 1 + 4 + 1 + 8 + 8 + 96 + 2 + 4 * kNumScaledFields + 4,
               "FileHeader must be packed");
 static_assert(sizeof(EngageHeader) == 1 + 4 + 2 + 12 + 4 + 4 + 2,
               "EngageHeader must be packed");
@@ -249,13 +280,16 @@ inline float decodeScaled(int16_t raw, float scale) {
 }
 
 inline void initFileHeader(FileHeader& h, const uint8_t firmware_id[8],
-                           const uint8_t weight_id[8], uint16_t tick_ms) {
+                           const uint8_t weight_id[8], const char* program,
+                           uint16_t tick_ms) {
   memset(&h, 0, sizeof(h));
   h.type = kFileHeader;
   h.magic = kMagic;
   h.format_version = kFormatVersion;
   memcpy(h.firmware_id, firmware_id, 8);
   memcpy(h.weight_id, weight_id, 8);
+  // NUL-padded via the memset; silently truncated to 95 chars + NUL.
+  strncpy(h.program, program, sizeof(h.program) - 1);
   h.tick_ms = tick_ms;
   defaultScaleTable(h.scales);
   h.scale_table_crc = crc32(h.scales, sizeof(h.scales));

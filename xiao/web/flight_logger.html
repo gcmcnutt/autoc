@@ -434,11 +434,16 @@
     // specs/039-xiao-20hz-flight/contracts/flight-log-format.md (same wire
     // format as xiao/include/flight_log_format.h; loud-fail on version/CRC).
     // ------------------------------------------------------------------
-    const FL_MAGIC = 0x314C4641, FL_VERSION = 2;
+    const FL_MAGIC = 0x314C4641, FL_VERSION = 3;
     const FL_NUM_IN = 37, FL_NUM_OUT = 3, FL_NUM_SCALED = 49;
-    const FL_SIZES = { 1: 224, 2: 29, 3: 114, 4: 10, 5: 103, 6: 25 };
+    const FL_SIZES = { 1: 320, 2: 29, 3: 114, 4: 10, 5: 103, 6: 25 };  // v3: FileHeader +program[96]
     const FL_EVENTS = { 1: 'ARM', 2: 'DISARM', 3: 'ENGAGE', 4: 'DISENGAGE',
-                        5: 'FETCH_TIMEOUT', 6: 'LOG_DROP', 7: 'FLASH_FULL' };
+                        5: 'FETCH_TIMEOUT', 6: 'LOG_DROP', 7: 'FLASH_FULL',
+                        8: 'DISENGAGE_REASON', 9: 'FAILSAFE', 10: 'SERVO_SWITCH',
+                        11: 'INAV_CLOCK' };
+    const FL_REASONS = { 0: 'unknown', 1: 'servo switch', 2: 'failsafe', 3: 'disarmed',
+                         4: 'timeout', 5: 'path complete', 6: 'MSP state failure',
+                         7: 'missing local state', 8: 'autoc cancelled' };
     const FL_INPUT_NAMES = [].concat(
       [...Array(6)].map((_, i) => 'target_x_' + i),
       [...Array(6)].map((_, i) => 'target_y_' + i),
@@ -468,15 +473,20 @@
           if (magic !== FL_MAGIC) throw new Error('bad magic — not a flight log');
           if (version !== FL_VERSION) throw new Error(
             `format_version ${version} unsupported (decoder is v${FL_VERSION})`);
-          const scaleBytes = bytes.subarray(pos + 24, pos + 24 + 4 * FL_NUM_SCALED);
-          if (crc32(scaleBytes) !== dv.getUint32(pos + 24 + 4 * FL_NUM_SCALED, true))
+          // v3 layout: program[96] at 22, tick_ms at 118, scales at 120
+          const scaleBytes = bytes.subarray(pos + 120, pos + 120 + 4 * FL_NUM_SCALED);
+          if (crc32(scaleBytes) !== dv.getUint32(pos + 120 + 4 * FL_NUM_SCALED, true))
             throw new Error('scale_table_crc mismatch — refusing to decode');
           scales = [];
-          for (let i = 0; i < FL_NUM_SCALED; i++) scales.push(dv.getFloat32(pos + 24 + 4 * i, true));
+          for (let i = 0; i < FL_NUM_SCALED; i++) scales.push(dv.getFloat32(pos + 120 + 4 * i, true));
           const hex = (o, n) => Array.from(bytes.subarray(pos + o, pos + o + n))
             .map(b => b.toString(16).padStart(2, '0')).join('');
-          header = { firmware_id: hex(6, 8), weight_id: hex(14, 8),
-                     tick_ms: dv.getUint16(pos + 22, true) };
+          const progBytes = bytes.subarray(pos + 22, pos + 118);
+          const progEnd = progBytes.indexOf(0);
+          const program = new TextDecoder().decode(
+            progEnd < 0 ? progBytes : progBytes.subarray(0, progEnd));
+          header = { firmware_id: hex(6, 8), weight_id: hex(14, 8), program,
+                     tick_ms: dv.getUint16(pos + 118, true) };
         } else if (t === 2) {                            // EngageHeader
           cur = { engage: {
                     ts: dv.getUint32(pos + 1, true),
@@ -531,8 +541,13 @@
     }
 
     function showDecodeSummary(d) {
-      let out = `decoded v2  tick=${d.header.tick_ms}ms  fw=${d.header.firmware_id}  wt=${d.header.weight_id}  breadcrumbs=${d.flightStates}\n`;
-      for (const ev of d.events) out += `event t=${ev.ts} ${ev.name} value=${ev.value}\n`;
+      let out = `decoded v${FL_VERSION}  tick=${d.header.tick_ms}ms  fw=${d.header.firmware_id}  wt=${d.header.weight_id}  breadcrumbs=${d.flightStates}\n`;
+      out += `program: ${d.header.program}\n`;
+      for (const ev of d.events) {
+        const annot = ev.name === 'DISENGAGE_REASON'
+          ? `  (${FL_REASONS[ev.value] || '?'})` : '';
+        out += `event t=${ev.ts} ${ev.name} value=${ev.value}${annot}\n`;
+      }
       for (const s of d.spans) {
         let gaps = 0;
         for (let i = 1; i < s.ticks.length; i++)
