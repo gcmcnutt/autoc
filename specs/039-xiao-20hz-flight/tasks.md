@@ -111,6 +111,37 @@ T025–T026 flight (planned 2026-07-12), T027/T028 report+verdict (assistant, po
   bars are engage-relative); writer + tests + python (--flightpath CSV) + browser + renderer all
   updated and cross-validated (13-state synthetic: 5 breadcrumbs + 8 ticks, span indices 5-12)
 
+## Phase 7c: Bench hardening + v3 (2026-07-12, waived-flight bench day)
+
+- [X] T034 Alignment HardFault root-caused + fixed — packed `msp_autoc_state_t` at offset 11 in
+  `State` put `q[]` on an odd address; `-Ofast` VLDR through the decayed `float*` faulted on the
+  first valid MSP state (armed by 17f8c52's second call site de-inlining the quat helper). The
+  "USB bus wedge" was this crash playing dead. `alignas(4)` on the member; on-chip J-Link
+  confirmation (CFSR UNALIGNED, faulting PC in inavQuatToAerospaceEB)
+- [X] T035 fault_guard — nRF WDT (30 s, armed end-of-setup after the console window, fed in loop +
+  QSPI erase waits) + fault-vector capture to .noinit (pc/lr/cfsr/hfsr/bfar) reported on next
+  boot. Console-only by design (operator: keep it simple). WDT=30s NOT 4s: the dog survives the
+  1200-touch into the bootloader, which does NOT feed it — a 4 s dog killed DFU mid-write
+  (erase-only "SUCCESS", RESETREAS DOG). Field recovery notes in memory reference_xiao_usb_dfu_quirks
+- [X] T036 Flight-log v3 — arm→disarm self-containment (operator ask post console/flash gap
+  review): FileHeader += program[96] (nn2cpp source string), events 8-11 = DISENGAGE_REASON
+  (stopAutoc enum-ified, all 10 call sites), FAILSAFE + SERVO_SWITCH transitions (seeded after
+  ARM), INAV_CLOCK anchor pairs at arm/engage/disengage/disarm. All five readers in lockstep
+  (firmware, python, browser, renderer recompile, roundtrip tests 6/6); v3 loud-fails on v2 file
+- [X] T037 Blackbox correlation `specs/039-xiao-20hz-flight/correlate_blackbox.py` — anchor-fit
+  clock map + breadcrumb/tick vs navPos/quaternion comparison. Powered bench: drift +1409 ppm,
+  pos err mean 4.3 cm / p95 9.1 cm, attitude mean 0.21°. Real-craft battery run: +1513 ppm
+  (stable crystal offset), pos mean 4.8 cm / p95 13 cm, attitude 0.19°, 0 drops/gaps both runs
+- [X] T038 Flight hardware recovered + v3 flashed — old firmware crash made USB unflashable
+  in-airframe; recovery = FC in DFU mode (no MSP state → firmware stays alive) + touch → 24 s
+  DFU + power cycle. Verified on live INAV: 53 s+ heartbeat through the exact state that killed
+  it, WDT fed. Battery-powered 2-span bench flight logged, downloaded over BLE, correlated (T037)
+
+**CHECKPOINT 2026-07-12: READY FOR FLIGHT** — flight xiao runs v3 (weight_id 32fb4398, gen9200
+candidate), full chain proven cable-free (arm → spans → BLE download → decode → render →
+blackbox-correlate). Remaining before takeoff: T025 operator pre-flight incl. ground `ERASE:ALL`
+(flash holds bench flights), then T026 flight day.
+
 ## Phase 8: Polish & Cross-Cutting
 
 - [X] T029 [P] Constitution VI type-domain grep audit on 039-touched paths (`tools/nn2cpp.cc`, decoder boundary, any `src/`/`include/autoc/` touches): annotate `// raw-ok:` or convert — DONE: arena.h/nn2cpp gp_scalar-clean; flight_log_format.h records section + flight_log.h carry raw-ok annotations; python/js decoders are the gp_scalar re-entry boundary
