@@ -1,6 +1,6 @@
 # autoc Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-27
+Auto-generated from all feature plans. Last updated: 2026-07-10
 
 ## Active Technologies
 - C++17 (renderer, shared code), Python 3.11 (analysis scripts) + Eigen (math), VTK (renderer), cereal (data.dat parsing), blackbox-tools (INAV decode) (018-flight-analysis)
@@ -34,6 +34,8 @@ Auto-generated from all feature plans. Last updated: 2026-06-27
 - C++17 (autoc, crrcsim), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analysis) + Eigen (vec3/quat), cereal (NN + EvalResults + dmp), inih (ini), GoogleTest, (037-20hz-control-loop)
 - C++17 (autoc, crrcsim), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analytics) + Eigen (vec3/quat math), cereal (NN01 + EvalResults + dmp serialization), inih (038-accurate-m2)
 - file-based — `data.dat` (per-tick trace), `data.stc` (per-gen aggregate), S3 per-mode buckets (038-accurate-m2)
+- C++17 (autoc tools/desktop reader), C++ (xiao, PlatformIO arduino-mbed, + nn2cpp codegen (`tools/nn2cpp.cc`), xiao QSPI flash logger + BLE stack, (039-xiao-20hz-flight)
+- xiao QSPI flash (2 MB log region, pre-erased ring, ground `ERASE:ALL`); new versioned (039-xiao-20hz-flight)
 
 - C++17 + Eigen, cereal (serialization), inih (config), GoogleTest (015-nn-training-improvements)
 
@@ -53,9 +55,9 @@ tests/
 C++17: Follow standard conventions
 
 ## Recent Changes
+- 039-xiao-20hz-flight: Added C++17 (autoc tools/desktop reader), C++ (xiao, PlatformIO arduino-mbed, + nn2cpp codegen (`tools/nn2cpp.cc`), xiao QSPI flash logger + BLE stack,
 - 038-accurate-m2: Added C++17 (autoc, crrcsim), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analytics) + Eigen (vec3/quat math), cereal (NN01 + EvalResults + dmp serialization), inih
 - 037-20hz-control-loop: Added C++17 (autoc, crrcsim), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analysis) + Eigen (vec3/quat), cereal (NN + EvalResults + dmp), inih (ini), GoogleTest,
-- 035-energy-lexicase-objective: Added C++17 (autoc, crrcsim), Python 3.11 (analysis/plot scripts) + Eigen (vec3/quat), cereal (NN + EvalResults + dmp serialization), inih
 
 
 <!-- MANUAL ADDITIONS START -->

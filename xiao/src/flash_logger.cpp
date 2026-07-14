@@ -117,9 +117,6 @@ static bool isFlashBusy();
 static bool isFlushIdle();
 static bool flashLoggerSyncBlocking(uint32_t timeoutMs);
 static void resetSlotMetadata(BufferSlot* slot);
-static bool appendMessageToActive(uint32_t msgId, const char* msg, size_t msgLen, bool needsNewline);
-static void handleDroppedRange(uint32_t dropStartId, uint32_t dropEndId);
-static void enqueueDropNotice(uint32_t dropStartId, uint32_t dropEndId);
 static void archiveCurrentFlight();
 
 // QSPI Configuration
@@ -197,30 +194,49 @@ void flashLoggerInit() {
            (unsigned long)(metadata.flightCounter + 1));
 }
 
-uint32_t flashLoggerWrite(const char* msg) {
+// 039 US3 (T013) — binary record append. The text path (id-prefix + newline
+// framing) is REPLACED, not kept alongside (Constitution III): flash now
+// carries only flight_log_format.h records. Records are appended whole —
+// never split across buffers — so the only inter-record bytes are the 0x00
+// word-alignment padding at buffer boundaries (decoders skip 0x00).
+// Returns false instead of stalling when the buffer ring is under pressure;
+// the flight_log layer counts the drop (FR-008).
+bool flashLoggerWriteBinary(const void* data, size_t len) {
   writeCallCount++;
 
-  uint32_t messageId = nextMessageId++;
-
-  if (msg == nullptr) {
-    return messageId;
+  if (data == nullptr || len == 0 || len >= FLASH_LOGGER_BUFFER_SIZE) {
+    return false;
   }
-
-  size_t msgLen = strlen(msg);
-  bool needsNewline = (msgLen == 0 || msg[msgLen - 1] != '\n');
-
   if (!flashInitialized || flashFull || flashError || loggingSuspended) {
-    return messageId;
+    return false;
+  }
+  if (!activeBuffer) {
+    return false;
   }
 
-  if (!appendMessageToActive(messageId, msg, msgLen, needsNewline)) {
-    uint32_t dropStart = (activeBuffer && activeBuffer->messageCount > 0)
-                             ? activeBuffer->firstMessageId
-                             : messageId;
-    handleDroppedRange(dropStart, messageId);
+  if (activeBuffer->payloadLen + len > FLASH_LOGGER_BUFFER_SIZE) {
+    flushRequested = true;
+    if (!tryStageActiveBuffer()) {
+      return false;  // no free slot — drop this record, tick never stalls
+    }
+    if (activeBuffer->payloadLen + len > FLASH_LOGGER_BUFFER_SIZE) {
+      return false;
+    }
   }
 
-  return messageId;
+  memcpy(activeBuffer->data + activeBuffer->payloadLen, data, len);
+  activeBuffer->payloadLen += len;
+
+  uint32_t recId = nextMessageId++;
+  if (activeBuffer->messageCount == 0) {
+    activeBuffer->firstMessageId = recId;
+  }
+  activeBuffer->lastMessageId = recId;
+  if (activeBuffer->messageCount < UINT16_MAX) {
+    activeBuffer->messageCount++;
+  }
+
+  return true;
 }
 
 void flashLoggerFlushCheck() {
@@ -444,13 +460,13 @@ const char* flashLoggerGetFileName(int index) {
   static char filename[32];
 
   if (index < (int)metadata.numFlights) {
-    snprintf(filename, sizeof(filename), "flight_%03lu.txt",
+    snprintf(filename, sizeof(filename), "flight_%03lu.bin",
              (unsigned long)metadata.flightIndex[index].flightNumber);
     return filename;
   }
 
   if (index == (int)metadata.numFlights && metadata.flightCounter > 0) {
-    snprintf(filename, sizeof(filename), "flight_%03lu.txt",
+    snprintf(filename, sizeof(filename), "flight_%03lu.bin",
              (unsigned long)metadata.flightCounter);
     return filename;
   }
@@ -486,7 +502,7 @@ bool flashLoggerStartDownload(const char* filename) {
   }
 
   uint32_t requestedFlight = 0;
-  if (sscanf(filename, "flight_%lu.txt", (unsigned long*)&requestedFlight) != 1) {
+  if (sscanf(filename, "flight_%lu.bin", (unsigned long*)&requestedFlight) != 1) {
     logPrint(ERROR, "Invalid filename format: %s", filename);
     return false;
   }
@@ -551,54 +567,29 @@ int flashLoggerReadChunk(uint8_t* buffer, size_t maxLen) {
     return 0;
   }
 
-  size_t produced = 0;
-  while (produced == 0 && downloadReadAddr < downloadEndAddr) {
-    size_t remainingFlash = downloadEndAddr - downloadReadAddr;
-
-    size_t toRead = remainingFlash;
-    if (toRead > maxLen) {
-      toRead = maxLen;
-    }
-
-    while (nrfx_qspi_mem_busy_check()) {
-      delayMicroseconds(5);
-    }
-    if (!qspiRead(downloadReadAddr, downloadScratch, toRead)) {
-      logPrint(ERROR, "QSPI chunk read failed at addr 0x%lx len=%lu",
-               (unsigned long)downloadReadAddr, (unsigned long)toRead);
-      return -1;
-    }
-
-    size_t writeIdx = 0;
-    for (size_t i = 0; i < toRead; ++i) {
-      uint8_t byte = downloadScratch[i];
-      if (byte != 0) {
-        buffer[writeIdx++] = byte;
-      }
-    }
-
-    downloadReadAddr += toRead;
-    produced = writeIdx;
-
-    if (downloadFilteredSize > 0) {
-      uint32_t remaining = downloadFilteredSize > downloadBytesSent
-                               ? (downloadFilteredSize - downloadBytesSent)
-                               : 0;
-      if (remaining == 0) {
-        return 0;
-      }
-      if (produced > remaining) {
-        produced = remaining;
-      }
-    }
+  // 039 US3: RAW passthrough. The old text path stripped 0x00 padding here,
+  // which would corrupt binary records (they legitimately contain zeros).
+  // Padding is now handled at decode time (0x00 between records is skipped
+  // by every reader of flight_log_format.h).
+  size_t remainingFlash = downloadEndAddr - downloadReadAddr;
+  size_t toRead = remainingFlash;
+  if (toRead > maxLen) {
+    toRead = maxLen;
   }
 
-  if (produced == 0) {
-    return 0;
+  while (nrfx_qspi_mem_busy_check()) {
+    delayMicroseconds(5);
+  }
+  if (!qspiRead(downloadReadAddr, downloadScratch, toRead)) {
+    logPrint(ERROR, "QSPI chunk read failed at addr 0x%lx len=%lu",
+             (unsigned long)downloadReadAddr, (unsigned long)toRead);
+    return -1;
   }
 
-  downloadBytesSent += produced;
-  return (int)produced;
+  memcpy(buffer, downloadScratch, toRead);
+  downloadReadAddr += toRead;
+  downloadBytesSent += toRead;
+  return (int)toRead;
 }
 
 void flashLoggerStopDownload() {
@@ -612,26 +603,6 @@ void flashLoggerStopDownload() {
 
 FlashLoggerState flashLoggerGetState() {
   return currentState;
-}
-
-static uint32_t computeFilteredSize(uint32_t startAddr, uint32_t endAddr) {
-  alignas(4) uint8_t scanBuf[128];
-  uint32_t filtered = 0;
-  for (uint32_t addr = startAddr; addr < endAddr;) {
-    uint32_t remaining = endAddr - addr;
-    uint32_t chunk = (remaining < sizeof(scanBuf)) ? remaining : (uint32_t)sizeof(scanBuf);
-    if (!qspiRead(addr, scanBuf, chunk)) {
-      logPrint(WARNING, "Filtered size scan failed at 0x%06lX", (unsigned long)addr);
-      return endAddr - startAddr;
-    }
-    for (uint32_t i = 0; i < chunk; ++i) {
-      if (scanBuf[i] != 0) {
-        filtered++;
-      }
-    }
-    addr += chunk;
-  }
-  return filtered;
 }
 
 uint32_t flashLoggerGetActiveDownloadSize() {
@@ -680,6 +651,9 @@ static bool qspiEraseBlocking(uint32_t addr, nrf_qspi_erase_len_t len) {
     return false;
   }
   while (nrfx_qspi_mem_busy_check()) {
+    // A 64 KB block erase can take ~2 s — the only legitimate stall on the
+    // order of the WDT period, so feed it here (fault_guard.h).
+    faultGuardFeed();
     delayMicroseconds(100);
   }
   return true;
@@ -1069,109 +1043,6 @@ static void resetSlotMetadata(BufferSlot* slot) {
   slot->messageCount = 0;
 }
 
-static bool appendMessageToActive(uint32_t msgId, const char* msg, size_t msgLen, bool needsNewline) {
-  if (!activeBuffer) {
-    return false;
-  }
-
-  char idPrefix[20];
-  int prefixLen = snprintf(idPrefix, sizeof(idPrefix), "#%08lu ", (unsigned long)msgId);
-  if (prefixLen <= 0) {
-    return false;
-  }
-
-  size_t prefixSize = (size_t)prefixLen;
-  size_t totalLen = prefixSize + msgLen + (needsNewline ? 1 : 0);
-
-  if (totalLen >= FLASH_LOGGER_BUFFER_SIZE) {
-    return false;
-  }
-
-  if (activeBuffer->payloadLen + totalLen > FLASH_LOGGER_BUFFER_SIZE) {
-    flushRequested = true;
-    if (!tryStageActiveBuffer()) {
-      return false;
-    }
-  }
-
-  if (activeBuffer->payloadLen + totalLen > FLASH_LOGGER_BUFFER_SIZE) {
-    return false;
-  }
-
-  char* dest = activeBuffer->data + activeBuffer->payloadLen;
-  memcpy(dest, idPrefix, prefixSize);
-  dest += prefixSize;
-
-  if (msgLen > 0) {
-    memcpy(dest, msg, msgLen);
-    dest += msgLen;
-  }
-
-  if (needsNewline) {
-    *dest++ = '\n';
-  }
-
-  activeBuffer->payloadLen += totalLen;
-
-  if (activeBuffer->messageCount == 0) {
-    activeBuffer->firstMessageId = msgId;
-  }
-  activeBuffer->lastMessageId = msgId;
-  if (activeBuffer->messageCount < UINT16_MAX) {
-    activeBuffer->messageCount++;
-  }
-
-  return true;
-}
-
-static void handleDroppedRange(uint32_t dropStartId, uint32_t dropEndId) {
-  if (dropStartId == 0 || dropEndId < dropStartId) {
-    return;
-  }
-
-  if (activeBuffer) {
-    activeBuffer->payloadLen = 0;
-    activeBuffer->paddedLen = 0;
-    activeBuffer->writeOffset = 0;
-    activeBuffer->targetAddr = 0;
-    activeBuffer->sequence = 0;
-    resetSlotMetadata(activeBuffer);
-  }
-
-  enqueueDropNotice(dropStartId, dropEndId);
-  flushRequested = true;
-}
-
-static void enqueueDropNotice(uint32_t dropStartId, uint32_t dropEndId) {
-  if (!activeBuffer) {
-    return;
-  }
-
-  char notice[128];
-  unsigned long lost = (unsigned long)(dropEndId - dropStartId + 1);
-  snprintf(notice, sizeof(notice),
-           "LOG_DROP lost %lu messages (ids %lu-%lu)",
-           lost,
-           (unsigned long)dropStartId,
-           (unsigned long)dropEndId);
-
-  uint32_t dropMsgId = nextMessageId++;
-  size_t noticeLen = strlen(notice);
-  if (!appendMessageToActive(dropMsgId, notice, noticeLen, true)) {
-    // Force reset and try once more; if it still fails give up.
-    if (activeBuffer) {
-      activeBuffer->payloadLen = 0;
-      activeBuffer->paddedLen = 0;
-      activeBuffer->writeOffset = 0;
-      activeBuffer->targetAddr = 0;
-      activeBuffer->sequence = 0;
-      resetSlotMetadata(activeBuffer);
-    }
-    appendMessageToActive(dropMsgId, notice, noticeLen, true);
-  }
-
-  Serial.print("WARNING: flash logger dropped messages ");
-  Serial.print(dropStartId);
-  Serial.print("-");
-  Serial.println(dropEndId);
-}
+// Text append path (appendMessageToActive / drop-notice text records) removed
+// in 039 US3 — binary records only (flashLoggerWriteBinary above); drops are
+// counted by the flight_log layer and surfaced as kEventLogDrop records.

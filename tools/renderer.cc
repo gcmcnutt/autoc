@@ -32,6 +32,7 @@
 
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/nn_inputs.h"
+#include "flight_log_format.h"  // 039 T032: -x binary flight-log support
 #include <cstring>
 
 #include <aws/core/Aws.h>
@@ -102,9 +103,13 @@ std::vector<vec3> xiaoVirtualPositions;  // Virtual (pos) coordinates for indivi
 std::vector<std::string> xiaoLines;  // Store xiao log lines for span analysis
 std::vector<SpanData> xiaoSpanData;  // Rabbit and vec data organized by span
 std::vector<size_t> navStateLineToStateIndex;  // Map Nav State line number to actual state index
+// 039 T032: true when -x was given a binary flight log (flight_log_format.h)
+// instead of the legacy text log; span extraction uses explicit records.
+bool xiaoBinaryLog = false;
 
 // Forward declarations
 bool parseXiaoData(const std::string& xiaoLogPath);
+bool parseXiaoDataBinary(const std::string& xiaoLogPath);
 bool loadXiaoData();
 void extractXiaoTestSpans();
 void updateBlackboxForCurrentTest();
@@ -2509,15 +2514,287 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
   return !blackboxAircraftStates.empty();
 }
 
-// Load xiao log data
+// 039 T032 — binary flight-log parse (-x with a downloaded flight_NNN.bin,
+// flight_log_format.h v2). Fills the SAME globals as the text parse; spans
+// come from explicit EngageHeader/SpanSummary records instead of console-line
+// regexes. Craft telemetry (pos/vel/rabbit) is carried per tick since v2, so
+// no INAV-blackbox join is needed. Note: TickRecords are engagement-scoped —
+// the 'a' full-flight trace shows engaged segments only.
+bool parseXiaoDataBinary(const std::string& xiaoLogPath) {
+  std::ifstream file(xiaoLogPath, std::ios::binary);
+  if (!file.is_open()) {
+    std::cerr << "Failed to open xiao flight log: " << xiaoLogPath << std::endl;
+    return false;
+  }
+  std::vector<uint8_t> blob((std::istreambuf_iterator<char>(file)),
+                            std::istreambuf_iterator<char>());
+  file.close();
+
+  blackboxPoints.clear();
+  blackboxNormals.clear();
+  blackboxAircraftStates.clear();
+  fullBlackboxAircraftStates.clear();
+  xiaoLines.clear();
+  craftToTargetVectors.clear();
+  xiaoVirtualPositions.clear();
+  navStateLineToStateIndex.clear();
+  xiaoSpanData.clear();
+
+  using namespace flightlog;
+
+  const FileHeader* header = nullptr;
+  bool inSpan = false;
+  unsigned long spanStartTimeMs = 0;
+  unsigned long flightStartTimeMs = 0;
+  bool flightStartSet = false;
+  vec3 currentOrigin(0.0f, 0.0f, 0.0f);
+  SpanData currentSpanData;
+  std::vector<TimestampedVec> allVecPoints;
+  size_t currentStateIdx = 0;
+  size_t tickCount = 0;
+
+  auto closeSpan = [&]() {
+    if (inSpan) {
+      currentSpanData.endStateIdx = currentStateIdx > 0 ? currentStateIdx - 1 : 0;
+      if (!currentSpanData.vecs.empty()) {
+        xiaoSpanData.push_back(currentSpanData);
+      }
+      inSpan = false;
+    }
+  };
+
+  StreamWalker walker(blob.data(), blob.size());
+  RecordView v;
+  while (walker.next(v)) {
+    switch (v.type) {
+      case kFileHeader: {
+        header = v.as<FileHeader>();
+        // Loud-fail per contract: wrong version / corrupted scale table is a
+        // hard error, never a best-effort render.
+        switch (validateFileHeader(*header)) {
+          case ValidateResult::kOk: break;
+          case ValidateResult::kBadMagic:
+            std::cerr << "flight log: bad magic — not a flight log" << std::endl;
+            return false;
+          case ValidateResult::kBadVersion:
+            std::cerr << "flight log: format_version "
+                      << (int)header->format_version << " unsupported (renderer is v"
+                      << (int)kFormatVersion << ")" << std::endl;
+            return false;
+          case ValidateResult::kBadScaleCrc:
+            std::cerr << "flight log: scale_table_crc mismatch — refusing to decode" << std::endl;
+            return false;
+        }
+        break;
+      }
+
+      case kEngageHeader: {
+        const EngageHeader* eh = v.as<EngageHeader>();
+        closeSpan();
+        currentOrigin = vec3(eh->origin_ned[0], eh->origin_ned[1], eh->origin_ned[2]);
+        spanStartTimeMs = eh->engage_timestamp_ms;
+        inSpan = true;
+        currentSpanData = SpanData();
+        currentSpanData.origin = currentOrigin;
+        currentSpanData.startStateIdx = currentStateIdx;
+        currentSpanData.pathIndex = eh->path_index;
+        break;
+      }
+
+      case kTick: {
+        if (!header) {
+          std::cerr << "flight log: tick before FileHeader — corrupt stream" << std::endl;
+          return false;
+        }
+        const TickRecord* tr = v.as<TickRecord>();
+        tickCount++;
+
+        float in[kNumInputs], out[kNumOutputs], posv[3], velv[3], rabbitv[3];
+        decodeTick(*tr, header->scales, in, out, posv, velv, rabbitv);
+
+        if (!flightStartSet) {
+          flightStartTimeMs = tr->timestamp_ms;
+          flightStartSet = true;
+        }
+
+        vec3 virtualPosition(posv[0], posv[1], posv[2]);
+        vec3 position = virtualPosition + currentOrigin;  // raw NED
+        vec3 velocity_vector(velv[0], velv[1], velv[2]);
+        quat earthToBody(in[static_cast<int>(PathgenInput::QUAT_W)],
+                         in[static_cast<int>(PathgenInput::QUAT_X)],
+                         in[static_cast<int>(PathgenInput::QUAT_Y)],
+                         in[static_cast<int>(PathgenInput::QUAT_Z)]);
+        if (earthToBody.norm() > 0.0f) earthToBody.normalize();
+
+        // Rabbit reconstruction from the NOW direction-cosine slot — same
+        // first-principles math as the text path (see parseXiaoData); the
+        // ground-truth rabbit fields land in directRabbitPoints.
+        if (inSpan) {
+          scalar tx = in[static_cast<int>(PathgenInput::TARGET_X_NOW)];
+          scalar ty = in[static_cast<int>(PathgenInput::TARGET_Y_NOW)];
+          scalar tz = in[static_cast<int>(PathgenInput::TARGET_Z_NOW)];
+          scalar dist = in[static_cast<int>(PathgenInput::DIST_NOW)];
+          if (dist > 0.01f) {
+            vec3 body(tx * dist, ty * dist, tz * dist);
+            vec3 world = earthToBody * body;  // body→world (q_EB)
+            vec3 rabbitPos = virtualPosition + world;
+            rabbitPos[2] = rabbitPos[2] + SIM_INITIAL_ALTITUDE;
+            currentSpanData.rabbitPoints.push_back(rabbitPos);
+            currentSpanData.rabbitTimesMs.push_back(
+                static_cast<unsigned long>(tr->timestamp_ms - spanStartTimeMs));
+
+            TimestampedVec tv(world,
+                              (unsigned long)(tr->timestamp_ms - spanStartTimeMs) * 1000UL);
+            currentSpanData.vecs.push_back(tv);
+            allVecPoints.push_back(tv);
+          }
+          vec3 directRabbit(rabbitv[0], rabbitv[1], rabbitv[2]);
+          directRabbit[2] = directRabbit[2] + SIM_INITIAL_ALTITUDE;
+          currentSpanData.directRabbitPoints.push_back(directRabbit);
+        }
+
+        // Same coincident-point filter as the text path.
+        bool addState = blackboxPoints.empty() ||
+                        (position - blackboxPoints.back()).norm() > static_cast<scalar>(0.01f);
+        navStateLineToStateIndex.push_back(addState ? fullBlackboxAircraftStates.size()
+                                                    : SIZE_MAX);
+        if (addState) {
+          blackboxPoints.push_back(position);
+          xiaoVirtualPositions.push_back(virtualPosition);
+
+          scalar speed = std::abs(in[static_cast<int>(PathgenInput::CLOSING_RATE)]);
+          if (speed < 0.01f) speed = velocity_vector.norm();
+
+          scalar rollCmd = CLAMP_DEF((tr->rc_sent[0] - 1500.0f) / 500.0f, -1.0f, 1.0f);
+          scalar pitchCmd = CLAMP_DEF((tr->rc_sent[1] - 1500.0f) / 500.0f, -1.0f, 1.0f);
+          scalar throttleCmd = CLAMP_DEF((tr->rc_sent[2] - 1500.0f) / 500.0f, -1.0f, 1.0f);
+
+          unsigned long absoluteTimeUs =
+              (unsigned long)(tr->timestamp_ms - flightStartTimeMs) * 1000UL;
+
+          AircraftState state(
+              static_cast<int>(blackboxAircraftStates.size()),
+              speed, velocity_vector, earthToBody, position,
+              pitchCmd, rollCmd, throttleCmd, absoluteTimeUs);
+          blackboxAircraftStates.push_back(state);
+          fullBlackboxAircraftStates.push_back(state);
+          currentStateIdx++;
+        }
+        break;
+      }
+
+      case kEvent: {
+        const EventRecord* ev = v.as<EventRecord>();
+        if (ev->code == kEventDisengage) closeSpan();
+        break;
+      }
+
+      case kSpanSummary:
+        closeSpan();
+        break;
+
+      case kFlightState: {
+        // Armed-but-not-engaged breadcrumb (raw INAV frame): the connective
+        // tissue that keeps the 'a' all-flight trace continuous between spans.
+        if (!header) {
+          std::cerr << "flight log: FlightState before FileHeader — corrupt stream" << std::endl;
+          return false;
+        }
+        const FlightStateRecord* fs = v.as<FlightStateRecord>();
+        if (!flightStartSet) {
+          flightStartTimeMs = fs->timestamp_ms;
+          flightStartSet = true;
+        }
+        vec3 position(decodeScaled(fs->pos_raw[0], header->scales[kScalePosBase]),
+                      decodeScaled(fs->pos_raw[1], header->scales[kScalePosBase + 1]),
+                      decodeScaled(fs->pos_raw[2], header->scales[kScalePosBase + 2]));
+        vec3 velocity_vector(decodeScaled(fs->vel[0], header->scales[kScaleVelBase]),
+                             decodeScaled(fs->vel[1], header->scales[kScaleVelBase + 1]),
+                             decodeScaled(fs->vel[2], header->scales[kScaleVelBase + 2]));
+        quat earthToBody(decodeScaled(fs->quat[0], kScaleUnit),
+                         decodeScaled(fs->quat[1], kScaleUnit),
+                         decodeScaled(fs->quat[2], kScaleUnit),
+                         decodeScaled(fs->quat[3], kScaleUnit));
+        if (earthToBody.norm() > 0.0f) earthToBody.normalize();
+
+        bool addState = blackboxPoints.empty() ||
+                        (position - blackboxPoints.back()).norm() > static_cast<scalar>(0.01f);
+        navStateLineToStateIndex.push_back(addState ? fullBlackboxAircraftStates.size()
+                                                    : SIZE_MAX);
+        if (addState) {
+          blackboxPoints.push_back(position);
+          xiaoVirtualPositions.push_back(position);  // no engage frame outside spans
+          unsigned long absoluteTimeUs =
+              (unsigned long)(fs->timestamp_ms - flightStartTimeMs) * 1000UL;
+          AircraftState state(
+              static_cast<int>(blackboxAircraftStates.size()),
+              velocity_vector.norm(), velocity_vector, earthToBody, position,
+              0.0f, 0.0f, 0.0f, absoluteTimeUs);
+          blackboxAircraftStates.push_back(state);
+          fullBlackboxAircraftStates.push_back(state);
+          currentStateIdx++;
+        }
+        break;
+      }
+
+      default:
+        break;
+    }
+  }
+  if (walker.failed()) {
+    std::cerr << "flight log: parse error at offset " << walker.position()
+              << " (unknown record type or truncated record)" << std::endl;
+    return false;
+  }
+  closeSpan();
+
+  craftToTargetVectors = allVecPoints;
+
+  std::cout << "Parsed binary flight log: " << blackboxAircraftStates.size() << " states ("
+            << tickCount << " ticks), " << craftToTargetVectors.size() << " vecs, "
+            << xiaoSpanData.size() << " spans" << std::endl;
+  return !blackboxAircraftStates.empty();
+}
+
+// Load xiao log data — sniff for the binary flight-log magic ('AFL1' after
+// the FileHeader type byte); fall back to the legacy text parser otherwise
+// (old flights stay renderable).
 bool loadXiaoData() {
-  return parseXiaoData(xiaoLogFile);
+  std::ifstream sniff(xiaoLogFile, std::ios::binary);
+  uint8_t head[5] = {0};
+  if (sniff.is_open()) {
+    sniff.read(reinterpret_cast<char*>(head), sizeof(head));
+    sniff.close();
+  }
+  uint32_t magic;
+  memcpy(&magic, head + 1, sizeof(magic));
+  xiaoBinaryLog = (head[0] == flightlog::kFileHeader && magic == flightlog::kMagic);
+  return xiaoBinaryLog ? parseXiaoDataBinary(xiaoLogFile) : parseXiaoData(xiaoLogFile);
 }
 
 // Extract test spans from xiao log (spans where autoc=Y)
 void extractXiaoTestSpans() {
   extern Renderer renderer;
   renderer.testSpans.clear();
+
+  // 039 T032: binary logs carry explicit span records — build TestSpans
+  // straight from xiaoSpanData (start/end state indices tracked at parse),
+  // then fall through to the shared validation + vec/path copy below.
+  if (xiaoBinaryLog) {
+    if (fullBlackboxAircraftStates.empty()) {
+      std::cerr << "No aircraft states available for test span extraction" << std::endl;
+      return;
+    }
+    for (const SpanData& sd : xiaoSpanData) {
+      TestSpan span;
+      span.startIndex = sd.startStateIdx;
+      span.endIndex = sd.endStateIdx;
+      span.startTime = sd.startStateIdx * 100;  // fake timestamps, same as text path
+      span.endTime = sd.endStateIdx * 100;
+      span.origin = sd.origin;
+      renderer.testSpans.push_back(span);
+    }
+  } else {
 
   if (xiaoLines.empty() || fullBlackboxAircraftStates.empty()) {
     std::cerr << "No xiao data or aircraft states available for test span extraction" << std::endl;
@@ -2620,6 +2897,8 @@ void extractXiaoTestSpans() {
     renderer.testSpans.push_back(currentSpan);
   }
 
+  }  // end legacy text-log branch (xiaoBinaryLog == false)
+
   // Validate spans
   std::vector<TestSpan> validSpans;
   for (const TestSpan& span : renderer.testSpans) {
@@ -2647,7 +2926,8 @@ void extractXiaoTestSpans() {
     renderer.testSpans[i].pathIndex = xiaoSpanData[i].pathIndex;
   }
 
-  std::cout << "Extracted " << renderer.testSpans.size() << " valid test spans from " << stateIndex << " aircraft states" << std::endl;
+  std::cout << "Extracted " << renderer.testSpans.size() << " valid test spans from "
+            << fullBlackboxAircraftStates.size() << " aircraft states" << std::endl;
   for (size_t i = 0; i < renderer.testSpans.size(); i++) {
     std::cout << "  Test " << (i+1) << ": indices " << renderer.testSpans[i].startIndex << "-" << renderer.testSpans[i].endIndex
               << " (" << (renderer.testSpans[i].endIndex - renderer.testSpans[i].startIndex + 1) << " states)"
@@ -2768,8 +3048,17 @@ void Renderer::showAllFlight() {
   // Hide stopwatch when switching to full flight mode
   hideStopwatch();
 
-  // In xiao-only mode, translate positions so first arming point is at origin
-  if (inXiaoOnlyMode && !testSpans.empty() && !fullBlackboxAircraftStates.empty()) {
+  // Binary flight logs (039 v2): positions are already in INAV's raw frame,
+  // whose origin is INAV home (set at INAV first-arm) — exactly the "full
+  // flight relative to arm point at world origin" view. No translation.
+  if (inXiaoOnlyMode && xiaoBinaryLog && !fullBlackboxAircraftStates.empty()) {
+    blackboxAircraftStates = fullBlackboxAircraftStates;
+    std::cout << "All-flight mode: " << blackboxAircraftStates.size()
+              << " states in raw INAV frame (arm/home point at origin); "
+              << testSpans.size() << " spans highlighted" << std::endl;
+  }
+  // Legacy text logs: translate positions so first arming point is at origin
+  else if (inXiaoOnlyMode && !testSpans.empty() && !fullBlackboxAircraftStates.empty()) {
     // Get first arming point as the origin offset
     vec3 firstOrigin = testSpans[0].origin;
 
