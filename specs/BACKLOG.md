@@ -10,6 +10,31 @@
 
 ## 039 deferrals
 
+### [039 wrap — GATED on n>1 flight articles, set 2026-07-13] Pitch marginal-stability levers — choose after the next articles fly
+
+First 20 Hz flight (wrap.md §3): the flight article is ~neutral CG; pitch oscillation under NN
+control is **closed-loop plant sensitivity, not command roughness** — pitch-rate RMS by regime:
+INAV acro untuned PID 24 °/s ("on a rail" at launch), pilot MANUAL 50 ("on edge"), NN-direct 141
+(NN spans run `MANUAL|MSPRCOVERRIDE` — raw surfaces, no inner loop). Command-domain per-axis
+reports (t5-class dCtrl) are blind to this by construction; the NN's pitch commands were the calm
+axis. **Operator decision 2026-07-13: NO sim recalibration from this n=1 airframe** — the towed
+streamer alone is a large effect; new flight articles are being built.
+
+Levers to choose among when n>1 (not exclusive):
+- **Forward CG ballast** on the article (hardware, cheapest, restores the static margin the sim
+  plant already has).
+- **Sim match**: reduce hb1_streamer static margin / pitch damping (Cm_alpha/Cm_q class) to the
+  measured article; acceptance test = reproduce ~141 °/s pitch RMS vs ~95 roll replaying the
+  recorded 20 Hz command stream (`flight-results/flight-20260713`, `specs/039-…/flight_report.py`).
+- **Static-margin craft-variation axis** (034-style static-per-scenario) — trains robustness
+  across CG placement instead of tuning to one article.
+- **Architectural**: NN over INAV's rate loop (acro+override instead of manual+override) — the
+  untuned PID already damps this plant to 24 °/s. Changes the action space (setpoints, not
+  surfaces); sim must match; a feature of its own, NOT a tweak.
+
+Related standing data from the same flight: routine ±7–8 g z-loads (peak +9.6 g in acro recovery
+outside spans) + throttle 86% saturated → energy/smoothness objective (035-line) material.
+
 ### [039 — BACKLOG, set 2026-07-10] Redefine flight boundaries generally for open flying — not the training cylinder
 
 **Operator (during the 039 arena-placement clarifications)**: the training cylinder (R=80 m, ±K

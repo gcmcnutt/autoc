@@ -87,10 +87,10 @@ T025–T026 flight (planned 2026-07-12), T027/T028 report+verdict (assistant, po
 **Goal**: fly, capture, and judge sim-grade smoothing (SC-005/SC-006).
 **Independent Test**: completed flight with full 20 Hz logs + the per-axis comparison report.
 
-- [ ] T025 [US5] OPERATOR pre-flight: `project_preflight_checklist` + FR-013 safety envelope check (arming/mode-flip/failsafe unchanged — bench SBUS/LOS sanity), ground `ERASE:ALL`
-- [ ] T026 [US5] OPERATOR flight day: 2 × 3–4 min flights on one flash fill, spans across the standard paths incl. the OOD random-intercept path (TX button 6); BLE download in the field (~7 s)
-- [ ] T027 [US5] Comparison report `src/analytics/flight_vs_sim_axes.py`: decoded flight CSV vs the SAME candidate's sim per-axis baseline (038 per_axis tooling) → per-axis dCtrl ⟨|Δu|⟩ + amplitude ⟨|out|⟩ with the ±25% band drawn, plus bang-bang saturation % vs the 2026-05-17 flight; PNG artifact named `autoc-039-t<N>-flight-vs-sim_*` in the feature dir
-- [ ] T028 [US5] SC-006 verdict in `specs/039-xiao-20hz-flight/outcome.md`: smoothing exhibited yes/no per axis, residual gaps named; new deferrals appended to `specs/BACKLOG.md` (Constitution X)
+- [X] T025 [US5] OPERATOR pre-flight (2026-07-13): `project_preflight_checklist` + FR-013 safety envelope check (arming/mode-flip/failsafe unchanged — bench SBUS/LOS sanity), ground `ERASE:ALL`
+- [X] T026 [US5] OPERATOR flight day (2026-07-13 — one flight, 4 spans, all `path complete`; BLE field download; see wrap.md §2): 2 × 3–4 min flights on one flash fill, spans across the standard paths incl. the OOD random-intercept path (TX button 6); BLE download in the field (~7 s)
+- [X] T027 [US5] Comparison report (t5 per-axis run by operator; command-domain metrics CLEAN — the observed pitch oscillation is plant-domain, invisible to dCtrl by construction: wrap.md §3 + flight_report.py three-regime numbers; sim-eval tracking comparison deferred to wrap §4.5) `src/analytics/flight_vs_sim_axes.py`: decoded flight CSV vs the SAME candidate's sim per-axis baseline (038 per_axis tooling) → per-axis dCtrl ⟨|Δu|⟩ + amplitude ⟨|out|⟩ with the ±25% band drawn, plus bang-bang saturation % vs the 2026-05-17 flight; PNG artifact named `autoc-039-t<N>-flight-vs-sim_*` in the feature dir
+- [X] T028 [US5] SC-006 verdict → carried in `wrap.md` §3/§4 (roll: smooth, confirmed visually + 95°/s RMS; pitch: oscillation is closed-loop plant sensitivity on a neutral-CG article, NOT command roughness; throttle: 86% saturated, 035-line). Deferrals in wrap §4.5: smoothing exhibited yes/no per axis, residual gaps named; new deferrals appended to `specs/BACKLOG.md` (Constitution X)
 
 ## Phase 7b: Operator additions (2026-07-11, pre-first-flight)
 
@@ -141,6 +141,9 @@ T025–T026 flight (planned 2026-07-12), T027/T028 report+verdict (assistant, po
 candidate), full chain proven cable-free (arm → spans → BLE download → decode → render →
 blackbox-correlate). Remaining before takeoff: T025 operator pre-flight incl. ground `ERASE:ALL`
 (flash holds bench flights), then T026 flight day.
+
+**WRAP 2026-07-13**: flight complete, feature closed — see `wrap.md` (verdict SUCCESS; pitch
+three-regime finding; operator decision: no sim recalibration until n>1 flight articles).
 
 ## Phase 8: Polish & Cross-Cutting
 
