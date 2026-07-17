@@ -32,25 +32,51 @@ def parse_args():
     p.add_argument("--csv", default=os.path.join(HERE, "results", "recovery_sweep.csv"))
     return p.parse_args()
 
+ATTACH_SH = os.path.abspath(os.path.join(HERE, "..", "..", "beacon-pod", "attach-medbg.sh"))
+
 class Emitter:
-    """Holds the CDC open for the whole run (DTR asserted un-tri-states the mEDBG UART bridge)."""
+    """Holds the CDC open for the whole run (DTR asserted un-tri-states the mEDBG UART bridge).
+    The mEDBG randomly drops off USB (seen 2026-07-16, twice): on any serial error, re-run
+    attach-medbg.sh, reopen the port, and retry the command once before giving up."""
     def __init__(self, port):
-        self.s = serial.Serial(port, 38400, timeout=0.5)
+        self.port = port
+        self._open()
+    def _open(self):
+        self.s = serial.Serial(self.port, 38400, timeout=0.5)
         self.s.dtr = True
         time.sleep(0.3)
         self.s.reset_input_buffer()
+    def _reattach(self):
+        print("  !! emitter CDC lost -> re-attaching mEDBG…", flush=True)
+        try: self.s.close()
+        except Exception: pass
+        for _ in range(2):
+            subprocess.run([ATTACH_SH], capture_output=True, timeout=60)
+            if os.path.exists(self.port):
+                try: self._open(); return True
+                except Exception: pass
+            time.sleep(1)
+        return False
     def cmd(self, b: bytes, label=""):
-        self.s.reset_input_buffer()
-        self.s.write(b)
-        echo = self.s.read(len(b))
-        if echo != b:
-            print(f"  !! echo mismatch on {label or b.hex()}: sent {b.hex()} got {echo.hex()}", flush=True)
-        return echo == b
+        for attempt in (1, 2):
+            try:
+                self.s.reset_input_buffer()
+                self.s.write(b)
+                echo = self.s.read(len(b))
+                if echo == b: return True
+                print(f"  !! echo mismatch on {label or b.hex()}: sent {b.hex()} got {echo.hex()}", flush=True)
+                if attempt == 1 and not self._reattach(): break
+            except (serial.SerialException, OSError):
+                if attempt == 1 and not self._reattach(): break
+        return False
     def stop(self):    return self.cmd(b"\x44\x1f", "D31(stop)")
     def restore(self): return self.cmd(b"\x52", "R")
     def close(self):
         try: self.restore()
-        finally: self.s.close()
+        except Exception: pass
+        finally:
+            try: self.s.close()
+            except Exception: pass
 
 def capture(com, seconds):
     """Blocking COM3 read via the proven Windows-side reader; returns parsed frames [(seq,lockB,marginB),...]."""
@@ -126,7 +152,10 @@ def main():
                 proc = subprocess.Popen([os.path.join(HERE, "monitor.sh"), a.com, str(cap_s)],
                                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
                 time.sleep(2.5)                                   # powershell/reader spin-up
-                em.stop(); time.sleep(d); em.restore()            # the one perturbation
+                if not em.stop():                                 # CDC died even after reattach -> invalid trial
+                    proc.kill(); em.restore()
+                    rows.append(dict(rep=rep, loss_s=d, outcome="CMD-FAIL")); continue
+                time.sleep(d); em.restore()                       # the one perturbation
                 out, _ = proc.communicate(timeout=cap_s + 60)
                 frames = []
                 for line in out.splitlines():
