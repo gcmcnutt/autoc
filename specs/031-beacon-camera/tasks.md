@@ -195,6 +195,26 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
 - [~] A4d-4 **LOS timing** — signal-gone → LOS-declared latency vs N + FSM constants; target "a couple of code words." _(Partial: burst sweep gives the drop edge — lock drops at ~2 code words of continuous blanking, HOLDMAX=2; full LOS-declared latency vs N sweep pending.)_
 - [~] A4d-5 **Two-signal (emitter B — A6 / S6)** — second OSCH-domain emitter summed into the virtual ADC; measure discrimination + acquisition + LOS under two simultaneous codes, independent drift, and **same-pixel summation**. **Harness built & HW-verified (2026-06-24):** emitter B on a skewed OSCH divisor (±3%) + a random-noise source, summed; both codes lock simultaneously (CDMA, A & B confirmed), and **A+B+noise degrades both to ~75 % confirmed with occasional wrong-channel locks** — N=15 is marginal under two-signal+noise. Full N-sweep quantification pending (with A4d-1).
 - [ ] A4d-6 **Chip-rate ↔ frame-rate decoupling** — with hard lock + motion predictors, sweep chip:frame ratios; quantify the achievable flexibility for 040.
+- [ ] A2-pwr **Emitter low-voltage floor + MCU speed-grade hardening** — measured 2026-07-16 (manual VIN ramp,
+  IR-live rig, decoder watching the hardwired DIM): 4.2→3.3 V fully decode-transparent (0 lock drops, margin
+  med 8–9); descending further, `corrB` tracks VIN once DIM-high < ADC Vref 2.5 V (137k→74k) and the emitter
+  **quits ≈2.7 V** — exactly the **LM3410X spec'd VIN minimum (2.7–5.5 V, SNVS541)**. AGC held lock nearly to
+  the floor (one 160 ms blip). NOTE the current firmware has **no UVLO code** (T027–T031 pending) — the planned
+  3.5 V firmware trip sits 0.8 V above the hardware floor, so firmware will always trip first once implemented.
+  Hardening for the field pod: (a) **F_CPU 20→10 MHz** — tinyAVR-1 speed grade for 20 MHz requires VDD ≥ 4.5 V,
+  so we're out of spec over the whole 1S range today; 10 MHz is valid 2.7–5.5 V (200 Hz chip + 38400 baud
+  unaffected; TCA_TOP = 3125 exact); (b) **set the BOD fuse** (~2.6 V) → clean reset instead of an undefined
+  brown-out while driving the LED string.
+- [ ] A4d-7 **Minimum-energy lock gate (harden the confidence ladder against dark-input false locks)** — found
+  2026-07-16 in the IR-live recovery regression (s6, `host/results/recovery_sweep_ir50ma.csv`): during LONG
+  signal-dark periods (8 s rung, 2/3 trials) the decoder flashed transient false `lock=2` ~1.5 s before the
+  signal actually returned. Cause: quality `q = 10·best/energy` is **energy-starved on silent input** — with
+  `beste` near its `|1` floor the ratio can spuriously spike ≥ GOOD, and the warm flywheel converts one
+  good-looking period into a confirmed LOCK flash. Matters if the tracker acts on `lockB` during occlusion.
+  Fix: gate the lock FSM (or the q compare) on `beste` ≥ a minimum-energy floor (calibrate above the dark/noise
+  energy, well below weak-signal energy — the ¼-amplitude AGC case must still lock). Verify in the HDL sim
+  (`sim/tb_s6.v`: assert NO lock=2 frames during an 8 s dark window) + re-run `recovery_sweep.py`; the 8 s rung
+  negative-recovery artifact should disappear. Slot for s7.
 
 **Initial edge measurements (2026-06-24, N=15, via `host/transition.sh` + telemetry @40 Hz):** acquire cold→confirmed **~200 ms** (MINLOCK=2); LOS signal→`lock=0` **~200 ms** clean / **~300 ms** with noise (noise extends the hold); **pure-noise false-alarm ≈ 0 green/10 s** (q floor ≈3, hits GOOD=6 only ~0.7% of frames and never 2 in a row — MINLOCK=2 is a strong noise rejector). Wrong-channel locks appear only with *real signal + noise* (A+B+noise ~75% confirmed), not pure noise. These are the N=15 baselines the A4d-1 length sweep improves on.
 

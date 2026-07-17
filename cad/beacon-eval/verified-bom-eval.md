@@ -21,6 +21,16 @@ In three orthogonal checks:
 1. **Gold-code generation** — ATtiny416 firmware drives DIM (PA3) with the 4-code PN-sequence at the spec'd chip rate. Verify on scope at U1 pin 4 (DIM).
 2. **Boost-stage regulation** — LM3410X drives the 5-LED string via the sense resistor at the FB reference (190 mV). **Bench value (2026-07): R1 = 3.74 Ω 1% → ~51 mA** (6× the field R_sense) to protect the un-heatsunk breadboard LED string from the field-power thermal load; **field/target value is 0.62 Ω → 306 mA**, restored once the SMT thermal carrier (EV-C1 / Luxeonstar SZ-01-R8-class MCPCB) is mounted. Verify I_LED at R1 (scope across R1 shows 190 mV ± 5% at either value; V_LED auto-regulates — ~11 V at the bench current, ~10 V at field).
 3. **Low-voltage cutout** *(revised 2026-05-20 per R11)* — slowly turn the bench supply down from 5 V. When VIN drops below the firmware threshold (3.6 V firmware-set, corresponds to 3.5 V real after Vref drift), the ATtiny416 firmware drives PA3 LOW + enters POWER_DOWN sleep, R2 (now pull-down to GND) ensures DIM stays LOW even after MCU sleeps, and the LED string goes dark within the ~500 ms ADC debounce window. mEDBG debug stays alive on its independent USB-5 V domain throughout. Also bench-verify: (a) physical MCU soft-reset mid-emission → LEDs off within ≤ 1 ms (POR + topology); (b) deliberately-hung firmware variant → WDT reset within ≤ 250 ms → LEDs off.
+4. **Open-LED over-voltage clamp** *(added 2026-07-16 — a boost CC driver with an open string rails V_OUT toward
+   the 24 V V_SW abs-max / 25 V C1 rating; a bench mishap in this failure class killed an XNANO)* — per the
+   LM3410 datasheet OVP application (TI SNVS541): **D3 = 15 V zener** (BZX55C15 DO-35 or 1N4744A DO-41, THT),
+   cathode → V_OUT (C1 top), anode → FB pin; **R4 = 1 kΩ 5%** in series between the FB pin and the R1 sense
+   node (LED-string cathode stays on the sense node). Normal operation: zener dark, R4 carries only FB bias
+   (~100 nA → 0.1 mV on the 190 mV setpoint — negligible, same at bench 3.74 Ω or field 0.62 Ω sense). String
+   opens: V_OUT clamps at ~V_Z+0.2 V ≈ 15.2 V with I_Z ≈ 190 mV/R4 ≈ 190 µA (~3 mW — cool indefinitely).
+   ⚠️ R4 is NOT optional: zener straight to the sense node makes the loop drive the FULL programmed current
+   through it (306 mA at field → ~4.6 W). Bench-verify: pull the LED header live → V_OUT settles ~15 V, no
+   heating; replug → 190 mV across R1 resumes.
 
 End-to-end check: when DIM modulates per gold code, LED current envelope tracks the modulation with the spec'd turn-on/turn-off transitions (see [`spec.md`](../../specs/031-beacon-camera/spec.md) §FR-1).
 
@@ -103,6 +113,15 @@ Pin role assignments (identical on both chips):
   - [ ] received — notes:
 - ~~**EV-A11** TI TPS3839L30DBVT 3.0 V open-drain voltage supervisor~~ *(removed 2026-05-20 per FR-1.7 #4 / R11: UVLO via firmware ADC + topological failsafe + WDT — no supervisor IC needed. Additionally, the previous BOM line had three errors that the removal moots: TPS3839L30 = 2.63 V not 3.0 V per datasheet; DBVT package code doesn't exist (only DBZ SOT-23-3 or DQN X2SON-4); TPS3839 output is push-pull not open-drain.)*
 - [ ] **EV-A12 = target A14** JST-PH 2.0 mm 2-pin THT socket (JST `S2B-PH-K-S` or equiv) — battery / bench-supply input header J2 on the eval, mates with the flight battery's standard JST-PH 2-pin pigtail. **Reuse from target order** (parent BOM Cart §A line A14; +1 spare). On the eval, plug in either a charged 1S LiPo (for battery-as-switch testing) or a bench-supply harness with a JST-PH male connector (for controlled VIN ramps during firmware-ADC cutoff verification).
+  - [ ] received — notes:
+- [ ] **EV-A13** *(added 2026-07-16 — open-LED OVP, orthogonal-check #4)* **15 V zener D3**, THT: `BZX55C15`
+  (DO-35, 500 mW) or `1N4744A` (DO-41, 1 W), qty 1 (+1 spare). Cathode → V_OUT (C1 top), anode → FB pin.
+  Clamps an open-string boost runaway at ~15.2 V (vs 24 V V_SW abs-max / 25 V C1). Dissipates ~3 mW in clamp
+  (with R4 — see EV-A14). Also add to the **field/target pod BOM** when it next revs.
+  - [ ] received — notes:
+- [ ] **EV-A14** *(added 2026-07-16, pairs with EV-A13)* **1 kΩ 5% R4**, THT or 0603, qty 1 — series FB-pin →
+  R1-sense-node. Limits zener clamp current to ~190 µA. ⚠️ NOT optional: without it the loop drives the full
+  programmed LED current through the zener (~4.6 W at field 306 mA).
   - [ ] received — notes:
 
 ### Cart §EV-B — DigiKey (Lumileds — match target order)
