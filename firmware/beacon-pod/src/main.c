@@ -23,9 +23,10 @@ static volatile uint32_t corrupt_mask = 0;               // error positions for 
 static volatile uint16_t lfsr = 0xACE1;                  // corruption PRNG
 
 int main(void) {
-    // Run the core at the full 20 MHz: default main-clock prescaler is /6, disable it (CCP-protected write).
+    // Core at 10 MHz = OSC20M/2 (CCP-protected write). NOT the full 20 MHz: that speed grade needs VDD >= 4.5 V
+    // (out of spec on 1S LiPo); 10 MHz is valid 2.7-5.5 V — matches the LM3410X floor (A2-pwr, 2026-07-16).
     CCP = CCP_IOREG_gc;
-    CLKCTRL.MCLKCTRLB = 0;                                   // PEN=0 -> 20 MHz (source = OSC20M)
+    CLKCTRL.MCLKCTRLB = CLKCTRL_PDIV_2X_gc | CLKCTRL_PEN_bm; // PEN=1, PDIV=/2 -> 10 MHz
 
     DIM_PORT.DIRSET  = BM(DIM_PIN);
     SYNC_PORT.DIRSET = BM(SYNC_PIN);

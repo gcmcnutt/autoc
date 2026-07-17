@@ -5,10 +5,13 @@
 #include <avr/io.h>
 
 // ---- clock / timing (nominal internal osc; OSCCFG fuse = 20 MHz, verified 0x02) ----
-#define F_CPU_HZ         20000000UL      // core clock after main() disables the default /6 prescaler
+// 10 MHz = OSC20M/2 via the main-clock prescaler (A2-pwr, 2026-07-16): the tinyAVR-1 speed grade for 20 MHz
+// requires VDD >= 4.5 V — out of spec across the whole 1S LiPo range. 10 MHz is in-spec 2.7–5.5 V, which
+// matches the LM3410X's 2.7 V floor. 200 Hz chip stays EXACT (TCA_TOP = 3125).
+#define F_CPU_HZ         10000000UL      // core clock after main() sets the prescaler to /2 (OSC20M/2)
 #define CHIP_RATE_HZ     200UL           // Gold-code chip rate
 #define TCA_PRESCALE     16UL            // TCA0 clock = F_CPU / 16
-#define TCA_TOP          (F_CPU_HZ / TCA_PRESCALE / CHIP_RATE_HZ)   // counts/chip = 6250  -> PER = TOP-1
+#define TCA_TOP          (F_CPU_HZ / TCA_PRESCALE / CHIP_RATE_HZ)   // counts/chip = 3125  -> PER = TOP-1
 #if (F_CPU_HZ % (TCA_PRESCALE * CHIP_RATE_HZ)) != 0
 #  error "CHIP_RATE_HZ is not an exact divisor of F_CPU/prescale — 200 Hz would not be exact"
 #endif
@@ -39,4 +42,4 @@
 // asserts DTR (pyserial does by default). Lets a host script perturb the REAL emitter for closed-loop tests:
 // retune frequency, inject bit errors, blank chips (dropout). See main.c for the byte protocol.
 #define UART_BAUD      38400UL       // modest rate: solid margin vs the RC-osc baud error (115200 showed MSB flips)
-#define UART_BAUD_REG  ((uint16_t)((64UL * F_CPU_HZ) / (16UL * UART_BAUD)))   // async normal mode; = 2083 @ 20 MHz
+#define UART_BAUD_REG  ((uint16_t)((64UL * F_CPU_HZ) / (16UL * UART_BAUD)))   // async normal mode; = 1041 @ 10 MHz (+0.06%)
