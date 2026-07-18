@@ -22,6 +22,11 @@ characterized for range and real-hand occlusion. Follows [s6-closed-loop-outcome
   diffuses through tissue (~20 dB attenuation), and the decoder's DC tracker + scale-free quality metric
   acquire on the ~5–20 nA that gets through. At 2 m through-hand is marginal (SEARCH↔ACQ) — brackets the
   decoder floor. **A hand is an attenuator, not a shutter: true-LOS tests need an IR-opaque block.**
+- **Non-LOS bounce lock (2026-07-18)**: sensor aimed at the *ceiling*, emitter aimed at the *wall* — still
+  locks. Indoor diffuse multipath (~70–80 % paint reflectivity at 850 nm) delivers low-nA photocurrent and
+  the decoder takes it. Consequences: (a) **indoors is an integrating sphere** — occlusion/LOS tests are
+  multipath-contaminated; true-dark needs emitter-off or a capped sensor; (b) the **outdoor 100 m test is
+  the honest range measurement** (no bounce surfaces); (c) further confirmation of the ≤10 nA floor.
 
 ## Link budget (datasheet model vs bench)
 
@@ -63,6 +68,20 @@ Clip guidance at R_f = 1 MΩ: output clips ~2 µA → stay **r ≥ ~0.7 m** (mea
 - Occlusion event table (60 s capture, `host/results/hand_occlusion.log`): 9 fast flicks — margin dips to
   1–4, **zero lock drops**; 4 slow passes — 0.3–1.7 s unlock, warm relock; 1 long hold — relock through
   tissue. Matches the emitter-commanded dropout ladder (HOLD ≈ 2 periods, warm relock ≲ 1 period).
+
+## Forward notes — camera-era field experiments (040 backlog, seeded 2026-07-18)
+
+The bounce-lock observation generalizes: **low-altitude flight is a partial integrating sphere** — ground,
+trees, and structures will return diffuse 850 nm multipath, so the camera position estimator will see the
+beacon as *more than a point source* (halos, secondary blobs, ground glints). Field experiments to run when
+the camera exists:
+1. Characterize ground/foliage bounce vs altitude/grazing angle (the single-PD rig + lens is already a
+   calibrated instrument for this — point it at the reflection, read `corrB`).
+2. Beacon-as-extended-source effects on centroiding/bearing (bias from asymmetric halos; specular water/metal
+   glints as false point sources).
+3. Architecture consequence: full per-pixel correlation won't scale — the likely shape is a **bank of
+   correlating trackers on candidate ROIs** (acquire wide, then N trackers follow code-locked blobs and the
+   estimator fuses/rejects on code margin + geometry). Today's decoder IS that tracker unit, one pixel worth.
 
 ## Next steps
 

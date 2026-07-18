@@ -22,15 +22,42 @@ static volatile uint8_t  corrupt_n = 0, dropout_n = 0;   // perturbation knobs (
 static volatile uint32_t corrupt_mask = 0;               // error positions for the current code word
 static volatile uint16_t lfsr = 0xACE1;                  // corruption PRNG
 
+// ---- firmware-ADC UVLO (R11): trip -> LEDs dark + POWER_DOWN; recovery = battery pull / POR ----
+static uint8_t uvlo_div = 0, uvlo_cnt = 0;               // ISR-only state (sample cadence / debounce)
+
+static void uvlo_shutdown(void) {
+    cli();
+    DIM_PORT.OUTCLR  = BM(DIM_PIN);  DIM_PORT.DIRCLR  = BM(DIM_PIN);   // release DIM: R2 pull-DOWN owns the node
+    SYNC_PORT.OUTCLR = BM(SYNC_PIN); SYNC_PORT.DIRCLR = BM(SYNC_PIN);  //   -> LM3410X in ~80 nA shutdown
+    DIAG_PORT.DIRCLR = BM(DIAG_PIN);                                   // release diag LED (off either polarity)
+    TCA0.SINGLE.CTRLA = 0; USART0.CTRLB = 0; ADC0.CTRLA = 0;
+    _PROTECTED_WRITE(WDT.CTRLA, WDT_PERIOD_OFF_gc);      // else the WDT would reboot-loop us out of sleep
+    SLPCTRL.CTRLA = SLPCTRL_SMODE_PDOWN_gc | SLPCTRL_SEN_bm;
+    for (;;) __asm__ __volatile__("sleep");              // no wake sources armed: sleep until power is pulled
+}
+
 int main(void) {
     // Core at 10 MHz = OSC20M/2 (CCP-protected write). NOT the full 20 MHz: that speed grade needs VDD >= 4.5 V
     // (out of spec on 1S LiPo); 10 MHz is valid 2.7-5.5 V — matches the LM3410X floor (A2-pwr, 2026-07-16).
     CCP = CCP_IOREG_gc;
     CLKCTRL.MCLKCTRLB = CLKCTRL_PDIV_2X_gc | CLKCTRL_PEN_bm; // PEN=1, PDIV=/2 -> 10 MHz
 
+    // Watchdog FIRST (eval check (b): hung firmware -> reset <= 250 ms -> R2 pull-down darkens the string
+    // through the reset). Fed once per chip in the TCA ISR.
+    _PROTECTED_WRITE(WDT.CTRLA, WDT_PERIOD_256CLK_gc);       // ~0.256 s @ 1 kHz WDT osc
+
     DIM_PORT.DIRSET  = BM(DIM_PIN);
     SYNC_PORT.DIRSET = BM(SYNC_PIN);
     DIAG_PORT.DIRSET = BM(DIAG_PIN);
+
+    // UVLO ADC: 1.1 V internal ref measured against VDD (result rises as VDD falls; trip > UVLO_ADC_TRIP).
+    VREF.CTRLA  = VREF_ADC0REFSEL_1V1_gc;
+    ADC0.CTRLC  = ADC_PRESC_DIV16_gc | ADC_REFSEL_VDDREF_gc | ADC_SAMPCAP_bm;   // 625 kHz ADC clk @ 10 MHz
+    ADC0.MUXPOS = ADC_MUXPOS_INTREF_gc;
+    ADC0.CTRLA  = ADC_ENABLE_bm;                              // 10-bit
+    ADC0.COMMAND = ADC_STCONV_bm;                             // throwaway conversion (reference settle)
+    while (!(ADC0.INTFLAGS & ADC_RESRDY_bm)) { }
+    (void)ADC0.RES;
 
     // USART0 command link, 115200 8N1 on the ALTERNATE route PA1(TXD)/PA2(RXD) (default PB2/PB3 not bridged by
     // the XNANO mEDBG CDC). TXD enabled + PA1 output for the RX-echo/heartbeat DIAG.
@@ -54,10 +81,23 @@ int main(void) {
 // ---- 200 Hz chip clock: apply this chip's outputs, then compute the next (with any commanded perturbation) ----
 ISR(TCA0_OVF_vect) {
     TCA0.SINGLE.INTFLAGS = TCA_SINGLE_OVF_bm;               // ack
+    __asm__ __volatile__("wdr");                            // feed the watchdog (chip clock alive)
 
     // pre-computed outputs FIRST -> constant-latency (measurement-grade) DIM edge
     if (dim_next)  DIM_PORT.OUTSET  = BM(DIM_PIN);  else DIM_PORT.OUTCLR  = BM(DIM_PIN);
     if (sync_next) SYNC_PORT.OUTSET = BM(SYNC_PIN); else SYNC_PORT.OUTCLR = BM(SYNC_PIN);
+
+    // UVLO sample every UVLO_SAMPLE_CHIPS chips (non-blocking: read last conversion, kick the next).
+    if (++uvlo_div >= UVLO_SAMPLE_CHIPS) {
+        uvlo_div = 0;
+        if (ADC0.INTFLAGS & ADC_RESRDY_bm) {
+            uint16_t res = ADC0.RES;                        // read clears RESRDY
+            if (res > UVLO_ADC_TRIP) {                      // VDD below ~3.6 V firmware-set
+                if (++uvlo_cnt >= UVLO_TRIP_COUNT) uvlo_shutdown();   // ~500 ms debounced -> dark + sleep
+            } else uvlo_cnt = 0;
+        }
+        ADC0.COMMAND = ADC_STCONV_bm;
+    }
 
     if (++chip >= GOLD_N) {                                 // new code word
         chip = 0;

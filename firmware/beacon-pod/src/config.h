@@ -43,3 +43,15 @@
 // retune frequency, inject bit errors, blank chips (dropout). See main.c for the byte protocol.
 #define UART_BAUD      38400UL       // modest rate: solid margin vs the RC-osc baud error (115200 showed MSB flips)
 #define UART_BAUD_REG  ((uint16_t)((64UL * F_CPU_HZ) / (16UL * UART_BAUD)))   // async normal mode; = 1041 @ 10 MHz (+0.06%)
+
+// ---- firmware-ADC UVLO (R11 / FR-1.7 #4): kill the LED string before the LiPo is over-discharged ----
+// ADC measures the 1.1 V internal reference AGAINST VDD (ref = VDD): result = 1023*1.1/VDD, so the count
+// RISES as VDD falls. Trip at 3.6 V firmware-set (~3.5 V real after Vref/ADC tolerance — operator-locked);
+// sample every UVLO_SAMPLE_CHIPS chips (100 ms @ 200 Hz), require UVLO_TRIP_COUNT consecutive lows (~500 ms
+// debounce, rides through battery-sag transients). On trip: DIM released (R2 pull-down -> LM3410X 80 nA
+// shutdown) + POWER_DOWN sleep; recovery = battery pull / POR.
+#define UVLO_VDD_MV        3600UL
+#define UVLO_INTREF_MV     1100UL
+#define UVLO_ADC_TRIP      ((uint16_t)((1023UL * UVLO_INTREF_MV) / UVLO_VDD_MV))   // 312 -> trip when res > this
+#define UVLO_SAMPLE_CHIPS  20        // 100 ms cadence @ 200 Hz chip rate
+#define UVLO_TRIP_COUNT    5         // 5 consecutive = ~500 ms debounce

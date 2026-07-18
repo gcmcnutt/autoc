@@ -213,13 +213,15 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   **order-03 O3-1/O3-2**; fit when parts arrive. Bench-verify: pull the LED header live → V_OUT clamps ~15.2 V,
   cool; replug → 190 mV across R1 resumes. Motivation: open-LED boost runaway already killed parts + a 416
   (rails toward the 24 V V_SW abs-max / 25 V C1 rating); wing-tip connectors WILL let go in the field.
-- [ ] A2-uvlo **Firmware-ADC UVLO @ 3.5 V + WDT (T027–T031 refresh) — NOW URGENT**: the emitter runs on a real
-  1S LiPo (2026-07-17) with NO cutoff — the boost pulls the cell toward the 2.7 V hardware floor (A2-pwr).
-  Implement per R11 / `contracts/mcu-firmware-contract.md`: ADC reads VIN, ≤3.6 V firmware-set (≈3.5 V real,
-  ~500 ms debounce) → drive DIM LOW + POWER_DOWN sleep; R2 pull-down keeps the LM3410X in 80 nA shutdown; add
-  the WDT. Set the BOD fuse (~2.6 V) in the same pass (A2-pwr item b). Verify = eval doc orthogonal check #3
-  (bench-supply ramp → dark at 3.5 V — the ramp harness/telemetry capture from 2026-07-16 is the instrument).
-  Until then: supervised battery use only.
+- [~] A2-uvlo **Firmware-ADC UVLO @ 3.5 V + WDT (T027–T031 refresh)** — **CODE IMPLEMENTED + BUILT 2026-07-18**
+  (both envs, 1066 B flash): ADC measures the 1.1 V INTREF against VDD (count rises as VDD falls; trip
+  > 312 ≙ 3.6 V firmware-set ≈ 3.5 V real), sampled every 20 chips (100 ms), 5-consecutive = ~500 ms debounce
+  → DIM **released** (R2 pull-down → LM3410X 80 nA shutdown) + peripherals off + WDT off + POWER_DOWN forever
+  (wake = battery pull/POR). **WDT 0.256 s** enabled first thing in main, fed once per chip ISR (hung firmware
+  → reset ≤ 250 ms → dark via R2 through the reset). **PENDING (needs the XNANO on USB): flash; write the BOD
+  fuse (BODCFG=0x48 — 2.6 V, sampled-active, off-in-sleep; command in `firmware/beacon-pod/SETUP.md`); verify =
+  eval check #3 bench-supply ramp → dark at ~3.5 V (2026-07-16 ramp/telemetry harness is the instrument) + the
+  hung-firmware WDT check.** Until verified: supervised battery use only.
 - [ ] A3-b **Soldered receiver rebuild on copper-clad** (from the breadboard A3): fixed R_f (choose from the
   range work; 1 MΩ default) + proper C_f (5–100 pF soldered), MCP6022 powered-pin checklist, TI-style PD
   return (anode→GND), IN−=GND single-ended, star-ground with the emitter board (kills the shared-return

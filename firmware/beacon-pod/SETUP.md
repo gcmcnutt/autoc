@@ -147,3 +147,13 @@ LED0 = **PB5** (active-low), SW0 = PB4 (from the board def).
 **Debugging**: PlatformIO has **no hardware debug** for tinyAVR (board `debug:{}`). Real UPDI hardware debug
 (breakpoints/step/watch) = **MPLAB X on Windows** driving the mEDBG natively (no usbip). PIO `debug_tool=simavr`
 gives simulator-only stepping if desired.
+
+**BOD fuse (A2-pwr item b — one-time per chip, freely rewritable)**: set the brown-out detector to 2.6 V,
+sampled-while-active, off-in-sleep (BODCFG = LVL2<<5 | ACTIVE_SAMPLED<<2 = **0x48**). With the board attached:
+```
+~/.venvs/avr/bin/pymcuprog write -d attiny416 -m fuses -o 1 -l 0x48    # offset 1 = BODCFG
+~/.venvs/avr/bin/pymcuprog read  -d attiny416 -m fuses                  # verify
+```
+Same command with `-d attiny412` over serialUPDI for the production pod. AVR "fuses" are non-volatile config
+bytes, NOT one-way — the only sticky config in this family is repurposing the 412's UPDI pin itself (needs HV
+to undo; don't).
