@@ -213,7 +213,11 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   **order-03 O3-1/O3-2**; fit when parts arrive. Bench-verify: pull the LED header live → V_OUT clamps ~15.2 V,
   cool; replug → 190 mV across R1 resumes. Motivation: open-LED boost runaway already killed parts + a 416
   (rails toward the 24 V V_SW abs-max / 25 V C1 rating); wing-tip connectors WILL let go in the field.
-- [~] A2-uvlo **Firmware-ADC UVLO @ 3.5 V + WDT (T027–T031 refresh)** — **CODE IMPLEMENTED + BUILT 2026-07-18**
+- [X] A2-uvlo **Firmware-ADC UVLO @ 3.5 V + WDT — DONE & HW-VERIFIED 2026-07-18** (07d195f + calibration):
+  ramp test = ONE clean trip, latched dark through ramp-back-up, power-cycle relock 0.17 s; **trip = 3.48 V
+  measured at the chip pins** (ref −3 %, in spec, ≈3.5 V target — no adjustment); **post-trip battery draw ≈ 0**
+  (below meter resolution: POWER_DOWN + LM3410X 80 nA). BOD fuse 0x48 written+verified. Remaining niceties only:
+  the deliberately-hung-firmware WDT check, and A2-uvlo-2 (micro-dropouts). Original implementation notes:
   (both envs, 1066 B flash): ADC measures the 1.1 V INTREF against VDD (count rises as VDD falls; trip
   > 312 ≙ 3.6 V firmware-set ≈ 3.5 V real), sampled every 20 chips (100 ms), 5-consecutive = ~500 ms debounce
   → DIM **released** (R2 pull-down → LM3410X 80 nA shutdown) + peripherals off + WDT off + POWER_DOWN forever
@@ -231,9 +235,9 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   supply-adjust artifacts from voltage-dependent instability) at 4.2 / 4.0 / 3.8 / 3.7 / 3.65 V × 60 s each;
   dual capture = pyserial banner listener (timestamps) + COM3 telemetry; correlate banners ↔ margin dips.
   Suspects: code-correlated rail ripple (lit-chip boost load sags the leads near threshold) vs pre-BOD dirty
-  restarts. **Also calibrate the trip point**: supply read 3.3–3.4 V at trip vs 3.6 firmware-set — put the DMM
-  ON THE 416 VDD PINS during a slow final ramp; if chip-measured trip < ~3.45 V, raise `UVLO_VDD_MV`
-  (ref-tolerance compensation).
+  restarts. ~~Also calibrate the trip point~~ **DONE 2026-07-18: 3.48 V at the chip pins** (several tries,
+  ambient) — ref −3 %, in spec, no `UVLO_VDD_MV` change; the earlier 3.3–3.4 supply reading was a
+  measurement-point/lag artifact. Static-hold micro-dropout sweep remains.
 - [ ] A3-b **Soldered receiver rebuild on copper-clad** (from the breadboard A3): fixed R_f (choose from the
   range work; 1 MΩ default) + proper C_f (5–100 pF soldered), MCP6022 powered-pin checklist, TI-style PD
   return (anode→GND), IN−=GND single-ended, star-ground with the emitter board (kills the shared-return

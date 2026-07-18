@@ -50,7 +50,8 @@
 // sample every UVLO_SAMPLE_CHIPS chips (100 ms @ 200 Hz), require UVLO_TRIP_COUNT consecutive lows (~500 ms
 // debounce, rides through battery-sag transients). On trip: DIM released (R2 pull-down -> LM3410X 80 nA
 // shutdown) + POWER_DOWN sleep; recovery = battery pull / POR.
-#define UVLO_VDD_MV        3600UL
+#define UVLO_VDD_MV        3600UL    // CALIBRATED 2026-07-18: trips at 3.48 V measured at the chip pins (ref ~-3%,
+                                     // in spec; ~3.5 V target met). Nudge to 3650 only if strictly >=3.50 needed.
 #define UVLO_INTREF_MV     1100UL
 #define UVLO_ADC_TRIP      ((uint16_t)((1023UL * UVLO_INTREF_MV) / UVLO_VDD_MV))   // 312 -> trip when res > this
 #define UVLO_SAMPLE_CHIPS  20        // 100 ms cadence @ 200 Hz chip rate
