@@ -222,6 +222,18 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   fuse (BODCFG=0x48 — 2.6 V, sampled-active, off-in-sleep; command in `firmware/beacon-pod/SETUP.md`); verify =
   eval check #3 bench-supply ramp → dark at ~3.5 V (2026-07-16 ramp/telemetry harness is the instrument) + the
   hung-firmware WDT check.** Until verified: supervised battery use only.
+- [ ] A2-uvlo-2 **Micro-dropout hunt near the UVLO threshold** — during the 2026-07-18 ramp verify, transient
+  ~125–275 ms signal disruptions appeared in the FINAL ~3 s before the trip (t−2.9/−1.1/−0.3 s; decoder rode
+  all of them in HOLD — margin dips only, zero confirmed-lock loss; `host/results/uvlo_ramp.log`). Shape says
+  brief MCU resets (reboot → code-phase restart → 1 word of broken correlation). **Instrument now in place**:
+  firmware boot banner `'B'+RSTFR hex` on USART (PORF=01 BORF=02 EXTRF=04 **WDRF=08** SWRF=10 UPDIRF=20,
+  cleared per event) — every reset self-identifies. **Protocol**: STATIC HOLDS (no knob motion — separates
+  supply-adjust artifacts from voltage-dependent instability) at 4.2 / 4.0 / 3.8 / 3.7 / 3.65 V × 60 s each;
+  dual capture = pyserial banner listener (timestamps) + COM3 telemetry; correlate banners ↔ margin dips.
+  Suspects: code-correlated rail ripple (lit-chip boost load sags the leads near threshold) vs pre-BOD dirty
+  restarts. **Also calibrate the trip point**: supply read 3.3–3.4 V at trip vs 3.6 firmware-set — put the DMM
+  ON THE 416 VDD PINS during a slow final ramp; if chip-measured trip < ~3.45 V, raise `UVLO_VDD_MV`
+  (ref-tolerance compensation).
 - [ ] A3-b **Soldered receiver rebuild on copper-clad** (from the breadboard A3): fixed R_f (choose from the
   range work; 1 MΩ default) + proper C_f (5–100 pF soldered), MCP6022 powered-pin checklist, TI-style PD
   return (anode→GND), IN−=GND single-ended, star-ground with the emitter board (kills the shared-return

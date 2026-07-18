@@ -67,6 +67,14 @@ int main(void) {
     USART0.CTRLA = USART_RXCIE_bm;                           // RX-complete interrupt
     USART0.CTRLB = USART_RXEN_bm | USART_TXEN_bm;            // enable RX + TX
 
+    // Boot banner: 'B' + RSTFR hex -> host attributes every reset (PORF=01 BORF=02 EXTRF=04 WDRF=08 SWRF=10
+    // UPDIRF=20). Added for the micro-dropout hunt (A2-uvlo-2): transient resets seen near the UVLO threshold.
+    uint8_t rf = RSTCTRL.RSTFR;
+    RSTCTRL.RSTFR = rf;                                      // write-1-to-clear so each banner is per-event
+    while (!(USART0.STATUS & USART_DREIF_bm)) { }  USART0.TXDATAL = 'B';
+    while (!(USART0.STATUS & USART_DREIF_bm)) { }  USART0.TXDATAL = "0123456789ABCDEF"[rf >> 4];
+    while (!(USART0.STATUS & USART_DREIF_bm)) { }  USART0.TXDATAL = "0123456789ABCDEF"[rf & 0x0F];
+
     dim_next  = (GOLD_CODE[CODE_ID] >> (GOLD_N - 1u)) & 1u;  // seed chip 0
     sync_next = 1u;
 
