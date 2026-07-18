@@ -195,7 +195,9 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
 - [~] A4d-4 **LOS timing** — signal-gone → LOS-declared latency vs N + FSM constants; target "a couple of code words." _(Partial: burst sweep gives the drop edge — lock drops at ~2 code words of continuous blanking, HOLDMAX=2; full LOS-declared latency vs N sweep pending.)_
 - [~] A4d-5 **Two-signal (emitter B — A6 / S6)** — second OSCH-domain emitter summed into the virtual ADC; measure discrimination + acquisition + LOS under two simultaneous codes, independent drift, and **same-pixel summation**. **Harness built & HW-verified (2026-06-24):** emitter B on a skewed OSCH divisor (±3%) + a random-noise source, summed; both codes lock simultaneously (CDMA, A & B confirmed), and **A+B+noise degrades both to ~75 % confirmed with occasional wrong-channel locks** — N=15 is marginal under two-signal+noise. Full N-sweep quantification pending (with A4d-1).
 - [ ] A4d-6 **Chip-rate ↔ frame-rate decoupling** — with hard lock + motion predictors, sweep chip:frame ratios; quantify the achievable flexibility for 040.
-- [ ] A2-pwr **Emitter low-voltage floor + MCU speed-grade hardening** — measured 2026-07-16 (manual VIN ramp,
+- [~] A2-pwr **Emitter low-voltage floor + MCU speed-grade hardening** — *(a) F_CPU 20→10 MHz DONE 2026-07-16
+  (commit ca1fe78, HW-verified: chip rate exact, regression identical; NB 'F' rate-cmd step doubled to
+  0.16 %/step — halve host step values). (b) BOD fuse ~2.6 V still PENDING.* — measured 2026-07-16 (manual VIN ramp,
   IR-live rig, decoder watching the hardwired DIM): 4.2→3.3 V fully decode-transparent (0 lock drops, margin
   med 8–9); descending further, `corrB` tracks VIN once DIM-high < ADC Vref 2.5 V (137k→74k) and the emitter
   **quits ≈2.7 V** — exactly the **LM3410X spec'd VIN minimum (2.7–5.5 V, SNVS541)**. AGC held lock nearly to
@@ -205,6 +207,25 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   so we're out of spec over the whole 1S range today; 10 MHz is valid 2.7–5.5 V (200 Hz chip + 38400 baud
   unaffected; TCA_TOP = 3125 exact); (b) **set the BOD fuse** (~2.6 V) → clean reset instead of an undefined
   brown-out while driving the LED string.
+- [ ] A1-ovp **Fit the open-LED OVP clamp on the emitter rig** — D3 15 V zener (cathode→V_OUT, anode→FB) +
+  R4 1 kΩ (FB pin → sense node; NOT optional — without it the clamp carries the full programmed LED current,
+  ~4.6 W at field). Provisioned in `verified-bom-eval.md` EV-A13/A14 (design + why) and ordered as
+  **order-03 O3-1/O3-2**; fit when parts arrive. Bench-verify: pull the LED header live → V_OUT clamps ~15.2 V,
+  cool; replug → 190 mV across R1 resumes. Motivation: open-LED boost runaway already killed parts + a 416
+  (rails toward the 24 V V_SW abs-max / 25 V C1 rating); wing-tip connectors WILL let go in the field.
+- [ ] A2-uvlo **Firmware-ADC UVLO @ 3.5 V + WDT (T027–T031 refresh) — NOW URGENT**: the emitter runs on a real
+  1S LiPo (2026-07-17) with NO cutoff — the boost pulls the cell toward the 2.7 V hardware floor (A2-pwr).
+  Implement per R11 / `contracts/mcu-firmware-contract.md`: ADC reads VIN, ≤3.6 V firmware-set (≈3.5 V real,
+  ~500 ms debounce) → drive DIM LOW + POWER_DOWN sleep; R2 pull-down keeps the LM3410X in 80 nA shutdown; add
+  the WDT. Set the BOD fuse (~2.6 V) in the same pass (A2-pwr item b). Verify = eval doc orthogonal check #3
+  (bench-supply ramp → dark at 3.5 V — the ramp harness/telemetry capture from 2026-07-16 is the instrument).
+  Until then: supervised battery use only.
+- [ ] A3-b **Soldered receiver rebuild on copper-clad** (from the breadboard A3): fixed R_f (choose from the
+  range work; 1 MΩ default) + proper C_f (5–100 pF soldered), MCP6022 powered-pin checklist, TI-style PD
+  return (anode→GND), IN−=GND single-ended, star-ground with the emitter board (kills the shared-return
+  di/dt edge spikes seen 2026-07-16). Read the traps table in
+  [`optical-link-outcome.md`](optical-link-outcome.md) FIRST. Then re-run the commanded dropout ladder
+  (`host/recovery_sweep.py`, TX back on USB) as the soldered-baseline regression.
 - [ ] A4d-7 **Minimum-energy lock gate (harden the confidence ladder against dark-input false locks)** — found
   2026-07-16 in the IR-live recovery regression (s6, `host/results/recovery_sweep_ir50ma.csv`): during LONG
   signal-dark periods (8 s rung, 2/3 trials) the decoder flashed transient false `lock=2` ~1.5 s before the
