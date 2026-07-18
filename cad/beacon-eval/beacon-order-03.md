@@ -84,11 +84,12 @@
   **shielded, Isat ≥ 2 A, 4×4×2 mm class**. Primary: Coilcraft **XFL4020-472ME** (4.7 µH, Isat ~3 A) qty **3**;
   alt **XAL4020-103** (10 µH) or Murata/TDK equivalent. Keep the switching loop tight on the tile stack (FR-1.6).
   - [ ] received — notes:
-- [ ] **O3-15** **Battery connector, 1.25 mm pitch, male PCB side** — ⚠️ naming trap: batteries sold as
-  "JST PH 1.25" are usually **Molex PicoBlade-compatible** (real JST PH = 2.0 mm; JST's true 1.25 mm family is
-  GH, which has a latch). **Verify against the actual battery plug before ordering** (photo/measure; latch ⇒ GH).
-  Default: Molex PicoBlade **53047-0210** (THT vertical) qty **6** (+ 53048-0210 SMT alt). These flight packs
-  replace the JST-PH 2.0 harness from order-01 on the pod side.
+- [ ] **O3-15** **Battery connector, 1.25 mm pitch, male PCB side** — flight pack CONFIRMED 2026-07-18:
+  **Spektrum SPMX1501S50** (1S 150 mAh 50C, nominal-3.7 V labeling = standard LiPo, charges to 4.20 V — NOT
+  LiHV), connector listed as **"PH 1.25 (Ultra Micro)"** = the Spektrum/E-flite **UMX** connector, 1.25 mm
+  **PicoBlade-compatible** (real JST PH = 2.0 mm — label is a misnomer). Order either: Molex PicoBlade
+  **53047-0210** (THT vertical) qty **6**, or a hobby-stock **UMX male pigtail** (bare leads — easiest to
+  solder into the pod). Replaces the JST-PH 2.0 harness from order-01 on the pod side.
   - [ ] received — notes:
 
 ## Related but $0 (firmware/fuses — not parts)
