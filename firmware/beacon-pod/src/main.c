@@ -31,6 +31,8 @@ static void uvlo_shutdown(void) {
     SYNC_PORT.OUTCLR = BM(SYNC_PIN); SYNC_PORT.DIRCLR = BM(SYNC_PIN);  //   -> LM3410X in ~80 nA shutdown
     DIAG_PORT.DIRCLR = BM(DIAG_PIN);                                   // release diag LED (off either polarity)
     TCA0.SINGLE.CTRLA = 0; USART0.CTRLB = 0; ADC0.CTRLA = 0;
+    PORTA.OUTSET = BM(1);                                // park TX (PA1) idle-HIGH: a low UART line = endless
+                                                         // break -> the mEDBG floods 0x00 (seen 2026-07-18)
     _PROTECTED_WRITE(WDT.CTRLA, WDT_PERIOD_OFF_gc);      // else the WDT would reboot-loop us out of sleep
     SLPCTRL.CTRLA = SLPCTRL_SMODE_PDOWN_gc | SLPCTRL_SEN_bm;
     for (;;) __asm__ __volatile__("sleep");              // no wake sources armed: sleep until power is pulled
