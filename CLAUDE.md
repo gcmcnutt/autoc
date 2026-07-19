@@ -9,6 +9,12 @@ FPGA, avr-gcc/UPDI for the emitter, PlatformIO for xiao, training box, S3) lives
 read it when a toolchain / host / build-path question comes up (it is intentionally NOT `@`-imported, so it
 stays out of every prefix): [`docs/toolchains.md`](docs/toolchains.md)
 
+**031 beacon bench**: the living bench state (instruments, traps, open items — kept IN-REPO for
+cross-machine portability, per operator 2026-07-18) is
+[`specs/031-beacon-camera/bench-journal.md`](specs/031-beacon-camera/bench-journal.md) — read it before any
+bench work. Policy: `firmware/beacon-decoder-stepfpga/host/regression.py` after any emitter-firmware or
+decoder-gateware change.
+
 ## Active Technologies
 - C++17 (renderer, shared code), Python 3.11 (analysis scripts) + Eigen (math), VTK (renderer), cereal (data.dat parsing), blackbox-tools (INAV decode) (018-flight-analysis)
 - File-based — flight logs, blackbox CSVs, eval-results/ directories, S3 for training artifacts (018-flight-analysis)

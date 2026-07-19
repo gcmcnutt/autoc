@@ -19,5 +19,5 @@ backup/ coreip/ dm/ synlog/ syntmp/ synwork/ *_synplify_tmp*.lpf Untitled.tpf*
 sim/*.vvp
 sim/*.vcd
 
-# host measurement outputs (per-bench; summaries go in docs/commits)
-host/results/
+# host measurement outputs are COMMITTED (operator 2026-07-18: portability across machines) — raw logs +
+# CSVs are the evidence behind the outcome docs. Keep individual files < a few MB.
