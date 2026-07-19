@@ -9,7 +9,7 @@
 
 - **Optical link WORKS end-to-end and is characterized**: LiPo-capable emitter (ATtiny416 XNANO eval @
   10 MHz, UVLO 3.48 V + WDT + BOD 2.6 V) → LM3410X boost → 5× L1IZ-0850 @ 51 mA bench → air → BPV10NF →
-  MCP6022 TIA (breadboard) → MCP3201 (IN−=GND) → StepFPGA s6 correlator. Best optical: margin 9,
+  MCP6022 TIA (breadboard) → MCP3201 (IN−=GND) → StepFPGA **s7** correlator. Best optical: margin 9,
   corrB 29.4k; **41 ft (~12.5 m) locks bare-to-bare** (decoder floor ≤10 nA). Full story:
   [optical-link-outcome.md](optical-link-outcome.md); hardwired-era: [s6-closed-loop-outcome.md](s6-closed-loop-outcome.md).
 - **Full bench regression is automated and POLICY**: `firmware/beacon-decoder-stepfpga/host/regression.py`
@@ -43,13 +43,13 @@
 
 ## Decoder knowledge (s6 gateware)
 
-- AGC = energy-normalized quality (excellent: 100 % lock at 3 % duty) + **DC tracker α=1/256 @480 Hz
-  (τ=533 ms) — the dominant settle constant** (10× down-step: margin craters ~1 s, settles 2.5–3 s; up-step
-  0.5–1 s; hand-relock ~1 s = pedestal step). Data: `host/results/agc_step.log`.
+- AGC = energy-normalized quality (excellent: 100 % lock at 3 % duty) + **gear-shifted DC tracker (s7)**:
+  α=1/256 locked (τ=533 ms) / **1/32 unlocked (τ=67 ms)** — HW step settle **0.62 s** (s6 was 1.23 s; s6-era
+  curves in `host/results/agc_step.log`). Min-energy lock gate (beste ≥ 64) kills dark-input false locks.
 - Occlusion: ≤1 word rides through in HOLD (300–325 ms absorption); warm relock ≲1 period; no ratchet
   (5 geometries of `recovery_sweep` CSVs in `host/results/`).
-- s7 gateware queue: **A4d-8** gear-shifted DC α (1/32 unlocked → ~4× faster pedestal recovery) + **A4d-7**
-  min-energy lock gate (dark-input false-lock flashes). Both sim-first via `sim/`.
+- **s7 SHIPPED 2026-07-18** (`experiments/s7.v`, sim `sim/tb_s7.v`): A4d-8 gear-shifted α + A4d-7 min-energy
+  gate — sim-first (0.81 ms settle, zero dark flashes), regression 19/19 with the settle bar ratcheted <1.0 s.
 
 ## Open items / next steps
 

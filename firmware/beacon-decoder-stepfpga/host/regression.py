@@ -96,7 +96,7 @@ def main():
     rows = [(i, int(r[8])) for i, r in enumerate(rows) if len(r) == 13 and r[0] == 'BCN']
     down_i = next((i for i, m in rows if m <= 3), None)
     settle = next((i for i, m in rows[ (down_i or 0):] if m >= 5), None) if down_i is not None else None
-    ok = down_i is not None and settle is not None and (settle - down_i) * 0.025 < 5.0
+    ok = down_i is not None and settle is not None and (settle - down_i) * 0.025 < 1.0  # s7 gear-shift bar (s6 measured 1.23 s)
     check("P3 step settle", ok,
           f"down@{down_i} settle@{settle} ({(settle-down_i)*0.025:.2f}s)" if ok else f"down={down_i} settle={settle}")
 

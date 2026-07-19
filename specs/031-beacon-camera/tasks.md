@@ -244,14 +244,14 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   di/dt edge spikes seen 2026-07-16). Read the traps table in
   [`optical-link-outcome.md`](optical-link-outcome.md) FIRST. Then re-run the commanded dropout ladder
   (`host/recovery_sweep.py`, TX back on USB) as the soldered-baseline regression.
-- [ ] A4d-8 **Gear-shifted DC tracker (AGC settle speed-up, s7 with A4d-7)** — MEASURED 2026-07-18 via the new
+- [X] A4d-8 **Gear-shifted DC tracker — DONE s7, HW-VERIFIED 2026-07-18**: alpha 1/256 locked / 1/32 unlocked; sim 0.81 ms settle; **HW step settle 1.23 s -> 0.62 s (2x)**, regression bar ratcheted to <1.0 s, 19/19 PASS. Original analysis: MEASURED 2026-07-18 via the new
   emitter `'P'` pulse-width attenuator (10× amplitude step, `host/results/agc_step.log`): down-step buries the
   small signal under DC-tracker bias — margin craters to 1–2 for ~1 s, settles in ~2.5–3 s (= 3–4τ of the
   α=1/256 @480 Hz tracker, τ≈533 ms — matches RTL prediction); up-step recovers in 0.5–1 s; hand-relock ~1 s =
   same mechanism (pedestal step). Steady-state AGC is excellent: 100 % lock down to P=8 (3 % duty, corrB 187,
   margin 6) on an already-weak bounce path. Fix: α = 1/256 while LOCKED, 1/32 while UNLOCKED (τ 67 ms — still
   13× a chip, can't eat the code): down-step trough → ~200 ms, hand-relock ~4× faster. Mux on a shift amount.
-- [ ] A4d-7 **Minimum-energy lock gate (harden the confidence ladder against dark-input false locks)** — found
+- [X] A4d-7 **Minimum-energy lock gate — DONE s7 2026-07-18**: q>=GOOD gated on per-period energy >= 64 (dark floor ~1-20, weakest real lock ~300). Sim: ZERO false flashes through a 1.2 s-equiv dark window; UVLO-trip recovery unimpaired (regression P6 PASS). Original finding: found
   2026-07-16 in the IR-live recovery regression (s6, `host/results/recovery_sweep_ir50ma.csv`): during LONG
   signal-dark periods (8 s rung, 2/3 trials) the decoder flashed transient false `lock=2` ~1.5 s before the
   signal actually returned. Cause: quality `q = 10·best/energy` is **energy-starved on silent input** — with
