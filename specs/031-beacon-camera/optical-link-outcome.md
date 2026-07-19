@@ -82,6 +82,11 @@ the camera exists:
 3. Architecture consequence: full per-pixel correlation won't scale — the likely shape is a **bank of
    correlating trackers on candidate ROIs** (acquire wide, then N trackers follow code-locked blobs and the
    estimator fuses/rejects on code margin + geometry). Today's decoder IS that tracker unit, one pixel worth.
+4. **Emitter waveform contract: FULL-DUTY chips in production** (locked 2026-07-18). A camera's exposure
+   window (10–60 % of frame, global shutter) slides through the chip period on unsynced clocks; partial-duty
+   pulses would overlap it phase-dependently → received amplitude beats at the clock-slip rate. Full-duty
+   chips are exposure-phase-immune. The `'P'` pulse-width command is a **bench-only** attenuator (the 480 Hz
+   point-sampling PD doesn't integrate; a camera does).
 
 ## Next steps
 

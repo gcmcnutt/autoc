@@ -13,7 +13,11 @@
 //   'D' <n>  dropout: blank the first n chips / code word (DIM held low)
 //   'P' <v>  lit-chip pulse width = v/256 of a chip (0 or 255 = full width). Hardware-timed via TCA CMP0:
 //            a photon-flux attenuator for link-margin / AGC-response tests (receiver samples catch the lit
-//            fraction with probability v/256 -> mean correlation scales ~linearly with v)
+//            fraction with probability v/256 -> mean correlation scales ~linearly with v).
+//            ⚠ BENCH-ONLY: the production waveform contract is FULL-DUTY chips. The eventual camera receiver
+//            integrates a 10-60%-of-frame exposure window that slides through the chip (unsynced clocks);
+//            partial-duty pulses would overlap it by a phase-dependent amount -> amplitude beats at the
+//            clock-slip rate. Full-duty chips are exposure-phase-immune. (Single-PD @480 Hz doesn't care.)
 //   'R'      reset to nominal (200 Hz, no corruption, no dropout, full-width pulses)
 #include "config.h"
 #include "gold_codes.h"
