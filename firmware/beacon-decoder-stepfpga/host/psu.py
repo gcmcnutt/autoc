@@ -26,6 +26,13 @@ import pyvisa
 
 ADDR = 'USB0::62700::5136::SPD1XEAX4R0055::0::INSTR'
 
+# ---- SAFETY GUARDRAILS (operator-set 2026-07-18; fire risk) ----
+# The bench rig is 1S-LiPo-class hardware. Any commanded value beyond these limits raises — REFUSAL, not
+# clamping, so a buggy script dies loudly instead of doing something subtly different. Raising the limits is a
+# deliberate EDIT of these constants (field-power 306 mA runs need MAX_CURR ~1.3 A — change it consciously).
+MAX_VOLT = 4.5    # V
+MAX_CURR = 0.5    # A
+
 class SPD1168X:
     def __init__(self, addr=ADDR):
         self.rm = pyvisa.ResourceManager('@py')
@@ -43,14 +50,24 @@ class SPD1168X:
     def w(self, cmd): time.sleep(0.4); self.i.write(cmd)
     # --- api ---
     def idn(self):            return self.q('*IDN?')
-    def set_volt(self, v):    self.w(f'CH1:VOLT {v:.3f}')
-    def set_curr(self, a):    self.w(f'CH1:CURR {a:.3f}')
+    def set_volt(self, v):
+        if not (0.0 <= v <= MAX_VOLT):
+            raise ValueError(f"REFUSED: {v} V outside guardrail 0..{MAX_VOLT} V (edit MAX_VOLT deliberately)")
+        self.w(f'CH1:VOLT {v:.3f}')
+    def set_curr(self, a):
+        if not (0.0 <= a <= MAX_CURR):
+            raise ValueError(f"REFUSED: {a} A outside guardrail 0..{MAX_CURR} A (edit MAX_CURR deliberately)")
+        self.w(f'CH1:CURR {a:.3f}')
     def get_volt(self):       return float(self.q('CH1:VOLT?'))
     def meas(self):           return (float(self.q('MEAS:VOLT? CH1')), float(self.q('MEAS:CURR? CH1')))
     def output(self, on):     self.w(f'OUTP CH1,{"ON" if on else "OFF"}')
     def status(self):         return int(self.q('SYST:STAT?'), 16)
     def ramp(self, v0, v1, step, dwell, cb=None):
         """Step v0 -> v1 (inclusive-ish) holding `dwell` s per station; cb(v, vmeas, imeas) per station."""
+        for v_ in (v0, v1):                                    # fail BEFORE moving anything
+            if not (0.0 <= v_ <= MAX_VOLT):
+                raise ValueError(f"REFUSED: ramp endpoint {v_} V outside guardrail 0..{MAX_VOLT} V")
+        if step <= 0: raise ValueError("step must be > 0")
         v = v0; sgn = 1 if v1 >= v0 else -1
         while (sgn > 0 and v <= v1 + 1e-9) or (sgn < 0 and v >= v1 - 1e-9):
             self.set_volt(v)
