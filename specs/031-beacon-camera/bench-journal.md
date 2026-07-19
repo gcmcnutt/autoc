@@ -25,7 +25,7 @@
 | Siglent SPD1168X supply | `psu.py` (pyvisa-py USBTMC) | **guardrails MAX_VOLT 4.5 / MAX_CURR 0.5** (REFUSES; raise deliberately for 306 mA field ≈1.3 A). Quirks: ~0.5 s cmd pacing; abandoned query wedges TMC → `usbipd detach/attach`; pyvisa addr uses DECIMAL VID/PID (`USB0::62700::5136::…`). udev: `99-siglent.rules` (f4ec 0666). |
 | Emitter cmd link | `recovery_sweep.Emitter` (pyserial, **DTR required**) | 38400 8N1 on the mEDBG CDC (`firmware/beacon-pod/attach-medbg.sh` → `/dev/ttyACM0`; auto-reattach built in). Cmds: `R` nominal, `F` rate (⚠ 0.16 %/step @10 MHz — halved vs 20 MHz era), `C` corrupt, `D` dropout (0x1F = full stop), `P` pulse width (**BENCH-ONLY** — production waveform contract = FULL-DUTY chips, camera exposure-phase immunity). Boot banner `'B'+RSTFR hex` per reset (WDRF=08, BORF=02, UPDIRF=20). |
 | Decoder telemetry | `monitor.sh COM3 <s>` (Windows-side read) | **one COM3 reader at a time** — a second silently OPEN-FAILs and logs nothing. BCN frame: seq(40 Hz),adc,corrA,lockA,marginA,corrB,lockB,marginB,rateA,rateB,recA,recB. |
-| FPGA build/flash | `experiments/deploy_s6.sh` | Diamond via WSL interop; flash = copy `.jed` → STEPLink `D:`. HDL sim: `sim/run.sh` (iverilog, `ifdef SIM` ÷100 clocks). |
+| FPGA build/flash | `experiments/deploy_s7.sh` (s7 current) | Diamond via WSL interop; flash = copy `.jed` → STEPLink `D:`. HDL sim: `sim/run.sh` (iverilog, `ifdef SIM` ÷100 clocks). |
 | Firmware build/flash | PIO `xnano416` env + pymcuprog | `pymcuprog reset -d attiny416` = **the un-latch** (see traps). BOD fuse recipe in `firmware/beacon-pod/SETUP.md`. |
 
 ## Traps (each cost real time — check before debugging "mysteries")
@@ -41,7 +41,7 @@
 5. usbipd bind targets a BUSID — devices swap busids across replugs; verify against `usbipd list` before any
    `bind --force` (a mis-bind once ate COM3).
 
-## Decoder knowledge (s6 gateware)
+## Decoder knowledge (s7 gateware)
 
 - AGC = energy-normalized quality (excellent: 100 % lock at 3 % duty) + **gear-shifted DC tracker (s7)**:
   α=1/256 locked (τ=533 ms) / **1/32 unlocked (τ=67 ms)** — HW step settle **0.62 s** (s6 was 1.23 s; s6-era
@@ -69,4 +69,4 @@ s5 real-ADC decode `1a35c30` → s6 closed loop + RAM windows + sim harness `afc
 harness auto-reattach `60c58c9` → 10 MHz `ca1fe78` → bench findings + OVP + order-03 `2d61e42` → optical
 checkpoint (41 ft) `d012eaf` → UVLO implemented `1dbe44e` → verified+banner `07d195f` → closed/calibrated
 `f58dcab` → order-03 flight section `49bb4c8` → 'P' attenuator + AGC measured `afcec11` → full-duty contract
-`81f9c99` → PSU driver `241c540` + profile `6adad83` + guardrails `1e022f5` → **regression suite `f4b8590`**.
+`81f9c99` → PSU driver `241c540` + profile `6adad83` + guardrails `1e022f5` → **regression suite `f4b8590`** → s7 gear-shift AGC + energy gate `32a2596`.
