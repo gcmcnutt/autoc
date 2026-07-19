@@ -16,6 +16,10 @@ Usage:
   psu.py set <volts> [amps]     # setpoint(s); does NOT touch output state
   psu.py out on|off
   psu.py ramp <v0> <v1> <step> <dwell_s>   # e.g. ramp 4.2 3.3 0.05 2  (UVLO sweeps; leaves output ON)
+  psu.py profile <v0> <v1> <step> <dwell_s> <out.csv>
+      # ramp + log the I-V curve: v_set,v_meas,i_meas,p_w per station. The emitter's input current profile:
+      # boost CC load => I ~ 1/V (constant power); the UVLO trip shows as a current cliff at ~3.48 V.
+      # NB SPD measurements are averaged -- the 200 Hz code envelope reads as its mean.
 """
 import sys, time
 import pyvisa
@@ -74,6 +78,15 @@ def main():
         elif a[0] == 'ramp':
             v0, v1, st, dw = map(float, a[1:5])
             p.ramp(v0, v1, st, dw, cb=lambda v, vm, im: print(f"  {v:.3f} V set -> {vm:.3f} V {im:.3f} A", flush=True))
+        elif a[0] == 'profile':
+            v0, v1, st, dw = map(float, a[1:5]); path = a[5]
+            with open(path, 'w') as f:
+                f.write("v_set,v_meas,i_meas,p_w\n")
+                def cb(v, vm, im):
+                    f.write(f"{v:.4f},{vm:.3f},{im:.3f},{vm*im:.4f}\n"); f.flush()
+                    print(f"  {v:.3f} V -> {vm:.3f} V  {im*1000:5.0f} mA  {vm*im:6.3f} W", flush=True)
+                p.ramp(v0, v1, st, dw, cb=cb)
+            print("csv ->", path)
         else: print(__doc__)
     finally:
         p.close()
