@@ -11,7 +11,10 @@
 //   'F' <v>  set chip rate:  PER = TCA_TOP-1 - (v-128)*5   (v=128 nominal 200 Hz, ~±10% over the byte)
 //   'C' <n>  corrupt: flip n random chips / code word
 //   'D' <n>  dropout: blank the first n chips / code word (DIM held low)
-//   'R'      reset to nominal (200 Hz, no corruption, no dropout)
+//   'P' <v>  lit-chip pulse width = v/256 of a chip (0 or 255 = full width). Hardware-timed via TCA CMP0:
+//            a photon-flux attenuator for link-margin / AGC-response tests (receiver samples catch the lit
+//            fraction with probability v/256 -> mean correlation scales ~linearly with v)
+//   'R'      reset to nominal (200 Hz, no corruption, no dropout, full-width pulses)
 #include "config.h"
 #include "gold_codes.h"
 #include <avr/interrupt.h>
@@ -19,6 +22,7 @@
 static volatile uint8_t  chip = 0;
 static volatile uint8_t  dim_next = 0, sync_next = 0;    // precomputed for the NEXT overflow
 static volatile uint8_t  corrupt_n = 0, dropout_n = 0;   // perturbation knobs (chips)
+static volatile uint8_t  pulse_w = 0;                    // 'P': lit-chip width = pulse_w/256 chip (0 = full)
 static volatile uint32_t corrupt_mask = 0;               // error positions for the current code word
 static volatile uint16_t lfsr = 0xACE1;                  // corruption PRNG
 
@@ -97,6 +101,15 @@ ISR(TCA0_OVF_vect) {
     if (dim_next)  DIM_PORT.OUTSET  = BM(DIM_PIN);  else DIM_PORT.OUTCLR  = BM(DIM_PIN);
     if (sync_next) SYNC_PORT.OUTSET = BM(SYNC_PIN); else SYNC_PORT.OUTCLR = BM(SYNC_PIN);
 
+    // 'P' pulse-shortening: arm CMP0 to cut the lit chip after pulse_w/256 of the period (hardware-timed).
+    if (pulse_w && dim_next) {
+        TCA0.SINGLE.CMP0 = (uint16_t)(((uint32_t)TCA0.SINGLE.PER * pulse_w) >> 8);
+        TCA0.SINGLE.INTFLAGS = TCA_SINGLE_CMP0_bm;
+        TCA0.SINGLE.INTCTRL  = TCA_SINGLE_OVF_bm | TCA_SINGLE_CMP0_bm;
+    } else {
+        TCA0.SINGLE.INTCTRL  = TCA_SINGLE_OVF_bm;
+    }
+
     // UVLO sample every UVLO_SAMPLE_CHIPS chips (non-blocking: read last conversion, kick the next).
     if (++uvlo_div >= UVLO_SAMPLE_CHIPS) {
         uvlo_div = 0;
@@ -124,6 +137,12 @@ ISR(TCA0_OVF_vect) {
     sync_next = (chip == 0);
 }
 
+// ---- 'P' pulse cut: end the lit portion of this chip (OUTCLR harmless if the chip was already dark) ----
+ISR(TCA0_CMP0_vect) {
+    TCA0.SINGLE.INTFLAGS = TCA_SINGLE_CMP0_bm;
+    DIM_PORT.OUTCLR = BM(DIM_PIN);
+}
+
 // ---- host command receiver ----
 ISR(USART0_RXC_vect) {
     static uint8_t op = 0;                                  // opcode awaiting its value byte
@@ -134,11 +153,12 @@ ISR(USART0_RXC_vect) {
             case 'F': TCA0.SINGLE.PERBUF = (uint16_t)((int16_t)(TCA_TOP - 1u) - ((int16_t)b - 128) * 5); break;
             case 'C': corrupt_n = (b > GOLD_N) ? GOLD_N : b; break;
             case 'D': dropout_n = (b > GOLD_N) ? GOLD_N : b; break;
+            case 'P': pulse_w = (b == 255u) ? 0u : b; break;   // 0 or 255 = full width
         }
         op = 0;
-    } else if (b == 'F' || b == 'C' || b == 'D') {
+    } else if (b == 'F' || b == 'C' || b == 'D' || b == 'P') {
         op = b;                                            // value-taking opcode
     } else if (b == 'R') {                                 // reset to nominal
-        TCA0.SINGLE.PERBUF = (uint16_t)(TCA_TOP - 1u); corrupt_n = 0; dropout_n = 0;
+        TCA0.SINGLE.PERBUF = (uint16_t)(TCA_TOP - 1u); corrupt_n = 0; dropout_n = 0; pulse_w = 0;
     }
 }
