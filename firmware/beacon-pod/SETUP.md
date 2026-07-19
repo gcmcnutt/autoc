@@ -148,6 +148,11 @@ LED0 = **PB5** (active-low), SW0 = PB4 (from the board def).
 (breakpoints/step/watch) = **MPLAB X on Windows** driving the mEDBG natively (no usbip). PIO `debug_tool=simavr`
 gives simulator-only stepping if desired.
 
+**⚠️ Power-cycling a latched (UVLO-tripped) target with the mEDBG USB attached may NOT reset it** (found
+2026-07-18): the bridge pins (UPDI + UART on PA1/PA2) back-feed enough leakage into the target rail that VDD
+never truly collapses — a POWER_DOWN-sleeping chip (~µA) rides the leakage and keeps its latch. True POR =
+**unplug the USB too**, or skip cable-pulling entirely and reset over UPDI (`pymcuprog ping` / `reset`).
+
 **BOD fuse (A2-pwr item b — one-time per chip, freely rewritable)**: set the brown-out detector to 2.6 V,
 sampled-while-active, off-in-sleep (BODCFG = LVL2<<5 | ACTIVE_SAMPLED<<2 = **0x48**). With the board attached:
 ```
