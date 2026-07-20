@@ -42,7 +42,19 @@ def check(name, ok, detail):
 def updi_reset():
     subprocess.run([PYMCU, 'reset', '-d', 'attiny416'], capture_output=True, timeout=60)
 
+def usb_preflight():
+    """Bench replugs shuffle busids and drop attachments. Attach anything bound-but-detached before starting."""
+    out = subprocess.run(['usbipd.exe', 'list'], capture_output=True, text=True, timeout=30).stdout.replace('\r', '')
+    for vidpid, name in (('f4ec:1410', 'SPD1168X'), ('03eb:2145', 'mEDBG')):
+        for line in out.splitlines():
+            if vidpid in line and 'Attached' not in line:
+                busid = line.split()[0]
+                print(f"  (pre-flight: attaching {name} at {busid})", flush=True)
+                subprocess.run(['usbipd.exe', 'attach', '--wsl', '--busid', busid], capture_output=True, timeout=30)
+                time.sleep(2)
+
 def main():
+    usb_preflight()
     psu = SPD1168X()
     print("== P0: cold start from PSU (output off -> on) ==")
     psu.set_volt(4.2); psu.set_curr(0.45); psu.output(True); time.sleep(2)
