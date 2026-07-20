@@ -3,6 +3,9 @@
 **Status**: DRAFT design, 2026-06-18 — wire-level reference for the single-IR-sensor collector. KiCad capture is the next step (`cad/beacon-receiver/beacon-receiver.kicad_sch`, not yet created).
 **Spec ref**: [acquisition-research-plan.md](../../specs/031-beacon-camera/acquisition-research-plan.md) §5 (receiver chain), [eval-loop-bom.md](eval-loop-bom.md) (parts).
 **Chain**: `PD → TIA → [DC tap | AC-couple] → ADC → StepFPGA`, plus an optional hard-1-bit comparator.
+**⚠ v1 is INDOOR/BENCH-ONLY** — full sun rails the 1 MΩ DC-coupled TIA (field-measured 2026-07-17: no
+lock at inches). The outdoor design is **v2**: [collector-schematic-daylight.md](collector-schematic-daylight.md)
+(low-R TIA → AC-couple → U1B ×101, mid-rail bias, optical BP filter required).
 
 Single 3.3 V rail (from the StepFPGA or a bench/USB 3.3 V). Signal BW is low (~100–200 Hz code), so the design is forgiving — jellybean parts, breadboard-friendly.
 
