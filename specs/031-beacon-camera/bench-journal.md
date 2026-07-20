@@ -51,6 +51,26 @@
 - **s7 SHIPPED 2026-07-18** (`experiments/s7.v`, sim `sim/tb_s7.v`): A4d-8 gear-shifted α + A4d-7 min-energy
   gate — sim-first (0.81 ms settle, zero dark flashes), regression 19/19 with the settle bar ratcheted <1.0 s.
 
+## Field finding (2026-07-17, outdoors, sunny): NO LOCK even at inches — TIA RAILED by ambient
+
+Expected physics, now measured: full sun ≈ 15–20 mW/cm² in the PD's wide 780–1050 band → **0.3–1 mA ambient
+photocurrent** vs a 1 MΩ DC-coupled TIA → output rails at 3.3 V, ADC pegged, no decode at any distance.
+AC-coupling alone can't fix a railed amp — the daylight stack is: **FB850-10 optical filter (÷~25 ambient,
+order-03 O3-11) + lower first-stage R_f (~47–100k for headroom) + AC couple (C2/R4) + U1B post-gain (×20–50,
+the MCP6022's unused half)**; ambient shot noise then sets the daylight floor (to be measured). No field
+instruments that day — NOTE: the rig is portable (laptop + STEPLink + battery TX); the telemetry `adc` column
+is a pedestal meter — bring it next time.
+
+## Planned experiments (2026-07-19)
+
+- **Set A (gain vs cap, explains the 16/19 paper-bounce run)**: A1 = 675k no-cap P-ladder; A2 = 1 MΩ +
+  100 pF P-ladder. Prediction: A2 recovers margin 6/100 % (cap = anti-aliasing at the 480 Hz point sampler);
+  A1 barely moves (margin is gain-normalized).
+- **Set B (DC-bias / synthetic sunlight)**: B1 incandescent-lamp pedestal ladder (LED lamps emit no 850 nm!)
+  — `adc` = pedestal meter, find margin knee + rail point; B2 shot-noise margin curve below rail; B3 AC-tap
+  (C2 1 µF + R4 1 MΩ) headroom gain; B4 two-stage daylight front end (low R_f + AC + U1B post-gain) → feeds
+  the A3-b soldered architecture.
+
 ## Open items / next steps
 
 1. **Order-03** ([cad/beacon-eval/beacon-order-03.md](../../cad/beacon-eval/beacon-order-03.md)): OVP parts,

@@ -238,6 +238,12 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   restarts. ~~Also calibrate the trip point~~ **DONE 2026-07-18: 3.48 V at the chip pins** (several tries,
   ambient) — ref −3 %, in spec, no `UVLO_VDD_MV` change; the earlier 3.3–3.4 supply reading was a
   measurement-point/lag artifact. Static-hold micro-dropout sweep remains.
+- [ ] A3-c **Daylight front end (FIELD BLOCKER, found 2026-07-17)**: outdoors/sunny = NO LOCK even at
+  inches — full sun puts 0.3–1 mA into the wide-band PD, railing the 1 MΩ DC-coupled TIA (ADC pegged; distance
+  irrelevant). Fix stack: FB850-10 filter (÷~25 ambient, O3-11) + first-stage R_f ~47–100k + AC couple (C2/R4)
+  + U1B post-gain ×20–50; then measure the ambient shot-noise floor. Bench experiments planned (Set B in
+  bench-journal.md): lamp pedestal ladder → knee/rail → AC-tap headroom → two-stage prototype → fold the
+  chosen architecture into A3-b. Field kit note: bring the laptop rig — telemetry `adc` is a pedestal meter.
 - [ ] A3-b **Soldered receiver rebuild on copper-clad** (from the breadboard A3): fixed R_f (choose from the
   range work; 1 MΩ default) + proper C_f (5–100 pF soldered), MCP6022 powered-pin checklist, TI-style PD
   return (anode→GND), IN−=GND single-ended, star-ground with the emitter board (kills the shared-return
