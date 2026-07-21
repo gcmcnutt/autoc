@@ -35,6 +35,18 @@ Levers to choose among when n>1 (not exclusive):
 Related standing data from the same flight: routine ±7–8 g z-loads (peak +9.6 g in acro recovery
 outside spans) + throttle 86% saturated → energy/smoothness objective (035-line) material.
 
+**Data point 2 (flight 2026-07-20, `flight-results/flight-20260720/`)**: same config except the
+tail boom re-seated (it had slid ~3/4" aft on broken dowel ends → 07-13 flew with CG further aft
+than intended). Cleanest possible A/B: the NN's pitch command stream was statistically identical
+across both flights (⟨|u|⟩ 0.374/0.376, dCtrl 0.315/0.313). Path-matched (paths 0/2/3) NN-direct
+pitch-rate RMS 138.6 → 128.6 °/s (−7%), pitch/roll ratio 1.39 → 1.25 (−10%, the wind-resistant
+number — roll went UP on ~8% hotter roll commands). Acro-PID floor unchanged (~28–37 °/s), so the
+plant still rings at ~4.5× damped baseline. Read: aft-CG explains maybe a quarter of the excess
+pitch motion, NOT the root cause; the too-steep wing leading edge on this article (known pitch
+destabilizer on prior craft) + streamer remain in the confound pool. Reinforces waiting for the
+new articles. Also: **new load record +11.2 g / −8.4 g** (span 2) on identical policy — loads
+creeping up flight-over-flight; inspect airframe between flights.
+
 ### [039 — BACKLOG, set 2026-07-10] Redefine flight boundaries generally for open flying — not the training cylinder
 
 **Operator (during the 039 arena-placement clarifications)**: the training cylinder (R=80 m, ±K
