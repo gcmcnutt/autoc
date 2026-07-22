@@ -4686,7 +4686,7 @@
 
 		(symbol
 		(lib_id "Device:R")
-		(at 235 40 0)
+		(at 234.95 39.37 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -4764,7 +4764,7 @@
 	)
 		(symbol
 		(lib_id "Device:R")
-		(at 235 55 0)
+		(at 234.95 54.61 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -4842,7 +4842,7 @@
 	)
 		(symbol
 		(lib_id "Device:R")
-		(at 235 70 0)
+		(at 234.95 69.85 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -4920,7 +4920,7 @@
 	)
 		(symbol
 		(lib_id "Device:C")
-		(at 235 85 0)
+		(at 234.95 85.09 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -5000,7 +5000,7 @@
 	)
 		(symbol
 		(lib_id "Device:C")
-		(at 235 100 0)
+		(at 234.95 100.33 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -5080,7 +5080,7 @@
 	)
 		(symbol
 		(lib_id "Device:R")
-		(at 250 40 0)
+		(at 250.19 39.37 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -5158,7 +5158,7 @@
 	)
 		(symbol
 		(lib_id "Device:R")
-		(at 250 55 0)
+		(at 250.19 54.61 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -5236,7 +5236,7 @@
 	)
 		(symbol
 		(lib_id "Device:C")
-		(at 250 70 0)
+		(at 250.19 69.85 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -5315,7 +5315,7 @@
 		)
 	)
 		(label "TIA_OUT"
-		(at 265 40 0)
+		(at 265.43 39.37 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5325,7 +5325,7 @@
 		(uuid "9fe8bd61-d34d-466d-993a-ad5b7e726399")
 	)
 		(label "AC_NODE"
-		(at 265 50 0)
+		(at 265.43 49.53 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5335,7 +5335,7 @@
 		(uuid "be4ad9c0-1b1f-4bae-8f93-b5c7a58ea95a")
 	)
 		(label "VBIAS2_1V25"
-		(at 265 60 0)
+		(at 265.43 59.69 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5345,7 +5345,7 @@
 		(uuid "d2e34e2e-1822-47de-9941-00516a1efc48")
 	)
 		(label "POST_OUT"
-		(at 265 70 0)
+		(at 265.43 69.85 0)
 		(effects
 			(font
 				(size 1.27 1.27)
