@@ -4,6 +4,12 @@
 	(generator_version "10.0")
 	(uuid "2b38b541-8578-4c8c-87a6-3ec7f952d22b")
 	(paper "A4")
+	(title_block
+		(title "beacon-receiver DAYLIGHT v2 — two-stage AC-coupled (10k TIA -> AC -> U1B x101)")
+		(date "2026-07-22")
+		(rev "v2-draft")
+		(comment 1 "staged parts at right margin; wire per collector-schematic-daylight.md")
+	)
 	(lib_symbols
 		(symbol "Amplifier_Operational:MCP6022"
 			(pin_names
@@ -3355,7 +3361,7 @@
 			(uuid "7a2beefa-768c-4b59-aed5-b952d4d2d5a4")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "U3")
 					(unit 1)
@@ -3434,7 +3440,7 @@
 			(uuid "e1f929b8-f5d8-4c69-ad0e-a0d53b2767ed")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "R1")
 					(unit 1)
@@ -3531,7 +3537,7 @@
 			(uuid "3b90550e-6b9d-4d86-a3aa-79ec221194bb")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "U1")
 					(unit 1)
@@ -3611,7 +3617,7 @@
 			(uuid "a99f4281-a50d-461c-b61a-192bbf6d1963")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "C2")
 					(unit 1)
@@ -3691,7 +3697,7 @@
 			(uuid "43f12551-bccc-453d-943b-d177ff5e3379")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "C4")
 					(unit 1)
@@ -3767,7 +3773,7 @@
 			(uuid "644de374-2543-4850-9967-1ffe4c07b290")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "PWR1")
 					(unit 1)
@@ -3847,7 +3853,7 @@
 			(uuid "43821637-060e-48e2-b5d6-10fe7a882b2b")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "C3")
 					(unit 1)
@@ -3927,7 +3933,7 @@
 			(uuid "53d1b1ed-2c19-471c-9615-e29de1ae0f06")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "C1")
 					(unit 1)
@@ -4006,7 +4012,7 @@
 			(uuid "a8fa368b-409f-4d37-84db-cb021bc72efc")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "D1")
 					(unit 1)
@@ -4142,7 +4148,7 @@
 			(uuid "46b7c441-ccc6-4954-b7b9-55b9c5b9cd80")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "J1")
 					(unit 1)
@@ -4220,7 +4226,7 @@
 			(uuid "43282479-fd63-4986-93ad-d769200eef8d")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "R2")
 					(unit 1)
@@ -4320,7 +4326,7 @@
 			(uuid "036703da-3f57-4ca1-b3f5-4274f28794fe")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "U1")
 					(unit 3)
@@ -4417,7 +4423,7 @@
 			(uuid "036703da-3f57-4ca1-b3f5-4274f28794fe")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "U1")
 					(unit 2)
@@ -4515,7 +4521,7 @@
 			(uuid "4eb93d62-a3d7-452d-a201-3a4987055e23")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "U2")
 					(unit 1)
@@ -4591,7 +4597,7 @@
 			(uuid "7ec03e0e-391d-4ac5-aabe-2fad0fcef153")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "PWR2")
 					(unit 1)
@@ -4669,7 +4675,7 @@
 			(uuid "6c99e0ee-9a7c-4445-9821-32f0eacc1cfc")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "R3")
 					(unit 1)
@@ -4754,7 +4760,7 @@
 			(uuid "7b9a121a-f51f-4db4-bc33-8fd88d5c5d43")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "R4")
 					(unit 1)
@@ -4832,7 +4838,7 @@
 			(uuid "2801ae9c-9973-4742-962f-5166729b59bc")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "R5")
 					(unit 1)
@@ -4910,7 +4916,7 @@
 			(uuid "6091a555-4f66-49a7-9953-3d594d0eeed6")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "R6")
 					(unit 1)
@@ -4990,7 +4996,7 @@
 			(uuid "2dacf2eb-f115-4425-9d4f-960dbddf818a")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "C5")
 					(unit 1)
@@ -5070,7 +5076,7 @@
 			(uuid "d955b35a-2bdf-4918-956d-b0372a82e886")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "C6")
 					(unit 1)
@@ -5148,7 +5154,7 @@
 			(uuid "21b3423c-6d77-4b77-992d-eecbad9a2970")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "R7")
 					(unit 1)
@@ -5226,7 +5232,7 @@
 			(uuid "9b0f5c22-d453-4392-9853-c28a8d8b0a8a")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "R8")
 					(unit 1)
@@ -5306,7 +5312,7 @@
 			(uuid "53bcec39-fb7e-4b19-b336-6f0e0be7d306")
 		)
 		(instances
-			(project "beacon-receiver"
+			(project "beacon-receiver-daylight"
 				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
 					(reference "C7")
 					(unit 1)
