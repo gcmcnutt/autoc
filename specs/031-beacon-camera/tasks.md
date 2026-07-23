@@ -244,7 +244,7 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   + U1B post-gain ×20–50; then measure the ambient shot-noise floor. Bench experiments planned (Set B in
   bench-journal.md): lamp pedestal ladder → knee/rail → AC-tap headroom → two-stage prototype → fold the
   chosen architecture into A3-b. Field kit note: bring the laptop rig — telemetry `adc` is a pedestal meter.
-  **v2 daylight schematic DRAFTED 2026-07-19**: [`cad/beacon-receiver/collector-schematic-daylight.md`](../../cad/beacon-receiver/collector-schematic-daylight.md)
+  **v2 daylight schematic DRAFTED 2026-07-19**: [`cad/beacon-receiver/daylight/collector-schematic-daylight.md`](../../cad/beacon-receiver/daylight/collector-schematic-daylight.md)
   — 10 k TIA → 1 µF/100 k AC-couple (HP 1.6 Hz) → U1B ×101 @ VBIAS2 1.25 V (mid-ADC, bipolar headroom) →
   820 pF anti-alias (1.9 kHz). Open Qs: filter FWHM 10 vs 40 nm against the LED's 30 nm spectrum; flicker
   through the HP; R_f1 final value. Set-B experiments validate before the A3-b freeze.

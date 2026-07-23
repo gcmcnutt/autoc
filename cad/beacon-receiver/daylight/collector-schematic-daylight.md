@@ -3,7 +3,7 @@
 **Status**: DRAFT design, 2026-07-19 — response to the field finding (bench-journal / A3-c): full sun puts
 **0.3–1 mA** into the wide-band PD and rails the v1 single-stage 1 MΩ DC-coupled TIA at any distance.
 **Chain**: `PD → optical BP filter → LOW-R TIA (U1A) → AC-couple → ×100 post-gain (U1B, mid-rail bias) → ADC`.
-v1 (indoor/bench, DC-coupled): [collector-schematic.md](collector-schematic.md). Validate stage-by-stage via
+v1 (indoor/bench, DC-coupled): [../collector-schematic.md](../collector-schematic.md). Validate stage-by-stage via
 the Set-B bench experiments (lamp pedestal ladder) before freezing into the soldered build (A3-b).
 
 ## Why two stages (the daylight math)
