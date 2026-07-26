@@ -51,6 +51,17 @@
 - **s7 SHIPPED 2026-07-18** (`experiments/s7.v`, sim `sim/tb_s7.v`): A4d-8 gear-shifted α + A4d-7 min-energy
   gate — sim-first (0.81 ms settle, zero dark flashes), regression 19/19 with the settle bar ratcheted <1.0 s.
 
+## Daylight receiver: OPTION C SELECTED (2026-07-24, bench-verified)
+
+**Reverse-biased PD + load R + single SBOA224-style gain stage** — canonical pin list + rationale in
+[cad/beacon-receiver/daylight/collector-schematic-daylight.md](../../cad/beacon-receiver/daylight/collector-schematic-daylight.md);
+KiCad sheet (`daylight/beacon-receiver-daylight.kicad_sch`) carries Option-C values ([OPT-C] tags; TIA-era
+parts marked DELETE; ERC = 22 intentional pre-wiring). Bench: strong close-range drive + wall-bounce decode
+with substitute values — topology-tolerant. **NEXT FIELD TEST RUNS OPTION C** — bring the rig (COM3 `adc` =
+pedestal meter). Two-stage (Option B) = linear-pedestal fallback. Gain leg needs R5 = R6/100 (×2 symptom =
+equal resistors). Orders: **02+03 COMBINED into the single active `cad/beacon-eval/beacon-order-03.md`**
+(C-1..C-24; order-02 deleted; filter FWHM 40-vs-10 nm = open decision C-14).
+
 ## Field finding (2026-07-17, outdoors, sunny): NO LOCK even at inches — TIA RAILED by ambient
 
 Expected physics, now measured: full sun ≈ 15–20 mW/cm² in the PD's wide 780–1050 band → **0.3–1 mA ambient
