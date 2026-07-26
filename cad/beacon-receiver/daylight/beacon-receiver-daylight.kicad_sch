@@ -2230,28 +2230,10 @@
 		)
 	)
 	(junction
-		(at 148.59 137.16)
+		(at 68.58 120.65)
 		(diameter 0)
 		(color 0 0 0 0)
-		(uuid "9fd24c06-7b7f-4a2e-87e3-e9deeae16ec9")
-	)
-	(junction
-		(at 109.22 106.68)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "376b6f18-1857-4ba1-a840-bb409cc42c04")
-	)
-	(junction
-		(at 68.58 96.52)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "5e5d6855-1877-463c-ac82-ed9727a33a3e")
-	)
-	(junction
-		(at 68.58 109.22)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "fe754e39-0043-4c59-8db1-439757fea864")
+		(uuid "16273deb-6ba7-41e5-aa14-8a89ff48f3fd")
 	)
 	(junction
 		(at 109.22 120.65)
@@ -2260,16 +2242,52 @@
 		(uuid "2fe5d1be-1845-4799-bf7a-172f5ac0658b")
 	)
 	(junction
-		(at 68.58 120.65)
+		(at 109.22 106.68)
 		(diameter 0)
 		(color 0 0 0 0)
-		(uuid "16273deb-6ba7-41e5-aa14-8a89ff48f3fd")
+		(uuid "376b6f18-1857-4ba1-a840-bb409cc42c04")
+	)
+	(junction
+		(at 135.89 137.16)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "559263e0-63dc-4e46-b594-d8be53b52fb6")
+	)
+	(junction
+		(at 68.58 96.52)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "5e5d6855-1877-463c-ac82-ed9727a33a3e")
+	)
+	(junction
+		(at 148.59 137.16)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "9fd24c06-7b7f-4a2e-87e3-e9deeae16ec9")
 	)
 	(junction
 		(at 153.67 71.12)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "a38241a1-64d5-4275-bae0-663d82181887")
+	)
+	(junction
+		(at 49.53 111.76)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "a605d15f-7868-4a03-9833-6e6c0a06c3fe")
+	)
+	(junction
+		(at 91.44 71.12)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "b4e33149-4f9b-4381-bc81-1254cbb4259b")
+	)
+	(junction
+		(at 167.64 71.12)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "bb3cfeba-ff25-4066-a138-e72821694a38")
 	)
 	(junction
 		(at 57.15 111.76)
@@ -2284,54 +2302,24 @@
 		(uuid "de9f6b9b-0acf-4ecc-9297-458ad3fbc3f1")
 	)
 	(junction
-		(at 167.64 71.12)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "bb3cfeba-ff25-4066-a138-e72821694a38")
-	)
-	(junction
-		(at 91.44 71.12)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "b4e33149-4f9b-4381-bc81-1254cbb4259b")
-	)
-	(junction
 		(at 49.53 93.98)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "eac10c9b-9b96-404d-a7a8-4de243527650")
 	)
 	(junction
-		(at 135.89 137.16)
+		(at 68.58 109.22)
 		(diameter 0)
 		(color 0 0 0 0)
-		(uuid "559263e0-63dc-4e46-b594-d8be53b52fb6")
-	)
-	(junction
-		(at 49.53 111.76)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "5c697c32-4a8d-4309-906a-4e868718e61f")
+		(uuid "fe754e39-0043-4c59-8db1-439757fea864")
 	)
 	(no_connect
-		(at 212.09 96.52)
-		(uuid "511313e7-9395-4af6-9fcc-eea14cf0798e")
+		(at 212.09 106.68)
+		(uuid "01092697-c026-4623-95c3-331a67d291ee")
 	)
 	(no_connect
-		(at 212.09 101.6)
-		(uuid "3d1a0cdc-adf0-490a-aa62-3b98d2a77a11")
-	)
-	(no_connect
-		(at 212.09 104.14)
-		(uuid "468fdb9a-017f-4671-af77-8f18bb370db4")
-	)
-	(no_connect
-		(at 212.09 83.82)
-		(uuid "cc65c218-8677-4f3a-a14e-94bfe9b79f63")
-	)
-	(no_connect
-		(at 212.09 111.76)
-		(uuid "60107ef2-3358-4dfa-8233-a64e8aced093")
+		(at 212.09 124.46)
+		(uuid "25b01fab-dfb6-437d-8696-d064a3510e2a")
 	)
 	(no_connect
 		(at 212.09 127)
@@ -2342,12 +2330,32 @@
 		(uuid "33138e84-e3af-4970-86c1-fc6d481fbf82")
 	)
 	(no_connect
-		(at 212.09 119.38)
-		(uuid "83f0d56c-7374-42b2-bc26-6b50c0f6e06f")
-	)
-	(no_connect
 		(at 212.09 109.22)
 		(uuid "368b2a4f-6535-4019-8bfe-0f35f476466e")
+	)
+	(no_connect
+		(at 212.09 101.6)
+		(uuid "3d1a0cdc-adf0-490a-aa62-3b98d2a77a11")
+	)
+	(no_connect
+		(at 212.09 104.14)
+		(uuid "468fdb9a-017f-4671-af77-8f18bb370db4")
+	)
+	(no_connect
+		(at 212.09 99.06)
+		(uuid "4fc40129-9b55-4e70-83ce-3ad04400e489")
+	)
+	(no_connect
+		(at 212.09 96.52)
+		(uuid "511313e7-9395-4af6-9fcc-eea14cf0798e")
+	)
+	(no_connect
+		(at 212.09 111.76)
+		(uuid "60107ef2-3358-4dfa-8233-a64e8aced093")
+	)
+	(no_connect
+		(at 212.09 119.38)
+		(uuid "83f0d56c-7374-42b2-bc26-6b50c0f6e06f")
 	)
 	(no_connect
 		(at 212.09 121.92)
@@ -2358,500 +2366,12 @@
 		(uuid "c2cd7e1f-df79-4f83-8b0f-290e5f726602")
 	)
 	(no_connect
-		(at 212.09 106.68)
-		(uuid "01092697-c026-4623-95c3-331a67d291ee")
-	)
-	(no_connect
-		(at 212.09 99.06)
-		(uuid "4fc40129-9b55-4e70-83ce-3ad04400e489")
+		(at 212.09 83.82)
+		(uuid "cc65c218-8677-4f3a-a14e-94bfe9b79f63")
 	)
 	(no_connect
 		(at 212.09 114.3)
 		(uuid "e3273089-5658-4ab5-bf90-d9a9c1f59ac8")
-	)
-	(no_connect
-		(at 212.09 124.46)
-		(uuid "25b01fab-dfb6-437d-8696-d064a3510e2a")
-	)
-	(wire
-		(pts
-			(xy 109.22 106.68) (xy 138.43 106.68)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "eb3b8c7e-1146-4668-817f-c9da608afebd")
-	)
-	(wire
-		(pts
-			(xy 176.53 86.36) (xy 212.09 86.36)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "74a5e2ab-be17-4ee0-b154-aeef6ed87a84")
-	)
-	(wire
-		(pts
-			(xy 49.53 111.76) (xy 49.53 121.92)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "764b4bc1-7935-4568-be2c-e08d7cfeed7d")
-	)
-	(wire
-		(pts
-			(xy 193.04 81.28) (xy 193.04 137.16)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a3b02ff5-8fd1-4b2c-9989-9d63b3969f6b")
-	)
-	(wire
-		(pts
-			(xy 153.67 71.12) (xy 167.64 71.12)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a9c769f8-71d2-4cf2-bdd3-f858eb2d8135")
-	)
-	(wire
-		(pts
-			(xy 193.04 137.16) (xy 148.59 137.16)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "2862b832-b1f0-4b83-92b2-9ef08fd826f4")
-	)
-	(wire
-		(pts
-			(xy 97.79 160.02) (xy 97.79 168.91)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "4e9a5613-08fd-45d7-b356-eb113e176bf1")
-	)
-	(wire
-		(pts
-			(xy 109.22 106.68) (xy 109.22 120.65)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b691d9a3-8141-42bd-b1a1-42b5ca903594")
-	)
-	(wire
-		(pts
-			(xy 74.93 146.05) (xy 74.93 157.48)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "60172080-b85e-475c-b379-247075656787")
-	)
-	(wire
-		(pts
-			(xy 96.52 120.65) (xy 109.22 120.65)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "3fddad89-fd92-410e-a900-c5ac41d1e42e")
-	)
-	(wire
-		(pts
-			(xy 57.15 80.01) (xy 62.23 80.01)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1d4376c1-2258-4f53-bcd1-9bafaefba94a")
-	)
-	(wire
-		(pts
-			(xy 57.15 96.52) (xy 57.15 111.76)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c569a002-db09-4565-b60a-260077419ff2")
-	)
-	(wire
-		(pts
-			(xy 96.52 130.81) (xy 109.22 130.81)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1283f72b-116d-4bb2-ba42-1895f131615c")
-	)
-	(wire
-		(pts
-			(xy 163.83 111.76) (xy 181.61 111.76)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "63e7f014-c5b7-4d1d-949c-8a3c6d33efb8")
-	)
-	(wire
-		(pts
-			(xy 57.15 111.76) (xy 57.15 121.92)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "9e1cab7a-0bb2-422e-8661-4221afe81bd8")
-	)
-	(wire
-		(pts
-			(xy 88.9 130.81) (xy 68.58 130.81)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "ca5cb5f2-bac9-46b7-85ad-40e13816d94a")
-	)
-	(wire
-		(pts
-			(xy 57.15 137.16) (xy 135.89 137.16)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "3e08a412-6248-4cb3-8825-b97fc0cfe1f5")
-	)
-	(wire
-		(pts
-			(xy 49.53 111.76) (xy 57.15 111.76)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "61e5b5d8-0126-4680-ac79-6fbd0a31749f")
-	)
-	(wire
-		(pts
-			(xy 135.89 111.76) (xy 135.89 137.16)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "bbbc81c9-c7cd-4138-a7ea-0949a812ec88")
-	)
-	(wire
-		(pts
-			(xy 91.44 71.12) (xy 91.44 77.47)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "bbb1f05d-6007-4939-ad50-0b659e46a1af")
-	)
-	(wire
-		(pts
-			(xy 148.59 137.16) (xy 148.59 116.84)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "0ae62871-7a49-4d25-9c95-3fb8b7cd49f6")
-	)
-	(wire
-		(pts
-			(xy 74.93 162.56) (xy 78.74 162.56)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f6453a39-04a6-465b-bf16-22b328161868")
-	)
-	(wire
-		(pts
-			(xy 179.07 88.9) (xy 179.07 106.68)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "e69d1a52-896e-4eef-9eaa-a502a2389413")
-	)
-	(wire
-		(pts
-			(xy 68.58 96.52) (xy 78.74 96.52)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "625ed187-e722-4c01-a7e4-181a62ce8232")
-	)
-	(wire
-		(pts
-			(xy 179.07 106.68) (xy 163.83 106.68)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "536c3467-0009-476f-9659-3e0dcdad39e9")
-	)
-	(wire
-		(pts
-			(xy 190.5 71.12) (xy 167.64 71.12)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f0fc7514-ca6e-4f96-97ab-90dac62ba6a0")
-	)
-	(wire
-		(pts
-			(xy 40.64 71.12) (xy 91.44 71.12)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d5f1410d-8109-4cf8-a25c-323f0001953e")
-	)
-	(wire
-		(pts
-			(xy 60.96 165.1) (xy 60.96 170.18)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "92cc172b-eb8d-4e94-ab03-060a26cd134f")
-	)
-	(wire
-		(pts
-			(xy 49.53 106.68) (xy 49.53 111.76)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "57088c28-708c-439f-8ce2-65503ed64ad0")
-	)
-	(wire
-		(pts
-			(xy 181.61 91.44) (xy 212.09 91.44)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "8f5f0a63-1ff2-4fed-b047-9d327de73896")
-	)
-	(wire
-		(pts
-			(xy 40.64 80.01) (xy 41.91 80.01)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "6ee79ae3-64e8-49db-9cb0-9b7172e3a8ce")
-	)
-	(wire
-		(pts
-			(xy 91.44 85.09) (xy 91.44 88.9)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c744b81b-330c-4890-aaf7-35adf298cecf")
-	)
-	(wire
-		(pts
-			(xy 68.58 109.22) (xy 86.36 109.22)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "0e0ad783-9bb9-4202-be6a-9839b382face")
-	)
-	(wire
-		(pts
-			(xy 148.59 137.16) (xy 148.59 140.97)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "dfffa95b-7bc2-4139-8f50-e17ffed1f5fb")
-	)
-	(wire
-		(pts
-			(xy 148.59 93.98) (xy 148.59 101.6)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "0dcec00b-853b-4e68-be44-64b308ca1bfe")
-	)
-	(wire
-		(pts
-			(xy 93.98 160.02) (xy 97.79 160.02)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "ff6f8538-9e8e-4d5a-a472-eca44ce4bf1a")
-	)
-	(wire
-		(pts
-			(xy 101.6 106.68) (xy 109.22 106.68)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f63cf377-6d42-47fa-b597-1f1240222005")
-	)
-	(wire
-		(pts
-			(xy 62.23 80.01) (xy 62.23 85.09)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "cec25619-8cd1-44c8-880b-af50853dc5bc")
-	)
-	(wire
-		(pts
-			(xy 167.64 88.9) (xy 167.64 85.09)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "55770527-ff02-4acc-9195-25ba38affa22")
-	)
-	(wire
-		(pts
-			(xy 109.22 120.65) (xy 109.22 130.81)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c2d030f0-fae1-4ef5-97dc-9af8affe0bf5")
-	)
-	(wire
-		(pts
-			(xy 59.69 67.31) (xy 59.69 63.5)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f3b36575-d69a-4711-a27d-4c129a8e9a7c")
-	)
-	(wire
-		(pts
-			(xy 176.53 86.36) (xy 176.53 109.22)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f0f393a7-0874-411e-aa20-14464420c8aa")
-	)
-	(wire
-		(pts
-			(xy 163.83 109.22) (xy 176.53 109.22)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a7acccae-8ea5-4369-90eb-bc3a630d9946")
-	)
-	(wire
-		(pts
-			(xy 49.53 93.98) (xy 49.53 99.06)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b774b8ef-11ab-4d98-8404-9acad1424cb3")
-	)
-	(wire
-		(pts
-			(xy 91.44 71.12) (xy 153.67 71.12)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b41051a8-3fbc-44bd-831d-564907c3335a")
-	)
-	(wire
-		(pts
-			(xy 167.64 71.12) (xy 167.64 77.47)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "4b4541f3-8da6-4a8a-8289-f9d036ef6831")
-	)
-	(wire
-		(pts
-			(xy 57.15 96.52) (xy 68.58 96.52)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d3ff0d04-f755-4013-9c0e-b2da45c3ba32")
-	)
-	(wire
-		(pts
-			(xy 68.58 120.65) (xy 88.9 120.65)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "08782bae-5fb0-4d8c-9e4d-e2313fc3eb2e")
 	)
 	(wire
 		(pts
@@ -2865,53 +2385,53 @@
 	)
 	(wire
 		(pts
-			(xy 78.74 157.48) (xy 74.93 157.48)
+			(xy 68.58 120.65) (xy 88.9 120.65)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "26e9fdef-5b86-453e-a6f3-4b89d6fdd878")
+		(uuid "08782bae-5fb0-4d8c-9e4d-e2313fc3eb2e")
 	)
 	(wire
 		(pts
-			(xy 68.58 106.68) (xy 68.58 109.22)
+			(xy 148.59 137.16) (xy 148.59 116.84)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "437d8960-7a75-4034-bba0-4cab0b1374cd")
+		(uuid "0ae62871-7a49-4d25-9c95-3fb8b7cd49f6")
 	)
 	(wire
 		(pts
-			(xy 60.96 146.05) (xy 60.96 149.86)
+			(xy 148.59 93.98) (xy 148.59 101.6)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "c21dea73-e890-444d-bc67-2a232de0d09e")
+		(uuid "0dcec00b-853b-4e68-be44-64b308ca1bfe")
 	)
 	(wire
 		(pts
-			(xy 190.5 129.54) (xy 212.09 129.54)
+			(xy 68.58 109.22) (xy 86.36 109.22)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "202d9320-c952-4a71-92f8-941198ada632")
+		(uuid "0e0ad783-9bb9-4202-be6a-9839b382face")
 	)
 	(wire
 		(pts
-			(xy 138.43 111.76) (xy 135.89 111.76)
+			(xy 96.52 130.81) (xy 109.22 130.81)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "64d3d8d9-c5dc-4230-9818-30a21ec57a2f")
+		(uuid "1283f72b-116d-4bb2-ba42-1895f131615c")
 	)
 	(wire
 		(pts
@@ -2925,113 +2445,53 @@
 	)
 	(wire
 		(pts
-			(xy 190.5 71.12) (xy 190.5 129.54)
+			(xy 57.15 80.01) (xy 62.23 80.01)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "a364d2a6-3f8c-4443-b9e2-438ab0d3b6a2")
+		(uuid "1d4376c1-2258-4f53-bcd1-9bafaefba94a")
 	)
 	(wire
 		(pts
-			(xy 97.79 168.91) (xy 74.93 168.91)
+			(xy 153.67 71.12) (xy 153.67 101.6)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "fec9feb5-6eee-4f01-bfed-efceb88ea340")
+		(uuid "1eb4ce3c-bf89-4f51-8b6b-484c49b82aa1")
 	)
 	(wire
 		(pts
-			(xy 68.58 96.52) (xy 68.58 99.06)
+			(xy 190.5 129.54) (xy 212.09 129.54)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "718bef1c-0d2f-4757-8ad1-3555108787a2")
+		(uuid "202d9320-c952-4a71-92f8-941198ada632")
 	)
 	(wire
 		(pts
-			(xy 179.07 88.9) (xy 212.09 88.9)
+			(xy 78.74 157.48) (xy 74.93 157.48)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "cbe8096b-037c-4a7b-9926-ed9596e33487")
+		(uuid "26e9fdef-5b86-453e-a6f3-4b89d6fdd878")
 	)
 	(wire
 		(pts
-			(xy 181.61 91.44) (xy 181.61 111.76)
+			(xy 193.04 137.16) (xy 148.59 137.16)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "d1f8c66b-9017-4cff-90c2-d243c9b18c49")
-	)
-	(wire
-		(pts
-			(xy 57.15 129.54) (xy 57.15 137.16)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "31f98efd-a83e-41a8-95ee-daec795901d9")
-	)
-	(wire
-		(pts
-			(xy 40.64 71.12) (xy 40.64 80.01)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5be45508-76ce-420c-a0b4-ce99fc9fb07e")
-	)
-	(wire
-		(pts
-			(xy 68.58 109.22) (xy 68.58 120.65)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "9ca76daa-745a-427b-9513-75c8cd9cc7ea")
-	)
-	(wire
-		(pts
-			(xy 68.58 130.81) (xy 68.58 120.65)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c7f9b542-521e-4544-846c-a68e9d1fc645")
-	)
-	(wire
-		(pts
-			(xy 78.74 96.52) (xy 78.74 104.14)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "85a65cff-e4ce-4c35-bb4f-5cca59731ed7")
-	)
-	(wire
-		(pts
-			(xy 49.53 129.54) (xy 49.53 137.16)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c5277420-a944-488b-a9e6-222846929981")
+		(uuid "2862b832-b1f0-4b83-92b2-9ef08fd826f4")
 	)
 	(wire
 		(pts
@@ -3045,43 +2505,153 @@
 	)
 	(wire
 		(pts
-			(xy 193.04 81.28) (xy 212.09 81.28)
+			(xy 57.15 129.54) (xy 57.15 137.16)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "b8102966-02b3-463e-bff9-79c47005c481")
+		(uuid "31f98efd-a83e-41a8-95ee-daec795901d9")
 	)
 	(wire
 		(pts
-			(xy 49.53 90.17) (xy 49.53 93.98)
+			(xy 57.15 137.16) (xy 135.89 137.16)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "87b5647a-fdb9-463a-9510-9ae40abdff0e")
+		(uuid "3e08a412-6248-4cb3-8825-b97fc0cfe1f5")
 	)
 	(wire
 		(pts
-			(xy 57.15 137.16) (xy 49.53 137.16)
+			(xy 96.52 120.65) (xy 109.22 120.65)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "d4191da9-94f8-4709-963d-c42497f66a31")
+		(uuid "3fddad89-fd92-410e-a900-c5ac41d1e42e")
 	)
 	(wire
 		(pts
-			(xy 49.53 93.98) (xy 148.59 93.98)
+			(xy 68.58 106.68) (xy 68.58 109.22)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "93d470ab-f42c-4dfe-ba0d-2c0b74137acf")
+		(uuid "437d8960-7a75-4034-bba0-4cab0b1374cd")
+	)
+	(wire
+		(pts
+			(xy 167.64 71.12) (xy 167.64 77.47)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4b4541f3-8da6-4a8a-8289-f9d036ef6831")
+	)
+	(wire
+		(pts
+			(xy 97.79 160.02) (xy 97.79 168.91)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4e9a5613-08fd-45d7-b356-eb113e176bf1")
+	)
+	(wire
+		(pts
+			(xy 179.07 106.68) (xy 163.83 106.68)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "536c3467-0009-476f-9659-3e0dcdad39e9")
+	)
+	(wire
+		(pts
+			(xy 167.64 88.9) (xy 167.64 85.09)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "55770527-ff02-4acc-9195-25ba38affa22")
+	)
+	(wire
+		(pts
+			(xy 49.53 106.68) (xy 49.53 111.76)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "57088c28-708c-439f-8ce2-65503ed64ad0")
+	)
+	(wire
+		(pts
+			(xy 40.64 71.12) (xy 40.64 80.01)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5be45508-76ce-420c-a0b4-ce99fc9fb07e")
+	)
+	(wire
+		(pts
+			(xy 74.93 146.05) (xy 74.93 157.48)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "60172080-b85e-475c-b379-247075656787")
+	)
+	(wire
+		(pts
+			(xy 49.53 111.76) (xy 57.15 111.76)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "61e5b5d8-0126-4680-ac79-6fbd0a31749f")
+	)
+	(wire
+		(pts
+			(xy 68.58 96.52) (xy 78.74 96.52)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "625ed187-e722-4c01-a7e4-181a62ce8232")
+	)
+	(wire
+		(pts
+			(xy 163.83 111.76) (xy 181.61 111.76)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "63e7f014-c5b7-4d1d-949c-8a3c6d33efb8")
+	)
+	(wire
+		(pts
+			(xy 138.43 111.76) (xy 135.89 111.76)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "64d3d8d9-c5dc-4230-9818-30a21ec57a2f")
 	)
 	(wire
 		(pts
@@ -3095,33 +2665,513 @@
 	)
 	(wire
 		(pts
-			(xy 153.67 71.12) (xy 153.67 101.6)
+			(xy 40.64 80.01) (xy 41.91 80.01)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "1eb4ce3c-bf89-4f51-8b6b-484c49b82aa1")
+		(uuid "6ee79ae3-64e8-49db-9cb0-9b7172e3a8ce")
 	)
-	(label "GND"
-		(at 91.44 88.9 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
+	(wire
+		(pts
+			(xy 68.58 96.52) (xy 68.58 99.06)
 		)
-		(uuid "7748add2-6eb6-41ef-9e37-c47931743c62")
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "718bef1c-0d2f-4757-8ad1-3555108787a2")
 	)
-	(label "GND"
-		(at 148.59 140.97 0)
+	(wire
+		(pts
+			(xy 176.53 86.36) (xy 212.09 86.36)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "74a5e2ab-be17-4ee0-b154-aeef6ed87a84")
+	)
+	(wire
+		(pts
+			(xy 40.64 111.76) (xy 40.64 123.19)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "764b4bc1-7935-4568-be2c-e08d7cfeed7d")
+	)
+	(wire
+		(pts
+			(xy 40.64 111.76) (xy 49.53 111.76)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7af99344-a036-47a8-aba8-9546b0459e82")
+	)
+	(wire
+		(pts
+			(xy 78.74 96.52) (xy 78.74 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "85a65cff-e4ce-4c35-bb4f-5cca59731ed7")
+	)
+	(wire
+		(pts
+			(xy 49.53 90.17) (xy 49.53 93.98)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "87b5647a-fdb9-463a-9510-9ae40abdff0e")
+	)
+	(wire
+		(pts
+			(xy 181.61 91.44) (xy 212.09 91.44)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8f5f0a63-1ff2-4fed-b047-9d327de73896")
+	)
+	(wire
+		(pts
+			(xy 60.96 165.1) (xy 60.96 170.18)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "92cc172b-eb8d-4e94-ab03-060a26cd134f")
+	)
+	(wire
+		(pts
+			(xy 49.53 93.98) (xy 148.59 93.98)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "93d470ab-f42c-4dfe-ba0d-2c0b74137acf")
+	)
+	(wire
+		(pts
+			(xy 68.58 109.22) (xy 68.58 120.65)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "9ca76daa-745a-427b-9513-75c8cd9cc7ea")
+	)
+	(wire
+		(pts
+			(xy 57.15 111.76) (xy 57.15 121.92)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "9e1cab7a-0bb2-422e-8661-4221afe81bd8")
+	)
+	(wire
+		(pts
+			(xy 190.5 71.12) (xy 190.5 129.54)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a364d2a6-3f8c-4443-b9e2-438ab0d3b6a2")
+	)
+	(wire
+		(pts
+			(xy 193.04 81.28) (xy 193.04 137.16)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a3b02ff5-8fd1-4b2c-9989-9d63b3969f6b")
+	)
+	(wire
+		(pts
+			(xy 163.83 109.22) (xy 176.53 109.22)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a7acccae-8ea5-4369-90eb-bc3a630d9946")
+	)
+	(wire
+		(pts
+			(xy 153.67 71.12) (xy 167.64 71.12)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a9c769f8-71d2-4cf2-bdd3-f858eb2d8135")
+	)
+	(wire
+		(pts
+			(xy 91.44 71.12) (xy 153.67 71.12)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b41051a8-3fbc-44bd-831d-564907c3335a")
+	)
+	(wire
+		(pts
+			(xy 109.22 106.68) (xy 109.22 120.65)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b691d9a3-8141-42bd-b1a1-42b5ca903594")
+	)
+	(wire
+		(pts
+			(xy 49.53 93.98) (xy 49.53 99.06)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b774b8ef-11ab-4d98-8404-9acad1424cb3")
+	)
+	(wire
+		(pts
+			(xy 193.04 81.28) (xy 212.09 81.28)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b8102966-02b3-463e-bff9-79c47005c481")
+	)
+	(wire
+		(pts
+			(xy 91.44 71.12) (xy 91.44 77.47)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bbb1f05d-6007-4939-ad50-0b659e46a1af")
+	)
+	(wire
+		(pts
+			(xy 135.89 111.76) (xy 135.89 137.16)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bbbc81c9-c7cd-4138-a7ea-0949a812ec88")
+	)
+	(wire
+		(pts
+			(xy 60.96 146.05) (xy 60.96 149.86)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c21dea73-e890-444d-bc67-2a232de0d09e")
+	)
+	(wire
+		(pts
+			(xy 109.22 120.65) (xy 109.22 130.81)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c2d030f0-fae1-4ef5-97dc-9af8affe0bf5")
+	)
+	(wire
+		(pts
+			(xy 40.64 130.81) (xy 40.64 137.16)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c5277420-a944-488b-a9e6-222846929981")
+	)
+	(wire
+		(pts
+			(xy 57.15 96.52) (xy 57.15 111.76)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c569a002-db09-4565-b60a-260077419ff2")
+	)
+	(wire
+		(pts
+			(xy 91.44 85.09) (xy 91.44 88.9)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c744b81b-330c-4890-aaf7-35adf298cecf")
+	)
+	(wire
+		(pts
+			(xy 68.58 130.81) (xy 68.58 120.65)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c7f9b542-521e-4544-846c-a68e9d1fc645")
+	)
+	(wire
+		(pts
+			(xy 88.9 130.81) (xy 68.58 130.81)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ca5cb5f2-bac9-46b7-85ad-40e13816d94a")
+	)
+	(wire
+		(pts
+			(xy 179.07 88.9) (xy 212.09 88.9)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "cbe8096b-037c-4a7b-9926-ed9596e33487")
+	)
+	(wire
+		(pts
+			(xy 62.23 80.01) (xy 62.23 85.09)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "cec25619-8cd1-44c8-880b-af50853dc5bc")
+	)
+	(wire
+		(pts
+			(xy 181.61 91.44) (xy 181.61 111.76)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d1f8c66b-9017-4cff-90c2-d243c9b18c49")
+	)
+	(wire
+		(pts
+			(xy 57.15 96.52) (xy 68.58 96.52)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d3ff0d04-f755-4013-9c0e-b2da45c3ba32")
+	)
+	(wire
+		(pts
+			(xy 57.15 137.16) (xy 40.64 137.16)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d4191da9-94f8-4709-963d-c42497f66a31")
+	)
+	(wire
+		(pts
+			(xy 40.64 71.12) (xy 91.44 71.12)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d5f1410d-8109-4cf8-a25c-323f0001953e")
+	)
+	(wire
+		(pts
+			(xy 148.59 137.16) (xy 148.59 140.97)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "dfffa95b-7bc2-4139-8f50-e17ffed1f5fb")
+	)
+	(wire
+		(pts
+			(xy 179.07 88.9) (xy 179.07 106.68)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e69d1a52-896e-4eef-9eaa-a502a2389413")
+	)
+	(wire
+		(pts
+			(xy 109.22 106.68) (xy 138.43 106.68)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "eb3b8c7e-1146-4668-817f-c9da608afebd")
+	)
+	(wire
+		(pts
+			(xy 176.53 86.36) (xy 176.53 109.22)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f0f393a7-0874-411e-aa20-14464420c8aa")
+	)
+	(wire
+		(pts
+			(xy 190.5 71.12) (xy 167.64 71.12)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f0fc7514-ca6e-4f96-97ab-90dac62ba6a0")
+	)
+	(wire
+		(pts
+			(xy 59.69 67.31) (xy 59.69 63.5)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f3b36575-d69a-4711-a27d-4c129a8e9a7c")
+	)
+	(wire
+		(pts
+			(xy 101.6 106.68) (xy 109.22 106.68)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f63cf377-6d42-47fa-b597-1f1240222005")
+	)
+	(wire
+		(pts
+			(xy 74.93 162.56) (xy 78.74 162.56)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f6453a39-04a6-465b-bf16-22b328161868")
+	)
+	(wire
+		(pts
+			(xy 97.79 168.91) (xy 74.93 168.91)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "fec9feb5-6eee-4f01-bfed-efceb88ea340")
+	)
+	(wire
+		(pts
+			(xy 93.98 160.02) (xy 97.79 160.02)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ff6f8538-9e8e-4d5a-a472-eca44ce4bf1a")
+	)
+	(label "SPI_CS"
+		(at 204.47 91.44 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify left bottom)
 		)
-		(uuid "6d781253-fc3c-4162-9b23-e1bcebdd5b0f")
+		(uuid "17f90149-a4c5-48eb-8a31-ac73824a1e6a")
+	)
+	(label "PD_NODE"
+		(at 76.2 109.22 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "1b6418d1-4085-4d11-9197-47408a9d07f0")
+	)
+	(label "TIA_OUT"
+		(at 101.6 106.68 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "1b87be92-b72f-4e74-a85e-b8443afde58f")
+	)
+	(label "SPI_CLK"
+		(at 203.2 88.9 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "21743da6-6200-4868-aff1-44d40255f3d8")
+	)
+	(label "GND"
+		(at 62.23 85.09 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "34992b36-d9ed-4fb8-a0c3-f067d2dc07c6")
+	)
+	(label "GND"
+		(at 167.64 88.9 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "4e4e1edd-c1aa-4c34-a41b-9232f07f6c76")
 	)
 	(label "SPI_DOUT"
 		(at 201.93 86.36 0)
@@ -3134,6 +3184,26 @@
 		(uuid "6a38bb88-546e-4551-adb0-7fbaf4c8238f")
 	)
 	(label "GND"
+		(at 148.59 140.97 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "6d781253-fc3c-4162-9b23-e1bcebdd5b0f")
+	)
+	(label "GND"
+		(at 91.44 88.9 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "7748add2-6eb6-41ef-9e37-c47931743c62")
+	)
+	(label "GND"
 		(at 207.01 81.28 0)
 		(effects
 			(font
@@ -3142,36 +3212,6 @@
 			(justify left bottom)
 		)
 		(uuid "7d4247ff-838a-4676-aa3b-bae8340e7343")
-	)
-	(label "GND"
-		(at 59.69 67.31 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "d55332e5-a817-434d-b622-5fa21d6d2d25")
-	)
-	(label "GND"
-		(at 167.64 88.9 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "4e4e1edd-c1aa-4c34-a41b-9232f07f6c76")
-	)
-	(label "SPI_CS"
-		(at 204.47 91.44 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "17f90149-a4c5-48eb-8a31-ac73824a1e6a")
 	)
 	(label "VREF2V5"
 		(at 50.8 93.98 0)
@@ -3183,46 +3223,6 @@
 		)
 		(uuid "8f0fdaa9-e6f3-416f-8b12-e77cab286c1e")
 	)
-	(label "SPI_CLK"
-		(at 203.2 88.9 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "21743da6-6200-4868-aff1-44d40255f3d8")
-	)
-	(label "TIA_OUT"
-		(at 101.6 106.68 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "1b87be92-b72f-4e74-a85e-b8443afde58f")
-	)
-	(label "PD_NODE"
-		(at 76.2 109.22 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "1b6418d1-4085-4d11-9197-47408a9d07f0")
-	)
-	(label "VBIAS"
-		(at 50.8 111.76 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "e9a5a297-da04-4e70-a7ca-6358efb9be89")
-	)
 	(label "GND"
 		(at 60.96 170.18 0)
 		(effects
@@ -3232,6 +3232,26 @@
 			(justify left bottom)
 		)
 		(uuid "944c0e24-9022-48c0-9628-518ee8ce7bc0")
+	)
+	(label "+3V3"
+		(at 60.96 146.05 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "98f03eb2-f6a2-4fbe-805a-d14436959490")
+	)
+	(label "TIA_OUT"
+		(at 265.43 39.37 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "9fe8bd61-d34d-466d-993a-ad5b7e726399")
 	)
 	(label "VBIAS"
 		(at 74.93 146.05 0)
@@ -3243,15 +3263,25 @@
 		)
 		(uuid "a74315f8-e1db-42d4-93ae-6198e1f8fe9f")
 	)
-	(label "GND"
-		(at 62.23 85.09 0)
+	(label "POST_OUT"
+		(at 265.43 69.85 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
-			(justify left bottom)
+			(justify right bottom)
 		)
-		(uuid "34992b36-d9ed-4fb8-a0c3-f067d2dc07c6")
+		(uuid "af9ad3ac-75e7-4416-8dc7-57523ccc3c89")
+	)
+	(label "AC_NODE"
+		(at 265.43 49.53 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "be4ad9c0-1b1f-4bae-8f93-b5c7a58ea95a")
 	)
 	(label "+3V3"
 		(at 153.67 67.31 0)
@@ -3264,16 +3294,6 @@
 		(uuid "c0a4e31b-1c41-4112-a84a-bb91f4ecc1dc")
 	)
 	(label "+3V3"
-		(at 60.96 146.05 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "98f03eb2-f6a2-4fbe-805a-d14436959490")
-	)
-	(label "+3V3"
 		(at 205.74 129.54 0)
 		(effects
 			(font
@@ -3283,10 +3303,39 @@
 		)
 		(uuid "cc3788db-1da8-426b-afd7-94ea9a2c7750")
 	)
+	(label "VBIAS2_1V25"
+		(at 265.43 59.69 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "d2e34e2e-1822-47de-9941-00516a1efc48")
+	)
+	(label "GND"
+		(at 59.69 67.31 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "d55332e5-a817-434d-b622-5fa21d6d2d25")
+	)
+	(label "VBIAS"
+		(at 50.8 111.76 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "e9a5a297-da04-4e70-a7ca-6358efb9be89")
+	)
 	(symbol
-		(lib_id "Reference_Voltage:MCP1525-TT")
-		(at 49.53 80.01 90)
-		(mirror x)
+		(lib_id "Device:R")
+		(at 49.53 102.87 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -3294,9 +3343,9 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(uuid "f0568a75-c044-4187-ac92-1267bcfeb8ac")
-		(property "Reference" "U3"
-			(at 44.958 89.154 90)
+		(uuid "0bdd4e9f-9a03-443c-ad05-ae5d11e79100")
+		(property "Reference" "R2"
+			(at 51.562 102.87 90)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -3305,8 +3354,8 @@
 				)
 			)
 		)
-		(property "Value" "MCP1525-TT"
-			(at 49.53 74.93 90)
+		(property "Value" "DELETE [OPT-C: no VBIAS1]"
+			(at 34.036 98.298 90)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -3315,55 +3364,224 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_TO_SOT_SMD:SOT-23"
-			(at 55.88 80.645 0)
+		(property "Footprint" ""
+			(at 47.752 102.87 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
-					(italic yes)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 49.53 102.87 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 49.53 102.87 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "8d4bc62c-5080-4960-aac3-9071671682c7")
+		)
+		(pin "2"
+			(uuid "43282479-fd63-4986-93ad-d769200eef8d")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "R2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Analog_ADC:MCP3201")
+		(at 151.13 109.22 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "22358381-f588-4222-aac9-1c69977800f5")
+		(property "Reference" "U2"
+			(at 154.94 118.11 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
 				)
 				(justify left)
 			)
 		)
-		(property "Datasheet" "http://ww1.microchip.com/downloads/en/devicedoc/21653b.pdf"
-			(at 49.53 80.01 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-					(italic yes)
-				)
-			)
-		)
-		(property "Description" "2.5V Voltage Reference, SOT-23"
-			(at 49.53 80.01 0)
-			(hide yes)
+		(property "Value" "MCP3201"
+			(at 154.94 115.57 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
-		(pin "2"
-			(uuid "685721fe-6203-4f8d-bad4-7d2ebdb37e7c")
+		(property "Footprint" ""
+			(at 170.18 100.33 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 171.45 106.68 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 151.13 109.22 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
 		)
 		(pin "1"
-			(uuid "10c30be9-dac7-4a5b-8ce0-41aeaef407f3")
+			(uuid "93f33024-79b8-44f6-a45f-f86aeb022571")
+		)
+		(pin "2"
+			(uuid "cd88ad0f-baec-40e9-b243-41cb69aef3d4")
 		)
 		(pin "3"
-			(uuid "7a2beefa-768c-4b59-aed5-b952d4d2d5a4")
+			(uuid "bed3c2fb-337b-4ad6-857b-9601cb5a52fb")
+		)
+		(pin "4"
+			(uuid "6b514407-b779-4d45-80b7-82f3dbe7a12e")
+		)
+		(pin "5"
+			(uuid "3bf91184-96ae-4a05-8bfe-938f1d90e137")
+		)
+		(pin "6"
+			(uuid "cd73afb6-6636-40b9-881a-a9f161fecd6d")
+		)
+		(pin "7"
+			(uuid "4f402c17-ca09-476d-beba-d4d46346e4d5")
+		)
+		(pin "8"
+			(uuid "4eb93d62-a3d7-452d-a201-3a4987055e23")
 		)
 		(instances
 			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "U3")
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "U2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 234.95 69.85 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "26776dab-1450-4a0b-a362-896a6e7fab75")
+		(property "Reference" "R6"
+			(at 46.482 162.814 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "100k (fb: out->-in, G=101) [OPT-C]"
+			(at 30.734 127.508 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 47.752 125.73 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 49.53 125.73 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 49.53 125.73 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "cda38fc4-12bc-44f4-a02a-08ec9a10304c")
+		)
+		(pin "2"
+			(uuid "6091a555-4f66-49a7-9953-3d594d0eeed6")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "R6")
 					(unit 1)
 				)
 			)
@@ -3391,7 +3609,7 @@
 				)
 			)
 		)
-		(property "Value" "10k 1% (Rf1 DAYLIGHT v2)"
+		(property "Value" "47k (R_load: PD anode->GND) [OPT-C]"
 			(at 97.536 117.856 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -3441,8 +3659,242 @@
 		)
 		(instances
 			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
 					(reference "R1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 59.69 63.5 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "46324cc3-e537-484b-b0fa-fadc5b5aa087")
+		(property "Reference" "PWR2"
+			(at 59.69 59.182 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 59.69 67.31 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 59.69 63.5 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 59.69 63.5 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 59.69 63.5 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "7ec03e0e-391d-4ac5-aabe-2fad0fcef153")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "PWR2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 251.46 85.09 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "4eece3f8-d942-4b9c-8d51-13fdb2184474")
+		(property "Reference" "C8"
+			(at 194.31 39.116 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "10uF (series under R5 -> GND: DC gain 1) [OPT-C]"
+			(at 168.656 55.118 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" ""
+			(at 168.605 77.47 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 167.64 81.28 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 167.64 81.28 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "4a4e89bb-1fb0-483c-8b6f-7525877bdcab")
+		)
+		(pin "2"
+			(uuid "31284909-4ea8-43eb-8f5e-4417458917ae")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "C8")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 250.19 54.61 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "4fd2946d-7251-43ef-8bd3-5ff6ee129bae")
+		(property "Reference" "R8"
+			(at 51.562 125.73 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "10k (VBIAS2 div lo)"
+			(at 37.338 126.492 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 47.752 125.73 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 49.53 125.73 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 49.53 125.73 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "722bbec9-c4c8-4d38-9d9a-b83ea468825e")
+		)
+		(pin "2"
+			(uuid "9b0f5c22-d453-4392-9853-c28a8d8b0a8a")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "R8")
 					(unit 1)
 				)
 			)
@@ -3538,8 +3990,596 @@
 		)
 		(instances
 			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
 					(reference "U1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:D_Photo")
+		(at 68.58 101.6 90)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "6258735e-92e1-4964-b416-8e08d67bbbc1")
+		(property "Reference" "D1"
+			(at 72.898 102.616 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "BPV10NF / BPW34"
+			(at 63.5 106.68 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 68.58 102.87 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 68.58 102.87 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 68.58 101.6 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "0c34a83a-01dd-4b3e-8a34-889b0ac27080")
+		)
+		(pin "2"
+			(uuid "a8fa368b-409f-4d37-84db-cb021bc72efc")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "D1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 153.67 63.5 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "639ddaa2-3021-450b-a744-bf30fb3e99f9")
+		(property "Reference" "PWR1"
+			(at 153.67 59.436 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 153.67 67.31 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 153.67 63.5 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 153.67 63.5 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 153.67 63.5 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "644de374-2543-4850-9967-1ffe4c07b290")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "PWR1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 234.95 39.37 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "65d29803-495b-4898-bf11-c8febf450a83")
+		(property "Reference" "R4"
+			(at 37.592 154.94 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "100k (bias: U1A +in ->VBIAS2) [OPT-C]"
+			(at 24.13 128.524 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 47.752 125.73 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 49.53 125.73 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 49.53 125.73 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "39170665-3250-4e5c-85f0-bcfc18a2f07d")
+		)
+		(pin "2"
+			(uuid "7b9a121a-f51f-4db4-bc33-8fd88d5c5d43")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "R4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Amplifier_Operational:MCP6022")
+		(at 63.5 157.48 0)
+		(unit 3)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "8280c01c-c75f-4183-ab1b-b1e8f61a9ba4")
+		(property "Reference" "U1"
+			(at 62.23 156.2099 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "MCP6022"
+			(at 62.23 158.7499 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" ""
+			(at 63.5 157.48 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "http://ww1.microchip.com/downloads/en/devicedoc/20001685e.pdf"
+			(at 63.5 157.48 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Dual Operational Amplifiers, Rail-to-Rail Input/Output, DIP-8/SOIC-8/TSSOP-8"
+			(at 63.5 157.48 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "3c3ec81d-806f-45d2-8335-e3750a62895d")
+		)
+		(pin "2"
+			(uuid "f1632946-1417-4fd2-914b-2ec8ea2fdd42")
+		)
+		(pin "3"
+			(uuid "68eed8d0-d812-4834-872a-90f8fd26f317")
+		)
+		(pin "5"
+			(uuid "5a3e1f8a-a727-4ee5-a99f-63165ec924d6")
+		)
+		(pin "6"
+			(uuid "d17d6d73-00fe-49dd-8af0-454b807e397e")
+		)
+		(pin "7"
+			(uuid "ff6711d9-807f-4a42-b01b-a7355b6e34e8")
+		)
+		(pin "4"
+			(uuid "b871b470-c5e3-4369-bdb6-8778a885578f")
+		)
+		(pin "8"
+			(uuid "036703da-3f57-4ca1-b3f5-4274f28794fe")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "U1")
+					(unit 3)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Amplifier_Operational:MCP6022")
+		(at 86.36 160.02 0)
+		(unit 2)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "8280c01c-c75f-4183-ab1b-b1e8f61a9ba5")
+		(property "Reference" "U1"
+			(at 86.36 165.354 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "MCP6022"
+			(at 86.36 152.4 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 86.36 160.02 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "http://ww1.microchip.com/downloads/en/devicedoc/20001685e.pdf"
+			(at 86.36 160.02 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Dual Operational Amplifiers, Rail-to-Rail Input/Output, DIP-8/SOIC-8/TSSOP-8"
+			(at 86.36 160.02 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "3c3ec81d-806f-45d2-8335-e3750a62895e")
+		)
+		(pin "2"
+			(uuid "f1632946-1417-4fd2-914b-2ec8ea2fdd43")
+		)
+		(pin "3"
+			(uuid "68eed8d0-d812-4834-872a-90f8fd26f318")
+		)
+		(pin "5"
+			(uuid "5a3e1f8a-a727-4ee5-a99f-63165ec924d7")
+		)
+		(pin "6"
+			(uuid "d17d6d73-00fe-49dd-8af0-454b807e397f")
+		)
+		(pin "7"
+			(uuid "ff6711d9-807f-4a42-b01b-a7355b6e34e9")
+		)
+		(pin "4"
+			(uuid "b871b470-c5e3-4369-bdb6-8778a8855790")
+		)
+		(pin "8"
+			(uuid "036703da-3f57-4ca1-b3f5-4274f28794ff")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "U1")
+					(unit 2)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 40.64 127 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "853fcb8d-1a47-4be9-b96c-e59e33489f8d")
+		(property "Reference" "R3"
+			(at 42.672 127 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "DELETE [OPT-C: no VBIAS1]"
+			(at 16.764 124.714 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 38.862 127 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 40.64 127 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 40.64 127 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "2fd0b8a9-66b0-42ac-af7c-8353d07e2703")
+		)
+		(pin "2"
+			(uuid "6c99e0ee-9a7c-4445-9821-32f0eacc1cfc")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "R3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 92.71 130.81 270)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "91cbf136-b69e-4b1c-9f5e-d34c4973fcad")
+		(property "Reference" "C1"
+			(at 92.71 134.874 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "DELETE [OPT-C: no TIA]"
+			(at 89.662 127 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" ""
+			(at 96.52 131.775 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 92.71 130.81 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 92.71 130.81 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "e10bc774-b9d5-48be-8cb2-4e60745f1acb")
+		)
+		(pin "2"
+			(uuid "53d1b1ed-2c19-471c-9615-e29de1ae0f06")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "C1")
 					(unit 1)
 				)
 			)
@@ -3618,7 +4658,7 @@
 		)
 		(instances
 			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
 					(reference "C2")
 					(unit 1)
 				)
@@ -3626,8 +4666,8 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:C")
-		(at 167.64 81.28 0)
+		(lib_id "Device:R")
+		(at 250.19 39.37 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -3635,8 +4675,86 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(uuid "f9c77058-3935-4e51-8195-546a20945ce8")
-		(property "Reference" "C4"
+		(uuid "a98414aa-3f52-4855-8aa3-912e50170d86")
+		(property "Reference" "R7"
+			(at 45.974 149.86 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "10k (VBIAS2 div hi)"
+			(at 35.052 126.492 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 47.752 125.73 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 49.53 125.73 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 49.53 125.73 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "fd0f73c3-e462-493a-8872-fe5acb97d6b2")
+		)
+		(pin "2"
+			(uuid "21b3423c-6d77-4b77-992d-eecbad9a2970")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "R7")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 250.19 69.85 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "ad9f2ad6-0bbe-4d72-8373-7b077dce6411")
+		(property "Reference" "C7"
 			(at 168.275 83.82 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -3647,8 +4765,8 @@
 				(justify left)
 			)
 		)
-		(property "Value" "100nF (U2 dec)"
-			(at 168.275 78.74 0)
+		(property "Value" "10uF (VBIAS2 bypass)"
+			(at 176.784 64.262 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -3691,23 +4809,23 @@
 			)
 		)
 		(pin "1"
-			(uuid "c43a9f35-4b34-4f1a-be7d-d414e8d1b708")
+			(uuid "32c4ca59-26ca-40ba-9650-4602e68a4f0d")
 		)
 		(pin "2"
-			(uuid "43f12551-bccc-453d-943b-d177ff5e3379")
+			(uuid "53bcec39-fb7e-4b19-b336-6f0e0be7d306")
 		)
 		(instances
 			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "C4")
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "C7")
 					(unit 1)
 				)
 			)
 		)
 	)
 	(symbol
-		(lib_id "power:PWR_FLAG")
-		(at 153.67 63.5 0)
+		(lib_id "Device:C")
+		(at 234.95 85.09 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -3715,30 +4833,31 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(uuid "639ddaa2-3021-450b-a744-bf30fb3e99f9")
-		(property "Reference" "PWR1"
-			(at 153.67 59.436 0)
+		(uuid "b2f1d30b-d2a7-4335-b9bf-05d263beaa39")
+		(property "Reference" "C5"
+			(at 203.454 41.148 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
-		(property "Value" "PWR_FLAG"
-			(at 153.67 67.31 0)
-			(hide yes)
+		(property "Value" "820pF (anti-alias ||R6) [OPT-C]"
+			(at 169.926 49.784 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Footprint" ""
-			(at 153.67 63.5 0)
+			(at 168.605 77.47 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -3749,7 +4868,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 153.67 63.5 0)
+			(at 167.64 81.28 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -3760,7 +4879,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 153.67 63.5 0)
+			(at 167.64 81.28 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -3770,12 +4889,15 @@
 			)
 		)
 		(pin "1"
-			(uuid "644de374-2543-4850-9967-1ffe4c07b290")
+			(uuid "cb85e067-c105-4498-99c3-8ae63fbb0d0d")
+		)
+		(pin "2"
+			(uuid "2dacf2eb-f115-4425-9d4f-960dbddf818a")
 		)
 		(instances
 			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "PWR1")
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "C5")
 					(unit 1)
 				)
 			)
@@ -3854,7 +4976,7 @@
 		)
 		(instances
 			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
 					(reference "C3")
 					(unit 1)
 				)
@@ -3862,8 +4984,8 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:C")
-		(at 92.71 130.81 270)
+		(lib_id "Device:R")
+		(at 234.95 54.61 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -3871,31 +4993,29 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(uuid "91cbf136-b69e-4b1c-9f5e-d34c4973fcad")
-		(property "Reference" "C1"
-			(at 92.71 134.874 90)
+		(uuid "c2e7fe3e-c583-4fc9-9dcb-cac0ce4bd527")
+		(property "Reference" "R5"
+			(at 50.8 147.828 90)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 			)
 		)
-		(property "Value" "1nF (Cf1, 16kHz)"
-			(at 89.662 127 90)
+		(property "Value" "1k (gain bot: -in ->C8->GND) [OPT-C]"
+			(at 20.828 128.016 90)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 			)
 		)
 		(property "Footprint" ""
-			(at 96.52 131.775 0)
+			(at 47.752 125.73 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -3906,7 +5026,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 92.71 130.81 0)
+			(at 49.53 125.73 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -3917,7 +5037,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 92.71 130.81 0)
+			(at 49.53 125.73 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -3927,23 +5047,23 @@
 			)
 		)
 		(pin "1"
-			(uuid "e10bc774-b9d5-48be-8cb2-4e60745f1acb")
+			(uuid "62870c23-3e11-48bc-bc69-e064c6eb1a84")
 		)
 		(pin "2"
-			(uuid "53d1b1ed-2c19-471c-9615-e29de1ae0f06")
+			(uuid "2801ae9c-9973-4742-962f-5166729b59bc")
 		)
 		(instances
 			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "C1")
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "R5")
 					(unit 1)
 				)
 			)
 		)
 	)
 	(symbol
-		(lib_id "Device:D_Photo")
-		(at 68.58 101.6 90)
+		(lib_id "Device:C")
+		(at 234.95 100.33 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -3951,9 +5071,9 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(uuid "6258735e-92e1-4964-b416-8e08d67bbbc1")
-		(property "Reference" "D1"
-			(at 72.898 102.616 90)
+		(uuid "decad770-c27c-4a99-b4b2-16719ec2d936")
+		(property "Reference" "C6"
+			(at 218.694 42.418 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -3963,18 +5083,19 @@
 				(justify left)
 			)
 		)
-		(property "Value" "BPV10NF / BPW34"
-			(at 63.5 106.68 0)
+		(property "Value" "100nF (AC-couple: PD anode->U1A +in) [OPT-C]"
+			(at 169.418 60.198 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Footprint" ""
-			(at 68.58 102.87 0)
+			(at 168.605 77.47 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -3985,7 +5106,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 68.58 102.87 0)
+			(at 167.64 81.28 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -3996,7 +5117,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 68.58 101.6 0)
+			(at 167.64 81.28 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -4006,15 +5127,101 @@
 			)
 		)
 		(pin "1"
-			(uuid "0c34a83a-01dd-4b3e-8a34-889b0ac27080")
+			(uuid "f341ed66-818e-44ea-8f1b-0f9a62460d9f")
 		)
 		(pin "2"
-			(uuid "a8fa368b-409f-4d37-84db-cb021bc72efc")
+			(uuid "d955b35a-2bdf-4918-956d-b0372a82e886")
 		)
 		(instances
 			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "D1")
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "C6")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Reference_Voltage:MCP1525-TT")
+		(at 49.53 80.01 90)
+		(mirror x)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "f0568a75-c044-4187-ac92-1267bcfeb8ac")
+		(property "Reference" "U3"
+			(at 44.958 89.154 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "MCP1525-TT"
+			(at 49.53 74.93 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Package_TO_SOT_SMD:SOT-23"
+			(at 55.88 80.645 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+					(italic yes)
+				)
+				(justify left)
+			)
+		)
+		(property "Datasheet" "http://ww1.microchip.com/downloads/en/devicedoc/21653b.pdf"
+			(at 49.53 80.01 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+					(italic yes)
+				)
+			)
+		)
+		(property "Description" "2.5V Voltage Reference, SOT-23"
+			(at 49.53 80.01 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "2"
+			(uuid "685721fe-6203-4f8d-bad4-7d2ebdb37e7c")
+		)
+		(pin "1"
+			(uuid "10c30be9-dac7-4a5b-8ce0-41aeaef407f3")
+		)
+		(pin "3"
+			(uuid "7a2beefa-768c-4b59-aed5-b952d4d2d5a4")
+		)
+		(instances
+			(project "beacon-receiver-daylight"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "U3")
 					(unit 1)
 				)
 			)
@@ -4149,7 +5356,7 @@
 		)
 		(instances
 			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
 					(reference "J1")
 					(unit 1)
 				)
@@ -4157,8 +5364,8 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:R")
-		(at 49.53 102.87 0)
+		(lib_id "Device:C")
+		(at 167.64 81.28 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -4166,88 +5373,9 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(uuid "0bdd4e9f-9a03-443c-ad05-ae5d11e79100")
-		(property "Reference" "R2"
-			(at 51.562 102.87 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "4.7k (VBIAS1 as-built)"
-			(at 49.53 102.87 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 47.752 102.87 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 49.53 102.87 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 49.53 102.87 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "8d4bc62c-5080-4960-aac3-9071671682c7")
-		)
-		(pin "2"
-			(uuid "43282479-fd63-4986-93ad-d769200eef8d")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "R2")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Amplifier_Operational:MCP6022")
-		(at 63.5 157.48 0)
-		(unit 3)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "8280c01c-c75f-4183-ab1b-b1e8f61a9ba4")
-		(property "Reference" "U1"
-			(at 62.23 156.2099 0)
+		(uuid "f9c77058-3935-4e51-8195-546a20945ce8")
+		(property "Reference" "C4"
+			(at 213.36 44.196 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -4257,8 +5385,8 @@
 				(justify left)
 			)
 		)
-		(property "Value" "MCP6022"
-			(at 62.23 158.7499 0)
+		(property "Value" "100nF (U2 dec)"
+			(at 168.275 78.74 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -4269,203 +5397,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 63.5 157.48 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" "http://ww1.microchip.com/downloads/en/devicedoc/20001685e.pdf"
-			(at 63.5 157.48 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Dual Operational Amplifiers, Rail-to-Rail Input/Output, DIP-8/SOIC-8/TSSOP-8"
-			(at 63.5 157.48 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "3c3ec81d-806f-45d2-8335-e3750a62895d")
-		)
-		(pin "2"
-			(uuid "f1632946-1417-4fd2-914b-2ec8ea2fdd42")
-		)
-		(pin "3"
-			(uuid "68eed8d0-d812-4834-872a-90f8fd26f317")
-		)
-		(pin "5"
-			(uuid "5a3e1f8a-a727-4ee5-a99f-63165ec924d6")
-		)
-		(pin "6"
-			(uuid "d17d6d73-00fe-49dd-8af0-454b807e397e")
-		)
-		(pin "7"
-			(uuid "ff6711d9-807f-4a42-b01b-a7355b6e34e8")
-		)
-		(pin "4"
-			(uuid "b871b470-c5e3-4369-bdb6-8778a885578f")
-		)
-		(pin "8"
-			(uuid "036703da-3f57-4ca1-b3f5-4274f28794fe")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "U1")
-					(unit 3)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Amplifier_Operational:MCP6022")
-		(at 86.36 160.02 0)
-		(unit 2)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "8280c01c-c75f-4183-ab1b-b1e8f61a9ba4")
-		(property "Reference" "U1"
-			(at 86.36 165.354 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "MCP6022"
-			(at 86.36 152.4 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 86.36 160.02 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" "http://ww1.microchip.com/downloads/en/devicedoc/20001685e.pdf"
-			(at 86.36 160.02 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Dual Operational Amplifiers, Rail-to-Rail Input/Output, DIP-8/SOIC-8/TSSOP-8"
-			(at 86.36 160.02 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "3c3ec81d-806f-45d2-8335-e3750a62895d")
-		)
-		(pin "2"
-			(uuid "f1632946-1417-4fd2-914b-2ec8ea2fdd42")
-		)
-		(pin "3"
-			(uuid "68eed8d0-d812-4834-872a-90f8fd26f317")
-		)
-		(pin "5"
-			(uuid "5a3e1f8a-a727-4ee5-a99f-63165ec924d6")
-		)
-		(pin "6"
-			(uuid "d17d6d73-00fe-49dd-8af0-454b807e397e")
-		)
-		(pin "7"
-			(uuid "ff6711d9-807f-4a42-b01b-a7355b6e34e8")
-		)
-		(pin "4"
-			(uuid "b871b470-c5e3-4369-bdb6-8778a885578f")
-		)
-		(pin "8"
-			(uuid "036703da-3f57-4ca1-b3f5-4274f28794fe")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "U1")
-					(unit 2)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Analog_ADC:MCP3201")
-		(at 151.13 109.22 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "22358381-f588-4222-aac9-1c69977800f5")
-		(property "Reference" "U2"
-			(at 154.94 118.11 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "MCP3201"
-			(at 154.94 115.57 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" ""
-			(at 170.18 100.33 0)
+			(at 168.605 77.47 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4476,7 +5408,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 171.45 106.68 0)
+			(at 167.64 81.28 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4487,7 +5419,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 151.13 109.22 0)
+			(at 167.64 81.28 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -4497,187 +5429,15 @@
 			)
 		)
 		(pin "1"
-			(uuid "93f33024-79b8-44f6-a45f-f86aeb022571")
+			(uuid "c43a9f35-4b34-4f1a-be7d-d414e8d1b708")
 		)
 		(pin "2"
-			(uuid "cd88ad0f-baec-40e9-b243-41cb69aef3d4")
-		)
-		(pin "3"
-			(uuid "bed3c2fb-337b-4ad6-857b-9601cb5a52fb")
-		)
-		(pin "4"
-			(uuid "6b514407-b779-4d45-80b7-82f3dbe7a12e")
-		)
-		(pin "5"
-			(uuid "3bf91184-96ae-4a05-8bfe-938f1d90e137")
-		)
-		(pin "6"
-			(uuid "cd73afb6-6636-40b9-881a-a9f161fecd6d")
-		)
-		(pin "7"
-			(uuid "4f402c17-ca09-476d-beba-d4d46346e4d5")
-		)
-		(pin "8"
-			(uuid "4eb93d62-a3d7-452d-a201-3a4987055e23")
+			(uuid "43f12551-bccc-453d-943b-d177ff5e3379")
 		)
 		(instances
 			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "U2")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:PWR_FLAG")
-		(at 59.69 63.5 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "46324cc3-e537-484b-b0fa-fadc5b5aa087")
-		(property "Reference" "PWR2"
-			(at 59.69 59.182 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "PWR_FLAG"
-			(at 59.69 67.31 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 59.69 63.5 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 59.69 63.5 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 59.69 63.5 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "7ec03e0e-391d-4ac5-aabe-2fad0fcef153")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "PWR2")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R")
-		(at 49.53 125.73 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "853fcb8d-1a47-4be9-b96c-e59e33489f8d")
-		(property "Reference" "R3"
-			(at 51.562 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "1k (VBIAS1 as-built)"
-			(at 49.53 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 47.752 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 49.53 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 49.53 125.73 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "2fd0b8a9-66b0-42ac-af7c-8353d07e2703")
-		)
-		(pin "2"
-			(uuid "6c99e0ee-9a7c-4445-9821-32f0eacc1cfc")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "R3")
+				(path "/1e326cd9-e089-4f5a-a427-68f8d567cf0d"
+					(reference "C4")
 					(unit 1)
 				)
 			)
@@ -4689,675 +5449,4 @@
 		)
 	)
 	(embedded_fonts no)
-
-		(symbol
-		(lib_id "Device:R")
-		(at 234.95 39.37 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "65d29803-495b-4898-bf11-c8febf450a83")
-		(property "Reference" "R4"
-			(at 51.562 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "100k (AC re-bias->VBIAS2)"
-			(at 49.53 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 47.752 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 49.53 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 49.53 125.73 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "39170665-3250-4e5c-85f0-bcfc18a2f07d")
-		)
-		(pin "2"
-			(uuid "7b9a121a-f51f-4db4-bc33-8fd88d5c5d43")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "R4")
-					(unit 1)
-				)
-			)
-		)
-	)
-		(symbol
-		(lib_id "Device:R")
-		(at 234.95 54.61 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "c2e7fe3e-c583-4fc9-9dcb-cac0ce4bd527")
-		(property "Reference" "R5"
-			(at 51.562 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "1k (U1B gain bot->VBIAS2)"
-			(at 49.53 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 47.752 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 49.53 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 49.53 125.73 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "62870c23-3e11-48bc-bc69-e064c6eb1a84")
-		)
-		(pin "2"
-			(uuid "2801ae9c-9973-4742-962f-5166729b59bc")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "R5")
-					(unit 1)
-				)
-			)
-		)
-	)
-		(symbol
-		(lib_id "Device:R")
-		(at 234.95 69.85 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "26776dab-1450-4a0b-a362-896a6e7fab75")
-		(property "Reference" "R6"
-			(at 51.562 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "100k (U1B fb, G=101)"
-			(at 49.53 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 47.752 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 49.53 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 49.53 125.73 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "cda38fc4-12bc-44f4-a02a-08ec9a10304c")
-		)
-		(pin "2"
-			(uuid "6091a555-4f66-49a7-9953-3d594d0eeed6")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "R6")
-					(unit 1)
-				)
-			)
-		)
-	)
-		(symbol
-		(lib_id "Device:C")
-		(at 234.95 85.09 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "b2f1d30b-d2a7-4335-b9bf-05d263beaa39")
-		(property "Reference" "C5"
-			(at 168.275 83.82 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "820pF (anti-alias, ||R6)"
-			(at 168.275 78.74 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" ""
-			(at 168.605 77.47 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 167.64 81.28 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 167.64 81.28 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "cb85e067-c105-4498-99c3-8ae63fbb0d0d")
-		)
-		(pin "2"
-			(uuid "2dacf2eb-f115-4425-9d4f-960dbddf818a")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "C5")
-					(unit 1)
-				)
-			)
-		)
-	)
-		(symbol
-		(lib_id "Device:C")
-		(at 234.95 100.33 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "decad770-c27c-4a99-b4b2-16719ec2d936")
-		(property "Reference" "C6"
-			(at 168.275 83.82 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "1uF (AC-couple = doc C2)"
-			(at 168.275 78.74 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" ""
-			(at 168.605 77.47 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 167.64 81.28 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 167.64 81.28 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "f341ed66-818e-44ea-8f1b-0f9a62460d9f")
-		)
-		(pin "2"
-			(uuid "d955b35a-2bdf-4918-956d-b0372a82e886")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "C6")
-					(unit 1)
-				)
-			)
-		)
-	)
-		(symbol
-		(lib_id "Device:R")
-		(at 250.19 39.37 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "a98414aa-3f52-4855-8aa3-912e50170d86")
-		(property "Reference" "R7"
-			(at 51.562 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "10k (VBIAS2 div hi)"
-			(at 49.53 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 47.752 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 49.53 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 49.53 125.73 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "fd0f73c3-e462-493a-8872-fe5acb97d6b2")
-		)
-		(pin "2"
-			(uuid "21b3423c-6d77-4b77-992d-eecbad9a2970")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "R7")
-					(unit 1)
-				)
-			)
-		)
-	)
-		(symbol
-		(lib_id "Device:R")
-		(at 250.19 54.61 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "4fd2946d-7251-43ef-8bd3-5ff6ee129bae")
-		(property "Reference" "R8"
-			(at 51.562 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "10k (VBIAS2 div lo)"
-			(at 49.53 125.73 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 47.752 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 49.53 125.73 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 49.53 125.73 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "722bbec9-c4c8-4d38-9d9a-b83ea468825e")
-		)
-		(pin "2"
-			(uuid "9b0f5c22-d453-4392-9853-c28a8d8b0a8a")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "R8")
-					(unit 1)
-				)
-			)
-		)
-	)
-		(symbol
-		(lib_id "Device:C")
-		(at 250.19 69.85 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "ad9f2ad6-0bbe-4d72-8373-7b077dce6411")
-		(property "Reference" "C7"
-			(at 168.275 83.82 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "10uF (VBIAS2 bypass)"
-			(at 168.275 78.74 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" ""
-			(at 168.605 77.47 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 167.64 81.28 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" ""
-			(at 167.64 81.28 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "32c4ca59-26ca-40ba-9650-4602e68a4f0d")
-		)
-		(pin "2"
-			(uuid "53bcec39-fb7e-4b19-b336-6f0e0be7d306")
-		)
-		(instances
-			(project "beacon-receiver-daylight"
-				(path "/2b38b541-8578-4c8c-87a6-3ec7f952d22b"
-					(reference "C7")
-					(unit 1)
-				)
-			)
-		)
-	)
-		(label "TIA_OUT"
-		(at 265.43 39.37 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "9fe8bd61-d34d-466d-993a-ad5b7e726399")
-	)
-		(label "AC_NODE"
-		(at 265.43 49.53 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "be4ad9c0-1b1f-4bae-8f93-b5c7a58ea95a")
-	)
-		(label "VBIAS2_1V25"
-		(at 265.43 59.69 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "d2e34e2e-1822-47de-9941-00516a1efc48")
-	)
-		(label "POST_OUT"
-		(at 265.43 69.85 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "af9ad3ac-75e7-4416-8dc7-57523ccc3c89")
-	)
 )
