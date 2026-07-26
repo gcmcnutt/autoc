@@ -240,20 +240,28 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   measurement-point/lag artifact. Static-hold micro-dropout sweep remains.
 - [ ] A3-c **Daylight front end (FIELD BLOCKER, found 2026-07-17)**: outdoors/sunny = NO LOCK even at
   inches — full sun puts 0.3–1 mA into the wide-band PD, railing the 1 MΩ DC-coupled TIA (ADC pegged; distance
-  irrelevant). Fix stack: FB850-10 filter (÷~25 ambient, O3-11) + first-stage R_f ~47–100k + AC couple (C2/R4)
-  + U1B post-gain ×20–50; then measure the ambient shot-noise floor. Bench experiments planned (Set B in
-  bench-journal.md): lamp pedestal ladder → knee/rail → AC-tap headroom → two-stage prototype → fold the
-  chosen architecture into A3-b. Field kit note: bring the laptop rig — telemetry `adc` is a pedestal meter.
-  **v2 daylight schematic DRAFTED 2026-07-19**: [`cad/beacon-receiver/daylight/collector-schematic-daylight.md`](../../cad/beacon-receiver/daylight/collector-schematic-daylight.md)
-  — 10 k TIA → 1 µF/100 k AC-couple (HP 1.6 Hz) → U1B ×101 @ VBIAS2 1.25 V (mid-ADC, bipolar headroom) →
-  820 pF anti-alias (1.9 kHz). Open Qs: filter FWHM 10 vs 40 nm against the LED's 30 nm spectrum; flicker
-  through the HP; R_f1 final value. Set-B experiments validate before the A3-b freeze.
-- [ ] A3-b **Soldered receiver rebuild on copper-clad** (from the breadboard A3): fixed R_f (choose from the
-  range work; 1 MΩ default) + proper C_f (5–100 pF soldered), MCP6022 powered-pin checklist, TI-style PD
-  return (anode→GND), IN−=GND single-ended, star-ground with the emitter board (kills the shared-return
-  di/dt edge spikes seen 2026-07-16). Read the traps table in
-  [`optical-link-outcome.md`](optical-link-outcome.md) FIRST. Then re-run the commanded dropout ladder
-  (`host/recovery_sweep.py`, TX back on USB) as the soldered-baseline regression.
+  irrelevant). Day-one fix hypothesis (two-stage TIA — since superseded by Option C below): FB850-10 filter
+  (÷~25 ambient, O3-11) + first-stage R_f ~47–100k + AC couple + U1B post-gain ×20–50; then measure the
+  ambient shot-noise floor. Bench experiments (Set B in bench-journal.md, reframed 2026-07-25 to run on
+  Option C): lamp pedestal ladder → compression knee → clamp A/B → flicker station → fold into A3-b. Field kit note: bring the laptop rig — telemetry `adc` is a pedestal meter.
+  **OPTION C SELECTED 2026-07-24 (bench-verified)** — reverse-biased PD (cathode→3V3) + R_load 47 k +
+  100 nF AC-couple + single ×101 SBOA224 stage @ VBIAS2 1.25 V + 820 pF anti-alias (1.9 kHz): canonical
+  values, time constants (f_hp 10.8 Hz / gain-leg 16 Hz / τ recovery ≪ 1 word), ambient-pedestal math, and
+  the clean netlist for the KiCad update are in
+  [`cad/beacon-receiver/daylight/collector-schematic-daylight.md`](../../cad/beacon-receiver/daylight/collector-schematic-daylight.md)
+  (doc restructured 2026-07-25; two-stage TIA demoted to Appendix B fallback). **FIELD-PROVEN 2026-07-26**:
+  canonical values (R_load ~47 k trimmer, R4 100 k, R6 100 k ∥ 800 pF, ×46) lock in DIRECT SUNLIGHT at
+  ~15–20 ft, bare PD, no filter, bench current — hand-shadow improves it, so residual compression = the
+  C-14 filter's job (bench-journal field test #3). Open Qs: filter FWHM 10 vs 40 nm ↔ R_load pairing
+  (47 k vs 22 k, order C-14); indoor-flicker margin cost; clamp-diode benefit; ×101 vs ×51/×46. Set-B
+  experiments close them before the A3-b freeze.
+- [ ] A3-b **Soldered receiver rebuild on copper-clad** (from the breadboard A3): build **Option C** per the
+  daylight doc's netlist (reverse-biased PD, R_load 47 k — or 22 k if the 40 nm filter wins C-14 — 100 nF
+  couple, ×101 stage with the C8 series-leg cap, D2/D3 clamps), MCP6022 powered-pin checklist, IN−=GND
+  single-ended, star-ground with the emitter board (kills the shared-return di/dt edge spikes seen
+  2026-07-16). Read the traps table in [`optical-link-outcome.md`](optical-link-outcome.md) FIRST. Then
+  re-run `regression.py` (policy) + the commanded dropout ladder (`host/recovery_sweep.py`, TX back on USB)
+  as the soldered-baseline regression.
 - [X] A4d-8 **Gear-shifted DC tracker — DONE s7, HW-VERIFIED 2026-07-18**: alpha 1/256 locked / 1/32 unlocked; sim 0.81 ms settle; **HW step settle 1.23 s -> 0.62 s (2x)**, regression bar ratcheted to <1.0 s, 19/19 PASS. Original analysis: MEASURED 2026-07-18 via the new
   emitter `'P'` pulse-width attenuator (10× amplitude step, `host/results/agc_step.log`): down-step buries the
   small signal under DC-tracker bias — margin craters to 1–2 for ~1 s, settles in ~2.5–3 s (= 3–4τ of the
@@ -280,7 +288,7 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
 
 ### Bench
 - [ ] A5 **Stage 0 "hello gold code"**: 1 emitter → 1 PD (ND-attenuated, ~1 m) → laptop; recover the code; sweep chip rate / oversampling.
-- [ ] A6 **Stage 1 two-codes-one-detector**: 2 emitters (codes A/B) → 1 PD; confirm CDMA separation + cross-corr floor; measure acquisition time **AND partial-code (~70%) lock + erasure-aware soft-decision gain** (§7); A/B must not leak into each other under the independent per-beacon clock drift (A4c).
+- [ ] A6 **Stage 1 two-codes-one-detector**: 2 emitters (codes A/B) → 1 PD; confirm CDMA separation + cross-corr floor; measure acquisition time **AND partial-code (~70%) lock + erasure-aware soft-decision gain** (§7); A/B must not leak into each other under the independent per-beacon clock drift (A4c). ⚠ **Analog front end: run the Option-C receiver at ×51 (R5 = 2 k) or a verified no-clip range** — clipping the SUM of two codes intermodulates A×B and creates near–far capture the correlator can't undo (single-code clipping tolerance does NOT carry over; daylight doc §two-emitter).
 
 **▣ Checkpoint (code, ahead of the field gate)**: Stage 0/1 working = hello-world up. Checkpoint firmware + gateware and **re-assess the hill** before the Stage-2 field work — is 031's scope right-sized or to be split? (plan.md M3→M4 boundary.)
 

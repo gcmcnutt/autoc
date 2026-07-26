@@ -53,22 +53,59 @@
 
 ## Daylight receiver: OPTION C SELECTED (2026-07-24, bench-verified)
 
-**Reverse-biased PD + load R + single SBOA224-style gain stage** — canonical pin list + rationale in
-[cad/beacon-receiver/daylight/collector-schematic-daylight.md](../../cad/beacon-receiver/daylight/collector-schematic-daylight.md);
-KiCad sheet (`daylight/beacon-receiver-daylight.kicad_sch`) carries Option-C values ([OPT-C] tags; TIA-era
-parts marked DELETE; ERC = 22 intentional pre-wiring). Bench: strong close-range drive + wall-bounce decode
-with substitute values — topology-tolerant. **NEXT FIELD TEST RUNS OPTION C** — bring the rig (COM3 `adc` =
-pedestal meter). Two-stage (Option B) = linear-pedestal fallback. Gain leg needs R5 = R6/100 (×2 symptom =
-equal resistors). Orders: **02+03 COMBINED into the single active `cad/beacon-eval/beacon-order-03.md`**
-(C-1..C-24; order-02 deleted; filter FWHM 40-vs-10 nm = open decision C-14).
+**Reverse-biased PD + load R + single SBOA224-style gain stage** — the doc
+[cad/beacon-receiver/daylight/collector-schematic-daylight.md](../../cad/beacon-receiver/daylight/collector-schematic-daylight.md)
+was **restructured 2026-07-25 to be Option-C canonical**: final values with time constants sized to the code
+(f_hp 10.8 Hz ≪ chip band 30–200 Hz; gain-leg 16 Hz; anti-alias 1.9 kHz ≈ 10× chip; step recovery
+~65–80 ms ≪ 155 ms word), ambient-pedestal ceilings (70 µA @ 47 k → pair R_load with the C-14 filter: 10 nm
+→ 47 k, 40 nm → 22 k), clean netlist + KiCad sync checklist (two-stage TIA → Appendix B fallback). KiCad
+sheet (`daylight/beacon-receiver-daylight.kicad_sch`) still carries pre-wiring [OPT-C] value tags — manual
+rewire per the netlist is the next CAD step. Bench: strong close-range drive + wall-bounce decode with
+substitute values — topology-tolerant. **NEXT FIELD TEST RUNS OPTION C** — bring the rig (COM3 `adc` =
+pedestal meter; note `adc` is AC-stripped now — scope N_PD for the raw pedestal). Gain leg needs R5 = R6/100
+(×2 symptom = equal resistors). Orders: **02+03 COMBINED into the single active
+`cad/beacon-eval/beacon-order-03.md`** (C-1..C-25; order-02 deleted; filter FWHM 40-vs-10 nm = open decision
+C-14, now coupled to R_load). **Reconciled 2026-07-26 vs the two DK packlists + operator inventory answers — cart is FINAL**: dropped
+C-3/C-5/C-7/C-13/C-17/C-18/C-25 (survivor counts OK, no 412s owned, wire + 1N4148 + 3.74 Ω on hand);
+**C-12 FIRM ×10 — the 5-LED bench string stays bench permanently, the flight cube gets its own LEDs**;
+confirmed shorts = SOT23→DIP adapters (C-6 ×10) + 1 broken XNANO (C-4 ×2).
+
+## Field test #2 (2026-07-26, outdoors, Option C with substitute values): compresses in sunlight — VALUES, not topology
+
+As-built rig (on-hand parts): **R_load 1 MΩ** (not 47 k), C6 0.1 µF, **R4 10 kΩ** (not 100 k), **R6 1 MΩ ∥
+4700 pF** (not 100 k ∥ 820 pF), R5 1 k + C8 10 µF. Result: sensor in direct sunlight (sun ~90° off
+boresight) = barely locks; marginal-but-real lock on strong signal. Diagnosis (all three deltas point the
+same way, math in the daylight doc):
+1. **1 MΩ load → ambient ceiling 3.3 µA** (vs 70 µA @ 47 k): outdoor ambient forward-biases the PD, its
+   dynamic resistance collapses to ~10²–10³ Ω and SHUNTS the beacon current ~40×+ — compression, not gain,
+   is the failure. Indoors (≤1 µA) sits just under the ceiling — hence the clean bench curve.
+2. **R4 10 k AC-loads the PD through C6** → in-band transimpedance ≈10 k regardless of the 1 M (which only
+   sets the DC point). This build also exposed a doc error: canonical in-band I→V is **R1∥R4 ≈ 32 k**, not
+   47 k (budget table corrected 2026-07-26).
+3. **1 M ∥ 4.7 nF = 34 Hz LP** — chips smeared to τ ≈ 1 chip; net equivalent ≈1.6 MΩ @ 200 Hz ≈ v1 gain
+   (familiar curve, correlator processing gain carried it). Plus τ_hp ≈ 100 ms (attitude blindness).
+   Verdict: **topology field-validated; go canonical values** (47 k / 100 k / 100 k ∥ 820 pF) for
+   sunlit-sensor operation; **C-14 filter still required for sun near the FOV** (bare-PD 30–300 µA → ÷7–25
+   brings it inside the 70 µA ceiling).
+
+**Field test #3 (same day, canonical values fitted)**: R_load = **47 k MEASURED post-test** (1 M 3296W
+trimmer, holding value), R4 100 k, R6 100 k ∥ 800 pF, R5 2.2 k (×46, two-emitter-safe). **DIRECT-SUNLIGHT LOCK:
+~15–20 ft (4.5–6 m) outdoors, bare round PD (BPV10NF), NO optical filter, bench current 51 mA.**
+Hand-shadowing the PD from direct sun improves signal → residual ambient compression is the remaining
+limiter, i.e. exactly the C-14 filter's job. Matches the corrected budget (~5 m ≈ 100-count class at ×46
+before daylight shot noise). **AC-coupled Option C is FIELD-PROVEN**; remaining range multipliers to 100 m:
+field current ×6 (range ×~2.4) → filter (kills compression + √7 shot noise) → collection optics (×10–25
+signal → range ×3–5). Scope note: BK 2120B + 10× probes (screen ×10; 1× probing would load the 100 k
+bias node — don't).
 
 ## Field finding (2026-07-17, outdoors, sunny): NO LOCK even at inches — TIA RAILED by ambient
 
 Expected physics, now measured: full sun ≈ 15–20 mW/cm² in the PD's wide 780–1050 band → **0.3–1 mA ambient
 photocurrent** vs a 1 MΩ DC-coupled TIA → output rails at 3.3 V, ADC pegged, no decode at any distance.
-AC-coupling alone can't fix a railed amp — the daylight stack is: **FB850-10 optical filter (÷~25 ambient,
-order-03 O3-11) + lower first-stage R_f (~47–100k for headroom) + AC couple (C2/R4) + U1B post-gain (×20–50,
-the MCP6022's unused half)**; ambient shot noise then sets the daylight floor (to be measured). No field
+AC-coupling alone can't fix a railed amp — the day-one hypothesis was: **FB850-10 optical filter (÷~25
+ambient, order-03 O3-11) + lower first-stage R_f (~47–100k for headroom) + AC couple (C2/R4) + U1B post-gain
+(×20–50, the MCP6022's unused half)** *(superseded 2026-07-24 by Option C — see the daylight section
+above)*; ambient shot noise then sets the daylight floor (to be measured). No field
 instruments that day — NOTE: the rig is portable (laptop + STEPLink + battery TX); the telemetry `adc` column
 is a pedestal meter — bring it next time.
 
@@ -77,10 +114,12 @@ is a pedestal meter — bring it next time.
 - **Set A (gain vs cap, explains the 16/19 paper-bounce run)**: A1 = 675k no-cap P-ladder; A2 = 1 MΩ +
   100 pF P-ladder. Prediction: A2 recovers margin 6/100 % (cap = anti-aliasing at the 480 Hz point sampler);
   A1 barely moves (margin is gain-normalized).
-- **Set B (DC-bias / synthetic sunlight)**: B1 incandescent-lamp pedestal ladder (LED lamps emit no 850 nm!)
-  — `adc` = pedestal meter, find margin knee + rail point; B2 shot-noise margin curve below rail; B3 AC-tap
-  (C2 1 µF + R4 1 MΩ) headroom gain; B4 two-stage daylight front end (low R_f + AC + U1B post-gain) → feeds
-  the A3-b soldered architecture.
+- **Set B (DC-bias / synthetic sunlight) — reframed 2026-07-25 to run on Option C**: B1 incandescent-lamp
+  pedestal ladder (LED lamps emit no 850 nm!) — scope N_PD = pedestal meter (`adc` is AC-stripped in
+  Option C), find the margin knee + soft-compression point vs the 70 µA @ 47 k ceiling; B2 shot-noise margin
+  curve below compression; B3 clamp-diode A/B (with/without D2/D3 under pedestal steps); B4 indoor-flicker
+  station (100/120 Hz + LED-PWM margin cost). Feeds the A3-b soldered freeze + the C-14 filter/R_load choice.
+  (The old B3 AC-tap / B4 two-stage line items are superseded — Option C selected.)
 
 ## Open items / next steps
 
@@ -88,7 +127,8 @@ is a pedestal meter — bring it next time.
    flight-cube tiles, filter+lens, 4.7 µH flight inductor, PicoBlade battery connectors (flight pack =
    Spektrum SPMX1501S50, std-LiPo 4.20 V charge, "PH 1.25 Ultra Micro" = PicoBlade-compatible).
 2. **A1-ovp**: fit the 15 V zener + 1 kΩ clamp when parts land; pull-LED-header live test.
-3. **A3-b**: soldered receiver on copper-clad (fixed R_f + real C_f, star ground) → re-run regression.
+3. **A3-b**: soldered **Option-C** receiver on copper-clad (netlist in the daylight doc; R_load per the
+   C-14 filter choice; star ground) → re-run regression.
 4. **A2-uvlo-2**: scripted slow-creep + dwell micro-dropout sweep (psu.py ramp + banner listener) — the
    original 3 blips didn't reproduce in the fast static-hold pass.
 5. Flight cube build @306 mA (raise psu MAX_CURR deliberately) → optics stage → **100 m field test**.

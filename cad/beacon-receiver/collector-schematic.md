@@ -4,8 +4,10 @@
 **Spec ref**: [acquisition-research-plan.md](../../specs/031-beacon-camera/acquisition-research-plan.md) §5 (receiver chain), [eval-loop-bom.md](eval-loop-bom.md) (parts).
 **Chain**: `PD → TIA → [DC tap | AC-couple] → ADC → StepFPGA`, plus an optional hard-1-bit comparator.
 **⚠ v1 is INDOOR/BENCH-ONLY** — full sun rails the 1 MΩ DC-coupled TIA (field-measured 2026-07-17: no
-lock at inches). The outdoor design is **v2**: [daylight/collector-schematic-daylight.md](daylight/collector-schematic-daylight.md)
-(low-R TIA → AC-couple → U1B ×101, mid-rail bias, optical BP filter required).
+lock at inches). The outdoor design is **v2 = Option C, SELECTED 2026-07-24**:
+[daylight/collector-schematic-daylight.md](daylight/collector-schematic-daylight.md)
+(reverse-biased PD + 47 k load + AC-couple + single ×101 stage @ mid-rail bias; optical BP filter required;
+the two-stage TIA is that doc's Appendix-B fallback).
 
 Single 3.3 V rail (from the StepFPGA or a bench/USB 3.3 V). Signal BW is low (~100–200 Hz code), so the design is forgiving — jellybean parts, breadboard-friendly.
 
