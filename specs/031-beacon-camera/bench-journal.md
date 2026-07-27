@@ -17,6 +17,13 @@
   Covers PSU cold start → baseline → dropout ladder → AGC ladder/step → injection/skew → I-V profile →
   deliberate UVLO trip → UPDI recovery → restore.
 - Bench parked: locked margin 9, supply 4.200 V / ~91 mA, output ON.
+- **Regression re-baselined 2026-07-26 on the Option-C rig ("current values" breadboard): 19/19 PASS**
+  ([results/regression-2026-07-26.log](../../firmware/beacon-decoder-stepfpga/host/results/regression-2026-07-26.log)).
+  Baseline lock 100 % margin 8 corr ~10.5 k; dropout ladder clean (1 s → 18–24 unlocked frames, 4 s
+  re-acquires); AGC step settle **0.30 s** (vs 0.62 s at s7 bring-up); locks at P=16; +2.6 % skew holds;
+  I-V 4.2→3.7 V no LOS; UVLO trips + UPDI recovery clean. First attempt died at P3 on a truncated
+  telemetry row — `regression.py capture()` now skips malformed rows (try/except) instead of crashing;
+  also note `tee` masks the suite's exit code — check the `19/19` line, or run with `PIPESTATUS`.
 
 ## Instruments (all scriptable from `firmware/beacon-decoder-stepfpga/host/`)
 

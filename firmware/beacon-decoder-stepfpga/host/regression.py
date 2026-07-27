@@ -26,7 +26,10 @@ def capture(sec):
     for line in out.stdout.splitlines():
         f = line.strip().split(',')
         if len(f) == 13 and f[0] == 'BCN' and f[1].isdigit():
-            rows.append(dict(adc=int(f[2]), lkB=int(f[7]), mB=int(f[8]), corrB=int(f[6]), rB=int(f[10])))
+            try:  # serial reads can hand back a truncated row (empty field) — skip, don't die
+                rows.append(dict(adc=int(f[2]), lkB=int(f[7]), mB=int(f[8]), corrB=int(f[6]), rB=int(f[10])))
+            except ValueError:
+                continue
     return rows
 
 def stats(rows):
