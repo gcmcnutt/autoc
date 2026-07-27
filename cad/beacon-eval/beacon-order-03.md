@@ -70,12 +70,31 @@ test**; (4) stop stalling on missing passives (kits).
   - [X] received — notes: packlists 128637262 line 1 / 127789318 line 6.
 
 ## D — Daylight receiver / 100 m optics (Option C selected 2026-07-24)
-- [ ] **C-14** *(O3-11 = O2-13 merged)* **850 nm bandpass filter + collection lens** — REQUIRED for daylight:
-  **open choice** (collector-schematic-daylight.md Q1): Thorlabs **FBH850-40** (40 nm, passes ~85 % of the
-  LED's 30 nm line, ambient ÷7) vs **FB850-10** (10 nm, beacon ×0.3, ambient ÷25 — direct-sun insurance).
-  Lean 40 nm primary; + **M12 lens** (m12lenses.com PT-02120 class) + M12 holder/mount.
-  ⚠ **couples to the Option-C R_load** (pedestal ceiling 3.3 V/R): 10 nm → R_load 47 k; **40 nm → 22 k**
-  (else filtered direct sun compresses) — see the daylight doc's pedestal table.
+- [ ] **C-14** *(O3-11 = O2-13 merged; **DECIDED 2026-07-26 → BUDGET M12 STACK**)* **850 nm bandpass
+  filter + collection lens** for the ~100 m single-pixel test. Thorlabs (FBH850-40 / FB850-10) is
+  **DEFERRED to the 040 camera** — the nicer filter earns its keep on the 2-D array; the single-pixel
+  test uses the cheap M12/CCTV ecosystem (which is also what 040 will mount, so the holder/lens carry
+  forward). **Sensor at the focal plane = BPW34** (flat 2.65 mm chip, no dome — clean image target;
+  its unfiltered visible response is exactly what the bandpass fixes). The domed BPV10NF stays the
+  bare/finder sensor — its built-in optic fights an external lens (±20° acceptance, tiny target).
+  Order (~$25–30 total):
+  - **M12 lens holder**, metal, PCB-mount (m12lenses.com / Amazon generic, ~$4) — screws to a perfboard
+    scrap with the BPW34 soldered dead-center under it.
+  - **M12 board lens 16 mm f/1.6–2.0** (~10 mm aperture, ~$10) — FOV ≈ 2.65/16 ≈ **9.5°** (16 m capture
+    width @ 100 m); aperture gain ≈ ×11 over bare BPW34 → with 306 mA emitters ≈ **95–100 m** reach.
+    Focus by telemetry: slide the thread while watching `corrB` peak.
+  - **850 nm bandpass discs 12.5 mm ×1.0 mm ×2** — Quanmin (Amazon, ~$12/pair); drop into the holder's
+    internal step behind the lens. Realistically 30–50 nm FWHM, ±10 nm CWL — fine vs the LED's 30 nm line.
+  - *Alt single-part (operator-found, mount VERIFIED M12×0.5)*: AliExpress "ELP HD M12 Lens, 850 nm IR
+    narrow-pass filter" (~$10, item 3256809007490501) — lens+filter in one, screws into any standard M12
+    holder; **pick the longest-focal SKU (16 mm; 12 mm acceptable)** — the 2.8/3.6/6 mm variants are
+    wide-FOV webcam glass with too little aperture for 100 m. Typical F2.0 @ 16 mm → 8 mm aperture ≈ ×7
+    over bare BPW34 → ~75–80 m; still fine. Buying this makes the Quanmin discs optional (backup/second rig).
+    *Step-up if CWL tolerance worries*: Commonlands CBP850, M12-threaded (~$25).
+  - *Headroom option if 100 m is thin*: 25 mm plano-convex (~$10, DIY tube) ≈ ×70 → ×8 range, FOV ~4°.
+  ⚠ **couples to the Option-C R_load** (pedestal ceiling 3.3 V/R): cheap discs are **40 nm-class →
+  R_load 22 k** (47 k reserved for a true 10 nm filter) — see the daylight doc's pedestal table. Note the
+  9.5° FOV itself is ambient rejection (sky-only background when aimed at a flying beacon).
   - [ ] received — notes:
 - [ ] **C-15** *(O2-7; demoted by Option C)* TSSOP/MSOP-8→DIP adapter (Aries LCQT-TSSOP8) ×2 — only if the
   OPA381 precision-TIA path revives (the OPA381 chips themselves are ✔ on hand, ×2 from order 1); Option C
@@ -146,6 +165,7 @@ test**; (4) stop stalling on missing passives (kits).
   verified 3.48 V** (07d195f) — all three closed since the original Order-03 draft.
 
 ## Open decisions gated by this order
-1. Filter FWHM (C-14): 40 nm vs 10 nm — Set-B lamp tests + first Option-C field test inform. **The choice
-   sets the Option-C R_load** (10 nm → 47 k, 40 nm → 22 k — pedestal ceiling math in the daylight doc).
+1. ~~Filter FWHM (C-14): 40 nm vs 10 nm~~ — **RESOLVED 2026-07-26: budget 40 nm-class (M12 stack) for
+   the single-pixel test → Option-C R_load = 22 k**; true 10 nm (Thorlabs) deferred to the 040 camera
+   where the 2-D array earns it. (Pedestal-ceiling math in the daylight doc.)
 2. RC vs 32k-crystal vs XO (F section) — still gated on the copper-board load-test jitter measurement.
