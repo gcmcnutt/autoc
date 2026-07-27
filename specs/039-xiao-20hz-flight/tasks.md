@@ -55,7 +55,7 @@ T025–T026 flight (planned 2026-07-12), T027/T028 report+verdict (assistant, po
 - [X] T014 [US3] Console split (FR-014) in `xiao/src/msplink.cpp` (+ logPrint call sites): DELETE the per-tick `NN:`/`Nav State:` text lines (incl. T009's interim extension — Constitution III, no parallel writers), keep events (arm/disarm/engage/disengage/errors) + ~2 Hz heartbeat — DONE: logPrint console-only (flash text path deleted incl. T009 interim NN line + Nav State line — Constitution III), ~2 Hz hb console line, events kept; span-end summaries stay (event-class)
 - [X] T015 [P] [US3] Desktop decoder `src/analytics/flightlog_decode.py`: reads `.bin` → CSV/dataframe; loud-fail on version/CRC; reports tick_counter gaps + drop counts; unit-check against a bench-produced file — DONE: header-scale CSV decode, loud-fail verified (version+1 / CRC / unknown-type / truncation all exit 1), gap+drop reporting; unit-checked against a C++-generated .bin from the same format header (bench file check remains in T017)
 - [X] T016 [P] [US3] Update `xiao/web/flight_logger.html`: download the `.bin` intact (rename/size handling), plus in-browser decode or CSV export implementing the same contract (no third format definition) — DONE: .bin saved intact (named flight_log_<ts>_flight_NNN.bin), in-browser decoder + tick-CSV export implementing the contract (validated under node against the synthetic .bin), decode summary panel
-- [ ] T017 [US3] OPERATOR bench: sustained logging session — budget math holds (~95 B/tick ⇒ ~0.9 MB for 2×4 min), BLE download, `flightlog_decode.py` lossless, zero logging-induced overruns in the span summary
+- [X] T017 [US3] **CLOSED-SUBSUMED (ledger reconciliation 2026-07-27, T030 pass)** — the dedicated bench session was never run as specified; the evidence arrived bigger: the v2/v3 bench-day sessions + **flight-20260713 itself** (4 spans, 1339 engaged ticks logged, zero drops / zero tick gaps, battery-only → BLE download → `flightlog_decode.py` → blackbox-correlate proven end-to-end in the field — wrap.md §verdict). Budget math held in practice (2×4 min fit with room). — ~~OPERATOR bench: sustained logging session — budget math holds (~95 B/tick ⇒ ~0.9 MB for 2×4 min), BLE download, `flightlog_decode.py` lossless, zero logging-induced overruns in the span summary~~
 
 **Checkpoint**: complete honest flight record at 20 Hz volume, console quiet.
 
@@ -66,8 +66,8 @@ T025–T026 flight (planned 2026-07-12), T027/T028 report+verdict (assistant, po
 
 - [X] T018 [US4] Set `MSP_NN_EVAL_DIVISOR = 1` in `xiao/include/main.h` (50 ms loop already 20 Hz); confirm re-entry guard behavior at every-tick eval in `xiao/src/msplink.cpp:43-44` — DONE: divisor=1; re-entry guard reasoning documented in main.h (single-threaded loop ⇒ no MSP overlap; over-budget ticks surface as loopStats overruns)
 - [X] T019 [P] [US4] DWT cycle-count measurement of the unrolled eval on target (037 `eval-cycle-harness` design: `DWT->CYCCNT`), one number per firmware image, written into the span-summary/boot log — DONE (code): DWT cycle counter enabled at msplinkSetup, first eval after boot measured (gather+forward), reported on console + carried in every SpanSummary (dwt_eval_cycles); the NUMBER lands with the operator bench (T020)
-- [ ] T020 [US4] OPERATOR bench: FR-011 cadence soak per `contracts/bench-validation.md` — several consecutive 3–4 min engaged spans at 115200 baud; loopStats + fetch/eval/send captured in the log
-- [ ] T021 [US4] OPERATOR bench: baud-raise experiment — repeat one soak at 460800 (`xiao/src/msplink.cpp:342` + INAV side); record both baud's pipeline stats for the memo; keep whichever the operator picks after T023 (D7: latency lever, not bandwidth)
+- [X] T020 [US4] **CLOSED-SUBSUMED (2026-07-27, T030 pass)** — the formal FR-011 soak per contract was overtaken by the 2026-07-12 bench-hardening day (T034–T038 sessions with loopStats live) and then the flight: **4/4 spans to `path complete`, zero overruns across 1339 engaged 20 Hz ticks at 115200** — a harder cadence proof than the bench soak specified. — ~~OPERATOR bench: FR-011 cadence soak per `contracts/bench-validation.md` — several consecutive 3–4 min engaged spans at 115200 baud; loopStats + fetch/eval/send captured in the log~~
+- [X] T021 [US4] **CLOSED-NOT-RUN (2026-07-27, T030 pass) → 040 candidate** — the 460800 baud-raise experiment was never performed; 115200 proved sufficient in flight (zero overruns), so the latency lever (D7) is unexercised, not disproven. Routed to specs/BACKLOG.md → "039 leftovers / 040 candidates". — ~~OPERATOR bench: baud-raise experiment — repeat one soak at 460800 (`xiao/src/msplink.cpp:342` + INAV side); record both baud's pipeline stats for the memo; keep whichever the operator picks after T023 (D7: latency lever, not bandwidth)~~
 
 **Checkpoint**: 20 Hz holding on hardware; all memo inputs measured.
 
@@ -76,9 +76,9 @@ T025–T026 flight (planned 2026-07-12), T027/T028 report+verdict (assistant, po
 **Goal**: the decision memo + operator review; flight candidate locked.
 **Independent Test**: memo exists with measured/modeled/gap + recommendation; operator decision recorded (contracts/latency-memo.md).
 
-- [ ] T022 [US2] Assemble the latency memo per `contracts/latency-memo.md` into `specs/039-xiao-20hz-flight/latency-memo-results.md`: 10 Hz-era numbers (research.md R1), 20 Hz bench numbers at both bauds (T020/T021), DWT eval cost (T019), modeled values + mechanism (COMPUTE_LATENCY 30 ms, servo v2), tail-vs-50 ms-tick analysis, recommendation (stands / amend+retrain / amend-without-retrain); NO RC-filter modeling (verified transparent)
-- [ ] T023 [US2] OPERATOR review: record the decision + FR-006 local-IMU verdict (research position: stays deferred) + baud choice in the memo results + outcome.md — this LOCKS the flight candidate
-- [ ] T024 [US2] CONDITIONAL (only if T023 = amend+retrain): update `COMPUTE_LATENCY_MSEC_DEFAULT` in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.h`, clean `rebuild-perf.sh` (OPERATOR), retrain M1 via `scripts/train.sh` (OPERATOR, Constitution IX), pin the elite (`retain=keep`) + record in outcome.md, regenerate firmware (repeat T008–T010 on the new weights)
+- [X] T022 [US2] **CLOSED-FOLDED (2026-07-27, T030 pass)** — the standalone `latency-memo-results.md` was never assembled; the memo's substance (bench latency numbers, DWT eval cost, mechanism/modeled values) landed piecemeal in outcome.md + wrap.md instead, and the 460800 arm (T021) has no data. The contract was not honored literally. The still-open analytical core — does the sim latency model (COMPUTE_LATENCY 30 ms + servo v2) match 20 Hz hardware reality, amend + retrain or not — **routes to the 040 "enhanced simulation" split** (see BACKLOG; pairs with [project_sim_latency]). — ~~Assemble the latency memo per `contracts/latency-memo.md` into `specs/039-xiao-20hz-flight/latency-memo-results.md` …~~
+- [X] T023 [US2] **CLOSED-IMPLICIT (2026-07-27, T030 pass) — decision of record: STANDS.** The flight candidate was locked de facto: flew gen9200 M1 on existing weights (no latency amendment, no retrain), FR-006 local-IMU stayed deferred (research position upheld), baud stayed 115200. Flight-20260713 SUCCESS validates the "stands" choice retroactively. Formal memo-review ceremony never held — recorded here as the decision artifact. — ~~OPERATOR review: record the decision + FR-006 local-IMU verdict + baud choice in the memo results + outcome.md — this LOCKS the flight candidate~~
+- [X] T024 [US2] **CLOSED-MOOT (2026-07-27, T030 pass)** — conditional never triggered: T023 resolved "stands", not "amend+retrain". No `COMPUTE_LATENCY_MSEC_DEFAULT` change, no retrain, no firmware regen. If the 040 enhanced-simulation split reopens the latency model, this task's recipe is the playbook. — ~~CONDITIONAL (only if T023 = amend+retrain): …~~
 
 **Checkpoint**: flight candidate + configuration frozen.
 
@@ -148,7 +148,15 @@ three-regime finding; operator decision: no sim recalibration until n>1 flight a
 ## Phase 8: Polish & Cross-Cutting
 
 - [X] T029 [P] Constitution VI type-domain grep audit on 039-touched paths (`tools/nn2cpp.cc`, decoder boundary, any `src/`/`include/autoc/` touches): annotate `// raw-ok:` or convert — DONE: arena.h/nn2cpp gp_scalar-clean; flight_log_format.h records section + flight_log.h carry raw-ok annotations; python/js decoders are the gp_scalar re-entry boundary
-- [ ] T030 Outcome hygiene: FR-002/FR-011 bench records, DWT number, memo decision, pinned-artifact prefixes all present in outcome.md; BACKLOG updated (delta+varint@50 Hz already filed)
+- [X] T030 **DONE 2026-07-27 (post-wrap ledger reconciliation)** — this pass: T017/T020 closed-subsumed (bench-day + flight evidence), T021 closed-not-run → 040 candidate, T022 closed-folded (memo substance in outcome/wrap; analytical core → 040 enhanced-simulation), T023 decision of record = STANDS (recorded in the task entry), T024 closed-moot. 039 leftovers + operator 040-split scope note filed in specs/BACKLOG.md → "039 leftovers / 040 candidates" (Constitution X: BACKLOG.md is the backlog of record; the section below is a pointer). — Outcome hygiene: bench records/DWT/memo-decision/pins were verified present across outcome.md + wrap.md rather than re-copied.
+
+## 040 candidates — post-wrap triage pointer (2026-07-27)
+
+> Backlog of record: **specs/BACKLOG.md → "[039 leftovers → 040 candidates]"** (Constitution X). Summary:
+> operator scope direction — **040 likely splits** into (a) **enhanced simulation** (sim-latency model
+> amendment + servo-v2 fold-in question from T022/T024, gates the deferred local-IMU) and (b) **additional
+> M1 flight tests** (feeds the pitch-lever gate: n>1 articles), while **031's 1-pixel flight tests** verify
+> emitter/sensor ranges before the camera-redo items commit. Unexercised 039 lever: 460800 baud (T021).
 
 ## Dependencies
 

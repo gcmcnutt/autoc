@@ -70,6 +70,31 @@ needs a general redefinition, NOT an extrapolation of the training cylinder:
 
 ---
 
+## 039 leftovers → 040 candidates (post-wrap triage 2026-07-27)
+
+### [040 scope note — operator 2026-07-27] 040 likely SPLITS: enhanced simulation + additional M1 flight tests, while 031 gates the camera redo
+
+Operator direction at the 039 ledger reconciliation: **040 is likely to split** rather than go straight at
+the camera redo —
+1. **Enhanced simulation** — the reopened sim-fidelity thread: does the sim latency model
+   (`COMPUTE_LATENCY` 30 ms + servo v2) match measured 20 Hz hardware reality; amend + retrain or not
+   (the analytical core 039's T022 memo never assembled; T024 holds the amend+retrain playbook). Absorbs
+   [project_sim_latency] ("amend sim latency model + retrain M1; gates the deferred local-IMU / FR-006").
+2. **Additional M1 flight tests** — more flights/articles on the standing v3 log + correlate tooling;
+   builds the **n>1 articles** dataset that gates the 039 pitch levers (see "pitch levers" below/in wrap),
+   and keeps sim-real in the loop per [project_038_regression_gate]. Per-flight clock-anchor fit remains
+   required practice.
+3. Meanwhile **031's 1-pixel flight tests** verify emitter/sensor RANGES in the field — the [040 — camera
+   redo] items (perception front-end + representation, further down this file) **wait on those results**
+   before committing to a camera spec.
+
+### [039 leftover] 460800 baud-raise experiment (unexercised latency lever)
+
+039 T021 was never run — 115200 proved sufficient in flight (zero overruns, 1339 engaged ticks), so the
+baud raise is an **unexercised latency lever (D7: latency, not bandwidth), not a disproven one**. Cheap
+bench experiment (`xiao/src/msplink.cpp:342` + INAV side) whenever pipeline latency becomes the binding
+concern — natural companion to the enhanced-simulation latency work above.
+
 ## 038 deferrals
 
 ### [038 US3 follow-on — PULLED FORWARD from 040, likely next step 2026-07-07] Spherical/equidistant projection so `span` (|gap|) means one thing everywhere on the display
