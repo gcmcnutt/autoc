@@ -1,0 +1,5 @@
+// S1 emitter pins (StepFPGA board labels → FPGA balls, per operator/EIM pinout).
+IOBUF ALLPORTS IO_TYPE=LVCMOS33 ;
+LOCATE COMP "code" SITE "P8" ;   // I/O 14 — gold code chip stream
+LOCATE COMP "sync" SITE "N8" ;   // I/O 15 — epoch/index pulse (scope trigger)
+LOCATE COMP "sw1"  SITE "M7" ;   // switch 1 — code select (A=0 / B=1)

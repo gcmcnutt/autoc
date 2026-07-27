@@ -1,0 +1,13 @@
+// 12 MHz board clock on C1 → PLL → 108 MHz (the 108 MHz domain is constrained by fast_pll's
+// FREQUENCY_PIN_CLKOP attribute). 8 user LEDs at the threeN1 sites.
+IOBUF ALLPORTS IO_TYPE=LVCMOS33 ;
+LOCATE COMP "clk12"   SITE "C1"  ;
+FREQUENCY PORT "clk12" 12.000000 MHz ;
+LOCATE COMP "LEDs[0]" SITE "N13" ;
+LOCATE COMP "LEDs[1]" SITE "M12" ;
+LOCATE COMP "LEDs[2]" SITE "P12" ;
+LOCATE COMP "LEDs[3]" SITE "M11" ;
+LOCATE COMP "LEDs[4]" SITE "P11" ;
+LOCATE COMP "LEDs[5]" SITE "N10" ;
+LOCATE COMP "LEDs[6]" SITE "N9"  ;
+LOCATE COMP "LEDs[7]" SITE "P9"  ;

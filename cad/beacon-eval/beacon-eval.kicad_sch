@@ -2780,7 +2780,7 @@
 				)
 			)
 		)
-		(property "Value" "0.62R 1%"
+		(property "Value" "3.74R 1%"
 			(at 166.37 82.55 90)
 			(show_name no)
 			(do_not_autoplace no)

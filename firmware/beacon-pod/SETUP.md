@@ -115,3 +115,50 @@ which avr-gcc pymcuprog && \
 ```
 
 All three commands returning real paths (not "not found") = ready.
+
+---
+
+## ATtiny416 Xplained Nano (XNANO) — PlatformIO + on-board mEDBG (working bring-up, 2026-06-30)
+
+The **eval** path (distinct from the 412 serialUPDI above): `firmware/beacon-pod/platformio.ini` env `xnano416`,
+bare-C (no Arduino framework — `atmelmegaavr` provides the ATtiny device pack, so **no apt/avr-libc, no sudo**).
+Flashed through the board's on-board **mEDBG** debugger via `pymcuprog`.
+
+**One-time (per boot) — share the mEDBG into WSL.** The mEDBG is a *composite* device (HID debug + CDC COM),
+so a plain `usbipd bind` won't attach — it needs `--force`. In an **Administrator** PowerShell on Windows:
+```
+usbipd bind --force --busid <busid>     # <busid> = the 03eb:2145 device in `usbipd list` (persists across reboots)
+usbipd attach --wsl --busid <busid>     # re-run after each reboot (attach does not persist)
+```
+Confirm in WSL: `lsusb | grep 03eb` and `~/.venvs/avr/bin/pymcuprog ping -d attiny416` → `Ping response: 1E9221`.
+
+**pymcuprog** (system pip is PEP-668 locked, so use a venv):
+```
+python3 -m venv ~/.venvs/avr && ~/.venvs/avr/bin/pip install pymcuprog
+```
+
+**Build + flash** (xiao-style; open `firmware/beacon-pod/` as its own VS Code workspace folder for the PIO buttons):
+```
+~/.platformio/penv/bin/platformio run -e xnano416            # build (bare-C)
+~/.platformio/penv/bin/platformio run -e xnano416 -t upload  # → pymcuprog write via mEDBG → 416
+```
+LED0 = **PB5** (active-low), SW0 = PB4 (from the board def).
+
+**Debugging**: PlatformIO has **no hardware debug** for tinyAVR (board `debug:{}`). Real UPDI hardware debug
+(breakpoints/step/watch) = **MPLAB X on Windows** driving the mEDBG natively (no usbip). PIO `debug_tool=simavr`
+gives simulator-only stepping if desired.
+
+**⚠️ Power-cycling a latched (UVLO-tripped) target with the mEDBG USB attached may NOT reset it** (found
+2026-07-18): the bridge pins (UPDI + UART on PA1/PA2) back-feed enough leakage into the target rail that VDD
+never truly collapses — a POWER_DOWN-sleeping chip (~µA) rides the leakage and keeps its latch. True POR =
+**unplug the USB too**, or skip cable-pulling entirely and reset over UPDI (`pymcuprog ping` / `reset`).
+
+**BOD fuse (A2-pwr item b — one-time per chip, freely rewritable)**: set the brown-out detector to 2.6 V,
+sampled-while-active, off-in-sleep (BODCFG = LVL2<<5 | ACTIVE_SAMPLED<<2 = **0x48**). With the board attached:
+```
+~/.venvs/avr/bin/pymcuprog write -d attiny416 -m fuses -o 1 -l 0x48    # offset 1 = BODCFG
+~/.venvs/avr/bin/pymcuprog read  -d attiny416 -m fuses                  # verify
+```
+Same command with `-d attiny412` over serialUPDI for the production pod. AVR "fuses" are non-volatile config
+bytes, NOT one-way — the only sticky config in this family is repurposing the 412's UPDI pin itself (needs HV
+to undo; don't).

@@ -11,6 +11,13 @@
 > firmware (T027–T031) CARRY into Phase A**; **Phase 5 US3 (camera) / Phase 6 US4 (recording) / Phase 7
 > US6 (flight) are DEFERRED → 040**; Phase 8 US5 (scenarios) partly carries (bench/field).
 >
+> 📦 **Doc relocation 2026-06-22**: the camera planning docs (`plan.md`, `data-model.md`, `quickstart.md`,
+> `recorder-status-codes.md`, `camera_considerations.md`), the camera `contracts/`, and the
+> **`beacon-loader/` + `beacon-viewer/` packages** moved to [`../040-camera-redo/`](../040-camera-redo/).
+> T0xx paths below that read `specs/031-beacon-camera/{beacon-loader,beacon-viewer,contracts/<camera>}`
+> are now under `specs/040-camera-redo/...` (stale-but-historical — completed/deferred camera tasks).
+> `spec.md` + `verified-bom.md` + `schematic.md` + `contracts/mcu-firmware-contract.md` stayed in 031.
+>
 > ⚠️ Stale details in the deferred tasks (superseded by [`cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md) + R11):
 > LM3410-**Y**→**X**; voltage supervisor **removed** (firmware-ADC UVLO); UVLO **3.3 V→3.5 V**;
 > chip rate **100 Hz→200 Hz** (480 fps ÷ 2.4 fpc).
@@ -29,7 +36,7 @@
 
 ## Path Conventions
 
-Multi-subtree per [plan.md](plan.md) Project Structure:
+Multi-subtree per [plan.md](../040-camera-redo/plan.md) Project Structure:
 
 ```
 firmware/
@@ -89,7 +96,7 @@ Per the IR-sensor + scope + small-Lattice-FPGA strategy added 2026-05-18 — the
 
 - [ ] T012a Receive Cart §F IR-sensor parts. Confirm BPW34 / OPT101P / comparator on bench.
 - [ ] T012b Build the **scope-direct decode rig**: OPT101P (or BPW34 + 1 MΩ + 0.1 µF DC-block) on the breadboard; output to scope probe; bench-power the OPT101P from a 5 V supply. Aim at a flashlight (visible) to confirm the sensor responds.
-- [ ] T012c **Optional: build the FPGA-decode add-on** on the operator's **EIM Technology STEPFPGA / STEP-MXO2 education kit** (Lattice MachXO2-4000HE, 4320 LUTs, 9 LEDs, 4× 7-seg, 4 buttons + switches, USB-UART via CH340; confirmed 2026-05-18). Comparator (LM393 or 74HC14 from Cart F) reshapes the analog PD signal into a digital edge; route to a free GPIO header pin. Gateware (Verilog, ~100-200 LUTs out of 4320 = massive headroom):
+- [~] T012c ⚠️ **SUPERSEDED 2026-06-22 — comparator/hard-1-bit path DROPPED** (ADC soft-decision only, acquisition-research-plan §5; the camera-era "≥240 Hz" sampling is also stale). The active FPGA decode is **A4/A4a–c on the MCP3201 ADC path**. Kept below as history only. ~~**Optional: build the FPGA-decode add-on**~~ on the operator's **EIM Technology STEPFPGA / STEP-MXO2 education kit** (Lattice MachXO2-4000HC, 4320 LUTs, 9 LEDs, 4× 7-seg, 4 buttons + switches, USB-UART via CH340; confirmed 2026-05-18). Comparator (LM393 or 74HC14 from Cart F) reshapes the analog PD signal into a digital edge; route to a free GPIO header pin. Gateware (Verilog, ~100-200 LUTs out of 4320 = massive headroom):
   - Sample comparator GPIO at ≥240 Hz (divide MachXO2 clock down — board has 12 MHz crystal)
   - 4× parallel 15-chip Gold-code correlators (one per code 0-3) — sliding XOR + popcount → compare to lock threshold
   - LED output: light LED i when code i is locked; chip-count on 7-seg display
@@ -136,19 +143,159 @@ Per the IR-sensor + scope + small-Lattice-FPGA strategy added 2026-05-18 — the
 The active arc per [`acquisition-research-plan.md`](acquisition-research-plan.md) §4. Hardware ordered 2026-06-18/19 (one DigiKey checkout: emitter §EV-A/B + receiver front end); assembly imminent.
 
 ### Emitter (reuse beacon-eval — carries from US1/US2)
-- [ ] A1 Build the emitter eval rig per [`cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md): one-time XNANO **R100 cut**; assemble **LM3410X** boost + 5× L1IZ-0850 series @ 306 mA + **R2 DIM pull-down** (R11 failsafe). Subs in hand: **SS1030** Schottky (SOD-123), **TDK B82464G4223M000** 22 µH inductor.
+- [X] A1 Build the emitter eval rig per [`cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md): one-time XNANO **R100 cut**; assemble **LM3410X** boost + 5× L1IZ-0850 series + **R2 DIM pull-down** (R11 failsafe). **DONE 2026-07-16** at the **51 mA bench current** (3.74 Ω sense; field 306 mA awaits the thermal carrier), incl. the OVP zener/R4 provision after open-LED blowouts. **Running standalone on a real 1S LiPo 2026-07-17** — ⚠️ NO firmware UVLO yet (T027–T031, now urgent): supervised use only, boost will pull the cell to the 2.7 V hardware floor. Results: [`optical-link-outcome.md`](optical-link-outcome.md).
 - [ ] A2 MCU bring-up: build + flash the gold-code firmware (**T027–T031 carry over**) via the XNANO mEDBG (UPDI); scope-verify the Gold code at the **200 Hz** chip rate + 15-chip period (`scope-trace-decode.py`). **Add a code-epoch SYNC pulse on the spare GPIO (PA7), HIGH during chip 0**, as a scope trigger / receiver time-align — see `contracts/mcu-firmware-contract.md` §Scope-sync pin.
+- [ ] A2-osc **Emitter oscillator accuracy + stability study** (hardware arriving ~2026-06-25; first bench test): measure the ATtiny412 chip clock against a stable timebase (counter/scope, later the A4c DPLL). Four measures, different fixes:
+  1. **absolute rate + ±tolerance** (expected ±5% RC) — sets the cold-search freq span;
+  2. **short-term stability over ~10 s** — the **frequency-flywheel coast spec: <0.05%** ([`acquisition-sim/a4d_model.py`](acquisition-sim/a4d_model.py) §5);
+  3. **LED-load / code-correlated pulling** — does the rate shift between high-LED and low-LED chips as the battery-fed boost rail sags? (the worst case: frequency modulation *synchronous with the code*, which a DPLL can't average out) → fix by **isolating the MCU/osc supply** (LDO + bulk cap, off the LED boost rail) *before* reaching for a crystal;
+  4. **battery-droop drift + warm-up transient** over a run → crystal/ceramic resonator or external precision oscillator if needed.
+  **Gates** whether the internal RC suffices or the emitter needs a stable clock (the [plan.md open item](plan.md)). The A4d flywheel coast budget depends entirely on this.
+
+#### A2-osc operational breakdown — E-series (emitter activation + skew measurement) 🔬
+
+Opened 2026-06-30. **Instrument = the STEP-MXO2 correlator-sim we just locked in (17/17 accept):** the FPGA's 12 MHz xtal is the stable reference; feed a real ATtiny412 emitter into a spare FPGA input and measure its RC-oscillator rate/jitter/drift over UART. Primary path is a **code-agnostic frequency counter** on the emitter epoch (no lock needed); the DPLL-ingest path is a second instrument that validates the flywheel end-to-end. **Emitter emits N=31 `CODE0` @ 200 Hz** (matches the correlator; reconciles the old N=15 T027) — one firmware serves the counter, the correlator, and the LED-load-pulling test.
+
+- [~] **E1 Emitter firmware (activates T027–T031, refreshed to N=31 CODE0 @ 200 Hz).**
+  - **E1a flash loop PROVEN 2026-06-30 (ATtiny416-XNANO):** PlatformIO project `firmware/beacon-pod/` (bare-C, NO Arduino framework; `atmelmegaavr` supplies the device pack — no sudo/avr-libc needed). Env **`xnano416`** builds + flashes via the on-board **mEDBG** (`pymcuprog write`, custom `upload_command`) → **LED0 (PB5) blinks @ 2 Hz confirmed**. Channel: WSL → `usbipd bind --force`+attach → mEDBG → UPDI → 416 (sig 1E9221). pymcuprog in `~/.venvs/avr/` (system pip PEP-668 locked). `pod412` env = serialUPDI for the production target. _(Debug: PIO has NO hardware-debug for tinyAVR — `debug:{}`; real UPDI debug = MPLAB X on Windows.)_
+  - **E1b remaining — the actual firmware:** `src/main.c` (CCP 20 MHz clock, TCA0 200 Hz ISR → N=31 `CODE0` LUT bit → DIM + **PA7 epoch** HIGH during chip 0), `src/gold_codes.c` (`CODE0 = 0000000100011011000011001110011`, matching `s3.v`), `config.h` (pins), `tests/scope-trace-decode.py` (200 Hz ±5% + 31-chip period + LUT match).
+- [ ] **E2 Breadboard emitter → STEP-MXO2.** Jumper emitter **DIM (code)** + **PA7 (epoch)** to two spare FPGA input pads (3.3 V logic — confirm ATtiny VDD = 3.3 V, add a divider/level check if 5 V). Scope emitter DIM vs the FPGA epoch (N8) to eyeball the slip live. Document the pin map in `s3_pins.lpf`.
+- [ ] **E3 FPGA frequency-counter gateware (primary instrument).** New module (or an `s3.v` mode): timestamp the emitter-epoch period against `clk12` → report **instantaneous period, running mean, min/max (jitter), and drift** over the BCN UART. Code-agnostic, lock-free. ~small LUT.
+- [ ] **E4 FPGA correlator-ingest (validation, stretch).** Mux the external emitter code into the existing correlator in place of synthetic emitter A → `rateA`/`recA` telemetry now measures the REAL emitter; confirms the DPLL + flywheel coast against a physical RC osc (the acquisition-relevant metric).
+- [ ] **E5 Osc study measurements (the A2-osc 1–4).** Host logging + writeup: (1) absolute rate + ±tolerance; (2) short-term stability over ~10 s vs the **<0.05 % flywheel-coast spec**; (3) **LED-load / code-correlated pulling** — needs the **A1** LED-driver rig (bare MCU can't show it); (4) battery-droop drift + warm-up. → gates the **RC-vs-crystal** decision.
+
+_Ordering:_ E1 → E2 → E3 → E5(1,2,4);  **A1** LED rig → E5(3);  E4 anytime after E2.  Software I can do now: **E1** (emitter firmware) and **E3** (counter gateware).
 
 ### Single-IR-sensor receiver (new — `cad/beacon-receiver`)
-- [ ] A3 Build the receiver per the `cad/beacon-receiver` schematic: **BPV10NF → MCP6022 TIA** (Rf trimpot ∥ Cf) **→ MCP3201 ADC**, VBIAS R2/R3 divider + C2 bypass, **MCP1525** 2.5 V ref, decoupling. Power + SPI from the **STEP-MXO2** via J1 (GND=21, SPISO=23→U2/6, SCK=24→U2/7, CS=25→U2/5, +3V3=40).
-- [ ] A4 FPGA bring-up: **Lattice Diamond** on the STEP-MXO2 (MachXO2-1200) — hello-blink → MCP3201 SPI capture (hard-SPI or bit-bang) → sliding 15-chip matched filter → tentative/confirmed lock + UART telemetry to the laptop.
+- [X] A3 Build the receiver per the `cad/beacon-receiver` schematic: **BPV10NF → MCP6022 TIA** (Rf trimpot ∥ Cf) **→ MCP3201 ADC**, VBIAS divider + bypass, **MCP1525** 2.5 V ref. **DONE (breadboard) 2026-07-17** after a bring-up saga worth reading before ANY rebuild — the traps list (unpowered-amp passive decode, PD orientation, MCP3201 IN− ±100 mV spec → single-ended as-built, TIA oscillation at 1 MΩ w/o C_f, trimpot/cap discipline) is in [`optical-link-outcome.md`](optical-link-outcome.md); schematic revisions in `collector-schematic.md`. **Measured**: 1/r² verified (1.1 V @ 1 m → 0.3 V @ 2 m @ 1 MΩ), margin 9 / corrB 29.4k best, hand-occlusion 15/15 recovery incl. lock THROUGH tissue at 1 m (hand = ~20 dB attenuator, not a shutter). NEXT: soldered copper-clad rebuild (kills breadboard strays/crosstalk), then the collection-optics stage.
+- [X] A4 **FPGA toolchain verify (F1 — prove the loop before logic)** — **DONE 2026-06-23**: 8-LED-ripple `blink` built via WSL→Diamond interop (`pnmainc.exe`, CWD on `/mnt/c`; `prj_project`+`prj_run Export -task Jedecgen`) and flashed via **`cmd.exe /c copy /Y *.jed D:\`** (STEPLink mass-storage, **not** JTAG; WSL can't see `D:`) → operator confirmed the board blinking. Incremental confirmed. Recipe: [`firmware/beacon-decoder-stepfpga/`](../../firmware/beacon-decoder-stepfpga/README.md); detail in [fpga-toolchain-plan §3.5–3.7](fpga-toolchain-plan.md). The correlator RTL (A4a–c) now builds through this same proven loop.
+- [ ] A4a **HDL co-sim harness (F2 — Principle I testing-first)**: `iverilog`/`vvp` testbench in `firmware/beacon-decoder-stepfpga/tb/`; extend `acquisition-sim/sim.py` to emit the ADC sample-stream stimulus + expected per-chip soft values + lock decisions; the testbench asserts the correlator (incl. the per-beacon DPLL of A4c) against the golden vectors. **MUST pass before A4c runs on hardware.** — **Status (2026-06-24):** met as a **live-hardware decode self-test** (`experiments/mcp3201_test.v`: LFSR-injected MCP3201 frames vs the shared `spi_mcp3201_reader`, codes cross-checked to `sim.py`) — no WSL `iverilog` available, operator chose hardware proof; the iverilog vector testbench is deferred.
+- [ ] A4b **MCP3201 SPI master + UART telemetry (F3)**: FPGA is SPI master to the MCP3201 (J1); stream raw/decimated ADC + lock state over UART (115200) to the laptop — live ADC envelope visible on the host. — **Status (2026-06-24):** soft SPI master + bit-exact virtual MCP3201 built & HW-verified (`spi_mcp3201.v`, S2; SCLK 50 kHz, 480 Hz sample). **UART `BCN` telemetry DONE & HW-verified (2026-06-24):** `uart_bcn.v` TX (115200 8N1) on pad **A2** → STEPLink → COM3; the `host/` parser ingests live frames (`BCN,seq,adc,corrA,lockA,marginA,corrB,lockB,marginB`) at **~40 Hz** (control-loop family). **Command RX DONE & HW-verified (2026-06-24):** UART on pad **A3**, host sends one knob byte (`0x40|mask`: code-select + the 4 K-actions) → `host/cmd_read.sh`; verified the emitted code + lock follow the command with a measurable ~200 ms acquisition ramp. Bidirectional link complete — **A4d sweeps are now scriptable** (set mode, dwell seconds, log CSV).
+- [ ] A4c **Soft-decision correlator + per-beacon DPLL + lock FSM (F4/F5)**: erasure-aware sliding 15-chip matched filter for codes A/B; **two INDEPENDENT self-syncing chip-rate/phase loops — one DPLL per beacon — each searching+locking its own chip rate under ~10% inter-beacon drift** (acquisition-research-plan §5; do NOT assume a shared clock); tentative→confirmed lock ladder + early/partial-code (~70%) acquisition + per-beacon correlation-margin output. Verified in sim (A4a), then against a live emitter. — **Status (2026-06-24):** soft matched filter + DC-removal/**AGC** (signal-level-independent match ratio) + **min-lock / limited-hold lock FSM** + **dual-code discrimination** (two correlators, 7-seg quality + RGB lock per code) built & HW-verified on the correlator-sim harness (S3a–c; commits `8061366`/`1df665f`). **Still pending: per-beacon DPLL** (drift tracking — currently max-correlation-over-period) and the **partial/progressive correlator** for sub-code-word candidate detection (A4d-2). A4d below formalizes the code-length/latency study this surfaced.
+
+### Correlator-sim hardening study (code length · latency · dropout) — A4d 🔬
+
+Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decoder-stepfpga/correlator-sim-plan.md`](../../firmware/beacon-decoder-stepfpga/correlator-sim-plan.md), S1–S6) — no analog HW. Surfaced 2026-06-24: **N=15 has a thin cross-corr↔1-bit-error margin** (floor q≈5 vs 1-bit q≈7), so the coding standard is likely under-spec — **especially with a second beacon**. This study sets the standard.
+
+**Acquisition-confidence model (the design target).** Lock is a **soft confidence ramp, not a binary flag**, in three latency tiers — the hardening target for camera mode (where the source first appears as event-camera-like pulses with apparent screen motion):
+- **Candidate — low latency, ~½ code word:** first partial-correlation evidence a coded source exists (e.g. an N=63 code recognised after ~20 chips). Enough for an **image predictor to start watching a screen region**.
+- **Hard lock — medium, ~1–2 code words:** confidence saturates; rides through varied dropout lengths.
+- **Re-acquire — fast, a few bits / phase-only:** relock quickly after a loss — drive through **occlusion · sun · ground clutter · noise · two beacons on one pixel · apparent image motion**. Enabled by the **frequency flywheel** (below): the held rate makes re-acquire phase-only.
+
+**Two time constants (frequency flywheel — clocks are unsync'd but STABLE):** **LOCK confidence** drops in ~150–300 ms (LOS → image predictor "lost it"), but the per-beacon DPLL **HOLDS the beacon's rate through ~10 s outages** (rate known to ~0.05 %, buyable from ~1 s of lock) and dead-reckons phase forward — so re-acquire is **phase-only (~MINLOCK periods)**, not a cold frequency+phase search. The slow part is the ONE cold acquisition; occlusion/sun recoveries are fast. This relaxes the code-length↔acq-time tension: a longer (more robust) code costs latency only on first lock. DPLL frequency-hold is a required A4c/A4d-2 feature.
+
+**Key output:** the **minimum code length** (+ chip/oversampling choice) that reaches confident acquisition AND dropout hardening — the coding standard for 040's camera CEP. Corollary: with hard lock + apparent-motion predictors, **chip-rate need not be rigidly tied to camera frame rate** — quantify that flexibility.
+
+**Goal (target spec):** acquisition **100–150 ms** with a **noticeable coast** (HOLD across short dropouts) and **robustness across large SNR + clock-frequency variation**. Model first, then bench/v-sim (a learned-robustness sim trains on top; the empirical acquisition-vs-(noise,clock) + robustness-vs-noise come from this harness).
+
+- [x] A4d-0 **Predictive model (model-before-metal)** — `acquisition-sim/a4d_model.py` → [`a4d-model-results.md`](acquisition-sim/a4d-model-results.md): code-length × chip-rate × SNR × clock-skew vs the 100–150 ms goal + robustness-over-noise. **Finding:** N=15 is the only length meeting 100–150 ms at 480 fps but the weakest (CDMA floor 0.60, +11.8 dB gain, ~75% under two-signal+noise); N=31/63 add **+3.2/+6.2 dB** and **2× better floor (0.29/0.27)** but need a faster camera (≈990/2016 fps) **or** partial-correlation candidate detection to hold ≤150 ms, plus a per-beacon DPLL for ±5% skew (walk >1 chip/period). Code length is bought with sample-rate (or partial correlation) + DPLL; the bench sweep (A4d-1) calibrates the absolute SNR axis to this shape. Also models the **chip-rate vs samples/chip** lever (200/240/300 Hz → 2.4/2.0/1.6 fpc: up-rate speeds the period but goes toward/below Nyquist — risky with unsync clocks; 2.4 fpc keeps the drift margin) and the **frequency flywheel** (hold rate ~10 s → phase-only re-acquire).
+- [~] A4d-1 **Code-length sweep** — parametrize the harness for **N=15 / 31 / 63** Gold codes; per length measure cross-corr floor, 1/2-bit-error margin, and the three latencies (candidate / hard-lock / re-acquire). Calibrate the A4d-0 model's SNR axis to the bench. _(N=15 datum: floor q≈5, 1-bit q≈7 — thin.)_ **N=63 measured 2026-06-25** (HW, s3.v `N=63/L=151`, proper Gold preferred pair xcorr {-17,-1,15}, floor 0.27): **fits 3524 LUT/82 %** (N=127 won't fit); **cold acquire 2 words = 629 ms, warm re-acquire 1 word = 315 ms** (flat across ≤8 s dropouts) — both 2× the N=31 wallclock (latency ∝ N at fixed chip rate). **Cold-skew cliff ~±5 %** (locks +4.9 %, fails +5.3 %): the long coherent window smears under rate error *before* the DPLL engages (slip updates only while LOCKED) — N=31 had margin here. Full table + analysis in [`correlator-sim-plan.md` §N=63-vs-N=31](../../firmware/beacon-decoder-stepfpga/correlator-sim-plan.md). _Remaining: re-baseline N=15/31 on the mature harness + the 1/2-bit-error margins per length._
+- [~] A4d-2 **Soft-confidence / partial-progressive correlator** — growing-window partial correlation so a **candidate appears at ~½ code word**. **INVESTIGATED & DEFERRED 2026-06-25** (two RTL designs built + acceptance-measured on HW): a ½-window candidate cannot be both early AND low-false-alarm at **N=31** — the ½-window has 3 dB less gain *and* a **partial Gold code loses the full code's cross-corr bound**, giving **50–70 % false-candidate on noise/wrong-code**; any threshold strict enough to reject them fires no earlier than tentative. Shipped the robust **3-level ladder** instead (acceptance 17/17). Revisit at **N=63** (half = full 31-chip code, cross-corr bound restored) or via a separate energy-only "coded-signal-present" gate. Rationale + data in [`DESIGN.md` §5](../../firmware/beacon-decoder-stepfpga/DESIGN.md). _(The latency goal is already met by the ladder: cold 200 ms, warm 154 ms, re-acq 25 ms.)_
+- [x] A4d-3 **Dropout hardening** — **DONE 2026-06-25**: added the **burst-error knob** (`K` cmd = N consecutive chips, both beacons squelched once per ~2.5 s window — distinct from the spread `inj-1/2bit`). HW-measured (N=31): **max survivable dropout (HOLD depth) ≈ 1.5 code words (~46 chips / 230 ms)** — partial-window correlation + the 2-period HOLD ride through it without dropping; **≥2 code words (62 chips) drops but warm re-acquire ~150–175 ms** (flywheel held the rate). Also added an emitter-A skew cmd (`E`) → **single-code cold acquire is robust across ±5 % skew (full-q ≤1.6 s, fast-acquire snap)**; two equal-power *skewed* codes is a CDMA energy-share stress corner (one can sag to q≈4). Drivers `host/burst.ps1`, `host/robust.ps1`.
+- [~] A4d-4 **LOS timing** — signal-gone → LOS-declared latency vs N + FSM constants; target "a couple of code words." _(Partial: burst sweep gives the drop edge — lock drops at ~2 code words of continuous blanking, HOLDMAX=2; full LOS-declared latency vs N sweep pending.)_
+- [~] A4d-5 **Two-signal (emitter B — A6 / S6)** — second OSCH-domain emitter summed into the virtual ADC; measure discrimination + acquisition + LOS under two simultaneous codes, independent drift, and **same-pixel summation**. **Harness built & HW-verified (2026-06-24):** emitter B on a skewed OSCH divisor (±3%) + a random-noise source, summed; both codes lock simultaneously (CDMA, A & B confirmed), and **A+B+noise degrades both to ~75 % confirmed with occasional wrong-channel locks** — N=15 is marginal under two-signal+noise. Full N-sweep quantification pending (with A4d-1).
+- [ ] A4d-6 **Chip-rate ↔ frame-rate decoupling** — with hard lock + motion predictors, sweep chip:frame ratios; quantify the achievable flexibility for 040.
+- [~] A2-pwr **Emitter low-voltage floor + MCU speed-grade hardening** — *(a) F_CPU 20→10 MHz DONE 2026-07-16
+  (commit ca1fe78, HW-verified: chip rate exact, regression identical; NB 'F' rate-cmd step doubled to
+  0.16 %/step — halve host step values). (b) BOD fuse ~2.6 V still PENDING.* — measured 2026-07-16 (manual VIN ramp,
+  IR-live rig, decoder watching the hardwired DIM): 4.2→3.3 V fully decode-transparent (0 lock drops, margin
+  med 8–9); descending further, `corrB` tracks VIN once DIM-high < ADC Vref 2.5 V (137k→74k) and the emitter
+  **quits ≈2.7 V** — exactly the **LM3410X spec'd VIN minimum (2.7–5.5 V, SNVS541)**. AGC held lock nearly to
+  the floor (one 160 ms blip). NOTE the current firmware has **no UVLO code** (T027–T031 pending) — the planned
+  3.5 V firmware trip sits 0.8 V above the hardware floor, so firmware will always trip first once implemented.
+  Hardening for the field pod: (a) **F_CPU 20→10 MHz** — tinyAVR-1 speed grade for 20 MHz requires VDD ≥ 4.5 V,
+  so we're out of spec over the whole 1S range today; 10 MHz is valid 2.7–5.5 V (200 Hz chip + 38400 baud
+  unaffected; TCA_TOP = 3125 exact); (b) **set the BOD fuse** (~2.6 V) → clean reset instead of an undefined
+  brown-out while driving the LED string.
+- [ ] A1-ovp **Fit the open-LED OVP clamp on the emitter rig** — D3 15 V zener (cathode→V_OUT, anode→FB) +
+  R4 1 kΩ (FB pin → sense node; NOT optional — without it the clamp carries the full programmed LED current,
+  ~4.6 W at field). Provisioned in `verified-bom-eval.md` EV-A13/A14 (design + why) and ordered as
+  **order-03 O3-1/O3-2**; fit when parts arrive. Bench-verify: pull the LED header live → V_OUT clamps ~15.2 V,
+  cool; replug → 190 mV across R1 resumes. Motivation: open-LED boost runaway already killed parts + a 416
+  (rails toward the 24 V V_SW abs-max / 25 V C1 rating); wing-tip connectors WILL let go in the field.
+- [X] A2-uvlo **Firmware-ADC UVLO @ 3.5 V + WDT — DONE & HW-VERIFIED 2026-07-18** (07d195f + calibration):
+  ramp test = ONE clean trip, latched dark through ramp-back-up, power-cycle relock 0.17 s; **trip = 3.48 V
+  measured at the chip pins** (ref −3 %, in spec, ≈3.5 V target — no adjustment); **post-trip battery draw ≈ 0**
+  (below meter resolution: POWER_DOWN + LM3410X 80 nA). BOD fuse 0x48 written+verified. Remaining niceties only:
+  the deliberately-hung-firmware WDT check, and A2-uvlo-2 (micro-dropouts). Original implementation notes:
+  (both envs, 1066 B flash): ADC measures the 1.1 V INTREF against VDD (count rises as VDD falls; trip
+  > 312 ≙ 3.6 V firmware-set ≈ 3.5 V real), sampled every 20 chips (100 ms), 5-consecutive = ~500 ms debounce
+  → DIM **released** (R2 pull-down → LM3410X 80 nA shutdown) + peripherals off + WDT off + POWER_DOWN forever
+  (wake = battery pull/POR). **WDT 0.256 s** enabled first thing in main, fed once per chip ISR (hung firmware
+  → reset ≤ 250 ms → dark via R2 through the reset). **PENDING (needs the XNANO on USB): flash; write the BOD
+  fuse (BODCFG=0x48 — 2.6 V, sampled-active, off-in-sleep; command in `firmware/beacon-pod/SETUP.md`); verify =
+  eval check #3 bench-supply ramp → dark at ~3.5 V (2026-07-16 ramp/telemetry harness is the instrument) + the
+  hung-firmware WDT check.** Until verified: supervised battery use only.
+- [ ] A2-uvlo-2 **Micro-dropout hunt near the UVLO threshold** — during the 2026-07-18 ramp verify, transient
+  ~125–275 ms signal disruptions appeared in the FINAL ~3 s before the trip (t−2.9/−1.1/−0.3 s; decoder rode
+  all of them in HOLD — margin dips only, zero confirmed-lock loss; `host/results/uvlo_ramp.log`). Shape says
+  brief MCU resets (reboot → code-phase restart → 1 word of broken correlation). **Instrument now in place**:
+  firmware boot banner `'B'+RSTFR hex` on USART (PORF=01 BORF=02 EXTRF=04 **WDRF=08** SWRF=10 UPDIRF=20,
+  cleared per event) — every reset self-identifies. **Protocol**: STATIC HOLDS (no knob motion — separates
+  supply-adjust artifacts from voltage-dependent instability) at 4.2 / 4.0 / 3.8 / 3.7 / 3.65 V × 60 s each;
+  dual capture = pyserial banner listener (timestamps) + COM3 telemetry; correlate banners ↔ margin dips.
+  Suspects: code-correlated rail ripple (lit-chip boost load sags the leads near threshold) vs pre-BOD dirty
+  restarts. ~~Also calibrate the trip point~~ **DONE 2026-07-18: 3.48 V at the chip pins** (several tries,
+  ambient) — ref −3 %, in spec, no `UVLO_VDD_MV` change; the earlier 3.3–3.4 supply reading was a
+  measurement-point/lag artifact. Static-hold micro-dropout sweep remains.
+- [ ] A3-c **Daylight front end (FIELD BLOCKER, found 2026-07-17)**: outdoors/sunny = NO LOCK even at
+  inches — full sun puts 0.3–1 mA into the wide-band PD, railing the 1 MΩ DC-coupled TIA (ADC pegged; distance
+  irrelevant). Day-one fix hypothesis (two-stage TIA — since superseded by Option C below): FB850-10 filter
+  (÷~25 ambient, O3-11) + first-stage R_f ~47–100k + AC couple + U1B post-gain ×20–50; then measure the
+  ambient shot-noise floor. Bench experiments (Set B in bench-journal.md, reframed 2026-07-25 to run on
+  Option C): lamp pedestal ladder → compression knee → clamp A/B → flicker station → fold into A3-b. Field kit note: bring the laptop rig — telemetry `adc` is a pedestal meter.
+  **OPTION C SELECTED 2026-07-24 (bench-verified)** — reverse-biased PD (cathode→3V3) + R_load 47 k +
+  100 nF AC-couple + single ×101 SBOA224 stage @ VBIAS2 1.25 V + 820 pF anti-alias (1.9 kHz): canonical
+  values, time constants (f_hp 10.8 Hz / gain-leg 16 Hz / τ recovery ≪ 1 word), ambient-pedestal math, and
+  the clean netlist for the KiCad update are in
+  [`cad/beacon-receiver/daylight/collector-schematic-daylight.md`](../../cad/beacon-receiver/daylight/collector-schematic-daylight.md)
+  (doc restructured 2026-07-25; two-stage TIA demoted to Appendix B fallback). **FIELD-PROVEN 2026-07-26**:
+  canonical values (R_load ~47 k trimmer, R4 100 k, R6 100 k ∥ 800 pF, ×46) lock in DIRECT SUNLIGHT at
+  ~15–20 ft, bare PD, no filter, bench current — hand-shadow improves it, so residual compression = the
+  C-14 filter's job (bench-journal field test #3). Open Qs: filter FWHM 10 vs 40 nm ↔ R_load pairing
+  (47 k vs 22 k, order C-14); indoor-flicker margin cost; clamp-diode benefit; ×101 vs ×51/×46. Set-B
+  experiments close them before the A3-b freeze.
+- [ ] A3-b **Soldered receiver rebuild on copper-clad** (from the breadboard A3): build **Option C** per the
+  daylight doc's netlist (reverse-biased PD, R_load 47 k — or 22 k if the 40 nm filter wins C-14 — 100 nF
+  couple, ×101 stage with the C8 series-leg cap, D2/D3 clamps), MCP6022 powered-pin checklist, IN−=GND
+  single-ended, star-ground with the emitter board (kills the shared-return di/dt edge spikes seen
+  2026-07-16). Read the traps table in [`optical-link-outcome.md`](optical-link-outcome.md) FIRST. Then
+  re-run `regression.py` (policy) + the commanded dropout ladder (`host/recovery_sweep.py`, TX back on USB)
+  as the soldered-baseline regression.
+- [X] A4d-8 **Gear-shifted DC tracker — DONE s7, HW-VERIFIED 2026-07-18**: alpha 1/256 locked / 1/32 unlocked; sim 0.81 ms settle; **HW step settle 1.23 s -> 0.62 s (2x)**, regression bar ratcheted to <1.0 s, 19/19 PASS. Original analysis: MEASURED 2026-07-18 via the new
+  emitter `'P'` pulse-width attenuator (10× amplitude step, `host/results/agc_step.log`): down-step buries the
+  small signal under DC-tracker bias — margin craters to 1–2 for ~1 s, settles in ~2.5–3 s (= 3–4τ of the
+  α=1/256 @480 Hz tracker, τ≈533 ms — matches RTL prediction); up-step recovers in 0.5–1 s; hand-relock ~1 s =
+  same mechanism (pedestal step). Steady-state AGC is excellent: 100 % lock down to P=8 (3 % duty, corrB 187,
+  margin 6) on an already-weak bounce path. Fix: α = 1/256 while LOCKED, 1/32 while UNLOCKED (τ 67 ms — still
+  13× a chip, can't eat the code): down-step trough → ~200 ms, hand-relock ~4× faster. Mux on a shift amount.
+- [X] A4d-7 **Minimum-energy lock gate — DONE s7 2026-07-18**: q>=GOOD gated on per-period energy >= 64 (dark floor ~1-20, weakest real lock ~300). Sim: ZERO false flashes through a 1.2 s-equiv dark window; UVLO-trip recovery unimpaired (regression P6 PASS). Original finding: found
+  2026-07-16 in the IR-live recovery regression (s6, `host/results/recovery_sweep_ir50ma.csv`): during LONG
+  signal-dark periods (8 s rung, 2/3 trials) the decoder flashed transient false `lock=2` ~1.5 s before the
+  signal actually returned. Cause: quality `q = 10·best/energy` is **energy-starved on silent input** — with
+  `beste` near its `|1` floor the ratio can spuriously spike ≥ GOOD, and the warm flywheel converts one
+  good-looking period into a confirmed LOCK flash. Matters if the tracker acts on `lockB` during occlusion.
+  Fix: gate the lock FSM (or the q compare) on `beste` ≥ a minimum-energy floor (calibrate above the dark/noise
+  energy, well below weak-signal energy — the ¼-amplitude AGC case must still lock). Verify in the HDL sim
+  (`sim/tb_s6.v`: assert NO lock=2 frames during an 8 s dark window) + re-run `recovery_sweep.py`; the 8 s rung
+  negative-recovery artifact should disappear. Slot for s7.
+
+**Initial edge measurements (2026-06-24, N=15, via `host/transition.sh` + telemetry @40 Hz):** acquire cold→confirmed **~200 ms** (MINLOCK=2); LOS signal→`lock=0` **~200 ms** clean / **~300 ms** with noise (noise extends the hold); **pure-noise false-alarm ≈ 0 green/10 s** (q floor ≈3, hits GOOD=6 only ~0.7% of frames and never 2 in a row — MINLOCK=2 is a strong noise rejector). Wrong-channel locks appear only with *real signal + noise* (A+B+noise ~75% confirmed), not pure noise. These are the N=15 baselines the A4d-1 length sweep improves on.
+
+**Modeling realism (harness baseline):** the analog model is **band-limited — chip edges RAMP** (low-pass PD/TIA, not ideal squares; `s3.v` `LPF_SH`), so edge samples land mid-ramp and correlation is modestly reduced. Treat the LPF cutoff as a sweepable realism knob alongside N, noise, and drift (a mild pass, not heavy smear).
+
+**Output → 040:** minimum code length + soft-confidence filter design + dropout/LOS thresholds + the chip/frame-rate envelope feed the camera coding + CEP design.
 
 ### Bench
 - [ ] A5 **Stage 0 "hello gold code"**: 1 emitter → 1 PD (ND-attenuated, ~1 m) → laptop; recover the code; sweep chip rate / oversampling.
-- [ ] A6 **Stage 1 two-codes-one-detector**: 2 emitters (codes A/B) → 1 PD; confirm CDMA separation + cross-corr floor; measure acquisition time.
+- [ ] A6 **Stage 1 two-codes-one-detector**: 2 emitters (codes A/B) → 1 PD; confirm CDMA separation + cross-corr floor; measure acquisition time **AND partial-code (~70%) lock + erasure-aware soft-decision gain** (§7); A/B must not leak into each other under the independent per-beacon clock drift (A4c). ⚠ **Analog front end: run the Option-C receiver at ×51 (R5 = 2 k) or a verified no-clip range** — clipping the SUM of two codes intermodulates A×B and creates near–far capture the correlator can't undo (single-code clipping tolerance does NOT carry over; daylight doc §two-emitter).
 
-### Field (occlusion-modulated acquisition vs range)
-- [ ] A7 Emitter on a craft, PD on the ground (cone + 850 nm bandpass); **modulate occlusion over the emitter and sweep range**; measure acquisition time + lock reliability + dropout stats vs range/aspect/sun. Compare to [`acquisition-sim/acquisition-results.md`](acquisition-sim/acquisition-results.md) predictions; log per FR-5.2.
+**▣ Checkpoint (code, ahead of the field gate)**: Stage 0/1 working = hello-world up. Checkpoint firmware + gateware and **re-assess the hill** before the Stage-2 field work — is 031's scope right-sized or to be split? (plan.md M3→M4 boundary.)
+
+### Field — Stage 2 (031 GATE, ground; two experiments, different optics — §3)
+- [ ] A7a **Exp A — all-attitude lock maintenance** (~40° FOV: large-area PD + short lens, ~30–50 m): emitter on a craft, PD on the ground; **modulate occlusion / sweep aspect through rolls/banks/pitches**; measure dropout depth/duration (the real erasure rate) + lock reliability. These dropout stats set the final code-length + soft/erasure thresholds.
+- [ ] A7b **Exp B — max-range acquisition** (narrow-aimed, ~100 m: collection lens Ø25–50 mm + 850 nm bandpass + small PD): measure acquisition time + post-correlation SNR vs range at the design range.
+- **Stage-2 GATE (acquire-and-agree)**: across the range/aspect grid both codes acquire AND measured **post-correlation SNR-vs-range is within ≤3 dB of the §9 sim prediction** and **acquisition-time within ±30%** — compare to [`acquisition-sim/acquisition-results.md`](acquisition-sim/acquisition-results.md); log per FR-5.2. _(≤3 dB / ±30% is a first-bench-calibratable default, not contractual; exploratory — newly-surfaced issues are research output, not automatic gate failures.)_
 
 **Checkpoint Phase A**: coded beacon acquired through real air with a single photodiode; acquisition-time / reliability / dropout vs range characterized → feeds **040** (camera) coding + CEP design.
 
@@ -158,26 +305,28 @@ The active arc per [`acquisition-research-plan.md`](acquisition-research-plan.md
 
 ## Phase 3: User Story 1 — Build single beacon pod (Priority: P1) 🎯 MVP foundation
 
-**Goal**: One assembled pod emits the canonical 15-bit Gold code at 100 Hz chip rate, runs on a 1S LiPo, passes FR-1.7 + FR-3.3 + FR-3.4 bench gates.
+**Goal**: One assembled pod emits the canonical 15-bit Gold code at **200 Hz** chip rate, runs on a 1S LiPo, passes FR-1.7 + FR-3.3 + FR-3.4 bench gates.
 
-**Independent test**: per [spec.md US1 acceptance](./spec.md) — pod emits 15-bit code @ 100 Hz from 1S LiPo, weighs ≤6 g, passes scope verification, EMC sanity, eye-safety substitutes.
+**Independent test**: per [spec.md US1 acceptance](../040-camera-redo/spec.md) — pod emits 15-bit code @ **200 Hz** from 1S LiPo, weighs ≤6 g, passes scope verification, EMC sanity, eye-safety substitutes.
+
+> **Active vs cube split (2026-06-22)**: the **active acquisition emitter is the `cad/beacon-eval` breadboard** (Phase A **A1/A2**) — that is what runs through Stage 0/1/2. **The firmware tasks T027–T031 below carry into A2** (refreshed to 200 Hz / 75 ms). The **cube hand-build T032–T038** is the *later flyable-pod* path (toward the pre-camera-flight follow-on), not the active bench/ground arc; its driver/UVLO details are superseded by [`cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md) + R11 (LM3410-**X**, firmware-ADC UVLO @ 3.5 V, no supervisor).
 
 ### Beacon-pod firmware (ATtiny412)
 
 - [ ] T027 [P] [US1] Generate the 4 N=15 Gold-code LUTs offline (LFSR pair seed enumeration; pick the 4 with lowest worst-case cross-correlation); commit to `firmware/beacon-pod/src/gold_codes.c` as `const uint8_t LUT[4][15]`.
 - [ ] T028 [P] [US1] Write `firmware/beacon-pod/src/config.h`: GPIO pin assignments (DIM-out, 2× code-select, diagnostic-LED, UPDI), chip-rate timer constant, LUT length.
-- [ ] T029 [US1] Write `firmware/beacon-pod/src/main.c`: boot sequence per `contracts/mcu-firmware-contract.md` (CCP-protected 20 MHz CPU clock, GPIO init, code-select sample, TCA0 100 Hz timer with overflow ISR), TCA0_OVF_vect ISR doing LUT lookup + single GPIO write to DIM + diagnostic-LED.
-- [ ] T030 [US1] Write `firmware/beacon-pod/tests/scope-trace-decode.py`: consumes a scope-exported CSV of DIM-pin waveform, asserts 100 Hz chip rate ± 5%, asserts 15-chip code period (150 ms), decodes LUT bits + asserts they match the flashed `CODE_ID`.
+- [ ] T029 [US1] Write `firmware/beacon-pod/src/main.c`: boot sequence per `contracts/mcu-firmware-contract.md` (CCP-protected 20 MHz CPU clock, GPIO init, code-select sample, **TCA0 200 Hz** timer with overflow ISR), TCA0_OVF_vect ISR doing LUT lookup + single GPIO write to DIM + diagnostic-LED. (A2 also adds the code-epoch SYNC pulse on PA7.)
+- [ ] T030 [US1] Write `firmware/beacon-pod/tests/scope-trace-decode.py`: consumes a scope-exported CSV of DIM-pin waveform, asserts **200 Hz** chip rate ± 5%, asserts **15-chip code period (75 ms)**, decodes LUT bits + asserts they match the flashed `CODE_ID`.
 - [ ] T031 [US1] Build + flash firmware on a **Microchip ATtiny412 Curiosity Nano** breadboard: `make CODE_ID=0 flash`; scope-probe DIM pin; capture 200 ms waveform; run `scope-trace-decode.py` → PASS. **Resolves M1.5** (HG).
 
 ### Pod hand-build + bench verification
 
 - [ ] T032 [US1] 3D-print one half-cube enclosure from `cad/beacon-half-cube.stl` (PLA, ~30% infill, 0.2 mm layer, no support). Verify LED indents accept Lumileds L1IZ; battery cavity friction-fits the 1S 100 mAh pack; light-pipe slot passes through diagnostic LED.
-- [ ] T033 [US1] Hand-build pod A per `hand-prototype-guide.md` (per [quickstart.md (a)](./quickstart.md)): perfboard sub-assembly with LM3410-Y boost driver, ATtiny412, voltage supervisor, 5× Lumileds wired in series, JST-PH 2.0 mm socket, diagnostic LED, code-select jumpers (CODE_ID=0). Flash firmware. Insert battery → pod boots ≤100 ms with diagnostic LED blinking at 100 Hz. **Resolves M2.1** (HG).
-- [ ] T034 [US1] Pod A **FR-1.5(a) scope verification**: capture LED-string sense-resistor waveform on a fast scope (10 µs/div); confirm 100 Hz chip rate, 150 ms code period, 7-8 ON chips of 15, 0/300 mA clean transitions; run `scope-trace-decode.py` on the captured CSV → PASS. **Resolves M2.2** (HG).
-- [ ] T034a [US1] Pod A **FR-1.5(b) photodiode-via-air verification** (operator direction 2026-05-18): using the rig from T012b, aim the photodiode at pod A at **1 m distance** through ambient air; capture the photodiode-amplifier output on the scope; confirm the recovered waveform shows the same 100 Hz chip rate + 15-chip code period + Gold-code bit pattern as T034 (which measured the LED current directly). Optional: if T012c (FPGA decode rig) is built, confirm onboard correlator locks on code-id 0 within ≤1 code period. **This validates the optical chain end-to-end (photons → air → photodiode → recoverable code) BEFORE any camera work.** Bench-log entry per FR-5.2 in `bench-logs/<date>-pod-a-photodiode.md`. Augments **M2.2** (HG).
+- [ ] T033 [US1] Hand-build pod A per `hand-prototype-guide.md` (per [quickstart.md (a)](../040-camera-redo/quickstart.md)): perfboard sub-assembly with **LM3410-X** boost driver, ATtiny412, **R2 DIM pull-down failsafe (no supervisor — firmware-ADC UVLO per R11)**, 5× Lumileds wired in series, JST-PH 2.0 mm socket, diagnostic LED, code-select jumpers (CODE_ID=0). Flash firmware. Insert battery → pod boots ≤100 ms with diagnostic LED blinking at **200 Hz**. **Resolves M2.1** (HG).
+- [ ] T034 [US1] Pod A **FR-1.5(a) scope verification**: capture LED-string sense-resistor waveform on a fast scope (10 µs/div); confirm **200 Hz chip rate, 75 ms code period**, 7-8 ON chips of 15, 0/300 mA clean transitions; run `scope-trace-decode.py` on the captured CSV → PASS. **Resolves M2.2** (HG).
+- [ ] T034a [US1] Pod A **FR-1.5(b) photodiode-via-air verification** (operator direction 2026-05-18): aim the photodiode at pod A at **1 m distance** through ambient air; capture the photodiode-amplifier output on the scope; confirm the recovered waveform shows the same **200 Hz** chip rate + 15-chip code period + Gold-code bit pattern as T034 (which measured the LED current directly). Optional: if the **A4 ADC correlator** (Phase A) is up, confirm it locks on code-id 0 within ≤1 code period. _(Superseded T012c comparator rig dropped — ADC soft-decision only.)_ **This validates the optical chain end-to-end (photons → air → photodiode → recoverable code) BEFORE any camera work.** Bench-log entry per FR-5.2 in `bench-logs/<date>-pod-a-photodiode.md`. Augments **M2.2** (HG).
 - [ ] T035 [US1] Pod A **FR-1.7 #2 power-off verification**: scope-trigger on V_BAT-fall (battery pull); measure time from V_BAT collapse to last DIM edge → must be ≤50 ms. **Resolves M2.3** (HG).
-- [ ] T036 [US1] Pod A **FR-1.7 #4 UVLO bench verification**: substitute the battery with a programmable supply; slowly ramp V_BAT 3.7→3.0 V; scope the boost driver's switch node + LED current; assert clean shutoff at 3.3 V ± 50 mV, no zombie emission, no re-emission until supply rises above ~3.4 V (hysteresis); measure quiescent <100 µA post-shutoff. Repeat with actual LiPo discharging through normal use until cutoff. **Resolves M2.4** (HG).
+- [ ] T036 [US1] Pod A **FR-1.7 #4 UVLO bench verification** (R11 — firmware-ADC, no supervisor): substitute the battery with a programmable supply; slowly ramp V_BAT 3.7→3.0 V; scope the boost driver's switch node + LED current; assert **clean firmware-ADC shutoff at ~3.5 V** (MCU samples V_BAT on ADC0, drives PA3 LOW + POWER_DOWN sleep → R2 pull-down holds DIM LOW), no zombie emission, no re-emission until the supply recovers above the sample-hysteresis band; measure quiescent <100 µA post-shutoff. Repeat with an actual LiPo discharging through normal use until cutoff. **Resolves M2.4** (HG).
 - [ ] T037 [US1] Pod A **FR-3.4 eye-safety substitutes (per Session 2026-05-17 deferral)**: perform the smartphone-IR camera check at 200 mm (bright but not pixel-saturated); write the operator-1m-rule attestation; populate `eye-safety-measurements.md` with the FR-1.7 link-budget basis + the 3 substitute checks. **Resolves M2.5** (HG).
 - [ ] T038 [US1] Pod A **FR-3.3 bench EMC sanity check**: mount pod A ~10 cm from a representative flight controller running INAV; capture (a) gyro spectrogram / blackbox-log baseline with beacon OFF, (b) same with beacon ON. Assert broadband gyro RMS bump ≤3 dB. Repeat for RSSI (≤2 dB drop) + link-quality (≤5% drop) + ESC throttle behavior (no twitches). Document in `bench-logs/<date>-emc-pod-a.md`. **Resolves M2.6** (HG).
 

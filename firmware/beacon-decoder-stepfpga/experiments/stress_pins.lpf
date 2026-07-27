@@ -1,0 +1,7 @@
+// Tight clock constraint so timing analysis (trce) reports against an aggressive target. The physical clk is
+// 12 MHz (C1); constraining it to 400 MHz makes the deep combinational path fail with large negative slack —
+// exactly the timing feedback we want to exercise. (A real high-speed clock would come from the sysCLOCK PLL.)
+IOBUF ALLPORTS IO_TYPE=LVCMOS33 ;
+LOCATE COMP "clk" SITE "C1"  ;
+LOCATE COMP "led" SITE "N13" ;
+FREQUENCY PORT "clk" 12.600000 MHz ;   // ~knee: just under the 12.675 MHz Fmax → marginal PASS (tiny slack)

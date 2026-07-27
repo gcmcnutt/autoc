@@ -24,7 +24,7 @@ fusion/auto-cal math.
 | **US1b** — M2 retrain (T029–T030) | **DONE / exceeded.** Superseded by the t11–t15 M2 de-risking arc (crash penalty validated; tracking-depth ceiling characterized). wrap.md §2–3. |
 | **US2 + US3 + R2/R3** — xiao 20/50 Hz (T009, T010, T031–T045) | **→ 039** (`039-xiao-20hz-flight`, already re-homed; Phase 6/7 banner). Firmware/flight-enablement, parallel track. |
 | **M2 architecture depth** — US4 temporal-memory + predictor, visibility reward | **→ 038** (NEW scope, not an old 037 task; wrap.md §5–6 is the bridge). |
-| **T047** — 031 write-back (20 Hz into `aircraft_tracker_handoff.md`) | **→ do during the 031 merge** (this branch flip). |
+| **T047** — 031 write-back (20 Hz into `aircraft_tracker_handoff.md`) | **DONE 2026-06-22** during the 031 merge (this branch flip). |
 | **P-O4** basic-m1 smoke, **P-O10** t11 re-tune | **DONE** during the t8–t15 work (smoke is now the standing loop-plumbing rule). |
 | **P-O5** 10 Hz confirm bake | **DROPPED** — 20 Hz is GO; the 10 Hz anchor isn't needed. |
 | **P-O8** svTau cleanup, **P-O11** time-denominate reports (partly via `--tick-sec`), **T028/T046** type-domain grep audits | **→ BACKLOG** (housekeeping; non-blocking — filed under 037 close-out). |
@@ -343,8 +343,9 @@ overrun under worst-case jitter), and the 50 Hz sim arm (FDM ≥500 Hz) clears t
 
 - [ ] T046 [P] Final type-domain grep audit (Principle VI) across all touched `src/eval/ src/nn/
   include/autoc/eval/ include/autoc/nn/` (closes any per-milestone gaps from T028/T030).
-- [ ] T047 [P] 031 write-back: fold the chosen control rate into `docs/aircraft_tracker_handoff.md` as the
-  acquisition-budget input; carry the per-beacon independent-correlator requirement (R7).
+- [X] T047 [P] 031 write-back (done 2026-06-22 during the 031 merge): chosen control rate **20 Hz** folded
+  into `docs/aircraft_tracker_handoff.md` §6.8 as the acquisition-budget input (≤25 ms); per-beacon
+  independent-correlator requirement (R7) carried into `specs/031-beacon-camera/acquisition-research-plan.md` §5.
 - [X] T048 Outcome doc + memory: `outcome.md` written 2026-06-11 (case-B verdict, three-arm table,
   pinned S3 prefixes, what-037-bought, route forward); project memory updated (cadence lineage,
   servo-era metrics, bang-bang physics-migration, basin-robustness observation).

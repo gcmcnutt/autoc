@@ -68,3 +68,6 @@ cad/**/~*.lck
 
 # VS Code Local History extension cache
 **/.history/
+
+# Windows "mark of the web" alternate-data-stream cruft (from drvfs copies)
+*:Zone.Identifier
