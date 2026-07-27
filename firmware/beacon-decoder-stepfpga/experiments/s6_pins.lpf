@@ -1,0 +1,51 @@
+// S6 pins. Receiver clock = 12 MHz xtal on C1; emitter clock = internal OSCH (no pin).
+// Code A = digitally injected (own OSCH clock); code B = REAL wired MCP3201 read over SPI (spi_do is an INPUT).
+IOBUF ALLPORTS IO_TYPE=LVCMOS33 ;
+LOCATE COMP "clk12"    SITE "C1"  ;
+FREQUENCY PORT "clk12" 12.000000 MHz ;
+LOCATE COMP "sw1"      SITE "M7"  ;   // DIP1 — enable code A (OFF=enabled, ON=mute)
+LOCATE COMP "dip2"     SITE "M8"  ;   // DIP2 — enable code B / ADC decode (OFF=enabled, ON=mute)
+LOCATE COMP "k1"       SITE "L14" ;   // K1 — inject 1 bit-flip / period into code A (active-low pushbutton)
+LOCATE COMP "k2"       SITE "M13" ;   // K2 — inject 2 bit-flips / period into code A
+IOBUF  PORT "sw1"  PULLMODE=UP ;
+IOBUF  PORT "dip2" PULLMODE=UP ;
+IOBUF  PORT "k1"   PULLMODE=UP ;
+IOBUF  PORT "k2"   PULLMODE=UP ;
+// s6: DIP3/DIP4 + ext_code(P8) + K3/K4 dropped. Active controls: DIP1(enA), DIP2(enB), K1/K2(inject), sync_pin.
+LOCATE COMP "sync_pin" SITE "N8"  ;   // I/O 15 — synthetic code-A epoch (reference)
+LOCATE COMP "spi_cs"   SITE "P3"  ;   // SPI_CS   -> real MCP3201 !CS  (FPGA drives)
+LOCATE COMP "spi_sclk" SITE "M4"  ;   // SPI_CLK  -> real MCP3201 CLK  (FPGA drives)
+LOCATE COMP "spi_do"   SITE "N4"  ;   // SPI_DO   <- real MCP3201 DOUT (INPUT; chip tri-states DOUT when CS high)
+IOBUF  PORT "spi_do" PULLMODE=DOWN ;  // weak pulldown keeps DOUT defined between frames (CS high = Hi-Z)
+LOCATE COMP "LEDs[0]"  SITE "N13" ;   // correlation bar-graph
+LOCATE COMP "LEDs[1]"  SITE "M12" ;
+LOCATE COMP "LEDs[2]"  SITE "P12" ;
+LOCATE COMP "LEDs[3]"  SITE "M11" ;
+LOCATE COMP "LEDs[4]"  SITE "P11" ;
+LOCATE COMP "LEDs[5]"  SITE "N10" ;
+LOCATE COMP "LEDs[6]"  SITE "N9"  ;
+LOCATE COMP "LEDs[7]"  SITE "P9"  ;
+LOCATE COMP "LEDl[0]"  SITE "M2"  ;   // RGB left — beacon-A lock (R/G/B)
+LOCATE COMP "LEDl[1]"  SITE "N2"  ;
+LOCATE COMP "LEDl[2]"  SITE "P2"  ;
+LOCATE COMP "LEDr[0]"  SITE "M3"  ;   // RGB right — CODE1 lock
+LOCATE COMP "LEDr[1]"  SITE "N3"  ;
+LOCATE COMP "LEDr[2]"  SITE "P4"  ;
+LOCATE COMP "d1[0]"    SITE "A11" ;   // 7-seg digit 1 (CODE0 quality 0-9)
+LOCATE COMP "d1[1]"    SITE "B12" ;
+LOCATE COMP "d1[2]"    SITE "H2"  ;
+LOCATE COMP "d1[3]"    SITE "H1"  ;
+LOCATE COMP "d1[4]"    SITE "J1"  ;
+LOCATE COMP "d1[5]"    SITE "B14" ;
+LOCATE COMP "d1[6]"    SITE "C12" ;
+LOCATE COMP "d2[0]"    SITE "B9"  ;   // 7-seg digit 2 (CODE1 quality 0-9)
+LOCATE COMP "d2[1]"    SITE "A9"  ;
+LOCATE COMP "d2[2]"    SITE "E2"  ;
+LOCATE COMP "d2[3]"    SITE "E1"  ;
+LOCATE COMP "d2[4]"    SITE "F2"  ;
+LOCATE COMP "d2[5]"    SITE "C11" ;
+LOCATE COMP "d2[6]"    SITE "A10" ;
+LOCATE COMP "enableLd1" SITE "C9" ;
+LOCATE COMP "enableLd2" SITE "A12" ;
+LOCATE COMP "txd"       SITE "A2" ;   // BCN telemetry UART -> STEPLink LPC -> COM3
+LOCATE COMP "rxd"       SITE "A3" ;   // command UART <- STEPLink LPC <- COM3 (PT11a)

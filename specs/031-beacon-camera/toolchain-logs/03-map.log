@@ -1,0 +1,263 @@
+Starting: "prj_run Map -impl threeN1"
+
+
+************************************************************
+**  Map Design                                            **
+************************************************************
+
+map -a "MachXO2" -p LCMXO2-4000HC -t CSBGA132 -s 4 -oc Commercial   "threeN1_threeN1.ngd" -o "threeN1_threeN1_map.ncd" -pr "threeN1_threeN1.prf" -mp "threeN1_threeN1.mrp" -lpf "C:/Users/gcmcn/OneDrive/Documents/FPGA/threeN1/threeN1_threeN1_synplify.lpf" -lpf "C:/Users/gcmcn/OneDrive/Documents/FPGA/threeN1/source/pin_assignments.lpf"  -c 0      -tdm -split_node -td_pack   
+map:  version Diamond (64-bit) 3.14.0.75.2
+
+Copyright (c) 1991-1994 by NeoCAD Inc. All rights reserved.
+Copyright (c) 1995 AT&T Corp.   All rights reserved.
+Copyright (c) 1995-2001 Lucent Technologies Inc.  All rights reserved.
+Copyright (c) 2001 Agere Systems   All rights reserved.
+Copyright (c) 2002-2024 Lattice Semiconductor Corporation,  All rights reserved.
+   Process the file: threeN1_threeN1.ngd
+   Picdevice="LCMXO2-4000HC"
+
+   Pictype="CSBGA132"
+
+   Picspeed=4
+
+   Remove unused logic
+
+   Do not produce over sized NCDs.
+
+Part used: LCMXO2-4000HCCSBGA132, Performance used: 4.
+
+Loading device for application map from file 'xo2c4000.nph' in environment: C:/lscc/diamond/3.14/ispfpga.
+Package Status:                     Final          Version 1.44.
+
+Running general design DRC...
+
+Removing unused logic...
+
+Optimizing...
+
+
+
+
+
+
+Design Summary:
+   Number of registers:     86 out of  4635 (2%)
+      PFU registers:           86 out of  4320 (2%)
+      PIO registers:            0 out of   315 (0%)
+   Number of SLICEs:        96 out of  2160 (4%)
+      SLICEs as Logic/ROM:     96 out of  2160 (4%)
+      SLICEs as RAM:            0 out of  1620 (0%)
+      SLICEs as Carry:         40 out of  2160 (2%)
+   Number of LUT4s:        190 out of  4320 (4%)
+      Number used as logic LUTs:        110
+      Number used as distributed RAM:     0
+      Number used as ripple logic:       80
+      Number used as shift registers:     0
+   Number of PIO sites used: 31 + 4(JTAG) out of 105 (33%)
+   Number of block RAMs:  0 out of 10 (0%)
+   Number of GSRs:        0 out of 1 (0%)
+   EFB used :        No
+   JTAG used :       No
+   Readback used :   No
+   Oscillator used : No
+   Startup used :    No
+   POR :             On
+   Bandgap :         On
+   Number of Power Controller:  0 out of 1 (0%)
+   Number of Dynamic Bank Controller (BCINRD):  0 out of 6 (0%)
+   Number of Dynamic Bank Controller (BCLVDSO):  0 out of 1 (0%)
+   Number of DCCA:  0 out of 8 (0%)
+   Number of DCMA:  0 out of 2 (0%)
+   Number of PLLs:  1 out of 2 (50%)
+   Number of DQSDLLs:  0 out of 2 (0%)
+   Number of CLKDIVC:  0 out of 4 (0%)
+   Number of ECLKSYNCA:  0 out of 4 (0%)
+   Number of ECLKBRIDGECS:  0 out of 2 (0%)
+   Notes:-
+      1. Total number of LUT4s = (Number of logic LUT4s) + 2*(Number of distributed RAMs) + 2*(Number of ripple logic)
+      2. Number of logic LUT4s does not include count of distributed RAM and ripple logic.
+   Number of clocks:  2
+     Net clk_c: 4 loads, 4 rising, 0 falling (Driver: PIO clk )
+     Net clk_op: 62 loads, 62 rising, 0 falling (Driver: fast_pll_inst/PLLInst_0 )
+   Number of Clock Enables:  10
+     Net cycle_counte_4: 8 loads, 8 LSLICEs
+     Net cycle_counte_1: 8 loads, 8 LSLICEs
+     Net cycle_counte_3_1: 5 loads, 5 LSLICEs
+     Net clk_en_reg_2: 5 loads, 5 LSLICEs
+     Net clk_en_reg_1: 5 loads, 5 LSLICEs
+     Net clk_en_reg_1_0: 3 loads, 3 LSLICEs
+     Net clk_en_reg_3: 6 loads, 6 LSLICEs
+     Net cycle_counte: 7 loads, 7 LSLICEs
+     Net cycle_counte_3: 5 loads, 5 LSLICEs
+     Net cycle_counte_2: 9 loads, 9 LSLICEs
+   Number of LSRs:  0
+   Number of nets driven by tri-state buffers:  0
+   Top 10 highest fanout non-clock nets:
+     Net threeN1_inst/intermediate[3]: 37 loads
+     Net threeN1_inst/intermediate[2]: 12 loads
+     Net threeN1_inst/N_50: 10 loads
+     Net cycle_counte_2: 9 loads
+     Net next_val_reg[1]: 9 loads
+     Net next_val_reg_1[1]: 9 loads
+     Net next_val_reg_2[1]: 9 loads
+     Net next_val_reg_3[1]: 9 loads
+     Net threeN1_inst/N_50_1: 9 loads
+     Net threeN1_inst/N_50_2: 9 loads
+ 
+
+   Number of warnings:  0
+   Number of errors:    0
+
+
+
+Total CPU Time: 0 secs  
+Total REAL Time: 0 secs  
+Peak Memory Usage: 56 MB
+
+Dumping design to file threeN1_threeN1_map.ncd.
+Done: completed successfully
+
+************************************************************
+**  Map Trace                                             **
+************************************************************
+
+trce -f "threeN1_threeN1.mt" -o "threeN1_threeN1.tw1" "threeN1_threeN1_map.ncd" "threeN1_threeN1.prf"
+trce:  version Diamond (64-bit) 3.14.0.75.2
+
+Copyright (c) 1991-1994 by NeoCAD Inc. All rights reserved.
+Copyright (c) 1995 AT&T Corp.   All rights reserved.
+Copyright (c) 1995-2001 Lucent Technologies Inc.  All rights reserved.
+Copyright (c) 2001 Agere Systems   All rights reserved.
+Copyright (c) 2002-2024 Lattice Semiconductor Corporation,  All rights reserved.
+
+Loading design for application trce from file threen1_threen1_map.ncd.
+Design name: topcount
+NCD version: 3.3
+Vendor:      LATTICE
+Device:      LCMXO2-4000HC
+Package:     CSBGA132
+Performance: 4
+Loading device for application trce from file 'xo2c4000.nph' in environment: C:/lscc/diamond/3.14/ispfpga.
+Package Status:                     Final          Version 1.44.
+Performance Hardware Data Status:   Final          Version 36.4.
+Setup and Hold Report
+
+--------------------------------------------------------------------------------
+Lattice TRACE Report - Setup, Version Diamond (64-bit) 3.14.0.75.2
+Tue Jun 23 08:36:39 2026
+
+Copyright (c) 1991-1994 by NeoCAD Inc. All rights reserved.
+Copyright (c) 1995 AT&T Corp.   All rights reserved.
+Copyright (c) 1995-2001 Lucent Technologies Inc.  All rights reserved.
+Copyright (c) 2001 Agere Systems   All rights reserved.
+Copyright (c) 2002-2024 Lattice Semiconductor Corporation,  All rights reserved.
+
+Report Information
+------------------
+Command line:    trce -v 1 -gt -mapchkpnt 0 -sethld -o threeN1_threeN1.tw1 -gui -msgset C:/Users/gcmcn/OneDrive/Documents/FPGA/promote.xml threeN1_threeN1_map.ncd threeN1_threeN1.prf 
+Design file:     threen1_threen1_map.ncd
+Preference file: threen1_threen1.prf
+Device,speed:    LCMXO2-4000HC,4
+Report level:    verbose report, limited to 1 item per preference
+--------------------------------------------------------------------------------
+
+BLOCK ASYNCPATHS
+BLOCK RESETPATHS
+BLOCK JTAG PATHS
+--------------------------------------------------------------------------------
+
+
+
+Timing summary (Setup):
+---------------
+
+Timing errors: 0  Score: 0
+Cumulative negative slack: 0
+
+Constraints cover 9287 paths, 2 nets, and 664 connections (85.79% coverage)
+
+--------------------------------------------------------------------------------
+Lattice TRACE Report - Hold, Version Diamond (64-bit) 3.14.0.75.2
+Tue Jun 23 08:36:40 2026
+
+Copyright (c) 1991-1994 by NeoCAD Inc. All rights reserved.
+Copyright (c) 1995 AT&T Corp.   All rights reserved.
+Copyright (c) 1995-2001 Lucent Technologies Inc.  All rights reserved.
+Copyright (c) 2001 Agere Systems   All rights reserved.
+Copyright (c) 2002-2024 Lattice Semiconductor Corporation,  All rights reserved.
+
+Report Information
+------------------
+Command line:    trce -v 1 -gt -mapchkpnt 0 -sethld -o threeN1_threeN1.tw1 -gui -msgset C:/Users/gcmcn/OneDrive/Documents/FPGA/promote.xml threeN1_threeN1_map.ncd threeN1_threeN1.prf 
+Design file:     threen1_threen1_map.ncd
+Preference file: threen1_threen1.prf
+Device,speed:    LCMXO2-4000HC,M
+Report level:    verbose report, limited to 1 item per preference
+--------------------------------------------------------------------------------
+
+BLOCK ASYNCPATHS
+BLOCK RESETPATHS
+BLOCK JTAG PATHS
+--------------------------------------------------------------------------------
+
+
+
+Timing summary (Hold):
+---------------
+
+Timing errors: 0  Score: 0
+Cumulative negative slack: 0
+
+Constraints cover 9287 paths, 2 nets, and 682 connections (88.11% coverage)
+
+
+
+Timing summary (Setup and Hold):
+---------------
+
+Timing errors: 0 (setup), 0 (hold)
+Score: 0 (setup), 0 (hold)
+Cumulative negative slack: 0 (0+0)
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+
+Total CPU Time: 0 secs 
+Total REAL Time: 0 secs 
+Peak Memory Usage: 62 MB
+
+Done: completed successfully
+
+************************************************************
+**  Verilog Simulation File                               **
+************************************************************
+
+ldbanno "threeN1_threeN1_map.ncd" -n Verilog -o "threeN1_threeN1_mapvo.vo" -w -neg
+ldbanno: version Diamond (64-bit) 3.14.0.75.2
+Copyright (c) 1991-1994 by NeoCAD Inc. All rights reserved.
+Copyright (c) 1995 AT&T Corp.   All rights reserved.
+Copyright (c) 1995-2001 Lucent Technologies Inc.  All rights reserved.
+Copyright (c) 2001 Agere Systems   All rights reserved.
+Copyright (c) 2002-2024 Lattice Semiconductor Corporation,  All rights reserved.
+
+Writing a Verilog netlist using the orca library type based on the threeN1_threeN1_map design file.
+
+
+Loading design for application ldbanno from file threeN1_threeN1_map.ncd.
+Design name: topcount
+NCD version: 3.3
+Vendor:      LATTICE
+Device:      LCMXO2-4000HC
+Package:     CSBGA132
+Performance: 4
+Loading device for application ldbanno from file 'xo2c4000.nph' in environment: C:/lscc/diamond/3.14/ispfpga.
+Package Status:                     Final          Version 1.44.
+Performance Hardware Data Status:   Final          Version 36.4.
+Converting design threeN1_threeN1_map.ncd into .ldb format.
+Writing Verilog netlist to file threeN1_threeN1_mapvo.vo
+Writing SDF timing to file threeN1_threeN1_mapvo.sdf
+INFO - ldbanno finished with 0 posted error messages.
+Total CPU Time: 0 secs 
+Total REAL Time: 0 secs 
+Peak Memory Usage: 53 MB
+Done: completed successfully

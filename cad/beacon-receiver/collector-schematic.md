@@ -3,6 +3,11 @@
 **Status**: DRAFT design, 2026-06-18 — wire-level reference for the single-IR-sensor collector. KiCad capture is the next step (`cad/beacon-receiver/beacon-receiver.kicad_sch`, not yet created).
 **Spec ref**: [acquisition-research-plan.md](../../specs/031-beacon-camera/acquisition-research-plan.md) §5 (receiver chain), [eval-loop-bom.md](eval-loop-bom.md) (parts).
 **Chain**: `PD → TIA → [DC tap | AC-couple] → ADC → StepFPGA`, plus an optional hard-1-bit comparator.
+**⚠ v1 is INDOOR/BENCH-ONLY** — full sun rails the 1 MΩ DC-coupled TIA (field-measured 2026-07-17: no
+lock at inches). The outdoor design is **v2 = Option C, SELECTED 2026-07-24**:
+[daylight/collector-schematic-daylight.md](daylight/collector-schematic-daylight.md)
+(reverse-biased PD + 47 k load + AC-couple + single ×101 stage @ mid-rail bias; optical BP filter required;
+the two-stage TIA is that doc's Appendix-B fallback).
 
 Single 3.3 V rail (from the StepFPGA or a bench/USB 3.3 V). Signal BW is low (~100–200 Hz code), so the design is forgiving — jellybean parts, breadboard-friendly.
 
@@ -77,10 +82,13 @@ Single 3.3 V rail (from the StepFPGA or a bench/USB 3.3 V). Signal BW is low (~1
 
 ## Design notes
 
-1. **Pseudo-differential ADC is the trick.** ADC IN− = VBIAS (the TIA's quiescent point), IN+ = TIA output, Vref = 2.5 V. The ADC reads `(TIA_OUT − VBIAS) = I_photo · R1` directly — the bias offset cancels, full 0–2.5 V code range. VBIAS ≈ 0.5 V keeps `VBIAS + 2.5 V < 3.3 V` rail.
+1. ~~**Pseudo-differential ADC is the trick.**~~ ⚠️ **RETRACTED 2026-07-16** — the MCP3201's IN− is
+   spec-limited to ±100 mV about VSS (see revised choice #3 below), so IN− = VBIAS is out of spec.
+   **As-built: IN− = GND (single-ended), IN+ = TIA output, Vref = 2.5 V.** The ADC reads
+   `VBIAS + I_photo·R1` absolute; the decoder's DC tracker strips the ~0.45 V pedestal.
 2. **DC vs AC jumper.** DC tap (TIA_OUT → ADC) keeps the ambient pedestal → AGC/envelope studies (but bright sun can eat range). AC tap (C2 + R4 re-bias) strips solar DC → full range for the code. Keep both reachable; pick per experiment.
 3. **TIA gain.** R1 = 1 MΩ start (covers ~0.1–2 µA). Use the 1 MΩ trimpot to sweep gain for the link-budget / saturation study. C1 = 2 pF tames ringing (omit if none).
-4. **PD on a cable (J2).** Lets the detector live in the cone/lens assembly while the board stays on the bench/airframe. Orient D1 so illumination drives TIA_OUT *above* VBIAS; flip if inverted.
+4. **PD on a cable (J2).** Lets the detector live in the cone/lens assembly while the board stays on the bench/airframe. **Orientation (HW-verified 2026-07-16): CATHODE → PD_NODE (TIA −in); ANODE → VBIAS (+in) per this schematic** — a zero-bias photovoltaic-mode TIA (no dark-current offset; the junction capacitance penalty is irrelevant at 200 Hz chips). *Anode → GND also works* (puts ~VBIAS of reverse bias on the PD; same output polarity). Either way illumination drives TIA_OUT *above* VBIAS and dark rests at VBIAS. **Swapping anode↔cathode fails**: the junction ends up ~VBIAS forward-biased — diffusion capacitance smears the edges (slow rising ramp), ambient pulls the output *below* VBIAS, and the code is undecodable (measured live, both ways, on first-light day). NB with anode→VBIAS the photocurrent is sourced by the VBIAS node — keep the divider stiff + bypassed (≥1 µF). If lead identity is in doubt, use the solar-cell test (DMM mV, illuminated: positive terminal = anode); don't trust flat/lead-length conventions.
 5. **Comparator is optional** — skip for first bring-up; the ADC subsumes it.
 6. **StepFPGA (MachXO2) has no analog input** — the MCP3201 is mandatory. SPI → its hard-SPI block.
 7. Low BW (~100–200 Hz) → MCP6022 (10 MHz) is wildly fast enough; stability easy.
@@ -89,7 +97,12 @@ Single 3.3 V rail (from the StepFPGA or a bench/USB 3.3 V). Signal BW is low (~1
 
 1. **Bias buffer: dual op-amp vs bypassed divider.** As drawn, op-amp B buffers VBIAS to low-Z (clean for the ADC IN− sampling kickback). *Simpler alternative*: drop the buffer, drive VBIAS straight from the R2/R3 divider with a **bypass cap to GND** (low-Z at the sampling frequency). Removes a half-IC + wiring; the divider's ~8 kΩ source + a 1 µF bypass is fine at 100 kS/s. Leaning toward this for v1 — fewer parts, and it sidesteps the multi-unit op-amp.
 2. **DC vs AC coupling.** DC tap (TIA_OUT → ADC) keeps the ambient pedestal for **AGC/envelope** studies but bright sun can rail the TIA; AC tap strips solar DC for **full code range**. Jumper both, or pick DC for the bench / AC for daylight field?
-3. **ADC reference: pseudo-diff vs single-ended.** Pseudo-diff (IN− = VBIAS) cancels the bias offset → cleanest. Single-ended (IN− = GND) is simpler but the VBIAS offset eats part of the range. Recommend pseudo-diff.
+3. **ADC reference: pseudo-diff vs single-ended.** ⚠️ **REVISED 2026-07-16 (bench)**: the MCP3201's
+   pseudo-differential IN− is spec-limited to **±100 mV about VSS** (datasheet 21290 — it cancels ground
+   offsets, not a 0.45 V reference), so IN− = VBIAS is OUT OF SPEC even though it can appear to work.
+   **Use single-ended (IN− = GND) — the as-built config.** The VBIAS pedestal (~0.45 V ≈ 18 % of range)
+   is stripped by the decoder's DC tracker; if the range is ever needed, the in-spec offset-removal path
+   is the AC-couple (C2 + R4), not IN−.
 4. **Vref: MCP1525 2.5 V vs VDD.** A dedicated 2.5 V ref gives stable, noise-free full-scale (better SNR numbers); VDD (3.3 V) is simpler but noisier. Recommend the MCP1525.
 5. **ADC speed.** MCP3201 @ 100 kS/s = ~1000× oversampling at 100 Hz chip — plenty. ADS7042 @ 1 MS/s only if you want finer oversampling sweeps.
 6. **Comparator (U4): include or omit v1?** The ADC subsumes it; recommend omit for first bring-up.

@@ -1,0 +1,23 @@
+# Source-of-truth in this tree = rtl/*.v, tb/*, constraints/*.lpf, build.tcl, build.sh, README.md.
+# Everything Diamond generates is transient — it lives in the /mnt/c sandbox (not here) or in build/.
+# (Classification derived from the threeN1 prior-art project, which mixed source + ~120 generated files.)
+
+# copied-back bitstream + reports (regenerable)
+build/
+
+# if Diamond is ever pointed at this tree directly, ignore its generated litter:
+*.jed *.bit *.ngd *.ngo *.ncd *.edi *.edn *.map *.mrp *.par *.pad *.twr *.tw1
+*.srf *.srr *.srs *.srm *.srd *.t2b *.prf *.bgn *.drc *.htm *.html *.log *.rpt
+*.db *.bak *.bak.[0-9] *.alt *.areasrr *.asd *.cam *.hrr *.ior *.mt *.p2t *.p3t *.pt *.vo *.sdf
+*.dir/ *.xcf scratchproject.prs run_options.txt .build_status .recordref automake.log message.xml version.log
+backup/ coreip/ dm/ synlog/ syntmp/ synwork/ *_synplify_tmp*.lpf Untitled.tpf*
+
+# IP-core regenerated outputs (keep the .ipx/.lpc spec under control; the rest regenerates via IPexpress)
+*.naf *.sort
+
+# HDL sim (iverilog) build artifacts — regenerable via sim/run.sh
+sim/*.vvp
+sim/*.vcd
+
+# host measurement outputs are COMMITTED (operator 2026-07-18: portability across machines) — raw logs +
+# CSVs are the evidence behind the outcome docs. Keep individual files < a few MB.

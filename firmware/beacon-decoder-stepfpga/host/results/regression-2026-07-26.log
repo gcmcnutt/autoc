@@ -1,0 +1,30 @@
+== P0: cold start from PSU (output off -> on) ==
+  [PASS] P0 cold-start echo: emitter alive=True
+  [PASS] P0 rail: 4.200 V 89 mA
+== P1: decode baseline ==
+  [PASS] P1 lock: lock 100% margin 8 corr 10511
+== P2: dropout mini-ladder (D31 hold; envelopes from the 5-geometry sweeps) ==
+  [PASS] P2 dropout 0.025s: unlocked_frames=0 relocked=True
+  [PASS] P2 dropout 0.155s: unlocked_frames=0 relocked=True
+  [PASS] P2 dropout 1.0s: unlocked_frames=18 relocked=True
+  [PASS] P2 dropout 4.0s: unlocked_frames=148 relocked=True
+== P3: AGC pulse-width ladder + step response ==
+  [PASS] P3 P=128: lock 100% margin 6 corr 6942
+  [PASS] P3 P=32: lock 97% margin 5 corr 2392
+  [PASS] P3 P=16: lock 100% margin 5 corr 1479
+  [PASS] P3 corr monotonic: corr decreases with duty
+  [PASS] P3 step settle: down@104 settle@116 (0.30s)
+== P4: error injection + rate skew ==
+  [PASS] P4 corrupt10 degrades: margin 4 (base 8) lock 55%
+  [PASS] P4 recover: lock 99% margin 8
+  [PASS] P4 skew +2.6% holds: lock 100% margin 8
+== P5: I-V profile 4.2->3.7 (above trip: no LOS allowed) ==
+  [PASS] P5 decode across 4.2-3.7 V: 4.2V:96mA; 4.1V:73mA; 4.0V:125mA; 3.9V:106mA; 3.8V:99mA; 3.7V:156mA | lock 100%
+== P6: UVLO trip + UPDI recovery (trickle-latch aware) ==
+  [PASS] P6 UVLO trip <=3.45 V: dark at end of ramp=True
+  [PASS] P6 UPDI recovery: lock 99% margin 8
+== P7: restore + final state ==
+  [PASS] P7 final: lock 100% margin 8 | 4.20 V 98 mA
+
+==== REGRESSION: 19/19 PASS ====
+REGRESSION_EXIT=0
