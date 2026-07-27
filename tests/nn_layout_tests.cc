@@ -78,10 +78,12 @@ TEST(NNLayout, OldLayoutStreamFailsLoud) {
   AircraftState st = makeState();
   std::string bytes = serializeState(st);
 
-  // Locate the layout marker: the unique LE byte run
-  // [inputCount=33][outputCount=3][layoutVersion] and flip the version to
-  // the pre-037 value 1. This reproduces what reading an old-layout stream
-  // looks like at the marker position.
+  // Locate the count fields [inputCount=37][outputCount=3]; flip the
+  // history-layout version to the pre-037 value 1 to reproduce what reading
+  // an old-layout stream looks like. 038 US3 SPLIT serialize reordered the NN
+  // block to [mode:1][historyLayout:4][inputCount:4][outputCount:4], so the
+  // layout marker is now the 4 bytes IMMEDIATELY BEFORE the counts (pos − 4),
+  // not after them.
   unsigned char needle[8];
   const uint32_t inCount = NN_INPUT_COUNT, outCount = NN_OUTPUT_COUNT;
   std::memcpy(needle, &inCount, 4);
@@ -89,8 +91,9 @@ TEST(NNLayout, OldLayoutStreamFailsLoud) {
   const std::string pat(reinterpret_cast<const char*>(needle), 8);
   const size_t pos = bytes.find(pat);
   ASSERT_NE(std::string::npos, pos) << "count fields not found in stream";
+  ASSERT_GE(pos, static_cast<size_t>(4)) << "no room for the layout marker before the counts";
   const uint32_t wrongLayout = 1;
-  std::memcpy(&bytes[pos + 8], &wrongLayout, 4);
+  std::memcpy(&bytes[pos - 4], &wrongLayout, 4);
 
   AircraftState back{};
   std::istringstream is(bytes, std::ios::binary);

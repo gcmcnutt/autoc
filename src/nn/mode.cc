@@ -31,10 +31,27 @@ void gather_tracker_inputs_signature_mismatch_guard(PathProvider&, AircraftState
     std::abort();
 }
 
+// 038 P0-D FR-P0H — gather_pathgen_inputs grew a FlightArena parameter
+// (arena-awareness inputs), so it no longer matches this bundle's legacy
+// (PathProvider&, AircraftState&, NNInputs&) function-pointer type. The
+// pointer was already vestigial: real pathgen dispatch runs through
+// NNControllerBackend::evaluate (which owns the config arena) and the xiao
+// generated program (which bakes a compile-time arena literal), never this
+// field. Keep a same-shaped guard so a stray call fails loud instead of
+// silently gathering without an arena.
+void gather_pathgen_inputs_signature_mismatch_guard(PathProvider&, AircraftState&, NNInputs&) {
+    std::fprintf(stderr,
+        "FATAL: kPathgenMode.gather_inputs invoked through the M2b strategy\n"
+        "bundle, but gather_pathgen_inputs now needs a FlightArena and is\n"
+        "dispatched via NNControllerBackend::evaluate (or the nn2cpp-generated\n"
+        "program). This is a wiring bug — see src/nn/evaluator.cc.\n");
+    std::abort();
+}
+
 }  // namespace
 
 const ModeStrategy kPathgenMode = {
-    &gather_pathgen_inputs,
+    &gather_pathgen_inputs_signature_mismatch_guard,
     static_cast<int>(PathgenInput::COUNT),
     "pathgen",
     NN_TOPOLOGY,

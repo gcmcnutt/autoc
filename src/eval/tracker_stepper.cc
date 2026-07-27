@@ -111,21 +111,19 @@ void TrackerStepper::initScenario() {
     // match the compiled cadence. stepOnce advances chase physics one
     // SIM_TIME_STEP_MSEC per SOURCE tick, so a 100 ms-recorded library run
     // at a 50 ms cadence would silently play the target at 2× speed.
-    // 2026-06-15: AVERAGE gap, not first gap — simTimeMsec is the 200 Hz/5 ms
-    // step clock TRUNCATED to integer ms, so a clean 50 ms source records
-    // 49/50/51 with the first gap always 49. (last-first)/(N-1) recovers 50.0
-    // and still catches a real mismatch (100 ms 10 Hz → 100). Proper fix =
-    // round/step-count the simTimeMsec stamp (BACKLOG). Mirrors
+    // 038 P0-D-1: STRICT single-gap check restored — simTimeMsec is now
+    // round()-stamped (exact 50 ms gaps), so the first gap is a faithful cadence
+    // probe again. (The 2026-06-15 average-gap workaround tolerated the old
+    // truncation jitter of 49/50/51 ms, now fixed at the stamp.) Mirrors
     // crrcsim_tracker_helper.cpp.
     if (source_.samples.size() >= 2) {
         const auto& s = source_.samples;
-        const double avgGapMsec =
-            (s.back().simTimeMsec - s.front().simTimeMsec) /
-            static_cast<double>(s.size() - 1);
-        if (std::lround(avgGapMsec) != SIM_TIME_STEP_MSEC) {
+        const long firstGapMsec =
+            std::lround(s[1].simTimeMsec - s[0].simTimeMsec);
+        if (firstGapMsec != SIM_TIME_STEP_MSEC) {
             throw std::runtime_error(
-                "TrackerStepper: source trajectory avg tick spacing " +
-                std::to_string(avgGapMsec) + " ms != compiled SIM_TIME_STEP_MSEC " +
+                "TrackerStepper: source trajectory tick spacing " +
+                std::to_string(firstGapMsec) + " ms != compiled SIM_TIME_STEP_MSEC " +
                 std::to_string(SIM_TIME_STEP_MSEC) +
                 " ms — rebake the M2 source library at the current cadence.");
         }
@@ -139,6 +137,14 @@ void TrackerStepper::initScenario() {
     // sees a populated, non-zero history at tick 1.
     cursor_ = 0;
     obs_ring_.reset();
+
+    // 038 P0-D FR-P0H (A) — reset situational-awareness state per scenario
+    // (FR-030 determinism: un-reset blind-tick / exit-bearing state would leak
+    // across scenarios and break the bitwise gate). The state is advanced only
+    // on real ticks (stepOnce), NOT during the history pre-fill below, so it
+    // starts each scenario at "visible-now / neutral bearing".
+    sa_state_.reset();
+
     if (!source_.samples.empty()) {
         for (int r = 0; r < TrackerObservationRing::kDepth; ++r) {
             projectAndShiftHistory(source_.samples[0]);
@@ -251,10 +257,17 @@ CrashReason TrackerStepper::stepOnce() {
     // Step 1: project beacons + shift history.
     projectAndShiftHistory(target);
 
+    // Step 1b (038 P0-D FR-P0H): advance the situational-awareness state from
+    // the freshly-projected "now" beacon observation. Visibility uses the
+    // sentinel threshold (matches fitness_decomposition.cc). Single-sourced
+    // update rule mirrored in CrrcsimTrackerHelper::tick.
+    sa_state_.update(history_.left_cep[5], history_.right_cep[5],
+                     autoc::eval::kCepSentinelThreshold);
+
     // Step 2: gather tracker NN inputs.
     TrackerInputs inputs = {};
     gather_tracker_inputs(state_, history_, arena_,
-                          static_cast<float>(cep_gate_threshold_), inputs);
+                          static_cast<float>(cep_gate_threshold_), sa_state_, inputs);
 
     // Step 3: NN forward pass → control commands.
     nn_.evaluateTracker(state_, inputs);

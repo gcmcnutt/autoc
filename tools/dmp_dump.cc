@@ -61,7 +61,8 @@ void printUsage(const char* prog) {
     "  --stride N     run-summary: sample every Nth gen (default 1)\n"
     "  --since-gen N  run-summary: skip gens < N (header suppressed) — incremental:\n"
     "                 fetch only new gens and append to a cached CSV\n"
-    "  -i, --config   ini for S3 creds + fitness params (default autoc.ini)\n"
+    "  -i, --config   ini for S3 creds/bucket (default autoc.ini); fitness cone +\n"
+    "                 cadence now read from the dmp-recorded RecordedRunConfig\n"
     "  -h, --help     this message\n"
     "\n"
     "CSV columns (pathgen): scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,\n"
@@ -400,11 +401,23 @@ int main(int argc, char** argv) {
   // Header (mode-specific: path-relative derived columns are pathgen-only).
   std::cout << "scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,"
                "pitchCmd,rollCmd,thrCmd,out_pt,out_rl,out_th,dhome,wN,wE,wD";
-  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt\n";
-  else           std::cout << ",dist,along,stpPt,mult,rampSc\n";
+  // 038 — honest recording read straight from the recorded per-tick
+  // TrackerInputs/NNInputs + tracker aux outputs: tracker adds inX/inY/inZ
+  // (arena-inward body dir) + tSee (time-since-seen) + the 038 US3 aux
+  // span-predictor OUTPUTS spP1/spP2/spP3 (predicted span @+50/+100/+150 ms) +
+  // spdR (predicted closure rate); pathgen adds dBnd (dist-to-boundary tanh) +
+  // inX/inY/inZ. (exit_dir removed 038 US3.)
+  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt,inX,inY,inZ,tSee,spP1,spP2,spP3,spdR\n";
+  else           std::cout << ",dist,along,stpPt,mult,rampSc,dBnd,inX,inY,inZ\n";
 
-  const AutocConfig& cfg = ConfigManager::getConfig();
-  int streakStepsToMax = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
+  // 038 P0-B (T010): read the fitness cone / cadence from the dmp-recorded,
+  // self-describing RecordedRunConfig — NOT the live .ini. M2 greenfield: no
+  // fallback to ConfigManager (a pre-038 dmp with a zeroed runConfig is
+  // reproduced by checking out the matching code, not by reading today's ini).
+  // Only S3 bucket/profile still comes from ConfigManager.
+  const RecordedRunConfig& rc = results.runConfig;
+  const double dtSec = rc.simTimeStepMsec / 1000.0;
+  int streakStepsToMax = static_cast<int>(rc.fitStreakRampSec / dtSec);
   if (streakStepsToMax < 1) streakStepsToMax = 1;
 
   for (size_t si = 0; si < results.aircraftStateList.size(); ++si) {
@@ -415,8 +428,8 @@ int main(int argc, char** argv) {
     const std::vector<Path>* path =
         (si < results.pathList.size()) ? &results.pathList[si] : nullptr;
 
-    FitnessComputer fc(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead, cfg.fitConeAngleDeg,
-                       cfg.fitStreakThreshold, streakStepsToMax, cfg.fitStreakMultiplierMax);
+    FitnessComputer fc(rc.fitDistScaleBehind, rc.fitDistScaleAhead, rc.fitConeAngleDeg,
+                       rc.fitStreakThreshold, streakStepsToMax, rc.fitStreakMultiplierMax);
     fc.resetStreak();
     gp_vec3 prevTangent = gp_vec3::UnitX();
     double prevSpan = 0.0;  // tracker spn0 at ti-1, for dspn (0 at first emitted tick)
@@ -499,12 +512,18 @@ int main(int argc, char** argv) {
         prevSpan = spn0;
         havePrevSpan = true;
 
-        char tb[320];
+        // 038 — arena-inward + time_since_seen (from recorded TrackerInputs) +
+        // the US3 aux span-predictor outputs out[3..6] (honest recording).
+        const TrackerInputs& ti_in = st.getTrackerInputs();
+        char tb[512];
         int tn = snprintf(tb, sizeof(tb),
-          ",%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+          ",%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f"
+          ",%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
           rampSc, hull,
           tg.x(), tg.y(), tg.z(), tr.x(), tr.y(), tr.z(),
-          spn0, dspn, blC0, brC0, tltS, tltC, stp);
+          spn0, dspn, blC0, brC0, tltS, tltC, stp,
+          ti_in.inward_body_x, ti_in.inward_body_y, ti_in.inward_body_z,
+          ti_in.time_since_seen, out[3], out[4], out[5], out[6]);
         std::cout.write(tb, tn);
       } else if (path && !path->empty()) {
         const int pIdx = std::clamp(st.getThisPathIndex(), 0,
@@ -521,12 +540,23 @@ int main(int argc, char** argv) {
         const double dist = offset.norm();
         const double stp = fc.computeStepScore(along, lateral);
         const double mult = (stp > 0.0) ? fc.applyStreak(stp) / stp : 1.0;
-        char d[160];
-        int dn = snprintf(d, sizeof(d), ",%.4f,%.4f,%.4f,%.4f,%.4f\n",
-                          dist, along, stp, mult, rampSc);
+        // 038 P0-D FR-P0H (B) — arena-awareness inputs from recorded NNInputs.
+        const NNInputs& nn_in = st.getNNInputs();
+        char d[256];
+        int dn = snprintf(d, sizeof(d), ",%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f\n",
+                          dist, along, stp, mult, rampSc,
+                          nn_in.dist_to_boundary, nn_in.inward_body_x,
+                          nn_in.inward_body_y, nn_in.inward_body_z);
         std::cout.write(d, dn);
       } else {
-        std::cout << ",,,,," << rampSc << "\n";
+        // 038 P0-D FR-P0H (B) — no path geometry, but the recorded NNInputs
+        // still carry the arena-awareness (B) inputs.
+        const NNInputs& nn_in = st.getNNInputs();
+        char d[128];
+        int dn = snprintf(d, sizeof(d), ",,,,,%.4f,%.6f,%.6f,%.6f,%.6f\n",
+                          rampSc, nn_in.dist_to_boundary, nn_in.inward_body_x,
+                          nn_in.inward_body_y, nn_in.inward_body_z);
+        std::cout.write(d, dn);
       }
     }
   }

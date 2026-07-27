@@ -11,17 +11,17 @@
 #include <numeric>
 
 // ============================================================
-// 028 D-alone: layer-2 (16-wide) recurrent, 1923 weights.
-// (Was 1667 / all-feedforward during the 027 cadence7-redux diagnostic.)
+// 028 D-alone: layer-2 (16-wide) recurrent. 038 FR-P0H: 33→37 inputs
+// (+4 arena-awareness (B)) grows the weight count 1923→2051 (+4×32=128).
 // ============================================================
 
 TEST(ContractEvaluator, TopologyConstants) {
-    EXPECT_EQ(NN_INPUT_COUNT, 33);
+    EXPECT_EQ(NN_INPUT_COUNT, 37);
     EXPECT_EQ(NN_HIDDEN1_SIZE, 32);
     EXPECT_EQ(NN_HIDDEN2_SIZE, 16);
     EXPECT_EQ(NN_OUTPUT_COUNT, 3);
     EXPECT_EQ(NN_NUM_LAYERS, 4);
-    EXPECT_EQ(NN_WEIGHT_COUNT, 1923);
+    EXPECT_EQ(NN_WEIGHT_COUNT, 2051);
     EXPECT_FALSE(NN_RECURRENT[0]);
     EXPECT_FALSE(NN_RECURRENT[1]);
     EXPECT_TRUE(NN_RECURRENT[2]);

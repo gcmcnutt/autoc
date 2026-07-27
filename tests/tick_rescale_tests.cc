@@ -44,7 +44,7 @@ TEST(TickRescale, ClosingRateUsesActualLagDt) {
   Path dummy{};
   SinglePathProvider provider(dummy);
   NNInputs in{};
-  gather_pathgen_inputs(provider, st, in);
+  gather_pathgen_inputs(provider, st, autoc::eval::FlightArena{}, in);
 
   // Positive = approaching; must recover the physical rate regardless of the
   // compiled control interval (the lag pair spans 100 ms at every rate).

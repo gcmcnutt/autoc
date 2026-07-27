@@ -4,6 +4,7 @@
 #include "autoc/util/config.h"
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/eval/camera_projection.h"
+#include "autoc/eval/derived_features.h"   // 038 US3 — compute_pair_span
 #include <algorithm>
 #include <cmath>
 
@@ -22,6 +23,61 @@ double percentileSorted(const std::vector<double>& sorted, double pct) {
     if (hi >= sorted.size()) hi = sorted.size() - 1;
     double frac = idx - lo;
     return sorted[lo] * (1.0 - frac) + sorted[hi] * frac;
+}
+
+// 038 US3 — mean aux span/closure-prediction error over CEP-visible
+// (t, t+horizon) pairs. Predicted spans are the tracker aux outputs
+// (nnOutputs[3..5] at the kSpanPredictHorizonsMsec lookaheads); nnOutputs[6] is
+// the predicted closure rate (span-rate, NDC/s). Realized span is the CEP-gated
+// beacon-pair span from the camera views (same gating rule as the spn0 input).
+// Returns 0 when there are no valid pairs (all-blind or pathgen). Cadence-
+// invariant: tick offsets derive from the fixed ms horizons.
+static_assert(kNumSpanPredictHorizons == 3, "update the horizon integral-check below if this changes");
+static_assert(kSpanPredictHorizonsMsec[0] % SIM_TIME_STEP_MSEC == 0 &&
+              kSpanPredictHorizonsMsec[1] % SIM_TIME_STEP_MSEC == 0 &&
+              kSpanPredictHorizonsMsec[2] % SIM_TIME_STEP_MSEC == 0,
+              "kSpanPredictHorizonsMsec must be integral multiples of SIM_TIME_STEP_MSEC (cadence-invariant)");
+
+gp_fitness computeSpanPredictionError(const std::vector<AircraftState>& states,
+                                      const std::vector<CameraViewSample>& cams) {
+    const int N = static_cast<int>(std::min(states.size(), cams.size()));
+    if (N < 2) return 0.0;
+    // realized span + CEP visibility per step.
+    std::vector<float> span(N, 0.0f);
+    std::vector<char> vis(N, 0);
+    for (int t = 0; t < N; ++t) {
+        const auto& bl = cams[t].beacon_left;
+        const auto& br = cams[t].beacon_right;
+        const bool gated = (bl.cep >= autoc::eval::kCepSentinelThreshold) ||
+                           (br.cep >= autoc::eval::kCepSentinelThreshold);
+        if (!gated) {
+            span[t] = static_cast<float>(autoc::eval::compute_pair_span(
+                bl.screen_x, bl.screen_y, br.screen_x, br.screen_y));
+            vis[t] = 1;
+        }
+    }
+    const double dt = SIM_TIME_STEP_MSEC / 1000.0;
+    double err = 0.0;
+    long pairs = 0;
+    for (int t = 0; t < N; ++t) {
+        if (!vis[t] || !states[t].hasNNData()) continue;
+        const float* out = states[t].getNNOutputs();
+        for (int h = 0; h < kNumSpanPredictHorizons; ++h) {
+            const int ta = t + (kSpanPredictHorizonsMsec[h] / SIM_TIME_STEP_MSEC);
+            if (ta >= N || !vis[ta]) continue;
+            const float predicted = out[TRACKER_NN_CONTROL_OUTPUT_COUNT + h];
+            err += std::abs(static_cast<double>(predicted) - static_cast<double>(span[ta]));
+            ++pairs;
+        }
+        // closure-rate aux output vs realized (span[t+1] - span[t]) / dt.
+        if (t + 1 < N && vis[t + 1]) {
+            const float predRate = out[TRACKER_NN_CONTROL_OUTPUT_COUNT + kNumSpanPredictHorizons];
+            const double realRate = (static_cast<double>(span[t + 1]) - static_cast<double>(span[t])) / dt;
+            err += std::abs(static_cast<double>(predRate) - realRate);
+            ++pairs;
+        }
+    }
+    return pairs > 0 ? static_cast<gp_fitness>(err / static_cast<double>(pairs)) : gp_fitness(0.0);
 }
 
 }  // namespace
@@ -299,6 +355,15 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             // streak-loss classifier records other reasons over the tick stream).
             if (crashReason == CrashReason::HullStrike) {
                 result.tracker_diag.loss_hull = 1;
+            }
+
+            // 038 US3 — aux span/closure-prediction error (lexicase axis, gated
+            // on EnablePredictorHead in selection). Computed always for tracker
+            // so it is recorded even when the axis is off; 0 if the camera trace
+            // is missing.
+            if (i < evalResults.cameraViewList.size()) {
+                result.prediction_score = computeSpanPredictionError(
+                    aircraftStates, evalResults.cameraViewList.at(i));
             }
             if (N > 0) {
                 result.tracker_diag.vis_frac = static_cast<float>(vis_count) / N;

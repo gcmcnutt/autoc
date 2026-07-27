@@ -118,6 +118,8 @@ add_executable(dmp-dump tools/dmp_dump.cc)  # 035 FR-P02/P06
 
 target_link_libraries(autoc autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(renderer autoc_common ${VTK_LIBRARIES} ${AWSSDK_LIBRARIES})
+# 039 T032: -x mode reads the binary flight log (shared format header)
+target_include_directories(renderer PRIVATE xiao/include)
 target_link_libraries(nnextractor autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(dmp-dump autoc_common ${AWSSDK_LIBRARIES})
 target_link_libraries(nn2cpp autoc_common)
@@ -184,6 +186,12 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(gather_tracker_inputs_tests tests/gather_tracker_inputs_tests.cc)
   target_link_libraries(gather_tracker_inputs_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(situational_inputs_tests tests/situational_inputs_tests.cc)
+  target_link_libraries(situational_inputs_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(predictor_head_tests tests/predictor_head_tests.cc)
+  target_link_libraries(predictor_head_tests GTest::gtest GTest::gtest_main autoc_common)
+
   add_executable(tracker_dmp_roundtrip_tests tests/tracker_dmp_roundtrip_tests.cc)
   target_link_libraries(tracker_dmp_roundtrip_tests GTest::gtest GTest::gtest_main autoc_common)
 
@@ -236,6 +244,28 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(nn_layout_tests tests/nn_layout_tests.cc)
   target_link_libraries(nn_layout_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  # 039 T006/T007 -- engage-scoped arena re-centering (FR-001, D5).
+  add_executable(arena_recenter_tests tests/arena_recenter_tests.cc)
+  target_link_libraries(arena_recenter_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  # 039 T011/T012 -- versioned binary flight log round-trip (US3, FR-007/008/009).
+  # Compiles the SAME xiao/include/flight_log_format.h the firmware uses
+  # (single shared format definition; no autoc_common needed — self-contained).
+  add_executable(flightlog_roundtrip_tests tests/flightlog_roundtrip_tests.cc)
+  target_link_libraries(flightlog_roundtrip_tests GTest::gtest GTest::gtest_main)
+  target_include_directories(flightlog_roundtrip_tests PRIVATE xiao/include)
+
+  # 039 T003/T004 -- nn2cpp unrolled-recurrent emission equivalence (D6).
+  # Drives the real nn2cpp binary + g++ harness compiles; paths injected here.
+  add_executable(nn2cpp_unroll_tests tests/nn2cpp_unroll_tests.cc)
+  target_link_libraries(nn2cpp_unroll_tests GTest::gtest GTest::gtest_main autoc_common)
+  add_dependencies(nn2cpp_unroll_tests nn2cpp)
+  target_compile_definitions(nn2cpp_unroll_tests PRIVATE
+    NN2CPP_BIN="$<TARGET_FILE:nn2cpp>"
+    AUTOC_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    AUTOC_EIGEN_INC="${EIGEN3_INCLUDE_DIR}"
+    AUTOC_CEREAL_INC="${cereal_SOURCE_DIR}/include")
+
   enable_testing()
   add_test(NAME nn_evaluator_tests COMMAND nn_evaluator_tests)
   add_test(NAME nn_serialization_tests COMMAND nn_serialization_tests)
@@ -256,6 +286,8 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME beacon_projection_tests COMMAND beacon_projection_tests)
   add_test(NAME contract_tracker_config_tests COMMAND contract_tracker_config_tests)
   add_test(NAME gather_tracker_inputs_tests COMMAND gather_tracker_inputs_tests)
+  add_test(NAME situational_inputs_tests COMMAND situational_inputs_tests)
+  add_test(NAME predictor_head_tests COMMAND predictor_head_tests)
   add_test(NAME tracker_dmp_roundtrip_tests COMMAND tracker_dmp_roundtrip_tests)
   add_test(NAME tracker_stepper_init_tests COMMAND tracker_stepper_init_tests)
   add_test(NAME arena_tests COMMAND arena_tests)
@@ -271,6 +303,9 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME cadence_invariance_tests COMMAND cadence_invariance_tests)
   add_test(NAME tick_rescale_tests COMMAND tick_rescale_tests)
   add_test(NAME nn_layout_tests COMMAND nn_layout_tests)
+  add_test(NAME nn2cpp_unroll_tests COMMAND nn2cpp_unroll_tests)
+  add_test(NAME arena_recenter_tests COMMAND arena_recenter_tests)
+  add_test(NAME flightlog_roundtrip_tests COMMAND flightlog_roundtrip_tests)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL
@@ -284,6 +319,8 @@ if(ENABLE_AUTOC_TESTS)
             beacon_projection_tests
             contract_tracker_config_tests
             gather_tracker_inputs_tests
+            situational_inputs_tests
+            predictor_head_tests
             tracker_dmp_roundtrip_tests
             tracker_stepper_init_tests
             arena_tests
@@ -299,6 +336,9 @@ if(ENABLE_AUTOC_TESTS)
             cadence_invariance_tests
             tick_rescale_tests
             nn_layout_tests
+            arena_recenter_tests
+            nn2cpp_unroll_tests
+            flightlog_roundtrip_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -307,6 +347,9 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND cadence_invariance_tests --gtest_brief=1
     COMMAND tick_rescale_tests --gtest_brief=1
     COMMAND nn_layout_tests --gtest_brief=1
+    COMMAND arena_recenter_tests --gtest_brief=1
+    COMMAND nn2cpp_unroll_tests --gtest_brief=1
+    COMMAND flightlog_roundtrip_tests --gtest_brief=1
     COMMAND selection_tests --gtest_brief=1
     COMMAND contract_evaluator_tests --gtest_brief=1
     COMMAND contract_config_tests --gtest_brief=1
@@ -320,6 +363,8 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND beacon_projection_tests --gtest_brief=1
     COMMAND contract_tracker_config_tests --gtest_brief=1
     COMMAND gather_tracker_inputs_tests --gtest_brief=1
+    COMMAND situational_inputs_tests --gtest_brief=1
+    COMMAND predictor_head_tests --gtest_brief=1
     COMMAND tracker_dmp_roundtrip_tests --gtest_brief=1
     COMMAND tracker_stepper_init_tests --gtest_brief=1
     COMMAND arena_tests --gtest_brief=1

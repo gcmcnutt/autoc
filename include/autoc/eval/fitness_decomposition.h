@@ -72,6 +72,12 @@ struct ScenarioScore {
     gp_fitness score;            // Tracking (negated accumulated points, lower = better)
     gp_fitness stability_score;  // Per-tick (|out_pt|-1) + (|out_rl|-1) summed; lower = better
     gp_fitness energy_score;     // Per-tick (out_th - 1) / 2 summed; lower = better
+    // 038 US3 — aux span/closure-predictor error (tracker-only; 0 in pathgen and
+    // when no CEP-visible (t, t+horizon) pairs exist). Mean |predicted_span −
+    // realized_span| over the kSpanPredictHorizonsMsec lookaheads + the closure
+    // rate; lower = better (a lexicase axis, gated on EnablePredictorHead). NOT
+    // touched by applyCrashPenalty. Beats-persistence is a US3-gate check.
+    gp_fitness prediction_score;
     bool crashed;
     CrashReason crashReason;     // 030 M11.wrap diagnostics — full terminate reason mirror of `crashed` (which is just isCrash(crashReason))
     int steps_completed;
@@ -87,6 +93,7 @@ struct ScenarioScore {
 
     ScenarioScore()
         : score(0.0), stability_score(0.0), energy_score(0.0),
+          prediction_score(0.0),
           crashed(false), crashReason(CrashReason::None),
           steps_completed(0), steps_total(0),
           maxStreak(0), totalStreakSteps(0), maxMultiplier(1.0) {}

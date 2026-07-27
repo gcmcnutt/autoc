@@ -59,7 +59,8 @@ namespace {
 }
 
 int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
-                    int pop_size, bool use_mad_epsilon, double epsilon) {
+                    int pop_size, bool use_mad_epsilon, double epsilon,
+                    bool include_prediction_axis) {
     if (pop_size <= 0) return 0;
     int num_scenarios = all_scores.empty() ? 0 : static_cast<int>(all_scores[0].size());
     if (num_scenarios == 0) {
@@ -73,8 +74,13 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
         ScoreField field;
         double epsilon_floor;
     };
+    // 038 US3 — the aux span/closure-prediction axis is added only when the
+    // caller passes include_prediction_axis (EnablePredictorHead ablation gate,
+    // threaded from the training loop; kept out of this pure function so unit
+    // tests need no ConfigManager). Separate lexicase axis — NOT scalar-
+    // composited (sidesteps the 033 collapse), per FR-003.
     std::vector<TestCase> pool;
-    pool.reserve(num_scenarios);
+    pool.reserve(static_cast<size_t>(num_scenarios) * (include_prediction_axis ? 3 : 2));
     for (int s = 0; s < num_scenarios; s++) {
         pool.push_back({s, &ScenarioScore::score,           0.5});
         // 035 FR-008: stability_score axis stays OFF — it's a control-amplitude
@@ -85,6 +91,9 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
         // throttle energy (FR-001b). Throttle is decoupled from pitch/roll, so
         // adding this axis trivially satisfies the FR-002 axis-independence ask.
         pool.push_back({s, &ScenarioScore::energy_score,    0.5});
+        if (include_prediction_axis) {
+            pool.push_back({s, &ScenarioScore::prediction_score, 0.5});
+        }
     }
 
     // Start with all candidates

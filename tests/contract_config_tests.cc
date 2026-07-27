@@ -211,8 +211,11 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // ServoModelEnabled → 94; then servo v2 cleanup removed CraftServoTauSigma
     // (dead — no lag term in the PWM-latch+slew model) → 93.
     // 038 T001 added EnableHullCrashPenalty + HullCrashPenaltyFactor → 95;
-    // t13 added OobCrashPenaltyWeight (fraction-based OOB rate penalty) → 96.
-    EXPECT_EQ(n, 96u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // t13 added OobCrashPenaltyWeight (fraction-based OOB rate penalty) → 96;
+    // 038 US3 added EnablePredictorHead (aux span-predictor ablation gate) → 97.
+    // 038 t7 added TrackerChaseUseSourceScenarioSeed (chase shares M1 source
+    // env/craft/entry seed) → 98.
+    EXPECT_EQ(n, 98u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

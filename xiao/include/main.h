@@ -6,6 +6,7 @@
 #include "MSP.h"
 #include "state.h"
 #include "flash_logger.h"
+#include "fault_guard.h"
 #include <autoc/types.h>
 
 // Forward declarations
@@ -22,7 +23,14 @@ struct AircraftState;
 // Single unified loop interval: 50ms (20Hz). Every tick sends cached RC commands.
 // Every Nth tick (N = MSP_NN_EVAL_DIVISOR) also fetches state and runs NN eval.
 #define MSP_LOOP_INTERVAL_MSEC 50
-#define MSP_NN_EVAL_DIVISOR 2     // NN eval every 2nd tick = 10Hz (matches training)
+#define MSP_NN_EVAL_DIVISOR 1     // 039 FR-011: NN eval EVERY tick = 20Hz (037 cadence
+                                  // decision; training runs at 20 Hz since t10).
+                                  // Re-entry safety at every-tick eval: the loop is
+                                  // single-threaded (no ticker) — fetch/eval/send run
+                                  // sequentially inside one controllerUpdate() tick, so
+                                  // the mspBusLocked guard can never see contention; an
+                                  // over-budget tick shows up as a loopStats overrun,
+                                  // not an overlapping MSP transaction.
 #define MSP_REPLY_TIMEOUT_MSEC 50
 #define MSP_LOS_INTERVAL_MSEC 2000
 

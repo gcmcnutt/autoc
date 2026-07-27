@@ -3,8 +3,10 @@
 
 #include <vector>
 #include <cstdint>
+#include <cmath>
 #include "autoc/types.h"
 #include "autoc/eval/aircraft_state.h"
+#include "autoc/eval/arena.h"   // 038 P0-D — FlightArena (cereal-free, xiao-safe) + inwardBodyDirection
 #include "autoc/eval/fitness_decomposition.h"
 
 // Neural network genome — the fundamental unit of neuroevolution.
@@ -95,7 +97,12 @@ void nn_xavier_init(NNGenome& genome);
 // 030 M2b — the typed function name is the FR-006 + FR-019 pluggable-mode
 // dispatch contract (see autoc/nn/mode.h kPathgenMode strategy bundle).
 // Body unchanged from the pre-rename nn_gather_inputs (FP-bit-exact).
+// 038 P0-D FR-P0H (B): pathgen (M1) now also carries arena-awareness inputs
+// (dist_to_boundary + inward_body), so the gather takes the FlightArena. The
+// desktop backend holds one (from config); nn2cpp bakes a compile-time literal
+// into the xiao firmware.
 void gather_pathgen_inputs(PathProvider& pathProvider, AircraftState& aircraftState,
+                           const autoc::eval::FlightArena& arena,
                            NNInputs& inputs);
 
 // 030 M6d — Tracker-mode NN sensor input gather (FR-006 + FR-016 + FR-019).
@@ -178,15 +185,48 @@ struct TrackerObservationRing {
     }
 };
 
-// Forward declaration so this header doesn't pull in arena.h transitively
-// (xiao firmware's cherry-pick build path). gather_tracker_inputs is
-// declared here for autoc desktop; xiao firmware uses pathgen mode only.
-namespace autoc { namespace eval { struct FlightArena; } }
+// 038 P0-D FR-P0H (A) — situational-awareness "target-lost" state (tracker
+// only; M1's rabbit is always visible). Stateful and held/decaying across
+// ticks; MUST reset per scenario/engage (un-reset state leaks across
+// scenarios and breaks the FR-030 bitwise gate). Single-sourced here so
+// TrackerStepper and CrrcsimTrackerHelper — and dmp_dump's honest
+// reconstruction — share one update rule that cannot drift.
+// (038 US3 2026-07-05: exit_dir_sin/cos removed — low-value hand-built cue
+//  redundant with the beacon history in-window. State is now just the blind
+//  counter feeding time_since_seen.)
+struct SituationalAwarenessState {
+    int blind_ticks = 0;         // consecutive ticks with no visible beacon
+
+    void reset() {
+        blind_ticks = 0;
+    }
+
+    // Per-tick update from the "now" beacon observation. A beacon is
+    // "visible" when its CEP is below the sentinel threshold (matches the
+    // fitness_decomposition.cc:200 visibility definition; caller passes
+    // kCepSentinelThreshold). Visible → zero the blind counter; blind →
+    // increment it.
+    void update(float left_cep, float right_cep, float visible_cep_threshold) {
+        const bool visible = (left_cep  < visible_cep_threshold) ||
+                             (right_cep < visible_cep_threshold);
+        if (visible) blind_ticks = 0;
+        else         ++blind_ticks;
+    }
+
+    // Write the (A) slot into a TrackerInputs. time_since_seen =
+    // tanh(blind_seconds / kTimeSinceSeenScale_s); 0 exactly when visible now.
+    void writeInputs(TrackerInputs& out) const {
+        const float blind_seconds = static_cast<float>(blind_ticks) *
+            (static_cast<float>(SIM_TIME_STEP_MSEC) / 1000.0f);
+        out.time_since_seen = std::tanh(blind_seconds / kTimeSinceSeenScale_s);  // raw-ok: NN-byte-format slot write
+    }
+};
 
 void gather_tracker_inputs(const AircraftState& chase,
                            const TrackerHistoryWindow& history,
                            const autoc::eval::FlightArena& arena,
                            float cep_gate_threshold,
+                           const SituationalAwarenessState& sa,
                            TrackerInputs& out);
 
 #include "autoc/eval/backend.h"
@@ -204,7 +244,12 @@ void gather_tracker_inputs(const AircraftState& chase,
 // identically to pre-027 — hidden_state_ is empty and unused.
 class NNControllerBackend : public ControllerBackend {
 public:
-    explicit NNControllerBackend(const NNGenome& genome);
+    // 038 P0-D FR-P0H (B): the backend carries the FlightArena so the pathgen
+    // evaluate() path can populate the arena-awareness inputs. No default per
+    // the M2-era no-fallback policy — every call site passes the config arena
+    // explicitly (tracker call sites pass it too even though evaluateTracker
+    // gathers the arena separately; the member is simply unused there).
+    NNControllerBackend(const NNGenome& genome, const autoc::eval::FlightArena& arena);
 
     void evaluate(AircraftState& aircraftState, PathProvider& pathProvider) override;
     const char* getName() const override { return "NeuralNet"; }
@@ -231,6 +276,7 @@ public:
 
 private:
     const NNGenome& genome_;
+    autoc::eval::FlightArena arena_;   // 038 P0-D — config arena for pathgen (B) inputs
     std::vector<float> hidden_state_;  // Sized by nn_hidden_state_count(); empty for feedforward
     // 028: held by value; cheap, no allocation. Captures samples only when
     // telemetry_capture_enabled_ is true (see enableTelemetryCapture()).

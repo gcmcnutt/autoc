@@ -61,11 +61,9 @@ def per_step(rows, pv):
     return ps, crashed, np.array([r[1] for r in grp])
 
 
-NWIND = 49  # winds per path (6 paths x 49 = 294); path = scenario // NWIND
-
-
-def parse_tick(csv_path):
+def parse_tick(csv_path, nwind):
     """Per-tick tracking error ‖chase − trail rabbit‖ from dmp-dump --csv-only, grouped by path.
+    nwind = winds per path (derived from the meta scenario grid); path = scenario // nwind.
 
     This is the GROUND-TRUTH tracking measure (reward-shaping-invariant): how far the chase is
     from the ideal trail point each tick. Returns {path_variant: np.array(err_meters)}.
@@ -73,7 +71,7 @@ def parse_tick(csv_path):
     import csv as _csv
     by_path = {}
     for r in _csv.DictReader(open(csv_path)):
-        pv = int(r["scenario"]) // NWIND
+        pv = int(r["scenario"]) // nwind
         err = ((float(r["px"]) - float(r["trX"]))**2 +
                (float(r["py"]) - float(r["trY"]))**2 +
                (float(r["pz"]) - float(r["trZ"]))**2) ** 0.5
@@ -87,6 +85,7 @@ def plot_single(name, gen, rows, out, tick=None):
     ncol = (len(paths) + 1) // 2
     keys = [f"p{pv}" for pv in paths]
     top = ["box"] + keys[:ncol]; bot = ["box"] + keys[ncol:]
+    bot += ["."] * (len(top) - len(bot))   # odd path count: blank-pad the short row
     fig, axd = plt.subplot_mosaic([top, bot], figsize=(14, 6),
                                   gridspec_kw={"width_ratios": [1.5] + [1] * ncol})
     ax = axd["box"]; box_data = []; persteps = {}
@@ -148,6 +147,7 @@ def plot_multi(runs, out):
     ncol = (len(paths) + 1) // 2
     keys = [f"p{pv}" for pv in paths]
     top = ["std"] + keys[:ncol]; bot = ["std"] + keys[ncol:]
+    bot += ["."] * (len(top) - len(bot))   # odd path count: blank-pad the short row
     fig, axd = plt.subplot_mosaic([top, bot], figsize=(15, 6.5),
                                   gridspec_kw={"width_ratios": [1.6] + [1] * ncol})
     # per-run per-path per-step arrays
@@ -207,7 +207,8 @@ def main():
         gen, rows = parse_meta(args.meta)
         if not rows:
             print("no scenarios parsed"); return
-        tick = parse_tick(args.csv) if args.csv else None
+        nwind = len(rows) // len(set(r[0] for r in rows))
+        tick = parse_tick(args.csv, nwind) if args.csv else None
         plot_single(args.label, gen, rows, args.out, tick=tick)
 
 

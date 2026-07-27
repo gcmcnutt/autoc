@@ -99,4 +99,64 @@ gp_scalar distanceToBoundary(const gp_vec3& chase_pos,
                              const gp_vec3& chase_velocity,
                              const FlightArena& arena);
 
+// 038 P0-D FR-P0H (B) — arena-inward body-frame unit vector. Radial direction
+// toward the cylinder axis (the virtual-frame origin) at the chase's horizontal
+// position, rotated into the chase body frame. All-attitude and smooth (works
+// inverted / knife-edge), unlike a planar heading angle that assumes a
+// reference "up" and drops the out-of-plane component. Returns Zero when the
+// chase is on the axis (hypot(x, y) < 1e-6 — no defined inward direction).
+//
+// Convention: world→body = chase_orientation.inverse() (matches
+// camera_projection.cc:117 and aircraft_state.h:440). The arena axis is
+// vertical (world Z), so the world-frame inward vector has zero z-component;
+// the body-frame result gains all three cosines through the rotation.
+gp_vec3 inwardBodyDirection(const gp_vec3& chase_pos,
+                            const gp_quat& chase_orientation);
+
+// ============================================================================
+// 039 FR-001 / D5 — engage-scoped arena resolution (pure ±K rule, no
+// min-elevation clamp per the 2026-07-10 simplification).
+//
+// The firmware re-centers the arena at every span activation: the template
+// geometry (nn2cpp -a literal, e.g. the 80/5/100 training arena) contributes
+// only its radius and its vertical EXTENT K = (ceiling_agl − floor_agl)/2;
+// the placement comes from the engage point:
+//
+//   raw NED (down-positive):  floor_Z = z_engage + K,  ceiling_Z = z_engage − K
+//   horizontal:               cylinder axis at engage x/y
+//
+// The xiao expresses AircraftState in an engage-zeroed virtual frame
+// (msplink.cpp test_origin_offset), so `virtual_arena` is the same band
+// translated into that frame for the EXISTING consumers
+// (gather_pathgen_inputs → distanceToBoundary / inwardBodyDirection,
+// checkArenaBounds): the craft sits at virtual (0,0,0) = AGL
+// −SIM_INITIAL_ALTITUDE at engage, hence floor/ceiling AGL = that ± K.
+// At engage the craft reads CENTER of the band by construction
+// (bench contract FR-002 item 4). Limits are safety-only this phase.
+//
+// Constitution VII: EngageArena has NO defaults — it exists only as the
+// result of resolveEngageArena at span activation.
+// ============================================================================
+struct EngageArena {
+    gp_vec3 origin_ned;        // raw NED engage point (EngageHeader provenance)
+    gp_scalar half_band_m;     // K, from the template geometry
+    gp_scalar floor_z_ned;     // raw NED: z_engage + K
+    gp_scalar ceiling_z_ned;   // raw NED: z_engage − K
+    FlightArena virtual_arena; // engage-zeroed virtual frame (gather/bounds)
+};
+
+inline EngageArena resolveEngageArena(const FlightArena& geometry,
+                                      const gp_vec3& engage_pos_ned) {
+    const gp_scalar k = (geometry.ceiling_agl_m - geometry.floor_agl_m)
+                        / static_cast<gp_scalar>(2.0);
+    const gp_scalar engage_agl = -SIM_INITIAL_ALTITUDE;  // virtual (0,0,0) in AGL terms
+    return EngageArena{
+        engage_pos_ned,
+        k,
+        engage_pos_ned.z() + k,
+        engage_pos_ned.z() - k,
+        FlightArena{geometry.radius_m, engage_agl - k, engage_agl + k},
+    };
+}
+
 }  // namespace autoc::eval
