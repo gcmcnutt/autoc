@@ -242,18 +242,18 @@ TEST(TrackerConfig, DerivedFeaturesAtCanonicalDefault) {
 TEST(ContractTrackerConfig, AirframeObstructionKeysPresentInTrackerInis) {
     const std::vector<std::string> required = {
         "AirframeObstructionEnabled",
-        "AirframeCameraStationIn",
-        "AirframeWingLeStationIn",
-        "AirframeWingChordIn",
-        "AirframeWingSpanIn",
-        "AirframeWingThicknessIn",
-        "AirframeWingBottomAboveThrustIn",
-        "AirframeCameraAboveWingBottomIn",
-        "AirframeCameraOutboardIn",
-        "AirframePropDiameterIn",
-        "AirframePropAttenuation",
+        "AirframeWingMinX", "AirframeWingMinY", "AirframeWingMinZ",
+        "AirframeWingMaxX", "AirframeWingMaxY", "AirframeWingMaxZ",
+        "AirframeNoseMinX", "AirframeNoseMinY", "AirframeNoseMinZ",
+        "AirframeNoseMaxX", "AirframeNoseMaxY", "AirframeNoseMaxZ",
+        "AirframePropPlaneX", "AirframePropAxisY", "AirframePropAxisZ",
+        "AirframePropRadius", "AirframePropAttenuation",
     };
-    for (const char* name : {"autoc-tracker.ini", "autoc-eval-tracker.ini",
+    // Present in EVERY ini, not just the tracker ones: the config surface is
+    // shared, so a mode switch must never trip a missing key.
+    for (const char* name : {"autoc.ini", "autoc-eval.ini", "autoc-eval-visual.ini",
+                             "autoc-basic-m1.ini", "autoc-basic-m1-eval.ini",
+                             "autoc-tracker.ini", "autoc-eval-tracker.ini",
                              "autoc-eval-tracker-visual.ini"}) {
         // ctest runs from build/, so resolve against the injected source dir
         // rather than the working directory.

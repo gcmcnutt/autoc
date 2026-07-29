@@ -260,24 +260,31 @@ struct AutocConfig {
     double cepGateThreshold = 1.25;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to float at the eval-pipeline consumption boundary
 
     // --- 040 airframe obstruction (FR-007/008/009, FR-034) ---
-    // Chase self-occlusion geometry. INCHES — that is how the airframe was
-    // measured; converted once in buildAirframeObstruction(). Vertical offsets
-    // are measured UP from the thrust line (up = -z in body NED, per
-    // docs/COORDINATE_CONVENTIONS.md); stations are measured AFT from the prop
-    // disc. Defaults mirror hb1AirframeDimensions() so the two cannot drift;
-    // contract_tracker_config_tests asserts every key is actually present in
-    // the ini, so a default can never silently stand in for a missing key.
+    // Chase self-occlusion geometry, METRES in body frame.
+    // DATUM: propeller axle / back of prop is station 0 = (0,0,0). Axes per
+    // docs/COORDINATE_CONVENTIONS.md: +x forward, +y right wing, +z down.
+    // Stations run AFT (negative x); "up" is negative z.
+    // Defaults mirror hb1AirframeObstruction() so the two cannot drift;
+    // contract_tracker_config_tests asserts every key is present in the ini,
+    // so a default can never silently stand in for a missing key.
     int airframeObstructionEnabled = 0;   // Stage D (T043) turns this on
-    double airframeCameraStationIn = 6.0;            // camera in the wing LE
-    double airframeWingLeStationIn = 6.0;
-    double airframeWingChordIn = 7.0;
-    double airframeWingSpanIn = 30.0;
-    double airframeWingThicknessIn = 1.0;
-    double airframeWingBottomAboveThrustIn = 0.75;   // wing underside above thrust
-    double airframeCameraAboveWingBottomIn = 0.5;    // camera centre above underside
-    double airframeCameraOutboardIn = 8.0;
-    double airframePropDiameterIn = 5.5;             // Master Airscrew 5.5x4
-    double airframePropAttenuation = 0.18;           // ASSUMED; FR-035
+    double airframeWingMinX = -0.330200;  // trailing edge
+    double airframeWingMinY = -0.381000;  // port tip
+    double airframeWingMinZ = -0.044450;  // wing top (up)
+    double airframeWingMaxX = -0.152400;  // leading edge
+    double airframeWingMaxY = 0.381000;   // starboard tip
+    double airframeWingMaxZ = -0.019050;  // wing underside
+    double airframeNoseMinX = -0.152400;
+    double airframeNoseMinY = -0.038100;
+    double airframeNoseMinZ = -0.038100;
+    double airframeNoseMaxX = 0.0;
+    double airframeNoseMaxY = 0.038100;
+    double airframeNoseMaxZ = 0.038100;
+    double airframePropPlaneX = 0.0;      // the datum plane
+    double airframePropAxisY = 0.0;
+    double airframePropAxisZ = 0.0;
+    double airframePropRadius = 0.069850; // 5.5in two-blade
+    double airframePropAttenuation = 0.18;// ASSUMED blade-over-pupil duty; FR-035
 };
 
 // 034 FR-010 — single source of truth for config parse + startup print.
@@ -388,20 +395,25 @@ struct AutocConfig {
     X(double,         beaconRightMountY,         "BeaconRightMountY") \
     X(double,         beaconRightMountZ,         "BeaconRightMountZ") \
     X(double,         cepGateThreshold,          "CepGateThreshold") \
-    /* 040 T015 — airframe obstruction geometry (FR-007/008/009, FR-034). \
-       Inches: that is how the airframe was measured; converted once in \
-       buildAirframeObstruction(). Vertical offsets are measured UP from the \
-       thrust line (up = -z in body NED). */ \
+    /* 040 T015 — airframe obstruction, METRES in body frame. Datum: prop \
+       axle = (0,0,0); +x fwd, +y right, +z down; stations aft = -x. */ \
     X(int,            airframeObstructionEnabled,"AirframeObstructionEnabled") \
-    X(double,         airframeCameraStationIn,   "AirframeCameraStationIn") \
-    X(double,         airframeWingLeStationIn,   "AirframeWingLeStationIn") \
-    X(double,         airframeWingChordIn,       "AirframeWingChordIn") \
-    X(double,         airframeWingSpanIn,        "AirframeWingSpanIn") \
-    X(double,         airframeWingThicknessIn,   "AirframeWingThicknessIn") \
-    X(double,         airframeWingBottomAboveThrustIn, "AirframeWingBottomAboveThrustIn") \
-    X(double,         airframeCameraAboveWingBottomIn, "AirframeCameraAboveWingBottomIn") \
-    X(double,         airframeCameraOutboardIn,  "AirframeCameraOutboardIn") \
-    X(double,         airframePropDiameterIn,    "AirframePropDiameterIn") \
+    X(double,         airframeWingMinX,          "AirframeWingMinX") \
+    X(double,         airframeWingMinY,          "AirframeWingMinY") \
+    X(double,         airframeWingMinZ,          "AirframeWingMinZ") \
+    X(double,         airframeWingMaxX,          "AirframeWingMaxX") \
+    X(double,         airframeWingMaxY,          "AirframeWingMaxY") \
+    X(double,         airframeWingMaxZ,          "AirframeWingMaxZ") \
+    X(double,         airframeNoseMinX,          "AirframeNoseMinX") \
+    X(double,         airframeNoseMinY,          "AirframeNoseMinY") \
+    X(double,         airframeNoseMinZ,          "AirframeNoseMinZ") \
+    X(double,         airframeNoseMaxX,          "AirframeNoseMaxX") \
+    X(double,         airframeNoseMaxY,          "AirframeNoseMaxY") \
+    X(double,         airframeNoseMaxZ,          "AirframeNoseMaxZ") \
+    X(double,         airframePropPlaneX,        "AirframePropPlaneX") \
+    X(double,         airframePropAxisY,         "AirframePropAxisY") \
+    X(double,         airframePropAxisZ,         "AirframePropAxisZ") \
+    X(double,         airframePropRadius,        "AirframePropRadius") \
     X(double,         airframePropAttenuation,   "AirframePropAttenuation")
 
 class ConfigManager {

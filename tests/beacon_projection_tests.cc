@@ -47,8 +47,7 @@ namespace {
 // so what they assert (a box in the line of sight gates the beacon) still holds.
 AirframeObstruction obstructionWithWingBox(const gp_vec3& lo, const gp_vec3& hi) {
     AirframeObstruction a =
-        autoc::eval::buildAirframeObstruction(CameraConfig{}.mount_offset_body,
-                                             autoc::eval::hb1AirframeDimensions());
+        autoc::eval::hb1AirframeObstruction();
     a.enabled = true;
     a.wing_min = lo;
     a.wing_max = hi;
@@ -374,7 +373,7 @@ TEST(BeaconProjectionDeterminism, IdenticalInputProducesIdenticalOutput) {
 
 TEST(AirframeObstruction, CameraMountIsNotInsideAnyPrimitive) {
     const gp_vec3 mount = CameraConfig{}.mount_offset_body;
-    AirframeObstruction a = autoc::eval::buildAirframeObstruction(mount, autoc::eval::hb1AirframeDimensions());
+    AirframeObstruction a = autoc::eval::hb1AirframeObstruction();
     a.enabled = true;
 
     // A degenerate mount shows up as a zero-length ray "hitting" a primitive.
@@ -392,7 +391,7 @@ TEST(AirframeObstruction, ForwardLevelRayIsNotSelfOccluded) {
     // the superseded proxy: a level forward ray from the configured mount
     // reaches a distant target without the aircraft blocking itself.
     const gp_vec3 mount = CameraConfig{}.mount_offset_body;
-    AirframeObstruction a = autoc::eval::buildAirframeObstruction(mount, autoc::eval::hb1AirframeDimensions());
+    AirframeObstruction a = autoc::eval::hb1AirframeObstruction();
     a.enabled = true;
 
     const gp_vec3 target = mount + gp_vec3(10.0f, 0.0f, 0.0f);
@@ -408,9 +407,11 @@ TEST(AirframeObstruction, LeadingEdgeMountClearsThePropDisc) {
     // mount worth having, and it is why the 040 propeller model needs no blade
     // phase: at this mount the disc sits ~41-61 deg inboard, nowhere near the
     // boresight where a tail-chased target lives.
-    const gp_vec3 mount = CameraConfig{}.mount_offset_body;
-    AirframeObstruction a = autoc::eval::buildAirframeObstruction(
-        mount, autoc::eval::hb1AirframeDimensions());
+    // The LEADING-EDGE mount, not the legacy one. The legacy mount sits 5 cm
+    // above the axle — inside the 6.99 cm prop radius, i.e. squarely behind
+    // the disc — which is precisely why Stage D moves it.
+    const gp_vec3 mount = autoc::eval::hb1LeadingEdgeCameraMount();
+    AirframeObstruction a = autoc::eval::hb1AirframeObstruction();
     a.enabled = true;
 
     const gp_vec3 target = mount + gp_vec3(10.0f, 0.0f, 0.0f);
@@ -420,6 +421,12 @@ TEST(AirframeObstruction, LeadingEdgeMountClearsThePropDisc) {
     const ObstructionResult r = testObstruction(mount, target, a);
     EXPECT_FALSE(r.blocked);
     EXPECT_FLOAT_EQ(r.attenuation, 1.0f) << "clear of the disc ⇒ no attenuation";
+
+    // The contrast that motivates the mount change: the legacy centreline
+    // position DOES sit behind the disc.
+    const gp_vec3 legacy = CameraConfig{}.mount_offset_body;
+    EXPECT_TRUE(rayCrossesPropDisc(legacy, legacy + gp_vec3(10.0f, 0.0f, 0.0f), a))
+        << "expected the legacy mount to sit behind the disc";
 }
 
 TEST(AirframeObstruction, PropDiscAttenuatesButNeverGates) {
@@ -427,8 +434,7 @@ TEST(AirframeObstruction, PropDiscAttenuatesButNeverGates) {
     // thrust axis on the boresight explicitly rather than relying on the
     // baseline geometry, which deliberately clears it (see the test above).
     const gp_vec3 mount = CameraConfig{}.mount_offset_body;
-    AirframeObstruction a = autoc::eval::buildAirframeObstruction(
-        mount, autoc::eval::hb1AirframeDimensions());
+    AirframeObstruction a = autoc::eval::hb1AirframeObstruction();
     a.enabled = true;
     a.prop_axis_y = mount.y();
     a.prop_axis_z = mount.z();
@@ -447,7 +453,7 @@ TEST(AirframeObstruction, DisabledObstructionNeverOccludes) {
     // irrelevant and nothing may be reported blocked or attenuated.
     const gp_vec3 mount = CameraConfig{}.mount_offset_body;
     const AirframeObstruction a =
-        autoc::eval::buildAirframeObstruction(mount, autoc::eval::hb1AirframeDimensions());
+        autoc::eval::hb1AirframeObstruction();
     ASSERT_FALSE(a.enabled)
         << "obstruction is expected to ship disabled until Stage D (T043)";
 

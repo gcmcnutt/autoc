@@ -98,47 +98,24 @@ ObstructionResult testObstruction(const gp_vec3& camera,
                                   const gp_vec3& target,
                                   const AirframeObstruction& airframe);
 
-// Measured airframe dimensions, all externally configured (FR-034). Units are
-// INCHES because that is how the airframe was measured; conversion to metres
-// happens once inside the builder rather than being scattered through the ini.
+// The measured HB1 geometry, in METRES and body frame — the values the ini
+// ships with, and what tests build against.
 //
-// No in-class defaults (Constitution VII): every value arrives from config, so
-// a missing key is a loud failure rather than a silent stale geometry that
-// looks plausible and obstructs the wrong things.
-struct AirframeDimensions {
-    // Station stack, measured AFT from the propeller disc (station 0).
-    gp_scalar camera_station_in;      // camera at the wing leading edge
-    gp_scalar wing_le_station_in;
-    gp_scalar wing_chord_in;
-    gp_scalar wing_span_in;
-    gp_scalar wing_thickness_in;
-
-    // Vertical stack, measured UP from the thrust line (up = -z in body NED).
-    gp_scalar wing_bottom_above_thrust_in;
-    gp_scalar camera_above_wing_bottom_in;
-
-    // Lateral: camera outboard of the thrust axis.
-    gp_scalar camera_outboard_in;
-
-    // Propeller.
-    gp_scalar prop_diameter_in;
-    gp_scalar prop_attenuation;
-
-    bool enabled;
-};
-
-// Build the obstruction set in body frame.
+// DATUM: the propeller axle / back of the prop is station 0, i.e. body
+// (x, y, z) = (0, 0, 0). Body axes per docs/COORDINATE_CONVENTIONS.md:
+// +x forward through the nose, +y out the right wing, +z down through the
+// belly. Stations run AFT, so they are at negative x. "Up" is negative z.
 //
-// ANCHORING (040 T013): the station stack is RELATIVE, and the thrust line's
-// body-frame position is not yet measured (input-data-checklist A1b). The one
-// station whose body-frame position IS known is the camera, from config — so
-// the geometry is anchored to the camera mount and every other primitive is
-// placed by measured offset from it. When A1b lands this can anchor to the
-// thrust line directly and the camera dependency disappears.
-AirframeObstruction buildAirframeObstruction(const gp_vec3& camera_mount_body,
-                                             const AirframeDimensions& dims);
+// Everything is metres here and in the ini. The sketch was measured in inches
+// and converted ONCE, at the point the constants were written down — no
+// runtime unit conversion, and nothing downstream has to know inches existed.
+AirframeObstruction hb1AirframeObstruction();
 
-// The measured HB1 values, for tests and as the ini defaults' source of truth.
-AirframeDimensions hb1AirframeDimensions();
+// The measured leading-edge camera mount, body frame, metres, same datum:
+// station 6 aft, 8" outboard, mid-thickness at 1.25" up. This is the Stage D
+// (T043) mount; the shipped ini still carries the legacy position, which sits
+// only 5 cm above the axle — INSIDE the 6.99 cm prop radius, and therefore
+// squarely behind the disc. That contrast is the whole argument for moving it.
+gp_vec3 hb1LeadingEdgeCameraMount();
 
 }  // namespace autoc::eval

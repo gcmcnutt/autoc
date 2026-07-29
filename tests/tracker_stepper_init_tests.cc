@@ -40,8 +40,7 @@ using autoc::eval::CameraConfig;
 using autoc::eval::CrashHull;
 using autoc::eval::FlightArena;
 using autoc::eval::TrackerStepper;
-using autoc::eval::buildAirframeObstruction;
-using autoc::eval::hb1AirframeDimensions;
+using autoc::eval::hb1AirframeObstruction;
 
 namespace {
 
@@ -96,7 +95,7 @@ TrackerStepper makeStepperWithSource(NNControllerBackend& nn,
                           CameraConfig{},
                           BeaconConfig{},
                           BeaconConfig{},
-                          autoc::eval::buildAirframeObstruction(CameraConfig{}.mount_offset_body, autoc::eval::hb1AirframeDimensions()),
+                          autoc::eval::hb1AirframeObstruction(),
                           FlightArena{},
                           CrashHull{},
                           /*p_crash_this_gen=*/0.0f,

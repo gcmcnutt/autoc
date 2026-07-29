@@ -105,94 +105,65 @@ ObstructionResult testObstruction(const gp_vec3& camera,
     return out;
 }
 
-AirframeObstruction buildAirframeObstruction(const gp_vec3& camera_mount_body,
-                                             const AirframeDimensions& d) {
+AirframeObstruction hb1AirframeObstruction() {
+    // Measured 2026-07-28 (operator sketch + prop photo), converted to metres
+    // once, here. DATUM: prop axle / back of prop at (0, 0, 0); +x forward,
+    // +y right wing, +z down; stations run aft (negative x), "up" is -z.
+    //
+    // The camera sits IN THE WING LEADING EDGE — station 6 aft, 8" outboard,
+    // mid-thickness at 1.25" up (0.5" above the wing bottom, which is itself
+    // 0.75" up from the axle). That is body (-0.1524, +0.2032, -0.03175).
     AirframeObstruction a;
 
-    const gp_scalar cx = camera_mount_body.x();
-    const gp_scalar cy = camera_mount_body.y();
-    const gp_scalar cz = camera_mount_body.z();
+    // Propeller — 5.5" two-blade (photo-confirmed) ⇒ r = 0.06985 m.
+    a.prop_plane_x = static_cast<gp_scalar>(0.0);
+    a.prop_axis_y = static_cast<gp_scalar>(0.0);
+    a.prop_axis_z = static_cast<gp_scalar>(0.0);
+    a.prop_radius = static_cast<gp_scalar>(0.069850);
+    // Representative blade-over-pupil duty. CLASSIFIED ASSUMED — depends on
+    // entrance pupil and exposure, neither measured (FR-035).
+    a.prop_attenuation = static_cast<gp_scalar>(0.18);
 
-    // ---- Vertical stack (body NED: +z is DOWN, so "above" is -z) ----------
-    // Measured 2026-07-28: wing bottom sits `wing_bottom_above_thrust_in`
-    // above the thrust line, and the camera centre `camera_above_wing_bottom_in`
-    // above the wing bottom. Working DOWN from the camera:
-    const gp_scalar wing_bottom_z = cz + in(d.camera_above_wing_bottom_in);
-    const gp_scalar wing_top_z = wing_bottom_z - in(d.wing_thickness_in);
-    const gp_scalar thrust_z = wing_bottom_z + in(d.wing_bottom_above_thrust_in);
+    // Wing — THIN SLAB. 7" chord (LE station 6 → TE station 13), 30" span,
+    // 1" thick, underside 0.75" up from the axle. The thinness is the whole
+    // correction: the superseded single-AABB proxy gave a 1" wing a 0.25 m
+    // z-extent and called it an airframe.
+    a.wing_min = gp_vec3(static_cast<gp_scalar>(-0.330200),   // TE
+                         static_cast<gp_scalar>(-0.381000),   // port tip
+                         static_cast<gp_scalar>(-0.044450));  // top (up)
+    a.wing_max = gp_vec3(static_cast<gp_scalar>(-0.152400),   // LE
+                         static_cast<gp_scalar>(+0.381000),   // starboard tip
+                         static_cast<gp_scalar>(-0.019050));  // underside
 
-    // ---- Lateral ---------------------------------------------------------
-    // The camera is outboard; the thrust axis is inboard of it. Sign follows
-    // the camera's own side so the geometry is correct on either wing.
-    const gp_scalar side = (cy >= static_cast<gp_scalar>(0))
-                               ? static_cast<gp_scalar>(1)
-                               : static_cast<gp_scalar>(-1);
-    const gp_scalar thrust_y = cy - side * in(d.camera_outboard_in);
+    // Pod nose — wing leading edge forward to the disc plane, straddling the
+    // thrust line. ASSUMED pending the pod measurement; deliberately modest so
+    // a wrong guess under-obstructs rather than silently eating the field.
+    a.nose_min = gp_vec3(static_cast<gp_scalar>(-0.152400),
+                         static_cast<gp_scalar>(-0.038100),
+                         static_cast<gp_scalar>(-0.038100));
+    a.nose_max = gp_vec3(static_cast<gp_scalar>(0.0),
+                         static_cast<gp_scalar>(+0.038100),
+                         static_cast<gp_scalar>(+0.038100));
 
-    // ---- Longitudinal ----------------------------------------------------
-    // Stations are measured AFT from the disc, body +x is FORWARD, so a
-    // station forward of the camera is at greater x.
-    const gp_scalar prop_x = cx + in(d.camera_station_in);
-    const gp_scalar wing_le_x =
-        cx + in(d.camera_station_in - d.wing_le_station_in);
-    const gp_scalar wing_te_x = wing_le_x - in(d.wing_chord_in);
-
-    // ---- Propeller -------------------------------------------------------
-    a.prop_plane_x = prop_x;
-    a.prop_axis_y = thrust_y;
-    a.prop_axis_z = thrust_z;
-    a.prop_radius = in(d.prop_diameter_in / static_cast<gp_scalar>(2));
-    a.prop_attenuation = d.prop_attenuation;
-
-    // ---- Wing — THIN SLAB ------------------------------------------------
-    // The thinness is the whole correction: the superseded single-AABB proxy
-    // gave a 1" wing a 0.25 m z-extent and called it an airframe.
-    //
-    // The camera sits mid-thickness IN the leading edge, so the slab must be
-    // strictly AFT of the lens or the mount lands on the LE face and every
-    // forward ray reads as blocked — the exact degeneracy being removed. The
-    // lens protrudes slightly from the foam, which is both physically true and
-    // what keeps the geometry non-degenerate.
-    const gp_scalar lens_protrusion = in(static_cast<gp_scalar>(0.1));
-    const gp_scalar half_span = in(d.wing_span_in / static_cast<gp_scalar>(2));
-    a.wing_min = gp_vec3(wing_te_x, thrust_y - half_span, wing_top_z);
-    a.wing_max = gp_vec3(std::min(wing_le_x, cx - lens_protrusion),
-                         thrust_y + half_span, wing_bottom_z);
-
-    // ---- Pod nose --------------------------------------------------------
-    // From the wing leading edge forward to the disc plane, hanging below the
-    // thrust line. Dimensions ASSUMED pending the pod measurement, kept modest
-    // so a wrong guess under-obstructs rather than silently eating the field.
-    const gp_scalar pod_half_width = in(static_cast<gp_scalar>(1.5));
-    a.nose_min = gp_vec3(wing_le_x, thrust_y - pod_half_width,
-                         thrust_z - in(static_cast<gp_scalar>(1.5)));
-    a.nose_max = gp_vec3(prop_x, thrust_y + pod_half_width,
-                         thrust_z + in(static_cast<gp_scalar>(1.5)));
-
-    a.enabled = d.enabled;
+    // Stage D (T043) moves the camera mount to the leading edge and turns this
+    // on. Enabling it against the legacy mount would model geometry the
+    // aircraft does not have.
+    a.enabled = false;
     return a;
 }
 
-AirframeDimensions hb1AirframeDimensions() {
-    // Measured 2026-07-28 (operator sketch + photo). The camera is IN the wing
-    // leading edge — station 6, not the station-8 max-thickness point an
-    // earlier wing-top mount assumed.
-    AirframeDimensions d;
-    d.camera_station_in = static_cast<gp_scalar>(6.0);
-    d.wing_le_station_in = static_cast<gp_scalar>(6.0);
-    d.wing_chord_in = static_cast<gp_scalar>(7.0);
-    d.wing_span_in = static_cast<gp_scalar>(30.0);
-    d.wing_thickness_in = static_cast<gp_scalar>(1.0);
-    d.wing_bottom_above_thrust_in = static_cast<gp_scalar>(0.75);
-    d.camera_above_wing_bottom_in = static_cast<gp_scalar>(0.5);
-    d.camera_outboard_in = static_cast<gp_scalar>(8.0);
-    d.prop_diameter_in = static_cast<gp_scalar>(5.5);
-    d.prop_attenuation = static_cast<gp_scalar>(0.18);
-    // Ships DISABLED: Stage D (T043) moves the mount to the leading edge and
-    // turns this on. Enabling it against the legacy centreline mount would
-    // model geometry the aircraft does not have.
-    d.enabled = false;
-    return d;
+gp_vec3 hb1LeadingEdgeCameraMount() {
+    // Station 6 aft, 8" outboard, 1.25" up — converted from the sketch once.
+    //
+    // x is 2 mm FORWARD of the wing LE plane (-0.152400), not on it. The lens
+    // stands proud of the foam, which is physically true and is also what
+    // keeps the geometry non-degenerate: an aperture exactly coincident with
+    // the LE face reads as a hit (a surface touch counts), so every forward
+    // ray would report blocked — the same failure that made the superseded
+    // AABB proxy unusable.
+    return gp_vec3(static_cast<gp_scalar>(-0.150400),
+                   static_cast<gp_scalar>(+0.203200),
+                   static_cast<gp_scalar>(-0.031750));
 }
 
 }  // namespace autoc::eval

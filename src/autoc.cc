@@ -59,26 +59,33 @@ From skeleton/skeleton.cc
 
 using namespace std;
 
-// 040 T015 — airframe dimensions straight from config. Every field is read;
-// none carries a fallback (Constitution VII), so a missing ini key is a loud
-// ConfigManager failure rather than a silent stale geometry that looks
-// plausible and obstructs the wrong things.
-static autoc::eval::AirframeDimensions airframeDimsFromConfig(const AutocConfig& cfg) {
-    autoc::eval::AirframeDimensions d;
-    d.enabled = (cfg.airframeObstructionEnabled != 0);
-    d.camera_station_in = static_cast<gp_scalar>(cfg.airframeCameraStationIn);
-    d.wing_le_station_in = static_cast<gp_scalar>(cfg.airframeWingLeStationIn);
-    d.wing_chord_in = static_cast<gp_scalar>(cfg.airframeWingChordIn);
-    d.wing_span_in = static_cast<gp_scalar>(cfg.airframeWingSpanIn);
-    d.wing_thickness_in = static_cast<gp_scalar>(cfg.airframeWingThicknessIn);
-    d.wing_bottom_above_thrust_in =
-        static_cast<gp_scalar>(cfg.airframeWingBottomAboveThrustIn);
-    d.camera_above_wing_bottom_in =
-        static_cast<gp_scalar>(cfg.airframeCameraAboveWingBottomIn);
-    d.camera_outboard_in = static_cast<gp_scalar>(cfg.airframeCameraOutboardIn);
-    d.prop_diameter_in = static_cast<gp_scalar>(cfg.airframePropDiameterIn);
-    d.prop_attenuation = static_cast<gp_scalar>(cfg.airframePropAttenuation);
-    return d;
+// 040 T015 — airframe obstruction straight from config, METRES in body frame.
+// Datum: prop axle = (0,0,0); +x fwd, +y right, +z down; stations aft = -x.
+// Every field is read; none carries a fallback here (Constitution VII), and
+// contract_tracker_config_tests asserts the keys exist in every ini, so a
+// struct default can never silently stand in for a missing one.
+static autoc::eval::AirframeObstruction airframeObstructionFromConfig(
+    const AutocConfig& cfg) {
+    autoc::eval::AirframeObstruction a;
+    a.enabled = (cfg.airframeObstructionEnabled != 0);
+    a.wing_min = gp_vec3(static_cast<gp_scalar>(cfg.airframeWingMinX),
+                         static_cast<gp_scalar>(cfg.airframeWingMinY),
+                         static_cast<gp_scalar>(cfg.airframeWingMinZ));
+    a.wing_max = gp_vec3(static_cast<gp_scalar>(cfg.airframeWingMaxX),
+                         static_cast<gp_scalar>(cfg.airframeWingMaxY),
+                         static_cast<gp_scalar>(cfg.airframeWingMaxZ));
+    a.nose_min = gp_vec3(static_cast<gp_scalar>(cfg.airframeNoseMinX),
+                         static_cast<gp_scalar>(cfg.airframeNoseMinY),
+                         static_cast<gp_scalar>(cfg.airframeNoseMinZ));
+    a.nose_max = gp_vec3(static_cast<gp_scalar>(cfg.airframeNoseMaxX),
+                         static_cast<gp_scalar>(cfg.airframeNoseMaxY),
+                         static_cast<gp_scalar>(cfg.airframeNoseMaxZ));
+    a.prop_plane_x = static_cast<gp_scalar>(cfg.airframePropPlaneX);
+    a.prop_axis_y = static_cast<gp_scalar>(cfg.airframePropAxisY);
+    a.prop_axis_z = static_cast<gp_scalar>(cfg.airframePropAxisZ);
+    a.prop_radius = static_cast<gp_scalar>(cfg.airframePropRadius);
+    a.prop_attenuation = static_cast<gp_scalar>(cfg.airframePropAttenuation);
+    return a;
 }
 
 
@@ -1002,8 +1009,7 @@ static WorkerInit buildWorkerInit() {
 
     // 040 T013 — obstruction geometry anchors to the camera mount, since the
     // thrust line's body-frame position is not yet measured (checklist A1b).
-    init.airframeObstruction = autoc::eval::buildAirframeObstruction(
-        init.cameraConfig.mount_offset_body, airframeDimsFromConfig(cfg));
+    init.airframeObstruction = airframeObstructionFromConfig(cfg);
 
     init.flightArena.radius_m = static_cast<gp_scalar>(cfg.flightArenaRadius);
     init.flightArena.floor_agl_m = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
@@ -1715,11 +1721,7 @@ int main(int argc, char** argv)
     // primitives (wing slab / pod nose / prop disc) anchored to the camera
     // mount. Still ships DISABLED: the leading-edge mount that makes the
     // geometry meaningful lands in Stage D (T043).
-    const gp_vec3 cam_mount(static_cast<gp_scalar>(cfg.cameraMountOffsetX),
-                           static_cast<gp_scalar>(cfg.cameraMountOffsetY),
-                           static_cast<gp_scalar>(cfg.cameraMountOffsetZ));
-    const auto obstruction =
-        autoc::eval::buildAirframeObstruction(cam_mount, airframeDimsFromConfig(cfg));
+    const auto obstruction = airframeObstructionFromConfig(cfg);
     *logger.info() << "AirframeObstruction: "
                    << (obstruction.enabled ? "enabled" : "DISABLED (transparent)")
                    << " — wing slab + pod nose + prop disc; see airframe_occlusion.h" << endl;
