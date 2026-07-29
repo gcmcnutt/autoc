@@ -99,6 +99,7 @@ add_library(autoc_common STATIC
     src/eval/arena.cc
     src/eval/trail_rabbit.cc
     src/eval/crash_hull.cc
+    src/eval/tracker_tick_rule.cc
     src/eval/tracker_stepper.cc
     src/nn/evaluator.cc
     src/nn/serialization.cc

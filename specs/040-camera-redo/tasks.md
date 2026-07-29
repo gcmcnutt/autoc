@@ -64,22 +64,22 @@ there is a bug. Every later phase deliberately changes outputs.
 
 ### Tests (write first, verify failing)
 
-- [ ] T007 [P] Add per-scenario state-reset assertions to `tests/tracker_stepper_init_tests.cc` — all carried perception state must zero at scenario boundaries (FR-020a)
+- [x] T007 [P] ✅ **DONE 2026-07-28** — two reset-contract tests added to `tests/tracker_stepper_init_tests.cc`, asserting **bit-exact** (not near) reproduction of first-tick perception after re-init, including after a deep prior run that fills the observation ring. Written at the observable level so they keep guarding when the acquisition state machine lands (FR-020a)
 - [ ] T008 [P] Add a test to `tests/beacon_projection_tests.cc` asserting the camera mount never lies on an obstruction primitive boundary (guards the current degenerate default)
 - [ ] T009 [P] Add a test to `tests/contract_tracker_config_tests.cc` asserting the new ini key count and that every new key is read (no silent default)
 
 ### Implementation
 
-- [ ] T010 Extract the shared per-tick perception rule (CEP gating, separation, situational-awareness update) into new `include/autoc/eval/tracker_tick_rule.h` + `src/eval/tracker_tick_rule.cc` (FR-031)
-- [ ] T011 Point the production tick `crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp` at the shared rule, removing its inline duplicate
-- [ ] T012 Point the test-only reference `src/eval/tracker_stepper.cc` at the same shared rule, removing its inline duplicate (see research R1 — this path is test-only but is the behavioural contract)
+- [x] T010 ✅ **DONE 2026-07-28** — `include/autoc/eval/tracker_tick_rule.h` + `src/eval/tracker_tick_rule.cc`: `projectPerceptionTick()`, `advanceSituationalAwareness()`, `resetPerceptionState()`. Extracted **verbatim** — no improvement rides along, which is what makes the T021 gate meaningful (FR-031)
+- [x] T011 ✅ **DONE 2026-07-28** — production tick consumes the shared rule; inline duplicate removed, stale `derived_features.h` include dropped (Constitution III)
+- [x] T012 ✅ **DONE 2026-07-28** — test-only reference consumes the same rule; inline duplicate and stale include removed. Both paths now reset through one call, so the Stage E acquisition state machine lands once
 - [ ] T013 [P] Create `include/autoc/eval/airframe_occlusion.h` + `src/eval/airframe_occlusion.cc` with three primitives — thin wing slab, pod nose box, static propeller disc — per [data-model.md](data-model.md) §3
 - [ ] T014 Replace `defaultAirframeProxyHB1()` in `include/autoc/eval/camera_projection.h` with the new obstruction set and delete the degenerate single-AABB proxy (Principle III — clean cut, no shim)
 - [ ] T015 [P] Add all new ini keys to the X-macro in `include/autoc/util/config.h` per [contracts/config-surface.md](contracts/config-surface.md)
 - [ ] T016 Wire the new config values through `src/autoc.cc` worker init into `WorkerInit` — **no in-class default initializers on any member receiving a constructor parameter** (Principle VII; the `cepGateThreshold` bug the constitution cites lives in this exact code)
 - [ ] T017 [P] Retire stale fields from `include/autoc/eval/camera_config.h`: `frame_rate_hz` (predates the 20 Hz decision), `latency_ms` (latency now emerges from acquisition timing), and the `Projection` enum
 - [ ] T018 [P] Add the new ini keys with documented defaults to `autoc-tracker.ini`, `autoc-eval-tracker.ini`, and `autoc-eval-tracker-visual.ini`
-- [ ] T019 Register new sources and test targets in `CMakeLists.txt`
+- [~] T019 **PARTIAL 2026-07-28** — `src/eval/tracker_tick_rule.cc` added to `autoc_common` (crrcsim links that target, so both paths pick it up). Remaining new sources/tests register as their tasks land
 
 **Checkpoint gates**:
 

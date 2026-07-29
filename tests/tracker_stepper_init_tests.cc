@@ -234,3 +234,76 @@ TEST(TrackerStepperInit, EmptySourceFallsBackToLegacyInit) {
     EXPECT_NEAR(state.getVelocity().x(), -SIM_INITIAL_VELOCITY, 1e-3f);
     EXPECT_NEAR(state.getVelocity().norm(), SIM_INITIAL_VELOCITY, 1e-3f);
 }
+
+// ---------------------------------------------------------------------------
+// 040 T007 (FR-020a) — per-scenario perception-state reset.
+//
+// These guard the trap the constitution and the existing situational-awareness
+// code both warn about: carried perception state that is NOT reset at a
+// scenario boundary leaks into the next scenario and breaks the bitwise gate.
+// The leak is invisible — no crash, no failing assertion, just a different
+// training trajectory nobody can attribute months later.
+//
+// 040 routes every reset through resetPerceptionState() so the acquisition
+// state machine (Stage E) is picked up by BOTH execution paths without either
+// being edited. These tests pin that contract at the observable level:
+// re-initialising a scenario must reproduce first-tick perception exactly,
+// regardless of what ran before it.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Capture the NN-facing perception slots after a given number of ticks.
+std::vector<float> perceptionAfterTicks(TrackerStepper& stepper, int ticks) {  // raw-ok: NN-byte-format buffer
+    stepper.initScenario();
+    for (int i = 0; i < ticks; ++i) stepper.stepOnce();
+    const CameraViewSample& v = stepper.lastCameraView();
+    return {v.beacon_left.screen_x,  v.beacon_left.screen_y,  v.beacon_left.cep,
+            v.beacon_right.screen_x, v.beacon_right.screen_y, v.beacon_right.cep};
+}
+
+}  // namespace
+
+TEST(TrackerStepperReset, ReinitReproducesFirstTickPerception) {
+    NNGenome genome = makeMinimalGenome();
+    NNControllerBackend nn(genome, autoc::eval::FlightArena{});
+    AircraftState state;
+    SourceScenarioTrajectory source =
+        makeSyntheticSource(/*tick_count=*/40, gp_vec3(-13.0f, 0.0f, 0.0f));
+    TrackerStepper stepper = makeStepperWithSource(nn, state, source);
+
+    const std::vector<float> first = perceptionAfterTicks(stepper, 1);  // raw-ok: NN-byte-format buffer
+    const std::vector<float> again = perceptionAfterTicks(stepper, 1);  // raw-ok: NN-byte-format buffer
+
+    ASSERT_EQ(first.size(), again.size());
+    for (size_t i = 0; i < first.size(); ++i) {
+        // BIT-exact, not near: determinism is the contract (FR-020).
+        EXPECT_EQ(first[i], again[i])
+            << "perception slot " << i << " differs after re-init — carried "
+               "state leaked across the scenario boundary (FR-020a)";
+    }
+}
+
+TEST(TrackerStepperReset, DeepRunDoesNotContaminateNextScenario) {
+    NNGenome genome = makeMinimalGenome();
+    NNControllerBackend nn(genome, autoc::eval::FlightArena{});
+    AircraftState state;
+    SourceScenarioTrajectory source =
+        makeSyntheticSource(/*tick_count=*/40, gp_vec3(-13.0f, 0.0f, 0.0f));
+    TrackerStepper stepper = makeStepperWithSource(nn, state, source);
+
+    // Baseline: a fresh scenario's first tick.
+    const std::vector<float> baseline = perceptionAfterTicks(stepper, 1);  // raw-ok: NN-byte-format buffer
+
+    // Run deep enough to fill the observation ring and advance any carried
+    // state well past its initial value, then re-init and re-measure.
+    perceptionAfterTicks(stepper, TrackerObservationRing::kDepth + 5);
+    const std::vector<float> after_deep_run = perceptionAfterTicks(stepper, 1);  // raw-ok: NN-byte-format buffer
+
+    ASSERT_EQ(baseline.size(), after_deep_run.size());
+    for (size_t i = 0; i < baseline.size(); ++i) {
+        EXPECT_EQ(baseline[i], after_deep_run[i])
+            << "perception slot " << i << " differs after a deep prior run — "
+               "ring or acquisition state survived initScenario() (FR-020a)";
+    }
+}
