@@ -685,6 +685,24 @@ the noise-model home).
   retuned value) must be hand-applied to each and they silently drift -- the 037 `ControlIntervalMsec`,
   craft actuator-dynamics sigmas, and tightened entry sigmas each had to be touched in 3-6 files, and the
   `autoc-eval-*.ini` copies lagged. inih only parses a single file.
+- **040 T021 data point (2026-07-28) — the drift is now a correctness hazard, not just tedium.** Reproducing
+  the t9 M2 training run for a bit-identity gate required hand-aligning **four** fields in
+  `autoc-eval-tracker.ini` — not just the obvious `TrackerSourceRun`/`Bucket` + `Seed`, but the scenario
+  **shape** (`SimNumPathsPerGeneration` 7→6, `WindScenarios` 7→49), because the file had been left
+  configured for the t10 novel-geometry exercise. **One shared eval ini is doing two incompatible jobs**
+  (training-repro vs novel-geometry generalisation) with only a comment separating them.
+  - It failed loud and correctly — *"seed table (49) not 1:1 with source list (294)"*, the 7×7 t10 grid
+    against the 6×49 t9 source — so the guard earned its place. But the guard only catches the *count*
+    mismatch; a config that differed in sigmas or enables would have produced a plausible wrong number.
+  - **Open design question the operator named (2026-07-28)**: must an M2 run assume the *same scenario
+    shape* as its M1 source? Today the 1:1 seed-table check enforces exactly that, and it is what couples
+    the eval ini so tightly to whichever run it last served. Relaxing it (M2 shape independent of M1, or
+    running more scenarios than the source provides) is the design fork that has stalled this item.
+  - **Status: deliberately deferred 2026-07-28** — *"we have had various ideas… gave up for now and keep
+    the ugly setup"*. Recorded so the next attempt starts from the fork above rather than rediscovering it.
+  - Related: **Self-describing dmp** (record the config block in every gen dmp) below — the other half of
+    this problem, since a run that carries its own config makes "reproduce run X" a lookup instead of an
+    archaeology exercise. The two should probably be designed together.
 - **Want**: replace the single-file load with a config system that supports STACKING multiple INI files
   in "last value wins" order, so e.g. `-i base.ini -i m2.ini -i eval.ini` composes (base + overrides).
   The eval / visual / tracker variants then become thin override files over one base, eliminating drift.
