@@ -97,10 +97,21 @@ contract; a reference implementation encoding stale semantics would silently cer
 ## 6. Physical-camera assumption (unchanged, restated)
 
 The hardware is a **planar sensor**. The perception front-end applies known intrinsics to remap pixel
-centroids to angles — a deterministic, information-free calibration step. The simulator skips the pixel
-stage and emits the angle domain directly.
+centroids to angles — a deterministic, information-free calibration step. The simulator skips the
+**photometric and centroiding** stages and emits the angle domain directly, but it does model the grid's
+*resolution*: bearings are quantised to pixel centres (T031), so reported precision never exceeds what the
+sensor can deliver.
 
-**Angular bearing is a representation choice for the interface, not a fisheye claim.** Residual: under
+**Angular bearing is a representation choice for the interface, not a fisheye claim.**
+
+**Separation is measured on the sphere, not in the bearing plane (amended 2026-07-29, T033a).** Under
 equidistant mapping, Euclidean distance in (θx, θy) equals the great-circle angle exactly radially and
-over-reads tangentially by θ/sin θ — +21% worst case at the frame corner. This is the only remaining
-position dependence and is documented rather than corrected.
+over-reads tangentially by θ/sin θ — +8.6% at 40° off-axis, **+35% at the 75° frame diagonal** (the figure
+previously given here, +21%, was θ/sin θ at the 60° horizontal edge, not the true diagonal). That residual
+was originally accepted as documented-not-fixed. It is now **corrected**: `compute_pair_span` reconstructs
+both unit rays and returns the angle between them, which is exactly position- and orientation-invariant by
+construction. There is **no remaining position dependence in the separation channel**, and SC-001 holds as
+literally worded, to within grid quantisation.
+
+Bearing itself remains the equidistant (θx, θy) pair — the change is to the *metric*, not the
+representation. Tilt is still measured in the bearing plane by deliberate choice; see research R2.

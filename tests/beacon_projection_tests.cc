@@ -25,6 +25,7 @@
 #include "autoc/eval/beacon_config.h"
 #include "autoc/eval/camera_config.h"
 #include "autoc/eval/camera_projection.h"
+#include "autoc/eval/derived_features.h"  // 040 T033a — span is measured here
 #include "autoc/types.h"
 
 using autoc::eval::AirframeObstruction;
@@ -132,12 +133,31 @@ BeaconObservation obsAtRay(double theta_deg, double phi_deg,
     return projectBeacon(in);
 }
 
-// Separation between two reported bearings, in degrees, measured as Euclidean
-// distance in the (θx, θy) bearing plane — exactly what compute_pair_span does.
+// As obsAtRay, but aimed along an arbitrary direction rather than a (θ, φ)
+// pair. Needed where the pair geometry is built in 3D so that the true angular
+// separation is exact by construction rather than routed through the very
+// mapping under test.
+BeaconObservation obsAlong(const gp_vec3& dir, double range_m = 10.0) {
+    ProjectionInput in = makeBaselineInput();
+    in.beacon_mount_target_body = gp_vec3(0.0f, 0.0f, 0.0f);
+    in.target_position_world =
+        dir.normalized() * static_cast<gp_scalar>(range_m);
+    const gp_vec3 back_at_chase = -in.target_position_world.normalized();
+    in.beacon_emission_axis_target_body = back_at_chase;
+    in.beacon.mount_body = in.beacon_mount_target_body;
+    in.beacon.emission_axis_body = back_at_chase;
+    return projectBeacon(in);
+}
+
+// Separation between two reported bearings, in degrees. Measured THROUGH the
+// production function rather than reimplemented here: a duplicate metric in the
+// test is how a metric change passes its own tests (040 T033a moved this from a
+// planar distance to the great-circle angle, and a local copy would have gone
+// on agreeing with the retired version).
 double sepDeg(const BeaconObservation& a, const BeaconObservation& b) {
-    const double dx = static_cast<double>(a.bearing_x_rad - b.bearing_x_rad);
-    const double dy = static_cast<double>(a.bearing_y_rad - b.bearing_y_rad);
-    return std::sqrt(dx * dx + dy * dy) * kRadToDeg;
+    return static_cast<double>(autoc::eval::compute_pair_span(
+               a.bearing_x_rad, a.bearing_y_rad,
+               b.bearing_x_rad, b.bearing_y_rad)) * kRadToDeg;
 }
 
 // Exact bearing of pixel `i`'s CENTRE on an `n`-pixel axis, in degrees.
@@ -545,17 +565,21 @@ TEST(AirframeObstruction, DisabledObstructionNeverOccludes) {
 //     horizontally against a 0.375° pixel, 26% coarser than the sensor it
 //     claimed to represent, and 6% finer vertically.
 //
-// SCOPE OF THE INVARIANCE CLAIM (research R2, contract §6). Under equidistant
-// mapping, Euclidean distance in (θx, θy) equals the great-circle angle
-// EXACTLY along a radius and over-reads TANGENTIALLY by θ/sin θ — up to +21%
-// at the frame corner. That residual is accepted and documented, not fixed;
-// it is what makes a separate ray-angle span computation unnecessary.
+// SCOPE OF THE INVARIANCE CLAIM (040 T033a; research R2 as amended). Bearing is
+// still an equidistant mapping, but the pair is no longer MEASURED in that
+// plane. Planar Euclidean distance in (θx, θy) equals the great-circle angle
+// exactly along a radius and over-reads TANGENTIALLY by θ/sin θ — +8.6% at 40°,
+// +35% at the 75° frame diagonal. R2 originally accepted that residual as
+// documented-not-fixed, on the grounds that it "makes a separate ray-angle span
+// computation unnecessary", which put a position-dependent error in the sole
+// range channel and contradicted SC-001's "at any orientation".
 //
-// So SC-001's "within 2% ... at any orientation" holds radially and holds for
-// the orientation flip that FR-002 is actually about, but NOT tangentially at
-// large field angles. RadialSeparationIsPositionInvariant asserts the property
-// delivered; TangentialSeparationOverReadsByThetaOverSinTheta pins the limit,
-// so the residual is a tested contract rather than a surprise later.
+// compute_pair_span now reconstructs both unit rays and returns the angle
+// between them, so SC-001 holds LITERALLY: invariant at any position in frame
+// and any pair orientation, to within what the pixel grid permits. There is no
+// residual left to pin, so the test that pinned it is gone — replaced by
+// SeparationIsInvariantAtAnyPositionAndOrientation, which sweeps the cases the
+// old metric failed.
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
@@ -588,31 +612,93 @@ TEST(CameraGridGeometry, RadialSeparationIsPositionInvariant) {
            "out at 50° off-axis (SC-001)";
 }
 
-TEST(CameraGridGeometry, TangentialSeparationOverReadsByThetaOverSinTheta) {
-    // The documented residual (research R2, contract §6). A pair straddling a
-    // constant field angle θ₀ tangentially reads θ₀/sin θ₀ too wide. Pinned so
-    // the accepted limit cannot drift silently — and so that anyone tempted to
-    // read SC-001 as unconditional finds the exception under test.
-    const double theta0 = 40.0;
-    const double dphi = 20.0;
+TEST(CameraGridGeometry, SeparationIsInvariantAtAnyPositionAndOrientation) {
+    // SC-001 as literally worded, which 040 T033a made achievable. A pair of a
+    // FIXED true angular separation is walked out from the boresight to 40° off
+    // axis and rotated through every orientation from radial to tangential; all
+    // readings must agree with the truth and with each other.
+    //
+    // Construction is in 3D rather than in bearings, so the truth is exact by
+    // construction rather than derived through the mapping under test: take a
+    // central ray u₀ at field angle θ₀, build the orthonormal tangent basis
+    // there (e_rad along increasing θ, e_tan across it), and place the pair at
+    //     u± = cos(ψ/2)·u₀ ± sin(ψ/2)·(cos α·e_rad + sin α·e_tan)
+    // which subtends exactly ψ, centred on u₀, oriented α from radial.
+    const CameraConfig cam{};
+    const double rad_per_px = static_cast<double>(cam.deg_per_px) * kDegToRad;
+    const double psi = 20.0 * kDegToRad;
 
-    const double measured =
-        sepDeg(obsAtRay(theta0, -dphi / 2.0), obsAtRay(theta0, +dphi / 2.0));
+    // TWO-PART BOUND, and both parts are needed. 2% is the SC-001 projection
+    // claim. The grid term is separate and unavoidable: each bearing quantises
+    // independently on each axis, so up to 0.5 px per axis per beacon, and a
+    // pair can accumulate ~1.4 px between them. 1.5 px is that worst case with
+    // a little room, and it is stated in radians so it scales if the grid does.
+    const double bound = 0.02 * psi + 1.5 * rad_per_px;
 
-    // True great-circle angle between the two rays.
-    const double t = theta0 * kDegToRad;
-    const double cos_psi = std::cos(t) * std::cos(t) +
-                           std::sin(t) * std::sin(t) * std::cos(dphi * kDegToRad);
-    const double truth = std::acos(cos_psi) * kRadToDeg;
+    double min_read = 1e9;
+    double max_read = -1e9;
+    double worst_tangential_planar = 0.0;
+    double worst_tangential_truth = 0.0;
 
-    const double over_read = measured / truth;
-    const double predicted = t / std::sin(t);   // 1.086 at 40°
-    EXPECT_NEAR(over_read, predicted, 0.02)
-        << "tangential over-read must match θ/sin θ — measured " << measured
-        << "° vs true " << truth << "°";
-    EXPECT_GT(over_read, 1.02)
-        << "this case is deliberately OUTSIDE the 2% band; if it ever lands "
-           "inside, the projection changed and contract §6 needs revisiting";
+    for (const double theta0_deg : {0.0, 15.0, 30.0, 40.0}) {
+        const double t0 = theta0_deg * kDegToRad;
+        const gp_vec3 u0(static_cast<gp_scalar>(std::cos(t0)),
+                         static_cast<gp_scalar>(std::sin(t0)),
+                         0.0f);
+        const gp_vec3 e_rad(static_cast<gp_scalar>(-std::sin(t0)),
+                            static_cast<gp_scalar>(std::cos(t0)),
+                            0.0f);
+        const gp_vec3 e_tan(0.0f, 0.0f, 1.0f);
+
+        for (const double alpha_deg : {0.0, 30.0, 45.0, 60.0, 90.0}) {
+            const double a = alpha_deg * kDegToRad;
+            const gp_vec3 off = static_cast<gp_scalar>(std::cos(a)) * e_rad +
+                                static_cast<gp_scalar>(std::sin(a)) * e_tan;
+            const gp_scalar c = static_cast<gp_scalar>(std::cos(psi / 2.0));
+            const gp_scalar s = static_cast<gp_scalar>(std::sin(psi / 2.0));
+
+            const BeaconObservation lo = obsAlong(c * u0 - s * off);
+            const BeaconObservation hi = obsAlong(c * u0 + s * off);
+            ASSERT_NE(lo.cep, kCepSentinelFloat)
+                << "θ₀=" << theta0_deg << "° α=" << alpha_deg
+                << "° gated — the sweep must stay inside the field and clear "
+                   "the airframe, or it is measuring the wrong thing";
+            ASSERT_NE(hi.cep, kCepSentinelFloat)
+                << "θ₀=" << theta0_deg << "° α=" << alpha_deg << "° gated";
+
+            const double read = sepDeg(lo, hi) * kDegToRad;
+            EXPECT_NEAR(read, psi, bound)
+                << "θ₀=" << theta0_deg << "° α=" << alpha_deg
+                << "° read " << read * kRadToDeg << "° for a true "
+                << psi * kRadToDeg << "° (SC-001)";
+
+            min_read = std::min(min_read, read);
+            max_read = std::max(max_read, read);
+
+            // Keep the most tangential, most off-axis case's planar distance so
+            // the assertion below can prove this sweep has teeth.
+            if (alpha_deg == 90.0 && theta0_deg == 40.0) {
+                worst_tangential_planar =
+                    std::hypot(static_cast<double>(hi.bearing_x_rad - lo.bearing_x_rad),
+                               static_cast<double>(hi.bearing_y_rad - lo.bearing_y_rad));
+                worst_tangential_truth = read;
+            }
+        }
+    }
+
+    // The invariance claim itself: not merely "each is close to truth" but
+    // "they all agree", which is what a range channel actually needs.
+    EXPECT_LT(max_read - min_read, 2.0 * bound)
+        << "spread across position and orientation was "
+        << (max_read - min_read) * kRadToDeg << "°";
+
+    // TEETH. The retired planar metric read this case θ/sin θ = 1.086× wide,
+    // i.e. ~1.7° on a 20° pair, which is outside the bound above. If this ever
+    // stops holding, the sweep has gone slack and would pass on either metric.
+    ASSERT_GT(worst_tangential_truth, 0.0) << "worst-case config never ran";
+    EXPECT_GT(worst_tangential_planar - worst_tangential_truth, bound)
+        << "the planar distance must land OUTSIDE the bound at 40° tangential, "
+           "or this test no longer discriminates between the two metrics";
 }
 
 // ---------------------------------------------------------------------------
@@ -709,7 +795,12 @@ TEST(CameraGridGeometry, RangeFromSeparationMatchesTruthWithoutSystematicBias) {
 
         const double span_rad = sepDeg(left, right) * kDegToRad;
         ASSERT_GT(span_rad, 0.0);
-        const double inferred_m = separation_m / span_rad;
+        // EXACT inverse of the pair geometry, not the small-angle L/ψ. Now that
+        // span is a true great-circle angle, an isoceles pair of baseline L at
+        // range R subtends ψ = 2·atan((L/2)/R), so R = (L/2)/tan(ψ/2) inverts it
+        // with no approximation left in the chain.
+        const double inferred_m =
+            (separation_m / 2.0) / std::tan(span_rad / 2.0);
 
         // What the grid permits: a one-pixel error in the span propagates
         // proportionally into range.
@@ -728,13 +819,15 @@ TEST(CameraGridGeometry, RangeFromSeparationMatchesTruthWithoutSystematicBias) {
     // the same ratio. At 0.9 m against a true 0.772 m every estimate would sit
     // ~16.6% high and this would fail by a wide margin.
     //
-    // The ~1% that legitimately remains is GRID CONVEXITY, not calibration:
-    // range is separation/span, and E[1/span] > 1/E[span] for a span carrying
-    // symmetric quantisation error (Jensen). At 25 m the pair subtends only
-    // ~4.7 px, so ±1 px of grid error is enough to bend the mean upward by
-    // about a percent. That is a genuine property of inferring range from a
-    // discrete sensor, and 040 does not pretend otherwise — the bound below is
-    // set to sit above it and far below any plausible constant error.
+    // The ~1% that legitimately remains is GRID CONVEXITY, not calibration, and
+    // it survived the T033a metric fix unchanged because it was never a metric
+    // error: range is a convex decreasing function of span, so E[R(span)] >
+    // R(E[span]) for a span carrying symmetric quantisation error (Jensen). At
+    // 25 m the pair subtends only ~4.7 px, so ±1 px of grid error is enough to
+    // bend the mean upward by about a percent. That is a genuine property of
+    // inferring range from a discrete sensor, and 040 does not pretend
+    // otherwise — the bound below sits above it and far below any plausible
+    // constant error.
     const double mean_bias = bias_sum / n;
     EXPECT_LT(std::abs(mean_bias), 0.03)
         << "mean relative range error " << (mean_bias * 100.0)

@@ -103,24 +103,22 @@ range matches truth.
 All six written against the not-yet-existing API and confirmed failing to compile before implementation.
 They live in a `CameraGridGeometry` suite in `tests/beacon_projection_tests.cc`.
 
-- [x] T023 [P] [US2] ✅ **DONE 2026-07-29** — split into two, because the single assertion the task describes is **not true as written**. `RadialSeparationIsPositionInvariant` asserts the delivered property: 15.0° reads within 2% at frame centre and at 50° off-axis, with both pairs placed on exact pixel centres so quantisation contributes **zero** and the tolerance measures the projection alone. `TangentialSeparationOverReadsByThetaOverSinTheta` pins the accepted residual (+8.6% at 40°, matching θ/sin θ). **See the SC-001 note below** — this is a spec/research inconsistency, not an implementation shortfall
+- [x] T023 [P] [US2] ✅ **DONE 2026-07-29, then STRENGTHENED by T033a.** Originally split in two, because the single assertion the task describes was not true under the planar metric: `RadialSeparationIsPositionInvariant` asserted the delivered property (15.0° within 2% at frame centre and at 50° off-axis, both pairs on exact pixel centres so quantisation contributes **zero**), and `TangentialSeparationOverReadsByThetaOverSinTheta` pinned the accepted residual. **T033a made the task's original wording achievable**, so the residual test is gone and `SeparationIsInvariantAtAnyPositionAndOrientation` replaces it — a 4 × 5 sweep of field angle (0–40°) × pair orientation (radial→tangential) at fixed true separation, with an explicit teeth assertion that the retired planar metric lands *outside* the bound at 40° tangential, so the sweep cannot go slack and pass on either metric
 - [x] T024 [P] [US2] ✅ **DONE 2026-07-29** — `SeparationIsUnchangedWhenRotatedHorizontalToVertical`, equal to 1e-4 rad. This is the assertion that actually retires the bug: the ±1 encoding normalised each axis by its own half-FOV and read these **33% apart**
 - [x] T025 [P] [US2] ✅ **DONE 2026-07-29** — two tests. `BearingIsQuantisedToPixelCentres` sweeps ±50° and asserts every reported bearing lands on a pixel centre; `BearingResolvesNoFinerAndNoCoarserThanOnePixel` asserts sub-pixel detail does **not** survive (two truths inside one pixel are bit-identical) and that one pixel apart resolves as exactly one pixel
 - [x] T026 [P] [US2] ✅ **DONE 2026-07-29** — `RangeFromSeparationMatchesTruthWithoutSystematicBias`, 5–25 m at 0.25 m steps. The mean-bias assertion is what catches a wrong constant: 0.9 m would sit ~16.6% high uniformly. **Found a real effect while tuning it** — a genuine ~1.1% positive bias remains, which is **grid convexity** (range is separation/span and E[1/span] > 1/E[span] under symmetric quantisation error; at 25 m the pair subtends only ~4.7 px). Documented in the test and the bound set above it
 - [x] T027 [P] [US2] ✅ **DONE 2026-07-29 — already enforced, no new test needed.** `TrackerInput::COUNT == 58` and `sizeof(TrackerInputs) == 58 * sizeof(float)` are `static_assert`s in `include/autoc/nn/nn_inputs.h`, mirrored in `tests/gather_tracker_inputs_tests.cc`. FR-006 is a **compile-time** guarantee here, which is stronger than a runtime test; US2 changed the units in those slots, never the count
 - [x] T028 [P] [US2] ✅ **DONE 2026-07-29** — `FieldOfViewIsDerivedFromGridAndPixelPitch` (halving the pitch halves both fields; there is no setter that could contradict it) plus `FovEdgeFollowsTheDerivedField` (the derived field is the real visibility boundary, not a separate knob that could drift)
 
-> ⚠️ **SC-001 is not achievable as literally worded, and this is a spec inconsistency to reconcile — not a
-> gap in the work.** SC-001 says a fixed angular separation reads within 2% "wherever it appears in frame
-> **and at any orientation**". Research R2 and [contracts/perception-interface.md](contracts/perception-interface.md) §6 both accept a **+21%
-> worst-case tangential over-read** (θ/sin θ at the frame corner) as documented-not-fixed, explicitly
-> because it "makes a separate ray-angle span computation unnecessary". Those cannot both hold.
+> ✅ **SC-001 RESOLVED 2026-07-29 by fixing the metric, not the wording — see T033a.** The conflict was real:
+> SC-001 claims 2% invariance "wherever it appears in frame **and at any orientation**", while research R2 and
+> [contracts/perception-interface.md](contracts/perception-interface.md) §6 both accepted a worst-case tangential over-read (θ/sin θ) as
+> documented-not-fixed, explicitly because it "makes a separate ray-angle span computation unnecessary".
 >
-> **Implemented per research R2** — it is the later, more specific, and explicitly-reasoned decision, and its
-> rejected alternative (b) (direction cosines) was rejected for re-introducing position dependence in the
-> opposite direction. The 2% claim holds radially anywhere, and holds for the orientation flip FR-002 is
-> actually about. **Operator decision needed**: reword SC-001 to scope it radially, or reopen R2's
-> alternative (b). Nothing downstream is blocked either way.
+> **Operator decision was to reopen R2** rather than scope SC-001 radially, on the grounds that the residual
+> is position-dependent and sits in the sole range channel. T033a measures the pair on the sphere; SC-001 now
+> holds as literally worded. R2, contract §6, and the test comments are amended. *Also corrected in passing:
+> R2's "+21% at the frame corner" was θ/sin θ at the 60° horizontal edge — the true 75° diagonal is +35%.*
 
 ### Implementation
 
@@ -132,7 +130,11 @@ They live in a `CameraGridGeometry` suite in `tests/beacon_projection_tests.cc`.
 - [x] T034 [US2] ✅ **DONE 2026-07-29** — POV panel normalises bearings against the recorded half-field. **This is why `screen_x` was renamed rather than reinterpreted**: reading a radian value as if it were ±1 NDC would have silently pinned every beacon near frame centre, and the rename made every one of the ~14 consumer sites a compile error instead
 - [x] T035 [US2] ✅ **DONE 2026-07-29** — grep run on the diff. Production code is clean bar the `X(double, cameraDegPerPixel, ...)` macro token, which must match its struct field and is uniform with all 114 other entries. `cameraDegPerPixel` annotated per the `cepGateThreshold` precedent (inih returns double, cast at the WorkerInit boundary). Test scaffolding carries a block annotation explaining that raw `double` there is deliberate: the reference geometry must out-precision the code under test, or a 2%-of-a-pixel tolerance partly measures the test
 
-**Gate**: `cmake --build build` clean, **39/39 ctest suites pass, 0 fail**, crrcsim links clean.
+- [x] T033a [US2] ✅ **DONE 2026-07-29 — added after review, on the operator's call to reopen R2 rather than reword SC-001.** Span is measured **on the sphere**: `bearing_to_unit_ray` reconstructs each ray (the exact inverse of the forward projection, so no information is added or lost) and `compute_pair_span` returns the angle between them. Exactly position- and orientation-invariant by construction, retiring the θ/sin θ tangential over-read from the sole range channel. **`2·asin(chord/2)`, not `acos(dot)`** — `gp_scalar` is float and at 25 m the dot product sits at 0.99952, where `acos` sheds half its digits. **Blast radius was one function body**: all four call sites (tick rule, `fitness_decomposition`, `dmp_dump`, and the crrcsim mirror via the shared tick rule) share the 4-arg signature, and the NN input layout is untouched — 4 bearing slots, `COUNT == 58`, FR-006 intact. **Tilt deliberately left planar** (direction residual, not magnitude; no global horizontal exists on the sphere). Range inference in the test moved to the exact `(L/2)/tan(ψ/2)`. `sepDeg` in the test now calls the production function instead of reimplementing the metric — a duplicate is how a metric change passes its own tests. ⚠️ **Breaks bit-identity; the determinism baseline needs re-establishing before the Phase 9 retrain** (free to do now, a second retrain if deferred)
+
+**Gate**: `cmake --build build` clean, **39/39 ctest suites pass, 0 fail**, crrcsim links clean. Re-confirmed
+after T033a: 39/39, and both the autoc tick-rule object and the crrcsim mirror object rebuilt against the
+amended header.
 
 **Checkpoint**: **manual renderer check** — load a playback and confirm beacons render where expected under
 the new scale. Automated tests cannot catch a scale error that is self-consistent.

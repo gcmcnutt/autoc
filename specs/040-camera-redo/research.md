@@ -31,7 +31,7 @@ the requirement exists to prevent.
 
 ---
 
-## R2 — Bearing representation and residual anisotropy
+## R2 — Bearing representation and separation metric
 
 **Decision**: quantise to the 320×240 pixel grid, then present **angles in radians**, isotropically scaled.
 Retire the int8 encoding entirely.
@@ -40,18 +40,45 @@ Retire the int8 encoding entirely.
 sensor it claims to model** — while being 6% *finer* vertically, and the two axes carry different scales.
 Radians are the honest sim↔hardware contract (the front-end's output is an angle; pixels are a sensor
 implementation detail), isotropic by construction, and land in a well-conditioned range (±1.047 H / ±0.785 V).
-Separation then becomes a true angular quantity, so range is `separation ≈ wingspan / angle` directly.
+Separation then becomes a true angular quantity, so range follows from the pair geometry directly — and
+exactly, once the metric is spherical: `R = (L/2)/tan(ψ/2)` for a baseline `L` subtending `ψ`, with no
+small-angle step left in the chain.
 
-**Residual to document, not fix**: under equidistant mapping, Euclidean distance in (θx, θy) equals the
-great-circle angle **exactly** radially, and over-reads tangentially by θ/sin θ — **+21% worst case at the
-frame corner**. This is the *only* remaining position dependence, down from the tan-stretch removed at t9,
-and it is what makes a separate ray-angle span computation unnecessary.
+**AMENDED 2026-07-29 (T033a) — the residual is corrected, not documented.** This paragraph previously read
+"*Residual to document, not fix*" and accepted a tangential over-read on the grounds that it "makes a
+separate ray-angle span computation unnecessary". **That was the wrong call**, for a reason the original
+note did not weigh: the over-read is position-dependent and it sits in the *only* channel conveying range.
+Operator decision (2026-07-29) was to reopen it rather than reword SC-001 around it.
+
+**The geometry, restated correctly**: under equidistant mapping, Euclidean distance in (θx, θy) equals the
+great-circle angle **exactly** radially and over-reads tangentially by θ/sin θ — +8.6% at 40° off-axis and
+**+35% at the 75° frame diagonal**. *The +21% originally recorded here was θ/sin θ at the 60° horizontal
+edge, not at the true diagonal — the worst case was understated.* This is the generic
+flat-metric-on-a-curved-surface error, not a property of the encoding, which is why it is fixable without
+touching the representation.
+
+**Correction**: `compute_pair_span` reconstructs both unit rays from the quantised bearings — the exact
+inverse of the forward projection, so no information is added or lost — and returns the angle between them
+as `2·asin(chord/2)`. That form rather than `acos(u_L · u_R)` because `gp_scalar` is **float** and our
+operating regime is small spans: at 25 m the pair subtends ~0.031 rad, where the dot product sits at
+0.99952 and `acos` sheds roughly half its significant digits. The result is exactly position- and
+orientation-invariant by construction, so **SC-001 holds as literally worded** and there is no residual
+left to pin. Cost is one sqrt + one sincos per beacon per tick, negligible against the FDM.
+
+**Bearing representation is unchanged** — still equidistant (θx, θy), still 4 slots, so `TrackerInput::COUNT
+== 58` and FR-006 are untouched. Only the metric moved. **Tilt deliberately stays planar**: on a sphere the
+pair's angle needs a reference direction and there is no global horizontal, so defining one means a
+parallel-transported tangent basis at the pair midpoint. Tilt conveys roll/aspect, so its residual is a
+*direction* error — far more benign than a *magnitude* error in the range channel. Recorded as a known
+approximation.
 
 **Alternatives considered**: (a) Raw pixel indices as controller inputs — rejected: large, non-zero-centred,
-poor conditioning. (b) Direction cosines `(sin θ·dir)` — the literal ray geometry, but compresses toward the
-frame edge, re-introducing position-dependent separation scale in the opposite direction from t9. (c) Keep
-int8 — rejected: it is a resolution model, and the pixel grid *is* the resolution model, so it is redundant
-and wrong.
+poor conditioning. (b) Direction cosines `(sin θ·dir)` — rejected as written, and the rejection was *too
+broad*: that is a **two-component** encoding with the along-boresight component discarded, and it is the
+truncation that compresses toward the frame edge, not ray geometry as such. The **full three-component**
+unit ray has no compression whatsoever, which is what T033a now uses internally — as a measurement stage,
+not as an NN input, so (b)'s conditioning objection never arises. (c) Keep int8 — rejected: it is a
+resolution model, and the pixel grid *is* the resolution model, so it is redundant and wrong.
 
 ---
 
