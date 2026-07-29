@@ -59,10 +59,17 @@ a later calibration pass reads it to know exactly what it may overwrite.
 
 | Key | Unit | Default | Class | Basis |
 |---|---|---|---|---|
-| `AcqCodePeriodMs` | ms | 75 | M | 15 chips @ 200 Hz = 1.5 ticks @ 20 Hz |
-| `AcqPartialLockMs` | ms | 55 | M | 031 early-lock |
-| `AcqHoldPeriods` | — | 2 | M | 031 measured hold |
-| `AcqWarmRelockPeriods` | — | 1 | M | 031 measured |
+| `AcqCodeChips` | — | **31** | M | N=31 is the 031 baseline (all tests moved to it; N=63 is the documented next step). Made configurable so the 63 upgrade is a value change |
+| `AcqChipRateHz` | — | 200 | M | ⇒ code period = 31 / 200 = **154 ms ≈ 3.1 ticks @ 20 Hz** |
+| `AcqWarmRelockMs` | ms | **154** | M | **HW-measured**, ≈1 code word — flywheel held, re-lock on first good period, skips ACQUIRING |
+| `AcqColdAcquireMs` | ms | **308** | M | **HW-measured**, ≈2 code words — rate stale, needs `MINLOCK` |
+| `AcqHoldMs` | ms | **308** | M | `HOLDMAX` = 2 bad periods |
+| `AcqCoastWindowSec` | s | **10** | M | `COASTMAX=65` periods @ N=31. **Wallclock-driven** (emitter↔rx oscillator stability), *not* code length — the single most behaviour-defining parameter in the model |
+| `AcqGoodThreshold` | — | 5 | M | `q = \|corr\|/energy` on 0–9; GOOD ≥ 5 at N=31/63 (6 at N=15) |
+
+All seven are hardware-measured from the StepFPGA correlator —
+[`firmware/beacon-decoder-stepfpga/SIM-FEATURES.md`](../../firmware/beacon-decoder-stepfpga/SIM-FEATURES.md)
+(recovery-counter measurements at N=31; N=63 reads 315/629 ms).
 
 ## Obstruction
 

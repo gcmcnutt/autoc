@@ -107,8 +107,8 @@ tracking, plus holding through brief loss). Fully deterministic — the 031 prob
 **thresholds and time constants**, never Bernoulli draws.
 
 **Rationale**: Determinism is non-negotiable (FR-020) and bit-replay is a project gate, so sampling is
-disqualified outright. The 031 data supplies the shape directly: full code 75 ms ≈ 1.5 ticks at 20 Hz,
-partial-code early lock ≈ 55 ms, hold ≈ 2 code periods, warm relock ≲ 1 period.
+disqualified outright. Timings come from the shipped gateware, hardware-measured at N=31 — see **R12**
+below, which supersedes the earlier N=15 figures used when this section was first written.
 
 **Tentative lock reports a bearing** with a large-variance quality value (FR-017a), matching the 031
 soft-threshold recommendation. Quality therefore spans three regimes: small (confident), large (tentative),
@@ -247,6 +247,60 @@ recorded number.
 ⚠️ **Remaining step is operator-driven**: actually running the eval to confirm `NN_EVAL_SAME` against a
 rebuilt binary is the eval-vs-training bitwise gate, which the operator drives rather than an assistant
 kicking off. The value above is what T021 must reproduce.
+
+## R12 — Acquisition timing model, first pass (decided 2026-07-28)
+
+Supersedes the N=15 figures in R5. Source is the **shipped gateware**, not the paper study:
+[`firmware/beacon-decoder-stepfpga/SIM-FEATURES.md`](../../firmware/beacon-decoder-stepfpga/SIM-FEATURES.md),
+recovery-counter measurements on real hardware.
+
+### Rate stack
+
+Controller **20 Hz** (50 ms) · camera **480 fps** (2.08 ms) · chips **200 Hz** (5 ms) · code **N=31**
+(154 ms). Per controller tick the camera captures **24 frames** and advances **10 chips** — about a third
+of a word. Frames-per-chip is 2.4: Nyquist margin, not information.
+
+### Measured timings (N=31; N=63 reads 315/629 ms)
+
+| | ms | ticks |
+|---|---:|---:|
+| Code word | 154 | 3.1 |
+| **Warm re-acquire** (flywheel held) | **154** | 3.1 |
+| **True-cold** (rate stale, needs `MINLOCK`) | **308** | 6.2 |
+| HOLD coast (`HOLDMAX` 2 bad periods) | 308 | 6.2 |
+| **Coast window** (`COASTMAX=65`) | **~10 000** | 200 |
+
+### Decisions
+
+1. **N=31 baseline** (operator: all 031 tests moved to 31; 63 is next). Code length is a **config value**,
+   so the 63 upgrade is a value change rather than a re-derivation.
+2. **Mirror the gateware FSM** — `SEARCH → ACQUIRING → LOCKED → HOLD` — rather than invent one. It is
+   already the right shape, it is what the hardware does, and it is ~50 lines.
+3. **Analytic advance, once per controller tick.** No sub-stepping. Exact for constant SNR, phase-free
+   (154 ms against 50 ms is 3.08, so the code boundary drifts relative to the tick as free-running hardware
+   does), and 24× cheaper than frame-stepping — which matters against the FR-038 ceiling.
+4. **Warm/cold gated on the coast timer** — the single highest-value feature in the model.
+5. **Quality from a `q` proxy.** The hardware emits `q = |corr|/energy` on 0–9, **signal-level
+   independent** (AGC-normalised), GOOD ≥ 5. CEP derives from a simulated `q`: a monotonic map from
+   modelled per-chip SNR, ramping with integration and degrading in HOLD. This *is* the operator's
+   "likely-will-lock representation in CEP ≈ SNR" — it falls out rather than being bolted on.
+6. **Cold path modelled**, despite being rare in M2 (operator: it does occur in flight — sun, reflections
+   — at losses beyond ~10 s). Nearly free once the timers exist.
+
+### The behaviour-defining finding
+
+**The coast window is wallclock-driven, not code-length driven** — set by emitter↔receiver oscillator
+stability. The documented M2 worst-case blind window is **~8 s**, which sits **inside** the ~10 s coast.
+So **most M2 reacquisitions are warm (154 ms), not cold (308 ms)**, and "N=31 triples acquisition" holds
+only for the cold path M2 rarely takes. **Sim difficulty hinges on the coast window far more than on code
+length** — it is the parameter to vary if reacquisition cost turns out to matter.
+
+### Deferred (recorded, not dropped)
+
+- **DPLL slip/skew pull-in** — snap-to-estimate reaches cold full quality in <1 s; the first pass gives
+  cold lock full `q` immediately
+- **Per-chip erasure/flip accounting** — the measured 2:1 flip-vs-erasure asymmetry
+- **2.4 frames/chip oversampling** — Nyquist margin, carries no information the tick-level model needs
 
 ## Open items carried into implementation
 

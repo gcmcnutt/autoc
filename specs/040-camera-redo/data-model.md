@@ -108,19 +108,40 @@ Per beacon. **Internal to perception — never a controller input** (FR-017b). R
 
 **States**: `SEARCHING` → `ACQUIRING` → `TRACKING` → `HOLDING` → (`TRACKING` | `SEARCHING`)
 
-| Transition | Condition | Timing | Class |
-|---|---|---|---|
-| SEARCHING → ACQUIRING | SNR above threshold | immediate | M |
-| ACQUIRING → TRACKING | chip credit ≥ confirm threshold | ≈55 ms partial / 75 ms full code | M |
-| ACQUIRING → SEARCHING | credit decays below floor | — | D |
-| TRACKING → HOLDING | signal lost | immediate | M |
-| HOLDING → TRACKING | signal returns within hold window | ≲1 code period (warm relock) | M |
-| HOLDING → SEARCHING | hold window expires | ≈2 code periods | M |
+Mirrors the shipped gateware FSM rather than inventing one
+([`SIM-FEATURES.md`](../../firmware/beacon-decoder-stepfpga/SIM-FEATURES.md)). All timings are
+**hardware-measured at N=31** via the decoder's recovery counter.
+
+| Transition | Condition | Timing | ticks @ 20 Hz | Class |
+|---|---|---|---:|---|
+| SEARCH → ACQUIRING | SNR above threshold | immediate | 0 | M |
+| ACQUIRING → LOCKED (**cold**) | rate stale ⇒ needs `MINLOCK` | **308 ms** (≈2 words) | 6.2 | M |
+| **HOLD → LOCKED (warm)** | signal returns **inside the coast window** ⇒ flywheel still holds the rate, re-lock on the first good period, **ACQUIRING skipped** | **154 ms** (≈1 word) | 3.1 | M |
+| LOCKED → HOLD | signal lost | immediate | 0 | M |
+| HOLD → SEARCH | `HOLDMAX` 2 bad periods elapse | **308 ms** | 6.2 | M |
+| coast expiry | `time_since_loss` > **10 s** ⇒ next re-acquire is **true-cold** | wallclock | 200 | M |
 
 | Field | Unit | Notes |
 |---|---|---|
-| `chip_credit` | chips | integrator; the 031 probability curves become thresholds, never draws |
-| `hold_remaining` | ms | counts down in HOLDING |
+| `time_in_state` | ms | advanced **analytically** once per 50 ms controller tick — no sub-stepping |
+| `time_since_loss` | ms | gates warm vs true-cold at the coast window |
+| `q` | 0–9 | `\|corr\|/energy` — **signal-level independent** (AGC-normalised); GOOD ≥ 5. Source of the quality value |
+
+### Why the coast window dominates
+
+The coast window is **wallclock-driven** (emitter↔receiver oscillator stability), *not* code length. The
+documented M2 worst-case blind window is **~8 s**, which sits **inside** the ~10 s coast — so in practice
+**most M2 reacquisitions are warm (154 ms), not cold (308 ms)**. "31 chips triples acquisition" is true only
+of the cold path, which M2 rarely takes. Cold is still modelled: operator reports it does occur in flight
+(sun, reflections) at losses beyond ~10 s.
+
+### Advance rule
+
+Chip credit accrues linearly in time, so a 50 ms tick adds 10 chips' worth at the current SNR — computed in
+one arithmetic step rather than 24 frame sub-steps. This is exact for constant SNR, **phase-free** (a 154 ms
+word against a 50 ms tick is 3.08 — not commensurate, so the code boundary drifts relative to the tick
+exactly as free-running hardware does), and keeps perception inside the FR-038 throughput ceiling.
+Quantisation is ±1 tick, which SC-005 already states as the tolerance.
 
 **Reset (FR-020a)**: every field resets at each scenario boundary, in **both** the production path and the
 test-only reference. Unreset state leaks across scenarios and breaks the bitwise gate — the existing
