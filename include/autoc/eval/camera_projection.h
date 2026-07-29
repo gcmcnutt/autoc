@@ -25,12 +25,15 @@
 // angular scales and a horizontal separation read 60/45 = 1.333× its vertical
 // twin — a 33% orientation error sitting in the sole range channel (FR-002).
 //
-// RESIDUAL, documented not corrected (research R2, contract §6): under
-// equidistant mapping, Euclidean distance in (θx, θy) equals the great-circle
-// angle EXACTLY along a radius and over-reads TANGENTIALLY by θ/sin θ — +21%
-// at the frame corner. This is the only remaining position dependence, and it
-// is what makes a separate ray-angle span computation unnecessary. Pinned by
-// tests/beacon_projection_tests.cc CameraGridGeometry.Tangential*.
+// 040 T033a — SEPARATION IS MEASURED ON THE SPHERE. Under equidistant mapping,
+// Euclidean distance in (θx, θy) equals the great-circle angle EXACTLY along a
+// radius but over-reads TANGENTIALLY by θ/sin θ (+35% at the 75° diagonal).
+// R2 originally accepted that residual; it is now CORRECTED in
+// `compute_pair_span`, which reconstructs both unit rays and returns the angle
+// between them — see include/autoc/eval/derived_features.h. Nothing in the
+// projection changed: bearing is still equidistant (θx, θy). Pinned by
+// tests/beacon_projection_tests.cc
+// CameraGridGeometry.SeparationIsInvariantAtAnyPositionAndOrientation.
 //
 // Coordinate convention (chase body frame, NED): +x forward, +y right,
 // +z down. Camera optical axis = body +x by default; bearing_x_rad runs
@@ -153,6 +156,70 @@ int16_t bearingToPixel(gp_scalar bearing_rad, int pixels, gp_scalar rad_per_px);
 // Exact centre bearing of pixel `px`. Inverse of the above up to the
 // quantisation the grid imposes by design.
 gp_scalar pixelToBearing(int16_t px, int pixels, gp_scalar rad_per_px);
+
+// ---------------------------------------------------------------------------
+// 040 T044 (FR-012, SC-003) — the EFFECTIVE field of view.
+//
+// The nominal field is a rectangle the grid defines. The effective field is
+// what is left after the aircraft's own wing, nose and propeller take their
+// share, and publishing the difference is the point of US3: obstruction here is
+// a design choice to VALIDATE, not a defect to model faithfully.
+//
+// SOLID-ANGLE WEIGHTED, deliberately. Under an equidistant mapping equal areas
+// in (θx, θy) do NOT subtend equal solid angle — the Jacobian is sin θ/θ — so
+// counting samples uniformly would over-weight the frame corners, which is
+// exactly where obstruction lives. An unweighted count would flatter or damn
+// the mount for the wrong reason.
+// ---------------------------------------------------------------------------
+
+struct EffectiveField {
+    // Solid angle of the nominal rectangle, steradians.
+    gp_scalar nominal_sr;
+    // Solid angle still fully usable: neither blocked nor attenuated.
+    gp_scalar clear_sr;
+    // Blocked by an opaque primitive (wing or nose) — beacon simply not seen.
+    gp_scalar blocked_sr;
+    // Crossed by the propeller disc: visible but attenuated (FR-009), so it is
+    // NOT lost field and is reported apart from `blocked_sr` rather than summed
+    // into it.
+    gp_scalar attenuated_sr;
+
+    gp_scalar blockedFraction() const { return blocked_sr / nominal_sr; }
+    gp_scalar attenuatedFraction() const { return attenuated_sr / nominal_sr; }
+    gp_scalar clearFraction() const { return clear_sr / nominal_sr; }
+};
+
+// Sweep the nominal field from `camera_mount_body` and integrate what the
+// airframe takes. `stride_px` subsamples the grid (1 = every pixel); the
+// integral is insensitive to it well before 1, and the default keeps the sweep
+// cheap enough for a report. `probe_range_m` is how far out the test target
+// sits — obstruction is near-field geometry, so any range past the airframe
+// gives the same answer.
+EffectiveField computeEffectiveField(const CameraConfig& camera,
+                                     const AirframeObstruction& airframe,
+                                     const gp_vec3& camera_mount_body,
+                                     int stride_px = 4,
+                                     gp_scalar probe_range_m =
+                                         static_cast<gp_scalar>(10));
+
+// ---------------------------------------------------------------------------
+// 040 T045 (FR-007b, SC-007) — obstruction ONSET.
+//
+// The angle from the camera's own boresight at which the airframe first takes
+// signal, sweeping inboard — toward the thrust axis, which is where every
+// primitive lives. Reported per mount so the distribution across the
+// mounting-error envelope can be assembled by the caller.
+//
+// Returns a negative value if the sweep finds no obstruction anywhere in the
+// field, which is a meaningful answer and not an error: it is what a mount that
+// fully clears the airframe looks like.
+// ---------------------------------------------------------------------------
+
+gp_scalar obstructionOnsetDeg(const CameraConfig& camera,
+                              const AirframeObstruction& airframe,
+                              const gp_vec3& camera_mount_body,
+                              gp_scalar boresight_tilt_inboard_deg =
+                                  static_cast<gp_scalar>(0));
 
 // CEP quantisation (R7). `quantize_cep` reserves INT8_MIN for the sentinel and
 // otherwise clamps to [0, 1] before rounding to [0, +127]; the negative range

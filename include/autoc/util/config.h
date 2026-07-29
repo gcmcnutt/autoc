@@ -242,9 +242,13 @@ struct AutocConfig {
     // 040 T017 — CameraFrameRateHz / CameraLatencyMs retired. Sensor cadence
     // follows ControlIntervalMsec (037); latency emerges from the acquisition
     // state machine (US4). See include/autoc/eval/camera_config.h.
-    double cameraMountOffsetX = 0.0;
-    double cameraMountOffsetY = 0.0;
-    double cameraMountOffsetZ = -0.05;      // m above wing surface (NED, +Z down)
+    // 040 T043 — THE BASELINE MOUNT: wing leading edge, 8″ outboard, ~1¼″ above
+    // the thrust line, on the prop-axle datum. Mirrors CameraConfig's default
+    // and hb1LeadingEdgeCameraMount(); the retired (0, 0, −0.05) sat on the
+    // centreline INSIDE the 6.985 cm prop radius, i.e. behind the disc.
+    double cameraMountOffsetX = -0.150400;  // raw-ok: ini-loaded config-struct field (inih::GetReal → double; cast to gp_scalar at the WorkerInit boundary). 2 mm proud of the LE face
+    double cameraMountOffsetY = 0.203200;   // raw-ok: ini-loaded config-struct field. 8″ outboard — clears the prop disc
+    double cameraMountOffsetZ = -0.031750;  // raw-ok: ini-loaded config-struct field. ~1.25″ up (NED, +Z down ⇒ −Z is up)
 
     // --- Beacon config (FR-004) ---
     int beaconLeftWavelengthNm = 850;
@@ -275,7 +279,7 @@ struct AutocConfig {
     // Defaults mirror hb1AirframeObstruction() so the two cannot drift;
     // contract_tracker_config_tests asserts every key is present in the ini,
     // so a default can never silently stand in for a missing key.
-    int airframeObstructionEnabled = 0;   // Stage D (T043) turns this on
+    int airframeObstructionEnabled = 1;   // 040 T043 — ON at the baseline mount
     double airframeWingMinX = -0.330200;  // trailing edge
     double airframeWingMinY = -0.381000;  // port tip
     double airframeWingMinZ = -0.044450;  // wing top (up)

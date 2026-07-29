@@ -212,4 +212,134 @@ BeaconObservation projectBeacon(const ProjectionInput& input) {
     return obs;
 }
 
+// ---------------------------------------------------------------------------
+// 040 T044 / T045 — effective field and obstruction onset.
+//
+// Both are pure geometry over the same primitives the per-tick path uses, so
+// they cannot drift from what the simulator actually does: they call
+// testObstruction, not a parallel reimplementation of it.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Unit ray in camera frame for a bearing, matching the projection's forward
+// mapping (see derived_features.h bearing_to_unit_ray — same construction; kept
+// local rather than shared because this file must not depend on the NN-facing
+// derived-feature header).
+gp_vec3 rayForBearing(gp_scalar bx, gp_scalar by) {
+    const gp_scalar theta = std::sqrt(bx * bx + by * by);
+    if (theta < static_cast<gp_scalar>(1e-9)) {
+        return gp_vec3(static_cast<gp_scalar>(1), static_cast<gp_scalar>(0),
+                       static_cast<gp_scalar>(0));
+    }
+    const gp_scalar s = std::sin(theta) / theta;
+    return gp_vec3(std::cos(theta), s * bx, s * by);
+}
+
+}  // namespace
+
+EffectiveField computeEffectiveField(const CameraConfig& camera,
+                                     const AirframeObstruction& airframe,
+                                     const gp_vec3& camera_mount_body,
+                                     int stride_px,
+                                     gp_scalar probe_range_m) {
+    EffectiveField out;
+    out.nominal_sr = static_cast<gp_scalar>(0);
+    out.clear_sr = static_cast<gp_scalar>(0);
+    out.blocked_sr = static_cast<gp_scalar>(0);
+    out.attenuated_sr = static_cast<gp_scalar>(0);
+
+    const int stride = std::max(1, stride_px);
+    const gp_scalar rad_per_px = camera.radPerPx();
+    // Solid angle a single sampled cell would subtend if the mapping were
+    // area-true; the sin θ/θ Jacobian below corrects it to the real sphere.
+    const gp_scalar cell =
+        rad_per_px * rad_per_px * static_cast<gp_scalar>(stride) *
+        static_cast<gp_scalar>(stride);
+
+    for (int iy = 0; iy < camera.pixels_v; iy += stride) {
+        const gp_scalar by = pixelToBearing(static_cast<int16_t>(iy),
+                                            camera.pixels_v, rad_per_px);
+        for (int ix = 0; ix < camera.pixels_h; ix += stride) {
+            const gp_scalar bx = pixelToBearing(static_cast<int16_t>(ix),
+                                                camera.pixels_h, rad_per_px);
+
+            // Jacobian of the equidistant mapping: dΩ = (sin θ / θ) dθx dθy.
+            const gp_scalar theta = std::sqrt(bx * bx + by * by);
+            const gp_scalar jac =
+                (theta < static_cast<gp_scalar>(1e-9))
+                    ? static_cast<gp_scalar>(1)
+                    : std::sin(theta) / theta;
+            const gp_scalar d_omega = cell * jac;
+            out.nominal_sr += d_omega;
+
+            const gp_vec3 target =
+                camera_mount_body + rayForBearing(bx, by) * probe_range_m;
+            const ObstructionResult r =
+                testObstruction(camera_mount_body, target, airframe);
+
+            if (r.blocked) {
+                out.blocked_sr += d_omega;
+            } else if (r.attenuation < static_cast<gp_scalar>(1)) {
+                out.attenuated_sr += d_omega;
+                // Attenuated field is still usable field, so it also counts as
+                // clear for the purpose of "what did the airframe take".
+                out.clear_sr += d_omega;
+            } else {
+                out.clear_sr += d_omega;
+            }
+        }
+    }
+
+    return out;
+}
+
+gp_scalar obstructionOnsetDeg(const CameraConfig& camera,
+                              const AirframeObstruction& airframe,
+                              const gp_vec3& camera_mount_body,
+                              gp_scalar boresight_tilt_inboard_deg) {
+    // Sweep INBOARD — toward the thrust axis — because that is where every
+    // primitive sits. "Inboard" is the direction from the mount's (y, z) to the
+    // prop axis, which for the baseline mount is mostly −y with a little +z.
+    const gp_scalar dy = airframe.prop_axis_y - camera_mount_body.y();
+    const gp_scalar dz = airframe.prop_axis_z - camera_mount_body.z();
+    const gp_scalar r = std::sqrt(dy * dy + dz * dz);
+    if (r < static_cast<gp_scalar>(1e-9)) {
+        // Mount is ON the thrust axis: there is no inboard direction, and the
+        // disc is dead ahead. Onset is zero by inspection.
+        return static_cast<gp_scalar>(0);
+    }
+    const gp_scalar uy = dy / r;
+    const gp_scalar uz = dz / r;
+
+    constexpr gp_scalar kDeg = static_cast<gp_scalar>(3.14159265358979323846 / 180.0);
+
+    // A misaligned mount does not move the airframe — it rotates the boresight.
+    // So the sweep starts at the tilt angle in BODY terms and the reported onset
+    // is measured from the camera's OWN boresight, which is what a controller
+    // trained on this camera would experience.
+    const gp_scalar half_field_deg =
+        std::max(camera.fovHDeg(), camera.fovVDeg()) /
+        static_cast<gp_scalar>(2);
+
+    // 0.05° steps: an order finer than a 0.375° pixel, so the reported onset is
+    // limited by the geometry rather than by the sweep.
+    const gp_scalar step = static_cast<gp_scalar>(0.05);
+    for (gp_scalar a = static_cast<gp_scalar>(0); a <= half_field_deg;
+         a += step) {
+        const gp_scalar body_deg = a + boresight_tilt_inboard_deg;
+        const gp_scalar t = body_deg * kDeg;
+        const gp_vec3 dir(std::cos(t), std::sin(t) * uy, std::sin(t) * uz);
+        const gp_vec3 target =
+            camera_mount_body + dir * static_cast<gp_scalar>(10);
+        const ObstructionResult res =
+            testObstruction(camera_mount_body, target, airframe);
+        if (res.blocked || res.attenuation < static_cast<gp_scalar>(1)) {
+            return a;
+        }
+    }
+
+    return static_cast<gp_scalar>(-1);  // nothing obstructs anywhere in field
+}
+
 }  // namespace autoc::eval

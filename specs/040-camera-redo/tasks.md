@@ -151,24 +151,44 @@ reported obstruction-onset distribution matches geometric prediction and the win
 
 ### Tests (write first, verify failing)
 
-- [ ] T036 [P] [US3] Test in `tests/beacon_projection_tests.cc`: at the baseline mount the wing contributes zero obstruction (nothing sits ahead of the leading edge)
-- [ ] T037 [P] [US3] Test in `tests/beacon_projection_tests.cc`: propeller shadow onset at the baseline mount matches the geometric prediction (≈41° inboard)
-- [ ] T038 [P] [US3] Test in `tests/beacon_projection_tests.cc`: an alternative configured mount (wing-top) reports different obstruction without code change (FR-011a)
-- [ ] T039 [P] [US3] Test in `tests/beacon_projection_tests.cc`: propeller obstruction attenuates rather than hard-cutting (FR-009)
-- [ ] T040 [P] [US3] Test in `tests/beacon_projection_tests.cc`: the reported effective field differs from the nominal rectangle by the geometrically justified amount (FR-012, SC-003)
+- [x] T036 [P] [US3] ✅ **DONE 2026-07-29** — `WingContributesNoObstructionAtBaselineMount` sweeps the whole field (4800 samples) rather than arguing it: the aperture stands 2 mm FORWARD of the LE plane, so for any forward ray the wing is strictly behind it. **Zero of 4800 field rays hit the wing slab.** The claim the LE mount's build cost rests on, so it is swept, not reasoned
+- [x] T037 [P] [US3] ✅ **DONE 2026-07-29** — two tests. `PropShadowOnsetMatchesGeometricPrediction` compares the swept onset against the closed form `atan((r_cam − r_prop)/Δx)`: **42.10° measured vs 42.08° predicted**. Scoping said ≈41°. `MisalignedMountBringsTheShadowInboard` covers the envelope case — a 20° glue error does not move the airframe, it rotates the boresight, so the same shadow arrives **22.1°** from the camera's own boresight (spec predicted ≈21°)
+- [x] T038 [P] [US3] ✅ **DONE 2026-07-29** — `AlternativeMountReportsDifferentObstruction` prices a wing-top mount by changing configuration only. Asserts both that the answer *differs* and the *direction* of the difference (wing-top is obstructed more), because a test that only asserts inequality would pass on a bug that made every mount look bad
+- [x] T039 [P] [US3] ✅ **ALREADY SATISFIED — no new test written.** `PropDiscAttenuatesButNeverGates` has covered FR-009 since T013: crossing the disc yields `blocked == false` with `0 < attenuation < 1`. Verified against the new baseline mount rather than re-asserted
+- [x] T040 [P] [US3] ✅ **DONE 2026-07-29 — and it FAILED FIRST, correctly.** I wrote it asserting `blockedFraction == 0`; the sweep reported **2.9%**. The test was wrong, not the code: the wing is eliminated but **the pod nose still shadows the inboard field** from ~48° out, exactly as [input-data-checklist.md](input-data-checklist.md) predicted ("wing occlusion is eliminated at any LE offset; the pod nose shadows the same inboard region and merges into the same patch"). Test now asserts the true structure **with attribution** — collapse the nose box and blockage must vanish entirely, so the 2.9% cannot be quietly ascribed to the wing. Also pins that the integrator integrates the SPHERE (2.989 sr) and not the flat rectangle (3.29 sr)
 
 ### Implementation
 
-- [ ] T041 [US3] Implement wing-slab and nose-box ray tests in `src/eval/airframe_occlusion.cc` using the measured station stack (prop 0″, wing LE 6″, camera 8″, wing TE 13″)
-- [ ] T042 [US3] Implement the static propeller-disc angular region with representative attenuation in `src/eval/airframe_occlusion.cc` — **no engine speed, no blade phase** (FR-009)
-- [ ] T043 [US3] Set the baseline mount (leading edge, 8″ outboard, ~1″ above thrust line, boresight parallel to thrust line) as the default in `autoc-tracker.ini` (FR-007a)
-- [ ] T044 [US3] Compute and expose the effective field of view — nominal minus all obstructions — from `src/eval/camera_projection.cc` (FR-012)
-- [ ] T045 [US3] Add an obstruction-onset distribution report (median / 95th / clipped extreme across the mounting-error envelope) to `tools/dmp_dump.cc` (FR-007b, SC-007)
-- [ ] T046 [US3] Record the propeller blade-passage envelope arithmetic as a research note in `specs/040-camera-redo/research.md` — recorded, not resolved (FR-011)
-- [ ] T047 [US3] Run the Principle VI type-domain grep on the diff; annotate or convert
+- [x] T041 [US3] ✅ **ALREADY IMPLEMENTED at T013** — `rayHitsBox` (slab method over the segment) plus the measured station stack in `hb1AirframeObstruction()`. Verified against the new mount; no change needed
+- [x] T042 [US3] ✅ **ALREADY IMPLEMENTED at T013** — `rayCrossesPropDisc` + partial attenuation, no engine speed and no blade phase. Verified; no change needed
+- [x] T043 [US3] ✅ **DONE 2026-07-29 — the switch this whole story exists to justify.** Mount moved to `(-0.150400, +0.203200, -0.031750)` and **obstruction turned ON**, in FOUR places that could otherwise drift: `CameraConfig`'s default, `AutocConfig`'s default, `hb1AirframeObstruction().enabled`, and all **three** tracker inis. The retired `(0, 0, -0.05)` sat on the centreline 5 cm above the axle — **inside** the 6.985 cm prop radius, i.e. squarely behind the disc — which is why obstruction had to ship disabled. Added `ConfigDefaultMountMatchesTheMeasuredLeadingEdgeMount` to pin the two code copies equal (they cannot be single-sourced without `camera_config.h` depending on the obstruction header). Two existing tests had to change with it: the "legacy mount" contrast now writes the retired value literally (reading it from config would have compared the new mount against itself), and `DisabledObstructionNeverOccludes` now disables explicitly so it tests the switch rather than the shipped default
+- [x] T044 [US3] ✅ **DONE 2026-07-29** — `computeEffectiveField` in `camera_projection.cc`, reported as **solid angle, deliberately**: under an equidistant mapping equal areas in (θx, θy) do NOT subtend equal solid angle (Jacobian sin θ/θ), and an unweighted sample count would over-weight the frame corners — which is precisely where obstruction lives, so it would have flattered or damned the mount for the wrong reason. Blocked and attenuated are reported **separately, never summed**: the prop attenuates rather than blocks (FR-009), so its share is not lost field. Calls `testObstruction` rather than reimplementing it, so the report cannot drift from what the simulator does
+- [x] T045 [US3] ✅ **DONE 2026-07-29** — `dmp-dump --obstruction-report -i <ini>`. **Takes no dmp argument**, because onset is a property of the configuration and not of any run; handled before the positional-argument check. The mounting-error envelope is **ASSUMED and stated in the output itself**, not buried: half-normal σ=6° clipped at 20°, swept deterministically rather than sampled so the report is reproducible. Percentiles are read from the PESSIMISTIC end, so "p95" means "95% of mounts obstruct no closer in than this"
+- [x] T046 [US3] ✅ **DONE 2026-07-29** — research **R13**, consolidated out of the checklist §C that produced it so it survives independently. Records `f_bp = RPM/30` (261–679 Hz in level flight), the three commensurabilities, and the key asymmetry: **exact lock is benign** (fixed phase ⇒ uniform attenuation ⇒ absorbed by the energy-normalised AGC) while **the near-miss is the hazard** (phase walks a full cycle within one 75 ms code word ⇒ structured attenuation ramp; danger band 14 010–14 790 rpm ⇒ 12.4–13.2 m/s, which sits on autoc cruise). Notes that the checklist's independent ~19% duty estimate lands on the shipped `AirframePropAttenuation = 0.18` — but that this is **not** independent confirmation, since both rest on the same unmeasured pupil and chord. Also records that **throttle is an NN output**, so this is a closed loop rather than an external disturbance
+- [x] T047 [US3] ✅ **DONE 2026-07-29** — grep clean. Three `cameraMountOffset*` config fields annotated per the `cameraDegPerPixel` precedent (inih returns double, cast at the WorkerInit boundary); the report-local statistics in `dmp_dump.cc` annotated as such — they summarise gp_scalar geometry and must out-precision it. **Cleanup**: deleted the dead `in()` inches→metres helper in `airframe_occlusion.cc`, defined at T013 and never called (the constants were written out in metres directly), so it was a second unused way to say the same thing
+
+**Gate**: `cmake --build build` clean, **39/39 ctest suites pass, 0 fail**, Principle VI grep clean.
 
 **Checkpoint**: **read the obstruction-onset distribution.** Per the "let it ride" clarification this is an
-observation, not a pass/fail — but it is the milestone's actual output.
+observation, not a pass/fail — but it is the milestone's actual output. Produced 2026-07-29 by
+`./build/dmp-dump --obstruction-report -i autoc-tracker.ini`:
+
+```
+effective_field:            onset_deg_from_own_boresight:
+  nominal_sr:      2.98916    nominal:          42.10   (scoping predicted ~41)
+  clear_frac:      0.9708     median:           38.10
+  blocked_frac:    0.0292     p95:              30.35
+  attenuated_frac: 0.0220     clipped_extreme:  22.10   (spec predicted ~21)
+```
+
+**Reading it — three things, and the second is the finding.** (1) Onset lands where the geometry said it
+would, at nominal *and* at the clipped extreme, so the mount decision rests on arithmetic that now
+reproduces. (2) **The 2.9% that is hard-blocked is the pod NOSE, not the wing** — wing obstruction really is
+eliminated at any LE offset, but the nose shadows the inboard field from ~48° out, and the nose box is
+**ASSUMED geometry pending the pod measurement** (checklist A1b), so this number is the least trustworthy
+one here and is deliberately modelled to under-obstruct rather than over-. (3) Even at the 20° glue-error
+limit the shadow stays 22° off boresight, which is the "let it ride" answer justified: no threshold was
+needed because the envelope never brings obstruction near where a tail-chased target lives.
 
 > ⚠️ **US3 acceptance scenario 6 completes in Phase 6, not here.** "Given a brief obstruction, when it
 > clears, then recovery follows the measured ride-through" (FR-013) requires the acquisition hold machinery,

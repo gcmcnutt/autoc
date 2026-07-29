@@ -511,11 +511,27 @@ TEST(AirframeObstruction, LeadingEdgeMountClearsThePropDisc) {
     EXPECT_FALSE(r.blocked);
     EXPECT_FLOAT_EQ(r.attenuation, 1.0f) << "clear of the disc ⇒ no attenuation";
 
-    // The contrast that motivates the mount change: the legacy centreline
-    // position DOES sit behind the disc.
-    const gp_vec3 legacy = CameraConfig{}.mount_offset_body;
-    EXPECT_TRUE(rayCrossesPropDisc(legacy, legacy + gp_vec3(10.0f, 0.0f, 0.0f), a))
-        << "expected the legacy mount to sit behind the disc";
+    // The contrast that motivates the mount change: the RETIRED centreline
+    // position sat behind the disc. Written out literally rather than read from
+    // CameraConfig, because T043 made the leading-edge mount the default — so
+    // reading the config here would compare the new mount against itself and
+    // the contrast would silently evaporate.
+    const gp_vec3 retired(0.0f, 0.0f, -0.05f);
+    EXPECT_TRUE(rayCrossesPropDisc(retired, retired + gp_vec3(10.0f, 0.0f, 0.0f), a))
+        << "expected the retired centreline mount to sit behind the disc";
+}
+
+TEST(AirframeObstruction, ConfigDefaultMountMatchesTheMeasuredLeadingEdgeMount) {
+    // T043 — two places name the baseline mount: the CameraConfig default (what
+    // the code ships) and hb1LeadingEdgeCameraMount() (what the sketch measured).
+    // They cannot be single-sourced without camera_config.h depending on the
+    // obstruction header, so they are pinned equal instead.
+    const gp_vec3 cfg = CameraConfig{}.mount_offset_body;
+    const gp_vec3 measured = autoc::eval::hb1LeadingEdgeCameraMount();
+    EXPECT_FLOAT_EQ(cfg.x(), measured.x());
+    EXPECT_FLOAT_EQ(cfg.y(), measured.y());
+    EXPECT_FLOAT_EQ(cfg.z(), measured.z())
+        << "the shipped camera mount has drifted from the measured geometry";
 }
 
 TEST(AirframeObstruction, PropDiscAttenuatesButNeverGates) {
@@ -537,19 +553,223 @@ TEST(AirframeObstruction, PropDiscAttenuatesButNeverGates) {
     EXPECT_GT(r.attenuation, 0.0f) << "attenuation must be partial, not total";
 }
 
+TEST(AirframeObstruction, ObstructionShipsEnabledAtTheBaselineMount) {
+    // T043 inverted this. Obstruction shipped DISABLED while the camera sat on
+    // the centreline inside the prop radius; with the mount at the leading edge
+    // it is on, and that is the switch US3 exists to justify.
+    const AirframeObstruction a = autoc::eval::hb1AirframeObstruction();
+    EXPECT_TRUE(a.enabled)
+        << "T043 turns obstruction on; if this is false the baseline mount and "
+           "the obstruction switch have come apart";
+}
+
 TEST(AirframeObstruction, DisabledObstructionNeverOccludes) {
-    // Guards the ship-safe default: with obstruction disabled, geometry is
-    // irrelevant and nothing may be reported blocked or attenuated.
+    // The kill switch still has to work: with obstruction off, geometry is
+    // irrelevant and nothing may be reported blocked or attenuated. Disabled
+    // explicitly now rather than relying on the shipped default (T043 flipped
+    // it), so this tests the switch instead of the config.
     const gp_vec3 mount = CameraConfig{}.mount_offset_body;
-    const AirframeObstruction a =
-        autoc::eval::hb1AirframeObstruction();
-    ASSERT_FALSE(a.enabled)
-        << "obstruction is expected to ship disabled until Stage D (T043)";
+    AirframeObstruction a = autoc::eval::hb1AirframeObstruction();
+    a.enabled = false;
+    // Put the disc dead ahead so the test would certainly fire if enabled.
+    a.prop_axis_y = mount.y();
+    a.prop_axis_z = mount.z();
 
     const gp_vec3 target = mount + gp_vec3(10.0f, 0.0f, 0.0f);
     const ObstructionResult r = testObstruction(mount, target, a);
     EXPECT_FALSE(r.blocked);
     EXPECT_FLOAT_EQ(r.attenuation, 1.0f);
+}
+
+// ===========================================================================
+// 040 US3 (T036-T040) — prove the mount clears the obstructions.
+//
+// The point of this block is that obstruction is a DESIGN CHOICE being
+// validated, not a defect being modelled faithfully. So the assertions are
+// about the mount: the wing contributes nothing, the propeller shadow lands
+// where geometry says it should and far from the boresight, and an alternative
+// mount can be priced without touching code.
+// ===========================================================================
+
+TEST(AirframeObstructionField, WingContributesNoObstructionAtBaselineMount) {
+    // T036 (acceptance scenario 1). The camera sits 2 mm FORWARD of the wing
+    // leading-edge plane, so for any forward ray (dx > 0, true everywhere in a
+    // ±75° field) the wing is strictly behind the aperture and cannot be hit.
+    // Swept over the whole field rather than argued, because the claim is what
+    // makes the leading-edge mount worth its build cost.
+    const CameraConfig cam{};
+    const gp_vec3 mount = cam.mount_offset_body;
+    AirframeObstruction a = autoc::eval::hb1AirframeObstruction();
+    ASSERT_TRUE(a.enabled);
+
+    int wing_hits = 0;
+    int samples = 0;
+    for (int iy = 0; iy < cam.pixels_v; iy += 4) {
+        for (int ix = 0; ix < cam.pixels_h; ix += 4) {
+            const double bx =
+                pixelCentreDeg(ix, cam.pixels_h, cam.deg_per_px) * kDegToRad;
+            const double by =
+                pixelCentreDeg(iy, cam.pixels_v, cam.deg_per_px) * kDegToRad;
+            const double th = std::sqrt(bx * bx + by * by);
+            const double s = (th < 1e-12) ? 1.0 : std::sin(th) / th;
+            const gp_vec3 dir(static_cast<gp_scalar>(std::cos(th)),
+                              static_cast<gp_scalar>(s * bx),
+                              static_cast<gp_scalar>(s * by));
+            const gp_vec3 target = mount + dir * 10.0f;
+            if (rayHitsBox(mount, target, a.wing_min, a.wing_max)) ++wing_hits;
+            ++samples;
+        }
+    }
+    ASSERT_GT(samples, 1000) << "sweep did not actually cover the field";
+    EXPECT_EQ(wing_hits, 0)
+        << wing_hits << " of " << samples
+        << " field rays hit the wing slab — the leading-edge mount is supposed "
+           "to eliminate wing obstruction entirely (FR-007a)";
+}
+
+TEST(AirframeObstructionField, PropShadowOnsetMatchesGeometricPrediction) {
+    // T037 (acceptance scenario 1, second half). Closed form: the mount sits at
+    // radial distance r_cam from the thrust axis and the disc reaches r_prop, so
+    // a ray must deflect inboard by atan((r_cam − r_prop)/Δx) before it can
+    // cross, where Δx is the axial distance from aperture to disc plane.
+    const CameraConfig cam{};
+    const gp_vec3 mount = cam.mount_offset_body;
+    const AirframeObstruction a = autoc::eval::hb1AirframeObstruction();
+
+    const double dy = static_cast<double>(a.prop_axis_y - mount.y());
+    const double dz = static_cast<double>(a.prop_axis_z - mount.z());
+    const double r_cam = std::sqrt(dy * dy + dz * dz);
+    const double dx = static_cast<double>(a.prop_plane_x - mount.x());
+    const double predicted_deg =
+        std::atan((r_cam - static_cast<double>(a.prop_radius)) / dx) * kRadToDeg;
+
+    const double onset = static_cast<double>(autoc::eval::obstructionOnsetDeg(
+        cam, a, mount, 0.0f));
+
+    // The sweep steps at 0.05°, so it can only ever land on or just past truth.
+    EXPECT_NEAR(onset, predicted_deg, 0.2)
+        << "onset " << onset << "° vs closed-form " << predicted_deg << "°";
+
+    // THE DESIGN CLAIM, stated as a number: the shadow is far enough off
+    // boresight that a tail-chased target never sits in it. Scoping put this at
+    // ~41°; anything much smaller means the mount stopped being worth it.
+    EXPECT_GT(onset, 35.0)
+        << "prop shadow has crept toward the boresight — at " << onset
+        << "° a chased target would sit in it";
+}
+
+TEST(AirframeObstructionField, MisalignedMountBringsTheShadowInboard) {
+    // T037 (acceptance scenario 2 support). The mounting-error envelope is the
+    // reason US3 tests at the extremes, not at nominal: a camera glued 20°
+    // inboard does not move the airframe, it rotates the boresight, so the same
+    // shadow arrives ~20° closer to the middle of the frame.
+    const CameraConfig cam{};
+    const gp_vec3 mount = cam.mount_offset_body;
+    const AirframeObstruction a = autoc::eval::hb1AirframeObstruction();
+
+    const double nominal =
+        static_cast<double>(autoc::eval::obstructionOnsetDeg(cam, a, mount, 0.0f));
+    const double clipped =
+        static_cast<double>(autoc::eval::obstructionOnsetDeg(cam, a, mount, 20.0f));
+
+    EXPECT_NEAR(clipped, nominal - 20.0, 0.3)
+        << "a 20° inboard glue error must move onset in by 20°: nominal "
+        << nominal << "° vs misaligned " << clipped << "°";
+    // The spec's stated worst case (~21° from its own boresight). Pinned so the
+    // number the mount decision rests on cannot drift unnoticed.
+    EXPECT_GT(clipped, 15.0);
+    EXPECT_LT(clipped, 27.0);
+}
+
+TEST(AirframeObstructionField, AlternativeMountReportsDifferentObstruction) {
+    // T038 (acceptance scenario 3, FR-011a). A wing-TOP mount is priced by
+    // changing configuration only — no code path here is mount-specific.
+    const CameraConfig cam{};
+    const AirframeObstruction a = autoc::eval::hb1AirframeObstruction();
+
+    const autoc::eval::EffectiveField baseline =
+        autoc::eval::computeEffectiveField(cam, a, cam.mount_offset_body);
+
+    // Wing top, mid-chord, on the centreline: 1 cm above the wing's upper
+    // surface, half way between LE and TE. Nothing but config changed.
+    const gp_vec3 wing_top(
+        static_cast<gp_scalar>(0.5 * (-0.330200 + -0.152400)),
+        0.0f,
+        static_cast<gp_scalar>(-0.044450 - 0.010));
+    const autoc::eval::EffectiveField alternative =
+        autoc::eval::computeEffectiveField(cam, a, wing_top);
+
+    EXPECT_NE(baseline.blockedFraction(), alternative.blockedFraction())
+        << "an alternative mount must report different obstruction without a "
+           "code change, or mount options cannot be compared (FR-011a)";
+    // Direction of the difference is itself the finding: the wing-top mount has
+    // the wing ahead of and below it, and the nose box ahead of it.
+    EXPECT_GT(alternative.blockedFraction(), baseline.blockedFraction())
+        << "expected the wing-top mount to be obstructed MORE than the "
+           "leading-edge mount — if not, the case for the LE mount is weaker "
+           "than the scoping analysis claimed";
+}
+
+TEST(AirframeObstructionField, EffectiveFieldDiffersFromNominalByAJustifiedAmount) {
+    // T040 (FR-012, SC-003). The effective field is the nominal rectangle minus
+    // what the airframe takes. Two things must both hold: the loss is real (the
+    // report is not silently zero), and it is SMALL — because at this mount the
+    // only contributor is a propeller disc that attenuates rather than blocks.
+    const CameraConfig cam{};
+    const AirframeObstruction a = autoc::eval::hb1AirframeObstruction();
+    const autoc::eval::EffectiveField f =
+        autoc::eval::computeEffectiveField(cam, a, cam.mount_offset_body);
+
+    // Nominal solid angle, closed form: ∫∫ (sin θ/θ) dθx dθy over the
+    // rectangle. Checked loosely — the point is that the integrator is
+    // integrating the sphere and not the flat rectangle, whose area would be
+    // 2.094 × 1.571 = 3.29 sr.
+    const double flat = static_cast<double>(cam.fovHDeg() * kDegToRad) *
+                        static_cast<double>(cam.fovVDeg() * kDegToRad);
+    EXPECT_LT(static_cast<double>(f.nominal_sr), flat)
+        << "the sin θ/θ Jacobian must pull the true solid angle BELOW the flat "
+           "rectangle's area; got " << f.nominal_sr << " vs flat " << flat;
+    EXPECT_GT(static_cast<double>(f.nominal_sr), 0.5 * flat);
+
+    // THE LOSS IS REAL AND IT IS THE POD NOSE, not the wing. The scoping
+    // analysis said so ("wing occlusion is eliminated at any LE offset; the pod
+    // nose shadows the same inboard region and merges into the same patch") and
+    // the sweep agrees: ~3% of the field is hard-blocked, entering around 48°
+    // inboard where the ray finally descends into the nose box before clearing
+    // its forward face. The wing contributes exactly zero — see
+    // WingContributesNoObstructionAtBaselineMount.
+    EXPECT_GT(f.blockedFraction(), 0.005f)
+        << "the pod nose reaches the inboard field at this mount; a zero here "
+           "means the sweep or the nose geometry is wrong, not that the mount "
+           "is perfect";
+    EXPECT_LT(f.blockedFraction(), 0.10f)
+        << "blocked " << f.blockedFraction() * 100.0f
+        << "% of the field — more than the inboard nose patch can account for";
+
+    // ATTRIBUTION, so the number above cannot be quietly ascribed to the wrong
+    // primitive: collapse the nose box to nothing and the blockage must vanish
+    // entirely. This is also the only assertion here that would catch the wing
+    // starting to contribute.
+    AirframeObstruction no_nose = a;
+    no_nose.nose_min = gp_vec3(0.0f, 0.0f, 0.0f);
+    no_nose.nose_max = gp_vec3(0.0f, 0.0f, 0.0f);
+    const autoc::eval::EffectiveField without_nose =
+        autoc::eval::computeEffectiveField(cam, no_nose, cam.mount_offset_body);
+    EXPECT_LT(without_nose.blockedFraction(), 1e-6f)
+        << "with the nose box collapsed, nothing opaque should block the field "
+           "— so the blockage above is the nose and nothing else";
+
+    // The propeller reaches the field too, and ITS loss is attenuation rather
+    // than blockage (FR-009) — the distinction the report must preserve.
+    EXPECT_GT(f.attenuatedFraction(), 0.0f)
+        << "the prop disc is inside the 120°×90° field at this mount";
+    EXPECT_LT(f.attenuatedFraction(), 0.25f)
+        << "prop shadow covering more than a quarter of the field would "
+           "contradict the ~42-61° inboard patch the geometry predicts";
+
+    // Attenuated field is still usable, so it counts as clear. NEAR not FLOAT_EQ:
+    // both sides are sums over ~4800 samples and differ in the last few bits.
+    EXPECT_NEAR(f.clearFraction(), 1.0f - f.blockedFraction(), 1e-5f);
 }
 
 // ===========================================================================

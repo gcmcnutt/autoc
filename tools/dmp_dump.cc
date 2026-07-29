@@ -44,6 +44,109 @@
 
 namespace {
 
+// ---------------------------------------------------------------------------
+// 040 T045 (FR-007b, SC-007) — obstruction-onset distribution.
+//
+// Reports where the chase's own airframe first takes signal, across the
+// MOUNTING-ERROR ENVELOPE rather than at nominal only. That is the whole point:
+// design intent and build reality have to be checked together, because a camera
+// glued 20° off brings the propeller shadow back toward the boresight where a
+// chased target actually lives.
+//
+// This reads only the ini — obstruction onset is a property of the
+// configuration, not of any particular run — so it needs no dmp argument.
+//
+// THE ENVELOPE IS ASSUMED, and stated here rather than buried: per spec
+// Session 2026-07-28, most of the mounting-error distribution sits within 10°
+// with a hard limit at 20°. Modelled as a half-normal in tilt magnitude with
+// σ = 6° (⇒ ~95th percentile at 11.8°), hard-clipped at 20°, swept
+// deterministically rather than sampled so the report is reproducible. There is
+// no measured glue-error distribution; when one exists it replaces σ only.
+// Per the "let it ride" clarification this is an OBSERVATION, not a gate.
+// ---------------------------------------------------------------------------
+int emitObstructionReport(const AutocConfig& cfg,
+                          const autoc::eval::AirframeObstruction& airframe,
+                          const gp_vec3& mount) {
+  autoc::eval::CameraConfig cam;
+  cam.pixels_h = cfg.cameraPixelsH;
+  cam.pixels_v = cfg.cameraPixelsV;
+  cam.deg_per_px = static_cast<gp_scalar>(cfg.cameraDegPerPixel);
+  cam.mount_offset_body = mount;
+
+  std::cout << "obstruction_report:\n";
+  std::cout << "  enabled: " << (airframe.enabled ? "true" : "false") << "\n";
+  std::cout << "  mount_body_m: [" << mount.x() << ", " << mount.y() << ", "
+            << mount.z() << "]\n";
+  std::cout << "  nominal_fov_deg: [" << cam.fovHDeg() << ", " << cam.fovVDeg()
+            << "]\n";
+
+  if (!airframe.enabled) {
+    std::cout << "  note: obstruction disabled — nothing to report\n";
+    return 0;
+  }
+
+  // --- effective field at nominal alignment (T044, FR-012) ------------------
+  const autoc::eval::EffectiveField f =
+      autoc::eval::computeEffectiveField(cam, airframe, mount);
+  std::cout << "  effective_field:\n";
+  std::cout << "    nominal_sr: " << f.nominal_sr << "\n";
+  std::cout << "    clear_frac: " << f.clearFraction() << "\n";
+  std::cout << "    blocked_frac: " << f.blockedFraction()
+            << "    # opaque (wing/nose) — signal lost\n";
+  std::cout << "    attenuated_frac: " << f.attenuatedFraction()
+            << "    # prop disc — reduced, NOT lost (FR-009)\n";
+
+  // --- onset across the mounting-error envelope (T045, FR-007b) ------------
+  // Deterministic sweep of tilt magnitude, weighted by the half-normal above.
+  // Weights are accumulated so median / 95th read off the same curve.
+  constexpr double kSigmaDeg = 6.0;   // raw-ok: report-local statistics, not eval math
+  constexpr double kClipDeg = 20.0;   // raw-ok: report-local statistics, not eval math
+  constexpr double kStepDeg = 0.25;   // raw-ok: report-local statistics, not eval math
+
+  std::vector<std::pair<double, double>> onset_weight;  // raw-ok: report-local statistics. (onset_deg, weight)
+  double total_w = 0.0;  // raw-ok: report-local statistics
+  for (double tilt = 0.0; tilt <= kClipDeg + 1e-9; tilt += kStepDeg) {  // raw-ok: report-local statistics
+    // Half-normal density (unnormalised; normalised via total_w below).
+    const double w = std::exp(-0.5 * (tilt / kSigmaDeg) * (tilt / kSigmaDeg));  // raw-ok: report-local statistics
+    const double onset = static_cast<double>(autoc::eval::obstructionOnsetDeg(  // raw-ok: report-local statistics
+        cam, airframe, mount, static_cast<gp_scalar>(tilt)));
+    onset_weight.emplace_back(onset, w);
+    total_w += w;
+  }
+  // Onset DECREASES as tilt grows, so sort ascending to read percentiles from
+  // the pessimistic tail inward.
+  std::sort(onset_weight.begin(), onset_weight.end());
+
+  auto percentile = [&](double p) {  // raw-ok: report-local statistics
+    // p measured from the PESSIMISTIC end (smallest onset = worst case), so
+    // "95th percentile" means "95% of mounts do at least this well".
+    double acc = 0.0;  // raw-ok: report-local statistics
+    for (const auto& ow : onset_weight) {
+      acc += ow.second;
+      if (acc / total_w >= (1.0 - p)) return ow.first;
+    }
+    return onset_weight.back().first;
+  };
+
+  const double nominal_onset = static_cast<double>(  // raw-ok: report-local statistics
+      autoc::eval::obstructionOnsetDeg(cam, airframe, mount, 0.0f));
+  const double clipped_extreme = onset_weight.front().first;  // raw-ok: report-local statistics
+
+  std::cout << "  onset_deg_from_own_boresight:\n";
+  std::cout << "    nominal: " << nominal_onset << "\n";
+  std::cout << "    median: " << percentile(0.50) << "\n";
+  std::cout << "    p95: " << percentile(0.95)
+            << "    # 95% of mounts obstruct no closer in than this\n";
+  std::cout << "    clipped_extreme: " << clipped_extreme
+            << "    # the " << kClipDeg << "° glue-error limit\n";
+  std::cout << "    envelope: half-normal sigma=" << kSigmaDeg
+            << "deg clipped at " << kClipDeg << "deg (ASSUMED; FR-035)\n";
+  if (nominal_onset < 0.0) {
+    std::cout << "    note: no obstruction anywhere in the field at nominal\n";
+  }
+  return 0;
+}
+
 void printUsage(const char* prog) {
   std::cout <<
     "Usage: " << prog << " <s3-uri | local-path> [OPTIONS]\n"
@@ -61,6 +164,10 @@ void printUsage(const char* prog) {
     "  --stride N     run-summary: sample every Nth gen (default 1)\n"
     "  --since-gen N  run-summary: skip gens < N (header suppressed) — incremental:\n"
     "                 fetch only new gens and append to a cached CSV\n"
+    "  -O, --obstruction-report\n"
+    "                 040 T045: airframe obstruction-onset distribution across the\n"
+    "                 mounting-error envelope, plus the effective field of view.\n"
+    "                 Reads the ini ONLY — takes no dmp argument. Pair with -i.\n"
     "  -i, --config   ini for S3 creds/bucket (default autoc.ini); fitness cone +\n"
     "                 cadence now read from the dmp-recorded RecordedRunConfig\n"
     "  -h, --help     this message\n"
@@ -253,16 +360,18 @@ int main(int argc, char** argv) {
     {"stride", required_argument, 0, 'S'},
     {"since-gen", required_argument, 0, 'G'},
     {"config", required_argument, 0, 'i'},
+    {"obstruction-report", no_argument, 0, 'O'},
     {"help", no_argument, 0, 'h'},
     {0, 0, 0, 0}
   };
   int specifiedGen = -1;
   bool metaOnly = false, csvOnly = false, runSummary = false;
+  bool obstructionReport = false;
   int stride = 1;
   int sinceGen = 0;
   std::string configFile = "autoc.ini";
   int idx = 0, opt;
-  while ((opt = getopt_long(argc, argv, "g:mcsS:G:i:h", long_options, &idx)) != -1) {
+  while ((opt = getopt_long(argc, argv, "g:mcsS:G:i:Oh", long_options, &idx)) != -1) {
     switch (opt) {
       case 'g': specifiedGen = std::stoi(optarg); break;
       case 'm': metaOnly = true; break;
@@ -271,10 +380,45 @@ int main(int argc, char** argv) {
       case 'S': stride = std::stoi(optarg); break;
       case 'G': sinceGen = std::stoi(optarg); break;
       case 'i': configFile = optarg; break;
+      case 'O': obstructionReport = true; break;
       case 'h': printUsage(argv[0]); return 0;
       default: printUsage(argv[0]); return 1;
     }
   }
+
+  // 040 T045 — the obstruction report is derived from the INI alone (onset is a
+  // property of the configuration, not of a run), so it is handled before the
+  // dmp-argument check and takes no positional argument.
+  if (obstructionReport) {
+    // Config chatter to stderr so stdout stays a clean YAML block, matching the
+    // other paths through this tool.
+    ConfigManager::initialize(configFile, std::cerr);
+    const AutocConfig& cfg = ConfigManager::getConfig();
+    autoc::eval::AirframeObstruction a;
+    a.enabled = (cfg.airframeObstructionEnabled != 0);
+    a.wing_min = gp_vec3(static_cast<gp_scalar>(cfg.airframeWingMinX),
+                         static_cast<gp_scalar>(cfg.airframeWingMinY),
+                         static_cast<gp_scalar>(cfg.airframeWingMinZ));
+    a.wing_max = gp_vec3(static_cast<gp_scalar>(cfg.airframeWingMaxX),
+                         static_cast<gp_scalar>(cfg.airframeWingMaxY),
+                         static_cast<gp_scalar>(cfg.airframeWingMaxZ));
+    a.nose_min = gp_vec3(static_cast<gp_scalar>(cfg.airframeNoseMinX),
+                         static_cast<gp_scalar>(cfg.airframeNoseMinY),
+                         static_cast<gp_scalar>(cfg.airframeNoseMinZ));
+    a.nose_max = gp_vec3(static_cast<gp_scalar>(cfg.airframeNoseMaxX),
+                         static_cast<gp_scalar>(cfg.airframeNoseMaxY),
+                         static_cast<gp_scalar>(cfg.airframeNoseMaxZ));
+    a.prop_plane_x = static_cast<gp_scalar>(cfg.airframePropPlaneX);
+    a.prop_axis_y = static_cast<gp_scalar>(cfg.airframePropAxisY);
+    a.prop_axis_z = static_cast<gp_scalar>(cfg.airframePropAxisZ);
+    a.prop_radius = static_cast<gp_scalar>(cfg.airframePropRadius);
+    a.prop_attenuation = static_cast<gp_scalar>(cfg.airframePropAttenuation);
+    const gp_vec3 mount(static_cast<gp_scalar>(cfg.cameraMountOffsetX),
+                        static_cast<gp_scalar>(cfg.cameraMountOffsetY),
+                        static_cast<gp_scalar>(cfg.cameraMountOffsetZ));
+    return emitObstructionReport(cfg, a, mount);
+  }
+
   if (optind >= argc) { printUsage(argv[0]); return 1; }
   const std::string input = argv[optind];
 

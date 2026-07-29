@@ -10,14 +10,12 @@ namespace autoc::eval {
 
 namespace {
 
-// Inches → metres. The measured station stack is imperial; the sim is metric,
-// and doing the conversion once here beats scattering 0.0254 through the
-// geometry.
-constexpr gp_scalar kIn = static_cast<gp_scalar>(0.0254);
-
-inline constexpr gp_scalar in(double inches) {  // raw-ok: literal-accepting helper; callers pass inch constants, result is gp_scalar
-    return static_cast<gp_scalar>(inches) * kIn;
-}
+// The measured station stack was imperial. It is converted to metres ONCE, by
+// hand, at the point each constant below is written down — deliberately, so
+// nothing downstream has to know inches existed and there is no runtime unit
+// path to get wrong. (An `in()` helper lived here briefly and was never called;
+// removed in T043 rather than left as a second, unused way to say the same
+// thing.)
 
 }  // namespace
 
@@ -145,10 +143,12 @@ AirframeObstruction hb1AirframeObstruction() {
                          static_cast<gp_scalar>(+0.038100),
                          static_cast<gp_scalar>(+0.038100));
 
-    // Stage D (T043) moves the camera mount to the leading edge and turns this
-    // on. Enabling it against the legacy mount would model geometry the
-    // aircraft does not have.
-    a.enabled = false;
+    // 040 T043 — ON. The camera mount moved to the leading edge (8″ outboard),
+    // which is what makes obstruction modellable at all: against the retired
+    // centreline mount, 5 cm above the axle and thus INSIDE the 6.985 cm prop
+    // radius, enabling this would have put the disc across the whole forward
+    // view — geometry the aircraft does not have.
+    a.enabled = true;
     return a;
 }
 

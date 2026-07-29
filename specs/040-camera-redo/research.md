@@ -329,6 +329,52 @@ length** — it is the parameter to vary if reacquisition cost turns out to matt
 - **Per-chip erasure/flip accounting** — the measured 2:1 flip-vs-erasure asymmetry
 - **2.4 frames/chip oversampling** — Nyquist margin, carries no information the tick-level model needs
 
+## R13 — Propeller blade-passage envelope (T046, FR-011: RECORDED, NOT RESOLVED)
+
+**Status**: deliberately *not* a decision. FR-011 asks for the envelope arithmetic to be preserved because
+it is cheap to keep and expensive to re-derive; resolving it is a **decoder-design** research project, not
+a controller-training one, and it is **moot at the 040 baseline mount**. Recorded here so it survives
+outside the checklist that produced it — see [input-data-checklist.md](input-data-checklist.md) §C for the
+full derivation and its assumption ledger.
+
+**Blade-passage frequency**, 2-blade prop: `f_bp = 2 × RPM/60 = RPM/30`. Across level flight this runs
+**261–679 Hz** (7 833 rpm at stall → 20 365 rpm at 92% throttle), and down to ~187 Hz static at low
+throttle. Cruise (13.0 m/s, ~62% throttle, ~14 660 rpm) sits at **~489 Hz**.
+
+**The commensurabilities that matter**, against the 480 fps camera / 200 Hz chip / N=31 code baseline:
+
+| coincidence | RPM | airspeed |
+|---|---:|---:|
+| `f_bp` = 2× chip rate (400 Hz) | 12 000 | ≈10.6 m/s |
+| `f_bp` = **frame rate** (480 Hz) | 14 400 | **≈12.8 m/s — on autoc cruise** |
+| `f_bp` = 3× chip rate (600 Hz) | 18 000 | ≈15.9 m/s |
+
+**Exact lock is benign; the NEAR-MISS is the hazard.** At exact lock the occlusion phase is fixed every
+frame, so attenuation is uniform and the energy-normalised AGC absorbs it (031 shows lock holding at 3%
+duty). But when the beat period approaches the 75 ms code word, the phase walks a full cycle *within* one
+code and produces a systematic attenuation ramp across the 15 chips — structured error, and flips cost 2×
+erasures. At cruise the beat is |489 − 480| ≈ 9 Hz (114 ms), so phase advances ~66% of a cycle per word.
+**Predicted danger band: `f_bp` = 480 ± 13 Hz ⇒ 14 010–14 790 rpm ⇒ 12.4–13.2 m/s.**
+
+**Why it is moot here, and the two things that would change that.** At the baseline mount the disc sits
+**42–61° inboard** (measured by `dmp-dump --obstruction-report`, T045), so the shadow is nowhere near a
+tail-chased target and a static disc is sufficient. It stops being moot if either (a) the camera moves back
+behind the disc — a wing-top or centreline mount, or any build that lets the propeller re-enter the useful
+field, or (b) a bench measurement shows margin ripple synchronised to engine speed.
+
+**Cross-check worth noting**: the checklist's independent duty estimate — ~13 mm chord + 8 mm pupil at
+r ≈ 35 mm, 14 400 rpm ⇒ 0.40 ms transit against a 2.08 ms blade-pass period ⇒ **~19% duty** — lands on the
+`AirframePropAttenuation = 0.18` the model ships. That agreement is reassuring but **not** independent
+confirmation: both rest on the same unmeasured pupil and chord figures, and the constant stays classified
+**assumed** (FR-035) until a bench measurement replaces it.
+
+**One control-theoretic wrinkle, recorded because it is easy to forget**: throttle is an NN *output*, so
+the controller selects its own position relative to these bands. A trained M2 could in principle learn to
+avoid — or to sit in — a band, which makes this a closed loop rather than an external disturbance. Nothing
+in 040 exploits or prevents that.
+
+---
+
 ## Open items carried into implementation
 
 Values, not structure — none blocks the design (per the plumbing-first contract, FR-034/035):

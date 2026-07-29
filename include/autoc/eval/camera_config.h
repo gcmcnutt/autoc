@@ -58,9 +58,21 @@ struct CameraConfig {
     gp_scalar deg_per_px = static_cast<gp_scalar>(0.375);
 
     // ----- PRNG-varied per scenario (v1 sigmas at zero) ---------------------
-    // Mount offset in chase body frame. v1 default: top-of-wing-chord, 5 cm
-    // above body origin (NED: +z down → -z = up).
-    gp_vec3 mount_offset_body{0.0f, 0.0f, -0.05f};
+    // Mount offset in chase body frame, metres, on the prop-axle datum
+    // (station 0 = axle; +x forward, +y right wing, +z down).
+    //
+    // 040 T043 — THE BASELINE MOUNT: wing leading edge, 8″ outboard, ~1¼″ above
+    // the thrust line. The retired default was (0, 0, −0.05) — on the
+    // centreline, 5 cm above the axle, which is INSIDE the 6.985 cm prop radius
+    // and therefore squarely behind the disc. Obstruction had to ship disabled
+    // to keep that mount usable; this position is what lets it be switched on,
+    // and it is why US3 treats obstruction as a design choice to validate
+    // rather than a defect to model.
+    //
+    // Kept numerically identical to hb1LeadingEdgeCameraMount() — see the note
+    // there on why x stands 2 mm proud of the leading-edge face rather than on
+    // it (a surface touch counts as a hit).
+    gp_vec3 mount_offset_body{-0.150400f, 0.203200f, -0.031750f};
 
     // Mount orientation: rotation that takes camera-frame coordinates into
     // chase-body coordinates. Identity ⇒ camera frame == body frame, i.e.
