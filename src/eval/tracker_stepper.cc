@@ -233,7 +233,8 @@ CrashReason TrackerStepper::stepOnce() {
     // Step 2: gather tracker NN inputs.
     TrackerInputs inputs = {};
     gather_tracker_inputs(state_, history_, arena_,
-                          static_cast<float>(cep_gate_threshold_), sa_state_, inputs);
+                          static_cast<float>(cep_gate_threshold_),  // raw-ok: gp_scalar→NN-byte-format boundary (gather takes float)
+                          sa_state_, inputs);
 
     // Step 3: NN forward pass → control commands.
     nn_.evaluateTracker(state_, inputs);

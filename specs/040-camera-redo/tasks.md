@@ -29,7 +29,7 @@ Existing C++17 codebase. Perception lives in `src/eval/` + `include/autoc/eval/`
 
 - [x] T001 ✅ **DONE 2026-07-28** — `scripts/rebuild.sh` clean: **339 tests pass, 0 fail**. The two `error` strings in the log are benign (a CMake probe for an optional dependency, and a test deliberately exercising a fail-loud path)
 - [x] T002 [P] ✅ **DONE 2026-07-28** — baseline from `logs/autoc-038-t9-m2-spherical.log`: 430 gens / 26.88 h = **16.00 gen/hour**, late-run **≈5600 sims/s**. Recorded in `research.md` §R10 with the note that **sims/s at a comparable generation** is the honest comparator — gen/hour is config-sensitive and the run-mean (7359) is inflated by faster early gens. FR-038 ceiling ⇒ **≥ ~5040 sims/s**
-- [~] T003 [P] **PARTIAL 2026-07-28** — oracle identified and recorded in `research.md` §R11: t9 **gen 430, fitness `-13949.366286`**, already corroborated by that run's own `NN_ELITE_SAME` line. ⚠️ **Remaining step is operator-driven**: running the eval against a rebuilt binary to confirm `NN_EVAL_SAME` is the eval-vs-training bitwise gate
+- [x] T003 [P] ✅ **CLOSED 2026-07-28 by T021** — oracle confirmed live: `NN_EVAL_SAME` reproduced `-13949.366286`. Originally recorded in `research.md` §R11 as t9 gen 430. **PARTIAL note superseded** — oracle identified and recorded in `research.md` §R11: t9 **gen 430, fitness `-13949.366286`**, already corroborated by that run's own `NN_ELITE_SAME` line. ⚠️ **Remaining step is operator-driven**: running the eval against a rebuilt binary to confirm `NN_EVAL_SAME` is the eval-vs-training bitwise gate
 - [x] T003a [P] ✅ **DONE 2026-07-28** — both M1 sources verified present and pinned `retain=keep`; prefixes and the near-miss recorded in `specs/040-camera-redo/research.md` §R9. The training source (`autoc-m1`) was already pinned; the **novel-path eval source (`autoc-eval`) was `retain=expire` and ~12 days from deletion** — it is the 038 t10 source the prior baseline's generalisation was measured against, so its loss would have silently destroyed the SC-008 comparison. The retrain MUST use these same sources (see T082a)
 
 ---
@@ -83,9 +83,9 @@ there is a bug. Every later phase deliberately changes outputs.
 
 **Checkpoint gates**:
 
-- [ ] T020 Run `bash scripts/rebuild-perf.sh` — **required, not incremental**, because `CMakeLists.txt` changed (Principle IV; operator drives)
-- [ ] T021 **BIT-IDENTITY GATE**: evaluate the T003 pinned elite and confirm `NN_EVAL_SAME` against the recorded fitness. A refactor that changes behaviour has a bug — do not proceed until this passes
-- [ ] T022 Run the Principle VI type-domain grep over `src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/`; annotate `// raw-ok:` or convert every hit in the diff
+- [x] T020 ✅ **DONE 2026-07-28** — clean `scripts/rebuild-perf.sh` completed (operator). Full `ctest`: **39/39 suites pass, 0 fail**, including the two new reset-contract tests
+- [x] T021 ✅ **PASSED 2026-07-28** — `NN_EVAL_SAME: fitness=-13949.366286`, exact match to the oracle across all 294 scenarios, exit 0. **The Stage-B extraction is provably behaviour-preserving.** Setup required aligning the eval ini to the t9 *training* shape (source→`autoc-m1` gen9200, Seed=1783621931, 6 paths × 49 winds); the ini carries inline `RESTORE TO …` notes for T085
+- [x] T022 ✅ **DONE 2026-07-28** — grep run. **Zero violations in the 040 diff**: the three `tracker_tick_rule` hits are the words float/double in explanatory prose, not code. 448 tree-wide hits are the known pre-existing backlog the constitution defers to a one-time backfill spec (enforcement is incremental on touched code). Additionally annotated one pre-existing boundary cast in `tracker_stepper.cc` while in the file (comment-only, post-gate, cannot affect T021)
 
 ---
 
