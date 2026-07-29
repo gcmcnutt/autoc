@@ -33,6 +33,7 @@
 
 #include "autoc/types.h"
 #include "autoc/eval/beacon_config.h"
+#include "autoc/eval/airframe_occlusion.h"
 #include "autoc/eval/camera_config.h"
 
 namespace autoc::eval {
@@ -72,54 +73,6 @@ struct BeaconObservation {
     }
 };
 
-// Compile-time toggle for airframe self-occlusion (D10). FALSE for v1 sim
-// runs because the placeholder hb1 proxy is too coarse — flip back to
-// true once real airframe geometry is calibrated. Operator routing
-// 2026-05-07: occlusion will be permanently ON once sim training shifts
-// to real-flight prep, so a runtime knob would be lifecycle drag — one
-// compile-time constant is all that's needed.
-constexpr bool kAirframeOcclusionEnabled = false;
-
-// Coarse axis-aligned-box proxy for the chase craft's airframe, expressed
-// in chase body frame. Used for self-occlusion testing (D10): a ray from
-// `camera_mount_chase_body` to `beacon_in_chase_body` that intersects the
-// box registers the beacon as occluded (sentinel).
-//
-// `enabled` is set per-proxy; defaults to `true` so test-side proxies
-// constructed via `AirframeProxy{box_min, box_max}` directly continue to
-// exercise the occlusion-fires path in tests/beacon_projection_tests.cc.
-// Production-side proxies come from `defaultAirframeProxyHB1()` which
-// inherits the compile-time `kAirframeOcclusionEnabled` (currently false).
-struct AirframeProxy {
-    gp_vec3 box_min_chase_body;
-    gp_vec3 box_max_chase_body;
-    bool enabled = true;
-
-    // 030 M6e + M8b — cereal serialize for EvalData wire-protocol carry.
-    template <class Archive>
-    void serialize(Archive& ar) {
-        ar(box_min_chase_body, box_max_chase_body, enabled);
-    }
-};
-
-// Default v1 proxy for hb1: fuselage + wing AABB. Coarse — the projection
-// contract calls for calibration against operator's reference video as a
-// plan-research deliverable; this is the rough placeholder until that
-// calibration lands. Box bounds (chase body frame, NED meters):
-//   x ∈ [-0.6, +0.4]   fuselage extent (rear→nose)
-//   y ∈ [-0.6, +0.6]   wing extent (left↔right wingtips)
-//   z ∈ [-0.05, +0.20] thickness (top-of-wing → belly)
-//
-// Eigen matrices aren't `constexpr`-compatible, so this is a function that
-// constructs the proxy on demand.
-inline AirframeProxy defaultAirframeProxyHB1() {
-    AirframeProxy p;
-    p.box_min_chase_body = gp_vec3(-0.6f, -0.6f, -0.05f);
-    p.box_max_chase_body = gp_vec3(+0.4f, +0.6f, +0.20f);
-    p.enabled = kAirframeOcclusionEnabled;
-    return p;
-}
-
 // Full input to the projection module.
 struct ProjectionInput {
     // Chase craft pose (world frame, NED meters / body→world quat).
@@ -142,8 +95,10 @@ struct ProjectionInput {
     CameraConfig camera;
     BeaconConfig beacon;
 
-    // Self-occlusion proxy (chase body frame).
-    AirframeProxy chase_airframe;
+    // 040 T014 — chase airframe obstruction (body frame). Replaces the
+    // single-AABB AirframeProxy, which modelled a thin wing as a solid
+    // brick AND placed the default camera mount exactly on a box face.
+    AirframeObstruction chase_airframe;
 };
 
 // Project one beacon. Returns dequantized fp32 values + raw int8 storage.
@@ -151,13 +106,6 @@ struct ProjectionInput {
 // cone, outside FOV) all set `cep = kCepSentinelFloat` and
 // `raw_cep_int8 = INT8_MIN`; `screen_x` / `screen_y` are zero in sentinel.
 BeaconObservation projectBeacon(const ProjectionInput& input);
-
-// Ray–box intersection test (slab method). Returns true if the line segment
-// from `ray_origin_chase_body` to `ray_target_chase_body` intersects the
-// proxy AABB. Touching the box surface counts as a hit.
-bool rayHitsProxy(const gp_vec3& ray_origin_chase_body,
-                  const gp_vec3& ray_target_chase_body,
-                  const AirframeProxy& proxy);
 
 // Quantization round-trip primitives (R7). `quantize_xy` clamps to [-1, +1]
 // before rounding to int8 ∈ [-127, +127]; `quantize_cep` reserves INT8_MIN

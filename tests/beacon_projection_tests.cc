@@ -19,7 +19,11 @@
 #include "autoc/eval/camera_projection.h"
 #include "autoc/types.h"
 
-using autoc::eval::AirframeProxy;
+using autoc::eval::AirframeObstruction;
+using autoc::eval::rayHitsBox;
+using autoc::eval::testObstruction;
+using autoc::eval::ObstructionResult;
+using autoc::eval::rayCrossesPropDisc;
 using autoc::eval::BeaconConfig;
 using autoc::eval::BeaconObservation;
 using autoc::eval::CameraConfig;
@@ -31,7 +35,6 @@ using autoc::eval::kCepSentinelThreshold;
 using autoc::eval::projectBeacon;
 using autoc::eval::quantize_cep;
 using autoc::eval::quantize_xy;
-using autoc::eval::rayHitsProxy;
 
 namespace {
 
@@ -39,6 +42,25 @@ namespace {
 // wingtip beacon mounted at (0, -0.45, 0) on a target whose orientation
 // the test sets. The default airframe proxy is loose enough that beacons
 // out in front of the chase clear it.
+// 040 T014 — legacy box-occlusion tests below were written against the single
+// AABB. They now exercise the WING slab, with the nose and prop parked clear,
+// so what they assert (a box in the line of sight gates the beacon) still holds.
+AirframeObstruction obstructionWithWingBox(const gp_vec3& lo, const gp_vec3& hi) {
+    AirframeObstruction a =
+        autoc::eval::buildAirframeObstruction(CameraConfig{}.mount_offset_body,
+                                             autoc::eval::hb1AirframeDimensions());
+    a.enabled = true;
+    a.wing_min = lo;
+    a.wing_max = hi;
+    // Park the nose and the prop disc far behind the camera so only the wing
+    // box under test can produce a hit.
+    a.nose_min = gp_vec3(-100.0f, -1.0f, -1.0f);
+    a.nose_max = gp_vec3(-99.0f, 1.0f, 1.0f);
+    a.prop_plane_x = -100.0f;
+    a.prop_radius = 0.0f;
+    return a;
+}
+
 ProjectionInput makeBaselineInput() {
     ProjectionInput in;
     in.chase_position_world = gp_vec3(0.0f, 0.0f, 0.0f);
@@ -57,12 +79,11 @@ ProjectionInput makeBaselineInput() {
     // Placeholder proxy parked far behind the camera so default test rays
     // (forward, +x) never trip self-occlusion. Specific occlusion tests
     // override `in.chase_airframe` directly.
-    in.chase_airframe = AirframeProxy{
-        gp_vec3(-100.0f, -1.0f, -1.0f),
-        gp_vec3(-99.0f,  +1.0f, +1.0f)
-    };
+    in.chase_airframe = obstructionWithWingBox(gp_vec3(-100.0f, -1.0f, -1.0f), gp_vec3(-99.0f,  +1.0f, +1.0f));
     return in;
 }
+
+
 
 }  // namespace
 
@@ -200,33 +221,27 @@ TEST(BeaconProjectionSentinel, TargetOutsideHorizontalFovEmitsSentinel) {
 // T025 — Sentinel: airframe proxy occlusion.
 // ---------------------------------------------------------------------------
 
-TEST(BeaconProjectionSentinel, AirframeProxyOccludesEmitsSentinel) {
+TEST(BeaconProjectionSentinel, AirframeObstructionOccludesEmitsSentinel) {
     ProjectionInput in = makeBaselineInput();
     in.beacon_mount_target_body = gp_vec3(0.0f, 0.0f, 0.0f);
     in.beacon_emission_axis_target_body = gp_vec3(-1.0f, 0.0f, 0.0f);
     // Target dead ahead; proxy box straddles the optical axis between
     // camera and target.
     in.target_position_world = gp_vec3(10.0f, 0.0f, 0.0f);
-    in.chase_airframe = AirframeProxy{
-        gp_vec3(2.0f, -0.5f, -0.5f),
-        gp_vec3(4.0f, +0.5f, +0.5f)
-    };
+    in.chase_airframe = obstructionWithWingBox(gp_vec3(2.0f, -0.5f, -0.5f), gp_vec3(4.0f, +0.5f, +0.5f));
 
     BeaconObservation obs = projectBeacon(in);
 
     EXPECT_FLOAT_EQ(obs.cep, kCepSentinelFloat);
 }
 
-TEST(BeaconProjectionSentinel, AirframeProxyMissesDoesNotOcclude) {
+TEST(BeaconProjectionSentinel, AirframeObstructionMissesDoesNotOcclude) {
     ProjectionInput in = makeBaselineInput();
     in.beacon_mount_target_body = gp_vec3(0.0f, 0.0f, 0.0f);
     in.beacon_emission_axis_target_body = gp_vec3(-1.0f, 0.0f, 0.0f);
     in.target_position_world = gp_vec3(10.0f, 0.0f, 0.0f);
     // Proxy way off to the side — ray to (10, 0, 0) doesn't pass through.
-    in.chase_airframe = AirframeProxy{
-        gp_vec3(2.0f, +5.0f, +5.0f),
-        gp_vec3(4.0f, +6.0f, +6.0f)
-    };
+    in.chase_airframe = obstructionWithWingBox(gp_vec3(2.0f, +5.0f, +5.0f), gp_vec3(4.0f, +6.0f, +6.0f));
 
     BeaconObservation obs = projectBeacon(in);
 
@@ -304,23 +319,28 @@ TEST(BeaconProjectionQuant, CepSentinelExactRoundTrip) {
 }
 
 // ---------------------------------------------------------------------------
-// rayHitsProxy direct unit test — covers parallel-axis edge cases.
+// rayHitsBox direct unit test — covers parallel-axis edge cases. (040 T014:
+// the slab primitive moved to airframe_occlusion.h and now takes explicit
+// bounds rather than a proxy struct.)
 // ---------------------------------------------------------------------------
 
-TEST(RayHitsProxy, ForwardSegmentThroughBoxHits) {
-    AirframeProxy box{gp_vec3(2.0f, -0.5f, -0.5f), gp_vec3(4.0f, 0.5f, 0.5f)};
-    EXPECT_TRUE(rayHitsProxy(gp_vec3(0, 0, 0), gp_vec3(10, 0, 0), box));
+TEST(RayHitsBox, ForwardSegmentThroughBoxHits) {
+    const gp_vec3 box_lo(2.0f, -0.5f, -0.5f);
+    const gp_vec3 box_hi(4.0f, 0.5f, 0.5f);
+    EXPECT_TRUE(rayHitsBox(gp_vec3(0, 0, 0), gp_vec3(10, 0, 0), box_lo, box_hi));
 }
 
-TEST(RayHitsProxy, OffAxisSegmentMisses) {
-    AirframeProxy box{gp_vec3(2.0f, -0.5f, -0.5f), gp_vec3(4.0f, 0.5f, 0.5f)};
-    EXPECT_FALSE(rayHitsProxy(gp_vec3(0, 5, 0), gp_vec3(10, 5, 0), box));
+TEST(RayHitsBox, OffAxisSegmentMisses) {
+    const gp_vec3 box_lo(2.0f, -0.5f, -0.5f);
+    const gp_vec3 box_hi(4.0f, 0.5f, 0.5f);
+    EXPECT_FALSE(rayHitsBox(gp_vec3(0, 5, 0), gp_vec3(10, 5, 0), box_lo, box_hi));
 }
 
-TEST(RayHitsProxy, SegmentEndsBeforeBoxMisses) {
-    AirframeProxy box{gp_vec3(2.0f, -0.5f, -0.5f), gp_vec3(4.0f, 0.5f, 0.5f)};
+TEST(RayHitsBox, SegmentEndsBeforeBoxMisses) {
+    const gp_vec3 box_lo(2.0f, -0.5f, -0.5f);
+    const gp_vec3 box_hi(4.0f, 0.5f, 0.5f);
     // Segment from origin to (1, 0, 0); box starts at x=2 → no hit.
-    EXPECT_FALSE(rayHitsProxy(gp_vec3(0, 0, 0), gp_vec3(1, 0, 0), box));
+    EXPECT_FALSE(rayHitsBox(gp_vec3(0, 0, 0), gp_vec3(1, 0, 0), box_lo, box_hi));
 }
 
 // ---------------------------------------------------------------------------
@@ -337,4 +357,102 @@ TEST(BeaconProjectionDeterminism, IdenticalInputProducesIdenticalOutput) {
     EXPECT_FLOAT_EQ(a.screen_x, b.screen_x);
     EXPECT_FLOAT_EQ(a.screen_y, b.screen_y);
     EXPECT_FLOAT_EQ(a.cep, b.cep);
+}
+
+// ---------------------------------------------------------------------------
+// 040 T008 — the camera must never sit ON an obstruction boundary.
+//
+// WHY THIS EXISTS. The superseded single-AABB proxy was degenerate: it spanned
+// z ∈ [-0.05, +0.20] while the default camera mount sat at z = -0.05, exactly
+// on box_min_z. A surface touch counts as a hit, so enabling occlusion made
+// essentially EVERY forward ray report blocked and the target vanish.
+//
+// That was harmless only because occlusion shipped disabled. 040 replaces the
+// proxy with three primitives anchored to the camera mount, which removes the
+// coincidence by construction. These tests pin that it stays removed.
+// ---------------------------------------------------------------------------
+
+TEST(AirframeObstruction, CameraMountIsNotInsideAnyPrimitive) {
+    const gp_vec3 mount = CameraConfig{}.mount_offset_body;
+    AirframeObstruction a = autoc::eval::buildAirframeObstruction(mount, autoc::eval::hb1AirframeDimensions());
+    a.enabled = true;
+
+    // A degenerate mount shows up as a zero-length ray "hitting" a primitive.
+    // Probe with a tiny forward segment: if the origin were on or inside a
+    // face this would report blocked.
+    const gp_vec3 just_ahead = mount + gp_vec3(1e-4f, 0.0f, 0.0f);
+    EXPECT_FALSE(rayHitsBox(mount, just_ahead, a.wing_min, a.wing_max))
+        << "camera mount lies on/inside the wing slab — the degeneracy is back";
+    EXPECT_FALSE(rayHitsBox(mount, just_ahead, a.nose_min, a.nose_max))
+        << "camera mount lies on/inside the nose box — the degeneracy is back";
+}
+
+TEST(AirframeObstruction, ForwardLevelRayIsNotSelfOccluded) {
+    // The contract the replacement must satisfy, and precisely what fails with
+    // the superseded proxy: a level forward ray from the configured mount
+    // reaches a distant target without the aircraft blocking itself.
+    const gp_vec3 mount = CameraConfig{}.mount_offset_body;
+    AirframeObstruction a = autoc::eval::buildAirframeObstruction(mount, autoc::eval::hb1AirframeDimensions());
+    a.enabled = true;
+
+    const gp_vec3 target = mount + gp_vec3(10.0f, 0.0f, 0.0f);
+    const ObstructionResult r = testObstruction(mount, target, a);
+    EXPECT_FALSE(r.blocked)
+        << "a forward-level ray must not be gated by the chase's own airframe";
+}
+
+TEST(AirframeObstruction, LeadingEdgeMountClearsThePropDisc) {
+    // THE DESIGN PROPERTY. The camera sits 8" outboard of the thrust axis, so
+    // its radial distance (~8") vastly exceeds the 2.75" tip radius and a
+    // forward ray never enters the disc. This is what makes the leading-edge
+    // mount worth having, and it is why the 040 propeller model needs no blade
+    // phase: at this mount the disc sits ~41-61 deg inboard, nowhere near the
+    // boresight where a tail-chased target lives.
+    const gp_vec3 mount = CameraConfig{}.mount_offset_body;
+    AirframeObstruction a = autoc::eval::buildAirframeObstruction(
+        mount, autoc::eval::hb1AirframeDimensions());
+    a.enabled = true;
+
+    const gp_vec3 target = mount + gp_vec3(10.0f, 0.0f, 0.0f);
+    EXPECT_FALSE(rayCrossesPropDisc(mount, target, a))
+        << "an 8-inch outboard mount must clear the prop disc on boresight";
+
+    const ObstructionResult r = testObstruction(mount, target, a);
+    EXPECT_FALSE(r.blocked);
+    EXPECT_FLOAT_EQ(r.attenuation, 1.0f) << "clear of the disc ⇒ no attenuation";
+}
+
+TEST(AirframeObstruction, PropDiscAttenuatesButNeverGates) {
+    // FR-009: where the disc IS crossed it attenuates and never gates. Put the
+    // thrust axis on the boresight explicitly rather than relying on the
+    // baseline geometry, which deliberately clears it (see the test above).
+    const gp_vec3 mount = CameraConfig{}.mount_offset_body;
+    AirframeObstruction a = autoc::eval::buildAirframeObstruction(
+        mount, autoc::eval::hb1AirframeDimensions());
+    a.enabled = true;
+    a.prop_axis_y = mount.y();
+    a.prop_axis_z = mount.z();
+
+    const gp_vec3 target = mount + gp_vec3(10.0f, 0.0f, 0.0f);
+    ASSERT_TRUE(rayCrossesPropDisc(mount, target, a));
+
+    const ObstructionResult r = testObstruction(mount, target, a);
+    EXPECT_FALSE(r.blocked) << "the propeller must never gate (FR-009)";
+    EXPECT_LT(r.attenuation, 1.0f) << "crossing the disc must attenuate";
+    EXPECT_GT(r.attenuation, 0.0f) << "attenuation must be partial, not total";
+}
+
+TEST(AirframeObstruction, DisabledObstructionNeverOccludes) {
+    // Guards the ship-safe default: with obstruction disabled, geometry is
+    // irrelevant and nothing may be reported blocked or attenuated.
+    const gp_vec3 mount = CameraConfig{}.mount_offset_body;
+    const AirframeObstruction a =
+        autoc::eval::buildAirframeObstruction(mount, autoc::eval::hb1AirframeDimensions());
+    ASSERT_FALSE(a.enabled)
+        << "obstruction is expected to ship disabled until Stage D (T043)";
+
+    const gp_vec3 target = mount + gp_vec3(10.0f, 0.0f, 0.0f);
+    const ObstructionResult r = testObstruction(mount, target, a);
+    EXPECT_FALSE(r.blocked);
+    EXPECT_FLOAT_EQ(r.attenuation, 1.0f);
 }

@@ -34,13 +34,14 @@
 #include "autoc/nn/evaluator.h"
 #include "autoc/types.h"
 
-using autoc::eval::AirframeProxy;
+using autoc::eval::AirframeObstruction;
 using autoc::eval::BeaconConfig;
 using autoc::eval::CameraConfig;
 using autoc::eval::CrashHull;
 using autoc::eval::FlightArena;
 using autoc::eval::TrackerStepper;
-using autoc::eval::defaultAirframeProxyHB1;
+using autoc::eval::buildAirframeObstruction;
+using autoc::eval::hb1AirframeDimensions;
 
 namespace {
 
@@ -95,7 +96,7 @@ TrackerStepper makeStepperWithSource(NNControllerBackend& nn,
                           CameraConfig{},
                           BeaconConfig{},
                           BeaconConfig{},
-                          defaultAirframeProxyHB1(),
+                          autoc::eval::buildAirframeObstruction(CameraConfig{}.mount_offset_body, autoc::eval::hb1AirframeDimensions()),
                           FlightArena{},
                           CrashHull{},
                           /*p_crash_this_gen=*/0.0f,

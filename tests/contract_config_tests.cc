@@ -215,7 +215,7 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // 038 US3 added EnablePredictorHead (aux span-predictor ablation gate) → 97.
     // 038 t7 added TrackerChaseUseSourceScenarioSeed (chase shares M1 source
     // env/craft/entry seed) → 98.
-    EXPECT_EQ(n, 98u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    EXPECT_EQ(n, 109u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

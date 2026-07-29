@@ -10,6 +10,8 @@
 #include <cstdio>
 #include <fstream>
 #include <string>
+#include <sstream>
+#include <vector>
 
 #include <INIReader.h>
 
@@ -224,3 +226,47 @@ TEST(TrackerConfig, DerivedFeaturesAtCanonicalDefault) {
 // operator runs at startup, not unit-testable without a process fork. The
 // INIReader-level parse succeeds for any double value; the range check
 // lives in src/util/config.cc per contracts/ini_schema.md.
+
+// ---------------------------------------------------------------------------
+// 040 T009 (FR-034) — every airframe-obstruction key must be PRESENT in the
+// tracker inis, not merely defaulted in the struct.
+//
+// WHY. AutocConfig declares these with in-class defaults, following local
+// convention. That is convenient but creates exactly the hazard Constitution
+// VII was written about: a missing ini key silently falls back to a plausible
+// value and the model obstructs the wrong things with no error anywhere. The
+// defaults mirror hb1AirframeDimensions() so they cannot drift — this test is
+// what stops them from ever being load-bearing.
+// ---------------------------------------------------------------------------
+
+TEST(ContractTrackerConfig, AirframeObstructionKeysPresentInTrackerInis) {
+    const std::vector<std::string> required = {
+        "AirframeObstructionEnabled",
+        "AirframeCameraStationIn",
+        "AirframeWingLeStationIn",
+        "AirframeWingChordIn",
+        "AirframeWingSpanIn",
+        "AirframeWingThicknessIn",
+        "AirframeWingBottomAboveThrustIn",
+        "AirframeCameraAboveWingBottomIn",
+        "AirframeCameraOutboardIn",
+        "AirframePropDiameterIn",
+        "AirframePropAttenuation",
+    };
+    for (const char* name : {"autoc-tracker.ini", "autoc-eval-tracker.ini",
+                             "autoc-eval-tracker-visual.ini"}) {
+        // ctest runs from build/, so resolve against the injected source dir
+        // rather than the working directory.
+        const std::string ini = std::string(AUTOC_SOURCE_DIR) + "/" + name;
+        std::ifstream f(ini);
+        ASSERT_TRUE(f.good()) << "cannot open " << ini;
+        std::stringstream ss;
+        ss << f.rdbuf();
+        const std::string body = ss.str();
+        for (const auto& key : required) {
+            EXPECT_NE(body.find(key), std::string::npos)
+                << ini << " is missing " << key
+                << " — it would silently fall back to the struct default";
+        }
+    }
+}

@@ -2,11 +2,13 @@
 //
 // Analytic EQUIDISTANT (f-theta / spherical) projection (038 t9 — was
 // rectilinear/pinhole pre-t9), sentinel handling, int8 quantization round-
-// trip, and AirframeProxy ray–box self-occlusion. Uses the codebase's NED
+// trip, and airframe obstruction (wing slab / pod nose / prop disc). Uses the NED
 // body-frame convention (+x forward, +y right, +z down) directly; see
 // `include/autoc/eval/camera_projection.h` for the convention contract.
 
 #include "autoc/eval/camera_projection.h"
+
+#include "autoc/eval/airframe_occlusion.h"
 
 #include <algorithm>
 #include <cmath>
@@ -67,42 +69,6 @@ float dequantize_cep(int8_t q) {                                 // raw-ok: NN-b
 }
 
 // ---------------------------------------------------------------------------
-// Ray–box (AABB slab method). Tests the segment from origin → target.
-// ---------------------------------------------------------------------------
-
-bool rayHitsProxy(const gp_vec3& ray_origin_chase_body,
-                  const gp_vec3& ray_target_chase_body,
-                  const AirframeProxy& proxy) {
-    const gp_vec3 d = ray_target_chase_body - ray_origin_chase_body;
-    gp_scalar t_enter = static_cast<gp_scalar>(0);
-    gp_scalar t_exit = static_cast<gp_scalar>(1);
-
-    for (int i = 0; i < 3; ++i) {
-        const gp_scalar o = ray_origin_chase_body[i];
-        const gp_scalar di = d[i];
-        const gp_scalar bmin = proxy.box_min_chase_body[i];
-        const gp_scalar bmax = proxy.box_max_chase_body[i];
-
-        if (std::abs(di) < static_cast<gp_scalar>(1e-12)) {
-            // Ray parallel to slab; hit only possible if origin already
-            // inside the slab on this axis.
-            if (o < bmin || o > bmax) return false;
-            continue;
-        }
-
-        gp_scalar t1 = (bmin - o) / di;
-        gp_scalar t2 = (bmax - o) / di;
-        if (t1 > t2) std::swap(t1, t2);
-
-        t_enter = std::max(t_enter, t1);
-        t_exit = std::min(t_exit, t2);
-        if (t_enter > t_exit) return false;
-    }
-
-    return true;
-}
-
-// ---------------------------------------------------------------------------
 // projectBeacon — main projection entry point.
 // ---------------------------------------------------------------------------
 
@@ -153,16 +119,20 @@ BeaconObservation projectBeacon(const ProjectionInput& input) {
         }
     }
 
-    // Step 4c — self-occlusion via airframe proxy. Ray from camera mount
-    // to beacon-in-body intersects the AABB ⇒ occluded. Skipped when the
-    // proxy is disabled (transparent airframe — default in production
-    // tracker mode until real airframe geometry is calibrated).
-    if (input.chase_airframe.enabled &&
-        rayHitsProxy(input.camera_mount_chase_body,
-                     beacon_in_chase_body,
-                     input.chase_airframe)) {
+    // Step 4c — airframe obstruction (040 T014). Opaque primitives (wing
+    // slab, pod nose) gate the beacon; the propeller disc attenuates rather
+    // than gating (FR-009). Skipped entirely when disabled.
+    const ObstructionResult obstruction = testObstruction(
+        input.camera_mount_chase_body, beacon_in_chase_body,
+        input.chase_airframe);
+    if (obstruction.blocked) {
         return sentinelObservation();
     }
+    // obstruction.attenuation is computed and available but not yet consumed:
+    // it feeds the Stage-E signal budget (FR-014/015), which does not exist
+    // yet. Deliberately not folded into the placeholder CEP below — that would
+    // mix a real physical term into a geometric stand-in and make the Stage-E
+    // replacement harder to attribute.
 
     // Step 4d — outside FOV. Equidistant (f-theta / spherical) projection,
     // 038 t9: NDC is proportional to ANGLE off the optical axis, not

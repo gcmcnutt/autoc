@@ -48,7 +48,7 @@ struct TickRuleConfig {
     CameraConfig camera;
     BeaconConfig beacon_left;
     BeaconConfig beacon_right;
-    AirframeProxy airframe;
+    AirframeObstruction airframe;
     gp_scalar cep_gate_threshold;
 };
 

@@ -52,7 +52,7 @@ public:
                    const CameraConfig& camera,
                    const BeaconConfig& beacon_left,
                    const BeaconConfig& beacon_right,
-                   const AirframeProxy& airframe,
+                   const AirframeObstruction& airframe,
                    const FlightArena& arena,
                    const CrashHull& crash_hull,
                    gp_scalar p_crash_this_gen,
@@ -90,7 +90,7 @@ private:
     CameraConfig camera_;
     BeaconConfig beacon_left_;
     BeaconConfig beacon_right_;
-    AirframeProxy airframe_;
+    AirframeObstruction airframe_;
     FlightArena arena_;
 
     // 030 M7d.b — Crash hull (FR-008b). Geometry inside-hull check + per-tick

@@ -59,6 +59,29 @@ From skeleton/skeleton.cc
 
 using namespace std;
 
+// 040 T015 — airframe dimensions straight from config. Every field is read;
+// none carries a fallback (Constitution VII), so a missing ini key is a loud
+// ConfigManager failure rather than a silent stale geometry that looks
+// plausible and obstructs the wrong things.
+static autoc::eval::AirframeDimensions airframeDimsFromConfig(const AutocConfig& cfg) {
+    autoc::eval::AirframeDimensions d;
+    d.enabled = (cfg.airframeObstructionEnabled != 0);
+    d.camera_station_in = static_cast<gp_scalar>(cfg.airframeCameraStationIn);
+    d.wing_le_station_in = static_cast<gp_scalar>(cfg.airframeWingLeStationIn);
+    d.wing_chord_in = static_cast<gp_scalar>(cfg.airframeWingChordIn);
+    d.wing_span_in = static_cast<gp_scalar>(cfg.airframeWingSpanIn);
+    d.wing_thickness_in = static_cast<gp_scalar>(cfg.airframeWingThicknessIn);
+    d.wing_bottom_above_thrust_in =
+        static_cast<gp_scalar>(cfg.airframeWingBottomAboveThrustIn);
+    d.camera_above_wing_bottom_in =
+        static_cast<gp_scalar>(cfg.airframeCameraAboveWingBottomIn);
+    d.camera_outboard_in = static_cast<gp_scalar>(cfg.airframeCameraOutboardIn);
+    d.prop_diameter_in = static_cast<gp_scalar>(cfg.airframePropDiameterIn);
+    d.prop_attenuation = static_cast<gp_scalar>(cfg.airframePropAttenuation);
+    return d;
+}
+
+
 std::vector<std::vector<Path>> generationPaths;
 std::vector<ScenarioDescriptor> generationScenarios;
 
@@ -977,7 +1000,10 @@ static WorkerInit buildWorkerInit() {
                 static_cast<gp_scalar>(cfg.beaconRightMountZ));
     init.beaconRightConfig.emission_axis_body = gp_vec3(0.0f, +1.0f, 0.0f);
 
-    init.airframeProxy = autoc::eval::defaultAirframeProxyHB1();
+    // 040 T013 — obstruction geometry anchors to the camera mount, since the
+    // thrust line's body-frame position is not yet measured (checklist A1b).
+    init.airframeObstruction = autoc::eval::buildAirframeObstruction(
+        init.cameraConfig.mount_offset_body, airframeDimsFromConfig(cfg));
 
     init.flightArena.radius_m = static_cast<gp_scalar>(cfg.flightArenaRadius);
     init.flightArena.floor_agl_m = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
@@ -1685,9 +1711,18 @@ int main(int argc, char** argv)
 #undef X
   // Compile-time (non-ini) occlusion state — tracker-relevant only.
   if (cfg.mode == "tracker") {
-    *logger.info() << "AirframeOcclusion (compile-time): "
-                   << (autoc::eval::kAirframeOcclusionEnabled ? "enabled" : "DISABLED (transparent)")
-                   << " — see camera_projection.h kAirframeOcclusionEnabled" << endl;
+    // 040 T014 — the single-AABB proxy is gone; obstruction is now three
+    // primitives (wing slab / pod nose / prop disc) anchored to the camera
+    // mount. Still ships DISABLED: the leading-edge mount that makes the
+    // geometry meaningful lands in Stage D (T043).
+    const gp_vec3 cam_mount(static_cast<gp_scalar>(cfg.cameraMountOffsetX),
+                           static_cast<gp_scalar>(cfg.cameraMountOffsetY),
+                           static_cast<gp_scalar>(cfg.cameraMountOffsetZ));
+    const auto obstruction =
+        autoc::eval::buildAirframeObstruction(cam_mount, airframeDimsFromConfig(cfg));
+    *logger.info() << "AirframeObstruction: "
+                   << (obstruction.enabled ? "enabled" : "DISABLED (transparent)")
+                   << " — wing slab + pod nose + prop disc; see airframe_occlusion.h" << endl;
   }
 
   // 030 M6e — load source dmp at startup for tracker mode (FR-001 + FR-011).

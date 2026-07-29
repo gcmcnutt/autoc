@@ -30,7 +30,7 @@
 #include "autoc/eval/arena.h"               // FlightArena (030 M7a)
 #include "autoc/eval/beacon_config.h"
 #include "autoc/eval/camera_config.h"
-#include "autoc/eval/camera_projection.h"   // AirframeProxy
+#include "autoc/eval/camera_projection.h"   // AirframeObstruction
 #include "autoc/eval/variation_generator.h"
 // NOTE: include "autoc/eval/source_trajectory.h" lives AFTER
 // ScenarioMetadata is defined below — source_trajectory.h depends on
@@ -151,7 +151,7 @@ struct WorkerInit {
   autoc::eval::CameraConfig cameraConfig;
   autoc::eval::BeaconConfig beaconLeftConfig;
   autoc::eval::BeaconConfig beaconRightConfig;
-  autoc::eval::AirframeProxy airframeProxy;
+  autoc::eval::AirframeObstruction airframeObstruction;
   autoc::eval::FlightArena flightArena;
 
   // 030 M7d.b — crash-hull + trail-rabbit static params. Note
@@ -214,7 +214,7 @@ struct WorkerInit {
   void serialize(Archive& ar) {
     int m = static_cast<int>(mode);
     ar(m, sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
-       airframeProxy, flightArena,
+       airframeObstruction, flightArena,
        crashHullRadius, trailDistance,
        pathList, scenarioMetaList,
        cepGateThreshold,
