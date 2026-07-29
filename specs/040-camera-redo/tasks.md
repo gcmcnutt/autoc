@@ -45,11 +45,11 @@ magnitude of disagreement, ending in an explicit recorded decision. Delivers val
 off the M1 source. No code — a document and a decision.
 
 - [x] T004 [US1] ✅ **DONE 2026-07-28** — `specs/040-camera-redo/airframe-fidelity.md`. Compare simulated vs measured airframe/propulsion parameters (mass, span, wing area, propeller diameter/pitch, CG) in a new `specs/040-camera-redo/airframe-fidelity.md`, classifying each agree/disagree/unknown with magnitude, sourced from `crrcsim/models/hb1_streamer.xml` and [input-data-checklist.md](input-data-checklist.md)
-- [ ] T005 [US1] Record in `specs/040-camera-redo/airframe-fidelity.md` the explicit decision — regenerate M1 source now, or defer — with reasoning (FR-025)
-- [ ] T006 [US1] File each deferred discrepancy (notably the propeller 5.0×4.5-vs-5.5×4 mismatch) into `specs/BACKLOG.md` against the feature that will address it (FR-026, Principle X)
+- [x] T005 [US1] ✅ **DONE 2026-07-28 — verdict: DEFER** (operator). Recorded in `airframe-fidelity.md`. Reasoning of record: the propeller value and the tuned derivative set are one fitted system, so correcting it in isolation would break a fit made against observed flight. No M1 regeneration anywhere in this feature; the T003a pins remain SC-008's basis
+- [x] T006 [US1] ✅ **DONE 2026-07-28** — propeller discrepancy filed to `specs/BACKLOG.md` against the flight-model re-tune (already gated on n>1 articles), carrying the do-not-fix-in-isolation warning and the eCalc wing-area caveat
 
-**🚦 CHECKPOINT — HARD GATE**: if the verdict is **regenerate**, STOP. Rebake the M1 source before Phase 3.
-If **defer** (expected), proceed. Everything downstream assumes the existing M1 source is valid.
+**🚦 CHECKPOINT — HARD GATE: ✅ CLEARED 2026-07-28, verdict DEFER.** Phase 3 is open. Everything downstream
+may assume the existing M1 source is valid, and no M1 regeneration occurs in this feature.
 
 ---
 

@@ -85,11 +85,24 @@ fitted system.
 
 ## Decision (T005 — operator)
 
-> **Status: AWAITING OPERATOR DECISION.**
+> ### ✅ **DEFER** — decided by operator, 2026-07-28
 >
-> - [ ] **DEFER** — proceed to Stage B; file the propeller discrepancy for the flight-model feature
-> - [ ] **REGENERATE** — stop; rebake the M1 source before any perception work, and re-pin the baseline
+> - [x] **DEFER** — proceed to Stage B; propeller discrepancy filed for the flight-model feature
+> - [ ] ~~REGENERATE~~
 >
-> **Decided by**: _______________ **Date**: _______________
+> **Consequences now binding on 040**:
 >
-> **Reasoning**:
+> 1. **No M1 source regeneration anywhere in this feature** (FR-025, SC-009). The existing sources stand,
+>    and the `retain=keep` pins applied at T003a remain the basis for SC-008's comparison.
+> 2. **Stage B opens.** Everything downstream may assume the existing M1 source is valid.
+> 3. **The propeller discrepancy is filed, not forgotten** (T006) — it belongs to the flight-model re-tune
+>    gated on n>1 articles, not to a perception feature.
+> 4. **The plant is unchanged**, so 040 remains parallel to the M1-controller flight-test track, which is
+>    what the feature was scoped to preserve.
+>
+> **Reasoning of record**: the propeller value and the tuned derivative set are one fitted system.
+> Correcting `D`/`H` in isolation would break a fit that was made against observed flight, and could make
+> the model *less* faithful rather than more. Deferral is therefore the technically correct call, not
+> merely the cheap one — and it is reinforced by the standing 039 "no recalibration from an n=1 airframe"
+> decision and by the acknowledged mediocrity of the current best M1 (spec Assumption 13a), which places
+> flight-model fidelity work in its own feature.

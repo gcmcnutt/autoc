@@ -47,6 +47,37 @@ destabilizer on prior craft) + streamer remain in the confound pool. Reinforces 
 new articles. Also: **new load record +11.2 g / −8.4 g** (span 2) on identical policy — loads
 creeping up flight-over-flight; inspect airframe between flights.
 
+### [040-fed, filed 2026-07-28] FDM propeller is the wrong part — 5.0×4.5 modelled vs 5.5×4 flown; fix only as part of a re-tune
+
+Found during the 040 Stage-A airframe-fidelity check
+([airframe-fidelity.md](040-camera-redo/airframe-fidelity.md), T004). **Everything else agrees** — mass
+(0.515 vs 520 g), span and chord (exact), wing area — so this is the sole plant-affecting discrepancy.
+
+| | modelled | flown |
+|---|---|---|
+| `crrcsim/models/hb1_streamer.xml` `<propeller D H>` | **0.127 / 0.114 m** (5.0 × 4.5) | **0.1397 / 0.1016 m** (5.5 × 4) |
+| Δ | — | **+10% diameter, +21% disc area, −11% pitch** |
+
+The modelled value is the airframe vendor's *stock recommended* prop; the flown one is the Master Airscrew
+GF 5.5×4 confirmed by photo (Windsor Propeller). Both are legitimate — they are simply different props.
+
+**⚠️ Do NOT fix this in isolation.** `hb1_streamer.xml` is a **stability-derivative model tuned against
+observed flight** across 021/023 *with these propeller values already in place* — `Cl_da` alone was revised
+four times to match measured roll rates. Whatever thrust error the wrong prop introduced has been silently
+absorbed by the tuning. Correcting `D`/`H` alone would break that fit and could make the model **less**
+faithful, not more. It is only meaningful as part of a re-tune against flight data.
+
+**Home**: the flight-model fidelity re-tune — the same work as the pitch marginal-stability levers above,
+which is already gated on **n>1 flight articles**. Pairs naturally with the deferred "less pitch
+aggressiveness" direction (operator 2026-07-28) and with the static-margin craft-variation axis.
+
+**Also worth carrying**: eCalc's wing-area entry of 17.42 dm² (270 in²) implies a ~9″ mean chord against a
+measured 7″; the simulator's 0.136 m² is correct. That is a third-party data-entry error, and it
+contaminates the **airspeed** axis of any eCalc partial-load table — fit throttle→RPM, never airspeed→RPM.
+
+**Trigger**: the flight-model re-tune feature (n>1 articles), or any 040-successor that changes the plant
+and must therefore rebake M1 anyway.
+
 ### [039 — BACKLOG, set 2026-07-10] Redefine flight boundaries generally for open flying — not the training cylinder
 
 **Operator (during the 039 arena-placement clarifications)**: the training cylinder (R=80 m, ±K
