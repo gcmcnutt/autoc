@@ -30,6 +30,7 @@ Existing C++17 codebase. Perception lives in `src/eval/` + `include/autoc/eval/`
 - [ ] T001 Confirm clean baseline: run `bash scripts/rebuild.sh` and verify all tests pass before any edits
 - [ ] T002 [P] Record the prior M2 run's throughput (generations/hour from its logfile) into `specs/040-camera-redo/research.md` as the FR-038 benchmark baseline
 - [ ] T003 [P] Pin a prior-M2 elite and record its exact eval fitness in `specs/040-camera-redo/research.md` — this is the bit-identity oracle for the T021 foundational gate
+- [x] T003a [P] ✅ **DONE 2026-07-28** — both M1 sources verified present and pinned `retain=keep`; prefixes and the near-miss recorded in `specs/040-camera-redo/research.md` §R9. The training source (`autoc-m1`) was already pinned; the **novel-path eval source (`autoc-eval`) was `retain=expire` and ~12 days from deletion** — it is the 038 t10 source the prior baseline's generalisation was measured against, so its loss would have silently destroyed the SC-008 comparison. The retrain MUST use these same sources (see T082a)
 
 ---
 
@@ -259,6 +260,7 @@ the aggregate delta against the prior baseline.
 
 ### Run and evaluate
 
+- [ ] T082a [US5] Confirm `autoc-tracker.ini` points `TrackerSourceRun`/`TrackerSourceBucket` at the **T003a-pinned M1 source** — the same one the prior baseline trained from (SC-008); if substituted, record it as confounding
 - [ ] T083 [US5] Launch the retrain via `bash scripts/train.sh autoc-tracker.ini logs/autoc-040-t1-perception.log` — **detached only**, never a harness-tracked background task (Principle IX)
 - [ ] T084 [US5] Monitor to a competence plateau; confirm the run completes without systemic failure
 - [ ] T085 [US5] Evaluate the resulting elite on novel paths by repointing `autoc-eval-tracker.ini` at a novel M1 eval source

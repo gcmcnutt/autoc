@@ -256,6 +256,11 @@ correctly state why 120° was retained, what it costs, and which measurements wo
   reporting noise as signal.
 - **Camera obstructed and target lost simultaneously.** Obstruction and genuine loss of signal must not be
   conflated; recovery timing differs and diagnostics must distinguish them.
+- **Beacon identity unresolved before decode.** A centroid exists before the code identifies which beacon
+  produced it. Separation survives this (it is a magnitude), but **tilt sign does not** — a swapped pair
+  flips tilt by 180°, and tilt drives the roll command. The trap is that positional confidence can be high
+  while identity is unknown, so quality must carry the identity uncertainty too (FR-017d) — it is the only
+  channel available to flag it.
 - **Reduced field of view with unchanged obstruction geometry.** Obstructions sit at fixed angles, so
   narrowing the field changes what fraction is lost. The effective field must be recomputed, never assumed.
 - **A scenario drawing an extreme camera misalignment.** Variation must remain within physically plausible
@@ -340,6 +345,19 @@ correctly state why 120° was retained, what it costs, and which measurements wo
   controller input**. The perception interface stays bearing plus a quality signal; the controller infers
   tracking state from how quality behaves across its history window rather than being handed a category.
   Tracking state is recorded for diagnostics only (FR-028).
+- **FR-017c**: Separation-derived quantities — beacon separation, range, target tilt — MUST be computed
+  from **tentative-lock bearings** rather than suppressed. The blob centroid exists before the code
+  decodes: detection and identification are separate operations, so a bearing is available pre-lock and the
+  centre of the detected blob *is* the coordinate. Quality is presented alongside, and the controller is
+  expected to learn the appropriate discount rather than being handed a gap.
+- **FR-017d**: **Identity uncertainty MUST be reflected in the quality value**, which is the interface's
+  *only* confidence channel — separation and tilt are bare values carrying no confidence of their own, and
+  the input vector is fixed at 58 (FR-006), so no channel can be added. Tilt sign depends on beacon
+  identity while separation does not: a swapped pair flips tilt by 180°, and tilt drives the roll command.
+  Pre-decode, two cleanly-detected blobs could otherwise carry *low* quality values (confident positions)
+  while identity is unknown — confidently wrong tilt with nothing flagging it. Unresolved identity MUST
+  therefore inflate quality on the affected beacons. This is coherent because quality is redefined as
+  **signal quality** (FR-014), not strictly positional uncertainty.
 - **FR-018**: Loss of signal MUST pass through a hold interval before tracking is reported lost, matching
   measured behaviour.
 - **FR-019**: The emission pattern MUST replace the current hard angular cutoff with a **flat-top profile
@@ -380,9 +398,15 @@ correctly state why 120° was retained, what it costs, and which measurements wo
 #### Calibratability — the plumbing-first contract
 
 - **FR-033**: Perception MUST model detection and range-inference as **separate envelopes**: bearing
-  remains available to the design detection range, while separation-derived range degrades to unavailable
-  once the beacon pair falls below the sensor's resolving limit. Neither may be reported as usable outside
-  its own envelope.
+  remains available to the detection range, while separation-derived range degrades to unavailable once the
+  beacon pair falls below the sensor's resolving limit. Neither may be reported as usable outside its own
+  envelope.
+- **FR-033a**: The detection envelope is **asserted, not emergent** — the sensor is taken as good to the
+  configured detection range (default ~100 m), and the signal budget shapes **quality within it** rather
+  than cutting visibility short. Rationale: the budget is not yet calibrated well enough to be trusted as a
+  *limit*, but is good enough to shape a *gradient*, and the degradation modes that would set a real limit
+  (sun angle, glint, dust, ambient level, sensor variation) are deliberately out of scope. Signal-to-noise
+  is therefore **proxied into the quality value**, which is what carries range dependence to the controller.
 - **FR-034**: Every physical quantity in the perception chain — emitter drive and beam pattern, ambient
   level, detection threshold, acquisition and hold timing, code-interference penalty, exposure, aperture,
   angular pixel size — MUST be an externally configured value with a stated default and a recorded basis,
@@ -451,8 +475,10 @@ correctly state why 120° was retained, what it costs, and which measurements wo
   by the wrong physical separation.
 - **SC-003**: The published effective field of view accounts for all obstructions and differs from the
   nominal field by a stated, geometrically justified amount.
-- **SC-004**: Signal quality degrades monotonically with distance and reproduces the measured bench
-  relationship, with the loss-of-tracking point falling within the measured range band.
+- **SC-004**: Signal quality degrades monotonically with distance across the detection envelope, following
+  the *shape* of the measured bench relationship. The envelope itself is asserted (FR-033a), so the test is
+  the **gradient**, not the cutoff point — quality at the far edge is materially worse than at close range,
+  with no discontinuity.
 - **SC-005**: Time to re-establish tracking after a loss matches measured acquisition behaviour within one
   control tick, and interruptions shorter than the measured hold interval never lose tracking.
 - **SC-006**: Repeated evaluation of an identical scenario produces bit-identical results, and with
@@ -461,7 +487,10 @@ correctly state why 120° was retained, what it costs, and which measurements wo
   mounting-error envelope — median, 95th percentile and clipped extreme — at the baseline mount, with the
   wing contributing no obstruction.
 - **SC-008**: A retrained M2 completes without systemic failure and its competence on unseen paths is
-  reported against the prior baseline on the established comparators as an **aggregate delta**. The
+  reported against the prior baseline on the established comparators as an **aggregate delta**, trained
+  from the **same M1 source the baseline used** so the delta isolates the perception change. If that source
+  is unavailable, the substitution MUST be stated and the delta reported as confounded rather than
+  presented as a clean comparison. The
   question this answers is deliberately coarse — *are we in the right room, and is this more honest?* — not
   which individual term cost what. No competence floor gates the feature; a drop attributable to more
   honest perception is a valid outcome. Per-term attribution is available later if wanted, since every
@@ -472,7 +501,7 @@ correctly state why 120° was retained, what it costs, and which measurements wo
 - **SC-010**: Every physical quantity the model relies on is classified measured / derived / assumed, with
   a recorded basis, and none is fixed at build time — so a calibration pass knows exactly what it may
   overwrite.
-- **SC-011**: Bearing remains reported out to the design detection range while separation-derived range
+- **SC-011**: Bearing remains reported out to the asserted detection range (FR-033a) while separation-derived range
   degrades to explicitly unavailable below the resolving limit, with a documented crossover — rather than
   range being reported as usable where the sensor cannot resolve it.
 - **SC-012**: A calibration rehearsal — substituting a plausible alternative value for each assumed
@@ -516,11 +545,23 @@ correctly state why 120° was retained, what it costs, and which measurements wo
 11. **Field of view is 120°, decided not studied** (operator, 2026-07-28). Retained deliberately: it keeps
     the field of view and the perception model from changing in the same step, which preserves
     interpretability against prior baselines.
-12. **Design detection range is ~100 m**, with the understanding that separation-derived range is usable
-    only within roughly a quarter of that. The two envelopes are modelled separately (FR-033).
+12. **Detection range is ~100 m, asserted rather than derived** (FR-033a) — the sensor is taken as good to
+    that range and the budget shapes quality within it. Separation-derived range remains usable only within
+    roughly a quarter of that. The two envelopes are modelled separately (FR-033). The real limit depends
+    on degradation modes deliberately out of scope here; asserting the envelope avoids an under-calibrated
+    budget producing a confidently wrong cutoff.
 13. **Numeric calibration is provisional by design.** Values are seeded from 031 bench measurements and
     datasheets and will be wrong in detail. The feature is judged on whether the structure absorbs
     correction (FR-036), not on the accuracy of the seed values.
+13a. **The M1 source is known-mediocre, and that caps M2's absolute numbers** (operator, 2026-07-28: *"the
+    current best M1 is so-so… at some point we go back to improved fidelity there (less pitch
+    aggressiveness), but for now we are refining camera track"*). The chase can only track as well as the
+    target flies, so **absolute M2 competence here is bounded by target flight quality, not by perception**.
+    Three consequences: (a) low absolute figures MUST NOT be read as a perception failure; (b) only the
+    **aggregate delta against the same-source baseline** is interpretable (SC-008), which is why the source
+    is pinned rather than refreshed; (c) when M1 fidelity is later improved, **every existing M2 baseline
+    becomes incomparable** — a future feature's numbers will jump for reasons unrelated to this one, and
+    that discontinuity should be expected rather than investigated.
 14. **Emitter beam width is 150° FWHM with a flat top to ±45°**, per the manufacturer datasheet (DS190
     Table 1) plus operator observation of the flat region. This is measured, not assumed. The 031 analysis
     script's 130° figure is a defect to be corrected at the source.
@@ -600,6 +641,29 @@ Deferred to later features, each with a recorded trigger:
   or a bench measurement showing margin ripple synchronised to engine speed.
 
 ## Clarifications
+
+### Session 2026-07-28 (post-plan pass)
+
+- Q: During a tentative lock, are separation-derived quantities computed or suppressed? → A: **Computed**
+  (FR-017c). The blob centroid exists before the code decodes — detection and identification are separate,
+  so the centre of the detected blob *is* the coordinate even pre-lock. Quality is presented alongside;
+  let the controller learn the discount rather than handing it a gap.
+- Q: Is quality (CEP) the only confidence channel in the interface? → A: **Yes** — per beacon the interface
+  is `x`, `y`, `quality`; separation and tilt are bare values, and the 58-input vector admits no additions.
+  Consequence (FR-017d): **identity uncertainty must be folded into quality**, because tilt sign depends on
+  beacon identity while separation does not, and positional confidence can be high while identity is
+  unknown. Coherent because quality is redefined as *signal* quality (FR-014), not strictly positional.
+- Q: Is the detection range configured or emergent from the signal budget? → A: **Asserted — the sensor is
+  good to ~100 m, with signal-to-noise proxied into the quality value** (FR-033a). The budget shapes the
+  *gradient* within the envelope rather than setting a *cutoff*, because it is not calibrated well enough
+  to be trusted as a limit and the modes that would set a real limit (sun angle, glint, dust, ambient,
+  sensor variation) are out of scope. SC-004 revised accordingly: the test is the gradient, not the cutoff.
+  Detection-quality variation filed to the backlog.
+- Q: Does the retrain use the same M1 source as the prior M2 baseline? → A: **Yes if available** — it is
+  the only way the aggregate delta isolates perception rather than mixing in source differences (SC-008).
+  ⚠️ **Time-sensitive**: dumps are tagged `retain=expire` and auto-delete after 30 days unless pinned
+  (Principle VIII), so the baseline's source must be **verified and pinned early**, not at retrain time.
+  If it has expired, the substitution is stated and the delta reported as confounded.
 
 ### Session 2026-07-28
 

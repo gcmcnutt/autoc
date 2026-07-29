@@ -185,6 +185,30 @@ because throughput converts directly into generations reached.
 
 ---
 
+## R9 — M1 source provenance and retention (T003a, resolved 2026-07-28)
+
+**Both M1 sources the feature depends on are now pinned `retain=keep`.**
+
+| Role | Config | Bucket / key | Tag |
+|---|---|---|---|
+| M2 **training** source | `autoc-tracker.ini` | `autoc-m1` · `autoc-9223370253553029228-2026-07-06T01:35:46.579Z/gen9200.dmp.zst` | already `keep` |
+| M1 **novel-path eval** source | `autoc-eval-tracker.ini` | `autoc-eval` · `autoc-9223370253134917267-2026-07-10T21:44:18.540Z/gen9999.dmp.zst` | **was `expire` → set to `keep`** |
+
+**The eval source was ~12 days from deletion** — created 2026-07-10, and the Principle VIII lifecycle
+expires `retain=expire` objects 30 days after creation (≈2026-08-09). It is the novel-path source from the
+038 t10 wrap exercise, i.e. the paths the prior M2 baseline's generalisation was measured on. Losing it
+would not have broken the retrain; it would have removed the ability to evaluate against the *same* novel
+paths as the baseline — silently destroying the comparison SC-008 rests on, and surfacing weeks later as
+"the baseline comparison cannot be reproduced" with no obvious cause.
+
+Single 9.4 MB object in that prefix, so one tag preserves the run.
+
+**Interpretation caveat (Assumption 13a)**: the current best M1 is acknowledged mediocre, and M1 fidelity
+work (less pitch aggressiveness) is deferred. The chase can only track as well as the target flies, so
+**absolute** M2 competence here is bounded by target flight quality rather than perception. Only the
+aggregate delta against this same-source baseline is interpretable — which is exactly why both sources are
+pinned rather than refreshed.
+
 ## Open items carried into implementation
 
 Values, not structure — none blocks the design (per the plumbing-first contract, FR-034/035):

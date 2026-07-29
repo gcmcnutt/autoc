@@ -459,6 +459,32 @@ the 031 1-bit acquisition phase and the 20 Hz / 480 fps / 200 Hz / 75 ms baselin
 - **Why research-track, not implementation**: needs a dataset + simulator camera model upgrade (or recorded event-camera bench data) before any controller work; coupled to the 031 perception-front-end FPGA / DSP scoping.
 - **Source design notes**: this thread; 030 D10 (single-camera v1 baseline that this would supersede); see also `[BACKLOG] Multi-camera variant experiments` below for the controller-side experiment shell once a camera spec is chosen.
 
+### [040-fed, filed 2026-07-28] Detection-quality degradation modes — make the detection envelope emergent instead of asserted
+
+040 **asserts** the detection envelope (sensor good to ~100 m) and proxies signal-to-noise into the quality
+value, rather than letting the signal budget set a cutoff ([040 spec](040-camera-redo/spec.md) FR-033a).
+That was deliberate: the budget is not calibrated well enough to be trusted as a *limit*, and the physics
+that would set a real limit is shelved. Operator framing 2026-07-28: *"we operate with uncertain or
+tentative information — let's just say the sensor is good to 100 m for now with some s/n proxied in the
+CEP; later we can add a lot more."*
+
+**What would make the envelope emergent** (roughly in order of expected effect):
+
+- **Ambient level / time-of-day** — the measured dominant limiter. 031 field tests: full sun rails a
+  DC-coupled front end; direct-sunlight lock fell to 4.5–6 m bare/unfiltered vs 12.5 m dark. Needs sun
+  position in the simulator.
+- **Sun angle in or near the FOV** — no filter helps with in-band sunlight; also the AGC-response question
+  (couples to the flight-data trigger already recorded for sun/glint).
+- **Glint** — specular water/metal returning false point sources. Unknowable until a camera exists.
+- **Atmospheric**: dust, haze, scintillation — blob spreads across more pixels, dimmer per pixel.
+- **Sensor variation** — QE spread, read noise, well depth, exposure tolerance; needs article 1.
+- **Optics degradation** — dirty lens, filter aging.
+
+**Trigger**: a calibrated camera link budget exists (article 1 + raw uncompressed capture — the same
+trigger as the deferred photon budget), OR field data shows the asserted 100 m envelope is materially wrong
+in a way that changes M2 behaviour. Pairs with the [031-fed] CEP-realism items below and with the camera
+PRNG slot item that follows.
+
 ### [BACKLOG — camera variations, scoped 2026-07-09] 5th PRNG class slot: mount-alignment 6-DOF first, then FOV/aberrations/noise
 
 **Operator scoping (2026-07-09, during the t9 equidistant-projection change)**: camera variations are
