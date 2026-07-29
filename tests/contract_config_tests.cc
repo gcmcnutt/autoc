@@ -215,7 +215,11 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // 038 US3 added EnablePredictorHead (aux span-predictor ablation gate) → 97.
     // 038 t7 added TrackerChaseUseSourceScenarioSeed (chase shares M1 source
     // env/craft/entry seed) → 98.
-    EXPECT_EQ(n, 116u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // 040 T015 added the 18 Airframe* obstruction keys (enabled + wing/nose
+    // AABBs + prop disc), replacing the compile-time proxy → 116; T017 retired
+    // CameraFrameRateHz + CameraLatencyMs (cadence follows ControlIntervalMsec,
+    // latency emerges from acquisition) → 114.
+    EXPECT_EQ(n, 114u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

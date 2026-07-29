@@ -4,8 +4,23 @@
 //
 // Mount + projection parameters for the on-board chase-craft camera that
 // produces the perception input for tracker-mode NN training. v1 baseline:
-// single forward-pointing camera, planar pinhole, 120° H × 90° V FOV, 30 Hz,
-// top-of-wing-chord mount per spec D10.
+// single forward-pointing camera, 120° H × 90° V FOV, top-of-wing-chord
+// mount per spec D10.
+//
+// 040 T017 — three fields retired here, each because the thing it configured
+// no longer exists:
+//   `frame_rate_hz`  the camera does not have an independent rate. Sensor
+//                    cadence follows the control loop, fixed at 20 Hz by 037
+//                    (WorkerInit.controlIntervalMsec); the 30 Hz here predated
+//                    that decision and was never read.
+//   `latency_ms`     latency is no longer a configured constant. It emerges
+//                    from the acquisition state machine's chip-credit timing
+//                    (US4), so a scalar knob would contradict the model.
+//   `Projection`     a two-value enum with one value ever constructed. The
+//                    projection stage is rewritten in US2 (T031) to quantise
+//                    on a real pixel grid; there is no second mode to select.
+// Deleted outright rather than deprecated, per Constitution III. WorkerInit is
+// RPC-only and never persisted, so the serialize change is same-rebuild safe.
 //
 // Coordinate convention (chase body frame, NED): +x forward, +y right,
 // +z down. The camera's optical axis is aligned with body +x by default
@@ -24,16 +39,10 @@ namespace autoc::eval {
 
 struct CameraConfig {
     // ----- Compile-time-fixed (target-hardware spec) ------------------------
-    enum class Projection { PLANAR_PINHOLE, SPHERICAL_FISHEYE };
-    Projection projection = Projection::PLANAR_PINHOLE;
-
     // FOV is the FULL angular extent (not half-angle). Tests and projection
     // math convert to half-angle (fov_*_deg / 2) where geometry needs it.
     gp_scalar fov_h_deg = 120.0f;
     gp_scalar fov_v_deg = 90.0f;
-
-    gp_scalar frame_rate_hz = 30.0f;
-    gp_scalar latency_ms = 0.0f;    // v1 baseline: zero pipeline latency
 
     // ----- PRNG-varied per scenario (v1 sigmas at zero) ---------------------
     // Mount offset in chase body frame. v1 default: top-of-wing-chord, 5 cm
@@ -45,14 +54,10 @@ struct CameraConfig {
     // optical axis is body +x (forward).
     gp_quat mount_orientation_body{1.0f, 0.0f, 0.0f, 0.0f};
 
-    // 030 M6e — cereal serialize for EvalData wire-protocol carry. Enum
-    // serialized as int (cereal doesn't handle enum class directly).
+    // 030 M6e — cereal serialize for the WorkerInit RPC carry.
     template <class Archive>
     void serialize(Archive& ar) {
-        int proj = static_cast<int>(projection);
-        ar(proj, fov_h_deg, fov_v_deg, frame_rate_hz, latency_ms,
-           mount_offset_body, mount_orientation_body);
-        projection = static_cast<Projection>(proj);
+        ar(fov_h_deg, fov_v_deg, mount_offset_body, mount_orientation_body);
     }
 };
 

@@ -232,8 +232,9 @@ struct AutocConfig {
     int cameraCount = 1;
     double cameraFOVHorizontalDeg = 120.0;
     double cameraFOVVerticalDeg = 90.0;
-    double cameraFrameRateHz = 30.0;
-    double cameraLatencyMs = 0.0;
+    // 040 T017 — CameraFrameRateHz / CameraLatencyMs retired. Sensor cadence
+    // follows ControlIntervalMsec (037); latency emerges from the acquisition
+    // state machine (US4). See include/autoc/eval/camera_config.h.
     double cameraMountOffsetX = 0.0;
     double cameraMountOffsetY = 0.0;
     double cameraMountOffsetZ = -0.05;      // m above wing surface (NED, +Z down)
@@ -380,8 +381,6 @@ struct AutocConfig {
     X(int,            cameraCount,               "CameraCount") \
     X(double,         cameraFOVHorizontalDeg,    "CameraFOVHorizontalDeg") \
     X(double,         cameraFOVVerticalDeg,      "CameraFOVVerticalDeg") \
-    X(double,         cameraFrameRateHz,         "CameraFrameRateHz") \
-    X(double,         cameraLatencyMs,           "CameraLatencyMs") \
     X(double,         cameraMountOffsetX,        "CameraMountOffsetX") \
     X(double,         cameraMountOffsetY,        "CameraMountOffsetY") \
     X(double,         cameraMountOffsetZ,        "CameraMountOffsetZ") \

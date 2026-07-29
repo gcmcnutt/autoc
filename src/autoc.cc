@@ -984,8 +984,6 @@ static WorkerInit buildWorkerInit() {
 
     init.cameraConfig.fov_h_deg = static_cast<gp_scalar>(cfg.cameraFOVHorizontalDeg);
     init.cameraConfig.fov_v_deg = static_cast<gp_scalar>(cfg.cameraFOVVerticalDeg);
-    init.cameraConfig.frame_rate_hz = static_cast<gp_scalar>(cfg.cameraFrameRateHz);
-    init.cameraConfig.latency_ms = static_cast<gp_scalar>(cfg.cameraLatencyMs);
     init.cameraConfig.mount_offset_body =
         gp_vec3(static_cast<gp_scalar>(cfg.cameraMountOffsetX),
                 static_cast<gp_scalar>(cfg.cameraMountOffsetY),

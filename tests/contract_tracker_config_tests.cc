@@ -123,8 +123,6 @@ TEST(TrackerConfig, CameraConfigParses) {
         "CameraCount = 1\n"
         "CameraFOVHorizontalDeg = 120.0\n"
         "CameraFOVVerticalDeg = 90.0\n"
-        "CameraFrameRateHz = 30.0\n"
-        "CameraLatencyMs = 0.0\n"
         "CameraMountOffsetX = 0.0\n"
         "CameraMountOffsetY = 0.0\n"
         "CameraMountOffsetZ = -0.05\n";
@@ -134,7 +132,6 @@ TEST(TrackerConfig, CameraConfigParses) {
     EXPECT_EQ(reader.GetInteger("", "CameraCount", -1), 1);
     EXPECT_DOUBLE_EQ(reader.GetReal("", "CameraFOVHorizontalDeg", 0.0), 120.0);
     EXPECT_DOUBLE_EQ(reader.GetReal("", "CameraFOVVerticalDeg", 0.0), 90.0);
-    EXPECT_DOUBLE_EQ(reader.GetReal("", "CameraFrameRateHz", 0.0), 30.0);
     EXPECT_DOUBLE_EQ(reader.GetReal("", "CameraMountOffsetZ", 0.0), -0.05);
 }
 
