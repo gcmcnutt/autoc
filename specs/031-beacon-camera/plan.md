@@ -3,7 +3,7 @@
 > **This is the ACTIVE 031 plan** (the 1-bit single-IR-sensor acquisition phase). It is an **index /
 > overview that references the detailed docs** rather than restating them — ask it "what is the plan,
 > the milestones, the acceptance criteria" and follow the links for depth. The original camera-pipeline
-> `plan.md` moved to [`../040-camera-redo/plan.md`](../040-camera-redo/plan.md) (parked, likely stale).
+> `plan.md` moved to [`../040-camera-redo/camera-hardware-phase/plan.md`](../040-camera-redo/camera-hardware-phase/plan.md) (parked, likely stale).
 >
 > ⚠️ **Spec-kit note**: do **not** run the stock `/speckit.plan` or `/speckit.tasks` generators on this
 > branch — `FEATURE_SPEC` resolves to the shared mega-`spec.md` (not this phase) and the generators would

@@ -1,8 +1,8 @@
 # Contract — Python Loader API (`beacon_loader`)
 
 **Spec ref**: FR-4.3
-**Reference impl**: `specs/040-camera-redo/beacon-loader/beacon_loader/loader.py`
-**Test ref**: `specs/040-camera-redo/beacon-loader/tests/test_loader_contract.py`
+**Reference impl**: `specs/040-camera-redo/camera-hardware-phase/beacon-loader/beacon_loader/loader.py`
+**Test ref**: `specs/040-camera-redo/camera-hardware-phase/beacon-loader/tests/test_loader_contract.py`
 
 ## Public API
 

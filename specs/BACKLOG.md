@@ -400,6 +400,29 @@ net learns the feedback)**. The lean pulls toward the US2 end.
 
 Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 2026-05-04, before plan-research begins. These were architecturally part of the 030 epic but earned defer-status under the smoke-test-first scoping (D13 / D16). Some are 031 (sibling-feature) candidates, some are pure backlog. Tagging as such; final 030/031 split is plan-research's call.
 
+### [PARKED — camera bench era, relocated 2026-07-28] Camera hardware phase — recorder chain, clip format, loader
+
+**Where it lives**: [`specs/040-camera-redo/camera-hardware-phase/`](040-camera-redo/camera-hardware-phase/)
+— `plan.md` (the original 031 Phase-1 camera plan), `data-model.md`, `quickstart.md` (build-a-pod /
+build-a-recorder walk-throughs), `recorder-status-codes.md`, `contracts/` (clip byte format, FPGA-recorder
+contract, Python-loader contract, JSON sidecar schema), plus the `beacon-viewer/` and `beacon-loader/`
+Python packages.
+
+**Why it moved**: 040 was specified 2026-07-28 as *sim-side perception fidelity only* — none of this
+material is in scope. Four of its filenames (`plan.md`, `data-model.md`, `quickstart.md`, `contracts/`)
+collide with `/speckit.plan` output and would have been overwritten in place. Filed here so it stays
+findable rather than being rediscovered by accident.
+
+**NOT obsolete — actively referenced by the running 031 build**: `cad/beacon-eval/verified-bom-eval.md`
+(§(a) hand-off to the cube-mounted target), `specs/031-beacon-camera/tasks.md` (T033 pod hand-build),
+`schematic.md`, `spec.md`, and both `firmware/flight-recorder/` READMEs link into it. Links were rewritten
+at the move; do not relocate again without re-running the sweep.
+
+**Unpark trigger**: a camera bench exists — article 1 plus raw uncompressed high-bandwidth capture (the
+same trigger as the deferred photon budget in the 040 spec). ⚠️ Re-validate first: these documents predate
+the 031 1-bit acquisition phase and the 20 Hz / 480 fps / 200 Hz / 75 ms baseline, and carry legacy
+240 fps / 100 Hz / 150 ms numbers.
+
 ### [040 — camera redo] Parallel perception-front-end — camera pixels → (x, y, CEP)
 
 > Re-homed to feature **040 (camera redo)** on 2026-06-20: 031 narrowed to the 1-bit single-IR-sensor acquisition-research phase; the camera pipeline (this item + the FOV/representation item below) is the separate 040 effort. Emitters are shared; 040 replaces the single-sensor analog front end with a camera + bigger FPGA. The old camera `specs/031-beacon-camera/spec.md`+`plan.md` are 040's reference.
@@ -417,6 +440,20 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **Question 2 — Optics with non-uniform angular resolution**: a 120° FOV with uniform pixel pitch wastes resolution on the edges where the target rarely sits, and starves the center where it does. Two candidate architectures:
   - **Dual-camera**: wide (~180°) for acquire/orbit-recovery + narrow (~60°) for hi-res tracking. NN sees both feeds (concatenated or as separate channels). Mirrors how birds-of-prey use peripheral + foveal vision.
   - **Single non-linear lens**: fisheye / log-polar / panomorph optics that compress edges and expand the center on the same sensor. Lower hardware cost, but introduces lens calibration and non-linear NDC math; the NN has to learn the warp implicitly.
+- **Question 2b — RAPTOR BINOCULAR arrangement: two IDENTICAL wide cameras, splayed, overlapping forward (operator 2026-07-28, "might be what we wind up doing after M2")**. Distinct from the wide+narrow sketch in Question 2 above — that one mimics the *foveal* adaptation (peripheral + high-acuity); this one mimics the *binocular* adaptation (lateral coverage + forward depth), and looks stronger. Two identical 120° cameras on the wing leading edge at ∓8″ (the 040 baseline mount, [040 input checklist](040-camera-redo/input-data-checklist.md)), splayed outward by α:
+
+  | splay α | total coverage | binocular overlap | prop shadow |
+  |---:|---:|---:|---|
+  | 0° | 120° | 120° | in frame, 41–61° inboard |
+  | **20°** | **160°** | **80°** | **gone** |
+  | 30° | 180° | 60° | gone |
+  | 45° | 210° | 30° | gone |
+
+  **Solves three problems at once**: (a) **blindness** — 160–180° coverage attacks the documented M2 ceiling head-on ([project_m2_tracking_ceiling]: reacquire-through-blindness, ~8 s worst-case blind windows, reward-invariant ⇒ perception-capped); (b) **range where it matters** — the binocular lobe sits forward, exactly where a tail chase terminates, and stereo yields range from a **single** visible beacon, which is the case precisely when the target banks and hides a wingtip (beacon-separation ranging fails there); (c) **prop occlusion vanishes for free** — the shadow lies inboard, so **any splay > ~19° rotates it outside a ±60° field**. The splay chosen for coverage is the splay that kills the occlusion.
+  - **Baseline caveat (carry the right expectation)**: ∓8″ ⇒ a 0.41 m stereo baseline vs the target's 0.772 m beacon separation, so as a *ranging-accuracy* upgrade it is ≈1.9× coarser than just using the target's own wingspan. Its value is **robustness, not precision** — single-beacon range, plus geometric rejection of ground-bounce/glint false blobs (a genuine beacon appears in both views at consistent disparity). Judge it on those, not on range error.
+  - **Cost**: the NN input vector grows to two cameras' worth of observations — a real feature, not a tweak. Also doubles the perception front-end. Symmetric mounting cancels any asymmetric drag from a single LE camera.
+  - **Trigger**: after M2 (operator). Natural pairing with the rear-facing-camera idea (same blindness target, different geometry) and with [031-fed] CEP realism.
+
 - **Question 3 — Projection model: go spherical/equidistant, not rectilinear (operator direction 2026-07-07)**. *[PULLED FORWARD 2026-07-07 as a likely near-term step after t6 — see the promoted entry under "038 deferrals" at the top of this file; full rationale + blast radius stay here.]* Today the sim projects rectilinearly (pinhole): `screen = tan(θ)/tan(fov/2)` ([camera_projection.cc:168](../src/eval/camera_projection.cc)). Because NDC ∝ `tan(θ)`, a *fixed angular* wingspan reads **larger toward the frame edge** than at center — so `beacon_pair_span` (and `tilt`, `span_rate`, the CEP edge factor, and every raw beacon NDC input) carries an **ego-pointing contamination**: where you aim the camera changes the reading. This surfaced in the 038 US3 span-predictor discussion (2026-07-07): it muddies "what span means" — span is *meant* to be a clean range×aspect closure signal, but the tan-stretch injects an ego term. **Direction**: switch the sim to a **spherical / equidistant** projection (`screen ∝ θ`) applied uniformly to **all** coordinates, so NDC is ∝ angle and span becomes ego-pointing-invariant (a clean angular quantity). Then, once real camera hardware is chosen, **model that specific lens's projection function** (rectilinear / equidistant / equisolid / panomorph) in sim to match — projection becomes a *modeled physical property of the chosen optic*, not an arbitrary sim convention, and lens choice becomes a first-class sim variable (ties to the dual-FOV / non-linear-lens options above). **Blast radius**: `camera_projection.cc` `screen_x/y` + the FOV clip + CEP edge factor; changes every beacon NDC input + all derived features → a perception-representation change, so M1/M2 source dmps are invalidated and need a rebake (greenfield, no cereal bump per project practice). Couples to [031-fed] CEP-realism below and `project_cep_realism_backlog`. Span itself stays the metric — operator: "span is nice, keep it"; this only makes it mean one thing everywhere.
 - **What the early minisim playback informed**: the 120° FOV + raw-NDC-projection presentation gives narrow beacon spacing close-in (~0.26 NDC at 10ft), and the controller learned an emergent orbit-to-reacquire when the target left the FOV — useful evidence that the current rep gets some way, but reacquisition cost in crrcsim's harder dynamics may push the topology budget higher than 030 v1 plans for. A richer rep (event stream) or smarter optics (dual-FOV / non-linear) could lower that topology demand instead.
 - **Why research-track, not implementation**: needs a dataset + simulator camera model upgrade (or recorded event-camera bench data) before any controller work; coupled to the 031 perception-front-end FPGA / DSP scoping.
