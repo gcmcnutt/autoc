@@ -27,9 +27,9 @@ Existing C++17 codebase. Perception lives in `src/eval/` + `include/autoc/eval/`
 
 **Purpose**: establish the baselines that later gates measure against. Nothing here changes behaviour.
 
-- [ ] T001 Confirm clean baseline: run `bash scripts/rebuild.sh` and verify all tests pass before any edits
-- [ ] T002 [P] Record the prior M2 run's throughput (generations/hour from its logfile) into `specs/040-camera-redo/research.md` as the FR-038 benchmark baseline
-- [ ] T003 [P] Pin a prior-M2 elite and record its exact eval fitness in `specs/040-camera-redo/research.md` — this is the bit-identity oracle for the T021 foundational gate
+- [x] T001 ✅ **DONE 2026-07-28** — `scripts/rebuild.sh` clean: **339 tests pass, 0 fail**. The two `error` strings in the log are benign (a CMake probe for an optional dependency, and a test deliberately exercising a fail-loud path)
+- [x] T002 [P] ✅ **DONE 2026-07-28** — baseline from `logs/autoc-038-t9-m2-spherical.log`: 430 gens / 26.88 h = **16.00 gen/hour**, late-run **≈5600 sims/s**. Recorded in `research.md` §R10 with the note that **sims/s at a comparable generation** is the honest comparator — gen/hour is config-sensitive and the run-mean (7359) is inflated by faster early gens. FR-038 ceiling ⇒ **≥ ~5040 sims/s**
+- [~] T003 [P] **PARTIAL 2026-07-28** — oracle identified and recorded in `research.md` §R11: t9 **gen 430, fitness `-13949.366286`**, already corroborated by that run's own `NN_ELITE_SAME` line. ⚠️ **Remaining step is operator-driven**: running the eval against a rebuilt binary to confirm `NN_EVAL_SAME` is the eval-vs-training bitwise gate
 - [x] T003a [P] ✅ **DONE 2026-07-28** — both M1 sources verified present and pinned `retain=keep`; prefixes and the near-miss recorded in `specs/040-camera-redo/research.md` §R9. The training source (`autoc-m1`) was already pinned; the **novel-path eval source (`autoc-eval`) was `retain=expire` and ~12 days from deletion** — it is the 038 t10 source the prior baseline's generalisation was measured against, so its loss would have silently destroyed the SC-008 comparison. The retrain MUST use these same sources (see T082a)
 
 ---
@@ -44,7 +44,7 @@ magnitude of disagreement, ending in an explicit recorded decision. Delivers val
 **Why first**: a "regenerate" verdict forces an M1 source rebake *before* perception work, since M2 trains
 off the M1 source. No code — a document and a decision.
 
-- [ ] T004 [US1] Compare simulated vs measured airframe/propulsion parameters (mass, span, wing area, propeller diameter/pitch, CG) in a new `specs/040-camera-redo/airframe-fidelity.md`, classifying each agree/disagree/unknown with magnitude, sourced from `crrcsim/models/hb1_streamer.xml` and [input-data-checklist.md](input-data-checklist.md)
+- [x] T004 [US1] ✅ **DONE 2026-07-28** — `specs/040-camera-redo/airframe-fidelity.md`. Compare simulated vs measured airframe/propulsion parameters (mass, span, wing area, propeller diameter/pitch, CG) in a new `specs/040-camera-redo/airframe-fidelity.md`, classifying each agree/disagree/unknown with magnitude, sourced from `crrcsim/models/hb1_streamer.xml` and [input-data-checklist.md](input-data-checklist.md)
 - [ ] T005 [US1] Record in `specs/040-camera-redo/airframe-fidelity.md` the explicit decision — regenerate M1 source now, or defer — with reasoning (FR-025)
 - [ ] T006 [US1] File each deferred discrepancy (notably the propeller 5.0×4.5-vs-5.5×4 mismatch) into `specs/BACKLOG.md` against the feature that will address it (FR-026, Principle X)
 

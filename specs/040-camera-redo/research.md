@@ -209,6 +209,45 @@ work (less pitch aggressiveness) is deferred. The chase can only track as well a
 aggregate delta against this same-source baseline is interpretable — which is exactly why both sources are
 pinned rather than refreshed.
 
+## R10 — Throughput baseline for FR-037/038 (T002, captured 2026-07-28)
+
+Prior M2 training run: **`logs/autoc-038-t9-m2-spherical.log`** — the t9 spherical/equidistant run whose
+elite fed the 038 t10 wrap exercise, i.e. the baseline SC-008 compares against.
+
+| Metric | Value |
+|---|---|
+| Window | 2026-07-09 11:32:11 → 2026-07-10 14:24:43 (**26.88 h**) |
+| Generations | 430 |
+| **Wall throughput** | **16.00 gen/hour** (225.0 s/gen) |
+| Per-gen sim duration | mean 225.0 s (min 90.6 / max 275.8) |
+| Sim rate | mean 7359 sims/s; **late-run ≈5530–5730 sims/s** (gens ~425–430) |
+
+**Use `sims/s` at a comparable generation as the primary comparator, not gen/hour.** Wall throughput is
+sensitive to population and scenario-count configuration, and the per-gen figure drifts *within* a run as
+scenario length grows — the mean (7359) is inflated by faster early generations, so comparing a new run's
+early gens against this mean would flatter it. The late-run band (~5600 sims/s) is the honest reference.
+
+**FR-038 ceiling**: ≤10% regression ⇒ a new run must hold **≥ ~5040 sims/s** in the same late-run regime.
+
+## R11 — Bit-identity oracle for the Stage B gate (T003, partial 2026-07-28)
+
+**Candidate elite**: prior M2 run `autoc-038-t9-m2-spherical`, **gen 430** (final).
+
+| Field | Value |
+|---|---|
+| Elite fitness (training) | **`-13949.366286`** |
+| Corroboration | `NN_ELITE_SAME: gen=430 fitness=-13949.366286` — the run's own elite re-eval already reproduced it |
+| Competence context | `pctInStreak=7.5`, `avgMaxStreak=21.1`, 293/294 rabbitComplete, 0 hull strikes |
+| S3 | bucket `autoc-m2`, run `autoc-9223370253134917267-…`-class prefix (confirm exact key before pinning) |
+
+**Why this value is a usable oracle**: the run's own `NN_ELITE_SAME` line shows the elite re-evaluates to
+the training fitness bit-exactly, so it is already a proven determinism anchor rather than merely a
+recorded number.
+
+⚠️ **Remaining step is operator-driven**: actually running the eval to confirm `NN_EVAL_SAME` against a
+rebuilt binary is the eval-vs-training bitwise gate, which the operator drives rather than an assistant
+kicking off. The value above is what T021 must reproduce.
+
 ## Open items carried into implementation
 
 Values, not structure — none blocks the design (per the plumbing-first contract, FR-034/035):
