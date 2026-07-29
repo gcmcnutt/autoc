@@ -100,22 +100,39 @@ range matches truth.
 
 ### Tests (write first, verify failing)
 
-- [ ] T023 [P] [US2] Test in `tests/beacon_projection_tests.cc`: a fixed angular separation reads within 2% of the same value at frame centre and near the edge (SC-001)
-- [ ] T024 [P] [US2] Test in `tests/beacon_projection_tests.cc`: the same separation rotated horizontal→vertical is unchanged — both axes share one scale (FR-002)
-- [ ] T025 [P] [US2] Test in `tests/beacon_projection_tests.cc`: bearing is quantised to the pixel grid, neither finer nor coarser (FR-001)
-- [ ] T026 [P] [US2] Test in `tests/beacon_projection_tests.cc`: range inferred from separation matches truth within grid resolution, no systematic bias — guards the 0.772 m correction (SC-002)
-- [ ] T027 [P] [US2] Test in `tests/gather_tracker_inputs_tests.cc`: controller input vector remains exactly 58 (FR-006)
-- [ ] T028 [P] [US2] Test in `tests/beacon_projection_tests.cc`: FOV is derived from grid × deg-per-pixel and cannot be set independently (FR-003)
+All six written against the not-yet-existing API and confirmed failing to compile before implementation.
+They live in a `CameraGridGeometry` suite in `tests/beacon_projection_tests.cc`.
+
+- [x] T023 [P] [US2] ✅ **DONE 2026-07-29** — split into two, because the single assertion the task describes is **not true as written**. `RadialSeparationIsPositionInvariant` asserts the delivered property: 15.0° reads within 2% at frame centre and at 50° off-axis, with both pairs placed on exact pixel centres so quantisation contributes **zero** and the tolerance measures the projection alone. `TangentialSeparationOverReadsByThetaOverSinTheta` pins the accepted residual (+8.6% at 40°, matching θ/sin θ). **See the SC-001 note below** — this is a spec/research inconsistency, not an implementation shortfall
+- [x] T024 [P] [US2] ✅ **DONE 2026-07-29** — `SeparationIsUnchangedWhenRotatedHorizontalToVertical`, equal to 1e-4 rad. This is the assertion that actually retires the bug: the ±1 encoding normalised each axis by its own half-FOV and read these **33% apart**
+- [x] T025 [P] [US2] ✅ **DONE 2026-07-29** — two tests. `BearingIsQuantisedToPixelCentres` sweeps ±50° and asserts every reported bearing lands on a pixel centre; `BearingResolvesNoFinerAndNoCoarserThanOnePixel` asserts sub-pixel detail does **not** survive (two truths inside one pixel are bit-identical) and that one pixel apart resolves as exactly one pixel
+- [x] T026 [P] [US2] ✅ **DONE 2026-07-29** — `RangeFromSeparationMatchesTruthWithoutSystematicBias`, 5–25 m at 0.25 m steps. The mean-bias assertion is what catches a wrong constant: 0.9 m would sit ~16.6% high uniformly. **Found a real effect while tuning it** — a genuine ~1.1% positive bias remains, which is **grid convexity** (range is separation/span and E[1/span] > 1/E[span] under symmetric quantisation error; at 25 m the pair subtends only ~4.7 px). Documented in the test and the bound set above it
+- [x] T027 [P] [US2] ✅ **DONE 2026-07-29 — already enforced, no new test needed.** `TrackerInput::COUNT == 58` and `sizeof(TrackerInputs) == 58 * sizeof(float)` are `static_assert`s in `include/autoc/nn/nn_inputs.h`, mirrored in `tests/gather_tracker_inputs_tests.cc`. FR-006 is a **compile-time** guarantee here, which is stronger than a runtime test; US2 changed the units in those slots, never the count
+- [x] T028 [P] [US2] ✅ **DONE 2026-07-29** — `FieldOfViewIsDerivedFromGridAndPixelPitch` (halving the pitch halves both fields; there is no setter that could contradict it) plus `FovEdgeFollowsTheDerivedField` (the derived field is the real visibility boundary, not a separate knob that could drift)
+
+> ⚠️ **SC-001 is not achievable as literally worded, and this is a spec inconsistency to reconcile — not a
+> gap in the work.** SC-001 says a fixed angular separation reads within 2% "wherever it appears in frame
+> **and at any orientation**". Research R2 and [contracts/perception-interface.md](contracts/perception-interface.md) §6 both accept a **+21%
+> worst-case tangential over-read** (θ/sin θ at the frame corner) as documented-not-fixed, explicitly
+> because it "makes a separate ray-angle span computation unnecessary". Those cannot both hold.
+>
+> **Implemented per research R2** — it is the later, more specific, and explicitly-reasoned decision, and its
+> rejected alternative (b) (direction cosines) was rejected for re-introducing position dependence in the
+> opposite direction. The 2% claim holds radially anywhere, and holds for the orientation flip FR-002 is
+> actually about. **Operator decision needed**: reword SC-001 to scope it radially, or reopen R2's
+> alternative (b). Nothing downstream is blocked either way.
 
 ### Implementation
 
-- [ ] T029 [US2] Rework `include/autoc/eval/camera_config.h` to `pixels_h` / `pixels_v` / `deg_per_px`, with `fov_h_deg` / `fov_v_deg` derived (FR-003)
-- [ ] T030 [P] [US2] Correct beacon separation to 0.772 m in `include/autoc/eval/beacon_config.h` (±0.386 m mounts), replacing ±0.45 m (FR-004)
-- [ ] T031 [US2] Rewrite the projection stage in `src/eval/camera_projection.cc`: quantise to the pixel grid, then emit isotropic **radians** (FR-001, FR-002)
-- [ ] T032 [US2] Remove the int8 bearing encoding from `include/autoc/eval/camera_projection.h` and add `int16` pixel-index fields, `// raw-ok:` annotated (Principle III + VI)
-- [ ] T033 [US2] Update derived features in `src/nn/evaluator.cc` and `include/autoc/eval/derived_features.h` for the radian scale — separation, separation rate, tilt (tilt stays sin/cos per FR-005)
-- [ ] T034 [US2] Rescale the camera POV panel in `tools/renderer.cc` from the retired ±1 convention to radians, including the angular reticle
-- [ ] T035 [US2] Run the Principle VI type-domain grep on the diff; annotate or convert
+- [x] T029 [US2] ✅ **DONE 2026-07-29** — `pixels_h` / `pixels_v` / `deg_per_px` with `fovHDeg()` / `fovVDeg()` / `halfFov*Rad()` / `radPerPx()` as **accessors, not fields**, so no setter exists that could contradict the grid. `fov_h_deg` / `fov_v_deg` deleted along with the `CameraFOVHorizontalDeg` / `CameraFOVVerticalDeg` ini keys; `CameraPixelsH` / `CameraPixelsV` / `CameraDegPerPixel` replace them in all three tracker inis. `AUTOC_CONFIG_FIELDS` 114 → 115
+- [x] T030 [P] [US2] ✅ **DONE 2026-07-29** — `kBeaconSeparationM = 0.772` / `kBeaconMountY = 0.386` in `beacon_config.h`, with the mounts derived from the constant so the two can never disagree. Inis updated. Added `TrackerInisCarryTheMeasuredBeaconSeparation`, which asserts the **value** (right − left == 0.772) in all three inis, not merely the key's presence
+- [x] T031 [US2] ✅ **DONE 2026-07-29** — projection emits isotropic radians and quantises on the grid. Pixel centres at `(i − (n−1)/2)·rad_per_px`, so the sensor edges land at `±n/2·rad_per_px` and the derived FOV is exactly `n × deg_per_px`. **With an even pixel count the boresight falls on a pixel BOUNDARY**, so a perfectly centred beacon reports half a pixel and never exactly zero — that is what an even-width sensor does, and it is preserved rather than papered over
+- [x] T032 [US2] ✅ **DONE 2026-07-29** — int8 bearing encoding **deleted outright** (`quantize_xy` / `dequantize_xy` and their round-trip tests). `int16_t raw_px_x` / `raw_px_y` replace `raw_x_int8` / `raw_y_int8`, with `kPixelSentinel = INT16_MIN` (valid indices are never negative). CEP keeps its int8 encoding until US4 replaces it with signal-derived quality
+- [x] T033 [US2] ✅ **DONE 2026-07-29** — **units changed, math did not.** `compute_pair_span` / `compute_tilt` were always pure planar geometry over whatever the caller passed, so no formula moved; what changed is what they MEAN, and every comment claiming NDC was corrected across `derived_features.h`, `nn_inputs.h`, `evaluator.h`, `evaluator.cc`. `kTiltDegenerateEpsilon` re-justified in radians (1e-4 rad ≈ 1.5% of a pixel) — and grid quantisation makes it sharper, since two beacons in one pixel now yield a distance of exactly zero. Tilt stays sin/cos per FR-005
+- [x] T034 [US2] ✅ **DONE 2026-07-29** — POV panel normalises bearings against the recorded half-field. **This is why `screen_x` was renamed rather than reinterpreted**: reading a radian value as if it were ±1 NDC would have silently pinned every beacon near frame centre, and the rename made every one of the ~14 consumer sites a compile error instead
+- [x] T035 [US2] ✅ **DONE 2026-07-29** — grep run on the diff. Production code is clean bar the `X(double, cameraDegPerPixel, ...)` macro token, which must match its struct field and is uniform with all 114 other entries. `cameraDegPerPixel` annotated per the `cepGateThreshold` precedent (inih returns double, cast at the WorkerInit boundary). Test scaffolding carries a block annotation explaining that raw `double` there is deliberate: the reference geometry must out-precision the code under test, or a 2%-of-a-pixel tolerance partly measures the test
+
+**Gate**: `cmake --build build` clean, **39/39 ctest suites pass, 0 fail**, crrcsim links clean.
 
 **Checkpoint**: **manual renderer check** — load a playback and confirm beacons render where expected under
 the new scale. Automated tests cannot catch a scale error that is self-consistent.

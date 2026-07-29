@@ -518,7 +518,7 @@ void gather_tracker_inputs(const AircraftState& chase,
         out.beacon_pair_span[i] = history.span[i];  // raw-ok: NN-byte-format primitive
     }
 
-    // (2) span_rate — signed RATE (NDC-units/s) over the NOW↔TM1 lag gap
+    // (2) span_rate — signed RATE (rad/s, 040 T031) over the NOW↔TM1 lag gap
     // (100 ms at every cadence; 037 T022 — was a raw one-tick diff). No own
     // CEP-gate; mechanically derives from history.span. Per spec Q3 + R3 +
     // data-model.md §3.1: visibility transitions produce signed step
@@ -526,7 +526,7 @@ void gather_tracker_inputs(const AircraftState& chase,
     // positive). Documented as intentional.
     out.span_rate = (history.span[5] - history.span[4]) / kNNHistoryRecentGapSec;  // raw-ok: NN-byte-format primitive
 
-    // (3) target_tilt — (sin θ, cos θ) over the port→starboard NDC line.
+    // (3) target_tilt — (sin θ, cos θ) over the port→starboard bearing line.
     // CEP-gate at "now": if EITHER beacon is untrusted, substitute neutral
     // (0, 1) = "wings level relative, no roll pressure". Degenerate-pair
     // guard inside compute_tilt handles the geometric edge case.

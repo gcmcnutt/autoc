@@ -40,12 +40,15 @@ PerceptionTickResult projectPerceptionTick(const AircraftState& chase,
     out.left = left;
     out.right = right;
 
-    out.record.left_x = left.screen_x;       // raw-ok: NN-byte-format primitive
-    out.record.left_y = left.screen_y;       // raw-ok: NN-byte-format primitive
-    out.record.left_cep = left.cep;          // raw-ok: NN-byte-format primitive
-    out.record.right_x = right.screen_x;     // raw-ok: NN-byte-format primitive
-    out.record.right_y = right.screen_y;     // raw-ok: NN-byte-format primitive
-    out.record.right_cep = right.cep;        // raw-ok: NN-byte-format primitive
+    // 040 T031 — these carry BEARINGS IN RADIANS now, not ±1 NDC. Everything
+    // downstream (span, span_rate, tilt, the aux predictor's realized target)
+    // inherits the new scale.
+    out.record.left_x = left.bearing_x_rad;    // raw-ok: NN-byte-format primitive
+    out.record.left_y = left.bearing_y_rad;    // raw-ok: NN-byte-format primitive
+    out.record.left_cep = left.cep;            // raw-ok: NN-byte-format primitive
+    out.record.right_x = right.bearing_x_rad;  // raw-ok: NN-byte-format primitive
+    out.record.right_y = right.bearing_y_rad;  // raw-ok: NN-byte-format primitive
+    out.record.right_cep = right.cep;          // raw-ok: NN-byte-format primitive
 
     // 032 PHASE 1 — beacon-pair separation, CEP-gated: if EITHER beacon's CEP
     // is at or above the threshold, substitute neutral 0.0 rather than compute
@@ -61,10 +64,10 @@ PerceptionTickResult projectPerceptionTick(const AircraftState& chase,
     } else {
         out.record.span = static_cast<float>(  // raw-ok: NN-byte-format slot write
             compute_pair_span(
-                static_cast<gp_scalar>(left.screen_x),
-                static_cast<gp_scalar>(left.screen_y),
-                static_cast<gp_scalar>(right.screen_x),
-                static_cast<gp_scalar>(right.screen_y)));
+                static_cast<gp_scalar>(left.bearing_x_rad),
+                static_cast<gp_scalar>(left.bearing_y_rad),
+                static_cast<gp_scalar>(right.bearing_x_rad),
+                static_cast<gp_scalar>(right.bearing_y_rad)));
     }
 
     return out;

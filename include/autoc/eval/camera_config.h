@@ -22,6 +22,11 @@
 // Deleted outright rather than deprecated, per Constitution III. WorkerInit is
 // RPC-only and never persisted, so the serialize change is same-rebuild safe.
 //
+// 040 T029 — `fov_h_deg` / `fov_v_deg` follow them, for a different reason:
+// they were not dead, they were REDUNDANT. Field of view and resolution are
+// not independent facts about a camera, and configuring them separately let
+// them disagree. They are now derived from the grid (FR-003).
+//
 // Coordinate convention (chase body frame, NED): +x forward, +y right,
 // +z down. The camera's optical axis is aligned with body +x by default
 // (mount_orientation_body = identity quat). Tests + the projection module
@@ -38,11 +43,19 @@
 namespace autoc::eval {
 
 struct CameraConfig {
-    // ----- Compile-time-fixed (target-hardware spec) ------------------------
-    // FOV is the FULL angular extent (not half-angle). Tests and projection
-    // math convert to half-angle (fov_*_deg / 2) where geometry needs it.
-    gp_scalar fov_h_deg = 120.0f;
-    gp_scalar fov_v_deg = 90.0f;
+    // ----- The sensor grid — the ONLY resolution inputs (040 T029, FR-003) --
+    //
+    // Field of view is DERIVED from these, never configured beside them. That
+    // is the whole point of FR-003: with independent `fov_h_deg` / `fov_v_deg`
+    // fields (retired here) a config could declare a 120° field over a grid
+    // whose pitch implied 90°, and nothing would notice. One knob, one answer.
+    //
+    // Defaults are the assumed sensor format (config-surface.md classifies all
+    // three ASSUMED, pending the lens/sensor decision recorded in US7):
+    // 320 × 240 at 0.375°/px ⇒ exactly 120° × 90°.
+    int pixels_h = 320;
+    int pixels_v = 240;
+    gp_scalar deg_per_px = static_cast<gp_scalar>(0.375);
 
     // ----- PRNG-varied per scenario (v1 sigmas at zero) ---------------------
     // Mount offset in chase body frame. v1 default: top-of-wing-chord, 5 cm
@@ -54,11 +67,39 @@ struct CameraConfig {
     // optical axis is body +x (forward).
     gp_quat mount_orientation_body{1.0f, 0.0f, 0.0f, 0.0f};
 
+    // ----- Derived field of view (FR-003) -----------------------------------
+    //
+    // FULL angular extent, edge to edge. Pixel CENTRES sit at
+    // (i − (n−1)/2)·deg_per_px, so the outer edges land at ±n/2·deg_per_px and
+    // the field is exactly n × deg_per_px. Accessors, not fields, so there is
+    // no setter that could contradict the grid.
+    gp_scalar fovHDeg() const {
+        return static_cast<gp_scalar>(pixels_h) * deg_per_px;
+    }
+    gp_scalar fovVDeg() const {
+        return static_cast<gp_scalar>(pixels_v) * deg_per_px;
+    }
+
+    gp_scalar radPerPx() const { return deg_per_px * kDegToRad; }
+    gp_scalar halfFovHRad() const {
+        return static_cast<gp_scalar>(pixels_h) * radPerPx() /
+               static_cast<gp_scalar>(2);
+    }
+    gp_scalar halfFovVRad() const {
+        return static_cast<gp_scalar>(pixels_v) * radPerPx() /
+               static_cast<gp_scalar>(2);
+    }
+
     // 030 M6e — cereal serialize for the WorkerInit RPC carry.
     template <class Archive>
     void serialize(Archive& ar) {
-        ar(fov_h_deg, fov_v_deg, mount_offset_body, mount_orientation_body);
+        ar(pixels_h, pixels_v, deg_per_px,
+           mount_offset_body, mount_orientation_body);
     }
+
+private:
+    static constexpr gp_scalar kDegToRad =
+        static_cast<gp_scalar>(3.14159265358979323846 / 180.0);
 };
 
 }  // namespace autoc::eval

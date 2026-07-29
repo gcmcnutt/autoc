@@ -218,8 +218,10 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // 040 T015 added the 18 Airframe* obstruction keys (enabled + wing/nose
     // AABBs + prop disc), replacing the compile-time proxy → 116; T017 retired
     // CameraFrameRateHz + CameraLatencyMs (cadence follows ControlIntervalMsec,
-    // latency emerges from acquisition) → 114.
-    EXPECT_EQ(n, 114u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // latency emerges from acquisition) → 114; T029 retired
+    // CameraFOVHorizontalDeg + CameraFOVVerticalDeg (FOV is now DERIVED from
+    // the grid, FR-003) and added CameraPixelsH/V + CameraDegPerPixel → 115.
+    EXPECT_EQ(n, 115u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

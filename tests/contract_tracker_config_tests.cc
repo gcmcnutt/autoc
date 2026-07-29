@@ -121,8 +121,9 @@ TEST(TrackerConfig, FlightArenaDefaults) {
 TEST(TrackerConfig, CameraConfigParses) {
     std::string ini =
         "CameraCount = 1\n"
-        "CameraFOVHorizontalDeg = 120.0\n"
-        "CameraFOVVerticalDeg = 90.0\n"
+        "CameraPixelsH = 320\n"
+        "CameraPixelsV = 240\n"
+        "CameraDegPerPixel = 0.375\n"
         "CameraMountOffsetX = 0.0\n"
         "CameraMountOffsetY = 0.0\n"
         "CameraMountOffsetZ = -0.05\n";
@@ -130,8 +131,10 @@ TEST(TrackerConfig, CameraConfigParses) {
     INIReader reader(path);
     ASSERT_EQ(reader.ParseError(), 0);
     EXPECT_EQ(reader.GetInteger("", "CameraCount", -1), 1);
-    EXPECT_DOUBLE_EQ(reader.GetReal("", "CameraFOVHorizontalDeg", 0.0), 120.0);
-    EXPECT_DOUBLE_EQ(reader.GetReal("", "CameraFOVVerticalDeg", 0.0), 90.0);
+    // 040 T029 (FR-003) — the grid is configured, the field is DERIVED.
+    EXPECT_EQ(reader.GetInteger("", "CameraPixelsH", 0), 320);
+    EXPECT_EQ(reader.GetInteger("", "CameraPixelsV", 0), 240);
+    EXPECT_DOUBLE_EQ(reader.GetReal("", "CameraDegPerPixel", 0.0), 0.375);
     EXPECT_DOUBLE_EQ(reader.GetReal("", "CameraMountOffsetZ", 0.0), -0.05);
 }
 
@@ -144,16 +147,17 @@ TEST(TrackerConfig, BeaconConfigParses) {
         "BeaconLeftWavelengthNm = 850\n"
         "BeaconRightWavelengthNm = 940\n"
         "BeaconEmissionConeDeg = 270.0\n"
-        "BeaconLeftMountY = -0.45\n"
-        "BeaconRightMountY = 0.45\n";
+        "BeaconLeftMountY = -0.386\n"
+        "BeaconRightMountY = 0.386\n";
     std::string path = writeTempIni("beacon.ini", ini);
     INIReader reader(path);
     ASSERT_EQ(reader.ParseError(), 0);
     EXPECT_EQ(reader.GetInteger("", "BeaconLeftWavelengthNm", 0), 850);
     EXPECT_EQ(reader.GetInteger("", "BeaconRightWavelengthNm", 0), 940);
     EXPECT_DOUBLE_EQ(reader.GetReal("", "BeaconEmissionConeDeg", 0.0), 270.0);
-    EXPECT_DOUBLE_EQ(reader.GetReal("", "BeaconLeftMountY", 0.0), -0.45);
-    EXPECT_DOUBLE_EQ(reader.GetReal("", "BeaconRightMountY", 0.0), 0.45);
+    // 040 T030 (FR-004) — the measured 0.772 m separation, ±0.386 per tip.
+    EXPECT_DOUBLE_EQ(reader.GetReal("", "BeaconLeftMountY", 0.0), -0.386);
+    EXPECT_DOUBLE_EQ(reader.GetReal("", "BeaconRightMountY", 0.0), 0.386);
 }
 
 // ---------------------------------------------------------------------------
@@ -265,5 +269,85 @@ TEST(ContractTrackerConfig, AirframeObstructionKeysPresentInTrackerInis) {
                 << ini << " is missing " << key
                 << " — it would silently fall back to the struct default";
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 040 T029/T030 (FR-003, FR-004, FR-034) — the camera grid and the measured
+// beacon separation must be PRESENT in every tracker ini, same hazard as the
+// airframe keys above: `AutocConfig` declares them with in-class defaults, so
+// a missing key falls back silently rather than failing loud.
+//
+// This one bites harder than most. `cameraDegPerPixel` sets BOTH the reported
+// resolution and the derived field of view (FR-003), and the beacon mounts are
+// the ONLY range reference the controller has — a silent fallback in either
+// would train a controller against a camera nobody configured.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// True when the ini ASSIGNS `key` — i.e. a non-comment line of the form
+// "Key = ...". A plain substring search over the file body would also match
+// prose, and the retirement notes in these inis deliberately name the keys
+// they retired so an operator hunting a remembered knob finds out where it
+// went. Those notes are worth keeping, so the check has to be sharper than
+// "does this string appear anywhere".
+bool iniAssignsKey(const std::string& body, const std::string& key) {
+    std::istringstream lines(body);
+    std::string line;
+    while (std::getline(lines, line)) {
+        const size_t first = line.find_first_not_of(" \t");
+        if (first == std::string::npos) continue;
+        if (line[first] == '#' || line[first] == ';') continue;
+        if (line.compare(first, key.size(), key) != 0) continue;
+        const size_t after = line.find_first_not_of(" \t", first + key.size());
+        if (after != std::string::npos && line[after] == '=') return true;
+    }
+    return false;
+}
+
+}  // namespace
+
+TEST(ContractTrackerConfig, CameraGridAndBeaconSeparationKeysPresent) {
+    const std::vector<std::string> required = {
+        "CameraPixelsH", "CameraPixelsV", "CameraDegPerPixel",
+        "CameraMountOffsetX", "CameraMountOffsetY", "CameraMountOffsetZ",
+        "BeaconLeftMountY", "BeaconRightMountY",
+    };
+    for (const char* name : {"autoc-tracker.ini", "autoc-eval-tracker.ini",
+                             "autoc-eval-tracker-visual.ini"}) {
+        const std::string ini = std::string(AUTOC_SOURCE_DIR) + "/" + name;
+        std::ifstream f(ini);
+        ASSERT_TRUE(f.good()) << "cannot open " << ini;
+        std::stringstream ss;
+        ss << f.rdbuf();
+        const std::string body = ss.str();
+        for (const auto& key : required) {
+            EXPECT_TRUE(iniAssignsKey(body, key))
+                << ini << " is missing " << key
+                << " — it would silently fall back to the struct default";
+        }
+        // The retired keys must not reappear as assignments: an independently
+        // set field of view is exactly what FR-003 exists to prevent.
+        for (const char* gone : {"CameraFOVHorizontalDeg", "CameraFOVVerticalDeg",
+                                 "CameraFrameRateHz", "CameraLatencyMs"}) {
+            EXPECT_FALSE(iniAssignsKey(body, gone))
+                << ini << " still assigns retired key " << gone;
+        }
+    }
+}
+
+TEST(ContractTrackerConfig, TrackerInisCarryTheMeasuredBeaconSeparation) {
+    // The value itself, not just the key. 0.9 m (±0.45) put a systematic ~17%
+    // into every inferred range; this is the gate against it drifting back.
+    for (const char* name : {"autoc-tracker.ini", "autoc-eval-tracker.ini",
+                             "autoc-eval-tracker-visual.ini"}) {
+        const std::string ini = std::string(AUTOC_SOURCE_DIR) + "/" + name;
+        INIReader reader(ini);
+        ASSERT_EQ(reader.ParseError(), 0) << ini;
+        const double left = reader.GetReal("", "BeaconLeftMountY", 0.0);
+        const double right = reader.GetReal("", "BeaconRightMountY", 0.0);
+        EXPECT_NEAR(right - left, 0.772, 1e-9)
+            << ini << " beacon separation is not the measured 0.772 m";
     }
 }

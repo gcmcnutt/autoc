@@ -230,8 +230,15 @@ struct AutocConfig {
 
     // --- Camera config (FR-003) ---
     int cameraCount = 1;
-    double cameraFOVHorizontalDeg = 120.0;
-    double cameraFOVVerticalDeg = 90.0;
+    // 040 T029 — the sensor grid is the ONLY resolution input; FOV is derived
+    // as pixels × deg/px, so field and resolution cannot disagree. The former
+    // CameraFOVHorizontalDeg / CameraFOVVerticalDeg keys are retired: they let
+    // a config declare a field its own grid contradicted.
+    // 320 × 240 @ 0.375°/px ⇒ exactly 120° × 90°. All three ASSUMED pending
+    // the lens/sensor decision (contracts/config-surface.md).
+    int cameraPixelsH = 320;
+    int cameraPixelsV = 240;
+    double cameraDegPerPixel = 0.375;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to gp_scalar at the WorkerInit boundary
     // 040 T017 — CameraFrameRateHz / CameraLatencyMs retired. Sensor cadence
     // follows ControlIntervalMsec (037); latency emerges from the acquisition
     // state machine (US4). See include/autoc/eval/camera_config.h.
@@ -379,8 +386,9 @@ struct AutocConfig {
     X(double,         flightArenaFloorAGL,       "FlightArenaFloorAGL") \
     X(double,         flightArenaCeilingAGL,     "FlightArenaCeilingAGL") \
     X(int,            cameraCount,               "CameraCount") \
-    X(double,         cameraFOVHorizontalDeg,    "CameraFOVHorizontalDeg") \
-    X(double,         cameraFOVVerticalDeg,      "CameraFOVVerticalDeg") \
+    X(int,            cameraPixelsH,             "CameraPixelsH") \
+    X(int,            cameraPixelsV,             "CameraPixelsV") \
+    X(double,         cameraDegPerPixel,         "CameraDegPerPixel") \
     X(double,         cameraMountOffsetX,        "CameraMountOffsetX") \
     X(double,         cameraMountOffsetY,        "CameraMountOffsetY") \
     X(double,         cameraMountOffsetZ,        "CameraMountOffsetZ") \

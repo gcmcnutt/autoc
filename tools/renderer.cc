@@ -3396,7 +3396,12 @@ void Renderer::createControlsOverlay() {
 // the chase NN's camera sees. Aspect ratio = fov_h/fov_v from each
 // tick's CameraViewSample (so x/y span is geometrically accurate; a
 // rolling craft ahead of chase doesn't warp). Two colored splat dots
-// at projected (screen_x, screen_y); splat radius scales with CEP.
+// at the projected bearing; splat radius scales with CEP.
+//
+// 040 T034 — bearings arrive in RADIANS and are normalised against the
+// recorded half-field for panel placement. The panel is where a self-
+// consistent scale error hides from unit tests, so it is the Phase 4 manual
+// checkpoint: load a playback and confirm beacons land where expected.
 void Renderer::createCameraPOVMiniPanel() {
   cameraPOVPanelOutline = vtkSmartPointer<vtkActor2D>::New();
   vtkNew<vtkPolyDataMapper2D> outlineMapper;
@@ -3570,14 +3575,20 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
       if (actor) actor->SetVisibility(0);
       return;
     }
-    // Map (screen_x, screen_y) ∈ [-1,+1] to window coords.
-    // Image-coord convention: screen_y positive = down in image →
-    // lower window-y (bottom of rect).
-    scalar xWin = xLeft + (static_cast<scalar>(obs.screen_x) +
-                           static_cast<scalar>(1.0f)) * 0.5f *
+    // 040 T034 — bearings are ANGLES IN RADIANS now (was ±1 NDC). Normalise by
+    // the half-field the recorded FOV implies, so the panel keeps meaning the
+    // same thing while the underlying scale changes. Reading a radian value as
+    // if it were NDC would silently pin every beacon near frame centre — which
+    // is exactly why the field was renamed rather than reinterpreted.
+    // Image-coord convention: bearing_y positive = down in image → lower
+    // window-y (bottom of rect).
+    const scalar half_h_rad = fov_h * static_cast<scalar>(M_PI / 360.0);
+    const scalar half_v_rad = fov_v * static_cast<scalar>(M_PI / 360.0);
+    scalar ndc_x = static_cast<scalar>(obs.bearing_x_rad) / half_h_rad;
+    scalar ndc_y = static_cast<scalar>(obs.bearing_y_rad) / half_v_rad;
+    scalar xWin = xLeft + (ndc_x + static_cast<scalar>(1.0f)) * 0.5f *
                           (xRight - xLeft);
-    scalar yWin = yTop - (static_cast<scalar>(obs.screen_y) +
-                          static_cast<scalar>(1.0f)) * 0.5f *
+    scalar yWin = yTop - (ndc_y + static_cast<scalar>(1.0f)) * 0.5f *
                          (yTop - yBottom);
 
     // Splat radius (CEP=0 → 2px sharp; CEP=1 → 18px fuzzy)

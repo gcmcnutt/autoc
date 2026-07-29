@@ -52,7 +52,8 @@ gp_fitness computeSpanPredictionError(const std::vector<AircraftState>& states,
                            (br.cep >= autoc::eval::kCepSentinelThreshold);
         if (!gated) {
             span[t] = static_cast<float>(autoc::eval::compute_pair_span(
-                bl.screen_x, bl.screen_y, br.screen_x, br.screen_y));
+                bl.bearing_x_rad, bl.bearing_y_rad,
+                br.bearing_x_rad, br.bearing_y_rad));
             vis[t] = 1;
         }
     }

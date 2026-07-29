@@ -19,11 +19,24 @@
 // See `specs/030-tracker-mode/contracts/beacon_projection_api.md` and
 // `data-model.md` §4 for the source contract.
 //
+// 040 T031 — bearings are now ANGLES IN RADIANS quantised on the sensor's
+// pixel grid, replacing the ±1 per-axis NDC encoding. The retired encoding
+// normalised each axis by its OWN half-FOV, so the two axes carried different
+// angular scales and a horizontal separation read 60/45 = 1.333× its vertical
+// twin — a 33% orientation error sitting in the sole range channel (FR-002).
+//
+// RESIDUAL, documented not corrected (research R2, contract §6): under
+// equidistant mapping, Euclidean distance in (θx, θy) equals the great-circle
+// angle EXACTLY along a radius and over-reads TANGENTIALLY by θ/sin θ — +21%
+// at the frame corner. This is the only remaining position dependence, and it
+// is what makes a separate ray-angle span computation unnecessary. Pinned by
+// tests/beacon_projection_tests.cc CameraGridGeometry.Tangential*.
+//
 // Coordinate convention (chase body frame, NED): +x forward, +y right,
-// +z down. Camera optical axis = body +x by default; screen_x ∈ [-1, +1]
-// runs left→right (image right is positive); screen_y ∈ [-1, +1] runs
-// top→bottom (pixel-coord convention: image down is positive); ±1 is the
-// per-axis FOV edge in ANGLE (screen = θ·dir / (fov/2)).
+// +z down. Camera optical axis = body +x by default; bearing_x_rad runs
+// left→right (image right positive), bearing_y_rad runs top→bottom
+// (pixel-coord convention: image down positive). Each is bounded by the
+// DERIVED per-axis half-FOV (CameraConfig::halfFov*Rad()).
 //
 // Determinism contract (FR-009): same `ProjectionInput` ⇒ bit-identical
 // `BeaconObservation` across invocations. No PRNG, no clock, no thread-
@@ -45,31 +58,45 @@ namespace autoc::eval {
 constexpr float kCepSentinelThreshold = 1.25f;  // raw-ok: NN-byte-format perception interface (fp32 contract). any cep ≥ this ⇒ invisible
 constexpr float kCepSentinelFloat = 1.5f;       // raw-ok: NN-byte-format perception interface (fp32 contract). dequantized sentinel marker
 
-// Per-tick perception output for one (camera, beacon) pair. `screen_x`,
-// `screen_y`, and `cep` are the NN-facing dequantized fp32 values; the
-// `raw_*_int8` fields preserve the on-wire quantized state for the M2 dmp.
-struct BeaconObservation {
-    // NN-facing dequantized values (fp32 at the input boundary). All three
-    // fields are raw fp32, not `gp_scalar`, because they participate in
-    // cereal byte-format for the M8 v=2 dmp schema; flipping `gp_scalar`
-    // to fp64 would change the on-disk byte layout.
-    float screen_x;       // raw-ok: cereal byte-format member (M8 dmp). [-1, +1] uncalibrated
-    float screen_y;       // raw-ok: cereal byte-format member (M8 dmp). [-1, +1]
-    float cep;            // raw-ok: cereal byte-format member (M8 dmp). [0, 1.0] visible, == kCepSentinelFloat invisible
+// 040 T032 — pixel-index sentinel. Distinguishable from every valid index,
+// which is [0, pixels−1] and therefore never negative.
+constexpr int16_t kPixelSentinel = INT16_MIN;
 
-    // For dmp / renderer:
-    int8_t raw_x_int8;
-    int8_t raw_y_int8;
+// Per-tick perception output for one (camera, beacon) pair: BEARING plus
+// quality, per contracts/perception-interface.md §1.
+//
+// 040 T032 — the int8 bearing encoding is GONE. It was a second, independent
+// resolution model layered on top of the sensor grid, and the two disagreed:
+// 2/254 of a 120° field is 0.472°/LSB horizontally against a 0.375° pixel —
+// 26% COARSER than the sensor it claimed to model — while being 6% FINER
+// vertically, over a 90° field. The pixel grid IS the resolution model, so the
+// int8 layer was redundant where it agreed and wrong where it did not.
+//
+// Bearings are now angles in RADIANS, isotropic across both axes, quantised
+// on the pixel grid. `raw_px_*` carries the pixel index the angle came from,
+// for the dmp and the renderer.
+struct BeaconObservation {
+    // NN-facing values (fp32 at the input boundary). Raw fp32, not
+    // `gp_scalar`, because they participate in cereal byte-format for the dmp
+    // schema; flipping `gp_scalar` to fp64 would change the on-disk layout.
+    //
+    // Range is ±halfFovHRad() / ±halfFovVRad() — ≈±1.047 / ±0.785 at the
+    // 320×240 @ 0.375°/px baseline. Both axes carry the SAME angular scale, so
+    // a given angular separation reads identically at any orientation (FR-002).
+    float bearing_x_rad;  // raw-ok: cereal byte-format member (dmp). right positive
+    float bearing_y_rad;  // raw-ok: cereal byte-format member (dmp). down positive (pixel convention)
+    float cep;            // raw-ok: cereal byte-format member (dmp). [0, 1.0] visible, == kCepSentinelFloat invisible
+
+    // For dmp / renderer: the sensor-grid indices the bearings quantised to.
+    // kPixelSentinel ⇔ invisible.
+    int16_t raw_px_x;
+    int16_t raw_px_y;
     int8_t raw_cep_int8;  // INT8_MIN ⇔ invisible
 
-    // 030 M8a — cereal serialize for v=2 dmp output (cameraViewList).
-    // Wire-format note: the int8 raw_* fields are the canonical state;
-    // the fp32 dequantized values are derived from them at render-time.
-    // Both are serialized for renderer convenience (no dequantize cost
-    // in the playback path).
+    // 030 M8a — cereal serialize for dmp output (cameraViewList).
     template <class Archive>
     void serialize(Archive& ar) {
-        ar(screen_x, screen_y, cep, raw_x_int8, raw_y_int8, raw_cep_int8);
+        ar(bearing_x_rad, bearing_y_rad, cep, raw_px_x, raw_px_y, raw_cep_int8);
     }
 };
 
@@ -101,23 +128,41 @@ struct ProjectionInput {
     AirframeObstruction chase_airframe;
 };
 
-// Project one beacon. Returns dequantized fp32 values + raw int8 storage.
-// Sentinel cases (behind camera, occluded by airframe, outside emission
-// cone, outside FOV) all set `cep = kCepSentinelFloat` and
-// `raw_cep_int8 = INT8_MIN`; `screen_x` / `screen_y` are zero in sentinel.
+// Project one beacon. Sentinel cases (behind camera, occluded by airframe,
+// outside emission cone, outside the derived FOV) all set
+// `cep = kCepSentinelFloat`, `raw_cep_int8 = INT8_MIN` and
+// `raw_px_* = kPixelSentinel`; bearings are zero in sentinel.
 BeaconObservation projectBeacon(const ProjectionInput& input);
 
-// Quantization round-trip primitives (R7). `quantize_xy` clamps to [-1, +1]
-// before rounding to int8 ∈ [-127, +127]; `quantize_cep` reserves INT8_MIN
-// for the sentinel and otherwise clamps to [0, 1] before rounding to
-// [0, +127]. The negative int8 range [-127, -1] is unused for CEP.
+// ---------------------------------------------------------------------------
+// 040 T031 — sensor-grid quantisation (FR-001).
 //
-// All `float` here is `// raw-ok:` per Principle VI: these are the int8 ↔
-// fp32 NN-byte-format conversion primitives — the byte format is
-// xiao-firmware-locked at fp32, so the alias `gp_scalar` doesn't apply.
-int8_t quantize_xy(float v_in_minus_one_plus_one);    // raw-ok: NN-byte-format conversion primitive
+// Pixel CENTRES sit at (i − (n−1)/2)·rad_per_px for i ∈ [0, n−1], so the outer
+// edges land at ±n/2·rad_per_px and the derived FOV is exactly n × deg_per_px.
+// With an even pixel count the boresight falls on a pixel BOUNDARY, not a
+// centre — so a perfectly centred beacon reports ±half a pixel, never exactly
+// zero. That is the physically correct behaviour of an even-width sensor, and
+// it is preserved rather than papered over.
+// ---------------------------------------------------------------------------
+
+// Nearest pixel index to `bearing_rad`, clamped to [0, pixels−1]. Callers must
+// reject out-of-field bearings BEFORE calling; the clamp is a safety net for
+// floating-point edge cases, not a visibility test.
+int16_t bearingToPixel(gp_scalar bearing_rad, int pixels, gp_scalar rad_per_px);
+
+// Exact centre bearing of pixel `px`. Inverse of the above up to the
+// quantisation the grid imposes by design.
+gp_scalar pixelToBearing(int16_t px, int pixels, gp_scalar rad_per_px);
+
+// CEP quantisation (R7). `quantize_cep` reserves INT8_MIN for the sentinel and
+// otherwise clamps to [0, 1] before rounding to [0, +127]; the negative range
+// [-127, -1] is unused. `float` is `// raw-ok:` per Principle VI — these are
+// int8 ↔ fp32 NN-byte-format primitives and the byte format is
+// xiao-firmware-locked at fp32, so the `gp_scalar` alias does not apply.
+//
+// US4 replaces CEP with a signal-derived quality value (FR-014); this encoding
+// survives only until then.
 int8_t quantize_cep(float cep_in_zero_one_or_sentinel); // raw-ok: NN-byte-format conversion primitive
-float dequantize_xy(int8_t q);                        // raw-ok: NN-byte-format conversion primitive
-float dequantize_cep(int8_t q);                       // raw-ok: NN-byte-format conversion primitive
+float dequantize_cep(int8_t q);                        // raw-ok: NN-byte-format conversion primitive
 
 }  // namespace autoc::eval

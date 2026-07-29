@@ -500,10 +500,14 @@ int main(int argc, char** argv) {
           const bool gated = (bl.cep >= autoc::eval::kCepSentinelThreshold)
                           || (br.cep >= autoc::eval::kCepSentinelThreshold);
           if (!gated) {
-            spn0 = autoc::eval::compute_pair_span(bl.screen_x, bl.screen_y,
-                                                  br.screen_x, br.screen_y);
-            const auto t = autoc::eval::compute_tilt(bl.screen_x, bl.screen_y,
-                                                     br.screen_x, br.screen_y);
+            // 040 T031 — bearings are radians now; span is therefore a true
+            // angular quantity and range is separation_m / span directly.
+            spn0 = autoc::eval::compute_pair_span(
+                bl.bearing_x_rad, bl.bearing_y_rad,
+                br.bearing_x_rad, br.bearing_y_rad);
+            const auto t = autoc::eval::compute_tilt(
+                bl.bearing_x_rad, bl.bearing_y_rad,
+                br.bearing_x_rad, br.bearing_y_rad);
             tltS = t.sin;
             tltC = t.cos;
           }

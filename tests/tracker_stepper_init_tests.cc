@@ -258,8 +258,8 @@ std::vector<float> perceptionAfterTicks(TrackerStepper& stepper, int ticks) {  /
     stepper.initScenario();
     for (int i = 0; i < ticks; ++i) stepper.stepOnce();
     const CameraViewSample& v = stepper.lastCameraView();
-    return {v.beacon_left.screen_x,  v.beacon_left.screen_y,  v.beacon_left.cep,
-            v.beacon_right.screen_x, v.beacon_right.screen_y, v.beacon_right.cep};
+    return {v.beacon_left.bearing_x_rad,  v.beacon_left.bearing_y_rad,  v.beacon_left.cep,
+            v.beacon_right.bearing_x_rad, v.beacon_right.bearing_y_rad, v.beacon_right.cep};
 }
 
 }  // namespace

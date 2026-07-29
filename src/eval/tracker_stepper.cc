@@ -184,8 +184,10 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
         state_.getPosition() + state_.getOrientation() * camera_.mount_offset_body;
     last_camera_view_.camera_pose_world_orient =
         state_.getOrientation() * camera_.mount_orientation_body;
-    last_camera_view_.camera_fov_h_deg = static_cast<float>(camera_.fov_h_deg);   // raw-ok: cereal byte-format member (CameraViewSample fp32 contract)
-    last_camera_view_.camera_fov_v_deg = static_cast<float>(camera_.fov_v_deg);   // raw-ok: cereal byte-format member (CameraViewSample fp32 contract)
+    // 040 T029 — FOV is derived from the sensor grid, so the dmp records the
+    // derived value rather than a separately-configured one that could disagree.
+    last_camera_view_.camera_fov_h_deg = static_cast<float>(camera_.fovHDeg());   // raw-ok: cereal byte-format member (CameraViewSample fp32 contract)
+    last_camera_view_.camera_fov_v_deg = static_cast<float>(camera_.fovVDeg());   // raw-ok: cereal byte-format member (CameraViewSample fp32 contract)
     last_camera_view_.beacon_left = left;
     last_camera_view_.beacon_right = right;
 

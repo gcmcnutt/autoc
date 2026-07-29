@@ -982,8 +982,11 @@ static WorkerInit buildWorkerInit() {
     // per-eval EvalData no longer carries trajectory bytes.
     init.sourceList = gSourceTrajectoryList;
 
-    init.cameraConfig.fov_h_deg = static_cast<gp_scalar>(cfg.cameraFOVHorizontalDeg);
-    init.cameraConfig.fov_v_deg = static_cast<gp_scalar>(cfg.cameraFOVVerticalDeg);
+    // 040 T029 — grid in, FOV derived (FR-003). No fov_* assignment exists to
+    // contradict the grid.
+    init.cameraConfig.pixels_h = cfg.cameraPixelsH;
+    init.cameraConfig.pixels_v = cfg.cameraPixelsV;
+    init.cameraConfig.deg_per_px = static_cast<gp_scalar>(cfg.cameraDegPerPixel);
     init.cameraConfig.mount_offset_body =
         gp_vec3(static_cast<gp_scalar>(cfg.cameraMountOffsetX),
                 static_cast<gp_scalar>(cfg.cameraMountOffsetY),
