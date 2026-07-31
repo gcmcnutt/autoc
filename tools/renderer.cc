@@ -2028,6 +2028,7 @@ int main(int argc, char** argv) {
   std::cout << "    Arrow keys   Move focus between arenas" << std::endl;
   std::cout << "    d            Toggle tracker detail overlays" << std::endl;
   std::cout << "                 (FOV pyramid + wingtip beacon trails)" << std::endl;
+  std::cout << "    q / e        Quit  (both are VTK built-ins)" << std::endl;
   std::cout << "\n  Stepping is what makes the acquisition model readable: a warm"
             << std::endl;
   std::cout << "  relock is 154 ms (3 ticks) and a cold acquire 308 ms (6), so at"
@@ -3445,6 +3446,13 @@ void Renderer::createCameraPOVMiniPanel() {
   cameraPOVBeaconRightDot->SetMapper(rightDotMapper);
   cameraPOVBeaconRightDot->GetProperty()->SetColor(0.2, 1.0, 0.2);  // Green — starboard
   cameraPOVBeaconRightDot->GetProperty()->SetOpacity(0.85);
+
+  // 040 T065g — per-beacon lock state + q, as legible text under the panel.
+  cameraPOVStatusActor = vtkSmartPointer<vtkTextActor>::New();
+  cameraPOVStatusActor->GetTextProperty()->SetFontSize(13);
+  cameraPOVStatusActor->GetTextProperty()->SetColor(0.95, 0.95, 0.75);
+  cameraPOVStatusActor->GetTextProperty()->SetFontFamilyToCourier();
+  cameraPOVStatusActor->SetVisibility(0);
 }
 
 void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
@@ -3459,6 +3467,7 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
     cameraPOVPanelOutline->SetVisibility(0);
     cameraPOVBeaconLeftDot->SetVisibility(0);
     cameraPOVBeaconRightDot->SetVisibility(0);
+    if (cameraPOVStatusActor) cameraPOVStatusActor->SetVisibility(0);
   };
 
   if (!isTrackerMode_ || !controlsVisible) {
@@ -3637,18 +3646,27 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
       }
       (void)first;
 
-      // ---- T065e: the VERTICAL MEMBER, at the same angular scale ------------
-      // Beacon separation is a roughly HORIZONTAL measurement, so it says
-      // nothing about vertical displacement. For a tail chase closing on a
-      // streamer, up/down is the axis this display is least instrumented on. A
-      // same-scale vertical reference makes "am I above or below the target's
-      // plane" readable at a glance.
-      const vtkIdType vt =
-          outlinePoints->InsertNextPoint(winX(ndcX(cx_rad)),
-                                         winY(ndcY(cy_rad - r_rad)), 0);
-      const vtkIdType vb =
-          outlinePoints->InsertNextPoint(winX(ndcX(cx_rad)),
-                                         winY(ndcY(cy_rad + r_rad)), 0);
+    }
+
+    // ---- T065e: ONE vertical member, spanning the outermost ring ----------
+    // Beacon separation is a roughly HORIZONTAL measurement, so it says nothing
+    // about vertical displacement -- and for a tail chase closing on a streamer,
+    // up/down is the axis this display is least instrumented on.
+    //
+    // The first cut drew a stub through EVERY ring: four short lines, which read
+    // as clutter rather than as a reference. One full-height line through the
+    // aim point does the same job legibly, since the rings already carry the
+    // scale.
+    {
+      scalar cx_rad, cy_rad;
+      thrustAxisAngles(kRingRangesM[0], cx_rad, cy_rad);  // widest ring (3 m)
+      const scalar r_rad = std::atan2(kBeaconSepM * 0.5f, kRingRangesM[0]);
+      scalar ax, ay;
+      thrustAxisAngles(10.0f, ax, ay);  // the aim point the cross marks
+      const vtkIdType vt = outlinePoints->InsertNextPoint(
+          winX(ndcX(ax)), winY(ndcY(cy_rad - r_rad)), 0);
+      const vtkIdType vb = outlinePoints->InsertNextPoint(
+          winX(ndcX(ax)), winY(ndcY(cy_rad + r_rad)), 0);
       addLine(vt, vb);
     }
   }
@@ -3661,7 +3679,7 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
     thrustAxisAngles(10.0f, ax, ay);  // 10 m -- representative engagement range
     const scalar px = winX(ndcX(ax));
     const scalar py = winY(ndcY(ay));
-    constexpr scalar kArm = static_cast<scalar>(6.0f);
+    constexpr scalar kArm = static_cast<scalar>(11.0f);  // was 6 -- too small to read
     const vtkIdType a1 = outlinePoints->InsertNextPoint(px - kArm, py, 0);
     const vtkIdType a2 = outlinePoints->InsertNextPoint(px + kArm, py, 0);
     const vtkIdType a3 = outlinePoints->InsertNextPoint(px, py - kArm, 0);
@@ -3787,42 +3805,6 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
       dotPolys->InsertNextCell(polygon);
     }
 
-    // ---- T065g: the `q` BAR --------------------------------------------
-    // 0-9 with the GOOD >= 5 threshold ticked. This is the HARDWARE'S OWN
-    // metric, AGC-normalised, so a bench capture and a sim playback can be put
-    // side by side and compared on the same number -- which no invented
-    // confidence scale would allow. Reconstructed here from the recorded SNR
-    // through the same monotonic map the model uses.
-    {
-      const scalar snr_db = static_cast<scalar>(obs.raw_margin);
-      const scalar q = std::clamp(snr_db / 20.0f, 0.0f, 1.0f) * 9.0f;
-      constexpr scalar kBarH = static_cast<scalar>(22.0f);
-      constexpr scalar kBarW = static_cast<scalar>(3.0f);
-      const scalar bx = xWin + radius + 4.0f;
-      const scalar by = yWin - kBarH * 0.5f;
-
-      auto vline = [&](scalar x, scalar y0, scalar y1) {
-        const vtkIdType a = dotPoints->InsertNextPoint(x, y0, 0);
-        const vtkIdType b = dotPoints->InsertNextPoint(x, y1, 0);
-        vtkNew<vtkLine> ln;
-        ln->GetPointIds()->SetId(0, a);
-        ln->GetPointIds()->SetId(1, b);
-        dotLines->InsertNextCell(ln);
-      };
-      // Filled portion = q/9 of the bar height.
-      const scalar fill = kBarH * (q / 9.0f);
-      vline(bx, by, by + fill);
-      vline(bx + kBarW, by, by + fill);
-      // GOOD threshold tick at q = 5.
-      const scalar goodY = by + kBarH * (5.0f / 9.0f);
-      const vtkIdType g0 = dotPoints->InsertNextPoint(bx - 2.0f, goodY, 0);
-      const vtkIdType g1 = dotPoints->InsertNextPoint(bx + kBarW + 2.0f, goodY, 0);
-      vtkNew<vtkLine> gl;
-      gl->GetPointIds()->SetId(0, g0);
-      gl->GetPointIds()->SetId(1, g1);
-      dotLines->InsertNextCell(gl);
-    }
-
     vtkNew<vtkPolyData> dotPoly;
     dotPoly->SetPoints(dotPoints);
     dotPoly->SetPolys(dotPolys);
@@ -3834,6 +3816,39 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
 
   static const scalar kPortColor[3] = {1.0f, 0.2f, 0.2f};       // red, port
   static const scalar kStarboardColor[3] = {0.2f, 1.0f, 0.2f};  // green, starboard
+
+  // ---- T065g REVISED: q and lock state as TEXT, not a 3 px gauge ---------
+  //
+  // The first cut drew a 3 px-wide bar beside each blob with a tick at the
+  // GOOD>=5 threshold. At that size it was unreadable -- you cannot judge a
+  // fill fraction on three pixels, and two of them competed with the blobs they
+  // annotated. A text line states the same two facts unambiguously and answers
+  // the checkpoint question directly.
+  //
+  // `q` is the HARDWARE's own AGC-normalised 0-9 metric, so a bench capture and
+  // a sim playback can be read off the same number. GOOD is q >= 5.
+  auto lockName = [](int8_t st) -> const char* {
+    switch (static_cast<int>(st)) {
+      case 0: return "SRCH";
+      case 1: return "ACQ ";
+      case 2: return "TRK ";
+      case 3: return "HOLD";
+      default: return "??  ";
+    }
+  };
+  auto qOf = [](const autoc::eval::BeaconObservation& o) -> int {
+    const scalar snr = static_cast<scalar>(o.raw_margin);
+    return static_cast<int>(std::clamp(snr / 20.0f, 0.0f, 1.0f) * 9.0f + 0.5f);
+  };
+  if (cameraPOVStatusActor) {
+    char st[96];
+    snprintf(st, sizeof(st), "L %s q%d   R %s q%d",
+             lockName(cam.beacon_left.lock_state), qOf(cam.beacon_left),
+             lockName(cam.beacon_right.lock_state), qOf(cam.beacon_right));
+    cameraPOVStatusActor->SetInput(st);
+    cameraPOVStatusActor->SetPosition(xLeft, yBottom - 16);
+    cameraPOVStatusActor->SetVisibility(1);
+  }
 
   buildBeaconDot(cam.beacon_left, cameraPOVBeaconLeftDot, kPortColor);
   buildBeaconDot(cam.beacon_right, cameraPOVBeaconRightDot, kStarboardColor);
@@ -3933,18 +3948,24 @@ void Renderer::updateStopwatch(gp_scalar currentTime) {
   // without a tick readout is stepping blind: the whole point of single-step is
   // counting ticks against the model's own units (warm relock = 3, cold = 6,
   // HOLDMAX = 6), and you cannot count what is not displayed.
+  // STACKED, not widened. The first cut appended tick + pause marker on one
+  // line, which pushed the string wider than the clock face it sits under and
+  // spilled out either side. The text property is already centre-justified, so
+  // stacking keeps every line inside the dial's width.
   char timeStr[64];
   const gp_scalar tick_s = (tickSec > static_cast<gp_scalar>(1e-4))
                                ? tickSec
                                : static_cast<gp_scalar>(0.05f);
   const int tickIdx = static_cast<int>(currentTime / tick_s + static_cast<gp_scalar>(0.5f));
   if (transportPaused) {
-    snprintf(timeStr, sizeof(timeStr), "%.2f  t%d  ||", currentTime, tickIdx);
+    snprintf(timeStr, sizeof(timeStr), "%.2f\nt%d\n||", currentTime, tickIdx);
   } else {
-    snprintf(timeStr, sizeof(timeStr), "%.2f  t%d", currentTime, tickIdx);
+    snprintf(timeStr, sizeof(timeStr), "%.2f\nt%d", currentTime, tickIdx);
   }
   stopwatchTimeActor->SetInput(timeStr);
-  stopwatchTimeActor->SetPosition(centerX - 12, centerY - 25); // Centered horizontally, positioned below hands center
+  // centerX, not centerX-12: the -12 was hand-nudging a left-justified string
+  // and fights the centred justification once the text is more than one line.
+  stopwatchTimeActor->SetPosition(centerX, centerY - 25);
 }
 
 void Renderer::updateStopwatchPosition() {
@@ -4767,6 +4788,7 @@ void Renderer::togglePlaybackAnimation() {
     renderer->AddActor2D(cameraPOVPanelOutline);
     renderer->AddActor2D(cameraPOVBeaconLeftDot);
     renderer->AddActor2D(cameraPOVBeaconRightDot);
+    renderer->AddActor2D(cameraPOVStatusActor);
   }
 
     std::cout << "Real-time playback animation started" << std::endl;

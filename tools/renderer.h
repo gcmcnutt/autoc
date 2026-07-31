@@ -276,6 +276,8 @@ private:
   vtkSmartPointer<vtkActor2D> cameraPOVPanelOutline;
   vtkSmartPointer<vtkActor2D> cameraPOVBeaconLeftDot;
   vtkSmartPointer<vtkActor2D> cameraPOVBeaconRightDot;
+  // 040 T065g — lock state + q as text; a 3 px bar was unreadable.
+  vtkSmartPointer<vtkTextActor> cameraPOVStatusActor;
   std::vector<vtkSmartPointer<vtkActor>> arenaLabelActors;
   
   vtkSmartPointer<vtkTextActor> generationTextActor;
