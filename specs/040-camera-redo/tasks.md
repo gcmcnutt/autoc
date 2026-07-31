@@ -360,7 +360,18 @@ the aggregate delta against the prior baseline.
 
 ### Run and evaluate
 
-- [ ] T082a [US5] Confirm `autoc-tracker.ini` points `TrackerSourceRun`/`TrackerSourceBucket` at the **T003a-pinned M1 source** — the same one the prior baseline trained from (SC-008); if substituted, record it as confounding
+- [x] T082a [US5] ✅ **DONE 2026-07-30 — confirmed, not substituted.** `autoc-tracker.ini` points at `autoc-m1` · `autoc-9223370253553029228-2026-07-06T01:35:46.579Z/gen9200.dmp.zst`, which **is** the T003a-pinned `retain=keep` training source. SC-008 therefore compares like-for-like: **new M2 perception against the same old M1**, with the perception model as the only moving part. Nothing to record as confounding
+
+**Full ini audit, 2026-07-30 (operator-confirmed).** Scenario set is the standard 6 paths × 49 winds = **294 scenarios** at pop 5000 / 800 gens — the shape the T021 gate ran. Cadence `ControlIntervalMsec=50` (20 Hz) + `ServoModelEnabled=1`, unchanged from 037. Craft sigmas unchanged from 039. `VariationRampStep = 0` — **not ramping**, full variation from gen 1.
+
+**Two couplings surfaced and accepted by the operator rather than changed:**
+
+1. **`VariationRampStep=0` un-ramps the CRASH PENALTIES too.** Hull and OOB both scale by `computeVariationScale()`, which returns a flat 1.0 when the ramp is off — so `HullCrashPenaltyFactor=0.75` and `OobCrashPenaltyWeight=2.0` bite at **full strength from generation 1**, which is *not* the t14 configuration where they ramped in. Not obvious from reading either key; recorded here so a surprise in the early-gen curve is attributable.
+2. **`Seed = -1`** — random, so this run is not bit-replayable from the ini alone. Accepted; the run's own seed is logged.
+
+**Cleanup done in the same pass**: `BeaconEmissionConeDeg` **deleted** — T058's flat-top emission profile left the hard 270° cutoff with no reader, so it was a live-looking knob in three tracker inis that changed nothing (Constitution III, same as T014/T017). `AUTOC_CONFIG_FIELDS` 134 → 133.
+
+> 📊 **What the perception model actually delivers is now recorded in [research.md](research.md) §R14** — the range/SNR/q table, and the headline for the hardware work: modelled received at 100 m is **0.039 nA against a ≤10 nA measured decode floor, ≈24 dB short**. The 100 m envelope is an *assertion* (FR-033a); closing that gap is the camera-perf / emitter-power effort
 - [ ] T083 [US5] Launch the retrain via `bash scripts/train.sh autoc-tracker.ini logs/autoc-040-t1-perception.log` — **detached only**, never a harness-tracked background task (Principle IX)
 - [ ] T084 [US5] Monitor to a competence plateau; confirm the run completes without systemic failure
 - [ ] T085 [US5] Evaluate the resulting elite on novel paths by repointing `autoc-eval-tracker.ini` at a novel M1 eval source

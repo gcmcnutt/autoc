@@ -386,3 +386,45 @@ Values, not structure — none blocks the design (per the plumbing-first contrac
 | Filter bandwidth, flux anchor, ambient pedestal | Configured, classified **assumed**, seeded from 031 |
 | Airframe CG station, wing camber | Affects obstruction geometry marginally; classified **assumed** |
 | Wing-thickness variation sigma | Folded into camera variation as an obstruction-side term |
+
+---
+
+## R14 — What the shipped signal model actually delivers vs range (measured 2026-07-30, post-T057)
+
+Probe against `hb1SignalConfig()` through the shipped `computeSignal()`, tail-chase geometry (chase aft of
+target, so the enclosure's aft face is on-axis). This is the answer to "will the sim show signal at 100 m
+even if that isn't realistic?" — **yes, by assertion, and here is the size of the lie.**
+
+| range | received | SNR | q (0–9) | cep the NN sees | regime |
+|---:|---:|---:|---:|---:|---|
+| 5 m | 15.5 nA | 27.6 dB | 9.0 | 0.02 | saturated |
+| 10 m | 3.9 nA | 21.6 dB | 9.0 | 0.02 | saturated |
+| 25 m | 0.62 nA | 13.6 dB | 6.1 | 0.32 | GOOD |
+| **33 m** | — | 11.1 dB | **5.0** | 0.44 | **GOOD threshold** |
+| 50 m | 0.16 nA | 7.6 dB | 3.4 | 0.62 | degraded |
+| 100 m | 0.039 nA | 1.6 dB | 0.7 | 0.92 | barely above floor |
+| >100 m | — | — | — | sentinel | hard cut (FR-033a) |
+
+### The number that matters for the hardware work
+
+**Modelled received at 100 m is 0.039 nA. The 031 bench decode floor is ≤10 nA. That is ~256× short,
+≈24 dB.** Taken against the measured floor, the honest detection range at today's per-emitter flux with no
+collection optics is **≈6 m**, and every range past that would sit equally at the floor — perfectly
+monotonic and completely uninformative, which is why the floor is back-solved instead (see
+`signal_model.h`).
+
+So the sim's 100 m is an **assertion that the hardware will get there** (FR-033a), and **closing the ~24 dB
+is the camera-perf / emitter-power work**. Candidate contributions, none yet modelled: `SignalOpticsGain`
+(shipped at 1.0 — no collection optics), emitter drive, entrance-pupil area, narrower field (more photons
+per pixel), longer integration. When any of them is real, it moves `SignalOpticsGain` / `flux_constant` /
+the floor — and per FR-036 it must move **without structural change**, which is what T092 rehearses.
+
+### Two properties worth keeping
+
+1. **The two degradations nearly coincide.** GOOD tracking (q ≥ 5) ends at ~33 m; separation-derived range
+   dies at ~28 m. So "I trust this" and "I know how far" fade together rather than as two unrelated
+   cliffs — a coherent perceptual story for the controller to learn.
+2. **The five-face enclosure is nearly flat across useful aspects.** Gains: tail 1.44, beam peak 1.59,
+   quarter 2.29, head-on 1.44, inboard (the mounted face) 0.59. Tail-chase sits only 0.4 dB below beam
+   peak. Under the single-outboard-axis model the tail chase — the dominant M2 geometry — would have read
+   ~10 dB down.
