@@ -208,32 +208,93 @@ monotonically per the measured bench relationship; interrupt the signal and conf
 
 ### Tests (write first, verify failing)
 
-- [ ] T048 [P] [US4] New `tests/signal_model_tests.cc`: signal falls monotonically with range and the loss-of-tracking point lands inside the measured band (FR-015, SC-004)
-- [ ] T049 [P] [US4] In `tests/signal_model_tests.cc`: emission follows a flat-top profile — near-constant to ±45°, half power at ±75° — and is **not** a cosine power law (FR-019)
-- [ ] T050 [P] [US4] In `tests/signal_model_tests.cc`: when both beacons share a detector element, detection and code identification survive with only the measured penalty (FR-016 — this configuration is field-proven, not a failure)
-- [ ] T051 [P] [US4] New `tests/acquisition_state_tests.cc`: acquisition completes within the measured window, including partial-code early lock (FR-017, SC-005)
-- [ ] T052 [P] [US4] In `tests/acquisition_state_tests.cc`: a tentative lock reports a bearing with large-variance quality, improving toward confirmed (FR-017a)
-- [ ] T053 [P] [US4] In `tests/acquisition_state_tests.cc`: an interruption shorter than the hold window never loses tracking (FR-018, SC-005)
-- [ ] T054 [P] [US4] In `tests/acquisition_state_tests.cc`: identical inputs produce bit-identical outputs; no PRNG in the signal path (FR-020, SC-006)
-- [ ] T055 [P] [US4] In `tests/acquisition_state_tests.cc`: all carried state resets at scenario boundaries in both execution paths (FR-020a)
-- [ ] T056 [P] [US4] In `tests/beacon_projection_tests.cc`: bearing reaches the design detection range while separation-derived range goes explicitly unavailable below the resolving limit (FR-033, SC-011)
-- [ ] T056a [P] [US4] In `tests/acquisition_state_tests.cc`: when a **brief obstruction** clears, recovery follows the measured ride-through rather than restoring instantaneously — distinct from T053, which covers signal loss (FR-013, US3 acceptance scenario 6)
+- [x] T048 [P] [US4] ✅ **DONE 2026-07-30** — `SignalFallsMonotonicallyWithRange` sweeps 2-120 m, plus `RangeFalloffIsInverseSquare`, which asserts doubling range costs exactly 6.02 dB. That second one is what distinguishes a real 1/r² term from a hand-tuned ramp that merely decreases. `QualityGradientSpansTheAssertedDetectionEnvelope` carries SC-004's actual content: the gradient must be USEFUL across the envelope, not saturated or floored throughout — a model can be perfectly monotonic and carry no information — orig: signal falls monotonically with range and the loss-of-tracking point lands inside the measured band (FR-015, SC-004)
+- [x] T049 [P] [US4] ✅ **DONE 2026-07-30** — flat to ±45°, exactly 0.5 at ±75°, exactly 0 at ±105°. `EmissionIsFlatTopNotCosinePowerLaw` **builds the competing cos^m law fitted to the same half-power angle** and asserts we sit >0.10 above it in the flat region — asserting only "flat to 45°" would pass on a cosine law with a large enough exponent, leaving FR-019 decorative. **Also found a real modelling error while writing it**: a single outboard emission axis puts the TAIL-CHASE direction at 90° off beam, deep in the skirt, when the enclosure is a cube-minus-base with an aft face pointed straight down the chase's throat. Modelling one axis would have been wrong in the one geometry M2 spends all its time in. `FiveFaceEnclosureIlluminatesTheTailChaseDirection` pins it at >4× the single-axis answer — orig: emission follows a flat-top profile — near-constant to ±45°, half power at ±75° — and is **not** a cosine power law (FR-019)
+- [x] T050 [P] [US4] ✅ **DONE 2026-07-30** — `SharedDetectorElementDegradesButNeverGates` asserts the cost is EXACTLY `cdma_penalty_db`, not merely non-zero, and that `q > 0` survives. FR-016 is emphatic this configuration is field-proven — orig: when both beacons share a detector element, detection and code identification survive with only the measured penalty (FR-016 — this configuration is field-proven, not a failure)
+- [x] T051 [P] [US4] ✅ **DONE 2026-07-30** — cold 7 ticks (308 ms), warm 4 (154 ms), both ±1 per SC-005, plus `ReacquisitionBeyondTheCoastWindowIsTrueCold`. `WarmRelockIsCheaperThanCold` asserts warm < cold STRICTLY — if that ever reads equal the coast-window design has been silently defeated, and it is the single highest-value feature in the model — orig: acquisition completes within the measured window, including partial-code early lock (FR-017, SC-005)
+- [x] T052 [P] [US4] ✅ **DONE 2026-07-30** — quality large on the first tentative tick, monotonically improving, never the sentinel. Plus `UnresolvedIdentityInflatesQuality` for FR-017d — orig: a tentative lock reports a bearing with large-variance quality, improving toward confirmed (FR-017a)
+- [x] T053 [P] [US4] ✅ **DONE 2026-07-30** — plus the complement `InterruptionLongerThanTheHoldWindowDropsToSearching`, without which the first test would pass on a machine that never leaves HOLDING — orig: an interruption shorter than the hold window never loses tracking (FR-018, SC-005)
+- [x] T054 [P] [US4] ✅ **DONE 2026-07-30** — two machines driven through a deliberately awkward 30-tick sequence (partial acquisitions, holds that expire, holds that do not, re-locks on both budgets), every field compared bit-exact each tick — orig: identical inputs produce bit-identical outputs; no PRNG in the signal path (FR-020, SC-006)
+- [x] T055 [P] [US4] ✅ **DONE 2026-07-30** — two tests. Field-level reset-to-fresh, and the OBSERVABLE form mirroring T007: a recycled scenario must acquire **cold**, exactly as a virgin one does. A machine that reset its fields but leaked a warm coast passes the first and fails the second — orig: all carried state resets at scenario boundaries in both execution paths (FR-020a)
+- [x] T056 [P] [US4] ✅ **DONE 2026-07-30** — a five-test `TwoEnvelopes` suite. **The crossover test found something worth keeping**: the naive continuous prediction (5 px ⇒ 23.6 m) is WRONG — measured is ~27.75 m — for two real reasons. (1) Quantisation rounds OUTWARD for a boresight-straddling pair: with an even pixel count the boresight sits on a pixel BOUNDARY, so a true 4.25 px gap reads as exactly 5. (2) **The camera is not on the centreline** — 8″ outboard, ~1¼″ up — so the pair does not straddle symmetrically. The test therefore asserts the INVARIANT (the crossover is exactly where the *quantised* gap reaches the configured limit, and one step out it is not) rather than a derived range, so it stays tied to the grid. — orig:  bearing reaches the design detection range while separation-derived range goes explicitly unavailable below the resolving limit (FR-033, SC-011)
+- [x] T056a [P] [US4] ✅ **DONE 2026-07-30** — `ClearedObstructionReEstablishesViaRideThroughNotInstantly`. Guards the tempting shortcut of restoring the previous lock the instant geometry clears because "we know it is the same beacon" — orig: when a **brief obstruction** clears, recovery follows the measured ride-through rather than restoring instantaneously — distinct from T053, which covers signal loss (FR-013, US3 acceptance scenario 6)
 
 ### Implementation
 
-- [ ] T057 [P] [US4] Create `include/autoc/eval/signal_model.h` + `src/eval/signal_model.cc` — drive × emission × 1/r² × obstruction ÷ ambient → per-chip SNR, per [data-model.md](data-model.md) §4
-- [ ] T058 [US4] Implement the flat-top emission profile in `src/eval/signal_model.cc`, replacing the hard 270° cone in `include/autoc/eval/beacon_config.h` (FR-019)
-- [ ] T059 [US4] Implement the detector-sharing penalty in `src/eval/signal_model.cc` — degrades quality, never gates detection (FR-016)
-- [ ] T060 [P] [US4] Create `include/autoc/eval/acquisition_state.h` + `src/eval/acquisition_state.cc` — chip-credit integrator and four-state machine per [data-model.md](data-model.md) §5, deterministic thresholds not draws
-- [ ] T061 [US4] Derive quality from signal and lock state in `src/eval/camera_projection.cc`, replacing the linear edge-factor placeholder (FR-014)
-- [ ] T062 [US4] Keep the state machine internal — expose only bearing and quality; record state for diagnostics only (FR-017b, [contracts/perception-interface.md](contracts/perception-interface.md))
-- [ ] T063 [US4] Implement the two-envelope rule in `src/eval/camera_projection.cc`: bearing to design range, separation-derived range unavailable below the resolving limit (FR-033)
-- [ ] T064 [US4] Wire per-scenario reset of all acquisition state into `src/eval/tracker_tick_rule.cc` so both paths reset identically (FR-020a)
-- [ ] T064a [US4] Route obstruction state through the acquisition hold path in `src/eval/acquisition_state.cc` so a cleared obstruction re-establishes via ride-through, not instantaneous restoration (FR-013). **Note the asymmetry**: an obstruction clears deterministically by geometry while a signal returns by SNR — both must enter the same hold machinery, but only obstruction has a knowable clear-time
-- [ ] T065 [US4] Run the Principle VI type-domain grep on the diff; annotate or convert
+- [x] T057 [P] [US4] ✅ **DONE 2026-07-30** — `signal_model.{h,cc}`. **The header carries the calibration-honesty note that matters most in the whole phase**: `ambient_floor + noise_floor` is **back-solved**, not measured, so 0 dB lands exactly at the asserted detection range. Taking the measured 031 decode floor (≤10 nA) literally would end detection at ~5 m and leave every longer range equally at the floor — monotonic and completely uninformative. FR-033a resolves it by asserting the envelope and letting the budget shape quality *within* it. `NoiseFloorIsCoherentWithTheAssertedDetectionRange` pins the coupling, because in the ini the two values look independent — orig: Create `include/autoc/eval/signal_model.h` + `src/eval/signal_model.cc` — drive × emission × 1/r² × obstruction ÷ ambient → per-chip SNR, per [data-model.md](data-model.md) §4
+- [x] T058 [US4] ✅ **DONE 2026-07-30** — flat-top with a raised-cosine shoulder replaces the hard 270° cone, which is **deleted** (Principle III). The only thing that gates now is genuine darkness — no face still illuminating that direction — which is physics rather than an arbitrary cone — orig: Implement the flat-top emission profile in `src/eval/signal_model.cc`, replacing the hard 270° cone in `include/autoc/eval/beacon_config.h` (FR-019)
+- [x] T059 [US4] ✅ **DONE 2026-07-30** — applied in `projectPerceptionTick`, not `projectBeacon`, because it needs BOTH beacons' pixel indices. Degrades, never gates — orig: Implement the detector-sharing penalty in `src/eval/signal_model.cc` — degrades quality, never gates detection (FR-016)
+- [x] T060 [P] [US4] ✅ **DONE 2026-07-30** — `acquisition_state.{h,cc}`, mirroring the shipped gateware FSM. **One design correction landed during wiring**: quality keys off a new `blob_present` flag, NOT off `state`. HOLDING with signal RETURNED is re-integrating on a blob that is plainly there and must report a tentative bearing (FR-017c); HOLDING while still blind has nothing to report. Keying off `state` alone conflates the two — orig: Create `include/autoc/eval/acquisition_state.h` + `src/eval/acquisition_state.cc` — chip-credit integrator and four-state machine per [data-model.md](data-model.md) §5, deterministic thresholds not draws
+- [x] T061 [US4] ✅ **DONE 2026-07-30** — the `0.3 × max(|x|,|y|)` edge factor is gone. **Two existing tests asserted the retired semantic** (`cep > 0.20` at the frame edge, "edge_factor near 1 ⇒ cep near 0.3") and now assert the REPLACEMENT property: frame position no longer drives quality, because position is not a signal term — orig: Derive quality from signal and lock state in `src/eval/camera_projection.cc`, replacing the linear edge-factor placeholder (FR-014)
+- [x] T062 [US4] ✅ **DONE 2026-07-30** — `LockState` reaches the dmp as a diagnostic and never the NN. `COUNT == 58` static_asserts untouched — orig: Keep the state machine internal — expose only bearing and quality; record state for diagnostics only (FR-017b, [contracts/perception-interface.md](contracts/perception-interface.md))
+- [x] T063 [US4] ✅ **DONE 2026-07-30** — resolving-limit gate beside the existing CEP gate. Noted while wiring: the shipped `CepGateThreshold` (1.25) is **exactly** `kCepSentinelThreshold`, so that gate is already a VISIBILITY gate and stays one under 040's quality semantics — which is what keeps it compatible with FR-017c. Lowering it below 1.0 would start suppressing tentative locks and break FR-017c; the header now says so — orig: Implement the two-envelope rule in `src/eval/camera_projection.cc`: bearing to design range, separation-derived range unavailable below the resolving limit (FR-033)
+- [x] T064 [US4] ✅ **DONE 2026-07-30** — `PerceptionCarryState` added to `resetPerceptionState`, so both execution paths inherited it **without either being edited** — which is exactly what T010 built the single-source rule for — orig: Wire per-scenario reset of all acquisition state into `src/eval/tracker_tick_rule.cc` so both paths reset identically (FR-020a)
+- [x] T064a [US4] ✅ **DONE 2026-07-30** — obstruction and signal loss enter the same hold machinery by construction, since `signal_present` is geometric visibility and obstruction zeroes it — orig: Route obstruction state through the acquisition hold path in `src/eval/acquisition_state.cc` so a cleared obstruction re-establishes via ride-through, not instantaneous restoration (FR-013). **Note the asymmetry**: an obstruction clears deterministically by geometry while a signal returns by SNR — both must enter the same hold machinery, but only obstruction has a knowable clear-time
+- [x] T065 [US4] ✅ **DONE 2026-07-30** — grep clean. The only hits are the 19 `X(double, ...)` macro tokens, which must match their struct field type and are uniform with the other 115 entries (the `cameraDegPerPixel` precedent), plus one test-scaffolding `double`. Annotated as a block in `config.h` on the `cepGateThreshold` precedent — orig: Run the Principle VI type-domain grep on the diff; annotate or convert
+
+### Playback controls — a Stage E DEPENDENCY, not renderer polish
+
+> **Why these sit in Phase 6 rather than Phase 10.** The checkpoint below asks whether dropout and
+> reacquisition *look physical*. It is not answerable at realtime playback: a **warm relock is 154 ms (3
+> ticks)** and a **cold acquire is 308 ms (6 ticks)**, so the entire warm-vs-cold distinction — the most
+> behaviour-defining thing in the model, the thing the whole coast-window design turns on — plays out in
+> under a third of a second. At 20 Hz realtime both are "it blinked". The tentative→confident quality ramp
+> spans the same ~3 ticks. **Single-step is what makes the checkpoint answerable at all**, which is why
+> these unpark from the backlog into 040 rather than staying deferred.
+>
+> Backstep is cheap here: playback is *recorded* data, so a step back is an index decrement. The
+> [hidden-state scrubbing](../BACKLOG.md) problem only bites a renderer that re-runs the NN, which this
+> one does not.
+
+- [ ] T065a [P] Playback transport in `tools/renderer.h` (`CustomInteractorStyle::OnChar`) + `tools/renderer.cc` — a manual tick cursor replacing wall-clock-only playback, on the agreed bindings:
+
+  | key | action |
+  |---|---|
+  | `Space` | play / pause toggle |
+  | `.` / `,` | step forward / back one tick |
+  | `>` / `<` | step ±10 ticks |
+  | `Home` / `End` | jump to start / end |
+  | `F` | rapid-finish — **moved off `Space`** |
+  | `[` / `]` | jump to previous / next **event** (dropout, relock, hull strike) |
+
+  `Space` becoming play/pause is the conventional binding and worth the small break from current
+  behaviour. **Event-jump earns its place**: stepping 900 ticks to hunt a dropout is worse than not
+  having the feature.
+
+- [ ] T065b [P] Tick counter + elapsed-time readout alongside the transport — stepping without one is stepping blind
+- [ ] T065c [P] **Unpark** the three superseded backlog entries (*Renderer Playback Enhancements*, *Renderer scrub controls*, *Renderer scrubbing with hidden state*) to point at T065a rather than describing the work a fourth time (Principle X)
+
+### Perception rendering — the parallax layer (extends T088)
+
+> **The finding this exists to make visible.** The camera sits 8″ outboard and ~1¼″ above the thrust line,
+> boresight parallel to it. So the thrust axis — where the propeller actually goes, i.e. **where the
+> streamer gets cut** — projects left and slightly below image centre by `atan(r_cam/d)`. Both that offset
+> and the beacon separation scale as 1/d, so the parallax is a **constant 26.6% of the target's apparent
+> wingspan at every range** (`r_cam/W = 0.205/0.772`):
+>
+> | range | beacon separation | aim offset | offset ÷ separation |
+> |---|---:|---:|---:|
+> | 3 m | 14.7° | 3.91° | **26.6%** |
+> | 10 m | 4.42° | 1.17° | **26.6%** |
+> | 25 m | 1.77° | 0.47° | **26.6%** |
+> | 100 m | 0.44° | 0.12° | **26.6%** |
+>
+> **You cannot close your way out of it.** Anyone reading the FPV and aiming at image centre mis-aims by a
+> quarter wingspan, always. This is arguably safety-relevant display scope, and it is not in the spec today.
+
+- [ ] T065d [P] Rings in `updateCameraPOVMiniPanel` — boresight cross at image centre (thin, neutral: that is the camera axis), the **thrust-axis locus** as a short track from ≈(−0.065, +0.008) NDC at 3 m to (0,0) at infinity, and **range rings centred on that locus, not on image centre**, diameter = expected beacon separation, labelled 3 / 10 / 25 / 100 m. Match the observed pair to a ring ⇒ read range; pair vs ring centre ⇒ read aiming error; the rings' migration off-centre ⇒ the parallax made visible. At 100 m the ring is ~1.2 px across, which is itself an honest statement about the resolution floor
+- [ ] T065e [P] A **vertical member** through the aim point at the same angular scale as the rings. Beacon separation is a roughly *horizontal* measurement and says nothing about vertical displacement; for a tail chase closing on a streamer, up/down is the axis the display is least instrumented on
+- [ ] T065f [P] Quality rendering beyond radius — **Gaussian falloff, not a hard disc** (a hard edge implies a bound; CEP is a distribution, so σ ∝ CEP on an alpha-gradient sprite), **alpha = confidence** so bad data visually recedes, and **colour = lock state**: confident saturated/sharp · tentative amber/soft · **HOLD a hollow dashed ring at last-known, fading across the hold window** · searching absent. HOLD is the one worth building — you watch it hold, then either snap back solid (warm, ~3 ticks) or expire (~6 ticks) and vanish, which *is* the checkpoint question
+- [ ] T065g [P] A small `q` bar (0–9, GOOD ≥ 5 marked) per blob. It is the **hardware's own metric**, so a bench capture and a sim playback can be put side by side and compared on the same number
+
+> ⚠️ **T065f/T065g depend on `lock_state` + `raw_margin` reaching `CameraViewSample`** — exactly the
+> diagnostic fields T089 (FR-028) adds. That dependency is a decent argument for why those fields earn
+> their place: without them the renderer cannot show the thing you would most want to look at. **Pull T089
+> and T090 forward** to land with T062 rather than waiting for Phase 10.
 
 **Checkpoint**: **playback review.** Does dropout and reacquisition look physical? Is the range-envelope
 crossover where expected? This is where "passes its tests" and "physically plausible" most easily diverge.
+**Answerable only with T065a in hand** — see the note above.
 
 ---
 
@@ -313,9 +374,9 @@ gates this feature.
 
 ## Phase 10: Polish & Cross-Cutting
 
-- [ ] T088 [P] Update `tools/renderer.cc` to draw the effective field of view including obstructed regions and visible quality regimes (FR-030)
-- [ ] T089 [P] Emit the new diagnostic fields (pixel indices, correlation margin, lock state) in `tools/dmp_dump.cc` (FR-028)
-- [ ] T090 [P] Extend `tests/tracker_dmp_roundtrip_tests.cc` to round-trip the new diagnostic fields (FR-029)
+- [ ] T088 [P] Update `tools/renderer.cc` to draw the effective field of view including obstructed regions and visible quality regimes (FR-030). **The parallax layer that extends this — rings, vertical member, quality rendering, `q` bar — moved to T065d–T065g in Phase 6**, because the Phase 6 checkpoint cannot be read without it
+- [x] T089 [P] ✅ **DONE 2026-07-30, pulled forward as planned** — — emit the new diagnostic fields (pixel indices, correlation margin, lock state) in `tools/dmp_dump.cc` (FR-028). T065f/T065g cannot render lock state or `q` until these reach `CameraViewSample`
+- [x] T090 [P] ✅ **DONE 2026-07-30** — round-trips `raw_margin` + `lock_state`; the fixture sweeps all four `LockState` values and includes a **negative** SNR, because a naive unsigned round-trip would survive positive-only data. — — extend `tests/tracker_dmp_roundtrip_tests.cc` to round-trip the new diagnostic fields (FR-029)
 - [ ] T091 Verify every configured physical quantity is classified measured/derived/assumed in [contracts/config-surface.md](contracts/config-surface.md) and matches the shipped defaults (FR-035, SC-010)
 - [ ] T092 **CALIBRATION REHEARSAL**: substitute a plausible alternative for each **assumed** value, confirm results change and **no structural change is required** (FR-036, SC-012) — this proves the feature's central claim
 - [ ] T093 Run `bash scripts/rebuild.sh` for the final correctness gate (Principle II)
@@ -357,7 +418,7 @@ Real but limited to *within* phases:
 - **Phase 3**: T007–T009 (tests) in parallel; T013, T015, T017, T018 in parallel
 - **Phase 4**: T023–T028 (tests) all parallel; T030 parallel with T029
 - **Phase 5**: T036–T040 (tests) all parallel
-- **Phase 6**: T048–T056 (tests) all parallel; T057 and T060 parallel
+- **Phase 6**: T048–T056 (tests) all parallel; T057 and T060 parallel; **T065a–T065c (playback transport) parallel with the whole signal-model chain** — they touch only `tools/renderer.{cc,h}` and depend on nothing in US4, so land them FIRST and use them while iterating on the model. T065d–T065g follow T089
 - **Phase 7**: T066–T070 (tests) all parallel
 - **Phase 8**: T078–T080 all parallel, and the whole phase parallel with Phases 4–7
 - **Phase 10**: T088–T090 in parallel

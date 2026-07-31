@@ -23,6 +23,7 @@
 // existing situational-awareness state already carries that warning; the
 // acquisition state added at 040 M4/Stage E has identical exposure.
 
+#include "autoc/eval/acquisition_state.h"
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/eval/beacon_config.h"
 #include "autoc/eval/camera_config.h"
@@ -49,7 +50,40 @@ struct TickRuleConfig {
     BeaconConfig beacon_left;
     BeaconConfig beacon_right;
     AirframeObstruction airframe;
+    // 032 phase 1. NOTE at 040: the shipped value (1.25) is EXACTLY
+    // kCepSentinelThreshold, so this is already a VISIBILITY gate in practice
+    // and remains one under 040's quality semantics — visible quality spans
+    // [0, 1] and never reaches it. That matters because FR-017c forbids
+    // suppressing separation for a merely TENTATIVE lock: the blob centroid
+    // exists before the code decodes, so a bearing is available pre-lock and the
+    // controller is expected to learn the discount rather than be handed a gap.
+    // Lowering this below 1.0 would start gating tentative locks and break
+    // FR-017c — the resolving limit below is the physically meaningful gate.
     gp_scalar cep_gate_threshold;
+
+    // 040 US4 — the link budget and the acquisition machine.
+    SignalConfig signal;
+    AcquisitionConfig acquisition;
+    // Controller tick length. The acquisition machine advances ANALYTICALLY once
+    // per tick rather than sub-stepping the 480 fps camera, so it needs to know
+    // how much time one call represents.
+    gp_scalar control_interval_ms;
+};
+
+// Per-beacon state carried ACROSS ticks within a scenario (FR-020a).
+//
+// Owned by the caller, not by this module, because the two call sites own their
+// own ring and dmp recording already. Reset through resetPerceptionState() at
+// every scenario boundary — unreset state leaks between scenarios and breaks the
+// bitwise gate.
+struct PerceptionCarryState {
+    AcquisitionState left;
+    AcquisitionState right;
+
+    void reset() {
+        left.reset();
+        right.reset();
+    }
 };
 
 // One tick of perception: both beacon observations plus the ring record built
@@ -70,7 +104,8 @@ struct PerceptionTickResult {
 // neutral 0.0 rather than computed from an untrusted endpoint.
 PerceptionTickResult projectPerceptionTick(const AircraftState& chase,
                                            const SourceTickSample& target,
-                                           const TickRuleConfig& config);
+                                           const TickRuleConfig& config,
+                                           PerceptionCarryState& carry);
 
 // Advance the situational-awareness state from the freshly materialized "now"
 // slot. Visibility uses the sentinel threshold, matching
@@ -88,6 +123,7 @@ void advanceSituationalAwareness(const TrackerHistoryWindow& history,
 // When the 040 acquisition state machine lands, its reset belongs here — so
 // that both execution paths pick it up without either being edited.
 void resetPerceptionState(TrackerObservationRing& ring,
-                          SituationalAwarenessState& sa);
+                          SituationalAwarenessState& sa,
+                          PerceptionCarryState& carry);
 
 }  // namespace autoc::eval

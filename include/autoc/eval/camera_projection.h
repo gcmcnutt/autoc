@@ -51,6 +51,7 @@
 #include "autoc/eval/beacon_config.h"
 #include "autoc/eval/airframe_occlusion.h"
 #include "autoc/eval/camera_config.h"
+#include "autoc/eval/signal_model.h"
 
 namespace autoc::eval {
 
@@ -96,10 +97,23 @@ struct BeaconObservation {
     int16_t raw_px_y;
     int8_t raw_cep_int8;  // INT8_MIN ⇔ invisible
 
+    // ----- 040 T089 (FR-028) — DIAGNOSTIC ONLY, never controller inputs -------
+    //
+    // These exist because without them the renderer cannot show the thing you
+    // most want to look at: whether a dropout coasted warm and snapped back, or
+    // expired cold. FR-017b keeps the state machine internal to PERCEPTION —
+    // "internal" means it never becomes an NN input, not that it may not be
+    // recorded. The input vector stays at 58 (FR-006).
+    float raw_margin;   // raw-ok: cereal byte-format member (dmp). per-chip SNR in dB, cdma penalty applied
+    int8_t lock_state;  // LockState as int8; values pinned, see acquisition_state.h
+
     // 030 M8a — cereal serialize for dmp output (cameraViewList).
+    // 040: appended at the end per the in-code convention — no
+    // CEREAL_CLASS_VERSION bump, old dmps orphaned (greenfield policy).
     template <class Archive>
     void serialize(Archive& ar) {
-        ar(bearing_x_rad, bearing_y_rad, cep, raw_px_x, raw_px_y, raw_cep_int8);
+        ar(bearing_x_rad, bearing_y_rad, cep, raw_px_x, raw_px_y, raw_cep_int8,
+           raw_margin, lock_state);
     }
 };
 
@@ -124,6 +138,10 @@ struct ProjectionInput {
     // Configs.
     CameraConfig camera;
     BeaconConfig beacon;
+
+    // 040 T057 — the link budget (FR-014/FR-015). Range and emission aspect now
+    // enter perception; through 039 neither did.
+    SignalConfig signal;
 
     // 040 T014 — chase airframe obstruction (body frame). Replaces the
     // single-AABB AirframeProxy, which modelled a thin wing as a solid

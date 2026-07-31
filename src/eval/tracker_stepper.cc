@@ -143,7 +143,7 @@ void TrackerStepper::initScenario() {
     // is picked up by both execution paths without either being edited.
     // Advanced only on real ticks (stepOnce), never during the history pre-fill
     // below, so each scenario starts at "visible-now / neutral bearing".
-    resetPerceptionState(obs_ring_, sa_state_);
+    resetPerceptionState(obs_ring_, sa_state_, perception_carry_);
 
     if (!source_.samples.empty()) {
         for (int r = 0; r < TrackerObservationRing::kDepth; ++r) {
@@ -168,9 +168,15 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     rule_cfg.beacon_right = beacon_right_;
     rule_cfg.airframe = airframe_;
     rule_cfg.cep_gate_threshold = cep_gate_threshold_;
+    // 040 US4 — shipped values. TrackerStepper is the TEST-ONLY reference, so it
+    // takes the same factories autoc.cc feeds WorkerInit from; a divergent set
+    // here would let the reference certify behaviour production never exhibits.
+    rule_cfg.signal = hb1SignalConfig();
+    rule_cfg.acquisition = hb1AcquisitionConfig();
+    rule_cfg.control_interval_ms = static_cast<gp_scalar>(SIM_TIME_STEP_MSEC);
 
     const PerceptionTickResult tick =
-        projectPerceptionTick(state_, target, rule_cfg);
+        projectPerceptionTick(state_, target, rule_cfg, perception_carry_);
     const BeaconObservation& left = tick.left;
     const BeaconObservation& right = tick.right;
 

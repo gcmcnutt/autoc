@@ -25,6 +25,9 @@
 #include "autoc/eval/beacon_config.h"
 #include "autoc/eval/camera_config.h"
 #include "autoc/eval/camera_projection.h"
+#include "autoc/eval/acquisition_state.h"
+#include "autoc/eval/signal_model.h"
+#include "autoc/eval/tracker_tick_rule.h"
 #include "autoc/eval/derived_features.h"  // 040 T033a — span is measured here
 #include "autoc/types.h"
 
@@ -36,6 +39,8 @@ using autoc::eval::rayCrossesPropDisc;
 using autoc::eval::BeaconConfig;
 using autoc::eval::BeaconObservation;
 using autoc::eval::CameraConfig;
+using autoc::eval::hb1AcquisitionConfig;
+using autoc::eval::hb1SignalConfig;
 using autoc::eval::ProjectionInput;
 using autoc::eval::dequantize_cep;
 using autoc::eval::kCepSentinelFloat;
@@ -86,6 +91,11 @@ ProjectionInput makeBaselineInput() {
     // (forward, +x) never trip self-occlusion. Specific occlusion tests
     // override `in.chase_airframe` directly.
     in.chase_airframe = obstructionWithWingBox(gp_vec3(-100.0f, -1.0f, -1.0f), gp_vec3(-99.0f,  +1.0f, +1.0f));
+    // 040 US4 — the link budget. SignalConfig carries NO in-class defaults
+    // (Constitution VII), so leaving this unset does not fail to compile — it
+    // silently yields garbage, and every ray reads as dark. Supply the shipped
+    // values explicitly, exactly as the production tick rule does.
+    in.signal = hb1SignalConfig();
     return in;
 }
 
@@ -216,7 +226,14 @@ TEST(BeaconProjectionGeometry, TargetAtRightFovEdgeApproachesPlusOne) {
     EXPECT_NE(obs.cep, kCepSentinelFloat);
     EXPECT_NEAR(obs.bearing_x_rad, static_cast<float>(CameraConfig{}.halfFovHRad()),
                 static_cast<float>(CameraConfig{}.radPerPx()));
-    EXPECT_GT(obs.cep, 0.20f);  // edge_factor near 1 ⇒ cep near 0.3
+    // 040 T061 — the old assertion here was `cep > 0.20` "edge_factor near 1 ⇒
+    // cep near 0.3". That encoded the RETIRED position-only placeholder, in
+    // which sitting near the frame edge was itself the definition of low
+    // confidence. Quality is now signal-derived (FR-014), and frame position is
+    // not a signal term, so the edge no longer degrades it. Asserting the
+    // REPLACEMENT property instead: an edge beacon is still fully detected.
+    EXPECT_LT(obs.cep, 0.5f)
+        << "frame position must no longer drive quality — that was the placeholder";
 }
 
 TEST(BeaconProjectionGeometry, TargetAtLeftFovEdgeApproachesMinusOne) {
@@ -230,7 +247,7 @@ TEST(BeaconProjectionGeometry, TargetAtLeftFovEdgeApproachesMinusOne) {
     EXPECT_NE(obs.cep, kCepSentinelFloat);
     EXPECT_NEAR(obs.bearing_x_rad, -static_cast<float>(CameraConfig{}.halfFovHRad()),
                 static_cast<float>(CameraConfig{}.radPerPx()));
-    EXPECT_GT(obs.cep, 0.20f);
+    EXPECT_LT(obs.cep, 0.5f);  // see the note on the right-edge twin above
 }
 
 // ---------------------------------------------------------------------------
@@ -1086,4 +1103,182 @@ TEST(CameraGridGeometry, FovEdgeFollowsTheDerivedField) {
         << "just inside the derived field must be visible";
     EXPECT_FLOAT_EQ(obsAtRay(half_h + 0.5, 0.0).cep, kCepSentinelFloat)
         << "just outside the derived field must be invisible";
+}
+
+// ===========================================================================
+// 040 T056 (FR-033, SC-011) — TWO ENVELOPES, NOT ONE.
+//
+// Detection and range-inference have different reach, and the whole point is
+// that NEITHER may be reported as usable outside its own:
+//
+//   bearing                    → to the ASSERTED detection range (~100 m)
+//   separation-derived range   → dies at ~24 m, when the pair stops resolving
+//
+// At 120° over 320 px the 0.772 m pair subtends ≈1 px at 100 m. Reporting a
+// range from that would be reporting a quantisation artefact as a measurement —
+// which is exactly what the code did through 039, where separation was computed
+// from whatever the two (identical) pixels gave.
+//
+// The CONSEQUENCE is intended and is behaviour M2 has never trained against:
+// the controller experiences a genuine perceptual REGIME CHANGE as it closes —
+// bearing-only at range, bearing-plus-range inside.
+// ===========================================================================
+
+namespace {
+
+// Chase at the origin looking down +x; target dead ahead at `range_m`, wings
+// level, so the beacon pair straddles the boresight horizontally.
+// `double range_m` here is raw-ok per the test-scaffolding block note above:
+// the sweep positions the target more precisely than the code under test
+// resolves, which is what lets a crossover be located to a quarter metre.
+autoc::eval::PerceptionTickResult tickAtRange(double range_m,  // raw-ok: test-reference geometry
+                                              autoc::eval::PerceptionCarryState& carry) {
+    AircraftState chase;
+    chase.setPosition(gp_vec3(0.0f, 0.0f, 0.0f));
+    chase.setOrientation(gp_quat::Identity());
+
+    SourceTickSample target{};
+    target.position = gp_vec3(static_cast<gp_scalar>(range_m), 0.0f, 0.0f);
+    target.orientation = gp_quat::Identity();
+    target.velocity = gp_vec3(0.0f, 0.0f, 0.0f);
+
+    autoc::eval::TickRuleConfig cfg;
+    cfg.camera = CameraConfig{};
+    cfg.beacon_left = BeaconConfig{};
+    cfg.beacon_left.mount_body = gp_vec3(0.0f, -autoc::eval::kBeaconMountY, 0.0f);
+    cfg.beacon_left.emission_axis_body = gp_vec3(0.0f, -1.0f, 0.0f);
+    cfg.beacon_right = BeaconConfig{};
+    cfg.beacon_right.mount_body = gp_vec3(0.0f, +autoc::eval::kBeaconMountY, 0.0f);
+    cfg.beacon_right.emission_axis_body = gp_vec3(0.0f, +1.0f, 0.0f);
+    // Airframe parked far behind so obstruction plays no part here.
+    cfg.airframe = obstructionWithWingBox(gp_vec3(-100.0f, -1.0f, -1.0f),
+                                          gp_vec3(-99.0f, +1.0f, +1.0f));
+    cfg.cep_gate_threshold = static_cast<gp_scalar>(1.25);
+    cfg.signal = hb1SignalConfig();
+    cfg.acquisition = hb1AcquisitionConfig();
+    cfg.control_interval_ms = static_cast<gp_scalar>(50);
+
+    return autoc::eval::projectPerceptionTick(chase, target, cfg, carry);
+}
+
+// Run enough ticks at a fixed range to get past acquisition into TRACKING, then
+// return the settled tick. Acquisition timing is T051's business, not this
+// test's — here it is setup.
+autoc::eval::PerceptionTickResult settledAtRange(double range_m) {
+    autoc::eval::PerceptionCarryState carry;
+    carry.reset();
+    autoc::eval::PerceptionTickResult r = tickAtRange(range_m, carry);
+    for (int i = 0; i < 12; ++i) r = tickAtRange(range_m, carry);
+    return r;
+}
+
+}  // namespace
+
+TEST(TwoEnvelopes, BearingSurvivesToTheAssertedDetectionRange) {
+    // FR-033a — the detection envelope is ASSERTED, so bearing must still be
+    // reported at 95 m even though the link budget there is at its floor.
+    const autoc::eval::PerceptionTickResult far = settledAtRange(95.0);
+
+    EXPECT_LT(far.left.cep, autoc::eval::kCepSentinelThreshold)
+        << "bearing must reach the asserted detection range";
+    EXPECT_LT(far.right.cep, autoc::eval::kCepSentinelThreshold);
+    EXPECT_NE(far.left.raw_px_x, autoc::eval::kPixelSentinel);
+}
+
+TEST(TwoEnvelopes, BeyondTheDetectionRangeNothingIsReported) {
+    // The complement — without it the test above would pass on a model with no
+    // detection envelope at all.
+    const autoc::eval::PerceptionTickResult beyond = settledAtRange(140.0);
+
+    EXPECT_GE(beyond.left.cep, autoc::eval::kCepSentinelThreshold);
+    EXPECT_GE(beyond.right.cep, autoc::eval::kCepSentinelThreshold);
+    EXPECT_EQ(beyond.left.raw_px_x, autoc::eval::kPixelSentinel);
+}
+
+TEST(TwoEnvelopes, SeparationRangeDiesLongBeforeBearingDoes) {
+    // THE ASSERTION THAT MATTERS. Inside the resolving limit span is a real
+    // measurement; outside it, span reads exactly neutral 0 while the BEARINGS
+    // are still perfectly good. That asymmetry IS the two-envelope rule.
+    const autoc::eval::PerceptionTickResult close = settledAtRange(15.0);
+    const autoc::eval::PerceptionTickResult far = settledAtRange(60.0);
+
+    EXPECT_GT(close.record.span, 0.0f) << "inside ~24 m, range from separation is usable";
+
+    EXPECT_EQ(far.record.span, 0.0f)
+        << "past the resolving limit, separation-derived range must be "
+           "UNAVAILABLE, not merely imprecise";
+    // ...and yet the beacons are plainly still seen. This is the pair of facts
+    // that has to hold simultaneously.
+    EXPECT_LT(far.left.cep, autoc::eval::kCepSentinelThreshold);
+    EXPECT_LT(far.right.cep, autoc::eval::kCepSentinelThreshold);
+}
+
+TEST(TwoEnvelopes, TheSeparationCrossoverIsSetByTheQUANTISEDPixelGap) {
+    // The crossover must be a property of the GRID, not a tuned constant. The
+    // obvious way to assert that — predict a range from continuous geometry —
+    // is WRONG, and instructively so: 5 px at 0.375°/px is 1.875°, which a
+    // 0.772 m pair subtends at ≈23.6 m, but the measured crossover sits near
+    // 27.75 m. Two real effects the continuous number ignores:
+    //
+    //   1. QUANTISATION ROUNDS OUTWARD for a boresight-straddling pair. With an
+    //      even pixel count the boresight falls on a pixel BOUNDARY (T031), so
+    //      two beacons at ±2.1 px land on centres ±2.5 px apart — a true 4.25 px
+    //      gap reads as exactly 5. The gate sees pixels, because the sensor only
+    //      has pixels.
+    //   2. THE CAMERA IS NOT ON THE CENTRELINE. It sits 8″ outboard and ~1¼″
+    //      above the thrust line, so the pair does not straddle the boresight
+    //      symmetrically. This is the same parallax that makes the aim point sit
+    //      a constant ~26.6% of the target's apparent wingspan off image centre
+    //      at EVERY range.
+    //
+    // So the test asserts the INVARIANT rather than a derived range: wherever
+    // the crossover falls, it falls exactly where the quantised gap reaches the
+    // configured limit, and one step further out it has not.
+    const gp_scalar limit_px = hb1SignalConfig().separation_min_px;
+
+    auto gapPx = [](const autoc::eval::PerceptionTickResult& r) -> double {
+        if (r.left.raw_px_x == autoc::eval::kPixelSentinel ||
+            r.right.raw_px_x == autoc::eval::kPixelSentinel) {
+            return -1.0;
+        }
+        const double dx = static_cast<double>(r.left.raw_px_x - r.right.raw_px_x);
+        const double dy = static_cast<double>(r.left.raw_px_y - r.right.raw_px_y);
+        return std::sqrt(dx * dx + dy * dy);
+    };
+
+    double crossover = -1.0;
+    for (double r = 40.0; r >= 8.0; r -= 0.25) {
+        if (settledAtRange(r).record.span > 0.0f) {
+            crossover = r;
+            break;
+        }
+    }
+    ASSERT_GT(crossover, 0.0) << "span must become available somewhere inside 40 m";
+
+    // At the crossover the quantised gap has just reached the limit...
+    EXPECT_GE(gapPx(settledAtRange(crossover)), static_cast<double>(limit_px));
+    // ...and one sweep step further out it had not. This is what ties the
+    // envelope to the grid: move separation_min_px or deg_per_px and the
+    // crossover moves with them, with nothing else to update.
+    EXPECT_LT(gapPx(settledAtRange(crossover + 0.25)), static_cast<double>(limit_px));
+
+    // Sanity band, deliberately loose: it must be in the tens of metres, not at
+    // the detection edge and not in the weeds.
+    EXPECT_GT(crossover, 15.0);
+    EXPECT_LT(crossover, 40.0);
+}
+
+TEST(TwoEnvelopes, MergedBlobsStillDetectButCarryIdentityUncertainty) {
+    // FR-016 + FR-017d together. At long range the pair shares a detector
+    // element: 031 proves both codes still decode, so detection MUST survive —
+    // but there is one blob and no way to assign two identities to two
+    // positions, so quality must carry that.
+    const autoc::eval::PerceptionTickResult merged = settledAtRange(95.0);
+
+    ASSERT_LT(merged.left.cep, autoc::eval::kCepSentinelThreshold)
+        << "a shared detector element is FIELD-PROVEN, not a failure mode";
+    EXPECT_GT(merged.left.cep, 0.5f)
+        << "unresolved identity must inflate quality (FR-017d)";
+    EXPECT_EQ(merged.record.span, 0.0f)
+        << "what merging removes is spatial separation, hence range";
 }

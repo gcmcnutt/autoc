@@ -9,11 +9,14 @@
 
 #include "autoc/eval/tracker_tick_rule.h"
 
+#include <cmath>
+
 namespace autoc::eval {
 
 PerceptionTickResult projectPerceptionTick(const AircraftState& chase,
                                            const SourceTickSample& target,
-                                           const TickRuleConfig& config) {
+                                           const TickRuleConfig& config,
+                                           PerceptionCarryState& carry) {
     ProjectionInput proj;
     proj.chase_position_world = chase.getPosition();
     proj.chase_orientation_world = chase.getOrientation();
@@ -23,18 +26,98 @@ PerceptionTickResult projectPerceptionTick(const AircraftState& chase,
     proj.camera_orientation_chase_body = config.camera.mount_orientation_body;
     proj.camera = config.camera;
     proj.chase_airframe = config.airframe;
+    proj.signal = config.signal;
 
     // Left beacon.
     proj.beacon_mount_target_body = config.beacon_left.mount_body;
     proj.beacon_emission_axis_target_body = config.beacon_left.emission_axis_body;
     proj.beacon = config.beacon_left;
-    const BeaconObservation left = projectBeacon(proj);
+    BeaconObservation left = projectBeacon(proj);
 
     // Right beacon.
     proj.beacon_mount_target_body = config.beacon_right.mount_body;
     proj.beacon_emission_axis_target_body = config.beacon_right.emission_axis_body;
     proj.beacon = config.beacon_right;
-    const BeaconObservation right = projectBeacon(proj);
+    BeaconObservation right = projectBeacon(proj);
+
+    // ---------------------------------------------------------------------
+    // 040 US4 — the pair-level stage. Everything below needs BOTH beacons or
+    // needs history, so none of it can live inside projectBeacon.
+    // ---------------------------------------------------------------------
+
+    const bool left_visible = left.raw_px_x != kPixelSentinel;
+    const bool right_visible = right.raw_px_x != kPixelSentinel;
+
+    // Pixel gap between the two blobs. This one number drives BOTH envelopes.
+    gp_scalar px_gap = static_cast<gp_scalar>(0);
+    if (left_visible && right_visible) {
+        const gp_scalar dx = static_cast<gp_scalar>(left.raw_px_x - right.raw_px_x);
+        const gp_scalar dy = static_cast<gp_scalar>(left.raw_px_y - right.raw_px_y);
+        px_gap = std::sqrt(dx * dx + dy * dy);
+    }
+
+    // FR-016 — a SHARED DETECTOR ELEMENT. Field-proven, not a failure mode: the
+    // 031 single-detector rig is exactly this case and decodes both codes
+    // reliably. It costs the measured interference penalty and it costs SPATIAL
+    // SEPARATION; it does not cost detection.
+    const bool shares_element =
+        left_visible && right_visible && px_gap <= config.signal.shared_element_px;
+
+    // FR-033 — the SEPARATION envelope, which is NOT the detection envelope.
+    // Bearing reaches the asserted detection range; separation-derived range
+    // dies far sooner, once the pair no longer resolves as two blobs. At 120°
+    // over 320 px the 0.772 m pair subtends ≈1 px at 100 m — reporting a range
+    // from that would be reporting a quantisation artefact as a measurement.
+    const bool separation_resolvable =
+        left_visible && right_visible && px_gap >= config.signal.separation_min_px;
+
+    // Advance the acquisition machines. `signal_present` is GEOMETRIC visibility
+    // only — FR-033a asserts the detection envelope rather than deriving it, so
+    // SNR shapes quality within the envelope and never cuts visibility short.
+    const gp_scalar cdma =
+        shares_element ? config.signal.cdma_penalty_db : static_cast<gp_scalar>(0);
+
+    auto refine = [&](BeaconObservation& obs, AcquisitionState& acq, bool visible) {
+        const gp_scalar snr_db =
+            visible ? static_cast<gp_scalar>(obs.raw_margin) - cdma
+                    : static_cast<gp_scalar>(-999);
+        const gp_scalar signal_q =
+            visible ? qFromSnrDb(snr_db, config.signal) : static_cast<gp_scalar>(0);
+
+        advanceAcquisition(acq, visible, signal_q, config.control_interval_ms,
+                           config.acquisition);
+
+        // FR-017d — identity uncertainty inflates quality. Two sources:
+        //   (a) pre-decode, i.e. any state short of TRACKING. The blob centroid
+        //       exists before the code resolves which beacon it is, and tilt
+        //       SIGN rides on that identity while separation does not — a
+        //       swapped pair flips tilt 180°, and tilt drives the roll command.
+        //   (b) a shared detector element, where there is one blob and no way to
+        //       assign two identities to two distinct positions.
+        // Quality is the interface's ONLY confidence channel (the vector is
+        // fixed at 58), so this is where it has to land.
+        const bool identity_uncertain =
+            (acq.state != LockState::TRACKING) || shares_element;
+
+        obs.cep = static_cast<float>(  // raw-ok: gp_scalar→NN-byte-format boundary
+            qualityFromAcquisition(acq, identity_uncertain, config.acquisition));
+        obs.raw_cep_int8 = quantize_cep(obs.cep);
+        obs.raw_margin = static_cast<float>(snr_db);  // raw-ok: gp_scalar→cereal byte-format boundary
+        obs.lock_state = static_cast<int8_t>(acq.state);
+
+        // A beacon whose quality came back sentinel reports no bearing at all —
+        // keep the sentinel form whole rather than leaving a live bearing beside
+        // a dead quality value.
+        if (obs.cep >= kCepSentinelThreshold) {
+            obs.bearing_x_rad = 0.0f;
+            obs.bearing_y_rad = 0.0f;
+            obs.raw_px_x = kPixelSentinel;
+            obs.raw_px_y = kPixelSentinel;
+        }
+    };
+
+    refine(left, carry.left, left_visible);
+    refine(right, carry.right, right_visible);
 
     PerceptionTickResult out;
     out.left = left;
@@ -59,7 +142,11 @@ PerceptionTickResult projectPerceptionTick(const AircraftState& chase,
     const bool cep_gated =
         left.cep >= cep_gate ||
         right.cep >= cep_gate;
-    if (cep_gated) {
+    // 040 T063 (FR-033) — and the resolving limit. Below it the pair is one
+    // blob, or close enough that the ±0.5 px quantisation swamps the gap, so
+    // separation-derived range is UNAVAILABLE rather than merely imprecise.
+    // Neither quantity may be reported as usable outside its own envelope.
+    if (cep_gated || !separation_resolvable) {
         out.record.span = 0.0f;
     } else {
         out.record.span = static_cast<float>(  // raw-ok: NN-byte-format slot write
@@ -83,13 +170,18 @@ void advanceSituationalAwareness(const TrackerHistoryWindow& history,
 }
 
 void resetPerceptionState(TrackerObservationRing& ring,
-                          SituationalAwarenessState& sa) {
+                          SituationalAwarenessState& sa,
+                          PerceptionCarryState& carry) {
     ring.reset();
     // FR-020a: un-reset blind-tick / exit-bearing state leaks across scenarios
-    // and breaks the bitwise gate. The 040 acquisition state machine's reset
-    // belongs here too, so both execution paths inherit it without either
-    // being edited.
+    // and breaks the bitwise gate.
     sa.reset();
+    // 040 T064 — and the acquisition machines, which have identical exposure:
+    // a leaked coast window would let a fresh scenario acquire WARM off the
+    // previous scenario's lock, which is both wrong and non-reproducible.
+    // Landing it here is what makes both execution paths inherit it without
+    // either being edited.
+    carry.reset();
 }
 
 }  // namespace autoc::eval

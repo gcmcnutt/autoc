@@ -33,6 +33,7 @@
 #include "autoc/eval/derived_features.h"  // 032 — compute_pair_span / compute_tilt
 #include "autoc/eval/scenario_stepper.h"
 #include "autoc/eval/source_trajectory.h"
+#include "autoc/eval/tracker_tick_rule.h"  // 040 — PerceptionCarryState, TickRuleConfig
 #include "autoc/nn/evaluator.h"          // NNControllerBackend, TrackerHistoryWindow
 #include "autoc/rpc/protocol.h"          // CrashReason, ScenarioMetadata, CameraViewSample, CopiedTargetSample
 #include "autoc/types.h"
@@ -109,6 +110,12 @@ private:
     // the ring at the kNNHistoryLagsMsec offsets each tick.
     TrackerObservationRing obs_ring_;
     TrackerHistoryWindow history_;
+
+    // 040 T064 (FR-020a) — per-beacon acquisition state, carried across ticks
+    // within a scenario and reset through resetPerceptionState() at every
+    // scenario boundary. Mirrors CrrcsimTrackerHelper exactly; the two must
+    // reset identically or the test-only reference certifies wrong behaviour.
+    PerceptionCarryState perception_carry_;
 
     // 038 P0-D FR-P0H (A) — situational-awareness state (time_since_seen +
     // held exit-bearing). Reset in initScenario, advanced each stepOnce from

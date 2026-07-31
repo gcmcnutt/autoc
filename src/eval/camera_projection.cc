@@ -9,6 +9,7 @@
 
 #include "autoc/eval/camera_projection.h"
 
+#include "autoc/eval/acquisition_state.h"
 #include "autoc/eval/airframe_occlusion.h"
 
 #include <algorithm>
@@ -33,6 +34,8 @@ inline BeaconObservation sentinelObservation() {
     obs.raw_px_x = kPixelSentinel;
     obs.raw_px_y = kPixelSentinel;
     obs.raw_cep_int8 = INT8_MIN;
+    obs.raw_margin = -999.0f;  // raw-ok: cereal byte-format member. no signal ⇒ no SNR
+    obs.lock_state = static_cast<int8_t>(LockState::SEARCHING);
     return obs;
 }
 
@@ -106,27 +109,35 @@ BeaconObservation projectBeacon(const ProjectionInput& input) {
         return sentinelObservation();
     }
 
-    // Step 4b — emission cone. Vector from beacon to chase position must
-    // fall within the beacon's emission half-angle of the emission axis.
-    {
-        const gp_vec3 emission_axis_world =
-            input.target_orientation_world * input.beacon_emission_axis_target_body;
-        const gp_vec3 from_beacon_to_chase =
-            input.chase_position_world - beacon_world;
-        const gp_scalar to_chase_norm = from_beacon_to_chase.norm();
-        const gp_scalar emission_axis_norm = emission_axis_world.norm();
-        constexpr gp_scalar kNormEps = static_cast<gp_scalar>(1e-9);
-        if (to_chase_norm > kNormEps && emission_axis_norm > kNormEps) {
-            const gp_scalar cos_angle =
-                emission_axis_world.dot(from_beacon_to_chase) /
-                (emission_axis_norm * to_chase_norm);
-            const gp_scalar cos_half_cone =
-                std::cos(input.beacon.emission_cone_deg *
-                         (kPi / static_cast<gp_scalar>(360)));
-            if (cos_angle < cos_half_cone) {
-                return sentinelObservation();
-            }
-        }
+    // Step 4b — emission (FR-019). The hard 270° cone is GONE: it modelled a
+    // single outboard emitter with a cliff edge, when the enclosure is a cube
+    // minus its base emitting on five faces with a flat-top-and-shoulders
+    // pattern on each. The replacement is a continuous gain, and the only thing
+    // that gates is genuine darkness — no face still illuminating this
+    // direction, which for the shipped profile means past ~105° from every one
+    // of the five axes. That is physics, not an arbitrary cone.
+    //
+    // The aspect must be taken in the TARGET body frame, since that is where the
+    // enclosure's faces are fixed.
+    const gp_vec3 to_chase_target_body =
+        input.target_orientation_world.inverse() *
+        (input.chase_position_world - beacon_world);
+    const gp_scalar range_m = to_chase_target_body.norm();
+    const gp_scalar emission_gain = emissionGain(
+        to_chase_target_body, input.beacon_emission_axis_target_body, input.signal);
+    if (emission_gain <= static_cast<gp_scalar>(0)) {
+        return sentinelObservation();
+    }
+
+    // Step 4b2 — the DETECTION envelope (FR-033a). ASSERTED, not emergent: the
+    // sensor is taken as good to the configured range, and the link budget
+    // shapes quality WITHIN it rather than cutting visibility short. The budget
+    // is not calibrated well enough to be trusted as a *limit* — the degradation
+    // modes that would set a real one (sun angle, glint, dust, ambient level,
+    // sensor variation) are deliberately out of scope — but it is good enough to
+    // shape a *gradient*.
+    if (range_m > input.signal.detection_range_m) {
+        return sentinelObservation();
     }
 
     // Step 4c — airframe obstruction (040 T014). Opaque primitives (wing
@@ -188,17 +199,24 @@ BeaconObservation projectBeacon(const ProjectionInput& input) {
     const gp_scalar q_bearing_x = pixelToBearing(px_x, input.camera.pixels_h, rad_per_px);
     const gp_scalar q_bearing_y = pixelToBearing(px_y, input.camera.pixels_v, rad_per_px);
 
-    // Step 6 — CEP (R6 v1 linear placeholder). Edge factor grows from 0 at the
-    // frame centre to 1 at the frame edge; the 0.3 coefficient matches the
-    // data-model.md §4 suggested edge baseline. Expressed as a fraction of the
-    // per-axis half-field so the retired ±1 NDC semantics are preserved
-    // exactly — this term is a geometric stand-in and US4 (FR-014) replaces it
-    // wholesale with a signal-derived quality, so it is deliberately NOT
-    // improved here.
-    const gp_scalar edge_factor = std::max(std::abs(q_bearing_x) / half_h,
-                                           std::abs(q_bearing_y) / half_v);
+    // Step 6 — QUALITY (FR-014). The position-only placeholder is gone. It was
+    // `0.3 × max(|x|, |y|)` — purely where the beacon sat in frame, so a beacon
+    // at 5 m and one at 500 m on the same pixel were indistinguishable. Quality
+    // is now derived from the link budget: range, emission aspect and
+    // obstruction attenuation all reach it.
+    //
+    // THE VALUE WRITTEN HERE IS SIGNAL-ONLY — what a permanently-locked receiver
+    // would report. It is the correct standalone answer for a caller holding no
+    // carried state (which is what the geometry tests are), but the production
+    // path refines it: `projectPerceptionTick` applies the shared-detector
+    // penalty, which needs BOTH beacons, and then the acquisition state machine,
+    // which needs history. Neither is knowable from one beacon on one tick.
+    const SignalResult signal = computeSignal(range_m, emission_gain,
+                                              obstruction.attenuation,
+                                              /*shares_detector_element=*/false,
+                                              input.signal);
     const gp_scalar cep_raw = std::clamp(
-        edge_factor * static_cast<gp_scalar>(0.3),
+        static_cast<gp_scalar>(1) - signal.q / static_cast<gp_scalar>(9),
         static_cast<gp_scalar>(0),
         static_cast<gp_scalar>(1));
 
@@ -209,6 +227,8 @@ BeaconObservation projectBeacon(const ProjectionInput& input) {
     obs.bearing_y_rad = static_cast<float>(q_bearing_y);          // raw-ok: gp_scalar→NN-byte-format boundary
     obs.raw_cep_int8 = quantize_cep(static_cast<float>(cep_raw)); // raw-ok: gp_scalar→NN-byte-format boundary
     obs.cep = dequantize_cep(obs.raw_cep_int8);
+    obs.raw_margin = static_cast<float>(signal.snr_db);           // raw-ok: gp_scalar→cereal byte-format boundary
+    obs.lock_state = static_cast<int8_t>(LockState::TRACKING);
     return obs;
 }
 

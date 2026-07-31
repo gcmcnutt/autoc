@@ -271,6 +271,46 @@ struct AutocConfig {
     // matches kCepSentinelThreshold (1.25) from camera_projection.h.
     double cepGateThreshold = 1.25;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to float at the eval-pipeline consumption boundary
 
+    // === 040 US4 — SIGNAL BUDGET + ACQUISITION (FR-014..FR-020a) =========
+    //
+    // Every value here is a physical quantity, so every one is exposed rather
+    // than baked: FR-036's calibration rehearsal (T092) requires substituting a
+    // plausible alternative for each ASSUMED value and confirming NO structural
+    // change is needed. A value that lives only in a C++ factory cannot be
+    // rehearsed. Defaults mirror hb1SignalConfig() / hb1AcquisitionConfig() so
+    // the two cannot drift, and contract_tracker_config_tests asserts every key
+    // is present in all three tracker inis so a default can never silently
+    // stand in for a missing key.
+    //
+    // PRINCIPLE VI (T065): every `double` in this block is `// raw-ok:` as a
+    // BLOCK, on the `cepGateThreshold` precedent above — these are ini-loaded
+    // config-struct fields, inih::GetReal returns double, and each is cast to
+    // gp_scalar at the WorkerInit boundary in src/autoc.cc. The matching
+    // AUTOC_CONFIG_FIELDS entries carry `double` for the same reason and must
+    // agree with the field type or the X-macro will not compile.
+    //
+    // Classification per FR-035 — M measured, D derived, A assumed:
+    double signalFluxConstant = 0.27;        // M/D  µA·m² PER EMITTER: 031 bench 1.35 (five co-aimed) ÷ 5 faces
+    double signalOpticsGain = 1.0;           // A    collection optics, none fitted yet
+    double signalAmbientFloor = 2.16e-5;     // A    µA — varied per scenario in US6
+    double signalNoiseFloor = 0.54e-5;       // A    µA — fixed sensor term
+    double signalCdmaPenaltyDb = 3.0;        // M    031 §4, ≈ one SNR tier
+    double signalQFloorDb = 0.0;             // M    031 decode floor
+    double signalQSaturationDb = 20.0;       // A    where the AGC-normalised metric tops out
+    double beaconEmissionFlatDeg = 45.0;     // M    Lumileds DS190 flat region
+    double beaconEmissionHalfPowerDeg = 75.0;// M    Lumileds DS190 half-power angle
+    double cameraDetectionRangeM = 100.0;    // A    ASSERTED envelope (FR-033a), not emergent
+    double separationMinResolvablePx = 5.0;  // A    below this, range from separation is a quantisation artefact
+    double sharedElementPx = 1.5;            // M    031 single-detector rig is exactly this case
+
+    double acquisitionCodeWordMs = 154.0;    // M    N=31 @ 200 Hz chips — the WARM budget
+    double acquisitionColdMs = 308.0;        // M    rate stale, needs MINLOCK
+    double acquisitionHoldMaxMs = 308.0;     // M    HOLDMAX = 2 bad periods
+    double acquisitionCoastWindowMs = 10000.0; // M  COASTMAX=65 — the parameter sim difficulty actually hinges on
+    double qualityConfidentCep = 0.02;       // D    cep at q = 9
+    double qualityTentativeCep = 1.0;        // D    cep at q = 0
+    double qualityIdentityUncertainCep = 0.75; // A  FR-017d floor for unresolved identity
+
     // --- 040 airframe obstruction (FR-007/008/009, FR-034) ---
     // Chase self-occlusion geometry, METRES in body frame.
     // DATUM: propeller axle / back of prop is station 0 = (0,0,0). Axes per
@@ -408,6 +448,25 @@ struct AutocConfig {
     X(double,         cepGateThreshold,          "CepGateThreshold") \
     /* 040 T015 — airframe obstruction, METRES in body frame. Datum: prop \
        axle = (0,0,0); +x fwd, +y right, +z down; stations aft = -x. */ \
+    X(double,         signalFluxConstant,        "SignalFluxConstant") \
+    X(double,         signalOpticsGain,          "SignalOpticsGain") \
+    X(double,         signalAmbientFloor,        "SignalAmbientFloor") \
+    X(double,         signalNoiseFloor,          "SignalNoiseFloor") \
+    X(double,         signalCdmaPenaltyDb,       "SignalCdmaPenaltyDb") \
+    X(double,         signalQFloorDb,            "SignalQFloorDb") \
+    X(double,         signalQSaturationDb,       "SignalQSaturationDb") \
+    X(double,         beaconEmissionFlatDeg,     "BeaconEmissionFlatDeg") \
+    X(double,         beaconEmissionHalfPowerDeg,"BeaconEmissionHalfPowerDeg") \
+    X(double,         cameraDetectionRangeM,     "CameraDetectionRangeM") \
+    X(double,         separationMinResolvablePx, "SeparationMinResolvablePx") \
+    X(double,         sharedElementPx,           "SharedElementPx") \
+    X(double,         acquisitionCodeWordMs,     "AcquisitionCodeWordMs") \
+    X(double,         acquisitionColdMs,         "AcquisitionColdMs") \
+    X(double,         acquisitionHoldMaxMs,      "AcquisitionHoldMaxMs") \
+    X(double,         acquisitionCoastWindowMs,  "AcquisitionCoastWindowMs") \
+    X(double,         qualityConfidentCep,       "QualityConfidentCep") \
+    X(double,         qualityTentativeCep,       "QualityTentativeCep") \
+    X(double,         qualityIdentityUncertainCep,"QualityIdentityUncertainCep") \
     X(int,            airframeObstructionEnabled,"AirframeObstructionEnabled") \
     X(double,         airframeWingMinX,          "AirframeWingMinX") \
     X(double,         airframeWingMinY,          "AirframeWingMinY") \

@@ -1020,6 +1020,32 @@ static WorkerInit buildWorkerInit() {
     init.trailDistance = static_cast<gp_scalar>(cfg.trailDistance);
     init.cepGateThreshold = static_cast<gp_scalar>(cfg.cepGateThreshold);
 
+    // 040 US4 — link budget + acquisition machine (FR-014..FR-020a). Populated
+    // field-by-field from the ini rather than from hb1SignalConfig(), so the
+    // shipped values are the ini's and the factory stays a documentation of the
+    // defaults rather than a second, silently-authoritative copy.
+    init.signalConfig.flux_constant = static_cast<gp_scalar>(cfg.signalFluxConstant);
+    init.signalConfig.optics_gain = static_cast<gp_scalar>(cfg.signalOpticsGain);
+    init.signalConfig.emission_flat_deg = static_cast<gp_scalar>(cfg.beaconEmissionFlatDeg);
+    init.signalConfig.emission_half_power_deg = static_cast<gp_scalar>(cfg.beaconEmissionHalfPowerDeg);
+    init.signalConfig.ambient_floor = static_cast<gp_scalar>(cfg.signalAmbientFloor);
+    init.signalConfig.noise_floor = static_cast<gp_scalar>(cfg.signalNoiseFloor);
+    init.signalConfig.cdma_penalty_db = static_cast<gp_scalar>(cfg.signalCdmaPenaltyDb);
+    init.signalConfig.q_floor_db = static_cast<gp_scalar>(cfg.signalQFloorDb);
+    init.signalConfig.q_saturation_db = static_cast<gp_scalar>(cfg.signalQSaturationDb);
+    init.signalConfig.detection_range_m = static_cast<gp_scalar>(cfg.cameraDetectionRangeM);
+    init.signalConfig.separation_min_px = static_cast<gp_scalar>(cfg.separationMinResolvablePx);
+    init.signalConfig.shared_element_px = static_cast<gp_scalar>(cfg.sharedElementPx);
+
+    init.acquisitionConfig.code_word_ms = static_cast<gp_scalar>(cfg.acquisitionCodeWordMs);
+    init.acquisitionConfig.cold_acquire_ms = static_cast<gp_scalar>(cfg.acquisitionColdMs);
+    init.acquisitionConfig.hold_max_ms = static_cast<gp_scalar>(cfg.acquisitionHoldMaxMs);
+    init.acquisitionConfig.coast_window_ms = static_cast<gp_scalar>(cfg.acquisitionCoastWindowMs);
+    init.acquisitionConfig.confident_cep = static_cast<gp_scalar>(cfg.qualityConfidentCep);
+    init.acquisitionConfig.tentative_cep = static_cast<gp_scalar>(cfg.qualityTentativeCep);
+    init.acquisitionConfig.identity_uncertain_cep =
+        static_cast<gp_scalar>(cfg.qualityIdentityUncertainCep);
+
     return init;
 }
 

@@ -101,6 +101,8 @@ add_library(autoc_common STATIC
     src/eval/crash_hull.cc
     src/eval/airframe_occlusion.cc
     src/eval/tracker_tick_rule.cc
+    src/eval/signal_model.cc
+    src/eval/acquisition_state.cc
     src/eval/tracker_stepper.cc
     src/nn/evaluator.cc
     src/nn/serialization.cc
@@ -179,6 +181,12 @@ if(ENABLE_AUTOC_TESTS)
 
   add_executable(beacon_projection_tests tests/beacon_projection_tests.cc)
   target_link_libraries(beacon_projection_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(signal_model_tests tests/signal_model_tests.cc)
+  target_link_libraries(signal_model_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(acquisition_state_tests tests/acquisition_state_tests.cc)
+  target_link_libraries(acquisition_state_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(contract_tracker_config_tests tests/contract_tracker_config_tests.cc)
   target_link_libraries(contract_tracker_config_tests GTest::gtest GTest::gtest_main autoc_common)
@@ -286,6 +294,8 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME source_dmp_loading_tests COMMAND source_dmp_loading_tests)
   add_test(NAME source_dmp_s3_integration_tests COMMAND source_dmp_s3_integration_tests)
   add_test(NAME beacon_projection_tests COMMAND beacon_projection_tests)
+  add_test(NAME signal_model_tests COMMAND signal_model_tests)
+  add_test(NAME acquisition_state_tests COMMAND acquisition_state_tests)
   add_test(NAME contract_tracker_config_tests COMMAND contract_tracker_config_tests)
   add_test(NAME gather_tracker_inputs_tests COMMAND gather_tracker_inputs_tests)
   add_test(NAME situational_inputs_tests COMMAND situational_inputs_tests)
@@ -319,6 +329,8 @@ if(ENABLE_AUTOC_TESTS)
             cereal_version_anchor_tests nn_sensor_interface_tests
             source_dmp_loading_tests source_dmp_s3_integration_tests
             beacon_projection_tests
+            signal_model_tests
+            acquisition_state_tests
             contract_tracker_config_tests
             gather_tracker_inputs_tests
             situational_inputs_tests
@@ -363,6 +375,8 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND source_dmp_loading_tests --gtest_brief=1
     COMMAND source_dmp_s3_integration_tests --gtest_brief=1
     COMMAND beacon_projection_tests --gtest_brief=1
+    COMMAND signal_model_tests --gtest_brief=1
+    COMMAND acquisition_state_tests --gtest_brief=1
     COMMAND contract_tracker_config_tests --gtest_brief=1
     COMMAND gather_tracker_inputs_tests --gtest_brief=1
     COMMAND situational_inputs_tests --gtest_brief=1
