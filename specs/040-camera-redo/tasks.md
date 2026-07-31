@@ -355,7 +355,9 @@ the aggregate delta against the prior baseline.
 
 ### Pre-run gates
 
-- [ ] T081 [US5] Run `bash scripts/rebuild-perf.sh` and the full test suite — mandatory pre-run gate, perception changes are determinism-affecting (Principle IX)
+- [x] T081 [US5] ✅ **PASSED 2026-07-30** — clean `scripts/rebuild-perf.sh` (optimized, single-threaded for FP determinism), log `logs/040-t1-prerun-gate.log`, exit 0. **41/41 suites, 398 tests, 0 fail**; crrcsim links clean against the new `signal_model` / `acquisition_state` objects. The one `error` string is the benign `ConfigManager not initialized` fail-loud path test T001 documented. Test count 339 (T001 baseline) → 398.
+
+  ⚠️ **A defect in the GATE ITSELF was found and fixed while verifying it** (`ea5fb63`): `nn_telemetry_tests` was a `DEPENDS` of `run_autoc_tests` (so it compiled) and an `add_test` (so `ctest` ran it) but was **missing from the custom target's `COMMAND` chain**. Since `rebuild-perf.sh` is just `cmake && make`, the mandatory pre-run gate had been **building that suite and never executing it** — 40 of 41. Pre-existing, unrelated to 040; `add_test` names and `COMMAND` entries now match exactly at 41, so **this is the first gate run that actually ran everything**
 - [ ] T082 [US5] **THROUGHPUT BENCHMARK**: measure total evaluation throughput against the T002 prior-M2 baseline; confirm ≤10% regression (FR-037/038, SC-013). A breach escalates to an explicit accept-or-optimise decision, not silent absorption
 
 ### Run and evaluate
