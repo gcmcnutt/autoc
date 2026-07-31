@@ -993,7 +993,6 @@ static WorkerInit buildWorkerInit() {
                 static_cast<gp_scalar>(cfg.cameraMountOffsetZ));
 
     init.beaconLeftConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconLeftWavelengthNm);
-    init.beaconLeftConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
     init.beaconLeftConfig.mount_body =
         gp_vec3(static_cast<gp_scalar>(cfg.beaconLeftMountX),
                 static_cast<gp_scalar>(cfg.beaconLeftMountY),
@@ -1001,7 +1000,6 @@ static WorkerInit buildWorkerInit() {
     init.beaconLeftConfig.emission_axis_body = gp_vec3(0.0f, -1.0f, 0.0f);
 
     init.beaconRightConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconRightWavelengthNm);
-    init.beaconRightConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
     init.beaconRightConfig.mount_body =
         gp_vec3(static_cast<gp_scalar>(cfg.beaconRightMountX),
                 static_cast<gp_scalar>(cfg.beaconRightMountY),

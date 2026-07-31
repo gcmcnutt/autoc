@@ -253,7 +253,6 @@ struct AutocConfig {
     // --- Beacon config (FR-004) ---
     int beaconLeftWavelengthNm = 850;
     int beaconRightWavelengthNm = 940;
-    double beaconEmissionConeDeg = 270.0;
     double beaconLeftMountX = 0.0;
     double beaconLeftMountY = -0.45;        // left wingtip (body -y)
     double beaconLeftMountZ = 0.0;
@@ -438,7 +437,6 @@ struct AutocConfig {
     X(double,         cameraMountOffsetZ,        "CameraMountOffsetZ") \
     X(int,            beaconLeftWavelengthNm,    "BeaconLeftWavelengthNm") \
     X(int,            beaconRightWavelengthNm,   "BeaconRightWavelengthNm") \
-    X(double,         beaconEmissionConeDeg,     "BeaconEmissionConeDeg") \
     X(double,         beaconLeftMountX,          "BeaconLeftMountX") \
     X(double,         beaconLeftMountY,          "BeaconLeftMountY") \
     X(double,         beaconLeftMountZ,          "BeaconLeftMountZ") \

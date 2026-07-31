@@ -146,7 +146,6 @@ TEST(TrackerConfig, BeaconConfigParses) {
     std::string ini =
         "BeaconLeftWavelengthNm = 850\n"
         "BeaconRightWavelengthNm = 940\n"
-        "BeaconEmissionConeDeg = 270.0\n"
         "BeaconLeftMountY = -0.386\n"
         "BeaconRightMountY = 0.386\n";
     std::string path = writeTempIni("beacon.ini", ini);
@@ -154,7 +153,6 @@ TEST(TrackerConfig, BeaconConfigParses) {
     ASSERT_EQ(reader.ParseError(), 0);
     EXPECT_EQ(reader.GetInteger("", "BeaconLeftWavelengthNm", 0), 850);
     EXPECT_EQ(reader.GetInteger("", "BeaconRightWavelengthNm", 0), 940);
-    EXPECT_DOUBLE_EQ(reader.GetReal("", "BeaconEmissionConeDeg", 0.0), 270.0);
     // 040 T030 (FR-004) — the measured 0.772 m separation, ±0.386 per tip.
     EXPECT_DOUBLE_EQ(reader.GetReal("", "BeaconLeftMountY", 0.0), -0.386);
     EXPECT_DOUBLE_EQ(reader.GetReal("", "BeaconRightMountY", 0.0), 0.386);

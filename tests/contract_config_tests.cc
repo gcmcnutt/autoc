@@ -228,8 +228,10 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // anchors). All nineteen are exposed rather than baked BECAUSE FR-036's
     // calibration rehearsal requires substituting an alternative for each
     // ASSUMED value with no structural change — a baked value cannot be
-    // rehearsed.
-    EXPECT_EQ(n, 134u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // rehearsed. T058 then DELETED BeaconEmissionConeDeg -- the hard 270 deg
+    // cutoff the flat-top emission profile replaced, which after FR-019 had no
+    // reader left and was a live-looking knob that changed nothing -> 133.
+    EXPECT_EQ(n, 133u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

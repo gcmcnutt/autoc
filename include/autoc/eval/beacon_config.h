@@ -33,9 +33,16 @@ namespace autoc::eval {
 constexpr gp_scalar kBeaconSeparationM = static_cast<gp_scalar>(0.772);
 constexpr gp_scalar kBeaconMountY = kBeaconSeparationM / static_cast<gp_scalar>(2);  // 0.386
 
+// 040 T058 — `emission_cone_deg` DELETED (Constitution III, no shim). It was a
+// hard 270° angular cutoff: inside the cone the beacon was fully visible,
+// outside it was invisible, with nothing in between. FR-019 replaced it with a
+// continuous flat-top-with-shoulders profile per emitter face
+// (`emissionProfile` in signal_model.h), which is what the datasheet actually
+// describes and which the five-face enclosure sums over. Once the profile
+// landed nothing read this field, so it was a knob that looked live in three
+// inis and changed nothing.
 struct BeaconConfig {
     uint16_t wavelength_nm = 850;          // distinct per-beacon (e.g. 850 vs 940)
-    gp_scalar emission_cone_deg = 270.0f;  // FULL angular extent (half-angle = 135°)
 
     // Mount in target body frame, at the wingtips: ±kBeaconMountY on body Y.
     gp_vec3 mount_body{0.0f, -kBeaconMountY, 0.0f};
@@ -48,7 +55,7 @@ struct BeaconConfig {
     // 030 M6e — cereal serialize for EvalData wire-protocol carry.
     template <class Archive>
     void serialize(Archive& ar) {
-        ar(wavelength_nm, emission_cone_deg, mount_body, emission_axis_body);
+        ar(wavelength_nm, mount_body, emission_axis_body);
     }
 };
 
