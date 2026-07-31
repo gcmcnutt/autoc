@@ -246,7 +246,7 @@ monotonically per the measured bench relationship; interrupt the signal and conf
 > [hidden-state scrubbing](../BACKLOG.md) problem only bites a renderer that re-runs the NN, which this
 > one does not.
 
-- [ ] T065a [P] Playback transport in `tools/renderer.h` (`CustomInteractorStyle::OnChar`) + `tools/renderer.cc` — a manual tick cursor replacing wall-clock-only playback, on the agreed bindings:
+- [x] T065a [P] ✅ **DONE 2026-07-30** — transport in `tools/renderer.h` (`CustomInteractorStyle::OnChar`) + `tools/renderer.cc` — a manual tick cursor replacing wall-clock-only playback, on the agreed bindings:
 
   | key | action |
   |---|---|
@@ -261,8 +261,8 @@ monotonically per the measured bench relationship; interrupt the signal and conf
   behaviour. **Event-jump earns its place**: stepping 900 ticks to hunt a dropout is worse than not
   having the feature.
 
-- [ ] T065b [P] Tick counter + elapsed-time readout alongside the transport — stepping without one is stepping blind
-- [ ] T065c [P] **Unpark** the three superseded backlog entries (*Renderer Playback Enhancements*, *Renderer scrub controls*, *Renderer scrubbing with hidden state*) to point at T065a rather than describing the work a fourth time (Principle X)
+- [x] T065b [P] ✅ **DONE 2026-07-30** — tick index + `||` pause marker on the stopwatch readout. Tick length is **derived from consecutive recorded timestamps**, not assumed, so one step is always exactly one recorded sample however the run was configured — and the displayed index is countable against the model's own units (warm relock 3, cold 6, HOLDMAX 6)
+- [x] T065c [P] ✅ **DONE 2026-07-30** — all three updated. *Renderer Playback Enhancements* and *Renderer scrub controls* closed against T065a; *Renderer scrubbing with hidden state* **narrowed rather than closed**, because the genuinely hard case it was about — scrubbing a view that RE-RUNS the network, where RNN hidden state cannot be rewound — is untouched by this work. Was: unpark the three superseded backlog entries (*Renderer Playback Enhancements*, *Renderer scrub controls*, *Renderer scrubbing with hidden state*) to point at T065a rather than describing the work a fourth time (Principle X)
 
 ### Perception rendering — the parallax layer (extends T088)
 
@@ -282,15 +282,15 @@ monotonically per the measured bench relationship; interrupt the signal and conf
 > **You cannot close your way out of it.** Anyone reading the FPV and aiming at image centre mis-aims by a
 > quarter wingspan, always. This is arguably safety-relevant display scope, and it is not in the spec today.
 
-- [ ] T065d [P] Rings in `updateCameraPOVMiniPanel` — boresight cross at image centre (thin, neutral: that is the camera axis), the **thrust-axis locus** as a short track from ≈(−0.065, +0.008) NDC at 3 m to (0,0) at infinity, and **range rings centred on that locus, not on image centre**, diameter = expected beacon separation, labelled 3 / 10 / 25 / 100 m. Match the observed pair to a ring ⇒ read range; pair vs ring centre ⇒ read aiming error; the rings' migration off-centre ⇒ the parallax made visible. At 100 m the ring is ~1.2 px across, which is itself an honest statement about the resolution floor
-- [ ] T065e [P] A **vertical member** through the aim point at the same angular scale as the rings. Beacon separation is a roughly *horizontal* measurement and says nothing about vertical displacement; for a tail chase closing on a streamer, up/down is the axis the display is least instrumented on
-- [ ] T065f [P] Quality rendering beyond radius — **Gaussian falloff, not a hard disc** (a hard edge implies a bound; CEP is a distribution, so σ ∝ CEP on an alpha-gradient sprite), **alpha = confidence** so bad data visually recedes, and **colour = lock state**: confident saturated/sharp · tentative amber/soft · **HOLD a hollow dashed ring at last-known, fading across the hold window** · searching absent. HOLD is the one worth building — you watch it hold, then either snap back solid (warm, ~3 ticks) or expire (~6 ticks) and vanish, which *is* the checkpoint question
-- [ ] T065g [P] A small `q` bar (0–9, GOOD ≥ 5 marked) per blob. It is the **hardware's own metric**, so a bench capture and a sim playback can be put side by side and compared on the same number
+- [x] T065d [P] ✅ **DONE 2026-07-30** — rings in `updateCameraPOVMiniPanel` — boresight cross at image centre (thin, neutral: that is the camera axis), the **thrust-axis locus** as a short track from ≈(−0.065, +0.008) NDC at 3 m to (0,0) at infinity, and **range rings centred on that locus, not on image centre**, diameter = expected beacon separation, labelled 3 / 10 / 25 / 100 m. Match the observed pair to a ring ⇒ read range; pair vs ring centre ⇒ read aiming error; the rings' migration off-centre ⇒ the parallax made visible. At 100 m the ring is ~1.2 px across, which is itself an honest statement about the resolution floor
+- [x] T065e [P] ✅ **DONE 2026-07-30** — a **vertical member** through the aim point at the same angular scale as the rings. Beacon separation is a roughly *horizontal* measurement and says nothing about vertical displacement; for a tail chase closing on a streamer, up/down is the axis the display is least instrumented on
+- [x] T065f [P] ✅ **DONE 2026-07-30** — quality rendering beyond radius — **Gaussian falloff, not a hard disc** (a hard edge implies a bound; CEP is a distribution, so σ ∝ CEP on an alpha-gradient sprite), **alpha = confidence** so bad data visually recedes, and **colour = lock state**: confident saturated/sharp · tentative amber/soft · **HOLD a hollow dashed ring at last-known, fading across the hold window** · searching absent. HOLD is the one worth building — you watch it hold, then either snap back solid (warm, ~3 ticks) or expire (~6 ticks) and vanish, which *is* the checkpoint question
+- [x] T065g [P] ✅ **DONE 2026-07-30** — a small `q` bar (0–9, GOOD ≥ 5 marked) per blob. It is the **hardware's own metric**, so a bench capture and a sim playback can be put side by side and compared on the same number
 
-> ⚠️ **T065f/T065g depend on `lock_state` + `raw_margin` reaching `CameraViewSample`** — exactly the
-> diagnostic fields T089 (FR-028) adds. That dependency is a decent argument for why those fields earn
-> their place: without them the renderer cannot show the thing you would most want to look at. **Pull T089
-> and T090 forward** to land with T062 rather than waiting for Phase 10.
+> ✅ **Dependency discharged 2026-07-30.** T089/T090 were pulled forward as planned and `lock_state` +
+> `raw_margin` now reach `CameraViewSample`, which is what let T065f draw the HOLD coast at all. The
+> argument held up: without those fields the renderer could not show the one thing the checkpoint asks
+> about.
 
 **Checkpoint**: **playback review.** Does dropout and reacquisition look physical? Is the range-envelope
 crossover where expected? This is where "passes its tests" and "physically plausible" most easily diverge.

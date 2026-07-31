@@ -837,7 +837,12 @@ flip to re-enable) or "investigate before retraining":
   is not regenerated/built/flashed.
 - Triggered by 028's sim gate clearing — same discipline as 027.
 
-### [DEFERRED — post-028] Renderer scrubbing with hidden state
+### [NARROWED 2026-07-30 — post-028] Renderer scrubbing with hidden state
+
+> **Scope note**: 040 T065a shipped scrub over RECORDED playback, where a step
+> back is an index decrement and no hidden state is involved. What remains open
+> here is only the harder case this entry was really about — scrubbing a view
+> that RE-RUNS the network, where RNN hidden state cannot be rewound.
 
 - 027 plan open decision #5: when user scrubs the timeline
   backwards, does the recurrent hidden state get recomputed from
@@ -1674,10 +1679,17 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 ## Visualization
 
 ### [NEXT] Renderer Playback Enhancements — per-tick scrub + streak/multiplier overlay
-- **Per-tick scrub controls**: pause / step-forward-one-tick / step-backward-one-tick.
-  Today the renderer plays a continuous timeline; for diagnostic work you want to
-  freeze on a specific tick and walk one step at a time to see exactly when the NN
-  does what.
+- **Per-tick scrub controls — ✅ CLOSED 2026-07-30 by 040 T065a.** Unparked into 040
+  rather than left deferred, because the US4 checkpoint ("does dropout and
+  reacquisition look physical?") is NOT ANSWERABLE at realtime: warm relock is
+  154 ms (3 ticks) and cold acquire 308 ms (6 ticks), so the behaviour-defining
+  distinction plays out in under a third of a second. Shipped in
+  `tools/renderer.{cc,h}`: `Space` play/pause (rapid-finish moved to `F`),
+  `.`/`,` ±1 tick, `>`/`<` ±10, `Home`/`End`, `[`/`]` jump to previous/next
+  perception event (lock-state transition or hull strike), plus a tick-index +
+  pause readout on the stopwatch. Tick length is DERIVED from consecutive
+  recorded timestamps, not assumed.
+- The streak/multiplier overlay below is still open.
 - **In-streak counter overlay**: per-tick `streakCount` displayed alongside
   the rendered aircraft, so you can see "is this a streak tick? for how long?"
 - **Points multiplier overlay**: per-tick `multiplier` (= 1 + (streakMultMax-1) ·
@@ -1708,11 +1720,14 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 - **Scope**: second VTK renderer (or split-screen overlay) using chase camera pose from `cameraViewList[i][k].camera_pose_world_pos` + orientation as VTK camera; FOV deg → projection matrix; render full scene (target craft + arena + plane). Beacon dots already projected by M5 — render at fullscreen coords matching mini-panel.
 - **Files likely**: `tools/renderer.cc` only. Roughly 150-300 LOC.
 
-### [DEFERRED 2026-05-08] Renderer scrub controls (was 030 T057, rolled-in from earlier 028 entry)
+### [CLOSED 2026-07-30 by 040 T065a] Renderer scrub controls (was 030 T057, rolled-in from earlier 028 entry)
 
-- **Trigger**: when operator needs frame-by-frame inspection — pause / step-forward-one-tick / step-backward-one-tick. Animation already auto-pauses on left-click for camera interaction; full scrub adds tick-by-tick navigation.
-- **Why deferred from 030 v1**: not load-bearing for smoke-test signal-or-not. Current pause-on-click + scrolling through generations covers the typical diagnostic workflow.
-- See also the older "[NEXT] Renderer Playback Enhancements" entry below for scope notes.
+- **Closed**: shipped as the 040 playback transport. The "not load-bearing"
+  judgement was right for 030's smoke test and wrong once US4 put 3-tick and
+  6-tick events on screen — see the entry above for the shipped bindings.
+- The old note that backstep is risky does not apply: playback is RECORDED data,
+  so a step back is an index decrement. The hidden-state problem in the entry
+  below only bites a renderer that re-runs the NN, which this one does not.
 
 ### [DEFERRED 2026-05-08] Renderer streak/multiplier overlay (was 030 T058, rolled-in from earlier 028 entry)
 
