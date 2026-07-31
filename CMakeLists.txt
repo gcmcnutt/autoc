@@ -370,6 +370,12 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND contract_evolution_tests --gtest_brief=1
     COMMAND rpc_transport_tests --gtest_brief=1
     COMMAND msplink_quat_convention_tests --gtest_brief=1
+    # 040 2026-07-30 -- nn_telemetry_tests was a DEPENDS (so it compiled) and an
+    # add_test (so ctest ran it) but was missing from this COMMAND chain, so a
+    # plain `make` -- i.e. scripts/rebuild-perf.sh, the pre-run gate -- built it
+    # and never ran it. Pre-existing; found while verifying the gate really does
+    # run every suite before a training launch.
+    COMMAND nn_telemetry_tests --gtest_brief=1
     COMMAND cereal_version_anchor_tests --gtest_brief=1
     COMMAND nn_sensor_interface_tests --gtest_brief=1
     COMMAND source_dmp_loading_tests --gtest_brief=1
