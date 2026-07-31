@@ -1926,11 +1926,15 @@ int main(int argc, char** argv) {
 
     // Print xiao-specific controls
     std::cout << "\nXiao Flight Mode Controls:" << std::endl;
-    std::cout << "  t/r - Next/previous test span" << std::endl;
-    std::cout << "  a - Show all flight" << std::endl;
-    std::cout << "  SPACE - Playback animation" << std::endl;
-    std::cout << "  f - Focus mode" << std::endl;
-    std::cout << "  q - Quit" << std::endl;
+    std::cout << "  t / r        Next / previous test span" << std::endl;
+    std::cout << "  a            Show all flight" << std::endl;
+    std::cout << "  SPACE        Play / pause  (040 T065a: was start/stop)" << std::endl;
+    std::cout << "  . / ,        Step forward / back one tick" << std::endl;
+    std::cout << "  > / <        Step +/- 10 ticks" << std::endl;
+    std::cout << "  Home / End   Jump to start / end" << std::endl;
+    std::cout << "  F            Rapid-finish" << std::endl;
+    std::cout << "  f            Focus mode" << std::endl;
+    std::cout << "  q            Quit" << std::endl;
 
     // Start the interactor
     renderer.renderWindowInteractor->Start();
@@ -2002,17 +2006,35 @@ int main(int argc, char** argv) {
   renderer.genNumber = extractGenNumber(keyName);
   renderer.updateGenerationDisplay(renderer.genNumber);
   
-  // Print keyboard controls
+  // Print keyboard controls.
+  // 040 T065a — kept in sync with CustomInteractorStyle::OnChar in renderer.h.
+  // NOTE the one displaced binding: SPACE is now PLAY/PAUSE (the conventional
+  // meaning); rapid-finish moved to F.
   std::cout << "\nKeyboard Controls:" << std::endl;
-  std::cout << "  n - Next generation" << std::endl;
-  std::cout << "  p - Previous generation" << std::endl;
-  std::cout << "  N - Jump to newest generation" << std::endl;
-  std::cout << "  P - Jump to oldest generation (generation 1)" << std::endl;
-  std::cout << "  SPACE - Toggle playback animation" << std::endl;
-  std::cout << "  f - Focus camera on current arena" << std::endl;
-  std::cout << "  Arrow keys - Move focus between arenas" << std::endl;
-  std::cout << "  d - Toggle tracker-mode detail overlays "
-               "(FOV pyramid + wingtip beacon trails)" << std::endl;
+  std::cout << "  GENERATION" << std::endl;
+  std::cout << "    n / p        Next / previous generation" << std::endl;
+  std::cout << "    N / P        Newest / oldest generation" << std::endl;
+  std::cout << "  PLAYBACK TRANSPORT" << std::endl;
+  std::cout << "    SPACE        Play / pause  (was start/stop -- see F)" << std::endl;
+  std::cout << "    . / ,        Step forward / back ONE tick" << std::endl;
+  std::cout << "    > / <        Step +/- 10 ticks" << std::endl;
+  std::cout << "    Home / End   Jump to start / end" << std::endl;
+  std::cout << "    ] / [        Jump to next / previous PERCEPTION EVENT" << std::endl;
+  std::cout << "                 (lock-state change: acquire, confirm, dropout," << std::endl;
+  std::cout << "                  relock, coast expiry -- or a hull strike)" << std::endl;
+  std::cout << "    F            Rapid-finish: stop and show the whole scene" << std::endl;
+  std::cout << "  VIEW" << std::endl;
+  std::cout << "    f            Focus camera on current arena" << std::endl;
+  std::cout << "    Arrow keys   Move focus between arenas" << std::endl;
+  std::cout << "    d            Toggle tracker detail overlays" << std::endl;
+  std::cout << "                 (FOV pyramid + wingtip beacon trails)" << std::endl;
+  std::cout << "\n  Stepping is what makes the acquisition model readable: a warm"
+            << std::endl;
+  std::cout << "  relock is 154 ms (3 ticks) and a cold acquire 308 ms (6), so at"
+            << std::endl;
+  std::cout << "  realtime both are just \"it blinked\". The HUD clock shows"
+            << std::endl;
+  std::cout << "  <seconds> t<tick>, with || while paused." << std::endl;
   if (renderer.inXiaoMode && !renderer.testSpans.empty()) {
     std::cout << "  t - Next test segment" << std::endl;
     std::cout << "  r - Previous test segment" << std::endl;

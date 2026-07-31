@@ -837,6 +837,27 @@ flip to re-enable) or "investigate before retraining":
   is not regenerated/built/flashed.
 - Triggered by 028's sim gate clearing — same discipline as 027.
 
+### [SMALL — surfaced 2026-07-30 during 040 t1 launch] `tracker_dmp_inspect` bucket + .zst warts
+
+Two papercuts hit while spot-checking the first gen of an M2 run. Neither is
+load-bearing; both cost a few minutes each time.
+
+1. **Wrong bucket for M2 dmps.** Given a tracker ini it resolves the fetch
+   bucket from `TrackerSourceBucket` (`autoc-m1`, the M1 *source*) rather than
+   `S3Bucket` (`autoc-m2`, where this run's own output lands), so inspecting a
+   run's own gen dmp by S3 key fails with "specified key does not exist" — while
+   the banner confusingly prints `bucket: autoc-m2`. It is reusing the
+   source-dmp loader path. Workaround: `aws s3 cp` locally first.
+2. **A local `.zst` path is not decompressed.** Passing a local `*.dmp.zst`
+   feeds compressed bytes straight to cereal, which reads a garbage vector
+   length and dies with `std::bad_alloc` — and the error text then blames a
+   *version mismatch*, sending you hunting a schema bug that is not there. The
+   S3 path decompresses; the local path does not. Workaround: `zstd -d` first.
+
+**Fix**: honour `S3Bucket` when the key is not the configured source, and sniff
+the zstd magic on local files. The misleading version-mismatch message is
+arguably the worse of the two — it points at the wrong cause.
+
 ### [NARROWED 2026-07-30 — post-028] Renderer scrubbing with hidden state
 
 > **Scope note**: 040 T065a shipped scrub over RECORDED playback, where a step
