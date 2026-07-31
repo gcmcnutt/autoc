@@ -3571,8 +3571,7 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   //
   // Reading it: match the observed pair to a ring -> read RANGE. Pair position
   // versus ring centre -> read AIMING ERROR. The rings' migration off-centre IS
-  // the parallax. At 100 m the ring is ~1.2 px across, which is itself an honest
-  // statement about the resolution floor.
+  // the parallax.
   // =========================================================================
 
   // Camera offset from the thrust axis, metres (body frame: +y right, +z down).
@@ -3623,7 +3622,27 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   // Ring DIAMETER is the beacon pair's angular separation at that range, so a
   // pair that fills a ring is at that ring's range.
   {
-    const scalar kRingRangesM[] = {3.0f, 10.0f, 25.0f, 100.0f};
+    // THREE rings, and the ranges are not arbitrary — each is a threshold that
+    // already means something in this simulation:
+    //
+    //   1.000 m  CrashHullRadius   — inside this you have hit the target
+    //   3.048 m  TrailDistance     — where the trail rabbit sits (10 ft)
+    //  10.000 m  engagement        — representative working range
+    //
+    // Sizing the LARGEST ring to about half the panel's vertical field lands on
+    // ~0.93 m, which is essentially the hull radius — so the operator's display
+    // request and the physics agree, and the outer ring reads as "this is
+    // contact". Ring DIAMETER is the beacon pair's angular separation at that
+    // range, so a pair that fills a ring is at that ring's range:
+    //
+    //   1.000 m → 42.2° diameter ≈ 47% of the 90° vertical field
+    //   3.048 m → 14.5°
+    //  10.000 m →  4.4°
+    //
+    // The retired set (3/10/25/100 m) put the outermost ring at ~1.2 px across,
+    // which was an honest statement about the resolution floor but unreadable
+    // as a reticle.
+    const scalar kRingRangesM[] = {1.0f, 3.048f, 10.0f};
     constexpr int kRingSegments = 48;
     for (scalar d : kRingRangesM) {
       scalar cx_rad, cy_rad;
@@ -3957,11 +3976,11 @@ void Renderer::updateStopwatch(gp_scalar currentTime) {
                                ? tickSec
                                : static_cast<gp_scalar>(0.05f);
   const int tickIdx = static_cast<int>(currentTime / tick_s + static_cast<gp_scalar>(0.5f));
-  if (transportPaused) {
-    snprintf(timeStr, sizeof(timeStr), "%.2f\nt%d\n||", currentTime, tickIdx);
-  } else {
-    snprintf(timeStr, sizeof(timeStr), "%.2f\nt%d", currentTime, tickIdx);
-  }
+  // NO pause marker here. A third line pushed the time and tick up by a line
+  // every time you paused, so the two numbers you are actually reading moved
+  // on screen at the exact moment you stopped to read them. Pause is already
+  // evident from the clock not advancing, and the console announces it.
+  snprintf(timeStr, sizeof(timeStr), "%.2f\nt%d", currentTime, tickIdx);
   stopwatchTimeActor->SetInput(timeStr);
   // centerX, not centerX-12: the -12 was hand-nudging a left-justified string
   // and fights the centred justification once the text is more than one line.
