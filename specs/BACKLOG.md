@@ -294,6 +294,33 @@ posed — structurally cannot provide useful signal.**
   the t8/t9 config) for these weak-signal experiments — a STATIONARY objective + bit determinism is what
   lets a third-order selection signal accumulate over hundreds of gens instead of being washed by a
   shifting landscape; t9's monotone grind is plausibly visible only because the ramp was off.
+- **040 t1 UPDATE (2026-07-31, measured @ gen 179) — the t9 grind REVERSED, and there is now a second,
+  purely mechanical reason the head cannot form. Routing: this is 041 material (operator 2026-07-31);
+  040 stays camera-engine fidelity.**
+  - **Observed**: all four curves rise instead of grinding down — err150 **0.40 (gen 1) → 0.74 (gen 179)**,
+    err_rate 0.29 → 0.63. Against the permanent baselines in the same cache: persist150 = **0.0066**
+    (the head is **113×** the no-change bar) and `span_scale` (σ of realized span) = **0.044 rad** (the
+    head is **17× worse than emitting a constant 0.0**).
+  - **New root cause, introduced by 040's own camera work**: T023-T035 / T033a moved bearings from ±1 NDC
+    to **radians** and span to a great-circle angle, shrinking the predicted quantity ~20×. The aux
+    outputs are raw **tanh, bounded ±1** (every layer applies `fast_tanh` — `src/nn/evaluator.cc:125`,
+    `:217`). So the entire signal now lives in ~4% of the output range while the shared trunk saturates
+    (W_hh spectral radius 4.73; control axes 97-100% over the amplitude budget) and drags the aux outputs
+    to the rails. **err150 ≈ mean |aux output|** — the curve is now a *saturation* readout, NOT a
+    prediction-skill readout. Do not read it as predictor progress while the head is in this state.
+  - **The 038 elevation package is UNSTARTED**: `predictor` appears **0×** in `specs/040-camera-redo/`
+    spec.md and tasks.md. Outputs `[3..6]` remain write-only leaves — not actuated
+    (`src/nn/evaluator.cc:591-595`), no forecast slots in `TrackerInput`, output layer non-recurrent
+    (`TRACKER_NN_RECURRENT = {false,false,true,false}`). t1 is the t6 predictor config with a new camera.
+  - **Design note for 041 — prefer the structural re-target over rescaling.** Rescaling the aux target
+    into tanh range is a coefficient fix on an objective the persistence bar already calls worthless, and
+    it cuts against [feedback_clear_objectives_not_tuning]. Re-targeting to blindness-bridging horizons
+    (0.5-2 s, visible→reacquisition pairs) collapses persistence, gives the head something only it can
+    do, AND moves the target into a tanh-representable range as a side effect — one structural change
+    instead of two.
+  - **Cheap ablation while it sits**: `EnablePredictorHead = 0` costs nothing to try and answers whether
+    the dead head + its lexicase axis are actively taxing the control search (119 output weights + one
+    test case per scenario currently buying nothing).
 
 ### [038 follow-on — ~~BACKLOG~~ → **VALIDATED 2026-07-10 (t10, the 038 wrap exercise)**] M2 novel-path eval harness — measure M2 generalization
 
@@ -553,6 +580,34 @@ the noise-model home).
   additive NDC offset (clean, learnable robustness target — under rectilinear it was position-dependent).
 - **Trigger**: pre-real-hardware M2 training (the run whose controller flies a physical camera), or 040
   front-end characterization telling us actual tolerance numbers — whichever first.
+
+### [BACKLOG — M2 realism, filed 2026-07-31] Chase and target must eventually be DIFFERENT craft — share the air mass, not the airframe
+
+**Current state (verified 040 t1, 2026-07-31)**: `TrackerChaseUseSourceScenarioSeed=1` shares ONE
+`scenarioSeed` with the M1 source, and every class sub-seed derives from it — so the chase inherits the
+target's **craft** draws along with wind/thermal/gust/entry/crash-hull. The two aircraft are therefore the
+**same airframe realization**: identical CG, drag, trim, thrust, pitch/roll authority, servo slew, thrust
+tau. The startup log says as much (`…wind/thermal/gust/entry/craft/crash-hull seeds…`).
+
+**This is deliberate for now (operator 2026-07-31)**: the current question is "can we roughly track in the
+same *temporal air environment* with an identical craft" — holding the airframe fixed isolates the
+environment/perception question, which is what t7 was built to answer. Not a defect; a scoping choice.
+
+- **Eventual target**: the air mass stays shared (both aircraft fly the same wind/thermal/gust field —
+  that part of the seed sharing is physically right), but **everything else about the two craft becomes
+  independent**. A chase that can only track a copy of itself has learned a weaker skill than one tracking
+  an airframe with different speed, turn rate, and energy state.
+- **Implementation shape**: split the shared seed by CLASS rather than sharing it wholesale — keep
+  `wind` from the source, draw `craft` (and `entry`) from the chase's own M2 seed. The plumbing already
+  distinguishes classes (`deriveClassSubSeeds`); what's missing is a per-class share/independent policy
+  instead of today's all-or-nothing `chaseScenarioSeedAt()` swap. Same pattern the camera slot uses
+  (chase-specific even under seed sharing — 040 US6 T070).
+- **Trigger / relation to other work**: **co-evolution** is the likely forcing function (an evolved or
+  adversarial target is by construction not the chase's twin); also any real-hardware M2 where the target
+  is a different physical aircraft. Pairs with the library-based-training direction
+  ([project_library_based_training]) — recorded real flights are inherently not the chase's airframe.
+- **Watch item when it lands**: expect tracking difficulty to rise; the current M2 ceiling numbers were
+  measured against a twin, so they are an OPTIMISTIC baseline for the differing-craft case.
 
 ### [031 CANDIDATE] Variable-rate / real-flight source robustness
 
@@ -836,6 +891,49 @@ flip to re-enable) or "investigate before retraining":
   array, `nn_reset()`), but `xiao/src/generated/nn_program_generated.cpp`
   is not regenerated/built/flashed.
 - Triggered by 028's sim gate clearing — same discipline as 027.
+
+### [041 CANDIDATE — operator direction 2026-08-01] Actuate the span/closure predictor
+
+**Direction**: "improve the predictor to do something with what it has."
+
+**Where it stands today.** The 038 US3 aux head already emits four predictions —
+beacon-pair `span` at +50/+100/+150 ms plus a closure rate — scored on a
+SEPARATE lexicase axis against the realized span, and required to beat a
+persistence baseline (SC-002). But `nn_inputs.h` states the limitation plainly:
+**NOT actuated.** It is pure representation-learning pressure. The network is
+made to learn a forward model of closure and then forbidden from steering with
+it.
+
+**Why now, and why it is the named lever.** 037's M2 de-risking concluded that
+tracking depth is architecture/perception-capped rather than reward-limited
+(reward-invariant ~11% close, ~17 m error), and named the next lever as
+**temporal memory + target predictor**. 040 delivered the perception half:
+acquisition timing, hold/coast, quality that carries real temporal structure
+(tentative→confident ramp, HOLD decay), and honest range envelopes. The
+predictor is the other half, and it is now sitting on strictly better inputs.
+
+**What 040 changed for it, in both directions.**
+- *More to work with*: quality is no longer a position-only stand-in, so the
+  history window carries a genuine signal about how trustworthy each bearing is.
+- *A harder job*: separation-derived range goes UNAVAILABLE past ~28 m
+  (FR-033), so beyond that the predictor must carry closure through a channel
+  that has gone quiet. That is exactly the regime a forward model earns its
+  keep in, and M2 has never trained against it.
+- *Capacity exists*: `rnn_capacity` on the t1 run reads spectral radius ~5.2
+  with effective rank ~11.5/16, so there is real recurrent state to exploit
+  rather than a decayed feedforward net.
+
+**Open design questions** (not decided):
+- Feed the prediction back as an INPUT (grows the 58-vector, which FR-006 froze
+  for 040 — a deliberate re-open, not an oversight), or actuate it inside the
+  control head, or gate control gain on predicted closure?
+- The 150 ms horizon was chosen to match actuation lag and give *actionable*
+  anti-overrun lead. Actuating it is the use it was designed for.
+- Does the separate lexicase axis stay once the prediction is load-bearing, or
+  does actuated performance subsume it?
+
+**Prerequisite**: 040 closes and its t2 bake lands, so the predictor is judged
+against the finished perception model rather than a moving one.
 
 ### [SMALL — surfaced 2026-07-30 during 040 t1 launch] `tracker_dmp_inspect` bucket + .zst warts
 
