@@ -892,48 +892,118 @@ flip to re-enable) or "investigate before retraining":
   is not regenerated/built/flashed.
 - Triggered by 028's sim gate clearing — same discipline as 027.
 
-### [041 CANDIDATE — operator direction 2026-08-01] Actuate the span/closure predictor
+### [041 CANDIDATE — operator direction 2026-08-01] Make the predictor earn its keep
 
-**Direction**: "improve the predictor to do something with what it has."
+**Framing**: 041 runs a **couple of experiments on competing hypotheses**, not a
+decided design. The critique below is MEASURED; the proposed fixes are not.
 
-**Where it stands today.** The 038 US3 aux head already emits four predictions —
-beacon-pair `span` at +50/+100/+150 ms plus a closure rate — scored on a
-SEPARATE lexicase axis against the realized span, and required to beat a
-persistence baseline (SC-002). But `nn_inputs.h` states the limitation plainly:
-**NOT actuated.** It is pure representation-learning pressure. The network is
-made to learn a forward model of closure and then forbidden from steering with
-it.
+---
 
-**Why now, and why it is the named lever.** 037's M2 de-risking concluded that
-tracking depth is architecture/perception-capped rather than reward-limited
-(reward-invariant ~11% close, ~17 m error), and named the next lever as
-**temporal memory + target predictor**. 040 delivered the perception half:
-acquisition timing, hold/coast, quality that carries real temporal structure
-(tentative→confident ramp, HOLD decay), and honest range envelopes. The
-predictor is the other half, and it is now sitting on strictly better inputs.
+#### What is measured already (038, not speculation)
 
-**What 040 changed for it, in both directions.**
-- *More to work with*: quality is no longer a position-only stand-in, so the
-  history window carries a genuine signal about how trustworthy each bearing is.
-- *A harder job*: separation-derived range goes UNAVAILABLE past ~28 m
-  (FR-033), so beyond that the predictor must carry closure through a channel
-  that has gone quiet. That is exactly the regime a forward model earns its
-  keep in, and M2 has never trained against it.
-- *Capacity exists*: `rnn_capacity` on the t1 run reads spectral radius ~5.2
-  with effective rank ~11.5/16, so there is real recurrent state to exploit
-  rather than a decayed feedforward net.
+The aux head emits four predictions — beacon-pair `span` at +50/+100/+150 ms
+plus a closure rate — scored on a separate lexicase axis
+(`selection.cc`: `prediction_score`, ε 0.5) against a persistence baseline, and
+`nn_inputs.h` states it plainly: **NOT actuated**.
 
-**Open design questions** (not decided):
-- Feed the prediction back as an INPUT (grows the 58-vector, which FR-006 froze
-  for 040 — a deliberate re-open, not an oversight), or actuate it inside the
-  control head, or gate control gain on predicted closure?
-- The 150 ms horizon was chosen to match actuation lag and give *actionable*
-  anti-overrun lead. Actuating it is the use it was designed for.
-- Does the separate lexicase axis stay once the prediction is load-bearing, or
-  does actuated performance subsume it?
+From `specs/038-accurate-m2/wrap.md`:
+
+| run | finding |
+|---|---|
+| t6 | "forms weakly at best; **passive scoring doesn't couple to control; persistence baseline shows the as-posed objective is structurally worthless**" |
+| t9 | "first run where all four predictor error curves grind down monotonically — the tie-break CAN couple when the target is honest, just **~10× too slow as a tie-break**" |
+
+The wrap already named the fix — "the elevation package for the predictor
+(consume the forecast as inputs; first-class lexicase axis; re-target across
+blindness)" — and routed it to 040. It did not land: FR-006 froze the 58-input
+vector to keep the perception change attributable. Correct for 040; **the freeze
+is the thing 041 re-opens.**
+
+#### Why the aux axis buys so little today
+
+In a gradient-trained net an auxiliary prediction loss shapes representation via
+backprop. This is a **GA with lexicase selection** — no gradient reaches the
+hidden state. Prediction is just another selection axis, so individuals that
+predict well survive on it whether or not they fly well. That is a diversity
+mechanism, not representation learning, and 038 clocked it at ~10× too slow.
+
+Meanwhile the recurrence already carries state on its own: `rnn_capacity` on the
+040 t1 run reads spectral radius ~5.2, effective rank ~11.5/16. **The aux head is
+not supplying a capability `W_hh` lacks.**
+
+---
+
+#### H1 — we are predicting the wrong QUANTITY (leading hypothesis)
+
+`span` is a **world-model** target: where the target will be, not whether that is
+good. The objective is `stepPoints` — in the cone, at range, extending a streak.
+"Toward the actual objective" means a **value function**: predict accumulated
+score over the next N ticks.
+
+Consequences, and why this is the leading option:
+
+- **Scoring stops being a proxy.** Prediction accuracy *is* objective accuracy,
+  so 038's "structurally worthless objective" cannot recur by construction.
+- **The horizon question dissolves.** Return telescopes; span does not. You pick
+  a discount, not a lookahead you have to justify.
+- **Zero extra simulation.** `fitness_decomposition.cc` already computes
+  `stepPoints` per tick for every scenario, so a Monte-Carlo return target is a
+  post-hoc sum over data already recorded.
+- **It ports to M1 for free** — and this is the strongest argument. A *span*
+  head cannot go to M1 at all (span needs beacons); a *return* head ports
+  unchanged, because cone/distance/streak exist identically in both modes.
+  Operator's "the predictor should earn its keep on M1" and this reframe are the
+  same move: the objective is mode-agnostic, the observable is not.
+
+#### H2 — actuation is what matters, not the target (conservative fallback)
+
+The wrap's own package: consume the existing span forecast as control inputs,
+promote the axis to first class, re-target across blindness. Cheaper and closer
+to what exists. Tests whether the 038 failure was *passivity* rather than *target
+choice* — which is the null hypothesis H1 must beat.
+
+⚠️ Within ONE recurrent net, feeding the forecast back as an input may be
+largely redundant: the hidden state that produced the prediction is the state
+producing the control. The non-redundant variant is feeding back the
+**prediction ERROR** (realized span now, minus what was predicted for now
+150 ms ago) — a Kalman-innovation term telling the controller when its own model
+is wrong, which is exactly the reacquire-through-blindness case 037 named as the
+bottleneck.
+
+#### H3 — cheap lookahead, if H1 lands
+
+Operator asked whether a real predictor should roll futures forward "in an n²
+pattern". Rollout on the true FDM is ~10× throughput (~6270 sims/s → ~40 min/gen
+→ ~3 weeks for 800 gens): **dead**. But with a VALUE head you do not simulate
+futures, you **evaluate candidate actions**: pick k candidate control outputs,
+score each with a forward pass, take the best. That is k × (NN eval on a 16×16
+RNN — microseconds), not k × (physics step). Perhaps +20-30% throughput.
+
+Note this is only available under H1. A world model forces an actual rollout; a
+value model collapses the rollout into one evaluation.
+
+---
+
+#### Shared measurement protocol — how any of these is judged
+
+**Ablation on CONTROL, never on prediction accuracy.** `EnablePredictorHead`
+0 vs 1, everything else fixed, compare `pctInStreak` / `avgRngMed`. That is
+"earn its keep" literally, and it sidesteps "we don't know what horizon helps"
+— you never have to know, you measure control.
+
+**Run it on M1.** M1 climbs fast and reliably at pop 3000 / single longSequential
+/ 16 winds ([[project_m1_basic_learner_validated]]), so an ablation reads in
+hours rather than a 27 h M2 bake.
+
+#### Honest caveats
+
+- H1/H3 are proposals. 038 validated the **critique**, not these fixes.
+- H3 scores actions rather than states — closer to Q than V, which this GA has
+  never been asked to learn, and there is no actor-critic machinery here.
+- H2's redundancy concern is reasoning, not measurement.
 
 **Prerequisite**: 040 closes and its t2 bake lands, so the predictor is judged
-against the finished perception model rather than a moving one.
+against a finished perception model rather than a moving one.
 
 ### [SMALL — surfaced 2026-07-30 during 040 t1 launch] `tracker_dmp_inspect` bucket + .zst warts
 
