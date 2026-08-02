@@ -894,113 +894,128 @@ flip to re-enable) or "investigate before retraining":
 
 ### [041 CANDIDATE — operator direction 2026-08-01] Make the predictor earn its keep
 
-**Framing**: 041 runs a **couple of experiments on competing hypotheses**, not a
-decided design. The critique below is MEASURED; the proposed fixes are not.
+**Status change 2026-08-01**: this entry was first written around *design*
+hypotheses. It has been rewritten around **measurement** — the span/closure head
+was instrumented on the live 040 t1 run and carries **no usable information**.
+That closes several questions the earlier draft left open, and reorders the work.
 
 ---
 
-#### What is measured already (038, not speculation)
+#### MEASURED — the head is not learning, and rescaling will not save it
 
-The aux head emits four predictions — beacon-pair `span` at +50/+100/+150 ms
-plus a closure rate — scored on a separate lexicase axis
-(`selection.cc`: `prediction_score`, ε 0.5) against a persistence baseline, and
-`nn_inputs.h` states it plainly: **NOT actuated**.
+Reproduce with `specs/040-camera-redo/predictor_signal.py` (new script, not an
+edit to `predictor_analysis.py`). Source: 040 t1 elite @ gen ~709, 294 scenarios,
+132,690 ticks, ~93-97k visible (t, t+h) pairs per horizon.
 
-From `specs/038-accurate-m2/wrap.md`:
+| horizon | r(level) | **r(Δspan)** | **r²(Δ)** | raw \|e\| | after IDEAL rescale | persistence |
+|---|---:|---:|---:|---:|---:|---:|
+| +50 ms | −0.061 | −0.024 | 0.06% | 0.6828 | 0.0347 | **0.00407** |
+| +100 ms | +0.036 | +0.005 | 0.00% | 0.6845 | 0.0346 | **0.00584** |
+| +150 ms | **+0.103** | −0.008 | 0.01% | 0.5530 | 0.0342 | **0.00748** |
+| closure rate | — | −0.018 | 0.03% | — | — | — |
 
-| run | finding |
-|---|---|
-| t6 | "forms weakly at best; **passive scoring doesn't couple to control; persistence baseline shows the as-posed objective is structurally worthless**" |
-| t9 | "first run where all four predictor error curves grind down monotonically — the tie-break CAN couple when the target is honest, just **~10× too slow as a tie-break**" |
+Also: **best error at every horizon occurs at GENERATION 1** — the random
+initialisation. 709 generations produced wander in the 0.5-0.85 band, nothing else.
 
-The wrap already named the fix — "the elevation package for the predictor
-(consume the forecast as inputs; first-class lexicase axis; re-target across
-blindness)" — and routed it to 040. It did not land: FR-006 froze the 58-input
-vector to keep the perception change attributable. Correct for 040; **the freeze
-is the thing 041 re-opens.**
+**Three findings, in order of importance:**
 
-#### Why the aux axis buys so little today
+1. **THE METRIC IN USE IS THE WRONG ONE.** `computeSpanPredictionError` scores
+   mean \|predicted − realized_span\|, and that conflates offset/scale error with
+   information content. Span is SLOW — it moves ~0.0075 rad per 150 ms against a
+   ~0.049 rad level — so **persistence ("assume no change") is already right to
+   within 15%**. Predicting the *level* is therefore trivial and beats nothing.
+   The only statistic that matters is **r(prediction, Δspan)**, and it is
+   **≈ 0 at every horizon**.
 
-In a gradient-trained net an auxiliary prediction loss shapes representation via
-backprop. This is a **GA with lexicase selection** — no gradient reaches the
-hidden state. Prediction is just another selection axis, so individuals that
-predict well survive on it whether or not they fly well. That is a diversity
-mechanism, not representation learning, and 038 clocked it at ~10× too slow.
+2. **The +150 ms "tilt" is real but is the head learning the MEAN.** Operator
+   spotted a tilt in the +150 ms calibration scatter — correctly, it is the only
+   horizon with a positive level-correlation (r = +0.103). But r(Δ) = −0.008
+   there. The head has partly learned "span is about 0.06", a constant that
+   persistence already encodes. There is a physical reason the tilt appears only
+   at the longest horizon: at +50 ms the change is buried in grid quantisation,
+   and by +150 ms the closure trend has cleared the noise floor. The horizon 038
+   picked for actuation-lag reasons is also the shortest one with any SNR.
 
-Meanwhile the recurrence already carries state on its own: `rnn_capacity` on the
-040 t1 run reads spectral radius ~5.2, effective rank ~11.5/16. **The aux head is
-not supplying a capability `W_hh` lacks.**
+3. **The parameterisation is broken, and fixing it is NOT sufficient.**
+   Predicted mean +0.27, sd 0.59 vs realized mean +0.062, sd 0.049 — a ~12×
+   scale error, because `fitness_decomposition.cc:70` compares a raw bounded NN
+   output directly against a 0.049-rad target with no scaling, wasting ~95% of
+   the output range. But applying the **ideal** linear recalibration still leaves
+   4.6-8.5× WORSE than persistence. Scaling is a necessary fix, not the fix.
 
----
+*(Ruled out: lexicase ε is NOT the problem. `LexicaseEpsilonMode = mad` is on and
+the 0.5 floor is skipped entirely in MAD mode — `selection.cc:123-134`.)*
 
-#### H1 — we are predicting the wrong QUANTITY (leading hypothesis)
+This quantifies 038's "structurally worthless as posed" and supplies the mechanism.
 
-`span` is a **world-model** target: where the target will be, not whether that is
-good. The objective is `stepPoints` — in the cone, at range, extending a streak.
-"Toward the actual objective" means a **value function**: predict accumulated
-score over the next N ticks.
+#### The cost being paid right now
 
-Consequences, and why this is the leading option:
-
-- **Scoring stops being a proxy.** Prediction accuracy *is* objective accuracy,
-  so 038's "structurally worthless objective" cannot recur by construction.
-- **The horizon question dissolves.** Return telescopes; span does not. You pick
-  a discount, not a lookahead you have to justify.
-- **Zero extra simulation.** `fitness_decomposition.cc` already computes
-  `stepPoints` per tick for every scenario, so a Monte-Carlo return target is a
-  post-hoc sum over data already recorded.
-- **It ports to M1 for free** — and this is the strongest argument. A *span*
-  head cannot go to M1 at all (span needs beacons); a *return* head ports
-  unchanged, because cone/distance/streak exist identically in both modes.
-  Operator's "the predictor should earn its keep on M1" and this reframe are the
-  same move: the objective is mode-agnostic, the observable is not.
-
-#### H2 — actuation is what matters, not the target (conservative fallback)
-
-The wrap's own package: consume the existing span forecast as control inputs,
-promote the axis to first class, re-target across blindness. Cheaper and closer
-to what exists. Tests whether the 038 failure was *passivity* rather than *target
-choice* — which is the null hypothesis H1 must beat.
-
-⚠️ Within ONE recurrent net, feeding the forecast back as an input may be
-largely redundant: the hidden state that produced the prediction is the state
-producing the control. The non-redundant variant is feeding back the
-**prediction ERROR** (realized span now, minus what was predicted for now
-150 ms ago) — a Kalman-innovation term telling the controller when its own model
-is wrong, which is exactly the reacquire-through-blindness case 037 named as the
-bottleneck.
-
-#### H3 — cheap lookahead, if H1 lands
-
-Operator asked whether a real predictor should roll futures forward "in an n²
-pattern". Rollout on the true FDM is ~10× throughput (~6270 sims/s → ~40 min/gen
-→ ~3 weeks for 800 gens): **dead**. But with a VALUE head you do not simulate
-futures, you **evaluate candidate actions**: pick k candidate control outputs,
-score each with a forward pass, take the best. That is k × (NN eval on a 16×16
-RNN — microseconds), not k × (physics step). Perhaps +20-30% throughput.
-
-Note this is only available under H1. A world model forces an actual rollout; a
-value model collapses the rollout into one evaluation.
+The prediction axis is **one of three axes × 294 scenarios** in the lexicase pool
+— a third of all test cases — selecting on a channel with r² ≈ 0. Individuals win
+on prediction luck and carry mediocre control through. This is not an inert
+axis, it is an actively harmful one.
 
 ---
 
-#### Shared measurement protocol — how any of these is judged
+#### E1 — ablate the head (do this first; cheap, and may be a win on its own)
 
-**Ablation on CONTROL, never on prediction accuracy.** `EnablePredictorHead`
-0 vs 1, everything else fixed, compare `pctInStreak` / `avgRngMed`. That is
-"earn its keep" literally, and it sidesteps "we don't know what horizon helps"
-— you never have to know, you measure control.
+`EnablePredictorHead` 0 vs 1, everything else fixed. **Not a neutral ablation** —
+it returns a third of selection pressure from a dead channel to axes that mean
+something, so the prior should be that tracking IMPROVES. Run on **M1**, which
+climbs fast and reliably at pop 3000 / single longSequential / 16 winds
+([[project_m1_basic_learner_validated]]) — hours, not a 27 h M2 bake.
 
-**Run it on M1.** M1 climbs fast and reliably at pop 3000 / single longSequential
-/ 16 winds ([[project_m1_basic_learner_validated]]), so an ablation reads in
-hours rather than a 27 h M2 bake.
+If E1 wins, that is the finding, and everything below is optional.
+
+#### E2 — is the target learnable AT ALL from these inputs?
+
+Before building anything, settle whether Δspan is predictable from the 58-input
+history window by ANY model. Fit an offline regressor (ridge / small MLP) on the
+recorded per-tick CSV — no training run, no simulation, minutes of work. If an
+offline model cannot beat persistence on Δspan either, **the task is impossible
+as posed** and no architecture change rescues it. That is the cheapest possible
+kill-shot and it should precede E3.
+
+#### E3 — if E2 says the signal exists: fix the objective, then actuate
+
+Only worth building if E2 clears. In order:
+- **Score Δ, not level.** Target `span[t+h] − span[t]` against a persistence
+  baseline of zero, so the objective cannot be satisfied by learning a constant.
+- **Scale the output** into the target's domain so the usable range is not 5% of
+  one output unit.
+- **Then** actuate — the wrap's package (consume forecast as input; first-class
+  axis; re-target across blindness). Feeding the forecast into the SAME recurrent
+  net may be redundant (the hidden state that made the prediction also makes the
+  control); the non-redundant signal is the **prediction ERROR**, a
+  Kalman-innovation term saying "my model is wrong right now".
+
+#### E4 — value head instead of world model (the bigger swing)
+
+`span` is a *world-model* target: where the target will be, not whether that is
+good. The objective is `stepPoints`. A **value head** predicting accumulated
+future score has four advantages: prediction accuracy IS objective accuracy (no
+proxy gap); the horizon becomes a discount rather than a guess; the Monte-Carlo
+target costs **zero extra simulation** (`fitness_decomposition.cc` already
+computes `stepPoints` per tick); and it **ports to M1 unchanged**, where a span
+head cannot go at all because span needs beacons.
+
+It also enables cheap lookahead: with a value head you do not simulate futures,
+you **evaluate candidate actions** — k forward passes on a 16×16 RNN
+(microseconds) rather than k physics steps. Rollout on the true FDM is ~10×
+throughput (~6,270 sims/s → ~40 min/gen → ~3 weeks/800 gens) and is dead.
+
+⚠️ Scoring actions rather than states is closer to Q than V, and this GA has no
+actor-critic machinery. Biggest swing here, lowest confidence.
+
+---
 
 #### Honest caveats
 
-- H1/H3 are proposals. 038 validated the **critique**, not these fixes.
-- H3 scores actions rather than states — closer to Q than V, which this GA has
-  never been asked to learn, and there is no actor-critic machinery here.
-- H2's redundancy concern is reasoning, not measurement.
+- E1's measurements are from ONE elite of ONE run. Confirm on M1 before
+  generalising.
+- E4 is a proposal. 038 validated the critique; nothing has validated the fix.
+- The r(Δ) ≈ 0 result says the CURRENT head learned nothing. It does not prove
+  Δspan is unlearnable — that is exactly what E2 exists to decide.
 
 **Prerequisite**: 040 closes and its t2 bake lands, so the predictor is judged
 against a finished perception model rather than a moving one.
