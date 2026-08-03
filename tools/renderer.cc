@@ -3547,216 +3547,235 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   addLine(cTop, cBot); addLine(cLeft, cRight);
 
   // =========================================================================
-  // 040 T065d/T065e — THE PARALLAX LAYER. Replaces the 038 t9 axis ticks.
+  // 040 T065d/T065e/T088 — THE PARALLAX LAYER, IN THE CAMERA'S OWN FRAME.
   //
   // WHAT THIS EXISTS TO MAKE VISIBLE. The camera sits 8" outboard and ~1.25"
-  // above the thrust line, boresight parallel to it. So the THRUST AXIS -- where
-  // the propeller actually goes, i.e. where the streamer gets cut -- projects
-  // left and slightly below image centre by atan(r_cam/d).
+  // above the thrust line. So the THRUST AXIS — where the propeller goes, i.e.
+  // where the streamer gets cut — projects off image centre by atan(r_cam/d).
+  // Both that offset and the beacon separation scale as 1/d, so the parallax is
+  // a CONSTANT ~26.6% of the target's apparent wingspan at EVERY range
+  // (r_cam/W = 0.205/0.772). You cannot close your way out of it: anyone aiming
+  // at image centre mis-aims by a quarter wingspan, always.
   //
-  // The invariant that drives the whole design: BOTH the aim offset and the
-  // beacon separation scale as 1/d, so the parallax is a CONSTANT 26.6% of the
-  // target's apparent wingspan at EVERY range (r_cam/W = 0.205/0.772):
+  // ---------------------------------------------------------------------------
+  // 2026-08-02 — REWRITTEN because US6 made the camera MOVE (operator: "in theory
+  // the location and angle of the concentric circles and effective rotation of
+  // the entire scene is a function of the camera position").
   //
-  //     3 m: sep 14.7deg, offset 3.91deg    25 m: sep 1.77deg, offset 0.47deg
-  //    10 m: sep 4.42deg, offset 1.17deg   100 m: sep 0.44deg, offset 0.12deg
+  // The panel is in CAMERA frame. Every element drawn here originates in BODY
+  // frame — the thrust-axis locus, the ring centres, the vertical member, the
+  // obstruction hatch — and the first cut projected all of them assuming the
+  // camera was perfectly aligned. With per-scenario boresight and roll draws of
+  // up to 20 deg that is wrong by up to 53 px, a SIXTH of the panel width.
   //
-  // YOU CANNOT CLOSE YOUR WAY OUT OF IT. Anyone reading this panel and aiming at
-  // image centre mis-aims by a quarter wingspan, always. That is why the rings
-  // are centred on the THRUST-AXIS LOCUS and not on image centre.
+  // The beacon dots were always right, because their bearings are recorded AFTER
+  // variation. So the fix is one transform applied consistently, not a patch:
+  // recover the varied camera orientation and push every body-frame direction
+  // through it. ROLL then falls out for free — the locus swings about the
+  // boresight and the vertical member tilts, because that is what rolling the
+  // image plane does.
   //
-  // Under the equidistant mapping (screen proportional to angle) iso-angle
-  // contours are CIRCLES, so range rings are the natural reticle here in a way
-  // they would not be under a rectilinear projection.
+  //   camera_pose_world_orient = chase_orient * mount_orientation_body(varied)
+  //   => mount_q = chase_orient^-1 * camera_pose_world_orient
   //
-  // Reading it: match the observed pair to a ring -> read RANGE. Pair position
-  // versus ring centre -> read AIMING ERROR. The rings' migration off-centre IS
-  // the parallax.
+  // ⚠️ WHAT IS AND IS NOT RECOVERABLE FROM THE DMP. Rotation is exact — it is
+  // implied by the recorded pose. Mount TRANSLATION is not: it is applied to the
+  // obstruction path only (research R6) and the recorded pose uses the nominal
+  // bearing mount, so the +/-5 mm never reaches the dmp. Nor does the wing
+  // thickness draw. Both are small for the panel (5 mm is 0.03 deg at 10 m)
+  // while rotation is the +/-20 deg term, so the overlay tracks what matters and
+  // is honest about the rest.
   // =========================================================================
 
-  // Camera offset from the thrust axis, metres (body frame: +y right, +z down).
-  // Matches CameraConfig's shipped mount; the panel would lie if these drifted.
-  constexpr scalar kCamOffsetY = static_cast<scalar>(0.203200f);   // 8" outboard
-  constexpr scalar kCamOffsetZ = static_cast<scalar>(-0.031750f);  // ~1.25" up
+  constexpr scalar kCamOffsetY = static_cast<scalar>(0.203200f);   // 8" outboard (starboard)
+  constexpr scalar kCamOffsetZ = static_cast<scalar>(-0.031750f);  // ~1.25" up (-z is up)
   constexpr scalar kBeaconSepM = static_cast<scalar>(0.772f);      // measured, T030
 
   const scalar half_h_rad_panel = fov_h * static_cast<scalar>(M_PI / 360.0);
   const scalar half_v_rad_panel = fov_v * static_cast<scalar>(M_PI / 360.0);
 
-  // Angle -> panel NDC. Equidistant, so this is a pure linear scale.
-  auto ndcX = [&](scalar ax_rad) { return ax_rad / half_h_rad_panel; };
-  auto ndcY = [&](scalar ay_rad) { return ay_rad / half_v_rad_panel; };
-  auto winX = [&](scalar nx) { return xLeft + (nx + 1.0f) * 0.5f * (xRight - xLeft); };
-  auto winY = [&](scalar ny) { return yTop - (ny + 1.0f) * 0.5f * (yTop - yBottom); };
+  // The varied camera orientation, recovered from the recorded pose.
+  gp_quat mountQ = gp_quat::Identity();
+  if (arenaIndex < static_cast<int>(evalResults.aircraftStateList.size()) &&
+      camIdx < evalResults.aircraftStateList[arenaIndex].size()) {
+    mountQ = evalResults.aircraftStateList[arenaIndex][camIdx].getOrientation()
+                 .inverse() * cam.camera_pose_world_orient;
+    mountQ.normalize();
+  }
+  const gp_quat mountQinv = mountQ.inverse();
 
-  // Where the thrust axis projects at range d. The camera looks along +x from a
-  // point offset (+y, +z) from the axis, so the axis appears at -offset/d.
-  auto thrustAxisAngles = [&](scalar d, scalar& ax, scalar& ay) {
-    ax = std::atan2(-kCamOffsetY, d);
-    ay = std::atan2(-kCamOffsetZ, d);
+  // Body-frame direction -> panel window point. Returns false when the
+  // direction falls behind the camera, so callers can drop the segment rather
+  // than drawing a mirrored ghost.
+  auto bodyToWin = [&](const gp_vec3& d_body, scalar& wx, scalar& wy) -> bool {
+    const gp_vec3 d = mountQinv * d_body;
+    if (d.x() <= static_cast<gp_scalar>(0)) return false;
+    const gp_scalar ryz = std::sqrt(d.y() * d.y() + d.z() * d.z());
+    gp_scalar ax = 0, ay = 0;
+    if (ryz > static_cast<gp_scalar>(1e-12)) {
+      const gp_scalar th = std::atan2(ryz, d.x());
+      ax = th * (d.y() / ryz);
+      ay = th * (d.z() / ryz);
+    }
+    const scalar nx = static_cast<scalar>(ax) / half_h_rad_panel;
+    const scalar ny = static_cast<scalar>(ay) / half_v_rad_panel;
+    wx = xLeft + (nx + 1.0f) * 0.5f * (xRight - xLeft);
+    wy = yTop - (ny + 1.0f) * 0.5f * (yTop - yBottom);
+    return true;
   };
 
-  // ---- The thrust-axis LOCUS: a short track from 3 m to infinity ------------
-  // This is "the centerline projected". It converges on image centre only at
-  // infinity, which is the visual statement that the offset never goes away.
+  // Body-frame direction from the camera toward the thrust axis at range d.
+  auto thrustAxisDir = [&](scalar d) {
+    return gp_vec3(static_cast<gp_scalar>(d), static_cast<gp_scalar>(-kCamOffsetY),
+                   static_cast<gp_scalar>(-kCamOffsetZ));
+  };
+
+  // ---- The thrust-axis LOCUS: "the centerline projected" -------------------
+  // Converges on the boresight only at infinity, which is the visual statement
+  // that the offset never goes away.
   {
     constexpr int kLocusSteps = 24;
-    vtkIdType prev = -1;
+    scalar px = 0, py = 0, qx = 0, qy = 0;
+    bool havePrev = false;
     for (int i = 0; i <= kLocusSteps; ++i) {
       // Sample in 1/d so the near end, where the offset is largest, gets the
-      // resolution. Runs 3 m -> 200 m.
+      // resolution. 3 m -> 200 m.
       const scalar inv = (1.0f / 3.0f) +
                          (static_cast<scalar>(i) / static_cast<scalar>(kLocusSteps)) *
                              ((1.0f / 200.0f) - (1.0f / 3.0f));
-      const scalar d = 1.0f / inv;
-      scalar ax, ay;
-      thrustAxisAngles(d, ax, ay);
-      const vtkIdType id =
-          outlinePoints->InsertNextPoint(winX(ndcX(ax)), winY(ndcY(ay)), 0);
-      if (prev >= 0) addLine(prev, id);
-      prev = id;
+      const bool ok = bodyToWin(thrustAxisDir(1.0f / inv), qx, qy);
+      if (ok && havePrev) {
+        vtkIdType a = outlinePoints->InsertNextPoint(px, py, 0);
+        vtkIdType b = outlinePoints->InsertNextPoint(qx, qy, 0);
+        addLine(a, b);
+      }
+      px = qx; py = qy; havePrev = ok;
     }
   }
 
-  // ---- Range rings, centred on the thrust axis at each range ---------------
+  // ---- Range rings, as CONES about the thrust axis in BODY frame -----------
+  // Drawn as a swept cone rather than a circle in panel space, so a rolled or
+  // cocked camera deforms and displaces them the way the real optics would.
   // Ring DIAMETER is the beacon pair's angular separation at that range, so a
-  // pair that fills a ring is at that ring's range.
+  // pair that fills a ring is at that ring's range. Ranges are thresholds that
+  // already mean something: 1 m = CrashHullRadius (contact), 3.048 m =
+  // TrailDistance (the rabbit), 10 m = representative engagement.
   {
-    // THREE rings, and the ranges are not arbitrary — each is a threshold that
-    // already means something in this simulation:
-    //
-    //   1.000 m  CrashHullRadius   — inside this you have hit the target
-    //   3.048 m  TrailDistance     — where the trail rabbit sits (10 ft)
-    //  10.000 m  engagement        — representative working range
-    //
-    // Sizing the LARGEST ring to about half the panel's vertical field lands on
-    // ~0.93 m, which is essentially the hull radius — so the operator's display
-    // request and the physics agree, and the outer ring reads as "this is
-    // contact". Ring DIAMETER is the beacon pair's angular separation at that
-    // range, so a pair that fills a ring is at that ring's range:
-    //
-    //   1.000 m → 42.2° diameter ≈ 47% of the 90° vertical field
-    //   3.048 m → 14.5°
-    //  10.000 m →  4.4°
-    //
-    // The retired set (3/10/25/100 m) put the outermost ring at ~1.2 px across,
-    // which was an honest statement about the resolution floor but unreadable
-    // as a reticle.
     const scalar kRingRangesM[] = {1.0f, 3.048f, 10.0f};
     constexpr int kRingSegments = 48;
     for (scalar d : kRingRangesM) {
-      scalar cx_rad, cy_rad;
-      thrustAxisAngles(d, cx_rad, cy_rad);
-      // Half the pair separation, as an angle, at this range.
-      const scalar r_rad = std::atan2(kBeaconSepM * 0.5f, d);
-
-      vtkIdType first = -1, prev = -1;
-      for (int seg = 0; seg <= kRingSegments; ++seg) {
-        const scalar th = static_cast<scalar>(2.0 * M_PI) *
-                          static_cast<scalar>(seg) /
-                          static_cast<scalar>(kRingSegments);
-        const scalar ax = cx_rad + r_rad * std::cos(th);
-        const scalar ay = cy_rad + r_rad * std::sin(th);
-        const vtkIdType id =
-            outlinePoints->InsertNextPoint(winX(ndcX(ax)), winY(ndcY(ay)), 0);
-        if (seg == 0) first = id;
-        else addLine(prev, id);
-        prev = id;
+      const gp_vec3 axis = thrustAxisDir(d).normalized();
+      // Body "up" (-z) made perpendicular to the axis: the reference that makes
+      // roll visible. Without it the ring is rotation-symmetric and roll would
+      // be invisible in the rings alone.
+      gp_vec3 up(static_cast<gp_scalar>(0), static_cast<gp_scalar>(0),
+                 static_cast<gp_scalar>(-1));
+      up = (up - axis * axis.dot(up));
+      if (up.norm() < static_cast<gp_scalar>(1e-6)) {
+        up = gp_vec3(static_cast<gp_scalar>(0), static_cast<gp_scalar>(1),
+                     static_cast<gp_scalar>(0));
+        up = (up - axis * axis.dot(up));
       }
-      (void)first;
+      up.normalize();
+      const gp_vec3 right = axis.cross(up).normalized();
 
-    }
+      const gp_scalar half = std::atan2(static_cast<gp_scalar>(kBeaconSepM * 0.5f),
+                                        static_cast<gp_scalar>(d));
+      const gp_scalar ca = std::cos(half), sa = std::sin(half);
 
-    // ---- T065e: ONE vertical member, spanning the outermost ring ----------
-    // Beacon separation is a roughly HORIZONTAL measurement, so it says nothing
-    // about vertical displacement -- and for a tail chase closing on a streamer,
-    // up/down is the axis this display is least instrumented on.
-    //
-    // The first cut drew a stub through EVERY ring: four short lines, which read
-    // as clutter rather than as a reference. One full-height line through the
-    // aim point does the same job legibly, since the rings already carry the
-    // scale.
-    {
-      scalar cx_rad, cy_rad;
-      thrustAxisAngles(kRingRangesM[0], cx_rad, cy_rad);  // widest ring (3 m)
-      const scalar r_rad = std::atan2(kBeaconSepM * 0.5f, kRingRangesM[0]);
-      scalar ax, ay;
-      thrustAxisAngles(10.0f, ax, ay);  // the aim point the cross marks
-      const vtkIdType vt = outlinePoints->InsertNextPoint(
-          winX(ndcX(ax)), winY(ndcY(cy_rad - r_rad)), 0);
-      const vtkIdType vb = outlinePoints->InsertNextPoint(
-          winX(ndcX(ax)), winY(ndcY(cy_rad + r_rad)), 0);
-      addLine(vt, vb);
+      scalar px = 0, py = 0, qx = 0, qy = 0;
+      bool havePrev = false;
+      for (int seg = 0; seg <= kRingSegments; ++seg) {
+        const gp_scalar th = static_cast<gp_scalar>(2.0 * M_PI) *
+                             static_cast<gp_scalar>(seg) /
+                             static_cast<gp_scalar>(kRingSegments);
+        const gp_vec3 dir = axis * ca + (right * std::cos(th) + up * std::sin(th)) * sa;
+        const bool ok = bodyToWin(dir, qx, qy);
+        if (ok && havePrev) {
+          vtkIdType a = outlinePoints->InsertNextPoint(px, py, 0);
+          vtkIdType b = outlinePoints->InsertNextPoint(qx, qy, 0);
+          addLine(a, b);
+        }
+        px = qx; py = qy; havePrev = ok;
+      }
+
+      // ---- T065e: the VERTICAL MEMBER, on the widest ring -------------------
+      // Beacon separation is a roughly HORIZONTAL measurement and says nothing
+      // about vertical displacement — for a tail chase closing on a streamer,
+      // up/down is the axis this display is least instrumented on. Drawn along
+      // BODY up, so a roll error TILTS it, which is precisely the cue that a
+      // rolled camera is lying to you about tilt.
+      if (d == kRingRangesM[0]) {
+        scalar ax0, ay0, bx0, by0;
+        const bool okA = bodyToWin(axis * ca + up * sa, ax0, ay0);
+        const bool okB = bodyToWin(axis * ca - up * sa, bx0, by0);
+        if (okA && okB) {
+          vtkIdType a = outlinePoints->InsertNextPoint(ax0, ay0, 0);
+          vtkIdType b = outlinePoints->InsertNextPoint(bx0, by0, 0);
+          addLine(a, b);
+        }
+      }
     }
   }
 
-  // ---- T088 (FR-030): the EFFECTIVE field, not the nominal rectangle ------
+  // ---- T088 (FR-030): the EFFECTIVE field, not the nominal rectangle -------
   //
   // The panel outline is the NOMINAL field. What the camera can actually use is
-  // that minus what the aircraft's own wing, nose and propeller take, and until
-  // now the panel drew no distinction — a beacon could sit in a region the
-  // airframe permanently blocks and the display would look entirely healthy.
+  // that minus what the aircraft's own wing, nose and propeller take — and
+  // without this a beacon could sit in a permanently blocked region while the
+  // display looked entirely healthy.
   //
-  // Hatched with short ticks rather than filled: a fill would bury the beacon
-  // dots and the range rings, which are what the panel is FOR. The ticks read as
-  // "this area is spoken for" without competing.
+  // Hatched, not filled: a fill would bury the beacon dots and range rings the
+  // panel exists for. BLOCKED (wing/nose, opaque) gets an X; ATTENUATED (prop
+  // disc — reduced, NOT lost per FR-009) gets a single slash.
   //
-  // Two regimes, drawn differently because FR-009 distinguishes them:
-  //   BLOCKED    (wing / nose) — opaque. Signal is simply gone.
-  //   ATTENUATED (prop disc)   — reduced, NOT lost. Still usable field.
-  //
-  // Computed ONCE (static) — obstruction is a property of the CONFIGURATION,
-  // not of any tick, so recomputing it per frame would be pure waste. It calls
-  // testObstruction rather than reimplementing the geometry, so the overlay
-  // cannot drift from what the simulator actually did.
+  // Sampled in BODY frame and projected through mountQ like everything else, so
+  // it MOVES with the scenario's camera draw. Cached per (arena, camera
+  // orientation) because obstruction is a property of the configuration, not of
+  // any tick. Calls testObstruction rather than reimplementing the geometry, so
+  // the overlay cannot drift from what the simulator actually did.
   {
-    struct ObsCell { scalar bx, by; bool blocked; };
+    struct ObsCell { gp_vec3 dir; bool blocked; };
     static std::vector<ObsCell> obsCells;
     static bool obsComputed = false;
     if (!obsComputed) {
       obsComputed = true;
+      // ⚠️ Compiled-in defaults: the dmp carries no airframe/camera config (the
+      // standing self-describing-dmp backlog item). Correct for every 040-era
+      // dmp; an older replay would draw the current airframe over someone
+      // else's flight. Mount translation and wing thickness are likewise not
+      // recoverable — see the frame note at the top of this block.
       const autoc::eval::AirframeObstruction airframe =
           autoc::eval::hb1AirframeObstruction();
-      // Matches CameraConfig's shipped default; ConfigDefaultMountMatchesTheMeasuredLeadingEdgeMount
-      // pins the two equal, so the overlay and the sim share one mount.
-      //
-      // ⚠️ LIMITATION, stated rather than hidden: this reads the COMPILED-IN
-      // defaults, not the geometry the played-back run actually used. The dmp
-      // does not carry the airframe/camera config (that is the standing
-      // "self-describing dmp" backlog item), so replaying a run baked with
-      // different obstruction geometry would draw the CURRENT airframe over
-      // someone else's flight. Correct for every 040-era dmp; revisit when the
-      // dmp carries its own config.
-      const autoc::eval::CameraConfig cam{};
-      const gp_vec3 mount = cam.mount_offset_body;
-      const gp_scalar rad_px = cam.radPerPx();
-      constexpr int kStride = 10;  // coarse: this is a legend, not an integral
-      for (int iy = 0; iy < cam.pixels_v; iy += kStride) {
-        for (int ix = 0; ix < cam.pixels_h; ix += kStride) {
-          const gp_scalar bxr =
-              autoc::eval::pixelToBearing(static_cast<int16_t>(ix), cam.pixels_h, rad_px);
-          const gp_scalar byr =
-              autoc::eval::pixelToBearing(static_cast<int16_t>(iy), cam.pixels_v, rad_px);
+      const autoc::eval::CameraConfig ccfg{};
+      const gp_vec3 mount = ccfg.mount_offset_body;
+      const gp_scalar rad_px = ccfg.radPerPx();
+      constexpr int kStride = 10;  // coarse: a legend, not an integral
+      for (int iy = 0; iy < ccfg.pixels_v; iy += kStride) {
+        for (int ix = 0; ix < ccfg.pixels_h; ix += kStride) {
+          const gp_scalar bxr = autoc::eval::pixelToBearing(
+              static_cast<int16_t>(ix), ccfg.pixels_h, rad_px);
+          const gp_scalar byr = autoc::eval::pixelToBearing(
+              static_cast<int16_t>(iy), ccfg.pixels_v, rad_px);
           const gp_scalar th = std::sqrt(bxr * bxr + byr * byr);
           const gp_scalar sn = (th < static_cast<gp_scalar>(1e-9))
                                    ? static_cast<gp_scalar>(1)
                                    : std::sin(th) / th;
+          // Body-frame ray for a NOMINAL camera; mountQ re-points it per
+          // scenario at draw time below.
           const gp_vec3 dir(std::cos(th), sn * bxr, sn * byr);
           const autoc::eval::ObstructionResult r = autoc::eval::testObstruction(
               mount, mount + dir * static_cast<gp_scalar>(10), airframe);
-          if (r.blocked) {
-            obsCells.push_back({static_cast<scalar>(bxr), static_cast<scalar>(byr), true});
-          } else if (r.attenuation < static_cast<gp_scalar>(1)) {
-            obsCells.push_back({static_cast<scalar>(bxr), static_cast<scalar>(byr), false});
-          }
+          if (r.blocked) obsCells.push_back({dir, true});
+          else if (r.attenuation < static_cast<gp_scalar>(1)) obsCells.push_back({dir, false});
         }
       }
     }
     for (const ObsCell& c : obsCells) {
-      const scalar px = winX(ndcX(c.bx));
-      const scalar py = winY(ndcY(c.by));
+      scalar px, py;
+      if (!bodyToWin(c.dir, px, py)) continue;
+      if (px < xLeft || px > xRight || py < yBottom || py > yTop) continue;
       const scalar h = c.blocked ? static_cast<scalar>(3.0f) : static_cast<scalar>(1.5f);
-      // Blocked = an X (crossed out). Attenuated = a single short slash.
       vtkIdType a = outlinePoints->InsertNextPoint(px - h, py - h, 0);
       vtkIdType b = outlinePoints->InsertNextPoint(px + h, py + h, 0);
       addLine(a, b);
@@ -3768,21 +3787,20 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
     }
   }
 
-  // ---- The aim point itself: thrust axis at the nearest ring ---------------
-  // A small cross, distinct from the boresight crosshair already drawn at image
-  // centre. The GAP between the two is the mis-aim a centre-aiming pilot takes.
+  // ---- The aim point: thrust axis at a representative engagement range -----
+  // The GAP between this cross and the boresight crosshair at image centre is
+  // the mis-aim a centre-aiming pilot takes.
   {
-    scalar ax, ay;
-    thrustAxisAngles(10.0f, ax, ay);  // 10 m -- representative engagement range
-    const scalar px = winX(ndcX(ax));
-    const scalar py = winY(ndcY(ay));
-    constexpr scalar kArm = static_cast<scalar>(11.0f);  // was 6 -- too small to read
-    const vtkIdType a1 = outlinePoints->InsertNextPoint(px - kArm, py, 0);
-    const vtkIdType a2 = outlinePoints->InsertNextPoint(px + kArm, py, 0);
-    const vtkIdType a3 = outlinePoints->InsertNextPoint(px, py - kArm, 0);
-    const vtkIdType a4 = outlinePoints->InsertNextPoint(px, py + kArm, 0);
-    addLine(a1, a2);
-    addLine(a3, a4);
+    scalar px, py;
+    if (bodyToWin(thrustAxisDir(10.0f), px, py)) {
+      constexpr scalar kArm = static_cast<scalar>(11.0f);
+      vtkIdType a1 = outlinePoints->InsertNextPoint(px - kArm, py, 0);
+      vtkIdType a2 = outlinePoints->InsertNextPoint(px + kArm, py, 0);
+      vtkIdType a3 = outlinePoints->InsertNextPoint(px, py - kArm, 0);
+      vtkIdType a4 = outlinePoints->InsertNextPoint(px, py + kArm, 0);
+      addLine(a1, a2);
+      addLine(a3, a4);
+    }
   }
 
   vtkNew<vtkPolyData> outlinePoly;

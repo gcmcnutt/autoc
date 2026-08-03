@@ -382,3 +382,88 @@ TEST(CameraVariation, NominalDrawLeavesTheTickConfigExactlyUntouched) {
     EXPECT_EQ(cfg.airframe.wing_max.z(), before.airframe.wing_max.z());
     EXPECT_EQ(cfg.signal.ambient_floor, before.signal.ambient_floor);
 }
+
+// ---------------------------------------------------------------------------
+// THE PANEL'S LOAD-BEARING INVARIANT: dots and reticle share ONE frame.
+//
+// The POV panel draws two kinds of thing. Beacon DOTS come from bearings the
+// simulator recorded, which are already in the VARIED camera frame. Every
+// reticle element — thrust-axis locus, range rings, vertical member, obstruction
+// hatch — originates in BODY frame and must be pushed through the same varied
+// orientation to land in the same picture.
+//
+// Until 2026-08-02 the reticle assumed identity while the dots were varied, so
+// with a 20 deg draw they disagreed by ~53 px — a SIXTH of the panel width. The
+// renderer recovers the orientation as
+//     mountQ = chase_orient^-1 * camera_pose_world_orient
+// and projects body directions through mountQ^-1.
+//
+// This test asserts that recipe reproduces `projectBeacon`'s own bearing to
+// floating-point agreement. If the two ever diverge, the panel is drawing a
+// reticle for one camera over dots from another — and it would look plausible.
+// ---------------------------------------------------------------------------
+
+TEST(CameraVariation, ReticleFrameMatchesTheRecordedBeaconBearing) {
+    const gp_quat chase_orient(Eigen::AngleAxis<gp_scalar>(
+        static_cast<gp_scalar>(0.3), gp_vec3(0.2f, 0.9f, 0.35f).normalized()));
+    const gp_vec3 chase_pos(3.0f, -2.0f, -11.0f);
+    const gp_vec3 beacon_world(28.0f, 6.0f, -14.0f);
+
+    for (double yaw : {0.0, 12.0, -20.0}) {
+        for (double roll : {0.0, -17.0, 20.0}) {
+            autoc::eval::TickRuleConfig cfg;
+            cfg.camera = autoc::eval::CameraConfig{};
+            cfg.obstruction_mount_offset = cfg.camera.mount_offset_body;
+            autoc::eval::CameraDeltas d;
+            d.boresightYawDeg = static_cast<gp_scalar>(yaw);
+            d.rollDeg = static_cast<gp_scalar>(roll);
+            autoc::eval::applyCameraVariation(cfg, d);
+
+            // --- what the SIMULATOR records (the beacon dot) ---
+            autoc::eval::ProjectionInput in;
+            in.chase_position_world = chase_pos;
+            in.chase_orientation_world = chase_orient;
+            in.target_position_world = beacon_world;
+            in.target_orientation_world = gp_quat::Identity();
+            in.beacon_mount_target_body = gp_vec3(0, 0, 0);
+            in.beacon_emission_axis_target_body = gp_vec3(-1, 0, 0);
+            in.camera_mount_chase_body = cfg.camera.mount_offset_body;
+            in.camera_orientation_chase_body = cfg.camera.mount_orientation_body;
+            in.obstruction_mount_chase_body = cfg.obstruction_mount_offset;
+            in.camera = cfg.camera;
+            in.beacon = autoc::eval::BeaconConfig{};
+            in.beacon.mount_body = in.beacon_mount_target_body;
+            in.beacon.emission_axis_body = in.beacon_emission_axis_target_body;
+            in.chase_airframe = autoc::eval::AirframeObstruction{};
+            in.chase_airframe.enabled = false;
+            in.signal = autoc::eval::hb1SignalConfig();
+            const autoc::eval::BeaconObservation obs = autoc::eval::projectBeacon(in);
+            ASSERT_LT(obs.cep, autoc::eval::kCepSentinelThreshold)
+                << "fixture must keep the beacon visible (yaw " << yaw << " roll " << roll << ")";
+
+            // --- what the RENDERER's reticle recipe produces ---
+            // Recover the orientation exactly as the panel does, from the pose
+            // the dmp records.
+            const gp_quat recorded_pose = chase_orient * cfg.camera.mount_orientation_body;
+            gp_quat mountQ = chase_orient.inverse() * recorded_pose;
+            mountQ.normalize();
+            const gp_vec3 beacon_body =
+                chase_orient.inverse() * (beacon_world - chase_pos) - cfg.camera.mount_offset_body;
+            const gp_vec3 dcam = mountQ.inverse() * beacon_body;
+            ASSERT_GT(dcam.x(), 0.0f);
+            const gp_scalar ryz = std::sqrt(dcam.y() * dcam.y() + dcam.z() * dcam.z());
+            const gp_scalar th = std::atan2(ryz, dcam.x());
+            const double ax = static_cast<double>(th * (dcam.y() / ryz));
+            const double ay = static_cast<double>(th * (dcam.z() / ryz));
+
+            // Agreement to within one pixel — the recorded bearing is QUANTISED
+            // to the grid (T031) while the reticle recipe is continuous, so a
+            // sub-pixel gap is expected and anything larger is a frame error.
+            const double px = static_cast<double>(cfg.camera.radPerPx());
+            EXPECT_NEAR(ax, static_cast<double>(obs.bearing_x_rad), px)
+                << "yaw " << yaw << " roll " << roll;
+            EXPECT_NEAR(ay, static_cast<double>(obs.bearing_y_rad), px)
+                << "yaw " << yaw << " roll " << roll;
+        }
+    }
+}
