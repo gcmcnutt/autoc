@@ -64,7 +64,9 @@ EXPECTED="$(grep -c 'add_test(NAME' CMakeLists.txt)"
 echo
 echo "rebuild-perf: gate self-check — expecting ${EXPECTED} suites to have run."
 echo "  (This script's exit status alone is NOT sufficient evidence. If you piped"
-echo "   output to a log, verify:  grep -c 'Running main() from' <log>  ==  ${EXPECTED})"
+echo "   output to a log, count the gtest banners in it -- one per suite -- and"
+echo "   check the total equals ${EXPECTED}. The banner text is deliberately NOT"
+echo "   quoted here: printing it would inflate the very count you are grepping."
 for t in autoc renderer dmp-dump; do
   [ -x "build/$t" ] || { echo "rebuild-perf: FAILED — build/$t missing after a 'successful' build." >&2; exit 1; }
 done

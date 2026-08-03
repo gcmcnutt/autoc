@@ -269,3 +269,116 @@ TEST_F(FitnessDecomp022Test, ZOffsetTreatedAsLateral) {
     EXPECT_GT(ratio, 0.8);
     EXPECT_LT(ratio, 1.2);
 }
+
+// ===========================================================================
+// 2026-08-02 — THE TICK-PAIRING INVARIANT for the prediction axis.
+//
+// `aircraftStateList` and `cameraViewList` are NOT index-parallel, despite an
+// M8b comment saying they are. `inputdev_autoc.cpp` pushes the INITIAL aircraft
+// state once at scenario start, before any NN tick, while camera views begin at
+// tick 1 — so a scenario records e.g. 368 states against 367 camera views and
+//
+//     tick k's camera view is cams[k - 1]
+//
+// From 038 US3 until 2026-08-02 this function paired them 1:1, scoring every
+// forecast ONE TICK LATE — a +50 ms prediction compared against the span two
+// ticks ahead, a whole horizon of error on the shortest one, on a LIVE lexicase
+// axis. It survived two features because nothing asserted the pairing.
+//
+// This is that assertion, and it is deliberately the strongest form available:
+// a predictor that is EXACTLY right must score EXACTLY zero. Any pairing error
+// makes a perfect predictor look wrong, so the test cannot pass on a shifted
+// index no matter how the tolerances are chosen.
+// ===========================================================================
+
+namespace {
+
+// span at tick k, chosen to change every tick so a shift cannot alias.
+double spanAtTick(int k) { return 0.050 + 0.0013 * k; }
+
+CameraViewSample camWithSpan(double span) {
+    CameraViewSample cv{};
+    // A pair placed symmetrically about the boresight subtends exactly `span`.
+    cv.beacon_left.bearing_x_rad = static_cast<float>(-span * 0.5);
+    cv.beacon_left.bearing_y_rad = 0.0f;
+    cv.beacon_left.cep = 0.05f;
+    cv.beacon_right.bearing_x_rad = static_cast<float>(span * 0.5);
+    cv.beacon_right.bearing_y_rad = 0.0f;
+    cv.beacon_right.cep = 0.05f;
+    return cv;
+}
+
+}  // namespace
+
+TEST(SpanPrediction, PerfectPredictorScoresExactlyZero) {
+    constexpr int kTicks = 12;               // ticks 1..11 have camera views
+    const double dt = SIM_TIME_STEP_MSEC / 1000.0;
+
+    // cams[j] is tick j+1's view.
+    std::vector<CameraViewSample> cams;
+    for (int k = 1; k < kTicks; ++k) cams.push_back(camWithSpan(spanAtTick(k)));
+
+    // states[0] is the pre-tick initial state and carries NO NN data — exactly
+    // as the recorder produces it. states[k] is tick k.
+    std::vector<AircraftState> states(kTicks);
+    for (int k = 1; k < kTicks; ++k) {
+        float out[TRACKER_NN_OUTPUT_COUNT] = {0};
+        out[0] = out[1] = out[2] = 0.0f;  // control outputs, unused here
+        for (int h = 0; h < kNumSpanPredictHorizons; ++h) {
+            const int ticksAhead = kSpanPredictHorizonsMsec[h] / SIM_TIME_STEP_MSEC;
+            // A PERFECT forecast of the span at tick k + ticksAhead.
+            out[TRACKER_NN_CONTROL_OUTPUT_COUNT + h] =
+                static_cast<float>(spanAtTick(k + ticksAhead));
+        }
+        // ...and a perfect closure rate.
+        out[TRACKER_NN_CONTROL_OUTPUT_COUNT + kNumSpanPredictHorizons] =
+            static_cast<float>((spanAtTick(k + 1) - spanAtTick(k)) / dt);
+        states[k].setNNData(NNInputs{}, out, TRACKER_NN_OUTPUT_COUNT);
+    }
+
+    const gp_fitness err = computeSpanPredictionError(states, cams);
+    EXPECT_LT(static_cast<double>(err), 1e-4)
+        << "a perfect predictor must score ~0. A non-zero result here means the "
+           "state<->cameraView tick pairing is off, NOT that the predictor is bad.";
+}
+
+TEST(SpanPrediction, AOneTickShiftIsDetectable) {
+    // Teeth for the test above: prove the assertion is actually sensitive to the
+    // bug it guards, or PerfectPredictorScoresExactlyZero would have passed on
+    // the old code too.
+    //
+    // Asserted as a RATIO against the correctly-paired error rather than an
+    // absolute bar: the shift's magnitude scales with how fast span moves, so an
+    // absolute threshold would be a tuning parameter that silently goes slack on
+    // a slower-closing fixture. The ratio cannot.
+    constexpr int kTicks = 12;
+    const double dt = SIM_TIME_STEP_MSEC / 1000.0;
+
+    std::vector<CameraViewSample> aligned, shifted;
+    for (int k = 1; k < kTicks; ++k) {
+        aligned.push_back(camWithSpan(spanAtTick(k)));
+        shifted.push_back(camWithSpan(spanAtTick(k + 1)));  // one tick out
+    }
+
+    std::vector<AircraftState> states(kTicks);
+    for (int k = 1; k < kTicks; ++k) {
+        float out[TRACKER_NN_OUTPUT_COUNT] = {0};
+        for (int h = 0; h < kNumSpanPredictHorizons; ++h) {
+            const int ticksAhead = kSpanPredictHorizonsMsec[h] / SIM_TIME_STEP_MSEC;
+            out[TRACKER_NN_CONTROL_OUTPUT_COUNT + h] =
+                static_cast<float>(spanAtTick(k + ticksAhead));
+        }
+        out[TRACKER_NN_CONTROL_OUTPUT_COUNT + kNumSpanPredictHorizons] =
+            static_cast<float>((spanAtTick(k + 1) - spanAtTick(k)) / dt);
+        states[k].setNNData(NNInputs{}, out, TRACKER_NN_OUTPUT_COUNT);
+    }
+
+    const double good = static_cast<double>(computeSpanPredictionError(states, aligned));
+    const double bad = static_cast<double>(computeSpanPredictionError(states, shifted));
+
+    EXPECT_LT(good, 1e-4) << "sanity: the aligned pairing is the zero case";
+    EXPECT_GT(bad, good * 100.0)
+        << "a one-tick shift must be plainly visible in the score; if it is not, "
+           "PerfectPredictorScoresExactlyZero has no teeth. good=" << good
+           << " bad=" << bad;
+}
