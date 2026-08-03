@@ -1111,8 +1111,18 @@ along free. **Reverse this call** if t2 returns an anomaly the 0.85 m offset
 could explain — it is exactly the size that could flatter or damn close-in
 tracking.
 
-**Fix**: `targets[stepIndex - 1]`, guarded for `stepIndex >= 1`. Add the
+**Fix**: `targets[stepIndex - 1]`, guarded for `stepIndex >= 1`, plus the
 zero-error-style assertion (see `SpanPrediction.PerfectPredictorScoresExactlyZero`).
+**Proper indexing, not extra storage** (operator 2026-08-02) — and see the
+grouped-record entry below for the structural version that makes the class
+unrepresentable.
+
+⚠️ **041 NEEDS A RESEARCH PHASE FIRST** (operator 2026-08-02). Not just this fix:
+a deliberate dig through the code for this risk class *before* implementing
+anything, since one cross-cutting question produced a finding that four features
+of feature-shaped work had missed. Scope it as a phase with its own output — an
+inventory of index-coupled contracts and structs with two lifetimes — rather
+than folding it into the predictor work as a side task.
 
 ---
 
@@ -1152,10 +1162,33 @@ zero, then assert zero. Any pairing error becomes visible regardless of
 tolerances, and a companion "shifted input must score visibly worse" test keeps
 it honest. Both live in `fitness_decomposition_tests.cc` as a template.
 
-**Cheapest structural fix** for the whole family: give the recorded samples a
-tick index or timestamp, so the invariant becomes checkable from the DATA rather
-than only from the code. That converts every one of these from invisible to
-loud.
+**Operator direction 2026-08-02 on the fix shape**: *"stick with proper
+indexing. Not additional storage."* A tick index per sample was one option and
+is rejected — it pays permanent bytes on every tick of every dmp to paper over a
+structural problem.
+
+**The structural fix instead — retire the parallel lists.** Replace
+
+```
+aircraftStateList[i][k]   cameraViewList[i][k]   targetTrajectoryList[i][k]
+```
+
+with ONE list of grouped per-tick records:
+
+```
+tickList[i][k] = { state, cameraView, targetSample }
+```
+
+Then the invariant is not asserted, documented or tested — **it is
+unrepresentable to get wrong**, because there is no second index to be off by.
+It also deletes the whole failure class at the root rather than instrumenting
+it: no tick index needed, no comment to trust, no test to remember. The extra
+pre-loop initial state either joins the group or is stored once beside it, and
+that choice becomes explicit instead of accidental.
+
+Cost: a dmp schema change (greenfield, no version bump per project policy — old
+dmps orphaned) plus every consumer. Real work, but bounded, and it is the last
+time this class can bite.
 
 ### [SMALL — surfaced 2026-07-30 during 040 t1 launch] `tracker_dmp_inspect` bucket + .zst warts
 
