@@ -100,10 +100,21 @@ struct SignalConfig {
     // distance. The loss sits upstream of every downstream multiplier and is far
     // larger than any realistic current increase recovers.
     //
-    // ASSUMED, and the single value the lens + bandpass field tests (~week of
-    // 2026-08-03) are expected to pin. The 031 consequence — the 850 nm bandpass
-    // is a GATE, not an optimisation — is what this term makes representable:
-    // a filter cuts out-of-band ambient, which raises the effective knee.
+    // ⚠️ ANCHORED TO THE WRONG SENSOR, and knowingly so. Every 031 measurement
+    // to date — field test #4 included — is from a SINGLE PHOTODIODE, which
+    // integrates the whole field onto one junction. This model is of a 320×240
+    // ARRAY, where ambient spreads over 76,800 pixels while the beacon
+    // concentrates onto a few: ~48 dB of spatial ambient rejection a PD simply
+    // does not have (optics-record.md §3a). Junction forward-bias from
+    // whole-field flux is a PD failure mode; an array saturates wells instead.
+    //
+    // So the STRUCTURE here is right — ambient can compress, and modelling it as
+    // additive noise alone let the model claim you can out-power the sun — but
+    // this MAGNITUDE is very likely far too pessimistic for an array. It is an
+    // ASSUMED value and the upcoming CAMERA trials (not the PD bench) are what
+    // will set it. Harmless meanwhile: ambient variation ships at sigma 0 and
+    // the knee sits 100× above the nominal floor, so the shipped contribution is
+    // −0.09 dB.
     gp_scalar ambient_knee;
 
     // ----- Decode ------------------------------------------------------------

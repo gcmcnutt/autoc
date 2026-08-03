@@ -56,7 +56,7 @@ measurement of what it is.
 | **Narrower field** | More photons per pixel and a longer effective range for the same sensor — the direct trade this document is about. |
 | **Larger entrance pupil** | Untried; couples to mass and to the C-14 mechanical envelope. |
 | **Longer integration** | Bounded by the 480 fps frame and by motion blur at closing speed. |
-| ~~**Emitter drive**~~ | ❌ **RULED OUT in direct sun — measured, not argued.** |
+| ~~**Emitter drive**~~ | ❌ **RULED OUT in direct sun on a PHOTODIODE — measured, not argued. See §3a: this may not carry to an imaging array.** |
 
 **The emitter-drive row is the finding.** 031 field test #4 (2026-08-02): ~6 LEDs at 50 mA (~300 mA), bare
 photodiode, no filter — a **shaded** PD locks at ~20 ft, a **sun-exposed** PD fails at any distance, and
@@ -91,6 +91,75 @@ bearing-plus-range inside.
 **Format.** A real 120° build at the current 0.375°/px needs 320 × 240 with a lens that actually delivers
 120° onto that array without vignetting the corners — where, per T044, obstruction already lives. Nothing
 has verified that a candidate lens does so.
+
+---
+
+## 3a. ⚠️ EVERY BENCH NUMBER ABOVE IS FROM A 1-PIXEL PHOTODIODE
+
+**Added 2026-08-02 (operator): camera trials are imminent, and they are a different sensor.** All 031
+bench and field work to date — including field test #4 and the ≤10 nA decode floor — uses a **single
+photodiode**. The 040 model is of a **320 × 240 imaging array**. Those differ in the one respect that
+dominates this whole analysis.
+
+**A PD integrates the entire field onto one junction.** Every ambient photon inside its acceptance angle
+lands on the same device as the beacon. **An array spreads ambient across 76,800 pixels while the beacon
+concentrates onto a few.** That asymmetry *is* the reason to use a camera at all, and it is worth ~48 dB:
+
+| | solid angle |
+|---|---:|
+| one pixel (0.375°) | 4.28 × 10⁻⁵ sr |
+| full 120° × 90° field | 2.989 sr |
+| **ratio** | **69,780 ⇒ 48.4 dB** |
+
+*(Sanity check: the pixel count is 76,800; the gap to 69,780 is the sin θ/θ Jacobian — the sphere subtends
+slightly less than the naive angular product. The two agreeing to ~9% is the arithmetic checking itself.)*
+
+### This inverts §2's conclusion
+
+The ~24 dB shortfall is computed against a **PD-anchored** budget. An array recovers roughly **twice**
+that from spatial ambient rejection alone — even with a badly blurred spot:
+
+| beacon spot | rejection | headroom vs the 24 dB shortfall |
+|---|---:|---:|
+| 1 × 1 px | 48.4 dB | **+24.4 dB** |
+| 2 × 2 px | 42.4 dB | +18.4 dB |
+| 3 × 3 px | 38.9 dB | +14.9 dB |
+| 5 × 5 px | 34.5 dB | +10.5 dB |
+
+**What transfers from the PD work and what does not:**
+
+- ✅ **The SIGNAL side transfers.** The same aperture collects the same beacon flux, so
+  `SignalFluxConstant`, the ÷5 co-aiming correction, and the 1/r² law are all still the right shape.
+- ❌ **The NOISE and FLOOR side does not.** The ≤10 nA decode floor is a *PD* decode floor for a
+  whole-field integrator. An array's limits are per-pixel well depth, read noise and per-pixel shot
+  noise — a different noise model in different units.
+- ❌ **`SignalAmbientKnee` is anchored to the wrong sensor.** Junction forward-bias from whole-field flux
+  is a PD failure mode; an array pixel sees ~1/70,000 of that flux, so compression in that specific form
+  is largely a non-issue for an array, which saturates wells instead.
+- ⚠️ **"You cannot out-power the sun" is a PD result.** It is solid for a bare photodiode and may well
+  **not** carry to an imaging array, where the sun occupies its own pixels and the beacon does not share
+  them. §2's struck-out emitter-drive row should be read as *PD-specific pending the camera trials*, not
+  as a general law.
+
+### Honest disclosure about how this model got here
+
+`SignalAmbientKnee` was added to the 040 signal model on 2026-08-02 in direct response to field test #4.
+The **structure** is right — ambient can compress, and modelling it only as additive noise let the model
+claim you can out-power the sun. The **magnitude** is anchored to a photodiode and is very likely far too
+pessimistic for an array. It is an `A` row and the camera trials are what will set it.
+
+**No harm to the runs**: ambient variation ships at sigma 0 and the nominal knee sits 100× above the
+nominal floor, so compression contributes −0.09 dB in t1 and t2. The wrong anchor is in the *record*, not
+in the trained controllers.
+
+### What the camera trials should measure
+
+1. **Per-pixel ambient photocurrent in direct sun**, with and without the 850 nm bandpass — this is what
+   actually sets `SignalAmbientKnee` for an array, and it is the number the PD cannot provide.
+2. **The beacon's spot size in pixels** at representative range. It converts the table above from a range
+   of possibilities into a single number, because the whole 48 dB rests on concentration.
+3. **Whether the sun-exposed failure reproduces at all** on an array. If it does not, field test #4's gate
+   is a PD artefact and the bandpass drops from *gate* back to *optimisation*.
 
 ---
 

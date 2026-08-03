@@ -444,6 +444,13 @@ the sun. A `SignalAmbientKnee` compression term was added 2026-08-02 so the *tra
 ambient as well as the noise. See `signal_model.h`; the knee is ASSUMED and is the value the
 **lens + filter field tests (~week of 2026-08-03) are expected to pin**.
 
+⚠️ **AND A LARGER ONE, added 2026-08-02: this is all from a 1-PIXEL PHOTODIODE.** The 040 model is of a
+320×240 array, which spreads ambient over 76,800 pixels while the beacon concentrates onto a few — **~48 dB
+of spatial ambient rejection a PD does not have**, i.e. about twice the shortfall computed above. The
+SIGNAL side of this table transfers (same aperture, same flux); the FLOOR and the compression term do not.
+See [optics-record.md](optics-record.md) §3a. The upcoming camera trials, not more PD bench work, are what
+settle it.
+
 ⚠️ **Confounds the 031 journal flags itself, and which this note inherits** — the defensible claim is the
 shaded/exposed split alone (same emitter, same distance), NOT the absolute range: (1) ~20 ft may be the
 *yard* limit rather than the signal limit; (2) splayed LEDs are **not** 6× on-axis, plausibly 1-3×;

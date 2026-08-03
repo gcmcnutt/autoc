@@ -62,7 +62,7 @@ could contradict the grid.
 | `SignalOpticsGain` | × | 1.0 | **A** | no collection optics fitted |
 | `SignalAmbientFloor` | µA | 2.16e-5 | **A** | shade / overcast |
 | `SignalNoiseFloor` | µA | 0.54e-5 | **A** | fixed sensor term |
-| `SignalAmbientKnee` | µA | 2.16e-3 | **A** | **the 031 field-test #4 term** — ambient at which signal *transfer* halves |
+| `SignalAmbientKnee` | µA | 2.16e-3 | **A** | ambient at which signal *transfer* halves. ⚠️ **PD-anchored** — every 031 measurement is from a 1-pixel photodiode; an array has ~48 dB of spatial ambient rejection a PD lacks, so this is very likely far too pessimistic (optics-record.md §3a) |
 | `SignalCdmaPenaltyDb` | dB | 3.0 | **M** | 031 §4, ≈ one SNR tier |
 | `SignalQFloorDb` | dB | 0.0 | **M** | 031 decode floor ⇒ q = 0 |
 | `SignalQSaturationDb` | dB | 20.0 | **A** | where the AGC-normalised q tops out at 9 |
@@ -135,7 +135,7 @@ A calibration pass may overwrite **any A row** without touching code (FR-036); T
 with the new measurement.
 
 **The A rows most likely to move first**, in order:
-1. `SignalAmbientKnee`, `SignalOpticsGain` — the lens + bandpass field tests (~week of 2026-08-03).
+1. `SignalAmbientKnee`, `SignalOpticsGain` — the **camera trials**, not the PD bench. The knee in particular cannot be set from a photodiode at all: it needs *per-pixel* ambient in direct sun, with and without the bandpass.
 2. `AirframeNose*` — the pod measurement (checklist A1b).
 3. `CameraPixelsH/V`, `CameraDegPerPixel` — the sensor decision recorded in [optics-record.md](../optics-record.md).
 
