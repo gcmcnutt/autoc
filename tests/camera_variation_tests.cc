@@ -18,6 +18,9 @@
 // verifiable, but ships at sigma 0 until the lens+filter field tests pin
 // `SignalAmbientKnee`. `AmbientIsDrawnButHeldNominal` asserts that deliberately,
 // so a later reader cannot mistake the zero for an oversight.
+//
+// This suite mirrors `craft_variation_tests.cc` — camera is a new CLASS in a
+// working pipeline, not a new mechanism.
 
 #include <gtest/gtest.h>
 
@@ -33,20 +36,22 @@
 using autoc::eval::CameraDeltas;
 using autoc::eval::CameraSigmas;
 using autoc::eval::generateCameraFromClassPRNG;
-using autoc::eval::kCameraAlignmentHardClipDeg;
-using autoc::eval::kCameraMountTranslationHardClipM;
 using autoc::util::ClassPRNG;
+using autoc::util::kGaussianSigmaClamp;
 using autoc::util::deriveClassSubSeeds;
 
 namespace {
 
-// Shipped magnitudes: boresight and roll each sigma 10 deg, HARD-CLIPPED at 20.
+// Shipped magnitudes. The ENVELOPE is expressed as sigma, because the
+// pipeline truncates every draw at 2.5 sigma — same convention as entry/craft.
 CameraSigmas shippedSigmas() {
     CameraSigmas s;
-    s.boresightSigmaDeg = 10.0;
-    s.rollSigmaDeg = 10.0;
-    s.mountTranslationSigmaM = 0.005;   // 1 cm box => +/-5 mm
-    s.wingThicknessSigmaM = 0.002;
+    // 2.5σ IS the envelope, per the pipeline-wide truncation — same convention
+    // as `entryConeSigma = 18.0 // 2.5sigma = 45 deg`.
+    s.boresightSigmaDeg = 8.0;          // 2.5σ = 20 deg
+    s.rollSigmaDeg = 8.0;               // 2.5σ = 20 deg
+    s.mountTranslationSigmaM = 0.002;   // 2.5σ = 5 mm (the 1 cm box)
+    s.wingThicknessSigmaM = 0.0008;
     s.ambientSigmaFrac = 0.0;           // held nominal — see the header note
     return s;
 }
@@ -76,19 +81,27 @@ TEST(CameraVariation, DifferentScenariosDrawDifferentCameras) {
     EXPECT_NE(a.mountTranslation.x(), b.mountTranslation.x());
 }
 
-TEST(CameraVariation, DrawsStayWithinConfiguredBounds) {
+TEST(CameraVariation, DrawsStayWithinTheTwoPointFiveSigmaEnvelope) {
+    // The bound is the PIPELINE-WIDE truncation in ClassPRNG::nextGaussian, not
+    // a camera-specific clip. Asserting it against kGaussianSigmaClamp × sigma
+    // is what keeps camera honest to the same envelope rule as entry and craft —
+    // if someone re-tunes a sigma, the envelope moves with it automatically and
+    // there is no second constant to forget.
     const CameraSigmas s = shippedSigmas();
+    const double align_limit = kGaussianSigmaClamp * s.boresightSigmaDeg;   // 20 deg
+    const double roll_limit = kGaussianSigmaClamp * s.rollSigmaDeg;         // 20 deg
+    const double trans_limit = kGaussianSigmaClamp * s.mountTranslationSigmaM;  // 5 mm
+
+    EXPECT_DOUBLE_EQ(align_limit, 20.0) << "the spec's hard 20 deg, expressed as sigma";
+    EXPECT_DOUBLE_EQ(trans_limit, 0.005) << "the spec's 1 cm box, expressed as sigma";
+
     for (uint64_t k = 1; k <= 500; ++k) {
         const CameraDeltas d = drawFor(k * 0x9E3779B97F4A7C15ULL, s);
-        EXPECT_LE(std::abs(static_cast<double>(d.boresightYawDeg)),
-                  static_cast<double>(kCameraAlignmentHardClipDeg));
-        EXPECT_LE(std::abs(static_cast<double>(d.boresightPitchDeg)),
-                  static_cast<double>(kCameraAlignmentHardClipDeg));
-        EXPECT_LE(std::abs(static_cast<double>(d.rollDeg)),
-                  static_cast<double>(kCameraAlignmentHardClipDeg));
+        EXPECT_LE(std::abs(static_cast<double>(d.boresightYawDeg)), align_limit);
+        EXPECT_LE(std::abs(static_cast<double>(d.boresightPitchDeg)), align_limit);
+        EXPECT_LE(std::abs(static_cast<double>(d.rollDeg)), roll_limit);
         for (int i = 0; i < 3; ++i) {
-            EXPECT_LE(std::abs(static_cast<double>(d.mountTranslation[i])),
-                      static_cast<double>(kCameraMountTranslationHardClipM));
+            EXPECT_LE(std::abs(static_cast<double>(d.mountTranslation[i])), trans_limit);
         }
     }
 }
@@ -171,33 +184,29 @@ TEST(CameraVariation, ZeroSigmaProducesExactlyTheNominalCamera) {
 // T069 — hard clip, not tail resampling.
 // ---------------------------------------------------------------------------
 
-TEST(CameraVariation, AlignmentDrawsAreClippedNotResampled) {
-    // The distinction matters for DETERMINISM, not just for shape. Resampling a
-    // tail draw would change the PRNG draw COUNT for that scenario, which shifts
-    // every subsequent draw and breaks the frozen draw-order contract that
-    // bit-exact replay rests on. Clipping keeps the count fixed.
+TEST(CameraVariation, DrawsAreTruncatedNotResampled) {
+    // The distinction is about DETERMINISM, not shape. Resampling a tail draw
+    // would change the PRNG draw COUNT for that scenario, shifting every later
+    // draw and breaking the frozen draw-order contract bit-exact replay rests
+    // on. `scenario_prng.h` says so where the clamp is defined: "Clamp rather
+    // than resample so the PRNG draw COUNT per call stays fixed."
     //
-    // Detected by driving sigma far past the clip: with sigma 40 deg and a
-    // 2.5-sigma clamp the raw draw reaches 100 deg, so a large fraction of
-    // scenarios MUST land exactly ON the clip. A resampler would instead show a
-    // smooth distribution with nothing piled at the boundary.
-    CameraSigmas wide = shippedSigmas();
-    wide.boresightSigmaDeg = 40.0;
-    wide.rollSigmaDeg = 40.0;
+    // Detected by the pile-up at the boundary: a truncated normal puts finite
+    // mass exactly ON ±2.5σ, a resampler puts none there.
+    const CameraSigmas s = shippedSigmas();
+    const double limit = kGaussianSigmaClamp * s.rollSigmaDeg;
 
-    int at_clip = 0, total = 0;
-    for (uint64_t k = 1; k <= 400; ++k) {
-        const CameraDeltas d = drawFor(k * 0x9E3779B97F4A7C15ULL, wide);
+    int at_limit = 0, total = 0;
+    for (uint64_t k = 1; k <= 2000; ++k) {
+        const double roll = std::abs(static_cast<double>(
+            drawFor(k * 0x9E3779B97F4A7C15ULL, s).rollDeg));
         ++total;
-        if (std::abs(std::abs(static_cast<double>(d.rollDeg)) -
-                     static_cast<double>(kCameraAlignmentHardClipDeg)) < 1e-6) {
-            ++at_clip;
-        }
-        EXPECT_LE(std::abs(static_cast<double>(d.rollDeg)),
-                  static_cast<double>(kCameraAlignmentHardClipDeg));
+        if (std::abs(roll - limit) < 1e-6) ++at_limit;
+        EXPECT_LE(roll, limit);
     }
-    EXPECT_GT(at_clip, total / 10)
-        << "a hard clip must PILE draws on the boundary; a resampler would not";
+    EXPECT_GT(at_limit, 0)
+        << "a TRUNCATED normal must place draws exactly on the boundary; "
+           "a resampler would leave it empty";
 }
 
 TEST(CameraVariation, AmbientIsDrawnButHeldNominal) {

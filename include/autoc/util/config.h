@@ -128,19 +128,22 @@ struct AutocConfig {
     //                        sigma; center 0.150 s, clamped [0.050, 0.300]
     // (servo first-order tau removed 2026-06-12 — v2 has no lag term.)
     int enableCraftVariations = 0;
-    // 040 US6 — camera variation. Sigmas in degrees / metres; the hard clips
-    // (20 deg alignment, 5 mm translation) live in camera_variation.h because
-    // they are contract, not tuning.
+    // 040 US6 — camera variation. A new CLASS in the existing variation
+    // pipeline, mirroring craft: enable flag + sigmas, drawn parent-side,
+    // recorded raw in ScenarioMetadata, NOT ramped (scenario_meta_apply.h
+    // already decided that: camera is diversity, not difficulty).
     //
     // PRINCIPLE VI: every `double` below is `// raw-ok:` as a BLOCK, on the
     // `cepGateThreshold` precedent — ini-loaded config-struct fields, inih
     // returns double, and each is cast to gp_scalar at the CameraSigmas
     // boundary in src/autoc.cc.
     int enableCameraVariations = 0;
-    double cameraBoresightSigmaDeg = 10.0;       // M  boresight yaw+pitch error
-    double cameraRollSigmaDeg = 10.0;            // M  HIGHEST-IMPACT: biases tilt 1:1
-    double cameraMountTranslationSigmaM = 0.005; // M  1 cm box; OBSTRUCTION path only
-    double cameraWingThicknessSigmaM = 0.002;    // A  folded foam board is variable
+    // Sigmas express the ENVELOPE through the pipeline-wide 2.5-sigma truncation
+    // in ClassPRNG::nextGaussian, same convention as entryConeSigma.
+    double cameraBoresightSigmaDeg = 8.0;        // M  yaw+pitch; 2.5σ = 20 deg
+    double cameraRollSigmaDeg = 8.0;             // M  HIGHEST-IMPACT (biases tilt 1:1); 2.5σ = 20 deg
+    double cameraMountTranslationSigmaM = 0.002; // M  2.5σ = 5 mm; OBSTRUCTION path only
+    double cameraWingThicknessSigmaM = 0.0008;   // A  folded foam board is variable
     // DEFERRED (operator 2026-08-02): emitter stays perfect until the lens +
     // bandpass field tests pin SignalAmbientKnee. Plumbed, held at zero.
     double cameraAmbientSigmaFrac = 0.0;         // A
