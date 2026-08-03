@@ -131,6 +131,11 @@ struct AutocConfig {
     // 040 US6 — camera variation. Sigmas in degrees / metres; the hard clips
     // (20 deg alignment, 5 mm translation) live in camera_variation.h because
     // they are contract, not tuning.
+    //
+    // PRINCIPLE VI: every `double` below is `// raw-ok:` as a BLOCK, on the
+    // `cepGateThreshold` precedent — ini-loaded config-struct fields, inih
+    // returns double, and each is cast to gp_scalar at the CameraSigmas
+    // boundary in src/autoc.cc.
     int enableCameraVariations = 0;
     double cameraBoresightSigmaDeg = 10.0;       // M  boresight yaw+pitch error
     double cameraRollSigmaDeg = 10.0;            // M  HIGHEST-IMPACT: biases tilt 1:1
