@@ -414,10 +414,40 @@ monotonic and completely uninformative, which is why the floor is back-solved in
 `signal_model.h`).
 
 So the sim's 100 m is an **assertion that the hardware will get there** (FR-033a), and **closing the ~24 dB
-is the camera-perf / emitter-power work**. Candidate contributions, none yet modelled: `SignalOpticsGain`
-(shipped at 1.0 — no collection optics), emitter drive, entrance-pupil area, narrower field (more photons
-per pixel), longer integration. When any of them is real, it moves `SignalOpticsGain` / `flux_constant` /
-the floor — and per FR-036 it must move **without structural change**, which is what T092 rehearses.
+is the camera-perf / emitter-power work**. When any of it is real it moves `SignalOpticsGain` /
+`flux_constant` / the floor — and per FR-036 it must move **without structural change**, which is what T092
+rehearses.
+
+### ⚠️ CORRECTED 2026-08-02 by 031 field test #4 — emitter drive is NOT a free lever
+
+This section originally listed the candidate contributions as "`SignalOpticsGain`, **emitter drive**,
+entrance-pupil area, narrower field, longer integration". **The emitter-drive entry was wrong**, and the
+bench measured it rather than argued it
+([`specs/031-beacon-camera/bench-journal.md`](../031-beacon-camera/bench-journal.md) field test #4,
+2026-08-02):
+
+- 6 LEDs @ 50 mA (~300 mA, nominally ~6× current), bare PD, no filter.
+- **PD shaded → locks at ~20 ft. PD in direct sun → fails at any distance tested.**
+- Same emitter, same distance: **shadow alone flips it.**
+
+The mechanism is **ambient compression at the photodiode** — ambient forward-biases the PD, its dynamic
+resistance collapses, and beacon current is *shunted at the sensor*. That loss sits **upstream of every
+downstream multiplier**, and it is far larger than any realistic current increase can recover, so **you
+cannot out-power the sun**. Consequence recorded on the 031 side: the **850 nm bandpass moves from an
+optimisation to a gate** on the whole range roadmap — optics multiply signal but do nothing about
+compression, and only after the filter restores headroom does extra current show up as range.
+
+**What this cost the 040 model, and the fix.** `signal_model.h` treated ambient as a purely ADDITIVE noise
+term (`snr = received / (ambient_floor + noise_floor)`). Under that shape more `flux_constant` or
+`optics_gain` always buys SNR at any ambient — i.e. the model would cheerfully predict you can out-power
+the sun. A `SignalAmbientKnee` compression term was added 2026-08-02 so the *transfer* degrades with
+ambient as well as the noise. See `signal_model.h`; the knee is ASSUMED and is the value the
+**lens + filter field tests (~week of 2026-08-03) are expected to pin**.
+
+⚠️ **Confounds the 031 journal flags itself, and which this note inherits** — the defensible claim is the
+shaded/exposed split alone (same emitter, same distance), NOT the absolute range: (1) ~20 ft may be the
+*yard* limit rather than the signal limit; (2) splayed LEDs are **not** 6× on-axis, plausibly 1-3×;
+(3) conditions and build differ from test #3, which logged 15-20 ft *in* direct sun at 51 mA.
 
 ### Two properties worth keeping
 

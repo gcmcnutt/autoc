@@ -12,7 +12,8 @@
 // THE CHAIN (data-model.md §4):
 //
 //   received  = flux_constant × emission(aspect) × (1/r²) × obstruction × optics
-//   snr_chip  = received / (ambient_floor + noise_floor)
+//   transfer  = ambient_knee / (ambient_knee + ambient_floor)   [031 field #4]
+//   snr_chip  = (received × transfer) / (ambient_floor + noise_floor)
 //   snr_chip -= cdma_penalty          when both beacons share a detector element
 //
 // DETERMINISM (FR-020): pure functions, no PRNG, no clock, no carried state.
@@ -82,6 +83,29 @@ struct SignalConfig {
     gp_scalar ambient_floor;  // µA, per-scenario draw in US6 (overcast → sun)
     gp_scalar noise_floor;    // µA, fixed sensor term
 
+    // AMBIENT COMPRESSION (031 field test #4, 2026-08-02). µA — the ambient
+    // photocurrent at which signal TRANSFER halves.
+    //
+    // Ambient does two distinct things to a photodiode, and through 040 t1 this
+    // model captured only the second:
+    //   1. it forward-biases the junction, collapsing dynamic resistance, so
+    //      beacon current is SHUNTED AT THE SENSOR  <-- transfer loss, was missing
+    //   2. it adds shot noise                        <-- the additive floor above
+    //
+    // Why it matters: with an additive floor alone, more `flux_constant` or
+    // `optics_gain` always buys SNR at any ambient — the model would predict you
+    // can OUT-POWER THE SUN. The bench says otherwise. At ~6x emitter current
+    // with a bare PD, a shaded sensor locks at ~20 ft and a sun-exposed one
+    // fails at any distance; shadow alone flips it at fixed emitter and
+    // distance. The loss sits upstream of every downstream multiplier and is far
+    // larger than any realistic current increase recovers.
+    //
+    // ASSUMED, and the single value the lens + bandpass field tests (~week of
+    // 2026-08-03) are expected to pin. The 031 consequence — the 850 nm bandpass
+    // is a GATE, not an optimisation — is what this term makes representable:
+    // a filter cuts out-of-band ambient, which raises the effective knee.
+    gp_scalar ambient_knee;
+
     // ----- Decode ------------------------------------------------------------
     gp_scalar cdma_penalty_db;  // dB, cost of sharing a detector element (031 §4)
     gp_scalar q_floor_db;       // dB, SNR at which the 0-9 quality metric reads 0
@@ -103,7 +127,7 @@ struct SignalConfig {
     template <class Archive>
     void serialize(Archive& ar) {
         ar(flux_constant, optics_gain, emission_flat_deg, emission_half_power_deg,
-           ambient_floor, noise_floor, cdma_penalty_db, q_floor_db,
+           ambient_floor, noise_floor, ambient_knee, cdma_penalty_db, q_floor_db,
            q_saturation_db, detection_range_m, separation_min_px,
            shared_element_px);
     }
@@ -149,7 +173,8 @@ gp_scalar emissionGain(const gp_vec3& dir_target_body,
 // ---------------------------------------------------------------------------
 
 struct SignalResult {
-    gp_scalar received_ua;  // µA at the detector
+    gp_scalar received_ua;  // µA at the detector, AFTER ambient compression
+    gp_scalar transfer;     // ambient-compression factor in (0, 1]; 1 = uncompressed
     gp_scalar snr_db;       // per-chip SNR, cdma penalty already applied
     // The hardware's own quality metric, 0-9, GOOD ≥ 5. Derived from snr_db by a
     // monotonic map. Using the hardware's scale rather than inventing one is

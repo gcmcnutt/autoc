@@ -1028,6 +1028,7 @@ static WorkerInit buildWorkerInit() {
     init.signalConfig.emission_half_power_deg = static_cast<gp_scalar>(cfg.beaconEmissionHalfPowerDeg);
     init.signalConfig.ambient_floor = static_cast<gp_scalar>(cfg.signalAmbientFloor);
     init.signalConfig.noise_floor = static_cast<gp_scalar>(cfg.signalNoiseFloor);
+    init.signalConfig.ambient_knee = static_cast<gp_scalar>(cfg.signalAmbientKnee);
     init.signalConfig.cdma_penalty_db = static_cast<gp_scalar>(cfg.signalCdmaPenaltyDb);
     init.signalConfig.q_floor_db = static_cast<gp_scalar>(cfg.signalQFloorDb);
     init.signalConfig.q_saturation_db = static_cast<gp_scalar>(cfg.signalQSaturationDb);

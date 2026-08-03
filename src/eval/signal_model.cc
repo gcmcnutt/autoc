@@ -33,6 +33,13 @@ SignalConfig hb1SignalConfig() {
     c.detection_range_m = static_cast<gp_scalar>(100.0);
     c.ambient_floor = static_cast<gp_scalar>(2.16e-5);
     c.noise_floor = static_cast<gp_scalar>(0.54e-5);
+    // 100x the shipped (shade/overcast) ambient, so the DEFAULT case is
+    // essentially uncompressed — transfer 0.990, i.e. −0.09 dB — and t1's
+    // semantics are preserved. Compression only bites once US6 draws ambient
+    // upward: 10x ambient costs −0.4 dB, 100x (direct sun) −3 dB, 1000x
+    // −10.4 dB, and that sits ON TOP of the additive floor rising in step, which
+    // together is the "fails at any distance" wall field test #4 measured.
+    c.ambient_knee = static_cast<gp_scalar>(2.16e-3);
 
     // 031 §4: sharing a detector element costs about one SNR tier.
     c.cdma_penalty_db = static_cast<gp_scalar>(3.0);
@@ -134,8 +141,18 @@ SignalResult computeSignal(gp_scalar range_m,
     // The chain. Obstruction is a plain multiplier — the propeller attenuates
     // rather than gates (FR-009), which is the term T014 computed and left
     // deliberately unconsumed until this module existed.
-    out.received_ua = cfg.flux_constant * emission_gain * obstruction_attenuation *
-                      cfg.optics_gain / (r * r);
+    const gp_scalar incident = cfg.flux_constant * emission_gain *
+                               obstruction_attenuation * cfg.optics_gain / (r * r);
+
+    // AMBIENT COMPRESSION (031 field test #4) — signal shunted at the sensor
+    // before it is ever measured. Applied to the SIGNAL, not the noise, because
+    // it is a transfer loss and not a noise source; the additive floor below is
+    // the separate noise effect. Reported so callers can attribute a weak link
+    // to compression rather than to range.
+    out.transfer = (cfg.ambient_knee > static_cast<gp_scalar>(0))
+                       ? cfg.ambient_knee / (cfg.ambient_knee + cfg.ambient_floor)
+                       : static_cast<gp_scalar>(1);
+    out.received_ua = incident * out.transfer;
 
     const gp_scalar floor_ua = cfg.ambient_floor + cfg.noise_floor;
     if (out.received_ua <= static_cast<gp_scalar>(0) ||

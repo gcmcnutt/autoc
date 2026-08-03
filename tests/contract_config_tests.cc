@@ -231,7 +231,10 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // rehearsed. T058 then DELETED BeaconEmissionConeDeg -- the hard 270 deg
     // cutoff the flat-top emission profile replaced, which after FR-019 had no
     // reader left and was a live-looking knob that changed nothing -> 133.
-    EXPECT_EQ(n, 133u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // 2026-08-02 added SignalAmbientKnee -> 134: the ambient-compression term
+    // 031 field test #4 forced, where ambient shunts signal at the PD rather
+    // than merely adding noise.
+    EXPECT_EQ(n, 134u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

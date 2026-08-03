@@ -117,8 +117,76 @@ TEST(SignalModel, NoiseFloorIsCoherentWithTheAssertedDetectionRange) {
         (static_cast<double>(cfg.detection_range_m) * static_cast<double>(cfg.detection_range_m));
     EXPECT_NEAR(floor_ua, implied, implied * 1e-6);
 
-    EXPECT_NEAR(static_cast<double>(atRangeOnAxis(100.0, cfg).snr_db), 0.0, 1e-3)
-        << "0 dB must land at the asserted envelope edge on beam peak";
+    // 0 dB lands at the envelope edge BEFORE ambient compression. The knee term
+    // added 2026-08-02 costs a further 10·log10(transfer) — −0.09 dB at the
+    // shipped (shade) ambient — so the assertion states the coupling exactly
+    // rather than being loosened to hide it.
+    const double transfer_db =
+        10.0 * std::log10(static_cast<double>(atRangeOnAxis(100.0, cfg).transfer));
+    EXPECT_NEAR(static_cast<double>(atRangeOnAxis(100.0, cfg).snr_db), transfer_db, 1e-3)
+        << "0 dB must land at the asserted envelope edge on beam peak, "
+           "less only the ambient-compression transfer";
+    EXPECT_GT(transfer_db, -0.15) << "shade ambient must be essentially uncompressed";
+}
+
+// ---------------------------------------------------------------------------
+// AMBIENT COMPRESSION (031 field test #4, 2026-08-02).
+//
+// Ambient does TWO things to a photodiode. Through 040 t1 this model captured
+// only the second: (1) it forward-biases the junction so beacon current is
+// SHUNTED AT THE SENSOR — a transfer loss — and (2) it adds shot noise. With
+// only the additive floor, more emitter current always buys SNR at any ambient,
+// i.e. the model would predict you can OUT-POWER THE SUN. The bench says
+// otherwise.
+// ---------------------------------------------------------------------------
+
+TEST(SignalModel, AmbientCompressionIsNegligibleAtTheShippedAmbient) {
+    // The shipped ambient is shade/overcast, and the knee sits 100× above it, so
+    // the default case is essentially uncompressed. This is what preserves the
+    // t1 bake's semantics — compression only bites once US6 draws ambient up.
+    const SignalConfig cfg = hb1SignalConfig();
+    EXPECT_GT(static_cast<double>(atRangeOnAxis(20.0, cfg).transfer), 0.98);
+}
+
+TEST(SignalModel, AmbientCompressionCollapsesTransferAsAmbientRises) {
+    SignalConfig cfg = hb1SignalConfig();
+    const double shade = static_cast<double>(cfg.ambient_floor);
+
+    double prev = 1.1;
+    for (double mult : {1.0, 10.0, 100.0, 1000.0}) {
+        cfg.ambient_floor = static_cast<gp_scalar>(shade * mult);
+        const double t = static_cast<double>(atRangeOnAxis(20.0, cfg).transfer);
+        EXPECT_LT(t, prev) << "transfer must fall monotonically with ambient (×" << mult << ")";
+        EXPECT_GT(t, 0.0) << "compression attenuates, it never gates";
+        prev = t;
+    }
+    // Direct sun ≈ 100× shade puts the knee at parity ⇒ half the signal shunted.
+    cfg.ambient_floor = static_cast<gp_scalar>(shade * 100.0);
+    EXPECT_NEAR(static_cast<double>(atRangeOnAxis(20.0, cfg).transfer), 0.5, 0.01);
+}
+
+TEST(SignalModel, EmitterCurrentCannotBuyBackDirectSun) {
+    // THE FIELD-TEST PROPERTY, as an executable assertion. 031 field test #4:
+    // at ~6× emitter current with a bare PD, a SHADED sensor locks at ~20 ft and
+    // a SUN-EXPOSED one fails at any distance — shadow alone flips it at fixed
+    // emitter and distance.
+    //
+    // The loss sits upstream of every downstream multiplier and is far larger
+    // than a realistic current increase recovers. If a future edit ever lets
+    // 6× current reach shaded parity in sun, this model has gone back to
+    // claiming you can out-power the sun, and this test is what stops it.
+    const SignalConfig shade = hb1SignalConfig();
+
+    SignalConfig sun6x = hb1SignalConfig();
+    sun6x.ambient_floor = static_cast<gp_scalar>(shade.ambient_floor * 100.0);  // direct sun
+    sun6x.flux_constant = static_cast<gp_scalar>(shade.flux_constant * 6.0);    // ×6 emitters
+
+    const double shade_db = static_cast<double>(atRangeOnAxis(6.0, shade).snr_db);
+    const double sun_db = static_cast<double>(atRangeOnAxis(6.0, sun6x).snr_db);
+
+    EXPECT_LT(sun_db, shade_db - 10.0)
+        << "×6 emitter current in direct sun must remain FAR below the shaded "
+           "link at 1× — the bandpass filter is the gate, not emitter drive";
 }
 
 // ---------------------------------------------------------------------------

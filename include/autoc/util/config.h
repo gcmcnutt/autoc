@@ -293,6 +293,15 @@ struct AutocConfig {
     double signalOpticsGain = 1.0;           // A    collection optics, none fitted yet
     double signalAmbientFloor = 2.16e-5;     // A    µA — varied per scenario in US6
     double signalNoiseFloor = 0.54e-5;       // A    µA — fixed sensor term
+    // A  µA — ambient at which signal TRANSFER halves (031 field test #4).
+    // Ambient both SHUNTS signal at the PD (this) and adds noise (above). With
+    // only the noise term, more emitter current always buys SNR — the model
+    // would claim you can out-power the sun, which the bench disproved: at ~6×
+    // current a shaded PD locks at ~20 ft and a sun-exposed one fails at any
+    // distance. The 850 nm bandpass RAISES this knee, which is why 031 calls the
+    // filter a gate rather than an optimisation. Expected to be pinned by the
+    // lens + filter field tests (~week of 2026-08-03).
+    double signalAmbientKnee = 2.16e-3;
     double signalCdmaPenaltyDb = 3.0;        // M    031 §4, ≈ one SNR tier
     double signalQFloorDb = 0.0;             // M    031 decode floor
     double signalQSaturationDb = 20.0;       // A    where the AGC-normalised metric tops out
@@ -450,6 +459,7 @@ struct AutocConfig {
     X(double,         signalOpticsGain,          "SignalOpticsGain") \
     X(double,         signalAmbientFloor,        "SignalAmbientFloor") \
     X(double,         signalNoiseFloor,          "SignalNoiseFloor") \
+    X(double,         signalAmbientKnee,         "SignalAmbientKnee") \
     X(double,         signalCdmaPenaltyDb,       "SignalCdmaPenaltyDb") \
     X(double,         signalQFloorDb,            "SignalQFloorDb") \
     X(double,         signalQSaturationDb,       "SignalQSaturationDb") \
