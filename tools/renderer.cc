@@ -3690,6 +3690,84 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
     }
   }
 
+  // ---- T088 (FR-030): the EFFECTIVE field, not the nominal rectangle ------
+  //
+  // The panel outline is the NOMINAL field. What the camera can actually use is
+  // that minus what the aircraft's own wing, nose and propeller take, and until
+  // now the panel drew no distinction — a beacon could sit in a region the
+  // airframe permanently blocks and the display would look entirely healthy.
+  //
+  // Hatched with short ticks rather than filled: a fill would bury the beacon
+  // dots and the range rings, which are what the panel is FOR. The ticks read as
+  // "this area is spoken for" without competing.
+  //
+  // Two regimes, drawn differently because FR-009 distinguishes them:
+  //   BLOCKED    (wing / nose) — opaque. Signal is simply gone.
+  //   ATTENUATED (prop disc)   — reduced, NOT lost. Still usable field.
+  //
+  // Computed ONCE (static) — obstruction is a property of the CONFIGURATION,
+  // not of any tick, so recomputing it per frame would be pure waste. It calls
+  // testObstruction rather than reimplementing the geometry, so the overlay
+  // cannot drift from what the simulator actually did.
+  {
+    struct ObsCell { scalar bx, by; bool blocked; };
+    static std::vector<ObsCell> obsCells;
+    static bool obsComputed = false;
+    if (!obsComputed) {
+      obsComputed = true;
+      const autoc::eval::AirframeObstruction airframe =
+          autoc::eval::hb1AirframeObstruction();
+      // Matches CameraConfig's shipped default; ConfigDefaultMountMatchesTheMeasuredLeadingEdgeMount
+      // pins the two equal, so the overlay and the sim share one mount.
+      //
+      // ⚠️ LIMITATION, stated rather than hidden: this reads the COMPILED-IN
+      // defaults, not the geometry the played-back run actually used. The dmp
+      // does not carry the airframe/camera config (that is the standing
+      // "self-describing dmp" backlog item), so replaying a run baked with
+      // different obstruction geometry would draw the CURRENT airframe over
+      // someone else's flight. Correct for every 040-era dmp; revisit when the
+      // dmp carries its own config.
+      const autoc::eval::CameraConfig cam{};
+      const gp_vec3 mount = cam.mount_offset_body;
+      const gp_scalar rad_px = cam.radPerPx();
+      constexpr int kStride = 10;  // coarse: this is a legend, not an integral
+      for (int iy = 0; iy < cam.pixels_v; iy += kStride) {
+        for (int ix = 0; ix < cam.pixels_h; ix += kStride) {
+          const gp_scalar bxr =
+              autoc::eval::pixelToBearing(static_cast<int16_t>(ix), cam.pixels_h, rad_px);
+          const gp_scalar byr =
+              autoc::eval::pixelToBearing(static_cast<int16_t>(iy), cam.pixels_v, rad_px);
+          const gp_scalar th = std::sqrt(bxr * bxr + byr * byr);
+          const gp_scalar sn = (th < static_cast<gp_scalar>(1e-9))
+                                   ? static_cast<gp_scalar>(1)
+                                   : std::sin(th) / th;
+          const gp_vec3 dir(std::cos(th), sn * bxr, sn * byr);
+          const autoc::eval::ObstructionResult r = autoc::eval::testObstruction(
+              mount, mount + dir * static_cast<gp_scalar>(10), airframe);
+          if (r.blocked) {
+            obsCells.push_back({static_cast<scalar>(bxr), static_cast<scalar>(byr), true});
+          } else if (r.attenuation < static_cast<gp_scalar>(1)) {
+            obsCells.push_back({static_cast<scalar>(bxr), static_cast<scalar>(byr), false});
+          }
+        }
+      }
+    }
+    for (const ObsCell& c : obsCells) {
+      const scalar px = winX(ndcX(c.bx));
+      const scalar py = winY(ndcY(c.by));
+      const scalar h = c.blocked ? static_cast<scalar>(3.0f) : static_cast<scalar>(1.5f);
+      // Blocked = an X (crossed out). Attenuated = a single short slash.
+      vtkIdType a = outlinePoints->InsertNextPoint(px - h, py - h, 0);
+      vtkIdType b = outlinePoints->InsertNextPoint(px + h, py + h, 0);
+      addLine(a, b);
+      if (c.blocked) {
+        vtkIdType c1 = outlinePoints->InsertNextPoint(px - h, py + h, 0);
+        vtkIdType c2 = outlinePoints->InsertNextPoint(px + h, py - h, 0);
+        addLine(c1, c2);
+      }
+    }
+  }
+
   // ---- The aim point itself: thrust axis at the nearest ring ---------------
   // A small cross, distinct from the boresight crosshair already drawn at image
   // centre. The GAP between the two is the mis-aim a centre-aiming pilot takes.
