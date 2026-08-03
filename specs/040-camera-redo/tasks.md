@@ -306,6 +306,25 @@ known camera.
 **Independent Test**: scenarios draw distinct camera parameters; the same scenario id always reproduces the
 same draw; zero sigmas reproduce the baseline bit-identically.
 
+> 🎯 **SCOPE DECISION 2026-08-02 (operator): CAMERA variation only — the emitter
+> stays PERFECT.** US6 varies the camera's *mechanical and optical* imperfections
+> (boresight, roll, mount translation, wing thickness) and holds the emitter /
+> ambient side at nominal. `SignalAmbientKnee` stays in the model as the fidelity
+> fix 031 field test #4 forced, but its **variation sigma stays at zero** for this
+> pass. Two reasons, and the second is the stronger:
+>
+> 1. **The knee is not pinned yet.** The lens + bandpass field tests (~week of
+>    2026-08-03) are expected to fix it. Varying ambient now would bake an assumed
+>    compression curve into a training run and then have to be redone.
+> 2. **It keeps t2 attributable.** With ambient held, `t2 − t1` is *camera
+>    variation* and nothing else. Vary both and the delta confounds a mechanical
+>    robustness change with a signal-model change — and 038's whole lesson was
+>    that unattributable deltas cost a run.
+>
+> Ambient variation is therefore deferred, not dropped, and its trigger is the
+> filter field data. Stated here so a later reader does not read the zero sigma
+> as an oversight.
+
 ### Tests (write first, verify failing)
 
 - [ ] T066 [P] [US6] New `tests/camera_variation_tests.cc`: two scenarios draw different camera parameters within configured bounds (FR-021)
@@ -320,7 +339,7 @@ same draw; zero sigmas reproduce the baseline bit-identically.
 - [ ] T072 [US6] Add `cameraSeed` and the variation draws to `include/autoc/rpc/scenario_metadata.h`, following the craft-variation pattern (raw pre-scale draws recorded)
 - [ ] T073 [US6] Apply boresight and roll error (σ 10°, hard clip 20°) to the camera pose in `src/eval/camera_projection.cc`
 - [ ] T074 [US6] Apply mount translation (1 cm box) in `src/eval/airframe_occlusion.cc` — **obstruction path only**, deliberately not applied to bearing in `src/eval/camera_projection.cc`: ±5 mm is 0.03° at 10 m (negligible) but swings propeller clearance ~15% (research R6)
-- [ ] T075 [US6] Apply wing-thickness and ambient-level variation to `src/eval/airframe_occlusion.cc` and `src/eval/signal_model.cc` respectively
+- [ ] T075 [US6] Apply wing-thickness variation to `src/eval/airframe_occlusion.cc`. **Ambient-level variation is DEFERRED per the scope decision above** — plumb the draw so it exists and is recorded, but ship its sigma at zero; the trigger to switch it on is the lens+filter field data pinning `SignalAmbientKnee`
 - [ ] T076 [US6] Emit the camera variation draws in `tools/dmp_dump.cc --meta-only` so variation is verifiable ramp-independently
 - [ ] T077 [US6] Run the Principle VI type-domain grep on the diff; annotate or convert
 
