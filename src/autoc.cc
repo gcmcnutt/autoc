@@ -516,7 +516,8 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
         std::ostringstream hdr;
         hdr << "Scenario       ScenarioSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°";
         if (any_craft_active) {
-            hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svSlew   thrTau   pwmPh    CraftSeed";
+            hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svSlew   thrTau   pwmPh    CraftSeed"
+                << "   camYaw  camPit  camRol   camDx   camDy   camDz  camWng   CamSeed";
         }
         *logger.info() << hdr.str() << endl;
     }
@@ -576,6 +577,24 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
                  << std::setw(7) << static_cast<double>(cd.craftServoPwmPhase)  // 037 v2: s (PWM latch phase)
                  << "  0x" << std::hex << std::setw(8) << std::setfill('0')
                  << sv.craftSeed
+                 // 040 T076 — camera draws land HERE rather than in
+                 // `dmp-dump --meta-only`, because they no longer ride the
+                 // persisted ScenarioMetadata (see protocol.h). They are static
+                 // per scenario for the whole run, so this startup table IS the
+                 // complete record — and it is ramp-independent by construction,
+                 // which was T076's actual requirement.
+                 // setfill(' ') FIRST: craftSeed above leaves setfill('0') set,
+                 // which would render -6.66 as 00-6.66 and make the table
+                 // unreadable -- and this table IS T076's record.
+                 << setfill(' ')
+                 << "  " << setw(7) << fixed << setprecision(2) << sv.cameraDeltas.boresightYawDeg
+                 << " " << setw(7) << sv.cameraDeltas.boresightPitchDeg
+                 << " " << setw(7) << sv.cameraDeltas.rollDeg
+                 << " " << setw(7) << setprecision(4) << sv.cameraDeltas.mountTranslation.x()
+                 << " " << setw(7) << sv.cameraDeltas.mountTranslation.y()
+                 << " " << setw(7) << sv.cameraDeltas.mountTranslation.z()
+                 << " " << setw(7) << sv.cameraDeltas.wingThicknessDelta
+                 << "  0x" << hex << setw(8) << setfill('0') << sv.cameraSeed << dec << setfill(' ')
                  << std::dec << std::setfill(' ');
         }
 
@@ -981,16 +1000,6 @@ static WorkerInit buildWorkerInit() {
                 meta.craftThrustTau = cd.craftThrustTau;
                 meta.craftServoPwmPhase = cd.craftServoPwmPhase;  // 037 servo v2
                 meta.craftSeed = gScenarioVariations[idx].craftSeed;
-                // 040 US6 — raw PRE-SCALE camera draws, so variation stays
-                // verifiable ramp-independently via `dmp-dump --meta-only`.
-                const auto& cam = gScenarioVariations[idx].cameraDeltas;
-                meta.cameraBoresightYawDeg = cam.boresightYawDeg;
-                meta.cameraBoresightPitchDeg = cam.boresightPitchDeg;
-                meta.cameraRollDeg = cam.rollDeg;
-                meta.cameraMountTranslation = cam.mountTranslation;
-                meta.cameraWingThicknessDelta = cam.wingThicknessDelta;
-                meta.cameraAmbientScale = cam.ambientScale;
-                meta.cameraSeed = gScenarioVariations[idx].cameraSeed;
                 // (033 cleanup) rabbitSpeedSeed assignment removed — field
                 // deleted from ScenarioMetadata + ScenarioVariations.
                 // Worker derives rabbit-class PRNG seed from
@@ -1072,6 +1081,15 @@ static WorkerInit buildWorkerInit() {
     init.acquisitionConfig.tentative_cep = static_cast<gp_scalar>(cfg.qualityTentativeCep);
     init.acquisitionConfig.identity_uncertain_cep =
         static_cast<gp_scalar>(cfg.qualityIdentityUncertainCep);
+
+    // 040 US6 — per-scenario camera draws, primed once. Indexed to match
+    // gScenarioVariations (and therefore the source scenario index the worker
+    // sees), so the worker needs no lookup table of its own.
+    init.cameraVariations.clear();
+    init.cameraVariations.reserve(gScenarioVariations.size());
+    for (const auto& sv : gScenarioVariations) {
+        init.cameraVariations.push_back(sv.cameraDeltas);
+    }
 
     return init;
 }

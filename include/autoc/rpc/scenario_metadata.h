@@ -95,31 +95,25 @@ struct ScenarioMetadata {
     // [0, 0.020)); the real command dead-time. Appended after craftSeed so
     // the wire prefix is preserved (greenfield growth, no version bump).
     gp_scalar craftServoPwmPhase = static_cast<gp_scalar>(0.0);
-    // 040 US6 (FR-021/FR-022) — CAMERA variation. The insertion point reserved
-    // by FR-020 is now taken; appended after craftServoPwmPhase rather than
-    // interleaved, so the wire prefix is preserved (greenfield growth, no
-    // version bump — old dmps fail loud on length mismatch, by policy).
+    // 040 US6 — CAMERA VARIATION DELIBERATELY DOES **NOT** LIVE HERE.
     //
-    // Raw PRE-SCALE draws are recorded, not the post-ramp values, which is what
-    // makes variation verifiable RAMP-INDEPENDENTLY via `dmp-dump --meta-only`.
+    // It was put here first, and that broke the pinned M1 source: this struct is
+    // persisted inside every dmp's `scenarioList`, so changing its wire format
+    // orphans every dmp ever written — including the T003a-pinned M1 source that
+    // SC-008's whole comparison rests on and that T005 explicitly decided NOT to
+    // regenerate. `loadSourceDmp` failed loud with `vector::_M_default_append`
+    // on the first t2 launch attempt (2026-08-02).
     //
-    // Defaults are the NOMINAL camera so a no-variation scenario is bit-identical
-    // to having no camera-variation code at all. Note ambientScale defaults to
-    // 1.0, not 0.0 — it is a scale, not a delta.
-    gp_scalar cameraBoresightYawDeg = static_cast<gp_scalar>(0.0);
-    gp_scalar cameraBoresightPitchDeg = static_cast<gp_scalar>(0.0);
-    // Highest-impact term: roll rotates the image plane and so biases the
-    // port→starboard tilt cue degree-for-degree, and tilt drives roll command.
-    gp_scalar cameraRollDeg = static_cast<gp_scalar>(0.0);
-    // OBSTRUCTION-path only (research R6) — 0.03° at 10 m for bearing, but ~15%
-    // of propeller clearance.
-    gp_vec3 cameraMountTranslation{static_cast<gp_scalar>(0.0), static_cast<gp_scalar>(0.0),
-                                   static_cast<gp_scalar>(0.0)};
-    gp_scalar cameraWingThicknessDelta = static_cast<gp_scalar>(0.0);
-    // Held at nominal for the t2 pass (operator 2026-08-02: emitter stays
-    // perfect until the lens+filter field tests pin SignalAmbientKnee).
-    gp_scalar cameraAmbientScale = static_cast<gp_scalar>(1.0);
-    uint32_t cameraSeed = 0;  // camera-class PRNG seed (replay root)
+    // Two project rules collided and only one was honoured: greenfield
+    // no-cereal-versioning (old dmps fail loud) versus the pinned, do-not-rebake
+    // M1 source. When 034 craft variation hit the same wall the answer was an M1
+    // rebake (038 t5); 040 cannot take that route without destroying its own
+    // baseline comparison.
+    //
+    // Camera draws now ride `WorkerInit.cameraVariations` — RPC-only, never
+    // persisted — which is also what the priming architecture already asks for:
+    // scenario-shaped payloads belong in the once-per-worker WorkerInit, not in
+    // per-eval metadata. See include/autoc/rpc/protocol.h.
 
     template<class Archive>
     void serialize(Archive& ar, const std::uint32_t /*version*/) {
@@ -139,11 +133,7 @@ struct ScenarioMetadata {
            craftPitchEffDelta, craftRollEffDelta,
            craftServoSlew, craftThrustTau,  // 037 actuator dynamics (servoTau removed 2026-06-12)
            craftSeed,
-           craftServoPwmPhase,  // 037 servo v2 -- appended, no version bump
-           // 040 US6 camera variation -- appended, no version bump
-           cameraBoresightYawDeg, cameraBoresightPitchDeg, cameraRollDeg,
-           cameraMountTranslation, cameraWingThicknessDelta, cameraAmbientScale,
-           cameraSeed);
+           craftServoPwmPhase);  // 037 servo v2 -- appended, no version bump
     }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)

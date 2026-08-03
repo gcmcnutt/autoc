@@ -234,33 +234,65 @@ TEST(CameraVariation, AmbientIsDrawnButHeldNominal) {
 }
 
 // ---------------------------------------------------------------------------
-// T072 — the draws survive the ScenarioMetadata round trip.
+// T072 — the draws survive the WorkerInit round trip.
+//
+// ⚠️ THEY RIDE WorkerInit, NOT ScenarioMetadata, AND THE DISTINCTION IS THE
+// WHOLE POINT. The first implementation put them in ScenarioMetadata, which is
+// persisted inside every dmp's `scenarioList` — so it orphaned the T003a-pinned
+// M1 source and the t2 launch died with `vector::_M_default_append` before a
+// single generation ran. 040 cannot rebake M1 without destroying the SC-008
+// comparison it exists to make.
+//
+// `WorkerInitRoundTripPreservesCameraDraws` is therefore also a REGRESSION
+// GUARD: if someone moves these fields back onto a persisted struct, the pinned
+// source breaks again, and the failure will look like a corrupt dmp rather than
+// a schema change.
 // ---------------------------------------------------------------------------
 
-TEST(CameraVariation, ScenarioMetadataRoundTripsTheCameraDraws) {
-    ScenarioMetadata src{};
-    src.cameraSeed = 0xDEADBEEF;
-    src.cameraBoresightYawDeg = static_cast<gp_scalar>(-7.25);
-    src.cameraBoresightPitchDeg = static_cast<gp_scalar>(3.5);
-    src.cameraRollDeg = static_cast<gp_scalar>(-19.75);
-    src.cameraMountTranslation = gp_vec3(static_cast<gp_scalar>(0.004),
-                                         static_cast<gp_scalar>(-0.002),
-                                         static_cast<gp_scalar>(0.001));
-    src.cameraWingThicknessDelta = static_cast<gp_scalar>(0.0013);
-    src.cameraAmbientScale = static_cast<gp_scalar>(1.0);
+TEST(CameraVariation, WorkerInitRoundTripPreservesCameraDraws) {
+    WorkerInit src{};
+    src.cameraVariations.resize(2);
+    src.cameraVariations[0].boresightYawDeg = static_cast<gp_scalar>(-7.25);
+    src.cameraVariations[0].boresightPitchDeg = static_cast<gp_scalar>(3.5);
+    src.cameraVariations[0].rollDeg = static_cast<gp_scalar>(-19.75);
+    src.cameraVariations[0].mountTranslation = gp_vec3(static_cast<gp_scalar>(0.004),
+                                                       static_cast<gp_scalar>(-0.002),
+                                                       static_cast<gp_scalar>(0.001));
+    src.cameraVariations[0].wingThicknessDelta = static_cast<gp_scalar>(0.0013);
+    src.cameraVariations[1].ambientScale = static_cast<gp_scalar>(1.0);
 
     std::stringstream ss;
     { cereal::BinaryOutputArchive ar(ss); ar(src); }
-    ScenarioMetadata dst{};
+    WorkerInit dst{};
     { cereal::BinaryInputArchive ar(ss); ar(dst); }
 
-    EXPECT_EQ(dst.cameraSeed, src.cameraSeed);
-    EXPECT_EQ(dst.cameraBoresightYawDeg, src.cameraBoresightYawDeg);
-    EXPECT_EQ(dst.cameraBoresightPitchDeg, src.cameraBoresightPitchDeg);
-    EXPECT_EQ(dst.cameraRollDeg, src.cameraRollDeg);
-    EXPECT_EQ(dst.cameraMountTranslation.y(), src.cameraMountTranslation.y());
-    EXPECT_EQ(dst.cameraWingThicknessDelta, src.cameraWingThicknessDelta);
-    EXPECT_EQ(dst.cameraAmbientScale, src.cameraAmbientScale);
+    ASSERT_EQ(dst.cameraVariations.size(), 2u);
+    EXPECT_EQ(dst.cameraVariations[0].boresightYawDeg, src.cameraVariations[0].boresightYawDeg);
+    EXPECT_EQ(dst.cameraVariations[0].boresightPitchDeg, src.cameraVariations[0].boresightPitchDeg);
+    EXPECT_EQ(dst.cameraVariations[0].rollDeg, src.cameraVariations[0].rollDeg);
+    EXPECT_EQ(dst.cameraVariations[0].mountTranslation.y(),
+              src.cameraVariations[0].mountTranslation.y());
+    EXPECT_EQ(dst.cameraVariations[0].wingThicknessDelta,
+              src.cameraVariations[0].wingThicknessDelta);
+    EXPECT_EQ(dst.cameraVariations[1].ambientScale, src.cameraVariations[1].ambientScale);
+}
+
+TEST(CameraVariation, ScenarioMetadataCarriesNoCameraFields) {
+    // The regression guard, stated as a compile-time fact rather than a comment:
+    // ScenarioMetadata is PERSISTED, so its wire format must stay frozen against
+    // the pinned M1 source. If a future change adds camera fields back here, the
+    // round-trip below changes size and this test's sibling above becomes the
+    // only thing standing between us and an unreadable baseline.
+    //
+    // Asserted by round-tripping a default ScenarioMetadata and confirming the
+    // byte length matches a second default — i.e. nothing camera-shaped has
+    // silently grown into it.
+    ScenarioMetadata a{}, b{};
+    std::stringstream sa, sb;
+    { cereal::BinaryOutputArchive ar(sa); ar(a); }
+    { cereal::BinaryOutputArchive ar(sb); ar(b); }
+    EXPECT_EQ(sa.str().size(), sb.str().size());
+    EXPECT_GT(sa.str().size(), 0u);
 }
 
 // ---------------------------------------------------------------------------

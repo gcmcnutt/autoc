@@ -522,23 +522,6 @@ int main(int argc, char** argv) {
       // Applied wind = base_dir + offset × variationScale(gen) (run-level ramp_scale).
       std::cout << "    wind_dir_offset_deg: "
                 << (results.scenarioList[i].windDirectionOffset * 180.0 / M_PI) << "\n";
-      // 040 T076 (US6) — RAW pre-scale camera draws. Recording them un-ramped is
-      // what makes variation verifiable RAMP-INDEPENDENTLY: you can read what a
-      // scenario's camera actually was without knowing the generation. (Camera
-      // is not ramped anyway — scenario_meta_apply.h classes it as diversity,
-      // not difficulty — but the raw record keeps that a property of the data
-      // rather than of a reader's assumption.)
-      if (i < results.scenarioList.size()) {
-        const auto& sc = results.scenarioList[i];
-        std::cout << "    camera: {boresight_yaw_deg: " << sc.cameraBoresightYawDeg
-                  << ", boresight_pitch_deg: " << sc.cameraBoresightPitchDeg
-                  << ", roll_deg: " << sc.cameraRollDeg
-                  << ", mount_dx_m: " << sc.cameraMountTranslation.x()
-                  << ", mount_dy_m: " << sc.cameraMountTranslation.y()
-                  << ", mount_dz_m: " << sc.cameraMountTranslation.z()
-                  << ", wing_thickness_dm: " << sc.cameraWingThicknessDelta
-                  << ", ambient_scale: " << sc.cameraAmbientScale << "}\n";
-      }
       std::cout << "    crash_reason: " << crashReasonToString(s.crashReason) << "\n";
       std::cout << "    score: " << s.score << "\n";
       std::cout << "    energy_score: " << s.energy_score << "\n";

@@ -4,7 +4,7 @@
 //
 // A DIRECT MIRROR of `craft_variation.h`, deliberately: same struct pair
 // (Sigmas / Deltas), same header-only generator, same draw-and-discard call
-// discipline in autoc.cc, same raw-draw recording in ScenarioMetadata. The
+// discipline in autoc.cc. The
 // variation pipeline already works; camera is a new CLASS in it, not a new
 // mechanism.
 //
@@ -56,8 +56,8 @@ namespace autoc::eval {
 
 struct CameraSigmas {
     // ini-loaded config-struct fields — inih::GetReal yields a 64-bit real, and
-    // gp_scalar conversion happens where the drawn value is written into
-    // ScenarioMetadata. Mirrors CraftSigmas exactly.
+    // gp_scalar conversion happens at the CameraSigmas boundary in autoc.cc.
+    // Mirrors CraftSigmas exactly.
     //
     // Each sigma is chosen so 2.5σ (the pipeline-wide truncation) equals the
     // intended envelope:
@@ -83,13 +83,23 @@ struct CameraDeltas {
                              static_cast<gp_scalar>(0.0)};
     gp_scalar wingThicknessDelta = static_cast<gp_scalar>(0.0);
     gp_scalar ambientScale = static_cast<gp_scalar>(1.0);
+
+    // 040 — cereal serialize for the WorkerInit RPC carry. RPC-ONLY: these
+    // deliberately do not ride ScenarioMetadata, because that struct is
+    // persisted in every dmp and changing it orphaned the pinned M1 source.
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(boresightYawDeg, boresightPitchDeg, rollDeg, mountTranslation,
+           wingThicknessDelta, ambientScale);
+    }
 };
 
 /**
  * Draw order is FROZEN — adding or reordering draws shifts the value a seed
  * produces and breaks bit-exact replay. To add a camera axis later, append the
- * draw at the bottom and append the field to `ScenarioMetadata` + `CameraDeltas`
- * last. Same contract as craft.
+ * draw at the bottom and append the field to `CameraDeltas` last. Same contract
+ * as craft. NOTE the draws ride WorkerInit, NOT ScenarioMetadata — see the
+ * serialize comment below for why that distinction is load-bearing.
  *
  * The ambient draw is centered at 1.0 (multiplicative scale, like
  * `craftThrustScale`); every other axis is a zero-centered delta.

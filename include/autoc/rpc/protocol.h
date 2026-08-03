@@ -31,6 +31,7 @@
 #include "autoc/eval/beacon_config.h"
 #include "autoc/eval/camera_config.h"
 #include "autoc/eval/acquisition_state.h"    // AcquisitionConfig
+#include "autoc/eval/camera_variation.h"     // CameraDeltas
 #include "autoc/eval/camera_projection.h"   // AirframeObstruction
 #include "autoc/eval/variation_generator.h"
 // NOTE: include "autoc/eval/source_trajectory.h" lives AFTER
@@ -163,6 +164,19 @@ struct WorkerInit {
   autoc::eval::SignalConfig signalConfig;
   autoc::eval::AcquisitionConfig acquisitionConfig;
 
+  // 040 US6 — per-scenario CAMERA draws, indexed by source scenario index.
+  //
+  // HERE, not in ScenarioMetadata, and the reason is load-bearing: this struct
+  // is RPC-only and NEVER persisted, whereas ScenarioMetadata is serialized
+  // inside every dmp's scenarioList. Putting the draws there orphaned the
+  // T003a-pinned M1 source (t2 launch, 2026-08-02) — and 040 cannot rebake M1
+  // without destroying the SC-008 comparison it exists to make.
+  //
+  // It is also what the priming architecture already asks for: scenario-shaped
+  // payloads belong in the once-per-worker WorkerInit rather than in per-eval
+  // EvalData. Empty ⇒ the nominal camera everywhere, bit-identical to pre-US6.
+  std::vector<autoc::eval::CameraDeltas> cameraVariations;
+
   // 030 M7d.b — crash-hull + trail-rabbit static params. Note
   // pCrashThisGen is NOT here; it ramps per-gen and stays in EvalData.
   gp_scalar crashHullRadius = static_cast<gp_scalar>(1.0);
@@ -224,7 +238,7 @@ struct WorkerInit {
     int m = static_cast<int>(mode);
     ar(m, sourceList, cameraConfig, beaconLeftConfig, beaconRightConfig,
        airframeObstruction, flightArena,
-       signalConfig, acquisitionConfig,
+       signalConfig, acquisitionConfig, cameraVariations,
        crashHullRadius, trailDistance,
        pathList, scenarioMetaList,
        cepGateThreshold,
