@@ -190,8 +190,12 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     // chase_orient * camera_orient gives the camera frame in world coords.
     last_camera_view_.camera_pose_world_pos =
         state_.getPosition() + state_.getOrientation() * camera_.mount_offset_body;
+    // 040 US6 — the VARIED orientation (rule_cfg), not the nominal member.
+    // See the note in crrcsim_tracker_helper.cpp: recording the nominal pose
+    // made the recorded camera direction disagree with the bearings projected
+    // through it.
     last_camera_view_.camera_pose_world_orient =
-        state_.getOrientation() * camera_.mount_orientation_body;
+        state_.getOrientation() * rule_cfg.camera.mount_orientation_body;
     // 040 T029 — FOV is derived from the sensor grid, so the dmp records the
     // derived value rather than a separately-configured one that could disagree.
     last_camera_view_.camera_fov_h_deg = static_cast<float>(camera_.fovHDeg());   // raw-ok: cereal byte-format member (CameraViewSample fp32 contract)

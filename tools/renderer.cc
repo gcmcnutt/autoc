@@ -3609,19 +3609,24 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   // around the panel during playback of a SINGLE scenario, when the camera draw
   // is static per scenario and it should sit still.
   //
-  // Cached per scenario as well, because the draw cannot change within one.
+  // Cached per scenario, because the draw cannot change within one. Keyed on
+  // the gp hash as well as the arena: a function-local static would otherwise
+  // survive a generation switch or a whole new dmp load and hand the next run
+  // the previous one's camera.
   static int cachedArena = -1;
+  static uint64_t cachedGpHash = 0;
   static gp_quat cachedMountQ = gp_quat::Identity();
   gp_quat mountQ = gp_quat::Identity();
   {
     const auto& states = evalResults.aircraftStateList[arenaIndex];
     const size_t stateIdx = camIdx + 1;  // the +1 is the offset above
-    if (arenaIndex == cachedArena) {
+    if (arenaIndex == cachedArena && evalResults.gpHash == cachedGpHash) {
       mountQ = cachedMountQ;
     } else if (stateIdx < states.size()) {
       mountQ = states[stateIdx].getOrientation().inverse() * cam.camera_pose_world_orient;
       mountQ.normalize();
       cachedArena = arenaIndex;
+      cachedGpHash = evalResults.gpHash;
       cachedMountQ = mountQ;
     }
   }

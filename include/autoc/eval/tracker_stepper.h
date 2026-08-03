@@ -61,6 +61,11 @@ public:
                    gp_scalar trail_distance,
                    gp_scalar cep_gate_threshold);
 
+    // 040 US6 — set the scenario's camera draw. The production path takes this
+    // from WorkerInit; the test-only reference takes it directly so the
+    // recorded-pose invariant can be asserted.
+    void setCameraVariation(const CameraDeltas& d) { camera_variation_ = d; }
+
     void initScenario() override;
     CrashReason stepOnce() override;
     unsigned long durationMsec() const override { return duration_msec_; }

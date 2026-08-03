@@ -307,3 +307,57 @@ TEST(TrackerStepperReset, DeepRunDoesNotContaminateNextScenario) {
                "ring or acquisition state survived initScenario() (FR-020a)";
     }
 }
+
+// ===========================================================================
+// 040 US6 (2026-08-02) — THE RECORDED CAMERA POSE MUST CARRY THE VARIATION.
+//
+// Both recording paths originally wrote `chase_orient * NOMINAL mount`, while
+// the bearings beside them were projected through the VARIED mount. The dmp
+// therefore claimed the camera pointed down the nominal boresight when it was
+// actually up to 20 deg off.
+//
+// The symptom was visual and easy to misread as "variation isn't on": the
+// renderer recovers the orientation as chase^-1 * recorded_pose, which collapsed
+// to IDENTITY, so the POV reticle sat still across every scenario. The 3D FOV
+// pyramid drew the wrong cone for the same reason.
+//
+// Training was never affected — the pose is dmp-only and never an NN input —
+// but every downstream statement about where the camera was pointing was wrong.
+// This asserts the recorded pose and the projected bearings describe ONE camera.
+// ===========================================================================
+
+TEST(TrackerStepperInit, RecordedCameraPoseCarriesTheVariation) {
+    NNGenome genome = makeMinimalGenome();
+    NNControllerBackend nn(genome, autoc::eval::FlightArena{});
+    AircraftState state;
+    SourceScenarioTrajectory source =
+        makeSyntheticSource(/*tick_count=*/30, gp_vec3(-12.77f, -3.14f, -1.23f));
+
+    TrackerStepper stepper = makeStepperWithSource(nn, state, source);
+    autoc::eval::CameraDeltas d;
+    d.boresightYawDeg = static_cast<gp_scalar>(15.0);
+    d.rollDeg = static_cast<gp_scalar>(-11.0);
+    stepper.setCameraVariation(d);
+    stepper.initScenario();
+
+    const CameraViewSample& cv = stepper.lastCameraView();
+    // Recover the mount orientation exactly as the renderer does.
+    gp_quat mountQ = state.getOrientation().inverse() * cv.camera_pose_world_orient;
+    mountQ.normalize();
+
+    // It must NOT be identity — that is precisely the bug.
+    const double angle_deg =
+        2.0 * std::acos(std::min(1.0, std::fabs(static_cast<double>(mountQ.w())))) * 180.0 / M_PI;
+    EXPECT_GT(angle_deg, 5.0)
+        << "the recorded pose collapsed to the nominal camera; the reticle will "
+           "sit still while the beacons move";
+
+    // And it must match what applyCameraVariation actually produced.
+    autoc::eval::TickRuleConfig ref;
+    ref.camera = autoc::eval::CameraConfig{};
+    ref.obstruction_mount_offset = ref.camera.mount_offset_body;
+    autoc::eval::applyCameraVariation(ref, d);
+    const gp_quat expected = ref.camera.mount_orientation_body;
+    EXPECT_NEAR(std::abs(static_cast<double>(mountQ.dot(expected))), 1.0, 1e-5)
+        << "recorded pose and projected bearings must describe ONE camera";
+}
