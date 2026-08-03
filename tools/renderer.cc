@@ -3757,17 +3757,38 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   // panel exists for. BLOCKED (wing/nose, opaque) gets an X; ATTENUATED (prop
   // disc — reduced, NOT lost per FR-009) gets a single slash.
   //
-  // Sampled in BODY frame and projected through mountQ like everything else, so
-  // it MOVES with the scenario's camera draw. Cached per (arena, camera
-  // orientation) because obstruction is a property of the configuration, not of
-  // any tick. Calls testObstruction rather than reimplementing the geometry, so
-  // the overlay cannot drift from what the simulator actually did.
+  // ---------------------------------------------------------------------------
+  // SAMPLED IN CAMERA FRAME, not body frame (fixed 2026-08-02).
+  //
+  // The first cut sampled the NOMINAL camera's field once, recorded which of
+  // those body-frame rays were blocked, and rotated that fixed set for display.
+  // Operator spotted what that actually draws: "not a projection of the actual
+  // craft, rather the clipped part of the craft if the camera was in nominal
+  // position."
+  //
+  // The airframe does not move when the camera turns — the FIELD OF VIEW does.
+  // So a fixed body-frame sample set is the wrong thing to rotate: directions
+  // that swing INTO view as the camera turns toward the wing were never sampled,
+  // and ones that leave get clipped at the panel edge. The hatch was correct
+  // where it appeared and simply absent where it mattered most.
+  //
+  // Correct order: walk the CAMERA's own pixel grid, convert each cell to a body
+  // direction through mountQ, and ask the airframe there. The panel position is
+  // then just the bearing itself — no projection needed, because we started in
+  // the frame we are drawing in.
+  //
+  // Cached per (arena, gpHash) like mountQ: obstruction is a property of the
+  // scenario's camera, not of any tick.
+  // ---------------------------------------------------------------------------
   {
-    struct ObsCell { gp_vec3 dir; bool blocked; };
-    static std::vector<ObsCell> obsCells;
-    static bool obsComputed = false;
-    if (!obsComputed) {
-      obsComputed = true;
+    struct HatchCell { scalar bx, by; bool blocked; };
+    static std::vector<HatchCell> hatch;
+    static int hatchArena = -1;
+    static uint64_t hatchGpHash = 0;
+    if (arenaIndex != hatchArena || evalResults.gpHash != hatchGpHash) {
+      hatchArena = arenaIndex;
+      hatchGpHash = evalResults.gpHash;
+      hatch.clear();
       // ⚠️ Compiled-in defaults: the dmp carries no airframe/camera config (the
       // standing self-describing-dmp backlog item). Correct for every 040-era
       // dmp; an older replay would draw the current airframe over someone
@@ -3778,31 +3799,35 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
       const autoc::eval::CameraConfig ccfg{};
       const gp_vec3 mount = ccfg.mount_offset_body;
       const gp_scalar rad_px = ccfg.radPerPx();
-      constexpr int kStride = 10;  // coarse: a legend, not an integral
+      constexpr int kStride = 8;  // coarse: a legend, not an integral
       for (int iy = 0; iy < ccfg.pixels_v; iy += kStride) {
         for (int ix = 0; ix < ccfg.pixels_h; ix += kStride) {
           const gp_scalar bxr = autoc::eval::pixelToBearing(
               static_cast<int16_t>(ix), ccfg.pixels_h, rad_px);
           const gp_scalar byr = autoc::eval::pixelToBearing(
               static_cast<int16_t>(iy), ccfg.pixels_v, rad_px);
+          // CAMERA-frame ray for this panel cell...
           const gp_scalar th = std::sqrt(bxr * bxr + byr * byr);
           const gp_scalar sn = (th < static_cast<gp_scalar>(1e-9))
                                    ? static_cast<gp_scalar>(1)
                                    : std::sin(th) / th;
-          // Body-frame ray for a NOMINAL camera; mountQ re-points it per
-          // scenario at draw time below.
-          const gp_vec3 dir(std::cos(th), sn * bxr, sn * byr);
+          const gp_vec3 d_cam(std::cos(th), sn * bxr, sn * byr);
+          // ...re-expressed in BODY frame, where the airframe actually lives.
+          const gp_vec3 d_body = mountQ * d_cam;
           const autoc::eval::ObstructionResult r = autoc::eval::testObstruction(
-              mount, mount + dir * static_cast<gp_scalar>(10), airframe);
-          if (r.blocked) obsCells.push_back({dir, true});
-          else if (r.attenuation < static_cast<gp_scalar>(1)) obsCells.push_back({dir, false});
+              mount, mount + d_body * static_cast<gp_scalar>(10), airframe);
+          if (r.blocked) {
+            hatch.push_back({static_cast<scalar>(bxr), static_cast<scalar>(byr), true});
+          } else if (r.attenuation < static_cast<gp_scalar>(1)) {
+            hatch.push_back({static_cast<scalar>(bxr), static_cast<scalar>(byr), false});
+          }
         }
       }
     }
-    for (const ObsCell& c : obsCells) {
-      scalar px, py;
-      if (!bodyToWin(c.dir, px, py)) continue;
-      if (px < xLeft || px > xRight || py < yBottom || py > yTop) continue;
+    for (const HatchCell& c : hatch) {
+      // The cell IS a bearing, so it maps straight to the panel — no projection.
+      const scalar px = xLeft + (c.bx / half_h_rad_panel + 1.0f) * 0.5f * (xRight - xLeft);
+      const scalar py = yTop - (c.by / half_v_rad_panel + 1.0f) * 0.5f * (yTop - yBottom);
       const scalar h = c.blocked ? static_cast<scalar>(3.0f) : static_cast<scalar>(1.5f);
       vtkIdType a = outlinePoints->InsertNextPoint(px - h, py - h, 0);
       vtkIdType b = outlinePoints->InsertNextPoint(px + h, py + h, 0);
