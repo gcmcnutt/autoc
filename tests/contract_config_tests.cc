@@ -234,7 +234,11 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // 2026-08-02 added SignalAmbientKnee -> 134: the ambient-compression term
     // 031 field test #4 forced, where ambient shunts signal at the PD rather
     // than merely adding noise.
-    EXPECT_EQ(n, 134u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // 040 US6 added 6 camera-variation keys -> 140: the EnableCameraVariations
+    // master switch plus five sigmas (boresight, roll, mount translation, wing
+    // thickness, and ambient -- the last plumbed but held at zero per the
+    // emitter-stays-perfect scope decision).
+    EXPECT_EQ(n, 140u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

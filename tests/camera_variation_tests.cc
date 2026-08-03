@@ -1,0 +1,253 @@
+// 040 T066-T070 (US6) — per-scenario camera variation.
+//
+// WHY THIS EXISTS. Through 040 t1 the controller trained against a PERFECTLY
+// known camera: exact boresight, exact roll, exact mount. Every scenario saw the
+// same optics. That is the one assumption a real airframe cannot honour — glue
+// sets crooked, mounts shift, foam board varies — and a controller that has only
+// ever seen a perfect camera has no reason to be robust to an imperfect one.
+//
+// THE HIGHEST-IMPACT TERM IS ROLL, not boresight. Under the angular
+// representation a boresight error lands as a near-constant additive offset on
+// both bearings — clean, and something a network can learn to subtract. ROLL
+// rotates the image plane, so it biases the port→starboard TILT cue
+// degree-for-degree, and tilt drives the roll command. `RollErrorBiasesTiltButBoresightDoesNot`
+// pins that asymmetry, because it is the reason roll deserves its own axis.
+//
+// SCOPE (operator 2026-08-02): CAMERA variation only — the emitter stays
+// perfect. `ambientScale` is drawn and recorded so the plumbing exists and is
+// verifiable, but ships at sigma 0 until the lens+filter field tests pin
+// `SignalAmbientKnee`. `AmbientIsDrawnButHeldNominal` asserts that deliberately,
+// so a later reader cannot mistake the zero for an oversight.
+
+#include <gtest/gtest.h>
+
+#include <cmath>
+#include <sstream>
+
+#include <cereal/archives/binary.hpp>
+
+#include "autoc/eval/camera_variation.h"
+#include "autoc/rpc/protocol.h"
+#include "autoc/util/scenario_prng.h"
+
+using autoc::eval::CameraDeltas;
+using autoc::eval::CameraSigmas;
+using autoc::eval::generateCameraFromClassPRNG;
+using autoc::eval::kCameraAlignmentHardClipDeg;
+using autoc::eval::kCameraMountTranslationHardClipM;
+using autoc::util::ClassPRNG;
+using autoc::util::deriveClassSubSeeds;
+
+namespace {
+
+// Shipped magnitudes: boresight and roll each sigma 10 deg, HARD-CLIPPED at 20.
+CameraSigmas shippedSigmas() {
+    CameraSigmas s;
+    s.boresightSigmaDeg = 10.0;
+    s.rollSigmaDeg = 10.0;
+    s.mountTranslationSigmaM = 0.005;   // 1 cm box => +/-5 mm
+    s.wingThicknessSigmaM = 0.002;
+    s.ambientSigmaFrac = 0.0;           // held nominal — see the header note
+    return s;
+}
+
+CameraDeltas drawFor(uint64_t scenario_seed, const CameraSigmas& sigmas) {
+    ClassPRNG prng(deriveClassSubSeeds(scenario_seed).camera);
+    return generateCameraFromClassPRNG(prng, sigmas);
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// T066 (FR-021) — scenarios draw distinct parameters, within bounds.
+// ---------------------------------------------------------------------------
+
+TEST(CameraVariation, DifferentScenariosDrawDifferentCameras) {
+    const CameraSigmas s = shippedSigmas();
+    const CameraDeltas a = drawFor(0x0318fceb14b1dfd5ULL, s);
+    const CameraDeltas b = drawFor(0x2fbc927725e57acbULL, s);
+
+    // At least one alignment axis must differ — identical draws across scenarios
+    // would mean the controller still sees one camera, just a wrong one.
+    EXPECT_TRUE(a.boresightYawDeg != b.boresightYawDeg ||
+                a.boresightPitchDeg != b.boresightPitchDeg ||
+                a.rollDeg != b.rollDeg)
+        << "two scenarios drew an identical camera";
+    EXPECT_NE(a.mountTranslation.x(), b.mountTranslation.x());
+}
+
+TEST(CameraVariation, DrawsStayWithinConfiguredBounds) {
+    const CameraSigmas s = shippedSigmas();
+    for (uint64_t k = 1; k <= 500; ++k) {
+        const CameraDeltas d = drawFor(k * 0x9E3779B97F4A7C15ULL, s);
+        EXPECT_LE(std::abs(static_cast<double>(d.boresightYawDeg)),
+                  static_cast<double>(kCameraAlignmentHardClipDeg));
+        EXPECT_LE(std::abs(static_cast<double>(d.boresightPitchDeg)),
+                  static_cast<double>(kCameraAlignmentHardClipDeg));
+        EXPECT_LE(std::abs(static_cast<double>(d.rollDeg)),
+                  static_cast<double>(kCameraAlignmentHardClipDeg));
+        for (int i = 0; i < 3; ++i) {
+            EXPECT_LE(std::abs(static_cast<double>(d.mountTranslation[i])),
+                      static_cast<double>(kCameraMountTranslationHardClipM));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T067 (FR-022) — reproducible from the scenario identifier alone.
+// ---------------------------------------------------------------------------
+
+TEST(CameraVariation, SameScenarioSeedReproducesTheDrawBitExactly) {
+    const CameraSigmas s = shippedSigmas();
+    for (uint64_t seed : {0x0318fceb14b1dfd5ULL, 0x715d97070e3127e9ULL, 1ULL}) {
+        const CameraDeltas a = drawFor(seed, s);
+        const CameraDeltas b = drawFor(seed, s);
+        EXPECT_EQ(a.boresightYawDeg, b.boresightYawDeg);
+        EXPECT_EQ(a.boresightPitchDeg, b.boresightPitchDeg);
+        EXPECT_EQ(a.rollDeg, b.rollDeg);
+        EXPECT_EQ(a.mountTranslation.x(), b.mountTranslation.x());
+        EXPECT_EQ(a.mountTranslation.y(), b.mountTranslation.y());
+        EXPECT_EQ(a.mountTranslation.z(), b.mountTranslation.z());
+        EXPECT_EQ(a.wingThicknessDelta, b.wingThicknessDelta);
+        EXPECT_EQ(a.ambientScale, b.ambientScale);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T070 (FR-022) — camera variation is CHASE-specific.
+// ---------------------------------------------------------------------------
+
+TEST(CameraVariation, CameraDrawIsIndependentOfTheOtherVariationClasses) {
+    // `TrackerChaseUseSourceScenarioSeed=1` shares the M1 source's
+    // wind/entry/craft seeds with the chase so both aircraft fly the same
+    // weather. Perception belongs to the CHASE ALONE, so the camera sub-seed
+    // must not be reconstructible from, or collide with, the shared classes.
+    const auto sub = deriveClassSubSeeds(0x0318fceb14b1dfd5ULL);
+    EXPECT_NE(sub.camera, sub.wind);
+    EXPECT_NE(sub.camera, sub.rabbit);
+    EXPECT_NE(sub.camera, sub.entry);
+    EXPECT_NE(sub.camera, sub.craft);
+
+    // And the camera slot must be the LAST derived, per the append-only
+    // contract — if a future class is inserted before it, every prior bake's
+    // camera draws change silently.
+    autoc::util::ScenarioRootPRNG root(0x0318fceb14b1dfd5ULL);
+    const uint32_t s0 = root.next(), s1 = root.next(), s2 = root.next(),
+                   s3 = root.next(), s4 = root.next();
+    EXPECT_EQ(s0, sub.wind);
+    EXPECT_EQ(s1, sub.rabbit);
+    EXPECT_EQ(s2, sub.entry);
+    EXPECT_EQ(s3, sub.craft);
+    EXPECT_EQ(s4, sub.camera) << "camera must remain the last-derived sub-seed";
+}
+
+// ---------------------------------------------------------------------------
+// T068 (FR-023, SC-006) — zero sigma is bit-identical to no variation.
+// ---------------------------------------------------------------------------
+
+TEST(CameraVariation, ZeroSigmaProducesExactlyTheNominalCamera) {
+    // THE LOAD-BEARING ONE. It is what lets a variation-off run be compared
+    // against the t1 baseline without an asterisk: with sigmas at zero the
+    // camera path must be not merely close but IDENTICAL to having no variation
+    // code at all.
+    CameraSigmas zero;  // all defaults are 0
+    const CameraDeltas nominal;  // default-constructed = nominal camera
+
+    for (uint64_t k = 1; k <= 200; ++k) {
+        const CameraDeltas d = drawFor(k * 0x9E3779B97F4A7C15ULL, zero);
+        EXPECT_EQ(d.boresightYawDeg, nominal.boresightYawDeg);
+        EXPECT_EQ(d.boresightPitchDeg, nominal.boresightPitchDeg);
+        EXPECT_EQ(d.rollDeg, nominal.rollDeg);
+        EXPECT_EQ(d.mountTranslation.x(), nominal.mountTranslation.x());
+        EXPECT_EQ(d.mountTranslation.y(), nominal.mountTranslation.y());
+        EXPECT_EQ(d.mountTranslation.z(), nominal.mountTranslation.z());
+        EXPECT_EQ(d.wingThicknessDelta, nominal.wingThicknessDelta);
+        EXPECT_EQ(d.ambientScale, nominal.ambientScale)
+            << "ambient must collapse to EXACTLY nominal (1.0), not 0.0";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T069 — hard clip, not tail resampling.
+// ---------------------------------------------------------------------------
+
+TEST(CameraVariation, AlignmentDrawsAreClippedNotResampled) {
+    // The distinction matters for DETERMINISM, not just for shape. Resampling a
+    // tail draw would change the PRNG draw COUNT for that scenario, which shifts
+    // every subsequent draw and breaks the frozen draw-order contract that
+    // bit-exact replay rests on. Clipping keeps the count fixed.
+    //
+    // Detected by driving sigma far past the clip: with sigma 40 deg and a
+    // 2.5-sigma clamp the raw draw reaches 100 deg, so a large fraction of
+    // scenarios MUST land exactly ON the clip. A resampler would instead show a
+    // smooth distribution with nothing piled at the boundary.
+    CameraSigmas wide = shippedSigmas();
+    wide.boresightSigmaDeg = 40.0;
+    wide.rollSigmaDeg = 40.0;
+
+    int at_clip = 0, total = 0;
+    for (uint64_t k = 1; k <= 400; ++k) {
+        const CameraDeltas d = drawFor(k * 0x9E3779B97F4A7C15ULL, wide);
+        ++total;
+        if (std::abs(std::abs(static_cast<double>(d.rollDeg)) -
+                     static_cast<double>(kCameraAlignmentHardClipDeg)) < 1e-6) {
+            ++at_clip;
+        }
+        EXPECT_LE(std::abs(static_cast<double>(d.rollDeg)),
+                  static_cast<double>(kCameraAlignmentHardClipDeg));
+    }
+    EXPECT_GT(at_clip, total / 10)
+        << "a hard clip must PILE draws on the boundary; a resampler would not";
+}
+
+TEST(CameraVariation, AmbientIsDrawnButHeldNominal) {
+    // Operator scope decision 2026-08-02: camera variation only, emitter stays
+    // perfect. The ambient draw is plumbed so it is verifiable, but its sigma
+    // ships at zero until the lens+filter field tests pin SignalAmbientKnee.
+    // Asserted rather than assumed so the zero reads as a DECISION.
+    const CameraSigmas shipped = shippedSigmas();
+    EXPECT_EQ(shipped.ambientSigmaFrac, 0.0);
+    for (uint64_t k = 1; k <= 50; ++k) {
+        EXPECT_EQ(drawFor(k * 0x9E3779B97F4A7C15ULL, shipped).ambientScale,
+                  static_cast<gp_scalar>(1.0));
+    }
+    // ...but the plumbing genuinely works when switched on.
+    CameraSigmas on = shipped;
+    on.ambientSigmaFrac = 0.5;
+    bool varied = false;
+    for (uint64_t k = 1; k <= 50 && !varied; ++k) {
+        varied = drawFor(k * 0x9E3779B97F4A7C15ULL, on).ambientScale !=
+                 static_cast<gp_scalar>(1.0);
+    }
+    EXPECT_TRUE(varied) << "the ambient draw must be live, merely held at zero sigma";
+}
+
+// ---------------------------------------------------------------------------
+// T072 — the draws survive the ScenarioMetadata round trip.
+// ---------------------------------------------------------------------------
+
+TEST(CameraVariation, ScenarioMetadataRoundTripsTheCameraDraws) {
+    ScenarioMetadata src{};
+    src.cameraSeed = 0xDEADBEEF;
+    src.cameraBoresightYawDeg = static_cast<gp_scalar>(-7.25);
+    src.cameraBoresightPitchDeg = static_cast<gp_scalar>(3.5);
+    src.cameraRollDeg = static_cast<gp_scalar>(-19.75);
+    src.cameraMountTranslation = gp_vec3(static_cast<gp_scalar>(0.004),
+                                         static_cast<gp_scalar>(-0.002),
+                                         static_cast<gp_scalar>(0.001));
+    src.cameraWingThicknessDelta = static_cast<gp_scalar>(0.0013);
+    src.cameraAmbientScale = static_cast<gp_scalar>(1.0);
+
+    std::stringstream ss;
+    { cereal::BinaryOutputArchive ar(ss); ar(src); }
+    ScenarioMetadata dst{};
+    { cereal::BinaryInputArchive ar(ss); ar(dst); }
+
+    EXPECT_EQ(dst.cameraSeed, src.cameraSeed);
+    EXPECT_EQ(dst.cameraBoresightYawDeg, src.cameraBoresightYawDeg);
+    EXPECT_EQ(dst.cameraBoresightPitchDeg, src.cameraBoresightPitchDeg);
+    EXPECT_EQ(dst.cameraRollDeg, src.cameraRollDeg);
+    EXPECT_EQ(dst.cameraMountTranslation.y(), src.cameraMountTranslation.y());
+    EXPECT_EQ(dst.cameraWingThicknessDelta, src.cameraWingThicknessDelta);
+    EXPECT_EQ(dst.cameraAmbientScale, src.cameraAmbientScale);
+}

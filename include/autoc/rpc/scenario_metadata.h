@@ -95,9 +95,31 @@ struct ScenarioMetadata {
     // [0, 0.020)); the real command dead-time. Appended after craftSeed so
     // the wire prefix is preserved (greenfield growth, no version bump).
     gp_scalar craftServoPwmPhase = static_cast<gp_scalar>(0.0);
-    // FR-020: future cameraSeed insertion point — append `uint32_t cameraSeed`
-    // here after craftSeed when the camera-variation class lands. Order
-    // matters (wire byte position); keep new seeds appended, not interleaved.
+    // 040 US6 (FR-021/FR-022) — CAMERA variation. The insertion point reserved
+    // by FR-020 is now taken; appended after craftServoPwmPhase rather than
+    // interleaved, so the wire prefix is preserved (greenfield growth, no
+    // version bump — old dmps fail loud on length mismatch, by policy).
+    //
+    // Raw PRE-SCALE draws are recorded, not the post-ramp values, which is what
+    // makes variation verifiable RAMP-INDEPENDENTLY via `dmp-dump --meta-only`.
+    //
+    // Defaults are the NOMINAL camera so a no-variation scenario is bit-identical
+    // to having no camera-variation code at all. Note ambientScale defaults to
+    // 1.0, not 0.0 — it is a scale, not a delta.
+    gp_scalar cameraBoresightYawDeg = static_cast<gp_scalar>(0.0);
+    gp_scalar cameraBoresightPitchDeg = static_cast<gp_scalar>(0.0);
+    // Highest-impact term: roll rotates the image plane and so biases the
+    // port→starboard tilt cue degree-for-degree, and tilt drives roll command.
+    gp_scalar cameraRollDeg = static_cast<gp_scalar>(0.0);
+    // OBSTRUCTION-path only (research R6) — 0.03° at 10 m for bearing, but ~15%
+    // of propeller clearance.
+    gp_vec3 cameraMountTranslation{static_cast<gp_scalar>(0.0), static_cast<gp_scalar>(0.0),
+                                   static_cast<gp_scalar>(0.0)};
+    gp_scalar cameraWingThicknessDelta = static_cast<gp_scalar>(0.0);
+    // Held at nominal for the t2 pass (operator 2026-08-02: emitter stays
+    // perfect until the lens+filter field tests pin SignalAmbientKnee).
+    gp_scalar cameraAmbientScale = static_cast<gp_scalar>(1.0);
+    uint32_t cameraSeed = 0;  // camera-class PRNG seed (replay root)
 
     template<class Archive>
     void serialize(Archive& ar, const std::uint32_t /*version*/) {
@@ -117,7 +139,11 @@ struct ScenarioMetadata {
            craftPitchEffDelta, craftRollEffDelta,
            craftServoSlew, craftThrustTau,  // 037 actuator dynamics (servoTau removed 2026-06-12)
            craftSeed,
-           craftServoPwmPhase);  // 037 servo v2 -- appended, no version bump
+           craftServoPwmPhase,  // 037 servo v2 -- appended, no version bump
+           // 040 US6 camera variation -- appended, no version bump
+           cameraBoresightYawDeg, cameraBoresightPitchDeg, cameraRollDeg,
+           cameraMountTranslation, cameraWingThicknessDelta, cameraAmbientScale,
+           cameraSeed);
     }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)

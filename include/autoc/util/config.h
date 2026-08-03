@@ -128,6 +128,17 @@ struct AutocConfig {
     //                        sigma; center 0.150 s, clamped [0.050, 0.300]
     // (servo first-order tau removed 2026-06-12 — v2 has no lag term.)
     int enableCraftVariations = 0;
+    // 040 US6 — camera variation. Sigmas in degrees / metres; the hard clips
+    // (20 deg alignment, 5 mm translation) live in camera_variation.h because
+    // they are contract, not tuning.
+    int enableCameraVariations = 0;
+    double cameraBoresightSigmaDeg = 10.0;       // M  boresight yaw+pitch error
+    double cameraRollSigmaDeg = 10.0;            // M  HIGHEST-IMPACT: biases tilt 1:1
+    double cameraMountTranslationSigmaM = 0.005; // M  1 cm box; OBSTRUCTION path only
+    double cameraWingThicknessSigmaM = 0.002;    // A  folded foam board is variable
+    // DEFERRED (operator 2026-08-02): emitter stays perfect until the lens +
+    // bandpass field tests pin SignalAmbientKnee. Plumbed, held at zero.
+    double cameraAmbientSigmaFrac = 0.0;         // A
     // 038 T001 — member-level hull-crash penalty (M2 safety experiment). When on,
     // a member's per-scenario tracking `score` is multiplied by factor^(#hull-strike
     // scenarios) before fitness/selection, so a crasher's tracking advantage
@@ -395,6 +406,12 @@ struct AutocConfig {
     X(double,         entryPositionRadiusSigma,  "EntryPositionRadiusSigma") \
     X(double,         entryPositionAltSigma,     "EntryPositionAltSigma") \
     X(int,            enableCraftVariations,     "EnableCraftVariations") \
+    X(int,            enableCameraVariations,    "EnableCameraVariations") \
+    X(double,         cameraBoresightSigmaDeg,   "CameraBoresightSigmaDeg") \
+    X(double,         cameraRollSigmaDeg,        "CameraRollSigmaDeg") \
+    X(double,         cameraMountTranslationSigmaM,"CameraMountTranslationSigmaM") \
+    X(double,         cameraWingThicknessSigmaM, "CameraWingThicknessSigmaM") \
+    X(double,         cameraAmbientSigmaFrac,    "CameraAmbientSigmaFrac") \
     X(int,            enableHullCrashPenalty,    "EnableHullCrashPenalty") \
     X(int,            enablePredictorHead,       "EnablePredictorHead") \
     X(int,            trackerChaseUseSourceScenarioSeed, "TrackerChaseUseSourceScenarioSeed") \

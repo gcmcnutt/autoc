@@ -224,6 +224,9 @@ if(ENABLE_AUTOC_TESTS)
   target_link_libraries(scenario_prng_tests GTest::gtest GTest::gtest_main autoc_common)
 
   # 034 US4 — craft variation contract tests (T043).
+  add_executable(camera_variation_tests tests/camera_variation_tests.cc)
+  target_link_libraries(camera_variation_tests GTest::gtest GTest::gtest_main autoc_common)
+
   add_executable(craft_variation_tests tests/craft_variation_tests.cc)
   target_link_libraries(craft_variation_tests GTest::gtest GTest::gtest_main autoc_common)
 
@@ -307,6 +310,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME crash_hull_tests COMMAND crash_hull_tests)
   add_test(NAME derived_features_tests COMMAND derived_features_tests)
   add_test(NAME scenario_prng_tests COMMAND scenario_prng_tests)
+  add_test(NAME camera_variation_tests COMMAND camera_variation_tests)
   add_test(NAME craft_variation_tests COMMAND craft_variation_tests)
   add_test(NAME run_id_prefix_tests COMMAND run_id_prefix_tests)
   add_test(NAME s3_run_selector_tests COMMAND s3_run_selector_tests)
@@ -342,6 +346,7 @@ if(ENABLE_AUTOC_TESTS)
             crash_hull_tests
             derived_features_tests
             scenario_prng_tests
+            camera_variation_tests
             craft_variation_tests
             run_id_prefix_tests
             s3_run_selector_tests
@@ -394,6 +399,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND crash_hull_tests --gtest_brief=1
     COMMAND derived_features_tests --gtest_brief=1
     COMMAND scenario_prng_tests --gtest_brief=1
+    COMMAND camera_variation_tests --gtest_brief=1
     COMMAND craft_variation_tests --gtest_brief=1
     COMMAND run_id_prefix_tests --gtest_brief=1
     COMMAND s3_run_selector_tests --gtest_brief=1

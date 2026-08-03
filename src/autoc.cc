@@ -34,6 +34,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/pathgen.h"
 #include "autoc/util/config.h"
 #include "autoc/eval/variation_generator.h"
+#include "autoc/eval/camera_variation.h"
 #include "autoc/eval/craft_variation.h"      // 034 US4 — craft-class draws
 #include "autoc/nn/mode.h"           // 030 M7a — getActiveModeStrategy
 #include "autoc/nn/population.h"
@@ -189,6 +190,8 @@ static VariationSigmas gVariationSigmas = {0.0, 0.0, 0.0, 0.0, 0.0};
 // EnableCraftVariations master disable parallels EnableEntry/Wind/Rabbit
 // (draw-and-discard when off — PRNG advances, deltas zeroed before write).
 static autoc::eval::CraftSigmas gCraftSigmas;
+static autoc::eval::CameraSigmas gCameraSigmas;
+static bool gEnableCameraVariations = false;
 static bool gEnableCraftVariations = false;
 // Individual variation enable flags (from config)
 static bool gEnableEntryVariations = false;
@@ -302,6 +305,10 @@ struct ScenarioVariations {
     // scales via applyVariationScale() before passing to the FDM.
     autoc::eval::CraftDeltas craftDeltas;
     uint32_t craftSeed = 0;                     // = deriveClassSubSeeds(scenarioSeed).craft
+    // 040 US6 — full-magnitude camera draw + its class sub-seed. Same shape as
+    // craft: drawn parent-side, copied to ScenarioMetadata per eval.
+    autoc::eval::CameraDeltas cameraDeltas;
+    uint32_t cameraSeed = 0;                    // = deriveClassSubSeeds(scenarioSeed).camera
 };
 
 // Global pre-computed table (indexed by wind scenario index 0..N-1)
@@ -454,6 +461,17 @@ static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigma
         } else {
             sv.craftDeltas = autoc::eval::CraftDeltas{};  // zeros + 1.0 thrust
         }
+
+        // 040 US6 — camera-class draws. Same draw-and-discard discipline as
+        // craft: the PRNG is ALWAYS advanced so toggling EnableCameraVariations
+        // cannot shift any other class's draws. Off ⇒ the NOMINAL camera, which
+        // is bit-identical to having no camera-variation code at all (FR-023).
+        autoc::util::ClassPRNG cameraPRNG(subseeds.camera);
+        sv.cameraSeed = subseeds.camera;
+        autoc::eval::CameraDeltas cameraDraw =
+            autoc::eval::generateCameraFromClassPRNG(cameraPRNG, gCameraSigmas);
+        sv.cameraDeltas = gEnableCameraVariations ? cameraDraw
+                                                  : autoc::eval::CameraDeltas{};
 
         gScenarioVariations.push_back(std::move(sv));
     }
@@ -963,6 +981,16 @@ static WorkerInit buildWorkerInit() {
                 meta.craftThrustTau = cd.craftThrustTau;
                 meta.craftServoPwmPhase = cd.craftServoPwmPhase;  // 037 servo v2
                 meta.craftSeed = gScenarioVariations[idx].craftSeed;
+                // 040 US6 — raw PRE-SCALE camera draws, so variation stays
+                // verifiable ramp-independently via `dmp-dump --meta-only`.
+                const auto& cam = gScenarioVariations[idx].cameraDeltas;
+                meta.cameraBoresightYawDeg = cam.boresightYawDeg;
+                meta.cameraBoresightPitchDeg = cam.boresightPitchDeg;
+                meta.cameraRollDeg = cam.rollDeg;
+                meta.cameraMountTranslation = cam.mountTranslation;
+                meta.cameraWingThicknessDelta = cam.wingThicknessDelta;
+                meta.cameraAmbientScale = cam.ambientScale;
+                meta.cameraSeed = gScenarioVariations[idx].cameraSeed;
                 // (033 cleanup) rabbitSpeedSeed assignment removed — field
                 // deleted from ScenarioMetadata + ScenarioVariations.
                 // Worker derives rabbit-class PRNG seed from
@@ -1811,6 +1839,12 @@ int main(int argc, char** argv)
   // off, the PRNG still advances per-scenario (draw-and-discard) and the
   // drawn deltas are zeroed before reaching the FDM.
   gEnableCraftVariations = (cfg.enableCraftVariations != 0);
+  gEnableCameraVariations = (cfg.enableCameraVariations != 0);
+  gCameraSigmas.boresightSigmaDeg = cfg.cameraBoresightSigmaDeg;
+  gCameraSigmas.rollSigmaDeg = cfg.cameraRollSigmaDeg;
+  gCameraSigmas.mountTranslationSigmaM = cfg.cameraMountTranslationSigmaM;
+  gCameraSigmas.wingThicknessSigmaM = cfg.cameraWingThicknessSigmaM;
+  gCameraSigmas.ambientSigmaFrac = cfg.cameraAmbientSigmaFrac;
   // 038 t7 — chase shares the M1 source's per-scenario airspace/airframe seed.
   gChaseUseSourceScenarioSeed = (cfg.trackerChaseUseSourceScenarioSeed != 0);
   gCraftSigmas.craftCGSigma       = cfg.craftCGSigma;
