@@ -3595,12 +3595,35 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   const scalar half_v_rad_panel = fov_v * static_cast<scalar>(M_PI / 360.0);
 
   // The varied camera orientation, recovered from the recorded pose.
+  //
+  // ⚠️ THE TWO ARRAYS ARE NOT INDEX-PARALLEL, despite the M8b comment saying so.
+  // `inputdev_autoc.cpp` pushes the INITIAL aircraft state once at scenario
+  // start (before any NN tick), while camera views only begin at tick 1 — hence
+  // 368 states against 367 camera views. So:
+  //
+  //     cameraViewList[j]  <->  aircraftStateList[j + 1]
+  //
+  // Pairing them naively makes mountQ = chase(t)^-1 * chase(t+1) * mount, i.e.
+  // it leaks ONE TICK OF THE AIRCRAFT'S OWN ROTATION into what should be a
+  // constant. The symptom is unmistakable once seen: the whole reticle swims
+  // around the panel during playback of a SINGLE scenario, when the camera draw
+  // is static per scenario and it should sit still.
+  //
+  // Cached per scenario as well, because the draw cannot change within one.
+  static int cachedArena = -1;
+  static gp_quat cachedMountQ = gp_quat::Identity();
   gp_quat mountQ = gp_quat::Identity();
-  if (arenaIndex < static_cast<int>(evalResults.aircraftStateList.size()) &&
-      camIdx < evalResults.aircraftStateList[arenaIndex].size()) {
-    mountQ = evalResults.aircraftStateList[arenaIndex][camIdx].getOrientation()
-                 .inverse() * cam.camera_pose_world_orient;
-    mountQ.normalize();
+  {
+    const auto& states = evalResults.aircraftStateList[arenaIndex];
+    const size_t stateIdx = camIdx + 1;  // the +1 is the offset above
+    if (arenaIndex == cachedArena) {
+      mountQ = cachedMountQ;
+    } else if (stateIdx < states.size()) {
+      mountQ = states[stateIdx].getOrientation().inverse() * cam.camera_pose_world_orient;
+      mountQ.normalize();
+      cachedArena = arenaIndex;
+      cachedMountQ = mountQ;
+    }
   }
   const gp_quat mountQinv = mountQ.inverse();
 

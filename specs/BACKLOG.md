@@ -1020,6 +1020,48 @@ actor-critic machinery. Biggest swing here, lowest confidence.
 **Prerequisite**: 040 closes and its t2 bake lands, so the predictor is judged
 against a finished perception model rather than a moving one.
 
+### [041 / BUG — found 2026-08-02] `prediction_score` is scored one tick out of alignment
+
+**Found while chasing a renderer artefact** (the POV reticle swimming during
+playback of a single scenario). The renderer bug is fixed; this one is real,
+pre-existing since 038 US3, and touches TRAINING.
+
+**The offset.** `inputdev_autoc.cpp:764` pushes the INITIAL aircraft state once
+at scenario start, before any NN tick, while camera views only begin at tick 1.
+So the two recorded arrays are **not** index-parallel despite the M8b comment
+saying they are — 368 states against 367 camera views:
+
+```
+cameraViewList[j]  <->  aircraftStateList[j + 1]
+```
+
+**What it does and does NOT affect** (checked, not assumed):
+
+| consumer | affected? | why |
+|---|---|---|
+| **Perception / NN inputs** | ❌ **no** | `trackerHelper_.tick(aircraftState, …)` computes from the LIVE state passed in. No index lookup anywhere in the sim path. |
+| **score / energy / stability / streak** | ❌ **no** | derived from `aircraftStates` alone; never paired with camera views |
+| `vis_frac` (avgVis diagnostic) | ⚠️ 1 tick | `fitness_decomposition.cc:256`, explicitly *"Observation-only; no effect on fitness or selection"*. 1 in ~370 — cosmetic |
+| **`prediction_score`** | ✅ **YES** | `computeSpanPredictionError(aircraftStates, cameraViewList[i])` pairs `states[t]` with `cams[t]`. It is a **live lexicase axis** (`selection.cc:95`, `EnablePredictorHead=1`) |
+
+So the NN's inputs and the main objective are clean. The **predictor axis** has
+been scored against a target shifted one tick for its entire life: a +50 ms
+prediction is compared against the span two ticks later, not one.
+
+**Why this matters for [the 041 predictor work](#041-candidate--operator-direction-2026-08-01-make-the-predictor-earn-its-keep):**
+E2 asks whether Δspan is learnable at all. That question is **confounded** until
+this is fixed — the head has never been scored against the target it was
+supposed to predict. A one-tick shift degrades a short-horizon prediction
+badly, though it does not by itself explain the measured r(Δ) ≈ 0 at every
+horizon *including* the closure rate. Fix it first, re-measure, then decide.
+
+**Fix**: pair `cams[j]` with `states[j+1]` in `computeSpanPredictionError` (and
+in the `vis_frac` lookup for tidiness). ⚠️ **This changes fitness**, so it must
+NOT land while a bake is running — workers re-exec `build/autoc`, so rebuilding
+mid-run would switch the objective underneath a live run.
+
+**Trigger**: after the 040 t2 bake completes, and before 041 E2.
+
 ### [SMALL — surfaced 2026-07-30 during 040 t1 launch] `tracker_dmp_inspect` bucket + .zst warts
 
 Two papercuts hit while spot-checking the first gen of an M2 run. Neither is
