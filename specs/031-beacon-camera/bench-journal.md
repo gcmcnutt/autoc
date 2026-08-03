@@ -77,6 +77,36 @@ C-3/C-5/C-7/C-13/C-17/C-18/C-25 (survivor counts OK, no 412s owned, wire + 1N414
 **C-12 FIRM ×10 — the 5-LED bench string stays bench permanently, the flight cube gets its own LEDs**;
 confirmed shorts = SOT23→DIP adapters (C-6 ×10) + 1 broken XNANO (C-4 ×2).
 
+## Field test #4 (2026-08-02, outdoors, ~6× emitter current): AMBIENT COMPRESSION IS THE WALL — current doesn't buy it back
+
+Rig: **6 parallel LEDs @ 50 mA each (~300 mA total)** "pointing in the general direction" (not boresighted
+per-LED), bare PD, no optical filter — i.e. the field-current multiplier from the test-#3 roadmap, applied
+ahead of the filter/optics stages. Operator result:
+
+- **PD shaded (hand/body shadow) but in an otherwise sunlit outdoor scene → locks to ~20 ft (~6 m).**
+- **PD exposed to direct sun → does NOT work at any distance tested.**
+- **Good reflection sensitivity** — bounce/off-surface returns decode readily, so raw sensitivity is intact.
+- **AGC feels a little slow** in the field (subjective — see open item below).
+
+**Read**: this is the compression model in the daylight doc doing exactly what it predicts. Ambient forward-biases
+the PD, its dynamic resistance collapses, and beacon current gets **shunted at the sensor** — a loss that sits
+*upstream* of every downstream multiplier, so **×6 emitter current cannot buy back a direct-sun failure**. The
+shaded-vs-exposed split is the cleanest evidence yet that the limiter is ambient at the PD, not link budget:
+same emitter, same distance, shadow alone flips it. **C-14's bandpass filter is therefore not an
+optimization — it is the gate on every remaining range multiplier.** Optics (C-14 lens) multiply signal but do
+nothing about compression; the filter is what restores headroom, and only then does the ×6 current show up as range.
+
+⚠ **Confounds to resolve on the next run — do NOT treat this as a regression vs test #3 yet** (which logged
+15–20 ft with the sensor *in* direct sun at 51 mA):
+1. **Was ~20 ft the signal limit or the yard limit?** If the operator stopped walking, the number is a floor,
+   not a measurement. Pace out past loss-of-lock next time.
+2. **Effective on-axis current is NOT 6×.** With each LED aimed "generally" rather than boresighted, the
+   received flux is the sum of six off-axis contributions — plausibly ~1–3× of a single aimed LED, not 6×.
+   Boresight the cube (or measure one LED aimed vs six splayed at fixed range) before crediting/faulting ×6.
+3. **Ambient was likely higher** (2026-08-02 conditions vs 07-26) and the PD/values may differ from test #3's
+   as-measured build (R_load 47 k trimmer — confirm it still reads 47 k; BPV10NF vs BPW34).
+Until 1–3 are pinned, the defensible claim is the **shaded/exposed split**, which stands on its own.
+
 ## Field test #2 (2026-07-26, outdoors, Option C with substitute values): compresses in sunlight — VALUES, not topology
 
 As-built rig (on-hand parts): **R_load 1 MΩ** (not 47 k), C6 0.1 µF, **R4 10 kΩ** (not 100 k), **R6 1 MΩ ∥
@@ -130,16 +160,30 @@ is a pedestal meter — bring it next time.
 
 ## Open items / next steps
 
-1. **Order-03** ([cad/beacon-eval/beacon-order-03.md](../../cad/beacon-eval/beacon-order-03.md)): OVP parts,
-   flight-cube tiles, filter+lens, 4.7 µH flight inductor, PicoBlade battery connectors (flight pack =
-   Spektrum SPMX1501S50, std-LiPo 4.20 V charge, "PH 1.25 Ultra Micro" = PicoBlade-compatible).
-2. **A1-ovp**: fit the 15 V zener + 1 kΩ clamp when parts land; pull-LED-header live test.
-3. **A3-b**: soldered **Option-C** receiver on copper-clad (netlist in the daylight doc; R_load per the
-   C-14 filter choice; star ground) → re-run regression.
-4. **A2-uvlo-2**: scripted slow-creep + dwell micro-dropout sweep (psu.py ramp + banner listener) — the
+1. **Order-03** ([cad/beacon-eval/beacon-order-03.md](../../cad/beacon-eval/beacon-order-03.md)) — **mostly
+   landed**: AMZ-1 (2026-07-30: adapters, R/C kits, FR4, M12 holder, breadboards) + DK-3 (invoice 129837577,
+   2026-08-02: BZX55C15 ×10, 1 k, XNANO ×1, **4.7 µH SPM4020T ×9 of 10 — 1 backordered, separate shipment**,
+   Molex UMX ×10, L1IZ-0850 ×10). **Sections A (OVP) and C (flight cube) are fully sourced — buildable now.**
+   Still out: **C-14 lens (ETA ~week of 2026-08-03) + 850 nm bandpass** — now the single critical path
+   (see field test #4), plus C-24 flight pack and the gated F-section parts.
+2. **AGC speed — quantify (deferred, operator 2026-08-02)**: field impression is "a little slow" while the
+   bench measures **0.30 s step settle** (regression 2026-07-26, vs 0.62 s at s7 bring-up). Suspect the
+   field case is not the bench case: outdoor pedestal steps (sun/shadow/attitude) are far larger than the
+   `agc_step` ladder, and near compression the loop chases a *shunted* signal. Plan: log the AGC state +
+   pedestal together during the next outdoor run, then extend the ladder to field-sized steps before
+   touching s7's gear-shift α.
+3. **A1-ovp**: zener + 1 k clamp parts are IN HAND (DK-3) — fit the 15 V zener + 1 kΩ clamp; pull-LED-header
+   live test. No longer blocked.
+4. **A3-b**: soldered **Option-C** receiver on copper-clad (**FR4 stock in hand — AMZ-1 C-8/C-20**; netlist
+   in the daylight doc; R_load per the C-14 filter choice; star ground) → re-run regression.
+5. **A2-uvlo-2**: scripted slow-creep + dwell micro-dropout sweep (psu.py ramp + banner listener) — the
    original 3 blips didn't reproduce in the fast static-hold pass.
-5. Flight cube build @306 mA (raise psu MAX_CURR deliberately) → optics stage → **100 m field test**.
-6. Camera-era (040) notes seeded in optical-link-outcome.md (multipath, tracker-bank, full-duty contract).
+6. Flight cube build @306 mA (raise psu MAX_CURR deliberately) — **parts in hand; boresight the 5 tiles,
+   don't splay them (field test #4 confound 2)** → optics stage → **100 m field test**.
+7. **Next-field-run checklist** (from field test #4): pace out past loss-of-lock instead of stopping at the
+   yard edge; confirm the R_load trimmer still measures 47 k; record which PD is fitted (BPV10NF vs BPW34);
+   scope N_PD for the raw pedestal in both shaded and sun-exposed states; log AGC state alongside.
+8. Camera-era (040) notes seeded in optical-link-outcome.md (multipath, tracker-bank, full-duty contract).
 
 ## History (chronological commits of record)
 

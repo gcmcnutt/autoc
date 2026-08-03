@@ -7,6 +7,13 @@ slice of the Order-02 cart DID ship: 3.74 Ω ×10, SMT3U ×2, BB830 ×1, 100 nF 
 the rest of that cart was never submitted). Follow-on to [Order 01](verified-bom-eval.md) /
 [receiver BOM](../beacon-receiver/eval-loop-bom.md). Provenance tags (was O2-x / O3-x) kept.
 **Qty policy**: sweet spot is **10** for cheap jellybean lines (operator 2026-07-26) — stop nickel-and-diming.
+**AMZ-1 receipt 2026-07-30**: Amazon order **111-5521786-5077025** (placed 26-Jul-2026, delivered 30-Jul-2026,
+8 lines) landed — closes C-2/C-6/C-8/C-15/C-16/C-20, half-closes C-14 (holder only) and C-22. The 8th line
+(1/2 AA LS14250 ×4) is **not part of this bench order** — unrelated household batteries.
+**DK-3 receipt 2026-08-02**: **DK order 3** = invoice **129837577** / sales order 100616351 (ordered
+26-Jul-2026, 6 lines) landed — closes C-1/C-10/C-12, closes C-4 (see qty caveat), adds an SMD 1 k to C-2.
+⚠ **C-9 short-shipped: 9 of 10 inductors — 1 BACKORDERED, arriving as a separate shipment** (packlist line 4,
+`445-174477-1-ND`); watch for the second box and update C-9 when it lands.
 
 > **History**: the **1S 150 mAh bench LiPo** came via Amazon (was O2-14, ✔ — bench substitute; flight uses
 > SPMX1501S50). The **SMT3U proto boards** (DK order 2) turned out SOIC-footprint-only — WRONG for SOT-23
@@ -21,50 +28,68 @@ test**; (4) stop stalling on missing passives (kits).
 ---
 
 ## A — OVP clamp (EV-A13/A14)
-- [ ] **C-1** *(O3-1)* 15 V zener THT `BZX55C15` (DO-35; alt `1N4744A` DO-41) — qty **10** (sweet spot; was 5).
-  Cathode→V_OUT, anode→FB; clamp ≈15.2 V. Not in either DK packlist — genuinely needed.
-  - [ ] received — notes:
-- [ ] **C-2** *(O3-2)* 1 kΩ 5 % ¼ W THT — qty **10** (R4 series FB→sense; ⚠ NOT optional with the zener).
-  Kit overlap: the C-16 resistor kit covers 1 k THT — skip this line if the kits go in the same cart.
-  - [ ] received — notes:
+- [X] **C-1** *(O3-1)* 15 V zener THT `BZX55C15` — **✔ RECEIVED ×10 (DK-3 line 1)**: Vishay
+  `BZX55C15-TAP` (`BZX55C15-TAPGICT-ND`), 15 V 500 mW, **DO-204AH = DO-35** axial as specced.
+  Cathode→V_OUT, anode→FB; clamp ≈15.2 V.
+  - [X] received — notes: ×10, packlist 129837577 line 1.
+- [X] **C-2** *(O3-2)* ~~1 kΩ 5 % ¼ W THT — qty 10~~ — **✔ CLOSED twice over**: (a) the C-16 resistor kit
+  (BOJACK 50-value 1350 pc, 1 % ¼ W metal film, 0 Ω–5.6 MΩ; AMZ-1) supplies the **THT** part, and (b) DK-3
+  line 2 delivered KOA `RK73B2ATTD102J` ×10 — 1 k 5 % ¼ W but **0805 SMD, not THT**. Use the kit part for
+  breadboard/DO-35-zener work; keep the 0805s for the SMD emitter build. R4 series FB→sense is covered.
+  - [X] received — notes: kit AMZ-1 2026-07-30 (THT); 0805 ×10 packlist 129837577 line 2.
 
 ## B — Attrition + mounting
 - [X] **C-3** *(O3-3)* ~~LM3410XMF-NOPB replenish~~ — **DROPPED 2026-07-26** (Q1: enough survivors of the
   ×10 from order 1).
-- [ ] **C-4** *(O3-4+O3-12 merged)* **ATTINY416-XNANO** — qty **2** (order 1 delivered ×2, ONE CONFIRMED
-  BROKEN → one working unit; new units need their own admin `usbipd bind --force` + R100 cut).
-  - [ ] received — notes:
+- [X] **C-4** *(O3-4+O3-12 merged)* **ATTINY416-XNANO** — **✔ RECEIVED ×1 (DK-3 line 3)**. ⚠ **Qty caveat**:
+  the line asked ×2 but the cart was placed for ×1 (ordered 1 / shipped 1 — not a short-ship). Bench now
+  has **2 working units** (1 new + 1 survivor of order 1's pair), which meets the actual need; the spare
+  margin is gone, so order another if a second casualty happens. New unit needs its own admin
+  `usbipd bind --force` + R100 cut before use.
+  - [X] received — notes: ×1, packlist 129837577 line 3 (lot RAY255200016).
 - [X] **C-5** *(O3-5)* ~~SS1030 Schottky replenish~~ — **DROPPED 2026-07-26** (Q2: enough survivors of the
   ×10 from order 1).
-- [ ] **C-6** *(O3-6+O3-10 merged)* **SOT-23-5→DIP adapters** SchmalzTech `ST-SOT23-5` — qty **10** (sweet
-  spot; was 8). CONFIRMED short: order 1 brought only ×2 SparkFun 00717, and the SMT3U boards are
-  SOIC-only (Chip Quik `PA0089`/`PCB3007-1` alt).
-  - [ ] received — notes:
+- [X] **C-6** *(O3-6+O3-10 merged)* **SOT-23-5→DIP adapters** — **✔ RECEIVED (AMZ-1)**: Cermant
+  **SOT23-6 / SC70-6 → DIP** breakout ×20 (substitute for the SchmalzTech `ST-SOT23-5`; a SOT-23-5 part
+  lands on 5 of the 6 pads — leave the unused pad open). Supersedes the ×2 SparkFun 00717 shortfall and
+  the SOIC-only SMT3U boards.
+  - [X] received — notes: ×20, AMZ-1 2026-07-30. Verify pin-1 orientation on the first build.
 - [X] **C-7** *(O3-13)* ~~SOIC-8→DIP adapters~~ — **DROPPED 2026-07-26** (Q3: no ATtiny412s owned — they
   were in neither DK packlist; the 416 XNANO path carries everything. If the 412 shipping-pod path ever
   revives, order chips + adapters together).
 
 ## C — Flight-emitter cube (306 mA)
-- [ ] **C-8** *(O3-14)* **Thin double-sided copper-clad FR4** 0.5–0.8 mm, 1 oz+ (MG Chemicals small sheet),
-  qty 1 — shear into ~10×10 mm single-LED tiles (knife-slit islands, stitch faces); 5 tiles glue into the
-  cube. ~15 °C rise at field power per tile — validate one before gluing five.
-  - [ ] received — notes:
-- [ ] **C-9** *(O3-16)* **Flight boost inductor** 4.7 µH shielded, Isat ≥ 2 A, 4×4×2 mm class — Coilcraft
-  **XFL4020-472ME** qty **10** (sweet spot; ~$2 ea; alt XAL4020-103 10 µH). Replaces the 10×10 mm 22 µH
-  brick for flight (22 µH bricks: ×10 on hand from order 1).
-  - [ ] received — notes:
-- [ ] **C-10** *(O3-15)* **Battery connector 1.25 mm, male PCB side** — flight pack = **Spektrum
-  SPMX1501S50** (std LiPo, 4.20 V charge; "PH 1.25 Ultra Micro" = UMX = **PicoBlade-compatible**, NOT real
-  JST-PH). Molex **53047-0210** THT qty **10** (sweet spot; was 6), or hobby UMX male pigtails. NB: the
-  ×10 `S2B-PH-K-S` from order 1 are JST-PH **2.0 mm** — wrong pitch for the UMX pack, don't confuse them.
-  - [ ] received — notes:
+- [X] **C-8** *(O3-14)* **Thin double-sided copper-clad FR4** — **✔ RECEIVED (AMZ-1)**: uxcell 70×50 mm
+  double-sided copper-clad FR4 ×5, **1.0 mm** thick (spec asked 0.5–0.8 mm — 1 mm is stiffer/heavier per
+  tile; acceptable, but weigh a finished tile before committing the cube). Shear into ~10×10 mm single-LED
+  tiles (knife-slit islands, stitch faces); 5 tiles glue into the cube. ~15 °C rise at field power per
+  tile — validate one before gluing five.
+  - [X] received — notes: ×5 sheets @ 70×50×1.0 mm, AMZ-1 2026-07-30. ⚠ thickness 1.0 mm vs 0.5–0.8 mm spec.
+- [ ] **C-9** *(O3-16; 9 of 10 IN HAND — 1 BACKORDERED)* **Flight boost inductor** 4.7 µH shielded,
+  Isat ≥ 2 A, 4×4×2 mm class — supplied as TDK **`SPM4020T-4R7M-LR`** (`445-174477-1-ND`), **not** the
+  specced Coilcraft XFL4020-472ME: 4.7 µH, **2.5 A**, DCR **147.2 mΩ**, 4.0×4.0×2.0 mm metal-composite
+  shielded — meets the spec envelope (Isat 2.5 A > 2 A required). Replaces the 10×10 mm 22 µH brick for
+  flight (22 µH bricks: ×10 on hand from order 1).
+  ⚠ **DK-3 shipped 9, backordered 1 → the 10th arrives in a SEPARATE SHIPMENT** (packlist 129837577 line 4:
+  Ordered 10 / Shipped 9 / Backordered 1; no ETA on the packlist). **9 is enough to proceed** — the cube
+  needs 1 and the bench 1 — so this does not block anything; leave this line open only to track the
+  straggler, and check the DigiKey order page if it hasn't landed within ~2 weeks.
+  - [ ] received — notes: **×9 received 2026-08-02** (lot 5017524072, date code Sep-2025); ×1 backordered,
+    separate shipment pending.
+- [X] **C-10** *(O3-15)* **Battery connector 1.25 mm, male PCB side** — **✔ RECEIVED ×10 (DK-3 line 5)**:
+  Molex **`0530470210`** (`WM1731-ND`), 2-pos vertical header, 1.25 mm — exactly as specced. Flight pack =
+  **Spektrum SPMX1501S50** (std LiPo, 4.20 V charge; "PH 1.25 Ultra Micro" = UMX = **PicoBlade-compatible**,
+  NOT real JST-PH). NB: the ×10 `S2B-PH-K-S` from order 1 are JST-PH **2.0 mm** — wrong pitch for the UMX
+  pack, don't confuse them.
+  - [X] received — notes: ×10, packlist 129837577 line 5.
 - [ ] **C-11** *(O3-7 = O2-3 merged; optional)* **Luxeonstar SZ-01-R8** MCPCB L1IZ-0850 ×≤5 + small heatsink
   — the no-reflow alternative to C-8 tiles for field power. Order only if tiles disappoint.
   - [ ] received — notes:
-- [ ] **C-12** *(O3-9; NOW FIRM — operator 2026-07-26)* **L1IZ-0850** qty **10** (sweet spot). The 5-LED
-  bench string is a **permanent bench fixture** — it does NOT donate to the flight cube. Cube takes 5,
-  rest are spares/second-cube stock.
-  - [ ] received — notes:
+- [X] **C-12** *(O3-9; NOW FIRM — operator 2026-07-26)* **L1IZ-0850** — **✔ RECEIVED ×10 (DK-3 line 6)**:
+  Lumileds `L1IZ-0850000000000` (`1416-1997-1-ND`). The 5-LED bench string is a **permanent bench
+  fixture** — it does NOT donate to the flight cube. Cube takes 5, rest are spares/second-cube stock.
+  - [X] received — notes: ×10, packlist 129837577 line 6 (lot 251027611586). Bench total now ×20 with
+    order 1's reel (5 committed to the bench string).
 - [X] **C-13** *(O2-1)* ~~Sense resistor 3.74 Ω 1 % 1206~~ — **✔ CLOSED: DK order 2 delivered ×10**
   (`541-3.74FFCT-ND`, 1/4 W); field 0.62 Ω also confirmed ×10 in order 1 (`CRL1206-FW-R620ELF`, 1/2 W).
   - [X] received — notes: packlists 128637262 line 1 / 127789318 line 6.
@@ -92,41 +117,58 @@ test**; (4) stop stalling on missing passives (kits).
     over bare BPW34 → ~75–80 m; still fine. Buying this makes the Quanmin discs optional (backup/second rig).
     *Step-up if CWL tolerance worries*: Commonlands CBP850, M12-threaded (~$25).
   - *Headroom option if 100 m is thin*: 25 mm plano-convex (~$10, DIY tube) ≈ ×70 → ×8 range, FOV ~4°.
+  🔴 **PRIORITY RAISED 2026-08-02 by field test #4**: at ~6× emitter current (6 × 50 mA) the link locks to
+  ~20 ft with the PD **shaded** but fails outright with the PD **in direct sun** — same emitter, same
+  distance, shadow alone flips it. Compression at the PD sits upstream of every other multiplier, so more
+  emitter current cannot buy back direct-sun operation. **The bandpass is the gate on the whole range
+  roadmap, not an optimization.** (Bench-journal field test #4.)
+  **STATUS 2026-07-30 — PARTIAL, REST IN TRANSIT**: ✔ **M12 lens holder received (AMZ-1)** — uxcell S-mount
+  M12 board-lens holder ×10, 20 mm screw spacing, metal/black, PCB-mount. **Lens on order, ETA ~week of
+  2026-08-03** (operator 2026-07-30) — confirm on arrival whether it is the bare 16 mm board lens (then the
+  850 nm bandpass is still separately needed) or the all-in-one ELP IR-narrow-pass SKU (covers both).
   ⚠ **couples to the Option-C R_load** (pedestal ceiling 3.3 V/R): cheap discs are **40 nm-class →
   R_load 22 k** (47 k reserved for a true 10 nm filter) — see the daylight doc's pedestal table. Note the
   9.5° FOV itself is ambient rejection (sky-only background when aimed at a flying beacon).
   - [ ] received — notes:
-- [ ] **C-15** *(O2-7; demoted by Option C)* TSSOP/MSOP-8→DIP adapter (Aries LCQT-TSSOP8) ×2 — only if the
-  OPA381 precision-TIA path revives (the OPA381 chips themselves are ✔ on hand, ×2 from order 1); Option C
-  needs no precision TIA. Optional.
-  - [ ] received — notes:
+- [X] **C-15** *(O2-7; demoted by Option C)* TSSOP/MSOP-8→DIP adapter — **✔ RECEIVED (AMZ-1)**: Stargazer
+  SMD→DIP breakout for **SOIC-8 / TSSOP-8 / MSOP-8 / VSOP-8** ×5 with gold-plated headers (substitute for
+  the Aries LCQT-TSSOP8). The OPA381 precision-TIA path is now unblocked if it ever revives (OPA381 ×2 on
+  hand); also retroactively covers the dropped C-7 SOIC-8→DIP need.
+  - [X] received — notes: ×5, AMZ-1 2026-07-30.
 - [X] **C-25** *(NEW 2026-07-25)* ~~1N4148 small-signal diodes~~ — **DROPPED 2026-07-26** (Q5: on hand in
   the drawer; D2/D3 clamps covered).
 
 ## E — Bench consumables
-- [ ] **C-16** *(O3-17, absorbs O2-9/O2-10; TRIMMED 2026-07-26)* **Passives assortment kits (THT)** —
-  the two that still matter: **resistor kit ¼ W 1 % metal-film 10 Ω–1 MΩ** (Option-C R_load 47 k/22 k,
-  R5 1–2 k, plus C-2's 1 k — on-hand resistors are 0603 SMD only) and **MLCC kit 10 pF–1 µF** (C5 820 pF
-  and friends). Amazon-class ~$10–15 ea. The electrolytic + film-cap kits are now OPTIONAL: DK order 2
-  delivered **100 nF radial ×50 + 10 µF radial ×10** which covers C6/C7/C8 for many builds.
-  - [ ] received — notes:
+- [X] **C-16** *(O3-17, absorbs O2-9/O2-10; TRIMMED 2026-07-26)* **Passives assortment kits (THT)** —
+  **✔ BOTH RECEIVED (AMZ-1)**: **BOJACK 50-value 1350 pc resistor kit**, 0 Ω–5.6 MΩ, 1 % ¼ W metal film
+  (covers Option-C R_load 47 k/22 k, R5 1–2 k, C-2's 1 k) and **ALLECIN 24-value monolithic ceramic cap
+  kit** 10 pF–10 µF (10/20/30/47/56/68/100/220/330/680 pF, 1/4.7/10/47/100 nF, 0.15–0.68 µF, 1/2.2/4.7/10 µF).
+  ⚠ The cap kit has **no 820 pF** — nearest for C5 is 680 pF or 1 nF (or 680 pF ∥ 150 pF); pick when the
+  Option-C filter corner is set. Electrolytic + film kits stay OPTIONAL (DK order 2's 100 nF ×50 / 10 µF ×10
+  cover C6/C7/C8).
+  - [X] received — notes: both kits, AMZ-1 2026-07-30.
 - [X] **C-17** *(O2-11)* ~~High-temp wire~~ — **DROPPED 2026-07-26** (Q6: wire stock confirmed on hand).
 - [X] **C-18** *(O2-12)* ~~Bare tinned bus wire~~ — **DROPPED 2026-07-26** (Q6: on hand).
-- [ ] **C-19** *(O2-8; HALF-CLOSED)* Solderless breadboard **BB830** — **✔ ×1 received (DK order 2)**.
-  Order 1 more only if two simultaneous rigs are actually wanted (emitter + receiver already split boards).
-  - [ ] received — notes: ×1 in packlist 128637262 line 3.
-- [ ] **C-20** *(O2-2; REVISED)* **Ground-plane / thermal copper board** — the SMT3U ×2 that arrived
-  (DK order 2) are SOIC-pad boards with NO plane and NO SOT-23 (C-6 adapters = the mounting fix). Still
-  wanted for plane/thermal: **MG 540 copper-clad 5″×3″** ×1–2 — or shear it from the C-8 FR4 sheet and
-  skip this line.
-  - [ ] received — notes: SMT3U ×2 ✔ (usable as SOIC carriers only).
+- [X] **C-19** *(O2-8; CLOSED 2026-07-30)* Solderless breadboard **BB830** — **✔ ×1 received (DK order 2)**,
+  plus **✔ Chanzon SYB-170 mini breadboards ×6 (170 tie points, adhesive back) from AMZ-1** — small
+  single-block rigs (emitter head, receiver front-end) no longer compete for the BB830. No further
+  breadboard purchases.
+  - [X] received — notes: BB830 ×1 packlist 128637262 line 3; SYB-170 ×6 AMZ-1 2026-07-30.
+- [X] **C-20** *(O2-2; CLOSED 2026-07-30 via C-8)* **Ground-plane / thermal copper board** — the MG 540
+  5″×3″ line is **dropped**: the C-8 uxcell sheets (70×50 mm double-sided, ×5) are shear stock for both
+  the LED tiles and any ground-plane/thermal coupon. The SMT3U ×2 (DK order 2) remain SOIC-pad carriers
+  with no plane; C-6 adapters are the SOT-23 mounting fix.
+  - [X] received — notes: covered by C-8 sheets, AMZ-1 2026-07-30; SMT3U ×2 ✔ (SOIC carriers only).
 
 ## F — RC-vs-crystal stability study (gated by the copper-board load test; unchanged from O2)
 - [ ] **C-21** *(O2-4)* 32.768 kHz watch crystal (CFS-206/AB26T, CL 12.5 pF) ×3 — XOSC32K on PB2/PB3;
   ⚠ 416-only (412 has no TOSC → ≥14-pin tinyAVR for a shipping pod on this path).
   - [ ] received — notes:
-- [ ] **C-22** *(O2-5)* Crystal load caps: a few 18 pF + 6.8 pF.
-  - [ ] received — notes:
+- [ ] **C-22** *(O2-5; MOSTLY COVERED 2026-07-30)* Crystal load caps: a few 18 pF + 6.8 pF. The AMZ-1
+  ALLECIN kit brings **10 / 20 / 30 pF** — 20 pF is the practical stand-in for 18 pF, and 10 pF for 6.8 pF
+  (recompute C_L against the crystal's 12.5 pF spec + stray). Only buy exact values if the F-section jitter
+  measurement turns out to care.
+  - [ ] received — notes: 10/20/30 pF via AMZ-1 kit; exact 18 pF / 6.8 pF NOT on hand.
 - [ ] **C-23** *(O2-6; fallback only)* 20.000 MHz CMOS XO half-can ×2 + 3.3 V LDO ×1 — order only if the
   XO route is pursued (EXTCLK→PA3 conflict: DIM moves to PA6/PA7).
   - [ ] received — notes:
@@ -139,12 +181,17 @@ test**; (4) stop stalling on missing passives (kits).
 ## Already on hand — do NOT re-order (reconciled against both DK packlists, 2026-07-26)
 - **Receiver**: BPV10NF ×2, BPW34 ×10, MCP6022 ×2, MCP3201 ×2, MCP1525 ×2, OPA381 ×2, 1 MΩ 3296W
   trimmer ×2.
-- **Emitter**: L1IZ-0850 ×10 (5 on the bench string), LM3410X ×10 − attrition, SS1030 ×10 − attrition,
-  22 µH B82464 ×10, 0.62 Ω 1206 ×10, 3.74 Ω 1206 ×10, XNANO ×2 − 1 casualty.
+- **Emitter**: L1IZ-0850 **×20** (order 1 ×10 + DK-3 ×10; 5 committed to the bench string), LM3410X ×10 −
+  attrition, SS1030 ×10 − attrition, 22 µH B82464 ×10 (bench) + **SPM4020T-4R7M-LR 4.7 µH ×9 (flight, +1
+  backordered)**, 0.62 Ω 1206 ×10, 3.74 Ω 1206 ×10, **BZX55C15 zener ×10**, **1 k 0805 ×10**,
+  **Molex 53047-0210 UMX header ×10**, XNANO **×2 working** (1 survivor + 1 new).
 - **Passives (0603 SMD, ×10 each)**: 10 k, 100 k, 1 M, 10 M, 2 pF C0G, 100 nF, 1 µF (0805), 2.2 µF,
-  4.7 µF (1206). **THT**: 100 nF radial ×50, 10 µF radial ×10.
-- **Misc**: JST-PH 2.0 mm S2B ×10 (NOT the UMX 1.25 mm pitch — see C-10), SOT23→DIP ×2 (short — C-6),
-  SMT3U ×2, BB830 ×1, TTL-232R-3V3 cable, microSD breakout ×2, 1S 150 mAh bench LiPo (Amazon),
+  4.7 µF (1206). **THT**: 100 nF radial ×50, 10 µF radial ×10, **BOJACK resistor kit** (50 values,
+  0 Ω–5.6 MΩ, 1 % ¼ W metal film, 1350 pc) and **ALLECIN MLCC kit** (24 values, 10 pF–10 µF) — both AMZ-1.
+- **Misc**: JST-PH 2.0 mm S2B ×10 (NOT the UMX 1.25 mm pitch — see C-10), SOT23→DIP ×2 + **SOT23-6/SC70-6
+  →DIP ×20 (AMZ-1)**, **SOIC/TSSOP/MSOP/VSOP-8→DIP ×5 (AMZ-1)**, SMT3U ×2, BB830 ×1 + **SYB-170 mini
+  breadboards ×6 (AMZ-1)**, **copper-clad FR4 70×50×1.0 mm ×5 (AMZ-1)**, **M12 S-mount lens holders ×10
+  (AMZ-1)**, TTL-232R-3V3 cable, microSD breakout ×2, 1S 150 mAh bench LiPo (Amazon),
   1N4148 drawer stock, PTFE 30 AWG + silicone 22–24 AWG + bare bus wire, 1 M 3296W trimmers ×2 (✔ both
   alive).
 
@@ -163,6 +210,20 @@ test**; (4) stop stalling on missing passives (kits).
 ## Related but $0 (firmware/fuses — not parts)
 - ~~F_CPU 20→10 MHz~~ **DONE** (ca1fe78) · ~~BOD fuse~~ **DONE** (0x48) · ~~firmware UVLO~~ **DONE &
   verified 3.48 V** (07d195f) — all three closed since the original Order-03 draft.
+
+## Still outstanding after AMZ-1 + DK-3 (updated 2026-08-02)
+
+**In transit**: ⏳ **C-9's 10th inductor** (DK-3 backorder, separate shipment, no ETA) — not blocking.
+⏳ **C-14 lens, ETA ~week of 2026-08-03** (operator).
+
+With DK-3 in hand, **sections A and C are complete** — the OVP clamp and the whole flight-emitter cube
+(LEDs, inductor, battery header, FR4 tiles) can be built now. Remaining buys:
+1. **C-14 optics tail** — 16 mm M12 board lens (in transit) **+ 850 nm bandpass** if the incoming lens is
+   the bare SKU rather than the all-in-one ELP. Holder ✔. **The only thing blocking the 100 m test.**
+2. **C-24** 1S 100 mAh flight pack (separate supplier) — the RC-osc jitter test wants flight-pack ESR.
+3. **C-21/C-23** F-section crystals / XO — still gated on the copper-board load-test jitter measurement.
+4. **C-11** Luxeonstar MCPCB — only if the C-8 tiles disappoint · **C-19/C-16** closed, nothing to buy.
+5. **Contingency only**: another XNANO (spare margin is gone — see C-4) · exact 18 pF/6.8 pF for C-22.
 
 ## Open decisions gated by this order
 1. ~~Filter FWHM (C-14): 40 nm vs 10 nm~~ — **RESOLVED 2026-07-26: budget 40 nm-class (M12 stack) for
