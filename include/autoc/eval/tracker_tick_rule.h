@@ -27,6 +27,7 @@
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/eval/beacon_config.h"
 #include "autoc/eval/camera_config.h"
+#include "autoc/eval/camera_variation.h"
 #include "autoc/eval/camera_projection.h"
 #include "autoc/eval/derived_features.h"
 #include "autoc/eval/source_trajectory.h"
@@ -68,7 +69,31 @@ struct TickRuleConfig {
     // per tick rather than sub-stepping the 480 fps camera, so it needs to know
     // how much time one call represents.
     gp_scalar control_interval_ms;
+
+    // 040 T074 — the mount the OBSTRUCTION test uses, which US6 lets drift from
+    // the bearing mount by up to ±5 mm. Separate field rather than one shared
+    // mount because the split is the whole point (research R6): translation is
+    // negligible for bearing and material for propeller clearance.
+    gp_vec3 obstruction_mount_offset;
 };
+
+// 040 T073-T075 (US6) — bake a scenario's camera draw into the tick config.
+//
+// ONE function, called once per scenario by BOTH execution paths, so the two
+// cannot apply variation differently. Perturbs, in place:
+//
+//   * mount_orientation_body — boresight yaw/pitch + roll. Roll matters most:
+//     it rotates the image plane and so biases the port→starboard tilt cue
+//     degree-for-degree, and tilt drives the roll command.
+//   * obstruction_mount_offset — mount translation, OBSTRUCTION PATH ONLY
+//     (research R6). ±5 mm is 0.03° at 10 m, nothing for bearing, but ~15% of
+//     propeller clearance. Bearing keeps the nominal mount.
+//   * airframe wing slab thickness — folded foam board is "highly variable".
+//
+// `ambientScale` is applied to signal.ambient_floor. It ships at 1.0 (emitter
+// stays perfect, operator 2026-08-02), so this is inert until the lens+filter
+// tests pin SignalAmbientKnee — wired now so switching it on is a sigma change.
+void applyCameraVariation(TickRuleConfig& cfg, const CameraDeltas& draw);
 
 // Per-beacon state carried ACROSS ticks within a scenario (FR-020a).
 //

@@ -117,6 +117,11 @@ private:
     // reset identically or the test-only reference certifies wrong behaviour.
     PerceptionCarryState perception_carry_;
 
+    // 040 US6 — camera draw for the current scenario. Defaults to the NOMINAL
+    // camera; the test-only reference has no ScenarioMetadata, and its job is to
+    // pin the RULE, not to replay a bake.
+    CameraDeltas camera_variation_{};
+
     // 038 P0-D FR-P0H (A) — situational-awareness state (time_since_seen +
     // held exit-bearing). Reset in initScenario, advanced each stepOnce from
     // the "now" beacon observation. Shared update rule with CrrcsimTrackerHelper.

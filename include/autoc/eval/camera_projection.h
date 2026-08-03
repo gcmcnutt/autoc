@@ -135,6 +135,12 @@ struct ProjectionInput {
     gp_vec3 camera_mount_chase_body;
     gp_quat camera_orientation_chase_body;
 
+    // 040 T074 — the mount the OBSTRUCTION test rays from, which US6 lets drift
+    // from the bearing mount by up to ±5 mm. Deliberately separate: ±5 mm is
+    // 0.03° at 10 m (nothing for bearing) but swings propeller clearance ~15%,
+    // because the clear cone is atan((h − r_tip)/d) with a small numerator.
+    gp_vec3 obstruction_mount_chase_body;
+
     // Configs.
     CameraConfig camera;
     BeaconConfig beacon;

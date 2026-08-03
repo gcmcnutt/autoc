@@ -144,7 +144,7 @@ BeaconObservation projectBeacon(const ProjectionInput& input) {
     // slab, pod nose) gate the beacon; the propeller disc attenuates rather
     // than gating (FR-009). Skipped entirely when disabled.
     const ObstructionResult obstruction = testObstruction(
-        input.camera_mount_chase_body, beacon_in_chase_body,
+        input.obstruction_mount_chase_body, beacon_in_chase_body,
         input.chase_airframe);
     if (obstruction.blocked) {
         return sentinelObservation();

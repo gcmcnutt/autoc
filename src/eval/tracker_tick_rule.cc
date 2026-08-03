@@ -23,6 +23,7 @@ PerceptionTickResult projectPerceptionTick(const AircraftState& chase,
     proj.target_position_world = target.position;
     proj.target_orientation_world = target.orientation;
     proj.camera_mount_chase_body = config.camera.mount_offset_body;
+    proj.obstruction_mount_chase_body = config.obstruction_mount_offset;
     proj.camera_orientation_chase_body = config.camera.mount_orientation_body;
     proj.camera = config.camera;
     proj.chase_airframe = config.airframe;
@@ -158,6 +159,35 @@ PerceptionTickResult projectPerceptionTick(const AircraftState& chase,
     }
 
     return out;
+}
+
+void applyCameraVariation(TickRuleConfig& cfg, const CameraDeltas& draw) {
+    // Alignment error is a rotation of the camera about its own axes, applied
+    // ON TOP of the nominal mount orientation. Order is roll (about the optical
+    // axis, body +x) then pitch then yaw — an intrinsic sequence, so a mount
+    // that is both cocked and rolled composes the way a physically misglued
+    // bracket would rather than in some arbitrary global order.
+    constexpr gp_scalar kDeg = static_cast<gp_scalar>(3.14159265358979323846 / 180.0);
+    const gp_quat roll(Eigen::AngleAxis<gp_scalar>(draw.rollDeg * kDeg,
+                                                   gp_vec3::UnitX()));
+    const gp_quat pitch(Eigen::AngleAxis<gp_scalar>(draw.boresightPitchDeg * kDeg,
+                                                    gp_vec3::UnitY()));
+    const gp_quat yaw(Eigen::AngleAxis<gp_scalar>(draw.boresightYawDeg * kDeg,
+                                                  gp_vec3::UnitZ()));
+    cfg.camera.mount_orientation_body =
+        (cfg.camera.mount_orientation_body * yaw * pitch * roll).normalized();
+
+    // OBSTRUCTION ONLY (research R6) — bearing keeps the nominal mount.
+    cfg.obstruction_mount_offset = cfg.camera.mount_offset_body + draw.mountTranslation;
+
+    // Wing slab thickness. The slab runs from wing top (min z, "up" is −z) to
+    // underside (max z); thickening it grows the underside downward, which is
+    // the direction that can actually intrude on a leading-edge mount's view.
+    cfg.airframe.wing_max.z() += draw.wingThicknessDelta;
+
+    // Inert at the shipped 1.0 — see the header note on the emitter staying
+    // perfect until the lens+filter field tests land.
+    cfg.signal.ambient_floor *= draw.ambientScale;
 }
 
 void advanceSituationalAwareness(const TrackerHistoryWindow& history,

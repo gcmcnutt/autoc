@@ -83,6 +83,11 @@ ProjectionInput makeBaselineInput() {
     in.beacon_emission_axis_target_body = gp_vec3(0.0f, -1.0f, 0.0f);
     in.camera_mount_chase_body = gp_vec3(0.0f, 0.0f, 0.0f);
     in.camera_orientation_chase_body = gp_quat::Identity();
+    // 040 T074 — the obstruction ray origin is a SEPARATE field so US6 can drift
+    // it from the bearing mount. Like SignalConfig it has no in-class default
+    // (Constitution VII), so leaving it unset is silent garbage rather than a
+    // compile error — set it explicitly, as both production paths do.
+    in.obstruction_mount_chase_body = in.camera_mount_chase_body;
     in.camera = CameraConfig{};
     in.beacon = BeaconConfig{};
     in.beacon.mount_body = in.beacon_mount_target_body;
@@ -1154,6 +1159,7 @@ autoc::eval::PerceptionTickResult tickAtRange(double range_m,  // raw-ok: test-r
     cfg.airframe = obstructionWithWingBox(gp_vec3(-100.0f, -1.0f, -1.0f),
                                           gp_vec3(-99.0f, +1.0f, +1.0f));
     cfg.cep_gate_threshold = static_cast<gp_scalar>(1.25);
+    cfg.obstruction_mount_offset = cfg.camera.mount_offset_body;
     cfg.signal = hb1SignalConfig();
     cfg.acquisition = hb1AcquisitionConfig();
     cfg.control_interval_ms = static_cast<gp_scalar>(50);

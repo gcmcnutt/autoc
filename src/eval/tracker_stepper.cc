@@ -174,6 +174,8 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     rule_cfg.signal = hb1SignalConfig();
     rule_cfg.acquisition = hb1AcquisitionConfig();
     rule_cfg.control_interval_ms = static_cast<gp_scalar>(SIM_TIME_STEP_MSEC);
+    rule_cfg.obstruction_mount_offset = camera_.mount_offset_body;
+    applyCameraVariation(rule_cfg, camera_variation_);
 
     const PerceptionTickResult tick =
         projectPerceptionTick(state_, target, rule_cfg, perception_carry_);

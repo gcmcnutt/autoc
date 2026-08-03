@@ -29,7 +29,9 @@
 
 #include <cereal/archives/binary.hpp>
 
+#include "autoc/eval/airframe_occlusion.h"
 #include "autoc/eval/camera_variation.h"
+#include "autoc/eval/tracker_tick_rule.h"
 #include "autoc/rpc/protocol.h"
 #include "autoc/util/scenario_prng.h"
 
@@ -259,4 +261,92 @@ TEST(CameraVariation, ScenarioMetadataRoundTripsTheCameraDraws) {
     EXPECT_EQ(dst.cameraMountTranslation.y(), src.cameraMountTranslation.y());
     EXPECT_EQ(dst.cameraWingThicknessDelta, src.cameraWingThicknessDelta);
     EXPECT_EQ(dst.cameraAmbientScale, src.cameraAmbientScale);
+}
+
+// ---------------------------------------------------------------------------
+// T073/T074 — the draws actually reach the perception path, and reach the
+// RIGHT parts of it.
+// ---------------------------------------------------------------------------
+
+TEST(CameraVariation, RollRotatesTheCameraButBoresightOnlyOffsetsIt) {
+    // THE ASYMMETRY THE AXIS SPLIT RESTS ON, asserted rather than asserted-in-
+    // prose. A boresight error tips the optical axis: both bearings shift by
+    // roughly the same angle and the image plane's ORIENTATION is untouched. A
+    // roll error leaves the axis alone and rotates the image plane — which is
+    // what biases the port→starboard tilt cue degree-for-degree, and tilt drives
+    // the roll command.
+    //
+    // Measured on the camera's own axes: roll must move the plane's "up"
+    // direction while leaving the boresight put; yaw must do the reverse.
+    autoc::eval::TickRuleConfig base;
+    base.camera = autoc::eval::CameraConfig{};
+
+    auto varied = [&](gp_scalar yaw, gp_scalar roll) {
+        autoc::eval::TickRuleConfig cfg = base;
+        autoc::eval::CameraDeltas d;
+        d.boresightYawDeg = yaw;
+        d.rollDeg = roll;
+        autoc::eval::applyCameraVariation(cfg, d);
+        return cfg.camera.mount_orientation_body;
+    };
+
+    const gp_vec3 axis(1, 0, 0), up(0, 0, -1);
+    const gp_quat nominal = base.camera.mount_orientation_body;
+
+    const gp_quat rolled = varied(0, static_cast<gp_scalar>(15));
+    EXPECT_NEAR((rolled * axis - nominal * axis).norm(), 0.0, 1e-5)
+        << "roll must leave the OPTICAL AXIS untouched";
+    EXPECT_GT((rolled * up - nominal * up).norm(), 0.2)
+        << "roll must rotate the IMAGE PLANE — this is the tilt bias";
+
+    const gp_quat yawed = varied(static_cast<gp_scalar>(15), 0);
+    EXPECT_GT((yawed * axis - nominal * axis).norm(), 0.2)
+        << "boresight error must tip the optical axis";
+}
+
+TEST(CameraVariation, MountTranslationMovesObstructionOnlyNotBearing) {
+    // Research R6: ±5 mm is 0.03° at 10 m — nothing for bearing — but swings
+    // propeller clearance ~15%. Routing it into bearing as well would add
+    // arithmetic that cannot matter; this pins the split so a later "tidy-up"
+    // cannot silently collapse the two mounts back together.
+    autoc::eval::TickRuleConfig cfg;
+    cfg.camera = autoc::eval::CameraConfig{};
+    cfg.obstruction_mount_offset = cfg.camera.mount_offset_body;
+    const gp_vec3 nominal_mount = cfg.camera.mount_offset_body;
+
+    autoc::eval::CameraDeltas d;
+    d.mountTranslation = gp_vec3(static_cast<gp_scalar>(0.004),
+                                 static_cast<gp_scalar>(-0.003),
+                                 static_cast<gp_scalar>(0.002));
+    autoc::eval::applyCameraVariation(cfg, d);
+
+    EXPECT_EQ(cfg.camera.mount_offset_body.x(), nominal_mount.x())
+        << "the BEARING mount must not move";
+    EXPECT_EQ(cfg.camera.mount_offset_body.y(), nominal_mount.y());
+    EXPECT_EQ(cfg.camera.mount_offset_body.z(), nominal_mount.z());
+    EXPECT_NEAR(static_cast<double>(cfg.obstruction_mount_offset.x() - nominal_mount.x()),
+                0.004, 1e-6) << "the OBSTRUCTION mount must move";
+    EXPECT_NEAR(static_cast<double>(cfg.obstruction_mount_offset.y() - nominal_mount.y()),
+                -0.003, 1e-6);
+}
+
+TEST(CameraVariation, NominalDrawLeavesTheTickConfigExactlyUntouched) {
+    // The FR-023 no-op, one level up from the draw: applying a NOMINAL draw must
+    // be bit-identical to not calling applyCameraVariation at all. Without this,
+    // a variation-off t2 could differ from t1 by a rounding crumb and nobody
+    // would know where it came from.
+    autoc::eval::TickRuleConfig cfg;
+    cfg.camera = autoc::eval::CameraConfig{};
+    cfg.airframe = autoc::eval::hb1AirframeObstruction();
+    cfg.signal = autoc::eval::hb1SignalConfig();
+    cfg.obstruction_mount_offset = cfg.camera.mount_offset_body;
+    const autoc::eval::TickRuleConfig before = cfg;
+
+    autoc::eval::applyCameraVariation(cfg, autoc::eval::CameraDeltas{});
+
+    EXPECT_EQ(cfg.camera.mount_orientation_body.w(), before.camera.mount_orientation_body.w());
+    EXPECT_EQ(cfg.camera.mount_orientation_body.x(), before.camera.mount_orientation_body.x());
+    EXPECT_EQ(cfg.obstruction_mount_offset.x(), before.obstruction_mount_offset.x());
+    EXPECT_EQ(cfg.airframe.wing_max.z(), before.airframe.wing_max.z());
+    EXPECT_EQ(cfg.signal.ambient_floor, before.signal.ambient_floor);
 }
