@@ -1062,6 +1062,101 @@ mid-run would switch the objective underneath a live run.
 
 **Trigger**: after the 040 t2 bake completes, and before 041 E2.
 
+### [041 — BUG, DEFERRED ON PURPOSE 2026-08-02] The main M2 objective scores against the target one tick late
+
+**Found by asking "where else does this shape appear?" after three display bugs
+of the same kind** — which is the leverage argument in miniature: feature work
+found the display bugs; a cross-cutting question found the objective one.
+
+`fitness_decomposition.cc:205` pairs `targetTrajectoryList[i][stepIndex]` with
+`aircraftStates[stepIndex]`, on the comment *"parallel-indexed … both pushed in
+lockstep by the worker."* They are pushed in lockstep — but `inputdev_autoc.cpp:764`
+pushes the INITIAL aircraft state once **before** the loop, unconditionally. So
+
+```
+states = 1 + N        targets = N        cameras = N     (368 / 367 / 367)
+=> targets[j]  <->  states[j + 1]
+```
+
+**This is the objective, not a diagnostic.** `rabbitPosition` and
+`targetPosition` feed `decomposeStepScore`, so the chase at tick *k* has been
+scored against where the target was at tick *k+1* — since 030.
+
+**Magnitude**: 50 ms at ~17 m/s ≈ **0.85 m**. Against `FitDistScaleBehind = 7 m`
+that is ~12%; but the rabbit is *meant* to trail by `TrailDistance = 3.048 m`,
+so the effective trail is ~2.2 m — a **28% reduction in the intended trail
+distance**, systematically.
+
+⚠️ **`CopiedTargetSample` carries NO timestamp**, so this is invisible in the
+recorded data. Nothing short of reading the push sites could have caught it —
+which is why it survived four features.
+
+#### Why it is DEFERRED rather than fixed on the spot
+
+Two earlier bugs from the same family were fixed immediately, because neither
+touched the comparison basis (`prediction_score` was a broken axis with no
+baseline value; the recorded camera pose was display-only). **This one IS the
+objective**, and t2's whole purpose is the delta `t2 − t1`. Fixing mid-flight
+would make those two runs differ in *two* ways — camera variation AND the
+scoring basis — which is exactly the unattributable delta 038 taught us costs a
+run.
+
+The offset is systematic and **identical in t1, t2 and the 038-t9 baseline**, so
+it shifts every absolute number while largely cancelling in the delta Phase 9
+actually reports.
+
+**Fix as the FIRST item of 041**, with a fresh t1′/t2′ baseline pair. 041 is
+already a new-baseline moment for the predictor rework, so the correction rides
+along free. **Reverse this call** if t2 returns an anomaly the 0.85 m offset
+could explain — it is exactly the size that could flatter or damn close-in
+tracking.
+
+**Fix**: `targets[stepIndex - 1]`, guarded for `stepIndex >= 1`. Add the
+zero-error-style assertion (see `SpanPrediction.PerfectPredictorScoresExactlyZero`).
+
+---
+
+### [INFRA — 2026-08-02] Systematic scan: index-parallel collections with no assertion
+
+**Operator direction**: "the backlog is a larger scan for this sort of
+inconsistency across all functions."
+
+**The failure class, stated precisely** so it can be scanned for rather than
+stumbled on: *two collections written by different code paths, related by index,
+with the invariant recorded only in a comment.* Four instances found in one
+session, all with a comment asserting parallelism and **none with a test**:
+
+| pair | verdict |
+|---|---|
+| `aircraftStateList` × `cameraViewList` → `prediction_score` | **was wrong** (fixed 2026-08-02) |
+| `aircraftStateList` × `cameraViewList` → `vis_frac` | **was wrong** (fixed) |
+| `aircraftStateList` × `targetTrajectoryList` → **the objective** | **wrong** (entry above) |
+| recorded camera pose × projected bearings | **was wrong** (fixed) |
+
+**What made them survive**: every one is invisible in the recorded data.
+`CopiedTargetSample` has no timestamp; `CameraViewSample` has no tick index.
+Nothing downstream could detect a shift, so the only witness was the code.
+
+**Scan scope** — not just these arrays:
+1. Every `std::vector` pair indexed by a shared loop variable across a
+   producer/consumer boundary.
+2. Every struct serving TWO lifetimes (RPC-only vs persisted). `ScenarioMetadata`
+   in both roles cost a launch on 2026-08-02.
+3. Every value duplicated in two places (`CameraConfig` default vs
+   `hb1AirframeObstruction()` — that one HAS a test, and is the model to copy).
+4. Every "compiled-in default vs recorded config" read — the self-describing-dmp
+   item is the structural fix for a whole family.
+
+**The test pattern that works**: construct data whose correct answer is EXACTLY
+zero, then assert zero. Any pairing error becomes visible regardless of
+tolerances, and a companion "shifted input must score visibly worse" test keeps
+it honest. Both live in `fitness_decomposition_tests.cc` as a template.
+
+**Cheapest structural fix** for the whole family: give the recorded samples a
+tick index or timestamp, so the invariant becomes checkable from the DATA rather
+than only from the code. That converts every one of these from invisible to
+loud.
+
 ### [SMALL — surfaced 2026-07-30 during 040 t1 launch] `tracker_dmp_inspect` bucket + .zst warts
 
 Two papercuts hit while spot-checking the first gen of an M2 run. Neither is
