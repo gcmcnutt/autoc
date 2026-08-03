@@ -152,6 +152,32 @@ pessimistic for an array. It is an `A` row and the camera trials are what will s
 nominal floor, so compression contributes −0.09 dB in t1 and t2. The wrong anchor is in the *record*, not
 in the trained controllers.
 
+### ⏭️ A THIRD configuration is coming first: a 16 mm lens on the single-pixel PD
+
+**Operator 2026-08-02: "we have a 16 mm lens coming with the single pixel PD — the math will be all
+different — we'll work those details later in 031."** Recorded here only so the reader knows this record
+describes *two* sensors while the next bench data will come from a *third*. **The details belong to 031,
+not to 040.**
+
+The one thing worth stating now is what that rig is and is not. A 16 mm lens collapses the PD's acceptance
+angle from a bare device's near-hemisphere to a few degrees:
+
+| PD | active area | field with a 16 mm lens | ambient vs a bare 120°×90° view |
+|---|---:|---:|---:|
+| BPV10NF | ~0.78 mm² | ~3.2° | ~1,250× less (**~31 dB**) |
+| BPW34 | ~7.5 mm² | ~9.8° | ~131× less (**~21 dB**) |
+
+So a lensed PD attacks the *same* compression problem as an array — by rejecting out-of-field ambient —
+but geometrically rather than spatially, and it gains aperture on the signal at the same time. It is
+therefore an excellent instrument for **isolating the link budget and the filter question**, which is
+exactly what 031 needs next.
+
+**But a 3–10° detector is not a 120° tracking sensor.** Whatever range it demonstrates is a statement about
+the *link*, not about the *field*, and it cannot be read directly as a range for the flight camera. The
+array analysis above stands on its own for the flight sensor; the lensed-PD result will bound the terms
+that both share (`SignalFluxConstant`, `SignalOpticsGain`, and whether the bandpass restores sun
+operation at all).
+
 ### What the camera trials should measure
 
 1. **Per-pixel ambient photocurrent in direct sun**, with and without the 850 nm bandpass — this is what
