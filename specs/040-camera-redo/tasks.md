@@ -358,7 +358,7 @@ the aggregate delta against the prior baseline.
 - [x] T081 [US5] ✅ **PASSED 2026-07-30** — clean `scripts/rebuild-perf.sh` (optimized, single-threaded for FP determinism), log `logs/040-t1-prerun-gate.log`, exit 0. **41/41 suites, 398 tests, 0 fail**; crrcsim links clean against the new `signal_model` / `acquisition_state` objects. The one `error` string is the benign `ConfigManager not initialized` fail-loud path test T001 documented. Test count 339 (T001 baseline) → 398.
 
   ⚠️ **A defect in the GATE ITSELF was found and fixed while verifying it** (`ea5fb63`): `nn_telemetry_tests` was a `DEPENDS` of `run_autoc_tests` (so it compiled) and an `add_test` (so `ctest` ran it) but was **missing from the custom target's `COMMAND` chain**. Since `rebuild-perf.sh` is just `cmake && make`, the mandatory pre-run gate had been **building that suite and never executing it** — 40 of 41. Pre-existing, unrelated to 040; `add_test` names and `COMMAND` entries now match exactly at 41, so **this is the first gate run that actually ran everything**
-- [ ] T082 [US5] **THROUGHPUT BENCHMARK**: measure total evaluation throughput against the T002 prior-M2 baseline; confirm ≤10% regression (FR-037/038, SC-013). A breach escalates to an explicit accept-or-optimise decision, not silent absorption
+- [x] T082 [US5] ✅ **PASSED 2026-08-01 — no regression; a GAIN.** Run mean **6,678 sims/s** over 1,176,235,200 evaluations in 176,127 s, against the T002 t9 baseline of ≈5,600 sims/s late-run. Per R10 the honest comparator is sims/s at a *comparable generation*, not the run mean, so measured that way too: mid (150-250) **+13.7%**, late (300-356) **+11.0%**. FR-038's ≤10% ceiling is not merely met, it is inverted. Credit belongs to the **analytic once-per-tick acquisition advance** — 10 chips' worth of credit in one arithmetic step rather than sub-stepping 24 camera frames — which was chosen for exactly this reason. *(The early window reads −25%, which is NOT a regression: early generations are dominated by short crash-terminated scenarios and the two runs crash at different rates there, so that window compares different workloads. R10 warns about this specifically.)*
 
 ### Run and evaluate
 
@@ -374,8 +374,25 @@ the aggregate delta against the prior baseline.
 **Cleanup done in the same pass**: `BeaconEmissionConeDeg` **deleted** — T058's flat-top emission profile left the hard 270° cutoff with no reader, so it was a live-looking knob in three tracker inis that changed nothing (Constitution III, same as T014/T017). `AUTOC_CONFIG_FIELDS` 134 → 133.
 
 > 📊 **What the perception model actually delivers is now recorded in [research.md](research.md) §R14** — the range/SNR/q table, and the headline for the hardware work: modelled received at 100 m is **0.039 nA against a ≤10 nA measured decode floor, ≈24 dB short**. The 100 m envelope is an *assertion* (FR-033a); closing that gap is the camera-perf / emitter-power effort
-- [ ] T083 [US5] Launch the retrain via `bash scripts/train.sh autoc-tracker.ini logs/autoc-040-t1-perception.log` — **detached only**, never a harness-tracked background task (Principle IX)
-- [ ] T084 [US5] Monitor to a competence plateau; confirm the run completes without systemic failure
+- [x] T083 [US5] ✅ **DONE 2026-07-30** — launched via `scripts/train.sh`, which self-detaches (`setsid` + `nohup`, reparents to `systemd --user`) and so survived both terminal and agent-session teardown. Master seed **1785475004** (`Seed=-1`, so this value exists nowhere but the log — it is what makes the run bit-reproducible). Output prefix `autoc-m2/autoc-9223370251379769240-2026-07-31T05:16:46.567Z/`
+- [x] T084 [US5] ✅ **DONE 2026-08-01 — plateau reached AND the run completed.** All 800 generations, "NN evolution complete!", best fitness −15048.21, no crashes or worker deaths. **61 elite changes, the last at gen 612 — 188 generations with no improvement**, so this is genuine convergence rather than a run cut short.
+
+  **Result vs the 038 t9 M2 baseline (both at their final generation):**
+
+  | metric | 040-t1 g800 | 038-t9 g430 | |
+  |---|---:|---:|---|
+  | avgMaxStreak | 23.60 | 21.10 | **+11.8%** |
+  | pctInStreak | 8.00% | 7.50% | **+6.7%** |
+  | avgInRamp | 0.096 | 0.090 | **+6.7%** |
+  | avgRngMed | **15.14 m** | 16.86 m | **−10.2%** |
+  | avgRngMin | **3.14 m** | 3.60 m | **−12.8%** |
+  | avgVis | 0.789 | 0.795 | −0.8% |
+
+  **This is the outcome US5 hoped for and not the one to have predicted.** Perception got materially HARDER in every direction 040 touched — acquisition costs 3-6 ticks instead of zero, quality decays with range, obstruction is ON for the first time, separation-derived range dies past ~28 m, and the beacon separation shrank 17% — and the controller came out **closer** and **stickier**. The honest reading is that the prior model's optimism was not buying the controller anything real.
+
+  `avgVis` is the one metric that moved against the trend, and it is coherent rather than alarming: closing to a 15.1 m median puts more time in the near field where the merged-blob regime and the pod-nose shadow actually bite. **Pre-040 the perception model had no near-field cost to pay at all**, so this trade was previously invisible.
+
+  ⚠️ **A decision for T086, to be stated rather than defaulted into**: the best *tracking* elite was **gen 585's** (pctInStreak 8.3%, avgRngMed 14.8 m); the *final* elite is **gen 612's** (8.0%, 15.1 m), which won on total fitness by trading a little tracking occupancy on another lexicase axis. Which one is the SC-008 comparator changes the reported delta.
 - [ ] T085 [US5] Evaluate the resulting elite on novel paths by repointing `autoc-eval-tracker.ini` at a novel M1 eval source
 - [ ] T086 [US5] Write `specs/040-camera-redo/outcome.md` reporting the **aggregate delta** against the prior baseline on the established comparators — the question is *are we in the right room, and is this more honest?*, not per-term attribution (SC-008)
 - [ ] T087 [US5] Tag artifacts `retain=expire`; if the controller becomes a baseline, pin `retain=keep` and record its S3 prefix in `outcome.md` (Principle VIII)
