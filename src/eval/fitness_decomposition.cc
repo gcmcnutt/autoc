@@ -202,11 +202,30 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             if (is_tracker) {
                 // Tracker: rabbit = trail-rabbit position trailing target's
                 // velocity vector (M7b); tangent = target velocity unit.
-                // targetTrajectoryList[i] is parallel-indexed with
-                // aircraftStateList[i] (both pushed in lockstep by the worker).
+                //
+                // ⚠️ THE TWO ARRAYS ARE NOT INDEX-PARALLEL, despite the comment
+                // that used to sit here saying they were "pushed in lockstep".
+                // They ARE pushed in lockstep inside the tick loop — but
+                // inputdev_autoc.cpp pushes the INITIAL aircraft state once
+                // BEFORE the loop, unconditionally. A scenario therefore records
+                //
+                //     states = 1 + N      targets = N      (368 vs 367)
+                //     => targets[j] is the target during tick j + 1
+                //
+                // `stepIndex` is a STATE index, so tick k's target is
+                // targets[k - 1]. Pairing 1:1 scored the chase at tick k against
+                // where the target was at tick k+1 — since 030.
+                //
+                // MAGNITUDE: 50 ms at ~17 m/s is ~0.85 m. The rabbit is meant to
+                // trail by TrailDistance = 3.048 m, so the effective trail was
+                // ~2.2 m: a 28% error in the DEFINITION of the task, not a
+                // rounding artefact.
+                //
+                // Invisible in the data — CopiedTargetSample carries no
+                // timestamp — so only the push sites could reveal it.
                 const std::vector<CopiedTargetSample>& targets =
                     evalResults.targetTrajectoryList.at(i);
-                int targetIndex = std::clamp(stepIndex, 0,
+                int targetIndex = std::clamp(stepIndex - 1, 0,
                                              static_cast<int>(targets.size()) - 1);
                 const CopiedTargetSample& target = targets.at(targetIndex);
                 rabbitPosition = target.trail_rabbit_position;

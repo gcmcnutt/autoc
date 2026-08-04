@@ -140,8 +140,11 @@ struct AutocConfig {
     int enableCameraVariations = 0;
     // Sigmas express the ENVELOPE through the pipeline-wide 2.5-sigma truncation
     // in ClassPRNG::nextGaussian, same convention as entryConeSigma.
-    double cameraBoresightSigmaDeg = 8.0;        // M  yaw+pitch; 2.5σ = 20 deg
-    double cameraRollSigmaDeg = 8.0;             // M  HIGHEST-IMPACT (biases tilt 1:1); 2.5σ = 20 deg
+    // 2026-08-03 (t3): 8.0 → 0.8 after the 20° bake capped hard — see the ini
+    // for the evidence. 2° keeps the random draw so the plumbing stays
+    // exercised, making the next run a diagnostic rather than a retreat.
+    double cameraBoresightSigmaDeg = 0.8;        // M  yaw+pitch; 2.5σ = 2 deg
+    double cameraRollSigmaDeg = 0.8;             // M  HIGHEST-IMPACT (biases tilt 1:1); 2.5σ = 2 deg
     double cameraMountTranslationSigmaM = 0.002; // M  2.5σ = 5 mm; OBSTRUCTION path only
     double cameraWingThicknessSigmaM = 0.0008;   // A  folded foam board is variable
     // DEFERRED (operator 2026-08-02): emitter stays perfect until the lens +

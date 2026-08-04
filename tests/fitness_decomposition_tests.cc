@@ -382,3 +382,96 @@ TEST(SpanPrediction, AOneTickShiftIsDetectable) {
            "PerfectPredictorScoresExactlyZero has no teeth. good=" << good
            << " bad=" << bad;
 }
+
+// ===========================================================================
+// 2026-08-03 — THE OBJECTIVE'S TICK PAIRING (the sibling of SpanPrediction).
+//
+// In TRACKER mode the rabbit and target come from `targetTrajectoryList`, and
+// that list is NOT index-parallel with `aircraftStateList`: the recorder pushes
+// the INITIAL aircraft state once before the tick loop, so
+//
+//     states = 1 + N     targets = N     => targets[j] is tick j + 1's target
+//
+// `stepIndex` is a STATE index, so tick k's target is `targets[k - 1]`. Pairing
+// 1:1 — as this did from 030 until 2026-08-03 — scored the chase at tick k
+// against where the target was at tick k+1: ~0.85 m at cruise, which against a
+// 3.048 m intended trail distance is a 28% error in the DEFINITION of the task.
+//
+// It is invisible in the data (CopiedTargetSample has no timestamp), so the test
+// has to construct the relationship rather than observe it: put the target at a
+// position that MOVES every tick, and place the chase exactly on the rabbit that
+// the CORRECT pairing implies. A correct implementation scores that as a perfect
+// tail-chase; a shifted one puts the chase 0.85 m off every single tick.
+// ===========================================================================
+
+TEST_F(FitnessDecomp022Test, TrackerObjectiveUsesTheTargetFromTheSameTick) {
+    const int kTicks = 20;
+    const double kStepM = 0.85;   // target advances this far per tick
+
+    // Build a tracker scenario where the chase sits exactly on the rabbit
+    // implied by `whichTick`'s target. `shift = 0` is the CORRECT pairing
+    // (tick k -> targets[k-1]); `shift = 1` is the old off-by-one.
+    auto build = [&](int shift) {
+        EvalResults r;
+        // The path is semantically IGNORED in tracker mode — the rabbit comes
+        // from targetTrajectoryList — but it must be non-empty, because
+        // computeScenarioScores skips any scenario with an empty path
+        // (`if (path.empty() || aircraftStates.empty()) continue;`). An empty
+        // one silently scores 0 for every variant, which makes a comparison
+        // test look like it passed when it never ran.
+        std::vector<Path> path;
+        for (int j = 0; j <= kTicks; ++j) {
+            path.push_back(Path(gp_vec3(static_cast<gp_scalar>(-kStepM * j), 0.0f, 0.0f),
+                                gp_vec3::UnitX(), kStepM * j, 0.0));
+        }
+        r.pathList.push_back(path);
+
+        std::vector<CopiedTargetSample> targets;
+        for (int j = 0; j < kTicks; ++j) {
+            const int tick = j + 1;                  // targets[j] IS tick j+1
+            CopiedTargetSample t;
+            t.position = gp_vec3(static_cast<gp_scalar>(-kStepM * tick), 0.0f, 0.0f);
+            t.velocity = gp_vec3(static_cast<gp_scalar>(-13.0), 0.0f, 0.0f);
+            t.trail_rabbit_position =
+                t.position + gp_vec3(static_cast<gp_scalar>(3.048), 0.0f, 0.0f);
+            targets.push_back(t);
+        }
+
+        std::vector<AircraftState> states;
+        for (int k = 0; k <= kTicks; ++k) {
+            AircraftState st;
+            const int j = std::clamp(k - 1 + shift, 0, kTicks - 1);
+            st.setPosition(targets[j].trail_rabbit_position);
+            // Nose along -X, i.e. pointed down the target's line of travel —
+            // otherwise the tail-chase cone term zeroes the score regardless of
+            // which tick's target is read, and the test measures nothing.
+            st.setOrientation(gp_quat(Eigen::AngleAxis<gp_scalar>(
+                static_cast<gp_scalar>(M_PI), gp_vec3::UnitZ())));
+            st.setVelocity(gp_vec3(static_cast<gp_scalar>(-13.0), 0.0f, 0.0f));
+            st.setSimTimeMsec(k * SIM_TIME_STEP_MSEC);
+            st.setThisPathIndex(0);
+            states.push_back(st);
+        }
+
+        r.aircraftStateList.push_back(states);
+        r.targetTrajectoryList.push_back(targets);
+        r.crashReasonList.push_back(CrashReason::None);
+        return r;
+    };
+
+    EvalResults aligned = build(0);
+    EvalResults shifted = build(1);
+    const auto a = computeScenarioScores(aligned);
+    const auto b = computeScenarioScores(shifted);
+    ASSERT_EQ(a.size(), 1u);
+    ASSERT_EQ(b.size(), 1u);
+
+    // Scores are negative-lower-better. A chase parked on the tick's OWN rabbit
+    // must score at least as well as one parked on the NEXT tick's rabbit; if
+    // the objective reads the wrong tick, the preference inverts.
+    EXPECT_LT(a[0].score, b[0].score)
+        << "the objective must prefer the chase aligned with THIS tick's target. "
+           "aligned=" << a[0].score << " shifted=" << b[0].score
+           << " -- an inversion means targetTrajectoryList is being read one tick "
+              "out (the 030-2026-08-03 bug).";
+}
