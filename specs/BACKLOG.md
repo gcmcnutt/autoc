@@ -1190,6 +1190,77 @@ Cost: a dmp schema change (greenfield, no version bump per project policy — ol
 dmps orphaned) plus every consumer. Real work, but bounded, and it is the last
 time this class can bite.
 
+### [041+ CANDIDATE — operator 2026-08-03] Ephemeral online offset estimation ("the pilot who notices the trim is off")
+
+**Operator**: *"a first order online learn for offsets … while in active flight
+the system sort of learns the offsets, biases — all ephemeral, but like a person
+would do automatically, note the trim offset, seat alignment, etc."*
+
+**Why this is the highest-leverage idea on the list.** It is a *third* answer,
+distinct from the two we have been circling:
+
+| approach | cost | addresses |
+|---|---|---|
+| more weights | ↑↑ search space — the very problem | representational capacity |
+| a working predictor ([041](#041-candidate--operator-direction-2026-08-01-make-the-predictor-earn-its-keep)) | moderate | *dynamics* — where the target is going |
+| **ephemeral offset estimation** | **a handful of state variables** | ***static bias* — where the camera is pointing** |
+
+Operator's framing on 2026-08-03: *"we have gradually been increasing the
+complexity without additional weights to go along (which increase search
+space)."* This buys capability with **structure instead of capacity**, which is
+the only direction that does not make GA search harder.
+
+#### The t2 result is the evidence for it
+
+The 20° camera-variation bake **capped hard**: worst blind streak pinned at
+44.4 s from gen 175 to 369 (t1 finished at 6.0 s), `avgVis` 0.624 vs 0.789,
+everything plateaued by gen ~250 while t1 was still climbing at 585. Diagnosis:
+the controller has **no search behaviour**, so its recovery is "point where I
+last saw it" — and a miscalibrated boresight aims that reflex systematically
+wrong. **More weights would not have fixed that**; it is an architecture gap.
+
+**But the boresight error is CONSTANT within a scenario.** A controller that
+estimated and subtracted it would turn a 20° miscalibration into a solved
+problem within seconds — exactly what a person does on an unfamiliar aircraft.
+
+#### The estimator can be almost free
+
+In a tail chase the target's bearing should average near centre when tracking
+well. So a **running mean of bearing over a few seconds IS an estimate of the
+boresight offset** — the constant bias survives averaging, the varying tracking
+error largely cancels. Subtract it before the NN sees the bearing.
+
+That is a first-order filter and two state variables, not a bigger genome.
+
+#### Design notes to carry in
+
+- **Ephemeral by construction**: per-scenario state, reset at every boundary.
+  That puts it squarely in the FR-020a family — the same reset trap that already
+  caught `AcquisitionState`. It must reset identically in **both** execution
+  paths, and `resetPerceptionState` is the single place that knows how.
+- **Deterministic**: a pure function of observations, so no PRNG and no
+  bit-replay risk.
+- **Do not integrate while blind.** No signal must mean no update, or the
+  estimate drifts through exactly the dropouts it is meant to survive.
+- **The bias/signal confound is the real risk**: a persistent *tracking* error
+  (always lagging) looks identical to a boresight offset. A symmetric tail chase
+  should average it out; an asymmetric flight pattern would not. Measure before
+  trusting.
+- **Explicit vs implicit**: hand-build the estimator in the perception path
+  (cheap, testable, likely to work), or feed the NN the raw material — e.g. a
+  leaky-integrated bearing — and let it learn the correction. The second is more
+  general and lands straight back in the search-space problem, so **start
+  explicit**.
+
+#### The experiment that settles it
+
+Re-run the **20° envelope** with the estimator on. If it trains where t2 capped,
+the finding is that *the ceiling was never capacity — it was the absence of
+online calibration*. That is a clean A/B against a run we already have.
+
+**Prerequisite**: 040 closes, and 041's research phase — this is a perception
+architecture change and belongs behind the index-coupling inventory.
+
 ### [SMALL — surfaced 2026-07-30 during 040 t1 launch] `tracker_dmp_inspect` bucket + .zst warts
 
 Two papercuts hit while spot-checking the first gen of an M2 run. Neither is
