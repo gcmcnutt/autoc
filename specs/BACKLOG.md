@@ -1190,76 +1190,91 @@ Cost: a dmp schema change (greenfield, no version bump per project policy — ol
 dmps orphaned) plus every consumer. Real work, but bounded, and it is the last
 time this class can bite.
 
-### [041+ CANDIDATE — operator 2026-08-03] Ephemeral online offset estimation ("the pilot who notices the trim is off")
+### [041+ / STRATEGIC — operator 2026-08-03] Online craft identification: null the variations in flight, not in the weights
 
-**Operator**: *"a first order online learn for offsets … while in active flight
-the system sort of learns the offsets, biases — all ephemeral, but like a person
-would do automatically, note the trim offset, seat alignment, etc."*
+**Operator**: *"all craft variations have a chance to be nulled — and this isn't
+during a training run — this is a dynamic online discovery of a craft
+characteristic — the hardest of all, but common for people — trim, camera, etc —
+all the variations that are craft related."*
 
-**Why this is the highest-leverage idea on the list.** It is a *third* answer,
-distinct from the two we have been circling:
+Started as camera-boresight estimation; the general case is **every per-scenario
+craft constant**, and the generalisation is the point.
 
-| approach | cost | addresses |
+#### What it changes
+
+Today the variation set (034 US4's eight axes + 040's camera axes) exists to
+force **robustness**: fixed weights must cope with the whole variation manifold
+simultaneously. That is a large function to learn, and it is precisely the
+search-space squeeze the operator named on 2026-08-03 — *"we have gradually been
+increasing the complexity without additional weights to go along."*
+
+The alternative is **adaptation instead of robustness**: identify the parameters
+in flight, then control the identified plant. The weights no longer encode
+"handle every craft" but "estimate this craft, then fly it" — a far smaller
+function, learned with the same genome.
+
+**It also reframes what the variations are for.** They stop being difficulty the
+policy must tolerate and become **the training signal for the identifier**. A
+variation the controller can null is no longer noise; it is what teaches it to
+null.
+
+#### Every axis is a constant mapping command → response
+
+| axis | how a pilot reads it | plausible online estimator |
 |---|---|---|
-| more weights | ↑↑ search space — the very problem | representational capacity |
-| a working predictor ([041](#041-candidate--operator-direction-2026-08-01-make-the-predictor-earn-its-keep)) | moderate | *dynamics* — where the target is going |
-| **ephemeral offset estimation** | **a handful of state variables** | ***static bias* — where the camera is pointing** |
+| `craftTrimDelta` (Cm_0) | "it wants to nose up" | running mean of pitch command in steady flight |
+| camera boresight / roll | "the sight is off" | running mean of bearing (tail chase averages to centre) |
+| `craftPitchEff` / `RollEff` | "controls feel heavy" | rate response ÷ commanded deflection |
+| `craftThrustScale` | "it's a bit gutless" | accel ÷ commanded throttle |
+| `craftDragDelta` | "it won't hold speed" | steady speed at known throttle |
+| `craftServoSlew`, `thrustTau` | "it's laggy" | phase lag between command and response |
+| `craftCGDelta` | "it's twitchy in pitch" | pitch-rate dynamics; couples with trim |
 
-Operator's framing on 2026-08-03: *"we have gradually been increasing the
-complexity without additional weights to go along (which increase search
-space)."* This buys capability with **structure instead of capacity**, which is
-the only direction that does not make GA search harder.
+The shared structure: **a constant parameter, observable in the residual between
+what was commanded and what happened.** First-order filters, not a bigger genome.
 
-#### The t2 result is the evidence for it
+#### The hard parts, which are the interesting parts
 
-The 20° camera-variation bake **capped hard**: worst blind streak pinned at
-44.4 s from gen 175 to 369 (t1 finished at 6.0 s), `avgVis` 0.624 vs 0.789,
-everything plateaued by gen ~250 while t1 was still climbing at 585. Diagnosis:
-the controller has **no search behaviour**, so its recovery is "point where I
-last saw it" — and a miscalibrated boresight aims that reflex systematically
-wrong. **More weights would not have fixed that**; it is an architecture gap.
+1. **Observability requires excitation.** Trim shows up in steady flight; roll
+   effectiveness needs roll input. A passive tail chase may never excite some
+   modes. A pilot gets a control check on the ground — **the chase does not**,
+   unless we deliberately spend early-episode ticks on exploratory inputs and
+   pay for them in tracking. That trade is a real design decision, not a detail.
+2. **Parameter coupling.** Drag and thrust both move steady speed; CG and trim
+   both move pitch. Some pairs may be **unidentifiable separately** from passive
+   observation, so the estimator should target the *combination* that affects
+   control rather than the physical parameter.
+3. **The bias/signal confound.** A persistent tracking lag looks identical to a
+   boresight offset. Symmetric tail chase averages it out; asymmetric patterns
+   would not.
+4. **Ephemeral state is the FR-020a trap again.** Per-scenario, reset at every
+   boundary, identically in both execution paths — the same trap that caught
+   `AcquisitionState`, and `resetPerceptionState` is the one place that knows.
+5. **Never adapt on no signal.** Do not integrate while blind, or the estimate
+   drifts through exactly the dropouts it exists to survive.
 
-**But the boresight error is CONSTANT within a scenario.** A controller that
-estimated and subtracted it would turn a 20° miscalibration into a solved
-problem within seconds — exactly what a person does on an unfamiliar aircraft.
+#### Why the evidence points here
 
-#### The estimator can be almost free
-
-In a tail chase the target's bearing should average near centre when tracking
-well. So a **running mean of bearing over a few seconds IS an estimate of the
-boresight offset** — the constant bias survives averaging, the varying tracking
-error largely cancels. Subtract it before the NN sees the bearing.
-
-That is a first-order filter and two state variables, not a bigger genome.
-
-#### Design notes to carry in
-
-- **Ephemeral by construction**: per-scenario state, reset at every boundary.
-  That puts it squarely in the FR-020a family — the same reset trap that already
-  caught `AcquisitionState`. It must reset identically in **both** execution
-  paths, and `resetPerceptionState` is the single place that knows how.
-- **Deterministic**: a pure function of observations, so no PRNG and no
-  bit-replay risk.
-- **Do not integrate while blind.** No signal must mean no update, or the
-  estimate drifts through exactly the dropouts it is meant to survive.
-- **The bias/signal confound is the real risk**: a persistent *tracking* error
-  (always lagging) looks identical to a boresight offset. A symmetric tail chase
-  should average it out; an asymmetric flight pattern would not. Measure before
-  trusting.
-- **Explicit vs implicit**: hand-build the estimator in the perception path
-  (cheap, testable, likely to work), or feed the NN the raw material — e.g. a
-  leaky-integrated bearing — and let it learn the correction. The second is more
-  general and lands straight back in the search-space problem, so **start
-  explicit**.
+The t2 20° bake **capped hard** — worst blind streak pinned at 44.4 s from gen
+175 to 369 (t1 finished at 6.0 s), everything plateaued by gen ~250 while t1 was
+still climbing at 585. The controller has no search behaviour, so recovery is
+"point where I last saw it" and a bad boresight aims that reflex wrong. **More
+weights would not have fixed it.** But the offset is CONSTANT within the
+scenario, so an identifier nulls it in seconds.
 
 #### The experiment that settles it
 
 Re-run the **20° envelope** with the estimator on. If it trains where t2 capped,
-the finding is that *the ceiling was never capacity — it was the absence of
-online calibration*. That is a clean A/B against a run we already have.
+the ceiling was never capacity — it was the absence of online calibration. A
+clean A/B against a run already in hand.
 
-**Prerequisite**: 040 closes, and 041's research phase — this is a perception
-architecture change and belongs behind the index-coupling inventory.
+**Start explicit and start with ONE axis** (camera boresight, or trim — both are
+running means and both are strongly observable in a tail chase). Feeding the NN
+raw material and letting it learn the correction is more general and lands
+straight back in the search-space problem.
+
+Related: [[project_perception_control_two_loop]] — this is a third loop beside
+perception and control, on a slower time constant.
 
 ### [SMALL — surfaced 2026-07-30 during 040 t1 launch] `tracker_dmp_inspect` bucket + .zst warts
 
