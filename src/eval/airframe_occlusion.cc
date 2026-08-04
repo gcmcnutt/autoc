@@ -21,6 +21,33 @@ namespace {
 
 bool rayHitsBox(const gp_vec3& a, const gp_vec3& b,
                 const gp_vec3& lo, const gp_vec3& hi) {
+    // 2026-08-03 — A PRIMITIVE CONTAINING THE RAY ORIGIN DOES NOT BLOCK.
+    //
+    // Physically: the camera is bonded into the leading edge and the LE is cut
+    // away for it, so structure the aperture sits *within* cannot obstruct its
+    // view. A lens buried in foam is not a thing that exists; a lens in a notch
+    // is.
+    //
+    // Without this, an origin inside the slab is "hit" in every direction, and
+    // the scenario goes totally blind. That is exactly what happened once US6
+    // started moving the mount: the baseline sits only 2 mm proud of the wing LE
+    // with its y and z ALREADY inside the slab's ranges, so a ±5 mm translation
+    // buried the aperture in ~16% of scenarios. Worst blind streak pinned near
+    // 44 s from generation 1 — identically at a ±20° and a ±2° angular envelope,
+    // which was the tell that the angles were never the cause. It voided two
+    // full bakes (t2, t3).
+    //
+    // This is the general form of the fix rather than clamping the mount: it
+    // needs no special case, and it stays correct for any future primitive the
+    // camera is mounted into.
+    {
+        bool origin_inside = true;
+        for (int i = 0; i < 3 && origin_inside; ++i) {
+            if (a[i] < lo[i] || a[i] > hi[i]) origin_inside = false;
+        }
+        if (origin_inside) return false;
+    }
+
     const gp_vec3 d = b - a;
     gp_scalar t_enter = static_cast<gp_scalar>(0);
     gp_scalar t_exit = static_cast<gp_scalar>(1);

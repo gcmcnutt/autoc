@@ -143,9 +143,12 @@ struct AutocConfig {
     // 2026-08-03 (t3): 8.0 → 0.8 after the 20° bake capped hard — see the ini
     // for the evidence. 2° keeps the random draw so the plumbing stays
     // exercised, making the next run a diagnostic rather than a retreat.
-    double cameraBoresightSigmaDeg = 0.8;        // M  yaw+pitch; 2.5σ = 2 deg
-    double cameraRollSigmaDeg = 0.8;             // M  HIGHEST-IMPACT (biases tilt 1:1); 2.5σ = 2 deg
-    double cameraMountTranslationSigmaM = 0.002; // M  2.5σ = 5 mm; OBSTRUCTION path only
+    double cameraBoresightSigmaDeg = 4.0;        // M  yaw+pitch; 2.5σ = 10 deg
+    double cameraRollSigmaDeg = 4.0;             // M  HIGHEST-IMPACT (biases tilt 1:1); 2.5σ = 10 deg
+    // PER-AXIS: the bond face is the wing LE, so tolerance is not isotropic.
+    double cameraMountTranslationSigmaX = 0.0020; // M  2.5σ = ±5 mm  (into/out of the face)
+    double cameraMountTranslationSigmaY = 0.0040; // M  2.5σ = ±10 mm (spanwise, loosest)
+    double cameraMountTranslationSigmaZ = 0.0012; // M  2.5σ = ±3 mm  (vertical, tightest)
     double cameraWingThicknessSigmaM = 0.0008;   // A  folded foam board is variable
     // DEFERRED (operator 2026-08-02): emitter stays perfect until the lens +
     // bandpass field tests pin SignalAmbientKnee. Plumbed, held at zero.
@@ -420,7 +423,9 @@ struct AutocConfig {
     X(int,            enableCameraVariations,    "EnableCameraVariations") \
     X(double,         cameraBoresightSigmaDeg,   "CameraBoresightSigmaDeg") \
     X(double,         cameraRollSigmaDeg,        "CameraRollSigmaDeg") \
-    X(double,         cameraMountTranslationSigmaM,"CameraMountTranslationSigmaM") \
+    X(double,         cameraMountTranslationSigmaX,"CameraMountTranslationSigmaX") \
+    X(double,         cameraMountTranslationSigmaY,"CameraMountTranslationSigmaY") \
+    X(double,         cameraMountTranslationSigmaZ,"CameraMountTranslationSigmaZ") \
     X(double,         cameraWingThicknessSigmaM, "CameraWingThicknessSigmaM") \
     X(double,         cameraAmbientSigmaFrac,    "CameraAmbientSigmaFrac") \
     X(int,            enableHullCrashPenalty,    "EnableHullCrashPenalty") \

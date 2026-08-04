@@ -238,7 +238,9 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // master switch plus five sigmas (boresight, roll, mount translation, wing
     // thickness, and ambient -- the last plumbed but held at zero per the
     // emitter-stays-perfect scope decision).
-    EXPECT_EQ(n, 140u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // 2026-08-03 split CameraMountTranslationSigmaM into per-axis X/Y/Z (the
+    // bond face makes tolerance anisotropic) -> 142.
+    EXPECT_EQ(n, 142u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

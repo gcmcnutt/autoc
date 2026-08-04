@@ -50,9 +50,14 @@ CameraSigmas shippedSigmas() {
     CameraSigmas s;
     // 2.5σ IS the envelope, per the pipeline-wide truncation — same convention
     // as `entryConeSigma = 18.0 // 2.5sigma = 45 deg`.
-    s.boresightSigmaDeg = 8.0;          // 2.5σ = 20 deg
-    s.rollSigmaDeg = 8.0;               // 2.5σ = 20 deg
-    s.mountTranslationSigmaM = 0.002;   // 2.5σ = 5 mm (the 1 cm box)
+    // ⚠️ Keep in step with autoc-tracker.ini — this fixture drifted out of sync
+    // once already (it still read the pre-t3 values while the ini had moved),
+    // which is how a "shipped magnitudes" helper quietly stops testing what ships.
+    s.boresightSigmaDeg = 4.0;          // 2.5σ = 10 deg
+    s.rollSigmaDeg = 4.0;               // 2.5σ = 10 deg
+    s.mountTranslationSigmaX = 0.0020;  // 2.5σ = ±5 mm  (into/out of the bond face)
+    s.mountTranslationSigmaY = 0.0040;  // 2.5σ = ±10 mm (spanwise, loosest)
+    s.mountTranslationSigmaZ = 0.0012;  // 2.5σ = ±3 mm  (vertical, tightest)
     s.wingThicknessSigmaM = 0.0008;
     s.ambientSigmaFrac = 0.0;           // held nominal — see the header note
     return s;
@@ -92,19 +97,28 @@ TEST(CameraVariation, DrawsStayWithinTheTwoPointFiveSigmaEnvelope) {
     const CameraSigmas s = shippedSigmas();
     const double align_limit = kGaussianSigmaClamp * s.boresightSigmaDeg;   // 20 deg
     const double roll_limit = kGaussianSigmaClamp * s.rollSigmaDeg;         // 20 deg
-    const double trans_limit = kGaussianSigmaClamp * s.mountTranslationSigmaM;  // 5 mm
+    const double tx_limit = kGaussianSigmaClamp * s.mountTranslationSigmaX;  // 5 mm
+    const double ty_limit = kGaussianSigmaClamp * s.mountTranslationSigmaY;  // 10 mm
+    const double tz_limit = kGaussianSigmaClamp * s.mountTranslationSigmaZ;  // 3 mm
 
-    EXPECT_DOUBLE_EQ(align_limit, 20.0) << "the spec's hard 20 deg, expressed as sigma";
-    EXPECT_DOUBLE_EQ(trans_limit, 0.005) << "the spec's 1 cm box, expressed as sigma";
+    EXPECT_DOUBLE_EQ(align_limit, 10.0) << "the 10 deg envelope, expressed as sigma";
+    EXPECT_DOUBLE_EQ(tx_limit, 0.005) << "x: +/-5 mm into/out of the bond face";
+    EXPECT_DOUBLE_EQ(ty_limit, 0.010) << "y: +/-10 mm spanwise, the loosest axis";
+    EXPECT_DOUBLE_EQ(tz_limit, 0.003) << "z: +/-3 mm vertical, the tightest";
 
     for (uint64_t k = 1; k <= 500; ++k) {
         const CameraDeltas d = drawFor(k * 0x9E3779B97F4A7C15ULL, s);
-        EXPECT_LE(std::abs(static_cast<double>(d.boresightYawDeg)), align_limit);
-        EXPECT_LE(std::abs(static_cast<double>(d.boresightPitchDeg)), align_limit);
-        EXPECT_LE(std::abs(static_cast<double>(d.rollDeg)), roll_limit);
-        for (int i = 0; i < 3; ++i) {
-            EXPECT_LE(std::abs(static_cast<double>(d.mountTranslation[i])), trans_limit);
-        }
+        EXPECT_LE(std::abs(static_cast<double>(d.boresightYawDeg)), align_limit * (1 + 1e-6));
+        EXPECT_LE(std::abs(static_cast<double>(d.boresightPitchDeg)), align_limit * (1 + 1e-6));
+        EXPECT_LE(std::abs(static_cast<double>(d.rollDeg)), roll_limit * (1 + 1e-6));
+        // Relative epsilon: the draw is computed in double and stored as
+        // gp_scalar (float), so a value clamped exactly AT the bound rounds a few
+        // ULPs past it. That is representation, not an envelope breach — the z
+        // axis trips it because its bound is the smallest.
+        constexpr double kUlp = 1e-6;
+        EXPECT_LE(std::abs(static_cast<double>(d.mountTranslation.x())), tx_limit * (1 + kUlp));
+        EXPECT_LE(std::abs(static_cast<double>(d.mountTranslation.y())), ty_limit * (1 + kUlp));
+        EXPECT_LE(std::abs(static_cast<double>(d.mountTranslation.z())), tz_limit * (1 + kUlp));
     }
 }
 
@@ -466,4 +480,94 @@ TEST(CameraVariation, ReticleFrameMatchesTheRecordedBeaconBearing) {
                 << "yaw " << yaw << " roll " << roll;
         }
     }
+}
+
+// ===========================================================================
+// 2026-08-03 — THE MOUNT MUST NEVER END UP INSIDE THE AIRFRAME.
+//
+// T008 asserted this for the NOMINAL mount. Nothing asserted it for a VARIED
+// one, and that gap voided two full training runs.
+//
+// The baseline mount sits just 2 mm proud of the wing leading edge, and its y
+// and z are ALREADY inside the wing slab's ranges — only that 2 mm of x keeps
+// the camera out of the wing. With a 2 mm translation sigma, ~16% of scenarios
+// (≈47 of 294) pushed the aperture INSIDE the slab. A ray origin inside a box
+// is blocked in every direction, so those scenarios were totally blind: the
+// worst blind streak pinned at ~44 s from generation 1, identically at a ±20°
+// and a ±2° angular envelope, because the angles were never the cause.
+//
+// Physically the clamp is not a fudge: the aperture is bonded to the leading-
+// edge face, so a build tolerance slides it ALONG that face and outward — it
+// cannot recess into the structure it is bonded to.
+// ===========================================================================
+
+TEST(CameraVariation, AMountInsideTheAirframeStillSees) {
+    // The invariant is about BEHAVIOUR, not position. A mount may land inside a
+    // primitive — the leading edge is cut away for the camera, so structure the
+    // aperture sits within cannot obstruct it. What must never happen is that
+    // such a scenario goes blind.
+    //
+    // Deliberately drives the pathological case rather than waiting for a draw
+    // to produce it: place the aperture squarely inside the wing slab and
+    // confirm the forward field is still clear.
+    constexpr double kDeg = 3.14159265358979323846 / 180.0;
+    const autoc::eval::AirframeObstruction airframe = autoc::eval::hb1AirframeObstruction();
+    const autoc::eval::CameraConfig ccfg{};
+
+    // THE REAL CASE: the nominal outboard mount pushed 5 mm aft in x — the very
+    // draw that voided t2/t3. Deliberately NOT the wing's centroid: that sits on
+    // the centreline directly behind the pod nose, so its forward rays are
+    // legitimately blocked by the nose and the test would measure the wrong
+    // thing. The actual camera is 8" outboard, well clear of the nose.
+    const gp_vec3 buried =
+        ccfg.mount_offset_body + gp_vec3(static_cast<gp_scalar>(-0.005),
+                                         static_cast<gp_scalar>(0),
+                                         static_cast<gp_scalar>(0));
+    ASSERT_GE(buried.x(), airframe.wing_min.x());
+    ASSERT_LE(buried.x(), airframe.wing_max.x()) << "fixture must actually be inside the wing";
+
+    auto blockedCount = [&](const gp_vec3& origin) {
+        int n = 0;
+        for (double ax = -50; ax <= 50; ax += 5) {
+            for (double ay = -35; ay <= 35; ay += 5) {
+                const double th = std::sqrt(ax * ax + ay * ay) * kDeg;
+                const double sn = (th < 1e-9) ? 1.0 : std::sin(th) / th;
+                const gp_vec3 dir(static_cast<gp_scalar>(std::cos(th)),
+                                  static_cast<gp_scalar>(sn * ax * kDeg),
+                                  static_cast<gp_scalar>(sn * ay * kDeg));
+                if (autoc::eval::testObstruction(
+                        origin, origin + dir * static_cast<gp_scalar>(10), airframe).blocked) {
+                    ++n;
+                }
+            }
+        }
+        return n;
+    };
+
+    const int nominalBlocked = blockedCount(ccfg.mount_offset_body);
+    const int buriedBlocked = blockedCount(buried);
+
+    // The invariant is RELATIVE: burying the aperture must not make obstruction
+    // worse. Absolute zero would be the wrong bar — some inboard rays reach the
+    // pod nose from either origin, and that is real obstruction we want kept.
+    EXPECT_LE(buriedBlocked, nominalBlocked + 2)
+        << "buried=" << buriedBlocked << " nominal=" << nominalBlocked
+        << ". A mount inside a primitive must not blind the camera; blocking "
+           "every direction is what voided the t2 and t3 bakes.";
+    EXPECT_LT(buriedBlocked, 315 / 4)
+        << "a buried mount is blocking most of the field — the interior-origin "
+           "rule is not doing its job";
+
+    // ...and the sanity half: the nominal mount is unaffected by the change, so
+    // real obstruction (pod nose, prop disc) still works.
+    const auto nose = autoc::eval::testObstruction(
+        ccfg.mount_offset_body,
+        ccfg.mount_offset_body + gp_vec3(static_cast<gp_scalar>(1),
+                                         static_cast<gp_scalar>(-1),
+                                         static_cast<gp_scalar>(0)).normalized() *
+            static_cast<gp_scalar>(10),
+        airframe);
+    EXPECT_TRUE(nose.blocked || nose.attenuation < static_cast<gp_scalar>(1))
+        << "an inboard ray from the nominal mount must still meet the nose or prop — "
+           "the interior-origin rule must not have disabled obstruction wholesale";
 }

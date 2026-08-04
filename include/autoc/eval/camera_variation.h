@@ -61,11 +61,18 @@ struct CameraSigmas {
     //
     // Each sigma is chosen so 2.5σ (the pipeline-wide truncation) equals the
     // intended envelope:
-    //   boresight / roll   8.0 deg  → 2.5σ = 20 deg
-    //   mount translation  0.002 m  → 2.5σ = 5 mm (the 1 cm box)
+    //   boresight / roll   4.0 deg   → 2.5σ = 10 deg
+    //   mount translation  x 0.0020  → 2.5σ = ±5 mm
+    //                      y 0.0040  → 2.5σ = ±10 mm  (spanwise, loosest)
+    //                      z 0.0012  → 2.5σ = ±3 mm   (vertical, tightest)
     double boresightSigmaDeg = 0.0;      // raw-ok: ini config-struct field (double per inih::GetReal)
     double rollSigmaDeg = 0.0;           // raw-ok: ini config-struct field (double per inih::GetReal)
-    double mountTranslationSigmaM = 0.0; // raw-ok: ini config-struct field (double per inih::GetReal)
+    // PER-AXIS (2026-08-03): the bond face is the wing leading edge, so build
+    // tolerance is not isotropic. Spanwise (y) is loosest, into/out of the face
+    // (x) is set by the glue line, and vertical (z) is tightest.
+    double mountTranslationSigmaX = 0.0; // raw-ok: ini config-struct field (double per inih::GetReal)
+    double mountTranslationSigmaY = 0.0; // raw-ok: ini config-struct field (double per inih::GetReal)
+    double mountTranslationSigmaZ = 0.0; // raw-ok: ini config-struct field (double per inih::GetReal)
     double wingThicknessSigmaM = 0.0;    // raw-ok: ini config-struct field (double per inih::GetReal)
     // DEFERRED — ships at 0 per the scope decision above.
     double ambientSigmaFrac = 0.0;       // raw-ok: ini config-struct field (double per inih::GetReal)
@@ -110,10 +117,11 @@ inline CameraDeltas generateCameraFromClassPRNG(
     d.boresightYawDeg    = static_cast<gp_scalar>(cameraPRNG.nextGaussian(sigmas.boresightSigmaDeg));
     d.boresightPitchDeg  = static_cast<gp_scalar>(cameraPRNG.nextGaussian(sigmas.boresightSigmaDeg));
     d.rollDeg            = static_cast<gp_scalar>(cameraPRNG.nextGaussian(sigmas.rollSigmaDeg));
+    // Draw order x, y, z is FROZEN, as before — only the sigmas became per-axis.
     d.mountTranslation   = gp_vec3(
-        static_cast<gp_scalar>(cameraPRNG.nextGaussian(sigmas.mountTranslationSigmaM)),
-        static_cast<gp_scalar>(cameraPRNG.nextGaussian(sigmas.mountTranslationSigmaM)),
-        static_cast<gp_scalar>(cameraPRNG.nextGaussian(sigmas.mountTranslationSigmaM)));
+        static_cast<gp_scalar>(cameraPRNG.nextGaussian(sigmas.mountTranslationSigmaX)),
+        static_cast<gp_scalar>(cameraPRNG.nextGaussian(sigmas.mountTranslationSigmaY)),
+        static_cast<gp_scalar>(cameraPRNG.nextGaussian(sigmas.mountTranslationSigmaZ)));
     d.wingThicknessDelta = static_cast<gp_scalar>(cameraPRNG.nextGaussian(sigmas.wingThicknessSigmaM));
     d.ambientScale       = static_cast<gp_scalar>(1.0 + cameraPRNG.nextGaussian(sigmas.ambientSigmaFrac));
     return d;

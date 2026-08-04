@@ -178,6 +178,9 @@ void applyCameraVariation(TickRuleConfig& cfg, const CameraDeltas& draw) {
         (cfg.camera.mount_orientation_body * yaw * pitch * roll).normalized();
 
     // OBSTRUCTION ONLY (research R6) — bearing keeps the nominal mount.
+    // Free to wander: a mount that lands inside a primitive no longer blinds the
+    // camera, because `testObstruction` treats a primitive containing the
+    // aperture as cut away for it. See airframe_occlusion.cc.
     cfg.obstruction_mount_offset = cfg.camera.mount_offset_body + draw.mountTranslation;
 
     // Wing slab thickness. The slab runs from wing top (min z, "up" is −z) to

@@ -1860,7 +1860,9 @@ int main(int argc, char** argv)
   gEnableCameraVariations = (cfg.enableCameraVariations != 0);
   gCameraSigmas.boresightSigmaDeg = cfg.cameraBoresightSigmaDeg;
   gCameraSigmas.rollSigmaDeg = cfg.cameraRollSigmaDeg;
-  gCameraSigmas.mountTranslationSigmaM = cfg.cameraMountTranslationSigmaM;
+  gCameraSigmas.mountTranslationSigmaX = cfg.cameraMountTranslationSigmaX;
+  gCameraSigmas.mountTranslationSigmaY = cfg.cameraMountTranslationSigmaY;
+  gCameraSigmas.mountTranslationSigmaZ = cfg.cameraMountTranslationSigmaZ;
   gCameraSigmas.wingThicknessSigmaM = cfg.cameraWingThicknessSigmaM;
   gCameraSigmas.ambientSigmaFrac = cfg.cameraAmbientSigmaFrac;
   // 038 t7 — chase shares the M1 source's per-scenario airspace/airframe seed.
