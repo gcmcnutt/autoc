@@ -19,11 +19,27 @@
 // See `specs/030-tracker-mode/contracts/beacon_projection_api.md` and
 // `data-model.md` §4 for the source contract.
 //
+// 040 T031 — bearings are now ANGLES IN RADIANS quantised on the sensor's
+// pixel grid, replacing the ±1 per-axis NDC encoding. The retired encoding
+// normalised each axis by its OWN half-FOV, so the two axes carried different
+// angular scales and a horizontal separation read 60/45 = 1.333× its vertical
+// twin — a 33% orientation error sitting in the sole range channel (FR-002).
+//
+// 040 T033a — SEPARATION IS MEASURED ON THE SPHERE. Under equidistant mapping,
+// Euclidean distance in (θx, θy) equals the great-circle angle EXACTLY along a
+// radius but over-reads TANGENTIALLY by θ/sin θ (+35% at the 75° diagonal).
+// R2 originally accepted that residual; it is now CORRECTED in
+// `compute_pair_span`, which reconstructs both unit rays and returns the angle
+// between them — see include/autoc/eval/derived_features.h. Nothing in the
+// projection changed: bearing is still equidistant (θx, θy). Pinned by
+// tests/beacon_projection_tests.cc
+// CameraGridGeometry.SeparationIsInvariantAtAnyPositionAndOrientation.
+//
 // Coordinate convention (chase body frame, NED): +x forward, +y right,
-// +z down. Camera optical axis = body +x by default; screen_x ∈ [-1, +1]
-// runs left→right (image right is positive); screen_y ∈ [-1, +1] runs
-// top→bottom (pixel-coord convention: image down is positive); ±1 is the
-// per-axis FOV edge in ANGLE (screen = θ·dir / (fov/2)).
+// +z down. Camera optical axis = body +x by default; bearing_x_rad runs
+// left→right (image right positive), bearing_y_rad runs top→bottom
+// (pixel-coord convention: image down positive). Each is bounded by the
+// DERIVED per-axis half-FOV (CameraConfig::halfFov*Rad()).
 //
 // Determinism contract (FR-009): same `ProjectionInput` ⇒ bit-identical
 // `BeaconObservation` across invocations. No PRNG, no clock, no thread-
@@ -33,7 +49,9 @@
 
 #include "autoc/types.h"
 #include "autoc/eval/beacon_config.h"
+#include "autoc/eval/airframe_occlusion.h"
 #include "autoc/eval/camera_config.h"
+#include "autoc/eval/signal_model.h"
 
 namespace autoc::eval {
 
@@ -44,81 +62,60 @@ namespace autoc::eval {
 constexpr float kCepSentinelThreshold = 1.25f;  // raw-ok: NN-byte-format perception interface (fp32 contract). any cep ≥ this ⇒ invisible
 constexpr float kCepSentinelFloat = 1.5f;       // raw-ok: NN-byte-format perception interface (fp32 contract). dequantized sentinel marker
 
-// Per-tick perception output for one (camera, beacon) pair. `screen_x`,
-// `screen_y`, and `cep` are the NN-facing dequantized fp32 values; the
-// `raw_*_int8` fields preserve the on-wire quantized state for the M2 dmp.
-struct BeaconObservation {
-    // NN-facing dequantized values (fp32 at the input boundary). All three
-    // fields are raw fp32, not `gp_scalar`, because they participate in
-    // cereal byte-format for the M8 v=2 dmp schema; flipping `gp_scalar`
-    // to fp64 would change the on-disk byte layout.
-    float screen_x;       // raw-ok: cereal byte-format member (M8 dmp). [-1, +1] uncalibrated
-    float screen_y;       // raw-ok: cereal byte-format member (M8 dmp). [-1, +1]
-    float cep;            // raw-ok: cereal byte-format member (M8 dmp). [0, 1.0] visible, == kCepSentinelFloat invisible
+// 040 T032 — pixel-index sentinel. Distinguishable from every valid index,
+// which is [0, pixels−1] and therefore never negative.
+constexpr int16_t kPixelSentinel = INT16_MIN;
 
-    // For dmp / renderer:
-    int8_t raw_x_int8;
-    int8_t raw_y_int8;
+// Per-tick perception output for one (camera, beacon) pair: BEARING plus
+// quality, per contracts/perception-interface.md §1.
+//
+// 040 T032 — the int8 bearing encoding is GONE. It was a second, independent
+// resolution model layered on top of the sensor grid, and the two disagreed:
+// 2/254 of a 120° field is 0.472°/LSB horizontally against a 0.375° pixel —
+// 26% COARSER than the sensor it claimed to model — while being 6% FINER
+// vertically, over a 90° field. The pixel grid IS the resolution model, so the
+// int8 layer was redundant where it agreed and wrong where it did not.
+//
+// Bearings are now angles in RADIANS, isotropic across both axes, quantised
+// on the pixel grid. `raw_px_*` carries the pixel index the angle came from,
+// for the dmp and the renderer.
+struct BeaconObservation {
+    // NN-facing values (fp32 at the input boundary). Raw fp32, not
+    // `gp_scalar`, because they participate in cereal byte-format for the dmp
+    // schema; flipping `gp_scalar` to fp64 would change the on-disk layout.
+    //
+    // Range is ±halfFovHRad() / ±halfFovVRad() — ≈±1.047 / ±0.785 at the
+    // 320×240 @ 0.375°/px baseline. Both axes carry the SAME angular scale, so
+    // a given angular separation reads identically at any orientation (FR-002).
+    float bearing_x_rad;  // raw-ok: cereal byte-format member (dmp). right positive
+    float bearing_y_rad;  // raw-ok: cereal byte-format member (dmp). down positive (pixel convention)
+    float cep;            // raw-ok: cereal byte-format member (dmp). [0, 1.0] visible, == kCepSentinelFloat invisible
+
+    // For dmp / renderer: the sensor-grid indices the bearings quantised to.
+    // kPixelSentinel ⇔ invisible.
+    int16_t raw_px_x;
+    int16_t raw_px_y;
     int8_t raw_cep_int8;  // INT8_MIN ⇔ invisible
 
-    // 030 M8a — cereal serialize for v=2 dmp output (cameraViewList).
-    // Wire-format note: the int8 raw_* fields are the canonical state;
-    // the fp32 dequantized values are derived from them at render-time.
-    // Both are serialized for renderer convenience (no dequantize cost
-    // in the playback path).
+    // ----- 040 T089 (FR-028) — DIAGNOSTIC ONLY, never controller inputs -------
+    //
+    // These exist because without them the renderer cannot show the thing you
+    // most want to look at: whether a dropout coasted warm and snapped back, or
+    // expired cold. FR-017b keeps the state machine internal to PERCEPTION —
+    // "internal" means it never becomes an NN input, not that it may not be
+    // recorded. The input vector stays at 58 (FR-006).
+    float raw_margin;   // raw-ok: cereal byte-format member (dmp). per-chip SNR in dB, cdma penalty applied
+    int8_t lock_state;  // LockState as int8; values pinned, see acquisition_state.h
+
+    // 030 M8a — cereal serialize for dmp output (cameraViewList).
+    // 040: appended at the end per the in-code convention — no
+    // CEREAL_CLASS_VERSION bump, old dmps orphaned (greenfield policy).
     template <class Archive>
     void serialize(Archive& ar) {
-        ar(screen_x, screen_y, cep, raw_x_int8, raw_y_int8, raw_cep_int8);
+        ar(bearing_x_rad, bearing_y_rad, cep, raw_px_x, raw_px_y, raw_cep_int8,
+           raw_margin, lock_state);
     }
 };
-
-// Compile-time toggle for airframe self-occlusion (D10). FALSE for v1 sim
-// runs because the placeholder hb1 proxy is too coarse — flip back to
-// true once real airframe geometry is calibrated. Operator routing
-// 2026-05-07: occlusion will be permanently ON once sim training shifts
-// to real-flight prep, so a runtime knob would be lifecycle drag — one
-// compile-time constant is all that's needed.
-constexpr bool kAirframeOcclusionEnabled = false;
-
-// Coarse axis-aligned-box proxy for the chase craft's airframe, expressed
-// in chase body frame. Used for self-occlusion testing (D10): a ray from
-// `camera_mount_chase_body` to `beacon_in_chase_body` that intersects the
-// box registers the beacon as occluded (sentinel).
-//
-// `enabled` is set per-proxy; defaults to `true` so test-side proxies
-// constructed via `AirframeProxy{box_min, box_max}` directly continue to
-// exercise the occlusion-fires path in tests/beacon_projection_tests.cc.
-// Production-side proxies come from `defaultAirframeProxyHB1()` which
-// inherits the compile-time `kAirframeOcclusionEnabled` (currently false).
-struct AirframeProxy {
-    gp_vec3 box_min_chase_body;
-    gp_vec3 box_max_chase_body;
-    bool enabled = true;
-
-    // 030 M6e + M8b — cereal serialize for EvalData wire-protocol carry.
-    template <class Archive>
-    void serialize(Archive& ar) {
-        ar(box_min_chase_body, box_max_chase_body, enabled);
-    }
-};
-
-// Default v1 proxy for hb1: fuselage + wing AABB. Coarse — the projection
-// contract calls for calibration against operator's reference video as a
-// plan-research deliverable; this is the rough placeholder until that
-// calibration lands. Box bounds (chase body frame, NED meters):
-//   x ∈ [-0.6, +0.4]   fuselage extent (rear→nose)
-//   y ∈ [-0.6, +0.6]   wing extent (left↔right wingtips)
-//   z ∈ [-0.05, +0.20] thickness (top-of-wing → belly)
-//
-// Eigen matrices aren't `constexpr`-compatible, so this is a function that
-// constructs the proxy on demand.
-inline AirframeProxy defaultAirframeProxyHB1() {
-    AirframeProxy p;
-    p.box_min_chase_body = gp_vec3(-0.6f, -0.6f, -0.05f);
-    p.box_max_chase_body = gp_vec3(+0.4f, +0.6f, +0.20f);
-    p.enabled = kAirframeOcclusionEnabled;
-    return p;
-}
 
 // Full input to the projection module.
 struct ProjectionInput {
@@ -138,38 +135,125 @@ struct ProjectionInput {
     gp_vec3 camera_mount_chase_body;
     gp_quat camera_orientation_chase_body;
 
+    // 040 T074 — the mount the OBSTRUCTION test rays from, which US6 lets drift
+    // from the bearing mount by up to ±5 mm. Deliberately separate: ±5 mm is
+    // 0.03° at 10 m (nothing for bearing) but swings propeller clearance ~15%,
+    // because the clear cone is atan((h − r_tip)/d) with a small numerator.
+    gp_vec3 obstruction_mount_chase_body;
+
     // Configs.
     CameraConfig camera;
     BeaconConfig beacon;
 
-    // Self-occlusion proxy (chase body frame).
-    AirframeProxy chase_airframe;
+    // 040 T057 — the link budget (FR-014/FR-015). Range and emission aspect now
+    // enter perception; through 039 neither did.
+    SignalConfig signal;
+
+    // 040 T014 — chase airframe obstruction (body frame). Replaces the
+    // single-AABB AirframeProxy, which modelled a thin wing as a solid
+    // brick AND placed the default camera mount exactly on a box face.
+    AirframeObstruction chase_airframe;
 };
 
-// Project one beacon. Returns dequantized fp32 values + raw int8 storage.
-// Sentinel cases (behind camera, occluded by airframe, outside emission
-// cone, outside FOV) all set `cep = kCepSentinelFloat` and
-// `raw_cep_int8 = INT8_MIN`; `screen_x` / `screen_y` are zero in sentinel.
+// Project one beacon. Sentinel cases (behind camera, occluded by airframe,
+// outside emission cone, outside the derived FOV) all set
+// `cep = kCepSentinelFloat`, `raw_cep_int8 = INT8_MIN` and
+// `raw_px_* = kPixelSentinel`; bearings are zero in sentinel.
 BeaconObservation projectBeacon(const ProjectionInput& input);
 
-// Ray–box intersection test (slab method). Returns true if the line segment
-// from `ray_origin_chase_body` to `ray_target_chase_body` intersects the
-// proxy AABB. Touching the box surface counts as a hit.
-bool rayHitsProxy(const gp_vec3& ray_origin_chase_body,
-                  const gp_vec3& ray_target_chase_body,
-                  const AirframeProxy& proxy);
-
-// Quantization round-trip primitives (R7). `quantize_xy` clamps to [-1, +1]
-// before rounding to int8 ∈ [-127, +127]; `quantize_cep` reserves INT8_MIN
-// for the sentinel and otherwise clamps to [0, 1] before rounding to
-// [0, +127]. The negative int8 range [-127, -1] is unused for CEP.
+// ---------------------------------------------------------------------------
+// 040 T031 — sensor-grid quantisation (FR-001).
 //
-// All `float` here is `// raw-ok:` per Principle VI: these are the int8 ↔
-// fp32 NN-byte-format conversion primitives — the byte format is
-// xiao-firmware-locked at fp32, so the alias `gp_scalar` doesn't apply.
-int8_t quantize_xy(float v_in_minus_one_plus_one);    // raw-ok: NN-byte-format conversion primitive
+// Pixel CENTRES sit at (i − (n−1)/2)·rad_per_px for i ∈ [0, n−1], so the outer
+// edges land at ±n/2·rad_per_px and the derived FOV is exactly n × deg_per_px.
+// With an even pixel count the boresight falls on a pixel BOUNDARY, not a
+// centre — so a perfectly centred beacon reports ±half a pixel, never exactly
+// zero. That is the physically correct behaviour of an even-width sensor, and
+// it is preserved rather than papered over.
+// ---------------------------------------------------------------------------
+
+// Nearest pixel index to `bearing_rad`, clamped to [0, pixels−1]. Callers must
+// reject out-of-field bearings BEFORE calling; the clamp is a safety net for
+// floating-point edge cases, not a visibility test.
+int16_t bearingToPixel(gp_scalar bearing_rad, int pixels, gp_scalar rad_per_px);
+
+// Exact centre bearing of pixel `px`. Inverse of the above up to the
+// quantisation the grid imposes by design.
+gp_scalar pixelToBearing(int16_t px, int pixels, gp_scalar rad_per_px);
+
+// ---------------------------------------------------------------------------
+// 040 T044 (FR-012, SC-003) — the EFFECTIVE field of view.
+//
+// The nominal field is a rectangle the grid defines. The effective field is
+// what is left after the aircraft's own wing, nose and propeller take their
+// share, and publishing the difference is the point of US3: obstruction here is
+// a design choice to VALIDATE, not a defect to model faithfully.
+//
+// SOLID-ANGLE WEIGHTED, deliberately. Under an equidistant mapping equal areas
+// in (θx, θy) do NOT subtend equal solid angle — the Jacobian is sin θ/θ — so
+// counting samples uniformly would over-weight the frame corners, which is
+// exactly where obstruction lives. An unweighted count would flatter or damn
+// the mount for the wrong reason.
+// ---------------------------------------------------------------------------
+
+struct EffectiveField {
+    // Solid angle of the nominal rectangle, steradians.
+    gp_scalar nominal_sr;
+    // Solid angle still fully usable: neither blocked nor attenuated.
+    gp_scalar clear_sr;
+    // Blocked by an opaque primitive (wing or nose) — beacon simply not seen.
+    gp_scalar blocked_sr;
+    // Crossed by the propeller disc: visible but attenuated (FR-009), so it is
+    // NOT lost field and is reported apart from `blocked_sr` rather than summed
+    // into it.
+    gp_scalar attenuated_sr;
+
+    gp_scalar blockedFraction() const { return blocked_sr / nominal_sr; }
+    gp_scalar attenuatedFraction() const { return attenuated_sr / nominal_sr; }
+    gp_scalar clearFraction() const { return clear_sr / nominal_sr; }
+};
+
+// Sweep the nominal field from `camera_mount_body` and integrate what the
+// airframe takes. `stride_px` subsamples the grid (1 = every pixel); the
+// integral is insensitive to it well before 1, and the default keeps the sweep
+// cheap enough for a report. `probe_range_m` is how far out the test target
+// sits — obstruction is near-field geometry, so any range past the airframe
+// gives the same answer.
+EffectiveField computeEffectiveField(const CameraConfig& camera,
+                                     const AirframeObstruction& airframe,
+                                     const gp_vec3& camera_mount_body,
+                                     int stride_px = 4,
+                                     gp_scalar probe_range_m =
+                                         static_cast<gp_scalar>(10));
+
+// ---------------------------------------------------------------------------
+// 040 T045 (FR-007b, SC-007) — obstruction ONSET.
+//
+// The angle from the camera's own boresight at which the airframe first takes
+// signal, sweeping inboard — toward the thrust axis, which is where every
+// primitive lives. Reported per mount so the distribution across the
+// mounting-error envelope can be assembled by the caller.
+//
+// Returns a negative value if the sweep finds no obstruction anywhere in the
+// field, which is a meaningful answer and not an error: it is what a mount that
+// fully clears the airframe looks like.
+// ---------------------------------------------------------------------------
+
+gp_scalar obstructionOnsetDeg(const CameraConfig& camera,
+                              const AirframeObstruction& airframe,
+                              const gp_vec3& camera_mount_body,
+                              gp_scalar boresight_tilt_inboard_deg =
+                                  static_cast<gp_scalar>(0));
+
+// CEP quantisation (R7). `quantize_cep` reserves INT8_MIN for the sentinel and
+// otherwise clamps to [0, 1] before rounding to [0, +127]; the negative range
+// [-127, -1] is unused. `float` is `// raw-ok:` per Principle VI — these are
+// int8 ↔ fp32 NN-byte-format primitives and the byte format is
+// xiao-firmware-locked at fp32, so the `gp_scalar` alias does not apply.
+//
+// US4 replaces CEP with a signal-derived quality value (FR-014); this encoding
+// survives only until then.
 int8_t quantize_cep(float cep_in_zero_one_or_sentinel); // raw-ok: NN-byte-format conversion primitive
-float dequantize_xy(int8_t q);                        // raw-ok: NN-byte-format conversion primitive
-float dequantize_cep(int8_t q);                       // raw-ok: NN-byte-format conversion primitive
+float dequantize_cep(int8_t q);                        // raw-ok: NN-byte-format conversion primitive
 
 }  // namespace autoc::eval

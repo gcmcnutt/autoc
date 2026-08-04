@@ -1,159 +1,213 @@
-# Data Model — 031 Beacon-Camera Phase 1
+# Data Model — 040 Camera Redo
 
-> **MOVED 2026-06-22 from `specs/031-beacon-camera/`. Parked 040 camera-redo reference — predates the 031 1-bit phase and is likely stale; re-validate (20 Hz / 480 fps / 200 Hz / 75 ms baseline + 031 field findings) on 040 restart. See [`README.md`](README.md).**
+**Date**: 2026-07-28 | **Plan**: [plan.md](plan.md) | **Spec**: [spec.md](spec.md)
 
-The Phase-1 data model is dominated by the **recorded raw-clip artifact**. No database, no service entities — the model is a file format with a JSON sidecar.
+Entities in the chase-side perception chain. Classification column follows FR-035:
+**M** = measured (traceable to a recorded measurement) · **D** = derived (computed from measured) ·
+**A** = assumed (placeholder awaiting calibration).
 
-## Entities
+---
 
-### ClipFile
+## 1. CameraSensor
 
-The complete on-disk artifact produced by the FPGA recorder. One ClipFile per recording session (bench scenario or flight). Comprises:
+Replaces the current implicit "two independent FOV numbers" description. FOV becomes **derived**, so field
+of view and resolution can no longer disagree (FR-003).
 
-- **File header** (16 bytes, written once at session start)
-- **Chunk[]** (1 or more ~1-second blocks, appended as the session runs)
+| Field | Unit | Default | Class | Notes |
+|---|---|---|---|---|
+| `pixels_h`, `pixels_v` | px | 320, 240 | A | 4:3 grid |
+| `deg_per_px` | deg | 0.375 | A | the single resolution knob |
+| `fov_h_deg`, `fov_v_deg` | deg | **derived** = pixels × deg_per_px ⇒ 120, 90 | D | never set directly |
+| `entrance_pupil_mm` | mm | 8.0 | A | pre-031 assumption; feeds propeller attenuation only |
+| `exposure_ms` | ms | 1.04 | A | 50% of a 2.08 ms frame; sensitivity, not a fixed result |
+| `mount_offset_body` | m | LE, 8″ outboard, ~1″ above thrust line | M | sketch 2026-07-28 |
+| `mount_orientation_body` | quat | identity (boresight ∥ thrust line) | M | operator |
 
-Stored as a single binary file at `<session-id>.clip`. The matching JSONSidecar lives at `<session-id>.json` next to it.
+**Validation**: `deg_per_px > 0`; `pixels_* > 0`; mount must not lie inside or on the boundary of any
+obstruction volume (the defect in the current default — see `AirframeObstruction`).
 
-| Field | Type | Notes |
-|---|---|---|
-| `magic` | `uint32` | `0x0BEAC031` — sentinel; loader hard-fails if absent |
-| `format_version` | `uint16` | Phase 1 → `1`. **Principle V: fail-loud on mismatch** |
-| `header_size` | `uint16` | Byte size of the file header (= 16 for v1) — future versions may extend |
-| `session_start_us` | `uint64` | Wall-clock µs since epoch at session start (informational; FPGA monotonic clock is authoritative for in-clip timing per FR-2.4) |
+**Retired**: `frame_rate_hz` (was 30, predates the 20 Hz decision), `latency_ms` (was 0; perception latency
+now emerges from acquisition timing), `Projection` enum (representation is fixed — see `BeaconObservation`).
 
-After the file header, chunks are appended in order. The file may be truncated mid-chunk on power-loss / SD-full per FR-2.5; the loader recovers up to the last complete chunk.
+---
 
-### Chunk
+## 2. BeaconEmitter
 
-Independently parseable ~1-second block. Two variants distinguished by `frame_count`:
+| Field | Unit | Default | Class | Notes |
+|---|---|---|---|---|
+| `mount_body` | m | ±0.386 (⇒ **0.772 m** separation) | M | 30″ span + 5 mm enclosure offset per tip. **Was ±0.45 — a ~17% error in the sole range channel** |
+| `enclosure_size_m` | m | 0.01 | M | 1 cm cube, one face against the tip |
+| `emission_axes` | unit vec ×5 | outboard, fore, aft, up, down | M | matches `beam_axes_cube_minus_base()` in the 031 analysis script |
+| `flat_half_angle_deg` | deg | 45 | M | flat-top region |
+| `half_power_half_angle_deg` | deg | 75 | M | ⇒ 150° FWHM, Lumileds DS190 Table 1 |
+| `drive_current_ma` | mA | 306 | M | field; bench is 51 |
 
-- **Data chunk** (`frame_count > 0`): carries N frames of raw pixel data.
-- **Fault-sentinel chunk** (`frame_count == 0`): marks a discontinuity in the recording — recorder hit a fault and either recovered (Class 1) or sealed the file (Class 2 `FINAL_UNRECOVERABLE`). Carries a 32-bit fault code in the `_reserved[0..3]` field.
+**Emission pattern** (FR-019): flat-top with shoulders — near-constant within `flat_half_angle`, falling
+through half power at `half_power_half_angle`. **A cosine power law MUST NOT be used.** Total output is the
+sum over the five emitters.
 
-| Field | Type | Notes |
-|---|---|---|
-| `chunk_magic` | `uint32` | `0xCAFEC0DE` — sentinel; loader skips invalid chunks |
-| `chunk_format_version` | `uint16` | Per Principle V; must equal file-header `format_version` |
-| `_pad0` | `uint16` | = 0 |
-| `chunk_size_bytes` | `uint32` | Total bytes in this chunk *including* this header — used to find the next chunk without parsing each frame |
-| `chunk_timestamp_us` | `uint64` | FPGA-monotonic-counter µs of the **first frame** in this chunk (for fault-sentinel: the µs at fault detection) |
-| `bit_depth` | `uint8` | `8` or `10` (per FR-2.3) |
-| `_pad1` | `uint8` | = 0 |
-| `frame_count` | `uint16` | Number of frames in this chunk. **0 ⇒ fault-sentinel chunk; ≥1 ⇒ data chunk**. Typical data values: 240 for 1 s @ 240 fps, 480 for 1 s @ 480 fps |
-| `frame_width` | `uint16` | `320` for Phase 1 (per FR-2.3) |
-| `frame_height` | `uint16` | `240` for Phase 1 |
-| `_reserved` | `uint8[4]` | **For fault-sentinel chunks: bytes [0..3] = `fault_code` (uint32 LE)**; for data chunks: zero-padded |
-| `frames[frame_count]` | `Frame[]` | Frame payload (data chunks only; absent in fault-sentinels) |
-| `crc32` | `uint32` | CRC-32 of the chunk body. Loader warns on mismatch but does not fail |
+**Note**: with 45° flat regions and faces 90° apart, the flat regions *tile* the outboard hemisphere, so
+illumination toward the chase is near-uniform — which is why off-axis emission is low-priority.
 
-The fault-sentinel chunk is a recoverable-by-design discontinuity marker — see [contracts/data-format.md](./contracts/data-format.md) for the full fault-code table.
+---
 
-### Frame
+## 3. AirframeObstruction
 
-One frame's worth of raw pixel data.
+Replaces `AirframeProxy` (a single AABB). Three primitives, all in chase body frame.
 
-| Field | Type | Notes |
-|---|---|---|
-| `frame_timestamp_delta_us` | `uint16` | µs delta from `chunk_timestamp_us` — covers ~65 ms (sufficient for one chunk at 240–480 fps) |
-| `pixel_data` | `byte[N]` | Raw pixel bytes. For 8-bit: `N = 320 × 240 = 76 800`. For 10-bit packed: `N = 320 × 240 × 10 / 8 = 96 000`. No padding |
-
-Total per-frame size: 76 802 bytes (8-bit) or 96 002 bytes (10-bit packed).
-
-### JSONSidecar
-
-Per-clip metadata, separate from the binary. Stored on disk; loader returns it as a `dict` augmented with runtime fields (`recovered_frame_count`, `recovered_chunk_count`, `fault_events`, `fully_intact`, `partial_recovery_warning`, `truncated_at_offset`) — these augmented fields are **not** part of the on-disk schema; they reflect what the loader observed during parse.
-
-See `contracts/json-sidecar-schema.json` for the formal on-disk schema. Field summary:
-
-| Field | Type | Required | Notes |
+| Primitive | Shape | Source | Class |
 |---|---|---|---|
-| `clip_id` | string | yes | Session ID, e.g. `S6-2026-05-22-001` |
-| `clip_file` | string | yes | Relative path to the `.clip` file |
-| `format_version` | int | yes | Must match the `format_version` in the file header — sidecar/binary integrity check |
-| `iso_start_time` | string (ISO 8601) | yes | Wall-clock session start |
-| `sensor_model` | string | yes | `OG0VA` or `OV9281` |
-| `sensor_fw_rev` | string | no | If available from sensor I²C |
-| `lens_spec` | object | yes | `{model, h_fov_deg, f_number, filter_cwl_nm, filter_fwhm_nm}` |
-| `capture_mode` | object | yes | `{resolution: [320, 240], fps: 240 or 480, bit_depth: 8 or 10}` |
-| `sensor_settings` | object | yes | `{exposure_us, analog_gain, digital_gain}` |
-| `ambient` | enum | yes | `indoor / outdoor_cloudy / outdoor_sun / dusk / dim` |
-| `range_qualifier` | string | no | Free-text or numeric meters |
-| `pose_qualifier` | enum | yes | `stationary / hand_panned / on_aircraft / in_flight` |
-| `recording_mode` | enum | yes | `bench_tethered / flight_sd` |
-| `notes` | string | no | Free-text |
-| `in_flight_extras` | object | conditional | Required if `recording_mode = flight_sd`: `{target_craft_id, beacon_code_ids: [A, B], airframe_config, intended_pattern, ground_notes}` |
+| Wing | thin slab — 30″ span × 7″ chord × 1″ thick, LE at station 6″ | sketch | M |
+| Pod nose | box forward of the wing LE | sketch | A (dimensions pending) |
+| Propeller disc | static annulus, `r_tip` 2.75″, disc plane at station 0 | photo + sketch | M |
 
-## Relationships
+| Field | Unit | Default | Class |
+|---|---|---|---|
+| `prop_attenuation` | fraction | ~0.15–0.20 | A | representative blade-over-aperture duty |
+| `enabled` | bool | **true** | — | was `false`; the old proxy was unusable |
 
-```
-ClipFile
-├── FileHeader (1, fixed 16 bytes)
-└── Chunk[] (1..N, appended)
-    ├── DataChunk (frame_count > 0)
-    │   ├── ChunkHeader (32 bytes; _reserved zeroed)
-    │   ├── Frame[] (typically 240 or 480)
-    │   └── CRC-32 (4 bytes)
-    └── FaultSentinelChunk (frame_count == 0)
-        ├── ChunkHeader (32 bytes; _reserved[0..3] = fault_code)
-        └── CRC-32 (4 bytes)
+**Critical validation**: the camera origin MUST NOT lie on a primitive boundary. The current default places
+the mount at z = −0.05 exactly on `box_min_z`, and a surface touch counts as a hit — so obstruction as
+shipped would obstruct nearly every forward ray. **Fix before anything depends on obstruction.**
 
-JSONSidecar
-└── references ClipFile by clip_id + clip_file path
-```
+**Behaviour**: wing and nose are opaque (hard gate). The propeller is a **static angular region applying
+partial attenuation** — no engine speed, no blade phase (FR-009).
 
-A typical Phase-1 flight clip is **a sequence of DataChunks** with **zero or more FaultSentinelChunks interleaved** at the points where the recorder hit transient faults and reset. A flight that ended cleanly (operator power-down, no faults) has no sentinels. A flight that filled the SD card has a single `FINAL_UNRECOVERABLE` sentinel at the end.
+**At the baseline mount**: wing contributes nothing (nothing sits ahead of the leading edge); propeller
+shadow spans ≈41–61° inboard.
 
-## Validation rules
+---
 
-| Rule | Applied by |
-|---|---|
-| `magic == 0x0BEAC031` | Loader file-open |
-| `format_version == 1` (Phase 1) | Loader file-header check — **fail loud on mismatch per Principle V** |
-| Each chunk has `chunk_magic == 0xCAFEC0DE` | Loader iterator — invalid chunks skipped + logged |
-| `chunk_format_version == file_header.format_version` | Loader chunk-iterator |
-| `frame_timestamp_delta_us` is monotonically increasing within a chunk | Loader (warn-only — frame drops surface here) |
-| `chunk_timestamp_us` monotonically increasing across chunks | Loader (warn-only) |
-| Sidecar `format_version == file_header.format_version` | Loader after both are opened |
-| Sidecar `recording_mode == flight_sd` ⇒ `in_flight_extras` present | Loader sidecar-validation |
-| CRC-32 per chunk | Loader (warn-only sanity check) |
+## 4. SignalBudget *(new)*
 
-## State transitions
-
-The ClipFile transitions through:
+Per beacon, per tick. Deterministic; no PRNG anywhere (FR-020).
 
 ```
-[file pre-allocated, header written]
-        │ recorder steady-state: append DataChunks
-        ▼
-[recording — header + N data chunks on disk]
-        │
-        ├── Class 1 transient fault detected
-        │       │ insert FaultSentinelChunk (recoverable code)
-        │       │ reset affected subsystem (~200 ms)
-        │       │ resume DataChunk appends
-        │       ▼
-        │   [recording — DataChunks + 1+ sentinels]
-        │
-        ├── Class 2 unrecoverable fault (SD-full / re-init failed)
-        │       │ insert FaultSentinelChunk (0xFF FINAL_UNRECOVERABLE)
-        │       │ finalize file
-        │       ▼
-        │   [sealed file with terminal sentinel]
-        │
-        ├── Class 3 brown-out (power lost)
-        │       │ no sentinel possible
-        │       ▼
-        │   [truncated file — loader detects via chunk-magic mismatch]
-        │
-        └── Operator power-down (normal completion)
-                │ no sentinel; clean EOF after last DataChunk
-                ▼
-            [sealed file, fully_intact = True]
+received  = drive × emission(aspect) × (1/r²) × obstruction_attenuation × optics_gain
+snr_chip  = received / (ambient_floor + noise_floor)
+snr_chip -= cdma_penalty        when both beacons share a detector element
 ```
 
-Once sealed (any path), the file is read-only and immutable.
+| Field | Unit | Default | Class |
+|---|---|---|---|
+| `flux_constant` | µA·m² | 1.1–1.6 | M | 031 bench; pick one, record which |
+| `ambient_floor` | µA | per-scenario draw | A | overcast → direct sun |
+| `detection_threshold` | dB | ~0 per chip | M | 031 decode floor ≤10 nA |
+| `cdma_penalty` | dB | ≈1 SNR tier | M | 031 §4 |
+| `optics_gain` | × | 1.0 | A | collection optics if fitted |
 
-## Versioning
+**Known uncertainties, carried explicitly** (not silently absorbed): the bench used five co-aimed emitters
+where flight aims five directions (~1.4× range overstatement in the source doc); and the 100 m link budget
+assumes a narrow camera, leaving a 120° optic ~40 dB down. Both are FR-035 calibration targets.
 
-`format_version = 1` is the on-ramp. Per the constitution (Principle V) and the project's no-cereal-versioning practice, any future schema change bumps the version directly; readers fail loud on mismatch. There is no "migration" path planned for Phase 1 → Phase 2 (031-fpga's clip writer will be v1 too unless a feature explicitly motivates a bump).
+---
+
+## 5. AcquisitionState *(new)*
+
+Per beacon. **Internal to perception — never a controller input** (FR-017b). Recorded for diagnostics only.
+
+**States**: `SEARCHING` → `ACQUIRING` → `TRACKING` → `HOLDING` → (`TRACKING` | `SEARCHING`)
+
+Mirrors the shipped gateware FSM rather than inventing one
+([`SIM-FEATURES.md`](../../firmware/beacon-decoder-stepfpga/SIM-FEATURES.md)). All timings are
+**hardware-measured at N=31** via the decoder's recovery counter.
+
+| Transition | Condition | Timing | ticks @ 20 Hz | Class |
+|---|---|---|---:|---|
+| SEARCH → ACQUIRING | SNR above threshold | immediate | 0 | M |
+| ACQUIRING → LOCKED (**cold**) | rate stale ⇒ needs `MINLOCK` | **308 ms** (≈2 words) | 6.2 | M |
+| **HOLD → LOCKED (warm)** | signal returns **inside the coast window** ⇒ flywheel still holds the rate, re-lock on the first good period, **ACQUIRING skipped** | **154 ms** (≈1 word) | 3.1 | M |
+| LOCKED → HOLD | signal lost | immediate | 0 | M |
+| HOLD → SEARCH | `HOLDMAX` 2 bad periods elapse | **308 ms** | 6.2 | M |
+| coast expiry | `time_since_loss` > **10 s** ⇒ next re-acquire is **true-cold** | wallclock | 200 | M |
+
+| Field | Unit | Notes |
+|---|---|---|
+| `time_in_state` | ms | advanced **analytically** once per 50 ms controller tick — no sub-stepping |
+| `time_since_loss` | ms | gates warm vs true-cold at the coast window |
+| `q` | 0–9 | `\|corr\|/energy` — **signal-level independent** (AGC-normalised); GOOD ≥ 5. Source of the quality value |
+
+### Why the coast window dominates
+
+The coast window is **wallclock-driven** (emitter↔receiver oscillator stability), *not* code length. The
+documented M2 worst-case blind window is **~8 s**, which sits **inside** the ~10 s coast — so in practice
+**most M2 reacquisitions are warm (154 ms), not cold (308 ms)**. "31 chips triples acquisition" is true only
+of the cold path, which M2 rarely takes. Cold is still modelled: operator reports it does occur in flight
+(sun, reflections) at losses beyond ~10 s.
+
+### Advance rule
+
+Chip credit accrues linearly in time, so a 50 ms tick adds 10 chips' worth at the current SNR — computed in
+one arithmetic step rather than 24 frame sub-steps. This is exact for constant SNR, **phase-free** (a 154 ms
+word against a 50 ms tick is 3.08 — not commensurate, so the code boundary drifts relative to the tick
+exactly as free-running hardware does), and keeps perception inside the FR-038 throughput ceiling.
+Quantisation is ±1 tick, which SC-005 already states as the tolerance.
+
+**Reset (FR-020a)**: every field resets at each scenario boundary, in **both** the production path and the
+test-only reference. Unreset state leaks across scenarios and breaks the bitwise gate — the existing
+situational-awareness state carries an explicit warning to this effect.
+
+---
+
+## 6. BeaconObservation *(modified)*
+
+The per-tick perception output. **Controller-facing fields are unchanged in count** — bearing pair plus
+quality, so the 58-input vector holds (FR-006).
+
+| Field | Was | Now | Class |
+|---|---|---|---|
+| bearing x, y | int8 NDC, per-axis normalised | **radians**, isotropic, quantised on the pixel grid | D |
+| quality (CEP) | `0.3 × max(\|x\|,\|y\|)` — position only | **signal-derived**: small = confident, large = tentative, sentinel = not visible | D |
+| `raw_x_px`, `raw_y_px` | — | **NEW** int16 pixel indices (diagnostic) | D |
+| `raw_margin` | — | **NEW** correlation-margin proxy (diagnostic) | D |
+| `lock_state` | — | **NEW** tracking state (diagnostic) | D |
+
+**Quality regimes** (FR-017a): confident · tentative (bearing reported, large variance) · not-visible
+(distinct sentinel). The sentinel remains distinguishable from any in-range value.
+
+**Serialization**: append at the end of the v≥2 block, no `CEREAL_CLASS_VERSION` bump, old dmps orphaned —
+the established in-code convention. Diagnostic fields are cereal byte-format ⇒ `// raw-ok:` annotated
+(Principle VI).
+
+---
+
+## 7. CameraVariationDraw *(new)*
+
+Per scenario, from the reserved `camera` sub-seed (slot 5). Modelled on the craft-variation pattern.
+
+| Field | Unit | σ | Clip | Class | Consumer |
+|---|---|---|---|---|---|
+| `boresight_error` (2 DOF) | deg | 10 | **hard 20** | M | bearing |
+| `roll_error` | deg | 10 | **hard 20** | M | bearing — **biases target tilt one-for-one** |
+| `mount_translation` | m | within a 1 cm box | ±5 mm | M | **obstruction only** — negligible for bearing (0.03° at 10 m) but swings propeller clearance ~15% |
+| `wing_thickness` | in | TBD | — | A | obstruction — folded foam board is "highly variable" |
+| `ambient_level` | µA | TBD | — | A | signal budget |
+
+**Rules**: reproducible from the scenario identifier alone; **chase-specific** even when environment seeds
+are shared with the target (FR-022); with all sigmas zero, results bit-identical to the no-variation
+baseline (FR-023). Raw pre-scale draws recorded in `ScenarioMetadata` so variation is verifiable
+ramp-independently.
+
+**Highest-impact term**: roll error. Boresight error lands as a near-constant additive offset under the
+angular representation — clean and learnable — whereas roll rotates the image plane and therefore biases
+the port→starboard tilt cue degree-for-degree, and tilt feeds the roll command.
+
+---
+
+## Entity relationships
+
+```
+CameraVariationDraw ──┬─→ CameraSensor (mount pose)
+                      ├─→ AirframeObstruction (translation, wing thickness)
+                      └─→ SignalBudget (ambient level)
+
+BeaconEmitter ──→ SignalBudget ──→ AcquisitionState ──→ BeaconObservation
+                       ↑                                       │
+AirframeObstruction ────┘                                      ↓
+                                              controller inputs (58, unchanged)
+CameraSensor ──→ bearing quantisation ────────────────────────┘
+```
+
+**Envelope rule (FR-033)**: bearing and separation-derived range have **different reach**. Bearing extends
+to the design detection range (~100 m); separation subtends ≈1 px there, so range degrades to explicitly
+unavailable somewhere around 25 m. Neither may be reported as usable outside its own envelope.

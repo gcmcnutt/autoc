@@ -215,7 +215,32 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // 038 US3 added EnablePredictorHead (aux span-predictor ablation gate) → 97.
     // 038 t7 added TrackerChaseUseSourceScenarioSeed (chase shares M1 source
     // env/craft/entry seed) → 98.
-    EXPECT_EQ(n, 98u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // 040 T015 added the 18 Airframe* obstruction keys (enabled + wing/nose
+    // AABBs + prop disc), replacing the compile-time proxy → 116; T017 retired
+    // CameraFrameRateHz + CameraLatencyMs (cadence follows ControlIntervalMsec,
+    // latency emerges from acquisition) → 114; T029 retired
+    // CameraFOVHorizontalDeg + CameraFOVVerticalDeg (FOV is now DERIVED from
+    // the grid, FR-003) and added CameraPixelsH/V + CameraDegPerPixel → 115.
+    // 040 US4 added 19 signal-budget + acquisition keys → 134: twelve for the
+    // link budget (flux/optics/ambient/noise/cdma/qFloor/qSat + the two emission
+    // beam-width angles + the three envelope bounds) and seven for the
+    // acquisition machine (four gateware timings + three quality-regime
+    // anchors). All nineteen are exposed rather than baked BECAUSE FR-036's
+    // calibration rehearsal requires substituting an alternative for each
+    // ASSUMED value with no structural change — a baked value cannot be
+    // rehearsed. T058 then DELETED BeaconEmissionConeDeg -- the hard 270 deg
+    // cutoff the flat-top emission profile replaced, which after FR-019 had no
+    // reader left and was a live-looking knob that changed nothing -> 133.
+    // 2026-08-02 added SignalAmbientKnee -> 134: the ambient-compression term
+    // 031 field test #4 forced, where ambient shunts signal at the PD rather
+    // than merely adding noise.
+    // 040 US6 added 6 camera-variation keys -> 140: the EnableCameraVariations
+    // master switch plus five sigmas (boresight, roll, mount translation, wing
+    // thickness, and ambient -- the last plumbed but held at zero per the
+    // emitter-stays-perfect scope decision).
+    // 2026-08-03 split CameraMountTranslationSigmaM into per-axis X/Y/Z (the
+    // bond face makes tolerance anisotropic) -> 142.
+    EXPECT_EQ(n, 142u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

@@ -1,264 +1,229 @@
-# Implementation Plan: 031 Beacon-Camera Optical Perception — Phase 1
+# Implementation Plan: 040 Camera Redo — Perception Fidelity Refinement for M2
 
-> **MOVED 2026-06-22: `specs/031-beacon-camera/` → here (`040-camera-redo/`).** This is the parked 040 camera-redo reference. **It predates the 031 1-bit acquisition phase and is very likely OUT OF DATE** — re-validate against 031 field findings + the 20 Hz / 480 fps / 200 Hz / 75 ms baseline before planning 040. The active 031 plan-of-record is [`../031-beacon-camera/acquisition-research-plan.md`](../031-beacon-camera/acquisition-research-plan.md). See [`README.md`](README.md).
-
-**Branch**: `031-beacon-camera` | **Date**: 2026-05-17 | **Spec**: [spec.md](../031-beacon-camera/spec.md)
-**Input**: Feature specification from `specs/031-beacon-camera/spec.md` (the shared emitter+camera mega-spec; stayed in 031)
-
-> ⚠️ **RE-SCOPED 2026-06-20**: this plan is the original **camera-pipeline** plan, now the **camera-redo feature `040`** (deferred). The active 031 plan is the **1-bit single-IR-sensor acquisition-research** arc in [`acquisition-research-plan.md`](../031-beacon-camera/acquisition-research-plan.md) (tasks = **Phase A** in [`tasks.md`](../031-beacon-camera/tasks.md)). Emitters are shared between 031 and 040.
+**Branch**: `040-camera-redo` | **Date**: 2026-07-28 | **Spec**: [spec.md](spec.md)
+**Input**: [spec.md](spec.md) + [input-data-checklist.md](input-data-checklist.md) (input of record — measured
+hardware values, sources, open items; consume rather than re-derive)
 
 ## Summary
 
-Phase 1 of 031 delivers a **bench- and field-runnable beacon-camera setup that records raw video of two coded-IR beacons at flight-relevant ranges and dynamics** ([spec.md §Overview](../031-beacon-camera/spec.md)). No simulator code is touched. No `(x, y, CEP)` extraction. No NN-in-the-loop. The deliverable is **photons → raw clip on SD card → Python-loadable numpy array** end-to-end, validated by one paired-craft test flight (US6).
+Replace the sim's placeholder beacon-camera model with one grounded in buildable hardware, then retrain M2
+against it. Four substantive changes to the chase-side perception chain — **pixel-grid geometry in isotropic
+radians**, **obstruction from the measured airframe**, **signal-quality CEP driven by a link budget and an
+acquisition state machine**, and **per-scenario camera variation** — plus a gating airframe-fidelity check
+and an aggregate-delta M2 retrain.
 
-**Approach** — operator direction 2026-05-17:
-- **Multi-eval-board de-risk strategy**: prove each chunk of work on its own off-the-shelf eval board *before* the integrated hand-built path. Specifically:
-  - **Beacon firmware** → bring up first on an ATtiny412 **Curiosity Nano** dev board + breadboard with the LED string + boost driver IC + scope. Validates timing + LUT-bit pattern + chip rate before any pod is hand-built.
-  - **Camera + optical chain** → bring up first on an **off-the-shelf USB-UVC camera module** (Arducam B0264 USB shield + B0162 OV9281, or equivalent). Live-streams to a host PC, gives instant first-light + EMI debug + exposure tuning without any FPGA gateware effort. **This is the FR-4.1 bench-mode path** (see Clarifications Session 2026-05-17).
-  - **Recording format** → exercised end-to-end via a Python `specs/040-camera-redo/beacon-viewer/` utility that consumes UVC frames + writes the canonical `.clip` format. Loader contract is round-tripped before flight gateware lands.
-  - **Flight-mode FPGA gateware** → the long-lead Lattice CrossLink-NX-EVN path (FR-4.1b) is built **in parallel** to the bench-mode work, de-risked by the bench-mode optical + format proofs.
-- **Hand-prototype first, no PCB spin** until the optical chain is proven on dev modules. The first beacon pod is point-to-point wiring on a perfboard inside the 3D-printed half-cube; PCB design is deferred to a follow-on or 031-integration.
-- **CAD-via-MCP** for the enclosure work — connect the **FreeCAD MCP server** at P1 execution time and use it as the back-part / mount-design mechanism. FreeCAD's parametric solid-modeling + native STEP/STL export is the chosen CAD toolchain.
-- **Datasheet audit phase** is explicit — every BOM part gets its datasheet pulled and cross-checked against FR-1.2.1 claims (pinout, footprint, height, soft-start, DIM/EN, UVLO, wavelength bin) before any hardware is ordered.
-- **Receiver is camera-separate-from-FPGA**, both tape-mounted to whatever airframe is available (test quad, hb1, or similar). Production-weight perception hardware is explicitly out of scope; mount-on-whatever-flies is the design point.
+**Governing constraint is architectural, not numeric**: *plumbing first*. Every physical quantity becomes a
+configured value classified measured/derived/assumed, so a later real-to-simulation calibration lands as
+config edits rather than redesign (FR-034/035/036). Numeric accuracy is explicitly provisional.
 
-**Phasing** (operator direction):
-
-| Phase | Output |
-|---|---|
-| **P1 — Design + audit + first-eval-board bring-up** | Verified BOM, hand-prototype build guide, CAD enclosure (STEP/STL via FreeCAD MCP), NFR-4 clock-drift simulation, `data-format.md`, `recorder-status-codes.md`, `eye-safety-measurements.md` (template). **Eval-board first-light**: USB-UVC camera (Arducam B0264 + B0162) running + Python `specs/040-camera-redo/beacon-viewer/` displaying live frames + recording to `.clip` format; ATtiny412 Curiosity Nano blinking a test LED at the 100 Hz chip rate + verified by scope-trace decode. Optical and code paths proven on commodity eval boards before any hand-built hardware. |
-| **P2 — Beacon hand-build + bench** | First pod hand-built per build guide; FR-3.3 EMC + FR-3.4 eye-safety + FR-1.7 UVLO verifications PASS; second pod built; FR-1.5 orthogonality verified. Bench-mode UVC camera from P1 is the verification rig (live-display of the pod's IR emission + recovered Gold code). |
-| **P3 — Flight-mode recorder build + bench scenario sweep** | Lattice EVN gateware (`firmware/flight-recorder/`) producing first frames to SD; FR-2.4/2.5/2.6/2.7 working; Class 1/2/3 fault-handling bench-injected + verified; FR-2.7 mount on a tape carrier. **Bench scenarios S1–S9 (FR-5.1)** recorded via two paths in parallel: (a) UVC bench-mode for fast iteration, (b) Lattice flight-mode for the flight-format proof. FR-4.3 Python loader ingests every clip from both paths. |
-| **P4 — US6 Beacon Test Flight 1** | One paired-craft session ≥5 min air time on flight-mode (Lattice EVN) recorder; clip passes the 3-criterion US6 acceptance gate |
-| **P5 — Close-out + handoff** | Bench-log + outcome.md; tag the EVN camera-ingest gateware as the 031-fpga input; archive recordings for 031-noise-cal follow-on |
+**Blast radius is deliberately small**: perception runs chase-side at M2 train time, so **no M1 source rebake**
+and **no change to the 58-input controller vector**. Tracker mode is `#ifndef ARDUINO`, so **xiao is
+untouched**. The feature runs parallel to M1 flight-test work.
 
 ## Technical Context
 
-**Languages / Toolchains**:
-- **Embedded MCU**: C (avr-gcc + serialUPDI programmer for ATtiny412); flashed via UPDI 1-wire serial — no proprietary tool required. Microchip MPLAB X is the IDE alternative.
-- **FPGA gateware (recorder)**: Lattice Radiant (the LIFCL-40 toolchain) or Lattice Propel for the soft-CPU + SD-record reference design. **Bitstream is camera-config + bulk SD record only in Phase 1**; the five-stage DSP pipeline is 031-fpga's job.
-- **Python 3.11**: FR-4.3 clip loader, JSON sidecar handler, NFR-4 clock-drift simulation, hand-rolled DSP scripts for US6 acceptance.
-- **C++17**: only if a simulator hook for the recorded clips is added in Phase 1 (not currently planned — that's 031-noise-cal). If added, integrates under the existing `src/eval/` umbrella per constitution.
-- **CAD**: **FreeCAD MCP server** — invoked from Claude Code at P1 execution time, produces STEP + STL files. FreeCAD project files (`.FCStd`) checked into `cad/source/`.
+**Language/Version**: C++17 (autoc + crrcsim); Python 3.11 (analysis/plots only)
+**Primary Dependencies**: Eigen (vec3/quat), cereal (dmp + EvalData wire), inih (ini), GoogleTest, CRRCSim
+LaRCSim FDM
+**Storage**: file-based — `data.dat` (per-tick trace), `data.stc` (per-gen), S3 `autoc-m2` / `autoc-eval`
+per-mode buckets (`<run-id>/gen<N>.dmp`)
+**Testing**: GoogleTest under `tests/`, registered via `run_autoc_tests`; determinism via the
+`rebuild-perf.sh` FP-deterministic build + eval-vs-training bitwise gate
+**Target Platform**: Linux desktop (training). **xiao explicitly out of scope** — `gather_tracker_inputs` is
+`#ifndef ARDUINO`; tracker mode has never shipped to firmware
+**Project Type**: evolution/simulation engine — three components (autoc evolution, crrcsim FDM, xiao embedded)
+**Performance Goals**: total evaluation throughput regression **≤10%** benchmarked against the prior M2 run
+(FR-037/038, SC-013). Perception sits in the innermost loop: ~294 scenarios × ~450–900 ticks × population ×
+2 beacons per generation
+**Constraints**: bit-determinism non-negotiable (FR-020, SC-006); no PRNG in the signal path; NN input vector
+stays 58 (FR-006); no M1 source regeneration (FR-006, SC-009); dmp changes limited to diagnostics (FR-029)
+**Scale/Scope**: ~6 headers + ~5 implementation files + 5 existing test files extended; 1 gating research
+memo; 1 M2 training run + novel-path eval
 
-**Primary Dependencies**:
-- **Hardware (beacon)**: Lumileds L1IZ-0850000000000 ×5, TI LM3410-X, ATtiny412, 22 µH shielded SMD inductor, MBR130 Schottky, 1S LiPo 100 mAh JST-PH 2.0 pack, decoupling caps, code-select jumpers (or CUI DSM-02), 0603 diagnostic LED. Hand-prototype substitutes: Pololu / SparkFun / Adafruit breakouts (see R5). *(revised 2026-05-20 per FR-1.7 #4 / R11: external voltage supervisor IC removed — UVLO is now firmware ADC + topological failsafe + WDT.)*
-- **Hardware (recorder)**: Lattice CrossLink-NX-EVN (LIFCL-40-9BG400C), OmniVision OG0VA (primary) or OV9281 via Arducam B0162 (backup), Commonlands custom M12 NIR-corrected 120° lens with integrated 850 ± 5 nm CWL / ≤30 nm FWHM bandpass filter (prototype path: m12lenses.com PT-02120 + Edmund Optics #65-679 or Thorlabs FB850-10), SanDisk Extreme Pro microSD V30 (240 fps) / V60 (480 fps), Pololu D24V10F5 5V buck.
-- **Software**: `numpy` (loader), `pytest` (loader contract test), `cereal` (only if a C++ schema is added — not currently planned), `inih` (N/A this phase).
-- **Sourcing channels**: DigiKey / Mouser (most parts), Arducam direct (B0162), Lattice direct (EVN board), OmniVision OEM channel for OG0VA, Commonlands direct for custom lens.
+### Ground truth established during planning
 
-**Storage**:
-- **On-pod**: nothing persistent (LUT compiled into MCU flash).
-- **On-recorder**: microSD card with **FR-4.2 chunked binary format** (`format_version` uint16 per chunk per Principle V) + JSON sidecar. Pre-allocated file + direct-sector writes per FR-2.5.
-- **Ground analysis**: clip files + sidecars in `specs/031-beacon-camera/clips/` (or external store for large sets) — not source-tree-tracked beyond a small set of golden test clips.
+Three findings from reading the tree that shape the work — recorded fully in [research.md](research.md):
 
-**Testing**:
-- **Python (loader, sim hooks)**: `pytest` — contract test for `load_clip()` round-trip, schema-version mismatch fail-loud test, JSON-sidecar validation.
-- **C++ (if added)**: GoogleTest per constitution.
-- **MCU firmware**: oscilloscope-verified chip-rate output (FR-1.5(a)); LUT-bit pattern decoded by Python from a captured scope trace.
-- **FPGA gateware**: simulation testbench (Lattice ModelSim / VUnit equivalent) for the SD-record path; bring-up bench check that frames-counted-out == frames-counted-in.
-- **Hardware bench-verifications (FR-3.x)**: stand-in for the constitution's "tests" — physical measurements with documented PASS/FAIL criteria (EMC, eye-safety, UVLO, orthogonality, emission pattern). Bench log per FR-5.2 is the test-result-of-record.
-
-**Target Platform**:
-- **Beacon pod**: ATtiny412 + LM3410-X boost driver hand-wired inside a 3D-printed half-cube enclosure, tape-mounted to a flat ~2.5 cm wing-tip outboard face (target craft: hb1-class or any RC fixed-wing with wing-tip access).
-- **Recorder**: Lattice CrossLink-NX-EVN + camera module, **double-back-tape (or velcro) mounted** to whatever surface a carrier craft offers. First flights: **test quad, hb1, or any platform with ~100 g payload margin** — mount-on-whatever-flies is the explicit design intent.
-- **Ground**: Linux PC (operator workstation) for Python loader + analysis.
-
-**Project Type**: hardware-firmware-optics integration with a small Python toolchain. Atypical for the spec template; closer to "embedded systems + sidecar tooling" than a software-only feature.
-
-**Performance Goals**:
-- Beacon: 100 Hz chip rate ±0.1%, 5-LED series at 300 mA constant current, ~14 min runtime / 100 mAh charge, IEC 62471 RG0 ≤10 s at 200 mm.
-- Camera: 320×240 @ 240 fps (baseline) and 480 fps (high-rate); 8-bit and 10-bit raw both selectable; manual AGC + manual exposure via I²C, auto-AGC disabled.
-- Recorder SD throughput: 18.4 MB/s (240 fps 8-bit baseline) up to 46.1 MB/s (480 fps 10-bit-packed worst case), sustained with no frame drops.
-- US6 acceptance: one ≥5 min paired-craft flight session producing one clip loadable + DSP-pass-through + visualization-pass per the three FR-4 criteria.
-
-**Constraints**:
-- Per-pod mass ≤6 g (target 4.5–5 g per FR-1.2.1 BOM).
-- Recorder system mass ~70–100 g (carrier-craft path; production-weight optimization is deferred to 031-integration).
-- EMI: gyro broadband RMS bump ≤3 dB, RSSI drop ≤2 dB, link-quality drop ≤5 % (FR-3.3).
-- LiPo UVLO at 3.5 V real V_BAT (firmware ADC trip at 3.6 V) + topological failsafe (DIM pull-down to GND) + WDT ≤ 250 ms (FR-1.7 #4, revised 2026-05-20 per R11).
-- Beacon MCU clock drift ±5 % bounded; NFR-4 simulation chooses crystal vs multi-hypothesis correlator before PCB freeze.
-- Eye safety: IEC 62471 RG0 at ≤10 s exposure @ 200 mm (FR-1.7 + US6 gate).
-- LED + filter + sensor wavelength binning: all at 850 ± 5 nm CWL (FR-1.1 + FR-2.2).
-- No PCB spin in Phase 1 (operator direction 2026-05-17) — hand-prototype only.
-
-**Scale / Scope**:
-- 2 beacon pods (one per wing on target craft) + 1 spare pod for swap if US6 build fails one.
-- 1 recorder system (1 camera, 1 FPGA eval board, 1 SD card, 1 buck regulator).
-- 9 bench scenarios (S1–S9 per FR-5.1).
-- 1 paired-craft test flight (US6).
-- 5 sub-deliverable docs (data-format.md, eye-safety-measurements.md, recorder-status-codes.md, hand-prototype-guide.md, verified-bom.md).
+1. **`TrackerStepper` is test-only.** The constitution states crrcsim FDM is the *sole worker since 034;
+   minisim retired*, and `TrackerStepper` now appears only in `tests/` plus comments. The production tracker
+   tick is `crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp`. **This corrects FR-031's
+   stated rationale** — it is not two live production paths but one production path plus a test-only
+   reference. The duplication still matters (the tests are the contract and would silently encode stale
+   behaviour), but it is a *correctness-of-tests* concern, not a production-divergence one.
+2. **Camera config is already wired.** `src/autoc.cc:955-960` reads `CameraFOVHorizontalDeg`,
+   `CameraFOVVerticalDeg`, `CameraMountOffset{X,Y,Z}` from the ini into `CameraConfig`. FR-032 is therefore
+   partially satisfied; the remaining work is the new signal-model keys plus retiring the stale
+   `frame_rate_hz` / `latency_ms`.
+3. **The dmp append convention is established in-code.** `protocol.h` documents append-at-end-of-v≥2-block
+   with no `CEREAL_CLASS_VERSION` bump, old dmps orphaned. The diagnostic fields follow that convention.
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+*GATE: evaluated before Phase 0; re-evaluated after Phase 1 design.*
 
-| Principle | Phase-1 Posture | Status |
+| Principle | Assessment | Status |
 |---|---|---|
-| **I. Testing-First** | Python loader: pytest contract tests written before the loader implementation. MCU firmware: scope-trace decode is the hardware-side "test" for chip-rate + LUT correctness. FPGA gateware: ModelSim/VUnit testbench for the SD-record path. Hardware bench-verifications (FR-3.x) are the test-of-record for the optical/electrical claims; documented in `eye-safety-measurements.md` + bench log. | ✅ PASS |
-| **II. Build Stability** | Python loader integrates under existing tooling. Any C++ added (none planned in Phase 1) goes through `rebuild.sh` per constitution. FPGA bitstream + MCU firmware are out-of-tree builds — not in the `rebuild.sh` path. | ✅ PASS |
-| **III. No Compatibility Shims** | Greenfield. Format-version 1 of `data-format.md` is the only on-disk contract introduced. No back-compat wrappers anywhere. | ✅ PASS |
-| **IV. Unified Build** | Python loader sits in `specs/040-camera-redo/beacon-loader/` or similar — does not duplicate cereal/inih/GoogleTest declarations. FPGA + MCU builds are explicitly separate (different toolchains; can't unify with CMake). | ✅ PASS |
-| **V. Versioned Persistence Artifacts** | **`data-format.md` is the on-ramp**: `format_version` uint16 at a stable parseable offset per chunk; FR-4.3 Python loader is the reference implementation with **fail-loud on version mismatch** (no silent default-init, no truncation). Write-side: FPGA recorder writes `format_version = 1` directly into each chunk header. Schema covers raw 8/10-bit, per-frame µs timestamp from FPGA monotonic counter, per-chunk header, JSON sidecar metadata. | ✅ PASS |
-| **VI. Type-Domain Discipline** | Phase 1 does NOT touch `src/eval/` or `src/nn/`. The Python loader returns `numpy.ndarray` (host-side, not eval-pipeline) — `gp_scalar` / `gp_vec3` / `gp_fitness` aliases are irrelevant. If 031-noise-cal (future) adds a C++ hook to consume clips inside the simulator, Principle VI applies there. | ✅ N/A this phase |
+| **I. Testing-First** | Five existing test files carry the contract and will be extended before implementation: `beacon_projection_tests.cc` (geometry, quantisation, obstruction), `gather_tracker_inputs_tests.cc` (input assembly, CEP gating), `contract_tracker_config_tests.cc` (ini field-count + new signal keys), `tracker_dmp_roundtrip_tests.cc` (diagnostic fields), `tracker_stepper_init_tests.cc` (per-scenario state reset, FR-020a). New: signal-model and variation tests. | ✅ PASS |
+| **II. Build Stability** | `scripts/rebuild.sh` compile-and-test gate before any commit; xiao unaffected so its build gate is not in play. | ✅ PASS |
+| **III. No Compatibility Shims** | Clean cut throughout: int8 bearing encoding is **removed**, not deprecated alongside a replacement; the linear CEP placeholder is **replaced**, not switched. Old M2 elites are invalidated — accepted, retraining is the planned outcome (Assumption 10). | ✅ PASS |
+| **IV. Unified Build** | No new third-party dependencies. New test targets touch `CMakeLists.txt` ⇒ that change MUST go through a clean `scripts/rebuild-perf.sh`, not an incremental reconfigure. Operator drives the clean rebuild. | ✅ PASS *(with the rebuild-perf obligation recorded)* |
+| **V. Versioned Persistence** | `BeaconObservation` gains pixel-coordinate + diagnostic fields; `CameraViewSample` carries them into the dmp. Follows the in-code convention documented at `protocol.h:428-447` — append at end of the v≥2 block, no `CEREAL_CLASS_VERSION` bump, **old dmps orphaned** (they fail to parse rather than mis-parse, which is the fail-loud outcome the principle requires). The M1 source format is untouched, so M1 dmps remain readable. | ✅ PASS |
+| **VI. Type-Domain Discipline** | New perception code uses `gp_scalar` / `gp_vec3`. The pixel-coordinate and diagnostic fields are cereal byte-format ⇒ `// raw-ok:` annotated at declaration. **Milestone-closing obligation**: run the principle's grep over `src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/` and annotate-or-convert every hit in the diff. | ✅ PASS *(audit obligation carried into every milestone)* |
+| **VII. No Silent Fallback Defaults** | **Directly load-bearing here.** The constitution cites the `cepGateThreshold` bug — which lives in *this exact code* — as the motivating failure. Every new signal-model value flowing from `WorkerInit` MUST have no in-class default; the constructor initializer list is the single assignment site. | ✅ PASS *(highest-attention principle for this feature)* |
+| **VIII. Training-Artifact Lifecycle** | The M2 retrain uploads tagged `retain=expire`; if the resulting controller becomes a baseline it is pinned `retain=keep` and its S3 prefix recorded in the outcome doc. | ✅ PASS |
+| **IX. Detached Training Launch** | Retrain launched via `scripts/train.sh <ini> <logfile>` — never a harness-tracked background task. Pre-run build gate applies: `rebuild-perf.sh` before the run, since perception changes are determinism-affecting. | ✅ PASS |
+| **X. Single Ordered Backlog** | All deferrals already filed in `specs/BACKLOG.md` (camera-hardware phase, raptor binocular arrangement, IMU misalignment, engine-speed propeller work). No per-item files created. | ✅ PASS |
 
-**Gate result**: PASS. No violations to justify. Proceeding to Phase 0.
+**Gate result**: PASS, no violations to justify. Two standing obligations carried into implementation —
+the Principle VI grep at every milestone close, and Principle VII discipline on all new `WorkerInit`-sourced
+values.
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/031-beacon-camera/
-├── spec.md                         # ✅ written; clarified + analyzed 2026-05-17
-├── plan.md                         # ⬅ this file
-├── research.md                     # Phase 0 output
-├── data-model.md                   # Phase 1 output (data-format.md schema + JSON sidecar schema)
-├── quickstart.md                   # Phase 1 output (build-one-pod + build-one-recorder walk-through)
-├── contracts/
-│   ├── data-format.md              # canonical chunked-binary clip format (versioned)
-│   ├── python-loader.md            # FR-4.3 load_clip() interface contract
-│   ├── mcu-firmware-contract.md    # ATtiny412 chip-rate output + LUT-bit timing contract
-│   ├── fpga-recorder-contract.md   # FPGA → SD-card byte format + chunk-write atomicity
-│   └── json-sidecar-schema.json    # JSON sidecar schema (consumed + emitted by loader)
-├── verified-bom.md                 # P1 datasheet-audit output (each part datasheet-checked)
-├── hand-prototype-guide.md         # P1 step-by-step assembly (perfboard + breakouts + wiring)
-├── eye-safety-measurements.md      # P1 template, P2-populated IEC 62471 measurements
-├── recorder-status-codes.md        # P1 LED blink-code reference card
-├── cad/
-│   ├── beacon-half-cube.step       # 3D enclosure, primary CAD output (via FreeCAD MCP)
-│   ├── beacon-half-cube.stl        # FDM-printable mesh (exported from FreeCAD)
-│   ├── recorder-mount-template.stl # Optional tape-on adapter for the eval board
-│   └── source/
-│       └── beacon-half-cube.FCStd  # FreeCAD parametric project (source-of-truth)
-├── bench-logs/                     # P2/P3/P4 bench-log entries per FR-5.2 (one .md per session)
-├── clips/                          # Phase-1 recorded clips (golden small set; bulk archived externally)
-└── tasks.md                        # NOT created by /speckit.plan — /speckit.tasks output
+specs/040-camera-redo/
+├── spec.md                     # feature specification (44 FR, 13 SC, 7 stories)
+├── input-data-checklist.md     # INPUT OF RECORD — measured values, sources, open items
+├── plan.md                     # this file
+├── research.md                 # Phase 0 — ground truth + design decisions
+├── data-model.md               # Phase 1 — entities, fields, state transitions
+├── quickstart.md               # Phase 1 — how to run, verify, and calibrate
+├── contracts/                  # Phase 1 — perception interface + config + dmp contracts
+├── checklists/requirements.md  # spec quality checklist (passing)
+├── camera_considerations.md    # 040 reference — sensor/link-budget (rate-stale banner)
+└── camera-hardware-phase/      # PARKED — recorder chain; not in this feature
 ```
 
-### Source Code (repository root)
-
-The repo is multi-language (autoc C++17, xiao C/C++ via PlatformIO, Python analysis scripts). Phase 1 adds **firmware + tools subtrees** alongside the existing structure:
+### Source code (repository root)
 
 ```text
-firmware/
-├── beacon-pod/                     # ATtiny412 firmware (avr-gcc + serialUPDI)
-│   ├── src/
-│   │   ├── main.c                  # boot → read code-select → 100 Hz timer ISR → DIM toggle
-│   │   ├── gold_codes.c            # 4× N=15 Gold-code LUTs
-│   │   └── config.h                # chip-rate, LUT length, GPIO pin mapping
-│   ├── Makefile                    # avr-gcc invocation, UPDI flash target
-│   └── tests/
-│       └── scope-trace-decode.py   # consumes a captured scope CSV, asserts the LUT bit sequence
-└── flight-recorder/                # Lattice LIFCL-40 gateware (Radiant project)
-    ├── rtl/
-    │   ├── camera_config_i2c.v     # OG0VA/OV9281 register init
-    │   ├── mipi_ingest.v           # MIPI CSI-2 → BRAM double-buffer
-    │   ├── sdram_ring.v            # external SDRAM ring buffer (per F14 sweep)
-    │   ├── sd_writer.v             # 4-bit SDIO direct-sector writes
-    │   └── status_led.v            # FR-2.6 blink-code state machine
-    ├── tb/
-    │   └── sd_writer_tb.v          # ModelSim testbench
-    └── propel-project/             # Lattice Propel project file
+include/autoc/eval/
+├── camera_projection.h        # BeaconObservation: pixel coords replace int8; + diagnostics
+├── camera_config.h            # sensor grid + deg/px; retire frame_rate_hz / latency_ms
+├── beacon_config.h            # separation 0.9 → 0.772 m; flat-top emission params
+├── signal_model.h             # NEW — link budget → per-chip SNR → quality
+├── acquisition_state.h        # NEW — chip-credit integrator + lock/hold state machine
+└── airframe_occlusion.h       # NEW — wing slab + nose + prop disc (replaces the AABB proxy)
 
-tools/
-├── beacon-loader/                  # Python loader + simulator hooks
-│   ├── beacon_loader/
-│   │   ├── __init__.py
-│   │   ├── loader.py               # load_clip(path) → (np.ndarray, dict)
-│   │   ├── schema.py               # format_version validation + JSON sidecar schema
-│   │   └── chunk.py                # chunked-binary read implementation
-│   ├── tests/
-│   │   ├── test_loader_contract.py # FR-4.3 round-trip test
-│   │   ├── test_version_mismatch.py# Principle V fail-loud test
-│   │   ├── test_loader_resilience.py # fault-sentinel + brown-out tests
-│   │   └── test_sidecar_schema.py  # JSON sidecar validation
-│   └── pyproject.toml
-└── beacon-viewer/                  # Bench-mode live UVC viewer + recorder (FR-4.1)
-    ├── beacon_viewer/
-    │   ├── __init__.py
-    │   ├── uvc_capture.py          # V4L2 / pyuvc capture from Arducam UVC USB
-    │   ├── live_display.py         # Real-time frame display (Qt or matplotlib)
-    │   └── record_to_clip.py       # Write captured frames into FR-4.2 .clip format
-    ├── tests/
-    │   └── test_record_to_clip.py  # Bench-mode recordings round-trip via beacon-loader
-    └── pyproject.toml
+src/eval/
+├── camera_projection.cc       # pixel quantisation, isotropic radians, effective FOV
+├── signal_model.cc            # NEW
+├── acquisition_state.cc       # NEW
+└── airframe_occlusion.cc      # NEW
 
-# No changes to existing autoc/, crrcsim/, xiao/, src/ in Phase 1.
+crrcsim/src/mod_inputdev/inputdev_autoc/
+└── crrcsim_tracker_helper.cpp # PRODUCTION tick — consumes the shared per-tick rule
+
+src/eval/tracker_stepper.cc    # test-only reference — must consume the SAME shared rule
+include/autoc/util/config.h    # new signal-model + variation ini keys (X-macro)
+include/autoc/util/scenario_prng.h        # camera sub-seed (slot 5, reserved, unused)
+include/autoc/rpc/scenario_metadata.h     # cameraSeed + variation draws (craft pattern)
+include/autoc/rpc/protocol.h              # CameraViewSample diagnostic fields
+src/autoc.cc                   # worker init: new config → WorkerInit (Principle VII)
+tools/renderer.cc              # POV panel: radians scale, effective FOV, obstruction
+tools/dmp_dump.cc              # emit new diagnostics
+
+tests/
+├── beacon_projection_tests.cc      # EXTEND — quantisation, isotropy, obstruction
+├── gather_tracker_inputs_tests.cc  # EXTEND — CEP semantics, tentative lock
+├── contract_tracker_config_tests.cc# EXTEND — ini field count + new keys
+├── tracker_dmp_roundtrip_tests.cc  # EXTEND — diagnostic round-trip
+├── tracker_stepper_init_tests.cc   # EXTEND — per-scenario state reset (FR-020a)
+├── signal_model_tests.cc           # NEW — link budget, CDMA, monotonicity
+├── acquisition_state_tests.cc      # NEW — timing, hold, determinism
+└── camera_variation_tests.cc       # NEW — reproducibility, zero-sigma identity
 ```
 
-**Structure Decision**: **multi-subtree** (firmware/ + tools/ + specs/) because the deliverable spans MCU firmware, FPGA gateware, host-side Python, hardware enclosures, and operational docs. The existing repo already segregates `xiao/` (PlatformIO embedded), `crrcsim/` (third-party-style C++ build), and top-level `src/` + `scripts/` (autoc evolution + Python analysis); the new `firmware/` and `tools/` subtrees follow that segregation pattern. No new top-level CMakeLists.txt entries are needed in Phase 1 (firmware builds out-of-tree; Python loader has its own pyproject.toml).
+**Structure Decision**: extend the existing `src/eval/` perception module rather than introducing a new
+top-level component. Perception is already an eval-pipeline concern (`camera_projection` lives there, the
+tracker stepper consumes it, crrcsim links `autoc_common`), and Principle IV's single-CMakeLists rule makes
+a peer directory pure overhead. The three new headers/implementations are siblings of
+`camera_projection`, not a new subsystem.
 
-## Complexity Tracking
+## Implementation Sequencing
 
-No constitution violations. Hand-prototype-instead-of-PCB is a *simplification* of the spec's Plan Dep B.2 (PCB layout), driven by operator direction 2026-05-17. PCB design is deferred — not a violation, just a re-phasing.
+Ordering is driven by two hard constraints rather than convenience.
 
-| Risk | Why it's accepted | Mitigation |
+> **Naming note**: stages are lettered **A–H**, *not* numbered M0–M7. In this project **M1 / M2 / M3 denote
+> controller modes** (pathgen / tracker / optical+ToF) and appear throughout this document in that sense —
+> "no M1 source rebake", "the M2 retrain". Numbered milestones would collide with that vocabulary exactly
+> where a misread is most expensive.
+
+| Stage | Work | tasks.md | Why here |
+|---|---|---|---|
+| **A** | **Airframe-fidelity verdict** (US1, FR-024/025/026) | Phase 2 | **Gating.** A verdict of "regenerate" would force an M1-source rebake *before* any perception work, since the M2 controller trains off the M1 source. Expected outcome is "defer", but it must be established, not assumed. Cheap: a document, no code. |
+| **B** | **Shared per-tick rule** (FR-031) + obstruction-proxy fix + config surface (FR-032) | Phase 3 | Prerequisite. The acquisition state machine must land in exactly one place; doing this later would mean writing it twice. Also fixes the degenerate default proxy (camera on `box_min_z`) before anything depends on obstruction. |
+| **C** | **Pixel-grid geometry** (US2, FR-001–006) | Phase 4 | Foundation — every later quantity is expressed in the new representation. Includes the 0.772 m separation correction. |
+| **D** | **Obstruction** (US3, FR-007–013) | Phase 5 | Depends on Stage C's angular representation and Stage B's proxy fix. Validates the leading-edge mount across the variation envelope. |
+| **E** | **Signal-quality CEP** (US4, FR-014–020a) | Phase 6 | The feature's core. Depends on Stage C (geometry) and Stage D (obstruction feeds the budget). |
+| **F** | **Camera variation** (US6, FR-021–023) | Phase 7 | Layers on top; needs Stages C–E in place to vary anything meaningful. |
+| **G** | **Instrumentation + optics record** (US7, FR-027–030) | Phases 8, 10 | Diagnostics and the durable optics artefact. |
+| **H** | **Retrain + evaluate** (US5, FR-037/038) | Phase 9 | Terminal. Throughput benchmark against the prior M2 run, then novel-path eval, aggregate delta reported. |
+
+Stages A and B are genuinely blocking. C→D→E is a strict dependency chain. F and G could run in either
+order; G is documentation-heavy and may float.
+
+### Verification type per stage — where operator time is needed
+
+| Stage | Automated verification | Operator / manual |
 |---|---|---|
-| Hand-prototype circuit may have higher EMI than a designed PCB | EMI envelope is *radiated-only* with path C (no airframe connection); FR-3.3 bench gate catches it before US6 | If FR-3.3 fails, fall back to designed PCB before US6 |
-| CAD MCP server not yet identified | The user has committed to wiring one in at P1 execution time | Plan flags this as R10 in research.md; P1 cannot complete without it |
-| OG0VA OEM-channel lead time unknown | Spec already names OV9281 / Arducam B0162 as the bench-bring-up backup; ship with the backup, hot-swap if OG0VA lands in time | OV9281 is the de-risk path; OG0VA is the upgrade |
-| 1.6 MHz boost-converter EMI vs FC gyros | Identical risk to all FPV/drone boost converters; well-understood mitigation set | FR-1.6 mitigations + FR-3.3 bench gate |
+| **A** | — | **The entire stage.** Comparison memo + a recorded decision. Gate. |
+| **B** | **Bit-identity** — pinned elite evals `NN_EVAL_SAME`. A behaviour-preserving refactor that changes behaviour has a bug | Operator drives `rebuild-perf.sh` (Principle IV) |
+| **C** | Isotropy, pixel quantisation, separation invariance, range-vs-truth | **Renderer POV panel** — the ±1 convention is retired and the scale changes; confirm beacons land where expected |
+| **D** | Visibility-map geometry assertions | **Read the obstruction-onset distribution.** Per the "let it ride" clarification this stage's output is an observation, not a pass/fail |
+| **E** | Monotonic falloff, acquisition timing, hold ride-through, determinism | **Playback.** Does dropout/reacquire look physical? Is the ~25 m range-envelope crossover where expected? Unit tests cannot answer this |
+| **F** | Reproducibility from scenario id; zero-sigma bit-identity | Spot-check only |
+| **G** | dmp round-trip | **Renderer visual** (effective FOV, obstructed regions, quality regimes) + **read the optics record** |
+| **H** | Throughput benchmark vs the prior M2 run | **Effectively the entire stage** — pre-run gate, launch, monitor, judge the plateau, write the aggregate delta |
 
----
+**Three hard operator gates**: A (a decision), B (clean rebuild), H (pre-run gate then judgment).
+
+**Four visual checks**, all renderer-mediated: C, D, E, G. **Stage E is the one not to skip** — the signal
+model is where "physically plausible" and "passes its unit tests" diverge most easily, and playback is the
+only instrument that catches it.
+
+**Stage H is the long pole.** A–G are code and documents; H is a training run plus a novel-path eval — days
+of wall clock, and the only stage whose verdict is a judgment rather than a check.
+
+**Not required anywhere in 040**: bench hardware (031 supplies recorded measurements; 040 consumes them)
+and flight testing (that is the parallel M1-controller flight-test track). Nothing here blocks on weather,
+hardware availability, or a field trip.
+
+**The asymmetry worth respecting**: Stage A costs almost nothing and gates everything. A "regenerate"
+verdict reorders the whole feature behind an M1-source rebake — the cheapest possible guard against the
+most expensive possible surprise.
 
 ## Phase 0: Research
 
-See [research.md](../031-beacon-camera/research.md) for the resolution of each NEEDS CLARIFICATION item. _(research.md stayed in 031 — it holds active emitter R1/R2 research.)_
+See [research.md](research.md). Topics resolved:
 
-Top-level research items identified during Technical Context fill:
-
-| ID | Question |
-|---|---|
-| R1 | FreeCAD MCP server — confirm install/connection at P1 execution; identify the specific MCP package being used |
-| R2 | ATtiny412 toolchain: avr-gcc + serialUPDI cable (DIY) vs Microchip MPLAB X + PICkit (commercial)? |
-| R3 | Lattice CrossLink-NX-EVN onboard SDRAM/HyperRAM part + capacity + DMA path — sufficient for the 6 MB ring buffer? |
-| R4 | OG0VA OEM-channel sourcing reality (lead time + MOQ) — gates the P2/P3 decision to ship OG0VA primary or OV9281 backup |
-| R5 | Hand-prototype breakouts: identify Adafruit / SparkFun / Pololu / DigiKey breakouts for LM3410-X (or compatible) and ATtiny412 — must fit in the 2.5 × 2.5 × 1.3 cm enclosure. *(revised 2026-05-20 per R11: voltage supervisor IC dropped from BOM, no breakout needed.)* |
-| R6 | Commonlands lens lead time + Edmund/Thorlabs filter availability + the m12lenses.com PT-02120 IR-cut status — drives the lens-side P2 schedule |
-| R7 | NFR-4 clock-drift simulation: numpy vs GNU Radio vs Matlab; pick the one with fastest "write a matched filter sweep" path |
-| R8 | 1S LiPo 100 mAh pack: confirm Amazon B083NWXLTK or pick a named DigiKey-stocked equivalent for supply-chain reliability |
-| R9 | Lattice toolchain: Radiant (HDL-direct) vs Propel (with a soft-CPU + driver lib for SDIO) — which has a closer-to-out-of-the-box camera-ingest + SD-record reference design? |
-| R10 | CAD-MCP invocation pattern from Claude Code: how does the planner reliably hand off "build a 25 × 25 × 13 mm half-cube with these features" and receive STEP/STL back? |
-
----
+1. Production vs test tracker path — and what FR-031 should actually do about it
+2. Pixel quantisation and the isotropic-radian representation; residual anisotropy
+3. Obstruction primitive selection (slab vs box) and the degenerate-proxy fix
+4. Signal-budget shape and its calibration against 031 bench data
+5. Acquisition state machine — states, timing, determinism strategy, per-scenario reset
+6. Camera-variation plumbing modelled on the existing craft-variation pattern
+7. dmp diagnostic-field convention
+8. Throughput measurement method against the prior M2 run
 
 ## Phase 1: Design & Contracts
 
-**Prerequisites**: research.md complete (all NEEDS CLARIFICATION resolved).
+- [data-model.md](data-model.md) — entities, fields, units, validation, state transitions
+- [contracts/perception-interface.md](contracts/perception-interface.md) — the `(bearing, quality)` contract
+  the controller consumes, and what is deliberately *not* exposed
+- [contracts/config-surface.md](contracts/config-surface.md) — every new ini key with default, unit, and
+  measured/derived/assumed classification (FR-035)
+- [contracts/dmp-diagnostics.md](contracts/dmp-diagnostics.md) — the diagnostic fields and their convention
+- [quickstart.md](quickstart.md) — build, test, verify determinism, run the retrain, calibrate later
 
-### Deliverables
+## Complexity Tracking
 
-| Artifact | Source | Contract role |
-|---|---|---|
-| `data-model.md` | This plan | Entity definitions: ClipFile, Chunk, Frame, JSONSidecar; relationships; validation rules |
-| `contracts/data-format.md` | Spec FR-4.2 + Principle V | Canonical chunked-binary byte layout with `format_version` uint16 per chunk |
-| `contracts/python-loader.md` | Spec FR-4.3 | `load_clip(path) → (np.ndarray, dict)` signature + error contract (fail-loud on schema mismatch) |
-| `contracts/mcu-firmware-contract.md` | Spec FR-1.3 | Chip-rate timing + LUT-bit GPIO signal at the DIM pin |
-| `contracts/fpga-recorder-contract.md` | Spec FR-2.5 + FR-2.4 | MIPI ingest → SDRAM ring → SD chunk-write atomicity; FPGA-monotonic timestamp source authority |
-| `contracts/json-sidecar-schema.json` | Spec FR-4.2 | JSON schema for the per-clip sidecar |
-| `quickstart.md` | This plan | Three walk-throughs: (a) build one pod, (b) build one recorder, (c) record S1 and ingest with the loader |
-| `verified-bom.md` | R5 + datasheet audit | Per-part datasheet citations + cross-check against spec claims (one row per part) |
-| `hand-prototype-guide.md` | R5 + CAD output | Parts list (breakouts) + wiring diagram + step-by-step assembly inside the half-cube |
-| `cad/beacon-half-cube.{step,stl}` + `cad/source/beacon-half-cube.FCStd` | FreeCAD MCP per R1/R10 | 3D enclosure with battery cavity, slide-in opening, 5 LED indents, light-pipe slot for diagnostic LED, code-select access slot. FreeCAD project file is the editable source-of-truth |
-| `eye-safety-measurements.md` (template) | Spec FR-1.7 + FR-3.4 | Empty measurement table to be populated in P2 |
-| `recorder-status-codes.md` | Spec FR-2.6 | LED blink-code reference card |
+No constitution violations. Two deviations from the spec's stated assumptions, both simplifications,
+recorded here rather than as violations:
 
-### Agent-context update
-
-Run after Phase 1 artifacts land:
-
-```bash
-.specify/scripts/bash/update-agent-context.sh claude
-```
-
-This refreshes `CLAUDE.md`'s "Active Technologies" / "Recent Changes" sections with the new 031-beacon-camera entries (Python loader + FPGA gateware + ATtiny412 firmware + CAD MCP integration).
-
----
-
-## What `/speckit.plan` does NOT do
-
-- Does not run the datasheet audit itself — `verified-bom.md` is a *plan-output template* whose body is filled in P1 execution.
-- Does not call the CAD MCP — the planner only commits to using one; the actual STEP/STL files appear during P1 execution.
-- Does not write firmware or gateware — only the per-component contracts.
-- Does not produce `tasks.md` — that's `/speckit.tasks`.
+| Item | Spec said | Reality | Effect |
+|---|---|---|---|
+| FR-031 rationale | "duplicated across two execution paths" | One production path + one test-only reference | Work still required (tests are the contract), but it is a test-correctness fix, not a production-divergence fix. Lower risk than the spec implies. |
+| FR-032 scope | "configuration values MUST be externally settable" | FOV and mount offsets already wired at `autoc.cc:955-960` | Less work than stated; remaining scope is the new signal-model keys plus retiring stale fields. |

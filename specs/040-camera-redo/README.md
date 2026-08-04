@@ -1,71 +1,58 @@
-# 040 — Camera Redo (PARKED placeholder)
+# 040 — Camera Redo
 
-**Status**: 🅿️ **PARKED — not yet specified.** This directory is a placeholder so the many
-cross-references to "feature 040" resolve to a real home. No `spec.md`/`plan.md`/`tasks.md` exists
-yet; run `/speckit.specify` here when 040 is unparked.
+**Status**: 🟢 **ACTIVE — specified 2026-07-28.** See [`spec.md`](spec.md).
 
-**Created**: 2026-06-22 (paperwork stub alongside the 031 re-scope to the 1-bit acquisition phase).
+**Created**: 2026-06-22 as a paperwork stub alongside the 031 re-scope. **Unparked 2026-07-28.**
 
-## What 040 is
+## Two eras live in this directory — do not confuse them
 
-040 is the **camera-redo phase**: the full beacon→camera→FPGA→recording optical pipeline that was
-originally drafted under 031, then split out when 031 was re-scoped (2026-06-20) to the **1-bit
-single-IR-sensor acquisition-research phase**. The relationship:
+| | what it is | where |
+|---|---|---|
+| **040 as specified (ACTIVE)** | **Perception-fidelity refinement for M2** — make the *simulated* camera resemble buildable hardware, then retrain M2 against it. Sim-side only. | [`spec.md`](spec.md), [`input-data-checklist.md`](input-data-checklist.md), [`checklists/`](checklists/) |
+| **Camera hardware phase (PARKED)** | The original beacon→camera→FPGA→SD **recording** chain: gateware, clip format, Python loader, bench build guides. **No part of it is in 040 as specified.** | [`camera-hardware-phase/`](camera-hardware-phase/) |
 
-- **Emitters are shared with 031** — same coded-IR beacon pods (5-LED half-cube, 1S-battery, Gold-code
-  modulated). 040 does not re-do the emitter; it consumes it.
-- **The single-sensor analog front end (031) is replaced by a camera + bigger FPGA** — a global-shutter
-  mono sensor (320×240 @ 480 fps), ~120° NIR-bandpass M12 lens, MIPI ingest, FPGA five-stage detection
-  pipeline, raw-frame recording, and the eventual real-time `(x, y, CEP)` wire contract that 030's
-  evolved controller consumes.
-- 031 proves the **temporal/code channel** (acquire + decode + two-code CDMA separation) cheaply on one
-  photodiode; 040 adds the **spatial channel** (localization / bearing) that a single detector cannot
-  provide. See [`../031-beacon-camera/acquisition-research-plan.md` §2](../031-beacon-camera/acquisition-research-plan.md).
+The hardware-phase material was relocated into its own subdirectory on 2026-07-28 for two reasons: four
+of its filenames (`plan.md`, `data-model.md`, `quickstart.md`, `contracts/`) collide with what
+`/speckit.plan` generates and would have been overwritten; and keeping the two eras adjacent was already
+causing confusion across sessions. It is **not** obsolete — several of its documents are actively
+referenced by the running 031 emitter build.
 
-## Reference material (lives in 031, is 040's source-of-design)
+## What 040 is (as specified)
 
-The camera-phase planning docs were **relocated here from `031-beacon-camera/` on 2026-06-22** (each
-carries a MOVED + likely-stale banner); the **shared emitter+camera origin docs stayed in 031** because
-the active emitter build still traces to them. **Do not build the camera chain from these without
-re-validating** — they predate the 031 1-bit phase and the 20 Hz / 480 fps / 200 Hz / 75 ms baseline.
+A **research + design-refinement** feature, not a build feature. Outcome: a refined camera scheme grounded
+in what hardware can actually deliver, a simulator that reflects it, and a more robust M2 — while 031
+proves field hardware in parallel and **M3 (optical + time-of-flight)** remains the real destination.
 
-Relocated here (040's own):
-- [`plan.md`](plan.md), [`data-model.md`](data-model.md), [`quickstart.md`](quickstart.md), [`recorder-status-codes.md`](recorder-status-codes.md) — camera-phase planning artifacts (stale).
-- [`camera_considerations.md`](camera_considerations.md) — sensor selection + link budget + Gold-code acquisition/tracking math.
-- [`contracts/`](contracts/) — camera-clip + FPGA-recorder + loader/sidecar contracts.
-- [`beacon-viewer/`](beacon-viewer/), [`beacon-loader/`](beacon-loader/) — camera-clip viewer + loader.
+Seven deliverables, priority-ordered in the spec: airframe-fidelity verdict (gating) · honest camera
+geometry · obstruction as design validation · signal-quality CEP · retrained M2 · camera variations ·
+optics record. Governing principle is **plumbing first, calibration later** — right structure and right
+knobs now, numeric calibration when real-to-simulation measurement exists.
 
-Stayed in 031 (shared emitter+camera; active emitter traces to them):
-- [`../031-beacon-camera/spec.md`](../031-beacon-camera/spec.md) — the mega-spec (emitter FR-1.x active + camera FR-2.x parked; rate-corrected + bannered).
-- [`../031-beacon-camera/verified-bom.md`](../031-beacon-camera/verified-bom.md) — shared BOM. [`schematic.md`](../031-beacon-camera/schematic.md) — emitter pod schematic. [`contracts/mcu-firmware-contract.md`](../031-beacon-camera/contracts/mcu-firmware-contract.md) — emitter firmware contract.
+**Explicitly out of scope**: photon budget at frame rate (needs article 1 + raw capture), second camera,
+dual-FOV optics, the detection-pipeline hardware, multipath/glint/sun, engine-speed propeller modelling.
+Each carries a recorded trigger in the spec.
 
-## Baseline correction to apply on unpark
+## Still current at this level
 
-The 031 reference docs carry a **2026-06-22 rate-baseline correction** to the current program baseline:
-**20 Hz control loop (037), 480 fps camera, 200 Hz Gold-code chip rate, 75 ms (15-chip) code period,
-15-bit codes** (200 Hz × 2.4 frames/chip = 480 fps; 15 chips @ 200 Hz = 75 ms = 1.5 ticks @ 20 Hz). The
-correction was applied to `031-beacon-camera/spec.md`'s operative text, but the **parked camera sub-docs
-above (`plan.md`, `data-model.md`, `tasks.md`, `quickstart.md`, `schematic.md`, `verified-bom.md`,
-`camera_considerations.md`, `recorder-status-codes.md`) still carry the legacy 240 fps / 100 Hz / 150 ms
-numbers.** When 040 is specified, sweep these to the corrected baseline first. 240 fps / 100 Hz is the
-legacy low-rate point, not the acquisition baseline.
+- [`camera_considerations.md`](camera_considerations.md) — sensor selection + link budget + code
+  acquisition maths. **Reference material the active spec cites** (notably that its 100 m link budget
+  assumes an 8 mm aperture / 3.4° camera, which is what makes the wide-field shortfall visible). Carries a
+  stale-rate banner: it predates the 20 Hz / 480 fps / 200 Hz / 75 ms baseline.
+- [`input-data-checklist.md`](input-data-checklist.md) — **the input of record for the spec**: every
+  measured hardware value, its source, and the open items. Consume this rather than re-deriving.
 
-## Toolchain (deferred)
+## Parked in `camera-hardware-phase/`
 
-Per [`../../docs/toolchains.md`](../../docs/toolchains.md): 040 targets **Lattice Radiant + Propel
-(CrossLink-NX / LIFCL-40)** on the Windows host — **NOT installed**; install only when 040 restarts.
-(Distinct from 031's Lattice **Diamond** / MachXO2 STEP-MXO2 acquisition-correlator flow — don't conflate
-the two.)
+`plan.md` · `data-model.md` · `quickstart.md` · `recorder-status-codes.md` · `contracts/` ·
+`beacon-viewer/` · `beacon-loader/`
 
-## Sibling tracks (for orientation)
+**Unpark trigger**: a camera bench exists (article 1 + raw uncompressed capture). Indexed from
+[`../BACKLOG.md`](../BACKLOG.md). ⚠️ These predate the 031 1-bit phase and the current rate baseline —
+re-validate before building from them.
 
-- **031** — active: 1-bit single-sensor beacon-acquisition research, **bench + ground only** (proves the
-  code + FPGA architecture; gate = Stage 2 ground-field).
-- **"pre-camera flight" follow-on** (unnumbered, end-of-roadmap) — flying the 1-bit receiver (Stage 3):
-  small-form-factor receiver + onboard record-to-SD. Sits between 031 and 040; sequencing condition-
-  dependent (e.g. emitters-flying-against-a-ground-receiver may come first). Number it when specced.
-- **038** — active: M2 RNN/tracker robustness (hull-crash penalty + camera variations); consumes 031's
-  eventual field-calibrated CEP model but is otherwise orthogonal to 040.
-- **040** — this: camera pipeline + localization, parked until 031 field-proves the acquisition channel.
-</content>
-</invoke>
+## Sibling tracks
+
+- **031** — active: 1-bit single-sensor beacon acquisition, bench + field. Produces the calibration 040
+  consumes. Several of its live build documents link into `camera-hardware-phase/`.
+- **M3** — optical + time-of-flight. Supplies range directly, which is why 040 corrects rather than
+  extends separation-derived ranging.

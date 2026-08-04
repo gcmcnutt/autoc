@@ -166,7 +166,7 @@ Pin role assignments (identical on both chips):
 6. **Low-voltage cutout test** *(revised 2026-05-20 per R11)*: with firmware flashed (see §7) and the MCU driving DIM HIGH at idle, slowly turn bench supply voltage down from 5 V. At ≈3.5 V real V_BAT (firmware-detected at 3.6 V), MCU should drive PA3 LOW + sleep → DIM low → boost shuts down → LED string goes dark within ~500 ms ADC debounce. Restore voltage and power-cycle to confirm clean restart. Also: (a) during emission, issue a soft-reset over UPDI — LEDs should go OFF within ≤ 1 ms (POR + topology); (b) load a deliberately-hung firmware variant — WDT should reset within ≤ 250 ms → LEDs OFF. mEDBG over USB should be unaffected throughout all of these.
 7. **Flash gold-code firmware to ATtiny416** via XNANO mEDBG over USB-Micro-B (PlatformIO `pio run -e beacon-eval -t upload`).
 8. **Verify on scope**: at U1 pin 4 (DIM) the waveform should be the 4-code PN sequence at the spec'd chip rate. At R1 (sense), the current envelope should track DIM with the spec'd turn-on/turn-off times.
-9. **Once §1-§8 pass**: rebuild the same firmware for `env:beacon-target` and proceed to §(a) of [`quickstart.md`](../../specs/040-camera-redo/quickstart.md) to commit to the cube-mounted target hardware.
+9. **Once §1-§8 pass**: rebuild the same firmware for `env:beacon-target` and proceed to §(a) of [`quickstart.md`](../../specs/040-camera-redo/camera-hardware-phase/quickstart.md) to commit to the cube-mounted target hardware.
 
 ---
 
@@ -189,4 +189,4 @@ Pin role assignments (identical on both chips):
 - Project lib table: [`sym-lib-table`](sym-lib-table)
 - Parent target BOM: [`../../specs/031-beacon-camera/verified-bom.md`](../../specs/031-beacon-camera/verified-bom.md)
 - Parent feature spec: [`../../specs/031-beacon-camera/spec.md`](../../specs/031-beacon-camera/spec.md)
-- Parent quickstart: [`../../specs/040-camera-redo/quickstart.md`](../../specs/040-camera-redo/quickstart.md)
+- Parent quickstart: [`../../specs/040-camera-redo/camera-hardware-phase/quickstart.md`](../../specs/040-camera-redo/camera-hardware-phase/quickstart.md)

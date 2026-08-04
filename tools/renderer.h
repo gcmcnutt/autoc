@@ -107,6 +107,25 @@ public:
   void updatePlaybackAnimation();
   void pausePlaybackAnimation();
   void resumePlaybackAnimation();
+
+  // --- 040 T065a: playback transport ---------------------------------------
+  //
+  // NOT renderer polish -- a Stage E DEPENDENCY. The US4 checkpoint asks
+  // whether dropout and reacquisition look physical, and that is unanswerable
+  // at realtime: a warm relock is 154 ms (3 ticks) and a cold acquire 308 ms
+  // (6 ticks), so the entire warm-vs-cold distinction -- the thing the whole
+  // coast-window design turns on -- plays out in under a third of a second. At
+  // 20 Hz realtime both are "it blinked".
+  //
+  // Backstep is cheap because playback is RECORDED data: a step back is an
+  // index decrement, so the hidden-state scrubbing problem in BACKLOG.md
+  // (which bites a renderer that re-runs the NN) does not apply here.
+  void transportTogglePause();
+  void transportStep(int ticks);      // +/- N control ticks
+  void transportJumpToStart();
+  void transportJumpToEnd();
+  void transportJumpToEvent(int direction);  // +1 next, -1 previous
+  void transportRapidFinish();               // was Space, now F
   void renderFullScene(); // Render complete scene without S3 fetch
   void hideStopwatch();
   void updateStopwatchPosition();
@@ -162,6 +181,25 @@ public:
   gp_scalar animationSpeed = 1.0f; // seconds per animation second
   gp_scalar totalAnimationDuration = 10.0f; // total animation duration in seconds
   unsigned long animationTimerId = 0; // VTK timer ID for animation
+
+  // --- 040 T065a transport state -------------------------------------------
+  // `transportPaused` is DELIBERATELY separate from `isPlaybackPaused`. The
+  // latter is the transient camera-interaction pause that auto-resumes on
+  // mouse-up; conflating them would make a manual pause evaporate the moment
+  // the operator rotated the view to look at what they had paused on.
+  bool transportPaused = false;
+  // Authoritative playback time while paused; tracks the wall clock while
+  // playing, so unpausing never jumps.
+  gp_scalar cursorSec = 0.0f;
+  // One control tick, seconds. Derived from consecutive recorded timestamps in
+  // deriveTickSeconds() rather than assumed, so a step is always exactly one
+  // recorded sample however the run was configured.
+  gp_scalar tickSec = 0.05f;
+
+  gp_scalar deriveTickSeconds() const;
+  gp_scalar playbackDurationSec() const;
+  void transportSeek(gp_scalar t);
+  std::vector<gp_scalar> perceptionEventTimes() const;
 
   // 037 P4 -- per-frame instrumentation for focused-vs-all-arenas
   // measurement. Accumulates wall-clock CPU time spent in the per-tick
@@ -238,6 +276,8 @@ private:
   vtkSmartPointer<vtkActor2D> cameraPOVPanelOutline;
   vtkSmartPointer<vtkActor2D> cameraPOVBeaconLeftDot;
   vtkSmartPointer<vtkActor2D> cameraPOVBeaconRightDot;
+  // 040 T065g — lock state + q as text; a 3 px bar was unreadable.
+  vtkSmartPointer<vtkTextActor> cameraPOVStatusActor;
   std::vector<vtkSmartPointer<vtkActor>> arenaLabelActors;
   
   vtkSmartPointer<vtkTextActor> generationTextActor;
@@ -390,8 +430,45 @@ protected:
     else if (key == "a") {
       this->InvokeEvent(AllFlightEvent, nullptr);
     }
+    // --- 040 T065a: playback transport --------------------------------------
+    //
+    // `Space` becomes play/pause -- the conventional binding, worth the small
+    // break from its old start/stop meaning. RAPID-FINISH MOVES TO `F`, which
+    // is the one existing behaviour this table displaces.
+    //
+    // `,` / `.` follow the mpv/vi frame-step convention. `Left`/`Right` were
+    // NOT reused: they already drive focus pan, and stealing them would trade
+    // one useful control for another.
     else if (key == "space") {
-      this->InvokeEvent(PlaybackEvent, nullptr);
+      if (renderer_) renderer_->transportTogglePause();
+    }
+    else if (key == "F") {
+      // Rapid-finish: stop playback and show the completed scene. Was `space`.
+      if (renderer_) renderer_->transportRapidFinish();
+    }
+    else if (key == "period") {   // '.'
+      if (renderer_) renderer_->transportStep(+1);
+    }
+    else if (key == "comma") {    // ','
+      if (renderer_) renderer_->transportStep(-1);
+    }
+    else if (key == "greater") {  // '>'
+      if (renderer_) renderer_->transportStep(+10);
+    }
+    else if (key == "less") {     // '<'
+      if (renderer_) renderer_->transportStep(-10);
+    }
+    else if (key == "Home") {
+      if (renderer_) renderer_->transportJumpToStart();
+    }
+    else if (key == "End") {
+      if (renderer_) renderer_->transportJumpToEnd();
+    }
+    else if (key == "bracketright") {  // ']' next perception event
+      if (renderer_) renderer_->transportJumpToEvent(+1);
+    }
+    else if (key == "bracketleft") {   // '[' previous perception event
+      if (renderer_) renderer_->transportJumpToEvent(-1);
     }
     else if (key == "f") {
       if (renderer_) {

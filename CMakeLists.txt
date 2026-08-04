@@ -99,6 +99,10 @@ add_library(autoc_common STATIC
     src/eval/arena.cc
     src/eval/trail_rabbit.cc
     src/eval/crash_hull.cc
+    src/eval/airframe_occlusion.cc
+    src/eval/tracker_tick_rule.cc
+    src/eval/signal_model.cc
+    src/eval/acquisition_state.cc
     src/eval/tracker_stepper.cc
     src/nn/evaluator.cc
     src/nn/serialization.cc
@@ -178,6 +182,12 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(beacon_projection_tests tests/beacon_projection_tests.cc)
   target_link_libraries(beacon_projection_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(signal_model_tests tests/signal_model_tests.cc)
+  target_link_libraries(signal_model_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  add_executable(acquisition_state_tests tests/acquisition_state_tests.cc)
+  target_link_libraries(acquisition_state_tests GTest::gtest GTest::gtest_main autoc_common)
+
   add_executable(contract_tracker_config_tests tests/contract_tracker_config_tests.cc)
   target_link_libraries(contract_tracker_config_tests GTest::gtest GTest::gtest_main autoc_common)
   target_compile_definitions(contract_tracker_config_tests PRIVATE
@@ -214,6 +224,9 @@ if(ENABLE_AUTOC_TESTS)
   target_link_libraries(scenario_prng_tests GTest::gtest GTest::gtest_main autoc_common)
 
   # 034 US4 — craft variation contract tests (T043).
+  add_executable(camera_variation_tests tests/camera_variation_tests.cc)
+  target_link_libraries(camera_variation_tests GTest::gtest GTest::gtest_main autoc_common)
+
   add_executable(craft_variation_tests tests/craft_variation_tests.cc)
   target_link_libraries(craft_variation_tests GTest::gtest GTest::gtest_main autoc_common)
 
@@ -284,6 +297,8 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME source_dmp_loading_tests COMMAND source_dmp_loading_tests)
   add_test(NAME source_dmp_s3_integration_tests COMMAND source_dmp_s3_integration_tests)
   add_test(NAME beacon_projection_tests COMMAND beacon_projection_tests)
+  add_test(NAME signal_model_tests COMMAND signal_model_tests)
+  add_test(NAME acquisition_state_tests COMMAND acquisition_state_tests)
   add_test(NAME contract_tracker_config_tests COMMAND contract_tracker_config_tests)
   add_test(NAME gather_tracker_inputs_tests COMMAND gather_tracker_inputs_tests)
   add_test(NAME situational_inputs_tests COMMAND situational_inputs_tests)
@@ -295,6 +310,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME crash_hull_tests COMMAND crash_hull_tests)
   add_test(NAME derived_features_tests COMMAND derived_features_tests)
   add_test(NAME scenario_prng_tests COMMAND scenario_prng_tests)
+  add_test(NAME camera_variation_tests COMMAND camera_variation_tests)
   add_test(NAME craft_variation_tests COMMAND craft_variation_tests)
   add_test(NAME run_id_prefix_tests COMMAND run_id_prefix_tests)
   add_test(NAME s3_run_selector_tests COMMAND s3_run_selector_tests)
@@ -317,6 +333,8 @@ if(ENABLE_AUTOC_TESTS)
             cereal_version_anchor_tests nn_sensor_interface_tests
             source_dmp_loading_tests source_dmp_s3_integration_tests
             beacon_projection_tests
+            signal_model_tests
+            acquisition_state_tests
             contract_tracker_config_tests
             gather_tracker_inputs_tests
             situational_inputs_tests
@@ -328,6 +346,7 @@ if(ENABLE_AUTOC_TESTS)
             crash_hull_tests
             derived_features_tests
             scenario_prng_tests
+            camera_variation_tests
             craft_variation_tests
             run_id_prefix_tests
             s3_run_selector_tests
@@ -356,11 +375,19 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND contract_evolution_tests --gtest_brief=1
     COMMAND rpc_transport_tests --gtest_brief=1
     COMMAND msplink_quat_convention_tests --gtest_brief=1
+    # 040 2026-07-30 -- nn_telemetry_tests was a DEPENDS (so it compiled) and an
+    # add_test (so ctest ran it) but was missing from this COMMAND chain, so a
+    # plain `make` -- i.e. scripts/rebuild-perf.sh, the pre-run gate -- built it
+    # and never ran it. Pre-existing; found while verifying the gate really does
+    # run every suite before a training launch.
+    COMMAND nn_telemetry_tests --gtest_brief=1
     COMMAND cereal_version_anchor_tests --gtest_brief=1
     COMMAND nn_sensor_interface_tests --gtest_brief=1
     COMMAND source_dmp_loading_tests --gtest_brief=1
     COMMAND source_dmp_s3_integration_tests --gtest_brief=1
     COMMAND beacon_projection_tests --gtest_brief=1
+    COMMAND signal_model_tests --gtest_brief=1
+    COMMAND acquisition_state_tests --gtest_brief=1
     COMMAND contract_tracker_config_tests --gtest_brief=1
     COMMAND gather_tracker_inputs_tests --gtest_brief=1
     COMMAND situational_inputs_tests --gtest_brief=1
@@ -372,6 +399,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND crash_hull_tests --gtest_brief=1
     COMMAND derived_features_tests --gtest_brief=1
     COMMAND scenario_prng_tests --gtest_brief=1
+    COMMAND camera_variation_tests --gtest_brief=1
     COMMAND craft_variation_tests --gtest_brief=1
     COMMAND run_id_prefix_tests --gtest_brief=1
     COMMAND s3_run_selector_tests --gtest_brief=1

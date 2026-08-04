@@ -34,6 +34,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/pathgen.h"
 #include "autoc/util/config.h"
 #include "autoc/eval/variation_generator.h"
+#include "autoc/eval/camera_variation.h"
 #include "autoc/eval/craft_variation.h"      // 034 US4 — craft-class draws
 #include "autoc/nn/mode.h"           // 030 M7a — getActiveModeStrategy
 #include "autoc/nn/population.h"
@@ -58,6 +59,36 @@ From skeleton/skeleton.cc
 #include <cereal/archives/binary.hpp>
 
 using namespace std;
+
+// 040 T015 — airframe obstruction straight from config, METRES in body frame.
+// Datum: prop axle = (0,0,0); +x fwd, +y right, +z down; stations aft = -x.
+// Every field is read; none carries a fallback here (Constitution VII), and
+// contract_tracker_config_tests asserts the keys exist in every ini, so a
+// struct default can never silently stand in for a missing one.
+static autoc::eval::AirframeObstruction airframeObstructionFromConfig(
+    const AutocConfig& cfg) {
+    autoc::eval::AirframeObstruction a;
+    a.enabled = (cfg.airframeObstructionEnabled != 0);
+    a.wing_min = gp_vec3(static_cast<gp_scalar>(cfg.airframeWingMinX),
+                         static_cast<gp_scalar>(cfg.airframeWingMinY),
+                         static_cast<gp_scalar>(cfg.airframeWingMinZ));
+    a.wing_max = gp_vec3(static_cast<gp_scalar>(cfg.airframeWingMaxX),
+                         static_cast<gp_scalar>(cfg.airframeWingMaxY),
+                         static_cast<gp_scalar>(cfg.airframeWingMaxZ));
+    a.nose_min = gp_vec3(static_cast<gp_scalar>(cfg.airframeNoseMinX),
+                         static_cast<gp_scalar>(cfg.airframeNoseMinY),
+                         static_cast<gp_scalar>(cfg.airframeNoseMinZ));
+    a.nose_max = gp_vec3(static_cast<gp_scalar>(cfg.airframeNoseMaxX),
+                         static_cast<gp_scalar>(cfg.airframeNoseMaxY),
+                         static_cast<gp_scalar>(cfg.airframeNoseMaxZ));
+    a.prop_plane_x = static_cast<gp_scalar>(cfg.airframePropPlaneX);
+    a.prop_axis_y = static_cast<gp_scalar>(cfg.airframePropAxisY);
+    a.prop_axis_z = static_cast<gp_scalar>(cfg.airframePropAxisZ);
+    a.prop_radius = static_cast<gp_scalar>(cfg.airframePropRadius);
+    a.prop_attenuation = static_cast<gp_scalar>(cfg.airframePropAttenuation);
+    return a;
+}
+
 
 std::vector<std::vector<Path>> generationPaths;
 std::vector<ScenarioDescriptor> generationScenarios;
@@ -159,6 +190,8 @@ static VariationSigmas gVariationSigmas = {0.0, 0.0, 0.0, 0.0, 0.0};
 // EnableCraftVariations master disable parallels EnableEntry/Wind/Rabbit
 // (draw-and-discard when off — PRNG advances, deltas zeroed before write).
 static autoc::eval::CraftSigmas gCraftSigmas;
+static autoc::eval::CameraSigmas gCameraSigmas;
+static bool gEnableCameraVariations = false;
 static bool gEnableCraftVariations = false;
 // Individual variation enable flags (from config)
 static bool gEnableEntryVariations = false;
@@ -272,6 +305,10 @@ struct ScenarioVariations {
     // scales via applyVariationScale() before passing to the FDM.
     autoc::eval::CraftDeltas craftDeltas;
     uint32_t craftSeed = 0;                     // = deriveClassSubSeeds(scenarioSeed).craft
+    // 040 US6 — full-magnitude camera draw + its class sub-seed. Same shape as
+    // craft: drawn parent-side, copied to ScenarioMetadata per eval.
+    autoc::eval::CameraDeltas cameraDeltas;
+    uint32_t cameraSeed = 0;                    // = deriveClassSubSeeds(scenarioSeed).camera
 };
 
 // Global pre-computed table (indexed by wind scenario index 0..N-1)
@@ -425,6 +462,17 @@ static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigma
             sv.craftDeltas = autoc::eval::CraftDeltas{};  // zeros + 1.0 thrust
         }
 
+        // 040 US6 — camera-class draws. Same draw-and-discard discipline as
+        // craft: the PRNG is ALWAYS advanced so toggling EnableCameraVariations
+        // cannot shift any other class's draws. Off ⇒ the NOMINAL camera, which
+        // is bit-identical to having no camera-variation code at all (FR-023).
+        autoc::util::ClassPRNG cameraPRNG(subseeds.camera);
+        sv.cameraSeed = subseeds.camera;
+        autoc::eval::CameraDeltas cameraDraw =
+            autoc::eval::generateCameraFromClassPRNG(cameraPRNG, gCameraSigmas);
+        sv.cameraDeltas = gEnableCameraVariations ? cameraDraw
+                                                  : autoc::eval::CameraDeltas{};
+
         gScenarioVariations.push_back(std::move(sv));
     }
 }
@@ -468,7 +516,8 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
         std::ostringstream hdr;
         hdr << "Scenario       ScenarioSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°";
         if (any_craft_active) {
-            hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svSlew   thrTau   pwmPh    CraftSeed";
+            hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svSlew   thrTau   pwmPh    CraftSeed"
+                << "   camYaw  camPit  camRol   camDx   camDy   camDz  camWng   CamSeed";
         }
         *logger.info() << hdr.str() << endl;
     }
@@ -528,6 +577,24 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
                  << std::setw(7) << static_cast<double>(cd.craftServoPwmPhase)  // 037 v2: s (PWM latch phase)
                  << "  0x" << std::hex << std::setw(8) << std::setfill('0')
                  << sv.craftSeed
+                 // 040 T076 — camera draws land HERE rather than in
+                 // `dmp-dump --meta-only`, because they no longer ride the
+                 // persisted ScenarioMetadata (see protocol.h). They are static
+                 // per scenario for the whole run, so this startup table IS the
+                 // complete record — and it is ramp-independent by construction,
+                 // which was T076's actual requirement.
+                 // setfill(' ') FIRST: craftSeed above leaves setfill('0') set,
+                 // which would render -6.66 as 00-6.66 and make the table
+                 // unreadable -- and this table IS T076's record.
+                 << setfill(' ')
+                 << "  " << setw(7) << fixed << setprecision(2) << sv.cameraDeltas.boresightYawDeg
+                 << " " << setw(7) << sv.cameraDeltas.boresightPitchDeg
+                 << " " << setw(7) << sv.cameraDeltas.rollDeg
+                 << " " << setw(7) << setprecision(4) << sv.cameraDeltas.mountTranslation.x()
+                 << " " << setw(7) << sv.cameraDeltas.mountTranslation.y()
+                 << " " << setw(7) << sv.cameraDeltas.mountTranslation.z()
+                 << " " << setw(7) << sv.cameraDeltas.wingThicknessDelta
+                 << "  0x" << hex << setw(8) << setfill('0') << sv.cameraSeed << dec << setfill(' ')
                  << std::dec << std::setfill(' ');
         }
 
@@ -952,17 +1019,17 @@ static WorkerInit buildWorkerInit() {
     // per-eval EvalData no longer carries trajectory bytes.
     init.sourceList = gSourceTrajectoryList;
 
-    init.cameraConfig.fov_h_deg = static_cast<gp_scalar>(cfg.cameraFOVHorizontalDeg);
-    init.cameraConfig.fov_v_deg = static_cast<gp_scalar>(cfg.cameraFOVVerticalDeg);
-    init.cameraConfig.frame_rate_hz = static_cast<gp_scalar>(cfg.cameraFrameRateHz);
-    init.cameraConfig.latency_ms = static_cast<gp_scalar>(cfg.cameraLatencyMs);
+    // 040 T029 — grid in, FOV derived (FR-003). No fov_* assignment exists to
+    // contradict the grid.
+    init.cameraConfig.pixels_h = cfg.cameraPixelsH;
+    init.cameraConfig.pixels_v = cfg.cameraPixelsV;
+    init.cameraConfig.deg_per_px = static_cast<gp_scalar>(cfg.cameraDegPerPixel);
     init.cameraConfig.mount_offset_body =
         gp_vec3(static_cast<gp_scalar>(cfg.cameraMountOffsetX),
                 static_cast<gp_scalar>(cfg.cameraMountOffsetY),
                 static_cast<gp_scalar>(cfg.cameraMountOffsetZ));
 
     init.beaconLeftConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconLeftWavelengthNm);
-    init.beaconLeftConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
     init.beaconLeftConfig.mount_body =
         gp_vec3(static_cast<gp_scalar>(cfg.beaconLeftMountX),
                 static_cast<gp_scalar>(cfg.beaconLeftMountY),
@@ -970,14 +1037,15 @@ static WorkerInit buildWorkerInit() {
     init.beaconLeftConfig.emission_axis_body = gp_vec3(0.0f, -1.0f, 0.0f);
 
     init.beaconRightConfig.wavelength_nm = static_cast<uint16_t>(cfg.beaconRightWavelengthNm);
-    init.beaconRightConfig.emission_cone_deg = static_cast<gp_scalar>(cfg.beaconEmissionConeDeg);
     init.beaconRightConfig.mount_body =
         gp_vec3(static_cast<gp_scalar>(cfg.beaconRightMountX),
                 static_cast<gp_scalar>(cfg.beaconRightMountY),
                 static_cast<gp_scalar>(cfg.beaconRightMountZ));
     init.beaconRightConfig.emission_axis_body = gp_vec3(0.0f, +1.0f, 0.0f);
 
-    init.airframeProxy = autoc::eval::defaultAirframeProxyHB1();
+    // 040 T013 — obstruction geometry anchors to the camera mount, since the
+    // thrust line's body-frame position is not yet measured (checklist A1b).
+    init.airframeObstruction = airframeObstructionFromConfig(cfg);
 
     init.flightArena.radius_m = static_cast<gp_scalar>(cfg.flightArenaRadius);
     init.flightArena.floor_agl_m = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
@@ -986,6 +1054,42 @@ static WorkerInit buildWorkerInit() {
     init.crashHullRadius = static_cast<gp_scalar>(cfg.crashHullRadius);
     init.trailDistance = static_cast<gp_scalar>(cfg.trailDistance);
     init.cepGateThreshold = static_cast<gp_scalar>(cfg.cepGateThreshold);
+
+    // 040 US4 — link budget + acquisition machine (FR-014..FR-020a). Populated
+    // field-by-field from the ini rather than from hb1SignalConfig(), so the
+    // shipped values are the ini's and the factory stays a documentation of the
+    // defaults rather than a second, silently-authoritative copy.
+    init.signalConfig.flux_constant = static_cast<gp_scalar>(cfg.signalFluxConstant);
+    init.signalConfig.optics_gain = static_cast<gp_scalar>(cfg.signalOpticsGain);
+    init.signalConfig.emission_flat_deg = static_cast<gp_scalar>(cfg.beaconEmissionFlatDeg);
+    init.signalConfig.emission_half_power_deg = static_cast<gp_scalar>(cfg.beaconEmissionHalfPowerDeg);
+    init.signalConfig.ambient_floor = static_cast<gp_scalar>(cfg.signalAmbientFloor);
+    init.signalConfig.noise_floor = static_cast<gp_scalar>(cfg.signalNoiseFloor);
+    init.signalConfig.ambient_knee = static_cast<gp_scalar>(cfg.signalAmbientKnee);
+    init.signalConfig.cdma_penalty_db = static_cast<gp_scalar>(cfg.signalCdmaPenaltyDb);
+    init.signalConfig.q_floor_db = static_cast<gp_scalar>(cfg.signalQFloorDb);
+    init.signalConfig.q_saturation_db = static_cast<gp_scalar>(cfg.signalQSaturationDb);
+    init.signalConfig.detection_range_m = static_cast<gp_scalar>(cfg.cameraDetectionRangeM);
+    init.signalConfig.separation_min_px = static_cast<gp_scalar>(cfg.separationMinResolvablePx);
+    init.signalConfig.shared_element_px = static_cast<gp_scalar>(cfg.sharedElementPx);
+
+    init.acquisitionConfig.code_word_ms = static_cast<gp_scalar>(cfg.acquisitionCodeWordMs);
+    init.acquisitionConfig.cold_acquire_ms = static_cast<gp_scalar>(cfg.acquisitionColdMs);
+    init.acquisitionConfig.hold_max_ms = static_cast<gp_scalar>(cfg.acquisitionHoldMaxMs);
+    init.acquisitionConfig.coast_window_ms = static_cast<gp_scalar>(cfg.acquisitionCoastWindowMs);
+    init.acquisitionConfig.confident_cep = static_cast<gp_scalar>(cfg.qualityConfidentCep);
+    init.acquisitionConfig.tentative_cep = static_cast<gp_scalar>(cfg.qualityTentativeCep);
+    init.acquisitionConfig.identity_uncertain_cep =
+        static_cast<gp_scalar>(cfg.qualityIdentityUncertainCep);
+
+    // 040 US6 — per-scenario camera draws, primed once. Indexed to match
+    // gScenarioVariations (and therefore the source scenario index the worker
+    // sees), so the worker needs no lookup table of its own.
+    init.cameraVariations.clear();
+    init.cameraVariations.reserve(gScenarioVariations.size());
+    for (const auto& sv : gScenarioVariations) {
+        init.cameraVariations.push_back(sv.cameraDeltas);
+    }
 
     return init;
 }
@@ -1685,9 +1789,14 @@ int main(int argc, char** argv)
 #undef X
   // Compile-time (non-ini) occlusion state — tracker-relevant only.
   if (cfg.mode == "tracker") {
-    *logger.info() << "AirframeOcclusion (compile-time): "
-                   << (autoc::eval::kAirframeOcclusionEnabled ? "enabled" : "DISABLED (transparent)")
-                   << " — see camera_projection.h kAirframeOcclusionEnabled" << endl;
+    // 040 T014 — the single-AABB proxy is gone; obstruction is now three
+    // primitives (wing slab / pod nose / prop disc) anchored to the camera
+    // mount. Still ships DISABLED: the leading-edge mount that makes the
+    // geometry meaningful lands in Stage D (T043).
+    const auto obstruction = airframeObstructionFromConfig(cfg);
+    *logger.info() << "AirframeObstruction: "
+                   << (obstruction.enabled ? "enabled" : "DISABLED (transparent)")
+                   << " — wing slab + pod nose + prop disc; see airframe_occlusion.h" << endl;
   }
 
   // 030 M6e — load source dmp at startup for tracker mode (FR-001 + FR-011).
@@ -1748,6 +1857,14 @@ int main(int argc, char** argv)
   // off, the PRNG still advances per-scenario (draw-and-discard) and the
   // drawn deltas are zeroed before reaching the FDM.
   gEnableCraftVariations = (cfg.enableCraftVariations != 0);
+  gEnableCameraVariations = (cfg.enableCameraVariations != 0);
+  gCameraSigmas.boresightSigmaDeg = cfg.cameraBoresightSigmaDeg;
+  gCameraSigmas.rollSigmaDeg = cfg.cameraRollSigmaDeg;
+  gCameraSigmas.mountTranslationSigmaX = cfg.cameraMountTranslationSigmaX;
+  gCameraSigmas.mountTranslationSigmaY = cfg.cameraMountTranslationSigmaY;
+  gCameraSigmas.mountTranslationSigmaZ = cfg.cameraMountTranslationSigmaZ;
+  gCameraSigmas.wingThicknessSigmaM = cfg.cameraWingThicknessSigmaM;
+  gCameraSigmas.ambientSigmaFrac = cfg.cameraAmbientSigmaFrac;
   // 038 t7 — chase shares the M1 source's per-scenario airspace/airframe seed.
   gChaseUseSourceScenarioSeed = (cfg.trackerChaseUseSourceScenarioSeed != 0);
   gCraftSigmas.craftCGSigma       = cfg.craftCGSigma;

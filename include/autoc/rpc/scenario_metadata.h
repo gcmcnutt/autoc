@@ -95,9 +95,25 @@ struct ScenarioMetadata {
     // [0, 0.020)); the real command dead-time. Appended after craftSeed so
     // the wire prefix is preserved (greenfield growth, no version bump).
     gp_scalar craftServoPwmPhase = static_cast<gp_scalar>(0.0);
-    // FR-020: future cameraSeed insertion point — append `uint32_t cameraSeed`
-    // here after craftSeed when the camera-variation class lands. Order
-    // matters (wire byte position); keep new seeds appended, not interleaved.
+    // 040 US6 — CAMERA VARIATION DELIBERATELY DOES **NOT** LIVE HERE.
+    //
+    // It was put here first, and that broke the pinned M1 source: this struct is
+    // persisted inside every dmp's `scenarioList`, so changing its wire format
+    // orphans every dmp ever written — including the T003a-pinned M1 source that
+    // SC-008's whole comparison rests on and that T005 explicitly decided NOT to
+    // regenerate. `loadSourceDmp` failed loud with `vector::_M_default_append`
+    // on the first t2 launch attempt (2026-08-02).
+    //
+    // Two project rules collided and only one was honoured: greenfield
+    // no-cereal-versioning (old dmps fail loud) versus the pinned, do-not-rebake
+    // M1 source. When 034 craft variation hit the same wall the answer was an M1
+    // rebake (038 t5); 040 cannot take that route without destroying its own
+    // baseline comparison.
+    //
+    // Camera draws now ride `WorkerInit.cameraVariations` — RPC-only, never
+    // persisted — which is also what the priming architecture already asks for:
+    // scenario-shaped payloads belong in the once-per-worker WorkerInit, not in
+    // per-eval metadata. See include/autoc/rpc/protocol.h.
 
     template<class Archive>
     void serialize(Archive& ar, const std::uint32_t /*version*/) {

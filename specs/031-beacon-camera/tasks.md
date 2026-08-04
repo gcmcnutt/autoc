@@ -36,7 +36,7 @@
 
 ## Path Conventions
 
-Multi-subtree per [plan.md](../040-camera-redo/plan.md) Project Structure:
+Multi-subtree per [plan.md](../040-camera-redo/camera-hardware-phase/plan.md) Project Structure:
 
 ```
 firmware/
@@ -322,7 +322,7 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
 ### Pod hand-build + bench verification
 
 - [ ] T032 [US1] 3D-print one half-cube enclosure from `cad/beacon-half-cube.stl` (PLA, ~30% infill, 0.2 mm layer, no support). Verify LED indents accept Lumileds L1IZ; battery cavity friction-fits the 1S 100 mAh pack; light-pipe slot passes through diagnostic LED.
-- [ ] T033 [US1] Hand-build pod A per `hand-prototype-guide.md` (per [quickstart.md (a)](../040-camera-redo/quickstart.md)): perfboard sub-assembly with **LM3410-X** boost driver, ATtiny412, **R2 DIM pull-down failsafe (no supervisor — firmware-ADC UVLO per R11)**, 5× Lumileds wired in series, JST-PH 2.0 mm socket, diagnostic LED, code-select jumpers (CODE_ID=0). Flash firmware. Insert battery → pod boots ≤100 ms with diagnostic LED blinking at **200 Hz**. **Resolves M2.1** (HG).
+- [ ] T033 [US1] Hand-build pod A per `hand-prototype-guide.md` (per [quickstart.md (a)](../040-camera-redo/camera-hardware-phase/quickstart.md)): perfboard sub-assembly with **LM3410-X** boost driver, ATtiny412, **R2 DIM pull-down failsafe (no supervisor — firmware-ADC UVLO per R11)**, 5× Lumileds wired in series, JST-PH 2.0 mm socket, diagnostic LED, code-select jumpers (CODE_ID=0). Flash firmware. Insert battery → pod boots ≤100 ms with diagnostic LED blinking at **200 Hz**. **Resolves M2.1** (HG).
 - [ ] T034 [US1] Pod A **FR-1.5(a) scope verification**: capture LED-string sense-resistor waveform on a fast scope (10 µs/div); confirm **200 Hz chip rate, 75 ms code period**, 7-8 ON chips of 15, 0/300 mA clean transitions; run `scope-trace-decode.py` on the captured CSV → PASS. **Resolves M2.2** (HG).
 - [ ] T034a [US1] Pod A **FR-1.5(b) photodiode-via-air verification** (operator direction 2026-05-18): aim the photodiode at pod A at **1 m distance** through ambient air; capture the photodiode-amplifier output on the scope; confirm the recovered waveform shows the same **200 Hz** chip rate + 15-chip code period + Gold-code bit pattern as T034 (which measured the LED current directly). Optional: if the **A4 ADC correlator** (Phase A) is up, confirm it locks on code-id 0 within ≤1 code period. _(Superseded T012c comparator rig dropped — ADC soft-decision only.)_ **This validates the optical chain end-to-end (photons → air → photodiode → recoverable code) BEFORE any camera work.** Bench-log entry per FR-5.2 in `bench-logs/<date>-pod-a-photodiode.md`. Augments **M2.2** (HG).
 - [ ] T035 [US1] Pod A **FR-1.7 #2 power-off verification**: scope-trigger on V_BAT-fall (battery pull); measure time from V_BAT collapse to last DIM edge → must be ≤50 ms. **Resolves M2.3** (HG).

@@ -125,10 +125,10 @@ struct TrackerHistoryWindow {  // raw-ok: NN-byte-format buffer
     float right_cep[6];   // raw-ok: NN-byte-format buffer
 
     // 032 PHASE 1 — Cached beacon-pair span across the history window.
-    // Span = ||right.xy - left.xy|| in NDC, computed and CEP-gated at
+    // Span = ||right.xy - left.xy|| in RADIANS (040 T031), computed and CEP-gated at
     // projection time (src/eval/tracker_stepper.cc::projectAndShiftHistory
     // and the crrcsim mirror). Cached here so gather_tracker_inputs reads
-    // it via the same memcpy pattern as the NDC channels — single
+    // it via the same memcpy pattern as the bearing channels — single
     // computation site, consistent CEP-gating semantics.
     float span[6];        // raw-ok: NN-byte-format buffer
 };

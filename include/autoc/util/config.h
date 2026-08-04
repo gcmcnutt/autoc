@@ -128,6 +128,31 @@ struct AutocConfig {
     //                        sigma; center 0.150 s, clamped [0.050, 0.300]
     // (servo first-order tau removed 2026-06-12 — v2 has no lag term.)
     int enableCraftVariations = 0;
+    // 040 US6 — camera variation. A new CLASS in the existing variation
+    // pipeline, mirroring craft: enable flag + sigmas, drawn parent-side,
+    // recorded raw in ScenarioMetadata, NOT ramped (scenario_meta_apply.h
+    // already decided that: camera is diversity, not difficulty).
+    //
+    // PRINCIPLE VI: every `double` below is `// raw-ok:` as a BLOCK, on the
+    // `cepGateThreshold` precedent — ini-loaded config-struct fields, inih
+    // returns double, and each is cast to gp_scalar at the CameraSigmas
+    // boundary in src/autoc.cc.
+    int enableCameraVariations = 0;
+    // Sigmas express the ENVELOPE through the pipeline-wide 2.5-sigma truncation
+    // in ClassPRNG::nextGaussian, same convention as entryConeSigma.
+    // 2026-08-03 (t3): 8.0 → 0.8 after the 20° bake capped hard — see the ini
+    // for the evidence. 2° keeps the random draw so the plumbing stays
+    // exercised, making the next run a diagnostic rather than a retreat.
+    double cameraBoresightSigmaDeg = 4.0;        // M  yaw+pitch; 2.5σ = 10 deg
+    double cameraRollSigmaDeg = 4.0;             // M  HIGHEST-IMPACT (biases tilt 1:1); 2.5σ = 10 deg
+    // PER-AXIS: the bond face is the wing LE, so tolerance is not isotropic.
+    double cameraMountTranslationSigmaX = 0.0020; // M  2.5σ = ±5 mm  (into/out of the face)
+    double cameraMountTranslationSigmaY = 0.0040; // M  2.5σ = ±10 mm (spanwise, loosest)
+    double cameraMountTranslationSigmaZ = 0.0012; // M  2.5σ = ±3 mm  (vertical, tightest)
+    double cameraWingThicknessSigmaM = 0.0008;   // A  folded foam board is variable
+    // DEFERRED (operator 2026-08-02): emitter stays perfect until the lens +
+    // bandpass field tests pin SignalAmbientKnee. Plumbed, held at zero.
+    double cameraAmbientSigmaFrac = 0.0;         // A
     // 038 T001 — member-level hull-crash penalty (M2 safety experiment). When on,
     // a member's per-scenario tracking `score` is multiplied by factor^(#hull-strike
     // scenarios) before fitness/selection, so a crasher's tracking advantage
@@ -230,18 +255,29 @@ struct AutocConfig {
 
     // --- Camera config (FR-003) ---
     int cameraCount = 1;
-    double cameraFOVHorizontalDeg = 120.0;
-    double cameraFOVVerticalDeg = 90.0;
-    double cameraFrameRateHz = 30.0;
-    double cameraLatencyMs = 0.0;
-    double cameraMountOffsetX = 0.0;
-    double cameraMountOffsetY = 0.0;
-    double cameraMountOffsetZ = -0.05;      // m above wing surface (NED, +Z down)
+    // 040 T029 — the sensor grid is the ONLY resolution input; FOV is derived
+    // as pixels × deg/px, so field and resolution cannot disagree. The former
+    // CameraFOVHorizontalDeg / CameraFOVVerticalDeg keys are retired: they let
+    // a config declare a field its own grid contradicted.
+    // 320 × 240 @ 0.375°/px ⇒ exactly 120° × 90°. All three ASSUMED pending
+    // the lens/sensor decision (contracts/config-surface.md).
+    int cameraPixelsH = 320;
+    int cameraPixelsV = 240;
+    double cameraDegPerPixel = 0.375;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to gp_scalar at the WorkerInit boundary
+    // 040 T017 — CameraFrameRateHz / CameraLatencyMs retired. Sensor cadence
+    // follows ControlIntervalMsec (037); latency emerges from the acquisition
+    // state machine (US4). See include/autoc/eval/camera_config.h.
+    // 040 T043 — THE BASELINE MOUNT: wing leading edge, 8″ outboard, ~1¼″ above
+    // the thrust line, on the prop-axle datum. Mirrors CameraConfig's default
+    // and hb1LeadingEdgeCameraMount(); the retired (0, 0, −0.05) sat on the
+    // centreline INSIDE the 6.985 cm prop radius, i.e. behind the disc.
+    double cameraMountOffsetX = -0.150400;  // raw-ok: ini-loaded config-struct field (inih::GetReal → double; cast to gp_scalar at the WorkerInit boundary). 2 mm proud of the LE face
+    double cameraMountOffsetY = 0.203200;   // raw-ok: ini-loaded config-struct field. 8″ outboard — clears the prop disc
+    double cameraMountOffsetZ = -0.031750;  // raw-ok: ini-loaded config-struct field. ~1.25″ up (NED, +Z down ⇒ −Z is up)
 
     // --- Beacon config (FR-004) ---
     int beaconLeftWavelengthNm = 850;
     int beaconRightWavelengthNm = 940;
-    double beaconEmissionConeDeg = 270.0;
     double beaconLeftMountX = 0.0;
     double beaconLeftMountY = -0.45;        // left wingtip (body -y)
     double beaconLeftMountZ = 0.0;
@@ -258,6 +294,82 @@ struct AutocConfig {
     // when EITHER beacon's CEP at the current tick is >= this. Default
     // matches kCepSentinelThreshold (1.25) from camera_projection.h.
     double cepGateThreshold = 1.25;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to float at the eval-pipeline consumption boundary
+
+    // === 040 US4 — SIGNAL BUDGET + ACQUISITION (FR-014..FR-020a) =========
+    //
+    // Every value here is a physical quantity, so every one is exposed rather
+    // than baked: FR-036's calibration rehearsal (T092) requires substituting a
+    // plausible alternative for each ASSUMED value and confirming NO structural
+    // change is needed. A value that lives only in a C++ factory cannot be
+    // rehearsed. Defaults mirror hb1SignalConfig() / hb1AcquisitionConfig() so
+    // the two cannot drift, and contract_tracker_config_tests asserts every key
+    // is present in all three tracker inis so a default can never silently
+    // stand in for a missing key.
+    //
+    // PRINCIPLE VI (T065): every `double` in this block is `// raw-ok:` as a
+    // BLOCK, on the `cepGateThreshold` precedent above — these are ini-loaded
+    // config-struct fields, inih::GetReal returns double, and each is cast to
+    // gp_scalar at the WorkerInit boundary in src/autoc.cc. The matching
+    // AUTOC_CONFIG_FIELDS entries carry `double` for the same reason and must
+    // agree with the field type or the X-macro will not compile.
+    //
+    // Classification per FR-035 — M measured, D derived, A assumed:
+    double signalFluxConstant = 0.27;        // M/D  µA·m² PER EMITTER: 031 bench 1.35 (five co-aimed) ÷ 5 faces
+    double signalOpticsGain = 1.0;           // A    collection optics, none fitted yet
+    double signalAmbientFloor = 2.16e-5;     // A    µA — varied per scenario in US6
+    double signalNoiseFloor = 0.54e-5;       // A    µA — fixed sensor term
+    // A  µA — ambient at which signal TRANSFER halves (031 field test #4).
+    // Ambient both SHUNTS signal at the PD (this) and adds noise (above). With
+    // only the noise term, more emitter current always buys SNR — the model
+    // would claim you can out-power the sun, which the bench disproved: at ~6×
+    // current a shaded PD locks at ~20 ft and a sun-exposed one fails at any
+    // distance. The 850 nm bandpass RAISES this knee, which is why 031 calls the
+    // filter a gate rather than an optimisation. Expected to be pinned by the
+    // lens + filter field tests (~week of 2026-08-03).
+    double signalAmbientKnee = 2.16e-3;
+    double signalCdmaPenaltyDb = 3.0;        // M    031 §4, ≈ one SNR tier
+    double signalQFloorDb = 0.0;             // M    031 decode floor
+    double signalQSaturationDb = 20.0;       // A    where the AGC-normalised metric tops out
+    double beaconEmissionFlatDeg = 45.0;     // M    Lumileds DS190 flat region
+    double beaconEmissionHalfPowerDeg = 75.0;// M    Lumileds DS190 half-power angle
+    double cameraDetectionRangeM = 100.0;    // A    ASSERTED envelope (FR-033a), not emergent
+    double separationMinResolvablePx = 5.0;  // A    below this, range from separation is a quantisation artefact
+    double sharedElementPx = 1.5;            // M    031 single-detector rig is exactly this case
+
+    double acquisitionCodeWordMs = 154.0;    // M    N=31 @ 200 Hz chips — the WARM budget
+    double acquisitionColdMs = 308.0;        // M    rate stale, needs MINLOCK
+    double acquisitionHoldMaxMs = 308.0;     // M    HOLDMAX = 2 bad periods
+    double acquisitionCoastWindowMs = 10000.0; // M  COASTMAX=65 — the parameter sim difficulty actually hinges on
+    double qualityConfidentCep = 0.02;       // D    cep at q = 9
+    double qualityTentativeCep = 1.0;        // D    cep at q = 0
+    double qualityIdentityUncertainCep = 0.75; // A  FR-017d floor for unresolved identity
+
+    // --- 040 airframe obstruction (FR-007/008/009, FR-034) ---
+    // Chase self-occlusion geometry, METRES in body frame.
+    // DATUM: propeller axle / back of prop is station 0 = (0,0,0). Axes per
+    // docs/COORDINATE_CONVENTIONS.md: +x forward, +y right wing, +z down.
+    // Stations run AFT (negative x); "up" is negative z.
+    // Defaults mirror hb1AirframeObstruction() so the two cannot drift;
+    // contract_tracker_config_tests asserts every key is present in the ini,
+    // so a default can never silently stand in for a missing key.
+    int airframeObstructionEnabled = 1;   // 040 T043 — ON at the baseline mount
+    double airframeWingMinX = -0.330200;  // trailing edge
+    double airframeWingMinY = -0.381000;  // port tip
+    double airframeWingMinZ = -0.044450;  // wing top (up)
+    double airframeWingMaxX = -0.152400;  // leading edge
+    double airframeWingMaxY = 0.381000;   // starboard tip
+    double airframeWingMaxZ = -0.019050;  // wing underside
+    double airframeNoseMinX = -0.152400;
+    double airframeNoseMinY = -0.038100;
+    double airframeNoseMinZ = -0.038100;
+    double airframeNoseMaxX = 0.0;
+    double airframeNoseMaxY = 0.038100;
+    double airframeNoseMaxZ = 0.038100;
+    double airframePropPlaneX = 0.0;      // the datum plane
+    double airframePropAxisY = 0.0;
+    double airframePropAxisZ = 0.0;
+    double airframePropRadius = 0.069850; // 5.5in two-blade
+    double airframePropAttenuation = 0.18;// ASSUMED blade-over-pupil duty; FR-035
 };
 
 // 034 FR-010 — single source of truth for config parse + startup print.
@@ -308,6 +420,14 @@ struct AutocConfig {
     X(double,         entryPositionRadiusSigma,  "EntryPositionRadiusSigma") \
     X(double,         entryPositionAltSigma,     "EntryPositionAltSigma") \
     X(int,            enableCraftVariations,     "EnableCraftVariations") \
+    X(int,            enableCameraVariations,    "EnableCameraVariations") \
+    X(double,         cameraBoresightSigmaDeg,   "CameraBoresightSigmaDeg") \
+    X(double,         cameraRollSigmaDeg,        "CameraRollSigmaDeg") \
+    X(double,         cameraMountTranslationSigmaX,"CameraMountTranslationSigmaX") \
+    X(double,         cameraMountTranslationSigmaY,"CameraMountTranslationSigmaY") \
+    X(double,         cameraMountTranslationSigmaZ,"CameraMountTranslationSigmaZ") \
+    X(double,         cameraWingThicknessSigmaM, "CameraWingThicknessSigmaM") \
+    X(double,         cameraAmbientSigmaFrac,    "CameraAmbientSigmaFrac") \
     X(int,            enableHullCrashPenalty,    "EnableHullCrashPenalty") \
     X(int,            enablePredictorHead,       "EnablePredictorHead") \
     X(int,            trackerChaseUseSourceScenarioSeed, "TrackerChaseUseSourceScenarioSeed") \
@@ -351,23 +471,61 @@ struct AutocConfig {
     X(double,         flightArenaFloorAGL,       "FlightArenaFloorAGL") \
     X(double,         flightArenaCeilingAGL,     "FlightArenaCeilingAGL") \
     X(int,            cameraCount,               "CameraCount") \
-    X(double,         cameraFOVHorizontalDeg,    "CameraFOVHorizontalDeg") \
-    X(double,         cameraFOVVerticalDeg,      "CameraFOVVerticalDeg") \
-    X(double,         cameraFrameRateHz,         "CameraFrameRateHz") \
-    X(double,         cameraLatencyMs,           "CameraLatencyMs") \
+    X(int,            cameraPixelsH,             "CameraPixelsH") \
+    X(int,            cameraPixelsV,             "CameraPixelsV") \
+    X(double,         cameraDegPerPixel,         "CameraDegPerPixel") \
     X(double,         cameraMountOffsetX,        "CameraMountOffsetX") \
     X(double,         cameraMountOffsetY,        "CameraMountOffsetY") \
     X(double,         cameraMountOffsetZ,        "CameraMountOffsetZ") \
     X(int,            beaconLeftWavelengthNm,    "BeaconLeftWavelengthNm") \
     X(int,            beaconRightWavelengthNm,   "BeaconRightWavelengthNm") \
-    X(double,         beaconEmissionConeDeg,     "BeaconEmissionConeDeg") \
     X(double,         beaconLeftMountX,          "BeaconLeftMountX") \
     X(double,         beaconLeftMountY,          "BeaconLeftMountY") \
     X(double,         beaconLeftMountZ,          "BeaconLeftMountZ") \
     X(double,         beaconRightMountX,         "BeaconRightMountX") \
     X(double,         beaconRightMountY,         "BeaconRightMountY") \
     X(double,         beaconRightMountZ,         "BeaconRightMountZ") \
-    X(double,         cepGateThreshold,          "CepGateThreshold")
+    X(double,         cepGateThreshold,          "CepGateThreshold") \
+    /* 040 T015 — airframe obstruction, METRES in body frame. Datum: prop \
+       axle = (0,0,0); +x fwd, +y right, +z down; stations aft = -x. */ \
+    X(double,         signalFluxConstant,        "SignalFluxConstant") \
+    X(double,         signalOpticsGain,          "SignalOpticsGain") \
+    X(double,         signalAmbientFloor,        "SignalAmbientFloor") \
+    X(double,         signalNoiseFloor,          "SignalNoiseFloor") \
+    X(double,         signalAmbientKnee,         "SignalAmbientKnee") \
+    X(double,         signalCdmaPenaltyDb,       "SignalCdmaPenaltyDb") \
+    X(double,         signalQFloorDb,            "SignalQFloorDb") \
+    X(double,         signalQSaturationDb,       "SignalQSaturationDb") \
+    X(double,         beaconEmissionFlatDeg,     "BeaconEmissionFlatDeg") \
+    X(double,         beaconEmissionHalfPowerDeg,"BeaconEmissionHalfPowerDeg") \
+    X(double,         cameraDetectionRangeM,     "CameraDetectionRangeM") \
+    X(double,         separationMinResolvablePx, "SeparationMinResolvablePx") \
+    X(double,         sharedElementPx,           "SharedElementPx") \
+    X(double,         acquisitionCodeWordMs,     "AcquisitionCodeWordMs") \
+    X(double,         acquisitionColdMs,         "AcquisitionColdMs") \
+    X(double,         acquisitionHoldMaxMs,      "AcquisitionHoldMaxMs") \
+    X(double,         acquisitionCoastWindowMs,  "AcquisitionCoastWindowMs") \
+    X(double,         qualityConfidentCep,       "QualityConfidentCep") \
+    X(double,         qualityTentativeCep,       "QualityTentativeCep") \
+    X(double,         qualityIdentityUncertainCep,"QualityIdentityUncertainCep") \
+    X(int,            airframeObstructionEnabled,"AirframeObstructionEnabled") \
+    X(double,         airframeWingMinX,          "AirframeWingMinX") \
+    X(double,         airframeWingMinY,          "AirframeWingMinY") \
+    X(double,         airframeWingMinZ,          "AirframeWingMinZ") \
+    X(double,         airframeWingMaxX,          "AirframeWingMaxX") \
+    X(double,         airframeWingMaxY,          "AirframeWingMaxY") \
+    X(double,         airframeWingMaxZ,          "AirframeWingMaxZ") \
+    X(double,         airframeNoseMinX,          "AirframeNoseMinX") \
+    X(double,         airframeNoseMinY,          "AirframeNoseMinY") \
+    X(double,         airframeNoseMinZ,          "AirframeNoseMinZ") \
+    X(double,         airframeNoseMaxX,          "AirframeNoseMaxX") \
+    X(double,         airframeNoseMaxY,          "AirframeNoseMaxY") \
+    X(double,         airframeNoseMaxZ,          "AirframeNoseMaxZ") \
+    X(double,         airframePropPlaneX,        "AirframePropPlaneX") \
+    X(double,         airframePropAxisY,         "AirframePropAxisY") \
+    X(double,         airframePropAxisZ,         "AirframePropAxisZ") \
+    X(double,         airframePropRadius,        "AirframePropRadius") \
+    X(double,         airframePropAttenuation,   "AirframePropAttenuation")
 
 class ConfigManager {
 public:

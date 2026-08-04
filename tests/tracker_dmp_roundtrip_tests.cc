@@ -62,18 +62,26 @@ EvalResults makeSyntheticV2(int numScenarios, int ticksPer) {
             cv.camera_pose_world_orient = gp_quat::Identity();
             cv.camera_fov_h_deg = 120.0f;
             cv.camera_fov_v_deg = 90.0f;
-            cv.beacon_left.screen_x = 0.1f * static_cast<float>(t);
-            cv.beacon_left.screen_y = 0.2f * static_cast<float>(t);
+            cv.beacon_left.bearing_x_rad = 0.1f * static_cast<float>(t);
+            cv.beacon_left.bearing_y_rad = 0.2f * static_cast<float>(t);
             cv.beacon_left.cep = 0.3f;
-            cv.beacon_left.raw_x_int8 = static_cast<int8_t>(t);
-            cv.beacon_left.raw_y_int8 = static_cast<int8_t>(t * 2);
+            cv.beacon_left.raw_px_x = static_cast<int16_t>(t);
+            cv.beacon_left.raw_px_y = static_cast<int16_t>(t * 2);
             cv.beacon_left.raw_cep_int8 = 38;
-            cv.beacon_right.screen_x = -0.1f * static_cast<float>(t);
-            cv.beacon_right.screen_y = -0.2f * static_cast<float>(t);
+            // 040 T090 (FR-029) — the new diagnostic fields. Values chosen to
+            // vary per tick and to include a NEGATIVE SNR, because a naive
+            // unsigned round-trip would survive positive-only data.
+            cv.beacon_left.raw_margin = -4.5f + 0.25f * static_cast<float>(t);
+            cv.beacon_left.lock_state =
+                static_cast<int8_t>(t % 4);  // sweeps all four LockState values
+            cv.beacon_right.bearing_x_rad = -0.1f * static_cast<float>(t);
+            cv.beacon_right.bearing_y_rad = -0.2f * static_cast<float>(t);
             cv.beacon_right.cep = 0.3f;
-            cv.beacon_right.raw_x_int8 = static_cast<int8_t>(-t);
-            cv.beacon_right.raw_y_int8 = static_cast<int8_t>(-t * 2);
+            cv.beacon_right.raw_px_x = static_cast<int16_t>(-t);
+            cv.beacon_right.raw_px_y = static_cast<int16_t>(-t * 2);
             cv.beacon_right.raw_cep_int8 = 38;
+            cv.beacon_right.raw_margin = 12.75f - 0.5f * static_cast<float>(t);
+            cv.beacon_right.lock_state = static_cast<int8_t>((t + 2) % 4);
             r.cameraViewList[i].push_back(cv);
 
             CopiedTargetSample tg;
@@ -145,10 +153,17 @@ TEST(TrackerDmpRoundtrip, V2RoundTripIdentity) {
             EXPECT_FLOAT_EQ(dCv.camera_pose_world_pos.y(), sCv.camera_pose_world_pos.y());
             EXPECT_FLOAT_EQ(dCv.camera_pose_world_pos.z(), sCv.camera_pose_world_pos.z());
             EXPECT_FLOAT_EQ(dCv.camera_fov_h_deg, sCv.camera_fov_h_deg);
-            EXPECT_FLOAT_EQ(dCv.beacon_left.screen_x, sCv.beacon_left.screen_x);
-            EXPECT_EQ(dCv.beacon_left.raw_x_int8, sCv.beacon_left.raw_x_int8);
-            EXPECT_FLOAT_EQ(dCv.beacon_right.screen_y, sCv.beacon_right.screen_y);
+            EXPECT_FLOAT_EQ(dCv.beacon_left.bearing_x_rad, sCv.beacon_left.bearing_x_rad);
+            EXPECT_EQ(dCv.beacon_left.raw_px_x, sCv.beacon_left.raw_px_x);
+            EXPECT_FLOAT_EQ(dCv.beacon_right.bearing_y_rad, sCv.beacon_right.bearing_y_rad);
             EXPECT_EQ(dCv.beacon_right.raw_cep_int8, sCv.beacon_right.raw_cep_int8);
+            // 040 T090 — without these the renderer cannot draw the HOLD coast
+            // or the q bar, which is the one thing the Phase 6 playback review
+            // most needs to see.
+            EXPECT_FLOAT_EQ(dCv.beacon_left.raw_margin, sCv.beacon_left.raw_margin);
+            EXPECT_EQ(dCv.beacon_left.lock_state, sCv.beacon_left.lock_state);
+            EXPECT_FLOAT_EQ(dCv.beacon_right.raw_margin, sCv.beacon_right.raw_margin);
+            EXPECT_EQ(dCv.beacon_right.lock_state, sCv.beacon_right.lock_state);
 
             const CopiedTargetSample& sTg = src.targetTrajectoryList[i][t];
             const CopiedTargetSample& dTg = dst.targetTrajectoryList[i][t];

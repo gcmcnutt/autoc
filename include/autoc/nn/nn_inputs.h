@@ -38,7 +38,7 @@ constexpr float kTimeSinceSeenScale_s = 2.0f;
 // 038 US3 — auxiliary span/closure predictor head (TRACKER-ONLY).
 // ----------------------------------------------------------------------------
 // The aux NN outputs predict the beacon-pair `span` (closure) at fixed
-// MILLISECOND horizons — NOT raw NDC positions (Clarifications 2026-07-05):
+// MILLISECOND horizons — NOT raw bearing positions (Clarifications 2026-07-05):
 // span is ≈ invariant to camera rotation and moves only with range, so it IS
 // the closure/overtake signal and needs no ego-motion subtraction; it predicts
 // cleanly at the ~150 ms actuation-lag horizon that gives *actionable*
@@ -49,7 +49,7 @@ constexpr float kTimeSinceSeenScale_s = 2.0f;
 // consumer (src/eval/fitness_decomposition.cc), same pattern as historyLagTicks.
 //
 // Aux output vector (kNumSpanAuxOutputs = 4): predicted span at +50/+100/+150 ms
-// (kSpanPredictHorizonsMsec) + a predicted closure rate (span-rate, NDC/s).
+// (kSpanPredictHorizonsMsec) + a predicted closure rate (span-rate, rad/s).
 // Scored on a SEPARATE lexicase axis (prediction_score) vs the realized span,
 // must beat the persistence baseline (SC-002). NOT actuated.
 constexpr int kSpanPredictHorizonsMsec[] = {50, 100, 150};
@@ -318,21 +318,21 @@ struct TrackerInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xi
 
     // ----- 032 PHASE 1 — derived perceptual features (FR per spec.md §1.5) -----
     // beacon_pair_span: raw Euclidean distance between port + starboard
-    // beacon centroids in the NDC (x, y) coordinate frame — `sqrt(dx² + dy²)`
+    // beacon bearings, in RADIANS as of 040 T031 — `sqrt(dx² + dy²)`
     // with no scaling, no normalization, no clipping. Same units as
     // BeaconObservation::screen_x/y. 6-slot history at kNNHistoryLagsMsec.
     // Substituted to 0.0 per-tick when EITHER beacon's CEP at "now"
     // >= CepGateThreshold.
     float beacon_pair_span[6];   // raw-ok: NN-byte-format buffer
-    // span_rate: signed RATE (NDC-units/s) over the NOW↔TM1 lag gap =
+    // span_rate: signed RATE (rad/s) over the NOW↔TM1 lag gap =
     // (span[5] - span[4]) / kNNHistoryRecentGapSec. 037 T022 changed this
     // from a raw one-tick diff to a true per-second rate (cadence- and
     // lag-invariant); M2 genomes retrain from scratch at the boundary.
     float span_rate;             // raw-ok: NN-byte-format buffer
     // target_tilt encoded as (sin θ, cos θ) where θ = atan2(y_r-y_l, x_r-x_l)
-    // over NDC. θ = 0 ⇔ port→starboard line is horizontal in image plane (chase
+    // over bearings. θ = 0 ⇔ port→starboard line is horizontal in image plane (chase
     // and target wings level relative). Substituted to (0, 1) per-tick when
-    // CEP-gated OR when beacon pair is geometrically degenerate (<1e-4 in NDC).
+    // CEP-gated OR when beacon pair is geometrically degenerate (<1e-4 rad).
     float target_tilt_sin;       // raw-ok: NN-byte-format buffer
     float target_tilt_cos;       // raw-ok: NN-byte-format buffer
 
