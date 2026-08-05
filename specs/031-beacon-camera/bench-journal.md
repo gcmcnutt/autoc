@@ -204,6 +204,75 @@ is a pedestal meter — bring it next time.
     two codes (`corrA/corrB`) — drive pod A with the code under test and hold pod B unmodulated as the
     aggressor, then watch `lockA/marginA` survive or not. Same instruments, no aggressor LED to build.
 
+### C1 RESULT — dark baseline measured 2026-08-04 (Ubuntu host, synthetic channel A)
+
+Runner: [`host/set_c.py`](../../firmware/beacon-decoder-stepfpga/host/set_c.py) · data:
+`host/results/set_c_dark_chA.csv` (18 trials, 3 reps). Stimulus = one-shot `enA` clear on the decoder's
+**synthetic** channel A (operator direction: code B's optical amplitude is not repeatable enough).
+
+| span | duration | outcome | unlock span | relock AFTER restore | min marginA |
+|---:|---:|---|---:|---:|---:|
+| 16 chips | 80 ms | rode through | — | — | 2–4 |
+| 31 chips | 155 ms | rode through | — | — | 3 |
+| 62 chips | 310 ms | **rode through** | — | — | 1–3 |
+| 124 chips | 620 ms | unlocked | 300–325 ms | −10 … +15 ms | 1 |
+| 196 chips | 980 ms | unlocked | 625–775 ms | −45 … +105 ms | 0–2 |
+| 400 chips | 2000 ms | unlocked | 1675–1850 ms | −15 … +160 ms | 0 |
+
+**Two numbers worth keeping.**
+1. **HOLD absorption is bracketed to 310 ms < x ≤ 620 ms** — 62 chips rides through, 124 does not.
+   Independently reproduces the previously logged 300–325 ms from a different stimulus path.
+2. **Warm relock from DARK is essentially immediate: 0–2 frames after signal returns.** Every rung's
+   unlock span is just `duration − ~310 ms of HOLD`, with nothing left over. This is *tighter* than the
+   journal's earlier "≲1 period" (155 ms) claim and it is the number C2 has to beat. **If the saturated
+   arm shows any non-zero recovery after restoration, that delta is the AGC windup, isolated.**
+
+`min marginA` degrades monotonically 4 → 3 → 1 → 0 with span, confirming the stimulus is graded and real
+rather than a step function.
+
+### C2 IS BLOCKED, and the fix is one bit of gateware
+
+Muting code A drives `injA` to **MID** (mid-scale) — a clean signal removal with **zero DC step**. Real
+saturation is a large DC step the tracker must chase. So no existing knob produces the C2 stimulus:
+amplitude `'A'` moves HI/LO separation *symmetrically about MID* (no DC shift), and `'K'` blanks to MID
+like everything else. **The dark and saturated arms are not distinguishable with today's bitstream.**
+
+The change is minimal and reuses the existing chip-exact burst machinery. `s7.v` mask bits **2 and 6 are
+unallocated** ([0]enA [1]enB [3]inj1 [4]inj2 [5]weak). Take bit 6 as `blank-to-rail`:
+
+```verilog
+wire erail = remote & cmd_reg[6];              // NEW: blank to rail instead of mid
+wire [11:0] injA = (enA & ~blankA_rx) ? (codeA_rx ? hiA : loA)
+                                      : (erail ? 12'hFFF : MID);   // was: MID
+```
+
+That makes C1 and C2 **the same chip-exact stimulus differing by one bit**, which is exactly the
+controlled comparison Set C wants — better than the pod-firmware `'S'` command originally planned, since
+it needs no emitter change and inherits `'K'`'s chip-exact timing. The `'S'` route stays valid for
+end-to-end optical work later.
+
+⚠️ **Neither can be built on the Ubuntu host.** Diamond (gateware) and the pod toolchain both live on the
+Windows box per [`docs/toolchains.md`](../../docs/toolchains.md); Ubuntu has the hardware but not the
+builders. C2 is gated on a Windows-side rebuild + flash, then `regression.py` per policy.
+
+### Host-portability findings (cost real time — folded into Traps by reference)
+
+- **Every existing harness entry point is Windows-bound**: `monitor.sh` and `cmd_read.sh` shell to
+  `powershell.exe` against COM3 via `/mnt/c`; `regression.py` calls `usbipd.exe`. None exist on Ubuntu, so
+  the *measurement* side of `recovery_sweep`/`regression` is unreachable there. `set_c.py` reads the CDC
+  directly and is the pattern for porting the rest.
+- **Ports are inverted on Ubuntu.** `/dev/ttyACM0` = ARM DAPLink = **decoder** (was COM3);
+  `/dev/ttyACM1` = ATMEL mEDBG = **emitter**. `recovery_sweep.py --port` defaults to `/dev/ttyACM0`,
+  which on Ubuntu sends emitter commands to the decoder.
+- **`'+'` alone disables both correlators.** `cmd_reg` powers up at 0, so REMOTE with no mask sets
+  enA=enB=0. Send `0x80|mask` **first**, then `'+'`; restore with `'-'`.
+- **Channel A does not respond to the pod.** corrA ≈ 66000 is the synthetic injected channel; corrB ≈ 1200
+  is the real optical one. `recovery_sweep` measures `lockB` for that reason. A first attempt here keyed on
+  `lockA` against a pod blanking command and reported "rode through" on every rung — a null result that was
+  purely an instrumentation error.
+- **A hand-rolled emitter write is not safe.** `recovery_sweep.Emitter.cmd()` verifies the command echo and
+  re-attaches the flaky mEDBG; a plain `write()` silently "succeeds" when nothing landed.
+
 ## Open items / next steps
 
 1. **Order-03** ([cad/beacon-eval/beacon-order-03.md](../../cad/beacon-eval/beacon-order-03.md)) — **mostly
