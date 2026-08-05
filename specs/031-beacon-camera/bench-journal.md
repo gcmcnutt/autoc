@@ -157,6 +157,52 @@ is a pedestal meter — bring it next time.
   curve below compression; B3 clamp-diode A/B (with/without D2/D3 under pedestal steps); B4 indoor-flicker
   station (100/120 Hz + LED-PWM margin cost). Feeds the A3-b soldered freeze + the C-14 filter/R_load choice.
   (The old B3 AC-tap / B4 two-stage line items are superseded — Option C selected.)
+- **Set C (SATURATE-vs-DARK at chip granularity) — planned 2026-08-04, feeds open item 2a/2b.** The
+  question the lens analysis raised and nothing has measured: **is warm relock from a SATURATED start the
+  same as from a DARK one?** Everything characterised so far (occlusion ≤1 word in HOLD, warm relock ≲1
+  period, the 5 `recovery_sweep` geometries) entered from *dark*. A sun transit enters from *saturated*,
+  and the mechanism below predicts they are not the same.
+
+  **HYPOTHESIS (this is the point of the set — it is falsifiable, and cheap to falsify).**
+  - *Dark*: the min-energy gate (`beste ≥ 64`) fires → lock drops → gear shifts **fast** (α=1/32,
+    τ=67 ms) → recovery is period-dominated, ≲150 ms. This is the measured baseline.
+  - *Saturated*: energy is **high**, so the min-energy gate does **not** fire and the decoder **retains
+    (false) lock** — leaving the DC tracker in the **slow** gear (α=1/256, τ=533 ms) at exactly the moment
+    it needs the fast one. Recovery becomes τ-dominated, not period-dominated.
+  - **Predicted asymmetry: saturated recovery 3–8× slower than dark at the same N.** If the arms come out
+    equal, no max-energy gate is needed and item 2a closes for free. If they diverge as predicted, the
+    gate is justified by measurement rather than by argument, and C5 sizes it.
+
+  **Chip-granular gating must be FIRMWARE-side.** The Siglent's ~0.5 s command pacing is **50 chips** at
+  the 100 Hz chip rate — the PSU cannot produce the transient. Its job here is to set the steady
+  saturation *depth*; the emitter MCU produces the event, chip-synchronous by construction.
+
+  - **C1 — dark baseline (mostly free).** Re-run `recovery_sweep` over the N ladder below and confirm it
+    reproduces the existing `host/results/` CSVs. Establishes today's decoder as the comparison point.
+  - **C2 — saturate arm.** Add an `S` command to the pod firmware: hold the LED **unmodulated ON for N
+    chips**, the exact mirror of `D` dropout (same code path, same chip-clock alignment). Emitter at
+    inches so the mean current is mA-scale and compresses — per the daylight doc, "at inches it is
+    mA-scale and compresses everything". ⚠️ Firmware change ⇒ **`regression.py` before and after**.
+  - **N ladder (chips, 10 ms each)**: 1, 2, 4, 8, 16, 31, 62, 100, 150. Brackets both the 300–325 ms HOLD
+    absorption (~31 chips) and the two field-relevant sun transits — **16 chips ≈ 163 ms @ 60 °/s** and
+    **98 chips ≈ 978 ms @ 10 °/s**. ≥10 reps per cell; report medians, not means (relock is bimodal once
+    a word boundary is crossed).
+  - **C3 — depth sweep (S only).** Saturation depth as a multiple of the 70 µA @ 47 k compression ceiling:
+    ~1×, 3×, 10×, 30×, set by PSU current + standoff. Establishes whether recovery time depends on how
+    *hard* it saturated or only on how *long* — the first is a soft-recovery story, the second a
+    state-machine one, and they want different fixes.
+  - **C4 — instrument the MECHANISM, not just the outcome.** Log `lockA/marginA/adc` **through** the event,
+    not merely after it. The hypothesis stands or falls on whether `lockA` stays asserted during
+    saturation; that single bit is the whole argument. If lock drops on its own, the min-energy gate is
+    already covering this case and 2a is moot.
+  - **C5 — max-energy gate A/B (only if C2/C4 confirm).** Add the gate, re-run C2 identically, and report
+    the recovery-time delta. Sizing question it must answer: what energy threshold fires on the sun but
+    never on a legitimate close-range pass, where the beacon's own mean current is *also* mA-scale (the
+    daylight doc's "back off to ≥1 m for linear measurements" caveat is exactly this collision).
+  - **Faithful variant, no new hardware (do after C2).** C2 saturates with the code *absent*, which models
+    "sun swamps everything". The truer sun case is code *present but buried*. The decoder already tracks
+    two codes (`corrA/corrB`) — drive pod A with the code under test and hold pod B unmodulated as the
+    aggressor, then watch `lockA/marginA` survive or not. Same instruments, no aggressor LED to build.
 
 ## Open items / next steps
 
