@@ -1190,7 +1190,7 @@ Cost: a dmp schema change (greenfield, no version bump per project policy — ol
 dmps orphaned) plus every consumer. Real work, but bounded, and it is the last
 time this class can bite.
 
-### [041+ / STRATEGIC — operator 2026-08-03] Online craft identification: null the variations in flight, not in the weights
+### [SECONDARY / DOWN THE ROAD — operator 2026-08-03, downgraded 2026-08-04] Online craft identification: null the variations in flight, not in the weights
 
 **Operator**: *"all craft variations have a chance to be nulled — and this isn't
 during a training run — this is a dynamic online discovery of a craft
@@ -1253,20 +1253,24 @@ what was commanded and what happened.** First-order filters, not a bigger genome
 5. **Never adapt on no signal.** Do not integrate while blind, or the estimate
    drifts through exactly the dropouts it exists to survive.
 
-#### Why the evidence points here
+#### ⚠️ The evidence that pointed here has been RETRACTED
 
-The t2 20° bake **capped hard** — worst blind streak pinned at 44.4 s from gen
-175 to 369 (t1 finished at 6.0 s), everything plateaued by gen ~250 while t1 was
-still climbing at 585. The controller has no search behaviour, so recovery is
-"point where I last saw it" and a bad boresight aims that reflex wrong. **More
-weights would not have fixed it.** But the offset is CONSTANT within the
-scenario, so an identifier nulls it in seconds.
+This section previously argued from the t2 cap. **That cap was the
+mount-inside-the-wing bug**, and t4 subsequently trained fine at ±10° with no
+adaptation whatsoever. Nothing currently demonstrates that fixed weights cannot
+absorb craft variation at the complexity we run today.
 
-#### The experiment that settles it
+What survives is the *structural* argument: adaptation is cheaper than capacity,
+and a GA pays for capacity twice (representation AND search). That is a reason to
+expect this to matter eventually, not evidence that it matters now.
 
-Re-run the **20° envelope** with the estimator on. If it trains where t2 capped,
-the ceiling was never capacity — it was the absence of online calibration. A
-clean A/B against a run already in hand.
+#### The experiment, if and when it is promoted
+
+Raise variation until competence genuinely caps — **and prove the cap is not
+plumbing** (a pinned diagnostic from generation 1 is the bug signature; a real
+ceiling shows improvement then plateau). Then A/B the estimator against that
+run. Starting from a demonstrated ceiling is what this entry lacked the first
+time.
 
 **Start explicit and start with ONE axis** (camera boresight, or trim — both are
 running means and both are strongly observable in a tail chase). Feeding the NN
