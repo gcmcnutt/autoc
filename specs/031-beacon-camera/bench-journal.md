@@ -320,6 +320,18 @@ builders. C2 is gated on a Windows-side rebuild + flash, then `regression.py` pe
    live test. No longer blocked.
 4. **A3-b**: soldered **Option-C** receiver on copper-clad (**FR4 stock in hand — AMZ-1 C-8/C-20**; netlist
    in the daylight doc; R_load per the C-14 filter choice; star ground) → re-run regression.
+   - **Receiver-head cage (operator plan 2026-08-04, pre-lens)**: BPW34 in a **light-tight enclosure,
+     black except the lens aperture** — copper-clad as the mount **tied to GND** (shields the 47 k PD
+     node; bare BPW34 is unfiltered 430–1100 nm and demonstrably picks up LED-lamp PWM on the bench),
+     **matte-black interior** (the decoder locks on nA of internal bounce), aperture cappable (= the
+     true-dark test fixture the traps list wants). Filter sits BEHIND the lens (F/2 cone ±14° vs full
+     field angle — AoI blue-shift math in `lensed_pd_range.py`).
+   - **Bench note 2026-08-04 (canonical-values rebuild, BPW34 bare)**: works indoors; LED-lamp PWM now
+     visible (no package filter — BPV10NF's built-in 780–1050 nm hid it, but that 270 nm window is also
+     why bare sun was fatal in the v1 era); strong-drive waveform = bottom-rail clip first (1.25 V down
+     vs 2.05 V up headroom) + AC-coupler ride-up — looks alarming, is correct polarity overdriven.
+     PD-orientation check that settles it in 30 s: PD_NODE ≈ 0 V dark rising with light (backwards =
+     pinned ~2.7 V, near-zero signal). Full tune deferred until the C-14 lens+filter land.
 5. **A2-uvlo-2**: scripted slow-creep + dwell micro-dropout sweep (psu.py ramp + banner listener) — the
    original 3 blips didn't reproduce in the fast static-hold pass.
 6. Flight cube build @306 mA (raise psu MAX_CURR deliberately) — **parts in hand; boresight the 5 tiles,
