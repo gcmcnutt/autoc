@@ -120,6 +120,32 @@ The PD node DC voltage is V_ped = I_amb·R1; the PD compresses (softly) as V_ped
 
 - **Pairing rule (order C-14)**: FB850-10 → keep R1 = 47 k (max signal). FBH850-40 → drop R1 to **22 k**
   so filtered direct sun stays linear (signal cost ×0.47, still 2.2 MΩ equivalent).
+
+> ⚠️ **THE TABLE ABOVE IS THE BARE-PD CASE AND PREDATES THE C-14 LENS (noted 2026-08-04).** Fitting the
+> lens splits ambient into two cases that behave *oppositely*, and only one of them improves:
+>
+> - **Extended ambient** (sky, sunlit ground — the sun NOT in the field) scales as `T_amb/(4·F#²)`,
+>   i.e. it **drops ~113×** at F/2.0 with a 50 nm filter. "Sunny, not sun-facing" 30–300 µA bare
+>   becomes **0.27–2.7 µA** lensed. Comfortably linear at either R1. This is the good case.
+> - **The sun DISC inside the field** is collected by the whole entrance pupil, so it scales with
+>   **pupil area ÷ die area = 6.7×** at F/2.0 — the lens makes it *worse*, and the filter only partly
+>   offsets that. Against the ceilings ([`lensed_pd_range.py`](../../../specs/031-beacon-camera/lensed_pd_range.py) §8):
+>
+> | filter | sun pedestal | vs 47 k (70 µA) | vs 22 k (150 µA) | vs 10 k (330 µA) |
+> |---|---:|---:|---:|---:|
+> | 10 nm | 209 µA | 3× over | 1× over | OK |
+> | 30 nm | 628 µA | 9× over | 4× over | 2× over |
+> | 50 nm | 952 µA | 14× over | 6× over | 3× over |
+>
+> **No load resistor survives a direct hit.** Dropping R1 to 22 k buys linearity for *diffuse* sun,
+> which is what the pairing rule was for — it does not and cannot buy it for the disc. **Direct sun
+> must be RIDDEN THROUGH, not designed around**; see the decoder AGC max-energy gate in the bench
+> journal. Do not chase this with a smaller R1: 10 k would still be 3× over at 50 nm while costing
+> 4.7× signal everywhere else.
+>
+> Not a damage risk, for the record: the focused solar image is 148 µm at ~101 kW/m², but total power
+> is only ~1.7 mW and silicon spreads it to a **~39 mK** junction rise. It is purely a saturation and
+> recovery problem.
 - The pedestal itself is DC — C6 strips it; only pedestal **motion** matters (next section).
 - The beacon's own mean current is also a pedestal (full-duty chips, 16/31 duty): at inches it is mA-scale
   and compresses everything — bench 2026-07-24 decoded anyway (AGC is scale-free); back off to ≥1 m for

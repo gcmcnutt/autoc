@@ -172,6 +172,35 @@ is a pedestal meter — bring it next time.
    `agc_step` ladder, and near compression the loop chases a *shunted* signal. Plan: log the AGC state +
    pedestal together during the next outdoor run, then extend the ladder to field-sized steps before
    touching s7's gear-shift α.
+   - **2a. MAX-energy gate — new work item (2026-08-04, from the C-14 lens analysis).** Once the lens is
+     fitted, a **sun transit through the field is unsurvivable by pedestal design** — 209–952 µA
+     depending on filter FWHM, over every R_load ceiling (daylight doc pedestal table, lens-era note).
+     The transit itself is not the problem; **AGC windup during it is.** The gear-shifted DC tracker
+     (α=1/256 locked, τ=533 ms) would chase a ~10⁵× pedestal and then need ~533 ms to unwind — an order
+     of magnitude longer than the event that caused it. **Fix shape: a max-energy gate that FREEZES the
+     AGC and asserts HOLD**, the exact mirror of s7's existing min-energy lock gate (`beste ≥ 64`) that
+     kills dark-input false locks. Then a sun transit is handled by the same machinery as a propeller
+     occlusion, which is already characterised (≤1 word in HOLD, warm relock ≲1 period).
+   - **2b. Transit duration is FOV-linear, and the C-14 field is not narrow enough at low body rates.**
+     At the BPW34 focal-plane field of **9.8°** ([`lensed_pd_range.py`](lensed_pd_range.py) §8):
+
+     | body rate | blanked | vs the 300–325 ms HOLD absorption |
+     |---:|---:|---|
+     | 10 °/s | 978 ms | **EXCEEDS — lock lost** |
+     | 20 °/s | 489 ms | **EXCEEDS — lock lost** |
+     | 60 °/s | 163 ms | rides through |
+     | 120 °/s | 82 ms | rides through |
+
+     So slow, sun-ward passes are the worst case, not aggressive ones. Either extend the HOLD budget to
+     ~1 s for the max-energy case specifically, or accept a reacquire and measure how long warm relock
+     actually takes from a saturated start (it is **not** the same entry condition as a dark occlusion —
+     worth its own bench arm). A narrower field shortens this linearly; the BPV10NF's 3.2° would cut it
+     ~3×, but that PD is the finder, not the focal-plane sensor.
+   - **2c. Down the line: the decoder should CONTROL the camera** (operator 2026-08-04). Same loop, one
+     level up — once the array is in, exposure/gain become decoder-driven rather than free-running, so
+     the max-energy gate and the exposure command are one control problem, not two. Camera-side
+     prerequisites (global shutter, manual exposure) are now **requirements** on the D1 line in
+     [`verified-bom.md`](verified-bom.md).
 3. **A1-ovp**: zener + 1 k clamp parts are IN HAND (DK-3) — fit the 15 V zener + 1 kΩ clamp; pull-LED-header
    live test. No longer blocked.
 4. **A3-b**: soldered **Option-C** receiver on copper-clad (**FR4 stock in hand — AMZ-1 C-8/C-20**; netlist
@@ -183,6 +212,28 @@ is a pedestal meter — bring it next time.
 7. **Next-field-run checklist** (from field test #4): pace out past loss-of-lock instead of stopping at the
    yard edge; confirm the R_load trimmer still measures 47 k; record which PD is fitted (BPV10NF vs BPW34);
    scope N_PD for the raw pedestal in both shaded and sun-exposed states; log AGC state alongside.
+   - **Added 2026-08-04 (C-14 lens arm)** — the first lensed run should close these, in this order:
+     1. **Measure the aperture gain FUNCTIONALLY — do not derive it.** Same emitter, same distance,
+        same PD: record photocurrent bare, then lensed. The ratio folds F/#, lens transmission, filter
+        transmission and focus quality into ONE number, and it drops straight into `SignalOpticsGain`
+        (040 ships it at 1.0, an untried `A` row; the calibration rehearsal pencils in 4.0). This is
+        the single largest uncertainty left — range scales **linearly** with pupil diameter, so the
+        F/1.6-vs-F/2.4 spread alone is 115 m vs 77 m for one die at 306 mA.
+     2. **The front element is convex** — its diameter is NOT the entrance pupil, so do not caliper it
+        and infer F/#. (Item 1 makes this moot, which is why it is item 1.)
+     3. **Confirm the ELP integrated filter passes 850** and record whatever FWHM the vendor will
+        admit to. Camera-market "narrow pass" is typically 40–60 nm, not 10 nm — which is the RIGHT
+        width behind a fast lens (verified-bom D5 note), but it sets the sun pedestal.
+     4. **Focus on the beacon itself, not by eye.** The integrated filter blocks visible, so there is
+        no visible image to focus on — which also retires the NIR focus-shift trap. `corrB`-peak
+        focusing per C-14 is the method.
+     5. **Focus, then back off to ~30–50% of the die.** Total photocurrent is identical focused or
+        defocused (the PD integrates) and ambient is focus-independent, so defocus buys nothing on
+        signal — but a slight blur is cheap insurance against die non-uniformity and thermal drift.
+        Do NOT defocus to fill the die: that softens and shrinks the effective field.
+     6. **Provoke a sun transit deliberately** and log AGC state + pedestal through it — this is the
+        entry condition for item 2a/2b above, and it is the one measurement neither the bench nor any
+        prior field test has.
 8. Camera-era (040) notes seeded in optical-link-outcome.md (multipath, tracker-bank, full-duty contract).
 
 ## History (chronological commits of record)

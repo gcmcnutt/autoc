@@ -117,6 +117,29 @@ test**; (4) stop stalling on missing passives (kits).
     over bare BPW34 → ~75–80 m; still fine. Buying this makes the Quanmin discs optional (backup/second rig).
     *Step-up if CWL tolerance worries*: Commonlands CBP850, M12-threaded (~$25).
   - *Headroom option if 100 m is thin*: 25 mm plano-convex (~$10, DIY tube) ≈ ×70 → ×8 range, FOV ~4°.
+  ✅ **THE ELP ALL-IN-ONE IS THE RIGHT PART, and now for an optical reason (2026-08-04).** The 40 nm-class
+  decision was taken on cost; it is also correct on physics. A dielectric bandpass blue-shifts with AOI,
+  and behind the lens the marginal ray arrives at arctan(1/2F#) — 17.4° at F/1.6, 14.0° at F/2.0 — needing
+  a **≥26 nm / ≥17 nm** passband respectively just to keep the outer pupil in band. A true 10 nm filter
+  mounted internally would stop the lens down and throw away the aperture gain it was bought for. The
+  Thorlabs deferral to the 040 camera stands, but note it must be **front-mounted** there too, not dropped
+  behind the optic. Full working: [`lensed_pd_range.py`](../../specs/031-beacon-camera/lensed_pd_range.py) §7.
+  📊 **Predicted reach, anchored on the 41 ft bench lock** (not on datasheet flux — see the script's
+  calibration note). Aperture gain is referenced to the **BPV10NF** the flux constant was measured on;
+  BPW34 at the focal plane sets FOV (9.8°) and ambient, not signal:
+
+  | configuration | F/1.6 | F/2.0 | F/2.4 |
+  |---|---:|---:|---:|
+  | 1 die @ 306 mA | **115 m** | 92 m | 77 m |
+  | flight cube 5 @ 306 mA, face-on | 145 m | 116 m | 96 m |
+  | flight cube 5 @ 306 mA, edge-on | 174 m | 139 m | 116 m |
+
+  Consistent with this entry's own ~75–100 m estimate, and **100 m is reachable at every F/#** for the
+  full cube. Range scales **linearly with pupil diameter**, so F/# is the dominant unknown — measure the
+  aperture gain functionally on the first lensed run rather than deriving it (bench-journal item 7).
+  ⚠️ **But the sun disc in the field is over EVERY R_load ceiling once the lens is fitted** (209–952 µA vs
+  70/150/330 µA at 47 k/22 k/10 k). The 22 k pairing rule below buys linearity for *diffuse* sun only. See
+  the lens-era note in the daylight doc and the max-energy-gate work item (bench journal 2a).
   🔴 **PRIORITY RAISED 2026-08-02 by field test #4**: at ~6× emitter current (6 × 50 mA) the link locks to
   ~20 ft with the PD **shaded** but fails outright with the PD **in direct sun** — same emitter, same
   distance, shadow alone flips it. Compression at the PD sits upstream of every other multiplier, so more
