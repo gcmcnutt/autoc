@@ -34,13 +34,13 @@
 #include "autoc/nn/evaluator.h"
 #include "autoc/types.h"
 
-using autoc::eval::AirframeProxy;
+using autoc::eval::AirframeObstruction;
 using autoc::eval::BeaconConfig;
 using autoc::eval::CameraConfig;
 using autoc::eval::CrashHull;
 using autoc::eval::FlightArena;
 using autoc::eval::TrackerStepper;
-using autoc::eval::defaultAirframeProxyHB1;
+using autoc::eval::hb1AirframeObstruction;
 
 namespace {
 
@@ -95,7 +95,7 @@ TrackerStepper makeStepperWithSource(NNControllerBackend& nn,
                           CameraConfig{},
                           BeaconConfig{},
                           BeaconConfig{},
-                          defaultAirframeProxyHB1(),
+                          autoc::eval::hb1AirframeObstruction(),
                           FlightArena{},
                           CrashHull{},
                           /*p_crash_this_gen=*/0.0f,
@@ -233,4 +233,131 @@ TEST(TrackerStepperInit, EmptySourceFallsBackToLegacyInit) {
     // (180° yaw flips x). Magnitude = SIM_INITIAL_VELOCITY.
     EXPECT_NEAR(state.getVelocity().x(), -SIM_INITIAL_VELOCITY, 1e-3f);
     EXPECT_NEAR(state.getVelocity().norm(), SIM_INITIAL_VELOCITY, 1e-3f);
+}
+
+// ---------------------------------------------------------------------------
+// 040 T007 (FR-020a) — per-scenario perception-state reset.
+//
+// These guard the trap the constitution and the existing situational-awareness
+// code both warn about: carried perception state that is NOT reset at a
+// scenario boundary leaks into the next scenario and breaks the bitwise gate.
+// The leak is invisible — no crash, no failing assertion, just a different
+// training trajectory nobody can attribute months later.
+//
+// 040 routes every reset through resetPerceptionState() so the acquisition
+// state machine (Stage E) is picked up by BOTH execution paths without either
+// being edited. These tests pin that contract at the observable level:
+// re-initialising a scenario must reproduce first-tick perception exactly,
+// regardless of what ran before it.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Capture the NN-facing perception slots after a given number of ticks.
+std::vector<float> perceptionAfterTicks(TrackerStepper& stepper, int ticks) {  // raw-ok: NN-byte-format buffer
+    stepper.initScenario();
+    for (int i = 0; i < ticks; ++i) stepper.stepOnce();
+    const CameraViewSample& v = stepper.lastCameraView();
+    return {v.beacon_left.bearing_x_rad,  v.beacon_left.bearing_y_rad,  v.beacon_left.cep,
+            v.beacon_right.bearing_x_rad, v.beacon_right.bearing_y_rad, v.beacon_right.cep};
+}
+
+}  // namespace
+
+TEST(TrackerStepperReset, ReinitReproducesFirstTickPerception) {
+    NNGenome genome = makeMinimalGenome();
+    NNControllerBackend nn(genome, autoc::eval::FlightArena{});
+    AircraftState state;
+    SourceScenarioTrajectory source =
+        makeSyntheticSource(/*tick_count=*/40, gp_vec3(-13.0f, 0.0f, 0.0f));
+    TrackerStepper stepper = makeStepperWithSource(nn, state, source);
+
+    const std::vector<float> first = perceptionAfterTicks(stepper, 1);  // raw-ok: NN-byte-format buffer
+    const std::vector<float> again = perceptionAfterTicks(stepper, 1);  // raw-ok: NN-byte-format buffer
+
+    ASSERT_EQ(first.size(), again.size());
+    for (size_t i = 0; i < first.size(); ++i) {
+        // BIT-exact, not near: determinism is the contract (FR-020).
+        EXPECT_EQ(first[i], again[i])
+            << "perception slot " << i << " differs after re-init — carried "
+               "state leaked across the scenario boundary (FR-020a)";
+    }
+}
+
+TEST(TrackerStepperReset, DeepRunDoesNotContaminateNextScenario) {
+    NNGenome genome = makeMinimalGenome();
+    NNControllerBackend nn(genome, autoc::eval::FlightArena{});
+    AircraftState state;
+    SourceScenarioTrajectory source =
+        makeSyntheticSource(/*tick_count=*/40, gp_vec3(-13.0f, 0.0f, 0.0f));
+    TrackerStepper stepper = makeStepperWithSource(nn, state, source);
+
+    // Baseline: a fresh scenario's first tick.
+    const std::vector<float> baseline = perceptionAfterTicks(stepper, 1);  // raw-ok: NN-byte-format buffer
+
+    // Run deep enough to fill the observation ring and advance any carried
+    // state well past its initial value, then re-init and re-measure.
+    perceptionAfterTicks(stepper, TrackerObservationRing::kDepth + 5);
+    const std::vector<float> after_deep_run = perceptionAfterTicks(stepper, 1);  // raw-ok: NN-byte-format buffer
+
+    ASSERT_EQ(baseline.size(), after_deep_run.size());
+    for (size_t i = 0; i < baseline.size(); ++i) {
+        EXPECT_EQ(baseline[i], after_deep_run[i])
+            << "perception slot " << i << " differs after a deep prior run — "
+               "ring or acquisition state survived initScenario() (FR-020a)";
+    }
+}
+
+// ===========================================================================
+// 040 US6 (2026-08-02) — THE RECORDED CAMERA POSE MUST CARRY THE VARIATION.
+//
+// Both recording paths originally wrote `chase_orient * NOMINAL mount`, while
+// the bearings beside them were projected through the VARIED mount. The dmp
+// therefore claimed the camera pointed down the nominal boresight when it was
+// actually up to 20 deg off.
+//
+// The symptom was visual and easy to misread as "variation isn't on": the
+// renderer recovers the orientation as chase^-1 * recorded_pose, which collapsed
+// to IDENTITY, so the POV reticle sat still across every scenario. The 3D FOV
+// pyramid drew the wrong cone for the same reason.
+//
+// Training was never affected — the pose is dmp-only and never an NN input —
+// but every downstream statement about where the camera was pointing was wrong.
+// This asserts the recorded pose and the projected bearings describe ONE camera.
+// ===========================================================================
+
+TEST(TrackerStepperInit, RecordedCameraPoseCarriesTheVariation) {
+    NNGenome genome = makeMinimalGenome();
+    NNControllerBackend nn(genome, autoc::eval::FlightArena{});
+    AircraftState state;
+    SourceScenarioTrajectory source =
+        makeSyntheticSource(/*tick_count=*/30, gp_vec3(-12.77f, -3.14f, -1.23f));
+
+    TrackerStepper stepper = makeStepperWithSource(nn, state, source);
+    autoc::eval::CameraDeltas d;
+    d.boresightYawDeg = static_cast<gp_scalar>(15.0);
+    d.rollDeg = static_cast<gp_scalar>(-11.0);
+    stepper.setCameraVariation(d);
+    stepper.initScenario();
+
+    const CameraViewSample& cv = stepper.lastCameraView();
+    // Recover the mount orientation exactly as the renderer does.
+    gp_quat mountQ = state.getOrientation().inverse() * cv.camera_pose_world_orient;
+    mountQ.normalize();
+
+    // It must NOT be identity — that is precisely the bug.
+    const double angle_deg =
+        2.0 * std::acos(std::min(1.0, std::fabs(static_cast<double>(mountQ.w())))) * 180.0 / M_PI;
+    EXPECT_GT(angle_deg, 5.0)
+        << "the recorded pose collapsed to the nominal camera; the reticle will "
+           "sit still while the beacons move";
+
+    // And it must match what applyCameraVariation actually produced.
+    autoc::eval::TickRuleConfig ref;
+    ref.camera = autoc::eval::CameraConfig{};
+    ref.obstruction_mount_offset = ref.camera.mount_offset_body;
+    autoc::eval::applyCameraVariation(ref, d);
+    const gp_quat expected = ref.camera.mount_orientation_body;
+    EXPECT_NEAR(std::abs(static_cast<double>(mountQ.dot(expected))), 1.0, 1e-5)
+        << "recorded pose and projected bearings must describe ONE camera";
 }

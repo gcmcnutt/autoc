@@ -687,7 +687,7 @@ Pattern (following [xiao/src/util.cpp:15-32](../../xiao/src/util.cpp#L15) `heart
 
 The indicator SHALL be placed where the operator can see it during pre-flight walk-around without removing the camera mount cover or any wing tape (e.g., LED visible through a small light-pipe slot in the recorder housing, or mounted on an exposed face of the dev-kit board). Operator pre-flight checklist (FR-5.2 / US6 pre-flight safety gate) SHALL include "**confirm GREEN heartbeat blink (~1–2 Hz pulse) on recorder LED**" before throttle-up — a single observed pulse + ongoing cadence is the "alive + recording" signal. (Revised 2026-05-17 from the prior GREEN-solid expectation.)
 
-The blink-code table SHALL be documented alongside this spec (`040-camera-redo/recorder-status-codes.md` — moved there 2026-06-22 — or equivalent quick-reference card) so a future operator unfamiliar with the build can interpret the LED at the flying field.
+The blink-code table SHALL be documented alongside this spec (`040-camera-redo/camera-hardware-phase/recorder-status-codes.md` — moved there 2026-06-22 — or equivalent quick-reference card) so a future operator unfamiliar with the build can interpret the LED at the flying field.
 
 #### FR-2.7 Camera + recorder system BOM (new 2026-05-14, parallel to FR-1.2.1)
 
@@ -752,7 +752,7 @@ A FAIL in #1, #2, or #4 (the emission-correctness + LiPo-safety checks) SHALL bl
 
 (Revised 2026-05-12 — recording now supports two modes producing the same file format: bench-mode for indoor scenario sweeps; flight-mode for Beacon Test Flight 1 per US6. Flight-mode is the new addition; bench-mode is unchanged.)
 
-**FR-4.1 — bench mode (USB-tethered via UVC eval-camera)** (revised 2026-05-17 multi-eval-board strategy). The bench recording system SHALL use an **off-the-shelf UVC-compliant USB camera module** with a NIR-capable global-shutter sensor (default: Arducam B0264 USB-UVC shield + Arducam B0162 OV9281 sensor module, or equivalent), feeding **live frames + per-frame metadata to the host PC over USB-UVC** at up to 480 fps 320×240 (USB-UVC bandwidth permitting — see caveat below; V4L2 on Linux, AVFoundation on macOS). A **`specs/040-camera-redo/beacon-viewer/` Python utility** (moved there 2026-06-22) SHALL provide:
+**FR-4.1 — bench mode (USB-tethered via UVC eval-camera)** (revised 2026-05-17 multi-eval-board strategy). The bench recording system SHALL use an **off-the-shelf UVC-compliant USB camera module** with a NIR-capable global-shutter sensor (default: Arducam B0264 USB-UVC shield + Arducam B0162 OV9281 sensor module, or equivalent), feeding **live frames + per-frame metadata to the host PC over USB-UVC** at up to 480 fps 320×240 (USB-UVC bandwidth permitting — see caveat below; V4L2 on Linux, AVFoundation on macOS). A **`specs/040-camera-redo/camera-hardware-phase/beacon-viewer/` Python utility** (moved there 2026-06-22) SHALL provide:
 - Live-display of the streaming frames (per-pixel inspection, exposure/gain tuning, alignment + EMI debug);
 - **Optional record-to-file**: consume UVC frames and write the canonical FR-4.2 `.clip` format + JSON sidecar, exercising the same loader contract as flight mode.
 

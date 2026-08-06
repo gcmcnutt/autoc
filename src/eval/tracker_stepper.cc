@@ -7,6 +7,8 @@
 
 #include "autoc/eval/tracker_stepper.h"
 
+#include "autoc/eval/tracker_tick_rule.h"
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -14,7 +16,6 @@
 
 #include "autoc/eval/camera_projection.h"  // kCepSentinelThreshold (032 default gate)
 #include "autoc/eval/crash_hull.h"     // M7c — geometric inside-hull telemetry
-#include "autoc/eval/derived_features.h"  // 032 phase 1 — compute_pair_span
 #include "autoc/eval/trail_rabbit.h"  // M7b — real trail-rabbit math
 
 namespace autoc::eval {
@@ -26,7 +27,7 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                const CameraConfig& camera,
                                const BeaconConfig& beacon_left,
                                const BeaconConfig& beacon_right,
-                               const AirframeProxy& airframe,
+                               const AirframeObstruction& airframe,
                                const FlightArena& arena,
                                const CrashHull& crash_hull,
                                gp_scalar p_crash_this_gen,
@@ -136,14 +137,13 @@ void TrackerStepper::initScenario() {
     // observation ring (037: depth grew with the R5 lag window) so the NN
     // sees a populated, non-zero history at tick 1.
     cursor_ = 0;
-    obs_ring_.reset();
 
-    // 038 P0-D FR-P0H (A) — reset situational-awareness state per scenario
-    // (FR-030 determinism: un-reset blind-tick / exit-bearing state would leak
-    // across scenarios and break the bitwise gate). The state is advanced only
-    // on real ticks (stepOnce), NOT during the history pre-fill below, so it
-    // starts each scenario at "visible-now / neutral bearing".
-    sa_state_.reset();
+    // 040 T012 (FR-020a) — ALL carried per-scenario perception state resets
+    // through one call, so a future addition (the acquisition state machine)
+    // is picked up by both execution paths without either being edited.
+    // Advanced only on real ticks (stepOnce), never during the history pre-fill
+    // below, so each scenario starts at "visible-now / neutral bearing".
+    resetPerceptionState(obs_ring_, sa_state_, perception_carry_);
 
     if (!source_.samples.empty()) {
         for (int r = 0; r < TrackerObservationRing::kDepth; ++r) {
@@ -156,58 +156,33 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     // 037 T022 — observations land in the deep ring; the 6-slot gather view
     // (history_) is materialized from the ring at the R5 lag offsets at the
     // end of this function. (Pre-037: 6-slot shift-left register.)
+    //
+    // 040 T012 (FR-031) — the projection + CEP-gated-separation rule now lives
+    // once in tracker_tick_rule.cc. This path is TEST-ONLY (crrcsim has been the
+    // sole worker since 034), but it is the behavioural contract exercised by
+    // tests/tracker_stepper_init_tests.cc, so it must consume the same rule the
+    // production tick does — not a copy of it.
+    TickRuleConfig rule_cfg;
+    rule_cfg.camera = camera_;
+    rule_cfg.beacon_left = beacon_left_;
+    rule_cfg.beacon_right = beacon_right_;
+    rule_cfg.airframe = airframe_;
+    rule_cfg.cep_gate_threshold = cep_gate_threshold_;
+    // 040 US4 — shipped values. TrackerStepper is the TEST-ONLY reference, so it
+    // takes the same factories autoc.cc feeds WorkerInit from; a divergent set
+    // here would let the reference certify behaviour production never exhibits.
+    rule_cfg.signal = hb1SignalConfig();
+    rule_cfg.acquisition = hb1AcquisitionConfig();
+    rule_cfg.control_interval_ms = static_cast<gp_scalar>(SIM_TIME_STEP_MSEC);
+    rule_cfg.obstruction_mount_offset = camera_.mount_offset_body;
+    applyCameraVariation(rule_cfg, camera_variation_);
 
-    // Build projection inputs for both beacons. Camera mount + orientation
-    // come from CameraConfig (chase body frame); beacons mount at
-    // BeaconConfig::mount_body in target body frame.
-    ProjectionInput proj;
-    proj.chase_position_world = state_.getPosition();
-    proj.chase_orientation_world = state_.getOrientation();
-    proj.target_position_world = target.position;
-    proj.target_orientation_world = target.orientation;
-    proj.camera_mount_chase_body = camera_.mount_offset_body;
-    proj.camera_orientation_chase_body = camera_.mount_orientation_body;
-    proj.camera = camera_;
-    proj.chase_airframe = airframe_;
+    const PerceptionTickResult tick =
+        projectPerceptionTick(state_, target, rule_cfg, perception_carry_);
+    const BeaconObservation& left = tick.left;
+    const BeaconObservation& right = tick.right;
 
-    // Left beacon.
-    proj.beacon_mount_target_body = beacon_left_.mount_body;
-    proj.beacon_emission_axis_target_body = beacon_left_.emission_axis_body;
-    proj.beacon = beacon_left_;
-    BeaconObservation left = projectBeacon(proj);
-
-    // Right beacon.
-    proj.beacon_mount_target_body = beacon_right_.mount_body;
-    proj.beacon_emission_axis_target_body = beacon_right_.emission_axis_body;
-    proj.beacon = beacon_right_;
-    BeaconObservation right = projectBeacon(proj);
-
-    TrackerObservationRing::Record rec;
-    rec.left_x = left.screen_x;       // raw-ok: NN-byte-format primitive
-    rec.left_y = left.screen_y;       // raw-ok: NN-byte-format primitive
-    rec.left_cep = left.cep;          // raw-ok: NN-byte-format primitive
-    rec.right_x = right.screen_x;     // raw-ok: NN-byte-format primitive
-    rec.right_y = right.screen_y;     // raw-ok: NN-byte-format primitive
-    rec.right_cep = right.cep;        // raw-ok: NN-byte-format primitive
-
-    // 032 PHASE 1 — Cache beacon-pair span at the current tick. CEP-gated:
-    // if EITHER beacon's CEP exceeds the configured threshold, substitute
-    // neutral 0.0 (= "no closing-distance signal"). Per spec Q4 + R2.
-    const float cep_gate = static_cast<float>(cep_gate_threshold_);  // raw-ok: NN-byte-format comparison boundary
-    const bool cep_gated =
-        left.cep >= cep_gate ||
-        right.cep >= cep_gate;
-    if (cep_gated) {
-        rec.span = 0.0f;
-    } else {
-        rec.span = static_cast<float>(  // raw-ok: NN-byte-format slot write
-            autoc::eval::compute_pair_span(
-                static_cast<gp_scalar>(left.screen_x),
-                static_cast<gp_scalar>(left.screen_y),
-                static_cast<gp_scalar>(right.screen_x),
-                static_cast<gp_scalar>(right.screen_y)));
-    }
-    obs_ring_.push(rec);
+    obs_ring_.push(tick.record);
     obs_ring_.materialize(history_);
 
     // 030 M8b — Per-tick recording for v=2 dmp output (FR-015).
@@ -215,10 +190,16 @@ void TrackerStepper::projectAndShiftHistory(const SourceTickSample& target) {
     // chase_orient * camera_orient gives the camera frame in world coords.
     last_camera_view_.camera_pose_world_pos =
         state_.getPosition() + state_.getOrientation() * camera_.mount_offset_body;
+    // 040 US6 — the VARIED orientation (rule_cfg), not the nominal member.
+    // See the note in crrcsim_tracker_helper.cpp: recording the nominal pose
+    // made the recorded camera direction disagree with the bearings projected
+    // through it.
     last_camera_view_.camera_pose_world_orient =
-        state_.getOrientation() * camera_.mount_orientation_body;
-    last_camera_view_.camera_fov_h_deg = static_cast<float>(camera_.fov_h_deg);   // raw-ok: cereal byte-format member (CameraViewSample fp32 contract)
-    last_camera_view_.camera_fov_v_deg = static_cast<float>(camera_.fov_v_deg);   // raw-ok: cereal byte-format member (CameraViewSample fp32 contract)
+        state_.getOrientation() * rule_cfg.camera.mount_orientation_body;
+    // 040 T029 — FOV is derived from the sensor grid, so the dmp records the
+    // derived value rather than a separately-configured one that could disagree.
+    last_camera_view_.camera_fov_h_deg = static_cast<float>(camera_.fovHDeg());   // raw-ok: cereal byte-format member (CameraViewSample fp32 contract)
+    last_camera_view_.camera_fov_v_deg = static_cast<float>(camera_.fovVDeg());   // raw-ok: cereal byte-format member (CameraViewSample fp32 contract)
     last_camera_view_.beacon_left = left;
     last_camera_view_.beacon_right = right;
 
@@ -261,13 +242,13 @@ CrashReason TrackerStepper::stepOnce() {
     // the freshly-projected "now" beacon observation. Visibility uses the
     // sentinel threshold (matches fitness_decomposition.cc). Single-sourced
     // update rule mirrored in CrrcsimTrackerHelper::tick.
-    sa_state_.update(history_.left_cep[5], history_.right_cep[5],
-                     autoc::eval::kCepSentinelThreshold);
+    advanceSituationalAwareness(history_, sa_state_);
 
     // Step 2: gather tracker NN inputs.
     TrackerInputs inputs = {};
     gather_tracker_inputs(state_, history_, arena_,
-                          static_cast<float>(cep_gate_threshold_), sa_state_, inputs);
+                          static_cast<float>(cep_gate_threshold_),  // raw-ok: gp_scalar→NN-byte-format boundary (gather takes float)
+                          sa_state_, inputs);
 
     // Step 3: NN forward pass → control commands.
     nn_.evaluateTracker(state_, inputs);

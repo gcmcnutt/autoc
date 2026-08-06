@@ -5,6 +5,8 @@
 #include "autoc/types.h"
 #include "autoc/eval/fitness_computer.h"
 #include "autoc/rpc/crash_reason.h"
+#include "autoc/eval/aircraft_state.h"   // AircraftState (computeSpanPredictionError)
+#include "autoc/rpc/protocol.h"          // CameraViewSample
 
 // Forward declaration — full definition in rpc/protocol.h
 struct EvalResults;
@@ -113,6 +115,16 @@ inline gp_fitness throttleEnergyStep(gp_fitness out_th) {
 // variationScale: 0.0 (no variations) to 1.0 (full variations), used for streak threshold ramp.
 // Returns one ScenarioScore per scenario (path×wind combination).
 std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults);
+
+// 038 US3 — aux span/closure-prediction error, i.e. the `prediction_score`
+// lexicase axis. Exposed for test (2026-08-02) because the TICK PAIRING between
+// the two arrays is a SILENT invariant: `cams[j]` is the view from tick `j+1`,
+// since the initial pre-tick state is pushed to `states` with no matching
+// camera view. Getting it wrong scores every forecast one tick late and nothing
+// else notices — which is exactly what happened from 038 US3 until 2026-08-02.
+// See SpanPrediction.PerfectPredictorScoresExactlyZero.
+gp_fitness computeSpanPredictionError(const std::vector<AircraftState>& states,
+                                      const std::vector<CameraViewSample>& cams);
 
 // Aggregate: sum of per-scenario scores (already negated, lower is better).
 double aggregateRawFitness(const std::vector<ScenarioScore>& scores);

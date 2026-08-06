@@ -1,10 +1,65 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-07-10
+**Last Updated**: 2026-08-06
 
-> **Routing (2026-07-10, 038 wrap)**: 038 closed — see [038 wrap](038-accurate-m2/wrap.md). Next feature
-> is **039 (xiao back in shape)**; the M2-depth items below (predictor elevation, streak-proxy input,
-> camera work) are **040** candidates.
+> **Routing (2026-08-06, 040 wrap)**: 040 closed — see [040 outcome](040-camera-redo/outcome.md).
+> Verdict: *a better camera model, much closer to real, and training results more or less the same —
+> that is the going concern.* Perception fidelity is **not** what caps M2. Next feature is **041**
+> ([seed](041-m2-depth/README.md)), scoped by the operator to three threads: **redo M1**, **control
+> aggressiveness on both the M1 and M2 side**, and **a predictor that actually works**. The
+> "Make the predictor earn its keep" entry below is 041's E1–E4 and is already measured — start there.
+>
+> *(Prior routing, 2026-07-10, 038 wrap: 039 xiao, then M2-depth items → 040.)*
+
+---
+
+## 040 deferrals
+
+### [040 wrap, filed 2026-08-06] t1′ — the attributable camera-variation delta (LOW priority, probably not worth it)
+
+The one experiment 040 could not run cleanly. `68f64ab` corrected the M2 objective's one-tick target
+offset **between** t1 (no camera variation) and t4 (±10°), so the t1↔t4 training-curve delta mixes a
+perception-robustness change with a change in the definition of the task. t1′ — variation off, current
+code, 800 gens — would isolate it. Cost ≈53 h of bake.
+
+**Why it is probably not worth running**: T085 already answered the question a different way. On 49
+novel scenarios under one binary and one objective, t4 and t1 came out **indistinguishable** (0.7% on
+fitness, same crash scenarios, differences ≤10% pointing both directions). That is a head-to-head with
+weights as the only variable, which is exactly what t1′ was meant to supply. Run it only if a future
+result makes the camera-variation cost load-bearing.
+
+### [040 wrap, filed 2026-08-06] A baseline's WEIGHTS expire when the dmp schema moves — decide what we do about it
+
+Found closing T085. The 038-t9 elite — the M2 baseline every 040 number is quoted against — **cannot be
+loaded by a 040 binary**: `nnextractor` dies with `vector::_M_default_append`, a cereal schema
+mismatch. 040 grew the dmp schema, and by standing policy we do not version it
+([[feedback_no_cereal_versioning]], and that policy is right — backward compat on a research schema is
+a tax with no payer).
+
+The policy is not the problem; the **unstated consequence** is. `retain=keep` on a milestone dmp reads
+as "this baseline is preserved", and it is not: what is preserved is a blob that only its own build can
+open. In practice a pinned baseline survives as *logged numbers*, never as a controller you can re-fly.
+That silently downgrades every "vs the prior baseline" claim from a head-to-head to a metric
+comparison, which is what happened to 040.
+
+Options, cheapest first — **this is a decision to make, not obviously work to do**:
+1. **Write it down and move on.** Amend Principle VIII so `retain=keep` states the guarantee honestly
+   ("numbers survive, weights do not travel across schema changes"). Zero cost.
+2. **Pin the weight file, not the dmp.** `nn_weights*.dat` is NN01, a stable format that predates and
+   outlives the EvalResults schema. Archiving the ~11 KB weights next to a milestone dmp would have
+   preserved t9 completely. Nearly free, and it is the option that actually buys the capability.
+3. Version the dmp schema. Rejected before, still rejected.
+
+Trigger: any feature that wants a true elite-vs-elite comparison across a schema boundary. 041 will, if
+it re-baselines M1.
+
+### [040 wrap, filed 2026-08-06] Novel-geometry eval source — pin it and reuse it, or it is not a comparator
+
+T085 generated `autoc-eval · autoc-9223370250819561192-2026-08-06T16:53:34.615Z/` (7 random paths × 7
+winds, flown by the pinned M1, 49/49 complete) and it needs `retain=keep`, because a regenerated source
+is a *different* 49 scenarios and cross-run generalization numbers stop being comparable. Same applies
+to the 038 t10 source, which is already pinned. **Two pinned novel sets now exist** — using both is the
+cheap way to tell a real generalization difference from a 49-scenario sampling artefact.
 
 ---
 
@@ -46,6 +101,37 @@ pitch motion, NOT the root cause; the too-steep wing leading edge on this articl
 destabilizer on prior craft) + streamer remain in the confound pool. Reinforces waiting for the
 new articles. Also: **new load record +11.2 g / −8.4 g** (span 2) on identical policy — loads
 creeping up flight-over-flight; inspect airframe between flights.
+
+### [040-fed, filed 2026-07-28] FDM propeller is the wrong part — 5.0×4.5 modelled vs 5.5×4 flown; fix only as part of a re-tune
+
+Found during the 040 Stage-A airframe-fidelity check
+([airframe-fidelity.md](040-camera-redo/airframe-fidelity.md), T004). **Everything else agrees** — mass
+(0.515 vs 520 g), span and chord (exact), wing area — so this is the sole plant-affecting discrepancy.
+
+| | modelled | flown |
+|---|---|---|
+| `crrcsim/models/hb1_streamer.xml` `<propeller D H>` | **0.127 / 0.114 m** (5.0 × 4.5) | **0.1397 / 0.1016 m** (5.5 × 4) |
+| Δ | — | **+10% diameter, +21% disc area, −11% pitch** |
+
+The modelled value is the airframe vendor's *stock recommended* prop; the flown one is the Master Airscrew
+GF 5.5×4 confirmed by photo (Windsor Propeller). Both are legitimate — they are simply different props.
+
+**⚠️ Do NOT fix this in isolation.** `hb1_streamer.xml` is a **stability-derivative model tuned against
+observed flight** across 021/023 *with these propeller values already in place* — `Cl_da` alone was revised
+four times to match measured roll rates. Whatever thrust error the wrong prop introduced has been silently
+absorbed by the tuning. Correcting `D`/`H` alone would break that fit and could make the model **less**
+faithful, not more. It is only meaningful as part of a re-tune against flight data.
+
+**Home**: the flight-model fidelity re-tune — the same work as the pitch marginal-stability levers above,
+which is already gated on **n>1 flight articles**. Pairs naturally with the deferred "less pitch
+aggressiveness" direction (operator 2026-07-28) and with the static-margin craft-variation axis.
+
+**Also worth carrying**: eCalc's wing-area entry of 17.42 dm² (270 in²) implies a ~9″ mean chord against a
+measured 7″; the simulator's 0.136 m² is correct. That is a third-party data-entry error, and it
+contaminates the **airspeed** axis of any eCalc partial-load table — fit throttle→RPM, never airspeed→RPM.
+
+**Trigger**: the flight-model re-tune feature (n>1 articles), or any 040-successor that changes the plant
+and must therefore rebake M1 anyway.
 
 ### [039 — BACKLOG, set 2026-07-10] Redefine flight boundaries generally for open flying — not the training cylinder
 
@@ -263,6 +349,33 @@ posed — structurally cannot provide useful signal.**
   the t8/t9 config) for these weak-signal experiments — a STATIONARY objective + bit determinism is what
   lets a third-order selection signal accumulate over hundreds of gens instead of being washed by a
   shifting landscape; t9's monotone grind is plausibly visible only because the ramp was off.
+- **040 t1 UPDATE (2026-07-31, measured @ gen 179) — the t9 grind REVERSED, and there is now a second,
+  purely mechanical reason the head cannot form. Routing: this is 041 material (operator 2026-07-31);
+  040 stays camera-engine fidelity.**
+  - **Observed**: all four curves rise instead of grinding down — err150 **0.40 (gen 1) → 0.74 (gen 179)**,
+    err_rate 0.29 → 0.63. Against the permanent baselines in the same cache: persist150 = **0.0066**
+    (the head is **113×** the no-change bar) and `span_scale` (σ of realized span) = **0.044 rad** (the
+    head is **17× worse than emitting a constant 0.0**).
+  - **New root cause, introduced by 040's own camera work**: T023-T035 / T033a moved bearings from ±1 NDC
+    to **radians** and span to a great-circle angle, shrinking the predicted quantity ~20×. The aux
+    outputs are raw **tanh, bounded ±1** (every layer applies `fast_tanh` — `src/nn/evaluator.cc:125`,
+    `:217`). So the entire signal now lives in ~4% of the output range while the shared trunk saturates
+    (W_hh spectral radius 4.73; control axes 97-100% over the amplitude budget) and drags the aux outputs
+    to the rails. **err150 ≈ mean |aux output|** — the curve is now a *saturation* readout, NOT a
+    prediction-skill readout. Do not read it as predictor progress while the head is in this state.
+  - **The 038 elevation package is UNSTARTED**: `predictor` appears **0×** in `specs/040-camera-redo/`
+    spec.md and tasks.md. Outputs `[3..6]` remain write-only leaves — not actuated
+    (`src/nn/evaluator.cc:591-595`), no forecast slots in `TrackerInput`, output layer non-recurrent
+    (`TRACKER_NN_RECURRENT = {false,false,true,false}`). t1 is the t6 predictor config with a new camera.
+  - **Design note for 041 — prefer the structural re-target over rescaling.** Rescaling the aux target
+    into tanh range is a coefficient fix on an objective the persistence bar already calls worthless, and
+    it cuts against [feedback_clear_objectives_not_tuning]. Re-targeting to blindness-bridging horizons
+    (0.5-2 s, visible→reacquisition pairs) collapses persistence, gives the head something only it can
+    do, AND moves the target into a tanh-representable range as a side effect — one structural change
+    instead of two.
+  - **Cheap ablation while it sits**: `EnablePredictorHead = 0` costs nothing to try and answers whether
+    the dead head + its lexicase axis are actively taxing the control search (119 output weights + one
+    test case per scenario currently buying nothing).
 
 ### [038 follow-on — ~~BACKLOG~~ → **VALIDATED 2026-07-10 (t10, the 038 wrap exercise)**] M2 novel-path eval harness — measure M2 generalization
 
@@ -400,6 +513,29 @@ net learns the feedback)**. The lean pulls toward the US2 end.
 
 Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 2026-05-04, before plan-research begins. These were architecturally part of the 030 epic but earned defer-status under the smoke-test-first scoping (D13 / D16). Some are 031 (sibling-feature) candidates, some are pure backlog. Tagging as such; final 030/031 split is plan-research's call.
 
+### [PARKED — camera bench era, relocated 2026-07-28] Camera hardware phase — recorder chain, clip format, loader
+
+**Where it lives**: [`specs/040-camera-redo/camera-hardware-phase/`](040-camera-redo/camera-hardware-phase/)
+— `plan.md` (the original 031 Phase-1 camera plan), `data-model.md`, `quickstart.md` (build-a-pod /
+build-a-recorder walk-throughs), `recorder-status-codes.md`, `contracts/` (clip byte format, FPGA-recorder
+contract, Python-loader contract, JSON sidecar schema), plus the `beacon-viewer/` and `beacon-loader/`
+Python packages.
+
+**Why it moved**: 040 was specified 2026-07-28 as *sim-side perception fidelity only* — none of this
+material is in scope. Four of its filenames (`plan.md`, `data-model.md`, `quickstart.md`, `contracts/`)
+collide with `/speckit.plan` output and would have been overwritten in place. Filed here so it stays
+findable rather than being rediscovered by accident.
+
+**NOT obsolete — actively referenced by the running 031 build**: `cad/beacon-eval/verified-bom-eval.md`
+(§(a) hand-off to the cube-mounted target), `specs/031-beacon-camera/tasks.md` (T033 pod hand-build),
+`schematic.md`, `spec.md`, and both `firmware/flight-recorder/` READMEs link into it. Links were rewritten
+at the move; do not relocate again without re-running the sweep.
+
+**Unpark trigger**: a camera bench exists — article 1 plus raw uncompressed high-bandwidth capture (the
+same trigger as the deferred photon budget in the 040 spec). ⚠️ Re-validate first: these documents predate
+the 031 1-bit acquisition phase and the 20 Hz / 480 fps / 200 Hz / 75 ms baseline, and carry legacy
+240 fps / 100 Hz / 150 ms numbers.
+
 ### [040 — camera redo] Parallel perception-front-end — camera pixels → (x, y, CEP)
 
 > Re-homed to feature **040 (camera redo)** on 2026-06-20: 031 narrowed to the 1-bit single-IR-sensor acquisition-research phase; the camera pipeline (this item + the FOV/representation item below) is the separate 040 effort. Emitters are shared; 040 replaces the single-sensor analog front end with a camera + bigger FPGA. The old camera `specs/031-beacon-camera/spec.md`+`plan.md` are 040's reference.
@@ -417,10 +553,66 @@ Items extracted from the [030 tracker-mode spec](030-tracker-mode/spec.md) on 20
 - **Question 2 — Optics with non-uniform angular resolution**: a 120° FOV with uniform pixel pitch wastes resolution on the edges where the target rarely sits, and starves the center where it does. Two candidate architectures:
   - **Dual-camera**: wide (~180°) for acquire/orbit-recovery + narrow (~60°) for hi-res tracking. NN sees both feeds (concatenated or as separate channels). Mirrors how birds-of-prey use peripheral + foveal vision.
   - **Single non-linear lens**: fisheye / log-polar / panomorph optics that compress edges and expand the center on the same sensor. Lower hardware cost, but introduces lens calibration and non-linear NDC math; the NN has to learn the warp implicitly.
+- **Question 2b — RAPTOR BINOCULAR arrangement: two IDENTICAL wide cameras, splayed, overlapping forward (operator 2026-07-28, "might be what we wind up doing after M2")**. Distinct from the wide+narrow sketch in Question 2 above — that one mimics the *foveal* adaptation (peripheral + high-acuity); this one mimics the *binocular* adaptation (lateral coverage + forward depth), and looks stronger. Two identical 120° cameras on the wing leading edge at ∓8″ (the 040 baseline mount, [040 input checklist](040-camera-redo/input-data-checklist.md)), splayed outward by α:
+
+  | splay α | total coverage | binocular overlap | prop shadow |
+  |---:|---:|---:|---|
+  | 0° | 120° | 120° | in frame, 41–61° inboard |
+  | **20°** | **160°** | **80°** | **gone** |
+  | 30° | 180° | 60° | gone |
+  | 45° | 210° | 30° | gone |
+
+  **Solves three problems at once**: (a) **blindness** — 160–180° coverage attacks the documented M2 ceiling head-on ([project_m2_tracking_ceiling]: reacquire-through-blindness, ~8 s worst-case blind windows, reward-invariant ⇒ perception-capped); (b) **range where it matters** — the binocular lobe sits forward, exactly where a tail chase terminates, and stereo yields range from a **single** visible beacon, which is the case precisely when the target banks and hides a wingtip (beacon-separation ranging fails there); (c) **prop occlusion vanishes for free** — the shadow lies inboard, so **any splay > ~19° rotates it outside a ±60° field**. The splay chosen for coverage is the splay that kills the occlusion.
+  - **Baseline caveat (carry the right expectation)**: ∓8″ ⇒ a 0.41 m stereo baseline vs the target's 0.772 m beacon separation, so as a *ranging-accuracy* upgrade it is ≈1.9× coarser than just using the target's own wingspan. Its value is **robustness, not precision** — single-beacon range, plus geometric rejection of ground-bounce/glint false blobs (a genuine beacon appears in both views at consistent disparity). Judge it on those, not on range error.
+  - **Cost**: the NN input vector grows to two cameras' worth of observations — a real feature, not a tweak. Also doubles the perception front-end. Symmetric mounting cancels any asymmetric drag from a single LE camera.
+  - **Trigger**: after M2 (operator). Natural pairing with the rear-facing-camera idea (same blindness target, different geometry) and with [031-fed] CEP realism.
+
+- **Question 2c — PAN/TILT (and eventually zoom) single camera: decouple instantaneous field from coverage (operator 2026-07-28, "at some point that may be better than two cameras… we've done a bunch of pan tilt so far")**. The third architecture on the table alongside Question 2 (wide+narrow foveal) and Question 2b (raptor binocular). It attacks the **central tension** the 040 optics analysis exposed — *you cannot have 120° FOV and 100 m range on a 320×240 sensor* ([040 input checklist](040-camera-redo/input-data-checklist.md) §B4) — because a gimbal is the only option that gets both, at the cost of seeing **one place at a time**.
+
+  - **Why it works quantitatively**: background-limited SNR ∝ f² ∝ **1/FOV²**, so narrowing buys range *quadratically*. Against the measured ~40 dB shortfall of a 120° optic: narrowing to **30° buys +12 dB**, to **15° buys +18 dB**. Combined with the ~20 dB available from emitter drive, aiming, sensor format and aperture (same §B4 lever budget), **a 15–30° gimballed camera is roughly what 100 m actually needs** — a normal lens on a normal gimbal, not the 3.4° exotic the original narrow design assumed.
+  - **It matches the patrol/engage mode split better than any fixed arrangement.** Patrol wants ~100 m detection over a wide search volume and *can afford to sweep* because nothing is manoeuvring yet; engagement wants the target near boresight. That is a description of what a gimbal does. Fixed optics must trade instantaneous field against range; a gimbal trades *time* instead.
+  - **Prior art in-house**: operator reports substantial pan/tilt experience, which materially lowers the build risk versus the dual-camera paths.
+
+  **Costs and the real risks**:
+  - **Slew rate is the binding constraint.** Target angular rate at terminal geometry: **~248°/s at 3 m** (13 m/s crossing), 74°/s at 10 m, 30°/s at 25 m. On top of that the gimbal must *reject body motion* — 039 flight data shows pitch-rate RMS 128–141°/s with roll capability to ~500°/s. So the gimbal is simultaneously stabilising and tracking, and terminal geometry is where it is hardest.
+  - **Acquisition gets worse, not better.** A narrow field must *search* to acquire — cold acquisition becomes a slew pattern, potentially far slower than a wide fixed camera that simply sees everything. This is the classic trade (wide acquires fast and tracks poorly at range; narrow the reverse) and it argues for either a fast search mode or pairing with a wide fixed sensor.
+  - Moving mass and power on a 520 g airframe; **moving parts on an aircraft whose mission involves collisions**; a second control loop with its own latency and dynamics.
+  - **Pointing knowledge**: prefer resolving to body frame *in the front-end* so the NN interface stays unchanged, rather than adding gimbal angles to the input vector.
+
+  **Zoom** (operator: "I get ahead of myself") would give the dual-FOV benefit — wide to acquire, narrow to track — on **one** sensor, at the cost of heavier/slower optics and a focal length that becomes a live variable the front-end must track for calibration.
+
+  **Trigger**: post-M2, alongside the Question 2b evaluation — these are alternatives to each other, not a sequence, and the choice should be made against a calibrated camera link budget (article 1 + raw capture) rather than on paper.
+
 - **Question 3 — Projection model: go spherical/equidistant, not rectilinear (operator direction 2026-07-07)**. *[PULLED FORWARD 2026-07-07 as a likely near-term step after t6 — see the promoted entry under "038 deferrals" at the top of this file; full rationale + blast radius stay here.]* Today the sim projects rectilinearly (pinhole): `screen = tan(θ)/tan(fov/2)` ([camera_projection.cc:168](../src/eval/camera_projection.cc)). Because NDC ∝ `tan(θ)`, a *fixed angular* wingspan reads **larger toward the frame edge** than at center — so `beacon_pair_span` (and `tilt`, `span_rate`, the CEP edge factor, and every raw beacon NDC input) carries an **ego-pointing contamination**: where you aim the camera changes the reading. This surfaced in the 038 US3 span-predictor discussion (2026-07-07): it muddies "what span means" — span is *meant* to be a clean range×aspect closure signal, but the tan-stretch injects an ego term. **Direction**: switch the sim to a **spherical / equidistant** projection (`screen ∝ θ`) applied uniformly to **all** coordinates, so NDC is ∝ angle and span becomes ego-pointing-invariant (a clean angular quantity). Then, once real camera hardware is chosen, **model that specific lens's projection function** (rectilinear / equidistant / equisolid / panomorph) in sim to match — projection becomes a *modeled physical property of the chosen optic*, not an arbitrary sim convention, and lens choice becomes a first-class sim variable (ties to the dual-FOV / non-linear-lens options above). **Blast radius**: `camera_projection.cc` `screen_x/y` + the FOV clip + CEP edge factor; changes every beacon NDC input + all derived features → a perception-representation change, so M1/M2 source dmps are invalidated and need a rebake (greenfield, no cereal bump per project practice). Couples to [031-fed] CEP-realism below and `project_cep_realism_backlog`. Span itself stays the metric — operator: "span is nice, keep it"; this only makes it mean one thing everywhere.
 - **What the early minisim playback informed**: the 120° FOV + raw-NDC-projection presentation gives narrow beacon spacing close-in (~0.26 NDC at 10ft), and the controller learned an emergent orbit-to-reacquire when the target left the FOV — useful evidence that the current rep gets some way, but reacquisition cost in crrcsim's harder dynamics may push the topology budget higher than 030 v1 plans for. A richer rep (event stream) or smarter optics (dual-FOV / non-linear) could lower that topology demand instead.
 - **Why research-track, not implementation**: needs a dataset + simulator camera model upgrade (or recorded event-camera bench data) before any controller work; coupled to the 031 perception-front-end FPGA / DSP scoping.
 - **Source design notes**: this thread; 030 D10 (single-camera v1 baseline that this would supersede); see also `[BACKLOG] Multi-camera variant experiments` below for the controller-side experiment shell once a camera spec is chosen.
+
+### [040-fed, filed 2026-07-28] Detection-quality degradation modes — make the detection envelope emergent instead of asserted
+
+040 **asserts** the detection envelope (sensor good to ~100 m) and proxies signal-to-noise into the quality
+value, rather than letting the signal budget set a cutoff ([040 spec](040-camera-redo/spec.md) FR-033a).
+That was deliberate: the budget is not calibrated well enough to be trusted as a *limit*, and the physics
+that would set a real limit is shelved. Operator framing 2026-07-28: *"we operate with uncertain or
+tentative information — let's just say the sensor is good to 100 m for now with some s/n proxied in the
+CEP; later we can add a lot more."*
+
+**What would make the envelope emergent** (roughly in order of expected effect):
+
+- **Ambient level / time-of-day** — the measured dominant limiter. 031 field tests: full sun rails a
+  DC-coupled front end; direct-sunlight lock fell to 4.5–6 m bare/unfiltered vs 12.5 m dark. Needs sun
+  position in the simulator.
+- **Sun angle in or near the FOV** — no filter helps with in-band sunlight; also the AGC-response question
+  (couples to the flight-data trigger already recorded for sun/glint).
+- **Glint** — specular water/metal returning false point sources. Unknowable until a camera exists.
+- **Atmospheric**: dust, haze, scintillation — blob spreads across more pixels, dimmer per pixel.
+- **Sensor variation** — QE spread, read noise, well depth, exposure tolerance; needs article 1.
+- **Optics degradation** — dirty lens, filter aging.
+
+**Trigger**: a calibrated camera link budget exists (article 1 + raw uncompressed capture — the same
+trigger as the deferred photon budget), OR field data shows the asserted 100 m envelope is materially wrong
+in a way that changes M2 behaviour. Pairs with the [031-fed] CEP-realism items below and with the camera
+PRNG slot item that follows.
 
 ### [BACKLOG — camera variations, scoped 2026-07-09] 5th PRNG class slot: mount-alignment 6-DOF first, then FOV/aberrations/noise
 
@@ -443,6 +635,34 @@ the noise-model home).
   additive NDC offset (clean, learnable robustness target — under rectilinear it was position-dependent).
 - **Trigger**: pre-real-hardware M2 training (the run whose controller flies a physical camera), or 040
   front-end characterization telling us actual tolerance numbers — whichever first.
+
+### [BACKLOG — M2 realism, filed 2026-07-31] Chase and target must eventually be DIFFERENT craft — share the air mass, not the airframe
+
+**Current state (verified 040 t1, 2026-07-31)**: `TrackerChaseUseSourceScenarioSeed=1` shares ONE
+`scenarioSeed` with the M1 source, and every class sub-seed derives from it — so the chase inherits the
+target's **craft** draws along with wind/thermal/gust/entry/crash-hull. The two aircraft are therefore the
+**same airframe realization**: identical CG, drag, trim, thrust, pitch/roll authority, servo slew, thrust
+tau. The startup log says as much (`…wind/thermal/gust/entry/craft/crash-hull seeds…`).
+
+**This is deliberate for now (operator 2026-07-31)**: the current question is "can we roughly track in the
+same *temporal air environment* with an identical craft" — holding the airframe fixed isolates the
+environment/perception question, which is what t7 was built to answer. Not a defect; a scoping choice.
+
+- **Eventual target**: the air mass stays shared (both aircraft fly the same wind/thermal/gust field —
+  that part of the seed sharing is physically right), but **everything else about the two craft becomes
+  independent**. A chase that can only track a copy of itself has learned a weaker skill than one tracking
+  an airframe with different speed, turn rate, and energy state.
+- **Implementation shape**: split the shared seed by CLASS rather than sharing it wholesale — keep
+  `wind` from the source, draw `craft` (and `entry`) from the chase's own M2 seed. The plumbing already
+  distinguishes classes (`deriveClassSubSeeds`); what's missing is a per-class share/independent policy
+  instead of today's all-or-nothing `chaseScenarioSeedAt()` swap. Same pattern the camera slot uses
+  (chase-specific even under seed sharing — 040 US6 T070).
+- **Trigger / relation to other work**: **co-evolution** is the likely forcing function (an evolved or
+  adversarial target is by construction not the chase's twin); also any real-hardware M2 where the target
+  is a different physical aircraft. Pairs with the library-based-training direction
+  ([project_library_based_training]) — recorded real flights are inherently not the chase's airframe.
+- **Watch item when it lands**: expect tracking difficulty to rise; the current M2 ceiling numbers were
+  measured against a twin, so they are an OPTIMISTIC baseline for the differing-craft case.
 
 ### [031 CANDIDATE] Variable-rate / real-flight source robustness
 
@@ -575,6 +795,24 @@ the noise-model home).
   retuned value) must be hand-applied to each and they silently drift -- the 037 `ControlIntervalMsec`,
   craft actuator-dynamics sigmas, and tightened entry sigmas each had to be touched in 3-6 files, and the
   `autoc-eval-*.ini` copies lagged. inih only parses a single file.
+- **040 T021 data point (2026-07-28) — the drift is now a correctness hazard, not just tedium.** Reproducing
+  the t9 M2 training run for a bit-identity gate required hand-aligning **four** fields in
+  `autoc-eval-tracker.ini` — not just the obvious `TrackerSourceRun`/`Bucket` + `Seed`, but the scenario
+  **shape** (`SimNumPathsPerGeneration` 7→6, `WindScenarios` 7→49), because the file had been left
+  configured for the t10 novel-geometry exercise. **One shared eval ini is doing two incompatible jobs**
+  (training-repro vs novel-geometry generalisation) with only a comment separating them.
+  - It failed loud and correctly — *"seed table (49) not 1:1 with source list (294)"*, the 7×7 t10 grid
+    against the 6×49 t9 source — so the guard earned its place. But the guard only catches the *count*
+    mismatch; a config that differed in sigmas or enables would have produced a plausible wrong number.
+  - **Open design question the operator named (2026-07-28)**: must an M2 run assume the *same scenario
+    shape* as its M1 source? Today the 1:1 seed-table check enforces exactly that, and it is what couples
+    the eval ini so tightly to whichever run it last served. Relaxing it (M2 shape independent of M1, or
+    running more scenarios than the source provides) is the design fork that has stalled this item.
+  - **Status: deliberately deferred 2026-07-28** — *"we have had various ideas… gave up for now and keep
+    the ugly setup"*. Recorded so the next attempt starts from the fork above rather than rediscovering it.
+  - Related: **Self-describing dmp** (record the config block in every gen dmp) below — the other half of
+    this problem, since a run that carries its own config makes "reproduce run X" a lookup instead of an
+    archaeology exercise. The two should probably be designed together.
 - **Want**: replace the single-file load with a config system that supports STACKING multiple INI files
   in "last value wins" order, so e.g. `-i base.ini -i m2.ini -i eval.ini` composes (base + overrides).
   The eval / visual / tracker variants then become thin override files over one base, eliminating drift.
@@ -709,7 +947,421 @@ flip to re-enable) or "investigate before retraining":
   is not regenerated/built/flashed.
 - Triggered by 028's sim gate clearing — same discipline as 027.
 
-### [DEFERRED — post-028] Renderer scrubbing with hidden state
+### [041 CANDIDATE — operator direction 2026-08-01] Make the predictor earn its keep
+
+**Status change 2026-08-01**: this entry was first written around *design*
+hypotheses. It has been rewritten around **measurement** — the span/closure head
+was instrumented on the live 040 t1 run and carries **no usable information**.
+That closes several questions the earlier draft left open, and reorders the work.
+
+---
+
+#### MEASURED — the head is not learning, and rescaling will not save it
+
+Reproduce with `specs/040-camera-redo/predictor_signal.py` (new script, not an
+edit to `predictor_analysis.py`). Source: 040 t1 elite @ gen ~709, 294 scenarios,
+132,690 ticks, ~93-97k visible (t, t+h) pairs per horizon.
+
+| horizon | r(level) | **r(Δspan)** | **r²(Δ)** | raw \|e\| | after IDEAL rescale | persistence |
+|---|---:|---:|---:|---:|---:|---:|
+| +50 ms | −0.061 | −0.024 | 0.06% | 0.6828 | 0.0347 | **0.00407** |
+| +100 ms | +0.036 | +0.005 | 0.00% | 0.6845 | 0.0346 | **0.00584** |
+| +150 ms | **+0.103** | −0.008 | 0.01% | 0.5530 | 0.0342 | **0.00748** |
+| closure rate | — | −0.018 | 0.03% | — | — | — |
+
+Also: **best error at every horizon occurs at GENERATION 1** — the random
+initialisation. 709 generations produced wander in the 0.5-0.85 band, nothing else.
+
+**Three findings, in order of importance:**
+
+1. **THE METRIC IN USE IS THE WRONG ONE.** `computeSpanPredictionError` scores
+   mean \|predicted − realized_span\|, and that conflates offset/scale error with
+   information content. Span is SLOW — it moves ~0.0075 rad per 150 ms against a
+   ~0.049 rad level — so **persistence ("assume no change") is already right to
+   within 15%**. Predicting the *level* is therefore trivial and beats nothing.
+   The only statistic that matters is **r(prediction, Δspan)**, and it is
+   **≈ 0 at every horizon**.
+
+2. **The +150 ms "tilt" is real but is the head learning the MEAN.** Operator
+   spotted a tilt in the +150 ms calibration scatter — correctly, it is the only
+   horizon with a positive level-correlation (r = +0.103). But r(Δ) = −0.008
+   there. The head has partly learned "span is about 0.06", a constant that
+   persistence already encodes. There is a physical reason the tilt appears only
+   at the longest horizon: at +50 ms the change is buried in grid quantisation,
+   and by +150 ms the closure trend has cleared the noise floor. The horizon 038
+   picked for actuation-lag reasons is also the shortest one with any SNR.
+
+3. **The parameterisation is broken, and fixing it is NOT sufficient.**
+   Predicted mean +0.27, sd 0.59 vs realized mean +0.062, sd 0.049 — a ~12×
+   scale error, because `fitness_decomposition.cc:70` compares a raw bounded NN
+   output directly against a 0.049-rad target with no scaling, wasting ~95% of
+   the output range. But applying the **ideal** linear recalibration still leaves
+   4.6-8.5× WORSE than persistence. Scaling is a necessary fix, not the fix.
+
+*(Ruled out: lexicase ε is NOT the problem. `LexicaseEpsilonMode = mad` is on and
+the 0.5 floor is skipped entirely in MAD mode — `selection.cc:123-134`.)*
+
+This quantifies 038's "structurally worthless as posed" and supplies the mechanism.
+
+#### The cost being paid right now
+
+The prediction axis is **one of three axes × 294 scenarios** in the lexicase pool
+— a third of all test cases — selecting on a channel with r² ≈ 0. Individuals win
+on prediction luck and carry mediocre control through. This is not an inert
+axis, it is an actively harmful one.
+
+---
+
+#### E1 — ablate the head (do this first; cheap, and may be a win on its own)
+
+`EnablePredictorHead` 0 vs 1, everything else fixed. **Not a neutral ablation** —
+it returns a third of selection pressure from a dead channel to axes that mean
+something, so the prior should be that tracking IMPROVES. Run on **M1**, which
+climbs fast and reliably at pop 3000 / single longSequential / 16 winds
+([[project_m1_basic_learner_validated]]) — hours, not a 27 h M2 bake.
+
+If E1 wins, that is the finding, and everything below is optional.
+
+#### E2 — is the target learnable AT ALL from these inputs?
+
+Before building anything, settle whether Δspan is predictable from the 58-input
+history window by ANY model. Fit an offline regressor (ridge / small MLP) on the
+recorded per-tick CSV — no training run, no simulation, minutes of work. If an
+offline model cannot beat persistence on Δspan either, **the task is impossible
+as posed** and no architecture change rescues it. That is the cheapest possible
+kill-shot and it should precede E3.
+
+#### E3 — if E2 says the signal exists: fix the objective, then actuate
+
+Only worth building if E2 clears. In order:
+- **Score Δ, not level.** Target `span[t+h] − span[t]` against a persistence
+  baseline of zero, so the objective cannot be satisfied by learning a constant.
+- **Scale the output** into the target's domain so the usable range is not 5% of
+  one output unit.
+- **Then** actuate — the wrap's package (consume forecast as input; first-class
+  axis; re-target across blindness). Feeding the forecast into the SAME recurrent
+  net may be redundant (the hidden state that made the prediction also makes the
+  control); the non-redundant signal is the **prediction ERROR**, a
+  Kalman-innovation term saying "my model is wrong right now".
+
+#### E4 — value head instead of world model (the bigger swing)
+
+`span` is a *world-model* target: where the target will be, not whether that is
+good. The objective is `stepPoints`. A **value head** predicting accumulated
+future score has four advantages: prediction accuracy IS objective accuracy (no
+proxy gap); the horizon becomes a discount rather than a guess; the Monte-Carlo
+target costs **zero extra simulation** (`fitness_decomposition.cc` already
+computes `stepPoints` per tick); and it **ports to M1 unchanged**, where a span
+head cannot go at all because span needs beacons.
+
+It also enables cheap lookahead: with a value head you do not simulate futures,
+you **evaluate candidate actions** — k forward passes on a 16×16 RNN
+(microseconds) rather than k physics steps. Rollout on the true FDM is ~10×
+throughput (~6,270 sims/s → ~40 min/gen → ~3 weeks/800 gens) and is dead.
+
+⚠️ Scoring actions rather than states is closer to Q than V, and this GA has no
+actor-critic machinery. Biggest swing here, lowest confidence.
+
+---
+
+#### Honest caveats
+
+- E1's measurements are from ONE elite of ONE run. Confirm on M1 before
+  generalising.
+- E4 is a proposal. 038 validated the critique; nothing has validated the fix.
+- The r(Δ) ≈ 0 result says the CURRENT head learned nothing. It does not prove
+  Δspan is unlearnable — that is exactly what E2 exists to decide.
+
+**Prerequisite**: 040 closes and its t2 bake lands, so the predictor is judged
+against a finished perception model rather than a moving one.
+
+### [041 / BUG — found 2026-08-02] `prediction_score` is scored one tick out of alignment
+
+**Found while chasing a renderer artefact** (the POV reticle swimming during
+playback of a single scenario). The renderer bug is fixed; this one is real,
+pre-existing since 038 US3, and touches TRAINING.
+
+**The offset.** `inputdev_autoc.cpp:764` pushes the INITIAL aircraft state once
+at scenario start, before any NN tick, while camera views only begin at tick 1.
+So the two recorded arrays are **not** index-parallel despite the M8b comment
+saying they are — 368 states against 367 camera views:
+
+```
+cameraViewList[j]  <->  aircraftStateList[j + 1]
+```
+
+**What it does and does NOT affect** (checked, not assumed):
+
+| consumer | affected? | why |
+|---|---|---|
+| **Perception / NN inputs** | ❌ **no** | `trackerHelper_.tick(aircraftState, …)` computes from the LIVE state passed in. No index lookup anywhere in the sim path. |
+| **score / energy / stability / streak** | ❌ **no** | derived from `aircraftStates` alone; never paired with camera views |
+| `vis_frac` (avgVis diagnostic) | ⚠️ 1 tick | `fitness_decomposition.cc:256`, explicitly *"Observation-only; no effect on fitness or selection"*. 1 in ~370 — cosmetic |
+| **`prediction_score`** | ✅ **YES** | `computeSpanPredictionError(aircraftStates, cameraViewList[i])` pairs `states[t]` with `cams[t]`. It is a **live lexicase axis** (`selection.cc:95`, `EnablePredictorHead=1`) |
+
+So the NN's inputs and the main objective are clean. The **predictor axis** has
+been scored against a target shifted one tick for its entire life: a +50 ms
+prediction is compared against the span two ticks later, not one.
+
+**Why this matters for [the 041 predictor work](#041-candidate--operator-direction-2026-08-01-make-the-predictor-earn-its-keep):**
+E2 asks whether Δspan is learnable at all. That question is **confounded** until
+this is fixed — the head has never been scored against the target it was
+supposed to predict. A one-tick shift degrades a short-horizon prediction
+badly, though it does not by itself explain the measured r(Δ) ≈ 0 at every
+horizon *including* the closure rate. Fix it first, re-measure, then decide.
+
+**Fix**: pair `cams[j]` with `states[j+1]` in `computeSpanPredictionError` (and
+in the `vis_frac` lookup for tidiness). ⚠️ **This changes fitness**, so it must
+NOT land while a bake is running — workers re-exec `build/autoc`, so rebuilding
+mid-run would switch the objective underneath a live run.
+
+**Trigger**: after the 040 t2 bake completes, and before 041 E2.
+
+### [041 — BUG, DEFERRED ON PURPOSE 2026-08-02] The main M2 objective scores against the target one tick late
+
+**Found by asking "where else does this shape appear?" after three display bugs
+of the same kind** — which is the leverage argument in miniature: feature work
+found the display bugs; a cross-cutting question found the objective one.
+
+`fitness_decomposition.cc:205` pairs `targetTrajectoryList[i][stepIndex]` with
+`aircraftStates[stepIndex]`, on the comment *"parallel-indexed … both pushed in
+lockstep by the worker."* They are pushed in lockstep — but `inputdev_autoc.cpp:764`
+pushes the INITIAL aircraft state once **before** the loop, unconditionally. So
+
+```
+states = 1 + N        targets = N        cameras = N     (368 / 367 / 367)
+=> targets[j]  <->  states[j + 1]
+```
+
+**This is the objective, not a diagnostic.** `rabbitPosition` and
+`targetPosition` feed `decomposeStepScore`, so the chase at tick *k* has been
+scored against where the target was at tick *k+1* — since 030.
+
+**Magnitude**: 50 ms at ~17 m/s ≈ **0.85 m**. Against `FitDistScaleBehind = 7 m`
+that is ~12%; but the rabbit is *meant* to trail by `TrailDistance = 3.048 m`,
+so the effective trail is ~2.2 m — a **28% reduction in the intended trail
+distance**, systematically.
+
+⚠️ **`CopiedTargetSample` carries NO timestamp**, so this is invisible in the
+recorded data. Nothing short of reading the push sites could have caught it —
+which is why it survived four features.
+
+#### Why it is DEFERRED rather than fixed on the spot
+
+Two earlier bugs from the same family were fixed immediately, because neither
+touched the comparison basis (`prediction_score` was a broken axis with no
+baseline value; the recorded camera pose was display-only). **This one IS the
+objective**, and t2's whole purpose is the delta `t2 − t1`. Fixing mid-flight
+would make those two runs differ in *two* ways — camera variation AND the
+scoring basis — which is exactly the unattributable delta 038 taught us costs a
+run.
+
+The offset is systematic and **identical in t1, t2 and the 038-t9 baseline**, so
+it shifts every absolute number while largely cancelling in the delta Phase 9
+actually reports.
+
+**Fix as the FIRST item of 041**, with a fresh t1′/t2′ baseline pair. 041 is
+already a new-baseline moment for the predictor rework, so the correction rides
+along free. **Reverse this call** if t2 returns an anomaly the 0.85 m offset
+could explain — it is exactly the size that could flatter or damn close-in
+tracking.
+
+**Fix**: `targets[stepIndex - 1]`, guarded for `stepIndex >= 1`, plus the
+zero-error-style assertion (see `SpanPrediction.PerfectPredictorScoresExactlyZero`).
+**Proper indexing, not extra storage** (operator 2026-08-02) — and see the
+grouped-record entry below for the structural version that makes the class
+unrepresentable.
+
+⚠️ **041 NEEDS A RESEARCH PHASE FIRST** (operator 2026-08-02). Not just this fix:
+a deliberate dig through the code for this risk class *before* implementing
+anything, since one cross-cutting question produced a finding that four features
+of feature-shaped work had missed. Scope it as a phase with its own output — an
+inventory of index-coupled contracts and structs with two lifetimes — rather
+than folding it into the predictor work as a side task.
+
+---
+
+### [INFRA — 2026-08-02] Systematic scan: index-parallel collections with no assertion
+
+**Operator direction**: "the backlog is a larger scan for this sort of
+inconsistency across all functions."
+
+**The failure class, stated precisely** so it can be scanned for rather than
+stumbled on: *two collections written by different code paths, related by index,
+with the invariant recorded only in a comment.* Four instances found in one
+session, all with a comment asserting parallelism and **none with a test**:
+
+| pair | verdict |
+|---|---|
+| `aircraftStateList` × `cameraViewList` → `prediction_score` | **was wrong** (fixed 2026-08-02) |
+| `aircraftStateList` × `cameraViewList` → `vis_frac` | **was wrong** (fixed) |
+| `aircraftStateList` × `targetTrajectoryList` → **the objective** | **wrong** (entry above) |
+| recorded camera pose × projected bearings | **was wrong** (fixed) |
+
+**What made them survive**: every one is invisible in the recorded data.
+`CopiedTargetSample` has no timestamp; `CameraViewSample` has no tick index.
+Nothing downstream could detect a shift, so the only witness was the code.
+
+**Scan scope** — not just these arrays:
+1. Every `std::vector` pair indexed by a shared loop variable across a
+   producer/consumer boundary.
+2. Every struct serving TWO lifetimes (RPC-only vs persisted). `ScenarioMetadata`
+   in both roles cost a launch on 2026-08-02.
+3. Every value duplicated in two places (`CameraConfig` default vs
+   `hb1AirframeObstruction()` — that one HAS a test, and is the model to copy).
+4. Every "compiled-in default vs recorded config" read — the self-describing-dmp
+   item is the structural fix for a whole family.
+
+**The test pattern that works**: construct data whose correct answer is EXACTLY
+zero, then assert zero. Any pairing error becomes visible regardless of
+tolerances, and a companion "shifted input must score visibly worse" test keeps
+it honest. Both live in `fitness_decomposition_tests.cc` as a template.
+
+**Operator direction 2026-08-02 on the fix shape**: *"stick with proper
+indexing. Not additional storage."* A tick index per sample was one option and
+is rejected — it pays permanent bytes on every tick of every dmp to paper over a
+structural problem.
+
+**The structural fix instead — retire the parallel lists.** Replace
+
+```
+aircraftStateList[i][k]   cameraViewList[i][k]   targetTrajectoryList[i][k]
+```
+
+with ONE list of grouped per-tick records:
+
+```
+tickList[i][k] = { state, cameraView, targetSample }
+```
+
+Then the invariant is not asserted, documented or tested — **it is
+unrepresentable to get wrong**, because there is no second index to be off by.
+It also deletes the whole failure class at the root rather than instrumenting
+it: no tick index needed, no comment to trust, no test to remember. The extra
+pre-loop initial state either joins the group or is stored once beside it, and
+that choice becomes explicit instead of accidental.
+
+Cost: a dmp schema change (greenfield, no version bump per project policy — old
+dmps orphaned) plus every consumer. Real work, but bounded, and it is the last
+time this class can bite.
+
+### [SECONDARY / DOWN THE ROAD — operator 2026-08-03, downgraded 2026-08-04] Online craft identification: null the variations in flight, not in the weights
+
+**Operator**: *"all craft variations have a chance to be nulled — and this isn't
+during a training run — this is a dynamic online discovery of a craft
+characteristic — the hardest of all, but common for people — trim, camera, etc —
+all the variations that are craft related."*
+
+Started as camera-boresight estimation; the general case is **every per-scenario
+craft constant**, and the generalisation is the point.
+
+#### What it changes
+
+Today the variation set (034 US4's eight axes + 040's camera axes) exists to
+force **robustness**: fixed weights must cope with the whole variation manifold
+simultaneously. That is a large function to learn, and it is precisely the
+search-space squeeze the operator named on 2026-08-03 — *"we have gradually been
+increasing the complexity without additional weights to go along."*
+
+The alternative is **adaptation instead of robustness**: identify the parameters
+in flight, then control the identified plant. The weights no longer encode
+"handle every craft" but "estimate this craft, then fly it" — a far smaller
+function, learned with the same genome.
+
+**It also reframes what the variations are for.** They stop being difficulty the
+policy must tolerate and become **the training signal for the identifier**. A
+variation the controller can null is no longer noise; it is what teaches it to
+null.
+
+#### Every axis is a constant mapping command → response
+
+| axis | how a pilot reads it | plausible online estimator |
+|---|---|---|
+| `craftTrimDelta` (Cm_0) | "it wants to nose up" | running mean of pitch command in steady flight |
+| camera boresight / roll | "the sight is off" | running mean of bearing (tail chase averages to centre) |
+| `craftPitchEff` / `RollEff` | "controls feel heavy" | rate response ÷ commanded deflection |
+| `craftThrustScale` | "it's a bit gutless" | accel ÷ commanded throttle |
+| `craftDragDelta` | "it won't hold speed" | steady speed at known throttle |
+| `craftServoSlew`, `thrustTau` | "it's laggy" | phase lag between command and response |
+| `craftCGDelta` | "it's twitchy in pitch" | pitch-rate dynamics; couples with trim |
+
+The shared structure: **a constant parameter, observable in the residual between
+what was commanded and what happened.** First-order filters, not a bigger genome.
+
+#### The hard parts, which are the interesting parts
+
+1. **Observability requires excitation.** Trim shows up in steady flight; roll
+   effectiveness needs roll input. A passive tail chase may never excite some
+   modes. A pilot gets a control check on the ground — **the chase does not**,
+   unless we deliberately spend early-episode ticks on exploratory inputs and
+   pay for them in tracking. That trade is a real design decision, not a detail.
+2. **Parameter coupling.** Drag and thrust both move steady speed; CG and trim
+   both move pitch. Some pairs may be **unidentifiable separately** from passive
+   observation, so the estimator should target the *combination* that affects
+   control rather than the physical parameter.
+3. **The bias/signal confound.** A persistent tracking lag looks identical to a
+   boresight offset. Symmetric tail chase averages it out; asymmetric patterns
+   would not.
+4. **Ephemeral state is the FR-020a trap again.** Per-scenario, reset at every
+   boundary, identically in both execution paths — the same trap that caught
+   `AcquisitionState`, and `resetPerceptionState` is the one place that knows.
+5. **Never adapt on no signal.** Do not integrate while blind, or the estimate
+   drifts through exactly the dropouts it exists to survive.
+
+#### ⚠️ The evidence that pointed here has been RETRACTED
+
+This section previously argued from the t2 cap. **That cap was the
+mount-inside-the-wing bug**, and t4 subsequently trained fine at ±10° with no
+adaptation whatsoever. Nothing currently demonstrates that fixed weights cannot
+absorb craft variation at the complexity we run today.
+
+What survives is the *structural* argument: adaptation is cheaper than capacity,
+and a GA pays for capacity twice (representation AND search). That is a reason to
+expect this to matter eventually, not evidence that it matters now.
+
+#### The experiment, if and when it is promoted
+
+Raise variation until competence genuinely caps — **and prove the cap is not
+plumbing** (a pinned diagnostic from generation 1 is the bug signature; a real
+ceiling shows improvement then plateau). Then A/B the estimator against that
+run. Starting from a demonstrated ceiling is what this entry lacked the first
+time.
+
+**Start explicit and start with ONE axis** (camera boresight, or trim — both are
+running means and both are strongly observable in a tail chase). Feeding the NN
+raw material and letting it learn the correction is more general and lands
+straight back in the search-space problem.
+
+Related: [[project_perception_control_two_loop]] — this is a third loop beside
+perception and control, on a slower time constant.
+
+### [SMALL — surfaced 2026-07-30 during 040 t1 launch] `tracker_dmp_inspect` bucket + .zst warts
+
+Two papercuts hit while spot-checking the first gen of an M2 run. Neither is
+load-bearing; both cost a few minutes each time.
+
+1. **Wrong bucket for M2 dmps.** Given a tracker ini it resolves the fetch
+   bucket from `TrackerSourceBucket` (`autoc-m1`, the M1 *source*) rather than
+   `S3Bucket` (`autoc-m2`, where this run's own output lands), so inspecting a
+   run's own gen dmp by S3 key fails with "specified key does not exist" — while
+   the banner confusingly prints `bucket: autoc-m2`. It is reusing the
+   source-dmp loader path. Workaround: `aws s3 cp` locally first.
+2. **A local `.zst` path is not decompressed.** Passing a local `*.dmp.zst`
+   feeds compressed bytes straight to cereal, which reads a garbage vector
+   length and dies with `std::bad_alloc` — and the error text then blames a
+   *version mismatch*, sending you hunting a schema bug that is not there. The
+   S3 path decompresses; the local path does not. Workaround: `zstd -d` first.
+
+**Fix**: honour `S3Bucket` when the key is not the configured source, and sniff
+the zstd magic on local files. The misleading version-mismatch message is
+arguably the worse of the two — it points at the wrong cause.
+
+### [NARROWED 2026-07-30 — post-028] Renderer scrubbing with hidden state
+
+> **Scope note**: 040 T065a shipped scrub over RECORDED playback, where a step
+> back is an index decrement and no hidden state is involved. What remains open
+> here is only the harder case this entry was really about — scrubbing a view
+> that RE-RUNS the network, where RNN hidden state cannot be rewound.
 
 - 027 plan open decision #5: when user scrubs the timeline
   backwards, does the recurrent hidden state get recomputed from
@@ -1546,10 +2198,17 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 ## Visualization
 
 ### [NEXT] Renderer Playback Enhancements — per-tick scrub + streak/multiplier overlay
-- **Per-tick scrub controls**: pause / step-forward-one-tick / step-backward-one-tick.
-  Today the renderer plays a continuous timeline; for diagnostic work you want to
-  freeze on a specific tick and walk one step at a time to see exactly when the NN
-  does what.
+- **Per-tick scrub controls — ✅ CLOSED 2026-07-30 by 040 T065a.** Unparked into 040
+  rather than left deferred, because the US4 checkpoint ("does dropout and
+  reacquisition look physical?") is NOT ANSWERABLE at realtime: warm relock is
+  154 ms (3 ticks) and cold acquire 308 ms (6 ticks), so the behaviour-defining
+  distinction plays out in under a third of a second. Shipped in
+  `tools/renderer.{cc,h}`: `Space` play/pause (rapid-finish moved to `F`),
+  `.`/`,` ±1 tick, `>`/`<` ±10, `Home`/`End`, `[`/`]` jump to previous/next
+  perception event (lock-state transition or hull strike), plus a tick-index +
+  pause readout on the stopwatch. Tick length is DERIVED from consecutive
+  recorded timestamps, not assumed.
+- The streak/multiplier overlay below is still open.
 - **In-streak counter overlay**: per-tick `streakCount` displayed alongside
   the rendered aircraft, so you can see "is this a streak tick? for how long?"
 - **Points multiplier overlay**: per-tick `multiplier` (= 1 + (streakMultMax-1) ·
@@ -1580,11 +2239,14 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 - **Scope**: second VTK renderer (or split-screen overlay) using chase camera pose from `cameraViewList[i][k].camera_pose_world_pos` + orientation as VTK camera; FOV deg → projection matrix; render full scene (target craft + arena + plane). Beacon dots already projected by M5 — render at fullscreen coords matching mini-panel.
 - **Files likely**: `tools/renderer.cc` only. Roughly 150-300 LOC.
 
-### [DEFERRED 2026-05-08] Renderer scrub controls (was 030 T057, rolled-in from earlier 028 entry)
+### [CLOSED 2026-07-30 by 040 T065a] Renderer scrub controls (was 030 T057, rolled-in from earlier 028 entry)
 
-- **Trigger**: when operator needs frame-by-frame inspection — pause / step-forward-one-tick / step-backward-one-tick. Animation already auto-pauses on left-click for camera interaction; full scrub adds tick-by-tick navigation.
-- **Why deferred from 030 v1**: not load-bearing for smoke-test signal-or-not. Current pause-on-click + scrolling through generations covers the typical diagnostic workflow.
-- See also the older "[NEXT] Renderer Playback Enhancements" entry below for scope notes.
+- **Closed**: shipped as the 040 playback transport. The "not load-bearing"
+  judgement was right for 030's smoke test and wrong once US4 put 3-tick and
+  6-tick events on screen — see the entry above for the shipped bindings.
+- The old note that backstep is risky does not apply: playback is RECORDED data,
+  so a step back is an index decrement. The hidden-state problem in the entry
+  below only bites a renderer that re-runs the NN, which this one does not.
 
 ### [DEFERRED 2026-05-08] Renderer streak/multiplier overlay (was 030 T058, rolled-in from earlier 028 entry)
 

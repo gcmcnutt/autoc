@@ -1926,11 +1926,15 @@ int main(int argc, char** argv) {
 
     // Print xiao-specific controls
     std::cout << "\nXiao Flight Mode Controls:" << std::endl;
-    std::cout << "  t/r - Next/previous test span" << std::endl;
-    std::cout << "  a - Show all flight" << std::endl;
-    std::cout << "  SPACE - Playback animation" << std::endl;
-    std::cout << "  f - Focus mode" << std::endl;
-    std::cout << "  q - Quit" << std::endl;
+    std::cout << "  t / r        Next / previous test span" << std::endl;
+    std::cout << "  a            Show all flight" << std::endl;
+    std::cout << "  SPACE        Play / pause  (040 T065a: was start/stop)" << std::endl;
+    std::cout << "  . / ,        Step forward / back one tick" << std::endl;
+    std::cout << "  > / <        Step +/- 10 ticks" << std::endl;
+    std::cout << "  Home / End   Jump to start / end" << std::endl;
+    std::cout << "  F            Rapid-finish" << std::endl;
+    std::cout << "  f            Focus mode" << std::endl;
+    std::cout << "  q            Quit" << std::endl;
 
     // Start the interactor
     renderer.renderWindowInteractor->Start();
@@ -2002,17 +2006,36 @@ int main(int argc, char** argv) {
   renderer.genNumber = extractGenNumber(keyName);
   renderer.updateGenerationDisplay(renderer.genNumber);
   
-  // Print keyboard controls
+  // Print keyboard controls.
+  // 040 T065a — kept in sync with CustomInteractorStyle::OnChar in renderer.h.
+  // NOTE the one displaced binding: SPACE is now PLAY/PAUSE (the conventional
+  // meaning); rapid-finish moved to F.
   std::cout << "\nKeyboard Controls:" << std::endl;
-  std::cout << "  n - Next generation" << std::endl;
-  std::cout << "  p - Previous generation" << std::endl;
-  std::cout << "  N - Jump to newest generation" << std::endl;
-  std::cout << "  P - Jump to oldest generation (generation 1)" << std::endl;
-  std::cout << "  SPACE - Toggle playback animation" << std::endl;
-  std::cout << "  f - Focus camera on current arena" << std::endl;
-  std::cout << "  Arrow keys - Move focus between arenas" << std::endl;
-  std::cout << "  d - Toggle tracker-mode detail overlays "
-               "(FOV pyramid + wingtip beacon trails)" << std::endl;
+  std::cout << "  GENERATION" << std::endl;
+  std::cout << "    n / p        Next / previous generation" << std::endl;
+  std::cout << "    N / P        Newest / oldest generation" << std::endl;
+  std::cout << "  PLAYBACK TRANSPORT" << std::endl;
+  std::cout << "    SPACE        Play / pause  (was start/stop -- see F)" << std::endl;
+  std::cout << "    . / ,        Step forward / back ONE tick" << std::endl;
+  std::cout << "    > / <        Step +/- 10 ticks" << std::endl;
+  std::cout << "    Home / End   Jump to start / end" << std::endl;
+  std::cout << "    ] / [        Jump to next / previous PERCEPTION EVENT" << std::endl;
+  std::cout << "                 (lock-state change: acquire, confirm, dropout," << std::endl;
+  std::cout << "                  relock, coast expiry -- or a hull strike)" << std::endl;
+  std::cout << "    F            Rapid-finish: stop and show the whole scene" << std::endl;
+  std::cout << "  VIEW" << std::endl;
+  std::cout << "    f            Focus camera on current arena" << std::endl;
+  std::cout << "    Arrow keys   Move focus between arenas" << std::endl;
+  std::cout << "    d            Toggle tracker detail overlays" << std::endl;
+  std::cout << "                 (FOV pyramid + wingtip beacon trails)" << std::endl;
+  std::cout << "    q / e        Quit  (both are VTK built-ins)" << std::endl;
+  std::cout << "\n  Stepping is what makes the acquisition model readable: a warm"
+            << std::endl;
+  std::cout << "  relock is 154 ms (3 ticks) and a cold acquire 308 ms (6), so at"
+            << std::endl;
+  std::cout << "  realtime both are just \"it blinked\". The HUD clock shows"
+            << std::endl;
+  std::cout << "  <seconds> t<tick>, with || while paused." << std::endl;
   if (renderer.inXiaoMode && !renderer.testSpans.empty()) {
     std::cout << "  t - Next test segment" << std::endl;
     std::cout << "  r - Previous test segment" << std::endl;
@@ -3396,7 +3419,12 @@ void Renderer::createControlsOverlay() {
 // the chase NN's camera sees. Aspect ratio = fov_h/fov_v from each
 // tick's CameraViewSample (so x/y span is geometrically accurate; a
 // rolling craft ahead of chase doesn't warp). Two colored splat dots
-// at projected (screen_x, screen_y); splat radius scales with CEP.
+// at the projected bearing; splat radius scales with CEP.
+//
+// 040 T034 — bearings arrive in RADIANS and are normalised against the
+// recorded half-field for panel placement. The panel is where a self-
+// consistent scale error hides from unit tests, so it is the Phase 4 manual
+// checkpoint: load a playback and confirm beacons land where expected.
 void Renderer::createCameraPOVMiniPanel() {
   cameraPOVPanelOutline = vtkSmartPointer<vtkActor2D>::New();
   vtkNew<vtkPolyDataMapper2D> outlineMapper;
@@ -3418,6 +3446,13 @@ void Renderer::createCameraPOVMiniPanel() {
   cameraPOVBeaconRightDot->SetMapper(rightDotMapper);
   cameraPOVBeaconRightDot->GetProperty()->SetColor(0.2, 1.0, 0.2);  // Green — starboard
   cameraPOVBeaconRightDot->GetProperty()->SetOpacity(0.85);
+
+  // 040 T065g — per-beacon lock state + q, as legible text under the panel.
+  cameraPOVStatusActor = vtkSmartPointer<vtkTextActor>::New();
+  cameraPOVStatusActor->GetTextProperty()->SetFontSize(13);
+  cameraPOVStatusActor->GetTextProperty()->SetColor(0.95, 0.95, 0.75);
+  cameraPOVStatusActor->GetTextProperty()->SetFontFamilyToCourier();
+  cameraPOVStatusActor->SetVisibility(0);
 }
 
 void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
@@ -3432,6 +3467,7 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
     cameraPOVPanelOutline->SetVisibility(0);
     cameraPOVBeaconLeftDot->SetVisibility(0);
     cameraPOVBeaconRightDot->SetVisibility(0);
+    if (cameraPOVStatusActor) cameraPOVStatusActor->SetVisibility(0);
   };
 
   if (!isTrackerMode_ || !controlsVisible) {
@@ -3510,48 +3546,314 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   // Center crosshair (subtle origin reference)
   addLine(cTop, cBot); addLine(cLeft, cRight);
 
-  // 038 t9 — angular reticle: tick marks every 15° along both crosshair
-  // axes, positions derived from the FOV. Under the t9 equidistant NDC
-  // (screen ∝ angle) these constant-angle ticks are EVENLY spaced — the
-  // visual statement that the panel is linear in angle and a fixed angular
-  // span reads the same size anywhere in frame. (Replaying a pre-t9
-  // rectilinear dmp the same NDC ticks are NOT constant-angle — the uneven
-  // meaning is the tell that distinguishes old playbacks.) Ticks every 15°,
-  // taller at 30° multiples.
-  constexpr scalar kReticleStepDeg = static_cast<scalar>(15.0f);
-  auto addTick = [&](scalar ndc, bool horizontalAxis, bool major) {
-    const scalar half = major ? static_cast<scalar>(7.0f)
-                              : static_cast<scalar>(4.0f);
-    if (horizontalAxis) {
-      // Tick on the horizontal center line: vertical dash at x = ndc.
-      scalar xw = xLeft + (ndc + static_cast<scalar>(1.0f)) * 0.5f *
-                          (xRight - xLeft);
-      vtkIdType a = outlinePoints->InsertNextPoint(xw, yMid - half, 0);
-      vtkIdType b = outlinePoints->InsertNextPoint(xw, yMid + half, 0);
-      addLine(a, b);
-    } else {
-      // Tick on the vertical center line: horizontal dash at y = ndc
-      // (image convention: +ndc = down = lower window-y).
-      scalar yw = yTop - (ndc + static_cast<scalar>(1.0f)) * 0.5f *
-                         (yTop - yBottom);
-      vtkIdType a = outlinePoints->InsertNextPoint(xMid - half, yw, 0);
-      vtkIdType b = outlinePoints->InsertNextPoint(xMid + half, yw, 0);
-      addLine(a, b);
+  // =========================================================================
+  // 040 T065d/T065e/T088 — THE PARALLAX LAYER, IN THE CAMERA'S OWN FRAME.
+  //
+  // WHAT THIS EXISTS TO MAKE VISIBLE. The camera sits 8" outboard and ~1.25"
+  // above the thrust line. So the THRUST AXIS — where the propeller goes, i.e.
+  // where the streamer gets cut — projects off image centre by atan(r_cam/d).
+  // Both that offset and the beacon separation scale as 1/d, so the parallax is
+  // a CONSTANT ~26.6% of the target's apparent wingspan at EVERY range
+  // (r_cam/W = 0.205/0.772). You cannot close your way out of it: anyone aiming
+  // at image centre mis-aims by a quarter wingspan, always.
+  //
+  // ---------------------------------------------------------------------------
+  // 2026-08-02 — REWRITTEN because US6 made the camera MOVE (operator: "in theory
+  // the location and angle of the concentric circles and effective rotation of
+  // the entire scene is a function of the camera position").
+  //
+  // The panel is in CAMERA frame. Every element drawn here originates in BODY
+  // frame — the thrust-axis locus, the ring centres, the vertical member, the
+  // obstruction hatch — and the first cut projected all of them assuming the
+  // camera was perfectly aligned. With per-scenario boresight and roll draws of
+  // up to 20 deg that is wrong by up to 53 px, a SIXTH of the panel width.
+  //
+  // The beacon dots were always right, because their bearings are recorded AFTER
+  // variation. So the fix is one transform applied consistently, not a patch:
+  // recover the varied camera orientation and push every body-frame direction
+  // through it. ROLL then falls out for free — the locus swings about the
+  // boresight and the vertical member tilts, because that is what rolling the
+  // image plane does.
+  //
+  //   camera_pose_world_orient = chase_orient * mount_orientation_body(varied)
+  //   => mount_q = chase_orient^-1 * camera_pose_world_orient
+  //
+  // ⚠️ WHAT IS AND IS NOT RECOVERABLE FROM THE DMP. Rotation is exact — it is
+  // implied by the recorded pose. Mount TRANSLATION is not: it is applied to the
+  // obstruction path only (research R6) and the recorded pose uses the nominal
+  // bearing mount, so the +/-5 mm never reaches the dmp. Nor does the wing
+  // thickness draw. Both are small for the panel (5 mm is 0.03 deg at 10 m)
+  // while rotation is the +/-20 deg term, so the overlay tracks what matters and
+  // is honest about the rest.
+  // =========================================================================
+
+  constexpr scalar kCamOffsetY = static_cast<scalar>(0.203200f);   // 8" outboard (starboard)
+  constexpr scalar kCamOffsetZ = static_cast<scalar>(-0.031750f);  // ~1.25" up (-z is up)
+  constexpr scalar kBeaconSepM = static_cast<scalar>(0.772f);      // measured, T030
+
+  const scalar half_h_rad_panel = fov_h * static_cast<scalar>(M_PI / 360.0);
+  const scalar half_v_rad_panel = fov_v * static_cast<scalar>(M_PI / 360.0);
+
+  // The varied camera orientation, recovered from the recorded pose.
+  //
+  // ⚠️ THE TWO ARRAYS ARE NOT INDEX-PARALLEL, despite the M8b comment saying so.
+  // `inputdev_autoc.cpp` pushes the INITIAL aircraft state once at scenario
+  // start (before any NN tick), while camera views only begin at tick 1 — hence
+  // 368 states against 367 camera views. So:
+  //
+  //     cameraViewList[j]  <->  aircraftStateList[j + 1]
+  //
+  // Pairing them naively makes mountQ = chase(t)^-1 * chase(t+1) * mount, i.e.
+  // it leaks ONE TICK OF THE AIRCRAFT'S OWN ROTATION into what should be a
+  // constant. The symptom is unmistakable once seen: the whole reticle swims
+  // around the panel during playback of a SINGLE scenario, when the camera draw
+  // is static per scenario and it should sit still.
+  //
+  // Cached per scenario, because the draw cannot change within one. Keyed on
+  // the gp hash as well as the arena: a function-local static would otherwise
+  // survive a generation switch or a whole new dmp load and hand the next run
+  // the previous one's camera.
+  static int cachedArena = -1;
+  static uint64_t cachedGpHash = 0;
+  static gp_quat cachedMountQ = gp_quat::Identity();
+  gp_quat mountQ = gp_quat::Identity();
+  {
+    const auto& states = evalResults.aircraftStateList[arenaIndex];
+    const size_t stateIdx = camIdx + 1;  // the +1 is the offset above
+    if (arenaIndex == cachedArena && evalResults.gpHash == cachedGpHash) {
+      mountQ = cachedMountQ;
+    } else if (stateIdx < states.size()) {
+      mountQ = states[stateIdx].getOrientation().inverse() * cam.camera_pose_world_orient;
+      mountQ.normalize();
+      cachedArena = arenaIndex;
+      cachedGpHash = evalResults.gpHash;
+      cachedMountQ = mountQ;
     }
-  };
-  const scalar halfFovH = fov_h * static_cast<scalar>(0.5f);
-  const scalar halfFovV = fov_v * static_cast<scalar>(0.5f);
-  for (int k = 1; k * kReticleStepDeg < halfFovH; ++k) {
-    const scalar ndc = static_cast<scalar>(k) * kReticleStepDeg / halfFovH;
-    const bool major = (k % 2 == 0);  // 30° multiples
-    addTick(+ndc, true, major);
-    addTick(-ndc, true, major);
   }
-  for (int k = 1; k * kReticleStepDeg < halfFovV; ++k) {
-    const scalar ndc = static_cast<scalar>(k) * kReticleStepDeg / halfFovV;
-    const bool major = (k % 2 == 0);
-    addTick(+ndc, false, major);
-    addTick(-ndc, false, major);
+  const gp_quat mountQinv = mountQ.inverse();
+
+  // Body-frame direction -> panel window point. Returns false when the
+  // direction falls behind the camera, so callers can drop the segment rather
+  // than drawing a mirrored ghost.
+  auto bodyToWin = [&](const gp_vec3& d_body, scalar& wx, scalar& wy) -> bool {
+    const gp_vec3 d = mountQinv * d_body;
+    if (d.x() <= static_cast<gp_scalar>(0)) return false;
+    const gp_scalar ryz = std::sqrt(d.y() * d.y() + d.z() * d.z());
+    gp_scalar ax = 0, ay = 0;
+    if (ryz > static_cast<gp_scalar>(1e-12)) {
+      const gp_scalar th = std::atan2(ryz, d.x());
+      ax = th * (d.y() / ryz);
+      ay = th * (d.z() / ryz);
+    }
+    const scalar nx = static_cast<scalar>(ax) / half_h_rad_panel;
+    const scalar ny = static_cast<scalar>(ay) / half_v_rad_panel;
+    wx = xLeft + (nx + 1.0f) * 0.5f * (xRight - xLeft);
+    wy = yTop - (ny + 1.0f) * 0.5f * (yTop - yBottom);
+    return true;
+  };
+
+  // Body-frame direction from the camera toward the thrust axis at range d.
+  auto thrustAxisDir = [&](scalar d) {
+    return gp_vec3(static_cast<gp_scalar>(d), static_cast<gp_scalar>(-kCamOffsetY),
+                   static_cast<gp_scalar>(-kCamOffsetZ));
+  };
+
+  // ---- The thrust-axis LOCUS: "the centerline projected" -------------------
+  // Converges on the boresight only at infinity, which is the visual statement
+  // that the offset never goes away.
+  {
+    constexpr int kLocusSteps = 24;
+    scalar px = 0, py = 0, qx = 0, qy = 0;
+    bool havePrev = false;
+    for (int i = 0; i <= kLocusSteps; ++i) {
+      // Sample in 1/d so the near end, where the offset is largest, gets the
+      // resolution. 3 m -> 200 m.
+      const scalar inv = (1.0f / 3.0f) +
+                         (static_cast<scalar>(i) / static_cast<scalar>(kLocusSteps)) *
+                             ((1.0f / 200.0f) - (1.0f / 3.0f));
+      const bool ok = bodyToWin(thrustAxisDir(1.0f / inv), qx, qy);
+      if (ok && havePrev) {
+        vtkIdType a = outlinePoints->InsertNextPoint(px, py, 0);
+        vtkIdType b = outlinePoints->InsertNextPoint(qx, qy, 0);
+        addLine(a, b);
+      }
+      px = qx; py = qy; havePrev = ok;
+    }
+  }
+
+  // ---- Range rings, as CONES about the thrust axis in BODY frame -----------
+  // Drawn as a swept cone rather than a circle in panel space, so a rolled or
+  // cocked camera deforms and displaces them the way the real optics would.
+  // Ring DIAMETER is the beacon pair's angular separation at that range, so a
+  // pair that fills a ring is at that ring's range. Ranges are thresholds that
+  // already mean something: 1 m = CrashHullRadius (contact), 3.048 m =
+  // TrailDistance (the rabbit), 10 m = representative engagement.
+  {
+    const scalar kRingRangesM[] = {1.0f, 3.048f, 10.0f};
+    constexpr int kRingSegments = 48;
+    for (scalar d : kRingRangesM) {
+      const gp_vec3 axis = thrustAxisDir(d).normalized();
+      // Body "up" (-z) made perpendicular to the axis: the reference that makes
+      // roll visible. Without it the ring is rotation-symmetric and roll would
+      // be invisible in the rings alone.
+      gp_vec3 up(static_cast<gp_scalar>(0), static_cast<gp_scalar>(0),
+                 static_cast<gp_scalar>(-1));
+      up = (up - axis * axis.dot(up));
+      if (up.norm() < static_cast<gp_scalar>(1e-6)) {
+        up = gp_vec3(static_cast<gp_scalar>(0), static_cast<gp_scalar>(1),
+                     static_cast<gp_scalar>(0));
+        up = (up - axis * axis.dot(up));
+      }
+      up.normalize();
+      const gp_vec3 right = axis.cross(up).normalized();
+
+      const gp_scalar half = std::atan2(static_cast<gp_scalar>(kBeaconSepM * 0.5f),
+                                        static_cast<gp_scalar>(d));
+      const gp_scalar ca = std::cos(half), sa = std::sin(half);
+
+      scalar px = 0, py = 0, qx = 0, qy = 0;
+      bool havePrev = false;
+      for (int seg = 0; seg <= kRingSegments; ++seg) {
+        const gp_scalar th = static_cast<gp_scalar>(2.0 * M_PI) *
+                             static_cast<gp_scalar>(seg) /
+                             static_cast<gp_scalar>(kRingSegments);
+        const gp_vec3 dir = axis * ca + (right * std::cos(th) + up * std::sin(th)) * sa;
+        const bool ok = bodyToWin(dir, qx, qy);
+        if (ok && havePrev) {
+          vtkIdType a = outlinePoints->InsertNextPoint(px, py, 0);
+          vtkIdType b = outlinePoints->InsertNextPoint(qx, qy, 0);
+          addLine(a, b);
+        }
+        px = qx; py = qy; havePrev = ok;
+      }
+
+      // ---- T065e: the VERTICAL MEMBER, on the widest ring -------------------
+      // Beacon separation is a roughly HORIZONTAL measurement and says nothing
+      // about vertical displacement — for a tail chase closing on a streamer,
+      // up/down is the axis this display is least instrumented on. Drawn along
+      // BODY up, so a roll error TILTS it, which is precisely the cue that a
+      // rolled camera is lying to you about tilt.
+      if (d == kRingRangesM[0]) {
+        scalar ax0, ay0, bx0, by0;
+        const bool okA = bodyToWin(axis * ca + up * sa, ax0, ay0);
+        const bool okB = bodyToWin(axis * ca - up * sa, bx0, by0);
+        if (okA && okB) {
+          vtkIdType a = outlinePoints->InsertNextPoint(ax0, ay0, 0);
+          vtkIdType b = outlinePoints->InsertNextPoint(bx0, by0, 0);
+          addLine(a, b);
+        }
+      }
+    }
+  }
+
+  // ---- T088 (FR-030): the EFFECTIVE field, not the nominal rectangle -------
+  //
+  // The panel outline is the NOMINAL field. What the camera can actually use is
+  // that minus what the aircraft's own wing, nose and propeller take — and
+  // without this a beacon could sit in a permanently blocked region while the
+  // display looked entirely healthy.
+  //
+  // Hatched, not filled: a fill would bury the beacon dots and range rings the
+  // panel exists for. BLOCKED (wing/nose, opaque) gets an X; ATTENUATED (prop
+  // disc — reduced, NOT lost per FR-009) gets a single slash.
+  //
+  // ---------------------------------------------------------------------------
+  // SAMPLED IN CAMERA FRAME, not body frame (fixed 2026-08-02).
+  //
+  // The first cut sampled the NOMINAL camera's field once, recorded which of
+  // those body-frame rays were blocked, and rotated that fixed set for display.
+  // Operator spotted what that actually draws: "not a projection of the actual
+  // craft, rather the clipped part of the craft if the camera was in nominal
+  // position."
+  //
+  // The airframe does not move when the camera turns — the FIELD OF VIEW does.
+  // So a fixed body-frame sample set is the wrong thing to rotate: directions
+  // that swing INTO view as the camera turns toward the wing were never sampled,
+  // and ones that leave get clipped at the panel edge. The hatch was correct
+  // where it appeared and simply absent where it mattered most.
+  //
+  // Correct order: walk the CAMERA's own pixel grid, convert each cell to a body
+  // direction through mountQ, and ask the airframe there. The panel position is
+  // then just the bearing itself — no projection needed, because we started in
+  // the frame we are drawing in.
+  //
+  // Cached per (arena, gpHash) like mountQ: obstruction is a property of the
+  // scenario's camera, not of any tick.
+  // ---------------------------------------------------------------------------
+  {
+    struct HatchCell { scalar bx, by; bool blocked; };
+    static std::vector<HatchCell> hatch;
+    static int hatchArena = -1;
+    static uint64_t hatchGpHash = 0;
+    if (arenaIndex != hatchArena || evalResults.gpHash != hatchGpHash) {
+      hatchArena = arenaIndex;
+      hatchGpHash = evalResults.gpHash;
+      hatch.clear();
+      // ⚠️ Compiled-in defaults: the dmp carries no airframe/camera config (the
+      // standing self-describing-dmp backlog item). Correct for every 040-era
+      // dmp; an older replay would draw the current airframe over someone
+      // else's flight. Mount translation and wing thickness are likewise not
+      // recoverable — see the frame note at the top of this block.
+      const autoc::eval::AirframeObstruction airframe =
+          autoc::eval::hb1AirframeObstruction();
+      const autoc::eval::CameraConfig ccfg{};
+      const gp_vec3 mount = ccfg.mount_offset_body;
+      const gp_scalar rad_px = ccfg.radPerPx();
+      constexpr int kStride = 8;  // coarse: a legend, not an integral
+      for (int iy = 0; iy < ccfg.pixels_v; iy += kStride) {
+        for (int ix = 0; ix < ccfg.pixels_h; ix += kStride) {
+          const gp_scalar bxr = autoc::eval::pixelToBearing(
+              static_cast<int16_t>(ix), ccfg.pixels_h, rad_px);
+          const gp_scalar byr = autoc::eval::pixelToBearing(
+              static_cast<int16_t>(iy), ccfg.pixels_v, rad_px);
+          // CAMERA-frame ray for this panel cell...
+          const gp_scalar th = std::sqrt(bxr * bxr + byr * byr);
+          const gp_scalar sn = (th < static_cast<gp_scalar>(1e-9))
+                                   ? static_cast<gp_scalar>(1)
+                                   : std::sin(th) / th;
+          const gp_vec3 d_cam(std::cos(th), sn * bxr, sn * byr);
+          // ...re-expressed in BODY frame, where the airframe actually lives.
+          const gp_vec3 d_body = mountQ * d_cam;
+          const autoc::eval::ObstructionResult r = autoc::eval::testObstruction(
+              mount, mount + d_body * static_cast<gp_scalar>(10), airframe);
+          if (r.blocked) {
+            hatch.push_back({static_cast<scalar>(bxr), static_cast<scalar>(byr), true});
+          } else if (r.attenuation < static_cast<gp_scalar>(1)) {
+            hatch.push_back({static_cast<scalar>(bxr), static_cast<scalar>(byr), false});
+          }
+        }
+      }
+    }
+    for (const HatchCell& c : hatch) {
+      // The cell IS a bearing, so it maps straight to the panel — no projection.
+      const scalar px = xLeft + (c.bx / half_h_rad_panel + 1.0f) * 0.5f * (xRight - xLeft);
+      const scalar py = yTop - (c.by / half_v_rad_panel + 1.0f) * 0.5f * (yTop - yBottom);
+      const scalar h = c.blocked ? static_cast<scalar>(3.0f) : static_cast<scalar>(1.5f);
+      vtkIdType a = outlinePoints->InsertNextPoint(px - h, py - h, 0);
+      vtkIdType b = outlinePoints->InsertNextPoint(px + h, py + h, 0);
+      addLine(a, b);
+      if (c.blocked) {
+        vtkIdType c1 = outlinePoints->InsertNextPoint(px - h, py + h, 0);
+        vtkIdType c2 = outlinePoints->InsertNextPoint(px + h, py - h, 0);
+        addLine(c1, c2);
+      }
+    }
+  }
+
+  // ---- The aim point: thrust axis at a representative engagement range -----
+  // The GAP between this cross and the boresight crosshair at image centre is
+  // the mis-aim a centre-aiming pilot takes.
+  {
+    scalar px, py;
+    if (bodyToWin(thrustAxisDir(10.0f), px, py)) {
+      constexpr scalar kArm = static_cast<scalar>(11.0f);
+      vtkIdType a1 = outlinePoints->InsertNextPoint(px - kArm, py, 0);
+      vtkIdType a2 = outlinePoints->InsertNextPoint(px + kArm, py, 0);
+      vtkIdType a3 = outlinePoints->InsertNextPoint(px, py - kArm, 0);
+      vtkIdType a4 = outlinePoints->InsertNextPoint(px, py + kArm, 0);
+      addLine(a1, a2);
+      addLine(a3, a4);
+    }
   }
 
   vtkNew<vtkPolyData> outlinePoly;
@@ -3564,53 +3866,160 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   // Build a CEP-sized splat at one beacon's projected position, set
   // it on the actor. Sentinel CEP ⇒ hide the actor (beacon invisible
   // this tick).
+  // =========================================================================
+  // 040 T065f/T065g — QUALITY AND LOCK-STATE RENDERING.
+  //
+  // The retired version mapped CEP linearly to a hard-edged disc radius
+  // (2 px -> 18 px) and hid the actor on sentinel. Two problems with that under
+  // US4 semantics:
+  //
+  //   * A HARD EDGE IMPLIES A BOUND. CEP is a distribution, so the disc claimed
+  //     a certainty the value does not carry. Radius still leads (it IS a
+  //     position PDF) but it no longer carries the whole load.
+  //   * IT COULD NOT SHOW HOLD. A dropout simply vanished, so warm-coast-then-
+  //     snap-back and coast-expiry looked identical -- and telling those apart
+  //     is exactly the Phase 6 checkpoint question.
+  //
+  // Three channels now: RADIUS = positional uncertainty, ALPHA = confidence (so
+  // bad data visually recedes and the eye tracks good data), COLOUR = lock
+  // state. HOLDING draws a hollow ring at last-known that FADES across the hold
+  // window -- you watch it hold, then either snap back solid (warm, ~3 ticks) or
+  // expire (~6 ticks) and vanish.
+  // =========================================================================
   auto buildBeaconDot = [&](const autoc::eval::BeaconObservation& obs,
-                            vtkActor2D* actor) {
-    if (obs.cep >= autoc::eval::kCepSentinelThreshold || !actor) {
-      if (actor) actor->SetVisibility(0);
+                            vtkActor2D* actor,
+                            const scalar baseColor[3]) {
+    if (!actor) return;
+
+    const int lock = static_cast<int>(obs.lock_state);
+    const bool holding = (lock == 3);  // LockState::HOLDING
+    const bool tentative = (lock == 0 || lock == 1);  // SEARCHING / ACQUIRING
+    const bool visible = obs.cep < autoc::eval::kCepSentinelThreshold;
+
+    // Nothing to draw only when there is neither a blob nor a coast to show.
+    if (!visible && !holding) {
+      actor->SetVisibility(0);
       return;
     }
-    // Map (screen_x, screen_y) ∈ [-1,+1] to window coords.
-    // Image-coord convention: screen_y positive = down in image →
-    // lower window-y (bottom of rect).
-    scalar xWin = xLeft + (static_cast<scalar>(obs.screen_x) +
-                           static_cast<scalar>(1.0f)) * 0.5f *
+
+    // 040 T034 — bearings are ANGLES IN RADIANS (was ±1 NDC). Normalise by the
+    // half-field the recorded FOV implies. Reading a radian value as NDC would
+    // silently pin every beacon near frame centre, which is why the field was
+    // renamed rather than reinterpreted.
+    const scalar half_h_rad = fov_h * static_cast<scalar>(M_PI / 360.0);
+    const scalar half_v_rad = fov_v * static_cast<scalar>(M_PI / 360.0);
+    scalar ndc_x = static_cast<scalar>(obs.bearing_x_rad) / half_h_rad;
+    scalar ndc_y = static_cast<scalar>(obs.bearing_y_rad) / half_v_rad;
+    scalar xWin = xLeft + (ndc_x + static_cast<scalar>(1.0f)) * 0.5f *
                           (xRight - xLeft);
-    scalar yWin = yTop - (static_cast<scalar>(obs.screen_y) +
-                          static_cast<scalar>(1.0f)) * 0.5f *
+    scalar yWin = yTop - (ndc_y + static_cast<scalar>(1.0f)) * 0.5f *
                          (yTop - yBottom);
 
-    // Splat radius (CEP=0 → 2px sharp; CEP=1 → 18px fuzzy)
-    scalar radius = static_cast<scalar>(2.0f) +
-                    static_cast<scalar>(16.0f) * static_cast<scalar>(obs.cep);
+    // CEP in [0, 1] for the visible regimes; a coasting beacon holds at the
+    // tentative end because its position estimate is stale by construction.
+    const scalar cep = visible ? static_cast<scalar>(obs.cep) : 1.0f;
+    const scalar radius = static_cast<scalar>(2.0f) +
+                          static_cast<scalar>(16.0f) * cep;
 
-    // Build a 16-segment filled polygon (disk) at (xWin, yWin)
-    constexpr int kSegments = 16;
+    // ALPHA = confidence. Confident -> opaque; tentative -> translucent.
+    scalar alpha = 0.95f - 0.65f * cep;
+    if (holding) alpha *= 0.55f;  // a coast is weaker still
+    actor->GetProperty()->SetOpacity(std::clamp(alpha, 0.10f, 0.95f));
+
+    // COLOUR = lock state. Confirmed keeps the port/starboard navigation
+    // colours (the identity cue); tentative and coasting shift toward amber so
+    // the regime is readable without reading a number.
+    if (holding) {
+      actor->GetProperty()->SetColor(0.95f, 0.75f, 0.15f);
+    } else if (tentative) {
+      actor->GetProperty()->SetColor(0.90f, 0.65f, 0.25f);
+    } else {
+      actor->GetProperty()->SetColor(baseColor[0], baseColor[1], baseColor[2]);
+    }
+
     vtkNew<vtkPoints> dotPoints;
     vtkNew<vtkCellArray> dotPolys;
-    vtkNew<vtkPolygon> polygon;
-    polygon->GetPointIds()->SetNumberOfIds(kSegments);
-    for (int s = 0; s < kSegments; ++s) {
-      scalar angle = static_cast<scalar>(2.0f * M_PI) *
-                     static_cast<scalar>(s) /
-                     static_cast<scalar>(kSegments);
-      scalar px = xWin + radius * std::cos(angle);
-      scalar py = yWin + radius * std::sin(angle);
-      vtkIdType pid = dotPoints->InsertNextPoint(px, py, 0);
-      polygon->GetPointIds()->SetId(s, pid);
+    vtkNew<vtkCellArray> dotLines;
+    constexpr int kSegments = 24;
+
+    if (holding) {
+      // HOLLOW DASHED RING at last-known. Hollow because there is no blob --
+      // drawing a filled dot would assert a detection that did not happen.
+      for (int seg = 0; seg < kSegments; seg += 2) {
+        const scalar a0 = static_cast<scalar>(2.0 * M_PI) *
+                          static_cast<scalar>(seg) / static_cast<scalar>(kSegments);
+        const scalar a1 = static_cast<scalar>(2.0 * M_PI) *
+                          static_cast<scalar>(seg + 1) / static_cast<scalar>(kSegments);
+        const vtkIdType p0 = dotPoints->InsertNextPoint(
+            xWin + radius * std::cos(a0), yWin + radius * std::sin(a0), 0);
+        const vtkIdType p1 = dotPoints->InsertNextPoint(
+            xWin + radius * std::cos(a1), yWin + radius * std::sin(a1), 0);
+        vtkNew<vtkLine> ln;
+        ln->GetPointIds()->SetId(0, p0);
+        ln->GetPointIds()->SetId(1, p1);
+        dotLines->InsertNextCell(ln);
+      }
+    } else {
+      vtkNew<vtkPolygon> polygon;
+      polygon->GetPointIds()->SetNumberOfIds(kSegments);
+      for (int s2 = 0; s2 < kSegments; ++s2) {
+        const scalar angle = static_cast<scalar>(2.0f * M_PI) *
+                             static_cast<scalar>(s2) /
+                             static_cast<scalar>(kSegments);
+        const vtkIdType pid = dotPoints->InsertNextPoint(
+            xWin + radius * std::cos(angle), yWin + radius * std::sin(angle), 0);
+        polygon->GetPointIds()->SetId(s2, pid);
+      }
+      dotPolys->InsertNextCell(polygon);
     }
-    dotPolys->InsertNextCell(polygon);
 
     vtkNew<vtkPolyData> dotPoly;
     dotPoly->SetPoints(dotPoints);
     dotPoly->SetPolys(dotPolys);
+    dotPoly->SetLines(dotLines);
     vtkPolyDataMapper2D::SafeDownCast(actor->GetMapper())
         ->SetInputData(dotPoly);
     actor->SetVisibility(1);
   };
 
-  buildBeaconDot(cam.beacon_left, cameraPOVBeaconLeftDot);
-  buildBeaconDot(cam.beacon_right, cameraPOVBeaconRightDot);
+  static const scalar kPortColor[3] = {1.0f, 0.2f, 0.2f};       // red, port
+  static const scalar kStarboardColor[3] = {0.2f, 1.0f, 0.2f};  // green, starboard
+
+  // ---- T065g REVISED: q and lock state as TEXT, not a 3 px gauge ---------
+  //
+  // The first cut drew a 3 px-wide bar beside each blob with a tick at the
+  // GOOD>=5 threshold. At that size it was unreadable -- you cannot judge a
+  // fill fraction on three pixels, and two of them competed with the blobs they
+  // annotated. A text line states the same two facts unambiguously and answers
+  // the checkpoint question directly.
+  //
+  // `q` is the HARDWARE's own AGC-normalised 0-9 metric, so a bench capture and
+  // a sim playback can be read off the same number. GOOD is q >= 5.
+  auto lockName = [](int8_t st) -> const char* {
+    switch (static_cast<int>(st)) {
+      case 0: return "SRCH";
+      case 1: return "ACQ ";
+      case 2: return "TRK ";
+      case 3: return "HOLD";
+      default: return "??  ";
+    }
+  };
+  auto qOf = [](const autoc::eval::BeaconObservation& o) -> int {
+    const scalar snr = static_cast<scalar>(o.raw_margin);
+    return static_cast<int>(std::clamp(snr / 20.0f, 0.0f, 1.0f) * 9.0f + 0.5f);
+  };
+  if (cameraPOVStatusActor) {
+    char st[96];
+    snprintf(st, sizeof(st), "L %s q%d   R %s q%d",
+             lockName(cam.beacon_left.lock_state), qOf(cam.beacon_left),
+             lockName(cam.beacon_right.lock_state), qOf(cam.beacon_right));
+    cameraPOVStatusActor->SetInput(st);
+    cameraPOVStatusActor->SetPosition(xLeft, yBottom - 16);
+    cameraPOVStatusActor->SetVisibility(1);
+  }
+
+  buildBeaconDot(cam.beacon_left, cameraPOVBeaconLeftDot, kPortColor);
+  buildBeaconDot(cam.beacon_right, cameraPOVBeaconRightDot, kStarboardColor);
 }
 
 void Renderer::updateStopwatch(gp_scalar currentTime) {
@@ -3701,11 +4110,30 @@ void Renderer::updateStopwatch(gp_scalar currentTime) {
     mapper->SetInputData(stopwatchData);
   }
   
-  // Update time text (centered horizontally below hands center)
-  char timeStr[32];
-  snprintf(timeStr, sizeof(timeStr), "%.2f", currentTime);
+  // Update time text (centered horizontally below hands center).
+  //
+  // 040 T065b — carries the TICK INDEX too, and a PAUSE marker. Stepping
+  // without a tick readout is stepping blind: the whole point of single-step is
+  // counting ticks against the model's own units (warm relock = 3, cold = 6,
+  // HOLDMAX = 6), and you cannot count what is not displayed.
+  // STACKED, not widened. The first cut appended tick + pause marker on one
+  // line, which pushed the string wider than the clock face it sits under and
+  // spilled out either side. The text property is already centre-justified, so
+  // stacking keeps every line inside the dial's width.
+  char timeStr[64];
+  const gp_scalar tick_s = (tickSec > static_cast<gp_scalar>(1e-4))
+                               ? tickSec
+                               : static_cast<gp_scalar>(0.05f);
+  const int tickIdx = static_cast<int>(currentTime / tick_s + static_cast<gp_scalar>(0.5f));
+  // NO pause marker here. A third line pushed the time and tick up by a line
+  // every time you paused, so the two numbers you are actually reading moved
+  // on screen at the exact moment you stopped to read them. Pause is already
+  // evident from the clock not advancing, and the console announces it.
+  snprintf(timeStr, sizeof(timeStr), "%.2f\nt%d", currentTime, tickIdx);
   stopwatchTimeActor->SetInput(timeStr);
-  stopwatchTimeActor->SetPosition(centerX - 12, centerY - 25); // Centered horizontally, positioned below hands center
+  // centerX, not centerX-12: the -12 was hand-nudging a left-justified string
+  // and fights the centred justification once the text is more than one line.
+  stopwatchTimeActor->SetPosition(centerX, centerY - 25);
 }
 
 void Renderer::updateStopwatchPosition() {
@@ -4528,6 +4956,7 @@ void Renderer::togglePlaybackAnimation() {
     renderer->AddActor2D(cameraPOVPanelOutline);
     renderer->AddActor2D(cameraPOVBeaconLeftDot);
     renderer->AddActor2D(cameraPOVBeaconRightDot);
+    renderer->AddActor2D(cameraPOVStatusActor);
   }
 
     std::cout << "Real-time playback animation started" << std::endl;
@@ -4561,10 +4990,19 @@ void Renderer::updatePlaybackAnimation() {
   // Skip updates while paused
   if (isPlaybackPaused) return;
   
-  auto currentTime = std::chrono::steady_clock::now();
-  auto totalElapsed = currentTime - animationStartTime;
-  auto effectiveElapsed = totalElapsed - totalPausedTime;
-  scalar elapsed = static_cast<scalar>(std::chrono::duration_cast<std::chrono::milliseconds>(effectiveElapsed).count()) / static_cast<scalar>(1000.0f);
+  // 040 T065a — the transport cursor is authoritative while paused. While
+  // playing it TRACKS the wall clock, which is what makes unpausing seamless:
+  // there is no separate "where were we" to reconcile.
+  scalar elapsed;
+  if (transportPaused) {
+    elapsed = cursorSec;
+  } else {
+    auto currentTime = std::chrono::steady_clock::now();
+    auto totalElapsed = currentTime - animationStartTime;
+    auto effectiveElapsed = totalElapsed - totalPausedTime;
+    elapsed = static_cast<scalar>(std::chrono::duration_cast<std::chrono::milliseconds>(effectiveElapsed).count()) / static_cast<scalar>(1000.0f);
+    cursorSec = elapsed;
+  }
   
   // Path always drives the timing - find longest path duration across all arenas
   scalar primaryDuration = 0.0f;
@@ -4618,7 +5056,7 @@ void Renderer::updatePlaybackAnimation() {
   // currentSimTime and clear isPlaybackActive, leaving the last focused
   // frame frozen on screen. This matches the existing all-arenas
   // semantics.
-  if (primaryDuration > 0.0 && currentSimTime >= primaryDuration) {
+  if (primaryDuration > 0.0 && currentSimTime >= primaryDuration && !transportPaused) {
     currentSimTime = primaryDuration;
     isPlaybackActive = false;
     animationTimerId = 0;
@@ -5248,10 +5686,213 @@ void Renderer::updatePlaybackAnimation() {
     instrPointsPushed = 0;
   }
 
-  // Continue animation if still active (use one-shot timers like original)
-  if (isPlaybackActive) {
+  // Continue animation if still active (use one-shot timers like original).
+  // 040 T065a — while transport-paused we do NOT re-arm: the frame is static,
+  // so a 30 Hz re-render of an unchanging scene is pure waste. Unpausing and
+  // stepping both call updatePlaybackAnimation() directly, which restarts the
+  // chain.
+  if (isPlaybackActive && !transportPaused) {
     animationTimerId = renderWindowInteractor->CreateOneShotTimer(33); // 33ms = ~30fps
   }
+}
+
+// ===========================================================================
+// 040 T065a/T065b — PLAYBACK TRANSPORT.
+//
+// See renderer.h for why this is a Stage E dependency rather than polish.
+// ===========================================================================
+
+gp_scalar Renderer::deriveTickSeconds() const {
+  // Derive from the data rather than assuming 20 Hz, so a step is always
+  // exactly ONE recorded sample no matter how the run was configured. Falls
+  // back to 50 ms only when there is nothing to derive from.
+  for (const auto& states : evalResults.aircraftStateList) {
+    if (states.size() >= 2) {
+      const gp_scalar dt =
+          static_cast<gp_scalar>(states[1].getSimTimeMsec() - states[0].getSimTimeMsec()) /
+          static_cast<gp_scalar>(1000.0f);
+      if (dt > static_cast<gp_scalar>(1e-4)) return dt;
+    }
+  }
+  return static_cast<gp_scalar>(0.05f);
+}
+
+gp_scalar Renderer::playbackDurationSec() const {
+  gp_scalar longest = 0.0f;
+  const int n = static_cast<int>(evalResults.aircraftStateList.size());
+  for (int i = 0; i < n; ++i) {
+    if (focusMode && i != focusArenaIndex) continue;
+    if (evalResults.aircraftStateList[i].empty()) continue;
+    const gp_scalar d =
+        static_cast<gp_scalar>(evalResults.aircraftStateList[i].back().getSimTimeMsec()) /
+        static_cast<gp_scalar>(1000.0f);
+    longest = std::max(longest, d);
+  }
+  return longest;
+}
+
+void Renderer::transportSeek(gp_scalar t) {
+  const gp_scalar duration = playbackDurationSec();
+  cursorSec = std::clamp(t, static_cast<gp_scalar>(0.0f),
+                         duration > 0.0f ? duration : t);
+  if (!isPlaybackActive) return;
+  if (transportPaused) {
+    // Render the single frame we just seeked to. Without this the cursor moves
+    // and nothing on screen changes, which reads as a broken key.
+    updatePlaybackAnimation();
+    renderWindow->Render();
+  } else {
+    // Re-anchor the wall clock so play resumes FROM the new cursor rather than
+    // snapping back to where real time had got to.
+    animationStartTime = std::chrono::steady_clock::now() -
+                         std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                             std::chrono::duration<gp_scalar>(cursorSec));
+    totalPausedTime = std::chrono::duration<gp_scalar>::zero();
+  }
+}
+
+void Renderer::transportTogglePause() {
+  if (!isPlaybackActive) {
+    // Space on a stopped playback starts it — the conventional meaning.
+    togglePlaybackAnimation();
+    return;
+  }
+  transportPaused = !transportPaused;
+  tickSec = deriveTickSeconds();
+  if (transportPaused) {
+    std::cout << "Transport PAUSED at t=" << cursorSec << "s (tick "
+              << static_cast<int>(cursorSec / tickSec) << ", "
+              << (tickSec * 1000.0f) << " ms/tick)" << std::endl;
+    updatePlaybackAnimation();
+    renderWindow->Render();
+  } else {
+    animationStartTime = std::chrono::steady_clock::now() -
+                         std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                             std::chrono::duration<gp_scalar>(cursorSec));
+    totalPausedTime = std::chrono::duration<gp_scalar>::zero();
+    std::cout << "Transport PLAYING from t=" << cursorSec << "s" << std::endl;
+    updatePlaybackAnimation();
+  }
+}
+
+void Renderer::transportStep(int ticks) {
+  if (!isPlaybackActive) return;
+  // Stepping implies pausing — otherwise the wall clock immediately overwrites
+  // the step, which is the classic "why does the step key do nothing" bug.
+  if (!transportPaused) {
+    transportPaused = true;
+    std::cout << "Transport PAUSED (step)" << std::endl;
+  }
+  tickSec = deriveTickSeconds();
+  transportSeek(cursorSec + static_cast<gp_scalar>(ticks) * tickSec);
+  std::cout << "  tick " << static_cast<int>(cursorSec / tickSec + 0.5f)
+            << "  t=" << cursorSec << "s" << std::endl;
+}
+
+void Renderer::transportJumpToStart() {
+  if (!isPlaybackActive) return;
+  transportSeek(0.0f);
+  std::cout << "Transport -> START" << std::endl;
+}
+
+void Renderer::transportJumpToEnd() {
+  if (!isPlaybackActive) return;
+  transportSeek(playbackDurationSec());
+  std::cout << "Transport -> END (t=" << cursorSec << "s)" << std::endl;
+}
+
+void Renderer::transportRapidFinish() {
+  // 040 T065a — this is the old Space behaviour, moved to F so Space can carry
+  // the conventional play/pause. It stops playback and re-renders the complete
+  // scene, i.e. "just show me the whole thing".
+  if (isPlaybackActive) {
+    transportPaused = false;
+    togglePlaybackAnimation();
+  }
+}
+
+std::vector<gp_scalar> Renderer::perceptionEventTimes() const {
+  // 040 T065a — EVENT JUMP earns its keys: stepping 900 ticks to hunt a dropout
+  // is worse than not having the feature at all.
+  //
+  // An event is any tick where either beacon's LOCK STATE changes. That single
+  // rule covers everything worth stopping on — acquisition start, confirmed
+  // lock, dropout into HOLD, warm relock, and coast expiry into SEARCH —
+  // because each is by definition a state transition. Hull strikes are folded
+  // in from the target trajectory.
+  std::vector<gp_scalar> out;
+  // Same arena selection updateCameraPOVMiniPanel uses, so the events you jump
+  // to are the events shown on the panel.
+  const int arena = focusMode ? focusArenaIndex : 0;
+  if (arena < 0 || arena >= static_cast<int>(evalResults.cameraViewList.size())) {
+    return out;
+  }
+  const auto& cams = evalResults.cameraViewList[arena];
+  const auto& states = (arena < static_cast<int>(evalResults.aircraftStateList.size()))
+                           ? evalResults.aircraftStateList[arena]
+                           : std::vector<AircraftState>{};
+
+  auto timeAt = [&](size_t k) -> gp_scalar {
+    if (k < states.size()) {
+      return static_cast<gp_scalar>(states[k].getSimTimeMsec()) /
+             static_cast<gp_scalar>(1000.0f);
+    }
+    return static_cast<gp_scalar>(k) * tickSec;
+  };
+
+  for (size_t k = 1; k < cams.size(); ++k) {
+    const bool changed =
+        cams[k].beacon_left.lock_state != cams[k - 1].beacon_left.lock_state ||
+        cams[k].beacon_right.lock_state != cams[k - 1].beacon_right.lock_state;
+    if (changed) out.push_back(timeAt(k));
+  }
+
+  if (arena < static_cast<int>(evalResults.targetTrajectoryList.size())) {
+    const auto& tgt = evalResults.targetTrajectoryList[arena];
+    for (size_t k = 1; k < tgt.size(); ++k) {
+      if (tgt[k].inside_crash_hull && !tgt[k - 1].inside_crash_hull) {
+        out.push_back(timeAt(k));
+      }
+    }
+  }
+
+  std::sort(out.begin(), out.end());
+  out.erase(std::unique(out.begin(), out.end()), out.end());
+  return out;
+}
+
+void Renderer::transportJumpToEvent(int direction) {
+  if (!isPlaybackActive) return;
+  tickSec = deriveTickSeconds();
+  const std::vector<gp_scalar> events = perceptionEventTimes();
+  if (events.empty()) {
+    std::cout << "Transport: no perception events in this arena "
+                 "(pathgen dmp, or lock state never changes)" << std::endl;
+    return;
+  }
+  // Half-tick epsilon so repeated presses always advance instead of re-finding
+  // the event we are already sitting on.
+  const gp_scalar eps = tickSec * static_cast<gp_scalar>(0.5f);
+  gp_scalar target = cursorSec;
+  bool found = false;
+  if (direction > 0) {
+    for (gp_scalar t : events) {
+      if (t > cursorSec + eps) { target = t; found = true; break; }
+    }
+  } else {
+    for (auto it = events.rbegin(); it != events.rend(); ++it) {
+      if (*it < cursorSec - eps) { target = *it; found = true; break; }
+    }
+  }
+  if (!found) {
+    std::cout << "Transport: no " << (direction > 0 ? "later" : "earlier")
+              << " event (" << events.size() << " total)" << std::endl;
+    return;
+  }
+  if (!transportPaused) transportPaused = true;
+  transportSeek(target);
+  std::cout << "Transport -> event at t=" << cursorSec << "s (tick "
+            << static_cast<int>(cursorSec / tickSec + 0.5f) << ")" << std::endl;
 }
 
 void Renderer::renderFullScene() {

@@ -38,21 +38,48 @@ static_assert(kSpanPredictHorizonsMsec[0] % SIM_TIME_STEP_MSEC == 0 &&
               kSpanPredictHorizonsMsec[2] % SIM_TIME_STEP_MSEC == 0,
               "kSpanPredictHorizonsMsec must be integral multiples of SIM_TIME_STEP_MSEC (cadence-invariant)");
 
+}  // namespace
+
+// NOT in the anonymous namespace: declared in the header so the tick-pairing
+// invariant can be asserted directly (see the header comment). It stays a plain
+// free function otherwise.
 gp_fitness computeSpanPredictionError(const std::vector<AircraftState>& states,
                                       const std::vector<CameraViewSample>& cams) {
-    const int N = static_cast<int>(std::min(states.size(), cams.size()));
+    // ⚠️ THE TWO ARRAYS ARE NOT INDEX-PARALLEL (fixed 2026-08-02).
+    //
+    // `inputdev_autoc.cpp` pushes the INITIAL aircraft state once at scenario
+    // start, BEFORE any NN tick, while camera views only begin at tick 1. So a
+    // scenario records e.g. 368 states against 367 camera views, and
+    //
+    //     cams[j]  is the camera view recorded during tick  j + 1
+    //     states[k] is the state (and NN outputs) of tick    k
+    //     => tick k's camera view is cams[k - 1]
+    //
+    // Pairing them 1:1 — as this function did from 038 US3 until 2026-08-02 —
+    // scored every prediction against the span ONE TICK LATE: a +50 ms forecast
+    // was compared against the span two ticks ahead. That is a whole horizon of
+    // error on the shortest one, silently, on a LIVE lexicase axis. Nothing
+    // asserted the pairing, which is why it survived two features.
+    //
+    // Indexed by TICK below, so `span[k]` means "the span at tick k" and the
+    // horizon arithmetic downstream reads naturally.
+    const int N = static_cast<int>(states.size());
     if (N < 2) return 0.0;
-    // realized span + CEP visibility per step.
+    // realized span + CEP visibility per TICK (index 0 = the pre-tick initial
+    // state, which has no camera view and stays invisible).
     std::vector<float> span(N, 0.0f);
     std::vector<char> vis(N, 0);
-    for (int t = 0; t < N; ++t) {
-        const auto& bl = cams[t].beacon_left;
-        const auto& br = cams[t].beacon_right;
+    for (int t = 1; t < N; ++t) {
+        const int c = t - 1;  // <-- the offset
+        if (c >= static_cast<int>(cams.size())) break;
+        const auto& bl = cams[c].beacon_left;
+        const auto& br = cams[c].beacon_right;
         const bool gated = (bl.cep >= autoc::eval::kCepSentinelThreshold) ||
                            (br.cep >= autoc::eval::kCepSentinelThreshold);
         if (!gated) {
             span[t] = static_cast<float>(autoc::eval::compute_pair_span(
-                bl.screen_x, bl.screen_y, br.screen_x, br.screen_y));
+                bl.bearing_x_rad, bl.bearing_y_rad,
+                br.bearing_x_rad, br.bearing_y_rad));
             vis[t] = 1;
         }
     }
@@ -80,6 +107,7 @@ gp_fitness computeSpanPredictionError(const std::vector<AircraftState>& states,
     return pairs > 0 ? static_cast<gp_fitness>(err / static_cast<double>(pairs)) : gp_fitness(0.0);
 }
 
+namespace {
 }  // namespace
 
 std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
@@ -174,11 +202,30 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             if (is_tracker) {
                 // Tracker: rabbit = trail-rabbit position trailing target's
                 // velocity vector (M7b); tangent = target velocity unit.
-                // targetTrajectoryList[i] is parallel-indexed with
-                // aircraftStateList[i] (both pushed in lockstep by the worker).
+                //
+                // ⚠️ THE TWO ARRAYS ARE NOT INDEX-PARALLEL, despite the comment
+                // that used to sit here saying they were "pushed in lockstep".
+                // They ARE pushed in lockstep inside the tick loop — but
+                // inputdev_autoc.cpp pushes the INITIAL aircraft state once
+                // BEFORE the loop, unconditionally. A scenario therefore records
+                //
+                //     states = 1 + N      targets = N      (368 vs 367)
+                //     => targets[j] is the target during tick j + 1
+                //
+                // `stepIndex` is a STATE index, so tick k's target is
+                // targets[k - 1]. Pairing 1:1 scored the chase at tick k against
+                // where the target was at tick k+1 — since 030.
+                //
+                // MAGNITUDE: 50 ms at ~17 m/s is ~0.85 m. The rabbit is meant to
+                // trail by TrailDistance = 3.048 m, so the effective trail was
+                // ~2.2 m: a 28% error in the DEFINITION of the task, not a
+                // rounding artefact.
+                //
+                // Invisible in the data — CopiedTargetSample carries no
+                // timestamp — so only the push sites could reveal it.
                 const std::vector<CopiedTargetSample>& targets =
                     evalResults.targetTrajectoryList.at(i);
-                int targetIndex = std::clamp(stepIndex, 0,
+                int targetIndex = std::clamp(stepIndex - 1, 0,
                                              static_cast<int>(targets.size()) - 1);
                 const CopiedTargetSample& target = targets.at(targetIndex);
                 rabbitPosition = target.trail_rabbit_position;
@@ -250,9 +297,15 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             if (is_tracker) {
                 // Visibility from chase camera observations (per tick).
                 bool left_vis = false, right_vis = false;
-                if (i < evalResults.cameraViewList.size()
-                    && stepIndex < static_cast<int>(evalResults.cameraViewList.at(i).size())) {
-                    const CameraViewSample& cv = evalResults.cameraViewList.at(i).at(stepIndex);
+                // Same tick offset as computeSpanPredictionError above:
+                // stepIndex is a STATE index and tick k's view is cams[k-1].
+                // Observation-only, so this was cosmetic — but leaving one of
+                // the two sites wrong is how the next reader concludes the
+                // pairing is 1:1.
+                if (i < evalResults.cameraViewList.size() && stepIndex >= 1
+                    && (stepIndex - 1) < static_cast<int>(evalResults.cameraViewList.at(i).size())) {
+                    const CameraViewSample& cv =
+                        evalResults.cameraViewList.at(i).at(stepIndex - 1);
                     left_vis  = (cv.beacon_left.cep  < autoc::eval::kCepSentinelThreshold);
                     right_vis = (cv.beacon_right.cep < autoc::eval::kCepSentinelThreshold);
                 }

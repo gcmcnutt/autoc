@@ -71,14 +71,15 @@ void printBeacon(const char* label, const autoc::eval::BeaconObservation& b) {
         std::cout << "INVISIBLE (cep=" << std::fixed << std::setprecision(2)
                   << b.cep << ", raw_cep_int8=" << static_cast<int>(b.raw_cep_int8) << ")";
     } else {
-        std::cout << std::fixed << std::setprecision(3)
-                  << "x=" << std::setw(7) << b.screen_x
-                  << " y=" << std::setw(7) << b.screen_y
+        // 040 T031 — bearings in radians (was ±1 NDC); raw is the sensor-grid
+        // pixel index the angle quantised to (was the retired int8 encoding).
+        std::cout << std::fixed << std::setprecision(4)
+                  << "x=" << std::setw(8) << b.bearing_x_rad << " rad"
+                  << " y=" << std::setw(8) << b.bearing_y_rad << " rad"
                   << " cep=" << std::setw(5) << b.cep
-                  << "  raw=("
-                  << static_cast<int>(b.raw_x_int8) << ", "
-                  << static_cast<int>(b.raw_y_int8) << ", "
-                  << static_cast<int>(b.raw_cep_int8) << ")";
+                  << "  px=("
+                  << b.raw_px_x << ", " << b.raw_px_y << ")"
+                  << " raw_cep_int8=" << static_cast<int>(b.raw_cep_int8);
     }
     std::cout << "\n";
 }

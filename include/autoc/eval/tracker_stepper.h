@@ -33,6 +33,7 @@
 #include "autoc/eval/derived_features.h"  // 032 — compute_pair_span / compute_tilt
 #include "autoc/eval/scenario_stepper.h"
 #include "autoc/eval/source_trajectory.h"
+#include "autoc/eval/tracker_tick_rule.h"  // 040 — PerceptionCarryState, TickRuleConfig
 #include "autoc/nn/evaluator.h"          // NNControllerBackend, TrackerHistoryWindow
 #include "autoc/rpc/protocol.h"          // CrashReason, ScenarioMetadata, CameraViewSample, CopiedTargetSample
 #include "autoc/types.h"
@@ -52,13 +53,18 @@ public:
                    const CameraConfig& camera,
                    const BeaconConfig& beacon_left,
                    const BeaconConfig& beacon_right,
-                   const AirframeProxy& airframe,
+                   const AirframeObstruction& airframe,
                    const FlightArena& arena,
                    const CrashHull& crash_hull,
                    gp_scalar p_crash_this_gen,
                    uint32_t prng_seed,
                    gp_scalar trail_distance,
                    gp_scalar cep_gate_threshold);
+
+    // 040 US6 — set the scenario's camera draw. The production path takes this
+    // from WorkerInit; the test-only reference takes it directly so the
+    // recorded-pose invariant can be asserted.
+    void setCameraVariation(const CameraDeltas& d) { camera_variation_ = d; }
 
     void initScenario() override;
     CrashReason stepOnce() override;
@@ -90,7 +96,7 @@ private:
     CameraConfig camera_;
     BeaconConfig beacon_left_;
     BeaconConfig beacon_right_;
-    AirframeProxy airframe_;
+    AirframeObstruction airframe_;
     FlightArena arena_;
 
     // 030 M7d.b — Crash hull (FR-008b). Geometry inside-hull check + per-tick
@@ -109,6 +115,17 @@ private:
     // the ring at the kNNHistoryLagsMsec offsets each tick.
     TrackerObservationRing obs_ring_;
     TrackerHistoryWindow history_;
+
+    // 040 T064 (FR-020a) — per-beacon acquisition state, carried across ticks
+    // within a scenario and reset through resetPerceptionState() at every
+    // scenario boundary. Mirrors CrrcsimTrackerHelper exactly; the two must
+    // reset identically or the test-only reference certifies wrong behaviour.
+    PerceptionCarryState perception_carry_;
+
+    // 040 US6 — camera draw for the current scenario. Defaults to the NOMINAL
+    // camera; the test-only reference has no ScenarioMetadata, and its job is to
+    // pin the RULE, not to replay a bake.
+    CameraDeltas camera_variation_{};
 
     // 038 P0-D FR-P0H (A) — situational-awareness state (time_since_seen +
     // held exit-bearing). Reset in initScenario, advanced each stepOnce from
