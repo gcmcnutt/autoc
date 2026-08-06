@@ -279,8 +279,16 @@ builders. C2 is gated on a Windows-side rebuild + flash, then `regression.py` pe
    landed**: AMZ-1 (2026-07-30: adapters, R/C kits, FR4, M12 holder, breadboards) + DK-3 (invoice 129837577,
    2026-08-02: BZX55C15 ×10, 1 k, XNANO ×1, **4.7 µH SPM4020T ×9 of 10 — 1 backordered, separate shipment**,
    Molex UMX ×10, L1IZ-0850 ×10). **Sections A (OVP) and C (flight cube) are fully sourced — buildable now.**
-   Still out: **C-14 lens (ETA ~week of 2026-08-03) + 850 nm bandpass** — now the single critical path
-   (see field test #4), plus C-24 flight pack and the gated F-section parts.
+   **C-14 lens ARRIVED 2026-08-05** — barrel: `16mm 5MP 1/2.5" IR`. Day-one findings: (a) **integrated
+   filter confirmed** — opaque to visible AND passes 850 (emitters viewed through lens + microscope glow
+   the classic Bayer purple/magenta = strong NIR transmission → **lens-arm checklist item 3 CLOSED
+   functionally**; FWHM still unknown, assume 40–60 nm camera-class); (b) 16 mm + BPW34 2.65 mm die →
+   **9.5° field — matches the 9.8° assumed by `lensed_pd_range.py`**, so the 2b sun-transit table stands;
+   (c) 1/2.5" image circle (~7.2 mm) comfortably covers the 3.75 mm die diagonal — no vignetting;
+   (d) visible-blindness confirms corrB-peak focusing is the only focusing method (checklist item 4).
+   **NEXT = checklist item 1: functional aperture-gain measurement** (bare vs lensed photocurrent, same
+   emitter/distance). Still out: separate 850 nm bandpass (if still wanted given the integrated filter),
+   C-24 flight pack, gated F-section parts.
 2. **AGC speed — quantify (deferred, operator 2026-08-02)**: field impression is "a little slow" while the
    bench measures **0.30 s step settle** (regression 2026-07-26, vs 0.62 s at s7 bring-up). Suspect the
    field case is not the bench case: outdoor pedestal steps (sun/shadow/attitude) are far larger than the
