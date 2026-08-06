@@ -1,10 +1,65 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-07-10
+**Last Updated**: 2026-08-06
 
-> **Routing (2026-07-10, 038 wrap)**: 038 closed — see [038 wrap](038-accurate-m2/wrap.md). Next feature
-> is **039 (xiao back in shape)**; the M2-depth items below (predictor elevation, streak-proxy input,
-> camera work) are **040** candidates.
+> **Routing (2026-08-06, 040 wrap)**: 040 closed — see [040 outcome](040-camera-redo/outcome.md).
+> Verdict: *a better camera model, much closer to real, and training results more or less the same —
+> that is the going concern.* Perception fidelity is **not** what caps M2. Next feature is **041**
+> ([seed](041-m2-depth/README.md)), scoped by the operator to three threads: **redo M1**, **control
+> aggressiveness on both the M1 and M2 side**, and **a predictor that actually works**. The
+> "Make the predictor earn its keep" entry below is 041's E1–E4 and is already measured — start there.
+>
+> *(Prior routing, 2026-07-10, 038 wrap: 039 xiao, then M2-depth items → 040.)*
+
+---
+
+## 040 deferrals
+
+### [040 wrap, filed 2026-08-06] t1′ — the attributable camera-variation delta (LOW priority, probably not worth it)
+
+The one experiment 040 could not run cleanly. `68f64ab` corrected the M2 objective's one-tick target
+offset **between** t1 (no camera variation) and t4 (±10°), so the t1↔t4 training-curve delta mixes a
+perception-robustness change with a change in the definition of the task. t1′ — variation off, current
+code, 800 gens — would isolate it. Cost ≈53 h of bake.
+
+**Why it is probably not worth running**: T085 already answered the question a different way. On 49
+novel scenarios under one binary and one objective, t4 and t1 came out **indistinguishable** (0.7% on
+fitness, same crash scenarios, differences ≤10% pointing both directions). That is a head-to-head with
+weights as the only variable, which is exactly what t1′ was meant to supply. Run it only if a future
+result makes the camera-variation cost load-bearing.
+
+### [040 wrap, filed 2026-08-06] A baseline's WEIGHTS expire when the dmp schema moves — decide what we do about it
+
+Found closing T085. The 038-t9 elite — the M2 baseline every 040 number is quoted against — **cannot be
+loaded by a 040 binary**: `nnextractor` dies with `vector::_M_default_append`, a cereal schema
+mismatch. 040 grew the dmp schema, and by standing policy we do not version it
+([[feedback_no_cereal_versioning]], and that policy is right — backward compat on a research schema is
+a tax with no payer).
+
+The policy is not the problem; the **unstated consequence** is. `retain=keep` on a milestone dmp reads
+as "this baseline is preserved", and it is not: what is preserved is a blob that only its own build can
+open. In practice a pinned baseline survives as *logged numbers*, never as a controller you can re-fly.
+That silently downgrades every "vs the prior baseline" claim from a head-to-head to a metric
+comparison, which is what happened to 040.
+
+Options, cheapest first — **this is a decision to make, not obviously work to do**:
+1. **Write it down and move on.** Amend Principle VIII so `retain=keep` states the guarantee honestly
+   ("numbers survive, weights do not travel across schema changes"). Zero cost.
+2. **Pin the weight file, not the dmp.** `nn_weights*.dat` is NN01, a stable format that predates and
+   outlives the EvalResults schema. Archiving the ~11 KB weights next to a milestone dmp would have
+   preserved t9 completely. Nearly free, and it is the option that actually buys the capability.
+3. Version the dmp schema. Rejected before, still rejected.
+
+Trigger: any feature that wants a true elite-vs-elite comparison across a schema boundary. 041 will, if
+it re-baselines M1.
+
+### [040 wrap, filed 2026-08-06] Novel-geometry eval source — pin it and reuse it, or it is not a comparator
+
+T085 generated `autoc-eval · autoc-9223370250819561192-2026-08-06T16:53:34.615Z/` (7 random paths × 7
+winds, flown by the pinned M1, 49/49 complete) and it needs `retain=keep`, because a regenerated source
+is a *different* 49 scenarios and cross-run generalization numbers stop being comparable. Same applies
+to the 038 t10 source, which is already pinned. **Two pinned novel sets now exist** — using both is the
+cheap way to tell a real generalization difference from a 49-scenario sampling artefact.
 
 ---
 

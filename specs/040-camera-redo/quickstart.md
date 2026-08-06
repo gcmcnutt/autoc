@@ -35,7 +35,8 @@ bash scripts/rebuild.sh          # compile + full test suite
 `// raw-ok: <reason>` or converted:
 
 ```bash
-grep -nE '\b(float|double)\b' src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/ \
+# -r is required on GNU grep (the box's ugrep recurses directories by default; grep does not)
+grep -rnE '\b(float|double)\b' src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/ \
   | grep -v -E '// raw-ok:'
 ```
 
@@ -110,16 +111,39 @@ Launch **only** via the detached script (never a harness-tracked background task
 runs t4 and t5 mid-flight with no error in the log):
 
 ```bash
-bash scripts/train.sh autoc-tracker.ini logs/autoc-040-t1-perception.log
+bash scripts/train.sh autoc-tracker.ini logs/autoc-040-t4-camera-var-10deg.log
 ```
 
 Naming follows the artifact convention: `autoc-<feature>-t<N>-<details>`, lexicographically ordered.
 
-Then evaluate on paths the controller never trained against — repoint `autoc-eval-tracker.ini` at a novel
-M1 eval source and compare on the established comparators. Report the **aggregate delta** (SC-008): the
-question is *are we in the right room, and is this more honest?* — not which term cost what. **A
-competence drop attributable to more honest perception is a valid outcome**, and no floor gates the
-feature.
+> **The bakes this feature actually ran** (2026-08-06): **t1** no variation, 800 gens; **t2** (20°) and
+> **t3** (2°) both **VOID** on the mount-inside-wing obstruction bug (`7ba6b11`); **t4** 10° envelope,
+> 800 gens — **the feature's result**. Numbers and the objective-fix confound between t1 and t4 are in
+> [outcome.md](outcome.md).
+
+Report set from a bake (11 PNGs for m2), per [feedback_generate_pngs_wrapper] — hand-calling the
+analytics scripts loses the incremental per-gen S3 cache:
+
+```bash
+scripts/generate_pngs.sh m2 logs/autoc-040-t4-camera-var-10deg.log \
+  --compare 040-t1-noVar:logs/autoc-040-t1-perception.log
+```
+
+Then evaluate on paths the controller never trained against — repoint `autoc-eval-tracker.ini` at the
+novel M1 eval source and compare on the established comparators.
+
+⚠️ **`autoc-eval-tracker.ini` is currently pointed at the T021 bit-identity gate source**, not the novel
+one. Restore it before any generalization eval — the values are in that file's own comment block:
+
+```ini
+TrackerSourceRun    = autoc-9223370253134917267-2026-07-10T21:44:18.540Z/gen9999.dmp.zst
+TrackerSourceBucket = autoc-eval
+Seed                = -1
+```
+
+Report the **aggregate delta** (SC-008): the question is *are we in the right room, and is this more
+honest?* — not which term cost what. **A competence drop attributable to more honest perception is a
+valid outcome**, and no floor gates the feature.
 
 Artifact lifecycle (Principle VIII): dumps upload tagged `retain=expire`. If the controller becomes a
 baseline, pin it `retain=keep` and record the S3 prefix in the outcome document.
