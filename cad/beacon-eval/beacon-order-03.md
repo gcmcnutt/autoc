@@ -145,10 +145,14 @@ test**; (4) stop stalling on missing passives (kits).
   distance, shadow alone flips it. Compression at the PD sits upstream of every other multiplier, so more
   emitter current cannot buy back direct-sun operation. **The bandpass is the gate on the whole range
   roadmap, not an optimization.** (Bench-journal field test #4.)
-  **STATUS 2026-07-30 — PARTIAL, REST IN TRANSIT**: ✔ **M12 lens holder received (AMZ-1)** — uxcell S-mount
-  M12 board-lens holder ×10, 20 mm screw spacing, metal/black, PCB-mount. **Lens on order, ETA ~week of
-  2026-08-03** (operator 2026-07-30) — confirm on arrival whether it is the bare 16 mm board lens (then the
-  850 nm bandpass is still separately needed) or the all-in-one ELP IR-narrow-pass SKU (covers both).
+  **STATUS 2026-08-05 — LENS ARRIVED, IN VALIDATION**: ✔ **M12 lens holder received (AMZ-1)** — uxcell
+  S-mount ×10, 20 mm screw spacing. ✔ **Lens received 2026-08-05**: barrel `16mm 5MP 1/2.5" IR` —
+  **integrated-filter style** (opaque to visible, passes 850: emitters glow Bayer-purple through it), so
+  no separate bandpass needed for this rig; entrance pupil eyeballs ~8 mm ⇒ F/2-class as hoped.
+  ⚠ **NOT yet validated as an imager**: back-focus/focus hunt ongoing (bench-journal lens arm) — flat ×1.7
+  gain in the first PD sweeps, image-plane localization in progress via knife-edge / Pi-cam-v2.1-bare-sensor
+  route. **Hold the "received ✔" tick until it demonstrably focuses**; if it fails the sensor test it goes
+  back and a replacement 16 mm F/2 M12 IR lens gets ordered.
   ⚠ **couples to the Option-C R_load** (pedestal ceiling 3.3 V/R): cheap discs are **40 nm-class →
   R_load 22 k** (47 k reserved for a true 10 nm filter) — see the daylight doc's pedestal table. Note the
   9.5° FOV itself is ambient rejection (sky-only background when aimed at a flying beacon).
@@ -234,15 +238,16 @@ test**; (4) stop stalling on missing passives (kits).
 - ~~F_CPU 20→10 MHz~~ **DONE** (ca1fe78) · ~~BOD fuse~~ **DONE** (0x48) · ~~firmware UVLO~~ **DONE &
   verified 3.48 V** (07d195f) — all three closed since the original Order-03 draft.
 
-## Still outstanding after AMZ-1 + DK-3 (updated 2026-08-02)
+## Still outstanding after AMZ-1 + DK-3 (updated 2026-08-07)
 
-**In transit**: ⏳ **C-9's 10th inductor** (DK-3 backorder, separate shipment, no ETA) — not blocking.
-⏳ **C-14 lens, ETA ~week of 2026-08-03** (operator).
+**DigiKey — the only open DK item**: ⏳ **C-9's 10th inductor** (DK-3 backorder, separate shipment, no
+ETA; check the order page for SO 100616351 if not landed by ~mid-Aug) — not blocking.
 
 With DK-3 in hand, **sections A and C are complete** — the OVP clamp and the whole flight-emitter cube
-(LEDs, inductor, battery header, FR4 tiles) can be built now. Remaining buys:
-1. **C-14 optics tail** — 16 mm M12 board lens (in transit) **+ 850 nm bandpass** if the incoming lens is
-   the bare SKU rather than the all-in-one ELP. Holder ✔. **The only thing blocking the 100 m test.**
+(LEDs, inductor, battery header, FR4 tiles) can be built now. Remaining buys/items:
+1. **C-14 optics validation** — lens ARRIVED 2026-08-05 (integrated 850 filter confirmed; F/2-class
+   pupil) but has NOT yet demonstrated focus — back-focus hunt in progress (bench-journal lens arm).
+   If it fails the bare-sensor test → return + replacement buy. **Still the gate on the 100 m test.**
 2. **C-24** 1S 100 mAh flight pack (separate supplier) — the RC-osc jitter test wants flight-pack ESR.
 3. **C-21/C-23** F-section crystals / XO — still gated on the copper-board load-test jitter measurement.
 4. **C-11** Luxeonstar MCPCB — only if the C-8 tiles disappoint · **C-19/C-16** closed, nothing to buy.
