@@ -65,17 +65,13 @@ test**; (4) stop stalling on missing passives (kits).
   tiles (knife-slit islands, stitch faces); 5 tiles glue into the cube. ~15 °C rise at field power per
   tile — validate one before gluing five.
   - [X] received — notes: ×5 sheets @ 70×50×1.0 mm, AMZ-1 2026-07-30. ⚠ thickness 1.0 mm vs 0.5–0.8 mm spec.
-- [ ] **C-9** *(O3-16; 9 of 10 IN HAND — 1 BACKORDERED)* **Flight boost inductor** 4.7 µH shielded,
+- [X] **C-9** *(O3-16; **CLOSED 2026-08-07 — 10 of 10**)* **Flight boost inductor** 4.7 µH shielded,
   Isat ≥ 2 A, 4×4×2 mm class — supplied as TDK **`SPM4020T-4R7M-LR`** (`445-174477-1-ND`), **not** the
   specced Coilcraft XFL4020-472ME: 4.7 µH, **2.5 A**, DCR **147.2 mΩ**, 4.0×4.0×2.0 mm metal-composite
   shielded — meets the spec envelope (Isat 2.5 A > 2 A required). Replaces the 10×10 mm 22 µH brick for
   flight (22 µH bricks: ×10 on hand from order 1).
-  ⚠ **DK-3 shipped 9, backordered 1 → the 10th arrives in a SEPARATE SHIPMENT** (packlist 129837577 line 4:
-  Ordered 10 / Shipped 9 / Backordered 1; no ETA on the packlist). **9 is enough to proceed** — the cube
-  needs 1 and the bench 1 — so this does not block anything; leave this line open only to track the
-  straggler, and check the DigiKey order page if it hasn't landed within ~2 weeks.
-  - [ ] received — notes: **×9 received 2026-08-02** (lot 5017524072, date code Sep-2025); ×1 backordered,
-    separate shipment pending.
+  - [X] received — notes: ×9 received 2026-08-02 (lot 5017524072) + **backordered 10th received
+    2026-08-07** — full ×10 in hand. **DigiKey side of order-03 is now fully closed.**
 - [X] **C-10** *(O3-15)* **Battery connector 1.25 mm, male PCB side** — **✔ RECEIVED ×10 (DK-3 line 5)**:
   Molex **`0530470210`** (`WM1731-ND`), 2-pos vertical header, 1.25 mm — exactly as specced. Flight pack =
   **Spektrum SPMX1501S50** (std LiPo, 4.20 V charge; "PH 1.25 Ultra Micro" = UMX = **PicoBlade-compatible**,
@@ -93,6 +89,14 @@ test**; (4) stop stalling on missing passives (kits).
 - [X] **C-13** *(O2-1)* ~~Sense resistor 3.74 Ω 1 % 1206~~ — **✔ CLOSED: DK order 2 delivered ×10**
   (`541-3.74FFCT-ND`, 1/4 W); field 0.62 Ω also confirmed ×10 in order 1 (`CRL1206-FW-R620ELF`, 1/2 W).
   - [X] received — notes: packlists 128637262 line 1 / 127789318 line 6.
+- [ ] **C-26** *(NEW 2026-08-07)* **Bare flight MCU** — the pod flies a bare chip, not the XNANO dev board.
+  Package options: **ATtiny412 = SOIC-8 only (NO crystal pins — forecloses the F-section path on that
+  pod)**; **ATtiny414 = SOIC-14 (TOSC ✔)**; **ATtiny416 = SOIC-20 or VQFN-20 3×3 mm (TOSC ✔)**.
+  **Lean: ATTINY416 SOIC-20 ×5** — zero firmware delta from the bench 416, crystal option preserved,
+  hand-solderable; 412 SOIC-8 is the minimal-mass alt if RC-osc passes the jitter gate (SOIC-8→DIP
+  adapters ✔ on hand, C-15). Programming: serial UPDI = on-hand TTL-232R-3V3 + 1–4.7 k resistor +
+  `pymcuprog` — no new programmer needed.
+  - [ ] received — notes:
 
 ## D — Daylight receiver / 100 m optics (Option C selected 2026-07-24)
 - [ ] **C-14** *(O3-11 = O2-13 merged; **DECIDED 2026-07-26 → BUDGET M12 STACK**)* **850 nm bandpass
@@ -201,9 +205,11 @@ test**; (4) stop stalling on missing passives (kits).
   - [ ] received — notes:
 
 ## Separate supplier
-- [ ] **C-24** *(O3-8, O2-14 caveat)* **1S 100 mAh flight pack** — the definitive RC-osc jitter test wants
-  flight-pack internal resistance (the 150 mAh bench pack reads optimistic).
-  - [ ] received — notes:
+- [X] **C-24** *(O3-8, O2-14 caveat; **RESOLVED 2026-08-07**)* ~~1S 100 mAh flight pack~~ — **operator
+  decision: the 1S 150 mAh packs ARE the flight hardware.** No 100 mAh buy; the bench pack and flight
+  pack are now the same type, which also dissolves the original rationale (jitter test wanted flight-pack
+  ESR — it now measures it by definition). Buy more of the same 150 mAh SKU only if pack count runs short.
+  - [X] received — notes: closed by decision, no purchase.
 
 ## Already on hand — do NOT re-order (reconciled against both DK packlists, 2026-07-26)
 - **Receiver**: BPV10NF ×2, BPW34 ×10, MCP6022 ×2, MCP3201 ×2, MCP1525 ×2, OPA381 ×2, 1 MΩ 3296W
@@ -238,20 +244,20 @@ test**; (4) stop stalling on missing passives (kits).
 - ~~F_CPU 20→10 MHz~~ **DONE** (ca1fe78) · ~~BOD fuse~~ **DONE** (0x48) · ~~firmware UVLO~~ **DONE &
   verified 3.48 V** (07d195f) — all three closed since the original Order-03 draft.
 
-## Still outstanding after AMZ-1 + DK-3 (updated 2026-08-07)
+## Still outstanding (updated 2026-08-07 — DigiKey FULLY CLOSED: C-9's 10th inductor landed)
 
-**DigiKey — the only open DK item**: ⏳ **C-9's 10th inductor** (DK-3 backorder, separate shipment, no
-ETA; check the order page for SO 100616351 if not landed by ~mid-Aug) — not blocking.
-
-With DK-3 in hand, **sections A and C are complete** — the OVP clamp and the whole flight-emitter cube
-(LEDs, inductor, battery header, FR4 tiles) can be built now. Remaining buys/items:
+Sections A and C complete; battery decision made (C-24: **150 mAh packs ARE flight hardware**, no buy).
+Remaining:
 1. **C-14 optics validation** — lens ARRIVED 2026-08-05 (integrated 850 filter confirmed; F/2-class
    pupil) but has NOT yet demonstrated focus — back-focus hunt in progress (bench-journal lens arm).
    If it fails the bare-sensor test → return + replacement buy. **Still the gate on the 100 m test.**
-2. **C-24** 1S 100 mAh flight pack (separate supplier) — the RC-osc jitter test wants flight-pack ESR.
-3. **C-21/C-23** F-section crystals / XO — still gated on the copper-board load-test jitter measurement.
+2. **C-26 bare flight MCU** — the one genuinely NEW buy: lean ATTINY416 SOIC-20 ×5 (keeps the crystal
+   option; 412 SOIC-8 = minimal-mass alt). Next DigiKey cart when convenient.
+3. **C-21/C-23** F-section crystals / XO — deferred ("later", operator 2026-08-07); still gated on the
+   copper-board load-test jitter measurement. NB the C-26 package choice preserves or forecloses this.
 4. **C-11** Luxeonstar MCPCB — only if the C-8 tiles disappoint · **C-19/C-16** closed, nothing to buy.
-5. **Contingency only**: another XNANO (spare margin is gone — see C-4) · exact 18 pF/6.8 pF for C-22.
+5. **Contingency only**: another XNANO (spare margin is gone — see C-4) · exact 18 pF/6.8 pF for C-22 ·
+   more 150 mAh packs if count runs short.
 
 ## Open decisions gated by this order
 1. ~~Filter FWHM (C-14): 40 nm vs 10 nm~~ — **RESOLVED 2026-07-26: budget 40 nm-class (M12 stack) for
