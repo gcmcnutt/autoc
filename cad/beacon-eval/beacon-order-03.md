@@ -80,6 +80,10 @@ test**; (4) stop stalling on missing passives (kits).
   - [X] received — notes: ×10, packlist 129837577 line 5.
 - [ ] **C-11** *(O3-7 = O2-3 merged; optional)* **Luxeonstar SZ-01-R8** MCPCB L1IZ-0850 ×≤5 + small heatsink
   — the no-reflow alternative to C-8 tiles for field power. Order only if tiles disappoint.
+  ⚠ **NO DigiKey part number exists (checked 2026-08-07)** — mounted-star modules are Luxeonstar
+  (Quadica) direct only: SZ-01-R8 (10 mm base, this line), **SM-01-R8 (5 mm Micro-Z1 base — lighter,
+  likely the better cube fallback)**, SZ-05-R8 (4-up 20 mm, bench). DigiKey carries only the bare
+  emitter (`1416-1997-1-ND`, ×20 on hand).
   - [ ] received — notes:
 - [X] **C-12** *(O3-9; NOW FIRM — operator 2026-07-26)* **L1IZ-0850** — **✔ RECEIVED ×10 (DK-3 line 6)**:
   Lumileds `L1IZ-0850000000000` (`1416-1997-1-ND`). The 5-LED bench string is a **permanent bench
