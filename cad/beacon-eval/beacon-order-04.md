@@ -99,6 +99,11 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   narrow-field/range; (b) **Quanmin 12.5 mm 850 nm disc pair (~$12, the order-03 C-14 alternate)
   behind the included 2.8 mm** = filtered 72° H wide config — no new lens needed. **True 120° H on
   OV9281 still needs f ≈ 1.1 mm = the Commonlands custom question (spec.md), unchanged.**
+  **DECIDED 2026-08-09 (operator)**: go Pi + included 2.8 mm + existing IR filter stack; ALSO order a
+  **2.8 mm-or-slightly-longer 850 nm-integrated SKU** from the ELP family (~$10) as the dedicated
+  filtered-wide lens. NB the physics tether (see 041 note below): at fixed F/#, FOV and pupil trade —
+  2.8 mm F/2.2 = 1.27 mm pupil ≈ **40× less point-source light than the 16 mm F/2** → the wide lens is
+  inherently a **short-range (~15 m-class) acquisition/bench device**; the 16 mm is the range camera.
   - [ ] received — notes:
 
 ## Research sources (captured 2026-08-08 — the fps-gate and board-selection evidence)
