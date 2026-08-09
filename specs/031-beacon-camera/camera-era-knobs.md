@@ -33,9 +33,16 @@ Pi + OV9281 rig comes up (order-04).
 ## Scaling laws (the knobs and their exponents)
 
 **1. Photon budget (signal per frame on the beacon pixel):**
-N_e ≈ I_emit · A_pupil · t_exp · (λ/hc) · QE · **T_optics** / r² — with **T_optics ≈ 0.65** (lens ~0.8 ×
-filter-peak·LED-line overlap ~0.85; ADDED 2026-08-09, was omitted) ≈ **1.6×10⁹ / r² electrons**
-(face-on cube, wide lens, 2.2 ms @ 453 fps).
+N_e ≈ I_emit · A_pupil · t_exp · (λ/hc) · QE · **T_optics** / r² — with **T_optics ≈ 0.65** ≈
+**1.6×10⁹ / r² electrons** (face-on cube, wide lens, 2.2 ms @ 453 fps).
+**T_optics decomposition (reconciled 2026-08-10 — "0.88 on the lens page" vs 0.65 here are different
+scopes)**: lens stack ≈ 0.85–0.88 (the datasheet number) × filter peak ≈ 0.86 × **spectral overlap of
+the LED's 30 nm line inside the ~40 nm passband ≈ 0.85–0.9 (on no datasheet)** → chain ≈ 0.62–0.68.
+Separately, the drawing's **Relative Illumination = 52 %** is a FOV-dependent derate: corner-of-field
+beacons get ~half the center photons — on-axis budget × RI(θ) off-axis. Bird-pair bonus: the central
+overlap is each camera's edge region, but BOTH see it → the pair sums back to ~parity at the seam.
+The static range test measures the whole product (empirical #3) — these factors then stop being
+estimates.
 
 | r | e⁻/frame | dark/indoor per-frame SNR (shot + 3 e⁻ read) | bright-day per-frame SNR (sky ~4000 e⁻/px est. → σ≈63) | post-correlation ×√74, bright day |
 |---|---|---|---|---|
