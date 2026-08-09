@@ -28,9 +28,14 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   (c) **453 fps mode geometry — CROP or SKIP/BIN?** FOV at speed hinges on it: the 2.8 mm lens gives
   ~**72° H × 48° V** full-field (pinhole math 69.7°/47.3°/78.8° D; vendor 90° D/72° H with the −17 %
   distortion), 0.056°/px at full res — the beacon is sub-pixel at 100 m at any binning — but a center
-  **crop** to 320×240 collapses the field to ~20° H × 15° V at speed, while **skip/bin** keeps the full
-  ~72° at 0.23°/px. Wide-acquisition vs narrow-tracker at 453 fps is decided by this register mode —
-  check the InnoMaker mode table / raw frames on arrival.
+  **crop** to 320×240 collapses the field to ~20° H × 15° V at speed, while skip/bin keeps the full
+  ~72° at 0.23°/px. **And skip ≠ bin for a SUB-PIXEL source** (sharpened 2026-08-09): **bin** sums the
+  groups — full field, gap-free, all beacon photons land in some super-pixel (background ×N, SNR −√N,
+  correlator absorbs it); **skip** reads 1-of-N photosites and DISCARDS the rest — a sub-pixel beacon
+  falling between sampled sites VANISHES, and would blink in/out as the target drifts across the
+  sampling grid (code corruption), unless the PSF is deliberately defocused to span the skip pitch.
+  Ranking for the beacon: **bin > crop > skip**. Real modes are often chains (bin-2 + skip-2) — read
+  the actual register config of the 453 fps mode on arrival, not just its output resolution.
   *(Arducam B0162 remains the alt if InnoMaker stock vanishes — but its Pi-stack modes are documented
   slower: 320×240@220 fps binned.)*
   - [ ] received — notes:
