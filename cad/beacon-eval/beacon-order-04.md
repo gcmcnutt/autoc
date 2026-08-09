@@ -101,7 +101,13 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   OV9281 still needs f ≈ 1.1 mm = the Commonlands custom question (spec.md), unchanged.**
   **DECIDED 2026-08-09 (operator)**: go Pi + included 2.8 mm + existing IR filter stack; ALSO order a
   **2.8 mm-or-slightly-longer 850 nm-integrated SKU** from the ELP family (~$10) as the dedicated
-  filtered-wide lens. NB the physics tether (see 041 note below): at fixed F/#, FOV and pupil trade —
+  filtered-wide lens. **FWHM answer (asked 2026-08-10): it will be 30–60 nm class — integrated-10 nm
+  M12 lenses do not exist** (10 nm = laser/VCSEL disc market), and per
+  [`camera-era-knobs.md`](../../specs/031-beacon-camera/camera-era-knobs.md) §5 that is the RIGHT width:
+  30–40 nm is matched to the LED's 30 nm line; 10 nm would discard ~70 % of our own signal and
+  blue-shifts off-band at wide-field CRA anyway. Record the vendor's admitted FWHM on arrival.
+  Flight architecture note: **two of these birded outward** (~120–125° H combined, overlap parallax) is
+  the current flight-optics shape — FOV soft, co-designed with training (knobs §6). Tracked as tasks A8. NB the physics tether (see 041 note below): at fixed F/#, FOV and pupil trade —
   2.8 mm F/2.2 = 1.27 mm pupil ≈ **40× less point-source light than the 16 mm F/2** → the wide lens is
   inherently a **short-range (~15 m-class) acquisition/bench device**; the 16 mm is the range camera.
   - [ ] received — notes:
