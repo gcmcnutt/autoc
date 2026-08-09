@@ -5,6 +5,27 @@
 > file as the bench evolves; deep results live in the outcome docs it links. Machine-local assistant memory
 > should hold only a pointer here.
 
+## Regression on the DGX-native bench (2026-08-08, post circuit clean-up): 17/19 PASS
+
+**The bench now runs NATIVELY on the DGX Spark** (no WSL interop): STEPLink CDC = `/dev/ttyACM1`
+(monitor.sh grew a native branch — `COM3` maps to `$BCN_PORT`, default ACM1), mEDBG = `/dev/ttyACM0`,
+PSU via pyvisa-py (udev rule `99-beacon-bench.rules`: f4ec + 03eb + hidraw 0666), venv `~/.venvs/avr`
+(pyserial/pyvisa-py/pyusb/pymcuprog), `regression.py` preflight skips usbipd when absent.
+
+**Result 17/19**: P0 cold start ✓ (4.200 V / 91 mA — matches the parked baseline), P1 lock 100 % margin 8
+corr 16.2k, P2 dropout ladder ✓ (envelopes identical), **P3 step settle 0.15 s ✓ — 2× better than the
+0.30 s bar** (AC-coupled front end pins the decoder pedestal at VBIAS), P4 injection/skew ✓, P5 I-V ✓,
+P6 UVLO trip + UPDI recovery ✓, P7 restore ✓.
+**FAILs = the two deep-attenuation rungs only**: P3 P=32 (lock 51 %, margin 4) and P=16 (61 %, margin 4)
+vs the WSL-era 100 %-at-3 %-duty envelope. Corr scales linearly with duty (16.2k×32/128 ≈ 3.6k measured ✓)
+— the decoder is fine; the weak-signal MARGIN is ~one notch lower than the old rig. Two suspects, both
+receiver-side and expected: (a) geometry — corr baseline 16k vs the historical 29k best; (b) **the bench
+PD is now the unfiltered BPW34** — indoor LED-lamp PWM lands in-band and inflates the AGC energy
+denominator exactly where signal is weakest (the old BPV10NF's 780–1050 package filter hid it).
+Discriminator queued: re-run the P-ladder dark / incandescent-only, and/or re-aim to peak corr first.
+**Verdict: same realm — core link, timing, recovery all at baseline; weak-signal corner awaits the lens
+cage + 850 filter (which removes suspect (b) by construction).**
+
 ## Current state (2026-07-18)
 
 - **Optical link WORKS end-to-end and is characterized**: LiPo-capable emitter (ATtiny416 XNANO eval @
