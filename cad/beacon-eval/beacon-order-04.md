@@ -76,15 +76,18 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   hard D-PHY) — the analysis vendor and the flight vendor are now deliberately decoupled; the tracker
   RTL stays vendor-neutral Verilog so fabric work ports either way.
 
-- [ ] **O4-5** *(NEW 2026-08-08)* **850 nm-filtered lens for the camera** — the O4-1 included 2.8 mm
-  F/2.2 lens has NO IR bandpass (72° H of unfiltered daylight). FOV math on the 3.896 mm-wide sensor:
-  2.8 mm → 70° H · 3.6 mm → 57° · 6 mm → 36° · 16 mm → 13.9° H · **120° H (the production spec) needs
-  f ≈ 1.1 mm — NOT available with an integrated narrow filter**; true 120° stays the Commonlands
-  question (spec.md §lens). Plan: (a) reuse the **C-14 16 mm 850 nm lens** for narrow-field/range
-  analysis (if O4-1's mount is M12); (b) order the **2.8 mm SKU of the same AliExpress ELP 850 nm
-  IR-lens family** (~$10, operator's "recent source") for filtered wide-ish work — ⚠ check CRA/AoI
-  blue-shift at field edges vs the ~40 nm passband before trusting corner response (the daylight doc's
-  AoI section; wide fields push chief rays off-normal even with the filter behind the lens).
+- [ ] **O4-5** *(NEW 2026-08-08; REVISED after reading the InnoMaker lens drawing)* **850 nm filtering
+  for the camera**. The included 2.8 mm F/2.2 lens per the vendor drawing
+  (`github.com/INNO-MAKER/CAM-OV9281RAW-V2` → Lens drawing/Lens.png, mirrored in scratch): design
+  format **1/2.7″** with D=148°/H=118° ON THAT FORMAT — **the OV9281's 1/4″ sensor crops this to
+  ~72° H** (the product page's number; sensor sets FOV, not the glass). Drawing confirms: **M12
+  thread** ✓ (the C-14 16 mm 850 nm lens interchanges directly = narrow/range config), **"4G+IR",
+  λ 400–1100 nm** = IR-corrected NOT IR-cut (works at 850, just unfiltered), and **CRA = 10°** — the
+  quiet win: a **12.5 mm 850 nm disc dropped BEHIND this lens** sees near-normal incidence over the
+  whole field → 40 nm-passband AoI shift negligible. Plan: (a) 16 mm 850 lens swap-in for
+  narrow-field/range; (b) **Quanmin 12.5 mm 850 nm disc pair (~$12, the order-03 C-14 alternate)
+  behind the included 2.8 mm** = filtered 72° H wide config — no new lens needed. **True 120° H on
+  OV9281 still needs f ≈ 1.1 mm = the Commonlands custom question (spec.md), unchanged.**
   - [ ] received — notes:
 
 ## Research sources (captured 2026-08-08 — the fps-gate and board-selection evidence)
