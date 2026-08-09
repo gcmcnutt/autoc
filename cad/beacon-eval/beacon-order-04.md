@@ -40,7 +40,17 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   card** on the expansion headers (LIFCL-40 caBGA400 supports LPDDR3/DDR3L-1066 if a custom board ever
   wants it); (c) PSG is Dec-2020 — glance at the current user guide at order for board-rev deltas.
   ⚠ **Toolchain: CrossLink-NX = RADIANT, not Diamond** — new install alongside the MXO2 Diamond flow
-  (free license covers LIFCL); plan a hello-LED bring-up before the MIPI work.
+  (kit ships Radiant license info + 12 V adapter + USB cable, per UG); plan a hello-LED bring-up before
+  the MIPI work.
+  **Camera integration (UG EB-02028 §8.4/8.5, archived alongside the PSG)**: the board's CN1 is a
+  **30-pin Lattice-pinout camera FFC** (CAM0 clk + 4 D-PHY lanes, I²C, RESET, MCLK, 1.2/1.8/2.8 V
+  rails for a bare sensor) — **an Arducam B0162 flex does NOT mate directly**. Routes: (a) small FFC
+  adapter Arducam→CN1 (CN1 connector PN in UG Appendix B when needed), or (b) the **J6 D-PHY1 header**
+  (2×10, GND-interleaved, clk + 4 lanes on balls A8/B8, A7/B7, A9/B9, A6/B6, A10/B10) — header-wire the
+  camera for bring-up at moderate lane rates. Plan (b) first, adapter later if signal integrity bites.
+  Also per UG: **no microSD/SDIO and no USB-C on this board** (mini-USB FTDI only) — the old
+  verified-bom D3 verify items assumed both; recording-to-SD is NOT an EVN-native path, consistent with
+  the no-DRAM finding: this is the ANALYSIS board, the recorder is a later question.
   - [ ] received — notes:
 
 ## Explicitly NOT in this order
