@@ -21,14 +21,26 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   ⚠ Bundled M12 lens usually has an IR-cut — strip/swap; **the C-14 16 mm IR lens screws straight on**
   (bonus: this module IS the trusted focal plane for finishing the lens validation — no Pi-cam surgery).
   - [ ] received — notes:
-- [ ] **O4-2** **Arducam USB-UVC shield for OV9281 (B0264) ×1** (~$90) — hosts an O4-1 module as a UVC
-  webcam for bench/hand-held work (US3). ⚠ UVC path is USB2-capped well below 480 fps — geometry /
-  exposure / lens analysis only; rate validation is the FPGA path. Check MIPI flex included (else +1
-  flex, verified-bom D8).
+- [ ] **O4-2** *(DEMOTED to optional 2026-08-08)* **Arducam USB-UVC shield for OV9281 (B0264) ×1**
+  (~$90) — hosts an O4-1 module as a UVC webcam for bench/hand-held work (US3). ⚠ UVC is USB2-capped
+  well below 480 fps. **The O4-4 Pi Zero 2 W covers this role** (libcamera stills/preview + our own
+  capture code) — buy the shield only if a laptop-native UVC webcam proves independently useful.
   - [ ] received — notes:
-- [ ] **O4-3** **Digilent Zybo Z7-20 (Zynq-7020) ×1** (~$300 street; Digilent/Mouser/Amazon) — the
-  analysis FPGA, **CHANGED FROM LIFCL-40-EVN 2026-08-08** (operator: not wedded to Lattice; want
-  out-of-the-box camera + memory + SD). Why it wins for ANALYSIS:
+- [ ] **O4-4** *(NEW 2026-08-08 — CHEAPEST-FIRST, order ahead of O4-3)* **Raspberry Pi Zero 2 W ×1
+  (~$15) + Zero 22-pin→15-pin camera adapter flex (~$6)** — the "$15 correlator" experiment: quad
+  A53 + NEON ≈ tens of Gops vs ~0.4 Gops needed for even FULL per-pixel correlation at 320×240×480 fps
+  (37 Mpx/s; tracker-bank is far cheaper); per-pixel N=31 window state ≈ 11 MB vs 512 MB; CSI ingest
+  37 MB/s = trivial for Unicam DMA; Linux jitter is harmless (sensor free-runs = sampling clock;
+  drops = erasures the decoder already tolerates). **THE GATE: OV9281 ≥480 fps mode on the Pi stack**
+  — mainline driver tops out ~640×400@210 fps; 480 needs Arducam's driver or custom register modes via
+  raw capture. 210 fps ceiling = 1.05 samples/chip @ 200 Hz = Nyquist fail → mode-unlock or bust.
+  **Run this gate experiment BEFORE buying O4-3.** Flight bonus if it clears: 11 g / 1–2 W / WiFi —
+  analysis platform and flyable tracker candidate collapse into one $15 board.
+  - [ ] received — notes:
+- [ ] **O4-3** *(NOW CONDITIONAL — order only if the O4-4 fps gate FAILS)* **Digilent Zybo Z7-20
+  (Zynq-7020) ×1** (~$300 street; Digilent/Mouser/Amazon) — the analysis FPGA, **CHANGED FROM
+  LIFCL-40-EVN 2026-08-08** (operator: not wedded to Lattice; want out-of-the-box camera + memory +
+  SD). Why it wins for FPGA-path ANALYSIS:
   - **Pcam port = Pi-compatible 15-pin MIPI CSI-2 FFC** — the Arducam OV9281's Pi-style flex plugs
     STRAIGHT IN (vs the Lattice EVN's proprietary 30-pin CN1 needing an adapter or header-wiring).
   - **1 GB DDR3L onboard** — the FR-2.5 6 MB ring question evaporates (~22 s of full frames);
