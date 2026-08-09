@@ -33,14 +33,22 @@ Pi + OV9281 rig comes up (order-04).
 ## Scaling laws (the knobs and their exponents)
 
 **1. Photon budget (signal per frame on the beacon pixel):**
-N_e ≈ I_emit · A_pupil · t_exp · (λ/hc) · QE / r² ≈ **2.4×10⁹ / r² electrons** (face-on cube, wide lens).
+N_e ≈ I_emit · A_pupil · t_exp · (λ/hc) · QE · **T_optics** / r² — with **T_optics ≈ 0.65** (lens ~0.8 ×
+filter-peak·LED-line overlap ~0.85; ADDED 2026-08-09, was omitted) ≈ **1.6×10⁹ / r² electrons**
+(face-on cube, wide lens, 2.2 ms @ 453 fps).
 
-| r | e⁻/frame | vs 3 e⁻ read noise |
-|---|---|---|
-| 30 m | ~2700 | huge |
-| 50 m | ~960 | huge |
-| 100 m | ~240 | 80× |
-| 150 m | ~110 | 36× |
+| r | e⁻/frame | dark/indoor per-frame SNR (shot + 3 e⁻ read) | bright-day per-frame SNR (sky ~4000 e⁻/px est. → σ≈63) | post-correlation ×√74, bright day |
+|---|---|---|---|---|
+| 30 m | ~1800 | ~42 | ~28 | ~240 |
+| 50 m | ~640 | ~25 | ~10 | ~87 |
+| 100 m | ~160 | ~12 | ~2.5 | ~22 |
+| 150 m | ~71 | ~8 | ~1.1 | ~10 |
+
+vs the ~13 dB (×4.5) lock threshold → **bright-day lock pencils to ~200 m-class even through the wide
+pupil** — BUT the sky-background estimate is the least-trusted number here (±3×) and sits near the
+OV9281's ~10 ke⁻ full well at 2.2 ms: **manual exposure is load-bearing** (bright day = shorter exposure
+= √t SNR cost, well depth is the cap). Read noise is irrelevant inside ~300 m. Empirical item #1
+calibrates this entire column with one frame of filtered daytime sky.
 
 The **small pixel is the camera's secret weapon**: per-pixel sky background ∝ (pixel IFOV)² — at
 0.056°/px the sky patch behind the beacon is tiny, so even the 1.27 mm pupil gives workable daylight
