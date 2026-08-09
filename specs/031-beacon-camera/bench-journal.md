@@ -5,6 +5,14 @@
 > file as the bench evolves; deep results live in the outcome docs it links. Machine-local assistant memory
 > should hold only a pointer here.
 
+## Camera-era analysis order OPENED (2026-08-08): [beacon-order-04.md](../../cad/beacon-eval/beacon-order-04.md)
+
+OV9281 MIPI ×2 (B0162) + UVC shield (B0264) + **LIFCL-40-EVN** (CrossLink-NX — sized from the s3 datum:
+3.5k LUT/correlator on MXO2 → 20–35k LUT tracker-bank architecture vs 39k cells, hard MIPI D-PHY).
+At-order verifies: EVN onboard RAM ≥6 MB (T011), Radiant toolchain (new install, not Diamond). The UVC
+OV9281 doubles as the trusted focal plane to finish the C-14 lens validation (M12 mount, global shutter,
+no IR-cut after lens swap).
+
 ## Regression on the DGX-native bench (2026-08-08, post circuit clean-up): 17/19 PASS
 
 **The bench now runs NATIVELY on the DGX Spark** (no WSL interop): STEPLink CDC = `/dev/ttyACM1`
