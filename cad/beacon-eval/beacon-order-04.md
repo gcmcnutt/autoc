@@ -26,32 +26,31 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   exposure / lens analysis only; rate validation is the FPGA path. Check MIPI flex included (else +1
   flex, verified-bom D8).
   - [ ] received — notes:
-- [ ] **O4-3** **Lattice CrossLink-NX Evaluation Board `LIFCL-40-EVN` ×1** (~$300–400, Lattice/Mouser) —
-  the analysis FPGA. Sizing: tracker-bank architecture ≈ 20–35k LUT vs 39k cells (s3 correlator datum
-  3.5k LUT/unit on MXO2, cheaper here with DSP slices), hardened 4-lane MIPI D-PHY vs a 0.37 Gbps need.
-  **T011 RESOLVED 2026-08-08** (Lattice PSG Dec-2020, p.26 — archived at
-  [`firmware/beacon-receiver/PSG_2020_I0211K_Rev28.pdf`](../../firmware/beacon-receiver/PSG_2020_I0211K_Rev28.pdf)):
-  the EVN board is LIFCL-40-**9BG400C**, expansion = FMC + Raspberry Pi + Pmod + MIPI CSI-2/D-PHY
-  headers, PCIe 5G SERDES, USB-B programming — and its only memory is **128 Mbit SPI BOOT FLASH: NO
-  onboard DRAM/HyperRAM**. On-chip total is ~0.35 MB (1512k EBR + 1024k LRAM + 240k distributed), so
-  the FR-2.5 **6 MB frame ring does NOT fit this board natively**. Consequences:
-  (a) the ANALYSIS scope (MIPI bring-up, tracker bank, live detection stats out over USB/UART) needs no
-  frame ring — EVN is sufficient as-is; (b) full-frame recording later = **HyperRAM Pmod / FMC memory
-  card** on the expansion headers (LIFCL-40 caBGA400 supports LPDDR3/DDR3L-1066 if a custom board ever
-  wants it); (c) PSG is Dec-2020 — glance at the current user guide at order for board-rev deltas.
-  ⚠ **Toolchain: CrossLink-NX = RADIANT, not Diamond** — new install alongside the MXO2 Diamond flow
-  (kit ships Radiant license info + 12 V adapter + USB cable, per UG); plan a hello-LED bring-up before
-  the MIPI work.
-  **Camera integration (UG EB-02028 §8.4/8.5, archived alongside the PSG)**: the board's CN1 is a
-  **30-pin Lattice-pinout camera FFC** (CAM0 clk + 4 D-PHY lanes, I²C, RESET, MCLK, 1.2/1.8/2.8 V
-  rails for a bare sensor) — **an Arducam B0162 flex does NOT mate directly**. Routes: (a) small FFC
-  adapter Arducam→CN1 (CN1 connector PN in UG Appendix B when needed), or (b) the **J6 D-PHY1 header**
-  (2×10, GND-interleaved, clk + 4 lanes on balls A8/B8, A7/B7, A9/B9, A6/B6, A10/B10) — header-wire the
-  camera for bring-up at moderate lane rates. Plan (b) first, adapter later if signal integrity bites.
-  Also per UG: **no microSD/SDIO and no USB-C on this board** (mini-USB FTDI only) — the old
-  verified-bom D3 verify items assumed both; recording-to-SD is NOT an EVN-native path, consistent with
-  the no-DRAM finding: this is the ANALYSIS board, the recorder is a later question.
+- [ ] **O4-3** **Digilent Zybo Z7-20 (Zynq-7020) ×1** (~$300 street; Digilent/Mouser/Amazon) — the
+  analysis FPGA, **CHANGED FROM LIFCL-40-EVN 2026-08-08** (operator: not wedded to Lattice; want
+  out-of-the-box camera + memory + SD). Why it wins for ANALYSIS:
+  - **Pcam port = Pi-compatible 15-pin MIPI CSI-2 FFC** — the Arducam OV9281's Pi-style flex plugs
+    STRAIGHT IN (vs the Lattice EVN's proprietary 30-pin CN1 needing an adapter or header-wiring).
+  - **1 GB DDR3L onboard** — the FR-2.5 6 MB ring question evaporates (~22 s of full frames);
+    **microSD slot native**; dual Cortex-A9 runs Linux → SD recording/streaming comes from the PS
+    side nearly free.
+  - **Fabric: XC7Z020 = 53k LUT + 220 DSP + 630 KB BRAM** — tracker-bank estimate (20–35k) fits with
+    room; the correlator RTL is plain Verilog and ports.
+  - **Digilent's Pcam 5C reference design** = working open MIPI D-PHY/CSI-2 RX for this exact port —
+    the bring-up starts from a known-good camera pipeline, not from a blank D-PHY.
+  - Bandwidth: 480 fps × 320×240 × 10 bit ≈ 185 Mbps/lane on 2 lanes — far inside the port's envelope.
+  - Toolchain: **Vivado** (free tier covers 7020; big install). One more toolchain in the shop, but it
+    replaces Radiant which would ALSO have been new.
+  - Alt considered: **Kria KV260** (~$250, 4 GB, Ubuntu, RPi CSI connector, huge fabric) — even more
+    out-of-the-box but heavier ecosystem (PetaLinux/Vitis) and far from flight-representative. Keep as
+    fallback if Zybo availability slips.
   - [ ] received — notes:
+- **Lattice postscript (research retained, buy dropped)**: the LIFCL-40-EVN investigation is archived —
+  PSG + EVN UG in [`firmware/beacon-receiver/`](../../firmware/beacon-receiver/); findings: no onboard
+  DRAM (128 Mbit boot flash only, ~0.35 MB on-chip → no 6 MB ring), no SD/USB-C, proprietary 30-pin
+  camera CN1, Radiant toolchain. **CrossLink-NX remains the FLIGHT-article candidate** (small, low-power,
+  hard D-PHY) — the analysis vendor and the flight vendor are now deliberately decoupled; the tracker
+  RTL stays vendor-neutral Verilog so fabric work ports either way.
 
 ## Explicitly NOT in this order
 - Thorlabs 10 nm filter (deferred to 040, front-mounted — order-03 C-14 rationale).
