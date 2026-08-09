@@ -13,6 +13,24 @@ At-order verifies: EVN onboard RAM ≥6 MB (T011), Radiant toolchain (new instal
 OV9281 doubles as the trusted focal plane to finish the C-14 lens validation (M12 mount, global shutter,
 no IR-cut after lens swap).
 
+## 4.7 µH flight-inductor bring-up (2026-08-09): inductor GOOD, bench-supply wiring was the problem
+
+Swapped the 22 µH bench brick for the SPM4020T 4.7 µH (C-9 flight part) in the LM3410X boost. Findings:
+- **On the 1S LiPo: starts and runs clean.** On the SPD1168X bench supply: NO START — MCU in fast-flash
+  "quiver" (BOD brownout boot-loop). Raising the CC limit did NOT fix it. Scope showed **volts-class
+  ringing on the input bus** (−1.5/+3 V vs rail, at only 50 mA drive; measured with a ground-clip probe —
+  re-check tip-and-barrel before trusting the amplitude).
+- **Discriminator: LiPo clipped onto the SAME bus → ring GONE entirely.** Diagnosis: classic input-filter
+  instability — the boost is a negative-incremental-resistance load; PSU lead inductance (~µH) + small
+  input C = underdamped tank the converter pumps. 4.7 µH raises ripple ~5× over 22 µH and crosses the
+  threshold; battery milliohms damp it dead. NB a lone extra low-ESR cap HELPS NOT AT ALL (raises tank Q —
+  observed); the fix shape is a DAMPED leg (ganged 10 µF electrolytics — their ESR is the damper) +
+  ceramics at VIN + short twisted leads.
+- **Policy**: bench PSU-fed work runs the **22 µH** (or battery-parallel float, supervised); the
+  **4.7 µH is VALIDATED on its actual flight source**. Cube-tile build spec picks up: 4.7 µF ceramic +
+  100 nF at LM3410 VIN, damped bulk leg, short battery leads. `psu.py` MAX_CURR deliberately raised
+  0.5 → 1.3 A (dated comment; start-with-headroom-then-re-arm procedure) for the coming 306 mA era.
+
 ## Regression on the DGX-native bench (2026-08-08, post circuit clean-up): 17/19 PASS
 
 **The bench now runs NATIVELY on the DGX Spark** (no WSL interop): STEPLink CDC = `/dev/ttyACM1`
