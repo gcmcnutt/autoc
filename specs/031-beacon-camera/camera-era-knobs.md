@@ -107,11 +107,16 @@ The LED line is **~30 nm FWHM**, so a 10 nm filter passes only ~30 % of OUR OWN 
 **Verdict: the wide pair stays 30–40 nm class (it is near-OPTIMAL — matched to the LED linewidth);
 shelve 10 nm unless a well-depth-limited regime emerges, and then narrow-FOV optics only.**
 
-**6. FOV is a TRAINING constraint, not a free knob (operator 2026-08-09)**: the upcoming sim training
-runs assume **FOV-H = 120°** — the flight optics must realize what the policy is trained on. The birded
-pair (2×72° − overlap ≈ 120–125°) hits it while keeping each camera's 1.27 mm pupil and 0.056°/px sky
-patch. The single-lens alternative (f ≈ 1.1 mm @ F/2.2 → 0.50 mm pupil) costs **×6.5 in signal** and
-coarsens the sky patch ×2.8 — **the two-camera bird geometry IS the link-budget answer to 120°.**
+**6. FOV is CO-DESIGNED with training (operator 2026-08-09; decision SOFT)**: the current sim training
+assumes **FOV-H = 120°**, and the flight optics must realize whatever the policy is trained on — but
+the coupling runs both ways: **training is the cheap side of the trade**, so if the link budget lands
+on the fence at 120°, alternate topologies (narrower single camera + predictor-heavier policy, other
+splay angles, asymmetric pairs) can be TRAINED AND COMPARED in sim before any glass is bought. For the
+current 120° assumption: the birded pair (2×72° − overlap ≈ 120–125°) hits it while keeping each
+camera's 1.27 mm pupil and 0.056°/px sky patch; the single-lens alternative (f ≈ 1.1 mm @ F/2.2 →
+0.50 mm pupil) costs **×6.5 in signal** and coarsens the sky patch ×2.8 — the bird geometry is the
+link-budget answer *to 120° specifically*. If static range testing says even the pair is marginal,
+the FOV knob re-opens via retraining, not via optics heroics.
 
 ## Empirical backlog (what the Pi rig measures, in order)
 
