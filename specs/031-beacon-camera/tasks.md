@@ -280,6 +280,35 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   (`sim/tb_s6.v`: assert NO lock=2 frames during an 8 s dark window) + re-run `recovery_sweep.py`; the 8 s rung
   negative-recovery artifact should disappear. Slot for s7.
 
+### A7 — Flight-emitter cube build @306 mA (STARTED 2026-08-09; parts = order-03 §C complete; supersedes the T032–T038 hand-build details)
+
+> Staged, gate-by-gate. Prior decisions baked in: 0.62 Ω field sense (order-1 stock) · 4.7 µH SPM4020T
+> (VALIDATED on battery 2026-08-09; PSU-fed needs damper — journal) · OVP fit per EV-A13/A14 ·
+> co-aimed tiles (field test #4 confound) · XNANO-tethered MCU (bare 416 = order-04 C-26, later) ·
+> `psu.py` MAX_CURR now 1.3 A · eye safety RG0 ≥30 cm momentary.
+
+- [ ] **A7-1 Single-tile thermal gate**: shear one ~10×10 mm tile (C-8 FR4, 1.0 mm), knife-slit island,
+  solder one L1IZ-0850; drive at **306 mA** (0.19 V across the 0.62 Ω); 10-min soak; verify ~15 °C rise
+  and clean chip edges on the current envelope. **GO/NO-GO for the cube** (fallback = C-11 Luxeonstar
+  MCPCB, order-03 sourcing note). Record the measured rise here: ______
+- [ ] **A7-2 Flight driver on copper-clad**: LM3410X on SOT23-6 adapter (**verify pin-1**), 4.7 µH,
+  SS1030, 0.62 Ω; **input network per the 2026-08-09 finding**: 4.7 µF ceramic + 100 nF AT the VIN pin,
+  damped bulk leg (3–4× ganged 10 µF electrolytics — ESR is the damper), Molex UMX header, short leads.
+- [ ] **A7-3 OVP fitted during build** (closes A1-ovp): BZX55C15 cathode→V_OUT / anode→FB + 1 k series
+  FB→sense; then the pull-LED-header live test.
+- [ ] **A7-4 Driver bring-up at 306 mA**: battery-first; PSU tests only with the damper bank (CC 1.3 A
+  start → re-arm 0.45 A). Verify sense voltage, chip-edge quality, UVLO trip on a supply ramp.
+- [ ] **A7-5 Shear + populate 4 more tiles** (thermal gate passed); stitch series string.
+- [ ] **A7-6 Cube assembly**: 5 tiles **CO-AIMED/boresighted, NOT splayed**; glue; re-verify current +
+  thermal on the assembled cube (worst tile).
+- [ ] **A7-7 Power/runtime check**: ~1.3 A input during ON chips / ~0.7 A avg at 16/31 duty from the
+  150 mAh pack ≈ **~13 min/charge** — confirm measured; both packs charged for field days; UVLO = the
+  honest end-of-day bell.
+- [ ] **A7-8 Re-baseline**: full `regression.py` on the bench mule (22 µH, PSU) per policy + a
+  battery-powered functional ladder on the cube itself (baseline lock, dropout mini-ladder, P-ladder).
+- [ ] **A7-9 → optics stage**: cube + Option-C receiver + telemetry rig → the **100 m field test**
+  (order-03 driver (3); lensed_pd_range.py predictions 96–174 m depending on F/# and aspect).
+
 **Initial edge measurements (2026-06-24, N=15, via `host/transition.sh` + telemetry @40 Hz):** acquire cold→confirmed **~200 ms** (MINLOCK=2); LOS signal→`lock=0` **~200 ms** clean / **~300 ms** with noise (noise extends the hold); **pure-noise false-alarm ≈ 0 green/10 s** (q floor ≈3, hits GOOD=6 only ~0.7% of frames and never 2 in a row — MINLOCK=2 is a strong noise rejector). Wrong-channel locks appear only with *real signal + noise* (A+B+noise ~75% confirmed), not pure noise. These are the N=15 baselines the A4d-1 length sweep improves on.
 
 **Modeling realism (harness baseline):** the analog model is **band-limited — chip edges RAMP** (low-pass PD/TIA, not ideal squares; `s3.v` `LPF_SH`), so edge samples land mid-ramp and correlation is modestly reduced. Treat the LPF cutoff as a sweepable realism knob alongside N, noise, and drift (a mild pass, not heavy smear).
