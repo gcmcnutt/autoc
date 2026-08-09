@@ -81,10 +81,37 @@ tolerance, on top of removing most cold-acquisition pointing anxiety. Beyond the
 job is exactly the operator's framing: an educated guess at which way the fight went; scan-acquire
 (sweep ≤ ~FOV per code word ≈ 60–90°/s with coarse binning) is the backstop.
 
-**4. Sampling-mode interaction** (from order-04 verify (c)): during search/scan use **bin** (gap-free,
-photon-preserving); a skip mode makes a sub-pixel beacon blink as it crosses the sampling grid — only
-usable with PSF deliberately defocused past the skip pitch. Slight defocus (2–4 px PSF) is desirable
-anyway for centroid interpolation.
+**4. Sampling-mode + defocus interaction** (from order-04 verify (c); DERATE ADDED 2026-08-09): during
+search/scan use **bin** (gap-free, photon-preserving); skip modes make a sub-pixel beacon blink — only
+usable with PSF defocused past the skip pitch. Defocus (desired for centroiding anyway) has an SNR
+price: spreading the spot over k pixels leaves total signal intact but the spatial sum (or the k-bin)
+takes √k more background noise → **background-limited SNR ÷√k. At the 16-px (4×4) defocus: ÷4** —
+the bright-day post-correlation column drops 22→~5.5 @100 m (vs the ×4.5 threshold) → **bright-day
+range with 4×4 defocus ≈ 100–110 m-class**, dark barely affected (shot-limited: ~12→9 @100 m).
+Defocus is a knob: a 2×2-px PSF (÷2) may satisfy centroiding + skip-bridging at half the cost —
+optimize live against corrB + centroid jitter.
+
+**5. Filter FWHM (10 vs 40 nm) in the whole budget — the LED linewidth decides it:**
+The LED line is **~30 nm FWHM**, so a 10 nm filter passes only ~30 % of OUR OWN signal (×0.3) vs
+~85 % for 40 nm. Two regimes:
+- **Exposure-time-limited** (the 453 fps case — sky ~40 % of well at 2.2 ms): SNR ∝ T_sig/√BW →
+  **40 nm wins ×1.4**.
+- **Well-depth-limited** (sky so bright that exposure must shrink to protect the well): t ∝ 1/BW →
+  SNR ∝ T_sig/BW → **10 nm wins ×1.4**. Only reachable on very bright days or slower frame modes.
+- **AoI disqualifier for wide optics**: CRA ~10° blue-shifts a dielectric stack ~4–5 nm — HALF a 10 nm
+  passband — so an edge-of-field beacon slides off the filter. 10 nm is narrow-optics-only regardless.
+- **Market reality (searched 2026-08-09)**: integrated-10 nm M12 lens SKUs effectively don't exist —
+  10 nm FWHM is the laser/VCSEL isolation market, sold as loose discs (Amazon/SyronOptics); the
+  LED-illumination lens market ships 30–60 nm ("narrow" board-lens filters spec ≈ 850±10 CWL, 30 nm
+  HBW, T≈86 % — cctvopticallens/TowinLens class).
+**Verdict: the wide pair stays 30–40 nm class (it is near-OPTIMAL — matched to the LED linewidth);
+shelve 10 nm unless a well-depth-limited regime emerges, and then narrow-FOV optics only.**
+
+**6. FOV is a TRAINING constraint, not a free knob (operator 2026-08-09)**: the upcoming sim training
+runs assume **FOV-H = 120°** — the flight optics must realize what the policy is trained on. The birded
+pair (2×72° − overlap ≈ 120–125°) hits it while keeping each camera's 1.27 mm pupil and 0.056°/px sky
+patch. The single-lens alternative (f ≈ 1.1 mm @ F/2.2 → 0.50 mm pupil) costs **×6.5 in signal** and
+coarsens the sky patch ×2.8 — **the two-camera bird geometry IS the link-budget answer to 120°.**
 
 ## Empirical backlog (what the Pi rig measures, in order)
 
