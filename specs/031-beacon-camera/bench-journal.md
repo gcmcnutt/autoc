@@ -22,9 +22,12 @@ vs the WSL-era 100 %-at-3 %-duty envelope. Corr scales linearly with duty (16.2k
 receiver-side and expected: (a) geometry — corr baseline 16k vs the historical 29k best; (b) **the bench
 PD is now the unfiltered BPW34** — indoor LED-lamp PWM lands in-band and inflates the AGC energy
 denominator exactly where signal is weakest (the old BPV10NF's 780–1050 package filter hid it).
-Discriminator queued: re-run the P-ladder dark / incandescent-only, and/or re-aim to peak corr first.
-**Verdict: same realm — core link, timing, recovery all at baseline; weak-signal corner awaits the lens
-cage + 850 filter (which removes suspect (b) by construction).**
+**Operator context (2026-08-08): the run geometry was IMPROVISED** — emitter pointing right, lens/filter
+loose over a face-UP sensor, lots of light leakage → the coupling was indirect/bounce with ambient pouring
+in around the optics. Margin 8 + clean recovery through THAT is a strong showing; the two deep-attenuation
+rungs are not diagnostic of the real chain. **Deep-attenuation characterization + the P-ladder
+discriminator are DEFERRED to the field unit** (copper-clad cage, light-sealed, boresighted) — re-run the
+full ladder as the first act on that build and expect the WSL-era envelope back.
 
 ## Current state (2026-07-18)
 
