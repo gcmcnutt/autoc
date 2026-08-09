@@ -29,9 +29,16 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
 - [ ] **O4-3** **Lattice CrossLink-NX Evaluation Board `LIFCL-40-EVN` ×1** (~$300–400, Lattice/Mouser) —
   the analysis FPGA. Sizing: tracker-bank architecture ≈ 20–35k LUT vs 39k cells (s3 correlator datum
   3.5k LUT/unit on MXO2, cheaper here with DSP slices), hardened 4-lane MIPI D-PHY vs a 0.37 Gbps need.
-  **At-order verifies (T011, still open)**: onboard HyperRAM/SDRAM **≥6 MB** (FR-2.5 ring), microSD
-  4-bit SDIO, USB-C — vendor pages 403'd in the May audit, check the user guide behind the
-  latticesemi.com login.
+  **T011 RESOLVED 2026-08-08** (Lattice PSG Dec-2020, p.26 — archived at
+  [`firmware/beacon-receiver/PSG_2020_I0211K_Rev28.pdf`](../../firmware/beacon-receiver/PSG_2020_I0211K_Rev28.pdf)):
+  the EVN board is LIFCL-40-**9BG400C**, expansion = FMC + Raspberry Pi + Pmod + MIPI CSI-2/D-PHY
+  headers, PCIe 5G SERDES, USB-B programming — and its only memory is **128 Mbit SPI BOOT FLASH: NO
+  onboard DRAM/HyperRAM**. On-chip total is ~0.35 MB (1512k EBR + 1024k LRAM + 240k distributed), so
+  the FR-2.5 **6 MB frame ring does NOT fit this board natively**. Consequences:
+  (a) the ANALYSIS scope (MIPI bring-up, tracker bank, live detection stats out over USB/UART) needs no
+  frame ring — EVN is sufficient as-is; (b) full-frame recording later = **HyperRAM Pmod / FMC memory
+  card** on the expansion headers (LIFCL-40 caBGA400 supports LPDDR3/DDR3L-1066 if a custom board ever
+  wants it); (c) PSG is Dec-2020 — glance at the current user guide at order for board-rev deltas.
   ⚠ **Toolchain: CrossLink-NX = RADIANT, not Diamond** — new install alongside the MXO2 Diamond flow
   (free license covers LIFCL); plan a hello-LED bring-up before the MIPI work.
   - [ ] received — notes:
