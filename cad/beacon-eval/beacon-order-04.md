@@ -24,7 +24,13 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   Why ×2: one lives on the bench Pi permanently, one is spare/flight-cage stock (XNANO lesson — keep
   margin). At-order verifies: (a) **Zero-style 22-pin cable included?** (Zero W is listed as supported —
   else add the ~$6 adapter flex); (b) **is the lens mount M12?** (if yes, the C-14 16 mm IR lens screws
-  straight on = narrow-field tracker config + the trusted 850 nm focal plane, no Pi-cam surgery).
+  straight on = narrow-field tracker config + the trusted 850 nm focal plane, no Pi-cam surgery);
+  (c) **453 fps mode geometry — CROP or SKIP/BIN?** FOV at speed hinges on it: the 2.8 mm lens gives
+  ~**72° H × 48° V** full-field (pinhole math 69.7°/47.3°/78.8° D; vendor 90° D/72° H with the −17 %
+  distortion), 0.056°/px at full res — the beacon is sub-pixel at 100 m at any binning — but a center
+  **crop** to 320×240 collapses the field to ~20° H × 15° V at speed, while **skip/bin** keeps the full
+  ~72° at 0.23°/px. Wide-acquisition vs narrow-tracker at 453 fps is decided by this register mode —
+  check the InnoMaker mode table / raw frames on arrival.
   *(Arducam B0162 remains the alt if InnoMaker stock vanishes — but its Pi-stack modes are documented
   slower: 320×240@220 fps binned.)*
   - [ ] received — notes:
