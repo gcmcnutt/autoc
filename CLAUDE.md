@@ -71,6 +71,21 @@ tests/
 
 C++17: Follow standard conventions
 
+## Active feature — 041 m2-depth (specced, ready to implement)
+
+**Start here**: [`specs/041-m2-depth/tasks.md`](specs/041-m2-depth/tasks.md) — it opens with a READ-FIRST
+block giving the document order and which document governs. 109 tasks across 9 phases.
+
+Two things a fresh context should know before touching anything:
+- **`spec.md` § Clarifications governs.** 11 decisions across two clarify sessions live there, several
+  reversing earlier ones. `hypothesis.md` is the derivation-of-record but is **superseded where it
+  conflicts** (it says so at the top) — read it for *why*, never for *what*.
+- **T011a must precede T044.** The version bump makes the pinned comparator dmps unreadable; extract their
+  per-tick CSVs first or the prior-M1 baseline and the blind-gap distribution are lost permanently.
+
+Three build surfaces this feature, not two: autoc/crrcsim, xiao, and **INAV** (two targets — bench
+`MAMBAF722_2022A`, flight `MATEKF722MINI`, bench first; disconnect the GPS before flashing).
+
 ## Recent Changes
 - 041-m2-depth: Added C++17 (autoc, crrcsim, tools), Python 3.11 (analytics only) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp serialization), inih (ini),
 - 040-camera-redo: Added C++17 (autoc + crrcsim); Python 3.11 (analysis/plots only) + Eigen (vec3/quat), cereal (dmp + EvalData wire), inih (ini), GoogleTest, CRRCSim

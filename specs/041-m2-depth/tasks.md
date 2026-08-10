@@ -1,9 +1,35 @@
 # Tasks: 041 — M2 Depth (observation-side objectives)
 
 **Input**: Design documents from `/specs/041-m2-depth/`
-**Prerequisites**: [plan.md](plan.md), [spec.md](spec.md), [research.md](research.md),
-[data-model.md](data-model.md), [contracts/](contracts/), [quickstart.md](quickstart.md)
-**Derivation of record**: [hypothesis.md](hypothesis.md)
+
+## 📖 READ THIS FIRST — order, and which document wins
+
+A fresh context should read in this order. The ordering is not cosmetic: two documents disagree with each
+other on purpose, and one of them is superseded.
+
+| # | document | why, and how much |
+|---|---|---|
+| 1 | **this file** | the execution list. Each task carries its file paths and its own warnings — you can work from it directly |
+| 2 | [plan.md](plan.md) | stack, constitution gates, phase sequencing |
+| 3 | [spec.md](spec.md) **§ Clarifications** | ⭐ **GOVERNS.** On any conflict between documents, this wins. 11 decisions across two sessions live here |
+| 4 | [contracts/](contracts/) + [data-model.md](data-model.md) | binding interface detail — read the relevant one per task, not all up front |
+| 5 | [research.md](research.md) | the *why* per decision, R1–R14. Read when a task's rationale is unclear |
+| 6 | [hypothesis.md](hypothesis.md) | ⚠️ **SUPERSEDED WHERE IT CONFLICTS.** The derivation of record and the only place the *retractions* are written down — genuinely worth reading for **why**, but **not for what**. It carries a supersession table at the top; trust that over its body. Optional |
+
+**If you read only one thing beyond this file, read spec.md § Clarifications.** Several decisions reversed
+earlier ones, and the reversals are the load-bearing part: no load axis in 041; the in-envelope *flag* (not the
+duration accumulator) is the primary input; the predictor is a horizon-free current-bearing estimator with its
+error fed back, not a fixed-horizon forecast.
+
+**Three traps that cost real money if missed** — each is called out at its task, listed here because they are
+the ones you cannot recover from:
+
+1. **T011a before T044** — extract the pre-break comparator CSVs, or the prior-M1 baseline (SC-007a) and the
+   blind-gap distribution (FR-024b) are gone permanently.
+2. **T036** — bit-identical fitness across moving the step score into the tick loop. Without it, a rounding
+   difference is a silent objective change.
+3. **T040(a)** — steady level flight must read ≈1 g on the normal accel channel, not ≈0. The only guard
+   between specific force and kinematic acceleration.
 
 **Tests**: REQUIRED, not optional — Constitution I, and FR-003 mandates the zero-answer pattern for every
 paired-series fitness term. Test tasks are interleaved with implementation per Constitution I's TDD ordering.
@@ -24,8 +50,12 @@ paired-series fitness term. Test tasks are interleaved with implementation per C
 2. **Never rebuild while a bake is live** — workers re-exec `build/autoc`.
 3. **Nothing fitness-affecting after the bundle** until the M1 bake completes.
 4. **Submodule pointer bump before parent merge** (crrcsim tick stamping).
-5. **Study A runs on CURRENT dmps** — no schema dependency — so it can precede the break entirely.
-6. All training via `scripts/train.sh` (Constitution IX). Never a background task.
+5. ⛔ **T011a MUST precede T044.** Studies A and B both read the **pre-break** pinned comparators, and T044's
+   version bump + fail-loud read makes those dmps unreadable to a 041 binary. Extract the CSVs first or lose
+   the prior-M1 baseline (SC-007a) and the blind-gap distribution (FR-024b) permanently.
+6. **T046 and T047 MUST precede T045.** T045's gate builds xiao, which compiles the generated forward pass —
+   a stale `nn_program_generated.cpp` against the new input count fails or, worse, misleads.
+7. All training via `scripts/train.sh` (Constitution IX). Never a background task.
 
 ---
 
@@ -57,6 +87,11 @@ plus the physics reader that unblocks Study A on existing data.
 - [ ] T009 [P] Time-denominate the streak metrics in `src/analytics/` so `pctInStreak` / `avgMaxStreak` are surfaced in seconds consistently (037 P-O11). These are 041's primary progress signal and raw tick-denominated counts read 2× at 20 Hz — fix before they are used to judge a bake.
 - [ ] T010 Add physics columns to `tools/dmp_dump.cc`: per-tick `acc[3]`, `omegaDotBody[3]`, `alpha`, `vRelWind` from `PhysicsTraceEntry`, plus derived body-frame normal acceleration from `acc[]` + `quat[]`. ⚠️ This data is **already recorded** for every elite reeval (`inputdev_autoc.cpp:1047`) and has **no consumer anywhere** — this is a reader, not a recording change, and it works on **current** dmps.
 - [ ] T011 [P] Add a test in `tests/dmp_dump_tests.cc` (or the nearest existing suite) that the derived normal acceleration equals 1 g for a synthetic steady-level-flight tick and the documented sign for a synthetic pull-up.
+- [ ] T011a ⛔ **HARD PREREQUISITE OF PHASE 4 — extract the comparator data while it is still readable.** Run `dmp-dump --physics` (and the standard per-tick CSV) over **both pinned comparators** — the prior M1 `autoc-m1/…2026-07-06T01:35:46.579Z/` and 040-t4 `autoc-m2/…2026-08-04T03:43:24.586Z/` — and archive the CSVs under `specs/041-m2-depth/artifacts/pre-break/`.
+  **Why this cannot wait**: T044 bumps the `EvalResults` version and makes reads **fail loud** on older artifacts, so from that commit onward a 041 binary **cannot read either comparator**. Two things become permanently unobtainable if this is skipped:
+  1. **The prior M1's per-regime profile** (SC-007a, FR-011c) — its 37-input genome cannot be loaded by a 041 binary either, so the recorded dmp is the *only* route to that baseline. Lose the read and the baseline is gone for good.
+  2. **The blind-gap distribution** (FR-024b) — which *defines* the predictor go/no-go bins and feeds the lens-purchase decision.
+  Extracting to CSV (rather than keeping a pre-break binary around) means the data outlives any build.
 
 **Checkpoint**: config edits no longer fail spuriously, streak metrics are honest, and load is readable from
 existing pinned runs. Study A (Phase 5) is now unblocked without touching the schema.
@@ -81,7 +116,7 @@ zero-answer test; no known instance remains asserted only by a comment (SC-001).
 
 - [ ] T017 [US1] Add a zero-answer test for the M2 objective in `tests/fitness_decomposition_tests.cc`: construct data whose correct score is **exactly 0**, assert exactly 0. Add the companion assertion that a deliberately one-tick-shifted input scores **visibly worse** — a test that passes either way would be worse than none here.
 - [ ] T018 [P] [US1] Add the same zero-answer + shifted-worse pair for `vis_frac` in `tests/fitness_decomposition_tests.cc`.
-- [ ] T019 [P] [US1] Add the same pair for `prediction_score` in `tests/fitness_decomposition_tests.cc`. ⚠️ Two fixture traps make these silently vacuous, both already paid for: an empty `pathList` makes `computeScenarioScores` **skip the scenario** so every variant scores 0 and the comparison looks passed without running; and a bare `TEST()` misses the `ConfigManager` fixture so the run proceeds on defaults. Verify each new test **fails** when the fix is reverted.
+- [ ] T019 [P] [US1] Add the same pair for `prediction_score` in `tests/fitness_decomposition_tests.cc`. ⚠️ **Timing exception to this block's "write before the refactor" rule**: `prediction_score`'s pairing is *currently wrong*, so a zero-answer test cannot pass until T022 lands the grouped record. Write it here, expect RED, and confirm it goes green at T022 — that transition is the evidence the pairing was actually fixed. ⚠️ Two fixture traps make these silently vacuous, both already paid for: an empty `pathList` makes `computeScenarioScores` **skip the scenario** so every variant scores 0 and the comparison looks passed without running; and a bare `TEST()` misses the `ConfigManager` fixture so the run proceeds on defaults. Verify each new test **fails** when the fix is reverted.
 
 ### The structural fix
 
@@ -140,7 +175,9 @@ read by every consumer, with input-count assertions and metadata tables in agree
 
 ### Land it
 
-- [ ] T045 [US2] [OP] **THE SINGLE COMMIT** — everything from Phase 3 and Phase 4 together (FR-005). Gates, all of which must pass: `bash scripts/rebuild.sh` green; `cd xiao && pio run -e xiaoblesense_arduinocore_mbed` green; Constitution VI audit clean on touched paths (`grep -nE '\b(float|double)\b' src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/ | grep -v -- '// raw-ok:'`). Nothing lands after this until the M1 bake completes.
+- [ ] T045 [US2] [OP] **THE SINGLE COMMIT** — everything from Phase 3 and Phase 4 together (FR-005).
+  ⛔ **Preconditions**: **T046** (`nn2cpp` regenerated) and **T047** (`sim_response.py` parser) must be done *first* — this gate builds xiao, which compiles the generated forward pass, so a stale generated file against the new input count either fails to build or builds something wrong. Also **T011a** must be done (see Phase 2), since this commit makes the pre-break comparators unreadable.
+  Gates, all of which must pass: `bash scripts/rebuild.sh` green; `cd xiao && pio run -e xiaoblesense_arduinocore_mbed` green; Constitution VI audit clean on touched paths (`grep -nE '\b(float|double)\b' src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/ | grep -v -- '// raw-ok:'`). Nothing lands after this until the M1 bake completes.
 - [ ] T046 [US2] Regenerate `xiao/src/generated/nn_program_generated.cpp` via `tools/nn2cpp.cc` for the new layout, and add a parity test that the generated forward pass matches the desktop forward pass on a fixed input vector.
 - [ ] T047 [P] [US2] Update the `data.dat` parser in `specs/019-improved-crrcsim/sim_response.py` for the new column set.
 - [ ] T048 [US2] [OP] If `CMakeLists.txt` was touched by this phase, run a clean `bash scripts/rebuild-perf.sh` (Constitution IV — an incremental reconfigure can leave stale link state and miss test registration).
@@ -169,7 +206,7 @@ from a pinned run with no recording change (SC-004, SC-005).
 - [ ] T055 [US3] Report per regime, per axis: `dCtrl`, `⟨|u|⟩`, and load distribution **plus peak** (peak is the damage-relevant statistic; a mean hides ±11 g excursions entirely). Emit machine-readable CSV alongside any plot. State sample sizes and any excluded ticks.
 - [ ] T056 [US3] Add the H2 test to the study: within each regime, does pitch/roll `dCtrl` predict throttle level and load? Report correlation with a stated confidence, not a scatter plot alone.
 - [ ] T057 [US3] Add normal-load **autocorrelation at the history lags** to the study — this is the cheap evidence that decides whether the accel channels ever need temporal depth (research.md R1 fallback ladder). Strong autocorrelation at 50–100 ms ⇒ one instantaneous sample suffices and neither fallback is warranted.
-- [ ] T058 [US3] Run Study A on the **pinned prior M1** and on **040-t4** via `dmp-dump --physics`, producing `specs/041-m2-depth/study-a/`. ⚠️ Uses **current** dmps — no schema dependency, so this can run before or after the break. This also produces the **prior M1's per-regime profile**, which is the only obtainable form of that baseline (FR-011c: the 37-input genome cannot be loaded by a 041 binary, so it can never be re-evaluated or ablated).
+- [ ] T058 [US3] Run Study A on the **pre-break CSVs archived at T011a** (`artifacts/pre-break/`), covering the pinned prior M1 and 040-t4, producing `specs/041-m2-depth/study-a/`. ⚠️ Do **not** plan to re-extract from S3 — after T044 the comparators are unreadable by a 041 binary. ⚠️ Uses **current** dmps — no schema dependency, so this can run before or after the break. This also produces the **prior M1's per-regime profile**, which is the only obtainable form of that baseline (FR-011c: the 37-input genome cannot be loaded by a 041 binary, so it can never be re-evaluated or ablated).
 
 **Checkpoint**: both instruments exist and are validated. Study A's findings are recorded as input to the
 **follow-on** aggressiveness feature — 041 builds no load axis.
@@ -226,7 +263,7 @@ the new inputs (SC-006, SC-007, SC-007a).
 **Independent test**: the study returns a verdict against a no-information baseline, binned by gap age
 (SC-009).
 
-- [ ] T081 [US5] Extend `src/analytics/regime_load_study.py` (or a sibling in the same package) to extract per-tick target-bearing truth and visibility from recorded tracker runs, and to compute the **hold-last-seen** baseline (dead-reckon at zero rate).
+- [ ] T081 [US5] Extend `src/analytics/regime_load_study.py` (or a sibling in the same package) to extract per-tick target-bearing truth and visibility from the **T011a pre-break tracker CSVs** (not from S3 — see constraint 5), and to compute the **hold-last-seen** baseline (dead-reckon at zero rate).
 - [ ] T082 [US5] Produce the **blind-gap distribution** — frequency, duration histogram, exit→re-entry bearing offset. ⚠️ **This must come first**, because it *defines* the go/no-go criterion (FR-024b), and it is a deliverable in its own right regardless of the predictor verdict — **it is an input to the lens purchase** (1.8 mm vs 2.x mm depends on how useful the predictor turns out to be), and nobody has measured it.
   ⚠️ **Measured at V = 90°, applied at V = 75°.** The recorded runs available (040-t4) predate FR-029, so their gap distribution is **optimistic** — narrowing V shifts mass toward longer gaps. This is conservative in the right direction (bins qualified against t4 are a harder bar than reality), so use it, but say so. Predictability itself (T083) is largely FOV-independent and needs no caveat.
   Cross-check against the physics: [camera-era-knobs.md](../031-beacon-camera/camera-era-knobs.md) §3 predicts a 3 g target exits a ±36° half-field in ~1.1 s @50 m / ~1.5 s @100 m — so expect the relevant timescale to be **order 1 s, not sub-second**. A measured distribution far from that wants explaining before it is trusted.
@@ -277,9 +314,10 @@ the new inputs (SC-006, SC-007, SC-007a).
 ```text
 Phase 1 (setup, INAV bring-up)
    │
-Phase 2 (foundational: config surface, physics reader)
+Phase 2 (foundational: config surface, physics reader, ⛔ T011a pre-break CSV extraction)
    │
-   ├─────────────► Phase 5 partial: T054–T058 (Study A on CURRENT dmps — no schema dependency)
+   ├─────────────► Phase 5 partial: T054–T058 (Study A on the T011a CSVs — must be extracted
+   │                                            BEFORE T044's version bump, see constraint 5)
    │
 Phase 3 (US1 structural) ──┐
                            ├──► T045 THE SINGLE COMMIT ──► Phase 5 rest (instruments) ──► Phase 6 (US4 bake)
@@ -337,5 +375,6 @@ defensible increment even if no bake ever runs.
 | T086 predictor go/no-go | Phase 8's head work, before a 27 h bake |
 | T087 E1 decision | one tracker run |
 
-**Total**: 109 tasks. US1 17 · US2 24 · US3 10 · US4 22 · US5 8 · US6 10 · setup/foundational/polish 18.
-*(US2 grew by 3 at the 2026-08-10 camera-model pass: T041a–T041c.)*
+**Total**: 110 tasks. US1 17 · US2 24 · US3 10 · US4 22 · US5 8 · US6 10 · setup/foundational/polish 19.
+*(US2 grew by 3 at the 2026-08-10 camera-model pass: T041a–T041c. T011a added at the same pass's ordering
+review — it is the one task whose omission is unrecoverable.)*
