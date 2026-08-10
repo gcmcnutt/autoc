@@ -168,6 +168,15 @@ TEST(TrackerConfig, OperatorIniParsesClean) {
     // smoke values for fast visual iteration). If it ever fails to parse,
     // smoke-test runs would fail too. CMake passes the source dir so the
     // test runs from any CWD.
+    //
+    // 041 T008 — this is a STRUCTURAL guard only: the file parses, and the two
+    // keys without which tracker mode cannot start are present. It deliberately
+    // does NOT pin operator-tunable values (it used to pin CrashHullShape and
+    // FlightArenaRadius == 80). Such pins fail on an ordinary knob edit — a red
+    // test for a reason unrelated to correctness — and 041 edits streak and
+    // camera knobs in exactly these files. Values that are physical
+    // MEASUREMENTS rather than tuning choices (beacon separation below) stay
+    // pinned; the distinction is whether an operator is expected to change it.
     const std::string ini_path =
         std::string(AUTOC_SOURCE_DIR) + "/autoc-tracker.ini";
     INIReader reader(ini_path);
@@ -175,8 +184,6 @@ TEST(TrackerConfig, OperatorIniParsesClean) {
         << "autoc-tracker.ini must parse cleanly: " << ini_path;
     EXPECT_EQ(reader.Get("", "Mode", ""), "tracker");
     EXPECT_FALSE(reader.Get("", "TrackerSourceRun", "").empty());
-    EXPECT_EQ(reader.Get("", "CrashHullShape", ""), "SPHERE");
-    EXPECT_DOUBLE_EQ(reader.GetReal("", "FlightArenaRadius", 0.0), 80.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -208,17 +215,15 @@ TEST(TrackerConfig, DerivedFeaturesExplicitValuesParse) {
     EXPECT_DOUBLE_EQ(reader.GetReal("", "CepGateThreshold", 1.25), 0.75);
 }
 
-TEST(TrackerConfig, DerivedFeaturesAtCanonicalDefault) {
-    // Spec Q4 + research.md R2 lock the default at 1.25 (matches
-    // kCepSentinelThreshold). The repo-root autoc-tracker.ini ships with
-    // CepGateThreshold = 1.25 as a flat key. This is the gate against
-    // accidental ini drift.
-    const std::string ini_path =
-        std::string(AUTOC_SOURCE_DIR) + "/autoc-tracker.ini";
-    INIReader reader(ini_path);
-    ASSERT_EQ(reader.ParseError(), 0);
-    EXPECT_DOUBLE_EQ(reader.GetReal("", "CepGateThreshold", -1.0), 1.25);
-}
+// 041 T008 — REMOVED: `DerivedFeaturesAtCanonicalDefault`, which read the
+// production autoc-tracker.ini and pinned CepGateThreshold == 1.25.
+//
+// It was written as a gate "against accidental ini drift", but it cannot tell
+// accidental drift from an operator deliberately sweeping the knob — and the
+// latter is the normal case. The two fixture-owned tests above already cover
+// what is actually testable here: the key parses when present, and the caller's
+// default applies when absent. The compiled-in default and its [0, 2] range
+// check live in src/util/config.cc, where a bad value fails loud at startup.
 
 // Out-of-range CepGateThreshold loud-fail is enforced via the ConfigManager
 // loud-fail path (calls exit(1) with a clear error) — covered by manual

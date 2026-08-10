@@ -24,6 +24,15 @@ add_library(inih STATIC
     ${inih_SOURCE_DIR}/cpp/INIReader.cpp
 )
 target_include_directories(inih PUBLIC ${inih_SOURCE_DIR} ${inih_SOURCE_DIR}/cpp)
+# 041 T005 -- raise inih's line cap. Upstream INI_MAX_LINE is 200 bytes, and a
+# LEGAL `key = value  # explanatory comment` exceeds it easily: 216 bytes on
+# `EnablePredictorHead = 1` plus its comment aborted startup once with no
+# diagnostic at all, costing a bisect. 041 adds several commented knobs, so the
+# trap would fire again. PUBLIC because ini.c sizes its stack line buffer from
+# this and INIReader.cpp must agree; 4096 is ~20x the observed failure and still
+# a trivial stack frame. Pairs with T006 -- if a line ever DOES exceed this, the
+# reader now names the line instead of failing mutely.
+target_compile_definitions(inih PUBLIC INI_MAX_LINE=4096)
 
 # cereal serialization (header-only, replaces Boost.Serialization)
 FetchContent_Declare(

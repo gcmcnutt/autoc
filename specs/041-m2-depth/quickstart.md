@@ -19,6 +19,7 @@ workflow; exact flags settle at `/speckit.tasks` and implementation.
 | Never `git push` — the operator drives pushes | [[feedback_operator_drives_push]] |
 | ⚠️ **Disconnect the GPS module before flashing an INAV controller** | `specs/020-pre-flight-pipeline/plan.md` |
 | INAV builds **two targets** — bench `MAMBAF722_2022A`, flight `MATEKF722MINI`. **Bench first**; bench-only validation is not flight validation | 021 T041 precedent |
+| **All gear-attached work lives in Phase 6**, gated on a decent M1 read at T067 — INAV bring-up (T001/T001a) and the xiao board tasks (T074/T075/T078). Xiao *host compiles* (T002, T046, T045's gate) stay early: no board needed, and T045 compiles the generated forward pass | operator decision 2026-08-10 |
 | Reports come from `scripts/generate_pngs.sh <m1\|m2> <log>` — hand-calling the plotters loses the per-gen S3 cache | [[feedback_generate_pngs_wrapper]] |
 
 ---

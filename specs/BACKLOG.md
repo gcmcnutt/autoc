@@ -15,6 +15,46 @@
 
 ## 041 deferrals
 
+### [041 US1 implement, filed 2026-08-10] Reorganise `EvalResults` BY TIME — stop having independent lists to synchronise at all
+
+**Operator framing, 2026-08-10**: *"try not to sync independent lists — rather we refactor the whole thing
+by time. Big ripple effect for later on."* That is the actual target, and it is deliberately larger than
+what 041 does.
+
+**What 041 did, and where it stopped.** US1 replaced the per-**tick** parallel lists with a grouped record —
+`tickList[i][k] = {state, cameraView, targetSample}` plus a separately-named pre-loop initial state — which
+retires the offset bug class on that axis by construction (the `stepIndex - 1` clamp is deleted, not
+relocated). It did **not** touch the per-**scenario** axis, where `EvalResults` still carries eight
+collections indexed by the same `i`: `crashReasonList`, `pathList`, `aircraftStateList`, `scenarioList`,
+`debugSamples`, `physicsTrace`, `arenaEgressCount`, `hullStrikeCount`.
+
+**Why it stopped there** (recorded so the decision is not re-litigated as an oversight): grouping the
+scenario axis is strictly larger than the change 041 was already taking, and it would have landed in the
+**same commit as the M1 bake's schema** — the one commit 041 cannot afford to get wrong (FR-005, one
+contract break, one owed rebake).
+
+**What the follow-on should actually do.** Not "group the scenario axis too" — make **time the organising
+principle** so there is no set of independent series to keep in step. Concretely, the things that make the
+current shape fragile:
+
+- The eight scenario-axis lists are only safe because they are appended **in lockstep in one place**
+  (`inputdev_autoc.cpp:1030-1054`). Nothing enforces that; a future producer that appends to seven of eight
+  compiles fine.
+- `physicsTrace` and `debugSamples` are appended only `if (evalData.isEliteReeval)`, so on a non-elite dmp
+  they are **empty while the others are full**. Every consumer bounds-checks today; nothing makes it
+  mandatory.
+- `physicsTrace` is worse than offset — it is a **different rate** (200 Hz FDM substeps vs 20 Hz control
+  ticks) living in a struct whose other members are per-tick, with a timestamp that only advances per
+  control tick. 041 dealt with this by joining on recorded time in the one consumer (`dmp-dump --physics`);
+  a time-organised structure would make the rate difference explicit instead of implicit.
+- `ScenarioMetadata` serves **two lifetimes** in one struct — `EvalResults::scenario` (per-eval RPC) and
+  `EvalResults::scenarioList` (persisted). This shape cost a launch on 2026-08-02.
+
+**Ripple** — this is a dmp schema change plus every reader (`dmp_dump`, `renderer`, `tracker_dmp_inspect`,
+`source_dmp_loader`, the analytics CSV consumers), so it wants its own baseline moment and its own owed
+rebake, exactly as 041's did. Full evidence and the per-class classification:
+[041 index-coupling-inventory.md](041-m2-depth/index-coupling-inventory.md).
+
 ### [041 camera-model pass, filed 2026-08-10] The FOV / topology outcome space — 041's predictor verdict is an input to it
 
 Not a deferral so much as the **decision frame** the camera items below sit inside. Operator 2026-08-10: these

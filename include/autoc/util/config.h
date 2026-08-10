@@ -527,6 +527,13 @@ struct AutocConfig {
     X(double,         airframePropRadius,        "AirframePropRadius") \
     X(double,         airframePropAttenuation,   "AirframePropAttenuation")
 
+// 041 T006 -- turn inih's bare "cannot parse" into a diagnosis. `error` is
+// INIReader::ParseError()'s value: a positive value is the 1-based line number
+// of the first bad line, -1 is a file-open failure, -2 is allocation failure.
+// Split out of ConfigManager::initialize() so it is reachable from a test
+// without the exit(1) that follows it in production (T007).
+void reportIniParseError(const std::string& filename, int error, std::ostream& out);
+
 class ConfigManager {
 public:
     static void initialize(const std::string& filename = "autoc.ini", std::ostream& out = std::cout);

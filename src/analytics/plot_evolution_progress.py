@@ -64,6 +64,8 @@ import re
 import sys
 from pathlib import Path
 
+from cadence import CadenceUnknown, tick_sec_from_log   # 041 T009
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -238,10 +240,12 @@ def main():
     p.add_argument("--total-gens", type=int, default=800,
                    help="x-axis extent + 40-gen variation-step markers (default 800 — "
                         "matches autoc.ini production scale)")
-    p.add_argument("--tick-sec", type=float, default=0.05,
+    p.add_argument("--tick-sec", type=float, default=None,
                    help="control-loop cadence (sec/tick) — avgMaxStreak is tick-denominated, so "
-                        "this converts it to SECONDS for cross-cadence comparison (default 0.05 = "
-                        "20 Hz; use 0.10 for 10 Hz logs). generate_pngs.sh passes the run's value.")
+                        "this converts it to SECONDS for cross-cadence comparison. Normally "
+                        "OMITTED: 041 T009 reads the cadence from the focus log's own "
+                        "ControlIntervalMsec, and a value disagreeing with it is an error. "
+                        "Supply it only for pre-config-print logs (0.10 = 10 Hz).")
     p.add_argument("--title", default=None)
     p.add_argument("--crash-log", type=Path, default=None,
                    help="path to focus run's training log file (.log); when set, "
@@ -263,6 +267,15 @@ def main():
         focus_name, focus_path = args.focus
     if not focus_path.is_file():
         raise SystemExit(f"focus log not found: {focus_path}")
+
+    # 041 T009 — the focus RUN states its own cadence; trust that over any flag.
+    # generate_pngs.sh derives --tick-sec from the CURRENT ini, which is the
+    # wrong source when re-plotting an older run: it would rescale every
+    # streak-second by the ratio of the two cadences and say nothing.
+    try:
+        args.tick_sec = tick_sec_from_log(focus_path, args.tick_sec, label=focus_name)
+    except CadenceUnknown as e:
+        raise SystemExit(str(e))
     f = load_stc(focus_path)
     if not f["gens"]:
         raise SystemExit(f"no #NNGen lines in {focus_path}")

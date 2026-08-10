@@ -64,11 +64,22 @@ if [[ "$MODE" == "m1" ]]; then BUCKET=autoc-m1; INI="$REPO/autoc.ini";         e
                                BUCKET=autoc-m2; INI="$REPO/autoc-tracker.ini"; fi
 [[ -f "$INI" ]] || die "config not found: $INI"
 
-# Control cadence (sec/tick) from the run's config — feeds intercept_analysis's
-# closing-rate m/s AND time-denominates the tick-based streak metrics
-# (avgMaxStreak, maxLost → seconds) so 20 Hz (50 ms) vs 10 Hz (100 ms) compare.
-CTRL_MSEC="$(grep -E '^[[:space:]]*ControlIntervalMsec' "$INI" | head -1 | sed -E 's/.*=[[:space:]]*([0-9]+).*/\1/')"
-[[ "$CTRL_MSEC" =~ ^[0-9]+$ ]] || CTRL_MSEC=50
+# Control cadence (sec/tick) — feeds intercept_analysis's closing-rate m/s AND
+# time-denominates the tick-based streak metrics (avgMaxStreak, maxLost →
+# seconds) so 20 Hz (50 ms) vs 10 Hz (100 ms) compare.
+#
+# 041 T009 — read it from the LOG, not the ini. autoc prints its resolved config
+# at startup, so the log states the cadence the run actually used; the ini states
+# the cadence the NEXT run would use. Re-plotting a historical 10 Hz log with
+# today's 20 Hz ini silently halved every duration in the report. The ini is only
+# a fallback for pre-config-print logs, and it says so out loud.
+CTRL_MSEC="$(grep -oE 'ControlIntervalMsec[ =:]+[0-9]+' "$LOG" | head -1 | grep -oE '[0-9]+$')"
+if [[ ! "$CTRL_MSEC" =~ ^[0-9]+$ ]]; then
+  CTRL_MSEC="$(grep -E '^[[:space:]]*ControlIntervalMsec' "$INI" | head -1 | sed -E 's/.*=[[:space:]]*([0-9]+).*/\1/')"
+  [[ "$CTRL_MSEC" =~ ^[0-9]+$ ]] || CTRL_MSEC=50
+  echo "  [warn] $LOG does not state ControlIntervalMsec; falling back to ${INI##*/} = ${CTRL_MSEC}ms." >&2
+  echo "         If this log predates the config print, confirm that is its real cadence." >&2
+fi
 TICK_SEC="$(awk "BEGIN{printf \"%.4f\", $CTRL_MSEC/1000.0}")"
 
 NAME="$(basename "$LOG" .log)"

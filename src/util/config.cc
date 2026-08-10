@@ -3,6 +3,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <INIReader.h>
+#include <ini.h>                        // 041 T006 -- INI_MAX_LINE, for the diagnostic hint
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Client.h>
@@ -37,6 +38,53 @@ template <> std::string readIniField<std::string>(INIReader& r, const char* key,
 }
 }  // namespace
 
+// 041 T006 -- inih already knows exactly which line it choked on; the old
+// message threw that away. The failure this replaces was silent enough to cost
+// a bisect: an over-length line (the pre-T005 cap was 200 bytes) got split, the
+// tail parsed as a nameless token, and the operator saw only the file name.
+void reportIniParseError(const std::string& filename, int error, std::ostream& out) {
+    out << "FATAL ERROR: Cannot parse '" << filename << "'";
+
+    if (error == -1) {
+        out << ": could not be opened for reading." << std::endl;
+        return;
+    }
+    if (error == -2) {
+        out << ": out of memory while parsing." << std::endl;
+        return;
+    }
+
+    out << ": line " << error;
+
+    // Echo the offending line. Best-effort -- if the file has become unreadable
+    // between the parse and here, the line number alone is still the diagnosis.
+    std::ifstream in(filename);
+    std::string line;
+    bool found = false;
+    for (int n = 1; std::getline(in, line); ++n) {
+        if (n == error) {
+            found = true;
+            break;
+        }
+    }
+    if (found) {
+        out << ": " << line;
+    }
+    out << std::endl;
+
+    out << "  inih reports the FIRST bad line; later ones may exist. Common causes:" << std::endl
+        << "    - line longer than INI_MAX_LINE (" << INI_MAX_LINE << " bytes) -- it gets split, "
+        << "and the tail parses as a nameless token. NOTE: inih counts each split"
+        << " chunk as its own line, so for this cause the real culprit is the line"
+        << " ABOVE the one reported" << std::endl
+        << "    - a 'key = value' pair missing its '='" << std::endl
+        << "    - an unclosed or stray '[' section header" << std::endl;
+    if (found && line.size() >= static_cast<std::size_t>(INI_MAX_LINE)) {
+        out << "  ^ this line is " << line.size() << " bytes, at or over the "
+            << INI_MAX_LINE << "-byte cap -- that is almost certainly the cause." << std::endl;
+    }
+}
+
 void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
     if (initialized) {
         return;
@@ -51,7 +99,7 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
 
     INIReader reader(filename);
     if (reader.ParseError() != 0) {
-        out << "FATAL ERROR: Cannot parse configuration file '" << filename << "'" << std::endl;
+        reportIniParseError(filename, reader.ParseError(), out);
         exit(1);
     }
 

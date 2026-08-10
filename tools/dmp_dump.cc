@@ -38,6 +38,7 @@
 #include "autoc/eval/fitness_computer.h"      // FitnessComputer (derived columns)
 #include "autoc/eval/derived_features.h"      // compute_pair_span, compute_tilt (032 NN inputs)
 #include "autoc/eval/camera_projection.h"     // kCepSentinelThreshold (CEP gate)
+#include "autoc/eval/specific_force.h"        // 041 T010 — shared body specific force
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/nn/serialization.h"           // nn_detect_format / nn_deserialize
 #include "autoc/nn/evaluator.h"               // NNGenome (variation_scale)
@@ -147,6 +148,83 @@ int emitObstructionReport(const AutocConfig& cfg,
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// 041 T010 — per-tick physics columns from the recorded PhysicsTraceEntry.
+//
+// This is a READER. The data has been recorded for every elite reeval since
+// long before 041 (`inputdev_autoc.cpp:1047`) and had no consumer anywhere, so
+// these columns work on EXISTING dmps and unblock Study A with no schema
+// change.
+//
+// ⚠️ THE INDEX TRAP. `physicsTrace[si]` and `aircraftStateList[si]` are the same
+// scenario, but NOT the same tick series: physics is captured inside the FDM,
+// once per integration substep (`fdm_larcsim.cpp:925`), while aircraft states
+// are recorded once per CONTROL tick. So physicsTrace[si] is MUCH longer, and
+// `physicsTrace[si][ti]` is a different moment in time from `states[ti]`.
+// Joining them by index is exactly the parallel-index failure class US1 exists
+// to retire — so this joins on RECORDED TIME instead, and reports how well it
+// matched rather than assuming it did.
+struct PhysicsJoin {
+  const std::vector<PhysicsTraceEntry>* trace = nullptr;
+  size_t cursor = 0;      // monotone: both series are time-ordered
+  size_t matched = 0;
+  size_t unmatched = 0;
+  double worstSkewMsec = 0.0;   // raw-ok: report-local diagnostic
+  double tolMsec = 0.0;         // raw-ok: report-local diagnostic
+
+  // Nearest recorded physics row WITHIN tolerance, or nullptr.
+  //
+  // ⚠️ The tolerance is not defensive padding — it is load-bearing. The FDM caps
+  // the trace at `MAX_TRACE_STEPS = 35` (`fdm_larcsim.cpp:74`), which is roughly
+  // the first 200 ms of a scenario, so for all but the first few control ticks
+  // there is NO physics row. Returning the nearest one anyway would repeat the
+  // 200 ms sample for the rest of an 18-second flight and read as real data.
+  const PhysicsTraceEntry* at(double tMsec) {
+    if (trace == nullptr || trace->empty()) { ++unmatched; return nullptr; }
+    while (cursor + 1 < trace->size()
+           && (*trace)[cursor + 1].simTimeMsec <= tMsec) {
+      ++cursor;
+    }
+    // `cursor` is the last row at or before tMsec; the next one may be nearer.
+    size_t best = cursor;
+    if (cursor + 1 < trace->size()) {
+      const double dCur = std::fabs((*trace)[cursor].simTimeMsec - tMsec);
+      const double dNxt = std::fabs((*trace)[cursor + 1].simTimeMsec - tMsec);
+      if (dNxt < dCur) best = cursor + 1;
+    }
+    const double skew = std::fabs((*trace)[best].simTimeMsec - tMsec);
+    if (skew > tolMsec) { ++unmatched; return nullptr; }
+    if (skew > worstSkewMsec) worstSkewMsec = skew;
+    ++matched;
+    return &(*trace)[best];
+  }
+};
+
+// Body-frame specific force in g, plus the load factor, from a physics row.
+//
+// spec_force_world = a_world - g_world, with NED gravity (0, 0, +g) — see
+// docs/COORDINATE_CONVENTIONS.md. The recorded `gravity` is used rather than a
+// literal 9.81 because PhysicsTraceEntry carries FDM-NATIVE units (LaRCSim is
+// ft-based), and dividing by the recorded value makes the result unit-free
+// whichever it is.
+//
+// SIGN: `nz_g` is the aviation load factor — +1 in steady level flight, >1 in a
+// pull-up, negative in a push-over — i.e. the NEGATED body-z specific force, so
+// that it reads the way "+11.2 g / -8.4 g" is quoted in the flight reports.
+// The raw sfx/sfy/sfz columns are emitted unnegated beside it so the convention
+// is inspectable rather than buried in this comment.
+// The math itself lives in autoc/eval/specific_force.h so this reader and the
+// NN input (T039) cannot drift apart; this only adapts PhysicsTraceEntry's
+// storage layout (quat is [x, y, z, w]; gp_quat is (w, x, y, z)).
+autoc::eval::BodySpecificForce deriveLoad(const PhysicsTraceEntry& p) {
+  const gp_quat q(static_cast<gp_scalar>(p.quat[3]), static_cast<gp_scalar>(p.quat[0]),
+                  static_cast<gp_scalar>(p.quat[1]), static_cast<gp_scalar>(p.quat[2]));
+  const gp_vec3 accWorld(static_cast<gp_scalar>(p.acc[0]),
+                         static_cast<gp_scalar>(p.acc[1]),
+                         static_cast<gp_scalar>(p.acc[2]));
+  return autoc::eval::bodySpecificForce(accWorld, q, static_cast<gp_scalar>(p.gravity));
+}
+
 void printUsage(const char* prog) {
   std::cout <<
     "Usage: " << prog << " <s3-uri | local-path> [OPTIONS]\n"
@@ -170,6 +248,12 @@ void printUsage(const char* prog) {
     "                 Reads the ini ONLY — takes no dmp argument. Pair with -i.\n"
     "  -i, --config   ini for S3 creds/bucket (default autoc.ini); fitness cone +\n"
     "                 cadence now read from the dmp-recorded RecordedRunConfig\n"
+    "  --physics      041 T010: append per-tick FDM physics columns from the\n"
+    "                 recorded PhysicsTraceEntry (elite-reeval dmps only):\n"
+    "                 accX,accY,accZ,odbP,odbQ,odbR,alpha,vRelWind + the DERIVED\n"
+    "                 body-frame specific force sfx_g,sfy_g,sfz_g and load factor\n"
+    "                 nz_g. Works on EXISTING dmps — this is a reader, not a\n"
+    "                 recording change. Empty fields where no physics row matches.\n"
     "  -h, --help     this message\n"
     "\n"
     "CSV columns (pathgen): scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,\n"
@@ -361,17 +445,19 @@ int main(int argc, char** argv) {
     {"since-gen", required_argument, 0, 'G'},
     {"config", required_argument, 0, 'i'},
     {"obstruction-report", no_argument, 0, 'O'},
+    {"physics", no_argument, 0, 'P'},          // 041 T010
     {"help", no_argument, 0, 'h'},
     {0, 0, 0, 0}
   };
   int specifiedGen = -1;
   bool metaOnly = false, csvOnly = false, runSummary = false;
   bool obstructionReport = false;
+  bool physics = false;                        // 041 T010
   int stride = 1;
   int sinceGen = 0;
   std::string configFile = "autoc.ini";
   int idx = 0, opt;
-  while ((opt = getopt_long(argc, argv, "g:mcsS:G:i:Oh", long_options, &idx)) != -1) {
+  while ((opt = getopt_long(argc, argv, "g:mcsS:G:i:OPh", long_options, &idx)) != -1) {
     switch (opt) {
       case 'g': specifiedGen = std::stoi(optarg); break;
       case 'm': metaOnly = true; break;
@@ -381,6 +467,7 @@ int main(int argc, char** argv) {
       case 'G': sinceGen = std::stoi(optarg); break;
       case 'i': configFile = optarg; break;
       case 'O': obstructionReport = true; break;
+      case 'P': physics = true; break;         // 041 T010
       case 'h': printUsage(argv[0]); return 0;
       default: printUsage(argv[0]); return 1;
     }
@@ -551,8 +638,12 @@ int main(int argc, char** argv) {
   // span-predictor OUTPUTS spP1/spP2/spP3 (predicted span @+50/+100/+150 ms) +
   // spdR (predicted closure rate); pathgen adds dBnd (dist-to-boundary tanh) +
   // inX/inY/inZ. (exit_dir removed 038 US3.)
-  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt,inX,inY,inZ,tSee,spP1,spP2,spP3,spdR\n";
-  else           std::cout << ",dist,along,stpPt,mult,rampSc,dBnd,inX,inY,inZ\n";
+  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt,inX,inY,inZ,tSee,spP1,spP2,spP3,spdR";
+  else           std::cout << ",dist,along,stpPt,mult,rampSc,dBnd,inX,inY,inZ";
+  // 041 T010 — physics columns last, so every existing column index is
+  // unchanged for readers that ignore the flag.
+  if (physics) std::cout << ",phyMs,accX,accY,accZ,odbP,odbQ,odbR,alpha,vRelWind,sfx_g,sfy_g,sfz_g,nz_g";
+  std::cout << "\n";
 
   // 038 P0-B (T010): read the fitness cone / cadence from the dmp-recorded,
   // self-describing RecordedRunConfig — NOT the live .ini. M2 greenfield: no
@@ -578,6 +669,15 @@ int main(int argc, char** argv) {
     gp_vec3 prevTangent = gp_vec3::UnitX();
     double prevSpan = 0.0;  // tracker spn0 at ti-1, for dspn (0 at first emitted tick)
     bool havePrevSpan = false;
+
+    // 041 T010 — joined on time, not index (see PhysicsJoin).
+    PhysicsJoin phy;
+    if (physics && si < results.physicsTrace.size()) {
+      phy.trace = &results.physicsTrace[si];
+      // Half a control tick: a physics row must describe THIS tick, not a
+      // neighbouring one.
+      phy.tolMsec = rc.simTimeStepMsec / 2.0;
+    }
 
     for (size_t ti = 1; ti < states.size(); ++ti) {
       const auto& st = states[ti];
@@ -666,7 +766,7 @@ int main(int argc, char** argv) {
         char tb[512];
         int tn = snprintf(tb, sizeof(tb),
           ",%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f"
-          ",%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+          ",%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",
           rampSc, hull,
           tg.x(), tg.y(), tg.z(), tr.x(), tr.y(), tr.z(),
           spn0, dspn, blC0, brC0, tltS, tltC, stp,
@@ -691,7 +791,7 @@ int main(int argc, char** argv) {
         // 038 P0-D FR-P0H (B) — arena-awareness inputs from recorded NNInputs.
         const NNInputs& nn_in = st.getNNInputs();
         char d[256];
-        int dn = snprintf(d, sizeof(d), ",%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f\n",
+        int dn = snprintf(d, sizeof(d), ",%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f",
                           dist, along, stp, mult, rampSc,
                           nn_in.dist_to_boundary, nn_in.inward_body_x,
                           nn_in.inward_body_y, nn_in.inward_body_z);
@@ -701,11 +801,54 @@ int main(int argc, char** argv) {
         // still carry the arena-awareness (B) inputs.
         const NNInputs& nn_in = st.getNNInputs();
         char d[128];
-        int dn = snprintf(d, sizeof(d), ",,,,,%.4f,%.6f,%.6f,%.6f,%.6f\n",
+        int dn = snprintf(d, sizeof(d), ",,,,,%.4f,%.6f,%.6f,%.6f,%.6f",
                           rampSc, nn_in.dist_to_boundary, nn_in.inward_body_x,
                           nn_in.inward_body_y, nn_in.inward_body_z);
         std::cout.write(d, dn);
       }
+
+      // 041 T010 — physics tail, joined on recorded sim time. Empty fields when
+      // this dmp carries no physics trace (i.e. was not an elite reeval), so a
+      // missing trace reads as missing rather than as zeros.
+      if (physics) {
+        const PhysicsTraceEntry* p =
+            phy.at(static_cast<double>(st.getSimTimeMsec()));
+        if (p != nullptr) {
+          const autoc::eval::BodySpecificForce dl = deriveLoad(*p);
+          char pb[320];
+          int pn = snprintf(pb, sizeof(pb),
+            ",%.1f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",
+            p->simTimeMsec,
+            p->acc[0], p->acc[1], p->acc[2],
+            p->omegaDotBody[0], p->omegaDotBody[1], p->omegaDotBody[2],
+            p->alpha, p->vRelWind,
+            static_cast<double>(dl.g_units.x()), static_cast<double>(dl.g_units.y()),
+            static_cast<double>(dl.g_units.z()), static_cast<double>(dl.load_factor_nz));
+          std::cout.write(pb, pn);
+        } else {
+          std::cout << ",,,,,,,,,,,,";
+        }
+      }
+      std::cout << "\n";
+    }
+
+    // Report the join quality per scenario rather than silently producing a
+    // plausible CSV. A large skew means the control tick and the physics
+    // substep have drifted apart and the load columns describe a different
+    // moment from the rest of the row.
+    if (physics && phy.unmatched > 0) {
+      std::cerr << "dmp-dump --physics: scenario " << si
+                << ": " << phy.matched << " ticks have physics, "
+                << phy.unmatched << " do not"
+                << " (worst matched skew " << phy.worstSkewMsec << " ms,"
+                << " tolerance " << phy.tolMsec << " ms).";
+      if (phy.matched > 0 && phy.trace != nullptr) {
+        std::cerr << " NOTE: the FDM caps the trace at MAX_TRACE_STEPS"
+                  << " (fdm_larcsim.cpp), so only the first ~200 ms of each"
+                  << " scenario carries physics — the empty rows are expected"
+                  << " on any pre-041 dmp, NOT a join failure.";
+      }
+      std::cerr << "\n";
     }
   }
 

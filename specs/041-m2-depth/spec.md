@@ -161,6 +161,41 @@ lens before the next long run.
 
 ---
 
+### Session 2026-08-10 — where load data actually comes from
+
+Forced by a finding during T010/T011a: the FDM physics trace that Study A was expected to read is capped at
+`MAX_TRACE_STEPS = 35` (`crrcsim/src/mod_fdm/fdm_larcsim/fdm_larcsim.cpp:74`) — 35 FDM substeps at 5 ms =
+**175 ms**, i.e. the first 3.5 control ticks of an ~18 s scenario. Measured coverage in both pinned
+comparators: **1,176 of 132,462 ticks, 0.89%**. T010's task note ("already recorded … works on current
+dmps") is true of the plumbing and false of the coverage.
+
+- Q: Raise `MAX_TRACE_STEPS` so the trace covers a whole scenario? → A: **No — keep it exactly as it is.**
+  It was built for old determinism troubleshooting and still serves that. The capture sits inside the
+  200 Hz substep loop, so uncapped it would write **~1.01 GB per elite-reeval dmp** against a current whole
+  dmp of 32.9 MB — and 9 of every 10 rows would be time-degenerate, because the recorded `simTimeMsec` only
+  advances per control tick. Not worth it for a feature that builds no load axis.
+- Q: Then where does load come from? → A: **From the recorded NN input vector, at 20 Hz.** `AircraftState`
+  already serializes the entire NN input block every tick (038 US3 honest recording), so the instant T039
+  adds `ACCEL_X/Y/Z` the accel is recorded per tick as a *consequence* — no new field, no schema decision,
+  **~2.6 MB** for all five new slots. Study A reads `ACCEL_Z`, not `physicsTrace`.
+- Q: Record gravity, or world accel, so load can be reconstructed later? → A: **Neither.** Operator:
+  *"gravity is interesting as flight really would only have the quat."* INAV's `acc.accADCf` is already
+  body-frame specific force **in g**, the same quantity `ACCEL_*` is defined as. So the sim computes
+  `R(quat)ᵀ·(a_world − g_world)/g` once at gather time and records the **result**; gravity stays a
+  gather-time intermediate and is never stored or transmitted. Load factor is then one identical line on
+  both sides: `nz_g = −ACCEL_Z × kAccelScale_g`. Sim-real parity by construction rather than by a
+  conversion someone has to remember.
+- Q: Add a sim-only true-peak channel (max |nz| across the 10 substeps per control tick) so peak load
+  (SC-008) isn't limited by 20 Hz sampling? → A: **No — 20 Hz samples only.** 20 Hz is what the NN sees and
+  what INAV reports; a sim-only peak channel would break exactly the sim-real symmetry the decision above
+  buys. Accepted consequence: a structural peak occurring between control ticks is not observed.
+- Q: The prior M1 predates `ACCEL_*` entirely, so no old-vs-new load comparison is possible — acceptable?
+  → A: **Yes.** Operator: *"old M1 is what it is — most of these new runs can't be compared at the micro
+  level, we are ok with this."* All 041 load numbers are a **single-run profile of the new M1**, never a
+  delta. This applies to every load statistic, not only the cross-run framing already hedged in T071.
+
+---
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Retire the index-coupled failure class (Priority: P1)

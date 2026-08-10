@@ -84,7 +84,10 @@ Two things a fresh context should know before touching anything:
   per-tick CSVs first or the prior-M1 baseline and the blind-gap distribution are lost permanently.
 
 Three build surfaces this feature, not two: autoc/crrcsim, xiao, and **INAV** (two targets — bench
-`MAMBAF722_2022A`, flight `MATEKF722MINI`, bench first; disconnect the GPS before flashing).
+`MAMBAF722_2022A`, flight `MATEKF722MINI`, bench first; disconnect the GPS before flashing). **All
+gear-attached work sits in Phase 6**, triggered by a decent M1 read at T067 (operator decision 2026-08-10):
+INAV bring-up T001/T001a and the xiao board tasks T074/T075/T078. Xiao *host compiles* (T002 baseline, T046
+codegen, T045's gate) stay early — no board needed, and T045 compiles the generated forward pass.
 
 ## Recent Changes
 - 041-m2-depth: Added C++17 (autoc, crrcsim, tools), Python 3.11 (analytics only) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp serialization), inih (ini),

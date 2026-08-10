@@ -14,8 +14,11 @@
 #include <vector>
 #include <type_traits>
 #include <cstdint>
+#include <sstream>
 
 #include "autoc/util/config.h"  // 034 FR-010 — AUTOC_CONFIG_FIELDS macro
+#include <INIReader.h>          // 041 T007 — parse a malformed fixture ini
+#include <ini.h>                // 041 T005 — INI_MAX_LINE
 
 // For now we test the contract by writing a temp ini file and verifying
 // that key names and value types are correct. The actual parser will change
@@ -260,4 +263,64 @@ TEST(ContractConfig, SeedFieldWideForPasteBack_FR011) {
     AutocConfig cfg;
     cfg.seed = INT64_C(3000000000);  // > 2^31-1
     EXPECT_EQ(cfg.seed, INT64_C(3000000000));
+}
+
+// ============================================================
+// 041 T007 — the ini parse error must name the offending line
+// ============================================================
+// The failure this pins cost a bisect: a legal `key = value  # comment` at 216
+// bytes exceeded inih's 200-byte default cap, and the only output was the file
+// name. T005 raised the cap; T006 makes any remaining parse failure say WHERE.
+//
+// These use a fixture-owned temp ini, never the production file — a test that
+// reads autoc.ini would fail whenever an operator edits a knob, which is
+// exactly the coupling T008 removes elsewhere in this suite.
+TEST(ContractConfig, IniParseErrorNamesOffendingLine_T006) {
+    const std::string path = "/tmp/contract_config_test_malformed.ini";
+    {
+        std::ofstream out(path);
+        out << "# a comment\n"
+            << "Mode = 0\n"
+            << "this line has no equals sign\n"
+            << "PopulationSize = 42\n";
+    }
+
+    INIReader reader(path);
+    const int err = reader.ParseError();
+    ASSERT_EQ(err, 3) << "inih should report the 1-based line of the first bad line";
+
+    std::ostringstream msg;
+    reportIniParseError(path, err, msg);
+    const std::string text = msg.str();
+
+    EXPECT_NE(text.find("line 3"), std::string::npos)
+        << "diagnostic must name the offending line number; got: " << text;
+    EXPECT_NE(text.find("this line has no equals sign"), std::string::npos)
+        << "diagnostic must echo the offending line text; got: " << text;
+    EXPECT_NE(text.find("missing its '='"), std::string::npos)
+        << "diagnostic must hint at the common causes; got: " << text;
+
+    std::remove(path.c_str());
+}
+
+TEST(ContractConfig, IniParseErrorDistinguishesOpenAndMemoryFailures_T006) {
+    // inih overloads its return: >0 is a line number, -1 open failure, -2 OOM.
+    // Reporting "line -1" would be worse than the message it replaced.
+    std::ostringstream open_msg;
+    reportIniParseError("/nonexistent/path.ini", -1, open_msg);
+    EXPECT_NE(open_msg.str().find("could not be opened"), std::string::npos);
+    EXPECT_EQ(open_msg.str().find("line -1"), std::string::npos);
+
+    std::ostringstream oom_msg;
+    reportIniParseError("/nonexistent/path.ini", -2, oom_msg);
+    EXPECT_NE(oom_msg.str().find("out of memory"), std::string::npos);
+    EXPECT_EQ(oom_msg.str().find("line -2"), std::string::npos);
+}
+
+// The cap must stay well clear of the 216-byte line that broke it, and the
+// value the diagnostic quotes must be the value the parser actually used.
+TEST(ContractConfig, IniMaxLineCapRaised_T005) {
+    EXPECT_GE(INI_MAX_LINE, 1024)
+        << "INI_MAX_LINE must stay far above the ~216-byte commented-knob lines "
+           "that 041 adds; see CMakeLists.txt target_compile_definitions(inih ...)";
 }

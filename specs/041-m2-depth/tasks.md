@@ -63,15 +63,14 @@ paired-series fitness term. Test tasks are interleaved with implementation per C
 
 **Purpose**: confirm the build surfaces and establish artifact homes.
 
-> ⚠️ **Standing hardware procedure — applies to EVERY INAV flash in this feature (T001, T072, T078, T080)**:
-> **remove the GPS before flashing the INAV controller.** Known quirk, not up for debate. Forgetting it costs
-> a debugging session, so it belongs in the runbook rather than in somebody's memory.
+> ↪ **INAV bring-up (T001, T001a) is deferred to Phase 6** (operator decision 2026-08-10): it is hardware
+> work that wants the operator near the gear, and nothing in Phases 2–5 depends on it. It is now the first
+> item of Phase 6's hardware sub-phase, triggered once the M1 read (T067) looks decent. The IDs are
+> unchanged so cross-references (T102) still resolve. Phase 1 is therefore desktop-only.
 
-- [ ] T001 Confirm the INAV baseline builds in `~/inav` for **both** established targets — **bench = `MAMBAF722_2022A`** (STM32F722; `xiao/inav-bench.cfg`) and **flight = `MATEKF722MINI`** (`xiao/inav-hb1.cfg`), both currently at `63cffaf4`. Routine and precedented: **021 T041 already did exactly this** ("INAV builds for bench (MAMBAF722_2022A) and flight (MATEKF722MINI)", closed), and the commands are recorded in `specs/020-pre-flight-pipeline/plan.md`: `cd ~/inav && mkdir -p build && cd build && cmake .. && make MAMBAF722_2022A`. **Bench first.**
-- [ ] T001a Record the two-variant build/deploy sequence in `specs/041-m2-depth/artifacts/README.md`, pointing at `specs/020-pre-flight-pipeline/plan.md` for the commands rather than restating them. Every later INAV task (T072, T078, T080) builds and flashes **both** targets, bench first — a change validated only on the bench target is not validated for flight.
-- [ ] T002 [P] [OP] Confirm the xiao baseline builds unchanged: `cd xiao && ~/.platformio/penv/bin/pio run -e xiaoblesense_arduinocore_mbed`, and record the byte size of `xiao/src/generated/nn_program_generated.cpp` as the pre-change reference.
-- [ ] T003 [P] Create `specs/041-m2-depth/artifacts/` with a `README.md` stating what belongs there (final M1/M2 `data.dat` snapshots per FR-022, archived `nn_weights*.dat` per FR-010) and what does not (anything re-derivable from S3).
-- [ ] T004 [P] Record the pinned comparator prefixes and their verified retention state in `specs/041-m2-depth/artifacts/README.md`: `autoc-m1/autoc-9223370253553029228-2026-07-06T01:35:46.579Z/` and `autoc-m2/autoc-9223370251039771221-2026-08-04T03:43:24.586Z/`, both 800/800 `retain=keep` verified 2026-08-07 (Constitution VIII.3 — provenance lives in the repo).
+- [ ] T002 [P] [OP] Confirm the xiao baseline builds unchanged: `cd xiao && ~/.platformio/penv/bin/pio run -e xiaoblesense_arduinocore_mbed`, and record the byte size of `xiao/src/generated/nn_program_generated.cpp` as the pre-change reference. **Host compile — no board attached.** It stays in Phase 1 (operator decision 2026-08-10, when INAV moved out) for two reasons: the byte size is only a *pre-change* reference if taken before T046 overwrites the file, and T045's gate compiles this same generated forward pass (ordering constraint 6). The xiao tasks that need the board — T074, T075, T078 — are in Phase 6 with INAV.
+- [X] T003 [P] Create `specs/041-m2-depth/artifacts/` with a `README.md` stating what belongs there (final M1/M2 `data.dat` snapshots per FR-022, archived `nn_weights*.dat` per FR-010) and what does not (anything re-derivable from S3).
+- [X] T004 [P] Record the pinned comparator prefixes and their verified retention state in `specs/041-m2-depth/artifacts/README.md`: `autoc-m1/autoc-9223370253553029228-2026-07-06T01:35:46.579Z/` and `autoc-m2/autoc-9223370251039771221-2026-08-04T03:43:24.586Z/`, both 800/800 `retain=keep` verified 2026-08-07 (Constitution VIII.3 — provenance lives in the repo).
 
 ---
 
@@ -80,14 +79,14 @@ paired-series fitness term. Test tasks are interleaved with implementation per C
 **Purpose**: config-surface and reporting fixes that would otherwise fail for reasons unrelated to correctness,
 plus the physics reader that unblocks Study A on existing data.
 
-- [ ] T005 Raise or remove the `INI_MAX_LINE` cap in `src/util/config.cc` so a legal `key = value  # long comment` never fails on length. This trap already aborted startup once on `EnablePredictorHead = 1` plus its comment (216 bytes) with no diagnostic, costing a bisect — and 041 adds several commented knobs.
-- [ ] T006 Surface `ini_parse`'s error line in `src/util/config.cc`: replace the bare `FATAL ERROR: Cannot parse configuration file '<f>'` with `Cannot parse '<file>': line <N>: <line text>` plus a hint for the common causes (over-length line, missing `=`, stray `[`).
-- [ ] T007 [P] Add a test in `tests/contract_config_tests.cc` that a deliberately malformed temp ini fails with the offending line number in the message (fixture-owned ini, never the production file).
-- [ ] T008 Strip the mutable-production-value pins from `tests/contract_tracker_config_tests.cc` (`FitStreakThreshold == 0.5`, `FlightArenaRadius == 80`, `CepGateThreshold == 1.25`, `BeaconEmissionConeDeg == 270`, `BeaconLeftMountY == -0.45`). Keep at most a structural guard: production ini parses clean and required keys (`Mode`, `TrackerSourceRun`) are present. 041 changes streak config, so these pins would fail for a reason unrelated to correctness.
-- [ ] T009 [P] Time-denominate the streak metrics in `src/analytics/` so `pctInStreak` / `avgMaxStreak` are surfaced in seconds consistently (037 P-O11). These are 041's primary progress signal and raw tick-denominated counts read 2× at 20 Hz — fix before they are used to judge a bake.
-- [ ] T010 Add physics columns to `tools/dmp_dump.cc`: per-tick `acc[3]`, `omegaDotBody[3]`, `alpha`, `vRelWind` from `PhysicsTraceEntry`, plus derived body-frame normal acceleration from `acc[]` + `quat[]`. ⚠️ This data is **already recorded** for every elite reeval (`inputdev_autoc.cpp:1047`) and has **no consumer anywhere** — this is a reader, not a recording change, and it works on **current** dmps.
-- [ ] T011 [P] Add a test in `tests/dmp_dump_tests.cc` (or the nearest existing suite) that the derived normal acceleration equals 1 g for a synthetic steady-level-flight tick and the documented sign for a synthetic pull-up.
-- [ ] T011a ⛔ **HARD PREREQUISITE OF PHASE 4 — extract the comparator data while it is still readable.** Run `dmp-dump --physics` (and the standard per-tick CSV) over **both pinned comparators** — the prior M1 `autoc-m1/…2026-07-06T01:35:46.579Z/` and 040-t4 `autoc-m2/…2026-08-04T03:43:24.586Z/` — and archive the CSVs under `specs/041-m2-depth/artifacts/pre-break/`.
+- [X] T005 Raise or remove the `INI_MAX_LINE` cap in `src/util/config.cc` so a legal `key = value  # long comment` never fails on length. This trap already aborted startup once on `EnablePredictorHead = 1` plus its comment (216 bytes) with no diagnostic, costing a bisect — and 041 adds several commented knobs.
+- [X] T006 Surface `ini_parse`'s error line in `src/util/config.cc`: replace the bare `FATAL ERROR: Cannot parse configuration file '<f>'` with `Cannot parse '<file>': line <N>: <line text>` plus a hint for the common causes (over-length line, missing `=`, stray `[`).
+- [X] T007 [P] Add a test in `tests/contract_config_tests.cc` that a deliberately malformed temp ini fails with the offending line number in the message (fixture-owned ini, never the production file).
+- [X] T008 Strip the mutable-production-value pins from `tests/contract_tracker_config_tests.cc` (`FitStreakThreshold == 0.5`, `FlightArenaRadius == 80`, `CepGateThreshold == 1.25`, `BeaconEmissionConeDeg == 270`, `BeaconLeftMountY == -0.45`). Keep at most a structural guard: production ini parses clean and required keys (`Mode`, `TrackerSourceRun`) are present. 041 changes streak config, so these pins would fail for a reason unrelated to correctness.
+- [X] T009 [P] Time-denominate the streak metrics in `src/analytics/` so `pctInStreak` / `avgMaxStreak` are surfaced in seconds consistently (037 P-O11). These are 041's primary progress signal and raw tick-denominated counts read 2× at 20 Hz — fix before they are used to judge a bake.
+- [X] T010 Add physics columns to `tools/dmp_dump.cc`: per-tick `acc[3]`, `omegaDotBody[3]`, `alpha`, `vRelWind` from `PhysicsTraceEntry`, plus derived body-frame normal acceleration from `acc[]` + `quat[]`. ⚠️ This data is **already recorded** for every elite reeval (`inputdev_autoc.cpp:1047`) and has **no consumer anywhere** — this is a reader, not a recording change, and it works on **current** dmps.
+- [X] T011 [P] Add a test in `tests/dmp_dump_tests.cc` (or the nearest existing suite) that the derived normal acceleration equals 1 g for a synthetic steady-level-flight tick and the documented sign for a synthetic pull-up.
+- [X] T011a ⛔ **HARD PREREQUISITE OF PHASE 4 — extract the comparator data while it is still readable.** Run `dmp-dump --physics` (and the standard per-tick CSV) over **both pinned comparators** — the prior M1 `autoc-m1/…2026-07-06T01:35:46.579Z/` and 040-t4 `autoc-m2/…2026-08-04T03:43:24.586Z/` — and archive the CSVs under `specs/041-m2-depth/artifacts/pre-break/`.
   **Why this cannot wait**: T044 bumps the `EvalResults` version and makes reads **fail loud** on older artifacts, so from that commit onward a 041 binary **cannot read either comparator**. Two things become permanently unobtainable if this is skipped:
   1. **The prior M1's per-regime profile** (SC-007a, FR-011c) — its 37-input genome cannot be loaded by a 041 binary either, so the recorded dmp is the *only* route to that baseline. Lose the read and the baseline is gone for good.
   2. **The blind-gap distribution** (FR-024b) — which *defines* the predictor go/no-go bins and feeds the lens-purchase decision.
@@ -106,11 +105,11 @@ zero-answer test; no known instance remains asserted only by a comment (SC-001).
 
 ### A0 — the scan
 
-- [ ] T012 [US1] Sweep for collection pairs indexed by a shared loop variable across a producer/consumer boundary: `grep -rn "List\.at(\|List\[" src/eval/ src/nn/ tools/ crrcsim/src/mod_inputdev/`, then **read each hit** rather than trusting the pattern. Record findings in a new `specs/041-m2-depth/index-coupling-inventory.md`.
-- [ ] T013 [P] [US1] Sweep for structs serving two lifetimes (RPC-only vs persisted) across `include/autoc/rpc/` and `include/autoc/eval/`; `ScenarioMetadata` in both roles already cost a launch on 2026-08-02. Add to the inventory.
-- [ ] T014 [P] [US1] Sweep for values duplicated across two definitions (the `CameraConfig` default vs `hb1AirframeObstruction()` pattern — that one HAS a test and is the model to copy). Add to the inventory.
-- [ ] T015 [P] [US1] Sweep for "compiled-in default vs recorded config" reads; note which are resolved by the US2 config block and which are not. Add to the inventory.
-- [ ] T016 [US1] Complete `index-coupling-inventory.md`: every entry marked **fixed**, **structurally eliminated**, or **covered by a zero-answer test**, with the grouped-record migration list as an appendix. This is A0's deliverable and the gate on everything downstream.
+- [X] T012 [US1] Sweep for collection pairs indexed by a shared loop variable across a producer/consumer boundary: `grep -rn "List\.at(\|List\[" src/eval/ src/nn/ tools/ crrcsim/src/mod_inputdev/`, then **read each hit** rather than trusting the pattern. Record findings in a new `specs/041-m2-depth/index-coupling-inventory.md`.
+- [X] T013 [P] [US1] Sweep for structs serving two lifetimes (RPC-only vs persisted) across `include/autoc/rpc/` and `include/autoc/eval/`; `ScenarioMetadata` in both roles already cost a launch on 2026-08-02. Add to the inventory.
+- [X] T014 [P] [US1] Sweep for values duplicated across two definitions (the `CameraConfig` default vs `hb1AirframeObstruction()` pattern — that one HAS a test and is the model to copy). Add to the inventory.
+- [X] T015 [P] [US1] Sweep for "compiled-in default vs recorded config" reads; note which are resolved by the US2 config block and which are not. Add to the inventory.
+- [X] T016 [US1] Complete `index-coupling-inventory.md`: every entry marked **fixed**, **structurally eliminated**, or **covered by a zero-answer test**, with the grouped-record migration list as an appendix. This is A0's deliverable and the gate on everything downstream.
 
 ### The zero-answer test pattern (write these BEFORE the refactor — they must pass identically after)
 
@@ -123,7 +122,7 @@ zero-answer test; no known instance remains asserted only by a comment (SC-001).
 - [ ] T020 [US1] Define the grouped per-tick record in `include/autoc/rpc/protocol.h`: `tickList[i][k] = { state, cameraView, targetSample }`, with the pre-loop initial state as a **separate named field** beside the list (research.md R5) — **not** `tickList[0]` with sentinel members, which would recreate the hazard as "slot 0 is special". Tracker-only members absent (not zero-filled) in pathgen records.
 - [ ] T021 [US1] Update the push sites in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp` to emit grouped records, and store the initial state into its named field once before the loop.
 - [ ] T022 [US1] Migrate `src/eval/fitness_decomposition.cc` to the grouped record. **Delete** the `stepIndex - 1` clamp rather than relocating it — if any consumer still needs an offset, the grouping is wrong. This subsumes FR-004: the prediction-score pairing becomes correct by construction rather than by a fix.
-- [ ] T023 [P] [US1] Migrate `tools/dmp_dump.cc` to the grouped record (coordinate with T010's physics columns).
+- [ ] T023 [P] [US1] Migrate `tools/dmp_dump.cc` to the grouped record (coordinate with T010's physics columns). ⚠️ **Also `tools/tracker_dmp_inspect.cc`** — 11 parallel-index hits, found by the T012 sweep and absent from the original task list; it breaks at T045 if skipped (index-coupling-inventory.md appendix).
 - [ ] T024 [P] [US1] Migrate `tools/renderer.cc` to the grouped record.
 - [ ] T025 [P] [US1] Migrate `src/eval/source_dmp_loader.cc` to the grouped record.
 - [ ] T026 [P] [US1] Migrate `src/eval/tracker_stepper.cc` and `crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp` to the grouped record.
@@ -164,7 +163,7 @@ read by every consumer, with input-count assertions and metadata tables in agree
 
 - [ ] T041a [US2] Set `CameraPixelsV = 240 → 200` in `autoc-tracker.ini`, `autoc-eval-tracker.ini`, and `autoc-eval-tracker-visual.ini`, giving V = 200 × 0.375 = **75°** (H unchanged at 120°). Leave `CameraDegPerPixel` alone so `radPerPx`, per-pixel quantisation and CEP are untouched. Rationale in the ini comment: the ordered 1.8 mm fisheye on OV9281 estimates ~124°×78° equidistant, 120×75 is the conservative split, and 320:200 = 1.6 matches the real 1280×800 aspect (the prior 240 px was a 4:3 invention, optimistic by 15° vertically). ⚠️ **Fitness-affecting** → A1 bundle only.
 - [ ] T041b [P] [US2] Update the derived-FOV assertion comment in `include/autoc/eval/camera_projection.h` (currently cites ±0.785 rad / 45° for V) so the documented half-angles match the grid, and add/extend a test asserting derived V = 75° and derived H = 120° from the configured grid — the FR-003 "field and resolution cannot disagree" property.
-- [ ] T041c [P] [US2] Record in `specs/041-m2-depth/artifacts/README.md` that the projection is **already equidistant** (`camera_projection.cc:158-184`, since 040 T031) and that `CameraDetectionRangeM = 100.0` is now **independently corroborated** by the 031 photon budget (bright-day post-correlation SNR ≈22 @100 m, ÷4 at 4×4 defocus → ≈5.5 vs ×4.5 threshold). Neither is a change; both are facts a later reader will otherwise re-derive.
+- [X] T041c [P] [US2] Record in `specs/041-m2-depth/artifacts/README.md` that the projection is **already equidistant** (`camera_projection.cc:158-184`, since 040 T031) and that `CameraDetectionRangeM = 100.0` is now **independently corroborated** by the 031 photon budget (bright-day post-correlation SNR ≈22 @100 m, ÷4 at 4×4 defocus → ≈5.5 vs ×4.5 threshold). Neither is a change; both are facts a later reader will otherwise re-derive.
 
 ### Recording changes
 
@@ -204,9 +203,11 @@ from a pinned run with no recording change (SC-004, SC-005).
 
 - [ ] T054 [US3] Create `src/analytics/regime_load_study.py`: classify every tick into `{tracking, intercept, patrol}` using the **existing** rule (`stpPt ≥ 0.5`; below that, smoothed `d(dist)/dt < 0` is intercept, else patrol) — reuse `dynamics_progress.py:74-80`'s definition rather than writing a new one, so numbers stay comparable with every prior report.
 - [ ] T055 [US3] Report per regime, per axis: `dCtrl`, `⟨|u|⟩`, and load distribution **plus peak** (peak is the damage-relevant statistic; a mean hides ±11 g excursions entirely). Emit machine-readable CSV alongside any plot. State sample sizes and any excluded ticks.
+  ⚠️ **Load comes from the recorded NN input column `ACCEL_Z`, NOT from `physicsTrace`** (spec.md Clarifications, session 2026-08-10). `nz_g = −ACCEL_Z × kAccelScale_g`, the same line flight uses. The physics trace is capped at 175 ms per scenario (0.89% of ticks) and is staying that way. Consequence: **load exists only for runs baked after T039** — the two pre-break comparators have no usable load at all, so T058 reports their CONTROL half only.
 - [ ] T056 [US3] Add the H2 test to the study: within each regime, does pitch/roll `dCtrl` predict throttle level and load? Report correlation with a stated confidence, not a scatter plot alone.
-- [ ] T057 [US3] Add normal-load **autocorrelation at the history lags** to the study — this is the cheap evidence that decides whether the accel channels ever need temporal depth (research.md R1 fallback ladder). Strong autocorrelation at 50–100 ms ⇒ one instantaneous sample suffices and neither fallback is warranted.
-- [ ] T058 [US3] Run Study A on the **pre-break CSVs archived at T011a** (`artifacts/pre-break/`), covering the pinned prior M1 and 040-t4, producing `specs/041-m2-depth/study-a/`. ⚠️ Do **not** plan to re-extract from S3 — after T044 the comparators are unreadable by a 041 binary. ⚠️ Uses **current** dmps — no schema dependency, so this can run before or after the break. This also produces the **prior M1's per-regime profile**, which is the only obtainable form of that baseline (FR-011c: the 37-input genome cannot be loaded by a 041 binary, so it can never be re-evaluated or ablated).
+- [ ] T057 [US3] Add normal-load **autocorrelation at the history lags** to the study — ⚠️ runs on the **new M1** (T071), not on the pre-break CSVs, which carry no load. Sampling is 20 Hz by decision, so the shortest observable lag is 50 ms — this is the cheap evidence that decides whether the accel channels ever need temporal depth (research.md R1 fallback ladder). Strong autocorrelation at 50–100 ms ⇒ one instantaneous sample suffices and neither fallback is warranted.
+- [ ] T058 [US3] Run Study A's **control half** on the **pre-break CSVs already archived at T011a** (`artifacts/pre-break/*.csv.gz`, extracted 2026-08-10), covering the pinned prior M1 and 040-t4, producing `specs/041-m2-depth/study-a/`. Per-regime `dCtrl` / `⟨|u|⟩` and the regime classification: 100% tick coverage, fully available. This is the **prior M1's per-regime profile**, the only obtainable form of that baseline (FR-011c: its 37-input genome cannot be loaded by a 041 binary, so it can never be re-evaluated or ablated).
+  ⚠️ **No load half here.** The prior M1 predates `ACCEL_*` and its physics trace covers 0.89% of ticks, so old-vs-new load comparison is impossible — accepted by the operator 2026-08-10 ("old M1 is what it is"). Every 041 load number is a single-run profile of the NEW M1 (T071), never a delta. ⚠️ Do **not** plan to re-extract from S3: after T044 these comparators are unreadable by a 041 binary.
 
 **Checkpoint**: both instruments exist and are validated. Study A's findings are recorded as input to the
 **follow-on** aggressiveness feature — 041 builds no load axis.
@@ -239,9 +240,24 @@ the new inputs (SC-006, SC-007, SC-007a).
 - [ ] T068 [US4] Run the **ablation matrix** on the new elite: flag alone (`--zero-input IN_ENVELOPE`), duration alone (`ENVELOPE_SECS`), both, and the accel channels — per FR-014b. Expectation is that the **flag** carries the effect; a duration-only effect would be distinct and more surprising.
 - [ ] T069 [US4] Run the **control-input ablations** for calibration (FR-011b): `DIST_NOW` (known-critical end), `GYRO_P,GYRO_Q,GYRO_R`, `INWARD_BODY_X,INWARD_BODY_Y,INWARD_BODY_Z` (plausibly marginal). State the envelope verdict as a **position on this spectrum**, never against an assumed absolute threshold.
 - [ ] T070 [US4] Record the H1a verdict as **pass** (fitness drop **and** behavioural shift, beyond the marginal end of the control spectrum), **partial** (one but not both), or **fail** (neither) — per regime. All three close the hypothesis; only an unclassifiable result fails SC-007.
-- [ ] T071 [US4] Run Study A on the new elite and produce the **per-regime intent comparison** against the prior M1's profile from T058 (SC-007a), including per-axis aggressiveness and **peak load per regime** (SC-008). Report as a **ballpark read**, not an attributable effect size — it is a cross-run profile comparison, not a controlled delta.
+- [ ] T071 [US4] Run Study A on the new elite and produce the **per-regime intent comparison** against the prior M1's profile from T058 (SC-007a). Per-axis aggressiveness is comparable across the two runs; **peak load per regime** (SC-008) is **new-M1-only** — there is no prior-M1 load to compare against, and peak is bounded by the 20 Hz sampling decision (a between-tick structural peak is not observed). Report as a **ballpark read**, not an attributable effect size — it is a cross-run profile comparison, not a controlled delta.
 
 ### Hardware deployment (conditional on the M1 result)
+
+> ⚠️ **Standing hardware procedure — applies to EVERY INAV flash in this feature (T001, T072, T078, T080)**:
+> **remove the GPS before flashing the INAV controller.** Known quirk, not up for debate. Forgetting it costs
+> a debugging session, so it belongs in the runbook rather than in somebody's memory.
+
+**This sub-phase is where every gear-attached task lives** — both INAV targets *and* the xiao board work
+(T074, T075, T078). Nothing before this point requires hardware; the xiao tasks outside this phase (T002,
+T046, T045's gate) are host compiles only.
+
+**INAV bring-up** (moved here from Phase 1, 2026-08-10 — operator is near the gear at this point). Trigger:
+the T067 non-regression read looks decent. Do this **before** T072, so the baseline is known-good before it
+is modified.
+
+- [ ] T001 [US4] Confirm the INAV baseline builds in `~/inav` for **both** established targets — **bench = `MAMBAF722_2022A`** (STM32F722; `xiao/inav-bench.cfg`) and **flight = `MATEKF722MINI`** (`xiao/inav-hb1.cfg`), both currently at `63cffaf4`. Routine and precedented: **021 T041 already did exactly this** ("INAV builds for bench (MAMBAF722_2022A) and flight (MATEKF722MINI)", closed), and the commands are recorded in `specs/020-pre-flight-pipeline/plan.md`: `cd ~/inav && mkdir -p build && cd build && cmake .. && make MAMBAF722_2022A`. **Bench first.**
+- [ ] T001a [US4] Record the two-variant build/deploy sequence in `specs/041-m2-depth/artifacts/README.md`, pointing at `specs/020-pre-flight-pipeline/plan.md` for the commands rather than restating them. Every later INAV task (T072, T078, T080) builds and flashes **both** targets, bench first — a change validated only on the bench target is not validated for flight.
 
 - [ ] T072 [US4] Extend `MSP2_AUTOC_STATE` in `~/inav/src/main/fc/fc_msp.c` (the `MSP2_INAV_LOCAL_STATE` case) to carry accel in the **same single round trip**. Copy the shape of fork commit `63cffaf4f` ("extend MSP2_AUTOC_STATE with filtered gyro rates"): append at payload end, fixed integer scale stated at the write site, and document the axis/sign convention for the consumer. ⚠️ **Source `acc.accADCf` — the TRANSFORMED field, never a raw sensor read.** `acceleration.c:563-568` applies `applySensorAlignment` then `applyBoardAlignment` then divides by `acc.dev.acc_1G`, so `acc.accADCf` is board-alignment-corrected and **already in g units**. This mirrors `gyro.gyroADCf` (`gyro.c:438-442`, same two alignment calls), which is exactly why the existing gyro extension is correct. **Do NOT use** the file-static `accADC` (`acceleration.c:73`) or `acc.dev.ADCRaw` — those are pre-alignment and would bake in each board's misalignment differently (bench roll = −16 vs flight). Wire encoding: milli-g `int16` = `lrintf(acc.accADCf[axis] * 1000.0f)`, giving ±32 g against ±11 g observed. Build **both** targets, bench first; disconnect GPS before flashing.
 - [ ] T073 [US4] Pin the accel axis and sign convention against the **already-measured bench table** in `docs/COORDINATE_CONVENTIONS.md` ("Ground Verification Results, bench 2026-03-30", `MAMBAF722_2022A`, board alignment roll = −16): level → `[~0, ~0, +2050]`; right wing down 90° → `[~0, +2060, ~0]`; nose up 90° → `[+2050, ~0, ~0]`. ⚠️ **Units**: those are **blackbox `accSmooth` counts** (`acc_1G ≈ 2048`), *not* the runtime `acc.accADCf`, which is the same vector already divided by `acc_1G` — i.e. `+2050 counts` ⇔ `+1.0 g`. Convert before comparing. The **axes and signs** transfer directly; only the scale differs. T073 is therefore *match the table*, not derive the convention — add a test asserting all three attitudes. ⚠️ Board alignment differs between bench (roll = −16) and flight, so verify on **both** targets; do not assume one target's result transfers.
@@ -312,7 +328,7 @@ the new inputs (SC-006, SC-007, SC-007a).
 ## Dependencies & story order
 
 ```text
-Phase 1 (setup, INAV bring-up)
+Phase 1 (setup — desktop only; INAV bring-up deferred to Phase 6)
    │
 Phase 2 (foundational: config surface, physics reader, ⛔ T011a pre-break CSV extraction)
    │
@@ -357,7 +373,9 @@ defensible increment even if no bake ever runs.
 
 **Incremental delivery**:
 
-1. **Phase 1–2** retires the INAV unknown and stops config edits failing spuriously.
+1. **Phase 1–2** stops config edits failing spuriously and makes load readable from existing runs. The INAV
+   unknown is deliberately **not** retired here — it moved to Phase 6, where the operator is at the bench
+   anyway, and it blocks nothing before then.
 2. **Study A early** (T054–T058, on current dmps) — cheapest possible information, and it can *remove* work
    from the feature by showing no load problem exists.
 3. **US1 + US2 → T045** the single commit.
@@ -375,6 +393,7 @@ defensible increment even if no bake ever runs.
 | T086 predictor go/no-go | Phase 8's head work, before a 27 h bake |
 | T087 E1 decision | one tracker run |
 
-**Total**: 110 tasks. US1 17 · US2 24 · US3 10 · US4 22 · US5 8 · US6 10 · setup/foundational/polish 19.
+**Total**: 110 tasks. US1 17 · US2 24 · US3 10 · US4 24 · US5 8 · US6 10 · setup/foundational/polish 17.
 *(US2 grew by 3 at the 2026-08-10 camera-model pass: T041a–T041c. T011a added at the same pass's ordering
-review — it is the one task whose omission is unrecoverable.)*
+review — it is the one task whose omission is unrecoverable. T001/T001a moved from setup into US4's hardware
+sub-phase the same day — same IDs, later position; the count is unchanged.)*
