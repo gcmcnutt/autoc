@@ -1,9 +1,29 @@
 # 041 — hypothesis + approach (pre-spec)
 
 **Status**: PRE-SPEC design memo, written 2026-08-06 against [README.md](README.md) (the 040-wrap seed)
-and [BACKLOG.md](../BACKLOG.md). Feeds `/speckit.specify`. Filename deliberately avoids the speckit
+and [BACKLOG.md](../BACKLOG.md). Fed `/speckit.specify`. Filename deliberately avoids the speckit
 output names (`spec.md`, `plan.md`, `data-model.md`, `quickstart.md`, `contracts/`) — 040 paid for that
 collision once.
+
+> ## ⚠️ SUPERSEDED WHERE IT CONFLICTS — `spec.md` Clarifications govern
+>
+> This memo remains the **derivation of record**: it is the only place the *reasoning*, and especially the
+> **retractions**, are written down. Read it for **why**. Do not read it for **what** — two clarify sessions
+> (2026-08-07, 2026-08-10) reversed several conclusions reached here, and where the two disagree,
+> [spec.md](spec.md) § Clarifications and [research.md](research.md) win.
+>
+> Reversals since this memo was drafted, with the section each affects:
+>
+> | this memo argued | actually decided | see |
+> |---|---|---|
+> | B2 carries the streak input **plus a load axis** (§7) | **No load axis in 041.** One behavioural lever only | spec FR-019/FR-020 |
+> | A3 gates the bundle — "decides whether a load axis is needed" (§5) | **A3 is report-only**; it feeds the follow-on feature and gates nothing | research R4 |
+> | Predictor target = **reappearance geometry** across a gap (§4, §5 C2a) | **Continuous current-bearing estimate** — horizon-free state estimator; the reappearance framing still hid an unknown-gap-duration horizon | spec FR-025 |
+> | Head scored passively | **Actuated** — prediction *error* fed back as an input | spec FR-025c–f |
+> | *(silent on)* camera field | **V 90° → 75°** to match ordered hardware, M2-only | spec FR-029 |
+> | `streak_proxy` (§3) | canonical names are **`IN_ENVELOPE`** and **`ENVELOPE_SECS`** | data-model §1.1 |
+>
+> Stale passages below carry inline `⚠️ SUPERSEDED` markers pointing at the governing requirement.
 
 ---
 
@@ -81,8 +101,14 @@ The gap is concrete and measurable, not a metaphor:
   what 80% of the available fitness pays for.
 
 Note what the NN *can* already do. The instantaneous in-envelope test is a function of `dist` and the
-`target_*` bearings — inputs it already has. **The flag is computable; the integral is not.** The missing
-quantity is the accumulator, and it is missing for a structural reason (window length), not a tuning one.
+`target_*` bearings — inputs it already has. **The flag is computable; the integral is not.**
+
+> ⚠️ **SUPERSEDED 2026-08-07 (research R2)** — this paragraph concluded the *accumulator* was therefore the
+> missing quantity. Correct about **information**, wrong about **decision relevance**: the multiplier is
+> monotone in duration, so with no competing cost in 041's objective there is no state where leaving the
+> envelope is preferable. The optimal policy is "stay in", which needs the **flag**, not the depth.
+> **The flag is the primary input**; the accumulator is secondary and becomes decision-relevant only once a
+> load or energy cost exists. Both slots still ship (one format break), and ablation separates them.
 
 ### H1 — the pocket hypothesis (this is the falsifiable claim)
 
@@ -176,7 +202,7 @@ So the pairing is structural, and it is the same structural insight applied twic
 | | objective side | observation side |
 |---|---|---|
 | tracking | streak multiplier (exists) | **streak/regime input (missing)** |
-| load | **load axis (proposed)** | **accelerometer input (missing)** |
+| load | ~~load axis (proposed)~~ → **deferred to the follow-on feature** (spec FR-019) | **accelerometer input (missing)** — still ships in 041 (spec FR-017a) |
 
 - **Deployable, not a sim privilege.** Accelerometers are the one sensor this airframe unambiguously has —
   INAV provides it, and the xiao carries an LSM6DS3 ([[project_xiao_imu_crosscheck]]). This is a *more*
@@ -246,7 +272,8 @@ direct-observable principle. Derive it from what a real airframe can compute:
 
 - `in_envelope(t)` — the observable geometric test (M1: rabbit distance + bearing; M2: both beacons
   CEP-visible AND span in `[lo, hi]` AND centroid within a centered radius).
-- `streak_proxy(t)` = `min(consecutive-in-envelope seconds / FitStreakRampSec, 1)`, reset on dropout.
+- `ENVELOPE_SECS(t)` = `min(consecutive-in-envelope seconds / FitStreakRampSec, 1)`, reset on dropout.
+  *(Drafted here as `streak_proxy`; the canonical names are `IN_ENVELOPE` and `ENVELOPE_SECS` — data-model §1.1.)*
 
 Two new inputs. **ms-based, so cadence-invariant** — the same discipline as `kNNHistoryLagsMsec`. The proxy
 need not match `stpPt` exactly; it needs to *correlate*, and the net learns the mapping.
@@ -298,6 +325,11 @@ chosen for actuation lag; the *purpose* is bridging blindness. So the target bec
 will reappear** — reappearance bearing (and span) after a blind gap — at **blindness-scale horizons
 (≈0.5–2 s)** rather than actuation-scale ones.
 
+> ⚠️ **SUPERSEDED (spec FR-025)** — this target still hides an unknown gap duration: at prediction time the
+> net does not know *when* reacquisition happens. The decided target is a **continuous current-bearing
+> estimate**, horizon-free. The three reasons given below for why this beats span are sound and unchanged;
+> only the target definition moved.
+
 This is the 038 re-target design, and the operator's statement selects it over the alternatives. Three
 reasons it is the right target where span was not:
 
@@ -340,7 +372,7 @@ reacquisition result first.
 
 ### The alternative if reacquisition does not clear — a value head
 
-Retained as the fallback rather than the lead. If C2 says reappearance bearing is not learnable either, the
+Retained as the fallback rather than the lead. If C2 says the current-bearing estimate is not learnable either, the
 remaining idea is to stop predicting the world and predict *value*: discounted future accumulated
 `stepPoints`.
 
@@ -378,7 +410,7 @@ lever), *M2 tests the predictor*. Production M1 regime is **pop 8000 / 49 winds*
 |---|---|---|
 | **A0** | **Research phase — the index-parallel scan.** Operator-mandated, own output: an inventory of index-coupled contracts and structs with two lifetimes, plus a decision on the grouped-record (`tickList[i][k] = {state, cameraView, targetSample}`) refactor. | Before any objective change lands. |
 | **A1** | **The format-break bundle, one commit**: streak accumulator inputs (§3), grouped-record refactor if A0 recommends it, `wind_velocity` recording, self-describing dmp — whichever of those A0 promotes from candidate to commitment. Plus the `nn_weights*.dat` archival practice. | Clean build + full test suite (Constitution IX); nothing lands while a bake is live. |
-| **A3** | **Offline regime / load study — no bake.** On the pinned M1 and 040 t4: (a) split ticks into `{tracking, intercept, patrol}` on the existing `stpPt ≥ 0.5` + closing rule; (b) **read the load out of `PhysicsTraceEntry`** — per-tick `acc[]` + `quat[]` → body normal acceleration, per axis, per regime. It is recorded for every elite and has **no consumer today**, so this needs a small reader (extend `dmp-dump` with physics columns), not a recording change; (c) test H2 — within regime, does pitch/roll `dCtrl` predict throttle level and load; (d) report per-regime `dCtrl` / `⟨\|u\|⟩` / peak-g so H3 is a measurement rather than an intuition. **Decides whether a load axis is needed at all, and what its limit should be**, before a line of it is written. | Runs today; blocks the axis design, not the bundle. |
+| **A3** | **Offline regime / load study — no bake.** On the pinned M1 and 040 t4: (a) split ticks into `{tracking, intercept, patrol}` on the existing `stpPt ≥ 0.5` + closing rule; (b) **read the load out of `PhysicsTraceEntry`** — per-tick `acc[]` + `quat[]` → body normal acceleration, per axis, per regime. It is recorded for every elite and has **no consumer today**, so this needs a small reader (extend `dmp-dump` with physics columns), not a recording change; (c) test H2 — within regime, does pitch/roll `dCtrl` predict throttle level and load; (d) report per-regime `dCtrl` / `⟨\|u\|⟩` / peak-g so H3 is a measurement rather than an intuition. ⚠️ **SUPERSEDED — A3 is REPORT-ONLY** (research R4): 041 builds no load axis, so A3 gates nothing. Its findings are input to the follow-on aggressiveness feature, sequenced after the M2 predictor go/no-go. | Runs today; gates nothing. |
 | **A2** | **Genome ablation tool, minimal scope** — `--zero-input <named columns>` + Δ fitness / per-axis Δ`dCtrl` / Δ`⟨\|u\|⟩` reporting ([BACKLOG.md](../BACKLOG.md) entry, currently unbuilt). **This is a dependency, not a nicety**: it is the only rigorous instrument in the feature (§5). Leave `--zero-whh` and the rest of the mask vocabulary unbuilt. | Must exist before B2's elite is read. |
 
 ### Phase B — M1 experiment bake (aggressiveness)
@@ -422,10 +454,11 @@ complete deliverable.
   with `r² ≈ 0` to axes that mean something. If E1 wins, that is a finding on its own.
 - **C2 — offline feasibility, minutes, no simulation.** Regressions on recorded per-tick traces, each
   scored as **r² against a no-information baseline**, never mean error:
-  - *(a)* **the one that matters — reappearance bearing across a blind gap.** Extract
-    visible→blind→reacquire triples from the recorded runs; can pre-blindness history predict re-entry
-    bearing better than persistence, which should *collapse* there? This is the head's actual purpose
-    (§4) and the cheapest possible test of it.
+  - *(a)* ⚠️ **SUPERSEDED (spec FR-025)** — drafted as *"reappearance bearing across a blind gap"*, which
+    still carried an unknown-gap-duration horizon. The decided target is a **continuous current-bearing
+    estimate**: every tick the head emits "where I believe the target is *now*", scored against truth wherever
+    truth exists, dead-reckoning through gaps, **horizon-free**. Scored as r² vs **hold-last-seen**, binned by
+    blind-gap age. This is the head's actual purpose and the cheapest possible test of it.
   - *(b)* Δspan at the old horizons (E2) — run only as the control that confirms *why* the old head
     failed. ⚠️ Confounded until the `prediction_score` one-tick pairing is fixed; that fix is Phase A work.
   - *(c)* discounted future `stepPoints` — the value-head fallback, vs constant-mean.
@@ -697,7 +730,12 @@ instances and any future ones at once. A0's output becomes the *inventory* (what
 the migration list, not a go/no-go.
 
 **B2 — carry both levers**, reversing the one-lever-per-bake recommendation. The reasoning is an asymmetry
-in what is recoverable after the fact, not a change of appetite:
+in what is recoverable after the fact, not a change of appetite.
+
+> ⚠️ **SUPERSEDED 2026-08-07 — there is no second lever.** The load axis left 041 entirely (spec FR-019/020),
+> so B2 carries the envelope/streak input alone. The asymmetry argument below is still *correct* and is worth
+> keeping, because it is why bundling **inputs** is safe: inputs are ablatable, fitness axes are not. With no
+> axis in the bake, **every new thing in B2 is an input, so nothing in it is un-attributable** (spec FR-020a).
 
 - The **streak/regime input is ablatable post-hoc** — zero the columns on the trained elite, re-eval
   within build (§5). H1a survives regardless of what else was in the bake.
@@ -707,8 +745,8 @@ in what is recoverable after the fact, not a change of appetite:
   when PRNG, model and fitness all move.
 
 Since separating the levers buys no attribution the ablation does not already provide, and costs an extra
-8000/49 lottery ticket, **B2 carries the streak/regime input plus whatever load axis A3 justifies.** If A3
-says load is not the problem, no axis gets built and the question dissolves.
+8000/49 lottery ticket, bundling was the right call — and the 2026-08-07 clarification then removed the axis
+altogether, so **B2 carries the envelope/streak input and nothing else behavioural.**
 
 **Still open, needed before `/speckit.specify` closes:**
 2. **What "in the ballpark" means numerically for B2** — which historical runs form the comparison band

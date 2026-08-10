@@ -84,9 +84,16 @@ completes.
 Checklist:
 
 - [ ] Grouped per-tick record; initial state as a named field; `stepIndex - 1` clamp **deleted**
-- [ ] Prediction-score pairing fix (FR-004)
-- [ ] New input slots, both modes, with metadata rows — see
+      *(this is also how FR-004's prediction-score pairing gets fixed — structurally, not as a separate patch)*
+- [ ] New input slots, both modes, with metadata rows — `IN_ENVELOPE`, `ENVELOPE_SECS`, `ACCEL_X/Y/Z`; see
       [contracts/nn-input-layout.md](contracts/nn-input-layout.md)
+- [ ] **Step score moved into the tick loop** (FR-018a) — one computation feeds the NN input *and* fitness
+- [ ] **Bit-identical fitness equivalence test** across that move (T036) — the only guard against a silent
+      objective change, since post-hoc read serialized state and inline reads live state
+- [ ] **`ACCEL_*` = body specific force incl. gravity**, not FDM kinematic acceleration; level flight must
+      read ≈1 g on the normal axis (T040a)
+- [ ] **Camera `CameraPixelsV` 240 → 200** ⇒ M2 vertical field 75° (FR-029, T041a–c) — M2-only
+- [ ] New config knobs via the `AUTOC_CONFIG_FIELDS` X-macro; no in-class defaults (Constitution VII)
 - [ ] `wind_velocity` set at record time
 - [ ] Config block recorded per gen; readers prefer it over the ini
 - [ ] Exact tick stamping — **crrcsim submodule, pointer bump first**
@@ -166,14 +173,25 @@ cp data.dat specs/041-m2-depth/artifacts/m1-t1-data.dat     # FR-022 — next la
 
 ## Phase C — predictor decision (no bake)
 
+Study B (offline) is the decisive step — see [contracts/offline-study.md](contracts/offline-study.md).
+Targets, each scored as r² against a stated no-information baseline: **(a) continuous current-bearing
+estimate vs hold-last-seen, binned by blind-gap age** (the one that matters); (b) Δspan at the old horizons,
+as the control confirming why the old head failed; (c) discounted future step points, the value-head fallback.
+Produce the **blind-gap distribution first** — it defines which bins qualify (FR-024b).
+
+⚠️ **E1 is CONDITIONAL — do not run it without deciding T087 first.** If Study B is going to settle the
+head's fate anyway, E1's question ("is the dead head taxing the search?") is moot and the run should be
+dropped:
+
 ```bash
-# E1 — is the dead head taxing the search?
+# ONLY if T087 says E1 still earns its run:
 # EnablePredictorHead = 0 vs 1, short tracker runs (NOT an M1 run — the head is tracker-only)
 scripts/train.sh autoc-tracker.ini logs/autoc-041-t2-m2-nohead.log
 ```
 
-Combine with Study B's verdict → **C3 decision**: re-targeted head, value-head fallback, or **retire**
-(output 7→3). Retirement is an accepted outcome.
+→ **C3 decision** (T088): re-targeted continuous-estimate head with innovation feedback, value-head fallback,
+or **retire** (output 7→3, reclaiming 119 output weights and a third of the lexicase pool). Retirement is an
+accepted outcome.
 
 ---
 

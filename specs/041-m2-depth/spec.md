@@ -22,10 +22,11 @@ between them: **what the controller can observe about how well it is doing.**
 The gap is concrete, not a metaphor. `FitStreakMultiplierMax = 5.0` ramping over `FitStreakRampSec = 5.0 s`
 is the dominant fitness shaping, while the NN's entire perceptual window is **0.8 s**
 (`kNNHistoryLagsMsec`). The reward is conditioned on **6× more history than the policy can observe** — a
-Markov violation from the NN's seat. The same shape appears a second time in the aggressiveness thread: a
-load objective would penalize g-loading that no input reports.
+Markov violation from the NN's seat. The same shape would appear a second time the moment a load objective
+existed — it would penalize g-loading that no input reports — which is why 041 ships the accelerometer now
+(FR-017a) and defers the objective itself (FR-019).
 
-041 therefore adds **observations to match existing objectives**, rather than adding objectives.
+041 therefore adds **observations to match an objective that already exists**, rather than adding objectives.
 
 ---
 
@@ -116,6 +117,47 @@ load objective would penalize g-loading that no input reports.
   correctly"* — narrowing the field makes excursions **more frequent and possibly short**, so the decisive
   bins may be **sub-second**, and an arbitrary ≥1 s threshold would set the bar in the wrong place. Let the
   distribution say where the mass is, then require the win there.
+
+---
+
+### Session 2026-08-10 — camera model alignment with ordered hardware
+
+Source: [031 handoff](../031-beacon-camera/handoff-041-camera-model.md) +
+[camera-era-knobs.md](../031-beacon-camera/camera-era-knobs.md). Camera-era hardware is **ordered** (InnoMaker
+OV9281 ×2, 1.8 mm M12 fisheye, Pi 3A+) but weeks out; the ask was to nudge the sim optic closer to the real
+lens before the next long run.
+
+- Q: Switch the sim projection from pinhole to equidistant (f·θ)? → A: **Already done — no action.** 038 t9
+  established the angular mapping and 040 T031 kept it while dropping per-axis normalization
+  (`camera_projection.cc:158-184`): bearings are `θ` in **radians**, and `radPerPx` is a single uniform value,
+  so the "constant angular resolution everywhere" property the handoff wanted is already exploited. ⚠️ Historical
+  note worth carrying: t9's switch to equidistant **near-froze evolution** (elite unreplaced ~57 gens) because
+  the rectilinear tan-stretch had been an accidental training aid at the frame edge. We are where the handoff
+  wants us, but the path cost a run — do not re-open the projection casually.
+- Q: Make FOV and projection parameters rather than constants? → A: **Already done — no action.** 040 retired
+  `CameraFOVHorizontalDeg`/`VerticalDeg`; FOV is **derived** from `CameraPixelsH/V × CameraDegPerPixel` so field
+  and resolution cannot disagree, and SC-012 proved all 15 assumed values substitute with no code change.
+- Q: Adopt the handoff's H = 120° / V = 75° field? → A: **Yes, for the next M2 run.** H is already 120°
+  (320 px × 0.375). **V is 90° and optimistic by 15°** — the concern the handoff raises. Fix is
+  `CameraPixelsV 240 → 200`: 200 × 0.375 = **75° exactly**, and 320:200 = **1.6**, the real sensor's aspect
+  (OV9281 is 1280×800), so the sim grid becomes a clean 4× downsample instead of a 4:3 invention. Operator:
+  *"sure it adds another variable but it is likely more realistic."*
+- Q: Does this affect M1? → A: **No — no change there.** M1 has no camera; it keeps its global view exactly as
+  before. This is an M2-only change.
+- Q: Single camera or the birded pair? → A: **Single camera stays.** The dual-camera fork goes to the backlog —
+  and the operator adds a cost the handoff did not: a two-camera rig brings **inter-camera alignment and
+  calibration variation**, compounding the per-scenario mount misalignment 040 already models. The handoff also
+  softened its own case (single-fisheye penalty narrowed ×6.5 → **×2.2**), and it was conditioned on a marginal
+  link budget, which no longer reads marginal.
+- Q: Model on-the-fly camera-mode switching (the 453 fps crop-vs-bin two-regime structure)? → A: **Not now —
+  future research**, but with a sharper framing than the handoff's: in tracker mode, **when the target is close
+  and bright, go centre-bore** (narrow field for angular resolution) and stay wide otherwise. That is a
+  target-state-driven mode switch, not merely acquisition-vs-tracked. Filed to backlog; gated on the A8-2
+  register measurement that decides whether the fast mode is a crop or a bin.
+- Q: Which lens gets bought? → A: **041's predictor verdict is an input to that decision** (operator): whether
+  a 1.8 mm or a 2.x mm lens makes sense "depends on how useful predictors are here in 041." A working predictor
+  tolerates a narrower field; a dead one demands a wider one. This makes the predictor go/no-go and the measured
+  blind-gap distribution **hardware-purchase-relevant**, not just training-relevant.
 
 ---
 
@@ -238,8 +280,9 @@ and one ablation, before any bake is committed to it.
 horizon, best error at generation 1 — while occupying a third of the lexicase pool, so it is actively
 harmful rather than inert. Two experiments here can kill or redirect the whole branch for hours of work.
 
-**Independent Test**: The offline study returns a verdict on whether reappearance bearing across a blind
-gap is learnable; the ablation returns whether the dead head is taxing the control search.
+**Independent Test**: The offline study returns a verdict on whether the target's current bearing is
+estimable through a blind gap — beating hold-last-seen, binned by gap age; the ablation returns whether the
+dead head is taxing the control search.
 
 **Acceptance Scenarios**:
 
@@ -320,8 +363,18 @@ aggressiveness outcome.
 
 ### Functional Requirements — contract bundle (US2)
 
-- **FR-005**: All model-incompatible and schema-incompatible changes MUST land in one commit, before the
+- **FR-005**: All **M1-affecting** model- and schema-incompatible changes MUST land in one commit, before the
   first bake of the feature and never during a live bake.
+- **FR-005a**: One **M2-only** layout change is permitted *after* that commit: the tracker innovation
+  channels (FR-025d), which land in the M2 phase once T088 fixes the estimate's dimensionality. This does not
+  violate FR-005, and the reason is load-bearing rather than incidental:
+  - `TrackerInputs` and `NNInputs` are **separate structs with separate genomes**, so growing the tracker
+    vector cannot invalidate the M1 model.
+  - 040's **T023 split of `AircraftState::serialize`** was built precisely so tracker-input growth needs **no
+    M1 source rebake** — the M1 source dmp stays readable by the M2 binary across the change.
+  - Consequently the final tracker count is **63 + N**, N = the estimate's dimensionality, resolved at T088;
+    every artifact quoting "63" is quoting the *post-A1, pre-M2* value.
+  ⚠️ Any *other* post-A1 layout change is a violation. This exemption is specific and does not generalize.
 - **FR-006**: Each per-gen dump MUST carry the fitness and cadence configuration used to produce it;
   readers MUST prefer the recorded configuration over any on-disk configuration file.
 - **FR-007**: Tick timestamps MUST be stamped so that a run at the configured cadence records exact
@@ -490,6 +543,33 @@ aggressiveness outcome.
 - **FR-028**: The M2 bake MUST NOT introduce an M2-side aggressiveness lever; aggressiveness is inherited
   and observed.
 
+### Functional Requirements — camera model (US6, M2-only)
+
+- **FR-029**: The M2 camera's vertical field MUST be **75°**, achieved by setting `CameraPixelsV = 200` against
+  the existing `CameraDegPerPixel = 0.375` (200 × 0.375 = 75°). Horizontal stays **120°** (320 px). `radPerPx`
+  MUST NOT change, so per-pixel quantisation and CEP are unaffected.
+  *Rationale*: the ordered 1.8 mm fisheye on an OV9281 estimates to ~124° × 78° equidistant; 120 × 75 is the
+  conservative split, and 320:200 = 1.6 matches the real 1280×800 aspect. The prior 240 px (90°) was a 4:3
+  invention that made the vertical tracking envelope optimistic by 15°.
+- **FR-029a**: This is **M2-only**. M1 has no camera and keeps its global view unchanged.
+- **FR-029b**: ⚠️ **Fitness-affecting** (more sentinel ticks, more and longer blind gaps) → A1 bundle, never
+  mid-bake. The derived-FOV assertion comment in `camera_projection.h` (currently citing ±0.785 rad / 45° for
+  V) MUST be updated so the documented half-angles match the grid.
+- **FR-030**: The predictor's contract MUST record the physical drift budget from
+  [camera-era-knobs.md](../031-beacon-camera/camera-era-knobs.md) §3: blind-interval bearing growth
+  Δθ ≈ ½·a_target·t²/r + 1–2° IMU feed-forward error, giving field-exit times for a 3 g target of ~1.1 s @50 m
+  and ~1.5 s @100 m at a ±36° half-field. This sets the **timescale** the predictor operates on — order 1 s,
+  not sub-second — and is an independent cross-check on Study B's measured gap distribution.
+- **FR-031**: The predictor's contract MUST record that **warm reacquisition has a floor of ≈155 ms**
+  (N/f_chip, N = 31 Gold at ~189 Hz chips). A perfect predictor pointing perfectly still waits that long for
+  code relock. Consequence: **the predictor's value is in pointing, not in latency** — any claim that it reduces
+  time-to-reacquire below the code-lock floor is unphysical.
+- **FR-032**: `CameraDetectionRangeM = 100.0` MUST remain as-is. It was an assertion (FR-033a in 040) and is now
+  **independently corroborated** by the 031 photon budget: bright-day post-correlation SNR ≈22 @100 m, ÷4 at
+  4×4 defocus → ≈5.5 against a ×4.5 lock threshold ⇒ 100–110 m class. Recorded as a strengthened assumption, not
+  a changed value. *(This does not contradict 040's gloomy single-PD figure — the small pixel's tiny sky patch
+  is a different budget.)*
+
 ### Key Entities
 
 - **Per-tick record**: the grouped unit replacing today's parallel per-tick collections — chase state,
@@ -562,8 +642,32 @@ Named explicitly, because each has a standing rationale that the spec must not q
 - **A control bake / micro A/B** — with PRNG, model and fitness all moving between runs, a cross-run delta
   measures everything at once. Small-population runs are **smoke tests** for plumbing and ballpark
   sanity, not comparison arms. Attribution comes from within-build ablation instead.
-- **Reducing the camera field of view** — an option this feature *enables* if reacquisition works, and a
-  downstream feature. Out of scope here.
+- **Choosing the camera field of view or topology** — out of scope, but 041 is a *load-bearing input* to that
+  choice, so the frame matters. The live outcome space (operator 2026-08-10) spans **~90° single camera** (wins
+  if 120° is marginal on photon budget *and* the predictor carries the extra blind time), **120° single**
+  (status quo), and **~270° from several cameras** (*"if we just can't get there without, so be it"*).
+  Narrowing buys range quadratically (SNR ∝ 1/FOV²) and costs blind time ∝ √(half-field) — so **a working
+  predictor is what makes a narrow field affordable, and a dead one forces the field wider.** That is why the
+  go/no-go and the measured blind-gap distribution must be recorded with their evidence: they feed a hardware
+  purchase (1.8 mm vs 2.x mm), not just a training config. Full frame in [BACKLOG.md](../BACKLOG.md).
+  The V = 75° change (FR-029) is a *fidelity correction to match ordered hardware*, not an exploration of this
+  trade.
+- **The birded two-camera pair** — deferred to backlog. Beyond the input-vector cost (the beacon block roughly
+  doubles) it brings **inter-camera alignment and calibration variation** on top of the per-scenario mount
+  misalignment already modelled. Single camera stays; the single-fisheye signal penalty is only ×2.2, and the
+  link budget that would have forced the pair does not read marginal.
+- **On-the-fly camera-mode switching** — future research, but its shape is decided: **an NN output knob**
+  (operator 2026-08-10), target-state-driven — *close and bright ⇒ go centre-bore*, wide otherwise. The two
+  hard parts are consequences of actuating it: **transition lag** (a crop change plus code relock is ≥155 ms,
+  so the policy must *anticipate* rather than react) and **mode state fed back as an input**. That feedback is
+  the **same wiring 041 builds for the predictor innovation** (FR-025c–f), so this item inherits a working
+  template if 041 lands it — a reason to sequence it after. Gated on the A8-2 measurement of whether the
+  453 fps mode is a centre crop or a bin.
+- **Learned cross-camera registration** — if the dual-camera path is ever taken, the auto-correlation and the
+  shifts/warps that bring two uncalibrated views into one frame are plausibly **a learned function rather than
+  a calibration constant** (operator 2026-08-10). Notably this *inverts* the alignment-variation objection —
+  a registration net trained against misalignment makes uncalibrated mounting the thing it is robust to — at
+  the cost of a second trained stage inside the perception front end. "Something for later."
 - **Perception changes** — projection model, camera variation deltas, detection-envelope realism, CEP
   physical model. 040 closed perception.
 - **Flight-model re-tune items** — pitch marginal-stability levers, propeller correction. Gated on more

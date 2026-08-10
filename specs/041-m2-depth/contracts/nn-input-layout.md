@@ -42,11 +42,32 @@ ACCEL_Z         float, ≈[-2,2]                                        (normal 
 | symbol | before | after |
 |---|---:|---:|
 | `NN_INPUT_COUNT` / `PathgenInput::COUNT` | 37 | **42** |
-| `TRACKER_NN_INPUT_COUNT` / `TrackerInput::COUNT` | 58 | **63** |
+| `TRACKER_NN_INPUT_COUNT` / `TrackerInput::COUNT` | 58 | **63** *(post-A1; see below)* |
 | `TRACKER_NN_TOPOLOGY_STRING` | `"58,32,16r,7"` | `"63,32,16r,<out>"` |
 
 `<out>` is 7 if a predictor head survives US5, 3 if retired. Weight-count `static_assert`s must be
 **recomputed**, never relaxed.
+
+### ⚠️ The tracker count changes TWICE — and the second time is legal
+
+| stage | `TrackerInput::COUNT` |
+|---|---|
+| today | 58 |
+| after the A1 bundle | **63** (+`IN_ENVELOPE`, `ENVELOPE_SECS`, `ACCEL_X/Y/Z`) |
+| after the M2 phase | **63 + N** — the innovation channels (FR-025d), N = estimate dimensionality, fixed at T088 |
+
+The second change lands **after** the "one contract break", which looks like an FR-005 violation and is not
+(FR-005a). Three reasons, and the middle one is the load-bearing one:
+
+1. `TrackerInputs` and `NNInputs` are **separate structs with separate genomes** — growing the tracker vector
+   cannot invalidate the M1 model.
+2. **040's T023 split of `AircraftState::serialize` was built for exactly this**: tracker-input growth needs
+   **no M1 source rebake**, so the M1 source dmp stays readable by the M2 binary across the change. Without
+   that split this would be illegal.
+3. It cannot be pulled forward into A1, because N is not known until the predictor design decision (T088).
+
+**Every "63" in this document and in data-model.md §1.2 is the post-A1, pre-M2 value.** Any *other* post-A1
+layout change is a violation — this exemption is specific and does not generalize.
 
 ## Semantics — binding definitions
 

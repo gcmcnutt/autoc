@@ -55,7 +55,12 @@ table (`kPathgenInputMeta`, `kTrackerInputMeta`), all cross-`static_assert`-ed.
 | | before | after |
 |---|---:|---:|
 | `NNInputs` / `PathgenInput::COUNT` / `NN_INPUT_COUNT` | 37 | **42** |
-| `TrackerInputs` / `TrackerInput::COUNT` / `TRACKER_NN_INPUT_COUNT` | 58 | **63** |
+| `TrackerInputs` / `TrackerInput::COUNT` / `TRACKER_NN_INPUT_COUNT` | 58 | **63** ⁽¹⁾ |
+
+⁽¹⁾ **Post-A1, pre-M2 value.** The tracker count changes a second time in the M2 phase — `63 + N` for the
+innovation channels (§4.4, FR-025d), N fixed at T088. That second change is permitted by **FR-005a**: separate
+struct, separate genome, and 040's T023 `AircraftState::serialize` split means it needs **no M1 source
+rebake**. See [contracts/nn-input-layout.md](contracts/nn-input-layout.md) for the full justification.
 
 Weight counts and topology strings both change and their `static_assert`s must be recomputed, not
 loosened. `TRACKER_NN_TOPOLOGY_STRING` becomes `"63,32,16r,<out>"`, where `<out>` depends on the US5
@@ -248,6 +253,7 @@ place. Expected keys:
 | `EnableAccelInputs` | ablation gate for the accelerometer inputs |
 | `AccelScaleG` | `kAccelScale_g` normalizer |
 | `EnvelopeSpanLo` / `EnvelopeSpanHi` / `EnvelopeCentroidRadius` | M2 estimator envelope (reserved; Phase C/D) |
+| `CameraPixelsV` **240 → 200** | M2 vertical field 90° → **75°**, matching the ordered 1.8 mm fisheye on OV9281 and the real 1.6 sensor aspect (research.md R14). `CameraDegPerPixel` unchanged, so `radPerPx` / quantisation / CEP are unaffected. ⚠️ Fitness-affecting; M2-only |
 | ~~`EnableLoadAxis`~~ | **not in 041** — no load objective (clarified 2026-08-07, research.md R4) |
 
 ⚠️ Two config-surface hazards, both already-paid lessons: `INI_MAX_LINE` is 200 chars and a knob plus its

@@ -432,6 +432,51 @@ the trained policy.
 
 ---
 
+## R14 — Camera model alignment with ordered hardware (added 2026-08-10)
+
+Source: [031 handoff](../031-beacon-camera/handoff-041-camera-model.md) +
+[camera-era-knobs.md](../031-beacon-camera/camera-era-knobs.md).
+
+**Two of the three asks were already satisfied**, which the 031-side instance had no way to know:
+
+| ask | status |
+|---|---|
+| pinhole → equidistant (f·θ) | ✅ **already done** — `camera_projection.cc:158-184`, since 038 t9 / 040 T031. Bearings are θ in radians; `radPerPx` is uniform, so "constant °/px everywhere" is already exploited |
+| FOV/projection as parameters, not constants | ✅ **already done** — 040 retired the FOV keys; field is *derived* from grid × °/px (FR-003), and SC-012 proved 15 assumed values substitute with no code change |
+| **H = 120° / V = 75°** | ⚠️ **real delta** — H already 120°, **V is 90°** |
+
+**Decision**: adopt V = 75° via `CameraPixelsV 240 → 200` (200 × 0.375 = 75° exactly). Also makes the grid
+aspect **1.6**, matching the real OV9281 (1280×800); the prior 240 px was a 4:3 invention that left the vertical
+tracking envelope optimistic by 15°. `CameraDegPerPixel` untouched ⇒ `radPerPx`, quantisation and CEP unchanged.
+M2-only; M1 has no camera and is unaffected.
+
+⚠️ **Do not re-open the projection casually.** t9's switch to equidistant **near-froze evolution** (elite
+unreplaced ~57 gens, pop average climbing ~5× slower) because the rectilinear tan-stretch had been an
+*accidental training aid* — edge NDC gradient ~2.3/rad vs a flat 0.955/rad, and keep-in-frame is an edge
+phenomenon. 040 T031 went angular anyway and it held, but the path cost a run.
+
+**Two physical constraints imported as predictor contract** (FR-030, FR-031):
+- Drift budget Δθ ≈ ½·a_target·t²/r + 1–2° IMU error. A 3 g target exits a ±36° half-field in ~1.1 s @50 m /
+  ~1.5 s @100 m ⇒ **the predictor's timescale is order 1 s, not sub-second**, and this is an independent
+  cross-check on Study B's measured distribution.
+- **Warm code relock floors at ≈155 ms** (N/f_chip, N = 31 @ ~189 Hz). A perfect predictor still waits that
+  long ⇒ **the predictor's value is pointing, not latency**; sub-155 ms reacquire claims are unphysical.
+
+**One value corroborated, not changed**: `CameraDetectionRangeM = 100.0` was ASSERTED (040 FR-033a) and the 031
+photon budget independently lands 100–110 m class bright-day at 4×4 defocus (SNR ≈22 @100 m, ÷4, vs ×4.5
+threshold). Does not contradict 040's single-PD pessimism — small-pixel sky patch is a different budget.
+
+**Deferred with triggers** (both now in `specs/BACKLOG.md`): the birded two-camera pair — the operator adds the
+cost the handoff omitted, **inter-camera alignment/calibration variation**, a new variation class rather than a
+doubled one; and on-the-fly mode switching, whose interesting form is target-state-driven (**close and bright ⇒
+centre-bore**), gated on the A8-2 register measurement.
+
+**Feedback loop worth naming**: **041's predictor verdict is an input to the lens purchase** — 1.8 mm vs 2.x mm
+"depends on how useful predictors are here in 041" (operator). So the go/no-go and the measured blind-gap
+distribution are hardware-purchase-relevant, not merely training-relevant.
+
+---
+
 ## Resolved / assigned summary
 
 | # | Unknown | Outcome |
@@ -445,9 +490,10 @@ the trained policy.
 | R7 | Non-regression band | **Proposed** → operator |
 | R8 | Retry budget / abort signal | **Proposed** (3 attempts; σ=0.000 throttle lock) → operator |
 | R9 | Offline study data source | **Decided**: dmp physics columns; `data.dat` already gone |
-| R10 | Predictor target | **Decided**: reappearance geometry across gaps, gap-scale horizons |
+| R10 | Predictor target | **Decided**: **continuous current-bearing estimate** — horizon-free state estimator, scored vs hold-last-seen and binned by blind-gap age; the earlier reappearance-geometry framing is superseded |
 | R11 | M2 aggressiveness lever | **Decided**: none; inherit |
 | R12 | Tooling prerequisites | **Swept**; one prerequisite deleted (naming already exists) |
+| R14 | Camera model vs ordered hardware | **Decided**: projection already equidistant (no action); adopt **V = 75°** via `CameraPixelsV = 200`, M2-only; import drift budget + 155 ms relock floor as predictor contract; 100 m corroborated; dual-camera and mode-switching deferred with triggers |
 | R13 | Hardware accel source | **Decided**: INAV over MSP via `MSP2_AUTOC_STATE` extension — adds INAV as a third build surface in **two target variants** (bench = `MAMBAF722_2022A`, flight = `MATEKF722MINI`, bench first). Routine and precedented (021 T041). Disconnect GPS before flashing |
 
 No `NEEDS CLARIFICATION` remains that blocks `/speckit.tasks`. R7 and R8 are operator confirmations that

@@ -15,6 +15,108 @@
 
 ## 041 deferrals
 
+### [041 camera-model pass, filed 2026-08-10] The FOV / topology outcome space — 041's predictor verdict is an input to it
+
+Not a deferral so much as the **decision frame** the camera items below sit inside. Operator 2026-08-10: these
+are *all* live outcomes, and which one lands depends on how the photon budget and the predictor actually read.
+
+| outcome | when it wins | cost |
+|---|---|---|
+| **~90° single camera** | 120° is marginal on photon budget **and** the predictor can carry the extra blind time | smallest, cheapest optic; leans hardest on 041's predictor result |
+| **120° single camera** (current baseline) | budget holds at 120° and the predictor is at best neutral | status quo; V = 75° per FR-029 |
+| **~270° from several cameras** | nothing narrower closes the geometry — *"if we just can't get there without, so be it"* | multiple cameras, registration problem, mass/power, inter-camera alignment |
+
+Two couplings that make this a real trade rather than a preference:
+
+- **Narrowing buys range quadratically** (background-limited SNR ∝ 1/FOV²) and costs blind time. Blind-time
+  budget ∝ √(half-field), so the predictor is the thing that pays for narrowing — **a working predictor is what
+  makes 90° affordable, and a dead one forces the field wider.**
+- **Training is the cheap side** ([camera-era-knobs.md](031-beacon-camera/camera-era-knobs.md) knob 6): FOV
+  alternatives can be trained and compared in sim before glass is bought. The optics decision should be *made*
+  against a trained policy, not assumed and then trained around.
+
+**This is why 041's predictor go/no-go and its measured blind-gap distribution are hardware-purchase-relevant**
+(1.8 mm vs 2.x mm), and why both must be recorded with their evidence rather than as a verdict alone.
+
+### [041 camera-model pass, filed 2026-08-10] Birded two-camera pair — deferred, and the real cost is alignment variation
+
+041 keeps `CameraCount = 1`. The [031 handoff](031-beacon-camera/handoff-041-camera-model.md) asked for the
+bird-pair-vs-single-fisheye fork to be **compared in training**; deferred, for reasons that got stronger as the
+numbers firmed up:
+
+- **The handoff softened its own case.** The single-fisheye signal penalty narrowed from ×6.5 (rectilinear
+  1.1 mm) to **×2.2** once commodity 1.7–1.8 mm F/2.0 IR-corrected fisheyes entered the picture
+  ([camera-era-knobs.md](031-beacon-camera/camera-era-knobs.md) knob 6 refinement). And the fork was
+  conditioned on *"if the link budget reads marginal"* — with bright-day post-correlation SNR pencilling to
+  100–110 m class at 4×4 defocus, it does not.
+- **The cost the handoff did not price (operator 2026-08-10): inter-camera alignment and calibration
+  variation.** A two-camera rig adds a *relative* pose error between the cameras on top of the per-scenario
+  mount misalignment 040 already models. That is a new variation class, not a doubling of an existing one, and
+  it is exactly the axis the camera PRNG slot was scoped for (mount-alignment 6-DOF first). Training a policy
+  against an uncalibrated pair is a materially harder problem than training against one uncalibrated camera.
+- **Input-vector cost**: the beacon block (36 slots) roughly doubles; the multi-camera *interface* exists from
+  030 FR-003b but has never been exercised.
+
+**What the pair would buy** (unchanged, and still real): ~120–125° combined H from 2×72° splayed ±26°, a ~20°
+central overlap giving **parallax ranging** (disparity = baseline/r — 10 px @20 m, 4 px @50 m, 2 px @100 m:
+weak far, strong exactly where the endgame is), doubled photon budget in the overlap, and cross-validated code
+locks. Hardware note: one CSI port per Pi Zero 2 W ⇒ two Zeros (11 g each) or a Pi 5.
+
+**The registration problem may itself want a NN (operator 2026-08-10)** — and this reframes the cost above
+rather than just adding to it. Cross-camera auto-correlation ("do these two blobs are the same beacon, and at
+what disparity") plus the shifts/warps needed to bring two uncalibrated views into a common frame is plausibly
+**a learned function, not a calibration constant** — a small network in the perception front end that outputs
+the registration transform.
+
+Two consequences, in tension, and both should be stated when this unparks:
+
+- **It absorbs the cost.** If the registration net is *trained against* alignment variation, then uncalibrated
+  mounting stops being a tax and becomes the thing the net is robust to — which inverts the "new variation
+  class" objection above. That is the operator's point and it is a good one.
+- **It moves the architecture.** A learned registration stage sits **inside the perception front end**, which
+  is the territory of the *"Parallel perception-front-end — camera pixels → (x, y, CEP)"* item further down this
+  file, not of the control network. The clean interface (front end emits `(x, y, CEP)`; control NN consumes it)
+  survives — but the front end grows a trained component, and the "photons in, control out" story gains a
+  second learned stage with its own training data requirements (real footage, or a sim that models two
+  uncalibrated views faithfully enough to train against).
+
+**"Something for later"** — explicitly not scheduled.
+
+**Trigger**: static range testing says the single wide optic is marginal, OR the 041 predictor verdict says a
+narrow field is untenable, OR parallax ranging becomes load-bearing for the endgame. Pairs with the camera PRNG
+slot item (alignment variation is the shared prerequisite) and with the perception-front-end item.
+
+### [041 camera-model pass, filed 2026-08-10] On-the-fly camera mode switching — close-and-bright goes centre-bore
+
+The 453 fps mode's crop-vs-bin geometry may make the *effective* field two-regime: if it is a centre crop,
+tracked-state FOV is ~20°×15° while acquisition FOV is the full field
+([031 handoff](031-beacon-camera/handoff-041-camera-model.md)).
+
+**Operator framing 2026-08-10, sharper than the handoff's**: the interesting version is not
+acquisition-vs-tracked, it is **target-state-driven** — in tracker mode, *when the target is close and bright,
+go centre-bore*; stay wide otherwise. Close + bright is exactly when you can afford a narrow field and most
+want the angular resolution, and it is a condition the policy can already perceive (range proxy + signal
+quality are both in the input vector).
+
+**Shape decided (operator 2026-08-10): the mode is an NN OUTPUT knob**, not a front-end rule. That makes it a
+control problem, and the two interesting parts are consequences of actuating it:
+
+1. **Transition lag.** A crop change plus a code relock is **at least the ≈155 ms warm-relock floor**, probably
+   more. So the policy must *anticipate* — command the switch before it needs the narrow field — which is a
+   harder learning problem than reacting. Lag magnitude is the first thing to measure.
+2. **Mode state as a feedback input.** The net needs to know which mode it is in, and plausibly how far through
+   a transition it is. That is the **same wiring shape 041 builds for the predictor innovation** (FR-025c–f:
+   an output whose consequence is fed back as an input next tick, computed in the stepper, no output-layer
+   recurrence). If 041 lands that pattern, this item inherits a working template rather than inventing one —
+   worth sequencing after 041 for that reason alone.
+
+Remaining open: how to represent the two-regime field in the sim cheaply; whether the knob is binary or a
+continuous zoom; whether a mis-timed switch (narrow field commanded while the target is still wide) should be
+punished by the objective or left to be its own consequence.
+
+**Trigger**: the A8-2 arrival measurement that reads the actual 453 fps mode geometry from registers (crop vs
+skip vs bin) — until then the premise is unverified. Filed as **future research**, not scheduled work.
+
 ### [041 clarify, filed 2026-08-07] The scoring envelope is position-only — should "in streak" also require the target to be VISIBLE?
 
 **The defect.** `stepPoints` (and therefore streak credit) is computed from **relative position alone** — the

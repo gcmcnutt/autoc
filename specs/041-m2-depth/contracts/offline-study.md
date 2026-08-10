@@ -108,11 +108,26 @@ horizon with best error at *generation 1*.
 
 ⚠️ **Target (b) is confounded until the prediction-pairing fix lands** (FR-004). Run it after.
 
-### Free by-product — required output
+### Free by-product — required output, and it feeds a hardware purchase
 
 The **blind-gap distribution**: frequency, duration histogram, and exit→re-entry bearing offset. Nobody has
-measured this, and it is the actual input to any future field-of-view decision. Record it whatever the
-predictor verdict is.
+measured this. Record it whatever the predictor verdict is — **which lens gets bought depends on it**: 1.8 mm
+vs 2.x mm "depends on how useful predictors are here in 041" (operator 2026-08-10), so this distribution plus
+the go/no-go are inputs to an optics decision, not only to training.
+
+⚠️ **Field-of-view caveat.** The recorded runs available (040-t4) have **V = 90°**; FR-029 narrows the M2
+vertical field to **75°**. Narrowing shifts gap mass toward *longer* gaps, so t4's distribution is
+**optimistic** — which is conservative in the right direction (bins qualified against it are a harder bar than
+reality). Use it, and say so. Target (a)'s *predictability* is largely field-independent and needs no caveat.
+
+**Physics cross-check** ([camera-era-knobs.md](../../031-beacon-camera/camera-era-knobs.md) §3): blind-interval
+bearing growth Δθ ≈ ½·a_target·t²/r + 1–2° IMU feed-forward error puts a 3 g target out of a ±36° half-field in
+~1.1 s @50 m / ~1.5 s @100 m. So expect the decisive timescale to be **order 1 s, not sub-second**; a measured
+distribution far from that wants explaining before it is trusted.
+
+**Latency floor to respect in any conclusion**: warm code relock is ≈**155 ms** (N/f_chip, N = 31 @ ~189 Hz).
+A perfect predictor pointing perfectly still waits that long — so the head's value is **pointing, not
+latency**, and no result should be framed as reducing time-to-reacquire below that floor.
 
 ### Decisions this study gates
 

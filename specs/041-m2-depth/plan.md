@@ -7,17 +7,21 @@ retractions and evidence behind every decision below. Read it for *why*; this fi
 
 ## Summary
 
-041 adds **observations to match objectives that already exist**, rather than adding objectives. Two
-existing rewards are invisible to the policy: the streak multiplier (5× of fitness, ramped over 5 s,
-against a 0.8 s perceptual window) and — prospectively — airframe load. The feature gives the NN an
-envelope-occupancy signal and an accelerometer, rebakes M1 with them, and separately settles by cheap
-offline measurement whether the M2 predictor head can be re-targeted to something learnable
-(reappearance geometry across a visibility gap) or should be retired.
+041 adds **observations to match an objective that already exists**, rather than adding objectives. The
+streak multiplier is 5× of fitness, ramped over 5 s, against a 0.8 s perceptual window — invisible to the
+policy. The feature gives the NN an in-envelope flag plus a duration accumulator, completes the 6-DOF
+craft-state block with an accelerometer, and rebakes M1 with them. **041 adds no load objective**: the
+per-regime load findings are measured and reported, then handed to a follow-on feature.
+
+Separately it settles by cheap offline measurement whether the M2 predictor head can be re-targeted to
+something learnable — **a continuous current-bearing estimate**, horizon-free, with the prediction *error*
+fed back as an input — or should be retired.
 
 Technical approach: one research phase that retires the index-coupled-collection failure class
-structurally; one contract-break commit carrying every model- and schema-incompatible change; two
-instruments (input ablation, offline regime/load study) built before any compute is spent; one production
-M1 bake; one M2 bake scoped to the predictor question.
+structurally; one contract-break commit carrying every model- and schema-incompatible change (including the
+M2 camera vertical field 90° → 75° to match ordered hardware); two instruments (input ablation, offline
+regime/load study) built before any compute is spent; one production M1 bake; one M2 bake scoped to the
+predictor question.
 
 ## Technical Context
 
@@ -41,12 +45,18 @@ preserved (eval-vs-training bitwise match is the regression gate)
 2026-08-07); NN input layout is a serialization contract shared with xiao codegen; nothing
 fitness-affecting may land while a bake is live
 **Scale/Scope**: M1 production bake at pop 8000 / 49 winds (~800 gens); M2 bake ~27 h; two new input
-slots plus accelerometer slots in both input structs; one dmp schema break
+slots plus accelerometer slots in both input structs; one dmp schema break; one M2 camera-fidelity change
+(vertical field 90° → 75°, matching ordered hardware — research.md R14)
 
-**Unknowns carried into Phase 0**: accelerometer slot count and framing; envelope-accumulator reset rule;
-M2 envelope estimator; load-axis form if justified; grouped-record migration of the pre-loop initial
-state; cereal version-bump decision; non-regression band definition; retry budget. All resolved or
-explicitly assigned in [research.md](research.md).
+**Unknowns carried into Phase 0 — all now resolved or explicitly assigned in
+[research.md](research.md) R1–R14**: accelerometer slot count and framing (R1: 3 slots, specific force,
+instantaneous, fallback ladder recorded); envelope-accumulator reset rule (R2: envelope exit only — and the
+*flag*, not the accumulator, is the primary input); M2 envelope estimator (R3: direct-perception, built and
+used in the D bake); load-axis form (R4: **none in 041** — Study A is report-only, findings feed the
+follow-on); grouped-record migration of the pre-loop initial state (R5: named field beside the list);
+version-bump decision (R6: bump, no migration, fail loud); predictor target (R10: continuous current-bearing
+estimate); hardware accel source (R13: INAV `MSP2_AUTOC_STATE`, transformed field); camera model (R14:
+V = 75°). **Operator-owned thresholds still open**: non-regression band (R7) and retry budget (R8).
 
 ## Constitution Check
 
@@ -59,7 +69,7 @@ explicitly assigned in [research.md](research.md).
 | **III. No Compatibility Shims** | ✅ | Explicitly the operating mode. FR-005 lands all breaks at once; FR-009 forbids version negotiation; every call site updated directly. Reinforced by [[feedback_m2_no_fallback_patterns]] — no defaults whose purpose is preserving unchanged callers. |
 | **IV. Unified Build** | ⚠️ **action required** | Two `CMakeLists.txt` touches are expected (the ablation tool target, its test registration). Those MUST be built with a clean `scripts/rebuild-perf.sh`, not an incremental reconfigure. **The operator drives the clean rebuild** ([[feedback_operator_runs_regression_gate]]) — the plan must not schedule an agent-run one. |
 | **V. Versioned Persistence Artifacts** | ⚠️ **decision forced — see below** | 041 breaks the dmp schema. V's write-side contract says a committed transition SHOULD **bump the version field** while *not* maintaining shims, and readers MUST fail loud naming both versions. |
-| **VI. Type-Domain Discipline** | ✅ | New inputs are NN byte-format buffers, so raw `float` with `// raw-ok:` annotation is the correct choice at those declaration sites. Load/energy accumulation is `gp_fitness`; geometry is `gp_vec3`. The closing report runs the audit grep on touched paths. |
+| **VI. Type-Domain Discipline** | ✅ | New inputs are NN byte-format buffers, so raw `float` with `// raw-ok:` annotation is the correct choice at those declaration sites. Step-score / fitness accumulation stays `gp_fitness`; geometry `gp_vec3`. *(No load/energy accumulation is added — FR-019.)* The closing report runs the audit grep on touched paths. |
 | **VII. No Silent Fallback Defaults** | ✅ | New config knobs and new worker-primed values follow the constructor-initializer rule. This principle is *load-bearing* here: the whole feature is about a value the policy cannot see, and its cautionary example (`cepGateThreshold` falling back to a hardcoded default) is the same failure shape. |
 | **VIII. Retention** | ✅ **satisfied in advance** | Both comparators verified retained object-by-object 2026-08-07: `autoc-m1/…2026-07-06T01:35:46.579Z/` and `autoc-m2/…2026-08-04T03:43:24.586Z/`, 800/800 `retain=keep` each. FR-010 adds weight archival, closing the gap that made the 038 baseline unloadable. Prefixes recorded in spec + outcome per VIII.2/VIII.3. |
 | **IX. Detached Training Launch** | ✅ | All bakes via `scripts/train.sh <ini> <logfile>`. No `run_in_background`, no foreground job. Pre-run build gate before each bake. |
@@ -126,7 +136,7 @@ include/autoc/
 src/
 ├── eval/
 │   ├── fitness_decomposition.cc # US1 FR-004 pairing fix; US4 envelope + load terms
-│   ├── selection.cc             # US5 predictor axis gate; US4 load axis if justified
+│   ├── selection.cc             # US5 predictor axis gate (no load axis in 041 — FR-019)
 │   └── fitness_computer.cc      # streak machinery (source of the envelope definition)
 ├── nn/
 │   └── evaluator.cc             # gather_inputs / gather_tracker_inputs — new slots
@@ -169,8 +179,11 @@ Feature-local scripts stay under `specs/041-m2-depth/`; only cross-version utili
 ```text
 A0  research scan + inventory ──► A1  ONE contract-break commit ──► B  M1 bake ──► (repeat if stuck)
          │                              │                               │
-         └─ decides grouped-record       └─ nothing else lands until B   └─ H1a ablation read
-            migration shape                 completes
+         └─ decides grouped-record       │  grouped record · new inputs  └─ H1a ablation read
+            migration shape              │  step-score→tick loop · wind    (input ablation matrix
+                                         │  config block · tick stamp       + control-input calibration)
+                                         │  version bump · camera V=75
+                                         └─ nothing else lands until B completes
 A2  ablation tool  ─┐
 A3  offline study  ─┴─► REPORT ONLY — feeds the follow-on aggressiveness feature, does not gate A1
 
