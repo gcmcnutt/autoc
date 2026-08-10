@@ -65,17 +65,13 @@ test**; (4) stop stalling on missing passives (kits).
   tiles (knife-slit islands, stitch faces); 5 tiles glue into the cube. ~15 °C rise at field power per
   tile — validate one before gluing five.
   - [X] received — notes: ×5 sheets @ 70×50×1.0 mm, AMZ-1 2026-07-30. ⚠ thickness 1.0 mm vs 0.5–0.8 mm spec.
-- [ ] **C-9** *(O3-16; 9 of 10 IN HAND — 1 BACKORDERED)* **Flight boost inductor** 4.7 µH shielded,
+- [X] **C-9** *(O3-16; **CLOSED 2026-08-07 — 10 of 10**)* **Flight boost inductor** 4.7 µH shielded,
   Isat ≥ 2 A, 4×4×2 mm class — supplied as TDK **`SPM4020T-4R7M-LR`** (`445-174477-1-ND`), **not** the
   specced Coilcraft XFL4020-472ME: 4.7 µH, **2.5 A**, DCR **147.2 mΩ**, 4.0×4.0×2.0 mm metal-composite
   shielded — meets the spec envelope (Isat 2.5 A > 2 A required). Replaces the 10×10 mm 22 µH brick for
   flight (22 µH bricks: ×10 on hand from order 1).
-  ⚠ **DK-3 shipped 9, backordered 1 → the 10th arrives in a SEPARATE SHIPMENT** (packlist 129837577 line 4:
-  Ordered 10 / Shipped 9 / Backordered 1; no ETA on the packlist). **9 is enough to proceed** — the cube
-  needs 1 and the bench 1 — so this does not block anything; leave this line open only to track the
-  straggler, and check the DigiKey order page if it hasn't landed within ~2 weeks.
-  - [ ] received — notes: **×9 received 2026-08-02** (lot 5017524072, date code Sep-2025); ×1 backordered,
-    separate shipment pending.
+  - [X] received — notes: ×9 received 2026-08-02 (lot 5017524072) + **backordered 10th received
+    2026-08-07** — full ×10 in hand. **DigiKey side of order-03 is now fully closed.**
 - [X] **C-10** *(O3-15)* **Battery connector 1.25 mm, male PCB side** — **✔ RECEIVED ×10 (DK-3 line 5)**:
   Molex **`0530470210`** (`WM1731-ND`), 2-pos vertical header, 1.25 mm — exactly as specced. Flight pack =
   **Spektrum SPMX1501S50** (std LiPo, 4.20 V charge; "PH 1.25 Ultra Micro" = UMX = **PicoBlade-compatible**,
@@ -84,6 +80,10 @@ test**; (4) stop stalling on missing passives (kits).
   - [X] received — notes: ×10, packlist 129837577 line 5.
 - [ ] **C-11** *(O3-7 = O2-3 merged; optional)* **Luxeonstar SZ-01-R8** MCPCB L1IZ-0850 ×≤5 + small heatsink
   — the no-reflow alternative to C-8 tiles for field power. Order only if tiles disappoint.
+  ⚠ **NO DigiKey part number exists (checked 2026-08-07)** — mounted-star modules are Luxeonstar
+  (Quadica) direct only: SZ-01-R8 (10 mm base, this line), **SM-01-R8 (5 mm Micro-Z1 base — lighter,
+  likely the better cube fallback)**, SZ-05-R8 (4-up 20 mm, bench). DigiKey carries only the bare
+  emitter (`1416-1997-1-ND`, ×20 on hand).
   - [ ] received — notes:
 - [X] **C-12** *(O3-9; NOW FIRM — operator 2026-07-26)* **L1IZ-0850** — **✔ RECEIVED ×10 (DK-3 line 6)**:
   Lumileds `L1IZ-0850000000000` (`1416-1997-1-ND`). The 5-LED bench string is a **permanent bench
@@ -93,6 +93,15 @@ test**; (4) stop stalling on missing passives (kits).
 - [X] **C-13** *(O2-1)* ~~Sense resistor 3.74 Ω 1 % 1206~~ — **✔ CLOSED: DK order 2 delivered ×10**
   (`541-3.74FFCT-ND`, 1/4 W); field 0.62 Ω also confirmed ×10 in order 1 (`CRL1206-FW-R620ELF`, 1/2 W).
   - [X] received — notes: packlists 128637262 line 1 / 127789318 line 6.
+- [ ] **C-26** *(NEW 2026-08-07; **DECIDED 2026-08-10: ATtiny412**)* **Bare flight MCU = ATTINY412
+  SOIC-8 ×10** (sweet-spot qty, ~$0.60 ea) — operator call: minimal pod, back to the original design
+  target (schematic.md/verified-bom were 412 from the start). Consequences, accepted: **no TOSC pins →
+  the crystal path is FORECLOSED for the pod → RC-osc is committed** (the decoder side already carries
+  it: per-beacon DPLL + measured +2.6 % skew tolerance, bench-verified). **F-section (C-21/C-22/C-23)
+  closes as MOOT** — the RC-vs-crystal study's only purpose was this decision. Firmware: 416→412 is a
+  pin remap (same core/peripherals); SOIC-8→DIP adapters ✔ on hand (C-15); programming = serial UPDI
+  (TTL-232R-3V3 + 1–4.7 k + `pymcuprog`), no new hardware.
+  - [ ] received — notes:
 
 ## D — Daylight receiver / 100 m optics (Option C selected 2026-07-24)
 - [ ] **C-14** *(O3-11 = O2-13 merged; **DECIDED 2026-07-26 → BUDGET M12 STACK**)* **850 nm bandpass
@@ -117,15 +126,42 @@ test**; (4) stop stalling on missing passives (kits).
     over bare BPW34 → ~75–80 m; still fine. Buying this makes the Quanmin discs optional (backup/second rig).
     *Step-up if CWL tolerance worries*: Commonlands CBP850, M12-threaded (~$25).
   - *Headroom option if 100 m is thin*: 25 mm plano-convex (~$10, DIY tube) ≈ ×70 → ×8 range, FOV ~4°.
+  ✅ **THE ELP ALL-IN-ONE IS THE RIGHT PART, and now for an optical reason (2026-08-04).** The 40 nm-class
+  decision was taken on cost; it is also correct on physics. A dielectric bandpass blue-shifts with AOI,
+  and behind the lens the marginal ray arrives at arctan(1/2F#) — 17.4° at F/1.6, 14.0° at F/2.0 — needing
+  a **≥26 nm / ≥17 nm** passband respectively just to keep the outer pupil in band. A true 10 nm filter
+  mounted internally would stop the lens down and throw away the aperture gain it was bought for. The
+  Thorlabs deferral to the 040 camera stands, but note it must be **front-mounted** there too, not dropped
+  behind the optic. Full working: [`lensed_pd_range.py`](../../specs/031-beacon-camera/lensed_pd_range.py) §7.
+  📊 **Predicted reach, anchored on the 41 ft bench lock** (not on datasheet flux — see the script's
+  calibration note). Aperture gain is referenced to the **BPV10NF** the flux constant was measured on;
+  BPW34 at the focal plane sets FOV (9.8°) and ambient, not signal:
+
+  | configuration | F/1.6 | F/2.0 | F/2.4 |
+  |---|---:|---:|---:|
+  | 1 die @ 306 mA | **115 m** | 92 m | 77 m |
+  | flight cube 5 @ 306 mA, face-on | 145 m | 116 m | 96 m |
+  | flight cube 5 @ 306 mA, edge-on | 174 m | 139 m | 116 m |
+
+  Consistent with this entry's own ~75–100 m estimate, and **100 m is reachable at every F/#** for the
+  full cube. Range scales **linearly with pupil diameter**, so F/# is the dominant unknown — measure the
+  aperture gain functionally on the first lensed run rather than deriving it (bench-journal item 7).
+  ⚠️ **But the sun disc in the field is over EVERY R_load ceiling once the lens is fitted** (209–952 µA vs
+  70/150/330 µA at 47 k/22 k/10 k). The 22 k pairing rule below buys linearity for *diffuse* sun only. See
+  the lens-era note in the daylight doc and the max-energy-gate work item (bench journal 2a).
   🔴 **PRIORITY RAISED 2026-08-02 by field test #4**: at ~6× emitter current (6 × 50 mA) the link locks to
   ~20 ft with the PD **shaded** but fails outright with the PD **in direct sun** — same emitter, same
   distance, shadow alone flips it. Compression at the PD sits upstream of every other multiplier, so more
   emitter current cannot buy back direct-sun operation. **The bandpass is the gate on the whole range
   roadmap, not an optimization.** (Bench-journal field test #4.)
-  **STATUS 2026-07-30 — PARTIAL, REST IN TRANSIT**: ✔ **M12 lens holder received (AMZ-1)** — uxcell S-mount
-  M12 board-lens holder ×10, 20 mm screw spacing, metal/black, PCB-mount. **Lens on order, ETA ~week of
-  2026-08-03** (operator 2026-07-30) — confirm on arrival whether it is the bare 16 mm board lens (then the
-  850 nm bandpass is still separately needed) or the all-in-one ELP IR-narrow-pass SKU (covers both).
+  **STATUS 2026-08-05 — LENS ARRIVED, IN VALIDATION**: ✔ **M12 lens holder received (AMZ-1)** — uxcell
+  S-mount ×10, 20 mm screw spacing. ✔ **Lens received 2026-08-05**: barrel `16mm 5MP 1/2.5" IR` —
+  **integrated-filter style** (opaque to visible, passes 850: emitters glow Bayer-purple through it), so
+  no separate bandpass needed for this rig; entrance pupil eyeballs ~8 mm ⇒ F/2-class as hoped.
+  ⚠ **NOT yet validated as an imager**: back-focus/focus hunt ongoing (bench-journal lens arm) — flat ×1.7
+  gain in the first PD sweeps, image-plane localization in progress via knife-edge / Pi-cam-v2.1-bare-sensor
+  route. **Hold the "received ✔" tick until it demonstrably focuses**; if it fails the sensor test it goes
+  back and a replacement 16 mm F/2 M12 IR lens gets ordered.
   ⚠ **couples to the Option-C R_load** (pedestal ceiling 3.3 V/R): cheap discs are **40 nm-class →
   R_load 22 k** (47 k reserved for a true 10 nm filter) — see the daylight doc's pedestal table. Note the
   9.5° FOV itself is ambient rejection (sky-only background when aimed at a flying beacon).
@@ -160,23 +196,20 @@ test**; (4) stop stalling on missing passives (kits).
   with no plane; C-6 adapters are the SOT-23 mounting fix.
   - [X] received — notes: covered by C-8 sheets, AMZ-1 2026-07-30; SMT3U ×2 ✔ (SOIC carriers only).
 
-## F — RC-vs-crystal stability study (gated by the copper-board load test; unchanged from O2)
-- [ ] **C-21** *(O2-4)* 32.768 kHz watch crystal (CFS-206/AB26T, CL 12.5 pF) ×3 — XOSC32K on PB2/PB3;
-  ⚠ 416-only (412 has no TOSC → ≥14-pin tinyAVR for a shipping pod on this path).
-  - [ ] received — notes:
-- [ ] **C-22** *(O2-5; MOSTLY COVERED 2026-07-30)* Crystal load caps: a few 18 pF + 6.8 pF. The AMZ-1
-  ALLECIN kit brings **10 / 20 / 30 pF** — 20 pF is the practical stand-in for 18 pF, and 10 pF for 6.8 pF
-  (recompute C_L against the crystal's 12.5 pF spec + stray). Only buy exact values if the F-section jitter
-  measurement turns out to care.
-  - [ ] received — notes: 10/20/30 pF via AMZ-1 kit; exact 18 pF / 6.8 pF NOT on hand.
-- [ ] **C-23** *(O2-6; fallback only)* 20.000 MHz CMOS XO half-can ×2 + 3.3 V LDO ×1 — order only if the
-  XO route is pursued (EXTCLK→PA3 conflict: DIM moves to PA6/PA7).
-  - [ ] received — notes:
+## F — RC-vs-crystal stability study — **CLOSED AS MOOT 2026-08-10** (C-26 decision: ATtiny412 = no
+TOSC = RC-osc committed for the pod; the study's only purpose was this choice. Decoder side already
+carries RC drift: per-beacon DPLL, +2.6 % skew bench-verified.)
+- [X] **C-21** *(O2-4)* ~~32.768 kHz watch crystal ×3~~ — MOOT (412 has no TOSC).
+- [X] **C-22** *(O2-5)* ~~exact 18 pF / 6.8 pF load caps~~ — MOOT (10/20/30 pF from the AMZ-1 kit remain
+  general stock).
+- [X] **C-23** *(O2-6)* ~~20 MHz XO + LDO fallback~~ — MOOT.
 
 ## Separate supplier
-- [ ] **C-24** *(O3-8, O2-14 caveat)* **1S 100 mAh flight pack** — the definitive RC-osc jitter test wants
-  flight-pack internal resistance (the 150 mAh bench pack reads optimistic).
-  - [ ] received — notes:
+- [X] **C-24** *(O3-8, O2-14 caveat; **RESOLVED 2026-08-07**)* ~~1S 100 mAh flight pack~~ — **operator
+  decision: the 1S 150 mAh packs ARE the flight hardware.** No 100 mAh buy; the bench pack and flight
+  pack are now the same type, which also dissolves the original rationale (jitter test wanted flight-pack
+  ESR — it now measures it by definition). Buy more of the same 150 mAh SKU only if pack count runs short.
+  - [X] received — notes: closed by decision, no purchase.
 
 ## Already on hand — do NOT re-order (reconciled against both DK packlists, 2026-07-26)
 - **Receiver**: BPV10NF ×2, BPW34 ×10, MCP6022 ×2, MCP3201 ×2, MCP1525 ×2, OPA381 ×2, 1 MΩ 3296W
@@ -211,19 +244,19 @@ test**; (4) stop stalling on missing passives (kits).
 - ~~F_CPU 20→10 MHz~~ **DONE** (ca1fe78) · ~~BOD fuse~~ **DONE** (0x48) · ~~firmware UVLO~~ **DONE &
   verified 3.48 V** (07d195f) — all three closed since the original Order-03 draft.
 
-## Still outstanding after AMZ-1 + DK-3 (updated 2026-08-02)
+## Still outstanding (updated 2026-08-07 — DigiKey FULLY CLOSED: C-9's 10th inductor landed)
 
-**In transit**: ⏳ **C-9's 10th inductor** (DK-3 backorder, separate shipment, no ETA) — not blocking.
-⏳ **C-14 lens, ETA ~week of 2026-08-03** (operator).
-
-With DK-3 in hand, **sections A and C are complete** — the OVP clamp and the whole flight-emitter cube
-(LEDs, inductor, battery header, FR4 tiles) can be built now. Remaining buys:
-1. **C-14 optics tail** — 16 mm M12 board lens (in transit) **+ 850 nm bandpass** if the incoming lens is
-   the bare SKU rather than the all-in-one ELP. Holder ✔. **The only thing blocking the 100 m test.**
-2. **C-24** 1S 100 mAh flight pack (separate supplier) — the RC-osc jitter test wants flight-pack ESR.
-3. **C-21/C-23** F-section crystals / XO — still gated on the copper-board load-test jitter measurement.
+Sections A and C complete; battery decision made (C-24: **150 mAh packs ARE flight hardware**, no buy).
+Remaining:
+1. **C-14 optics validation** — lens ARRIVED 2026-08-05 (integrated 850 filter confirmed; F/2-class
+   pupil) but has NOT yet demonstrated focus — back-focus hunt in progress (bench-journal lens arm).
+   If it fails the bare-sensor test → return + replacement buy. **Still the gate on the 100 m test.**
+2. **C-26 bare flight MCU — DECIDED: ATTINY412 SOIC-8 ×10** (operator 2026-08-10). The one DigiKey buy
+   left on this order; goes in the same cart as the order-04 era.
+3. ~~C-21/C-23 F-section~~ — **CLOSED AS MOOT 2026-08-10** (412 = no TOSC = RC-osc committed; see §F).
 4. **C-11** Luxeonstar MCPCB — only if the C-8 tiles disappoint · **C-19/C-16** closed, nothing to buy.
-5. **Contingency only**: another XNANO (spare margin is gone — see C-4) · exact 18 pF/6.8 pF for C-22.
+5. **Contingency only**: another XNANO (spare margin is gone — see C-4) · more 150 mAh packs if count
+   runs short.
 
 ## Open decisions gated by this order
 1. ~~Filter FWHM (C-14): 40 nm vs 10 nm~~ — **RESOLVED 2026-07-26: budget 40 nm-class (M12 stack) for

@@ -31,7 +31,9 @@ ADDR = 'USB0::62700::5136::SPD1XEAX4R0055::0::INSTR'
 # clamping, so a buggy script dies loudly instead of doing something subtly different. Raising the limits is a
 # deliberate EDIT of these constants (field-power 306 mA runs need MAX_CURR ~1.3 A — change it consciously).
 MAX_VOLT = 4.5    # V
-MAX_CURR = 0.5    # A
+MAX_CURR = 1.3    # A — RAISED 2026-08-09 (was 0.5): 4.7 µH flight-inductor start surge + the coming
+                  # 306 mA field-current era both need amp-class headroom. Procedure: start with a high
+                  # CC limit, then dial back to 0.45 A once the boost is running (running draw ≤~0.2 A).
 
 class SPD1168X:
     def __init__(self, addr=ADDR):

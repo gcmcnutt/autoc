@@ -186,6 +186,34 @@ operation at all).
    of possibilities into a single number, because the whole 48 dB rests on concentration.
 3. **Whether the sun-exposed failure reproduces at all** on an array. If it does not, field test #4's gate
    is a PD artefact and the bandpass drops from *gate* back to *optimisation*.
+4. **Blooming / smear extent around a saturated sun**, in pixels, at the working exposure. The 48 dB above
+   assumes the sun stays in *its own* pixels. Charge bleeding into neighbours, or a smear column, is the
+   mechanism that would break that assumption — and it is a sensor property, not a lens property.
+5. **Sun-transit recovery time from a saturated start.** Not the same entry condition as a dark occlusion,
+   and nothing on the PD bench or in any field test so far has measured it.
+
+### ⚙️ Two camera REQUIREMENTS this analysis promotes out of "preference" (operator 2026-08-04)
+
+Both are recorded here because they are consequences of §3a's argument, not shopping preferences. A
+candidate sensor lacking either is disqualified. They are mirrored on the D1 line of
+[`specs/031-beacon-camera/verified-bom.md`](../031-beacon-camera/verified-bom.md).
+
+- **Global shutter.** A rolling shutter converts a saturated sun from a ~2 px event into a full-height
+  smear column that can cross the beacon track. Global shutter keeps the event local. (The shipped D1
+  choice — Arducam OV9281 — already satisfies this; it simply was not written down as binding.)
+- **Manual / fixed exposure and gain.** This one is load-bearing in a way that is easy to miss:
+  **frame-averaged auto-exposure discards the entire 48 dB of spatial ambient rejection that justifies
+  using a camera at all.** A sun anywhere in a 120° field crushes global exposure and blanks the beacon
+  everywhere — the array's spatial advantage is undone by a global control loop. Fixed exposure, or ROI
+  metering locked to the track.
+
+This is the same failure the single-pixel rig has in the decoder's AGC: a control loop chasing a pedestal
+it should instead detect and freeze on. The 031 fix shape is a max-energy gate that freezes AGC and
+asserts HOLD, mirroring the existing min-energy gate
+([031 bench journal](../031-beacon-camera/bench-journal.md) item 2a). **Operator intent is that these
+converge — the decoder eventually drives camera exposure/gain directly**, making saturation detection and
+exposure command one control problem rather than two. Worth carrying into whatever spec owns the camera
+bring-up.
 
 ---
 

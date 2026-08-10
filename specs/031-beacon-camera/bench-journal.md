@@ -5,6 +5,56 @@
 > file as the bench evolves; deep results live in the outcome docs it links. Machine-local assistant memory
 > should hold only a pointer here.
 
+## Camera-era analysis order OPENED (2026-08-08): [beacon-order-04.md](../../cad/beacon-eval/beacon-order-04.md)
+
+OV9281 MIPI ×2 (B0162) + UVC shield (B0264) + **LIFCL-40-EVN** (CrossLink-NX — sized from the s3 datum:
+3.5k LUT/correlator on MXO2 → 20–35k LUT tracker-bank architecture vs 39k cells, hard MIPI D-PHY).
+At-order verifies: EVN onboard RAM ≥6 MB (T011), Radiant toolchain (new install, not Diamond). The UVC
+OV9281 doubles as the trusted focal plane to finish the C-14 lens validation (M12 mount, global shutter,
+no IR-cut after lens swap).
+
+## 4.7 µH flight-inductor bring-up (2026-08-09): inductor GOOD, bench-supply wiring was the problem
+
+Swapped the 22 µH bench brick for the SPM4020T 4.7 µH (C-9 flight part) in the LM3410X boost. Findings:
+- **On the 1S LiPo: starts and runs clean.** On the SPD1168X bench supply: NO START — MCU in fast-flash
+  "quiver" (BOD brownout boot-loop). Raising the CC limit did NOT fix it. Scope showed **volts-class
+  ringing on the input bus** (−1.5/+3 V vs rail, at only 50 mA drive; measured with a ground-clip probe —
+  re-check tip-and-barrel before trusting the amplitude).
+- **Discriminator: LiPo clipped onto the SAME bus → ring GONE entirely.** Diagnosis: classic input-filter
+  instability — the boost is a negative-incremental-resistance load; PSU lead inductance (~µH) + small
+  input C = underdamped tank the converter pumps. 4.7 µH raises ripple ~5× over 22 µH and crosses the
+  threshold; battery milliohms damp it dead. NB a lone extra low-ESR cap HELPS NOT AT ALL (raises tank Q —
+  observed); the fix shape is a DAMPED leg (ganged 10 µF electrolytics — their ESR is the damper) +
+  ceramics at VIN + short twisted leads.
+- **Policy**: bench PSU-fed work runs the **22 µH** (or battery-parallel float, supervised); the
+  **4.7 µH is VALIDATED on its actual flight source**. Cube-tile build spec picks up: 4.7 µF ceramic +
+  100 nF at LM3410 VIN, damped bulk leg, short battery leads. `psu.py` MAX_CURR deliberately raised
+  0.5 → 1.3 A (dated comment; start-with-headroom-then-re-arm procedure) for the coming 306 mA era.
+
+## Regression on the DGX-native bench (2026-08-08, post circuit clean-up): 17/19 PASS
+
+**The bench now runs NATIVELY on the DGX Spark** (no WSL interop): STEPLink CDC = `/dev/ttyACM1`
+(monitor.sh grew a native branch — `COM3` maps to `$BCN_PORT`, default ACM1), mEDBG = `/dev/ttyACM0`,
+PSU via pyvisa-py (udev rule `99-beacon-bench.rules`: f4ec + 03eb + hidraw 0666), venv `~/.venvs/avr`
+(pyserial/pyvisa-py/pyusb/pymcuprog), `regression.py` preflight skips usbipd when absent.
+
+**Result 17/19**: P0 cold start ✓ (4.200 V / 91 mA — matches the parked baseline), P1 lock 100 % margin 8
+corr 16.2k, P2 dropout ladder ✓ (envelopes identical), **P3 step settle 0.15 s ✓ — 2× better than the
+0.30 s bar** (AC-coupled front end pins the decoder pedestal at VBIAS), P4 injection/skew ✓, P5 I-V ✓,
+P6 UVLO trip + UPDI recovery ✓, P7 restore ✓.
+**FAILs = the two deep-attenuation rungs only**: P3 P=32 (lock 51 %, margin 4) and P=16 (61 %, margin 4)
+vs the WSL-era 100 %-at-3 %-duty envelope. Corr scales linearly with duty (16.2k×32/128 ≈ 3.6k measured ✓)
+— the decoder is fine; the weak-signal MARGIN is ~one notch lower than the old rig. Two suspects, both
+receiver-side and expected: (a) geometry — corr baseline 16k vs the historical 29k best; (b) **the bench
+PD is now the unfiltered BPW34** — indoor LED-lamp PWM lands in-band and inflates the AGC energy
+denominator exactly where signal is weakest (the old BPV10NF's 780–1050 package filter hid it).
+**Operator context (2026-08-08): the run geometry was IMPROVISED** — emitter pointing right, lens/filter
+loose over a face-UP sensor, lots of light leakage → the coupling was indirect/bounce with ambient pouring
+in around the optics. Margin 8 + clean recovery through THAT is a strong showing; the two deep-attenuation
+rungs are not diagnostic of the real chain. **Deep-attenuation characterization + the P-ladder
+discriminator are DEFERRED to the field unit** (copper-clad cage, light-sealed, boresighted) — re-run the
+full ladder as the first act on that build and expect the WSL-era envelope back.
+
 ## Current state (2026-07-18)
 
 - **Optical link WORKS end-to-end and is characterized**: LiPo-capable emitter (ATtiny416 XNANO eval @
@@ -157,6 +207,121 @@ is a pedestal meter — bring it next time.
   curve below compression; B3 clamp-diode A/B (with/without D2/D3 under pedestal steps); B4 indoor-flicker
   station (100/120 Hz + LED-PWM margin cost). Feeds the A3-b soldered freeze + the C-14 filter/R_load choice.
   (The old B3 AC-tap / B4 two-stage line items are superseded — Option C selected.)
+- **Set C (SATURATE-vs-DARK at chip granularity) — planned 2026-08-04, feeds open item 2a/2b.** The
+  question the lens analysis raised and nothing has measured: **is warm relock from a SATURATED start the
+  same as from a DARK one?** Everything characterised so far (occlusion ≤1 word in HOLD, warm relock ≲1
+  period, the 5 `recovery_sweep` geometries) entered from *dark*. A sun transit enters from *saturated*,
+  and the mechanism below predicts they are not the same.
+
+  **HYPOTHESIS (this is the point of the set — it is falsifiable, and cheap to falsify).**
+  - *Dark*: the min-energy gate (`beste ≥ 64`) fires → lock drops → gear shifts **fast** (α=1/32,
+    τ=67 ms) → recovery is period-dominated, ≲150 ms. This is the measured baseline.
+  - *Saturated*: energy is **high**, so the min-energy gate does **not** fire and the decoder **retains
+    (false) lock** — leaving the DC tracker in the **slow** gear (α=1/256, τ=533 ms) at exactly the moment
+    it needs the fast one. Recovery becomes τ-dominated, not period-dominated.
+  - **Predicted asymmetry: saturated recovery 3–8× slower than dark at the same N.** If the arms come out
+    equal, no max-energy gate is needed and item 2a closes for free. If they diverge as predicted, the
+    gate is justified by measurement rather than by argument, and C5 sizes it.
+
+  **Chip-granular gating must be FIRMWARE-side.** The Siglent's ~0.5 s command pacing is **50 chips** at
+  the 100 Hz chip rate — the PSU cannot produce the transient. Its job here is to set the steady
+  saturation *depth*; the emitter MCU produces the event, chip-synchronous by construction.
+
+  - **C1 — dark baseline (mostly free).** Re-run `recovery_sweep` over the N ladder below and confirm it
+    reproduces the existing `host/results/` CSVs. Establishes today's decoder as the comparison point.
+  - **C2 — saturate arm.** Add an `S` command to the pod firmware: hold the LED **unmodulated ON for N
+    chips**, the exact mirror of `D` dropout (same code path, same chip-clock alignment). Emitter at
+    inches so the mean current is mA-scale and compresses — per the daylight doc, "at inches it is
+    mA-scale and compresses everything". ⚠️ Firmware change ⇒ **`regression.py` before and after**.
+  - **N ladder (chips, 10 ms each)**: 1, 2, 4, 8, 16, 31, 62, 100, 150. Brackets both the 300–325 ms HOLD
+    absorption (~31 chips) and the two field-relevant sun transits — **16 chips ≈ 163 ms @ 60 °/s** and
+    **98 chips ≈ 978 ms @ 10 °/s**. ≥10 reps per cell; report medians, not means (relock is bimodal once
+    a word boundary is crossed).
+  - **C3 — depth sweep (S only).** Saturation depth as a multiple of the 70 µA @ 47 k compression ceiling:
+    ~1×, 3×, 10×, 30×, set by PSU current + standoff. Establishes whether recovery time depends on how
+    *hard* it saturated or only on how *long* — the first is a soft-recovery story, the second a
+    state-machine one, and they want different fixes.
+  - **C4 — instrument the MECHANISM, not just the outcome.** Log `lockA/marginA/adc` **through** the event,
+    not merely after it. The hypothesis stands or falls on whether `lockA` stays asserted during
+    saturation; that single bit is the whole argument. If lock drops on its own, the min-energy gate is
+    already covering this case and 2a is moot.
+  - **C5 — max-energy gate A/B (only if C2/C4 confirm).** Add the gate, re-run C2 identically, and report
+    the recovery-time delta. Sizing question it must answer: what energy threshold fires on the sun but
+    never on a legitimate close-range pass, where the beacon's own mean current is *also* mA-scale (the
+    daylight doc's "back off to ≥1 m for linear measurements" caveat is exactly this collision).
+  - **Faithful variant, no new hardware (do after C2).** C2 saturates with the code *absent*, which models
+    "sun swamps everything". The truer sun case is code *present but buried*. The decoder already tracks
+    two codes (`corrA/corrB`) — drive pod A with the code under test and hold pod B unmodulated as the
+    aggressor, then watch `lockA/marginA` survive or not. Same instruments, no aggressor LED to build.
+
+### C1 RESULT — dark baseline measured 2026-08-04 (Ubuntu host, synthetic channel A)
+
+Runner: [`host/set_c.py`](../../firmware/beacon-decoder-stepfpga/host/set_c.py) · data:
+`host/results/set_c_dark_chA.csv` (18 trials, 3 reps). Stimulus = one-shot `enA` clear on the decoder's
+**synthetic** channel A (operator direction: code B's optical amplitude is not repeatable enough).
+
+| span | duration | outcome | unlock span | relock AFTER restore | min marginA |
+|---:|---:|---|---:|---:|---:|
+| 16 chips | 80 ms | rode through | — | — | 2–4 |
+| 31 chips | 155 ms | rode through | — | — | 3 |
+| 62 chips | 310 ms | **rode through** | — | — | 1–3 |
+| 124 chips | 620 ms | unlocked | 300–325 ms | −10 … +15 ms | 1 |
+| 196 chips | 980 ms | unlocked | 625–775 ms | −45 … +105 ms | 0–2 |
+| 400 chips | 2000 ms | unlocked | 1675–1850 ms | −15 … +160 ms | 0 |
+
+**Two numbers worth keeping.**
+1. **HOLD absorption is bracketed to 310 ms < x ≤ 620 ms** — 62 chips rides through, 124 does not.
+   Independently reproduces the previously logged 300–325 ms from a different stimulus path.
+2. **Warm relock from DARK is essentially immediate: 0–2 frames after signal returns.** Every rung's
+   unlock span is just `duration − ~310 ms of HOLD`, with nothing left over. This is *tighter* than the
+   journal's earlier "≲1 period" (155 ms) claim and it is the number C2 has to beat. **If the saturated
+   arm shows any non-zero recovery after restoration, that delta is the AGC windup, isolated.**
+
+`min marginA` degrades monotonically 4 → 3 → 1 → 0 with span, confirming the stimulus is graded and real
+rather than a step function.
+
+### C2 IS BLOCKED, and the fix is one bit of gateware
+
+Muting code A drives `injA` to **MID** (mid-scale) — a clean signal removal with **zero DC step**. Real
+saturation is a large DC step the tracker must chase. So no existing knob produces the C2 stimulus:
+amplitude `'A'` moves HI/LO separation *symmetrically about MID* (no DC shift), and `'K'` blanks to MID
+like everything else. **The dark and saturated arms are not distinguishable with today's bitstream.**
+
+The change is minimal and reuses the existing chip-exact burst machinery. `s7.v` mask bits **2 and 6 are
+unallocated** ([0]enA [1]enB [3]inj1 [4]inj2 [5]weak). Take bit 6 as `blank-to-rail`:
+
+```verilog
+wire erail = remote & cmd_reg[6];              // NEW: blank to rail instead of mid
+wire [11:0] injA = (enA & ~blankA_rx) ? (codeA_rx ? hiA : loA)
+                                      : (erail ? 12'hFFF : MID);   // was: MID
+```
+
+That makes C1 and C2 **the same chip-exact stimulus differing by one bit**, which is exactly the
+controlled comparison Set C wants — better than the pod-firmware `'S'` command originally planned, since
+it needs no emitter change and inherits `'K'`'s chip-exact timing. The `'S'` route stays valid for
+end-to-end optical work later.
+
+⚠️ **Neither can be built on the Ubuntu host.** Diamond (gateware) and the pod toolchain both live on the
+Windows box per [`docs/toolchains.md`](../../docs/toolchains.md); Ubuntu has the hardware but not the
+builders. C2 is gated on a Windows-side rebuild + flash, then `regression.py` per policy.
+
+### Host-portability findings (cost real time — folded into Traps by reference)
+
+- **Every existing harness entry point is Windows-bound**: `monitor.sh` and `cmd_read.sh` shell to
+  `powershell.exe` against COM3 via `/mnt/c`; `regression.py` calls `usbipd.exe`. None exist on Ubuntu, so
+  the *measurement* side of `recovery_sweep`/`regression` is unreachable there. `set_c.py` reads the CDC
+  directly and is the pattern for porting the rest.
+- **Ports are inverted on Ubuntu.** `/dev/ttyACM0` = ARM DAPLink = **decoder** (was COM3);
+  `/dev/ttyACM1` = ATMEL mEDBG = **emitter**. `recovery_sweep.py --port` defaults to `/dev/ttyACM0`,
+  which on Ubuntu sends emitter commands to the decoder.
+- **`'+'` alone disables both correlators.** `cmd_reg` powers up at 0, so REMOTE with no mask sets
+  enA=enB=0. Send `0x80|mask` **first**, then `'+'`; restore with `'-'`.
+- **Channel A does not respond to the pod.** corrA ≈ 66000 is the synthetic injected channel; corrB ≈ 1200
+  is the real optical one. `recovery_sweep` measures `lockB` for that reason. A first attempt here keyed on
+  `lockA` against a pod blanking command and reported "rode through" on every rung — a null result that was
+  purely an instrumentation error.
+- **A hand-rolled emitter write is not safe.** `recovery_sweep.Emitter.cmd()` verifies the command echo and
+  re-attaches the flaky mEDBG; a plain `write()` silently "succeeds" when nothing landed.
 
 ## Open items / next steps
 
@@ -164,18 +329,67 @@ is a pedestal meter — bring it next time.
    landed**: AMZ-1 (2026-07-30: adapters, R/C kits, FR4, M12 holder, breadboards) + DK-3 (invoice 129837577,
    2026-08-02: BZX55C15 ×10, 1 k, XNANO ×1, **4.7 µH SPM4020T ×9 of 10 — 1 backordered, separate shipment**,
    Molex UMX ×10, L1IZ-0850 ×10). **Sections A (OVP) and C (flight cube) are fully sourced — buildable now.**
-   Still out: **C-14 lens (ETA ~week of 2026-08-03) + 850 nm bandpass** — now the single critical path
-   (see field test #4), plus C-24 flight pack and the gated F-section parts.
+   **C-14 lens ARRIVED 2026-08-05** — barrel: `16mm 5MP 1/2.5" IR`. Day-one findings: (a) **integrated
+   filter confirmed** — opaque to visible AND passes 850 (emitters viewed through lens + microscope glow
+   the classic Bayer purple/magenta = strong NIR transmission → **lens-arm checklist item 3 CLOSED
+   functionally**; FWHM still unknown, assume 40–60 nm camera-class); (b) 16 mm + BPW34 2.65 mm die →
+   **9.5° field — matches the 9.8° assumed by `lensed_pd_range.py`**, so the 2b sun-transit table stands;
+   (c) 1/2.5" image circle (~7.2 mm) comfortably covers the 3.75 mm die diagonal — no vignetting;
+   (d) visible-blindness confirms corrB-peak focusing is the only focusing method (checklist item 4).
+   **NEXT = checklist item 1: functional aperture-gain measurement** (bare vs lensed photocurrent, same
+   emitter/distance). Still out: separate 850 nm bandpass (if still wanted given the integrated filter),
+   C-24 flight pack, gated F-section parts.
 2. **AGC speed — quantify (deferred, operator 2026-08-02)**: field impression is "a little slow" while the
    bench measures **0.30 s step settle** (regression 2026-07-26, vs 0.62 s at s7 bring-up). Suspect the
    field case is not the bench case: outdoor pedestal steps (sun/shadow/attitude) are far larger than the
    `agc_step` ladder, and near compression the loop chases a *shunted* signal. Plan: log the AGC state +
    pedestal together during the next outdoor run, then extend the ladder to field-sized steps before
    touching s7's gear-shift α.
+   - **2a. MAX-energy gate — new work item (2026-08-04, from the C-14 lens analysis).** Once the lens is
+     fitted, a **sun transit through the field is unsurvivable by pedestal design** — 209–952 µA
+     depending on filter FWHM, over every R_load ceiling (daylight doc pedestal table, lens-era note).
+     The transit itself is not the problem; **AGC windup during it is.** The gear-shifted DC tracker
+     (α=1/256 locked, τ=533 ms) would chase a ~10⁵× pedestal and then need ~533 ms to unwind — an order
+     of magnitude longer than the event that caused it. **Fix shape: a max-energy gate that FREEZES the
+     AGC and asserts HOLD**, the exact mirror of s7's existing min-energy lock gate (`beste ≥ 64`) that
+     kills dark-input false locks. Then a sun transit is handled by the same machinery as a propeller
+     occlusion, which is already characterised (≤1 word in HOLD, warm relock ≲1 period).
+   - **2b. Transit duration is FOV-linear, and the C-14 field is not narrow enough at low body rates.**
+     At the BPW34 focal-plane field of **9.8°** ([`lensed_pd_range.py`](lensed_pd_range.py) §8):
+
+     | body rate | blanked | vs the 300–325 ms HOLD absorption |
+     |---:|---:|---|
+     | 10 °/s | 978 ms | **EXCEEDS — lock lost** |
+     | 20 °/s | 489 ms | **EXCEEDS — lock lost** |
+     | 60 °/s | 163 ms | rides through |
+     | 120 °/s | 82 ms | rides through |
+
+     So slow, sun-ward passes are the worst case, not aggressive ones. Either extend the HOLD budget to
+     ~1 s for the max-energy case specifically, or accept a reacquire and measure how long warm relock
+     actually takes from a saturated start (it is **not** the same entry condition as a dark occlusion —
+     worth its own bench arm). A narrower field shortens this linearly; the BPV10NF's 3.2° would cut it
+     ~3×, but that PD is the finder, not the focal-plane sensor.
+   - **2c. Down the line: the decoder should CONTROL the camera** (operator 2026-08-04). Same loop, one
+     level up — once the array is in, exposure/gain become decoder-driven rather than free-running, so
+     the max-energy gate and the exposure command are one control problem, not two. Camera-side
+     prerequisites (global shutter, manual exposure) are now **requirements** on the D1 line in
+     [`verified-bom.md`](verified-bom.md).
 3. **A1-ovp**: zener + 1 k clamp parts are IN HAND (DK-3) — fit the 15 V zener + 1 kΩ clamp; pull-LED-header
    live test. No longer blocked.
 4. **A3-b**: soldered **Option-C** receiver on copper-clad (**FR4 stock in hand — AMZ-1 C-8/C-20**; netlist
    in the daylight doc; R_load per the C-14 filter choice; star ground) → re-run regression.
+   - **Receiver-head cage (operator plan 2026-08-04, pre-lens)**: BPW34 in a **light-tight enclosure,
+     black except the lens aperture** — copper-clad as the mount **tied to GND** (shields the 47 k PD
+     node; bare BPW34 is unfiltered 430–1100 nm and demonstrably picks up LED-lamp PWM on the bench),
+     **matte-black interior** (the decoder locks on nA of internal bounce), aperture cappable (= the
+     true-dark test fixture the traps list wants). Filter sits BEHIND the lens (F/2 cone ±14° vs full
+     field angle — AoI blue-shift math in `lensed_pd_range.py`).
+   - **Bench note 2026-08-04 (canonical-values rebuild, BPW34 bare)**: works indoors; LED-lamp PWM now
+     visible (no package filter — BPV10NF's built-in 780–1050 nm hid it, but that 270 nm window is also
+     why bare sun was fatal in the v1 era); strong-drive waveform = bottom-rail clip first (1.25 V down
+     vs 2.05 V up headroom) + AC-coupler ride-up — looks alarming, is correct polarity overdriven.
+     PD-orientation check that settles it in 30 s: PD_NODE ≈ 0 V dark rising with light (backwards =
+     pinned ~2.7 V, near-zero signal). Full tune deferred until the C-14 lens+filter land.
 5. **A2-uvlo-2**: scripted slow-creep + dwell micro-dropout sweep (psu.py ramp + banner listener) — the
    original 3 blips didn't reproduce in the fast static-hold pass.
 6. Flight cube build @306 mA (raise psu MAX_CURR deliberately) — **parts in hand; boresight the 5 tiles,
@@ -183,6 +397,28 @@ is a pedestal meter — bring it next time.
 7. **Next-field-run checklist** (from field test #4): pace out past loss-of-lock instead of stopping at the
    yard edge; confirm the R_load trimmer still measures 47 k; record which PD is fitted (BPV10NF vs BPW34);
    scope N_PD for the raw pedestal in both shaded and sun-exposed states; log AGC state alongside.
+   - **Added 2026-08-04 (C-14 lens arm)** — the first lensed run should close these, in this order:
+     1. **Measure the aperture gain FUNCTIONALLY — do not derive it.** Same emitter, same distance,
+        same PD: record photocurrent bare, then lensed. The ratio folds F/#, lens transmission, filter
+        transmission and focus quality into ONE number, and it drops straight into `SignalOpticsGain`
+        (040 ships it at 1.0, an untried `A` row; the calibration rehearsal pencils in 4.0). This is
+        the single largest uncertainty left — range scales **linearly** with pupil diameter, so the
+        F/1.6-vs-F/2.4 spread alone is 115 m vs 77 m for one die at 306 mA.
+     2. **The front element is convex** — its diameter is NOT the entrance pupil, so do not caliper it
+        and infer F/#. (Item 1 makes this moot, which is why it is item 1.)
+     3. **Confirm the ELP integrated filter passes 850** and record whatever FWHM the vendor will
+        admit to. Camera-market "narrow pass" is typically 40–60 nm, not 10 nm — which is the RIGHT
+        width behind a fast lens (verified-bom D5 note), but it sets the sun pedestal.
+     4. **Focus on the beacon itself, not by eye.** The integrated filter blocks visible, so there is
+        no visible image to focus on — which also retires the NIR focus-shift trap. `corrB`-peak
+        focusing per C-14 is the method.
+     5. **Focus, then back off to ~30–50% of the die.** Total photocurrent is identical focused or
+        defocused (the PD integrates) and ambient is focus-independent, so defocus buys nothing on
+        signal — but a slight blur is cheap insurance against die non-uniformity and thermal drift.
+        Do NOT defocus to fill the die: that softens and shrinks the effective field.
+     6. **Provoke a sun transit deliberately** and log AGC state + pedestal through it — this is the
+        entry condition for item 2a/2b above, and it is the one measurement neither the bench nor any
+        prior field test has.
 8. Camera-era (040) notes seeded in optical-link-outcome.md (multipath, tracker-bank, full-duty contract).
 
 ## History (chronological commits of record)
