@@ -251,13 +251,12 @@ Remaining:
 1. **C-14 optics validation** — lens ARRIVED 2026-08-05 (integrated 850 filter confirmed; F/2-class
    pupil) but has NOT yet demonstrated focus — back-focus hunt in progress (bench-journal lens arm).
    If it fails the bare-sensor test → return + replacement buy. **Still the gate on the 100 m test.**
-2. **C-26 bare flight MCU** — the one genuinely NEW buy: lean ATTINY416 SOIC-20 ×5 (keeps the crystal
-   option; 412 SOIC-8 = minimal-mass alt). Next DigiKey cart when convenient.
-3. **C-21/C-23** F-section crystals / XO — deferred ("later", operator 2026-08-07); still gated on the
-   copper-board load-test jitter measurement. NB the C-26 package choice preserves or forecloses this.
+2. **C-26 bare flight MCU — DECIDED: ATTINY412 SOIC-8 ×10** (operator 2026-08-10). The one DigiKey buy
+   left on this order; goes in the same cart as the order-04 era.
+3. ~~C-21/C-23 F-section~~ — **CLOSED AS MOOT 2026-08-10** (412 = no TOSC = RC-osc committed; see §F).
 4. **C-11** Luxeonstar MCPCB — only if the C-8 tiles disappoint · **C-19/C-16** closed, nothing to buy.
-5. **Contingency only**: another XNANO (spare margin is gone — see C-4) · exact 18 pF/6.8 pF for C-22 ·
-   more 150 mAh packs if count runs short.
+5. **Contingency only**: another XNANO (spare margin is gone — see C-4) · more 150 mAh packs if count
+   runs short.
 
 ## Open decisions gated by this order
 1. ~~Filter FWHM (C-14): 40 nm vs 10 nm~~ — **RESOLVED 2026-07-26: budget 40 nm-class (M12 stack) for
