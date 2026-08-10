@@ -147,6 +147,13 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
 | **Pi reseller** (PiShop/Adafruit/CanaKit) | **Pi 3A+ ×1** (O4-4; SWITCHED 2026-08-10 — Zero 2 W scalped everywhere incl. AliExpress. 3A+ = same BCM2710 family at 1.4 GHz (faster), explicitly on InnoMaker's supported list, STANDARD 15-pin CSI = cable question dissolves. Zero 2 W stays the flight-mass option when supply normalizes; Pi 5 dual-CSI = the bird-pair host candidate. **CONFIRMED 2026-08-10: 3A+ is the ground-test unit**; storage = its own microSD for boot/capture, plus the on-hand microSD breakouts ×2 (order-01) if extra logging paths are wanted) | ~25 |
 | *Optional, Amazon* | Quanmin 12.5 mm 850 nm disc pair (filters any bare lens; NOT on hand; 10.4 mm variant exists — **measure the holder bore first**) | ~12 |
 
+**Barrel-label "IR" decoder (2026-08-10)** — three meanings, two-second test: (1) **IR-corrected**
+(most common): day/night confocal design, NO filter, transmits 400–1100 nm — 850 AND 940 pass fine
+(glass goes far beyond; 1100 is the SENSOR's limit, not the lens's) — look through it: room looks
+normal; (2) **850-bandpass integrated** (our 16 mm): opaque to the eye; (3) **"IR CUT"**: built-in
+650 nm cut for color cams — the only poison type, usually says CUT. Confocality band (546→850/940)
+irrelevant for monochromatic corrB-focus use.
+
 **Filter-disc mounting (2026-08-10)**: discs drop INSIDE the M12 holder onto its internal step (where
 factory IR-cuts sit) — retain MECHANICALLY (O-ring / foam ring / cut plastic ring), zero adhesive. If
 bonding is unavoidable: 3 tiny edge dots of canopy glue (PVA, no fog) or slow epoxy. **NEVER
