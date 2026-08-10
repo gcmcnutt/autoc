@@ -124,6 +124,13 @@ camera's 1.27 mm pupil and 0.056°/px sky patch; the single-lens alternative (f 
 0.50 mm pupil) costs **×6.5 in signal** and coarsens the sky patch ×2.8 — the bird geometry is the
 link-budget answer *to 120° specifically*. If static range testing says even the pair is marginal,
 the FOV knob re-opens via retraining, not via optics heroics.
+**FOV for the ORDERED 1.8 mm fisheye on OV9281 (estimated 2026-08-10; training input)**: rectilinear
+lower bound 94.5°×68.6°; **equidistant (f·θ — the likely projection for this lens class) ≈ 124° H ×
+78° V** (~147° D), uniform ~0.097°/px. **Train the next run at H = 120°, V = 75°** — the current 120°
+assumption lands in band. ⚠ **Projection model matters as much as FOV**: a pinhole camera model at 120°
+mis-maps edge bearings badly vs the real f·θ lens — the sim camera should be EQUIDISTANT (silver
+lining: constant °/px everywhere). Measure the actual projection curve on arrival (one image of a known
+grid — add to A8-2 arrival work); operator merging this branch into 041 for cross-reference.
 **Refinement 2026-08-10 (AliExpress market check)**: commodity **1.7–1.8 mm F/2.0 IR-corrected
 fisheyes** reach ~110–120° via barrel distortion at a 0.85 mm pupil — the single-camera-120° penalty is
 **×2.2** vs a bird-pair camera (not the ×6.5 of a rectilinear 1.1 mm). Still no parallax, distorted
