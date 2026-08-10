@@ -15,7 +15,8 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
 
 ## Lines
 
-- [ ] **O4-1** *(SUPPLIER SWITCHED 2026-08-08)* **InnoMaker CAM-MIPI9281RAW-V2 ×2** (~$40–60 ea) — the
+- [ ] **O4-1** *(SUPPLIER SWITCHED 2026-08-08)* **InnoMaker CAM-MIPI9281RAW-V2 ×2** (**~$39 ea**,
+  vendor-page price per operator 2026-08-10) — the
   camera. **Vendor documents the gate number outright: "up to 453 fps external trigger stream mode …
   for Rasp Pi 4B/3B+/3B/3A+/CM3/Pi Zero W, Support Bullseye"** — 453 fps ÷ 2.4 fpc = **189 Hz chips,
   essentially the 200 Hz design point.** Specs (operator-captured 2026-08-08): OV9281 mono global
