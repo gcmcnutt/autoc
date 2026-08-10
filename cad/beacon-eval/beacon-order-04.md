@@ -96,8 +96,11 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   λ 400–1100 nm** = IR-corrected NOT IR-cut (works at 850, just unfiltered), and **CRA = 10°** — the
   quiet win: a **12.5 mm 850 nm disc dropped BEHIND this lens** sees near-normal incidence over the
   whole field → 40 nm-passband AoI shift negligible. Plan: (a) 16 mm 850 lens swap-in for
-  narrow-field/range; (b) **Quanmin 12.5 mm 850 nm disc pair (~$12, the order-03 C-14 alternate)
-  behind the included 2.8 mm** = filtered 72° H wide config — no new lens needed. **True 120° H on
+  narrow-field/range; (b) ~~Quanmin disc behind the included 2.8 mm~~ — **CLARIFIED 2026-08-10: NO
+  filter discs on hand** (the "existing IR filter" = the 16 mm's integrated one). The filtered-wide
+  config comes from the **AliExpress 2.8 mm 850 nm-integrated SKU** being ordered; the Quanmin disc
+  pair (~$12) is now an OPTIONAL flexibility buy (filters any future bare lens incl. the InnoMaker
+  stock 2.8 mm). **True 120° H on
   OV9281 still needs f ≈ 1.1 mm = the Commonlands custom question (spec.md), unchanged.**
   **DECIDED 2026-08-09 (operator)**: go Pi + included 2.8 mm + existing IR filter stack; ALSO order a
   **2.8 mm-or-slightly-longer 850 nm-integrated SKU** from the ELP family (~$10) as the dedicated

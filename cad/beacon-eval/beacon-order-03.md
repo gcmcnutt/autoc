@@ -93,13 +93,14 @@ test**; (4) stop stalling on missing passives (kits).
 - [X] **C-13** *(O2-1)* ~~Sense resistor 3.74 Ω 1 % 1206~~ — **✔ CLOSED: DK order 2 delivered ×10**
   (`541-3.74FFCT-ND`, 1/4 W); field 0.62 Ω also confirmed ×10 in order 1 (`CRL1206-FW-R620ELF`, 1/2 W).
   - [X] received — notes: packlists 128637262 line 1 / 127789318 line 6.
-- [ ] **C-26** *(NEW 2026-08-07)* **Bare flight MCU** — the pod flies a bare chip, not the XNANO dev board.
-  Package options: **ATtiny412 = SOIC-8 only (NO crystal pins — forecloses the F-section path on that
-  pod)**; **ATtiny414 = SOIC-14 (TOSC ✔)**; **ATtiny416 = SOIC-20 or VQFN-20 3×3 mm (TOSC ✔)**.
-  **Lean: ATTINY416 SOIC-20 ×5** — zero firmware delta from the bench 416, crystal option preserved,
-  hand-solderable; 412 SOIC-8 is the minimal-mass alt if RC-osc passes the jitter gate (SOIC-8→DIP
-  adapters ✔ on hand, C-15). Programming: serial UPDI = on-hand TTL-232R-3V3 + 1–4.7 k resistor +
-  `pymcuprog` — no new programmer needed.
+- [ ] **C-26** *(NEW 2026-08-07; **DECIDED 2026-08-10: ATtiny412**)* **Bare flight MCU = ATTINY412
+  SOIC-8 ×10** (sweet-spot qty, ~$0.60 ea) — operator call: minimal pod, back to the original design
+  target (schematic.md/verified-bom were 412 from the start). Consequences, accepted: **no TOSC pins →
+  the crystal path is FORECLOSED for the pod → RC-osc is committed** (the decoder side already carries
+  it: per-beacon DPLL + measured +2.6 % skew tolerance, bench-verified). **F-section (C-21/C-22/C-23)
+  closes as MOOT** — the RC-vs-crystal study's only purpose was this decision. Firmware: 416→412 is a
+  pin remap (same core/peripherals); SOIC-8→DIP adapters ✔ on hand (C-15); programming = serial UPDI
+  (TTL-232R-3V3 + 1–4.7 k + `pymcuprog`), no new hardware.
   - [ ] received — notes:
 
 ## D — Daylight receiver / 100 m optics (Option C selected 2026-07-24)
@@ -195,18 +196,13 @@ test**; (4) stop stalling on missing passives (kits).
   with no plane; C-6 adapters are the SOT-23 mounting fix.
   - [X] received — notes: covered by C-8 sheets, AMZ-1 2026-07-30; SMT3U ×2 ✔ (SOIC carriers only).
 
-## F — RC-vs-crystal stability study (gated by the copper-board load test; unchanged from O2)
-- [ ] **C-21** *(O2-4)* 32.768 kHz watch crystal (CFS-206/AB26T, CL 12.5 pF) ×3 — XOSC32K on PB2/PB3;
-  ⚠ 416-only (412 has no TOSC → ≥14-pin tinyAVR for a shipping pod on this path).
-  - [ ] received — notes:
-- [ ] **C-22** *(O2-5; MOSTLY COVERED 2026-07-30)* Crystal load caps: a few 18 pF + 6.8 pF. The AMZ-1
-  ALLECIN kit brings **10 / 20 / 30 pF** — 20 pF is the practical stand-in for 18 pF, and 10 pF for 6.8 pF
-  (recompute C_L against the crystal's 12.5 pF spec + stray). Only buy exact values if the F-section jitter
-  measurement turns out to care.
-  - [ ] received — notes: 10/20/30 pF via AMZ-1 kit; exact 18 pF / 6.8 pF NOT on hand.
-- [ ] **C-23** *(O2-6; fallback only)* 20.000 MHz CMOS XO half-can ×2 + 3.3 V LDO ×1 — order only if the
-  XO route is pursued (EXTCLK→PA3 conflict: DIM moves to PA6/PA7).
-  - [ ] received — notes:
+## F — RC-vs-crystal stability study — **CLOSED AS MOOT 2026-08-10** (C-26 decision: ATtiny412 = no
+TOSC = RC-osc committed for the pod; the study's only purpose was this choice. Decoder side already
+carries RC drift: per-beacon DPLL, +2.6 % skew bench-verified.)
+- [X] **C-21** *(O2-4)* ~~32.768 kHz watch crystal ×3~~ — MOOT (412 has no TOSC).
+- [X] **C-22** *(O2-5)* ~~exact 18 pF / 6.8 pF load caps~~ — MOOT (10/20/30 pF from the AMZ-1 kit remain
+  general stock).
+- [X] **C-23** *(O2-6)* ~~20 MHz XO + LDO fallback~~ — MOOT.
 
 ## Separate supplier
 - [X] **C-24** *(O3-8, O2-14 caveat; **RESOLVED 2026-08-07**)* ~~1S 100 mAh flight pack~~ — **operator
