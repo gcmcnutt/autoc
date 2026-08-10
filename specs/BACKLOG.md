@@ -13,6 +13,57 @@
 
 ---
 
+## 041 deferrals
+
+### [041 clarify, filed 2026-08-07] The scoring envelope is position-only — should "in streak" also require the target to be VISIBLE?
+
+**The defect.** `stepPoints` (and therefore streak credit) is computed from **relative position alone** — the
+along/lateral decomposition against the trail rabbit. Nothing tests whether the chase can actually *see* the
+target. So a chase can earn tracking credit while pointed the wrong way. The clean instance is a **head-on
+crossing**: at the crossing instant the chase is geometrically inside the scoring cone while the target sits
+outside any plausible field of view.
+
+**Magnitude is small** — roughly one tick per crossing (operator 2026-08-07). But the *definition* is wrong,
+and this project's record on small-but-wrong definitions is bad: a 28% trail-distance error survived four
+features because it was invisible in recorded data.
+
+**Why it was pulled out of 041 rather than fixed there.** The question *"can you be in streak and not
+visible?"* opens a design tree, not a one-line fix:
+
+1. **Gate the score, or only the streak?** Gating `stepPoints` is one definition in one place, and the streak
+   follows automatically since it tests `stepPoints`. Gating only the streak has a smaller blast radius but
+   keeps paying base points for blind position — the same defect in smaller print.
+2. **A hard gate punishes every short excursion with a zero.** That is harsh *precisely* in the regime that
+   narrowing the field of view would create more of, and it plausibly pushes the controller back toward the
+   wide standoff that already generalizes fine while tight tracking does not (040 T085: inside-5 m halves,
+   15.3% → 8.4%, on novel geometry). Making the objective *more* punishing at close range is the wrong
+   direction if standoff is already the failure mode.
+3. **A grace window fixes (2) but adds a parameter** — and an added coefficient is exactly what
+   [feedback_clear_objectives_not_tuning] warns against. If a grace window is used, its length should be
+   derived from the measured blind-gap distribution (041 Study B produces one), not chosen.
+4. **Hysteresis may be required.** A flag that chatters at the field-of-view boundary resets the
+   envelope-duration accumulator repeatedly, which is worse than either steady state.
+5. **M1 has no perception at all**, so it needs a **geometric FOV proxy** — target within a forward cone about
+   the chase body axis, half-angle matched to the modelled camera. Without it M1 and M2 optimize *different*
+   tasks, which undermines the M1→M2 source relationship the whole two-stage architecture rests on.
+6. **It is an OBJECTIVE change**, so it needs a baseline moment — it should ride a rebake (as 041's contract
+   bundle did), never land between a run and its comparator.
+
+**Where 041 leaves it**: known, written down, and deliberately unaddressed. 041's `IN_ENVELOPE` input will
+assert "in envelope" for ~one tick per crossing while the controller cannot see the target. Recorded as an
+edge case in [041 spec.md](041-m2-depth/spec.md).
+
+**Interaction that decides the timing**: the tradeoff in (2) *sharpens as the field of view narrows*. If the
+041 predictor work clears its go/no-go and a 120° → 90° reduction becomes real, this item should be designed
+**together with** that change rather than before it — the right gating rule depends on how often and how long
+the target actually leaves frame.
+
+**Trigger**: the next M1/M2 rebake moment (an objective change needs one), **or** the field-of-view-narrowing
+feature — whichever comes first. Pairs with 041's envelope-input work and with the blind-gap distribution 041
+produces.
+
+---
+
 ## 040 deferrals
 
 ### [040 wrap, filed 2026-08-06] t1′ — the attributable camera-variation delta (LOW priority, probably not worth it)
