@@ -310,7 +310,19 @@ CameraViewSample camWithSpan(double span) {
 
 }  // namespace
 
-TEST(SpanPrediction, PerfectPredictorScoresExactlyZero) {
+// 041 T019 — converted from a bare TEST() to TEST_F so the ConfigManager
+// fixture applies. A bare TEST() runs on struct defaults rather than the
+// fixture's config, which is trap 2 of the zero-answer block: the test still
+// passes, so nothing tells you it was measuring a different configuration from
+// every other test in this file.
+//
+// ⚠️ T019's task note says this pairing is "currently wrong" and expects the
+// test to be RED until T022. That premise is STALE: commit 1b290f2 (2026-08-02,
+// "prediction_score was scored ONE TICK LATE since 038 US3") already fixed it,
+// before 041 was specced. Both tests below are green today and must STAY green
+// through T020-T022 -- their value now is as a regression gate on the grouped
+// record, not as evidence of a pending fix.
+TEST_F(FitnessDecomp022Test, PerfectPredictorScoresExactlyZero) {
     constexpr int kTicks = 12;               // ticks 1..11 have camera views
     const double dt = SIM_TIME_STEP_MSEC / 1000.0;
 
@@ -342,7 +354,7 @@ TEST(SpanPrediction, PerfectPredictorScoresExactlyZero) {
            "state<->cameraView tick pairing is off, NOT that the predictor is bad.";
 }
 
-TEST(SpanPrediction, AOneTickShiftIsDetectable) {
+TEST_F(FitnessDecomp022Test, AOneTickShiftIsDetectable) {
     // Teeth for the test above: prove the assertion is actually sensitive to the
     // bug it guards, or PerfectPredictorScoresExactlyZero would have passed on
     // the old code too.
@@ -474,4 +486,271 @@ TEST_F(FitnessDecomp022Test, TrackerObjectiveUsesTheTargetFromTheSameTick) {
            "aligned=" << a[0].score << " shifted=" << b[0].score
            << " -- an inversion means targetTrajectoryList is being read one tick "
               "out (the 030-2026-08-03 bug).";
+}
+
+// ===========================================================================
+// 041 T017-T019 (FR-003, SC-001) — THE ZERO-ANSWER PATTERN.
+//
+// Construct data whose correct answer is EXACTLY 0, assert exactly 0, and pair
+// every such test with a shifted-input companion proving the assertion has
+// teeth. Written BEFORE the T020-T028 grouped-record refactor and required to
+// pass IDENTICALLY after it.
+//
+// ⚠️ THE POINT OF `TickFixture` BELOW. These tests must not encode the storage
+// layout, or the refactor invalidates them exactly when they are needed most.
+// Today the per-tick series are parallel lists with an offset — the recorder
+// pushes an initial aircraft state before the tick loop, so `cams[j]` and
+// `targets[j]` are tick j+1's — and after T020 they become
+// `tickList[i][k] = {state, cameraView, targetSample}` with no offset at all.
+// Everything that knows about the offset lives in this one helper. At T022 the
+// helper changes; not one assertion below does.
+//
+// ⚠️ TWO FIXTURE TRAPS, both already paid for once:
+//   1. An EMPTY pathList makes computeScenarioScores SKIP the scenario
+//      (`if (path.empty() || ...) continue;`), so every variant scores 0 and a
+//      comparison looks passed without ever running. `TickFixture` always lays
+//      a path.
+//   2. A bare TEST() misses the ConfigManager fixture and runs on defaults.
+//      All of these are TEST_F(FitnessDecomp022Test, ...).
+// ===========================================================================
+
+namespace {
+
+// Builds a single-scenario tracker EvalResults, addressed BY TICK.
+// Tick indices are 1-based, matching `stepIndex` in the objective: tick 1 is
+// the first stepped tick. Tick 0 is the pre-loop initial state and is never
+// addressable here — which is the property T020's separately-named initial
+// field is meant to make structural.
+struct TickFixture {
+    int ticks;
+    std::vector<Path> path;
+    std::vector<AircraftState> states;          // states[0] = initial, states[k] = tick k
+    std::vector<CopiedTargetSample> targets;    // STORAGE: targets[k-1] is tick k
+    std::vector<CameraViewSample> cams;         // STORAGE: cams[k-1] is tick k
+
+    explicit TickFixture(int n) : ticks(n), states(n + 1), targets(n), cams(n) {
+        // Trap 1: a non-empty path, or the scenario is silently skipped.
+        for (int j = 0; j <= n; ++j) {
+            path.push_back(Path(gp_vec3(static_cast<gp_scalar>(-0.85 * j), 0.0f, 0.0f),
+                                gp_vec3::UnitX(), 0.85 * j, 0.0));
+        }
+        for (int k = 0; k <= n; ++k) {
+            states[k].setSimTimeMsec(k * SIM_TIME_STEP_MSEC);
+            states[k].setThisPathIndex(0);
+            states[k].setVelocity(gp_vec3(static_cast<gp_scalar>(-13.0), 0.0f, 0.0f));
+            // Nose down the target's line of travel, or the tail-chase cone term
+            // zeroes every score and the test measures nothing.
+            states[k].setOrientation(gp_quat(Eigen::AngleAxis<gp_scalar>(
+                static_cast<gp_scalar>(M_PI), gp_vec3::UnitZ())));
+        }
+    }
+
+    // ---- the ONLY places that know the storage layout -----------------------
+    void setTargetAtTick(int tick, const CopiedTargetSample& t) { targets.at(tick - 1) = t; }
+    void setViewAtTick(int tick, const CameraViewSample& c)     { cams.at(tick - 1) = c; }
+    void setChaseAtTick(int tick, const gp_vec3& p)             { states.at(tick).setPosition(p); }
+    // -------------------------------------------------------------------------
+
+    EvalResults build() const {
+        EvalResults r;
+        r.pathList.push_back(path);
+        r.aircraftStateList.push_back(states);
+        r.targetTrajectoryList.push_back(targets);
+        r.cameraViewList.push_back(cams);
+        r.crashReasonList.push_back(CrashReason::None);
+        return r;
+    }
+};
+
+CameraViewSample visibleView() {
+    CameraViewSample cv{};
+    cv.beacon_left.cep = 0.05f;      // below kCepSentinelThreshold => visible
+    cv.beacon_right.cep = 0.05f;
+    return cv;
+}
+
+CameraViewSample blindView() {
+    CameraViewSample cv{};
+    cv.beacon_left.cep = 9.0f;       // above threshold => not visible
+    cv.beacon_right.cep = 9.0f;
+    return cv;
+}
+
+// A target advancing steadily along -X, with its trail rabbit 3.048 m behind.
+CopiedTargetSample targetAtTick(int tick, double stepM = 0.85) {
+    CopiedTargetSample t;
+    t.position = gp_vec3(static_cast<gp_scalar>(-stepM * tick), 0.0f, 0.0f);
+    t.velocity = gp_vec3(static_cast<gp_scalar>(-13.0), 0.0f, 0.0f);
+    t.trail_rabbit_position = t.position + gp_vec3(static_cast<gp_scalar>(3.048), 0.0f, 0.0f);
+    return t;
+}
+
+}  // namespace
+
+// --- T017: the M2 objective ------------------------------------------------
+
+TEST_F(FitnessDecomp022Test, T017_TrackerObjectiveScoresExactlyZeroForAPerfectTailChase) {
+    // THE ZERO CASE. A chase sitting exactly on this tick's trail rabbit, nose
+    // down the line of travel, is a perfect tail-chase: zero positional error
+    // every tick. Any non-zero error here is a PAIRING fault, not a tracking
+    // one -- there is nothing else in the fixture that could produce it.
+    constexpr int kTicks = 16;
+    TickFixture f(kTicks);
+    for (int k = 1; k <= kTicks; ++k) {
+        const auto t = targetAtTick(k);
+        f.setTargetAtTick(k, t);
+        f.setChaseAtTick(k, t.trail_rabbit_position);   // exactly on the rabbit
+        f.setViewAtTick(k, visibleView());
+    }
+    // Tick 0 is the pre-loop initial state; park it on tick 1's rabbit so it is
+    // never the thing under test.
+    f.states[0].setPosition(targetAtTick(1).trail_rabbit_position);
+
+    EvalResults r = f.build();   // lvalue: computeScenarioScores takes a mutable ref
+    const auto scores = computeScenarioScores(r);
+    ASSERT_EQ(scores.size(), 1u);
+
+    // A chase sitting on the rabbit is exactly the trail distance behind the
+    // target, every tick -- so the median range is 3.048 EXACTLY. This is the
+    // pairing-sensitive exact answer: reading a neighbouring tick's target moves
+    // it by a full 0.85 m of target travel.
+    EXPECT_NEAR(static_cast<double>(scores[0].tracker_diag.range_med), 3.048, 1e-4)
+        << "a chase parked on THIS tick's rabbit is exactly the trail distance "
+           "behind THIS tick's target; a different value means the objective is "
+           "reading another tick's target (the 030..2026-08-03 off-by-one).";
+
+    // And every tick is inside the fitness ramp -- exactly all of them, not
+    // all-but-one from dropping a tick at either end of the series.
+    EXPECT_EQ(static_cast<double>(scores[0].tracker_diag.in_fit_ramp_frac), 1.0)
+        << "a perfect tail-chase is in the fit ramp on every tick";
+}
+
+TEST_F(FitnessDecomp022Test, T017_TrackerObjectiveScoresExactlyZeroWhenNoCreditIsEarned) {
+    // The LITERAL zero: a chase parked far outside the cone earns no step points
+    // on any tick, so the accumulated (negated) score is exactly 0.0. Not -0.0001
+    // from a stray half-credit tick, and not a small positive from a sign slip.
+    constexpr int kTicks = 16;
+    TickFixture f(kTicks);
+    for (int k = 1; k <= kTicks; ++k) {
+        f.setTargetAtTick(k, targetAtTick(k));
+        // 500 m off to the side: far outside any cone or distance term.
+        f.setChaseAtTick(k, targetAtTick(k).trail_rabbit_position
+                            + gp_vec3(0.0f, static_cast<gp_scalar>(500.0), 0.0f));
+        f.setViewAtTick(k, blindView());
+    }
+    f.states[0].setPosition(targetAtTick(1).trail_rabbit_position
+                            + gp_vec3(0.0f, static_cast<gp_scalar>(500.0), 0.0f));
+
+    EvalResults r = f.build();
+    const auto scores = computeScenarioScores(r);
+    ASSERT_EQ(scores.size(), 1u);
+
+    // The EXACT assertion: not one tick of these 16 reaches the fit threshold.
+    // A count over a count -- no epsilon anywhere.
+    EXPECT_EQ(static_cast<double>(scores[0].tracker_diag.in_fit_ramp_frac), 0.0)
+        << "a chase 500 m off-axis is in the fit ramp on exactly zero ticks";
+
+    // And the documented non-assertion: the score is near zero but NOT zero.
+    // Pinned as strictly-less-than-zero so that if the objective ever gains a
+    // hard cutoff (making an exact zero reachable), this test fails and someone
+    // revisits the comment above rather than finding it quietly stale.
+    EXPECT_LT(static_cast<double>(scores[0].score), 0.0)
+        << "the Lorentzian never reaches zero; if this now passes as exactly 0, "
+           "the objective gained a cutoff and the comment above needs updating";
+}
+
+TEST_F(FitnessDecomp022Test, T017_TrackerObjectiveOneTickShiftIsVisiblyWorse) {
+    // TEETH. Same fixture, chase parked on the NEXT tick's rabbit. If the
+    // objective were reading one tick out, this would be the one scoring zero.
+    constexpr int kTicks = 16;
+    auto buildWithShift = [&](int shift) {
+        TickFixture f(kTicks);
+        for (int k = 1; k <= kTicks; ++k) {
+            f.setTargetAtTick(k, targetAtTick(k));
+            f.setChaseAtTick(k, targetAtTick(k + shift).trail_rabbit_position);
+            f.setViewAtTick(k, visibleView());
+        }
+        f.states[0].setPosition(targetAtTick(1).trail_rabbit_position);
+        EvalResults r = f.build();
+        return computeScenarioScores(r);
+    };
+
+    const auto aligned = buildWithShift(0);
+    const auto shifted = buildWithShift(1);
+    ASSERT_EQ(aligned.size(), 1u);
+    ASSERT_EQ(shifted.size(), 1u);
+
+    const double a = static_cast<double>(aligned[0].tracker_diag.range_med);
+    const double b = static_cast<double>(shifted[0].tracker_diag.range_med);
+    EXPECT_NEAR(a, 3.048, 1e-4) << "sanity: the aligned case is the exact case";
+    EXPECT_GT(std::abs(b - a), 0.5)
+        << "a one-tick shift is 0.85 m of target travel and must be plainly "
+           "visible; if it is not, the exact-answer test above has no teeth. "
+           "aligned=" << a << " shifted=" << b;
+}
+
+// --- T018: vis_frac --------------------------------------------------------
+
+TEST_F(FitnessDecomp022Test, T018_VisFracIsExactlyZeroWhenNothingIsEverVisible) {
+    // THE ZERO CASE for the visibility diagnostic. Every tick blind => exactly
+    // 0.0, not 0.0-ish and not 1/N from an off-by-one reading past the end.
+    constexpr int kTicks = 12;
+    TickFixture f(kTicks);
+    for (int k = 1; k <= kTicks; ++k) {
+        f.setTargetAtTick(k, targetAtTick(k));
+        f.setChaseAtTick(k, targetAtTick(k).trail_rabbit_position);
+        f.setViewAtTick(k, blindView());
+    }
+    f.states[0].setPosition(targetAtTick(1).trail_rabbit_position);
+
+    EvalResults r = f.build();   // lvalue: computeScenarioScores takes a mutable ref
+    const auto scores = computeScenarioScores(r);
+    ASSERT_EQ(scores.size(), 1u);
+    EXPECT_EQ(static_cast<double>(scores[0].tracker_diag.vis_frac), 0.0)
+        << "no beacon is ever within CEP threshold, so vis_frac must be exactly 0";
+}
+
+TEST_F(FitnessDecomp022Test, T018_VisFracIsExactlyOneWhenEverythingIsVisible) {
+    constexpr int kTicks = 12;
+    TickFixture f(kTicks);
+    for (int k = 1; k <= kTicks; ++k) {
+        f.setTargetAtTick(k, targetAtTick(k));
+        f.setChaseAtTick(k, targetAtTick(k).trail_rabbit_position);
+        f.setViewAtTick(k, visibleView());
+    }
+    f.states[0].setPosition(targetAtTick(1).trail_rabbit_position);
+
+    EvalResults r = f.build();   // lvalue: computeScenarioScores takes a mutable ref
+    const auto scores = computeScenarioScores(r);
+    ASSERT_EQ(scores.size(), 1u);
+    // Exactly 1.0. A reader that misses the last tick lands on 11/12 = 0.9166,
+    // which an EXPECT_NEAR with a loose tolerance would wave through.
+    EXPECT_EQ(static_cast<double>(scores[0].tracker_diag.vis_frac), 1.0)
+        << "every tick has both beacons inside CEP threshold, so vis_frac must "
+           "be exactly 1 -- a value just under it means a tick is being dropped "
+           "at one end of the series";
+}
+
+TEST_F(FitnessDecomp022Test, T018_VisFracCountsTheTickItIsPairedWith) {
+    // TEETH, and the reason a PREFIX pattern is used rather than an alternating
+    // one: alternating visibility has the same FRACTION under a one-tick shift,
+    // so it would pass either way. A prefix moves the count by exactly one.
+    constexpr int kTicks = 12;
+    constexpr int kVisibleThrough = 5;
+    TickFixture f(kTicks);
+    for (int k = 1; k <= kTicks; ++k) {
+        f.setTargetAtTick(k, targetAtTick(k));
+        f.setChaseAtTick(k, targetAtTick(k).trail_rabbit_position);
+        f.setViewAtTick(k, (k <= kVisibleThrough) ? visibleView() : blindView());
+    }
+    f.states[0].setPosition(targetAtTick(1).trail_rabbit_position);
+
+    EvalResults r = f.build();   // lvalue: computeScenarioScores takes a mutable ref
+    const auto scores = computeScenarioScores(r);
+    ASSERT_EQ(scores.size(), 1u);
+    EXPECT_NEAR(static_cast<double>(scores[0].tracker_diag.vis_frac),
+                static_cast<double>(kVisibleThrough) / kTicks, 1e-6)
+        << "vis_frac must count the view paired with each tick; being one tick "
+           "out reads " << (kVisibleThrough - 1) << "/" << kTicks << " or "
+        << (kVisibleThrough + 1) << "/" << kTicks;
 }
