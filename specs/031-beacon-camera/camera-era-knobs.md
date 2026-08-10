@@ -124,6 +124,13 @@ camera's 1.27 mm pupil and 0.056°/px sky patch; the single-lens alternative (f 
 0.50 mm pupil) costs **×6.5 in signal** and coarsens the sky patch ×2.8 — the bird geometry is the
 link-budget answer *to 120° specifically*. If static range testing says even the pair is marginal,
 the FOV knob re-opens via retraining, not via optics heroics.
+**Refinement 2026-08-10 (AliExpress market check)**: commodity **1.7–1.8 mm F/2.0 IR-corrected
+fisheyes** reach ~110–120° via barrel distortion at a 0.85 mm pupil — the single-camera-120° penalty is
+**×2.2** vs a bird-pair camera (not the ×6.5 of a rectilinear 1.1 mm). Still no parallax, distorted
+edge °/px, harsher corner falloff, and no 850-integrated superwide exists (unfiltered or disc-behind,
+where fisheye CRA stresses the passband) — but at ~$10 the topology is now cheap to TEST on the same
+camera body, so the training-fork comparison (knob 6) gets an empirical arm: bird-pair vs single-fisheye
+measured, not argued.
 
 ## Empirical backlog (what the Pi rig measures, in order)
 

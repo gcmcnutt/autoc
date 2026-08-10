@@ -143,7 +143,7 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
 |---|---|---|
 | **DigiKey** | ATTINY412 SOIC-8 ×10 (order-03 C-26) · *optional*: ATTINY416-XNANO spare ×1 | 6–18 |
 | **InnoMaker** (inno-maker.com / their Amazon store) | **CAM-MIPI9281RAW-V2 ×2 @ ~$39** (O4-1) | ~78 |
-| **AliExpress** (ELP 850 nm lens family) | **2.8 mm 850 nm-integrated SKU ×1–2** (O4-5; record vendor FWHM claim, expect 30–60 nm) | 10–20 |
+| **AliExpress** (M12 commodity market — lenses only; cameras stay InnoMaker for the DRIVER) | **Lens kit**: 2.8 mm 850 nm-integrated ×1–2 (O4-5; record vendor FWHM claim, expect 30–60 nm) + **1.7–1.8 mm F/2.0 IR-corrected fisheye ×1** (~$8–15 — the single-camera ~110–120° topology experiment: 0.85 mm pupil = only ×2.2 signal penalty vs a bird-pair camera, NOT the ×6.5 of a rectilinear 1.1 mm; unfiltered — characterize first, disc-filter later if it earns it) | 20–35 |
 | **Pi reseller** (PiShop/Adafruit/CanaKit) | **Pi Zero 2 W ×1** (O4-4) | ~15 |
 | *Optional, Amazon* | Quanmin 12.5 mm 850 nm disc pair (filters any bare lens; NOT on hand) | ~12 |
 
