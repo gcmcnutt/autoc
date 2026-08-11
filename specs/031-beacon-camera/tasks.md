@@ -292,12 +292,15 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   rise** on the 1″ knife-slit board (microscope-verified emission, purple bloom on camera).
   **306 mA operating point MEASURED 2026-08-10: 0.840 W/die electrical → Vf = 2.75 V**; derived:
   optical ~0.32 W (η≈38 %) → **heat ~0.52 W/die, ~2.6 W cube-wide**; string 5×Vf ≈ 13.7 V; runtime
-  refresh ≈ 15–16 min per 150 mAh charge at code duty. Next: 306 mA **10-min soak** → record rise:
-  ______; then optionally 1 A exploration. **Soak setup (2026-08-10)**: UNTAPE from the microscope's
-  aluminum base (it was heatsinking the double-sided board — the 200 mA "negligible" was partly the
-  stand) — hang the tile free on its clip leads, still air. **Thermometer = Vf droop**: at constant
-  current, ~−2 mV/°C of junction rise → watch Vf sag from the 2.745 V start; −20 mV ≈ +10 °C at the
-  die. Junction number beats any surface reading. ⚠ weigh a finished tile: 1.0 mm
+  refresh ≈ 15–16 min per 150 mAh charge at code duty. **SOAK COMPLETE — THERMAL PASS 2026-08-10**: free-hanging, still air,
+  306 mA: Vf settled 2.745 → ~2.737–2.730 V = **−8 to −15 mV ≈ 5–8 °C junction rise** (Vf-droop
+  thermometer, ~−2 mV/°C). Thermal is NOT the cube's constraint at 1″ tile size.
+  **NEW FINDING — ASSEMBLY, not thermal, is the risk**: hand-mounting the bottom-pad Luxeon Z without
+  SMT equipment is fragile; loosening in flight vibration is a live concern → **this fires the C-11
+  trigger** (route 1: pre-mounted SM-01-R8/SZ-01-R8 stars, Luxeonstar direct — factory-reflowed die,
+  hand-solderable tabs, epoxy star to tile, calibration preserved). Route 2 (rescue): hot-plate reflow
+  on the tile itself + epoxy SIDE fillets (never the emitting face; never CA) + wire strain relief.
+  Route 3 (different winged package) re-opens flux/bin/eye-safety calibration — last resort. ⚠ weigh a finished tile: 1.0 mm
   FR4 at 1″×5 faces ≈ 6 g board stock alone — check against the pod mass budget. Camera-safety note:
   no need to shield the Andonstar even at 1 A (die radiance ~70× BELOW solar; magnification conserves
   radiance) — protect EYES instead: RG0 was assessed at 306 mA/≥30 cm; at 1 A, close viewing via
