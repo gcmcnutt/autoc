@@ -406,6 +406,47 @@ xiao state) uses standard aerospace NED/FRD with RHR throughout.
 All transforms are applied at the INAV↔xiao boundary (msplink.cpp). Downstream
 code (NN evaluator, CRRCSim, renderer) uses standard aerospace convention only.
 
+## Accelerometer as an INTERFACE quantity (041, 2026-08-10)
+
+⚠️ **New status.** Until 041 the accelerometer was an **internal** value — it has never been an interface
+quantity, going back to minisim. The 021 table below is therefore *observational* (what blackbox
+`accSmooth` logs), **not** a ratified NN-input standard. 041 promotes accel to an interface quantity
+because `ACCEL_X/Y/Z` become NN inputs, so the standard is stated here.
+
+**The standard: aerospace body FRD** — x forward, y right, z down — the same frame the quat and gyro use
+downstream of the msplink boundary. **Explicitly NOT FRU/FLU** (operator 2026-08-10). Units: **g**
+(dimensionless), scaled by `kAccelScale_g` only at the NN slot write.
+
+**Two converters, deliberately different.** Native CRRCSim is its own beast and INAV is another; neither is
+the standard, and each gets its own boundary conversion:
+
+| source | native form | converter | lands as |
+|---|---|---|---|
+| CRRCSim FDM | world-frame kinematic accel (LaRCSim, ft-based) + gravity + q_EB | `autoc/eval/specific_force.h`, worker-side | body FRD, g |
+| INAV | `acc.accADCf` — post `applySensorAlignment` + `applyBoardAlignment`, ÷ `acc_1G` | `msplink.cpp`, same boundary as the quat's `(w, x, -y, -z)` and the gyro's pitch/yaw negation | body FRD, g |
+
+⚠️ **Board alignment differs between bench and flight** (`xiao/inav-bench.cfg` vs `xiao/inav-hb1.cfg`) —
+the devices are mounted differently. Alignment is applied INSIDE INAV before MSP, so the converter is the
+same for both, but **T073 must verify on both targets**; a bench-only check is not a flight check.
+
+### ⛔ ONE DATUM UNRESOLVED — settle before T039/T073 writes a sign
+
+The 021 bench table below is self-consistent for **level** and **right-wing-down** under "FRD, the sensed
+gravity-plus-manoeuvre vector" (level ⇒ `[0, 0, +1g]`, RWD ⇒ `[0, +1g, 0]`), which is the convention 041
+adopts and which makes the load factor read directly off `ACCEL_Z` with no negation.
+
+**Nose-up 90° does not fit it.** With the nose at the sky, body +x points UP, so gravity lies along **−x**
+and that row should read `−1g`; the table records **`+2050`**. Two of three attitudes fit the adopted
+convention and the third does not.
+
+Candidate explanations, to be settled against `~/inav` source (`acceleration.c`, around the alignment call)
+plus the two `xiao/*.cfg` alignments — **not** by re-deriving from first principles:
+1. the nose-up X value is a transcription error and should be `−2050`;
+2. INAV applies a sign on X that the blackbox inherits, so `accADCf` and `accSmooth` differ there;
+3. the bench "nose up" maneuver was recorded nose-DOWN.
+
+Until resolved, **do not** pin a nose-up assertion in a test. Level and right-wing-down are safe to assert.
+
 ## Gyro & Accelerometer Conventions (021, 2026-03-28)
 
 ### INAV Sensor Processing Chain

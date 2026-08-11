@@ -43,6 +43,62 @@ paired-series fitness term. Test tasks are interleaved with implementation per C
 - **[Story]**: US1–US6 per spec.md
 - **[OP]**: operator-driven — an assistant MUST NOT run this (clean rebuilds, bakes, S3 mutation, flight)
 
+## ▶️ RESUME HERE (state as of 2026-08-10)
+
+**Progress: 42/110 marked.** Phases 1–3 complete; Phase 4 (US2) about half. Build clean, 42/42 ctest
+suites pass, operator ran a fresh `rebuild-perf.sh` gate — passed. Commits: `304f004` (parent, T035/T036)
++ `b1db43b` (crrcsim). ⚠️ All Phase 3/4 work is **checkpointed WIP, not landed** — it squashes into T045.
+
+### ⛔ FIRST THING NEXT SESSION — settle the accel sign, then flip it
+
+`include/autoc/eval/specific_force.h` currently computes **proper acceleration** (level flight ⇒
+`ACCEL_Z = −1`). The convention 041 **adopted** is the sensed gravity-plus-manoeuvre vector in body FRD
+(level ⇒ `[0, 0, +1g]`), which makes the load factor read directly off `ACCEL_Z` with no negation. So the
+header and its five tests in `tests/dmp_dump_tests.cc` need the sign flipped — **once**, after the open
+datum below is settled, not twice.
+
+**The open datum**: `docs/COORDINATE_CONVENTIONS.md` → "Accelerometer as an INTERFACE quantity (041)" →
+*ONE DATUM UNRESOLVED*. Level and right-wing-down fit the adopted convention; **nose-up 90° does not**
+(table says `+2050` on X, the convention implies `−1g`). Settle it against `~/inav`
+(`src/main/sensors/acceleration.c`, around the alignment call) plus the two `xiao/*.cfg` alignments —
+**not** by re-deriving from first principles. Operator 2026-08-10: this took a long time to get right and
+must be correct on the first flight. Until settled: level + RWD are safe to assert, nose-up is not.
+
+### Then T037–T040, which are now fully specified
+
+- **Ordering is SOLVED** (spec.md Clarifications, "the tracker target is a PRELOADED PATH"): the tracker
+  target is `source_->samples[cursor_]` (`crrcsim_tracker_helper.cpp:208`) — a preloaded trajectory
+  indexed by a cursor, structurally identical to pathgen's `path[pathIndex]`. So the step score is a
+  LOOKUP in both modes, knowable before the NN acts ⇒ compute **pre-eval in both**. No tick k−1 fallback.
+  Currently the worker scores AFTER the eval (`inputdev_autoc.cpp`, "SCORE THE TICK") — move it up.
+- **T039 plumbing is DECIDED**: body-frame specific force in g stored on `AircraftState` **beside
+  `gyroRates_`**, computed worker-side via `specific_force.h`; both gathers only COPY. Criterion was
+  "closest to what INAV presents to real hardware NN inputs" — on hardware the value arrives finished and
+  the gather does no transformation, so the sim must match that shape.
+- **T040** is wiring, not derivation: the shared math and its five tests already exist from T010/T011.
+
+### Unfiled — do this before it is lost
+
+The **M2 flight architecture** (operator 2026-08-10): early M2 flights are **one real craft against a
+VIRTUAL target derived from an M1 run, with a SYNTHETIC camera** — implying beacon projection + CEP
+running on the nRF52840. Captured in spec.md Clarifications but **not yet in `specs/BACKLOG.md`**, where it
+belongs as future firmware scope. Not 041 (041's flight test is M1, T079/T080).
+
+### Decisions taken 2026-08-10 that changed the plan
+
+| | outcome |
+|---|---|
+| T062 | **Reframed, closed.** No retry budget, no lottery framing — "a good bake is good enough". Early failures are **diagnostics** (missed assumptions / non-determinism), not bad luck. T064 folds into T063 |
+| T067 / R7 | Judge against the **pinned prior M1 alone**, loose bar, "materially worse" — one comparator cannot make a band |
+| T087 | **DROPPED** — one tracker run removed |
+| "calibration" | = re-establish the **comparator set**. Closes with no new work (T065 / FR-010 / T097) |
+| Camera pitch | **0.375 stays** (120°×75°). Revisit from measurement, not a second estimate |
+| crrcsim builds | **Build freely; gates stay with the operator.** `crrcsim/CLAUDE.md` updated |
+| T036 | Gate is **determinism + materially-same**, not literal bit equality |
+| T047 | **INVERTED** — `data.dat` retired at 035 FR-P05; its parser must NOT be updated |
+
+---
+
 ## ⛔ Hard ordering constraints (violating these costs a run)
 
 1. **One contract-break commit** (FR-005). US1's grouped record and all of US2 land **together**, before any
@@ -163,7 +219,7 @@ read by every consumer, with input-count assertions and metadata tables in agree
   ⚠️ Unchanged: Constitution IV, the pre-run build gate, and the eval-vs-training bitwise regression gate.
 - [ ] T037 [US2] Populate `IN_ENVELOPE` / `ENVELOPE_SECS` in `src/nn/evaluator.cc` `gather_inputs` from the tick-loop step score. Accumulator is an **external counter** in the stepper, resets **on envelope exit only** (not on regime change), millisecond-based against `FitStreakRampSec`, **linear** normalization — no log, no tanh.
 - [ ] T038 [US2] Populate `IN_ENVELOPE` / `ENVELOPE_SECS` in `gather_tracker_inputs` from the M2 direct-perception estimator: both beacons CEP-visible AND separation within `[EnvelopeSpanLo, EnvelopeSpanHi]` AND pair centroid within `EnvelopeCentroidRadius`. Same accumulator mechanics as M1 — only the flag's source differs.
-- [ ] T039 [US2] Populate `ACCEL_*` in both gather functions as **body-frame specific force including gravity**: `R(quat)ᵀ · (a_world − g_world) / kAccelScale_g`. ⚠️ **Not FDM kinematic acceleration** — that would put a constant ~1 g offset in the most load-relevant axis, invisible in sim and wrong in flight.
+- [ ] T039 [US2] ⚠️ **See the RESUME block: the sign convention must be settled first, and `specific_force.h` needs flipping to the adopted FRD "sensed gravity-plus-manoeuvre" convention (level ⇒ +1 g on Z).** Plumbing is decided — store on `AircraftState` beside `gyroRates_`, computed worker-side; both gathers only COPY. Populate `ACCEL_*` in both gather functions as **body-frame specific force including gravity**: `R(quat)ᵀ · (a_world − g_world) / kAccelScale_g`. ⚠️ **Not FDM kinematic acceleration** — that would put a constant ~1 g offset in the most load-relevant axis, invisible in sim and wrong in flight.
 - [ ] T040 [US2] Add input-semantics tests in `tests/nn_evaluator_tests.cc`: (a) **steady level flight → normal channel ≈1 g, not ≈0** (the test that catches the kinematic-vs-specific error — and **empirically confirmed on hardware**: the bench table in `docs/COORDINATE_CONVENTIONS.md` reads `+2050` on the normal axis in level attitude — blackbox `accSmooth` counts, `acc_1G ≈ 2048`, so `≈ +1.0 g` — meaning INAV already reports specific force including gravity, exactly the sim semantics required); (b) documented sign on a pull-up; (c) `IN_ENVELOPE` ∈ {0,1}; (d) `ENVELOPE_SECS` monotone within a streak, 0 immediately after exit, saturates at 1; (e) `ENVELOPE_SECS` identical for a given wall-clock duration at two cadences; (f) M1 `IN_ENVELOPE` agrees tick-for-tick with the objective's own threshold decision.
 - [X] T041 [P] [US2] Update layout assertions in `tests/contract_evaluator_tests.cc` for both modes' new counts.
 
@@ -238,7 +294,9 @@ the new inputs (SC-006, SC-007, SC-007a).
 
 ### Production bake
 
-- [ ] T062 [US4] [OP] Declare the retry budget and abort criterion **in writing before starting** (research.md R8 proposes 3 attempts): abort on the stuck-basin signature — throttle amplitude exactly 1.000 with **σ = 0.000** and `dCtrl` 0.000, plus `avgMaxStreak` frozen and best-sigma not annealing past ~0.14 by gen 200. Note that throttle *saturation* (mean ≈0.85, σ>0) is **not** the tell; climbers pass through it.
+- [X] T062 [US4] [OP] ⚠️ **REFRAMED by the operator 2026-08-10 — this is not a retry-budget task.** Asked how many attempts to allow before re-drawing, the answer was: *"a good bake is good enough — forget the random as we aren't quite at the brittle edge of NN capacity. Often the early runs uncover missed assumptions or non determinism — that's the key search."*
+  So: **no fixed attempt count, and no lottery framing.** Run until a bake is good; a good bake is good enough. The important correction is what an early failure MEANS — it is a **diagnostic**, not bad luck. The first runs are the cheapest place to discover a missed assumption or a non-determinism, and treating a bad one as "re-draw and hope" throws away the signal we are actually there to collect. R8's 3-attempt proposal is superseded.
+  The **abort signature** below still stands, but as an *investigate* trigger rather than a *re-draw* trigger: abort on the stuck-basin signature — throttle amplitude exactly 1.000 with **σ = 0.000** and `dCtrl` 0.000, plus `avgMaxStreak` frozen and best-sigma not annealing past ~0.14 by gen 200. Note that throttle *saturation* (mean ≈0.85, σ>0) is **not** the tell; climbers pass through it.
 - [ ] T063 [US4] [OP] Pre-run build gate, then `scripts/train.sh autoc.ini logs/autoc-041-t1-m1-envelope.log` (pop 8000 / 49 winds). Judge climb on `pctInStreak` / `avgMaxStreak`, **not** completions.
 - [ ] T064 [US4] [OP] Repeat as a lottery re-draw if the abort criterion fires, within the declared budget, incrementing the artifact index (`t2`, `t3`) per `autoc-<feature>-t<N>-<details>`.
 - [ ] T065 [US4] [OP] Immediately on completion: tag all dmp objects `retain=keep`, and archive `nn_weights*.dat` beside the dmp (FR-010 — the dmp preserves numbers, only NN01 preserves a controller you can re-fly). Record the S3 prefix in the outcome doc. ⚠️ **The `data.dat` snapshot FR-022 asks for is MOOT** — 035 FR-P05 retired the writer, so there is no per-tick file for "the next launch" to overwrite. The dmp IS the trace, and `retain=keep` is what preserves it. FR-022 is satisfied by the pinning, not by a file copy.
@@ -246,7 +304,7 @@ the new inputs (SC-006, SC-007, SC-007a).
 ### Reads
 
 - [ ] T066 [US4] Generate the report set: `scripts/generate_pngs.sh m1 logs/autoc-041-t1-m1-envelope.log`.
-- [ ] T067 [US4] Assess non-regression against the historical band (research.md R7): `pctInStreak` / `avgMaxStreak` within noise of or above the band; crash/OOB counts not worse; per-axis `dCtrl` / `⟨|u|⟩` per regime; peak load not higher. ⚠️ Absolute fitness sums are **not** comparable across runs with different scenario counts — use per-scenario or per-step rates.
+- [ ] T067 [US4] Assess non-regression against **the pinned prior M1 alone** (`autoc-m1/…2026-07-06T01:35:46.579Z/`), with a **loose bar**: the trigger is *materially worse*, not a numeric band. ⚠️ **Operator decision 2026-08-10, superseding research.md R7's "historical band".** Reasons, both worth keeping: we have **one** pinned comparator, so a "band" would be a spread invented from a single sample; and per the T062 reframing the early runs exist to surface missed assumptions, which a noise-triggered bar actively works against. Same spirit as T036 — measure, report, and judge materially, rather than assert a threshold that gets loosened when it fires. Compare on: `pctInStreak` / `avgMaxStreak` within noise of or above the band; crash/OOB counts not worse; per-axis `dCtrl` / `⟨|u|⟩` per regime; peak load not higher. ⚠️ Absolute fitness sums are **not** comparable across runs with different scenario counts — use per-scenario or per-step rates.
 - [ ] T068 [US4] Run the **ablation matrix** on the new elite: flag alone (`--zero-input IN_ENVELOPE`), duration alone (`ENVELOPE_SECS`), both, and the accel channels — per FR-014b. Expectation is that the **flag** carries the effect; a duration-only effect would be distinct and more surprising.
 - [ ] T069 [US4] Run the **control-input ablations** for calibration (FR-011b): `DIST_NOW` (known-critical end), `GYRO_P,GYRO_Q,GYRO_R`, `INWARD_BODY_X,INWARD_BODY_Y,INWARD_BODY_Z` (plausibly marginal). State the envelope verdict as a **position on this spectrum**, never against an assumed absolute threshold.
 - [ ] T070 [US4] Record the H1a verdict as **pass** (fitness drop **and** behavioural shift, beyond the marginal end of the control spectrum), **partial** (one but not both), or **fail** (neither) — per regime. All three close the hypothesis; only an unclassifiable result fails SC-007.
@@ -270,7 +328,7 @@ is modified.
 - [ ] T001a [US4] Record the two-variant build/deploy sequence in `specs/041-m2-depth/artifacts/README.md`, pointing at `specs/020-pre-flight-pipeline/plan.md` for the commands rather than restating them. Every later INAV task (T072, T078, T080) builds and flashes **both** targets, bench first — a change validated only on the bench target is not validated for flight.
 
 - [ ] T072 [US4] Extend `MSP2_AUTOC_STATE` in `~/inav/src/main/fc/fc_msp.c` (the `MSP2_INAV_LOCAL_STATE` case) to carry accel in the **same single round trip**. Copy the shape of fork commit `63cffaf4f` ("extend MSP2_AUTOC_STATE with filtered gyro rates"): append at payload end, fixed integer scale stated at the write site, and document the axis/sign convention for the consumer. ⚠️ **Source `acc.accADCf` — the TRANSFORMED field, never a raw sensor read.** `acceleration.c:563-568` applies `applySensorAlignment` then `applyBoardAlignment` then divides by `acc.dev.acc_1G`, so `acc.accADCf` is board-alignment-corrected and **already in g units**. This mirrors `gyro.gyroADCf` (`gyro.c:438-442`, same two alignment calls), which is exactly why the existing gyro extension is correct. **Do NOT use** the file-static `accADC` (`acceleration.c:73`) or `acc.dev.ADCRaw` — those are pre-alignment and would bake in each board's misalignment differently (bench roll = −16 vs flight). Wire encoding: milli-g `int16` = `lrintf(acc.accADCf[axis] * 1000.0f)`, giving ±32 g against ±11 g observed. Build **both** targets, bench first; disconnect GPS before flashing.
-- [ ] T073 [US4] Pin the accel axis and sign convention against the **already-measured bench table** in `docs/COORDINATE_CONVENTIONS.md` ("Ground Verification Results, bench 2026-03-30", `MAMBAF722_2022A`, board alignment roll = −16): level → `[~0, ~0, +2050]`; right wing down 90° → `[~0, +2060, ~0]`; nose up 90° → `[+2050, ~0, ~0]`. ⚠️ **Units**: those are **blackbox `accSmooth` counts** (`acc_1G ≈ 2048`), *not* the runtime `acc.accADCf`, which is the same vector already divided by `acc_1G` — i.e. `+2050 counts` ⇔ `+1.0 g`. Convert before comparing. The **axes and signs** transfer directly; only the scale differs. T073 is therefore *match the table*, not derive the convention — add a test asserting all three attitudes. ⚠️ Board alignment differs between bench (roll = −16) and flight, so verify on **both** targets; do not assume one target's result transfers.
+- [ ] T073 [US4] ⚠️ **The bench table has ONE UNRESOLVED ROW** — nose-up 90° reads `+2050` on X where the adopted convention implies `−1 g`. Level and right-wing-down are consistent and safe to assert; **do not pin a nose-up assertion until it is settled** against `~/inav` + the two `xiao/*.cfg` alignments (see `docs/COORDINATE_CONVENTIONS.md` → "Accelerometer as an INTERFACE quantity (041)"). ⚠️ Board alignment DIFFERS bench vs flight (different mounting), so verify on **both** targets — a bench-only check is not a flight check. Pin the accel axis and sign convention against the **already-measured bench table** in `docs/COORDINATE_CONVENTIONS.md` ("Ground Verification Results, bench 2026-03-30", `MAMBAF722_2022A`, board alignment roll = −16): level → `[~0, ~0, +2050]`; right wing down 90° → `[~0, +2060, ~0]`; nose up 90° → `[+2050, ~0, ~0]`. ⚠️ **Units**: those are **blackbox `accSmooth` counts** (`acc_1G ≈ 2048`), *not* the runtime `acc.accADCf`, which is the same vector already divided by `acc_1G` — i.e. `+2050 counts` ⇔ `+1.0 g`. Convert before comparing. The **axes and signs** transfer directly; only the scale differs. T073 is therefore *match the table*, not derive the convention — add a test asserting all three attitudes. ⚠️ Board alignment differs between bench (roll = −16) and flight, so verify on **both** targets; do not assume one target's result transfers.
 - [ ] T074 [US4] Consume the new accel fields in `xiao/src/msplink.cpp` and feed `ACCEL_*` into the input vector with the same specific-force semantics as sim.
 - [ ] T075 [US4] Implement `IN_ENVELOPE` / `ENVELOPE_SECS` on-target in `xiao/src/`: the step-score cone geometry (`FitDistScaleBehind`/`Ahead`, `FitConeAngleDeg`) thresholded at `FitStreakThreshold`, plus the duration accumulator with a **reset on engage** as well as on envelope exit (FR-022a). This is firmware work, not codegen.
 - [ ] T076 [US4] Verify the added payload does not push the MSP cycle past its loop budget. 039 measured zero overruns at 115200 with the prior payload; if headroom is marginal, the unexercised 460800 baud-raise lever is the documented next step rather than dropping the field.
@@ -297,7 +355,7 @@ is modified.
 - [ ] T084 [P] [US5] Fit target **(b) — Δspan at 50/100/150 ms** as the *control* that confirms why the old head failed. Confounded until the pairing is correct; T022 satisfies that structurally.
 - [ ] T085 [P] [US5] Fit target **(c) — discounted future `stepPoints`** vs a constant-mean baseline (the value-head fallback).
 - [ ] T086 [US5] Apply the go/no-go rule (FR-024a): the head must beat hold-last-seen **in the gap-age bins where real excursions occur**, per T082's measured distribution, by a margin stated in advance, with adequate per-bin samples. Bound the claim by two physical facts (FR-030, FR-031): the drift budget Δθ ≈ ½·a·t²/r + 1–2° IMU error sets what hold-last-seen's error *should* look like as a gap ages, and **warm code relock has a ≈155 ms floor** — so the predictor's value is in **pointing, not latency**, and any claimed reduction in time-to-reacquire below 155 ms is unphysical. ⚠️ The verdict feeds a hardware decision (which lens gets bought), so record it with its evidence rather than as a verdict alone.
-- [ ] T087 [US5] ⚠️ **DECISION NEEDED FROM OPERATOR before running**: is E1 (`EnablePredictorHead` 0 vs 1, short tracker runs) still worth a run, given that T086 decides the head's fate anyway? If the head is being retired or re-targeted regardless, E1's question ("is the dead head taxing the search") is moot and this task should be **dropped**. Flagged outstanding at the second clarify pass; resolving it may remove a tracker run from the plan.
+- [X] T087 [US5] ⛔ **DROPPED — operator decision 2026-08-10. Do not run E1.** T086 settles the head's fate on offline evidence, and T088 then re-targets or retires it; either way the "dead head" configuration E1 exists to measure **stops existing**, so its answer cannot change anything downstream. Removes one tracker run from the plan. *(Original task text kept below for provenance.)* ~~is E1 (`EnablePredictorHead` 0 vs 1, short tracker runs) still worth a run, given that T086 decides the head's fate anyway? If the head is being retired or re-targeted regardless, E1's question ("is the dead head taxing the search") is moot and this task should be **dropped**. Flagged outstanding at the second clarify pass; resolving it may remove a tracker run from the plan.~~
 - [ ] T088 [US5] Record the **C3 decision** in `specs/041-m2-depth/predictor-decision.md`: re-targeted continuous-estimate head, value-head fallback, or **retire**. Retirement is an accepted outcome (FR-027) and shrinks the output topology 7→3, reclaiming 119 output weights and a third of the lexicase pool.
 
 **Checkpoint**: the predictor question is answered before any M2 compute is spent.
@@ -401,7 +459,7 @@ defensible increment even if no bake ever runs.
 | T057 load autocorrelation | the accel temporal-depth fallbacks |
 | T070 H1a verdict | the whole envelope hypothesis, for the cost of an eval |
 | T086 predictor go/no-go | Phase 8's head work, before a 27 h bake |
-| T087 E1 decision | one tracker run |
+| T087 E1 decision | one tracker run — **exercised 2026-08-10: dropped, run removed** |
 
 **Total**: 110 tasks. US1 17 · US2 24 · US3 10 · US4 24 · US5 8 · US6 10 · setup/foundational/polish 17.
 *(US2 grew by 3 at the 2026-08-10 camera-model pass: T041a–T041c. T011a added at the same pass's ordering

@@ -225,6 +225,56 @@ dmps") is true of the plumbing and false of the coverage.
 
 ---
 
+### Session 2026-08-10 — the tracker target is a PRELOADED PATH, like pathgen
+
+- Q: T037/T038 hit an ordering problem — the step score is computed after the NN eval, and in tracker mode
+  the target sample looked like a product of `trackerHelper_.tick()`, so it could not be scored before the
+  gather. Feed the policy tick k−1's score instead? → A: **No — the framing was wrong.** Operator
+  2026-08-10: *"tracker's path should be like pathgen, we can preload it in xiao as a virtual path set —
+  tracker is the same."* The data already works this way: `crrcsim_tracker_helper.cpp:208` reads
+  `source_->samples[cursor_]`, a **preloaded `SourceScenarioTrajectory` indexed by a cursor**, structurally
+  identical to pathgen's `path[pathIndex]`. The helper *advances* a cursor; it does not *produce* the
+  target.
+  **Consequence**: the score for tick k is a LOOKUP in both modes, knowable before the NN acts, so it is
+  computed **pre-eval** in both. No tick k−1 fallback, and no one-tick skew reintroduced after US1 spent
+  itself removing exactly that.
+- Q: Does that hold on hardware? → A: **Yes, and it is the point.** The virtual target set preloads into
+  the xiao the same way, so firmware computes `IN_ENVELOPE` from a table lookup rather than needing live
+  perception — which is what FR-022a already asks for, now with an obvious implementation.
+- Q: What do early M2 flights actually look like? → A: **One real craft against a VIRTUAL target derived
+  from an M1 run, with a SYNTHETIC camera.** A single airframe flies a more sophisticated path while the
+  perception input is generated on-target rather than sensed. ⚠️ **Not 041 scope** — 041's flight test is
+  M1 (T079/T080). Recorded here because it explains *why* tracker must be shaped like pathgen, and because
+  it implies real future firmware (beacon projection + CEP on the nRF52840). Filed to BACKLOG.
+
+---
+
+### Session 2026-08-10 — the accel input takes the shape INAV delivers
+
+- Q: How should the accel value reach the NN gather — a field on `AircraftState`, computed in the gather,
+  or an explicit parameter? → A: **"Whatever is closest to what INAV will present to real hardware NN
+  inputs"** (operator). That criterion decides it: on hardware `acc.accADCf` arrives **already finished** —
+  post-`applySensorAlignment`, post-`applyBoardAlignment`, divided by `acc.dev.acc_1G`, body-frame, in g —
+  delivered per tick in the same MSP round trip as quat and gyro, and the xiao's gather does **no**
+  transformation, it copies.
+  So the sim matches that shape: the transform happens **upstream in the worker** (where FDM gravity is in
+  scope, via `autoc/eval/specific_force.h`), the result is stored on `AircraftState` **beside
+  `gyroRates_`**, and both gathers only copy. A gather-side computation would be a sim-only code path with
+  no hardware counterpart — the opposite of the criterion.
+- Q: Then which SIGN convention does the stored value use? → A: **Aerospace body frame, same as everything
+  else downstream of the msplink boundary.** This is the trap FR-022f names, and the project has already
+  solved it twice: the INAV quat needs `(w, x, -y, -z)` (`inavQuatToAerospaceEB`, T042) and the gyro needs
+  pitch/yaw negation, both applied **once at `msplink.cpp`**. Accel joins them — T074 must convert INAV's
+  accel to aerospace at the same boundary, and T073's bench table is the check, not a fresh derivation.
+  ⚠️ Consequence worth stating: the sim's `ACCEL_Z` in steady level flight is **−1** in body axes (body +z
+  is DOWN, the measured reaction points UP), while INAV's bench table reads **+2050 counts** on its normal
+  axis. Those are the SAME physical fact in two conventions. If the msplink conversion is skipped, the NN
+  sees a sign-flipped load axis in flight versus training — invisible in sim, wrong in the air, and not
+  detectable from recorded data. The `load_factor_nz` helper in `specific_force.h` already carries the
+  negation for human-facing reporting; the NN input does **not** use it.
+
+---
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Retire the index-coupled failure class (Priority: P1)

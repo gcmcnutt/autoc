@@ -228,9 +228,12 @@ CMake touch, and the Principle V version-bump practice change now made explicit 
 
 Not blockers for `/speckit.tasks`, but each shapes a task's acceptance:
 
-1. **"Calibration efforts"** — confirm this means re-establishing the comparator set (new M1 baseline,
-   archived weights, novel source re-run) rather than re-calibrating the perception model's 15 assumed
-   physical values, which have no new measurements to inform them.
+1. ~~**"Calibration efforts"**~~ — ✅ **RESOLVED 2026-08-10 (operator): it means re-establishing the
+   COMPARATOR SET** — new M1 baseline pinned, weights archived beside the dmp (FR-010), novel-geometry
+   source re-run so generalization stays measurable (T097). Already covered by T065 / FR-010 / T097, so this
+   closes with **no new work**. Explicitly NOT the perception model's 15 assumed physical values: 040
+   SC-012 proved those are *substitutable*, not *wrong*, no new measurements exist to inform them, and the
+   camera hardware that would produce some is still weeks out.
 2. **Non-regression band** — which historical runs define it, and how much per-axis movement counts as
    no-regression (research.md R7 proposes a default).
 3. **Retry budget** for the production M1 bake, declared before the first attempt (research.md R8).
