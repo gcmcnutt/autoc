@@ -26,8 +26,9 @@ the ones you cannot recover from:
 
 1. **T011a before T044** — extract the pre-break comparator CSVs, or the prior-M1 baseline (SC-007a) and the
    blind-gap distribution (FR-024b) are gone permanently.
-2. **T036** — bit-identical fitness across moving the step score into the tick loop. Without it, a rounding
-   difference is a silent objective change.
+2. **T036** — moving the step score into the tick loop must not silently change the objective. *(Reframed
+   2026-08-10: the gate is **determinism + "materially the same or better"**, not literal bit equality —
+   see spec.md § Clarifications. Silence is the failure mode, not difference.)*
 3. **T040(a)** — steady level flight must read ≈1 g on the normal accel channel, not ≈0. The only guard
    between specific force and kinematic acceleration.
 
@@ -153,8 +154,8 @@ read by every consumer, with input-count assertions and metadata tables in agree
 
 ### The step score moves into the tick loop (FR-018a — the single-source-of-truth refactor)
 
-- [ ] T035 [US2] Move the per-tick step-score / streak computation out of post-hoc `computeScenarioScores` in `src/eval/fitness_decomposition.cc` into the eval tick path, and record the per-tick result into the tick record. One computation feeds **both** the NN input gather and the fitness accumulation.
-- [ ] T036 [US2] ⚠️ **Prove DETERMINISM and characterise the delta** in `tests/fitness_decomposition_tests.cc`. *(Reframed by the operator 2026-08-10 — see spec.md § Clarifications "what bit-identical actually has to mean". The original wording said **bit-identical**; the real gate is determinism plus "materially the same or better".)*
+- [X] T035 [US2] Move the per-tick step-score / streak computation out of post-hoc `computeScenarioScores` in `src/eval/fitness_decomposition.cc` into the eval tick path, and record the per-tick result into the tick record. One computation feeds **both** the NN input gather and the fitness accumulation.
+- [X] T036 [US2] ⚠️ **Prove DETERMINISM and characterise the delta** in `tests/fitness_decomposition_tests.cc`. *(Reframed by the operator 2026-08-10 — see spec.md § Clarifications "what bit-identical actually has to mean". The original wording said **bit-identical**; the real gate is determinism plus "materially the same or better".)*
   Three obligations, in priority order:
   1. **Determinism** — the same genome and scenario scored twice give exactly the same number, and the move introduces no worker-order or FP-associativity sensitivity. This one IS an equality assertion.
   2. **Materially the same or better** — the inline result is compared against the post-hoc one and the delta is *measured and reported*, not asserted to be zero. Post-hoc reads float-rounded `AircraftState` (`gp_scalar` is `float`); inline reads live state, so a last-bits difference is expected and acceptable. A changed *objective* is not.

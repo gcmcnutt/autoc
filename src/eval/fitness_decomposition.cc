@@ -255,11 +255,18 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             gp_vec3 lateral = offset - along * tangent;
             double lateralDist = lateral.norm();
 
-            // Score this step. decomposeStepScore preserves computeStepScore's
-            // numerics bitwise (computeStepScore now delegates to it), so
-            // pathgen-mode regression-gate is unaffected.
+            // 041 T035 (FR-018a) — THE SCORE IS READ, NOT RE-DERIVED.
+            //
+            // `tickRecord.stepScore` was computed in the eval tick path, from
+            // this same AircraftState before it was serialized, so the number
+            // the policy is rewarded by and the number recorded for it to
+            // observe are one value rather than two implementations agreeing.
+            // The local geometry above is still computed because the
+            // ATTRIBUTION buckets below need the decomposed terms (distTermSq
+            // vs angleTermSq) — those are observation-only, carry no selection
+            // pressure, and are not what gets scored.
             auto terms = fc.decomposeStepScore(along, lateralDist);
-            double stepPoints = terms.score;
+            double stepPoints = static_cast<double>(tickRecord.stepScore);
             double multipliedScore = fc.applyStreak(stepPoints);
             // 037 T018 — ×kCadenceTickScale: per-tick samples of the
             // instantaneous geometry accumulate in 100 ms-tick-equivalent

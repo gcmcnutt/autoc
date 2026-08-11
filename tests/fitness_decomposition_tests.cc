@@ -7,6 +7,82 @@
 #include "autoc/eval/fitness_decomposition.h"
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/util/config.h"
+#include "autoc/eval/fitness_computer.h"
+#include <algorithm>
+
+
+// ---------------------------------------------------------------------------
+// 041 T035/T036 — the POST-HOC reference computation of the per-tick step score.
+//
+// The eval tick path (inputdev_autoc.cpp) now computes and records
+// EvalTick::stepScore, and computeScenarioScores READS it rather than
+// re-deriving it. Hand-built fixtures have no worker, so they fill it here.
+//
+// This function is deliberately a faithful transcription of what the worker
+// does, from the same recorded state — which makes it two things at once:
+//   1. the fixture filler, so every test below keeps its original meaning;
+//   2. the REFERENCE for T036, which measures worker-recorded against this and
+//      reports the delta instead of asserting an equality it cannot promise.
+// If the two ever disagree materially, the objective moved and T036 says so.
+// ---------------------------------------------------------------------------
+void fillStepScores(EvalResults& r) {
+    const AutocConfig& cfg = ConfigManager::getConfig();
+    int rampSteps = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
+    if (rampSteps < 1) rampSteps = 1;
+    FitnessComputer scorer(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead,
+                           cfg.fitConeAngleDeg, cfg.fitStreakThreshold,
+                           rampSteps, cfg.fitStreakMultiplierMax);
+
+    for (size_t i = 0; i < r.tickList.size(); ++i) {
+        auto& ticks = r.tickList[i].ticks;
+        const std::vector<Path>* path =
+            (i < r.pathList.size() && !r.pathList[i].empty()) ? &r.pathList[i] : nullptr;
+        gp_vec3 prevTangent = gp_vec3::UnitX();
+        double accumMsec = 0.0;
+
+        for (auto& tick : ticks) {
+            gp_vec3 rabbit = gp_vec3::Zero();
+            gp_vec3 tangent = prevTangent;
+            bool haveGeometry = false;
+
+            if (tick.targetSample.has_value()) {
+                rabbit = tick.targetSample->trail_rabbit_position;
+                const gp_vec3 vel = tick.targetSample->velocity;
+                const double vn = vel.norm();
+                if (vn > 0.01) { tangent = vel / vn; prevTangent = tangent; }
+                haveGeometry = true;
+            } else if (path != nullptr) {
+                const int pIdx = std::clamp(tick.state.getThisPathIndex(), 0,
+                                            static_cast<int>(path->size()) - 1);
+                rabbit = path->at(pIdx).start;
+                if (pIdx + 1 < static_cast<int>(path->size())) {
+                    gp_vec3 t = path->at(pIdx + 1).start - path->at(pIdx).start;
+                    const double tn = t.norm();
+                    if (tn > 0.01) { tangent = t / tn; prevTangent = tangent; }
+                }
+                haveGeometry = true;
+            }
+
+            float score = 0.0f;
+            if (haveGeometry) {
+                const gp_vec3 offset = tick.state.getPosition() - rabbit;
+                const double along = offset.dot(tangent);
+                const double lateralDist = (offset - along * tangent).norm();
+                score = static_cast<float>(scorer.decomposeStepScore(along, lateralDist).score);
+            }
+            tick.stepScore = score;
+
+            if (score >= static_cast<float>(cfg.fitStreakThreshold)) {
+                accumMsec += static_cast<double>(SIM_TIME_STEP_MSEC);
+            } else {
+                accumMsec = 0.0;
+            }
+            const double rampMsec = cfg.fitStreakRampSec * 1000.0;
+            tick.envelopeSecs = (rampMsec > 0.0)
+                ? static_cast<float>(std::min(1.0, accumMsec / rampMsec)) : 0.0f;
+        }
+    }
+}
 
 // Initialize ConfigManager for tests (uses defaults from AutocConfig)
 class FitnessDecomp022Test : public ::testing::Test {
@@ -81,6 +157,7 @@ static EvalResults makeStraightPath(int numSteps, double aircraftOffsetAlong, do
         states.push_back(state);
     }
     results.tickList.push_back(toScenarioTicks(states));
+    fillStepScores(results);   // 041 T035 — the objective READS the score now
     results.crashReasonList.push_back(crash ? CrashReason::Eval : CrashReason::None);
     results.scenarioList.push_back(ScenarioMetadata());
 
@@ -216,6 +293,7 @@ TEST_F(FitnessDecomp022Test, ThreeShortStreaks) {
         states.push_back(state);
     }
     results.tickList.push_back(toScenarioTicks(states));
+    fillStepScores(results);   // 041 T035 — the objective READS the score now
     results.crashReasonList.push_back(CrashReason::None);
     results.scenarioList.push_back(ScenarioMetadata());
 
@@ -249,6 +327,7 @@ TEST_F(FitnessDecomp022Test, MultiScenarioAggregate) {
             states.push_back(state);
         }
         results.tickList.push_back(toScenarioTicks(states));
+    fillStepScores(results);   // 041 T035 — the objective READS the score now
         results.crashReasonList.push_back(CrashReason::None);
         results.scenarioList.push_back(ScenarioMetadata());
     }
@@ -506,6 +585,7 @@ TEST_F(FitnessDecomp022Test, TrackerObjectiveUsesTheTargetFromTheSameTick) {
         }
         r.tickList.push_back(std::move(sc));
         r.crashReasonList.push_back(CrashReason::None);
+        fillStepScores(r);   // 041 T035
         return r;
     };
 
@@ -605,6 +685,7 @@ struct TickFixture {
         }
         r.tickList.push_back(std::move(sc));
         r.crashReasonList.push_back(CrashReason::None);
+        fillStepScores(r);   // 041 T035
         return r;
     }
 };
@@ -800,4 +881,102 @@ TEST_F(FitnessDecomp022Test, T018_VisFracCountsTheTickItIsPairedWith) {
         << "vis_frac must count the view paired with each tick; being one tick "
            "out reads " << (kVisibleThrough - 1) << "/" << kTicks << " or "
         << (kVisibleThrough + 1) << "/" << kTicks;
+}
+
+// ===========================================================================
+// 041 T036 (FR-018a) — the step score moved INTO the tick loop.
+//
+// ⚠️ The task originally said "bit-identical". The operator reframed it
+// (spec.md § Clarifications, "what bit-identical actually has to mean"): the
+// gate is DETERMINISM plus "materially the same or better", because asserting
+// `==` and then loosening the tolerance when it fails is the anti-pattern this
+// task exists to prevent.
+//
+// ⚠️ What these CANNOT prove, stated so nobody assumes otherwise: the fixtures
+// fill stepScore with fillStepScores(), the post-hoc reference. A true
+// worker-vs-post-hoc comparison needs a dmp produced by the eval path — that is
+// the operator-run eval-vs-training bitwise gate, which performs exactly that
+// comparison end to end. What IS proved here is that the objective genuinely
+// READS the recorded series, and does so deterministically.
+// ===========================================================================
+
+TEST_F(FitnessDecomp022Test, T036_ScoringIsDeterministic) {
+    // Obligation 1 — determinism. An equality assertion, and the one thing
+    // everything downstream depends on (the bitwise gate, ablation deltas,
+    // cross-run comparison).
+    EvalResults a = makeStraightPath(40, 0.0, 0.0);
+    EvalResults b = makeStraightPath(40, 0.0, 0.0);
+    const auto s1 = computeScenarioScores(a);
+    const auto s2 = computeScenarioScores(b);
+    ASSERT_EQ(s1.size(), s2.size());
+    for (size_t i = 0; i < s1.size(); ++i) {
+        EXPECT_EQ(static_cast<double>(s1[i].score), static_cast<double>(s2[i].score))
+            << "scenario " << i << " scored differently on two identical inputs";
+    }
+
+    // Re-scoring the SAME object twice must also be stable — the objective
+    // carries streak state and must reset it per call.
+    EvalResults c = makeStraightPath(40, 0.0, 0.0);
+    const auto first = computeScenarioScores(c);
+    const auto second = computeScenarioScores(c);
+    ASSERT_EQ(first.size(), second.size());
+    for (size_t i = 0; i < first.size(); ++i) {
+        EXPECT_EQ(static_cast<double>(first[i].score), static_cast<double>(second[i].score))
+            << "re-scoring the same EvalResults changed the answer at " << i
+            << " — streak state is leaking across calls";
+    }
+}
+
+TEST_F(FitnessDecomp022Test, T036_TheObjectiveActuallyReadsTheRecordedScore) {
+    // THE TEETH, and the most important assertion here. If computeScenarioScores
+    // still re-derived the geometry, perturbing the RECORDED series would change
+    // nothing and the "relocation" would be a fiction — the policy would observe
+    // one number and be rewarded by another, the exact gap 041 exists to close.
+    EvalResults baseline = makeStraightPath(40, 0.0, 0.0);
+    const auto before = computeScenarioScores(baseline);
+    ASSERT_FALSE(before.empty());
+
+    EvalResults perturbed = makeStraightPath(40, 0.0, 0.0);
+    ASSERT_FALSE(perturbed.tickList.empty());
+    ASSERT_GT(perturbed.tickList[0].ticks.size(), 10u);
+    // Halve one tick's recorded score. Geometry is untouched, so a re-deriving
+    // objective would be blind to this.
+    perturbed.tickList[0].ticks[5].stepScore *= 0.5f;
+    const auto after = computeScenarioScores(perturbed);
+
+    EXPECT_NE(static_cast<double>(before[0].score), static_cast<double>(after[0].score))
+        << "perturbing the RECORDED step score did not move the fitness — the "
+           "objective is still re-deriving it, so the recorded series and the "
+           "scored series are two different numbers again";
+}
+
+TEST_F(FitnessDecomp022Test, T036_RecordedSeriesMatchesThePostHocReference) {
+    // Obligation 2 — MEASURE and report, do not assert-and-loosen. The max
+    // per-tick delta is surfaced in the message so a future divergence is
+    // diagnosable rather than merely red.
+    //
+    // Exact equality is expected HERE because both sides read the same
+    // float-rounded AircraftState: the relocation reads the very object that
+    // gets serialized, so there is no double-precision path to diverge from.
+    // If that ever stops being true, this is where it surfaces.
+    EvalResults r = makeStraightPath(40, 1.5, 0.8);
+    std::vector<float> recorded;
+    for (const auto& tick : r.tickList[0].ticks) recorded.push_back(tick.stepScore);
+
+    fillStepScores(r);   // recompute the reference over the same states
+
+    ASSERT_EQ(recorded.size(), r.tickList[0].ticks.size());
+    double maxDelta = 0.0;
+    size_t worstTick = 0;
+    for (size_t k = 0; k < recorded.size(); ++k) {
+        const double d = std::abs(static_cast<double>(recorded[k]) -
+                                  static_cast<double>(r.tickList[0].ticks[k].stepScore));
+        if (d > maxDelta) { maxDelta = d; worstTick = k; }
+    }
+    EXPECT_EQ(maxDelta, 0.0)
+        << "recorded step score diverges from the post-hoc reference; max delta "
+        << maxDelta << " at tick " << worstTick
+        << ". A non-zero value is not automatically a failure — the gate is "
+           "'materially the same or better' — but it MUST be explained, not "
+           "absorbed by widening this tolerance.";
 }
