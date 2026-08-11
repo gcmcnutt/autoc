@@ -305,6 +305,14 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   no need to shield the Andonstar even at 1 A (die radiance ~70× BELOW solar; magnification conserves
   radiance) — protect EYES instead: RG0 was assessed at 306 mA/≥30 cm; at 1 A, close viewing via
   screen only. **GO/NO-GO for the cube** (fallback = C-11 Luxeonstar MCPCB).
+- [ ] **A7-1b Single-tile FIELD config (operator idea 2026-08-10 — bridge test while C-11 stars ship)**:
+  ⚠ the boost CANNOT drive one die (Vf 2.75 < Vbat: L+Schottky passthrough conducts uncontrolled and
+  DIM can't modulate — code dies). Config = **no boost: 1S battery → LED → 3.74 Ω (stock) → logic
+  N-FET (≥1 A, AO3400/IRLZ class) gated by XNANO DIM**. Current tracks battery (0.15–0.39 A over
+  3.3–4.2 V) — AGC is scale-free, log Vbat with each range point; firmware UVLO still guards the pack.
+  Expected reach: 1 die @306 mA = the lensed table's first row (92–115 m @F/2 through the 16 mm);
+  ÷√5 vs the full cube. Alt: 3 dies in series on the boost (clean) — but re-invokes the C-11 assembly
+  fragility.
 - [ ] **A7-2 Flight driver on copper-clad**: LM3410X on SOT23-6 adapter (**verify pin-1**), 4.7 µH,
   SS1030, 0.62 Ω; **input network per the 2026-08-09 finding**: 4.7 µF ceramic + 100 nF AT the VIN pin,
   damped bulk leg (3–4× ganged 10 µF electrolytics — ESR is the damper), Molex UMX header, short leads.
