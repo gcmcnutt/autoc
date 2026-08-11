@@ -287,10 +287,14 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
 > co-aimed tiles (field test #4 confound) · XNANO-tethered MCU (bare 416 = order-04 C-26, later) ·
 > `psu.py` MAX_CURR now 1.3 A · eye safety RG0 ≥30 cm momentary.
 
-- [ ] **A7-1 Single-tile thermal gate**: shear one ~10×10 mm tile (C-8 FR4, 1.0 mm), knife-slit island,
-  solder one L1IZ-0850; drive at **306 mA** (0.19 V across the 0.62 Ω); 10-min soak; verify ~15 °C rise
-  and clean chip edges on the current envelope. **GO/NO-GO for the cube** (fallback = C-11 Luxeonstar
-  MCPCB, order-03 sourcing note). Record the measured rise here: ______
+- [~] **A7-1 Single-tile thermal gate — IN PROGRESS 2026-08-10**: tile size REVISED to **~1″ (wing
+  thickness, operator)** — ~6× the 10 mm plan's spreading copper. First result: **200 mA = negligible
+  rise** on the 1″ knife-slit board (microscope-verified emission, purple bloom on camera). Next: 306 mA
+  10-min soak → record rise: ______; then optionally 1 A exploration. ⚠ weigh a finished tile: 1.0 mm
+  FR4 at 1″×5 faces ≈ 6 g board stock alone — check against the pod mass budget. Camera-safety note:
+  no need to shield the Andonstar even at 1 A (die radiance ~70× BELOW solar; magnification conserves
+  radiance) — protect EYES instead: RG0 was assessed at 306 mA/≥30 cm; at 1 A, close viewing via
+  screen only. **GO/NO-GO for the cube** (fallback = C-11 Luxeonstar MCPCB).
 - [ ] **A7-2 Flight driver on copper-clad**: LM3410X on SOT23-6 adapter (**verify pin-1**), 4.7 µH,
   SS1030, 0.62 Ω; **input network per the 2026-08-09 finding**: 4.7 µF ceramic + 100 nF AT the VIN pin,
   damped bulk leg (3–4× ganged 10 µF electrolytics — ESR is the damper), Molex UMX header, short leads.
