@@ -236,6 +236,26 @@ struct WorkerInit {
   // run regardless (draw-and-discard, same convention as wind above).
   bool servoModelEnabled = false;
 
+  // 041 T035 (FR-018a) — the fitness cone, primed to the worker so the step
+  // score can be computed IN the tick path. The worker has no ConfigManager, so
+  // without these it cannot score a tick at all. RPC-only struct, so adding
+  // fields is a same-rebuild change with no version bump.
+  //
+  // ⚠️ NO in-class initializers, per Constitution VII and the T016 precedent: a
+  // plausible default here would be invisible until a training run had already
+  // spent hours scoring against the wrong cone. Populated explicitly in
+  // src/autoc.cc; the worker fail-louds on a zeroed cone.
+  double fitDistScaleBehind;
+  double fitDistScaleAhead;
+  double fitConeAngleDeg;
+  double fitStreakThreshold;
+  double fitStreakRampSec;
+  // 041 US4 ablation gates — the worker must know whether to populate the
+  // envelope/accel channels at all, for the T068 matrix.
+  int enableEnvelopeInputs;
+  int enableAccelInputs;
+  double accelScaleG;
+
   template<class Archive>
   void serialize(Archive& ar) {
     int m = static_cast<int>(mode);
@@ -247,7 +267,11 @@ struct WorkerInit {
        cepGateThreshold,
        enableWindVariations,    // 034 Phase 7 -- appended, no version bump
        controlIntervalMsec,     // 037 T001 -- appended, no version bump
-       servoModelEnabled);      // 037 servo v2 -- appended, no version bump
+       servoModelEnabled,       // 037 servo v2 -- appended, no version bump
+       // 041 T035 -- fitness cone + US4 gates, appended, no version bump
+       fitDistScaleBehind, fitDistScaleAhead, fitConeAngleDeg,
+       fitStreakThreshold, fitStreakRampSec,
+       enableEnvelopeInputs, enableAccelInputs, accelScaleG);
     mode = static_cast<Mode>(m);
   }
 };
@@ -445,12 +469,34 @@ struct EvalTick {
   std::optional<CameraViewSample> cameraView;      // tracker only
   std::optional<CopiedTargetSample> targetSample;  // tracker only
 
+  // 041 T035 (FR-018a) — THE STEP SCORE, COMPUTED ONCE, AT THE TICK.
+  //
+  // Previously derived post-hoc in computeScenarioScores by re-deriving the
+  // geometry from recorded state. That made the number the policy is REWARDED
+  // by a different computation from any number the policy could SEE — and 041
+  // exists because the policy could not see it at all. Computing it in the tick
+  // path and recording it makes the reward and the observation the same number
+  // by construction rather than by two implementations agreeing.
+  //
+  // `stepScore` is the raw geometric step score (the Lorentzian, in [0, 1]);
+  // the streak multiplier is still applied downstream in the objective, since
+  // that is a pure function of this sequence and stays deterministic.
+  // `envelopeSecs` is the external accumulator: seconds continuously at or above
+  // FitStreakThreshold, reset on envelope EXIT only, normalised LINEARLY against
+  // FitStreakRampSec and clamped to 1.
+  float stepScore = 0.0f;      // raw-ok: recorded per-tick scalar, cereal byte-format
+  float envelopeSecs = 0.0f;   // raw-ok: recorded per-tick scalar, cereal byte-format
+
   EvalTick() = default;
   explicit EvalTick(const AircraftState& s) : state(s) {}
 
+  // True when this tick was inside the scoring envelope. Derived, never stored:
+  // a stored flag could disagree with the score it is supposed to summarise.
+  bool inEnvelope(float streakThreshold) const { return stepScore >= streakThreshold; }
+
   template<class Archive>
   void serialize(Archive& ar) {
-    ar(state, cameraView, targetSample);
+    ar(state, cameraView, targetSample, stepScore, envelopeSecs);
   }
 };
 

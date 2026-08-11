@@ -926,6 +926,21 @@ static WorkerInit buildWorkerInit() {
     // worker gates the fdm_larcsim servo block on it.
     init.servoModelEnabled = (cfg.servoModelEnabled != 0);
 
+    // 041 T035 (FR-018a) — the fitness cone, primed so the worker can score a
+    // tick IN the tick path rather than leaving it to be re-derived post-hoc.
+    // These have NO in-class defaults (Constitution VII): a plausible default
+    // would be invisible until a run had already scored hours against the wrong
+    // cone, which is exactly the shape the principle exists to stop.
+    init.fitDistScaleBehind = cfg.fitDistScaleBehind;
+    init.fitDistScaleAhead = cfg.fitDistScaleAhead;
+    init.fitConeAngleDeg = cfg.fitConeAngleDeg;
+    init.fitStreakThreshold = cfg.fitStreakThreshold;
+    init.fitStreakRampSec = cfg.fitStreakRampSec;
+    // 041 US4 ablation gates + accel scale (T068's matrix flips these).
+    init.enableEnvelopeInputs = cfg.enableEnvelopeInputs;
+    init.enableAccelInputs = cfg.enableAccelInputs;
+    init.accelScaleG = cfg.accelScaleG;
+
     // 030 V1.5 — run-static scenario library shared by both modes.
     // generateSmoothPaths(gPathSeed) is byte-identical every gen, so we
     // copy it exactly once into WorkerInit. scenarioMetaList carries
