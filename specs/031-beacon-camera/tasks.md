@@ -289,8 +289,11 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
 
 - [~] **A7-1 Single-tile thermal gate — IN PROGRESS 2026-08-10**: tile size REVISED to **~1″ (wing
   thickness, operator)** — ~6× the 10 mm plan's spreading copper. First result: **200 mA = negligible
-  rise** on the 1″ knife-slit board (microscope-verified emission, purple bloom on camera). Next: 306 mA
-  10-min soak → record rise: ______; then optionally 1 A exploration. ⚠ weigh a finished tile: 1.0 mm
+  rise** on the 1″ knife-slit board (microscope-verified emission, purple bloom on camera).
+  **306 mA operating point MEASURED 2026-08-10: 0.840 W/die electrical → Vf = 2.75 V**; derived:
+  optical ~0.32 W (η≈38 %) → **heat ~0.52 W/die, ~2.6 W cube-wide**; string 5×Vf ≈ 13.7 V; runtime
+  refresh ≈ 15–16 min per 150 mAh charge at code duty. Next: 306 mA **10-min soak** → record rise:
+  ______; then optionally 1 A exploration. ⚠ weigh a finished tile: 1.0 mm
   FR4 at 1″×5 faces ≈ 6 g board stock alone — check against the pod mass budget. Camera-safety note:
   no need to shield the Andonstar even at 1 A (die radiance ~70× BELOW solar; magnification conserves
   radiance) — protect EYES instead: RG0 was assessed at 306 mA/≥30 cm; at 1 A, close viewing via
