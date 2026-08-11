@@ -24,6 +24,19 @@ protected:
     }
 };
 
+
+// 041 T020 — adapts the legacy pathgen fixtures, which build a flat state vector
+// whose slot 0 is the pre-loop pose, to the grouped record. Identical content
+// and identical ordering, so every pathgen assertion in this file is unchanged.
+static ScenarioTicks toScenarioTicks(const std::vector<AircraftState>& states) {
+    ScenarioTicks sc;
+    if (states.empty()) return sc;
+    sc.initialState = states.front();
+    sc.ticks.reserve(states.size() - 1);
+    for (size_t k = 1; k < states.size(); ++k) sc.ticks.emplace_back(states[k]);
+    return sc;
+}
+
 // ============================================================
 // Helper: build a straight-line path in VIRTUAL coordinates.
 // All positions at Z=0 (virtual origin). No setOriginOffset().
@@ -67,7 +80,7 @@ static EvalResults makeStraightPath(int numSteps, double aircraftOffsetAlong, do
         state.setThrottleCommand(0.0f);
         states.push_back(state);
     }
-    results.aircraftStateList.push_back(states);
+    results.tickList.push_back(toScenarioTicks(states));
     results.crashReasonList.push_back(crash ? CrashReason::Eval : CrashReason::None);
     results.scenarioList.push_back(ScenarioMetadata());
 
@@ -202,7 +215,7 @@ TEST_F(FitnessDecomp022Test, ThreeShortStreaks) {
         state.setSimTimeMsec(static_cast<float>(i * 100.0));
         states.push_back(state);
     }
-    results.aircraftStateList.push_back(states);
+    results.tickList.push_back(toScenarioTicks(states));
     results.crashReasonList.push_back(CrashReason::None);
     results.scenarioList.push_back(ScenarioMetadata());
 
@@ -235,7 +248,7 @@ TEST_F(FitnessDecomp022Test, MultiScenarioAggregate) {
             state.setSimTimeMsec(static_cast<float>(i * 100.0));
             states.push_back(state);
         }
-        results.aircraftStateList.push_back(states);
+        results.tickList.push_back(toScenarioTicks(states));
         results.crashReasonList.push_back(CrashReason::None);
         results.scenarioList.push_back(ScenarioMetadata());
     }
@@ -308,6 +321,22 @@ CameraViewSample camWithSpan(double span) {
     return cv;
 }
 
+
+// 041 T022 — translates the legacy two-vector fixture into the grouped series.
+// This is now the ONLY place in the codebase that writes `cams[k - 1]`: the
+// offset survives solely as a statement about how the OLD fixtures were laid
+// out, and no production path can reach it.
+static std::vector<EvalTick> zipTicks(const std::vector<AircraftState>& states,
+                                      const std::vector<CameraViewSample>& cams) {
+    std::vector<EvalTick> out;
+    for (size_t k = 1; k < states.size(); ++k) {
+        EvalTick t(states[k]);
+        if (k - 1 < cams.size()) t.cameraView = cams[k - 1];
+        out.push_back(t);
+    }
+    return out;
+}
+
 }  // namespace
 
 // 041 T019 — converted from a bare TEST() to TEST_F so the ConfigManager
@@ -348,7 +377,7 @@ TEST_F(FitnessDecomp022Test, PerfectPredictorScoresExactlyZero) {
         states[k].setNNData(NNInputs{}, out, TRACKER_NN_OUTPUT_COUNT);
     }
 
-    const gp_fitness err = computeSpanPredictionError(states, cams);
+    const gp_fitness err = computeSpanPredictionError(zipTicks(states, cams));
     EXPECT_LT(static_cast<double>(err), 1e-4)
         << "a perfect predictor must score ~0. A non-zero result here means the "
            "state<->cameraView tick pairing is off, NOT that the predictor is bad.";
@@ -385,8 +414,8 @@ TEST_F(FitnessDecomp022Test, AOneTickShiftIsDetectable) {
         states[k].setNNData(NNInputs{}, out, TRACKER_NN_OUTPUT_COUNT);
     }
 
-    const double good = static_cast<double>(computeSpanPredictionError(states, aligned));
-    const double bad = static_cast<double>(computeSpanPredictionError(states, shifted));
+    const double good = static_cast<double>(computeSpanPredictionError(zipTicks(states, aligned)));
+    const double bad = static_cast<double>(computeSpanPredictionError(zipTicks(states, shifted)));
 
     EXPECT_LT(good, 1e-4) << "sanity: the aligned pairing is the zero case";
     EXPECT_GT(bad, good * 100.0)
@@ -465,8 +494,17 @@ TEST_F(FitnessDecomp022Test, TrackerObjectiveUsesTheTargetFromTheSameTick) {
             states.push_back(st);
         }
 
-        r.aircraftStateList.push_back(states);
-        r.targetTrajectoryList.push_back(targets);
+        // 041 T020 — same content, grouped. `states[0]` is the pre-loop pose
+        // and `targets[j]` was tick j+1's, so the zip is states[k] with
+        // targets[k-1]; that offset now exists only in this fixture translation.
+        ScenarioTicks sc;
+        sc.initialState = states.at(0);
+        for (size_t k = 1; k < states.size(); ++k) {
+            EvalTick t(states[k]);
+            if (k - 1 < targets.size()) t.targetSample = targets[k - 1];
+            sc.ticks.push_back(t);
+        }
+        r.tickList.push_back(std::move(sc));
         r.crashReasonList.push_back(CrashReason::None);
         return r;
     };
@@ -524,11 +562,16 @@ namespace {
 struct TickFixture {
     int ticks;
     std::vector<Path> path;
-    std::vector<AircraftState> states;          // states[0] = initial, states[k] = tick k
-    std::vector<CopiedTargetSample> targets;    // STORAGE: targets[k-1] is tick k
-    std::vector<CameraViewSample> cams;         // STORAGE: cams[k-1] is tick k
+    AircraftState initialState;                 // pre-loop; NOT a tick
+    std::vector<EvalTick> records;              // records[k-1] is tick k
+    // 041 T020/T022 — the storage changed here and NOWHERE ELSE. It was three
+    // parallel vectors with an offset; it is now one grouped series plus a named
+    // initial state. Not one assertion in this file needed touching, which is
+    // what the setters below were for.
+    std::vector<AircraftState> states;          // kept: the [0] = initial view the
+                                                // tests use to park the pre-loop pose
 
-    explicit TickFixture(int n) : ticks(n), states(n + 1), targets(n), cams(n) {
+    explicit TickFixture(int n) : ticks(n), records(n), states(n + 1) {
         // Trap 1: a non-empty path, or the scenario is silently skipped.
         for (int j = 0; j <= n; ++j) {
             path.push_back(Path(gp_vec3(static_cast<gp_scalar>(-0.85 * j), 0.0f, 0.0f),
@@ -546,17 +589,21 @@ struct TickFixture {
     }
 
     // ---- the ONLY places that know the storage layout -----------------------
-    void setTargetAtTick(int tick, const CopiedTargetSample& t) { targets.at(tick - 1) = t; }
-    void setViewAtTick(int tick, const CameraViewSample& c)     { cams.at(tick - 1) = c; }
+    void setTargetAtTick(int tick, const CopiedTargetSample& t) { records.at(tick - 1).targetSample = t; }
+    void setViewAtTick(int tick, const CameraViewSample& c)     { records.at(tick - 1).cameraView = c; }
     void setChaseAtTick(int tick, const gp_vec3& p)             { states.at(tick).setPosition(p); }
     // -------------------------------------------------------------------------
 
     EvalResults build() const {
         EvalResults r;
         r.pathList.push_back(path);
-        r.aircraftStateList.push_back(states);
-        r.targetTrajectoryList.push_back(targets);
-        r.cameraViewList.push_back(cams);
+        ScenarioTicks sc;
+        sc.initialState = states.at(0);          // the pre-loop pose, by name
+        sc.ticks = records;
+        for (size_t k = 0; k < sc.ticks.size(); ++k) {
+            sc.ticks[k].state = states.at(k + 1);  // tick k+1's pose
+        }
+        r.tickList.push_back(std::move(sc));
         r.crashReasonList.push_back(CrashReason::None);
         return r;
     }

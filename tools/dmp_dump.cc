@@ -307,12 +307,18 @@ struct AxisAggr {
 AxisAggr computeAggr(const EvalResults& r) {
   double sd[3] = {0, 0, 0}, sm[3] = {0, 0, 0};
   long cd[3] = {0, 0, 0}, cm[3] = {0, 0, 0};
-  for (const auto& states : r.aircraftStateList) {
-    for (size_t t = 0; t < states.size(); ++t) {
-      const float* o = states[t].getNNOutputs();
+  // 041 T023 — iterates the STEPPED ticks only. Previously this walked
+  // `aircraftStateList[i]`, whose slot 0 is the pre-loop initial state: it
+  // carries no NN outputs, so every aggressiveness mean was diluted by one zero
+  // sample per scenario (~0.2% at N=450). Excluding it is both correct and now
+  // structural — the initial state is not in `ticks` to be walked by accident.
+  for (const auto& scenarioTicks : r.tickList) {
+    const auto& ticks = scenarioTicks.ticks;
+    for (size_t t = 0; t < ticks.size(); ++t) {
+      const float* o = ticks[t].state.getNNOutputs();
       for (int a = 0; a < 3; ++a) { sm[a] += std::abs(o[a]); cm[a]++; }
       if (t > 0) {
-        const float* p = states[t - 1].getNNOutputs();
+        const float* p = ticks[t - 1].state.getNNOutputs();
         for (int a = 0; a < 3; ++a) { sd[a] += std::abs(o[a] - p[a]); cd[a]++; }
       }
     }
@@ -349,14 +355,14 @@ PerPathRates computePerPathRates(const EvalResults& r) {
   const double dt = SIM_TIME_STEP_MSEC / 1000.0;
   double sr[kMaxPaths] = {0}, sp[kMaxPaths] = {0};
   int n[kMaxPaths] = {0};
-  for (size_t i = 0; i < r.aircraftStateList.size(); ++i) {
-    const auto& states = r.aircraftStateList[i];
+  for (size_t i = 0; i < r.tickList.size(); ++i) {
+    const auto& states = r.tickList[i].ticks;
     if (states.size() < 2) continue;
     const int path = (i < r.scenarioList.size()) ? r.scenarioList[i].pathVariantIndex : -1;
     if (path < 0 || path >= kMaxPaths) continue;
     double droll = 0, dpitch = 0, lastR = 0, lastP = 0; bool have = false;
     for (size_t t = 0; t < states.size(); ++t) {
-      double rd, pd; quatToRollPitchDeg(states[t].getOrientation(), rd, pd);
+      double rd, pd; quatToRollPitchDeg(states[t].state.getOrientation(), rd, pd);
       if (have) { droll += std::abs(unwrapDeg(rd - lastR)); dpitch += std::abs(pd - lastP); }
       lastR = rd; lastP = pd; have = true;
     }
@@ -572,7 +578,8 @@ int main(int argc, char** argv) {
   // tracker iff any scenario carries a target trajectory (same modality test
   // computeScenarioScores + the old data.dat writer used).
   bool isTracker = false;
-  for (const auto& t : results.targetTrajectoryList) if (!t.empty()) { isTracker = true; break; }
+  for (const auto& st : results.tickList)
+    if (!st.ticks.empty() && st.ticks.front().targetSample.has_value()) { isTracker = true; break; }
 
   const int actualGen = autoc::extractGenNumber(srcKey);  // -1 if not a gen key
   const auto scores = computeScenarioScores(results);
@@ -655,11 +662,10 @@ int main(int argc, char** argv) {
   int streakStepsToMax = static_cast<int>(rc.fitStreakRampSec / dtSec);
   if (streakStepsToMax < 1) streakStepsToMax = 1;
 
-  for (size_t si = 0; si < results.aircraftStateList.size(); ++si) {
-    const auto& states = results.aircraftStateList[si];
-    if (states.empty()) continue;
-    const bool sceneTracker = si < results.targetTrajectoryList.size()
-                              && !results.targetTrajectoryList[si].empty();
+  for (size_t si = 0; si < results.tickList.size(); ++si) {
+    const auto& ticks = results.tickList[si].ticks;
+    if (ticks.empty()) continue;
+    const bool sceneTracker = ticks.front().targetSample.has_value();
     const std::vector<Path>* path =
         (si < results.pathList.size()) ? &results.pathList[si] : nullptr;
 
@@ -679,8 +685,12 @@ int main(int argc, char** argv) {
       phy.tolMsec = rc.simTimeStepMsec / 2.0;
     }
 
-    for (size_t ti = 1; ti < states.size(); ++ti) {
-      const auto& st = states[ti];
+    // 041 T023 — one series. `ti` is the 1-based tick NUMBER emitted in the CSV
+    // (unchanged), and `ticks[ti - 1]` is that tick's complete record. The
+    // clamped `min(ti, targets.size()-1)` lookups below are gone.
+    for (size_t ti = 1; ti <= ticks.size(); ++ti) {
+      const EvalTick& tickRecord = ticks[ti - 1];
+      const auto& st = tickRecord.state;
       const gp_vec3 pos = st.getPosition();
       const gp_quat q = st.getOrientation();
       const gp_vec3 vel = st.getVelocity();
@@ -700,23 +710,31 @@ int main(int argc, char** argv) {
       std::cout.write(buf, n);
 
       if (sceneTracker) {
-        const auto& targets = results.targetTrajectoryList[si];
-        const size_t tgi = std::min(ti, targets.size() - 1);
-        const int hull = (!targets.empty() && targets.at(tgi).inside_crash_hull) ? 1 : 0;
+        // 041 T023 — ⚠️ THIS READER HAD ITS OWN OFF-BY-ONE, in the opposite
+        // direction from the objective's. It paired tick `ti` with
+        // `targets[min(ti, size-1)]`, i.e. one tick LATER than the objective's
+        // `targets[ti - 1]`. Every tracker column emitted here (tg*, tr*, spn0,
+        // blC0/brC0, tltS/tltC, and the recomputed stpPt) therefore described a
+        // different instant from the one the objective scored — a reader
+        // silently disagreeing with the thing it exists to explain. Pre-041 CSV
+        // extracts carry the old pairing; see artifacts/pre-break/README.md.
+        const CopiedTargetSample* target =
+            tickRecord.targetSample.has_value() ? &*tickRecord.targetSample : nullptr;
+        const int hull = (target != nullptr && target->inside_crash_hull) ? 1 : 0;
 
         // Target + trail-rabbit pose (0s if the trajectory list is missing/empty).
         gp_vec3 tg = gp_vec3::Zero(), tr = gp_vec3::Zero();
         double stp = 0.0;  // in-cone step score (tracking metric)
-        if (!targets.empty()) {
-          tg = targets.at(tgi).position;
-          tr = targets.at(tgi).trail_rabbit_position;
+        if (target != nullptr) {
+          tg = target->position;
+          tr = target->trail_rabbit_position;
           // Per-tick in-cone step score, recomputed from recorded target
           // geometry EXACTLY as fitness_decomposition.cc's tracker branch:
           // rabbit = trail-rabbit, tangent = target-velocity unit (prevTangent
           // fallback when degenerate). This is the tracker counterpart to the
           // pathgen `stpPt` column — derived, not recorded, like pathgen — so
           // dynamics_progress et al. get a real per-tick tracking flag on M2.
-          const gp_vec3 tvel = targets.at(tgi).velocity;
+          const gp_vec3 tvel = target->velocity;
           const double vn = tvel.norm();
           gp_vec3 tangent;
           if (vn > 0.01) { tangent = tvel / vn; prevTangent = tangent; }
@@ -732,11 +750,8 @@ int main(int argc, char** argv) {
         // (cepGateThreshold isn't carried in EvalResults).
         double spn0 = 0.0, tltS = 0.0, tltC = 1.0;
         double blC0 = 0.0, brC0 = 0.0;
-        const bool haveCam = si < results.cameraViewList.size()
-                             && !results.cameraViewList[si].empty();
-        if (haveCam) {
-          const auto& cams = results.cameraViewList[si];
-          const auto& cv = cams.at(std::min(ti, cams.size() - 1));
+        if (tickRecord.cameraView.has_value()) {
+          const CameraViewSample& cv = *tickRecord.cameraView;
           const auto& bl = cv.beacon_left;
           const auto& br = cv.beacon_right;
           blC0 = bl.cep;

@@ -48,6 +48,63 @@ using quat = gp_quat;
 using mat3 = Eigen::Matrix<gp_scalar, 3, 3>;
 
 EvalResults evalResults;
+
+// ===========================================================================
+// 041 T024 — DERIVED per-series views of `evalResults.tickList`.
+//
+// The renderer is display-only and its VTK helpers want contiguous arrays it
+// can hand straight to a poly-data builder, so the grouped record is unpacked
+// ONCE at load rather than at every frame.
+//
+// These look like the parallel lists US1 just retired, and the difference is
+// the one that matters: they have a SINGLE PRODUCER (rebuildDerivedViews below,
+// which walks one tickList), so they cannot be built out of step with each
+// other. The old lists were populated independently by the recorder, which is
+// exactly how they acquired different start points.
+//
+// ⚠️ `statesByScenario` deliberately keeps the historical shape
+// `initialState` + one entry per tick, so `states.size() == 1 + ticks.size()`
+// and every existing index expression in this file — including the documented
+// `cams[j] <-> states[j + 1]` relationship — keeps its meaning. Changing that
+// here would silently reindex the playback scrubber, the camera HUD and the
+// tape geometry all at once, for no display benefit.
+std::vector<std::vector<AircraftState>> statesByScenario;
+std::vector<std::vector<CopiedTargetSample>> targetsByScenario;  // per tick; tracker only
+std::vector<std::vector<CameraViewSample>> camsByScenario;       // per tick; tracker only
+
+// True when ANY tick actually carried tracker members. ⚠️ Do NOT infer this
+// from `!camsByScenario.empty()`: the unpack pushes one (possibly empty) inner
+// vector per scenario, so the OUTER vector is non-empty even in pathgen. That
+// is the precise mis-classification the 033 producer-side mode gate existed to
+// prevent — a pathgen dmp read as tracker mode, with the rabbit path silently
+// not drawn. The gate is gone from the producer because grouping made it
+// unnecessary there; the question has to be asked of the DATA here instead.
+bool derivedHasTrackerData = false;
+
+void rebuildDerivedViews() {
+  statesByScenario.clear();
+  targetsByScenario.clear();
+  camsByScenario.clear();
+  derivedHasTrackerData = false;
+  statesByScenario.reserve(evalResults.tickList.size());
+  targetsByScenario.reserve(evalResults.tickList.size());
+  camsByScenario.reserve(evalResults.tickList.size());
+  for (const auto& sc : evalResults.tickList) {
+    std::vector<AircraftState> states;
+    states.reserve(sc.ticks.size() + 1);
+    states.push_back(sc.initialState);        // slot 0, as before
+    std::vector<CopiedTargetSample> targets;
+    std::vector<CameraViewSample> cams;
+    for (const auto& tk : sc.ticks) {
+      states.push_back(tk.state);
+      if (tk.targetSample.has_value()) { targets.push_back(*tk.targetSample); derivedHasTrackerData = true; }
+      if (tk.cameraView.has_value())   { cams.push_back(*tk.cameraView);       derivedHasTrackerData = true; }
+    }
+    statesByScenario.push_back(std::move(states));
+    targetsByScenario.push_back(std::move(targets));
+    camsByScenario.push_back(std::move(cams));
+  }
+}
 std::string computedKeyName = "";
 Renderer renderer;
 
@@ -398,8 +455,14 @@ bool Renderer::updateGenerationDisplay(int newGen) {
           segment.start[2] += SIM_INITIAL_ALTITUDE;
         }
       }
-      for (auto& stateList : evalResults.aircraftStateList) {
-        for (auto& state : stateList) {
+      // 041 T024 — shift the SOURCE records; the derived views are rebuilt
+      // from them below, so the offset is applied exactly once.
+      for (auto& sc : evalResults.tickList) {
+        std::vector<AircraftState*> toShift;
+        toShift.push_back(&sc.initialState);
+        for (auto& tk : sc.ticks) toShift.push_back(&tk.state);
+        for (auto* sp : toShift) {
+          AircraftState& state = *sp;
           gp_vec3 pos = state.getPosition();
           pos[2] += SIM_INITIAL_ALTITUDE;
           state.setPosition(pos);
@@ -410,6 +473,11 @@ bool Renderer::updateGenerationDisplay(int newGen) {
         }
       }
 
+      // 041 T024 — unpack the grouped record into the display views, AFTER the
+      // altitude shift so the shift is applied exactly once, and BEFORE the
+      // target/camera shifts below which operate on those views.
+      rebuildDerivedViews();
+
       // 030 M9a — Tracker-mode dmp version dispatch (T052, FR-015a).
       // v=1 dmps (pathgen historical) and v=2-pathgen dmps (post-M8a
       // schema bump but pathgen-mode runs) load with cameraViewList +
@@ -419,9 +487,7 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       // M9b/c/d render-path branching. Constitution V loud-fail on
       // future-version dmps already handled by cereal's class-version
       // mechanism in serialize().
-      const bool tracker_data_present =
-          !evalResults.cameraViewList.empty()
-          && !evalResults.targetTrajectoryList.empty();
+      const bool tracker_data_present = derivedHasTrackerData;
       this->isTrackerMode_ = tracker_data_present;
 
       // 030 M9b color routing 2026-05-08: in tracker mode, actor2
@@ -452,7 +518,7 @@ bool Renderer::updateGenerationDisplay(int newGen) {
         // target-craft VTK actor reads these positions and needs them in
         // the same display-altitude frame as the chase-craft actor.
         // trail_rabbit_position is also virtual-frame; shift to match.
-        for (auto& targetList : evalResults.targetTrajectoryList) {
+        for (auto& targetList : targetsByScenario) {
           for (auto& target : targetList) {
             target.position[2] += SIM_INITIAL_ALTITUDE;
             target.trail_rabbit_position[2] += SIM_INITIAL_ALTITUDE;
@@ -460,21 +526,21 @@ bool Renderer::updateGenerationDisplay(int newGen) {
         }
         // Camera world pose in cameraViewList[][].camera_pose_world_pos
         // is the chase-craft camera mount position — also virtual-frame.
-        for (auto& cvList : evalResults.cameraViewList) {
+        for (auto& cvList : camsByScenario) {
           for (auto& cv : cvList) {
             cv.camera_pose_world_pos[2] += SIM_INITIAL_ALTITUDE;
           }
         }
         std::cerr << "[RENDERER] tracker-mode dmp loaded: "
-                  << evalResults.cameraViewList.size() << " scenarios, "
-                  << "first scenario " << evalResults.cameraViewList[0].size()
-                  << " ticks (cameraViewList + targetTrajectoryList populated). "
+                  << camsByScenario.size() << " scenarios, "
+                  << "first scenario " << camsByScenario[0].size()
+                  << " ticks (per-tick cameraView + targetSample populated). "
                   << "M9b target-craft + beacons render path: TODO."
                   << std::endl;
       } else {
         std::cerr << "[RENDERER] pathgen-mode dmp loaded: "
-                  << evalResults.aircraftStateList.size() << " scenarios "
-                  << "(cameraViewList empty — pathgen render path)."
+                  << statesByScenario.size() << " scenarios "
+                  << "(no per-tick cameraView — pathgen render path)."
                   << std::endl;
       }
     }
@@ -544,8 +610,8 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     }
 
     vec3 finalPos = vec3::Zero();
-    if (i < evalResults.aircraftStateList.size() && !evalResults.aircraftStateList[i].empty()) {
-      finalPos = evalResults.aircraftStateList[i].back().getPosition();
+    if (i < statesByScenario.size() && !statesByScenario[i].empty()) {
+      finalPos = statesByScenario[i].back().getPosition();
     } else if (i < evalResults.pathList.size() && !evalResults.pathList[i].empty()) {
       finalPos = evalResults.pathList[i].back().start;
     }
@@ -564,7 +630,7 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     vec3 offset = renderingOffset(i);
 
     std::vector<vec3> p = pathToVector(evalResults.pathList[i]);
-    std::vector<vec3> a = stateToVector(evalResults.aircraftStateList[i]);
+    std::vector<vec3> a = stateToVector(statesByScenario[i]);
 
     // 030 M9b — Tracker mode hides the red rabbit path entirely. The
     // pathList lives in the v=2 dmp for renderer-pipeline backwards
@@ -577,7 +643,7 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       this->paths->AddInputData(createPointSet(offset, p));
     }
     if (!a.empty()) {
-      this->actuals->AddInputData(createTapeSet(offset, a, stateToOrientation(evalResults.aircraftStateList[i])));
+      this->actuals->AddInputData(createTapeSet(offset, a, stateToOrientation(statesByScenario[i])));
     }
     // 030 M9b — Target-craft tape + chase→target error bars, populated
     // from targetTrajectoryList when isTrackerMode_. Empty for pathgen-
@@ -585,10 +651,10 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     // same arena cell as chase tape.
     const bool tracker_scenario_has_target =
         this->isTrackerMode_
-        && i < static_cast<int>(evalResults.targetTrajectoryList.size())
-        && !evalResults.targetTrajectoryList[i].empty();
+        && i < static_cast<int>(targetsByScenario.size())
+        && !targetsByScenario[i].empty();
     if (tracker_scenario_has_target) {
-      const auto& targetSamples = evalResults.targetTrajectoryList[i];
+      const auto& targetSamples = targetsByScenario[i];
       std::vector<vec3> targetPositions = targetSamplesToVector(targetSamples);
       std::vector<vec3> targetOrientations = targetSamplesToOrientation(targetSamples);
       this->targetActuals->AddInputData(
@@ -605,9 +671,9 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       // 030 M9b.3 — FOV pyramid at the latest visible camera tick. For
       // static load this is the final tick of the scenario; animation
       // updates per-frame (see updatePlaybackAnimation).
-      if (i < static_cast<int>(evalResults.cameraViewList.size())
-          && !evalResults.cameraViewList[i].empty()) {
-        const auto& latestCam = evalResults.cameraViewList[i].back();
+      if (i < static_cast<int>(camsByScenario.size())
+          && !camsByScenario[i].empty()) {
+        const auto& latestCam = camsByScenario[i].back();
         this->chaseCameraFov->AddInputData(
             createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(10.0f)));
       }
@@ -616,12 +682,12 @@ bool Renderer::updateGenerationDisplay(int newGen) {
       // tracking error rather than the trail-rabbit fitness construct.
       if (!a.empty()) {
         this->segmentGaps->AddInputData(
-            createSegmentSetToTarget(offset, evalResults.aircraftStateList[i], targetSamples));
+            createSegmentSetToTarget(offset, statesByScenario[i], targetSamples));
       }
     } else if (!a.empty() && !p.empty()) {
       // Pathgen mode (or tracker-without-target-fallback): legacy
       // chase→rabbit path-error visualization.
-      this->segmentGaps->AddInputData(createSegmentSet(offset, evalResults.aircraftStateList[i], p));
+      this->segmentGaps->AddInputData(createSegmentSet(offset, statesByScenario[i], p));
     }
 
     // Create a plane source at z = 0
@@ -3225,8 +3291,8 @@ void Renderer::createStopwatch() {
 // fallback; a pre-038 dmp is replayed by checking out the matching code).
 double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) {
   outMult = 1.0;
-  if (arena < 0 || arena >= static_cast<int>(evalResults.aircraftStateList.size())) return 0.0;
-  const std::vector<AircraftState>& states = evalResults.aircraftStateList[arena];
+  if (arena < 0 || arena >= static_cast<int>(statesByScenario.size())) return 0.0;
+  const std::vector<AircraftState>& states = statesByScenario[arena];
   if (states.empty()) return 0.0;
 
   // Mode dispatch: tracker iff this arena carries a target trajectory. Tracker
@@ -3235,8 +3301,8 @@ double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) 
   // as fitness_decomposition.cc's tracker branch and dmp_dump.cc do. Before
   // this branch existed, tracker runs fell through the pathgen-empty
   // early-return and the HUD showed a flat ×1.0 (no streak) for every M2 run.
-  const bool isTracker = arena < static_cast<int>(evalResults.targetTrajectoryList.size())
-                         && !evalResults.targetTrajectoryList[arena].empty();
+  const bool isTracker = arena < static_cast<int>(targetsByScenario.size())
+                         && !targetsByScenario[arena].empty();
   const std::vector<Path>* path = nullptr;
   if (!isTracker) {
     if (arena >= static_cast<int>(evalResults.pathList.size())) return 0.0;
@@ -3262,7 +3328,7 @@ double Renderer::replayScore(int arena, gp_scalar currentTime, double& outMult) 
     if (isTracker) {
       // Trail-rabbit anchor + target-velocity tangent (both already shifted to
       // display altitude in lockstep with `pos`, so the offset below cancels it).
-      const std::vector<CopiedTargetSample>& targets = evalResults.targetTrajectoryList[arena];
+      const std::vector<CopiedTargetSample>& targets = targetsByScenario[arena];
       const size_t tgi = std::min(ti, targets.size() - 1);
       anchor = targets[tgi].trail_rabbit_position;
       const gp_vec3 tvel = targets[tgi].velocity;
@@ -3475,31 +3541,59 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
     return;
   }
   if (arenaIndex < 0 ||
-      arenaIndex >= static_cast<int>(evalResults.cameraViewList.size())) {
+      arenaIndex >= static_cast<int>(camsByScenario.size())) {
     hideAll();
     return;
   }
-  const auto& camList = evalResults.cameraViewList[arenaIndex];
+  const auto& camList = camsByScenario[arenaIndex];
   if (camList.empty()) {
     hideAll();
     return;
   }
 
-  // Find the current visible tick by aircraftStateList timestamp
-  // (cameraViewList is index-parallel per M8b contract).
-  size_t camIdx = 0;
-  if (arenaIndex < static_cast<int>(evalResults.aircraftStateList.size())) {
-    const auto& states = evalResults.aircraftStateList[arenaIndex];
+  // Find the current tick from the state timestamps, then convert to a CAMERA
+  // index.
+  //
+  // ⚠️ 041 T024 — THIS CONVERSION WAS MISSING, and single-stepping is where it
+  // shows. The old comment here claimed "cameraViewList is index-parallel per
+  // M8b contract"; the mountQ block further down says in detail why that is
+  // false — `statesByScenario` carries the pre-loop initial state at slot 0, so
+  //
+  //     cams[j]  <->  states[j + 1]
+  //
+  // The loop below picks a STATE index, and the result was then used directly
+  // to index `camList`. That displayed the camera view from ONE TICK LATER than
+  // the aircraft state being drawn beside it: step forward a frame and the HUD
+  // moved before the aircraft did. Harmless in continuous playback at 20 Hz,
+  // plainly visible when stepping tick by tick.
+  //
+  // mountQ's `stateIdx = camIdx + 1` below is unchanged and stays correct: it
+  // wants the state matching the camera it is drawing, which is exactly the
+  // relationship above.
+  //
+  // ⚠️ VERIFIED BY EYE ONLY. Every display surface — this HUD, the tape
+  // geometry, the stopwatch tick readout (a THIRD, independent derivation:
+  // currentTime / tickSec), the controls and the streak overlay — resolves its
+  // own index from `currentTime` separately, so there is no single answer to
+  // "which tick is on screen" to be right or wrong against. Making that
+  // analytic is filed in specs/BACKLOG.md ("Make 'is every renderer surface on
+  // the same tick?' ANALYTIC instead of visual").
+  size_t stateIdx = 0;
+  if (arenaIndex < static_cast<int>(statesByScenario.size())) {
+    const auto& states = statesByScenario[arenaIndex];
     for (size_t i = 0; i < states.size(); ++i) {
       gp_scalar t = static_cast<gp_scalar>(states[i].getSimTimeMsec()) /
                     static_cast<gp_scalar>(1000.0f);
       if (t > currentTime) break;
-      camIdx = i;
+      stateIdx = i;
     }
-    if (camIdx >= camList.size()) camIdx = camList.size() - 1;
   } else {
-    camIdx = camList.size() - 1;
+    stateIdx = camList.size();   // clamps to the last camera below
   }
+  // state index -> camera index. Slot 0 is the pre-loop state and has no view,
+  // so it maps to the first one.
+  size_t camIdx = (stateIdx > 0) ? stateIdx - 1 : 0;
+  if (camIdx >= camList.size()) camIdx = camList.size() - 1;
 
   const CameraViewSample& cam = camList[camIdx];
 
@@ -3618,7 +3712,7 @@ void Renderer::updateCameraPOVMiniPanel(gp_scalar currentTime, int arenaIndex) {
   static gp_quat cachedMountQ = gp_quat::Identity();
   gp_quat mountQ = gp_quat::Identity();
   {
-    const auto& states = evalResults.aircraftStateList[arenaIndex];
+    const auto& states = statesByScenario[arenaIndex];
     const size_t stateIdx = camIdx + 1;  // the +1 is the offset above
     if (arenaIndex == cachedArena && evalResults.gpHash == cachedGpHash) {
       mountQ = cachedMountQ;
@@ -4166,13 +4260,13 @@ bool Renderer::getControlStateAtTime(gp_scalar currentSimTime, gp_scalar& pitch,
     states = &blackboxAircraftStates;
     useBlackboxTime = true;
     usedBlackbox = true;
-  } else if (!evalResults.aircraftStateList.empty()) {
+  } else if (!statesByScenario.empty()) {
     if (arenaIndex < 0) arenaIndex = 0;
-    if (arenaIndex >= static_cast<int>(evalResults.aircraftStateList.size())) {
-      arenaIndex = static_cast<int>(evalResults.aircraftStateList.size()) - 1;
+    if (arenaIndex >= static_cast<int>(statesByScenario.size())) {
+      arenaIndex = static_cast<int>(statesByScenario.size()) - 1;
     }
-    if (!evalResults.aircraftStateList[arenaIndex].empty()) {
-      states = &evalResults.aircraftStateList[arenaIndex];
+    if (!statesByScenario[arenaIndex].empty()) {
+      states = &statesByScenario[arenaIndex];
     }
   } else {
     return false;
@@ -5022,8 +5116,8 @@ void Renderer::updatePlaybackAnimation() {
     if (!evalResults.pathList[i].empty()) {
       // Path is pure geometry now — derive duration from AircraftState timestamps
       // Use last aircraft state time as proxy for path duration
-      if (i < static_cast<int>(evalResults.aircraftStateList.size()) && !evalResults.aircraftStateList[i].empty()) {
-        scalar stateDuration = static_cast<scalar>(evalResults.aircraftStateList[i].back().getSimTimeMsec()) / static_cast<scalar>(1000.0f);
+      if (i < static_cast<int>(statesByScenario.size()) && !statesByScenario[i].empty()) {
+        scalar stateDuration = static_cast<scalar>(statesByScenario[i].back().getSimTimeMsec()) / static_cast<scalar>(1000.0f);
         primaryDuration = std::max(primaryDuration, stateDuration);
       }
     }
@@ -5131,7 +5225,7 @@ void Renderer::updatePlaybackAnimation() {
   int renderArenas = (!blackboxAircraftStates.empty()) ? 1 : static_cast<int>(evalResults.pathList.size());
 
   // In xiao-only mode, skip evalResults iteration if it's empty
-  bool hasSimData = !evalResults.pathList.empty() && !evalResults.aircraftStateList.empty();
+  bool hasSimData = !evalResults.pathList.empty() && !statesByScenario.empty();
 
   for (int i = 0; i < renderArenas; i++) {
     // 030 M9b focus animation 2026-05-08: when focused on a single
@@ -5151,14 +5245,14 @@ void Renderer::updatePlaybackAnimation() {
     std::vector<vec3> a;
     if (hasSimData && i < static_cast<int>(evalResults.pathList.size())) {
       p = pathToVector(evalResults.pathList[i]);
-      a = stateToVector(evalResults.aircraftStateList[i]);
+      a = stateToVector(statesByScenario[i]);
     }
     
     // Filter aircraft states by timestamp (must happen before path reveal)
     std::vector<AircraftState> visibleStates;
     std::vector<vec3> visibleStateVector;
-    if (hasSimData && i < static_cast<int>(evalResults.aircraftStateList.size()) && !evalResults.aircraftStateList[i].empty()) {
-      for (const auto& state : evalResults.aircraftStateList[i]) {
+    if (hasSimData && i < static_cast<int>(statesByScenario.size()) && !statesByScenario[i].empty()) {
+      for (const auto& state : statesByScenario[i]) {
         scalar stateTime = static_cast<scalar>(state.getSimTimeMsec()) / static_cast<scalar>(1000.0f);
         if (stateTime <= currentSimTime) {
           visibleStates.push_back(state);
@@ -5184,8 +5278,8 @@ void Renderer::updatePlaybackAnimation() {
 
     const bool tracker_scenario_has_target =
         this->isTrackerMode_
-        && i < static_cast<int>(evalResults.targetTrajectoryList.size())
-        && !evalResults.targetTrajectoryList[i].empty();
+        && i < static_cast<int>(targetsByScenario.size())
+        && !targetsByScenario[i].empty();
 
     // ---- Path reveal (red rabbit path) ----
     // Tracker mode: visiblePathVector stays empty — no red dots. The
@@ -5233,7 +5327,7 @@ void Renderer::updatePlaybackAnimation() {
     // count of visibleStates.
     std::vector<CopiedTargetSample> visibleTargets;
     if (tracker_scenario_has_target) {
-      const auto& fullTargets = evalResults.targetTrajectoryList[i];
+      const auto& fullTargets = targetsByScenario[i];
       size_t n = std::min(visibleStates.size(), fullTargets.size());
       visibleTargets.assign(fullTargets.begin(), fullTargets.begin() + n);
       if (!visibleTargets.empty()) {
@@ -5249,12 +5343,12 @@ void Renderer::updatePlaybackAnimation() {
         // 030 M9b.3 — FOV pyramid at the latest visible chase tick.
         // cameraViewList[i] is index-parallel to aircraftStateList[i],
         // so element [visibleStates.size()-1] is the matching tick.
-        if (i < static_cast<int>(evalResults.cameraViewList.size())
-            && !evalResults.cameraViewList[i].empty()
+        if (i < static_cast<int>(camsByScenario.size())
+            && !camsByScenario[i].empty()
             && !visibleStates.empty()) {
           size_t camIdx = std::min(visibleStates.size() - 1,
-                                   evalResults.cameraViewList[i].size() - 1);
-          const auto& latestCam = evalResults.cameraViewList[i][camIdx];
+                                   camsByScenario[i].size() - 1);
+          const auto& latestCam = camsByScenario[i][camIdx];
           this->chaseCameraFov->AddInputData(
               createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(10.0f)));
         }
@@ -5706,7 +5800,7 @@ gp_scalar Renderer::deriveTickSeconds() const {
   // Derive from the data rather than assuming 20 Hz, so a step is always
   // exactly ONE recorded sample no matter how the run was configured. Falls
   // back to 50 ms only when there is nothing to derive from.
-  for (const auto& states : evalResults.aircraftStateList) {
+  for (const auto& states : statesByScenario) {
     if (states.size() >= 2) {
       const gp_scalar dt =
           static_cast<gp_scalar>(states[1].getSimTimeMsec() - states[0].getSimTimeMsec()) /
@@ -5719,12 +5813,12 @@ gp_scalar Renderer::deriveTickSeconds() const {
 
 gp_scalar Renderer::playbackDurationSec() const {
   gp_scalar longest = 0.0f;
-  const int n = static_cast<int>(evalResults.aircraftStateList.size());
+  const int n = static_cast<int>(statesByScenario.size());
   for (int i = 0; i < n; ++i) {
     if (focusMode && i != focusArenaIndex) continue;
-    if (evalResults.aircraftStateList[i].empty()) continue;
+    if (statesByScenario[i].empty()) continue;
     const gp_scalar d =
-        static_cast<gp_scalar>(evalResults.aircraftStateList[i].back().getSimTimeMsec()) /
+        static_cast<gp_scalar>(statesByScenario[i].back().getSimTimeMsec()) /
         static_cast<gp_scalar>(1000.0f);
     longest = std::max(longest, d);
   }
@@ -5824,12 +5918,12 @@ std::vector<gp_scalar> Renderer::perceptionEventTimes() const {
   // Same arena selection updateCameraPOVMiniPanel uses, so the events you jump
   // to are the events shown on the panel.
   const int arena = focusMode ? focusArenaIndex : 0;
-  if (arena < 0 || arena >= static_cast<int>(evalResults.cameraViewList.size())) {
+  if (arena < 0 || arena >= static_cast<int>(camsByScenario.size())) {
     return out;
   }
-  const auto& cams = evalResults.cameraViewList[arena];
-  const auto& states = (arena < static_cast<int>(evalResults.aircraftStateList.size()))
-                           ? evalResults.aircraftStateList[arena]
+  const auto& cams = camsByScenario[arena];
+  const auto& states = (arena < static_cast<int>(statesByScenario.size()))
+                           ? statesByScenario[arena]
                            : std::vector<AircraftState>{};
 
   auto timeAt = [&](size_t k) -> gp_scalar {
@@ -5847,8 +5941,8 @@ std::vector<gp_scalar> Renderer::perceptionEventTimes() const {
     if (changed) out.push_back(timeAt(k));
   }
 
-  if (arena < static_cast<int>(evalResults.targetTrajectoryList.size())) {
-    const auto& tgt = evalResults.targetTrajectoryList[arena];
+  if (arena < static_cast<int>(targetsByScenario.size())) {
+    const auto& tgt = targetsByScenario[arena];
     for (size_t k = 1; k < tgt.size(); ++k) {
       if (tgt[k].inside_crash_hull && !tgt[k - 1].inside_crash_hull) {
         out.push_back(timeAt(k));
@@ -5959,7 +6053,7 @@ void Renderer::renderFullScene() {
     vec3 offset = renderingOffset(i);
 
     std::vector<vec3> p = pathToVector(evalResults.pathList[i]);
-    std::vector<vec3> a = stateToVector(evalResults.aircraftStateList[i]);
+    std::vector<vec3> a = stateToVector(statesByScenario[i]);
 
     // 030 M9b — Hide red path in tracker mode (parallel to
     // updateGenerationDisplay + updatePlaybackAnimation). The pathList
@@ -5969,7 +6063,7 @@ void Renderer::renderFullScene() {
       this->paths->AddInputData(createPointSet(offset, p)); // Full progress (no timeProgress param)
     }
     if (!a.empty()) {
-      this->actuals->AddInputData(createTapeSet(offset, a, stateToOrientation(evalResults.aircraftStateList[i]))); // Full progress
+      this->actuals->AddInputData(createTapeSet(offset, a, stateToOrientation(statesByScenario[i]))); // Full progress
     }
 
     // 030 M9b — Target tape + chase→target error bars in renderFullScene
@@ -5978,10 +6072,10 @@ void Renderer::renderFullScene() {
     // craft + chase→target lines, not chase→rabbit).
     const bool tracker_scenario_has_target =
         this->isTrackerMode_
-        && i < static_cast<int>(evalResults.targetTrajectoryList.size())
-        && !evalResults.targetTrajectoryList[i].empty();
+        && i < static_cast<int>(targetsByScenario.size())
+        && !targetsByScenario[i].empty();
     if (tracker_scenario_has_target) {
-      const auto& targetSamples = evalResults.targetTrajectoryList[i];
+      const auto& targetSamples = targetsByScenario[i];
       std::vector<vec3> targetPositions = targetSamplesToVector(targetSamples);
       std::vector<vec3> targetOrientations = targetSamplesToOrientation(targetSamples);
       this->targetActuals->AddInputData(
@@ -5992,18 +6086,18 @@ void Renderer::renderFullScene() {
       this->targetBeaconsLeft->AddInputData(createPointSet(offset, beaconLeftWorld));
       this->targetBeaconsRight->AddInputData(createPointSet(offset, beaconRightWorld));
       // 030 M9b.3 — FOV pyramid at the final-tick camera pose.
-      if (i < static_cast<int>(evalResults.cameraViewList.size())
-          && !evalResults.cameraViewList[i].empty()) {
-        const auto& latestCam = evalResults.cameraViewList[i].back();
+      if (i < static_cast<int>(camsByScenario.size())
+          && !camsByScenario[i].empty()) {
+        const auto& latestCam = camsByScenario[i].back();
         this->chaseCameraFov->AddInputData(
             createFovPyramidLines(offset, latestCam, static_cast<gp_scalar>(10.0f)));
       }
       if (!a.empty()) {
         this->segmentGaps->AddInputData(
-            createSegmentSetToTarget(offset, evalResults.aircraftStateList[i], targetSamples));
+            createSegmentSetToTarget(offset, statesByScenario[i], targetSamples));
       }
     } else if (!a.empty() && !p.empty()) {
-      this->segmentGaps->AddInputData(createSegmentSet(offset, evalResults.aircraftStateList[i], p)); // Full progress
+      this->segmentGaps->AddInputData(createSegmentSet(offset, statesByScenario[i], p)); // Full progress
     }
     
     // Add blackbox/xiao data to first arena only (full progress)

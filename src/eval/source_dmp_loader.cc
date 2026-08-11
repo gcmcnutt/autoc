@@ -116,15 +116,15 @@ std::vector<SourceScenarioTrajectory> loadSourceDmp(
 
     EvalResults source = loadEvalResultsDmp(path_or_key);
 
-    const size_t scenarioCount = source.aircraftStateList.size();
+    const size_t scenarioCount = source.tickList.size();
     if (scenarioCount == 0) {
         throw std::runtime_error(
-            "loadSourceDmp: source dmp has empty aircraftStateList — no"
+            "loadSourceDmp: source dmp has empty tickList — no"
             " scenarios to load. path_or_key=" + path_or_key);
     }
     if (source.scenarioList.size() != scenarioCount) {
         throw std::runtime_error(
-            "loadSourceDmp: source dmp inconsistent — aircraftStateList has " +
+            "loadSourceDmp: source dmp inconsistent — tickList has " +
             std::to_string(scenarioCount) +
             " entries but scenarioList has " +
             std::to_string(source.scenarioList.size()));
@@ -136,9 +136,18 @@ std::vector<SourceScenarioTrajectory> loadSourceDmp(
         SourceScenarioTrajectory traj;
         traj.sourceScenarioIndex = static_cast<int>(i);
         traj.variation = source.scenarioList[i];
-        traj.samples.reserve(source.aircraftStateList[i].size());
-        for (const auto& s : source.aircraftStateList[i]) {
-            traj.samples.push_back(fromAircraftState(s));
+        // 041 T025 — ⚠️ THE INITIAL STATE BELONGS IN THIS ONE, and now it has
+        // to be asked for by name. A source TRAJECTORY is the flown path, which
+        // genuinely starts at the pre-loop pose: the old code got it for free
+        // because it walked `aircraftStateList[i]`, whose slot 0 WAS that pose.
+        // Dropping it here would silently start every M2 source scenario one
+        // tick late. Order and count are byte-identical to the pre-grouping
+        // behaviour: initial state first, then one sample per stepped tick.
+        const ScenarioTicks& scenarioTicks = source.tickList[i];
+        traj.samples.reserve(scenarioTicks.ticks.size() + 1);
+        traj.samples.push_back(fromAircraftState(scenarioTicks.initialState));
+        for (const auto& tick : scenarioTicks.ticks) {
+            traj.samples.push_back(fromAircraftState(tick.state));
         }
         out.push_back(std::move(traj));
     }

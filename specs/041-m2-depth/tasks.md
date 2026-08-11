@@ -119,15 +119,15 @@ zero-answer test; no known instance remains asserted only by a comment (SC-001).
 
 ### The structural fix
 
-- [ ] T020 [US1] Define the grouped per-tick record in `include/autoc/rpc/protocol.h`: `tickList[i][k] = { state, cameraView, targetSample }`, with the pre-loop initial state as a **separate named field** beside the list (research.md R5) — **not** `tickList[0]` with sentinel members, which would recreate the hazard as "slot 0 is special". Tracker-only members absent (not zero-filled) in pathgen records.
-- [ ] T021 [US1] Update the push sites in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp` to emit grouped records, and store the initial state into its named field once before the loop.
-- [ ] T022 [US1] Migrate `src/eval/fitness_decomposition.cc` to the grouped record. **Delete** the `stepIndex - 1` clamp rather than relocating it — if any consumer still needs an offset, the grouping is wrong. This subsumes FR-004: the prediction-score pairing becomes correct by construction rather than by a fix.
-- [ ] T023 [P] [US1] Migrate `tools/dmp_dump.cc` to the grouped record (coordinate with T010's physics columns). ⚠️ **Also `tools/tracker_dmp_inspect.cc`** — 11 parallel-index hits, found by the T012 sweep and absent from the original task list; it breaks at T045 if skipped (index-coupling-inventory.md appendix).
-- [ ] T024 [P] [US1] Migrate `tools/renderer.cc` to the grouped record.
-- [ ] T025 [P] [US1] Migrate `src/eval/source_dmp_loader.cc` to the grouped record.
-- [ ] T026 [P] [US1] Migrate `src/eval/tracker_stepper.cc` and `crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp` to the grouped record.
-- [ ] T027 [P] [US1] Migrate any `src/analytics/` reader that consumes per-tick arrays.
-- [ ] T028 [US1] Add a grouped-record round-trip test in `tests/serialization_tests.cc` (or nearest): serialize → deserialize preserves every member and the tick count, and the initial-state field survives without being confused for tick 0.
+- [X] T020 [US1] Define the grouped per-tick record in `include/autoc/rpc/protocol.h`: `tickList[i][k] = { state, cameraView, targetSample }`, with the pre-loop initial state as a **separate named field** beside the list (research.md R5) — **not** `tickList[0]` with sentinel members, which would recreate the hazard as "slot 0 is special". Tracker-only members absent (not zero-filled) in pathgen records.
+- [X] T021 [US1] Update the push sites in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp` to emit grouped records, and store the initial state into its named field once before the loop.
+- [X] T022 [US1] Migrate `src/eval/fitness_decomposition.cc` to the grouped record. **Delete** the `stepIndex - 1` clamp rather than relocating it — if any consumer still needs an offset, the grouping is wrong. This subsumes FR-004: the prediction-score pairing becomes correct by construction rather than by a fix.
+- [X] T023 [P] [US1] Migrate `tools/dmp_dump.cc` to the grouped record (coordinate with T010's physics columns). ⚠️ **Also `tools/tracker_dmp_inspect.cc`** — 11 parallel-index hits, found by the T012 sweep and absent from the original task list; it breaks at T045 if skipped (index-coupling-inventory.md appendix).
+- [X] T024 [P] [US1] Migrate `tools/renderer.cc` to the grouped record.
+- [X] T025 [P] [US1] Migrate `src/eval/source_dmp_loader.cc` to the grouped record.
+- [X] T026 [P] [US1] Migrate `src/eval/tracker_stepper.cc` and `crrcsim/src/mod_inputdev/inputdev_autoc/crrcsim_tracker_helper.cpp` to the grouped record.
+- [X] T027 [P] [US1] Migrate any `src/analytics/` reader that consumes per-tick arrays.
+- [X] T028 [US1] Add a grouped-record round-trip test in `tests/serialization_tests.cc` (or nearest): serialize → deserialize preserves every member and the tick count, and the initial-state field survives without being confused for tick 0.
 
 **Checkpoint**: the objective is correct by construction, the tests have teeth, and the inventory says what
 else shares the shape. ⚠️ Do **not** commit yet — this lands with Phase 4 as one commit (T045).

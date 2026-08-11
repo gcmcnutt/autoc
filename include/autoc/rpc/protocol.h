@@ -7,8 +7,11 @@
 #include <cstdint>
 #include <arpa/inet.h>
 
+#include <optional>                       // 041 T020 — EvalTick tracker members
+
 #include <cereal/cereal.hpp>
 #include <cereal/types/vector.hpp>
+#include <cereal/types/optional.hpp>       // 041 T020
 #include <cereal/types/string.hpp>
 #include <cereal/archives/binary.hpp>
 
@@ -417,12 +420,62 @@ struct RecordedRunConfig {
   }
 };
 
+// ===========================================================================
+// 041 T020 (US1, FR-002) — ONE TICK, ONE RECORD.
+//
+// Replaces the parallel `aircraftStateList` / `cameraViewList` /
+// `targetTrajectoryList`, which were documented as "parallel … per-tick
+// indexing" but were NOT 1:1: the recorder pushes an initial aircraft state
+// before the tick loop, so the state list ran one longer and tick k's view was
+// `cams[k-1]`. That offset produced a live scoring bug (`prediction_score` one
+// tick late, 1b290f2) and a second in the objective (targets read one tick
+// ahead, 2026-08-03). Grouping makes the pairing unrepresentable rather than
+// asserted — the `stepIndex - 1` clamp is DELETED at T022, not relocated.
+//
+// ⚠️ Tracker members are `std::optional`, deliberately: in pathgen mode there
+// is no camera and no target, and "absent" must not be readable as a
+// zero-filled sample that looks like data. Costs one byte per tick per member.
+// Named EvalTick, not TickRecord: `TickRecord` is already taken by the xiao
+// flight-log on-disk format (xiao/include/flight_log_format.h:189), which is
+// versioned and consumed by the renderer's log loader. Two different "tick
+// records" in one translation unit is precisely the kind of ambiguity this
+// feature is trying to remove.
+struct EvalTick {
+  AircraftState state;
+  std::optional<CameraViewSample> cameraView;      // tracker only
+  std::optional<CopiedTargetSample> targetSample;  // tracker only
+
+  EvalTick() = default;
+  explicit EvalTick(const AircraftState& s) : state(s) {}
+
+  template<class Archive>
+  void serialize(Archive& ar) {
+    ar(state, cameraView, targetSample);
+  }
+};
+
+// One scenario's ticks, with the pre-loop initial state as a NAMED FIELD beside
+// the list (research.md R5) — explicitly NOT `ticks[0]` carrying sentinel
+// members, which would recreate the very hazard being retired as "slot 0 is
+// special". `ticks[k]` is tick k+1 in the objective's 1-based `stepIndex`; the
+// initial state is reachable only through its own name.
+struct ScenarioTicks {
+  AircraftState initialState;
+  std::vector<EvalTick> ticks;
+
+  template<class Archive>
+  void serialize(Archive& ar) {
+    ar(initialState, ticks);
+  }
+};
+
 struct EvalResults {
   std::vector<char> gp;
   uint64_t gpHash = 0;  // FNV-1a hash of gp buffer for verification
   std::vector<CrashReason> crashReasonList;
   std::vector<std::vector<Path>> pathList;
-  std::vector<std::vector<AircraftState>> aircraftStateList;
+  // 041 T020 — the grouped per-tick record. Indexed [scenario].ticks[tick].
+  std::vector<ScenarioTicks> tickList;
   ScenarioMetadata scenario;
   std::vector<ScenarioMetadata> scenarioList;
   std::vector<std::vector<DebugSample>> debugSamples;  // Debug snapshots per path (only populated for elite reeval)
@@ -431,13 +484,10 @@ struct EvalResults {
   int workerPid = 0;
   int workerEvalCounter = 0;  // Incremented per evaluation on the worker
 
-  // 030 M8a — Tracker-mode v=2 fields (FR-015). Empty in pathgen-mode dmps;
-  // populated by TrackerStepper at M8b. cameraViewList[scenario][tick]
-  // and targetTrajectoryList[scenario][tick] parallel aircraftStateList's
-  // per-scenario per-tick indexing. arenaEgressCount + hullStrikeCount
-  // are per-scenario telemetry counters wired by M7.
-  std::vector<std::vector<CameraViewSample>> cameraViewList;
-  std::vector<std::vector<CopiedTargetSample>> targetTrajectoryList;
+  // 041 T020 — cameraViewList / targetTrajectoryList are GONE; their per-tick
+  // contents live in EvalTick above, where they cannot drift out of step with
+  // the state. arenaEgressCount + hullStrikeCount stay per-SCENARIO counters
+  // (M7) — they were never per-tick and are not affected.
   std::vector<int> arenaEgressCount;  // M7 — per-scenario count of arena egress events
   std::vector<int> hullStrikeCount;   // M7 — per-scenario count of crash-hull p_crash fires
 
@@ -456,7 +506,7 @@ struct EvalResults {
 
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
-    ar(gp, gpHash, crashReasonList, pathList, aircraftStateList,
+    ar(gp, gpHash, crashReasonList, pathList, tickList,
        scenario, scenarioList, debugSamples, physicsTrace,
        workerId, workerPid, workerEvalCounter);
     if (version >= 2) {
@@ -465,7 +515,7 @@ struct EvalResults {
       // population. Constitution V loud-fail behavior for v=3 lands via
       // cereal's class-version mechanism (verified in
       // tests/tracker_dmp_roundtrip_tests.cc).
-      ar(cameraViewList, targetTrajectoryList, arenaEgressCount, hullStrikeCount);
+      ar(arenaEgressCount, hullStrikeCount);
 
       // 033 §2.A — master-seed provenance. Appended at end of v=2 block per
       // project no-cereal-versioning policy; old dmps are orphaned by the
@@ -483,7 +533,7 @@ struct EvalResults {
     gpHash = 0;
     crashReasonList.clear();
     pathList.clear();
-    aircraftStateList.clear();
+    tickList.clear();
     scenario = ScenarioMetadata();
     scenarioList.clear();
     debugSamples.clear();
@@ -492,8 +542,6 @@ struct EvalResults {
     workerPid = 0;
     workerEvalCounter = 0;
     // 030 M8a — tracker-mode v=2 fields.
-    cameraViewList.clear();
-    targetTrajectoryList.clear();
     arenaEgressCount.clear();
     hullStrikeCount.clear();
     // 033 §2.A — provenance header reset to "no-context" default.
@@ -505,7 +553,7 @@ struct EvalResults {
   void dump(std::ostream& os) {
     char buf[512];
     snprintf(buf, sizeof(buf), "EvalResults: crash[%zu] paths[%zu] states[%zu]\n Paths:\n",
-      crashReasonList.size(), pathList.size(), aircraftStateList.size());
+      crashReasonList.size(), pathList.size(), tickList.size());
     os << buf;
 
     // 033 cleanup: windSeed display swapped for scenarioSeed (the new
@@ -543,9 +591,9 @@ struct EvalResults {
       }
     }
     os << " Aircraft States:\n";
-    for (size_t i = 0; i < aircraftStateList.size(); i++) {
-      for (size_t j = 0; j < aircraftStateList.at(i).size(); j++) {
-        AircraftState aircraftState = aircraftStateList.at(i).at(j);
+    for (size_t i = 0; i < tickList.size(); i++) {
+      for (size_t j = 0; j < tickList.at(i).ticks.size(); j++) {
+        AircraftState aircraftState = tickList.at(i).ticks.at(j).state;
         gp_quat orientQuatF = aircraftState.getOrientation();
         if (!std::isnan(orientQuatF.norm()) && std::abs(orientQuatF.norm() - 1.0f) > 1e-6f) {
           orientQuatF.normalize();

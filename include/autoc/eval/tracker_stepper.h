@@ -73,7 +73,8 @@ public:
     // 030 M8b — Per-tick recorded outputs for the v=2 dmp output stream.
     // Populated by projectAndShiftHistory each step; the worker reads
     // after each successful step and push_backs into evalResults's
-    // cameraViewList / targetTrajectoryList.
+    // EvalTick::cameraView / EvalTick::targetSample (041 T020 — these were
+    // the separate cameraViewList / targetTrajectoryList before grouping).
     const CameraViewSample& lastCameraView() const { return last_camera_view_; }
     const CopiedTargetSample& lastTargetSample() const { return last_target_sample_; }
 

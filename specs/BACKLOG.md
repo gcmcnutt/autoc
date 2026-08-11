@@ -15,6 +15,42 @@
 
 ## 041 deferrals
 
+### [041 T024, filed 2026-08-10] Make "is every renderer surface on the same tick?" ANALYTIC instead of visual
+
+**Operator 2026-08-10**: *"is tough objectively to see if the hud, display, clock, controls, streak are all
+on exactly the same entry — but we can dig later and make it analytic."*
+
+**Why this is live.** 041 T024 fixed a real one-tick lead in the camera HUD: the code derived an index by
+walking the **state** timestamps and then used it directly to index the **camera** list, while
+`cams[j] ↔ states[j + 1]`. The same file documented the true relationship forty lines lower, in the `mountQ`
+block, which compensated correctly — so the file contained both the true statement and the false one, and
+the code followed the false one. At 20 Hz continuous playback that is 50 ms and invisible; stepping tick by
+tick, the HUD moved before the aircraft did.
+
+The fix is verified only by eye, which is the problem. It is also the FOURTH instance of this bug class
+found in 041 (objective target read, `prediction_score`, `dmp_dump` target pairing, renderer HUD) — every
+one a series starting one tick later than the states, every one invisible in continuous operation.
+
+**The actual defect is structural**: each display surface derives its own index from `currentTime`
+independently — HUD, tape/aircraft geometry, stopwatch tick readout (`currentTime / tickSec`), the playback
+controls, and the streak/telemetry overlays. There is no single answer to "which tick is on screen", so
+there is nothing to be right or wrong against.
+
+**Shape of the fix** (not designed, just scoped):
+
+1. Resolve the playback tick **once** per frame — one `struct PlaybackCursor { int tick; size_t stateIdx;
+   size_t camIdx; gp_scalar time; }` — and have every surface read it instead of re-deriving. That alone
+   makes disagreement unrepresentable, the same move the grouped record made for the recorded data.
+2. Make it **checkable**: a debug key that prints each surface's resolved index for the current frame, and
+   /or a headless test that drives playback across a synthetic dmp whose per-tick values are distinguishable
+   (tick number encoded in position, span, and streak) and asserts every surface reports the same tick.
+   The synthetic-fixture trick is already proven in `tracker_dmp_roundtrip_tests.cc`.
+3. Worth including in the sweep: the stopwatch's `currentTime / tick_s + 0.5` rounding, which is a THIRD
+   independent derivation and can disagree with both index paths at a boundary.
+
+Deferred from 041 deliberately: the T024 fix is correct and the feature's remaining work is training, not
+rendering. This is a tooling-confidence item, best done when the renderer is next opened.
+
 ### [041 US1 implement, filed 2026-08-10] Reorganise `EvalResults` BY TIME — stop having independent lists to synchronise at all
 
 **Operator framing, 2026-08-10**: *"try not to sync independent lists — rather we refactor the whole thing

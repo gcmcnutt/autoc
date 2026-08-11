@@ -44,7 +44,7 @@ void printUsage(const char* prog) {
         "Usage: " << prog << " <path_or_s3_key> [-i autoc.ini]\n"
         "  Loads a tracker-mode (v=2) M2 dmp and prints scenario-summary\n"
         "  stats covering both legacy fields and the v=2 additions\n"
-        "  (cameraViewList, targetTrajectoryList, arenaEgressCount,\n"
+        "  (per-tick cameraView / targetSample, arenaEgressCount,\n"
         "  hullStrikeCount). Pathgen-mode dmps work too — v=2 fields\n"
         "  display empty per the back-compat contract.\n"
         "  -i <ini>      Config file (default autoc.ini). Provides S3\n"
@@ -173,7 +173,7 @@ int main(int argc, char* argv[]) {
                   << std::setfill('0') << r.gpHash << std::dec
                   << std::setfill(' ') << "  gpBytes=" << r.gp.size() << "\n";
 
-        const size_t scenarioCount = r.aircraftStateList.size();
+        const size_t scenarioCount = r.tickList.size();
         std::cout << "Scenarios: " << scenarioCount << "\n";
         if (scenarioCount == 0) {
             std::cout << "  (empty — nothing to inspect)\n";
@@ -183,7 +183,7 @@ int main(int argc, char* argv[]) {
 
         // Per-scenario tick counts + crash reasons.
         std::vector<size_t> tickCounts;
-        for (const auto& states : r.aircraftStateList) tickCounts.push_back(states.size());
+        for (const auto& st : r.tickList) tickCounts.push_back(st.ticks.size());
         const size_t totalT = std::accumulate(tickCounts.begin(), tickCounts.end(), size_t{0});
         const size_t minT = *std::min_element(tickCounts.begin(), tickCounts.end());
         const size_t maxT = *std::max_element(tickCounts.begin(), tickCounts.end());
@@ -216,18 +216,37 @@ int main(int argc, char* argv[]) {
                          "on cereal length mismatch before this point)\n";
         }
 
-        // v=2 schema-additions presence + parallel-indexing audit.
-        const bool hasCameraView = !r.cameraViewList.empty();
-        const bool hasTargetTraj = !r.targetTrajectoryList.empty();
-        std::cout << "v=2 fields:\n"
-                  << "  cameraViewList: " << (hasCameraView ? "POPULATED" : "empty (pathgen-mode dmp or pre-M8 tracker-mode)") << "\n"
-                  << "  targetTrajectoryList: " << (hasTargetTraj ? "POPULATED" : "empty") << "\n"
+        // 041 T023 — the PARALLEL-INDEXING AUDIT THAT USED TO LIVE HERE IS GONE,
+        // because what it audited is now unrepresentable: camera view and target
+        // sample ride inside each EvalTick, so they cannot differ in length
+        // from the states or start at a different tick. The old
+        // "cameraViewList.size() != scenarioCount" warning had no failure mode
+        // left to detect.
+        //
+        // What IS still worth reporting is per-tick PRESENCE: tracker members
+        // are std::optional, and a scenario where only some ticks carry a view
+        // means the recorder dropped samples — a real fault the old shape could
+        // not distinguish from a short list.
+        size_t withCam = 0, withTgt = 0, totalTicks = 0;
+        for (const auto& st : r.tickList) {
+            for (const auto& tk : st.ticks) {
+                ++totalTicks;
+                if (tk.cameraView.has_value()) ++withCam;
+                if (tk.targetSample.has_value()) ++withTgt;
+            }
+        }
+        const bool hasCameraView = withCam > 0;
+        const bool hasTargetTraj = withTgt > 0;
+        std::cout << "tracker per-tick members:\n"
+                  << "  ticks with cameraView:   " << withCam << " / " << totalTicks
+                  << (hasCameraView ? "" : "   (pathgen-mode dmp)") << "\n"
+                  << "  ticks with targetSample: " << withTgt << " / " << totalTicks << "\n"
                   << "  arenaEgressCount.size(): " << r.arenaEgressCount.size() << "\n"
                   << "  hullStrikeCount.size(): " << r.hullStrikeCount.size() << "\n";
-
-        if (hasCameraView && r.cameraViewList.size() != scenarioCount) {
-            std::cout << "  WARNING: cameraViewList.size()=" << r.cameraViewList.size()
-                      << " does not match scenarioCount=" << scenarioCount << "\n";
+        if (hasCameraView && withCam != totalTicks) {
+            std::cout << "  WARNING: " << (totalTicks - withCam)
+                      << " tick(s) carry no cameraView in a tracker dmp — the"
+                         " recorder dropped samples.\n";
         }
 
         // Per-scenario summary (cap at 10 lines for compactness).
@@ -235,14 +254,17 @@ int main(int argc, char* argv[]) {
                   << "  idx  ticks  crash         cameraViewTicks  targetTrajTicks  arena  hull\n";
         const size_t showN = std::min(scenarioCount, size_t{10});
         for (size_t i = 0; i < showN; ++i) {
-            const size_t cvN = (i < r.cameraViewList.size()) ? r.cameraViewList[i].size() : 0;
-            const size_t ttN = (i < r.targetTrajectoryList.size()) ? r.targetTrajectoryList[i].size() : 0;
+            size_t cvN = 0, ttN = 0;
+            for (const auto& tk : r.tickList[i].ticks) {
+                if (tk.cameraView.has_value()) ++cvN;
+                if (tk.targetSample.has_value()) ++ttN;
+            }
             const int arena = (i < r.arenaEgressCount.size()) ? r.arenaEgressCount[i] : 0;
             const int hull = (i < r.hullStrikeCount.size()) ? r.hullStrikeCount[i] : 0;
             const CrashReason cr =
                 (i < r.crashReasonList.size()) ? r.crashReasonList[i] : CrashReason::None;
             std::cout << "  " << std::setw(3) << i
-                      << "  " << std::setw(5) << r.aircraftStateList[i].size()
+                      << "  " << std::setw(5) << r.tickList[i].ticks.size()
                       << "  " << std::left << std::setw(14) << crashReasonName(cr) << std::right
                       << std::setw(15) << cvN
                       << std::setw(17) << ttN
@@ -256,31 +278,34 @@ int main(int argc, char* argv[]) {
 
         // v=2 sample dump from scenario 0 — first / middle / last tick of
         // both cameraView and target trajectory streams.
-        if (hasCameraView && !r.cameraViewList[0].empty()) {
-            const auto& cv0 = r.cameraViewList[0];
-            std::cout << "\nScenario 0 cameraView samples (" << cv0.size() << " ticks):\n";
-            printCameraView("first ", cv0.front());
-            if (cv0.size() >= 3) printCameraView("middle", cv0[cv0.size() / 2]);
-            printCameraView("last  ", cv0.back());
+        const auto& t0 = r.tickList[0].ticks;
+        if (hasCameraView && !t0.empty() && t0.front().cameraView.has_value()) {
+            std::cout << "\nScenario 0 cameraView samples (" << t0.size() << " ticks):\n";
+            printCameraView("first ", *t0.front().cameraView);
+            if (t0.size() >= 3 && t0[t0.size() / 2].cameraView.has_value())
+                printCameraView("middle", *t0[t0.size() / 2].cameraView);
+            if (t0.back().cameraView.has_value())
+                printCameraView("last  ", *t0.back().cameraView);
         }
 
-        if (hasTargetTraj && !r.targetTrajectoryList[0].empty()) {
-            const auto& tt0 = r.targetTrajectoryList[0];
-            std::cout << "\nScenario 0 target trajectory samples (" << tt0.size() << " ticks):\n";
-            printTarget("first ", tt0.front());
-            if (tt0.size() >= 3) printTarget("middle", tt0[tt0.size() / 2]);
-            printTarget("last  ", tt0.back());
+        if (hasTargetTraj && !t0.empty() && t0.front().targetSample.has_value()) {
+            std::cout << "\nScenario 0 target trajectory samples (" << t0.size() << " ticks):\n";
+            printTarget("first ", *t0.front().targetSample);
+            if (t0.size() >= 3 && t0[t0.size() / 2].targetSample.has_value())
+                printTarget("middle", *t0[t0.size() / 2].targetSample);
+            if (t0.back().targetSample.has_value())
+                printTarget("last  ", *t0.back().targetSample);
         }
 
         // 032 phase 1 — per-tick derived perceptual features (slots 45..53
         // of TrackerInputs). Serialized into AircraftState at dmp v=2.
         // Smoke verification: confirm non-trivial values across ticks.
-        if (!r.aircraftStateList.empty() && !r.aircraftStateList[0].empty()) {
-            const auto& as0 = r.aircraftStateList[0];
+        if (!t0.empty()) {
             std::cout << "\nScenario 0 derived perceptual features (032 phase 1 — slots 45..53):\n";
-            printDerivedFeatures("first ", as0.front().getTrackerInputs());
-            if (as0.size() >= 3) printDerivedFeatures("middle", as0[as0.size() / 2].getTrackerInputs());
-            printDerivedFeatures("last  ", as0.back().getTrackerInputs());
+            printDerivedFeatures("first ", t0.front().state.getTrackerInputs());
+            if (t0.size() >= 3)
+                printDerivedFeatures("middle", t0[t0.size() / 2].state.getTrackerInputs());
+            printDerivedFeatures("last  ", t0.back().state.getTrackerInputs());
         }
     } catch (const std::exception& e) {
         std::cerr << "ERROR: " << e.what() << "\n";

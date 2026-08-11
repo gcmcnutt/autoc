@@ -123,8 +123,9 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults);
 // camera view. Getting it wrong scores every forecast one tick late and nothing
 // else notices — which is exactly what happened from 038 US3 until 2026-08-02.
 // See SpanPrediction.PerfectPredictorScoresExactlyZero.
-gp_fitness computeSpanPredictionError(const std::vector<AircraftState>& states,
-                                      const std::vector<CameraViewSample>& cams);
+// 041 T022 — takes ONE series. Previously two parallel vectors reconciled with
+// a `- 1` offset inside; see the definition for what that cost.
+gp_fitness computeSpanPredictionError(const std::vector<EvalTick>& ticks);
 
 // Aggregate: sum of per-scenario scores (already negated, lower is better).
 double aggregateRawFitness(const std::vector<ScenarioScore>& scores);
