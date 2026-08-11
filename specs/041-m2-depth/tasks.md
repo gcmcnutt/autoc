@@ -53,8 +53,10 @@ paired-series fitness term. Test tasks are interleaved with implementation per C
 5. ⛔ **T011a MUST precede T044.** Studies A and B both read the **pre-break** pinned comparators, and T044's
    version bump + fail-loud read makes those dmps unreadable to a 041 binary. Extract the CSVs first or lose
    the prior-M1 baseline (SC-007a) and the blind-gap distribution (FR-024b) permanently.
-6. **T046 and T047 MUST precede T045.** T045's gate builds xiao, which compiles the generated forward pass —
+6. **T046 MUST precede T045.** T045's gate builds xiao, which compiles the generated forward pass —
    a stale `nn_program_generated.cpp` against the new input count fails or, worse, misleads.
+   *(T047 was the second half of this constraint and is now INVERTED — `data.dat` is no longer generated, so
+   its parser must NOT be updated. See T047.)*
 7. All training via `scripts/train.sh` (Constitution IX). Never a background task.
 
 ---
@@ -142,27 +144,32 @@ read by every consumer, with input-count assertions and metadata tables in agree
 
 ### NN input slots
 
-- [ ] T029 [US2] Add the five new slots to `include/autoc/nn/nn_inputs.h` in **both** `PathgenInput`/`NNInputs` and `TrackerInput`/`TrackerInputs`, in the order given by [contracts/nn-input-layout.md](contracts/nn-input-layout.md): `IN_ENVELOPE`, `ENVELOPE_SECS`, `ACCEL_X`, `ACCEL_Y`, `ACCEL_Z`. Place `ACCEL_*` **adjacent to `GYRO_*`** so the 6-DOF inertial block is visible. Annotate each `// raw-ok: NN-byte-format buffer`.
-- [ ] T030 [US2] Add the matching rows to `kPathgenInputMeta` and `kTrackerInputMeta` (name, short name, width). The existing `static_assert` on table length vs `COUNT` enforces this — do not weaken it.
-- [ ] T031 [US2] Update counts and recompute weight-count `static_assert`s in `include/autoc/nn/topology.h`: `NN_INPUT_COUNT` 37→42, `TRACKER_NN_INPUT_COUNT` 58→63, `TRACKER_NN_TOPOLOGY_STRING` → `"63,32,16r,<out>"`. **Recompute**, never relax.
-- [ ] T032 [P] [US2] Add `kAccelScale_g` alongside `kCruiseSpeed_mps` / `kDistToBoundaryScale_m` in `include/autoc/nn/nn_inputs.h`, with the rationale comment (±11 g observed must land in a tanh-friendly range).
-- [ ] T033 [US2] Add config knobs via the `AUTOC_CONFIG_FIELDS(X)` X-macro in `include/autoc/util/config.h`: `EnableEnvelopeInputs`, `EnableAccelInputs`, `AccelScaleG`, and the reserved M2 estimator knobs `EnvelopeSpanLo` / `EnvelopeSpanHi` / `EnvelopeCentroidRadius`. Per Constitution VII, no in-class default initializers for constructor-supplied members.
-- [ ] T034 [P] [US2] Update the field-count assertion in `tests/contract_config_tests.cc` for the new knobs.
+- [X] T029 [US2] Add the five new slots to `include/autoc/nn/nn_inputs.h` in **both** `PathgenInput`/`NNInputs` and `TrackerInput`/`TrackerInputs`, in the order given by [contracts/nn-input-layout.md](contracts/nn-input-layout.md): `IN_ENVELOPE`, `ENVELOPE_SECS`, `ACCEL_X`, `ACCEL_Y`, `ACCEL_Z`. Place `ACCEL_*` **adjacent to `GYRO_*`** so the 6-DOF inertial block is visible. Annotate each `// raw-ok: NN-byte-format buffer`.
+- [X] T030 [US2] Add the matching rows to `kPathgenInputMeta` and `kTrackerInputMeta` (name, short name, width). The existing `static_assert` on table length vs `COUNT` enforces this — do not weaken it.
+- [X] T031 [US2] Update counts and recompute weight-count `static_assert`s in `include/autoc/nn/topology.h`: `NN_INPUT_COUNT` 37→42, `TRACKER_NN_INPUT_COUNT` 58→63, `TRACKER_NN_TOPOLOGY_STRING` → `"63,32,16r,<out>"`. **Recompute**, never relax.
+- [X] T032 [P] [US2] Add `kAccelScale_g` alongside `kCruiseSpeed_mps` / `kDistToBoundaryScale_m` in `include/autoc/nn/nn_inputs.h`, with the rationale comment (±11 g observed must land in a tanh-friendly range).
+- [X] T033 [US2] Add config knobs via the `AUTOC_CONFIG_FIELDS(X)` X-macro in `include/autoc/util/config.h`: `EnableEnvelopeInputs`, `EnableAccelInputs`, `AccelScaleG`, and the reserved M2 estimator knobs `EnvelopeSpanLo` / `EnvelopeSpanHi` / `EnvelopeCentroidRadius`. Per Constitution VII, no in-class default initializers for constructor-supplied members.
+- [X] T034 [P] [US2] Update the field-count assertion in `tests/contract_config_tests.cc` for the new knobs.
 
 ### The step score moves into the tick loop (FR-018a — the single-source-of-truth refactor)
 
 - [ ] T035 [US2] Move the per-tick step-score / streak computation out of post-hoc `computeScenarioScores` in `src/eval/fitness_decomposition.cc` into the eval tick path, and record the per-tick result into the tick record. One computation feeds **both** the NN input gather and the fitness accumulation.
-- [ ] T036 [US2] ⚠️ **Prove numerical equivalence** in `tests/fitness_decomposition_tests.cc`: fitness on a fixed genome is **bit-identical** before and after the move. Post-hoc read serialized state; inline reads live state — if those differ by a rounding step the objective changed silently, and this test is the only thing that would catch it.
+- [ ] T036 [US2] ⚠️ **Prove DETERMINISM and characterise the delta** in `tests/fitness_decomposition_tests.cc`. *(Reframed by the operator 2026-08-10 — see spec.md § Clarifications "what bit-identical actually has to mean". The original wording said **bit-identical**; the real gate is determinism plus "materially the same or better".)*
+  Three obligations, in priority order:
+  1. **Determinism** — the same genome and scenario scored twice give exactly the same number, and the move introduces no worker-order or FP-associativity sensitivity. This one IS an equality assertion.
+  2. **Materially the same or better** — the inline result is compared against the post-hoc one and the delta is *measured and reported*, not asserted to be zero. Post-hoc reads float-rounded `AircraftState` (`gp_scalar` is `float`); inline reads live state, so a last-bits difference is expected and acceptable. A changed *objective* is not.
+  3. **Silence is the failure mode, not difference.** What this task prevents is a rounding change nobody notices. Measuring and reporting satisfies that; asserting `==` and then loosening the tolerance when it fails does not.
+  ⚠️ Unchanged: Constitution IV, the pre-run build gate, and the eval-vs-training bitwise regression gate.
 - [ ] T037 [US2] Populate `IN_ENVELOPE` / `ENVELOPE_SECS` in `src/nn/evaluator.cc` `gather_inputs` from the tick-loop step score. Accumulator is an **external counter** in the stepper, resets **on envelope exit only** (not on regime change), millisecond-based against `FitStreakRampSec`, **linear** normalization — no log, no tanh.
 - [ ] T038 [US2] Populate `IN_ENVELOPE` / `ENVELOPE_SECS` in `gather_tracker_inputs` from the M2 direct-perception estimator: both beacons CEP-visible AND separation within `[EnvelopeSpanLo, EnvelopeSpanHi]` AND pair centroid within `EnvelopeCentroidRadius`. Same accumulator mechanics as M1 — only the flag's source differs.
 - [ ] T039 [US2] Populate `ACCEL_*` in both gather functions as **body-frame specific force including gravity**: `R(quat)ᵀ · (a_world − g_world) / kAccelScale_g`. ⚠️ **Not FDM kinematic acceleration** — that would put a constant ~1 g offset in the most load-relevant axis, invisible in sim and wrong in flight.
 - [ ] T040 [US2] Add input-semantics tests in `tests/nn_evaluator_tests.cc`: (a) **steady level flight → normal channel ≈1 g, not ≈0** (the test that catches the kinematic-vs-specific error — and **empirically confirmed on hardware**: the bench table in `docs/COORDINATE_CONVENTIONS.md` reads `+2050` on the normal axis in level attitude — blackbox `accSmooth` counts, `acc_1G ≈ 2048`, so `≈ +1.0 g` — meaning INAV already reports specific force including gravity, exactly the sim semantics required); (b) documented sign on a pull-up; (c) `IN_ENVELOPE` ∈ {0,1}; (d) `ENVELOPE_SECS` monotone within a streak, 0 immediately after exit, saturates at 1; (e) `ENVELOPE_SECS` identical for a given wall-clock duration at two cadences; (f) M1 `IN_ENVELOPE` agrees tick-for-tick with the objective's own threshold decision.
-- [ ] T041 [P] [US2] Update layout assertions in `tests/contract_evaluator_tests.cc` for both modes' new counts.
+- [X] T041 [P] [US2] Update layout assertions in `tests/contract_evaluator_tests.cc` for both modes' new counts.
 
 ### Camera model (M2-only, fidelity to ordered hardware)
 
-- [ ] T041a [US2] Set `CameraPixelsV = 240 → 200` in `autoc-tracker.ini`, `autoc-eval-tracker.ini`, and `autoc-eval-tracker-visual.ini`, giving V = 200 × 0.375 = **75°** (H unchanged at 120°). Leave `CameraDegPerPixel` alone so `radPerPx`, per-pixel quantisation and CEP are untouched. Rationale in the ini comment: the ordered 1.8 mm fisheye on OV9281 estimates ~124°×78° equidistant, 120×75 is the conservative split, and 320:200 = 1.6 matches the real 1280×800 aspect (the prior 240 px was a 4:3 invention, optimistic by 15° vertically). ⚠️ **Fitness-affecting** → A1 bundle only.
-- [ ] T041b [P] [US2] Update the derived-FOV assertion comment in `include/autoc/eval/camera_projection.h` (currently cites ±0.785 rad / 45° for V) so the documented half-angles match the grid, and add/extend a test asserting derived V = 75° and derived H = 120° from the configured grid — the FR-003 "field and resolution cannot disagree" property.
+- [X] T041a [US2] Set `CameraPixelsV = 240 → 200` in `autoc-tracker.ini`, `autoc-eval-tracker.ini`, and `autoc-eval-tracker-visual.ini`, giving V = 200 × 0.375 = **75°** (H unchanged at 120°). Leave `CameraDegPerPixel` alone so `radPerPx`, per-pixel quantisation and CEP are untouched. Rationale in the ini comment: the ordered 1.8 mm fisheye on OV9281 estimates ~124°×78° equidistant, 120×75 is the conservative split, and 320:200 = 1.6 matches the real 1280×800 aspect (the prior 240 px was a 4:3 invention, optimistic by 15° vertically). ⚠️ **Fitness-affecting** → A1 bundle only.
+- [X] T041b [P] [US2] Update the derived-FOV assertion comment in `include/autoc/eval/camera_projection.h` (currently cites ±0.785 rad / 45° for V) so the documented half-angles match the grid, and add/extend a test asserting derived V = 75° and derived H = 120° from the configured grid — the FR-003 "field and resolution cannot disagree" property.
 - [X] T041c [P] [US2] Record in `specs/041-m2-depth/artifacts/README.md` that the projection is **already equidistant** (`camera_projection.cc:158-184`, since 040 T031) and that `CameraDetectionRangeM = 100.0` is now **independently corroborated** by the 031 photon budget (bright-day post-correlation SNR ≈22 @100 m, ÷4 at 4×4 defocus → ≈5.5 vs ×4.5 threshold). Neither is a change; both are facts a later reader will otherwise re-derive.
 
 ### Recording changes
@@ -178,7 +185,9 @@ read by every consumer, with input-count assertions and metadata tables in agree
   ⛔ **Preconditions**: **T046** (`nn2cpp` regenerated) and **T047** (`sim_response.py` parser) must be done *first* — this gate builds xiao, which compiles the generated forward pass, so a stale generated file against the new input count either fails to build or builds something wrong. Also **T011a** must be done (see Phase 2), since this commit makes the pre-break comparators unreadable.
   Gates, all of which must pass: `bash scripts/rebuild.sh` green; `cd xiao && pio run -e xiaoblesense_arduinocore_mbed` green; Constitution VI audit clean on touched paths (`grep -nE '\b(float|double)\b' src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/ | grep -v -- '// raw-ok:'`). Nothing lands after this until the M1 bake completes.
 - [ ] T046 [US2] Regenerate `xiao/src/generated/nn_program_generated.cpp` via `tools/nn2cpp.cc` for the new layout, and add a parity test that the generated forward pass matches the desktop forward pass on a fixed input vector.
-- [ ] T047 [P] [US2] Update the `data.dat` parser in `specs/019-improved-crrcsim/sim_response.py` for the new column set.
+- [X] T047 [P] [US2] ⛔ **INVERTED — do NOT update `specs/019-improved-crrcsim/sim_response.py`. Verified 2026-08-10.** The task assumed `data.dat` is a live output. It is not: **035 FR-P05 retired the per-step writer** (`src/autoc.cc:1969` "data.dat output file retired; the dmp (S3) is the single training trace"), and nothing in the tree writes one. Operator 2026-08-10: *"data.dat is gone from being generated, but the content in s3 remains."*
+  So `sim_response.py` is a **reader of historical artifacts only**, and its documented field map is frozen at the **021-era** layout (`F0..F49`, 33-input era — pre-038's four arena inputs, let alone 041's five). Teaching it the 041 column set would make it mis-parse every file it can still be pointed at, which is the exact opposite of the intent. It is also a pre-035 script under [[feedback_historical_scripts_immutable]].
+  **Consequence for ordering**: hard constraint 6 reduces to **T046 only**.
 - [ ] T048 [US2] [OP] If `CMakeLists.txt` was touched by this phase, run a clean `bash scripts/rebuild-perf.sh` (Constitution IV — an incremental reconfigure can leave stale link state and miss test registration).
 
 **Checkpoint**: one commit, one owed rebake. All three build targets green.
@@ -231,7 +240,7 @@ the new inputs (SC-006, SC-007, SC-007a).
 - [ ] T062 [US4] [OP] Declare the retry budget and abort criterion **in writing before starting** (research.md R8 proposes 3 attempts): abort on the stuck-basin signature — throttle amplitude exactly 1.000 with **σ = 0.000** and `dCtrl` 0.000, plus `avgMaxStreak` frozen and best-sigma not annealing past ~0.14 by gen 200. Note that throttle *saturation* (mean ≈0.85, σ>0) is **not** the tell; climbers pass through it.
 - [ ] T063 [US4] [OP] Pre-run build gate, then `scripts/train.sh autoc.ini logs/autoc-041-t1-m1-envelope.log` (pop 8000 / 49 winds). Judge climb on `pctInStreak` / `avgMaxStreak`, **not** completions.
 - [ ] T064 [US4] [OP] Repeat as a lottery re-draw if the abort criterion fires, within the declared budget, incrementing the artifact index (`t2`, `t3`) per `autoc-<feature>-t<N>-<details>`.
-- [ ] T065 [US4] [OP] Immediately on completion: snapshot `data.dat` to `specs/041-m2-depth/artifacts/` (FR-022 — the next launch overwrites it), tag all dmp objects `retain=keep`, and archive `nn_weights*.dat` beside the dmp (FR-010 — the dmp preserves numbers, only NN01 preserves a controller you can re-fly). Record the S3 prefix in the outcome doc.
+- [ ] T065 [US4] [OP] Immediately on completion: tag all dmp objects `retain=keep`, and archive `nn_weights*.dat` beside the dmp (FR-010 — the dmp preserves numbers, only NN01 preserves a controller you can re-fly). Record the S3 prefix in the outcome doc. ⚠️ **The `data.dat` snapshot FR-022 asks for is MOOT** — 035 FR-P05 retired the writer, so there is no per-tick file for "the next launch" to overwrite. The dmp IS the trace, and `retain=keep` is what preserves it. FR-022 is satisfied by the pinning, not by a file copy.
 
 ### Reads
 
@@ -310,7 +319,7 @@ is modified.
 - [ ] T095 [US6] [OP] Repoint `autoc-tracker.ini` at the **new pinned M1 source** from T065. ⚠️ Check the scenario **shape** explicitly (`SimNumPathsPerGeneration`, `WindScenarios`), not just the run id — reproducing a run once needed four hand-aligned fields, and the 1:1 seed-table guard catches count mismatches only. A config differing in sigmas or enables produces a plausible wrong number.
 - [ ] T096 [US6] [OP] Pre-run build gate, then `scripts/train.sh autoc-tracker.ini logs/autoc-041-t<N>-m2-predictor.log`.
 - [ ] T097 [US6] Report in priority order: (1) **predictor signal or its absence** — the deliverable, judged as variance explained against the no-information baseline, binned by gap age; (2) whether the M1 aggressiveness change **carried through** — a free observation, not a designed experiment (FR-028); (3) **novel-geometry generalization** on the pinned 038-t10 source plus the training set, against the T085 baseline (13.03 m median, 15.3% inside 5 m trained; 15.00 m, 8.4% novel). ⚠️ State the single-pinned-set limitation: the second novel source was deliberately left to expire, so a difference cannot be cross-checked against an independent sample.
-- [ ] T098 [US6] [OP] Pin the M2 run `retain=keep`, archive its weights, and snapshot its `data.dat` (FR-010, FR-022).
+- [ ] T098 [US6] [OP] Pin the M2 run `retain=keep` and archive its weights (FR-010). ⚠️ No `data.dat` snapshot — retired at 035 FR-P05; see T065.
 
 ---
 

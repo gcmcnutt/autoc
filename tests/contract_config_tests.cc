@@ -243,7 +243,11 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // emitter-stays-perfect scope decision).
     // 2026-08-03 split CameraMountTranslationSigmaM into per-axis X/Y/Z (the
     // bond face makes tolerance anisotropic) -> 142.
-    EXPECT_EQ(n, 142u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // 041 T034 added 6 US4 knobs -> 148: EnableEnvelopeInputs + EnableAccelInputs
+    // (ablation gates so T068 can turn each half off without a rebuild),
+    // AccelScaleG, and the three reserved M2 direct-perception estimator bounds
+    // (EnvelopeSpanLo/Hi, EnvelopeCentroidRadius).
+    EXPECT_EQ(n, 148u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

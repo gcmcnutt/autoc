@@ -13,15 +13,18 @@
 // ============================================================
 // 028 D-alone: layer-2 (16-wide) recurrent. 038 FR-P0H: 33→37 inputs
 // (+4 arena-awareness (B)) grows the weight count 1923→2051 (+4×32=128).
+// 041 US4: 37→42 inputs (+IN_ENVELOPE, ENVELOPE_SECS, ACCEL_X/Y/Z) grows it
+// 2051→2211 (+5×32=160). Both modes gain the same five slots — the topology
+// change is GENERIC, which is why the smoke at T060 has to prove M2 runs too.
 // ============================================================
 
 TEST(ContractEvaluator, TopologyConstants) {
-    EXPECT_EQ(NN_INPUT_COUNT, 37);
+    EXPECT_EQ(NN_INPUT_COUNT, 42);
     EXPECT_EQ(NN_HIDDEN1_SIZE, 32);
     EXPECT_EQ(NN_HIDDEN2_SIZE, 16);
     EXPECT_EQ(NN_OUTPUT_COUNT, 3);
     EXPECT_EQ(NN_NUM_LAYERS, 4);
-    EXPECT_EQ(NN_WEIGHT_COUNT, 2051);
+    EXPECT_EQ(NN_WEIGHT_COUNT, 2211);
     EXPECT_FALSE(NN_RECURRENT[0]);
     EXPECT_FALSE(NN_RECURRENT[1]);
     EXPECT_TRUE(NN_RECURRENT[2]);

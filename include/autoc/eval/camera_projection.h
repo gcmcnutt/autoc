@@ -24,6 +24,9 @@
 // normalised each axis by its OWN half-FOV, so the two axes carried different
 // angular scales and a horizontal separation read 60/45 = 1.333× its vertical
 // twin — a 33% orientation error sitting in the sole range channel (FR-002).
+// (Those 60/45 half-angles were the pre-041 grid; the field is now 120°×75°.
+// The ratio is historical — it describes the bug that was removed, not today's
+// geometry, and is left as written because it explains the retired encoding.)
 //
 // 040 T033a — SEPARATION IS MEASURED ON THE SPHERE. Under equidistant mapping,
 // Euclidean distance in (θx, θy) equals the great-circle angle EXACTLY along a
@@ -84,9 +87,13 @@ struct BeaconObservation {
     // `gp_scalar`, because they participate in cereal byte-format for the dmp
     // schema; flipping `gp_scalar` to fp64 would change the on-disk layout.
     //
-    // Range is ±halfFovHRad() / ±halfFovVRad() — ≈±1.047 / ±0.785 at the
-    // 320×240 @ 0.375°/px baseline. Both axes carry the SAME angular scale, so
-    // a given angular separation reads identically at any orientation (FR-002).
+    // Range is ±halfFovHRad() / ±halfFovVRad() — ≈±1.047 / ±0.654 at the
+    // 320×200 @ 0.375°/px baseline (120° H × 75° V). Both axes carry the SAME
+    // angular scale, so a given angular separation reads identically at any
+    // orientation (FR-002).
+    // 041 T041b — was ±0.785 (90° V) at the retired 320×240 grid. The field is
+    // DERIVED from the grid (FR-003), so this comment is the only place the two
+    // could disagree; a test pins the derivation rather than trusting it.
     float bearing_x_rad;  // raw-ok: cereal byte-format member (dmp). right positive
     float bearing_y_rad;  // raw-ok: cereal byte-format member (dmp). down positive (pixel convention)
     float cep;            // raw-ok: cereal byte-format member (dmp). [0, 1.0] visible, == kCepSentinelFloat invisible

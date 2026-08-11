@@ -15,6 +15,32 @@
 
 ## 041 deferrals
 
+### [041 T036 discussion, filed 2026-08-10] Standing direction — PRUNE the complexity we are not going to use
+
+**Operator 2026-08-10**, alongside the T036 reframing: *"we just don't need compat because if things get
+better with our additional complexity we keep it — gradually pruning out stuff we're likely not going to
+use (variations ramp is a potential)."*
+
+Not a task, a **standing direction**: 041's clean-slate rule (no compat, no shims) has a corollary that has
+not been acted on — complexity that was added speculatively and never earned its keep should be *removed*,
+not merely tolerated. Every carried-but-unused mechanism is search space, config surface, and one more
+thing a reader has to model.
+
+**Named candidate: the variation RAMP.** Distinguish carefully — per-scenario *variations* are load-bearing
+(034 US4 craft, 040 US6 camera). It is the **ramp** — the gradual per-generation escalation of variation
+magnitude — that is the suspect. Evidence already on file that it costs more than it returns:
+
+- Late-run training fitness includes variation-ramp pressure, so cross-run and ablation comparisons must use
+  a fixed eval to be meaningful at all ([[project_late_run_fitness_interpretation]]). That is a permanent tax
+  on every comparison the project makes.
+- `rampSc` threads through the objective, the dmp, `dmp_dump`, the renderer and the analytics as a column
+  that mostly reads 1.0.
+
+**Before removing**: confirm against a run whether the ramp measurably helps early convergence, since that
+was its original justification. If it does not, deleting it simplifies the objective, the recorded schema
+and every downstream reader at once. Other pruning candidates should be added to this entry as they are
+identified rather than filed separately.
+
 ### [041 T024, filed 2026-08-10] Make "is every renderer surface on the same tick?" ANALYTIC instead of visual
 
 **Operator 2026-08-10**: *"is tough objectively to see if the hud, display, clock, controls, streak are all

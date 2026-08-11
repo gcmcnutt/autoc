@@ -376,11 +376,13 @@ TEST(NNForwardPass, Deterministic) {
 // 30-32: gyro rates (p, q, r) in rad/s               standard aerospace RHR
 //    33: dist_to_boundary (tanh)                     038 FR-P0H (B)
 // 34-36: inward_body (x,y,z) body-frame radial-inward 038 FR-P0H (B)
+// 37-38: in_envelope, envelope_secs   041 US4 — the reward made observable
+// 39-41: accel (x,y,z) body specific force 041 US4 — the other half of the IMU
 
 TEST(NNInputLayout, InputCountMatchesTopology) {
     // NN_INPUT_COUNT must equal the first layer of NN_TOPOLOGY
     EXPECT_EQ(NN_INPUT_COUNT, NN_TOPOLOGY[0]);
-    EXPECT_EQ(NN_INPUT_COUNT, 37);
+    EXPECT_EQ(NN_INPUT_COUNT, 42);   // 041 US4: 37 + envelope×2 + accel×3
 }
 
 // Note: Full gather_pathgen_inputs test requires AircraftState + PathProvider.

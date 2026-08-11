@@ -25,19 +25,24 @@ constexpr size_t tracker_meta_size() {
 
 TEST(NNSensorInterface, PathgenInputCountMatchesNNInputs) {
     // 038 FR-P0H (B): 33 → 37 (dist_to_boundary + inward_body xyz appended).
-    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 37);
+    // 041 US4: 37 → 42 (in_envelope + envelope_secs + accel xyz appended).
+    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 42);
     EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), NN_INPUT_COUNT);
-    EXPECT_EQ(pathgen_meta_size(), 37u);
+    EXPECT_EQ(pathgen_meta_size(), 42u);
 }
 
-TEST(NNSensorInterface, TrackerInputCountIs58) {
+TEST(NNSensorInterface, TrackerInputCountIs63) {
     // 030 M7a Session 2026-05-07 Q1: was 48 with HOME_X/Y/Z/HOME_DIST,
     // then 45 with single DIST_TO_BOUNDARY_ALONG_VEL.
     // 032 phase 1: 45 + 9 derived (span[6] + span_rate + tilt sin/cos) = 54.
     // 038 FR-P0H: 54 + 4 situational-awareness (time_since_seen + inward_body
     // xyz) = 58. (exit_dir sin/cos removed 038 US3 2026-07-05.)
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 58);
-    EXPECT_EQ(tracker_meta_size(), 58u);
+    // 041 US4: 58 + 5 (in_envelope + envelope_secs + accel xyz) = 63. Same five
+    // slots as pathgen — the RNN sees identical channels in both modes and only
+    // the FLAG's source differs (exact cone geometry in M1, direct perception
+    // in M2). ⚠️ Moves once more to 63 + N after T088 (FR-005a).
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 63);
+    EXPECT_EQ(tracker_meta_size(), 63u);
 }
 
 TEST(NNSensorInterface, PathgenMetaWellFormed) {
@@ -106,7 +111,13 @@ TEST(NNSensorInterface, TrackerAnchorPositions) {
     EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_X), 55);
     EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_Y), 56);
     EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_Z), 57);
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 58);
+    // 041 US4 — envelope occupancy + specific force at 58..62.
+    EXPECT_EQ(static_cast<int>(TrackerInput::IN_ENVELOPE), 58);
+    EXPECT_EQ(static_cast<int>(TrackerInput::ENVELOPE_SECS), 59);
+    EXPECT_EQ(static_cast<int>(TrackerInput::ACCEL_X), 60);
+    EXPECT_EQ(static_cast<int>(TrackerInput::ACCEL_Y), 61);
+    EXPECT_EQ(static_cast<int>(TrackerInput::ACCEL_Z), 62);
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 63);
 }
 
 TEST(NNSensorInterface, TrackerDerivedFeatureNamesCanonical) {
@@ -203,6 +214,15 @@ TEST(NNSensorInterface, PathgenMetaWalkProducesExistingHeaderText) {
         "      qw      qx      qy      qz"
         "     vel   gyrP   gyrQ   gyrR"
         // 038 FR-P0H (B) arena-awareness columns (dBnd width 8, inX/Y/Z width 7)
-        "    dBnd    inX    inY    inZ";
+        "    dBnd    inX    inY    inZ"
+        // 041 US4 — envelope occupancy + specific force (all width 7).
+        // ⚠️ This walk no longer describes a LIVE output format: the per-step
+        // data.dat writer was retired at 035 FR-P05 and the dmp is the training
+        // trace. The test still earns its keep as a drift guard between the enum
+        // and kPathgenInputMeta — a slot added to one and not the other shows up
+        // here — but do NOT propagate these columns into
+        // specs/019-improved-crrcsim/sim_response.py, which reads HISTORICAL
+        // data.dat files frozen at the 021-era layout (see T047).
+        "    env   envS    acX    acY    acZ";
     EXPECT_EQ(walk.str(), expected);
 }

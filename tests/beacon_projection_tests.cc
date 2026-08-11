@@ -1087,15 +1087,26 @@ TEST(CameraGridGeometry, FieldOfViewIsDerivedFromGridAndPixelPitch) {
                      cam.pixels_h * static_cast<double>(cam.deg_per_px));
     EXPECT_DOUBLE_EQ(static_cast<double>(cam.fovVDeg()),
                      cam.pixels_v * static_cast<double>(cam.deg_per_px));
+    // 041 T041b (FR-029) — the field the ordered hardware actually gives:
+    // 120° H × 75° V from a 320×200 grid at 0.375°/px. V was 90° and optimistic
+    // by 15°. H is unchanged. Asserting the DERIVED value is the FR-003
+    // property — field and resolution cannot disagree, because there is one knob.
     EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 120.0, 1e-9);
-    EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 90.0, 1e-9);
+    EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 75.0, 1e-9);
+    // The half-angles the projection actually clips against (camera_projection.h
+    // documents ≈±1.047 / ±0.654 rad); pinned so that comment cannot go stale.
+    // Tolerance 1e-6, not 1e-9: gp_scalar is float, so ~1e-7 is the type's own
+    // resolution here. Still four orders of magnitude below the 0.13 rad the
+    // 90° → 75° change moves it, which is what this needs to catch.
+    EXPECT_NEAR(static_cast<double>(cam.halfFovHRad()), 1.0471975511965976, 1e-6);
+    EXPECT_NEAR(static_cast<double>(cam.halfFovVRad()), 0.6544984694978736, 1e-6);
 
     // Resolution and field cannot disagree, because there is only one knob:
     // halving the pixel pitch halves both fields, and no setter exists that
     // could contradict it.
     cam.deg_per_px = static_cast<gp_scalar>(0.1875);
     EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 60.0, 1e-9);
-    EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 45.0, 1e-9);
+    EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 37.5, 1e-9);
 }
 
 TEST(CameraGridGeometry, FovEdgeFollowsTheDerivedField) {

@@ -157,12 +157,15 @@ TEST(GatherTrackerInputs, DistToBoundarySoftSatShapeNearWall) {
 }
 
 // reinterpret_cast<float*>(&trackerInputs) is the path nn_forward uses;
-// verify the struct can be safely treated as a flat float[54] post-032 phase 1.
-TEST(GatherTrackerInputs, LayoutIsContiguousFloat54) {
-    static_assert(sizeof(TrackerInputs) == 58 * sizeof(float),
-                  "TrackerInputs must be float[58] for nn_forward to consume "
-                  "(54 pre-038 + 038 FR-P0H: 1 target-lost + 3 arena-inward = 58; "
-                  "exit_dir removed 038 US3)");
+// verify the struct can be safely treated as a flat float array.
+TEST(GatherTrackerInputs, LayoutIsContiguousFloatArray) {
+    // Derived, not literal: the count lives in one place (TrackerInput::COUNT,
+    // itself asserted against the struct size in nn_inputs.h), so a layout
+    // change fails at its source instead of in three restated numbers.
+    static_assert(sizeof(TrackerInputs) ==
+                      static_cast<size_t>(TRACKER_NN_INPUT_COUNT) * sizeof(float),
+                  "TrackerInputs must be a flat float[TRACKER_NN_INPUT_COUNT] for "
+                  "nn_forward to consume");
 
     AircraftState chase = makeChaseState();
     TrackerHistoryWindow history{};

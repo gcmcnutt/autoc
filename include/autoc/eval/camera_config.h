@@ -54,7 +54,13 @@ struct CameraConfig {
     // three ASSUMED, pending the lens/sensor decision recorded in US7):
     // 320 × 240 at 0.375°/px ⇒ exactly 120° × 90°.
     int pixels_h = 320;
-    int pixels_v = 240;
+    // 041 T041a — 240 → 200: 200 × 0.375°/px = 75° V, matching the ordered
+    // 1.8 mm fisheye's conservative estimate and the OV9281's 1280×800 (1.6)
+    // aspect. Must move together with AutocConfig::cameraPixelsV and the three
+    // tracker inis — three definitions of one value, the E1 hazard in
+    // index-coupling-inventory.md. The ini is authoritative at runtime; these
+    // defaults exist so a missing key is not silently a DIFFERENT camera.
+    int pixels_v = 200;
     gp_scalar deg_per_px = static_cast<gp_scalar>(0.375);
 
     // ----- PRNG-varied per scenario (v1 sigmas at zero) ---------------------

@@ -7,7 +7,7 @@ What lives here, what does not, and the provenance a later reader will otherwise
 | item | task | why here |
 |---|---|---|
 | `pre-break/` — per-tick + `--physics` CSVs from **both pinned comparators** | T011a | ⛔ Extracted **before** T044's version bump, which makes those dmps unreadable to a 041 binary. This is the only surviving route to the prior-M1 per-regime baseline (SC-007a) and the blind-gap distribution (FR-024b) |
-| Final M1 / M2 `data.dat` snapshots | T065, T098 (FR-022) | The next training launch overwrites `data.dat` in the repo root |
+| ~~Final M1 / M2 `data.dat` snapshots~~ | ~~T065, T098 (FR-022)~~ | ⛔ **MOOT.** 035 FR-P05 retired the per-step `data.dat` writer — nothing generates one, so there is nothing for "the next launch" to overwrite. The **dmp is the training trace**, and FR-022 is satisfied by tagging it `retain=keep`. Historical `data.dat` content still in S3 is read by pre-035 tooling frozen at its own layout (see T047) |
 | Archived `nn_weights*.dat` for every pinned run | T065, T098 (FR-010) | A dmp preserves *numbers*; only the weight format preserves a **controller you can re-fly** — the gap that made the 038 baseline unloadable |
 | The two-variant INAV build/deploy sequence | T001a | Written when Phase 6 runs; points at `specs/020-pre-flight-pipeline/plan.md` for the commands rather than restating them |
 
@@ -20,12 +20,13 @@ run** or **unreadable after the next commit**, not for a second copy of durable 
 ## ⚠️ git tracks the CSVs but NOT the `.dat` files
 
 The root [`.gitignore`](../../../.gitignore) has an unanchored `*.dat` rule (line 6), so **every `.dat` file
-placed here is ignored**, including the FR-010 weight archives and the FR-022 `data.dat` snapshots. The
+placed here is ignored**, including the FR-010 weight archives. The
 `/*.csv` rule is root-anchored, so `pre-break/*.csv` **is** tracked normally.
 
 This is deliberate rather than an oversight to fix:
 
-- `data.dat` is a per-tick trace and runs to tens of MB — the wrong thing to put in git history.
+- Nothing writes `data.dat` any more (035 FR-P05); the rule below is kept because archived
+  `nn_weights*.dat` still land here, and they are the FR-010 artifact that matters.
 - The **durable** copy of anything `.dat` is **S3**, beside its dmp (that is what FR-010 means by
   "archived alongside"). The copy here is a working convenience for the machine that ran the bake.
 - Consequence to keep in mind: **`.dat` files here do not sync across machines.** If a `.dat` artifact is

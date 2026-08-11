@@ -196,6 +196,35 @@ dmps") is true of the plumbing and false of the coverage.
 
 ---
 
+### Session 2026-08-10 — what "bit-identical" actually has to mean (T036)
+
+- Q: T036 says fitness must be **bit-identical** across moving the step-score computation into the tick
+  loop. Post-hoc reads float-rounded `AircraftState`; inline could read live FDM doubles. Is literal bit
+  equality the gate? → A: **No — the gate is DETERMINISM plus "materially the same or better".** Operator
+  2026-08-10: *"bit identity really means determinism and global outcome materially the same or better than
+  before — we just don't need compat because if things get better with our additional complexity we keep
+  it."*
+  Restated as three obligations, in priority order:
+  1. **Determinism is non-negotiable.** Same seed and config must reproduce the same run, and the
+     eval-vs-training bitwise match stays the regression gate ([[reference_perf_build_reproducibility]]).
+     Moving the computation must not introduce worker-order or FP-associativity sensitivity.
+  2. **The global outcome must be materially the same or better.** A small numerical delta from reading
+     live state instead of re-derived state is ACCEPTABLE; a changed objective is not. The test therefore
+     characterises the delta and shows it is negligible or favourable, rather than asserting equality it
+     cannot honestly promise.
+  3. **Silence is the failure mode, not difference.** What T036 exists to prevent is a rounding change that
+     nobody notices. Measuring and reporting the delta satisfies that; asserting `==` and then loosening the
+     tolerance when it fails does not.
+  ⚠️ This does **not** relax Constitution IV or the pre-run build gate — it relaxes only the literal
+  equality claim in T036's wording.
+- Q: If added complexity earns its keep, do we carry the old path for comparison? → A: **No.** Same
+  clean-slate rule as everywhere else in 041: *"we just don't need compat."* If the new path is better it
+  simply replaces the old one. The corollary the operator adds is a standing direction rather than a 041
+  task: **gradually prune what we are not going to use** — the variation ramp is named as a candidate.
+  Filed to [BACKLOG.md](../BACKLOG.md); not in 041's scope.
+
+---
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Retire the index-coupled failure class (Priority: P1)

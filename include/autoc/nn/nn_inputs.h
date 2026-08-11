@@ -27,6 +27,16 @@
 constexpr float kCruiseSpeed_mps = 13.0f;
 constexpr float kDistToBoundaryScale_m = 20.0f;
 
+// 041 T032 — ACCEL_* normalization. Body specific force is divided by this, so
+// the channel carries "g's, scaled". Sized from the observed envelope rather
+// than a round number: the standing flight record is +11.2 g / -8.4 g, and
+// loads have crept up flight over flight. At 8 g the raw ratio is 1.0, which
+// keeps the common flight regime (0..3 g) inside [0, 0.4] where tanh is close
+// to linear, while an 11 g excursion reaches 1.4 -- large and clearly distinct
+// without saturating the unit. A scale of 1 g would put every manoeuvre deep in
+// tanh saturation and destroy exactly the resolution the load axis needs.
+constexpr float kAccelScale_g = 8.0f;
+
 // 038 P0-D FR-P0H (A) — time-since-seen normalization. Blind-tick count × dt
 // (seconds) fed through tanh(t / kTimeSinceSeenScale_s): 1 s → 0.46, 2 s →
 // 0.76, 4 s → 0.96. Gives the tracker NN a graded "how long since the target
@@ -118,10 +128,30 @@ struct NNInputs {
     float inward_body_x;     // raw-ok: NN-byte-format buffer — body-frame radial-inward unit vec, chase_quat.conjugate()*normalize(center-pos)
     float inward_body_y;     // raw-ok: NN-byte-format buffer
     float inward_body_z;     // raw-ok: NN-byte-format buffer
+    // ----- 041 US4 — the reward the policy could not see, plus the other half
+    // of the IMU. The streak multiplier is 5x of fitness ramped over 5 s against
+    // a 0.8 s perceptual window: invisible to the controller until now. The FLAG
+    // is the primary input (spec.md Clarifications) -- with no competing cost in
+    // 041's objective the optimal policy is simply "stay in", which needs the
+    // flag and not the depth. Duration ships because the format break happens
+    // once and the follow-on load feature will want it.
+    float in_envelope;       // raw-ok: NN-byte-format buffer — {0,1}, step score >= FitStreakThreshold
+    float envelope_secs;     // raw-ok: NN-byte-format buffer — min(sec_in_envelope / FitStreakRampSec, 1), LINEAR
+    // ACCEL_* adjacent to GYRO_* would split the 038 arena block, so the 6-DOF
+    // pairing is documented here instead: gyro_p/q/r above are the rate half,
+    // these are the specific-force half. Body-frame specific force INCLUDING
+    // gravity (a_world - g_world rotated into body), scaled by kAccelScale_g —
+    // NOT FDM kinematic acceleration, which would put a constant ~1 g offset in
+    // the most load-relevant axis. autoc/eval/specific_force.h is the one
+    // definition, shared with dmp-dump so reader and input cannot disagree.
+    float accel_x;           // raw-ok: NN-byte-format buffer — longitudinal
+    float accel_y;           // raw-ok: NN-byte-format buffer — lateral
+    float accel_z;           // raw-ok: NN-byte-format buffer — normal, the load axis
 };
 
-static_assert(sizeof(NNInputs) == 37 * sizeof(float),
-              "NNInputs layout must be contiguous float[37] with no padding (33 pre-038 + 4 FR-P0H arena)");
+static_assert(sizeof(NNInputs) == 42 * sizeof(float),
+              "NNInputs layout must be contiguous float[42] with no padding "
+              "(33 pre-038 + 4 FR-P0H arena + 5 041: envelope flag/secs + accel xyz)");
 static_assert(alignof(NNInputs) == alignof(float),
               "NNInputs must be float-aligned for matrix multiply");
 
@@ -158,8 +188,9 @@ struct SensorInputMeta {
 };
 
 // ----------------------------------------------------------------------------
-// PathgenInput — 37 inputs, layout matches NNInputs struct field order.
-// (33 pre-038 + 4 038 FR-P0H arena-awareness (B): dist_to_boundary + inward_body xyz)
+// PathgenInput — 42 inputs, layout matches NNInputs struct field order.
+// (33 pre-038 + 4 038 FR-P0H arena-awareness (B) + 5 041 US4: envelope flag,
+//  envelope seconds, and body specific force xyz)
 // ----------------------------------------------------------------------------
 enum class PathgenInput : uint16_t {
     TARGET_X_TM5 = 0, TARGET_X_TM4, TARGET_X_TM3, TARGET_X_TM2, TARGET_X_TM1, TARGET_X_NOW,
@@ -173,6 +204,9 @@ enum class PathgenInput : uint16_t {
     // ----- 038 P0-D FR-P0H arena-awareness (B), M1 gets it too (33..36) -----
     DIST_TO_BOUNDARY,
     INWARD_BODY_X, INWARD_BODY_Y, INWARD_BODY_Z,
+    // ----- 041 US4 envelope occupancy + specific force (37..41) -----
+    IN_ENVELOPE, ENVELOPE_SECS,
+    ACCEL_X, ACCEL_Y, ACCEL_Z,
     COUNT
 };
 
@@ -194,6 +228,12 @@ constexpr SensorInputMeta kPathgenInputMeta[] = {
     {"INWARD_BODY_X",    "inX",  7},
     {"INWARD_BODY_Y",    "inY",  7},
     {"INWARD_BODY_Z",    "inZ",  7},
+    // ----- 041 US4 meta (slots 37..41) -----
+    {"IN_ENVELOPE",   "env",  7},
+    {"ENVELOPE_SECS", "envS", 7},
+    {"ACCEL_X",       "acX",  7},
+    {"ACCEL_Y",       "acY",  7},
+    {"ACCEL_Z",       "acZ",  7},
 };
 
 static_assert(static_cast<size_t>(PathgenInput::COUNT) ==
@@ -241,6 +281,9 @@ enum class TrackerInput : uint16_t {
     INWARD_BODY_X,     // chase_quat.conjugate()*normalize(center-pos), body frame
     INWARD_BODY_Y,
     INWARD_BODY_Z,
+    // ----- 041 US4 envelope occupancy + specific force (58..62) -----
+    IN_ENVELOPE, ENVELOPE_SECS,
+    ACCEL_X, ACCEL_Y, ACCEL_Z,
     COUNT
 };
 
@@ -275,14 +318,22 @@ constexpr SensorInputMeta kTrackerInputMeta[] = {
     {"INWARD_BODY_X",        "inX",   7},
     {"INWARD_BODY_Y",        "inY",   7},
     {"INWARD_BODY_Z",        "inZ",   7},
+    // ----- 041 US4 meta (slots 58..62) -----
+    {"IN_ENVELOPE",          "env",   7},
+    {"ENVELOPE_SECS",        "envS",  7},
+    {"ACCEL_X",              "acX",   7},
+    {"ACCEL_Y",              "acY",   7},
+    {"ACCEL_Z",              "acZ",   7},
 };
 
 static_assert(static_cast<size_t>(TrackerInput::COUNT) ==
               sizeof(kTrackerInputMeta) / sizeof(SensorInputMeta),
               "TrackerInput enum count must match kTrackerInputMeta length");
-static_assert(static_cast<int>(TrackerInput::COUNT) == 58,
-              "TrackerInput::COUNT must equal 58 (54 pre-038 + 038 FR-P0H: 1 target-lost + 3 arena-inward; "
-              "exit_dir_sin/cos removed 038 US3)");
+static_assert(static_cast<int>(TrackerInput::COUNT) == 63,
+              "TrackerInput::COUNT must equal 63 (54 pre-038 + 038 FR-P0H: 1 target-lost + 3 arena-inward, "
+              "exit_dir_sin/cos removed 038 US3; + 041 US4: envelope flag/secs + accel xyz). "
+              "⚠️ This count changes ONCE MORE after the M2 phase (63 + N innovation "
+              "channels, FR-005a) -- that second change is legal, see contracts/nn-input-layout.md");
 
 // 030 M6d — Tracker-mode NN input storage struct (FR-006 + FR-016).
 //
@@ -347,10 +398,25 @@ struct TrackerInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xi
     float inward_body_x;     // raw-ok: NN-byte-format buffer — chase_quat.conjugate()*normalize(center-pos), body frame
     float inward_body_y;     // raw-ok: NN-byte-format buffer
     float inward_body_z;     // raw-ok: NN-byte-format buffer
+
+    // ----- 041 US4 — SAME CHANNELS AS M1, different source for the flag -----
+    // The RNN receives identical input channels in both modes; only where the
+    // flag comes from differs. M1 computes it exactly from the step-score cone
+    // geometry; M2 estimates it from direct perception (both beacons CEP-visible
+    // AND separation within [EnvelopeSpanLo, EnvelopeSpanHi] AND pair centroid
+    // within EnvelopeCentroidRadius). The accumulator mechanics are identical:
+    // an EXTERNAL counter in the stepper, reset on envelope exit only (plus on
+    // engage in firmware, FR-022a), millisecond-based, LINEAR.
+    float in_envelope;       // raw-ok: NN-byte-format buffer — {0,1}
+    float envelope_secs;     // raw-ok: NN-byte-format buffer — min(sec / FitStreakRampSec, 1)
+    float accel_x;           // raw-ok: NN-byte-format buffer — body specific force / kAccelScale_g
+    float accel_y;           // raw-ok: NN-byte-format buffer
+    float accel_z;           // raw-ok: NN-byte-format buffer — normal, the load axis
 };
 
-static_assert(sizeof(TrackerInputs) == 58 * sizeof(float),
-              "TrackerInputs layout must be contiguous float[58] with no padding (exit_dir removed 038 US3)");
+static_assert(sizeof(TrackerInputs) == 63 * sizeof(float),
+              "TrackerInputs layout must be contiguous float[63] with no padding "
+              "(58 pre-041 + 5 041 US4: envelope flag/secs + accel xyz)");
 static_assert(alignof(TrackerInputs) == alignof(float),
               "TrackerInputs must be float-aligned for matrix multiply");
 static_assert(static_cast<int>(TrackerInput::COUNT) ==

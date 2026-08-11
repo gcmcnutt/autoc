@@ -201,6 +201,19 @@ struct AutocConfig {
     double fitStreakRampSec = 5.0;       // Seconds to reach max multiplier
     double fitStreakMultiplierMax = 5.0; // Maximum streak multiplier
 
+    // --- 041 US4: envelope occupancy + specific-force inputs ---
+    // Ablation gates, so the T068 matrix can turn each half off without a
+    // rebuild. Default ON: they are what the feature exists to test.
+    int enableEnvelopeInputs = 1;        // IN_ENVELOPE + ENVELOPE_SECS populated
+    int enableAccelInputs = 1;           // ACCEL_X/Y/Z populated
+    double accelScaleG = 8.0;            // must match kAccelScale_g (nn_inputs.h)
+    // M2 direct-perception envelope estimator (FR-018b). Reserved: read by
+    // gather_tracker_inputs only. In-envelope ⇔ both beacons CEP-visible AND
+    // pair separation within [lo, hi] AND pair centroid within the radius.
+    double envelopeSpanLo = 0.02;        // rad, pair span lower bound (far edge)
+    double envelopeSpanHi = 0.35;        // rad, pair span upper bound (near edge)
+    double envelopeCentroidRadius = 0.5; // rad, max pair-centroid offset from boresight
+
     // --- Variable rabbit speed ---
     double rabbitSpeedNominal = 16.0;
     double rabbitSpeedSigma = 0.0;
@@ -262,7 +275,7 @@ struct AutocConfig {
     // 320 × 240 @ 0.375°/px ⇒ exactly 120° × 90°. All three ASSUMED pending
     // the lens/sensor decision (contracts/config-surface.md).
     int cameraPixelsH = 320;
-    int cameraPixelsV = 240;
+    int cameraPixelsV = 200;   // 041 T041a: 240 → 200 (75° V). See camera_config.h.
     double cameraDegPerPixel = 0.375;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to gp_scalar at the WorkerInit boundary
     // 040 T017 — CameraFrameRateHz / CameraLatencyMs retired. Sensor cadence
     // follows ControlIntervalMsec (037); latency emerges from the acquisition
@@ -450,6 +463,12 @@ struct AutocConfig {
     X(double,         fitStreakThreshold,        "FitStreakThreshold") \
     X(double,         fitStreakRampSec,          "FitStreakRampSec") \
     X(double,         fitStreakMultiplierMax,    "FitStreakMultiplierMax") \
+    X(int,            enableEnvelopeInputs,      "EnableEnvelopeInputs") \
+    X(int,            enableAccelInputs,         "EnableAccelInputs") \
+    X(double,         accelScaleG,               "AccelScaleG") \
+    X(double,         envelopeSpanLo,            "EnvelopeSpanLo") \
+    X(double,         envelopeSpanHi,            "EnvelopeSpanHi") \
+    X(double,         envelopeCentroidRadius,    "EnvelopeCentroidRadius") \
     X(double,         rabbitSpeedNominal,        "RabbitSpeedNominal") \
     X(double,         rabbitSpeedSigma,          "RabbitSpeedSigma") \
     X(double,         rabbitSpeedMin,            "RabbitSpeedMin") \
