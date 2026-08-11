@@ -940,6 +940,10 @@ static WorkerInit buildWorkerInit() {
     init.enableEnvelopeInputs = cfg.enableEnvelopeInputs;
     init.enableAccelInputs = cfg.enableAccelInputs;
     init.accelScaleG = cfg.accelScaleG;
+    // 041 T038 — M2 direct-perception envelope estimator thresholds.
+    init.envelopeSpanLo = cfg.envelopeSpanLo;
+    init.envelopeSpanHi = cfg.envelopeSpanHi;
+    init.envelopeCentroidRadius = cfg.envelopeCentroidRadius;
 
     // 030 V1.5 — run-static scenario library shared by both modes.
     // generateSmoothPaths(gPathSeed) is byte-identical every gen, so we

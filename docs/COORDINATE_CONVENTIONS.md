@@ -423,29 +423,75 @@ the standard, and each gets its own boundary conversion:
 | source | native form | converter | lands as |
 |---|---|---|---|
 | CRRCSim FDM | world-frame kinematic accel (LaRCSim, ft-based) + gravity + q_EB | `autoc/eval/specific_force.h`, worker-side | body FRD, g |
-| INAV | `acc.accADCf` — post `applySensorAlignment` + `applyBoardAlignment`, ÷ `acc_1G` | `msplink.cpp`, same boundary as the quat's `(w, x, -y, -z)` and the gyro's pitch/yaw negation | body FRD, g |
+| INAV | `acc.accADCf` — proper acceleration in INAV's native **FLU** frame; post `applySensorAlignment` + `applyBoardAlignment`, ÷ `acc_1G` | `msplink.cpp`, the **same y/z flip** as the quat's `(w, x, -y, -z)` and the gyro's pitch/yaw negation | body FRD, g |
 
 ⚠️ **Board alignment differs between bench and flight** (`xiao/inav-bench.cfg` vs `xiao/inav-hb1.cfg`) —
 the devices are mounted differently. Alignment is applied INSIDE INAV before MSP, so the converter is the
 same for both, but **T073 must verify on both targets**; a bench-only check is not a flight check.
 
-### ⛔ ONE DATUM UNRESOLVED — settle before T039/T073 writes a sign
+### ✅ RESOLVED 2026-08-11 — the bench table is correct as recorded; the *assumed frame* was wrong
 
-The 021 bench table below is self-consistent for **level** and **right-wing-down** under "FRD, the sensed
-gravity-plus-manoeuvre vector" (level ⇒ `[0, 0, +1g]`, RWD ⇒ `[0, +1g, 0]`), which is the convention 041
-adopts and which makes the load factor read directly off `ACCEL_Z` with no negation.
+The nose-up row was flagged as not fitting the convention. It fits. **None of the three candidate
+explanations previously listed here is right** (no transcription error, no per-axis sign, no mislabelled
+maneuver) — the fourth possibility is the answer:
 
-**Nose-up 90° does not fit it.** With the nose at the sky, body +x points UP, so gravity lies along **−x**
-and that row should read `−1g`; the table records **`+2050`**. Two of three attitudes fit the adopted
-convention and the third does not.
+> **INAV's body frame is FLU** — x forward, y **LEFT**, z **UP** — and `acc.accADCf` is plain
+> **proper acceleration** (specific force), which at rest points **UP**, away from the earth.
 
-Candidate explanations, to be settled against `~/inav` source (`acceleration.c`, around the alignment call)
-plus the two `xiao/*.cfg` alignments — **not** by re-deriving from first principles:
-1. the nose-up X value is a transcription error and should be `−2050`;
-2. INAV applies a sign on X that the blackbox inherits, so `accADCf` and `accSmooth` differ there;
-3. the bench "nose up" maneuver was recorded nose-DOWN.
+Under that reading all three bench rows are consistent, with no exceptions:
 
-Until resolved, **do not** pin a nose-up assertion in a test. Level and right-wing-down are safe to assert.
+| attitude | which body axis points UP | INAV reads (FLU) | → aerospace FRD |
+|---|---|---|---|
+| level | `+z` (up) | `[0, 0, +1g]` | `[0, 0, −1g]` |
+| nose up 90° | `+x` (forward) | `[+1g, 0, 0]` | `[+1g, 0, 0]` |
+| right wing down 90° | `+y` (left) | `[0, +1g, 0]` | `[0, −1g, 0]` |
+
+**Why nose-up was the row that disagreed** — and why that is the *expected* place for a frame error to
+show. FLU→FRD negates **y and z only**; **x is shared**. So on the level and RWD rows the frame flip and
+the specific-force-vs-gravity-direction flip *cancel*, and both hypotheses predict the same number. X is
+the one axis where they cannot cancel. The nose-up row is therefore not an anomaly — it is the single
+discriminating measurement in the table, and it discriminates in favour of FLU + specific force.
+
+**Evidence, from `~/inav` @ `63cffaf4` (not from first principles):**
+
+1. `sensors/acceleration.c:567-568` — `acc.accADCf[axis] = accADC[axis] / acc.dev.acc_1G`. No negation
+   anywhere in `accUpdate()`; the value is the raw chip reading after alignment and scaling only. Whatever
+   sign the sensor produces is the sign INAV publishes.
+2. `sensors/acceleration.c:335-337` with `:360-366` — `getPrimaryAxisIndex` returns index **0** when
+   `sample[Z] > 0`, and index 0 is the **TOP-UP** calibration position (`accStartCalibration` rejects a
+   recalibration that does not start there). A MEMS accelerometer at rest reads `+1 g` on whichever of its
+   axes points up ⇒ a level, top-up board reads **positive Z** ⇒ **INAV's board `+z` is UP**.
+3. `flight/imu.c:483-491` — `vGravity = {0, 0, 1}` in the earth frame is rotated EF→BF and crossed with the
+   *normalised measured accel*, with the error driven to zero. The measured vector is therefore parallel to
+   earth `+z`, consistent with a Z-up earth frame and a reaction-up reading.
+4. `y` is LEFT follows from the RWD row given (2): the reading is `+1 g` on Y, so Y is the axis pointing up
+   in that attitude, which is the **left** wing.
+5. This is the **same** frame difference the project already handles twice: the quat's `(w, x, −y, −z)`
+   (`inavQuatToAerospaceEB`) and the gyro's pitch/yaw negation (`msplink.cpp:964-966`) are each exactly a
+   y/z flip. They were documented as "INAV inverts pitch and yaw"; structurally they are one frame change,
+   FLU→FRD, and accel is the third quantity through the same door.
+6. Board alignment is *not* involved: bench `align_board_roll = −16` (−1.6°, a mount trim) and flight
+   `roll = 1700, yaw = 900` are applied **inside** INAV before MSP (`acceleration.c:563-564`), so the
+   boundary converter is identical for both targets. T073 still verifies on both — the alignment values
+   differ, so a bench-only check is not a flight check.
+
+**Consequences — read these before writing a sign anywhere:**
+
+- **The msplink converter is `accel_FRD = (accADCf[0], −accADCf[1], −accADCf[2])`** — the same y/z flip as
+  the quat and the gyro, applied once at the same boundary (T074).
+- **In aerospace FRD, steady level flight reads `[0, 0, −1 g]`.** Body `+z` is DOWN and the measured
+  reaction points UP. This matches `spec.md` § Clarifications (which governs) and matches
+  `include/autoc/eval/specific_force.h` **as already written** — `f = R(q)ᵀ·(a_world − g_world)/g`.
+  ⚠️ **No sign flip is owed.** An earlier 041 handoff note asserted the adopted convention was the *sensed
+  gravity direction* (level ⇒ `[0, 0, +1g]`) and that the header needed flipping. That note was written
+  against this unresolved datum and is **withdrawn**; flipping the header would have put the NN's load axis
+  backwards relative to flight.
+- The load factor quoted in flight reports is `nz = −ACCEL_Z`, which is what `load_factor_nz` in
+  `specific_force.h` carries. That negation is for **human-facing reporting only** — the NN input is the
+  un-negated FRD component.
+- **All three attitudes are now safe to assert** in T073, in FRD: level `[0, 0, −1]`, nose up
+  `[+1, 0, 0]`, right wing down `[0, −1, 0]`. Compare against the counts table below by dividing by
+  `acc_1G ≈ 2048` **and** applying the y/z flip — the table is in INAV's FLU counts, not FRD g.
 
 ## Gyro & Accelerometer Conventions (021, 2026-03-28)
 
@@ -489,16 +535,24 @@ yaw_rate   = -gyroADC[2]    // negate to match aerospace RHR (nose right = posit
 
 ### Blackbox Accelerometer: accSmooth[0-2] (VERIFIED bench 2026-03-30)
 
-| Index | Axis | At rest (level) | Nose up 90° | Right wing down 90° | Units |
+⚠️ **Axis labels corrected 2026-08-11** (041). The rows are as measured; the *interpretation* below them
+was wrong — INAV's frame is **FLU**, and the reading is proper acceleration (points UP at rest), not the
+gravity direction. See "Accelerometer as an INTERFACE quantity (041)" above for the derivation and for the
+FRD conversion. The measured numbers never changed.
+
+| Index | Axis (INAV FLU) | At rest (level) | Nose up 90° | Right wing down 90° | Units |
 |-------|------|-----------------|-------------|---------------------|-------|
 | [0] | X body (forward) | ~0 | **+1G** | ~0 | acc_1G scale |
-| [1] | Y body (right) | ~0 | ~0 | **+1G** | acc_1G scale |
-| [2] | Z body (down) | **+1G** | ~0 | ~0 | acc_1G scale |
+| [1] | Y body (**left**) | ~0 | ~0 | **+1G** | acc_1G scale |
+| [2] | Z body (**up**) | **+1G** | ~0 | ~0 | acc_1G scale |
 
-- **Frame**: Body-frame, board-alignment-corrected (same as gyro)
-- **At level rest**: accel ≈ [0, 0, +1G] (gravity points down in body frame = +Z) ✓ verified
-- **Nose up**: accel ≈ [+1G, 0, 0] (gravity pulls along nose = +X) ✓ verified
-- **Right wing down**: accel ≈ [0, +1G, 0] (gravity pulls toward right wing = +Y) ✓ verified
+- **Frame**: Body-frame **FLU**, board-alignment-corrected (same pipeline as gyro)
+- **The reading is the reaction, pointing UP** — a MEMS accelerometer at rest reads +1 G on whichever axis
+  points at the sky. Every row below is that one rule.
+- **At level rest**: accel ≈ [0, 0, +1G] — body +Z (up) is the skyward axis ✓ verified
+- **Nose up**: accel ≈ [+1G, 0, 0] — body +X (forward) is the skyward axis ✓ verified
+- **Right wing down**: accel ≈ [0, +1G, 0] — body +Y (**left**) is the skyward axis ✓ verified
+- **In aerospace FRD** (after the msplink y/z flip): `[0,0,−1]`, `[+1,0,0]`, `[0,−1,0]` respectively
 - **acc_1G scale**: ~2050 counts = 1G on this hardware (bench measurement)
 - **In turns**: centripetal acceleration adds to gravity vector (useful, not noise)
 

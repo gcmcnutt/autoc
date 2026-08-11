@@ -356,6 +356,49 @@ struct AircraftState {
     gp_vec3 getGyroRates() const { return gyroRates_; }
     void setGyroRates(const gp_vec3& rates) { gyroRates_ = rates; }
 
+    // 041 T039 — body-frame SPECIFIC FORCE in g (what an accelerometer reads,
+    // gravity included), completing the 6-DOF inertial block beside the gyro.
+    //
+    // Aerospace body FRD, so steady level flight is [0, 0, -1]: body +z points
+    // DOWN and the measured reaction points UP. ⚠️ Do NOT "fix" that against
+    // INAV's bench table (level reads +1 g on its normal axis) — INAV's frame
+    // is FLU and msplink flips y/z at the boundary, exactly as it already does
+    // for the quat and the gyro. Same physical fact, two frames. Settled
+    // 2026-08-11; derivation in docs/COORDINATE_CONVENTIONS.md.
+    //
+    // ⚠️ SPECIFIC force, not FDM kinematic acceleration. The latter reads ~0 in
+    // level flight and would put a constant 1 g error in the load axis —
+    // invisible in sim, wrong in the air.
+    //
+    // WHY IT LIVES HERE rather than being computed in the gather: on hardware
+    // `acc.accADCf` arrives already finished in the same MSP round trip as the
+    // quat and gyro, and the xiao's gather does no transformation — it copies.
+    // The sim matches that shape (spec.md § Clarifications, 2026-08-10): the
+    // worker computes it via autoc/eval/specific_force.h, stores it here, and
+    // both gathers only copy. A gather-side computation would be a sim-only
+    // code path with no hardware counterpart.
+    //
+    // Stored UNSCALED (g). kAccelScale_g is applied at the NN slot write.
+    gp_vec3 getSpecificForceG() const { return specificForceG_; }
+    void setSpecificForceG(const gp_vec3& sf_g) { specificForceG_ = sf_g; }
+
+    // 041 T037/T038 — envelope occupancy, as the NN sees it.
+    //
+    // `inEnvelope` is the OBSERVABLE scoring-envelope condition (FR-015), never
+    // the fitness machinery's internal streak counter. `envelopeSecs` is
+    // min(consecutive_seconds / FitStreakRampSec, 1), already normalized.
+    //
+    // Both are computed ONCE per tick by the stepper, before the NN evaluates,
+    // and the same value feeds the NN input and (M1) the fitness accumulation.
+    // Two independent computations of this quantity are forbidden — the
+    // disagreement they permit is the failure class 041 exists to remove.
+    // Accumulator mechanics: autoc/eval/envelope_state.h.
+    bool getInEnvelope() const { return inEnvelope_; }
+    void setInEnvelope(bool inside) { inEnvelope_ = inside; }
+
+    gp_scalar getEnvelopeSecs() const { return envelopeSecs_; }
+    void setEnvelopeSecs(gp_scalar secs) { envelopeSecs_ = secs; }
+
     // NN I/O capture — record what the NN actually saw and produced.
     //
     // 030 M9.preA (2026-05-07): Two parallel input slots — `nnInputs_` for
@@ -540,6 +583,20 @@ struct AircraftState {
 
     // Body-frame angular rates (rad/s, standard aerospace RHR)
     gp_vec3 gyroRates_ = gp_vec3::Zero();
+
+    // 041 T037-T039 — the observation half of the 6-DOF inertial block, plus
+    // envelope occupancy. Set by the stepper each tick BEFORE the NN gathers.
+    //
+    // ⚠️ DELIBERATELY NOT SERIALIZED. These are NN INPUTS, and every NN input
+    // is already recorded per tick through nnInputs_ / trackerInputs_ (the
+    // honest-capture block). Adding them to the archive would create a second
+    // recorded copy of the same numbers that could disagree with the first —
+    // the exact parallel-definition shape US1 exists to retire. Readers wanting
+    // accel or envelope read the NN input columns, which are what the policy
+    // actually saw.
+    gp_vec3 specificForceG_ = gp_vec3::Zero();  // body FRD, g, gravity included
+    bool inEnvelope_ = false;
+    gp_scalar envelopeSecs_ = 0;                // already normalized to [0, 1]
 
     // NN I/O capture — actual values presented to/produced by the neural net.
     // Pathgen-mode populates nnInputs_ (33 floats); tracker-mode populates

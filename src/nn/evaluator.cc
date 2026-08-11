@@ -315,6 +315,34 @@ static constexpr int HIST_PAST[] = {
     historyLagTicks(0), historyLagTicks(1), historyLagTicks(2),
     historyLagTicks(3), historyLagTicks(4), historyLagTicks(5)};
 
+// 041 T037-T039 — the five new slots, written identically in both modes.
+//
+// ONE function for both gathers, deliberately: `IN_ENVELOPE`, `ENVELOPE_SECS`
+// and `ACCEL_*` mean the same thing in M1 and M2 and must be scaled the same
+// way. What differs between the modes is *who computes the flag* (M1 the
+// objective's own threshold, M2 the perception estimator) — and that happens
+// upstream in the stepper, not here.
+//
+// Templated on the input struct rather than duplicated because `NNInputs` and
+// `TrackerInputs` are unrelated types carrying identically-named members; a
+// second copy of these five lines is precisely the parallel-definition hazard
+// US1 exists to retire.
+template <typename InputsT>
+static void writeEnvelopeAndAccelSlots(const AircraftState& state,
+                                       InputsT& inputs) {
+    inputs.in_envelope = state.getInEnvelope() ? 1.0f : 0.0f;  // raw-ok: NN-byte-format slot write
+    inputs.envelope_secs = static_cast<float>(state.getEnvelopeSecs());  // raw-ok: NN-byte-format slot write
+
+    // Body-frame specific force, g → NN units. The state carries g (what INAV
+    // delivers and what specific_force.h produces); kAccelScale_g is applied
+    // ONLY here, at the slot write, so every other consumer — dmp-dump, the
+    // analytics load column, the flight log — reads plain g.
+    const gp_vec3 sf = state.getSpecificForceG();
+    inputs.accel_x = static_cast<float>(sf.x()) / kAccelScale_g;  // raw-ok: NN-byte-format slot write
+    inputs.accel_y = static_cast<float>(sf.y()) / kAccelScale_g;  // raw-ok: NN-byte-format slot write
+    inputs.accel_z = static_cast<float>(sf.z()) / kAccelScale_g;  // raw-ok: NN-byte-format slot write
+}
+
 void gather_pathgen_inputs([[maybe_unused]] PathProvider& pathProvider,
                            AircraftState& aircraftState,
                            const autoc::eval::FlightArena& arena,
@@ -379,6 +407,15 @@ void gather_pathgen_inputs([[maybe_unused]] PathProvider& pathProvider,
         inputs.inward_body_y = static_cast<float>(inward.y());
         inputs.inward_body_z = static_cast<float>(inward.z());
     }
+
+    // ----- 041 T037/T039 — envelope occupancy + specific force -----
+    // Both are COPIES. The stepper computed them before this call and stored
+    // them on the state; nothing is derived here. That is the point (spec.md
+    // § Clarifications 2026-08-10): on hardware these arrive finished and the
+    // gather copies, so the sim gather must not be the one place that
+    // transforms — a sim-only code path is exactly what would let sim and
+    // flight disagree without either looking wrong.
+    writeEnvelopeAndAccelSlots(aircraftState, inputs);
 }
 
 // ============================================================
@@ -568,6 +605,13 @@ void gather_tracker_inputs(const AircraftState& chase,
     // state. The stateful update is single-sourced in the stepper (shared rule
     // between TrackerStepper and CrrcsimTrackerHelper).
     sa.writeInputs(out);
+
+    // ----- 041 T038/T039 — envelope occupancy + specific force -----
+    // Identical slot writes to M1 (same helper). The M2 flag was produced by
+    // the perception estimator in the stepper — `perceivedInEnvelope` in
+    // autoc/eval/envelope_state.h — and stored on the chase state, so the two
+    // modes differ in the flag's SOURCE and in nothing else downstream.
+    writeEnvelopeAndAccelSlots(chase, out);
 }
 
 void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,

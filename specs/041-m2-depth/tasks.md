@@ -43,26 +43,60 @@ paired-series fitness term. Test tasks are interleaved with implementation per C
 - **[Story]**: US1–US6 per spec.md
 - **[OP]**: operator-driven — an assistant MUST NOT run this (clean rebuilds, bakes, S3 mutation, flight)
 
-## ▶️ RESUME HERE (state as of 2026-08-10)
+## ▶️ RESUME HERE (state as of 2026-08-11)
 
-**Progress: 42/110 marked.** Phases 1–3 complete; Phase 4 (US2) about half. Build clean, 42/42 ctest
-suites pass, operator ran a fresh `rebuild-perf.sh` gate — passed. Commits: `304f004` (parent, T035/T036)
-+ `b1db43b` (crrcsim). ⚠️ All Phase 3/4 work is **checkpointed WIP, not landed** — it squashes into T045.
+**Progress: 47/111 marked.** Phases 1–3 complete; Phase 4 (US2) through T041c. Build clean on both
+surfaces (autoc + crrcsim), **43/43 ctest suites pass** (+1: `envelope_accel_inputs_tests`, the T040
+semantics suite). ⚠️ All Phase 3/4 work is **checkpointed WIP, not landed** — it squashes into T045.
+Task count is 111, not 110: **T074a** added 2026-08-11 (bench-observable NN inputs, operator ask).
 
-### ⛔ FIRST THING NEXT SESSION — settle the accel sign, then flip it
+### What landed 2026-08-11
 
-`include/autoc/eval/specific_force.h` currently computes **proper acceleration** (level flight ⇒
-`ACCEL_Z = −1`). The convention 041 **adopted** is the sensed gravity-plus-manoeuvre vector in body FRD
-(level ⇒ `[0, 0, +1g]`), which makes the load factor read directly off `ACCEL_Z` with no negation. So the
-header and its five tests in `tests/dmp_dump_tests.cc` need the sign flipped — **once**, after the open
-datum below is settled, not twice.
+- **The accel sign datum is SETTLED** (see the next section) — and the answer was "no flip", so nothing
+  was flipped. `docs/COORDINATE_CONVENTIONS.md` now carries the derivation and the evidence.
+- **T037–T040 complete.** The step score now computes **pre-eval in both modes**; `IN_ENVELOPE` /
+  `ENVELOPE_SECS` / `ACCEL_*` reach both gathers; 8 new semantics tests.
+- New shared header **`include/autoc/eval/envelope_state.h`** — `EnvelopeState` (accumulator mechanics,
+  identical in both modes) + `perceivedInEnvelope` (the M2 direct-perception estimator). `EnvelopeState`
+  joins `resetPerceptionState()`, so both tracker paths reset it without either being edited.
+- `CrrcsimTrackerHelper::peekTargetGeometry()` — reads `samples[cursor_]` **without advancing**, which is
+  what let the tracker score pre-eval. The clamp at exhaustion is not padding: it reproduces the old
+  `lastTargetSample()` value exactly, which is what keeps the move a relocation.
 
-**The open datum**: `docs/COORDINATE_CONVENTIONS.md` → "Accelerometer as an INTERFACE quantity (041)" →
-*ONE DATUM UNRESOLVED*. Level and right-wing-down fit the adopted convention; **nose-up 90° does not**
-(table says `+2050` on X, the convention implies `−1g`). Settle it against `~/inav`
-(`src/main/sensors/acceleration.c`, around the alignment call) plus the two `xiao/*.cfg` alignments —
-**not** by re-deriving from first principles. Operator 2026-08-10: this took a long time to get right and
-must be correct on the first flight. Until settled: level + RWD are safe to assert, nose-up is not.
+### ⚠️ Next, and the one thing to be careful about
+
+**T042 → T043 → T044 → T046 → T045.** Ordering constraint 6 reduced to T046-only (T047 is inverted), so
+the remaining gate order is: T046 regenerates `nn_program_generated.cpp` for 42 inputs, **then** T045
+commits and builds xiao. T011a is already done, so T044's version bump is safe to take.
+
+⚠️ **T036's gate has not been re-run since the score moved pre-eval at T037.** T036 passed against the
+post-eval placement. The move is argued to be value-preserving (the NN eval writes only commands; position,
+attitude and the target lookup are all fixed before it runs) — but that is an argument, not a measurement,
+and "silence is the failure mode" is exactly T036's point. **Re-run the T036 determinism + materially-same
+comparison before T045.**
+
+### ✅ SETTLED 2026-08-11 — the accel sign needs NO flip; do not re-open it
+
+The open datum is **resolved against `~/inav` @ `63cffaf4`**, and the answer is that
+`include/autoc/eval/specific_force.h` and its five tests in `tests/dmp_dump_tests.cc` are **already
+correct**. Full derivation and evidence: `docs/COORDINATE_CONVENTIONS.md` → "Accelerometer as an INTERFACE
+quantity (041)" → *RESOLVED 2026-08-11*.
+
+- **INAV's body frame is FLU** (x fwd, y **left**, z **up**) and `acc.accADCf` is plain **proper
+  acceleration**, which at rest points UP. Under that reading **all three** bench rows fit — including
+  nose-up. Nose-up was the only *discriminating* row because FLU→FRD flips y and z but **shares x**, so on
+  level and RWD the frame flip and the sign flip cancel and both hypotheses agree.
+- **The msplink converter is the same y/z flip already used for the quat and gyro**:
+  `accel_FRD = (accADCf[0], −accADCf[1], −accADCf[2])` (T074).
+- **In FRD, level flight reads `ACCEL_Z = −1`.** That matches spec.md § Clarifications (which GOVERNS —
+  session 2026-08-10, "the sim's `ACCEL_Z` in steady level flight is **−1** in body axes") and matches the
+  header as written.
+- ⚠️ **The earlier "flip it" instruction is WITHDRAWN.** It was derived against the unresolved datum and
+  asserted the opposite convention. Flipping the header would have put the NN's load axis backwards
+  relative to flight — invisible in sim, wrong in the air.
+- **All three attitudes are now safe to assert** at T073, in FRD: level `[0,0,−1]`, nose up `[+1,0,0]`,
+  right wing down `[0,−1,0]`. The bench table is in INAV FLU **counts** (`acc_1G ≈ 2048`); divide *and*
+  flip y/z before comparing.
 
 ### Then T037–T040, which are now fully specified
 
@@ -217,10 +251,10 @@ read by every consumer, with input-count assertions and metadata tables in agree
   2. **Materially the same or better** — the inline result is compared against the post-hoc one and the delta is *measured and reported*, not asserted to be zero. Post-hoc reads float-rounded `AircraftState` (`gp_scalar` is `float`); inline reads live state, so a last-bits difference is expected and acceptable. A changed *objective* is not.
   3. **Silence is the failure mode, not difference.** What this task prevents is a rounding change nobody notices. Measuring and reporting satisfies that; asserting `==` and then loosening the tolerance when it fails does not.
   ⚠️ Unchanged: Constitution IV, the pre-run build gate, and the eval-vs-training bitwise regression gate.
-- [ ] T037 [US2] Populate `IN_ENVELOPE` / `ENVELOPE_SECS` in `src/nn/evaluator.cc` `gather_inputs` from the tick-loop step score. Accumulator is an **external counter** in the stepper, resets **on envelope exit only** (not on regime change), millisecond-based against `FitStreakRampSec`, **linear** normalization — no log, no tanh.
-- [ ] T038 [US2] Populate `IN_ENVELOPE` / `ENVELOPE_SECS` in `gather_tracker_inputs` from the M2 direct-perception estimator: both beacons CEP-visible AND separation within `[EnvelopeSpanLo, EnvelopeSpanHi]` AND pair centroid within `EnvelopeCentroidRadius`. Same accumulator mechanics as M1 — only the flag's source differs.
-- [ ] T039 [US2] ⚠️ **See the RESUME block: the sign convention must be settled first, and `specific_force.h` needs flipping to the adopted FRD "sensed gravity-plus-manoeuvre" convention (level ⇒ +1 g on Z).** Plumbing is decided — store on `AircraftState` beside `gyroRates_`, computed worker-side; both gathers only COPY. Populate `ACCEL_*` in both gather functions as **body-frame specific force including gravity**: `R(quat)ᵀ · (a_world − g_world) / kAccelScale_g`. ⚠️ **Not FDM kinematic acceleration** — that would put a constant ~1 g offset in the most load-relevant axis, invisible in sim and wrong in flight.
-- [ ] T040 [US2] Add input-semantics tests in `tests/nn_evaluator_tests.cc`: (a) **steady level flight → normal channel ≈1 g, not ≈0** (the test that catches the kinematic-vs-specific error — and **empirically confirmed on hardware**: the bench table in `docs/COORDINATE_CONVENTIONS.md` reads `+2050` on the normal axis in level attitude — blackbox `accSmooth` counts, `acc_1G ≈ 2048`, so `≈ +1.0 g` — meaning INAV already reports specific force including gravity, exactly the sim semantics required); (b) documented sign on a pull-up; (c) `IN_ENVELOPE` ∈ {0,1}; (d) `ENVELOPE_SECS` monotone within a streak, 0 immediately after exit, saturates at 1; (e) `ENVELOPE_SECS` identical for a given wall-clock duration at two cadences; (f) M1 `IN_ENVELOPE` agrees tick-for-tick with the objective's own threshold decision.
+- [X] T037 [US2] Populate `IN_ENVELOPE` / `ENVELOPE_SECS` in `src/nn/evaluator.cc` `gather_inputs` from the tick-loop step score. Accumulator is an **external counter** in the stepper, resets **on envelope exit only** (not on regime change), millisecond-based against `FitStreakRampSec`, **linear** normalization — no log, no tanh.
+- [X] T038 [US2] Populate `IN_ENVELOPE` / `ENVELOPE_SECS` in `gather_tracker_inputs` from the M2 direct-perception estimator: both beacons CEP-visible AND separation within `[EnvelopeSpanLo, EnvelopeSpanHi]` AND pair centroid within `EnvelopeCentroidRadius`. Same accumulator mechanics as M1 — only the flag's source differs.
+- [X] T039 [US2] ✅ **Sign convention SETTLED 2026-08-11 — `specific_force.h` is correct as written, NO flip (see the RESUME block). FRD level flight ⇒ `ACCEL_Z = −1`.** Plumbing is decided — store on `AircraftState` beside `gyroRates_`, computed worker-side; both gathers only COPY. Populate `ACCEL_*` in both gather functions as **body-frame specific force including gravity**: `R(quat)ᵀ · (a_world − g_world) / kAccelScale_g`. ⚠️ **Not FDM kinematic acceleration** — that would put a constant ~1 g offset in the most load-relevant axis, invisible in sim and wrong in flight.
+- [X] T040 [US2] Add input-semantics tests in `tests/nn_evaluator_tests.cc`: (a) **steady level flight → normal channel ≈1 g, not ≈0** (the test that catches the kinematic-vs-specific error — and **empirically confirmed on hardware**: the bench table in `docs/COORDINATE_CONVENTIONS.md` reads `+2050` on the normal axis in level attitude — blackbox `accSmooth` counts, `acc_1G ≈ 2048`, so `≈ +1.0 g` — meaning INAV already reports specific force including gravity, exactly the sim semantics required); (b) documented sign on a pull-up; (c) `IN_ENVELOPE` ∈ {0,1}; (d) `ENVELOPE_SECS` monotone within a streak, 0 immediately after exit, saturates at 1; (e) `ENVELOPE_SECS` identical for a given wall-clock duration at two cadences; (f) M1 `IN_ENVELOPE` agrees tick-for-tick with the objective's own threshold decision.
 - [X] T041 [P] [US2] Update layout assertions in `tests/contract_evaluator_tests.cc` for both modes' new counts.
 
 ### Camera model (M2-only, fidelity to ordered hardware)
@@ -327,13 +361,20 @@ is modified.
 - [ ] T001 [US4] Confirm the INAV baseline builds in `~/inav` for **both** established targets — **bench = `MAMBAF722_2022A`** (STM32F722; `xiao/inav-bench.cfg`) and **flight = `MATEKF722MINI`** (`xiao/inav-hb1.cfg`), both currently at `63cffaf4`. Routine and precedented: **021 T041 already did exactly this** ("INAV builds for bench (MAMBAF722_2022A) and flight (MATEKF722MINI)", closed), and the commands are recorded in `specs/020-pre-flight-pipeline/plan.md`: `cd ~/inav && mkdir -p build && cd build && cmake .. && make MAMBAF722_2022A`. **Bench first.**
 - [ ] T001a [US4] Record the two-variant build/deploy sequence in `specs/041-m2-depth/artifacts/README.md`, pointing at `specs/020-pre-flight-pipeline/plan.md` for the commands rather than restating them. Every later INAV task (T072, T078, T080) builds and flashes **both** targets, bench first — a change validated only on the bench target is not validated for flight.
 
-- [ ] T072 [US4] Extend `MSP2_AUTOC_STATE` in `~/inav/src/main/fc/fc_msp.c` (the `MSP2_INAV_LOCAL_STATE` case) to carry accel in the **same single round trip**. Copy the shape of fork commit `63cffaf4f` ("extend MSP2_AUTOC_STATE with filtered gyro rates"): append at payload end, fixed integer scale stated at the write site, and document the axis/sign convention for the consumer. ⚠️ **Source `acc.accADCf` — the TRANSFORMED field, never a raw sensor read.** `acceleration.c:563-568` applies `applySensorAlignment` then `applyBoardAlignment` then divides by `acc.dev.acc_1G`, so `acc.accADCf` is board-alignment-corrected and **already in g units**. This mirrors `gyro.gyroADCf` (`gyro.c:438-442`, same two alignment calls), which is exactly why the existing gyro extension is correct. **Do NOT use** the file-static `accADC` (`acceleration.c:73`) or `acc.dev.ADCRaw` — those are pre-alignment and would bake in each board's misalignment differently (bench roll = −16 vs flight). Wire encoding: milli-g `int16` = `lrintf(acc.accADCf[axis] * 1000.0f)`, giving ±32 g against ±11 g observed. Build **both** targets, bench first; disconnect GPS before flashing.
-- [ ] T073 [US4] ⚠️ **The bench table has ONE UNRESOLVED ROW** — nose-up 90° reads `+2050` on X where the adopted convention implies `−1 g`. Level and right-wing-down are consistent and safe to assert; **do not pin a nose-up assertion until it is settled** against `~/inav` + the two `xiao/*.cfg` alignments (see `docs/COORDINATE_CONVENTIONS.md` → "Accelerometer as an INTERFACE quantity (041)"). ⚠️ Board alignment DIFFERS bench vs flight (different mounting), so verify on **both** targets — a bench-only check is not a flight check. Pin the accel axis and sign convention against the **already-measured bench table** in `docs/COORDINATE_CONVENTIONS.md` ("Ground Verification Results, bench 2026-03-30", `MAMBAF722_2022A`, board alignment roll = −16): level → `[~0, ~0, +2050]`; right wing down 90° → `[~0, +2060, ~0]`; nose up 90° → `[+2050, ~0, ~0]`. ⚠️ **Units**: those are **blackbox `accSmooth` counts** (`acc_1G ≈ 2048`), *not* the runtime `acc.accADCf`, which is the same vector already divided by `acc_1G` — i.e. `+2050 counts` ⇔ `+1.0 g`. Convert before comparing. The **axes and signs** transfer directly; only the scale differs. T073 is therefore *match the table*, not derive the convention — add a test asserting all three attitudes. ⚠️ Board alignment differs between bench (roll = −16) and flight, so verify on **both** targets; do not assume one target's result transfers.
-- [ ] T074 [US4] Consume the new accel fields in `xiao/src/msplink.cpp` and feed `ACCEL_*` into the input vector with the same specific-force semantics as sim.
+- [ ] T072 [US4] Extend `MSP2_AUTOC_STATE` in `~/inav/src/main/fc/fc_msp.c` (the `MSP2_INAV_LOCAL_STATE` case) to carry accel in the **same single round trip**. Copy the shape of fork commit `63cffaf4f` ("extend MSP2_AUTOC_STATE with filtered gyro rates"): append at payload end, fixed integer scale stated at the write site, and document the axis/sign convention for the consumer. ⚠️ **Source `acc.accADCf` — the TRANSFORMED field, never a raw sensor read.** `acceleration.c:563-568` applies `applySensorAlignment` then `applyBoardAlignment` then divides by `acc.dev.acc_1G`, so `acc.accADCf` is board-alignment-corrected and **already in g units**. This mirrors `gyro.gyroADCf` (`gyro.c:438-442`, same two alignment calls), which is exactly why the existing gyro extension is correct. **Do NOT use** the file-static `accADC` (`acceleration.c:73`) or `acc.dev.ADCRaw` — those are pre-alignment and would bake in each board's misalignment differently (bench roll = −16 vs flight). Wire encoding: milli-g `int16` = `lrintf(acc.accADCf[axis] * 1000.0f)`, giving ±32 g against ±11 g observed. ⚠️ **The wire carries INAV's native FLU, unflipped** — exactly as the quat and gyro already do. The FLU→FRD y/z flip belongs at T074's msplink boundary, once, beside the other two (settled 2026-08-11). Build **both** targets, bench first; disconnect GPS before flashing.
+- [ ] T073 [US4] ✅ **The bench table is fully resolved (2026-08-11) — all three rows are consistent and all three are safe to assert.** INAV's frame is FLU and `accADCf` is proper acceleration; nose-up `+2050` on X is correct, and it was the discriminating row precisely because FLU→FRD shares the x axis. Assert in **FRD** (post-msplink): level `[0,0,−1]`, nose up `[+1,0,0]`, right wing down `[0,−1,0]` — see `docs/COORDINATE_CONVENTIONS.md` → "Accelerometer as an INTERFACE quantity (041)" for the `~/inav` evidence. ⚠️ Board alignment DIFFERS bench vs flight (different mounting), so verify on **both** targets — a bench-only check is not a flight check. Pin the accel axis and sign convention against the **already-measured bench table** in `docs/COORDINATE_CONVENTIONS.md` ("Ground Verification Results, bench 2026-03-30", `MAMBAF722_2022A`, board alignment roll = −16): level → `[~0, ~0, +2050]`; right wing down 90° → `[~0, +2060, ~0]`; nose up 90° → `[+2050, ~0, ~0]`. ⚠️ **Units**: those are **blackbox `accSmooth` counts** (`acc_1G ≈ 2048`), *not* the runtime `acc.accADCf`, which is the same vector already divided by `acc_1G` — i.e. `+2050 counts` ⇔ `+1.0 g`. Convert before comparing. The **axes and signs** transfer directly; only the scale differs. T073 is therefore *match the table*, not derive the convention — add a test asserting all three attitudes. ⚠️ Board alignment differs between bench (roll = −16) and flight, so verify on **both** targets; do not assume one target's result transfers.
+- [ ] T074 [US4] Consume the new accel fields in `xiao/src/msplink.cpp` and feed `ACCEL_*` into the input vector with the same specific-force semantics as sim. **The conversion is `accel_FRD = (a[0], −a[1], −a[2])`** — the identical y/z flip already applied to the quat (`inavQuatToAerospaceEB`) and the gyro (`msplink.cpp:964-966`), because INAV's frame is FLU. Put it beside them so the three cannot drift. Level flight must land on `ACCEL_Z ≈ −1`, matching sim.
+- [ ] T074a [US4] ⭐ **Bench-observable NN inputs — operator requirement 2026-08-11: "we will definitely want the NN inputs logged in xiao, and in the sim as usual, to help troubleshoot; bench where we move the craft in various directions to confirm hypothesis."** The engaged path already satisfies this and needs nothing: `TickRecord.inputs[kNumInputs]` is *"post-gather values ACTUALLY fed to the NN (honest)"*, so growing `kNumInputs` 37→42 logs `ACCEL_*` + envelope per tick for free.
+  **The gap is the bench posture itself.** Moving the craft by hand happens **armed-but-not-engaged**, and in that state only `FlightStateRecord` is written — pos, vel, quat, and **no accel**. So the one test that confirms the convention is the one state that cannot see it. Close it:
+  1. Add `int16_t accel_frd[3]` to `FlightStateRecord` (`xiao/include/flight_log_format.h`) — **post-flip aerospace FRD**, the value the NN would receive, same convention as its `quat[4]` (already `q_EB`, post-`neuQuaternionToNed`).
+  2. Add `int16_t accel_inav[3]` alongside it — the **raw INAV FLU** value, pre-flip. ⚠️ Not redundant: with only the post-flip number a wrong reading cannot be attributed to the sensor, the wire, or the flip. With both, the bench says *which step* is wrong. The operator's standing constraint is that this must be right on the **first** flight, and one extra `int16[3]` is the cheapest possible way to make the failure legible.
+  3. **Bump `kFormatVersion` 3 → 4** and update the decoder (Constitution V — every decoder loud-fails on unknown version).
+  **Bench acceptance** (the hypothesis under test, settled 2026-08-11): hold the craft level → `accel_frd ≈ [0, 0, −1]`; nose up 90° → `[+1, 0, 0]`; right wing down 90° → `[0, −1, 0]`; and `accel_inav` shows the un-flipped FLU counterparts `[0,0,+1]`, `[+1,0,0]`, `[0,+1,0]`. Verify on **both** targets — board alignment differs (bench roll = −16, flight roll = 1700 / yaw = 900).
+  **Sim side needs no work**: `AircraftState::nnInputs_` already records the full input vector per tick, so `ACCEL_*` and the envelope slots reach the dmp as a consequence of being inputs, and `dmp-dump` labels them from the metadata short names. Confirm the columns appear at T061 rather than building anything.
 - [ ] T075 [US4] Implement `IN_ENVELOPE` / `ENVELOPE_SECS` on-target in `xiao/src/`: the step-score cone geometry (`FitDistScaleBehind`/`Ahead`, `FitConeAngleDeg`) thresholded at `FitStreakThreshold`, plus the duration accumulator with a **reset on engage** as well as on envelope exit (FR-022a). This is firmware work, not codegen.
 - [ ] T076 [US4] Verify the added payload does not push the MSP cycle past its loop budget. 039 measured zero overruns at 115200 with the prior payload; if headroom is marginal, the unexercised 460800 baud-raise lever is the documented next step rather than dropping the field.
 - [ ] T077 [US4] Decide explicitly whether the queued `mspOverrideInit` first-frame patch (backlog C1 — MSPRCOVERRIDE engage pays a spurious 200 ms floor) rides along, since INAV is being built and flashed anyway. Record the decision either way — this is the same "now is the time" logic as the format break, and the window closes when the flash does.
-- [ ] T078 [US4] [OP] Bench parity before flight (SC-011a): generated forward pass reproduces the desktop forward pass on a fixed input vector, and the new inputs read sane values on-target against a known geometry.
+- [ ] T078 [US4] [OP] Bench parity before flight (SC-011a): generated forward pass reproduces the desktop forward pass on a fixed input vector, and the new inputs read sane values on-target against a known geometry. **Includes the T074a attitude sweep** — move the craft through level / nose-up / right-wing-down and read `accel_frd` + `accel_inav` back out of the log, on **both** targets. This is the empirical confirmation of the 2026-08-11 convention finding; do not treat the desk derivation as sufficient on its own.
 - [ ] T079 [US4] [OP] Flight-test go/no-go per FR-022d: proceed **unless** the M1 result is an utter fail/reject (non-regression failed, or H1a a clear fail with no behavioural change). **Record the decision and its reason either way** — silence on this point is not an acceptable outcome (SC-011b).
 - [ ] T080 [US4] [OP] If go: fly, and produce a flight report in `flight-results/flight-<date>/` with per-flight clock-anchor fit (standing practice). Watch the standing load trend — +11.2 g / −8.4 g is the current record and loads have crept up flight-over-flight.
 

@@ -33,7 +33,9 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                gp_scalar p_crash_this_gen,
                                uint32_t prng_seed,
                                gp_scalar trail_distance,
-                               gp_scalar cep_gate_threshold)
+                               gp_scalar cep_gate_threshold,
+                               const EnvelopeEstimatorConfig& envelope_cfg,
+                               gp_scalar fit_streak_ramp_sec)
     : nn_(nn),
       state_(state),
       source_(source),
@@ -55,7 +57,9 @@ TrackerStepper::TrackerStepper(NNControllerBackend& nn,
                                    : prng_seed % 0x7FFFFFFFu)) | 1u),
       hull_fired_count_(0),
       trail_distance_(trail_distance),
-      cep_gate_threshold_(cep_gate_threshold) {}
+      cep_gate_threshold_(cep_gate_threshold),
+      envelope_cfg_(envelope_cfg),
+      fit_streak_ramp_sec_(fit_streak_ramp_sec) {}
 
 void TrackerStepper::initScenario() {
     nn_.reset();  // zero recurrent state at scenario start (no-op for feedforward)
@@ -143,7 +147,7 @@ void TrackerStepper::initScenario() {
     // is picked up by both execution paths without either being edited.
     // Advanced only on real ticks (stepOnce), never during the history pre-fill
     // below, so each scenario starts at "visible-now / neutral bearing".
-    resetPerceptionState(obs_ring_, sa_state_, perception_carry_);
+    resetPerceptionState(obs_ring_, sa_state_, perception_carry_, envelope_);
 
     if (!source_.samples.empty()) {
         for (int r = 0; r < TrackerObservationRing::kDepth; ++r) {
@@ -243,6 +247,16 @@ CrashReason TrackerStepper::stepOnce() {
     // sentinel threshold (matches fitness_decomposition.cc). Single-sourced
     // update rule mirrored in CrrcsimTrackerHelper::tick.
     advanceSituationalAwareness(history_, sa_state_);
+
+    // Step 1c (041 T038): the M2 direct-perception envelope flag + its
+    // accumulator, from the freshly-projected "now" slot and BEFORE the gather.
+    // Mirrors CrrcsimTrackerHelper::tick — this ordering is the part that can
+    // drift even though the rule itself is single-sourced in
+    // autoc/eval/envelope_state.h, so the reference has to run it too.
+    envelope_.advance(perceivedInEnvelope(history_, envelope_cfg_),
+                      static_cast<double>(SIM_TIME_STEP_MSEC));
+    state_.setInEnvelope(envelope_.in_envelope);
+    state_.setEnvelopeSecs(envelope_.normalizedSecs(fit_streak_ramp_sec_));
 
     // Step 2: gather tracker NN inputs.
     TrackerInputs inputs = {};

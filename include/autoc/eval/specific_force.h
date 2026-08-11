@@ -32,10 +32,17 @@ struct BodySpecificForce {
     gp_vec3 g_units;
 
     // Aviation load factor: +1 in steady level flight, >1 in a pull-up,
-    // negative in a push-over. This is `-g_units.z()` — the negation exists so
-    // the number reads the way loads are quoted in the flight reports
-    // ("+11.2 g / -8.4 g"), and so it matches the INAV bench table, where level
-    // attitude reads +1 g on the normal axis rather than -1.
+    // negative in a push-over. This is `-g_units.z()`, and the negation exists
+    // for ONE reason: so the number reads the way loads are quoted in the
+    // flight reports ("+11.2 g / -8.4 g").
+    //
+    // ⚠️ This is a HUMAN-FACING quantity. The NN input ACCEL_Z is `g_units.z()`
+    // — un-negated, so level flight feeds the network -1, not +1. Do not
+    // "correct" that against INAV's bench table (level reads +1 g on its normal
+    // axis): INAV's frame is FLU, ours is FRD, and msplink flips y/z at the
+    // boundary exactly as it does for the quat and the gyro. Same physical
+    // fact, two frames. Settled 2026-08-11 — see docs/COORDINATE_CONVENTIONS.md
+    // -> "Accelerometer as an INTERFACE quantity (041)".
     gp_scalar load_factor_nz;
 };
 

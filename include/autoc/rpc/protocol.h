@@ -255,6 +255,14 @@ struct WorkerInit {
   int enableEnvelopeInputs;
   int enableAccelInputs;
   double accelScaleG;
+  // 041 T038 — M2 direct-perception envelope estimator thresholds (FR-018b).
+  // M2 cannot see the along/lateral geometry M1 thresholds on, so its flag is
+  // inferred from the beacon pair: both visible, separation in [lo, hi], pair
+  // centroid near boresight. Same no-default rule as the cone above — a
+  // plausible guess here would train a whole run against a wrong envelope.
+  double envelopeSpanLo;
+  double envelopeSpanHi;
+  double envelopeCentroidRadius;
 
   template<class Archive>
   void serialize(Archive& ar) {
@@ -271,7 +279,9 @@ struct WorkerInit {
        // 041 T035 -- fitness cone + US4 gates, appended, no version bump
        fitDistScaleBehind, fitDistScaleAhead, fitConeAngleDeg,
        fitStreakThreshold, fitStreakRampSec,
-       enableEnvelopeInputs, enableAccelInputs, accelScaleG);
+       enableEnvelopeInputs, enableAccelInputs, accelScaleG,
+       // 041 T038 -- M2 envelope estimator, appended, no version bump
+       envelopeSpanLo, envelopeSpanHi, envelopeCentroidRadius);
     mode = static_cast<Mode>(m);
   }
 };
