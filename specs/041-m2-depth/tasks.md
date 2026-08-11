@@ -69,11 +69,19 @@ Task count is 111, not 110: **T074a** added 2026-08-11 (bench-observable NN inpu
 the remaining gate order is: T046 regenerates `nn_program_generated.cpp` for 42 inputs, **then** T045
 commits and builds xiao. T011a is already done, so T044's version bump is safe to take.
 
-⚠️ **T036's gate has not been re-run since the score moved pre-eval at T037.** T036 passed against the
-post-eval placement. The move is argued to be value-preserving (the NN eval writes only commands; position,
-attitude and the target lookup are all fixed before it runs) — but that is an argument, not a measurement,
-and "silence is the failure mode" is exactly T036's point. **Re-run the T036 determinism + materially-same
-comparison before T045.**
+⚠️ **The T037 move is unverified by anything an assistant can run.** Be precise about which "T036" is meant,
+because the two are not interchangeable:
+
+| | what it is | catches the T037 move? |
+|---|---|---|
+| **T036 unit test** (`fitness_decomposition_tests.cc`) | in ctest, no rebuild, passing | ❌ **No.** Its fixtures fill `stepScore` via `fillStepScores()` — the post-hoc reference — so the worker is never invoked. The test says so itself at `:895-900`. It proves the objective READS the recorded series, deterministically. That is orthogonal to where the worker computes it. |
+| **eval-vs-training bitwise gate** [OP] | clean `rebuild-perf.sh` + a run, fitness compared exactly | ✅ **Yes** — it is the only thing that compares a worker-produced dmp against the objective end to end. |
+
+So the argument for the move being value-preserving (the NN eval writes only pitch/roll/throttle; position,
+attitude and the target lookup are all fixed before it runs; `peekTargetGeometry`'s exhaustion clamp
+reproduces the old `lastTargetSample()` exactly) is **an argument, not a measurement** — and "silence is the
+failure mode" is exactly T036's point. **The operator's bitwise gate is what closes it, before T045.**
+Re-running the unit suite is not a substitute and should not be mistaken for one.
 
 ### ✅ SETTLED 2026-08-11 — the accel sign needs NO flip; do not re-open it
 
