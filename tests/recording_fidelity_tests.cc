@@ -30,6 +30,9 @@
 #include <cereal/archives/binary.hpp>
 
 #include "autoc/eval/aircraft_state.h"
+// gp_vec3 / gp_quat cereal handlers are free functions declared in protocol.h,
+// so an AircraftState round trip does not compile without it.
+#include "autoc/rpc/protocol.h"
 #include "autoc/types.h"
 
 namespace {
@@ -129,6 +132,97 @@ TEST(RecordingFidelity, TruncationWouldHaveJittered_T044a2) {
         << "truncation and rounding agreed everywhere, so this platform cannot "
            "reproduce the 038 P0-D-1 jitter and the test above proves less than "
            "it appears to — investigate before trusting it";
+}
+
+// ---------------------------------------------------------------------------
+// T043 — the dmp is SELF-DESCRIBING: a drifted ini cannot change what a
+// recorded run replays as.
+// ---------------------------------------------------------------------------
+
+TEST(RecordingFidelity, RecordedRunConfigSurvivesAndIncludes041Knobs_T043) {
+    // Values deliberately unlike any shipped ini, so a reader that silently
+    // reached for ConfigManager instead would produce visibly different
+    // numbers rather than coincidentally-equal ones.
+    RecordedRunConfig rc;
+    rc.fitDistScaleBehind     = 11.5;
+    rc.fitDistScaleAhead      = 1.25;
+    rc.fitConeAngleDeg        = 33.0;
+    rc.fitStreakThreshold     = 0.625;
+    rc.fitStreakRampSec       = 7.5;
+    rc.fitStreakMultiplierMax = 9.0;
+    rc.simTimeStepMsec        = 50;
+    rc.cadenceTickScale       = 0.5;
+    rc.enableHullCrashPenalty = 1;
+    rc.hullCrashPenaltyFactor = 2.5;
+    rc.oobCrashPenaltyWeight  = 0.125;
+    // 041 T043 — the knobs that say whether ACCEL_* / envelope were POPULATED
+    // or ABLATED. Set enableAccelInputs = 0 on purpose: "ablated" is the state
+    // that is indistinguishable from "broken" if it is not recorded.
+    rc.enableEnvelopeInputs   = 1;
+    rc.enableAccelInputs      = 0;
+    rc.accelScaleG            = 8.0;
+    rc.envelopeSpanLo         = 0.02;
+    rc.envelopeSpanHi         = 0.35;
+    rc.envelopeCentroidRadius = 0.5;
+
+    std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
+    {
+        cereal::BinaryOutputArchive out(ss);
+        out(rc);
+    }
+    RecordedRunConfig back;
+    {
+        cereal::BinaryInputArchive in(ss);
+        in(back);
+    }
+
+    EXPECT_DOUBLE_EQ(back.fitDistScaleBehind, rc.fitDistScaleBehind);
+    EXPECT_DOUBLE_EQ(back.fitDistScaleAhead, rc.fitDistScaleAhead);
+    EXPECT_DOUBLE_EQ(back.fitConeAngleDeg, rc.fitConeAngleDeg);
+    EXPECT_DOUBLE_EQ(back.fitStreakThreshold, rc.fitStreakThreshold);
+    EXPECT_DOUBLE_EQ(back.fitStreakRampSec, rc.fitStreakRampSec);
+    EXPECT_DOUBLE_EQ(back.fitStreakMultiplierMax, rc.fitStreakMultiplierMax);
+    EXPECT_EQ(back.simTimeStepMsec, rc.simTimeStepMsec);
+    EXPECT_DOUBLE_EQ(back.cadenceTickScale, rc.cadenceTickScale);
+    EXPECT_EQ(back.enableHullCrashPenalty, rc.enableHullCrashPenalty);
+    EXPECT_DOUBLE_EQ(back.hullCrashPenaltyFactor, rc.hullCrashPenaltyFactor);
+    EXPECT_DOUBLE_EQ(back.oobCrashPenaltyWeight, rc.oobCrashPenaltyWeight);
+
+    // The 041 tail — the part a stale reader would silently drop.
+    EXPECT_EQ(back.enableEnvelopeInputs, 1);
+    EXPECT_EQ(back.enableAccelInputs, 0)
+        << "an ablated accel channel must be RECORDED as ablated; otherwise a "
+           "zeroed column cannot be told apart from a broken one";
+    EXPECT_DOUBLE_EQ(back.accelScaleG, 8.0);
+    EXPECT_DOUBLE_EQ(back.envelopeSpanLo, 0.02);
+    EXPECT_DOUBLE_EQ(back.envelopeSpanHi, 0.35);
+    EXPECT_DOUBLE_EQ(back.envelopeCentroidRadius, 0.5);
+}
+
+TEST(RecordingFidelity, RecordedConfigIsIndependentOfTheLiveIni_T043) {
+    // The property in one assertion: a run's numbers travel WITH the run.
+    //
+    // ⚠️ Scope, stated because it is easy to overclaim: this pins that the
+    // recorded block is a standalone carrier. That the READERS prefer it is
+    // enforced structurally rather than here — dmp_dump.cc:655-660 reads
+    // `results.runConfig` with no ConfigManager fallback at all, and 041 T043
+    // closed renderer.cc's last live-ini read (:4651, the HUD multiplier
+    // ceiling). A reader cannot "fall back" to a path that no longer exists.
+    EvalResults r;
+    r.runConfig.fitStreakMultiplierMax = 9.0;
+    r.runConfig.fitStreakRampSec = 7.5;
+
+    // Whatever any ini says, these are the run's own numbers.
+    EXPECT_DOUBLE_EQ(r.runConfig.fitStreakMultiplierMax, 9.0);
+    EXPECT_DOUBLE_EQ(r.runConfig.fitStreakRampSec, 7.5);
+
+    // A default-constructed block is ZERO, not a plausible-looking default.
+    // That matters: a zeroed cone read as if it were real would score a whole
+    // run against nonsense, so zero has to be obviously wrong rather than
+    // quietly wrong.
+    const RecordedRunConfig fresh;
+    EXPECT_DOUBLE_EQ(fresh.fitConeAngleDeg, 0.0);
+    EXPECT_DOUBLE_EQ(fresh.accelScaleG, 0.0);
 }
 
 }  // namespace

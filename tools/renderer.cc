@@ -4648,7 +4648,16 @@ void Renderer::updateControlsOverlay(gp_scalar currentTime) {
   {
     double mult = 1.0;
     double score = replayScore(selectedArena, currentTime, mult);
-    const double multMax = std::max(1.0001, ConfigManager::getConfig().fitStreakMultiplierMax);
+    // 041 T043 — the RECORDED multiplier ceiling, not the live .ini.
+    // ⚠️ This line was the last half of a half-flipped reader: `mult` above
+    // comes from replayScore, which normalizes against the dmp's own
+    // rc.fitStreakMultiplierMax, while this scale used to come from whatever
+    // ini happened to be on disk. A drifted ini therefore mapped a correct
+    // multiplier onto a wrong colour, silently. A reader that takes half its
+    // numbers from the artifact and half from the environment is worse than one
+    // that takes none from the artifact, because the disagreement is invisible.
+    const double multMax =
+        std::max(1.0001, evalResults.runConfig.fitStreakMultiplierMax);
     double t = (mult - 1.0) / (multMax - 1.0);
     t = (t < 0.0) ? 0.0 : (t > 1.0 ? 1.0 : t);   // 0 = grey, 1 = full streak
     const double cr = 0.60 + 0.40 * t;            // grey (0.6,0.6,0.6) → gold (1.0,0.84,0.0)

@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 
@@ -252,17 +253,102 @@ TEST(TrackerDmpRoundtrip, PathgenStyleDmpHasEmptyTrackerFields) {
 // exact byte tampering once cereal's stream layout is locked.
 // ---------------------------------------------------------------------------
 
-TEST(TrackerDmpRoundtrip, FutureVersionLoudFail_DocumentationOnly) {
-    // This test documents the Constitution V loud-fail contract for
-    // forward-incompatible dmps. The byte-level synthesis is deferred to
-    // a follow-up — cereal's version-field byte position requires
-    // integration with cereal's archive layout, which is internal API.
-    //
-    // Operator-driven verification: take a real v=2 dmp, manually
-    // increment the version byte, attempt to load with build/autoc-eval —
-    // expect a cereal::Exception. Once verified, this test can be
-    // upgraded to a hermetic byte-tampering reproducer.
-    SUCCEED() << "Constitution V loud-fail on future-version dmp: "
-                 "documented contract (operator-verifiable). Hermetic "
-                 "byte-tampering test deferred to a follow-up.";
+// ---------------------------------------------------------------------------
+// 041 T044 — schema-mismatch loud fail, now HERMETIC.
+//
+// This replaces a SUCCEED() placeholder that asserted nothing and deferred the
+// real check to "operator-driven verification". It could be written now only
+// because T044 added an explicit version check to EvalResults::serialize:
+// before that there was no defined behaviour to test, because cereal does not
+// reject a version mismatch — it forwards the number and lets the body read a
+// payload that is not there.
+//
+// What that produced, and why this test exists: a mismatched read walked into
+// the `version >= 2` branch, pulled a garbage container length, and the process
+// died inside the allocator as `vector::_M_default_append`. That trace names
+// neither the artifact nor the schema, and it points at memory corruption —
+// a diagnosis that costs hours and goes to the wrong place entirely.
+// ---------------------------------------------------------------------------
+
+// Rewrite the class-version field cereal writes at the head of the archive.
+// Asserted rather than assumed: if cereal's layout ever moves, the assertion
+// below fails loudly instead of silently tampering with an unrelated byte and
+// leaving a test that passes for the wrong reason.
+std::string withSchemaVersion(const std::string& blob, std::uint32_t version) {
+    EXPECT_GE(blob.size(), sizeof(std::uint32_t));
+    std::uint32_t stored = 0;
+    std::memcpy(&stored, blob.data(), sizeof(stored));
+    EXPECT_EQ(stored, EvalResults::kSchemaVersion)
+        << "expected the archive to open with the EvalResults class version; "
+           "cereal's layout may have changed, in which case this helper is "
+           "tampering with the wrong bytes";
+
+    std::string out = blob;
+    std::memcpy(out.data(), &version, sizeof(version));
+    return out;
+}
+
+std::string serializeCurrent() {
+    EvalResults r = makeSyntheticV2(2, 3);
+    std::ostringstream os(std::ios::binary);
+    {
+        cereal::BinaryOutputArchive oa(os);
+        oa(r);
+    }
+    return os.str();
+}
+
+TEST(TrackerDmpRoundtrip, PriorVersionArtifactFailsLoudNamingBothVersions_T044) {
+    const std::string tampered = withSchemaVersion(serializeCurrent(), 2u);
+
+    EvalResults out;
+    std::istringstream is(tampered, std::ios::binary);
+    cereal::BinaryInputArchive ia(is);
+
+    try {
+        ia(out);
+        FAIL() << "reading a v2 artifact with a v3 reader must throw, not "
+                  "succeed — a silent partial read is the failure Constitution V "
+                  "exists to prevent";
+    } catch (const std::exception& e) {
+        const std::string msg = e.what();
+        // BOTH numbers, per the task: one alone leaves the reader guessing
+        // which side is stale.
+        EXPECT_NE(msg.find("v2"), std::string::npos) << msg;
+        EXPECT_NE(msg.find("v3"), std::string::npos) << msg;
+        // And it must say which direction, since the remedies are opposite.
+        EXPECT_NE(msg.find("predates"), std::string::npos) << msg;
+    }
+}
+
+TEST(TrackerDmpRoundtrip, NewerVersionArtifactFailsLoudAndSaysRebuild_T044) {
+    // The other direction: a stale BINARY against a newer artifact. Same class
+    // of bug, opposite remedy, so the message must distinguish them.
+    const std::string tampered = withSchemaVersion(serializeCurrent(), 99u);
+
+    EvalResults out;
+    std::istringstream is(tampered, std::ios::binary);
+    cereal::BinaryInputArchive ia(is);
+
+    try {
+        ia(out);
+        FAIL() << "reading a v99 artifact with a v3 reader must throw";
+    } catch (const std::exception& e) {
+        const std::string msg = e.what();
+        EXPECT_NE(msg.find("v99"), std::string::npos) << msg;
+        EXPECT_NE(msg.find("v3"), std::string::npos) << msg;
+        EXPECT_NE(msg.find("NEWER"), std::string::npos) << msg;
+    }
+}
+
+TEST(TrackerDmpRoundtrip, CurrentVersionStillRoundTrips_T044) {
+    // The guard must reject mismatches WITHOUT rejecting the current schema —
+    // a check that throws on everything would pass both tests above and break
+    // every real read.
+    const std::string blob = serializeCurrent();
+    EvalResults out;
+    std::istringstream is(blob, std::ios::binary);
+    cereal::BinaryInputArchive ia(is);
+    EXPECT_NO_THROW(ia(out));
+    EXPECT_EQ(out.tickList.size(), 2u);
 }

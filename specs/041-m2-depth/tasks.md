@@ -63,6 +63,24 @@ Task count is 111, not 110: **T074a** added 2026-08-11 (bench-observable NN inpu
   what let the tracker score pre-eval. The clamp at exhaustion is not padding: it reproduces the old
   `lastTargetSample()` value exactly, which is what keeps the move a relocation.
 
+### State after the 2026-08-11 evening pass
+
+**Phase 4 is code complete except T046**, which is deliberately parked (below). Landed this pass:
+T042 + T044a tests (`tests/recording_fidelity_tests.cc`), T043's real remainder (041 knobs recorded,
+`renderer.cc:4651` un-half-flipped, tests), and T044 (version 2→3 with a **real** fail-loud check).
+**44/44 ctest suites pass**; autoc, crrcsim, dmp-dump and renderer all build.
+
+⚠️ **T044's headline correction**: the old comment claimed *"v=3+ dmps fail loudly via cereal's
+class-version mechanism"*. **Cereal does no such thing** — it forwards the stored version to `serialize()`
+and rejects nothing, which is exactly why mismatches died in the allocator as `vector::_M_default_append`
+instead of naming the artifact. The check is now explicit in `EvalResults::serialize`, keyed to
+`EvalResults::kSchemaVersion`, static_asserted against `CEREAL_CLASS_VERSION`, and covered by three
+hermetic tests (older / newer / current) that replaced a `SUCCEED()` placeholder asserting nothing.
+
+**T046 is PARKED** — operator 2026-08-11: *"that part of validate needs to wait."* It is the sole
+remaining T045 precondition, so **T045 cannot land until T046a is done**. See T046 for the split and for
+the silent 37-vs-42 layout hazard that must be made loud as part of it.
+
 ### ⚠️ Next, and the one thing to be careful about
 
 **T042 → T043 → T044 → T046 → T045.** Ordering constraint 6 reduced to T046-only (T047 is inverted), so
@@ -273,14 +291,14 @@ read by every consumer, with input-count assertions and metadata tables in agree
 
 ### Recording changes
 
-- [ ] T042 [US2] ⚠️ **IMPLEMENTATION ALREADY DONE — verified 2026-08-11. The task premise is STALE.** It says the field is "serialized-but-never-set, zero in every dmp"; that was true when 041 was specced but was fixed at **038 P0-D-3** (`e6108cc`), and `inputdev_autoc.cpp` has set it from `eom01->getLastLocalAirmass()` (NED ft/s → m/s, NaN-guarded) ever since. **Do not re-implement it.**
+- [X] T042 [US2] ⚠️ **IMPLEMENTATION ALREADY DONE — verified 2026-08-11. The task premise is STALE.** It says the field is "serialized-but-never-set, zero in every dmp"; that was true when 041 was specced but was fixed at **038 P0-D-3** (`e6108cc`), and `inputdev_autoc.cpp` has set it from `eom01->getLastLocalAirmass()` (NED ft/s → m/s, NaN-guarded) ever since. **Do not re-implement it.**
   Outstanding: **only the test** — that a non-zero wind survives to the dmp. Note the honest limit of a unit test here: recording is a worker-side effect, so unit level can prove the field round-trips through serialization, and the end-to-end "a run in wind records wind" claim is closed by the **T061 smoke inspection**, not by ctest.
-- [ ] T043 [US2] ⚠️ **MOSTLY DONE ALREADY — verified 2026-08-11. Scope is much smaller than this text implies.** The 038 P0-D-2 work landed `RecordedRunConfig` (`protocol.h:432`), serialized it into `EvalResults` (`:583`), and flipped `dmp_dump.cc` to read it with **no ConfigManager fallback** (`:655-660`). Do not redo any of that. What actually remains:
+- [X] T043 [US2] ⚠️ **MOSTLY DONE ALREADY — verified 2026-08-11. Scope is much smaller than this text implies.** The 038 P0-D-2 work landed `RecordedRunConfig` (`protocol.h:432`), serialized it into `EvalResults` (`:583`), and flipped `dmp_dump.cc` to read it with **no ConfigManager fallback** (`:655-660`). Do not redo any of that. What actually remains:
   1. **`tools/renderer.cc` is only half-flipped.** It reads `runConfig` at `:3313` but still reads the **live ini** at `:4651` (`ConfigManager::getConfig().fitStreakMultiplierMax`, the HUD streak-colour scale). Display-only, but it is precisely the "reader with a drifted ini" case this task exists to close, and a half-flipped reader is worse than an unflipped one because the inconsistency is invisible.
   2. **Add 041's knobs to `RecordedRunConfig`** — `enableEnvelopeInputs`, `enableAccelInputs`, `accelScaleG`, `envelopeSpanLo/Hi`, `envelopeCentroidRadius`. Without them a dmp cannot say whether its `ACCEL_*` columns were populated or ablated, which is exactly the question the T068 matrix asks of it.
   3. **The test**: a reader with a deliberately-drifted ini still replays the recorded numbers.
-- [ ] T044 [US2] Bump the `EvalResults` version field and implement **fail-loud** reads naming both the artifact and reader versions (Constitution V; research.md R6). No migration path, no shim. Add a test that a prior-version artifact errors with both numbers and does **not** crash in the allocator — the 038 baseline currently dies as `vector::_M_default_append`, which is exactly the diagnosis this prevents.
-- [ ] T044a [US2] ⚠️ **IMPLEMENTATION ALREADY DONE — verified 2026-08-11. The task premise is STALE.** `SimStateHandler::getSimulationTimeSinceReset()` already returns `llround(sim_steps * Global::dt * 1000.0)` (**038 P0-D-1**, `e6108cc` — the same commit as T042), replacing the truncation that produced 49/50/51 ms jitter. **Do not re-implement it.**
+- [X] T044 [US2] Bump the `EvalResults` version field and implement **fail-loud** reads naming both the artifact and reader versions (Constitution V; research.md R6). No migration path, no shim. Add a test that a prior-version artifact errors with both numbers and does **not** crash in the allocator — the 038 baseline currently dies as `vector::_M_default_append`, which is exactly the diagnosis this prevents.
+- [X] T044a [US2] ⚠️ **IMPLEMENTATION ALREADY DONE — verified 2026-08-11. The task premise is STALE.** `SimStateHandler::getSimulationTimeSinceReset()` already returns `llround(sim_steps * Global::dt * 1000.0)` (**038 P0-D-1**, `e6108cc` — the same commit as T042), replacing the truncation that produced 49/50/51 ms jitter. **Do not re-implement it.**
   **Two consequences, both worth stating because they change the plan:**
   1. ⛔ **The `[OP]` marking and the "determinism-affecting / pointer-bump the submodule first" warning NO LONGER APPLY to this task.** There is no determinism-affecting change owed here. An earlier 2026-08-11 note claimed T044a was still pending and would land *between* two runs of the bitwise gate — that was wrong, and it made the gate look more fragile than it is.
   2. The consumer-side invariant is already enforced **fail-loud at runtime**: `crrcsim_tracker_helper.cpp::initScenario` throws when the first source gap ≠ `SIM_TIME_STEP_MSEC`, and `tracker_stepper.cc` mirrors it.

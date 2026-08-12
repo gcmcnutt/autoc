@@ -445,12 +445,31 @@ struct RecordedRunConfig {
   double hullCrashPenaltyFactor = 0.0;
   double oobCrashPenaltyWeight = 0.0;
 
+  // 041 T043 — the US4 observation knobs. Recorded because a dmp must be able
+  // to answer "were ACCEL_* and the envelope slots POPULATED or ABLATED in this
+  // run?" — which is exactly what the T068 ablation matrix asks of it. Without
+  // these a zeroed accel column is ambiguous between "ablated on purpose" and
+  // "silently broken", and that ambiguity is unresolvable after the fact.
+  int    enableEnvelopeInputs = 0;
+  int    enableAccelInputs = 0;
+  double accelScaleG = 0.0;
+  // M2 direct-perception envelope estimator thresholds (FR-018b). Recorded for
+  // the same reason: the M2 flag is an ESTIMATE, so its thresholds are part of
+  // what the run means.
+  double envelopeSpanLo = 0.0;
+  double envelopeSpanHi = 0.0;
+  double envelopeCentroidRadius = 0.0;
+
   template<class Archive>
   void serialize(Archive& ar) {
     ar(fitDistScaleBehind, fitDistScaleAhead, fitConeAngleDeg,
        fitStreakThreshold, fitStreakRampSec, fitStreakMultiplierMax,
        simTimeStepMsec, cadenceTickScale,
-       enableHullCrashPenalty, hullCrashPenaltyFactor, oobCrashPenaltyWeight);
+       enableHullCrashPenalty, hullCrashPenaltyFactor, oobCrashPenaltyWeight,
+       // 041 T043 — appended; EvalResults' version bump at T044 is what makes
+       // older dmps fail loud rather than mis-read this tail.
+       enableEnvelopeInputs, enableAccelInputs, accelScaleG,
+       envelopeSpanLo, envelopeSpanHi, envelopeCentroidRadius);
   }
 };
 
@@ -560,8 +579,43 @@ struct EvalResults {
   // (T010) in preference to the live .ini.
   RecordedRunConfig runConfig;
 
+  // 041 T044 (Constitution V; research.md R6) — the reader's schema version, in
+  // one place so the check below and CEREAL_CLASS_VERSION cannot drift apart.
+  static constexpr std::uint32_t kSchemaVersion = 3;
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
+    // 041 T044 — FAIL LOUD ON ANY VERSION MISMATCH, naming BOTH numbers.
+    //
+    // ⚠️ Cereal does NOT do this for you. It reads the stored version and hands
+    // it straight to this function; nothing rejects a mismatch. The old comment
+    // claiming "v=3+ dmps fail loudly via cereal's class-version mechanism" was
+    // wrong, and the failure it promised is what actually happened instead:
+    // the `version >= 2` branch below runs against a payload with a different
+    // tail, reads a garbage length, and the process dies inside the allocator
+    // as `vector::_M_default_append` — a stack trace that names neither the
+    // artifact nor the schema, and sent one diagnosis down a memory-corruption
+    // path it never belonged on.
+    //
+    // No migration, no shim (FR-005 / the greenfield policy): 041's contract
+    // break orphans every earlier dmp by design. The ONLY requirement is that a
+    // reader says so in one line instead of crashing.
+    //
+    // Both directions are errors and both are worth distinguishing: an OLDER
+    // artifact means "re-bake or check out the matching code", a NEWER one
+    // means "your binary is stale".
+    if (version != kSchemaVersion) {
+      throw std::runtime_error(
+          std::string("EvalResults schema mismatch: artifact is v") +
+          std::to_string(version) + ", this reader expects v" +
+          std::to_string(kSchemaVersion) +
+          (version < kSchemaVersion
+               ? " — the artifact predates the 041 contract break (FR-005) and"
+                 " cannot be read; re-bake it, or check out the code that"
+                 " produced it. There is deliberately no migration path."
+               : " — the artifact is NEWER than this binary; rebuild."));
+    }
+
     ar(gp, gpHash, crashReasonList, pathList, tickList,
        scenario, scenarioList, debugSamples, physicsTrace,
        workerId, workerPid, workerEvalCounter);
@@ -678,11 +732,23 @@ struct EvalResults {
   }
 };
 // 030 M8a — bumped 1 → 2 for tracker-mode dmp output (FR-015a + Constitution V).
-// v=1 dmps still readable: cameraViewList / targetTrajectoryList /
-// arenaEgressCount / hullStrikeCount remain empty when reading v=1.
-// v=3+ dmps fail loudly via cereal's class-version mechanism — caller
-// should treat as a Constitution V "schema mismatch" loud-fail trigger.
-CEREAL_CLASS_VERSION(EvalResults, 2)
+//
+// 041 T044 — bumped 2 → 3 for the contract break (FR-005): the grouped per-tick
+// record (EvalTick), the five new NN input slots, and the US4 knobs added to
+// RecordedRunConfig. Every pre-041 dmp is orphaned BY DESIGN — no migration, no
+// shim, one owed re-bake.
+//
+// ⚠️ The version check that enforces this lives in EvalResults::serialize, NOT
+// here. Cereal's class-version mechanism records and forwards the version; it
+// does not reject a mismatch, which is why the previous "v=3+ fails loudly via
+// cereal" note was wrong and mismatches died in the allocator instead.
+//
+// ⚠️ Keep this in step with EvalResults::kSchemaVersion — the static_assert
+// below makes a one-sided edit a compile error rather than a runtime surprise.
+CEREAL_CLASS_VERSION(EvalResults, 3)
+static_assert(EvalResults::kSchemaVersion == 3,
+              "EvalResults::kSchemaVersion and CEREAL_CLASS_VERSION(EvalResults, N) "
+              "must agree — bump both or neither.");
 
 struct WorkerContext {
   std::unique_ptr<TcpSocket> socket;

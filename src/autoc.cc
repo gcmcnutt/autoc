@@ -164,6 +164,14 @@ static void stampEvalResultsProvenance(EvalResults& results) {
     rc.enableHullCrashPenalty = cfg.enableHullCrashPenalty;
     rc.hullCrashPenaltyFactor = cfg.hullCrashPenaltyFactor;
     rc.oobCrashPenaltyWeight  = cfg.oobCrashPenaltyWeight;
+    // 041 T043 — US4 observation knobs, so the dmp says whether its ACCEL_* /
+    // envelope columns were populated or ablated.
+    rc.enableEnvelopeInputs    = cfg.enableEnvelopeInputs;
+    rc.enableAccelInputs       = cfg.enableAccelInputs;
+    rc.accelScaleG             = cfg.accelScaleG;
+    rc.envelopeSpanLo          = cfg.envelopeSpanLo;
+    rc.envelopeSpanHi          = cfg.envelopeSpanHi;
+    rc.envelopeCentroidRadius  = cfg.envelopeCentroidRadius;
 }
 
 // Compute (and cache) the scenarioSeed table once the per-run scenario
