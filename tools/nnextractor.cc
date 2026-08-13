@@ -98,8 +98,32 @@ int main(int argc, char** argv) {
       computedKeyName = autoc::findLatestRun(*s3_client, bucket);
     }
     if (specifiedGeneration >= 0) {
-      // -g passes the raw file gen number (10000 - actualGen), as before.
-      keyName = computedKeyName + "gen" + std::to_string(specifiedGeneration) + ".dmp";
+      // -g passes the raw FILE gen number (10000 - actualGen), as before.
+      //
+      // ⚠️ Resolve against what is actually in the bucket rather than
+      // synthesizing the extension. Every dmp is zstd-compressed
+      // (`gen<N>.dmp.zst`), so the old hardcoded `.dmp` could never find one —
+      // `-g` was simply broken, and its error ("The specified key does not
+      // exist") looked like a wrong gen number rather than a wrong suffix.
+      const std::string wanted = "gen" + std::to_string(specifiedGeneration) + ".dmp";
+      const auto keys = autoc::listRunGenKeys(*s3_client, bucket, computedKeyName);
+      for (const auto& k : keys) {
+        const std::string base = k.substr(k.find_last_of('/') + 1);
+        if (base == wanted || base == wanted + ".zst") { keyName = k; break; }
+      }
+      if (keyName.empty()) {
+        std::cerr << "nnextractor: no dmp for gen " << specifiedGeneration
+                  << " under " << computedKeyName << " (" << keys.size()
+                  << " gen objects present)." << std::endl;
+        if (!keys.empty()) {
+          std::cerr << "  first: " << keys.front() << "\n  last : "
+                    << keys.back() << std::endl;
+        }
+        std::cerr << "  NOTE: -g takes the FILE number (10000 - actualGen), "
+                     "unlike dmp-dump --gen which takes the actual generation."
+                  << std::endl;
+        return 1;
+      }
     } else {
       keyName = autoc::findLatestGenKey(*s3_client, bucket, computedKeyName);
     }
