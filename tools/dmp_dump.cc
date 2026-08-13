@@ -647,6 +647,25 @@ int main(int argc, char** argv) {
   // inX/inY/inZ. (exit_dir removed 038 US3.)
   if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt,inX,inY,inZ,tSee,spP1,spP2,spP3,spdR";
   else           std::cout << ",dist,along,stpPt,mult,rampSc,dBnd,inX,inY,inZ";
+  // 041 T037-T039 — the five A1 slots, read from the RECORDED NN input vector
+  // in both modes. Short names match kPathgenInputMeta / kTrackerInputMeta so a
+  // column and its metadata row cannot drift.
+  //
+  // ⚠️ Not optional decoration. Two consumers need these and had no source:
+  //   * T061's smoke inspection — "IN_ENVELOPE toggles, ENVELOPE_SECS ramps and
+  //     resets, ACCEL_Z reads ~1 g in level flight" was uninspectable, because
+  //     dmp_dump emitted only a hand-picked subset of NNInputs.
+  //   * Study A (T055) reads load from the recorded ACCEL_Z column, explicitly
+  //     NOT from physicsTrace — the trace is capped at 175 ms per scenario
+  //     (0.89% of ticks) and only captured on elite reeval.
+  //
+  // ⚠️ acX/acY/acZ are in NN units (specific force / kAccelScale_g), the value
+  // the policy actually saw. Multiply by the dmp's recorded accelScaleG for g.
+  // The sfx_g/sfy_g/sfz_g/nz_g columns under --physics are a DIFFERENT
+  // quantity: derived from the physics trace, in g, and present on ~1% of
+  // ticks. Same physics, different provenance and coverage — do not mix them in
+  // one analysis without saying which is which.
+  std::cout << ",env,envS,acX,acY,acZ";
   // 041 T010 — physics columns last, so every existing column index is
   // unchanged for readers that ignore the flag.
   if (physics) std::cout << ",phyMs,accX,accY,accZ,odbP,odbQ,odbR,alpha,vRelWind,sfx_g,sfy_g,sfz_g,nz_g";
@@ -820,6 +839,26 @@ int main(int argc, char** argv) {
                           rampSc, nn_in.dist_to_boundary, nn_in.inward_body_x,
                           nn_in.inward_body_y, nn_in.inward_body_z);
         std::cout.write(d, dn);
+      }
+
+      // 041 T037-T039 — the five A1 slots, straight off the recorded input
+      // vector. Mode-branched only because the two input structs are unrelated
+      // types; the VALUES mean the same thing in both, which is the point.
+      {
+        char eb[160];
+        int en;
+        if (sceneTracker) {
+          const TrackerInputs& in = st.getTrackerInputs();
+          en = snprintf(eb, sizeof(eb), ",%.0f,%.6f,%.6f,%.6f,%.6f",
+                        in.in_envelope, in.envelope_secs,
+                        in.accel_x, in.accel_y, in.accel_z);
+        } else {
+          const NNInputs& in = st.getNNInputs();
+          en = snprintf(eb, sizeof(eb), ",%.0f,%.6f,%.6f,%.6f,%.6f",
+                        in.in_envelope, in.envelope_secs,
+                        in.accel_x, in.accel_y, in.accel_z);
+        }
+        std::cout.write(eb, en);
       }
 
       // 041 T010 — physics tail, joined on recorded sim time. Empty fields when
