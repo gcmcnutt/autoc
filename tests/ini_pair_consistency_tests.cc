@@ -36,7 +36,20 @@ namespace {
 // Minimal ini scan: `Key = value  # comment`. Deliberately not INIReader —
 // this test is about what the FILES say, and going through the parser would
 // fold in defaults for absent keys, which is precisely what it must detect.
-std::map<std::string, std::string> readKeys(const std::string& path) {
+// Resolve against the repo root baked in at configure time. The ALL target
+// runs test binaries from the build dir while ctest can run them from
+// anywhere, so a relative path would pass in one harness and fail in the other
+// — and "cannot open" would read as a missing ini rather than a wrong cwd.
+#ifndef AUTOC_SOURCE_DIR
+#error "AUTOC_SOURCE_DIR must be defined by the build (see CMakeLists.txt)"
+#endif
+
+std::string repoPath(const std::string& rel) {
+    return std::string(AUTOC_SOURCE_DIR) + "/" + rel;
+}
+
+std::map<std::string, std::string> readKeys(const std::string& relPath) {
+    const std::string path = repoPath(relPath);
     std::map<std::string, std::string> out;
     std::ifstream in(path);
     EXPECT_TRUE(in.is_open()) << "cannot open " << path;

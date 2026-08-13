@@ -274,6 +274,12 @@ if(ENABLE_AUTOC_TESTS)
   # from the repo root (WORKING_DIRECTORY below), not the build dir.
   add_executable(ini_pair_consistency_tests tests/ini_pair_consistency_tests.cc)
   target_link_libraries(ini_pair_consistency_tests GTest::gtest GTest::gtest_main)
+  # Reads the production inis, so it needs the repo root as an ABSOLUTE path.
+  # A WORKING_DIRECTORY on add_test alone would not do: the run_autoc_tests ALL
+  # target runs from the build dir and shares one working directory across every
+  # COMMAND, so the test has to be cwd-independent rather than cwd-configured.
+  target_compile_definitions(ini_pair_consistency_tests
+                             PRIVATE AUTOC_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
   # 037 T016 -- NN-layout round-trip + history-layout fail-loud.
   add_executable(nn_layout_tests tests/nn_layout_tests.cc)
@@ -342,8 +348,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME tick_rescale_tests COMMAND tick_rescale_tests)
   add_test(NAME envelope_accel_inputs_tests COMMAND envelope_accel_inputs_tests)
   add_test(NAME recording_fidelity_tests COMMAND recording_fidelity_tests)
-  add_test(NAME ini_pair_consistency_tests COMMAND ini_pair_consistency_tests
-           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  add_test(NAME ini_pair_consistency_tests COMMAND ini_pair_consistency_tests)
   add_test(NAME nn_layout_tests COMMAND nn_layout_tests)
   add_test(NAME nn2cpp_unroll_tests COMMAND nn2cpp_unroll_tests)
   add_test(NAME arena_recenter_tests COMMAND arena_recenter_tests)
@@ -382,6 +387,7 @@ if(ENABLE_AUTOC_TESTS)
             tick_rescale_tests
             envelope_accel_inputs_tests
             recording_fidelity_tests
+            ini_pair_consistency_tests
             nn_layout_tests
             arena_recenter_tests
             nn2cpp_unroll_tests
@@ -395,6 +401,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND tick_rescale_tests --gtest_brief=1
     COMMAND envelope_accel_inputs_tests --gtest_brief=1
     COMMAND recording_fidelity_tests --gtest_brief=1
+    COMMAND ini_pair_consistency_tests --gtest_brief=1
     COMMAND nn_layout_tests --gtest_brief=1
     COMMAND arena_recenter_tests --gtest_brief=1
     COMMAND nn2cpp_unroll_tests --gtest_brief=1
