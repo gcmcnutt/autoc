@@ -1,6 +1,6 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-08-06
+**Last Updated**: 2026-08-13
 
 > **Routing (2026-08-06, 040 wrap)**: 040 closed — see [040 outcome](040-camera-redo/outcome.md).
 > Verdict: *a better camera model, much closer to real, and training results more or less the same —
@@ -14,6 +14,36 @@
 ---
 
 ## 041 deferrals
+
+### [041 smoke session, filed 2026-08-13] Portable run review — the renderer is bound to an X display, and that is now a workflow tax
+
+**Operator 2026-08-13**, mid-smoke: *"the current renderer isn't a portable web page — we prob should do
+that soon — so i pull the code over to where i can do x display at decent performance."*
+
+**The cost, observed the same day.** Reviewing a run currently requires the *build host* and the *display
+host* to be the same machine, or a code push and a rebuild to move between them. During the 041 M1 smoke
+that meant: push both repos, pull on the render host, `submodule update`, clean rebuild — to look at a run
+that was already sitting complete in S3. The artifact is portable; the viewer is not.
+
+It also cost a debugging cycle. A renderer segfault could not be reproduced on the training host (only
+software-GL `xvfb` was available there), so the crash could not be attributed to code versus display path
+without moving machines. A viewer that runs anywhere would have made that a one-minute question.
+
+**Shape, roughly.** The renderer is VTK/X11/GPU-bound. A browser-based viewer reading the same dmp — via a
+small exporter, or a WASM/three.js front end — decouples "where the run was produced" from "where it is
+looked at", and makes a run shareable rather than reproducible-on-request.
+
+⚠️ **Do not scope this as a port of the current renderer.** It has accumulated a lot of surface (playback,
+FOV pyramids, beacon trails, per-tick HUD, xiao-log overlay, tracker POV). The useful first version is the
+*review* subset — trajectory, target, score/streak over time — not feature parity. Deciding which subset
+is the actual work.
+
+**Adjacent, already filed**: the T024 entry below ("make 'is every renderer surface on the same tick?'
+ANALYTIC instead of visual") points the same direction — several things currently answered by *looking*
+should be answered by *reading numbers*, which shrinks what a viewer has to do at all.
+
+**Not 041.** No dependency either way; 041's reads are CSV-and-metrics driven (`dmp-dump`, Study A), and
+none of them need the 3D view.
 
 ### [041 T036 discussion, filed 2026-08-10] Standing direction — PRUNE the complexity we are not going to use
 
