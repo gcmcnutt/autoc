@@ -270,6 +270,11 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(recording_fidelity_tests tests/recording_fidelity_tests.cc)
   target_link_libraries(recording_fidelity_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  # 041 — training/eval ini agreement. Reads the production inis, so it runs
+  # from the repo root (WORKING_DIRECTORY below), not the build dir.
+  add_executable(ini_pair_consistency_tests tests/ini_pair_consistency_tests.cc)
+  target_link_libraries(ini_pair_consistency_tests GTest::gtest GTest::gtest_main)
+
   # 037 T016 -- NN-layout round-trip + history-layout fail-loud.
   add_executable(nn_layout_tests tests/nn_layout_tests.cc)
   target_link_libraries(nn_layout_tests GTest::gtest GTest::gtest_main autoc_common)
@@ -337,6 +342,8 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME tick_rescale_tests COMMAND tick_rescale_tests)
   add_test(NAME envelope_accel_inputs_tests COMMAND envelope_accel_inputs_tests)
   add_test(NAME recording_fidelity_tests COMMAND recording_fidelity_tests)
+  add_test(NAME ini_pair_consistency_tests COMMAND ini_pair_consistency_tests
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
   add_test(NAME nn_layout_tests COMMAND nn_layout_tests)
   add_test(NAME nn2cpp_unroll_tests COMMAND nn2cpp_unroll_tests)
   add_test(NAME arena_recenter_tests COMMAND arena_recenter_tests)
