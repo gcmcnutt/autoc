@@ -2070,7 +2070,23 @@ int main(int argc, char** argv) {
 
   // display initial data
   renderer.genNumber = extractGenNumber(keyName);
-  renderer.updateGenerationDisplay(renderer.genNumber);
+  // 041 T044 — a failed INITIAL load must not fall through into rendering.
+  //
+  // ⚠️ This return value was ignored. That was survivable while every dmp
+  // loaded; the T044 version bump made failure the COMMON case for any
+  // pre-041 artifact, and falling through renders an EvalResults that was
+  // never populated — empty pathList/tickList indexed by the display code,
+  // i.e. a segfault whose stack points at VTK rather than at the schema
+  // mismatch that actually caused it. Fail where the information is.
+  if (!renderer.updateGenerationDisplay(renderer.genNumber)) {
+    std::cerr << "renderer: FATAL — could not load generation "
+              << renderer.genNumber
+              << (keyName.empty() ? std::string()
+                                  : (std::string(" (key ") + keyName + ")"))
+              << ". Nothing to display; see the error above."
+              << std::endl;
+    return EXIT_FAILURE;
+  }
   
   // Print keyboard controls.
   // 040 T065a — kept in sync with CustomInteractorStyle::OnChar in renderer.h.
@@ -3068,8 +3084,16 @@ void Renderer::jumpToNewestGeneration() {
   } while (isTruncated);
   
   if (!newestKeyName.empty()) {
+    const int previousGen = genNumber;
     genNumber = lowestGenNumber;
-    updateGenerationDisplay(genNumber);
+    // 041 T044 — an interactive jump that fails must not leave the renderer
+    // displaying a half-loaded state. Restore the generation we were on and
+    // say so; the previously-loaded data is still valid.
+    if (!updateGenerationDisplay(genNumber)) {
+      std::cerr << "renderer: could not load gen " << genNumber
+                << " — staying on gen " << previousGen << "." << std::endl;
+      genNumber = previousGen;
+    }
   }
 }
 
@@ -3077,8 +3101,14 @@ void Renderer::jumpToOldestGeneration() {
   hideStopwatch();
   
   // Generation 1 is stored as gen9999.dmp
+  const int previousGen = genNumber;
   genNumber = 9999;
-  updateGenerationDisplay(genNumber);
+  // 041 T044 — see jumpToNewestGeneration: keep the valid view on failure.
+  if (!updateGenerationDisplay(genNumber)) {
+    std::cerr << "renderer: could not load gen " << genNumber
+              << " — staying on gen " << previousGen << "." << std::endl;
+    genNumber = previousGen;
+  }
 }
 
 void Renderer::nextTest() {
