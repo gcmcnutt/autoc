@@ -1,0 +1,7 @@
+regime,pair,pearson_r,r_squared,p_value,n,verdict
+tracking,dCtrl_bank~|throttle|,-0.0101,0.0001,0.298,10534,no effect (not significant)
+tracking,dCtrl_bank~nz,,,,0,no data (run predates T039 ACCEL_*)
+intercept,dCtrl_bank~|throttle|,-0.0048,0.0000,0.232,61043,no effect (not significant)
+intercept,dCtrl_bank~nz,,,,0,no data (run predates T039 ACCEL_*)
+patrol,dCtrl_bank~|throttle|,-0.0854,0.0073,1.18e-97,59931,negligible (<1% variance) despite tiny p
+patrol,dCtrl_bank~nz,,,,0,no data (run predates T039 ACCEL_*)

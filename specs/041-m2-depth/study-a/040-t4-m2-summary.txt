@@ -1,0 +1,16 @@
+041 Study A — 040-t4-m2
+source: specs/041-m2-depth/artifacts/pre-break/040-t4-m2-gen800-physics.csv.gz
+scenarios: 294   classified ticks: 131802
+  tracking     10714 ticks (  8.1%)
+  intercept    61053 ticks ( 46.3%)
+  patrol       60035 ticks ( 45.5%)
+
+LOAD: ABSENT — this run predates 041 T039, so it carries no
+  ACCEL_* columns and no load can be reported. This is the
+  CONTROL HALF ONLY (T058). Do NOT substitute physicsTrace:
+  it covers ~1% of ticks and would misstate a peak.
+
+wrote: specs/041-m2-depth/study-a/040-t4-m2-regime-axis.csv
+       specs/041-m2-depth/study-a/040-t4-m2-regime-load.csv
+       specs/041-m2-depth/study-a/040-t4-m2-h2.csv
+       specs/041-m2-depth/study-a/040-t4-m2-autocorr.csv
