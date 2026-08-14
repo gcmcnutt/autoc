@@ -39,9 +39,10 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   the actual register config of the 453 fps mode on arrival, not just its output resolution.
   *(Arducam B0162 remains the alt if InnoMaker stock vanishes — but its Pi-stack modes are documented
   slower: 320×240@220 fps binned.)*
-  - [X] received — notes: **×2 received 2026-08-13, visual check OK.** Verifies (a)/(b) doable now
-    (cable inventory — 3A+ wants the STANDARD 15-pin flex; M12-mount check → 16 mm lens trial-fit +
-    see-through test of the included 2.8 mm = should look normal/broadband). Verify (c) — 453 fps mode
+  - [X] received — notes: **×2 received 2026-08-13, visual check OK.** **Verify (a) CLOSED 2026-08-13: TWO cables shipped** —
+    standard 15-pin (the 3A+ cable) AND a narrow-end Zero-style adapter (future Zero 2 W covered free).
+    Verify (b) still doable now: M12-mount check → 16 mm lens trial-fit + see-through test of the
+    included 2.8 mm (= should look normal/broadband). Verify (c) — 453 fps mode
     registers, crop/skip/bin — waits on the 3A+ (Adafruit, in transit).
 - [ ] **O4-2** *(DEMOTED to optional 2026-08-08)* **Arducam USB-UVC shield for OV9281 (B0264) ×1**
   (~$90) — hosts an O4-1 module as a UVC webcam for bench/hand-held work (US3). ⚠ UVC is USB2-capped
