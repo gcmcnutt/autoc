@@ -344,7 +344,11 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
 - [ ] **A8-2 Arrival verifies** (order-04 O4-1 a/b/c): Zero cable present? lens mount M12? **453 fps
   mode registers — CROP vs SKIP vs BIN** (decides FOV at speed; ranking bin > crop > skip).
 - [ ] **A8-3 Pi bring-up**: Bullseye + InnoMaker driver; reproduce the documented 453 fps; 10 s
-  drop-rate count against the sensor frame counter.
+  drop-rate count against the sensor frame counter. **Can start NOW on the on-hand Pi (2026-08-13)** —
+  driver supports 4B/3B+/3B/3A+/CM3/Zero W (⚠ NOT Pi 5 — new PiSP stack); flash Bullseye if the Pi
+  runs something else; repo = `INNO-MAKER/CAM-OV9281RAW-V2`. Crop-vs-bin test = same scene full-res vs
+  fast mode, compare extent. Bonus: 16 mm lens on live view ENDS the back-focus saga + enables the
+  empirical-#1 sky frame immediately.
 - [ ] **A8-4 Empirical #1 — daylight sky background** e⁻/px/frame through the filter (bin + full-res):
   sets the real daylight floor AND rules the 120° link-budget fence (knobs #6 → training topology).
 - [ ] **A8-5 Empirical #3 — static range test**: cube on a post, 2.8 mm lens, beacon e⁻/frame vs range —
