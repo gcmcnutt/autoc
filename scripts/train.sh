@@ -19,14 +19,19 @@ REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BIN="${REPO_DIR}/build/autoc"
 
 usage() {
-  echo "usage: scripts/train.sh <ini-file> <logfile>" >&2
+  echo "usage: scripts/train.sh <ini-file> <logfile> [extra autoc args...]" >&2
   echo "  e.g. scripts/train.sh autoc.ini logs/autoc-035-t7-m1-energy.log" >&2
   exit 2
 }
 
-[ $# -eq 2 ] || usage
+[ $# -ge 2 ] || usage
 INI="$1"
 LOG="$2"
+shift 2
+# 041 T049 — anything after <logfile> is forwarded verbatim to autoc, so an
+# ablation run launches through the SAME detached path as every other run
+# rather than being invoked by hand outside Constitution IX.
+EXTRA_ARGS=("$@")
 
 # --- Validate (fail loud, per project constitution) -------------------------
 cd "${REPO_DIR}"
@@ -55,8 +60,13 @@ mkdir -p "$(dirname "${LOG}")"
 # ulimit  -> enable core dumps (system default was reset by a driver update);
 #            core_pattern is relative, so core.autoc.<pid> lands in repo root.
 ulimit -c unlimited
+EXTRA_ARGS_Q=""
+for a in ${EXTRA_ARGS+"${EXTRA_ARGS[@]}"}; do
+  EXTRA_ARGS_Q="${EXTRA_ARGS_Q} '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'"
+done
+
 setsid bash -c "ulimit -c unlimited; cd '${REPO_DIR}'; \
-  exec nohup stdbuf -oL -eL '${BIN}' -i '${INI}' > '${LOG}' 2>&1 < /dev/null" &
+  exec nohup stdbuf -oL -eL '${BIN}' -i '${INI}' ${EXTRA_ARGS_Q} > '${LOG}' 2>&1 < /dev/null" &
 PID=$!          # in a non-interactive script the backsetsid child isn't a group
 disown || true  # leader, so setsid exec-chains in place: $! is the autoc pid
 

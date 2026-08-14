@@ -434,6 +434,25 @@ void NNControllerBackend::reset() {
     std::fill(hidden_state_.begin(), hidden_state_.end(), 0.0f);
 }
 
+// 041 T049 — fail loud on a wrong-length mask (Constitution VII).
+//
+// A mask one slot short would silently ablate the wrong columns from that point
+// on, and the run would produce a clean-looking number that answers a different
+// question. There is no defensible truncate-or-pad, so there isn't one.
+void NNControllerBackend::setInputMask(const std::vector<uint8_t>& mask,
+                                       int expectedCount) {
+    if (mask.empty()) { input_mask_.clear(); return; }
+    if (static_cast<int>(mask.size()) != expectedCount) {
+        throw std::runtime_error(
+            "NNControllerBackend::setInputMask: mask has " +
+            std::to_string(mask.size()) + " entries but this mode has " +
+            std::to_string(expectedCount) + " input slots. A mask must cover "
+            "every slot exactly — a short mask would ablate the wrong columns "
+            "and the result would look like a finding.");
+    }
+    input_mask_ = mask;
+}
+
 void NNControllerBackend::enableTelemetryCapture() {
     telemetry_capture_enabled_ = true;
 }
@@ -457,6 +476,11 @@ long long NNControllerBackend::telemetrySampleCount() const {
 void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& pathProvider) {
     NNInputs inputs = {};
     gather_pathgen_inputs(pathProvider, aircraftState, arena_, inputs);
+
+    // 041 T049 — ablation mask, after the gather and before the forward pass.
+    // setNNData below therefore records the MASKED vector: the dmp describes the
+    // network that actually ran, not the one that would have run unablated.
+    applyInputMask(inputs);
 
     float outputs[NN_OUTPUT_COUNT];  // raw-ok: NN-byte-format buffer (output of nn_forward, fp32 contract)
     if (hidden_state_.empty()) {
@@ -615,7 +639,12 @@ void gather_tracker_inputs(const AircraftState& chase,
 }
 
 void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,
-                                          const TrackerInputs& inputs) {
+                                          const TrackerInputs& inputs_in) {
+    // 041 T049 — the tracker gather happens in the stepper, so the mask is
+    // applied to a local copy here. Same ordering guarantee as pathgen: masked
+    // before the forward pass, and the masked copy is what gets recorded.
+    TrackerInputs inputs = inputs_in;
+    applyInputMask(inputs);
     // 038 US3 — tracker output head is 7: outputs[0..2] control (actuated),
     // outputs[3..6] = span/closure predictor (aux, NOT actuated; scored on the
     // prediction_score lexicase axis and recorded for honest capture).

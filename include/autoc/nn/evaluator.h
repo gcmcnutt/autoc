@@ -274,8 +274,39 @@ public:
     double telemetryActivationRatio() const;
     long long telemetrySampleCount() const;
 
+    // 041 T049 — NN input ablation mask: one byte per input slot of the active
+    // mode, 1 = force that column to 0.0. EMPTY (the default) means no ablation,
+    // which is every training path.
+    //
+    // ⚠️ Applied AFTER the gather and IMMEDIATELY BEFORE the forward pass, so
+    // the net sees exactly what the mask says and the recorded inputs describe
+    // what the net actually saw. Masking inside the gather would instead record
+    // the un-masked values, and every downstream analysis of an ablated run
+    // would silently describe a different network than the one that flew.
+    //
+    // ⚠️ A wrong-length mask is a HARD ERROR at the setter, not a silent
+    // truncate-or-pad: a mask one slot short would ablate the wrong column and
+    // the result would look like a finding.
+    void setInputMask(const std::vector<uint8_t>& mask, int expectedCount);
+    bool hasInputMask() const { return !input_mask_.empty(); }
+
 private:
+    // Zero the masked columns of a gathered input struct, in place. Templated
+    // because NNInputs and TrackerInputs are unrelated types over the same
+    // float-buffer contract; both are asserted to be exactly COUNT floats.
+    template <typename InputsT>
+    void applyInputMask(InputsT& inputs) const {
+        if (input_mask_.empty()) return;
+        float* raw = reinterpret_cast<float*>(&inputs);  // raw-ok: NN-byte-format buffer
+        const size_t n = std::min(input_mask_.size(),
+                                  sizeof(InputsT) / sizeof(float));
+        for (size_t i = 0; i < n; ++i) {
+            if (input_mask_[i]) raw[i] = 0.0f;  // raw-ok: NN-byte-format slot write
+        }
+    }
+
     const NNGenome& genome_;
+    std::vector<uint8_t> input_mask_;  // raw-ok: per-slot flag buffer; empty = no ablation
     autoc::eval::FlightArena arena_;   // 038 P0-D — config arena for pathgen (B) inputs
     std::vector<float> hidden_state_;  // Sized by nn_hidden_state_count(); empty for feedforward
     // 028: held by value; cheap, no allocation. Captures samples only when

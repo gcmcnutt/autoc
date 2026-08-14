@@ -37,6 +37,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/camera_variation.h"
 #include "autoc/eval/craft_variation.h"      // 034 US4 — craft-class draws
 #include "autoc/nn/mode.h"           // 030 M7a — getActiveModeStrategy
+#include "autoc/nn/input_mask.h"     // 041 T049 — --zero-input slot resolver
 #include "autoc/nn/population.h"
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
@@ -853,6 +854,11 @@ void newHandler()
 
 // Bridge config → mode lookup. Lives here (not in mode.cc) to keep mode.cc
 // free of the ConfigManager / AWS SDK dependency chain.
+// 041 T049 — ablation slot names from --zero-input, resolved to a mask in
+// buildWorkerInit once the mode is known. Empty = the unablated baseline, which
+// is every training run.
+static std::string gAblateSlots;
+
 static const ModeStrategy& getActiveModeStrategy() {
   return getModeStrategyByName(ConfigManager::getConfig().mode.c_str());
 }
@@ -952,6 +958,15 @@ static WorkerInit buildWorkerInit() {
     init.envelopeSpanLo = cfg.envelopeSpanLo;
     init.envelopeSpanHi = cfg.envelopeSpanHi;
     init.envelopeCentroidRadius = cfg.envelopeCentroidRadius;
+    // 041 T049 — resolve --zero-input against THIS mode's slot names. Throws
+    // (listing valid names) on a typo, before any worker is primed.
+    const bool ablateTracker = (init.mode == Mode::TRACKER);
+    init.nnInputMask = autoc::nn::buildInputMask(gAblateSlots, ablateTracker);
+    if (!init.nnInputMask.empty()) {
+      *logger.info() << "#Ablation slots="
+                     << autoc::nn::describeInputMask(init.nnInputMask, ablateTracker)
+                     << std::endl;
+    }
 
     // 030 V1.5 — run-static scenario library shared by both modes.
     // generateSmoothPaths(gPathSeed) is byte-identical every gen, so we
@@ -1731,9 +1746,25 @@ int main(int argc, char** argv)
         std::cerr << "Error: -i option requires a filename argument" << std::endl;
         return 1;
       }
+    } else if (strcmp(argv[i], "--zero-input") == 0) {
+      // 041 T049 — ablation. Names resolve against the mode's metadata table;
+      // an unknown name is a hard error listing the valid set, never a silent
+      // no-op (a typo that ablated nothing would report "no effect", which is
+      // a finding-shaped lie).
+      if (i + 1 < argc) {
+        gAblateSlots = argv[i + 1];
+        i++;
+      } else {
+        std::cerr << "Error: --zero-input requires a comma-separated slot list"
+                  << std::endl;
+        return 1;
+      }
     } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
-      std::cout << "Usage: " << argv[0] << " [-i config_file]" << std::endl;
+      std::cout << "Usage: " << argv[0] << " [-i config_file] [--zero-input NAMES]" << std::endl;
       std::cout << "  -i config_file  Use specified config file instead of autoc.ini" << std::endl;
+      std::cout << "  --zero-input N1,N2  Ablate these NN input slots (force to 0.0" << std::endl;
+      std::cout << "                  every tick, after gather, before the forward pass)." << std::endl;
+      std::cout << "                  Names come from the mode's input metadata table." << std::endl;
       std::cout << "  -h, --help      Show this help message" << std::endl;
       return 0;
     }

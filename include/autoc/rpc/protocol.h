@@ -264,6 +264,22 @@ struct WorkerInit {
   double envelopeSpanHi;
   double envelopeCentroidRadius;
 
+  // 041 T049 — NN input ablation mask. One byte per input slot of the ACTIVE
+  // mode (1 = force this column to 0.0); EMPTY means no ablation, which is the
+  // training path and every historical caller.
+  //
+  // ⚠️ It lives on WorkerInit, not on EvalData, because the mask is
+  // scenario-invariant: masking must be applied identically in every scenario
+  // and every tick or the comparison stops being one-variable. Putting it
+  // per-eval would make a per-scenario mask *expressible*, and the whole value
+  // of the instrument is that it cannot vary.
+  //
+  // ⚠️ Applied in the worker, immediately before the forward pass — see
+  // NNControllerBackend. It must NOT be applied in the gather: the recorded
+  // inputs then describe what the net actually saw, which is what makes an
+  // ablated dmp readable by the same analytics as an unablated one.
+  std::vector<uint8_t> nnInputMask;  // raw-ok: per-slot flag buffer
+
   template<class Archive>
   void serialize(Archive& ar) {
     int m = static_cast<int>(mode);
@@ -281,7 +297,9 @@ struct WorkerInit {
        fitStreakThreshold, fitStreakRampSec,
        enableEnvelopeInputs, enableAccelInputs, accelScaleG,
        // 041 T038 -- M2 envelope estimator, appended, no version bump
-       envelopeSpanLo, envelopeSpanHi, envelopeCentroidRadius);
+       envelopeSpanLo, envelopeSpanHi, envelopeCentroidRadius,
+       // 041 T049 -- ablation mask, appended, no version bump
+       nnInputMask);
     mode = static_cast<Mode>(m);
   }
 };
