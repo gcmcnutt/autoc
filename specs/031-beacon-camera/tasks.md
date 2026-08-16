@@ -353,8 +353,11 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   sets the real daylight floor AND rules the 120° link-budget fence (knobs #6 → training topology).
 - [ ] **A8-5 Empirical #3 — static range test**: cube on a post, 2.8 mm lens, beacon e⁻/frame vs range —
   calibrates the 1.6×10⁹/r² constant and the true optics loss.
-- [ ] **A8-6 NEON correlator port** (s7 math → C/NEON); warm/cold reacquire wall-clock vs the N/f_chip
-  prediction (empirical #4).
+- [ ] **A8-6 NEON correlator port — PROMOTED 2026-08-16 (operator: "prototype a decoder for this
+  toolchain", parallel to 041 training)**: s7 math → C/NEON on the Pi 3A+ against 640×400@250 fps raw
+  (proven ingest); start from the whole-frame photometry that already read 26/31 chips, then per-ROI /
+  per-pixel DC-track + sliding matched filter; warm/cold reacquire wall-clock vs N/f_chip (empirical #4).
+  Emitter chip rate is sweepable to the 104 Hz the 250 fps sampling wants (one timer constant).
 - [ ] **A8-7 Defocus knob sweep**: PSF 1→4 px vs corrB + centroid jitter (knobs #4 — pick the smallest
   PSF that centroids well; each doubling of spread costs √k in daylight SNR).
 - [ ] **A8-8 Feed-forward**: results → the 041 predictor spec (~/autoc) + the training-topology decision

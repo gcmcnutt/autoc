@@ -5,7 +5,27 @@ cross-references. Context you don't have: the camera-era hardware is ORDERED (In
 modules ×2, a 1.8 mm M12 fisheye, Pi 3A+) but weeks out — the operator is working the high-power
 emitter build (tasks A7) and TRAINING in the meantime. That's where you come in.*
 
-## The ask: nudge the sim camera model closer to the real lens before the next long training run
+## UPDATE 2026-08-16 — the lens is now MEASURED; train with these, no more estimates
+
+Ruled-mat calibration on the $3 1.8 mm fisheye + OV9281 (frame archived as
+`fisheye-1p8mm-grid-15in.jpg`, method + numbers in `camera-era-knobs.md`):
+- **Projection = equidistant (f·θ)** — validated center-to-edge (grid spacing 50 → 41 px/in at 23°;
+  pinhole predicts no compression). Barrel distortion, in image terms.
+- **FOV = 95° H × 61° V, direct tape measurement at the frame edge**; 0.076°/px uniform.
+- **The single-fisheye-at-120° assumption is RETIRED for this lens.** 120° needs the birded pair
+  (~125–130° combined at ±30° splay, ~35° overlap) or a wider lens ($3 experiment, queued).
+
+**Operator direction: try training with THIS FOV (95×61) and THIS projection model, and see what
+happens.** In parallel, the 031 side prototypes a decoder on this same toolchain (Pi 3A+ + OV9281 at
+250 fps: the code was already read optically from raw frames on 2026-08-13 — 26/31 vs CODE0 with a
+naive threshold; the NEON matched filter is next).
+
+Outdoor/flight caveat that does NOT change training: this lens is unfiltered (broadband IR-corrected).
+**An 850 nm filter is still required for daylight/flight** (drop-in disc behind the lens, or the
+filtered 2.8 mm on hand) — it affects photon budget/daylight range, not geometry, so the sim camera
+model above stands regardless.
+
+## The original ask (2026-08-10, now superseded by the measured numbers above)
 
 1. **Projection: pinhole → equidistant (f·θ).** The flight optic is a fisheye-class 1.8 mm on the
    OV9281. Fisheyes map bearing→pixel as r = f·θ (approximately), NOT as r = f·tanθ. At the FOVs we
