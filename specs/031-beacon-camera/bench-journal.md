@@ -97,6 +97,10 @@ full ladder as the first act on that build and expect the WSL-era envelope back.
    integrating sphere** (ceiling-bounce locks) — true-dark tests need emitter-off or a capped sensor.
 5. usbipd bind targets a BUSID — devices swap busids across replugs; verify against `usbipd list` before any
    `bind --force` (a mis-bind once ate COM3).
+6. **NIR viewers are not equal (2026-08-10)**: the Andonstar microscope camera shows 850 nm as BRIGHT
+   purple (weak IR-cut) — it is the bench's NIR eyeball; the **iPhone attenuates 850 heavily** (good
+   IR-cut) — a dim phone image does NOT mean weak emission (this dimmed the card-projection tests and
+   understated the 16 mm lens all along). Emission checks → microscope camera, not phone.
 
 ## Decoder knowledge (s7 gateware)
 

@@ -287,10 +287,32 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
 > co-aimed tiles (field test #4 confound) · XNANO-tethered MCU (bare 416 = order-04 C-26, later) ·
 > `psu.py` MAX_CURR now 1.3 A · eye safety RG0 ≥30 cm momentary.
 
-- [ ] **A7-1 Single-tile thermal gate**: shear one ~10×10 mm tile (C-8 FR4, 1.0 mm), knife-slit island,
-  solder one L1IZ-0850; drive at **306 mA** (0.19 V across the 0.62 Ω); 10-min soak; verify ~15 °C rise
-  and clean chip edges on the current envelope. **GO/NO-GO for the cube** (fallback = C-11 Luxeonstar
-  MCPCB, order-03 sourcing note). Record the measured rise here: ______
+- [~] **A7-1 Single-tile thermal gate — IN PROGRESS 2026-08-10**: tile size REVISED to **~1″ (wing
+  thickness, operator)** — ~6× the 10 mm plan's spreading copper. First result: **200 mA = negligible
+  rise** on the 1″ knife-slit board (microscope-verified emission, purple bloom on camera).
+  **306 mA operating point MEASURED 2026-08-10: 0.840 W/die electrical → Vf = 2.75 V**; derived:
+  optical ~0.32 W (η≈38 %) → **heat ~0.52 W/die, ~2.6 W cube-wide**; string 5×Vf ≈ 13.7 V; runtime
+  refresh ≈ 15–16 min per 150 mAh charge at code duty. **SOAK COMPLETE — THERMAL PASS 2026-08-10**: free-hanging, still air,
+  306 mA: Vf settled 2.745 → ~2.737–2.730 V = **−8 to −15 mV ≈ 5–8 °C junction rise** (Vf-droop
+  thermometer, ~−2 mV/°C). Thermal is NOT the cube's constraint at 1″ tile size.
+  **NEW FINDING — ASSEMBLY, not thermal, is the risk**: hand-mounting the bottom-pad Luxeon Z without
+  SMT equipment is fragile; loosening in flight vibration is a live concern → **this fires the C-11
+  trigger** (route 1: pre-mounted SM-01-R8/SZ-01-R8 stars, Luxeonstar direct — factory-reflowed die,
+  hand-solderable tabs, epoxy star to tile, calibration preserved). Route 2 (rescue): hot-plate reflow
+  on the tile itself + epoxy SIDE fillets (never the emitting face; never CA) + wire strain relief.
+  Route 3 (different winged package) re-opens flux/bin/eye-safety calibration — last resort. ⚠ weigh a finished tile: 1.0 mm
+  FR4 at 1″×5 faces ≈ 6 g board stock alone — check against the pod mass budget. Camera-safety note:
+  no need to shield the Andonstar even at 1 A (die radiance ~70× BELOW solar; magnification conserves
+  radiance) — protect EYES instead: RG0 was assessed at 306 mA/≥30 cm; at 1 A, close viewing via
+  screen only. **GO/NO-GO for the cube** (fallback = C-11 Luxeonstar MCPCB).
+- [ ] **A7-1b Single-tile FIELD config (operator idea 2026-08-10 — bridge test while C-11 stars ship)**:
+  ⚠ the boost CANNOT drive one die (Vf 2.75 < Vbat: L+Schottky passthrough conducts uncontrolled and
+  DIM can't modulate — code dies). Config = **no boost: 1S battery → LED → 3.74 Ω (stock) → logic
+  N-FET (≥1 A, AO3400/IRLZ class) gated by XNANO DIM**. Current tracks battery (0.15–0.39 A over
+  3.3–4.2 V) — AGC is scale-free, log Vbat with each range point; firmware UVLO still guards the pack.
+  Expected reach: 1 die @306 mA = the lensed table's first row (92–115 m @F/2 through the 16 mm);
+  ÷√5 vs the full cube. Alt: 3 dies in series on the boost (clean) — but re-invokes the C-11 assembly
+  fragility.
 - [ ] **A7-2 Flight driver on copper-clad**: LM3410X on SOT23-6 adapter (**verify pin-1**), 4.7 µH,
   SS1030, 0.62 Ω; **input network per the 2026-08-09 finding**: 4.7 µF ceramic + 100 nF AT the VIN pin,
   damped bulk leg (3–4× ganged 10 µF electrolytics — ESR is the damper), Molex UMX header, short leads.
@@ -322,13 +344,20 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
 - [ ] **A8-2 Arrival verifies** (order-04 O4-1 a/b/c): Zero cable present? lens mount M12? **453 fps
   mode registers — CROP vs SKIP vs BIN** (decides FOV at speed; ranking bin > crop > skip).
 - [ ] **A8-3 Pi bring-up**: Bullseye + InnoMaker driver; reproduce the documented 453 fps; 10 s
-  drop-rate count against the sensor frame counter.
+  drop-rate count against the sensor frame counter. **Can start NOW on the on-hand Pi (2026-08-13)** —
+  driver supports 4B/3B+/3B/3A+/CM3/Zero W (⚠ NOT Pi 5 — new PiSP stack); flash Bullseye if the Pi
+  runs something else; repo = `INNO-MAKER/CAM-OV9281RAW-V2`. Crop-vs-bin test = same scene full-res vs
+  fast mode, compare extent. Bonus: 16 mm lens on live view ENDS the back-focus saga + enables the
+  empirical-#1 sky frame immediately.
 - [ ] **A8-4 Empirical #1 — daylight sky background** e⁻/px/frame through the filter (bin + full-res):
   sets the real daylight floor AND rules the 120° link-budget fence (knobs #6 → training topology).
 - [ ] **A8-5 Empirical #3 — static range test**: cube on a post, 2.8 mm lens, beacon e⁻/frame vs range —
   calibrates the 1.6×10⁹/r² constant and the true optics loss.
-- [ ] **A8-6 NEON correlator port** (s7 math → C/NEON); warm/cold reacquire wall-clock vs the N/f_chip
-  prediction (empirical #4).
+- [ ] **A8-6 NEON correlator port — PROMOTED 2026-08-16 (operator: "prototype a decoder for this
+  toolchain", parallel to 041 training)**: s7 math → C/NEON on the Pi 3A+ against 640×400@250 fps raw
+  (proven ingest); start from the whole-frame photometry that already read 26/31 chips, then per-ROI /
+  per-pixel DC-track + sliding matched filter; warm/cold reacquire wall-clock vs N/f_chip (empirical #4).
+  Emitter chip rate is sweepable to the 104 Hz the 250 fps sampling wants (one timer constant).
 - [ ] **A8-7 Defocus knob sweep**: PSF 1→4 px vs corrB + centroid jitter (knobs #4 — pick the smallest
   PSF that centroids well; each doubling of spread costs √k in daylight SNR).
 - [ ] **A8-8 Feed-forward**: results → the 041 predictor spec (~/autoc) + the training-topology decision

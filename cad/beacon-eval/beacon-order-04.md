@@ -39,7 +39,11 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   the actual register config of the 453 fps mode on arrival, not just its output resolution.
   *(Arducam B0162 remains the alt if InnoMaker stock vanishes — but its Pi-stack modes are documented
   slower: 320×240@220 fps binned.)*
-  - [ ] received — notes:
+  - [X] received — notes: **×2 received 2026-08-13, visual check OK.** **Verify (a) CLOSED 2026-08-13: TWO cables shipped** —
+    standard 15-pin (the 3A+ cable) AND a narrow-end Zero-style adapter (future Zero 2 W covered free).
+    Verify (b) still doable now: M12-mount check → 16 mm lens trial-fit + see-through test of the
+    included 2.8 mm (= should look normal/broadband). Verify (c) — 453 fps mode
+    registers, crop/skip/bin — waits on the 3A+ (Adafruit, in transit).
 - [ ] **O4-2** *(DEMOTED to optional 2026-08-08)* **Arducam USB-UVC shield for OV9281 (B0264) ×1**
   (~$90) — hosts an O4-1 module as a UVC webcam for bench/hand-held work (US3). ⚠ UVC is USB2-capped
   well below 480 fps. **The O4-4 Pi Zero 2 W covers this role** (libcamera stills/preview + our own
@@ -143,8 +147,8 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
 |---|---|---|
 | **DigiKey** | ATTINY412 SOIC-8 ×10 (order-03 C-26) · *optional*: ATTINY416-XNANO spare ×1 | 6–18 |
 | **InnoMaker** (inno-maker.com / their Amazon store) | **CAM-MIPI9281RAW-V2 ×2 @ ~$39** (O4-1) | ~78 |
-| **AliExpress** (M12 commodity market — lenses only; cameras stay InnoMaker for the DRIVER) | **Lens kit**: 2.8 mm 850 nm-integrated ×1–2 (O4-5; record vendor FWHM claim, expect 30–60 nm) + **1.7 mm fisheye ×1** (~$10–15 — the single-camera ~110–120° topology experiment: 0.85 mm pupil = only ×2.2 signal penalty vs a bird-pair camera; unfiltered — characterize first, disc-filter later if it earns it). **Candidates ranked 2026-08-10**: (1) **Arducam M12 1.7 mm 1/2.5″ ultra-wide** (~$10–15, Amazon/Pi Hut, ships with holder) — BUY FIRST; note "IR-corrected" is OPTIONAL for monochromatic-850 + corrB-focus use, only a built-in IR-cut disqualifies; (2) Vision Datum VT-LEM01720FE-i (spec'd, ~$20); (3) FOCtek M12-1.7IR 8MP via RMA (~$35, IR-corrected) / Commonlands CIL290 2 mm 190° (~$50, IP67) as the upgrade path if the fisheye topology wins the training fork | 20–35 |
-| **Pi reseller** (PiShop/Adafruit/CanaKit) | **Pi 3A+ ×1** (O4-4; SWITCHED 2026-08-10 — Zero 2 W scalped everywhere incl. AliExpress. 3A+ = same BCM2710 family at 1.4 GHz (faster), explicitly on InnoMaker's supported list, STANDARD 15-pin CSI = cable question dissolves. Zero 2 W stays the flight-mass option when supply normalizes; Pi 5 dual-CSI = the bird-pair host candidate. **CONFIRMED 2026-08-10: 3A+ is the ground-test unit**; storage = its own microSD for boot/capture, plus the on-hand microSD breakouts ×2 (order-01) if extra logging paths are wanted) | ~25 |
+| **AliExpress** (M12 commodity market — lenses only; cameras stay InnoMaker for the DRIVER) | **Lens kit**: 2.8 mm 850 nm-integrated ×1–2 (O4-5; record vendor FWHM claim, expect 30–60 nm) + **1.7 mm fisheye ×1** (~$10–15 — the single-camera ~110–120° topology experiment: 0.85 mm pupil = only ×2.2 signal penalty vs a bird-pair camera; unfiltered — characterize first, disc-filter later if it earns it). **Candidates ranked 2026-08-10**: (1) **Arducam M12 1.7 mm 1/2.5″ ultra-wide** (~$10–15, Amazon/Pi Hut, ships with holder) — BUY FIRST; note "IR-corrected" is OPTIONAL for monochromatic-850 + corrB-focus use, only a built-in IR-cut disqualifies; (2) Vision Datum VT-LEM01720FE-i (spec'd, ~$20); (3) FOCtek M12-1.7IR 8MP via RMA (~$35, IR-corrected) / Commonlands CIL290 2 mm 190° (~$50, IP67) as the upgrade path if the fisheye topology wins the training fork. **✔ 1.8 mm fisheye RECEIVED 2026-08-16 — no filter glued to the back (as expected for the "IR-corrected" broadband class; see the barrel-label decoder below) → unfiltered wide characterization first, disc-behind-lens later if the topology earns it.** | 20–35 |
+| **Pi reseller** (PiShop/Adafruit/CanaKit) | **Pi 3A+ ×1** (O4-4; SWITCHED 2026-08-10 — Zero 2 W scalped everywhere incl. AliExpress. 3A+ = same BCM2710 family at 1.4 GHz (faster), explicitly on InnoMaker's supported list, STANDARD 15-pin CSI = cable question dissolves. Zero 2 W stays the flight-mass option when supply normalizes; Pi 5 dual-CSI = the bird-pair host candidate. **CONFIRMED 2026-08-10: 3A+ is the ground-test unit**; storage = its own microSD for boot/capture, plus the on-hand microSD breakouts ×2 (order-01) if extra logging paths are wanted). **✔ RECEIVED 2026-08-15** (Adafruit). NB the drawer Pi 3B already did the whole first-light + code-capture campaign on 2026-08-13; the 3A+ inherits a proven recipe (Bookworm, `dtoverlay=ov9281`, vc4-kms-v3d,cma-320, rpicam-raw to /dev/shm) | ~25 |
 | *Optional, Amazon* | Quanmin 12.5 mm 850 nm disc pair (filters any bare lens; NOT on hand; 10.4 mm variant exists — **measure the holder bore first**) | ~12 |
 
 **Barrel-label "IR" decoder (2026-08-10)** — three meanings, two-second test: (1) **IR-corrected**
@@ -162,7 +166,10 @@ cyanoacrylate near optics** — CA vapor frosts glass while curing (blooming). 1
 passband blue-shift on top of the 52 % corner illumination — characterize unfiltered first.
 
 **Total ≈ $110–145.** Post-order: the 22-pin Zero flex (+$6) only if InnoMaker's included cabling
-doesn't cover the Zero (O4-1 verify (a)). NOT bought: Zybo (conditional), 120° single lens (physics),
+doesn't cover the Zero (O4-1 verify (a)) — **MOOT, both cables shipped.**
+**ORDER-04 ARRIVAL STATUS 2026-08-16: ALL IN HAND** — cameras ×2 (08-13), Pi 3A+ (08-15), 1.8 mm
+fisheye (08-16); 2.8 mm 850 nm-integrated lens on hand from the earlier buy. Nothing outstanding on
+this order except the DEFERRED 412s (order-03 C-26, not needed for ground tests). NOT bought: Zybo (conditional), 120° single lens (physics),
 Thorlabs 10 nm (doesn't exist integrated / anti-optimal), second bird-pair set (waits on static range +
 training topology).
 
