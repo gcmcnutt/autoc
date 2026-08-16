@@ -131,6 +131,16 @@ assumption lands in band. ⚠ **Projection model matters as much as FOV**: a pin
 mis-maps edge bearings badly vs the real f·θ lens — the sim camera should be EQUIDISTANT (silver
 lining: constant °/px everywhere). Measure the actual projection curve on arrival (one image of a known
 grid — add to A8-2 arrival work); operator merging this branch into 041 for cross-reference.
+**MEASURED 2026-08-16 — the 1.8 mm fisheye on the OV9281, ruled-mat method (h = 15″, 1″ grid; frame
+archived `fisheye-1p8mm-grid-15in.jpg`)**: gridline spacing 50 px/in at center → 41 px/in at 23°
+off-axis; **pinhole predicts 50 (no compression), equidistant f·θ predicts 42.3 → PROJECTION =
+EQUIDISTANT, confirmed** (the sim camera must be f·θ). Fitted f ≈ 750 px ≈ 2.25 mm (label says 1.8 —
+normal M12 labeling slop). **FOV by equidistant extrapolation ≈ 98° H × 61° V** (0.076°/px) — narrower
+than the 120–124° pre-estimate; PROVISIONAL because the frame only reached 23° off-axis and fisheyes
+often compress harder in the outer field (→ true FOV likely ≥ this). Direct measurement queued: slide
+the beacon out along the ruled axis until it exits the frame. **041 training input: use f·θ; H≈100°,
+V≈60° pending the edge measurement — the 120° assumption should be REVISITED (this lens alone does not
+reach it; the birded pair does).**
 **Refinement 2026-08-10 (AliExpress market check)**: commodity **1.7–1.8 mm F/2.0 IR-corrected
 fisheyes** reach ~110–120° via barrel distortion at a 0.85 mm pupil — the single-camera-120° penalty is
 **×2.2** vs a bird-pair camera (not the ×6.5 of a rectilinear 1.1 mm). Still no parallax, distorted
