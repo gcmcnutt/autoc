@@ -137,10 +137,13 @@ off-axis; **pinhole predicts 50 (no compression), equidistant f·θ predicts 42.
 EQUIDISTANT, confirmed** (the sim camera must be f·θ). Fitted f ≈ 750 px ≈ 2.25 mm (label says 1.8 —
 normal M12 labeling slop). **FOV by equidistant extrapolation ≈ 98° H × 61° V** (0.076°/px) — narrower
 than the 120–124° pre-estimate; PROVISIONAL because the frame only reached 23° off-axis and fisheyes
-often compress harder in the outer field (→ true FOV likely ≥ this). Direct measurement queued: slide
-the beacon out along the ruled axis until it exits the frame. **041 training input: use f·θ; H≈100°,
-V≈60° pending the edge measurement — the 120° assumption should be REVISITED (this lens alone does not
-reach it; the birded pair does).**
+often compress harder in the outer field (→ true FOV likely ≥ this). **Direct edge measurement DONE
+(2026-08-16, tape along the centerline at h = 15″): frame spans 33″ H × 17.5″ V → half-angles
+atan(16.5/15) = 47.7° and atan(8.75/15) = 30.3° → FOV = 95° H × 61° V — MEASURED, FINAL.** Matches the
+f·θ extrapolation (98/61) to within 3° → the equidistant model holds to the field edge. **041 training
+input (firm): f·θ projection, H = 95°, V = 61°, 0.076°/px. The single-fisheye-at-120° assumption is
+RETIRED for this lens — 120° H requires the birded pair (2 × 95° with ~±30° splay ≈ 125–130° combined,
+~35° overlap for parallax) or a wider lens.**
 **Refinement 2026-08-10 (AliExpress market check)**: commodity **1.7–1.8 mm F/2.0 IR-corrected
 fisheyes** reach ~110–120° via barrel distortion at a 0.85 mm pupil — the single-camera-120° penalty is
 **×2.2** vs a bird-pair camera (not the ×6.5 of a rectilinear 1.1 mm). Still no parallax, distorted
