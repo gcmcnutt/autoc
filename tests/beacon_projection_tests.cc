@@ -218,13 +218,17 @@ TEST(BeaconProjectionGeometry, TargetDeadAheadProducesCenteredObservation) {
 
 TEST(BeaconProjectionGeometry, TargetAtRightFovEdgeApproachesPlusOne) {
     ProjectionInput in = makeBaselineInput();
-    // The derived field is 320 px × 0.375° = 120° H ⇒ half-angle 60°. Target
-    // at body (10, 17.32, 0) puts the beacon ray at atan(17.32/10) = 60°
-    // off-axis — exactly the right edge. Set beacon mount to target origin to
-    // remove the wingtip bias.
+    // The derived field is 320 px × 0.304° = 97.3° H ⇒ half-angle 48.64°.
+    // Placing the target at body (10, 10·tan(half), 0) puts the beacon ray
+    // exactly on the right edge. 041 T041d — this used to be the literal
+    // (10, 17.32, 0), i.e. tan 60° hand-evaluated for the retired 120° field;
+    // COMPUTED from the config now, so the geometry follows the one knob
+    // instead of needing a human to re-evaluate a tangent (FR-003).
+    const double half_h_rad = static_cast<double>(CameraConfig{}.halfFovHRad());
     in.beacon_mount_target_body = gp_vec3(0.0f, 0.0f, 0.0f);
     in.beacon_emission_axis_target_body = gp_vec3(-1.0f, 0.0f, 0.0f);
-    in.target_position_world = gp_vec3(10.0f, 17.32f, 0.0f);
+    in.target_position_world =
+        gp_vec3(10.0f, static_cast<float>(10.0 * std::tan(half_h_rad)), 0.0f);
 
     BeaconObservation obs = projectBeacon(in);
 
@@ -243,9 +247,12 @@ TEST(BeaconProjectionGeometry, TargetAtRightFovEdgeApproachesPlusOne) {
 
 TEST(BeaconProjectionGeometry, TargetAtLeftFovEdgeApproachesMinusOne) {
     ProjectionInput in = makeBaselineInput();
+    // 041 T041d — computed from the config, mirroring the right-edge twin.
+    const double half_h_rad = static_cast<double>(CameraConfig{}.halfFovHRad());
     in.beacon_mount_target_body = gp_vec3(0.0f, 0.0f, 0.0f);
     in.beacon_emission_axis_target_body = gp_vec3(-1.0f, 0.0f, 0.0f);
-    in.target_position_world = gp_vec3(10.0f, -17.32f, 0.0f);
+    in.target_position_world =
+        gp_vec3(10.0f, static_cast<float>(-10.0 * std::tan(half_h_rad)), 0.0f);
 
     BeaconObservation obs = projectBeacon(in);
 
@@ -835,10 +842,12 @@ TEST(CameraGridGeometry, RadialSeparationIsPositionInvariant) {
     // Both pairs are 40 pixels apart on the horizontal axis and both lie ON
     // pixel centres, so quantisation contributes EXACTLY zero and the 2%
     // tolerance measures the projection alone rather than the grid.
-    const double near_lo = pixelCentreDeg(140, cam.pixels_h, dpp);   // −7.3125°
-    const double near_hi = pixelCentreDeg(180, cam.pixels_h, dpp);   // +7.6875°
-    const double far_lo  = pixelCentreDeg(260, cam.pixels_h, dpp);   // +37.6875°
-    const double far_hi  = pixelCentreDeg(300, cam.pixels_h, dpp);   // +52.6875°
+    // 041 T041d — the inline degree values move with the pitch (they were
+    // −7.3125 / +7.6875 / +37.6875 / +52.6875 at the retired 0.375°/px).
+    const double near_lo = pixelCentreDeg(140, cam.pixels_h, dpp);   // −5.928°
+    const double near_hi = pixelCentreDeg(180, cam.pixels_h, dpp);   // +6.232°
+    const double far_lo  = pixelCentreDeg(260, cam.pixels_h, dpp);   // +30.552°
+    const double far_hi  = pixelCentreDeg(300, cam.pixels_h, dpp);   // +42.712°
 
     // φ = 180° puts the ray on the −y side; φ = 0° on the +y side.
     const double sep_centre =
@@ -846,18 +855,18 @@ TEST(CameraGridGeometry, RadialSeparationIsPositionInvariant) {
     const double sep_edge =
         sepDeg(obsAtRay(far_lo, 0.0), obsAtRay(far_hi, 0.0));
 
-    const double expected = 40.0 * dpp;  // 15.0°
+    const double expected = 40.0 * dpp;  // 12.16° (was 15.0° at 0.375°/px)
     EXPECT_NEAR(sep_centre, expected, 0.02 * expected);
     EXPECT_NEAR(sep_edge, expected, 0.02 * expected);
     EXPECT_NEAR(sep_edge, sep_centre, 0.02 * sep_centre)
         << "a fixed angular separation must read the same at frame centre and "
-           "out at 50° off-axis (SC-001)";
+           "out near the field edge (SC-001)";
 }
 
 TEST(CameraGridGeometry, SeparationIsInvariantAtAnyPositionAndOrientation) {
     // SC-001 as literally worded, which 040 T033a made achievable. A pair of a
-    // FIXED true angular separation is walked out from the boresight to 40° off
-    // axis and rotated through every orientation from radial to tangential; all
+    // FIXED true angular separation is walked out from the boresight to the
+    // furthest field angle the pair still fits inside, and rotated through every orientation from radial to tangential; all
     // readings must agree with the truth and with each other.
     //
     // Construction is in 3D rather than in bearings, so the truth is exact by
@@ -882,7 +891,16 @@ TEST(CameraGridGeometry, SeparationIsInvariantAtAnyPositionAndOrientation) {
     double worst_tangential_planar = 0.0;
     double worst_tangential_truth = 0.0;
 
-    for (const double theta0_deg : {0.0, 15.0, 30.0, 40.0}) {
+    // 041 T041d — the outer sample used to be a literal 40°, which had 8.6° of
+    // clearance inside the retired 60° half-field and NONE inside the measured
+    // 48.64° one: θ₀ + ψ/2 = 50° fell outside, the pair gated, and the ASSERT
+    // below fired. Walk out to the furthest θ₀ whose pair still fits, with a
+    // degree of margin, so the sweep follows the one knob (FR-003) instead of
+    // needing a human to re-check it whenever the field moves.
+    const double theta_max_deg =
+        static_cast<double>(cam.fovHDeg()) / 2.0 - psi * kRadToDeg / 2.0 - 1.0;
+    for (const double theta0_deg : {0.0, theta_max_deg / 3.0,
+                                    2.0 * theta_max_deg / 3.0, theta_max_deg}) {
         const double t0 = theta0_deg * kDegToRad;
         const gp_vec3 u0(static_cast<gp_scalar>(std::cos(t0)),
                          static_cast<gp_scalar>(std::sin(t0)),
@@ -919,7 +937,9 @@ TEST(CameraGridGeometry, SeparationIsInvariantAtAnyPositionAndOrientation) {
 
             // Keep the most tangential, most off-axis case's planar distance so
             // the assertion below can prove this sweep has teeth.
-            if (alpha_deg == 90.0 && theta0_deg == 40.0) {
+            // 041 T041d — keyed off the derived outer sample, not the literal
+            // 40° it replaced; otherwise the guard below silently never arms.
+            if (alpha_deg == 90.0 && theta0_deg == theta_max_deg) {
                 worst_tangential_planar =
                     std::hypot(static_cast<double>(hi.bearing_x_rad - lo.bearing_x_rad),
                                static_cast<double>(hi.bearing_y_rad - lo.bearing_y_rad));
@@ -934,12 +954,15 @@ TEST(CameraGridGeometry, SeparationIsInvariantAtAnyPositionAndOrientation) {
         << "spread across position and orientation was "
         << (max_read - min_read) * kRadToDeg << "°";
 
-    // TEETH. The retired planar metric read this case θ/sin θ = 1.086× wide,
-    // i.e. ~1.7° on a 20° pair, which is outside the bound above. If this ever
+    // TEETH. The retired planar metric reads this case θ/sin θ wide — 1.076×
+    // at the derived 37.64° outer sample, i.e. ~1.5° on a 20° pair against a
+    // 0.86° bound. (It was 1.086× / ~1.7° at the retired 40° sample and a
+    // wider bound; the margin shrank with the field but survives.) If this ever
     // stops holding, the sweep has gone slack and would pass on either metric.
     ASSERT_GT(worst_tangential_truth, 0.0) << "worst-case config never ran";
     EXPECT_GT(worst_tangential_planar - worst_tangential_truth, bound)
-        << "the planar distance must land OUTSIDE the bound at 40° tangential, "
+        << "the planar distance must land OUTSIDE the bound at the outer "
+           "tangential sample, "
            "or this test no longer discriminates between the two metrics";
 }
 
@@ -954,8 +977,8 @@ TEST(CameraGridGeometry, SeparationIsUnchangedWhenRotatedHorizontalToVertical) {
     // Identical angular offsets either side of the boresight, measured once
     // across the image and once down it. Both axes' pixel centres sit at the
     // same offsets (both counts are even), so this is exact on both.
-    const double lo = -pixelCentreDeg(140, cam.pixels_h, dpp);  // 7.3125°
-    const double hi = pixelCentreDeg(180, cam.pixels_h, dpp);   // 7.6875°
+    const double lo = -pixelCentreDeg(140, cam.pixels_h, dpp);  // 5.928°
+    const double hi = pixelCentreDeg(180, cam.pixels_h, dpp);   // 6.232°
 
     const double horizontal = sepDeg(obsAtRay(lo, 180.0), obsAtRay(hi, 0.0));
     const double vertical   = sepDeg(obsAtRay(lo, 270.0), obsAtRay(hi, 90.0));
@@ -977,7 +1000,12 @@ TEST(CameraGridGeometry, BearingIsQuantisedToPixelCentres) {
 
     // Every reported bearing must land on a pixel centre — an exact multiple
     // of the pixel pitch away from the axis origin.
-    for (double deg = -50.0; deg <= 50.0; deg += 0.11) {
+    // 041 T041d — the sweep bound was a literal ±50°, inside the retired 60°
+    // half-field and outside the measured 48.64° one. Derived from the field
+    // now, a degree short of the edge so the last sample is not fighting the
+    // visibility clip.
+    const double sweep = static_cast<double>(cam.fovHDeg()) / 2.0 - 1.0;
+    for (double deg = -sweep; deg <= sweep; deg += 0.11) {
         const BeaconObservation obs = obsAtRay(std::abs(deg), deg < 0 ? 180.0 : 0.0);
         ASSERT_NE(obs.cep, kCepSentinelFloat) << "at " << deg << "°";
         const double reported = static_cast<double>(obs.bearing_x_rad) * kRadToDeg;
@@ -991,7 +1019,7 @@ TEST(CameraGridGeometry, BearingIsQuantisedToPixelCentres) {
 TEST(CameraGridGeometry, BearingResolvesNoFinerAndNoCoarserThanOnePixel) {
     const CameraConfig cam{};
     const double dpp = static_cast<double>(cam.deg_per_px);
-    const double centre = pixelCentreDeg(200, cam.pixels_h, dpp);  // +15.1875°
+    const double centre = pixelCentreDeg(200, cam.pixels_h, dpp);  // +12.312°
 
     // NO FINER: two truths inside the same pixel are indistinguishable.
     const BeaconObservation a = obsAtRay(centre - 0.3 * dpp, 0.0);
@@ -1083,30 +1111,46 @@ TEST(CameraGridGeometry, RangeFromSeparationMatchesTruthWithoutSystematicBias) {
 
 TEST(CameraGridGeometry, FieldOfViewIsDerivedFromGridAndPixelPitch) {
     CameraConfig cam{};
-    EXPECT_DOUBLE_EQ(static_cast<double>(cam.fovHDeg()),
-                     cam.pixels_h * static_cast<double>(cam.deg_per_px));
-    EXPECT_DOUBLE_EQ(static_cast<double>(cam.fovVDeg()),
-                     cam.pixels_v * static_cast<double>(cam.deg_per_px));
-    // 041 T041b (FR-029) — the field the ordered hardware actually gives:
-    // 120° H × 75° V from a 320×200 grid at 0.375°/px. V was 90° and optimistic
-    // by 15°. H is unchanged. Asserting the DERIVED value is the FR-003
-    // property — field and resolution cannot disagree, because there is one knob.
-    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 120.0, 1e-9);
-    EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 75.0, 1e-9);
+    // 041 T041d — these were EXPECT_DOUBLE_EQ and passed exactly while the
+    // pitch was 0.375. That was luck of the binary, not a property: 0.375 = 3/8
+    // is exactly representable and 320 × 0.375 = 120 is too, so the accessor's
+    // FLOAT multiply and this DOUBLE one agreed bit for bit. 0.304 is a
+    // repeating binary fraction, the two multiplies round differently, and they
+    // now differ by ~2e-6 — a float-arithmetic artifact of the check itself,
+    // not a disagreement between field and grid. Compare at the precision
+    // gp_scalar actually carries.
+    constexpr double kFloatRel = 1e-6;
+    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()),
+                cam.pixels_h * static_cast<double>(cam.deg_per_px),
+                kFloatRel * 320.0 * 0.304);
+    EXPECT_NEAR(static_cast<double>(cam.fovVDeg()),
+                cam.pixels_v * static_cast<double>(cam.deg_per_px),
+                kFloatRel * 200.0 * 0.304);
+    // 041 T041b/T041d (FR-029) — the field the MEASURED flight optic gives:
+    // 97.3° H × 60.8° V from a 320×200 grid at 0.304°/px. Both numbers now
+    // trace to 031's 2026-08-16 ruled-mat calibration of the 1.8 mm fisheye on
+    // the OV9281 (0.076°/px native, ×4 sim bin; 95° × 61° by direct tape, which
+    // this straddles). The retired 120° × 75° was the conservative split of a
+    // pre-arrival ESTIMATE — the real field is ~19% narrower on BOTH axes, and
+    // that is the direction nobody guarded against. Asserting the DERIVED value
+    // is the FR-003 property — field and resolution cannot disagree, because
+    // there is one knob.
+    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 97.28, 1e-4);
+    EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 60.8, 1e-4);
     // The half-angles the projection actually clips against (camera_projection.h
-    // documents ≈±1.047 / ±0.654 rad); pinned so that comment cannot go stale.
+    // documents ≈±0.849 / ±0.531 rad); pinned so that comment cannot go stale.
     // Tolerance 1e-6, not 1e-9: gp_scalar is float, so ~1e-7 is the type's own
-    // resolution here. Still four orders of magnitude below the 0.13 rad the
-    // 90° → 75° change moves it, which is what this needs to catch.
-    EXPECT_NEAR(static_cast<double>(cam.halfFovHRad()), 1.0471975511965976, 1e-6);
-    EXPECT_NEAR(static_cast<double>(cam.halfFovVRad()), 0.6544984694978736, 1e-6);
+    // resolution here. Still orders of magnitude below the ~0.20 / 0.12 rad the
+    // 0.375 → 0.304 change moves them, which is what this needs to catch.
+    EXPECT_NEAR(static_cast<double>(cam.halfFovHRad()), 0.84892814817004192, 1e-6);
+    EXPECT_NEAR(static_cast<double>(cam.halfFovVRad()), 0.53058009260627610, 1e-6);
 
     // Resolution and field cannot disagree, because there is only one knob:
     // halving the pixel pitch halves both fields, and no setter exists that
     // could contradict it.
-    cam.deg_per_px = static_cast<gp_scalar>(0.1875);
-    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 60.0, 1e-9);
-    EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 37.5, 1e-9);
+    cam.deg_per_px = static_cast<gp_scalar>(0.152);
+    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 48.64, 1e-4);
+    EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 30.4, 1e-4);
 }
 
 TEST(CameraGridGeometry, FovEdgeFollowsTheDerivedField) {
@@ -1233,9 +1277,9 @@ TEST(TwoEnvelopes, SeparationRangeDiesLongBeforeBearingDoes) {
 TEST(TwoEnvelopes, TheSeparationCrossoverIsSetByTheQUANTISEDPixelGap) {
     // The crossover must be a property of the GRID, not a tuned constant. The
     // obvious way to assert that — predict a range from continuous geometry —
-    // is WRONG, and instructively so: 5 px at 0.375°/px is 1.875°, which a
-    // 0.772 m pair subtends at ≈23.6 m, but the measured crossover sits near
-    // 27.75 m. Two real effects the continuous number ignores:
+    // is WRONG, and instructively so: 5 px at 0.304°/px is 1.52°, which a
+    // 0.772 m pair subtends at ≈29.1 m, but the measured crossover sits near
+    // 34.25 m. Two real effects the continuous number ignores:
     //
     //   1. QUANTISATION ROUNDS OUTWARD for a boresight-straddling pair. With an
     //      even pixel count the boresight falls on a pixel BOUNDARY (T031), so
@@ -1263,14 +1307,19 @@ TEST(TwoEnvelopes, TheSeparationCrossoverIsSetByTheQUANTISEDPixelGap) {
         return std::sqrt(dx * dx + dy * dy);
     };
 
+    // 041 T041d — sweep from 60 m, not 40. The finer measured pixel pitch moved
+    // the crossover 27.75 → 34.25 m (it scales as 1/deg_per_px), which left the
+    // old 40 m start with under 6 m of headroom; a further pitch change could
+    // push the crossover past the first sample, where the loop would report the
+    // sweep's own start as the answer instead of failing.
     double crossover = -1.0;
-    for (double r = 40.0; r >= 8.0; r -= 0.25) {
+    for (double r = 60.0; r >= 8.0; r -= 0.25) {
         if (settledAtRange(r).record.span > 0.0f) {
             crossover = r;
             break;
         }
     }
-    ASSERT_GT(crossover, 0.0) << "span must become available somewhere inside 40 m";
+    ASSERT_GT(crossover, 0.0) << "span must become available somewhere inside 60 m";
 
     // At the crossover the quantised gap has just reached the limit...
     EXPECT_GE(gapPx(settledAtRange(crossover)), static_cast<double>(limit_px));
@@ -1280,9 +1329,10 @@ TEST(TwoEnvelopes, TheSeparationCrossoverIsSetByTheQUANTISEDPixelGap) {
     EXPECT_LT(gapPx(settledAtRange(crossover + 0.25)), static_cast<double>(limit_px));
 
     // Sanity band, deliberately loose: it must be in the tens of metres, not at
-    // the detection edge and not in the weeds.
+    // the detection edge and not in the weeds. Now a real assertion rather than
+    // one the sweep's own bounds implied — the loop starts at 60 m.
     EXPECT_GT(crossover, 15.0);
-    EXPECT_LT(crossover, 40.0);
+    EXPECT_LT(crossover, 45.0);
 }
 
 TEST(TwoEnvelopes, MergedBlobsStillDetectButCarryIdentityUncertainty) {

@@ -450,6 +450,14 @@ aspect **1.6**, matching the real OV9281 (1280×800); the prior 240 px was a 4:3
 tracking envelope optimistic by 15°. `CameraDegPerPixel` untouched ⇒ `radPerPx`, quantisation and CEP unchanged.
 M2-only; M1 has no camera and is unaffected.
 
+> ⚠️ **SUPERSEDED IN PART, 2026-08-16 (T041d).** The grid half stands — 320 × 200 (aspect 1.6) is the real
+> sensor. The pitch half does not: this analysis reasoned from a pre-arrival ESTIMATE (~124° × 78°), and 031
+> then MEASURED the lens — equidistant confirmed, **0.076°/px native, 95° H × 61° V by tape**. The real field
+> is ~19% NARROWER than the conservative split, not wider, so `CameraDegPerPixel` moves **0.375 → 0.304**
+> (⇒ 97.3° × 60.8°, a true 4× bin of 1280 × 800) and `radPerPx` / quantisation / CEP **do** change, ~19% finer.
+> `spec.md` § Clarifications governs. This paragraph is kept as the derivation-of-record for *why* the grid
+> changed, not as a statement of the current config.
+
 ⚠️ **Do not re-open the projection casually.** t9's switch to equidistant **near-froze evolution** (elite
 unreplaced ~57 gens, pop average climbing ~5× slower) because the rectilinear tan-stretch had been an
 *accidental training aid* — edge NDC gradient ~2.3/rad vs a flat 0.955/rad, and keep-in-frame is an edge

@@ -142,6 +142,25 @@ lens before the next long run.
   `CameraPixelsV 240 → 200`: 200 × 0.375 = **75° exactly**, and 320:200 = **1.6**, the real sensor's aspect
   (OV9281 is 1280×800), so the sim grid becomes a clean 4× downsample instead of a 4:3 invention. Operator:
   *"sure it adds another variable but it is likely more realistic."*
+- Q: The lens has now been MEASURED — adopt the measured field? → A: **Yes. This SUPERSEDES the 120° × 75°
+  answer directly above** (session 3, 2026-08-16, on merging `031-beacon-camera`). 031 calibrated the actual
+  flight optic — the $3 1.8 mm M12 fisheye on the OV9281, ruled mat at h = 15″, frame archived as
+  `specs/031-beacon-camera/fisheye-1p8mm-grid-15in.jpg`:
+  - **Projection = equidistant (f·θ), confirmed center-to-edge.** No action — the sim has been analytic
+    equidistant since 038 t9. The measurement **validates** a model already three features old.
+  - **Native pitch = 0.076°/px**, uniform. **FOV = 95° H × 61° V** by direct tape measurement at the frame edge.
+  **Decision: `CameraDegPerPixel` 0.375 → 0.304, grid stays 320 × 200 ⇒ 97.3° H × 60.8° V.** The sim grid is a
+  4× bin of the real 1280 × 800 sensor, so 4 × 0.076 = 0.304 makes grid AND pitch both trace to hardware; the
+  result straddles the two measurements (tape 95×61, f·θ extrapolation 98×61). This is the exact trigger T041a
+  reserved for touching the pitch — *"revisit from MEASUREMENT, not from a second estimate"* — and it fired.
+  ⚠️ **The estimate was wrong in the direction nobody guarded against**: the real field is ~19% NARROWER on
+  both axes, not wider. The single-fisheye-at-120° assumption is **RETIRED for this lens**; 120° H needs the
+  birded pair or a wider lens. Two consequences, in opposite directions: per-pixel CEP and quantisation get
+  ~19% **finer** (the real lens resolves better than assumed — separation-ranging crossover moves 27.75 →
+  34.25 m), while the narrower field means **more and longer blind excursions**, which is the fitness-affecting
+  half. Rejected alternative: hold 0.375 and shrink the grid to 253 × 163 — it preserves CEP exactly and
+  isolates the field change, but abandons the sensor-bin relationship for an arbitrary grid and keeps a pitch
+  the lens does not have.
 - Q: Does this affect M1? → A: **No — no change there.** M1 has no camera; it keeps its global view exactly as
   before. This is an M2-only change.
 - Q: Single camera or the birded pair? → A: **Single camera stays.** The dual-camera fork goes to the backlog —
@@ -659,16 +678,27 @@ aggressiveness outcome.
 
 ### Functional Requirements — camera model (US6, M2-only)
 
-- **FR-029**: The M2 camera's vertical field MUST be **75°**, achieved by setting `CameraPixelsV = 200` against
-  the existing `CameraDegPerPixel = 0.375` (200 × 0.375 = 75°). Horizontal stays **120°** (320 px). `radPerPx`
-  MUST NOT change, so per-pixel quantisation and CEP are unaffected.
-  *Rationale*: the ordered 1.8 mm fisheye on an OV9281 estimates to ~124° × 78° equidistant; 120 × 75 is the
-  conservative split, and 320:200 = 1.6 matches the real 1280×800 aspect. The prior 240 px (90°) was a 4:3
-  invention that made the vertical tracking envelope optimistic by 15°.
+- **FR-029**: The M2 camera MUST use the **measured** flight optic: `CameraPixelsH = 320`,
+  `CameraPixelsV = 200`, `CameraDegPerPixel = 0.304` ⇒ **97.3° H × 60.8° V**.
+  *Rationale*: 031's 2026-08-16 ruled-mat calibration of the 1.8 mm fisheye on the OV9281 measured
+  **equidistant projection** (already the sim's model since 038 t9 — no action), **0.076°/px native**, and
+  **95° H × 61° V** by direct tape. The sim grid is that sensor binned 4×, so 4 × 0.076 = 0.304 and the derived
+  field straddles the two measurements. Grid and pitch now both trace to hardware.
+  ⚠️ **This revises the original FR-029** (120° × 75° via `CameraPixelsV 240 → 200` at an unchanged 0.375). The
+  grid half of that change stands — 320:200 = 1.6 is the real 1280×800 aspect and the retired 240 px was a 4:3
+  invention. What does NOT stand is holding the pitch: 120 × 75 was the conservative split of a pre-arrival
+  ESTIMATE (~124° × 78°), and the measurement came in ~19% **narrower** on both axes.
+- **FR-029c**: `radPerPx` **DOES** change (0.375 → 0.304), so per-pixel quantisation and CEP get ~19% finer.
+  This is a consequence to accept, not avoid: the real lens resolves better than the sim assumed. Measured
+  side effect — the separation-ranging crossover moves 27.75 m → 34.25 m, i.e. the narrower field buys back
+  reach in the one channel that keys off pitch rather than extent. The original FR-029's "radPerPx MUST NOT
+  change" clause is **withdrawn**; it existed to keep a field change attributable on its own, which only made
+  sense while the pitch was an estimate nobody had measured.
 - **FR-029a**: This is **M2-only**. M1 has no camera and keeps its global view unchanged.
 - **FR-029b**: ⚠️ **Fitness-affecting** (more sentinel ticks, more and longer blind gaps) → A1 bundle, never
-  mid-bake. The derived-FOV assertion comment in `camera_projection.h` (currently citing ±0.785 rad / 45° for
-  V) MUST be updated so the documented half-angles match the grid.
+  mid-bake. The derived-FOV assertion comment in `camera_projection.h` MUST be updated so the documented
+  half-angles match the grid — now **±0.849 / ±0.531 rad** (it cited ±1.047 / ±0.785 for the retired
+  120° × 90°). A test pins the derivation so the comment cannot go stale silently.
 - **FR-030**: The predictor's contract MUST record the physical drift budget from
   [camera-era-knobs.md](../031-beacon-camera/camera-era-knobs.md) §3: blind-interval bearing growth
   Δθ ≈ ½·a_target·t²/r + 1–2° IMU feed-forward error, giving field-exit times for a 3 g target of ~1.1 s @50 m

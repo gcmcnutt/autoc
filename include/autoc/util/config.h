@@ -272,11 +272,15 @@ struct AutocConfig {
     // as pixels × deg/px, so field and resolution cannot disagree. The former
     // CameraFOVHorizontalDeg / CameraFOVVerticalDeg keys are retired: they let
     // a config declare a field its own grid contradicted.
-    // 320 × 240 @ 0.375°/px ⇒ exactly 120° × 90°. All three ASSUMED pending
-    // the lens/sensor decision (contracts/config-surface.md).
+    // 320 × 200 @ 0.304°/px ⇒ 97.3° H × 60.8° V. All three now MEASURED, not
+    // assumed: 041 T041d takes them from 031's 2026-08-16 ruled-mat calibration
+    // of the flight optic (1.8 mm fisheye on OV9281 — equidistant confirmed,
+    // 0.076°/px native, 95° × 61° by tape). The sim grid is that sensor binned
+    // 4×, so grid AND pitch both trace to hardware. Full derivation and the
+    // retired-estimate history in include/autoc/eval/camera_config.h.
     int cameraPixelsH = 320;
-    int cameraPixelsV = 200;   // 041 T041a: 240 → 200 (75° V). See camera_config.h.
-    double cameraDegPerPixel = 0.375;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to gp_scalar at the WorkerInit boundary
+    int cameraPixelsV = 200;   // 041 T041a: 240 → 200 (1.6 aspect). See camera_config.h.
+    double cameraDegPerPixel = 0.304;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to gp_scalar at the WorkerInit boundary
     // 040 T017 — CameraFrameRateHz / CameraLatencyMs retired. Sensor cadence
     // follows ControlIntervalMsec (037); latency emerges from the acquisition
     // state machine (US4). See include/autoc/eval/camera_config.h.

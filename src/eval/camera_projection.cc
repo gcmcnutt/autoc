@@ -342,7 +342,7 @@ gp_scalar obstructionOnsetDeg(const CameraConfig& camera,
         std::max(camera.fovHDeg(), camera.fovVDeg()) /
         static_cast<gp_scalar>(2);
 
-    // 0.05° steps: an order finer than a 0.375° pixel, so the reported onset is
+    // 0.05° steps: an order finer than a 0.304° pixel, so the reported onset is
     // limited by the geometry rather than by the sweep.
     const gp_scalar step = static_cast<gp_scalar>(0.05);
     for (gp_scalar a = static_cast<gp_scalar>(0); a <= half_field_deg;

@@ -87,13 +87,15 @@ struct BeaconObservation {
     // `gp_scalar`, because they participate in cereal byte-format for the dmp
     // schema; flipping `gp_scalar` to fp64 would change the on-disk layout.
     //
-    // Range is ±halfFovHRad() / ±halfFovVRad() — ≈±1.047 / ±0.654 at the
-    // 320×200 @ 0.375°/px baseline (120° H × 75° V). Both axes carry the SAME
-    // angular scale, so a given angular separation reads identically at any
-    // orientation (FR-002).
-    // 041 T041b — was ±0.785 (90° V) at the retired 320×240 grid. The field is
-    // DERIVED from the grid (FR-003), so this comment is the only place the two
-    // could disagree; a test pins the derivation rather than trusting it.
+    // Range is ±halfFovHRad() / ±halfFovVRad() — ≈±0.849 / ±0.531 at the
+    // 320×200 @ 0.304°/px baseline (97.3° H × 60.8° V). Both axes carry the
+    // SAME angular scale, so a given angular separation reads identically at
+    // any orientation (FR-002).
+    // 041 T041b/T041d — was ±1.047 / ±0.785 (120° × 90°) at the retired 320×240
+    // grid on the pre-arrival estimate. Both the grid and the pitch now trace
+    // to 031's measured flight optic. The field is DERIVED from the grid
+    // (FR-003), so this comment is the only place the two could disagree; a
+    // test pins the derivation rather than trusting it.
     float bearing_x_rad;  // raw-ok: cereal byte-format member (dmp). right positive
     float bearing_y_rad;  // raw-ok: cereal byte-format member (dmp). down positive (pixel convention)
     float cep;            // raw-ok: cereal byte-format member (dmp). [0, 1.0] visible, == kCepSentinelFloat invisible
