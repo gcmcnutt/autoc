@@ -164,6 +164,24 @@ run plot_per_axis_time_series.py "$SUMMARY" --label "$NAME" --total-gens "$TOTAL
 run dynamics_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
     "${DYN_CACHE[@]}" --label "$NAME" -o "$OUT/${NAME}_dynamics_progress.png"
 
+# input_investment (041) — per-input first-layer weight norm over gens, plus
+# W_hh effective rank over gens and the curriculum ramp on a shared axis.
+# Answers "is evolution investing in the inputs we added?" continuously, where
+# the T068 ablation answers it definitively but only post-bake for one elite.
+# Mode-agnostic (pure weight analysis), so it lives in the COMMON set.
+# Its own stride: one nnextractor+nn2cpp per sampled gen is dearer than a
+# run-summary row, and the signal is a slow trend that does not need gen-level
+# resolution.
+if [[ -x "$REPO/build/nnextractor" && -x "$REPO/build/nn2cpp" ]]; then
+  run input_investment.py --run "$RUN" --gens "1-$GEN" --stride "$((STRIDE * 8))" \
+      -i "$INI" --label "$NAME" --total-gens "$TOTAL_GENS" \
+      --ramp-step "$(awk -F= '/^VariationRampStep/{gsub(/[^0-9-]/,"",$2); print $2; exit}' "$INI")" \
+      --csv "$OUT/${NAME}_input_investment.csv" \
+      -o "$OUT/${NAME}_input_investment.png"
+else
+  echo "  [plot] input_investment skipped (needs nnextractor + nn2cpp)" >&2
+fi
+
 # --- m2 (tracker) adds: gen_diag, intercept_analysis (A/B-capable), rnn_capacity ---
 if [[ "$MODE" == "m2" ]]; then
   run plot_gen_diag.py --in "$LOG" --label "$NAME" --out "$OUT/${NAME}_gen_diag.png"
