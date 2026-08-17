@@ -15,6 +15,11 @@
 #if (F_CPU_HZ % (TCA_PRESCALE * CHIP_RATE_HZ)) != 0
 #  error "CHIP_RATE_HZ is not an exact divisor of F_CPU/prescale — 200 Hz would not be exact"
 #endif
+// BENCH half-rate mode ('H' command, 2026-08-16): the Pi-3-class camera receiver sustains ~280 fps, so
+// 2.4 samples/chip wants ~115 Hz. 625000/115 is not integral -> use 5435 counts = 114.995 Hz (0.004 % off,
+// negligible vs the RC oscillator's ±5 %). NOT the flight nominal -- 200 Hz stays the design point; 'R'
+// restores it. Word period at 115 Hz = 31/115 = 270 ms (vs 155 ms) -- see camera-era-knobs.md.
+#define TCA_TOP_HALF     5435UL          // counts/chip for ~115 Hz (F_CPU/16/5435 = 114.995 Hz)
 
 // ---- logical signal -> physical pin (PORTA on BOTH 412 + 416) ----
 #define DIM_PORT   PORTA     // code output (baseband, to the LED-driver DIM)      412: PA3
