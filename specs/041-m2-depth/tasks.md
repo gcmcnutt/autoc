@@ -43,6 +43,48 @@ paired-series fitness term. Test tasks are interleaved with implementation per C
 - **[Story]**: US1–US6 per spec.md
 - **[OP]**: operator-driven — an assistant MUST NOT run this (clean rebuilds, bakes, S3 mutation, flight)
 
+## ⏸️ PAUSED 2026-08-17 — t1 stopped at gen 608; the APPROACH is the blocker, not the bake
+
+**Operator call**: *"feels we need to get some improvement here in approach before working m2."* The camera
+toolchain proceeds in parallel — it only fixes constants for the M2 sensor and does not gate this.
+
+### What t1 settled (none of it wasted)
+
+| question | answer |
+|---|---|
+| does the 42-input vector run at production scale? | **yes** — 294 scenarios, 26 workers, 608 gens, zero worker deaths |
+| is scoring deterministic? | **yes** — 487+ `NN_ELITE_SAME`, zero `ELITE_DIVERGED` |
+| were the fitness regressions a bug? | **no** — 11 of 11 land exactly on 40-gen variation-ramp boundaries |
+| is NN capacity the constraint? | **no** — `W_hh` effective rank 11.1–11.8 of 16, flat all run |
+| is `IN_ENVELOPE` used? | by **contribution** (weight × std) it ranks **2nd of all measurable inputs**; by weight alone it looked weakest — the weight-only read was wrong |
+| what load does the policy pull? | nz median **3.17 g**, peak **11.13 g**, 34% of ticks >4 g — at the airframe's standing record, with nothing in the objective restraining it |
+
+t1 final: best −23651, `avgMaxStreak` 34.4, `pctInStreak` 16.1, 288/294 complete. It was still climbing.
+
+⚠️ **The gen-608 elite is pinned and REMAINS ABLATABLE.** T049/T052 masking is implemented, so the H1a
+matrix can still run against it. Stopping the run did **not** forfeit the verdict — it deferred it.
+
+### The diagnosis that triggered the pause
+
+Every energy/smoothness objective tried so far has *muted the whole regiment* rather than trimming waste,
+because each penalises an **absolute** quantity. Full power is genuinely correct when far behind, in a
+sustained spiral, and under pitch-induced drag — so uniform pressure can only quiet everything. What is
+missing is energy **relative to what the situation demands**, i.e. a state-conditioned baseline. Operator:
+*"if we knew an optimal path and then could figure out the energy to make that step, then this can be per
+step reinforcement."*
+
+See **[approach-proposal.md](approach-proposal.md)** for the proposed way forward (per-tick reward shaping,
+a computable energy reference, and the input-vector trim).
+
+### Consequences for the remaining 041 tasks
+
+- **T063–T067, T071 are VOID as written** — they describe an 800-gen t1 and its non-regression read. A
+  re-baked M1 under a revised objective is a different run; do not report t1 against them.
+- **T068/T069/T070 (the ablation matrix) are STILL LIVE** and now cheap — the elite exists.
+- **T045 remains blocked on T046** (parked), unchanged.
+- The M2 chain (T095–T098) is unblocked only by a *pinned M1 source*, which t1 could still supply if we
+  chose to; the pause is about wanting a better M1 first, not a broken one.
+
 ## ▶️ RESUME HERE (state as of 2026-08-11)
 
 **Progress: 47/111 marked.** Phases 1–3 complete; Phase 4 (US2) through T041c. Build clean on both
