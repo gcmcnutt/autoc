@@ -73,3 +73,20 @@ the FPGA route (Zybo, still conditional). The recipe (patched driver + `fps_prob
 to a Pi 4/5 for the next measurement. Files: `pi/ov9282-experimental.c`, `pi/ov9282-640x200.patch`.
 Card state: the experimental module is installed on the Trixie card (`ov9282.ko`; stock kept as
 `ov9282.ko.xz.stock` — revert = rename back + `depmod -a`).
+
+## Addendum (2026-08-16): 320×200 attempt + HOW reduced modes compute pixel values (matters for the correlator)
+
+- **320×200 in-sensor (h-skip-4 via `0x3814=0x71`)**: enumerates (744 fps advertised) but streams ZERO
+  frames — that skip value isn't accepted by the readout. Parked: the per-frame ceiling means it could
+  not have raised fps on the Pi 3 anyway.
+- **What a reduced mode actually does to the photons — three different knobs on the OV9281:**
+  - **vertical BIN (`0x3815=0x22`)** — analog row summing, ALL photons kept (used for V in 640×400/640×200).
+  - **horizontal SKIP (`0x3814=0x31`)** — 1 column read, 2 discarded: photons LOST, sub-pixel beacon can
+    fall in a skipped column. **The stock 640×400 mode is bin-V × skip-H** — half good, half the "vanishing
+    beacon" trap from order-04 verify (c).
+  - **digital output crop (`0x380a/0b`)** — rows discarded, no summing: shrinks FIELD, not sampling.
+  Analog binning tops out at 2×2; deeper "320×240" in-sensor is skip or ISP averaging — NOT 16-photon sums.
+- **Design consequence (the correlator's 320×200)**: take **640×400 @ ~280 fps** from the sensor and do the
+  final 2×2 as a **software SUM** on the Pi (NEON, ~65 Mpx/s — trivial). Keeps every delivered photon,
+  gap-free, and the reduction math (sum / max / centroid per ROI) becomes a controllable knob instead of
+  whatever the readout did. In-sensor reduction below 640×400 is not worth its photon cost.
