@@ -47,3 +47,29 @@ on other sensors by exactly this row-cropping trick.
 - Sampling budget: mainline 260–280 fps today; ≥453 via a driver mode entry (this plan) — result TBD.
 - **Future feature**: high-speed correlator for moving beacons across the scene (per-ROI/tracker bank
   on the Pi/NEON, or FPGA), built on whichever fps the recipe delivers.
+
+## RESULT (2026-08-16, second SD card, Trixie 6.18.34 arm64, patched `ov9282.c` — the answer)
+
+**Custom modes WORK; the Pi 3 does NOT get faster. Ceiling ≈ 280 fps regardless of frame size.**
+
+What was learned building it (mechanism, not folklore):
+- **The driver is `ov9282.c`** (the `ov9281` dtoverlay is a name only). Mode table is fully table-driven —
+  add an entry and it enumerates (`--list-cameras` showed `640x200 [588.93 fps]`, `640x392`, etc.).
+- **How to shrink a binned mode on the OV9282: crop at the ISP OUTPUT (`0x380a/0x380b`), NOT the readout
+  window (`0x3806/0x3807`).** Every readout-window crop of the bin-2 mode (400, 408, 600, 608, 784 rows)
+  produced ZERO frames — the sensor never asserts frame-valid. Full 800-row window + output height 200
+  streams cleanly. (Four register-crop variants died before this was isolated.)
+- **The `media-ctl` + raw-V4L2 harness was BROKEN** (control 640×400 also gave 0 frames on a fresh boot);
+  it invalidated a whole round of "zero-frame" verdicts. `rpicam-raw` to tmpfs is the honest harness.
+  Lesson: run the CONTROL first, every time.
+- **The number**: `640×200 @ ≤300 req → 280 fps sustained; ≥350 → frontend timeout.` Same as 640×400
+  (260–280). Half the bytes per frame, identical fps ⇒ **the Pi 3 limit is per-FRAME (Unicam/pipeline
+  overhead), not bandwidth and not sensor row time.**
+
+**031 verdict on the sampling-budget question**: on Pi 3-class hardware the OV9281 path tops out at
+~280 fps ⇒ chip rates ≤ ~115 Hz at 2.4 samples/chip (emitter is one timer constant). **≥453 fps needs a
+faster host** — Pi 4/5 (faster Unicam / PiSP; Pi 5 also brings the dual-CSI the birded pair wants) or
+the FPGA route (Zybo, still conditional). The recipe (patched driver + `fps_probe.py`) transfers as-is
+to a Pi 4/5 for the next measurement. Files: `pi/ov9282-experimental.c`, `pi/ov9282-640x200.patch`.
+Card state: the experimental module is installed on the Trixie card (`ov9282.ko`; stock kept as
+`ov9282.ko.xz.stock` — revert = rename back + `depmod -a`).
