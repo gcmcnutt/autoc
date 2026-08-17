@@ -85,6 +85,15 @@ const std::vector<std::string> kInputAndObjectiveKeys = {
     "FitStreakThreshold", "FitStreakRampSec",
     // Cadence + actuation: both change what the policy experiences per tick.
     "ControlIntervalMsec", "ServoModelEnabled",
+    // 041 T041f — the camera GEOMETRY. M2-only keys, so they are absent from
+    // both M1 inis and skipped there (absent in both is legal); on the tracker
+    // pairs they are checked. These decide the field the beacons project into,
+    // so a train/eval disagreement would evaluate a policy against a different
+    // optic than it trained on — the same class of silent mismatch as the input
+    // knobs above, and newly worth guarding now that the field traces to a
+    // physical measurement rather than to a shared default.
+    "CameraPixelsH", "CameraPixelsV", "CameraDegPerPixel",
+    "CameraDetectionRangeM",
 };
 
 // Additionally required of a BITWISE-REPRO pair: the scenario set itself.

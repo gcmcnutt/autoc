@@ -278,7 +278,7 @@ struct AutocConfig {
     // 0.076°/px native, 95° × 61° by tape). The sim grid is that sensor binned
     // 4×, so grid AND pitch both trace to hardware. Full derivation and the
     // retired-estimate history in include/autoc/eval/camera_config.h.
-    int cameraPixelsH = 320;
+    int cameraPixelsH = 312;      // 041 T041f — measured field (312 x 0.304 = 94.85 ~ 95 H)
     int cameraPixelsV = 200;   // 041 T041a: 240 → 200 (1.6 aspect). See camera_config.h.
     double cameraDegPerPixel = 0.304;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to gp_scalar at the WorkerInit boundary
     // 040 T017 — CameraFrameRateHz / CameraLatencyMs retired. Sensor cadence

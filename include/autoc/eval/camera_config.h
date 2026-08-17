@@ -53,7 +53,15 @@ struct CameraConfig {
     // Defaults are the MEASURED sensor format (they were ASSUMED through 040;
     // 031's ruled-mat calibration of the flight lens closed that — see below).
     // 320 × 200 at 0.304°/px ⇒ 97.3° H × 60.8° V.
-    int pixels_h = 320;
+    // 041 T041f — 312, not 320: the grid is sized to the MEASURED field.
+    // 312 x 0.304 = 94.85 deg ~ the tape-measured 95 H (031, "MEASURED,
+    // FINAL"), where 320 gave the f-theta extrapolation's 97.3 and handed the
+    // craft ~2.4 deg of horizontal field the real lens does not deliver.
+    // V stays 200 (200 x 0.304 = 60.8 ~ the measured 61).
+    // ⚠️ 312 x 4 = 1248 of the sensor's 1280 columns: the bin relationship is
+    // to the USABLE field, not the full array. That is the honest one — the
+    // outer columns are what the tape says we do not get.
+    int pixels_h = 312;
     // 041 T041a — 240 → 200: matching the OV9281's 1280×800 (1.6) aspect rather
     // than the 4:3 invention 240 px was. Must move together with
     // AutocConfig::cameraPixelsV and the three tracker inis — three definitions

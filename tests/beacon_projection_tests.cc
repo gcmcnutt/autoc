@@ -762,12 +762,35 @@ TEST(AirframeObstructionField, EffectiveFieldDiffersFromNominalByAJustifiedAmoun
 
     // THE LOSS IS REAL AND IT IS THE POD NOSE, not the wing. The scoping
     // analysis said so ("wing occlusion is eliminated at any LE offset; the pod
-    // nose shadows the same inboard region and merges into the same patch") and
-    // the sweep agrees: ~3% of the field is hard-blocked, entering around 48°
-    // inboard where the ray finally descends into the nose box before clearing
-    // its forward face. The wing contributes exactly zero — see
-    // WingContributesNoObstructionAtBaselineMount.
-    EXPECT_GT(f.blockedFraction(), 0.005f)
+    // nose shadows the same inboard region and merges into the same patch").
+    //
+    // ⚠️ 041 T041f — THE BOUND HERE IS FIELD-DEPENDENT, and steeply so. The
+    // nose patch lives at the OUTER EDGE of the horizontal field, so how much
+    // of it the camera sees is decided by the last degree or two of half-field.
+    // Measured sweep (blocked %, vs half-H):
+    //
+    //     46.21°  0.000     <- onset is between 46.2 and 46.8
+    //     46.82°  0.096
+    //     47.42°  0.214     <- MEASURED field (312 px), where we now train
+    //     48.03°  0.518
+    //     48.64°  0.628     <- f·θ extrapolation (320 px), T041d's value
+    //     54.72°  2.566
+    //
+    // So the original ">0.005" floor and the "~3% is hard-blocked" claim both
+    // date from the retired 120° era (half-H 60°). T041d already left this
+    // passing by a hair — 0.628% against a 0.5% floor — and T041f's move onto
+    // the tape-measured field tipped it under. The floor was never a physical
+    // constant; it was a snapshot of a field we no longer use.
+    //
+    // What IS physical, and is what these two bounds now say: the nose reaches
+    // the field corner at this mount (non-zero), and it takes a small bite
+    // (well under a tenth). The ATTRIBUTION assertion below is what actually
+    // pins it to the nose rather than to the wing or to a sweep bug.
+    //
+    // Worth carrying into M2 planning: the measured lens sees ~1/3 the nose
+    // blockage the extrapolated one did — a small silver lining to a field that
+    // is otherwise ~21% narrower than the estimate everyone planned against.
+    EXPECT_GT(f.blockedFraction(), 0.001f)
         << "the pod nose reaches the inboard field at this mount; a zero here "
            "means the sweep or the nose geometry is wrong, not that the mount "
            "is perfect";
@@ -1126,30 +1149,38 @@ TEST(CameraGridGeometry, FieldOfViewIsDerivedFromGridAndPixelPitch) {
     EXPECT_NEAR(static_cast<double>(cam.fovVDeg()),
                 cam.pixels_v * static_cast<double>(cam.deg_per_px),
                 kFloatRel * 200.0 * 0.304);
-    // 041 T041b/T041d (FR-029) — the field the MEASURED flight optic gives:
-    // 97.3° H × 60.8° V from a 320×200 grid at 0.304°/px. Both numbers now
+    // 041 T041b/T041d/T041f (FR-029) — the field the MEASURED flight optic
+    // gives: 94.85° H × 60.8° V from a 312×200 grid at 0.304°/px. Both numbers
     // trace to 031's 2026-08-16 ruled-mat calibration of the 1.8 mm fisheye on
-    // the OV9281 (0.076°/px native, ×4 sim bin; 95° × 61° by direct tape, which
-    // this straddles). The retired 120° × 75° was the conservative split of a
-    // pre-arrival ESTIMATE — the real field is ~19% narrower on BOTH axes, and
-    // that is the direction nobody guarded against. Asserting the DERIVED value
-    // is the FR-003 property — field and resolution cannot disagree, because
-    // there is one knob.
-    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 97.28, 1e-4);
+    // the OV9281 (0.076°/px native, ×4 sim bin), and both now sit ON the direct
+    // tape measurement — 95° × 61°, recorded there as "MEASURED, FINAL".
+    //
+    // ⚠️ T041f narrowed H 320 → 312 px. T041d had kept 320 because it made the
+    // grid an exact 4× bin of the sensor's full 1280 columns, which put the sim
+    // at the f·θ EXTRAPOLATION (97.3°) rather than at what the tape says the
+    // lens delivers (95°) — ~2.4° of horizontal field the aircraft would train
+    // against and never get. 312×4 = 1248 columns: the bin relationship is now
+    // to the USABLE field, which is the honest one.
+    //
+    // The retired 120° × 75° was the conservative split of a pre-arrival
+    // ESTIMATE — the real field is ~21% narrower on BOTH axes, the direction
+    // nobody guarded against. Asserting the DERIVED value is the FR-003
+    // property: field and resolution cannot disagree, because there is one knob.
+    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 94.848, 1e-4);
     EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 60.8, 1e-4);
     // The half-angles the projection actually clips against (camera_projection.h
     // documents ≈±0.849 / ±0.531 rad); pinned so that comment cannot go stale.
     // Tolerance 1e-6, not 1e-9: gp_scalar is float, so ~1e-7 is the type's own
     // resolution here. Still orders of magnitude below the ~0.20 / 0.12 rad the
     // 0.375 → 0.304 change moves them, which is what this needs to catch.
-    EXPECT_NEAR(static_cast<double>(cam.halfFovHRad()), 0.84892814817004192, 1e-6);
+    EXPECT_NEAR(static_cast<double>(cam.halfFovHRad()), 0.82770494446579079, 1e-6);
     EXPECT_NEAR(static_cast<double>(cam.halfFovVRad()), 0.53058009260627610, 1e-6);
 
     // Resolution and field cannot disagree, because there is only one knob:
     // halving the pixel pitch halves both fields, and no setter exists that
     // could contradict it.
     cam.deg_per_px = static_cast<gp_scalar>(0.152);
-    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 48.64, 1e-4);
+    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 47.424, 1e-4);
     EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 30.4, 1e-4);
 }
 
