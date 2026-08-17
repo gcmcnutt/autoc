@@ -90,3 +90,16 @@ Card state: the experimental module is installed on the Trixie card (`ov9282.ko`
   final 2×2 as a **software SUM** on the Pi (NEON, ~65 Mpx/s — trivial). Keeps every delivered photon,
   gap-free, and the reduction math (sum / max / centroid per ROI) becomes a controllable knob instead of
   whatever the readout did. In-sensor reduction below 640×400 is not worth its photon cost.
+
+## What a 640×400 / 640×200 pixel IS (from the mode registers, 2026-08-16)
+
+`0x3814=0x31` (h odd/even increment 3/1 → read 2 adjacent columns, skip the next 2), `0x3815=0x22` (v bin-2),
+`0x3820=0x60` (bit5: v-bin enable), `0x3821=0x01` (bit0: h-bin enable). ⇒ **each output pixel = an analog
+2×2 BIN of 4 photosites, on a 4-column × 2-row footprint; the other 2 columns × 2 rows are SKIPPED — never
+sampled.** Half the light in each pixel's footprint is captured; the horizontal axis is a *sampled* grid.
+Consequences: (a) a point-source beacon's response MODULATES as it drifts across the column grid (the
+"angular variation" the operator flagged); (b) mitigation = PSF ≥ ~2 output pixels wide (slight defocus,
+both lenses focusable) — smooth field response + centroiding, at the knobs-doc √k SNR derate; (c) 641×400
+vs 640×200 are identical in this respect — the 200 just drops rows at the output. Feed 041's sensor
+model: sampling = 2×2 bin on a 4×2 stride (H stride 4 photosites = 12 µm, V stride 2 = 6 µm) → effective
+IFOV per output pixel 0.076° H (fisheye) with a 50 % horizontal fill factor.
