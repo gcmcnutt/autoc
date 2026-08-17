@@ -103,3 +103,15 @@ both lenses focusable) — smooth field response + centroiding, at the knobs-doc
 vs 640×200 are identical in this respect — the 200 just drops rows at the output. Feed 041's sensor
 model: sampling = 2×2 bin on a 4×2 stride (H stride 4 photosites = 12 µm, V stride 2 = 6 µm) → effective
 IFOV per output pixel 0.076° H (fisheye) with a 50 % horizontal fill factor.
+
+## Beacon signal level on the camera (2026-08-16, exposure ladder; feeds the daylight budget)
+
+Bench emitter (5-die string, 51 mA), **~90° off-axis, ~2 m**, 1.8 mm fisheye, 640×400 8-bit, gain 1:
+lit-chip peak = **255 (rail) at 2000 and 500 µs; 170 at 200 µs; ~85 at 100 µs** (linear) →
+**~850 counts per ms of exposure ≈ 8–10× over full scale at the 2 ms capture exposure.** This is the
+WORST emitter aspect through the SMALLEST pupil at bench current; face-on cube @306 mA is ~×30 more.
+Consequences: (a) signal headroom is not the daylight problem — sky background per pixel is (empirical
+#1 still the number to get); (b) **exposure must track range / be per-ROI** — at 2 m the correlator
+wants ~200 µs, not 2 ms (the "manual exposure is load-bearing" requirement, now with a number);
+(c) 8-bit is the tight axis — 10-bit mode buys 4× headroom for ~20 % fps. Emitter bench 'H' mode
+(~115 Hz, camera-measured 121 Hz) is live; run the camera at its 280 ceiling for 2.3 samples/chip.
