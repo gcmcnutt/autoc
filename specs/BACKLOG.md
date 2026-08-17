@@ -1,6 +1,6 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-08-13
+**Last Updated**: 2026-08-16
 
 > **Routing (2026-08-06, 040 wrap)**: 040 closed — see [040 outcome](040-camera-redo/outcome.md).
 > Verdict: *a better camera model, much closer to real, and training results more or less the same —
@@ -10,6 +10,91 @@
 > "Make the predictor earn its keep" entry below is 041's E1–E4 and is already measured — start there.
 >
 > *(Prior routing, 2026-07-10, 038 wrap: 039 xiao, then M2-depth items → 040.)*
+
+---
+
+## Post-041 direction (roadmap, filed 2026-08-16)
+
+### [operator 2026-08-16] M2 is TWO-FOLD, and M3 forks after it
+
+Recorded because it is the first time the M2 goal has been stated as two distinct deliverables rather
+than one, and because the first half is already firmware scope that was flagged unfiled during the 041
+smoke session.
+
+**M2, phase 1 — a virtual target, on the real aircraft.** Load a **virtual M1 into the flight hardware**
+and fly it against a **synthetic camera**: the beacon projection + CEP run ON the nRF52840, fed from an
+M1-derived virtual target rather than from a real optic. This is the cheapest possible way to fly the
+whole M2 stack — perception, envelope, control — with no second aircraft and no lens dependency, and it
+isolates "does the controller work in the air" from "does the camera see".
+⚠️ Implies porting beacon projection + CEP to the xiao. That is real firmware scope and is NOT in 041
+(041's flight test is M1: T079/T080).
+
+**M2, phase 2 — chase an actual craft carrying beacons.** The real optic, the real target, the real link
+budget. Everything phase 1 deliberately faked becomes real, one layer at a time.
+
+**What M2 demonstrates when both halves land**: all-attitude flight control and a *generalized* controller
+— i.e. one that holds up outside the trained envelope and against a target it does not script.
+
+**M3 forks, deliberately undecided** (operator: *"we'll see"*):
+- **(a) the target stops broadcasting** — passive/vision-only acquisition. Kills the beacon crutch and
+  makes perception the whole problem. Note the 031 link-budget work argues the temporal-code side is the
+  strong one, so removing it is a *large* step, not an increment.
+- **(b) strategy — offense/defense.** See the entry below; this changes the problem CLASS, not just its
+  difficulty.
+
+The fork is not scheduled. Which branch M3 takes should be decided on what M2 phase 2 actually shows.
+
+### [operator 2026-08-16] Per-step supervised prediction + learned context — the 042 candidate
+
+Operator: *"we're gradually casting off the genetic programming core here — so, let's discuss how we'd take
+a series of inputs, and a 'context' and predict the next outputs (only 3 of them)."* Filed as a **042
+candidate**, not 041 scope.
+
+**The prize, stated numerically**: today the search sees **one scalar per ~1000 ticks** (aggregate episode
+fitness). Per-step supervision is ~1000× denser. That is the entire argument for the change.
+
+⚠️ **"Score each step" is TWO different projects, and conflating them wastes the effort:**
+- **per-step REWARD** → still RL. No teacher needed, but temporal credit assignment is owed (a good tick
+  now can be a crash in 2 s). We ALREADY have this — `stpPt` per tick, recorded in every dmp since 041
+  T035. What is missing is machinery that can *use* it, not the signal.
+- **per-step TARGET** → supervised. Cheap and stable, but something must say what the right output WAS,
+  and the sim does not. The operator's phrasing ("predict the next outputs") is the supervised shape, so
+  **the real question is where targets come from**, not which architecture.
+
+**Why GP survived here** — any replacement must beat this: the objective is non-differentiable, the sim is
+a black box, and the crash boundary is a hard discontinuity. ES/GP is indifferent to all three. Replacing
+it means acquiring gradients (differentiable sim, or policy gradient) or targets (a teacher). Neither is
+free and both dislike the crash boundary.
+
+**FIRST EXPERIMENT — free, and it reframes everything. Do this before choosing an architecture.**
+Every dmp already records the **exact input vector the net saw and the exact outputs it produced**
+(`nnInputs_` / xiao `TickRecord.inputs`, the honest-recording contract). That is a supervised corpus of
+(inputs → 3 outputs) pairs, hundreds of thousands of rows per run, **already on disk** — including the
+041 t1 run now baking. So: **behavior-clone an elite from its own dmp**, minutes of CPU on a 2211-weight
+net. It is diagnostic either way:
+- **clone FAILS** ⇒ the inputs do not determine the outputs — an *observability* result. The policy is
+  leaning on recurrent state carrying something the input vector lacks, and that names what to add.
+- **clone SUCCEEDS easily** ⇒ the policy class is not the bottleneck, **search is** — the strongest
+  possible argument for changing learning machinery, bought for an afternoon.
+
+**"Context" has three levels**, and we own the first two: recurrent hidden state (16r today) · explicit
+history window (6 ms-based lags today) · learned latent over the tick sequence (transformer/SSM — this is
+what needs hardware). For offense/defense, context means something else again: a **belief about the
+opponent's policy**, inferred online. A per-episode scalar cannot teach that.
+
+**Offense/defense changes the problem CLASS.** A maneuvering adversary is not a stationary MDP, it is a
+game: the environment is non-stationary by construction, "optimal" is undefined without naming the
+opponent, and self-play brings cycling/overfitting pathologies. Two consequences: per-step prediction gets
+*more* valuable there (predicting the opponent's next move is a supervised target with a **free label** —
+you observe what they did), and **041's predictor head is this idea in miniature** — T088's verdict is
+early evidence about how much opponent structure is predictable at all.
+
+**Suggested order**: (1) behavior-clone diagnostic → (2) value/critic head, reusing the recorded per-step
+reward and 041's extra-head machinery → (3) PPO on the existing sim (4669 sims/s measured — sample cost is
+the usual blocker and we are unusually well placed) → (4) self-play / opponent modelling.
+
+⚠️ **Do not buy hardware ahead of step 1.** The net is tiny; a GPU buys nothing for behavior cloning.
+Hardware binds at step 3 (PPO sample counts) and step 4 (larger contexts), not before.
 
 ---
 

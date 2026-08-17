@@ -137,12 +137,16 @@ quantity (041)" → *RESOLVED 2026-08-11*.
   the gather does no transformation, so the sim must match that shape.
 - **T040** is wiring, not derivation: the shared math and its five tests already exist from T010/T011.
 
-### Unfiled — do this before it is lost
+### ✅ Filed 2026-08-16 — no longer unfiled
 
-The **M2 flight architecture** (operator 2026-08-10): early M2 flights are **one real craft against a
-VIRTUAL target derived from an M1 run, with a SYNTHETIC camera** — implying beacon projection + CEP
-running on the nRF52840. Captured in spec.md Clarifications but **not yet in `specs/BACKLOG.md`**, where it
-belongs as future firmware scope. Not 041 (041's flight test is M1, T079/T080).
+The **M2 flight architecture** (operator 2026-08-10) is now in `specs/BACKLOG.md` → *Post-041 direction*,
+where it belongs as future firmware scope. It was extended there by the operator on 2026-08-16: M2 is
+**two-fold** — phase 1 a virtual M1 target on the flight hardware with a synthetic camera (beacon
+projection + CEP on the nRF52840), phase 2 chasing a real craft with real beacons — demonstrating
+all-attitude flight control and a generalized controller. **M3 then forks**, deliberately undecided:
+target-stops-broadcasting (vision-only) vs strategy (offense/defense).
+
+Still not 041 — 041's flight test is M1 (T079/T080).
 
 ### Decisions taken 2026-08-10 that changed the plan
 
