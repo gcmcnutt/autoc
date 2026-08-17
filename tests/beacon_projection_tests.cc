@@ -787,10 +787,11 @@ TEST(AirframeObstructionField, EffectiveFieldDiffersFromNominalByAJustifiedAmoun
     // (well under a tenth). The ATTRIBUTION assertion below is what actually
     // pins it to the nose rather than to the wing or to a sweep bug.
     //
-    // Worth carrying into M2 planning: the measured lens sees ~1/3 the nose
-    // blockage the extrapolated one did — a small silver lining to a field that
-    // is otherwise ~21% narrower than the estimate everyone planned against.
-    EXPECT_GT(f.blockedFraction(), 0.001f)
+    // ⚠️ At the shipped 320 px grid (half-H 48.64°) the value is 0.628%, which
+    // clears the 0.5% floor by a HAIR. That is not comfort: one degree of field
+    // either way moves it ~2×. If a future field change trips this, read the
+    // sweep above and set the bound from physics — do not nudge the floor.
+    EXPECT_GT(f.blockedFraction(), 0.005f)
         << "the pod nose reaches the inboard field at this mount; a zero here "
            "means the sweep or the nose geometry is wrong, not that the mount "
            "is perfect";
@@ -1149,38 +1150,38 @@ TEST(CameraGridGeometry, FieldOfViewIsDerivedFromGridAndPixelPitch) {
     EXPECT_NEAR(static_cast<double>(cam.fovVDeg()),
                 cam.pixels_v * static_cast<double>(cam.deg_per_px),
                 kFloatRel * 200.0 * 0.304);
-    // 041 T041b/T041d/T041f (FR-029) — the field the MEASURED flight optic
-    // gives: 94.85° H × 60.8° V from a 312×200 grid at 0.304°/px. Both numbers
-    // trace to 031's 2026-08-16 ruled-mat calibration of the 1.8 mm fisheye on
-    // the OV9281 (0.076°/px native, ×4 sim bin), and both now sit ON the direct
-    // tape measurement — 95° × 61°, recorded there as "MEASURED, FINAL".
+    // 041 T041b/T041d (FR-029) — the field the MEASURED flight optic gives:
+    // 97.3° H × 60.8° V from the 320×200 grid the SENSOR DUMPS at 0.304°/px.
+    // Both trace to 031's 2026-08-16 ruled-mat calibration of the 1.8 mm
+    // fisheye on the OV9281 (0.076°/px native, ×4 sim bin).
     //
-    // ⚠️ T041f narrowed H 320 → 312 px. T041d had kept 320 because it made the
-    // grid an exact 4× bin of the sensor's full 1280 columns, which put the sim
-    // at the f·θ EXTRAPOLATION (97.3°) rather than at what the tape says the
-    // lens delivers (95°) — ~2.4° of horizontal field the aircraft would train
-    // against and never get. 312×4 = 1248 columns: the bin relationship is now
-    // to the USABLE field, which is the honest one.
+    // ⚠️ The tape reads 95° H where this derives 97.3°. That ~2.4° is TAPE
+    // MEASUREMENT ERROR — the calibration itself quotes agreement only within
+    // 3° — and it is absorbed there, NOT in the pixel count. T041f briefly set
+    // 312 px to force the derived angle onto the tape value; that was reverted
+    // (operator 2026-08-16) because the grid is the one quantity here we know
+    // exactly, and bending it to match a tape reading models a sensor that does
+    // not exist.
     //
     // The retired 120° × 75° was the conservative split of a pre-arrival
-    // ESTIMATE — the real field is ~21% narrower on BOTH axes, the direction
+    // ESTIMATE — the real field is ~19% narrower on BOTH axes, the direction
     // nobody guarded against. Asserting the DERIVED value is the FR-003
     // property: field and resolution cannot disagree, because there is one knob.
-    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 94.848, 1e-4);
+    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 97.28, 1e-4);
     EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 60.8, 1e-4);
     // The half-angles the projection actually clips against (camera_projection.h
     // documents ≈±0.849 / ±0.531 rad); pinned so that comment cannot go stale.
     // Tolerance 1e-6, not 1e-9: gp_scalar is float, so ~1e-7 is the type's own
     // resolution here. Still orders of magnitude below the ~0.20 / 0.12 rad the
     // 0.375 → 0.304 change moves them, which is what this needs to catch.
-    EXPECT_NEAR(static_cast<double>(cam.halfFovHRad()), 0.82770494446579079, 1e-6);
+    EXPECT_NEAR(static_cast<double>(cam.halfFovHRad()), 0.84892814817004192, 1e-6);
     EXPECT_NEAR(static_cast<double>(cam.halfFovVRad()), 0.53058009260627610, 1e-6);
 
     // Resolution and field cannot disagree, because there is only one knob:
     // halving the pixel pitch halves both fields, and no setter exists that
     // could contradict it.
     cam.deg_per_px = static_cast<gp_scalar>(0.152);
-    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 47.424, 1e-4);
+    EXPECT_NEAR(static_cast<double>(cam.fovHDeg()), 48.64, 1e-4);
     EXPECT_NEAR(static_cast<double>(cam.fovVDeg()), 30.4, 1e-4);
 }
 
