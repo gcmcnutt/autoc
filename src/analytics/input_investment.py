@@ -63,6 +63,41 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 NEW_SLOTS = ["IN_ENVELOPE", "ENVELOPE_SECS", "ACCEL_X", "ACCEL_Y", "ACCEL_Z"]
 NEW_COLORS = ["tab:red", "tab:orange", "tab:blue", "tab:green", "tab:purple"]
 
+# dmp-dump per-tick column -> input slot name. Only a SUBSET of the 42 inputs is
+# emitted as CSV columns, which is why the contribution panel below covers these
+# and not the whole vector (see its caveat).
+CSV_TO_SLOT = {
+    "env": "IN_ENVELOPE", "envS": "ENVELOPE_SECS",
+    "acX": "ACCEL_X", "acY": "ACCEL_Y", "acZ": "ACCEL_Z",
+    "dBnd": "DIST_TO_BOUNDARY", "inX": "INWARD_BODY_X",
+    "inY": "INWARD_BODY_Y", "inZ": "INWARD_BODY_Z",
+}
+
+
+def input_stds(tick_csv):
+    """Per-slot std of the RECORDED input values, in NN units.
+
+    ⚠️ WHY THIS MATTERS. A weight norm alone is not what the network feels: the
+    pre-activation contribution scales as weight x the input's spread. An input
+    pinned near a constant contributes almost nothing no matter how large its
+    weight. Measured on the 041 t1 run: ACCEL_Y std = 0.0129 against
+    IN_ENVELOPE's 0.3754 — a 29x difference, because a coordinated turn keeps
+    lateral accel at zero. Ranking those two by weight norm is meaningless.
+    """
+    import csv as _csv
+    import statistics as _st
+    try:
+        with open(tick_csv) as fh:
+            rows = list(_csv.DictReader(fh))
+    except OSError:
+        return {}
+    out = {}
+    for col, slot in CSV_TO_SLOT.items():
+        vals = [float(r[col]) for r in rows if r.get(col) not in (None, "")]
+        if len(vals) > 1:
+            out[slot] = _st.pstdev(vals)
+    return out
+
 
 def input_names(mode_header="nn_inputs.h"):
     """Slot names in declaration order, read from the C++ metadata table.
@@ -126,6 +161,7 @@ def main():
     p.add_argument("--total-gens", type=int, default=800)
     p.add_argument("--ramp-step", type=int, default=40)
     p.add_argument("--csv", help="also write the per-gen table here")
+    p.add_argument("--tick-csv", help="per-tick CSV (dmp-dump --csv-only) for input stds")
     args = p.parse_args()
 
     lo, hi = (int(x) for x in args.gens.split("-"))
@@ -166,8 +202,11 @@ def main():
     if names is None or len(names) != n_in:
         names = [f"IN{i}" for i in range(n_in)]
 
-    fig, ax = plt.subplots(3, 1, figsize=(13, 12), sharex=True,
-                           gridspec_kw={"height_ratios": [3, 1.3, 1]})
+    stds = input_stds(args.tick_csv) if args.tick_csv else {}
+    n_panels = 4 if stds else 3
+    heights = [3, 2.2, 1.3, 1] if stds else [3, 1.3, 1]
+    fig, ax = plt.subplots(n_panels, 1, figsize=(13, 3.6 * n_panels), sharex=True,
+                           gridspec_kw={"height_ratios": heights})
 
     # --- panel 1: per-input investment ---------------------------------------
     new_idx = {nm: names.index(nm) for nm in NEW_SLOTS if nm in names}
@@ -188,27 +227,50 @@ def main():
     ax[0].legend(fontsize=8, ncol=2, loc="upper left")
     ax[0].grid(True, lw=0.3, alpha=0.4)
 
-    # --- panel 2: recurrent capacity ----------------------------------------
+    # --- panel 2 (only with --tick-csv): CONTRIBUTION = norm x std ----------
+    # The panel above ranks by weight alone; this ranks by what the network
+    # actually feels. Covers only the slots dmp-dump emits as columns.
+    k = 1
+    if stds:
+        for nm, c in zip(NEW_SLOTS, NEW_COLORS):
+            if nm in names and nm in stds:
+                ax[k].plot(kept, rel[:, names.index(nm)] * stds[nm], color=c, lw=1.8,
+                           label=f"{nm}  (std {stds[nm]:.3f})")
+        for nm, c in [("DIST_TO_BOUNDARY", "0.4"), ("INWARD_BODY_X", "0.6")]:
+            if nm in names and nm in stds:
+                ax[k].plot(kept, rel[:, names.index(nm)] * stds[nm], color=c, lw=1.1,
+                           ls=":", label=f"{nm}  (std {stds[nm]:.3f}, reference)")
+        ax[k].set_ylabel("contribution scale\n(rel. weight x input std)")
+        ax[k].set_title("what the network actually FEELS — weight alone overstates a "
+                        "near-constant input.\n⚠️ std is from the LATEST gen's ticks and "
+                        "applied across all gens; only the slots dmp-dump emits are shown",
+                        fontsize=9)
+        ax[k].legend(fontsize=7, ncol=2, loc="upper left")
+        ax[k].grid(True, lw=0.3, alpha=0.4)
+        k = 2
+
+    # --- recurrent capacity -------------------------------------------------
     if np.isfinite(pr).any():
-        ax[1].plot(kept, pr, color="tab:brown", lw=1.5)
-        ax[1].set_ylabel("W_hh effective rank\n(participation ratio)")
-        ax[1].set_title("recurrent capacity — flat near N = saturated (widen); "
+        ax[k].plot(kept, pr, color="tab:brown", lw=1.5)
+        ax[k].set_ylabel("W_hh effective rank\n(participation ratio)")
+        ax[k].set_title("recurrent capacity — flat near N = saturated (widen); "
                         "well below N = 16 is plenty", fontsize=9)
-        ax[1].grid(True, lw=0.3, alpha=0.4)
+        ax[k].grid(True, lw=0.3, alpha=0.4)
     else:
-        ax[1].text(0.5, 0.5, "no recurrent layer in this genome",
-                   ha="center", va="center", transform=ax[1].transAxes)
+        ax[k].text(0.5, 0.5, "no recurrent layer in this genome",
+                   ha="center", va="center", transform=ax[k].transAxes)
+    k += 1
 
     # --- panel 3: the curriculum ramp ---------------------------------------
     vs = [variation_scale(g, args.total_gens, args.ramp_step) for g in kept]
-    ax[2].step(kept, vs, where="post", color="tab:gray", lw=1.5)
-    ax[2].set_ylabel("variation scale")
-    ax[2].set_xlabel("generation")
-    ax[2].set_ylim(-0.05, 1.05)
-    ax[2].set_title(f"curriculum ramp (step {args.ramp_step}) — elite fitness legitimately "
+    ax[k].step(kept, vs, where="post", color="tab:gray", lw=1.5)
+    ax[k].set_ylabel("variation scale")
+    ax[k].set_xlabel("generation")
+    ax[k].set_ylim(-0.05, 1.05)
+    ax[k].set_title(f"curriculum ramp (step {args.ramp_step}) — elite fitness legitimately "
                     "WORSENS at each step; that is difficulty rising, not non-determinism",
                     fontsize=9)
-    ax[2].grid(True, lw=0.3, alpha=0.4)
+    ax[k].grid(True, lw=0.3, alpha=0.4)
 
     fig.tight_layout()
     fig.savefig(args.out, dpi=110)

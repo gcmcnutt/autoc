@@ -176,7 +176,7 @@ if [[ -x "$REPO/build/nnextractor" && -x "$REPO/build/nn2cpp" ]]; then
   run input_investment.py --run "$RUN" --gens "1-$GEN" --stride "$((STRIDE * 8))" \
       -i "$INI" --label "$NAME" --total-gens "$TOTAL_GENS" \
       --ramp-step "$(awk -F= '/^VariationRampStep/{gsub(/[^0-9-]/,"",$2); print $2; exit}' "$INI")" \
-      --csv "$OUT/${NAME}_input_investment.csv" \
+      --csv "$OUT/${NAME}_input_investment.csv" --tick-csv "$TICK" \
       -o "$OUT/${NAME}_input_investment.png"
 else
   echo "  [plot] input_investment skipped (needs nnextractor + nn2cpp)" >&2
