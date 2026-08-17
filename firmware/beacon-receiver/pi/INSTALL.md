@@ -33,3 +33,18 @@ dtoverlay=ov9281
 ## Not done / next
 - InnoMaker Bullseye vendor driver (453 fps mode) → **second SD card**, don't disturb this one.
 - The 3B is unplugged; this card runs the 3A+ under the same Tailscale identity.
+
+## Card 2 — Trixie arm64 (2026-08-16/17; the high-fps + tracker card, node `beaconpi` 100.87.61.53)
+- Image: Raspberry Pi OS **Trixie Lite arm64** (2026-06-18 build), flashed from the DGX (`dd`), pre-seeded
+  headless via bootfs `ssh` + `userconf.txt` + cloud-init `user-data`/`network-config`/`meta-data`.
+  Lessons: cloud-init's netplan Wi-Fi did NOT come up → NM profile written directly to rootfs
+  (`/etc/NetworkManager/system-connections/lyu-guest.nmconnection`, must be 0600); the Pi's clock at
+  first boot predates TLS certs → **wait for NTP before any HTTPS** (Tailscale install failed "cert not
+  yet valid" until fixed); Tailscale static arm64 binaries pre-placed from the DGX, enrolled with a
+  reusable auth key in `runcmd` (key scrubbed after; REVOKE it in the console).
+- config.txt: `camera_auto_detect=0`, `dtoverlay=vc4-kms-v3d,cma-320`, `dtoverlay=ov9281`.
+- Kernel 6.18.34+rpt-rpi-v8; **experimental `ov9282.ko` installed** (`pi/ov9282-experimental.c`, built
+  on-Pi against `linux-headers-rpi-v8`; stock kept as `ov9282.ko.xz.stock`). Modes added: 640x200 (works,
+  ~280 fps ceiling), 320x200 (does not stream), 640x392 (does not stream).
+- Packages: `python3-numpy` (2026-08-17, for `beacon_track.py`), `i2c-tools`, `build-essential`.
+- Scripts in `~pi/`: `fps_probe.py`, `beacon_track.py`; build dir `~pi/ov9282-build/`.
