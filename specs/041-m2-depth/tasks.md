@@ -599,3 +599,35 @@ defensible increment even if no bake ever runs.
 *(US2 grew by 3 at the 2026-08-10 camera-model pass: T041a–T041c. T011a added at the same pass's ordering
 review — it is the one task whose omission is unrecoverable. T001/T001a moved from setup into US4's hardware
 sub-phase the same day — same IDs, later position; the count is unchanged.)*
+
+---
+
+## Phase A′ (amendment 2026-08-17) — containment + step-wise cost. **BOTH MODES.**
+
+Implements spec FR-033…FR-039 and the amendment plan. Ordering is load-bearing: **A1–A2 spend no bake
+time and can change everything after them.**
+
+### A — read what already exists (zero bake)
+
+- [ ] TA01 Run the **T068/T069 ablation matrix on the pinned gen-608 elite** (`autoc-m1/autoc-9223370249927095135-2026-08-17T00:48:00.672Z/`, seed 1786927680). Masking is implemented (T049/T052). Arms: `IN_ENVELOPE`; `ENVELOPE_SECS`; both; `ACCEL_X,ACCEL_Y,ACCEL_Z`; `ACCEL_Y` alone; plus the calibration spectrum `DIST_NOW` (known-critical) and `GYRO_P,GYRO_Q,GYRO_R`. ⛔ **Gate on SC-015: no input may be dropped before this runs.** The contribution ranking is a screen; this is the verdict.
+- [ ] TA02 ⚠️ **Conditional contribution for limit-class inputs.** Extend the contribution panel to report contribution **restricted to the states where the input is active** — for `DIST_TO_BOUNDARY`, ticks below a saturation threshold. Measured 2026-08-17: it is >0.95 for **92.8%** of ticks and its near-edge std is **2.4×** its pooled std, which is precisely why the pooled number (0.050) nearly got it deleted. **This task exists because that analysis was wrong once already.**
+- [ ] TA03 Compute `Es = h + v²/2g` and `Ps = (T−D)·V/W` from the **existing t1 dmps** and plot energy state along representative trajectories. Answers, as a READ rather than a bake: is the spiral bleeding energy into induced drag (operator's hypothesis), and does `Ps/Ps_max` separate "expensive for what it achieved" from "expensive"? ⛔ **If it cannot separate those two on recorded data, it is not ready to drive an objective (SC-014).**
+
+### B — instrument (zero bake, but needs a rebuild; the window is open NOW)
+
+- [ ] TA04 **`dmp-dump`: emit the FULL input vector** — all 42 pathgen / 63 tracker slots, named from `kPathgenInputMeta` / `kTrackerInputMeta` so columns and metadata cannot drift (FR-038). Today only 9 of 42 are emitted, which is the direct reason the boundary input was nearly trimmed on a partial picture and why contribution ranking covers 9 of 42.
+- [ ] TA05 **Record `Es` and `Ps` per tick** (FR-038). Derived from state already recorded; put the derivation in ONE header shared by the recorder and every reader, the `specific_force.h` pattern — reader and input must not be able to disagree.
+- [ ] TA06 **Time-to-boundary input** (FR-035): `distance_along_vel / speed`, seconds, replacing or supplementing the saturated `tanh(d/20 m)`. ⚠️ Rate-derived ⇒ **millisecond-denominated and cadence-invariant**, with a test at two cadences (the `ENVELOPE_SECS` T040(e) pattern). Both gathers; both modes.
+- [ ] TA07 [OP] Land B as **one commit with an `EvalResults` version bump** — same FR-005 one-break discipline as the A1 bundle. Gates: `rebuild-perf.sh` clean with the banner count verified, xiao host compile, Constitution VI audit on touched paths.
+
+### C — reshape (one M1 bake, and it is also the M2 source)
+
+- [ ] TA08 **Boundary containment as potential-based shaping** (FR-034, FR-036): `F(s,s') = γ·Φ(s') − Φ(s)` with Φ a function of time-to-boundary. ⚠️ **Potential-based specifically** — an ad-hoc "stay away from the edge" penalty is the exact shape that creates a centre-hugging attractor, and the tight spiral already proves this system finds unintended attractors. Keep the terminal egress crash as the backstop; the shaping is what gives the policy something to act on *before* it.
+- [ ] TA09 **Track-score gradient input** (FR-039): ∂score/∂position in body frame, from `FitnessComputer::decomposeStepScore`'s Lorentzian (closed form), scaled by the streak multiplier. ⚠️ **Keep the binary `IN_ENVELOPE` alongside for one bake** so the ablation can attribute any change to the reshape rather than to the removal.
+- [ ] TA10 **Step-wise cost against `Ps_max(state)`** (FR-037) — state-conditioned, never absolute. ⛔ Gated on TA03 showing the discrimination exists.
+- [ ] TA11 Apply TA02's verdict + TA01's ablation: drop what both agree is inert. Current suspicion, **pending TA01**: `ACCEL_Y` (pooled contribution 0.014; coordinated turns pin it at ~0 — but keep it for M2, where sideslip may carry real information) and `ENVELOPE_SECS` (0.082). ⛔ `DIST_TO_BOUNDARY` and `INWARD_BODY_*` are **RETAINED** by FR-033 regardless of pooled contribution.
+- [ ] TA12 [OP] Pre-run gate, then the M1 bake. Judge on `pctInStreak` / `avgMaxStreak`, and on SC-013: egress not worse than t1's 6/294, with time-to-boundary minima **rising** — i.e. turning before the edge rather than being terminated at it.
+
+### D — per-tick advantage (later; see specs/BACKLOG.md → 042 candidate)
+
+- [ ] TA13 Critic/value head reusing 041's extra-head machinery + the recorded per-step reward, giving `A(s,a) = Q − V`. ⚠️ The point of the learned baseline is that **the optimum never has to be known** — `V(s)` only has to RANK actions. `Ps/Ps_max` is the hand-built baseline; do it first so we know what the learned one must beat.

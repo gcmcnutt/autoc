@@ -860,3 +860,84 @@ Named explicitly, because each has a standing rationale that the spec must not q
   discovering later that the opportunity passed.
 - **Flight deliverable is conditional** (FR-022d) — so the INAV work is only wasted if the M1 result is an
   utter reject, and even then the MSP extension keeps its value for every later flight.
+
+---
+
+# AMENDMENT 2026-08-17 — containment as CONTROL, and step-wise cost
+
+**Status**: amends this spec after t1 was stopped at gen 608. Rationale and evidence live in
+[approach-proposal.md](approach-proposal.md); this section states only what the system must DO.
+
+**Scope**: every requirement below applies to **BOTH M1 and M2**. They share `FlightArena`, share the
+boundary input, and will share the step-wise cost — a containment rule that existed only in M1 would have
+to be re-learned by M2 against a different objective, which is how the two modes drift apart.
+
+## The finding that prompted this
+
+Operator 2026-08-17: *"we need boundary as we need some sort control to have craft not exit the area."*
+
+⚠️ **This CORRECTS an earlier proposal to review `DIST_TO_BOUNDARY` for removal on low contribution
+(0.050).** That reading was wrong, and the way it was wrong is worth keeping:
+
+> **Contribution averaged over all ticks systematically understates inputs whose value is concentrated in
+> rare states.** `DIST_TO_BOUNDARY` sits above 0.95 for **92.8%** of ticks and above 0.99 for 76.8% — it is
+> a *limit* signal, not a *tracking* signal. Its std **conditional on being near the edge is 2.4×** its
+> unconditional std. An input that is inert 93% of the time and decisive the other 7% is exactly what a
+> safety input should look like.
+
+Any future input-trim decision MUST use conditional contribution for limit-class inputs, never the pooled
+average.
+
+## Requirements
+
+- **FR-033**: `DIST_TO_BOUNDARY` and `INWARD_BODY_*` MUST be **retained** in both modes. They are the
+  containment control surface, and the trim analysis that questioned them used the wrong statistic.
+
+- **FR-034**: Containment MUST be expressed as a **gradient the policy can act on**, not only as a terminal
+  penalty. Today egress is a **cliff**: `checkArenaBounds` returns an egress kind, which becomes a
+  `CrashReason`, which ends the scenario. Nothing rewards *approaching the edge more slowly*, so the policy
+  has no signal until the scenario is already over.
+
+- **FR-035**: The boundary observation MUST NOT be saturated across the operating region. `tanh(d /
+  kDistToBoundaryScale_m)` with a 20 m scale is ≈1.0 through almost the whole arena, so its **gradient is
+  ~0 exactly where early corrective action is cheapest**. Replace or supplement it with a
+  **non-saturating, control-relevant** quantity — preferred: **time-to-boundary** along the velocity
+  vector (`distance_along_vel / speed`, seconds), which accounts for closure rate rather than position
+  alone and is directly comparable to reaction time.
+  ⚠️ Time-to-boundary is a **rate-derived** quantity: it MUST be millisecond-denominated and
+  cadence-invariant, like `kNNHistoryLagsMsec` and `ENVELOPE_SECS`, or it silently rescales when the
+  control interval changes.
+
+- **FR-036**: Any boundary shaping term MUST be **potential-based** — `F(s,s') = γ·Φ(s') − Φ(s)` — so it
+  provably cannot change the optimal policy (Ng, Harada & Russell). This is not ceremony: the tight spiral
+  is already an unintended attractor, and an ad-hoc "stay away from the edge" penalty is exactly the shape
+  that creates another one (e.g. a policy that hugs the arena centre and stops tracking).
+
+- **FR-037**: Step-wise cost MUST be measured against a **state-conditioned reference**, not an absolute.
+  Every prior energy/smoothness objective penalised an absolute quantity and muted the whole regiment,
+  because full power is genuinely correct when far behind, in a sustained spiral, and against
+  pitch-induced drag. The reference SHOULD be the computable one — specific excess power
+  `Ps = (T−D)·V/W` against `Ps_max(state)` — before any learned baseline is attempted.
+
+- **FR-038**: The per-tick record MUST carry the **full NN input vector** and the **energy state**
+  (`Es`, `Ps`). Today `dmp-dump` emits 9 of 42 input columns, which is why the contribution analysis could
+  only rank 9 and why the boundary error above went unnoticed. This is a recording change and is free
+  **only while no bake is running** — take it now.
+
+- **FR-039**: The in-envelope observation SHOULD be reshaped from a **state label** to an **improvement
+  direction**: the track-score **gradient** (∂score/∂position, body frame) scaled by the streak multiplier.
+  Operator: *"streak was a crude proxy for rewarding in-track range."* A binary flag can only be switched
+  on; a gradient tells the controller which way to move and how much is at stake.
+  ⚠️ Keep the binary flag alongside it for one bake, so the ablation can attribute any change to the
+  reshape rather than to the removal.
+
+## Success criteria
+
+- **SC-013**: In a bake under these rules, arena egress count is **not worse** than t1's baseline (6 of 294
+  scenarios at gen 608) — and the policy demonstrably *turns before* the edge rather than being terminated
+  at it, measurable as time-to-boundary minima rising.
+- **SC-014**: The step-wise cost discriminates: at matched task progress, a spiral bleeding energy scores
+  worse than an efficient closure. If it cannot separate those two on recorded t1 data, it is not ready to
+  drive a bake.
+- **SC-015**: Every input retained after the trim is justified by **conditional** contribution where it is
+  a limit-class signal, and by pooled contribution otherwise, with the T068 ablation as the verdict.

@@ -237,3 +237,52 @@ Not blockers for `/speckit.tasks`, but each shapes a task's acceptance:
 2. **Non-regression band** — which historical runs define it, and how much per-axis movement counts as
    no-regression (research.md R7 proposes a default).
 3. **Retry budget** for the production M1 bake, declared before the first attempt (research.md R8).
+
+---
+
+# AMENDMENT PLAN 2026-08-17 — containment + step-wise cost (M1 and M2)
+
+Implements the spec amendment (FR-033…FR-039). Sequenced so the two **zero-bake** steps come first,
+because either can change everything after them.
+
+## Sequencing rationale
+
+| phase | bake cost | why here |
+|---|---|---|
+| **A. Read what we already have** | none | the gen-608 elite and its dmps exist; both open questions are answerable without spending compute |
+| **B. Instrument** | none | recording changes are free ONLY while no bake runs — that window is open now and closes the moment we start one |
+| **C. Reshape** | one M1 bake | only after A and B say what to reshape |
+| **D. Per-tick advantage** | later | needs B's data and C's result; see the 042 backlog entry |
+
+⚠️ **Phase B requires a rebuild.** It was deferred throughout t1 for that reason
+([feedback_no_rebuild_during_training](../../.claude/projects/-home-gmcnutt-autoc/memory/feedback_no_rebuild_during_training.md)).
+The constraint is lifted; do not re-open a bake until B has landed, or it defers again.
+
+## Shared-by-construction
+
+Everything here lands in code both modes already share — `FlightArena` / `arena.h` for containment,
+`nn_inputs.h` + both gathers for observations, `fitness_*` for cost. **No M1-only or M2-only variant is
+acceptable**: a containment rule learned by M1 and not M2 means the M2 chase re-learns it against a
+different objective, which is how the two modes drift. This is the same "one definition" discipline the
+index-coupling inventory exists to enforce.
+
+## Risks, and what each would look like
+
+1. **The gradient hands over the answer.** ∂score/∂position is close to telling the policy where to go; it
+   may learn greedy gradient-following and lose the anticipation the recurrent layer was building. **Tell**:
+   the accelerating late-run curve shape disappears; effective rank falls further.
+2. **Boundary shaping produces a centre-hugger.** Potential-based shaping cannot change the optimum, but a
+   badly-chosen Φ can still slow learning badly. **Tell**: egress drops AND tracking drops together.
+3. **`Ps_max(state)` is awkward to obtain** from the FDM without a fit or lookup. **Fallback**: a learned
+   baseline, which costs the critic first — i.e. it promotes phase D ahead of C.
+4. **Shaping does not fix strategy.** Potential-based shaping preserves the optimum, so if the tight spiral
+   is genuinely objective-optimal, this makes learning faster without changing the target. Removing the
+   spiral needs the objective or the airframe, and there is a standing decision to let a real flight
+   trigger that call.
+
+## Gates
+
+- Phase B is a **format break**: `EvalResults` version bump, one owed re-bake, everything in one commit —
+  the same FR-005 discipline the A1 bundle used.
+- Constitution IX pre-run gate before any bake in phase C.
+- Phase A's ablation must run **before** any input is dropped (SC-015).
