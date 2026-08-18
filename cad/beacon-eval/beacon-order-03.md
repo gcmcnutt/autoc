@@ -96,7 +96,7 @@ test**; (4) stop stalling on missing passives (kits).
 - [X] **C-13** *(O2-1)* ~~Sense resistor 3.74 Ω 1 % 1206~~ — **✔ CLOSED: DK order 2 delivered ×10**
   (`541-3.74FFCT-ND`, 1/4 W); field 0.62 Ω also confirmed ×10 in order 1 (`CRL1206-FW-R620ELF`, 1/2 W).
   - [X] received — notes: packlists 128637262 line 1 / 127789318 line 6.
-- [ ] **C-26** *(NEW 2026-08-07; **DECIDED 2026-08-10: ATtiny412**)* **Bare flight MCU = ATTINY412
+- [ ] **C-26** *(NEW 2026-08-07; **DECIDED 2026-08-10: ATtiny412**; **ORDER NOW 2026-08-17 — gates the two-cube build**)* **Bare flight MCU = ATTINY412
   SOIC-8 ×10** (sweet-spot qty, ~$0.60 ea) — operator call: minimal pod, back to the original design
   target (schematic.md/verified-bom were 412 from the start). Consequences, accepted: **no TOSC pins →
   the crystal path is FORECLOSED for the pod → RC-osc is committed** (the decoder side already carries
@@ -206,6 +206,13 @@ carries RC drift: per-beacon DPLL, +2.6 % skew bench-verified.)
 - [X] **C-22** *(O2-5)* ~~exact 18 pF / 6.8 pF load caps~~ — MOOT (10/20/30 pF from the AMZ-1 kit remain
   general stock).
 - [X] **C-23** *(O2-6)* ~~20 MHz XO + LDO fallback~~ — MOOT.
+
+- [ ] **C-27** *(NEW 2026-08-17)* **850 nm bandpass DISC for the 1.8 mm fisheye** — Quanmin 12.5 mm × 1.0 mm
+  pair (~$12, Amazon) or 10.4 mm variant: **measure the M12 holder's internal bore first.** **~40 nm-class,
+  NOT 10 nm**: the LED line is ~30 nm (10 nm keeps only ~30 % of our signal) and fisheye rear CRA of 25–35°
+  blue-shifts a passband ~5+ nm — half of a 10 nm window. Mount on the holder step, mechanical capture
+  (O-ring/foam), no CA near optics. Purpose: empirical #1 (sky background) + outdoor camera work.
+  - [ ] received — notes:
 
 ## Separate supplier
 - [X] **C-24** *(O3-8, O2-14 caveat; **RESOLVED 2026-08-07**)* ~~1S 100 mAh flight pack~~ — **operator
