@@ -52,7 +52,26 @@ produces a craft flying underground, or a hovering arena, and you see it immedia
 **So 'a' mode is the acceptance test, not a nice-to-have.** If the flown trace sits correctly on the arena
 with the ground plane where the ground is, the chain is right end to end.
 
-## Proposed target: one datum, the hard deck
+## ⚠️ TARGET REVISED 2026-08-18 — geometry, not the origin
+
+**The origin move proposed below was NOT adopted.** Operator: *"Arena should be same geometry. Same radius.
+Same height. Xiao trigger should be halfway up the cylinder. And sim should be similar. Now maybe we should
+keep it as is because in the general sense z sign should never matter… So revisit the need to change arena
+origin."*
+
+**Adopted scope instead:**
+1. **Same arena geometry both sides** — radius and height. Fix the *sizes* if they differ.
+2. **Engage mid-cylinder in the sim**, as it already is in flight. Today the sim engages 21% up its band
+   (25 m AGL in a 5–100 m band), which is the real asymmetry.
+3. **Virtual origin unchanged.** z sign should not matter to any consumer, and a frame move is a large risky
+   change to buy what (1)+(2) already deliver.
+4. `Es` still measured as **height above the configured floor** — a *computed* quantity, so a varying deck
+   or an outside-in entry does not invalidate the frame.
+
+⚠️ Do not anchor the frame to today's deck: *"hard deck or ground will eventually vary"*, and entry from
+outside the arena is *"quite plausible"*. Today's mid-band entry is a flight-safety convention, not physics.
+
+### (superseded) Original proposal — move the origin to the hard deck
 
 Move the virtual origin from mid-band to the **arena floor**, and make every stage express height as
 "metres above the hard deck":

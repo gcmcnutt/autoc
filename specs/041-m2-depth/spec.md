@@ -31,8 +31,16 @@ tracking problem on an untrusted foundation.
 ## IN scope
 
 - Energy: `SPECIFIC_ENERGY` input + `Ps`-based lexicase axis (the observation *and* the objective — neither alone).
+  ⛔ The `Ps` axis **REPLACES** the existing `energy_score` axis (`sum((out_th − 1)/2)`, a throttle-amplitude
+  penalty). It is not added alongside it: that axis **is** 035's energy objective and is the absolute-quantity
+  pressure that muted the regiment, so keeping both would retain the defect next to its own fix. They also
+  conflict by construction — full throttle is correct when far behind, which the old axis always penalises and
+  `Ps` correctly does not. `Ps` is orthogonal to task progress (r = −0.048); throttle amplitude is not.
 - Input-vector revision per [input-vector-proposal.md](input-vector-proposal.md), on TA01 ablation evidence.
 - Datum unification + HAT analysis per [toolchain-datum-validation.md](toolchain-datum-validation.md).
+  ⛔ **NOT an origin move.** Operator 2026-08-18: *"revisit the need to change arena origin… in the general
+  sense z sign should never matter."* Scope is: **same arena geometry both sides** (radius, height), **engage
+  mid-cylinder** in both, and fix arena *sizes* if they differ. The virtual origin stays where it is.
 - One format break carrying all of the above.
 - A production M1 bake, and **an M1 flight that proves the toolchain**.
 
@@ -54,6 +62,30 @@ provenance and every cross-reference point at it. Read the name as historical.
 **041 (better M1, flown) → 042 (physics/camera data, child of 031) → 043 (M2 tracking).**
 042 first because the camera constants it produces are inputs to M2's sensor model, and measuring them does
 not depend on either.
+
+## Acceptance criteria (rescoped)
+
+- **AC-1 — "better M1" is COMPOUND**: tracking occupancy **within noise of the pinned prior M1 (30.9%)**
+  *and* a **measurable energy improvement** (`Ps`-based).
+  ⚠️ Compound deliberately, because the two can trade: adding an energy axis may legitimately cost a little
+  tracking, so a pure tracking bar could fail a genuinely better controller — while a pure energy bar could
+  certify a **muted** one, which is the exact failure mode 035 produced. Neither half alone is a valid gate.
+  ⚠️ Occupancy is comparable across runs only because it uses one definition (`stpPt ≥ FitStreakThreshold`)
+  in both Study A and the per-gen logs. Do not substitute a differently-defined tracking metric.
+  ⚠️ t1's 16.1% is **not** the baseline: it was a partial 608/800 run under the old objective.
+
+## Clarifications
+
+### Session 2026-08-18
+
+- Q: What makes the new M1 good enough to close 041 and hand to 043? → A: Compound — tracking
+  non-regression vs the pinned prior M1 (30.9% occupancy) **and** a measurable `Ps`/energy improvement
+- Q: What happens to the existing throttle-amplitude `energy_score` axis when the `Ps` axis lands? → A:
+  `Ps` **replaces** it — not kept alongside, since it is the muting pressure itself
+- Q: Which side becomes truth for the sim-vs-flight arena band placement? → A: **Neither — the premise was
+  wrong.** Keep the same *geometry* (radius, height) both sides and make **engage mid-cylinder** in both;
+  **do NOT move the virtual origin** (revisit that need — z sign should not matter). Fix arena *sizes* if
+  they differ
 
 ---
 

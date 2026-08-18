@@ -106,7 +106,17 @@ Hardware binds at step 3 (PPO sample counts) and step 4 (larger contexts), not b
 
 ## 041 deferrals
 
-### [041 TA03 follow-up, filed 2026-08-17] The virtual coordinate origin sits half-way up the band — revisit
+### [041 TA03 follow-up, filed 2026-08-17 · ⚠️ DOWNGRADED 2026-08-18] The virtual coordinate origin sits half-way up the band
+
+⚠️ **DOWNGRADED, not withdrawn.** Operator 2026-08-18, asked which side should win the band-placement
+disagreement: *"maybe we should keep it as is because in the general sense z sign should never matter… So
+revisit the need to change arena origin."* The 041 fix is now the **geometry** (same radius/height both
+sides, engage mid-cylinder in both) with the origin left alone — see 041 P2-3. This entry survives as a
+*question* rather than a plan: it is only worth doing if a consumer is found that genuinely cares where z = 0
+sits, and none has been.
+⚠️ Two forward-looking reasons NOT to commit to a floor-anchored origin: *"hard deck or ground will
+eventually vary"* (real terrain), and *"at some point we are at trigger and craft enters arena and stays
+there is quite plausible"* (outside-in entry). Both would invalidate a frame anchored to today's deck.
 
 Operator 2026-08-17, choosing the `SPECIFIC_ENERGY` datum: *"our virtual coordinate system with origin
 half way up, well, we could consider some changes down the line — this sort of thing is where sim to real

@@ -36,8 +36,20 @@ Scope: [spec.md § SCOPE RESET](spec.md) · Phases: [plan.md § PLAN RESET](plan
 - [ ] P2-2 Input vector per [input-vector-proposal.md](input-vector-proposal.md): **add**
   `SPECIFIC_ENERGY`, `BOUNDARY_CLOSURE_RATE`, `SCORE_GRAD_X/Y/Z`; **remove** `IN_ENVELOPE`,
   `ENVELOPE_SECS`; **retain** `ACCEL_Y` and `DIST_TO_BOUNDARY` on ablation evidence.
-- [ ] P2-3 **Datum unification**: virtual origin → arena floor; band placement resolved in the SAME commit;
-  crrcsim offsets adjusted. ⛔ Origin and placement together or neither. (was TD02/TD03/TD04)
+- [ ] P2-3 ⚠️ **REVISED 2026-08-18 — this is NOT an origin move.** Operator: *"Arena should be same geometry.
+  Same radius. Same height. Xiao trigger should be halfway up the cylinder. And sim should be similar… in the
+  general sense z sign should never matter… So revisit the need to change arena origin."*
+  **Do**: (a) verify sim and flight use the **same arena geometry** — radius and height — and fix the *sizes*
+  if they differ; (b) make **engage sit mid-cylinder in the sim**, as it already does in flight
+  (`resolveEngageArena`, ±K). Today the sim engages at 25 m AGL in a 5–100 m band, i.e. **21% up, not
+  half-way** — that asymmetry is the actual defect, not the coordinate origin.
+  **Do NOT**: move `SIM_INITIAL_ALTITUDE` / the virtual origin. That was my proposal (TD02) and the operator
+  questioned the need; z sign should not matter to any consumer, and a frame move is a large, risky change to
+  buy something the geometry fix already delivers.
+  ⚠️ **Why the hard deck must not be baked in as permanent**: *"hard deck or ground will eventually vary"*,
+  and *"at some point we are at trigger and craft enters arena and stays there is quite plausible"* — today's
+  mid-band entry is a **flight-safety convention**, not physics. Keep `Es`'s deck datum a *computed* quantity
+  (height above the configured floor) so a varying deck or an outside-in entry does not invalidate the frame.
 - [ ] P2-4 Recording: full input vector + `Es`/`Ps` per tick. (was TA04/TA05)
 - [ ] P2-5 Objective: `Ps`-based efficiency as a **lexicase axis**. ⛔ Never a scalar penalty; never without
   P2-2's energy input — an axis for an unobservable is what muted 035.
