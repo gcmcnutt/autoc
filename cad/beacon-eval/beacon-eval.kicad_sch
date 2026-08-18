@@ -2940,7 +2940,7 @@
 				)
 			)
 		)
-		(property "Value" "MBR130"
+		(property "Value" "SS1030"
 			(at 176.53 59.69 0)
 			(show_name no)
 			(do_not_autoplace no)
