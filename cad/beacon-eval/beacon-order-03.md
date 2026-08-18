@@ -207,8 +207,12 @@ carries RC drift: per-beacon DPLL, +2.6 % skew bench-verified.)
   general stock).
 - [X] **C-23** *(O2-6)* ~~20 MHz XO + LDO fallback~~ — MOOT.
 
-- [ ] **C-27** *(NEW 2026-08-17)* **850 nm bandpass DISC for the 1.8 mm fisheye** — Quanmin 12.5 mm × 1.0 mm
-  pair (~$12, Amazon) or 10.4 mm variant: **measure the M12 holder's internal bore first.** **~40 nm-class,
+- [ ] **C-27** *(NEW 2026-08-17; GEOMETRY CHECKED same day)* **850 nm bandpass DISC for the 1.8 mm fisheye** —
+  the lens's rear is a FLAT black face with a ~5 mm aperture (last element slightly recessed) and NO filter
+  seat; the holder has no step either → **a small ~8 mm × ~1 mm disc rests against the lens's rear face
+  centred on the aperture** (mechanical capture with a thin O-ring/foam against the holder wall, or 3
+  edge dots of canopy glue onto the metal face — never the recessed glass). Buy the ~8 mm size, not
+  12.5 mm. AoI is the lens's CRA (~10°) here, milder than the fisheye field angle → 40 nm is comfortable. **~40 nm-class,
   NOT 10 nm**: the LED line is ~30 nm (10 nm keeps only ~30 % of our signal) and fisheye rear CRA of 25–35°
   blue-shifts a passband ~5+ nm — half of a 10 nm window. Mount on the holder step, mechanical capture
   (O-ring/foam), no CA near optics. Purpose: empirical #1 (sky background) + outdoor camera work.
