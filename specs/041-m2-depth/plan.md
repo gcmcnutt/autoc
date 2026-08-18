@@ -13,11 +13,68 @@ Settle what is known before touching anything. Cheap, and each item can change t
   where they must land under a unified datum.
 - Size `kScoreGradScale` from recorded ticks, the way `kAccelScale_g` was sized from the ±11 g record.
 
-**Exit**: the datum table has no UNVERIFIED cells, and every new constant has a measured basis.
+### ➕ ARENA UPDATE — research that remains (added 2026-08-18)
+
+Operator: *"additional research that remains around arena update (arena bottom is hard deck. Generally with
+some real hat or some manual setting for that)."*
+
+**The definition is settled: the arena bottom IS the hard deck.** What is not settled is *how either side
+knows where it is* — and the two sides have different information:
+
+| | what defines the deck today | what it should be |
+|---|---|---|
+| **sim** | `floor_agl_m` = 5, against a ground plane crrcsim knows exactly | keep — the sim has real terrain |
+| **flight** | implicit: `z_engage + K`, i.e. wherever you engaged | ⚠️ **a real HAT, or an explicit manual setting** |
+
+**Open questions for this phase — decide by measurement or explicit choice, not assumption:**
+
+1. **Is there a usable HAT source on the aircraft?** Baro drifts over a flight; GPS altitude is poor;
+   a rangefinder is hardware we do not have. If none is trustworthy, the deck must be *told*, not sensed.
+2. **If manual — what is the setting and when is it entered?** Field elevation at arm? A deck offset below
+   the arm point? It must survive a re-arm and be recorded in the flight log, or a post-flight `Es` cannot
+   be reconstructed.
+3. **What happens when the deck is wrong?** Containment currently terminates on egress. A mis-set deck moves
+   the floor under a flying aircraft, so the failure mode needs stating before the input is trusted.
+4. **crrcsim side**: ground, field elevation and starting HAT must land where the unified definition expects
+   (the P0-2 analysis feeds this).
+
+⚠️ **This is deliberately RESEARCH, not implementation.** The deck varies in the real world — the operator
+has already flagged that *"hard deck or ground will eventually vary"* and that outside-in arena entry is
+plausible — so the answer must be a mechanism that tolerates a changing deck, not a constant baked into a
+config.
+
+### ➕ PERCEPTUAL INPUTS — now specified (added 2026-08-18)
+
+The new/changed inputs are settled and written up in
+**[input-vector-proposal.md](input-vector-proposal.md)** (field, source, measured range for every slot).
+Phase 0 owes only their remaining *constants*:
+
+| input | status | Phase 0 owes |
+|---|---|---|
+| `SPECIFIC_ENERGY` | specified; datum = height above the **arena floor** | `kEnergyScale_m` = 139 (measured basis recorded) — confirm against the arena-update outcome above |
+| `BOUNDARY_CLOSURE_RATE` | specified; replaces the retracted time-to-boundary | normalises by existing `kCruiseSpeed_mps` — no new constant |
+| `SCORE_GRAD_X/Y/Z` | specified; source keyed by **flight phase** (exact through M2 phase 1) | ⛔ `kScoreGradScale` — size from recorded ticks |
+| removed: `IN_ENVELOPE`, `ENVELOPE_SECS` | ablation-evidenced | — |
+| retained: `ACCEL_Y`, `DIST_TO_BOUNDARY` | ablation-evidenced, against my own screen | — |
+
+**Exit**: the datum table has no UNVERIFIED cells, every new constant has a measured basis, and the
+hard-deck mechanism is chosen (sensed or set) rather than assumed.
 
 ## Phase 1 — ANALYSIS (reads only; no rebuild, no bake)
 
 Already largely done — this phase is closing, not opening.
+
+⛔ **DO NOT RE-RUN OR DISCARD THE COMPLETED WORK.** The t1 run and the two research tasks below are the
+evidence the whole rescope stands on, and t1 cost ~15 h of compute that is not being spent again:
+
+| artifact | where | why it must survive |
+|---|---|---|
+| **t1 run**, gen 608, pinned | `autoc-m1/autoc-9223370249927095135-2026-08-17T00:48:00.672Z/`, seed 1786927680 | the ablated elite; the only 42-input M1 in existence |
+| **TA01 ablation matrix** | [ablation/ta01-t1-elite-findings.md](ablation/ta01-t1-elite-findings.md) | H1a verdict + the input-retention evidence |
+| **TA03 energy analysis** | same doc | the `Ps` case, and SC-014's discrimination result |
+| **Study A** | [study-a/](study-a/) | the prior-M1 per-regime profile — **unobtainable any other way**, its 37-input genome cannot be loaded by a current binary |
+| **report set** | `autoc-041-t1-m1-envelope_*.png` + `_input_investment.csv` | the run's own record |
+| **ablation config** | [ablation/autoc-eval-m1-t1.ini](ablation/autoc-eval-m1-t1.ini) | reproduces the arms; derived from `autoc.ini` by override |
 
 - ✅ TA01 ablation on the pinned t1 elite — H1a **fails**; `DIST_TO_BOUNDARY` is the 3rd most important
   input; contribution screens mis-rank in both directions.

@@ -14,7 +14,19 @@ Scope: [spec.md § SCOPE RESET](spec.md) · Phases: [plan.md § PLAN RESET](plan
   `<launch altitude="82">` vs `SIM_INITIAL_ALTITUDE = −25` reconciliation answered by measurement.** (was TD01)
 - [ ] P0-2 **HAT analysis** — crrcsim's ground, field elevation and starting height-above-terrain: what they
   are, and where they must land under a unified datum. Operator: *"we need to make sure we twiddle the
-  offsets for crrcsim too."* (was TD04, analysis half)
+  offsets for crrcsim too."*
+- [ ] P0-4 ➕ **ARENA UPDATE research — how does each side KNOW where the hard deck is?** (added 2026-08-18)
+  The *definition* is settled — **the arena bottom is the hard deck** — but the two sides have different
+  information: the sim has real terrain, the aircraft has none (today the floor is implicitly `z_engage + K`,
+  i.e. wherever you happened to engage). Decide: **a real HAT source, or an explicit manual setting.**
+  Answer, by measurement or explicit choice: (a) is any on-aircraft HAT source trustworthy — baro drifts,
+  GPS altitude is poor, a rangefinder is hardware we do not have; (b) if manual, *what* is set and *when*
+  (field elevation at arm? a deck offset below it?), and it MUST be recorded in the flight log or `Es`
+  cannot be reconstructed post-flight; (c) what the failure mode is when the deck is set wrong, since a
+  mis-set deck moves the floor under a flying aircraft and containment terminates on egress.
+  ⚠️ **Research, not implementation** — the answer must be a mechanism that tolerates a **changing** deck
+  (*"hard deck or ground will eventually vary"*, and outside-in arena entry is plausible), not a constant
+  baked into a config. (was TD04, analysis half)
 - [ ] P0-3 Size `kScoreGradScale` from recorded ticks — the way `kAccelScale_g` was sized from the ±11 g
   flight record, never picked as a round number.
 
