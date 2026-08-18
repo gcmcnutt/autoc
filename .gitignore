@@ -1,5 +1,8 @@
 build/
 logs/
+# CTest scratch when ctest is run from the repo root instead of build/
+# (build/Testing/ is already covered by build/ above)
+/Testing/
 *.dat
 # (data.stc retired in 034 T052 — autoc no longer produces root .stc, and the
 #  stale pre-T052 root data.stc/eval-data.stc were deleted, so no ignore rule

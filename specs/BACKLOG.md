@@ -1,10 +1,65 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-07-10
+**Last Updated**: 2026-08-06
 
-> **Routing (2026-07-10, 038 wrap)**: 038 closed — see [038 wrap](038-accurate-m2/wrap.md). Next feature
-> is **039 (xiao back in shape)**; the M2-depth items below (predictor elevation, streak-proxy input,
-> camera work) are **040** candidates.
+> **Routing (2026-08-06, 040 wrap)**: 040 closed — see [040 outcome](040-camera-redo/outcome.md).
+> Verdict: *a better camera model, much closer to real, and training results more or less the same —
+> that is the going concern.* Perception fidelity is **not** what caps M2. Next feature is **041**
+> ([seed](041-m2-depth/README.md)), scoped by the operator to three threads: **redo M1**, **control
+> aggressiveness on both the M1 and M2 side**, and **a predictor that actually works**. The
+> "Make the predictor earn its keep" entry below is 041's E1–E4 and is already measured — start there.
+>
+> *(Prior routing, 2026-07-10, 038 wrap: 039 xiao, then M2-depth items → 040.)*
+
+---
+
+## 040 deferrals
+
+### [040 wrap, filed 2026-08-06] t1′ — the attributable camera-variation delta (LOW priority, probably not worth it)
+
+The one experiment 040 could not run cleanly. `68f64ab` corrected the M2 objective's one-tick target
+offset **between** t1 (no camera variation) and t4 (±10°), so the t1↔t4 training-curve delta mixes a
+perception-robustness change with a change in the definition of the task. t1′ — variation off, current
+code, 800 gens — would isolate it. Cost ≈53 h of bake.
+
+**Why it is probably not worth running**: T085 already answered the question a different way. On 49
+novel scenarios under one binary and one objective, t4 and t1 came out **indistinguishable** (0.7% on
+fitness, same crash scenarios, differences ≤10% pointing both directions). That is a head-to-head with
+weights as the only variable, which is exactly what t1′ was meant to supply. Run it only if a future
+result makes the camera-variation cost load-bearing.
+
+### [040 wrap, filed 2026-08-06] A baseline's WEIGHTS expire when the dmp schema moves — decide what we do about it
+
+Found closing T085. The 038-t9 elite — the M2 baseline every 040 number is quoted against — **cannot be
+loaded by a 040 binary**: `nnextractor` dies with `vector::_M_default_append`, a cereal schema
+mismatch. 040 grew the dmp schema, and by standing policy we do not version it
+([[feedback_no_cereal_versioning]], and that policy is right — backward compat on a research schema is
+a tax with no payer).
+
+The policy is not the problem; the **unstated consequence** is. `retain=keep` on a milestone dmp reads
+as "this baseline is preserved", and it is not: what is preserved is a blob that only its own build can
+open. In practice a pinned baseline survives as *logged numbers*, never as a controller you can re-fly.
+That silently downgrades every "vs the prior baseline" claim from a head-to-head to a metric
+comparison, which is what happened to 040.
+
+Options, cheapest first — **this is a decision to make, not obviously work to do**:
+1. **Write it down and move on.** Amend Principle VIII so `retain=keep` states the guarantee honestly
+   ("numbers survive, weights do not travel across schema changes"). Zero cost.
+2. **Pin the weight file, not the dmp.** `nn_weights*.dat` is NN01, a stable format that predates and
+   outlives the EvalResults schema. Archiving the ~11 KB weights next to a milestone dmp would have
+   preserved t9 completely. Nearly free, and it is the option that actually buys the capability.
+3. Version the dmp schema. Rejected before, still rejected.
+
+Trigger: any feature that wants a true elite-vs-elite comparison across a schema boundary. 041 will, if
+it re-baselines M1.
+
+### [040 wrap, filed 2026-08-06] Novel-geometry eval source — pin it and reuse it, or it is not a comparator
+
+T085 generated `autoc-eval · autoc-9223370250819561192-2026-08-06T16:53:34.615Z/` (7 random paths × 7
+winds, flown by the pinned M1, 49/49 complete) and it needs `retain=keep`, because a regenerated source
+is a *different* 49 scenarios and cross-run generalization numbers stop being comparable. Same applies
+to the 038 t10 source, which is already pinned. **Two pinned novel sets now exist** — using both is the
+cheap way to tell a real generalization difference from a 49-scenario sampling artefact.
 
 ---
 
@@ -1190,7 +1245,7 @@ Cost: a dmp schema change (greenfield, no version bump per project policy — ol
 dmps orphaned) plus every consumer. Real work, but bounded, and it is the last
 time this class can bite.
 
-### [041+ / STRATEGIC — operator 2026-08-03] Online craft identification: null the variations in flight, not in the weights
+### [SECONDARY / DOWN THE ROAD — operator 2026-08-03, downgraded 2026-08-04] Online craft identification: null the variations in flight, not in the weights
 
 **Operator**: *"all craft variations have a chance to be nulled — and this isn't
 during a training run — this is a dynamic online discovery of a craft
@@ -1253,20 +1308,24 @@ what was commanded and what happened.** First-order filters, not a bigger genome
 5. **Never adapt on no signal.** Do not integrate while blind, or the estimate
    drifts through exactly the dropouts it exists to survive.
 
-#### Why the evidence points here
+#### ⚠️ The evidence that pointed here has been RETRACTED
 
-The t2 20° bake **capped hard** — worst blind streak pinned at 44.4 s from gen
-175 to 369 (t1 finished at 6.0 s), everything plateaued by gen ~250 while t1 was
-still climbing at 585. The controller has no search behaviour, so recovery is
-"point where I last saw it" and a bad boresight aims that reflex wrong. **More
-weights would not have fixed it.** But the offset is CONSTANT within the
-scenario, so an identifier nulls it in seconds.
+This section previously argued from the t2 cap. **That cap was the
+mount-inside-the-wing bug**, and t4 subsequently trained fine at ±10° with no
+adaptation whatsoever. Nothing currently demonstrates that fixed weights cannot
+absorb craft variation at the complexity we run today.
 
-#### The experiment that settles it
+What survives is the *structural* argument: adaptation is cheaper than capacity,
+and a GA pays for capacity twice (representation AND search). That is a reason to
+expect this to matter eventually, not evidence that it matters now.
 
-Re-run the **20° envelope** with the estimator on. If it trains where t2 capped,
-the ceiling was never capacity — it was the absence of online calibration. A
-clean A/B against a run already in hand.
+#### The experiment, if and when it is promoted
+
+Raise variation until competence genuinely caps — **and prove the cap is not
+plumbing** (a pinned diagnostic from generation 1 is the bug signature; a real
+ceiling shows improvement then plateau). Then A/B the estimator against that
+run. Starting from a demonstrated ceiling is what this entry lacked the first
+time.
 
 **Start explicit and start with ONE axis** (camera boresight, or trim — both are
 running means and both are strongly observable in a tail chase). Feeding the NN

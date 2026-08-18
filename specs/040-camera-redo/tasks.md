@@ -1,5 +1,23 @@
 # Tasks: 040 Camera Redo — Perception Fidelity Refinement for M2
 
+> ## ✅ 040 CLOSED 2026-08-06 — outcome of record: [outcome.md](outcome.md)
+>
+> **Operator verdict**: *a better camera model, much closer to real, and training results compared to
+> the prior camera more or less the same — that is the going concern.*
+>
+> **107 of 108 tasks closed.** One carried to the PR rather than dropped: **T087** (the `retain=keep`
+> S3 tags — an out-of-band S3 mutation left to the operator). Stated in [outcome.md](outcome.md)
+> §Outstanding.
+>
+> **T085 ran on 2026-08-06 and gave the feature its cleanest result**: on 49 novel scenarios under
+> identical code, t4 (±10° camera variation) and t1 (none) are indistinguishable — 0.7% apart on
+> fitness, crashing on the same scenarios. The generalization gap is the carry-forward: train→novel
+> leaves the standoff distribution intact but **halves the time inside 5 m (15.3% → 8.4%)**.
+>
+> **Result run**: t4 (`autoc-m2/autoc-9223370251039771221-2026-08-04T03:43:24.586Z/`), 800 gens,
+> converged at gen 660. t2/t3 are VOID on the mount-inside-wing bug. Next feature is **041** — see
+> [specs/041-m2-depth/README.md](../041-m2-depth/README.md).
+
 **Input**: Design documents from `/specs/040-camera-redo/`
 **Prerequisites**: [plan.md](plan.md), [spec.md](spec.md), [research.md](research.md),
 [data-model.md](data-model.md), [contracts/](contracts/), [input-data-checklist.md](input-data-checklist.md)
@@ -412,9 +430,16 @@ the aggregate delta against the prior baseline.
   `avgVis` is the one metric that moved against the trend, and it is coherent rather than alarming: closing to a 15.1 m median puts more time in the near field where the merged-blob regime and the pod-nose shadow actually bite. **Pre-040 the perception model had no near-field cost to pay at all**, so this trade was previously invisible.
 
   ⚠️ **A decision for T086, to be stated rather than defaulted into**: the best *tracking* elite was **gen 585's** (pctInStreak 8.3%, avgRngMed 14.8 m); the *final* elite is **gen 612's** (8.0%, 15.1 m), which won on total fitness by trading a little tracking occupancy on another lexicase axis. Which one is the SC-008 comparator changes the reported delta.
-- [ ] T085 [US5] Evaluate the resulting elite on novel paths by repointing `autoc-eval-tracker.ini` at a novel M1 eval source
-- [ ] T086 [US5] Write `specs/040-camera-redo/outcome.md` reporting the **aggregate delta** against the prior baseline on the established comparators — the question is *are we in the right room, and is this more honest?*, not per-term attribution (SC-008)
-- [ ] T087 [US5] Tag artifacts `retain=expire`; if the controller becomes a baseline, pin `retain=keep` and record its S3 prefix in `outcome.md` (Principle VIII)
+- [x] T084a [US6] ✅ **DONE 2026-08-06 — the t4 bake, which had no task number until the wrap.** Phase 7 shipped the camera-variation *code*; the run that exercises it is **t4** (`logs/autoc-040-t4-camera-var-10deg.log`, prefix `autoc-m2/autoc-9223370251039771221-2026-08-04T03:43:24.586Z/`, master seed **1785815000**), and t2/t3 before it are **VOID** on the mount-inside-wing bug (`7ba6b11`). Numbered here so a later reader can tell which bake is the feature's result. **800 generations, completed clean, 61 elite changes with the last at gen 660** — 140 flat generations, genuine convergence. Envelope as shipped: 10° boresight + roll (σ 4.0), per-axis translation ±5/±10/±3 mm, wing thickness σ 0.8 mm. Full report set (11 PNGs) at gen 800 in this directory; numbers and the objective-fix confound in [outcome.md](outcome.md)
+- [x] T085 [US5] ✅ **DONE 2026-08-06 — and it produced the feature's cleanest result.** Two stages, both on the **pinned M1**: (1) that M1 elite flies **7 random paths × 7 winds = 49 novel scenarios** with every variation class live (`autoc-eval.ini`, `logs/autoc-040-t5-m1-novel-eval.log`, master seed **1786035214**, **49/49 RabbitComplete**) → source `autoc-eval · autoc-9223370250819561192-2026-08-06T16:53:34.615Z/`; (2) both M2 elites chase that recording under identical code and objective.
+
+  **t4 and t1 are the same controller to within noise on geometry neither has seen** — fitness −2034.19 vs −2020.23 (0.7%, t4 ahead), median per-tick error 15.00 m vs 14.93 m, 3 crashes each **on the same two scenarios**. t4 takes mean error (−2.8%), p90 (−5.8%), close-in occupancy (+8.1%) and visibility (+3.4%); t1 takes streak length (+10.4%). This is the head-to-head the training curves could not give — identical scenarios, identical binary, identical objective, weights the only variable — and it says **a 10° camera misalignment envelope costs nothing measurable**.
+
+  **The generalization gap is the finding worth carrying forward**: t4 train→novel moves median error 13.03 → 15.00 m (+15%) and p90 28.82 → 29.15 m (+1%), but **ticks inside 5 m halve, 15.3% → 8.4%**. Standoff generalizes; tight tracking does not. A 041 lead about the controller, not a 040 defect.
+
+  ⚠️ **The intended three-way failed and the reason matters**: the 038-t9 baseline elite **cannot be extracted** — `nnextractor` on its dmp dies with `vector::_M_default_append`, a cereal schema mismatch, because 040 grew the schema and the project does not version it ([[feedback_no_cereal_versioning]]). A prior baseline's *weights* expire when the schema moves; only its logged numbers survive. Every "vs 038-t9" figure in [outcome.md](outcome.md) is therefore logged-metric comparison, not a head-to-head — stated there rather than glossed. **The bogus third eval log was deleted**: `set -e` did not fire (the failing `nnextractor` was piped to `tail`), so that run silently re-flew t1's weights and would have entered the record as a t9 result
+- [x] T086 [US5] ✅ **DONE 2026-08-06** — [outcome.md](outcome.md). Reports the aggregate delta for **both** t1 and t4 against the 038-t9 baseline from the same pinned M1 source. Operator verdict: *a better camera model, much closer to real, and training results more or less the same — that is the going concern.* ⚠️ **The T084 elite-choice decision was overtaken by events**: t1 is no longer the comparator of record, because `68f64ab` corrected the objective's one-tick target offset between t1 and t4, so **the t1↔t4 delta is not attributable to camera variation** and the mid-run "costs ~nothing" claim (`e932e28`) does not survive as a quantitative statement. Stated in the document instead of being defaulted into. The clean experiment (t1′, variation off on current code) is deferred to [BACKLOG.md](../BACKLOG.md) — it answers a question no success criterion asked, at ~53 h of bake
+- [ ] T087 [US5] **PARTIAL — the S3 tag has NOT been applied (2026-08-06); carried to the PR.** Both prefixes are recorded in [outcome.md](outcome.md) as Principle VIII requires, and the decision is made: **t4 becomes the perception-era M2 baseline and must be pinned `retain=keep`** (041 compares against it); t1 may stay `retain=expire`. What remains is the tagging call itself, which mutates S3 and is left to the operator
 
 **Checkpoint**: a competence drop attributable to more honest perception is a **valid outcome**. No floor
 gates this feature.
@@ -432,7 +457,7 @@ gates this feature.
 
   ⚠️ **Run TWICE, deliberately.** The first pass was clean, but a header was edited afterwards for the PD-vs-array correction. The edit was verified comment-only — and a gate should still certify the tree it is quoted against, not one commit behind it. Re-run on the final commit with a clean working tree. This also serves as the **T081 pre-run gate for the t2 bake**
 - [x] T094 ✅ **DONE 2026-08-02** — clean across the whole 040 diff. The only `float`/`double` tokens are the `X(double, …)` macro entries (which must match their struct field type and are uniform with all 139 others), ini-loaded config-struct fields carrying block annotations on the `cepGateThreshold` precedent, and test scaffolding that must out-precision the code under test
-- [ ] T095 Walk [quickstart.md](quickstart.md) end to end and correct any drift
+- [x] T095 ✅ **DONE 2026-08-06 — walked end to end; three real drifts corrected.** (1) §(a)'s type-domain audit command **did not work on GNU grep** — it passes directories with no `-r`, and only ever appeared correct because this box's `grep` is `ugrep`, which recurses by default. A gate command that silently depends on which grep is installed is worse than no command. (2) §(e) named only the t1 log and gave no way to tell which bake is the feature's result — now records all four (t2/t3 VOID) and links [outcome.md](outcome.md), plus the `generate_pngs.sh` invocation per [feedback_generate_pngs_wrapper], which was missing entirely. (3) §(e) told the reader to repoint `autoc-eval-tracker.ini` at a novel source without saying it is **currently pointed at the T021 gate source** — the exact trap T085 would have walked into. Verified rather than assumed: all seven test files in §(b) exist, all three scripts in §(a)/§(e) exist, and the §(c)/§(f) contract paths resolve
 
 ---
 
