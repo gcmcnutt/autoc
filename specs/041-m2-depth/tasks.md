@@ -9,7 +9,14 @@ Scope: [spec.md § SCOPE RESET](spec.md) · Phases: [plan.md § PLAN RESET](plan
 
 ## Phase 0 — PREP (no code, no bake)
 
-- [ ] P0-1 ⛔ **Datum inventory — measure, do not infer.** Fill every UNVERIFIED cell in
+- [ ] P0-1 ⛔ **Datum inventory — measure, do not infer.** ➕ **Half the answer is known (operator
+  2026-08-18)**: *"The initial position in sim is the autoc xml file in CRRCSim we reference plus some aiding
+  from variations which are zeroed these days."* So `crrcsim/autoc_config.xml`'s `<launch altitude="82">` **is
+  the sim's initial-position source**, and the *position* entry variations are currently off
+  (`EntryPositionRadiusSigma = 0.0`, `EntryPositionAltSigma = 0.0`) — note the *attitude/speed* ones are NOT
+  (`EntryConeSigma` 18, `EntryRollSigma` 30, `EntrySpeedSigma` 0.06), so entry state still varies, just not
+  entry *position*. What remains is reconciling 82 against `SIM_INITIAL_ALTITUDE = −25` and the scenery
+  ground. Fill every UNVERIFIED cell in
   [toolchain-datum-validation.md](toolchain-datum-validation.md). **Ends with the
   `<launch altitude="82">` vs `SIM_INITIAL_ALTITUDE = −25` reconciliation answered by measurement.** (was TD01)
 - [ ] P0-2 **HAT analysis** — crrcsim's ground, field elevation and starting height-above-terrain: what they
@@ -31,6 +38,24 @@ Scope: [spec.md § SCOPE RESET](spec.md) · Phases: [plan.md § PLAN RESET](plan
   mis-placed deck cannot be reached. Revisit only when flights get low or terrain varies.
   ⚠️ Still true: whatever deck value is used **must be recorded in the flight log**, or `Es` cannot be
   reconstructed post-flight.
+  ➕ **INAV is the source of truth for position/altitude in these phases** (operator 2026-08-18) — *"Don't
+  worry about gps/baro drift for now."* So no drift budget, no altitude-fusion work, and no second opinion:
+  what INAV reports is what the arena and `Es` are computed against.
+
+- [ ] P0-5 ➕ **EXPERIMENT — is the variation curriculum still earning its place?** (added 2026-08-18)
+  Operator: *"we prob should try disabling variation on m1 to decide if we are done with this method of
+  curriculum."*
+  **Run it at `autoc-basic-m1.ini` scale, not production** — pop 3000 / 1 path / 16 winds climbs fast
+  (the 041 smoke reached 288/294 complete in ~320 gens), so an A/B costs hours instead of the ~15 h a
+  production pair would. Arms: all four variation classes **ON** (today's default) vs **OFF**.
+  ⚠️ **There is prior evidence variations HELP**
+  ([project_m1_basic_learner_validated](../../.claude/projects/-home-gmcnutt-autoc/memory/project_m1_basic_learner_validated.md):
+  at this exact scale, variations gave a *steeper* climb) — so this is a re-test under the **new objective**,
+  not a fresh question. If they still help, the curriculum stays and the ramp discussion reopens separately.
+  ⚠️ Related but distinct: the **ramp** (`VariationRampStep = 40`) caused all 11 of t1's elite-fitness
+  regressions and M2 already runs ramp-free. Disabling *variations* and disabling the *ramp* are two
+  different experiments; do not conflate them.
+  **Decides**: whether the production bake in Phase 4 runs with variations, and whether the ramp survives.
 
 ## Phase 1 — ANALYSIS (reads only) — closing, not opening
 

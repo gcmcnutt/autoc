@@ -32,7 +32,7 @@ tracking problem on an untrusted foundation.
 
 - Energy: `SPECIFIC_ENERGY` input + `Ps`-based lexicase axis (the observation *and* the objective — neither alone).
   ⛔ **`Ps` is NOT a "minimise energy" pressure.** Operator 2026-08-18: *"energy is relative. If target is
-  above (−z) then we have to add lower to climb generally. And if target is below we can use height as
+  above (−z) then we have to add power to climb generally. And if target is below we can use height as
   energy to burn. All normal."* So spending energy to climb toward a high target is **correct behaviour**,
   and an axis that punished it would recreate the muting in a new form. The axis must reward *efficiency
   against what the task demanded*, never low `Ps` as such — which is the same state-conditioned point that
