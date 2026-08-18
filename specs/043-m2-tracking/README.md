@@ -59,6 +59,24 @@ response.** Waiting is cheap; specifying twice is not.
 depends on neither. ⚠️ Do not start 043 before 041 pins an M1 — the source dependency is hard, and the
 `EvalResults` version bump means an older source dmp cannot be read at all.
 
+## ⭐ Phase 1 inherits M1's fidelity — the hard perception work is phase 2
+
+Operator 2026-08-18: *"Score grad in Xiao in m1 is virtual so we can do that. In m2 it'll proxy from camera
+range estimation. Should be an interesting 043 study… Wait. First m2 flights will also be virtual so roughly
+the same fidelity as today's m1 virtual paths."*
+
+Because **M2 phase 1 is a virtual target with a synthetic camera**, the `SCORE_GRAD_*` input stays **exact**
+there — the xiao computes it from a target it knows, exactly as M1 flight does. Nothing new is owed to fly
+phase 1.
+
+**The camera-proxy gradient — estimating ∂score/∂position from span-based range — is a phase-2 study.** That
+is a genuine piece of research (range from span is the same inference the whole M2 sensor model rests on),
+and it is now **deferred behind a flyable phase 1** instead of gating it.
+
+⚠️ Read this together with the lens block above: phase 2's perception scope depends on 042's range and
+response findings *and* on which lens is chosen, so specifying the proxy before 042 reports would be
+specifying against an unknown sensor.
+
 ## Known traps carried forward
 
 - **`FR-005a`** permits the tracker innovation channels as the one post-A1 layout change — legal because

@@ -93,12 +93,24 @@ range."* A binary flag is a **state label** — a controller can only switch on 
 Lorentzian in `FitnessComputer::decomposeStepScore`, so no estimation is required in M1. Multiplying by the
 streak multiplier weights it by how much reward is currently at stake.
 
-⚠️ **`SCORE_GRAD_*` is a shared SLOT with a mode-specific SOURCE**, exactly as `IN_ENVELOPE` was:
-- **M1** — exact. The virtual target's geometry is known in sim *and* in flight, so there is no sim-to-real
-  gap.
-- **M2** — must be **perception-derived**, never the true geometry. Feeding true ∂score/∂position to a
-  tracker that cannot see it in the air would be an oracle, and would train a policy that cannot fly.
-  This is the same discipline T038 applied to the M2 envelope estimator.
+⚠️ **`SCORE_GRAD_*` is a shared SLOT with a mode-specific SOURCE** — and the source changes with the
+*flight phase*, not just the mode (operator 2026-08-18):
+
+| stage | target | `SCORE_GRAD_*` source | on-target cost |
+|---|---|---|---|
+| **M1 sim** | virtual | exact, closed form from the Lorentzian | — |
+| **M1 flight** | **virtual** | **exact** — the xiao knows the virtual target, so it can compute the gradient on-target | ✅ **no blocker** |
+| **M2 flight, phase 1** | **virtual + synthetic camera** | **still exact** — same fidelity as today's M1 virtual paths | ✅ no new work |
+| **M2 flight, phase 2** | real craft, real beacons | **must proxy from camera range estimation** | ⚠️ the real study |
+
+**Consequence, and it is a good one**: the perception-derived gradient is **not needed until M2 phase 2**.
+Phase 1 flies a virtual target against a synthetic camera, so the gradient stays exact and the aircraft
+sees the same fidelity M1 does today. The camera-proxy version — estimating ∂score/∂position from span-based
+range — is a **043 study**, and it is deferred behind phase 1 rather than gating it.
+
+⚠️ Still true at phase 2: feeding *true* ∂score/∂position to a tracker that cannot see it in the air would
+be an oracle, and would train a policy that cannot fly. Same discipline T038 applied to the M2 envelope
+estimator.
 
 **`SPECIFIC_ENERGY` — the missing observation.** TA03 found the vector carries `AIRSPEED` but **no
 altitude/height/AGL term at all**, so `Es = h + v²/2g` was unobservable: the policy had the `v²` half and
