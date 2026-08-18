@@ -142,7 +142,13 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   Cheap enough to measure on the ruled mat like the 1.8; verify it's fisheye (f·θ) not rectilinear, and
   NOT "IR-cut". Reality check: 120° H on a 1/4″ chip needs ~1.1–1.2 mm TRUE focal length — the birded
   pair stays the physics-honest 120°+ route; this lens tests how far a single optic gets.
-  **Buy it WITH the vendor's filter option (operator 2026-08-17: the SKUs come with selectable filters)**:
+  **Listing confirmed (ELP-L156, 2026-08-17): the box INCLUDES all three filters — 650 nm IR-block, 850 nm
+  IR-pass, 940 nm IR-pass** (separate discs; expect them to seat in the holder's square well or against
+  the lens rear). Use the 850; keep the 650 for daylight-visible reference frames; 940 = spare/unused.
+  Marketing text is AI boilerplate (13×10×9 cm / 0.1 kg = the shipping box) — the hard facts (1.56 mm,
+  M12, manual focus, 3 filters) are what matter. **BUY: the ELP-L156 = the wider-fisheye experiment AND
+  the 850 filter in one ~$8 item; C-27 squares now pure insurance.**
+  Original filter-option guidance (still true if a variant listing forces a choice):
   choose the **"850nm / IR-pass" variant** — NOT "IR-cut/650nm/day" (blocks 850, poison) and not the bare
   "IR/no filter" one. On these fisheyes the filter is usually glued to the lens's rear face (stays with the
   lens; the holder's square well stays free for other glass). If a bandwidth is stated, ~30–50 nm is right;
