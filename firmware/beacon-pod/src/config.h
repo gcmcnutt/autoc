@@ -20,6 +20,13 @@
 // negligible vs the RC oscillator's ±5 %). NOT the flight nominal -- 200 Hz stays the design point; 'R'
 // restores it. Word period at 115 Hz = 31/115 = 270 ms (vs 155 ms) -- see camera-era-knobs.md.
 #define TCA_TOP_HALF     5435UL          // counts/chip for ~115 Hz (F_CPU/16/5435 = 114.995 Hz)
+// BOOT_HALF_RATE (2026-08-17): boot straight into the ~115 Hz bench mode so a field power-cycle / USB drop
+// does NOT silently revert to 200 Hz (the 25 ft "intermittent" diagnosis). 'R' still selects 200, 'H' 115.
+// Build with -DBOOT_HALF_RATE=0 for the 200 Hz flight-nominal boot.
+#ifndef BOOT_HALF_RATE
+#  define BOOT_HALF_RATE 1
+#endif
+#define TCA_TOP_BOOT     (BOOT_HALF_RATE ? TCA_TOP_HALF : TCA_TOP)
 
 // ---- logical signal -> physical pin (PORTA on BOTH 412 + 416) ----
 #define DIM_PORT   PORTA     // code output (baseband, to the LED-driver DIM)      412: PA3

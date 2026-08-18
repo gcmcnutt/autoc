@@ -60,6 +60,7 @@ def main():
     ap.add_argument("--agc", action="store_true", help="adapt shutter to keep the beacon's lit level in band (restart capture)")
     ap.add_argument("--agc-lo", type=int, default=90, help="lit-level below which shutter doubles")
     ap.add_argument("--agc-hi", type=int, default=230, help="lit-level above which shutter halves")
+    ap.add_argument("--min-peak", type=float, default=150.0, help="energy gate: no LOCK unless correlation peak >= this (s7 min-energy gate; noise ~20-60)")
     a = ap.parse_args()
     import json
     fpc = a.fps/a.chip; M = int(round(31*fpc)); T = templates(fpc, M)
@@ -112,7 +113,7 @@ def main():
                 qmap = np.zeros(RH*RW, dtype=np.float32); qmap[idx]=qroi; mode="TRK"
             dt_corr = time.time()-ta
             held=False
-            if q >= a.qlock:
+            if q >= a.qlock and pk >= a.min_peak:
                 if locked and last_ph is not None:
                     d = ((ph - last_ph + 15) % 31) - 15
                     dn = n - last_n

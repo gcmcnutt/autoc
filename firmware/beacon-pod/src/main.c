@@ -90,7 +90,7 @@ int main(void) {
     dim_next  = (GOLD_CODE[CODE_ID] >> (GOLD_N - 1u)) & 1u;  // seed chip 0
     sync_next = 1u;
 
-    TCA0.SINGLE.PER     = (uint16_t)(TCA_TOP - 1u);          // exactly 200 Hz
+    TCA0.SINGLE.PER     = (uint16_t)(TCA_TOP_BOOT - 1u);     // 200 Hz, or ~115 Hz if BOOT_HALF_RATE (config.h)
     TCA0.SINGLE.INTCTRL = TCA_SINGLE_OVF_bm;
     TCA0.SINGLE.CTRLA   = TCA_SINGLE_CLKSEL_DIV16_gc | TCA_SINGLE_ENABLE_bm;
 
