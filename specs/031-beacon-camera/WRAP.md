@@ -20,7 +20,13 @@
    *(One 200 Hz question to decide at build time: flight boot = 200 Hz nominal or the Pi-3-era 115.)*
 3. **Field test the cube(s) with the 1-pixel receiver at range** (A7-9 / the 100 m attempt) — closes the
    emitter+optics story with a number.
-4. **Docs**: bench-journal "current state" refreshed to today; tasks.md reconciled (below); this WRAP.
+4. **850 nm filter for the 1.8 mm fisheye** (operator 2026-08-17): drop-in disc behind the lens on the
+   holder's internal step, mechanical capture (measure the bore: 12.5 vs 10.4 mm variants). Expect edge
+   blue-shift (fisheye rear CRA 25–35°) + the 52 % corner falloff — measure, don't assume.
+5. **In parallel — an M2 build/run at the MEASURED camera (95×61, f·θ)** to see whether the reduced FOV
+   (vs the 120° assumption) is a problem for the policy — 041-side; the answer decides whether the
+   birded pair / wider lens moves up. (Filter + M2 run are independent → run both.)
+6. **Docs**: bench-journal "current state" refreshed to today; tasks.md reconciled (below); this WRAP.
 
 ## What LEAVES 031 (goes to 042 or the backlog)
 - **042 — camera receiver hardening** (new feature): native C/NEON tracker-bank on the Pi (sliding-window,
@@ -40,7 +46,10 @@
   max-energy gate (journal 2a) — camera-era items already filed there.
 
 ## Wrap criteria (checklist)
-- [ ] Emitter schematic has D3/R4 + regenerated PDF
+- [ ] Emitter schematic has D3/R4 + regenerated PDF (D3 15 V zener cathode→V_OUT / anode→FB; R4 1 k in
+      SERIES FB→sense — R4 is what keeps the clamp current at ~190 µA instead of the full LED current)
+- [ ] 850 disc on the fisheye; sky-background frame through it (empirical #1)
+- [ ] M2 run at the measured camera model (041) — reduced-FOV verdict
 - [ ] Two cubes built (A/B), regression re-baselined, one field range number recorded
 - [ ] tasks.md reconciled (superseded / migrated / done), bench-journal current-state refreshed
 - [ ] 042 spec seeded (`specs/042-camera-receiver/`) from the "leaves 031" list + camera-era-knobs
