@@ -171,6 +171,46 @@ horizontal fill** — a sub-pixel source *amplitude-modulates* as it drifts acro
   power whether the target blooms beyond one pixel"* — this is the estimator that answers it.)
 - **8-bit is the tight axis**; 10-bit buys 4× headroom for ~20 % fps. Keep it a knob.
 
+### 5.1 The goal state (10 ft trail) is the camera's worst cell — and the pod pair solves half of it
+
+`TrailDistance = 3.048 m` (040 input-data-checklist) is the mission goal state, and **three things go
+wrong there at once** (operator 2026-08-17):
+
+- **Apparent rate peaks**: 244°/s for a 13 m/s crossing at 3 m (BACKLOG §Q2c says 248°/s) ⇒ the full 95°
+  field crosses in **0.39 s** — barely one and a half words at 121 Hz. §2.5's constraint bites hardest
+  exactly at the goal state.
+- **Integration time is therefore minimal** — the adaptive short-integration mode (§4) is not an
+  optimization here, it is the only mode that works.
+- **The beacon saturates hard.** Extrapolating the 031 exposure ladder (bench current, worst aspect, 2 m →
+  ~200 µs), a flight cube at 306 mA face-on at 3 m wants roughly **10–20 µs** — a couple of line times
+  above the OV9281's floor. Inside ~2 m the exposure controller **bottoms out and saturation is
+  permanent**. Not fatal (a railed signal still modulates, so the code correlates fine); what breaks is
+  amplitude linearity and the intensity-weighted centroid ⇒ **§5's flat-top / disk-centre estimator is
+  load-bearing at the goal state, not optional.**
+
+**The compensation: at this range the two-code pod pair is a rangefinder.** Separation subtends
+2·atan(b/2r). For a 1 m pod baseline, at ~0.7 px combined centroid error:
+
+| range | subtended | M2 px | range precision |
+|---|---|---|---|
+| 3.05 m | 18.6° | 61 | **±1.1 % (±3 cm)** |
+| 10 m | 5.7° | 19 | ±3.7 % |
+| 30 m | 1.9° | 6.3 | ±11 % |
+| 100 m | 0.57° | 1.9 | ±37 % |
+
+**Monocular — no stereo, no ToF.** It needs only what 042-B already produces: two coded tracks with
+sub-pixel centroids. Aspect foreshortening (b_apparent = b·cos aspect, biasing range long) is the usual
+killer of this technique and it **vanishes exactly where the measurement is wanted** — in a dead-astern
+trail the aspect is ~0 by definition. Useful to ~30 m; excellent inside 10 m.
+
+**Consequence for the sensor ledger**: for a *cooperative* target the pod pair already covers endgame
+ranging better than the VL53L9CX does at that distance, so **the ToF's unique justification collapses
+cleanly onto the non-cooperative case** (§9) — the one thing no other sensor here can supply. Two reasons
+to add a sensor became one, and it is the durable one.
+
+*(042 does not build the rangefinder — it just must not preclude it: emit both tracks' sub-pixel centroids
+and the pod baseline `b` as a config constant, which the §11 record already does.)*
+
 ---
 
 ## 6. Camera path — direct libcamera (DECIDED)
@@ -286,8 +326,10 @@ The part is the **ST VL53L9CX** — 2-D zone array, **~9 m (30 ft)** range (corr
 
 - **Terminal / locked-in ranging.** 9 m at 13–25 m/s closure is ~0.4–0.7 s of engagement — this is a
   *last-second* sensor, for impact geometry and terminal guidance, not for tracking.
-- **Non-cooperative targets.** The entire 031/042 chain discriminates by Gold code, so it only ever sees a
-  target that *broadcasts*. A 2-D ToF array sees geometry, not cooperation.
+- **Non-cooperative targets — and after §5.1, this is the *only* durable justification.** The entire
+  031/042 chain discriminates by Gold code, so it only ever sees a target that *broadcasts*. A 2-D ToF
+  array sees geometry, not cooperation. (For a cooperative target the monocular pod-pair rangefinder of
+  §5.1 beats it at the ranges the ToF can reach.)
 
 **The fit is better than it first looks: the ToF's window is exactly where the beacon correlator is
 weakest.** Near field means maximum apparent angular rate (248°/s at 3 m) and therefore minimum usable
