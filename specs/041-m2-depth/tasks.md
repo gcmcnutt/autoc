@@ -44,20 +44,26 @@ Scope: [spec.md § SCOPE RESET](spec.md) · Phases: [plan.md § PLAN RESET](plan
   worry about gps/baro drift for now."* So no drift budget, no altitude-fusion work, and no second opinion:
   what INAV reports is what the arena and `Es` are computed against.
 
-- [ ] P0-5 ➕ **EXPERIMENT — is the variation curriculum still earning its place?** (added 2026-08-18)
-  Operator: *"we prob should try disabling variation on m1 to decide if we are done with this method of
-  curriculum."*
-  **Run it at `autoc-basic-m1.ini` scale, not production** — pop 3000 / 1 path / 16 winds climbs fast
-  (the 041 smoke reached 288/294 complete in ~320 gens), so an A/B costs hours instead of the ~15 h a
-  production pair would. Arms: all four variation classes **ON** (today's default) vs **OFF**.
-  ⚠️ **There is prior evidence variations HELP**
-  ([project_m1_basic_learner_validated](../../.claude/projects/-home-gmcnutt-autoc/memory/project_m1_basic_learner_validated.md):
-  at this exact scale, variations gave a *steeper* climb) — so this is a re-test under the **new objective**,
-  not a fresh question. If they still help, the curriculum stays and the ramp discussion reopens separately.
-  ⚠️ Related but distinct: the **ramp** (`VariationRampStep = 40`) caused all 11 of t1's elite-fitness
-  regressions and M2 already runs ramp-free. Disabling *variations* and disabling the *ramp* are two
-  different experiments; do not conflate them.
-  **Decides**: whether the production bake in Phase 4 runs with variations, and whether the ramp survives.
+- [ ] P0-5 ➕ **Disable the variation RAMP on M1** (corrected 2026-08-18 — *"disable ramp is what I meant…
+  We definitely keep variations."*)
+  **Change**: `VariationRampStep = 40 → 0` in `autoc.ini`. ⚠️ **All four variation classes STAY ON** —
+  entry, wind, rabbit-speed, craft. This is not a variations experiment.
+  **What ramp=0 actually does**: `computeVariationScale()` returns `1.0` when `numSteps <= 1`, so variation
+  goes to **full scale from generation 1** rather than climbing 0→1 over 20 steps. Harder early, but
+  **stationary** — and stationarity is the point.
+  **Why**:
+  1. **M2 already runs ramp-free and shows good progress** (`autoc-tracker.ini`: `VariationRampStep = 0`,
+     *"t8: full shared-source env from gen 1 (t7/m1 used 40)"*). The precedent is in-project.
+  2. **The ramp caused every one of t1's elite-fitness regressions** — 11 of 11 landed exactly on 40-gen
+     boundaries, and it briefly read as a determinism bug.
+  3. **A moving objective swamps a small signal.** 041 is measuring aggressiveness and energy changes; a
+     difficulty step every 40 gens makes cross-generation comparison meaningless without correcting for it.
+  ⚠️ **M2's precedent is supportive evidence, not proof for M1**: M2 trains against a *preloaded* source
+  trajectory while M1 generates its own paths, and M1's basin-finding is the documented-fragile one
+  ([project_m1_basin_lottery_actual_rate](../../.claude/projects/-home-gmcnutt-autoc/memory/project_m1_basin_lottery_actual_rate.md)).
+  So **confirm with a cheap A/B at `autoc-basic-m1.ini` scale** (pop 3000 / 1 path / 16 winds — the smoke hit
+  288/294 in ~320 gens, so hours not the ~15 h a production pair costs) before committing the Phase 4 bake.
+  **Decides**: whether the production bake runs ramped or stationary.
 
 ## Phase 1 — ANALYSIS (reads only) — closing, not opening
 
