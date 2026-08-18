@@ -85,6 +85,7 @@ def main(stdscr):
             put(stdscr, 3+GH+8, 0, " convention: code A = PORT (red)   code B = STARBOARD (green)   -- aviation nav lights; renderer matches"[:curses.COLS-1])
         else:
             put(stdscr, 3+GH+3, 0, " waiting for collector...")
+        put(stdscr, 3+GH+9, 0, " legend: @ locked fix   ? unlocked guess   * trail (last 12 fixes)   ^v() halo on big grids   + boresight (0,0)   :/. centre lines   q/Esc quit"[:curses.COLS-1])
         stdscr.refresh()
         try:
             if stdscr.getch() in (ord('q'), 27): break
