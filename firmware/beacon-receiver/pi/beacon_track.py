@@ -116,4 +116,10 @@ def main():
             last=now
     p.wait()
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    try:
+        main()
+    except BrokenPipeError:      # display went away -- exit quietly
+        import os, sys; sys.stderr.close(); os._exit(0)
+    except KeyboardInterrupt:
+        pass
