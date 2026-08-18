@@ -140,3 +140,9 @@ it the right host regardless of the fps result: (1) **dual CSI ports = the birde
 official 27 W PSU and an active cooler (sustained rpicam-raw pegs a core). Keep the 3A+ as the bench/
 flight-mass reference. First act on arrival: `dtoverlay=ov9281`, rebuild the patched module against the
 Pi 5 kernel (`rpi-6.18.y`/`v8-16k`), `fps_probe.py --modes 640:200:8 --fps 400,453,520,600`.
+
+**Decision (operator 2026-08-17): HOLD the Pi 5.** Build the robust/responsive tracker on the Pi 3A+ at
+250 fps / ~115–121 Hz beacons — every algorithmic question (motion-compensated ROIs, velocity estimation,
+sliding-window 20 Hz fixes, hold/reacquire, the C/NEON port) is per-frame and scales with the hardware.
+**Buy the Pi 5 when 042 shows a fancy tracker in the ballpark at high slew rate** — to confirm scaling
+(and get dual CSI), not to discover whether the tracker works.

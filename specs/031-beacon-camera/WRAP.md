@@ -29,7 +29,8 @@
 6. **Docs**: bench-journal "current state" refreshed to today; tasks.md reconciled (below); this WRAP.
 
 ## What LEAVES 031 (goes to 042 or the backlog)
-- **042 — camera receiver hardening** (new feature): native C/NEON tracker-bank on the Pi (sliding-window,
+- **042 — camera receiver hardening** (new feature; **platform = the Pi 3A+ at 250 fps / ~115 Hz beacons
+  until the tracker proves itself — Pi 5 held as the scaling step, operator 2026-08-17**): native C/NEON tracker-bank on the Pi (sliding-window,
   motion-compensated trackers, 20 Hz fixes, threaded acquire) — A8-6's "next"; **faster host** (Pi 4/5 for
   ≥453 fps + dual CSI; the FPGA patterns as the alternative); lens/filter (850 disc mounting, filtered wide
   lens, sky-background measurement — empirical #1 STILL OPEN); exposure/gain AGC as a controller; the
