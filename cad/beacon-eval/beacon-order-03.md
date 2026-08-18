@@ -213,6 +213,12 @@ carries RC drift: per-beacon DPLL, +2.6 % skew bench-verified.)
   centred on the aperture** (mechanical capture with a thin O-ring/foam against the holder wall, or 3
   edge dots of canopy glue onto the metal face — never the recessed glass). Buy the ~8 mm size, not
   12.5 mm. AoI is the lens's CRA (~10°) here, milder than the fisheye field angle → 40 nm is comfortable.
+  **Listing spec confirmed (operator 2026-08-17): CWL 850±10 nm, half-bandwidth 30 nm, T>86 %, black
+  glass, 8.2×8.2×1 mm square — matched to the LED's 30 nm line, EXACTLY the right width.** Fit note: the
+  8.2 mm square's **11.6 mm diagonal** may not drop flat into a ~10–11.5 mm M12 bore — either it lives in
+  the wider sensor cavity below the thread (likely, given the 1.8 mm's short back-focus), or clip the four
+  corners with a diamond file (only the 5 mm aperture matters), or take the round 8×1 mm alt. Measure the
+  holder bore on arrival.
   **Sources (2026-08-17)**: (a) Amazon **8.2×8.2×1 mm square** 850 nm narrow-pass discs (Quanmin-class,
   ~$8–10/pc, listing B09MD2WV29 / B09N9S27C1) — an 8.2 mm square covers the 5 mm aperture and fits the
   ~10 mm bore behind the lens; also **round 8×1 mm** on eBay (item 389163618400). These are the same
