@@ -44,26 +44,31 @@ Scope: [spec.md § SCOPE RESET](spec.md) · Phases: [plan.md § PLAN RESET](plan
   worry about gps/baro drift for now."* So no drift budget, no altitude-fusion work, and no second opinion:
   what INAV reports is what the arena and `Es` are computed against.
 
-- [ ] P0-5 ➕ **Disable the variation RAMP on M1** (corrected 2026-08-18 — *"disable ramp is what I meant…
-  We definitely keep variations."*)
-  **Change**: `VariationRampStep = 40 → 0` in `autoc.ini`. ⚠️ **All four variation classes STAY ON** —
-  entry, wind, rabbit-speed, craft. This is not a variations experiment.
-  **What ramp=0 actually does**: `computeVariationScale()` returns `1.0` when `numSteps <= 1`, so variation
-  goes to **full scale from generation 1** rather than climbing 0→1 over 20 steps. Harder early, but
-  **stationary** — and stationarity is the point.
-  **Why**:
-  1. **M2 already runs ramp-free and shows good progress** (`autoc-tracker.ini`: `VariationRampStep = 0`,
-     *"t8: full shared-source env from gen 1 (t7/m1 used 40)"*). The precedent is in-project.
-  2. **The ramp caused every one of t1's elite-fitness regressions** — 11 of 11 landed exactly on 40-gen
-     boundaries, and it briefly read as a determinism bug.
-  3. **A moving objective swamps a small signal.** 041 is measuring aggressiveness and energy changes; a
-     difficulty step every 40 gens makes cross-generation comparison meaningless without correcting for it.
-  ⚠️ **M2's precedent is supportive evidence, not proof for M1**: M2 trains against a *preloaded* source
-  trajectory while M1 generates its own paths, and M1's basin-finding is the documented-fragile one
-  ([project_m1_basin_lottery_actual_rate](../../.claude/projects/-home-gmcnutt-autoc/memory/project_m1_basin_lottery_actual_rate.md)).
-  So **confirm with a cheap A/B at `autoc-basic-m1.ini` scale** (pop 3000 / 1 path / 16 winds — the smoke hit
-  288/294 in ~320 gens, so hours not the ~15 h a production pair costs) before committing the Phase 4 bake.
-  **Decides**: whether the production bake runs ramped or stationary.
+- [X] P0-5 ✅ **DONE 2026-08-18 — ramp DISABLED. Decision, not an experiment.** `VariationRampStep` → **0**
+  in `autoc.ini`, `autoc-basic-m1.ini` and both their eval counterparts. ⚠️ **All four variation classes stay
+  ON** — this was never a variations change.
+  **Effect**: `computeVariationScale()` returns `1.0` when `numSteps <= 1`, so variation is at **full scale
+  from generation 1** rather than climbing 0→1 over 20 steps. Harder early, **stationary** throughout — and
+  stationarity is the point.
+  **Why no A/B** (I had proposed one; operator overrode): *"Nah disable ramp. Arguably the m1 paths are
+  simpler given they are computed geometry."* ⚠️ **That inverts my caveat.** I had argued M1 might be more
+  fragile than M2 under full variation because M1 generates its own paths. The opposite is true where it
+  matters: M1's targets are **computed analytic geometry** (StraightAndLevel, SpiralClimb, FigureEight,
+  AngledLoop, HighPerchSplitS, SeededRandomB) while M2 tracks a **recorded flight trajectory** with all its
+  noise. M1 is the *easier* tracking problem, and M2 has tolerated ramp-free since t8.
+  **Supporting**: the ramp caused all 11 of t1's elite-fitness regressions, and a moving objective swamps the
+  small energy/aggressiveness signals 041 exists to measure.
+
+### ➕ Methodology note (operator 2026-08-18) — match the test to the size of the change
+
+*"We are looking for improvements in many dimensions. So the eyeball test is good for bigger changes like nn
+inputs."*
+
+⛔ **Do not A/B every change.** A controlled comparison is for **small signals** — an ablation delta, a
+regression band, an energy effect measured against noise. For **large** changes (the input vector, the ramp,
+the objective's shape) the difference is visible in the ordinary report set, and an A/B costs a full run pair
+to confirm what the charts already show. This applies directly to Phase 4: judge the new M1 on its charts
+against the pinned prior M1, not on a purpose-built controlled pair.
 
 ## Phase 1 — ANALYSIS (reads only) — closing, not opening
 
