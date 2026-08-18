@@ -218,7 +218,12 @@ carries RC drift: per-beacon DPLL, +2.6 % skew bench-verified.)
   8.2 mm square's **11.6 mm diagonal** may not drop flat into a ~10–11.5 mm M12 bore — either it lives in
   the wider sensor cavity below the thread (likely, given the 1.8 mm's short back-focus), or clip the four
   corners with a diamond file (only the 5 mm aperture matters), or take the round 8×1 mm alt. Measure the
-  holder bore on arrival.
+  holder bore on arrival. **RESOLVED by photo 2026-08-17: the InnoMaker board's two-screw M12 holder has a
+  SQUARE filter well directly above the sensor die (the standard CCTV IR-cut seat) — an 8.2 mm square is
+  the intended part for it.** Recipe: unscrew the two holder screws → drop the square onto the well's
+  ledge → fix with Kapton across two edges (bench) or 2–4 UV/epoxy dots at the corners (flight) → screw
+  the holder back; refocus (~0.3 mm shift). Die is exposed while the holder is off — clean bench, no
+  fingers/blower, holder back promptly. AoI at the well = lens CRA (~10°): benign for the 30 nm passband.
   **Sources (2026-08-17)**: (a) Amazon **8.2×8.2×1 mm square** 850 nm narrow-pass discs (Quanmin-class,
   ~$8–10/pc, listing B09MD2WV29 / B09N9S27C1) — an 8.2 mm square covers the 5 mm aperture and fits the
   ~10 mm bore behind the lens; also **round 8×1 mm** on eBay (item 389163618400). These are the same
