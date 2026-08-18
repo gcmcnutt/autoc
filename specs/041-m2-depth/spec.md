@@ -1010,12 +1010,12 @@ average.
 - **FR-033**: `DIST_TO_BOUNDARY` and `INWARD_BODY_*` MUST be **retained** in both modes. They are the
   containment control surface, and the trim analysis that questioned them used the wrong statistic.
 
-- **FR-034**: Containment MUST be expressed as a **gradient the policy can act on**, not only as a terminal
+- **FR-034** ⛔ **SUPERSEDED 2026-08-18** — containment shaping is NOT built. *"Any exit the arena is a fail so really for safety. Scoring should just work."* The terminal fail plus the boundary INPUTS is the whole mechanism. Original text: Containment MUST be expressed as a **gradient the policy can act on**, not only as a terminal
   penalty. Today egress is a **cliff**: `checkArenaBounds` returns an egress kind, which becomes a
   `CrashReason`, which ends the scenario. Nothing rewards *approaching the edge more slowly*, so the policy
   has no signal until the scenario is already over.
 
-- **FR-035**: The boundary observation MUST NOT be saturated across the operating region. `tanh(d /
+- **FR-035** ⚠️ **REVISED 2026-08-18** — the saturation concern stands and is addressed by ADDING `BOUNDARY_CLOSURE_RATE`; but the preferred remedy named below (**time-to-boundary**) is **RETRACTED** — median turn radius is 11.9 m in an 80 m arena, so a straight-line ray points where the craft will never be. `DIST_TO_BOUNDARY` is **retained** (ablation: −40.7% pooled, the 3rd most important input). Original text: The boundary observation MUST NOT be saturated across the operating region. `tanh(d /
   kDistToBoundaryScale_m)` with a 20 m scale is ≈1.0 through almost the whole arena, so its **gradient is
   ~0 exactly where early corrective action is cheapest**. Replace or supplement it with a
   **non-saturating, control-relevant** quantity — preferred: **time-to-boundary** along the velocity
@@ -1025,7 +1025,7 @@ average.
   cadence-invariant, like `kNNHistoryLagsMsec` and `ENVELOPE_SECS`, or it silently rescales when the
   control interval changes.
 
-- **FR-036**: Any boundary shaping term MUST be **potential-based** — `F(s,s') = γ·Φ(s') − Φ(s)` — so it
+- **FR-036** ⛔ **SUPERSEDED 2026-08-18 with FR-034** — no boundary shaping term is added, so the potential-based constraint has nothing to govern. ⚠️ The underlying principle still applies to any FUTURE shaping term. Original text: Any boundary shaping term MUST be **potential-based** — `F(s,s') = γ·Φ(s') − Φ(s)` — so it
   provably cannot change the optimal policy (Ng, Harada & Russell). This is not ceremony: the tight spiral
   is already an unintended attractor, and an ad-hoc "stay away from the edge" penalty is exactly the shape
   that creates another one (e.g. a policy that hugs the arena centre and stops tracking).
@@ -1050,11 +1050,13 @@ average.
 
 ## Success criteria
 
-- **SC-013**: In a bake under these rules, arena egress count is **not worse** than t1's baseline (6 of 294
-  scenarios at gen 608) — and the policy demonstrably *turns before* the edge rather than being terminated
-  at it, measurable as time-to-boundary minima rising.
-- **SC-014**: The step-wise cost discriminates: at matched task progress, a spiral bleeding energy scores
-  worse than an efficient closure. If it cannot separate those two on recorded t1 data, it is not ready to
-  drive a bake.
-- **SC-015**: Every input retained after the trim is justified by **conditional** contribution where it is
-  a limit-class signal, and by pooled contribution otherwise, with the T068 ablation as the verdict.
+- **SC-013** ⚠️ **REVISED 2026-08-18**: arena egress count **not worse** than t1's baseline (6 of 294 at gen
+  608). ⛔ The second clause — *"time-to-boundary minima rising"* — is **withdrawn** with FR-035's retraction;
+  there is no time-to-boundary quantity to measure.
+- **SC-014** ✅ **MET 2026-08-17, before any bake.** Measured on recorded t1 data: `corr(Ps, closure rate) =
+  −0.048` (orthogonal), and `Ps` spans **24–32 m/s at every matched-progress bin**. The same task progress is
+  bought at wildly different energy cost, and nothing currently scores it.
+- **SC-015** ⚠️ **STRENGTHENED 2026-08-18** — contribution screens proved unreliable **in both directions**
+  (they ranked `IN_ENVELOPE` 2nd when ablation says worthless, and `DIST_TO_BOUNDARY` near-bottom when it is
+  the 3rd most important input). **Ablation is the verdict; contribution is at most a screen**, and any trim
+  must ablate the *set* it intends to remove, since ablation is non-monotonic.
