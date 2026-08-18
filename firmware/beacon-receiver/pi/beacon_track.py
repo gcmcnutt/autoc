@@ -35,7 +35,7 @@ def correlate(R, T):
         C = Tm @ Rz                                                 # (31 x P) all code phases
         pk = C.max(axis=0); q = pk/energy/np.sqrt(Rz.shape[0])
         i = int(np.argmax(q))
-        if best is None or q[i] > best[0]: best = (float(q[i]), name, i, q, float(pk[i]))
+        if best is None or q[i] > best[0]: best = (float(q[i]), name, i, q, float(pk[i]), int(np.argmax(C[:, i])))
     return best
 
 def centroid_cep(qmap2d, x, y):
@@ -55,7 +55,9 @@ def main():
     ap.add_argument("--report", type=float, default=0.5); ap.add_argument("--shutter", type=int, default=200)
     ap.add_argument("--gain", type=float, default=1.0); ap.add_argument("--secs", type=float, default=0)
     ap.add_argument("--qlock", type=float, default=0.62, help="lock threshold on q"); ap.add_argument("--qdrop", type=float, default=0.55)
+    ap.add_argument("--json", action="store_true", help="emit JSON lines (for the DGX display)")
     a = ap.parse_args()
+    import json
     fpc = a.fps/a.chip; M = int(round(31*fpc)); T = templates(fpc, M)
     print(f"# fps={a.fps} chip={a.chip} fpc={fpc:.2f} word={M}fr ({M/a.fps*1000:.0f}ms) shutter={a.shutter}us gain={a.gain} roi=±{ROI}", flush=True)
     p = subprocess.Popen(["rpicam-raw","-n","-t",str(int(a.secs*1000) if a.secs else 0),"--mode",f"{W}:{H}:8",
@@ -63,6 +65,7 @@ def main():
                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=W*H*8)
     ring = np.zeros((M, RH*RW), dtype=np.uint16); k=0; n=0; t0=time.time(); last=t0
     locked=False; lx=ly=0; FS=W*H
+    chip=a.chip; last_ph=None; last_n=None; ph_acc=0.0   # DPLL-lite state
     while True:
         buf = p.stdout.read(FS)
         if len(buf) < FS: break
@@ -74,19 +77,42 @@ def main():
             R = np.concatenate((ring[k:], ring[:k]), axis=0).astype(np.float32)   # snapshot, oldest first
             ta=time.time()
             if not locked:
-                q,name,i,qmap,pk = correlate(R, T)                                # full field (slow, acquire)
+                q,name,i,qmap,pk,ph = correlate(R, T)                             # full field (slow, acquire)
                 y,x = divmod(i, RW); mode="ACQ"
             else:
                 y0,y1 = max(0,ly-ROI),min(RH,ly+ROI); x0,x1 = max(0,lx-ROI),min(RW,lx+ROI)
                 idx = (np.arange(y0,y1)[:,None]*RW + np.arange(x0,x1)[None,:]).reshape(-1)
-                q,name,ii,qroi,pk = correlate(R[:,idx], T)                        # ROI only (fast, track)
+                q,name,ii,qroi,pk,ph = correlate(R[:,idx], T)                     # ROI only (fast, track)
                 yy,xx = divmod(ii, x1-x0); y,x = y0+yy, x0+xx
                 qmap = np.zeros(RH*RW, dtype=np.float32); qmap[idx]=qroi; mode="TRK"
             dt_corr = time.time()-ta
-            if q >= a.qlock: locked=True; lx,ly = x,y
-            elif q < a.qdrop: locked=False
+            if q >= a.qlock:
+                # DPLL-lite (bounded): between consecutive LOCKED reports the code phase at the ring end
+                # walks by d chips over dn frames if the template chip rate is off. Only trust it when
+                # dn is small enough that d is unambiguous (< half a word of drift), clamp each retune
+                # to ±0.5 %, and never let chip stray > ±8 % from the operator's --chip.
+                if locked and last_ph is not None:
+                    d = ((ph - last_ph + 15) % 31) - 15
+                    dn = n - last_n
+                    words = dn / (31*fpc)
+                    if 0 < dn and words < 8 and abs(d) <= 2:
+                        err = d / (dn/fpc)                       # fractional rate error this interval
+                        ph_acc = 0.7*ph_acc + 0.3*err
+                        if abs(ph_acc) > 0.002:
+                            step = max(-0.005, min(0.005, ph_acc))
+                            newchip = chip * (1.0 + step)
+                            if abs(newchip/a.chip - 1.0) <= 0.08:
+                                chip = newchip; fpc = a.fps/chip; T = templates(fpc, M)
+                            ph_acc = 0.0
+                locked=True; lx,ly = x,y; last_ph=ph; last_n=n
+            elif q < a.qdrop: locked=False; last_ph=None
             cx,cy,cep = centroid_cep(qmap.reshape(RH,RW), x, y); az,el = bearing(cx,cy)
-            print(f"t={now-t0:7.2f} {mode} {'LOCK' if locked else 'search'} code={name} x={cx:6.1f} y={cy:6.1f} cep={cep:4.2f}px q={q:5.3f} peak={pk:7.0f} az={az:6.1f} el={el:6.1f} fps={n/(now-t0):5.1f} corr={dt_corr*1000:4.0f}ms", flush=True)
+            if a.json:
+                print(json.dumps({"t":round(now-t0,2),"mode":mode,"lock":locked,"code":name,"x":round(cx,1),"y":round(cy,1),
+                                  "cep":round(cep,2),"q":round(q,3),"peak":round(pk),"az":round(az,1),"el":round(el,1),
+                                  "fps":round(n/(now-t0),1),"chip":round(chip,2),"corr_ms":round(dt_corr*1000)}), flush=True)
+            else:
+                print(f"t={now-t0:7.2f} {mode} {'LOCK' if locked else 'search'} code={name} x={cx:6.1f} y={cy:6.1f} cep={cep:4.2f}px q={q:5.3f} peak={pk:7.0f} az={az:6.1f} el={el:6.1f} chip={chip:6.2f} fps={n/(now-t0):5.1f} corr={dt_corr*1000:4.0f}ms", flush=True)
             last=now
     p.wait()
 
