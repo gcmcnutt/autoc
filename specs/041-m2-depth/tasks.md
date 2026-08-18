@@ -120,12 +120,25 @@ Per task, before the implementation:
 | P2-6 land it | full suite green with **banner count verified**, not just exit status |
 
 
-- [ ] P2-1 Shared **`CraftCommonInputs`** sub-struct: the 17 slots M1 and M2 share get **one definition**
+- [ ] P2-1 **Files**: `include/autoc/nn/nn_inputs.h` (both structs + both meta tables),
+  `include/autoc/nn/topology.h` (counts, weight `static_assert`s). Tests: `tests/contract_evaluator_tests.cc`,
+  `tests/nn_sensor_interface_tests.cc`.
+  Shared **`CraftCommonInputs`** sub-struct: the 17 slots M1 and M2 share get **one definition**
   instead of two. Operator: *"sensor inputs to m1 and m2 are the same except for target representation."*
-- [ ] P2-2 Input vector per [input-vector-proposal.md](input-vector-proposal.md): **add**
+- [ ] P2-2 **Files**: `include/autoc/nn/nn_inputs.h` (slots, scales), `include/autoc/nn/topology.h`
+  (42→45 / 63→66, recompute asserts), `src/nn/evaluator.cc` (BOTH gathers). **Producers** must set the new
+  state: `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`, `src/eval/tracker_stepper.cc`,
+  `include/autoc/eval/aircraft_state.h` (carriers). New shared header for `Es`/`Ps` alongside
+  `include/autoc/eval/specific_force.h`. Tests: `tests/envelope_accel_inputs_tests.cc` (extend),
+  `tests/contract_evaluator_tests.cc`.
+  Input vector per [input-vector-proposal.md](input-vector-proposal.md): **add**
   `SPECIFIC_ENERGY`, `BOUNDARY_CLOSURE_RATE`, `SCORE_GRAD_X/Y/Z`; **remove** `IN_ENVELOPE`,
   `ENVELOPE_SECS`; **retain** `ACCEL_Y` and `DIST_TO_BOUNDARY` on ablation evidence.
-- [ ] P2-3 ⚠️ **REVISED 2026-08-18 — this is NOT an origin move.** Operator: *"Arena should be same geometry.
+- [ ] P2-3 **Files**: `include/autoc/eval/arena.h` (geometry + `resolveEngageArena`),
+  `crrcsim/autoc_config.xml` (`<launch altitude>`, **feet**), `autoc.ini` + the three tracker inis
+  (`FlightArenaRadius`, floor/ceiling), `include/autoc/eval/aircraft_state.h` (`SIM_INITIAL_ALTITUDE` —
+  **unchanged**, see below). Tests: `tests/arena_tests.cc`, `tests/arena_recenter_tests.cc`.
+  ⚠️ **REVISED 2026-08-18 — this is NOT an origin move.** Operator: *"Arena should be same geometry.
   Same radius. Same height. Xiao trigger should be halfway up the cylinder. And sim should be similar… in the
   general sense z sign should never matter… So revisit the need to change arena origin."*
   **Do**: (a) verify sim and flight use the **same arena geometry** — radius and height — and fix the *sizes*
@@ -139,8 +152,16 @@ Per task, before the implementation:
   and *"at some point we are at trigger and craft enters arena and stays there is quite plausible"* — today's
   mid-band entry is a **flight-safety convention**, not physics. Keep `Es`'s deck datum a *computed* quantity
   (height above the configured floor) so a varying deck or an outside-in entry does not invalidate the frame.
-- [ ] P2-4 Recording: full input vector + `Es`/`Ps` per tick. (was TA04/TA05)
-- [ ] P2-5 Objective: `Ps`-based efficiency as a **lexicase axis**. ⛔ Never a scalar penalty; never without
+- [ ] P2-4 **Files**: `include/autoc/rpc/protocol.h` (`EvalResults` version bump + `RecordedRunConfig`),
+  `tools/dmp_dump.cc` (emit all 45/66 slots + `Es`/`Ps`), `src/autoc.cc` (stamp provenance). Tests:
+  `tests/tracker_dmp_roundtrip_tests.cc`, `tests/cereal_version_anchor_tests.cc` (re-anchor).
+  Recording: full input vector + `Es`/`Ps` per tick. (was TA04/TA05)
+- [ ] P2-5 **Files**: `include/autoc/eval/fitness_decomposition.h` (`ScenarioScore::energy_score` →
+  `Ps`-based), `src/eval/fitness_decomposition.cc` (compute), `src/eval/selection.cc` (lexicase axis list).
+  ⚠️ Downstream readers of `energy_score` must follow: `tools/dmp_dump.cc`, `src/autoc.cc`,
+  `src/analytics/plot_evolution_progress.py`. Tests: `tests/energy_metric_tests.cc`,
+  `tests/selection_tests.cc`, **plus the muting guard**.
+  Objective: `Ps`-based efficiency as a **lexicase axis**. ⛔ Never a scalar penalty; never without
   P2-2's energy input — an axis for an unobservable is what muted 035.
 - [ ] P2-6 [OP] Land it: version bump, `rebuild-perf.sh` with banners counted, xiao host compile,
   Constitution VI audit.
@@ -153,6 +174,17 @@ capacity is not the constraint. Settled; reopen only on new evidence.
 - [ ] P3-1 Per-hop datum checks, each against something independent. (was TD05)
 - [ ] P3-2 ⭐ Renderer **`'a'` mode** acceptance test — the one place actual flight is shown in world
   coords, so the only place a datum error is *visible* rather than inferred. (was TD06)
+- [ ] P3-4 ⭐ **SMOKE before the production bake** (added 2026-08-18). `scripts/train.sh autoc-basic-m1.ini
+  logs/autoc-041-t2-smoke-m1.log` — pop 3000 / 1 path / 16 winds, killed once it is clearly climbing.
+  **Checks**: `#GenCrash` shows `boot=0 sim=0` (workers survive the new input vector and the new arena);
+  the new columns **vary** in the dmp — `Es` plausible, `BOUNDARY_CLOSURE_RATE` signed both ways,
+  `SCORE_GRAD_*` non-zero off the score peak; and it **climbs at all** on `pctInStreak`/`avgMaxStreak`.
+  ⚠️ **A diagnostic that does not vary is telling you something** (040's trap 3).
+  **Why this exists**: the 041 t1 smoke found no fault, and that was the point — it proved 26 workers came
+  up clean on 42 inputs across 294 scenarios *before* committing ~15 h. This bake changes the input vector,
+  the objective **and** the arena at once, so the cheap check matters more, not less.
+  ⛔ **Gates P4-1.** No production bake until the smoke is clean.
+
 - [ ] P3-3 **`Es` sanity check — SUBJECTIVE, not a numeric gate (de-scoped 2026-08-18).** Operator: *"Prob
   defer. The variations work signals that comparison is perhaps hard to quantify across the scenarios."* With
   entry / wind / rabbit-speed / craft variations all active, "the same state in sim and flight" is not well
