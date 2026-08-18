@@ -353,11 +353,20 @@ Runs entirely on the **in-FPGA correlator-sim harness** ([`firmware/beacon-decod
   sets the real daylight floor AND rules the 120° link-budget fence (knobs #6 → training topology).
 - [ ] **A8-5 Empirical #3 — static range test**: cube on a post, 2.8 mm lens, beacon e⁻/frame vs range —
   calibrates the 1.6×10⁹/r² constant and the true optics loss.
-- [ ] **A8-6 NEON correlator port — PROMOTED 2026-08-16 (operator: "prototype a decoder for this
-  toolchain", parallel to 041 training)**: s7 math → C/NEON on the Pi 3A+ against 640×400@250 fps raw
-  (proven ingest); start from the whole-frame photometry that already read 26/31 chips, then per-ROI /
-  per-pixel DC-track + sliding matched filter; warm/cold reacquire wall-clock vs N/f_chip (empirical #4).
-  Emitter chip rate is sweepable to the 104 Hz the 250 fps sampling wants (one timer constant).
+- [~] **A8-6 Real-time tracker — PROTOTYPE WORKS (2026-08-17), C/NEON tracker-bank is the next step**:
+  `pi/beacon_track.py` + `pi/beacon_display.py`: 250 fps 640×400 → 2×2 sum → one-word ring → matched
+  filter both codes × 31 phases; ACQUIRE full-field → TRACK ±16 px ROI; HOLD; DPLL-lite; JSON (x,y,CEP,
+  q, chip) at 2 Hz → DGX curses M2 grid (port red A / starboard green B). 30 s: 49/49 locked, chip
+  tracked 121→123 (RC drift measured live). **Observed limits (operator)**: dropouts on motion; 2 Hz
+  reports vs the 20 Hz control loop; static ROI can't follow a beacon slewing across the field.
+  **Next = the FPGA-plan tracker bank, in C/NEON on the Pi**: (1) sliding-window correlator (advance the
+  ring 1 frame, re-run the phase bank) → 20 Hz fixes each integrating a full word; (2) **motion-
+  compensated trackers** — each instance estimates velocity and shifts its spatial window frame-by-frame
+  so the beacon stays fixed in the tracker's frame (a fast crosser leaves a single pixel within a
+  fraction of a word — static-ROI "dropouts" are exactly this); N instances on candidate ROIs, full-field
+  search only for acquisition; CEP reflects velocity uncertainty; (3) sampling margin — camera at the
+  280 ceiling (2.3 spc) or 'H' retuned ~105 Hz (2.4) to cut bad-word rate at the source. Per-frame ROI
+  work is tiny in C; the 2.5 s Python acquire becomes ~30 ms.
 - [ ] **A8-7 Defocus knob sweep**: PSF 1→4 px vs corrB + centroid jitter (knobs #4 — pick the smallest
   PSF that centroids well; each doubling of spread costs √k in daylight SNR).
 - [ ] **A8-8 Feed-forward**: results → the 041 predictor spec (~/autoc) + the training-topology decision
