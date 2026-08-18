@@ -18,6 +18,8 @@
 //            integrates a 10-60%-of-frame exposure window that slides through the chip (unsynced clocks);
 //            partial-duty pulses would overlap it by a phase-dependent amount -> amplitude beats at the
 //            clock-slip rate. Full-duty chips are exposure-phase-immune. (Single-PD @480 Hz doesn't care.)
+//   'H'      BENCH half-rate: chip clock -> ~115 Hz (TCA_TOP_HALF), everything else unchanged. For the
+//            Pi-3-class camera receiver (~280 fps sustained -> 2.4 samples/chip at 115 Hz). 'R' restores 200.
 //   'R'      reset to nominal (200 Hz, no corruption, no dropout, full-width pulses)
 #include "config.h"
 #include "gold_codes.h"
@@ -88,7 +90,7 @@ int main(void) {
     dim_next  = (GOLD_CODE[CODE_ID] >> (GOLD_N - 1u)) & 1u;  // seed chip 0
     sync_next = 1u;
 
-    TCA0.SINGLE.PER     = (uint16_t)(TCA_TOP - 1u);          // exactly 200 Hz
+    TCA0.SINGLE.PER     = (uint16_t)(TCA_TOP_BOOT - 1u);     // 200 Hz, or ~115 Hz if BOOT_HALF_RATE (config.h)
     TCA0.SINGLE.INTCTRL = TCA_SINGLE_OVF_bm;
     TCA0.SINGLE.CTRLA   = TCA_SINGLE_CLKSEL_DIV16_gc | TCA_SINGLE_ENABLE_bm;
 
@@ -164,5 +166,7 @@ ISR(USART0_RXC_vect) {
         op = b;                                            // value-taking opcode
     } else if (b == 'R') {                                 // reset to nominal
         TCA0.SINGLE.PERBUF = (uint16_t)(TCA_TOP - 1u); corrupt_n = 0; dropout_n = 0; pulse_w = 0;
+    } else if (b == 'H') {                                 // bench half-rate (~115 Hz), glitch-free via PERBUF
+        TCA0.SINGLE.PERBUF = (uint16_t)(TCA_TOP_HALF - 1u);
     }
 }

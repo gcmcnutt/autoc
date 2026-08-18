@@ -46,8 +46,13 @@ def updi_reset():
     subprocess.run([PYMCU, 'reset', '-d', 'attiny416'], capture_output=True, timeout=60)
 
 def usb_preflight():
-    """Bench replugs shuffle busids and drop attachments. Attach anything bound-but-detached before starting."""
-    out = subprocess.run(['usbipd.exe', 'list'], capture_output=True, text=True, timeout=30).stdout.replace('\r', '')
+    """Bench replugs shuffle busids and drop attachments. Attach anything bound-but-detached before starting.
+    Native-Linux bench (no usbipd interop): nothing to attach — devices are direct USB."""
+    try:
+        out = subprocess.run(['usbipd.exe', 'list'], capture_output=True, text=True, timeout=30).stdout.replace('\r', '')
+    except FileNotFoundError:
+        print("  (pre-flight: native Linux host, no usbipd — skipping)", flush=True)
+        return
     for vidpid, name in (('f4ec:1410', 'SPD1168X'), ('03eb:2145', 'mEDBG')):
         for line in out.splitlines():
             if vidpid in line and 'Attached' not in line:

@@ -1,7 +1,10 @@
 # Verified BOM — 031 Beacon-Camera Phase 1 (Printable Order Checklist)
 
 **Audit date**: 2026-05-18
-**Status**: ⚠️ **DEFERRED / LIKELY STALE (flagged 2026-06-17).** This is the **full camera-pipeline** Phase-1 BOM (camera + lens + filter + Lattice CrossLink-NX-EVN recorder + the cube-mounted target pod). 031 has since been **re-scoped to a 1-bit single-IR-sensor acquisition-research phase** (camera pipeline deferred), and the 20 Hz / 480 fps rethink has not been re-applied here — **do not order from this document as-is.** The current order target is the emitter→receiver bench loop: emitter = [`../../cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md), receiver = [`../../cad/beacon-receiver/eval-loop-bom.md`](../../cad/beacon-receiver/eval-loop-bom.md). Revisit/refresh this camera BOM when the camera phase un-parks.
+**Status**: ⚠️ **DEFERRED / LIKELY STALE (flagged 2026-06-17). §D PARTIALLY UN-PARKED 2026-08-08** —
+the camera+FPGA analysis buy (D1/D2/D3 equivalents) now lives in the active
+[`cad/beacon-eval/beacon-order-04.md`](../../cad/beacon-eval/beacon-order-04.md); the rest of this doc
+remains deferred. This is the **full camera-pipeline** Phase-1 BOM (camera + lens + filter + Lattice CrossLink-NX-EVN recorder + the cube-mounted target pod). 031 has since been **re-scoped to a 1-bit single-IR-sensor acquisition-research phase** (camera pipeline deferred), and the 20 Hz / 480 fps rethink has not been re-applied here — **do not order from this document as-is.** The current order target is the emitter→receiver bench loop: emitter = [`../../cad/beacon-eval/verified-bom-eval.md`](../../cad/beacon-eval/verified-bom-eval.md), receiver = [`../../cad/beacon-receiver/eval-loop-bom.md`](../../cad/beacon-receiver/eval-loop-bom.md). Revisit/refresh this camera BOM when the camera phase un-parks.
 > _Original status (2026-05-18): Cart-ready for ordering. Spec corrections (§0) queued as task **T007a** to apply before US1 hand-build._
 
 > **Print this for the order phase, then update the markdown as parts arrive.** Cart letters group items by vendor for batched checkout.
@@ -164,6 +167,17 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
 
 - [ ] **D1**  Arducam B0162 OV9281 1MP Global Shutter MIPI module ×1 + 1 spare — ~$70
   - [ ] received  •  notes:
+  - **REQUIREMENT, not a preference (operator 2026-08-04)**: **global shutter** and **manual /
+    fixed exposure+gain**. Both are load-bearing against the sun, and a part that lacks either is
+    disqualified regardless of price or resolution.
+    - *Global shutter*: a rolling shutter smears a saturated sun across a whole column, converting a
+      ~2 px event into a full-height stripe that can cross the beacon track. Global shutter keeps it
+      local. Blooming/anti-blooming behaviour is a separate spec line — ask for it explicitly.
+    - *Manual exposure*: the array's ~48 dB of spatial ambient rejection (optics-record §3a) is the
+      whole reason to use a camera, and **frame-averaged auto-exposure throws all of it away** — a sun
+      anywhere in a 120° field crushes global exposure and blanks the beacon everywhere. Fixed
+      exposure, or ROI metering locked to the track. This is the array's version of the decoder AGC
+      windup problem in [`lensed_pd_range.py`](lensed_pd_range.py) §8.
 - [ ] **D2**  Arducam B0264 USB-UVC Camera Shield ×1 + 1 spare (bench-mode UVC streaming) — ~$90
   - [ ] received  •  notes (MIPI flex shipped with kit? Y/N):
 - [ ] **D3**  Lattice CrossLink-NX-EVN board (LIFCL-40-EVN) ×1 — Lattice direct or Mouser — ~$300-400
@@ -174,6 +188,26 @@ Datasheet page 5 Section 6.5: I_CL = 2.1 min / **2.8 typ A**. More margin than s
   - **First-receiver check (task T044)**: confirm absence of IR-cut filter.
 - [ ] **D5**  850 nm bandpass filter ×1 + 1 spare — Edmund Optics #65-679 (10 mm dia, 850 ± 5 nm CWL, 10 nm FWHM) OR Thorlabs FB850-10 (1" dia, 850 ± 2 nm CWL, 10 ± 2 nm FWHM) — ~$140-180
   - [ ] received  •  notes (which vendor / CWL + FWHM as labeled):
+  - ⚠️ **CORRECTED 2026-08-04 — a 10 nm filter is the WRONG part if mounted INTERNALLY, and buying it
+    for that job wastes $140-180.** A dielectric bandpass blue-shifts with angle of incidence,
+    λ(θ) = λ₀·√(1 − (sin θ / n_eff)²). Behind the lens the marginal ray arrives at arctan(1/2F#), so
+    the passband must be wide enough to still contain it
+    ([`lensed_pd_range.py`](lensed_pd_range.py) §7):
+
+    | F/# | marginal ray | blue shift | min passband |
+    |---:|---:|---:|---:|
+    | 1.6 | 17.4° | 13.2 nm | **26 nm** |
+    | 2.0 | 14.0° | 8.7 nm | **17 nm** |
+    | 2.4 | 11.8° | 6.1 nm | 12 nm |
+
+    A 10 nm passband at F/1.6–2.0 throws the outer pupil off-band — it effectively stops the lens
+    down, discarding exactly the aperture gain the lens was bought for. **Internal ⇒ ≥30 nm.** This
+    independently confirms the C-14 "budget 40 nm-class" decision (resolved 2026-07-26 on cost
+    grounds) with an optical reason, and it is why the ELP all-in-one lens+filter is the right part.
+  - **A narrow filter is only correct FRONT-MOUNTED** (collimated space): at our 9.8° field the shift
+    is 1.07 nm — negligible. Keep this line only if a front-mount experiment is wanted, and note the
+    C-14 lens front surface is **convex**, so a flat filter needs a standoff adapter ring, not a
+    face mount. Otherwise **do not order.**
 - [ ] **D6**  SanDisk Extreme Pro V30 microSD 64 GB ×2 + 1 spare — ~$75
   - [ ] received  •  notes:
 - [ ] **D7**  Pololu D24V10F5 5V 1A buck ×1 + 1 spare — ~$20
