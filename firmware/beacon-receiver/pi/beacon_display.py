@@ -15,7 +15,7 @@ DEG = 0.304
 def grid_size(rows, cols):
     """Fit the grid to the terminal: reserve 3 rows above + 10 below + 2 border cols; keep ~1.6:1 aspect
     (320:200 px on ~2:1 character cells -> width:height ≈ 3.2:1 in chars)."""
-    gw = max(20, min(cols - 10, 100))
+    gw = max(20, min(cols - 10, 240))          # use the whole terminal width (was capped at 100)
     gh = max(6, min(rows - 14, int(gw / 3.2)))
     gw = min(gw, int(gh * 3.2))
     return gw, gh
@@ -66,7 +66,12 @@ def main(stdscr):
             x, y = last["x"], last["y"]; code = last["code"]
             gx = 1 + int(x / PXW * GW); gy = 3 + int(y / PXH * GH)
             ch = '@' if last.get("lock") else '?'
-            if 1 <= gx <= GW and 3 <= gy < 3+GH: put(stdscr, gy, gx, ch, curses.A_BOLD | curses.A_REVERSE | COL.get(code, 0))
+            if 1 <= gx <= GW and 3 <= gy < 3+GH:
+                a_ = curses.A_BOLD | COL.get(code, 0)
+                if GW >= 120:                          # big grid: 3-wide marker with wings
+                    put(stdscr, gy, gx-1, '(', a_); put(stdscr, gy, gx+1, ')', a_)
+                    put(stdscr, gy-1, gx, '^', a_); put(stdscr, gy+1, gx, 'v', a_)
+                put(stdscr, gy, gx, ch, a_ | curses.A_REVERSE)
             xc = x - (PXW-1)/2; yc = y - (PXH-1)/2          # centred pixel coords (041 convention)
             sname, scol = SIDE[code]
             side = f"code {code} = {sname} ({scol})"
