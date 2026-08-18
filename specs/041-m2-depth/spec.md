@@ -112,6 +112,22 @@ not depend on either.
   wrong.** Keep the same *geometry* (radius, height) both sides and make **engage mid-cylinder** in both;
   **do NOT move the virtual origin** (revisit that need — z sign should not matter). Fix arena *sizes* if
   they differ
+- Q: What numeric tolerance gates the `Es` sim-vs-flight comparison? → A: **Deferred and de-scoped** — the
+  active variation classes make cross-scenario comparison hard to quantify. Judge **subjectively** at first;
+  refine only if the strategy works
+- Q: How is the arena resolved, and how is the hard deck established? → A: **Same arena size both sides;
+  entry at the 3D centre of the cylinder; deck placement is MANUAL** (sim: configured above ground; flight:
+  operator decision, mitigated by starting well above ground). **No HAT sensor needed yet**
+- Q: Is energy an absolute quantity to minimise? → A: **No — it is RELATIVE to the target's height.**
+  Climbing to a target above costs energy and is correct; a target below lets height be spent as energy.
+  **Arena exit is a FAIL and exists for safety — scoring should just work**
+- Q: Where does the sim's initial position come from? → A: `crrcsim/autoc_config.xml`'s `<launch
+  altitude="82">` — **82 FEET = 24.9936 m**, matching `SIM_INITIAL_ALTITUDE` to 6.4 mm — plus entry
+  variations, of which the **position** ones are zeroed while attitude/speed still vary
+- Q: How much position/altitude accuracy must flight assume? → A: **INAV is the source of truth** for these
+  phases; GPS/baro drift is out of scope
+- Q: Is the variation *ramp* still earning its place on M1? → A: **No — disabled** (`VariationRampStep`
+  → 0, done 2026-08-18). ⚠️ Variations themselves **stay ON** (all four classes)
 
 ---
 

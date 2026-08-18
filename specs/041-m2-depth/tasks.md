@@ -95,10 +95,30 @@ against the pinned prior M1, not on a purpose-built controlled pair.
   screens mis-rank in both directions. [findings](ablation/ta01-t1-elite-findings.md)
 - [X] P1-2 ✅ TA03 `Es`/`Ps` from existing dmps — spiral bleeding energy; `Ps` orthogonal to progress
   (r = −0.048), 24–32 m/s spread at matched progress.
-- [ ] P1-3 Conditional contribution for limit-class inputs — pooled averages nearly deleted the third most
+- [ ] P1-3 **[LOW — reassess before doing]** Conditional contribution for limit-class inputs. ⚠️ Value
+  dropped since it was filed: SC-015 now demotes contribution to *"at most a screen"* and names **ablation as
+  the verdict**, after the pooled metric mis-ranked inputs in **both** directions. Worth doing only if a
+  cheap conditional view would have prevented that — otherwise close it and rely on ablation. Original:
+  conditional contribution for limit-class inputs — pooled averages nearly deleted the third most
   important input in the vector. (was TA02)
 
 ## Phase 2 — IMPLEMENT (ONE format break, one owed re-bake)
+
+⛔ **Constitution I (Testing-First) applies to every task below — currently the largest gap in this plan.**
+Phase 2 changes the input vector, the arena frame and the persistence schema at once; the 041 T041e episode
+showed what that costs untested — four projection tests carried literals silently encoding a retired
+60° half-field, and one passed *only* because `0.375` and `120` happen to be exactly representable in binary.
+Per task, before the implementation:
+
+| task | test obligation |
+|---|---|
+| P2-1 `CraftCommonInputs` | layout/count assertions hold for BOTH modes after the split; struct size == COUNT × 4, no padding |
+| P2-2 inputs | semantics per slot (the T040 pattern): `Es` non-negative and reconciling with airspeed; `BOUNDARY_CLOSURE_RATE` sign convention (+ = toward wall) and **cadence-invariance at two rates**; `SCORE_GRAD_*` zero at the score maximum and pointing uphill off it |
+| P2-3 arena | egress fires at exactly the configured floor/ceiling/radius; **engage lands mid-cylinder** in sim as it does in flight |
+| P2-4 recording | round-trip: every emitted column reads back; `Es`/`Ps` survive serialisation |
+| P2-5 `Ps` axis | ⚠️ **the muting guard** — a policy that climbs toward a HIGH target must not score worse than one that does not. This is the one test that would catch 035's failure re-entering |
+| P2-6 land it | full suite green with **banner count verified**, not just exit status |
+
 
 - [ ] P2-1 Shared **`CraftCommonInputs`** sub-struct: the 17 slots M1 and M2 share get **one definition**
   instead of two. Operator: *"sensor inputs to m1 and m2 are the same except for target representation."*
@@ -145,7 +165,22 @@ capacity is not the constraint. Settled; reopen only on new evidence.
 
 ## Phase 4 — BAKE AND FLY
 
-- [ ] P4-1 [OP] Pre-run gate, then the production M1 bake. Judge on `pctInStreak` / `avgMaxStreak`.
+- [ ] P4-1 [OP] Pre-run gate (Constitution IX — launch via `scripts/train.sh`, never a background task),
+  then the production M1 bake.
+  ⚠️ **Judge against AC-1's THREE parts, not fitness alone** (corrected 2026-08-18 — the previous wording
+  said only *"judge on `pctInStreak` / `avgMaxStreak`"*, which is the fitness half and omits the actual
+  target):
+  1. **fitness holds** — tracking occupancy within noise of the pinned prior M1's **30.9%**
+     (`stpPt ≥ FitStreakThreshold`, the one definition Study A and the per-gen logs share). Do not
+     substitute a differently-defined tracking metric.
+  2. ⭐ **aggressiveness DOWN** — per-axis `dCtrl` and `⟨|u|⟩` versus the prior M1. **This is the target.**
+     Both come from the existing report set (`per_axis_aggressiveness`, `run-summary` `dctrl_*`/`mag_*`) and
+     from [study-a/](study-a/) for the prior-M1 side — no new tooling.
+  3. **energy improving** — `Ps` better while fitness holds, which is what distinguishes a genuinely calmer
+     controller from a **muted** one (035's failure).
+  ⚠️ Judged **subjectively at first** per AC-1 — no numeric thresholds until the strategy shows signal.
+  ⚠️ Compare on the **charts against the pinned prior M1**, not a purpose-built controlled pair: large
+  changes are visible in the ordinary report set (methodology note, Phase 0).
 - [ ] P4-2 [OP] Pin `retain=keep` + archive weights. **This is 043's hard dependency.**
 - [ ] P4-3 [OP] M1 flight → playback → energy validation. ⚠️ Remove the GPS before flashing; both targets,
   bench first.

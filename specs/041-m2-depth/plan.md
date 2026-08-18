@@ -57,8 +57,10 @@ Phase 0 owes only their remaining *constants*:
 | removed: `IN_ENVELOPE`, `ENVELOPE_SECS` | ablation-evidenced | — |
 | retained: `ACCEL_Y`, `DIST_TO_BOUNDARY` | ablation-evidenced, against my own screen | — |
 
-**Exit**: the datum table has no UNVERIFIED cells, every new constant has a measured basis, and the
-hard-deck mechanism is chosen (sensed or set) rather than assumed.
+**Exit**: the datum table has no UNVERIFIED cells, every new constant has a measured basis, and the hard
+deck is **configured and recorded** — its placement was decided on 2026-08-18 (manual, both sides; no HAT
+sensor), so what remains is setting it and ensuring the value reaches the flight log, not choosing a
+mechanism.
 
 ## Phase 1 — ANALYSIS (reads only; no rebuild, no bake)
 
