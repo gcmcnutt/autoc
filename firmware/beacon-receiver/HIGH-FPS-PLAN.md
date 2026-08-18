@@ -115,3 +115,28 @@ Consequences: (a) signal headroom is not the daylight problem — sky background
 wants ~200 µs, not 2 ms (the "manual exposure is load-bearing" requirement, now with a number);
 (c) 8-bit is the tight axis — 10-bit mode buys 4× headroom for ~20 % fps. Emitter bench 'H' mode
 (~115 Hz, camera-measured 121 Hz) is live; run the camera at its 280 ceiling for 2.3 samples/chip.
+
+## Will a Raspberry Pi 5 reach 453 fps? — research verdict (2026-08-17)
+
+**Confirmed**: the OV9281 works on Pi 5 with the same `dtoverlay=ov9281`, same mode table (309.79 max @
+640×400 stock) — RPi forum thread + vendor "all Pi models incl. Pi 5" claims. **Pi 5 pipeline is different
+in kind**: RP1 CSI-2 front-end + PiSP ISP; raw V4L2 (`/dev/video0`) is NOT a drop-in path (an RPi engineer:
+"the Pi 5 pipeline is more complex … you need to configure it via Media Controller"); rpicam/libcamera is
+the sanctioned route (that suits us — our tools are already rpicam-raw). Pi 5's CSI-2 receiver is faster
+(4-lane-capable, higher link rate) and the SoC has ~3× the per-core CPU.
+
+**NOT confirmed anywhere: a measured OV9281 rate above the stock 309.79 on Pi 5.** Nobody has published
+it — the same "custom mode" gap as on Pi 3; the Pi 5 threads stop at "it works, ~90 fps met my need". So
+the honest expectation, not a promise: **the Pi 3's ~280 ceiling was a per-FRAME cost (identical at 640×400
+and 640×200) → on the Pi 5's much faster CSI front-end + CPU that ceiling should rise substantially, and
+our patched 640×200 mode (sensor advertises 589 fps) is the tool that would show it.** 453 fps at 640×200
+on Pi 5 = plausible-to-likely; ~600 possible; the risk is a new per-frame limit inside PiSP/libcamera at
+those rates. **This is a ~$80 experiment with a ready-made recipe** (patched ov9282.c + fps_probe.py +
+the same rpicam-raw harness — all transfer as-is).
+
+**Recommendation**: yes, buy a **Pi 5 (4 GB is plenty)** — for 453 fps *and* two other reasons that make
+it the right host regardless of the fps result: (1) **dual CSI ports = the birded pair on one board**;
+(2) ~3× per-core CPU + a real NEON budget for the tracker-bank without threading heroics. Order with the
+official 27 W PSU and an active cooler (sustained rpicam-raw pegs a core). Keep the 3A+ as the bench/
+flight-mass reference. First act on arrival: `dtoverlay=ov9281`, rebuild the patched module against the
+Pi 5 kernel (`rpi-6.18.y`/`v8-16k`), `fps_probe.py --modes 640:200:8 --fps 400,453,520,600`.
