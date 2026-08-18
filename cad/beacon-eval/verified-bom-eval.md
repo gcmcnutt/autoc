@@ -14,6 +14,22 @@
 
 ---
 
+
+> **Bench vs FLIGHT (2026-08-17)** — `beacon-eval.kicad_sch` is the BENCH sheet (XNANO-416 on J1). It now
+> carries the **OVP clamp: D2 15 V zener (cathode→V_OUT, anode→FB) + R3 1 k in series FB→sense** — same
+> on both builds. The **flight cube differs in exactly three components + the MCU block**:
+>
+> | Ref | Bench (this sheet) | Flight cube |
+> |---|---|---|
+> | L1 | 22 µH B82464 | **4.7 µH SPM4020T-4R7M-LR** (order-03 C-9) |
+> | R1 sense | 3.74 Ω (51 mA) | **0.62 Ω CRL1206 (306 mA)** |
+> | D1 Schottky | MBR130 | **SS1030** SOD-123 |
+> | MCU | XNANO ATtiny416 dev board via J1 | **bare ATtiny412 SOIC-8** (order-03 C-26), serial-UPDI header, `-DBOOT_HALF_RATE` per cube |
+> | Input net | as drawn | + damped bulk leg (3–4× 10 µF electrolytic) + 4.7 µF ceramic at VIN (the 4.7 µH bring-up lesson) |
+>
+> No separate flight sheet yet — the topology is identical; a `beacon-flight` sheet gets drawn when the
+> cube board is laid out (A7-2).
+
 ## What the eval validates
 
 In three orthogonal checks:
