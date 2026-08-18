@@ -33,6 +33,24 @@ Building a tracking problem on that foundation would have measured the foundatio
 - A validated datum chain, proven by an M1 flight.
 - The measured camera model (97.3° × 60.8°, equidistant, 0.304 °/px).
 
+## ⚠️ The sensor model is NOT settled — a 1.56 mm lens is on order
+
+Operator 2026-08-18: *"042 has ordered a 1.56mm lens which is close to 120deg fov. So that part of m2 is
+dependent on range and response findings anyway."*
+
+So M2's perception scope cannot be fixed yet. The tree currently carries the **1.8 mm** measurement
+(97.3° × 60.8° derived from 320×200 @ 0.304 °/px), and 031 retired the single-fisheye-at-120° assumption
+**for that lens**. A 1.56 mm near 120° would partially reverse that, which changes:
+
+- the blind-gap distribution — 041's T082 figure is a **lower bound** measured at 120°×90°, and a genuinely
+  120° lens moves reality back toward it;
+- the **predictor's value**, since its whole justification is bridging blind gaps (fewer/shorter gaps ⇒ less
+  to predict);
+- whether the **birded pair** is needed at all — its main justification was reaching 120°.
+
+⛔ **Do not spec M2's perception against either lens until 042 measures the 1.56 mm and reports range +
+response.** Waiting is cheap; specifying twice is not.
+
 ## Sequencing
 
 **041 (better M1, flown) → 042 (physics/camera, child of 031) → 043.**
