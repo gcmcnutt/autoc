@@ -64,8 +64,15 @@ capacity is not the constraint. Settled; reopen only on new evidence.
 - [ ] P3-1 Per-hop datum checks, each against something independent. (was TD05)
 - [ ] P3-2 ⭐ Renderer **`'a'` mode** acceptance test — the one place actual flight is shown in world
   coords, so the only place a datum error is *visible* rather than inferred. (was TD06)
-- [ ] P3-3 ⚠️ **Numeric `Es` sim-vs-flight comparison.** Cannot be eyeballed: a trace can sit perfectly on
-  the arena while `Es` carries a constant offset — invisible in a picture, fatal in an objective. (was TD08)
+- [ ] P3-3 **`Es` sanity check — SUBJECTIVE, not a numeric gate (de-scoped 2026-08-18).** Operator: *"Prob
+  defer. The variations work signals that comparison is perhaps hard to quantify across the scenarios."* With
+  entry / wind / rabbit-speed / craft variations all active, "the same state in sim and flight" is not well
+  defined, so a paired numeric tolerance has no clean denominator.
+  **Do**: confirm `Es` is plausible and self-consistent — non-negative, kinetic term reconciling with measured
+  airspeed, no sign or unit error, no gross constant offset between a sim run and the flight.
+  **Do not**: invent a tolerance to gate on. ⚠️ The bar is judged **subjectively at first**; the real target is
+  *good fitness with less aggressiveness*, with energy as the indicator. Refine after the strategy shows
+  signal. (was TD08)
 
 ## Phase 4 — BAKE AND FLY
 

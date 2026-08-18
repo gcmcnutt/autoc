@@ -65,8 +65,18 @@ not depend on either.
 
 ## Acceptance criteria (rescoped)
 
-- **AC-1 — "better M1" is COMPOUND**: tracking occupancy **within noise of the pinned prior M1 (30.9%)**
-  *and* a **measurable energy improvement** (`Ps`-based).
+- **AC-1 — "better M1" = good fitness with LESS AGGRESSIVENESS, indicated by better energy management.**
+  Operator 2026-08-18: *"The real goal here is good fitness with less aggressiveness. Directly indicated by
+  better energy management. Subjective initially and if strategy works then we refine."*
+  - **fitness**: tracking occupancy within noise of the pinned prior M1 (30.9%) — i.e. do not buy calm by
+    giving up the task;
+  - **aggressiveness DOWN**: per-axis `dCtrl` / `⟨|u|⟩`, the metrics Study A already reports. This is the
+    *target*, and it was missing from the first draft of this criterion;
+  - **energy management**: the *indicator* that the reduction is real rather than mere muting — `Ps` improving
+    while fitness holds.
+  ⚠️ **SUBJECTIVE INITIALLY, and deliberately so.** No numeric thresholds yet: quantifying the bar before the
+  strategy has shown it can work is how a gate gets loosened later to fit the result. Refine **after** the
+  approach demonstrates signal, not before.
   ⚠️ Compound deliberately, because the two can trade: adding an energy axis may legitimately cost a little
   tracking, so a pure tracking bar could fail a genuinely better controller — while a pure energy bar could
   certify a **muted** one, which is the exact failure mode 035 produced. Neither half alone is a valid gate.
