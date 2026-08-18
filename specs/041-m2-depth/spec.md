@@ -31,13 +31,29 @@ tracking problem on an untrusted foundation.
 ## IN scope
 
 - Energy: `SPECIFIC_ENERGY` input + `Ps`-based lexicase axis (the observation *and* the objective — neither alone).
+  ⛔ **`Ps` is NOT a "minimise energy" pressure.** Operator 2026-08-18: *"energy is relative. If target is
+  above (−z) then we have to add lower to climb generally. And if target is below we can use height as
+  energy to burn. All normal."* So spending energy to climb toward a high target is **correct behaviour**,
+  and an axis that punished it would recreate the muting in a new form. The axis must reward *efficiency
+  against what the task demanded*, never low `Ps` as such — which is the same state-conditioned point that
+  motivated `Ps` over throttle amplitude, now with a concrete mechanism: the target's relative height says
+  whether potential energy is being **bought** or **spent**.
   ⛔ The `Ps` axis **REPLACES** the existing `energy_score` axis (`sum((out_th − 1)/2)`, a throttle-amplitude
   penalty). It is not added alongside it: that axis **is** 035's energy objective and is the absolute-quantity
   pressure that muted the regiment, so keeping both would retain the defect next to its own fix. They also
   conflict by construction — full throttle is correct when far behind, which the old axis always penalises and
   `Ps` correctly does not. `Ps` is orthogonal to task progress (r = −0.048); throttle amplitude is not.
 - Input-vector revision per [input-vector-proposal.md](input-vector-proposal.md), on TA01 ablation evidence.
-- Datum unification + HAT analysis per [toolchain-datum-validation.md](toolchain-datum-validation.md).
+- Datum unification per [toolchain-datum-validation.md](toolchain-datum-validation.md).
+  **Arena (decided 2026-08-18)**: same size both sides, entry at the **3D centre of the cylinder**, hard deck
+  placed **manually** (sim: configured above ground; flight: operator decision, mitigated by starting well
+  above ground). No HAT sensor.
+  ⛔ **Arena exit is a FAIL, and the arena exists for SAFETY** — not as a scoring dimension. Operator:
+  *"any exit the arena is a fail so really for safety. Scoring should just work."* The boundary **inputs**
+  (`DIST_TO_BOUNDARY`, `BOUNDARY_CLOSURE_RATE`) let the policy learn to avoid the terminal cost; **no
+  potential-based boundary shaping term is added to the objective.** This supersedes the earlier FR-034 /
+  FR-036 proposal to make containment a shaped gradient — the terminal fail plus the inputs is the whole
+  mechanism.
   ⛔ **NOT an origin move.** Operator 2026-08-18: *"revisit the need to change arena origin… in the general
   sense z sign should never matter."* Scope is: **same arena geometry both sides** (radius, height), **engage
   mid-cylinder** in both, and fix arena *sizes* if they differ. The virtual origin stays where it is.

@@ -15,22 +15,22 @@ Scope: [spec.md § SCOPE RESET](spec.md) · Phases: [plan.md § PLAN RESET](plan
 - [ ] P0-2 **HAT analysis** — crrcsim's ground, field elevation and starting height-above-terrain: what they
   are, and where they must land under a unified datum. Operator: *"we need to make sure we twiddle the
   offsets for crrcsim too."*
-- [ ] P0-4 ➕ **ARENA UPDATE research — how does each side KNOW where the hard deck is?** (added 2026-08-18)
-  The *definition* is settled — **the arena bottom is the hard deck** — but the two sides have different
-  information: the sim has real terrain, the aircraft has none (today the floor is implicitly `z_engage + K`,
-  i.e. wherever you happened to engage). Decide: **a real HAT source, or an explicit manual setting.**
-  Answer, by measurement or explicit choice: (a) is any on-aircraft HAT source trustworthy — baro drifts,
-  GPS altitude is poor, a rangefinder is hardware we do not have; (b) if manual, *what* is set and *when*
-  (field elevation at arm? a deck offset below it?), and it MUST be recorded in the flight log or `Es`
-  cannot be reconstructed post-flight; (c) what the failure mode is when the deck is set wrong, since a
-  mis-set deck moves the floor under a flying aircraft and containment terminates on egress.
-  ⚠️ **Research, not implementation** — the answer must be a mechanism that tolerates a **changing** deck
-  (*"hard deck or ground will eventually vary"*, and outside-in arena entry is plausible), not a constant
-  baked into a config. (was TD04, analysis half)
-- [ ] P0-3 Size `kScoreGradScale` from recorded ticks — the way `kAccelScale_g` was sized from the ±11 g
-  flight record, never picked as a round number.
-
-**Exit**: no UNVERIFIED cells; every new constant has a measured basis.
+- [ ] P0-4 ➕ **ARENA — DECIDED 2026-08-18, now implementation not research.** Operator: *"Make it the same
+  size for both cases. And generally entering at the origin in the 3d center of the cylinder. For sim we need
+  to ensure manually that the hard deck bottom of arena is above ground. And this is a manual decision in
+  flight for now. We just start way above ground in these early runs."*
+  1. **Same arena size both sides** — one radius, one height, sim and flight.
+  2. **Entry at the 3D centre of the cylinder** — mid-band vertically *and* centred horizontally. Flight
+     already does the vertical half (`resolveEngageArena`, ±K); **the sim does not** (engages 21% up its
+     band) — that is the change.
+  3. **Hard deck placement is MANUAL, both sides.** Sim: ensure by configuration that the arena bottom sits
+     above the crrcsim ground. Flight: an operator decision, mitigated by **starting well above ground** in
+     these early runs.
+  ⛔ **No HAT sensor, and no sensing question to answer.** The earlier framing asked whether baro/GPS/
+  rangefinder could supply a deck; the answer is that none is needed yet — start high enough that a
+  mis-placed deck cannot be reached. Revisit only when flights get low or terrain varies.
+  ⚠️ Still true: whatever deck value is used **must be recorded in the flight log**, or `Es` cannot be
+  reconstructed post-flight.
 
 ## Phase 1 — ANALYSIS (reads only) — closing, not opening
 
