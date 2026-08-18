@@ -2290,6 +2290,41 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 
 ---
 
+## 042 spin-offs — sensing beyond the cooperative beacon (filed 2026-08-17, from the 042 strategy discussion)
+
+### [M3/M4] ST multizone ToF — close-in ranging AND non-broadcasting targets (operator 2026-08-17)
+
+**Operator note**: *"ST has a 30 m range ToF with a 2D array — we've noted this before as perhaps the mode
+to use when close in — and for the cases where the target does NOT broadcast their position — this is m3
+or m4 stuff."*
+
+- **Why it is interesting beyond ranging**: the whole 031/042 chain discriminates by Gold code, so it only
+  ever sees a *cooperative* target. A 2-D ToF array sees geometry, not cooperation — it is the natural
+  sensor for an opponent that does not carry a beacon. That is an M3/M4 capability question, not a 042 one.
+- **Second use**: ToF is the only thing that resolves **multipath** directly — metres of path difference is
+  exactly its resolution and is ~10⁻⁹ of a chip in code phase (see 042 spec §9). But the cheaper answer to
+  multipath is the birded stereo pair already on the roadmap, so ToF is not needed *for that*.
+- ⚠ **VERIFY THE PART before anything leans on it**: the commodity ST multizone family (VL53L5CX /
+  VL53L7CX / VL53L8CX, 4×4 or 8×8 zones) is **~4 m class**. A 30 m-class multizone SKU is a newer/longer-
+  range part — confirm against a datasheet (range vs ambient, FOV, frame rate, mass, power) before quoting
+  the number downstream.
+- **Tradeoff the operator flagged**: *"tradeoffs on too many sensors of course."* Each added sensor costs
+  mass, power, wiring, a coordinate convention, a calibration and a failure mode. Ranking for the airframe:
+  stereo pair (already committed, solves multipath + ranging + photons) > AHRS (already aboard) >
+  polarizer (grams, passive, 3 dB) > ToF (heaviest, narrowest, but the only non-cooperative sensor).
+
+### [042-D data, research later] Multipath over water — the pond at the park
+
+A specular pond reflection **carries the same Gold code** and is **near-equal brightness at grazing
+incidence**, so the code — the entire discrimination scheme — is blind to it. Full analysis, the ranked
+discriminators (`q_fine/q_coarse` extent, scintillation, mirror-pair geometry, stereo disparity), the
+Brewster-polarizer experiment, and the height-above-water inversion are written up in
+[042 spec §9](042-camera-receiver/spec.md). **042 buys option value only**: record the three fields, apply
+the same-code pair rule, and capture raw over the pond (plus a bench water-tray proxy on the pan rig).
+Research proper is 043-or-later.
+
+---
+
 ## Completed / Superseded
 
 - ~~Sigma Floor~~ — done (015 Phase 1)
