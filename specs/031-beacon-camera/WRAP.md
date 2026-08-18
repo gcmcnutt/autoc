@@ -1,4 +1,13 @@
-# 031 — wrap plan (drafted 2026-08-17)
+# 031 — WRAP (closed 2026-08-17)
+
+**Status: 031 is a wrap.** Delivered: a proven Gold-code IR emitter (bench + flight design, OVP, UVLO,
+115/200 Hz modes), a 1-pixel receiver field-proven in direct sun, a CDMA correlator with DPLL/AGC on FPGA
+and ported to the camera, and a verified Pi/OV9281 camera toolchain that reads the code and tracks the
+beacon in real time with the camera model measured for 041. **The only 031 items left open are the two
+flight emitter cubes (A7, parts in transit) — kept in this spec as the emitter build task; everything
+sensor-side moves to 042-camera-receiver.** Below: the wrap plan as it stood, for the record.
+
+## (original) wrap plan — drafted 2026-08-17
 
 ## Where 031 landed (the deliverables, as built)
 | Area | Outcome | Evidence |
