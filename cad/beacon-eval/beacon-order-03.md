@@ -207,7 +207,8 @@ carries RC drift: per-beacon DPLL, +2.6 % skew bench-verified.)
   general stock).
 - [X] **C-23** *(O2-6)* ~~20 MHz XO + LDO fallback~~ — MOOT.
 
-- [ ] **C-27** *(NEW 2026-08-17; GEOMETRY CHECKED same day)* **850 nm bandpass DISC for the 1.8 mm fisheye** —
+- [ ] **C-27** *(NEW 2026-08-17; GEOMETRY CHECKED same day; **DEMOTED to insurance** — the AliExpress
+  fisheye SKUs ship with a selectable 850 nm filter option, order-04 lens list)* **850 nm bandpass DISC for the 1.8 mm fisheye** —
   the lens's rear is a FLAT black face with a ~5 mm aperture (last element slightly recessed) and NO filter
   seat; the holder has no step either → **a small ~8 mm × ~1 mm disc rests against the lens's rear face
   centred on the aperture** (mechanical capture with a thin O-ring/foam against the holder wall, or 3

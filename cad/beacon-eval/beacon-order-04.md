@@ -142,6 +142,11 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   Cheap enough to measure on the ruled mat like the 1.8; verify it's fisheye (f·θ) not rectilinear, and
   NOT "IR-cut". Reality check: 120° H on a 1/4″ chip needs ~1.1–1.2 mm TRUE focal length — the birded
   pair stays the physics-honest 120°+ route; this lens tests how far a single optic gets.
+  **Buy it WITH the vendor's filter option (operator 2026-08-17: the SKUs come with selectable filters)**:
+  choose the **"850nm / IR-pass" variant** — NOT "IR-cut/650nm/day" (blocks 850, poison) and not the bare
+  "IR/no filter" one. On these fisheyes the filter is usually glued to the lens's rear face (stays with the
+  lens; the holder's square well stays free for other glass). If a bandwidth is stated, ~30–50 nm is right;
+  a "10nm" option would be the WRONG one (LED linewidth). This makes the separate C-27 squares optional.
 
 ## Explicitly NOT in this order
 - Thorlabs 10 nm filter (deferred to 040, front-mounted — order-03 C-14 rationale).
