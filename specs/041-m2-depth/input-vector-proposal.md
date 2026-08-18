@@ -31,7 +31,7 @@ definition. Layout order is preserved; only the declaration is factored.
 | 5 | `AIRSPEED` | `getRelVel()`, **raw m/s** | ~8–25 m/s (cruise 13) | — |
 | 6–8 | `GYRO_P/Q/R` | `getGyroRates()`, body rad/s | ±~6 rad/s | — |
 | 9–11 | `ACCEL_X/Y/Z` | `specific_force.h` ÷ `kAccelScale_g` (8) | measured: X [−0.19, +0.21], Y [−0.07, +0.07], **Z [−1.39, +0.50]** | ⭐ **RETAINED incl. ACCEL_Y** |
-| 12 | **`SPECIFIC_ENERGY`** | `Es = h_agl + v²/2g`, ÷ `kEnergyScale_m` | Es measured 5–110 m ⇒ **[0.05, 1.1]** at scale 100 | 🆕 **NEW** |
+| 12 | **`SPECIFIC_ENERGY`** | `Es = h_hd + v²/2g` ÷ `kEnergyScale_m`, where `h_hd` = height above the **arena floor (hard deck)** | measured p05 **27.1** / med **43.5** / max **98.0** m ⇒ **[0.19, 0.71]** at scale 139 | 🆕 **NEW** |
 | 13 | **`BOUNDARY_CLOSURE_RATE`** | outward radial velocity `(p·v)/‖p‖` ÷ `kCruiseSpeed_mps` | measured p05/p95 **−17.1 / +17.0 m/s**, std 11.4 ⇒ ~[−1.3, 1.3] | 🆕 **NEW** (replaces the time-to-boundary idea) |
 | 14 | `DIST_TO_BOUNDARY` | `tanh(d / 20 m)` | measured [0.12, 1.0], >0.95 for 92.8% of ticks | ⭐ **KEEP — see below** |
 | 15–17 | `INWARD_BODY_X/Y/Z` | `inwardBodyDirection()`, unit vector | [−1, 1] | — |
@@ -104,9 +104,49 @@ streak multiplier weights it by how much reward is currently at stake.
 altitude/height/AGL term at all**, so `Es = h + v²/2g` was unobservable: the policy had the `v²` half and
 never the `h` half. That is the mechanical explanation for 035's energy objective muting the whole
 regiment.
-⚠️ **Compute `h` as AGL, not from the sim's virtual-frame z.** The dmp's position is engage-relative
-(z ≈ 0 at start); AGL is what exists in flight. Using the virtual datum would train against a quantity the
-aircraft cannot reproduce.
+
+### The datum: height above the HARD DECK, not AGL and not the virtual origin
+
+Operator 2026-08-17: *"agl vs the virtual origin — probably ok for now — or elevation above hard deck, the
+bottom of the arena perhaps?"* **Take the hard deck**, and the code says the reason is stronger than
+convenience:
+
+⚠️ **AGL is NOT reproducible in flight.** In sim, `checkArenaBounds` derives
+`alt_agl = -(pos.z + SIM_INITIAL_ALTITUDE)` — ground-referenced, because the sim knows where the ground is.
+In flight, `resolveEngageArena` builds the band as `floor_z_ned = z_engage + K` — **engage-centred**,
+because the aircraft does not know ground height. An AGL input would therefore have been a sim-only
+quantity: exactly the same class of error as the virtual-origin datum it was meant to avoid.
+
+**Height above the arena floor is defined identically in both**, because both carry an explicit floor.
+`h_hd = floor_z − z` in each frame's own terms. Three further arguments:
+
+1. It is the **operationally meaningful** quantity — energy above the deck is energy you can actually
+   spend; below it is a crash.
+2. It **unifies FR-034 with FR-037**: running out of energy and hitting the floor are the same failure, so
+   containment and energy management stop being separate concerns.
+3. "Hard deck" is the air-combat term for exactly this, which keeps it consistent with the Boyd E-M framing
+   the rest of the proposal borrows.
+
+Measured on t1 with the hard-deck datum: `h_hd` p05 14.1 / med 28.4 / max 77.7 m; `v²/2g` med 14.2, max
+43.6 m; **`Es` p05 27.1 / med 43.5 / max 98.0 m**. Zero ticks below the deck — and negative `Es` is
+*meaningful* (below the deck), not an error to clamp.
+
+### ⚠️ PRE-EXISTING GAP FOUND WHILE CHECKING THIS — the band is placed differently in sim and flight
+
+| | floor relative to engage | ceiling relative to engage |
+|---|---:|---:|
+| **sim** (5–100 m AGL, engage at 25 AGL) | **20 m below** | 75 m above |
+| **flight** (`resolveEngageArena`, K = 47.5) | **47.5 m below** | 47.5 m above |
+
+Same 95 m band, **different placement**. A policy trained with 20 m of room beneath it will fly with 47.5 m.
+This is **not introduced by `SPECIFIC_ENERGY`** — it already affects `DIST_TO_BOUNDARY`, which the ablation
+just showed is the third most important input in the vector. It deserves its own decision (centre the sim
+arena on engage, or ground-reference the flight arena when altitude is trustworthy) and is filed rather
+than fixed here.
+
+**Mitigation for the input itself**: normalise by the **band** (`ceiling − floor` = 95 m in both), so the
+slot means *"energy height as a fraction of my usable vertical band"* — identical semantics either side,
+even while the placement question is open.
 ⚠️ Give **`Es` (the state), not only `Ps` (the rate)**. `Es` is the integral; making the recurrent layer
 accumulate it wastes capacity already unfilled (effective rank 11.3 of 16). `Ps` remains available to the
 *objective* without being an input.
@@ -157,7 +197,7 @@ rate carry the load that `DIST_*`/`CLOSING_RATE` carry in M1. That is the whole 
 
 | constant | proposed | rationale |
 |---|---|---|
-| `kEnergyScale_m` | **100.0** | arena ceiling 100 m AGL + cruise kinetic term ~8.6 m ⇒ Es lands in ~[0.05, 1.1], tanh-friendly without saturating |
+| `kEnergyScale_m` | **139.0** | band (95 m) + max observed kinetic term (43.6 m). Measured Es lands in **[0.19, 0.71]** — comfortably inside the unit without saturating, and with headroom above the observed max |
 | *(none — `kCruiseSpeed_mps` reused)* | 13.0 | `BOUNDARY_CLOSURE_RATE` normalises by cruise speed, an existing constant. Measured ±17 m/s ⇒ ~±1.3, which is tanh-friendly without a new knob |
 | `kScoreGradScale` | **TBD from data** | ∂score/∂position magnitude ≈ 1/`FitDistScale` (~0.14 m⁻¹) × multiplier (1–5). Measure on recorded ticks before fixing, the way `kAccelScale_g` was sized from the ±11 g record |
 

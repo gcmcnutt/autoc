@@ -100,6 +100,35 @@ Hardware binds at step 3 (PPO sample counts) and step 4 (larger contexts), not b
 
 ## 041 deferrals
 
+### [041 TA03 follow-up, filed 2026-08-17] The arena band is PLACED differently in sim and in flight
+
+Found while choosing the datum for the new `SPECIFIC_ENERGY` input. Not caused by it — it affects every
+altitude-derived input **that already ships**, including `DIST_TO_BOUNDARY`, which the TA01 ablation just
+measured as the **third most important input in the vector** (−40.7% pooled, −25.0% on the field path).
+
+| | floor rel. engage | ceiling rel. engage |
+|---|---:|---:|
+| **sim** — `checkArenaBounds`, 5–100 m AGL with engage at 25 m AGL | **20 m below** | 75 m above |
+| **flight** — `resolveEngageArena`, `floor_z_ned = z_engage + K`, K = 47.5 | **47.5 m below** | 47.5 m above |
+
+Same 95 m band, different placement. A policy trained with 20 m of room beneath it flies with 47.5 m, and
+every altitude-derived observation shifts accordingly.
+
+**Why it is like this**: 039 D5 made the baked arena a geometry *template* whose *placement* is
+engage-scoped, because the aircraft does not know ground height. That is sound reasoning for flight; the
+gap is that the sim never adopted the same placement rule.
+
+**Options, none free:**
+1. **Centre the sim arena on engage** to match flight. Fitness-affecting (changes the vertical envelope
+   every M1/M2 run trains against) ⇒ a re-bake, so it belongs in a format-break bundle.
+2. **Ground-reference the flight arena** when altitude is trustworthy. Needs a reliable AGL source the
+   aircraft currently does not have.
+3. **Normalise every altitude input by the band** so the slot means "fraction of usable vertical band"
+   rather than metres. Cheapest, and what the `SPECIFIC_ENERGY` proposal adopts — but it makes the inputs
+   agree while the *geometry* still differs, so it mitigates rather than resolves.
+
+⚠️ Worth deciding before the next M1 bake, since option 1 is only free during a format break.
+
 ### [041 smoke session, filed 2026-08-13] Portable run review — the renderer is bound to an X display, and that is now a workflow tax
 
 **Operator 2026-08-13**, mid-smoke: *"the current renderer isn't a portable web page — we prob should do
