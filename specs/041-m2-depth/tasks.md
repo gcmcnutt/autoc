@@ -632,3 +632,42 @@ time and can change everything after them.**
 ### D — per-tick advantage (later; see specs/BACKLOG.md → 042 candidate)
 
 - [ ] TA13 Critic/value head reusing 041's extra-head machinery + the recorded per-step reward, giving `A(s,a) = Q − V`. ⚠️ The point of the learned baseline is that **the optimum never has to be known** — `V(s)` only has to RANK actions. `Ps/Ps_max` is the hand-built baseline; do it first so we know what the learned one must beat.
+
+### B′ — datum unification, proven end-to-end (see [toolchain-datum-validation.md](toolchain-datum-validation.md))
+
+⛔ **Belongs INSIDE the TA04–TA07 format break.** Moving the frame is fitness-affecting and orphans every
+recorded dmp; done separately it costs a second re-bake. Operator 2026-08-17: *"is prob a good time to do
+this."*
+
+- [ ] TD01 ⚠️ **MEASURE every altitude datum in the chain before changing any of them.** Eleven hops, at
+  least four distinct references (scenery ground, `<launch altitude="82">`, the −25 m virtual mid-band
+  origin, the arm point, the engage point). ⛔ **The 82-vs-25 question is open and must be answered by
+  measurement, not inspection**: it is not established what `autoc_config.xml`'s launch altitude is
+  relative to, nor that it reconciles with `SIM_INITIAL_ALTITUDE`. Produce the filled-in table in
+  toolchain-datum-validation.md, replacing every UNVERIFIED cell with a measured number.
+- [ ] TD02 Move the virtual origin from mid-band to the **arena floor (hard deck)**: `SIM_INITIAL_ALTITUDE`
+  and every consumer (`arena.h` ×6, `scenario_stepper.h`, `inputdev_autoc.cpp` `pathOriginOffset`, the
+  renderer's add-back, the arena tests). ⚠️ **`z = 0` becomes a defined physical surface**, so `h_hd = −z`
+  needs no conversion and `Es ≥ 0` holds by construction.
+- [ ] TD03 Resolve the **band-placement** disagreement in the same commit (sim floor 20 m below engage vs
+  flight 47.5 m) — see specs/BACKLOG.md. ⛔ Do NOT ship TD02 without deciding TD03: they touch the same
+  frame, and fixing one while leaving the other creates a *new* inconsistency between the definition and
+  the placement.
+- [ ] TD04 Adjust the crrcsim side — scenery ground, field elevation, starting HAT — so the FDM's launch
+  state lands where the unified datum expects. Operator: *"we need to make sure we twiddle the offsets for
+  crrcsim too."*
+- [ ] TD05 Per-hop validation, each against something independent (table in the plan doc). ⚠️ Not "it
+  compiles" — each conversion checked: launch height reads back, egress fires at the configured floor,
+  playback sits at the dmp's altitude, bench height reads through MSP, logged `pos_raw` matches blackbox on
+  the clock-anchor fit.
+- [ ] TD06 ⭐ **Renderer `'a'` mode is the ACCEPTANCE TEST.** It is the one place actual flight is shown in
+  world coords (`renderer.cc:2518` uses `pos_raw`), so it is the only surface where a datum error is
+  *visible* rather than inferred — a craft flying underground, or a hovering arena. Everywhere else a wrong
+  offset produces plausible numbers. Flown trace must sit on the arena with the ground plane at the ground.
+- [ ] TD07 [OP] **M1 flight**, then playback, as the end-to-end proof: sim → renderer → xiao flight →
+  playback → energy. ⚠️ Standing procedure: **remove the GPS before flashing INAV**, and build/flash BOTH
+  targets, bench first.
+- [ ] TD08 ⚠️ **NUMERIC energy check — the one that cannot be eyeballed.** `Es` from the flight log vs `Es`
+  from a sim run in comparable states. A trace can look perfect on the arena while `Es` carries a constant
+  offset, because a constant offset is invisible in a picture and fatal in an objective. Requires a number,
+  not a screenshot.
