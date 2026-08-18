@@ -57,19 +57,33 @@ def main():
                     state["img"] = np.asarray(im); state["n"] += 1
                 except Exception: pass
     threading.Thread(target=reader, daemon=True).start()
-    plt.ion(); fig, ax = plt.subplots(figsize=(10, 6.5)); fig.canvas.manager.set_window_title("focus view")
-    art = ax.imshow(np.zeros((H, W), dtype=np.uint8), cmap="gray", vmin=0, vmax=255); ax.set_axis_off()
-    # centre-crop box = the sharpness ROI
-    ax.add_patch(plt.Rectangle((W//2-80, H//2-80), 160, 160, fill=False, ec="lime", lw=1))
-    title = ax.set_title("connecting...")
+    plt.ion()
+    fig = plt.figure(figsize=(18, 11)); fig.canvas.manager.set_window_title("focus view")
+    try: fig.canvas.manager.full_screen_toggle()          # go fullscreen if the backend allows
+    except Exception: pass
+    # layout: big number strip on top (readable across the room), image below
+    ax_num = fig.add_axes([0.0, 0.72, 1.0, 0.28]); ax_num.set_axis_off()
+    ax     = fig.add_axes([0.0, 0.0, 1.0, 0.72]); ax.set_axis_off()
+    art = ax.imshow(np.zeros((H, W), dtype=np.uint8), cmap="gray", vmin=0, vmax=255, aspect="auto")
+    ax.add_patch(plt.Rectangle((W//2-80, H//2-80), 160, 160, fill=False, ec="lime", lw=3))
+    big  = ax_num.text(0.5, 0.62, "----", ha="center", va="center", fontsize=140, fontweight="bold",
+                       family="monospace", color="lime", transform=ax_num.transAxes)
+    sub  = ax_num.text(0.5, 0.12, "connecting...", ha="center", va="center", fontsize=28,
+                       family="monospace", color="white", transform=ax_num.transAxes)
+    ax_num.set_facecolor("black"); fig.patch.set_facecolor("black")
     fig.canvas.mpl_connect("key_press_event", lambda e: plt.close(fig) if e.key == "q" else None)
+    title = None
     best = 0.0
     try:
         while plt.fignum_exists(fig.number):
             im = state["img"]
             if im is not None:
-                art.set_data(im); best = max(best, state["metric"])
-                title.set_text(f"sharpness {state['metric']:8.1f}   (best so far {best:8.1f})   turn lens for MAX  |  frame {state['n']}  {a.fps} fps  sh={a.shutter}us g={a.gain}  |  q quits")
+                art.set_data(im); m = state["metric"]; best = max(best, m)
+                big.set_text(f"{m:7.0f}")
+                # colour cue: green near best, yellow mid, red far
+                r = m / best if best > 0 else 0
+                big.set_color("lime" if r > 0.9 else ("yellow" if r > 0.6 else "tomato"))
+                sub.set_text(f"best {best:7.0f}   |   turn lens for MAX   |   frame {state['n']}   {a.fps} fps   sh={a.shutter}us  g={a.gain}   |   q quits")
             fig.canvas.draw_idle(); plt.pause(0.15)
     finally:
         try: sock.close()
