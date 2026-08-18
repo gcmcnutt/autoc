@@ -10,7 +10,7 @@ Keys: q quit.  The number in the title is the focus metric (higher = sharper); i
 import argparse, io, socket, subprocess, sys, threading, time
 import numpy as np
 from PIL import Image, ImageFilter, ImageStat
-import matplotlib; matplotlib.use("QtAgg")
+import matplotlib; matplotlib.use("GTK3Agg")
 import matplotlib.pyplot as plt
 
 def main():
