@@ -1,3 +1,70 @@
+# ⛔ TASK RESET 2026-08-17 — 041 = "a fresh full M1 toolchain, flown"
+
+**THIS BLOCK GOVERNS.** Everything below is the historical 136-task M2-depth list, retained for provenance.
+Scope: [spec.md § SCOPE RESET](spec.md) · Phases: [plan.md § PLAN RESET](plan.md).
+
+⛔ **MOVED OUT — do not work these here**: T060, T081–T098 and the whole predictor/M2-bake thread go to
+**[043](../043-m2-tracking/README.md)**. Camera follow-ups go to **042**. Boundary redesign is already in
+`specs/BACKLOG.md`.
+
+## Phase 0 — PREP (no code, no bake)
+
+- [ ] P0-1 ⛔ **Datum inventory — measure, do not infer.** Fill every UNVERIFIED cell in
+  [toolchain-datum-validation.md](toolchain-datum-validation.md). **Ends with the
+  `<launch altitude="82">` vs `SIM_INITIAL_ALTITUDE = −25` reconciliation answered by measurement.** (was TD01)
+- [ ] P0-2 **HAT analysis** — crrcsim's ground, field elevation and starting height-above-terrain: what they
+  are, and where they must land under a unified datum. Operator: *"we need to make sure we twiddle the
+  offsets for crrcsim too."* (was TD04, analysis half)
+- [ ] P0-3 Size `kScoreGradScale` from recorded ticks — the way `kAccelScale_g` was sized from the ±11 g
+  flight record, never picked as a round number.
+
+**Exit**: no UNVERIFIED cells; every new constant has a measured basis.
+
+## Phase 1 — ANALYSIS (reads only) — closing, not opening
+
+- [X] P1-1 ✅ TA01 ablation on the pinned t1 elite — **H1a fails**; `DIST_TO_BOUNDARY` 3rd most important;
+  screens mis-rank in both directions. [findings](ablation/ta01-t1-elite-findings.md)
+- [X] P1-2 ✅ TA03 `Es`/`Ps` from existing dmps — spiral bleeding energy; `Ps` orthogonal to progress
+  (r = −0.048), 24–32 m/s spread at matched progress.
+- [ ] P1-3 Conditional contribution for limit-class inputs — pooled averages nearly deleted the third most
+  important input in the vector. (was TA02)
+
+## Phase 2 — IMPLEMENT (ONE format break, one owed re-bake)
+
+- [ ] P2-1 Shared **`CraftCommonInputs`** sub-struct: the 17 slots M1 and M2 share get **one definition**
+  instead of two. Operator: *"sensor inputs to m1 and m2 are the same except for target representation."*
+- [ ] P2-2 Input vector per [input-vector-proposal.md](input-vector-proposal.md): **add**
+  `SPECIFIC_ENERGY`, `BOUNDARY_CLOSURE_RATE`, `SCORE_GRAD_X/Y/Z`; **remove** `IN_ENVELOPE`,
+  `ENVELOPE_SECS`; **retain** `ACCEL_Y` and `DIST_TO_BOUNDARY` on ablation evidence.
+- [ ] P2-3 **Datum unification**: virtual origin → arena floor; band placement resolved in the SAME commit;
+  crrcsim offsets adjusted. ⛔ Origin and placement together or neither. (was TD02/TD03/TD04)
+- [ ] P2-4 Recording: full input vector + `Es`/`Ps` per tick. (was TA04/TA05)
+- [ ] P2-5 Objective: `Ps`-based efficiency as a **lexicase axis**. ⛔ Never a scalar penalty; never without
+  P2-2's energy input — an axis for an unobservable is what muted 035.
+- [ ] P2-6 [OP] Land it: version bump, `rebuild-perf.sh` with banners counted, xiao host compile,
+  Constitution VI audit.
+
+⚠️ **RNN architecture is NOT changing.** Effective rank 11.1–11.8 of 16, flat over 608 generations —
+capacity is not the constraint. Settled; reopen only on new evidence.
+
+## Phase 3 — VALIDATE (per hop, before spending a bake)
+
+- [ ] P3-1 Per-hop datum checks, each against something independent. (was TD05)
+- [ ] P3-2 ⭐ Renderer **`'a'` mode** acceptance test — the one place actual flight is shown in world
+  coords, so the only place a datum error is *visible* rather than inferred. (was TD06)
+- [ ] P3-3 ⚠️ **Numeric `Es` sim-vs-flight comparison.** Cannot be eyeballed: a trace can sit perfectly on
+  the arena while `Es` carries a constant offset — invisible in a picture, fatal in an objective. (was TD08)
+
+## Phase 4 — BAKE AND FLY
+
+- [ ] P4-1 [OP] Pre-run gate, then the production M1 bake. Judge on `pctInStreak` / `avgMaxStreak`.
+- [ ] P4-2 [OP] Pin `retain=keep` + archive weights. **This is 043's hard dependency.**
+- [ ] P4-3 [OP] M1 flight → playback → energy validation. ⚠️ Remove the GPS before flashing; both targets,
+  bench first.
+- [ ] P4-4 Outcome doc: every hypothesis with its evidence, including the refuted ones.
+
+---
+
 # Tasks: 041 — M2 Depth (observation-side objectives)
 
 **Input**: Design documents from `/specs/041-m2-depth/`

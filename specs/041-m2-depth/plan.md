@@ -1,3 +1,64 @@
+# ⛔ PLAN RESET 2026-08-17 — five phases, traditionally structured
+
+**GOVERNS.** Everything below is the historical M2-depth plan, retained for provenance.
+Scope: [spec.md § SCOPE RESET](spec.md). Goal: **a fresh full M1 toolchain, flown.**
+
+## Phase 0 — PREP (no code, no bake)
+
+Settle what is known before touching anything. Cheap, and each item can change the phases after it.
+
+- Datum inventory: measure every altitude reference in the eleven-hop chain. ⛔ Ends with the
+  `<launch altitude="82">` vs `SIM_INITIAL_ALTITUDE = −25` question **answered by measurement**.
+- HAT analysis: what crrcsim's ground / field elevation / starting height-above-terrain actually are, and
+  where they must land under a unified datum.
+- Size `kScoreGradScale` from recorded ticks, the way `kAccelScale_g` was sized from the ±11 g record.
+
+**Exit**: the datum table has no UNVERIFIED cells, and every new constant has a measured basis.
+
+## Phase 1 — ANALYSIS (reads only; no rebuild, no bake)
+
+Already largely done — this phase is closing, not opening.
+
+- ✅ TA01 ablation on the pinned t1 elite — H1a **fails**; `DIST_TO_BOUNDARY` is the 3rd most important
+  input; contribution screens mis-rank in both directions.
+- ✅ TA03 `Es`/`Ps` off existing dmps — spiral confirmed bleeding energy; `Ps` orthogonal to progress
+  (r = −0.048) with 24–32 m/s spread at matched progress.
+- Remaining: conditional-contribution reporting for limit-class inputs (TA02).
+
+**Exit**: the input vector and the objective terms are decided on evidence, not suspicion.
+
+## Phase 2 — IMPLEMENT (one format break)
+
+Everything schema- or frame-affecting lands in **one commit**, per the FR-005 discipline the A1 bundle
+used. Nothing fitness-affecting lands after it until the bake completes.
+
+- Input vector: `SPECIFIC_ENERGY`, `BOUNDARY_CLOSURE_RATE`, `SCORE_GRAD_*`; remove the envelope pair;
+  retain `ACCEL_Y` and `DIST_TO_BOUNDARY` on ablation evidence.
+- Shared `CraftCommonInputs` sub-struct — the 17 shared slots get **one definition** instead of two.
+- Datum unification: virtual origin → arena floor, band placement resolved, crrcsim offsets adjusted.
+- Recording: full input vector + `Es`/`Ps` in the dmp.
+- Objective: `Ps`-based efficiency as a **lexicase axis** (never a scalar penalty, never without the input).
+
+⚠️ **The RNN architecture is NOT changing.** Measured effective rank 11.1–11.8 of 16, flat across 608
+generations — capacity is not the constraint, so widening it would spend search on a non-problem. Settled;
+do not reopen without new evidence.
+
+## Phase 3 — VALIDATE (per hop, before spending a bake)
+
+Each conversion checked against something independent — see
+[toolchain-datum-validation.md](toolchain-datum-validation.md). ⭐ Renderer `'a'` mode is the acceptance
+test for the datum chain; ⚠️ the numeric `Es` sim-vs-flight comparison is the one that cannot be eyeballed.
+
+## Phase 4 — BAKE AND FLY
+
+- Production M1 bake under the revised objective. Judge on `pctInStreak` / `avgMaxStreak`.
+- Flight, playback, energy validation. ⚠️ Remove the GPS before flashing INAV; build both targets, bench
+  first.
+
+**Exit = the feature**: a better M1, flown, with energy numbers that agree between sim and air.
+
+---
+
 # Implementation Plan: 041 — M2 Depth (observation-side objectives)
 
 **Branch**: `041-m2-depth` | **Date**: 2026-08-07 | **Spec**: [spec.md](spec.md)

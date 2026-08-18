@@ -1,3 +1,62 @@
+# ⛔ SCOPE RESET 2026-08-17 — 041 is now "a fresh full M1 toolchain, flown"
+
+**This section GOVERNS. Everything below it is historical record for the M2-depth scope 041 originally
+carried, retained for provenance and superseded where it conflicts.**
+
+Operator 2026-08-17: *"041 is now too large. Let's plan to stop this one at better m1 with energy etc. and
+move all the m2 after this to a new feature… Goal is a fresh full m1 toolchain flown."*
+
+## The goal, in one line
+
+**A better M1 — energy-aware, datum-correct — proven end to end by a real flight.**
+Sim → renderer → xiao → flight → playback → valid energy numbers.
+
+## Why the scope had to shrink
+
+041 accumulated 136 tasks across nine phases and three build surfaces. Three findings made the M2 half
+untenable *and* unnecessary to attempt now:
+
+1. **The M1 we would hand to M2 is not good enough.** t1 stopped at gen 608 with `pctInStreak` 16.1%
+   against the prior M1's 30.9% tracking occupancy, and it converged on a tight spiral that is
+   objective-optimal but not what we want to chase with.
+2. **The objective is missing its main term.** The policy cannot observe its own energy (no altitude
+   input), so every prior energy objective muted the whole regiment. That is an M1 defect, and M2 inherits
+   it verbatim.
+3. **The datum chain is unverified** — eleven hops, four references, at least one open question
+   (`<launch altitude="82">` vs `SIM_INITIAL_ALTITUDE = −25`). M2 would build on it.
+
+⚠️ **M2 is not blocked by M2 work. It is blocked by M1.** Continuing M2 inside 041 would have layered a
+tracking problem on an untrusted foundation.
+
+## IN scope
+
+- Energy: `SPECIFIC_ENERGY` input + `Ps`-based lexicase axis (the observation *and* the objective — neither alone).
+- Input-vector revision per [input-vector-proposal.md](input-vector-proposal.md), on TA01 ablation evidence.
+- Datum unification + HAT analysis per [toolchain-datum-validation.md](toolchain-datum-validation.md).
+- One format break carrying all of the above.
+- A production M1 bake, and **an M1 flight that proves the toolchain**.
+
+## OUT of scope → moved
+
+| what | where |
+|---|---|
+| Predictor head design/verdict (US5, T081–T088) | **043** |
+| M2 bake, innovation channels, novel-geometry read (US6, T089–T098) | **043** |
+| M2 smoke, tracker repoint (T060, T095) | **043** |
+| Camera-model follow-ups, lens purchase decision | **042** (child of 031) — needs physics data first |
+| Boundary redesign for open flying | BACKLOG (already filed, 039) |
+
+⚠️ **The directory name `041-m2-depth` is now a misnomer.** Not renamed — the git history, S3 run
+provenance and every cross-reference point at it. Read the name as historical.
+
+## Sequencing beyond 041
+
+**041 (better M1, flown) → 042 (physics/camera data, child of 031) → 043 (M2 tracking).**
+042 first because the camera constants it produces are inputs to M2's sensor model, and measuring them does
+not depend on either.
+
+---
+
 # Feature Specification: 041 — M2 Depth (observation-side objectives)
 
 **Feature Branch**: `041-m2-depth`

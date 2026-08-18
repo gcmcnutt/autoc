@@ -2,7 +2,13 @@
 
 **Last Updated**: 2026-08-16
 
-> **Routing (2026-08-06, 040 wrap)**: 040 closed — see [040 outcome](040-camera-redo/outcome.md).
+> **Routing (2026-08-17)**: **041 rescoped** to *"a fresh full M1 toolchain, flown"* — better M1 with
+> energy observation + objective, unified datum, proven by a real flight. M2 moved to
+> **[043](043-m2-tracking/README.md)**; camera/physics follow-ups to **042** (child of 031). Order:
+> **041 → 042 → 043**. ⚠️ M2 was never blocked by M2 work — it was blocked by M1: the source was not good
+> enough, the objective could not observe energy, and the datum chain was unverified.
+>
+> *(Prior routing, 2026-08-06, 040 wrap)*: 040 closed — see [040 outcome](040-camera-redo/outcome.md).
 > Verdict: *a better camera model, much closer to real, and training results more or less the same —
 > that is the going concern.* Perception fidelity is **not** what caps M2. Next feature is **041**
 > ([seed](041-m2-depth/README.md)), scoped by the operator to three threads: **redo M1**, **control
