@@ -33,3 +33,16 @@ f·θ projection, 95° H × 61° V (`specs/031-beacon-camera/camera-era-knobs.md
 - Raw burst: `rpicam-raw -n -t 2000 --mode 640:400:8 --framerate 250 --shutter 3000 --gain 1 -o /dev/shm/b.raw`
   (tmpfs; SD can't take 64 MB/s). Analysis scripts run on the DGX after `scp`.
 - Bench instruments (PSU `psu.py`, emitter cmd link) live in `firmware/beacon-decoder-stepfpga/host/`.
+
+## Live tracker (2026-08-17) — `pi/beacon_track.py` (Pi) + `pi/beacon_display.py` (DGX), `pi/live.sh`
+- Camera **250 fps** 640×400 8-bit; emitter bench **'H' mode = 115 Hz nominal (measured ~121–123 with the
+  RC skew — pass `--chip 121`; the DPLL-lite tracks the rest)**. 2×2 SUM to 320×200; one-word raw ring;
+  matched filter both Gold codes × 31 phases; ACQUIRE full-field (2.5 s in Python) → TRACK ±16 px ROI
+  (21 ms); HOLD rides ≤6 low-q reports; q scale-free (noise floor ~0.5, lock ≥0.62); centroid + CEP;
+  bearing via measured f·θ; JSON lines every 0.5 s (frame-counted). **30 s run: 49/49 locked, 8 held,
+  chip tracked 121→123.4.**
+- Display: M2 grid 320×200 @ 0.304°/px, centre (0,0), +x right / +y down (041 `camera_projection.h`);
+  **code A = PORT (red), code B = STARBOARD (green)** — aviation nav-light convention.
+- Known limit: Python. Per-frame 1.5 ms of a 4 ms budget; full-field acquire 2.5 s starves the pipe
+  (fps sags then recovers). **Next (A8-6): C/NEON `beacon_trackd`, same pipe in / same JSON out —
+  ~0.05 ms/frame + ~30 ms full-field acquire.**
