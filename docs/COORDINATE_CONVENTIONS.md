@@ -883,3 +883,40 @@ code, not a new one. Options and the decision point are in `specs/BACKLOG.md`.
 (`ceiling − floor`, 95 m in both), so a slot means *"fraction of my usable vertical band"* rather than
 metres from a differently-placed floor. That makes the *inputs* agree while the *geometry* still differs —
 a mitigation, and it should be labelled as one wherever it is used.
+
+## Units at the CRRCSim boundary (041, 2026-08-18)
+
+⚠️ **CRRCSim is FOOT-native; autoc is METRE-native. The bridge converts, and the conversion is easy to
+forget because both units appear in the same files.** Operator 2026-08-18: *"Check CRRCSim unit of measure.
+It is both feet and meters… This is silly but hey we aren't crashing probes into mars quite yet."*
+
+| side | units | frame |
+|---|---|---|
+| CRRCSim FDM (`eom01`) | **feet, ft/s** — `v_P_CG_Rwy`, `v_V_local_rel_ground`, `getAccel`, `getGravity` | north/east/down |
+| autoc `AircraftState` | **metres, m/s** | NED, but **virtual** — engage-relative, origin 25 m AGL |
+| conversion | `FEET_TO_METERS = 0.3048`, `inputdev_autoc.h:53` | applied at the bridge, both directions |
+
+**Both directions appear**: FDM→autoc multiplies (`vGround(0) * FEET_TO_METERS`), autoc→FDM divides
+(`entryAltOffset / FEET_TO_METERS`). A missing conversion is therefore a 3.28× error in one direction and
+0.305× in the other — large enough to be obvious in a trajectory, **but not always obvious in a scalar**.
+
+### ⭐ Worked example — the `82` that looked like a discrepancy
+
+`crrcsim/autoc_config.xml` carries `<launch altitude="82">`. 041 briefly recorded this as an **open
+reconciliation** against `SIM_INITIAL_ALTITUDE = −25`, on the assumption both were metres. They are not:
+
+```
+82 ft × 0.3048 = 24.9936 m   vs   SIM_INITIAL_ALTITUDE = 25 m     → agree to 6.4 mm (0.03%)
+```
+
+**The launch altitude is in CRRCSim's native FEET and it already matches the autoc virtual origin exactly.**
+There was never a discrepancy — only a unit assumption. Recorded here rather than quietly deleted, because
+the *shape* of the mistake (comparing two numbers without first checking they share a unit) is the one this
+section exists to prevent.
+
+### One consequence worth keeping
+
+`autoc/eval/specific_force.h` deliberately takes gravity as a **parameter in the caller's units** rather
+than assuming 9.81, precisely so the ft-native FDM path stays unit-free: `(a_world − g_world)/g` is
+dimensionless whichever unit both sides are in. Prefer that pattern for any new FDM-derived quantity —
+including `Es`/`Ps`, where the altitude and speed terms must share a unit before they are added.

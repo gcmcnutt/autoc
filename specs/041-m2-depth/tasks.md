@@ -15,8 +15,10 @@ Scope: [spec.md § SCOPE RESET](spec.md) · Phases: [plan.md § PLAN RESET](plan
   the sim's initial-position source**, and the *position* entry variations are currently off
   (`EntryPositionRadiusSigma = 0.0`, `EntryPositionAltSigma = 0.0`) — note the *attitude/speed* ones are NOT
   (`EntryConeSigma` 18, `EntryRollSigma` 30, `EntrySpeedSigma` 0.06), so entry state still varies, just not
-  entry *position*. What remains is reconciling 82 against `SIM_INITIAL_ALTITUDE = −25` and the scenery
-  ground. Fill every UNVERIFIED cell in
+  entry *position*. ✅ **RESOLVED 2026-08-18 — there was no discrepancy, only a unit assumption.** CRRCSim is **foot-native**
+  (`FEET_TO_METERS = 0.3048`, `inputdev_autoc.h:53`), so `<launch altitude="82">` is **82 FEET =
+  24.9936 m**, matching `SIM_INITIAL_ALTITUDE = 25 m` **to 6.4 mm (0.03%)**. What remains for P0-1 is the
+  scenery ground reference and the remaining hops — not this. Fill every UNVERIFIED cell in
   [toolchain-datum-validation.md](toolchain-datum-validation.md). **Ends with the
   `<launch altitude="82">` vs `SIM_INITIAL_ALTITUDE = −25` reconciliation answered by measurement.** (was TD01)
 - [ ] P0-2 **HAT analysis** — crrcsim's ground, field elevation and starting height-above-terrain: what they
