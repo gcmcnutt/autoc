@@ -86,6 +86,7 @@ def main(stdscr):
         else:
             put(stdscr, 3+GH+3, 0, " waiting for collector...")
         put(stdscr, 3+GH+9, 0, " legend: @ locked fix   ? unlocked guess   * trail (last 12 fixes)   ^v() halo on big grids   + boresight (0,0)   :/. centre lines   q/Esc quit"[:curses.COLS-1])
+        put(stdscr, 3+GH+10, 0, " fields: q=match quality (scale-free; noise~0.55, lock>=0.62, clean 0.85-0.98)  peak=raw correlation (brightness-scaled; noise~20-60, gate 150)  chip=tracked chip-rate Hz  fps=frames consumed/s (250 nominal; low=catching up)  corr=ms in correlator (~10s acquire / ~15ms track)"[:curses.COLS-1])
         stdscr.refresh()
         try:
             if stdscr.getch() in (ord('q'), 27): break
