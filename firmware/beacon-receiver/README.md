@@ -46,3 +46,17 @@ f·θ projection, 95° H × 61° V (`specs/031-beacon-camera/camera-era-knobs.md
 - Known limit: Python. Per-frame 1.5 ms of a 4 ms budget; full-field acquire 2.5 s starves the pipe
   (fps sags then recovers). **Next (A8-6): C/NEON `beacon_trackd`, same pipe in / same JSON out —
   ~0.05 ms/frame + ~30 ms full-field acquire.**
+
+## 25 ft "intermittent" — diagnosis (2026-08-17): the emitter had reset to 200 Hz, not gain/exposure
+Symptom: tracker intermittent/no-lock with the 5-LED @50 mA string at 25 ft. Suspects in order tested:
+exposure (a 200→3900 µs sweep showed the beacon at 168 counts modulation @2 ms — signal fine, and gain
+buys nothing: lit and floor rise together), the correlator (scored the KNOWN blinking pixel at q≈0.27
+= noise while its series showed a perfect 8:1 code — so the DECODE was failing on a good signal),
+and finally the chip-rate: run-length histogram at the beacon = 1–2 frames/chip → **209.5 Hz — the
+emitter had rebooted to 200-nominal when it lost USB during the move ('H' mode is volatile PERBUF;
+mEDBG dropped, trap #2)** while the tracker templated 121 Hz. `--chip 209` locked immediately (q→0.975).
+Fixes: (1) **acquire is now rate-agnostic** — tries {--chip, ×1.05, 200/210, 115/121} and adopts the
+winner (ring sized for the slowest); (2) 2 ms is the right shutter at 25 ft (`--agc` doubles/halves
+shutter to keep the lit level in band, restarting capture); (3) lesson for the C port: multi-rate
+acquire is ~10 s in Python (6 full-field passes) — fine once, but the reason the port matters.
+Reminder: 250 fps / 209 Hz = 1.19 samples/chip (sub-Nyquist) — locks, but 'H' (115) is the honest mode.
