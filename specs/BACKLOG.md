@@ -2292,11 +2292,11 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 
 ## 042 spin-offs — sensing beyond the cooperative beacon (filed 2026-08-17, from the 042 strategy discussion)
 
-### [M3/M4] ST multizone ToF — close-in ranging AND non-broadcasting targets (operator 2026-08-17)
+### [M3/M4] ST VL53L9CX multizone ToF (~9 m / 30 ft) — terminal ranging AND non-broadcasting targets (operator 2026-08-17)
 
-**Operator note**: *"ST has a 30 m range ToF with a 2D array — we've noted this before as perhaps the mode
-to use when close in — and for the cases where the target does NOT broadcast their position — this is m3
-or m4 stuff."*
+**Operator note**: *"we've noted this before as perhaps the mode to use when close in — and for the cases
+where the target does NOT broadcast their position — this is m3 or m4 stuff … st vl53l9cx — 9m (30ft) —
+an impressive piece of hardware to use for target locked-in mode."*
 
 - **Why it is interesting beyond ranging**: the whole 031/042 chain discriminates by Gold code, so it only
   ever sees a *cooperative* target. A 2-D ToF array sees geometry, not cooperation — it is the natural
@@ -2304,10 +2304,14 @@ or m4 stuff."*
 - **Second use**: ToF is the only thing that resolves **multipath** directly — metres of path difference is
   exactly its resolution and is ~10⁻⁹ of a chip in code phase (see 042 spec §9). But the cheaper answer to
   multipath is the birded stereo pair already on the roadmap, so ToF is not needed *for that*.
-- ⚠ **VERIFY THE PART before anything leans on it**: the commodity ST multizone family (VL53L5CX /
-  VL53L7CX / VL53L8CX, 4×4 or 8×8 zones) is **~4 m class**. A 30 m-class multizone SKU is a newer/longer-
-  range part — confirm against a datasheet (range vs ambient, FOV, frame rate, mass, power) before quoting
-  the number downstream.
+- **The fit is better than it first looks**: 9 m at 13–25 m/s closure is ~0.4–0.7 s — a *terminal* sensor,
+  not a tracking one. But that window is exactly where the beacon correlator is weakest: near field means
+  maximum apparent angular rate (248°/s at 3 m) and therefore minimum usable integration time (042 spec
+  §2.5). ToF is per-frame geometry with no code lock to lose — **the two sensors fail in opposite
+  directions.**
+- ⚠ **Datasheet check before anything leans on it**: FOV (this family is typically ~60–65° diagonal —
+  narrow vs the 95° camera field), zone count, frame rate vs the 20 Hz tick, sunlight and water
+  performance, mass and power.
 - **Tradeoff the operator flagged**: *"tradeoffs on too many sensors of course."* Each added sensor costs
   mass, power, wiring, a coordinate convention, a calibration and a failure mode. Ranking for the airframe:
   stereo pair (already committed, solves multipath + ranging + photons) > AHRS (already aboard) >

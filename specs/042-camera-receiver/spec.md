@@ -279,13 +279,25 @@ worth not designing out.
    **a tray of water under the emitter on the pan rig** gives a real specular pair at controlled geometry —
    enough to measure whether `q_fine/q_coarse` actually separates them before committing to it.
 
-### ToF — parked to M3/M4 (operator note 2026-08-17)
-The physics does favour ToF: metres of path difference is exactly what it resolves and code phase cannot.
-**Operator note: ST has a ~30 m-range multizone ToF with a 2D array** *(part number to VERIFY — the
-commodity VL53L5/L7/L8CX multizone family is ~4 m class; the 30 m-class part is a newer/longer-range SKU
-and must be confirmed against a datasheet before any design leans on it).* Noted before as
-**the mode to use close-in, and for the case where the target does NOT broadcast its position** — i.e. a
-non-cooperative-target sensor. **That is M3/M4 scope, not 042.** Filed to the backlog.
+### ToF — parked to M3/M4 (operator 2026-08-17: **ST VL53L9CX, ~9 m / 30 ft**)
+The physics favours ToF: metres of path difference is exactly what it resolves and code phase cannot.
+The part is the **ST VL53L9CX** — 2-D zone array, **~9 m (30 ft)** range (corrected from the initial
+"30 m"; *"an impressive piece of hardware to use for target locked-in mode"*). Two roles, both M3/M4:
+
+- **Terminal / locked-in ranging.** 9 m at 13–25 m/s closure is ~0.4–0.7 s of engagement — this is a
+  *last-second* sensor, for impact geometry and terminal guidance, not for tracking.
+- **Non-cooperative targets.** The entire 031/042 chain discriminates by Gold code, so it only ever sees a
+  target that *broadcasts*. A 2-D ToF array sees geometry, not cooperation.
+
+**The fit is better than it first looks: the ToF's window is exactly where the beacon correlator is
+weakest.** Near field means maximum apparent angular rate (248°/s at 3 m) and therefore minimum usable
+integration time — the corner §2.5 says the camera cannot integrate through. ToF is per-frame geometry
+with no code lock to lose, so the two sensors fail in opposite directions. (It would also resolve pond
+multipath trivially at that range — but stereo already covers that, so it is not the justification.)
+
+⚠ **Still to check against the datasheet** before any design leans on it: FOV (this family is typically
+~60–65° diagonal — narrow vs the 95° camera field), zone count, frame rate vs the 20 Hz control tick,
+performance against bright sunlight and against water, mass and power. **M3/M4 scope, not 042.**
 
 ---
 
@@ -376,7 +388,8 @@ against real conditions (the framework is 042); 453 fps on Pi 5; the FPGA decisi
 table; the tracker-error-model handoff that lets 041 put sun behaviour back in the sim; true 200 Hz chip
 rate with Gold-31.
 
-**To backlog / M3–M4**: ST multizone ToF for close-in and **non-broadcasting targets**; stereo multipath
+**To backlog / M3–M4**: ST **VL53L9CX** multizone ToF (~9 m) for terminal locked-in ranging and
+**non-broadcasting targets**; stereo multipath
 rejection; the polarizer experiment; the height-above-water inversion; the 120° single-lens question
 beyond measuring the ELP-L156; the flight recorder as a product.
 
@@ -390,7 +403,7 @@ tracking).
 1. Confirm the phasing seam (042 = A–D, E folded in?) before tasks are cut.
 2. Exit-band numbers (§3) — 90 / 150 / 300–500 °/s and ≤1 px RMS — confirm or move.
 3. Recorder default: RAM-ring+trigger vs continuous reduced stream as the flight default.
-4. Verify the ST ToF part number before it is quoted anywhere downstream (§9).
+4. ST VL53L9CX (§9): pull the datasheet for FOV / zones / frame rate / sunlight — M3-M4, no rush.
 
 ---
 
