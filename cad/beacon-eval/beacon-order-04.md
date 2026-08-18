@@ -135,6 +135,14 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   · reference docs <https://digilent.com/reference/programmable-logic/zybo-z7/start>
 - Lattice PSG + EVN UG: archived in-repo at [`firmware/beacon-receiver/`](../../firmware/beacon-receiver/)
 
+## Lens candidates queued (2026-08-17) — the "wider single fisheye" arm of the topology fork
+- **1.56 mm "192°" M12 fisheye** (AliExpress item 3256809401762535, ~$4–8): on the OV9281 predicts
+  **~110–115° H × ~70° V** (vs the 1.8 mm's measured 95×61) — probably just UNDER 120° given the same
+  label-vs-real slop the 1.8 showed (measured 2.25 mm vs "1.8"), and ~½ the light per pixel (0.8 mm pupil).
+  Cheap enough to measure on the ruled mat like the 1.8; verify it's fisheye (f·θ) not rectilinear, and
+  NOT "IR-cut". Reality check: 120° H on a 1/4″ chip needs ~1.1–1.2 mm TRUE focal length — the birded
+  pair stays the physics-honest 120°+ route; this lens tests how far a single optic gets.
+
 ## Explicitly NOT in this order
 - Thorlabs 10 nm filter (deferred to 040, front-mounted — order-03 C-14 rationale).
 - m12lenses PT-02120 fisheye (production-FOV question; analysis runs the 16 mm).
