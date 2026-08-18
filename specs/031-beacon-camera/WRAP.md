@@ -46,8 +46,9 @@
   max-energy gate (journal 2a) — camera-era items already filed there.
 
 ## Wrap criteria (checklist)
-- [ ] Emitter schematic has D3/R4 + regenerated PDF (D3 15 V zener cathode→V_OUT / anode→FB; R4 1 k in
-      SERIES FB→sense — R4 is what keeps the clamp current at ~190 µA instead of the full LED current)
+- [x] Emitter schematic has the OVP clamp + regenerated PDF (**DONE 2026-08-17**: D2 15 V zener
+      cathode→V_OUT / anode→FB; R3 1 k in SERIES FB→sense node — verified on the rendered sheet;
+      refdes on the sheet are D2/R3, the BOM calls them D3/R4 — same parts)
 - [ ] 850 disc on the fisheye; sky-background frame through it (empirical #1)
 - [ ] M2 run at the measured camera model (041) — reduced-FOV verdict
 - [ ] Two cubes built (A/B), regression re-baselined, one field range number recorded
