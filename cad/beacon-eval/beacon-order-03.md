@@ -212,7 +212,19 @@ carries RC drift: per-beacon DPLL, +2.6 % skew bench-verified.)
   seat; the holder has no step either → **a small ~8 mm × ~1 mm disc rests against the lens's rear face
   centred on the aperture** (mechanical capture with a thin O-ring/foam against the holder wall, or 3
   edge dots of canopy glue onto the metal face — never the recessed glass). Buy the ~8 mm size, not
-  12.5 mm. AoI is the lens's CRA (~10°) here, milder than the fisheye field angle → 40 nm is comfortable. **~40 nm-class,
+  12.5 mm. AoI is the lens's CRA (~10°) here, milder than the fisheye field angle → 40 nm is comfortable.
+  **Sources (2026-08-17)**: (a) Amazon **8.2×8.2×1 mm square** 850 nm narrow-pass discs (Quanmin-class,
+  ~$8–10/pc, listing B09MD2WV29 / B09N9S27C1) — an 8.2 mm square covers the 5 mm aperture and fits the
+  ~10 mm bore behind the lens; also **round 8×1 mm** on eBay (item 389163618400). These are the same
+  30–50 nm-class glass the CCTV market uses (vendor rarely states FWHM — measure with the 200 W bulb +
+  camera if it matters). (b) **SyronOptics 850 nm, 40 nm FWHM stated**, custom small sizes (~$20–40) —
+  the specified-spec option. (c) Commonlands 850 bandpass, unmounted, multiple sizes (~$25). Buy (a) ×2
+  now; (b) if a stated FWHM is wanted for the daylight-budget calibration.
+  **Adhesive** (the 16 mm's factory filter is bonded this way): **UV-cure optical adhesive (Norland
+  NOA61/NOA68) or a clear slow-cure epoxy** — 2–3 tiny dots at the disc EDGE onto the black metal rear
+  face, never on the recessed glass. **No cyanoacrylate near optics** (vapour blooms on glass). Practical
+  bench choice: mechanical capture (thin O-ring / foam ring pressing the disc to the lens face) — swappable
+  between lenses, zero adhesive risk; glue only for the flight article. **~40 nm-class,
   NOT 10 nm**: the LED line is ~30 nm (10 nm keeps only ~30 % of our signal) and fisheye rear CRA of 25–35°
   blue-shifts a passband ~5+ nm — half of a 10 nm window. Mount on the holder step, mechanical capture
   (O-ring/foam), no CA near optics. Purpose: empirical #1 (sky background) + outdoor camera work.
