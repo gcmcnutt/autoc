@@ -100,6 +100,35 @@ Hardware binds at step 3 (PPO sample counts) and step 4 (larger contexts), not b
 
 ## 041 deferrals
 
+### [041 TA03 follow-up, filed 2026-08-17] The virtual coordinate origin sits half-way up the band — revisit
+
+Operator 2026-08-17, choosing the `SPECIFIC_ENERGY` datum: *"our virtual coordinate system with origin
+half way up, well, we could consider some changes down the line — this sort of thing is where sim to real
+gets messy."*
+
+`SIM_INITIAL_ALTITUDE = -25 m` puts the virtual origin **25 m AGL**, mid-band, so "z = 0" is neither the
+ground, nor the floor, nor the ceiling — it is the altitude a scenario happens to start at. Consequences
+that keep surfacing:
+
+- every altitude-derived quantity needs an explicit datum conversion, and each conversion is a place to be
+  wrong (the sibling entry above — sim/flight band **placement** disagreeing — is one instance already
+  shipped);
+- "energy" measured from that origin would be measured from an arbitrary offset, which is why 041 chose
+  height above the **arena floor** instead;
+- a reader of `pz` cannot tell whether they hold virtual, raw-NED, or AGL without tracing the call site.
+
+**Candidate**: put the virtual origin at the **arena floor** (hard deck). Then `z` is directly "height in
+the operating band", altitude inputs need no conversion, and `Es ≥ 0` holds by construction rather than by
+observation.
+
+⚠️ **Fitness-affecting and wide-reaching** — it moves the frame every recorded dmp is expressed in. Only
+sane inside a format break with a re-bake, and it interacts with the band-placement decision above; do them
+together or not at all.
+
+**Not urgent.** 041's mitigation (measure from the floor, normalise by the band) makes the inputs correct
+today. This is about removing a standing source of conversion errors, and the trigger should be the next
+format break that is happening anyway.
+
 ### [041 TA03 follow-up, filed 2026-08-17] The arena band is PLACED differently in sim and in flight
 
 Found while choosing the datum for the new `SPECIFIC_ENERGY` input. Not caused by it — it affects every

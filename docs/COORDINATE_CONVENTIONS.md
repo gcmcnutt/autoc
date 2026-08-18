@@ -828,3 +828,58 @@ Gyro rates are in **rad/s**, unscaled. The NN learns the natural scale from trai
 - `gyrR` = r (yaw rate, rad/s)
 Typical range: ±10 rad/s (≈ ±560 deg/s at max roll rate).
 No normalization by max rate — avoids baking INAV rate config into the NN.
+
+## Altitude DATUM as an INTERFACE quantity (041, 2026-08-17)
+
+⚠️ **New status, and filed here for the same reason the accelerometer was** (see the 041 section above):
+altitude is about to become an NN input (`SPECIFIC_ENERGY`), and the moment a quantity crosses the
+sim↔flight boundary its **datum** is as load-bearing as its units and its frame. This project has already
+paid once this month for an unstated frame convention; a datum is the same hazard wearing different
+clothes.
+
+### The three candidate datums, and why only one works
+
+| datum | sim | flight | verdict |
+|---|---|---|---|
+| **virtual-frame z** | engage-relative, z ≈ 0 at start | same | ❌ arbitrary offset; "energy" would be measured from wherever the run happened to begin |
+| **AGL** | `-(pos.z + SIM_INITIAL_ALTITUDE)` — ground-referenced, the sim knows the ground | ❌ **not available** — `resolveEngageArena` centres the band on the engage point precisely because the aircraft has no ground reference | ❌ **sim-only**. Would train against a quantity flight cannot reproduce |
+| **height above the arena floor ("hard deck")** | `floor_agl_m` = 5 m AGL | `floor_z_ned = z_engage + K` | ✅ **defined identically in both**, because both carry an explicit floor |
+
+### Why the hard deck is the RIGHT answer, not merely the available one
+
+**Operator 2026-08-17**: *"elevation above a datum is more energy — would be weird for elevation to go
+negative with velocity positive… specific energy is arguably above the arena floor."*
+
+That objection is the strongest argument FOR this datum. With the hard deck:
+
+```
+Es = h_hd + v²/2g          h_hd = height above the arena floor
+```
+
+**`Es` is non-negative in every VALID state, and `Es < 0` is definitionally out of bounds** — below the
+floor is an egress, not a flight condition. So the variable never has to represent a nonsensical
+combination, and no clamping is needed to keep it sane. (Measured on the 041 t1 run: **0 of 129 519 ticks
+below the deck**.) A datum that put the zero anywhere else — engage point, ground, sea level — would allow
+"negative height, positive speed" states that are physically fine but semantically confusing, exactly the
+weirdness the operator named.
+
+It also makes energy and containment **one concern instead of two**: running out of energy and hitting the
+floor become the same failure.
+
+### ⚠️ The unresolved part — placement, not datum
+
+Sim and flight agree on the *definition* (height above the floor) but **not on where the floor is**:
+
+| | floor relative to engage |
+|---|---:|
+| sim (5–100 m AGL, engage at 25 m AGL) | **20 m below** |
+| flight (`resolveEngageArena`, K = 47.5) | **47.5 m below** |
+
+Same 95 m band, different placement. This already affects `DIST_TO_BOUNDARY` — measured by the 041 TA01
+ablation as the **third most important input in the vector** — so it is a live sim-to-real gap in shipped
+code, not a new one. Options and the decision point are in `specs/BACKLOG.md`.
+
+**Standing guidance until it is resolved**: normalise altitude-derived inputs by the **band**
+(`ceiling − floor`, 95 m in both), so a slot means *"fraction of my usable vertical band"* rather than
+metres from a differently-placed floor. That makes the *inputs* agree while the *geometry* still differs —
+a mitigation, and it should be labelled as one wherever it is used.
