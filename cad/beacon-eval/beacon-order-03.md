@@ -96,7 +96,7 @@ test**; (4) stop stalling on missing passives (kits).
 - [X] **C-13** *(O2-1)* ~~Sense resistor 3.74 Ω 1 % 1206~~ — **✔ CLOSED: DK order 2 delivered ×10**
   (`541-3.74FFCT-ND`, 1/4 W); field 0.62 Ω also confirmed ×10 in order 1 (`CRL1206-FW-R620ELF`, 1/2 W).
   - [X] received — notes: packlists 128637262 line 1 / 127789318 line 6.
-- [ ] **C-26** *(NEW 2026-08-07; **DECIDED 2026-08-10: ATtiny412**; **ORDER NOW 2026-08-17 — gates the two-cube build**)* **Bare flight MCU = ATTINY412
+- [X] **C-26** *(NEW 2026-08-07; **DECIDED 2026-08-10: ATtiny412**; **ORDERED 2026-08-17** — gates the two-cube build)* **Bare flight MCU = ATTINY412
   SOIC-8 ×10** (sweet-spot qty, ~$0.60 ea) — operator call: minimal pod, back to the original design
   target (schematic.md/verified-bom were 412 from the start). Consequences, accepted: **no TOSC pins →
   the crystal path is FORECLOSED for the pod → RC-osc is committed** (the decoder side already carries
@@ -207,8 +207,8 @@ carries RC drift: per-beacon DPLL, +2.6 % skew bench-verified.)
   general stock).
 - [X] **C-23** *(O2-6)* ~~20 MHz XO + LDO fallback~~ — MOOT.
 
-- [ ] **C-27** *(NEW 2026-08-17; GEOMETRY CHECKED same day; **DEMOTED to insurance** — the AliExpress
-  fisheye SKUs ship with a selectable 850 nm filter option, order-04 lens list)* **850 nm bandpass DISC for the 1.8 mm fisheye** —
+- [X] **C-27** *(NEW 2026-08-17; **NOT ORDERED — the ELP-L156 ships with 650/850/940 filters (order-04); these
+  squares are insurance only, buy if the included 850 disappoints**)* **850 nm bandpass DISC for the 1.8 mm fisheye** —
   the lens's rear is a FLAT black face with a ~5 mm aperture (last element slightly recessed) and NO filter
   seat; the holder has no step either → **a small ~8 mm × ~1 mm disc rests against the lens's rear face
   centred on the aperture** (mechanical capture with a thin O-ring/foam against the holder wall, or 3
@@ -282,19 +282,15 @@ carries RC drift: per-beacon DPLL, +2.6 % skew bench-verified.)
 - ~~F_CPU 20→10 MHz~~ **DONE** (ca1fe78) · ~~BOD fuse~~ **DONE** (0x48) · ~~firmware UVLO~~ **DONE &
   verified 3.48 V** (07d195f) — all three closed since the original Order-03 draft.
 
-## Still outstanding (updated 2026-08-07 — DigiKey FULLY CLOSED: C-9's 10th inductor landed)
+## Still outstanding (updated 2026-08-17 — ALL ORDERED except deferrals)
 
-Sections A and C complete; battery decision made (C-24: **150 mAh packs ARE flight hardware**, no buy).
-Remaining:
-1. **C-14 optics validation** — lens ARRIVED 2026-08-05 (integrated 850 filter confirmed; F/2-class
-   pupil) but has NOT yet demonstrated focus — back-focus hunt in progress (bench-journal lens arm).
-   If it fails the bare-sensor test → return + replacement buy. **Still the gate on the 100 m test.**
-2. **C-26 bare flight MCU — DECIDED: ATTINY412 SOIC-8 ×10** (operator 2026-08-10). The one DigiKey buy
-   left on this order; goes in the same cart as the order-04 era.
-3. ~~C-21/C-23 F-section~~ — **CLOSED AS MOOT 2026-08-10** (412 = no TOSC = RC-osc committed; see §F).
-4. **C-11** Luxeonstar MCPCB — only if the C-8 tiles disappoint · **C-19/C-16** closed, nothing to buy.
-5. **Contingency only**: another XNANO (spare margin is gone — see C-4) · more 150 mAh packs if count
-   runs short.
+**Placed today**: **C-26 ATtiny412 SOIC-8 ×10** (DigiKey — the two-cube build unblocks on arrival) and the
+**ELP-L156 1.56 mm fisheye + 650/850/940 filters** (AliExpress, order-04). **In hand**: everything else on
+this order (sections A/B/C/D/E closed; DK fully closed 2026-08-07).
+**Deferred by decision (no buy)**: C-11 Luxeonstar stars (only if hand-mounting the bare L1IZ fails at
+build time — 20 dies on hand), C-15 TSSOP adapters (OPA381 path dormant), C-21/22/23 crystals (moot —
+412/RC committed), C-24 flight pack (150 mAh = flight), C-25 1N4148 (drawer), C-27 850 squares (insurance).
+**Contingency**: XNANO spare (margin gone), more 150 mAh packs.
 
 ## Open decisions gated by this order
 1. ~~Filter FWHM (C-14): 40 nm vs 10 nm~~ — **RESOLVED 2026-07-26: budget 40 nm-class (M12 stack) for
