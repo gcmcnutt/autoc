@@ -32,7 +32,7 @@ definition. Layout order is preserved; only the declaration is factored.
 | 6–8 | `GYRO_P/Q/R` | `getGyroRates()`, body rad/s | ±~6 rad/s | — |
 | 9–11 | `ACCEL_X/Y/Z` | `specific_force.h` ÷ `kAccelScale_g` (8) | measured: X [−0.19, +0.21], Y [−0.07, +0.07], **Z [−1.39, +0.50]** | ⭐ **RETAINED incl. ACCEL_Y** |
 | 12 | **`SPECIFIC_ENERGY`** | `Es = h_agl + v²/2g`, ÷ `kEnergyScale_m` | Es measured 5–110 m ⇒ **[0.05, 1.1]** at scale 100 | 🆕 **NEW** |
-| 13 | **`TIME_TO_BOUNDARY`** | `distanceToBoundary(along vel) / speed`, `tanh(t / kTtbScale_s)` | t ~0–12 s in an 80 m arena at 13 m/s ⇒ [0, 1) | 🆕 **NEW** |
+| 13 | **`BOUNDARY_CLOSURE_RATE`** | outward radial velocity `(p·v)/‖p‖` ÷ `kCruiseSpeed_mps` | measured p05/p95 **−17.1 / +17.0 m/s**, std 11.4 ⇒ ~[−1.3, 1.3] | 🆕 **NEW** (replaces the time-to-boundary idea) |
 | 14 | `DIST_TO_BOUNDARY` | `tanh(d / 20 m)` | measured [0.12, 1.0], >0.95 for 92.8% of ticks | ⭐ **KEEP — see below** |
 | 15–17 | `INWARD_BODY_X/Y/Z` | `inwardBodyDirection()`, unit vector | [−1, 1] | — |
 | 18–20 | **`SCORE_GRAD_X/Y/Z`** | ∂score/∂position (body frame) × streak multiplier | design target ±1 after scaling | 🆕 **NEW**, replaces the envelope pair |
@@ -46,11 +46,43 @@ lateral accel near zero). **Ablation reversed that**: −4.5% on path 5, *worse 
 together*. All-attitude flight has sideslip; that is exactly where lateral accel earns its place, and path 5
 is the field-representative path.
 
+### ⚠️ TIME-TO-BOUNDARY IS RETRACTED — the vehicle never flies straight
+
+The earlier proposal (FR-035) was `distance_along_vel / speed`, i.e. time-to-impact assuming straight
+flight. **Operator 2026-08-17: *"time to boundary is tricky given that neither target, nor chase will be
+flying very often in straight line at any attitude."*** Measured on path 5, that is an understatement:
+
+| | path 5 |
+|---|---|
+| median turn radius | **11.9 m** (arena radius 80 m — 14.8%) |
+| ticks with turn radius < 20 m | **66.6%** |
+| full circle at median turn rate | **4.8 s** |
+
+A 3-second straight-line ray reaches 46 m, but the craft turns ~225° in that time. The ray points somewhere
+it will never be, so time-to-boundary would be a **systematically wrong input** — worse than none, because
+it looks authoritative. Retracted.
+
+**Replacement: `BOUNDARY_CLOSURE_RATE`** — the outward radial velocity component, `(p·v)/‖p‖`. It makes
+**no trajectory assumption whatsoever**: it states how fast the wall is being approached right now,
+whatever the path shape. Two further arguments for it:
+
+1. **It is informative exactly where distance is blind.** `DIST_TO_BOUNDARY` is saturated (>0.99) on 83% of
+   ticks with std 0.042; on those same ticks closure rate still spans **−17.3 to +16.5 m/s**. Position says
+   nothing there; rate says plenty.
+2. **It mirrors a pattern already in the vector.** The target block carries `DIST_*` **and**
+   `CLOSING_RATE` — position plus rate. The boundary had only position. This makes the boundary block
+   consistent with the target block rather than inventing a new idiom.
+
+⚠️ An arc-based projection (using turn rate to follow the actual circular path) is the more sophisticated
+option and is **not** proposed: it swaps a straight-line assumption for a constant-turn-rate assumption,
+and at 3.9 rad/s p95 the turn rate is not constant either. The derivative is assumption-free; prefer it
+until something proves it insufficient.
+
 **`DIST_TO_BOUNDARY` kept, NOT replaced.** FR-035 originally said "replace or supplement". Ablation settles
-it: **−40.7% pooled / −25.0% on path 5, the third most important input in the vector.** Time-to-boundary is
+it: **−40.7% pooled / −25.0% on path 5, the third most important input in the vector.** The closure rate is
 an **addition**, not a substitution. ⚠️ The two are complementary, not redundant: distance says *where the
-wall is*, time says *how long until you hit it at current velocity*. The saturation problem
-(93% of ticks above 0.95) is fixed by adding the time signal, not by removing the distance one.
+wall is*, rate says *whether it is getting closer*. The saturation problem (93% of ticks above 0.95) is
+fixed by adding the rate, not by removing the distance.
 
 **Envelope pair removed.** Ablation: zeroing `IN_ENVELOPE` **improves** path-5 score by 0.3%;
 `ENVELOPE_SECS` costs 0.2%. Both inside noise. They occupy two slots and buy nothing.
@@ -93,9 +125,29 @@ accumulate it wastes capacity already unfilled (effective rank 11.3 of 16). `Ps`
 
 ## M2 target representation — 46 slots, unchanged
 
-`BEACON_L_X/Y/CEP` ×6, `BEACON_R_X/Y/CEP` ×6, `BEACON_PAIR_SPAN` ×6, `SPAN_RATE`, `TARGET_TILT_SIN/COS`,
-`TIME_SINCE_SEEN`. Bearings in radians against the measured 97.3° × 60.8° field; CEP normalised with 1.25
-as the visibility sentinel.
+Ranges measured on the pinned 040-t4 tracker run (131 802 ticks). ⚠️ **That run was captured at the OLD
+120° × 90° field**; at the measured 97.3° × 60.8° the bearing bounds tighten and the blind fraction rises.
+Treat the bearing extremes as an upper bound and the blind fraction as a **lower** bound.
+
+| # | field | source | range (measured on 040-t4) |
+|---|---|---|---|
+| 21–32 | `BEACON_L_X/Y_TM5…NOW` | left-wingtip beacon bearing, camera frame, **radians**, 6 ms-based lags | bounded by the half-field: ±0.849 H / ±0.531 V at 97.3°×60.8° |
+| 33–38 | `BEACON_L_CEP_TM5…NOW` | per-beacon circular error probable, normalised | **[0.02, 1.5]**; **≥1.25 = the visibility sentinel** (invisible) |
+| 39–50 | `BEACON_R_X/Y_TM5…NOW` | right-wingtip beacon, same | as left |
+| 51–56 | `BEACON_R_CEP_TM5…NOW` | same | **[0.02, 1.5]** |
+| 57–62 | `BEACON_PAIR_SPAN_TM5…NOW` | ‖right.xy − left.xy‖ in **radians**, CEP-gated (0.0 when either endpoint is untrusted) | med **0.039**, p95 **0.153**, max 0.99 |
+| 63 | `SPAN_RATE` | d(span)/dt — the range-closure proxy | Δspan p05/p95 **−0.008 / +0.009** per tick |
+| 64–65 | `TARGET_TILT_SIN/COS` | port→starboard tilt of the beacon pair (target roll cue) | [−1, 1]; `cos` med **0.88** (mostly upright) |
+| 66 | `TIME_SINCE_SEEN` | `tanh(blind_seconds / 2.0)` | med **0.0**, p95 **0.52**, max 1.0 |
+
+⚠️ **20.3% of ticks had the left beacon at or beyond the CEP sentinel** — i.e. blind — at the *old, wider*
+field. This is the number FR-024b's blind-gap distribution quantifies, and the reason `TIME_SINCE_SEEN`
+and the span-gating exist at all. It will be **worse** at the measured field.
+
+**Structural note**: M2 has **no direct distance and no direct bearing to the target** — only beacon
+bearings and their separation. Range is inferred from `SPAN` (wider = closer), which is why span and its
+rate carry the load that `DIST_*`/`CLOSING_RATE` carry in M1. That is the whole of the M1↔M2 difference:
+**M1 is told where the target is; M2 must infer it from two points of light.**
 
 **M2 total: 66** (was 63).
 
@@ -106,11 +158,11 @@ as the visibility sentinel.
 | constant | proposed | rationale |
 |---|---|---|
 | `kEnergyScale_m` | **100.0** | arena ceiling 100 m AGL + cruise kinetic term ~8.6 m ⇒ Es lands in ~[0.05, 1.1], tanh-friendly without saturating |
-| `kTtbScale_s` | **3.0** | `tanh(t/3)` keeps resolution across 0–6 s, the window where corrective action is still cheap; beyond ~10 s the distinction stops mattering |
+| *(none — `kCruiseSpeed_mps` reused)* | 13.0 | `BOUNDARY_CLOSURE_RATE` normalises by cruise speed, an existing constant. Measured ±17 m/s ⇒ ~±1.3, which is tanh-friendly without a new knob |
 | `kScoreGradScale` | **TBD from data** | ∂score/∂position magnitude ≈ 1/`FitDistScale` (~0.14 m⁻¹) × multiplier (1–5). Measure on recorded ticks before fixing, the way `kAccelScale_g` was sized from the ±11 g record |
 
-⚠️ `TIME_TO_BOUNDARY` is **rate-derived** ⇒ millisecond-denominated and cadence-invariant, with a two-cadence
-test (the `ENVELOPE_SECS` T040(e) pattern). Same for anything built on `Ps`.
+⚠️ `BOUNDARY_CLOSURE_RATE` is **rate-derived** ⇒ millisecond-denominated and cadence-invariant, with a
+two-cadence test (the `ENVELOPE_SECS` T040(e) pattern). Same for anything built on `Ps`.
 
 ## Fitness vector — separate from the inputs
 
@@ -123,6 +175,6 @@ scalar penalty term**, and never without slot 12 in place: an axis for an unobse
 
 | | before | after |
 |---|---:|---:|
-| M1 | 42 | **45** (+3: Es, TTB, grad×3, −2 envelope) |
+| M1 | 42 | **45** (+3: Es, closure-rate, grad×3, −2 envelope) |
 | M2 | 63 | **66** |
 | shared block | 17 (duplicated) | **20 (one definition)** |
