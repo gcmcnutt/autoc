@@ -1197,8 +1197,15 @@ void Renderer::initialize() {
 
   // Configure the camera
   vtkNew<vtkCamera> camera;
-  camera->SetPosition(-50, 0, -2);        // behind the action
-  camera->SetFocalPoint(0, 0, -10);       // TODO center this on arenas
+  // 041 P2-3 — anchored to SIM_INITIAL_ALTITUDE instead of hardcoded metres.
+  // Same relative framing as before (focal point 10 m above the virtual origin,
+  // camera 8 m below that looking up, 50 m back), but it now follows the world
+  // frame. The literals -2/-10 were written when the origin rendered at 25 m
+  // AGL; 041 moved it to 55 m and the opening view aimed 30 m under the action.
+  // ⚠️ The TODO below is still open in the HORIZONTAL sense — this centres on
+  // the frame's altitude, not on the arena tile grid. That is what 'f' is for.
+  camera->SetPosition(-50, 0, SIM_INITIAL_ALTITUDE - 2);   // behind the action
+  camera->SetFocalPoint(0, 0, SIM_INITIAL_ALTITUDE - 10);  // TODO center this on arenas (x/y)
   camera->SetViewUp(0, 0, -1);           // Set the view up vector
   camera->SetViewAngle(60);             // Set the field of view (FOV) in degrees
 
@@ -5000,12 +5007,27 @@ void Renderer::setFocusArena(int arenaIdx) {
     }
   }
 
+  // ⛔ 041 P2-3 — anchor the camera to `focusZ`, the arena's own display
+  // altitude, NOT to offset[2].
+  //
+  // `focusZ` was already being computed in BOTH branches above and then thrown
+  // away: the camera used offset[2], which `renderingOffset` returns as 0
+  // because the tile layout is x/y only. So the focal point sat at a fixed 10 m
+  // above GROUND regardless of where the flight actually was. That was 15 m low
+  // when the virtual origin rendered at 25 m AGL, and 041 moved it to 55 m,
+  // making it 45 m low — the operator noticed 'f' aiming under the action.
+  //
+  // Using focusZ restores the evident intent and makes the framing track the
+  // frame: the relative geometry (focal point 10 m above the arena, camera 100 m
+  // above it) is unchanged, so the view looks the same, but it now follows
+  // SIM_INITIAL_ALTITUDE instead of silently going stale the next time the
+  // world frame moves.
   scalar camX = offset[0] - static_cast<scalar>(70.0f);
   scalar camY = offset[1] - static_cast<scalar>(10.0f);
-  scalar camZ = offset[2] - static_cast<scalar>(100.0f);
+  scalar camZ = focusZ - static_cast<scalar>(100.0f);
 
   focusCameraPosition = {camX, camY, camZ};
-  focusCameraFocalPoint = {offset[0], offset[1], offset[2] - static_cast<scalar>(10.0f)};
+  focusCameraFocalPoint = {offset[0], offset[1], focusZ - static_cast<scalar>(10.0f)};
   focusCameraViewUp = {0.0f, 0.0f, -1.0f};
 
   vtkCamera* camera = activeRenderer->GetActiveCamera();
