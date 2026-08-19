@@ -385,9 +385,11 @@ from INAV and logged in blackbox, whose decode chain already exists (018).
   actual pointing lags and overshoots the command under dynamics. Truth stays the §7 offline oracle on the
   recorded frames; the commanded profile is the input swept, not the reference scored against. (The
   jitter remains a feature — §2.4.)
-- Mechanical/electrical: the OV9281 + M12 lens is heavier and bulkier than the analog cam now on the
-  gimbal → printed bracket needs a remix (servo torque should be fine); the Pi needs a properly sized BEC,
-  more so if the Pi 5 lands there.
+- Mechanical: the gimbal already carries a **DJI O3 rig**, which is not light — so **torque and mounting
+  are proven** and fitting the OV9281 + M12 is a bracket-geometry change, not a load question (operator
+  2026-08-19). Bonus: **the O3's own recording is a free context channel** — a human-viewable, timestamped
+  record of what each sortie looked like, which is what you want when the IR raw shows something strange.
+- Electrical: see §16.3.
 
 #### 7.1.2 Time synchronisation — REQUIRED, and not otherwise in this spec
 
@@ -687,6 +689,65 @@ tracking).
 5. **NEW, decide before planning**: does §7.1's fly-to-record path pull the Pi 5 purchase ahead of
    042-B/C? See §12.1 — flagged, deliberately not moved.
 4. ST VL53L9CX (§9): pull the datasheet for FOV / zones / frame rate / sunlight — M3-M4, no rush.
+
+---
+
+## 16. Build, deployment and field operations (constraints, 2026-08-19)
+
+### 16.1 Three build paths, none load-bearing alone
+
+The dev box, the Pi 3A+ (Trixie arm64) and the Pi 5 are all **aarch64**; the operator's other host is
+**WSL2 on x86_64**, and **cross-compiling from it is a requirement, especially for field updates**.
+
+| path | for | needs |
+|---|---|---|
+| **Pi native** | the always-works field fallback | nothing (`-j2` + swap on the 3A+ — 512 MB is the constraint) |
+| **DGX native aarch64** | fast iteration, unit tests, the §7 oracle, envelope scoring | nothing — same arch, bit-identical NEON |
+| **WSL2 x86_64 → aarch64** | **field updates** | `gcc-aarch64-linux-gnu` + a sysroot rsync'd from the Pi (libcamera headers/libs) + a CMake toolchain file |
+
+**This is the payoff of the §16.5 core/shell split**: `core/` has zero dependencies, so it cross-compiles
+with nothing but the distro cross-gcc. Only `io/` + `app/` need the sysroot.
+
+### 16.2 Field iteration must not require a compiler
+
+Most field changes are a threshold, not a code change. Therefore:
+
+- **Tuning knobs live in runtime config** (`inih`, already in the repo), never in compile-time constants.
+  Edit + restart at the field; cross-compilation is reserved for real code changes.
+- **Build ID + config hash are stamped into every record and every recording.** Without this it becomes
+  impossible to say which binary produced which afternoon's data — and field iteration guarantees that
+  question gets asked.
+
+### 16.3 Power and the flight electrical environment
+
+Flight pack: **3S Li-ion, 4 Ah, ~20 min** ⇒ ~12 A average draw (operator 2026-08-19).
+
+| host | sustained draw | from the pack | share of 4 Ah over 20 min |
+|---|---|---|---|
+| Pi 3A+ | ~2–3 W | ~0.25 A | ~1.5 % |
+| **Pi 5 + NVMe** | 7–12 W | **~1 A** | **~8 %** |
+
+- **Separate BEC, spec'd 5 V / 5 A** for the Pi 5 (2.5 A suffices for the 3A+).
+- **The Pi 5 undervolts unforgivingly** — it throttles or drops NVMe if the rail sags, while sharing a pack
+  with a motor pulling 12 A. Separate BEC **plus a bulk capacitor at the Pi input and short, thick leads**.
+  This is the 031 bench-PSU lesson in a different circuit (bench-journal, 4.7 µH bring-up): the fix shape
+  is a **damped bulk leg**, not one more low-ESR ceramic.
+- **A brownout mid-write corrupts the card.** Flight config is **read-only root + a dedicated data
+  partition**, recordings into preallocated files — then pulling power is safe because root is never dirty.
+
+### 16.4 Scope of the sub-frame / decimated recorder
+
+**Operator 2026-08-19: the sub-frame record is for proving the toolchain, not for offline analysis.**
+Scoped accordingly — uniform decimation is acceptable for that purpose. *(Noted only: recording bursts of
+contiguous frames instead costs the same bandwidth and the same code, and yields clips that are also
+replayable words. Free option if the clips are ever wanted for analysis.)*
+
+### 16.5 Code layout and native-perf strategy
+
+The core/shell split, the determinism requirements (no wall-clock in core, integer correlator paths,
+virtualised acquisition scheduler) and the perf ordering (tile-fused front end, chip-domain reduction,
+integer NEON, core pinning, tail-latency instrumentation) are the substance of **`plan.md`** — recorded
+there rather than here so this spec stays a statement of *what* and *why*.
 
 ---
 
