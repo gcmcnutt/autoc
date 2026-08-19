@@ -154,21 +154,28 @@ all assume encoded video; raw Bayer-less 8-bit mono at 453 fps with custom metad
 
 ---
 
-## R10 — Two-clock synchronisation: optical fiducial for offset, MSP for drift
+## R10 — Two-clock sync: **both clocks in every entry** (the INAV→xiao precedent)
 
-**Decision**: both, per spec §7.1.2 — an LED in-frame pulsed by an INAV output (one-frame flash every ~5 s)
-for frame-exact offset removal, plus MSP over UART FC→Pi timestamped on arrival for drift fitting.
+**Decision**: every record and every recorded frame carries **both clocks** — the local Pi clock, and the
+INAV clock as read from the **most recent MSP call**, plus the age of that read. Alignment is then a
+post-hoc regression over hundreds of paired samples, not a special event. **This is the pattern already in
+use for INAV→xiao** (operator 2026-08-19: *"the log entries have both clocks recorded — xiao current clock
+and its read from the most recent MSP call"*), so it is proven in-house rather than invented here.
 
-**Rationale**: the Pi's `CLOCK_MONOTONIC` and INAV's blackbox clock are untied, and 10–50 ppm gives 1–5 ms
-drift per 100 s sortie — marginal against a 4 ms frame. The optical path needs **zero electrical
-integration** between the two systems and self-documents inside data already being kept. The MSP reader is
-the same link §2.3's AHRS feed-forward needs, so it pays twice.
+INAV also exposes **GPS time** alongside time-since-boot. It is not sampled often enough to serve as NTP,
+but it is an **absolute** reference, which matters the moment a third device is in the picture (Pi, INAV,
+xiao): log it when present and every device becomes mutually alignable without pairwise calibration.
 
-**Alternatives**: (a) *GPIO trigger (`ov9281_trigger`, GPIO23)* — harder-wired, and the right answer if
-frame-exact **phase locking** is ever needed rather than frame-exact alignment; documented, not built.
-(b) *MSP alone* — insufficient: gives ~ms alignment but no hard fiducial to anchor it.
+**Accuracy, honestly**: MSP transport and INAV scheduling jitter put a single pairing at roughly ±1–2 ms.
+Fitting over a sortie kills the *drift* term; the residual is the mean transport latency. That is
+comfortably inside the 20 Hz tick and inside what AHRS feed-forward and gimbal-command scoring need. It is
+**not** frame-exact against a 4 ms frame.
 
----
+**Alternatives / escalation**: the **optical fiducial** (an in-frame LED pulsed by an INAV output)
+previously specified as primary is **demoted to escalation** — it buys frame-exact offset removal and costs
+a wiring-free LED, so it stays documented and unbuilt unless per-frame de-rotation turns out to need it.
+The GPIO trigger path (`ov9281_trigger`) remains the answer only if frame-exact *phase locking* is ever
+required, which is a different problem again.
 
 ## R11 — Testing: scalar reference first, then NEON, then golden vectors
 
@@ -200,3 +207,21 @@ before the algorithm.
 
 **Alternatives**: *write it in C first* — rejected: it front-loads the most expensive implementation onto
 the least-settled design, which is exactly backwards.
+
+---
+
+## R13 — The record is transport-agnostic, because the boxes will merge
+
+**Decision**: the 20 Hz record is defined **as a versioned struct, never as a wire protocol**. Emitters are
+interchangeable: file, USB/serial CDC, TCP/UDP over WiFi, UART, I2C — and, later, shared memory or a direct
+call.
+
+**Rationale**: operator 2026-08-19 — *"the integrated h/w will prob combine xiao and receiver into one box,
+but for now…"*. When that happens the transport disappears entirely, and any format that baked in framing,
+handshakes or link assumptions has to be rewritten at exactly the moment the system is most integrated.
+Defining the struct as the contract and the transport as a plug means the merge is a deletion, not a
+redesign. It also serves the near-term need directly: bench tests want **USB or WiFi streaming** to the dev
+box, which is the same struct out of a different plug.
+
+**Alternatives**: *design the wire protocol first* — rejected; it optimises for the transport that is
+guaranteed to go away.

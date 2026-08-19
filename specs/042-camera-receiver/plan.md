@@ -43,6 +43,10 @@ deadline — the record predicting tick N on the wire ≥5 ms before tick N, mis
 virtualised acquisition scheduler); 512 MB RAM on the bench host; ~1 A from a 3S/4 Ah pack for the flight
 host (~8 % of capacity over a 20 min sortie); read-only root + data partition so a brownout cannot corrupt;
 field iteration must not require a compiler.
+**Forward constraint**: the integrated flight hardware will likely **combine the xiao and the receiver into
+one box** (operator 2026-08-19). Therefore the 20 Hz record is defined as a versioned *struct*, never as a
+wire protocol, and the transport is a plug (R13) — when the boxes merge, the transport is deleted rather
+than redesigned.
 **Scale/Scope**: 640×400 @ 250 fps = 64 Mpx/s front end; 2 Gold-31 codes; 16 correlator slots; ~123 MMAC
 per cold full-field acquire pass.
 
@@ -131,6 +135,68 @@ distro cross-gcc, (b) builds and tests on the dev box with no camera, (c) is the
 replay, and (d) can be exercised by the oracle, injector and scorer as a library. Every other property this
 plan needs — replay parity, hardware-free CI, field updates, bit-exact NEON verification — is downstream of
 that one boundary. `io/` and `app/` exist to be thin.
+
+## Stages — hardware-gated delivery (operator 2026-08-19)
+
+The A/B/C/E1/D work packages of spec §13 say **what code gets built**. The stages below say **what
+capability exists when**, and they are gated by hardware arriving — which is the schedule that actually
+governs. Both views are real; this table is the mapping.
+
+> **Naming**: these are **042 Stages 1–4**, deliberately *not* "M1–M4" — the project already uses M1/M2/M3
+> for mission/training milestones and the collision would be permanent.
+
+### Stage 1 — Bench tracker + ASCII scope *(existing hardware, no purchases)*
+
+Work: **042-A** (recorder + libcamera skeleton) · **042-B** (correlator bank) · **042-C** (acquisition,
+second code via the breadboard emitter) · **042-E1** (record + emit path).
+Prototyping per R12 (NumPy acquisition against recorded clips) and R11 (scalar-first kernels) rides here.
+
+**Exit criterion: the ASCII scope animates at 10 Hz on real beacons** (`contracts/cli.md`), fed by an
+evolving log / USB / WiFi stream. That single demo proves capture, correlation, tracking, the record and a
+transport all work end to end — and it is visible, which matters more at this point than any metric.
+
+*On "evolving stream format" vs Constitution V: these are not in tension. Version from day one because it
+is nearly free, then **bump the version freely through Stage 1** — nothing downstream consumes it yet.
+Versioning is about knowing which format you have, not about promising it will not change. The freeze
+comes when Stage 3 streams into something real.*
+
+### Stage 2 — Optics, AGC, range *(gated on the 1.56 mm lens + 850 filter)*
+
+Work: **042-D partial** — the static-bench half of the envelope. The three controllers of spec §4 tuned
+outdoors against real sky; range on a static bench; the §5 descaling/defocus/saturation study once there
+is enough power to bloom. Still static, still bench.
+
+*Photometry proper — sky background through the filter, the daylight budget — remains 043 (spec §14). What
+Stage 2 does is get the AGC **shape** right against real conditions.*
+
+### Stage 3 — Flight speeds *(gated on the Pi 5 arriving)*
+
+Work: **042-D remainder** — the rate-band envelope at 453 fps, full-frame continuous capture to NVMe, and
+**20 Hz position streaming as a real input**. This is where §3.2's flight column stops being an
+extrapolation and §2.5's °/s knee gets measured on the host that will fly.
+*Blocked-on note: the Pi 5's actual fps is still unmeasured; the `fps_probe.py` + patched-driver recipe is
+~one evening and should be the first act on arrival.*
+
+### Stage 4 — Ground track, then airborne *(gated on the hb1 flight cubes)*
+
+Work: spec §7.1's rungs 2 and 3. Cubes on hb1 → **ground tracking** (rung 2 — one aircraft, cheapest large
+gain). Then the Pi 5 hardware onto the Bixler 3 → airborne, **formation lead-follow**, pan/tilt uncaged.
+The gimbal body-fixed vs counter-rotating experiment (spec §7.1.1) lives here, and it is the measurement
+that says what AHRS feed-forward is worth.
+
+### Likely feature split
+
+**This is more than one feature and the operator has said so.** The seams that will hold:
+
+| stage | likely home | why the seam is here |
+|---|---|---|
+| 1 | **042** | self-contained, no purchases, ends in a demo |
+| 2 | **042** *(or 043 if the lens slips)* | still bench, still the same code |
+| 3 | **043** | new host, new frame rate, new capture regime |
+| 4 | **044** | two aircraft, flight ops, formation — a different kind of work entirely |
+
+Splitting is a routing decision to be made **when a stage actually starts**, not now. What matters is that
+the work packages are ordered so that a split at any of these seams leaves both halves coherent.
 
 ## Complexity Tracking
 

@@ -407,13 +407,27 @@ The Pi timestamps frames on `CLOCK_MONOTONIC` via libcamera; INAV's blackbox run
 Typical 10–50 ppm crystal offsets give **1–5 ms of drift over a 100 s sortie** — tolerable at the 20 Hz
 tick, marginal against a 4 ms frame. Do both of:
 
-1. **Optical fiducial** — an LED in the camera's field pulsed by an INAV output on a known pattern (e.g. a
-   one-frame flash every 5 s). It lands *in the recorded frames*, so alignment is frame-exact, there is
-   **zero electrical integration** between the two systems, and the sync evidence is self-documenting in
-   data already being kept. Removes the offset.
-2. **MSP over UART, FC → Pi**, timestamped on arrival — continuous attitude at 50–100 Hz for drift
-   fitting. This is **the same link §2.3's AHRS feed-forward needs**, so building the reader early pays
-   twice. Tracks the drift.
+**Method (operator 2026-08-19 — use the pattern already proven for INAV→xiao)**: *"the log entries have
+both clocks recorded — xiao current clock and its read from the most recent MSP call."*
+
+1. **Both clocks in every entry.** Each record and each recorded frame carries the local Pi clock **and**
+   the INAV clock as of the most recent MSP read, plus the age of that read. Alignment becomes a
+   regression over hundreds of paired samples rather than a special event, and it is the same shape as the
+   existing xiao logging — proven in-house, not invented here.
+2. **GPS time when present.** INAV exposes GPS time alongside time-since-boot. Too sparse for NTP, but
+   **absolute** — which is what makes a third device (Pi, INAV, xiao) mutually alignable without pairwise
+   calibration. Log it when available.
+3. **MSP over UART, FC → Pi** is the carrier, and is **the same link §2.3's AHRS feed-forward needs** — so
+   the reader pays twice.
+
+**Accuracy, stated honestly**: MSP transport and INAV scheduling jitter put a single pairing at ~±1–2 ms.
+Regression removes the drift term; the residual is mean transport latency. That is comfortably inside the
+20 Hz tick and inside what AHRS feed-forward and gimbal-command scoring need — but it is **not** frame-exact
+against a 4 ms frame.
+
+**Escalation, documented and unbuilt**: an **optical fiducial** (in-frame LED pulsed by an INAV output)
+buys frame-exact offset removal for the price of one LED and no wiring between systems. Build it only if
+per-frame de-rotation proves to need it.
 
 *(The InnoMaker `ov9281_trigger` GPIO path noted in HIGH-FPS-PLAN is the harder-wired alternative to (1)
 if frame-exact phase locking is ever needed rather than frame-exact alignment.)*

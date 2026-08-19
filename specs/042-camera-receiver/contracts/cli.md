@@ -14,7 +14,11 @@ capture, thermals, storage and the container format are proven before any algori
 
 ```
 beacon_trackd --config <ini> [--source live|replay:<file>]
-              [--emit binary:<path>|json:-|both] [--record <path>] [--duration S]
+              [--emit <sink>[,<sink>...]] [--record <path>] [--duration S]
+
+    <sink> ::= binary:<path> | json:- | tcp:<host>:<port> | serial:<dev>[:<baud>] | uart:<dev> | i2c:<addr>
+    The record is a versioned STRUCT; every sink carries the same bytes (R13). USB/serial and TCP/WiFi are
+    the bench-test transports; uart/i2c are the xiao link; the struct outlives all of them.
 ```
 `--source replay:<file>` runs the **identical `core/`** over a recording, with the acquisition scheduler
 virtualised (R3). Live and replay over the same frames must produce byte-identical record streams; that
@@ -30,6 +34,16 @@ score  --records <stream> [--truth <truth.bin>] --out <csv>
 `score` emits one CSV row per envelope cell with **all of**: valid-output rate, measured-fix rate (spec
 §3.1), the §3.2 invariant plus bench and flight-scaled °/s columns, deadline-miss rate (§11.1),
 false-acquire rate, and relock times.
+
+## `ascii_scope` — the 10 Hz terminal display (Stage 1 exit criterion)
+
+```
+ascii_scope --source tcp:<host>:<port>|json:-|binary:<path> [--hz 10]
+```
+Renders the M2 grid in the terminal at 10 Hz — beacon position, code identity (A=PORT, B=STARBOARD),
+lock/hold state, CEP. Works over SSH with no X. **This animating at 10 Hz on real beacons is the Stage 1
+exit criterion** (plan §Stages) — the first end-to-end proof that capture, correlation, tracking, the
+record and a transport all work together.
 
 ## Exit codes
 

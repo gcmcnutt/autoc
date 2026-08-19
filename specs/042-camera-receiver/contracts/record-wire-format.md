@@ -22,7 +22,10 @@ offset  size  field
 28      4     deadline_margin_us   SIGNED; negative = deadline missed
 32      8     build_id
 40      8     config_hash
-48      -     tracks[MAX_TRACKS]   fixed count from config; unused zeroed, VALID clear
+48      8     inav_t_us        INAV clock from the MOST RECENT MSP read (0 = none yet)
+56      4     inav_read_age_us age of that MSP read at this tick
+60      4     gps_time_ms      absolute, when available (0 = none)
+64      -     tracks[MAX_TRACKS]   fixed count from config; unused zeroed, VALID clear
 ```
 
 Per-track layout is `Track` from `data-model.md` §2, fixed-point as declared there.
@@ -40,6 +43,9 @@ an error, not a best-effort read.
   delivered before tick N, whose prediction is *for* N.
 - **`age_ms` is informational** (how stale the measurement behind the prediction is), not a constraint.
   The constraint is `deadline_margin_us` (§11.1).
+- **Both clocks are present on every record** (R10): the local frame clock in `t_us`, and the INAV clock
+  as of the last MSP read in `inav_t_us` with its `inav_read_age_us`. Alignment is a regression over many
+  paired samples, not a special event — matching the existing INAV→xiao logging pattern.
 - **`VALID` and `MEASURED_FIX` are the two scored bits** (spec §3.1). Everything else is diagnostic and
   may gain meanings within a `format_version`; **no bit is ever repurposed** without a version bump.
 

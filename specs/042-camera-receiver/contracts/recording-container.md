@@ -32,7 +32,10 @@ Length-prefixed, in capture order:
 8   t_us
 4   exposure_us
 2   gain_q8
-2   flags              bit0 = burst_start, bit1 = trigger_dump
+2   flags              bit0 = burst_start, bit1 = trigger_dump, bit2 = fiducial_seen
+8   inav_t_us          INAV clock from the most recent MSP read (0 = none)
+4   inav_read_age_us
+4   gps_time_ms        absolute when available (0 = none)
 -   payload            width*height*bpp/8
 ```
 
