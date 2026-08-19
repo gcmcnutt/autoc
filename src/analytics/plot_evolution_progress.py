@@ -105,11 +105,16 @@ NN_ELITE_BEST_RE = re.compile(
 
 # 037 T005 — per-scenario [N] CRASH/OK lines are gone from the training log;
 # the per-gen #GenCrash summary is the crash source now:
-#   #GenCrash gen=N hullStrike=A eval=B sim=C boot=D timeLimit=E
-#             rabbitComplete=F none=G total=T
-GENCRASH_RE = re.compile(
-    r"#GenCrash gen=(\d+) hullStrike=(\d+) eval=(\d+) sim=(\d+) boot=(\d+) "
-    r"timeLimit=(\d+) rabbitComplete=(\d+) none=(\d+) total=(\d+)")
+#   #GenCrash gen=N hullStrike=A eval=B [egFloor=.. egCeil=.. egRadius=..]
+#             sim=C boot=D timeLimit=E rabbitComplete=F none=G total=T
+#
+# ⚠️ Parsed BY FIELD NAME, not positionally. The previous regex pinned the
+# field ORDER, so 041 P2-4's egress-kind split (egFloor/egCeil/egRadius,
+# inserted after eval=) made every line stop matching — and the failure was not
+# "no crash data", it was an IndexError deep in the plot, several frames from
+# the cause. A key=value line should be read as key=value.
+GENCRASH_LINE = re.compile(r"#GenCrash\s+(.*)$")
+GENCRASH_KV = re.compile(r"(\w+)=(-?\d+)")
 
 
 def _parse_float_or_nan(s):
@@ -185,13 +190,19 @@ def load_crashes(path: Path):
     """Parse per-gen crash counts from the #GenCrash summary lines (037 T005)."""
     rows = dict(gens=[], crashes=[], total=[], rate=[])
     for line in path.read_text().splitlines():
-        m = GENCRASH_RE.search(line)
+        m = GENCRASH_LINE.search(line)
         if not m:
             continue
-        gen, hull, ev, sim, boot, _tl, _rc, _none, total = (int(g) for g in m.groups())
+        kv = {k: int(v) for k, v in GENCRASH_KV.findall(m.group(1))}
+        # Required keys only. Anything else on the line (the 041 egress-kind
+        # split, or whatever is added next) is ignored rather than fatal.
+        if not {"gen", "total"} <= kv.keys():
+            continue
+        gen, total = kv["gen"], kv["total"]
         if total <= 0:
             continue
-        crashes = hull + ev + sim + boot
+        # isCrash categories; absent key == 0 so an older log still parses.
+        crashes = sum(kv.get(k, 0) for k in ("hullStrike", "eval", "sim", "boot"))
         rows["gens"].append(gen)
         rows["crashes"].append(crashes)
         rows["total"].append(total)

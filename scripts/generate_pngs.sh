@@ -173,9 +173,14 @@ run dynamics_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$IN
 # run-summary row, and the signal is a slow trend that does not need gen-level
 # resolution.
 if [[ -x "$REPO/build/nnextractor" && -x "$REPO/build/nn2cpp" ]]; then
+  # ⚠️ ramp-step is read with the same sed idiom as ControlIntervalMsec above,
+  # NOT by stripping non-digits from the line. The old awk did
+  # gsub(/[^0-9-]/,"",$2) over everything after the '=', so any digit in the
+  # trailing COMMENT was concatenated into the value: a dated note turned
+  # "0" into "00410-52026-08-18--1". Take the first number after '=' and stop.
   run input_investment.py --run "$RUN" --gens "1-$GEN" --stride "$((STRIDE * 8))" \
       -i "$INI" --label "$NAME" --total-gens "$TOTAL_GENS" \
-      --ramp-step "$(awk -F= '/^VariationRampStep/{gsub(/[^0-9-]/,"",$2); print $2; exit}' "$INI")" \
+      --ramp-step "$(grep -E '^[[:space:]]*VariationRampStep' "$INI" | head -1 | sed -E 's/.*=[[:space:]]*(-?[0-9]+).*/\1/')" \
       --csv "$OUT/${NAME}_input_investment.csv" --tick-csv "$TICK" \
       -o "$OUT/${NAME}_input_investment.png"
 else
