@@ -369,6 +369,44 @@ hard-real-time risk**, because §11.1's deadline only binds once the tracker run
 
 Rungs 1–3 are 042. Rung 2 is the cheapest large gain and should not wait for rung 3.
 
+#### 7.1.1 The platform (operator photo, 2026-08-19)
+
+A foam airframe with a plywood equipment bay carrying a **2-axis servo pan/tilt commanded from INAV**,
+alongside a DJI air unit and an analog FPV camera on the gimbal today. **Rungs 1 and 3 therefore share one
+mechanism** — the same hardware provides bench slew and flight ego-motion — and the stimulus is scriptable
+from INAV and logged in blackbox, whose decode chain already exists (018).
+
+- **It makes ego-motion and target-motion separable.** Fly the same sortie twice: gimbal **body-fixed**
+  (full ego-motion reaches the tracker) vs gimbal **counter-rotating against AHRS** (residual is target
+  motion only). Same airframe, beacons and sky — the difference isolates which error source actually
+  hurts, and it is the direct measurement of what §2.3's AHRS feed-forward is worth. Not obtainable from a
+  bench rig or a fixed camera. **Protect this capability when the bracket is remixed.**
+- ⚠ **Commanded angle is *stimulus*, not truth.** Servo backlash, finite bandwidth and aero loading mean
+  actual pointing lags and overshoots the command under dynamics. Truth stays the §7 offline oracle on the
+  recorded frames; the commanded profile is the input swept, not the reference scored against. (The
+  jitter remains a feature — §2.4.)
+- Mechanical/electrical: the OV9281 + M12 lens is heavier and bulkier than the analog cam now on the
+  gimbal → printed bracket needs a remix (servo torque should be fine); the Pi needs a properly sized BEC,
+  more so if the Pi 5 lands there.
+
+#### 7.1.2 Time synchronisation — REQUIRED, and not otherwise in this spec
+
+The Pi timestamps frames on `CLOCK_MONOTONIC` via libcamera; INAV's blackbox runs on its own crystal.
+**Nothing currently ties the two clocks together, and every rung-2/3 analysis depends on that tie.**
+Typical 10–50 ppm crystal offsets give **1–5 ms of drift over a 100 s sortie** — tolerable at the 20 Hz
+tick, marginal against a 4 ms frame. Do both of:
+
+1. **Optical fiducial** — an LED in the camera's field pulsed by an INAV output on a known pattern (e.g. a
+   one-frame flash every 5 s). It lands *in the recorded frames*, so alignment is frame-exact, there is
+   **zero electrical integration** between the two systems, and the sync evidence is self-documenting in
+   data already being kept. Removes the offset.
+2. **MSP over UART, FC → Pi**, timestamped on arrival — continuous attitude at 50–100 Hz for drift
+   fitting. This is **the same link §2.3's AHRS feed-forward needs**, so building the reader early pays
+   twice. Tracks the drift.
+
+*(The InnoMaker `ov9281_trigger` GPIO path noted in HIGH-FPS-PLAN is the harder-wired alternative to (1)
+if frame-exact phase locking is ever needed rather than frame-exact alignment.)*
+
 ---
 
 ## 8. Raw capture — the recorder (restructured 2026-08-19)
