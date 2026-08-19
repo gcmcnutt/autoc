@@ -11,6 +11,39 @@ as expected, all while estimating position of next beacon on the 2d frame of the
 
 ---
 
+## Clarifications
+
+### Session 2026-08-19
+
+- Q: In the §3 bar "≥95 % of 20 Hz ticks valid", does an extrapolated/HOLD tick count as valid? →
+  A: **Option D — report two metrics** (bounded-extrapolation *valid-output rate* ≥95 %, plus a
+  *measured-fix rate* floor ≥60 %). Operator rationale: acquisition is expensive and the target is
+  crossing the field, so **the estimator must continuously re-affirm lock — confirming a chip is seen
+  where it is expected, wherever the track is on the screen** — rather than inferring health once per
+  word. See §2.6 and §3.1.
+- Q: What is the end-to-end latency requirement (photon → record on the wire)? →
+  A: **Option C — a delivery *deadline*, not a lag bound** ("C for now", revisitable): the record whose
+  prediction targets tick N must be on the wire ≥5 ms before tick N; publish deadline-miss rate. See §11.1.
+- Q: Where does 042 stop, given §13's seams? → A: **Option D — split E at its natural seam.**
+  E1 = record + emit path, E2 = xiao transport + AHRS feed-forward. **042 = A, B, C, E1, D**; E2 → 043.
+  Rationale surfaced by Q1/Q2: the envelope campaign (D) publishes §3.1's two metrics and §11.1's
+  deadline-miss rate **through the record**, so E1 is a *prerequisite* of D, not a successor — §13 as
+  originally written had D depending on its own successor. See §13.
+- Q: What is the recorder's flight default, given the 3A+ cannot sustain full raw? →
+  A: **None of the offered options — restructure.** Operator: *"if we plan for flight hardware at 453 Hz on
+  a Pi 5 with NVMe storage, maybe this simplifies a bit."* It does: **continuous full raw is the flight
+  design point**, and the 3A+'s RAM-ring + triggered dump becomes the *degraded bench mode*, not an
+  architecture. The reduced/ROI/compressed-stream machinery is **not built unless something forces it**.
+  See §8.
+- Q: Confirm or move the §3 exit-band numbers, now that the flight article is a Pi 5 at 453 fps? →
+  A: **Option D — the invariant is primary, °/s is derived.** Publish apparent motion per coherent
+  integration interval, plus the °/s at the 250 fps bench point *and* the ×1.65 flight-scaled knee, in
+  every envelope cell. Operator framing: *"we can do initial experiments on the RPi 3 we have today and
+  the slower chip rate — but this is to prove **algorithms**, not absolute tracking time; sure, we'll slow
+  the slew a bit to make it an honest test."* See §3.2.
+
+---
+
 ## 1. The fact that reorganizes the feature
 
 **The 031 tracker is a *static-beacon* correlator.** `beacon_track.py` integrates one full word per fix by
@@ -110,6 +143,33 @@ samples-per-chip story.** That makes the held Pi-5 gate quantitative: 042 measur
 and if the knee lands below the 128–141°/s body-rate RMS from 039, **the frame rate is the fix, not the
 algorithm.**
 
+### 2.6 Continuous chip-level re-affirmation (decision-directed lock health)
+
+**Operator requirement, 2026-08-19**: *"acquisition time is quite long and the target is moving across
+screen — we want the estimator to be able to continuously reaffirm, regardless of position on screen, that
+a chip is seen where we expect and is thus solidly locked still."*
+
+Acquisition is genuinely expensive: **1–2 words = 256–512 ms = 64–128 frames at 250 fps**, plus 60–120 ms
+per full-field search pass × chip-rate hypotheses (§1, §10). Losing lock is therefore costly, and must be
+detected *fast* and re-affirmed *cheaply*.
+
+Once code, phase and chip rate are known the receiver is in a **decision-directed** regime: it knows
+exactly which frames should be lit and which dark, and — from the track state — at which pixel. Every chip
+boundary is therefore a **testable event**, giving a lock-health signal at the chip rate (~121 Hz) rather
+than at the fix rate (20 Hz). Requirements:
+
+- **Per-chip re-affirmation** at up to the chip rate, not per-word inference. Accumulate a fast
+  lock-health statistic (exponentially-weighted agreement between predicted and observed chip polarity)
+  alongside the slow full-word `q`.
+- **Scale-free and field-position independent** — it must behave identically at the corner of the field as
+  on axis, which means normalizing against the *local* noise floor (RI corner falloff is ~52 %, so a raw
+  threshold would silently tighten off-axis). The same property `q` already has.
+- **It drives the hold/drop decision**, replacing the 031 prototype's "ride 6 low-q reports" countdown:
+  chip-level evidence says *when* lock actually broke, so a hold is justified by evidence rather than by a
+  timer, and a genuine break is detected in ~1 chip instead of ~1 word.
+- **It is also the `measured-fix` test of §3.1** — a tick is measurement-backed if chip re-affirmation
+  covered it, which is why the two-metric bar is cheap to compute.
+
 ---
 
 ## 3. Exit criterion — three rate bands, delivered as a measured envelope
@@ -124,6 +184,44 @@ Not one number. A surface (validity vs slew × SNR), plus:
 
 Plus, in every campaign: **false-acquire rate** over cluttered background under ego-motion, and an
 occlusion/relock ladder (0.3 / 0.6 / 1.0 s blocked).
+
+> The °/s figures above are the **bench** column of §3.2 — the transferable form of each bar is the
+> per-integration invariant, because 042 measures on the 3A+ while the flight article is a Pi 5 at 453 fps.
+
+### 3.1 What "valid" means (clarified 2026-08-19) — two metrics, both published
+
+A single validity number can be gamed by coasting: a tracker that extrapolates through an entire transit
+without re-measuring would score 100 %. So **every envelope cell publishes both**:
+
+| metric | definition | bar |
+|---|---|---|
+| **valid-output rate** | ticks carrying a usable estimate — a measured fix, **or** an extrapolation bounded at **age ≤150 ms (3 ticks) AND predicted CEP ≤3 px**. Outside either bound the tick is invalid regardless of flags. | **≥95 %** |
+| **measured-fix rate** | ticks whose estimate is backed by a correlation measurement in that tick (not extrapolation) | **≥60 %** floor |
+
+Both come free from the same run. The first reflects what 041 actually consumes; the second keeps a
+degrading correlator from hiding behind a healthy Kalman filter.
+
+### 3.2 The bar is an invariant; °/s is derived (clarified 2026-08-19)
+
+**042 measures on a host that is not the flight article.** The bench is a 3A+ at 250 fps / 121 Hz chips
+(word = 256 ms); the flight design point is a Pi 5 at 453 fps / 200 Hz (word = 155 ms). Raw °/s therefore
+does not transfer — but **apparent motion per coherent integration interval** does, because what breaks a
+correlator is smear *within* an integration, and °/px is fixed by the optics.
+
+**Operator framing (2026-08-19)**: *"initial experiments on the RPi 3 we have today and the slower chip
+rate — but this is to prove **algorithms**, not absolute tracking time; sure, we'll slow the slew a bit to
+make it an honest test."* The reduced bench slew is **dimensional consistency, not a weakened bar.**
+
+| band | **invariant (primary)** | bench °/s (3A+, 250 fps, word 256 ms) | flight °/s (Pi 5, 453 fps, word 155 ms) |
+|---|---|---|---|
+| **1 — full-word** | **≥23° of apparent motion per word** (≈76 px in the M2 grid) | ~90 °/s | ~148 °/s |
+| **2 — short integration** (8 chips) | **≥10° per integration** (≈33 px) | ~150 °/s | ~248 °/s |
+| **3 — transient** | survive a full-field (95°) transit; **relock ≤400 ms** — already host-independent | 300–500 °/s | 300–500 °/s |
+
+The ≤1 px (0.3°) RMS residual and §3.1's two rates are dimensionless already and carry across unchanged.
+
+**Every envelope cell publishes all three columns.** The bench number is the measurement; the invariant is
+the claim; the flight number is the ×1.65 word-duration extrapolation that §2.5's gate reads.
 
 **Honesty clause on "20 Hz"**: with full-word integration, consecutive fixes share ~92 % of their samples —
 the *effective* information bandwidth is ~4 Hz and the Kalman prediction supplies the rest. Near field with
@@ -247,21 +345,47 @@ all riding on the replay harness:
 
 ---
 
-## 8. Raw capture — the recorder, and a reality check on this host
+## 8. Raw capture — the recorder (restructured 2026-08-19)
 
-Operator: *"we do want all flight tests to capture all raw data for ground replay analysis."* Committed.
-The arithmetic that shapes it:
+Operator: *"we do want all flight tests to capture all raw data for ground replay analysis"* — and
+*"if we plan for flight hardware at 453 Hz on a Pi 5 with NVMe storage, maybe this simplifies a bit."*
+It does. **There are two hosts, and the recorder is designed for the flight one.**
 
-- 640×400 × 8 bit × 250 fps = **64 MB/s**. The SD card cannot take it; the 3A+ is USB2 (~35 MB/s real);
-  512 MB RAM ⇒ about an **8-second** ring.
-- 640×200 (the patched mode) halves it to 32 MB/s ⇒ ~16 s ring, at the cost of vertical field.
+### 8.1 The arithmetic
 
-Design (config-selectable, and the shape survives the host upgrade):
-- **RAM ring + triggered dump** — last N seconds, dumped on lock-loss / event. Works today, catches the
-  interesting moments.
-- **Continuous reduced stream** — the high-passed frame is mostly zeros; temporal-delta + LZ4 on an
-  IR-filtered scene should reach 5–10×. Lossy w.r.t. raw truth, lossless w.r.t. what the tracker consumes.
-- **Full continuous raw is a Pi 5 + NVMe capability**, not a 3A+ one — another line in the Pi 5 column.
+| host / mode | rate | sink capability | verdict |
+|---|---|---|---|
+| **Flight: Pi 5 + NVMe, 640×400 @ 453 fps** | **116 MB/s** | NVMe PCIe 2.0 ×1 ≈ 450 MB/s (~26 % used) | **continuous full raw — comfortable** |
+| Flight: Pi 5 + NVMe, 640×200 @ 453 fps | 58 MB/s | same | trivial |
+| Bench: Pi 3A+, 640×400 @ 250 fps | 64 MB/s | SD ≪; USB2 ~35 MB/s; 512 MB RAM | **~8 s RAM ring only** |
+| Bench: Pi 3A+, 640×200 @ 250 fps | 32 MB/s | as above | ~16 s ring, narrower V field |
+
+Capacity at the flight design point: a 10-minute sortie ≈ **70 GB**; a 1 TB drive ≈ **2.4 hours** at full
+rate. Storage is not a constraint on the flight article.
+
+### 8.2 The design that falls out
+
+**One recorder, one pluggable sink, one bounded in-RAM queue.**
+
+- If the sink keeps up (NVMe) → **continuous full raw**. This is the flight default.
+- If it cannot (3A+ SD/USB2) → the queue *is* the RAM ring, dumped on trigger (lock-loss, event, manual).
+  Same code path, one config knob; the degraded mode is a consequence of the sink, not a separate feature.
+- **Do NOT build** the ROI+context crops, decimated-context frames, high-passed streams or LZ4/delta
+  compression contemplated earlier. They were bandwidth management for a host being replaced. *(Noted for
+  the record: full-field compression was weaker than first assumed anyway — in flight the camera is always
+  moving, the whole field streams, and temporal-delta collapses to ~1.5–2× on raw. And a high-passed
+  stream discards the absolute levels that the later photometry, saturation and multipath-phenomenology
+  work needs.)*
+
+### 8.3 Two consequences to design for, not discover late
+
+- **IO jitter vs the §11.1 deadline.** Writing ~116 MB/s continuously on the same SoC as a hard-real-time
+  correlator can threaten the delivery deadline. Mitigations, specified now: writer on its own core,
+  pre-allocated extents / `O_DIRECT`, large aligned writes, and the bounded RAM queue absorbing burst
+  stalls. Deadline-miss rate (§11.1) is the metric that proves it.
+- **Mass and power of the flight host.** Pi 5 + active cooler + NVMe HAT + SSD is roughly **100–130 g**
+  against the 3A+'s ~30 g, with a materially higher sustained draw. That is an airframe budget question for
+  the flight article — filed as an open item (§15), **not a 042 question**.
 
 ---
 
@@ -365,13 +489,33 @@ validity flags:
 
 `t_us · seq · n_tracks ·` per track: `code_id · x · y` (M2 grid, 320×200 @ 0.304°/px, centre (0,0),
 +x right / +y down — 041 `camera_projection.h`) `· vx · vy · x_pred/y_pred at the NEXT control tick ·
-cep · q · extent · scintillation · flags{lock, hold, extrapolated, multipath_suspect, saturated} ·
+cep · q · lock_health (fast, chip-rate; §2.6) · extent · scintillation · flags{lock, hold, extrapolated, multipath_suspect, saturated} ·
 age_ms · independence`
 
 - **JSON lines** for the DGX display (existing `beacon_display.py` convention: **code A = PORT/red,
   code B = STARBOARD/green**).
 - **Binary over UART now, I2C slave when the xiao takes sensor inputs.** The link is **bidirectional** in
   the end state: fixes out, AHRS rates in (§2.3).
+### 11.1 Latency is a delivery deadline, not a lag bound (clarified 2026-08-19, "for now")
+
+For a control-loop sensor what matters is not absolute lag but whether the estimate **arrives before it is
+needed**. The record already predicts to the next tick (§11), which removes the lag by construction, so
+the constraint is on delivery:
+
+| requirement | value |
+|---|---|
+| **Deadline** | the record whose prediction targets tick N must be on the wire **≥5 ms before tick N** |
+| **Deadline-miss rate** | **<0.1 %**, published with every envelope cell alongside §3.1's two metrics |
+| internal budget — capture + front end | **≤1 frame (4 ms at 250 fps)**, hard real-time (§6) |
+| internal budget — correlate + emit | **≤1 tick (50 ms)**; may run off the capture thread behind a queue *provided the deadline holds* |
+
+Consequences: `age_ms` in the record remains **reported** (041 still wants to know how stale the
+measurement behind the prediction is) but is no longer a *constraint* — the deadline is. And adaptive
+integration length (§4) is bounded from above by nothing but this deadline plus the §3.1 measured-fix
+floor, which is the intended coupling.
+
+*Marked "for now" by the operator — revisit once 041's control-loop sensitivity to sensor lag is measured.*
+
 - **To 041**: the important handoff is not a camera model — it is the **measured tracker error model**
   (CEP and dropout statistics vs SNR, slew rate, field position, latency), so 041 injects a measured error
   process on top of the ideal bearing rather than running a correlator in sim. That is also how the sun
@@ -380,11 +524,19 @@ age_ms · independence`
 
 ---
 
-## 12. Platform decision (carried in, unchanged)
+## 12. Platform decision — two hosts, and they are not the same host
 
-**Pi 3A+ at 250 fps / ~115–121 Hz beacons** until the tracker proves itself. The Pi 5 (dual CSI, ~3× CPU,
-NVMe, likely 453+ fps with the patched 640×200 mode) is the **scaling step, gated on the °/s knee measured
-in 042-D** (§2.5) — bought to confirm scaling, not to discover whether the tracker works.
+**042 development / bench host: Pi 3A+ at 250 fps / ~115–121 Hz beacons.** Every algorithmic question is
+per-frame and scales with the host, so 042 proves the *algorithm* here (§3.2).
+
+**Flight-article design point: Pi 5 + NVMe at 453 fps / 200 Hz chips** (dual CSI, ~3× CPU, continuous full
+raw — §8). Stated 2026-08-19 so the recorder and the exit-bar arithmetic are designed against the right
+target.
+
+**These are not in conflict, and the gate is unchanged**: the Pi 5 is still *bought* on the °/s knee
+measured in 042-D (§2.5) — to confirm scaling and unlock dual CSI, not to discover whether the tracker
+works. What changed on 2026-08-19 is that the flight article is now *planned* as a Pi 5, which is what
+lets §8 stop engineering around a 512 MB / SD-card sink and §3.2 publish a flight-scaled column.
 
 ---
 
@@ -406,18 +558,24 @@ cancellation).
 
 > **— split seam 1: A+B+C is "a tracker that provably tracks" —**
 
+**042-E1 — the record + emit path.** The 20 Hz versioned fixed-shape record of §11, its §11.1 delivery
+deadline and miss-rate instrumentation, and the §3.1 two-metric scoring that reads it. JSON lines to the
+DGX display. **Moved ahead of D (clarified 2026-08-19)**: the envelope campaign publishes its metrics
+*through* this record, so it is a prerequisite of the measurement, not a successor to it.
+
 **042-D — the envelope.** Rig campaign across the three rate bands, cluttered-background false-acquire
 rate, occlusion/relock ladder, per-frame and per-fix cost table, **the °/s knee that gates the Pi 5**. The
 deliverable the operator asked for: a measured surface, not an anecdote. *(Pond raw-capture session rides
 here.)*
 
-**042-E — interfaces + AHRS feed-forward.** The 20 Hz record, UART now / I2C later, AHRS as optional
-feed-forward with the sign test.
+> **— split seam 2: end of 042 —**
 
-> **— split seam 2: D/E ride with 042, or start 043 —**
+**042-E2 → 043 — transport + AHRS feed-forward.** Binary over UART / I2C slave to the xiao, AHRS rates in
+as optional feed-forward with the sign test (§2.3). Deferred because nothing in the 042 exit criterion
+measures through it, and because AHRS is deliberately the *last* thing built (§2.3).
 
-**Working preference (2026-08-17): 042 = A through D**, with E folded in if small; everything photometric
-to 043 — because A–D is the coherent claim ("robust tracker, measured") and D is what makes the 043 gates
+**Scope of record (decided 2026-08-19): 042 = A · B · C · E1 · D.** Everything photometric, plus E2, to
+043 — A–E1–D is the coherent claim ("robust tracker, measured") and D is what makes the 043 gates
 quantitative.
 
 ---
@@ -426,8 +584,8 @@ quantitative.
 
 **To 043**: daylight — sky background through the 850 filter (031 empirical #1, **still open**); range;
 the saturation/blooming and defocus/descaling study at high power; exposure/gain controller *tuning*
-against real conditions (the framework is 042); 453 fps on Pi 5; the FPGA decision, closed by the 042-D
-table; the tracker-error-model handoff that lets 041 put sun behaviour back in the sim; true 200 Hz chip
+against real conditions (the framework is 042); 453 fps on Pi 5 (042 does not *build* on the Pi 5 even though §12 names it the flight
+design point); the FPGA decision, closed by the 042-D table; the tracker-error-model handoff that lets 041 put sun behaviour back in the sim; true 200 Hz chip
 rate with Gold-31.
 
 **To backlog / M3–M4**: ST **VL53L9CX** multizone ToF (~9 m) for terminal locked-in ranging and
@@ -440,11 +598,14 @@ tracking).
 
 ---
 
-## 15. Open for the morning
+## 15. Open items
 
-1. Confirm the phasing seam (042 = A–D, E folded in?) before tasks are cut.
-2. Exit-band numbers (§3) — 90 / 150 / 300–500 °/s and ≤1 px RMS — confirm or move.
-3. Recorder default: RAM-ring+trigger vs continuous reduced stream as the flight default.
+1. ~~Phasing seam~~ — **RESOLVED 2026-08-19**: 042 = A · B · C · E1 · D (§13).
+2. ~~Exit-band numbers~~ — **RESOLVED 2026-08-19**: invariant primary, °/s derived, all three columns
+   published (§3.2).
+3. ~~Recorder default~~ — **RESOLVED 2026-08-19**: continuous full raw on the Pi 5 + NVMe flight host;
+   3A+ ring is the degraded bench mode (§8). **New open item**: Pi 5 flight-host mass/power (~100–130 g
+   vs the 3A+'s ~30 g) against the airframe budget — flight-article question, not a 042 one (§8.3).
 4. ST VL53L9CX (§9): pull the datasheet for FOV / zones / frame rate / sunlight — M3-M4, no rush.
 
 ---
