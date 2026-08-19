@@ -18,6 +18,7 @@
 #include "autoc/eval/fitness_computer.h"   // 037 P-O12 — honest score replay (same math as dmp_dump)
 #include <vtkSphereSource.h>
 #include <vtkCylinderSource.h>
+#include <vtkRegularPolygonSource.h>
 #include <vtkTriangle.h>
 #include <vtkLookupTable.h>
 #include <vtkFloatArray.h>
@@ -572,6 +573,7 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   this->segmentGaps->RemoveAllInputs();
   this->planeData->RemoveAllInputs();
   this->arenaCylinders->RemoveAllInputs();
+  this->arenaRings->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
   this->blackboxHighlightTapes->RemoveAllInputs();
   this->xiaoVecArrows->RemoveAllInputs();
@@ -724,65 +726,6 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     planeSource->GetOutput()->GetCellData()->SetScalars(cellData);
     planeSource->Update();
     planeData->AddInputConnection(planeSource->GetOutputPort());
-
-    // ---- 041 P2-3: the containment cylinder ---------------------------------
-    //
-    // Geometry from the dmp's RECORDED FlightArena, never from the live .ini.
-    // The arena moved five times during 041, so a replay that drew today's
-    // config around a week-old flight would be confidently wrong -- and it
-    // would look right, which is worse. This is the reason the arena became
-    // part of RecordedRunConfig in the first place.
-    //
-    // FRAME: the checkerboard above is drawn at display z = 0 = GROUND, and
-    // every position was shifted by += SIM_INITIAL_ALTITUDE at load, so
-    // display_z = -AGL exactly. The floor and ceiling therefore sit at
-    // -floor_agl_m and -ceiling_agl_m with no further conversion -- if that
-    // ever stops being true, the cylinder detaches from the checkerboard
-    // visibly, which is the point of drawing it against the ground plane.
-    {
-      const auto& fa = evalResults.runConfig.flightArena;
-      if (fa.radius_m > 0.0f && fa.ceiling_agl_m > fa.floor_agl_m) {
-        const double heightM = static_cast<double>(fa.ceiling_agl_m - fa.floor_agl_m);
-        const double midZ = -0.5 * static_cast<double>(fa.ceiling_agl_m + fa.floor_agl_m);
-
-        vtkNew<vtkCylinderSource> cyl;
-        cyl->SetRadius(static_cast<double>(fa.radius_m));
-        cyl->SetHeight(heightM);
-        cyl->SetResolution(48);
-        cyl->CappingOff();          // open tube: caps would curtain off the view
-        cyl->SetCenter(0.0, 0.0, 0.0);
-
-        // vtkCylinderSource is Y-axis aligned; the arena axis is world Z.
-        vtkNew<vtkTransform> xf;
-        xf->Translate(offset[0], offset[1], midZ);
-        xf->RotateX(90.0);
-        vtkNew<vtkTransformPolyDataFilter> xff;
-        xff->SetTransform(xf);
-        xff->SetInputConnection(cyl->GetOutputPort());
-        xff->Update();
-        arenaCylinders->AddInputConnection(xff->GetOutputPort());
-
-        // Floor and ceiling RINGS, drawn as flat one-segment-tall tubes so they
-        // survive the wall's near-zero opacity. These two are the bounds that
-        // actually end a scenario; the wall only ends one of three.
-        for (double aglRing : {static_cast<double>(fa.floor_agl_m),
-                               static_cast<double>(fa.ceiling_agl_m)}) {
-          vtkNew<vtkCylinderSource> ring;
-          ring->SetRadius(static_cast<double>(fa.radius_m));
-          ring->SetHeight(0.35);
-          ring->SetResolution(48);
-          ring->CappingOff();
-          vtkNew<vtkTransform> rxf;
-          rxf->Translate(offset[0], offset[1], -aglRing);
-          rxf->RotateX(90.0);
-          vtkNew<vtkTransformPolyDataFilter> rxff;
-          rxff->SetTransform(rxf);
-          rxff->SetInputConnection(ring->GetOutputPort());
-          rxff->Update();
-          arenaCylinders->AddInputConnection(rxff->GetOutputPort());
-        }
-      }
-    }
 
     ScenarioMetadata meta = evalResults.scenario;
     if (evalResults.scenarioList.size() == evalResults.pathList.size()) {
@@ -937,6 +880,7 @@ bool Renderer::updateGenerationDisplay(int newGen) {
 
   this->planeData->Update();
   this->arenaCylinders->Update();
+  this->arenaRings->Update();
   this->paths->Update();
   this->actuals->Update();
   this->targetActuals->Update();  // 030 M9b
@@ -967,8 +911,12 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   updateTextDisplay(newGen, fitness);
 
   // Render the updated scene
-  renderWindow->Render();
   focusMode = false;
+  // 041 P2-3 — loading a generation drops focus, so the arena cylinder goes
+  // with it. Ordered BEFORE the render so the frame that appears is already
+  // correct rather than showing a stale cylinder for one frame.
+  updateArenaCylinder();
+  renderWindow->Render();
   return true;
 }
 
@@ -1307,6 +1255,7 @@ void Renderer::initialize() {
   segmentGaps = vtkSmartPointer<vtkAppendPolyData>::New();
   planeData = vtkSmartPointer<vtkAppendPolyData>::New();
   arenaCylinders = vtkSmartPointer<vtkAppendPolyData>::New();
+  arenaRings = vtkSmartPointer<vtkAppendPolyData>::New();
   blackboxTapes = vtkSmartPointer<vtkAppendPolyData>::New();
   blackboxHighlightTapes = vtkSmartPointer<vtkAppendPolyData>::New();
   xiaoVecArrows = vtkSmartPointer<vtkAppendPolyData>::New();
@@ -1327,6 +1276,7 @@ void Renderer::initialize() {
   segmentGaps->AddInputData(emptyPolyData);
   planeData->AddInputData(emptyPolyData);
   arenaCylinders->AddInputData(emptyPolyData);
+  arenaRings->AddInputData(emptyPolyData);
   blackboxTapes->AddInputData(emptyPolyData);
   blackboxHighlightTapes->AddInputData(emptyPolyData);
   xiaoVecArrows->AddInputData(emptyPolyData);
@@ -1355,18 +1305,30 @@ void Renderer::initialize() {
   // surface disappears entirely, and an arena you cannot see is worse than no
   // arena at all.
   arenaCylinders->Update();
+  arenaRings->Update();
   vtkNew<vtkPolyDataMapper> arenaMapper;
   arenaMapper->SetInputConnection(arenaCylinders->GetOutputPort());
-  vtkNew<vtkActor> arenaActor;
+  arenaActor = vtkSmartPointer<vtkActor>::New();
   arenaActor->SetMapper(arenaMapper);
   arenaActor->GetProperty()->SetColor(0.35, 0.75, 1.0);   // cool blue — not a flight colour
-  arenaActor->GetProperty()->SetOpacity(0.06);            // mostly transparent
+  arenaActor->GetProperty()->SetOpacity(0.06);            // the wall: barely there
   arenaActor->GetProperty()->SetLighting(false);
   arenaActor->GetProperty()->BackfaceCullingOff();
-  arenaActor->GetProperty()->SetEdgeVisibility(true);
-  arenaActor->GetProperty()->SetEdgeColor(0.35, 0.75, 1.0);
-  arenaActor->GetProperty()->SetLineWidth(1.0);
   arenaActor->PickableOff();
+  arenaActor->SetVisibility(false);   // shown only while focused AND playing
+
+  // The floor/ceiling outlines get their OWN actor because they need a
+  // completely different opacity from the wall — one actor cannot carry both,
+  // and at the wall's 0.06 the rings were exactly what did not read.
+  vtkNew<vtkPolyDataMapper> arenaRingMapper;
+  arenaRingMapper->SetInputConnection(arenaRings->GetOutputPort());
+  arenaRingActor = vtkSmartPointer<vtkActor>::New();
+  arenaRingActor->SetMapper(arenaRingMapper);
+  arenaRingActor->GetProperty()->SetColor(0.45, 0.85, 1.0);
+  arenaRingActor->GetProperty()->SetOpacity(0.85);        // solid, so the bounds read
+  arenaRingActor->GetProperty()->SetLighting(false);
+  arenaRingActor->PickableOff();
+  arenaRingActor->SetVisibility(false);
 
   // Update mappers
   vtkNew<vtkPolyDataMapper> mapper1;
@@ -1584,7 +1546,8 @@ void Renderer::initialize() {
   chaseCameraFovActor->GetProperty()->SetLineWidth(1.2);
 
   renderer->AddActor(planeActor);
-  renderer->AddActor(arenaActor);   // 041 P2-3 — containment cylinder
+  renderer->AddActor(arenaActor);      // 041 P2-3 — containment cylinder (wall)
+  renderer->AddActor(arenaRingActor);  // 041 P2-3 — floor/ceiling outlines
   renderer->AddActor(actor1);  // Red path line (projected rabbit)
   renderer->AddActor(directRabbitActor);  // Magenta path (direct rabbit ground truth)
   renderer->AddActor(actor2);  // Yellow flight tape
@@ -5125,6 +5088,99 @@ void Renderer::setFocusArena(int arenaIdx) {
     camera->SetViewUp(focusCameraViewUp[0], focusCameraViewUp[1], focusCameraViewUp[2]);
     activeRenderer->ResetCameraClippingRange();
   }
+  updateArenaCylinder();   // 041 P2-3 — follows the focused arena
+}
+
+// 041 P2-3 — the containment cylinder for the FOCUSED arena.
+//
+// Visibility rule (operator 2026-08-18): focus mode AND playback active. So it
+// appears when an animation starts on a focused arena and vanishes on the next
+// generation — because loading a generation clears `focusMode`, which this
+// reads. Nothing else has to remember to hide it.
+//
+// ⚠️ ONE cylinder, not one per arena. The first cut drew all 294 translucent
+// tubes every frame and that was the render cost the operator hit; the arena is
+// only meaningful for the scenario actually being watched.
+//
+// Geometry from the dmp's RECORDED FlightArena, never the live .ini — the arena
+// moved five times during 041, and a replay drawing today's config around a
+// week-old flight would be confidently wrong while LOOKING right.
+//
+// FRAME: the checkerboard sits at display z = 0 = ground and every position was
+// shifted by += SIM_INITIAL_ALTITUDE at load, so display_z = -AGL exactly and
+// the bounds need no conversion. If that ever stops holding, the cylinder
+// visibly detaches from the checkerboard — which is why it is drawn against the
+// ground plane rather than floated.
+void Renderer::updateArenaCylinder() {
+  if (!arenaCylinders || !arenaRings) return;
+  arenaCylinders->RemoveAllInputs();
+  arenaRings->RemoveAllInputs();
+
+  const auto& fa = evalResults.runConfig.flightArena;
+  const bool show = focusMode && isPlaybackActive
+                    && !evalResults.pathList.empty()
+                    && focusArenaIndex >= 0
+                    && focusArenaIndex < static_cast<int>(evalResults.pathList.size())
+                    && fa.radius_m > 0.0f
+                    && fa.ceiling_agl_m > fa.floor_agl_m;
+
+  if (!show) {
+    // An AppendPolyData with no inputs errors rather than drawing nothing, so
+    // keep the pipeline valid with an empty mesh and hide the actors.
+    vtkNew<vtkPolyData> empty;
+    arenaCylinders->AddInputData(empty);
+    arenaRings->AddInputData(empty);
+    arenaCylinders->Update();
+    arenaRings->Update();
+    if (arenaActor) arenaActor->SetVisibility(false);
+    if (arenaRingActor) arenaRingActor->SetVisibility(false);
+    return;
+  }
+
+  const vec3 offset = renderingOffset(focusArenaIndex);
+  const double heightM = static_cast<double>(fa.ceiling_agl_m - fa.floor_agl_m);
+  const double midZ = -0.5 * static_cast<double>(fa.ceiling_agl_m + fa.floor_agl_m);
+
+  // The wall — open tube, barely there.
+  vtkNew<vtkCylinderSource> cyl;
+  cyl->SetRadius(static_cast<double>(fa.radius_m));
+  cyl->SetHeight(heightM);
+  cyl->SetResolution(48);
+  cyl->CappingOff();          // caps would curtain off the view from outside
+  cyl->SetCenter(0.0, 0.0, 0.0);
+  vtkNew<vtkTransform> xf;                  // cylinder is Y-aligned; arena axis is world Z
+  xf->Translate(offset[0], offset[1], midZ);
+  xf->RotateX(90.0);
+  vtkNew<vtkTransformPolyDataFilter> xff;
+  xff->SetTransform(xf);
+  xff->SetInputConnection(cyl->GetOutputPort());
+  xff->Update();
+  arenaCylinders->AddInputConnection(xff->GetOutputPort());
+
+  // Floor and ceiling as SOLID circle outlines, in their own high-opacity
+  // actor. These two bounds are what actually terminate a scenario, so they
+  // have to read clearly; the wall only ends one egress in three.
+  for (double aglRing : {static_cast<double>(fa.floor_agl_m),
+                         static_cast<double>(fa.ceiling_agl_m)}) {
+    vtkNew<vtkRegularPolygonSource> circle;
+    circle->SetNumberOfSides(72);
+    circle->SetRadius(static_cast<double>(fa.radius_m));
+    circle->SetCenter(offset[0], offset[1], -aglRing);
+    circle->SetNormal(0.0, 0.0, 1.0);
+    circle->GeneratePolygonOff();   // outline, not a filled disc
+    vtkNew<vtkTubeFilter> ringTube; // give the outline real thickness
+    ringTube->SetInputConnection(circle->GetOutputPort());
+    ringTube->SetRadius(0.45);
+    ringTube->SetNumberOfSides(8);
+    ringTube->CappingOn();
+    ringTube->Update();
+    arenaRings->AddInputConnection(ringTube->GetOutputPort());
+  }
+
+  arenaCylinders->Update();
+  arenaRings->Update();
+  if (arenaActor) arenaActor->SetVisibility(true);
+  if (arenaRingActor) arenaRingActor->SetVisibility(true);
 }
 
 void Renderer::hideStopwatch() {
@@ -5172,6 +5228,7 @@ void Renderer::togglePlaybackAnimation() {
       animationTimerId = 0;
     }
     std::cout << "Playback animation stopped" << std::endl;
+    updateArenaCylinder();   // 041 P2-3 — hides with the animation
     // Re-render full scene using existing data (no S3 fetch)
     renderFullScene();
   } else {
@@ -5182,6 +5239,9 @@ void Renderer::togglePlaybackAnimation() {
     animationStartTime = std::chrono::steady_clock::now();
     stopwatchVisible = true;
     controlsVisible = true;
+    // 041 P2-3 — appears here: focus + playback is the whole visibility rule,
+    // and this is the edge where the second half becomes true.
+    updateArenaCylinder();
     
     // Show stopwatch actors (need to get the renderer from the render window)
     vtkRenderer* renderer = vtkRenderer::SafeDownCast(renderWindow->GetRenderers()->GetFirstRenderer());
