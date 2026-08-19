@@ -17,7 +17,7 @@
 # name (basename minus .log = the plot --label).
 #
 # Reports: m1 = evolution_progress, per_axis_aggressiveness, per_axis_time_series,
-#          dynamics_progress (4).  m2 = those + gen_diag + intercept_analysis +
+#          dynamics_progress, energy_progress (5).  m2 = those + gen_diag + intercept_analysis +
 #          predictor_analysis (038 US3 span/closure-predictor: per-horizon +
 #          closure-rate error over gens + latest-gen calibration/regime detail) +
 #          gen_runtime (log-only diversity/collapse proxy) + mode_progress (per-gen
@@ -145,10 +145,12 @@ if [[ "$USE_CACHE" == 1 ]]; then mkdir -p "$CACHE_DIR"; cp "$SUMMARY" "$CACHE"; 
 # new gens on a re-plot.
 DYN_CACHE=()
 PRED_CACHE=()
+ENERGY_CACHE=()
 if [[ "$USE_CACHE" == 1 ]]; then
   mkdir -p "$CACHE_DIR"
   DYN_CACHE=( --cache "$CACHE_DIR/${SAFE}__dmp${DSIG}_dynamics.csv" )
   PRED_CACHE=( --cache "$CACHE_DIR/${SAFE}__dmp${DSIG}_predictor.csv" )
+  ENERGY_CACHE=( --cache "$CACHE_DIR/${SAFE}__dmp${DSIG}_energy.csv" )
 fi
 
 run() { echo "  [plot] $1"; python3 "$AN/$@"; }
@@ -186,6 +188,20 @@ if [[ -x "$REPO/build/nnextractor" && -x "$REPO/build/nn2cpp" ]]; then
 else
   echo "  [plot] input_investment skipped (needs nnextractor + nn2cpp)" >&2
 fi
+
+# energy_progress (041 P2-5) — the Es/Ps STATE over generations, not just the
+# scalar objective. plot_evolution_progress's energy panel plots one summed
+# number per gen, which cannot distinguish "energy improved because the policy
+# flies better" from "energy improved because the policy was MUTED" -- and those
+# look identical in a scalar. That distinction is AC-1's third part and it is
+# what 035 got wrong. Mode-agnostic (Es/Ps are in the shared craft block), so it
+# lives in the COMMON set.
+#
+# ⛔ Post-041 runs only: a pre-P2-4 dmp has no Es_m column and the script exits
+# loudly rather than plotting a gap that would read as "no energy destroyed".
+run energy_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
+    "${ENERGY_CACHE[@]}" --label "$NAME" --total-gens "$TOTAL_GENS" \
+    -o "$OUT/${NAME}_energy_progress.png"
 
 # --- m2 (tracker) adds: gen_diag, intercept_analysis (A/B-capable), rnn_capacity ---
 if [[ "$MODE" == "m2" ]]; then
