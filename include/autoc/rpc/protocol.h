@@ -489,7 +489,8 @@ struct RecordedRunConfig {
   // 041 P2-4 — THE ARENA THE RUN WAS FLOWN IN.
   //
   // ⛔ It was not recorded, and the arena moved THREE TIMES in a single day
-  // (80/5/100 → 70/10/110 → 70/25/121 → 70/25/95 asymmetric). A dmp that cannot
+  // (80/5/100 → 70/10/110 → 70/25/121 → 70/25/95 → 70/25/105, the last two
+  // asymmetric about the arm point). A dmp that cannot
   // say which cylinder contained it cannot answer "was this egress the deck
   // being tight, or the policy being baited toward it" — and cannot even be
   // compared against another run without someone remembering which .ini was
