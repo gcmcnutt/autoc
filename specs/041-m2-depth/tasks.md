@@ -414,6 +414,63 @@ capacity is not the constraint. Settled; reopen only on new evidence.
   *good fitness with less aggressiveness*, with energy as the indicator. Refine after the strategy shows
   signal. (was TD08)
 
+## Phase 5 — HARDWARE LONG-LEAD ⭐ **STARTS NOW, IN PARALLEL WITH THE BAKE**
+
+➕ **Added 2026-08-18 (operator)**: *"we have an inav extension backlog item to get additional sensor data
+through the single msp call — that can start soon and be proven convention by bench testing — this is
+required ahead of all given the complexity of setting up the programming — and then the xiao in prep for
+flight."*
+
+⛔ **Why this is its own phase rather than a step of P4-3.** It was folded into P4-3 (the flight task), which
+made it look like it happens *after* the bake. It does not: it is the **longest-lead item in the feature**,
+it needs a bench and two INAV targets, and it gates the flight completely. It also touches **neither autoc
+nor the running bake** — different repo, different hardware — so it can proceed in parallel today.
+
+- [ ] P5-1 [OP] **INAV: carry accel in the SAME single MSP round trip.** Full spec is in T072 (kept below for
+  provenance); it is complete and does not need re-deriving. The load-bearing parts:
+  * Extend `MSP2_AUTOC_STATE` in `~/inav/src/main/fc/fc_msp.c` (the `MSP2_INAV_LOCAL_STATE` case). Copy the
+    shape of fork commit **`63cffaf4f`** ("extend MSP2_AUTOC_STATE with filtered gyro rates") — append at
+    payload end, fixed integer scale stated at the write site.
+  * ⚠️ **Source `acc.accADCf`** — the TRANSFORMED field. `acceleration.c:563-568` applies
+    `applySensorAlignment` then `applyBoardAlignment` then divides by `acc.dev.acc_1G`, so it is
+    board-alignment corrected and already in **g**. ⛔ **NOT** the file-static `accADC` nor `acc.dev.ADCRaw`
+    — those are pre-alignment and would bake each board's own misalignment in differently (bench roll = −16
+    vs flight).
+  * Wire encoding **milli-g `int16`** = `lrintf(acc.accADCf[axis] * 1000.0f)` — ±32 g range against ±11 g
+    observed.
+  * ⚠️ **The wire carries INAV's native FLU, UNFLIPPED**, exactly as the quat and gyro already do. The
+    FLU→FRD y/z flip belongs at the msplink boundary, once, beside the other two (settled 2026-08-11).
+  * ⚠️ Both targets, **bench first** (`MAMBAF722_2022A`), then flight (`MATEKF722MINI`). **Disconnect the
+    GPS before flashing.**
+- [ ] P5-2 [OP] ⭐ **BENCH-PROVE THE CONVENTION before trusting it in the air.** This is the point of doing
+  it early: the three static attitudes have a measured, recorded answer, so the sign convention is checkable
+  on a table rather than inferred from a flight.
+  Expected in **FRD, after the msplink flip**: level `[0, 0, −1]`, nose up `[+1, 0, 0]`, right wing down
+  `[0, −1, 0]`.
+  ⚠️ The bench table in `docs/COORDINATE_CONVENTIONS.md` is in INAV **FLU counts** (`acc_1G ≈ 2048`) —
+  **divide by 2048 AND flip y/z** before comparing. Getting this backwards is invisible in sim and wrong in
+  the air; it was already resolved once against `~/inav @ 63cffaf4` and the earlier "flip it" instruction was
+  **withdrawn**. Do not re-derive it from scratch — confirm against the recorded table.
+- [ ] P5-3 **xiao: produce the four channels it currently zeroes.** ⛔ The MSP extension only supplies ONE of
+  them. The split matters for scoping:
+  | channel | source on the xiao | needs P5-1? |
+  |---|---|---|
+  | `ACCEL_X/Y/Z` | MSP, via P5-1 | ✅ yes |
+  | `SPECIFIC_ENERGY` | position + airspeed + the engage-resolved arena floor — **all already on board** | ❌ no |
+  | `BOUNDARY_CLOSURE_RATE` | position + velocity — **already on board** | ❌ no |
+  | `SCORE_GRAD_*` | the virtual target's geometry + the cone constants — **the xiao knows the target** | ❌ no |
+  So three of the four can be written **now**, against `autoc/eval/craft_observations.h` and
+  `FitnessComputer::scoreGradientWorld`, and only the accel waits on hardware. ⚠️ The cone constants
+  (`FitDistScaleBehind/Ahead`, `FitConeAngleDeg`, `FitStreakThreshold/RampSec/MultiplierMax`) are **not on
+  the xiao today** — they have to be baked in alongside the arena template, or the gradient cannot be
+  computed there.
+  ⛔ **A flight before P5-3 lands would fly a policy seeing ZEROS in four channels the sim trained with** —
+  and `ACCEL_*` has been a silent zero on the xiao since 041 US4, so this is a pre-existing gap, not a new one.
+- [ ] P5-4 Regenerate + flash: `tools/nn2cpp` from the P4-2 pinned genome, then the xiao build. The
+  fail-loud `static_assert` in the generated file is what currently blocks the firmware, by design.
+
+⛔ **P4-3 depends on all of Phase 5.** It is the flight; this is what makes the flight mean anything.
+
 ## Phase 4 — BAKE AND FLY
 
 - [ ] P4-1 [OP] Pre-run gate (Constitution IX — launch via `scripts/train.sh`, never a background task),

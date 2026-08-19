@@ -106,6 +106,56 @@ Hardware binds at step 3 (PPO sample counts) and step 4 (larger contexts), not b
 
 ## 041 deferrals
 
+### [022 T024, re-filed 2026-08-18 · ⭐ TRIGGER HAS NOW FIRED] Streak-threshold curriculum ramp
+
+**It was never built.** Planned at 022 (`e76981a`, 5 Apr) — the commit message ends *"Streak threshold ramp
+(0.1→0.5) planned for next iteration to provide early evolutionary signal."* Deferred three times since, each
+with a reason, and the reasons are worth having in one place:
+
+| when | disposition | stated reason |
+|---|---|---|
+| 022 T024 | deferred to backlog | *"betterz2 converged without it"* |
+| 023 Q5 | not in 023 | *"022 verdict holds… **Revisit only if Milestone A shows an early-generation 'no streak signal' problem**"* |
+| 041 §6.5 | *"actively unwanted"* | *"curriculum stays OFF for weak-signal work"* |
+
+⭐ **023's revisit condition is exactly what t4 is showing.** At gen 100: `avgMaxStreak` **3.0–3.1 ticks**
+(0.15 s) unmoved across every generation of the run, `pctInStreak` declining 1.4 → 0.9 %, while survival
+improves hugely (completions 18 % → 81 %, egress deaths 240 → 55). That is an early-generation *no streak
+signal* problem, stated in the words the trigger was written in.
+
+**Why it matters mechanically, not just as a metric.** 022's design rests on one claim:
+
+> *"a brief 2 m flyby earns a few good points at 1x. 25 consecutive steps at 2 m earns at up to 5x. **The
+> sustained tracker wins overwhelmingly.**"*
+
+The 5× compound is what makes "tracks well for 50 steps" beat "wanders at 20 m for 200 steps". Reaching it
+needs `stepPoints ≥ FitStreakThreshold` (0.5) held for `FitStreakRampSec` (5 s = 100 ticks). The t4
+population lives at a mean `stepPoints` of **0.058** with a best streak of 3 ticks — so **the multiplier has
+never left 1.0×**, the compound has never operated, and what remains of the objective is a plain
+`Σ stepPoints`, under which the wanderer wins. 022 designed against precisely that outcome.
+
+⚠️ **This is NOT a request to lower the threshold.** A lower constant is tuning, and the standing rule is
+that values are gradient bumps, not knobs. The ramp is a different thing: the threshold *starts reachable and
+tightens as the population improves*, so the 5× rung exists from generation 1 and the final objective is
+unchanged. Same curriculum idea as `VariationRampStep`, and it has 022's provenance rather than being
+invented at the point of frustration.
+
+⛔ **The 041 objection is real and must be answered, not skipped.** §6.5 rules it out because *a moving
+objective swamps the small signals* — the same reason `VariationRampStep` went to 0 at P0-5. That objection
+has a **scope**: it protects work that is *measuring a small delta*. It does not obviously apply to a run
+whose problem is that one term of the objective has never activated at all. Whoever picks this up owes an
+explicit answer to: does a ramped threshold make the energy/aggressiveness comparison unreadable, and if so,
+can the ramp finish before the measurement window opens?
+
+**Suggested shape** (not a decision): ramp `FitStreakThreshold` low→0.5 over the early generations, driven by
+the existing `computeVariationScale()` so there is one curriculum clock rather than two.
+
+⚠️ Also found while digging: `include/autoc/eval/fitness_decomposition.h:142` still documents a
+`variationScale` parameter *"used for streak threshold ramp"* on `computeScenarioScores`. **The parameter
+does not exist** — the signature is `computeScenarioScores(EvalResults&)`. A stale comment describing the
+very feature that was never built; delete it or implement it, but it should not keep claiming both.
+
+
 ### [041 P3-4 tooling, filed 2026-08-18] `nnextractor -g` takes the FILE number; `dmp-dump --gen` takes the GENERATION
 
 ⛔ **Same flag name, opposite meaning, on two tools used in the same breath.** The dmp filename encodes

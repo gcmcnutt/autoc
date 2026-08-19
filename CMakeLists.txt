@@ -219,6 +219,9 @@ if(ENABLE_AUTOC_TESTS)
 
   add_executable(arena_tests tests/arena_tests.cc)
   target_link_libraries(arena_tests GTest::gtest GTest::gtest_main autoc_common)
+  # 041 P2-3 — arena_tests reads the crrcsim launch XMLs to check they agree with
+  # SIM_INITIAL_ALTITUDE, so it needs the repo root (same idiom as the ini tests).
+  target_compile_definitions(arena_tests PRIVATE AUTOC_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
   # 041 P2-3 — does the TRAINING GEOMETRY fit the arena? Links the real
   # generateSmoothPaths and measures, rather than trusting a recorded number.

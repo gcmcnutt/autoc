@@ -20,8 +20,13 @@ untenable *and* unnecessary to attempt now:
    against the prior M1's 30.9% tracking occupancy, and it converged on a tight spiral that is
    objective-optimal but not what we want to chase with.
 2. **The objective is missing its main term.** The policy cannot observe its own energy (no altitude
-   input), so every prior energy objective muted the whole regiment. That is an M1 defect, and M2 inherits
-   it verbatim.
+   input). ⛔ **CORRECTED 2026-08-19 — the second clause of this reason was WRONG.** It read *"so every
+   prior energy objective muted the whole regiment"*; 035's own outcome records the opposite for the only
+   prior LEXICASE energy objective (*"ENERGY WORKS … throttle amplitude falling 0.93 → 0.72"*). What muted
+   was SCALAR aggregation (033, 034). Acting on the wrong generalisation, P2-5 replaced a working term and
+   t4 re-pegged throttle at 1.000 with `pctInStreak` 3.2%. The FIRST clause still stands and is still
+   041's contribution — `SPECIFIC_ENERGY` is now an input. See
+   [objective-amendment.md](objective-amendment.md).
 3. **The datum chain is unverified** — eleven hops, four references, at least one open question
    (`<launch altitude="82">` vs `SIM_INITIAL_ALTITUDE = −25`). M2 would build on it.
 

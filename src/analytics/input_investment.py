@@ -60,18 +60,25 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # The 041 additions, by position in PathgenInput. Kept as NAMES and resolved
 # against the metadata table below so a layout change cannot silently point
 # these at the wrong columns.
-NEW_SLOTS = ["IN_ENVELOPE", "ENVELOPE_SECS", "ACCEL_X", "ACCEL_Y", "ACCEL_Z"]
-NEW_COLORS = ["tab:red", "tab:orange", "tab:blue", "tab:green", "tab:purple"]
+# The slots this report exists to watch. 041 P2-2 replaced the envelope pair
+# with the energy/boundary-rate/gradient trio, so the old IN_ENVELOPE and
+# ENVELOPE_SECS entries here were naming inputs that no longer exist.
+NEW_SLOTS = ["SPECIFIC_ENERGY", "BOUNDARY_CLOSURE_RATE",
+             "SCORE_GRAD_X", "SCORE_GRAD_Y", "SCORE_GRAD_Z",
+             "ACCEL_X", "ACCEL_Y", "ACCEL_Z"]
+NEW_COLORS = ["tab:red", "tab:orange", "tab:cyan", "tab:olive", "tab:pink",
+              "tab:blue", "tab:green", "tab:purple"]
 
 # dmp-dump per-tick column -> input slot name. Only a SUBSET of the 42 inputs is
 # emitted as CSV columns, which is why the contribution panel below covers these
 # and not the whole vector (see its caveat).
-CSV_TO_SLOT = {
-    "env": "IN_ENVELOPE", "envS": "ENVELOPE_SECS",
-    "acX": "ACCEL_X", "acY": "ACCEL_Y", "acZ": "ACCEL_Z",
-    "dBnd": "DIST_TO_BOUNDARY", "inX": "INWARD_BODY_X",
-    "inY": "INWARD_BODY_Y", "inZ": "INWARD_BODY_Z",
-}
+# dmp-dump emits EVERY slot as of 041 P2-4, labelled by the metadata table's
+# display_name. So the column -> slot mapping is DERIVED from that table rather
+# than hand-listed: a hand-listed subset silently stops covering new inputs, and
+# this file already had one that named two retired slots.
+def csv_to_slot():
+    pairs = _meta_pairs()
+    return {short: name for name, short in pairs}
 
 
 def input_stds(tick_csv):
@@ -92,26 +99,45 @@ def input_stds(tick_csv):
     except OSError:
         return {}
     out = {}
-    for col, slot in CSV_TO_SLOT.items():
+    for col, slot in csv_to_slot().items():
         vals = [float(r[col]) for r in rows if r.get(col) not in (None, "")]
         if len(vals) > 1:
             out[slot] = _st.pstdev(vals)
     return out
 
 
-def input_names(mode_header="nn_inputs.h"):
-    """Slot names in declaration order, read from the C++ metadata table.
+def _meta_pairs(mode_header="nn_inputs.h"):
+    """[(SLOT_NAME, display_name), ...] in declaration order, from the C++ table.
 
-    Parsed from the header rather than hardcoded: the table is already the
-    single source of truth (static_assert'd against COUNT), and the ablation
-    tool resolves the same names.
+    Parsed from the header rather than hardcoded: the table is already the single
+    source of truth (static_assert'd against COUNT), and the ablation tool
+    resolves the same names.
+
+    ⚠️ THE TABLE CONTAINS A MACRO. 041 P2-1 factored the 20 craft slots that M1
+    and M2 share into CRAFT_COMMON_INPUT_META, so `kPathgenInputMeta[]` ends with
+    a bare macro reference and the literal entries live in the #define above it.
+    The previous regex read only what was inside the array braces and returned 25
+    names instead of 45 — every craft slot silently absent, which blanked the
+    contribution panel and produced an empty-legend warning rather than an error.
+    Expand the macro before parsing.
     """
     path = os.path.join(REPO, "include", "autoc", "nn", mode_header)
     txt = open(path).read()
+
+    mac = re.search(r"#define\s+CRAFT_COMMON_INPUT_META\s+(.*?)(?=\n\n)", txt, re.S)
+    macro_body = mac.group(1).replace("\\\n", " ") if mac else ""
+
     m = re.search(r"kPathgenInputMeta\[\]\s*=\s*\{(.*?)\n\};", txt, re.S)
     if not m:
-        return None
-    return re.findall(r'\{\s*"([A-Z0-9_]+)"', m.group(1))
+        return []
+    body = m.group(1).replace("CRAFT_COMMON_INPUT_META", macro_body)
+    return re.findall(r'\{\s*"([A-Z0-9_]+)"\s*,\s*"([^"]+)"', body)
+
+
+def input_names(mode_header="nn_inputs.h"):
+    """Slot names in declaration order."""
+    pairs = _meta_pairs(mode_header)
+    return [n for n, _ in pairs] or None
 
 
 def elite_weights(run_prefix, file_gen, ini, tmp):

@@ -572,8 +572,15 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->chaseCameraFov->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->planeData->RemoveAllInputs();
-  this->arenaCylinders->RemoveAllInputs();
-  this->arenaRings->RemoveAllInputs();
+  // ⚠️ arenaCylinders / arenaRings are deliberately NOT cleared here.
+  // updateArenaCylinder() owns their whole lifecycle — it clears AND refills, in
+  // one place. Clearing them here left them with ZERO connections for the rest
+  // of the rebuild (the geometry moved out of the per-arena loop when the
+  // cylinder became focus-only), and vtkAppendPolyData errors on an input port
+  // with no connections rather than treating it as empty:
+  //   "Input port 0 of algorithm vtkAppendPolyData has 0 connections but is
+  //    not optional."
+  // Two owners for one filter is the bug; there is now one.
   this->blackboxTapes->RemoveAllInputs();
   this->blackboxHighlightTapes->RemoveAllInputs();
   this->xiaoVecArrows->RemoveAllInputs();
@@ -879,8 +886,10 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   }
 
   this->planeData->Update();
-  this->arenaCylinders->Update();
-  this->arenaRings->Update();
+  // Rebuild to whatever focus/playback state now holds — this both refills the
+  // filters and Update()s them, so the rebuild cannot end with a stale or empty
+  // arena.
+  updateArenaCylinder();
   this->paths->Update();
   this->actuals->Update();
   this->targetActuals->Update();  // 030 M9b
@@ -5170,7 +5179,10 @@ void Renderer::updateArenaCylinder() {
     circle->GeneratePolygonOff();   // outline, not a filled disc
     vtkNew<vtkTubeFilter> ringTube; // give the outline real thickness
     ringTube->SetInputConnection(circle->GetOutputPort());
-    ringTube->SetRadius(0.45);
+    // 0.225 m, halved from 0.45 (operator 2026-08-18): at full width the two
+    // rings dominated the scene they exist to frame. Only the RINGS changed —
+    // the wall keeps its own opacity and geometry.
+    ringTube->SetRadius(0.225);
     ringTube->SetNumberOfSides(8);
     ringTube->CappingOn();
     ringTube->Update();

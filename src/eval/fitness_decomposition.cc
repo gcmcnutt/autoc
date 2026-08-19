@@ -149,10 +149,6 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         // rewards.
         gp_fitness stabilityAccum = 0.0;
         gp_fitness energyAccum = 0.0;
-        // 041 P2-5 — per-scenario Ps state for the energy axis (below).
-        gp_fitness prevEs = 0.0;
-        double prevEsTimeMsec = 0.0;
-        bool haveEs = false;
 
         // Previous tangent for last-waypoint fallback
         gp_vec3 prevTangent = gp_vec3::UnitX();
@@ -295,56 +291,48 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             }
 
             // ================================================================
-            // 041 P2-5 — THE ENERGY AXIS, rebuilt on Ps.
+            // 041 P2-7 — THE ENERGY AXIS IS BACK ON THROTTLE POWER.
             // ----------------------------------------------------------------
-            // Was: a convex integral of the THROTTLE COMMAND (035 FR-001b).
-            // That penalised an ABSOLUTE quantity, and full power is genuinely
-            // correct when far behind, in a sustained spiral, and under
-            // pitch-induced drag — so uniform pressure could only quiet
-            // everything. 035 muted the whole regiment rather than trimming
-            // waste, and 033 showed the same shape for smoothness.
+            // ⛔ REVERTS P2-5. That change replaced 035's convex throttle
+            // integral with "metres of Es destroyed", on the spec.md premise
+            // that *"every prior energy objective muted the whole regiment"*.
+            // ⚠️ THAT PREMISE IS CONTRADICTED BY 035's OWN OUTCOME DOC:
             //
-            // Now: metres of specific energy DESTROYED, Σ max(0, −Ps)·dt.
-            // Three properties, each load-bearing:
+            //   035/outcome.md: "M1 verdict: ENERGY WORKS (energy-lexicase, no
+            //   tracking collapse) ... throttle amplitude falling over the run:
+            //   mag_throttle 0.93 -> 0.72. The controller learned to spend less
+            //   throttle. Contrast the 034 energy-SCALAR run, which froze
+            //   throttle pinned at ~0.997 (a dead axis)."
             //
-            //   1. ⭐ IT DOES NOT PENALISE CLIMBING. Gaining energy has Ps > 0
-            //      and contributes exactly zero. A policy that climbs to follow
-            //      a climbing target pays nothing for the climb — which is the
-            //      muting failure, stated as a property. energy_metric_tests
-            //      asserts it directly.
-            //   2. ⭐ IT DOES NOT PENALISE TRADING. Es = h + v²/2g, so a dive
-            //      that converts height into speed is Es-NEUTRAL and costs
-            //      nothing. Only drag losses and deliberately destroyed energy
-            //      appear. That is "waste", as opposed to "activity".
-            //   3. It is NOT telescoping. Σ Ps·dt would collapse to
-            //      (Es_end − Es_start) — gameable by simply finishing high, and
-            //      blind to everything in between. Clipping at zero breaks the
-            //      cancellation, so a climb-dive cycle is charged for the dive.
+            // What muted was SCALAR aggregation (034 energy, 033 smoothness) --
+            // project_scalar_multiobjective_collapse. The LEXICASE throttle
+            // integral worked, and de-pegging throttle was its mechanism.
             //
-            // ⛔ NEVER a scalar penalty term, and never without SPECIFIC_ENERGY
-            // in the input vector: an axis for an unobservable is exactly what
-            // muted 035 (TA03 — the policy had the v² half and never the h
-            // half). It is a lexicase axis, and corr(Ps, closure rate) = −0.048
-            // measured, so it is orthogonal to tracking — the ideal case for
-            // lexicase and the worst case for scalar aggregation.
+            // The t4 bake reproduced the 034 failure exactly: throttle pinned at
+            // 1.000 on 100% of 129,732 ticks, pctInStreak 3.2% against a 30.9%
+            // baseline and a 41.5% best-ever.
             //
-            // Units: metres of Es. Multiplied by the ACTUAL elapsed seconds, so
-            // it is cadence-invariant in physical units with no tick-scale
-            // fudge — the same discipline energy_state.h imposes on Ps itself.
-            {
-                const gp_fitness esNow = static_cast<gp_fitness>(stepState.getSpecificEnergy());
-                const double tNow = static_cast<double>(stepState.getSimTimeMsec());
-                if (haveEs) {
-                    const double dt = (tNow - prevEsTimeMsec) / 1000.0;
-                    if (dt > 0.0) {
-                        const gp_fitness ps = autoc::eval::specificExcessPower(
-                            esNow, prevEs, static_cast<gp_fitness>(dt));
-                        if (ps < 0.0) energyAccum += -ps * static_cast<gp_fitness>(dt);
-                    }
-                }
-                prevEs = esNow;
-                prevEsTimeMsec = tNow;
-                haveEs = true;
+            // ⭐ WHY Es-DESTROYED CANNOT DO THIS JOB. It charges for the RESULT
+            // (energy lost), not the EXPENDITURE. Full throttle RAISES Es, so it
+            // is not merely uncharged -- it is rewarded. The only remaining way
+            // to lose energy is drag, measured at corr(load, destroyed) = +0.72,
+            // so the axis quietly became a penalty on MANOEUVRING: exactly
+            // backwards. Charging for power spent is the term that makes "high
+            // power costs" true, and it is the one with a 41.5%-streak record.
+            //
+            // ⚠️ Es/Ps are NOT retired -- 041's real contribution stands. Es
+            // remains an NN INPUT (the policy can finally observe its own energy,
+            // which TA03 showed it never could) and Ps stays recorded in the dmp
+            // and plotted by energy_progress.py. What changed is only that Es
+            // stopped being the SELECTION term, which it was never proven to be.
+            //
+            // 037 T018 -- kCadenceTickScale: per-tick contributions accumulate in
+            // 100 ms-tick-equivalent units so the total is cadence-invariant.
+            // x1.0 bitwise no-op at 10 Hz.
+            if (stepState.hasNNData()) {
+                const float* out2 = stepState.getNNOutputs();
+                energyAccum += throttleEnergyStep(static_cast<gp_fitness>(out2[2]))
+                               * kCadenceTickScale;  // 035 FR-001b/R1 convex
             }
 
             // 030 M11.wrap T088 + 327-330 — tracker-mode diagnostic
@@ -443,7 +431,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         // Store result
         result.score = -accumulatedScore;       // Negate: lower = better
         result.stability_score = stabilityAccum; // Already negative; lower = better
-        result.energy_score = energyAccum;       // 041 P2-5: metres of Es destroyed; >= 0, lower = better
+        result.energy_score = energyAccum;       // 041 P2-7: convex throttle-power integral; >= 0, lower = better
         result.crashed = isCrash(crashReason);
         result.crashReason = crashReason;
 

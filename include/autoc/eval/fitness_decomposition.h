@@ -24,9 +24,8 @@ struct EvalResults;
 // - `stability_score` (027 v4): time pitch/roll surfaces spend off-center.
 //   Σ_t (|out_pt_t| - 1) + (|out_rl_t| - 1) over completed ticks. Each tick
 //   contributes -2 (both surfaces centered, ideal) to 0 (both saturated, worst).
-// - `energy_score` (041 P2-5): metres of specific energy DESTROYED,
-//   Σ max(0, −Ps)·dt. (Was 035 FR-001b/R1's convex throttle-command integral,
-//   which muted rather than trimmed — see the accumulation site.)
+// - `energy_score` (035 FR-001b/R1, restored 041 P2-7): convex throttle-command
+//   integral — the term that de-pegged throttle 0.93 -> 0.72 at 035.
 //   Σ_t ((out_th_t + 1) / 2)² over completed ticks — out_th∈[-1,1] mapped to a
 //   [0,1] throttle fraction, squared (super-linear). Each tick contributes
 //   0 (idle) to 1 (full throttle). ≥0, lower = better. (Replaces the 027 v3
@@ -76,14 +75,14 @@ struct TrackerDiag {
 struct ScenarioScore {
     gp_fitness score;            // Tracking (negated accumulated points, lower = better)
     gp_fitness stability_score;  // Per-tick (|out_pt|-1) + (|out_rl|-1) summed; lower = better
-    // 041 P2-5 — metres of SPECIFIC ENERGY DESTROYED over the scenario,
-    // Σ max(0, −Ps)·dt. Always >= 0; lower = better.
+    // Convex integral of commanded THROTTLE POWER — 035 FR-001b, restored at
+    // 041 P2-7 after the Es-destroyed variant re-pegged throttle at 1.000.
+    // Always >= 0; lower = better.
     //
-    // ⚠️ NOT the pre-041 throttle-command integral. That penalised an absolute
-    // quantity, and full power is often correct — so it could only mute. This
-    // charges for energy thrown away and nothing else: climbing is free
-    // (Ps > 0 contributes zero) and a height-for-speed trade is free (Es is
-    // conserved through it). See the derivation at the accumulation site.
+    // ⚠️ It charges for power SPENT, not for energy lost. That distinction is
+    // the whole point: Es-destroyed rewarded full throttle (throttle raises Es)
+    // and charged manoeuvring instead. See the accumulation site for the
+    // 034-vs-035 evidence.
     gp_fitness energy_score;
     // 038 US3 — aux span/closure-predictor error (tracker-only; 0 in pathgen and
     // when no CEP-visible (t, t+horizon) pairs exist). Mean |predicted_span −

@@ -1,11 +1,10 @@
 // 035 FR-001b/R1 (T029) -- convex throttle-energy metric.
 // asserts the hand-computed fixtures, non-negativity, monotonicity, convexity.
 //
-// ⚠️ 041 P2-5 — `throttleEnergyStep` NO LONGER FEEDS `energy_score`. It is
-// retained (and still tested) as a diagnostic of propulsive effort, but the
-// selection axis is now metres of specific energy DESTROYED, Σ max(0, −Ps)·dt.
-// The tests below the divider are the ones that matter for selection, and the
-// first of them is the guard against 035 happening again.
+// ⭐ 041 P2-7 — `throttleEnergyStep` IS the selection axis again, restored after
+// the P2-5 Es-destroyed variant re-pegged throttle at 1.000 on 100% of ticks.
+// The `PsEnergyAxis` tests below now cover a DIAGNOSTIC (Ps is still recorded
+// and plotted); `ThrottlePowerAxis` at the end covers the live objective.
 
 #include <gtest/gtest.h>
 #include <cmath>
@@ -85,7 +84,9 @@ constexpr double kDt = 0.05;  // 20 Hz
 
 }  // namespace
 
-// ⛔⛔ THE MUTING GUARD. This is the single test that would have caught 035.
+// ⛔ MUTING GUARD for the Ps DIAGNOSTIC — no longer the selection axis (see the
+// header note). Kept because Ps is still recorded and 043 may revisit it; if it
+// ever returns as an axis, this property has to hold first.
 //
 // 035 selected on an ABSOLUTE energy quantity (a convex integral of the
 // throttle command), and because full power is genuinely correct when far
@@ -172,6 +173,51 @@ TEST(PsEnergyAxis, IsNonNegativeAndZeroForALosslessPolicy) {
   std::vector<double> gaining;
   for (int i = 0; i < 100; ++i) gaining.push_back(10.0 + 0.3 * i);
   EXPECT_DOUBLE_EQ(energyDestroyed(gaining, kDt), 0.0);
+}
+
+
+// ===========================================================================
+// 041 P2-7 — THE LIVE AXIS: convex throttle power.
+// ===========================================================================
+
+// THE GUARD THAT WOULD HAVE CAUGHT t4. The Es-destroyed axis did not charge for
+// power at all -- full throttle RAISES Es, so pinning the stick was free, and the
+// t4 bake pinned it at 1.000 on 100% of 129,732 ticks. Any energy axis worth the
+// name must make sustained max power cost strictly more than modulating.
+TEST(ThrottlePowerAxis, FullThrottleCostsStrictlyMoreThanModulating_PEG_GUARD) {
+  const int kTicks = 1000;
+  gp_fitness pegged = 0.0, modulated = 0.0, idle = 0.0;
+  for (int i = 0; i < kTicks; ++i) {
+    pegged    += throttleEnergyStep(1.0);                   // pinned at max
+    modulated += throttleEnergyStep((i % 2) ? 1.0 : -1.0);  // same MEAN, alternating
+    idle      += throttleEnergyStep(-1.0);
+  }
+  EXPECT_GT(pegged, modulated)
+      << "sustained full throttle is not costing more than an equal-mean "
+         "modulated command -- the axis cannot de-peg the stick, which is the "
+         "034 failure and the one t4 reproduced";
+  EXPECT_GT(modulated, idle);
+  EXPECT_DOUBLE_EQ(idle, 0.0);
+
+  // CONVEXITY is what makes it prefer modulation: two ticks at half power must
+  // cost less than one at full plus one at idle. A LINEAR cost is indifferent,
+  // and an indifferent axis can never move the stick.
+  EXPECT_LT(2.0 * throttleEnergyStep(0.0),
+            throttleEnergyStep(1.0) + throttleEnergyStep(-1.0))
+      << "cost is not convex in throttle -- a linear axis is indifferent between "
+         "steady half power and bang-bang, so it would never de-peg";
+}
+
+// The 035 result as a property: the axis must be able to EXPRESS the
+// 0.93 -> 0.72 amplitude reduction it actually produced, i.e. the cost must not
+// be flat near max power.
+TEST(ThrottlePowerAxis, CostIsSensitiveNearFullPower) {
+  const gp_fitness at93 = throttleEnergyStep(0.86);  // throttle 0.93
+  const gp_fitness at72 = throttleEnergyStep(0.44);  // throttle 0.72
+  EXPECT_GT(at93, at72);
+  EXPECT_GT((at93 - at72) / at93, 0.25)
+      << "the axis barely distinguishes 0.93 from 0.72 throttle; 035 moved the "
+         "controller exactly that far, so the gradient must be there to follow";
 }
 
 }  // namespace

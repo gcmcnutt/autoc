@@ -11,6 +11,9 @@
 
 #include <gtest/gtest.h>
 
+#include <fstream>
+#include <string>
+
 #include <cmath>
 
 #include "autoc/eval/aircraft_state.h"
@@ -248,4 +251,55 @@ TEST(ArenaDatum, MeasuredM1TargetEnvelopeFitsInsideTheArena) {
         << "the rabbit itself leaves the arena at the top of its tallest path";
     EXPECT_LT(kTargetMaxRadius, arena.radius_m)
         << "the rabbit itself leaves the arena horizontally";
+}
+
+// ---------------------------------------------------------------------------
+// 041 P2-3 — the crrcsim launch altitudes must agree with the frame
+// ---------------------------------------------------------------------------
+
+// ⛔ THE ONE THAT WOULD HAVE CAUGHT IT. There are TWO crrcsim configs — the
+// headless training worker uses autoc_config.xml, the VISUAL worker uses
+// autoc_config-eval.xml — and when the frame moved only the first was updated.
+// The visual craft then launched at 25.0012 m AGL against a 25 m hard deck:
+// 1.2 mm of clearance, every scenario egressing on the floor inside a second,
+// and a policy that looked broken when the spawn point was the thing that was
+// wrong.
+//
+// `<launch altitude>` is in FEET and measured to the aircraft's LOWEST point.
+// crrc_main computes  Altitude = launch + zLow + groundHeight, so inverting:
+//     launch_ft = (-SIM_INITIAL_ALTITUDE / 0.3048) - zLow - groundHeight
+// ⚠️ groundHeight is NEGATIVE (Davis returns -0.1 ft), so that trailing term
+// ADDS 0.1. Getting its sign wrong is a 0.2 ft error — which this test caught
+// in its own first draft, which is the argument for computing it here rather
+// than pasting the number from the XML.
+//
+// Parsed from the XML rather than restated, so the test fails when the FILE
+// drifts rather than when someone forgets to update a copy of the number.
+TEST(ArenaDatum, EveryCrrcsimLaunchAltitudeMatchesTheVirtualOrigin) {
+    const double kZLowFt = 0.125;      // hb1_streamer.xml <wheels units="0">
+    const double kGroundFt = -0.1;     // BuiltinSceneryDavis::getHeight()
+    const double want_ft = (-static_cast<double>(SIM_INITIAL_ALTITUDE) / 0.3048)
+                           - kZLowFt - kGroundFt;
+
+    for (const char* rel : {"crrcsim/autoc_config.xml",
+                            "crrcsim/autoc_config-eval.xml"}) {
+        std::ifstream in(std::string(AUTOC_SOURCE_DIR) + "/" + rel);
+        ASSERT_TRUE(in.good()) << "cannot open " << rel;
+        std::string txt((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+
+        const std::string key = "<launch altitude=\"";
+        const size_t p = txt.find(key);
+        ASSERT_NE(p, std::string::npos) << rel << " has no <launch altitude>";
+        const size_t s = p + key.size();
+        const double got = std::stod(txt.substr(s, txt.find('"', s) - s));
+
+        EXPECT_NEAR(got, want_ft, 0.01)
+            << rel << " launches at " << got << " ft = "
+            << (got + kZLowFt + kGroundFt) * 0.3048 << " m AGL, but "
+            << "SIM_INITIAL_ALTITUDE puts the virtual origin at "
+            << -static_cast<double>(SIM_INITIAL_ALTITUDE) << " m. The craft would "
+            << "spawn in the wrong place — and if that is at or below the hard "
+            << "deck it egresses on tick 1 and the POLICY takes the blame.";
+    }
 }

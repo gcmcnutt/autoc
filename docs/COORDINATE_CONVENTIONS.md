@@ -373,7 +373,8 @@ hiding the training challenge.
 ### Renderer Display Convention
 
 The renderer shows paths and aircraft at a display altitude offset from virtual:
-- Paths (virtual Z=0) → shifted by `SIM_INITIAL_ALTITUDE` (-25m) for display
+- Paths (virtual Z=0) → shifted by `SIM_INITIAL_ALTITUDE` (−55 m as of 041) for display, so
+  **display z = −AGL** exactly and the arena cylinder lands on the checkerboard
 - Aircraft positions (virtual Z≈0) → shifted by `SIM_INITIAL_ALTITUDE` for display
 - Both use the same transform, so they overlap correctly
 
@@ -843,7 +844,7 @@ clothes.
 |---|---|---|---|
 | **virtual-frame z** | engage-relative, z ≈ 0 at start | same | ❌ arbitrary offset; "energy" would be measured from wherever the run happened to begin |
 | **AGL** | `-(pos.z + SIM_INITIAL_ALTITUDE)` — ground-referenced, the sim knows the ground | ❌ **not available** — `resolveEngageArena` centres the band on the engage point precisely because the aircraft has no ground reference | ❌ **sim-only**. Would train against a quantity flight cannot reproduce |
-| **height above the arena floor ("hard deck")** | `floor_agl_m` = 5 m AGL | `floor_z_ned = z_engage + K` | ✅ **defined identically in both**, because both carry an explicit floor |
+| **height above the arena floor ("hard deck")** | `floor_agl_m` = **25 m AGL** | `floor_z_ned = z_engage + down_m` | ✅ **defined identically in both**, because both carry an explicit floor |
 
 ### Why the hard deck is the RIGHT answer, not merely the available one
 
@@ -866,18 +867,35 @@ weirdness the operator named.
 It also makes energy and containment **one concern instead of two**: running out of energy and hitting the
 floor become the same failure.
 
-### ⚠️ The unresolved part — placement, not datum
+### ✅ RESOLVED 2026-08-18 — placement is now identical, by construction
 
-Sim and flight agree on the *definition* (height above the floor) but **not on where the floor is**:
+The placement gap below was real and is closed. It used to read:
 
-| | floor relative to engage |
-|---|---:|
-| sim (5–100 m AGL, engage at 25 m AGL) | **20 m below** |
-| flight (`resolveEngageArena`, K = 47.5) | **47.5 m below** |
+> sim placed the floor **20 m below** engage (5–100 m AGL band, engage at 25 m AGL) while flight placed it
+> **47.5 m below** (`resolveEngageArena`, K = 47.5). Same 95 m band, different placement — a live
+> sim-to-real gap affecting `DIST_TO_BOUNDARY`, which TA01 measured as the **third most important input**.
 
-Same 95 m band, different placement. This already affects `DIST_TO_BOUNDARY` — measured by the 041 TA01
-ablation as the **third most important input in the vector** — so it is a live sim-to-real gap in shipped
-code, not a new one. Options and the decision point are in `specs/BACKLOG.md`.
+**Now: ONE arena, radius 70 m, vertically ASYMMETRIC — `+50 m up / −30 m down` about the arm point.**
+In sim that lands at floor **25** / arm **55** / ceiling **105** m AGL.
+
+⭐ `resolveEngageArena(...).virtual_arena` is an **exact identity** on the training `FlightArena`, at any
+engage altitude and any asymmetry, because it derives the up and down extents separately from where the arm
+point sits inside the band. Sim and flight stopped agreeing by convention and now agree by construction.
+`tests/arena_tests.cc` and `tests/arena_recenter_tests.cc` assert it.
+
+⚠️ **The band is asymmetric on purpose, and sized to the CHASE, not the rabbit.** The M1 rabbit climbs
+34.98 m above the arm point and descends 2.74 m below it; the chase manoeuvres, bleeds energy and settles.
+A first cut at +60/−10 (sized to the rabbit) killed 16 of 16 scenarios on the deck within 4.9 s.
+
+⛔ **The arena is RELATIVE, not absolute.** Radius about the arm point, floor and ceiling at ∓extent. The AGL
+figures are only where the band lands *in sim*, where the ground is known. Keeping it above terrain and
+inside the site's 400 ft working envelope are **arm-time operator responsibilities** — nothing in the code
+enforces an absolute altitude, and nothing should.
+
+📐 **Every hop in the eleven-stage chain, measured**:
+[`specs/041-m2-depth/toolchain-datum-validation.md`](../specs/041-m2-depth/toolchain-datum-validation.md).
+⚠️ That file is feature-scoped and will age out with 041 — **this section is the durable home**; fold
+anything still load-bearing back here before the feature closes.
 
 **Standing guidance until it is resolved**: normalise altitude-derived inputs by the **band**
 (`ceiling − floor`, 95 m in both), so a slot means *"fraction of my usable vertical band"* rather than
@@ -893,7 +911,7 @@ It is both feet and meters… This is silly but hey we aren't crashing probes in
 | side | units | frame |
 |---|---|---|
 | CRRCSim FDM (`eom01`) | **feet, ft/s** — `v_P_CG_Rwy`, `v_V_local_rel_ground`, `getAccel`, `getGravity` | north/east/down |
-| autoc `AircraftState` | **metres, m/s** | NED, but **virtual** — engage-relative, origin 25 m AGL |
+| autoc `AircraftState` | **metres, m/s** | NED, but **virtual** — engage-relative; the origin sits at **55 m AGL** in sim (`SIM_INITIAL_ALTITUDE = −55`) |
 | conversion | `FEET_TO_METERS = 0.3048`, `inputdev_autoc.h:53` | applied at the bridge, both directions |
 
 **Both directions appear**: FDM→autoc multiplies (`vGround(0) * FEET_TO_METERS`), autoc→FDM divides
@@ -902,17 +920,29 @@ It is both feet and meters… This is silly but hey we aren't crashing probes in
 
 ### ⭐ Worked example — the `82` that looked like a discrepancy
 
-`crrcsim/autoc_config.xml` carries `<launch altitude="82">`. 041 briefly recorded this as an **open
-reconciliation** against `SIM_INITIAL_ALTITUDE = −25`, on the assumption both were metres. They are not:
+`crrcsim/autoc_config.xml` carried `<launch altitude="82">`. 041 briefly recorded this as an **open
+reconciliation** against `SIM_INITIAL_ALTITUDE = −25`, on the assumption both were metres. They are not —
+and the full arithmetic is worth having, because it is what the launch value is *derived from*:
 
 ```
-82 ft × 0.3048 = 24.9936 m   vs   SIM_INITIAL_ALTITUDE = 25 m     → agree to 6.4 mm (0.03%)
+crrc_main.cpp:  Altitude = launch.altitude + zLow + groundHeight       (all FEET)
+                zLow        = 0.125 ft   hb1_streamer.xml <wheels units="0">, max wheel z
+                groundHeight= −0.1  ft   BuiltinSceneryDavis::getHeight(), a flat plane
+    82 + 0.125 − 0.1 = 82.025 ft × 0.3048 = 25.0012 m   vs  25 m  → agree to 1.2 mm
 ```
 
-**The launch altitude is in CRRCSim's native FEET and it already matches the autoc virtual origin exactly.**
-There was never a discrepancy — only a unit assumption. Recorded here rather than quietly deleted, because
-the *shape* of the mistake (comparing two numbers without first checking they share a unit) is the one this
+**The launch altitude is in CRRCSim's native FEET and it matched the autoc virtual origin exactly.** There
+was never a discrepancy — only a unit assumption, plus two unstated terms. Kept here rather than deleted,
+because the *shape* of the mistake (comparing two numbers without checking they share a unit) is what this
 section exists to prevent.
+
+⚠️ **CURRENT VALUE: `<launch altitude="180.421">`** — inverting the same formula for a 55 m origin. And
+there are **TWO** files carrying it: `crrcsim/autoc_config.xml` (headless training worker) and
+`crrcsim/autoc_config-eval.xml` (**visual** worker, `scripts/crrcsim-visual.sh`). When the frame moved,
+only the first was updated; the visual craft then spawned at 25.0012 m AGL against a 25 m hard deck —
+**1.2 mm of clearance** — and every scenario floor-egressed within a second, which read as a broken policy.
+`ArenaDatum.EveryCrrcsimLaunchAltitudeMatchesTheVirtualOrigin` now parses **both** files and checks each
+against `SIM_INITIAL_ALTITUDE`.
 
 ### One consequence worth keeping
 
