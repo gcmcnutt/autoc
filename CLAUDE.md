@@ -1,6 +1,6 @@
 # autoc Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-07-28
+Auto-generated from all feature plans. Last updated: 2026-08-19
 
 ## Toolchains & Build Environment
 
@@ -51,6 +51,8 @@ decoder-gateware change.
 - xiao QSPI flash (2 MB log region, pre-erased ring, ground `ERASE:ALL`); new versioned (039-xiao-20hz-flight)
 - C++17 (autoc + crrcsim); Python 3.11 (analysis/plots only) + Eigen (vec3/quat), cereal (dmp + EvalData wire), inih (ini), GoogleTest, CRRCSim (040-camera-redo)
 - file-based — `data.dat` (per-tick trace), `data.stc` (per-gen), S3 `autoc-m2` / `autoc-eval` (040-camera-redo)
+- **C11** for `core/` (zero-dependency, no allocation after init, integer hot paths); + libcamera (live capture, per-frame metadata, request-level control); inih (042-camera-receiver)
+- raw frame recordings — continuous full raw on the flight host (Pi 5 + NVMe, 116 MB/s of ~450 (042-camera-receiver)
 
 - C++17 + Eigen, cereal (serialization), inih (config), GoogleTest (015-nn-training-improvements)
 
@@ -70,9 +72,9 @@ tests/
 C++17: Follow standard conventions
 
 ## Recent Changes
+- 042-camera-receiver: Added **C11** for `core/` (zero-dependency, no allocation after init, integer hot paths); + libcamera (live capture, per-frame metadata, request-level control); inih
 - 040-camera-redo: Added C++17 (autoc + crrcsim); Python 3.11 (analysis/plots only) + Eigen (vec3/quat), cereal (dmp + EvalData wire), inih (ini), GoogleTest, CRRCSim
 - 039-xiao-20hz-flight: Added C++17 (autoc tools/desktop reader), C++ (xiao, PlatformIO arduino-mbed, + nn2cpp codegen (`tools/nn2cpp.cc`), xiao QSPI flash logger + BLE stack,
-- 038-accurate-m2: Added C++17 (autoc, crrcsim), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analytics) + Eigen (vec3/quat math), cereal (NN01 + EvalResults + dmp serialization), inih
 
 
 <!-- MANUAL ADDITIONS START -->

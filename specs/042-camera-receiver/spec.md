@@ -385,10 +385,19 @@ from INAV and logged in blackbox, whose decode chain already exists (018).
   actual pointing lags and overshoots the command under dynamics. Truth stays the §7 offline oracle on the
   recorded frames; the commanded profile is the input swept, not the reference scored against. (The
   jitter remains a feature — §2.4.)
-- Mechanical: the gimbal already carries a **DJI O3 rig**, which is not light — so **torque and mounting
-  are proven** and fitting the OV9281 + M12 is a bracket-geometry change, not a load question (operator
-  2026-08-19). Bonus: **the O3's own recording is a free context channel** — a human-viewable, timestamped
-  record of what each sortie looked like, which is what you want when the IR raw shows something strange.
+- Mechanical: the gimbal today carries a **DJI O3 rig**, which is not light, and **the O3 comes OFF for
+  these tests** (operator 2026-08-19) — the OV9281 + M12 takes its place. So **torque and mounting are
+  proven with margin** (the replacement is lighter than what it replaces) and fitting it is a
+  bracket-geometry change, not a load question. The servo pan/tilt is driven by INAV independently of the
+  O3, so the repeatable-motion capability is unaffected by the swap.
+- ⚠ **Consequence of removing the O3: the sorties are flown blind.** No downlink, no live view of what the
+  camera sees, and no human-viewable context recording to annotate the IR raw against. Test protocol must
+  compensate — brief a known gimbal pointing and a known relative geometry, expect a fraction of passes to
+  miss the field, and fly enough passes that the yield is acceptable. If blind flying proves too costly,
+  the cheap fixes are a separate lightweight context camera (not on the gimbal) or a low-rate preview off
+  the Pi; neither is in 042 scope unless the first sortie says otherwise.
+- Power side-effect: removing the O3 (~4–8 W) roughly offsets the Pi's draw, so the §16.3 pack budget is
+  close to neutral on the swap rather than additive.
 - Electrical: see §16.3.
 
 #### 7.1.2 Time synchronisation — REQUIRED, and not otherwise in this spec
