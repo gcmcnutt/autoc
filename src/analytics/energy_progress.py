@@ -75,7 +75,8 @@ except ImportError:  # standalone use
 
 CACHE_FIELDS = ["gen", "es_p05", "es_med", "es_p95",
                 "ps_p05", "ps_med", "ps_p95",
-                "destroyed_per_scenario", "track_pct", "ticks"]
+                "destroyed_per_scenario", "destroyed_per_sec",
+                "track_pct", "ticks"]
 
 
 def compute_gen_metrics(rows):
@@ -88,6 +89,7 @@ def compute_gen_metrics(rows):
         raise KeyError("Es_m")
 
     es, ps, track = [], [], 0
+    total_dt = 0.0
     # Energy destroyed integrates max(0, -Ps)*dt per scenario, so it has to be
     # accumulated per scenario and averaged — not pooled over ticks.
     per_scenario = {}
@@ -118,6 +120,7 @@ def compute_gen_metrics(rows):
             if scn in prev_t:
                 dt = max(0.0, t - prev_t[scn])
             prev_t[scn] = t
+            total_dt += dt
             if pv < 0 and dt > 0:
                 per_scenario[scn] = per_scenario.get(scn, 0.0) + (-pv) * dt
             else:
@@ -136,6 +139,15 @@ def compute_gen_metrics(rows):
         "ps_med": float(np.median(psa)),
         "ps_p95": float(np.percentile(psa, 95)),
         "destroyed_per_scenario": float(sum(per_scenario.values()) / nscn),
+        # ⛔ THE LENGTH-INVARIANT ONE, and the one the muting test uses.
+        # destroyed_per_scenario is confounded by scenario LENGTH exactly the way
+        # raw fitness is: a policy that stops dying early flies more ticks, so it
+        # integrates more destruction at identical efficiency. Watched live on
+        # t4: completions went 18% -> 49% of scenarios between gen 1 and 50 and
+        # the summed energy rose with them, which says nothing about waste.
+        # Dividing by flight SECONDS makes it a rate: metres of Es destroyed per
+        # second of flight, comparable across runs of any length.
+        "destroyed_per_sec": float(sum(per_scenario.values()) / total_dt) if total_dt > 0 else 0.0,
         "track_pct": 100.0 * track / len(rows),
         "ticks": float(len(rows)),
     }
@@ -220,7 +232,7 @@ def main():
         if rec:
             data[g] = rec
             print(f"  [{i}/{len(todo)}] gen {g}: Es med {rec['es_med']:.1f}m "
-                  f"Ps med {rec['ps_med']:+.2f} destroyed/scn {rec['destroyed_per_scenario']:.1f}m "
+                  f"Ps med {rec['ps_med']:+.2f} destroyed {rec['destroyed_per_sec']:.2f} m/s "
                   f"track {rec['track_pct']:.1f}%")
             save_cache(args.cache, data)  # persist as we go — interruptible
 
@@ -256,18 +268,23 @@ def main():
 
     # --- 3. the objective ---
     a = ax[1][0]
-    a.plot(gens, col("destroyed_per_scenario"), "tab:purple", lw=1.8)
-    a.set_title("Energy DESTROYED per scenario  $\\Sigma\\max(0,-P_s)\\,dt$  (lower = better)")
-    a.set_ylabel("metres of $E_s$")
+    a.plot(gens, col("destroyed_per_sec"), "tab:purple", lw=1.8,
+           label="per SECOND of flight (length-invariant)")
+    a.plot(gens, col("destroyed_per_scenario") / max(1.0, float(np.mean(col("ticks")))),
+           "tab:gray", lw=1.0, alpha=0.6, ls="--",
+           label="per scenario / mean ticks (for contrast)")
+    a.set_title("Energy DESTROYED  $\\max(0,-P_s)$  (lower = better)")
+    a.set_ylabel("m of $E_s$ per second")
     a.set_xlabel("Generation")
+    a.legend(fontsize=7, loc="best")
 
     # --- 4. the muting test ---
     a = ax[1][1]
-    sc = a.scatter(col("track_pct"), col("destroyed_per_scenario"),
+    sc = a.scatter(col("track_pct"), col("destroyed_per_sec"),
                    c=gens, cmap="viridis", s=38, zorder=3)
     fig.colorbar(sc, ax=a, label="generation")
     a.set_xlabel(f"tracking occupancy (% ticks, stpPt ≥ {TRACK_THRESHOLD})")
-    a.set_ylabel("energy destroyed / scenario (m)")
+    a.set_ylabel("energy destroyed (m per second of flight)")
     a.set_title("MUTING TEST -- want DOWN-and-RIGHT\n"
                 "(down-and-LEFT = cheaper because it stopped trying = 035)",
                 fontsize=10)
