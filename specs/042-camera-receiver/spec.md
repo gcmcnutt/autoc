@@ -41,6 +41,11 @@ as expected, all while estimating position of next beacon on the 2d frame of the
   every envelope cell. Operator framing: *"we can do initial experiments on the RPi 3 we have today and
   the slower chip rate — but this is to prove **algorithms**, not absolute tracking time; sure, we'll slow
   the slew a bit to make it an honest test."* See §3.2.
+- Q: Does the Pi 5 flight-host mass (~100–130 g) constrain the plan? →
+  A: **No, and it opens something.** Operator 2026-08-19: *"we can fly this on other platforms more for
+  that size to verify the tracker dynamics — so is ok for tuning the rather demanding algorithm."* The
+  verification airframe is decoupled from the flight article, which means **the recorder can fly before
+  the tracker exists**. See §7.1 (verification ladder) and §12.1 (the gate this pulls at).
 
 ---
 
@@ -343,6 +348,27 @@ all riding on the replay harness:
    CEP ground truth.
 3. **The pan/pitch rig's commanded profile** — good rate truth, weaker position truth given the jitter.
 
+### 7.1 The verification ladder (added 2026-08-19) — and why the recorder flies first
+
+Operator: *"we can fly this on other platforms more for that size to verify the tracker dynamics — so is
+ok for tuning the rather demanding algorithm."* The **verification airframe is decoupled from the flight
+article**, so mass is not a tuning-phase constraint (§8.3's open item closes).
+
+The consequence is larger than the item it closes: **042-A ships a standalone recorder, so it can fly
+before 042-B exists.** A dumb recording payload brings back real raw with real ego-motion, sky,
+backgrounds, range and vibration — none of which the bench rig can produce — and B / C / E1 then develop
+offline against that dataset via replay, with the §7 offline oracle as truth. Early flights carry **no
+hard-real-time risk**, because §11.1's deadline only binds once the tracker runs onboard.
+
+| rung | setup | what it adds | cost |
+|---|---|---|---|
+| 1 | **Bench** — pan/pitch rig, static emitter | controlled, repeatable slew; jitter as disturbance | have it |
+| 2 | **Ground recorder + flying beacon aircraft** | real target dynamics, sky, backgrounds, range | one aircraft |
+| 3 | **Airborne recorder, verification platform** | **real ego-motion** (128–141 °/s pitch RMS, 500 °/s roll) + vibration | two aircraft, heavy payload OK |
+| 4 | Flight-weight host on the article | miniaturization | after the algorithm is settled — not 042 |
+
+Rungs 1–3 are 042. Rung 2 is the cheapest large gain and should not wait for rung 3.
+
 ---
 
 ## 8. Raw capture — the recorder (restructured 2026-08-19)
@@ -538,6 +564,19 @@ measured in 042-D (§2.5) — to confirm scaling and unlock dual CSI, not to dis
 works. What changed on 2026-08-19 is that the flight article is now *planned* as a Pi 5, which is what
 lets §8 stop engineering around a 512 MB / SD-card sink and §3.2 publish a flight-scaled column.
 
+### 12.1 Open decision — does §7.1 pull the Pi 5 purchase earlier?
+
+The gate as held (2026-08-17) is *"buy the Pi 5 when 042 shows a fancy tracker in the ballpark at high
+slew rate — to confirm scaling and get dual CSI, not to discover whether the tracker works."* §7.1
+introduces a **different justification**: buying it as the **recording platform** that produces the dataset
+the algorithm is tuned on, which would want it *before* B/C rather than after D.
+
+Both readings are defensible and the original reasoning is untouched by this — it argued against buying
+hardware to de-risk an unproven algorithm, not against buying hardware to collect data. **Flagged as an
+explicit decision, not moved.** Prerequisite either way: the Pi 5's actual fps is still unmeasured
+(HIGH-FPS-PLAN calls 453 "plausible-to-likely"), and the recipe — patched `ov9282.c` rebuilt against the
+Pi 5 kernel + `fps_probe.py` — is ~one evening.
+
 ---
 
 ## 13. Phasing, with split seams
@@ -604,8 +643,11 @@ tracking).
 2. ~~Exit-band numbers~~ — **RESOLVED 2026-08-19**: invariant primary, °/s derived, all three columns
    published (§3.2).
 3. ~~Recorder default~~ — **RESOLVED 2026-08-19**: continuous full raw on the Pi 5 + NVMe flight host;
-   3A+ ring is the degraded bench mode (§8). **New open item**: Pi 5 flight-host mass/power (~100–130 g
-   vs the 3A+'s ~30 g) against the airframe budget — flight-article question, not a 042 one (§8.3).
+   3A+ ring is the degraded bench mode (§8).
+   3a. ~~Pi 5 flight-host mass/power~~ — **RESOLVED 2026-08-19**: verification airframe is decoupled from
+   the flight article and can carry it; miniaturization is rung 4, not 042 (§7.1).
+5. **NEW, decide before planning**: does §7.1's fly-to-record path pull the Pi 5 purchase ahead of
+   042-B/C? See §12.1 — flagged, deliberately not moved.
 4. ST VL53L9CX (§9): pull the datasheet for FOV / zones / frame rate / sunlight — M3-M4, no rush.
 
 ---
