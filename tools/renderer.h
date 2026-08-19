@@ -225,6 +225,10 @@ private:
   vtkSmartPointer<vtkAppendPolyData> actuals;
   vtkSmartPointer<vtkAppendPolyData> segmentGaps;
   vtkSmartPointer<vtkAppendPolyData> planeData;
+  // 041 P2-3 — the containment cylinder, one per arena cell. Geometry comes
+  // from the dmp's recorded FlightArena, never from the live .ini, so a replay
+  // always shows the arena the run was actually flown in.
+  vtkSmartPointer<vtkAppendPolyData> arenaCylinders;
   vtkSmartPointer<vtkAppendPolyData> blackboxTapes;
   vtkSmartPointer<vtkAppendPolyData> blackboxHighlightTapes;  // For highlighted test spans
   vtkSmartPointer<vtkAppendPolyData> xiaoVecArrows;  // For xiao vec vectors

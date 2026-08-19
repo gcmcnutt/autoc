@@ -17,6 +17,7 @@
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/eval/fitness_computer.h"   // 037 P-O12 — honest score replay (same math as dmp_dump)
 #include <vtkSphereSource.h>
+#include <vtkCylinderSource.h>
 #include <vtkTriangle.h>
 #include <vtkLookupTable.h>
 #include <vtkFloatArray.h>
@@ -570,6 +571,7 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   { vtkNew<vtkPolyData> e; vtkNew<vtkPoints> p; e->SetPoints(p); this->chaseCameraFov->AddInputData(e); }
   this->segmentGaps->RemoveAllInputs();
   this->planeData->RemoveAllInputs();
+  this->arenaCylinders->RemoveAllInputs();
   this->blackboxTapes->RemoveAllInputs();
   this->blackboxHighlightTapes->RemoveAllInputs();
   this->xiaoVecArrows->RemoveAllInputs();
@@ -723,6 +725,65 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     planeSource->Update();
     planeData->AddInputConnection(planeSource->GetOutputPort());
 
+    // ---- 041 P2-3: the containment cylinder ---------------------------------
+    //
+    // Geometry from the dmp's RECORDED FlightArena, never from the live .ini.
+    // The arena moved five times during 041, so a replay that drew today's
+    // config around a week-old flight would be confidently wrong -- and it
+    // would look right, which is worse. This is the reason the arena became
+    // part of RecordedRunConfig in the first place.
+    //
+    // FRAME: the checkerboard above is drawn at display z = 0 = GROUND, and
+    // every position was shifted by += SIM_INITIAL_ALTITUDE at load, so
+    // display_z = -AGL exactly. The floor and ceiling therefore sit at
+    // -floor_agl_m and -ceiling_agl_m with no further conversion -- if that
+    // ever stops being true, the cylinder detaches from the checkerboard
+    // visibly, which is the point of drawing it against the ground plane.
+    {
+      const auto& fa = evalResults.runConfig.flightArena;
+      if (fa.radius_m > 0.0f && fa.ceiling_agl_m > fa.floor_agl_m) {
+        const double heightM = static_cast<double>(fa.ceiling_agl_m - fa.floor_agl_m);
+        const double midZ = -0.5 * static_cast<double>(fa.ceiling_agl_m + fa.floor_agl_m);
+
+        vtkNew<vtkCylinderSource> cyl;
+        cyl->SetRadius(static_cast<double>(fa.radius_m));
+        cyl->SetHeight(heightM);
+        cyl->SetResolution(48);
+        cyl->CappingOff();          // open tube: caps would curtain off the view
+        cyl->SetCenter(0.0, 0.0, 0.0);
+
+        // vtkCylinderSource is Y-axis aligned; the arena axis is world Z.
+        vtkNew<vtkTransform> xf;
+        xf->Translate(offset[0], offset[1], midZ);
+        xf->RotateX(90.0);
+        vtkNew<vtkTransformPolyDataFilter> xff;
+        xff->SetTransform(xf);
+        xff->SetInputConnection(cyl->GetOutputPort());
+        xff->Update();
+        arenaCylinders->AddInputConnection(xff->GetOutputPort());
+
+        // Floor and ceiling RINGS, drawn as flat one-segment-tall tubes so they
+        // survive the wall's near-zero opacity. These two are the bounds that
+        // actually end a scenario; the wall only ends one of three.
+        for (double aglRing : {static_cast<double>(fa.floor_agl_m),
+                               static_cast<double>(fa.ceiling_agl_m)}) {
+          vtkNew<vtkCylinderSource> ring;
+          ring->SetRadius(static_cast<double>(fa.radius_m));
+          ring->SetHeight(0.35);
+          ring->SetResolution(48);
+          ring->CappingOff();
+          vtkNew<vtkTransform> rxf;
+          rxf->Translate(offset[0], offset[1], -aglRing);
+          rxf->RotateX(90.0);
+          vtkNew<vtkTransformPolyDataFilter> rxff;
+          rxff->SetTransform(rxf);
+          rxff->SetInputConnection(ring->GetOutputPort());
+          rxff->Update();
+          arenaCylinders->AddInputConnection(rxff->GetOutputPort());
+        }
+      }
+    }
+
     ScenarioMetadata meta = evalResults.scenario;
     if (evalResults.scenarioList.size() == evalResults.pathList.size()) {
       meta = evalResults.scenarioList[i];
@@ -875,6 +936,7 @@ bool Renderer::updateGenerationDisplay(int newGen) {
   }
 
   this->planeData->Update();
+  this->arenaCylinders->Update();
   this->paths->Update();
   this->actuals->Update();
   this->targetActuals->Update();  // 030 M9b
@@ -1244,6 +1306,7 @@ void Renderer::initialize() {
   actuals = vtkSmartPointer<vtkAppendPolyData>::New();
   segmentGaps = vtkSmartPointer<vtkAppendPolyData>::New();
   planeData = vtkSmartPointer<vtkAppendPolyData>::New();
+  arenaCylinders = vtkSmartPointer<vtkAppendPolyData>::New();
   blackboxTapes = vtkSmartPointer<vtkAppendPolyData>::New();
   blackboxHighlightTapes = vtkSmartPointer<vtkAppendPolyData>::New();
   xiaoVecArrows = vtkSmartPointer<vtkAppendPolyData>::New();
@@ -1263,6 +1326,7 @@ void Renderer::initialize() {
   actuals->AddInputData(emptyPolyData);
   segmentGaps->AddInputData(emptyPolyData);
   planeData->AddInputData(emptyPolyData);
+  arenaCylinders->AddInputData(emptyPolyData);
   blackboxTapes->AddInputData(emptyPolyData);
   blackboxHighlightTapes->AddInputData(emptyPolyData);
   xiaoVecArrows->AddInputData(emptyPolyData);
@@ -1280,6 +1344,29 @@ void Renderer::initialize() {
   planeMapper->SetInputConnection(planeData->GetOutputPort());
   vtkNew<vtkActor> planeActor;
   planeActor->SetMapper(planeMapper);
+
+  // 041 P2-3 — the containment cylinder. Mostly transparent so it frames the
+  // flight without hiding it; drawn as a surface with its edges picked out, so
+  // the floor and ceiling RINGS read clearly (those are the bounds that
+  // actually terminate a scenario) even where the wall is nearly invisible.
+  //
+  // ⚠️ Backface culling OFF and lighting OFF deliberately: from inside the
+  // cylinder — which is where the camera almost always is — a lit, culled
+  // surface disappears entirely, and an arena you cannot see is worse than no
+  // arena at all.
+  arenaCylinders->Update();
+  vtkNew<vtkPolyDataMapper> arenaMapper;
+  arenaMapper->SetInputConnection(arenaCylinders->GetOutputPort());
+  vtkNew<vtkActor> arenaActor;
+  arenaActor->SetMapper(arenaMapper);
+  arenaActor->GetProperty()->SetColor(0.35, 0.75, 1.0);   // cool blue — not a flight colour
+  arenaActor->GetProperty()->SetOpacity(0.06);            // mostly transparent
+  arenaActor->GetProperty()->SetLighting(false);
+  arenaActor->GetProperty()->BackfaceCullingOff();
+  arenaActor->GetProperty()->SetEdgeVisibility(true);
+  arenaActor->GetProperty()->SetEdgeColor(0.35, 0.75, 1.0);
+  arenaActor->GetProperty()->SetLineWidth(1.0);
+  arenaActor->PickableOff();
 
   // Update mappers
   vtkNew<vtkPolyDataMapper> mapper1;
@@ -1497,6 +1584,7 @@ void Renderer::initialize() {
   chaseCameraFovActor->GetProperty()->SetLineWidth(1.2);
 
   renderer->AddActor(planeActor);
+  renderer->AddActor(arenaActor);   // 041 P2-3 — containment cylinder
   renderer->AddActor(actor1);  // Red path line (projected rabbit)
   renderer->AddActor(directRabbitActor);  // Magenta path (direct rabbit ground truth)
   renderer->AddActor(actor2);  // Yellow flight tape
