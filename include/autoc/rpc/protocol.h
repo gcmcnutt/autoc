@@ -250,9 +250,18 @@ struct WorkerInit {
   double fitConeAngleDeg;
   double fitStreakThreshold;
   double fitStreakRampSec;
-  // 041 US4 ablation gates — the worker must know whether to populate the
-  // envelope/accel channels at all, for the T068 matrix.
-  int enableEnvelopeInputs;
+  // 041 P2-2 — needed by the worker to weight SCORE_GRAD_* by the streak
+  // multiplier the tick earns. Same no-default rule as the cone above.
+  double fitStreakMultiplierMax;
+  // 041 US4 ablation gate for the accel channels (T068 matrix).
+  //
+  // ⚠️ `enableEnvelopeInputs` is GONE at 041 P2-2 — IN_ENVELOPE and
+  // ENVELOPE_SECS are no longer NN inputs, so a gate on "populate the envelope
+  // inputs" gated nothing. The envelope ACCUMULATOR is now populated
+  // unconditionally in both modes: M2's perception estimator is built on it and
+  // the tracking metrics are read from its recorded trace. Removed rather than
+  // left inert, per the no-vestigial-knob rule — a config key that does nothing
+  // is a question someone will have to answer later by reading the source.
   int enableAccelInputs;
   double accelScaleG;
   // 041 T038 — M2 direct-perception envelope estimator thresholds (FR-018b).
@@ -294,8 +303,8 @@ struct WorkerInit {
        servoModelEnabled,       // 037 servo v2 -- appended, no version bump
        // 041 T035 -- fitness cone + US4 gates, appended, no version bump
        fitDistScaleBehind, fitDistScaleAhead, fitConeAngleDeg,
-       fitStreakThreshold, fitStreakRampSec,
-       enableEnvelopeInputs, enableAccelInputs, accelScaleG,
+       fitStreakThreshold, fitStreakRampSec, fitStreakMultiplierMax,
+       enableAccelInputs, accelScaleG,
        // 041 T038 -- M2 envelope estimator, appended, no version bump
        envelopeSpanLo, envelopeSpanHi, envelopeCentroidRadius,
        // 041 T049 -- ablation mask, appended, no version bump
@@ -468,7 +477,6 @@ struct RecordedRunConfig {
   // run?" — which is exactly what the T068 ablation matrix asks of it. Without
   // these a zeroed accel column is ambiguous between "ablated on purpose" and
   // "silently broken", and that ambiguity is unresolvable after the fact.
-  int    enableEnvelopeInputs = 0;
   int    enableAccelInputs = 0;
   double accelScaleG = 0.0;
   // M2 direct-perception envelope estimator thresholds (FR-018b). Recorded for
@@ -478,6 +486,19 @@ struct RecordedRunConfig {
   double envelopeSpanHi = 0.0;
   double envelopeCentroidRadius = 0.0;
 
+  // 041 P2-4 — THE ARENA THE RUN WAS FLOWN IN.
+  //
+  // ⛔ It was not recorded, and the arena moved THREE TIMES in a single day
+  // (80/5/100 → 70/10/110 → 70/25/121 → 70/25/95 asymmetric). A dmp that cannot
+  // say which cylinder contained it cannot answer "was this egress the deck
+  // being tight, or the policy being baited toward it" — and cannot even be
+  // compared against another run without someone remembering which .ini was
+  // live. Every other self-describing field here exists for the same reason.
+  //
+  // Also what makes `Es` reconstructible post-hoc: the datum is height above
+  // the FLOOR, so a reader without the floor cannot recompute it.
+  autoc::eval::FlightArena flightArena;
+
   template<class Archive>
   void serialize(Archive& ar) {
     ar(fitDistScaleBehind, fitDistScaleAhead, fitConeAngleDeg,
@@ -486,8 +507,11 @@ struct RecordedRunConfig {
        enableHullCrashPenalty, hullCrashPenaltyFactor, oobCrashPenaltyWeight,
        // 041 T043 — appended; EvalResults' version bump at T044 is what makes
        // older dmps fail loud rather than mis-read this tail.
-       enableEnvelopeInputs, enableAccelInputs, accelScaleG,
-       envelopeSpanLo, envelopeSpanHi, envelopeCentroidRadius);
+       enableAccelInputs, accelScaleG,
+       envelopeSpanLo, envelopeSpanHi, envelopeCentroidRadius,
+       // 041 P2-4 — appended; the EvalResults v4 bump is what makes older dmps
+       // fail loud rather than mis-read this tail.
+       flightArena);
   }
 };
 
@@ -599,7 +623,16 @@ struct EvalResults {
 
   // 041 T044 (Constitution V; research.md R6) — the reader's schema version, in
   // one place so the check below and CEREAL_CLASS_VERSION cannot drift apart.
-  static constexpr std::uint32_t kSchemaVersion = 3;
+  // 041 P2-4 — v3 → v4. The break is REAL, not bookkeeping: the NN input
+  // vector changed shape in both modes (42→45, 63→66), the tracker vector was
+  // REORDERED, and AircraftState now carries Es / boundary-closure /
+  // score-gradient. A v3 dmp read by this binary would decode a differently
+  // shaped tick stream and every number in it would look plausible.
+  //
+  // ⚠️ The pre-break comparator CSVs had to be extracted BEFORE this bump —
+  // see specs/041-m2-depth/measure/README.md. After it, the t1 dmps are
+  // unreadable by any current binary, permanently.
+  static constexpr std::uint32_t kSchemaVersion = 4;
 
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
@@ -763,8 +796,8 @@ struct EvalResults {
 //
 // ⚠️ Keep this in step with EvalResults::kSchemaVersion — the static_assert
 // below makes a one-sided edit a compile error rather than a runtime surprise.
-CEREAL_CLASS_VERSION(EvalResults, 3)
-static_assert(EvalResults::kSchemaVersion == 3,
+CEREAL_CLASS_VERSION(EvalResults, 4)
+static_assert(EvalResults::kSchemaVersion == 4,
               "EvalResults::kSchemaVersion and CEREAL_CLASS_VERSION(EvalResults, N) "
               "must agree — bump both or neither.");
 

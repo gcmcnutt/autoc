@@ -167,12 +167,16 @@ static void stampEvalResultsProvenance(EvalResults& results) {
     rc.oobCrashPenaltyWeight  = cfg.oobCrashPenaltyWeight;
     // 041 T043 — US4 observation knobs, so the dmp says whether its ACCEL_* /
     // envelope columns were populated or ablated.
-    rc.enableEnvelopeInputs    = cfg.enableEnvelopeInputs;
     rc.enableAccelInputs       = cfg.enableAccelInputs;
     rc.accelScaleG             = cfg.accelScaleG;
     rc.envelopeSpanLo          = cfg.envelopeSpanLo;
     rc.envelopeSpanHi          = cfg.envelopeSpanHi;
     rc.envelopeCentroidRadius  = cfg.envelopeCentroidRadius;
+    // 041 P2-4 — the arena the run was flown in. Same source the workers get
+    // (init.flightArena), so the recorded cylinder is the enforced one.
+    rc.flightArena.radius_m      = static_cast<gp_scalar>(cfg.flightArenaRadius);
+    rc.flightArena.floor_agl_m   = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
+    rc.flightArena.ceiling_agl_m = static_cast<gp_scalar>(cfg.flightArenaCeilingAGL);
 }
 
 // Compute (and cache) the scenarioSeed table once the per-run scenario
@@ -951,7 +955,7 @@ static WorkerInit buildWorkerInit() {
     init.fitStreakThreshold = cfg.fitStreakThreshold;
     init.fitStreakRampSec = cfg.fitStreakRampSec;
     // 041 US4 ablation gates + accel scale (T068's matrix flips these).
-    init.enableEnvelopeInputs = cfg.enableEnvelopeInputs;
+    init.fitStreakMultiplierMax = cfg.fitStreakMultiplierMax;  // 041 P2-2 — SCORE_GRAD_* weighting
     init.enableAccelInputs = cfg.enableAccelInputs;
     init.accelScaleG = cfg.accelScaleG;
     // 041 T038 — M2 direct-perception envelope estimator thresholds.
@@ -1599,6 +1603,12 @@ static void runNNEvolution(
          << " avgMaxStreak=" << std::setprecision(1) << avgMaxStreak
          << " pctInStreak=" << std::setprecision(1) << pctInStreak
          << " stability=" << std::setprecision(2) << totalStability
+         // 041 P2-5 — `energy` is now METRES OF SPECIFIC ENERGY DESTROYED
+         // (Σ max(0, −Ps)·dt summed over scenarios), NOT the pre-041 convex
+         // throttle-command integral. Same column name, different quantity and
+         // different units: it is NOT comparable across the 041 boundary, and
+         // a cross-run plot that mixes the two is comparing throttle effort
+         // with energy waste.
          << " energy=" << std::setprecision(2) << totalEnergy
          << " whh_xh_ratio=" << std::setprecision(4) << whh_xh_ratio
          << " w_xh0_cv=" << std::setprecision(4) << blockStats.w_xh0_cv
@@ -1623,9 +1633,25 @@ static void runNNEvolution(
           case CrashReason::HullStrike:     cnt_hullStrike++; break;
         }
       }
+      // 041 P2-4 — split the `eval` bucket by WHICH BOUND was crossed. With the
+      // asymmetric band (+60 up / −10 down) "eval" alone cannot distinguish a
+      // deck that is too tight from a policy being baited down onto it, and
+      // those want opposite responses.
+      int cnt_egFloor = 0, cnt_egCeil = 0, cnt_egRadius = 0;
+      for (const auto& sc : bestScores) {
+        switch (sc.egress_kind) {
+          case autoc::eval::ArenaEgressKind::FLOOR:   cnt_egFloor++;  break;
+          case autoc::eval::ArenaEgressKind::CEILING: cnt_egCeil++;   break;
+          case autoc::eval::ArenaEgressKind::RADIUS:  cnt_egRadius++; break;
+          case autoc::eval::ArenaEgressKind::NONE:                    break;
+        }
+      }
       *logger.info() << "#GenCrash gen=" << gen
            << " hullStrike=" << cnt_hullStrike
            << " eval=" << cnt_eval
+           << " egFloor=" << cnt_egFloor
+           << " egCeil=" << cnt_egCeil
+           << " egRadius=" << cnt_egRadius
            << " sim=" << cnt_sim
            << " boot=" << cnt_boot
            << " timeLimit=" << cnt_timeLimit
@@ -2071,7 +2097,10 @@ int main(int argc, char** argv)
   // Generate initial paths using pre-fetched gPathSeed (single PRNG architecture)
   generationPaths = generateSmoothPaths(const_cast<char*>(cfg.generatorMethod.c_str()),
                                         cfg.simNumPathsPerGen,
-                                        SIM_PATH_BOUNDS, SIM_PATH_BOUNDS,
+                                        // 041 P2-3 — radius and HEIGHT are separate bounds now:
+                                        // the arena is not a cube and only the vertical is
+                                        // capped by the 400 ft site limit.
+                                        SIM_PATH_BOUNDS, SIM_PATH_HEIGHT_BOUNDS,
                                         gPathSeed);
 
   // DEBUG: Log segment counts for each path

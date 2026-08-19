@@ -40,11 +40,13 @@ TEST(InputMask, EmptyMeansUnablatedBaseline) {
     EXPECT_TRUE(buildInputMask(std::vector<std::string>{}, false).empty());
 }
 
-TEST(InputMask, ResolvesTheEnvelopeAndAccelSlots) {
-    const auto m = buildInputMask("IN_ENVELOPE,ENVELOPE_SECS", false);
+TEST(InputMask, ResolvesTheEnergyAndBoundarySlots) {
+    // 041 P2-2: IN_ENVELOPE / ENVELOPE_SECS are gone as inputs; the two new
+    // scalar observations stand in as the by-name resolution case.
+    const auto m = buildInputMask("SPECIFIC_ENERGY,BOUNDARY_CLOSURE_RATE", false);
     ASSERT_EQ(m.size(), static_cast<size_t>(PathgenInput::COUNT));
-    EXPECT_EQ(m[static_cast<size_t>(PathgenInput::IN_ENVELOPE)], 1);
-    EXPECT_EQ(m[static_cast<size_t>(PathgenInput::ENVELOPE_SECS)], 1);
+    EXPECT_EQ(m[static_cast<size_t>(PathgenInput::SPECIFIC_ENERGY)], 1);
+    EXPECT_EQ(m[static_cast<size_t>(PathgenInput::BOUNDARY_CLOSURE_RATE)], 1);
     // Everything else untouched — an over-broad mask would exaggerate an effect.
     EXPECT_EQ(m[static_cast<size_t>(PathgenInput::ACCEL_Z)], 0);
     EXPECT_EQ(m[static_cast<size_t>(PathgenInput::QUAT_W)], 0);
@@ -70,7 +72,7 @@ TEST(InputMask, UnknownNameIsAHardErrorListingValidNames) {
         EXPECT_NE(msg.find("GYROP"), std::string::npos) << msg;
         // It must show the caller what IS valid, or the error is a dead end.
         EXPECT_NE(msg.find("GYRO_P"), std::string::npos) << msg;
-        EXPECT_NE(msg.find("IN_ENVELOPE"), std::string::npos) << msg;
+        EXPECT_NE(msg.find("SPECIFIC_ENERGY"), std::string::npos) << msg;
     }
 }
 
@@ -148,14 +150,14 @@ TEST(InputMask, MaskZerosExactlyTheNamedSlotsAndNothingElse) {
     const int n = static_cast<int>(PathgenInput::COUNT);
     for (int i = 0; i < n; ++i) raw[i] = static_cast<float>(i + 1);  // all non-zero
 
-    const auto mask = buildInputMask("IN_ENVELOPE,ACCEL_Y", false);
+    const auto mask = buildInputMask("SPECIFIC_ENERGY,ACCEL_Y", false);
     for (int i = 0; i < n; ++i) {
         if (mask[static_cast<size_t>(i)]) raw[i] = 0.0f;
     }
 
     for (int i = 0; i < n; ++i) {
         const bool should_be_zero =
-            (i == static_cast<int>(PathgenInput::IN_ENVELOPE) ||
+            (i == static_cast<int>(PathgenInput::SPECIFIC_ENERGY) ||
              i == static_cast<int>(PathgenInput::ACCEL_Y));
         if (should_be_zero) {
             EXPECT_FLOAT_EQ(raw[i], 0.0f) << "slot " << i << " must be ablated";

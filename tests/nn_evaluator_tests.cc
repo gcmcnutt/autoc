@@ -382,7 +382,7 @@ TEST(NNForwardPass, Deterministic) {
 TEST(NNInputLayout, InputCountMatchesTopology) {
     // NN_INPUT_COUNT must equal the first layer of NN_TOPOLOGY
     EXPECT_EQ(NN_INPUT_COUNT, NN_TOPOLOGY[0]);
-    EXPECT_EQ(NN_INPUT_COUNT, 42);   // 041 US4: 37 + envelope×2 + accel×3
+    EXPECT_EQ(NN_INPUT_COUNT, 45);   // 041 P2-2: 25 M1 target + 20 CraftCommonInputs
 }
 
 // Note: Full gather_pathgen_inputs test requires AircraftState + PathProvider.

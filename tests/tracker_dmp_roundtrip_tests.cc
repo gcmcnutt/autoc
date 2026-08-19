@@ -315,7 +315,7 @@ TEST(TrackerDmpRoundtrip, PriorVersionArtifactFailsLoudNamingBothVersions_T044) 
         // BOTH numbers, per the task: one alone leaves the reader guessing
         // which side is stale.
         EXPECT_NE(msg.find("v2"), std::string::npos) << msg;
-        EXPECT_NE(msg.find("v3"), std::string::npos) << msg;
+        EXPECT_NE(msg.find("v4"), std::string::npos) << msg;
         // And it must say which direction, since the remedies are opposite.
         EXPECT_NE(msg.find("predates"), std::string::npos) << msg;
     }
@@ -336,7 +336,7 @@ TEST(TrackerDmpRoundtrip, NewerVersionArtifactFailsLoudAndSaysRebuild_T044) {
     } catch (const std::exception& e) {
         const std::string msg = e.what();
         EXPECT_NE(msg.find("v99"), std::string::npos) << msg;
-        EXPECT_NE(msg.find("v3"), std::string::npos) << msg;
+        EXPECT_NE(msg.find("v4"), std::string::npos) << msg;
         EXPECT_NE(msg.find("NEWER"), std::string::npos) << msg;
     }
 }

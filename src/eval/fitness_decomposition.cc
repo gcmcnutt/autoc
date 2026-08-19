@@ -1,4 +1,5 @@
 #include "autoc/eval/fitness_decomposition.h"
+#include "autoc/eval/energy_state.h"   // 041 P2-5 — Ps, one definition shared with the input and the reader
 #include "autoc/rpc/protocol.h"
 #include "autoc/autoc.h"
 #include "autoc/util/config.h"
@@ -148,6 +149,10 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         // rewards.
         gp_fitness stabilityAccum = 0.0;
         gp_fitness energyAccum = 0.0;
+        // 041 P2-5 — per-scenario Ps state for the energy axis (below).
+        gp_fitness prevEs = 0.0;
+        double prevEsTimeMsec = 0.0;
+        bool haveEs = false;
 
         // Previous tangent for last-waypoint fallback
         gp_vec3 prevTangent = gp_vec3::UnitX();
@@ -287,7 +292,59 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                 // stability/energy totals stay cadence-invariant on the
                 // historical 10 Hz scale; ×1.0 bitwise no-op at 10 Hz.
                 stabilityAccum += ((abs_pt - 1.0) + (abs_rl - 1.0)) * kCadenceTickScale;
-                energyAccum    += throttleEnergyStep(static_cast<gp_fitness>(out[2])) * kCadenceTickScale;  // 035 FR-001b/R1 convex
+            }
+
+            // ================================================================
+            // 041 P2-5 — THE ENERGY AXIS, rebuilt on Ps.
+            // ----------------------------------------------------------------
+            // Was: a convex integral of the THROTTLE COMMAND (035 FR-001b).
+            // That penalised an ABSOLUTE quantity, and full power is genuinely
+            // correct when far behind, in a sustained spiral, and under
+            // pitch-induced drag — so uniform pressure could only quiet
+            // everything. 035 muted the whole regiment rather than trimming
+            // waste, and 033 showed the same shape for smoothness.
+            //
+            // Now: metres of specific energy DESTROYED, Σ max(0, −Ps)·dt.
+            // Three properties, each load-bearing:
+            //
+            //   1. ⭐ IT DOES NOT PENALISE CLIMBING. Gaining energy has Ps > 0
+            //      and contributes exactly zero. A policy that climbs to follow
+            //      a climbing target pays nothing for the climb — which is the
+            //      muting failure, stated as a property. energy_metric_tests
+            //      asserts it directly.
+            //   2. ⭐ IT DOES NOT PENALISE TRADING. Es = h + v²/2g, so a dive
+            //      that converts height into speed is Es-NEUTRAL and costs
+            //      nothing. Only drag losses and deliberately destroyed energy
+            //      appear. That is "waste", as opposed to "activity".
+            //   3. It is NOT telescoping. Σ Ps·dt would collapse to
+            //      (Es_end − Es_start) — gameable by simply finishing high, and
+            //      blind to everything in between. Clipping at zero breaks the
+            //      cancellation, so a climb-dive cycle is charged for the dive.
+            //
+            // ⛔ NEVER a scalar penalty term, and never without SPECIFIC_ENERGY
+            // in the input vector: an axis for an unobservable is exactly what
+            // muted 035 (TA03 — the policy had the v² half and never the h
+            // half). It is a lexicase axis, and corr(Ps, closure rate) = −0.048
+            // measured, so it is orthogonal to tracking — the ideal case for
+            // lexicase and the worst case for scalar aggregation.
+            //
+            // Units: metres of Es. Multiplied by the ACTUAL elapsed seconds, so
+            // it is cadence-invariant in physical units with no tick-scale
+            // fudge — the same discipline energy_state.h imposes on Ps itself.
+            {
+                const gp_fitness esNow = static_cast<gp_fitness>(stepState.getSpecificEnergy());
+                const double tNow = static_cast<double>(stepState.getSimTimeMsec());
+                if (haveEs) {
+                    const double dt = (tNow - prevEsTimeMsec) / 1000.0;
+                    if (dt > 0.0) {
+                        const gp_fitness ps = autoc::eval::specificExcessPower(
+                            esNow, prevEs, static_cast<gp_fitness>(dt));
+                        if (ps < 0.0) energyAccum += -ps * static_cast<gp_fitness>(dt);
+                    }
+                }
+                prevEs = esNow;
+                prevEsTimeMsec = tNow;
+                haveEs = true;
             }
 
             // 030 M11.wrap T088 + 327-330 — tracker-mode diagnostic
@@ -386,9 +443,50 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         // Store result
         result.score = -accumulatedScore;       // Negate: lower = better
         result.stability_score = stabilityAccum; // Already negative; lower = better
-        result.energy_score = energyAccum;       // Already negative; lower = better
+        result.energy_score = energyAccum;       // 041 P2-5: metres of Es destroyed; >= 0, lower = better
         result.crashed = isCrash(crashReason);
         result.crashReason = crashReason;
+
+        // 041 P2-4 — attribute an egress to the bound it actually crossed.
+        //
+        // Re-checked from the TERMINAL recorded position against the RECORDED
+        // arena, which is why the arena had to become part of RecordedRunConfig:
+        // classifying against today's compiled default would silently re-label
+        // every historical run each time the arena moves, and it moved three
+        // times in one day.
+        //
+        // Only for CrashReason::Eval — that is the terminator arena egress maps
+        // to. A HullStrike or a TimeLimit is not an egress and must not be
+        // counted as one just because the final position happens to sit outside.
+        if (crashReason == CrashReason::Eval && !ticks.empty()) {
+            // ⚠️ NEAREST bound, not a re-run of checkArenaBounds.
+            //
+            // The first version called checkArenaBounds on the terminal state
+            // and reported NONE for every single egress — which read as
+            // "egFloor=0 egCeil=0 egRadius=0" in the per-gen line while the run
+            // was in fact dying on the deck 16 times out of 16. The recorded
+            // terminal state is the last SAMPLED one and sits marginally INSIDE
+            // the bound that tripped (measured 0.01–0.51 m above a 25 m deck),
+            // because the check and the state push happen at different points
+            // in the tick. A strict re-check is therefore the wrong question.
+            //
+            // ⛔ A diagnostic that silently reports "none of the above" is worse
+            // than no diagnostic: it looks like an answer.
+            const auto& fa = evalResults.runConfig.flightArena;
+            const gp_vec3 pos = ticks.back().state.getPosition();
+            const gp_scalar alt_agl = -(pos.z() + SIM_INITIAL_ALTITUDE);
+            const gp_scalar d_floor = alt_agl - fa.floor_agl_m;
+            const gp_scalar d_ceil = fa.ceiling_agl_m - alt_agl;
+            const gp_scalar d_radius =
+                fa.radius_m - std::sqrt(pos.x() * pos.x() + pos.y() * pos.y());
+            if (d_floor <= d_ceil && d_floor <= d_radius) {
+                result.egress_kind = autoc::eval::ArenaEgressKind::FLOOR;
+            } else if (d_ceil <= d_radius) {
+                result.egress_kind = autoc::eval::ArenaEgressKind::CEILING;
+            } else {
+                result.egress_kind = autoc::eval::ArenaEgressKind::RADIUS;
+            }
+        }
         result.steps_completed = simulation_steps;
         result.steps_total = static_cast<int>(path.size()) - 1;
         result.maxStreak = fc.getMaxStreak();

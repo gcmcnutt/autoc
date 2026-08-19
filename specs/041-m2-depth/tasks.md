@@ -23,7 +23,14 @@ seed still resolve.
 
 ## Phase 0 — PREP (no code, no bake)
 
-- [ ] P0-1 ⛔ **Datum inventory — measure, do not infer.** ➕ **Half the answer is known (operator
+- [X] P0-1 ✅ **DONE 2026-08-18 — datum inventory MEASURED; no UNVERIFIED cells remain.** Table + evidence in
+  [toolchain-datum-validation.md](toolchain-datum-validation.md). Headline: the chain closes to **1.2 mm** —
+  crrcsim launches the CG at `82 + zLow(0.125) − ground(0.1) = 82.025 ft = 25.0012 m`, so `<launch
+  altitude="82">` and `SIM_INITIAL_ALTITUDE = −25` never disagreed; the gap was an unstated unit (crrcsim is
+  foot-native) plus an unstated `zLow`. One real defect found and one bias recorded: `checkArenaBounds`'s
+  `alt_agl` is **datum**-referenced, not ground-referenced, and under-reads true AGL by a uniform **30.5 mm**.
+  ⛔ **The surprise was elsewhere — the sim runs THREE arenas** (see P0-2).
+  ~~Original:~~ ⛔ **Datum inventory — measure, do not infer.** ➕ **Half the answer is known (operator
   2026-08-18)**: *"The initial position in sim is the autoc xml file in CRRCSim we reference plus some aiding
   from variations which are zeroed these days."* So `crrcsim/autoc_config.xml`'s `<launch altitude="82">` **is
   the sim's initial-position source**, and the *position* entry variations are currently off
@@ -35,15 +42,53 @@ seed still resolve.
   scenery ground reference and the remaining hops — not this. Fill every UNVERIFIED cell in
   [toolchain-datum-validation.md](toolchain-datum-validation.md). **Ends with the
   `<launch altitude="82">` vs `SIM_INITIAL_ALTITUDE = −25` reconciliation answered by measurement.** (was TD01)
-- [ ] P0-2 **HAT analysis** — crrcsim's ground, field elevation and starting height-above-terrain: what they
+- [X] P0-2 ✅ **DONE 2026-08-18 — HAT analysis, and it found the real defect.** Davis Field's ground is a
+  **flat plane at −0.1 ft (−0.03048 m)** — `BuiltinSceneryDavis::getHeight()` returns a constant, so there is
+  no field-elevation or terrain-relief question to answer at all. What the analysis actually surfaced:
+  ⛔ **`DIST_TO_BOUNDARY` describes a cylinder the M1 aircraft cannot reach and does not describe the one that
+  kills it** — kill = `checkAircraftOOB` at 70/7/120, input = `FlightArena` defaults at 80/5/100 (10 m wider,
+  20 m shorter). TA01 ranks that input the **3rd most important in the vector**.
+  ⭐ And the measurement that reopened P0-4: **the M1 targets never descend below the entry altitude** and
+  climb to **+49.97 m** above it ([measure/path_altitude_extents.cc](measure/path_altitude_extents.cc)).
+  ~~Original:~~ **HAT analysis** — crrcsim's ground, field elevation and starting height-above-terrain: what they
   are, and where they must land under a unified datum. Operator: *"we need to make sure we twiddle the
   offsets for crrcsim too."*
-- [ ] P0-3 **Size `kScoreGradScale` from recorded ticks** — the last unsized constant in the new input
+- [X] P0-3 ✅ **DONE 2026-08-18 — `kScoreGradScale` = 0.78 m⁻¹**, the in-envelope p95 of `|∇score| × streak
+  multiplier` over **131 127 recorded t1 ticks** ([measure/README.md](measure/README.md)). Sized from data, not
+  picked: at that divisor the in-envelope median (0.2016) reads 0.26 and 95 % of in-envelope ticks fall below
+  `tanh(1)` — the same shape `kAccelScale_g` was given by the ±11 g record.
+  ⚠️ **The measurement also changed the ENCODING.** `|∇θ| = 1/d` diverges as the chase closes; every tick
+  above 2.0 has `d < 1.52 m` (median 0.23 m). The quantity is genuinely unbounded, so a plain divide is wrong
+  for this slot. Encode as a **direction-preserving tanh of the norm** —
+  `v_body = ĝ_body · tanh(|∇score|·mult / kScoreGradScale)` — not per-component tanh, which would bound the
+  slot while **rotating the vector** the input exists to communicate.
+  ~~Original:~~ **Size `kScoreGradScale` from recorded ticks** — the last unsized constant in the new input
   vector. ⚠️ Size it from *data*, the way `kAccelScale_g` was sized from the ±11 g flight record, never
   picked as a round number. Expected magnitude ≈ 1/`FitDistScale` (~0.14 m⁻¹) × streak multiplier (1–5), but
   measure rather than assume. *(restored 2026-08-18 — this task was lost in an edit that replaced a
   neighbouring block; the loss is noted rather than silently repaired.)*
-- [ ] P0-4 ➕ **ARENA — DECIDED 2026-08-18, now implementation not research.** Operator: *"Make it the same
+- [X] P0-4 ✅ **DONE 2026-08-18 — REOPENED by P0-2's measurement, then re-decided by the operator.**
+  The first decision ("entry at the 3D centre" + "deck above ground", at today's 25 m entry) turned out to be
+  **unsatisfiable**: the targets reach 74.98 m AGL, and a band centred on 25 m that reaches 75 m needs its
+  floor 25 m underground. Operator resolution — *"Raise sim frame… We do want Xiao arm at virtual origin.
+  Pilot responsible for that being way above terrain so that bottom of cyl is above ground. So really sim
+  should do identical."* Geometry: *"70m radius. Hat of perhaps 10 (bottom of cyl) top at 100m above bottom."*
+  ⇒ **radius 70 / floor 10 AGL / ceiling 110 AGL, K = 50, entry & arm at 60 m AGL = exact mid-cylinder**,
+  `SIM_INITIAL_ALTITUDE` −25 → **−60**, `<launch altitude>` 82 → **196.825 ft**. ⭐ Under those numbers
+  `resolveEngageArena(...).virtual_arena` **equals the sim's `FlightArena` identically** — sim and flight stop
+  agreeing by convention and start agreeing by construction. Implementation is P2-3.
+  ➕ **REVISED TWICE MORE by operator messages during implementation** — final geometry is **R = 70, K = 48**,
+  landing in sim at floor **25** / entry **73** / ceiling **121** m AGL, `SIM_INITIAL_ALTITUDE` **−73**,
+  `<launch altitude>` **239.476 ft**. ⛔ The arena is **RELATIVE** (±K about the arm origin); staying above
+  terrain and inside the site's 400 ft envelope are **arm-time operator responsibilities**, deliberately not
+  encoded (*"Not the models problem. Is operator."*).
+  ⚠️ **The chase still does not fit and that is accepted**: measured entry **+66.2 m** against K = 48, so
+  ~1 % of t1-like ticks now egress at the ceiling — intended pressure against the zoom the `Ps` axis also
+  charges for. **First thing to check in the P3-4 smoke** (`ArenaEgressKind::CEILING`); if it bleeds
+  scenarios, **K is the knob, not the objective**.
+  Full derivation, the three near-misses, and the acceptance criteria:
+  [toolchain-datum-validation.md](toolchain-datum-validation.md).
+  ~~Original:~~ ➕ **ARENA — DECIDED 2026-08-18, now implementation not research.** Operator: *"Make it the same
   size for both cases. And generally entering at the origin in the 3d center of the cylinder. For sim we need
   to ensure manually that the hard deck bottom of arena is above ground. And this is a manual decision in
   flight for now. We just start way above ground in these early runs."*
@@ -95,7 +140,18 @@ against the pinned prior M1, not on a purpose-built controlled pair.
   screens mis-rank in both directions. [findings](ablation/ta01-t1-elite-findings.md)
 - [X] P1-2 ✅ TA03 `Es`/`Ps` from existing dmps — spiral bleeding energy; `Ps` orthogonal to progress
   (r = −0.048), 24–32 m/s spread at matched progress.
-- [ ] P1-3 **[LOW — reassess before doing]** Conditional contribution for limit-class inputs. ⚠️ Value
+- [X] P1-3 ⛔ **CLOSED 2026-08-18 without doing it — reassessed, as the task asked.** A conditional
+  contribution view would have prevented **one** of TA01's two mis-rankings, not both, and the one it misses
+  is the one that matters.
+  * ✅ `DIST_TO_BOUNDARY` (saturated >0.95 on 93% of ticks, ranked low by weight, actually **3rd most
+    important**) — conditioning on the unsaturated 7% WOULD have surfaced it.
+  * ⛔ `IN_ENVELOPE` (ranked **2nd by contribution**, yet ablation shows zeroing it *improves* path-5 score)
+    — **no conditioning fixes this.** Contribution measures weight × variance; it cannot measure causal
+    dependence, and no subset of ticks turns a correlational metric into a causal one.
+  Since ablation is now cheap (the elite is pinned, T049/T052 masking is implemented) and SC-015 already
+  demotes contribution to *"at most a screen"* with ablation as the verdict, a half-fix to the screen buys
+  nothing. Rely on ablation. ~~Original:~~ **[LOW — reassess before doing]** Conditional contribution for
+  limit-class inputs. ⚠️ Value
   dropped since it was filed: SC-015 now demotes contribution to *"at most a screen"* and names **ablation as
   the verdict**, after the pooled metric mis-ranked inputs in **both** directions. Worth doing only if a
   cheap conditional view would have prevented that — otherwise close it and rely on ablation. Original:
@@ -120,12 +176,41 @@ Per task, before the implementation:
 | P2-6 land it | full suite green with **banner count verified**, not just exit status |
 
 
-- [ ] P2-1 **Files**: `include/autoc/nn/nn_inputs.h` (both structs + both meta tables),
+- [X] P2-1 ✅ **DONE — `CraftCommonInputs`, 20 slots, one definition.** Embedded as the last member of both
+  `NNInputs` (M1: 25 target + 20 common = **45**) and `TrackerInputs` (M2: 46 target + 20 common = **66**).
+  ⚠️ **`TrackerInputs` was REORDERED to make this possible** — the craft slots used to be split around the
+  derived perceptual block, and a shared sub-struct cannot be non-contiguous. Legal inside the format break.
+  ⭐ **The refactor immediately found a live divergence**: `AIRSPEED` was RAW m/s in M1 and CRUISE-NORMALIZED
+  in M2 — the same "shared" slot carrying two different scales. Unified on raw. That is precisely the hazard
+  the shared struct exists to retire, and it was already present.
+  Also folded: `DIST_TO_BOUNDARY_ALONG_VEL` → `DIST_TO_BOUNDARY` (two names, one quantity, one function).
+  Tests: `CraftCommonBlockIsIdenticalInBothModes` walks both meta tables asserting name / display-name /
+  width / relative order, plus `offsetof` in both structs — the enums are still written twice (C++ enums do
+  not compose) and nothing else stops them drifting. ~~Original files:~~ `include/autoc/nn/nn_inputs.h`,
   `include/autoc/nn/topology.h` (counts, weight `static_assert`s). Tests: `tests/contract_evaluator_tests.cc`,
   `tests/nn_sensor_interface_tests.cc`.
   Shared **`CraftCommonInputs`** sub-struct: the 17 slots M1 and M2 share get **one definition**
   instead of two. Operator: *"sensor inputs to m1 and m2 are the same except for target representation."*
-- [ ] P2-2 **Files**: `include/autoc/nn/nn_inputs.h` (slots, scales), `include/autoc/nn/topology.h`
+- [X] P2-2 ✅ **DONE — input vector 42→45 / 63→66 (net +3 each).** Added `SPECIFIC_ENERGY`,
+  `BOUNDARY_CLOSURE_RATE`, `SCORE_GRAD_X/Y/Z`; removed `IN_ENVELOPE`, `ENVELOPE_SECS`; retained `ACCEL_Y` and
+  `DIST_TO_BOUNDARY` on ablation evidence. Weight counts recomputed: **2307** (M1), **3047** (M2).
+  New shared headers: `include/autoc/eval/energy_state.h` (Es / Ps / `heightAboveDeck`) and
+  `include/autoc/eval/craft_observations.h` (the producer-side writer both modes call).
+  `FitnessComputer::scoreGradientWorld` lives next to `decomposeStepScore` so the gradient and the score
+  cannot be derived from different constants.
+  ⚠️ **Two design decisions came out of the P0-3 measurement, not out of the proposal**:
+  1. **`SCORE_GRAD_*` is encoded as a direction-preserving `tanh` of the NORM**, not a plain divide.
+     `|∇θ| = 1/d` diverges near the rabbit — measured, every t1 tick above 2.0 had d < 1.52 m — so the
+     quantity is genuinely unbounded. Per-component `tanh` would bound it while **rotating the vector**,
+     and the direction is the entire content of the input.
+  2. **`SCORE_GRAD_*` is DELIBERATELY ZERO IN M2**, written explicitly rather than left to a default.
+     Today's M2 tracks a recorded flight through a camera; the exact ∂score/∂position would be an oracle it
+     cannot reproduce in the air — the same refusal T038 made for the M2 envelope estimator. 043 decides the
+     source (phase 1 exact, phase 2 span-proxied).
+  ⚠️ Also retired: the `EnableEnvelopeInputs` config knob, which gated inputs that no longer exist.
+  Tests: 8 new semantics tests in `envelope_accel_inputs_tests.cc`. The gradient is verified by **central
+  finite difference against the objective itself**, not against a second copy of its own algebra —
+  agreement to 1e-4 relative across behind / ahead / at-the-π/2-clamp offsets. ~~Original files:~~
   (42→45 / 63→66, recompute asserts), `src/nn/evaluator.cc` (BOTH gathers). **Producers** must set the new
   state: `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`, `src/eval/tracker_stepper.cc`,
   `include/autoc/eval/aircraft_state.h` (carriers). New shared header for `Es`/`Ps` alongside
@@ -134,7 +219,38 @@ Per task, before the implementation:
   Input vector per [input-vector-proposal.md](input-vector-proposal.md): **add**
   `SPECIFIC_ENERGY`, `BOUNDARY_CLOSURE_RATE`, `SCORE_GRAD_X/Y/Z`; **remove** `IN_ENVELOPE`,
   `ENVELOPE_SECS`; **retain** `ACCEL_Y` and `DIST_TO_BOUNDARY` on ablation evidence.
-- [ ] P2-3 **Files**: `include/autoc/eval/arena.h` (geometry + `resolveEngageArena`),
+- [X] P2-3 ✅ **DONE — ONE arena, 70 / 10 / 110, entry at its exact vertical centre.**
+  `SIM_INITIAL_ALTITUDE` −25 → **−60**; `<launch altitude>` 82 → **196.825 ft**; `FlightArena` defaults and
+  all eight .ini files updated; **M1 now terminates on `checkArenaBounds`** against the same struct the
+  gather reads (`checkAircraftOOB` and `SIM_MIN/MAX_ELEVATION` deleted outright, no shim).
+  ⭐ **`resolveEngageArena(...).virtual_arena` is now IDENTICAL to the training `FlightArena`** — with entry
+  at the band centre it comes out an identity, so sim and flight stop agreeing by convention and start
+  agreeing by construction. `ArenaDatum.ResolveEngageArenaReproducesTheTrainingArenaExactly` asserts it at
+  three different engage altitudes.
+  ⛔ **`SIM_INITIAL_ALTITUDE` DID move, against this task's original "unchanged" instruction** — the P0-2
+  measurement showed the alternative was unsatisfiable, and the operator re-decided (see P0-4). It is NOT
+  the retracted origin→hard-deck proposal: z = 0 is still the entry point, so no dmp reader's frame changes
+  meaning; the scene simply sits 35 m higher over the terrain.
+  ⚠️ The two constants that must agree (`SIM_INITIAL_ALTITUDE`, a compile-time macro, and the arena bounds,
+  runtime config) are coupled by nothing in the type system, so
+  `ArenaDatum.EntryPointIsTheExactVerticalCentreOfTheBand` is the coupling. Move one without the other and
+  it fails.
+  ➕ **MAX-EXTENT CROSS-CHECK** (operator ask) — new suite
+  [`tests/arena_path_fit_tests.cc`](../../tests/arena_path_fit_tests.cc), which links the real
+  `generateSmoothPaths` and MEASURES rather than trusting recorded numbers. It found three things nothing
+  else would have:
+  1. SpiralClimb cleared the proposed ceiling by **3 cm**; shrunk 50 → 35 m (operator-authorized).
+  2. Fixing that promoted **HighPerchSplitS** (8.2 m) and then the **seeded** path (3.0 m). Shrunk to
+     15 + 15 m, and the seeded path's vertical draw split out as **`SIM_PATH_HEIGHT_BOUNDS = 30`** — the
+     arena is not a cube, and one bound for both axes made the seeded path binding.
+  3. ⛔ **The xiao generated a DIFFERENT random rabbit from the sim** (`height=100` vs 40 ⇒ an analytic
+     envelope of entry +112.5 m against +45 m). A live sim/flight divergence in the TARGET. Both generators
+     now share the constants.
+  ⭐ The suite also carries the **analytic** bound, not just a seed sweep: uniform Catmull-Rom overshoots its
+  control hull by exactly **1/8** at t = ½, so radius ≤ R × 1.250 (a norm) and altitude ≤ entry + H × 1.125
+  (a component). ⚠️ Conflating those two factors is an error the test caught while being written — a claimed
+  45 m radial bound against a measured 47.43 m. A seed sweep can only ever report the largest thing seen so
+  far; a bake runs far more than 400 generations. ~~Original files:~~
   `crrcsim/autoc_config.xml` (`<launch altitude>`, **feet**), `autoc.ini` + the three tracker inis
   (`FlightArenaRadius`, floor/ceiling), `include/autoc/eval/aircraft_state.h` (`SIM_INITIAL_ALTITUDE` —
   **unchanged**, see below). Tests: `tests/arena_tests.cc`, `tests/arena_recenter_tests.cc`.
@@ -152,19 +268,79 @@ Per task, before the implementation:
   and *"at some point we are at trigger and craft enters arena and stays there is quite plausible"* — today's
   mid-band entry is a **flight-safety convention**, not physics. Keep `Es`'s deck datum a *computed* quantity
   (height above the configured floor) so a varying deck or an outside-in entry does not invalidate the frame.
-- [ ] P2-4 **Files**: `include/autoc/rpc/protocol.h` (`EvalResults` version bump + `RecordedRunConfig`),
+- [X] P2-4 ✅ **DONE — `EvalResults` v3 → v4, and dmp-dump now emits EVERY slot.**
+  ⭐ **The hand-picked column subset is gone.** `dmp_dump` walks `kPathgenInputMeta` / `kTrackerInputMeta`,
+  so the header labels and the values come from ONE source: a slot cannot appear without its value, or be
+  emitted under the wrong label, and adding an input to `nn_inputs.h` adds its column with no edit at all.
+  Several recomputed-in-the-reader columns (`spn0`/`dspn`/`tltS`/`tltC`/`dBnd`/`inX..`) were deleted for the
+  same reason the gathers were consolidated — the reader was guessing a CEP gate threshold that
+  `EvalResults` does not carry.
+  Plus the UNSCALED sources — `Es_m`, `Ps_mps`, `bClR_ms`, `sgx/sgy/sgz` — recorded on `AircraftState`
+  separately from the slots that carry them. Not redundancy: an ablation mask zeroes the slot **by design**,
+  `SCORE_GRAD`'s slot is a saturating tanh so its magnitude does not survive, and Ps must be differenced
+  from a true Es. `Ps` is computed by `energy_state.h`, **the same function the lexicase axis uses**, over
+  the actual recorded interval.
+  Tests: `NewCraftObservationsSurviveSerialization_P2_4` (incl. a negative closure rate — the sign is the
+  slot's whole content) and `EveryNNSlotSurvivesSerializationInBothModes_P2_4` (each slot filled with its
+  own index, so a shift by ONE is visible). ~~Original files:~~
   `tools/dmp_dump.cc` (emit all 45/66 slots + `Es`/`Ps`), `src/autoc.cc` (stamp provenance). Tests:
   `tests/tracker_dmp_roundtrip_tests.cc`, `tests/cereal_version_anchor_tests.cc` (re-anchor).
   Recording: full input vector + `Es`/`Ps` per tick. (was TA04/TA05)
-- [ ] P2-5 **Files**: `include/autoc/eval/fitness_decomposition.h` (`ScenarioScore::energy_score` →
+- [X] P2-5 ✅ **DONE — `energy_score` is now metres of specific energy DESTROYED, `Σ max(0, −Ps)·dt`.**
+  Replaces 035's convex throttle-command integral, which penalised an ABSOLUTE quantity — and full power is
+  genuinely correct when far behind, in a sustained spiral, and under pitch-induced drag, so uniform
+  pressure could only quiet everything. Stays a **lexicase axis**, never a scalar penalty; measured
+  `corr(Ps, closure rate) = −0.048`, i.e. orthogonal to tracking, which is the ideal case for lexicase and
+  the worst case for aggregation.
+  Three properties, each load-bearing and each pinned by a test:
+  1. ⭐ **Climbing costs EXACTLY zero** (Ps > 0 contributes nothing) — the muting failure, stated as a
+     property. `ClimbingTowardAHighTargetIsNotPenalised_MUTING_GUARD`.
+  2. ⭐ **Trading height for speed is free** — Es is conserved through the trade, so only drag losses and
+     deliberately destroyed energy appear. That is "waste" as opposed to "activity".
+  3. **Not telescoping** — `Σ Ps·dt` would collapse to `(Es_end − Es_start)`, gameable by finishing high;
+     the clip at zero breaks the cancellation. `IsNotTelescopingAndCannotBeGamedByFinishingHigh`.
+  ⚠️ **`energy=` in the per-gen log is the same column name carrying a DIFFERENT quantity and different
+  units.** It is not comparable across the 041 boundary; a cross-run plot that mixes them is comparing
+  throttle effort with energy waste. Labelled at both emission sites. ~~Original files:~~
   `Ps`-based), `src/eval/fitness_decomposition.cc` (compute), `src/eval/selection.cc` (lexicase axis list).
   ⚠️ Downstream readers of `energy_score` must follow: `tools/dmp_dump.cc`, `src/autoc.cc`,
   `src/analytics/plot_evolution_progress.py`. Tests: `tests/energy_metric_tests.cc`,
   `tests/selection_tests.cc`, **plus the muting guard**.
   Objective: `Ps`-based efficiency as a **lexicase axis**. ⛔ Never a scalar penalty; never without
   P2-2's energy input — an axis for an unobservable is what muted 035.
-- [ ] P2-6 [OP] Land it: version bump, `rebuild-perf.sh` with banners counted, xiao host compile,
-  Constitution VI audit.
+- [ ] P2-6 [OP] Land it: `rebuild-perf.sh` with banners counted, Constitution VI audit.
+  ➕ **Partially prepared 2026-08-18 — here is what is already done and what is genuinely left.**
+  * ✅ **Version bump**: `EvalResults` v3 → v4, `CEREAL_CLASS_VERSION` + `kSchemaVersion` + the anchor test
+    all moved together.
+  * ✅ **Desktop**: incremental build clean (autoc, crrcsim, renderer, dmp-dump, nn2cpp); **46/46 ctest
+    suites pass**.
+  * ✅ **Tool chain verified end-to-end 2026-08-18**: `nnextractor` extracts `45→32→16→3 / 2307 weights`;
+    `nn2cpp -u` generates a 45-input unrolled program carrying the fail-loud guard and **bakes the live arena
+    automatically** (70 / 25 / 105 — `BakedArena` derives from `FlightArena` rather than restating it);
+    the xiao then builds **SUCCESS** (RAM 53.5%, Flash 44.8%) against that generated file. The placeholder was
+    restored byte-exact afterwards (md5 verified), so the guard is back in place.
+  * ⚠️ **xiao host compile — TWO blockers cleared, ONE deliberately left failing.**
+    - CLEARED (both PRE-EXISTING at HEAD, not introduced by 041 P2): `evaluator.h` dragged
+      `fitness_decomposition.h` → `protocol.h` → **cereal**, which does not exist in the embedded
+      toolchain; and `NNControllerBackend::setInputMask` **throws**, against `-fno-exceptions`. Both are
+      desktop concerns — the firmware runs the nn2cpp-generated program and never selects a genome — so both
+      are now fenced with `#ifndef ARDUINO`. ⚠️ The throw was NOT removed: a short ablation mask would ablate
+      the wrong columns and produce a clean-looking number answering a different question. Fence the
+      instrument, not its safety check.
+    - ⛔ **STILL FAILING, ON PURPOSE**: `xiao/src/generated/nn_program_generated.cpp` is baked at **37
+      inputs** while the gather now writes **45**. That file compiled CLEAN before this change and the
+      unrolled forward pass would have read **past the end of `nn_weights`** — flying on whatever was next
+      in flash, with nothing at build or run time saying so. `tools/nn2cpp` now emits a fail-loud
+      `static_assert` on every regeneration, and the guard has been hand-inserted into the existing artifact
+      so the current state announces itself. **Compiling clean was the dangerous state.**
+      **Clears at P4-2**, by regenerating from the pinned genome. Everything else in the firmware builds at
+      45 inputs (verified: RAM 53.5%, Flash 44.7%).
+  ⛔ **NOT DONE, and it gates P4-3 not P2-6**: the xiao does not PRODUCE any of `SPECIFIC_ENERGY`,
+  `BOUNDARY_CLOSURE_RATE`, `SCORE_GRAD_*` — **nor `ACCEL_*`, which has been a silent zero on the xiao since
+  041 US4 landed**. All four are computable there (it has position, velocity, the engage-resolved arena and
+  the virtual target), but the MSP accel plumbing and the fitness-cone constants are Phase 6 board work
+  (T074/T075/T078). **A flight before that wiring lands would fly a policy seeing zeros in four channels the
+  sim trained with.**
 
 ⚠️ **RNN architecture is NOT changing.** Effective rank 11.1–11.8 of 16, flat over 608 generations —
 capacity is not the constraint. Settled; reopen only on new evidence.
@@ -172,9 +348,52 @@ capacity is not the constraint. Settled; reopen only on new evidence.
 ## Phase 3 — VALIDATE (per hop, before spending a bake)
 
 - [ ] P3-1 Per-hop datum checks, each against something independent. (was TD05)
+  ➕ **PARTIALLY DONE 2026-08-18 — here is the coverage, hop by hop, and what each one is checked
+  AGAINST.** The obligation is "each conversion checked against something independent", so the third column
+  is the point of the table.
+
+  | hop | status | checked against |
+  |---|---|---|
+  | 1–3 crrcsim scenery → launch → FDM | ✅ | the code that computes it, read out rather than assumed; closes to **1.2 mm** ([toolchain-datum-validation.md](toolchain-datum-validation.md)) |
+  | 4–5 bridge → virtual z | ✅ | same arithmetic, independently: `82.025 ft × 0.3048 − 60` vs the compiled `SIM_INITIAL_ALTITUDE` |
+  | 6 `checkArenaBounds` AGL | ✅ | `ArenaDatum.EntryPointIsTheExactVerticalCentreOfTheBand` — the macro against the runtime config, which nothing in the type system couples |
+  | 6 egress bounds | ✅ | `arena_tests` — floor/ceiling/radius each fire at exactly the configured value, and the descent/ascent pair now read the SAME 50 m, which IS the centring property |
+  | 9 `resolveEngageArena` | ✅ | `ArenaDatum.ResolveEngageArenaReproducesTheTrainingArenaExactly` — flight's arena against sim's, at three engage altitudes |
+  | 12 `Es` datum | ✅ | `SpecificEnergyIsMeasuredFromTheHardDeck_P2_2f` + `...ReconcilesWithAirspeed_P2_2f` — the kinetic term against a hand-computed height trade |
+  | 7 dmp → renderer | ⏳ | needs a run to look at — **P3-2** |
+  | 8 INAV → xiao | ⏳ | bench, Phase 6 |
+  | 10 xiao → flight log | ⏳ | blackbox clock-anchor fit, Phase 6 |
+  | 11 renderer `'a'` | ⏳ | **P3-2**, the acceptance test |
+  | `Es` sim vs flight | ⏳ | **P3-3** (subjective, de-scoped) |
+
+  ⚠️ **The remaining five all need a run, a board or a flight** — none is closeable at a desk, which is why
+  they are listed rather than quietly folded into "done".
 - [ ] P3-2 ⭐ Renderer **`'a'` mode** acceptance test — the one place actual flight is shown in world
   coords, so the only place a datum error is *visible* rather than inferred. (was TD06)
-- [ ] P3-4 ⭐ **SMOKE before the production bake** (added 2026-08-18). `scripts/train.sh autoc-basic-m1.ini
+- [X] P3-4 ✅ **DONE 2026-08-18 — smoke run TWICE, and the first one found a real defect.**
+  **t2** (`logs/autoc-041-t2-smoke-m1.log`, arena +60/−10): ⛔ **16 of 16 scenarios died on the hard deck**
+  (terminal AGL 25.01–25.51 against a 25 m deck), mean survival **4.9 s** of a 272-step path,
+  `rabbitComplete=0`, elite frozen at −161.468690 for 11 generations. The ceiling was never approached
+  (48 m of 95). Diagnosis: the band had been sized to the RABBIT (flat, never descends) when it is the CHASE
+  that is contained. → arena re-cut to **+50 / −30** (operator).
+  **t3** (`logs/autoc-041-t3-smoke-m1.log`, arena +50/−30): `rabbitComplete=` **3/16**, egress mix
+  **6 floor / 7 radius / 0 ceiling**, elite moving −166.10 → −171.52 → −178.25 over 20 gens.
+  ✅ **All the P3-4 column checks pass** (gen 5, 4734 ticks): `Es_m` 13.6→66.1 and **all ≥ 0**;
+  `Ps_mps` −43.4→+23.3; `bClR_ms` **signed both ways** (1750 neg / 2984 pos); `SCORE_GRAD` non-zero on
+  **4734/4734** ticks. `#GenCrash boot=0 sim=0` throughout.
+  ⚠️ `rbHhd`/`rbZ` are **CONSTANT — correctly so**: `longSequential` is a flat path, which is the smoke's
+  known blind spot (it exercises none of the vertical question). 040's trap 3 says a diagnostic that does not
+  vary is telling you something; here it is telling you which config you ran.
+  ⛔ **A diagnostic that lied, and the fix.** t2's per-gen line read `egFloor=0 egCeil=0 egRadius=0` while
+  100% of deaths were the deck. The attribution re-ran `checkArenaBounds` on the terminal state, which sits
+  **0.01–0.51 m INSIDE** the bound that tripped (the check and the state push happen at different points in
+  the tick). Now attributed by **NEAREST bound**. A diagnostic reporting "none of the above" is worse than
+  none — it looks like an answer.
+  ⚠️ **Watch `pctInStreak`, not `best`**: at t3 gen 20 the elite improves while `pctInStreak` falls
+  2.1 → 1.6 and `avgMaxStreak` 4.6 → 3.9 — the length-confounding of raw score
+  ([project_038_wrap](../../.claude/projects/-home-gmcnutt-autoc/memory/project_038_wrap.md)). 20 generations
+  is far too early to read either way (035-t6 took off at gens 125–200).
+  ~~Original:~~ ⭐ **SMOKE before the production bake** (added 2026-08-18). `scripts/train.sh autoc-basic-m1.ini
   logs/autoc-041-t2-smoke-m1.log` — pop 3000 / 1 path / 16 winds, killed once it is clearly climbing.
   **Checks**: `#GenCrash` shows `boot=0 sim=0` (workers survive the new input vector and the new arena);
   the new columns **vary** in the dmp — `Es` plausible, `BOUNDARY_CLOSURE_RATE` signed both ways,

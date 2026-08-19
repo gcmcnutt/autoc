@@ -61,12 +61,20 @@ int runCmd(const std::string& cmd, std::string& output) {
     return pclose(pipe);
 }
 
-// Fixture genome: 37 → 8 → 6r → 3, structurally the elite's shape
+// Fixture genome: NN_INPUT_COUNT → 8 → 6r → 3, structurally the elite's shape
+// but with narrow hidden layers so the generated file compiles fast.
+//
+// ⚠️ 041 P2-2: the INPUT width must be NN_INPUT_COUNT, not a literal. The
+// generated file now carries a fail-loud static_assert that its baked input
+// count matches the compiled NNInputs layout — the guard that catches a stale
+// generated file being flown — and this harness compiles the generated file for
+// real, so a literal here would trip that guard on every layout change and read
+// as a codegen bug rather than as the fixture being out of date.
 // (input → hidden → recurrent → output) but small enough to keep the
 // harness compiles fast. Deterministic LCG weights.
 NNGenome makeFixtureGenome() {
     NNGenome g;
-    g.topology = {37, 8, 6, 3};
+    g.topology = {NN_INPUT_COUNT, 8, 6, 3};
     g.recurrent = {0, 0, 1, 0};
     const int total = nn_weight_count(g.topology, g.recurrent);
     g.weights.resize(total);

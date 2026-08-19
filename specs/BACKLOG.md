@@ -106,6 +106,33 @@ Hardware binds at step 3 (PPO sample counts) and step 4 (larger contexts), not b
 
 ## 041 deferrals
 
+### [041 P3-4 tooling, filed 2026-08-18] `nnextractor -g` takes the FILE number; `dmp-dump --gen` takes the GENERATION
+
+⛔ **Same flag name, opposite meaning, on two tools used in the same breath.** The dmp filename encodes
+`10000 − actual_gen`, and the two readers disagree about which side of that the operator is expected to do:
+
+| tool | `-g` / `--gen` means | to get actual gen 5 |
+|---|---|---|
+| `dmp-dump` | the **actual generation** | `--gen 5` |
+| `nnextractor` | the **file number** | `-g 9995` |
+
+Hit live during the 041 P3-4 verification: `nnextractor -g 5` failed on a run that plainly had generation 5.
+It is not silent — the error names the convention explicitly and lists the first/last file numbers, which is
+why this is a backlog item and not a defect. But the operator has to hold the inversion in their head at
+exactly the moment they are chasing something else.
+
+**Fix**: make `nnextractor -g` take the ACTUAL generation, matching `dmp-dump`. The inversion becomes an
+internal detail of the fetch, which is where it belongs.
+
+⚠️ **It is a breaking change to a habit, not just to a flag.** Any script or note that currently passes
+`-g 9995` silently starts fetching generation 9995's file (i.e. actual gen 5 → file `gen5.dmp`, which will
+not exist) — so it fails loudly rather than quietly, but every existing invocation needs revisiting. Worth
+a one-line note in the tool's `--help` recording that the meaning CHANGED, since the old form was documented
+behaviour for years.
+
+Related: [reference_dmp_filename_gen_encoding](../.claude/projects/-home-gmcnutt-autoc/memory/reference_dmp_filename_gen_encoding.md).
+
+
 ### [041 TA03 follow-up, filed 2026-08-17 · ⚠️ DOWNGRADED 2026-08-18] The virtual coordinate origin sits half-way up the band
 
 ⚠️ **DOWNGRADED, not withdrawn.** Operator 2026-08-18, asked which side should win the band-placement

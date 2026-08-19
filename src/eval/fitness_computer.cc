@@ -75,3 +75,45 @@ void FitnessComputer::resetStreak() {
     totalStreakSteps_ = 0;
     maxMultiplier_ = 1.0;
 }
+
+// 041 P2-2 (FR-039) — see the derivation in fitness_computer.h.
+gp_vec3 FitnessComputer::scoreGradientWorld(const gp_vec3& offset,
+                                            const gp_vec3& tangent) const {
+    const double d = static_cast<double>(offset.norm());
+    if (d < 1e-6) return gp_vec3::Zero();  // at the rabbit: score is maximal
+
+    const double along = static_cast<double>(offset.dot(tangent));
+    double cosAngle = -along / d;
+    if (cosAngle > 1.0) cosAngle = 1.0;
+    if (cosAngle < -1.0) cosAngle = -1.0;
+    const double angle = std::acos(cosAngle);
+
+    constexpr double HALF_PI = M_PI / 2.0;
+    const bool clamped = (angle >= HALF_PI);
+    const double angleClamped = clamped ? HALF_PI : angle;
+
+    const double distScale = (along <= 0.0) ? distScaleBehind_ : distScaleAhead_;
+    const double effDist = d / distScale;
+    const double effAngle = angleClamped / coneAngleRad_;
+    const double D = 1.0 + effDist * effDist + effAngle * effAngle;
+
+    // Radial part: (2d/S²)·û
+    const gp_vec3 u = offset / static_cast<gp_scalar>(d);
+    gp_vec3 grad = u * static_cast<gp_scalar>(2.0 * d / (distScale * distScale));
+
+    // Tangential part: (2θc/C²)·∇θ — zero where the angle is clamped, because
+    // the objective's own angle term is flat there.
+    if (!clamped) {
+        const double lateral = std::sqrt(std::max(0.0, d * d - along * along));
+        if (lateral > 1e-9) {
+            const gp_vec3 gradTheta =
+                tangent / static_cast<gp_scalar>(lateral) -
+                u * static_cast<gp_scalar>(along / (d * lateral));
+            grad += gradTheta * static_cast<gp_scalar>(
+                        2.0 * angleClamped / (coneAngleRad_ * coneAngleRad_));
+        }
+    }
+
+    // score = 1/D ⇒ ∇score = −(1/D²)·∇D, and `grad` above is ∇D.
+    return grad * static_cast<gp_scalar>(-1.0 / (D * D));
+}

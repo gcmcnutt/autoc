@@ -4,8 +4,18 @@
 // Compile-time NN topology constants (T110, updated 023)
 //
 // Single source of truth for neural network dimensions.
-// The topology is {33, 32, 16, 3}: 33 sensor inputs, two hidden layers
+// The topology is {NN_INPUT_COUNT, 32, 16, 3}: sensor inputs, two hidden layers
 // (32 and 16 neurons), 3 control outputs (pitch rate, roll rate, throttle).
+//
+// 041 P2-2: NN_INPUT_COUNT is 45 (25 M1 target representation + 20 shared
+// CraftCommonInputs). The historical 33-slot map below is kept for provenance
+// only — nn_inputs.h is the layout of record, and the shared craft block is
+// declared ONCE there rather than mirrored per mode.
+//
+// ⚠️ RNN width is NOT the constraint and is deliberately unchanged: measured
+// W_hh effective rank 11.1–11.8 of 16, flat across all 608 generations of t1.
+// Widening it would spend search on a non-problem. Settled; reopen only on new
+// evidence.
 //
 // Input layout (33 sensors):
 //  0- 5: target_x [-0.5s,-0.4s,-0.3s,-0.2s,-0.1s,now]  unit-vec x (body frame)
@@ -66,11 +76,14 @@ constexpr int NN_WEIGHT_COUNT =
     (NN_RECURRENT[1] ? NN_HIDDEN1_SIZE * NN_HIDDEN1_SIZE : 0) +
     (NN_RECURRENT[2] ? NN_HIDDEN2_SIZE * NN_HIDDEN2_SIZE : 0) +
     (NN_RECURRENT[3] ? NN_OUTPUT_COUNT  * NN_OUTPUT_COUNT  : 0);
-static_assert(NN_WEIGHT_COUNT == 2211,
+static_assert(NN_WEIGHT_COUNT == 2307,
               "Weight count arithmetic inconsistent. History: 028 = 1923 at 33 in; "
               "038 FR-P0H 33→37 in (+4×32 = 128) = 2051; "
-              "041 US4 37→42 in (+5×32 = 160) = 2211 "
-              "(42·32+32 + 32·16+16 + 16·3+3 + 16·16 = 1376+528+51+256). "
+              "041 US4 37→42 in (+5×32 = 160) = 2211; "
+              "041 P2-2 42→45 in (net +3: −IN_ENVELOPE −ENVELOPE_SECS "
+              "+SPECIFIC_ENERGY +BOUNDARY_CLOSURE_RATE +SCORE_GRAD_X/Y/Z, "
+              "+3×32 = 96) = 2307 "
+              "(45·32+32 + 32·16+16 + 16·3+3 + 16·16 = 1472+528+51+256). "
               "RECOMPUTE this when the input count moves — never relax it.");
 
 // Total recurrent hidden-state floats across all recurrent layers.
@@ -103,7 +116,7 @@ constexpr const char* NN_TOPOLOGY_STRING = "42,32,16r,3";  // 041 US4: 37 → 42
 // string updated to "54,32,16r,3".
 // ============================================================================
 
-constexpr int TRACKER_NN_INPUT_COUNT = static_cast<int>(TrackerInput::COUNT);  // 63 (041 US4: 58 + envelope×2 + accel×3)
+constexpr int TRACKER_NN_INPUT_COUNT = static_cast<int>(TrackerInput::COUNT);  // 66 (041 P2-2: 46 target + 20 CraftCommonInputs)
 constexpr int TRACKER_NN_HIDDEN1_SIZE = 32;
 constexpr int TRACKER_NN_HIDDEN2_SIZE = 16;
 // 038 US3 — tracker output head grows 3 → 7: 3 actuated control outputs +
@@ -134,11 +147,12 @@ constexpr int TRACKER_NN_WEIGHT_COUNT =
     (TRACKER_NN_RECURRENT[1] ? TRACKER_NN_HIDDEN1_SIZE * TRACKER_NN_HIDDEN1_SIZE : 0) +
     (TRACKER_NN_RECURRENT[2] ? TRACKER_NN_HIDDEN2_SIZE * TRACKER_NN_HIDDEN2_SIZE : 0) +
     (TRACKER_NN_RECURRENT[3] ? TRACKER_NN_OUTPUT_COUNT  * TRACKER_NN_OUTPUT_COUNT  : 0);
-static_assert(TRACKER_NN_WEIGHT_COUNT == 2951,
+static_assert(TRACKER_NN_WEIGHT_COUNT == 3047,
               "Tracker weight count arithmetic inconsistent. History: 2787 at 60 in / 3 out; "
               "038 US3 = 2791 at 58 in / 7 out; "
-              "041 US4 58→63 in (+5×32 = 160) = 2951 "
-              "(63·32+32 + 32·16+16 + 16·7+7 + 16·16 = 2048+528+119+256). "
+              "041 US4 58→63 in (+5×32 = 160) = 2951; "
+              "041 P2-2 63→66 in (same net +3 as pathgen, +3×32 = 96) = 3047 "
+              "(66·32+32 + 32·16+16 + 16·7+7 + 16·16 = 2144+528+119+256). "
               "⚠️ Moves AGAIN after the M2 phase: +N innovation inputs (FR-005a), and "
               "the output count becomes 3 if the predictor head is retired at T088 "
               "(which would reclaim 16·4+4 = 68 output weights). RECOMPUTE, never relax.");
@@ -148,6 +162,6 @@ constexpr int TRACKER_NN_HIDDEN_STATE_COUNT =
     (TRACKER_NN_RECURRENT[2] ? TRACKER_NN_HIDDEN2_SIZE : 0) +
     (TRACKER_NN_RECURRENT[3] ? TRACKER_NN_OUTPUT_COUNT  : 0);
 
-constexpr const char* TRACKER_NN_TOPOLOGY_STRING = "63,32,16r,7";  // 041 US4: 58 → 63 inputs
+constexpr const char* TRACKER_NN_TOPOLOGY_STRING = "66,32,16r,7";  // 041 P2-2: 63 → 66 inputs
 
 #endif

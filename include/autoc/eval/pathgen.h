@@ -354,7 +354,16 @@ public:
       case AeroStandardPathType::SpiralClimb: {
         addStraightSegment(path, entryPoint, gp_vec3(-1.0f, 0.0f, 0.0f), 20.0f, totalDistance);
         gp_vec3 spiralStart = path.back().start;
-        gp_scalar climbAmount = -50.0f;
+        // 041 P2-3 — 50 → 35 m (operator 2026-08-18). At 50 m the realized apex
+        // was entry + 49.97 m against a half-band of K = 48 — the rabbit itself
+        // left the arena, so the chase following it egressed on the most
+        // demanding path in the set. The operator kept the 25 m deck and the
+        // band sized to the site's 400 ft working envelope, and shrank the path
+        // instead: training content conforms to the envelope it will actually be
+        // flown in. ⛔ Mirrored in
+        // xiao/include/embedded_pathgen_selector.h — the two generators must
+        // produce the same rabbit or sim and flight are tracking different targets.
+        gp_scalar climbAmount = -35.0f;
         addSpiralTurn(path, spiralStart, 20.0f, 540.0f * M_PI / 180.0f, true, climbAmount, totalDistance);
         gp_vec3 northStart = path.back().start;
         addStraightSegment(path, northStart, gp_vec3(1.0f, 0.0f, 0.0f), 40.0f, totalDistance);
@@ -400,12 +409,18 @@ public:
       case AeroStandardPathType::HighPerchSplitS: {
         addStraightSegment(path, entryPoint, gp_vec3(-1.0f, 0.0f, 0.0f), 20.0f, totalDistance);
         gp_vec3 seg2Start = path.back().start;
-        gp_scalar climbAmount = -20.0f;
+        // 041 P2-3 — 20 → 15 m, paired with the verticalClimb below (also
+        // 20 → 15). Once SpiralClimb was shrunk, HighPerchSplitS's 20+20 = 40 m
+        // became the path that set the ceiling, leaving 8.2 m of margin —
+        // better than the 3 cm this cross-check started with, but still under
+        // one turn radius. Same operator principle: the training content
+        // conforms to the envelope it will be flown in.
+        gp_scalar climbAmount = -15.0f;
         addSpiralTurn(path, seg2Start, 20.0f, M_PI, true, climbAmount, totalDistance);
         gp_vec3 seg3Start = path.back().start;
         gp_vec3 headingNorth(1.0f, 0.0f, 0.0f);
         gp_scalar horizontalDist = 40.0f;
-        gp_scalar verticalClimb = -20.0f;
+        gp_scalar verticalClimb = -15.0f;
         gp_vec3 climbVector = headingNorth * horizontalDist + gp_vec3(0.0f, 0.0f, verticalClimb);
         gp_scalar climbDistance = climbVector.norm();
         addStraightSegment(path, seg3Start, climbVector.normalized(), climbDistance, totalDistance);
@@ -445,6 +460,9 @@ public:
         gp_vec3 lastPoint;
         gp_vec3 lastDirection;
         bool first = true;
+        // ⚠️ `height` is the CONTROL-POINT bound, not the realized one: the
+        // Catmull-Rom interpolation below overshoots it by 1/8. See
+        // SIM_PATH_HEIGHT_BOUNDS and tests/arena_path_fit_tests.cc.
         for (size_t i = 1; i < controlPoints.size() - 3; ++i) {
           for (gp_scalar t = 0; t <= 1; t += static_cast<gp_scalar>(0.02f)) {
             gp_vec3 interpolatedPoint = cubicInterpolate(controlPoints[i - 1], controlPoints[i],

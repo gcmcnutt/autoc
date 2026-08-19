@@ -204,7 +204,6 @@ struct AutocConfig {
     // --- 041 US4: envelope occupancy + specific-force inputs ---
     // Ablation gates, so the T068 matrix can turn each half off without a
     // rebuild. Default ON: they are what the feature exists to test.
-    int enableEnvelopeInputs = 1;        // IN_ENVELOPE + ENVELOPE_SECS populated
     int enableAccelInputs = 1;           // ACCEL_X/Y/Z populated
     double accelScaleG = 8.0;            // must match kAccelScale_g (nn_inputs.h)
     // M2 direct-perception envelope estimator (FR-018b). Reserved: read by
@@ -262,9 +261,16 @@ struct AutocConfig {
     double crashHullProbability = 0.10;
 
     // --- Tracker arena (FR-016) ---
-    double flightArenaRadius = 80.0;        // m horizontal
-    double flightArenaFloorAGL = 5.0;       // m AGL hard floor
-    double flightArenaCeilingAGL = 100.0;   // m AGL ceiling
+    double flightArenaRadius = 70.0;        // m horizontal
+    // 041 P2-3 — ONE arena for BOTH modes and BOTH sides (operator 2026-08-18:
+    // *"Should be the same for both. 70m radius. Hat of perhaps 10 (bottom of
+    // cyl) top at 100m above bottom is fine."*). The entry / arm point sits at
+    // 55 m AGL = −SIM_INITIAL_ALTITUDE — 30 m above the deck, NOT the centre — which is
+    // what makes resolveEngageArena an identity on the virtual arena.
+    // ⛔ Moving floor or ceiling without moving SIM_INITIAL_ALTITUDE breaks that
+    // — arena_tests.cc pins the relationship.
+    double flightArenaFloorAGL = 25.0;      // m AGL hard deck = arm − 30 (asymmetric band)
+    double flightArenaCeilingAGL = 105.0;   // m AGL ceiling = arm + 50 (asymmetric band)
 
     // --- Camera config (FR-003) ---
     int cameraCount = 1;
@@ -467,7 +473,6 @@ struct AutocConfig {
     X(double,         fitStreakThreshold,        "FitStreakThreshold") \
     X(double,         fitStreakRampSec,          "FitStreakRampSec") \
     X(double,         fitStreakMultiplierMax,    "FitStreakMultiplierMax") \
-    X(int,            enableEnvelopeInputs,      "EnableEnvelopeInputs") \
     X(int,            enableAccelInputs,         "EnableAccelInputs") \
     X(double,         accelScaleG,               "AccelScaleG") \
     X(double,         envelopeSpanLo,            "EnvelopeSpanLo") \

@@ -220,6 +220,11 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(arena_tests tests/arena_tests.cc)
   target_link_libraries(arena_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  # 041 P2-3 — does the TRAINING GEOMETRY fit the arena? Links the real
+  # generateSmoothPaths and measures, rather than trusting a recorded number.
+  add_executable(arena_path_fit_tests tests/arena_path_fit_tests.cc)
+  target_link_libraries(arena_path_fit_tests GTest::gtest GTest::gtest_main autoc_common)
+
   add_executable(trail_rabbit_tests tests/trail_rabbit_tests.cc)
   target_link_libraries(trail_rabbit_tests GTest::gtest GTest::gtest_main autoc_common)
 
@@ -338,6 +343,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME tracker_dmp_roundtrip_tests COMMAND tracker_dmp_roundtrip_tests)
   add_test(NAME tracker_stepper_init_tests COMMAND tracker_stepper_init_tests)
   add_test(NAME arena_tests COMMAND arena_tests)
+  add_test(NAME arena_path_fit_tests COMMAND arena_path_fit_tests)
   add_test(NAME trail_rabbit_tests COMMAND trail_rabbit_tests)
   add_test(NAME crash_hull_tests COMMAND crash_hull_tests)
   add_test(NAME derived_features_tests COMMAND derived_features_tests)
@@ -378,6 +384,7 @@ if(ENABLE_AUTOC_TESTS)
             tracker_dmp_roundtrip_tests
             tracker_stepper_init_tests
             arena_tests
+            arena_path_fit_tests
             trail_rabbit_tests
             crash_hull_tests
             derived_features_tests
@@ -439,6 +446,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND tracker_dmp_roundtrip_tests --gtest_brief=1
     COMMAND tracker_stepper_init_tests --gtest_brief=1
     COMMAND arena_tests --gtest_brief=1
+    COMMAND arena_path_fit_tests --gtest_brief=1
     COMMAND trail_rabbit_tests --gtest_brief=1
     COMMAND crash_hull_tests --gtest_brief=1
     COMMAND derived_features_tests --gtest_brief=1

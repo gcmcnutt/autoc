@@ -6,6 +6,7 @@
 // instead of pathgen's path-following body.
 
 #include "autoc/eval/tracker_stepper.h"
+#include "autoc/eval/craft_observations.h"  // 041 P2-2 — Es + boundary closure
 
 #include "autoc/eval/tracker_tick_rule.h"
 
@@ -257,6 +258,29 @@ CrashReason TrackerStepper::stepOnce() {
                       static_cast<double>(SIM_TIME_STEP_MSEC));
     state_.setInEnvelope(envelope_.in_envelope);
     state_.setEnvelopeSecs(envelope_.normalizedSecs(fit_streak_ramp_sec_));
+
+    // Step 1d (041 P2-2): Es + boundary closure rate, from the same `arena_`
+    // the gather and the egress check use. Producer writes, gather copies —
+    // and the reference stepper has to run it for the same reason it runs the
+    // envelope estimator: the ORDERING is what can drift.
+    autoc::eval::writeCraftObservations(state_, arena_);
+
+    // ⛔ 041 P2-2 — SCORE_GRAD_* IS DELIBERATELY ZERO IN M2, and the explicit
+    // write is here so the zero is a DECISION in the code rather than a
+    // default nobody looked at.
+    //
+    // The slot exists because the format break happens once and 043 will want
+    // it. It is not FILLED because M2 cannot legitimately have it yet: today's
+    // M2 tracks a RECORDED flight and perceives it only through the camera, so
+    // handing it the exact ∂score/∂position — which is computed from the true
+    // target geometry — would be an oracle it has no way to reproduce in the
+    // air. That is precisely what T038 refused for the M2 envelope estimator,
+    // and the same refusal applies here.
+    //
+    // 043 decides the source: phase 1 (virtual target + synthetic camera) can
+    // use the exact closed form legitimately; phase 2 (real craft, real
+    // beacons) must proxy it from span-based range estimation.
+    state_.setScoreGradBody(gp_vec3::Zero());
 
     // Step 2: gather tracker NN inputs.
     TrackerInputs inputs = {};

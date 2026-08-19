@@ -264,7 +264,9 @@ public:
         addStraightSegment(entryPoint, gp_vec3(static_cast<gp_scalar>(-1.0f), static_cast<gp_scalar>(0.0f), static_cast<gp_scalar>(0.0f)), static_cast<gp_scalar>(20.0f), totalDistance);
 
         gp_vec3 spiralStart = segments[segment_count-1].start;
-        gp_scalar climbAmount = static_cast<gp_scalar>(-50.0f);  // Climb 50m from z=0 to z=-50
+        // 041 P2-3 — 50 → 35 m, mirroring include/autoc/eval/pathgen.h. The two
+        // generators MUST agree or sim and flight track different rabbits.
+        gp_scalar climbAmount = static_cast<gp_scalar>(-35.0f);  // Climb 35m from z=0 to z=-35
         addSpiralTurn(spiralStart, static_cast<gp_scalar>(20.0f), static_cast<gp_scalar>(540.0f * M_PI / 180.0f), true, climbAmount, totalDistance);
 
         gp_vec3 northStart = segments[segment_count-1].start;
@@ -318,13 +320,15 @@ public:
         addStraightSegment(entryPoint, gp_vec3(static_cast<gp_scalar>(-1.0f), static_cast<gp_scalar>(0.0f), static_cast<gp_scalar>(0.0f)), static_cast<gp_scalar>(20.0f), totalDistance);
 
         gp_vec3 seg2Start = segments[segment_count-1].start;
-        gp_scalar climbAmount = static_cast<gp_scalar>(-20.0f);
+        // 041 P2-3 — 20 → 15 m, mirroring include/autoc/eval/pathgen.h (paired
+        // with verticalClimb below). The two generators MUST agree.
+        gp_scalar climbAmount = static_cast<gp_scalar>(-15.0f);
         addSpiralTurn(seg2Start, static_cast<gp_scalar>(20.0f), static_cast<gp_scalar>(M_PI), true, climbAmount, totalDistance);
 
         gp_vec3 seg3Start = segments[segment_count-1].start;
         gp_vec3 headingNorth(static_cast<gp_scalar>(1.0f), static_cast<gp_scalar>(0.0f), static_cast<gp_scalar>(0.0f));
         gp_scalar horizontalDist = static_cast<gp_scalar>(40.0f);
-        gp_scalar verticalClimb = static_cast<gp_scalar>(-20.0f);
+        gp_scalar verticalClimb = static_cast<gp_scalar>(-15.0f);
         gp_vec3 climbVector = headingNorth * horizontalDist + gp_vec3(static_cast<gp_scalar>(0.0f), static_cast<gp_scalar>(0.0f), verticalClimb);
         gp_scalar climbDistance = climbVector.norm();
         addStraightSegment(seg3Start, climbVector.normalized(), climbDistance, totalDistance);
@@ -364,7 +368,12 @@ public:
 
         gp_vec3 controlPoints[NUM_SEGMENTS_PER_PATH];
         for (int i = 0; i < NUM_SEGMENTS_PER_PATH; ++i) {
-          controlPoints[i] = localRandomPointInCylinder(rng, static_cast<gp_scalar>(40.0f), static_cast<gp_scalar>(100.0f), static_cast<gp_scalar>(0.0f));
+          // ⛔ 041 P2-3 — was height=100.0f here against the DESKTOP's 40, so the
+          // xiao generated a completely different random rabbit: an analytic
+          // envelope of entry + 112.5 m against the sim's entry + 45 m. A live
+          // sim/flight divergence in the target itself, found by the max-extent
+          // cross-check. Both sides now use SIM_PATH_BOUNDS / SIM_PATH_HEIGHT_BOUNDS.
+          controlPoints[i] = localRandomPointInCylinder(rng, SIM_PATH_BOUNDS, SIM_PATH_HEIGHT_BOUNDS, static_cast<gp_scalar>(0.0f));
         }
 
         // Generate smooth path through control points

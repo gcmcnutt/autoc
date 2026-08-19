@@ -2393,12 +2393,14 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
         nn.closing_rate = std::stof(matches[6].str());
         float qwxyz[4] = {0,0,0,0};
         parseFloatList(matches[7].str(), qwxyz, 4);
-        nn.quat_w = qwxyz[0]; nn.quat_x = qwxyz[1];
-        nn.quat_y = qwxyz[2]; nn.quat_z = qwxyz[3];
-        nn.airspeed = std::stof(matches[8].str());
+        // 041 P2-1 — craft state moved into the shared CraftCommonInputs
+        // sub-struct, so it is `nn.common.*` in both modes now.
+        nn.common.quat_w = qwxyz[0]; nn.common.quat_x = qwxyz[1];
+        nn.common.quat_y = qwxyz[2]; nn.common.quat_z = qwxyz[3];
+        nn.common.airspeed = std::stof(matches[8].str());
         float gpqr[3] = {0,0,0};
         parseFloatList(matches[9].str(), gpqr, 3);
-        nn.gyro_p = gpqr[0]; nn.gyro_q = gpqr[1]; nn.gyro_r = gpqr[2];
+        nn.common.gyro_p = gpqr[0]; nn.common.gyro_q = gpqr[1]; nn.common.gyro_r = gpqr[2];
 
         scalar relVel = std::abs(nn.closing_rate);  // m/s, + = approaching
         timestampRelVelMap[inavMs] = relVel;
@@ -2418,7 +2420,8 @@ bool parseXiaoData(const std::string& xiaoLogPath) {
         scalar ty   = nn.target_y[NOW];
         scalar tz   = nn.target_z[NOW];
         scalar dist = nn.dist[NOW];
-        scalar qw = nn.quat_w, qx = nn.quat_x, qy = nn.quat_y, qz = nn.quat_z;
+        scalar qw = nn.common.quat_w, qx = nn.common.quat_x,
+               qy = nn.common.quat_y, qz = nn.common.quat_z;
 
         if (dist > 0.01f) {
           // Body-frame craft→target vector (direction cosine * distance).

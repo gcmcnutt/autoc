@@ -6,6 +6,7 @@
 #include "autoc/eval/fitness_computer.h"
 #include "autoc/rpc/crash_reason.h"
 #include "autoc/eval/aircraft_state.h"   // AircraftState (computeSpanPredictionError)
+#include "autoc/eval/arena.h"            // 041 P2-4 — ArenaEgressKind attribution
 #include "autoc/rpc/protocol.h"          // CameraViewSample
 
 // Forward declaration — full definition in rpc/protocol.h
@@ -23,7 +24,9 @@ struct EvalResults;
 // - `stability_score` (027 v4): time pitch/roll surfaces spend off-center.
 //   Σ_t (|out_pt_t| - 1) + (|out_rl_t| - 1) over completed ticks. Each tick
 //   contributes -2 (both surfaces centered, ideal) to 0 (both saturated, worst).
-// - `energy_score` (035 FR-001b/R1): convex throttle-command integral.
+// - `energy_score` (041 P2-5): metres of specific energy DESTROYED,
+//   Σ max(0, −Ps)·dt. (Was 035 FR-001b/R1's convex throttle-command integral,
+//   which muted rather than trimmed — see the accumulation site.)
 //   Σ_t ((out_th_t + 1) / 2)² over completed ticks — out_th∈[-1,1] mapped to a
 //   [0,1] throttle fraction, squared (super-linear). Each tick contributes
 //   0 (idle) to 1 (full throttle). ≥0, lower = better. (Replaces the 027 v3
@@ -73,7 +76,15 @@ struct TrackerDiag {
 struct ScenarioScore {
     gp_fitness score;            // Tracking (negated accumulated points, lower = better)
     gp_fitness stability_score;  // Per-tick (|out_pt|-1) + (|out_rl|-1) summed; lower = better
-    gp_fitness energy_score;     // Per-tick (out_th - 1) / 2 summed; lower = better
+    // 041 P2-5 — metres of SPECIFIC ENERGY DESTROYED over the scenario,
+    // Σ max(0, −Ps)·dt. Always >= 0; lower = better.
+    //
+    // ⚠️ NOT the pre-041 throttle-command integral. That penalised an absolute
+    // quantity, and full power is often correct — so it could only mute. This
+    // charges for energy thrown away and nothing else: climbing is free
+    // (Ps > 0 contributes zero) and a height-for-speed trade is free (Es is
+    // conserved through it). See the derivation at the accumulation site.
+    gp_fitness energy_score;
     // 038 US3 — aux span/closure-predictor error (tracker-only; 0 in pathgen and
     // when no CEP-visible (t, t+horizon) pairs exist). Mean |predicted_span −
     // realized_span| over the kSpanPredictHorizonsMsec lookaheads + the closure
@@ -81,7 +92,22 @@ struct ScenarioScore {
     // touched by applyCrashPenalty. Beats-persistence is a US3-gate check.
     gp_fitness prediction_score;
     bool crashed;
-    CrashReason crashReason;     // 030 M11.wrap diagnostics — full terminate reason mirror of `crashed` (which is just isCrash(crashReason))
+    CrashReason crashReason;
+
+    // 041 P2-4 — WHICH BOUND was crossed, for M1 as well as M2.
+    //
+    // ⛔ `CrashReason::Eval` lumps floor, ceiling and wall into one number, so
+    // the per-gen `#GenCrash eval=` count could not answer the question the 041
+    // asymmetric band makes important: with only 10 m below the arm point, is a
+    // run dying because the DECK is too tight, or because the policy is being
+    // drawn down onto it by a target flying near it? Those call for opposite
+    // responses — widen the band, or leave it and let the policy learn — and
+    // widening in response to the second removes the lesson.
+    //
+    // Attributed parent-side from the terminal position against the RECORDED
+    // arena, so it costs no worker change and no wire change. NONE when the
+    // scenario did not end on egress.
+    autoc::eval::ArenaEgressKind egress_kind;     // 030 M11.wrap diagnostics — full terminate reason mirror of `crashed` (which is just isCrash(crashReason))
     int steps_completed;
     int steps_total;
 
@@ -97,6 +123,7 @@ struct ScenarioScore {
         : score(0.0), stability_score(0.0), energy_score(0.0),
           prediction_score(0.0),
           crashed(false), crashReason(CrashReason::None),
+          egress_kind(autoc::eval::ArenaEgressKind::NONE),
           steps_completed(0), steps_total(0),
           maxStreak(0), totalStreakSteps(0), maxMultiplier(1.0) {}
 };

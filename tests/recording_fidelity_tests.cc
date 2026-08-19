@@ -80,6 +80,95 @@ TEST(RecordingFidelity, NonZeroWindSurvivesSerialization_T042) {
 }
 
 // ---------------------------------------------------------------------------
+// 041 P2-4 — the new observations survive the round trip, and EVERY emitted
+// slot reads back
+// ---------------------------------------------------------------------------
+
+// ⛔ Es, the boundary closure rate and the score gradient are recorded on the
+// state SEPARATELY from the NN slots that carry them, and this test is what
+// makes that separation worth its bytes. Three reasons they are not redundant:
+// an ablation mask zeroes the slot by design, SCORE_GRAD's slot is a saturating
+// tanh so its magnitude does not survive it, and Ps must be differenced from a
+// true Es rather than a de-normalized slot.
+TEST(RecordingFidelity, NewCraftObservationsSurviveSerialization_P2_4) {
+    AircraftState st{0, 20.0f, gp_vec3(20.0f, 0.0f, 0.0f), gp_quat::Identity(),
+                     gp_vec3::Zero(), 0.0f, 0.0f, 0.0f, 0};
+
+    // Distinct, non-round, all-different values so a field swap or a partial
+    // write cannot pass — the same discipline as the wind test above.
+    const gp_scalar es = static_cast<gp_scalar>(73.125);
+    const gp_scalar bclr = static_cast<gp_scalar>(-4.75);
+    const gp_vec3 grad(0.375f, -0.125f, 0.0625f);
+    st.setSpecificEnergy(es);
+    st.setBoundaryClosureRate(bclr);
+    st.setScoreGradBody(grad);
+
+    std::stringstream ss;
+    { cereal::BinaryOutputArchive out(ss); out(st); }
+    AircraftState round{0, 0.0f, gp_vec3::Zero(), gp_quat::Identity(),
+                        gp_vec3::Zero(), 0.0f, 0.0f, 0.0f, 0};
+    { cereal::BinaryInputArchive in(ss); in(round); }
+
+    EXPECT_EQ(round.getSpecificEnergy(), es);
+    EXPECT_EQ(round.getBoundaryClosureRate(), bclr);
+    EXPECT_EQ(round.getScoreGradBody(), grad);
+
+    // ⚠️ And a NEGATIVE closure rate must survive as negative. The sign is the
+    // whole content of that slot (+ = toward the wall), and a sign lost in
+    // serialization would train the policy to fly into the boundary while every
+    // plot looked reasonable.
+    EXPECT_LT(round.getBoundaryClosureRate(), 0.0);
+}
+
+// Every NN slot of BOTH modes reads back — the property the full-vector CSV
+// emission in dmp_dump depends on. dmp_dump walks the struct as a flat float
+// array and labels it from the metadata table; if serialization dropped or
+// reordered even one slot, every column after it would be mislabelled and every
+// value would still look plausible.
+TEST(RecordingFidelity, EveryNNSlotSurvivesSerializationInBothModes_P2_4) {
+    for (bool tracker : {false, true}) {
+        AircraftState st{0, 20.0f, gp_vec3(20.0f, 0.0f, 0.0f), gp_quat::Identity(),
+                         gp_vec3::Zero(), 0.0f, 0.0f, 0.0f, 0};
+
+        // Fill every slot with its own index + 1, so a shift by ONE is visible
+        // (a fill of all-ones would survive any permutation).
+        const int n = tracker ? static_cast<int>(TrackerInput::COUNT)
+                              : static_cast<int>(PathgenInput::COUNT);
+        if (tracker) {
+            TrackerInputs in{};
+            float* raw = reinterpret_cast<float*>(&in);
+            for (int i = 0; i < n; ++i) raw[i] = static_cast<float>(i + 1);
+            float outs[TRACKER_NN_OUTPUT_COUNT];
+            for (int i = 0; i < TRACKER_NN_OUTPUT_COUNT; ++i) outs[i] = 0.5f * (i + 1);
+            st.setNNData(in, outs, TRACKER_NN_OUTPUT_COUNT);
+        } else {
+            NNInputs in{};
+            float* raw = reinterpret_cast<float*>(&in);
+            for (int i = 0; i < n; ++i) raw[i] = static_cast<float>(i + 1);
+            float outs[NN_OUTPUT_COUNT];
+            for (int i = 0; i < NN_OUTPUT_COUNT; ++i) outs[i] = 0.5f * (i + 1);
+            st.setNNData(in, outs, NN_OUTPUT_COUNT);
+        }
+
+        std::stringstream ss;
+        { cereal::BinaryOutputArchive out(ss); out(st); }
+        AircraftState round{0, 0.0f, gp_vec3::Zero(), gp_quat::Identity(),
+                            gp_vec3::Zero(), 0.0f, 0.0f, 0.0f, 0};
+        { cereal::BinaryInputArchive in(ss); in(round); }
+
+        const float* back = tracker
+            ? reinterpret_cast<const float*>(&round.getTrackerInputs())
+            : reinterpret_cast<const float*>(&round.getNNInputs());
+        for (int i = 0; i < n; ++i) {
+            EXPECT_FLOAT_EQ(back[i], static_cast<float>(i + 1))
+                << (tracker ? "tracker" : "pathgen") << " slot " << i
+                << " did not read back — a shifted or dropped slot mislabels "
+                   "every column after it in the dmp CSV";
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // T044a — the sim clock stamps exact cadence multiples
 // ---------------------------------------------------------------------------
 
@@ -158,12 +247,17 @@ TEST(RecordingFidelity, RecordedRunConfigSurvivesAndIncludes041Knobs_T043) {
     // 041 T043 — the knobs that say whether ACCEL_* / envelope were POPULATED
     // or ABLATED. Set enableAccelInputs = 0 on purpose: "ablated" is the state
     // that is indistinguishable from "broken" if it is not recorded.
-    rc.enableEnvelopeInputs   = 1;
     rc.enableAccelInputs      = 0;
     rc.accelScaleG            = 8.0;
     rc.envelopeSpanLo         = 0.02;
     rc.envelopeSpanHi         = 0.35;
     rc.envelopeCentroidRadius = 0.5;
+    // 041 P2-4 — the arena the run was flown in. Deliberately NOT the shipped
+    // defaults, so a round trip that quietly reconstructed defaults instead of
+    // reading the record would fail here.
+    rc.flightArena.radius_m      = 66.5f;
+    rc.flightArena.floor_agl_m   = 17.25f;
+    rc.flightArena.ceiling_agl_m = 88.75f;
 
     std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
     {
@@ -187,9 +281,14 @@ TEST(RecordingFidelity, RecordedRunConfigSurvivesAndIncludes041Knobs_T043) {
     EXPECT_EQ(back.enableHullCrashPenalty, rc.enableHullCrashPenalty);
     EXPECT_DOUBLE_EQ(back.hullCrashPenaltyFactor, rc.hullCrashPenaltyFactor);
     EXPECT_DOUBLE_EQ(back.oobCrashPenaltyWeight, rc.oobCrashPenaltyWeight);
+    // ⛔ The arena moved three times in one day. A dmp that cannot name its own
+    // containment volume can neither recompute Es (datum = the FLOOR) nor tell
+    // a tight deck from a policy baited onto it.
+    EXPECT_FLOAT_EQ(back.flightArena.radius_m, 66.5f);
+    EXPECT_FLOAT_EQ(back.flightArena.floor_agl_m, 17.25f);
+    EXPECT_FLOAT_EQ(back.flightArena.ceiling_agl_m, 88.75f);
 
     // The 041 tail — the part a stale reader would silently drop.
-    EXPECT_EQ(back.enableEnvelopeInputs, 1);
     EXPECT_EQ(back.enableAccelInputs, 0)
         << "an ablated accel channel must be RECORDED as ablated; otherwise a "
            "zeroed column cannot be told apart from a broken one";

@@ -77,45 +77,51 @@ TEST(GatherTrackerInputs, FillsAircraftStateFieldsFromAircraftState) {
     gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
 
     // Quat: identity ⇒ (1, 0, 0, 0).
-    EXPECT_FLOAT_EQ(out.quat_w, 1.0f);
-    EXPECT_FLOAT_EQ(out.quat_x, 0.0f);
-    EXPECT_FLOAT_EQ(out.quat_y, 0.0f);
-    EXPECT_FLOAT_EQ(out.quat_z, 0.0f);
-    // M11.preA.2: cruise-normalized airspeed (relVel / kCruiseSpeed_mps = 13).
-    EXPECT_FLOAT_EQ(out.airspeed, 12.5f / kCruiseSpeed_mps);
+    EXPECT_FLOAT_EQ(out.common.quat_w, 1.0f);
+    EXPECT_FLOAT_EQ(out.common.quat_x, 0.0f);
+    EXPECT_FLOAT_EQ(out.common.quat_y, 0.0f);
+    EXPECT_FLOAT_EQ(out.common.quat_z, 0.0f);
+    // ⚠️ 041 P2-1: RAW m/s, not cruise-normalized. Pre-041 M1 fed raw and M2 fed
+    // relVel / kCruiseSpeed_mps — the same "shared" slot carrying two different
+    // scales, which is exactly the divergence the shared CraftCommonInputs
+    // sub-struct exists to make impossible. Unified on raw.
+    EXPECT_FLOAT_EQ(out.common.airspeed, 12.5f);
 }
 
 TEST(GatherTrackerInputs, DistToBoundaryComputedFromArenaAndVelocity) {
-    // Chase at virtual (10, 0, 0) — 10m from arena center horizontally,
-    // velocity (12.5, 0, 0) — pure +X. Wall at radius 80m. Wall ahead is
-    // 80 - 10 = 70m along +X. Velocity unit = (1, 0, 0). Ray hits wall
-    // at t=70.
+    // Chase at virtual (10, 0, 0) — 10 m from the arena centre horizontally,
+    // velocity (12.5, 0, 0) — pure +X. Wall at radius 70 m, so the wall ahead
+    // is 70 − 10 = 60 m along +X. Velocity unit = (1, 0, 0) ⇒ ray hits at t=60.
     AircraftState chase = makeChaseState();
     TrackerHistoryWindow history{};
-    FlightArena arena;  // defaults: 80m radius, 5m floor, 100m ceiling
+    FlightArena arena;  // 041 P2-3 defaults: 70 m radius, 10 m deck, 110 m ceiling
 
     TrackerInputs out{};
     gather_tracker_inputs(chase, history, arena, 1.25f, SituationalAwarenessState{}, out);
 
-    // M11.preA.2: dist_to_boundary is now tanh(d / kDistToBoundaryScale_m).
-    // d_raw ≈ 70m (wall hit, no floor/ceiling intersection since vz = 0).
-    // tanh(70/20) = tanh(3.5) ≈ 0.998 (saturated, far from boundary).
-    EXPECT_NEAR(out.dist_to_boundary_along_vel,
-                std::tanh(70.0f / kDistToBoundaryScale_m), 1e-4f);
-    EXPECT_GT(out.dist_to_boundary_along_vel, 0.99f);
+    // M11.preA.2: dist_to_boundary is tanh(d / kDistToBoundaryScale_m).
+    // d_raw ≈ 60 m (wall hit; no floor/ceiling intersection since vz = 0).
+    // tanh(60/20) = tanh(3) ≈ 0.995 — saturated, i.e. far from the boundary.
+    EXPECT_NEAR(out.common.dist_to_boundary,
+                std::tanh(60.0f / kDistToBoundaryScale_m), 1e-4f);
+    EXPECT_GT(out.common.dist_to_boundary, 0.99f);
 }
 
 TEST(GatherTrackerInputs, DistToBoundaryWithDescendingVelocityHitsFloor) {
-    // Chase at virtual (10, 0, 0); virtual_z=0 corresponds to raw z=-25
-    // (i.e., 25m AGL). Floor at 5m AGL = raw z=-5 = virtual_z=+20.
-    // Velocity (10, 0, 5) — descending at 5 m/s. Distance to floor in
-    // virtual_z = 20 - 0 = 20. Time to floor = 20 / 5 = 4 sec
-    // along velocity = 4 sec * |v| ≈ ... wait, distanceToBoundary
-    // returns t in normalized-velocity units (meters along unit vector),
-    // so for unit v with vz_unit = 5/sqrt(125) ≈ 0.447, distance to floor
-    // along unit vec = 20 / 0.447 ≈ 44.7m.
-    AircraftState chase{0, /*relVel=*/sqrtf(125.0f),
-                        gp_vec3(10.0f, 0.0f, 5.0f),  // descending
+    // 041 P2-3: virtual_z=0 is the arm point (55 m AGL) and the hard deck is
+    // 25 m AGL = virtual_z = +30 — the DOWN-extent. Velocity (6, 0, 8) descends,
+    // |v| = 10 so vz_unit = 0.8 and vx_unit = 0.6. distanceToBoundary returns
+    // metres along the UNIT velocity vector, so the deck is 30/0.8 = 37.5 m away
+    // and the wall (70 − 10 = 60 m out) is 60/0.6 = 100 m.
+    //
+    // ⭐ The DECK is the nearer bound, which is what this test is named for.
+    // ⚠️ The velocity is (6,0,8) rather than the (10,0,5) used previously
+    // BECAUSE (10,0,5) is exactly degenerate at this geometry: 30/0.4472 and
+    // 60/0.8944 are both 67.08 m, so the minimum would be a tie and the test
+    // would pass or fail on floating-point noise while appearing to assert
+    // which bound wins.
+    AircraftState chase{0, /*relVel=*/10.0f,
+                        gp_vec3(6.0f, 0.0f, 8.0f),  // descending
                         gp_quat::Identity(),
                         gp_vec3(10.0f, 0.0f, 0.0f),
                         0.0f, 0.0f, 0.0f, 0};
@@ -124,12 +130,13 @@ TEST(GatherTrackerInputs, DistToBoundaryWithDescendingVelocityHitsFloor) {
     TrackerInputs out{};
     gather_tracker_inputs(chase, history, arena, 1.25f, SituationalAwarenessState{}, out);
 
-    // M11.preA.2: tanh-saturated. d_raw ≈ 44.7m → tanh(44.7/20) = tanh(2.235)
-    // ≈ 0.977 (still saturated; would need chase within ~10-20m of boundary
-    // to see gradient under scale=20). Floor (~44.7m) is closer than wall.
-    EXPECT_NEAR(out.dist_to_boundary_along_vel,
-                std::tanh(44.7f / kDistToBoundaryScale_m), 1e-3f);
-    EXPECT_GT(out.dist_to_boundary_along_vel, 0.95f);
+    // The MINIMUM over wall/deck/ceiling is taken, and it is the deck: 37.5 m.
+    EXPECT_NEAR(out.common.dist_to_boundary,
+                std::tanh(37.5f / kDistToBoundaryScale_m), 1e-3f);
+    // Distinguishable from the wall's 100 m, which would read 0.99999 — the
+    // assertion that the MINIMUM was taken, not merely that something was.
+    EXPECT_LT(out.common.dist_to_boundary,
+              std::tanh(100.0f / kDistToBoundaryScale_m) - 0.01f);
 }
 
 // 030 M11.preA.2 — soft-sat shape exercised in the gradient region. Place
@@ -139,21 +146,21 @@ TEST(GatherTrackerInputs, DistToBoundaryWithDescendingVelocityHitsFloor) {
 // the gradient region spans ~0-30m, matching the craft's ~10-15m emergency-
 // turn budget.
 TEST(GatherTrackerInputs, DistToBoundarySoftSatShapeNearWall) {
-    // Arena defaults: 80m radius. Place chase at virtual (70, 0, 0) with
-    // velocity (10, 0, 0). Wall ahead at +x: 80 - 70 = 10m along +X.
+    // Arena defaults: 70 m radius. Place the chase at virtual (60, 0, 0) with
+    // velocity (10, 0, 0). Wall ahead at +x: 70 − 60 = 10 m along +X.
     AircraftState chase{0, /*relVel=*/10.0f,
                         gp_vec3(10.0f, 0.0f, 0.0f),
                         gp_quat::Identity(),
-                        gp_vec3(70.0f, 0.0f, 0.0f),
+                        gp_vec3(60.0f, 0.0f, 0.0f),
                         0.0f, 0.0f, 0.0f, 0};
     TrackerHistoryWindow history{};
     FlightArena arena;
     TrackerInputs out{};
     gather_tracker_inputs(chase, history, arena, 1.25f, SituationalAwarenessState{}, out);
 
-    EXPECT_NEAR(out.dist_to_boundary_along_vel,
+    EXPECT_NEAR(out.common.dist_to_boundary,
                 std::tanh(10.0f / kDistToBoundaryScale_m), 1e-3f);
-    EXPECT_NEAR(out.dist_to_boundary_along_vel, 0.4621f, 1e-3f);
+    EXPECT_NEAR(out.common.dist_to_boundary, 0.4621f, 1e-3f);
 }
 
 // reinterpret_cast<float*>(&trackerInputs) is the path nn_forward uses;
@@ -176,16 +183,21 @@ TEST(GatherTrackerInputs, LayoutIsContiguousFloatArray) {
     gather_tracker_inputs(chase, history, FlightArena{}, 1.25f, SituationalAwarenessState{}, out);
 
     const float* flat = reinterpret_cast<const float*>(&out);
-    // First slot should be beacon_l_x[0] per enum order.
+    // ⚠️ 041 P2-1 REORDERED this struct: the craft block is now a contiguous
+    // 20-slot tail (46..65) instead of being split around the derived
+    // perceptual features. Indices below are the post-reorder ones.
+    //
+    // First slot is beacon_l_x[0] per enum order.
     EXPECT_FLOAT_EQ(flat[0], 0.123f);
-    // Slot 35 (last beacon channel: right_cep[5]) should be 0.987f.
+    // Slot 35 (last beacon channel: right_cep[5]).
     EXPECT_FLOAT_EQ(flat[35], 0.987f);
-    // Slot 36 should be quat_w (identity = 1.0).
-    EXPECT_FLOAT_EQ(flat[36], 1.0f);
-    // Slot 44 should be dist_to_boundary_along_vel.
-    EXPECT_FLOAT_EQ(flat[44], out.dist_to_boundary_along_vel);
-    // 032 phase 1 — slot 48 = beacon_pair_span[3] (cached from history).
-    EXPECT_FLOAT_EQ(flat[48], 0.456f);
+    // Slot 39 = beacon_pair_span[3] — the derived block now begins at 36.
+    EXPECT_FLOAT_EQ(flat[39], 0.456f);
+    // Slot 46 is the first CraftCommonInputs slot, quat_w (identity = 1.0).
+    EXPECT_FLOAT_EQ(flat[46], 1.0f);
+    // And the sub-struct really is embedded there, not merely coincident.
+    EXPECT_EQ(offsetof(TrackerInputs, common), 46u * sizeof(float));
+    EXPECT_FLOAT_EQ(flat[59], out.common.dist_to_boundary);
 }
 
 // ============================================================================

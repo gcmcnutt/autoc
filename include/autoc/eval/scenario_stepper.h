@@ -62,17 +62,17 @@ public:
 // radius / floor AGL / ceiling AGL from autoc-tracker.ini, plus
 // per-scenario egress-kind telemetry counters). For now both modes use
 // the same hardcoded M1 envelope.
-inline CrashReason checkAircraftOOB(const AircraftState& state) {
-    gp_vec3 rawForOOB =
-        state.getPosition() + gp_vec3(0.0f, 0.0f, SIM_INITIAL_ALTITUDE);
-    gp_scalar distanceFromOrigin =
-        std::sqrt(rawForOOB[0] * rawForOOB[0] + rawForOOB[1] * rawForOOB[1]);
-    if (rawForOOB[2] < (SIM_MAX_ELEVATION) ||
-        rawForOOB[2] > (SIM_MIN_ELEVATION) ||
-        distanceFromOrigin > SIM_PATH_RADIUS_LIMIT) {
-        return CrashReason::Eval;
-    }
-    return CrashReason::None;
-}
+// 041 P2-3 — `checkAircraftOOB` is GONE. It was the third arena: a hardcoded
+// 70 / 7 / 120 envelope that terminated M1 scenarios while the M1 network was
+// being told about `FlightArena`'s 80 / 5 / 100. Both modes now terminate on
+// `autoc::eval::checkArenaBounds(state, arena)` — the same function, over the
+// same struct, that the gather reads for DIST_TO_BOUNDARY.
+//
+// Deleted rather than deprecated on purpose: an inline that still compiled
+// would leave the old envelope reachable, and "which of the two arenas did this
+// run use" is precisely the question that must not be askable again.
+//
+// The comment block above documented the pre-041 semantics; it is retained
+// there for provenance, and the numbers in it are historical.
 
 }  // namespace autoc::eval

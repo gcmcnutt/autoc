@@ -15,17 +15,22 @@
 #include "autoc/rpc/protocol.h"
 #include "autoc/eval/aircraft_state.h"
 
-// 041 T044 (2026-08-11) — re-anchored 2 → 3 at the FR-005 contract break: the
-// grouped per-tick record (EvalTick), the five new NN input slots, and the US4
-// knobs on RecordedRunConfig. This is a milestone-boundary bump, which is the
-// only kind Constitution V permits — not intra-development churn.
+// 041 P2-4 (2026-08-18) — re-anchored 3 → 4 at the second FR-005 contract
+// break of this feature: the input vector changed shape in BOTH modes
+// (42→45, 63→66), the tracker vector was REORDERED so the shared craft block
+// could become one sub-struct, and AircraftState gained Es / boundary-closure /
+// score-gradient. Milestone-boundary, which is the only kind Constitution V
+// permits — not intra-development churn.
+//
+// (041 T044, 2026-08-11, was the 2 → 3 bump: the grouped per-tick record, the
+// five US4 slots, and the US4 knobs on RecordedRunConfig.)
 //
 // The anchor did its job: it failed the moment the bump landed and named the
 // edit to make. That is the whole reason it exists, so it is re-anchored here
 // rather than loosened.
-TEST(CerealVersionAnchor, EvalResultsAtVersion3) {
-    EXPECT_EQ(cereal::detail::Version<EvalResults>::version, 3u)
-        << "EvalResults schema version drifted from 3 (the 041 T044 contract-break "
+TEST(CerealVersionAnchor, EvalResultsAtVersion4) {
+    EXPECT_EQ(cereal::detail::Version<EvalResults>::version, 4u)
+        << "EvalResults schema version drifted from 4 (the 041 P2-4 contract-break "
            "bump). If this is intentional, update this anchor test alongside the "
            "CEREAL_CLASS_VERSION(EvalResults, ...) edit in protocol.h AND "
            "EvalResults::kSchemaVersion. Do NOT bump intra-development per "

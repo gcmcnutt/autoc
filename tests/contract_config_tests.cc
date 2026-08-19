@@ -247,7 +247,10 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // (ablation gates so T068 can turn each half off without a rebuild),
     // AccelScaleG, and the three reserved M2 direct-perception estimator bounds
     // (EnvelopeSpanLo/Hi, EnvelopeCentroidRadius).
-    EXPECT_EQ(n, 148u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // 041 P2-2 RETIRED EnableEnvelopeInputs -> 147: IN_ENVELOPE and ENVELOPE_SECS
+    // are no longer NN inputs, so a knob named "enable the envelope inputs"
+    // gated nothing. Removed rather than left inert.
+    EXPECT_EQ(n, 147u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

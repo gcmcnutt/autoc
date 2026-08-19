@@ -7,7 +7,22 @@
 #include "autoc/types.h"
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/eval/arena.h"   // 038 P0-D — FlightArena (cereal-free, xiao-safe) + inwardBodyDirection
+// 041 P2-6 — DESKTOP ONLY. fitness_decomposition.h pulls in rpc/protocol.h for
+// CameraViewSample, and protocol.h pulls in cereal, which does not exist in the
+// embedded toolchain. The xiao has no use for per-scenario fitness at all — it
+// flies a genome, it does not select one — so the include and the field it
+// serves are both fenced off rather than dragging the serialization layer onto
+// a microcontroller.
+//
+// ⚠️ This unblocks the xiao HOST COMPILE, which was failing at `fatal error:
+// cereal/cereal.hpp` before 041 P2 and independently of it. The firmware's
+// OTHER blocker — a generated NN file baked at 37 inputs against a 45-input
+// gather — is now a loud static_assert (nn2cpp) instead of a silent read past
+// the end of the weight array, and clears when the P4-1 bake produces a genome
+// to regenerate from.
+#ifndef ARDUINO
 #include "autoc/eval/fitness_decomposition.h"
+#endif
 
 // Neural network genome — the fundamental unit of neuroevolution.
 //
@@ -23,7 +38,9 @@ struct NNGenome {
     std::vector<int> topology;        // Layer sizes, e.g., {33, 32, 16, 3}
     std::vector<uint8_t> recurrent;   // Per-layer recurrent flag (0/1), same size as topology
     double fitness;                   // Aggregated fitness from evaluation
+#ifndef ARDUINO
     std::vector<ScenarioScore> scenario_scores;  // Per-scenario decomposed scores (015)
+#endif
     uint32_t generation;              // Generation when created
     float mutation_sigma;             // Per-individual mutation step size (self-adaptive)
     float variation_scale;            // computeVariationScale() at save time — eval uses directly

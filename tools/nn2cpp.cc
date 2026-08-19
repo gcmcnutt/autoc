@@ -13,6 +13,7 @@
 
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
+#include "autoc/eval/arena.h"   // 041 P2-3 — BakedArena defaults derive from FlightArena
 
 void printUsage(const char* progName) {
     std::cout << "Usage: " << progName << " [OPTIONS]\n";
@@ -22,8 +23,8 @@ void printUsage(const char* progName) {
     std::cout << "  -f, --function NAME  Generated function name (default: generatedNNProgram)\n";
     std::cout << "  -u, --unrolled       Generate unrolled layer code (default: use nn_forward)\n";
     std::cout << "  -a, --arena R,F,C    Bake FlightArena radius,floorAGL,ceilingAGL (m) into the\n";
-    std::cout << "                       generated pathgen (B) inputs (default: 80,5,100 — the\n";
-    std::cout << "                       FlightArena struct defaults / autoc.ini M1 config)\n";
+    std::cout << "                       generated pathgen (B) inputs (default: the live FlightArena\n";
+    std::cout << "                       struct defaults, currently 70,25,121 — NOT restated here)\n";
     std::cout << "  --help               Show this help message\n";
     std::cout << "\n";
     std::cout << "Generates C++ source with embedded NN weights for desktop and embedded deployment.\n";
@@ -47,10 +48,17 @@ void printUsage(const char* progName) {
 // the firmware re-centers per engage (resolveEngageArena), desktop harnesses
 // construct one explicitly. No definition ⇒ link failure (Constitution VII:
 // no silent fallback placement).
+// ⛔ 041 P2-3 — DEFAULTS DERIVE FROM `FlightArena`, they are not restated.
+// This struct used to carry its own literal 80 / 5 / 100 — a THIRD copy of the
+// arena geometry, alongside `FlightArena`'s defaults and the .ini keys — and it
+// was still at those numbers after the arena moved twice. A stale default here
+// bakes the wrong containment template into flight firmware, and the aircraft
+// would resolve its engage arena around a cylinder the policy was never trained
+// in. Deriving costs nothing and cannot go stale.
 struct BakedArena {
-    double radius_m = 80.0;
-    double floor_agl_m = 5.0;
-    double ceiling_agl_m = 100.0;
+    double radius_m      = static_cast<double>(autoc::eval::FlightArena{}.radius_m);
+    double floor_agl_m   = static_cast<double>(autoc::eval::FlightArena{}.floor_agl_m);
+    double ceiling_agl_m = static_cast<double>(autoc::eval::FlightArena{}.ceiling_agl_m);
 };
 
 // Emit the template accessor + the active-arena extern shared by both
@@ -212,6 +220,38 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     code << "};\n";
     code << "static const int nn_num_layers = " << genome.topology.size() << ";\n\n";
 
+    // 041 P2-2 — FAIL-LOUD LAYOUT GUARD, emitted into the generated file.
+    //
+    // ⛔ This is why the generated file is safe to fly. `gather_pathgen_inputs`
+    // writes `NN_INPUT_COUNT` floats into an `NNInputs`; the forward pass below
+    // multiplies them against a weight array baked HERE, at codegen time. If the
+    // two disagree — a firmware built against a stale generated file, which is
+    // exactly the state this tree was in (37 baked vs 45 compiled) — the
+    // forward pass reads past the end of `nn_weights` and flies on whatever is
+    // next in flash. Nothing in the build said so, and nothing at runtime would:
+    // the aircraft would simply fly badly, in the air, once.
+    //
+    // The assert lives in the GENERATED artifact rather than in nn2cpp because
+    // the mismatch is between that artifact and whatever firmware tree it is
+    // later compiled into — which nn2cpp cannot see.
+    code << "// 041 P2-2 fail-loud layout guard — see tools/nn2cpp.cc for why.\n";
+    code << "constexpr int kGeneratedNNInputCount = " << genome.topology.front() << ";\n";
+    code << "static_assert(kGeneratedNNInputCount == NN_INPUT_COUNT,\n";
+    code << "    \"Generated NN input count != the compiled NNInputs layout. This file \"\n";
+    code << "    \"was generated against a different nn_inputs.h, so the forward pass \"\n";
+    code << "    \"would read PAST THE END of nn_weights and fly on garbage. \"\n";
+    code << "    \"REGENERATE with tools/nn2cpp -- never relax this.\");\n";
+    // ⚠️ There is deliberately NO companion assert on the weight count against
+    // NN_WEIGHT_COUNT. That would assert "this genome has the project's current
+    // standard hidden widths", which is a different and weaker claim — it would
+    // reject a legitimately narrower experimental genome while catching nothing
+    // the input assert misses. The generated file's topology array and its
+    // weight array are sized from each other by construction here, so the only
+    // way they can disagree with the FIRMWARE is at the input boundary, which
+    // is exactly what the assert above covers.
+    code << "\n";
+
+
     // Recurrent flags (spec 027). Emitted even when all-false so xiao build
     // can switch on compile-time feedforward-only simpler path if wanted.
     const bool any_recurrent = std::any_of(genome.recurrent.begin(),
@@ -336,6 +376,23 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
         else code << " ";
     }
     code << "};\n\n";
+
+    // 041 P2-2 — FAIL-LOUD LAYOUT GUARD (see the same block in
+    // generateNNProgramCode above, and tools/nn2cpp.cc's rationale there).
+    // ⛔ THIS is the path the xiao actually uses: the unrolled generator. The
+    // tree shipped 37 baked inputs against 45 compiled with nothing objecting,
+    // which would have had the flight forward pass read past the end of
+    // nn_weights. A compile error naming both numbers costs nothing.
+    code << "// 041 P2-2 fail-loud layout guard — see tools/nn2cpp.cc for why.\n";
+    code << "constexpr int kGeneratedNNInputCount = " << genome.topology.front() << ";\n";
+    code << "static_assert(kGeneratedNNInputCount == NN_INPUT_COUNT,\n";
+    code << "    \"Generated NN input count != the compiled NNInputs layout. This file \"\n";
+    code << "    \"was generated against a different nn_inputs.h, so the unrolled \"\n";
+    code << "    \"forward pass would read PAST THE END of nn_weights and fly on \"\n";
+    code << "    \"garbage. REGENERATE with tools/nn2cpp -- never relax this.\");\n";
+    // (No companion weight-count assert — see the rationale at the same guard in
+    // generateNNProgramCode above.)
+    code << "\n";
 
     // 039 D6 — persistent recurrent state registers, one static array per
     // recurrent layer, surviving between calls. W_hh blocks live at the tail
@@ -468,7 +525,7 @@ int main(int argc, char** argv) {
     std::string outputFile = "nn_program_generated.cpp";
     std::string functionName = "generatedNNProgram";
     bool unrolled = false;
-    BakedArena arena;  // 038 P0-D — defaults 80/5/100 (FlightArena struct defaults)
+    BakedArena arena;  // defaults track FlightArena (041 P2-3: 70 / 25 / 121)
     int option_index = 0;
     int c;
 

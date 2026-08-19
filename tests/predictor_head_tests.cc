@@ -25,12 +25,13 @@ TEST(PredictorHead, TrackerOutputLayout) {
     EXPECT_EQ(kNumSpanPredictHorizons, 3);           // span @ +50/+100/+150 ms
     EXPECT_EQ(kNumSpanAuxOutputs, 4);                // 3 span + 1 closure-rate
     EXPECT_EQ(TRACKER_NN_OUTPUT_COUNT, 7);           // 3 control + 4 aux
-    // 041 US4 — 58 → 63 inputs (envelope flag/secs + accel xyz); the OUTPUT
-    // head is untouched here, which is the point of asserting both: the
-    // predictor's fate is decided later at T088, and if the head is retired the
-    // trailing 7 becomes 3 and this test is where that has to be stated.
-    EXPECT_STREQ(TRACKER_NN_TOPOLOGY_STRING, "63,32,16r,7");
-    EXPECT_EQ(TRACKER_NN_WEIGHT_COUNT, 2951);   // +5 inputs × 32 = +160 over 2791
+    // 041 P2-2 — 63 → 66 inputs (46 M2 target representation + 20 shared
+    // CraftCommonInputs); the OUTPUT head is untouched here, which is the point
+    // of asserting both: the predictor's fate is decided later at T088, and if
+    // the head is retired the trailing 7 becomes 3 and this test is where that
+    // has to be stated.
+    EXPECT_STREQ(TRACKER_NN_TOPOLOGY_STRING, "66,32,16r,7");
+    EXPECT_EQ(TRACKER_NN_WEIGHT_COUNT, 3047);   // 041 P2-2: 66 in / 7 out (was 2951 at 63 in)
     // Pathgen output head is untouched (predictor is tracker-only, M2-direct).
     EXPECT_EQ(NN_OUTPUT_COUNT, 3);
 }

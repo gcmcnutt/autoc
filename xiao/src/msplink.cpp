@@ -702,16 +702,22 @@ void mspUpdateState()
                  MAX_EMBEDDED_PATH_SEGMENTS);
       }
 
-      // 039 FR-001 — re-center the arena on the engage point (pure ±K rule)
-      // and zero the recurrent NN state (nn_reset) BEFORE the span goes live.
+      // 039 FR-001 — re-center the arena on the engage point and zero the
+      // recurrent NN state (nn_reset) BEFORE the span goes live.
+      //
+      // ⚠️ 041 P2-3: NOT a ±K rule any more. The band is asymmetric (+60 up /
+      // −10 down), so the up and down extents are resolved separately —
+      // a ±K placement would have given the aircraft ±35 m here: 25 m less room
+      // above than it trained with and 25 m more below, with every logged number
+      // looking entirely reasonable.
       engage_arena = autoc::eval::resolveEngageArena(
           generatedNNProgramArenaTemplate(), test_origin_offset);
       generatedNNProgramReset();
       logPrint(INFO,
-               "Engage: arena origin NED=[%.2f,%.2f,%.2f] floorZ=%.1f ceilZ=%.1f K=%.1f - NN state reset",
+               "Engage: arena origin NED=[%.2f,%.2f,%.2f] floorZ=%.1f ceilZ=%.1f up=%.1f down=%.1f - NN state reset",
                engage_arena.origin_ned.x(), engage_arena.origin_ned.y(),
                engage_arena.origin_ned.z(), engage_arena.floor_z_ned,
-               engage_arena.ceiling_z_ned, engage_arena.half_band_m);
+               engage_arena.ceiling_z_ned, engage_arena.up_m, engage_arena.down_m);
 
       // 039 US3 — EngageHeader with the RESOLVED arena (FR-001 provenance);
       // the first tick after this carries recurrent_reset = 1.
