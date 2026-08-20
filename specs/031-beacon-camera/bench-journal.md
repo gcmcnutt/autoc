@@ -13,6 +13,32 @@ At-order verifies: EVN onboard RAM ≥6 MB (T011), Radiant toolchain (new instal
 OV9281 doubles as the trusted focal plane to finish the C-14 lens validation (M12 mount, global shutter,
 no IR-cut after lens swap).
 
+## 042 US1 recorder bench-verified (2026-08-19): burst-to-SD at sensor rate, code B decodes from the clip
+
+`beacon_record` (C11 recorder, libcamera Request-based source) verified end-to-end on the 3A+
+(`pi@100.87.61.53`): **20 s burst capture straight to SD** (80 frames / 500, 640×400 @ 276.5 fps, 200 µs /
+gain 4) → 889 frames, 12 bursts, **intra-burst dt 3.642 ms mean = 274.6 fps ≈ sensor rate**, zero drops
+inside bursts. Clip pulled to the dev box: two replay runs byte-identical; an **independent Python codec
+(zero shared source)** decoded every frame — the container contract holds at arm's length — and **code B
+correlated at +1.000 within a single recorded burst** (chip 116.4 Hz). T025 CLOSED.
+
+Findings that cost time, so they are traps now:
+1. **The dmabuf mmap is write-combine: one uncached 256 KB read ≈ 4 ms on the A53** — slightly over the
+   3.6 ms frame period. Consequences: (a) continuous full-raw on the 3A+ tops out ~215 fps — a HOST limit,
+   not a bug (continuous is the Pi 5 flight mode; the bench records bursts); (b) bufferCount=16 is
+   REQUIRED — 8 buffers (29 ms slack) lose frames at burst tails, 16 (58 ms) absorb a full 80-frame
+   burst's copy deficit. For the tracker this is also the front-end budget reality: reduce-in-register
+   (read once, write 1/16th) fits; anything that memcpys full frames does not.
+2. **`metadata().sequence` on this pipeline counts DELIVERED frames, not sensor frames** — "0 seq gaps"
+   proves nothing about drops. Timestamps are the only honest witness (`bcnr_info` dt stats).
+3. **SCHED_FIFO on the capture loop made it WORSE** (204 fps vs 216) — it starves libcamera's own
+   delivery thread. RT hygiene stays best-effort/warn; do not "fix" it by escalating priority.
+4. The recorder is two-threaded (capture → 48 MiB queue → writer): the first single-threaded version lost
+   22 % of frames even to tmpfs (the 4 MiB flush pwrite stalls capture ~40 ms = 11 frames). Queue-full
+   drops are COUNTED (`frames_dropped`), never silent.
+5. Pi toolchain: cmake 3.31.6 + libcamera-dev 0.7.1 installed 2026-08-19 (`sudo apt install cmake
+   libcamera-dev`). Build: `cmake -S . -B build -DBEACON_RECEIVER=ON -DBUILD_AUTOC=OFF`.
+
 ## 4.7 µH flight-inductor bring-up (2026-08-09): inductor GOOD, bench-supply wiring was the problem
 
 Swapped the 22 µH bench brick for the SPM4020T 4.7 µH (C-9 flight part) in the LM3410X boost. Findings:

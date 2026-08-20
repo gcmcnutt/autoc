@@ -17,8 +17,12 @@ has to be measured on target.
 ## 2. Pi (native) — the always-works path
 
 ```bash
-rsync -a --exclude build/ ~/autoc-beacon/ pi@100.110.13.80:~/autoc-beacon/
-ssh pi@100.110.13.80 'cmake -S autoc-beacon -B autoc-beacon/build -DBEACON_RECEIVER=ON \
+# The 042 rig is pi@100.87.61.53 (tailscale `beaconpi`, the 3A+ with the OV9281). 100.110.13.80 is the
+# older 3B (`raspberrypi`) and is usually offline — check `tailscale status` before blaming the network.
+# The 3A+ ships without cmake: `sudo apt install cmake` once, or build the dependency-free parts with
+# plain gcc (core/, tools/ and tests/ need nothing else — that is the point of the tier-0 boundary).
+rsync -a --exclude build/ ~/autoc-beacon/ pi@100.87.61.53:~/autoc-beacon/
+ssh pi@100.87.61.53 'cmake -S autoc-beacon -B autoc-beacon/build -DBEACON_RECEIVER=ON -DBUILD_AUTOC=OFF \
     && cmake --build autoc-beacon/build --target beacon_record beacon_trackd -j2'
 ```
 `-j2`, not `-j4`: the 3A+ has 512 MB and libcamera headers are heavy. Add swap if it OOMs.
@@ -28,7 +32,7 @@ ssh pi@100.110.13.80 'cmake -S autoc-beacon -B autoc-beacon/build -DBEACON_RECEI
 ```bash
 sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 rsync -a pi@<pi>:/usr/include pi@<pi>:/usr/lib ~/pi-sysroot/     # once, then on libcamera upgrades
-cmake -S . -B build-cross -DBEACON_RECEIVER=ON \
+cmake -S . -B build-cross -DBEACON_RECEIVER=ON -DBUILD_AUTOC=OFF \
       -DCMAKE_TOOLCHAIN_FILE=firmware/beacon-receiver/cmake/aarch64-linux-gnu.cmake \
       -DCMAKE_SYSROOT=$HOME/pi-sysroot
 cmake --build build-cross --target beacon_trackd -j
@@ -53,11 +57,14 @@ to know in week one.
 
 ```bash
 ssh pi@<pi> 'beacon_record --config beacon.ini --mode burst \
-   --burst-frames 64 --burst-every 500 --duration 60 --out /dev/shm/clip.bcnr'
-scp pi@<pi>:/dev/shm/clip.bcnr .
-```
-Bursts of 64 contiguous frames (one full word at 121 Hz) every 500 — ~8 MB/s, SD-safe, and unlike uniform
-decimation **every burst is replayable**. Proves libcamera, the container, timestamps and metadata with no
+   --burst-frames 80 --burst-every 500 --duration 60 --out /dev/shm/clip.bcnr'
+scp pi@<pi>:/dev/shm/clip.bcnr .        # NB /dev/shm is wiped when the last pi session closes —
+```                                         # capture+scp in ONE session, or write to ~ instead
+Bursts of 80 contiguous frames every 500. **80, not 64** (corrected 2026-08-19 against measured rates):
+at the bench's actual 115.79 Hz chip / 276.47 fps, one word is 31 × 276.47/115.79 ≈ **74 frames** — 64 is
+0.86 of a word, so a 64-frame burst is NOT guaranteed replayable at every phase. 80 holds a full word with
+margin (~11 MB/s at 640×400; SD sustains ~18.5 MB/s with dd but capture-to-SD stalls approaching it —
+budget ≤12 MB/s or write to /dev/shm). Unlike uniform decimation **every burst is replayable**. Proves libcamera, the container, timestamps and metadata with no
 algorithm attached.
 
 ## 6. Replay parity check — the gate everything else rests on

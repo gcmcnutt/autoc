@@ -81,17 +81,17 @@ as a side effect and **de-risks libcamera before any algorithm depends on it** (
 **Independent test**: burst-capture 60 s on the Pi → `scp` → replay → container round-trip byte-identical;
 a version-mismatched file is rejected with both versions named.
 
-- [ ] T015 [P] [US1] Test: container write→read round-trip preserves every field **including `seq` gaps** — `firmware/beacon-receiver/tests/unit/test_container.c`
-- [ ] T016 [P] [US1] Test: the replay source yields an identical `FrameView` sequence across two runs — `firmware/beacon-receiver/tests/unit/test_replay.c`
-- [ ] T017 [US1] Implement the container writer in `firmware/beacon-receiver/src/io/sink_record.c` — preallocated file, `O_DIRECT`, large aligned writes (R9)
-- [ ] T018 [US1] Implement the replay frame source in `firmware/beacon-receiver/src/io/src_replay.c` behind the `FrameSource` vtable
-- [ ] T019 [US1] Implement the bounded RAM ring with triggered dump in `firmware/beacon-receiver/src/io/sink_record.c` — the degraded-sink mode of spec §8.2, same code path as continuous
-- [ ] T020 [US1] Implement burst mode (N contiguous frames every M) with `burst_start` flags in `firmware/beacon-receiver/src/io/sink_record.c` — each burst ≥1 full word so it stays replayable (spec §16.4)
-- [ ] T021 [US1] Implement the libcamera frame source in `firmware/beacon-receiver/src/io/src_libcamera.cc` — Request-based, DMA buffers, per-frame exposure/gain metadata (R8)
-- [ ] T022 [US1] Implement the `beacon_record` CLI in `firmware/beacon-receiver/src/app/beacon_record.c` per `contracts/cli.md`
-- [ ] T023 [US1] Apply real-time hygiene in `firmware/beacon-receiver/src/app/beacon_record.c` — `SCHED_FIFO`, core pinning, `mlockall`, no allocation in the loop (R6)
-- [ ] T024 [US1] Write dual-clock fields as **zero-when-absent** in `firmware/beacon-receiver/src/io/sink_record.c` — no FC on the bench, and a reader must never mistake 0 for a valid INAV time (R10)
-- [ ] T025 [US1] Bench-verify on the Pi — 60 s burst capture to `/dev/shm`, replay on the dev box, byte-identical round-trip; record the run in `specs/031-beacon-camera/bench-journal.md` (quickstart.md §5)
+- [X] T015 [P] [US1] Test: container write→read round-trip preserves every field **including `seq` gaps** — `firmware/beacon-receiver/tests/unit/test_container.c`
+- [X] T016 [P] [US1] Test: the replay source yields an identical `FrameView` sequence across two runs — `firmware/beacon-receiver/tests/unit/test_replay.c`
+- [X] T017 [US1] Implement the container writer in `firmware/beacon-receiver/src/io/sink_record.c` — preallocated file, `O_DIRECT`, large aligned writes (R9)
+- [X] T018 [US1] Implement the replay frame source in `firmware/beacon-receiver/src/io/src_replay.c` behind the `FrameSource` vtable
+- [X] T019 [US1] Implement the bounded RAM ring with triggered dump in `firmware/beacon-receiver/src/io/sink_record.c` — the degraded-sink mode of spec §8.2, same code path as continuous
+- [X] T020 [US1] Implement burst mode (N contiguous frames every M) with `burst_start` flags in `firmware/beacon-receiver/src/io/sink_record.c` — each burst ≥1 full word so it stays replayable (spec §16.4)
+- [X] T021 [US1] Implement the libcamera frame source in `firmware/beacon-receiver/src/io/src_libcamera.cc` — Request-based, DMA buffers, per-frame exposure/gain metadata (R8)
+- [X] T022 [US1] Implement the `beacon_record` CLI in `firmware/beacon-receiver/src/app/beacon_record.c` per `contracts/cli.md`
+- [X] T023 [US1] Apply real-time hygiene in `firmware/beacon-receiver/src/app/beacon_record.c` — `SCHED_FIFO`, core pinning, `mlockall`, no allocation in the loop (R6)
+- [X] T024 [US1] Write dual-clock fields as **zero-when-absent** in `firmware/beacon-receiver/src/io/sink_record.c` — no FC on the bench, and a reader must never mistake 0 for a valid INAV time (R10)
+- [X] T025 [US1] Bench-verify on the Pi — 60 s burst capture to `/dev/shm`, replay on the dev box, byte-identical round-trip; record the run in `specs/031-beacon-camera/bench-journal.md` (quickstart.md §5)
 
 **Checkpoint**: US1 is independently deliverable — the recorder can fly (spec §7.1) with nothing else built.
 
