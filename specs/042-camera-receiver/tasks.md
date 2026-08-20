@@ -12,6 +12,26 @@ scope animating at 10 Hz. Stages 2–4 are gated on the 1.56 mm lens, the Pi 5, 
 respectively, and are deliberately **not** decomposed here; the plan records them as likely separate
 features (043 / 044). Decomposing hardware you do not have produces tasks that rot.
 
+## Bench reality at kickoff (2026-08-19) — read this first
+
+**Only ONE code is available at the start.** The bench emitter is flashed as **code B (STARBOARD/green)**
+(031 handoff). The **code-A source is a real flight cube the operator is building in parallel** — so plan
+the early work single-code and let two-code arrive with the hardware, rather than blocking on it.
+
+| what exists now | note |
+|---|---|
+| Bench emitter, **code B only**, `'H'` mode ≈115 Hz nominal / **~121 Hz measured** | **Trap: `'H'` is volatile — any reset returns it to 200 Hz nominal.** If something "locks at the wrong rate", check the emitter before suspecting the correlator (031 diagnosis, 2026-08-17) |
+| Pi 3A+ + OV9281, Trixie arm64, mainline `ov9282` + patched 640×200 module | ~250–280 fps sustained; `pi/INSTALL.md` is the rebuild recipe |
+| 1.8 mm fisheye, **unfiltered** | f·θ, 95° H × 61° V measured — final. 850 filter + 1.56 mm lens are Stage 2 |
+| Pan/tilt on the airframe, INAV-commanded; **O3 removed for these tests** | repeatable slew available; sorties fly blind (spec §7.1.1) |
+| `rpicam-raw` to file | the crude recorder to bootstrap clips before T022 exists |
+| **Arriving in parallel** | code-A **flight cube** (operator building); 1.56 mm lens; Pi 5 |
+
+**Consequence for sequencing**: US1, US2 and US4 are fully exercisable single-code. In US3, cold
+acquisition (T048–T053) is single-code work and should proceed; only **T054, T057 and the near-far case
+need the second code**. Do not let them gate the Stage 1 exit demo — a single-code scope animating at
+10 Hz is still the exit criterion met, with two-code verification following the cube.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: parallelizable — different files, no dependency on an incomplete task
@@ -115,8 +135,13 @@ offline oracle, with both §3.1 rates reported.
 
 **Goal**: find a beacon with no prior, at slew, and keep A and B distinct.
 
-**Independent test**: cold acquisition on a clip with no seed; two codes tracked simultaneously with zero
-ID swaps; false-acquire rate measured over cluttered background.
+**Independent test**: cold acquisition on a clip with no seed; false-acquire rate over cluttered
+background. **Two-code verification (T057) is deferred until the code-A flight cube lands** — see
+§Bench reality; it does not gate the Stage 1 exit.
+
+**Single-code first**: T048–T053, T055, T056 and T058 are all exercisable with the bench code-B emitter
+alone. The mirror-pair rule (T055) is written and unit-tested against injected pairs (T045) rather than
+waiting for real hardware.
 
 - [ ] T048 [US3] Prototype acquisition in NumPy against recorded clips in `firmware/beacon-receiver/pi/acquire_proto.py` — **research spike, ships no tests** (R12; Constitution I exemption invoked narrowly, nothing promoted)
 - [ ] T049 [P] [US3] Implement blink detection (frame-to-frame temporal difference) in `firmware/beacon-receiver/src/core/acquire.c`
@@ -124,10 +149,10 @@ ID swaps; false-acquire rate measured over cluttered background.
 - [ ] T051 [US3] Implement multi-rate decode-along-track in `firmware/beacon-receiver/src/core/acquire.c` — rate-agnostic, because the bench emitter's `'H'` mode is volatile (031 trap #2)
 - [ ] T052 [P] [US3] Test: acquisition finds a known injected track at a known SNR — `firmware/beacon-receiver/tests/unit/test_acquire.c`
 - [ ] T053 [US3] Thread acquisition off the capture path in `firmware/beacon-receiver/src/app/beacon_trackd.cc`, charged through the T042 budget model
-- [ ] T054 [P] [US3] Build the interim code-A emitter (breadboard ATtiny412 + 2 LEDs, adequate at 2–5 m) and document it in `specs/031-beacon-camera/bench-journal.md` — **do not wait on the A7 cubes**
+- [ ] T054 [P] [US3] Code-A source — **the operator is building a real flight cube in parallel** (031 A7); track its arrival in `specs/031-beacon-camera/bench-journal.md` and re-baseline the regression when it lands. *Fallback only if the cube slips past US3: a breadboard ATtiny412 + 2 LEDs is adequate at 2–5 m — but do not build it pre-emptively*
 - [ ] T055 [US3] Implement the same-code mirror-pair rule in `firmware/beacon-receiver/src/core/bank.c` — flag the lower `MULTIPATH_SUSPECT`, **keep it, do not delete** (spec §9)
 - [ ] T056 [P] [US3] Implement `extent` (q_fine/q_coarse) and `scintillation` outputs in `firmware/beacon-receiver/src/core/track.c` (spec §9 — free from the ladder, painful to retrofit)
-- [ ] T057 [US3] Bench-verify — two codes tracked simultaneously, zero ID swaps, near-far case; results to `specs/042-camera-receiver/results/stage1-twocode.csv`
+- [ ] T057 [US3] Bench-verify — two codes tracked simultaneously, zero ID swaps, near-far case; results to `specs/042-camera-receiver/results/stage1-twocode.csv`. **GATED on the code-A flight cube (T054)** — does not block the Stage 1 exit
 - [ ] T058 [US3] Bench-verify — false-acquire rate over a cluttered room with the rig slewing; results to `specs/042-camera-receiver/results/stage1-falsealarm.csv` (spec §3)
 
 ---
@@ -193,7 +218,7 @@ correlator bug.
 and de-risks the single biggest unknown (libcamera bring-up on Trixie) before anything depends on it. If
 libcamera fights back, that is discovered in week one with a fallback still available (R8).
 
-**Stage 1 exit = US1 + US2 + US3 + US4.** An intermediate demo is possible at US1 + US2 + US4 by seeding a
+**Stage 1 exit = US1 + US2 + US3 + US4, single-code.** Two-code verification (T057) follows the flight cube and is not part of the exit. An intermediate demo is possible at US1 + US2 + US4 by seeding a
 candidate manually — worth doing to get the scope animating early, but it is not the exit criterion,
 because "you have to tell it where to look" is precisely what US3 removes.
 
