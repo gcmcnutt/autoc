@@ -13,6 +13,24 @@ At-order verifies: EVN onboard RAM ≥6 MB (T011), Radiant toolchain (new instal
 OV9281 doubles as the trusted focal plane to finish the C-14 lens validation (M12 mount, global shutter,
 no IR-cut after lens swap).
 
+## OV9281 speed lab CLOSED (2026-08-21): no 4x subsample on this silicon; the honest public number is Arducam's 253 fps
+
+Continuation of the findings below, closing the register avenue:
+- The 3.14x timing anomaly was **an illegal HTS**: my 320-wide mode entry carried the 640-wide
+  hblank_min (816 -> HTS 1136 < the silicon's 1456 minimum) and the sensor went undefined. Fixed
+  (hblank_min {1210,1136}) — and then the truth surfaced:
+- **Subsample-4 increments do not stream on this silicon**: both plausible encodings ({7,1} and {5,3},
+  legal HTS) wedge at every rate. The OV9281 is a 2x-bin/skip part; there is no 4x-decimated readout.
+- Downstream `ov9281.c` (rpi-5.10.y) confirms the timing model: HTS fixed 0x5B0 (1456), 8-bit SCLK a
+  real 200 Mpx/s, fps = 200M/(1456 x VTS); 640x400 VTS 421 -> **326 fps silicon ceiling full-FOV**.
+- **The interwebs never made this work**: Arducam's own datasheet says 640x400 @ 253 fps (210 at
+  10-bit). The 453/480 claims are marketing with no driver artifact (08-16 finding, reconfirmed).
+
+**Bench restored**: 640x400 @ 288.5 fps delivered (fps=300), tracker operating point unchanged.
+Remaining paths to 480 unchanged from below: PLL overclock (+60% SYS clock for 522 fps at full
+640x400-bin — real overclock, unknown margin) · dual-camera FSIN interleave (the design-consistent
+answer; both cameras in hand) · contract re-derivation at ~290 fps (120 Hz chips).
+
 ## OV9281 sensor-speed findings (2026-08-21, Pi 5 register lab): the fast-fps numbers were fiction; measured ceiling ~290-310 fps full-FOV
 
 Driven by the 320x200@480 NN contract. Method: patched `ov9282.c` modes (4-minute build-install-reboot

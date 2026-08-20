@@ -406,8 +406,9 @@ static const struct ov9282_reg mode_640x300_regs[] = {	/* 320x200 SKIP-4 both ax
 	{0x3808, 0x01}, {0x3809, 0x40},		/* out width 320 */
 	{0x380a, 0x00}, {0x380b, 0xc8},		/* out height 200 */
 	{0x3810, 0x00}, {0x3811, 0x04}, {0x3812, 0x00}, {0x3813, 0x04},
-	{0x3814, 0x71},				/* h odd/even inc {7,1}: skip-4 */
-	{0x3815, 0x71},				/* v odd/even inc {7,1}: skip-4 */
+	{0x3814, 0x53},				/* h odd/even inc {5,3}: skip-4 (the {7,1} encoding does
+						 * not stream on this silicon — tested 2026-08-21) */
+	{0x3815, 0x53},				/* v odd/even inc {5,3}: skip-4 */
 	{OV9282_REG_TIMING_FORMAT_1, 0x60},	/* vbin on */
 	{OV9282_REG_TIMING_FORMAT_2, 0x01},	/* hbin on */
 	{0x4008, 0x02}, {0x4009, 0x05}, {0x400c, 0x00}, {0x400d, 0x03},
@@ -514,7 +515,10 @@ static const struct ov9282_mode supported_modes[] = {
 	[MODE_640_300] = {
 		.width = 320,
 		.height = 200,
-		.hblank_min = { 890, 816 },
+		.hblank_min = { 1210, 1136 },	/* HTS must stay >= the silicon's 1456: width + hblank.
+					 * The 640-wide values here (816 -> HTS 1136) commanded an
+					 * ILLEGAL line length and the sensor went undefined — the
+					 * 3.14x timing anomaly + wedge lottery of 2026-08-21. */
 		.vblank = 1022,
 		.vblank_min = 22,
 		.vblank_max = 51540,
