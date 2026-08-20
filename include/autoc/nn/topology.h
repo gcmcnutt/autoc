@@ -169,4 +169,33 @@ constexpr int TRACKER_NN_HIDDEN_STATE_COUNT =
 
 constexpr const char* TRACKER_NN_TOPOLOGY_STRING = "66,32,16r,7";  // 041 P2-2: 63 → 66 inputs
 
+// ============================================================================
+// 041 P2-8 follow-up (2026-08-20) — MAKE THE DISPLAY STRINGS UNABLE TO GO STALE.
+//
+// ⛔ Both strings above are hand-maintained, and one of them WAS wrong: P2-2
+// moved pathgen 42 → 45, updated NN_WEIGHT_COUNT (whose static_assert has been
+// correct throughout) and updated the tracker string, but missed the pathgen
+// one. Every run log from 041 gen-1 through t7 launch printed "42,32,16r,3" for
+// a network whose first layer is 45 wide. Harmless arithmetically, actively
+// misleading to anyone reading a log to size the network — which is exactly what
+// happened while investigating the input-scale defect.
+//
+// ⭐ Fixing the string is not the fix. Nothing stopped it drifting, so nothing
+// stops it drifting again. These asserts make the leading number a COMPILE-TIME
+// consequence of the input count instead of a promise someone has to keep.
+constexpr int autocLeadingInt(const char* s) {
+    int v = 0;
+    for (; *s >= '0' && *s <= '9'; ++s) v = v * 10 + (*s - '0');
+    return v;
+}
+static_assert(autocLeadingInt(NN_TOPOLOGY_STRING) == NN_INPUT_COUNT,
+              "NN_TOPOLOGY_STRING's first layer disagrees with NN_INPUT_COUNT. "
+              "Update the string — the maths is driven by NN_INPUT_COUNT, so a "
+              "mismatch means only the LOG is lying, which is worse than a crash "
+              "because it survives review.");
+static_assert(autocLeadingInt(TRACKER_NN_TOPOLOGY_STRING) ==
+                  static_cast<int>(TrackerInput::COUNT),
+              "TRACKER_NN_TOPOLOGY_STRING's first layer disagrees with "
+              "TrackerInput::COUNT. Same failure, tracker side.");
+
 #endif
