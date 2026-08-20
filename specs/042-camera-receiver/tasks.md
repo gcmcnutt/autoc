@@ -67,7 +67,7 @@ a version-mismatched file is rejected with both versions named.
 - [ ] T022 [US1] Implement the `beacon_record` CLI in `firmware/beacon-receiver/src/app/beacon_record.c` per `contracts/cli.md`
 - [ ] T023 [US1] Apply real-time hygiene in `firmware/beacon-receiver/src/app/beacon_record.c` — `SCHED_FIFO`, core pinning, `mlockall`, no allocation in the loop (R6)
 - [ ] T024 [US1] Write dual-clock fields as **zero-when-absent** in `firmware/beacon-receiver/src/io/sink_record.c` — no FC on the bench, and a reader must never mistake 0 for a valid INAV time (R10)
-- [ ] T025 [US1] Bench-verify on the Pi: 60 s burst capture to `/dev/shm`, replay on the dev box, byte-identical round-trip (quickstart.md §5)
+- [ ] T025 [US1] Bench-verify on the Pi — 60 s burst capture to `/dev/shm`, replay on the dev box, byte-identical round-trip; record the run in `specs/031-beacon-camera/bench-journal.md` (quickstart.md §5)
 
 **Checkpoint**: US1 is independently deliverable — the recorder can fly (spec §7.1) with nothing else built.
 
@@ -101,7 +101,7 @@ offline oracle, with both §3.1 rates reported.
 - [ ] T044 [P] [US2] Implement the non-causal offline oracle in `firmware/beacon-receiver/tools/oracle.c`
 - [ ] T045 [P] [US2] Implement `firmware/beacon-receiver/tools/inject.c` — coded point source on a known trajectory into real recorded background (spec §7)
 - [ ] T046 [US2] Implement `firmware/beacon-receiver/tools/score.c` — one CSV row per envelope cell carrying §3.1's two rates, §3.2's three columns, and §11.1's deadline-miss rate
-- [ ] T047 [US2] Bench-verify: a pan/tilt slew clip is tracked through transit and scored against the oracle
+- [ ] T047 [US2] Bench-verify — a pan/tilt slew clip tracked through transit and scored against the oracle; envelope cell to `specs/042-camera-receiver/results/stage1-slew.csv`, summary in `specs/031-beacon-camera/bench-journal.md`
 
 **Checkpoint**: the tracker works on recorded data. Nothing yet renders it.
 
@@ -123,8 +123,8 @@ ID swaps; false-acquire rate measured over cluttered background.
 - [ ] T054 [P] [US3] Build the interim code-A emitter (breadboard ATtiny412 + 2 LEDs, adequate at 2–5 m) and document it in `specs/031-beacon-camera/bench-journal.md` — **do not wait on the A7 cubes**
 - [ ] T055 [US3] Implement the same-code mirror-pair rule in `firmware/beacon-receiver/src/core/bank.c` — flag the lower `MULTIPATH_SUSPECT`, **keep it, do not delete** (spec §9)
 - [ ] T056 [P] [US3] Implement `extent` (q_fine/q_coarse) and `scintillation` outputs in `firmware/beacon-receiver/src/core/track.c` (spec §9 — free from the ladder, painful to retrofit)
-- [ ] T057 [US3] Bench-verify: two codes tracked simultaneously, zero ID swaps, near-far case recorded
-- [ ] T058 [US3] Bench-verify: false-acquire rate over a cluttered room with the rig slewing (spec §3)
+- [ ] T057 [US3] Bench-verify — two codes tracked simultaneously, zero ID swaps, near-far case; results to `specs/042-camera-receiver/results/stage1-twocode.csv`
+- [ ] T058 [US3] Bench-verify — false-acquire rate over a cluttered room with the rig slewing; results to `specs/042-camera-receiver/results/stage1-falsealarm.csv` (spec §3)
 
 ---
 
@@ -150,7 +150,7 @@ once, on real beacons.
 - [ ] T066 [P] Capture the first golden vector from `beacon_track.py` + oracle, then re-baseline it from `beacon_trackd`, in `firmware/beacon-receiver/tests/golden/` (R11 bootstrap)
 - [ ] T067 Retire `firmware/beacon-receiver/pi/beacon_track.py` once golden vectors pass — **no fallback path survives** (Constitution III)
 - [ ] T068 [P] Add a tracker regression entry point alongside `firmware/beacon-decoder-stepfpga/host/regression.py` per the CLAUDE.md policy
-- [ ] T069 [P] Verify the WSL2 cross build produces a working `beacon_trackd` on the Pi (R7, quickstart.md §3)
+- [ ] T069 [P] Verify the WSL2 cross build produces a working `beacon_trackd` on the Pi and record the procedure in `firmware/beacon-receiver/README.md` (R7, quickstart.md §3)
 - [ ] T070 [P] Update `firmware/beacon-receiver/README.md` and `specs/031-beacon-camera/bench-journal.md` with Stage 1 results
 
 ---
