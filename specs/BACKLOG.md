@@ -106,6 +106,58 @@ Hardware binds at step 3 (PPO sample counts) and step 4 (larger contexts), not b
 
 ## 041 deferrals
 
+### [041 P2-8 follow-up, filed 2026-08-20 · ⭐ HIGH VALUE, LOW COST] Formal input normalization — measured statistics, not hand-derived constants
+
+**Trigger**: P2-8 fixed input scaling **by hand**, and the hand-fix was the third swing at the same problem.
+
+⛔ **The recurring failure, stated plainly.** A unit sees `Σ wᵢxᵢ`, so an input's influence is weight ×
+**spread**. Xavier init makes every weight comparable, so at gen 1 influence is proportional to spread. When
+the spread across slots ran 200:1 (`CLOSING_RATE` 7.53 → `DIST_TO_BOUNDARY` 0.036), the quiet slots were
+never selected on **at all** — across t5 gens 1→475 every input's weight investment sat at ~1.0 and
+`eff_rank` went 11.2 → 10.9. Not "weakly used": never differentiated. Downstream symptom was throttle
+pegged 99.3% of ticks vs the prior M1's 37.7%, because with no audible energy signal "more thrust is never
+worse" is correct.
+
+⚠️ **And it flip-flopped, silently, across three features:**
+* **030 M11.preA.2** normalized airspeed + dist-to-boundary — for **tracker mode only**.
+* **041 P2-2** "unified" the shared airspeed slot on **RAW**, resolving an M1/M2 split by taking the raw
+  side and discarding 030's deliberate normalization. Nothing failed; nothing warned.
+* **041 P2-8** re-normalized by hand from measured p95, and extended it to dist / closing-rate / gyro.
+
+Every step was locally reasonable. The scheme lived in prose and four scattered constants, so nothing could
+detect that a slot had been left — or put back — in raw units.
+
+**Proposal: running observation statistics, frozen at export.**
+* Track per-input mean/σ over experience during training; normalize by those.
+* ⭐ **Zero genome cost — they are MEASURED, not evolved.** This is the whole point (see the rejected
+  alternative below).
+* ⛔ **Freeze and serialize the stats with the weights at export.** Non-negotiable here: training and flight
+  must normalize identically, and replay must be bit-reproducible. No online adaptation in flight.
+* Mechanically this is what `kEnergyScale_m` / `kScoreGradScale` / the P2-8 constants already are — derived
+  automatically and completely instead of by hand and partially.
+* Adding a new input then costs nothing and can never be silently mis-scaled, which is the actual win.
+
+⛔ **REJECTED: a learned normalization layer.** Considered 2026-08-20 (operator: *"does this argue for
+another layer in the NN to help auto normalize? i know it costs search, but…"*). It **relocates the problem
+rather than solving it**: a scale parameter on a quiet input is itself only useful once large, and reaching
+it is the same fitness-neutral random walk that stranded the raw weights. Under backprop this works —
+BatchNorm receives gradient directly. Under **evolution** the only signal is fitness: mediated and noisy.
+You would pay 45+ new parameters to meet the original problem one layer up. Supporting evidence already in
+the tree: **T-102 tried 16r → 32r and lost by 700–1500 points consistently** — capacity has been bought once
+here and did not pay.
+
+⚠️ **Depth for STRUCTURE is a separate question and is not rejected** — the operator's fast-inner-loop /
+slow-outer-loop split is a structural prior, and structural priors tend to pay in evolution where
+undifferentiated depth does not. Do not let this entry be cited against that.
+
+**Related**: `041 P2-9` (tasks.md) — `nn2cpp` `static_assert`s the input COUNT but not the SCALES, so a
+pre-P2-8 genome compiles clean and flies wrong. A stats block serialized with the weights would close that
+hole by construction rather than by a hand-maintained assert list.
+
+**Evidence** — [t5-wrap.md](041-m2-depth/t5-wrap.md), commit `747a522`, and the p95 table in
+`include/autoc/nn/nn_inputs.h`.
+
+
 ### [022 T024, re-filed 2026-08-18 · ⭐ TRIGGER HAS NOW FIRED] Streak-threshold curriculum ramp
 
 **It was never built.** Planned at 022 (`e76981a`, 5 Apr) — the commit message ends *"Streak threshold ramp

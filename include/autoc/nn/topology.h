@@ -95,7 +95,12 @@ constexpr int NN_HIDDEN_STATE_COUNT =
 
 // Topology as comma-separated string (for config logging/validation).
 // Recurrent layers marked with a trailing 'r'.
-constexpr const char* NN_TOPOLOGY_STRING = "42,32,16r,3";  // 041 US4: 37 → 42 inputs
+constexpr const char* NN_TOPOLOGY_STRING = "45,32,16r,3";  // 041 P2-2: 42 → 45 inputs
+// ⚠️ DISPLAY ONLY, and it was STALE at "42" from 041 gen-1 through t7 launch —
+// P2-2 moved the input count 42 → 45 and updated NN_WEIGHT_COUNT (which the
+// static_assert above proves) but not this string. Every run log since then has
+// printed the wrong first-layer size. Harmless to the maths, actively misleading
+// to an investigation that reads the log to find out how big the network is.
 
 // ============================================================================
 // 030 M7a — Tracker-mode topology (FR-019 runtime mode dispatch + Session
