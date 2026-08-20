@@ -4,7 +4,8 @@
 OV9281 global-shutter module** (order-04), running Raspberry Pi OS **Bookworm** with the *mainline*
 `ov9281` driver. The FPGA route (Lattice CrossLink-NX / Zybo) is parked — research retained here as
 PDFs; CrossLink-NX stays the eventual flight-article candidate. The decoder prototype for this toolchain
-is tasks **A8-6** (031) and runs in parallel with 041 training. Camera model measured for 041:
+was tasks **A8-6** (031); **superseded by 042** — the C11 receiver in `src/`, `tools/` and `tests/` here
+(see §Build below). It runs in parallel with 041 training. Camera model measured for 041:
 f·θ projection, 95° H × 61° V (`specs/031-beacon-camera/camera-era-knobs.md`).
 
 ## What's here
@@ -29,7 +30,10 @@ f·θ projection, 95° H × 61° V (`specs/031-beacon-camera/camera-era-knobs.md
   `--shutter <us> --gain 1` for measurements.
 
 ## Workflow (from the DGX, over Tailscale)
-- Pi = `pi@100.110.13.80` (key auth installed). Console preview: `rpicam-hello -t 0` on the Pi's HDMI.
+- Pi = `pi@100.87.61.53` (tailscale `beaconpi`, the 3A+; key auth installed). The older `100.110.13.80`
+  (`raspberrypi`, the 3B) is a different machine and is usually offline — check `tailscale status` before
+  blaming the network. **The 3A+ has no `cmake`**, so quickstart.md §2's native build needs it installed
+  first, or build the dependency-free parts with `gcc` directly. Console preview: `rpicam-hello -t 0` on the Pi's HDMI.
 - Raw burst: `rpicam-raw -n -t 2000 --mode 640:400:8 --framerate 250 --shutter 3000 --gain 1 -o /dev/shm/b.raw`
   (tmpfs; SD can't take 64 MB/s). Analysis scripts run on the DGX after `scp`.
 - Bench instruments (PSU `psu.py`, emitter cmd link) live in `firmware/beacon-decoder-stepfpga/host/`.
@@ -60,3 +64,54 @@ winner (ring sized for the slowest); (2) 2 ms is the right shutter at 25 ft (`--
 shutter to keep the lit level in band, restarting capture); (3) lesson for the C port: multi-rate
 acquire is ~10 s in Python (6 full-field passes) — fine once, but the reason the port matters.
 Reminder: 250 fps / 209 Hz = 1.19 samples/chip (sub-Nyquist) — locks, but 'H' (115) is the honest mode.
+
+
+## Build — the three paths (042 T004)
+
+`core/`, `tools/` and `tests/` are **C11 with zero dependencies**, so they build natively on every host
+with nothing installed. That is not tidiness: it is why the identical code runs live on the Pi, in replay
+on the dev box, and cross-compiled from WSL2, and it is what makes replay parity checkable at all. `io/`
+and `app/` are the only things that need libcamera, and they are kept thin for exactly that reason.
+
+### 1. Dev box (aarch64) — where you live day to day
+```bash
+cmake -S . -B build -DBEACON_RECEIVER=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build --target beacon_core beacon_tools beacon_tests -j
+ctest --test-dir build -R beacon --output-on-failure
+```
+No camera, no libcamera, no cross-compile. **Use a RelWithDebInfo build for `beacon_bench`** — an
+unoptimised bench under-reports by ~5x and would falsely condemn R5; the binary warns you if you forget.
+
+### 2. Receiver-only configure (the Pi, and the cross path)
+```bash
+cmake -S . -B build -DBEACON_RECEIVER=ON -DBUILD_AUTOC=OFF
+```
+`BUILD_AUTOC=OFF` stops the top-level `CMakeLists.txt` before its `find_package(VTK|Eigen3|AWSSDK REQUIRED)`
+block — none of which exists on a Pi, and all of which are fatal at *configure* time. One build system,
+still (Constitution IV); the receiver simply does not drag the sim toolchain onto the bench host.
+
+### 3. WSL2 (x86_64) → aarch64 — the field-update path
+```bash
+sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+cmake -S . -B build-cross -DBEACON_RECEIVER=ON -DBUILD_AUTOC=OFF \
+      -DCMAKE_TOOLCHAIN_FILE=firmware/beacon-receiver/cmake/aarch64-linux-gnu.cmake
+cmake --build build-cross --target beacon_core beacon_tests -j
+```
+`core/`, `tools/` and `tests/` cross with **no sysroot at all**; only `io/`+`app/` need one
+(`-DCMAKE_SYSROOT=$HOME/pi-sysroot`, rsync'd from the Pi). At the field, prefer not to compile — tuning
+knobs are runtime config, so edit the `.ini` and restart.
+
+### The one-command gate
+```bash
+cmake --build build --target all-targets
+```
+Builds every target in the tree and **propagates failure** (T002b). Tier 0 is the default; `-DWITH_EMBEDDED=ON`
+adds the tier-1 cross/embedded targets, which need no hardware attached and are the tier that catches
+interface drift. Tier 2 (Diamond/stepfpga, anything needing hardware) is never automatic.
+
+### Contracts have golden vectors, not shared headers
+`tests/golden/record_vectors/` holds canonical encoded records with known field values. Any second
+implementation — xiao, analysis tooling — verifies against those bytes with **its own codec**, so drift
+fails a test on whichever side is stale with zero shared source and zero `#ifdef`. Regenerate them
+(`beacon_gen_record_vectors`) **only** on a `format_version` bump; regenerating to make a failing test
+pass destroys the mechanism.

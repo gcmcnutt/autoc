@@ -43,12 +43,12 @@ need the second code**. Do not let them gate the Stage 1 exit demo — a single-
 
 **Purpose**: project skeleton, the three build paths, and the tiered build structure
 
-- [ ] T001 Create the source tree skeleton per plan.md §Structure under `firmware/beacon-receiver/`: `src/core/`, `src/io/`, `src/app/`, `tools/`, `tests/{unit,equivalence,golden}/`, `cmake/`
-- [ ] T002 Declare beacon-receiver targets in the top-level `CMakeLists.txt` (Constitution IV — single source of truth): option `BEACON_RECEIVER`, targets `beacon_core` (C11), `beacon_tools`, `beacon_tests`; drive a clean rebuild, not an incremental reconfigure
-- [ ] T002a Expose the tier-0 / tier-1 build structure in the top-level `CMakeLists.txt` — option `WITH_EMBEDDED` (default OFF); tier 0 = native host targets, tier 1 = cross/embedded targets that need no hardware (plan.md §Build-tree principle)
-- [ ] T002b Add an `all-targets` meta-target in the top-level `CMakeLists.txt` that invokes each target build and **propagates failure** — wire the receiver in now; xiao/pod/fpga are retrofitted separately per `specs/BACKLOG.md`
-- [ ] T003 [P] Write the WSL2 cross toolchain file at `firmware/beacon-receiver/cmake/aarch64-linux-gnu.cmake` (research.md R7)
-- [ ] T004 [P] Document the three build paths in `firmware/beacon-receiver/README.md`, superseding the 031-era "Next (A8-6)" section
+- [X] T001 Create the source tree skeleton per plan.md §Structure under `firmware/beacon-receiver/`: `src/core/`, `src/io/`, `src/app/`, `tools/`, `tests/{unit,equivalence,golden}/`, `cmake/`
+- [X] T002 Declare beacon-receiver targets in the top-level `CMakeLists.txt` (Constitution IV — single source of truth): option `BEACON_RECEIVER`, targets `beacon_core` (C11), `beacon_tools`, `beacon_tests`; drive a clean rebuild, not an incremental reconfigure
+- [X] T002a Expose the tier-0 / tier-1 build structure in the top-level `CMakeLists.txt` — option `WITH_EMBEDDED` (default OFF); tier 0 = native host targets, tier 1 = cross/embedded targets that need no hardware (plan.md §Build-tree principle)
+- [X] T002b Add an `all-targets` meta-target in the top-level `CMakeLists.txt` that invokes each target build and **propagates failure** — wire the receiver in now; xiao/pod/fpga are retrofitted separately per `specs/BACKLOG.md`
+- [X] T003 [P] Write the WSL2 cross toolchain file at `firmware/beacon-receiver/cmake/aarch64-linux-gnu.cmake` (research.md R7)
+- [X] T004 [P] Document the three build paths in `firmware/beacon-receiver/README.md`, superseding the 031-era "Next (A8-6)" section
 
 ---
 
@@ -56,18 +56,18 @@ need the second code**. Do not let them gate the Stage 1 exit demo — a single-
 
 **Purpose**: the types, the versioned formats, and the config discipline everything else depends on
 
-- [ ] T005 Define `FrameView` and the `FrameSource` vtable in `firmware/beacon-receiver/src/core/frame.h` per data-model.md §1 — `t_us` is **source-supplied**; no `clock_gettime` anywhere in `core/` (R3)
-- [ ] T006 [P] Define the versioned 20 Hz record struct in `firmware/beacon-receiver/src/core/record.h` per `contracts/record-wire-format.md`, including the dual-clock fields (`inav_t_us`, `inav_read_age_us`, `gps_time_ms`) and the flags bit assignments
-- [ ] T006a [P] Add `static_assert` layout locks (struct size and field offsets) to `firmware/beacon-receiver/src/core/record.h` — catches an accidental field edit **within this implementation**; the cross-target mechanism is T006b's golden vectors, not a shared header (plan.md §Contracts at arm's length)
-- [ ] T006b [P] Emit **golden byte vectors** for the record contract into `firmware/beacon-receiver/tests/golden/record_vectors/` — canonical encoded records with known field values, so any future second implementation (xiao, analysis tooling) verifies against them with its own codec and no shared header (plan.md §Contracts at arm's length)
-- [ ] T007 [P] Define the versioned recording container structs in `firmware/beacon-receiver/src/core/container.h` per `contracts/recording-container.md`
-- [ ] T008 [P] Test: the config loader errors on **each** missing key, naming it, exiting 1 — `firmware/beacon-receiver/tests/unit/test_config.c` (Constitution VII; written before T010)
-- [ ] T009 [P] Test: record and container readers fail loudly on version mismatch, naming both versions — `firmware/beacon-receiver/tests/unit/test_versions.c` (Constitution V; written before T011)
-- [ ] T010 Implement the config loader in `firmware/beacon-receiver/src/core/config.c` + `config.h` per `contracts/config-schema.md` — no in-code defaults; annotate genuine zero-init with `/* default-ok: <reason> */`
-- [ ] T011 Implement the reader-side version-check helpers in `firmware/beacon-receiver/src/core/record.h` and `container.h` to satisfy T009
-- [ ] T012 Implement `config_hash` and `build_id` stamping in `firmware/beacon-receiver/src/core/config.c` (spec §16.2)
-- [ ] T013 Register GoogleTest + CTest for `tests/{unit,equivalence,golden}` in `firmware/beacon-receiver/CMakeLists.txt`
-- [ ] T014 [P] Implement the kernel micro-bench harness in `firmware/beacon-receiver/tools/bench.c`, reporting ns/px and GMAC/s per kernel (quickstart.md §4)
+- [X] T005 Define `FrameView` and the `FrameSource` vtable in `firmware/beacon-receiver/src/core/frame.h` per data-model.md §1 — `t_us` is **source-supplied**; no `clock_gettime` anywhere in `core/` (R3)
+- [X] T006 [P] Define the versioned 20 Hz record struct in `firmware/beacon-receiver/src/core/record.h` per `contracts/record-wire-format.md`, including the dual-clock fields (`inav_t_us`, `inav_read_age_us`, `gps_time_ms`) and the flags bit assignments
+- [X] T006a [P] Add `static_assert` layout locks (struct size and field offsets) to `firmware/beacon-receiver/src/core/record.h` — catches an accidental field edit **within this implementation**; the cross-target mechanism is T006b's golden vectors, not a shared header (plan.md §Contracts at arm's length)
+- [X] T006b [P] Emit **golden byte vectors** for the record contract into `firmware/beacon-receiver/tests/golden/record_vectors/` — canonical encoded records with known field values, so any future second implementation (xiao, analysis tooling) verifies against them with its own codec and no shared header (plan.md §Contracts at arm's length)
+- [X] T007 [P] Define the versioned recording container structs in `firmware/beacon-receiver/src/core/container.h` per `contracts/recording-container.md`
+- [X] T008 [P] Test: the config loader errors on **each** missing key, naming it, exiting 1 — `firmware/beacon-receiver/tests/unit/test_config.c` (Constitution VII; written before T010)
+- [X] T009 [P] Test: record and container readers fail loudly on version mismatch, naming both versions — `firmware/beacon-receiver/tests/unit/test_versions.c` (Constitution V; written before T011)
+- [X] T010 Implement the config loader in `firmware/beacon-receiver/src/core/config.c` + `config.h` per `contracts/config-schema.md` — no in-code defaults; annotate genuine zero-init with `/* default-ok: <reason> */`
+- [X] T011 Implement the reader-side version-check helpers in `firmware/beacon-receiver/src/core/record.h` and `container.h` to satisfy T009
+- [X] T012 Implement `config_hash` and `build_id` stamping in `firmware/beacon-receiver/src/core/config.c` (spec §16.2)
+- [X] T013 Register GoogleTest + CTest for `tests/{unit,equivalence,golden}` in `firmware/beacon-receiver/CMakeLists.txt`
+- [X] T014 [P] Implement the kernel micro-bench harness in `firmware/beacon-receiver/tools/bench.c`, reporting ns/px and GMAC/s per kernel (quickstart.md §4)
 
 **Checkpoint**: `beacon_core` + `beacon_tests` build and pass on the dev box with no camera present.
 

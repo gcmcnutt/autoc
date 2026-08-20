@@ -4,6 +4,45 @@ project(autoc)
 # Build crrcsim FDM alongside autoc (requires SDL, OpenGL, etc.)
 option(BUILD_CRRCSIM "Build CRRCSim flight dynamics model" ON)
 
+# ======================================================================================================
+# 042 camera receiver + the tiered build tree (plan.md §Build-tree principle; tasks T002 / T002a / T002b)
+#
+#   tier 0  (default)            native host targets: autoc + crrcsim, receiver core/ + tools/ + tests/
+#   tier 1  (-DWITH_EMBEDDED=ON) cross / embedded targets that still need NO HARDWARE ATTACHED — this is
+#                                the tier that catches interface drift. Receiver app/ (libcamera) lands
+#                                here; xiao (pio) and beacon-pod (avr-gcc) are retrofitted per BACKLOG.
+#   tier 2  (never automatic)    stepfpga (Diamond: Windows + licence), anything needing hardware.
+# ======================================================================================================
+option(BEACON_RECEIVER "Build the 042 camera-receiver targets" OFF)
+option(WITH_EMBEDDED   "Tier 1: also build cross/embedded targets (no hardware required)" OFF)
+option(BUILD_AUTOC     "Build the autoc + crrcsim sim/training targets" ON)
+
+# One command that builds every target and PROPAGATES FAILURE (T002b). Dependencies do the propagating:
+# a failed dependency fails the target, so `cmake --build build --target all-targets` is a real gate and
+# not a best-effort sweep. Declared here, before the early return below, so the receiver-only configure
+# on the Pi gets it too.
+add_custom_target(all-targets
+  COMMENT "tier 0 (+ tier 1 with -DWITH_EMBEDDED=ON): build every target, fail on the first that fails")
+
+# CTest must be enabled in the TOP-LEVEL directory or subdirectory tests never reach the root
+# CTestTestfile — and with BUILD_AUTOC=OFF the existing enable_testing() below is unreachable, so a
+# receiver-only build would silently report "No tests were found". Silently is the problem.
+enable_testing()
+
+if(BEACON_RECEIVER)
+  add_subdirectory(firmware/beacon-receiver)
+endif()
+
+# A receiver-only configure — the Pi 3A+ bench host and the WSL2 cross path — must not require VTK,
+# Eigen, the AWS SDK or zstd. None of them exist there and all four are find_package(REQUIRED) below, so
+# without this the Pi cannot configure the repo at all. Returning here keeps ONE build system
+# (Constitution IV) instead of growing a second one for the Pi.
+#   Pi / cross :  cmake -S . -B build -DBEACON_RECEIVER=ON -DBUILD_AUTOC=OFF
+#   dev box    :  cmake -S . -B build -DBEACON_RECEIVER=ON        (unchanged — everything still builds)
+if(NOT BUILD_AUTOC)
+  return()
+endif()
+
 find_package(VTK REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(AWSSDK REQUIRED COMPONENTS core s3)
@@ -412,3 +451,27 @@ endif()
 if(BUILD_CRRCSIM)
   add_subdirectory(crrcsim)
 endif()
+
+# ---- T002b: wire every remaining target into `all-targets` -------------------------------------------
+# Collected recursively rather than listed, so a target added later is covered without anyone remembering
+# to update this. UTILITY/INTERFACE targets are skipped (nothing to build) as is all-targets itself.
+function(_beacon_collect_targets out_var dir)
+  get_property(_subs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
+  get_property(_tgts DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
+  set(_acc ${_tgts})
+  foreach(_s IN LISTS _subs)
+    _beacon_collect_targets(_sub "${_s}")
+    list(APPEND _acc ${_sub})
+  endforeach()
+  set(${out_var} ${_acc} PARENT_SCOPE)
+endfunction()
+
+_beacon_collect_targets(_all_tgts "${CMAKE_CURRENT_SOURCE_DIR}")
+foreach(_t IN LISTS _all_tgts)
+  if(TARGET ${_t} AND NOT _t STREQUAL "all-targets")
+    get_target_property(_ty ${_t} TYPE)
+    if(NOT _ty STREQUAL "UTILITY" AND NOT _ty STREQUAL "INTERFACE_LIBRARY")
+      add_dependencies(all-targets ${_t})
+    endif()
+  endif()
+endforeach()
