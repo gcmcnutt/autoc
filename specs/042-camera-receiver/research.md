@@ -99,6 +99,11 @@ Measured on the 3A+ (`taskset -c 3`, RelWithDebInfo, gcc 14):
 | `reduce4` NEON | **0.31** | 3.2 | |
 | `hipass` NEON (M2 plane) | 6.2 | — | 0.8 ms per M2 plane; acquisition-path only |
 
+**Pi 5 / A76 (beaconpi5, measured 2026-08-20)**: `mac_i16` scalar **7.6 GMAC/s** (6.2x the A53),
+`reduce2` NEON 0.06 ns/px (17.5 G/s), `reduce4` NEON 27 G/s — a full-frame reduce4 is 10 us. NVMe
+sustained 454 MB/s write / 475 read. The §10 compute budget has an order of magnitude of headroom on the
+flight host; whether the WC-read wall persists on the pisp pipeline is the remaining Phase 3 question.
+
 **The structural correction (bench-journal 2026-08-19)**: these numbers are for CACHED input. The live
 dmabuf mmap is **write-combine — one uncached 256 KB frame read costs ~4 ms**, slightly more than the
 3.6 ms frame period. Consequences for the §10 budget:

@@ -13,6 +13,43 @@ At-order verifies: EVN onboard RAM ≥6 MB (T011), Radiant toolchain (new instal
 OV9281 doubles as the trusted focal plane to finish the C-14 lens validation (M12 mount, global shutter,
 no IR-cut after lens swap).
 
+## Pi 5 bring-up Phases 0-2 COMPLETE (2026-08-20): beaconpi5 on the tailnet, NVMe at 454 MB/s, all tests green
+
+**Host**: Pi 5 Model B Rev 1.1, 8 GB, active cooler, 52pi EP-0241 M.2/PoE+ HAT, WD SN7100S 1 TB (2230,
+Gen4 stick on the Gen2 x1 link). `beaconpi5` = tailscale `100.97.242.96`, wifi `192.168.1.197`
+(lyu-guest), user `pi`, passwordless sudo, fallback password `beacon5`.
+
+**Measured**:
+- NVMe `/data` (ext4, fstab by PARTUUID): **454 MB/s sustained write, 475 MB/s read** (8 GB, fsync) —
+  3.9x the 453 fps flight recording rate. Spec §16.4's "continuous full raw — comfortable" is now a
+  measurement, not a claim.
+- A76 kernels (vs the A53): `mac_i16` scalar **7.6 GMAC/s** (6.2x), `reduce2` NEON **0.06 ns/px**
+  (17.5 G/s), `reduce4` NEON 27 G/s -> full-frame reduce4 = 10 us. All 10 test suites pass
+  (libcamera 0.7.2).
+
+**The headless bring-up cost five card-shuttles; the traps, so nobody pays twice:**
+1. **THE wifi blocker on a manually-seeded (non-Imager) card is NetworkManager's software radio
+   switch** — `nmcli radio all` -> "WIFI disabled". NM re-asserts the rfkill soft-block every start, which
+   is why fixing the persisted rfkill state file, the modprobe `default_state`, AND the cmdline regdom
+   all failed in turn (each was real, none was the actor). Fix: `nmcli radio wifi on` +
+   `raspi-config nonint do_wifi_country US`. The Imager GUI does this invisibly; manual seeds must.
+2. **The guest wifi (lyu-guest) has client isolation** — LAN debugging of a headless Pi is impossible on
+   it, and tailscale is the only path between bench hosts (relay "sfo"). The escape hatch that ended the
+   loop: **direct cat5 to the DGX's free port (`enP7s7`) with an NM `ipv4.method shared` connection** —
+   DHCP + NAT internet over the cable, the pre-baked tailscale join fired on its own, and interactive
+   nmcli found the real blocker in one look. Keep `pi5-share` configured on the DGX for future bring-ups.
+3. Black-box pattern that worked: a boot service appending rfkill/nmcli/ip/https-reachability to the FAT
+   boot partition every 20 s — one boot cycle = full evidence, readable on any machine.
+4. tailscale is the OFFICIAL apt package now (1.102.3), state under /var/lib/tailscale; the static-binary
+   bootstrap + join units + black box were all removed after use.
+5. Pi 5 MAC OUI on this unit: 88:A2:9E (newer Raspberry Pi allocation).
+
+**NEXT = Phase 3, needs hands**: move the OV9281 (22-pin cable) to beaconpi5, `dtoverlay=ov9281` is
+already seeded in its config.txt. Then: mode table on the pisp pipeline, the WC-read-wall measurement
+(does continuous capture hold sensor rate where the 3A+ capped at 215 fps?), and the A/B gate — trackd
+live at the same 115 Hz operating point must match the 3A+'s 100 %-lock baseline before the 3A+ is
+touched further. Phases 4-6 (NVMe recorder milestone, the §12 high-fps evening, role swap) follow.
+
 ## Bench rate policy: 115-FAMILY ONLY (operator 2026-08-19, evening)
 
 **200/210 Hz removed from the camera receiver's acquire candidates** (`beacon-bench.ini`). Rationale: the
