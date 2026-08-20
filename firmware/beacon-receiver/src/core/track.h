@@ -77,6 +77,9 @@ typedef struct {
 
     /* lock-health EWMA internals */
     int32_t  lh_acc_q8;
+    uint16_t peak_px;                  /* aperture index of the last measured peak — lock_health watches
+                                        * THE TRACKED PIXEL ("a chip is seen where we expect", §2.6),
+                                        * not the aperture centre                                       */
     uint16_t evidence_chips;           /* chips with usable evidence since the last tick               */
     uint16_t last_r_q8;                /* |innovation| of the last measurement, M2 q8 — the ladder's
                                         * climb gate: a loop still converging must not shrink its net   */

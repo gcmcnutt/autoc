@@ -104,24 +104,24 @@ a version-mismatched file is rejected with both versions named.
 **Independent test**: a replayed pan/tilt slew clip is tracked through transit and scored against the
 offline oracle, with both §3.1 rates reported.
 
-- [ ] T026 [P] [US2] Test: scalar `reduce` / `hipass` kernels against hand-computed vectors — `firmware/beacon-receiver/tests/unit/test_kernels.c` (written before T027)
-- [ ] T027 [P] [US2] Implement scalar reference kernels in `firmware/beacon-receiver/src/core/reduce.c` and `src/core/hipass.c` — separate passes, obviously correct, permanent (R11)
-- [ ] T028 [US2] Implement the fused per-tile NEON front end in `firmware/beacon-receiver/src/core/reduce.c` and `src/core/hipass.c` — L1-sized tiles, one pass over each (R4)
-- [ ] T029 [US2] Test: scalar-vs-NEON **bit-exact** equivalence per kernel — `firmware/beacon-receiver/tests/equivalence/test_kernels_neon.c` (R11)
-- [ ] T030 [US2] Run `tools/bench` on the Pi and record the measured GMAC/s against R5's 1–2 GMAC/s assumption in `specs/042-camera-receiver/research.md`
-- [ ] T031 [P] [US2] Implement Gold-31 template generation and frames→chips reduction in `firmware/beacon-receiver/src/core/corr.c`, fixed-point per R2
-- [ ] T032 [US2] Implement `corr_search()` (31 phases × 2 codes) and `corr_track()` (known phase/code) as **separate** functions in `firmware/beacon-receiver/src/core/corr.c` — they differ by ~60× and the cheap one is the common path
-- [ ] T033 [P] [US2] Test: `corr_track` reproduces `corr_search`'s answer at a known phase — `firmware/beacon-receiver/tests/unit/test_corr.c`
-- [ ] T034 [US2] Implement the `Track` struct and the alpha-beta centering loop in `firmware/beacon-receiver/src/core/track.c` per data-model.md §2
-- [ ] T035 [US2] Implement the multi-scale ladder (coarse / medium / fine) with q-driven scale selection in `firmware/beacon-receiver/src/core/track.c` (spec §2.2)
-- [ ] T036 [US2] Implement the DPLL (chip-rate and phase pull-in) in `firmware/beacon-receiver/src/core/track.c`
-- [ ] T037 [US2] Implement decision-directed chip-level `lock_health` in `firmware/beacon-receiver/src/core/track.c` — scale-free and field-position independent, normalised against the local noise floor (spec §2.6)
-- [ ] T038 [US2] Implement SNR-driven adaptive integration length in `firmware/beacon-receiver/src/core/agc.c` (spec §4)
-- [ ] T039 [US2] Implement the Bank — 16 slots, candidate lifecycle, guard+precision pairing, eviction priority — in `firmware/beacon-receiver/src/core/bank.c` per data-model.md §3
-- [ ] T040 [US2] Implement the **evidence-bounded** HOLD state in `firmware/beacon-receiver/src/core/bank.c`, reading the same `hold_max_*` keys the scorer uses so metric and state machine cannot drift (data-model.md §2)
-- [ ] T041 [P] [US2] Test: track lifecycle transitions including evidence-bounded HOLD exit — `firmware/beacon-receiver/tests/unit/test_bank.c`
-- [ ] T042 [US2] Implement acquisition-budget virtualisation in `firmware/beacon-receiver/src/core/sched.c` so replay completes acquires at the frame index live would have (R3)
-- [ ] T043 [US2] Test: two replay runs of one clip emit byte-identical record streams — `firmware/beacon-receiver/tests/golden/test_replay_parity.c` (quickstart.md §6)
+- [X] T026 [P] [US2] Test: scalar `reduce` / `hipass` kernels against hand-computed vectors — `firmware/beacon-receiver/tests/unit/test_kernels.c` (written before T027)
+- [X] T027 [P] [US2] Implement scalar reference kernels in `firmware/beacon-receiver/src/core/reduce.c` and `src/core/hipass.c` — separate passes, obviously correct, permanent (R11)
+- [X] T028 [US2] Implement the fused per-tile NEON front end in `firmware/beacon-receiver/src/core/reduce.c` and `src/core/hipass.c` — L1-sized tiles, one pass over each (R4)
+- [X] T029 [US2] Test: scalar-vs-NEON **bit-exact** equivalence per kernel — `firmware/beacon-receiver/tests/equivalence/test_kernels_neon.c` (R11)
+- [X] T030 [US2] Run `tools/bench` on the Pi and record the measured GMAC/s against R5's 1–2 GMAC/s assumption in `specs/042-camera-receiver/research.md`
+- [X] T031 [P] [US2] Implement Gold-31 template generation and frames→chips reduction in `firmware/beacon-receiver/src/core/corr.c`, fixed-point per R2
+- [X] T032 [US2] Implement `corr_search()` (31 phases × 2 codes) and `corr_track()` (known phase/code) as **separate** functions in `firmware/beacon-receiver/src/core/corr.c` — they differ by ~60× and the cheap one is the common path
+- [X] T033 [P] [US2] Test: `corr_track` reproduces `corr_search`'s answer at a known phase — `firmware/beacon-receiver/tests/unit/test_corr.c`
+- [X] T034 [US2] Implement the `Track` struct and the alpha-beta centering loop in `firmware/beacon-receiver/src/core/track.c` per data-model.md §2
+- [X] T035 [US2] Implement the multi-scale ladder (coarse / medium / fine) with q-driven scale selection in `firmware/beacon-receiver/src/core/track.c` (spec §2.2)
+- [X] T036 [US2] Implement the DPLL (chip-rate and phase pull-in) in `firmware/beacon-receiver/src/core/track.c`
+- [X] T037 [US2] Implement decision-directed chip-level `lock_health` in `firmware/beacon-receiver/src/core/track.c` — scale-free and field-position independent, normalised against the local noise floor (spec §2.6)
+- [X] T038 [US2] Implement SNR-driven adaptive integration length in `firmware/beacon-receiver/src/core/agc.c` (spec §4)
+- [X] T039 [US2] Implement the Bank — 16 slots, candidate lifecycle, guard+precision pairing, eviction priority — in `firmware/beacon-receiver/src/core/bank.c` per data-model.md §3
+- [X] T040 [US2] Implement the **evidence-bounded** HOLD state in `firmware/beacon-receiver/src/core/bank.c`, reading the same `hold_max_*` keys the scorer uses so metric and state machine cannot drift (data-model.md §2)
+- [X] T041 [P] [US2] Test: track lifecycle transitions including evidence-bounded HOLD exit — `firmware/beacon-receiver/tests/unit/test_bank.c`
+- [X] T042 [US2] Implement acquisition-budget virtualisation in `firmware/beacon-receiver/src/core/sched.c` so replay completes acquires at the frame index live would have (R3)
+- [X] T043 [US2] Test: two replay runs of one clip emit byte-identical record streams — `firmware/beacon-receiver/tests/golden/test_replay_parity.c` (quickstart.md §6)
 - [ ] T044 [P] [US2] Implement the non-causal offline oracle in `firmware/beacon-receiver/tools/oracle.c`
 - [ ] T045 [P] [US2] Implement `firmware/beacon-receiver/tools/inject.c` — coded point source on a known trajectory into real recorded background (spec §7)
 - [ ] T046 [US2] Implement `firmware/beacon-receiver/tools/score.c` — one CSV row per envelope cell carrying §3.1's two rates, §3.2's three columns, and §11.1's deadline-miss rate
@@ -144,14 +144,14 @@ alone. The mirror-pair rule (T055) is written and unit-tested against injected p
 waiting for real hardware.
 
 - [ ] T048 [US3] Prototype acquisition in NumPy against recorded clips in `firmware/beacon-receiver/pi/acquire_proto.py` — **research spike, ships no tests** (R12; Constitution I exemption invoked narrowly, nothing promoted)
-- [ ] T049 [P] [US3] Implement blink detection (frame-to-frame temporal difference) in `firmware/beacon-receiver/src/core/acquire.c`
+- [X] T049 [P] [US3] Implement blink detection (frame-to-frame temporal difference) in `firmware/beacon-receiver/src/core/acquire.c`
 - [ ] T050 [US3] Implement linear-motion RANSAC proto-track formation in `firmware/beacon-receiver/src/core/acquire.c`
 - [ ] T051 [US3] Implement multi-rate decode-along-track in `firmware/beacon-receiver/src/core/acquire.c` — rate-agnostic, because the bench emitter's `'H'` mode is volatile (031 trap #2)
 - [ ] T052 [P] [US3] Test: acquisition finds a known injected track at a known SNR — `firmware/beacon-receiver/tests/unit/test_acquire.c`
 - [ ] T053 [US3] Thread acquisition off the capture path in `firmware/beacon-receiver/src/app/beacon_trackd.cc`, charged through the T042 budget model
 - [ ] T054 [P] [US3] Code-A source — **the operator is building a real flight cube in parallel** (031 A7); track its arrival in `specs/031-beacon-camera/bench-journal.md` and re-baseline the regression when it lands. *Fallback only if the cube slips past US3: a breadboard ATtiny412 + 2 LEDs is adequate at 2–5 m — but do not build it pre-emptively*
-- [ ] T055 [US3] Implement the same-code mirror-pair rule in `firmware/beacon-receiver/src/core/bank.c` — flag the lower `MULTIPATH_SUSPECT`, **keep it, do not delete** (spec §9)
-- [ ] T056 [P] [US3] Implement `extent` (q_fine/q_coarse) and `scintillation` outputs in `firmware/beacon-receiver/src/core/track.c` (spec §9 — free from the ladder, painful to retrofit)
+- [X] T055 [US3] Implement the same-code mirror-pair rule in `firmware/beacon-receiver/src/core/bank.c` — flag the lower `MULTIPATH_SUSPECT`, **keep it, do not delete** (spec §9)
+- [X] T056 [P] [US3] Implement `extent` (q_fine/q_coarse) and `scintillation` outputs in `firmware/beacon-receiver/src/core/track.c` (spec §9 — free from the ladder, painful to retrofit)
 - [ ] T057 [US3] Bench-verify — two codes tracked simultaneously, zero ID swaps, near-far case; results to `specs/042-camera-receiver/results/stage1-twocode.csv`. **GATED on the code-A flight cube (T054)** — does not block the Stage 1 exit
 - [ ] T058 [US3] Bench-verify — false-acquire rate over a cluttered room with the rig slewing; results to `specs/042-camera-receiver/results/stage1-falsealarm.csv` (spec §3)
 
@@ -164,13 +164,13 @@ once, on real beacons.
 
 **Independent test**: the ASCII scope animates at 10 Hz over SSH against a live bench run.
 
-- [ ] T059 [P] [US4] Implement the binary record emitter in `firmware/beacon-receiver/src/io/emit_record.c` — versioned struct, transport-agnostic (R13)
-- [ ] T060 [P] [US4] Implement the JSON projection in `firmware/beacon-receiver/src/io/emit_json.c`, preserving A = PORT/red, B = STARBOARD/green
-- [ ] T061 [US4] Implement the `tcp:` and `serial:` sinks in `firmware/beacon-receiver/src/io/emit_record.c` for bench USB/WiFi streaming (`contracts/cli.md`)
-- [ ] T062 [US4] Implement deadline instrumentation (`deadline_margin_us`, miss-rate accounting) in `firmware/beacon-receiver/src/app/beacon_trackd.cc` (spec §11.1) — track p99 and max, not mean
-- [ ] T063 [US4] Implement the `beacon_trackd` CLI in `firmware/beacon-receiver/src/app/beacon_trackd.cc` per `contracts/cli.md`
-- [ ] T064 [P] [US4] Implement the 10 Hz ASCII scope in `firmware/beacon-receiver/tools/ascii_scope.py`, consuming any sink, no X required
-- [ ] T065 [US4] **STAGE 1 EXIT**: bench run with real beacons — ASCII scope animates at 10 Hz, deadline-miss rate reported, recorded to `specs/031-beacon-camera/bench-journal.md`
+- [X] T059 [P] [US4] Implement the binary record emitter in `firmware/beacon-receiver/src/io/emit_record.c` — versioned struct, transport-agnostic (R13)
+- [X] T060 [P] [US4] Implement the JSON projection in `firmware/beacon-receiver/src/io/emit_json.c`, preserving A = PORT/red, B = STARBOARD/green
+- [X] T061 [US4] Implement the `tcp:` and `serial:` sinks in `firmware/beacon-receiver/src/io/emit_record.c` for bench USB/WiFi streaming (`contracts/cli.md`)
+- [X] T062 [US4] Implement deadline instrumentation (`deadline_margin_us`, miss-rate accounting) in `firmware/beacon-receiver/src/app/beacon_trackd.cc` (spec §11.1) — track p99 and max, not mean
+- [X] T063 [US4] Implement the `beacon_trackd` CLI in `firmware/beacon-receiver/src/app/beacon_trackd.cc` per `contracts/cli.md`
+- [X] T064 [P] [US4] Implement the 10 Hz ASCII scope in `firmware/beacon-receiver/tools/ascii_scope.py`, consuming any sink, no X required
+- [X] T065 [US4] **STAGE 1 EXIT**: bench run with real beacons — ASCII scope animates at 10 Hz, deadline-miss rate reported, recorded to `specs/031-beacon-camera/bench-journal.md`
 
 ---
 

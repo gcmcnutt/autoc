@@ -86,8 +86,9 @@ void bank_tick(Bank *b, const BcnConfig *cfg)
             s->promote_streak--;
         }
         /* a candidate whose q never rises dies by eviction (find_slot) or by starvation here: */
-        if (s->trk.age_ms > 4u * cfg->hold_max_age_ms && s->trk.q_q8 < cfg->q_drop_q8)
-            bury(b, i);
+        if (s->trk.age_ms > 2u * cfg->hold_max_age_ms && s->trk.q_q8 < cfg->q_drop_q8)
+            bury(b, i);         /* starve fast: a wrong-rate candidate must free the spot for the
+                                 * next rate hypothesis (acquire rotates on re-seed) */
     }
 
     /* guard allocation: every CONFIRMED PRECISION without a partner gets a GUARD one scale coarser,

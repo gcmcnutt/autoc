@@ -87,8 +87,10 @@ static void lock_health_chip(Track *t, int64_t chip)
 
     if (t->chip_phase == 0xFF || t->counts[b] == 0) return;   /* no phase yet, or an empty chip       */
 
-    /* aperture mean and centre-pixel value for this chip (per-sample means; counts equal per pixel)  */
-    cpx = (uint16_t)((E / 2u) * E + E / 2u);
+    /* THE TRACKED pixel (last measured peak), not the aperture centre: at sub-pixel straddle the
+     * centre pixel holds half-amplitude and the sign test dips for no real reason — measured live as
+     * lock_health 0.43..0.98 swings on a q=1.00 track. (Per-sample means; counts equal per pixel.)   */
+    cpx = t->peak_px < E * E ? t->peak_px : (uint16_t)((E / 2u) * E + E / 2u);
     for (p = 0; p < E * E; p++) apsum += t->bins[p * TRK_WIN + b];
     centre = t->bins[cpx * TRK_WIN + b] / t->counts[b];
     dev = centre - (int32_t)(apsum / ((int64_t)E * E * t->counts[b]));
@@ -225,14 +227,14 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
         if (t->chip_phase == 0xFF) {
             t->chip_phase = phase_abs;
         } else if (phase_abs != t->chip_phase) {
-            int8_t slip = (int8_t)(((int16_t)phase_abs - t->chip_phase + 46) % 31 - 15);  /* -15..15 */
-            /* one chip of slip over the whole window K -> rate error ~ chip_hz * slip / K.
-             * Correct at 1/4 gain; clamp to ±2 % per tick so one bad search cannot fling the clock. */
-            int32_t dhz = (int32_t)(((int64_t)t->chip_hz_q8 * slip) / (K * 4));
-            int32_t lim = (int32_t)(t->chip_hz_q8 / 50);
-            if (dhz > lim) dhz = lim;
-            if (dhz < -lim) dhz = -lim;
-            t->chip_hz_q8 = (uint32_t)((int32_t)t->chip_hz_q8 + dhz);
+            /* T036, phase half only — RATE ADJUSTMENT IS DELIBERATELY OFF (2026-08-19). Both attempts
+             * at closing the rate loop live destabilised it: naive dhz walked 115->109 Hz because a
+             * rate change rebases corr_chip_at across the whole epoch-to-now span; the epoch-re-anchor
+             * repair then sprayed 112..129 Hz. Meanwhile the fixed nominal rate held q=1.00 for whole
+             * stretches — the bench emitter is +0.7 % off nominal and a K=31 window only accrues 0.2
+             * chip of drift, well inside the correlator's tolerance. Phase adoption below absorbs the
+             * residual as an occasional 1-chip re-index. Rate tracking returns as designed work (sim
+             * against golden clips first), not live tuning: see bench journal 042 entry. */
             t->chip_phase = phase_abs;
         }
         t->q_q8 = ap.q_q8;
@@ -258,9 +260,11 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
             if (surf[p] > peak) { peak = surf[p]; peak_p = p; }
         }
         if (peak > 0) {
+            t->peak_px = peak_p;
             /* 3×3 centroid around the peak. SATURATED (spec §5): amplitude is a lie once the peak
              * rails, so switch to a flat-top estimator — binarise the weights at 70 % of peak. */
             int32_t wx = 0, wy = 0, wt = 0;
+            int64_t m2s_w = 0;                   /* second moment with the SAME weights as the centroid */
             int32_t px = (int32_t)(peak_p % E), py = (int32_t)(peak_p / E);
             int32_t peak_q8;
             uint16_t qpk;
@@ -273,6 +277,7 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
                     wgt = surf[yy * E + xx];
                     if (t->saturated) wgt = wgt * 10 >= peak * 7 ? 1 : 0;
                     wx += wgt * xx; wy += wgt * yy; wt += wgt;
+                    m2s_w += (int64_t)wgt * (dx * dx + dy * dy);
                 }
             }
             if (wt > 0) {
@@ -283,6 +288,23 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
                 int32_t plane_y_q8 = ((int32_t)t->roi_cy << 8) + my_q8 - ((int32_t)(E / 2u) << 8);
                 int32_t zx = plane_q8_to_m2_q8(t, plane_x_q8, f);
                 int32_t zy = plane_q8_to_m2_q8_y(t, plane_y_q8, f);
+
+                /* Innovation gate, before the update touches any state. The bench scene breathes
+                 * in-band (LED-lamp PWM, journal trap #4), and roughly once in ~10^2 ticks an
+                 * aperture-edge pixel out-peaks the beacon. Ungated, that one fix kicks v hard enough
+                 * that HOLD extrapolates off the field and the track dies (live, 2026-08-19: solid
+                 * q=1.00 locks at (8,16) dying to teleports like (-94,157)). Gated, a wild fix is a
+                 * COASTED tick — the flywheel's whole job. Gate: 4*cep, floored at 2 M2 px. */
+                {
+                    int32_t gx = zx - (t->x_q8 + (int32_t)(((int64_t)t->vx_q8 * dt_us) / 1000000));
+                    int32_t gy = zy - (t->y_q8 + (int32_t)(((int64_t)t->vy_q8 * dt_us) / 1000000));
+                    int32_t gate = 4 * (int32_t)t->cep_q8;
+                    if (gate < (2 << 8)) gate = 2 << 8;
+                    if (gx < 0) gx = -gx;
+                    if (gy < 0) gy = -gy;
+                    if ((gx > gate || gy > gate) && t->state != TRK_CANDIDATE)
+                        goto measurement_rejected;
+                }
 
                 /* T034: the alpha-beta update. Deliberately the SIMPLE form: innovate against the
                  * tick-epoch prediction, constant dt. z lags truth by tau (the window-centre effect),
@@ -308,22 +330,16 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
                 }
                 measured_this_tick = 1;
 
-                /* CEP from the centroid spread (second moment around the peak), in M2 q8 */
+                /* CEP from the centroid spread (second moment around the peak), in M2 q8. MUST use
+                 * the same weights the centroid used: the first version mixed raw |corr| moments with
+                 * flat-top-binarised wt (<=9), saturating cep to 256 px — and the HOLD cep bound then
+                 * killed the track on the next unmeasured tick (live autopsy 2026-08-19, deaths 2-5). */
                 {
-                    int64_t m2s = 0;
-                    for (dy = -1; dy <= 1; dy++)
-                        for (dx = -1; dx <= 1; dx++) {
-                            int32_t xx = px + dx, yy = py + dy;
-                            if (xx < 0 || yy < 0 || xx >= E || yy >= E) continue;
-                            m2s += (int64_t)surf[yy * E + xx] * (dx * dx + dy * dy);
-                        }
-                    if (wt > 0) {
-                        int32_t var_q8 = (int32_t)((m2s << 8) / (wt ? wt : 1) / 2);
-                        /* cep is a SIZE, not a position — scale only, no origin shift */
-                        int32_t cep = (var_q8 > 0 ? var_q8 : 26);
-                        cep = f == 2 ? cep : f == 4 ? cep * 2 : cep / 2;
-                        t->cep_q8 = (uint16_t)(cep > 0xFFFF ? 0xFFFF : cep < 26 ? 26 : cep);
-                    }
+                    int32_t var_q8 = (int32_t)((m2s_w << 8) / wt / 2);
+                    /* cep is a SIZE, not a position — scale only, no origin shift */
+                    int32_t cep = (var_q8 > 0 ? var_q8 : 26);
+                    cep = f == 2 ? cep : f == 4 ? cep * 2 : cep / 2;
+                    t->cep_q8 = (uint16_t)(cep > 0xFFFF ? 0xFFFF : cep < 26 ? 26 : cep);
                 }
 
                 /* extent (spec §9): point source -> peak-pixel q >= aperture q; glitter -> below */
@@ -341,6 +357,7 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
 
                 t->measured_fix = t->evidence_chips > 0 || t->lock_health_q8 >= cfg->lock_health_drop_q8;
                 t->last_fix_us = now_us;
+measurement_rejected: ;
             }
         }
     }
@@ -380,8 +397,12 @@ lifecycle:
      * promotion/demotion BETWEEN slots is the bank's job; the evidence bounds are per-track. */
     switch (t->state) {
     case TRK_CONFIRMED:
-        if (!t->measured_fix &&
-            (t->q_q8 < cfg->q_drop_q8 || t->lock_health_q8 < cfg->lock_health_drop_q8)) {
+        /* HOLD entry gates on q ALONE for now. lock_health is reported but does not yet demote: its
+         * per-chip sign test still dips on straddle even watching the peak pixel, and a q=1.00 track
+         * being sent to HOLD by a proxy statistic was the live failure loop of 2026-08-19 (HOLD ->
+         * widen -> bins reset -> re-affirmation window eaten -> dead at age 150 ms). Revisit when the
+         * estimator earns back its vote (spec §2.6 wants it driving this — earned, not assumed). */
+        if (!t->measured_fix && t->q_q8 < cfg->q_drop_q8) {
             t->state = TRK_HOLD;
             /* Entering HOLD at a fine scale is how a track dies BLIND: the aperture that lost the
              * beacon is the last place to keep staring. Widen immediately — the spatial version of
@@ -433,6 +454,7 @@ lifecycle:
             memset(t->bins, 0, sizeof t->bins);        /* new plane: the window restarts              */
             memset(t->counts, 0, sizeof t->counts);
             t->first_chip = t->last_chip + 1;
+            t->peak_px = (uint16_t)((t->extent / 2u) * t->extent + t->extent / 2u);
             t->ladder_dwell = 6;                       /* ~300 ms before the next move                */
         }
     }

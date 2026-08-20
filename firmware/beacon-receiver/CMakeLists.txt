@@ -18,6 +18,7 @@ add_library(beacon_core STATIC
   src/core/agc.c
   src/core/sched.c
   src/core/engine.c
+  src/core/acquire.c
 )
 set_target_properties(beacon_core PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
 target_include_directories(beacon_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
@@ -41,6 +42,8 @@ endif()
 add_library(beacon_io STATIC
   src/io/sink_record.c
   src/io/src_replay.c
+  src/io/emit_record.c
+  src/io/emit_json.c
 )
 set_target_properties(beacon_io PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
 target_include_directories(beacon_io PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/io)
@@ -79,6 +82,7 @@ set(BR_TESTS
   unit/test_replay
   unit/test_kernels
   unit/test_corr
+  unit/test_bank
   equivalence/test_kernels_neon
   golden/test_record_vectors
   golden/test_replay_parity
@@ -121,9 +125,21 @@ if(LIBCAMERA_FOUND)
   target_link_libraries(beacon_record PRIVATE beacon_io beacon_io_camera)
   target_compile_options(beacon_record PRIVATE -Wall -Wextra)
 
-  add_dependencies(all-targets beacon_io_camera beacon_record)
-  message(STATUS "042 receiver: libcamera ${LIBCAMERA_VERSION} found — building beacon_record")
+  add_executable(beacon_trackd src/app/beacon_trackd.cc)
+  set_target_properties(beacon_trackd PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  target_compile_definitions(beacon_trackd PRIVATE BCN_HAVE_LIBCAMERA)
+  target_link_libraries(beacon_trackd PRIVATE beacon_io beacon_io_camera)
+  target_compile_options(beacon_trackd PRIVATE -Wall -Wextra)
+
+  add_dependencies(all-targets beacon_io_camera beacon_record beacon_trackd)
+  message(STATUS "042 receiver: libcamera ${LIBCAMERA_VERSION} found — building beacon_record + beacon_trackd")
 else()
-  message(STATUS "042 receiver: libcamera not found — live-capture targets skipped (fine on the dev box; "
-                 "the Pi and the sysroot cross build have it)")
+  # trackd still builds WITHOUT libcamera: replay-only (the dev-box workflow needs exactly that).
+  add_executable(beacon_trackd src/app/beacon_trackd.cc)
+  set_target_properties(beacon_trackd PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  target_link_libraries(beacon_trackd PRIVATE beacon_io)
+  target_compile_options(beacon_trackd PRIVATE -Wall -Wextra)
+  add_dependencies(all-targets beacon_trackd)
+  message(STATUS "042 receiver: libcamera not found — beacon_trackd is replay-only on this host "
+                 "(the Pi build has live capture)")
 endif()

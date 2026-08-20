@@ -86,31 +86,37 @@ typedef struct {
     BcnTrack tracks[BCN_MAX_TRACKS]; /* 64 unused entries zeroed with VALID clear                          */
 } BcnRecord;
 
+#if defined(__cplusplus)
+#define BCN_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
+#else
+#define BCN_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
+#endif
+
 /* ---- T006a: layout locks. These catch an accidental field edit HERE, in this implementation, at compile
  * time. They are deliberately NOT the cross-target mechanism — see tests/golden/record_vectors/. */
-_Static_assert(sizeof(BcnTrack) == 48, "BcnTrack layout changed — bump format_version and regenerate golden vectors");
-_Static_assert(offsetof(BcnTrack, x)             ==  0, "BcnTrack.x moved");
-_Static_assert(offsetof(BcnTrack, chip_hz)       == 24, "BcnTrack.chip_hz moved");
-_Static_assert(offsetof(BcnTrack, cep)           == 28, "BcnTrack.cep moved");
-_Static_assert(offsetof(BcnTrack, flags)         == 38, "BcnTrack.flags moved");
-_Static_assert(offsetof(BcnTrack, code_id)       == 42, "BcnTrack.code_id moved");
+BCN_STATIC_ASSERT(sizeof(BcnTrack) == 48, "BcnTrack layout changed — bump format_version and regenerate golden vectors");
+BCN_STATIC_ASSERT(offsetof(BcnTrack, x)             ==  0, "BcnTrack.x moved");
+BCN_STATIC_ASSERT(offsetof(BcnTrack, chip_hz)       == 24, "BcnTrack.chip_hz moved");
+BCN_STATIC_ASSERT(offsetof(BcnTrack, cep)           == 28, "BcnTrack.cep moved");
+BCN_STATIC_ASSERT(offsetof(BcnTrack, flags)         == 38, "BcnTrack.flags moved");
+BCN_STATIC_ASSERT(offsetof(BcnTrack, code_id)       == 42, "BcnTrack.code_id moved");
 
-_Static_assert(offsetof(BcnRecord, magic)              ==  0, "record.magic moved");
-_Static_assert(offsetof(BcnRecord, format_version)     ==  4, "record.format_version moved — it MUST stay at a stable offset (Constitution V)");
-_Static_assert(offsetof(BcnRecord, header_bytes)       ==  6, "record.header_bytes moved");
-_Static_assert(offsetof(BcnRecord, t_us)               ==  8, "record.t_us moved");
-_Static_assert(offsetof(BcnRecord, seq)                == 16, "record.seq moved");
-_Static_assert(offsetof(BcnRecord, tick_index)         == 20, "record.tick_index moved");
-_Static_assert(offsetof(BcnRecord, n_tracks)           == 24, "record.n_tracks moved");
-_Static_assert(offsetof(BcnRecord, n_slots_used)       == 25, "record.n_slots_used moved");
-_Static_assert(offsetof(BcnRecord, deadline_margin_us) == 28, "record.deadline_margin_us moved");
-_Static_assert(offsetof(BcnRecord, build_id)           == 32, "record.build_id moved");
-_Static_assert(offsetof(BcnRecord, config_hash)        == 40, "record.config_hash moved");
-_Static_assert(offsetof(BcnRecord, inav_t_us)          == 48, "record.inav_t_us moved");
-_Static_assert(offsetof(BcnRecord, inav_read_age_us)   == 56, "record.inav_read_age_us moved");
-_Static_assert(offsetof(BcnRecord, gps_time_ms)        == 60, "record.gps_time_ms moved");
-_Static_assert(offsetof(BcnRecord, tracks)             == BCN_RECORD_HEADER_BYTES, "record.tracks must start at header_bytes");
-_Static_assert(sizeof(BcnRecord) == BCN_RECORD_HEADER_BYTES + 48u * BCN_MAX_TRACKS, "BcnRecord has hidden padding");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, magic)              ==  0, "record.magic moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, format_version)     ==  4, "record.format_version moved — it MUST stay at a stable offset (Constitution V)");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, header_bytes)       ==  6, "record.header_bytes moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, t_us)               ==  8, "record.t_us moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, seq)                == 16, "record.seq moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, tick_index)         == 20, "record.tick_index moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, n_tracks)           == 24, "record.n_tracks moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, n_slots_used)       == 25, "record.n_slots_used moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, deadline_margin_us) == 28, "record.deadline_margin_us moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, build_id)           == 32, "record.build_id moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, config_hash)        == 40, "record.config_hash moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, inav_t_us)          == 48, "record.inav_t_us moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, inav_read_age_us)   == 56, "record.inav_read_age_us moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, gps_time_ms)        == 60, "record.gps_time_ms moved");
+BCN_STATIC_ASSERT(offsetof(BcnRecord, tracks)             == BCN_RECORD_HEADER_BYTES, "record.tracks must start at header_bytes");
+BCN_STATIC_ASSERT(sizeof(BcnRecord) == BCN_RECORD_HEADER_BYTES + 48u * BCN_MAX_TRACKS, "BcnRecord has hidden padding");
 
 /* ---- T011: reader-side version check (Constitution V). Returns 0 on OK, non-zero on mismatch, and fills
  * `why` with a message naming BOTH the artifact's version and this reader's. Callers exit 2

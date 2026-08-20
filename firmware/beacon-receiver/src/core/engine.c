@@ -6,6 +6,7 @@
  * (16 slots × ~576 native px ≈ 9 KB). Full-field work (acquisition) is budgeted through sched.
  */
 #include "engine.h"
+#include "acquire.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +18,7 @@ struct Engine {
     Bank bank;
     Agc agc;
     Sched sched;
+    Acquire acq;
     EngineEmit emit;
     void *user;
 
@@ -27,6 +29,14 @@ struct Engine {
     uint32_t rec_seq;
     uint16_t frame_w, frame_h;
     uint8_t  roi_peak;                 /* brightest raw px across tracked ROIs since the last tick     */
+    AcqSeed  pending[ACQ_MAX_SEEDS];   /* seeds found by an in-flight pass, applied at the model frame  */
+    uint8_t  pending_n;
+    uint64_t next_acq_frame;           /* pass throttle                                                */
+    /* warm reacquire: the last CONFIRMED track's place and rate. A re-seed near it inherits the rate —
+     * a track that dies for a non-rate reason must not send reacquisition on a rate tour. */
+    int32_t  warm_x_q8, warm_y_q8;
+    uint32_t warm_chip_hz_q8;
+    uint8_t  warm_valid;
     int32_t  roi[TRK_MAX_EXTENT * TRK_MAX_EXTENT];   /* scratch: one aperture                         */
 };
 
@@ -53,6 +63,7 @@ int engine_open(Engine **out, const BcnConfig *cfg, EngineEmit emit, void *user,
     e->frame_h = (uint16_t)h;
     bank_init(&e->bank, &e->cfg);
     agc_init(&e->agc, &e->cfg);
+    acquire_init(&e->acq, &e->cfg);
     sched_init(&e->sched, &e->cfg, cfg->fps ? 1000000u / cfg->fps : 3617u);
     *out = e;
     return 0;
@@ -166,6 +177,83 @@ void engine_frame(Engine *e, const FrameView *fv)
         if (peak >= 250u) t->saturated = 1;               /* spec §5: flat-top estimator engages      */
         if (peak > e->roi_peak) e->roi_peak = peak;
         track_frame(t, &e->cfg, e->roi, cx, cy, fv->t_us);
+    }
+
+    /* Acquisition (US3-lite): when nothing is CONFIRMED, spend the sched budget on blink-detect
+     * passes. sched_try_begin/sched_completed make the completion frame a MODEL, identical live and
+     * replayed (R3) — the pass's seeds are only APPLIED at the model's completion frame. */
+    {
+        int have_confirmed = 0;
+        for (i = 0; i < e->bank.max_slots; i++)
+            if (e->bank.slots[i].used && e->bank.slots[i].trk.state == TRK_CONFIRMED) {
+                const Track *t = &e->bank.slots[i].trk;
+                have_confirmed = 1;
+                e->warm_x_q8 = t->x_q8;
+                e->warm_y_q8 = t->y_q8;
+                e->warm_chip_hz_q8 = t->chip_hz_q8;
+                e->warm_valid = 1u;
+                break;
+            }
+        /* Throttle + cap, learned live (2026-08-19: the first policy flooded the bank with 12 junk
+         * candidates and the WC-read cost of their apertures drove the deadline margin to -233 ms —
+         * §11.1's instrumentation catching its first real overload):
+         *   - a pass at most every 25 frames (~11 Hz of attempts),
+         *   - at most 2 candidates outstanding,
+         *   - 1 seed per pass (the strongest blink),
+         *   - candidates seed at MEDIUM scale (576 native px/frame, 16x cheaper than coarse). */
+        if (!have_confirmed) {
+            int n_cand = 0;
+            for (i = 0; i < e->bank.max_slots; i++)
+                if (e->bank.slots[i].used && e->bank.slots[i].role == BANK_ROLE_CANDIDATE) n_cand++;
+            int done = sched_completed(&e->sched, e->frame_idx);
+            /* Every completed pass ends its episode — INCLUDING an empty one. Without this, passes_max
+             * empty passes (and the first pass is empty by construction: it primes the diff plane)
+             * exhaust the budget and acquisition never runs again. Found live 2026-08-19: replay
+             * acquired instantly (burst data seeds on the first diff), the live bench never did. */
+            if (done) sched_reset_episode(&e->sched);
+            if (done && e->pending_n) {
+                uint8_t k;
+                for (k = 0; k < e->pending_n; k++) {
+                    /* skip seeds that landed on an existing candidate's aperture */
+                    int clash = 0;
+                    for (i = 0; i < e->bank.max_slots; i++) {
+                        const Track *t = &e->bank.slots[i].trk;
+                        int32_t dx, dy;
+                        if (!e->bank.slots[i].used) continue;
+                        dx = t->x_q8 - e->pending[k].x_q8;
+                        dy = t->y_q8 - e->pending[k].y_q8;
+                        if (dx < 0) dx = -dx;
+                        if (dy < 0) dy = -dy;
+                        if (dx < (8 << 8) && dy < (8 << 8)) { clash = 1; break; }
+                    }
+                    if (!clash && n_cand < 2) {
+                        uint32_t hz;
+                        int32_t wx = e->pending[k].x_q8 - e->warm_x_q8;
+                        int32_t wy = e->pending[k].y_q8 - e->warm_y_q8;
+                        if (wx < 0) wx = -wx;
+                        if (wy < 0) wy = -wy;
+                        if (e->warm_valid && wx < (8 << 8) && wy < (8 << 8))
+                            hz = e->warm_chip_hz_q8;   /* warm reacquire: inherit the proven rate    */
+                        else
+                            hz = acquire_next_rate_q8(&e->acq, &e->cfg,
+                                                      e->pending[k].x_q8, e->pending[k].y_q8);
+                        bank_seed(&e->bank, &e->cfg, 1u /* bench: code B; two-code seeds try both when
+                                  the cube lands */, TRK_SCALE_MEDIUM,
+                                  e->pending[k].x_q8, e->pending[k].y_q8, hz,
+                                  e->epoch_us, fv->t_us);
+                        n_cand++;
+                    }
+                }
+                e->pending_n = 0;
+            }
+            if (!e->sched.inflight && n_cand < 2 &&
+                e->frame_idx >= e->next_acq_frame &&
+                sched_try_begin(&e->sched, e->frame_idx)) {
+                /* the pass runs on THIS frame's data; its results wait for the model's frame */
+                e->pending_n = acquire_pass(&e->acq, fv, e->pending, 1);
+                e->next_acq_frame = e->frame_idx + 25u;
+            }
+        }
     }
 
     /* tick boundaries crossed by this frame's timestamp (usually 0 or 1; catches up after gaps) */

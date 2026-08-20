@@ -13,6 +13,43 @@ At-order verifies: EVN onboard RAM ≥6 MB (T011), Radiant toolchain (new instal
 OV9281 doubles as the trusted focal plane to finish the C-14 lens validation (M12 mount, global shutter,
 no IR-cut after lens swap).
 
+## 042 STAGE 1 EXIT MET single-code (2026-08-19): live ASCII scope at 10 Hz, cold acquisition, 0.000 % deadline misses
+
+`beacon_trackd` (C11 engine: corr/track/bank/agc/sched) running LIVE on the 3A+ against the code-B bench
+emitter ('H' 115 Hz), streaming 20 Hz records over `tcp:4242` to `ascii_scope.py` on the dev box:
+**355/356 scope paints LOCKED** (mean q 0.98) at M2 (7.8, 16.2) — native (336, 232), the independently
+verified beacon pixel — chip 115.00 Hz, fine scale, K=31, `MEASURED_FIX` set. **Cold acquisition** (blink
+detect through the sched budget, no manual seed) locks in a few hundred ms. **Deadline (§11.1): 0/600
+misses, margin min/median +18/+35.7 ms** — under the <0.1 % bar. Replay parity is a golden test (two runs
+byte-identical over a tracked clip) and the same binary cold-acquired code B from a REAL recorded burst
+clip at q=0.99.
+
+**The live-tuning war stories are recorded in-source (track.c/engine.c comments); the ones that will bite
+again:**
+1. **Verify the Pi actually rebuilt.** Two debugging rounds (~45 min) were spent "fixing" a binary that
+   was never rebuilt — `cmake --build --target beacon_trackd` printed "Built target" while running stale
+   code. `touch` the edited file or check for "Building C object" lines. The final fixes all worked on
+   the first properly-built run: **98.3 % lock duty, chip solid at 115.0**.
+2. **DPLL rate adjustment is PARKED (phase adoption only).** Two live attempts destabilised it (naive:
+   walked 115→109 Hz because a rate change rebases `corr_chip_at` across the whole epoch; epoch-re-anchor
+   repair: sprayed 112→129 Hz). Nominal-rate tracking holds q=1.00 — +0.7 % emitter offset accrues 0.2
+   chip over a K=31 window. Rate tracking returns as SIM-FIRST designed work against golden clips.
+3. **Innovation gating is load-bearing indoors**: LED-lamp PWM makes the scene breathe in-band (trap #4)
+   and an aperture-edge pixel occasionally out-peaks the beacon; ungated, one teleport fix kicked v and
+   HOLD extrapolated off the field. Gate = 4·cep floored at 2 M2 px; a wild fix is a coasted tick.
+4. **lock_health watches the last measured PEAK pixel** — the aperture-centre version dipped 0.4→0.2 on
+   sub-pixel straddle with q=1.00, sent healthy tracks to HOLD, and the HOLD-widen bin reset then ate the
+   150 ms re-affirmation window. lock_health is reported but does NOT yet demote (q-only HOLD gate) —
+   spec §2.6 wants it driving the decision; it earns that vote back with the estimator work.
+5. cep must use the same weights as the centroid (flat-top mixed weights saturated cep→256 px and the
+   HOLD cep bound killed tracks in one tick); acquisition episodes must reset on EMPTY passes too, or
+   the first pass (which only primes the diff plane) burns the budget forever.
+
+**Open items for the tail of Stage 1**: T044-T047 (oracle/inject/score + the slew-clip envelope run),
+T050-T053 (RANSAC proto-track, decode-along-track, acquisition off-thread), T057/T058 (two-code — gated
+on the flight cube; false-alarm run), lock_health estimator maturation, DPLL rate loop (sim-first),
+T066-T070 polish (golden vectors from live, retire beacon_track.py, regression entry point).
+
 ## 042 US1 recorder bench-verified (2026-08-19): burst-to-SD at sensor rate, code B decodes from the clip
 
 `beacon_record` (C11 recorder, libcamera Request-based source) verified end-to-end on the 3A+
