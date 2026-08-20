@@ -87,6 +87,28 @@ choice.
 
 ---
 
+## R5-measured (T030, 2026-08-19) — the assumption HOLDS, with one structural correction
+
+Measured on the 3A+ (`taskset -c 3`, RelWithDebInfo, gcc 14):
+
+| kernel | ns/px | G(MAC\|op)/s | note |
+|---|---|---|---|
+| `mac_i16` scalar | 0.82 | **1.23** | the correlator's inner shape — inside R5's 1–2 band pre-NEON |
+| `reduce2` scalar ref | 1.71 | 0.58 | the permanent oracle |
+| `reduce2` NEON | **0.31** | 3.2 | full 640×400 in 0.08 ms — 2 % of the 3.6 ms frame |
+| `reduce4` NEON | **0.31** | 3.2 | |
+| `hipass` NEON (M2 plane) | 6.2 | — | 0.8 ms per M2 plane; acquisition-path only |
+
+**The structural correction (bench-journal 2026-08-19)**: these numbers are for CACHED input. The live
+dmabuf mmap is **write-combine — one uncached 256 KB frame read costs ~4 ms**, slightly more than the
+3.6 ms frame period. Consequences for the §10 budget:
+- **Per-frame tracker work must be ROI-proportional, not field-proportional**: slots extract their small
+  ROIs directly from the raw frame (16 slots × ~576 px ≈ 9 KB of WC reads ≈ 0.15 ms). Anything that
+  touches the full frame every frame is already over budget before it computes.
+- **Full-field passes (acquisition's reduce) cost ~4 ms of WC read each** — which is what the [sched]
+  `acquire_cost_us_per_pass` budget model charges for, so the R3 virtualisation numbers are real.
+- The recorder pays the same wall; that is why bench full-raw is bursts (see bench journal).
+
 ## R6 — Threading: four pinned roles, SPSC rings, no locks in the hot path
 
 **Decision**: core 0 OS + libcamera; core 1 capture + fused front end (`SCHED_FIFO`); core 2 bank/track

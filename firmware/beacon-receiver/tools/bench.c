@@ -12,6 +12,8 @@
  * inner loop and therefore the number R5 is actually about.
  */
 #define _POSIX_C_SOURCE 199309L
+#include "reduce.h"
+#include "hipass.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -92,6 +94,29 @@ static int bench_kernels(void)
     t0 = now_ns();
     for (r = 0; r < REPEATS; r++) sinku += k_reduce2x2_ref(img, 640, 400, out);
     report("reduce2x2 (scalar)", now_ns() - t0, (double)N_PIX * REPEATS, (size_t)N_PIX * REPEATS);
+
+    /* T028's kernels, per T030: the numbers of record vs R5. u16 outputs land in `out` reinterpreted. */
+    t0 = now_ns();
+    for (r = 0; r < REPEATS; r++) { reduce2_scalar(img, 640, 640, 400, (uint16_t *)out); sinku += ((uint16_t *)out)[1]; }
+    report("reduce2 (ref)", now_ns() - t0, (double)N_PIX * REPEATS, (size_t)N_PIX * REPEATS);
+#if defined(__aarch64__)
+    t0 = now_ns();
+    for (r = 0; r < REPEATS; r++) { reduce2_neon(img, 640, 640, 400, (uint16_t *)out); sinku += ((uint16_t *)out)[1]; }
+    report("reduce2 (NEON)", now_ns() - t0, (double)N_PIX * REPEATS, (size_t)N_PIX * REPEATS);
+    t0 = now_ns();
+    for (r = 0; r < REPEATS; r++) { reduce4_neon(img, 640, 640, 400, (uint16_t *)out); sinku += ((uint16_t *)out)[1]; }
+    report("reduce4 (NEON)", now_ns() - t0, (double)N_PIX * REPEATS, (size_t)N_PIX * REPEATS);
+    {   /* hipass runs on the M2 plane (320x200), which is its real workload */
+        uint16_t *m2 = malloc(320 * 200 * sizeof *m2);
+        int32_t *hp = malloc(320 * 200 * sizeof *hp);
+        int i;
+        for (i = 0; i < 320 * 200; i++) m2[i] = (uint16_t)(i & 0x3FF);
+        t0 = now_ns();
+        for (r = 0; r < REPEATS; r++) { hipass_neon(m2, 320, 200, hp); sinku += (uint32_t)hp[321]; }
+        report("hipass M2 (NEON)", now_ns() - t0, (double)320 * 200 * REPEATS, (size_t)320 * 200 * REPEATS);
+        free(m2); free(hp);
+    }
+#endif
 
     printf("\n  (sinks %d %u — printed only so the optimiser cannot delete the loops)\n", sink32, sinku);
     printf("\n  NEON front end (T028) and its scalar-equivalence check (T029) register here as they land;\n"

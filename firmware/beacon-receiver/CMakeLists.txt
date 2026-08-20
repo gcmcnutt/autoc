@@ -10,6 +10,14 @@ add_library(beacon_core STATIC
   src/core/config.c
   src/core/record.c
   src/core/container.c
+  src/core/reduce.c
+  src/core/hipass.c
+  src/core/corr.c
+  src/core/track.c
+  src/core/bank.c
+  src/core/agc.c
+  src/core/sched.c
+  src/core/engine.c
 )
 set_target_properties(beacon_core PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
 target_include_directories(beacon_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
@@ -69,7 +77,11 @@ set(BR_TESTS
   unit/test_versions
   unit/test_container
   unit/test_replay
+  unit/test_kernels
+  unit/test_corr
+  equivalence/test_kernels_neon
   golden/test_record_vectors
+  golden/test_replay_parity
 )
 
 foreach(t IN LISTS BR_TESTS)
