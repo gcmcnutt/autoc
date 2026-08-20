@@ -150,11 +150,34 @@ different mechanisms:
 | goal | mechanism | needs a migration? |
 |---|---|---|
 | **Detect latent faults early** | **one command invokes all target builds and propagates failure** — `add_custom_target(xiao COMMAND pio run …)` under a top-level `all-targets`. CMake need not *understand* PlatformIO, only run it. | **No** |
-| **Prevent interface drift between targets** | **shared code in one place, compiled by every target that uses it, with compile-time ABI assertions** (`static_assert` on struct size and field offsets) | No — but it constrains where code lives |
+| **Prevent interface drift between targets** | **share the *contract*, not the code — and give the contract golden byte vectors** (below) | No |
 
-The second is the higher-value one and it is why `core/` has zero dependencies: so it compiles *anywhere*,
-including eventually on the xiao, which is the record's consumer and will likely share a box with the
-receiver (R13). A stale xiao then fails to **compile** rather than producing a wrong number at 20 Hz.
+### Contracts at arm's length, with teeth (operator 2026-08-19 — corrects an earlier draft)
+
+*"The kicker is shared headers wind up being sprinkled with `#ifdef xiao` and other things … maybe
+arm's-length contracts like we have with INAV."*
+
+**This is right, and it replaces the "shared code compiled by every target" mechanism this plan first
+proposed.** A shared header only delivers its `static_assert` guarantee if both sides compile *the same
+header* — which is exactly what breeds the `#ifdef` thicket. The ATtiny412 settles it alone: 8-bit `int`
+and different alignment mean any struct it shares needs conditionals from the first day.
+
+**The mechanism instead**: the contract is a *data description* (`contracts/record-wire-format.md`), and it
+emits **golden byte vectors** — canonical encoded records with known field values. Every implementation
+(Pi, xiao, autoc-side analysis) runs the same vectors through its **own hand-written codec** in its **own**
+test suite. Drift fails a test on whichever side is stale, with **zero shared source, zero `#ifdef`, zero
+build coupling.**
+
+This is MSP's arm's-length property with MSP's one weakness removed: MSP drift is caught at runtime, golden
+vectors catch it at test time.
+
+**When a shared header is still acceptable** — a narrow rule, because the exceptions are what rot:
+fixed-width types only · explicit little-endian · explicit padding · no bitfields · no enums as storage ·
+no platform includes. **If it needs one `#ifdef`, it has failed the test and becomes a contract.** The
+beacon-pod never shares a header.
+
+`static_assert` keeps a smaller, still-useful job: locking layout **within one implementation**, so an
+accidental field edit is caught locally. It is not the cross-target mechanism.
 
 **Tiering makes it practical** — a naive build-everything is slow, needs network, and needs Windows:
 
@@ -175,9 +198,12 @@ separate verification commands — the doc both mandates unification and acknowl
 meta-target is real, Principle II can collapse to one command. That is an amendment to make **when the
 mechanism exists**, not before. Filed to `specs/BACKLOG.md`.
 
-**042's obligations under this** (tasks T002a/T002b, T006a): declare targets in the top-level CMakeLists
-(already Constitution IV); expose the tier-0 / tier-1 structure; put `static_assert` ABI checks on the
-record struct so any future consumer — xiao included — fails at compile time.
+**042's obligations — baby steps, per the operator.** There is no second implementation of the record
+until Stage 3/4, so nothing cross-target gets built now: declare targets in the top-level CMakeLists
+(Constitution IV already); expose the tier-0 / tier-1 structure (T002a/T002b); lock layout locally with
+`static_assert` (T006a); and **emit golden byte vectors as a byproduct of test work already planned**
+(T006b). The vectors sit unused until something else reads a record — which is the point: the cheap half
+is done early, the machinery waits for a real consumer.
 
 ## Stages — hardware-gated delivery (operator 2026-08-19)
 

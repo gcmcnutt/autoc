@@ -2342,9 +2342,14 @@ hardware-attached). The retrofit is the remaining work:
 - Wrap `xiao` (PlatformIO) and `firmware/beacon-pod` (avr-gcc Makefile) as CMake custom targets under
   `all-targets`, propagating exit codes. **No migration required** — CMake invokes, it does not need to
   understand them.
-- Move genuinely shared declarations (record struct, Gold tables, NN01 format) into a `shared/` tier
-  compiled by every target that uses it, with `static_assert` ABI checks. **This is the higher-value half**
-  — it turns cross-target drift into a compile error instead of a wrong number in flight.
+- **Contracts at arm's length, not shared headers** (operator 2026-08-19: *"shared headers wind up being
+  sprinkled with `#ifdef xiao` … maybe arm's-length contracts like we have with INAV"*). Each interface
+  (record stream, NN01 format, Gold tables) gets a contract document that emits **golden byte vectors**;
+  every implementation verifies against the same vectors with its **own** codec, in its **own** test suite.
+  Zero shared source, zero `#ifdef`, zero build coupling — MSP's separation with MSP's runtime-only drift
+  detection fixed. A shared header is permitted only if it is pure data description (fixed-width, explicit
+  endianness and padding, no bitfields, no enums-as-storage, no platform includes); **one `#ifdef` means it
+  should have been a contract**. The ATtiny412 (8-bit `int`, different alignment) never shares a header.
 - `stepfpga` stays tier 2 (Diamond is GUI-oriented, licensed, Windows-hosted; the FPGA route is parked).
 - Constraint: avr-gcc on the ATtiny412 is 8-bit — anything shared down to the pod needs strict `stdint`
   discipline.
