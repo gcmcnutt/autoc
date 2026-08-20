@@ -217,6 +217,10 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(tracker_stepper_init_tests tests/tracker_stepper_init_tests.cc)
   target_link_libraries(tracker_stepper_init_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(nn_input_scaling_tests tests/nn_input_scaling_tests.cc)
+  target_link_libraries(nn_input_scaling_tests GTest::gtest GTest::gtest_main autoc_common)
+  add_test(NAME nn_input_scaling_tests COMMAND nn_input_scaling_tests)
+
   add_executable(arena_tests tests/arena_tests.cc)
   target_link_libraries(arena_tests GTest::gtest GTest::gtest_main autoc_common)
   # 041 P2-3 — arena_tests reads the crrcsim launch XMLs to check they agree with

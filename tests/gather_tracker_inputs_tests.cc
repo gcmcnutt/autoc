@@ -81,11 +81,13 @@ TEST(GatherTrackerInputs, FillsAircraftStateFieldsFromAircraftState) {
     EXPECT_FLOAT_EQ(out.common.quat_x, 0.0f);
     EXPECT_FLOAT_EQ(out.common.quat_y, 0.0f);
     EXPECT_FLOAT_EQ(out.common.quat_z, 0.0f);
-    // ⚠️ 041 P2-1: RAW m/s, not cruise-normalized. Pre-041 M1 fed raw and M2 fed
-    // relVel / kCruiseSpeed_mps — the same "shared" slot carrying two different
-    // scales, which is exactly the divergence the shared CraftCommonInputs
-    // sub-struct exists to make impossible. Unified on raw.
-    EXPECT_FLOAT_EQ(out.common.airspeed, 12.5f);
+    // 041 P2-8: CRUISE-NORMALIZED, both modes. The shared CraftCommonInputs
+    // sub-struct still makes an M1/M2 divergence impossible — P2-1 unified the
+    // slot on RAW, P2-8 keeps the unification but on the SCALED side, because
+    // raw m/s made this input 35x louder than SPECIFIC_ENERGY and the quiet
+    // slots were never selected on (t5: throttle pegged 99.3% of ticks).
+    // Written as physical/scale so the intent survives a constant change.
+    EXPECT_FLOAT_EQ(out.common.airspeed, 12.5f / kCruiseSpeed_mps);
 }
 
 TEST(GatherTrackerInputs, DistToBoundaryComputedFromArenaAndVelocity) {

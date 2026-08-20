@@ -414,6 +414,18 @@ capacity is not the constraint. Settled; reopen only on new evidence.
   *good fitness with less aggressiveness*, with energy as the indicator. Refine after the strategy shows
   signal. (was TD08)
 
+- [ ] P2-9 ⛔ **nn2cpp must bake a SCALE SIGNATURE, not just an input count.** Found 2026-08-20 while
+  applying P2-8. `nn2cpp` emits `static_assert(kGeneratedNNInputCount == NN_INPUT_COUNT)`, which catches a
+  LAYOUT change — but P2-8 changed input SCALES with the layout untouched (still float[45]). A genome baked
+  before P2-8 therefore has the right count and the wrong units: it compiles clean, passes the assert, and
+  flies wrong. That is precisely the silent-failure class the count assert was added to prevent, one level
+  down.
+  * Emit the four P2-8 constants plus `kAccelScale_g` / `kEnergyScale_m` / `kScoreGradScale` /
+    `kDistToBoundaryScale_m` into the generated header, and `static_assert` each against the live value.
+  * ⚠️ **Do this at flight-prep time, NOT during a bake** — it touches `tools/nn2cpp.cc`, and rebuilding
+    overwrites `build/autoc`, which the workers re-exec. `nn2cpp` is not needed until Phase 6 anyway.
+  * Deferred deliberately at 2026-08-20 so the t7 rebuild was not disturbed.
+
 ## Phase 5 — HARDWARE LONG-LEAD ⭐ **STARTS NOW, IN PARALLEL WITH THE BAKE**
 
 ➕ **Added 2026-08-18 (operator)**: *"we have an inav extension backlog item to get additional sensor data

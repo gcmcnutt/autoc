@@ -9,6 +9,7 @@
 //
 //   - Cruise-normalized airspeed: hb1 cruises ~13 m/s; chase at cruise ⇒ 1.0.
 //     Replaces raw m/s. Range becomes ≈ [0, 2].
+//     ⚠️ 041 P2-2 briefly reverted this to raw for BOTH modes; P2-8 restored it.
 //
 //   - Soft-saturated dist_to_boundary: cylinder always contains chase in sim
 //     (top + ceiling), so distanceToBoundary ≥ 0 by construction. Raw meters
@@ -26,6 +27,48 @@
 // unchanged.
 constexpr float kCruiseSpeed_mps = 13.0f;
 constexpr float kDistToBoundaryScale_m = 20.0f;
+
+// ============================================================================
+// 041 P2-8 (2026-08-20) — FINISH THE JOB 030 STARTED. Scale the four remaining
+// raw-units inputs so every slot reaches the first layer on comparable footing.
+//
+// ⛔ WHY THIS IS NOT TUNING. A unit sees Σ wᵢxᵢ, so an input's influence is
+// weight × SPREAD, not weight alone. Measured over 131,493 t5 ticks the spread
+// ran from 7.53 (CLOSING_RATE, raw m/s) down to 0.036 (DIST_TO_BOUNDARY) — a
+// 200× span. With Xavier init every weight starts comparable, so the small-scale
+// slots start ~100× quieter, and NNSigmaFloor=0.05 is the SAME mutation step for
+// every weight. Reaching a useful weight on a quiet slot is therefore a long
+// random walk whose every intermediate step is fitness-neutral: no gradient, no
+// selection, no arrival. The weight data shows exactly that — across t5 gens
+// 1→475 every input's investment sat at ~1.0 and eff_rank went 11.2 → 10.9. The
+// network never differentiated between its inputs AT ALL.
+//
+// ⭐ So this does not move the optimum, it makes terms REACHABLE. 041's premise
+// was "the policy cannot observe its own energy"; we added SPECIFIC_ENERGY and
+// left it below the search's own noise floor. Symptom: throttle pegged 99.3% of
+// ticks (prior M1: 37.7%) — with no usable energy signal, "more thrust is never
+// worse" is correct.
+//
+// ⚠️ 041 P2-2 made this worse rather than better: it "unified" AIRSPEED on RAW,
+// which discarded the cruise-normalization 030 M11.preA.2 had deliberately given
+// tracker mode (see the block above). This restores it and applies the same
+// treatment to the other three, so the shared block is consistent in BOTH modes.
+//
+// Scales are p95 of |x| over that same t5 tick set, rounded — the derivation
+// already used for kEnergyScale_m and kScoreGradScale. AIRSPEED reuses the
+// existing physical constant rather than adding a fifth.
+//     DIST         p95 25.87 →  26.0 m
+//     CLOSING_RATE p95 15.93 →  16.0 m/s
+//     GYRO         p95  6.17 →   6.0 rad/s
+//     AIRSPEED     ÷ kCruiseSpeed_mps (13.0) — chase at cruise ⇒ 1.0
+//
+// ⛔ BREAKING for trained weights, deliberately. Genomes trained against raw
+// dist/airspeed/gyro are NOT portable across this change (greenfield, no
+// backward compat per project policy). Layout is UNCHANGED — still float[45] /
+// float[66] — so no schema bump and no nn2cpp count change.
+constexpr float kTargetDistScale_m    = 26.0f;
+constexpr float kClosingRateScale_mps = 16.0f;
+constexpr float kGyroScale_radps      = 6.0f;
 
 // 041 T032 — ACCEL_* normalization. Body specific force is divided by this, so
 // the channel carries "g's, scaled". Sized from the observed envelope rather
@@ -168,8 +211,8 @@ struct CraftCommonInputs {  // raw-ok: NN-byte-format struct, all members fp32 b
     float quat_x;            // raw-ok: NN-byte-format buffer
     float quat_y;            // raw-ok: NN-byte-format buffer
     float quat_z;            // raw-ok: NN-byte-format buffer
-    float airspeed;          // raw-ok: NN-byte-format buffer — RAW m/s (see divergence note above)
-    float gyro_p;            // raw-ok: NN-byte-format buffer — rad/s, body, aerospace RHR
+    float airspeed;          // raw-ok: NN-byte-format buffer — ÷ kCruiseSpeed_mps (041 P2-8)
+    float gyro_p;            // raw-ok: NN-byte-format buffer — rad/s ÷ kGyroScale_radps, body, aerospace RHR
     float gyro_q;            // raw-ok: NN-byte-format buffer
     float gyro_r;            // raw-ok: NN-byte-format buffer
     // The other half of the IMU. Body-frame specific force INCLUDING gravity
@@ -257,8 +300,8 @@ struct NNInputs {
     float target_x[6];   // body-frame unit-vec x component (was dPhi)
     float target_y[6];   // body-frame unit-vec y component (was dTheta partial)
     float target_z[6];   // body-frame unit-vec z component (NEW)
-    float dist[6];       // m, euclidean distance to rabbit
-    float closing_rate;  // m/s, positive = approaching
+    float dist[6];       // m ÷ kTargetDistScale_m (041 P2-8), distance to rabbit
+    float closing_rate;  // m/s ÷ kClosingRateScale_mps (041 P2-8), + = approaching
     // ----- CRAFT STATE (20 slots) — one definition, shared with TrackerInputs
     CraftCommonInputs common;
 };

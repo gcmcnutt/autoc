@@ -345,17 +345,24 @@ static void writeCraftCommonInputs(const AircraftState& state,
         out.quat_z = static_cast<float>(q.z());  // raw-ok: NN-byte-format slot write
     }
 
-    // ⚠️ RAW m/s, both modes. Pre-041 M1 fed raw m/s and M2 fed
-    // relVel / kCruiseSpeed_mps — the same "shared" slot carrying two different
-    // scales. Unified on raw here per the input-vector proposal; M2 retrains
-    // across the boundary regardless, so the divergence is fixed for free.
-    out.airspeed = static_cast<float>(state.getRelVel());  // raw-ok: NN-byte-format slot write
+    // 041 P2-8 — CRUISE-NORMALIZED, both modes. Chase at cruise ⇒ 1.0.
+    // ⛔ This REVERSES P2-2's "unify on raw". P2-2 resolved the M1(raw)/M2(cruise)
+    // split by taking the M1 side, which quietly discarded the normalization 030
+    // M11.preA.2 had given tracker mode on purpose. Raw m/s put this slot at
+    // stdev 3.16 against SPECIFIC_ENERGY's 0.090 — 35× louder — so the energy
+    // channel never got selected on. Same slot, same both-modes unification,
+    // scaled side instead of raw side.
+    out.airspeed = static_cast<float>(state.getRelVel()) / kCruiseSpeed_mps;  // raw-ok: NN-byte-format slot write
 
+    // 041 P2-8 — body rates scaled by kGyroScale_radps (p95 |x| = 6.17 rad/s over
+    // the t5 tick set). Raw rad/s ran stdev 2.24 with 51-91% of ticks outside
+    // [-1,1] per axis, which both drowned the quiet slots and pushed the first
+    // layer toward tanh saturation.
     {
         const gp_vec3 gyro = state.getGyroRates();
-        out.gyro_p = static_cast<float>(gyro.x());  // raw-ok: NN-byte-format slot write
-        out.gyro_q = static_cast<float>(gyro.y());  // raw-ok: NN-byte-format slot write
-        out.gyro_r = static_cast<float>(gyro.z());  // raw-ok: NN-byte-format slot write
+        out.gyro_p = static_cast<float>(gyro.x()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
+        out.gyro_q = static_cast<float>(gyro.y()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
+        out.gyro_r = static_cast<float>(gyro.z()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
     }
 
     // Body-frame specific force, g → NN units.
@@ -430,18 +437,27 @@ void gather_pathgen_inputs([[maybe_unused]] PathProvider& pathProvider,
         inputs.target_z[i] = static_cast<float>(dir.z());
     }
 
-    // dist[0-5]: past history (raw metres)
+    // dist[0-5]: past history, scaled by kTargetDistScale_m (041 P2-8; p95 |x| =
+    // 25.87 m over the t5 tick set). Was RAW metres at stdev 7.17 — the second
+    // loudest input in the vector. Linear (not tanh) so the ratio structure the
+    // tracking cone depends on survives at every range.
     for (int i = 0; i < 6; i++)
-        inputs.dist[i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[i]));
+        inputs.dist[i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[i]))
+                         / kTargetDistScale_m;
 
     // closing_rate: dDist/dt (m/s, positive = approaching). 037 T019: the
     // rate spans the NOW↔TM1 lag gap (100 ms at EVERY cadence by the R5
     // table) and divides by that actual gap — the former /0.1f literal was
     // an implicit one-tick assumption that only held at 10 Hz.
     {
+        // 041 P2-8 — computed from RAW metres, then scaled by
+        // kClosingRateScale_mps (p95 |x| = 15.93 m/s). ⚠️ Deliberately NOT
+        // derived from the now-scaled inputs.dist[] above: that would divide by
+        // kTargetDistScale_m and silently change this channel's units.
         float dist_now  = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[5]));
         float dist_prev = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[4]));
-        inputs.closing_rate = (dist_prev - dist_now) / kNNHistoryRecentGapSec;
+        inputs.closing_rate = ((dist_prev - dist_now) / kNNHistoryRecentGapSec)
+                              / kClosingRateScale_mps;
     }
 
     // ----- CRAFT STATE (25..44) — the shared block, written once -----
