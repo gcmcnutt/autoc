@@ -88,10 +88,16 @@ can never de-peg the stick. That test would have failed on the P2-5 axis.
 ## 5. ⚠️ What this does NOT explain — open before the next bake
 
 **041-t1 ran the OLD throttle axis and still reached only 16.1%**, against the prior M1's 30.9%. So
-something besides the energy axis regressed between 038-t5 and 041-t1, and restoring the axis does not
-address it. Candidates, none yet tested:
+something besides the energy axis differs between 038-t5 and 041-t1, and restoring the axis does not
+address it. ⚠️ Note the word is *differs*, not *regressed* — see item 1, which offers a reading under which
+nothing is broken at all. Candidates, none yet tested:
 
-1. the 37 → 42 input-vector change (US4: envelope pair + accel);
+1. ⭐ **the input-vector growth (37 → 45), operator's reading 2026-08-19**: *"the 16% could be because
+   larger search space, recurrent layer filling up"* — i.e. NOT a defect but a **capacity/search cost**. A
+   wider input layer enlarges the weight space the GA must search, and a recurrent layer takes longer to
+   settle useful state, so a slower climb at equal generation count is the EXPECTED shape rather than a
+   regression to hunt. ⚠️ This reading is testable and currently untested: it predicts t1 would have caught
+   up given more generations, where a defect would predict a permanent ceiling. Do not treat it as settled;
 2. `VariationRampStep` 0 — full variation from gen 1, new at 041 versus 034/035 (operator has decided this
    stays off, so it becomes a known difference rather than a suspect to remove);
 3. the arena move (t4 only — t1 predates it).
