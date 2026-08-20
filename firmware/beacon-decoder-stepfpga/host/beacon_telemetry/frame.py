@@ -26,10 +26,17 @@ from dataclasses import dataclass, fields as _fields
 MAGIC = "BCN"
 LOCK_NAMES = {0: "no_lock", 1: "tentative", 2: "confirmed"}   # the §3.6 lock ladder
 # (A4d-2 ½-word "candidate" tier investigated & deferred — too false-alarm-prone at N=31; see DESIGN.md §5.)
+import os
+
 RATE_BIAS = 32768          # offset-binary zero point
 RATE_SCALE = 32           # internal IIR scaling (slip << 5)
 N_CHIPS = 31              # gateware code length (keep in sync with s3.v localparam N)
-SAMPLE_HZ = 480.0
+# Gateware sample tick — the ONLY constant that differs between the 200 Hz flight-nominal build
+# (+define+CHIP200 in s7.v: 480 Hz) and the ~115 Hz camera-era build (43480 -> 276 Hz). It MUST match
+# the bitstream actually flashed, or every chip_rate/slip number below is silently wrong rather than
+# obviously broken. Default stays 480.0 because that is what is on the board today; flip it (or export
+# BEACON_SAMPLE_HZ=276) the moment the 115 Hz bitstream is flashed.
+SAMPLE_HZ = float(os.environ.get("BEACON_SAMPLE_HZ", 480.0))
 NOM_SAMPLES_PER_PERIOD = round(2.4 * N_CHIPS)   # L in the gateware (74 for N=31)
 
 
