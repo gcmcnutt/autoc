@@ -68,6 +68,8 @@ typedef struct {
     /* aperture sampling: per-pixel chip bins. bins[(py*E+px)*TRK_WIN + b] */
     uint16_t native_w, native_h;       /* frame geometry — needed to convert centre-origin M2 coords
                                         * to top-left plane px and back (parsed from cfg at seed)       */
+    uint8_t  m2_div;                   /* native px per M2 px: 2 for 640-wide, 1 for 320-wide — the
+                                        * record grid is ALWAYS the 320x200 @~0.3°/px NN contract       */
     uint8_t  extent;                   /* E, plane px per side, from config scale_extents[scale]        */
     int16_t  roi_cx, roi_cy;           /* plane-px centre the ROI was extracted at (integer)            */
     int32_t  bins[TRK_MAX_EXTENT * TRK_MAX_EXTENT * TRK_WIN];

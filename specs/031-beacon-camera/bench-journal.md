@@ -13,6 +13,39 @@ At-order verifies: EVN onboard RAM ≥6 MB (T011), Radiant toolchain (new instal
 OV9281 doubles as the trusted focal plane to finish the C-14 lens validation (M12 mount, global shutter,
 no IR-cut after lens swap).
 
+## OV9281 sensor-speed findings (2026-08-21, Pi 5 register lab): the fast-fps numbers were fiction; measured ceiling ~290-310 fps full-FOV
+
+Driven by the 320x200@480 NN contract. Method: patched `ov9282.c` modes (4-minute build-install-reboot
+cycles on beaconpi5), honest per-frame timestamps (`--save-pts` / bcnr dt stats), never the mode table.
+
+**Measured facts:**
+1. **640x400: request 300 -> 288.5 fps delivered** (0.96 factor); >=305 wedges the sensor (one frame then
+   silence — FrameDurationLimits below the mode's REAL floor).
+2. **640x200 "588.93 fps" mode: caps at ~288 fps** — its register set reads the FULL 800-row window and
+   crops the OUTPUT; readout time never changed. The advertised number was driver arithmetic.
+3. **320x200 "744.60 fps" mode: delivers 0.319x its commanded rate** (rock-stable +/-2 us jitter),
+   ceiling ~237 fps. Line-length bookkeeping (hblank_min carried from the 640 modes) does not match the
+   sensor's real timing domain in this configuration.
+4. **Skip-4 both axes (odd/even inc {7,1}, full window, native 320x200 out): row time ~DOUBLES vs binned
+   modes** (~17.9 us vs ~9) — decimation bought output-pixel reduction, not readout speed. Ceiling again
+   ~237 fps.
+5. Conclusion consistent with HIGH-FPS-PLAN's 2026-08-16 finding (InnoMaker "453 fps" has no shipped
+   mode): **on mainline PLL settings this silicon does ~290-310 fps full-FOV, at any output geometry.**
+   Faster requires raising SCLK/PLL (0x0302-family) — genuine overclock, undocumented margin — or more
+   cameras.
+
+**Paths forward, as presented to the operator (2 owns the recommendation):**
+1. PLL overclock experiments (bounded, risky, fragile cement).
+2. **Dual-camera phase interleave: two OV9281s on the Pi 5's two CSI ports, FSIN-triggered 180 degrees
+   out of phase -> 576 effective samples/s** with zero silicon risk. Matches the flight birded-pair
+   architecture; the modules' external-trigger pins are the feature InnoMaker actually ships. Both
+   cameras exist (order BOM). Cost: bird config, mass, a sync harness.
+3. Re-derive the contract at measured reality: 288.5/2.4 = 120 Hz chips ('F'-trim reachable), or 2.0
+   samples/chip at 144 Hz.
+
+Driver lab assets: `pi/ov9282-patched.c` (repo) = the live module source; build recipe = kbuild Makefile
+in `~/ov9282-build` on beaconpi5; stock module preserved as `ov9282.ko.xz.stock`.
+
 ## Pi 5 Phase 3: camera ported to pisp, live tracking at 80 % daylight duty (2026-08-20 afternoon)
 
 **Camera**: on beaconpi5 CAM0 (`dtoverlay=ov9281,cam0`), refocused. Mode table tops at 640×400 R8

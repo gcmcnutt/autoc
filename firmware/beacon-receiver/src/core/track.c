@@ -25,17 +25,17 @@ static uint8_t scale_factor(uint8_t scale)
 static int32_t plane_q8_to_m2_q8(const Track *t, int32_t plane_q8, uint8_t f)
 {
     int32_t centered = plane_q8 - (((int32_t)(t->native_w / f) / 2) << 8);
-    return f == 2 ? centered : f == 4 ? centered * 2 : centered / 2;
+    return centered * f / t->m2_div;
 }
 static int32_t plane_q8_to_m2_q8_y(const Track *t, int32_t plane_q8, uint8_t f)
 {
     int32_t centered = plane_q8 - (((int32_t)(t->native_h / f) / 2) << 8);
-    return f == 2 ? centered : f == 4 ? centered * 2 : centered / 2;
+    return centered * f / t->m2_div;
 }
 static int32_t m2_q8_to_plane_px(const Track *t, int32_t m2_q8, uint8_t f, int is_y)
 {
     int32_t dim = is_y ? t->native_h : t->native_w;
-    return ((m2_q8 * 2 / f) >> 8) + (int32_t)(dim / f) / 2;
+    return ((m2_q8 * t->m2_div / f) >> 8) + (int32_t)(dim / f) / 2;
 }
 
 void track_seed(Track *t, const BcnConfig *cfg, uint8_t code_id, uint8_t scale,
@@ -46,6 +46,7 @@ void track_seed(Track *t, const BcnConfig *cfg, uint8_t code_id, uint8_t scale,
     sscanf(cfg->camera_mode, "%ux%u", &w, &h);
     t->native_w = (uint16_t)w;
     t->native_h = (uint16_t)h;
+    t->m2_div = (uint8_t)(w >= 640 ? 2 : 1);   /* 640-wide: M2 = native/2. 320-wide: native IS M2. */
     t->code_id = code_id;
     corr_template(code_id ? cfg->code_b_bits : cfg->code_a_bits, t->tmpl);
     t->chip_hz_q8 = chip_hz_q8;
@@ -338,7 +339,7 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
                     int32_t var_q8 = (int32_t)((m2s_w << 8) / wt / 2);
                     /* cep is a SIZE, not a position — scale only, no origin shift */
                     int32_t cep = (var_q8 > 0 ? var_q8 : 26);
-                    cep = f == 2 ? cep : f == 4 ? cep * 2 : cep / 2;
+                    cep = cep * f / t->m2_div;
                     t->cep_q8 = (uint16_t)(cep > 0xFFFF ? 0xFFFF : cep < 26 ? 26 : cep);
                 }
 

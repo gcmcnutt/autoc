@@ -26,6 +26,7 @@ typedef struct {
     uint16_t prev[160 * 100];
     uint8_t  prev_valid;
     uint16_t plane_w, plane_h;
+    uint8_t  m2_mul;           /* M2 px per coarse-plane px: 1280/native_w (2 for 640-wide, 4 for 320) */
     /* T051 rate policy: nominal FIRST (it is nominal for a reason), rotate only when re-seeding a
      * previously-starved location — so a live emitter reset to 200 Hz (the volatile-'H' trap, 031 #2)
      * costs a few starve-reseed rounds, while the common case locks on the first try. */

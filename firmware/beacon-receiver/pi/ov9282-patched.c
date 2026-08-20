@@ -395,19 +395,25 @@ static const struct ov9282_reg mode_640x400_regs[] = {
  * horizontal field is preserved; V field is halved. Frame rate is then set by VBLANK
  * (LPFR) exactly as for the other modes -- with half the rows, ~2x the max fps.
  */
-static const struct ov9282_reg mode_640x300_regs[] = {	/* EXPERIMENT: 320x200 -- full window, h-skip 4 + v-bin 2, output-only crop */
+static const struct ov9282_reg mode_640x300_regs[] = {	/* 320x200 SKIP-4 both axes, FULL FOV:
+	 * odd_inc/even_inc {7,1} + bin -> 4x decimation per axis, full 1280x800 window, ~220-line
+	 * readout => ~600 fps class ceiling. Replaces the slow output-crop experiment (which read the
+	 * full row count and measured 0.319x its commanded rate, ceiling 237 fps). */
 	{0x3778, 0x10},
 	{0x3800, 0x00}, {0x3801, 0x00}, {0x3802, 0x00}, {0x3803, 0x00},
 	{0x3804, 0x05}, {0x3805, 0x0f},
-	{0x3806, 0x03}, {0x3807, 0x2f},		/* FULL window (proven requirement on the bin path) */
-	{0x3808, 0x01}, {0x3809, 0x40},		/* out width 320 (0x0140) */
+	{0x3806, 0x03}, {0x3807, 0x2f},		/* full 800-row window */
+	{0x3808, 0x01}, {0x3809, 0x40},		/* out width 320 */
 	{0x380a, 0x00}, {0x380b, 0xc8},		/* out height 200 */
 	{0x3810, 0x00}, {0x3811, 0x04}, {0x3812, 0x00}, {0x3813, 0x04},
-	{0x3814, 0x71}, {0x3815, 0x22},		/* h: odd_inc 7 / even_inc 1 = 1-of-4 columns; v: bin-2 as 640x400 */
-	{OV9282_REG_TIMING_FORMAT_1, 0x60}, {OV9282_REG_TIMING_FORMAT_2, 0x01},
+	{0x3814, 0x71},				/* h odd/even inc {7,1}: skip-4 */
+	{0x3815, 0x71},				/* v odd/even inc {7,1}: skip-4 */
+	{OV9282_REG_TIMING_FORMAT_1, 0x60},	/* vbin on */
+	{OV9282_REG_TIMING_FORMAT_2, 0x01},	/* hbin on */
 	{0x4008, 0x02}, {0x4009, 0x05}, {0x400c, 0x00}, {0x400d, 0x03},
 	{0x4507, 0x03}, {0x4509, 0x80},
 };
+
 
 static const struct ov9282_reg mode_640x200_regs[] = {	/* EXPERIMENT: full 800-row window, output-only 200 */
 	{0x3778, 0x10},

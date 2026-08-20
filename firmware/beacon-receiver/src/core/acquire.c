@@ -13,6 +13,7 @@ void acquire_init(Acquire *a, const BcnConfig *cfg)
     sscanf(cfg->camera_mode, "%ux%u", &w, &h);
     a->plane_w = (uint16_t)(w / 4u);
     a->plane_h = (uint16_t)(h / 4u);
+    a->m2_mul = (uint8_t)(1280u / w);          /* coarse plane -> M2: x2 at 640-wide, x4 at 320-wide */
 }
 
 uint32_t acquire_next_rate_q8(Acquire *a, const BcnConfig *cfg, int32_t x_q8, int32_t y_q8)
@@ -74,8 +75,8 @@ uint8_t acquire_pass(Acquire *a, const FrameView *fv, AcqSeed *seeds, uint8_t ma
         {
             uint16_t px = (uint16_t)(best_i % W), py = (uint16_t)(best_i / W);
             /* coarse plane px -> M2 centre-origin q8: m2 = (plane - W/2) * 2 */
-            seeds[found].x_q8 = ((int32_t)px - W / 2) * 2 * 256;
-            seeds[found].y_q8 = ((int32_t)py - H / 2) * 2 * 256;
+            seeds[found].x_q8 = ((int32_t)px - W / 2) * a->m2_mul * 256;
+            seeds[found].y_q8 = ((int32_t)py - H / 2) * a->m2_mul * 256;
             seeds[found].strength = best > 0xFFFF ? 0xFFFF : (uint16_t)best;
             found++;
             /* null out a 3x3 neighbourhood so the next-strongest is a DIFFERENT blinker */

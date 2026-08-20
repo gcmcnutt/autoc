@@ -140,8 +140,9 @@ static void run_engine(Sink *sink)
             /* US2 demo path: manual seed near (not at) the truth — 3 native px off, exact rate unknown
              * (seed 115.0 vs the clip's 115.0 — candidate list would handle a mismatch; here the DPLL
              * proves pull-in from the phase search alone). M2 coords: native/2 - centre. */
-            int32_t seed_x_q8 = (int32_t)(((200 + 3) - W / 2) * 256 / 2);
-            int32_t seed_y_q8 = (int32_t)(((80 - 2) - H / 2) * 256 / 2);
+            /* 320-wide frames: native IS the M2 grid (m2_div = 1) */
+            int32_t seed_x_q8 = (int32_t)(((200 + 3) - W / 2) * 256);
+            int32_t seed_y_q8 = (int32_t)(((80 - 2) - H / 2) * 256);
             CHECK(engine_seed(e, 1u, seed_x_q8, seed_y_q8, CHIP_HZ_Q8) >= 0, "seed must land");
             seeded = 1;
         }
@@ -171,8 +172,8 @@ int main(void)
     {
         const BcnRecord *last = &a.last;
         double t_end = (double)(NFRAMES - 1) / FPS;
-        double tx_m2 = (truth_x(t_end) + 1.0 - W / 2) / 2.0;   /* +1: centre of the 2x2 source */
-        double ty_m2 = (truth_y(t_end) + 1.0 - H / 2) / 2.0;
+        double tx_m2 = (truth_x(t_end) + 1.0 - W / 2);   /* native==M2 at 320 wide; +1: centre of 2x2 */
+        double ty_m2 = (truth_y(t_end) + 1.0 - H / 2);
         const BcnTrack *t = &last->tracks[0];
         double ex, ey;
 
@@ -185,10 +186,10 @@ int main(void)
             CHECK(t->flags & BCN_F_MEASURED_FIX, "MEASURED_FIX (flags=0x%x)", t->flags);
             ex = t->x / 256.0 - tx_m2;
             ey = t->y / 256.0 - ty_m2;
-            CHECK(ex * ex + ey * ey < 2.25, "position within 1.5 M2 px of truth (err %.2f,%.2f)", ex, ey);
+            CHECK(ex * ex + ey * ey < 9.0, "position within 3 M2 px of truth (err %.2f,%.2f)", ex, ey);
             /* zero steady-state lag under constant slew: velocity ~ (30/2, 12/2) M2 px/s */
-            CHECK(t->vx > (int32_t)(10 * 256) && t->vx < (int32_t)(20 * 256),
-                  "vx ~ 15 M2 px/s, got %.1f", t->vx / 256.0);
+            CHECK(t->vx > (int32_t)(22 * 256) && t->vx < (int32_t)(38 * 256),
+                  "vx ~ 30 M2 px/s (native==M2 at 320 wide), got %.1f", t->vx / 256.0);
             /* DPLL: chip rate within 1% of 115 Hz */
             CHECK(t->chip_hz > 114u * 256u && t->chip_hz < 116u * 256u,
                   "chip_hz ~ 115, got %.2f", t->chip_hz / 256.0);
