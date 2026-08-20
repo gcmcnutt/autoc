@@ -2329,6 +2329,32 @@ Research proper is 043-or-later.
 
 ---
 
+### [Build tree] Retrofit xiao / beacon-pod / stepfpga into one meta-target (operator 2026-08-19)
+
+*"Today xiao build is separate from the main autoc/crrcsim build — maybe it shouldn't be so we detect
+latent faults earlier … a super clean CMake build seems right, across this box or WSL — prob same for
+FPGA."*
+
+042 establishes the pattern on greenfield code (plan.md §Build-tree principle): **tier 0** native host,
+**tier 1** `--with-embedded` cross targets needing no hardware, **tier 2** opt-in (Diamond/Windows,
+hardware-attached). The retrofit is the remaining work:
+
+- Wrap `xiao` (PlatformIO) and `firmware/beacon-pod` (avr-gcc Makefile) as CMake custom targets under
+  `all-targets`, propagating exit codes. **No migration required** — CMake invokes, it does not need to
+  understand them.
+- Move genuinely shared declarations (record struct, Gold tables, NN01 format) into a `shared/` tier
+  compiled by every target that uses it, with `static_assert` ABI checks. **This is the higher-value half**
+  — it turns cross-target drift into a compile error instead of a wrong number in flight.
+- `stepfpga` stays tier 2 (Diamond is GUI-oriented, licensed, Windows-hosted; the FPGA route is parked).
+- Constraint: avr-gcc on the ATtiny412 is 8-bit — anything shared down to the pod needs strict `stdint`
+  discipline.
+
+**Governance follow-on**: Constitution IV mandates the top-level CMakeLists as single source of truth while
+Constitution II lists `rebuild.sh` *and* `pio run` as separate commands. Once the meta-target is real,
+Principle II can collapse to one command — an amendment to make **when the mechanism exists**, not before.
+
+---
+
 ## Completed / Superseded
 
 - ~~Sigma Floor~~ — done (015 Phase 1)

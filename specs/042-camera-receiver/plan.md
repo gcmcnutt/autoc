@@ -136,6 +136,49 @@ replay, and (d) can be exercised by the oracle, injector and scorer as a library
 plan needs — replay parity, hardware-free CI, field updates, bit-exact NEON verification — is downstream of
 that one boundary. `io/` and `app/` exist to be thin.
 
+## Build-tree principle (operator 2026-08-19) — 042 as the exemplar
+
+*"Today xiao build is separate from the main autoc/crrcsim build — maybe it shouldn't be, so we detect
+latent faults earlier; same with this sort of firmware. A super clean CMake build seems right, across this
+box or WSL — prob same for FPGA."*
+
+**042 is greenfield, so it establishes the pattern rather than retrofitting it.** The repo has five
+toolchains — CMake (autoc/crrcsim), PlatformIO/arm-none-eabi (xiao), avr-gcc Makefile (beacon-pod), Lattice
+Diamond (stepfpga, Windows-hosted), and this new CMake receiver. "Unified" conflates two goals that need
+different mechanisms:
+
+| goal | mechanism | needs a migration? |
+|---|---|---|
+| **Detect latent faults early** | **one command invokes all target builds and propagates failure** — `add_custom_target(xiao COMMAND pio run …)` under a top-level `all-targets`. CMake need not *understand* PlatformIO, only run it. | **No** |
+| **Prevent interface drift between targets** | **shared code in one place, compiled by every target that uses it, with compile-time ABI assertions** (`static_assert` on struct size and field offsets) | No — but it constrains where code lives |
+
+The second is the higher-value one and it is why `core/` has zero dependencies: so it compiles *anywhere*,
+including eventually on the xiao, which is the record's consumer and will likely share a box with the
+receiver (R13). A stale xiao then fails to **compile** rather than producing a wrong number at 20 Hz.
+
+**Tiering makes it practical** — a naive build-everything is slow, needs network, and needs Windows:
+
+| tier | contents | where |
+|---|---|---|
+| **0** — default | autoc, crrcsim, receiver `core/` + `tools/` + `tests/` | native on the aarch64 box **and** WSL2 x86_64; seconds |
+| **1** — `--with-embedded` | xiao (pio), beacon-pod (avr-gcc), receiver `app/` (aarch64 cross) | both hosts, **no hardware needed — this is the tier that catches drift** |
+| **2** — opt-in, manual | stepfpga (Diamond: Windows + licence), anything needing hardware attached | never in the default build |
+
+**Limits, stated so they are not rediscovered**: avr-gcc on the ATtiny412 is 8-bit, so anything shared down
+to the pod needs strict `stdint` discipline; Diamond is GUI-oriented with TCL batch and Windows-hosted, so
+tier 2 is correct and the FPGA route is parked regardless; PlatformIO fetches toolchains on first run, so a
+fresh clone's tier 1 needs network.
+
+**Governance note (operator's call, not this plan's)**: Constitution IV already mandates the top-level
+CMakeLists as the single source of truth, while Constitution II lists `rebuild.sh` *and* `pio run` as two
+separate verification commands — the doc both mandates unification and acknowledges the split. Once the
+meta-target is real, Principle II can collapse to one command. That is an amendment to make **when the
+mechanism exists**, not before. Filed to `specs/BACKLOG.md`.
+
+**042's obligations under this** (tasks T002a/T002b, T006a): declare targets in the top-level CMakeLists
+(already Constitution IV); expose the tier-0 / tier-1 structure; put `static_assert` ABI checks on the
+record struct so any future consumer — xiao included — fails at compile time.
+
 ## Stages — hardware-gated delivery (operator 2026-08-19)
 
 The A/B/C/E1/D work packages of spec §13 say **what code gets built**. The stages below say **what

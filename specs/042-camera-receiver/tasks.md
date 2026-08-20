@@ -21,10 +21,12 @@ features (043 / 044). Decomposing hardware you do not have produces tasks that r
 
 ## Phase 1: Setup
 
-**Purpose**: project skeleton and the three build paths
+**Purpose**: project skeleton, the three build paths, and the tiered build structure
 
 - [ ] T001 Create the source tree skeleton per plan.md §Structure under `firmware/beacon-receiver/`: `src/core/`, `src/io/`, `src/app/`, `tools/`, `tests/{unit,equivalence,golden}/`, `cmake/`
 - [ ] T002 Declare beacon-receiver targets in the top-level `CMakeLists.txt` (Constitution IV — single source of truth): option `BEACON_RECEIVER`, targets `beacon_core` (C11), `beacon_tools`, `beacon_tests`; drive a clean rebuild, not an incremental reconfigure
+- [ ] T002a Expose the tier-0 / tier-1 build structure in the top-level `CMakeLists.txt` — option `WITH_EMBEDDED` (default OFF); tier 0 = native host targets, tier 1 = cross/embedded targets that need no hardware (plan.md §Build-tree principle)
+- [ ] T002b Add an `all-targets` meta-target in the top-level `CMakeLists.txt` that invokes each target build and **propagates failure** — wire the receiver in now; xiao/pod/fpga are retrofitted separately per `specs/BACKLOG.md`
 - [ ] T003 [P] Write the WSL2 cross toolchain file at `firmware/beacon-receiver/cmake/aarch64-linux-gnu.cmake` (research.md R7)
 - [ ] T004 [P] Document the three build paths in `firmware/beacon-receiver/README.md`, superseding the 031-era "Next (A8-6)" section
 
@@ -36,6 +38,7 @@ features (043 / 044). Decomposing hardware you do not have produces tasks that r
 
 - [ ] T005 Define `FrameView` and the `FrameSource` vtable in `firmware/beacon-receiver/src/core/frame.h` per data-model.md §1 — `t_us` is **source-supplied**; no `clock_gettime` anywhere in `core/` (R3)
 - [ ] T006 [P] Define the versioned 20 Hz record struct in `firmware/beacon-receiver/src/core/record.h` per `contracts/record-wire-format.md`, including the dual-clock fields (`inav_t_us`, `inav_read_age_us`, `gps_time_ms`) and the flags bit assignments
+- [ ] T006a [P] Add `static_assert` ABI checks (struct size and field offsets) to `firmware/beacon-receiver/src/core/record.h` so any future consumer — the xiao included — fails at **compile** time rather than producing a wrong number at 20 Hz (plan.md §Build-tree principle)
 - [ ] T007 [P] Define the versioned recording container structs in `firmware/beacon-receiver/src/core/container.h` per `contracts/recording-container.md`
 - [ ] T008 [P] Test: the config loader errors on **each** missing key, naming it, exiting 1 — `firmware/beacon-receiver/tests/unit/test_config.c` (Constitution VII; written before T010)
 - [ ] T009 [P] Test: record and container readers fail loudly on version mismatch, naming both versions — `firmware/beacon-receiver/tests/unit/test_versions.c` (Constitution V; written before T011)
