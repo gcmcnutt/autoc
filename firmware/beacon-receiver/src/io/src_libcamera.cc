@@ -13,12 +13,16 @@
 #include "src_libcamera.h"
 
 #include <libcamera/libcamera.h>
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 
 #include <condition_variable>
 #include <cstring>
 #include <deque>
 #include <map>
 #include <mutex>
+#include <cstdlib>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -81,7 +85,7 @@ FrameStatus lc_next(FrameSource *self, FrameView *out)
     const uint8_t *data = c->maps.at(buf);
 
     std::memset(out, 0, sizeof *out);
-    out->data   = data;
+    out->data   = data;                /* R8: the image. YUV420: plane 0 IS the u8 Y image.          */
     out->stride = static_cast<uint16_t>(c->stride);
     out->w      = static_cast<uint16_t>(c->w);
     out->h      = static_cast<uint16_t>(c->h);
@@ -133,48 +137,69 @@ extern "C" int bcn_libcamera_open(FrameSource **out, const BcnConfig *cfg, char 
         snprintf(err, err_len, "libcamera: CameraManager failed to start");
         delete c; return -1;
     }
-    auto cams = c->mgr->cameras();
-    if (cams.empty()) {
+    {
+        auto cams = c->mgr->cameras();
+        if (!cams.empty()) c->cam = cams[0];
+        /* cams' shared_ptrs MUST NOT outlive an error path's CameraManager: letting the vector
+         * destruct after `delete c` was a real segfault (deleteLater onto a destroyed manager
+         * thread — found by backtrace on the pisp bring-up, 2026-08-20). */
+    }
+    if (!c->cam) {
         snprintf(err, err_len, "libcamera: no cameras found (is the OV9281 ribbon seated?)");
         c->mgr->stop(); delete c; return -1;
     }
-    c->cam = cams[0];
     if (c->cam->acquire() != 0) {
         snprintf(err, err_len, "libcamera: camera busy — another rpicam/beacon process holds it "
                                "(pkill rpicam-raw and retry)");
-        c->mgr->stop(); delete c; return -1;
+        c->cam.reset(); c->mgr->stop(); delete c; return -1;
     }
 
-    c->config = c->cam->generateConfiguration({ StreamRole::Raw });
+    /* THE ISP PATH, deliberately (Pi 5 pisp bring-up, 2026-08-20). The raw/CFE path on pisp only
+     * emits 16-bit containers AND starved after its 2 internal image buffers in every configuration
+     * tried (one-frame wedge; debug-log archaeology in the bench journal). The ISP's processed output
+     * is the path this pipeline demonstrably services at speed, and it can emit R8 greyscale directly
+     * — hardware 16->8, zero CPU. On vc4 the raw path was the free choice; here the ISP is. The
+     * contract is FrameView u8 frames, not sensor-raw bytes: photometric caveat (ISP tuning curve sits
+     * between sensor and samples) is noted for spec §5 photometry work, and denoise is forced OFF so
+     * the point source stays a point.
+     * The 8-bit SENSOR mode is still forced via sensorConfig (else the pipeline picks Y10 and caps at
+     * 247.8 fps), and the frame duration is clamped to the mode's real floor (commanding below it
+     * wedges the sensor after one frame — measured). */
+    c->config = c->cam->generateConfiguration({ StreamRole::Viewfinder });
     if (!c->config || c->config->empty()) {
-        snprintf(err, err_len, "libcamera: no RAW stream role on this camera");
-        c->cam->release(); c->mgr->stop(); delete c; return -1;
+        snprintf(err, err_len, "libcamera: no Viewfinder stream role on this camera");
+        c->cam->release(); c->cam.reset(); c->mgr->stop(); delete c; return -1;
     }
     StreamConfiguration &sc = c->config->at(0);
     sc.size = Size(w, h);
-    sc.pixelFormat = formats::R8;
-    /* 16, not the customary 4-8: the dmabuf mmap is write-combine, and one uncached 256 KB read costs
-     * ~4 ms on the A53 — slightly MORE than the 3.6 ms frame period, so a consumer accrues ~0.5 ms of
-     * deficit per copied frame. 16 buffers = 58 ms of slack absorbs a full 80-frame burst's deficit
-     * (~40 ms), which 8 buffers (29 ms) demonstrably did not (2026-08-19: drops clustered at burst
-     * tails). Continuous full-raw on this host stays ~215 fps and that is a HOST limit, not a bug —
-     * continuous is the Pi 5 flight mode (spec §8.2); the bench records bursts. */
-    sc.bufferCount = 16;
-    if (c->config->validate() == CameraConfiguration::Invalid) {
-        snprintf(err, err_len, "libcamera: %ux%u R8 rejected outright", w, h);
-        c->cam->release(); c->mgr->stop(); delete c; return -1;
+    /* YUV420, not R8: the mono ISP adjusts R8 to R16 (measured), but YUV420 always flows and its
+     * plane 0 is exactly the u8 Y image core wants — same bytes, ISP does the depth conversion. */
+    sc.pixelFormat = formats::YUV420;
+    sc.bufferCount = 8;   /* pisp preps only 12 internal config/stats buffers; 16 requests starved the
+                           * pipeline into Idle after one completion (2026-08-20). 8 = 26 ms of slack at
+                           * 309 fps, and the A76+ISP path has no per-frame copy deficit to absorb. */
+    if (!getenv("BCN_NO_SENSCFG")) {   /* bisection flag, pisp bring-up */
+        SensorConfiguration sens;
+        sens.outputSize = Size(w, h);
+        sens.bitDepth = 8;
+        c->config->sensorConfig = sens;
     }
-    /* validate() may ADJUST rather than reject — a silently different geometry would record a container
-     * whose header lies. Refuse instead (Constitution VII's spirit: no silent substitution). */
-    if (sc.size.width != w || sc.size.height != h || sc.pixelFormat != formats::R8) {
+    if (c->config->validate() == CameraConfiguration::Invalid) {
+        snprintf(err, err_len, "libcamera: %ux%u R8 viewfinder rejected outright", w, h);
+        c->cam->release(); c->cam.reset(); c->mgr->stop(); delete c; return -1;
+    }
+    /* R8 preferred; YUV420 acceptable (plane 0 IS the u8 image, stride-aware). Anything else, or a
+     * geometry change, is refused — no silent substitution. */
+    if (sc.size.width != w || sc.size.height != h ||
+        (sc.pixelFormat != formats::R8 && sc.pixelFormat != formats::YUV420)) {
         snprintf(err, err_len, "libcamera: requested %ux%u R8, pipeline adjusted to %s %s — refusing "
                                "silent substitution; fix [camera] mode",
                  w, h, sc.size.toString().c_str(), sc.pixelFormat.toString().c_str());
-        c->cam->release(); c->mgr->stop(); delete c; return -1;
+        c->cam->release(); c->cam.reset(); c->mgr->stop(); delete c; return -1;
     }
     if (c->cam->configure(c->config.get()) != 0) {
         snprintf(err, err_len, "libcamera: configure() failed for %ux%u R8", w, h);
-        c->cam->release(); c->mgr->stop(); delete c; return -1;
+        c->cam->release(); c->cam.reset(); c->mgr->stop(); delete c; return -1;
     }
     c->stream = sc.stream();
     c->stride = sc.stride;
@@ -183,7 +208,7 @@ extern "C" int bcn_libcamera_open(FrameSource **out, const BcnConfig *cfg, char 
     c->alloc = std::make_unique<FrameBufferAllocator>(c->cam);
     if (c->alloc->allocate(c->stream) <= 0) {
         snprintf(err, err_len, "libcamera: buffer allocation failed");
-        c->cam->release(); c->mgr->stop(); delete c; return -1;
+        c->cam->release(); c->cam.reset(); c->mgr->stop(); delete c; return -1;
     }
     for (const auto &buf : c->alloc->buffers(c->stream)) {
         /* Map once, for the recorder's lifetime — never per frame (R6). Single-plane R8. */
@@ -192,14 +217,14 @@ extern "C" int bcn_libcamera_open(FrameSource **out, const BcnConfig *cfg, char 
         void *mem = mmap(nullptr, pl.length, PROT_READ, MAP_SHARED, pl.fd.get(), 0);
         if (mem == MAP_FAILED) {
             snprintf(err, err_len, "libcamera: mmap of a DMA buffer failed: %s", strerror(errno));
-            c->cam->release(); c->mgr->stop(); delete c; return -1;
+            c->cam->release(); c->cam.reset(); c->mgr->stop(); delete c; return -1;
         }
         c->maps[buf.get()] = static_cast<const uint8_t *>(mem);
 
         auto req = c->cam->createRequest();
         if (!req || req->addBuffer(c->stream, buf.get()) != 0) {
             snprintf(err, err_len, "libcamera: request setup failed");
-            c->cam->release(); c->mgr->stop(); delete c; return -1;
+            c->cam->release(); c->cam.reset(); c->mgr->stop(); delete c; return -1;
         }
         c->requests.push_back(std::move(req));
     }
@@ -210,18 +235,28 @@ extern "C" int bcn_libcamera_open(FrameSource **out, const BcnConfig *cfg, char 
      * "signal" (README §Measured facts, learned twice). The AGC (spec §4) drives these DELIBERATELY,
      * per-request, when it lands; free-running auto is never acceptable. */
     ControlList ctl(c->cam->controls());
-    ctl.set(controls::AeEnable, false);
-    ctl.set(controls::ExposureTime, static_cast<int32_t>(cfg->exposure_min_us));
-    ctl.set(controls::AnalogueGain, static_cast<float>(cfg->gain_min_q8) / 256.0f);
-    {
-        const int64_t us = 1000000 / cfg->fps;
+    if (!getenv("BCN_NO_CTRL")) {      /* bisection flag */
+        ctl.set(controls::AeEnable, false);
+        ctl.set(controls::ExposureTime, static_cast<int32_t>(cfg->exposure_min_us));
+        ctl.set(controls::AnalogueGain, static_cast<float>(cfg->gain_min_q8) / 256.0f);
+    }
+    if (!getenv("BCN_NO_FDL")) {
+        /* Clamp to the MODE's real minimum: commanding a frame duration below it does not saturate
+         * gracefully — the sensor wedges after one frame (measured). The camera's control info knows
+         * the floor once configure() has run. */
+        int64_t us = 1000000 / cfg->fps;
+        const auto it = c->cam->controls().find(&controls::FrameDurationLimits);
+        if (it != c->cam->controls().end()) {
+            const int64_t floor_us = it->second.min().get<int64_t>();
+            if (us < floor_us) us = floor_us;
+        }
         std::array<int64_t, 2> lim{ us, us };
         ctl.set(controls::FrameDurationLimits, Span<const int64_t, 2>(lim));
     }
 
     if (c->cam->start(&ctl) != 0) {
         snprintf(err, err_len, "libcamera: start() failed");
-        c->cam->release(); c->mgr->stop(); delete c; return -1;
+        c->cam->release(); c->cam.reset(); c->mgr->stop(); delete c; return -1;
     }
     for (auto &req : c->requests)
         c->cam->queueRequest(req.get());

@@ -13,6 +13,44 @@ At-order verifies: EVN onboard RAM ≥6 MB (T011), Radiant toolchain (new instal
 OV9281 doubles as the trusted focal plane to finish the C-14 lens validation (M12 mount, global shutter,
 no IR-cut after lens swap).
 
+## Pi 5 Phase 3: camera ported to pisp, live tracking at 80 % daylight duty (2026-08-20 afternoon)
+
+**Camera**: on beaconpi5 CAM0 (`dtoverlay=ov9281,cam0`), refocused. Mode table tops at 640×400 R8
+309.79 fps (the 640×200 patched mode needs the §12 driver port to this kernel).
+
+**The pisp port cost a debugging chain worth recording — every step is also commented in
+`src_libcamera.cc`:**
+1. **R8-in-memory does not exist on pisp** — the CFE writes 16-bit containers even for Y8 sensor modes
+   (sample in the HIGH byte). And the raw/CFE path starved into Idle after its 2 internal image buffers
+   in every configuration tried. **The ISP path is the answer**: YUV420, plane 0 = the u8 Y image,
+   hardware depth conversion, zero CPU. (ISP tuning curve now sits between sensor and samples — noted
+   as a caveat for §5 photometry work.)
+2. **The 8-bit SENSOR mode must be forced via `SensorConfiguration`** (bitDepth 8) — accepting a 16-bit
+   stream format otherwise selects the Y10 mode and caps at 247.8 fps.
+3. **`FrameDurationLimits` below ~3.3 ms WEDGES the sensor after one frame** (the mode advertises
+   3228 µs — optimistic). Delivery ladder: request 300 → 288.5 fps delivered; ≥305 → wedge. fps=300 is
+   the pinned Pi 5 bench rate; 309.79-and-beyond belongs to the §12 driver-timing evening.
+4. Error-path segfault fixed (camera shared_ptrs must not outlive the CameraManager).
+
+**Daylight lessons (it is afternoon; the 3A+ baseline was evening):**
+- Beacon contrast is exposure-inverse under daylight: 200 µs → 1.24×, 30 µs → 2.06×. Bench ini floor is
+  now 60 µs/gain 2 with the ROI-driven AGC walking it up as the scene darkens.
+- LED-PWM flicker out-blinks the beacon at short exposure: acquisition widened to 3 seeds/pass, 4
+  candidates ("the code kills false candidates" is the designed discriminator — let it see candidates).
+- **THE structural fix, found by replay-debugging a captured daylight clip offline (the parity
+  architecture earning its keep): the scale ladder may only move on MEASURED ticks.** A fresh
+  candidate's empty window reports q=0, and "weak → widen" demoted every seed to coarse on its first
+  tick, where flicker owns the correlation surface — nothing ever confirmed. Absence of evidence is not
+  evidence of weakness. One condition: 0 % → 80 % lock duty.
+
+**Gate status**: 80 % duty / 8.2 s runs / q 0.89 / 0.000 % deadline misses at 288.5 fps in DAYLIGHT —
+vs the 3A+'s 100 % in evening calm. Re-run the gate this evening for the like-for-like number; the
+daylight churn (death + reacquire every ~8 s) is the next tuning target, same replay-debug method.
+
+**Next**: §12 evening for 453/480 fps (port `ov9282-640x200.patch`, fix the pisp frame-duration floor,
+add faster 640×400 timings). 480 fps = exactly 200 Hz chips at 2.4 samples/chip → emitter `'R'` and the
+FPGA's `CHIP200` become correct again — that is the production-rate flip.
+
 ## Pi 5 bring-up Phases 0-2 COMPLETE (2026-08-20): beaconpi5 on the tailnet, NVMe at 454 MB/s, all tests green
 
 **Host**: Pi 5 Model B Rev 1.1, 8 GB, active cooler, 52pi EP-0241 M.2/PoE+ HAT, WD SN7100S 1 TB (2230,

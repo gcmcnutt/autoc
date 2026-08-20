@@ -434,9 +434,13 @@ lifecycle:
         break;
     }
 
-    /* T035: the q-driven ladder, with hysteresis and a dwell so it cannot chatter */
+    /* T035: the q-driven ladder, with hysteresis and a dwell so it cannot chatter. MEASURED ticks
+     * only: a young/empty window reports q=0, and treating that as "weak, widen" demoted every fresh
+     * candidate to coarse on its first tick — where daylight flicker owns the surface and nothing ever
+     * confirms (found by replay-debug on a real daylight clip, 2026-08-20). Absence of evidence is not
+     * evidence of weakness. */
     if (t->ladder_dwell) t->ladder_dwell--;
-    else if (t->state == TRK_CONFIRMED || t->state == TRK_CANDIDATE) {
+    else if (t->measured_fix && (t->state == TRK_CONFIRMED || t->state == TRK_CANDIDATE)) {
         uint8_t want = t->scale;
         /* Climb gate: strong, tight, AND SETTLED — the innovation must already be small relative to
          * the finer plane's pixel, or the shrunken aperture will lose a still-converging loop (the

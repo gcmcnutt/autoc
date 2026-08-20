@@ -198,8 +198,11 @@ void engine_frame(Engine *e, const FrameView *fv)
          * candidates and the WC-read cost of their apertures drove the deadline margin to -233 ms —
          * §11.1's instrumentation catching its first real overload):
          *   - a pass at most every 25 frames (~11 Hz of attempts),
-         *   - at most 2 candidates outstanding,
-         *   - 1 seed per pass (the strongest blink),
+         *   - at most 4 candidates outstanding, 3 seeds per pass (daylight lesson, 2026-08-20: LED-PWM
+         *     flicker out-blinks the beacon at short exposure, and with 1 seed/2 slots the lamps owned
+         *     the bank while the beacon starved outside it. "The code kills false candidates" is the
+         *     designed discriminator — let it see candidates. The A53-era 1/2 throttle was a deadline
+         *     precaution; the A76 runs 36 ms of margin),
          *   - candidates seed at MEDIUM scale (576 native px/frame, 16x cheaper than coarse). */
         if (!have_confirmed) {
             int n_cand = 0;
@@ -226,7 +229,7 @@ void engine_frame(Engine *e, const FrameView *fv)
                         if (dy < 0) dy = -dy;
                         if (dx < (8 << 8) && dy < (8 << 8)) { clash = 1; break; }
                     }
-                    if (!clash && n_cand < 2) {
+                    if (!clash && n_cand < 4) {
                         uint32_t hz;
                         int32_t wx = e->pending[k].x_q8 - e->warm_x_q8;
                         int32_t wy = e->pending[k].y_q8 - e->warm_y_q8;
@@ -246,11 +249,11 @@ void engine_frame(Engine *e, const FrameView *fv)
                 }
                 e->pending_n = 0;
             }
-            if (!e->sched.inflight && n_cand < 2 &&
+            if (!e->sched.inflight && n_cand < 4 &&
                 e->frame_idx >= e->next_acq_frame &&
                 sched_try_begin(&e->sched, e->frame_idx)) {
                 /* the pass runs on THIS frame's data; its results wait for the model's frame */
-                e->pending_n = acquire_pass(&e->acq, fv, e->pending, 1);
+                e->pending_n = acquire_pass(&e->acq, fv, e->pending, 3);
                 e->next_acq_frame = e->frame_idx + 25u;
             }
         }
