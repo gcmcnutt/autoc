@@ -13,6 +13,34 @@
 
 ---
 
+## 042 deferrals
+
+### [042 bring-up, filed 2026-08-20] Thermal-event sensing + logging on the flight hosts — REQUIRED before outdoor/flight use
+
+The Pi 5 throttles unforgivingly and the flight article will sit in an enclosure, in the sun, doing
+sustained 100+ MB/s NVMe writes with a DRAM-less SN7100S (a known hot-runner) and a camera pipeline whose
+deadline miss rate (§11.1) is exactly the thing throttling silently destroys. Bench bring-up 2026-08-20
+started at 40 °C with the active cooler in free air — the best case this hardware will ever see.
+
+**What to build** (small; belongs with T062's deadline instrumentation in `beacon_trackd`, or a sidecar):
+1. **Sample at ~1 Hz**: SoC temp (`/sys/class/thermal` / `vcgencmd measure_temp`), NVMe temp
+   (`nvme smart-log` / hwmon), and **`vcgencmd get_throttled`** — the load-bearing one: its STICKY bits
+   distinguish "under-voltage occurred", "freq-capped occurred", "throttled occurred" since boot, so a
+   transient event survives until read.
+2. **Log alongside the record stream** (timestamped file next to the recording, not inside the versioned
+   record — no schema change), so post-flight analysis can correlate thermal events with deadline_margin
+   dips and frame gaps.
+3. **Alert on state change** — a throttle bit flipping mid-sortie should be loud in the trackd stderr /
+   telemetry, not discovered post-hoc.
+4. Field data informs the enclosure/airflow design for the flight pod (spec §16.5's power section already
+   flags the Pi 5's undervolt sensitivity; heat is its twin).
+
+**Why filed rather than done now**: bench Phases 3-5 (camera move, A/B gate, high-fps evening) come
+first; thermal logging matters the moment sustained outdoor runs start — build it before the first
+parking-lot session, not after the first mystery brownout.
+
+---
+
 ## 040 deferrals
 
 ### [040 wrap, filed 2026-08-06] t1′ — the attributable camera-variation delta (LOW priority, probably not worth it)
