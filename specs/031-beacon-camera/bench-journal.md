@@ -13,6 +13,23 @@ At-order verifies: EVN onboard RAM ≥6 MB (T011), Radiant toolchain (new instal
 OV9281 doubles as the trusted focal plane to finish the C-14 lens validation (M12 mount, global shutter,
 no IR-cut after lens swap).
 
+## Bench rate policy: 115-FAMILY ONLY (operator 2026-08-19, evening)
+
+**200/210 Hz removed from the camera receiver's acquire candidates** (`beacon-bench.ini`). Rationale: the
+whole rig is derated to ~115 Hz; a 200 Hz lock is a false comfort that measures the wrong operating
+point. Consequences, all deliberate:
+- An emitter reset to 200 Hz (volatile-'H', trap #2) now presents as **NO LOCK** — go check the emitter.
+- `recovery_sweep.Emitter.close()` now sends `'R'` (clears knobs) **then `'H'`** — no harness exit leaves
+  the emitter at 200 silently (that silent restore cost a live debugging session).
+- **The stepfpga rejoins at 115 after its staged retune is built** (s7.v commit `5d2532c`, one-constant
+  sample-clock change, `+define+CHIP200` restores flight rates): operator will move the FPGA to the
+  Windows box for the Diamond build when convenient. After flashing: `regression.py` re-baseline, and
+  flip `BEACON_SAMPLE_HZ` default in `host/beacon_telemetry/frame.py` from 480 to 276.
+- Production rates (200 Hz / 453 fps) return **with the Pi 5**, as a config + `CHIP200` flip.
+
+Verified live after the change: 118/118 scope paints LOCKED, q=1.00, **lock_health 0.99** (the
+peak-pixel fix at work), chip pinned at 115.00.
+
 ## 042 STAGE 1 EXIT MET single-code (2026-08-19): live ASCII scope at 10 Hz, cold acquisition, 0.000 % deadline misses
 
 `beacon_trackd` (C11 engine: corr/track/bank/agc/sched) running LIVE on the 3A+ against the code-B bench

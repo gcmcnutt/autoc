@@ -71,8 +71,17 @@ class Emitter:
         return False
     def stop(self):    return self.cmd(b"\x44\x1f", "D31(stop)")
     def restore(self): return self.cmd(b"\x52", "R")
+    def bench_rate(self): return self.cmd(b"\x48", "H")   # ~115 Hz, the rig's rate of record
     def close(self):
-        try: self.restore()
+        # BENCH POLICY (operator 2026-08-19): the rig is 115-family only. 'R' still clears the
+        # corruption/dropout/pulse knobs, but close() then re-selects 'H' so no harness exit silently
+        # leaves the emitter at 200 Hz nominal — that silent restore cost a live-tracking debugging
+        # session (the camera receiver has no 200 Hz candidates and presents it as NO LOCK by design).
+        # The stepfpga decoder rejoins at 115 once its staged retune (s7.v, commit 5d2532c) is built on
+        # the Windows box; until then FPGA sessions must set 'R' EXPLICITLY and put 'H' back after.
+        try:
+            self.restore()
+            self.bench_rate()
         except Exception: pass
         finally:
             try: self.s.close()
