@@ -1,6 +1,14 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-08-06
+**Last Updated**: 2026-08-21
+
+> **Routing — hardware line (2026-08-21)**: this checkout runs the **031 → 042** hardware line (the sim
+> line 040 → 041 lives in `~/autoc`; the note below is that line's). 042 is in bench bring-up on
+> `beaconpi5`. **Next beyond 042** is scoped in
+> [§043/044 flight article — single-board integration](#043044-flight-article--single-board-integration-filed-2026-08-21-from-the-platform-discussion)
+> at the bottom of this file: CM5 carrier + sensor + XIAO on one PCB, INAV kept separate, no FPGA.
+> **One item is actionable during 042, not after** — the OG0VA design-house inquiry (R4), trigger fired
+> 2026-08-21, because OEM lead time is calendar that cannot be compressed later.
 
 > **Routing (2026-08-06, 040 wrap)**: 040 closed — see [040 outcome](040-camera-redo/outcome.md).
 > Verdict: *a better camera model, much closer to real, and training results more or less the same —
@@ -726,11 +734,30 @@ environment/perception question, which is what t7 was built to answer. Not a def
 - **What stays in 030 v1 from D15**: error bars on the camera-POV display (CEP as visible ellipse spread) — cheap, directly load-bearing for smoke-test signal-or-not assessment.
 - **Why deferred**: research-grade analytics; not required for smoke-test 4th deliverable.
 
-### [031 — BACKLOG] OG0VA design-house inquiry (register spec + eval module)
+### [031 → 043 — TRIGGER FIRED 2026-08-21] OG0VA design-house inquiry (register spec + eval module)
 
 - **Trigger**: when the OG0VA moves from paper-primary to an actual bring-up target (camera/040 work resumes, or the emitter power/osc study needs the real integration-time + FSIN/STROBE timing).
 - **Scope**: OEM/design-house engagement (OmniVision direct, or Leopard Imaging / e-con) for (a) the full OG0VA register spec — exact integration-time min/granularity, FSIN/STROBE timing diagrams, gain map; (b) a stocked eval module or the OC0VA CameraCubeChip; (c) lead time + MOQ. Resolves research R4.
 - **Why deferred (2026-07)**: sticking with OG0VA on paper for now. The [product brief](https://www.ovt.com/wp-content/uploads/2022/06/OG0VA-PB-v1.3-WEB.pdf) (480 fps @ 320×240, 60% QE @ 850 nm, global shutter, FSIN frame-sync + built-in STROBE, 1-lane MIPI, manual gain) is enough to design against. Exposure range is bounded mechanically (~tens of µs → ~2 ms full-frame @ 480 fps); exact numbers only needed at bring-up.
+- **TRIGGER FIRED 2026-08-21** (platform discussion): the single-board flight article makes OG0VA a real
+  bring-up target, and OEM lead time is calendar that cannot be compressed later. This is a phone call,
+  not engineering — **run it during 042, not after.** The board is laid out for OV9281-on-a-flex unless
+  R4 returns in time (see the 043/044 flight-article entries).
+- **What to actually ask** (channel: OmniVision direct, else Leopard Imaging / e-con / Arducam OEM):
+  1. **Availability first** — is there a *stocked* eval module, or the OC0VA CameraCubeChip? MOQ, lead
+     time, and unit price at qty 5 / 25 / 100. If the answer is "1 k MOQ, 26 weeks", the rest is moot and
+     OV9281 wins by default.
+  2. **Register spec under NDA** — full map, not the product brief.
+  3. **Integration time**: exact min and granularity (the brief only bounds it mechanically, ~tens of µs →
+     ~2 ms full-frame @ 480 fps). This sets the bright-day saturation floor — see 042 spec §289, where the
+     OV9281 already bottoms out inside ~2 m.
+  4. **FSIN / STROBE timing diagrams** — setup/hold, latency from FSIN edge to integration start, STROBE
+     assertion window vs actual integration. This is the load-bearing one for chip-phase locking.
+  5. **Gain map** — manual gain steps, linearity, and where read noise sits per step.
+  6. **Driver situation** — is there a reference Linux/V4L2 driver, or is it write-from-scratch? Ask
+     specifically whether anything exists against libcamera / the RPi kernel tree.
+  7. **QE curve** at 850 nm, not just the headline 60 % — and dark current vs temperature for a sensor
+     that will sit in a sunlit enclosure.
 
 ### [031 — STUDY] Code-derived shutter sync + sub-100% chip-on pulsing
 
@@ -2385,6 +2412,137 @@ hardware-attached). The retrofit is the remaining work:
 **Governance follow-on**: Constitution IV mandates the top-level CMakeLists as single source of truth while
 Constitution II lists `rebuild.sh` *and* `pio run` as separate commands. Once the meta-target is real,
 Principle II can collapse to one command — an amendment to make **when the mechanism exists**, not before.
+
+---
+
+## 043/044 flight article — single-board integration (filed 2026-08-21, from the platform discussion)
+
+### [043/044 — the headline hardware item] Single-board flight article: CM5 carrier + sensor + XIAO on one PCB
+
+**Operator note (2026-08-21)**: *"was thinking a single board solution for the camera, xiao — and arguably
+the inav but we can keep that separate as a safety consideration — is in the back of my mind given low
+volume FPGA is pricey."* Preceded by the platform challenge: *"the Pi might be the wrong choice here —
+rather at these prices several jetson embedded systems are lighter and more powerful."*
+
+**Three things this discussion settled, so they are not re-litigated:**
+
+1. **INAV stays on its own board.** Different failure domains and different update cadence. Vision is
+   best-effort and gets reflashed at the field; flight control must not. The MSP link stays the only
+   coupling, which preserves the property that a hung correlator is a degraded mission rather than a
+   lawn dart. The operator's own framing, and it is correct.
+
+2. **The FPGA is already out of the flight receiver — do not re-add one.** [042 spec §10](042-camera-receiver/spec.md)
+   already carries the verdict (*"the correlator bank does not need an FPGA on this host"*); the
+   CrossLink-NX-EVN in the [040 plan](040-camera-redo/camera-hardware-phase/plan.md) existed to receive
+   MIPI and record, which any Pi-class SoC does natively, and the StepFPGA is a **bench decoder**, not
+   flight hardware. The low-volume FPGA economics the operator is reacting to are real, but the fight is
+   already won. **The trap to watch for is an FPGA sneaking back in as a MIPI ingest bridge.**
+
+3. **The XIAO cannot be the vision processor.** The nRF52840 is a 64 MHz Cortex-M4F with no MIPI CSI-2
+   receiver and no parallel DCMI. Against §10's 640 Mops/s front-end budget it is ~10× short, and more
+   fundamentally it cannot ingest pixels at all. So "single board camera + xiao" resolves to *one board
+   carrying a vision SoC **and** the nRF52840* — a carrier design, not an MCU design.
+
+**The design that fits the constraint (volume 1–5, no NDA, no MOQ, no gateware NRE):**
+
+| block | part | why |
+|---|---|---|
+| vision SoC | **CM5** (BCM2712, 2×4-lane MIPI CSI) | keeps libcamera, keeps `core/`, keeps the patched `ov9282` as the de-risk path, keeps all three build paths in [042 spec §16.1](042-camera-receiver/spec.md) intact |
+| sensor | OG0VA when R4 lands; **OV9281 on a flex until then** | board is not gated on procurement — see the sensor entry below |
+| MCU | **XIAO soldered down** (castellated), not a bare nRF52840 | keeps the PlatformIO build and the 039 flight-log format, and keeps a **pre-certified radio** — skips RF layout, antenna tuning and cert entirely |
+| storage | NVMe | [042 spec §8](042-camera-receiver/spec.md) continuous full raw |
+| power | 5 V POL + damped bulk leg | per §16.3; see the power entry filed alongside this one |
+
+Estimated ~60–70 g against the present 100–130 g **plus** XIAO plus harness. Cost is a CM5 plus a 4–6
+layer carrier at qty 5.
+
+**Why not Jetson (checked 2026-08-21, so it is not re-opened on vibes):**
+
+- **The compute is already free.** §10 budgets the steady-state front end at *20 % of one A53*. The
+  [bench journal](031-beacon-camera/bench-journal.md) measured the Pi 5's A76 at 6.2× the A53
+  (`mac_i16` 7.6 GMAC/s, `reduce4` NEON 27 G/s) → **~3 % of one Pi 5 core**. Cold acquire (123 MMAC) is
+  ~16 ms on one core and is threaded off capture by design. A Jetson's 67 TOPS of Ampere + tensor cores
+  addresses a workload this project does not have — there is **no DNN on the camera path**, and NN01 runs
+  on an nRF52840 at 20 Hz with 54 inputs.
+- **Not actually lighter at system level.** The Orin module is light (~30–35 g); the dev kit with carrier
+  and heatsink is heavier than the Pi 5 stack, and 7–25 W against the Pi 5's measured 7–12 W means a
+  bigger thermal solution *and* more pack (§16.3 budgets the Pi 5 at ~1 A, ~8 % of the 4 Ah pack).
+- **CPU is a wash** on the part this workload uses: 6× A78AE @ 1.7 GHz vs 4× A76 @ 2.4 GHz.
+- **The switching cost is a sensor driver port, and it is the work just completed.** NVIDIA's ISP does
+  not support OV9281 (mono, the ISP wants Bayer) → pure V4L2/VI bypass, so Argus gives nothing. A custom
+  sensor needs a `tegra_cam_platform_sensor_ops` driver, a DTS mode table with hand-computed MIPI
+  timings, registration in `nvidia-kernel-oot`, and correct NVCSI **and** VI DMA config. Every custom
+  high-fps mode is another DTS entry. [plan.md](042-camera-receiver/plan.md) also names libcamera
+  per-frame metadata + request-level control as a dependency, with no clean V4L2-bypass equivalent.
+  *(The core/shell split does protect `core/` — Jetson is aarch64, so it cross-compiles and the
+  DGX-native NEON oracle still holds. The loss is confined to `io/` + `app/` + the kernel driver.)*
+
+**Why not the full MCU collapse yet — but keep the trigger.** The genuinely interesting single-chip
+option is **STM32N6**: Cortex-M55 @ 800 MHz with **Helium (MVE)** int8/int16 vector SIMD, a **MIPI CSI-2
+host + DCMIPP** pixel pipeline doing crop/decimate/format in hardware, and a 600 GOPS Neural-ART NPU idle
+until a learned detector appears. More credible than it sounds because **`core/` already gates on scalar
+reference paths and scalar-vs-NEON equivalence tests** — a Helium backend is structurally the case that
+architecture anticipates, and the existing tests prove it. Bare-metal would also turn §11.1's delivery
+deadline from a `SCHED_FIFO` argument into a provable property. **What it costs, plainly**: it kills the
+continuous-full-raw recorder (no MCU writes 116 MB/s, and §8 made that the flight design point), and it
+is a custom board *plus* MIPI bring-up on a non-Linux stack *plus* a new SIMD backend — three new things
+at once. **M4, conditional**, triggered only if flight mass or the recorder's necessity forces it.
+
+**Couplings to record now:**
+
+- **This is coupled to 042-E2 (xiao transport, → 043).** If the XIAO ends up on the carrier, the transport
+  becomes a board trace and the design space changes completely. **Do not over-invest in a cable-based
+  UART/I2C transport in 043** — or pick one that survives becoming a trace.
+- **Thermal**: the enclosure/airflow question in the 042-deferral thermal entry is the same question this
+  board answers; build the board with the thermal instrumentation already in hand.
+- **Power**: §16.3's separate BEC + damped bulk leg becomes an on-board POL. Injection lands on the CM5's
+  5 V rail with `PSU_MAX_CURRENT=5000` in the bootloader EEPROM (the same setting the 52Pi EP-0241 PoE HAT
+  documents, since it feeds the 5 V rail via the header and bypasses PD negotiation).
+
+**Sequencing — the part that matters most:**
+
+1. **Now** — fire the OG0VA R4 inquiry (below). Zero engineering, long lead, unblocks everything.
+2. **042** — finish on Pi 5 + OV9281 as planned; publish the °/s knee that [§12](042-camera-receiver/spec.md)
+   says buys the platform decision.
+3. **043/044** — the CM5 carrier. Matches [plan.md](042-camera-receiver/plan.md)'s verification-ladder
+   rung 3 (*"043 — new host, new frame rate, new capture regime"*).
+4. **M4, conditional** — STM32N6 collapse.
+
+⚠ **Do not build a board during 042.** A custom board mid-algorithm-bringup means every tracker anomaly
+has a hardware suspect, which is exactly what makes 042 tractable today.
+
+### [043+ — decide with R4] Sensor for the flight article: OG0VA vs the incumbent OV9281
+
+**Operator note (2026-08-21)**: *"we aren't stuck on this camera — we had gone down a path of OG0VA sensor
+which probably does work at our speeds."* Checked against the repo's own numbers, and it holds up:
+
+| | OV9281 (incumbent) | OG0VA (040-era paper-primary) |
+|---|---|---|
+| QE @ 850 nm | **0.38** ([camera-era-knobs](031-beacon-camera/camera-era-knobs.md)) | **0.60** (product brief) |
+| Fast mode | 1280×800; fighting the PLL for a small window | **480 fps @ 320×240** native |
+| Measured reality | 288 fps @ 640×400, ~326 fps ceiling; [continue.md](042-camera-receiver/continue.md): *"cannot reach [480] at stock PLL"* | 480 fps is the datasheet mode |
+| Frame sync | `ov9281_trigger` GPIO hack, parked in [research.md](042-camera-receiver/research.md) | **FSIN + built-in STROBE** |
+| Lanes | MIPI + DVP | 1-lane MIPI |
+
+Three reasons this is more than a swap:
+
+1. **1.6× the photons at the beacon line**, straight into the link budget of a system whose entire job is
+   pulling a modulated point source out of noise — 1.26–1.6× SNR depending on whether the regime is
+   shot- or read-noise limited. Run it through the ¼-power code-rate law in camera-era-knobs for the range
+   number.
+2. **We are currently using a 1 MP sensor and discarding ~90 % of it to buy frame rate.** The OG0VA is
+   natively the sensor being emulated — 320×240 @ 480 fps against the M2 grid's 320×200 @ 0.304°/px. No
+   custom mode tables, no PLL fight, no pisp frame-duration-floor hack.
+3. **FSIN/STROBE is architectural, not a nicety**, for a temporal-code correlator. It is the clean version
+   of the frame-exact phase-locking question research.md parks behind the GPIO path.
+
+**The catch, stated honestly: R4 is the same low-volume problem as the FPGA in a different costume.** No
+public register spec, OEM/design-house channel, unknown MOQ and lead time — plus a sensor driver written
+from scratch. *(That last part is the work already done once on `ov9282`, on a stack that documents its
+driver model — unlike the Jetson case above.)*
+
+**Decision rule**: the flight-article board is laid out for **OV9281 on a flex** unless R4 returns a
+stocked eval module and a tolerable MOQ before layout freeze. The sensor must not gate the board.
 
 ---
 

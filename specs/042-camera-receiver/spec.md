@@ -712,6 +712,14 @@ tracking).
 5. **NEW, decide before planning**: does §7.1's fly-to-record path pull the Pi 5 purchase ahead of
    042-B/C? See §12.1 — flagged, deliberately not moved.
 4. ST VL53L9CX (§9): pull the datasheet for FOV / zones / frame rate / sunlight — M3-M4, no rush.
+6. ~~Flight-article platform~~ — **SCOPED OUT 2026-08-21** to the backlog, not to 042. The Pi-vs-Jetson
+   challenge was checked and closed (compute is ~3 % of one Pi 5 core per §10; the switching cost is a
+   MIPI sensor driver port), and the successor is a **single-board CM5 carrier + sensor + XIAO**, INAV
+   separate, no FPGA. See [BACKLOG §043/044 flight article](../BACKLOG.md). **042 does not build a
+   board** — a custom board mid-algorithm-bringup makes every tracker anomaly a hardware suspect.
+   One spin-off *is* actionable during 042: the **OG0VA R4 design-house inquiry** (trigger fired
+   2026-08-21) — OEM lead time is calendar, and the sensor may beat the OV9281 by 1.6× QE at 850 nm and
+   a native 480 fps @ 320×240 mode.
 
 ---
 
