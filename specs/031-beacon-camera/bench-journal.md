@@ -5,6 +5,103 @@
 > file as the bench evolves; deep results live in the outcome docs it links. Machine-local assistant memory
 > should hold only a pointer here.
 
+## REPLATFORMED TO THE DESIGN POINT: 288 fps / 120 Hz chips, whole chain (2026-08-20, msi)
+
+Jobs B + C of [042 continue.md](../042-camera-receiver/continue.md) executed end-to-end on `msi`, which now
+holds the WHOLE rig (emitter + PSU + StepFPGA moved off the DGX bench; the Pi 5 sees the pod). 288 / 2.4 =
+**120.0 Hz exactly** — the platform now sits on its documented ratio with a deterministic 12-frames-per-
+5-chips sampling pattern instead of a drifting one.
+
+| artifact | constant | from → to |
+|---|---|---|
+| emitter `beacon-pod/src/config.h` | `TCA_TOP_HALF` → **`TCA_TOP_BENCH`** | 5435 (114.995 Hz) → **5208** (120.0077 Hz) |
+| gateware `experiments/s7.v` | `FDIV` | 43480 (276 Hz) → **41667** (287.998 Hz sample) |
+| ” | `EDIV_NOM` | 462629 → **443305** (120.0075 Hz, fits 19-bit `ediva_eff`) |
+| host `beacon_telemetry/frame.py` | `SAMPLE_HZ` default | 480.0 → **288.0** |
+| receiver `beacon-bench.ini` | `chip_hz_nominal` / `candidates` | 115.0 / 110,115,121 → **120.0 / 120.0 (single)** |
+
+### STRICTLY SINGLE-RATE — every alternate-rate path is GONE (operator 2026-08-20)
+
+Not "configured to 120" — *incapable of anything else*, so that every clip we record and train on is one
+operating point. Four live paths existed; all four are closed:
+
+| path | was | now |
+|---|---|---|
+| pod build flag | `-DBOOT_HALF_RATE=0` booted at 200 Hz | **removed**; `TCA_TOP_BOOT` ≡ the bench rate |
+| pod command | `'R'` jumped the chip clock to 200 Hz | `'R'` clears knobs and **stays** at 120; `'H'` idempotent |
+| gateware | `+define+CHIP200` → 200 Hz / 480 Hz set | **removed**; one rate set (`SIM` ÷100 scaling stays — it is a sim-time scale, not a rate) |
+| host parser | `BEACON_SAMPLE_HZ` env override | **removed**; `SAMPLE_HZ = 288.0` is a constant |
+| receiver | `chip_hz_candidates` round-robin | `acquire_next_rate_q8()` returns nominal **unconditionally** |
+
+The receiver enforcement sits in `acquire.c`, NOT in config `validate()`, deliberately: it holds even
+against a stale ini that still lists several candidates (no configuration can reintroduce a scan), and it
+leaves the config parser its only multi-element `T_Q8LIST` test coverage. `chip_hz_candidates` is now inert.
+`'F'` still skews ±~12 % **around** 120 Hz — a bounded test stimulus, not a mode, and `'R'` cancels it.
+200 Hz flight constants are kept as comments only; they return with the flight article as a deliberate edit.
+
+**Verified after the pin**: `'R'`, `'H'` and an `'F'` skew-then-cancel all hold lock 100 % / margin 8 with the
+rate parked at ~120.6 Hz — where `'R'` previously dropped it to lock 0 %.
+
+### Measured results
+- **s7 SIMULATES CLEAN — for the first time ever.** It had been staged-but-never-verified since 2026-08-19.
+  Root cause was not the retune: `tb_s7.v`'s code-B stimulus was hardcoded at 20 kHz (the 200 Hz-family ÷100
+  rate) while the DUT had already moved to the camera-era rate, so code B could never lock. Stimulus now
+  carries the single matching constant. s7 **PASS**, s6 still **PASS**. `sim/run.sh` grew a DUT selector:
+  `./run.sh s7`.
+- Gateware built + flashed: 61 % LUT4s (2654/4320), 62 % SLICEs, **all timing preferences met, 0 errors**.
+- **Cross-validation of the 288 Hz constant**: with the retuned bitstream flashed but the pod still on its
+  OLD 115 Hz firmware, the decoder recovered **115.713 Hz** — against the independently measured 115.79 in
+  this journal. The sample-rate constant is right.
+- Pod reflashed → code B moved **115.713 → 119.940 Hz**, margin **4 → 8**, now sitting on the synthetic
+  code-A reference. (Verified the rebuild really took: `0x1457` = 5207 in the disassembly, no 5434 — trap #1.)
+- **regression.py 18/19 PASS** (was 7/19 before the harness fixes below).
+- **Pi 5 live tracker**: acquires code B at `chip_hz 120.00`, q ≈ 1.00, cep 0.25, lock held for the whole
+  30 s run; 8638 frames ≈ 288 fps, **0/600 deadline misses (0.000 %)**. Re-verified on the single-rate build:
+  500 records, track present 98 %, `chip_hz` min/max **120.00 / 120.00**, q min/mean 0.83 / 0.98.
+- Bare recorder at the same operating point: **1440 frames per 5 s heartbeat = 288.0 fps, 0 sensor seq gaps.**
+- **Test suites**: 10/10 on msi native (x86_64 WSL2 — this also clears T069's Tier 0) and 10/10 on the Pi 5.
+
+### Two harness defects the retune exposed (both fixed)
+1. **`Emitter.restore()` was `'R'` alone → 200 Hz.** `'R'` is the only command that clears the corruption/
+   dropout/pulse knobs but it ALSO jumps the chip clock to 200, which a bench-rate-only decoder reads as NO
+   LOCK by design. That single fact accounted for **all 12** regression failures. `restore()` is now
+   `'R'`-then-`'H'`; callers wanting the flight nominal must say `restore_200()` explicitly.
+2. **`'F'` (rate skew) was anchored to `TCA_TOP` (200 Hz)**, so asking for ±2.6 % skew silently threw a
+   bench-rate pod to ~200 Hz. It now skews around `cur_top`, which tracks the last `'R'`/`'H'`.
+
+### The one open failure — NOT a rate regression
+`P3 P=32` (reduced pulse duty). Re-ran the duty ladder 3×: it is flaky at **every** duty point, including
+full-ish `P=128` (lock 100 % / 100 % / 13 %; corr swinging 15340 → 9867). That is optical-path variance from
+the rig changing benches, against P3 thresholds documented as geometry-dependent July envelopes. Full-duty —
+the production waveform contract, per `main.c` (partial duty is BENCH-ONLY) — locks 100 % consistently.
+**Owed**: re-baseline the P3 envelopes for the msi geometry, or gate them on a measured dark/ambient datum.
+
+### Toolchain state on msi (all four bench gates green)
+- **StepFPGA**: needs NO usbipd bind — flash by copying the `.jed` to `D:` (STEPLink volume) and read
+  telemetry via `monitor.sh COM3`. `docs/toolchains.md` lines 41-43 can be corrected accordingly.
+- **Diamond**: the build was dead with `pnmainc.exe` exiting 255 having printed **nothing at all** — no
+  FLEXlm error, empty `build.log`. Two causes, both now fixed and both documented in `deploy_s7.sh`:
+  (a) `LATTICE_LICENSE_FILE` pointed into the pre-migration OneDrive path; the license is now copied to
+  **`C:\lscc\license.dat`** (outside OneDrive, so Files-On-Demand can't dehydrate it) and `setx`'d there,
+  which fixes the GUI too; (b) a WSL-side `export` **does not reach** the Windows process without naming
+  the var in `WSLENV`. License is node-locked to the Killer Wi-Fi NIC `a002a51f3727`, valid to 29-jun-2027.
+- **Emitter**: `avr-gcc` is NOT installed and `sudo` wants a password — the working path is PlatformIO
+  (`~/.platformio/penv/bin/platformio run -e xnano416 -t upload`), which ships its own toolchain + device
+  pack. Run `firmware/beacon-pod/attach-medbg.sh` first or pymcuprog reports "No CMSIS-DAP devices found".
+- **PSU**: SPD1168X `SPD1XEAX4R0055` on usbipd, `psu.py` clean.
+- **Pi 5**: reachable from msi only by hopping through the DGX — msi's key is not in beaconpi5's
+  `authorized_keys`. **Owed**: install it, or keep hopping. Note `cat file | ssh dgx "ssh pi 'cat > dest'"`
+  hangs through the double hop; `base64 -w0` + `ssh -n` on both legs is reliable.
+
+### TRAP: beaconpi5's source tree is an rsync'd COPY, not a git checkout — and it had silently drifted
+`beacon_golden_test_replay_parity` failed 3/17 on the Pi (position err 66 M2 px, vx 1.8× high) while the
+SAME commit passed 10/10 natively on msi. It was not a code defect: the Pi was carrying an **older
+`tests/golden/test_replay_parity.c`**, plus a stray byte-identical `engine.c` at `firmware/beacon-receiver/`
+(a mis-pathed copy of `src/core/engine.c`; inert only because CMakeLists lists sources explicitly rather
+than globbing). Pushing the repo file and deleting the stray restored 10/10.
+**Because there is no git on the Pi, a failure there is not evidence of a repo defect** — always reproduce
+on a real checkout first, then `md5sum` the two trees to find the drift. A proper resync of that tree is owed.
+
 ## Camera-era analysis order OPENED (2026-08-08): [beacon-order-04.md](../../cad/beacon-eval/beacon-order-04.md)
 
 OV9281 MIPI ×2 (B0162) + UVC shield (B0264) + **LIFCL-40-EVN** (CrossLink-NX — sized from the s3 datum:

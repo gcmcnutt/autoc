@@ -12,10 +12,11 @@ Line:  BCN,<seq>,<adc>,<corrA>,<lockA>,<marginA>,<corrB>,<lockB>,<marginB>,<rate
   corrX    int    correlation peak for beacon X (A/B)
   lockX     0|1|2 lock state: 0=no_lock, 1=tentative, 2=confirmed   (the §3.6 lock ladder)
   marginX  int    correlation-margin / SNR proxy for beacon X (the 0-9 quality)
-  rateX    uint   DPLL rate estimate, offset-binary: slip = (rateX-32768)/32 ; chip_rate_Hz = N*480/(L+slip)
-                  (N=31, L=74 -> see chip_rate_hz()). Held (frozen) through outages = the frequency flywheel.
-                  NB 32768 (slip=0) = the TEMPLATE nominal (L=74 samples/period = 201.08 Hz), because L rounds
-                  2.4*31=74.4 down; a locked 200 Hz emitter converges to slip~=+0.4 -> rate ~=32781 -> 200 Hz.
+  rateX    uint   DPLL rate estimate, offset-binary: slip = (rateX-32768)/32 ; chip_rate_Hz =
+                  N*SAMPLE_HZ/(L+slip)  (N=31, L=74 -> see chip_rate_hz()). Held (frozen) through outages
+                  = the frequency flywheel. NB 32768 (slip=0) = the TEMPLATE nominal (L=74 samples/period),
+                  because L rounds 2.4*31=74.4 down; at the 288 Hz sample tick that is 120.65 Hz, so a
+                  locked 120 Hz emitter converges to slip~=+0.4 -> rate ~=32781.
 
 Two beacons because two codes share the one detector (CDMA). Each beacon has its OWN lock/margin/rate (the
 per-beacon independent DPLL of acquisition-research-plan §5).
@@ -26,17 +27,16 @@ from dataclasses import dataclass, fields as _fields
 MAGIC = "BCN"
 LOCK_NAMES = {0: "no_lock", 1: "tentative", 2: "confirmed"}   # the §3.6 lock ladder
 # (A4d-2 ½-word "candidate" tier investigated & deferred — too false-alarm-prone at N=31; see DESIGN.md §5.)
-import os
 
 RATE_BIAS = 32768          # offset-binary zero point
 RATE_SCALE = 32           # internal IIR scaling (slip << 5)
 N_CHIPS = 31              # gateware code length (keep in sync with s3.v localparam N)
-# Gateware sample tick — the ONLY constant that differs between the 200 Hz flight-nominal build
-# (+define+CHIP200 in s7.v: 480 Hz) and the ~115 Hz camera-era build (43480 -> 276 Hz). It MUST match
-# the bitstream actually flashed, or every chip_rate/slip number below is silently wrong rather than
-# obviously broken. Default stays 480.0 because that is what is on the board today; flip it (or export
-# BEACON_SAMPLE_HZ=276) the moment the 115 Hz bitstream is flashed.
-SAMPLE_HZ = float(os.environ.get("BEACON_SAMPLE_HZ", 480.0))
+# Gateware sample tick. SINGLE-RATE PLATFORM (operator 2026-08-20): s7.v has exactly one rate set
+# (FDIV 41667 -> 287.998 Hz sample -> 120 Hz chip), so this is a CONSTANT, not a knob. The old
+# BEACON_SAMPLE_HZ environment override is deliberately gone: it let a stale shell silently rescale every
+# chip_rate/slip number in this module, which fails quietly instead of loudly. If the gateware rate ever
+# changes, edit this line in the same commit as s7.v.
+SAMPLE_HZ = 288.0
 NOM_SAMPLES_PER_PERIOD = round(2.4 * N_CHIPS)   # L in the gateware (74 for N=31)
 
 

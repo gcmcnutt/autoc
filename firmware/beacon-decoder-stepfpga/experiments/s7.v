@@ -28,32 +28,29 @@ module s7_top (input clk12,
   // the whole decode datapath are bit-identical) so a lock lands in ~200k cycles instead of ~15M. SCLK_HALF scales
   // too so the SPI frame still fits inside one sample tick (frame ≈ 16·2·SCLK_HALF must be < FDIV). Synth (`ifndef
   // SIM`) uses the real hardware values. Define +define+SIM on the iverilog cmd line to select the sim set. ========
-// CAMERA-ERA RATE (2026-08-19). The bench emitter boots at ~115 Hz (beacon-pod BOOT_HALF_RATE=1) so the
-// Pi-3 camera receiver gets 2.4 samples/chip at its measured 276.5 fps. This correlator is ALREADY a
-// 2.4-samples/chip design (L = 74 = round(2.4*N) below), so the retune is the SAMPLE CLOCK ALONE:
-// 12 MHz/43480 = 276.0 Hz sample -> 115.0 Hz chip, with L, N and the whole datapath unchanged.
+// CAMERA-ERA RATE (staged 2026-08-19 at 115 Hz; RETUNED TO THE DESIGN POINT 2026-08-20). The OV9281
+// delivers a measured 288 fps at 640x400, and this correlator is ALREADY a 2.4-samples/chip design
+// (L = 74 = round(2.4*N) below), so the whole retune is the SAMPLE CLOCK ALONE: 288 / 2.4 = 120.0 Hz chip
+// exactly. 12 MHz/41667 = 287.998 Hz sample -> 120.0 Hz chip, with L, N and the datapath unchanged.
 // EDIV_NOM (synthetic code A, 53.2 MHz OSCH domain) MUST track it: left at 200 Hz, channel A would run at
-// 1.4 samples/chip and stop locking, taking the synthetic reference and Set C with it. 53.2 MHz/462629 =
-// 114.995 Hz, matching the pod's TCA_TOP_HALF exactly. (19-bit ediva_eff caps at 524287 — 462629 fits.)
+// 1.4 samples/chip and stop locking, taking the synthetic reference and Set C with it. 53.2 MHz/443305 =
+// 120.0075 Hz, matching the pod's TCA_TOP_BENCH (5208 -> 120.0077 Hz) to 2 ppm. (19-bit ediva_eff caps at
+// 524287 — 443305 fits.)
 // COASTMAX stays 65: the flywheel budget is "drift < ~1/2 chip", and both the period and the half-chip
 // tolerance scale with the chip rate, so the two effects cancel and the window is still ~17 s of RC drift.
-// Build with +define+CHIP200 for the 200 Hz flight-nominal set. Host parser must match: SAMPLE_HZ in
-// host/beacon_telemetry/frame.py.
-// (SPI still fits the sample tick either way: frame ~ 16*2*SCLK_HALF = 3840 << 43480.)
-// !! STAGED 2026-08-19 — NOT YET BUILT AND NOT SIMULATED. Diamond is on the (offline) Windows host and
-// !! iverilog is not installed on the bench host. Build, then run host/regression.py before trusting this.
+// (SPI fits the sample tick: frame ~ 16*2*SCLK_HALF = 3840 << 41667.)
+//
+// SINGLE-RATE PLATFORM (operator 2026-08-20): `+define+CHIP200` — the 200 Hz / 480 Hz flight-nominal set —
+// IS GONE. There is one rate set, so a bitstream cannot silently disagree with the pod or with the host
+// parser's SAMPLE_HZ. The flight numbers are recorded in the comment below and come back as a deliberate
+// edit WITH the flight article, not as a synthesis switch.
+//   flight-article reference: EDIV_NOM = 266000, FDIV = 25000  -> chip 200 Hz, sample 480 Hz
+// `SIM` remains, and is NOT a rate override: it scales both dividers ÷100 (same ratio, same samples/chip,
+// bit-identical datapath) purely so a lock lands in ~200k cycles instead of ~15M.
 `ifdef SIM
- `ifdef CHIP200
-  localparam integer EDIV_NOM = 2660, FDIV = 250, SCLK_HALF = 2;    // ÷100: chip 20 kHz, sample 48 kHz, SCLK 3 MHz
- `else
-  localparam integer EDIV_NOM = 4626, FDIV = 435, SCLK_HALF = 2;    // ÷100: chip 11.5 kHz, sample 27.6 kHz
- `endif
+  localparam integer EDIV_NOM = 4433, FDIV = 417, SCLK_HALF = 2;    // ÷100: chip 12.0 kHz, sample 28.8 kHz
 `else
- `ifdef CHIP200
-  localparam integer EDIV_NOM = 266000, FDIV = 25000, SCLK_HALF = 120;  // chip 200 Hz, sample 480 Hz, SCLK 50 kHz
- `else
-  localparam integer EDIV_NOM = 462629, FDIV = 43480, SCLK_HALF = 120;  // chip 115 Hz, sample 276 Hz, SCLK 50 kHz
- `endif
+  localparam integer EDIV_NOM = 443305, FDIV = 41667, SCLK_HALF = 120;  // chip 120 Hz, sample 288 Hz, SCLK 50 kHz
 `endif
 
   // ============ control: physical switches/buttons (active-low, pulled up) + USB override ============
@@ -339,7 +336,8 @@ module s7_top (input clk12,
   // ============ per-code DPLL: rate estimate from peak-phase slip (the frequency flywheel) ============
   // IIR mean of the per-period peak-phase delta (samples/period); updates only while LOCKED -> FROZEN (held)
   // through outages = the flywheel. Reported offset-binary: rate = 32768 + 32·(mean slip). Host recovers:
-  //   slip = (rate-32768)/32 ;  chip_rate_Hz = N·480 / (L + slip)   [N=31, L=74; faster emitter -> peak earlier
+  //   slip = (rate-32768)/32 ;  chip_rate_Hz = N·SAMPLE_HZ / (L + slip)   [SAMPLE_HZ = 288 for this build
+  //   — the platform's one sample rate; N=31, L=74; faster emitter -> peak earlier
   //   -> negative slip -> higher chip_rate]. (See host/beacon_telemetry/frame.py chip_rate_hz().)
   localparam integer SLIP_SH = 5;                        // IIR ~32 periods (~2.4 s) of averaging
   reg pend_d = 0; always @(posedge clk12) pend_d <= pend;

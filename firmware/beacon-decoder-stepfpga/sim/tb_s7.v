@@ -24,12 +24,17 @@ module tb_s7;
     .enableLd1(enableLd1), .enableLd2(enableLd2), .txd(txd), .rxd(rxd)
   );
 
-  // code-B stimulus: CODE1 at ~20 kHz sim chips; amplitude scale ampB; pedestal offset pedB; enable codeB_en
+  // code-B stimulus: CODE1 at the sim chip rate; amplitude scale ampB; pedestal offset pedB; enable codeB_en.
+  // CHIP_NS MUST track s7.v's SIM divider set (÷100 of the real rate) or code B simply never locks — that
+  // mismatch is why s7 had never simulated clean: the stimulus was pinned at the old 200 Hz-family rate
+  // (20 kHz) while the DUT had already moved to the camera-era rate. Found + fixed 2026-08-20.
+  // Single-rate platform: chip 120 Hz -> 12 kHz sim -> 83333 ns/chip. One number, matching s7.v.
+  localparam integer CHIP_NS = 83333;
   localparam [30:0] CODE1 = 31'b0100011001100111100101001011110;
   localparam integer NB = 31;
   reg [5:0] chipB = 0; reg codeB_en = 1'b0;
   real ampB = 1.0; integer pedB = 0;
-  initial forever begin #50000; chipB = (chipB==NB-1) ? 6'd0 : chipB + 1'b1; end
+  initial forever begin #CHIP_NS; chipB = (chipB==NB-1) ? 6'd0 : chipB + 1'b1; end
   always @* begin : lvl
     integer v;
     v = codeB_en ? (2048 + pedB + (CODE1[30-chipB] ? $rtoi(1152.0*ampB) : -$rtoi(1152.0*ampB)))

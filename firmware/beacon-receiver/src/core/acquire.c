@@ -16,22 +16,24 @@ void acquire_init(Acquire *a, const BcnConfig *cfg)
     a->m2_mul = (uint8_t)(1280u / w);          /* coarse plane -> M2: x2 at 640-wide, x4 at 320-wide */
 }
 
+/* SINGLE-RATE PLATFORM (operator 2026-08-20). Acquisition does NOT search for a chip rate: the pod, the
+ * StepFPGA decoder and this receiver are all pinned to 120 Hz (288 fps / 2.4 samples-per-chip), and every
+ * clip we record or train on is that one operating point.
+ *
+ * The round-robin over chip_hz_candidates that used to live here is gone ON PURPOSE, and the enforcement
+ * sits HERE rather than in config validate() for two reasons: (1) it holds even against a stale ini that
+ * still lists several candidates — no configuration can reintroduce a scan; (2) validate() rejecting a
+ * multi-entry list would cost the config parser its only multi-element T_Q8LIST test coverage.
+ *
+ * A wrong-rate emitter must present as NO LOCK, loudly, so the answer is "go look at the pod" rather than
+ * a derated lock that quietly measures the wrong operating point. Restoring a search is a deliberate edit
+ * here, alongside the pod firmware and the gateware — never a config tweak. */
 uint32_t acquire_next_rate_q8(Acquire *a, const BcnConfig *cfg, int32_t x_q8, int32_t y_q8)
 {
-    int32_t dx = x_q8 - a->last_seed_x_q8, dy = y_q8 - a->last_seed_y_q8;
-    uint32_t hz;
-    if (dx < 0) dx = -dx;
-    if (dy < 0) dy = -dy;
-    if (dx < (8 << 8) && dy < (8 << 8)) {
-        a->rate_rr = (uint8_t)((a->rate_rr + 1u) % cfg->n_chip_hz_candidates);   /* same spot: rotate */
-    } else {
-        a->rate_rr = 0u;                                    /* new spot: nominal first               */
-    }
-    hz = a->rate_rr == 0u ? cfg->chip_hz_nominal_q8
-                          : cfg->chip_hz_candidates_q8[a->rate_rr];
+    a->rate_rr = 0u;
     a->last_seed_x_q8 = x_q8;
     a->last_seed_y_q8 = y_q8;
-    return hz;
+    return cfg->chip_hz_nominal_q8;
 }
 
 uint8_t acquire_pass(Acquire *a, const FrameView *fv, AcqSeed *seeds, uint8_t max_seeds)

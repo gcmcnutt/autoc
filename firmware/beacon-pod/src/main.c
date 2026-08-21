@@ -1,14 +1,19 @@
-// Beacon emitter: 200 Hz Gold code (N=31) on DIM + a code-epoch SYNC pulse, with a USART0 command link so a host
+// Beacon emitter: 120 Hz Gold code (N=31) on DIM + a code-epoch SYNC pulse, with a USART0 command link so a host
 // can perturb the REAL emitter for closed-loop tests against the StepFPGA (frequency / corruption / dropout).
 //
+// SINGLE-RATE PLATFORM (operator 2026-08-20): 120 Hz is the ONLY rate. No build flag boots another rate and no
+// command leaves it — see the banner in config.h for what was removed and why. 'F' still skews AROUND 120 Hz
+// because a bounded skew is a test stimulus, not a mode; it is bounded to ~±10 % and 'R' cancels it.
+//
 // TIMING DISCIPLINE (so the StepFPGA measures the OSCILLATOR, not the firmware):
-//   * Rate is hardware-timed: each chip = TCA_TOP ticks of F_CPU/16 -> 200.000 Hz nominal. Frequency retune uses
+//   * Rate is hardware-timed: each chip = TCA_TOP_BENCH ticks of F_CPU/16 -> 120.0077 Hz. Frequency retune uses
 //     PERBUF (hardware double-buffered) so it takes effect glitch-free at the next overflow.
 //   * DIM/SYNC edges are DOUBLE-BUFFERED and applied at the TOP of the ISR, before any work (incl. the command
 //     effects), so edge latency stays constant (~1 cycle jitter) regardless of corruption/dropout/UART activity.
 //
 // Command protocol (bytes on USART0 RX @ 115200):
-//   'F' <v>  set chip rate:  PER = TCA_TOP-1 - (v-128)*5   (v=128 nominal 200 Hz, ~±10% over the byte)
+//   'F' <v>  skew chip rate: PER = TCA_TOP_BENCH-1 - (v-128)*5  (v=128 = nominal 120 Hz, ~±12% over the byte;
+//            0.096 %/step at the bench rate). A bounded test perturbation around the one rate — NOT a mode.
 //   'C' <n>  corrupt: flip n random chips / code word
 //   'D' <n>  dropout: blank the first n chips / code word (DIM held low)
 //   'P' <v>  lit-chip pulse width = v/256 of a chip (0 or 255 = full width). Hardware-timed via TCA CMP0:
@@ -18,9 +23,10 @@
 //            integrates a 10-60%-of-frame exposure window that slides through the chip (unsynced clocks);
 //            partial-duty pulses would overlap it by a phase-dependent amount -> amplitude beats at the
 //            clock-slip rate. Full-duty chips are exposure-phase-immune. (Single-PD @480 Hz doesn't care.)
-//   'H'      BENCH half-rate: chip clock -> ~115 Hz (TCA_TOP_HALF), everything else unchanged. For the
-//            Pi-3-class camera receiver (~280 fps sustained -> 2.4 samples/chip at 115 Hz). 'R' restores 200.
-//   'R'      reset to nominal (200 Hz, no corruption, no dropout, full-width pulses)
+//   'H'      re-assert the 120 Hz bench rate. Now IDEMPOTENT (the pod never leaves 120), kept so existing
+//            harnesses and the muscle-memory 'R'-then-'H' pairing keep working unchanged.
+//   'R'      reset: clear corruption / dropout / pulse-width knobs and re-assert 120 Hz. It no longer jumps
+//            the chip clock to 200 Hz — that silent jump was the single cause of 12 regression failures.
 #include "config.h"
 #include "gold_codes.h"
 #include <avr/interrupt.h>
@@ -31,6 +37,9 @@ static volatile uint8_t  corrupt_n = 0, dropout_n = 0;   // perturbation knobs (
 static volatile uint8_t  pulse_w = 0;                    // 'P': lit-chip width = pulse_w/256 chip (0 = full)
 static volatile uint32_t corrupt_mask = 0;               // error positions for the current code word
 static volatile uint16_t lfsr = 0xACE1;                  // corruption PRNG
+// NB there is deliberately no "current rate" variable any more: with the platform pinned to one rate, 'F'
+// skews around TCA_TOP_BENCH directly. (Pre-2026-08-20 'F' anchored to the 200 Hz constant, which silently
+// threw a bench-rate pod to ~200 Hz on any skew request — that is how regression.py's P4 check went red.)
 
 // ---- firmware-ADC UVLO (R11): trip -> LEDs dark + POWER_DOWN; recovery = battery pull / POR ----
 static uint8_t uvlo_div = 0, uvlo_cnt = 0;               // ISR-only state (sample cadence / debounce)
@@ -90,7 +99,7 @@ int main(void) {
     dim_next  = (GOLD_CODE[CODE_ID] >> (GOLD_N - 1u)) & 1u;  // seed chip 0
     sync_next = 1u;
 
-    TCA0.SINGLE.PER     = (uint16_t)(TCA_TOP_BOOT - 1u);     // 200 Hz, or ~115 Hz if BOOT_HALF_RATE (config.h)
+    TCA0.SINGLE.PER     = (uint16_t)(TCA_TOP_BOOT - 1u);     // 120 Hz — the only rate (config.h banner)
     TCA0.SINGLE.INTCTRL = TCA_SINGLE_OVF_bm;
     TCA0.SINGLE.CTRLA   = TCA_SINGLE_CLKSEL_DIV16_gc | TCA_SINGLE_ENABLE_bm;
 
@@ -156,7 +165,7 @@ ISR(USART0_RXC_vect) {
     if (USART0.STATUS & USART_DREIF_bm) USART0.TXDATAL = b; // echo the byte back (host ack / baud-error check)
     if (op) {
         switch (op) {
-            case 'F': TCA0.SINGLE.PERBUF = (uint16_t)((int16_t)(TCA_TOP - 1u) - ((int16_t)b - 128) * 5); break;
+            case 'F': TCA0.SINGLE.PERBUF = (uint16_t)((int16_t)(TCA_TOP_BENCH - 1u) - ((int16_t)b - 128) * 5); break;
             case 'C': corrupt_n = (b > GOLD_N) ? GOLD_N : b; break;
             case 'D': dropout_n = (b > GOLD_N) ? GOLD_N : b; break;
             case 'P': pulse_w = (b == 255u) ? 0u : b; break;   // 0 or 255 = full width
@@ -164,9 +173,8 @@ ISR(USART0_RXC_vect) {
         op = 0;
     } else if (b == 'F' || b == 'C' || b == 'D' || b == 'P') {
         op = b;                                            // value-taking opcode
-    } else if (b == 'R') {                                 // reset to nominal
-        TCA0.SINGLE.PERBUF = (uint16_t)(TCA_TOP - 1u); corrupt_n = 0; dropout_n = 0; pulse_w = 0;
-    } else if (b == 'H') {                                 // bench half-rate (~115 Hz), glitch-free via PERBUF
-        TCA0.SINGLE.PERBUF = (uint16_t)(TCA_TOP_HALF - 1u);
+    } else if (b == 'R' || b == 'H') {                     // both re-assert THE rate; 'R' also clears the knobs
+        TCA0.SINGLE.PERBUF = (uint16_t)(TCA_TOP_BENCH - 1u);   // glitch-free via PERBUF
+        if (b == 'R') { corrupt_n = 0; dropout_n = 0; pulse_w = 0; }
     }
 }

@@ -70,18 +70,22 @@ class Emitter:
                 if attempt == 1 and not self._reattach(): break
         return False
     def stop(self):    return self.cmd(b"\x44\x1f", "D31(stop)")
-    def restore(self): return self.cmd(b"\x52", "R")
-    def bench_rate(self): return self.cmd(b"\x48", "H")   # ~115 Hz, the rig's rate of record
+    def restore_200(self): return self.cmd(b"\x52", "R")  # RAW 'R': clears knobs AND jumps to 200 Hz nominal
+    def bench_rate(self): return self.cmd(b"\x48", "H")   # 120 Hz, the rig's rate of record
+    def restore(self):
+        # BENCH POLICY (operator 2026-08-19; completed 2026-08-20 with the 120 Hz retune). The rig is
+        # bench-rate ONLY — pod, decoder gateware and camera receiver are all pinned to 120 Hz, and the
+        # decoder has no 200 Hz template, so a 200 Hz emitter reads as NO LOCK *by design*.
+        # 'R' is the only command that clears the corruption/dropout/pulse knobs, but it ALSO jumps the
+        # chip clock to 200 — so every restore must put 'H' back. Folding that pairing into restore()
+        # itself (rather than leaving it to each caller) is what fixes regression.py: its 12 failures on
+        # 2026-08-20 were ALL "harness left the pod at 200 Hz and then asserted on lock". Callers that
+        # genuinely want the 200 Hz flight nominal must say restore_200() explicitly.
+        ok = self.restore_200()
+        return self.bench_rate() and ok
     def close(self):
-        # BENCH POLICY (operator 2026-08-19): the rig is 115-family only. 'R' still clears the
-        # corruption/dropout/pulse knobs, but close() then re-selects 'H' so no harness exit silently
-        # leaves the emitter at 200 Hz nominal — that silent restore cost a live-tracking debugging
-        # session (the camera receiver has no 200 Hz candidates and presents it as NO LOCK by design).
-        # The stepfpga decoder rejoins at 115 once its staged retune (s7.v, commit 5d2532c) is built on
-        # the Windows box; until then FPGA sessions must set 'R' EXPLICITLY and put 'H' back after.
         try:
-            self.restore()
-            self.bench_rate()
+            self.restore()          # already R-then-H; no harness exit leaves the pod at 200 Hz
         except Exception: pass
         finally:
             try: self.s.close()

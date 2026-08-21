@@ -1,5 +1,14 @@
 # 042 — continue here (handoff, written 2026-08-21 on the DGX)
 
+> **STATUS 2026-08-20 (msi): Jobs B and C are DONE.** The whole chain — pod, gateware, decoder host and
+> receiver — is replatformed to 288 fps / 120 Hz and verified live: s7 simulates clean (a first), gateware
+> built + flashed with all timing met, pod reflashed (code B measured 119.940 Hz), regression 18/19, and the
+> Pi 5 tracker acquires at `chip_hz 120.00` with 0.000 % deadline misses. Full write-up, including two
+> harness defects the retune exposed and the Diamond-license fix, is the top entry of the
+> [bench journal](../031-beacon-camera/bench-journal.md). **Job A (T069, the WSL2 cross path) is still open**,
+> as is the P3 AGC re-baseline for the msi optical geometry. Read the bench journal before the tables below —
+> where they disagree, the journal is current and the tables are the original plan.
+
 **This trip's host**: `msi` (Windows + WSL2). It is the only box with **all three** of the toolchains
 this feature still needs: the WSL2→aarch64 cross path, Lattice Diamond (gateware), and avr-gcc for the
 beacon pod. Three jobs below, independent — do them in any order.
@@ -68,11 +77,16 @@ because anything is failing.
 | ” | `firmware/beacon-decoder-stepfpga/host/beacon_telemetry/frame.py` | `SAMPLE_HZ` default `480.0` | **`288.0`** when the new bitstream is flashed (or `BEACON_SAMPLE_HZ=288`) |
 
 Notes:
-- `TCA_TOP_HALF`'s name becomes a misnomer (120 is not half of 200) — rename to `TCA_TOP_BENCH` while
-  you are in there; `BOOT_HALF_RATE=1` and the `'H'` / `'R'` command semantics stay as they are.
-- **The transition is graceful by construction**: `chip_hz_candidates` carrying both 115 and 120 means
-  acquisition rotates onto whichever the emitter is actually running (see `acquire_next_rate_q8`), so
-  the emitter and receiver do not have to change in the same minute. Drop 115 once the pod is reflashed.
+- ⚠️ **SUPERSEDED 2026-08-20 — the two notes below described a graceful, multi-rate transition; the
+  operator instead called for a STRICTLY single-rate platform.** What shipped: `TCA_TOP_HALF` →
+  `TCA_TOP_BENCH`, `BOOT_HALF_RATE` **deleted**, `'R'` no longer jumps to 200 Hz, `+define+CHIP200`
+  **deleted**, `BEACON_SAMPLE_HZ` **deleted**, and `acquire_next_rate_q8()` returns nominal
+  unconditionally so `chip_hz_candidates` is inert. See the bench journal's table of the four closed
+  paths. Everything from `frame.py`'s row above (the `BEACON_SAMPLE_HZ=288` suggestion) is likewise stale.
+- ~~`TCA_TOP_HALF`'s name becomes a misnomer — rename to `TCA_TOP_BENCH`; `BOOT_HALF_RATE=1` and the
+  `'H'`/`'R'` semantics stay as they are.~~
+- ~~**The transition is graceful by construction**: `chip_hz_candidates` carrying both 115 and 120 means
+  acquisition rotates onto whichever the emitter is actually running.~~
 - **`fps = 300` and `mode = 640x400` do NOT change.** 300 requested delivers ~288; ≥305 wedges the sensor.
 - **The 320×200 NN contract is already satisfied** — the record grid is *always* the 320×200 M2 grid
   (`m2_div` in `track.c`: 640-wide native → M2 = native/2). The sensor's 320×200 mode was only ever
@@ -100,7 +114,8 @@ constants first, then:
 - Flash: copy the `.jed` to the STEPLink mass-storage volume. **Note (found 2026-08-19): STEPLink mounts
   natively on Linux** (`/media/gmcnutt/STEPLink` on the DGX) — so only the *build* actually needs Windows;
   `docs/toolchains.md` lines 41–43 still claim otherwise and should be corrected once confirmed on msi.
-- `+define+CHIP200` restores the 200 Hz flight-nominal set; the default build is now the bench rate.
+- ~~`+define+CHIP200` restores the 200 Hz flight-nominal set~~ — **removed 2026-08-20**: there is exactly
+  one rate set. The flight constants survive only as a comment in `s7.v` and return with the flight article.
 
 ---
 

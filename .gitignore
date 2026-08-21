@@ -1,4 +1,7 @@
 build/
+# 042 receiver out-of-tree build dirs: build-bcn/ (native tier-0), build-cross/ (aarch64 tier-1, T069)
+build-bcn/
+build-cross/
 logs/
 # CTest scratch when ctest is run from the repo root instead of build/
 # (build/Testing/ is already covered by build/ above)

@@ -7,26 +7,32 @@
 // ---- clock / timing (nominal internal osc; OSCCFG fuse = 20 MHz, verified 0x02) ----
 // 10 MHz = OSC20M/2 via the main-clock prescaler (A2-pwr, 2026-07-16): the tinyAVR-1 speed grade for 20 MHz
 // requires VDD >= 4.5 V — out of spec across the whole 1S LiPo range. 10 MHz is in-spec 2.7–5.5 V, which
-// matches the LM3410X's 2.7 V floor. 200 Hz chip stays EXACT (TCA_TOP = 3125).
+// matches the LM3410X's 2.7 V floor.
 #define F_CPU_HZ         10000000UL      // core clock after main() sets the prescaler to /2 (OSC20M/2)
-#define CHIP_RATE_HZ     200UL           // Gold-code chip rate
 #define TCA_PRESCALE     16UL            // TCA0 clock = F_CPU / 16
-#define TCA_TOP          (F_CPU_HZ / TCA_PRESCALE / CHIP_RATE_HZ)   // counts/chip = 3125  -> PER = TOP-1
-#if (F_CPU_HZ % (TCA_PRESCALE * CHIP_RATE_HZ)) != 0
-#  error "CHIP_RATE_HZ is not an exact divisor of F_CPU/prescale — 200 Hz would not be exact"
-#endif
-// BENCH half-rate mode ('H' command, 2026-08-16): the Pi-3-class camera receiver sustains ~280 fps, so
-// 2.4 samples/chip wants ~115 Hz. 625000/115 is not integral -> use 5435 counts = 114.995 Hz (0.004 % off,
-// negligible vs the RC oscillator's ±5 %). NOT the flight nominal -- 200 Hz stays the design point; 'R'
-// restores it. Word period at 115 Hz = 31/115 = 270 ms (vs 155 ms) -- see camera-era-knobs.md.
-#define TCA_TOP_HALF     5435UL          // counts/chip for ~115 Hz (F_CPU/16/5435 = 114.995 Hz)
-// BOOT_HALF_RATE (2026-08-17): boot straight into the ~115 Hz bench mode so a field power-cycle / USB drop
-// does NOT silently revert to 200 Hz (the 25 ft "intermittent" diagnosis). 'R' still selects 200, 'H' 115.
-// Build with -DBOOT_HALF_RATE=0 for the 200 Hz flight-nominal boot.
-#ifndef BOOT_HALF_RATE
-#  define BOOT_HALF_RATE 1
-#endif
-#define TCA_TOP_BOOT     (BOOT_HALF_RATE ? TCA_TOP_HALF : TCA_TOP)
+//
+// ============================ SINGLE-RATE PLATFORM (operator 2026-08-20) ============================
+// The pod emits at 120 Hz. FULL STOP — there is no second rate, no boot-time override and no runtime
+// command that can leave this rate. The camera receiver delivers a measured 288 fps at 640x400 and the
+// design point is 2.4 samples/chip, so 288 / 2.4 = 120.0 Hz EXACTLY, and the whole chain (this pod, the
+// StepFPGA decoder, the Pi receiver) is pinned to that one number so training data is all one operating
+// point. 625000/120 is not integral -> 5208 counts = 120.0077 Hz (0.006 % off, negligible against the RC
+// oscillator's ±5 %). Word period = 31/120 = 258.3 ms. See camera-era-knobs.md.
+//
+// WHAT WAS REMOVED, and why you should not casually put it back:
+//   - `BOOT_HALF_RATE` (a build flag that booted the pod at 200 Hz) — a power-cycle at the wrong build
+//     silently changed the operating point; that cost the 25 ft "intermittent" diagnosis.
+//   - `'R'` jumping the chip clock to 200 Hz — it now clears the perturbation knobs and STAYS at 120.
+// The 200 Hz flight nominal returns WITH THE FLIGHT ARTICLE, as a deliberate edit here, not as a runtime
+// mode. Its constants are kept below purely as documentation of that design point.
+// =====================================================================================================
+#define TCA_TOP_CHIP_HZ  120UL           // THE chip rate. One number, one platform.
+#define TCA_TOP_BENCH    5208UL          // counts/chip for 120 Hz (F_CPU/16/5208 = 120.0077 Hz)
+#define TCA_TOP_BOOT     TCA_TOP_BENCH   // boot rate == the only rate; no override path
+//
+// Flight-article reference ONLY — not reachable at build or run time. 200 Hz IS exact at this clock
+// (10 MHz/16/200 = 3125 counts), which is why it was the original design point.
+#define TCA_TOP_FLIGHT_200   3125UL
 
 // ---- logical signal -> physical pin (PORTA on BOTH 412 + 416) ----
 #define DIM_PORT   PORTA     // code output (baseband, to the LED-driver DIM)      412: PA3
