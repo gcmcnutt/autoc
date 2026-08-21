@@ -5,6 +5,74 @@
 > file as the bench evolves; deep results live in the outcome docs it links. Machine-local assistant memory
 > should hold only a pointer here.
 
+## 120 Hz REPLATFORM CONFIRMED BACK ON THE DGX BENCH: regression 17/19, Pi 5 pinned at 120.00 (2026-08-21, DGX)
+
+The whole rig came home from `msi` (emitter + PSU + StepFPGA all back on the DGX bench; camera on the Pi 5).
+Pulled `dddc832` and re-ran the standard gate against real hardware on this bench. **The 120 Hz retune
+reproduces on a second bench**, so it is a property of the artifacts, not of the msi setup.
+
+### Results
+| gate | result |
+|---|---|
+| `regression.py` | **17/19 PASS** — see [results/regression-2026-08-21-dgx.log](../../firmware/beacon-decoder-stepfpga/host/results/regression-2026-08-21-dgx.log) |
+| ctest, DGX native (aarch64) | **10/10** |
+| ctest, Pi 5, CLEAN rebuild from the freshly synced tree | **10/10** (incl. `beacon_golden_test_replay_parity`) |
+| Pi 5 live tracker, 3 × 30 s | `chip_hz` min/max **120.00 / 120.00** every run; 8638 frames / 30 s = **287.9 fps**; **0/600 deadline misses (0.000 %)** ×3 |
+
+Bench parked as found: 4.200 V / 80 mA, output ON, decoder locked margin 8-9, corrB ~23 k.
+
+Notable regression numbers: P1 baseline lock 100 % margin 8 **corr 22.6 k** (best this rig has read — 16.2 k
+on 2026-08-08, 10.5 k on the Option-C breadboard); **P3 step settle 0.25 s**; **P4 skew +2.6 % holds lock
+100 % margin 8**, which is the direct on-hardware confirmation that the `'F'`-anchored-to-200-Hz defect is
+dead; P6 UVLO trip + UPDI recovery clean.
+
+### The 2 FAILs are the SAME two rungs this bench has always failed — already adjudicated
+`P3 P=32` (lock 73 %, margin 4) and `P3 P=16` (95 %, margin 4). Identical signature to the 2026-08-08
+DGX-native run further down this journal, which was also **17/19** with exactly these two rungs, and where
+the disposition was already taken: **deep-attenuation characterization and the P-ladder discriminator are
+DEFERRED to the field unit** (copper-clad cage, light-sealed, boresighted). Corr still scales linearly with
+duty (22.6 k full → 15.5 k at P=128 → 4.8 k at P=32), so the decoder is fine; it is weak-signal MARGIN on an
+unfiltered BPW34 with room light in-band. Partial duty is BENCH-ONLY per `beacon-pod/src/main.c`; the
+production waveform contract is full-duty, and full duty locks 100 %.
+**This supersedes the msi entry's "owed: re-baseline the P3 envelopes for the msi geometry"** — it is not an
+msi-geometry artefact, it is every geometry except the original WSL-era one. The re-baseline is owed on the
+FIELD UNIT, not on any breadboard bench.
+
+### TRAP FIXED: /dev/ttyACM<N> is plug-order-assigned and had flipped — harness now resolves BY IDENTITY
+The harness hardcoded `Emitter('/dev/ttyACM0')` and `monitor.sh`'s `BCN_PORT` default `/dev/ttyACM1`. Today
+the bench enumerated the **other way round** (DAPLink→ACM0, mEDBG→ACM1), so the regression would have
+commanded the decoder and read the emitter. Note both prior mappings are recorded in this repo and BOTH were
+true when written — 2026-08-08 says ACM1=STEPLink/ACM0=mEDBG, `042 continue.md` says ACM0=mEDBG (written
+while the StepFPGA was unplugged). That is the tell: the number is not a property of the board.
+New `host/ports.py` resolves from `/dev/serial/by-id` by USB descriptor —
+`usb-ARM_DAPLink_CMSIS-DAP_*-if01` = decoder, `usb-ATMEL_mEDBG_CMSIS-DAP_*-if01` = emitter — with
+`BCN_PORT` / `EMITTER_PORT` still overriding. Wired into `regression.py`, `recovery_sweep.py`, `monitor.sh`.
+**Any new bench script should call `ports.py`, never a bare ttyACM number.**
+
+### The Pi's rsync'd tree now has a SCRIPT, because ad-hoc rsync is what let it drift
+`firmware/beacon-receiver/pi/sync-to-pi.sh` (dry-run by default, `--go` to apply) — `--delete`, `--checksum`
+(several machines write this tree and their mtimes disagree, so content is the only honest comparison), and
+ONE authoritative exclude list. Excludes `crrcsim/`, `cad/`, `flight-results/`, `build*/`, `.git/`: the Pi
+builds `firmware/beacon-receiver` and nothing else, and ~490 MB of sim assets have no business on the flight
+host. Because rsync never deletes an excluded path, the Pi's own `build/` and `/data` are protected.
+Today's sync found **0 deletions** — the stray mis-pathed `engine.c` and the stale
+`tests/golden/test_replay_parity.c` were genuinely fixed on the msi trip — and after it a repeat dry run
+showed **zero residual delta**. Cross-checked: the repo's `pi/ov9282-patched.c` is **byte-identical**
+(md5 `37756be2fd392efcc50998ad36693d99`) to `~/ov9282-build/ov9282.c` that the Pi actually compiles, so the
+harvested camera driver in the repo is the one flying.
+
+### Pi 5 acquisition churn is still the open item — but it is a STARTUP transient, not steady-state
+Across three back-to-back 30 s runs the overall track-present duty read 66 % / 98 % / 61 %, which looks
+alarming until it is plotted against time: every run holds **100 % unbroken** once settled, and all the
+churn is in a variable settling window of 0.5-15 s at process start. Steady-state duty is 100 % / 100 % /
+100 %; q mean 0.95-0.97. So the msi entry's 98 % and today's 61 % are the SAME behaviour sampled at
+different settle times — do not read a duty percentage off a short run without the timeline. This is the
+existing T050-T053 / evening-A-B item, and the right measurement is time-to-first-stable-lock, not duty.
+
+### Not run here
+`iverilog` is not installed on the DGX, so the s6/s7 sim gate was not re-run on this box. Gateware is
+unchanged since `dddc832`, where s7 PASSed on msi.
+
 ## REPLATFORMED TO THE DESIGN POINT: 288 fps / 120 Hz chips, whole chain (2026-08-20, msi)
 
 Jobs B + C of [042 continue.md](../042-camera-receiver/continue.md) executed end-to-end on `msi`, which now

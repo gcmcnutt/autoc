@@ -12,6 +12,7 @@ baseline-relative where geometry-dependent.
 """
 import os, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ports import emitter_port
 from psu import SPD1168X
 from recovery_sweep import Emitter
 
@@ -66,7 +67,7 @@ def main():
     psu = SPD1168X()
     print("== P0: cold start from PSU (output off -> on) ==")
     psu.set_volt(4.2); psu.set_curr(0.45); psu.output(True); time.sleep(2)
-    em = Emitter('/dev/ttyACM0')
+    em = Emitter(emitter_port())          # by-id, not ttyACM<N> — plug order flips it (ports.py)
     alive = em.restore()
     if not alive:                                   # trickle-latched from a prior trip -> UPDI reset clears
         print("  (no echo -> UPDI reset to clear a trickle-preserved latch)")

@@ -18,19 +18,24 @@ Usage:  ~/.venvs/avr/bin/python recovery_sweep.py [--repeats 3] [--ladder "0.005
 import argparse, csv, os, re, subprocess, sys, time
 import serial
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ports import emitter_port
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 TICK_MS = 25.0                    # BCN frame period (40 Hz)
 SEQ_MOD = 10000
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--port", default="/dev/ttyACM0")
+    p.add_argument("--port", default=None, help="emitter CDC; default = mEDBG resolved via /dev/serial/by-id")
     p.add_argument("--com", default="COM3")
     p.add_argument("--repeats", type=int, default=3)
     p.add_argument("--ladder", default="0.005,0.025,0.078,0.155,0.5,1,2,4,8",
                    help="comma-sep loss durations in seconds")
     p.add_argument("--csv", default=os.path.join(HERE, "results", "recovery_sweep.csv"))
-    return p.parse_args()
+    a = p.parse_args()
+    if a.port is None: a.port = emitter_port()
+    return a
 
 ATTACH_SH = os.path.abspath(os.path.join(HERE, "..", "..", "beacon-pod", "attach-medbg.sh"))
 

@@ -1,17 +1,29 @@
 # 042 — continue here (handoff, written 2026-08-21 on the DGX)
 
+> **STATUS 2026-08-21 (DGX): the 120 Hz replatform is CONFIRMED ON A SECOND BENCH.** The rig came home from
+> msi and `dddc832` was re-gated here against real hardware: `regression.py` **17/19** (the 2 FAILs are the
+> two deep-attenuation P3 rungs this bench has *always* failed — already adjudicated, deferred to the field
+> unit), ctest **10/10** on the DGX and **10/10** on a CLEAN Pi 5 rebuild, and the Pi 5 tracker pinned at
+> `chip_hz` **120.00/120.00** with **0/600** deadline misses across three runs. Two harness traps fixed on
+> the way: serial ports now resolve by USB identity (`host/ports.py`) instead of `/dev/ttyACM<N>`, which had
+> flipped; and the Pi's rsync'd tree now syncs through `pi/sync-to-pi.sh` instead of ad-hoc rsync. Details in
+> the [bench journal](../031-beacon-camera/bench-journal.md) top entry.
+>
 > **STATUS 2026-08-20 (msi): Jobs B and C are DONE.** The whole chain — pod, gateware, decoder host and
 > receiver — is replatformed to 288 fps / 120 Hz and verified live: s7 simulates clean (a first), gateware
 > built + flashed with all timing met, pod reflashed (code B measured 119.940 Hz), regression 18/19, and the
 > Pi 5 tracker acquires at `chip_hz 120.00` with 0.000 % deadline misses. Full write-up, including two
 > harness defects the retune exposed and the Diamond-license fix, is the top entry of the
 > [bench journal](../031-beacon-camera/bench-journal.md). **Job A (T069, the WSL2 cross path) is still open**,
-> as is the P3 AGC re-baseline for the msi optical geometry. Read the bench journal before the tables below —
+> as is the P3 AGC re-baseline — **but see the 2026-08-21 entry: it is NOT an msi-geometry artefact.**
+> The same two deep-attenuation rungs fail on the DGX bench too, and the re-baseline is owed on the
+> FIELD UNIT, not on any breadboard bench. Read the bench journal before the tables below —
 > where they disagree, the journal is current and the tables are the original plan.
 
-**This trip's host**: `msi` (Windows + WSL2). It is the only box with **all three** of the toolchains
-this feature still needs: the WSL2→aarch64 cross path, Lattice Diamond (gateware), and avr-gcc for the
-beacon pod. Three jobs below, independent — do them in any order.
+**Jobs B and C below are DONE and are kept for the record** (they document the arithmetic and the constants).
+**Job A (T069) is the only one still open**, and it still needs `msi` (`100.92.184.6`) — the only box with the
+WSL2→aarch64 cross path, Lattice Diamond, and avr-gcc. Note the hardware itself is back on the DGX as of
+2026-08-21, so a future gateware change means shipping the StepFPGA to msi again, or installing Diamond here.
 
 ---
 
@@ -22,10 +34,11 @@ beacon pod. Three jobs below, independent — do them in any order.
 | `beaconpi5` | `pi@100.97.242.96` | **the 042 rig**: Pi 5 8 GB, OV9281 on CAM0, NVMe `/data`, tracker runs live here |
 | `beaconpi` | `pi@100.87.61.53` | 3A+, **spare** (camera removed); still has the original patched driver + build dir |
 | `msi` | `100.92.184.6` | Windows + WSL2: Diamond, avr-gcc, the cross path — **this trip** |
-| DGX | `promaxgb10-4331` | dev box; **the bench PSU + emitter USB live here** (`/dev/ttyACM0` = mEDBG), venv `~/.venvs/avr` |
+| DGX | `promaxgb10-4331` | dev box; **as of 2026-08-21 the WHOLE bench is here again** — PSU + emitter + StepFPGA. Do NOT hardcode a ttyACM number: `host/ports.py` resolves both CDCs by USB identity. venv `~/.venvs/avr` |
 
-**Physical**: emitter (code B) + PSU at the DGX bench, camera on the Pi 5, **StepFPGA currently
-disconnected** (operator pulled it) — convenient, since it may travel to msi for the Diamond flash.
+**Physical (2026-08-21)**: emitter (code B) + PSU + **StepFPGA all reconnected at the DGX bench**, camera on
+the Pi 5. The StepFPGA carries the retuned 120 Hz bitstream flashed on the msi trip. Bench parked locked at
+4.200 V / 80 mA, margin 8-9.
 
 **State**: Stage 1 exit met single-code (ASCII scope at 10 Hz on live beacons). Tracker on the Pi 5 runs
 at 640×400 / 288.5 fps with 0.000 % deadline misses. 10/10 test suites green on DGX, Pi 5, and 3A+.
@@ -124,14 +137,21 @@ constants first, then:
 1. **Verify the target actually rebuilt.** `cmake --build --target X` prints `Built target X` even when
    it compiled nothing. Two debug rounds were lost to a stale binary on the Pi. `touch` the edited file
    and look for a `Building C object` line before trusting any behavioural change.
-2. **`recovery_sweep.Emitter.close()` now parks the pod at `'H'`** (bench rate), deliberately — no
+2. **Never hardcode `/dev/ttyACM<N>`** — it is assigned in plug order and HAS flipped between the emitter
+   and the decoder (this file's own table said ACM0=mEDBG; the 2026-08-08 journal entry said ACM0=STEPLink;
+   both were true when written). Use `host/ports.py` (`decoder_port()` / `emitter_port()`), which reads
+   `/dev/serial/by-id`. `BCN_PORT` / `EMITTER_PORT` still override.
+3. **Sync the Pi with `firmware/beacon-receiver/pi/sync-to-pi.sh`, not ad-hoc rsync** — dry-run by default,
+   `--go` to apply, `--checksum --delete` with one authoritative exclude list. Ad-hoc rsync is exactly what
+   let that tree drift into a fake "Pi-only bug" (trap below).
+4. **`recovery_sweep.Emitter.close()` now parks the pod at `'H'`** (bench rate), deliberately — no
    harness exit may silently leave it at 200 Hz. FPGA sessions that want 200 must select `'R'`
    explicitly and put `'H'` back.
-3. **The bench is 115-family only** (now 115/120) — a 200 Hz lock is a false comfort on a derated rig,
+5. **The bench is 115-family only** (now 115/120) — a 200 Hz lock is a false comfort on a derated rig,
    so 200/210 are out of the candidate list. Production rates return with the flight article, not before.
-4. **DPLL rate adjustment is PARKED** (phase adoption only) — two live attempts destabilised it. It comes
+6. **DPLL rate adjustment is PARKED** (phase adoption only) — two live attempts destabilised it. It comes
    back as sim-first work against golden clips, never live tuning. See `track.c`.
-5. **lyu-guest has client isolation**: bench hosts can only reach each other over tailscale. The DGX has
+7. **lyu-guest has client isolation**: bench hosts can only reach each other over tailscale. The DGX has
    an `nmcli` shared-mode connection `pi5-share` on `enP7s7` for cabled bring-ups.
 
 ---
