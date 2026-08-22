@@ -317,14 +317,27 @@ static void consoleHeartbeat(bool hasServoActivation, int pathIdx)
     q.normalize();
   }
   gp_vec3 gyro = aircraft_state.getGyroRates();  // aerospace convention (rad/s)
+  // 041 P5-3 — specific force in body FRD g, exactly as the NN carrier holds it
+  // (UNSCALED; kAccelScale_g is applied at the slot write). |a| is the bench
+  // sanity check: ~1.00 at rest on a table, whatever the attitude.
+  gp_vec3 accel = aircraft_state.getSpecificForceG();
+  // The other three 041 channels. ⚠️ These read 0.00 until P5-3 part 2 computes
+  // them on the xiao — printing them is deliberate: a channel the policy is
+  // consuming as a constant zero should be VISIBLE on the bench, not something
+  // discovered post-flight from the log.
+  gp_scalar es = aircraft_state.getSpecificEnergy();
+  gp_scalar bclr = aircraft_state.getBoundaryClosureRate();
+  gp_vec3 sg = aircraft_state.getScoreGradBody();
   logPrint(INFO,
-           "hb: mspOK=%s pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro=[%.2f,%.2f,%.2f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d span=%u ticks=%lu drops=%lu",
+           "hb: mspOK=%s pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro=[%.2f,%.2f,%.2f] accel=[%.2f,%.2f,%.2f] |a|=%.2f Es=%.1f bClR=%.2f sg=[%.2f,%.2f,%.2f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d span=%u ticks=%lu drops=%lu",
            state.autoc_state_valid ? "Y" : "N",
            pos_raw.x(), pos_raw.y(), pos_raw.z(),
            pos_rel.x(), pos_rel.y(), pos_rel.z(),
            vel.x(), vel.y(), vel.z(),
            q.w(), q.x(), q.y(), q.z(),
            gyro.x(), gyro.y(), gyro.z(),
+           accel.x(), accel.y(), accel.z(), accel.norm(),
+           es, bclr, sg.x(), sg.y(), sg.z(),
            state.isArmed() ? "Y" : "N",
            state.isFailsafe() ? "Y" : "N",
            hasServoActivation ? "Y" : "N",
