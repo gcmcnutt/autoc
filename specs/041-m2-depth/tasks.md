@@ -489,6 +489,10 @@ capacity is not the constraint. Settled; reopen only on new evidence.
 
 ## Phase 5 — HARDWARE LONG-LEAD ⭐ **STARTS NOW, IN PARALLEL WITH THE BAKE**
 
+➕ **Picking this up in a fresh context? Start at [`phase5-handoff.md`](phase5-handoff.md)** — verified
+environment state, the three previously-resolved traps, the ⛔ do-not-rebuild-autoc boundary while t7 bakes,
+and the toolchains.md INAV gap to close first. This section still GOVERNS; the handoff is orientation.
+
 ➕ **Added 2026-08-18 (operator)**: *"we have an inav extension backlog item to get additional sensor data
 through the single msp call — that can start soon and be proven convention by bench testing — this is
 required ahead of all given the complexity of setting up the programming — and then the xiao in prep for
