@@ -72,8 +72,11 @@ constexpr float kGyroScale_radps      = 6.0f;
 
 // 041 T032 — ACCEL_* normalization. Body specific force is divided by this, so
 // the channel carries "g's, scaled". Sized from the observed envelope rather
-// than a round number: the standing flight record is +11.2 g / -8.4 g, and
-// loads have crept up flight over flight. At 8 g the raw ratio is 1.0, which
+// than a round number: the standing record is +11.2 g / -8.4 g, and loads have
+// crept up run over run. ⚠️ That peak is from SIM, not real-flight telemetry —
+// operator confirmed 2026-08-22 ("we saw 11 on earlier sim"). The previous
+// wording "flight record" read as airborne data; it is not, and reading it that
+// way would make a sim/real fidelity argument out of nothing. At 8 g the raw ratio is 1.0, which
 // keeps the common flight regime (0..3 g) inside [0, 0.4] where tanh is close
 // to linear, while an 11 g excursion reaches 1.4 -- large and clearly distinct
 // without saturating the unit. A scale of 1 g would put every manoeuvre deep in

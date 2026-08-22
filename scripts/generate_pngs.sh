@@ -171,6 +171,13 @@ run plot_per_axis_time_series.py "$SUMMARY" --label "$NAME" --total-gens "$TOTAL
 # knife-edge or inverted where Euler bank angle is meaningless.
 run regime_control.py "$TICK" --label "$NAME" --gen "$GEN" \
     -o "$OUT/${NAME}_regime_control.png"
+# g_load (041, 2026-08-22) — load factor as an aggressiveness measure. The
+# aggressiveness panels measure COMMAND effort; this measures the CONSEQUENCE,
+# and they can move opposite ways: t7 g559 pulls 4g+ with BELOW-average elevator
+# because airspeed is 24% higher (n goes as v²). Operator: "G load is another
+# form of aggressiveness measure."
+run g_load.py "$TICK" --label "$NAME" --gen "$GEN" \
+    -o "$OUT/${NAME}_g_load.png"
 run dynamics_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
     "${DYN_CACHE[@]}" --label "$NAME" -o "$OUT/${NAME}_dynamics_progress.png"
 
