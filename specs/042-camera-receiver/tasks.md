@@ -208,6 +208,32 @@ waiting for real hardware.
   loop with the emitter on a flatcar. Do this only if T077 leaves the velocity/acceleration behaviours
   entangled.
 
+- [ ] T079 [US3] **Field phase — preprogrammed quad flights** (operator idea, 2026-08-22): put the emitter
+  and/or the receiver on large quads flying **waypoint missions**, for *"honest and somewhat repeatable"*
+  field tests. Payload is not a problem — §7.1 already decoupled the verification airframe from the flight
+  article, and the Pi 5 + camera + NVMe is ~100–130 g.
+  **This is the stage that settles the one question the bench cannot**: it is the only way to get a **sky
+  background**, and sky is the case where visual ego-motion registration (T071) has no texture to work with —
+  precisely the regime where `compute-budget.md` shows brute force is four orders out, and therefore the
+  test that decides whether §2.3's AHRS is optional feed-forward or a flight-article requirement.
+  **Truth comes from the flown logs, never from the commanded path** — wind, GPS drift and timing offsets
+  mean "repeatable" is approximate. And know what that truth is worth:
+  | reference | 30 m | 100 m | vs the 0.3° RMS bearing bar |
+  |---|---|---|---|
+  | GPS, typical (3 m) | 5.73° | 1.72° | **6–19× too coarse** |
+  | GPS, good (1 m) | 1.91° | 0.57° | 2–6× too coarse |
+  | **RTK (2 cm)** | **0.038°** | **0.011°** | 8–26× margin |
+  So plain GPS is fine for **lock duty, reacquire distribution and the rate axis** — and rate truth is better
+  than position truth, since differencing removes common-mode error — but **the ≤1 px / 0.3° bearing-residual
+  bar cannot be validated in the field without RTK.** That bar stays a bench measurement (fiducials give
+  0.18°). Decide RTK on whether field bearing accuracy is worth the kit.
+  Useful missions, since apparent rate is set by v/R: a **constant-rate crossing** at fixed range (10 m/s at
+  30 m = 19 °/s, at 100 m = 5.7 °/s — the whole band is reachable by choosing range), a **radial
+  approach/recede** (≈0 °/s, isolates range/SNR from motion), and a **circle around the chase** (sustained
+  constant rate, the racetrack at scale). Both circling = the real engagement.
+  ⚠️ Has procurement/logistics lead time (airframes, mounts, possibly RTK) — start it early even though it
+  runs late.
+
 ### The research ladder (operator, 2026-08-22)
 
 Each stage isolates ONE new thing; do not skip, because a failure two stages up is uninterpretable.
@@ -218,6 +244,7 @@ Each stage isolates ONE new thing; do not skip, because a failure two stages up 
 | 2. + camera vibration/ego disturbance | robustness of registration (T071) | same rig + disturbance | |
 | 3. **moving target, static camera** | TBD with **no registration confound** | **T077 pendulum** | the cheap decisive one |
 | 4. both moving | the real engagement | both rigs | |
+| **5. field, preprogrammed quads** | **sky background** + real range/SNR; settles the AHRS question | T079 | long lead time |
 
 - [ ] T076 [P] [US2] **Two `track.c` correctness fixes** (bugs, not tuning — do them opportunistically, do
   NOT schedule a tuning phase; the measured knee is 1–2 °/s and these move it to maybe 2–3, against 15–18 °/s
