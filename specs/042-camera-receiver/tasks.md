@@ -171,6 +171,19 @@ waiting for real hardware.
 > ~15 000× at flight rates; ego-motion registration removes the V² term and is worth ~75×, where NEON is
 > worth ~4×). Do them in this order — each is independently testable against `pan2.bcnr`.
 
+- [ ] T080 [US3] **Re-rank the acquisition detector: accumulated |Δ²| over ~8 frames** — the cheapest large
+  win found so far, and it should be done BEFORE T071/T050 because it is ~30 lines and changes what those
+  are measured against. Replace `acquire_pass`'s single inter-pass |Δ| on the reduce4 plane with a running
+  sum of the temporal SECOND difference over 8 frames (3.3 chips). Measured offline on `pan2.bcnr`
+  ([results/stage1-detector-ranking.md](results/stage1-detector-ranking.md)): beacon median rank **1842 → 1**
+  still, **276 → 2** moving; top-3 seeding ~19–25 % → ~60 %, and the moving case becomes as good as the
+  still case. Works because a second difference annihilates the linear ramp an edge makes as it sweeps a
+  cell, which is the dominant ego-motion artefact. Window has a real optimum (flat 4–16 frames, collapses by
+  72) set by the same smear limit as everything else. **Also raise `max_seeds`/candidate cap** (3 seeds, 4
+  candidates today) — top-32 reaches ~71 %.
+  ⚠️ **Scope**: this fixes SEEDING, not CONFIRMATION. A seeded candidate still needs a coherent word, and the
+  code match still degrades 5–20× under motion — so expect a large gain static and only partial gain moving.
+  It does **not** substitute for T071/T050.
 - [ ] T071 [US3] **Ego-motion registration** — per-frame global shift estimate on a reduce4 plane, in
   `firmware/beacon-receiver/src/core/`. THE enabling piece: it turns the moving-camera case back into the
   static-camera case for detection, and removes the V² term from the velocity search (compute-budget.md).
