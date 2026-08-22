@@ -6626,11 +6626,16 @@ void printUsage(const char* progName) {
   std::cout << "Usage: " << progName << " [OPTIONS]\n";
   std::cout << "Options:\n";
   std::cout << "  -k, --keyname KEYNAME    Specify GP log key name\n";
-  std::cout << "  -x, --xiaofile FILE      Specify xiao log file to overlay\n";
+  std::cout << "  -x, --xiaofile FILE      Xiao flight log to play back (binary .bin from the\n";
+  std::cout << "                           flash logger; legacy text logs still parse). Alone,\n";
+  std::cout << "                           it selects xiao-only playback -- no sim/S3 needed.\n";
   std::cout << "  -i, --config FILE        Use specified config file (default: autoc.ini)\n";
   std::cout << "  -h, --help               Show this help message\n";
   std::cout << "\n";
   std::cout << "Examples:\n";
   std::cout << "  " << progName << "                                    # Render sim arenas from S3\n";
-  std::cout << "  " << progName << " -x flight.txt                     # Overlay xiao log data\n";
+  std::cout << "  " << progName << " -x flight_001.bin                 # Play back a xiao flight log\n";
+  std::cout << "\n";
+  std::cout << "Note: the binary log carries a format_version; a renderer built before a\n";
+  std::cout << "format change will REJECT a newer log rather than mis-parse it. Rebuild.\n";
 }
