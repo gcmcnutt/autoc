@@ -30,6 +30,12 @@
 #include <stdint.h>
 #include <string.h>
 
+// 041 P5-3 — the log's input block IS the NN's input block. Including the
+// layout (rather than restating its width) is what makes the static_asserts
+// below possible; before this, kNumInputs was a hand-maintained 37 against a
+// 45-slot NNInputs and NOTHING caught it. See the SLOT ORDER note below.
+#include "autoc/nn/nn_inputs.h"
+
 namespace flightlog {
 
 // ---------------------------------------------------------------------------
@@ -48,7 +54,12 @@ constexpr uint32_t kMagic = 0x314C4641u;
 // failsafe + servo-switch transitions, and INAV-clock anchor pairs
 // (EventRecord.timestamp_ms = xiao clock, value = INAV ms — fit offset/drift
 // against blackbox time).
-constexpr uint8_t kFormatVersion = 3;
+// v4 (041 P5-3): the NN input block grew 37 -> 45 slots (ACCEL_X/Y/Z,
+// SPECIFIC_ENERGY, BOUNDARY_CLOSURE_RATE, SCORE_GRAD_X/Y/Z) and the scale
+// table's telemetry bases moved with it. TickRecord and FileHeader both change
+// width, so a v3 file MUST NOT be parsed by a v4 reader — the version check in
+// validateFileHeader is what enforces that.
+constexpr uint8_t kFormatVersion = 4;
 
 enum RecordType : uint8_t {
   kPad = 0x00,          // buffer word-alignment filler — skipped, never emitted
@@ -101,18 +112,35 @@ enum DisengageReason : uint8_t {
 // decode(-encode(x)) == -decode(encode(x))). decoded = raw / scale.
 //
 // Slot order = PathgenInput enum order (autoc/nn/nn_inputs.h), then the 3 NN
-// outputs. 37 + 3 = 40 entries.
+// outputs, then the v2 telemetry triples.
+//
+// ⚠️ SLOT ORDER IS NOT A CONSTANT — it is whatever PathgenInput says today.
+// This width is DERIVED, and defaultScaleTable() below indexes by enum NAME
+// rather than by literal position, so inserting a slot mid-enum relocates the
+// scales automatically instead of silently mis-scaling every field after it.
+// That is not hypothetical: the 041 layout put ACCEL_X/Y/Z at 33-35, exactly
+// where the old hand-written table had dist_to_boundary and inward_body.
 
-constexpr int kNumInputs = 37;
+constexpr int kNumInputs = NN_INPUT_COUNT;
 constexpr int kNumOutputs = 3;
+
+static_assert(kNumInputs == static_cast<int>(PathgenInput::COUNT),
+              "flight-log input block must be the WHOLE NN input vector; a "
+              "short block silently truncates the tail channels from every "
+              "flight log (041: 8 channels, incl. all of SCORE_GRAD_*)");
 // v2 telemetry triples appended after the NN block (slot order below):
 // pos (virtual/engage-relative NED m), vel (NED m/s), rabbit (ground-truth
 // target position, virtual NED m — the path-follow "rabbit" the dir/dist
 // inputs were computed against).
 constexpr int kNumScaledFields = kNumInputs + kNumOutputs + 9;
-constexpr int kScalePosBase = 40;     // pos_n/e/d
-constexpr int kScaleVelBase = 43;     // vel_n/e/d
-constexpr int kScaleRabbitBase = 46;  // rabbit_n/e/d
+// DERIVED — these were literals (40/43/46) sized for a 37-slot input block,
+// which put them 8 fields inside the input region once the NN grew.
+constexpr int kScalePosBase = kNumInputs + kNumOutputs;  // pos_n/e/d
+constexpr int kScaleVelBase = kScalePosBase + 3;         // vel_n/e/d
+constexpr int kScaleRabbitBase = kScaleVelBase + 3;      // rabbit_n/e/d
+
+static_assert(kScaleRabbitBase + 3 == kNumScaledFields,
+              "telemetry bases must tile the scale table exactly");
 
 constexpr float kScaleUnit = 32767.0f;  // [-1,1]-bounded: unit vecs, quat, tanh, outputs
 constexpr float kScaleDistM = 32.0f;    // raw metres, ±1023.97 m, 1/32 m resolution
@@ -120,24 +148,67 @@ constexpr float kScaleSpeed = 256.0f;   // m/s (closing rate, airspeed, vel), ±
 constexpr float kScaleGyro = 900.0f;    // rad/s, ±36.4 rad/s (~2085 dps), ~0.0011 rad/s res
 constexpr float kScalePosM = 16.0f;     // position m, ±2047.9 m, 6.25 cm resolution
                                         // (engage-relative; 60 s span cap bounds excursion)
+// 041: NN-unit channels that are NOT bounded to [-1,1]. kScaleUnit would clip
+// them — ACCEL_* reaches 1.4 NN units at the 11.2 g flight record, and the MSP
+// wire itself carries ±32 g (= 4.0 NN units at kAccelScale_g). ±4 with 1/8192
+// resolution covers the wire's full range without saturating the log.
+constexpr float kScaleNN4 = 8192.0f;    // ±4.0 NN units
 
 // v2 writer scale table. The FileHeader CARRIES this table; decoders use the
 // header copy (CRC-verified), not a compiled-in copy.
+// ⚠️ INDEXED BY ENUM NAME, NEVER BY LITERAL POSITION. The previous version of
+// this function assigned by hardcoded index ranges and went silently wrong the
+// moment the NN layout changed underneath it. A slot inserted mid-enum now
+// relocates its scale automatically.
 inline void defaultScaleTable(float out[kNumScaledFields]) {
-  for (int i = 0; i < 18; i++) out[i] = kScaleUnit;   // target_x/y/z[6] unit vecs
-  for (int i = 18; i < 24; i++) out[i] = kScaleDistM; // dist[6] raw metres
-  out[24] = kScaleSpeed;                              // closing_rate
-  for (int i = 25; i < 29; i++) out[i] = kScaleUnit;  // quat w,x,y,z
-  out[29] = kScaleSpeed;                              // airspeed
-  for (int i = 30; i < 33; i++) out[i] = kScaleGyro;  // gyro p,q,r
-  out[33] = kScaleUnit;                               // dist_to_boundary (tanh)
-  for (int i = 34; i < 37; i++) out[i] = kScaleUnit;  // inward_body unit vec
-  for (int i = 37; i < 40; i++) out[i] = kScaleUnit;  // NN outputs (tanh)
+  const int kIn = static_cast<int>(PathgenInput::TARGET_X_TM5);  // = 0, the block base
+
+  // --- M1 target representation (25 slots) ---
+  for (int i = kIn; i < static_cast<int>(PathgenInput::DIST_TM5); i++)
+    out[i] = kScaleUnit;                              // target_x/y/z[6] unit vecs
+  for (int i = static_cast<int>(PathgenInput::DIST_TM5);
+       i < static_cast<int>(PathgenInput::CLOSING_RATE); i++)
+    out[i] = kScaleDistM;                             // dist[6] raw metres
+  out[static_cast<int>(PathgenInput::CLOSING_RATE)] = kScaleSpeed;
+
+  // --- craft common tail (20 slots) ---
+  for (int i = static_cast<int>(PathgenInput::QUAT_W);
+       i <= static_cast<int>(PathgenInput::QUAT_Z); i++)
+    out[i] = kScaleUnit;                              // quat w,x,y,z
+  out[static_cast<int>(PathgenInput::AIRSPEED)] = kScaleSpeed;
+  for (int i = static_cast<int>(PathgenInput::GYRO_P);
+       i <= static_cast<int>(PathgenInput::GYRO_R); i++)
+    out[i] = kScaleGyro;
+  // 041: specific force, in NN units (g / kAccelScale_g) — see kScaleNN4.
+  for (int i = static_cast<int>(PathgenInput::ACCEL_X);
+       i <= static_cast<int>(PathgenInput::ACCEL_Z); i++)
+    out[i] = kScaleNN4;
+  out[static_cast<int>(PathgenInput::SPECIFIC_ENERGY)] = kScaleNN4;
+  out[static_cast<int>(PathgenInput::BOUNDARY_CLOSURE_RATE)] = kScaleNN4;
+  out[static_cast<int>(PathgenInput::DIST_TO_BOUNDARY)] = kScaleUnit;   // tanh
+  for (int i = static_cast<int>(PathgenInput::INWARD_BODY_X);
+       i <= static_cast<int>(PathgenInput::INWARD_BODY_Z); i++)
+    out[i] = kScaleUnit;                              // unit vector
+  for (int i = static_cast<int>(PathgenInput::SCORE_GRAD_X);
+       i <= static_cast<int>(PathgenInput::SCORE_GRAD_Z); i++)
+    out[i] = kScaleUnit;                              // unit dir x bounded [0,1]
+
+  // --- NN outputs, then v2 telemetry triples ---
+  for (int i = 0; i < kNumOutputs; i++) out[kNumInputs + i] = kScaleUnit;  // tanh
   for (int i = 0; i < 3; i++) {
     out[kScalePosBase + i] = kScalePosM;              // pos (virtual NED m)
     out[kScaleVelBase + i] = kScaleSpeed;             // vel (NED m/s)
     out[kScaleRabbitBase + i] = kScalePosM;           // rabbit (virtual NED m)
   }
+}
+
+// Hardening: every slot must be assigned. A zero scale encodes every sample to
+// 0 and decodes to 0 — a channel that reads as "sensor silent" rather than as
+// a missing table entry, which is the failure this whole file exists to avoid.
+inline bool scaleTableComplete(const float scales[kNumScaledFields]) {
+  for (int i = 0; i < kNumScaledFields; i++)
+    if (!(scales[i] > 0.0f)) return false;
+  return true;
 }
 
 // CRC-32 (IEEE 802.3, poly 0xEDB88320, init/final-xor 0xFFFFFFFF). Bitwise —
@@ -248,9 +319,19 @@ struct SpanSummary {
 
 #pragma pack(pop)
 
-// Budget arithmetic (contract "Tests" + FR-008): 114 B/tick ⇒ 2×4 min ≈ 1.09 MB
-// in the 2.04 MB region (~47% headroom).
-static_assert(sizeof(TickRecord) <= 120, "TickRecord must stay <= 120 B (flash budget)");
+// Budget arithmetic (contract "Tests" + FR-008), stated as the CONSTRAINT
+// rather than as a magic byte count, so the next slot addition is judged
+// against flight duration instead of against a number nobody can re-derive.
+//
+// 041 P5-3 recomputation: the input block grew 37 -> 45 slots, so a tick went
+// 114 -> 130 B. Two 4-minute spans at 20 Hz = 9600 ticks = 1.19 MB against the
+// 2 MB region (59.5% used, ~40% headroom — was ~48% at 114 B).
+constexpr uint32_t kFlashLogRegionBytes = 2u * 1024u * 1024u;  // FLASH_TOTAL_SIZE
+constexpr uint32_t kBudgetTicks = 2u * 4u * 60u * 20u;         // 2 spans x 4 min @ 20 Hz
+static_assert(sizeof(TickRecord) * kBudgetTicks <= (kFlashLogRegionBytes * 7u) / 10u,
+              "TickRecord too large: two 4-minute spans at 20 Hz must fit in "
+              "70% of the flash log region. Either shrink the record or "
+              "re-argue the flight-duration budget — do NOT just raise this.");
 static_assert(sizeof(TickRecord) ==
                   1 + 4 + 2 + 2 * kNumInputs + 2 * kNumOutputs + 18 + 1 + 1 + 6 + 1,
               "TickRecord must be packed (no compiler padding)");
@@ -302,6 +383,10 @@ inline ValidateResult validateFileHeader(const FileHeader& h) {
   if (h.format_version != kFormatVersion) return ValidateResult::kBadVersion;
   if (crc32(h.scales, sizeof(h.scales)) != h.scale_table_crc)
     return ValidateResult::kBadScaleCrc;
+  // A CRC-clean table can still be WRONG: an unassigned slot is 0, which
+  // decodes every sample of that channel to 0.0 — indistinguishable from a
+  // dead sensor when reading the log months later.
+  if (!scaleTableComplete(h.scales)) return ValidateResult::kBadScaleCrc;
   return ValidateResult::kOk;
 }
 

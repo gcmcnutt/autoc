@@ -38,14 +38,33 @@ struct ScaleTableFixture {
 };
 
 TEST(FlightLogFormat, TickRecordBudget) {
-  // Contract (v2): static assert record size ≤ 120 B (114 B: NN block +
-  // pos/vel/rabbit telemetry + framing).
-  EXPECT_LE(sizeof(TickRecord), 120u);
-  // Spot-check the packed layout didn't grow padding.
+  // v4 (041 P5-3): the record is 130 B — the NN input block grew 37 -> 45
+  // slots. The old fixed ceilings (120 B, 1200 KB) encoded the 114 B era and
+  // could only be "fixed" by raising a magic number, so the contract is now
+  // stated as the FLIGHT-DURATION constraint the header enforces.
   EXPECT_EQ(sizeof(TickRecord),
-            1u + 4u + 2u + 2u * kNumInputs + 2u * kNumOutputs + 18u + 1u + 1u + 6u + 1u);
-  // 2-flight budget: 114 B × 20 Hz × 480 s engaged ≈ 1.09 MB ≤ 2.04 MB region.
-  EXPECT_LE(sizeof(TickRecord) * 20u * 480u, 1200u * 1024u);
+            1u + 4u + 2u + 2u * kNumInputs + 2u * kNumOutputs + 18u + 1u + 1u + 6u + 1u)
+      << "packed layout grew padding, or kNumInputs drifted from the NN vector";
+  // Two 4-minute spans at 20 Hz must fit in 70% of the flash log region.
+  EXPECT_LE(sizeof(TickRecord) * kBudgetTicks, (kFlashLogRegionBytes * 7u) / 10u);
+}
+
+// 041 P5-3 — the regression that motivated v4: the log's input block MUST be
+// the whole NN input vector. At v3 it was a hand-maintained 37 against a
+// 45-slot NNInputs, so BOUNDARY_CLOSURE_RATE..SCORE_GRAD_Z were silently
+// dropped from every flight log and every scale from slot 33 on was assigned
+// to the wrong channel.
+TEST(FlightLogFormat, InputBlockCoversTheWholeNNVector) {
+  EXPECT_EQ(kNumInputs, static_cast<int>(PathgenInput::COUNT));
+  ScaleTableFixture t;
+  // Every slot assigned — a zero scale decodes a live channel to 0.0, which
+  // reads as a dead sensor rather than as a table bug.
+  EXPECT_TRUE(scaleTableComplete(t.scales));
+  // ACCEL_* is not [-1,1]-bounded: the 11.2 g flight record is 1.4 NN units,
+  // and kScaleUnit would clip it. Pin the headroom, not just the presence.
+  const float accel_scale = t.scales[static_cast<int>(PathgenInput::ACCEL_X)];
+  EXPECT_LE(accel_scale * 1.4f, 32767.0f)
+      << "an 11.2 g excursion must survive quantization unclipped";
 }
 
 TEST(FlightLogFormat, RoundTripWithinQuantizationStep) {

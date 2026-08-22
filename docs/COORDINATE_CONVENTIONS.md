@@ -523,6 +523,24 @@ versus a tanh linear region running to ~1.4 (the 11.2 g flight record) — ~0.3%
 **no** accel bias or noise (`config.h` has `enableAccelInputs`/`accelScaleG` and no sigma); on these numbers
 that is defensible, but it is an untested assumption for the flight board until its residuals are measured.
 
+### ⚠️ OPEN (2026-08-22): the accel channel's DYNAMICS differ between sim and INAV, though its units do not
+
+Normalization is settled and identical — both sides store body-FRD g in `AircraftState` and divide by
+`kAccelScale_g` in the ONE shared gather (`src/nn/evaluator.cc`), so level flight reaches the NN as `−0.125`
+on either path. What is **not** matched is the filtering:
+
+| | source | filtering |
+|---|---|---|
+| sim | `bodySpecificForce((a_world − g_world), q, g)` off the FDM | **none** |
+| INAV | `acc.accADCf` | `accSoftLpfFilter` at `acc_lpf_hz`, **default 15 Hz** (PT1 or BIQUAD per `acc_lpf_type`), plus `acc_notch_hz` if set |
+
+At a 20 Hz control cadence a 15 Hz LPF is a real phase difference, so the policy sees a slightly laggier,
+smoother accel in the air than it trained against. ⚠️ **Unverified operator recollection (2026-08-22)**:
+that this filter is *disabled* when autoc/xiao is driving INAV. Reading `acceleration.c` `accUpdate()`, the
+LPF is applied **unconditionally** whenever `acc_lpf_hz != 0` — it is not gated on flight mode or MSP
+override, so the recollection may concern the gyro/PID path instead. **Resolve it by reading the bench FC's
+actual setting (`get acc_lpf_hz`) rather than from source or memory**, and record the answer here.
+
 ## Gyro & Accelerometer Conventions (021, 2026-03-28)
 
 ### INAV Sensor Processing Chain
