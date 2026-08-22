@@ -508,6 +508,14 @@ the loop, so a convention error could not hide behind a firmware bug. Bench FC `
 | nose up | `[+0.998, +0.023, +0.091]` | `[+0.998, −0.023, −0.091]` | `[+1, 0, 0]` | ✅ |
 | right wing down | `[+0.001, +1.000, −0.003]` | `[+0.001, −1.000, +0.003]` | `[0, −1, 0]` | ✅ |
 
+⭐ **Confirmed a second time, independently, through the xiao (2026-08-22).** With the 45-input firmware
+flashed, the 1 Hz console heartbeat prints `accel=[…]` straight off the NN carrier — i.e. AFTER msplink's
+FLU→FRD flip, which is the value the policy actually consumes. Operator read all three attitudes: level
+`z = −1`, nose up `x = +1`, right wing down `y = −1`. That matches the host-side probe exactly, which
+matters because the two paths share no code: the probe parses the wire in Python, the xiao parses it in C++
+and applies its own flip. **A disagreement would have localised the bug to msplink; agreement clears the
+whole chain** — INAV `acc.accADCf` → MSP → `msp_autoc_state_t` → the flip → `setSpecificForceG`.
+
 Hand-held attitudes, n=20 averaged, `|a|` within 0.3% of 1 g throughout. The off-axis terms are holding
 angle (nose-up sits ~5° off vertical), not convention error — the sign and the carrying axis are
 unambiguous in all three.
