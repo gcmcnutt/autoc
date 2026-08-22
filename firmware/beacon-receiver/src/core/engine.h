@@ -42,7 +42,9 @@ const Bank *engine_bank(const Engine *e);
  * DEBUG PATH, not the record. It is deliberately kept out of BcnRecord: the record is a versioned wire
  * contract (Constitution V) and the scope is a convenience, so this rides the JSON sink as a separate
  * line instead of growing the format. It is also OFF unless asked for -- it costs a full-frame pass
- * (~256 kpx) per tick.
+ * (~256 kpx) per tick, MEASURED live on the Pi 5 at ~3.2 ms of deadline margin (median margin 38.9 ms
+ * without it, 35.7 ms with, 0/500 misses either way). Affordable for aiming and capture; do not leave it
+ * on for an envelope run where the margin itself is the measurement.
  *
  * engine_field_enable() turns it on. engine_field_map() returns the cell buffer (BCN_FIELD_W*BCN_FIELD_H
  * bytes, row-major, 0..255) or NULL if disabled/not yet filled. */
