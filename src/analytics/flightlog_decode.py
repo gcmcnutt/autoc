@@ -187,12 +187,18 @@ def decode(blob):
                 fail("TickRecord before FileHeader — stream corrupt")
             f = TICK_REC.unpack(raw)
             ts, counter = f[1], f[2]
-            q_in = f[3:3 + NUM_INPUTS]
-            q_out = f[40:43]
-            q_telem = f[43:52]  # pos[3], vel[3], rabbit[3]
-            reset, path_idx = f[52], f[53]
-            rc = f[54:57]
-            valid = f[57]
+            # DERIVED offsets. These were literal 40/43/52/54/57, sized for a
+            # 37-slot input block: at 45 slots they read the outputs as inputs
+            # and the telemetry as outputs, so pos/vel/rabbit decoded to frozen
+            # nonsense (caught by the synthetic-v4 round-trip, 2026-08-22).
+            _o = 3 + NUM_INPUTS                  # first output field
+            _t = _o + NUM_OUTPUTS                # pos[3], vel[3], rabbit[3]
+            q_in = f[3:_o]
+            q_out = f[_o:_t]
+            q_telem = f[_t:_t + 9]
+            reset, path_idx = f[_t + 9], f[_t + 10]
+            rc = f[_t + 11:_t + 14]
+            valid = f[_t + 14]
             row = {"timestamp_ms": ts, "tick_counter": counter}
             if current is not None:
                 row["span_id"] = current["engage"]["span_id"]
