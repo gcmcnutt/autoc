@@ -58,5 +58,8 @@ binding constraint. See [t5-wrap.md](t5-wrap.md).
   exists precisely because the count assert does not catch this.
 * **Analytics**: `regime_control` and `g_load` are new with this baseline; the aggressiveness dashed lines
   are 027-era *servo-demand references*, not limits — `P2-10` is meant to replace them with a measured one.
-* ⚠️ **Cross-era comparison stays possible only via `artifacts/pre-break/`** — the v3→v4 schema break makes
-  038-t5's dmp unreadable, and that archive's physics columns are 4 ticks/scenario (see its README).
+* **Cross-era comparison** normally goes through `artifacts/pre-break/`, whose physics columns are only
+  4 ticks/scenario (see its README). ⭐ But the v3 dmps are **not lost**: build a worktree at `c747599` (the
+  last v3-capable tree, parent of the `7d77fdc` schema bump) and re-dump any pre-break run in full. ⛔ Do
+  that in a separate `git worktree`, never in the main tree during a bake — it would overwrite
+  `build/autoc` under live workers.

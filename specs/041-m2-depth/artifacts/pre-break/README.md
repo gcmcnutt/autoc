@@ -92,3 +92,38 @@ MAE 0.028 g**; the code refuses to plot a reconstruction below corr 0.95.
 ⚠️ **Units gotcha settled by that validation**: `vx/vy/vz` are **m/s** while
 `vRelWind` in the same file is **ft/s**. Assuming ft/s gives corr 0.751 /
 MAE 0.230 g; m/s gives 0.995 / 0.028 g. Decided by measurement, not by reading.
+
+---
+
+## ⭐ THE v3 DMPs ARE NOT LOST — build an older worktree
+
+Operator 2026-08-22: *"if needed we can pull and build an older worktree and read the archives if needed."*
+
+⚠️ **This corrects the framing used elsewhere in 041.** `dmp-dump` says *"there is deliberately no migration
+path"*, and several notes in this feature read that as "pre-041 dmps are unreadable, permanently." They are
+not. There is no *in-place* migration; the **old reader still exists in git** and reads them fine.
+
+**The last v3-capable tree is `c747599`** — the parent of `7d77fdc`, which is the commit that bumped
+`kSchemaVersion` 3 → 4. Verified: `c747599:include/autoc/rpc/protocol.h` line 602 reads
+`kSchemaVersion = 3`.
+
+```sh
+git worktree add /tmp/autoc-v3 c747599
+cd /tmp/autoc-v3
+git submodule update --init            # crrcsim pins to 98bf8fa, present in the submodule repo
+./scripts/rebuild-perf.sh              # or a plain cmake build — dmp-dump is all that is needed
+./build/dmp-dump "s3://autoc-m1/<v3-run-id>/" --csv-only -i autoc.ini > full.csv
+./build/dmp-dump "s3://autoc-m1/<v3-run-id>/" --physics  -i autoc.ini > physics.csv
+```
+
+⛔ **Do NOT build this in the main worktree while a bake is running** — it would overwrite `build/autoc`,
+which live workers re-exec. A separate `git worktree` (as above) has its own `build/`, which is the point.
+
+⭐ **What this changes in practice**: a FULL per-tick CSV can be regenerated for any pre-break run, so the
+4-ticks-per-scenario physics limitation above is a limitation of *this captured archive*, not of the data.
+If a study needs dense physics columns from a v3 run, re-dump it from the v3 worktree rather than working
+around the sparse sample.
+
+⚠️ **What it does not change**: the archive is still worth keeping. It makes the common case a file read
+instead of a checkout-and-build, and it is the only copy that survives if an S3 lifecycle rule ever expires
+those runs.
