@@ -1,177 +1,94 @@
-# 042 — continue here (handoff, written 2026-08-21 on the DGX)
+# 042 — continue here (handoff, rewritten 2026-08-22 at a deliberate pause)
 
-> **STATUS 2026-08-21 (DGX): the 120 Hz replatform is CONFIRMED ON A SECOND BENCH.** The rig came home from
-> msi and `dddc832` was re-gated here against real hardware: `regression.py` **17/19** (the 2 FAILs are the
-> two deep-attenuation P3 rungs this bench has *always* failed — already adjudicated, deferred to the field
-> unit), ctest **10/10** on the DGX and **10/10** on a CLEAN Pi 5 rebuild, and the Pi 5 tracker pinned at
-> `chip_hz` **120.00/120.00** with **0/600** deadline misses across three runs. Two harness traps fixed on
-> the way: serial ports now resolve by USB identity (`host/ports.py`) instead of `/dev/ttyACM<N>`, which had
-> flipped; and the Pi's rsync'd tree now syncs through `pi/sync-to-pi.sh` instead of ad-hoc rsync. Details in
-> the [bench journal](../031-beacon-camera/bench-journal.md) top entry.
->
-> **STATUS 2026-08-20 (msi): Jobs B and C are DONE.** The whole chain — pod, gateware, decoder host and
-> receiver — is replatformed to 288 fps / 120 Hz and verified live: s7 simulates clean (a first), gateware
-> built + flashed with all timing met, pod reflashed (code B measured 119.940 Hz), regression 18/19, and the
-> Pi 5 tracker acquires at `chip_hz 120.00` with 0.000 % deadline misses. Full write-up, including two
-> harness defects the retune exposed and the Diamond-license fix, is the top entry of the
-> [bench journal](../031-beacon-camera/bench-journal.md). **Job A (T069, the WSL2 cross path) is still open**,
-> as is the P3 AGC re-baseline — **but see the 2026-08-21 entry: it is NOT an msi-geometry artefact.**
-> The same two deep-attenuation rungs fail on the DGX bench too, and the re-baseline is owed on the
-> FIELD UNIT, not on any breadboard bench. Read the bench journal before the tables below —
-> where they disagree, the journal is current and the tables are the original plan.
+> **STATUS: PAUSED 2026-08-22.** Operator moved to **041** (INAV + xiao updates for an M1 flight test).
+> 042 is at a clean stopping point: working tree clean, **10/10 tests green**, everything pushed. This file
+> is the resume point — read it and the two results docs it names before touching anything.
 
-**Jobs B and C below are DONE and are kept for the record** (they document the arithmetic and the constants).
-**Job A (T069) is the only one still open**, and it still needs `msi` (`100.92.184.6`) — the only box with the
-WSL2→aarch64 cross path, Lattice Diamond, and avr-gcc. Note the hardware itself is back on the DGX as of
-2026-08-21, so a future gateware change means shipping the StepFPGA to msi again, or installing Diamond here.
+## ⚠️ THE BENCH HAS BEEN RE-TASKED — do not assume the 042 rig is as you left it
 
----
+Verified at the pause:
 
-## Where everything is
+| | state at pause |
+|---|---|
+| **PSU** | **12.599 V / 0.163 A, output ON** — repurposed to a 3S-class rail for 041. **NOT the 4.2 V beacon point.** Do not assume; read it before energising anything. |
+| **USB** | `/dev/serial/by-id` now holds the **XIAO nRF52840** and an **INAV STM32 VCP**. The StepFPGA (DAPLink) and the emitter (mEDBG) are **unplugged**. |
+| **StepFPGA** | powered on but disconnected from USB; irrelevant to camera work either way (see below) |
+| **beaconpi5** | **unreachable at the pause**, on both `192.168.1.197` (LAN) and `100.97.242.96` (tailscale). Probably powered down. The `/data` fixtures below are therefore **unverified as of the pause**. |
 
-| host | address | role now |
-|---|---|---|
-| `beaconpi5` | `pi@100.97.242.96` | **the 042 rig**: Pi 5 8 GB, OV9281 on CAM0, NVMe `/data`, tracker runs live here |
-| `beaconpi` | `pi@100.87.61.53` | 3A+, **spare** (camera removed); still has the original patched driver + build dir |
-| `msi` | `100.92.184.6` | Windows + WSL2: Diamond, avr-gcc, the cross path — **this trip** |
-| DGX | `promaxgb10-4331` | dev box; **as of 2026-08-21 the WHOLE bench is here again** — PSU + emitter + StepFPGA. Do NOT hardcode a ttyACM number: `host/ports.py` resolves both CDCs by USB identity. venv `~/.venvs/avr` |
+`host/ports.py` resolves the decoder and emitter by USB identity, so plugging them back in is enough — no
+ttyACM numbers to chase.
 
-**Physical (2026-08-21)**: emitter (code B) + PSU + **StepFPGA all reconnected at the DGX bench**, camera on
-the Pi 5. The StepFPGA carries the retuned 120 Hz bitstream flashed on the msi trip. Bench parked locked at
-4.200 V / 80 mA, margin 8-9.
+## What this pause bought — the measurement campaign
 
-**State**: Stage 1 exit met single-code (ASCII scope at 10 Hz on live beacons). Tracker on the Pi 5 runs
-at 640×400 / 288.5 fps with 0.000 % deadline misses. 10/10 test suites green on DGX, Pi 5, and 3A+.
+Four things are now measured that were previously assumed, each with its own results doc:
 
----
+1. **The coherence knee is 1–2 °/s** — confirmed three independent ways: theory (1.18), `pan1`'s
+   coherence-ratio, and `pan2`'s lock-rate against fiducial truth.
+   [stage1-pan1-analysis.md](results/stage1-pan1-analysis.md),
+   [stage1-pan2-analysis.md](results/stage1-pan2-analysis.md)
+2. **Deliberately gentle hand motion is 15–18 °/s median** — an order of magnitude past that knee. The gap
+   is geometric, not tunable.
+3. **Cold acquisition takes a median 2.95 s** at the real 53 µs operating point, static, n=5 —
+   **7× over** the 0.40 s relock bar. [stage1-acquisition-latency.md](results/stage1-acquisition-latency.md)
+4. **The acquisition failure mechanism**, which was NOT what the compute budget predicted:
+   K (candidate count) is fine at 276–1292 everywhere; **the beacon simply ranks ~126th–230th** among
+   detections and only the top 3 are seeded, so it enters the bank on 6–25 % of passes.
+   [stage1-K-census.md](results/stage1-K-census.md)
 
-## Job A — WSL2 toolchain check (**T069**, the actual reason the plan kept a cross path)
+Plus: **the StepFPGA contributes nothing measurable** to clutter (K 1277 vs 1292). Powering it down for
+camera work is tidiness, not a fix — settled properly, because the obvious first-lock A/B could not
+(Mann-Whitney U=9 against a critical 2).
 
-Tier 0, native x86_64 — everything with logic in it must build and pass with nothing installed:
-```bash
-cmake -S . -B build -DBEACON_RECEIVER=ON -DBUILD_AUTOC=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build --target all-targets -j
-ctest --test-dir build --output-on-failure       # expect 10/10
-```
-Tier 1, cross to aarch64 — **no sysroot needed** for core/tools/tests:
-```bash
-sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-cmake -S . -B build-cross -DBEACON_RECEIVER=ON -DBUILD_AUTOC=OFF \
-      -DCMAKE_TOOLCHAIN_FILE=firmware/beacon-receiver/cmake/aarch64-linux-gnu.cmake
-cmake --build build-cross --target beacon_core beacon_tools beacon_tests -j
-```
-The cross-built tests **cannot run on WSL** — that is expected, and the end-to-end proof is to scp them to
-`beaconpi5` and run them there (same binaries, foreign builder). `app/` (beacon_record/trackd) needs
-libcamera, i.e. a sysroot: `rsync -a pi@100.97.242.96:/usr/include pi@100.97.242.96:/usr/lib ~/pi-sysroot/`
-then add `-DCMAKE_SYSROOT=$HOME/pi-sysroot`. Record the procedure that worked in
-`firmware/beacon-receiver/README.md` §Build (T069's deliverable) and tick T069 in tasks.md.
+## RESUME HERE — T076 first, then T080
 
----
+**T080** (accumulated |Δ²| detector) is the big cheap win: offline on `pan2.bcnr` it moves the beacon from
+rank 1842→1 still and 276→2 moving, tripling top-3 seeding, and **the moving case becomes as good as the
+still case**. [stage1-detector-ranking.md](results/stage1-detector-ranking.md)
 
-## Job B — replatform to 288 fps / **120 Hz chips** (the 2.4 samples-per-chip design point)
+**It was attempted on 2026-08-22 and deliberately backed out.** It reached 16/17 golden-parity checks and
+then regressed while chasing the last one; the tree is clean. Read this before retrying:
 
-**The arithmetic**: the OV9281 delivers a measured **287.9–288.5 fps** at 640×400 (silicon ceiling ~326;
-see the bench journal's speed-lab entries — the 453/480 claims were fiction). 288 ÷ 2.4 = **120.0 Hz**.
+- **Do T076 first.** `hold_max_age_ms = 150` kills a track before the 258 ms needed to rebuild a 31-chip
+  window, so tracks die spuriously mid-clip. That is what makes the golden test sensitive to
+  *re-acquisition timing*, which is what the detector change perturbs. Fix the death and the two changes
+  become separable.
+- **Use a CONTINUOUS EWMA accumulator, not a burst.** `acc -= acc>>3; acc += |Δ²|`, fed every frame. The
+  burst version (accumulate only while a pass is in flight) delays seeds ~10 frames — worst exactly when a
+  track has just died. Costs `reduce4` per frame instead of 1-in-25, ~14 % of a core against ~36 ms of
+  margin. `reduce4_neon` is bit-exact vs scalar and equivalence-tested, so using it is legitimate.
+- **Three real bugs found during the attempt, latent for ANY multi-frame detector** (so T050 will meet them
+  too): (a) the apply block is gated on `sched_completed()`, which fires exactly once — a detector that
+  completes later than the cost model leaves seeds unapplied until the next pass, ~25 frames stale;
+  (b) the whole acquisition block sits inside `if (!have_confirmed)`, so any in-flight state left set when a
+  track confirms **wedges acquisition permanently**; (c) seeds snap to coarse-cell centres (4 M2 px here) —
+  a 3×3 centroid on the accumulator gives sub-cell placement.
 
-**Honest framing**: 115 Hz was never broken — at 288 fps it is already 2.50 samples/chip, *above* the
-design point. Moving to 120 buys three modest things: the documented ratio exactly, a 4 % shorter word
-(269.6 → 258.3 ms, i.e. slew tolerance per §2.5), and a **deterministic 12-frames-per-5-chips sampling
-pattern** instead of a drifting one. Do it because the platform should sit on its design point, not
-because anything is failing.
+**Do NOT schedule a tuning phase.** Operator call (D1): the knee is 1–2 °/s and tuning moves it to maybe
+2–3, against 15–18 °/s of hand motion. T076 is two correctness bugs, not tuning.
 
-### The three artifacts that must move together
+## Fixtures and tooling
 
-| artifact | file | from | to |
-|---|---|---|---|
-| **emitter** | `firmware/beacon-pod/src/config.h` | `TCA_TOP_HALF = 5435` (114.995 Hz) | **`5208`** → 625000/5208 = **120.0077 Hz** |
-| **receiver** | `firmware/beacon-receiver/beacon-bench.ini` | `chip_hz_nominal = 115.0` | **`120.0`**; candidates → `115.0,120.0,121.0` |
-| **decoder** | `firmware/beacon-decoder-stepfpga/experiments/s7.v` | staged `FDIV = 43480` (276 Hz / 115 Hz) | **`41667`** → 12 MHz/41667 = 287.998 Hz sample = **120.0 Hz chip** |
-| ” | same file | staged `EDIV_NOM = 462629` | **`443305`** → 53.2 MHz/443305 = 120.0075 Hz (fits the 19-bit `ediva_eff`, max 524287) |
-| ” | `firmware/beacon-decoder-stepfpga/host/beacon_telemetry/frame.py` | `SAMPLE_HZ` default `480.0` | **`288.0`** when the new bitstream is flashed (or `BEACON_SAMPLE_HZ=288`) |
+- `beaconpi5:/data/pan2.bcnr` — 60 s continuous, pan→tilt→circular, fiducial exposure, **the regression
+  fixture**: ground-truthed at 0.18°, with a known-bad baseline (3 % locked at 10–20 °/s) to beat.
+  Also `static_bench.bcnr`, `static_fid.bcnr`, `static_bench_fpgaon.bcnr`. **Unverified at the pause** — the
+  Pi was unreachable.
+- `~/beacon-clips/pan1.bcnr` on the DGX (the burst-mode clip; md5 `10c2cf687d9e8040`).
+- Tools: `oracle.py` (code-matched), `fiducial_truth.py` (per-frame pose from the ArUco), `candidate_census.py`
+  (K), `check_placement.py`, `pi/preview.py` (live browser view), `targets/` (printable sheets + generator).
+- **OpenCV is installed on the Pi at `~/cv`** — run truth extraction *there* (37 s) rather than moving
+  4.2 GB over its WiFi link.
 
-Notes:
-- ⚠️ **SUPERSEDED 2026-08-20 — the two notes below described a graceful, multi-rate transition; the
-  operator instead called for a STRICTLY single-rate platform.** What shipped: `TCA_TOP_HALF` →
-  `TCA_TOP_BENCH`, `BOOT_HALF_RATE` **deleted**, `'R'` no longer jumps to 200 Hz, `+define+CHIP200`
-  **deleted**, `BEACON_SAMPLE_HZ` **deleted**, and `acquire_next_rate_q8()` returns nominal
-  unconditionally so `chip_hz_candidates` is inert. See the bench journal's table of the four closed
-  paths. Everything from `frame.py`'s row above (the `BEACON_SAMPLE_HZ=288` suggestion) is likewise stale.
-- ~~`TCA_TOP_HALF`'s name becomes a misnomer — rename to `TCA_TOP_BENCH`; `BOOT_HALF_RATE=1` and the
-  `'H'`/`'R'` semantics stay as they are.~~
-- ~~**The transition is graceful by construction**: `chip_hz_candidates` carrying both 115 and 120 means
-  acquisition rotates onto whichever the emitter is actually running.~~
-- **`fps = 300` and `mode = 640x400` do NOT change.** 300 requested delivers ~288; ≥305 wedges the sensor.
-- **The 320×200 NN contract is already satisfied** — the record grid is *always* the 320×200 M2 grid
-  (`m2_div` in `track.c`: 640-wide native → M2 = native/2). The sensor's 320×200 mode was only ever
-  about speed, and it does not deliver speed. Nothing to do here.
+## Traps worth re-reading before resuming
 
-### Flashing the emitter from this trip
-avr-gcc is WSL-native on msi, but the pod's USB is **at the DGX bench**. Two options:
-1. Build the `.hex` on msi, copy it over, flash from the DGX with `~/.venvs/avr/bin/pymcuprog` (already
-   installed there, and `pymcuprog reset -d attiny416` is the documented un-latch). **Preferred.**
-2. Or install avr-gcc on the DGX and retire this cross-host dance entirely — worth 20 minutes if the
-   pod is going to change more than once.
-
-⚠️ **Policy (CLAUDE.md): run `firmware/beacon-decoder-stepfpga/host/regression.py` after ANY emitter
-firmware or decoder gateware change.** That needs the StepFPGA reconnected and, post-Job-C, agreeing on
-120 Hz with the pod.
-
----
-
-## Job C — build + flash the staged gateware (Diamond, Windows side)
-
-`s7.v` already carries the retune, staged and **never built** (commit `5d2532c`). Apply Job B's 120 Hz
-constants first, then:
-- Build: `firmware/beacon-decoder-stepfpga/experiments/deploy_s7.sh` is the WSL-interop recipe
-  (`pnmainc.exe` against `C:\lscc\diamond\3.14`).
-- Flash: copy the `.jed` to the STEPLink mass-storage volume. **Note (found 2026-08-19): STEPLink mounts
-  natively on Linux** (`/media/gmcnutt/STEPLink` on the DGX) — so only the *build* actually needs Windows;
-  `docs/toolchains.md` lines 41–43 still claim otherwise and should be corrected once confirmed on msi.
-- ~~`+define+CHIP200` restores the 200 Hz flight-nominal set~~ — **removed 2026-08-20**: there is exactly
-  one rate set. The flight constants survive only as a comment in `s7.v` and return with the flight article.
-
----
-
-## Carry-over traps (each cost real time)
-
-1. **Verify the target actually rebuilt.** `cmake --build --target X` prints `Built target X` even when
-   it compiled nothing. Two debug rounds were lost to a stale binary on the Pi. `touch` the edited file
-   and look for a `Building C object` line before trusting any behavioural change.
-2. **Never hardcode `/dev/ttyACM<N>`** — it is assigned in plug order and HAS flipped between the emitter
-   and the decoder (this file's own table said ACM0=mEDBG; the 2026-08-08 journal entry said ACM0=STEPLink;
-   both were true when written). Use `host/ports.py` (`decoder_port()` / `emitter_port()`), which reads
-   `/dev/serial/by-id`. `BCN_PORT` / `EMITTER_PORT` still override.
-3. **Sync the Pi with `firmware/beacon-receiver/pi/sync-to-pi.sh`, not ad-hoc rsync** — dry-run by default,
-   `--go` to apply, `--checksum --delete` with one authoritative exclude list. Ad-hoc rsync is exactly what
-   let that tree drift into a fake "Pi-only bug" (trap below).
-4. **`recovery_sweep.Emitter.close()` now parks the pod at `'H'`** (bench rate), deliberately — no
-   harness exit may silently leave it at 200 Hz. FPGA sessions that want 200 must select `'R'`
-   explicitly and put `'H'` back.
-5. **The bench is 115-family only** (now 115/120) — a 200 Hz lock is a false comfort on a derated rig,
-   so 200/210 are out of the candidate list. Production rates return with the flight article, not before.
-6. **DPLL rate adjustment is PARKED** (phase adoption only) — two live attempts destabilised it. It comes
-   back as sim-first work against golden clips, never live tuning. See `track.c`.
-7. **lyu-guest has client isolation**: bench hosts can only reach each other over tailscale. The DGX has
-   an `nmcli` shared-mode connection `pi5-share` on `enP7s7` for cabled bring-ups.
-
----
-
-## Where the work stands (57/74 tasks)
-
-Done: Setup + Foundational, US1 recorder, US2 tracker core, US3-lite acquisition, US4 scope + Stage 1
-exit (single-code). Open, roughly in value order:
-
-- **T044–T047** — oracle, inject, score, and the first envelope CSV from a pan/tilt slew clip. *This is
-  the feature's actual deliverable* (a measured envelope, not an anecdote) and it is all dev-box work.
-- **Evening A/B re-run** — the Pi 5 gate scored 80 % lock duty in daylight vs the 3A+'s 100 % in evening
-  calm. Owed: a like-for-like evening number, and a replay-autopsy of the remaining churn.
-- **T050–T053** — RANSAC proto-tracks, decode-along-track, acquisition off-thread.
-- **T057/T058** — two-code (gated on the code-A flight cube) and the false-alarm run.
-- **T066–T070** — golden vectors from live, retire `beacon_track.py`, tracker regression entry point,
-  and T069 above.
-- **Backlog**: thermal-event sensing/logging before any outdoor session (`specs/BACKLOG.md`, 042 section).
-
-**The 480 fps question is not closed, it is re-framed** — the OV9281 cannot reach it at stock PLL. The
-three surviving paths (PLL overclock / dual-camera FSIN interleave / accept ~288) are written up at the
-end of the bench journal's speed-lab entry. The operator leans toward the interleave since both cameras
-are already in hand and the birded pair was always the flight architecture.
+1. **`--record-mode continuous`** or you get burst islands the container contract forbids correlating
+   across — that is how `pan1` became unable to measure reacquire at all.
+2. **`frames_dropped` and the timestamp dt spread are the only honest capture witnesses.** Seq counts
+   *delivered* frames, so a drop leaves no gap (`sink_record.c`).
+3. **Fiducial truth must be anchored** — `fiducial_truth.py`'s default reference ("brightest high-pass
+   pixel") landed on an LED light bar and gave a 42 px single-axis bias. Validate against a known-good
+   stretch before trusting truth.
+4. **Every rate is rated at 288 fps / 120 Hz** — spec §2.5.1. A 480-fps-designed test must run ×0.600 here.
+5. **AGC is a confound** (operator, 2026-08-22): validate detector changes on **replay**, where the recorded
+   exposure is fixed, before trusting a live A/B.
+6. Pull clips over the **LAN** IP, not tailscale (relayed via SFO — 3.9 s vs 0.019 s for a page). Re-check
+   the Pi's LAN address on resume; `192.168.1.197` stopped routing at the pause.
