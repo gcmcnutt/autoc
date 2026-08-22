@@ -227,7 +227,9 @@ waiting for real hardware.
   than position truth, since differencing removes common-mode error — but **the ≤1 px / 0.3° bearing-residual
   bar cannot be validated in the field without RTK.** That bar stays a bench measurement (fiducials give
   0.18°). Decide RTK on whether field bearing accuracy is worth the kit.
-  Useful missions, since apparent rate is set by v/R: a **constant-rate crossing** at fixed range (10 m/s at
+  Mission rates are **rated at 288 fps (spec §2.5.1)** — 10 m/s at 30 m is 19.1 °/s = 16× the
+  acquisition knee and 0.2× the tracking limit, the right regime here; a 480-fps-designed profile would need
+  ×0.600 before flying it against this chain. Useful missions, since apparent rate is set by v/R: a **constant-rate crossing** at fixed range (10 m/s at
   30 m = 19 °/s, at 100 m = 5.7 °/s — the whole band is reachable by choosing range), a **radial
   approach/recede** (≈0 °/s, isolates range/SNR from motion), and a **circle around the chase** (sustained
   constant rate, the racetrack at scale). Both circling = the real engagement.

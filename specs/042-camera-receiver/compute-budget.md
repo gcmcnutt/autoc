@@ -10,6 +10,9 @@ prescribes. The binding constraint turns out not to be MACs — it is **how many
 frame the front end hands to the track former**. That number must stay under ~1000–2000, and keeping it
 there is what ego-motion registration buys.
 
+> **Every number here is rated at 288 fps / 120 Hz — see spec §2.5.1 for the scaling table.** Rate limits
+> scale ×1.667 and hypothesis counts ×0.36 if the platform ever reaches 480 fps, so these are floors.
+
 ## Measured, not assumed
 
 `beacon_bench --kernels` on the Pi 5, single-threaded:

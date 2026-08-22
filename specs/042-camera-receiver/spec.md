@@ -216,6 +216,48 @@ samples-per-chip story.** That makes the gate quantitative: 042 measures the °/
 and if the knee lands below the 128–141°/s body-rate RMS from 039, **the frame rate is the fix, not the
 algorithm.**
 
+### 2.5.1 PLATFORM RATING — every rate in this feature is stated at 288 fps / 120 Hz
+
+**Operator, 2026-08-22**: *"make double sure we recognize that with the current camera frame rate all the
+time based goals and rates scale… we don't want to try to achieve 480 fps dynamics with a 288 fps camera
+chain."* This table is the rule. **Anything smear- or coherence-bound scales as 1/word**, and the word is
+`N_chips / chip_rate`.
+
+| quantity | **288 fps / 120 Hz (THE platform)** | 480 fps / 200 Hz (aspiration) | ratio |
+|---|---|---|---|
+| frame period | 3.47 ms | 2.08 ms | ×0.600 |
+| chip period | 8.33 ms | 5.00 ms | ×0.600 |
+| **word (31 chips)** | **258 ms** | 155 ms | ×0.600 |
+| samples per chip | 2.40 | 2.40 | **invariant** |
+| tick / record rate | **20 Hz** | 20 Hz | **invariant** — `TICK_US`, not tied to fps |
+| scope draw rate | 10 Hz | 10 Hz | **invariant** |
+| acquisition knee (1 M2 px smear/word) | **1.18 °/s** | 1.96 °/s | ×1.667 |
+| 4-word tracking limit | **94 °/s** | 157 °/s | ×1.667 |
+| 1-word transit limit | **377 °/s** | 628 °/s | ×1.667 |
+| cold-reacquire **floor** (one word) | **258 ms** | 155 ms | ×0.600 |
+| slack under the 400 ms relock bar | **142 ms** | 245 ms | 1.7× more room |
+| velocity hypotheses, fixed rate range | ×1 | ×0.36 | ∝ word² |
+
+**The rule for fixtures and goals**: a test designed against the 480 fps platform must be run **×0.600
+slower here**, or it is exercising dynamics this chain cannot support and will fail for reasons that say
+nothing about the algorithm. Conversely every limit above rises ×1.667 if the 576 fps interleave ever lands
+— so a result measured here is a *floor*, not a ceiling.
+
+**Two consequences that are easy to miss:**
+- **The 400 ms relock bar is a mission requirement and does NOT scale** — but the floor under it does. At
+  288 fps a cold reacquire spends 258 ms of its 400 ms budget on the code word alone, leaving **142 ms** for
+  detection, track formation and confirmation combined. That is the real constraint on T050's design, and it
+  is 1.7× tighter than the flight aspiration.
+- **The 20 Hz record rate and 10 Hz scope rate are invariant.** They are not derived from fps and must not be
+  "scaled" along with the rate limits.
+
+**Fixtures already written are rated at 288 and check out** (§ tasks T077/T079): the pendulum peaks at
+20.9 °/s and the quad crossing at 19.1 °/s — 17–18× the acquisition knee, 0.2× the tracking limit. Right
+regime: brutal for acquisition, comfortably inside tracking. Had they been sized for 480 they would need to
+be ~35 °/s here, which would be over-driving the chain.
+
+---
+
 ### 2.6 Continuous chip-level re-affirmation (decision-directed lock health)
 
 **Operator requirement, 2026-08-19**: *"acquisition time is quite long and the target is moving across
