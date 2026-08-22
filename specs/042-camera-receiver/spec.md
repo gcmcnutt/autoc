@@ -760,7 +760,20 @@ bandwidth/scale schedule, DPLL, adaptive integration length, candidate lifecycle
 `q_fine/q_coarse` extent output. Proven on replayed rig data against the offline oracle. *(Bench water-tray
 multipath probe rides here.)*
 
-**042-C — acquisition.** Blink-detect → proto-track → decode-along-track, multi-rate, threaded. Plus the
+**042-C — acquisition.** Blink-detect → proto-track → decode-along-track, multi-rate, threaded.
+
+> **RE-SCOPED 2026-08-22 — this is the critical path, not late polish, and it gained a prerequisite.**
+> `pan2.bcnr` measured lock collapsing at **1–2 °/s** against **15–18 °/s** of deliberately gentle hand
+> motion, with 22 s of continuous slow motion producing **zero** reacquisitions
+> ([results/stage1-pan2-analysis.md](results/stage1-pan2-analysis.md)). And
+> [compute-budget.md](compute-budget.md) shows a brute-force velocity search is **14× over budget at bench
+> rates and ~15 000× at flight rates**, because hypothesis count grows as **V²**. The new prerequisite is
+> **ego-motion registration** (T071): it removes the V² term and restores the blink detector under motion,
+> worth ~75× where NEON is worth ~4×. The binding constraint is not MACs but **K, the candidate-detection
+> count per frame** — O(K²) for proto-track formation, needs K ≲ 1000–2000, and **has never been measured**
+> because `acquire_pass` caps its return at 3 seeds by policy (T072).
+
+Plus the
 **second code** — a breadboard ATtiny412 + 2 LEDs is enough at 2–5 m, **do not wait on the A7 cubes** — and
 the near-far test (railed near beacon leaking into the weak one's ROI; stretch: successive interference
 cancellation).
