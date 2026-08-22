@@ -66,3 +66,29 @@ So the `nz_g` column in these files is **entry-transient only, permanently**. No
 runs are finished. Use these files for the **control** half of Study A (`dCtrl`, `⟨|u|⟩`, regime
 classification, blind-gap distribution), which is complete and exact, and get every load number from the new
 M1's own dmp.
+
+---
+
+## ⚠️ LIMITATION FOUND 2026-08-22 — the physics COLUMNS are 4 ticks per scenario
+
+The `--physics` dumps here carry `alpha`, `vRelWind`, `sfx/y/z_g` and `nz_g` on
+**ticks 1–4 of each scenario only** — 1,176 of 132,462 rows in the prior-M1
+archive (0.89%), and all of it the **entry transient**.
+
+⛔ **Taken at face value the archive says the prior M1 never exceeded 2.45 g.**
+Its actual peak is **10.50 g**. Anyone reading the physics columns directly will
+get a badly wrong answer with no indication anything is missing.
+
+⭐ **The non-physics columns are fully populated** — `out_pt/rl/th`, `dist`,
+`stpPt`, `qw..qz`, `vx/vy/vz`, `px/py/pz` are on every row. So throttle,
+stability, regime and trajectory analysis off this archive are sound; only the
+FDM-computed physics block is sparse.
+
+**Workaround, implemented in `src/analytics/g_load.py`:** reconstruct load factor
+from the velocity trace (`dv/dt − g`, rotated world→body, Z component, negated)
+and validate against the sparse real `nz_g` rows. Measured **corr +0.9951,
+MAE 0.028 g**; the code refuses to plot a reconstruction below corr 0.95.
+
+⚠️ **Units gotcha settled by that validation**: `vx/vy/vz` are **m/s** while
+`vRelWind` in the same file is **ft/s**. Assuming ft/s gives corr 0.751 /
+MAE 0.230 g; m/s gives 0.995 / 0.028 g. Decided by measurement, not by reading.

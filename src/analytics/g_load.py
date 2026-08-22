@@ -41,6 +41,7 @@ import matplotlib.pyplot as plt
 
 ACCEL_SCALE_G = 8.0     # kAccelScale_g — dump stores acZ pre-divided by this
 CRUISE_MPS = 13.0       # kCruiseSpeed_mps — dump stores airspeed pre-divided
+SIM_DT_SEC = 0.05       # 20 Hz control cadence — physics-dump tick spacing
 PEAK_SEEN_G = 11.2      # highest sim load on record; sized kAccelScale_g (041)
 TRACK_THRESHOLD = 0.5
 CLOSE_SMOOTH_TICKS = 5
@@ -69,11 +70,91 @@ def main():
     a = ap.parse_args()
 
     d = np.genfromtxt(a.tick_csv, delimiter=",", names=True, dtype=None, encoding="utf-8")
-    if "acZ" not in d.dtype.names:
-        print("g_load: tick CSV lacks 'acZ' (pre-041 dump?)", file=sys.stderr)
+    cols = d.dtype.names
+
+    # ⭐ TWO INPUT FORMATS, on purpose. The standard per-tick CSV (dmp-dump
+    # --csv-only) carries `acZ` already divided by kAccelScale_g and `vel`
+    # divided by kCruiseSpeed_mps. The `--physics` dump carries RAW `nz_g` /
+    # `sfz_g` in g and `vRelWind` in m/s.
+    #
+    # ⛔ This is not gratuitous flexibility — it is the ONLY way to plot a
+    # pre-041 run at all. The 041 schema break (v3 -> v4, no migration path)
+    # makes those dmps unreadable; the T011a pre-break archive under
+    # artifacts/pre-break/ is a --physics dump precisely so the comparators
+    # survive. Without this branch the archive would be unusable for the very
+    # comparison it was captured for.
+    if "acZ" in cols:
+        n = -d["acZ"] * ACCEL_SCALE_G
+        vel = d["vel"] * CRUISE_MPS if "vel" in cols else None
+        fmt = "tick"
+    elif "nz_g" in cols or "sfz_g" in cols:
+        # nz_g == -sfz_g exactly; prefer nz_g, it is already the load factor.
+        n = d["nz_g"] if "nz_g" in cols else -d["sfz_g"]
+        vel = d["vRelWind"] / 3.280839895 if "vRelWind" in cols else None  # ft/s -> m/s
+        fmt = "physics"
+
+        # ⛔ THE PHYSICS BLOCK IS ALMOST ALL EMPTY, and this is not obvious.
+        # Measured on the T011a pre-break archive (038-t5 gen 800): nz_g is
+        # populated on ticks 1-4 of each scenario ONLY -- 1,176 of 132,462 rows,
+        # 0.89%, and all of it the entry transient. Taken at face value it says
+        # the prior M1 never exceeded 2.45 g, which is an artifact of sampling
+        # the first 200 ms of every flight.
+        #
+        # ⭐ RECONSTRUCT instead, from the velocity trace which IS fully
+        # populated: specific force = dv/dt - g, rotated world->body, Z
+        # component, negated. Then VALIDATE against whatever real nz_g rows
+        # exist -- the archive carries its own ground truth, so the
+        # reconstruction never has to be taken on faith.
+        #
+        # ⚠️ vx/vy/vz are m/s while vRelWind is ft/s, in the same file. That was
+        # settled BY the validation, not by assumption: ft/s gives corr 0.751 /
+        # MAE 0.230 g, m/s gives corr 0.995 / MAE 0.028 g.
+        if np.isfinite(n).sum() < 0.5 * len(n) and all(
+                k in cols for k in ("vx", "vy", "vz", "qw", "qx", "qy", "qz", "scenario")):
+            G = 9.80665
+            dt = SIM_DT_SEC
+            vx, vy, vz = d["vx"], d["vy"], d["vz"]
+            sc = d["scenario"]
+            ax_ = np.full(len(vx), np.nan); ay_ = ax_.copy(); az_ = ax_.copy()
+            for sid in np.unique(sc):
+                m = np.where(sc == sid)[0]
+                if len(m) < 3:
+                    continue
+                ax_[m[1:-1]] = (vx[m[2:]] - vx[m[:-2]]) / (2 * dt)
+                ay_[m[1:-1]] = (vy[m[2:]] - vy[m[:-2]]) / (2 * dt)
+                az_[m[1:-1]] = (vz[m[2:]] - vz[m[:-2]]) / (2 * dt)
+            qw_, qx_, qy_, qz_ = d["qw"], d["qx"], d["qy"], d["qz"]
+            r02 = 2 * (qx_ * qz_ + qw_ * qy_)
+            r12 = 2 * (qy_ * qz_ - qw_ * qx_)
+            r22 = 1 - 2 * (qx_ * qx_ + qy_ * qy_)
+            sfz = r02 * ax_ + r12 * ay_ + r22 * (az_ - G)
+            n_re = -(sfz / G)
+            good = np.isfinite(n_re) & np.isfinite(n)
+            if good.sum() > 50:
+                cc = np.corrcoef(n_re[good], n[good])[0, 1]
+                mae = np.nanmean(np.abs(n_re[good] - n[good]))
+                print(f"  reconstructed n from dv/dt; validated on {good.sum()} FDM ticks: "
+                      f"corr {cc:+.4f}, MAE {mae:.3f} g", file=sys.stderr)
+                # ⛔ Refuse a reconstruction that does not match ground truth.
+                if cc < 0.95 or mae > 0.10:
+                    print("  REFUSING: reconstruction disagrees with FDM nz_g; "
+                          "plotting the sparse FDM rows only", file=sys.stderr)
+                    n_re = None
+            if n_re is not None:
+                keep = np.isfinite(n_re)
+                n = n_re[keep]
+                # ⚠️ vRelWind is populated on the SAME sparse rows as nz_g, so it
+                # is unusable here. Speed comes from the velocity trace instead
+                # (|v|, m/s — ground speed rather than airspeed; the difference
+                # is the wind vector, and panel 4 only needs the v² trend).
+                vel = np.sqrt(d["vx"] ** 2 + d["vy"] ** 2 + d["vz"] ** 2)[keep]
+                d = d[keep]
+                fmt = "physics+reconstructed"
+    else:
+        print("g_load: CSV has neither 'acZ' (tick dump) nor 'nz_g'/'sfz_g' "
+              "(--physics dump)", file=sys.stderr)
         return 1
-    n = -d["acZ"] * ACCEL_SCALE_G
-    vel = d["vel"] * CRUISE_MPS if "vel" in d.dtype.names else None
+    print(f"  input format: {fmt}", file=sys.stderr)
     pt = d["out_pt"] if "out_pt" in d.dtype.names else None
     reg = classify(d) if "dist" in d.dtype.names else None
 
@@ -141,19 +222,25 @@ def main():
             ctr.append(0.5 * (lo + hi)); mn.append(np.mean(n[m]))
             mp.append(np.mean(np.abs(pt[m])))
         ctr = np.array(ctr); mn = np.array(mn)
-        ax[3].plot(ctr, mn, marker="o", color="#c0504d", label="mean load factor")
-        # v² reference, normalised at the median bin — what constant-Cl predicts
-        i0 = len(ctr) // 2
-        ax[3].plot(ctr, mn[i0] * (ctr / ctr[i0]) ** 2, ls="--", color="#888",
-                   label="∝ v² (constant Cl / same deflection)")
-        ax[3].set_xlabel("airspeed (m/s)"); ax[3].set_ylabel("mean load factor (g)")
-        a2 = ax[3].twinx()
-        a2.plot(ctr, mp, marker="s", ls=":", color="#3b6fb6", label="mean |pitch cmd| (right)")
-        a2.set_ylabel("mean |pitch cmd|", color="#3b6fb6")
-        ax[3].set_title("4. LOAD IS BOUGHT WITH SPEED, NOT STICK — if the red curve tracks v²\n"
-                        "while |pitch cmd| stays flat, high g is arrival speed, not harder pulling")
-        ax[3].legend(loc="upper left", fontsize=9); a2.legend(loc="lower right", fontsize=9)
-        ax[3].grid(alpha=.3)
+        if len(ctr) < 3:
+            # ⛔ Never plot a v² reference off one bin — say so instead.
+            ax[3].text(.5, .5, "insufficient speed coverage for the v² panel",
+                       ha="center", va="center", transform=ax[3].transAxes)
+            ctr = None
+        if ctr is not None:
+            ax[3].plot(ctr, mn, marker="o", color="#c0504d", label="mean load factor")
+            # v² reference, normalised at the median bin — what constant-Cl predicts
+            i0 = len(ctr) // 2
+            ax[3].plot(ctr, mn[i0] * (ctr / ctr[i0]) ** 2, ls="--", color="#888",
+                       label="∝ v² (constant Cl / same deflection)")
+            ax[3].set_xlabel("airspeed (m/s)"); ax[3].set_ylabel("mean load factor (g)")
+            a2 = ax[3].twinx()
+            a2.plot(ctr, mp, marker="s", ls=":", color="#3b6fb6", label="mean |pitch cmd| (right)")
+            a2.set_ylabel("mean |pitch cmd|", color="#3b6fb6")
+            ax[3].set_title("4. LOAD IS BOUGHT WITH SPEED, NOT STICK — if the red curve tracks v²\n"
+                            "while |pitch cmd| stays flat, high g is arrival speed, not harder pulling")
+            ax[3].legend(loc="upper left", fontsize=9); a2.legend(loc="lower right", fontsize=9)
+            ax[3].grid(alpha=.3)
 
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     fig.savefig(a.out, dpi=110)
