@@ -21,6 +21,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SOI, EOI = b"\xff\xd8", b"\xff\xd9"
 
+
+def local_addrs():
+    """Every IPv4 this host answers on, so the operator is never guessing which name resolves where."""
+    out = []
+    try:
+        import subprocess as sp
+        for line in sp.run(["ip", "-4", "-o", "addr", "show"], capture_output=True, text=True).stdout.splitlines():
+            f = line.split()
+            if len(f) > 3 and f[1] != "lo":
+                out.append(f[3].split("/")[0])
+    except Exception:
+        pass
+    return out or ["<this host>"]
+
 PAGE = """<!doctype html><meta charset=utf-8><title>beacon camera</title>
 <style>
  body{{background:#111;color:#ddd;font:13px system-ui,sans-serif;margin:0;padding:12px}}
@@ -145,8 +159,16 @@ def main():
     broker = Broker(cmd)
     srv = ThreadingHTTPServer(("0.0.0.0", a.port), make_handler(broker, a.width, a.height))
     srv.daemon_threads = True
-    host = socket.gethostname()
-    print(f"preview: http://{host}:{a.port}/   (Ctrl-C to stop)", flush=True)
+    # Print every ADDRESS, not the hostname. socket.gethostname() was the first version and it misled:
+    # "beaconpi5" resolves to LAN IPv6 on one box, to nothing on another, and never to the tailscale IP.
+    # Prefer the LAN address when there is one -- tailscale here is RELAYED (relay "sfo"), measured at
+    # 3.9 s to fetch the page vs 0.13 s over the LAN, which an MJPEG stream cannot afford.
+    print(f"preview serving on port {a.port} — open ONE of:", flush=True)
+    for ip in local_addrs():
+        tag = "  <-- LAN, use this" if ip.startswith(("192.168.", "10.", "172.")) else \
+              ("  (tailscale — works but may be relayed/slow)" if ip.startswith("100.") else "")
+        print(f"    http://{ip}:{a.port}/{tag}", flush=True)
+    print("Ctrl-C to stop.", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
