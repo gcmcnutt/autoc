@@ -897,8 +897,32 @@ static bool performMspRequest(uint16_t command, void *buffer, size_t size)
   {
     return false;
   }
-  bool success = msp.request(command, buffer, size);
+  uint16_t recvSize = 0;
+  bool success = msp.request(command, buffer, size, &recvSize);
   releaseMspBusFromTask();
+
+  // 041 P5-1 — REJECT a short reply. MSP::recv zero-fills the tail of an
+  // undersized payload and still returns true, so a xiao flashed against
+  // un-upgraded INAV would read accel = [0,0,0] and say nothing: the policy
+  // would fly on four silent zeros it never trained with. That failure mode is
+  // exactly what this feature exists to end, so it must be loud.
+  //
+  // The test is >=, not ==, on purpose: trailing fields appended by a LATER
+  // INAV keep every existing offset valid and MSP::recv discards the surplus,
+  // which is the property that makes flashing INAV ahead of the xiao safe.
+  if (success && recvSize < size)
+  {
+    static unsigned long last_short_ms = 0;
+    unsigned long now_ms = millis();
+    if (now_ms - last_short_ms >= 1000)
+    {
+      logPrint(ERROR,
+               "*** MSP cmd 0x%04x SHORT REPLY: %u bytes, expected >= %u — FC firmware is older than this xiao build. Flash INAV.",
+               (unsigned)command, (unsigned)recvSize, (unsigned)size);
+      last_short_ms = now_ms;
+    }
+    success = false;
+  }
   return success;
 }
 
@@ -971,6 +995,21 @@ void convertMSPStateToAircraftState(AircraftState &aircraftState)
     gp_scalar q = -static_cast<gp_scalar>(state.autoc_state.gyro[1]) * deciDegToRadS;  // pitch: NEGATE
     gp_scalar r = -static_cast<gp_scalar>(state.autoc_state.gyro[2]) * deciDegToRadS;  // yaw: NEGATE
     aircraftState.setGyroRates(gp_vec3(p, q, r));
+
+    // 041 P5-3 — body specific force, milli-g FLU on the wire → g FRD here.
+    // The SAME y/z flip as the quat's (w, x, -y, -z) and the gyro's pitch/yaw
+    // negation above: this is the third quantity through the one boundary, and
+    // it is deliberately the ONLY place the flip happens.
+    // Steady level flight therefore reads [0, 0, -1] here, matching what the
+    // sim stores via autoc/eval/specific_force.h. ⚠️ Do NOT "correct" that
+    // against INAV's bench table (+1 g on its normal axis) — that table is FLU.
+    // Bench-proven on the wire 2026-08-22; see COORDINATE_CONVENTIONS.md.
+    // Stored UNSCALED in g; kAccelScale_g is applied at the NN slot write.
+    const gp_scalar milliGToG = static_cast<gp_scalar>(0.001);
+    gp_scalar ax =  static_cast<gp_scalar>(state.autoc_state.accel[0]) * milliGToG;  // x fwd: no sign change
+    gp_scalar ay = -static_cast<gp_scalar>(state.autoc_state.accel[1]) * milliGToG;  // y: NEGATE (FLU left → FRD right)
+    gp_scalar az = -static_cast<gp_scalar>(state.autoc_state.accel[2]) * milliGToG;  // z: NEGATE (FLU up → FRD down)
+    aircraftState.setSpecificForceG(gp_vec3(ax, ay, az));
   }
 }
 

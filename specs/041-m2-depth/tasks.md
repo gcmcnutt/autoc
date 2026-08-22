@@ -528,7 +528,9 @@ nor the running bake** — different repo, different hardware — so it can proc
   **divide by 2048 AND flip y/z** before comparing. Getting this backwards is invisible in sim and wrong in
   the air; it was already resolved once against `~/inav @ 63cffaf4` and the earlier "flip it" instruction was
   **withdrawn**. Do not re-derive it from scratch — confirm against the recorded table.
-- [ ] P5-3 **xiao: produce the four channels it currently zeroes.** ⛔ The MSP extension only supplies ONE of
+- [~] P5-3 **PARTIAL 2026-08-22 — `ACCEL_*` plumbed end-to-end; the other three still zero.** Done: `msp_autoc_state_t` grew `int16_t accel[3]` (`xiao/include/MSP.h`); the FLU→FRD flip `(+x, −y, −z) × 0.001` landed at the ONE boundary beside the quat and gyro (`msplink.cpp`, `convertMSPStateToAircraftState`) feeding `setSpecificForceG` unscaled in g; and `performMspRequest` now **rejects a short reply** — `MSP::recv` zero-fills an undersized payload and still returns true, so a xiao flashed against un-upgraded INAV would have read `accel = [0,0,0]` silently. Guard is `recvSize >= size`, not `==`, so a LATER INAV appending fields stays compatible (surplus is discarded, offsets unchanged) — that asymmetry is what makes flashing INAV ahead of the xiao safe. `msplink.cpp.o` compiles; the build still stops at the by-design `static_assert` in `src/generated/nn_program_generated.cpp` (generated file is the old **37-input** program), which is P5-4.
+  ⛔ **Still zero on the xiao**: `SPECIFIC_ENERGY` (`setSpecificEnergy`), `BOUNDARY_CLOSURE_RATE` (`setBoundaryClosureRate`), `SCORE_GRAD_*` (`setScoreGradBody`). The shared gather in `src/nn/evaluator.cc` only COPIES these from `AircraftState`, so they stay zero until msplink computes and sets them — no hardware needed for any of the three. The cone-constants catch below still applies.
+  *(original text follows)* **xiao: produce the four channels it currently zeroes.** ⛔ The MSP extension only supplies ONE of
   them. The split matters for scoping:
   | channel | source on the xiao | needs P5-1? |
   |---|---|---|
