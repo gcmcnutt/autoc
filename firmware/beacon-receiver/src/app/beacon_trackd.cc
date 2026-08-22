@@ -37,7 +37,27 @@ struct Ctx {
     std::vector<int32_t> margins;      /* live deadline margins, for p99/max reporting */
     uint32_t misses = 0;
     uint32_t emitted = 0;
+    const Engine *eng = nullptr;       /* for the --field-map side channel (below) */
+    bool field_map = false;
 };
+
+/* --field-map: write the engine's coarse contrast map as its OWN JSON line on stdout, right after the
+ * record line. A side channel, not a record field: BcnRecord is a versioned wire contract and this is a
+ * viewfinder. ascii_scope keys on the "field" member and ignores the line otherwise, so an older scope
+ * (or any other json consumer) is unaffected -- it just sees a line with no "tracks". Pairs with
+ * --emit json:-; it has nothing to attach to over the binary/tcp sink. */
+static void emit_field_line(const Engine *eng)
+{
+    const uint8_t *f = engine_field_map(eng);
+    char buf[BCN_FIELD_W * BCN_FIELD_H * 4 + 64];
+    int n;
+    if (!f) return;
+    n = snprintf(buf, sizeof buf, "{\"field_w\":%d,\"field_h\":%d,\"field\":[", BCN_FIELD_W, BCN_FIELD_H);
+    for (int i = 0; i < BCN_FIELD_W * BCN_FIELD_H; i++)
+        n += snprintf(buf + n, sizeof buf - (size_t)n, "%s%u", i ? "," : "", f[i]);
+    n += snprintf(buf + n, sizeof buf - (size_t)n, "]}\n");
+    if (write(1, buf, (size_t)n) != (ssize_t)n) { /* scope went away; not fatal */ }
+}
 
 static uint64_t boottime_us()
 {
@@ -63,6 +83,7 @@ static void emit_cb(const BcnRecord *rec, void *user)
         if (r.deadline_margin_us < 0) c->misses++;
     }
     for (BcnEmitter *e : c->sinks) bcn_emitter_send(e, &r);
+    if (c->field_map && c->eng) emit_field_line(c->eng);
     c->emitted++;
 }
 
@@ -72,6 +93,7 @@ static void usage()
         "usage: beacon_trackd --config <ini> [--source live|replay:<file>]\n"
         "                     [--emit <sink>[,<sink>...]] [--record <path>] [--duration S]\n"
         "                     [--seed B:<x_m2>:<y_m2>]   (bench helper; acquisition normally seeds)\n"
+        "                     [--field-map]              (viewfinder for the scope; use with --emit json:-)\n"
         "  <sink> ::= binary:<path> | json:- | tcp:<host>:<port> | serial:<dev>[:<baud>]\n");
 }
 
@@ -79,6 +101,7 @@ int main(int argc, char **argv)
 {
     const char *ini = nullptr, *source = "live", *emit_spec = "json:-", *record_path = nullptr;
     const char *seed_spec = nullptr;
+    bool field_map = false;
     long duration_s = 0;
     char err[BCN_ERR_MAX];
     BcnConfig cfg;
@@ -95,6 +118,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--record")   && i + 1 < argc) record_path = argv[++i];
         else if (!strcmp(argv[i], "--duration") && i + 1 < argc) duration_s = atol(argv[++i]);
         else if (!strcmp(argv[i], "--seed")     && i + 1 < argc) seed_spec = argv[++i];
+        else if (!strcmp(argv[i], "--field-map"))                field_map = true;
         else { usage(); return 1; }
     }
     if (!ini) { usage(); return 1; }
@@ -154,8 +178,11 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    fprintf(stderr, "beacon_trackd: source=%s emit=%s%s%s\n", source, emit_spec,
-            record_path ? " record=" : "", record_path ? record_path : "");
+    if (field_map) { engine_field_enable(eng, 1); ctx.eng = eng; ctx.field_map = true; }
+
+    fprintf(stderr, "beacon_trackd: source=%s emit=%s%s%s%s\n", source, emit_spec,
+            record_path ? " record=" : "", record_path ? record_path : "",
+            field_map ? " field-map=on" : "");
 
     uint64_t t0 = 0;
     uint32_t nframes = 0;

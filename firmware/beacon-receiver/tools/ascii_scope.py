@@ -66,18 +66,65 @@ def source_records(spec):
     else:
         raise SystemExit(f"unknown source {spec}")
 
-GRID_W, GRID_H = 96, 30       # chars; maps M2 x in [-80,80], y in [-50,50]
-X_SPAN, Y_SPAN = 160.0, 100.0
+GRID_W, GRID_H = 96, 30       # chars; maps the WHOLE M2 grid: x in [-160,160], y in [-100,100]
+# The M2 grid is 320x200 CENTRE-ORIGIN (data-model §2), so the field is +-160 x +-100 px = 97.3 x 60.8 deg.
+# This was +-80 x +-50 until 2026-08-21, i.e. the scope silently drew only the middle QUARTER of the field
+# by area and a beacon out toward the edge simply never appeared -- indistinguishable, on screen, from a
+# tracker that had lost it. Fixed together with the --field-map viewfinder, which made the mismatch
+# obvious: the field map covered the whole frame while the glyphs covered the centre.
+X_SPAN, Y_SPAN = 320.0, 200.0
 RED, GRN, DIM, YEL, RST = "\x1b[31m", "\x1b[32m", "\x1b[2m", "\x1b[33m", "\x1b[0m"
+
+# --field-map viewfinder. beacon_trackd --field-map writes a second JSON line per tick carrying a coarse
+# max-minus-mean CONTRAST map of the frame (see engine.h). It answers the one question the track glyphs
+# cannot: "is the beacon even on the sensor?" -- which is what you need while aiming, precisely when
+# there is no track to draw. Rendered as a dim ramp UNDER the glyphs, so a lock always wins the cell.
+FIELD_RAMP = " .:-=+*#%@"
+# The floor is derived from the map itself, never a constant: scene texture sets the background contrast
+# (a synthetic noise field sits at ~17, a dark room near 0), so a fixed threshold either paints the whole
+# field or hides a real beacon. Same self-normalising principle acquire_pass() uses on the blink plane.
+FIELD_FLOOR_K = 3             # a cell must beat the field median by this many median-absolute-deviations
+# PEAK-HOLD. The beacon is DARK on roughly half the chips, so a single frame catches it only ~47 % of
+# ticks (measured on the golden clip: peak 96-103 lit, 19 dark). Without a hold the viewfinder strobes and
+# is useless for aiming. Decay 3/4 per tick keeps a real source visible for ~5 ticks (250 ms) while still
+# letting it fade once you pan off it.
+FIELD_DECAY_NUM, FIELD_DECAY_DEN = 3, 4
+
+def field_floor(cells):
+    """Robust background level: median + K*MAD. Beacons are a handful of cells out of 1280, so they do
+    not move the median, and MAD is unmoved by them either -- that is the point of using it over sigma."""
+    srt = sorted(cells)
+    med = srt[len(srt) // 2]
+    mad = sorted(abs(c - med) for c in cells)[len(cells) // 2]
+    return med + FIELD_FLOOR_K * max(mad, 1)
+
 
 def cell(x, y):
     cx = int((x + X_SPAN/2) / X_SPAN * GRID_W)
     cy = int((y + Y_SPAN/2) / Y_SPAN * GRID_H)
     return (cx, cy) if 0 <= cx < GRID_W and 0 <= cy < GRID_H else None
 
-def render(rec, fps_est):
-    grid = [[f"{DIM}.{RST}" if (x % 8 == 0 and y % 6 == 0) else " "
-             for x in range(GRID_W)] for y in range(GRID_H)]
+def render(rec, fps_est, field=None):
+    if field:
+        # field cells -> grid cells by nearest sample; scale the ramp to this frame's own peak so a dim
+        # far beacon still shows (it is a viewfinder, not a photometer).
+        fw, fh, cells = field
+        floor = field_floor(cells)
+        peak = max(max(cells), floor + 1)
+        grid = []
+        for y in range(GRID_H):
+            row = []
+            for x in range(GRID_W):
+                v = cells[(y * fh // GRID_H) * fw + (x * fw // GRID_W)]
+                if v <= floor:
+                    row.append(f"{DIM}.{RST}" if (x % 8 == 0 and y % 6 == 0) else " ")
+                else:
+                    k = 1 + (v - floor) * (len(FIELD_RAMP) - 2) // max(1, peak - floor)
+                    row.append(f"{DIM}{FIELD_RAMP[min(k, len(FIELD_RAMP) - 1)]}{RST}")
+            grid.append(row)
+    else:
+        grid = [[f"{DIM}.{RST}" if (x % 8 == 0 and y % 6 == 0) else " "
+                 for x in range(GRID_W)] for y in range(GRID_H)]
     # centre crosshair
     c = cell(0, 0)
     if c: grid[c[1]][c[0]] = f"{DIM}+{RST}"
@@ -100,8 +147,12 @@ def render(rec, fps_est):
     out = ["\x1b[H\x1b[2J"]
     dl = rec.get("deadline_us", 0)
     dl_s = f"{dl/1000.0:+.1f}ms" if dl else "n/a"
+    vf = ""
+    if field:
+        hot, floor = max(field[2]), field_floor(field[2])
+        vf = f"  view {'ON-SENSOR' if hot > floor else 'nothing'} (peak {hot:3d} vs floor {floor:3d})"
     out.append(f" beacon scope  tick {rec['tick']:>7}  tracks {rec['n']}  slots {rec['slots']}"
-               f"  deadline {dl_s}  {fps_est:4.1f} rec/s   (A=PORT red, B=STARBOARD green)")
+               f"  deadline {dl_s}  {fps_est:4.1f} rec/s{vf}   (A=PORT red, B=STARBOARD green)")
     out.append(" +" + "-" * GRID_W + "+")
     for row in grid: out.append(" |" + "".join(row) + "|")
     out.append(" +" + "-" * GRID_W + "+")
@@ -117,14 +168,25 @@ def main():
     period = 1.0 / a.hz
     last_draw = 0.0
     n_since, t_rate, fps_est = 0, time.time(), 0.0
+    field = None
+    hold = None
     for rec in source_records(a.source):
+        if "field" in rec:                      # viewfinder side channel, not a record
+            cur = rec["field"]
+            if hold is None or len(hold) != len(cur):
+                hold = list(cur)
+            else:
+                hold = [c if c > h * FIELD_DECAY_NUM // FIELD_DECAY_DEN
+                        else h * FIELD_DECAY_NUM // FIELD_DECAY_DEN for c, h in zip(cur, hold)]
+            field = (rec["field_w"], rec["field_h"], hold)
+            continue
         n_since += 1
         now = time.time()
         if now - t_rate >= 1.0:
             fps_est = n_since / (now - t_rate)
             n_since, t_rate = 0, now
         if now - last_draw >= period:      # records arrive at 20 Hz; draw at --hz
-            render(rec, fps_est)
+            render(rec, fps_est, field)
             last_draw = now
 
 if __name__ == "__main__":

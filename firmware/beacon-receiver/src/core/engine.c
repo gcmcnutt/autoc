@@ -38,7 +38,49 @@ struct Engine {
     uint32_t warm_chip_hz_q8;
     uint8_t  warm_valid;
     int32_t  roi[TRK_MAX_EXTENT * TRK_MAX_EXTENT];   /* scratch: one aperture                         */
+    uint8_t  field_on;                               /* debug field map requested (engine_field_enable) */
+    uint8_t  field_valid;
+    uint8_t  field[BCN_FIELD_W * BCN_FIELD_H];       /* coarse point-source contrast, for the scope     */
 };
+
+/* Coarse point-source contrast for the operator's scope. Per cell: max - mean, clamped to 0..255.
+ * Cheap and deliberately dumb -- it is a viewfinder, not a detector, and nothing in the tracker reads
+ * it. Cost is one pass over the frame, charged only on ticks and only when enabled. */
+static void field_update(Engine *e, const FrameView *fv)
+{
+    uint16_t cy, cx;
+    if (!fv->w || !fv->h) return;
+    for (cy = 0; cy < BCN_FIELD_H; cy++) {
+        uint32_t y0 = (uint32_t)cy * fv->h / BCN_FIELD_H;
+        uint32_t y1 = (uint32_t)(cy + 1) * fv->h / BCN_FIELD_H;
+        for (cx = 0; cx < BCN_FIELD_W; cx++) {
+            uint32_t x0 = (uint32_t)cx * fv->w / BCN_FIELD_W;
+            uint32_t x1 = (uint32_t)(cx + 1) * fv->w / BCN_FIELD_W;
+            uint32_t sum = 0, n = 0, y, x;
+            uint8_t mx = 0;
+            int32_t c;
+            for (y = y0; y < y1; y++) {
+                const uint8_t *r = fv->data + (size_t)y * fv->stride;
+                for (x = x0; x < x1; x++) {
+                    if (r[x] > mx) mx = r[x];
+                    sum += r[x];
+                    n++;
+                }
+            }
+            c = n ? (int32_t)mx - (int32_t)(sum / n) : 0;
+            if (c < 0) c = 0;
+            if (c > 255) c = 255;
+            e->field[cy * BCN_FIELD_W + cx] = (uint8_t)c;
+        }
+    }
+    e->field_valid = 1u;
+}
+
+void engine_field_enable(Engine *e, int on) { e->field_on = on ? 1u : 0u; }
+const uint8_t *engine_field_map(const Engine *e)
+{
+    return (e->field_on && e->field_valid) ? e->field : NULL;
+}
 
 int engine_open(Engine **out, const BcnConfig *cfg, EngineEmit emit, void *user,
                 char *err, size_t err_len)
@@ -261,6 +303,7 @@ void engine_frame(Engine *e, const FrameView *fv)
 
     /* tick boundaries crossed by this frame's timestamp (usually 0 or 1; catches up after gaps) */
     tk = (fv->t_us - e->t0_us) / TICK_US;
+    if (e->field_on && e->last_tick < tk) field_update(e, fv);   /* once per tick, not per frame */
     while (e->last_tick < tk) {
         e->last_tick++;
         tick(e, e->t0_us + e->last_tick * TICK_US);
