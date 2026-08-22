@@ -20,7 +20,7 @@ the early work single-code and let two-code arrive with the hardware, rather tha
 
 | what exists now | note |
 |---|---|
-| Bench emitter, **code B only**, `'H'` mode ≈115 Hz nominal / **~121 Hz measured** | **Trap: `'H'` is volatile — any reset returns it to 200 Hz nominal.** If something "locks at the wrong rate", check the emitter before suspecting the correlator (031 diagnosis, 2026-08-17) |
+| Bench emitter, **code B only**, **120.0 Hz** (measured 119.940) | ~~Trap: `'H'` is volatile~~ — **OBSOLETE 2026-08-20.** The platform is STRICTLY single-rate: `'R'` no longer jumps to 200 Hz, `BOOT_HALF_RATE` / `+define+CHIP200` / `BEACON_SAMPLE_HZ` are deleted, and `acquire_next_rate_q8()` returns nominal unconditionally. The rate cannot leave 120 Hz |
 | Pi 3A+ + OV9281, Trixie arm64, mainline `ov9282` + patched 640×200 module | ~250–280 fps sustained; `pi/INSTALL.md` is the rebuild recipe |
 | 1.8 mm fisheye, **unfiltered** | f·θ, 95° H × 61° V measured — final. 850 filter + 1.56 mm lens are Stage 2 |
 | Pan/tilt on the airframe, INAV-commanded; **O3 removed for these tests** | repeatable slew available; sorties fly blind (spec §7.1.1) |

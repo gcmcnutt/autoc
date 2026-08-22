@@ -92,6 +92,6 @@ One CSV row per envelope cell, carrying all of §3.1's two rates, §3.2's invari
 - **Run the control first, every time.** A broken harness invalidated a whole round of "zero-frame"
   verdicts during the high-fps work.
 - **Never auto-exposure/auto-gain for measurements** — settling ramps read as signal.
-- The bench emitter's `'H'` mode is **volatile**: any reset returns it to 200 Hz nominal. Acquisition is
+- ~~The bench emitter's `'H'` mode is **volatile**~~ — **OBSOLETE 2026-08-20**, the platform is strictly single-rate at 120 Hz and no command or reset can change it. Acquisition is
   rate-agnostic by design, but if something "locks at the wrong rate", check the emitter before the code.
 - 3A+ throttles at 80 °C under sustained capture. Heatsink it.

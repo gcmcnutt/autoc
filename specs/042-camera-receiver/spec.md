@@ -71,13 +71,50 @@ as expected, all while estimating position of next beacon on the 2d frame of the
   lost, which is exactly §2.4's "2 ticks instead of 1+ s" and is already built. Shortening *cold* reacquire
   means code length or chip rate, not the tracker.
 
+### Session 2026-08-21 (later — the reframe, and a platform re-rating)
+
+- Q: If target and chase both move continually, is *continuity* still the right exit metric? →
+  A: **No. Reacquire is the primary metric.** Operator: *"Target and chase continually move. Random
+  reacquire is essential. Estimators get better the more signal. Nothing stays put."* §3 is re-cut with a
+  REACQUIRE band first — the time-to-reacquire distribution (median and 90th percentile) — with lock duty
+  demoted to secondary. The floor is the code word: **258 ms cold**, sub-word only on the warm path where
+  §2.4's guard still holds phase and rate.
+- Q: What does the pan1 measurement actually bound? →
+  A: **Acquisition, not tracking — and that makes it the binding constraint.** The 1–3 °/s coherence
+  crossover is measured on a *static full-field* matched filter, which is exactly what acquisition is.
+  Tracking gets ROI-following and is bounded instead by aperture and prediction error. So the receiver
+  **cannot cold-acquire while slewing above walking pace**, by either mechanism — the blink detector is
+  swamped by global motion, and the code correlator loses coherence mid-word. This is now **band A** in
+  §3.2, and it is precisely the capability the operator says is essential. T050/T051 own it.
+- Q: Re-rate the whole document to the platform we actually have? →
+  A: **Done.** Every number is now at **288 fps / 120 Hz chips / word 258 ms / 20 Hz records / 97.3° × 60.8°
+  field**. Corrected throughout: 121 Hz → 120 Hz, 256 ms → 258 ms, 250 fps → 288 fps, 95° → 97.3°,
+  371/93 °/s → 377/94 °/s. Two premises were structurally dead, not just stale: **the Pi 3A+ bench is
+  retired** (spare, camera removed) so §3.2's host-gap extrapolation no longer exists — the measurement
+  host IS the design point — and **453/480 fps is unreachable on this sensor** (speed lab, ~326 fps
+  ceiling), so §8's 116 MB/s row is replaced by the measured **73.7 MB/s**. The 576 fps interleave column
+  is kept but written in the subjunctive.
+- Q: Ground truth for the envelope, given the oracle cannot measure the fast bands? →
+  A: **Printed fiducials in the FOV, near the emitter** (operator). This breaks a real circular dependency:
+  T044's oracle could not measure the moving case because a static matched filter is what fails there, so
+  truth depended on T051, the thing it was meant to score. Fiducials make truth **geometric and per-frame**,
+  independent of both. Verified they cannot corrupt the receiver: `corr.c`'s per-bin mean removal
+  (`dev[k] -= mean_q8`) gives a constant-brightness source **exactly zero** correlation at every phase, and
+  `acquire_pass`'s temporal diff is blind to it too. Short term: **printed ArUco** (visible band, needs the
+  exposure raised off the 53 µs beacon operating point). After the IR filter: constant-on 850 nm LEDs.
+  Second use worth taking: fiducial-derived ego-motion is a **bench stand-in for AHRS feed-forward**, so
+  §2.3's value can be measured offline before 043 builds any of it.
+
 ---
 
 ## 1. The fact that reorganizes the feature
 
 **The 031 tracker is a *static-beacon* correlator.** `beacon_track.py` integrates one full word per fix by
-stacking *the same pixel* across M frames. At 121 Hz chips a word is **256 ms**; in the M2 grid
-(0.304°/px) that is **25 px of smear at 30°/s and 1.7 px at 2°/s**. Above ~1–2 °/s the processing gain is
+stacking *the same pixel* across M frames. At 120 Hz chips a word is **258 ms**; in the M2 grid
+(0.304°/px) that is **25 px of smear at 30°/s and 1.7 px at 2°/s**. **MEASURED 2026-08-21** on
+`pan1.bcnr`: the crossover where a longer coherent window stops paying is **1–3 °/s**, against a
+theoretical 1.18 °/s — see [results/stage1-pan1-analysis.md](results/stage1-pan1-analysis.md). The
+prediction below was right, and it bounds ACQUISITION specifically. Above ~1–2 °/s the processing gain is
 gone — the beacon sits under the pixel for 2–3 of 64 frames. No ROI, DPLL, or hold tweak fixes this; the
 *integration model* is what has to change.
 
@@ -90,7 +127,7 @@ Two consequences ripple through everything:
   does the clutter rejection.
 - **Acquisition of a mover cannot be a full-field static matched filter.** Split it:
   **detect blink → form proto-track → decode along the track.** Frame-to-frame temporal difference is
-  cheap and motion-agnostic (at 250 fps even 400°/s is 5 px/frame); a linear-motion RANSAC over ~one word
+  cheap and motion-agnostic (at 288 fps even 400°/s is 4.6 px/frame); a linear-motion RANSAC over ~one word
   yields proto-tracks; correlation along each gives code ID and phase. The full-field correlator survives
   only as the weak-signal / static fallback.
 
@@ -161,14 +198,21 @@ The operator's jittery pan/pitch rig is a **feature**: jitter is broadband distu
 bandwidth schedule exists precisely so a narrow loop rejects it while a wide loop chases it. A rig that
 was too smooth would not test the thing that matters.
 
-### 2.5 The word-transit constraint — and why it re-frames the 453 fps gate
+### 2.5 The word-transit constraint — and why it re-frames the frame-rate gate
 
-A word at 121 Hz is 256 ms; the field is 95° H. The beacon is in-field for **one** full word only if
-ω < 95/0.256 = **371°/s**, and for **four** words (enough to actually track through) only if
-**ω < ~93°/s**. At 453 fps / 200 Hz chips the word drops to 155 ms → **613°/s** and **~153°/s**.
+A word at 120 Hz is 258 ms; the field is **97.3° H** (320 M2 px × 0.304°). The beacon is in-field for
+**one** full word only if ω < 97.3/0.258 = **377°/s**, and for **four** words (enough to actually track
+through) only if **ω < ~94°/s**. At 480 fps / 200 Hz chips the word would drop to 155 ms → **628°/s** and
+**~157°/s**.
 
-**Therefore the 453 fps / Pi 5 step is a linear slew-tolerance multiplier, not primarily an SNR or
-samples-per-chip story.** That makes the held Pi-5 gate quantitative: 042 measures the °/s knee at 250 fps,
+⚠️ **480 fps IS NOT AVAILABLE ON THIS SENSOR** (speed lab closed 2026-08-21): the OV9281's ceiling is
+~326 fps full-FOV at stock PLL, and the 453/480 figures this section was originally written against were
+vendor fiction. The surviving routes to a shorter word are PLL overclock, **dual-camera FSIN interleave**
+(2 × 288 → 576 fps, the operator's preference) or a shorter code. Until one lands, **every number in this
+spec is rated at 288 fps / 120 Hz.**
+
+**Therefore the frame-rate step is a linear slew-tolerance multiplier, not primarily an SNR or
+samples-per-chip story.** That makes the gate quantitative: 042 measures the °/s knee at 288 fps,
 and if the knee lands below the 128–141°/s body-rate RMS from 039, **the frame rate is the fix, not the
 algorithm.**
 
@@ -178,13 +222,13 @@ algorithm.**
 screen — we want the estimator to be able to continuously reaffirm, regardless of position on screen, that
 a chip is seen where we expect and is thus solidly locked still."*
 
-Acquisition is genuinely expensive: **1–2 words = 256–512 ms = 64–128 frames at 250 fps**, plus 60–120 ms
+Acquisition is genuinely expensive: **1–2 words = 258–516 ms = 74–149 frames at 288 fps**, plus 60–120 ms
 per full-field search pass × chip-rate hypotheses (§1, §10). Losing lock is therefore costly, and must be
 detected *fast* and re-affirmed *cheaply*.
 
 Once code, phase and chip rate are known the receiver is in a **decision-directed** regime: it knows
 exactly which frames should be lit and which dark, and — from the track state — at which pixel. Every chip
-boundary is therefore a **testable event**, giving a lock-health signal at the chip rate (~121 Hz) rather
+boundary is therefore a **testable event**, giving a lock-health signal at the chip rate (120 Hz) rather
 than at the fix rate (20 Hz). Requirements:
 
 - **Per-chip re-affirmation** at up to the chip rate, not per-word inference. Accumulate a fast
@@ -203,19 +247,30 @@ than at the fix rate (20 Hz). Requirements:
 
 ## 3. Exit criterion — three rate bands, delivered as a measured envelope
 
+> **REFRAMED 2026-08-21 (operator).** *"Target and chase continually move. Random reacquire is essential.
+> Nothing stays put."* The bands below were written around **continuity** — lock duty over a run. If the
+> engagement is two moving aircraft, continuity is not the normal case and lock duty is close to
+> meaningless as a headline: the honest primary metric is the **time-to-reacquire distribution (median and
+> tail)**, with continuity a secondary. Band A of §3.2 is the measured fact that makes this urgent — cold
+> acquisition currently fails above **1–3 °/s**, so today the receiver cannot reacquire while moving *at
+> all*. Bands are kept below because they still describe the tracking regimes; the **exit criterion is now
+> the reacquire distribution plus band A**.
+
 Not one number. A surface (validity vs slew × SNR), plus:
 
 | band | regime | bar |
 |---|---|---|
-| **Tracked, full-word** | to ~90°/s | ≥95 % of 20 Hz ticks valid, ≤1 px (0.3°) RMS bearing residual, **zero code-ID swaps** |
+| **REACQUIRE (primary)** | any slew in band 1–3 | **median time-to-reacquire and its 90th percentile**, from loss to confirmed lock, published as a distribution. Floor set by the code word: 258 ms cold, sub-word only warm (§2.4's guard) |
+| **Tracked, full-word** | to ~89°/s | ≥95 % of 20 Hz ticks valid, ≤1 px (0.3°) RMS bearing residual, **zero code-ID swaps** |
 | **Tracked, short-integration** (strong signal, adaptive length) | to ~150°/s | degradation *documented*, not asserted |
 | **Transient survival** | 300–500°/s roll | a **reacquire event**: metric is time-to-relock ≤ 400 ms, not continuity |
 
 Plus, in every campaign: **false-acquire rate** over cluttered background under ego-motion, and an
 occlusion/relock ladder (0.3 / 0.6 / 1.0 s blocked).
 
-> The °/s figures above are the **bench** column of §3.2 — the transferable form of each bar is the
-> per-integration invariant, because 042 measures on the 3A+ while the flight article is a Pi 5 at 453 fps.
+> The °/s figures above are the **288 fps** column of §3.2. The transferable form of each bar is still the
+> per-integration invariant — not because of a host gap (there is none any more: the measurement host IS
+> the design point since the 3A+ retired) but because it is what survives a future frame-rate change.
 
 ### 3.1 What "valid" means (clarified 2026-08-19) — two metrics, both published
 
@@ -232,25 +287,44 @@ degrading correlator from hiding behind a healthy Kalman filter.
 
 ### 3.2 The bar is an invariant; °/s is derived (clarified 2026-08-19)
 
-**042 measures on a host that is not the flight article.** The bench is a 3A+ at 250 fps / 121 Hz chips
-(word = 256 ms); the flight design point is a Pi 5 at 453 fps / 200 Hz (word = 155 ms). Raw °/s therefore
-does not transfer — but **apparent motion per coherent integration interval** does, because what breaks a
-correlator is smear *within* an integration, and °/px is fixed by the optics.
+**RE-RATED 2026-08-21.** This section was written when the bench was a Pi 3A+ at 250 fps and the flight
+article was a hypothetical Pi 5 at 453 fps. Both premises are now gone: **the 3A+ is retired** (spare,
+camera removed) and **the bench IS the flight host** — one Pi 5 at **288 fps / 120 Hz chips, word 258 ms**.
+453/480 fps is not reachable on this sensor at all (§2.5). So there is no longer a host gap to extrapolate
+across: **the measurement host and the design point are the same machine**, and the bench °/s column below
+IS the number, not a scaled proxy.
+
+The invariant framing is kept anyway, because it is what survives a future frame-rate change (interleave or
+a shorter code): **apparent motion per coherent integration interval** transfers where raw °/s does not,
+since what breaks a correlator is smear *within* an integration and °/px is fixed by the optics.
 
 **Operator framing (2026-08-19)**: *"initial experiments on the RPi 3 we have today and the slower chip
 rate — but this is to prove **algorithms**, not absolute tracking time; sure, we'll slow the slew a bit to
 make it an honest test."* The reduced bench slew is **dimensional consistency, not a weakened bar.**
 
-| band | **invariant (primary)** | bench °/s (3A+, 250 fps, word 256 ms) | flight °/s (Pi 5, 453 fps, word 155 ms) |
+| band | **invariant (primary)** | **NOW: Pi 5, 288 fps, word 258 ms** | *if* 576 fps interleave lands (word 129 ms) |
 |---|---|---|---|
-| **1 — full-word** | **≥23° of apparent motion per word** (≈76 px in the M2 grid) | ~90 °/s | ~148 °/s |
-| **2 — short integration** (8 chips) | **≥10° per integration** (≈33 px) | ~150 °/s | ~248 °/s |
-| **3 — transient** | survive a full-field (95°) transit; **relock ≤400 ms** — already host-independent | 300–500 °/s | 300–500 °/s |
+| **1 — full-word** | **≥23° of apparent motion per word** (≈76 px in the M2 grid) | **~89 °/s** | ~178 °/s |
+| **2 — short integration** (8 chips) | **≥10° per integration** (≈33 px) | **~150 °/s** | ~300 °/s |
+| **3 — transient** | survive a full-field (97.3°) transit; **relock ≤400 ms** — already host-independent | 300–500 °/s | 300–500 °/s |
+| **A — ACQUIRE (new, 2026-08-21)** | **≤1 M2 px of smear per acquisition word** | **1–3 °/s MEASURED** | ~2–6 °/s |
+
+**Band A is new and it is the binding one.** Acquisition is a *static* full-field search, so it gets none
+of the ROI-following that lets bands 1–2 tolerate 23° of sweep per word: measured on `pan1.bcnr`, cold
+acquisition stops working between **1 and 3 °/s** (theory 1.18 °/s). Both acquisition mechanisms fail
+together there — the blink detector is swamped because a moving camera makes the whole field differ, and
+the code correlator loses coherence because the signal leaves the pixel mid-word. Closing band A is
+T050/T051's job and nothing else's.
 
 The ≤1 px (0.3°) RMS residual and §3.1's two rates are dimensionless already and carry across unchanged.
 
-**Every envelope cell publishes all three columns.** The bench number is the measurement; the invariant is
-the claim; the flight number is the ×1.65 word-duration extrapolation that §2.5's gate reads.
+**Every envelope cell publishes the invariant and the 288 fps number.** The third column is a projection
+only, and is written in the subjunctive on purpose — nothing has demonstrated 576 fps on this rig.
+
+⚠️ **A systematic caveat on every °/s in this document**: they all assume a **uniform 0.304 °/px** across a
+97.3° field. On a 1.56 mm ultra-wide lens that is an approximation which degrades toward the edge, so a
+rate measured at the field corner is not strictly comparable to one measured on axis. Quantifying it needs
+a one-off checkerboard lens calibration — **owed before the envelope campaign publishes absolute °/s.**
 
 **Honesty clause on "20 Hz"**: with full-word integration, consecutive fixes share ~92 % of their samples —
 the *effective* information bandwidth is ~4 Hz and the Kalman prediction supplies the rest. Near field with
@@ -303,9 +377,10 @@ horizontal fill** — a sub-pixel source *amplitude-modulates* as it drifts acro
 `TrailDistance = 3.048 m` (040 input-data-checklist) is the mission goal state, and **three things go
 wrong there at once** (operator 2026-08-17):
 
-- **Apparent rate peaks**: 244°/s for a 13 m/s crossing at 3 m (BACKLOG §Q2c says 248°/s) ⇒ the full 95°
-  field crosses in **0.39 s** — barely one and a half words at 121 Hz. §2.5's constraint bites hardest
-  exactly at the goal state.
+- **Apparent rate peaks**: 244°/s for a 13 m/s crossing at 3 m (BACKLOG §Q2c says 248°/s) ⇒ the full 97.3°
+  field crosses in **0.40 s** — barely one and a half words at 120 Hz. §2.5's constraint bites hardest
+  exactly at the goal state, and **§3.2 band A says acquisition is already gone two orders of magnitude
+  below this rate** — which is why decode-along-track, not tuning, is the answer.
 - **Integration time is therefore minimal** — the adaptive short-integration mode (§4) is not an
   optimization here, it is the only mode that works.
 - **The beacon saturates hard.** Extrapolating the 031 exposure ladder (bench current, worst aspect, 2 m →
@@ -468,13 +543,14 @@ It does. **There are two hosts, and the recorder is designed for the flight one.
 
 | host / mode | rate | sink capability | verdict |
 |---|---|---|---|
-| **Flight: Pi 5 + NVMe, 640×400 @ 453 fps** | **116 MB/s** | NVMe PCIe 2.0 ×1 ≈ 450 MB/s (~26 % used) | **continuous full raw — comfortable** |
-| Flight: Pi 5 + NVMe, 640×200 @ 453 fps | 58 MB/s | same | trivial |
-| Bench: Pi 3A+, 640×400 @ 250 fps | 64 MB/s | SD ≪; USB2 ~35 MB/s; 512 MB RAM | **~8 s RAM ring only** |
-| Bench: Pi 3A+, 640×200 @ 250 fps | 32 MB/s | as above | ~16 s ring, narrower V field |
+| **Pi 5 + NVMe, 640×400 @ 288 fps — THE rig** | **73.7 MB/s** | NVMe ≈450 MB/s (~16 % used) | ✅ **MEASURED 2026-08-21: 17275/17275 frames, 0 dropped, 60.0 s, dt spread 23 µs, tracker running concurrently at 0/1200 deadline misses** |
+| Pi 5 + NVMe, 640×400 @ 480 fps *(if reachable)* | 123 MB/s | same | projection only — §2.5, not this sensor |
+| ~~Bench: Pi 3A+ @ 250 fps~~ | ~~64 MB/s~~ | ~~SD ≪; USB2; 512 MB RAM~~ | **retired 2026-08-21** — the 3A+ is a spare, camera removed |
 
-Capacity at the flight design point: a 10-minute sortie ≈ **70 GB**; a 1 TB drive ≈ **2.4 hours** at full
-rate. Storage is not a constraint on the flight article.
+Capacity at the measured rate: a 10-minute sortie ≈ **44 GB**; the fitted 916 GB drive ≈ **3.4 hours** at
+full rate. Storage is not a constraint. **Continuous capture is proven, not assumed** — and the honest
+witness is `frames_dropped` plus the timestamp dt spread, never seq gaps: this pipeline's seq counts
+DELIVERED frames, so a drop leaves no gap (`sink_record.c`, 2026-08-19).
 
 ### 8.2 The design that falls out
 
@@ -619,7 +695,7 @@ the constraint is on delivery:
 |---|---|
 | **Deadline** | the record whose prediction targets tick N must be on the wire **≥5 ms before tick N** |
 | **Deadline-miss rate** | **<0.1 %**, published with every envelope cell alongside §3.1's two metrics |
-| internal budget — capture + front end | **≤1 frame (4 ms at 250 fps)**, hard real-time (§6) |
+| internal budget — capture + front end | **≤1 frame (3.47 ms at 288 fps)**, hard real-time (§6) |
 | internal budget — correlate + emit | **≤1 tick (50 ms)**; may run off the capture thread behind a queue *provided the deadline holds* |
 
 Consequences: `age_ms` in the record remains **reported** (041 still wants to know how stale the
@@ -637,14 +713,21 @@ floor, which is the intended coupling.
 
 ---
 
-## 12. Platform decision — two hosts, and they are not the same host
+## 12. Platform decision — ~~two hosts~~ ONE host (collapsed 2026-08-21)
 
-**042 development / bench host: Pi 3A+ at 250 fps / ~115–121 Hz beacons.** Every algorithmic question is
-per-frame and scales with the host, so 042 proves the *algorithm* here (§3.2).
+> **This section's premise is gone.** It was written 2026-08-19 when development ran on a Pi 3A+ and the
+> flight article was a hypothetical faster Pi 5. Both halves changed: **the 3A+ is retired** (spare, camera
+> removed) and the Pi 5 turned out **not** to be a faster host for this sensor — the OV9281 tops out near
+> 326 fps, so 453/480 was never available (§2.5, speed lab closed 2026-08-21). There is now exactly one
+> host and one operating point, and the "prove the algorithm here, extrapolate there" structure below is
+> moot: **the measurement host IS the design point.**
 
-**Flight-article design point: Pi 5 + NVMe at 453 fps / 200 Hz chips** (dual CSI, ~3× CPU, continuous full
-raw — §8). Stated 2026-08-19 so the recorder and the exit-bar arithmetic are designed against the right
-target.
+**THE host, development and flight: Pi 5 + NVMe, 640×400 @ 288 fps, 120.0 Hz chips, word 258 ms**,
+continuous full raw at a measured 73.7 MB/s (§8). A shorter word — the thing §2.5 says actually buys slew
+tolerance — now depends on the **576 fps dual-camera FSIN interleave** or a shorter code, both 043.
+
+~~**042 development / bench host: Pi 3A+ at 250 fps / ~115–121 Hz beacons.**~~ Retired.
+~~**Flight-article design point: Pi 5 + NVMe at 453 fps / 200 Hz chips.**~~ Not reachable on this sensor.
 
 **These are not in conflict, and the gate is unchanged**: the Pi 5 is still *bought* on the °/s knee
 measured in 042-D (§2.5) — to confirm scaling and unlock dual CSI, not to discover whether the tracker

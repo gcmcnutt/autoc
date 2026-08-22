@@ -21,6 +21,25 @@ motion.
 | 30–80 °/s | 7 | **0.52** | 39.8 px | long integration **loses** |
 | 80–200 °/s | 2 | **0.58** | 95.3 px | long integration **loses** |
 
+### Scope: this bounds ACQUISITION, not tracking
+
+Stated precisely, because the distinction decides what to build. The measurement above is of a **static
+full-field** matched filter — the pixel grid does not move. That is exactly what **acquisition** is
+(`acquire_pass` + a fresh candidate's first word), so the 1–3 °/s crossover is an **acquisition** limit:
+above walking pace the receiver **cannot cold-acquire at all**, by either of its two mechanisms — the blink
+detector is swamped because a moving camera makes the whole field differ frame-to-frame, and now the code
+correlator too, because the signal leaves the pixel mid-word.
+
+**Tracking** is not bounded by this number, because a confirmed track's ROI *follows* the prediction — in
+the ROI's frame the beacon can stay put while the field sweeps past, which is what makes §3.2's "≥23° of
+apparent motion per word" reachable at all. Tracking is bounded instead by aperture, innovation gate and
+prediction error (see the 2026-08-21 tracker analysis).
+
+**This is why "random reacquire is essential" is the hard requirement**, not a softer one: the operator's
+stated need is precisely the case the receiver currently cannot do at all. T050/T051 (proto-track,
+decode-along-track) are therefore not a tracking nicety — they are the *only* route to acquiring a moving
+target, and the sole enabler of reacquire-while-slewing.
+
 **The sign of the slope flips, and that is the whole finding.** Stationary, a longer coherent window buys
 processing gain exactly as designed (33 chips beats 5 chips by 1.8×). Moving, a longer window *costs* — 5
 chips beats 33 chips by up to 4.5× (burst 25). A ratio below 1 cannot happen from noise; it only happens

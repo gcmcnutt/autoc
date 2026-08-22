@@ -10,13 +10,13 @@ into a receiver that tracks beacons crossing the field at flight-realistic rates
 next-tick prediction, and **publishes a measured envelope** rather than an anecdote.
 
 Technical approach: a bank of **movable multi-scale correlators**, each an alpha-beta centering loop (the
-spatial twin of the DPLL), with **decision-directed chip-level lock re-affirmation** at ~121 Hz. Written as
+spatial twin of the DPLL), with **decision-directed chip-level lock re-affirmation** at 120 Hz. Written as
 a **zero-dependency C11 core** behind a thin C++17 libcamera shell, so the identical code runs live on the
 Pi, in replay on the dev box, and cross-compiled from WSL2 for field updates. Truth comes from an
 **offline oracle** over recorded raw plus **signal injection** into real backgrounds — no simulator.
 
-Scope of record: **042 = A · B · C · E1 · D** (spec §13). Photometry, daylight, range, 453 fps and the
-xiao/AHRS transport are 043.
+Scope of record: **042 = A · B · C · E1 · D** (spec §13). Photometry, daylight, range, a higher frame rate
+(576 fps interleave — 453/480 is not reachable on this sensor, §2.5) and the xiao/AHRS transport are 043.
 
 ## Technical Context
 
@@ -36,7 +36,7 @@ entry point alongside the existing `firmware/beacon-decoder-stepfpga/host/regres
 the flight design point; aarch64 dev box (20 cores, ASIMD) for replay/oracle/tests; **WSL2 x86_64 →
 aarch64 cross-compile for field updates**.
 **Project Type**: real-time embedded-Linux signal-processing daemon + offline analysis tooling.
-**Performance Goals**: 20 Hz fixes; front end ≤1 frame (4 ms at 250 fps) hard real-time; **delivery
+**Performance Goals**: 20 Hz fixes; front end ≤1 frame (3.47 ms at 288 fps) hard real-time; **delivery
 deadline — the record predicting tick N on the wire ≥5 ms before tick N, miss rate <0.1 %** (§11.1);
 16 tracker instances; cold full-field acquire threaded off the capture path.
 **Constraints**: **bit-exact replay parity with live** (no wall-clock in `core/`, integer correlator paths,
@@ -47,7 +47,7 @@ field iteration must not require a compiler.
 one box** (operator 2026-08-19). Therefore the 20 Hz record is defined as a versioned *struct*, never as a
 wire protocol, and the transport is a plug (R13) — when the boxes merge, the transport is deleted rather
 than redesigned.
-**Scale/Scope**: 640×400 @ 250 fps = 64 Mpx/s front end; 2 Gold-31 codes; 16 correlator slots; ~123 MMAC
+**Scale/Scope**: 640×400 @ 288 fps = 73.7 Mpx/s front end; 2 Gold-31 codes; 16 correlator slots; ~123 MMAC
 per cold full-field acquire pass.
 
 ## Constitution Check
@@ -240,7 +240,7 @@ Stage 2 does is get the AGC **shape** right against real conditions.*
 
 ### Stage 3 — Flight speeds *(gated on the Pi 5 arriving)*
 
-Work: **042-D remainder** — the rate-band envelope at 453 fps, full-frame continuous capture to NVMe, and
+Work: **042-D remainder** — the rate-band envelope at 288 fps (480 is not reachable on this sensor), full-frame continuous capture to NVMe, and
 **20 Hz position streaming as a real input**. This is where §3.2's flight column stops being an
 extrapolation and §2.5's °/s knee gets measured on the host that will fly.
 *Blocked-on note: the Pi 5's actual fps is still unmeasured; the `fps_probe.py` + patched-driver recipe is
