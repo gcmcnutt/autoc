@@ -47,6 +47,30 @@ as expected, all while estimating position of next beacon on the 2d frame of the
   verification airframe is decoupled from the flight article, which means **the recorder can fly before
   the tracker exists**. See §7.1 (verification ladder) and §12.1 (the gate this pulls at).
 
+### Session 2026-08-21
+
+- Q: Is 300–500 °/s a *tracking* band or a *reacquire* band? (Raised by the operator wanting to pan the
+  rig by hand and keep 10 Hz locked updates.) →
+  A: **Reacquire — §3 band 3 stands, on both platforms.** The binding constraint is §2.5's word-transit
+  time, re-derived at the platform's actual 120 Hz: field 320 M2 px × 0.304° = **97.3°**, word = 31 chips
+  = **258 ms**, so the beacon is in-field for one whole word only below **377 °/s** and for the four words
+  it takes to actually track below **94 °/s** — which is where §3 band 1's "~90 °/s" already sat. Operator
+  2026-08-21: *"the 500 is prob ok for when we are back to 480fps and 200hz codes — yeah, we can scale it
+  back here."* Recorded so it is not re-litigated: **480 fps / 200 Hz moves the tracking band 94 → 157 °/s,
+  not to 500.** At 480/200 a 500 °/s pass is 1.26 words in-field ≈ one fix — still a transient event. No
+  estimator architecture changes this; it is code length against transit time (§2.5).
+- Q: Does the operator's "stack of estimators feeding down to fine grain, growing/shrinking" imply new
+  architecture? → A: **No — it is §2 restated**, and it is largely built: scale ladder (§2.2), alpha-beta
+  centering (§2.1), guard+precision pairing with guard-rescue (§2.4), spatial high-pass (§1), chip-level
+  re-affirmation (§2.6). The unbuilt gap is **042-C specifically**: `acquire.c` today is only blink-detect;
+  **proto-track formation and decode-along-track do not exist**, and acquisition is not threaded
+  (T050/T051/T053). That phase is the whole distance to tracking through motion.
+- Q: Is cold reacquire in ~2 frames (the StepFPGA's feel) reachable? → A: **Not cold.** The StepFPGA has
+  one PD and solves code only; the camera solves position *and* code, and one 31-chip word — **258 ms** —
+  is the quantum. Sub-word relock is a **warm** path: the guard holds phase and rate and only position is
+  lost, which is exactly §2.4's "2 ticks instead of 1+ s" and is already built. Shortening *cold* reacquire
+  means code length or chip rate, not the tracker.
+
 ---
 
 ## 1. The fact that reorganizes the feature
