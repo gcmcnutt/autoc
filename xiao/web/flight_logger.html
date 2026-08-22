@@ -434,9 +434,22 @@
     // specs/039-xiao-20hz-flight/contracts/flight-log-format.md (same wire
     // format as xiao/include/flight_log_format.h; loud-fail on version/CRC).
     // ------------------------------------------------------------------
-    const FL_MAGIC = 0x314C4641, FL_VERSION = 3;
-    const FL_NUM_IN = 37, FL_NUM_OUT = 3, FL_NUM_SCALED = 49;
-    const FL_SIZES = { 1: 320, 2: 29, 3: 114, 4: 10, 5: 103, 6: 25 };  // v3: FileHeader +program[96]
+    // v4 (041 P5-3): the NN input block grew 37 -> 45 slots. EVERY offset below
+    // is derived from FL_NUM_IN/FL_NUM_OUT rather than written as a literal --
+    // the v3 code hardcoded 81/87/105/40 and would have silently decoded the
+    // outputs as inputs and the telemetry as outputs against a v4 file.
+    const FL_MAGIC = 0x314C4641, FL_VERSION = 4;
+    const FL_NUM_IN = 45, FL_NUM_OUT = 3, FL_NUM_SCALED = FL_NUM_IN + FL_NUM_OUT + 9;
+    // Derived record geometry (must match xiao/include/flight_log_format.h).
+    const FL_TICK_IN = 7;                              // type+ts+counter
+    const FL_TICK_OUT = FL_TICK_IN + 2 * FL_NUM_IN;    // outputs
+    const FL_TICK_TELEM = FL_TICK_OUT + 2 * FL_NUM_OUT;// pos/vel/rabbit
+    const FL_TICK_TAIL = FL_TICK_TELEM + 18;           // reset, path, rc[3], valid
+    const FL_TICK_SIZE = FL_TICK_TAIL + 1 + 1 + 6 + 1;
+    const FL_HDR_SCALES = 120;                         // type..tick_ms
+    const FL_HDR_SIZE = FL_HDR_SCALES + 4 * FL_NUM_SCALED + 4;
+    const FL_SCALE_TELEM = FL_NUM_IN + FL_NUM_OUT;     // first telemetry scale slot
+    const FL_SIZES = { 1: FL_HDR_SIZE, 2: 29, 3: FL_TICK_SIZE, 4: 10, 5: 103, 6: 25 };
     const FL_EVENTS = { 1: 'ARM', 2: 'DISARM', 3: 'ENGAGE', 4: 'DISENGAGE',
                         5: 'FETCH_TIMEOUT', 6: 'LOG_DROP', 7: 'FLASH_FULL',
                         8: 'DISENGAGE_REASON', 9: 'FAILSAFE', 10: 'SERVO_SWITCH',
@@ -451,10 +464,16 @@
       [...Array(6)].map((_, i) => 'dist_' + i),
       ['closing_rate', 'quat_w', 'quat_x', 'quat_y', 'quat_z', 'airspeed',
        'gyro_p', 'gyro_q', 'gyro_r',
-       'dist_to_boundary', 'inward_body_x', 'inward_body_y', 'inward_body_z']);
+       // 041: five slots inserted BEFORE dist_to_boundary.
+       'accel_x', 'accel_y', 'accel_z',
+       'specific_energy', 'boundary_closure_rate',
+       'dist_to_boundary', 'inward_body_x', 'inward_body_y', 'inward_body_z',
+       'score_grad_x', 'score_grad_y', 'score_grad_z']);
+    if (FL_INPUT_NAMES.length !== FL_NUM_IN)
+      throw new Error(`FL_INPUT_NAMES has ${FL_INPUT_NAMES.length} entries, wire carries ${FL_NUM_IN}`);
     const FL_OUTPUT_NAMES = ['out_roll', 'out_pitch', 'out_throttle'];
     const FL_TELEM_NAMES = ['pos_n', 'pos_e', 'pos_d', 'vel_n', 'vel_e', 'vel_d',
-                            'rabbit_n', 'rabbit_e', 'rabbit_d'];  // v2, scale slots 40..48
+                            'rabbit_n', 'rabbit_e', 'rabbit_d'];  // scale slots FL_SCALE_TELEM..+8
 
     function decodeFlightLog(bytes) {
       const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -504,17 +523,17 @@
                         timestamp_ms: dv.getUint32(pos + 1, true),
                         tick_counter: dv.getUint16(pos + 5, true) };
           for (let i = 0; i < FL_NUM_IN; i++)
-            row[FL_INPUT_NAMES[i]] = dv.getInt16(pos + 7 + 2 * i, true) / scales[i];
+            row[FL_INPUT_NAMES[i]] = dv.getInt16(pos + FL_TICK_IN + 2 * i, true) / scales[i];
           for (let i = 0; i < FL_NUM_OUT; i++)
-            row[FL_OUTPUT_NAMES[i]] = dv.getInt16(pos + 81 + 2 * i, true) / scales[FL_NUM_IN + i];
+            row[FL_OUTPUT_NAMES[i]] = dv.getInt16(pos + FL_TICK_OUT + 2 * i, true) / scales[FL_NUM_IN + i];
           for (let i = 0; i < 9; i++)   // v2: pos[3], vel[3], rabbit[3] at 87..105
-            row[FL_TELEM_NAMES[i]] = dv.getInt16(pos + 87 + 2 * i, true) / scales[40 + i];
-          row.recurrent_reset = dv.getUint8(pos + 105);
-          row.path_index = dv.getInt8(pos + 106);
-          row.rc_roll = dv.getUint16(pos + 107, true);
-          row.rc_pitch = dv.getUint16(pos + 109, true);
-          row.rc_throttle = dv.getUint16(pos + 111, true);
-          row.state_valid = dv.getUint8(pos + 113);
+            row[FL_TELEM_NAMES[i]] = dv.getInt16(pos + FL_TICK_TELEM + 2 * i, true) / scales[FL_SCALE_TELEM + i];
+          row.recurrent_reset = dv.getUint8(pos + FL_TICK_TAIL);
+          row.path_index = dv.getInt8(pos + FL_TICK_TAIL + 1);
+          row.rc_roll = dv.getUint16(pos + FL_TICK_TAIL + 2, true);
+          row.rc_pitch = dv.getUint16(pos + FL_TICK_TAIL + 4, true);
+          row.rc_throttle = dv.getUint16(pos + FL_TICK_TAIL + 6, true);
+          row.state_valid = dv.getUint8(pos + FL_TICK_TAIL + 8);
           if (cur) cur.ticks.push(row);
         } else if (t === 4) {                            // EventRecord
           const code = dv.getUint8(pos + 5);
