@@ -40,8 +40,12 @@ FitnessComputer::ScoreTerms FitnessComputer::decomposeStepScore(double along, do
 
     // Clamp angle at π/2 so ahead positions don't saturate the angle term —
     // the directional distance scale carries the ahead gradient.
-    constexpr double HALF_PI = M_PI / 2.0;
-    double angleClamped = (angle < HALF_PI) ? angle : HALF_PI;
+    // kHalfPi, not the obvious name: the Arduino core #defines that identifier,
+    // and this file is now compiled into the xiao firmware too (041 P5-3) so the
+    // objective's gradient has ONE definition rather than a firmware copy.
+    // Value-identical -- a rename, nothing numeric.
+    constexpr double kHalfPi = M_PI / 2.0;
+    double angleClamped = (angle < kHalfPi) ? angle : kHalfPi;
 
     // Directional distance scale: forgiving behind, sharp ahead.
     double distScale = (along <= 0.0) ? distScaleBehind_ : distScaleAhead_;
@@ -88,9 +92,13 @@ gp_vec3 FitnessComputer::scoreGradientWorld(const gp_vec3& offset,
     if (cosAngle < -1.0) cosAngle = -1.0;
     const double angle = std::acos(cosAngle);
 
-    constexpr double HALF_PI = M_PI / 2.0;
-    const bool clamped = (angle >= HALF_PI);
-    const double angleClamped = clamped ? HALF_PI : angle;
+    // kHalfPi, not the obvious name: the Arduino core #defines that identifier,
+    // and this file is now compiled into the xiao firmware too (041 P5-3) so the
+    // objective's gradient has ONE definition rather than a firmware copy.
+    // Value-identical -- a rename, nothing numeric.
+    constexpr double kHalfPi = M_PI / 2.0;
+    const bool clamped = (angle >= kHalfPi);
+    const double angleClamped = clamped ? kHalfPi : angle;
 
     const double distScale = (along <= 0.0) ? distScaleBehind_ : distScaleAhead_;
     const double effDist = d / distScale;

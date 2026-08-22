@@ -3,6 +3,13 @@
 #include <embedded_pathgen_selector.h>
 #include <autoc/eval/sensor_math.h>
 #include <autoc/nn/nn_input_computation.h>
+// 041 P5-3 — the three channels the xiao used to zero. All three are computed
+// from the SAME shared code the sim producer uses, never re-derived here:
+// craft_observations.h writes Es + boundary closure, FitnessComputer owns the
+// score-gradient closed form, envelope_state.h owns the streak accumulator.
+#include <autoc/eval/craft_observations.h>
+#include <autoc/eval/envelope_state.h>
+#include <autoc/eval/fitness_computer.h>
 #include <autoc/imu/inav_quat_convention.h>
 #include <nn_program.h>
 #include <flight_log.h>
@@ -44,6 +51,13 @@ static int current_path_index = 0;
 // 039 US3 — binary flight-log span bookkeeping (flight_log_format.h).
 static uint16_t span_id_counter = 0;     // flight-unique, reset at arm
 static bool nn_warmup_tick = false;      // true for the first tick after engage (recurrent_reset marker)
+// 041 P5-3 — span-scoped streak accumulator feeding the SCORE_GRAD_* weight.
+// Same mechanics as the sim producer (autoc/eval/envelope_state.h): ms-based,
+// resets on envelope EXIT only.
+static autoc::eval::EnvelopeState score_envelope;
+// Carried tangent, mirroring the sim's stepScorePrevTangent_: on the last
+// segment (no i+1) the previous tangent is the honest answer, not zero.
+static gp_vec3 score_tangent_prev = gp_vec3::UnitX();
 
 // 039 T019 — DWT cycle count of one unrolled NN eval; measured once per boot
 // at the first eval (one number per firmware image), carried in every
@@ -430,6 +444,64 @@ static void mspUpdateNavControl()
     gp_vec3 target_local = aircraft_state.getOrientation().inverse() * craftToTarget;
     float dist_now = static_cast<float>(target_local.norm());
 
+    // ------------------------------------------------------------------
+    // 041 P5-3 — the three channels the xiao used to feed the NN as ZEROS.
+    //
+    // ⚠️ MIRRORS THE SIM PRODUCER, it does not re-derive it. The geometry here
+    // is the SEGMENT geometry (flight_path[i].start and the next segment),
+    // matching inputdev_autoc.cpp's score path — NOT the interpolated targetPos
+    // the direction-cosine inputs use. The two differ by less than one 0.4 m
+    // segment, but the gradient must describe the same rabbit the OBJECTIVE
+    // scored, or the policy is handed an uphill direction for a target the
+    // reward never used.
+    //
+    // Es and the boundary closure rate come from the shared writer so the
+    // energy datum and the containment floor are one number, not two.
+    {
+      autoc::eval::writeCraftObservations(aircraft_state, nnActiveArena());
+
+      const autoc::eval::ConeConstants& cone = generatedNNProgramConeConstants();
+      const FitnessComputer scorer(
+          cone.distScaleBehind, cone.distScaleAhead, cone.coneAngleDeg,
+          cone.streakThreshold,
+          std::max(1, static_cast<int>(cone.streakRampSec /
+                                       (MSP_LOOP_INTERVAL_MSEC / 1000.0))),
+          1.0 /* multiplier unused: raw step score only, as in the sim */);
+
+      gp_vec3 scoreGradBody = gp_vec3::Zero();
+      const int segIdx = current_path_index;
+      if (segIdx >= 0 && segIdx < (int)flight_path.size()) {
+        gp_vec3 rabbitSeg = flight_path[segIdx].start;
+        gp_vec3 segTangent = score_tangent_prev;
+        if (segIdx + 1 < (int)flight_path.size()) {
+          gp_vec3 t = flight_path[segIdx + 1].start - rabbitSeg;
+          const double tnorm = t.norm();
+          if (tnorm > 0.01) { segTangent = t / tnorm; score_tangent_prev = segTangent; }
+        }
+        const gp_vec3 offset = aircraft_state.getPosition() - rabbitSeg;
+        const double along = offset.dot(segTangent);
+        const double lateralDist = (offset - along * segTangent).norm();
+        const double stepScore = scorer.decomposeStepScore(along, lateralDist).score;
+
+        // One accumulator for the tick, advanced with the wall-clock interval
+        // (ms-based so a cadence change re-derives rather than rescales).
+        score_envelope.advance(stepScore >= cone.streakThreshold,
+                               static_cast<double>(MSP_LOOP_INTERVAL_MSEC));
+        const double multiplier =
+            1.0 + (cone.streakMultiplierMax - 1.0) *
+                      static_cast<double>(score_envelope.normalizedSecs(cone.streakRampSec));
+
+        // world -> body, the same convention as inwardBodyDirection. Stored
+        // RAW (unbounded); the gather applies tanh(norm/kScoreGradScale) with
+        // the direction preserved.
+        const gp_vec3 gradWorld = scorer.scoreGradientWorld(offset, segTangent);
+        scoreGradBody = (aircraft_state.getOrientation().inverse() * gradWorld) *
+                        static_cast<gp_scalar>(multiplier);
+      }
+      aircraft_state.setScoreGradBody(scoreGradBody);
+    }
+    // ------------------------------------------------------------------
+
     // Path tangent for singularity fallback (dist < 1e-4m)
     gp_vec3 posAhead = getInterpolatedTargetPosition(pathProvider, rabbit_odometer, 0.5f);
     gp_vec3 tangent = posAhead - targetPos;
@@ -726,6 +798,11 @@ void mspUpdateState()
       engage_arena = autoc::eval::resolveEngageArena(
           generatedNNProgramArenaTemplate(), test_origin_offset);
       generatedNNProgramReset();
+      // 041 P5-3 — the streak accumulator is span-scoped, exactly like the
+      // recurrent state: a new engage starts cold, or the first ticks would
+      // inherit a multiplier earned before the span existed.
+      score_envelope.reset();
+      score_tangent_prev = gp_vec3::UnitX();
       logPrint(INFO,
                "Engage: arena origin NED=[%.2f,%.2f,%.2f] floorZ=%.1f ceilZ=%.1f up=%.1f down=%.1f - NN state reset",
                engage_arena.origin_ned.x(), engage_arena.origin_ned.y(),

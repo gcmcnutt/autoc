@@ -14,6 +14,8 @@
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
 #include "autoc/eval/arena.h"   // 041 P2-3 — BakedArena defaults derive from FlightArena
+#include "autoc/eval/cone_constants.h"  // 041 P5-3 — SCORE_GRAD_* needs the cone
+#include "autoc/util/config.h"          // ...defaults derive from AutocConfig
 
 void printUsage(const char* progName) {
     std::cout << "Usage: " << progName << " [OPTIONS]\n";
@@ -22,9 +24,24 @@ void printUsage(const char* progName) {
     std::cout << "  -o, --output FILE    Output C++ source file (default: nn_program_generated.cpp)\n";
     std::cout << "  -f, --function NAME  Generated function name (default: generatedNNProgram)\n";
     std::cout << "  -u, --unrolled       Generate unrolled layer code (default: use nn_forward)\n";
+    std::cout << "      --ini FILE       Read the cone AND arena from this .ini -- the SAME file\n";
+    std::cout << "                       the run used. Strongly preferred: the baked constants\n";
+    std::cout << "                       must match the run that produced the weights, and only\n";
+    std::cout << "                       the ini knows what that run actually used. Without it,\n";
+    std::cout << "                       struct defaults are baked and SAID SO on stdout.\n";
+    std::cout << "                       (-i is the weight file for this tool, so the config flag\n";
+    std::cout << "                       is spelled --ini here.)\n";
+    std::cout << "  -c, --cone B,A,D,T,R,M  Bake tracking-cone constants (distScaleBehind,\n";
+    std::cout << "                          distScaleAhead, coneAngleDeg, streakThreshold,\n";
+    std::cout << "                          streakRampSec, streakMultMax) for SCORE_GRAD_*.\n";
+    std::cout << "                          Default = Config defaults; MUST match the run\n";
+    std::cout << "                          that produced the weights.\n";
     std::cout << "  -a, --arena R,F,C    Bake FlightArena radius,floorAGL,ceilingAGL (m) into the\n";
     std::cout << "                       generated pathgen (B) inputs (default: the live FlightArena\n";
-    std::cout << "                       struct defaults, currently 70,25,121 — NOT restated here)\n";
+    std::cout << "                       struct defaults -- NOT restated here, and not quoted in\n";
+    std::cout << "                       this help text either: it used to say \"currently\n";
+    std::cout << "                       70,25,121\" long after the arena moved to 70/25/105 --\n";
+    std::cout << "                       the same staleness BakedArena exists to prevent)\n";
     std::cout << "  --help               Show this help message\n";
     std::cout << "\n";
     std::cout << "Generates C++ source with embedded NN weights for desktop and embedded deployment.\n";
@@ -60,6 +77,37 @@ struct BakedArena {
     double floor_agl_m   = static_cast<double>(autoc::eval::FlightArena{}.floor_agl_m);
     double ceiling_agl_m = static_cast<double>(autoc::eval::FlightArena{}.ceiling_agl_m);
 };
+
+// 041 P5-3 — the tracking cone, baked for the same reason as the arena: the
+// firmware computes SCORE_GRAD_* from the virtual target's geometry, and that
+// closed form is only correct against the cone the objective was shaped with.
+// ⛔ DEFAULTS DERIVE FROM `AutocConfig`, exactly as BakedArena derives from
+// FlightArena, and for the identical reason — restating the six numbers here
+// would make this a third copy that goes stale the next time the cone moves.
+struct BakedCone {
+    double distScaleBehind     = AutocConfig{}.fitDistScaleBehind;
+    double distScaleAhead      = AutocConfig{}.fitDistScaleAhead;
+    double coneAngleDeg        = AutocConfig{}.fitConeAngleDeg;
+    double streakThreshold     = AutocConfig{}.fitStreakThreshold;
+    double streakRampSec       = AutocConfig{}.fitStreakRampSec;
+    double streakMultiplierMax = AutocConfig{}.fitStreakMultiplierMax;
+};
+
+// Emit the cone constants the firmware needs for SCORE_GRAD_*.
+static void emitConeContract(std::stringstream& code, const BakedCone& c) {
+    code << "// 041 P5-3 — tracking-cone constants from codegen (-c B,A,D,T,R,M).\n";
+    code << "// SCORE_GRAD_* is computed against THESE; they must match the run that\n";
+    code << "// produced the weights above, or the gradient points somewhere training\n";
+    code << "// never rewarded.\n";
+    code << "const autoc::eval::ConeConstants& generatedNNProgramConeConstants() {\n";
+    code << "    static const autoc::eval::ConeConstants c{"
+         << std::fixed << std::setprecision(6)
+         << c.distScaleBehind << ", " << c.distScaleAhead << ", "
+         << c.coneAngleDeg << ", " << c.streakThreshold << ", "
+         << c.streakRampSec << ", " << c.streakMultiplierMax << "};\n";
+    code << "    return c;\n";
+    code << "}\n\n";
+}
 
 // Emit the template accessor + the active-arena extern shared by both
 // codegen paths (039 D5).
@@ -183,7 +231,7 @@ static void emitIdentityTrailer(std::stringstream& code, const NNGenome& genome,
 
 // Generate code that uses the portable nn_forward() function with static weight array
 std::string generatePortableCode(const NNGenome& genome, const std::string& functionName,
-                                  const std::string& sourceFile, const BakedArena& arena,
+                                  const std::string& sourceFile, const BakedArena& arena, const BakedCone& cone,
                                   const std::vector<uint8_t>& weightFileBytes) {
     std::stringstream code;
 
@@ -301,6 +349,7 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     code << "}\n\n";
 
     emitArenaContract(code, arena);
+    emitConeContract(code, cone);
 
     // Main function
     code << "gp_scalar " << functionName << "(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {\n";
@@ -338,7 +387,7 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
 // exactly: sum = (B[j] + Σ W·x) + (Σ W_hh·h), tanh via fast_tanh — the
 // desktop equivalence test asserts bit-identical outputs.
 std::string generateUnrolledCode(const NNGenome& genome, const std::string& functionName,
-                                  const std::string& sourceFile, const BakedArena& arena,
+                                  const std::string& sourceFile, const BakedArena& arena, const BakedCone& cone,
                                   const std::vector<uint8_t>& weightFileBytes) {
     std::stringstream code;
 
@@ -424,6 +473,7 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     code << "}\n\n";
 
     emitArenaContract(code, arena);
+    emitConeContract(code, cone);
 
     // Main function with unrolled loops
     int max_layer = *std::max_element(genome.topology.begin(), genome.topology.end());
@@ -516,6 +566,8 @@ int main(int argc, char** argv) {
         {"output", required_argument, 0, 'o'},
         {"function", required_argument, 0, 'f'},
         {"unrolled", no_argument, 0, 'u'},
+        {"ini", required_argument, 0, 1001},
+        {"cone", required_argument, 0, 'c'},
         {"arena", required_argument, 0, 'a'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
@@ -525,17 +577,23 @@ int main(int argc, char** argv) {
     std::string outputFile = "nn_program_generated.cpp";
     std::string functionName = "generatedNNProgram";
     bool unrolled = false;
-    BakedArena arena;  // defaults track FlightArena (041 P2-3: 70 / 25 / 121)
+    BakedArena arena;  // defaults track FlightArena (041 P2-3)
+    BakedCone cone;    // defaults track AutocConfig (041 P5-3)
+    std::string iniFile;      // --ini: the run's config, the authoritative source
+    bool coneFromCli = false; // -c overrides --ini
+    bool arenaFromCli = false;
     int option_index = 0;
     int c;
 
-    while ((c = getopt_long(argc, argv, "i:o:f:ua:h", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "i:o:f:ua:c:h", long_options, &option_index)) != -1) {
         switch (c) {
             case 'i': inputFile = optarg; break;
             case 'o': outputFile = optarg; break;
             case 'f': functionName = optarg; break;
             case 'u': unrolled = true; break;
+            case 1001: iniFile = optarg; break;
             case 'a': {
+                arenaFromCli = true;
                 // Parse "radius,floor,ceiling" (meters). All three required.
                 if (std::sscanf(optarg, "%lf,%lf,%lf",
                                 &arena.radius_m, &arena.floor_agl_m,
@@ -545,9 +603,50 @@ int main(int argc, char** argv) {
                 }
                 break;
             }
+            case 'c': {
+                coneFromCli = true;
+                // Parse "behind,ahead,coneDeg,threshold,rampSec,multMax". All six
+                // required: a partial cone is worse than none, because the
+                // unspecified terms would silently keep Config's defaults while
+                // looking deliberate.
+                if (std::sscanf(optarg, "%lf,%lf,%lf,%lf,%lf,%lf",
+                                &cone.distScaleBehind, &cone.distScaleAhead,
+                                &cone.coneAngleDeg, &cone.streakThreshold,
+                                &cone.streakRampSec, &cone.streakMultiplierMax) != 6) {
+                    std::cerr << "Error: -c expects B,A,D,T,R,M "
+                                 "(e.g. -c 7,2,45,0.5,5,5)" << std::endl;
+                    return 1;
+                }
+                break;
+            }
             case 'h': printUsage(argv[0]); return 0;
             case '?': printUsage(argv[0]); return 1;
             default: break;
+        }
+    }
+
+    // 041 P5-3 — provenance for the baked constants, resolved and REPORTED.
+    //
+    // Order: --ini (the run's own config) < -c/-a (explicit override). Without
+    // --ini the struct defaults are baked, which is right only when the run did
+    // not override them — and that is precisely the case nobody can see. So the
+    // source is printed either way: a wrong cone flies a policy against a
+    // gradient its training never rewarded, and the failure is silent.
+    if (!iniFile.empty()) {
+        ConfigManager::initialize(iniFile, std::cerr);
+        const AutocConfig& cfg = ConfigManager::getConfig();
+        if (!coneFromCli) {
+            cone.distScaleBehind     = cfg.fitDistScaleBehind;
+            cone.distScaleAhead      = cfg.fitDistScaleAhead;
+            cone.coneAngleDeg        = cfg.fitConeAngleDeg;
+            cone.streakThreshold     = cfg.fitStreakThreshold;
+            cone.streakRampSec       = cfg.fitStreakRampSec;
+            cone.streakMultiplierMax = cfg.fitStreakMultiplierMax;
+        }
+        if (!arenaFromCli) {
+            arena.radius_m      = cfg.flightArenaRadius;
+            arena.floor_agl_m   = cfg.flightArenaFloorAGL;
+            arena.ceiling_agl_m = cfg.flightArenaCeilingAGL;
         }
     }
 
@@ -592,9 +691,9 @@ int main(int argc, char** argv) {
     // fallback is gone.
     std::string code;
     if (unrolled) {
-        code = generateUnrolledCode(genome, functionName, inputFile, arena, data);
+        code = generateUnrolledCode(genome, functionName, inputFile, arena, cone, data);
     } else {
-        code = generatePortableCode(genome, functionName, inputFile, arena, data);
+        code = generatePortableCode(genome, functionName, inputFile, arena, cone, data);
     }
 
     // Write output
@@ -616,6 +715,25 @@ int main(int argc, char** argv) {
     std::cout << "  Weights:    " << genome.weights.size() << std::endl;
     std::cout << "  Function:   " << functionName << "()" << std::endl;
     std::cout << "  Fitness:    " << std::fixed << std::setprecision(6) << genome.fitness << std::endl;
+    // Provenance of the baked constants — printed ALWAYS, because "which cone
+    // was this flown against?" must be answerable from the build log alone.
+    const char* coneSrc  = coneFromCli  ? "-c override"
+                         : (!iniFile.empty() ? iniFile.c_str() : "AutocConfig defaults (no --ini)");
+    const char* arenaSrc = arenaFromCli ? "-a override"
+                         : (!iniFile.empty() ? iniFile.c_str() : "FlightArena defaults (no --ini)");
+    std::cout << "  Arena:      " << std::setprecision(1) << arena.radius_m << ","
+              << arena.floor_agl_m << "," << arena.ceiling_agl_m
+              << "  [from " << arenaSrc << "]" << std::endl;
+    std::cout << "  Cone:       " << std::setprecision(3)
+              << cone.distScaleBehind << "," << cone.distScaleAhead << ","
+              << cone.coneAngleDeg << "," << cone.streakThreshold << ","
+              << cone.streakRampSec << "," << cone.streakMultiplierMax
+              << "  [from " << coneSrc << "]" << std::endl;
+    if (iniFile.empty()) {
+        std::cout << "  ⚠️  No --ini given: the constants above are STRUCT DEFAULTS, not the\n"
+                     "      run's config. Correct only if the run did not override them."
+                  << std::endl;
+    }
 
     return 0;
 }
