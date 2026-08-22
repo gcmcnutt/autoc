@@ -149,6 +149,39 @@ waiting for real hardware.
 - [ ] T051 [US3] Implement multi-rate decode-along-track in `firmware/beacon-receiver/src/core/acquire.c` — rate-agnostic, because the bench emitter's `'H'` mode is volatile (031 trap #2)
 - [ ] T052 [P] [US3] Test: acquisition finds a known injected track at a known SNR — `firmware/beacon-receiver/tests/unit/test_acquire.c`
 - [ ] T053 [US3] Thread acquisition off the capture path in `firmware/beacon-receiver/src/app/beacon_trackd.cc`, charged through the T042 budget model
+> **RE-ORDERED 2026-08-22 after the pan2 measurement + compute budget.** T050/T051 are no longer "acquisition
+> polish" — they are the critical path, and a new prerequisite (T071) sits in front of them. Evidence:
+> [results/stage1-pan2-analysis.md](results/stage1-pan2-analysis.md) (lock collapses at 1–2 °/s; hand motion
+> is 15–18 °/s; 22 s of continuous slow motion with **zero** reacquisitions) and
+> [compute-budget.md](compute-budget.md) (brute-force velocity search is 14× over budget at bench rates and
+> ~15 000× at flight rates; ego-motion registration removes the V² term and is worth ~75×, where NEON is
+> worth ~4×). Do them in this order — each is independently testable against `pan2.bcnr`.
+
+- [ ] T071 [US3] **Ego-motion registration** — per-frame global shift estimate on a reduce4 plane, in
+  `firmware/beacon-receiver/src/core/`. THE enabling piece: it turns the moving-camera case back into the
+  static-camera case for detection, and removes the V² term from the velocity search (compute-budget.md).
+  Independently testable: registered consecutive frames of `pan2.bcnr` must differ far less than unregistered
+  ones over the 10–41 s motion segments.
+- [ ] T072 [US3] **Measure K, the candidate-detection count per frame** — before and after T071, on
+  `pan2.bcnr`. Cheapest high-value experiment available: the RANSAC stage is O(K²) and needs K ≲ 1000–2000,
+  but K has never been measured because `acquire_pass` caps its return at 3 seeds by policy. This decides
+  whether T050 is viable as designed.
+- [ ] T073 [P] [US3] **NEON the correlator MAC** — `mac_i16` measures 5.07 G MAC/s SCALAR while the reduce
+  kernels gain ×9.4 from NEON, so ~4× is sitting uncollected in the hot path. Cheap, no architecture, and it
+  multiplies every budget in compute-budget.md.
+- [ ] T074 [US3] **Re-measure cold-acquisition latency at the 53 µs bench exposure.** The ~8 s figure in the
+  pan2 analysis was taken at the fiducial exposure (1499 µs) where the blink detector sees a very different
+  scene — it is flagged, not banked.
+- [ ] T075 [P] [US2] **Lens calibration pass** (`targets/checkerboard_8x11sq_20mm_inner7x10.png`, one static
+  capture). Every °/s in this feature assumes a uniform 0.304 °/M2 px across a 97.3° ultra-wide field; that
+  degrades toward the edge, so off-axis rates are not strictly comparable to on-axis ones. Owed before the
+  envelope publishes absolute °/s (spec §3.2).
+- [ ] T076 [P] [US2] **Two `track.c` correctness fixes** (bugs, not tuning — do them opportunistically, do
+  NOT schedule a tuning phase; the measured knee is 1–2 °/s and these move it to maybe 2–3, against 15–18 °/s
+  of hand motion): (a) `hold_max_age_ms = 150` kills a track before the 258 ms needed to rebuild a
+  `integration_min_chips = 31` window, so HOLD is arithmetically incapable of recovering; (b) widening the
+  aperture `memset`s the bins, discarding evidence that is a strict subset of the wider aperture.
+
 - [ ] T054 [P] [US3] Code-A source — **the operator is building a real flight cube in parallel** (031 A7); track its arrival in `specs/031-beacon-camera/bench-journal.md` and re-baseline the regression when it lands. *Fallback only if the cube slips past US3: a breadboard ATtiny412 + 2 LEDs is adequate at 2–5 m — but do not build it pre-emptively*
 - [X] T055 [US3] Implement the same-code mirror-pair rule in `firmware/beacon-receiver/src/core/bank.c` — flag the lower `MULTIPATH_SUSPECT`, **keep it, do not delete** (spec §9)
 - [X] T056 [P] [US3] Implement `extent` (q_fine/q_coarse) and `scintillation` outputs in `firmware/beacon-receiver/src/core/track.c` (spec §9 — free from the ladder, painful to retrofit)
