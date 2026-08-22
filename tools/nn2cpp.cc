@@ -20,17 +20,16 @@
 void printUsage(const char* progName) {
     std::cout << "Usage: " << progName << " [OPTIONS]\n";
     std::cout << "Options:\n";
-    std::cout << "  -i, --input FILE     Input NN weight file (required, NN01 format)\n";
+    std::cout << "  -i, --ini FILE       Config file the baked constants come from\n";
+    std::cout << "                       (default: autoc.ini; --config is an alias). The arena\n";
+    std::cout << "                       AND the tracking cone are read from here and NOWHERE\n";
+    std::cout << "                       else -- use the SAME ini the run used. There are\n";
+    std::cout << "                       deliberately no CLI overrides: one source means the\n";
+    std::cout << "                       provenance line below is the whole answer.\n";
+    std::cout << "  -w, --weights FILE   Input NN weight file (required, NN01 format)\n";
     std::cout << "  -o, --output FILE    Output C++ source file (default: nn_program_generated.cpp)\n";
     std::cout << "  -f, --function NAME  Generated function name (default: generatedNNProgram)\n";
     std::cout << "  -u, --unrolled       Generate unrolled layer code (default: use nn_forward)\n";
-    std::cout << "      --ini FILE       Config file the baked constants come from\n";
-    std::cout << "                       (default: autoc.ini). The arena AND the tracking cone\n";
-    std::cout << "                       are read from here and NOWHERE else -- use the SAME ini\n";
-    std::cout << "                       the run used. There are deliberately no CLI overrides:\n";
-    std::cout << "                       one source means the build log's provenance line is the\n";
-    std::cout << "                       whole answer. (-i is the weight file for this tool, so\n";
-    std::cout << "                       the config flag is spelled --ini.)\n";
     std::cout << "  --help               Show this help message\n";
     std::cout << "\n";
     std::cout << "Generates C++ source with embedded NN weights for desktop and embedded deployment.\n";
@@ -551,11 +550,13 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
 
 int main(int argc, char** argv) {
     static struct option long_options[] = {
-        {"input", required_argument, 0, 'i'},
+        {"input", required_argument, 0, 'w'},   // legacy spelling of --weights
         {"output", required_argument, 0, 'o'},
         {"function", required_argument, 0, 'f'},
         {"unrolled", no_argument, 0, 'u'},
-        {"ini", required_argument, 0, 1001},
+        {"ini", required_argument, 0, 'i'},
+        {"config", required_argument, 0, 'i'},   // convention alias
+        {"weights", required_argument, 0, 'w'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -572,13 +573,13 @@ int main(int argc, char** argv) {
     int option_index = 0;
     int c;
 
-    while ((c = getopt_long(argc, argv, "i:o:f:uh", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "i:w:o:f:uh", long_options, &option_index)) != -1) {
         switch (c) {
-            case 'i': inputFile = optarg; break;
+            case 'i': iniFile = optarg; break;
+            case 'w': inputFile = optarg; break;
             case 'o': outputFile = optarg; break;
             case 'f': functionName = optarg; break;
             case 'u': unrolled = true; break;
-            case 1001: iniFile = optarg; break;
             case 'h': printUsage(argv[0]); return 0;
             case '?': printUsage(argv[0]); return 1;
             default: break;
@@ -595,6 +596,23 @@ int main(int argc, char** argv) {
     // 041 P5-3 — the baked constants come from the ini and nowhere else.
     // ConfigManager exits(1) on a missing file, so there is no silent-default
     // path: either the constants are the run's, or nn2cpp does not run.
+    // ⚠️ 041 P5-3 flag change guard. -i used to be the weight file; an old
+    // `-i nn_weights.dat` would otherwise be fed to the ini parser, which
+    // reports a parse error with a screenful of binary. Detect the NN01 magic
+    // and say the one useful sentence instead.
+    {
+        std::ifstream probe(iniFile, std::ios::binary);
+        char magic[4] = {0, 0, 0, 0};
+        if (probe.good()) probe.read(magic, 4);
+        if (std::string(magic, 4) == "NN01") {
+            std::cerr << "Error: -i got '" << iniFile << "', which is an NN01 WEIGHT file.\n"
+                      << "       -i is the config file since 041 (it was the weight file before);\n"
+                      << "       pass the genome with -w instead:\n"
+                      << "         nn2cpp -w " << iniFile << " -i autoc.ini -o <out.cpp>"
+                      << std::endl;
+            return 1;
+        }
+    }
     ConfigManager::initialize(iniFile, std::cerr);
     {
         const AutocConfig& cfg = ConfigManager::getConfig();
@@ -610,7 +628,13 @@ int main(int argc, char** argv) {
     }
 
     if (inputFile.empty()) {
-        std::cerr << "Error: Input file required (-i)" << std::endl;
+        // ⚠️ 041 P5-3 FLAG CHANGE: -i used to be the weight file and is now the
+        // CONFIG file, matching every other tool. Say so, or an old
+        // `-i nn_weights.dat` habit reads a binary genome as an ini and fails
+        // somewhere much less obvious.
+        std::cerr << "Error: weight file required (-w)\n"
+                  << "NOTE: -i is now the CONFIG file (it was the weight file before 041);\n"
+                  << "      pass the genome with -w." << std::endl;
         printUsage(argv[0]);
         return 1;
     }

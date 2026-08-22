@@ -290,7 +290,7 @@ if [[ "$MODE" == "m2" ]]; then
   if [[ -x "$REPO/build/nnextractor" && -x "$REPO/build/nn2cpp" ]]; then
     extract_nn() {  # <run-id> <out.cpp> ; returns 0 on success
       "$REPO/build/nnextractor" -k "$1" -o "$TMP/$2.dat" -i "$INI" >"$TMP/$2.err" 2>&1 \
-        && "$REPO/build/nn2cpp" -i "$TMP/$2.dat" -o "$TMP/$2.cpp" >/dev/null 2>&1
+        && "$REPO/build/nn2cpp" -w "$TMP/$2.dat" -i "$INI" -o "$TMP/$2.cpp" >/dev/null 2>&1
     }
     if extract_nn "$RUNID" elite; then
       CAP_ARGS=( --nn "$NAME:$TMP/elite.cpp" )

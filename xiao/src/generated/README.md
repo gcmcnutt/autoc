@@ -8,7 +8,9 @@ Files placed here are compiled into the xiao firmware build via PlatformIO.
 
 ```bash
 # From autoc root, after training:
-./build/nn2cpp -i <nn_archive.bin> -o xiao/src/generated/
+# -w = genome (NN01), -i = the ini the RUN used (arena + tracking cone are
+# baked from it; there are no CLI overrides).
+./build/nn2cpp -w <nn_archive.bin> -i autoc.ini -o xiao/src/generated/nn_program_generated.cpp
 ```
 
 All files in this directory except this README are git-ignored.

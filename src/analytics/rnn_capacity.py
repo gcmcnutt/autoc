@@ -13,7 +13,7 @@ Weight layout (flat nn_weights[], from nn2cpp): for each transition l→l+1
 
 Usage:
   ./build/nnextractor -k <run-id> -o /tmp/x.dat -i autoc-tracker.ini
-  ./build/nn2cpp -i /tmp/x.dat -o /tmp/x.cpp
+  ./build/nn2cpp -w /tmp/x.dat -i autoc-tracker.ini -o /tmp/x.cpp
   python3 src/analytics/rnn_capacity.py --nn t11:/tmp/t11_nn.cpp --nn t12:/tmp/t12_nn.cpp \
     -o specs/037-20hz-control-loop/rnn_capacity.png
 """
