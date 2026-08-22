@@ -70,6 +70,14 @@ motion of two aircraft, which is far smaller than body rates (039: pitch RMS 128
 **Both fit inside the 400 ms relock bar.** Registration is therefore not an optimisation — it is the
 enabling architecture, worth ~75× where NEON is worth ~4×.
 
+> ⚠️ **SUPERSEDED 2026-08-22 by measurement — see [results/stage1-K-census.md](results/stage1-K-census.md).**
+> This section argued K was the binding constraint and that registration's job was to keep it small. K has
+> now been measured at **276–1292**, comfortably inside the budget in every condition including motion, and
+> it *falls* as a fraction of the plane under motion because the 4×-mean gate is self-normalising. The real
+> failure is a **ranking/sensitivity** one: the beacon ranks ~126th (still) / ~230th (moving) among
+> detections and only the **top 3** are seeded, so it enters the bank on 15.9 % / **6.2 %** of passes. The
+> arithmetic below is still correct as arithmetic; its conclusion about what binds is not.
+
 ## The constraint that actually binds: candidate count
 
 The plan is not a velocity sweep. It is spec §1's **detect → proto-track → decode-along-track**, where the
