@@ -4,6 +4,8 @@
 #   ./live.sh                          # tcp path (default): trackd LISTENS, scope dials in
 #   ./live.sh --pipe                   # ssh-pipe path instead (no ports; json over stdout)
 #   ./live.sh --field-map              # + the viewfinder heat map (implies --pipe; see below)
+#   ./live.sh --fiducial --record /data/pan2.bcnr --duration 60     # GROUND-TRUTH pass: fiducial ini,
+#                                      # continuous recording, viewfinder on so you can see you stayed on
 #   ./live.sh --field-map --record /data/pan1.bcnr --duration 30    # capture WHILE watching
 #   ./live.sh --duration 60            # anything else is passed through to beacon_trackd
 #   PI=pi@x.y.z.w ./live.sh            # different host
@@ -33,6 +35,13 @@ for a in "$@"; do
   case "$a" in
     --pipe)      MODE=pipe ;;
     --field-map) WANT_FIELD=1; ARGS+=("$a") ;;
+    # --fiducial: a GROUND-TRUTH pass. Picks the fiducial ini (exposure floor 1500 us, so the printed
+    # ArUco targets are visible -- at the bench 53 us they are black) and forces CONTINUOUS recording.
+    # Continuous is not optional here: burst mode gives 80-frame islands separated by gaps the container
+    # contract forbids correlating across, which is exactly how pan1.bcnr ended up unable to measure
+    # reacquire at all. Add --record <path> yourself; this flag deliberately does not invent one.
+    --fiducial)  CONFIG="firmware/beacon-receiver/beacon-fiducial.ini"
+                 ARGS+=("--record-mode" "continuous"); WANT_FIELD=1; ARGS+=("--field-map") ;;
     *)           ARGS+=("$a") ;;
   esac
 done
