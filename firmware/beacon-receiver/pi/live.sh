@@ -44,9 +44,13 @@ if [[ $WANT_FIELD -eq 1 && "$MODE" == tcp ]]; then
 fi
 
 if [[ "$MODE" == pipe ]]; then
-  exec ssh -o ServerAliveInterval=10 "$PI" \
+  # NOT `exec ... | ...`: exec inside a pipeline replaces only that pipeline's SUBSHELL, so the script
+  # kept running afterwards and fell straight through into the tcp branch below -- which is how a
+  # --field-map run ended up on the tcp path with no viewfinder. Run the pipeline, then exit explicitly.
+  ssh -o ServerAliveInterval=10 "$PI" \
     "cd $PI_REPO && stdbuf -oL $TRACKD --config $CONFIG --source live --emit json:- ${ARGS[*]:-}" 2>/dev/null \
     | python3 "$SCOPE" --source json:-
+  exit $?
 fi
 
 # tcp: start trackd detached on the Pi, wait for the listen socket, then dial in.
