@@ -3,6 +3,8 @@
 #
 #   ./live.sh                          # tcp path (default): trackd LISTENS, scope dials in
 #   ./live.sh --pipe                   # ssh-pipe path instead (no ports; json over stdout)
+#   ./live.sh --field-map              # + the viewfinder heat map (implies --pipe; see below)
+#   ./live.sh --field-map --record /data/pan1.bcnr --duration 30    # capture WHILE watching
 #   ./live.sh --duration 60            # anything else is passed through to beacon_trackd
 #   PI=pi@x.y.z.w ./live.sh            # different host
 #
@@ -26,8 +28,20 @@ TRACKD="build/firmware/beacon-receiver/beacon_trackd"
 CONFIG="${CONFIG:-firmware/beacon-receiver/beacon-bench.ini}"
 SCOPE="$REPO/firmware/beacon-receiver/tools/ascii_scope.py"
 
-MODE=tcp; ARGS=()
-for a in "$@"; do case "$a" in --pipe) MODE=pipe ;; *) ARGS+=("$a") ;; esac; done
+MODE=tcp; ARGS=(); WANT_FIELD=0
+for a in "$@"; do
+  case "$a" in
+    --pipe)      MODE=pipe ;;
+    --field-map) WANT_FIELD=1; ARGS+=("$a") ;;
+    *)           ARGS+=("$a") ;;
+  esac
+done
+# --field-map writes its viewfinder line to the daemon's STDOUT. Over tcp that stdout is a log file on the
+# Pi and the scope would never see it -- a silent no-op, which is worse than an error. Take the pipe.
+if [[ $WANT_FIELD -eq 1 && "$MODE" == tcp ]]; then
+  echo "live.sh: --field-map needs the stdout path; selecting --pipe automatically." >&2
+  MODE=pipe
+fi
 
 if [[ "$MODE" == pipe ]]; then
   exec ssh -o ServerAliveInterval=10 "$PI" \
