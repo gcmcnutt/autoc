@@ -86,3 +86,36 @@ coherence measurement only needs within-burst data — but the tracker-side numb
   beacon). The first version of `oracle.py` took the brightest high-pass pixel per frame and produced
   6 500–19 000 °/s — the tell that it was hopping between fixed objects, not tracking the beacon. Only the
   code discriminates. That is the same fact the tracker rests on (§2.4).
+
+---
+
+## Addendum 2026-08-21 — the fiducial ground-truth path is verified end to end
+
+The circular dependency this document flagged (truth for the fast bands needing the very
+decode-along-track it was meant to score) is now broken in practice, not just in principle. Four printed
+ArUco `DICT_4X4_50` markers were placed around the emitter and a 15 s clip recorded with
+`beacon-fiducial.ini` (`exposure_min_us` pinned at 1500 so paper is visible — at the bench 53 µs it is
+black). Both halves work **simultaneously**:
+
+| | result |
+|---|---|
+| beacon | track present **81 %**, q mean **0.88**, `chip_hz` **120.00/120.00**, cep 0.29 |
+| markers, ≥3 detected | **100 % of frames** — full 2D pose available on *every* frame |
+| markers, all four | **97 %** (id0 is the weak one: 97.1 %, 35.3 px) |
+| recorder | 4320/4320 frames, **0 dropped**, 0/300 deadline misses |
+
+**Truth is therefore per-frame at 288 Hz**, independent of the code, the tracker, and the apparent rate —
+which is exactly what the fast bands could not otherwise be measured in.
+
+Two measured corrections to earlier reasoning in this file:
+- **Marker detection was contrast-limited, not size-limited.** With room lighting only, the upper pair
+  (~27 px) did not detect and I attributed it to angular size. Focus was ruled out — the failing region was
+  the *sharpest* in frame (Laplacian variance 2139 vs 1978) — and adding 200 W of illumination brought all
+  four to 100 % at unchanged size. Both limits are real; on this rig contrast bound first.
+- **The beacon does not saturate at 1500 µs.** `BCN_F_SATURATED` was set on 0 of 243 fixes, so §5's
+  flat-top estimator never engages at the fiducial exposure.
+
+Still open on the fixture: all four markers sit at 27–36 px, below the ~40 px comfort floor, and they span
+only ~19 % of the field width. Expect the weakest to drop first under **motion blur**, which is precisely
+when truth matters most — so the pan clips must publish per-frame truth *coverage* alongside the envelope,
+not assume it.
