@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""041 P2-5 — specific-energy progress over generations (dmp-dump-based).
+"""041 P2-5, corrected at P2-7 — specific-energy progress over generations (dmp-dump-based).
 
 WHY THIS IS A SEPARATE REPORT. `plot_evolution_progress.py` panel 4 plots the
 scalar objective — Σ energy_score per generation, one number for the whole
@@ -13,11 +13,23 @@ Those look identical in a summed scalar and completely different per tick. 035
 failed exactly here: its energy term fell beautifully while the whole regiment
 went quiet, and the run-level number never said so.
 
-⛔ THE UNITS CHANGED AT 041 P2-5. `energy_score` used to be a convex integral of
-the THROTTLE COMMAND; it is now **metres of specific energy destroyed**,
-Σ max(0, −Ps)·dt. Same field name, different quantity, no conversion between
-them. This report therefore refuses to plot pre-041 runs on the same axes —
-see --compare below.
+⚠️ WHAT THE AXIS CHARGES — READ THIS BEFORE INTERPRETING THE PANELS.
+
+041 P2-5 changed `energy_score` from a convex integral of the THROTTLE COMMAND
+to metres of specific energy destroyed, Σ max(0, −Ps)·dt. **041 P2-7 CHANGED IT
+BACK.** The Es-destroyed axis charged for the RESULT rather than the
+EXPENDITURE: full throttle RAISES Es, so pinning the stick was not merely
+uncharged but rewarded, and t4 pegged throttle on 100% of ticks. See
+specs/041-m2-depth/objective-amendment.md.
+
+⭐ SO: Es and Ps are DIAGNOSTICS here, not the selection term. The axis charges
+throttle power (035 FR-001b). This file's title and its p05 legend both said
+otherwise from P2-7 until 2026-08-20 — the numbers were always right, the labels
+described an objective that had been withdrawn. Same failure class as the
+NN_TOPOLOGY_STRING "42" bug: a label that outlived what it described.
+
+The panels remain worth exactly what they were worth — Es/Ps are how you SEE
+whether the energy objective is working, whichever term does the charging.
 
 PANELS (per generation, elite individual, over all its scenarios):
 
@@ -28,12 +40,14 @@ PANELS (per generation, elite individual, over all its scenarios):
      learning to hold energy; a collapsing band = it has found one altitude and
      stopped manoeuvring, which is muting.
 
-  2. Ps RATE — median plus the p05 (the loss tail). The axis charges only the
-     NEGATIVE part, so p05 is the quantity under selection pressure and the
-     median says whether the policy is net-climbing or net-bleeding.
+  2. Ps RATE — median plus the p05 (the loss tail). ⚠️ p05 is NO LONGER under
+     selection pressure (P2-7); it is the sharpest available read on whether
+     manoeuvring is throwing energy away. The median says whether the policy is
+     net-climbing or net-bleeding.
 
-  3. ENERGY DESTROYED — Σ max(0, −Ps)·dt per scenario, i.e. the objective
-     itself, but per-scenario-mean so it is comparable across runs of different
+  3. ENERGY DESTROYED — Σ max(0, −Ps)·dt per scenario. ⚠️ This WAS the objective
+     itself under P2-5; under P2-7 it is a diagnostic. Per-scenario-mean so it is
+     comparable across runs of different
      scenario counts (the log's `energy=` is a raw sum over 294 scenarios and
      is not).
 
@@ -260,7 +274,7 @@ def main():
     a = ax[0][1]
     a.plot(gens, col("ps_med"), "tab:green", lw=1.8, label="median $P_s$")
     a.plot(gens, col("ps_p05"), "tab:red", lw=1.3, alpha=0.85,
-           label="p05 (the loss tail — what the axis charges)")
+           label="p05 (the loss tail — diagnostic; the AXIS charges throttle power)")
     a.axhline(0, color="gray", ls="--", lw=0.8, alpha=0.7)
     a.set_title("Specific excess power $P_s$ (m/s)")
     a.set_ylabel("$P_s$ (m/s)")
@@ -295,7 +309,7 @@ def main():
     for a in (ax[0][0], ax[0][1], ax[1][0]):
         a.set_xlim(0, xmax)
 
-    fig.suptitle(f"{args.label} — energy progress (041 P2-5 $P_s$ objective)",
+    fig.suptitle(f"{args.label} — energy progress ($E_s$/$P_s$ diagnostics; axis = throttle power)",
                  fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     fig.savefig(args.out, dpi=110)

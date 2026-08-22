@@ -426,6 +426,67 @@ capacity is not the constraint. Settled; reopen only on new evidence.
     overwrites `build/autoc`, which the workers re-exec. `nn2cpp` is not needed until Phase 6 anyway.
   * Deferred deliberately at 2026-08-20 so the t7 rebuild was not disturbed.
 
+- [ ] P2-10 ⭐ **VARIATION SWEEP EVAL — find the knee, i.e. where the craft/sensor complex actually runs out.**
+  Operator 2026-08-22: *"if we ran a genome through eval setting the ramp to a fraction of full across say
+  every gen or every 5 gens of ramp with the same best-of we might see good fitness maintained to a point and
+  then it climbs. That knee says something. We could run to 150% variation."*
+
+  **Shape**: hold ONE genome fixed, sweep the variation scale, plot fitness vs scale. A flat region then a
+  knee is the limit; where the knee sits, and whether it MOVES between genomes, is the finding.
+
+  * ⭐ **Sweep several genomes, not one** — e.g. best-of at gen 100 / 300 / 500 / 800. One genome tells you
+    where *it* breaks; the family tells you whether evolution is **moving the wall** or merely **walking
+    toward a fixed one**. That distinction is the actual question behind "physical limit".
+  * ⭐ **CRAFT VARIATION IS ALREADY IN THE SAMPLE** (operator 2026-08-22: *"we are already running 300 or
+    more variations so we do get craft variation fixed against a ramp of env"*). Each of the 294 scenarios
+    carries its own craft draw at FULL magnitude, and the seeds hold those draws identical across the whole
+    sweep. So the design is **a fixed craft-variation DISTRIBUTION × a ramped environment** — not a single
+    airframe. That is strictly better: the knee is then a property of the craft *population* the controller
+    must handle, not of one lucky or unlucky draw.
+  * ⭐ **SIM COST IS NEGLIGIBLE; STARTUP IS NOT.** 294 scenarios per genome-eval; 4 genomes × 16 scale
+    points = ~18.8k scenario-sims ≈ **seconds** of actual sim. The cost is per-eval-process startup (S3
+    genome fetch, worker spawn), which lands N times in a shell loop. ⚠️ This REVERSES the loop-vs-internal
+    recommendation above: prefer the operator's *"eval where it runs a ramp so all in one run"* — one
+    process, one worker pool, sweeping scale internally. Go wide on points (31, i.e. 0.05 steps) since the
+    resolution is nearly free; it is the knee's SHARPNESS that carries the information.
+  * ⛔ **Same master seed, same scenario seeds, across the whole sweep.** Only the variation MAGNITUDE may
+    change. Re-drawing scenarios per point confounds magnitude with which-scenarios and destroys the curve.
+  * Implementation: `gEvalVariationScaleOverride` already exists (`src/autoc.cc:238`) but is only ever set
+    from the genome's stored `variation_scale` (`:1262`). Add an ini/CLI override accepting **0.0 … 1.5+**,
+    default −1 = keep current behaviour. Then a shell loop over scale values, one full 294-scenario eval per
+    point. ⚠️ Prefer the loop over an all-in-one internal ramp: each point stays independently reproducible,
+    and a failed point does not poison the run. ⛔ SUPERSEDED — see the startup-cost note below; the
+    internal sweep wins. Keep per-point results independently identified in the output so a bad point is
+    still discardable.
+
+  ⚠️ **THREE CONSTRAINTS THAT CHANGE WHAT THIS CAN MEASURE — read before interpreting any curve:**
+
+  1. ⭐ **The ramp scales ENV variations ONLY — and for THIS experiment that is exactly right.**
+     Operator clarification 2026-08-22: *"given a fixed craft config set and a genome, ramp the env around
+     it to see where the craft/controller reduce performance."* `applyVariationScale`
+     (`include/autoc/eval/scenario_meta_apply.h`) touches entry pose, wind direction, entry position and
+     speed factor; **craft variations are deliberately NOT ramped** (037, operator 2026-06-10 — the ramp
+     exists so a fresh population is not killed by unflyable difficulty, and *"that risk is environmental
+     … not the airframe"*), and camera draws sit at full magnitude from gen 0.
+     ⛔ **Do NOT "fix" this.** Holding the airframe constant is what makes the curve readable: craft and
+     genome are the fixed system under test, env is the independent variable, and degradation is therefore
+     attributable to the environment alone. Ramping the craft too would confound the two.
+  2. ⭐ **A craft/sensor-tolerance sweep is a SEPARATE, later experiment** — multiplier on the craft/camera
+     sigmas, holding env fixed instead. Precedent: `eval_suite.sh` tier3-stress already runs *"12 paths ×
+     12 winds at 120% sigmas"*. Same shape, orthogonal axis: env-scale → "how bad can the weather get",
+     sigma-scale → "how wrong can the airframe/camera be". ⚠️ Keep them as two runs; one sweep varying both
+     answers neither.
+  3. ⚠️ **Position offsets CLAMP** at `ENTRY_SAFE_RADIUS` / `ENTRY_SAFE_ALT_MIN/MAX`. Past roughly scale 1.0
+     the entry-position component stops growing, so a knee near 1.0 may be **the clamp**, not the aircraft.
+     Angular/wind/speed terms keep scaling linearly. ⛔ Report the clamp fraction alongside the curve or the
+     knee will be misread.
+
+  **Output**: fitness (and `pctInStreak`, mean target distance) vs variation scale, one line per genome.
+  Then the standard evolution PNG pass for context.
+
+  ⛔ **BLOCKED until t7 finishes** — the override is a code change, and rebuilding overwrites `build/autoc`
+  which live workers re-exec. Queued 2026-08-22, deliberately not started.
+
 ## Phase 5 — HARDWARE LONG-LEAD ⭐ **STARTS NOW, IN PARALLEL WITH THE BAKE**
 
 ➕ **Added 2026-08-18 (operator)**: *"we have an inav extension backlog item to get additional sensor data

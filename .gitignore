@@ -75,3 +75,8 @@ cad/**/~*.lck
 # Windows "mark of the web" alternate-data-stream cruft (from drvfs copies)
 *:Zone.Identifier
 .rebuild-perf.lock
+
+# 041 — input_investment per-gen table is a recomputable CACHE (see
+# generate_pngs.sh INVCACHE), not a report artifact. It lived in specs/ and got
+# committed; every other report keeps its internal metrics in the run cache.
+specs/**/*_input_investment.csv

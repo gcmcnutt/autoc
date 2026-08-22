@@ -345,7 +345,12 @@ def main():
         ax_fit.text(x, 0.97, str(x), color="red", alpha=0.5,
                     ha="center", va="top", fontsize=7,
                     transform=ax_fit.get_xaxis_transform())
-    title = args.title or f"{focus_name} — 034 energy-objective-cleanup evolution progress"
+    # ⚠️ Was hardcoded "034 energy-objective-cleanup" — the feature this script was
+    # COPIED FROM, not the feature it is plotting. Every evolution chart from 035
+    # through 041 carried it, including the 041-t7 run that took the all-time M1
+    # record. A title naming a fixed feature can only ever be right once; derive
+    # it from the run instead so it cannot go stale again.
+    title = args.title or f"{focus_name} — evolution progress"
     ax_fit.set_ylabel("Fitness (lower = better)")
     ax_fit.set_title(title)
     ax_fit.set_xlim(0, args.total_gens)

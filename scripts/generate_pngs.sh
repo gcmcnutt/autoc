@@ -163,6 +163,14 @@ run per_axis_aggressiveness.py "$TICK" --label "$NAME" --gen "$GEN" \
     -o "$OUT/${NAME}_per_axis_aggressiveness.png"
 run plot_per_axis_time_series.py "$SUMMARY" --label "$NAME" --total-gens "$TOTAL_GENS" \
     -o "$OUT/${NAME}_per_axis_time_series.png"
+# regime_control (041, 2026-08-21) — the per-axis panels above pool every tick,
+# which cannot tell "quiet on patrol, works hard tracking" from "thrashes
+# uniformly"; same pooled mean, opposite verdicts. Groups pitch+roll as the bank
+# pair (they trade geometrically; roll alone changes no trajectory) and keeps
+# throttle separate, and measures attitude FRAME-FREE because ~30% of flight is
+# knife-edge or inverted where Euler bank angle is meaningless.
+run regime_control.py "$TICK" --label "$NAME" --gen "$GEN" \
+    -o "$OUT/${NAME}_regime_control.png"
 run dynamics_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
     "${DYN_CACHE[@]}" --label "$NAME" -o "$OUT/${NAME}_dynamics_progress.png"
 
@@ -171,19 +179,28 @@ run dynamics_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$IN
 # Answers "is evolution investing in the inputs we added?" continuously, where
 # the T068 ablation answers it definitively but only post-bake for one elite.
 # Mode-agnostic (pure weight analysis), so it lives in the COMMON set.
-# Its own stride: one nnextractor+nn2cpp per sampled gen is dearer than a
-# run-summary row, and the signal is a slow trend that does not need gen-level
-# resolution.
+# 2026-08-21 — NOW PER-GEN (stride 1), via an incremental cache. The old
+# stride*8 existed because one nnextractor+nn2cpp per gen is ~2.8 s, essentially
+# all S3 fetch. That is prohibitive once per RUN but trivial once per NEW GEN,
+# which is exactly the trick the run-summary already used. First report on a run
+# pays; every later one fetches only what has appeared since.
+#
+# ⭐ The cache also REPLACES the old --csv into $OUT. That wrote a recomputable
+# intermediate into the committed report directory, where it looked like a
+# deliverable; no other report does that with its internal metrics.
 if [[ -x "$REPO/build/nnextractor" && -x "$REPO/build/nn2cpp" ]]; then
   # ⚠️ ramp-step is read with the same sed idiom as ControlIntervalMsec above,
   # NOT by stripping non-digits from the line. The old awk did
   # gsub(/[^0-9-]/,"",$2) over everything after the '=', so any digit in the
   # trailing COMMENT was concatenated into the value: a dated note turned
   # "0" into "00410-52026-08-18--1". Take the first number after '=' and stop.
-  run input_investment.py --run "$RUN" --gens "1-$GEN" --stride "$((STRIDE * 8))" \
+  # Cache key mirrors the run-summary's: run-id + dmp-dump build signature, so a
+  # tooling change invalidates rather than silently mixing old and new maths.
+  INVCACHE="$CACHE_DIR/${SAFE}__dmp${DSIG}_investment.csv"
+  run input_investment.py --run "$RUN" --gens "1-$GEN" --stride 1 \
       -i "$INI" --label "$NAME" --total-gens "$TOTAL_GENS" \
       --ramp-step "$(grep -E '^[[:space:]]*VariationRampStep' "$INI" | head -1 | sed -E 's/.*=[[:space:]]*(-?[0-9]+).*/\1/')" \
-      --csv "$OUT/${NAME}_input_investment.csv" --tick-csv "$TICK" \
+      --cache "$INVCACHE" --tick-csv "$TICK" \
       -o "$OUT/${NAME}_input_investment.png"
 else
   echo "  [plot] input_investment skipped (needs nnextractor + nn2cpp)" >&2

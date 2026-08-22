@@ -186,7 +186,8 @@ def main():
     p.add_argument("-o", "--out", required=True)
     p.add_argument("--total-gens", type=int, default=800)
     p.add_argument("--ramp-step", type=int, default=40)
-    p.add_argument("--csv", help="also write the per-gen table here")
+    p.add_argument("--cache", help="incremental per-gen cache (recomputable; NOT a report artifact)")
+    p.add_argument("--csv", help=argparse.SUPPRESS)  # deprecated: see --cache
     p.add_argument("--tick-csv", help="per-tick CSV (dmp-dump --csv-only) for input stds")
     args = p.parse_args()
 
@@ -196,9 +197,47 @@ def main():
         gens.append(hi)
 
     names = input_names()
+
+    # ------------------------------------------------------------------
+    # 041 (2026-08-21) — INCREMENTAL CACHE.
+    #
+    # One nnextractor+nn2cpp per gen measures ~2.8 s, essentially all of it the
+    # S3 fetch. That cost is why this report used stride 40 while every other
+    # report used 5 — the docstring called gen-level resolution unaffordable and
+    # it was, ONCE PER RUN. It is not unaffordable once per NEW GENERATION.
+    #
+    # ⭐ The cache also replaces the old --csv artifact. That file was being
+    # written into the spec report directory and committed, which made a
+    # recomputable intermediate look like a deliverable — every other report
+    # keeps its equivalent in the run cache. Same data, correct home, and it now
+    # earns its keep by making the next run nearly free.
+    cache_rows = {}
+    if args.cache and os.path.exists(args.cache):
+        import csv as _csv
+        try:
+            with open(args.cache) as fh:
+                for r in _csv.DictReader(fh):
+                    g = int(r["gen"])
+                    vec = np.array([float(r[n]) for n in names]) if names else None
+                    if vec is not None:
+                        cache_rows[g] = (vec, float(r["eff_rank"]))
+        except (KeyError, ValueError, OSError) as e:
+            # ⛔ A stale/# corrupt cache must never poison the plot. Drop it and
+            # recompute rather than half-trusting it.
+            print(f"input_investment: ignoring unusable cache ({e})", file=sys.stderr)
+            cache_rows = {}
+    todo = [g for g in gens if g not in cache_rows]
+    if cache_rows:
+        print(f"input_investment: {len(cache_rows)} gens cached, {len(todo)} to fetch",
+              file=sys.stderr)
+
     rows, kept = [], []
     with tempfile.TemporaryDirectory() as tmp:
         for k, g in enumerate(gens, 1):
+            if g in cache_rows:
+                kept.append(g)
+                rows.append(cache_rows[g])
+                continue
             parsed = elite_weights(args.run, 10000 - g, args.config, tmp)
             if parsed is None:
                 print(f"  [{k}/{len(gens)}] gen {g}: no dmp/genome — skipped", file=sys.stderr)
@@ -302,13 +341,25 @@ def main():
     fig.savefig(args.out, dpi=110)
     print(f"wrote {args.out}")
 
-    if args.csv:
-        with open(args.csv, "w") as fh:
-            fh.write("gen,eff_rank,variation_scale," + ",".join(names) + "\n")
-            for i, g in enumerate(kept):
-                fh.write(f"{g},{pr[i]:.4f},{vs[i]:.4f},"
-                         + ",".join(f"{v:.5f}" for v in rel[i]) + "\n")
-            print(f"wrote {args.csv}")
+    # ⭐ Write the MERGED set (cache hits + newly fetched), so the next run starts
+    # from everything known — not just what this invocation happened to fetch.
+    dest = args.cache or args.csv
+    if dest:
+        tmp_dest = dest + ".tmp"
+        try:
+            with open(tmp_dest, "w") as fh:
+                fh.write("gen,eff_rank,variation_scale," + ",".join(names) + "\n")
+                for i, g in enumerate(kept):
+                    fh.write(f"{g},{pr[i]:.4f},{vs[i]:.4f},"
+                             + ",".join(f"{v:.5f}" for v in rel[i]) + "\n")
+            # ⛔ Atomic replace. A cache half-written by an interrupted report is
+            # worse than no cache: it reads as valid and silently truncates the
+            # series. os.replace is atomic on POSIX.
+            os.replace(tmp_dest, dest)
+            if args.csv and not args.cache:
+                print(f"wrote {dest}")
+        except OSError as e:
+            print(f"input_investment: could not write cache ({e})", file=sys.stderr)
     return 0
 
 
