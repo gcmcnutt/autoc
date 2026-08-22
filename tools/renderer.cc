@@ -2805,10 +2805,17 @@ bool parseXiaoDataBinary(const std::string& xiaoLogPath) {
         // first-principles math as the text path (see parseXiaoData); the
         // ground-truth rabbit fields land in directRabbitPoints.
         if (inSpan) {
+          // ⚠️ 041 P2-8 — THE LOG STORES POST-SCALE NN UNITS, NOT PHYSICAL UNITS.
+          // Every slot the gather divides by a k*Scale constant must have that
+          // constant multiplied back in before it is used as metres or m/s.
+          // dist[] was raw metres until P2-8 made it m / kTargetDistScale_m, and
+          // this reconstruction kept treating it as metres — shrinking every
+          // chase vector by 26x so the bars collapsed onto the craft. The
+          // direction cosines are unit vectors and are NOT scaled.
           scalar tx = in[static_cast<int>(PathgenInput::TARGET_X_NOW)];
           scalar ty = in[static_cast<int>(PathgenInput::TARGET_Y_NOW)];
           scalar tz = in[static_cast<int>(PathgenInput::TARGET_Z_NOW)];
-          scalar dist = in[static_cast<int>(PathgenInput::DIST_NOW)];
+          scalar dist = in[static_cast<int>(PathgenInput::DIST_NOW)] * kTargetDistScale_m;
           if (dist > 0.01f) {
             vec3 body(tx * dist, ty * dist, tz * dist);
             vec3 world = earthToBody * body;  // body→world (q_EB)
@@ -2837,7 +2844,12 @@ bool parseXiaoDataBinary(const std::string& xiaoLogPath) {
           blackboxPoints.push_back(position);
           xiaoVirtualPositions.push_back(virtualPosition);
 
-          scalar speed = std::abs(in[static_cast<int>(PathgenInput::CLOSING_RATE)]);
+          // Same P2-8 hazard: closing_rate is m/s / kClosingRateScale_mps.
+          // (Using closing rate as "speed" is pre-existing and semantically odd
+          // -- it is dDist/dt, not airspeed -- but the units at least now match
+          // the fallback it is compared against.)
+          scalar speed = std::abs(in[static_cast<int>(PathgenInput::CLOSING_RATE)])
+                         * kClosingRateScale_mps;
           if (speed < 0.01f) speed = velocity_vector.norm();
 
           scalar rollCmd = CLAMP_DEF((tr->rc_sent[0] - 1500.0f) / 500.0f, -1.0f, 1.0f);

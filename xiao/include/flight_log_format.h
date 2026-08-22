@@ -152,7 +152,13 @@ constexpr float kScalePosM = 16.0f;     // position m, ±2047.9 m, 6.25 cm resol
 // them — ACCEL_* reaches 1.4 NN units at the 11.2 g flight record, and the MSP
 // wire itself carries ±32 g (= 4.0 NN units at kAccelScale_g). ±4 with 1/8192
 // resolution covers the wire's full range without saturating the log.
-constexpr float kScaleNN4 = 8192.0f;    // ±4.0 NN units
+constexpr float kScaleNN4 = 8192.0f;    // ±4.0 NN units, 1/8192 resolution
+constexpr float kScaleNN8 = 4096.0f;    // ±8.0 NN units, for slots whose tail
+                                        // can run long (a 2000 dps snap is 5.8
+                                        // NN units of gyro; a head-on closure
+                                        // is ~3.8) — clipping those would edit
+                                        // the record of the exact excursion
+                                        // the log exists to capture.
 
 // v2 writer scale table. The FileHeader CARRIES this table; decoders use the
 // header copy (CRC-verified), not a compiled-in copy.
@@ -166,19 +172,26 @@ inline void defaultScaleTable(float out[kNumScaledFields]) {
   // --- M1 target representation (25 slots) ---
   for (int i = kIn; i < static_cast<int>(PathgenInput::DIST_TM5); i++)
     out[i] = kScaleUnit;                              // target_x/y/z[6] unit vecs
+  // ⚠️ 041 P2-8 — these are NOT physical units any more. The gather divides
+  // dist by kTargetDistScale_m (26), closing_rate by kClosingRateScale_mps,
+  // airspeed by kCruiseSpeed_mps and gyro by kGyroScale_radps, so every one of
+  // them arrives here as an O(1) NN unit. The pre-P2-8 physical scales were
+  // still in place through v4: kScaleDistM quantized dist at 1/32 NN unit =
+  // 0.81 m, which is coarse enough to be visible as stair-stepping in a
+  // reconstructed chase vector.
   for (int i = static_cast<int>(PathgenInput::DIST_TM5);
        i < static_cast<int>(PathgenInput::CLOSING_RATE); i++)
-    out[i] = kScaleDistM;                             // dist[6] raw metres
-  out[static_cast<int>(PathgenInput::CLOSING_RATE)] = kScaleSpeed;
+    out[i] = kScaleNN8;                               // dist[6], m / 26
+  out[static_cast<int>(PathgenInput::CLOSING_RATE)] = kScaleNN8;
 
   // --- craft common tail (20 slots) ---
   for (int i = static_cast<int>(PathgenInput::QUAT_W);
        i <= static_cast<int>(PathgenInput::QUAT_Z); i++)
     out[i] = kScaleUnit;                              // quat w,x,y,z
-  out[static_cast<int>(PathgenInput::AIRSPEED)] = kScaleSpeed;
+  out[static_cast<int>(PathgenInput::AIRSPEED)] = kScaleNN8;   // m/s / 13
   for (int i = static_cast<int>(PathgenInput::GYRO_P);
        i <= static_cast<int>(PathgenInput::GYRO_R); i++)
-    out[i] = kScaleGyro;
+    out[i] = kScaleNN8;                               // rad/s / 6
   // 041: specific force, in NN units (g / kAccelScale_g) — see kScaleNN4.
   for (int i = static_cast<int>(PathgenInput::ACCEL_X);
        i <= static_cast<int>(PathgenInput::ACCEL_Z); i++)
