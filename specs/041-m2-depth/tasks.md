@@ -503,6 +503,49 @@ made it look like it happens *after* the bake. It does not: it is the **longest-
 it needs a bench and two INAV targets, and it gates the flight completely. It also touches **neither autoc
 nor the running bake** — different repo, different hardware — so it can proceed in parallel today.
 
+➕ **BENCH EVIDENCE OF RECORD (2026-08-22 stationary bench, gen 633 firmware).**
+* **IN-REPO / portable**: [`artifacts/bench-20260822/autoc-041-bench2-gen633-xiao-v4.bin`](artifacts/bench-20260822/autoc-041-bench2-gen633-xiao-v4.bin)
+  — the run-2 xiao log, 315 ticks, 0 drops, all four 041 channels live. This is the first real v4 file and
+  doubles as the format's regression fixture. Decode:
+  `python3 src/analytics/flightlog_decode.py <bin> -o <csv>`.
+* **MACHINE-LOCAL** (`eval-results/` is gitignored, so this does NOT travel): `eval-results/bench-20260822/`
+  also holds both INAV blackboxes and the run-1 pair. The INAV side needs `blackbox_decode --index 2` —
+  that file contains two logs, and index 1 is the earlier run. The derived result is recorded rather than
+  the raw file: INAV `accSmooth` vs the xiao's logged `ACCEL_*` agree to **0.34 milli-g**, `|a|` 0.9976
+  both sides (full table in `docs/COORDINATE_CONVENTIONS.md`).
+
+➕ **TOOLCHAIN + FORMAT STATE after the 2026-08-22 bench session — read before touching flight tooling.**
+Several things changed underneath Phase 5 that are not tasks but WILL bite a fresh context:
+
+* **Flight log is v4** (`xiao/include/flight_log_format.h`). The NN input block was a hand-maintained 37
+  against a 45-slot `NNInputs`, with nothing asserting it. That silently truncated 8 channels AND
+  mis-assigned every quantization scale from slot 33 on (the old table put `dist_to_boundary` /
+  `inward_body` where 041 has `ACCEL_*`). Now `kNumInputs = NN_INPUT_COUNT` with a `static_assert`, the
+  table indexes by ENUM NAME, and the telemetry bases are derived. TickRecord 114 → **130 B**, FileHeader
+  320 → **352 B**.
+* **Post-P2-8 scales in the log**: `dist`/`gyro`/`airspeed`/`closing_rate` are O(1) NN units, not physical.
+  They were still quantized at physical scales — `dist` at 1/32 NN unit = **0.81 m** granularity. Now
+  `kScaleNN8` (±8 NN units): dist resolution 0.0063 m. ⚠️ **No version bump was needed** — the scale table
+  travels inside the CRC-guarded FileHeader and decoders use THAT copy, so older v4 files still decode with
+  their own table. That property is why it was safe.
+* **FOUR decoders had to move together**, and three of them were independently wrong in the same way
+  (literal field offsets sized for 37 inputs, which read outputs as inputs and telemetry as outputs):
+  `src/analytics/flightlog_decode.py`, `tools/renderer.cc`, `xiao/web/flight_logger.html`. All now derive
+  offsets from the widths. Verified agreeing on the real bench log: 130/352 B, telem scale base 48.
+* ⚠️ **`nn2cpp` CLI CHANGED**: `-i` is now the **config file** (`--config` alias, default `autoc.ini`) and
+  the genome moved to **`-w`/`--weights`**. Arena and cone come from the ini and NOWHERE else — the CLI
+  overrides were removed deliberately, so the printed provenance line is the whole answer. An old
+  `-i <weights>` is caught by an NN01 magic check with a migration message.
+* ⚠️ **The renderer read POST-P2-8 NN units as physical** — `DIST_NOW` × direction cosines with no
+  `kTargetDistScale_m`, so every chase vector was 26× too short and collapsed onto the craft. Fixed; the
+  reconstruction now matches the log's own rabbit telemetry to 0.19 m mean. **Rebuild the renderer** — a
+  stale binary loud-fails on v4 rather than mis-parsing (`cmake --build build --target renderer` is safe
+  during a bake: separate executable target, static libs, `build/autoc` untouched — verified by dry run).
+* ⚠️ **The USB console drops bytes.** Confirmed across two runs and a very wide terminal: the same
+  heartbeats lose exactly one space mid-line. `printf` cannot do that and the 512 B buffer has room, so it
+  is the CDC path; the mechanism was NOT identified. **The binary flight log is unaffected** (separate
+  path, fixed-size records, CRC-guarded header) — trust the log, not the console.
+
 - [X] P5-1 [OP] ✅ **DONE 2026-08-22** — 13 lines appended to `case MSP2_INAV_LOCAL_STATE` in `~/inav/src/main/fc/fc_msp.c` (after the gyro block), sourcing `acc.accADCf` as milli-g `int16`, INAV-native FLU unflipped. Payload **58 → 64 bytes** (note: the `63cffaf4f` commit message's "38 → 44" was already stale — the real pre-accel payload was 58). Built + flashed to the bench target `MAMBAF722_2022A`. ⚠️ Flight target `MATEKF722MINI` NOT yet built/flashed. **INAV: carry accel in the SAME single MSP round trip.** Full spec is in T072 (kept below for
   provenance); it is complete and does not need re-deriving. The load-bearing parts:
   * Extend `MSP2_AUTOC_STATE` in `~/inav/src/main/fc/fc_msp.c` (the `MSP2_INAV_LOCAL_STATE` case). Copy the
@@ -528,7 +571,33 @@ nor the running bake** — different repo, different hardware — so it can proc
   **divide by 2048 AND flip y/z** before comparing. Getting this backwards is invisible in sim and wrong in
   the air; it was already resolved once against `~/inav @ 63cffaf4` and the earlier "flip it" instruction was
   **withdrawn**. Do not re-derive it from scratch — confirm against the recorded table.
-- [~] P5-3 **PARTIAL 2026-08-22 — `ACCEL_*` plumbed AND BENCH-VERIFIED end-to-end; the other three still zero.** ✅ With the 45-input firmware flashed, the console heartbeat (which now prints all five 041 channels) read level `z = −1`, nose up `x = +1`, right wing down `y = −1` — agreeing with the host probe through a completely separate code path, so the flip in msplink is confirmed, not just the wire. Done: `msp_autoc_state_t` grew `int16_t accel[3]` (`xiao/include/MSP.h`); the FLU→FRD flip `(+x, −y, −z) × 0.001` landed at the ONE boundary beside the quat and gyro (`msplink.cpp`, `convertMSPStateToAircraftState`) feeding `setSpecificForceG` unscaled in g; and `performMspRequest` now **rejects a short reply** — `MSP::recv` zero-fills an undersized payload and still returns true, so a xiao flashed against un-upgraded INAV would have read `accel = [0,0,0]` silently. Guard is `recvSize >= size`, not `==`, so a LATER INAV appending fields stays compatible (surplus is discarded, offsets unchanged) — that asymmetry is what makes flashing INAV ahead of the xiao safe. `msplink.cpp.o` compiles; the build still stops at the by-design `static_assert` in `src/generated/nn_program_generated.cpp` (generated file is the old **37-input** program), which is P5-4.
+- [X] P5-3 ✅ **COMPLETE 2026-08-22 — all four channels live and bench-verified.** No NN input is a
+  constant zero on the xiao any more.
+  **Part 2 (the three non-hardware channels), added 2026-08-22:** `writeCraftObservations()` supplies Es +
+  boundary closure; `SCORE_GRAD_*` is computed from `FitnessComputer::scoreGradientWorld` × the streak
+  multiplier from a span-scoped `EnvelopeState`, world→body at the same boundary as `inwardBodyDirection`.
+  ⚠️ **All three use the SHARED code the sim producer uses** — `fitness_computer.cc` is now compiled into
+  the firmware (`platformio.ini` `build_src_filter`) rather than copied, so the gradient's closed form has
+  ONE definition. `HALF_PI` → `kHalfPi` there: the Arduino core `#define`s the former (rename only).
+  ⚠️ **The gradient uses SEGMENT geometry** (`flight_path[i].start` + next segment), matching
+  `inputdev_autoc.cpp`'s score path — NOT the interpolated `targetPos` the direction-cosine inputs use.
+  Under one 0.4 m segment apart, but it must describe the rabbit the OBJECTIVE scored.
+  **Cone constants** are baked by `nn2cpp` beside the arena template, via `autoc/eval/cone_constants.h`
+  (no default member initializers — it must not become a third source of truth).
+  **BENCH-VERIFIED 2026-08-22 (bench run 2, 315 ticks, gen 633 firmware):**
+  | channel | recorded | check |
+  |---|---|---|
+  | `SPECIFIC_ENERGY` | 30.02 → 30.52 m | matches the engage header's `floor_z = 30.5` |
+  | `BOUNDARY_CLOSURE_RATE` | −0.075 … +0.287 m/s | correct for a craft drifting cm/s on a table |
+  | `SCORE_GRAD_*` | non-zero on **315/315** ticks | mean 0.108 inside 10 m vs 0.0007 beyond 30 m — **146×** |
+  ⭐ The gradient trace is the real evidence: small AT the rabbit (0.042 at 0.62 m — score is maximal, so
+  there is no uphill), peaking at **0.152 at 4.8 m** where the tail-chase band and the ramping streak
+  multiplier compound, then vanishing as the rabbit runs the racetrack away and reviving as it loops back.
+  Body direction is +x dominant — "uphill is forward" for a craft being left behind. ⚠️ **The channel
+  carries decision signal only near the cone** (<0.01 NN beyond ~30 m). Geometrically honest — the
+  objective IS flat out there — but do not read a flight as "ignoring the input" without checking range.
+  **Cost**: eval 0.8/1.3/10.6 → 1.1/1.8/13.1 ms; total 12.8/21.5/55.1 ms in a 50 ms tick, 0 overruns/drops.
+  **Part 1 (`ACCEL_*`), 2026-08-22:** ✅ With the 45-input firmware flashed, the console heartbeat (which now prints all five 041 channels) read level `z = −1`, nose up `x = +1`, right wing down `y = −1` — agreeing with the host probe through a completely separate code path, so the flip in msplink is confirmed, not just the wire. Done: `msp_autoc_state_t` grew `int16_t accel[3]` (`xiao/include/MSP.h`); the FLU→FRD flip `(+x, −y, −z) × 0.001` landed at the ONE boundary beside the quat and gyro (`msplink.cpp`, `convertMSPStateToAircraftState`) feeding `setSpecificForceG` unscaled in g; and `performMspRequest` now **rejects a short reply** — `MSP::recv` zero-fills an undersized payload and still returns true, so a xiao flashed against un-upgraded INAV would have read `accel = [0,0,0]` silently. Guard is `recvSize >= size`, not `==`, so a LATER INAV appending fields stays compatible (surplus is discarded, offsets unchanged) — that asymmetry is what makes flashing INAV ahead of the xiao safe. `msplink.cpp.o` compiles; the build still stops at the by-design `static_assert` in `src/generated/nn_program_generated.cpp` (generated file is the old **37-input** program), which is P5-4.
   ⛔ **Still zero on the xiao**: `SPECIFIC_ENERGY` (`setSpecificEnergy`), `BOUNDARY_CLOSURE_RATE` (`setBoundaryClosureRate`), `SCORE_GRAD_*` (`setScoreGradBody`). The shared gather in `src/nn/evaluator.cc` only COPIES these from `AircraftState`, so they stay zero until msplink computes and sets them — no hardware needed for any of the three. The cone-constants catch below still applies.
   *(original text follows)* **xiao: produce the four channels it currently zeroes.** ⛔ The MSP extension only supplies ONE of
   them. The split matters for scoping:
@@ -545,8 +614,35 @@ nor the running bake** — different repo, different hardware — so it can proc
   computed there.
   ⛔ **A flight before P5-3 lands would fly a policy seeing ZEROS in four channels the sim trained with** —
   and `ACCEL_*` has been a silent zero on the xiao since 041 US4, so this is a pre-existing gap, not a new one.
-- [ ] P5-4 Regenerate + flash: `tools/nn2cpp` from the P4-2 pinned genome, then the xiao build. The
+- [~] P5-4 **Regenerate ✅ / flash ⏳.** `nn2cpp` regenerated from gen 633
+  (`…2026-08-20T22:22:41.333Z/gen9367.dmp.zst`, fitness −77,698, `45->32->16r->3`, 2307 weights) and the
+  firmware BUILDS (flash 45.5%, RAM 53.5%). Identity for the boot-banner check:
+  `weight_id=4123bd342058553a`, `firmware_id=fb3866080c0df02d`, `arenaTemplate=[R=70 F=25 C=105]`.
+  ⚠️ **gen 633 is the LATEST dmp, not the best** — `nnextractor` without `-k` takes the most recent. Choose
+  the flight genome deliberately (t7's final best, or a pinned gen), don't inherit whenever the extract ran.
+  ⚠️ Rebuild + reflash needed to pick up the post-run heartbeat change (`--` for uncomputed channels).
+  ⛔ **Flight article (`MATEKF722MINI`) is NOT built or flashed** — see the gate below.
+  *(original)* Regenerate + flash: `tools/nn2cpp` from the P4-2 pinned genome, then the xiao build. The
   fail-loud `static_assert` in the generated file is what currently blocks the firmware, by design.
+
+- [ ] P5-5 ⛔ **FLIGHT ARTICLE GATE — the only hardware gap left before flying.**
+  1. Build + flash INAV `MATEKF722MINI` (clean build dir per target — `rm -rf build && mkdir build && cmake
+     .. && make MATEKF722MINI`; **disconnect the GPS**).
+  2. Re-run the three static attitudes on the FLIGHT board with
+     [`msp_state_probe.py`](msp_state_probe.py) `-p <port>`. ⚠️ **The bench pass does NOT transfer.** Board
+     alignment is applied inside INAV before MSP, so a correct config makes the two boards read identically
+     — that is the test. The flight FC's `align_board_roll` is the 170-vs-180 case (auto-memory
+     `project_board_alignment`): a 10° residual puts ~0.17 g on the wrong axis and, unlike a fixed offset,
+     it ROTATES with attitude, so it does not average out in flight.
+  3. Flash the xiao with the chosen flight genome; confirm the boot banner's `weight_id` is the intended one.
+
+- [ ] P5-6 **P2-9 scale signature in `nn2cpp`** (carried from the P2 list — restated here because it is a
+  flight-safety item, not a tooling nicety). `nn2cpp` bakes `weight_id` / `firmware_id` / arena / cone, but
+  NOT the input scale constants (`kAccelScale_g`, `kGyroScale_radps`, `kTargetDistScale_m`, …). Those live
+  in `nn_inputs.h` and are outside the hashed code text, so **a genome + different scales produces an
+  IDENTICAL `firmware_id`** — a pre-P2-8 genome loads clean and flies wrong with nothing to say so. Not
+  blocking a same-session build (genome and firmware come from one tree), but it is exactly the hazard a
+  SNAPSHOT genome that outlives today creates.
 
 ⛔ **P4-3 depends on all of Phase 5.** It is the flight; this is what makes the flight mean anything.
 

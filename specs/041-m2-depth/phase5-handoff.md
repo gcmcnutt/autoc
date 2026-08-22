@@ -1,5 +1,14 @@
 # Phase 5 handoff — INAV accel over MSP, for a fresh context
 
+> ⚠️ **STATUS 2026-08-22 (end of bench session): P5-1, P5-2 and P5-3 are DONE.** This document describes
+> the state BEFORE that work and is kept for its environment notes and the three convention traps, which
+> remain accurate. For what is actually left, read [`tasks.md`](tasks.md) § Phase 5 — specifically the
+> TOOLCHAIN + FORMAT STATE block (flight log v4, the nn2cpp CLI change, the renderer unit fix) and P5-4 /
+> P5-5 / P5-6. ⛔ Do NOT use §7's "P5-3 is the parallel path" or §8's "what done looks like" as current
+> scope: both are satisfied. The accel convention is measured, not predicted — bench FRD `[0,0,−1]` /
+> `[+1,0,0]` / `[0,−1,0]` confirmed by three independent parsers and cross-checked against INAV's own
+> blackbox to **0.34 milli-g**.
+
 **Written 2026-08-22 from the 041-t7 bake context.** You are picking up **Phase 5** of 041 while a training
 run continues on this machine. This file is orientation and boundaries only — it does **not** restate the
 spec.
