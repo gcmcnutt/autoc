@@ -92,6 +92,7 @@ static void usage()
     fprintf(stderr,
         "usage: beacon_trackd --config <ini> [--source live|replay:<file>]\n"
         "                     [--emit <sink>[,<sink>...]] [--record <path>] [--duration S]\n"
+        "                     [--record-mode continuous|ring|burst]   (default: [record] mode in the ini)\n"
         "                     [--seed B:<x_m2>:<y_m2>]   (bench helper; acquisition normally seeds)\n"
         "                     [--field-map]              (viewfinder for the scope; use with --emit json:-)\n"
         "  <sink> ::= binary:<path> | json:- | tcp:<host>:<port> | serial:<dev>[:<baud>]\n");
@@ -100,6 +101,7 @@ static void usage()
 int main(int argc, char **argv)
 {
     const char *ini = nullptr, *source = "live", *emit_spec = "json:-", *record_path = nullptr;
+    const char *record_mode = nullptr;   /* NULL = take [record] mode from the ini */
     const char *seed_spec = nullptr;
     bool field_map = false;
     long duration_s = 0;
@@ -116,6 +118,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--source")   && i + 1 < argc) source = argv[++i];
         else if (!strcmp(argv[i], "--emit")     && i + 1 < argc) emit_spec = argv[++i];
         else if (!strcmp(argv[i], "--record")   && i + 1 < argc) record_path = argv[++i];
+        else if (!strcmp(argv[i], "--record-mode") && i + 1 < argc) record_mode = argv[++i];
         else if (!strcmp(argv[i], "--duration") && i + 1 < argc) duration_s = atol(argv[++i]);
         else if (!strcmp(argv[i], "--seed")     && i + 1 < argc) seed_spec = argv[++i];
         else if (!strcmp(argv[i], "--field-map"))                field_map = true;
@@ -172,8 +175,13 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* The mode must be overridable from the CLI. pan1.bcnr (2026-08-21) was captured in BURST mode
+     * purely because [record] mode in beacon-bench.ini is the bench default `burst`, and burst gives
+     * 80-frame islands 1.7 s apart -- 1.08 code words each, with gaps the container contract forbids
+     * correlating across. That silently made the clip unable to measure reacquire or tracking through a
+     * pan. A motion campaign wants `continuous`, and it should not depend on remembering to edit an ini. */
     if (record_path &&
-        bcn_recorder_open(&rec, &cfg, nullptr, record_path, err, sizeof err) != 0) {
+        bcn_recorder_open(&rec, &cfg, record_mode, record_path, err, sizeof err) != 0) {
         fprintf(stderr, "beacon_trackd: %s\n", err);
         return 1;
     }
@@ -212,11 +220,31 @@ int main(int argc, char **argv)
     }
 
     src->close(src);
-    if (rec) bcn_recorder_close(rec, err, sizeof err);
+    BcnRecorderStats rec_stats;
+    memset(&rec_stats, 0, sizeof rec_stats);
+    if (rec) {
+        bcn_recorder_drain(rec);
+        bcn_recorder_stats(rec, &rec_stats);
+        bcn_recorder_close(rec, err, sizeof err);
+    }
     engine_close(eng);
     for (BcnEmitter *e : ctx.sinks) bcn_emitter_close(e);
 
     fprintf(stderr, "beacon_trackd: %u records emitted over %u frames\n", ctx.emitted, nframes);
+    if (rec_stats.frames_offered) {
+        /* frames_dropped is the honest capture metric. Sensor seq gaps do NOT prove the capture was
+         * clean -- this pipeline's seq counts DELIVERED frames, so a dropped frame is invisible there
+         * (sink_record.c's 2026-08-19 note). Print the count, loudly if nonzero. */
+        fprintf(stderr, "beacon_trackd: recorder %llu offered, %llu written, %llu DROPPED (%.2f%%), "
+                        "%.1f MB, O_DIRECT %d\n",
+                (unsigned long long)rec_stats.frames_offered,
+                (unsigned long long)rec_stats.frames_written,
+                (unsigned long long)rec_stats.frames_dropped,
+                100.0 * (double)rec_stats.frames_dropped / (double)rec_stats.frames_offered,
+                (double)rec_stats.bytes_written / 1e6, rec_stats.o_direct);
+        if (rec_stats.frames_dropped)
+            fprintf(stderr, "beacon_trackd: WARNING — the sink could not keep up at this duty.\n");
+    }
     if (ctx.live && !ctx.margins.empty()) {
         std::sort(ctx.margins.begin(), ctx.margins.end());
         size_t p1 = ctx.margins.size() / 100;   /* 1st percentile of MARGIN = 99th of lateness */
