@@ -310,6 +310,13 @@ def report(header, spans, events, warnings, flight_states, out=sys.stderr):
             p("    WARNING: no span summary (disengage record missing?)")
     for w in warnings:
         p(f"  WARNING: {w}")
+    # ⚠️ Units, stated every run. The NN input columns are POST-SCALE NN units,
+    # exactly as the policy consumed them -- NOT physical. Reading one as
+    # physical is the bug that made the renderer draw every chase vector 26x too
+    # short (041, 2026-08-22). pos/vel/rabbit ARE physical (m, m/s).
+    p("  NOTE: NN input columns are POST-SCALE NN units, not physical -- "
+      "dist = m/26, gyro = rad/s/6, accel = g/8, airspeed & bClR = m/s/13, "
+      "closing_rate = m/s/16. pos/vel/rabbit ARE physical.")
     p(f"  totals: {len(spans)} spans, {sum(len(s['ticks']) for s in spans)} ticks, "
       f"{total_gaps} gaps, {len(flight_states)} flight-state breadcrumbs")
 
