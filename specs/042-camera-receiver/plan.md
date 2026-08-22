@@ -216,6 +216,10 @@ governs. Both views are real; this table is the mapping.
 
 ### Stage 1 — Bench tracker + ASCII scope *(existing hardware, no purchases)*
 
+> **2026-08-22**: 042-C's ordering changed — ego-motion registration (T071) is now a prerequisite of
+> proto-track/decode-along-track, and the whole phase is the critical path rather than late work. See
+> [compute-budget.md](compute-budget.md) and spec §13.
+
 Work: **042-A** (recorder + libcamera skeleton) · **042-B** (correlator bank) · **042-C** (acquisition,
 second code via the breadboard emitter) · **042-E1** (record + emit path).
 Prototyping per R12 (NumPy acquisition against recorded clips) and R11 (scalar-first kernels) rides here.
