@@ -503,7 +503,7 @@ made it look like it happens *after* the bake. It does not: it is the **longest-
 it needs a bench and two INAV targets, and it gates the flight completely. It also touches **neither autoc
 nor the running bake** — different repo, different hardware — so it can proceed in parallel today.
 
-- [ ] P5-1 [OP] **INAV: carry accel in the SAME single MSP round trip.** Full spec is in T072 (kept below for
+- [X] P5-1 [OP] ✅ **DONE 2026-08-22** — 13 lines appended to `case MSP2_INAV_LOCAL_STATE` in `~/inav/src/main/fc/fc_msp.c` (after the gyro block), sourcing `acc.accADCf` as milli-g `int16`, INAV-native FLU unflipped. Payload **58 → 64 bytes** (note: the `63cffaf4f` commit message's "38 → 44" was already stale — the real pre-accel payload was 58). Built + flashed to the bench target `MAMBAF722_2022A`. ⚠️ Flight target `MATEKF722MINI` NOT yet built/flashed. **INAV: carry accel in the SAME single MSP round trip.** Full spec is in T072 (kept below for
   provenance); it is complete and does not need re-deriving. The load-bearing parts:
   * Extend `MSP2_AUTOC_STATE` in `~/inav/src/main/fc/fc_msp.c` (the `MSP2_INAV_LOCAL_STATE` case). Copy the
     shape of fork commit **`63cffaf4f`** ("extend MSP2_AUTOC_STATE with filtered gyro rates") — append at
@@ -519,7 +519,7 @@ nor the running bake** — different repo, different hardware — so it can proc
     FLU→FRD y/z flip belongs at the msplink boundary, once, beside the other two (settled 2026-08-11).
   * ⚠️ Both targets, **bench first** (`MAMBAF722_2022A`), then flight (`MATEKF722MINI`). **Disconnect the
     GPS before flashing.**
-- [ ] P5-2 [OP] ⭐ **BENCH-PROVE THE CONVENTION before trusting it in the air.** This is the point of doing
+- [X] P5-2 [OP] ✅ **PASSED 2026-08-22, bench target — all three attitudes, measured on the wire.** Read host-side off the FC's USB VCP by [`msp_state_probe.py`](msp_state_probe.py) (no xiao in the loop, so a convention error could not hide behind a firmware bug). FRD after the flip: level `[−0.011, −0.032, −0.997]`, nose up `[+0.998, −0.023, −0.091]`, right wing down `[+0.001, −1.000, +0.003]` — all matching, `|a|` within 0.3% of 1 g. Full table + bias/scale residuals recorded in `docs/COORDINATE_CONVENTIONS.md` → "MEASURED ON THE WIRE 2026-08-22". ⚠️ **Bench board ONLY** — the flight FC has different `align_board_*` and must be re-measured after flashing. ⭐ **BENCH-PROVE THE CONVENTION before trusting it in the air.** This is the point of doing
   it early: the three static attitudes have a measured, recorded answer, so the sign convention is checkable
   on a table rather than inferred from a flight.
   Expected in **FRD, after the msplink flip**: level `[0, 0, −1]`, nose up `[+1, 0, 0]`, right wing down

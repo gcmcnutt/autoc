@@ -494,6 +494,35 @@ discriminating measurement in the table, and it discriminates in favour of FLU +
   `[+1, 0, 0]`, right wing down `[0, −1, 0]`. Compare against the counts table below by dividing by
   `acc_1G ≈ 2048` **and** applying the y/z flip — the table is in INAV's FLU counts, not FRD g.
 
+### ✅ MEASURED ON THE WIRE 2026-08-22 (041 P5-2) — prediction confirmed, bench target
+
+The three attitudes above are no longer a prediction. `MSP2_AUTOC_STATE` was extended to carry
+`acc.accADCf` as milli-g `int16` (041 P5-1), and the payload was read **directly off the FC's USB VCP** by
+[`specs/041-m2-depth/msp_state_probe.py`](../specs/041-m2-depth/msp_state_probe.py) — host-side, no xiao in
+the loop, so a convention error could not hide behind a firmware bug. Bench FC `MAMBAF722_2022A`
+(`align_board_roll = −16°`), INAV 8.0.0, payload 58 → **64 bytes**.
+
+| attitude | FLU as INAV sends it (g) | FRD after the msplink flip (g) | expected | |
+|---|---|---|---|---|
+| level | `[−0.011, +0.032, +0.997]` | `[−0.011, −0.032, −0.997]` | `[0, 0, −1]` | ✅ |
+| nose up | `[+0.998, +0.023, +0.091]` | `[+0.998, −0.023, −0.091]` | `[+1, 0, 0]` | ✅ |
+| right wing down | `[+0.001, +1.000, −0.003]` | `[+0.001, −1.000, +0.003]` | `[0, −1, 0]` | ✅ |
+
+Hand-held attitudes, n=20 averaged, `|a|` within 0.3% of 1 g throughout. The off-axis terms are holding
+angle (nose-up sits ~5° off vertical), not convention error — the sign and the carrying axis are
+unambiguous in all three.
+
+⚠️ **This certifies the BENCH board only.** Board alignment is applied inside INAV before MSP, so the
+flight FC (`MATEKF722MINI`, `align_board_roll` 170° vs 180° — see auto-memory `project_board_alignment`)
+must be re-measured after it is flashed. A 10° residual misalignment puts ~0.17 g of gravity on the wrong
+axis **and rotates with attitude**, so unlike a fixed offset it does not average out in flight.
+
+⭐ **Bias/scale residuals, for the sim-fidelity question**: the bench board's worst offset is +0.032 g (y at
+level) with a −0.3% scale error. Against `kAccelScale_g = 8.0` that reaches the NN as **0.004 input units**,
+versus a tanh linear region running to ~1.4 (the 11.2 g flight record) — ~0.3% of useful range. Sim models
+**no** accel bias or noise (`config.h` has `enableAccelInputs`/`accelScaleG` and no sigma); on these numbers
+that is defensible, but it is an untested assumption for the flight board until its residuals are measured.
+
 ## Gyro & Accelerometer Conventions (021, 2026-03-28)
 
 ### INAV Sensor Processing Chain
