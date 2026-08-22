@@ -57,8 +57,12 @@ import matplotlib.pyplot as plt
 
 TRACK_THRESHOLD = 0.5
 CLOSE_SMOOTH_TICKS = 5
-BUDGET = 0.27                      # per-axis change-rate budget
-BANK_BUDGET = BUDGET * np.sqrt(2)  # the pair, as a vector norm
+# Servo-demand references, NOT physical limits — see per_axis_aggressiveness.py
+# for full provenance (027 gate: cadence7 −20 % stick speed / −10 % saturation).
+SERVO_SLEW_REF = 0.27
+BANK_SLEW_REF = SERVO_SLEW_REF * np.sqrt(2)  # the pair, as a vector norm
+BUDGET = SERVO_SLEW_REF          # back-compat alias
+BANK_BUDGET = BANK_SLEW_REF      # back-compat alias
 GYRO_SCALE = 6.0                   # kGyroScale_radps — dump stores scaled rates
 REGIMES = ["track", "intercept", "patrol"]
 RCOLOR = {"track": "#2a9d3f", "intercept": "#e07b1a", "patrol": "#8888aa"}
@@ -138,7 +142,7 @@ def main():
         ax[0].hlines(bud, i - 0.4, i + 0.4, ls="--", color="k", lw=1)
     ax[0].set_xticks(x); ax[0].set_xticklabels([n for n, _, _ in groups])
     ax[0].set_ylabel("mean |Δ| per tick")
-    ax[0].set_title("1. COMMAND WORK, physically grouped  (dashed = budget; bank budget = 0.27·√2)")
+    ax[0].set_title("1. COMMAND WORK, physically grouped  (dashed = 027 servo-slew ref; bank = 0.27·√2)")
     ax[0].legend(); ax[0].grid(alpha=.3, axis="y")
 
     # --- panel 2: AIRFRAME response, frame-free ----------------------------
