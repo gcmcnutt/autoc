@@ -145,7 +145,21 @@ waiting for real hardware.
 
 - [ ] T048 [US3] Prototype acquisition in NumPy against recorded clips in `firmware/beacon-receiver/pi/acquire_proto.py` — **research spike, ships no tests** (R12; Constitution I exemption invoked narrowly, nothing promoted)
 - [X] T049 [P] [US3] Implement blink detection (frame-to-frame temporal difference) in `firmware/beacon-receiver/src/core/acquire.c`
-- [ ] T050 [US3] Implement linear-motion RANSAC proto-track formation in `firmware/beacon-receiver/src/core/acquire.c`
+- [ ] T050 [US3] ~~Implement linear-motion RANSAC proto-track formation~~ → **RE-CUT 2026-08-22 to
+  track-before-detect (TBD)**, in `firmware/beacon-receiver/src/core/acquire.c`. **RANSAC is the wrong
+  model and the operator caught it**: it fits a straight line over a whole word, but a word is 258 ms and at
+  a 500 °/s roll that sweeps 129° — cross-track plus roll with both platforms moving is an arc, and RANSAC
+  would reject the target as an outlier from its own trajectory. Instead propagate hypotheses frame-by-frame
+  through an **acceleration-bounded reachable cone**, accumulating code correlation along each path, with no
+  global motion model. Operator's framing: *"mostly little triangle guesses where last known point is a
+  vertex."*
+  **Why it is affordable** (`compute-budget.md` arithmetic): with a velocity state the per-frame cone is set
+  by ACCELERATION, not velocity, and is **sub-pixel even at 10 000 °/s²** (0.198 M2 px per 3.47 ms frame).
+  Propagation is therefore nearly free — a beam of 100 k particles costs **0.26 G ops/s** against 15.2
+  available, and 1 M costs 2.59. Compare the unpruned position×velocity lattice at 104–431 G ops/s, or the
+  brute-force sweep at 5.5 s per attempt.
+  **The actual design work is INITIALISATION**, not propagation: all the cost is in not-yet-knowing velocity.
+  Seeding density, pruning rule and score gate are the parameters that matter.
 - [ ] T051 [US3] Implement multi-rate decode-along-track in `firmware/beacon-receiver/src/core/acquire.c` — rate-agnostic, because the bench emitter's `'H'` mode is volatile (031 trap #2)
 - [ ] T052 [P] [US3] Test: acquisition finds a known injected track at a known SNR — `firmware/beacon-receiver/tests/unit/test_acquire.c`
 - [ ] T053 [US3] Thread acquisition off the capture path in `firmware/beacon-receiver/src/app/beacon_trackd.cc`, charged through the T042 budget model
@@ -176,6 +190,35 @@ waiting for real hardware.
   capture). Every °/s in this feature assumes a uniform 0.304 °/M2 px across a 97.3° ultra-wide field; that
   degrades toward the edge, so off-axis rates are not strictly comparable to on-axis ones. Owed before the
   envelope publishes absolute °/s (spec §3.2).
+- [ ] T077 [US3] **Moving-target fixture — pendulum** (operator idea, 2026-08-22). Hang the emitter and
+  swing it: a known analytic trajectory with REAL curvature, which is exactly what distinguishes TBD from a
+  linear model, for the price of a piece of string. Sizing: a **1.0 m pendulum at 3 m range gives a 2.0 s
+  period, peak 20.9 °/s and peak 65 °/s²** — dead centre of the band where the tracker currently scores
+  **3 % locked** (10–20 °/s), and the acceleration is trivially inside the TBD cone.
+  **One 60 s clip is ~30 swings = ~60 continuous sweeps of the whole rate axis**, which fixes the ragged
+  binning that made `pan1`/`pan2` weak (a single sample in the decisive 0.5–3 °/s bin). Vary the RELEASE
+  ANGLE across clips to move the peak — a sinusoid lingers near peak velocity and passes through zero
+  quickly, so the low-rate bins need the small-amplitude clips. Camera STATIC for this, so it isolates
+  target motion with no registration confound.
+- [ ] T078 [US3] **Moving-target fixture — constant-speed loop** (operator: *"a racetrack… some sort of
+  target track built in a large room back in the '70s"*). Complements T077 rather than replacing it: a
+  pendulum's speed distribution is arcsine-shaped and never holds a rate, whereas a loop gives **sustained
+  constant velocity on the straights and sustained constant curvature on the bends** — which separates
+  "constant-velocity tracking" from "constant-acceleration tracking" cleanly. Cheap version: model-railway
+  loop with the emitter on a flatcar. Do this only if T077 leaves the velocity/acceleration behaviours
+  entangled.
+
+### The research ladder (operator, 2026-08-22)
+
+Each stage isolates ONE new thing; do not skip, because a failure two stages up is uninterpretable.
+
+| stage | isolates | fixture | status |
+|---|---|---|---|
+| 1. static target, moving camera | ego-motion is the *entire* apparent motion, residual ≈ 0 | pan/tilt mount | `pan2.bcnr` is the handheld version — **done, analysed** |
+| 2. + camera vibration/ego disturbance | robustness of registration (T071) | same rig + disturbance | |
+| 3. **moving target, static camera** | TBD with **no registration confound** | **T077 pendulum** | the cheap decisive one |
+| 4. both moving | the real engagement | both rigs | |
+
 - [ ] T076 [P] [US2] **Two `track.c` correctness fixes** (bugs, not tuning — do them opportunistically, do
   NOT schedule a tuning phase; the measured knee is 1–2 °/s and these move it to maybe 2–3, against 15–18 °/s
   of hand motion): (a) `hold_max_age_ms = 150` kills a track before the 258 ms needed to rebuild a

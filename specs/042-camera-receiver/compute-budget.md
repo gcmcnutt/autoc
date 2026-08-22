@@ -113,3 +113,64 @@ tractable** — unless the clean-sky RANSAC path proves sufficient on its own, w
 sky-background clip would settle.
 
 Nothing here changes the 042 build order (AHRS is still 043). It changes what 043 is *for*.
+
+
+---
+
+## Addendum 2026-08-22 — RANSAC is out, track-before-detect is in
+
+The operator pushed back on RANSAC and was right. RANSAC proto-tracks fit a **straight line over a word**,
+but a word is 258 ms and at a 500 °/s roll that sweeps 129°. Cross-track plus roll with both platforms
+moving traces an arc, so a line-fitter rejects the target as an outlier from its own trajectory. The
+replacement is **track-before-detect**: propagate hypotheses frame-by-frame through an acceleration-bounded
+reachable cone, accumulating code correlation along each path, with no global motion model — the operator's
+*"little triangle guesses where last known point is a vertex."*
+
+**The reason it is cheap, which is the non-obvious part:**
+
+| | |
+|---|---|
+| cone with **no** velocity state, &#124;v&#124; ≤ 500 °/s | ±5.7 M2 px → 121 cells/frame |
+| cone **with** a velocity state, at 10 000 °/s² | **0.198 M2 px — sub-pixel** |
+
+Once a hypothesis carries velocity, the per-frame reachable set is bounded by ACCELERATION, and acceleration
+is small over 3.47 ms. **Propagation is nearly free; the entire cost is in not-yet-knowing velocity.**
+
+| formulation | cost | verdict |
+|---|---|---|
+| brute-force velocity sweep (±15 °/s) | 5.5 s per attempt | out |
+| full position×velocity lattice, unpruned | 104–431 G ops/s | out |
+| **beam TBD, 100 k particles** | **0.26 G ops/s** | fits (15.2 available) |
+| beam TBD, 1 M particles | 2.59 G ops/s | fits |
+
+Even allowing 20× for real per-particle work (sampling, bin accumulation, incremental scoring), 100 k
+particles is ~0.6 G ops/s. **The affordable population is large.** So the design problem is not throughput —
+it is **initialisation**: seeding density, pruning rule, score gate. That is where the effort goes (T050).
+
+### Ego-motion is a *range-dependent* hint, not a uniformly weak one
+
+The operator called it "a weak hint" because the target moves too. True at close range, and the pattern is
+favourable:
+
+| geometry | target relative rate | body rate (039) | ego-motion is |
+|---|---|---|---|
+| 13 m/s crossing at 3 m | 248 °/s | 128–500 °/s | comparable — weak |
+| same at 30 m | 25 °/s | 128–500 °/s | dominant |
+| same at 100 m | 7 °/s | 128–500 °/s | overwhelming |
+
+**It is strongest exactly where it is needed most** — long range, low SNR, longest integration, least
+tolerance for smear. Close in, where it is weak, SNR is high and integration can be short instead. Weight it
+by range/q rather than discounting it.
+
+### On evolving the estimator
+
+Raised by the operator; the objection they raised themselves is the correct one. This is an *estimator*, and
+its objective (a detection / false-alarm operating curve) is a clean scalar, so search is applicable in
+principle. The blocker is generating enough honest variety — and **`inject.c` (T045) is the answer**:
+injecting a synthetic coded point source into REAL recorded backgrounds gives real clutter, real ego-motion
+and real sensor noise with exact truth, SNR/rate/range dialable, and a space as large as the clip library.
+
+Verdict: searching over **parameters** (cone width, pruning threshold, seeding density, score gate) becomes
+defensible once inject.c exists. Evolving **structure** should be avoided — it fits the injector's model of a
+target rather than reality — and either way held-out real clips are the only honest test. **After** a working
+TBD, not instead of one.
