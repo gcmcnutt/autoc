@@ -745,7 +745,27 @@ Several things changed underneath Phase 5 that are not tasks but WILL bite a fre
   ⚠️ Judged **subjectively at first** per AC-1 — no numeric thresholds until the strategy shows signal.
   ⚠️ Compare on the **charts against the pinned prior M1**, not a purpose-built controlled pair: large
   changes are visible in the ordinary report set (methodology note, Phase 0).
-- [ ] P4-2 [OP] Pin `retain=keep` + archive weights. **This is 043's hard dependency.**
+- [ ] P4-2 [OP] ⭐ **RETAIN THE t7 BUILD IN S3 — this run is the baseline for M2 and camera work, not just
+  for 043.** Operator 2026-08-22: *"that m1 may likely be the baseline for m2 and camera work — we'll
+  definitely want to retain this build in s3 once the run is done."* Scope grew accordingly: it was
+  "pin + archive weights"; it is now **preserve the whole reproducible article**.
+  * **Run**: `autoc-9223370249590214474-2026-08-20T22:22:41.333Z` in `autoc-m1`, master seed `1787264561`.
+    Pin `retain=keep` (milestone-preserve prefix, per `reference_autoc_storage_keeper_runs`) so no lifecycle
+    rule can expire it.
+  * ⛔ **Wait for gen 800.** The pinned generation is the FINAL one — see [`baseline.md`](baseline.md),
+    which deliberately records a mid-run snapshot as NOT the pin.
+  * Archive alongside the weights, because the weights alone are not reproducible:
+    - `autoc.ini` **as the run used it** (the ramp-on, P2-8-era config),
+    - the **commit hash** of the binary that produced it (clean `rebuild-perf.sh`, 48/48),
+    - the crrcsim submodule pointer,
+    - the four P2-8 scale constants (`kCruiseSpeed_mps`, `kTargetDistScale_m`, `kClosingRateScale_mps`,
+      `kGyroScale_radps`) — ⛔ **without these the genome loads cleanly and flies WRONG**; see P2-9.
+  * ⭐ **Also extract the per-tick CSV now, while the reader matches.** The v3→v4 break already cost 041 a
+    comparator (T011a), and a future schema move would do the same to this one. A `--csv-only` and a
+    `--physics` dump into `artifacts/` costs minutes and removes the dependency on building an old worktree
+    later. ⚠️ The prior archive's physics columns turned out to be 4 ticks/scenario — check coverage on
+    the way in this time, do not assume it.
+  * **Hard dependency of**: 043, and now the M2 / camera baseline too.
 - [ ] P4-3 [OP] M1 flight → playback → energy validation. ⚠️ Remove the GPS before flashing; both targets,
   bench first.
 - [ ] P4-4 Outcome doc: every hypothesis with its evidence, including the refuted ones.
