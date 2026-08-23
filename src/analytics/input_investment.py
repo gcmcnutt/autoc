@@ -140,6 +140,9 @@ def input_names(mode_header="nn_inputs.h"):
     return [n for n, _ in pairs] or None
 
 
+_reported_fetch_error = False
+
+
 def elite_weights(run_prefix, file_gen, ini, tmp):
     """nnextractor -> nn2cpp -> (topo, recurrent, weights) for one generation.
 
@@ -153,9 +156,32 @@ def elite_weights(run_prefix, file_gen, ini, tmp):
         subprocess.run([os.path.join(REPO, "build", "nnextractor"),
                         "-k", run_id, "-g", str(file_gen), "-o", dat, "-i", ini],
                        check=True, capture_output=True, timeout=180)
-        subprocess.run([os.path.join(REPO, "build", "nn2cpp"), "-i", dat, "-o", cpp],
+        # ⚠️ 041 7bee3a1 CHANGED THIS CLI: -i is the INI, -w is the weights. It
+        # used to be `-i <weights>`. The call site was not updated, so every
+        # live fetch failed, elite_weights() returned None, and the report
+        # printed "no dmp/genome — skipped" for each one — which reads like a
+        # missing artifact, not a broken call. The cache silently froze at 551
+        # generations and two reports shipped with a truncated panel before
+        # anyone noticed. nn2cpp itself fails LOUD and says exactly what is
+        # wrong; the failure was invisible only because this except-block
+        # swallows CalledProcessError into a skip.
+        subprocess.run([os.path.join(REPO, "build", "nn2cpp"),
+                        "-w", dat, "-i", ini, "-o", cpp],
                        check=True, capture_output=True, timeout=180)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        # ⛔ SAY WHY. A bare `return None` renders upstream as "no dmp/genome —
+        # skipped", which reads as a missing artifact and hides a broken call:
+        # the 7bee3a1 CLI change froze this report's cache for a day and shipped
+        # two truncated panels, because the tool's own loud error was captured
+        # and discarded here. The first failure now surfaces the real stderr.
+        global _reported_fetch_error
+        if not _reported_fetch_error:
+            _reported_fetch_error = True
+            err = getattr(e, "stderr", b"") or b""
+            if isinstance(err, bytes):
+                err = err.decode("utf-8", "replace")
+            print(f"  ⛔ elite_weights failed (first occurrence shown in full; "
+                  f"later ones count as skips):\n{err.strip()[:600]}", file=sys.stderr)
         return None
     return parse_nn_cpp(cpp)
 
