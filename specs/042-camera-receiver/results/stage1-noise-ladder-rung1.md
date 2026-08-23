@@ -77,3 +77,60 @@ that one of those tracks should never have existed.
 Report **which object is tracked**, not just q and present %. A run that is "50 % present at q 0.5" and one
 that is "50 % present because half the time it sat on a lamp" are identical in the summary and are entirely
 different faults.
+
+---
+
+## T085 attempted twice and REVERTED — plus the measurement error that caused the second failure
+
+The diagnosis (§ above) stands: a constant saturated lamp promotes because q is a ratio whose denominator
+collapses. Two gate designs were tried against it and both are reverted.
+
+### Attempt 1 — absolute correlation floor (the predecessors' approach)
+
+Gate `|corr|` normalised per chip and per aperture pixel, floor calibrated from the bench at 150 000.
+
+| clip | present before → after | lamp fixes |
+|---|---|---|
+| dark60 | 99 % → 98 % | 7 → **0** |
+| rung1 | 97 % → 98 % | 6 → **0** |
+| rung1b | 92 % → 86 % | **101 → 0** |
+| **static_fid** | **98 % → 0 %** | 0 → 0 |
+
+It kills the lamps outright — and **silently zeroes tracking on the fiducial clip.** The cause is a flaw in
+the premise: the ROI normalisation (`rawsum·2¹⁴ / (exposure_us·gain/256)`) is exposure-invariant **only
+while the source is unsaturated**. Our beacon saturates at both 53 µs and 1499 µs, so at the fiducial
+exposure its normalised amplitude falls ~28× and an absolute floor rejects everything. **A threshold that
+can silently zero the tracker is not shippable.**
+
+### Attempt 2 — dimensionless modulation depth
+
+`mod = (energy/W) / level`, a ratio, so it cannot be broken by a scale change. Measured distributions with
+the gate **disabled**:
+
+| | beacon p05 | lamp p90 |
+|---|---|---|
+| rung1b | 0.027 | 0.012 |
+| static_fid | 0.016 | — |
+
+and a threshold sweep suggested **0.04** — keeping ~94 % of beacon fixes on *both* clips while rejecting
+95 % of lamp fixes. (It also showed my first guess of 0.08 would have kept only 16 % of `static_fid`, so the
+sweep was worth doing.)
+
+**Enabled, it failed anyway**: `static_fid` 98 % → **0 %**, `pan2` 40 % → **2 %**.
+
+### The error: I measured the distribution under one policy and applied the threshold under another
+
+With the gate **off**, a track survives its weak early ticks, establishes, and then produces the high-`mod`
+fixes that dominate the distribution. With the gate **on**, those same weak early ticks are rejected, the
+track dies before it establishes, and the high-`mod` population **never comes into existence**. The
+distribution I measured was conditioned on the very survival the gate removes.
+
+That is a feedback loop, not a threshold-tuning problem, and no value of `min_mod` fixes it. Any future gate
+here must either be applied only to *established* tracks, or be validated end-to-end rather than against a
+distribution collected with it disabled.
+
+### Why the fiducial clips are the ones that break
+
+Modulation depth is `deviation / level`, and at 1499 µs the background contributes far more to `level` while
+the beacon's excursion is clipped by saturation. So the same beacon reads as *less modulated* purely because
+the background got brighter — which is exactly the coupling the IR filter is meant to remove.
