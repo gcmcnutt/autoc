@@ -70,18 +70,53 @@ TEST(FlightLogFormat, InputBlockCoversTheWholeNNVector) {
 TEST(FlightLogFormat, RoundTripWithinQuantizationStep) {
   ScaleTableFixture t;
 
-  // Representative in-range values per field group (PathgenInput slot order):
-  // unit-vec components, raw-metre distances, closing rate, quat, airspeed,
-  // gyro rad/s, tanh boundary distance, inward unit vec.
-  float inputs[kNumInputs];
-  for (int i = 0; i < 18; i++) inputs[i] = -1.0f + 2.0f * (float)i / 17.0f;  // target_x/y/z
-  for (int i = 18; i < 24; i++) inputs[i] = 3.7f + 41.3f * (float)(i - 18);  // dist m
-  inputs[24] = -11.25f;                                                       // closing m/s
-  inputs[25] = 0.7071f; inputs[26] = -0.7071f; inputs[27] = 0.5f; inputs[28] = -0.5f;
-  inputs[29] = 17.3f;                                                         // airspeed
-  inputs[30] = -6.283f; inputs[31] = 2.5f; inputs[32] = -0.01f;               // gyro
-  inputs[33] = 0.42f;                                                         // dist_to_boundary
-  inputs[34] = 0.1f; inputs[35] = -0.9f; inputs[36] = 0.3f;                   // inward_body
+  // Representative in-range values per field group.
+  //
+  // ⚠️ 041 P2-8 — dist / closing-rate / airspeed / gyro are NOT physical units
+  // any more. The gather divides by kTargetDistScale_m, kClosingRateScale_mps,
+  // kCruiseSpeed_mps and kGyroScale_radps, so what reaches the log is an O(1)
+  // NN unit carried at kScaleNN8, whose rail is ±8.0. The old fixture still fed
+  // raw metres (up to 210), i.e. 26x past the rail, so those slots saturated.
+  //
+  // ⚠️ Assigned BY ENUM NAME, for the reason defaultScaleTable() states: literal
+  // indices go silently wrong the moment the NN layout shifts. It shifted — the
+  // block is 45 slots and the old fixture filled 37, leaving the ACCEL_X..
+  // SCORE_GRAD_Z tail to read uninitialized stack and round-trip whatever
+  // happened to be there.
+  float inputs[kNumInputs] = {0};
+  auto set = [&inputs](PathgenInput slot, float v) {
+    inputs[static_cast<int>(slot)] = v;
+  };
+  const int kTgtBase = static_cast<int>(PathgenInput::TARGET_X_TM5);
+  const int kDistBase = static_cast<int>(PathgenInput::DIST_TM5);
+  // target_x/y/z history — unit-vector components, [-1,1].
+  for (int i = kTgtBase; i < kDistBase; i++)
+    inputs[i] = -1.0f + 2.0f * (float)(i - kTgtBase) / (float)(kDistBase - kTgtBase - 1);
+  // dist history in NN units (m / 26): 3.7 m closing out to ~76 m.
+  for (int i = kDistBase; i < static_cast<int>(PathgenInput::CLOSING_RATE); i++)
+    inputs[i] = 0.142f + 0.55f * (float)(i - kDistBase);
+  set(PathgenInput::CLOSING_RATE, -1.406f);   // -11.25 m/s
+  set(PathgenInput::QUAT_W, 0.7071f);
+  set(PathgenInput::QUAT_X, -0.7071f);
+  set(PathgenInput::QUAT_Y, 0.5f);
+  set(PathgenInput::QUAT_Z, -0.5f);
+  set(PathgenInput::AIRSPEED, 1.331f);        // 17.3 m/s
+  set(PathgenInput::GYRO_P, -1.047f);         // -6.283 rad/s
+  set(PathgenInput::GYRO_Q, 0.417f);
+  set(PathgenInput::GYRO_R, -0.0017f);
+  // Specific force in NN units — Y at the 1.4 the headroom test pins.
+  set(PathgenInput::ACCEL_X, 0.12f);
+  set(PathgenInput::ACCEL_Y, -1.4f);
+  set(PathgenInput::ACCEL_Z, 0.98f);
+  set(PathgenInput::SPECIFIC_ENERGY, 1.15f);
+  set(PathgenInput::BOUNDARY_CLOSURE_RATE, -0.62f);
+  set(PathgenInput::DIST_TO_BOUNDARY, 0.42f);  // tanh
+  set(PathgenInput::INWARD_BODY_X, 0.1f);
+  set(PathgenInput::INWARD_BODY_Y, -0.9f);
+  set(PathgenInput::INWARD_BODY_Z, 0.3f);
+  set(PathgenInput::SCORE_GRAD_X, 0.55f);
+  set(PathgenInput::SCORE_GRAD_Y, -0.31f);
+  set(PathgenInput::SCORE_GRAD_Z, 0.77f);
 
   float outputs[kNumOutputs] = {-0.335f, 0.998f, 0.0421f};
   // v2 telemetry: engage-relative positions (metres), NED velocity (m/s)
@@ -161,16 +196,19 @@ TEST(FlightLogFormat, ScaleTableCrcLoudFail) {
 TEST(FlightLogFormat, SaturationNeverWraps) {
   ScaleTableFixture t;
 
-  // dist slot 18: scale 32 → rail at 32767/32 ≈ 1023.97 m. A 5 km reading
-  // must clamp to the positive rail (wrap would produce a negative value).
-  const float rail = 32767.0f / t.scales[18];
-  int16_t enc = encodeScaled(5000.0f, t.scales[18]);
+  // DIST_TM5: kScaleNN8 since 041 P2-8, so the rail is 32767/4096 ≈ 8.0 NN
+  // units (it was 1023.97 m at kScaleDistM, which is what the literal 5000 was
+  // written against). An over-rail reading must clamp — a wrap would turn the
+  // largest distance in the record into a negative one.
+  const int kDist = static_cast<int>(PathgenInput::DIST_TM5);
+  const float rail = 32767.0f / t.scales[kDist];
+  int16_t enc = encodeScaled(5000.0f, t.scales[kDist]);
   EXPECT_EQ(enc, INT16_MAX);
-  EXPECT_FLOAT_EQ(decodeScaled(enc, t.scales[18]), rail);
+  EXPECT_FLOAT_EQ(decodeScaled(enc, t.scales[kDist]), rail);
 
-  int16_t encNeg = encodeScaled(-5000.0f, t.scales[18]);
+  int16_t encNeg = encodeScaled(-5000.0f, t.scales[kDist]);
   EXPECT_EQ(encNeg, -INT16_MAX);  // symmetric clamp: -32767, not -32768
-  EXPECT_FLOAT_EQ(decodeScaled(encNeg, t.scales[18]), -rail);
+  EXPECT_FLOAT_EQ(decodeScaled(encNeg, t.scales[kDist]), -rail);
 
   // Unit-bounded slot: 1.0001 saturates to exactly the +1 rail.
   int16_t encUnit = encodeScaled(1.0001f, t.scales[0]);

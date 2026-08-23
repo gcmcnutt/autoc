@@ -119,7 +119,14 @@ add_library(autoc_common STATIC
     src/nn/telemetry.cc
     src/nn/mode.cc
 )
-target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen ${ZSTD_LIBRARY})
+# AWSSDK is PUBLIC (plain signature => propagates): config.cc's getS3Client() lives
+# in this library, so EVERY consumer of autoc_common needs the AWS symbols, not
+# just the ones that knowingly touch S3. Listing them per-target instead left
+# nn2cpp (and anything else added without the incantation) failing at link with
+# undefined Aws::* references. Yes, this makes nn2cpp drag in the SDK it never
+# calls -- the real fix is splitting the S3 client out of ConfigManager; until
+# then, correct-and-transitive beats per-target whack-a-mole.
+target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen ${ZSTD_LIBRARY} ${AWSSDK_LIBRARIES})
 
 add_executable(autoc src/autoc.cc)
 add_executable(renderer tools/renderer.cc)
@@ -129,15 +136,15 @@ add_executable(source_dmp_inspect tools/source_dmp_inspect.cc)
 add_executable(tracker_dmp_inspect tools/tracker_dmp_inspect.cc)
 add_executable(dmp-dump tools/dmp_dump.cc)  # 035 FR-P02/P06
 
-target_link_libraries(autoc autoc_common ${AWSSDK_LIBRARIES})
-target_link_libraries(renderer autoc_common ${VTK_LIBRARIES} ${AWSSDK_LIBRARIES})
+target_link_libraries(autoc autoc_common)
+target_link_libraries(renderer autoc_common ${VTK_LIBRARIES})
 # 039 T032: -x mode reads the binary flight log (shared format header)
 target_include_directories(renderer PRIVATE xiao/include)
-target_link_libraries(nnextractor autoc_common ${AWSSDK_LIBRARIES})
-target_link_libraries(dmp-dump autoc_common ${AWSSDK_LIBRARIES})
+target_link_libraries(nnextractor autoc_common)
+target_link_libraries(dmp-dump autoc_common)
 target_link_libraries(nn2cpp autoc_common)
-target_link_libraries(source_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
-target_link_libraries(tracker_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
+target_link_libraries(source_dmp_inspect autoc_common)
+target_link_libraries(tracker_dmp_inspect autoc_common)
 
 if(ENABLE_AUTOC_TESTS)
   add_executable(nn_evaluator_tests tests/nn_evaluator_tests.cc)
@@ -153,7 +160,7 @@ if(ENABLE_AUTOC_TESTS)
   target_link_libraries(fitness_computer_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(fitness_decomposition_tests tests/fitness_decomposition_tests.cc)
-  target_link_libraries(fitness_decomposition_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(fitness_decomposition_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(selection_tests tests/selection_tests.cc)
   target_link_libraries(selection_tests GTest::gtest GTest::gtest_main autoc_common)
@@ -183,10 +190,10 @@ if(ENABLE_AUTOC_TESTS)
   target_link_libraries(nn_sensor_interface_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(source_dmp_loading_tests tests/source_dmp_loading_tests.cc)
-  target_link_libraries(source_dmp_loading_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(source_dmp_loading_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(source_dmp_s3_integration_tests tests/source_dmp_s3_integration_tests.cc)
-  target_link_libraries(source_dmp_s3_integration_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(source_dmp_s3_integration_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(beacon_projection_tests tests/beacon_projection_tests.cc)
   target_link_libraries(beacon_projection_tests GTest::gtest GTest::gtest_main autoc_common)
@@ -261,11 +268,11 @@ if(ENABLE_AUTOC_TESTS)
 
   # 035 FR-P07 — shared S3 run-selector tests (pulls s3_run_selector.o → needs AWSSDK).
   add_executable(s3_run_selector_tests tests/s3_run_selector_tests.cc)
-  target_link_libraries(s3_run_selector_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(s3_run_selector_tests GTest::gtest GTest::gtest_main autoc_common)
 
   # 035 FR-P09 — zstd round-trip + ratio spike for the dmp boundary.
   add_executable(dmp_dump_tests tests/dmp_dump_tests.cc)
-  target_link_libraries(dmp_dump_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(dmp_dump_tests GTest::gtest GTest::gtest_main autoc_common)
 
   # 035 FR-001b/R1 (US1) — convex throttle-energy metric.
   add_executable(energy_metric_tests tests/energy_metric_tests.cc)

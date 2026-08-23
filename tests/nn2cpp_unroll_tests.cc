@@ -172,16 +172,27 @@ class Nn2cppUnrollTest : public ::testing::Test {
         writeFile(dir_ + "/nn_program.h",
                   "#pragma once\n"
                   "#include <autoc/nn/evaluator.h>\n"
-                  "#include <autoc/eval/sensor_math.h>\n");
+                  "#include <autoc/eval/sensor_math.h>\n"
+                  // 041 P5-3 baked the cone into the emission, so the mirror
+                  // needs the header the real nn_program.h gained with it.
+                  "#include <autoc/eval/cone_constants.h>\n");
         writeFile(dir_ + "/harness_main.cpp", kHarnessSource);
     }
 
     // Generate code via the real nn2cpp binary.
     void generate(bool unrolled, const std::string& outCpp) {
         std::ostringstream cmd;
-        cmd << NN2CPP_BIN << " -i " << dir_ << "/fixture.dat"
+        // 041 P5-3 CLI: -w is the genome, -i is the ini the baked arena/cone
+        // constants come from (it used to be -i for the genome plus -a for the
+        // arch, which is what this call said until the nn2cpp link break was
+        // fixed and the test could actually run). The arch now rides in the
+        // genome, so there is nothing left for -a to say. ConfigManager exits
+        // on a missing ini and the suite runs from the build dir, so the path
+        // has to be absolute.
+        cmd << NN2CPP_BIN << " -w " << dir_ << "/fixture.dat"
+            << " -i " << AUTOC_SOURCE_DIR << "/autoc.ini"
             << (unrolled ? " -u" : "")
-            << " -a 80,5,100 -f nnGenerated -o " << outCpp;
+            << " -f nnGenerated -o " << outCpp;
         std::string out;
         int rc = runCmd(cmd.str(), out);
         ASSERT_EQ(rc, 0) << "nn2cpp failed:\n" << out;
