@@ -414,7 +414,24 @@ capacity is not the constraint. Settled; reopen only on new evidence.
   *good fitness with less aggressiveness*, with energy as the indicator. Refine after the strategy shows
   signal. (was TD08)
 
-- [ ] P2-9 ⛔ **nn2cpp must bake a SCALE SIGNATURE, not just an input count.** Found 2026-08-20 while
+- [X] P2-9 ✅ **DONE 2026-08-22.** `nn2cpp` now emits a 9-constant scale signature beside the layout guard:
+  `kCruiseSpeed_mps`, `kDistToBoundaryScale_m`, `kTargetDistScale_m`, `kClosingRateScale_mps`,
+  `kGyroScale_radps`, `kAccelScale_g`, `kEnergyScale_m`, `kScoreGradScale`, `kTimeSinceSeenScale_s` — each
+  `static_assert`ed against the firmware tree's live value.
+  **Verified both directions**: the emitted asserts compile against the live header, and perturbing one
+  value fires it with the intended message. ⚠️ A first cut emitted `13f` (via `std::defaultfloat`), which
+  is not a valid C++ literal and would have been a hard compile error in every generated file — caught by
+  the positive test, fixed to `std::fixed`.
+  ⚠️ **WHAT IT DOES NOT CATCH, stated so nobody over-trusts it**: it pins the *codegen tree's* scales
+  against the *firmware tree's* scales. It does NOT pin the scales the genome was TRAINED with — the NN01
+  file carries weights and topology, not the config that shaped its inputs. Normally nn2cpp is built from
+  the same tree as the trainer so the check is meaningful, but a genome carried across a scale change and
+  regenerated with a matching-era nn2cpp still passes. Closing that needs the scales inside the genome
+  file: a format change, and a separate task if it is ever wanted.
+  ⛔ **The article flashed for the 2026-08-23 flight PREDATES this** (`firmware_id=fb3866080c0df02d`, gen
+  633). Do not regenerate before that flight unless you intend to re-flash — the signature changes the
+  generated text and therefore the `firmware_id`. Any field update or later bake picks it up automatically.
+  *(original)* ⛔ **nn2cpp must bake a SCALE SIGNATURE, not just an input count.** Found 2026-08-20 while
   applying P2-8. `nn2cpp` emits `static_assert(kGeneratedNNInputCount == NN_INPUT_COUNT)`, which catches a
   LAYOUT change — but P2-8 changed input SCALES with the layout untouched (still float[45]). A genome baked
   before P2-8 therefore has the right count and the wrong units: it compiles clean, passes the assert, and
@@ -694,7 +711,10 @@ Several things changed underneath Phase 5 that are not tasks but WILL bite a fre
      it ROTATES with attitude, so it does not average out in flight.
   3. Flash the xiao with the chosen flight genome; confirm the boot banner's `weight_id` is the intended one.
 
-- [ ] P5-6 **P2-9 scale signature in `nn2cpp`** — ⚠️ **OPEN, and knowingly not blocking the first flight**
+- [X] P5-6 ✅ **CLOSED 2026-08-22 — implemented, see P2-9.** The hazard it named is now guarded for every
+  FUTURE regeneration; the article flying on 2026-08-23 predates the signature, which is fine for the
+  reason below.
+  *(original)* ⚠️ **OPEN, and knowingly not blocking the first flight**
   (operator 2026-08-22): the flown genome and firmware were generated from one tree in one session and the
   boot banner's `weight_id`/`firmware_id` were checked against the intended build, so the hazard does not
   apply to THIS article. It applies to the next re-flash of a snapshot genome. (carried from the P2 list — restated here because it is a

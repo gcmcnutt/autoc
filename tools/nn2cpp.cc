@@ -97,6 +97,51 @@ static void emitConeContract(std::stringstream& code, const BakedCone& c) {
     code << "}\n\n";
 }
 
+// 041 P2-9 — emit the INPUT SCALE SIGNATURE beside the layout guard.
+//
+// WHY THE COUNT ASSERT IS NOT ENOUGH. `kGeneratedNNInputCount == NN_INPUT_COUNT`
+// catches a LAYOUT change. P2-8 changed input SCALES with the layout untouched
+// (still float[45]), so a genome baked before it has the right count and the
+// WRONG UNITS: it compiles clean, passes the count assert, and flies wrong.
+// That is the same silent-failure class the count assert exists to prevent, one
+// level down — and `firmware_id` cannot catch it either, because it hashes the
+// generated code TEXT while these constants live in nn_inputs.h, outside it.
+//
+// ⚠️ WHAT THIS DOES AND DOES NOT CATCH. It pins the scales of the tree that ran
+// nn2cpp against the scales of the firmware tree that compiles the result. It
+// does NOT pin the scales the genome was TRAINED with: the NN01 file carries
+// weights and topology, not the config that shaped its inputs. In the normal
+// workflow nn2cpp is built from the same tree as the trainer, so the check is
+// meaningful — but a genome carried across a scale change and regenerated with
+// a matching-era nn2cpp would still pass. Closing that needs the scales inside
+// the genome file, which is a format change and is not this task.
+static void emitScaleSignature(std::stringstream& code) {
+    struct S { const char* name; float value; };
+    const S sig[] = {
+        {"kCruiseSpeed_mps",       kCruiseSpeed_mps},
+        {"kDistToBoundaryScale_m", kDistToBoundaryScale_m},
+        {"kTargetDistScale_m",     kTargetDistScale_m},
+        {"kClosingRateScale_mps",  kClosingRateScale_mps},
+        {"kGyroScale_radps",       kGyroScale_radps},
+        {"kAccelScale_g",          kAccelScale_g},
+        {"kEnergyScale_m",         kEnergyScale_m},
+        {"kScoreGradScale",        kScoreGradScale},
+        {"kTimeSinceSeenScale_s",  kTimeSinceSeenScale_s},
+    };
+    code << "\n// 041 P2-9 fail-loud INPUT SCALE guard. The input-count assert above catches\n";
+    code << "// a LAYOUT change; P2-8 changed input SCALES with the layout untouched, so a\n";
+    code << "// stale genome has the right count and the wrong units -- compiles clean,\n";
+    code << "// passes that assert, flies wrong. These pin the units too.\n";
+    for (const S& e : sig) {
+        code << "static_assert(" << e.name << " == "
+             << std::fixed << std::setprecision(9) << e.value << "f,\n";
+        code << "    \"" << e.name
+             << " changed since this file was generated: the genome's inputs were \"\n";
+        code << "    \"scaled differently than this firmware will scale them. Same layout, \"\n";
+        code << "    \"wrong physics -- invisible in sim, wrong in the air. REGENERATE.\");\n";
+    }
+}
+
 // Emit the template accessor + the active-arena extern shared by both
 // codegen paths (039 D5).
 static void emitArenaContract(std::stringstream& code, const BakedArena& a) {
@@ -277,6 +322,7 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     code << "    \"was generated against a different nn_inputs.h, so the forward pass \"\n";
     code << "    \"would read PAST THE END of nn_weights and fly on garbage. \"\n";
     code << "    \"REGENERATE with tools/nn2cpp -- never relax this.\");\n";
+    emitScaleSignature(code);
     // ⚠️ There is deliberately NO companion assert on the weight count against
     // NN_WEIGHT_COUNT. That would assert "this genome has the project's current
     // standard hidden widths", which is a different and weaker claim — it would
@@ -427,6 +473,7 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     code << "    \"was generated against a different nn_inputs.h, so the unrolled \"\n";
     code << "    \"forward pass would read PAST THE END of nn_weights and fly on \"\n";
     code << "    \"garbage. REGENERATE with tools/nn2cpp -- never relax this.\");\n";
+    emitScaleSignature(code);
     // (No companion weight-count assert — see the rationale at the same guard in
     // generateNNProgramCode above.)
     code << "\n";
