@@ -171,6 +171,20 @@ waiting for real hardware.
 > ~15 000× at flight rates; ego-motion registration removes the V² term and is worth ~75×, where NEON is
 > worth ~4×). Do them in this order — each is independently testable against `pan2.bcnr`.
 
+- [ ] T081 [US3] **SYNC-FIRST ACQUISITION** (operator, 2026-08-22) — see
+  [sync-first-acquisition.md](sync-first-acquisition.md). Split the synced and unsynced regimes and make
+  chip phase **receiver-global** rather than per-track (one emitter, one clock). Then:
+  **synced** = full-field phase-known matched filter at **0.39 ms**, run EVERY tick, broad + narrow
+  continuously; **unsynced** = one 24 ms full 31-phase × 2-code search, off-thread.
+  Cold acquisition becomes **258 ms window + 24 ms search = 283 ms, deterministic**, against a 400 ms bar
+  and today's measured 2.10–8.30 s lottery. Phase survives ~**65 s** blind (single-rate platform, pod 64 ppm
+  off nominal), so a beacon leaving and re-entering the field costs ONE 0.39 ms correlation.
+  **Evidence it works: `tools/oracle.py` is already this detector** and finds the beacon at q_rel ~5000 in
+  the very scenes where the blink detector ranks it 126th–230th.
+  ⚠️ Measure first: memory bandwidth (7.9 MB of bins touched per frame — `hipass M2` at 0.672 G op/s is the
+  warning that this is memory-bound, not MAC-bound) and the full-field false-alarm rate (makes T058
+  load-bearing). Does NOT fix the 1–2 °/s coherence limit; T050 still owns motion.
+  **Largely supersedes T080** — ranking only matters while seeding is a lottery.
 - [ ] T080 [US3] **Re-rank the acquisition detector: accumulated |Δ²| over ~8 frames** — the cheapest large
   win found so far, and it should be done BEFORE T071/T050 because it is ~30 lines and changes what those
   are measured against. Replace `acquire_pass`'s single inter-pass |Δ| on the reduce4 plane with a running
