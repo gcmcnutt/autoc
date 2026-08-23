@@ -487,7 +487,20 @@ capacity is not the constraint. Settled; reopen only on new evidence.
   ⛔ **BLOCKED until t7 finishes** — the override is a code change, and rebuilding overwrites `build/autoc`
   which live workers re-exec. Queued 2026-08-22, deliberately not started.
 
-## Phase 5 — HARDWARE LONG-LEAD ⭐ **STARTS NOW, IN PARALLEL WITH THE BAKE**
+## Phase 5 — HARDWARE LONG-LEAD ✅ **CLOSED 2026-08-22 — the flight article is ready to fly**
+
+> **P5-1 … P5-5 are DONE.** The accel is on the MSP wire, its convention is measured rather than argued
+> (three independent parsers, and INAV's own blackbox agreeing to **0.34 milli-g**), all four formerly-zero
+> NN channels are computed and bench-verified on flight hardware, and the flight article passed the
+> three-attitude check with the 170-vs-180 alignment concern cleared. **P4-3 (the flight) is unblocked.**
+> P5-6 (scale signature) is open and knowingly not blocking — see its note.
+> ⛔ Read the **TOOLCHAIN + FORMAT STATE** block below before touching flight tooling: the log format, the
+> `nn2cpp` CLI and the renderer all changed underneath this phase on 2026-08-22.
+> ⚠️ One thing deliberately left unresolved: the **control oscillation** seen on the bench (P5-5). It is
+> open-loop/off-distribution and probably not representative — but the sim-vs-bench comparison that would
+> prove that was declined in favour of flying, so it is the FIRST thing to run if the flight looks jittery.
+
+*(original header)* ⭐ **STARTS NOW, IN PARALLEL WITH THE BAKE**
 
 ➕ **Picking this up in a fresh context? Start at [`phase5-handoff.md`](phase5-handoff.md)** — verified
 environment state, the three previously-resolved traps, the ⛔ do-not-rebuild-autoc boundary while t7 bakes,
@@ -614,7 +627,7 @@ Several things changed underneath Phase 5 that are not tasks but WILL bite a fre
   computed there.
   ⛔ **A flight before P5-3 lands would fly a policy seeing ZEROS in four channels the sim trained with** —
   and `ACCEL_*` has been a silent zero on the xiao since 041 US4, so this is a pre-existing gap, not a new one.
-- [~] P5-4 **Regenerate ✅ / flash ⏳.** `nn2cpp` regenerated from gen 633
+- [X] P5-4 ✅ **DONE 2026-08-22 — regenerated, flashed, and running on the flight article.** `nn2cpp` regenerated from gen 633
   (`…2026-08-20T22:22:41.333Z/gen9367.dmp.zst`, fitness −77,698, `45->32->16r->3`, 2307 weights) and the
   firmware BUILDS (flash 45.5%, RAM 53.5%). Identity for the boot-banner check:
   `weight_id=4123bd342058553a`, `firmware_id=fb3866080c0df02d`, `arenaTemplate=[R=70 F=25 C=105]`.
@@ -625,7 +638,42 @@ Several things changed underneath Phase 5 that are not tasks but WILL bite a fre
   *(original)* Regenerate + flash: `tools/nn2cpp` from the P4-2 pinned genome, then the xiao build. The
   fail-loud `static_assert` in the generated file is what currently blocks the firmware, by design.
 
-- [~] P5-5 **FLIGHT ARTICLE GATE — steps 1 and 2 DONE 2026-08-22; step 3 (xiao flash) pending.**
+- [X] P5-5 ✅ **COMPLETE 2026-08-22 — FLIGHT ARTICLE IS READY TO FLY** (operator call after the prop-off
+  bench run below). All three steps done.
+  **Prop-off bench validation on the flight article** (run 3,
+  [`artifacts/bench-20260822/autoc-041-bench3-flightarticle-gen633-xiao-v4.bin`](artifacts/bench-20260822/autoc-041-bench3-flightarticle-gen633-xiao-v4.bin),
+  341 ticks, path 0 run to natural completion, 0 drops, 0 overruns):
+  * ⭐ **Quaternion ↔ accel agree to 0.8–3.5°.** At rest the accel must read the body-frame UP direction,
+    which the AHRS quaternion independently predicts. Two INAV outputs that travel different paths and meet
+    only at the xiao — this is the strongest end-to-end check available without flying. The airframe sat
+    nose-up 4.0° / left-wing-down 9.8°, and BOTH channels report that same attitude.
+  * **Command path verified faithful**: 95.6% of sent RC values appear EXACTLY in INAV's stream (zero-order
+    hold test, all three channels). ⚠️ **Index-convention trap**: the xiao sends MSP order, the blackbox
+    logs FLIGHT-DYNAMICS order (ROLL, PITCH, **YAW**, **THROTTLE**) — so throttle correctly appears at
+    `rcData[3]` and the constant 1500 at `rcData[2]` is uncommanded yaw, NOT a lost channel. `servo[0]/[1]`
+    sweep the full 1000–2000 µs, so the servos have full authority.
+  * **Es / bClR / sg all live on flight hardware.** Es 30.0 → 31.2 m tracking a 1.1 m altitude drift;
+    `sg = [0.09, 0.00, −0.01]` at engage, decaying as the rabbit departs.
+  * ⚠️ **`bClR` is NOISY on a bench (±0.6 m/s) and this is geometric, not a fault** — the craft sits
+    0.5–1.3 m from the arena axis and `boundaryClosureRate` divides by that horizontal radius, so ordinary
+    velocity noise is amplified near the centre. In flight the radius is tens of metres. Do not chase it.
+  * ⚠️ **CONTROL OSCILLATION observed and deliberately NOT resolved.** Roll reverses direction on 77% of
+    ticks (mean 175 µs/tick), pitch 69%, throttle at a rail 74% (the known throttle bang-bang).
+    Autocorrelation shows a period-2 (10 Hz) component riding a slow trend — lag-1 0.451 vs lag-2 0.937 on
+    roll, weaker on pitch. ⛔ **A STATIC BENCH IS AN OPEN LOOP AND FAR OFF-DISTRIBUTION**: airspeed reads
+    0.35 m/s against a 13 m/s training cruise, commands produce no state change, and the rabbit recedes to
+    48 m past where the gradient carries signal. A recurrent controller whose outputs do not move the world
+    will wind up and hunt, so this OVERSTATES what the air will look like. It is good evidence the plumbing
+    and servo authority are sound; it is weak evidence about flight control quality.
+    ➕ **The diagnostic that would settle it** (offered, declined 2026-08-22 in favour of flying): compare
+    the same genome's per-tick outputs in SIM via `dmp-dump` against this bench trace, using the per-axis
+    `dCtrl`/aggressiveness comparator from the 038 control-quality gate. If sim shows the same 10 Hz roll
+    component it is the policy; if sim is smooth it is the open loop. **Do this before blaming the policy
+    for anything seen in flight.**
+  * ➕ **Latency datum for `project_sim_latency`**: command → `rcData` median **40 ms**, but up to 17 ms of
+    that is blackbox sampling phase, so the true figure is **~23–40 ms**. The sim model assumes ~30 ms. Not
+    a blocker; worth a purpose-built measurement rather than this by-product.
+  *(original)* **FLIGHT ARTICLE GATE — steps 1 and 2 DONE 2026-08-22; step 3 (xiao flash) pending.**
   ✅ INAV `MATEKF722MINI` built + flashed (FC enumerates as `INAV_…_206132853456`, distinct from the bench
   board's `…203739535333`), payload confirmed 64 B. ✅ Three attitudes measured with `msp_state_probe.py
   --watch`: level `[+0.009, +0.038, −0.997]`, nose up `[+1.003, +0.048, −0.014]`, right wing down
@@ -646,7 +694,10 @@ Several things changed underneath Phase 5 that are not tasks but WILL bite a fre
      it ROTATES with attitude, so it does not average out in flight.
   3. Flash the xiao with the chosen flight genome; confirm the boot banner's `weight_id` is the intended one.
 
-- [ ] P5-6 **P2-9 scale signature in `nn2cpp`** (carried from the P2 list — restated here because it is a
+- [ ] P5-6 **P2-9 scale signature in `nn2cpp`** — ⚠️ **OPEN, and knowingly not blocking the first flight**
+  (operator 2026-08-22): the flown genome and firmware were generated from one tree in one session and the
+  boot banner's `weight_id`/`firmware_id` were checked against the intended build, so the hazard does not
+  apply to THIS article. It applies to the next re-flash of a snapshot genome. (carried from the P2 list — restated here because it is a
   flight-safety item, not a tooling nicety). `nn2cpp` bakes `weight_id` / `firmware_id` / arena / cone, but
   NOT the input scale constants (`kAccelScale_g`, `kGyroScale_radps`, `kTargetDistScale_m`, …). Those live
   in `nn_inputs.h` and are outside the hashed code text, so **a genome + different scales produces an
