@@ -199,6 +199,17 @@ waiting for real hardware.
   with small cep and low q is weak-but-located, and the right response is longer integration (the AGC loop
   already does this) rather than a wider aperture. Likely the dominant remaining cause of churn, and
   independent of the promotion gate: that one gets a track STARTED, this is what stops it STAYING.
+- [ ] T085 [US2] **Restore the min-energy gate — q has no floor and saturated lamps score arbitrarily high**
+  ([results/stage1-noise-ladder-rung1.md](results/stage1-noise-ladder-rung1.md)). `corr.c`'s
+  `quality_q8()` is a pure ratio `|corr|*256/energy`, and `devs()` guards only against division by zero
+  (`energy | 1`). On a **saturated flat** region the deviations collapse, energy → ~1, and noise-level corr
+  yields a high q — so a constant ceiling downlight, carrying no code whatsoever, promotes to CONFIRMED.
+  Measured on `rung1b.bcnr`: both decoys sit at mean 255.0 with **rms 0.00** while the beacon shows a proper
+  Gold line spectrum, and 101 of 1160 fixes landed on a lamp.
+  **The gate exists in both predecessors and was dropped in the C rewrite**: the s7 gateware has an explicit
+  min-energy gate, and `pi/beacon_track.py` has `--min-peak 150` ("noise ~20-60") applied as
+  `q >= qlock and pk >= min_peak`. Require an absolute correlation floor alongside the ratio. Cheap, and it
+  should remove the rung-1 bimodality outright.
 - [ ] T081 [US3] **SYNC-FIRST ACQUISITION** (operator, 2026-08-22) — see
   [sync-first-acquisition.md](sync-first-acquisition.md). Split the synced and unsynced regimes and make
   chip phase **receiver-global** rather than per-track (one emitter, one clock). Then:

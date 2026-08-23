@@ -1,61 +1,79 @@
 # Noise ladder — rung 1: bench lamp on (2026-08-22)
 
-Same geometry as rung 0, **only the bench lamp added**. The ladder immediately earned its keep: it exposed
-a real defect that a single measurement would have read as noise.
+Same geometry as rung 0, **only the bench lamp added**. The ladder found a real defect — but the
+investigation took four wrong turns first, and those are recorded below because the method failure is as
+instructive as the result.
 
-## The numbers, and the split that gave it away
+## The numbers
 
 | | rung 0 (dark) | **rung 1 (bench lamp)** |
 |---|---|---|
 | frame mean | 0.14 | 0.49 |
 | **K per pass** | **36** | **213** (×6) |
-| 60 s clip: first lock / present / q p50 | 0.30 s / **99 %** / 1.00 | 1.05 s / **97 %** / 1.00 |
+| 60 s clip: present / q p50 | **99 %** / 1.00 | 97 %, 92 % / 1.00 |
 | 5 × 15 s live: present | **93/96/95/95/97** | **51/60/87/87/77** |
 | 5 × 15 s live: q p50 | **1.00** every run | **0.43/0.94/0.98/0.99/0.98** |
 
-Rung 0 is metronomic. Rung 1 is **bimodal** — some runs are as good as dark, some are half that. The 60 s
-clip looks fine because it averages across both modes.
+Rung 0 is metronomic; rung 1 is **bimodal**. The 60 s clips look healthy because they average across both
+modes. In `rung1b`, **101 of 1160 fixes landed on a decoy** rather than the beacon.
 
-**Flicker was the obvious suspect and it is wrong.** An FFT of the frame mean shows no 120 Hz component in
-either rung (peaks at 27/47 Hz, rms 0.024 → 0.032, spectra essentially identical). A lamp flickering at
-mains-2f would land exactly on the 120 Hz chip rate, so this was worth ruling out — it is ruled out.
+## THE CAUSE: q has no energy floor, so a saturated flat lamp scores arbitrarily high
 
-## What is actually happening: the tracker locks onto a REFLECTION
+The decoys are **recessed ceiling downlights**, visible in an auto-exposure frame. Measured at the pixels
+the tracker actually reported:
 
-The beacon sits at M2 **(19, +30)** — that is what the 60 s clip tracks at q 1.00. The bad runs track a
-different object at M2 **(18, −78)**: same x, 108 px above, q only 0.43–0.58.
+| | mean | rms | |
+|---|---|---|---|
+| beacon | 157.1 | **104.8** | peaks at code harmonics k = 2, 3, 6, 7, 8, 12 × 3.871 Hz — textbook Gold spectrum |
+| downlight (179, 36) | **255.0** | **0.00** | constant, saturated |
+| downlight (355, 44) | **255.0** | **0.00** | constant, saturated |
 
-Same x, same code, weaker, offset in y — a **specular reflection** of the beacon off something above it.
+`corr.c`:
 
-In the worst run, of 189 fixes: **101 landed on the decoy and 88 on the beacon.** Up to 7 bank slots in use,
-and `BCN_F_MULTIPATH_SUSPECT` (0x10) present in the flags.
+```c
+static uint16_t quality_q8(int32_t corr, int32_t energy)
+{
+    int64_t q = ((int64_t)(corr < 0 ? -corr : corr) * 256) / energy;
+```
 
-## The mirror-pair rule is inverted for this geometry
+**q is a pure ratio**, and `energy` is the sum of per-bin deviations with only `| 1` guarding division by
+zero. On a **saturated flat** region the deviations collapse, `energy` → ~1, and **noise-level `corr`
+yields a high q**. That is why a constant lamp — which carries no code at all — reaches q ≥ 0.55 often
+enough to promote.
 
-`bank.c`'s T055 rule (spec §9): *two CONFIRMED tracks, same code → the geometrically **UPPER** (smaller y)
-keeps CONFIRMED, the lower is flagged MULTIPATH_SUSPECT.*
+**The C receiver has no min-energy gate. Both of its predecessors do:**
+- s7 gateware: an explicit *"min-energy gate"*
+- `pi/beacon_track.py`: `--min-peak 150`, documented as *"no LOCK unless correlation peak >= this (s7
+  min-energy gate; noise ~20-60)"*, and applied as `if q >= a.qlock and pk >= a.min_peak`
 
-That heuristic is right for the **flight** case — a beacon in the air reflecting off water or ground, where
-the ghost appears *below* the real source. On this bench the reflecting surface is *above* the emitter, so
-the ghost is upper — and the rule **promotes the reflection and demotes the real beacon**.
+So the gate was dropped in the C rewrite. Filed as **T085**: require an absolute correlation floor
+alongside the ratio, exactly as the gateware and the prototype do.
 
-Beacon at y = +30 (lower) → flagged as the suspect. Decoy at y = −78 (upper) → kept as truth. Exactly
-backwards, roughly half the time, which is precisely the bimodality measured above.
+## Four wrong turns, recorded so the method improves
 
-## What this means
+1. **Called it a specular reflection** on the strength of "same x, same code" — before checking whether
+   anything was even at that pixel.
+2. **Tested for lamp flicker on the frame mean.** A single small lamp cannot move a whole-frame average;
+   the test could not have detected what it was looking for. Worse, the peaks it *did* show (27/47 Hz) were
+   the **beacon's own code harmonics**, which I briefly read as ambient.
+3. **Searched `rung1.bcnr` for a decoy that is not in it.** The decoy fixes came from the *live* 15 s runs,
+   which were never recorded. Its patch is zero for all 60 s of that clip.
+4. **Mis-centred the analysis patch**, getting "flat" and "saturated 100 %" out of the same clip depending
+   on a few pixels of window — because "the decoy" is not one object. In the live run it was at native
+   (355, 44); in `rung1b` at **(179, 36)**. Different downlight each time.
 
-- **The rule is not wrong, its assumption is unstated.** "Upper is real" encodes *"the reflector is below
-  the emitter"*. That holds over water and ground; it fails wherever the reflector is overhead. The
-  assumption needs to be explicit, and the rule needs a discriminator that is not pure geometry.
-- **q is the available discriminator and it is decisive here** — 1.00 for the beacon against 0.43–0.58 for
-  the ghost. A reflection is attenuated by the surface, so the direct path is essentially always stronger.
-  Preferring higher q, with geometry as a tie-break, would pick correctly on this bench *and* still pick
-  correctly over water.
-- **This is why rung 1 looks bimodal rather than degraded.** K rising 36 → 213 did not blunt the tracker;
-  it gave a same-code ghost enough support to reach CONFIRMED, after which a geometric rule chose wrongly.
+The common thread: **inferring from a derived statistic instead of looking at the thing.** What finally
+worked was taking the tracker's own reported positions, cropping the image there, and reading `corr.c`.
+
+## What this does NOT show
+
+Earlier I claimed the mirror-pair rule (T055) was inverted for this geometry and was promoting a reflection
+over the beacon. **Withdrawn** — there is no reflection here, and no evidence the rule misfired. The
+`MULTIPATH_SUSPECT` flag seen in the flags was the rule doing its job on two same-code tracks; the defect is
+that one of those tracks should never have existed.
 
 ## For the remaining rungs
 
-Watch for the decoy explicitly — report **which object is being tracked**, not just q and present %. A run
-that is "50 % present at q 0.5" and a run that is "50 % present because it spent half its time on a ghost"
-look identical in the summary numbers and are completely different faults.
+Report **which object is tracked**, not just q and present %. A run that is "50 % present at q 0.5" and one
+that is "50 % present because half the time it sat on a lamp" are identical in the summary and are entirely
+different faults.
