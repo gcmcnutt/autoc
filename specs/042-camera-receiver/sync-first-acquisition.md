@@ -100,3 +100,71 @@ Re-acquisition after a lost track, an occlusion, or a field exit is then a **bro
 - **Phase must be re-verified, not assumed.** A 65 s validity window is a *drift* bound, not a correctness
   one — an emitter reset or a pod reflash invalidates it instantly and silently. Re-affirm continuously
   (§2.6 already wants this) and fall back to the cold search on sustained failure.
+
+---
+
+## Addendum 2026-08-22 — the pattern, after two operator corrections
+
+### Correction 1: my 65 s holdover figure was open-loop, and therefore wrong for a PLL
+
+**Operator**: *"We have a pll so if clocks are reasonably stable. We prob get more than 65 secs."* Correct.
+The 65 s came from the raw nominal-vs-actual offset (64 ppm) with **no correction at all**. A loop that
+estimates frequency **nulls that constant** — what remains is the *residual*:
+
+| residual frequency error | time to 0.5 chip of drift |
+|---|---|
+| 64 ppm (uncorrected — **today**) | 65 s |
+| 10 ppm | 7 min |
+| 1 ppm | **69 min** |
+| 0.1 ppm | 11.6 h |
+
+So holdover is **minutes to hours**, not a minute — *once a rate estimate exists*.
+
+**But it does not exist today.** The DPLL's rate half is deliberately **PARKED** (bench journal trap #4):
+two live attempts destabilised it — naive `dhz` walked 115→109 Hz, and the epoch-re-anchor repair sprayed
+112–129 Hz. Only phase adoption runs. So **today's real holdover IS the open-loop 65 s**, and the long
+figures above are the prize for un-parking it, not a current property.
+
+The unlock: the journal's own condition for revisiting was *"sim-first work against golden clips, never live
+tuning."* **That precondition is now met** — `pan2.bcnr` and the static clips are deterministic replay
+fixtures with fiducial ground truth at 0.18°. The rate loop can now be developed offline against a known
+answer, which is exactly what it lacked when it burned two attempts.
+
+### Correction 2: the camera is the sampler, and 42 % of frames straddle a chip edge
+
+**Operator**: *"since camera is sampler we need to continuously reduce on whatever edge we see. Carefully."*
+
+At 2.3992 frames per chip the frame grid and the chip grid are incommensurate, and the 120 Hz retune made
+the pattern **deterministic: 12 frames per 5 chips**. Within that cycle:
+
+- **5 of 12 frames straddle a chip boundary — 42 % of all samples.**
+- `track_frame()` currently **hard-assigns** each frame to one chip via `corr_chip_at()`, so a straddler can
+  put up to **50 % of its light in the wrong chip**.
+- Simply discarding straddlers costs **2.34 dB** of the word's 14.9 dB processing gain — not acceptable.
+
+The right treatment weights each frame by its overlap with the chips it spans. And the useful part:
+**the straddlers ARE the sub-chip phase discriminator.** A straddling frame's value is a mix of two chip
+polarities, and the mixing ratio says where the edge sits *within* the frame — sub-frame phase resolution
+from data already being collected. That is the "continuously reduce on whatever edge we see", and it is the
+natural error signal to drive the rate loop with.
+
+**"Carefully" is the operative word**: this discriminator is what the parked rate loop lacked, and feeding a
+loop from a noisy edge estimate is precisely how the last two attempts diverged.
+
+### The pattern
+
+**Temporal before spatial, and temporal is GLOBAL.** There is one emitter and one clock, so phase and rate
+are receiver-level state, not per-track. Spatial estimators then run inside a *solved* temporal frame —
+which is the operator's *"if we assume locked then motion should work well as predictors can work from
+there."* The predictor stops having to solve when-and-where simultaneously.
+
+Three temporal states, each with a different search:
+
+| state | what is known | search | cost |
+|---|---|---|---|
+| **UNSYNCED** | nothing | full field × 31 phases × 2 codes | 24 ms, once, off-thread |
+| **PHASE-LOCKED** | phase | full field, phase-known, broad + narrow | **0.39 ms every tick** |
+| **RATE-LOCKED** | phase + frequency | as above, plus **long holdover** through blind periods | same |
+
+Re-entry to the field, occlusion recovery and lost-track re-acquisition are all **broad hits in the
+phase-known regime**, never cold starts — as long as holdover has not expired.

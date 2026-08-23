@@ -171,6 +171,23 @@ waiting for real hardware.
 > ~15 000× at flight rates; ego-motion registration removes the V² term and is worth ~75×, where NEON is
 > worth ~4×). Do them in this order — each is independently testable against `pan2.bcnr`.
 
+- [ ] T082 [US3] **Sub-frame chip-edge handling, and the phase discriminator it yields** (operator,
+  2026-08-22: *"since camera is sampler we need to continuously reduce on whatever edge we see. Carefully."*)
+  At 2.3992 frames/chip the grids are incommensurate — the 120 Hz retune made the pattern deterministic at
+  **12 frames per 5 chips**, and within it **5 of 12 frames (42 %) straddle a chip boundary**.
+  `track_frame()` hard-assigns each frame to one chip, so a straddler puts up to **50 % of its light in the
+  wrong chip**; discarding them instead would cost **2.34 dB** of the word's 14.9 dB gain. Weight by overlap.
+  The payoff beyond SNR: **the straddlers ARE the sub-chip phase discriminator** — the mixing ratio of the
+  two polarities locates the edge *within* the frame. That is sub-frame phase resolution from data already
+  collected, and it is the natural error signal for T083.
+- [ ] T083 [US3] **Un-park the DPLL rate loop — SIM-FIRST** — the prize is holdover: 64 ppm uncorrected
+  gives 65 s to half-chip drift, but a 1 ppm residual gives **69 minutes**, which is what makes T081's
+  "beacon leaves and returns" case robust rather than marginal. The rate half is OFF today (journal trap #4;
+  two live attempts diverged — naive `dhz` walked 115→109 Hz, the epoch re-anchor sprayed 112–129 Hz).
+  **The journal's own condition for revisiting was "sim-first against golden clips, never live tuning", and
+  that precondition is NOW MET**: `pan2.bcnr` + the static clips are deterministic replay fixtures with
+  fiducial truth at 0.18°. Drive it from T082's discriminator, develop entirely offline, and do not go live
+  until it holds on all fixtures.
 - [ ] T081 [US3] **SYNC-FIRST ACQUISITION** (operator, 2026-08-22) — see
   [sync-first-acquisition.md](sync-first-acquisition.md). Split the synced and unsynced regimes and make
   chip phase **receiver-global** rather than per-track (one emitter, one clock). Then:
