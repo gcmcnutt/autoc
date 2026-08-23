@@ -75,8 +75,23 @@ void bank_tick(Bank *b, const BcnConfig *cfg)
     for (i = 0; i < b->max_slots; i++) {
         BankSlot *s = &b->slots[i];
         if (!s->used || s->role != BANK_ROLE_CANDIDATE) continue;
+        /* lock_health may VETO, not AFFIRM (2026-08-22). It used to have to clear lock_health_lock (0.60)
+         * for three consecutive ticks, and that is why acquisition was a lottery: measured on the golden
+         * clip, a candidate sitting at q=1.00 for 15 straight ticks had lh oscillating 0.34-0.66, so
+         * promote_streak reached 1 twice and reset — the track was measuring PERFECTLY and was
+         * structurally unable to be confirmed.
+         *
+         * This was already an internal contradiction. track.c removed lock_health from the DEMOTE path on
+         * 2026-08-19 for exactly this unreliability ("its per-chip sign test still dips on straddle even
+         * watching the peak pixel"), yet it was left gating PROMOTION, where a noisy statistic has to hit
+         * a HIGH bar three times running. Distrusted for demotion, required for promotion.
+         *
+         * Now it must merely not be actively contradicting — the DROP threshold, the same bar the rest of
+         * the lifecycle uses — while q, the trusted full-word statistic, does the affirming. When
+         * lock_health earns its vote (spec §2.6 wants it driving this — earned, not assumed) this goes
+         * back to lock_health_lock. */
         if (s->trk.state == TRK_CANDIDATE &&
-            s->trk.q_q8 >= cfg->q_lock_q8 && s->trk.lock_health_q8 >= cfg->lock_health_lock_q8) {
+            s->trk.q_q8 >= cfg->q_lock_q8 && s->trk.lock_health_q8 >= cfg->lock_health_drop_q8) {
             if (++s->promote_streak >= 3u) {
                 s->trk.state = TRK_CONFIRMED;
                 s->role = BANK_ROLE_PRECISION;
