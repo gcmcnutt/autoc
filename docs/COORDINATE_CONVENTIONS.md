@@ -520,6 +520,29 @@ Hand-held attitudes, n=20 averaged, `|a|` within 0.3% of 1 g throughout. The off
 angle (nose-up sits ~5° off vertical), not convention error — the sign and the carrying axis are
 unambiguous in all three.
 
+### ✅ FLIGHT ARTICLE VERIFIED 2026-08-22 — the alignment transform IS transparent
+
+`MATEKF722MINI` flashed with the same INAV change and measured through the same host probe. Different
+board, different `align_board_*`, **same numbers**:
+
+| pose | flight article (FRD g) | bench article (FRD g) | expected |
+|---|---|---|---|
+| level | `[+0.009, +0.038, −0.997]` | `[−0.011, −0.032, −0.997]` | `[0, 0, −1]` ✅ |
+| nose up | `[+1.003, +0.048, −0.014]` | `[+0.998, −0.023, −0.091]` | `[+1, 0, 0]` ✅ |
+| right wing down | `[+0.029, −1.003, −0.043]` | `[+0.001, −1.000, +0.003]` | `[0, −1, 0]` ✅ |
+
+⭐ **This is the point of applying alignment inside INAV before MSP**: two boards with different mounting
+corrections produce the same body-frame vector for the same physical attitude, so the consumer needs no
+per-board knowledge. Identical readings ARE the test.
+
+⭐ **The 170-vs-180 roll concern (auto-memory `project_board_alignment`) is CLEARED for this airframe.** A
+10° residual would leak ~0.17 g onto a wrong axis in at least one pose. **Largest off-axis component across
+all three poses: 0.048 g** (≈2.8°, i.e. hand-holding). Per-pose off-axis angle: 2.3° / 2.8° / 3.0°, at or
+better than the bench board's 1.9° / 5.4° / 0.2°.
+
+`|a|` reads 1.003–1.005 g on the flight board vs 0.997 on the bench — each board's own accel calibration,
+both inside 0.5%. The level pose held to a spread of 0.002–0.004 g over 30 s.
+
 ⚠️ **This certifies the BENCH board only.** Board alignment is applied inside INAV before MSP, so the
 flight FC (`MATEKF722MINI`, `align_board_roll` 170° vs 180° — see auto-memory `project_board_alignment`)
 must be re-measured after it is flashed. A 10° residual misalignment puts ~0.17 g of gravity on the wrong

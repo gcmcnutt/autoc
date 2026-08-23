@@ -51,19 +51,35 @@ def msp2_frame(cmd, payload=b""):
 
 
 def msp2_read(port, want_cmd, timeout=1.0):
-    """Return (payload, ok_crc) for the next reply matching want_cmd, or None."""
+    """Return (payload, ok_crc) for the next reply matching want_cmd, or None.
+
+    Tolerates the pyserial "readiness to read but returned no data" exception,
+    which is what CONTENTION looks like: another program (INAV Configurator is
+    the usual one) holding the same VCP and consuming bytes. Aborting the whole
+    capture for that would lose a pose the operator is holding by hand.
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if port.read(1) != b"$":
+        try:
+            if port.read(1) != b"$":
+                continue
+        except serial.SerialException:
+            time.sleep(0.02)
             continue
         if port.read(2) != b"X>":
             continue
-        head = port.read(5)
+        try:
+            head = port.read(5)
+        except serial.SerialException:
+            continue
         if len(head) != 5:
             continue
         flag, cmd, size = struct.unpack("<BHH", head)
-        payload = port.read(size)
-        crc_byte = port.read(1)
+        try:
+            payload = port.read(size)
+            crc_byte = port.read(1)
+        except serial.SerialException:
+            continue
         if len(payload) != size or len(crc_byte) != 1:
             continue
         crc = 0
@@ -72,6 +88,45 @@ def msp2_read(port, want_cmd, timeout=1.0):
         if cmd == want_cmd:
             return payload, crc == crc_byte[0]
     return None
+
+
+def watch(port, req, seconds):
+    """Sample continuously, printing one averaged line per second.
+
+    Each line is the mean of that second's samples plus a stability figure, so a
+    held pose is obvious (low spread) and the transitions between poses are
+    obvious too (high spread) -- which is what lets a sequence be segmented
+    afterwards without the operator narrating each change.
+    """
+    t_end = time.time() + seconds
+    print(f"{'t(s)':>6} {'FRD x':>8} {'FRD y':>8} {'FRD z':>8} {'|a|':>7} {'spread':>7}  n")
+    t0 = time.time()
+    while time.time() < t_end:
+        bucket, t_bucket = [], time.time() + 1.0
+        while time.time() < t_bucket:
+            port.reset_input_buffer()
+            port.write(req)
+            r = msp2_read(port, MSP2_AUTOC_STATE, timeout=0.4)
+            if r is None:
+                continue
+            payload, crc_ok = r
+            if not crc_ok or len(payload) != STATE_LEN:
+                continue
+            f = struct.unpack(STATE_FMT, payload)
+            a = f[17:20]
+            bucket.append((a[0] / 1000.0, -a[1] / 1000.0, -a[2] / 1000.0))  # FLU -> FRD
+            time.sleep(0.02)
+        if not bucket:
+            print(f"{time.time()-t0:6.1f}  (no valid samples -- port contention?)")
+            continue
+        n = len(bucket)
+        mean = [sum(b[i] for b in bucket) / n for i in range(3)]
+        spread = max(max(abs(b[i] - mean[i]) for b in bucket) for i in range(3))
+        mag = sum(v * v for v in mean) ** 0.5
+        print(f"{time.time()-t0:6.1f} {mean[0]:+8.3f} {mean[1]:+8.3f} {mean[2]:+8.3f} "
+              f"{mag:7.3f} {spread:7.3f} {n:3d}"
+              f"{'   <- HELD' if spread < 0.05 else ''}")
+    return 0
 
 
 def main():
@@ -84,11 +139,18 @@ def main():
                     help="samples to average (default: %(default)s)")
     ap.add_argument("--raw", action="store_true",
                     help="print every sample instead of the average")
+    ap.add_argument("--watch", type=float, metavar="SEC",
+                    help="continuous mode: sample for SEC seconds, printing a "
+                         "1 Hz rolling FRD reading. Use this to walk through "
+                         "several static attitudes in one capture.")
     args = ap.parse_args()
 
     with serial.Serial(args.port, args.baud, timeout=0.2) as port:
         port.reset_input_buffer()
         req = msp2_frame(MSP2_AUTOC_STATE)
+
+        if args.watch:
+            return watch(port, req, args.watch)
 
         first = True
         acc_sum = [0.0, 0.0, 0.0]

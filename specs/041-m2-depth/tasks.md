@@ -625,7 +625,17 @@ Several things changed underneath Phase 5 that are not tasks but WILL bite a fre
   *(original)* Regenerate + flash: `tools/nn2cpp` from the P4-2 pinned genome, then the xiao build. The
   fail-loud `static_assert` in the generated file is what currently blocks the firmware, by design.
 
-- [ ] P5-5 ⛔ **FLIGHT ARTICLE GATE — the only hardware gap left before flying.**
+- [~] P5-5 **FLIGHT ARTICLE GATE — steps 1 and 2 DONE 2026-08-22; step 3 (xiao flash) pending.**
+  ✅ INAV `MATEKF722MINI` built + flashed (FC enumerates as `INAV_…_206132853456`, distinct from the bench
+  board's `…203739535333`), payload confirmed 64 B. ✅ Three attitudes measured with `msp_state_probe.py
+  --watch`: level `[+0.009, +0.038, −0.997]`, nose up `[+1.003, +0.048, −0.014]`, right wing down
+  `[+0.029, −1.003, −0.043]` — matching the bench board pose-for-pose, which is exactly the transparency the
+  in-INAV alignment is supposed to give. ⭐ **The 170-vs-180 roll concern is CLEARED**: largest off-axis
+  component across all three poses is **0.048 g** (~2.8°, hand-holding) against the ~0.17 g a 10° residual
+  would produce. Full table in `docs/COORDINATE_CONVENTIONS.md` → "FLIGHT ARTICLE VERIFIED".
+  ⚠️ Port contention (INAV Configurator on the same VCP) shows up as pyserial "readiness to read but
+  returned no data"; the probe now rides through it rather than aborting a held pose.
+  *(original)* ⛔ **FLIGHT ARTICLE GATE — the only hardware gap left before flying.**
   1. Build + flash INAV `MATEKF722MINI` (clean build dir per target — `rm -rf build && mkdir build && cmake
      .. && make MATEKF722MINI`; **disconnect the GPS**).
   2. Re-run the three static attitudes on the FLIGHT board with
