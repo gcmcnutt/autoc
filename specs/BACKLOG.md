@@ -1,6 +1,11 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-08-16
+**Last Updated**: 2026-08-23
+
+> ✅ **041 CLOSED 2026-08-23** — [outcome](041-m2-depth/outcome.md). Best M1 ever (−81,413, +47% on the
+> all-time record), flown, with load and throttle saturation DOWN alongside. Cause was **input scaling**
+> (P2-8), not the objective or the ramp — both of which were tried first and refuted. Baseline of record:
+> [baseline.md](041-m2-depth/baseline.md). The 2–5 Hz oscillation is architectural and carries to **043**.
 
 > **Routing (2026-08-17)**: **041 rescoped** to *"a fresh full M1 toolchain, flown"* — better M1 with
 > energy observation + objective, unified datum, proven by a real flight. M2 moved to

@@ -308,7 +308,7 @@ Per task, before the implementation:
   `tests/selection_tests.cc`, **plus the muting guard**.
   Objective: `Ps`-based efficiency as a **lexicase axis**. ⛔ Never a scalar penalty; never without
   P2-2's energy input — an axis for an unobservable is what muted 035.
-- [ ] P2-6 [OP] Land it: `rebuild-perf.sh` with banners counted, Constitution VI audit.
+- [X] P2-6 [OP] Land it: `rebuild-perf.sh` with banners counted, Constitution VI audit.  ✅ clean rebuild-perf 2026-08-23: ctest 49/49, 0 failed
   ➕ **Partially prepared 2026-08-18 — here is what is already done and what is genuinely left.**
   * ✅ **Version bump**: `EvalResults` v3 → v4, `CEREAL_CLASS_VERSION` + `kSchemaVersion` + the anchor test
     all moved together.
@@ -729,7 +729,7 @@ Several things changed underneath Phase 5 that are not tasks but WILL bite a fre
 
 ## Phase 4 — BAKE AND FLY
 
-- [ ] P4-1 [OP] Pre-run gate (Constitution IX — launch via `scripts/train.sh`, never a background task),
+- [X] P4-1 [OP] Pre-run gate (Constitution IX — launch via `scripts/train.sh`, never a background task),  ✅ t7 launched via scripts/train.sh, clean build, ran 800/800
   then the production M1 bake.
   ⚠️ **Judge against AC-1's THREE parts, not fitness alone** (corrected 2026-08-18 — the previous wording
   said only *"judge on `pctInStreak` / `avgMaxStreak`"*, which is the fitness half and omits the actual
@@ -745,7 +745,7 @@ Several things changed underneath Phase 5 that are not tasks but WILL bite a fre
   ⚠️ Judged **subjectively at first** per AC-1 — no numeric thresholds until the strategy shows signal.
   ⚠️ Compare on the **charts against the pinned prior M1**, not a purpose-built controlled pair: large
   changes are visible in the ordinary report set (methodology note, Phase 0).
-- [ ] P4-2 [OP] ⭐ **RETAIN THE t7 BUILD IN S3 — this run is the baseline for M2 and camera work, not just
+- [X] P4-2 [OP] ⭐ **RETAIN THE t7 BUILD IN S3 — this run is the baseline for M2 and camera work, not just  ✅ DONE 2026-08-23: 800/800 objects retain=keep verified; MANIFEST + weights + as-run ini archived
   for 043.** Operator 2026-08-22: *"that m1 may likely be the baseline for m2 and camera work — we'll
   definitely want to retain this build in s3 once the run is done."* Scope grew accordingly: it was
   "pin + archive weights"; it is now **preserve the whole reproducible article**.
@@ -766,9 +766,9 @@ Several things changed underneath Phase 5 that are not tasks but WILL bite a fre
     later. ⚠️ The prior archive's physics columns turned out to be 4 ticks/scenario — check coverage on
     the way in this time, do not assume it.
   * **Hard dependency of**: 043, and now the M2 / camera baseline too.
-- [ ] P4-3 [OP] M1 flight → playback → energy validation. ⚠️ Remove the GPS before flashing; both targets,
+- [X] P4-3 [OP] M1 flight → playback → energy validation. ⚠️ Remove the GPS before flashing; both targets,  ✅ flight 2026-08-23 flown + decoded + energy-validated engaged-only
   bench first.
-- [ ] P4-4 Outcome doc: every hypothesis with its evidence, including the refuted ones.
+- [X] P4-4 Outcome doc: every hypothesis with its evidence, including the refuted ones.  ✅ [outcome.md](outcome.md) 2026-08-23
 
 ---
 
