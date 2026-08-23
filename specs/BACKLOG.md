@@ -4,8 +4,13 @@
 
 > **Routing (2026-08-17)**: **041 rescoped** to *"a fresh full M1 toolchain, flown"* — better M1 with
 > energy observation + objective, unified datum, proven by a real flight. M2 moved to
-> **[043](043-m2-tracking/README.md)**; camera/physics follow-ups to **042** (child of 031). Order:
-> **041 → 042 → 043**. ⚠️ M2 was never blocked by M2 work — it was blocked by M1: the source was not good
+> **[044](044-m2-tracking/README.md)**; camera/physics follow-ups to **042** (child of 031).
+>
+> ⭐ **REVISED 2026-08-23 after the 041-t7 flight**: a new **[043 ACRO dual-loop](043-acro-dual-loop/README.md)**
+> inserts BEFORE M2. The flight oscillates at 2-5 Hz, and the phase budget says an 81.6 ms loop delay at
+> 20 Hz cannot damp it — the 20 Hz ZOH and the actuator are 67% of it, the gyro filter only 8%. M2 would
+> inherit whatever control architecture M1 lands on, so the loop gets fixed first.
+> Order: **041 → 043 → 042 → 044** (042 and 043 are independent and can overlap). ⚠️ M2 was never blocked by M2 work — it was blocked by M1: the source was not good
 > enough, the objective could not observe energy, and the datum chain was unverified.
 >
 > *(Prior routing, 2026-08-06, 040 wrap)*: 040 closed — see [040 outcome](040-camera-redo/outcome.md).
