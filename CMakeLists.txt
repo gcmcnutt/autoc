@@ -217,6 +217,10 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(tracker_stepper_init_tests tests/tracker_stepper_init_tests.cc)
   target_link_libraries(tracker_stepper_init_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(shared_input_block_tests tests/shared_input_block_tests.cc)
+  target_link_libraries(shared_input_block_tests GTest::gtest GTest::gtest_main autoc_common)
+  add_test(NAME shared_input_block_tests COMMAND shared_input_block_tests)
+
   add_executable(nn_input_scaling_tests tests/nn_input_scaling_tests.cc)
   target_link_libraries(nn_input_scaling_tests GTest::gtest GTest::gtest_main autoc_common)
   add_test(NAME nn_input_scaling_tests COMMAND nn_input_scaling_tests)
