@@ -85,3 +85,50 @@ specifying against an unknown sensor.
   from span. That asymmetry is the whole M1↔M2 difference and should shape the input work.
 - **Contribution/weight screens mis-rank inputs in both directions** (041 TA01 got it wrong three times).
   Ablate the set you intend to remove; ablation is non-monotonic.
+
+---
+
+## ⛔ TWO GATES BEFORE ANY 043 RUN (added 2026-08-22)
+
+### Gate 1 — the 042 camera parameters must have LANDED
+
+Operator 2026-08-22: *"we will have some new camera params from the 042 modelling that occurs in parallel,
+so be sure before we start any 043 runs we've received the camera updates."*
+
+⛔ **Do not launch a 043 bake against the current camera model.** 042 is running in parallel and its output
+is a changed perception front-end. A bake started before those land is spent: its results are attributable
+to a camera model that no longer exists, and it cannot be compared to anything after.
+
+Check before launching: the 042 camera constants are merged, and `beacon_config.h` / the camera-projection
+parameters are the 042 values, not 040's.
+
+### Gate 2 — ⚠️ AUDIT THE 46 TRACKER-SPECIFIC INPUT SCALES
+
+⭐ **M2 inherits the shared block's normalization automatically and completely.** `TrackerInputs` embeds
+`CraftCommonInputs` (the same struct M1 uses), and `gather_tracker_inputs` calls the same
+`writeCraftCommonInputs`. So all 20 shared slots arrive with the 041 P2-8 scaling for free — quat,
+airspeed, gyro, accel, Es, boundary-closure, dist-to-boundary, inward-body, score-grad.
+
+⛔ **But P2-8 never touched the 46 tracker-specific slots, and at least two are explicitly raw.**
+`nn_inputs.h` says of `beacon_pair_span`: *"in RADIANS … with no scaling, no normalization, no clipping."*
+`span_rate` is raw rad/s.
+
+⚠️ **The magnitudes are in the danger band.** With the measured 0.772 m beacon separation, the pair
+subtends 0.154 rad at 5 m and 0.011 rad at 70 m — an implied spread of roughly **0.02–0.03**. That sits
+alongside `DIST_TO_BOUNDARY` (0.036), `SCORE_GRAD` (0.062) and `SPECIFIC_ENERGY` (0.090) — precisely the
+quiet band that 041 proved was **never selected on at all** until P2-8 rescaled it. On 041-t5, every
+input's weight investment sat flat at ~1.0 for 475 generations and the network never differentiated.
+
+⛔ **This is not a prediction; it is the same defect, one milestone over.** 041 spent three runs
+(t4/t5/t6) blaming the objective and the ramp before measuring the inputs. Do not repeat that. **Measure
+the tracker-input spreads on a real M2 tick set BEFORE the first 043 bake** and rescale by measured p95,
+the derivation already used for `kEnergyScale_m`, `kScoreGradScale` and the four P2-8 constants.
+
+⚠️ **Unmeasured as of this note.** The 040-t4 pre-break archive does not carry the beacon input columns
+(its `spP1/2/3`/`spdR` are the aux span-PREDICTOR OUTPUTS, not inputs), so the figures above are a physical
+estimate from the beacon geometry, not a measurement. Getting the real numbers needs a tracker `--csv-only`
+dump — cheap, and it is the first thing to do here.
+
+⭐ The durable fix is the backlog entry *"Formal input normalization — measured statistics, not
+hand-derived constants"* (specs/BACKLOG.md). If that lands first, both gates collapse into it and the
+tracker block can never drift raw again.
