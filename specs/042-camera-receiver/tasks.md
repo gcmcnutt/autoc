@@ -188,6 +188,17 @@ waiting for real hardware.
   that precondition is NOW MET**: `pan2.bcnr` + the static clips are deterministic replay fixtures with
   fiducial truth at 0.18°. Drive it from T082's discriminator, develop entirely offline, and do not go live
   until it holds on all fixtures.
+- [ ] T084 [US2] **Stop the scale ladder death-spiralling on weak-but-located tracks** — see
+  [results/stage1-lit60-validation.md](results/stage1-lit60-validation.md). The ladder widens when q is weak,
+  which is right when the beacon is LOST (a wider aperture is the only way to find it) and wrong when it is
+  PRESENT BUT WEAK, because §2.2's own arithmetic says binning costs **√k in background** — so widening cuts
+  SNR, which cuts q, which widens further. Measured on `lit60.bcnr`: the track churns across scales {0,1,2}
+  with q p10 **0.12**, against a morning clip that sat at scale {2} with q p10 0.92. Not saturation (0/617
+  fixes) and not background (this scene is *darker*: frame mean 2.1 vs 5.6).
+  The fix is to stop using q as the trigger for both conditions — **`cep` says lost, q says weak**. A track
+  with small cep and low q is weak-but-located, and the right response is longer integration (the AGC loop
+  already does this) rather than a wider aperture. Likely the dominant remaining cause of churn, and
+  independent of the promotion gate: that one gets a track STARTED, this is what stops it STAYING.
 - [ ] T081 [US3] **SYNC-FIRST ACQUISITION** (operator, 2026-08-22) — see
   [sync-first-acquisition.md](sync-first-acquisition.md). Split the synced and unsynced regimes and make
   chip phase **receiver-global** rather than per-track (one emitter, one clock). Then:
