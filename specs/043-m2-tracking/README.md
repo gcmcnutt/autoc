@@ -163,9 +163,24 @@ identically at any orientation (FR-002)."* Dividing by different constants makes
 read differently depending on whether the pair is horizontal or vertical — which is exactly the property the
 beacon-pair geometry depends on.
 
-⭐ **Scale both axes by ONE constant.** The larger half-FOV (0.849) maps H to ±1 and leaves V at ±0.63,
-preserving isotropy. A measured p95 of `|bearing|` over both axes jointly is the alternative, and matches
-the `kEnergyScale_m` / `kScoreGradScale` / P2-8 derivation.
+⭐ **Scale both axes by ONE constant — the larger half-FOV (0.849).** H maps to ±1, V to ±0.63, isotropy
+preserved. ⭐ Since FOV-transfer is explicitly not required (see the governing principle), tying the
+constant to the optic is fine and gives a guaranteed unit range; a new optic means a retrain, which is
+accepted. A measured joint p95 of `|bearing|` is the alternative if the beacons rarely reach the frame
+edge and the p95 is well inside the FOV.
+
+### ⭐ THE GOVERNING PRINCIPLE (operator 2026-08-22)
+
+> *"we want good searchable dynamic range, not human units of measure — so, if we change FOV we retrain
+> around that. no problem."*
+
+⛔ **This demotes an argument made below.** Proposal B was partly sold on *"dimensionally identical to M1's
+`DIST`"* — that is aesthetics, not conditioning, and it is not a reason to choose a transform. The only
+criterion is **does the GA get uniform, searchable resolution across the operating range**.
+
+⭐ **And it removes a constraint**: FOV-transfer is NOT a requirement. A genome may be tied to the FOV it
+trained on; changing the optic means retraining. That frees the bearings to be scaled by the half-FOV
+itself (see Trap 1), which guarantees unit range — the cost is only a retrain we have already accepted.
 
 ### ⛔ TRAP 2 — `beacon_pair_span` is a 1/distance cue, so linear rescaling barely helps
 
@@ -196,9 +211,29 @@ invisible case (span is substituted to 0.0 when either CEP ≥ `CepGateThreshold
 sentinel — "no range estimate" must be representable and distinguishable from "very far". `time_since_seen`
 already carries visibility, so the pairing is natural, but it must be designed, not left to a divide.
 
-⛔ **B is a REPRESENTATION change, not a normalization change. Do not bundle it with A.** 041's whole lesson
-was that two changes at once make a run unattributable — t4 moved the objective and the inputs together and
-cost three runs to untangle. If both are wanted, A first, then B as its own single-variable read.
+⭐ **PROPOSAL C (measured best on the stated criterion) — LOG SPACE.** Span covers a factor of 14 (1.15
+decades) over 5–70 m. Map `log(span)` to `[-1, +1]`. Measured resolution uniformity, max step ÷ min step
+across the working range (1.0 = perfectly uniform):
+
+| transform | uniformity | comment |
+|---|---:|---|
+| **A** linear `span / 0.154` | **14.7×** | most resolution spent inside 10 m |
+| **B** `range / 26` | **7.5×** | better, still biased to the far field |
+| **C** `log(span)`, normalised | **1.5×** | ⭐ uniform per **octave** of distance |
+
+⭐ **C is the right answer under the operator's criterion.** A 1/x cue spanning a decade wants a log
+transform: equal input deltas then correspond to equal *fractional* range changes, which is what tracking
+accuracy actually scales with — being 10 % off at 50 m and 10 % off at 5 m are comparable errors, and only
+C gives them comparable input deltas. A and B both spend most of their dynamic range on one end.
+
+⚠️ **C shares B's singularity** — `log(0)` at the CEP-gated invisible case — so the sentinel design is
+required either way, and is not a reason to prefer one over the other.
+
+⛔ **B and C are REPRESENTATION changes, not normalization changes. Do not bundle either with A.** 041's
+lesson was that two changes at once make a run unattributable — t4 moved the objective and the inputs
+together and cost three runs to untangle. If the appetite is there, go **straight to C** as a single
+variable and skip B: B was motivated by a dimensional-symmetry argument the governing principle above
+retires, and it measures worse than C on the criterion that survives.
 
 ### ⚠️ ALL OF THE ABOVE IS UNMEASURED
 
