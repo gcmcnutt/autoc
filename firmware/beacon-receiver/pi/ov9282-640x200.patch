@@ -1,0 +1,98 @@
+--- /tmp/claude-1000/-home-gmcnutt-autoc-beacon/98d7821b-781e-4359-a431-fda46b9c0661/scratchpad/ov9282.c.orig	2026-08-16 20:14:02.554832583 -0700
++++ /tmp/claude-1000/-home-gmcnutt-autoc-beacon/98d7821b-781e-4359-a431-fda46b9c0661/scratchpad/ov9282.c	2026-08-16 20:34:06.361425788 -0700
+@@ -290,6 +290,8 @@
+ #define MODE_1280_800		0
+ #define MODE_1280_720		1
+ #define MODE_640_400		2
++#define MODE_640_200		3
++#define MODE_640_300		4
+ 
+ #define DEFAULT_MODE		MODE_1280_720
+ 
+@@ -386,6 +388,41 @@
+ 	{0x4509, 0x80},
+ };
+ 
++/*
++ * 640x200 @ up to ~500 fps (beacon-tracker mode, autoc 031): identical to 640x400
++ * (h-skip 3/1 + v-bin 2 of the full array) but with a CENTERED vertical crop of 400
++ * sensor rows (top 200..599 of the 800-row array) -> 200 binned output rows. Full
++ * horizontal field is preserved; V field is halved. Frame rate is then set by VBLANK
++ * (LPFR) exactly as for the other modes -- with half the rows, ~2x the max fps.
++ */
++static const struct ov9282_reg mode_640x300_regs[] = {	/* EXPERIMENT: 640x392, tiny crop */
++	{0x3778, 0x10},
++	{0x3800, 0x00}, {0x3801, 0x00}, {0x3802, 0x00}, {0x3803, 0x00},
++	{0x3804, 0x05}, {0x3805, 0x0f},
++	{0x3806, 0x03}, {0x3807, 0x0f},		/* y_end = 783 -> 784 rows -> 392 out */
++	{0x3808, 0x02}, {0x3809, 0x80},
++	{0x380a, 0x01}, {0x380b, 0x88},		/* out height 392 (0x0188) */
++	{0x3810, 0x00}, {0x3811, 0x04}, {0x3812, 0x00}, {0x3813, 0x04},
++	{0x3814, 0x31}, {0x3815, 0x22},
++	{OV9282_REG_TIMING_FORMAT_1, 0x60}, {OV9282_REG_TIMING_FORMAT_2, 0x01},
++	{0x4008, 0x02}, {0x4009, 0x05}, {0x400c, 0x00}, {0x400d, 0x03},
++	{0x4507, 0x03}, {0x4509, 0x80},
++};
++
++static const struct ov9282_reg mode_640x200_regs[] = {	/* EXPERIMENT: full 800-row window, output-only 200 */
++	{0x3778, 0x10},
++	{0x3800, 0x00}, {0x3801, 0x00}, {0x3802, 0x00}, {0x3803, 0x00},
++	{0x3804, 0x05}, {0x3805, 0x0f},
++	{0x3806, 0x03}, {0x3807, 0x2f},		/* FULL window (as 640x400) */
++	{0x3808, 0x02}, {0x3809, 0x80},
++	{0x380a, 0x00}, {0x380b, 0xc8},		/* out height 200 only */
++	{0x3810, 0x00}, {0x3811, 0x04}, {0x3812, 0x00}, {0x3813, 0x04},
++	{0x3814, 0x31}, {0x3815, 0x22},
++	{OV9282_REG_TIMING_FORMAT_1, 0x60}, {OV9282_REG_TIMING_FORMAT_2, 0x01},
++	{0x4008, 0x02}, {0x4009, 0x05}, {0x400c, 0x00}, {0x400d, 0x03},
++	{0x4507, 0x03}, {0x4509, 0x80},
++};
++
+ /* Supported sensor mode configurations */
+ static const struct ov9282_mode supported_modes[] = {
+ 	[MODE_1280_800] = {
+@@ -449,6 +486,44 @@
+ 			.regs = mode_640x400_regs,
+ 		},
+ 	},
++	[MODE_640_200] = {
++		.width = 640,
++		.height = 200,
++		.hblank_min = { 890, 816 },
++		.vblank = 1022,
++		.vblank_min = 22,
++		.vblank_max = 51540,
++		.link_freq_idx = 0,
++		.crop = {
++			.left = OV9282_PIXEL_ARRAY_LEFT,
++			.top = OV9282_PIXEL_ARRAY_TOP,
++			.width = 1280,
++			.height = 800
++		},
++		.reg_list = {
++			.num_of_regs = ARRAY_SIZE(mode_640x200_regs),
++			.regs = mode_640x200_regs,
++		},
++	},
++	[MODE_640_300] = {
++		.width = 640,
++		.height = 392,
++		.hblank_min = { 890, 816 },
++		.vblank = 1022,
++		.vblank_min = 22,
++		.vblank_max = 51540,
++		.link_freq_idx = 0,
++		.crop = {
++			.left = OV9282_PIXEL_ARRAY_LEFT,
++			.top = OV9282_PIXEL_ARRAY_TOP,
++			.width = 1280,
++			.height = 784
++		},
++		.reg_list = {
++			.num_of_regs = ARRAY_SIZE(mode_640x300_regs),
++			.regs = mode_640x300_regs,
++		},
++	},
+ };
+ 
+ /**

@@ -159,3 +159,22 @@ measured, not argued.
 3. Beacon e⁻/frame vs range, bare cube — calibrates the 2.4×10⁹/r² constant.
 4. Warm/cold reacquire wall-clock through the NEON correlator vs the N/f_chip prediction.
 5. Parallax disparity noise vs range on the birded pair (b measured) — the endgame ranging curve.
+
+## MEASURED 2026-08-17 — gain series on the live scene (raw 10-bit DNG, 500 µs, 1.8 mm UNFILTERED)
+
+| gain | wall mean / σ | wall SNR | sky (window) |
+|---|---|---|---|
+| 1 | 125 / 9.6 | 13.1 | **saturated (1023)** |
+| 2 | 169 / 19.2 | 8.8 | saturated |
+| 4 | 261 / 38.2 | 6.8 | saturated |
+| 8 | 437 / 75.9 | 5.8 | saturated |
+| 16 | 770 / 143 | 5.4 | saturated |
+
+Two findings: (1) **σ ∝ gain exactly** → even a dim indoor wall at 0.5 ms is photon-noise dominated;
+read noise is invisible at any daylight level (as predicted) → **analog gain buys ZERO SNR against
+background — it only lifts a weak signal above read noise/quantization in the DARK far-field.** The AGC
+therefore splits: **exposure = the saturation/well-depth controller (near-field, sunny), gain = the
+read-noise controller (far-field, dark).** (2) **Unfiltered daytime sky pins the sensor at 10-bit full
+scale even at 500 µs** — the real sky-background number (empirical #1) can ONLY be measured through the
+850 filter; unfiltered outdoor operation isn't a degraded mode, it's no mode. Beacon headroom for
+reference: 90° off-axis @2 m, bench current, saturates the 8-bit rail down to ~500 µs (see HIGH-FPS-PLAN).

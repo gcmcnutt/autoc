@@ -1,4 +1,0 @@
-(sym_lib_table
-  (version 7)
-  (lib (name "beacon-pod")(type "KiCad")(uri "/home/gmcnutt/autoc-beacon/cad/beacon-pod/beacon-pod.kicad_sym")(options "")(descr "Custom symbols for 031-beacon-camera Phase 1 (LM3410X + other parts not in stock libs)"))
-)
