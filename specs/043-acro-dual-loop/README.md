@@ -202,5 +202,41 @@ those is enough before committing to the architecture change.**
 | *crrcsim `mod_inputdev` — link `autoc_common` instead of cherry-picking sources* | we are opening `inputdev_autoc.cpp` for item 5; the AWSSDK link fix (`17e6c3e`) already moved the parent in this direction |
 | *Type-Safe NN Sensor Interface* | item 4 edits the sensor interface; six stale-label bugs in 041 were all "a caller was not updated" |
 | *Simulator Sampling Time Variation* | the 20 Hz ZOH is 25 ms of the 81.6 ms budget — varying it is directly on-topic |
-| *460800 baud-raise (039 T021, closed-not-run)* | worth ~5 ms of the budget and still untested |
+| ⛔ *460800 baud-raise (039 T021, closed-not-run)* | worth ~5 ms — but **GATED on transport error visibility first**, see below |
 | ⚠️ *Renderer playback enhancements / streak overlay / X-display portability* | only if the renderer is genuinely opened; otherwise leave — 043 is a control-loop feature |
+
+## ⛔ GATE ON THE BAUD RAISE — transport errors are invisible today
+
+Operator 2026-08-23: *"baud raise should be gated on checksums on the transport of course."* Correct, and
+the situation is worse than "unmonitored".
+
+The CRC **is** verified — MSP v2 `crc8_dvb_s2` in `xiao/src/MSP.cpp`. But the failure path is:
+
+```cpp
+uint8_t checksum = _stream->read();
+if (checksumCalc == checksum) {
+    return true;
+}
+}          // <-- falls through to the outer while(1) and silently re-reads
+}
+```
+
+⛔ **A corrupt frame does not return false, does not increment a counter, and is not logged.** It loops and
+keeps reading until `_timeout`. So a transport error surfaces ONLY as a longer `fetch` time —
+indistinguishable from INAV's scheduler being slow. `fetch` max is already 27–34 ms against a 50 ms tick,
+so there is room to hide a lot of retries.
+
+⚠️ **Therefore raising the baud rate today could double the error rate and the only symptom would be
+fetch-time creep**, which reads as jitter. That is the same failure shape 041 hit six times: a real error
+rendered as something benign.
+
+**Gate, in order:**
+1. Count CRC failures, framing errors and timeouts; expose them in `SpanSummary` beside the existing
+   `PipelineStats` (they are already logged per span, so the carrier exists).
+2. Establish the error rate **at 115200** as the baseline — it may not be zero now.
+3. Only then raise to 460800, and compare error rate as well as latency.
+
+⭐ This also retro-fits the 039 T021 conclusion. It was closed **not-run** because *"115200 proved
+sufficient in flight (zero overruns)"* — but zero *overruns* is not zero *errors*, and with retries hidden
+inside `fetch` the two are not the same measurement. The lever is still unexercised, and now so is its
+safety check.
