@@ -1,0 +1,16 @@
+041 Study A — prior-m1
+source: specs/041-m2-depth/artifacts/pre-break/prior-m1-gen800-physics.csv.gz
+scenarios: 294   classified ticks: 132462
+  tracking     40935 ticks ( 30.9%)
+  intercept    50251 ticks ( 37.9%)
+  patrol       41276 ticks ( 31.2%)
+
+LOAD: ABSENT — this run predates 041 T039, so it carries no
+  ACCEL_* columns and no load can be reported. This is the
+  CONTROL HALF ONLY (T058). Do NOT substitute physicsTrace:
+  it covers ~1% of ticks and would misstate a peak.
+
+wrote: specs/041-m2-depth/study-a/prior-m1-regime-axis.csv
+       specs/041-m2-depth/study-a/prior-m1-regime-load.csv
+       specs/041-m2-depth/study-a/prior-m1-h2.csv
+       specs/041-m2-depth/study-a/prior-m1-autocorr.csv

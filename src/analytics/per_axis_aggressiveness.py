@@ -29,10 +29,42 @@ AXES = [("out_pt", "pitch", "tab:red"),
         ("out_rl", "roll", "tab:blue"),
         ("out_th", "throttle", "tab:green")]
 
-# Spec-gate per-axis budgets (sum-over-axes ≤ 0.80 dctrl / ≤ 2.00 amplitude),
-# the dashed "goal" lines — same as 034 so runs compare directly.
-DCTRL_BUDGET = 0.27   # ~ 0.80 / 3
-MAG_BUDGET = 0.67     # ~ 2.00 / 3
+# ============================================================================
+# SERVO-DEMAND REFERENCE LINES — provenance, because the name used to overstate
+# what these are (operator 2026-08-22: "it is a decent measure of how hard are
+# we pushing the servos. Maybe we rename.").
+#
+# ⛔ THEY ARE NOT A PHYSICAL LIMIT. Traced to the 027 go/no-go gate table
+# (specs/027-recurrent-nn/plan.md), which set them as RELATIVE improvement bars
+# against the `cadence7` controller:
+#     dCtrl  cadence7 ~1.00  ->  <= 0.80   "≥ 20 % reduction in stick speed"
+#     |out|  cadence7 ~2.20  ->  <= 2.00   "≥ 10 % reduction in saturation"
+# Nothing in them derives from servo slew limits, hinge moments or the airframe.
+#
+# ⚠️ THREE THINGS THE OLD "budget" LABEL IMPLIED AND SHOULD NOT HAVE:
+#   1. The baseline is obsolete — cadence7 was 10 Hz, feedforward, 33 inputs.
+#      Beating it is progress against a historical reference, not evidence of
+#      nearing a limit.
+#   2. The per-axis value is just sum/3. The 027 gate was on the SUM over axes,
+#      so one axis at 0.5 with two at 0.1 PASSES the real gate and fails the
+#      drawn line; three at 0.28 does the reverse.
+#   3. Equal thirds assume the axes are equivalent efforts. They are not —
+#      pitch and roll trade geometrically through the bank vector while
+#      throttle is decoupled (operator 2026-08-21). regime_control.py budgets
+#      the bank PAIR instead, which is the defensible grouping.
+#
+# ⭐ What they ARE good for, and why they stay: a consistent, comparable measure
+# of how hard the controller works the servos, on the same scale every run since
+# 027. An EMPIRICAL limit is what 041 P2-10 (variation-sweep eval) is meant to
+# establish; replace these references with that result rather than carrying the
+# 027-era target forward a fourth time.
+# ============================================================================
+SERVO_SLEW_REF = 0.27    # = 0.80 / 3 — 027 gate, cadence7 −20 % stick speed
+SERVO_DEFLECT_REF = 0.67  # = 2.00 / 3 — 027 gate, cadence7 −10 % saturation
+
+# Back-compat aliases (other modules / older invocations may import these).
+DCTRL_BUDGET = SERVO_SLEW_REF
+MAG_BUDGET = SERVO_DEFLECT_REF
 
 
 def load_csv(src):
@@ -73,7 +105,7 @@ def summarize(vals, label, budget):
     over = int(np.sum(vals > budget))
     print(f"  {label:8s} mean {np.mean(vals):.3f} ± {np.std(vals):.3f}   "
           f"p50/p95 {np.median(vals):.3f}/{np.percentile(vals, 95):.3f}   "
-          f"({over}/{n}={100*over/n:.0f}% over budget {budget})")
+          f"({over}/{n}={100*over/n:.0f}% over servo-demand ref {budget})")
 
 
 def main() -> int:
@@ -104,7 +136,7 @@ def main() -> int:
     print("  --- amplitude <|out|> per axis ---")
     for _, name, _ in AXES:
         summarize(aggr[name][1], name, MAG_BUDGET)
-    print(f"\n  Spec-gate per-axis budgets: dctrl ≤ {DCTRL_BUDGET}, "
+    print(f"\n  Servo-demand refs (027 gate, NOT a physical limit): slew ≤ {SERVO_SLEW_REF}, "
           f"amplitude ≤ {MAG_BUDGET}  (sum-over-axes ≤ 0.80 / ≤ 2.00)")
 
     # 6 panels: 3 axes × {dctrl, mag}. Matches 034.
@@ -114,7 +146,7 @@ def main() -> int:
         ax_d, ax_m = axes[i]
         ax_d.hist(dvals, bins=24, color=color, alpha=0.75, edgecolor="white")
         ax_d.axvline(DCTRL_BUDGET, color="gray", linestyle="--", linewidth=0.8,
-                     label=f"budget {DCTRL_BUDGET}")
+                     label=f"servo-slew ref {SERVO_SLEW_REF} (027)")
         ax_d.axvline(np.mean(dvals), color="black", linestyle="-", linewidth=0.8,
                      label=f"mean {np.mean(dvals):.3f}")
         ax_d.set_xlabel(f"{name} <|Δ|>")
@@ -124,7 +156,7 @@ def main() -> int:
 
         ax_m.hist(mvals, bins=24, color=color, alpha=0.75, edgecolor="white")
         ax_m.axvline(MAG_BUDGET, color="gray", linestyle="--", linewidth=0.8,
-                     label=f"budget {MAG_BUDGET}")
+                     label=f"servo-deflection ref {SERVO_DEFLECT_REF} (027)")
         ax_m.axvline(np.mean(mvals), color="black", linestyle="-", linewidth=0.8,
                      label=f"mean {np.mean(mvals):.3f}")
         ax_m.set_xlabel(f"{name} <|out|>")

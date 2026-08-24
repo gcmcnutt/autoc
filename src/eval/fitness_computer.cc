@@ -40,8 +40,12 @@ FitnessComputer::ScoreTerms FitnessComputer::decomposeStepScore(double along, do
 
     // Clamp angle at π/2 so ahead positions don't saturate the angle term —
     // the directional distance scale carries the ahead gradient.
-    constexpr double HALF_PI = M_PI / 2.0;
-    double angleClamped = (angle < HALF_PI) ? angle : HALF_PI;
+    // kHalfPi, not the obvious name: the Arduino core #defines that identifier,
+    // and this file is now compiled into the xiao firmware too (041 P5-3) so the
+    // objective's gradient has ONE definition rather than a firmware copy.
+    // Value-identical -- a rename, nothing numeric.
+    constexpr double kHalfPi = M_PI / 2.0;
+    double angleClamped = (angle < kHalfPi) ? angle : kHalfPi;
 
     // Directional distance scale: forgiving behind, sharp ahead.
     double distScale = (along <= 0.0) ? distScaleBehind_ : distScaleAhead_;
@@ -74,4 +78,50 @@ void FitnessComputer::resetStreak() {
     maxStreak_ = 0;
     totalStreakSteps_ = 0;
     maxMultiplier_ = 1.0;
+}
+
+// 041 P2-2 (FR-039) — see the derivation in fitness_computer.h.
+gp_vec3 FitnessComputer::scoreGradientWorld(const gp_vec3& offset,
+                                            const gp_vec3& tangent) const {
+    const double d = static_cast<double>(offset.norm());
+    if (d < 1e-6) return gp_vec3::Zero();  // at the rabbit: score is maximal
+
+    const double along = static_cast<double>(offset.dot(tangent));
+    double cosAngle = -along / d;
+    if (cosAngle > 1.0) cosAngle = 1.0;
+    if (cosAngle < -1.0) cosAngle = -1.0;
+    const double angle = std::acos(cosAngle);
+
+    // kHalfPi, not the obvious name: the Arduino core #defines that identifier,
+    // and this file is now compiled into the xiao firmware too (041 P5-3) so the
+    // objective's gradient has ONE definition rather than a firmware copy.
+    // Value-identical -- a rename, nothing numeric.
+    constexpr double kHalfPi = M_PI / 2.0;
+    const bool clamped = (angle >= kHalfPi);
+    const double angleClamped = clamped ? kHalfPi : angle;
+
+    const double distScale = (along <= 0.0) ? distScaleBehind_ : distScaleAhead_;
+    const double effDist = d / distScale;
+    const double effAngle = angleClamped / coneAngleRad_;
+    const double D = 1.0 + effDist * effDist + effAngle * effAngle;
+
+    // Radial part: (2d/S²)·û
+    const gp_vec3 u = offset / static_cast<gp_scalar>(d);
+    gp_vec3 grad = u * static_cast<gp_scalar>(2.0 * d / (distScale * distScale));
+
+    // Tangential part: (2θc/C²)·∇θ — zero where the angle is clamped, because
+    // the objective's own angle term is flat there.
+    if (!clamped) {
+        const double lateral = std::sqrt(std::max(0.0, d * d - along * along));
+        if (lateral > 1e-9) {
+            const gp_vec3 gradTheta =
+                tangent / static_cast<gp_scalar>(lateral) -
+                u * static_cast<gp_scalar>(along / (d * lateral));
+            grad += gradTheta * static_cast<gp_scalar>(
+                        2.0 * angleClamped / (coneAngleRad_ * coneAngleRad_));
+        }
+    }
+
+    // score = 1/D ⇒ ∇score = −(1/D²)·∇D, and `grad` above is ∇D.
+    return grad * static_cast<gp_scalar>(-1.0 / (D * D));
 }

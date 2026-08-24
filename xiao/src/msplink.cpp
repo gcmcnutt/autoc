@@ -3,6 +3,13 @@
 #include <embedded_pathgen_selector.h>
 #include <autoc/eval/sensor_math.h>
 #include <autoc/nn/nn_input_computation.h>
+// 041 P5-3 — the three channels the xiao used to zero. All three are computed
+// from the SAME shared code the sim producer uses, never re-derived here:
+// craft_observations.h writes Es + boundary closure, FitnessComputer owns the
+// score-gradient closed form, envelope_state.h owns the streak accumulator.
+#include <autoc/eval/craft_observations.h>
+#include <autoc/eval/envelope_state.h>
+#include <autoc/eval/fitness_computer.h>
 #include <autoc/imu/inav_quat_convention.h>
 #include <nn_program.h>
 #include <flight_log.h>
@@ -44,6 +51,13 @@ static int current_path_index = 0;
 // 039 US3 — binary flight-log span bookkeeping (flight_log_format.h).
 static uint16_t span_id_counter = 0;     // flight-unique, reset at arm
 static bool nn_warmup_tick = false;      // true for the first tick after engage (recurrent_reset marker)
+// 041 P5-3 — span-scoped streak accumulator feeding the SCORE_GRAD_* weight.
+// Same mechanics as the sim producer (autoc/eval/envelope_state.h): ms-based,
+// resets on envelope EXIT only.
+static autoc::eval::EnvelopeState score_envelope;
+// Carried tangent, mirroring the sim's stepScorePrevTangent_: on the last
+// segment (no i+1) the previous tangent is the honest answer, not zero.
+static gp_vec3 score_tangent_prev = gp_vec3::UnitX();
 
 // 039 T019 — DWT cycle count of one unrolled NN eval; measured once per boot
 // at the first eval (one number per firmware image), carried in every
@@ -317,14 +331,39 @@ static void consoleHeartbeat(bool hasServoActivation, int pathIdx)
     q.normalize();
   }
   gp_vec3 gyro = aircraft_state.getGyroRates();  // aerospace convention (rad/s)
+  // 041 P5-3 — specific force in body FRD g, exactly as the NN carrier holds it
+  // (UNSCALED; kAccelScale_g is applied at the slot write). |a| is the bench
+  // sanity check: ~1.00 at rest on a table, whatever the attitude.
+  gp_vec3 accel = aircraft_state.getSpecificForceG();
+  // The other three 041 channels. ⚠️ These read 0.00 until P5-3 part 2 computes
+  // them on the xiao — printing them is deliberate: a channel the policy is
+  // consuming as a constant zero should be VISIBLE on the bench, not something
+  // discovered post-flight from the log.
+  gp_scalar es = aircraft_state.getSpecificEnergy();
+  gp_scalar bclr = aircraft_state.getBoundaryClosureRate();
+  gp_vec3 sg = aircraft_state.getScoreGradBody();
+  // 041 P5-3 — Es / bClR / sg are produced ONLY inside the engaged tick path
+  // (they need the engage-resolved arena and the span's rabbit). When autoc is
+  // off they are not being computed, and printing the last engaged values makes
+  // stale numbers look live — the same dishonesty as printing a silent zero.
+  // Render them as "--" instead, which also shortens the disengaged line.
+  char chan[64];
+  if (state.autoc_enabled) {
+    snprintf(chan, sizeof(chan), "Es=%.1f bClR=%.2f sg=[%.2f,%.2f,%.2f]",
+             (double)es, (double)bclr, (double)sg.x(), (double)sg.y(), (double)sg.z());
+  } else {
+    snprintf(chan, sizeof(chan), "Es=-- bClR=-- sg=--");
+  }
   logPrint(INFO,
-           "hb: mspOK=%s pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro=[%.2f,%.2f,%.2f] armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d span=%u ticks=%lu drops=%lu",
+           "hb: mspOK=%s pos_raw=[%.2f,%.2f,%.2f] pos=[%.2f,%.2f,%.2f] vel=[%.2f,%.2f,%.2f] quat=[%.3f,%.3f,%.3f,%.3f] gyro=[%.2f,%.2f,%.2f] accel=[%.2f,%.2f,%.2f] |a|=%.2f %s armed=%s fs=%s servo=%s autoc=%s rabbit=%s path=%d span=%u ticks=%lu drops=%lu",
            state.autoc_state_valid ? "Y" : "N",
            pos_raw.x(), pos_raw.y(), pos_raw.z(),
            pos_rel.x(), pos_rel.y(), pos_rel.z(),
            vel.x(), vel.y(), vel.z(),
            q.w(), q.x(), q.y(), q.z(),
            gyro.x(), gyro.y(), gyro.z(),
+           accel.x(), accel.y(), accel.z(), accel.norm(),
+           chan,
            state.isArmed() ? "Y" : "N",
            state.isFailsafe() ? "Y" : "N",
            hasServoActivation ? "Y" : "N",
@@ -416,6 +455,64 @@ static void mspUpdateNavControl()
     gp_vec3 craftToTarget = targetPos - aircraft_state.getPosition();
     gp_vec3 target_local = aircraft_state.getOrientation().inverse() * craftToTarget;
     float dist_now = static_cast<float>(target_local.norm());
+
+    // ------------------------------------------------------------------
+    // 041 P5-3 — the three channels the xiao used to feed the NN as ZEROS.
+    //
+    // ⚠️ MIRRORS THE SIM PRODUCER, it does not re-derive it. The geometry here
+    // is the SEGMENT geometry (flight_path[i].start and the next segment),
+    // matching inputdev_autoc.cpp's score path — NOT the interpolated targetPos
+    // the direction-cosine inputs use. The two differ by less than one 0.4 m
+    // segment, but the gradient must describe the same rabbit the OBJECTIVE
+    // scored, or the policy is handed an uphill direction for a target the
+    // reward never used.
+    //
+    // Es and the boundary closure rate come from the shared writer so the
+    // energy datum and the containment floor are one number, not two.
+    {
+      autoc::eval::writeCraftObservations(aircraft_state, nnActiveArena());
+
+      const autoc::eval::ConeConstants& cone = generatedNNProgramConeConstants();
+      const FitnessComputer scorer(
+          cone.distScaleBehind, cone.distScaleAhead, cone.coneAngleDeg,
+          cone.streakThreshold,
+          std::max(1, static_cast<int>(cone.streakRampSec /
+                                       (MSP_LOOP_INTERVAL_MSEC / 1000.0))),
+          1.0 /* multiplier unused: raw step score only, as in the sim */);
+
+      gp_vec3 scoreGradBody = gp_vec3::Zero();
+      const int segIdx = current_path_index;
+      if (segIdx >= 0 && segIdx < (int)flight_path.size()) {
+        gp_vec3 rabbitSeg = flight_path[segIdx].start;
+        gp_vec3 segTangent = score_tangent_prev;
+        if (segIdx + 1 < (int)flight_path.size()) {
+          gp_vec3 t = flight_path[segIdx + 1].start - rabbitSeg;
+          const double tnorm = t.norm();
+          if (tnorm > 0.01) { segTangent = t / tnorm; score_tangent_prev = segTangent; }
+        }
+        const gp_vec3 offset = aircraft_state.getPosition() - rabbitSeg;
+        const double along = offset.dot(segTangent);
+        const double lateralDist = (offset - along * segTangent).norm();
+        const double stepScore = scorer.decomposeStepScore(along, lateralDist).score;
+
+        // One accumulator for the tick, advanced with the wall-clock interval
+        // (ms-based so a cadence change re-derives rather than rescales).
+        score_envelope.advance(stepScore >= cone.streakThreshold,
+                               static_cast<double>(MSP_LOOP_INTERVAL_MSEC));
+        const double multiplier =
+            1.0 + (cone.streakMultiplierMax - 1.0) *
+                      static_cast<double>(score_envelope.normalizedSecs(cone.streakRampSec));
+
+        // world -> body, the same convention as inwardBodyDirection. Stored
+        // RAW (unbounded); the gather applies tanh(norm/kScoreGradScale) with
+        // the direction preserved.
+        const gp_vec3 gradWorld = scorer.scoreGradientWorld(offset, segTangent);
+        scoreGradBody = (aircraft_state.getOrientation().inverse() * gradWorld) *
+                        static_cast<gp_scalar>(multiplier);
+      }
+      aircraft_state.setScoreGradBody(scoreGradBody);
+    }
+    // ------------------------------------------------------------------
 
     // Path tangent for singularity fallback (dist < 1e-4m)
     gp_vec3 posAhead = getInterpolatedTargetPosition(pathProvider, rabbit_odometer, 0.5f);
@@ -702,16 +799,27 @@ void mspUpdateState()
                  MAX_EMBEDDED_PATH_SEGMENTS);
       }
 
-      // 039 FR-001 — re-center the arena on the engage point (pure ±K rule)
-      // and zero the recurrent NN state (nn_reset) BEFORE the span goes live.
+      // 039 FR-001 — re-center the arena on the engage point and zero the
+      // recurrent NN state (nn_reset) BEFORE the span goes live.
+      //
+      // ⚠️ 041 P2-3: NOT a ±K rule any more. The band is asymmetric (+60 up /
+      // −10 down), so the up and down extents are resolved separately —
+      // a ±K placement would have given the aircraft ±35 m here: 25 m less room
+      // above than it trained with and 25 m more below, with every logged number
+      // looking entirely reasonable.
       engage_arena = autoc::eval::resolveEngageArena(
           generatedNNProgramArenaTemplate(), test_origin_offset);
       generatedNNProgramReset();
+      // 041 P5-3 — the streak accumulator is span-scoped, exactly like the
+      // recurrent state: a new engage starts cold, or the first ticks would
+      // inherit a multiplier earned before the span existed.
+      score_envelope.reset();
+      score_tangent_prev = gp_vec3::UnitX();
       logPrint(INFO,
-               "Engage: arena origin NED=[%.2f,%.2f,%.2f] floorZ=%.1f ceilZ=%.1f K=%.1f - NN state reset",
+               "Engage: arena origin NED=[%.2f,%.2f,%.2f] floorZ=%.1f ceilZ=%.1f up=%.1f down=%.1f - NN state reset",
                engage_arena.origin_ned.x(), engage_arena.origin_ned.y(),
                engage_arena.origin_ned.z(), engage_arena.floor_z_ned,
-               engage_arena.ceiling_z_ned, engage_arena.half_band_m);
+               engage_arena.ceiling_z_ned, engage_arena.up_m, engage_arena.down_m);
 
       // 039 US3 — EngageHeader with the RESOLVED arena (FR-001 provenance);
       // the first tick after this carries recurrent_reset = 1.
@@ -891,8 +999,32 @@ static bool performMspRequest(uint16_t command, void *buffer, size_t size)
   {
     return false;
   }
-  bool success = msp.request(command, buffer, size);
+  uint16_t recvSize = 0;
+  bool success = msp.request(command, buffer, size, &recvSize);
   releaseMspBusFromTask();
+
+  // 041 P5-1 — REJECT a short reply. MSP::recv zero-fills the tail of an
+  // undersized payload and still returns true, so a xiao flashed against
+  // un-upgraded INAV would read accel = [0,0,0] and say nothing: the policy
+  // would fly on four silent zeros it never trained with. That failure mode is
+  // exactly what this feature exists to end, so it must be loud.
+  //
+  // The test is >=, not ==, on purpose: trailing fields appended by a LATER
+  // INAV keep every existing offset valid and MSP::recv discards the surplus,
+  // which is the property that makes flashing INAV ahead of the xiao safe.
+  if (success && recvSize < size)
+  {
+    static unsigned long last_short_ms = 0;
+    unsigned long now_ms = millis();
+    if (now_ms - last_short_ms >= 1000)
+    {
+      logPrint(ERROR,
+               "*** MSP cmd 0x%04x SHORT REPLY: %u bytes, expected >= %u — FC firmware is older than this xiao build. Flash INAV.",
+               (unsigned)command, (unsigned)recvSize, (unsigned)size);
+      last_short_ms = now_ms;
+    }
+    success = false;
+  }
   return success;
 }
 
@@ -965,6 +1097,21 @@ void convertMSPStateToAircraftState(AircraftState &aircraftState)
     gp_scalar q = -static_cast<gp_scalar>(state.autoc_state.gyro[1]) * deciDegToRadS;  // pitch: NEGATE
     gp_scalar r = -static_cast<gp_scalar>(state.autoc_state.gyro[2]) * deciDegToRadS;  // yaw: NEGATE
     aircraftState.setGyroRates(gp_vec3(p, q, r));
+
+    // 041 P5-3 — body specific force, milli-g FLU on the wire → g FRD here.
+    // The SAME y/z flip as the quat's (w, x, -y, -z) and the gyro's pitch/yaw
+    // negation above: this is the third quantity through the one boundary, and
+    // it is deliberately the ONLY place the flip happens.
+    // Steady level flight therefore reads [0, 0, -1] here, matching what the
+    // sim stores via autoc/eval/specific_force.h. ⚠️ Do NOT "correct" that
+    // against INAV's bench table (+1 g on its normal axis) — that table is FLU.
+    // Bench-proven on the wire 2026-08-22; see COORDINATE_CONVENTIONS.md.
+    // Stored UNSCALED in g; kAccelScale_g is applied at the NN slot write.
+    const gp_scalar milliGToG = static_cast<gp_scalar>(0.001);
+    gp_scalar ax =  static_cast<gp_scalar>(state.autoc_state.accel[0]) * milliGToG;  // x fwd: no sign change
+    gp_scalar ay = -static_cast<gp_scalar>(state.autoc_state.accel[1]) * milliGToG;  // y: NEGATE (FLU left → FRD right)
+    gp_scalar az = -static_cast<gp_scalar>(state.autoc_state.accel[2]) * milliGToG;  // z: NEGATE (FLU up → FRD down)
+    aircraftState.setSpecificForceG(gp_vec3(ax, ay, az));
   }
 }
 

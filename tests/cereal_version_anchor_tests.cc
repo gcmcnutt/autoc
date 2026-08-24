@@ -15,13 +15,37 @@
 #include "autoc/rpc/protocol.h"
 #include "autoc/eval/aircraft_state.h"
 
-TEST(CerealVersionAnchor, EvalResultsAtVersion2) {
-    EXPECT_EQ(cereal::detail::Version<EvalResults>::version, 2u)
-        << "EvalResults schema version drifted from 2 (the M8a tracker-mode bump). "
-           "If this is intentional (e.g., a future v=3 schema), update this anchor "
-           "test alongside the CEREAL_CLASS_VERSION(EvalResults, ...) edit in "
-           "protocol.h. Do NOT bump intra-development per Constitution V + Session "
-           "2026-05-04 Q5.";
+// 041 P2-4 (2026-08-18) — re-anchored 3 → 4 at the second FR-005 contract
+// break of this feature: the input vector changed shape in BOTH modes
+// (42→45, 63→66), the tracker vector was REORDERED so the shared craft block
+// could become one sub-struct, and AircraftState gained Es / boundary-closure /
+// score-gradient. Milestone-boundary, which is the only kind Constitution V
+// permits — not intra-development churn.
+//
+// (041 T044, 2026-08-11, was the 2 → 3 bump: the grouped per-tick record, the
+// five US4 slots, and the US4 knobs on RecordedRunConfig.)
+//
+// The anchor did its job: it failed the moment the bump landed and named the
+// edit to make. That is the whole reason it exists, so it is re-anchored here
+// rather than loosened.
+TEST(CerealVersionAnchor, EvalResultsAtVersion4) {
+    EXPECT_EQ(cereal::detail::Version<EvalResults>::version, 4u)
+        << "EvalResults schema version drifted from 4 (the 041 P2-4 contract-break "
+           "bump). If this is intentional, update this anchor test alongside the "
+           "CEREAL_CLASS_VERSION(EvalResults, ...) edit in protocol.h AND "
+           "EvalResults::kSchemaVersion. Do NOT bump intra-development per "
+           "Constitution V + Session 2026-05-04 Q5.";
+}
+
+// 041 T044 — the reader-side constant and the cereal registration must agree.
+// protocol.h already static_asserts this; asserting it here too means a
+// one-sided edit fails in the test suite even if someone edits the assert.
+TEST(CerealVersionAnchor, EvalResultsReaderConstantMatchesCerealRegistration) {
+    EXPECT_EQ(cereal::detail::Version<EvalResults>::version,
+              EvalResults::kSchemaVersion)
+        << "EvalResults::kSchemaVersion (used by the fail-loud check in "
+           "serialize) disagrees with CEREAL_CLASS_VERSION. Every read would "
+           "throw, or none would.";
 }
 
 TEST(CerealVersionAnchor, AircraftStateAtVersion2) {

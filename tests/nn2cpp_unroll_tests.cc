@@ -61,12 +61,20 @@ int runCmd(const std::string& cmd, std::string& output) {
     return pclose(pipe);
 }
 
-// Fixture genome: 37 → 8 → 6r → 3, structurally the elite's shape
+// Fixture genome: NN_INPUT_COUNT → 8 → 6r → 3, structurally the elite's shape
+// but with narrow hidden layers so the generated file compiles fast.
+//
+// ⚠️ 041 P2-2: the INPUT width must be NN_INPUT_COUNT, not a literal. The
+// generated file now carries a fail-loud static_assert that its baked input
+// count matches the compiled NNInputs layout — the guard that catches a stale
+// generated file being flown — and this harness compiles the generated file for
+// real, so a literal here would trip that guard on every layout change and read
+// as a codegen bug rather than as the fixture being out of date.
 // (input → hidden → recurrent → output) but small enough to keep the
 // harness compiles fast. Deterministic LCG weights.
 NNGenome makeFixtureGenome() {
     NNGenome g;
-    g.topology = {37, 8, 6, 3};
+    g.topology = {NN_INPUT_COUNT, 8, 6, 3};
     g.recurrent = {0, 0, 1, 0};
     const int total = nn_weight_count(g.topology, g.recurrent);
     g.weights.resize(total);
@@ -164,16 +172,27 @@ class Nn2cppUnrollTest : public ::testing::Test {
         writeFile(dir_ + "/nn_program.h",
                   "#pragma once\n"
                   "#include <autoc/nn/evaluator.h>\n"
-                  "#include <autoc/eval/sensor_math.h>\n");
+                  "#include <autoc/eval/sensor_math.h>\n"
+                  // 041 P5-3 baked the cone into the emission, so the mirror
+                  // needs the header the real nn_program.h gained with it.
+                  "#include <autoc/eval/cone_constants.h>\n");
         writeFile(dir_ + "/harness_main.cpp", kHarnessSource);
     }
 
     // Generate code via the real nn2cpp binary.
     void generate(bool unrolled, const std::string& outCpp) {
         std::ostringstream cmd;
-        cmd << NN2CPP_BIN << " -i " << dir_ << "/fixture.dat"
+        // 041 P5-3 CLI: -w is the genome, -i is the ini the baked arena/cone
+        // constants come from (it used to be -i for the genome plus -a for the
+        // arch, which is what this call said until the nn2cpp link break was
+        // fixed and the test could actually run). The arch now rides in the
+        // genome, so there is nothing left for -a to say. ConfigManager exits
+        // on a missing ini and the suite runs from the build dir, so the path
+        // has to be absolute.
+        cmd << NN2CPP_BIN << " -w " << dir_ << "/fixture.dat"
+            << " -i " << AUTOC_SOURCE_DIR << "/autoc.ini"
             << (unrolled ? " -u" : "")
-            << " -a 80,5,100 -f nnGenerated -o " << outCpp;
+            << " -f nnGenerated -o " << outCpp;
         std::string out;
         int rc = runCmd(cmd.str(), out);
         ASSERT_EQ(rc, 0) << "nn2cpp failed:\n" << out;

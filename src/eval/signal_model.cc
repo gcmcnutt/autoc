@@ -49,8 +49,12 @@ SignalConfig hb1SignalConfig() {
     c.q_floor_db = static_cast<gp_scalar>(0.0);
     c.q_saturation_db = static_cast<gp_scalar>(20.0);
 
-    // A 0.772 m pair at 0.375°/px resolves to 5 px at ≈23.6 m, which is the
-    // ≈25 m separation-range reach the perception contract states. Below 5 px
+    // A 0.772 m pair at 0.304°/px resolves to 5 px at ≈29.1 m (it was ≈23.6 m
+    // at the retired 0.375°/px — the measured lens's finer pitch EXTENDS the
+    // separation-ranging reach, the one place the narrower field buys
+    // something). The perception contract's ≈25 m figure is the pre-041 pitch;
+    // the measured crossover, which includes quantisation and the off-centre
+    // mount, sits at ≈34 m. Below 5 px
     // the ±0.5 px quantisation is already >10% of the gap, so range inferred
     // from it is not usable — see the grid-convexity note in T026.
     c.separation_min_px = static_cast<gp_scalar>(5.0);

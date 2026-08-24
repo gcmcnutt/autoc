@@ -48,7 +48,13 @@ TEST(TickRescale, ClosingRateUsesActualLagDt) {
 
   // Positive = approaching; must recover the physical rate regardless of the
   // compiled control interval (the lag pair spans 100 ms at every rate).
-  EXPECT_NEAR(kClosingRate_mps, in.closing_rate, 1e-3);
+  //
+  // 041 P2-8 — the slot is now scaled by kClosingRateScale_mps, so multiply it
+  // back out before comparing. ⭐ Kept as physical-rate-times-scale rather than
+  // hard-coding 1.25: this test exists to guard the LAG DT (that the pair spans
+  // 100 ms at any cadence), and that property must stay readable independently
+  // of whatever the normalization constant happens to be.
+  EXPECT_NEAR(kClosingRate_mps, in.closing_rate * kClosingRateScale_mps, 1e-3);
 }
 
 TEST(TickRescale, EngageDelayTicksRateIndependent) {

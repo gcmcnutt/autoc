@@ -7,7 +7,22 @@
 #include "autoc/types.h"
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/eval/arena.h"   // 038 P0-D — FlightArena (cereal-free, xiao-safe) + inwardBodyDirection
+// 041 P2-6 — DESKTOP ONLY. fitness_decomposition.h pulls in rpc/protocol.h for
+// CameraViewSample, and protocol.h pulls in cereal, which does not exist in the
+// embedded toolchain. The xiao has no use for per-scenario fitness at all — it
+// flies a genome, it does not select one — so the include and the field it
+// serves are both fenced off rather than dragging the serialization layer onto
+// a microcontroller.
+//
+// ⚠️ This unblocks the xiao HOST COMPILE, which was failing at `fatal error:
+// cereal/cereal.hpp` before 041 P2 and independently of it. The firmware's
+// OTHER blocker — a generated NN file baked at 37 inputs against a 45-input
+// gather — is now a loud static_assert (nn2cpp) instead of a silent read past
+// the end of the weight array, and clears when the P4-1 bake produces a genome
+// to regenerate from.
+#ifndef ARDUINO
 #include "autoc/eval/fitness_decomposition.h"
+#endif
 
 // Neural network genome — the fundamental unit of neuroevolution.
 //
@@ -23,7 +38,9 @@ struct NNGenome {
     std::vector<int> topology;        // Layer sizes, e.g., {33, 32, 16, 3}
     std::vector<uint8_t> recurrent;   // Per-layer recurrent flag (0/1), same size as topology
     double fitness;                   // Aggregated fitness from evaluation
+#ifndef ARDUINO
     std::vector<ScenarioScore> scenario_scores;  // Per-scenario decomposed scores (015)
+#endif
     uint32_t generation;              // Generation when created
     float mutation_sigma;             // Per-individual mutation step size (self-adaptive)
     float variation_scale;            // computeVariationScale() at save time — eval uses directly
@@ -274,8 +291,39 @@ public:
     double telemetryActivationRatio() const;
     long long telemetrySampleCount() const;
 
+    // 041 T049 — NN input ablation mask: one byte per input slot of the active
+    // mode, 1 = force that column to 0.0. EMPTY (the default) means no ablation,
+    // which is every training path.
+    //
+    // ⚠️ Applied AFTER the gather and IMMEDIATELY BEFORE the forward pass, so
+    // the net sees exactly what the mask says and the recorded inputs describe
+    // what the net actually saw. Masking inside the gather would instead record
+    // the un-masked values, and every downstream analysis of an ablated run
+    // would silently describe a different network than the one that flew.
+    //
+    // ⚠️ A wrong-length mask is a HARD ERROR at the setter, not a silent
+    // truncate-or-pad: a mask one slot short would ablate the wrong column and
+    // the result would look like a finding.
+    void setInputMask(const std::vector<uint8_t>& mask, int expectedCount);
+    bool hasInputMask() const { return !input_mask_.empty(); }
+
 private:
+    // Zero the masked columns of a gathered input struct, in place. Templated
+    // because NNInputs and TrackerInputs are unrelated types over the same
+    // float-buffer contract; both are asserted to be exactly COUNT floats.
+    template <typename InputsT>
+    void applyInputMask(InputsT& inputs) const {
+        if (input_mask_.empty()) return;
+        float* raw = reinterpret_cast<float*>(&inputs);  // raw-ok: NN-byte-format buffer
+        const size_t n = std::min(input_mask_.size(),
+                                  sizeof(InputsT) / sizeof(float));
+        for (size_t i = 0; i < n; ++i) {
+            if (input_mask_[i]) raw[i] = 0.0f;  // raw-ok: NN-byte-format slot write
+        }
+    }
+
     const NNGenome& genome_;
+    std::vector<uint8_t> input_mask_;  // raw-ok: per-slot flag buffer; empty = no ablation
     autoc::eval::FlightArena arena_;   // 038 P0-D — config arena for pathgen (B) inputs
     std::vector<float> hidden_state_;  // Sized by nn_hidden_state_count(); empty for feedforward
     // 028: held by value; cheap, no allocation. Captures samples only when

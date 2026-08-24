@@ -270,6 +270,13 @@ struct msp_autoc_state_t {
                    // [0]=roll (right wing down = +), [1]=pitch (nose DOWN = +),
                    // [2]=yaw (nose LEFT = +). Consumer must negate [1] and [2]
                    // for standard aerospace RHR. See COORDINATE_CONVENTIONS.md.
+  int16_t accel[3]; // 041 P5-1: specific force in milli-g, from acc.accADCf
+                    // (board-alignment corrected, already in g on the FC).
+                    // INAV-native FLU: [0]=x forward, [1]=y LEFT, [2]=z UP.
+                    // Consumer applies the SAME y/z flip as the quat and gyro:
+                    // FRD = (+x, -y, -z). Bench-proven 2026-08-22 on
+                    // MAMBAF722_2022A, three static attitudes — see
+                    // COORDINATE_CONVENTIONS.md "MEASURED ON THE WIRE".
 } __attribute__ ((packed));
 
 // MSP_ALTITUDE reply

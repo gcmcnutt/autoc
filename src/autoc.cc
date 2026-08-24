@@ -37,6 +37,7 @@ From skeleton/skeleton.cc
 #include "autoc/eval/camera_variation.h"
 #include "autoc/eval/craft_variation.h"      // 034 US4 — craft-class draws
 #include "autoc/nn/mode.h"           // 030 M7a — getActiveModeStrategy
+#include "autoc/nn/input_mask.h"     // 041 T049 — --zero-input slot resolver
 #include "autoc/nn/population.h"
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
@@ -164,6 +165,18 @@ static void stampEvalResultsProvenance(EvalResults& results) {
     rc.enableHullCrashPenalty = cfg.enableHullCrashPenalty;
     rc.hullCrashPenaltyFactor = cfg.hullCrashPenaltyFactor;
     rc.oobCrashPenaltyWeight  = cfg.oobCrashPenaltyWeight;
+    // 041 T043 — US4 observation knobs, so the dmp says whether its ACCEL_* /
+    // envelope columns were populated or ablated.
+    rc.enableAccelInputs       = cfg.enableAccelInputs;
+    rc.accelScaleG             = cfg.accelScaleG;
+    rc.envelopeSpanLo          = cfg.envelopeSpanLo;
+    rc.envelopeSpanHi          = cfg.envelopeSpanHi;
+    rc.envelopeCentroidRadius  = cfg.envelopeCentroidRadius;
+    // 041 P2-4 — the arena the run was flown in. Same source the workers get
+    // (init.flightArena), so the recorded cylinder is the enforced one.
+    rc.flightArena.radius_m      = static_cast<gp_scalar>(cfg.flightArenaRadius);
+    rc.flightArena.floor_agl_m   = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
+    rc.flightArena.ceiling_agl_m = static_cast<gp_scalar>(cfg.flightArenaCeilingAGL);
 }
 
 // Compute (and cache) the scenarioSeed table once the per-run scenario
@@ -845,6 +858,11 @@ void newHandler()
 
 // Bridge config → mode lookup. Lives here (not in mode.cc) to keep mode.cc
 // free of the ConfigManager / AWS SDK dependency chain.
+// 041 T049 — ablation slot names from --zero-input, resolved to a mask in
+// buildWorkerInit once the mode is known. Empty = the unablated baseline, which
+// is every training run.
+static std::string gAblateSlots;
+
 static const ModeStrategy& getActiveModeStrategy() {
   return getModeStrategyByName(ConfigManager::getConfig().mode.c_str());
 }
@@ -925,6 +943,34 @@ static WorkerInit buildWorkerInit() {
     // 037 servo v2 — in-FDM servo model switch (PWM latch + slew); the
     // worker gates the fdm_larcsim servo block on it.
     init.servoModelEnabled = (cfg.servoModelEnabled != 0);
+
+    // 041 T035 (FR-018a) — the fitness cone, primed so the worker can score a
+    // tick IN the tick path rather than leaving it to be re-derived post-hoc.
+    // These have NO in-class defaults (Constitution VII): a plausible default
+    // would be invisible until a run had already scored hours against the wrong
+    // cone, which is exactly the shape the principle exists to stop.
+    init.fitDistScaleBehind = cfg.fitDistScaleBehind;
+    init.fitDistScaleAhead = cfg.fitDistScaleAhead;
+    init.fitConeAngleDeg = cfg.fitConeAngleDeg;
+    init.fitStreakThreshold = cfg.fitStreakThreshold;
+    init.fitStreakRampSec = cfg.fitStreakRampSec;
+    // 041 US4 ablation gates + accel scale (T068's matrix flips these).
+    init.fitStreakMultiplierMax = cfg.fitStreakMultiplierMax;  // 041 P2-2 — SCORE_GRAD_* weighting
+    init.enableAccelInputs = cfg.enableAccelInputs;
+    init.accelScaleG = cfg.accelScaleG;
+    // 041 T038 — M2 direct-perception envelope estimator thresholds.
+    init.envelopeSpanLo = cfg.envelopeSpanLo;
+    init.envelopeSpanHi = cfg.envelopeSpanHi;
+    init.envelopeCentroidRadius = cfg.envelopeCentroidRadius;
+    // 041 T049 — resolve --zero-input against THIS mode's slot names. Throws
+    // (listing valid names) on a typo, before any worker is primed.
+    const bool ablateTracker = (init.mode == Mode::TRACKER);
+    init.nnInputMask = autoc::nn::buildInputMask(gAblateSlots, ablateTracker);
+    if (!init.nnInputMask.empty()) {
+      *logger.info() << "#Ablation slots="
+                     << autoc::nn::describeInputMask(init.nnInputMask, ablateTracker)
+                     << std::endl;
+    }
 
     // 030 V1.5 — run-static scenario library shared by both modes.
     // generateSmoothPaths(gPathSeed) is byte-identical every gen, so we
@@ -1557,6 +1603,12 @@ static void runNNEvolution(
          << " avgMaxStreak=" << std::setprecision(1) << avgMaxStreak
          << " pctInStreak=" << std::setprecision(1) << pctInStreak
          << " stability=" << std::setprecision(2) << totalStability
+         // 041 P2-5 — `energy` is now METRES OF SPECIFIC ENERGY DESTROYED
+         // (Σ max(0, −Ps)·dt summed over scenarios), NOT the pre-041 convex
+         // throttle-command integral. Same column name, different quantity and
+         // different units: it is NOT comparable across the 041 boundary, and
+         // a cross-run plot that mixes the two is comparing throttle effort
+         // with energy waste.
          << " energy=" << std::setprecision(2) << totalEnergy
          << " whh_xh_ratio=" << std::setprecision(4) << whh_xh_ratio
          << " w_xh0_cv=" << std::setprecision(4) << blockStats.w_xh0_cv
@@ -1581,9 +1633,25 @@ static void runNNEvolution(
           case CrashReason::HullStrike:     cnt_hullStrike++; break;
         }
       }
+      // 041 P2-4 — split the `eval` bucket by WHICH BOUND was crossed. With the
+      // asymmetric band (+60 up / −10 down) "eval" alone cannot distinguish a
+      // deck that is too tight from a policy being baited down onto it, and
+      // those want opposite responses.
+      int cnt_egFloor = 0, cnt_egCeil = 0, cnt_egRadius = 0;
+      for (const auto& sc : bestScores) {
+        switch (sc.egress_kind) {
+          case autoc::eval::ArenaEgressKind::FLOOR:   cnt_egFloor++;  break;
+          case autoc::eval::ArenaEgressKind::CEILING: cnt_egCeil++;   break;
+          case autoc::eval::ArenaEgressKind::RADIUS:  cnt_egRadius++; break;
+          case autoc::eval::ArenaEgressKind::NONE:                    break;
+        }
+      }
       *logger.info() << "#GenCrash gen=" << gen
            << " hullStrike=" << cnt_hullStrike
            << " eval=" << cnt_eval
+           << " egFloor=" << cnt_egFloor
+           << " egCeil=" << cnt_egCeil
+           << " egRadius=" << cnt_egRadius
            << " sim=" << cnt_sim
            << " boot=" << cnt_boot
            << " timeLimit=" << cnt_timeLimit
@@ -1704,9 +1772,25 @@ int main(int argc, char** argv)
         std::cerr << "Error: -i option requires a filename argument" << std::endl;
         return 1;
       }
+    } else if (strcmp(argv[i], "--zero-input") == 0) {
+      // 041 T049 — ablation. Names resolve against the mode's metadata table;
+      // an unknown name is a hard error listing the valid set, never a silent
+      // no-op (a typo that ablated nothing would report "no effect", which is
+      // a finding-shaped lie).
+      if (i + 1 < argc) {
+        gAblateSlots = argv[i + 1];
+        i++;
+      } else {
+        std::cerr << "Error: --zero-input requires a comma-separated slot list"
+                  << std::endl;
+        return 1;
+      }
     } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
-      std::cout << "Usage: " << argv[0] << " [-i config_file]" << std::endl;
+      std::cout << "Usage: " << argv[0] << " [-i config_file] [--zero-input NAMES]" << std::endl;
       std::cout << "  -i config_file  Use specified config file instead of autoc.ini" << std::endl;
+      std::cout << "  --zero-input N1,N2  Ablate these NN input slots (force to 0.0" << std::endl;
+      std::cout << "                  every tick, after gather, before the forward pass)." << std::endl;
+      std::cout << "                  Names come from the mode's input metadata table." << std::endl;
       std::cout << "  -h, --help      Show this help message" << std::endl;
       return 0;
     }
@@ -2013,7 +2097,10 @@ int main(int argc, char** argv)
   // Generate initial paths using pre-fetched gPathSeed (single PRNG architecture)
   generationPaths = generateSmoothPaths(const_cast<char*>(cfg.generatorMethod.c_str()),
                                         cfg.simNumPathsPerGen,
-                                        SIM_PATH_BOUNDS, SIM_PATH_BOUNDS,
+                                        // 041 P2-3 — radius and HEIGHT are separate bounds now:
+                                        // the arena is not a cube and only the vertical is
+                                        // capped by the 400 ft site limit.
+                                        SIM_PATH_BOUNDS, SIM_PATH_HEIGHT_BOUNDS,
                                         gPathSeed);
 
   // DEBUG: Log segment counts for each path

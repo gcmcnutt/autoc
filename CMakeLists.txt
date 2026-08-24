@@ -24,6 +24,15 @@ add_library(inih STATIC
     ${inih_SOURCE_DIR}/cpp/INIReader.cpp
 )
 target_include_directories(inih PUBLIC ${inih_SOURCE_DIR} ${inih_SOURCE_DIR}/cpp)
+# 041 T005 -- raise inih's line cap. Upstream INI_MAX_LINE is 200 bytes, and a
+# LEGAL `key = value  # explanatory comment` exceeds it easily: 216 bytes on
+# `EnablePredictorHead = 1` plus its comment aborted startup once with no
+# diagnostic at all, costing a bisect. 041 adds several commented knobs, so the
+# trap would fire again. PUBLIC because ini.c sizes its stack line buffer from
+# this and INIReader.cpp must agree; 4096 is ~20x the observed failure and still
+# a trivial stack frame. Pairs with T006 -- if a line ever DOES exceed this, the
+# reader now names the line instead of failing mutely.
+target_compile_definitions(inih PUBLIC INI_MAX_LINE=4096)
 
 # cereal serialization (header-only, replaces Boost.Serialization)
 FetchContent_Declare(
@@ -110,7 +119,14 @@ add_library(autoc_common STATIC
     src/nn/telemetry.cc
     src/nn/mode.cc
 )
-target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen ${ZSTD_LIBRARY})
+# AWSSDK is PUBLIC (plain signature => propagates): config.cc's getS3Client() lives
+# in this library, so EVERY consumer of autoc_common needs the AWS symbols, not
+# just the ones that knowingly touch S3. Listing them per-target instead left
+# nn2cpp (and anything else added without the incantation) failing at link with
+# undefined Aws::* references. Yes, this makes nn2cpp drag in the SDK it never
+# calls -- the real fix is splitting the S3 client out of ConfigManager; until
+# then, correct-and-transitive beats per-target whack-a-mole.
+target_link_libraries(autoc_common inih cereal::cereal Eigen3::Eigen ${ZSTD_LIBRARY} ${AWSSDK_LIBRARIES})
 
 add_executable(autoc src/autoc.cc)
 add_executable(renderer tools/renderer.cc)
@@ -120,15 +136,15 @@ add_executable(source_dmp_inspect tools/source_dmp_inspect.cc)
 add_executable(tracker_dmp_inspect tools/tracker_dmp_inspect.cc)
 add_executable(dmp-dump tools/dmp_dump.cc)  # 035 FR-P02/P06
 
-target_link_libraries(autoc autoc_common ${AWSSDK_LIBRARIES})
-target_link_libraries(renderer autoc_common ${VTK_LIBRARIES} ${AWSSDK_LIBRARIES})
+target_link_libraries(autoc autoc_common)
+target_link_libraries(renderer autoc_common ${VTK_LIBRARIES})
 # 039 T032: -x mode reads the binary flight log (shared format header)
 target_include_directories(renderer PRIVATE xiao/include)
-target_link_libraries(nnextractor autoc_common ${AWSSDK_LIBRARIES})
-target_link_libraries(dmp-dump autoc_common ${AWSSDK_LIBRARIES})
+target_link_libraries(nnextractor autoc_common)
+target_link_libraries(dmp-dump autoc_common)
 target_link_libraries(nn2cpp autoc_common)
-target_link_libraries(source_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
-target_link_libraries(tracker_dmp_inspect autoc_common ${AWSSDK_LIBRARIES})
+target_link_libraries(source_dmp_inspect autoc_common)
+target_link_libraries(tracker_dmp_inspect autoc_common)
 
 if(ENABLE_AUTOC_TESTS)
   add_executable(nn_evaluator_tests tests/nn_evaluator_tests.cc)
@@ -144,7 +160,7 @@ if(ENABLE_AUTOC_TESTS)
   target_link_libraries(fitness_computer_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(fitness_decomposition_tests tests/fitness_decomposition_tests.cc)
-  target_link_libraries(fitness_decomposition_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(fitness_decomposition_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(selection_tests tests/selection_tests.cc)
   target_link_libraries(selection_tests GTest::gtest GTest::gtest_main autoc_common)
@@ -174,10 +190,10 @@ if(ENABLE_AUTOC_TESTS)
   target_link_libraries(nn_sensor_interface_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(source_dmp_loading_tests tests/source_dmp_loading_tests.cc)
-  target_link_libraries(source_dmp_loading_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(source_dmp_loading_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(source_dmp_s3_integration_tests tests/source_dmp_s3_integration_tests.cc)
-  target_link_libraries(source_dmp_s3_integration_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(source_dmp_s3_integration_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(beacon_projection_tests tests/beacon_projection_tests.cc)
   target_link_libraries(beacon_projection_tests GTest::gtest GTest::gtest_main autoc_common)
@@ -208,8 +224,24 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(tracker_stepper_init_tests tests/tracker_stepper_init_tests.cc)
   target_link_libraries(tracker_stepper_init_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  add_executable(shared_input_block_tests tests/shared_input_block_tests.cc)
+  target_link_libraries(shared_input_block_tests GTest::gtest GTest::gtest_main autoc_common)
+  add_test(NAME shared_input_block_tests COMMAND shared_input_block_tests)
+
+  add_executable(nn_input_scaling_tests tests/nn_input_scaling_tests.cc)
+  target_link_libraries(nn_input_scaling_tests GTest::gtest GTest::gtest_main autoc_common)
+  add_test(NAME nn_input_scaling_tests COMMAND nn_input_scaling_tests)
+
   add_executable(arena_tests tests/arena_tests.cc)
   target_link_libraries(arena_tests GTest::gtest GTest::gtest_main autoc_common)
+  # 041 P2-3 — arena_tests reads the crrcsim launch XMLs to check they agree with
+  # SIM_INITIAL_ALTITUDE, so it needs the repo root (same idiom as the ini tests).
+  target_compile_definitions(arena_tests PRIVATE AUTOC_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+  # 041 P2-3 — does the TRAINING GEOMETRY fit the arena? Links the real
+  # generateSmoothPaths and measures, rather than trusting a recorded number.
+  add_executable(arena_path_fit_tests tests/arena_path_fit_tests.cc)
+  target_link_libraries(arena_path_fit_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(trail_rabbit_tests tests/trail_rabbit_tests.cc)
   target_link_libraries(trail_rabbit_tests GTest::gtest GTest::gtest_main autoc_common)
@@ -236,11 +268,11 @@ if(ENABLE_AUTOC_TESTS)
 
   # 035 FR-P07 — shared S3 run-selector tests (pulls s3_run_selector.o → needs AWSSDK).
   add_executable(s3_run_selector_tests tests/s3_run_selector_tests.cc)
-  target_link_libraries(s3_run_selector_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(s3_run_selector_tests GTest::gtest GTest::gtest_main autoc_common)
 
   # 035 FR-P09 — zstd round-trip + ratio spike for the dmp boundary.
   add_executable(dmp_dump_tests tests/dmp_dump_tests.cc)
-  target_link_libraries(dmp_dump_tests GTest::gtest GTest::gtest_main autoc_common ${AWSSDK_LIBRARIES})
+  target_link_libraries(dmp_dump_tests GTest::gtest GTest::gtest_main autoc_common)
 
   # 035 FR-001b/R1 (US1) — convex throttle-energy metric.
   add_executable(energy_metric_tests tests/energy_metric_tests.cc)
@@ -252,6 +284,29 @@ if(ENABLE_AUTOC_TESTS)
 
   add_executable(tick_rescale_tests tests/tick_rescale_tests.cc)
   target_link_libraries(tick_rescale_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  # 041 T040 — semantics of the five A1 slots (envelope + specific force).
+  add_executable(envelope_accel_inputs_tests tests/envelope_accel_inputs_tests.cc)
+  target_link_libraries(envelope_accel_inputs_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  # 041 T042/T044a — regression guards on recording fidelity (both landed at 038).
+  add_executable(recording_fidelity_tests tests/recording_fidelity_tests.cc)
+  target_link_libraries(recording_fidelity_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  # 041 T049/T052 — ablation mask: name resolution + application.
+  add_executable(input_mask_tests tests/input_mask_tests.cc)
+  target_link_libraries(input_mask_tests GTest::gtest GTest::gtest_main autoc_common)
+
+  # 041 — training/eval ini agreement. Reads the production inis, so it runs
+  # from the repo root (WORKING_DIRECTORY below), not the build dir.
+  add_executable(ini_pair_consistency_tests tests/ini_pair_consistency_tests.cc)
+  target_link_libraries(ini_pair_consistency_tests GTest::gtest GTest::gtest_main)
+  # Reads the production inis, so it needs the repo root as an ABSOLUTE path.
+  # A WORKING_DIRECTORY on add_test alone would not do: the run_autoc_tests ALL
+  # target runs from the build dir and shares one working directory across every
+  # COMMAND, so the test has to be cwd-independent rather than cwd-configured.
+  target_compile_definitions(ini_pair_consistency_tests
+                             PRIVATE AUTOC_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
   # 037 T016 -- NN-layout round-trip + history-layout fail-loud.
   add_executable(nn_layout_tests tests/nn_layout_tests.cc)
@@ -306,6 +361,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME tracker_dmp_roundtrip_tests COMMAND tracker_dmp_roundtrip_tests)
   add_test(NAME tracker_stepper_init_tests COMMAND tracker_stepper_init_tests)
   add_test(NAME arena_tests COMMAND arena_tests)
+  add_test(NAME arena_path_fit_tests COMMAND arena_path_fit_tests)
   add_test(NAME trail_rabbit_tests COMMAND trail_rabbit_tests)
   add_test(NAME crash_hull_tests COMMAND crash_hull_tests)
   add_test(NAME derived_features_tests COMMAND derived_features_tests)
@@ -318,6 +374,10 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME energy_metric_tests COMMAND energy_metric_tests)
   add_test(NAME cadence_invariance_tests COMMAND cadence_invariance_tests)
   add_test(NAME tick_rescale_tests COMMAND tick_rescale_tests)
+  add_test(NAME envelope_accel_inputs_tests COMMAND envelope_accel_inputs_tests)
+  add_test(NAME recording_fidelity_tests COMMAND recording_fidelity_tests)
+  add_test(NAME input_mask_tests COMMAND input_mask_tests)
+  add_test(NAME ini_pair_consistency_tests COMMAND ini_pair_consistency_tests)
   add_test(NAME nn_layout_tests COMMAND nn_layout_tests)
   add_test(NAME nn2cpp_unroll_tests COMMAND nn2cpp_unroll_tests)
   add_test(NAME arena_recenter_tests COMMAND arena_recenter_tests)
@@ -342,6 +402,7 @@ if(ENABLE_AUTOC_TESTS)
             tracker_dmp_roundtrip_tests
             tracker_stepper_init_tests
             arena_tests
+            arena_path_fit_tests
             trail_rabbit_tests
             crash_hull_tests
             derived_features_tests
@@ -354,6 +415,10 @@ if(ENABLE_AUTOC_TESTS)
             energy_metric_tests
             cadence_invariance_tests
             tick_rescale_tests
+            envelope_accel_inputs_tests
+            recording_fidelity_tests
+            ini_pair_consistency_tests
+            input_mask_tests
             nn_layout_tests
             arena_recenter_tests
             nn2cpp_unroll_tests
@@ -365,6 +430,10 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND fitness_decomposition_tests --gtest_brief=1
     COMMAND cadence_invariance_tests --gtest_brief=1
     COMMAND tick_rescale_tests --gtest_brief=1
+    COMMAND envelope_accel_inputs_tests --gtest_brief=1
+    COMMAND recording_fidelity_tests --gtest_brief=1
+    COMMAND ini_pair_consistency_tests --gtest_brief=1
+    COMMAND input_mask_tests --gtest_brief=1
     COMMAND nn_layout_tests --gtest_brief=1
     COMMAND arena_recenter_tests --gtest_brief=1
     COMMAND nn2cpp_unroll_tests --gtest_brief=1
@@ -395,6 +464,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND tracker_dmp_roundtrip_tests --gtest_brief=1
     COMMAND tracker_stepper_init_tests --gtest_brief=1
     COMMAND arena_tests --gtest_brief=1
+    COMMAND arena_path_fit_tests --gtest_brief=1
     COMMAND trail_rabbit_tests --gtest_brief=1
     COMMAND crash_hull_tests --gtest_brief=1
     COMMAND derived_features_tests --gtest_brief=1

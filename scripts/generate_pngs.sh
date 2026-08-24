@@ -17,7 +17,7 @@
 # name (basename minus .log = the plot --label).
 #
 # Reports: m1 = evolution_progress, per_axis_aggressiveness, per_axis_time_series,
-#          dynamics_progress (4).  m2 = those + gen_diag + intercept_analysis +
+#          dynamics_progress, energy_progress (5).  m2 = those + gen_diag + intercept_analysis +
 #          predictor_analysis (038 US3 span/closure-predictor: per-horizon +
 #          closure-rate error over gens + latest-gen calibration/regime detail) +
 #          gen_runtime (log-only diversity/collapse proxy) + mode_progress (per-gen
@@ -64,11 +64,22 @@ if [[ "$MODE" == "m1" ]]; then BUCKET=autoc-m1; INI="$REPO/autoc.ini";         e
                                BUCKET=autoc-m2; INI="$REPO/autoc-tracker.ini"; fi
 [[ -f "$INI" ]] || die "config not found: $INI"
 
-# Control cadence (sec/tick) from the run's config — feeds intercept_analysis's
-# closing-rate m/s AND time-denominates the tick-based streak metrics
-# (avgMaxStreak, maxLost → seconds) so 20 Hz (50 ms) vs 10 Hz (100 ms) compare.
-CTRL_MSEC="$(grep -E '^[[:space:]]*ControlIntervalMsec' "$INI" | head -1 | sed -E 's/.*=[[:space:]]*([0-9]+).*/\1/')"
-[[ "$CTRL_MSEC" =~ ^[0-9]+$ ]] || CTRL_MSEC=50
+# Control cadence (sec/tick) — feeds intercept_analysis's closing-rate m/s AND
+# time-denominates the tick-based streak metrics (avgMaxStreak, maxLost →
+# seconds) so 20 Hz (50 ms) vs 10 Hz (100 ms) compare.
+#
+# 041 T009 — read it from the LOG, not the ini. autoc prints its resolved config
+# at startup, so the log states the cadence the run actually used; the ini states
+# the cadence the NEXT run would use. Re-plotting a historical 10 Hz log with
+# today's 20 Hz ini silently halved every duration in the report. The ini is only
+# a fallback for pre-config-print logs, and it says so out loud.
+CTRL_MSEC="$(grep -oE 'ControlIntervalMsec[ =:]+[0-9]+' "$LOG" | head -1 | grep -oE '[0-9]+$')"
+if [[ ! "$CTRL_MSEC" =~ ^[0-9]+$ ]]; then
+  CTRL_MSEC="$(grep -E '^[[:space:]]*ControlIntervalMsec' "$INI" | head -1 | sed -E 's/.*=[[:space:]]*([0-9]+).*/\1/')"
+  [[ "$CTRL_MSEC" =~ ^[0-9]+$ ]] || CTRL_MSEC=50
+  echo "  [warn] $LOG does not state ControlIntervalMsec; falling back to ${INI##*/} = ${CTRL_MSEC}ms." >&2
+  echo "         If this log predates the config print, confirm that is its real cadence." >&2
+fi
 TICK_SEC="$(awk "BEGIN{printf \"%.4f\", $CTRL_MSEC/1000.0}")"
 
 NAME="$(basename "$LOG" .log)"
@@ -134,10 +145,12 @@ if [[ "$USE_CACHE" == 1 ]]; then mkdir -p "$CACHE_DIR"; cp "$SUMMARY" "$CACHE"; 
 # new gens on a re-plot.
 DYN_CACHE=()
 PRED_CACHE=()
+ENERGY_CACHE=()
 if [[ "$USE_CACHE" == 1 ]]; then
   mkdir -p "$CACHE_DIR"
   DYN_CACHE=( --cache "$CACHE_DIR/${SAFE}__dmp${DSIG}_dynamics.csv" )
   PRED_CACHE=( --cache "$CACHE_DIR/${SAFE}__dmp${DSIG}_predictor.csv" )
+  ENERGY_CACHE=( --cache "$CACHE_DIR/${SAFE}__dmp${DSIG}_energy.csv" )
 fi
 
 run() { echo "  [plot] $1"; python3 "$AN/$@"; }
@@ -150,8 +163,69 @@ run per_axis_aggressiveness.py "$TICK" --label "$NAME" --gen "$GEN" \
     -o "$OUT/${NAME}_per_axis_aggressiveness.png"
 run plot_per_axis_time_series.py "$SUMMARY" --label "$NAME" --total-gens "$TOTAL_GENS" \
     -o "$OUT/${NAME}_per_axis_time_series.png"
+# regime_control (041, 2026-08-21) — the per-axis panels above pool every tick,
+# which cannot tell "quiet on patrol, works hard tracking" from "thrashes
+# uniformly"; same pooled mean, opposite verdicts. Groups pitch+roll as the bank
+# pair (they trade geometrically; roll alone changes no trajectory) and keeps
+# throttle separate, and measures attitude FRAME-FREE because ~30% of flight is
+# knife-edge or inverted where Euler bank angle is meaningless.
+run regime_control.py "$TICK" --label "$NAME" --gen "$GEN" \
+    -o "$OUT/${NAME}_regime_control.png"
+# g_load (041, 2026-08-22) — load factor as an aggressiveness measure. The
+# aggressiveness panels measure COMMAND effort; this measures the CONSEQUENCE,
+# and they can move opposite ways: t7 g559 pulls 4g+ with BELOW-average elevator
+# because airspeed is 24% higher (n goes as v²). Operator: "G load is another
+# form of aggressiveness measure."
+run g_load.py "$TICK" --label "$NAME" --gen "$GEN" \
+    -o "$OUT/${NAME}_g_load.png"
 run dynamics_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
     "${DYN_CACHE[@]}" --label "$NAME" -o "$OUT/${NAME}_dynamics_progress.png"
+
+# input_investment (041) — per-input first-layer weight norm over gens, plus
+# W_hh effective rank over gens and the curriculum ramp on a shared axis.
+# Answers "is evolution investing in the inputs we added?" continuously, where
+# the T068 ablation answers it definitively but only post-bake for one elite.
+# Mode-agnostic (pure weight analysis), so it lives in the COMMON set.
+# 2026-08-21 — NOW PER-GEN (stride 1), via an incremental cache. The old
+# stride*8 existed because one nnextractor+nn2cpp per gen is ~2.8 s, essentially
+# all S3 fetch. That is prohibitive once per RUN but trivial once per NEW GEN,
+# which is exactly the trick the run-summary already used. First report on a run
+# pays; every later one fetches only what has appeared since.
+#
+# ⭐ The cache also REPLACES the old --csv into $OUT. That wrote a recomputable
+# intermediate into the committed report directory, where it looked like a
+# deliverable; no other report does that with its internal metrics.
+if [[ -x "$REPO/build/nnextractor" && -x "$REPO/build/nn2cpp" ]]; then
+  # ⚠️ ramp-step is read with the same sed idiom as ControlIntervalMsec above,
+  # NOT by stripping non-digits from the line. The old awk did
+  # gsub(/[^0-9-]/,"",$2) over everything after the '=', so any digit in the
+  # trailing COMMENT was concatenated into the value: a dated note turned
+  # "0" into "00410-52026-08-18--1". Take the first number after '=' and stop.
+  # Cache key mirrors the run-summary's: run-id + dmp-dump build signature, so a
+  # tooling change invalidates rather than silently mixing old and new maths.
+  INVCACHE="$CACHE_DIR/${SAFE}__dmp${DSIG}_investment.csv"
+  run input_investment.py --run "$RUN" --gens "1-$GEN" --stride 1 \
+      -i "$INI" --label "$NAME" --total-gens "$TOTAL_GENS" \
+      --ramp-step "$(grep -E '^[[:space:]]*VariationRampStep' "$INI" | head -1 | sed -E 's/.*=[[:space:]]*(-?[0-9]+).*/\1/')" \
+      --cache "$INVCACHE" --tick-csv "$TICK" \
+      -o "$OUT/${NAME}_input_investment.png"
+else
+  echo "  [plot] input_investment skipped (needs nnextractor + nn2cpp)" >&2
+fi
+
+# energy_progress (041 P2-5) — the Es/Ps STATE over generations, not just the
+# scalar objective. plot_evolution_progress's energy panel plots one summed
+# number per gen, which cannot distinguish "energy improved because the policy
+# flies better" from "energy improved because the policy was MUTED" -- and those
+# look identical in a scalar. That distinction is AC-1's third part and it is
+# what 035 got wrong. Mode-agnostic (Es/Ps are in the shared craft block), so it
+# lives in the COMMON set.
+#
+# ⛔ Post-041 runs only: a pre-P2-4 dmp has no Es_m column and the script exits
+# loudly rather than plotting a gap that would read as "no energy destroyed".
+run energy_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
+    "${ENERGY_CACHE[@]}" --label "$NAME" --total-gens "$TOTAL_GENS" \
+    -o "$OUT/${NAME}_energy_progress.png"
 
 # --- m2 (tracker) adds: gen_diag, intercept_analysis (A/B-capable), rnn_capacity ---
 if [[ "$MODE" == "m2" ]]; then
@@ -216,7 +290,7 @@ if [[ "$MODE" == "m2" ]]; then
   if [[ -x "$REPO/build/nnextractor" && -x "$REPO/build/nn2cpp" ]]; then
     extract_nn() {  # <run-id> <out.cpp> ; returns 0 on success
       "$REPO/build/nnextractor" -k "$1" -o "$TMP/$2.dat" -i "$INI" >"$TMP/$2.err" 2>&1 \
-        && "$REPO/build/nn2cpp" -i "$TMP/$2.dat" -o "$TMP/$2.cpp" >/dev/null 2>&1
+        && "$REPO/build/nn2cpp" -w "$TMP/$2.dat" -i "$INI" -o "$TMP/$2.cpp" >/dev/null 2>&1
     }
     if extract_nn "$RUNID" elite; then
       CAP_ARGS=( --nn "$NAME:$TMP/elite.cpp" )

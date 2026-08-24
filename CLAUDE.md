@@ -1,6 +1,6 @@
 # autoc Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-07-28
+Auto-generated from all feature plans. Last updated: 2026-08-07
 
 ## Toolchains & Build Environment
 
@@ -51,6 +51,8 @@ decoder-gateware change.
 - xiao QSPI flash (2 MB log region, pre-erased ring, ground `ERASE:ALL`); new versioned (039-xiao-20hz-flight)
 - C++17 (autoc + crrcsim); Python 3.11 (analysis/plots only) + Eigen (vec3/quat), cereal (dmp + EvalData wire), inih (ini), GoogleTest, CRRCSim (040-camera-redo)
 - file-based — `data.dat` (per-tick trace), `data.stc` (per-gen), S3 `autoc-m2` / `autoc-eval` (040-camera-redo)
+- C++17 (autoc, crrcsim, tools), Python 3.11 (analytics only) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp serialization), inih (ini), (041-m2-depth)
+- file-based — `data.dat` (per-tick trace), `data.stc` (per-gen), per-mode S3 buckets (041-m2-depth)
 
 - C++17 + Eigen, cereal (serialization), inih (config), GoogleTest (015-nn-training-improvements)
 
@@ -69,10 +71,28 @@ tests/
 
 C++17: Follow standard conventions
 
+## Active feature — 041 m2-depth (specced, ready to implement)
+
+**Start here**: [`specs/041-m2-depth/tasks.md`](specs/041-m2-depth/tasks.md) — it opens with a READ-FIRST
+block giving the document order and which document governs. 109 tasks across 9 phases.
+
+Two things a fresh context should know before touching anything:
+- **`spec.md` § Clarifications governs.** 11 decisions across two clarify sessions live there, several
+  reversing earlier ones. `hypothesis.md` is the derivation-of-record but is **superseded where it
+  conflicts** (it says so at the top) — read it for *why*, never for *what*.
+- **T011a must precede T044.** The version bump makes the pinned comparator dmps unreadable; extract their
+  per-tick CSVs first or the prior-M1 baseline and the blind-gap distribution are lost permanently.
+
+Three build surfaces this feature, not two: autoc/crrcsim, xiao, and **INAV** (two targets — bench
+`MAMBAF722_2022A`, flight `MATEKF722MINI`, bench first; disconnect the GPS before flashing). **All
+gear-attached work sits in Phase 6**, triggered by a decent M1 read at T067 (operator decision 2026-08-10):
+INAV bring-up T001/T001a and the xiao board tasks T074/T075/T078. Xiao *host compiles* (T002 baseline, T046
+codegen, T045's gate) stay early — no board needed, and T045 compiles the generated forward pass.
+
 ## Recent Changes
+- 041-m2-depth: Added C++17 (autoc, crrcsim, tools), Python 3.11 (analytics only) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp serialization), inih (ini),
 - 040-camera-redo: Added C++17 (autoc + crrcsim); Python 3.11 (analysis/plots only) + Eigen (vec3/quat), cereal (dmp + EvalData wire), inih (ini), GoogleTest, CRRCSim
 - 039-xiao-20hz-flight: Added C++17 (autoc tools/desktop reader), C++ (xiao, PlatformIO arduino-mbed, + nn2cpp codegen (`tools/nn2cpp.cc`), xiao QSPI flash logger + BLE stack,
-- 038-accurate-m2: Added C++17 (autoc, crrcsim), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analytics) + Eigen (vec3/quat math), cereal (NN01 + EvalResults + dmp serialization), inih
 
 
 <!-- MANUAL ADDITIONS START -->

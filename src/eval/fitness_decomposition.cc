@@ -1,4 +1,5 @@
 #include "autoc/eval/fitness_decomposition.h"
+#include "autoc/eval/energy_state.h"   // 041 P2-5 — Ps, one definition shared with the input and the reader
 #include "autoc/rpc/protocol.h"
 #include "autoc/autoc.h"
 #include "autoc/util/config.h"
@@ -43,37 +44,28 @@ static_assert(kSpanPredictHorizonsMsec[0] % SIM_TIME_STEP_MSEC == 0 &&
 // NOT in the anonymous namespace: declared in the header so the tick-pairing
 // invariant can be asserted directly (see the header comment). It stays a plain
 // free function otherwise.
-gp_fitness computeSpanPredictionError(const std::vector<AircraftState>& states,
-                                      const std::vector<CameraViewSample>& cams) {
-    // ⚠️ THE TWO ARRAYS ARE NOT INDEX-PARALLEL (fixed 2026-08-02).
+gp_fitness computeSpanPredictionError(const std::vector<EvalTick>& ticks) {
+    // 041 T022 — THE OFFSET IS GONE. This function used to take two parallel
+    // vectors and reconcile them with `const int c = t - 1;  // <-- the offset`,
+    // because the state list carried a pre-loop initial state and the camera
+    // list did not. Pairing them 1:1 (038 US3 .. 2026-08-02) scored every
+    // prediction ONE TICK LATE on a live lexicase axis, and nothing asserted the
+    // pairing, which is why it survived two features.
     //
-    // `inputdev_autoc.cpp` pushes the INITIAL aircraft state once at scenario
-    // start, BEFORE any NN tick, while camera views only begin at tick 1. So a
-    // scenario records e.g. 368 states against 367 camera views, and
-    //
-    //     cams[j]  is the camera view recorded during tick  j + 1
-    //     states[k] is the state (and NN outputs) of tick    k
-    //     => tick k's camera view is cams[k - 1]
-    //
-    // Pairing them 1:1 — as this function did from 038 US3 until 2026-08-02 —
-    // scored every prediction against the span ONE TICK LATE: a +50 ms forecast
-    // was compared against the span two ticks ahead. That is a whole horizon of
-    // error on the shortest one, silently, on a LIVE lexicase axis. Nothing
-    // asserted the pairing, which is why it survived two features.
-    //
-    // Indexed by TICK below, so `span[k]` means "the span at tick k" and the
-    // horizon arithmetic downstream reads naturally.
-    const int N = static_cast<int>(states.size());
+    // Now there is one series. `ticks[t]` carries the state, its NN outputs, and
+    // the camera view FROM THE SAME TICK, so `span[t]` means "the span at tick
+    // t" by construction and the horizon arithmetic reads directly. The pre-loop
+    // initial state lives in ScenarioTicks::initialState and is not addressable
+    // here at all.
+    const int N = static_cast<int>(ticks.size());
     if (N < 2) return 0.0;
-    // realized span + CEP visibility per TICK (index 0 = the pre-tick initial
-    // state, which has no camera view and stays invisible).
+    // realized span + CEP visibility per TICK — one index, no reconciliation.
     std::vector<float> span(N, 0.0f);
     std::vector<char> vis(N, 0);
-    for (int t = 1; t < N; ++t) {
-        const int c = t - 1;  // <-- the offset
-        if (c >= static_cast<int>(cams.size())) break;
-        const auto& bl = cams[c].beacon_left;
-        const auto& br = cams[c].beacon_right;
+    for (int t = 0; t < N; ++t) {
+        if (!ticks[t].cameraView.has_value()) continue;   // pathgen, or no view
+        const auto& bl = ticks[t].cameraView->beacon_left;
+        const auto& br = ticks[t].cameraView->beacon_right;
         const bool gated = (bl.cep >= autoc::eval::kCepSentinelThreshold) ||
                            (br.cep >= autoc::eval::kCepSentinelThreshold);
         if (!gated) {
@@ -87,8 +79,8 @@ gp_fitness computeSpanPredictionError(const std::vector<AircraftState>& states,
     double err = 0.0;
     long pairs = 0;
     for (int t = 0; t < N; ++t) {
-        if (!vis[t] || !states[t].hasNNData()) continue;
-        const float* out = states[t].getNNOutputs();
+        if (!vis[t] || !ticks[t].state.hasNNData()) continue;
+        const float* out = ticks[t].state.getNNOutputs();
         for (int h = 0; h < kNumSpanPredictHorizons; ++h) {
             const int ta = t + (kSpanPredictHorizonsMsec[h] / SIM_TIME_STEP_MSEC);
             if (ta >= N || !vis[ta]) continue;
@@ -120,10 +112,10 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
     for (size_t i = 0; i < evalResults.pathList.size(); i++) {
         ScenarioScore result;
         std::vector<Path>& path = evalResults.pathList.at(i);
-        std::vector<AircraftState>& aircraftStates = evalResults.aircraftStateList.at(i);
+        std::vector<EvalTick>& ticks = evalResults.tickList.at(i).ticks;
         CrashReason& crashReason = evalResults.crashReasonList.at(i);
 
-        if (path.empty() || aircraftStates.empty()) {
+        if (path.empty() || ticks.empty()) {
             scores.push_back(result);
             continue;
         }
@@ -165,15 +157,17 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         // the worker; pathgen scenarios leave it empty. Branch on data presence
         // to avoid a separate mode field. Pathgen path below is unchanged
         // (bitwise-preserved against the M1 regression gate).
-        const bool is_tracker =
-            (i < evalResults.targetTrajectoryList.size()
-             && !evalResults.targetTrajectoryList.at(i).empty());
+        // 041 T022 — mode is now a property of the tick record itself: a
+        // tracker tick carries a target sample, a pathgen tick does not (absent,
+        // not zero-filled). Same "branch on data presence" as before, but the
+        // presence is per-record rather than a separate list's length.
+        const bool is_tracker = ticks.front().targetSample.has_value();
 
         // 030 M11.wrap T088 + 327-330 — tracker-mode diagnostics state. All
         // zero-initialized; bookkeeping happens only inside the is_tracker branch.
         int prevStreakCount = 0;
         std::vector<double> rangeSamples;
-        rangeSamples.reserve(aircraftStates.size());
+        rangeSamples.reserve(ticks.size());
         double prevRange = 0.0;
         double prevDRange = 0.0;
         bool haveDRange = false;
@@ -190,9 +184,14 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         int thrash_pt_count = 0, thrash_rl_count = 0;
         const double THRASH_THRESHOLD = 0.5;
 
-        int stepIndex = 0;
-        while (++stepIndex < static_cast<int>(aircraftStates.size())) {
-            auto& stepState = aircraftStates.at(stepIndex);
+        // 041 T022 — `tickIndex` is 0-BASED over the stepped ticks. The old
+        // `stepIndex` was 1-based into a state array whose slot 0 was the
+        // pre-loop initial state; every "- 1" below existed to undo that. The
+        // initial state now has its own name (ScenarioTicks::initialState) and
+        // is not in this loop at all.
+        for (int tickIndex = 0; tickIndex < static_cast<int>(ticks.size()); ++tickIndex) {
+            EvalTick& tickRecord = ticks.at(tickIndex);
+            auto& stepState = tickRecord.state;
 
             gp_vec3 aircraftPosition = stepState.getPosition();
             gp_vec3 rabbitPosition;
@@ -203,31 +202,24 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                 // Tracker: rabbit = trail-rabbit position trailing target's
                 // velocity vector (M7b); tangent = target velocity unit.
                 //
-                // ⚠️ THE TWO ARRAYS ARE NOT INDEX-PARALLEL, despite the comment
-                // that used to sit here saying they were "pushed in lockstep".
-                // They ARE pushed in lockstep inside the tick loop — but
-                // inputdev_autoc.cpp pushes the INITIAL aircraft state once
-                // BEFORE the loop, unconditionally. A scenario therefore records
+                // 041 T022 — the clamp that used to live here is DELETED, not
+                // relocated:
                 //
-                //     states = 1 + N      targets = N      (368 vs 367)
-                //     => targets[j] is the target during tick j + 1
+                //     int targetIndex = std::clamp(stepIndex - 1, 0, size - 1);
                 //
-                // `stepIndex` is a STATE index, so tick k's target is
-                // targets[k - 1]. Pairing 1:1 scored the chase at tick k against
-                // where the target was at tick k+1 — since 030.
+                // It existed because the state list carried a pre-loop initial
+                // state and the target list did not, so tick k's target sat at
+                // targets[k-1]. Pairing 1:1 scored the chase at tick k against
+                // where the target was at tick k+1 — ~0.85 m at cruise against a
+                // 3.048 m intended trail, a 28% error in the DEFINITION of the
+                // task, live since 030 and invisible in the data because
+                // CopiedTargetSample carries no timestamp.
                 //
-                // MAGNITUDE: 50 ms at ~17 m/s is ~0.85 m. The rabbit is meant to
-                // trail by TrailDistance = 3.048 m, so the effective trail was
-                // ~2.2 m: a 28% error in the DEFINITION of the task, not a
-                // rounding artefact.
-                //
-                // Invisible in the data — CopiedTargetSample carries no
-                // timestamp — so only the push sites could reveal it.
-                const std::vector<CopiedTargetSample>& targets =
-                    evalResults.targetTrajectoryList.at(i);
-                int targetIndex = std::clamp(stepIndex - 1, 0,
-                                             static_cast<int>(targets.size()) - 1);
-                const CopiedTargetSample& target = targets.at(targetIndex);
+                // The target now travels IN the tick record, so there is no
+                // index to get wrong and nothing to clamp. If a future reader
+                // finds themselves needing an offset here, the grouping is
+                // wrong — fix the grouping, do not re-add the offset.
+                const CopiedTargetSample& target = *tickRecord.targetSample;
                 rabbitPosition = target.trail_rabbit_position;
                 targetPosition = target.position;
                 gp_vec3 vel = target.velocity;
@@ -264,11 +256,18 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             gp_vec3 lateral = offset - along * tangent;
             double lateralDist = lateral.norm();
 
-            // Score this step. decomposeStepScore preserves computeStepScore's
-            // numerics bitwise (computeStepScore now delegates to it), so
-            // pathgen-mode regression-gate is unaffected.
+            // 041 T035 (FR-018a) — THE SCORE IS READ, NOT RE-DERIVED.
+            //
+            // `tickRecord.stepScore` was computed in the eval tick path, from
+            // this same AircraftState before it was serialized, so the number
+            // the policy is rewarded by and the number recorded for it to
+            // observe are one value rather than two implementations agreeing.
+            // The local geometry above is still computed because the
+            // ATTRIBUTION buckets below need the decomposed terms (distTermSq
+            // vs angleTermSq) — those are observation-only, carry no selection
+            // pressure, and are not what gets scored.
             auto terms = fc.decomposeStepScore(along, lateralDist);
-            double stepPoints = terms.score;
+            double stepPoints = static_cast<double>(tickRecord.stepScore);
             double multipliedScore = fc.applyStreak(stepPoints);
             // 037 T018 — ×kCadenceTickScale: per-tick samples of the
             // instantaneous geometry accumulate in 100 ms-tick-equivalent
@@ -289,7 +288,51 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                 // stability/energy totals stay cadence-invariant on the
                 // historical 10 Hz scale; ×1.0 bitwise no-op at 10 Hz.
                 stabilityAccum += ((abs_pt - 1.0) + (abs_rl - 1.0)) * kCadenceTickScale;
-                energyAccum    += throttleEnergyStep(static_cast<gp_fitness>(out[2])) * kCadenceTickScale;  // 035 FR-001b/R1 convex
+            }
+
+            // ================================================================
+            // 041 P2-7 — THE ENERGY AXIS IS BACK ON THROTTLE POWER.
+            // ----------------------------------------------------------------
+            // ⛔ REVERTS P2-5. That change replaced 035's convex throttle
+            // integral with "metres of Es destroyed", on the spec.md premise
+            // that *"every prior energy objective muted the whole regiment"*.
+            // ⚠️ THAT PREMISE IS CONTRADICTED BY 035's OWN OUTCOME DOC:
+            //
+            //   035/outcome.md: "M1 verdict: ENERGY WORKS (energy-lexicase, no
+            //   tracking collapse) ... throttle amplitude falling over the run:
+            //   mag_throttle 0.93 -> 0.72. The controller learned to spend less
+            //   throttle. Contrast the 034 energy-SCALAR run, which froze
+            //   throttle pinned at ~0.997 (a dead axis)."
+            //
+            // What muted was SCALAR aggregation (034 energy, 033 smoothness) --
+            // project_scalar_multiobjective_collapse. The LEXICASE throttle
+            // integral worked, and de-pegging throttle was its mechanism.
+            //
+            // The t4 bake reproduced the 034 failure exactly: throttle pinned at
+            // 1.000 on 100% of 129,732 ticks, pctInStreak 3.2% against a 30.9%
+            // baseline and a 41.5% best-ever.
+            //
+            // ⭐ WHY Es-DESTROYED CANNOT DO THIS JOB. It charges for the RESULT
+            // (energy lost), not the EXPENDITURE. Full throttle RAISES Es, so it
+            // is not merely uncharged -- it is rewarded. The only remaining way
+            // to lose energy is drag, measured at corr(load, destroyed) = +0.72,
+            // so the axis quietly became a penalty on MANOEUVRING: exactly
+            // backwards. Charging for power spent is the term that makes "high
+            // power costs" true, and it is the one with a 41.5%-streak record.
+            //
+            // ⚠️ Es/Ps are NOT retired -- 041's real contribution stands. Es
+            // remains an NN INPUT (the policy can finally observe its own energy,
+            // which TA03 showed it never could) and Ps stays recorded in the dmp
+            // and plotted by energy_progress.py. What changed is only that Es
+            // stopped being the SELECTION term, which it was never proven to be.
+            //
+            // 037 T018 -- kCadenceTickScale: per-tick contributions accumulate in
+            // 100 ms-tick-equivalent units so the total is cadence-invariant.
+            // x1.0 bitwise no-op at 10 Hz.
+            if (stepState.hasNNData()) {
+                const float* out2 = stepState.getNNOutputs();
+                energyAccum += throttleEnergyStep(static_cast<gp_fitness>(out2[2]))
+                               * kCadenceTickScale;  // 035 FR-001b/R1 convex
             }
 
             // 030 M11.wrap T088 + 327-330 — tracker-mode diagnostic
@@ -297,15 +340,13 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             if (is_tracker) {
                 // Visibility from chase camera observations (per tick).
                 bool left_vis = false, right_vis = false;
-                // Same tick offset as computeSpanPredictionError above:
-                // stepIndex is a STATE index and tick k's view is cams[k-1].
-                // Observation-only, so this was cosmetic — but leaving one of
-                // the two sites wrong is how the next reader concludes the
-                // pairing is 1:1.
-                if (i < evalResults.cameraViewList.size() && stepIndex >= 1
-                    && (stepIndex - 1) < static_cast<int>(evalResults.cameraViewList.at(i).size())) {
-                    const CameraViewSample& cv =
-                        evalResults.cameraViewList.at(i).at(stepIndex - 1);
+                // 041 T022 — was `cams[stepIndex - 1]` with a bounds test, the
+                // sibling of the target offset above. Same fix: the view rides
+                // in the record, so there is no pairing to state and none to
+                // get wrong. Absent (pathgen, or a tick with no view recorded)
+                // reads as not-visible, which is what absence means here.
+                if (tickRecord.cameraView.has_value()) {
+                    const CameraViewSample& cv = *tickRecord.cameraView;
                     left_vis  = (cv.beacon_left.cep  < autoc::eval::kCepSentinelThreshold);
                     right_vis = (cv.beacon_right.cep < autoc::eval::kCepSentinelThreshold);
                 }
@@ -324,7 +365,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                 // Range + closure (chase→target).
                 const double range = (aircraftPosition - targetPosition).norm();
                 rangeSamples.push_back(range);
-                if (stepIndex > 1) {  // need a previous range
+                if (tickIndex > 0) {  // need a previous range
                     double dRange = range - prevRange;
                     const double dt = SIM_TIME_STEP_MSEC / 1000.0;
                     double closureRate = -dRange / dt;  // positive = closing
@@ -390,9 +431,50 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         // Store result
         result.score = -accumulatedScore;       // Negate: lower = better
         result.stability_score = stabilityAccum; // Already negative; lower = better
-        result.energy_score = energyAccum;       // Already negative; lower = better
+        result.energy_score = energyAccum;       // 041 P2-7: convex throttle-power integral; >= 0, lower = better
         result.crashed = isCrash(crashReason);
         result.crashReason = crashReason;
+
+        // 041 P2-4 — attribute an egress to the bound it actually crossed.
+        //
+        // Re-checked from the TERMINAL recorded position against the RECORDED
+        // arena, which is why the arena had to become part of RecordedRunConfig:
+        // classifying against today's compiled default would silently re-label
+        // every historical run each time the arena moves, and it moved three
+        // times in one day.
+        //
+        // Only for CrashReason::Eval — that is the terminator arena egress maps
+        // to. A HullStrike or a TimeLimit is not an egress and must not be
+        // counted as one just because the final position happens to sit outside.
+        if (crashReason == CrashReason::Eval && !ticks.empty()) {
+            // ⚠️ NEAREST bound, not a re-run of checkArenaBounds.
+            //
+            // The first version called checkArenaBounds on the terminal state
+            // and reported NONE for every single egress — which read as
+            // "egFloor=0 egCeil=0 egRadius=0" in the per-gen line while the run
+            // was in fact dying on the deck 16 times out of 16. The recorded
+            // terminal state is the last SAMPLED one and sits marginally INSIDE
+            // the bound that tripped (measured 0.01–0.51 m above a 25 m deck),
+            // because the check and the state push happen at different points
+            // in the tick. A strict re-check is therefore the wrong question.
+            //
+            // ⛔ A diagnostic that silently reports "none of the above" is worse
+            // than no diagnostic: it looks like an answer.
+            const auto& fa = evalResults.runConfig.flightArena;
+            const gp_vec3 pos = ticks.back().state.getPosition();
+            const gp_scalar alt_agl = -(pos.z() + SIM_INITIAL_ALTITUDE);
+            const gp_scalar d_floor = alt_agl - fa.floor_agl_m;
+            const gp_scalar d_ceil = fa.ceiling_agl_m - alt_agl;
+            const gp_scalar d_radius =
+                fa.radius_m - std::sqrt(pos.x() * pos.x() + pos.y() * pos.y());
+            if (d_floor <= d_ceil && d_floor <= d_radius) {
+                result.egress_kind = autoc::eval::ArenaEgressKind::FLOOR;
+            } else if (d_ceil <= d_radius) {
+                result.egress_kind = autoc::eval::ArenaEgressKind::CEILING;
+            } else {
+                result.egress_kind = autoc::eval::ArenaEgressKind::RADIUS;
+            }
+        }
         result.steps_completed = simulation_steps;
         result.steps_total = static_cast<int>(path.size()) - 1;
         result.maxStreak = fc.getMaxStreak();
@@ -414,10 +496,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
             // on EnablePredictorHead in selection). Computed always for tracker
             // so it is recorded even when the axis is off; 0 if the camera trace
             // is missing.
-            if (i < evalResults.cameraViewList.size()) {
-                result.prediction_score = computeSpanPredictionError(
-                    aircraftStates, evalResults.cameraViewList.at(i));
-            }
+            result.prediction_score = computeSpanPredictionError(ticks);
             if (N > 0) {
                 result.tracker_diag.vis_frac = static_cast<float>(vis_count) / N;
                 result.tracker_diag.in_fit_ramp_frac = static_cast<float>(in_ramp_count) / N;

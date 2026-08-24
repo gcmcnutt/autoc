@@ -25,19 +25,29 @@ constexpr size_t tracker_meta_size() {
 
 TEST(NNSensorInterface, PathgenInputCountMatchesNNInputs) {
     // 038 FR-P0H (B): 33 → 37 (dist_to_boundary + inward_body xyz appended).
-    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 37);
+    // 041 US4: 37 → 42 (in_envelope + envelope_secs + accel xyz appended).
+    // 041 P2-2: 42 → 45 — a NET +3, not an append: IN_ENVELOPE and
+    // ENVELOPE_SECS are REMOVED (ablation: zeroing IN_ENVELOPE *improves*
+    // path-5 score by 0.3%, ENVELOPE_SECS costs 0.2%, both inside noise) and
+    // SPECIFIC_ENERGY, BOUNDARY_CLOSURE_RATE and SCORE_GRAD_X/Y/Z are added.
+    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 45);
     EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), NN_INPUT_COUNT);
-    EXPECT_EQ(pathgen_meta_size(), 37u);
+    EXPECT_EQ(pathgen_meta_size(), 45u);
 }
 
-TEST(NNSensorInterface, TrackerInputCountIs58) {
+TEST(NNSensorInterface, TrackerInputCountIs66) {
     // 030 M7a Session 2026-05-07 Q1: was 48 with HOME_X/Y/Z/HOME_DIST,
     // then 45 with single DIST_TO_BOUNDARY_ALONG_VEL.
     // 032 phase 1: 45 + 9 derived (span[6] + span_rate + tilt sin/cos) = 54.
     // 038 FR-P0H: 54 + 4 situational-awareness (time_since_seen + inward_body
     // xyz) = 58. (exit_dir sin/cos removed 038 US3 2026-07-05.)
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 58);
-    EXPECT_EQ(tracker_meta_size(), 58u);
+    // 041 US4: 58 + 5 (in_envelope + envelope_secs + accel xyz) = 63.
+    // 041 P2-2: 63 → 66, the SAME net +3 as pathgen — which is the point. The
+    // craft block is one struct now, so the modes cannot take different slot
+    // changes; 46 M2 target representation + 20 CraftCommonInputs = 66.
+    // ⚠️ Moves once more to 66 + N after T088 (FR-005a).
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 66);
+    EXPECT_EQ(tracker_meta_size(), 66u);
 }
 
 TEST(NNSensorInterface, PathgenMetaWellFormed) {
@@ -66,47 +76,95 @@ TEST(NNSensorInterface, PathgenAnchorPositions) {
     // Anchor a few enum positions against the NNInputs struct field layout
     // (= cereal byte order). If reordering is needed, this test forces an
     // explicit, traceable update — not a silent index shift.
+    //
+    // 041 P2-1/P2-2: 25 M1 target representation + 20 CraftCommonInputs = 45.
     EXPECT_EQ(static_cast<int>(PathgenInput::TARGET_X_TM5), 0);
     EXPECT_EQ(static_cast<int>(PathgenInput::TARGET_X_NOW), 5);
     EXPECT_EQ(static_cast<int>(PathgenInput::TARGET_Y_TM5), 6);
     EXPECT_EQ(static_cast<int>(PathgenInput::TARGET_Z_TM5), 12);
     EXPECT_EQ(static_cast<int>(PathgenInput::DIST_TM5), 18);
     EXPECT_EQ(static_cast<int>(PathgenInput::CLOSING_RATE), 24);
+    // ----- CraftCommonInputs, slots 25..44 -----
     EXPECT_EQ(static_cast<int>(PathgenInput::QUAT_W), 25);
     EXPECT_EQ(static_cast<int>(PathgenInput::AIRSPEED), 29);
     EXPECT_EQ(static_cast<int>(PathgenInput::GYRO_P), 30);
     EXPECT_EQ(static_cast<int>(PathgenInput::GYRO_R), 32);
-    // 038 FR-P0H (B) — arena-awareness inputs at slots 33..36
-    EXPECT_EQ(static_cast<int>(PathgenInput::DIST_TO_BOUNDARY), 33);
-    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_X), 34);
-    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_Y), 35);
-    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_Z), 36);
+    EXPECT_EQ(static_cast<int>(PathgenInput::ACCEL_X), 33);
+    EXPECT_EQ(static_cast<int>(PathgenInput::ACCEL_Z), 35);
+    EXPECT_EQ(static_cast<int>(PathgenInput::SPECIFIC_ENERGY), 36);
+    EXPECT_EQ(static_cast<int>(PathgenInput::BOUNDARY_CLOSURE_RATE), 37);
+    EXPECT_EQ(static_cast<int>(PathgenInput::DIST_TO_BOUNDARY), 38);
+    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_X), 39);
+    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_Z), 41);
+    EXPECT_EQ(static_cast<int>(PathgenInput::SCORE_GRAD_X), 42);
+    EXPECT_EQ(static_cast<int>(PathgenInput::SCORE_GRAD_Y), 43);
+    EXPECT_EQ(static_cast<int>(PathgenInput::SCORE_GRAD_Z), 44);
+    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 45);
 }
 
 TEST(NNSensorInterface, TrackerAnchorPositions) {
-    // Anchor positions per FR-006 + FR-016 + Session 2026-05-07 Q1 + 032 phase 1
-    // + 038 FR-P0H: 36 beacon + 8 state + 1 arena + 9 derived + 4 sit-awareness = 58.
+    // 041 P2-1: 46 M2 target representation (36 beacon + 9 derived + 1
+    // time-since-seen) + 20 CraftCommonInputs = 66.
+    //
+    // ⚠️ This enum was REORDERED at 041 P2-1. Pre-041 the craft slots were split
+    // by the target block (quat at 36, then span/tilt, then inward at 55). A
+    // shared sub-struct cannot be non-contiguous, so they are gathered into one
+    // tail — and the tail now starts at 46 in both modes' terms.
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_L_X_TM5), 0);
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_L_CEP_NOW), 17);
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_R_X_TM5), 18);
     EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_R_CEP_NOW), 35);
-    EXPECT_EQ(static_cast<int>(TrackerInput::QUAT_W), 36);
-    EXPECT_EQ(static_cast<int>(TrackerInput::AIRSPEED), 40);
-    EXPECT_EQ(static_cast<int>(TrackerInput::GYRO_P), 41);
-    EXPECT_EQ(static_cast<int>(TrackerInput::DIST_TO_BOUNDARY_ALONG_VEL), 44);
-    // 032 phase 1 — derived perceptual features at slots 45..53
-    EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_PAIR_SPAN_TM5), 45);
-    EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_PAIR_SPAN_NOW), 50);
-    EXPECT_EQ(static_cast<int>(TrackerInput::SPAN_RATE), 51);
-    EXPECT_EQ(static_cast<int>(TrackerInput::TARGET_TILT_SIN), 52);
-    EXPECT_EQ(static_cast<int>(TrackerInput::TARGET_TILT_COS), 53);
-    // 038 FR-P0H — situational-awareness inputs at slots 54..57
-    // (exit_dir sin/cos removed 038 US3 2026-07-05; inward_body shifts down 2).
-    EXPECT_EQ(static_cast<int>(TrackerInput::TIME_SINCE_SEEN), 54);
-    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_X), 55);
-    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_Y), 56);
-    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_Z), 57);
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 58);
+    // 032 phase 1 — derived perceptual features at 36..44
+    EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_PAIR_SPAN_TM5), 36);
+    EXPECT_EQ(static_cast<int>(TrackerInput::BEACON_PAIR_SPAN_NOW), 41);
+    EXPECT_EQ(static_cast<int>(TrackerInput::SPAN_RATE), 42);
+    EXPECT_EQ(static_cast<int>(TrackerInput::TARGET_TILT_SIN), 43);
+    EXPECT_EQ(static_cast<int>(TrackerInput::TARGET_TILT_COS), 44);
+    // 038 FR-P0H (A) — the target-lost cue, tracker-only, so it belongs to the
+    // TARGET block and not to the shared one.
+    EXPECT_EQ(static_cast<int>(TrackerInput::TIME_SINCE_SEEN), 45);
+    // ----- CraftCommonInputs, slots 46..65 -----
+    EXPECT_EQ(static_cast<int>(TrackerInput::QUAT_W), 46);
+    EXPECT_EQ(static_cast<int>(TrackerInput::AIRSPEED), 50);
+    EXPECT_EQ(static_cast<int>(TrackerInput::GYRO_P), 51);
+    EXPECT_EQ(static_cast<int>(TrackerInput::ACCEL_X), 54);
+    EXPECT_EQ(static_cast<int>(TrackerInput::SPECIFIC_ENERGY), 57);
+    EXPECT_EQ(static_cast<int>(TrackerInput::BOUNDARY_CLOSURE_RATE), 58);
+    EXPECT_EQ(static_cast<int>(TrackerInput::DIST_TO_BOUNDARY), 59);
+    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_X), 60);
+    EXPECT_EQ(static_cast<int>(TrackerInput::SCORE_GRAD_X), 63);
+    EXPECT_EQ(static_cast<int>(TrackerInput::SCORE_GRAD_Z), 65);
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 66);
+}
+
+// 041 P2-1 — the assertion the refactor exists to make possible.
+//
+// The two structs share ONE definition of the craft block, but the two ENUMS
+// are still written out twice (C++ enums do not compose). Nothing but this
+// test stops the copies drifting: if they do, each mode reads the other's slot
+// meanings and every resulting value is entirely plausible.
+TEST(NNSensorInterface, CraftCommonBlockIsIdenticalInBothModes) {
+    const int pgBase = static_cast<int>(PathgenInput::QUAT_W);
+    const int trBase = static_cast<int>(TrackerInput::QUAT_W);
+
+    // The block is the LAST NN_COMMON_INPUT_COUNT slots of each mode.
+    EXPECT_EQ(pgBase, static_cast<int>(PathgenInput::COUNT) - NN_COMMON_INPUT_COUNT);
+    EXPECT_EQ(trBase, static_cast<int>(TrackerInput::COUNT) - NN_COMMON_INPUT_COUNT);
+
+    // Same names, same short names, same widths, same relative order.
+    for (int i = 0; i < NN_COMMON_INPUT_COUNT; ++i) {
+        const auto& pg = kPathgenInputMeta[pgBase + i];
+        const auto& tr = kTrackerInputMeta[trBase + i];
+        EXPECT_STREQ(pg.name, tr.name) << "common slot " << i << " name differs";
+        EXPECT_STREQ(pg.display_name, tr.display_name)
+            << "common slot " << i << " display_name differs";
+        EXPECT_EQ(pg.header_width, tr.header_width)
+            << "common slot " << i << " header_width differs";
+    }
+
+    // And the struct really is embedded at the documented offset in both.
+    EXPECT_EQ(offsetof(NNInputs, common), static_cast<size_t>(pgBase) * sizeof(float));
+    EXPECT_EQ(offsetof(TrackerInputs, common), static_cast<size_t>(trBase) * sizeof(float));
 }
 
 TEST(NNSensorInterface, TrackerDerivedFeatureNamesCanonical) {
@@ -200,9 +258,19 @@ TEST(NNSensorInterface, PathgenMetaWalkProducesExistingHeaderText) {
         "  tgZ-5  tgZ-4  tgZ-3  tgZ-2  tgZ-1   tgZ0"
         "   ds-5   ds-4   ds-3   ds-2   ds-1    ds0"
         "  dd/dt"
+        // ----- CraftCommonInputs, slots 25..44 (041 P2-1) -----
+        // ⚠️ This walk no longer describes a LIVE output format: the per-step
+        // data.dat writer was retired at 035 FR-P05 and the dmp is the training
+        // trace. The test still earns its keep as a drift guard between the enum
+        // and kPathgenInputMeta — a slot added to one and not the other shows up
+        // here — but do NOT propagate these columns into
+        // specs/019-improved-crrcsim/sim_response.py, which reads HISTORICAL
+        // data.dat files frozen at the 021-era layout (see T047).
         "      qw      qx      qy      qz"
         "     vel   gyrP   gyrQ   gyrR"
-        // 038 FR-P0H (B) arena-awareness columns (dBnd width 8, inX/Y/Z width 7)
-        "    dBnd    inX    inY    inZ";
+        "    acX    acY    acZ"
+        "      Es    bClR    dBnd"
+        "    inX    inY    inZ"
+        "    sgX    sgY    sgZ";
     EXPECT_EQ(walk.str(), expected);
 }

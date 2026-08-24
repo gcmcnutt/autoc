@@ -59,8 +59,8 @@
 namespace autoc {
 namespace eval {
 
-// Degenerate-pair epsilon, in RADIANS as of 040 T033. At the 0.375°/px
-// baseline one pixel is 6.54e-3 rad, so 1e-4 sits at ~1.5% of a pixel —
+// Degenerate-pair epsilon, in RADIANS as of 040 T033. At the 0.304°/px
+// baseline one pixel is 5.31e-3 rad, so 1e-4 sits at ~1.9% of a pixel —
 // comfortably below anything the grid can resolve, which is what this guard
 // wants. Grid quantisation makes the degenerate case sharper than it used to
 // be: two beacons landing in the SAME pixel now produce bit-identical bearings

@@ -50,12 +50,55 @@ struct CameraConfig {
     // fields (retired here) a config could declare a 120° field over a grid
     // whose pitch implied 90°, and nothing would notice. One knob, one answer.
     //
-    // Defaults are the assumed sensor format (config-surface.md classifies all
-    // three ASSUMED, pending the lens/sensor decision recorded in US7):
-    // 320 × 240 at 0.375°/px ⇒ exactly 120° × 90°.
+    // Defaults are the MEASURED sensor format (they were ASSUMED through 040;
+    // 031's ruled-mat calibration of the flight lens closed that — see below).
+    // 320 × 200 at 0.304°/px ⇒ 97.3° H × 60.8° V.
+    // 041 T041f (REVERTED 2026-08-16) — 320, the grid the SENSOR DELIVERS.
+    //
+    // T041f briefly set 312 to land the derived field on 031's tape-measured
+    // 95° H rather than the f·θ extrapolation's 97.3°. Operator reversed it,
+    // and the reasoning is better: the camera dumps 320×200 (a 4× bin of the
+    // real 1280×800). Sizing the grid to make a DERIVED angle match a tape
+    // reading means modelling a sensor that does not exist, and it silently
+    // reattributes ~2.4° of tape/extrapolation disagreement to the pixel count
+    // — the one quantity here we actually know exactly.
+    //
+    // The residual 95 vs 97.3 is measurement error in the tape (the two agree
+    // within the 3° the calibration itself quotes). Absorb it there, not in the
+    // grid. 320 × 0.304 = 97.3° H, 200 × 0.304 = 60.8° V.
     int pixels_h = 320;
-    int pixels_v = 240;
-    gp_scalar deg_per_px = static_cast<gp_scalar>(0.375);
+    // 041 T041a — 240 → 200: matching the OV9281's 1280×800 (1.6) aspect rather
+    // than the 4:3 invention 240 px was. Must move together with
+    // AutocConfig::cameraPixelsV and the three tracker inis — three definitions
+    // of one value, the E1 hazard in index-coupling-inventory.md. The ini is
+    // authoritative at runtime; these defaults exist so a missing key is not
+    // silently a DIFFERENT camera.
+    int pixels_v = 200;
+    // 041 T041d (FR-029) — 0.375 → 0.304, from MEASUREMENT, which is the exact
+    // trigger the T041a note reserved ("revisit from measurement, not from a
+    // second estimate"). 031 calibrated the flight optic on 2026-08-16 — the
+    // $3 1.8 mm M12 fisheye on the OV9281, ruled mat at h = 15″, frame archived
+    // as specs/031-beacon-camera/fisheye-1p8mm-grid-15in.jpg:
+    //   * PROJECTION = equidistant (f·θ), confirmed to the field edge. The sim
+    //     has been analytic equidistant since 038 t9, so nothing moves here —
+    //     the measurement VALIDATES a model already in use.
+    //   * NATIVE PITCH = 0.076°/px, uniform (the equidistant silver lining).
+    //   * FOV = 95° H × 61° V by direct tape measurement at the frame edge.
+    // The sim grid is a 4× bin of the real 1280×800 sensor, so the sim pitch is
+    // 4 × 0.076 = 0.304°/px, and 320 × 200 at that pitch is 97.3° × 60.8° —
+    // the measured lens inside its own spread (tape 95×61, f·θ extrapolation
+    // 98×61). Grid and pitch now BOTH trace to hardware.
+    // ⚠️ The prior 120° × 75° was the conservative split of a pre-arrival
+    // ESTIMATE (~124° × 78°), and the estimate was wrong in the direction
+    // nobody guarded against — the real field is NARROWER, ~19% on both axes.
+    // The single-fisheye-at-120° assumption is RETIRED for this lens; 120° H
+    // needs the birded pair or a wider lens (specs/031-beacon-camera/
+    // camera-era-knobs.md §6).
+    // Consequence to expect: per-pixel CEP and quantisation get ~19% FINER,
+    // which is not a side effect to be sorry about — the real lens resolves
+    // better than we assumed. The field narrowing is the fitness-affecting
+    // half, and it lands in the A1 bundle with the rest.
+    gp_scalar deg_per_px = static_cast<gp_scalar>(0.304);
 
     // ----- PRNG-varied per scenario (v1 sigmas at zero) ---------------------
     // Mount offset in chase body frame, metres, on the prop-axle datum

@@ -101,7 +101,16 @@ TrackerStepper makeStepperWithSource(NNControllerBackend& nn,
                           /*p_crash_this_gen=*/0.0f,
                           /*prng_seed=*/0,
                           /*trail_distance=*/3.048f,
-                          /*cep_gate_threshold=*/1.25f);
+                          /*cep_gate_threshold=*/1.25f,
+                          // 041 T038 — envelope estimator + ramp. Values match
+                          // autoc-tracker.ini's shipped defaults so this
+                          // reference exercises the production rule.
+                          autoc::eval::EnvelopeEstimatorConfig{
+                              /*cep_visible_threshold=*/1.25f,
+                              /*span_lo=*/0.02f,
+                              /*span_hi=*/0.35f,
+                              /*centroid_radius=*/0.5f},
+                          /*fit_streak_ramp_sec=*/5.0f);
 }
 
 }  // namespace

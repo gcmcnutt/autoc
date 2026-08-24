@@ -13,17 +13,23 @@
 
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/evaluator.h"
+#include "autoc/eval/arena.h"   // 041 P2-3 — BakedArena defaults derive from FlightArena
+#include "autoc/eval/cone_constants.h"  // 041 P5-3 — SCORE_GRAD_* needs the cone
+#include "autoc/util/config.h"          // ...defaults derive from AutocConfig
 
 void printUsage(const char* progName) {
     std::cout << "Usage: " << progName << " [OPTIONS]\n";
     std::cout << "Options:\n";
-    std::cout << "  -i, --input FILE     Input NN weight file (required, NN01 format)\n";
+    std::cout << "  -i, --ini FILE       Config file the baked constants come from\n";
+    std::cout << "                       (default: autoc.ini; --config is an alias). The arena\n";
+    std::cout << "                       AND the tracking cone are read from here and NOWHERE\n";
+    std::cout << "                       else -- use the SAME ini the run used. There are\n";
+    std::cout << "                       deliberately no CLI overrides: one source means the\n";
+    std::cout << "                       provenance line below is the whole answer.\n";
+    std::cout << "  -w, --weights FILE   Input NN weight file (required, NN01 format)\n";
     std::cout << "  -o, --output FILE    Output C++ source file (default: nn_program_generated.cpp)\n";
     std::cout << "  -f, --function NAME  Generated function name (default: generatedNNProgram)\n";
     std::cout << "  -u, --unrolled       Generate unrolled layer code (default: use nn_forward)\n";
-    std::cout << "  -a, --arena R,F,C    Bake FlightArena radius,floorAGL,ceilingAGL (m) into the\n";
-    std::cout << "                       generated pathgen (B) inputs (default: 80,5,100 — the\n";
-    std::cout << "                       FlightArena struct defaults / autoc.ini M1 config)\n";
     std::cout << "  --help               Show this help message\n";
     std::cout << "\n";
     std::cout << "Generates C++ source with embedded NN weights for desktop and embedded deployment.\n";
@@ -47,11 +53,94 @@ void printUsage(const char* progName) {
 // the firmware re-centers per engage (resolveEngageArena), desktop harnesses
 // construct one explicitly. No definition ⇒ link failure (Constitution VII:
 // no silent fallback placement).
+// ⛔ 041 P2-3 — DEFAULTS DERIVE FROM `FlightArena`, they are not restated.
+// This struct used to carry its own literal 80 / 5 / 100 — a THIRD copy of the
+// arena geometry, alongside `FlightArena`'s defaults and the .ini keys — and it
+// was still at those numbers after the arena moved twice. A stale default here
+// bakes the wrong containment template into flight firmware, and the aircraft
+// would resolve its engage arena around a cylinder the policy was never trained
+// in. Deriving costs nothing and cannot go stale.
 struct BakedArena {
-    double radius_m = 80.0;
-    double floor_agl_m = 5.0;
-    double ceiling_agl_m = 100.0;
+    double radius_m;
+    double floor_agl_m;
+    double ceiling_agl_m;
 };
+
+// 041 P5-3 — the tracking cone, baked for the same reason as the arena: the
+// firmware computes SCORE_GRAD_* from the virtual target's geometry, and that
+// closed form is only correct against the cone the objective was shaped with.
+// ⛔ DEFAULTS DERIVE FROM `AutocConfig`, exactly as BakedArena derives from
+// FlightArena, and for the identical reason — restating the six numbers here
+// would make this a third copy that goes stale the next time the cone moves.
+struct BakedCone {
+    double distScaleBehind;
+    double distScaleAhead;
+    double coneAngleDeg;
+    double streakThreshold;
+    double streakRampSec;
+    double streakMultiplierMax;
+};
+
+// Emit the cone constants the firmware needs for SCORE_GRAD_*.
+static void emitConeContract(std::stringstream& code, const BakedCone& c) {
+    code << "// 041 P5-3 — tracking-cone constants from codegen (-c B,A,D,T,R,M).\n";
+    code << "// SCORE_GRAD_* is computed against THESE; they must match the run that\n";
+    code << "// produced the weights above, or the gradient points somewhere training\n";
+    code << "// never rewarded.\n";
+    code << "const autoc::eval::ConeConstants& generatedNNProgramConeConstants() {\n";
+    code << "    static const autoc::eval::ConeConstants c{"
+         << std::fixed << std::setprecision(6)
+         << c.distScaleBehind << ", " << c.distScaleAhead << ", "
+         << c.coneAngleDeg << ", " << c.streakThreshold << ", "
+         << c.streakRampSec << ", " << c.streakMultiplierMax << "};\n";
+    code << "    return c;\n";
+    code << "}\n\n";
+}
+
+// 041 P2-9 — emit the INPUT SCALE SIGNATURE beside the layout guard.
+//
+// WHY THE COUNT ASSERT IS NOT ENOUGH. `kGeneratedNNInputCount == NN_INPUT_COUNT`
+// catches a LAYOUT change. P2-8 changed input SCALES with the layout untouched
+// (still float[45]), so a genome baked before it has the right count and the
+// WRONG UNITS: it compiles clean, passes the count assert, and flies wrong.
+// That is the same silent-failure class the count assert exists to prevent, one
+// level down — and `firmware_id` cannot catch it either, because it hashes the
+// generated code TEXT while these constants live in nn_inputs.h, outside it.
+//
+// ⚠️ WHAT THIS DOES AND DOES NOT CATCH. It pins the scales of the tree that ran
+// nn2cpp against the scales of the firmware tree that compiles the result. It
+// does NOT pin the scales the genome was TRAINED with: the NN01 file carries
+// weights and topology, not the config that shaped its inputs. In the normal
+// workflow nn2cpp is built from the same tree as the trainer, so the check is
+// meaningful — but a genome carried across a scale change and regenerated with
+// a matching-era nn2cpp would still pass. Closing that needs the scales inside
+// the genome file, which is a format change and is not this task.
+static void emitScaleSignature(std::stringstream& code) {
+    struct S { const char* name; float value; };
+    const S sig[] = {
+        {"kCruiseSpeed_mps",       kCruiseSpeed_mps},
+        {"kDistToBoundaryScale_m", kDistToBoundaryScale_m},
+        {"kTargetDistScale_m",     kTargetDistScale_m},
+        {"kClosingRateScale_mps",  kClosingRateScale_mps},
+        {"kGyroScale_radps",       kGyroScale_radps},
+        {"kAccelScale_g",          kAccelScale_g},
+        {"kEnergyScale_m",         kEnergyScale_m},
+        {"kScoreGradScale",        kScoreGradScale},
+        {"kTimeSinceSeenScale_s",  kTimeSinceSeenScale_s},
+    };
+    code << "\n// 041 P2-9 fail-loud INPUT SCALE guard. The input-count assert above catches\n";
+    code << "// a LAYOUT change; P2-8 changed input SCALES with the layout untouched, so a\n";
+    code << "// stale genome has the right count and the wrong units -- compiles clean,\n";
+    code << "// passes that assert, flies wrong. These pin the units too.\n";
+    for (const S& e : sig) {
+        code << "static_assert(" << e.name << " == "
+             << std::fixed << std::setprecision(9) << e.value << "f,\n";
+        code << "    \"" << e.name
+             << " changed since this file was generated: the genome's inputs were \"\n";
+        code << "    \"scaled differently than this firmware will scale them. Same layout, \"\n";
+        code << "    \"wrong physics -- invisible in sim, wrong in the air. REGENERATE.\");\n";
+    }
+}
 
 // Emit the template accessor + the active-arena extern shared by both
 // codegen paths (039 D5).
@@ -175,7 +264,7 @@ static void emitIdentityTrailer(std::stringstream& code, const NNGenome& genome,
 
 // Generate code that uses the portable nn_forward() function with static weight array
 std::string generatePortableCode(const NNGenome& genome, const std::string& functionName,
-                                  const std::string& sourceFile, const BakedArena& arena,
+                                  const std::string& sourceFile, const BakedArena& arena, const BakedCone& cone,
                                   const std::vector<uint8_t>& weightFileBytes) {
     std::stringstream code;
 
@@ -211,6 +300,39 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     }
     code << "};\n";
     code << "static const int nn_num_layers = " << genome.topology.size() << ";\n\n";
+
+    // 041 P2-2 — FAIL-LOUD LAYOUT GUARD, emitted into the generated file.
+    //
+    // ⛔ This is why the generated file is safe to fly. `gather_pathgen_inputs`
+    // writes `NN_INPUT_COUNT` floats into an `NNInputs`; the forward pass below
+    // multiplies them against a weight array baked HERE, at codegen time. If the
+    // two disagree — a firmware built against a stale generated file, which is
+    // exactly the state this tree was in (37 baked vs 45 compiled) — the
+    // forward pass reads past the end of `nn_weights` and flies on whatever is
+    // next in flash. Nothing in the build said so, and nothing at runtime would:
+    // the aircraft would simply fly badly, in the air, once.
+    //
+    // The assert lives in the GENERATED artifact rather than in nn2cpp because
+    // the mismatch is between that artifact and whatever firmware tree it is
+    // later compiled into — which nn2cpp cannot see.
+    code << "// 041 P2-2 fail-loud layout guard — see tools/nn2cpp.cc for why.\n";
+    code << "constexpr int kGeneratedNNInputCount = " << genome.topology.front() << ";\n";
+    code << "static_assert(kGeneratedNNInputCount == NN_INPUT_COUNT,\n";
+    code << "    \"Generated NN input count != the compiled NNInputs layout. This file \"\n";
+    code << "    \"was generated against a different nn_inputs.h, so the forward pass \"\n";
+    code << "    \"would read PAST THE END of nn_weights and fly on garbage. \"\n";
+    code << "    \"REGENERATE with tools/nn2cpp -- never relax this.\");\n";
+    emitScaleSignature(code);
+    // ⚠️ There is deliberately NO companion assert on the weight count against
+    // NN_WEIGHT_COUNT. That would assert "this genome has the project's current
+    // standard hidden widths", which is a different and weaker claim — it would
+    // reject a legitimately narrower experimental genome while catching nothing
+    // the input assert misses. The generated file's topology array and its
+    // weight array are sized from each other by construction here, so the only
+    // way they can disagree with the FIRMWARE is at the input boundary, which
+    // is exactly what the assert above covers.
+    code << "\n";
+
 
     // Recurrent flags (spec 027). Emitted even when all-false so xiao build
     // can switch on compile-time feedforward-only simpler path if wanted.
@@ -261,6 +383,7 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     code << "}\n\n";
 
     emitArenaContract(code, arena);
+    emitConeContract(code, cone);
 
     // Main function
     code << "gp_scalar " << functionName << "(PathProvider& pathProvider, AircraftState& aircraftState, gp_scalar arg) {\n";
@@ -298,7 +421,7 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
 // exactly: sum = (B[j] + Σ W·x) + (Σ W_hh·h), tanh via fast_tanh — the
 // desktop equivalence test asserts bit-identical outputs.
 std::string generateUnrolledCode(const NNGenome& genome, const std::string& functionName,
-                                  const std::string& sourceFile, const BakedArena& arena,
+                                  const std::string& sourceFile, const BakedArena& arena, const BakedCone& cone,
                                   const std::vector<uint8_t>& weightFileBytes) {
     std::stringstream code;
 
@@ -337,6 +460,24 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     }
     code << "};\n\n";
 
+    // 041 P2-2 — FAIL-LOUD LAYOUT GUARD (see the same block in
+    // generateNNProgramCode above, and tools/nn2cpp.cc's rationale there).
+    // ⛔ THIS is the path the xiao actually uses: the unrolled generator. The
+    // tree shipped 37 baked inputs against 45 compiled with nothing objecting,
+    // which would have had the flight forward pass read past the end of
+    // nn_weights. A compile error naming both numbers costs nothing.
+    code << "// 041 P2-2 fail-loud layout guard — see tools/nn2cpp.cc for why.\n";
+    code << "constexpr int kGeneratedNNInputCount = " << genome.topology.front() << ";\n";
+    code << "static_assert(kGeneratedNNInputCount == NN_INPUT_COUNT,\n";
+    code << "    \"Generated NN input count != the compiled NNInputs layout. This file \"\n";
+    code << "    \"was generated against a different nn_inputs.h, so the unrolled \"\n";
+    code << "    \"forward pass would read PAST THE END of nn_weights and fly on \"\n";
+    code << "    \"garbage. REGENERATE with tools/nn2cpp -- never relax this.\");\n";
+    emitScaleSignature(code);
+    // (No companion weight-count assert — see the rationale at the same guard in
+    // generateNNProgramCode above.)
+    code << "\n";
+
     // 039 D6 — persistent recurrent state registers, one static array per
     // recurrent layer, surviving between calls. W_hh blocks live at the tail
     // of nn_weights (NNGenome layout), in layer-index order.
@@ -367,6 +508,7 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     code << "}\n\n";
 
     emitArenaContract(code, arena);
+    emitConeContract(code, cone);
 
     // Main function with unrolled loops
     int max_layer = *std::max_element(genome.topology.begin(), genome.topology.end());
@@ -455,11 +597,13 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
 
 int main(int argc, char** argv) {
     static struct option long_options[] = {
-        {"input", required_argument, 0, 'i'},
+        {"input", required_argument, 0, 'w'},   // legacy spelling of --weights
         {"output", required_argument, 0, 'o'},
         {"function", required_argument, 0, 'f'},
         {"unrolled", no_argument, 0, 'u'},
-        {"arena", required_argument, 0, 'a'},
+        {"ini", required_argument, 0, 'i'},
+        {"config", required_argument, 0, 'i'},   // convention alias
+        {"weights", required_argument, 0, 'w'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -468,34 +612,76 @@ int main(int argc, char** argv) {
     std::string outputFile = "nn_program_generated.cpp";
     std::string functionName = "generatedNNProgram";
     bool unrolled = false;
-    BakedArena arena;  // 038 P0-D — defaults 80/5/100 (FlightArena struct defaults)
+    // Both are filled from the ini below -- no initializers, so a missed
+    // assignment is a compile-time complaint rather than a plausible default.
+    BakedArena arena{};
+    BakedCone cone{};
+    std::string iniFile = "autoc.ini";  // the ONE source for both
     int option_index = 0;
     int c;
 
-    while ((c = getopt_long(argc, argv, "i:o:f:ua:h", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "i:w:o:f:uh", long_options, &option_index)) != -1) {
         switch (c) {
-            case 'i': inputFile = optarg; break;
+            case 'i': iniFile = optarg; break;
+            case 'w': inputFile = optarg; break;
             case 'o': outputFile = optarg; break;
             case 'f': functionName = optarg; break;
             case 'u': unrolled = true; break;
-            case 'a': {
-                // Parse "radius,floor,ceiling" (meters). All three required.
-                if (std::sscanf(optarg, "%lf,%lf,%lf",
-                                &arena.radius_m, &arena.floor_agl_m,
-                                &arena.ceiling_agl_m) != 3) {
-                    std::cerr << "Error: -a expects R,F,C (e.g. -a 80,5,100)" << std::endl;
-                    return 1;
-                }
-                break;
-            }
             case 'h': printUsage(argv[0]); return 0;
             case '?': printUsage(argv[0]); return 1;
             default: break;
         }
     }
 
+    // 041 P5-3 — provenance for the baked constants, resolved and REPORTED.
+    //
+    // Order: --ini (the run's own config) < -c/-a (explicit override). Without
+    // --ini the struct defaults are baked, which is right only when the run did
+    // not override them — and that is precisely the case nobody can see. So the
+    // source is printed either way: a wrong cone flies a policy against a
+    // gradient its training never rewarded, and the failure is silent.
+    // 041 P5-3 — the baked constants come from the ini and nowhere else.
+    // ConfigManager exits(1) on a missing file, so there is no silent-default
+    // path: either the constants are the run's, or nn2cpp does not run.
+    // ⚠️ 041 P5-3 flag change guard. -i used to be the weight file; an old
+    // `-i nn_weights.dat` would otherwise be fed to the ini parser, which
+    // reports a parse error with a screenful of binary. Detect the NN01 magic
+    // and say the one useful sentence instead.
+    {
+        std::ifstream probe(iniFile, std::ios::binary);
+        char magic[4] = {0, 0, 0, 0};
+        if (probe.good()) probe.read(magic, 4);
+        if (std::string(magic, 4) == "NN01") {
+            std::cerr << "Error: -i got '" << iniFile << "', which is an NN01 WEIGHT file.\n"
+                      << "       -i is the config file since 041 (it was the weight file before);\n"
+                      << "       pass the genome with -w instead:\n"
+                      << "         nn2cpp -w " << iniFile << " -i autoc.ini -o <out.cpp>"
+                      << std::endl;
+            return 1;
+        }
+    }
+    ConfigManager::initialize(iniFile, std::cerr);
+    {
+        const AutocConfig& cfg = ConfigManager::getConfig();
+        arena.radius_m      = cfg.flightArenaRadius;
+        arena.floor_agl_m   = cfg.flightArenaFloorAGL;
+        arena.ceiling_agl_m = cfg.flightArenaCeilingAGL;
+        cone.distScaleBehind     = cfg.fitDistScaleBehind;
+        cone.distScaleAhead      = cfg.fitDistScaleAhead;
+        cone.coneAngleDeg        = cfg.fitConeAngleDeg;
+        cone.streakThreshold     = cfg.fitStreakThreshold;
+        cone.streakRampSec       = cfg.fitStreakRampSec;
+        cone.streakMultiplierMax = cfg.fitStreakMultiplierMax;
+    }
+
     if (inputFile.empty()) {
-        std::cerr << "Error: Input file required (-i)" << std::endl;
+        // ⚠️ 041 P5-3 FLAG CHANGE: -i used to be the weight file and is now the
+        // CONFIG file, matching every other tool. Say so, or an old
+        // `-i nn_weights.dat` habit reads a binary genome as an ini and fails
+        // somewhere much less obvious.
+        std::cerr << "Error: weight file required (-w)\n"
+                  << "NOTE: -i is now the CONFIG file (it was the weight file before 041);\n"
+                  << "      pass the genome with -w." << std::endl;
         printUsage(argv[0]);
         return 1;
     }
@@ -535,9 +721,9 @@ int main(int argc, char** argv) {
     // fallback is gone.
     std::string code;
     if (unrolled) {
-        code = generateUnrolledCode(genome, functionName, inputFile, arena, data);
+        code = generateUnrolledCode(genome, functionName, inputFile, arena, cone, data);
     } else {
-        code = generatePortableCode(genome, functionName, inputFile, arena, data);
+        code = generatePortableCode(genome, functionName, inputFile, arena, cone, data);
     }
 
     // Write output
@@ -559,6 +745,16 @@ int main(int argc, char** argv) {
     std::cout << "  Weights:    " << genome.weights.size() << std::endl;
     std::cout << "  Function:   " << functionName << "()" << std::endl;
     std::cout << "  Fitness:    " << std::fixed << std::setprecision(6) << genome.fitness << std::endl;
+    // Provenance — printed ALWAYS, because "which cone was this flown against?"
+    // must be answerable from the build log alone.
+    std::cout << "  Arena:      " << std::setprecision(1) << arena.radius_m << ","
+              << arena.floor_agl_m << "," << arena.ceiling_agl_m
+              << "  [from " << iniFile << "]" << std::endl;
+    std::cout << "  Cone:       " << std::setprecision(3)
+              << cone.distScaleBehind << "," << cone.distScaleAhead << ","
+              << cone.coneAngleDeg << "," << cone.streakThreshold << ","
+              << cone.streakRampSec << "," << cone.streakMultiplierMax
+              << "  [from " << iniFile << "]" << std::endl;
 
     return 0;
 }

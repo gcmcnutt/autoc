@@ -38,6 +38,8 @@
 #include "autoc/eval/fitness_computer.h"      // FitnessComputer (derived columns)
 #include "autoc/eval/derived_features.h"      // compute_pair_span, compute_tilt (032 NN inputs)
 #include "autoc/eval/camera_projection.h"     // kCepSentinelThreshold (CEP gate)
+#include "autoc/eval/specific_force.h"
+#include "autoc/eval/energy_state.h"         // 041 P2-2 — shared Es / Ps definitions
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/nn/serialization.h"           // nn_detect_format / nn_deserialize
 #include "autoc/nn/evaluator.h"               // NNGenome (variation_scale)
@@ -147,6 +149,83 @@ int emitObstructionReport(const AutocConfig& cfg,
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// 041 T010 — per-tick physics columns from the recorded PhysicsTraceEntry.
+//
+// This is a READER. The data has been recorded for every elite reeval since
+// long before 041 (`inputdev_autoc.cpp:1047`) and had no consumer anywhere, so
+// these columns work on EXISTING dmps and unblock Study A with no schema
+// change.
+//
+// ⚠️ THE INDEX TRAP. `physicsTrace[si]` and `aircraftStateList[si]` are the same
+// scenario, but NOT the same tick series: physics is captured inside the FDM,
+// once per integration substep (`fdm_larcsim.cpp:925`), while aircraft states
+// are recorded once per CONTROL tick. So physicsTrace[si] is MUCH longer, and
+// `physicsTrace[si][ti]` is a different moment in time from `states[ti]`.
+// Joining them by index is exactly the parallel-index failure class US1 exists
+// to retire — so this joins on RECORDED TIME instead, and reports how well it
+// matched rather than assuming it did.
+struct PhysicsJoin {
+  const std::vector<PhysicsTraceEntry>* trace = nullptr;
+  size_t cursor = 0;      // monotone: both series are time-ordered
+  size_t matched = 0;
+  size_t unmatched = 0;
+  double worstSkewMsec = 0.0;   // raw-ok: report-local diagnostic
+  double tolMsec = 0.0;         // raw-ok: report-local diagnostic
+
+  // Nearest recorded physics row WITHIN tolerance, or nullptr.
+  //
+  // ⚠️ The tolerance is not defensive padding — it is load-bearing. The FDM caps
+  // the trace at `MAX_TRACE_STEPS = 35` (`fdm_larcsim.cpp:74`), which is roughly
+  // the first 200 ms of a scenario, so for all but the first few control ticks
+  // there is NO physics row. Returning the nearest one anyway would repeat the
+  // 200 ms sample for the rest of an 18-second flight and read as real data.
+  const PhysicsTraceEntry* at(double tMsec) {
+    if (trace == nullptr || trace->empty()) { ++unmatched; return nullptr; }
+    while (cursor + 1 < trace->size()
+           && (*trace)[cursor + 1].simTimeMsec <= tMsec) {
+      ++cursor;
+    }
+    // `cursor` is the last row at or before tMsec; the next one may be nearer.
+    size_t best = cursor;
+    if (cursor + 1 < trace->size()) {
+      const double dCur = std::fabs((*trace)[cursor].simTimeMsec - tMsec);
+      const double dNxt = std::fabs((*trace)[cursor + 1].simTimeMsec - tMsec);
+      if (dNxt < dCur) best = cursor + 1;
+    }
+    const double skew = std::fabs((*trace)[best].simTimeMsec - tMsec);
+    if (skew > tolMsec) { ++unmatched; return nullptr; }
+    if (skew > worstSkewMsec) worstSkewMsec = skew;
+    ++matched;
+    return &(*trace)[best];
+  }
+};
+
+// Body-frame specific force in g, plus the load factor, from a physics row.
+//
+// spec_force_world = a_world - g_world, with NED gravity (0, 0, +g) — see
+// docs/COORDINATE_CONVENTIONS.md. The recorded `gravity` is used rather than a
+// literal 9.81 because PhysicsTraceEntry carries FDM-NATIVE units (LaRCSim is
+// ft-based), and dividing by the recorded value makes the result unit-free
+// whichever it is.
+//
+// SIGN: `nz_g` is the aviation load factor — +1 in steady level flight, >1 in a
+// pull-up, negative in a push-over — i.e. the NEGATED body-z specific force, so
+// that it reads the way "+11.2 g / -8.4 g" is quoted in the flight reports.
+// The raw sfx/sfy/sfz columns are emitted unnegated beside it so the convention
+// is inspectable rather than buried in this comment.
+// The math itself lives in autoc/eval/specific_force.h so this reader and the
+// NN input (T039) cannot drift apart; this only adapts PhysicsTraceEntry's
+// storage layout (quat is [x, y, z, w]; gp_quat is (w, x, y, z)).
+autoc::eval::BodySpecificForce deriveLoad(const PhysicsTraceEntry& p) {
+  const gp_quat q(static_cast<gp_scalar>(p.quat[3]), static_cast<gp_scalar>(p.quat[0]),
+                  static_cast<gp_scalar>(p.quat[1]), static_cast<gp_scalar>(p.quat[2]));
+  const gp_vec3 accWorld(static_cast<gp_scalar>(p.acc[0]),
+                         static_cast<gp_scalar>(p.acc[1]),
+                         static_cast<gp_scalar>(p.acc[2]));
+  return autoc::eval::bodySpecificForce(accWorld, q, static_cast<gp_scalar>(p.gravity));
+}
+
 void printUsage(const char* prog) {
   std::cout <<
     "Usage: " << prog << " <s3-uri | local-path> [OPTIONS]\n"
@@ -170,6 +249,12 @@ void printUsage(const char* prog) {
     "                 Reads the ini ONLY — takes no dmp argument. Pair with -i.\n"
     "  -i, --config   ini for S3 creds/bucket (default autoc.ini); fitness cone +\n"
     "                 cadence now read from the dmp-recorded RecordedRunConfig\n"
+    "  --physics      041 T010: append per-tick FDM physics columns from the\n"
+    "                 recorded PhysicsTraceEntry (elite-reeval dmps only):\n"
+    "                 accX,accY,accZ,odbP,odbQ,odbR,alpha,vRelWind + the DERIVED\n"
+    "                 body-frame specific force sfx_g,sfy_g,sfz_g and load factor\n"
+    "                 nz_g. Works on EXISTING dmps — this is a reader, not a\n"
+    "                 recording change. Empty fields where no physics row matches.\n"
     "  -h, --help     this message\n"
     "\n"
     "CSV columns (pathgen): scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,\n"
@@ -223,12 +308,18 @@ struct AxisAggr {
 AxisAggr computeAggr(const EvalResults& r) {
   double sd[3] = {0, 0, 0}, sm[3] = {0, 0, 0};
   long cd[3] = {0, 0, 0}, cm[3] = {0, 0, 0};
-  for (const auto& states : r.aircraftStateList) {
-    for (size_t t = 0; t < states.size(); ++t) {
-      const float* o = states[t].getNNOutputs();
+  // 041 T023 — iterates the STEPPED ticks only. Previously this walked
+  // `aircraftStateList[i]`, whose slot 0 is the pre-loop initial state: it
+  // carries no NN outputs, so every aggressiveness mean was diluted by one zero
+  // sample per scenario (~0.2% at N=450). Excluding it is both correct and now
+  // structural — the initial state is not in `ticks` to be walked by accident.
+  for (const auto& scenarioTicks : r.tickList) {
+    const auto& ticks = scenarioTicks.ticks;
+    for (size_t t = 0; t < ticks.size(); ++t) {
+      const float* o = ticks[t].state.getNNOutputs();
       for (int a = 0; a < 3; ++a) { sm[a] += std::abs(o[a]); cm[a]++; }
       if (t > 0) {
-        const float* p = states[t - 1].getNNOutputs();
+        const float* p = ticks[t - 1].state.getNNOutputs();
         for (int a = 0; a < 3; ++a) { sd[a] += std::abs(o[a] - p[a]); cd[a]++; }
       }
     }
@@ -265,14 +356,14 @@ PerPathRates computePerPathRates(const EvalResults& r) {
   const double dt = SIM_TIME_STEP_MSEC / 1000.0;
   double sr[kMaxPaths] = {0}, sp[kMaxPaths] = {0};
   int n[kMaxPaths] = {0};
-  for (size_t i = 0; i < r.aircraftStateList.size(); ++i) {
-    const auto& states = r.aircraftStateList[i];
+  for (size_t i = 0; i < r.tickList.size(); ++i) {
+    const auto& states = r.tickList[i].ticks;
     if (states.size() < 2) continue;
     const int path = (i < r.scenarioList.size()) ? r.scenarioList[i].pathVariantIndex : -1;
     if (path < 0 || path >= kMaxPaths) continue;
     double droll = 0, dpitch = 0, lastR = 0, lastP = 0; bool have = false;
     for (size_t t = 0; t < states.size(); ++t) {
-      double rd, pd; quatToRollPitchDeg(states[t].getOrientation(), rd, pd);
+      double rd, pd; quatToRollPitchDeg(states[t].state.getOrientation(), rd, pd);
       if (have) { droll += std::abs(unwrapDeg(rd - lastR)); dpitch += std::abs(pd - lastP); }
       lastR = rd; lastP = pd; have = true;
     }
@@ -361,17 +452,19 @@ int main(int argc, char** argv) {
     {"since-gen", required_argument, 0, 'G'},
     {"config", required_argument, 0, 'i'},
     {"obstruction-report", no_argument, 0, 'O'},
+    {"physics", no_argument, 0, 'P'},          // 041 T010
     {"help", no_argument, 0, 'h'},
     {0, 0, 0, 0}
   };
   int specifiedGen = -1;
   bool metaOnly = false, csvOnly = false, runSummary = false;
   bool obstructionReport = false;
+  bool physics = false;                        // 041 T010
   int stride = 1;
   int sinceGen = 0;
   std::string configFile = "autoc.ini";
   int idx = 0, opt;
-  while ((opt = getopt_long(argc, argv, "g:mcsS:G:i:Oh", long_options, &idx)) != -1) {
+  while ((opt = getopt_long(argc, argv, "g:mcsS:G:i:OPh", long_options, &idx)) != -1) {
     switch (opt) {
       case 'g': specifiedGen = std::stoi(optarg); break;
       case 'm': metaOnly = true; break;
@@ -381,6 +474,7 @@ int main(int argc, char** argv) {
       case 'G': sinceGen = std::stoi(optarg); break;
       case 'i': configFile = optarg; break;
       case 'O': obstructionReport = true; break;
+      case 'P': physics = true; break;         // 041 T010
       case 'h': printUsage(argv[0]); return 0;
       default: printUsage(argv[0]); return 1;
     }
@@ -485,7 +579,8 @@ int main(int argc, char** argv) {
   // tracker iff any scenario carries a target trajectory (same modality test
   // computeScenarioScores + the old data.dat writer used).
   bool isTracker = false;
-  for (const auto& t : results.targetTrajectoryList) if (!t.empty()) { isTracker = true; break; }
+  for (const auto& st : results.tickList)
+    if (!st.ticks.empty() && st.ticks.front().targetSample.has_value()) { isTracker = true; break; }
 
   const int actualGen = autoc::extractGenNumber(srcKey);  // -1 if not a gen key
   const auto scores = computeScenarioScores(results);
@@ -501,6 +596,21 @@ int main(int argc, char** argv) {
     std::cout << "  gp_hash: " << std::hex << results.gpHash << std::dec << "\n";
     std::cout << "  scenario_count: " << scores.size() << "\n";
     std::cout << "  ramp_scale: " << rampSc << "\n";
+    // 041 P2-4 — the arena the run was flown in, so a dmp is self-describing
+    // about its own containment volume. It moved three times in a single day;
+    // without this a reader cannot recompute `Es` (whose datum is the FLOOR)
+    // nor say whether a floor egress meant a tight deck or a baited policy.
+    {
+      const auto& fa = results.runConfig.flightArena;
+      const double arm_agl = -static_cast<double>(SIM_INITIAL_ALTITUDE);
+      std::cout << "  arena:\n";
+      std::cout << "    radius_m: " << fa.radius_m << "\n";
+      std::cout << "    floor_agl_m: " << fa.floor_agl_m << "\n";
+      std::cout << "    ceiling_agl_m: " << fa.ceiling_agl_m << "\n";
+      std::cout << "    arm_agl_m: " << arm_agl << "\n";
+      std::cout << "    up_m: " << (fa.ceiling_agl_m - arm_agl) << "\n";
+      std::cout << "    down_m: " << (arm_agl - fa.floor_agl_m) << "\n";
+    }
     std::cout << "scenarios:\n";
     for (size_t i = 0; i < scores.size(); ++i) {
       const auto& s = scores[i];
@@ -524,7 +634,10 @@ int main(int argc, char** argv) {
                 << (results.scenarioList[i].windDirectionOffset * 180.0 / M_PI) << "\n";
       std::cout << "    crash_reason: " << crashReasonToString(s.crashReason) << "\n";
       std::cout << "    score: " << s.score << "\n";
-      std::cout << "    energy_score: " << s.energy_score << "\n";
+      // 041 P2-5 — metres of specific energy DESTROYED (Σ max(0,−Ps)·dt),
+      // not the pre-041 throttle-command integral. Different quantity, so
+      // the unit is stated rather than left to the name.
+      std::cout << "    energy_score_m_destroyed: " << s.energy_score << "\n";
       std::cout << "    stability_score: " << s.stability_score << "\n";
       std::cout << "    max_streak: " << s.maxStreak << "\n";
       // 037 T005 — streak_steps + max_multiplier complete the per-scenario
@@ -545,14 +658,66 @@ int main(int argc, char** argv) {
   // Header (mode-specific: path-relative derived columns are pathgen-only).
   std::cout << "scenario,tick,px,py,pz,qw,qx,qy,qz,vx,vy,vz,"
                "pitchCmd,rollCmd,thrCmd,out_pt,out_rl,out_th,dhome,wN,wE,wD";
-  // 038 — honest recording read straight from the recorded per-tick
-  // TrackerInputs/NNInputs + tracker aux outputs: tracker adds inX/inY/inZ
-  // (arena-inward body dir) + tSee (time-since-seen) + the 038 US3 aux
-  // span-predictor OUTPUTS spP1/spP2/spP3 (predicted span @+50/+100/+150 ms) +
-  // spdR (predicted closure rate); pathgen adds dBnd (dist-to-boundary tanh) +
-  // inX/inY/inZ. (exit_dir removed 038 US3.)
-  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,spn0,dspn,blC0,brC0,tltS,tltC,stpPt,inX,inY,inZ,tSee,spP1,spP2,spP3,spdR\n";
-  else           std::cout << ",dist,along,stpPt,mult,rampSc,dBnd,inX,inY,inZ\n";
+  // Mode-specific DERIVED columns — recomputed here from geometry, not read
+  // from the input vector. These are the analysis quantities (path-relative
+  // decomposition for M1, target/trail positions and the aux predictor OUTPUTS
+  // for M2), and they are the only hand-listed columns left.
+  if (isTracker) std::cout << ",rampSc,hull,tgX,tgY,tgZ,trX,trY,trZ,stpPt,spP1,spP2,spP3,spdR";
+  // 041 P2-4 — pathgen gains the RABBIT's own position and its height above the
+  // hard deck. `rabbitPosition` was already serialized on every recorded state
+  // and had simply never been emitted, so the data existed and was unreadable.
+  //
+  // ⭐ rbHhd is what makes a FLOOR egress attributable. With the 041 asymmetric
+  // band (−10 m down) the deck is a tactical element, not just a bound: a target
+  // flying near it baits a pursuer into the ground, which is the whole point of
+  // a hard deck in air combat. So "the chase hit the floor" has two completely
+  // different meanings — the deck is too tight, or the policy was drawn down
+  // onto it — and telling them apart requires knowing where the RABBIT was.
+  // Widening the deck in response to the second one would remove the lesson.
+  else           std::cout << ",dist,along,stpPt,mult,rampSc,rbX,rbY,rbZ,rbHhd";
+
+  // 041 P2-4 — EVERY NN INPUT SLOT, walked from the metadata table.
+  //
+  // ⛔ The hand-picked subset is gone, and its removal is the point. Before
+  // this, dmp_dump emitted whichever slots someone had needed at the time —
+  // which meant each new consumer discovered its column did not exist (T061
+  // could not inspect the envelope inputs; Study A had to be told which of two
+  // similarly-named load columns it was reading). A subset is also a claim
+  // about what matters, made by whoever last edited a printf.
+  //
+  // Walking kPathgenInputMeta / kTrackerInputMeta means the header labels and
+  // the values come from ONE source: a slot cannot appear in the header without
+  // its value being emitted, or be emitted under the wrong label. Adding an
+  // input to nn_inputs.h now adds its column here with no edit at all.
+  //
+  // ⚠️ These are NN UNITS — normalized exactly as the policy saw them (accel /
+  // kAccelScale_g, Es / kEnergyScale_m, the tanh'd boundary distance and score
+  // gradient). The unscaled physical values are the Es/bClR/sg* columns below
+  // and the --physics tail; do not mix the two in one analysis without saying
+  // which is which.
+  {
+    const SensorInputMeta* meta = isTracker ? kTrackerInputMeta : kPathgenInputMeta;
+    const int nslots = isTracker ? static_cast<int>(TrackerInput::COUNT)
+                                 : static_cast<int>(PathgenInput::COUNT);
+    for (int i = 0; i < nslots; ++i) std::cout << "," << meta[i].display_name;
+  }
+
+  // 041 P2-4 — the UNSCALED sources, recorded on the state rather than derived
+  // back out of the slots. Three reasons they are not redundant with the block
+  // above: an ablation mask zeroes the slot by design, SCORE_GRAD's slot is a
+  // saturating tanh so its magnitude does not survive, and Ps must be
+  // differenced from a true Es.
+  //
+  //   Es_m    specific energy, METRES above the hard deck + v²/2g
+  //   Ps_mps  specific excess power, dEs/dt in m/s — computed by
+  //           autoc/eval/energy_state.h, the SAME function the lexicase axis
+  //           uses, over the actual recorded tick interval. Empty on the first
+  //           tick of a scenario, where there is no interval.
+  //   bClR_ms outward radial closure on the wall, m/s, + = toward it
+  //   sgx/sgy/sgz  ∂score/∂position, body frame, per metre, × streak multiplier
+  std::cout << ",Es_m,Ps_mps,bClR_ms,sgx,sgy,sgz";
+  if (physics) std::cout << ",phyMs,accX,accY,accZ,odbP,odbQ,odbR,alpha,vRelWind,sfx_g,sfy_g,sfz_g,nz_g";
+  std::cout << "\n";
 
   // 038 P0-B (T010): read the fitness cone / cadence from the dmp-recorded,
   // self-describing RecordedRunConfig — NOT the live .ini. M2 greenfield: no
@@ -564,11 +729,10 @@ int main(int argc, char** argv) {
   int streakStepsToMax = static_cast<int>(rc.fitStreakRampSec / dtSec);
   if (streakStepsToMax < 1) streakStepsToMax = 1;
 
-  for (size_t si = 0; si < results.aircraftStateList.size(); ++si) {
-    const auto& states = results.aircraftStateList[si];
-    if (states.empty()) continue;
-    const bool sceneTracker = si < results.targetTrajectoryList.size()
-                              && !results.targetTrajectoryList[si].empty();
+  for (size_t si = 0; si < results.tickList.size(); ++si) {
+    const auto& ticks = results.tickList[si].ticks;
+    if (ticks.empty()) continue;
+    const bool sceneTracker = ticks.front().targetSample.has_value();
     const std::vector<Path>* path =
         (si < results.pathList.size()) ? &results.pathList[si] : nullptr;
 
@@ -576,11 +740,28 @@ int main(int argc, char** argv) {
                        rc.fitStreakThreshold, streakStepsToMax, rc.fitStreakMultiplierMax);
     fc.resetStreak();
     gp_vec3 prevTangent = gp_vec3::UnitX();
-    double prevSpan = 0.0;  // tracker spn0 at ti-1, for dspn (0 at first emitted tick)
-    bool havePrevSpan = false;
+    // 041 P2-4 — per-scenario Ps state. Reset here, per scenario, so the first
+    // tick of each scenario reports no rate rather than differencing across a
+    // scenario boundary — which would produce an enormous, entirely fictional Ps.
+    double prevEs = 0.0;
+    double prevEsTimeMsec = 0.0;
+    bool havePrevEs = false;
 
-    for (size_t ti = 1; ti < states.size(); ++ti) {
-      const auto& st = states[ti];
+    // 041 T010 — joined on time, not index (see PhysicsJoin).
+    PhysicsJoin phy;
+    if (physics && si < results.physicsTrace.size()) {
+      phy.trace = &results.physicsTrace[si];
+      // Half a control tick: a physics row must describe THIS tick, not a
+      // neighbouring one.
+      phy.tolMsec = rc.simTimeStepMsec / 2.0;
+    }
+
+    // 041 T023 — one series. `ti` is the 1-based tick NUMBER emitted in the CSV
+    // (unchanged), and `ticks[ti - 1]` is that tick's complete record. The
+    // clamped `min(ti, targets.size()-1)` lookups below are gone.
+    for (size_t ti = 1; ti <= ticks.size(); ++ti) {
+      const EvalTick& tickRecord = ticks[ti - 1];
+      const auto& st = tickRecord.state;
       const gp_vec3 pos = st.getPosition();
       const gp_quat q = st.getOrientation();
       const gp_vec3 vel = st.getVelocity();
@@ -600,23 +781,31 @@ int main(int argc, char** argv) {
       std::cout.write(buf, n);
 
       if (sceneTracker) {
-        const auto& targets = results.targetTrajectoryList[si];
-        const size_t tgi = std::min(ti, targets.size() - 1);
-        const int hull = (!targets.empty() && targets.at(tgi).inside_crash_hull) ? 1 : 0;
+        // 041 T023 — ⚠️ THIS READER HAD ITS OWN OFF-BY-ONE, in the opposite
+        // direction from the objective's. It paired tick `ti` with
+        // `targets[min(ti, size-1)]`, i.e. one tick LATER than the objective's
+        // `targets[ti - 1]`. Every tracker column emitted here (tg*, tr*, spn0,
+        // blC0/brC0, tltS/tltC, and the recomputed stpPt) therefore described a
+        // different instant from the one the objective scored — a reader
+        // silently disagreeing with the thing it exists to explain. Pre-041 CSV
+        // extracts carry the old pairing; see artifacts/pre-break/README.md.
+        const CopiedTargetSample* target =
+            tickRecord.targetSample.has_value() ? &*tickRecord.targetSample : nullptr;
+        const int hull = (target != nullptr && target->inside_crash_hull) ? 1 : 0;
 
         // Target + trail-rabbit pose (0s if the trajectory list is missing/empty).
         gp_vec3 tg = gp_vec3::Zero(), tr = gp_vec3::Zero();
         double stp = 0.0;  // in-cone step score (tracking metric)
-        if (!targets.empty()) {
-          tg = targets.at(tgi).position;
-          tr = targets.at(tgi).trail_rabbit_position;
+        if (target != nullptr) {
+          tg = target->position;
+          tr = target->trail_rabbit_position;
           // Per-tick in-cone step score, recomputed from recorded target
           // geometry EXACTLY as fitness_decomposition.cc's tracker branch:
           // rabbit = trail-rabbit, tangent = target-velocity unit (prevTangent
           // fallback when degenerate). This is the tracker counterpart to the
           // pathgen `stpPt` column — derived, not recorded, like pathgen — so
           // dynamics_progress et al. get a real per-tick tracking flag on M2.
-          const gp_vec3 tvel = targets.at(tgi).velocity;
+          const gp_vec3 tvel = target->velocity;
           const double vn = tvel.norm();
           gp_vec3 tangent;
           if (vn > 0.01) { tangent = tvel / vn; prevTangent = tangent; }
@@ -627,51 +816,19 @@ int main(int argc, char** argv) {
           stp = fc.decomposeStepScore(along, lateralDist).score;
         }
 
-        // Beacon-derived sensors (spn0/dspn/tltS/tltC) — CEP-gated to match the
-        // 032 NN-input semantics. The gate uses the default sentinel threshold
-        // (cepGateThreshold isn't carried in EvalResults).
-        double spn0 = 0.0, tltS = 0.0, tltC = 1.0;
-        double blC0 = 0.0, brC0 = 0.0;
-        const bool haveCam = si < results.cameraViewList.size()
-                             && !results.cameraViewList[si].empty();
-        if (haveCam) {
-          const auto& cams = results.cameraViewList[si];
-          const auto& cv = cams.at(std::min(ti, cams.size() - 1));
-          const auto& bl = cv.beacon_left;
-          const auto& br = cv.beacon_right;
-          blC0 = bl.cep;
-          brC0 = br.cep;
-          const bool gated = (bl.cep >= autoc::eval::kCepSentinelThreshold)
-                          || (br.cep >= autoc::eval::kCepSentinelThreshold);
-          if (!gated) {
-            // 040 T031 — bearings are radians now; span is therefore a true
-            // angular quantity and range is separation_m / span directly.
-            spn0 = autoc::eval::compute_pair_span(
-                bl.bearing_x_rad, bl.bearing_y_rad,
-                br.bearing_x_rad, br.bearing_y_rad);
-            const auto t = autoc::eval::compute_tilt(
-                bl.bearing_x_rad, bl.bearing_y_rad,
-                br.bearing_x_rad, br.bearing_y_rad);
-            tltS = t.sin;
-            tltC = t.cos;
-          }
-        }
-        const double dspn = havePrevSpan ? (spn0 - prevSpan) : 0.0;
-        prevSpan = spn0;
-        havePrevSpan = true;
-
-        // 038 — arena-inward + time_since_seen (from recorded TrackerInputs) +
-        // the US3 aux span-predictor outputs out[3..6] (honest recording).
-        const TrackerInputs& ti_in = st.getTrackerInputs();
-        char tb[512];
+        // 041 P2-4 — spn0/dspn/blC0/brC0/tltS/tltC used to be recomputed here
+        // from the camera view. They are gone: every one of them is an NN input
+        // slot, and the slot walk below emits all of them straight from the
+        // recorded vector. Recomputing an input in the reader is the same
+        // two-computations-that-may-disagree hazard the gathers were just
+        // consolidated to remove — and here the reader had to guess the CEP
+        // gate threshold, because it is not carried in EvalResults.
+        char tb[256];
         int tn = snprintf(tb, sizeof(tb),
-          ",%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f"
-          ",%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+          ",%.4f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f,%.6f",
           rampSc, hull,
           tg.x(), tg.y(), tg.z(), tr.x(), tr.y(), tr.z(),
-          spn0, dspn, blC0, brC0, tltS, tltC, stp,
-          ti_in.inward_body_x, ti_in.inward_body_y, ti_in.inward_body_z,
-          ti_in.time_since_seen, out[3], out[4], out[5], out[6]);
+          stp, out[3], out[4], out[5], out[6]);
         std::cout.write(tb, tn);
       } else if (path && !path->empty()) {
         const int pIdx = std::clamp(st.getThisPathIndex(), 0,
@@ -688,24 +845,121 @@ int main(int argc, char** argv) {
         const double dist = offset.norm();
         const double stp = fc.computeStepScore(along, lateral);
         const double mult = (stp > 0.0) ? fc.applyStreak(stp) / stp : 1.0;
-        // 038 P0-D FR-P0H (B) — arena-awareness inputs from recorded NNInputs.
-        const NNInputs& nn_in = st.getNNInputs();
-        char d[256];
-        int dn = snprintf(d, sizeof(d), ",%.4f,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f,%.6f,%.6f\n",
+        const gp_vec3 rb = st.getRabbitPosition();
+        const double rbHhd = static_cast<double>(autoc::eval::heightAboveDeck(
+            rb.z(), SIM_INITIAL_ALTITUDE, rc.flightArena.floor_agl_m));
+        char d[224];
+        int dn = snprintf(d, sizeof(d),
+                          ",%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f",
                           dist, along, stp, mult, rampSc,
-                          nn_in.dist_to_boundary, nn_in.inward_body_x,
-                          nn_in.inward_body_y, nn_in.inward_body_z);
+                          rb.x(), rb.y(), rb.z(), rbHhd);
         std::cout.write(d, dn);
       } else {
-        // 038 P0-D FR-P0H (B) — no path geometry, but the recorded NNInputs
-        // still carry the arena-awareness (B) inputs.
-        const NNInputs& nn_in = st.getNNInputs();
-        char d[128];
-        int dn = snprintf(d, sizeof(d), ",,,,,%.4f,%.6f,%.6f,%.6f,%.6f\n",
-                          rampSc, nn_in.dist_to_boundary, nn_in.inward_body_x,
-                          nn_in.inward_body_y, nn_in.inward_body_z);
+        // No path geometry this tick — the path-relative derived columns are
+        // empty, but the recorded rabbit position and the input vector below are
+        // emitted regardless.
+        const gp_vec3 rb = st.getRabbitPosition();
+        const double rbHhd = static_cast<double>(autoc::eval::heightAboveDeck(
+            rb.z(), SIM_INITIAL_ALTITUDE, rc.flightArena.floor_agl_m));
+        char d[160];
+        int dn = snprintf(d, sizeof(d), ",,,,,%.4f,%.4f,%.4f,%.4f,%.4f",
+                          rampSc, rb.x(), rb.y(), rb.z(), rbHhd);
         std::cout.write(d, dn);
       }
+
+      // 041 P2-4 — EVERY slot of the recorded input vector, in metadata-table
+      // order, so header and values cannot disagree. Mode-branched only because
+      // the two structs are unrelated C++ types; the walk is identical.
+      {
+        const float* raw = sceneTracker                                 // raw-ok: NN-byte-format buffer
+            ? reinterpret_cast<const float*>(&st.getTrackerInputs())
+            : reinterpret_cast<const float*>(&st.getNNInputs());
+        const int nslots = sceneTracker ? static_cast<int>(TrackerInput::COUNT)
+                                        : static_cast<int>(PathgenInput::COUNT);
+        char sb[32];
+        for (int i = 0; i < nslots; ++i) {
+          int sn = snprintf(sb, sizeof(sb), ",%.6f", static_cast<double>(raw[i]));
+          std::cout.write(sb, sn);
+        }
+      }
+
+      // 041 P2-4 — the unscaled sources, and Ps differenced from the true Es.
+      //
+      // ⚠️ Ps uses autoc/eval/energy_state.h — the SAME function the lexicase
+      // axis calls — over the ACTUAL recorded tick interval, never an assumed
+      // one. An objective and a report that compute the same named quantity two
+      // ways is how a run gets judged against a number nothing was selecting on.
+      {
+        const double esNow = static_cast<double>(st.getSpecificEnergy());
+        char eb[192];
+        int en;
+        if (havePrevEs) {
+          const double dt = (static_cast<double>(st.getSimTimeMsec()) - prevEsTimeMsec) / 1000.0;
+          const double ps = static_cast<double>(autoc::eval::specificExcessPower(
+              static_cast<gp_scalar>(esNow), static_cast<gp_scalar>(prevEs),
+              static_cast<gp_scalar>(dt)));
+          en = snprintf(eb, sizeof(eb), ",%.4f,%.4f,%.4f,%.6f,%.6f,%.6f",
+                        esNow, ps, static_cast<double>(st.getBoundaryClosureRate()),
+                        static_cast<double>(st.getScoreGradBody().x()),
+                        static_cast<double>(st.getScoreGradBody().y()),
+                        static_cast<double>(st.getScoreGradBody().z()));
+        } else {
+          // First tick of the scenario: there is no interval, so there is no
+          // rate. Empty, not zero — zero is a measurement.
+          en = snprintf(eb, sizeof(eb), ",%.4f,,%.4f,%.6f,%.6f,%.6f",
+                        esNow, static_cast<double>(st.getBoundaryClosureRate()),
+                        static_cast<double>(st.getScoreGradBody().x()),
+                        static_cast<double>(st.getScoreGradBody().y()),
+                        static_cast<double>(st.getScoreGradBody().z()));
+        }
+        std::cout.write(eb, en);
+        prevEs = esNow;
+        prevEsTimeMsec = static_cast<double>(st.getSimTimeMsec());
+        havePrevEs = true;
+      }
+
+      // 041 T010 — physics tail, joined on recorded sim time. Empty fields when
+      // this dmp carries no physics trace (i.e. was not an elite reeval), so a
+      // missing trace reads as missing rather than as zeros.
+      if (physics) {
+        const PhysicsTraceEntry* p =
+            phy.at(static_cast<double>(st.getSimTimeMsec()));
+        if (p != nullptr) {
+          const autoc::eval::BodySpecificForce dl = deriveLoad(*p);
+          char pb[320];
+          int pn = snprintf(pb, sizeof(pb),
+            ",%.1f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",
+            p->simTimeMsec,
+            p->acc[0], p->acc[1], p->acc[2],
+            p->omegaDotBody[0], p->omegaDotBody[1], p->omegaDotBody[2],
+            p->alpha, p->vRelWind,
+            static_cast<double>(dl.g_units.x()), static_cast<double>(dl.g_units.y()),
+            static_cast<double>(dl.g_units.z()), static_cast<double>(dl.load_factor_nz));
+          std::cout.write(pb, pn);
+        } else {
+          std::cout << ",,,,,,,,,,,,";
+        }
+      }
+      std::cout << "\n";
+    }
+
+    // Report the join quality per scenario rather than silently producing a
+    // plausible CSV. A large skew means the control tick and the physics
+    // substep have drifted apart and the load columns describe a different
+    // moment from the rest of the row.
+    if (physics && phy.unmatched > 0) {
+      std::cerr << "dmp-dump --physics: scenario " << si
+                << ": " << phy.matched << " ticks have physics, "
+                << phy.unmatched << " do not"
+                << " (worst matched skew " << phy.worstSkewMsec << " ms,"
+                << " tolerance " << phy.tolMsec << " ms).";
+      if (phy.matched > 0 && phy.trace != nullptr) {
+        std::cerr << " NOTE: the FDM caps the trace at MAX_TRACE_STEPS"
+                  << " (fdm_larcsim.cpp), so only the first ~200 ms of each"
+                  << " scenario carries physics — the empty rows are expected"
+                  << " on any pre-041 dmp, NOT a join failure.";
+      }
+      std::cerr << "\n";
     }
   }
 

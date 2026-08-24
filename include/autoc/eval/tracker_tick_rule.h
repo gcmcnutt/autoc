@@ -30,6 +30,7 @@
 #include "autoc/eval/camera_variation.h"
 #include "autoc/eval/camera_projection.h"
 #include "autoc/eval/derived_features.h"
+#include "autoc/eval/envelope_state.h"
 #include "autoc/eval/source_trajectory.h"
 #include "autoc/nn/evaluator.h"  // TrackerObservationRing, SituationalAwarenessState
 #include "autoc/nn/nn_inputs.h"
@@ -151,6 +152,7 @@ void advanceSituationalAwareness(const TrackerHistoryWindow& history,
 // that both execution paths pick it up without either being edited.
 void resetPerceptionState(TrackerObservationRing& ring,
                           SituationalAwarenessState& sa,
-                          PerceptionCarryState& carry);
+                          PerceptionCarryState& carry,
+                          EnvelopeState& envelope);
 
 }  // namespace autoc::eval

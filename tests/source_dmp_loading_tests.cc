@@ -46,7 +46,7 @@ AircraftState makeTickState(unsigned long simTimeMsec, float xPos) {
 EvalResults makeSyntheticEvalResults(int numScenarios, int ticksPer,
                                      bool perfectScenarios = true) {
     EvalResults results;
-    results.aircraftStateList.resize(numScenarios);
+    results.tickList.resize(numScenarios);
     results.scenarioList.resize(numScenarios);
     results.crashReasonList.assign(numScenarios, CrashReason::None);
     results.pathList.resize(numScenarios);  // empty paths — loader doesn't read them
@@ -60,10 +60,15 @@ EvalResults makeSyntheticEvalResults(int numScenarios, int ticksPer,
         meta.scenarioSeed = static_cast<uint64_t>(0x1000ull + s);
         meta.scenarioSequence = static_cast<uint64_t>(100 + s);
 
-        auto& ticks = results.aircraftStateList[s];
-        ticks.reserve(ticksPer);
-        for (int t = 0; t < ticksPer; ++t) {
-            ticks.push_back(
+        // 041 T020 — grouped. The loader emits initialState followed by one
+        // sample per tick, so laying tick 0 into `initialState` keeps the total
+        // at `ticksPer` and the position sequence at 0, 1, 2, … exactly as
+        // before; the assertions downstream are unchanged.
+        ScenarioTicks& sc = results.tickList[s];
+        sc.initialState = makeTickState(0UL, 0.0f);
+        sc.ticks.reserve(ticksPer > 0 ? ticksPer - 1 : 0);
+        for (int t = 1; t < ticksPer; ++t) {
+            sc.ticks.emplace_back(
                 makeTickState(static_cast<unsigned long>(t) * 100UL,
                               static_cast<float>(t)));
         }

@@ -27,8 +27,40 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 AXES = [("pitch", "tab:red"), ("roll", "tab:blue"), ("throttle", "tab:green")]
-DCTRL_BUDGET = 0.27   # per-axis goal (sum-over-axes ≤ 0.80)
-MAG_BUDGET = 0.67     # per-axis goal (sum-over-axes ≤ 2.00)
+# ============================================================================
+# SERVO-DEMAND REFERENCE LINES — provenance, because the name used to overstate
+# what these are (operator 2026-08-22: "it is a decent measure of how hard are
+# we pushing the servos. Maybe we rename.").
+#
+# ⛔ THEY ARE NOT A PHYSICAL LIMIT. Traced to the 027 go/no-go gate table
+# (specs/027-recurrent-nn/plan.md), which set them as RELATIVE improvement bars
+# against the `cadence7` controller:
+#     dCtrl  cadence7 ~1.00  ->  <= 0.80   "≥ 20 % reduction in stick speed"
+#     |out|  cadence7 ~2.20  ->  <= 2.00   "≥ 10 % reduction in saturation"
+# Nothing in them derives from servo slew limits, hinge moments or the airframe.
+#
+# ⚠️ THREE THINGS THE OLD "budget" LABEL IMPLIED AND SHOULD NOT HAVE:
+#   1. The baseline is obsolete — cadence7 was 10 Hz, feedforward, 33 inputs.
+#      Beating it is progress against a historical reference, not evidence of
+#      nearing a limit.
+#   2. The per-axis value is just sum/3. The 027 gate was on the SUM over axes,
+#      so one axis at 0.5 with two at 0.1 PASSES the real gate and fails the
+#      drawn line; three at 0.28 does the reverse.
+#   3. Equal thirds assume the axes are equivalent efforts. They are not —
+#      pitch and roll trade geometrically through the bank vector while
+#      throttle is decoupled (operator 2026-08-21). regime_control.py budgets
+#      the bank PAIR instead, which is the defensible grouping.
+#
+# ⭐ What they ARE good for, and why they stay: a consistent, comparable measure
+# of how hard the controller works the servos, on the same scale every run since
+# 027. An EMPIRICAL limit is what 041 P2-10 (variation-sweep eval) is meant to
+# establish; replace these references with that result rather than carrying the
+# 027-era target forward a fourth time.
+# ============================================================================
+SERVO_SLEW_REF = 0.27
+SERVO_DEFLECT_REF = 0.67
+DCTRL_BUDGET = SERVO_SLEW_REF     # back-compat alias
+MAG_BUDGET = SERVO_DEFLECT_REF    # back-compat alias
 
 
 def load(src):
@@ -71,7 +103,7 @@ def main() -> int:
     for name, color in AXES:
         axes[0].plot(gen, d[f"dctrl_{name}"], label=name, color=color, lw=1.0)
     axes[0].axhline(DCTRL_BUDGET, color="gray", linestyle="--", linewidth=0.8,
-                    label=f"per-axis budget {DCTRL_BUDGET} (sum 0.80)")
+                    label=f"servo-slew ref {SERVO_SLEW_REF} (027; sum 0.80)")
     axes[0].set_ylabel("Mean |dctrl| per tick\n(slick rate)")
     axes[0].set_title("change rate (bang-bang detector) — watch dCtrl trend DOWN")
     axes[0].legend(fontsize=8, loc="upper right")
@@ -81,7 +113,7 @@ def main() -> int:
     for name, color in AXES:
         axes[1].plot(gen, d[f"mag_{name}"], label=name, color=color, lw=1.0)
     axes[1].axhline(MAG_BUDGET, color="gray", linestyle="--", linewidth=0.8,
-                    label=f"per-axis budget {MAG_BUDGET} (sum 2.00)")
+                    label=f"servo-deflection ref {SERVO_DEFLECT_REF} (027; sum 2.00)")
     axes[1].axhline(1.0, color="black", linestyle=":", linewidth=0.8,
                     label="full-throw ceiling 1.0")
     axes[1].set_ylabel("Mean |out| per tick\n(amplitude)")

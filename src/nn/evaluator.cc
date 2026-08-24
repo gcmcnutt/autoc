@@ -315,6 +315,116 @@ static constexpr int HIST_PAST[] = {
     historyLagTicks(0), historyLagTicks(1), historyLagTicks(2),
     historyLagTicks(3), historyLagTicks(4), historyLagTicks(5)};
 
+// 041 T037-T039 — the five new slots, written identically in both modes.
+//
+// 041 P2-1 — ONE function for ONE struct. `CraftCommonInputs` is a single
+// definition shared by `NNInputs` and `TrackerInputs`, so the twenty craft
+// slots are also written in exactly one place — no template over two unrelated
+// types with coincidentally-matching member names, and no second copy to drift.
+//
+// Everything here is a COPY. The producer (the crrcsim bridge for M1, the
+// tracker stepper for M2) computed each quantity before the NN ran and stored
+// it on the state; nothing is derived in the gather. That is deliberate
+// (spec.md § Clarifications 2026-08-10): on hardware these values arrive
+// finished over MSP and the xiao's gather likewise only copies, so a
+// sim-side transformation here would be the one code path with no hardware
+// counterpart — exactly how sim and flight diverge without either looking wrong.
+//
+// The single exception is NORMALIZATION, which is applied only at the slot
+// write. Every other consumer — dmp-dump, the analytics load column, the Ps
+// objective axis, the flight log — therefore reads the plain physical unit
+// (g, metres, m/s), and there is one place where NN units are entered.
+static void writeCraftCommonInputs(const AircraftState& state,
+                                   const autoc::eval::FlightArena& arena,
+                                   CraftCommonInputs& out) {
+    {
+        const gp_quat q = state.getOrientation();
+        out.quat_w = static_cast<float>(q.w());  // raw-ok: NN-byte-format slot write
+        out.quat_x = static_cast<float>(q.x());  // raw-ok: NN-byte-format slot write
+        out.quat_y = static_cast<float>(q.y());  // raw-ok: NN-byte-format slot write
+        out.quat_z = static_cast<float>(q.z());  // raw-ok: NN-byte-format slot write
+    }
+
+    // 041 P2-8 — CRUISE-NORMALIZED, both modes. Chase at cruise ⇒ 1.0.
+    // ⛔ This REVERSES P2-2's "unify on raw". P2-2 resolved the M1(raw)/M2(cruise)
+    // split by taking the M1 side, which quietly discarded the normalization 030
+    // M11.preA.2 had given tracker mode on purpose. Raw m/s put this slot at
+    // stdev 3.16 against SPECIFIC_ENERGY's 0.090 — 35× louder — so the energy
+    // channel never got selected on. Same slot, same both-modes unification,
+    // scaled side instead of raw side.
+    out.airspeed = static_cast<float>(state.getRelVel()) / kCruiseSpeed_mps;  // raw-ok: NN-byte-format slot write
+
+    // 041 P2-8 — body rates scaled by kGyroScale_radps (p95 |x| = 6.17 rad/s over
+    // the t5 tick set). Raw rad/s ran stdev 2.24 with 51-91% of ticks outside
+    // [-1,1] per axis, which both drowned the quiet slots and pushed the first
+    // layer toward tanh saturation.
+    {
+        const gp_vec3 gyro = state.getGyroRates();
+        out.gyro_p = static_cast<float>(gyro.x()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
+        out.gyro_q = static_cast<float>(gyro.y()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
+        out.gyro_r = static_cast<float>(gyro.z()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
+    }
+
+    // Body-frame specific force, g → NN units.
+    {
+        const gp_vec3 sf = state.getSpecificForceG();
+        out.accel_x = static_cast<float>(sf.x()) / kAccelScale_g;  // raw-ok: NN-byte-format slot write
+        out.accel_y = static_cast<float>(sf.y()) / kAccelScale_g;  // raw-ok: NN-byte-format slot write
+        out.accel_z = static_cast<float>(sf.z()) / kAccelScale_g;  // raw-ok: NN-byte-format slot write
+    }
+
+    // Es, metres of energy height above the hard deck → NN units.
+    out.specific_energy =                                          // raw-ok: NN-byte-format slot write
+        static_cast<float>(state.getSpecificEnergy()) / kEnergyScale_m;
+
+    // Outward radial closure on the wall, m/s → cruise-normalized.
+    out.boundary_closure_rate =                                    // raw-ok: NN-byte-format slot write
+        static_cast<float>(state.getBoundaryClosureRate()) / kCruiseSpeed_mps;
+
+    // ⚠️ The two arena-derived slots below are the ONE place the gather still
+    // computes rather than copies, and it is justified differently: they are
+    // pure functions of (position, velocity, orientation, arena), all of which
+    // the xiao has, and `nnActiveArena()` is exactly how the generated firmware
+    // supplies the engage-resolved arena to this same code. Same code, same
+    // arena, both sides — which is the property that matters.
+    {
+        const float dist_raw = static_cast<float>(   // raw-ok: NN-byte-format primitive
+            autoc::eval::distanceToBoundary(state.getPosition(),
+                                            state.getVelocity(), arena));
+        out.dist_to_boundary = std::tanh(dist_raw / kDistToBoundaryScale_m);  // raw-ok: NN-byte-format slot write
+    }
+    {
+        const gp_vec3 inward = autoc::eval::inwardBodyDirection(
+            state.getPosition(), state.getOrientation());
+        out.inward_body_x = static_cast<float>(inward.x());  // raw-ok: NN-byte-format slot write
+        out.inward_body_y = static_cast<float>(inward.y());  // raw-ok: NN-byte-format slot write
+        out.inward_body_z = static_cast<float>(inward.z());  // raw-ok: NN-byte-format slot write
+    }
+
+    // ∂score/∂position (body, × streak multiplier) → bounded NN units.
+    //
+    // ⚠️ tanh of the NORM, direction preserved. Per-component tanh would bound
+    // the slot while ROTATING the vector, and the direction is the whole
+    // content of this input. Unbounded input: |∇θ| = 1/d diverges near the
+    // rabbit — see kScoreGradScale for the measured basis.
+    {
+        const gp_vec3 g = state.getScoreGradBody();
+        const gp_scalar norm = g.norm();
+        if (norm > static_cast<gp_scalar>(1e-9)) {
+            const float bounded = std::tanh(static_cast<float>(norm) / kScoreGradScale);  // raw-ok: NN-byte-format primitive
+            out.score_grad_x = static_cast<float>(g.x() / norm) * bounded;  // raw-ok: NN-byte-format slot write
+            out.score_grad_y = static_cast<float>(g.y() / norm) * bounded;  // raw-ok: NN-byte-format slot write
+            out.score_grad_z = static_cast<float>(g.z() / norm) * bounded;  // raw-ok: NN-byte-format slot write
+        } else {
+            // At the score maximum there is no uphill direction. Zero is the
+            // honest answer, and a test pins it.
+            out.score_grad_x = 0.0f;  // raw-ok: NN-byte-format slot write
+            out.score_grad_y = 0.0f;  // raw-ok: NN-byte-format slot write
+            out.score_grad_z = 0.0f;  // raw-ok: NN-byte-format slot write
+        }
+    }
+}
+
 void gather_pathgen_inputs([[maybe_unused]] PathProvider& pathProvider,
                            AircraftState& aircraftState,
                            const autoc::eval::FlightArena& arena,
@@ -327,63 +437,50 @@ void gather_pathgen_inputs([[maybe_unused]] PathProvider& pathProvider,
         inputs.target_z[i] = static_cast<float>(dir.z());
     }
 
-    // dist[0-5]: past history (raw metres)
+    // dist[0-5]: past history, scaled by kTargetDistScale_m (041 P2-8; p95 |x| =
+    // 25.87 m over the t5 tick set). Was RAW metres at stdev 7.17 — the second
+    // loudest input in the vector. Linear (not tanh) so the ratio structure the
+    // tracking cone depends on survives at every range.
     for (int i = 0; i < 6; i++)
-        inputs.dist[i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[i]));
+        inputs.dist[i] = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[i]))
+                         / kTargetDistScale_m;
 
     // closing_rate: dDist/dt (m/s, positive = approaching). 037 T019: the
     // rate spans the NOW↔TM1 lag gap (100 ms at EVERY cadence by the R5
     // table) and divides by that actual gap — the former /0.1f literal was
     // an implicit one-tick assumption that only held at 10 Hz.
     {
+        // 041 P2-8 — computed from RAW metres, then scaled by
+        // kClosingRateScale_mps (p95 |x| = 15.93 m/s). ⚠️ Deliberately NOT
+        // derived from the now-scaled inputs.dist[] above: that would divide by
+        // kTargetDistScale_m and silently change this channel's units.
         float dist_now  = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[5]));
         float dist_prev = static_cast<float>(aircraftState.getHistoricalDist(HIST_PAST[4]));
-        inputs.closing_rate = (dist_prev - dist_now) / kNNHistoryRecentGapSec;
+        inputs.closing_rate = ((dist_prev - dist_now) / kNNHistoryRecentGapSec)
+                              / kClosingRateScale_mps;
     }
 
-    // quaternion attitude (w, x, y, z) — unit norm, components in [-1,1]
-    {
-        gp_quat q = aircraftState.getOrientation();
-        inputs.quat_w = static_cast<float>(q.w());
-        inputs.quat_x = static_cast<float>(q.x());
-        inputs.quat_y = static_cast<float>(q.y());
-        inputs.quat_z = static_cast<float>(q.z());
-    }
-
-    // airspeed (m/s, raw)
-    inputs.airspeed = static_cast<float>(aircraftState.getRelVel());
-
-    // gyro rates (p, q, r) in rad/s (raw, no scaling)
-    // Body-frame angular rates, standard aerospace RHR convention.
-    // CRRCSim FDM provides these directly; INAV requires pitch/yaw negation
-    // at consumer boundary (see COORDINATE_CONVENTIONS.md).
-    {
-        gp_vec3 gyro = aircraftState.getGyroRates();
-        inputs.gyro_p = static_cast<float>(gyro.x());  // p (roll rate, rad/s)
-        inputs.gyro_q = static_cast<float>(gyro.y());  // q (pitch rate, rad/s)
-        inputs.gyro_r = static_cast<float>(gyro.z());  // r (yaw rate, rad/s)
-    }
-
-    // ----- 038 P0-D FR-P0H arena-awareness (B) — M1 gets it too -----
-    // Same ray-projection + tanh(d / scale) as the tracker slot-44 input, plus
-    // the body-frame radial-inward unit vector. M1 never goes blind, so it
-    // carries only (B) — no (A) target-lost cues.
-    const float dist_raw = static_cast<float>(   // raw-ok: NN-byte-format primitive
-        autoc::eval::distanceToBoundary(aircraftState.getPosition(),
-                                        aircraftState.getVelocity(), arena));
-    inputs.dist_to_boundary = std::tanh(dist_raw / kDistToBoundaryScale_m);
-    {
-        const gp_vec3 inward = autoc::eval::inwardBodyDirection(
-            aircraftState.getPosition(), aircraftState.getOrientation());
-        inputs.inward_body_x = static_cast<float>(inward.x());
-        inputs.inward_body_y = static_cast<float>(inward.y());
-        inputs.inward_body_z = static_cast<float>(inward.z());
-    }
+    // ----- CRAFT STATE (25..44) — the shared block, written once -----
+    writeCraftCommonInputs(aircraftState, arena, inputs.common);
 }
 
 // ============================================================
 // T039: NNControllerBackend
 // ============================================================
+//
+// 041 P2-6 — DESKTOP ONLY. The xiao cherry-picks this .cc for the gather and
+// the forward pass; it does not use the backend, because the firmware runs the
+// nn2cpp-GENERATED unrolled program instead (which calls gather_pathgen_inputs
+// directly). The backend also throws — `setInputMask` fails loud on a
+// wrong-length ablation mask — and the embedded toolchain builds with
+// -fno-exceptions, so it cannot compile there at all.
+//
+// ⚠️ The throw is NOT the thing to remove. A mask one slot short would ablate
+// the wrong columns and produce a clean-looking number answering a different
+// question; there is no defensible truncate-or-pad. Ablation is a desktop
+// instrument, so the right fence is around the instrument, not around its
+// safety check.
+#ifndef ARDUINO
 
 NNControllerBackend::NNControllerBackend(const NNGenome& genome,
                                          const autoc::eval::FlightArena& arena)
@@ -395,6 +492,25 @@ NNControllerBackend::NNControllerBackend(const NNGenome& genome,
 
 void NNControllerBackend::reset() {
     std::fill(hidden_state_.begin(), hidden_state_.end(), 0.0f);
+}
+
+// 041 T049 — fail loud on a wrong-length mask (Constitution VII).
+//
+// A mask one slot short would silently ablate the wrong columns from that point
+// on, and the run would produce a clean-looking number that answers a different
+// question. There is no defensible truncate-or-pad, so there isn't one.
+void NNControllerBackend::setInputMask(const std::vector<uint8_t>& mask,
+                                       int expectedCount) {
+    if (mask.empty()) { input_mask_.clear(); return; }
+    if (static_cast<int>(mask.size()) != expectedCount) {
+        throw std::runtime_error(
+            "NNControllerBackend::setInputMask: mask has " +
+            std::to_string(mask.size()) + " entries but this mode has " +
+            std::to_string(expectedCount) + " input slots. A mask must cover "
+            "every slot exactly — a short mask would ablate the wrong columns "
+            "and the result would look like a finding.");
+    }
+    input_mask_ = mask;
 }
 
 void NNControllerBackend::enableTelemetryCapture() {
@@ -420,6 +536,11 @@ long long NNControllerBackend::telemetrySampleCount() const {
 void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& pathProvider) {
     NNInputs inputs = {};
     gather_pathgen_inputs(pathProvider, aircraftState, arena_, inputs);
+
+    // 041 T049 — ablation mask, after the gather and before the forward pass.
+    // setNNData below therefore records the MASKED vector: the dmp describes the
+    // network that actually ran, not the one that would have run unablated.
+    applyInputMask(inputs);
 
     float outputs[NN_OUTPUT_COUNT];  // raw-ok: NN-byte-format buffer (output of nn_forward, fp32 contract)
     if (hidden_state_.empty()) {
@@ -451,8 +572,6 @@ void NNControllerBackend::evaluate(AircraftState& aircraftState, PathProvider& p
 // FR-019 compile-time mode select). gather_tracker_inputs uses arena.h
 // which keeps things cereal-free but transitively pulls in the
 // FlightArena type definition; bodies are desktop-only.
-#ifndef ARDUINO
-
 void gather_tracker_inputs(const AircraftState& chase,
                            const TrackerHistoryWindow& history,
                            const autoc::eval::FlightArena& arena,
@@ -470,44 +589,8 @@ void gather_tracker_inputs(const AircraftState& chase,
         out.beacon_r_cep[i] = history.right_cep[i];  // raw-ok: NN-byte-format primitive
     }
 
-    // Aircraft attitude quaternion (w, x, y, z) — unit norm, components in [-1,1].
-    {
-        gp_quat q = chase.getOrientation();
-        out.quat_w = static_cast<float>(q.w());
-        out.quat_x = static_cast<float>(q.x());
-        out.quat_y = static_cast<float>(q.y());
-        out.quat_z = static_cast<float>(q.z());
-    }
-
-    // 030 M11.preA.2 — Cruise-normalized airspeed (was raw m/s pre-2026-05-09).
-    // Chase at hb1 cruise (~13 m/s) ⇒ 1.0; range becomes ≈ [0, 2].
-    out.airspeed = static_cast<float>(chase.getRelVel()) / kCruiseSpeed_mps;
-
-    // Body-frame angular rates (rad/s, standard aerospace RHR).
-    {
-        gp_vec3 gyro = chase.getGyroRates();
-        out.gyro_p = static_cast<float>(gyro.x());
-        out.gyro_q = static_cast<float>(gyro.y());
-        out.gyro_r = static_cast<float>(gyro.z());
-    }
-
-    // 030 M7a / M11.preA.2 — Arena-awareness input (FR-016).
-    // Underlying geometry: ray-projection scalar shared with arena.h's
-    // per-tick OOB termination check. Meters of safe forward flight along
-    // chase velocity vector before ray intersects cylinder wall, floor,
-    // or ceiling. M11.preA.2 wraps in tanh(d/scale) so the NN sees a
-    // dimensionless [0, 1) signal: sharp gradient near the boundary,
-    // saturated when far. (Cylinder always contains chase in sim, so
-    // distance ≥ 0 by construction. Real-world safety layer is a separate
-    // future addition that operates on raw distance, not NN input.)
-    const float dist_raw = static_cast<float>(   // raw-ok: NN-byte-format primitive
-        autoc::eval::distanceToBoundary(chase.getPosition(),
-                                         chase.getVelocity(),
-                                         arena));
-    out.dist_to_boundary_along_vel = std::tanh(dist_raw / kDistToBoundaryScale_m);
-
     // ====================================================================
-    // 032 PHASE 1 — Derived perceptual features (slots 45..53)
+    // 032 PHASE 1 — Derived perceptual features (slots 36..44)
     // ====================================================================
 
     // (1) beacon_pair_span[6] — copy cached values from history.span.
@@ -549,29 +632,33 @@ void gather_tracker_inputs(const AircraftState& chase,
     }
 
     // ====================================================================
-    // 038 P0-D FR-P0H — situational-awareness inputs (slots 54..59)
+    // 038 P0-D FR-P0H (A) — target-lost cue (slot 45), tracker-only
     // ====================================================================
-
-    // (B) arena-inward body-frame unit vector — radial toward the cylinder
-    // axis, rotated into the chase body frame. Pairs with
-    // dist_to_boundary_along_vel (magnitude/urgency) as a direction cue.
-    {
-        const gp_vec3 inward = autoc::eval::inwardBodyDirection(
-            chase.getPosition(), chase.getOrientation());
-        out.inward_body_x = static_cast<float>(inward.x());  // raw-ok: NN-byte-format slot write
-        out.inward_body_y = static_cast<float>(inward.y());  // raw-ok: NN-byte-format slot write
-        out.inward_body_z = static_cast<float>(inward.z());  // raw-ok: NN-byte-format slot write
-    }
-
-    // (A) target-lost cues (time_since_seen + held exit-bearing sin/cos) —
-    // written from the caller-owned, per-scenario-reset situational-awareness
+    // Written from the caller-owned, per-scenario-reset situational-awareness
     // state. The stateful update is single-sourced in the stepper (shared rule
     // between TrackerStepper and CrrcsimTrackerHelper).
+    //
+    // ⚠️ 041 P2-1 moved INWARD_BODY_* out of here — it is craft state, not
+    // target state, and now lives in the shared block below with everything
+    // else the two modes have in common.
     sa.writeInputs(out);
+
+    // ----- CRAFT STATE (46..65) — the shared block, written once -----
+    // Byte-for-byte the same writes M1 gets, from the same function over the
+    // same struct. The modes differ in their target representation and in
+    // nothing else: where a shared channel has a mode-specific SOURCE (the
+    // score gradient at M2 phase 2, say) that difference is upstream, in the
+    // producer, never here.
+    writeCraftCommonInputs(chase, arena, out.common);
 }
 
 void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,
-                                          const TrackerInputs& inputs) {
+                                          const TrackerInputs& inputs_in) {
+    // 041 T049 — the tracker gather happens in the stepper, so the mask is
+    // applied to a local copy here. Same ordering guarantee as pathgen: masked
+    // before the forward pass, and the masked copy is what gets recorded.
+    TrackerInputs inputs = inputs_in;
+    applyInputMask(inputs);
     // 038 US3 — tracker output head is 7: outputs[0..2] control (actuated),
     // outputs[3..6] = span/closure predictor (aux, NOT actuated; scored on the
     // prediction_score lexicase axis and recorded for honest capture).
@@ -600,7 +687,7 @@ void NNControllerBackend::evaluateTracker(AircraftState& aircraftState,
     aircraftState.setNNData(inputs, outputs, TRACKER_NN_OUTPUT_COUNT);
 }
 
-#endif  // ARDUINO — end of tracker-mode block (M6d/M7a)
+#endif  // ARDUINO — end of the desktop-only block (NNControllerBackend + M6d/M7a tracker mode)
 
 // ============================================================
 // Test helpers

@@ -59,7 +59,13 @@ public:
                    gp_scalar p_crash_this_gen,
                    uint32_t prng_seed,
                    gp_scalar trail_distance,
-                   gp_scalar cep_gate_threshold);
+                   gp_scalar cep_gate_threshold,
+                   // 041 T038 — M2 envelope estimator + its ramp. Passed
+                   // explicitly, no defaults (M2-era policy): a default here
+                   // would let this reference certify an envelope rule
+                   // production does not run.
+                   const EnvelopeEstimatorConfig& envelope_cfg,
+                   gp_scalar fit_streak_ramp_sec);
 
     // 040 US6 — set the scenario's camera draw. The production path takes this
     // from WorkerInit; the test-only reference takes it directly so the
@@ -73,7 +79,8 @@ public:
     // 030 M8b — Per-tick recorded outputs for the v=2 dmp output stream.
     // Populated by projectAndShiftHistory each step; the worker reads
     // after each successful step and push_backs into evalResults's
-    // cameraViewList / targetTrajectoryList.
+    // EvalTick::cameraView / EvalTick::targetSample (041 T020 — these were
+    // the separate cameraViewList / targetTrajectoryList before grouping).
     const CameraViewSample& lastCameraView() const { return last_camera_view_; }
     const CopiedTargetSample& lastTargetSample() const { return last_target_sample_; }
 
@@ -131,6 +138,14 @@ private:
     // held exit-bearing). Reset in initScenario, advanced each stepOnce from
     // the "now" beacon observation. Shared update rule with CrrcsimTrackerHelper.
     SituationalAwarenessState sa_state_;
+
+    // 041 T038 — envelope occupancy accumulator (M2 flag source: perception).
+    // Reset through resetPerceptionState() with the rest of the carried state;
+    // must mirror CrrcsimTrackerHelper exactly or this reference certifies
+    // behaviour production does not have.
+    EnvelopeState envelope_;
+    EnvelopeEstimatorConfig envelope_cfg_;
+    gp_scalar fit_streak_ramp_sec_;
 
     // Source-tick cursor. Each stepOnce consumes source_.samples[cursor_],
     // advances physics until the next sample's simTimeMsec, then increments.

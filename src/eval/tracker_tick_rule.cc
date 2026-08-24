@@ -204,7 +204,8 @@ void advanceSituationalAwareness(const TrackerHistoryWindow& history,
 
 void resetPerceptionState(TrackerObservationRing& ring,
                           SituationalAwarenessState& sa,
-                          PerceptionCarryState& carry) {
+                          PerceptionCarryState& carry,
+                          EnvelopeState& envelope) {
     ring.reset();
     // FR-020a: un-reset blind-tick / exit-bearing state leaks across scenarios
     // and breaks the bitwise gate.
@@ -215,6 +216,11 @@ void resetPerceptionState(TrackerObservationRing& ring,
     // Landing it here is what makes both execution paths inherit it without
     // either being edited.
     carry.reset();
+    // 041 T038 — the envelope accumulator has exactly the same exposure: a
+    // leaked accumulation would open a fresh scenario already claiming seconds
+    // of envelope occupancy it never had, which is both wrong and
+    // non-reproducible.
+    envelope.reset();
 }
 
 }  // namespace autoc::eval

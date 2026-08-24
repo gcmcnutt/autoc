@@ -1,8 +1,24 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-08-06
+**Last Updated**: 2026-08-23
 
-> **Routing (2026-08-06, 040 wrap)**: 040 closed — see [040 outcome](040-camera-redo/outcome.md).
+> ✅ **041 CLOSED 2026-08-23** — [outcome](041-m2-depth/outcome.md). Best M1 ever (−81,413, +47% on the
+> all-time record), flown, with load and throttle saturation DOWN alongside. Cause was **input scaling**
+> (P2-8), not the objective or the ramp — both of which were tried first and refuted. Baseline of record:
+> [baseline.md](041-m2-depth/baseline.md). The 2–5 Hz oscillation is architectural and carries to **043**.
+
+> **Routing (2026-08-17)**: **041 rescoped** to *"a fresh full M1 toolchain, flown"* — better M1 with
+> energy observation + objective, unified datum, proven by a real flight. M2 moved to
+> **[044](044-m2-tracking/README.md)**; camera/physics follow-ups to **042** (child of 031).
+>
+> ⭐ **REVISED 2026-08-23 after the 041-t7 flight**: a new **[043 ACRO dual-loop](043-acro-dual-loop/README.md)**
+> inserts BEFORE M2. The flight oscillates at 2-5 Hz, and the phase budget says an 81.6 ms loop delay at
+> 20 Hz cannot damp it — the 20 Hz ZOH and the actuator are 67% of it, the gyro filter only 8%. M2 would
+> inherit whatever control architecture M1 lands on, so the loop gets fixed first.
+> Order: **041 → 043 → 042 → 044** (042 and 043 are independent and can overlap). ⚠️ M2 was never blocked by M2 work — it was blocked by M1: the source was not good
+> enough, the objective could not observe energy, and the datum chain was unverified.
+>
+> *(Prior routing, 2026-08-06, 040 wrap)*: 040 closed — see [040 outcome](040-camera-redo/outcome.md).
 > Verdict: *a better camera model, much closer to real, and training results more or less the same —
 > that is the going concern.* Perception fidelity is **not** what caps M2. Next feature is **041**
 > ([seed](041-m2-depth/README.md)), scoped by the operator to three threads: **redo M1**, **control
@@ -10,6 +26,573 @@
 > "Make the predictor earn its keep" entry below is 041's E1–E4 and is already measured — start there.
 >
 > *(Prior routing, 2026-07-10, 038 wrap: 039 xiao, then M2-depth items → 040.)*
+
+---
+
+## Post-041 direction (roadmap, filed 2026-08-16)
+
+### [operator 2026-08-16] M2 is TWO-FOLD, and M3 forks after it
+
+Recorded because it is the first time the M2 goal has been stated as two distinct deliverables rather
+than one, and because the first half is already firmware scope that was flagged unfiled during the 041
+smoke session.
+
+**M2, phase 1 — a virtual target, on the real aircraft.** Load a **virtual M1 into the flight hardware**
+and fly it against a **synthetic camera**: the beacon projection + CEP run ON the nRF52840, fed from an
+M1-derived virtual target rather than from a real optic. This is the cheapest possible way to fly the
+whole M2 stack — perception, envelope, control — with no second aircraft and no lens dependency, and it
+isolates "does the controller work in the air" from "does the camera see".
+⚠️ Implies porting beacon projection + CEP to the xiao. That is real firmware scope and is NOT in 041
+(041's flight test is M1: T079/T080).
+
+**M2, phase 2 — chase an actual craft carrying beacons.** The real optic, the real target, the real link
+budget. Everything phase 1 deliberately faked becomes real, one layer at a time.
+
+**What M2 demonstrates when both halves land**: all-attitude flight control and a *generalized* controller
+— i.e. one that holds up outside the trained envelope and against a target it does not script.
+
+**M3 forks, deliberately undecided** (operator: *"we'll see"*):
+- **(a) the target stops broadcasting** — passive/vision-only acquisition. Kills the beacon crutch and
+  makes perception the whole problem. Note the 031 link-budget work argues the temporal-code side is the
+  strong one, so removing it is a *large* step, not an increment.
+- **(b) strategy — offense/defense.** See the entry below; this changes the problem CLASS, not just its
+  difficulty.
+
+The fork is not scheduled. Which branch M3 takes should be decided on what M2 phase 2 actually shows.
+
+### [operator 2026-08-16] Per-step supervised prediction + learned context — the 042 candidate
+
+Operator: *"we're gradually casting off the genetic programming core here — so, let's discuss how we'd take
+a series of inputs, and a 'context' and predict the next outputs (only 3 of them)."* Filed as a **042
+candidate**, not 041 scope.
+
+**The prize, stated numerically**: today the search sees **one scalar per ~1000 ticks** (aggregate episode
+fitness). Per-step supervision is ~1000× denser. That is the entire argument for the change.
+
+⚠️ **"Score each step" is TWO different projects, and conflating them wastes the effort:**
+- **per-step REWARD** → still RL. No teacher needed, but temporal credit assignment is owed (a good tick
+  now can be a crash in 2 s). We ALREADY have this — `stpPt` per tick, recorded in every dmp since 041
+  T035. What is missing is machinery that can *use* it, not the signal.
+- **per-step TARGET** → supervised. Cheap and stable, but something must say what the right output WAS,
+  and the sim does not. The operator's phrasing ("predict the next outputs") is the supervised shape, so
+  **the real question is where targets come from**, not which architecture.
+
+**Why GP survived here** — any replacement must beat this: the objective is non-differentiable, the sim is
+a black box, and the crash boundary is a hard discontinuity. ES/GP is indifferent to all three. Replacing
+it means acquiring gradients (differentiable sim, or policy gradient) or targets (a teacher). Neither is
+free and both dislike the crash boundary.
+
+**FIRST EXPERIMENT — free, and it reframes everything. Do this before choosing an architecture.**
+Every dmp already records the **exact input vector the net saw and the exact outputs it produced**
+(`nnInputs_` / xiao `TickRecord.inputs`, the honest-recording contract). That is a supervised corpus of
+(inputs → 3 outputs) pairs, hundreds of thousands of rows per run, **already on disk** — including the
+041 t1 run now baking. So: **behavior-clone an elite from its own dmp**, minutes of CPU on a 2211-weight
+net. It is diagnostic either way:
+- **clone FAILS** ⇒ the inputs do not determine the outputs — an *observability* result. The policy is
+  leaning on recurrent state carrying something the input vector lacks, and that names what to add.
+- **clone SUCCEEDS easily** ⇒ the policy class is not the bottleneck, **search is** — the strongest
+  possible argument for changing learning machinery, bought for an afternoon.
+
+**"Context" has three levels**, and we own the first two: recurrent hidden state (16r today) · explicit
+history window (6 ms-based lags today) · learned latent over the tick sequence (transformer/SSM — this is
+what needs hardware). For offense/defense, context means something else again: a **belief about the
+opponent's policy**, inferred online. A per-episode scalar cannot teach that.
+
+**Offense/defense changes the problem CLASS.** A maneuvering adversary is not a stationary MDP, it is a
+game: the environment is non-stationary by construction, "optimal" is undefined without naming the
+opponent, and self-play brings cycling/overfitting pathologies. Two consequences: per-step prediction gets
+*more* valuable there (predicting the opponent's next move is a supervised target with a **free label** —
+you observe what they did), and **041's predictor head is this idea in miniature** — T088's verdict is
+early evidence about how much opponent structure is predictable at all.
+
+**Suggested order**: (1) behavior-clone diagnostic → (2) value/critic head, reusing the recorded per-step
+reward and 041's extra-head machinery → (3) PPO on the existing sim (4669 sims/s measured — sample cost is
+the usual blocker and we are unusually well placed) → (4) self-play / opponent modelling.
+
+⚠️ **Do not buy hardware ahead of step 1.** The net is tiny; a GPU buys nothing for behavior cloning.
+Hardware binds at step 3 (PPO sample counts) and step 4 (larger contexts), not before.
+
+---
+
+## 041 deferrals
+
+### [041 P2-8 follow-up, filed 2026-08-20 · ⭐ HIGH VALUE, LOW COST] Formal input normalization — measured statistics, not hand-derived constants
+
+**Trigger**: P2-8 fixed input scaling **by hand**, and the hand-fix was the third swing at the same problem.
+
+⛔ **The recurring failure, stated plainly.** A unit sees `Σ wᵢxᵢ`, so an input's influence is weight ×
+**spread**. Xavier init makes every weight comparable, so at gen 1 influence is proportional to spread. When
+the spread across slots ran 200:1 (`CLOSING_RATE` 7.53 → `DIST_TO_BOUNDARY` 0.036), the quiet slots were
+never selected on **at all** — across t5 gens 1→475 every input's weight investment sat at ~1.0 and
+`eff_rank` went 11.2 → 10.9. Not "weakly used": never differentiated. Downstream symptom was throttle
+pegged 99.3% of ticks vs the prior M1's 37.7%, because with no audible energy signal "more thrust is never
+worse" is correct.
+
+⚠️ **And it flip-flopped, silently, across three features:**
+* **030 M11.preA.2** normalized airspeed + dist-to-boundary — for **tracker mode only**.
+* **041 P2-2** "unified" the shared airspeed slot on **RAW**, resolving an M1/M2 split by taking the raw
+  side and discarding 030's deliberate normalization. Nothing failed; nothing warned.
+* **041 P2-8** re-normalized by hand from measured p95, and extended it to dist / closing-rate / gyro.
+
+Every step was locally reasonable. The scheme lived in prose and four scattered constants, so nothing could
+detect that a slot had been left — or put back — in raw units.
+
+**Proposal: running observation statistics, frozen at export.**
+* Track per-input mean/σ over experience during training; normalize by those.
+* ⭐ **Zero genome cost — they are MEASURED, not evolved.** This is the whole point (see the rejected
+  alternative below).
+* ⛔ **Freeze and serialize the stats with the weights at export.** Non-negotiable here: training and flight
+  must normalize identically, and replay must be bit-reproducible. No online adaptation in flight.
+* Mechanically this is what `kEnergyScale_m` / `kScoreGradScale` / the P2-8 constants already are — derived
+  automatically and completely instead of by hand and partially.
+* Adding a new input then costs nothing and can never be silently mis-scaled, which is the actual win.
+
+⛔ **REJECTED: a learned normalization layer.** Considered 2026-08-20 (operator: *"does this argue for
+another layer in the NN to help auto normalize? i know it costs search, but…"*). It **relocates the problem
+rather than solving it**: a scale parameter on a quiet input is itself only useful once large, and reaching
+it is the same fitness-neutral random walk that stranded the raw weights. Under backprop this works —
+BatchNorm receives gradient directly. Under **evolution** the only signal is fitness: mediated and noisy.
+You would pay 45+ new parameters to meet the original problem one layer up. Supporting evidence already in
+the tree: **T-102 tried 16r → 32r and lost by 700–1500 points consistently** — capacity has been bought once
+here and did not pay.
+
+⚠️ **Depth for STRUCTURE is a separate question and is not rejected** — the operator's fast-inner-loop /
+slow-outer-loop split is a structural prior, and structural priors tend to pay in evolution where
+undifferentiated depth does not. Do not let this entry be cited against that.
+
+**Related**: `041 P2-9` (tasks.md) — `nn2cpp` `static_assert`s the input COUNT but not the SCALES, so a
+pre-P2-8 genome compiles clean and flies wrong. A stats block serialized with the weights would close that
+hole by construction rather than by a hand-maintained assert list.
+
+**Evidence** — [t5-wrap.md](041-m2-depth/t5-wrap.md), commit `747a522`, and the p95 table in
+`include/autoc/nn/nn_inputs.h`.
+
+
+### [022 T024, re-filed 2026-08-18 · ⭐ TRIGGER HAS NOW FIRED] Streak-threshold curriculum ramp
+
+**It was never built.** Planned at 022 (`e76981a`, 5 Apr) — the commit message ends *"Streak threshold ramp
+(0.1→0.5) planned for next iteration to provide early evolutionary signal."* Deferred three times since, each
+with a reason, and the reasons are worth having in one place:
+
+| when | disposition | stated reason |
+|---|---|---|
+| 022 T024 | deferred to backlog | *"betterz2 converged without it"* |
+| 023 Q5 | not in 023 | *"022 verdict holds… **Revisit only if Milestone A shows an early-generation 'no streak signal' problem**"* |
+| 041 §6.5 | *"actively unwanted"* | *"curriculum stays OFF for weak-signal work"* |
+
+⭐ **023's revisit condition is exactly what t4 is showing.** At gen 100: `avgMaxStreak` **3.0–3.1 ticks**
+(0.15 s) unmoved across every generation of the run, `pctInStreak` declining 1.4 → 0.9 %, while survival
+improves hugely (completions 18 % → 81 %, egress deaths 240 → 55). That is an early-generation *no streak
+signal* problem, stated in the words the trigger was written in.
+
+**Why it matters mechanically, not just as a metric.** 022's design rests on one claim:
+
+> *"a brief 2 m flyby earns a few good points at 1x. 25 consecutive steps at 2 m earns at up to 5x. **The
+> sustained tracker wins overwhelmingly.**"*
+
+The 5× compound is what makes "tracks well for 50 steps" beat "wanders at 20 m for 200 steps". Reaching it
+needs `stepPoints ≥ FitStreakThreshold` (0.5) held for `FitStreakRampSec` (5 s = 100 ticks). The t4
+population lives at a mean `stepPoints` of **0.058** with a best streak of 3 ticks — so **the multiplier has
+never left 1.0×**, the compound has never operated, and what remains of the objective is a plain
+`Σ stepPoints`, under which the wanderer wins. 022 designed against precisely that outcome.
+
+⚠️ **This is NOT a request to lower the threshold.** A lower constant is tuning, and the standing rule is
+that values are gradient bumps, not knobs. The ramp is a different thing: the threshold *starts reachable and
+tightens as the population improves*, so the 5× rung exists from generation 1 and the final objective is
+unchanged. Same curriculum idea as `VariationRampStep`, and it has 022's provenance rather than being
+invented at the point of frustration.
+
+⛔ **The 041 objection is real and must be answered, not skipped.** §6.5 rules it out because *a moving
+objective swamps the small signals* — the same reason `VariationRampStep` went to 0 at P0-5. That objection
+has a **scope**: it protects work that is *measuring a small delta*. It does not obviously apply to a run
+whose problem is that one term of the objective has never activated at all. Whoever picks this up owes an
+explicit answer to: does a ramped threshold make the energy/aggressiveness comparison unreadable, and if so,
+can the ramp finish before the measurement window opens?
+
+**Suggested shape** (not a decision): ramp `FitStreakThreshold` low→0.5 over the early generations, driven by
+the existing `computeVariationScale()` so there is one curriculum clock rather than two.
+
+⚠️ Also found while digging: `include/autoc/eval/fitness_decomposition.h:142` still documents a
+`variationScale` parameter *"used for streak threshold ramp"* on `computeScenarioScores`. **The parameter
+does not exist** — the signature is `computeScenarioScores(EvalResults&)`. A stale comment describing the
+very feature that was never built; delete it or implement it, but it should not keep claiming both.
+
+
+### [041 P3-4 tooling, filed 2026-08-18] `nnextractor -g` takes the FILE number; `dmp-dump --gen` takes the GENERATION
+
+⛔ **Same flag name, opposite meaning, on two tools used in the same breath.** The dmp filename encodes
+`10000 − actual_gen`, and the two readers disagree about which side of that the operator is expected to do:
+
+| tool | `-g` / `--gen` means | to get actual gen 5 |
+|---|---|---|
+| `dmp-dump` | the **actual generation** | `--gen 5` |
+| `nnextractor` | the **file number** | `-g 9995` |
+
+Hit live during the 041 P3-4 verification: `nnextractor -g 5` failed on a run that plainly had generation 5.
+It is not silent — the error names the convention explicitly and lists the first/last file numbers, which is
+why this is a backlog item and not a defect. But the operator has to hold the inversion in their head at
+exactly the moment they are chasing something else.
+
+**Fix**: make `nnextractor -g` take the ACTUAL generation, matching `dmp-dump`. The inversion becomes an
+internal detail of the fetch, which is where it belongs.
+
+⚠️ **It is a breaking change to a habit, not just to a flag.** Any script or note that currently passes
+`-g 9995` silently starts fetching generation 9995's file (i.e. actual gen 5 → file `gen5.dmp`, which will
+not exist) — so it fails loudly rather than quietly, but every existing invocation needs revisiting. Worth
+a one-line note in the tool's `--help` recording that the meaning CHANGED, since the old form was documented
+behaviour for years.
+
+Related: [reference_dmp_filename_gen_encoding](../.claude/projects/-home-gmcnutt-autoc/memory/reference_dmp_filename_gen_encoding.md).
+
+
+### [041 TA03 follow-up, filed 2026-08-17 · ⚠️ DOWNGRADED 2026-08-18] The virtual coordinate origin sits half-way up the band
+
+⚠️ **DOWNGRADED, not withdrawn.** Operator 2026-08-18, asked which side should win the band-placement
+disagreement: *"maybe we should keep it as is because in the general sense z sign should never matter… So
+revisit the need to change arena origin."* The 041 fix is now the **geometry** (same radius/height both
+sides, engage mid-cylinder in both) with the origin left alone — see 041 P2-3. This entry survives as a
+*question* rather than a plan: it is only worth doing if a consumer is found that genuinely cares where z = 0
+sits, and none has been.
+⚠️ Two forward-looking reasons NOT to commit to a floor-anchored origin: *"hard deck or ground will
+eventually vary"* (real terrain), and *"at some point we are at trigger and craft enters arena and stays
+there is quite plausible"* (outside-in entry). Both would invalidate a frame anchored to today's deck.
+
+Operator 2026-08-17, choosing the `SPECIFIC_ENERGY` datum: *"our virtual coordinate system with origin
+half way up, well, we could consider some changes down the line — this sort of thing is where sim to real
+gets messy."*
+
+`SIM_INITIAL_ALTITUDE = -25 m` puts the virtual origin **25 m AGL**, mid-band, so "z = 0" is neither the
+ground, nor the floor, nor the ceiling — it is the altitude a scenario happens to start at. Consequences
+that keep surfacing:
+
+- every altitude-derived quantity needs an explicit datum conversion, and each conversion is a place to be
+  wrong (the sibling entry above — sim/flight band **placement** disagreeing — is one instance already
+  shipped);
+- "energy" measured from that origin would be measured from an arbitrary offset, which is why 041 chose
+  height above the **arena floor** instead;
+- a reader of `pz` cannot tell whether they hold virtual, raw-NED, or AGL without tracing the call site.
+
+**Candidate**: put the virtual origin at the **arena floor** (hard deck). Then `z` is directly "height in
+the operating band", altitude inputs need no conversion, and `Es ≥ 0` holds by construction rather than by
+observation.
+
+⚠️ **Fitness-affecting and wide-reaching** — it moves the frame every recorded dmp is expressed in. Only
+sane inside a format break with a re-bake, and it interacts with the band-placement decision above; do them
+together or not at all.
+
+**Not urgent.** 041's mitigation (measure from the floor, normalise by the band) makes the inputs correct
+today. This is about removing a standing source of conversion errors, and the trigger should be the next
+format break that is happening anyway.
+
+### [041 TA03 follow-up, filed 2026-08-17] The arena band is PLACED differently in sim and in flight
+
+Found while choosing the datum for the new `SPECIFIC_ENERGY` input. Not caused by it — it affects every
+altitude-derived input **that already ships**, including `DIST_TO_BOUNDARY`, which the TA01 ablation just
+measured as the **third most important input in the vector** (−40.7% pooled, −25.0% on the field path).
+
+| | floor rel. engage | ceiling rel. engage |
+|---|---:|---:|
+| **sim** — `checkArenaBounds`, 5–100 m AGL with engage at 25 m AGL | **20 m below** | 75 m above |
+| **flight** — `resolveEngageArena`, `floor_z_ned = z_engage + K`, K = 47.5 | **47.5 m below** | 47.5 m above |
+
+Same 95 m band, different placement. A policy trained with 20 m of room beneath it flies with 47.5 m, and
+every altitude-derived observation shifts accordingly.
+
+**Why it is like this**: 039 D5 made the baked arena a geometry *template* whose *placement* is
+engage-scoped, because the aircraft does not know ground height. That is sound reasoning for flight; the
+gap is that the sim never adopted the same placement rule.
+
+**Options, none free:**
+1. **Centre the sim arena on engage** to match flight. Fitness-affecting (changes the vertical envelope
+   every M1/M2 run trains against) ⇒ a re-bake, so it belongs in a format-break bundle.
+2. **Ground-reference the flight arena** when altitude is trustworthy. Needs a reliable AGL source the
+   aircraft currently does not have.
+3. **Normalise every altitude input by the band** so the slot means "fraction of usable vertical band"
+   rather than metres. Cheapest, and what the `SPECIFIC_ENERGY` proposal adopts — but it makes the inputs
+   agree while the *geometry* still differs, so it mitigates rather than resolves.
+
+⚠️ Worth deciding before the next M1 bake, since option 1 is only free during a format break.
+
+### [041 smoke session, filed 2026-08-13] Portable run review — the renderer is bound to an X display, and that is now a workflow tax
+
+**Operator 2026-08-13**, mid-smoke: *"the current renderer isn't a portable web page — we prob should do
+that soon — so i pull the code over to where i can do x display at decent performance."*
+
+**The cost, observed the same day.** Reviewing a run currently requires the *build host* and the *display
+host* to be the same machine, or a code push and a rebuild to move between them. During the 041 M1 smoke
+that meant: push both repos, pull on the render host, `submodule update`, clean rebuild — to look at a run
+that was already sitting complete in S3. The artifact is portable; the viewer is not.
+
+It also cost a debugging cycle. A renderer segfault could not be reproduced on the training host (only
+software-GL `xvfb` was available there), so the crash could not be attributed to code versus display path
+without moving machines. A viewer that runs anywhere would have made that a one-minute question.
+
+**Shape, roughly.** The renderer is VTK/X11/GPU-bound. A browser-based viewer reading the same dmp — via a
+small exporter, or a WASM/three.js front end — decouples "where the run was produced" from "where it is
+looked at", and makes a run shareable rather than reproducible-on-request.
+
+⚠️ **Do not scope this as a port of the current renderer.** It has accumulated a lot of surface (playback,
+FOV pyramids, beacon trails, per-tick HUD, xiao-log overlay, tracker POV). The useful first version is the
+*review* subset — trajectory, target, score/streak over time — not feature parity. Deciding which subset
+is the actual work.
+
+**Adjacent, already filed**: the T024 entry below ("make 'is every renderer surface on the same tick?'
+ANALYTIC instead of visual") points the same direction — several things currently answered by *looking*
+should be answered by *reading numbers*, which shrinks what a viewer has to do at all.
+
+**Not 041.** No dependency either way; 041's reads are CSV-and-metrics driven (`dmp-dump`, Study A), and
+none of them need the 3D view.
+
+### [041 T036 discussion, filed 2026-08-10] Standing direction — PRUNE the complexity we are not going to use
+
+**Operator 2026-08-10**, alongside the T036 reframing: *"we just don't need compat because if things get
+better with our additional complexity we keep it — gradually pruning out stuff we're likely not going to
+use (variations ramp is a potential)."*
+
+Not a task, a **standing direction**: 041's clean-slate rule (no compat, no shims) has a corollary that has
+not been acted on — complexity that was added speculatively and never earned its keep should be *removed*,
+not merely tolerated. Every carried-but-unused mechanism is search space, config surface, and one more
+thing a reader has to model.
+
+**Named candidate: the variation RAMP.** Distinguish carefully — per-scenario *variations* are load-bearing
+(034 US4 craft, 040 US6 camera). It is the **ramp** — the gradual per-generation escalation of variation
+magnitude — that is the suspect. Evidence already on file that it costs more than it returns:
+
+- Late-run training fitness includes variation-ramp pressure, so cross-run and ablation comparisons must use
+  a fixed eval to be meaningful at all ([[project_late_run_fitness_interpretation]]). That is a permanent tax
+  on every comparison the project makes.
+- `rampSc` threads through the objective, the dmp, `dmp_dump`, the renderer and the analytics as a column
+  that mostly reads 1.0.
+
+**Before removing**: confirm against a run whether the ramp measurably helps early convergence, since that
+was its original justification. If it does not, deleting it simplifies the objective, the recorded schema
+and every downstream reader at once. Other pruning candidates should be added to this entry as they are
+identified rather than filed separately.
+
+### [041 T024, filed 2026-08-10] Make "is every renderer surface on the same tick?" ANALYTIC instead of visual
+
+**Operator 2026-08-10**: *"is tough objectively to see if the hud, display, clock, controls, streak are all
+on exactly the same entry — but we can dig later and make it analytic."*
+
+**Why this is live.** 041 T024 fixed a real one-tick lead in the camera HUD: the code derived an index by
+walking the **state** timestamps and then used it directly to index the **camera** list, while
+`cams[j] ↔ states[j + 1]`. The same file documented the true relationship forty lines lower, in the `mountQ`
+block, which compensated correctly — so the file contained both the true statement and the false one, and
+the code followed the false one. At 20 Hz continuous playback that is 50 ms and invisible; stepping tick by
+tick, the HUD moved before the aircraft did.
+
+The fix is verified only by eye, which is the problem. It is also the FOURTH instance of this bug class
+found in 041 (objective target read, `prediction_score`, `dmp_dump` target pairing, renderer HUD) — every
+one a series starting one tick later than the states, every one invisible in continuous operation.
+
+**The actual defect is structural**: each display surface derives its own index from `currentTime`
+independently — HUD, tape/aircraft geometry, stopwatch tick readout (`currentTime / tickSec`), the playback
+controls, and the streak/telemetry overlays. There is no single answer to "which tick is on screen", so
+there is nothing to be right or wrong against.
+
+**Shape of the fix** (not designed, just scoped):
+
+1. Resolve the playback tick **once** per frame — one `struct PlaybackCursor { int tick; size_t stateIdx;
+   size_t camIdx; gp_scalar time; }` — and have every surface read it instead of re-deriving. That alone
+   makes disagreement unrepresentable, the same move the grouped record made for the recorded data.
+2. Make it **checkable**: a debug key that prints each surface's resolved index for the current frame, and
+   /or a headless test that drives playback across a synthetic dmp whose per-tick values are distinguishable
+   (tick number encoded in position, span, and streak) and asserts every surface reports the same tick.
+   The synthetic-fixture trick is already proven in `tracker_dmp_roundtrip_tests.cc`.
+3. Worth including in the sweep: the stopwatch's `currentTime / tick_s + 0.5` rounding, which is a THIRD
+   independent derivation and can disagree with both index paths at a boundary.
+
+Deferred from 041 deliberately: the T024 fix is correct and the feature's remaining work is training, not
+rendering. This is a tooling-confidence item, best done when the renderer is next opened.
+
+### [041 US1 implement, filed 2026-08-10] Reorganise `EvalResults` BY TIME — stop having independent lists to synchronise at all
+
+**Operator framing, 2026-08-10**: *"try not to sync independent lists — rather we refactor the whole thing
+by time. Big ripple effect for later on."* That is the actual target, and it is deliberately larger than
+what 041 does.
+
+**What 041 did, and where it stopped.** US1 replaced the per-**tick** parallel lists with a grouped record —
+`tickList[i][k] = {state, cameraView, targetSample}` plus a separately-named pre-loop initial state — which
+retires the offset bug class on that axis by construction (the `stepIndex - 1` clamp is deleted, not
+relocated). It did **not** touch the per-**scenario** axis, where `EvalResults` still carries eight
+collections indexed by the same `i`: `crashReasonList`, `pathList`, `aircraftStateList`, `scenarioList`,
+`debugSamples`, `physicsTrace`, `arenaEgressCount`, `hullStrikeCount`.
+
+**Why it stopped there** (recorded so the decision is not re-litigated as an oversight): grouping the
+scenario axis is strictly larger than the change 041 was already taking, and it would have landed in the
+**same commit as the M1 bake's schema** — the one commit 041 cannot afford to get wrong (FR-005, one
+contract break, one owed rebake).
+
+**What the follow-on should actually do.** Not "group the scenario axis too" — make **time the organising
+principle** so there is no set of independent series to keep in step. Concretely, the things that make the
+current shape fragile:
+
+- The eight scenario-axis lists are only safe because they are appended **in lockstep in one place**
+  (`inputdev_autoc.cpp:1030-1054`). Nothing enforces that; a future producer that appends to seven of eight
+  compiles fine.
+- `physicsTrace` and `debugSamples` are appended only `if (evalData.isEliteReeval)`, so on a non-elite dmp
+  they are **empty while the others are full**. Every consumer bounds-checks today; nothing makes it
+  mandatory.
+- `physicsTrace` is worse than offset — it is a **different rate** (200 Hz FDM substeps vs 20 Hz control
+  ticks) living in a struct whose other members are per-tick, with a timestamp that only advances per
+  control tick. 041 dealt with this by joining on recorded time in the one consumer (`dmp-dump --physics`);
+  a time-organised structure would make the rate difference explicit instead of implicit.
+- `ScenarioMetadata` serves **two lifetimes** in one struct — `EvalResults::scenario` (per-eval RPC) and
+  `EvalResults::scenarioList` (persisted). This shape cost a launch on 2026-08-02.
+
+**Ripple** — this is a dmp schema change plus every reader (`dmp_dump`, `renderer`, `tracker_dmp_inspect`,
+`source_dmp_loader`, the analytics CSV consumers), so it wants its own baseline moment and its own owed
+rebake, exactly as 041's did. Full evidence and the per-class classification:
+[041 index-coupling-inventory.md](041-m2-depth/index-coupling-inventory.md).
+
+### [041 camera-model pass, filed 2026-08-10] The FOV / topology outcome space — 041's predictor verdict is an input to it
+
+Not a deferral so much as the **decision frame** the camera items below sit inside. Operator 2026-08-10: these
+are *all* live outcomes, and which one lands depends on how the photon budget and the predictor actually read.
+
+| outcome | when it wins | cost |
+|---|---|---|
+| **~90° single camera** | 120° is marginal on photon budget **and** the predictor can carry the extra blind time | smallest, cheapest optic; leans hardest on 041's predictor result |
+| **120° single camera** (current baseline) | budget holds at 120° and the predictor is at best neutral | status quo; V = 75° per FR-029 |
+| **~270° from several cameras** | nothing narrower closes the geometry — *"if we just can't get there without, so be it"* | multiple cameras, registration problem, mass/power, inter-camera alignment |
+
+Two couplings that make this a real trade rather than a preference:
+
+- **Narrowing buys range quadratically** (background-limited SNR ∝ 1/FOV²) and costs blind time. Blind-time
+  budget ∝ √(half-field), so the predictor is the thing that pays for narrowing — **a working predictor is what
+  makes 90° affordable, and a dead one forces the field wider.**
+- **Training is the cheap side** ([camera-era-knobs.md](031-beacon-camera/camera-era-knobs.md) knob 6): FOV
+  alternatives can be trained and compared in sim before glass is bought. The optics decision should be *made*
+  against a trained policy, not assumed and then trained around.
+
+**This is why 041's predictor go/no-go and its measured blind-gap distribution are hardware-purchase-relevant**
+(1.8 mm vs 2.x mm), and why both must be recorded with their evidence rather than as a verdict alone.
+
+### [041 camera-model pass, filed 2026-08-10] Birded two-camera pair — deferred, and the real cost is alignment variation
+
+041 keeps `CameraCount = 1`. The [031 handoff](031-beacon-camera/handoff-041-camera-model.md) asked for the
+bird-pair-vs-single-fisheye fork to be **compared in training**; deferred, for reasons that got stronger as the
+numbers firmed up:
+
+- **The handoff softened its own case.** The single-fisheye signal penalty narrowed from ×6.5 (rectilinear
+  1.1 mm) to **×2.2** once commodity 1.7–1.8 mm F/2.0 IR-corrected fisheyes entered the picture
+  ([camera-era-knobs.md](031-beacon-camera/camera-era-knobs.md) knob 6 refinement). And the fork was
+  conditioned on *"if the link budget reads marginal"* — with bright-day post-correlation SNR pencilling to
+  100–110 m class at 4×4 defocus, it does not.
+- **The cost the handoff did not price (operator 2026-08-10): inter-camera alignment and calibration
+  variation.** A two-camera rig adds a *relative* pose error between the cameras on top of the per-scenario
+  mount misalignment 040 already models. That is a new variation class, not a doubling of an existing one, and
+  it is exactly the axis the camera PRNG slot was scoped for (mount-alignment 6-DOF first). Training a policy
+  against an uncalibrated pair is a materially harder problem than training against one uncalibrated camera.
+- **Input-vector cost**: the beacon block (36 slots) roughly doubles; the multi-camera *interface* exists from
+  030 FR-003b but has never been exercised.
+
+**What the pair would buy** (unchanged, and still real): ~120–125° combined H from 2×72° splayed ±26°, a ~20°
+central overlap giving **parallax ranging** (disparity = baseline/r — 10 px @20 m, 4 px @50 m, 2 px @100 m:
+weak far, strong exactly where the endgame is), doubled photon budget in the overlap, and cross-validated code
+locks. Hardware note: one CSI port per Pi Zero 2 W ⇒ two Zeros (11 g each) or a Pi 5.
+
+**The registration problem may itself want a NN (operator 2026-08-10)** — and this reframes the cost above
+rather than just adding to it. Cross-camera auto-correlation ("do these two blobs are the same beacon, and at
+what disparity") plus the shifts/warps needed to bring two uncalibrated views into a common frame is plausibly
+**a learned function, not a calibration constant** — a small network in the perception front end that outputs
+the registration transform.
+
+Two consequences, in tension, and both should be stated when this unparks:
+
+- **It absorbs the cost.** If the registration net is *trained against* alignment variation, then uncalibrated
+  mounting stops being a tax and becomes the thing the net is robust to — which inverts the "new variation
+  class" objection above. That is the operator's point and it is a good one.
+- **It moves the architecture.** A learned registration stage sits **inside the perception front end**, which
+  is the territory of the *"Parallel perception-front-end — camera pixels → (x, y, CEP)"* item further down this
+  file, not of the control network. The clean interface (front end emits `(x, y, CEP)`; control NN consumes it)
+  survives — but the front end grows a trained component, and the "photons in, control out" story gains a
+  second learned stage with its own training data requirements (real footage, or a sim that models two
+  uncalibrated views faithfully enough to train against).
+
+**"Something for later"** — explicitly not scheduled.
+
+**Trigger**: static range testing says the single wide optic is marginal, OR the 041 predictor verdict says a
+narrow field is untenable, OR parallax ranging becomes load-bearing for the endgame. Pairs with the camera PRNG
+slot item (alignment variation is the shared prerequisite) and with the perception-front-end item.
+
+### [041 camera-model pass, filed 2026-08-10] On-the-fly camera mode switching — close-and-bright goes centre-bore
+
+The 453 fps mode's crop-vs-bin geometry may make the *effective* field two-regime: if it is a centre crop,
+tracked-state FOV is ~20°×15° while acquisition FOV is the full field
+([031 handoff](031-beacon-camera/handoff-041-camera-model.md)).
+
+**Operator framing 2026-08-10, sharper than the handoff's**: the interesting version is not
+acquisition-vs-tracked, it is **target-state-driven** — in tracker mode, *when the target is close and bright,
+go centre-bore*; stay wide otherwise. Close + bright is exactly when you can afford a narrow field and most
+want the angular resolution, and it is a condition the policy can already perceive (range proxy + signal
+quality are both in the input vector).
+
+**Shape decided (operator 2026-08-10): the mode is an NN OUTPUT knob**, not a front-end rule. That makes it a
+control problem, and the two interesting parts are consequences of actuating it:
+
+1. **Transition lag.** A crop change plus a code relock is **at least the ≈155 ms warm-relock floor**, probably
+   more. So the policy must *anticipate* — command the switch before it needs the narrow field — which is a
+   harder learning problem than reacting. Lag magnitude is the first thing to measure.
+2. **Mode state as a feedback input.** The net needs to know which mode it is in, and plausibly how far through
+   a transition it is. That is the **same wiring shape 041 builds for the predictor innovation** (FR-025c–f:
+   an output whose consequence is fed back as an input next tick, computed in the stepper, no output-layer
+   recurrence). If 041 lands that pattern, this item inherits a working template rather than inventing one —
+   worth sequencing after 041 for that reason alone.
+
+Remaining open: how to represent the two-regime field in the sim cheaply; whether the knob is binary or a
+continuous zoom; whether a mis-timed switch (narrow field commanded while the target is still wide) should be
+punished by the objective or left to be its own consequence.
+
+**Trigger**: the A8-2 arrival measurement that reads the actual 453 fps mode geometry from registers (crop vs
+skip vs bin) — until then the premise is unverified. Filed as **future research**, not scheduled work.
+
+### [041 clarify, filed 2026-08-07] The scoring envelope is position-only — should "in streak" also require the target to be VISIBLE?
+
+**The defect.** `stepPoints` (and therefore streak credit) is computed from **relative position alone** — the
+along/lateral decomposition against the trail rabbit. Nothing tests whether the chase can actually *see* the
+target. So a chase can earn tracking credit while pointed the wrong way. The clean instance is a **head-on
+crossing**: at the crossing instant the chase is geometrically inside the scoring cone while the target sits
+outside any plausible field of view.
+
+**Magnitude is small** — roughly one tick per crossing (operator 2026-08-07). But the *definition* is wrong,
+and this project's record on small-but-wrong definitions is bad: a 28% trail-distance error survived four
+features because it was invisible in recorded data.
+
+**Why it was pulled out of 041 rather than fixed there.** The question *"can you be in streak and not
+visible?"* opens a design tree, not a one-line fix:
+
+1. **Gate the score, or only the streak?** Gating `stepPoints` is one definition in one place, and the streak
+   follows automatically since it tests `stepPoints`. Gating only the streak has a smaller blast radius but
+   keeps paying base points for blind position — the same defect in smaller print.
+2. **A hard gate punishes every short excursion with a zero.** That is harsh *precisely* in the regime that
+   narrowing the field of view would create more of, and it plausibly pushes the controller back toward the
+   wide standoff that already generalizes fine while tight tracking does not (040 T085: inside-5 m halves,
+   15.3% → 8.4%, on novel geometry). Making the objective *more* punishing at close range is the wrong
+   direction if standoff is already the failure mode.
+3. **A grace window fixes (2) but adds a parameter** — and an added coefficient is exactly what
+   [feedback_clear_objectives_not_tuning] warns against. If a grace window is used, its length should be
+   derived from the measured blind-gap distribution (041 Study B produces one), not chosen.
+4. **Hysteresis may be required.** A flag that chatters at the field-of-view boundary resets the
+   envelope-duration accumulator repeatedly, which is worse than either steady state.
+5. **M1 has no perception at all**, so it needs a **geometric FOV proxy** — target within a forward cone about
+   the chase body axis, half-angle matched to the modelled camera. Without it M1 and M2 optimize *different*
+   tasks, which undermines the M1→M2 source relationship the whole two-stage architecture rests on.
+6. **It is an OBJECTIVE change**, so it needs a baseline moment — it should ride a rebake (as 041's contract
+   bundle did), never land between a run and its comparator.
+
+**Where 041 leaves it**: known, written down, and deliberately unaddressed. 041's `IN_ENVELOPE` input will
+assert "in envelope" for ~one tick per crossing while the controller cannot see the target. Recorded as an
+edge case in [041 spec.md](041-m2-depth/spec.md).
+
+**Interaction that decides the timing**: the tradeoff in (2) *sharpens as the field of view narrows*. If the
+041 predictor work clears its go/no-go and a 120° → 90° reduction becomes real, this item should be designed
+**together with** that change rather than before it — the right gating rule depends on how often and how long
+the target actually leaves frame.
+
+**Trigger**: the next M1/M2 rebake moment (an objective change needs one), **or** the field-of-view-narrowing
+feature — whichever comes first. Pairs with 041's envelope-input work and with the blind-gap distribution 041
+produces.
 
 ---
 

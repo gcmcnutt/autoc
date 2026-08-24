@@ -373,7 +373,8 @@ hiding the training challenge.
 ### Renderer Display Convention
 
 The renderer shows paths and aircraft at a display altitude offset from virtual:
-- Paths (virtual Z=0) → shifted by `SIM_INITIAL_ALTITUDE` (-25m) for display
+- Paths (virtual Z=0) → shifted by `SIM_INITIAL_ALTITUDE` (−55 m as of 041) for display, so
+  **display z = −AGL** exactly and the arena cylinder lands on the checkerboard
 - Aircraft positions (virtual Z≈0) → shifted by `SIM_INITIAL_ALTITUDE` for display
 - Both use the same transform, so they overlap correctly
 
@@ -405,6 +406,171 @@ xiao state) uses standard aerospace NED/FRD with RHR throughout.
 
 All transforms are applied at the INAV↔xiao boundary (msplink.cpp). Downstream
 code (NN evaluator, CRRCSim, renderer) uses standard aerospace convention only.
+
+## Accelerometer as an INTERFACE quantity (041, 2026-08-10)
+
+⚠️ **New status.** Until 041 the accelerometer was an **internal** value — it has never been an interface
+quantity, going back to minisim. The 021 table below is therefore *observational* (what blackbox
+`accSmooth` logs), **not** a ratified NN-input standard. 041 promotes accel to an interface quantity
+because `ACCEL_X/Y/Z` become NN inputs, so the standard is stated here.
+
+**The standard: aerospace body FRD** — x forward, y right, z down — the same frame the quat and gyro use
+downstream of the msplink boundary. **Explicitly NOT FRU/FLU** (operator 2026-08-10). Units: **g**
+(dimensionless), scaled by `kAccelScale_g` only at the NN slot write.
+
+**Two converters, deliberately different.** Native CRRCSim is its own beast and INAV is another; neither is
+the standard, and each gets its own boundary conversion:
+
+| source | native form | converter | lands as |
+|---|---|---|---|
+| CRRCSim FDM | world-frame kinematic accel (LaRCSim, ft-based) + gravity + q_EB | `autoc/eval/specific_force.h`, worker-side | body FRD, g |
+| INAV | `acc.accADCf` — proper acceleration in INAV's native **FLU** frame; post `applySensorAlignment` + `applyBoardAlignment`, ÷ `acc_1G` | `msplink.cpp`, the **same y/z flip** as the quat's `(w, x, -y, -z)` and the gyro's pitch/yaw negation | body FRD, g |
+
+⚠️ **Board alignment differs between bench and flight** (`xiao/inav-bench.cfg` vs `xiao/inav-hb1.cfg`) —
+the devices are mounted differently. Alignment is applied INSIDE INAV before MSP, so the converter is the
+same for both, but **T073 must verify on both targets**; a bench-only check is not a flight check.
+
+### ✅ RESOLVED 2026-08-11 — the bench table is correct as recorded; the *assumed frame* was wrong
+
+The nose-up row was flagged as not fitting the convention. It fits. **None of the three candidate
+explanations previously listed here is right** (no transcription error, no per-axis sign, no mislabelled
+maneuver) — the fourth possibility is the answer:
+
+> **INAV's body frame is FLU** — x forward, y **LEFT**, z **UP** — and `acc.accADCf` is plain
+> **proper acceleration** (specific force), which at rest points **UP**, away from the earth.
+
+Under that reading all three bench rows are consistent, with no exceptions:
+
+| attitude | which body axis points UP | INAV reads (FLU) | → aerospace FRD |
+|---|---|---|---|
+| level | `+z` (up) | `[0, 0, +1g]` | `[0, 0, −1g]` |
+| nose up 90° | `+x` (forward) | `[+1g, 0, 0]` | `[+1g, 0, 0]` |
+| right wing down 90° | `+y` (left) | `[0, +1g, 0]` | `[0, −1g, 0]` |
+
+**Why nose-up was the row that disagreed** — and why that is the *expected* place for a frame error to
+show. FLU→FRD negates **y and z only**; **x is shared**. So on the level and RWD rows the frame flip and
+the specific-force-vs-gravity-direction flip *cancel*, and both hypotheses predict the same number. X is
+the one axis where they cannot cancel. The nose-up row is therefore not an anomaly — it is the single
+discriminating measurement in the table, and it discriminates in favour of FLU + specific force.
+
+**Evidence, from `~/inav` @ `63cffaf4` (not from first principles):**
+
+1. `sensors/acceleration.c:567-568` — `acc.accADCf[axis] = accADC[axis] / acc.dev.acc_1G`. No negation
+   anywhere in `accUpdate()`; the value is the raw chip reading after alignment and scaling only. Whatever
+   sign the sensor produces is the sign INAV publishes.
+2. `sensors/acceleration.c:335-337` with `:360-366` — `getPrimaryAxisIndex` returns index **0** when
+   `sample[Z] > 0`, and index 0 is the **TOP-UP** calibration position (`accStartCalibration` rejects a
+   recalibration that does not start there). A MEMS accelerometer at rest reads `+1 g` on whichever of its
+   axes points up ⇒ a level, top-up board reads **positive Z** ⇒ **INAV's board `+z` is UP**.
+3. `flight/imu.c:483-491` — `vGravity = {0, 0, 1}` in the earth frame is rotated EF→BF and crossed with the
+   *normalised measured accel*, with the error driven to zero. The measured vector is therefore parallel to
+   earth `+z`, consistent with a Z-up earth frame and a reaction-up reading.
+4. `y` is LEFT follows from the RWD row given (2): the reading is `+1 g` on Y, so Y is the axis pointing up
+   in that attitude, which is the **left** wing.
+5. This is the **same** frame difference the project already handles twice: the quat's `(w, x, −y, −z)`
+   (`inavQuatToAerospaceEB`) and the gyro's pitch/yaw negation (`msplink.cpp:964-966`) are each exactly a
+   y/z flip. They were documented as "INAV inverts pitch and yaw"; structurally they are one frame change,
+   FLU→FRD, and accel is the third quantity through the same door.
+6. Board alignment is *not* involved: bench `align_board_roll = −16` (−1.6°, a mount trim) and flight
+   `roll = 1700, yaw = 900` are applied **inside** INAV before MSP (`acceleration.c:563-564`), so the
+   boundary converter is identical for both targets. T073 still verifies on both — the alignment values
+   differ, so a bench-only check is not a flight check.
+
+**Consequences — read these before writing a sign anywhere:**
+
+- **The msplink converter is `accel_FRD = (accADCf[0], −accADCf[1], −accADCf[2])`** — the same y/z flip as
+  the quat and the gyro, applied once at the same boundary (T074).
+- **In aerospace FRD, steady level flight reads `[0, 0, −1 g]`.** Body `+z` is DOWN and the measured
+  reaction points UP. This matches `spec.md` § Clarifications (which governs) and matches
+  `include/autoc/eval/specific_force.h` **as already written** — `f = R(q)ᵀ·(a_world − g_world)/g`.
+  ⚠️ **No sign flip is owed.** An earlier 041 handoff note asserted the adopted convention was the *sensed
+  gravity direction* (level ⇒ `[0, 0, +1g]`) and that the header needed flipping. That note was written
+  against this unresolved datum and is **withdrawn**; flipping the header would have put the NN's load axis
+  backwards relative to flight.
+- The load factor quoted in flight reports is `nz = −ACCEL_Z`, which is what `load_factor_nz` in
+  `specific_force.h` carries. That negation is for **human-facing reporting only** — the NN input is the
+  un-negated FRD component.
+- **All three attitudes are now safe to assert** in T073, in FRD: level `[0, 0, −1]`, nose up
+  `[+1, 0, 0]`, right wing down `[0, −1, 0]`. Compare against the counts table below by dividing by
+  `acc_1G ≈ 2048` **and** applying the y/z flip — the table is in INAV's FLU counts, not FRD g.
+
+### ✅ MEASURED ON THE WIRE 2026-08-22 (041 P5-2) — prediction confirmed, bench target
+
+The three attitudes above are no longer a prediction. `MSP2_AUTOC_STATE` was extended to carry
+`acc.accADCf` as milli-g `int16` (041 P5-1), and the payload was read **directly off the FC's USB VCP** by
+[`specs/041-m2-depth/msp_state_probe.py`](../specs/041-m2-depth/msp_state_probe.py) — host-side, no xiao in
+the loop, so a convention error could not hide behind a firmware bug. Bench FC `MAMBAF722_2022A`
+(`align_board_roll = −16°`), INAV 8.0.0, payload 58 → **64 bytes**.
+
+| attitude | FLU as INAV sends it (g) | FRD after the msplink flip (g) | expected | |
+|---|---|---|---|---|
+| level | `[−0.011, +0.032, +0.997]` | `[−0.011, −0.032, −0.997]` | `[0, 0, −1]` | ✅ |
+| nose up | `[+0.998, +0.023, +0.091]` | `[+0.998, −0.023, −0.091]` | `[+1, 0, 0]` | ✅ |
+| right wing down | `[+0.001, +1.000, −0.003]` | `[+0.001, −1.000, +0.003]` | `[0, −1, 0]` | ✅ |
+
+⭐ **Confirmed a second time, independently, through the xiao (2026-08-22).** With the 45-input firmware
+flashed, the 1 Hz console heartbeat prints `accel=[…]` straight off the NN carrier — i.e. AFTER msplink's
+FLU→FRD flip, which is the value the policy actually consumes. Operator read all three attitudes: level
+`z = −1`, nose up `x = +1`, right wing down `y = −1`. That matches the host-side probe exactly, which
+matters because the two paths share no code: the probe parses the wire in Python, the xiao parses it in C++
+and applies its own flip. **A disagreement would have localised the bug to msplink; agreement clears the
+whole chain** — INAV `acc.accADCf` → MSP → `msp_autoc_state_t` → the flip → `setSpecificForceG`.
+
+Hand-held attitudes, n=20 averaged, `|a|` within 0.3% of 1 g throughout. The off-axis terms are holding
+angle (nose-up sits ~5° off vertical), not convention error — the sign and the carrying axis are
+unambiguous in all three.
+
+### ✅ FLIGHT ARTICLE VERIFIED 2026-08-22 — the alignment transform IS transparent
+
+`MATEKF722MINI` flashed with the same INAV change and measured through the same host probe. Different
+board, different `align_board_*`, **same numbers**:
+
+| pose | flight article (FRD g) | bench article (FRD g) | expected |
+|---|---|---|---|
+| level | `[+0.009, +0.038, −0.997]` | `[−0.011, −0.032, −0.997]` | `[0, 0, −1]` ✅ |
+| nose up | `[+1.003, +0.048, −0.014]` | `[+0.998, −0.023, −0.091]` | `[+1, 0, 0]` ✅ |
+| right wing down | `[+0.029, −1.003, −0.043]` | `[+0.001, −1.000, +0.003]` | `[0, −1, 0]` ✅ |
+
+⭐ **This is the point of applying alignment inside INAV before MSP**: two boards with different mounting
+corrections produce the same body-frame vector for the same physical attitude, so the consumer needs no
+per-board knowledge. Identical readings ARE the test.
+
+⭐ **The 170-vs-180 roll concern (auto-memory `project_board_alignment`) is CLEARED for this airframe.** A
+10° residual would leak ~0.17 g onto a wrong axis in at least one pose. **Largest off-axis component across
+all three poses: 0.048 g** (≈2.8°, i.e. hand-holding). Per-pose off-axis angle: 2.3° / 2.8° / 3.0°, at or
+better than the bench board's 1.9° / 5.4° / 0.2°.
+
+`|a|` reads 1.003–1.005 g on the flight board vs 0.997 on the bench — each board's own accel calibration,
+both inside 0.5%. The level pose held to a spread of 0.002–0.004 g over 30 s.
+
+⚠️ **This certifies the BENCH board only.** Board alignment is applied inside INAV before MSP, so the
+flight FC (`MATEKF722MINI`, `align_board_roll` 170° vs 180° — see auto-memory `project_board_alignment`)
+must be re-measured after it is flashed. A 10° residual misalignment puts ~0.17 g of gravity on the wrong
+axis **and rotates with attitude**, so unlike a fixed offset it does not average out in flight.
+
+⭐ **Bias/scale residuals, for the sim-fidelity question**: the bench board's worst offset is +0.032 g (y at
+level) with a −0.3% scale error. Against `kAccelScale_g = 8.0` that reaches the NN as **0.004 input units**,
+versus a tanh linear region running to ~1.4 (the 11.2 g flight record) — ~0.3% of useful range. Sim models
+**no** accel bias or noise (`config.h` has `enableAccelInputs`/`accelScaleG` and no sigma); on these numbers
+that is defensible, but it is an untested assumption for the flight board until its residuals are measured.
+
+### ⚠️ OPEN (2026-08-22): the accel channel's DYNAMICS differ between sim and INAV, though its units do not
+
+Normalization is settled and identical — both sides store body-FRD g in `AircraftState` and divide by
+`kAccelScale_g` in the ONE shared gather (`src/nn/evaluator.cc`), so level flight reaches the NN as `−0.125`
+on either path. What is **not** matched is the filtering:
+
+| | source | filtering |
+|---|---|---|
+| sim | `bodySpecificForce((a_world − g_world), q, g)` off the FDM | **none** |
+| INAV | `acc.accADCf` | `accSoftLpfFilter` at `acc_lpf_hz`, **default 15 Hz** (PT1 or BIQUAD per `acc_lpf_type`), plus `acc_notch_hz` if set |
+
+At a 20 Hz control cadence a 15 Hz LPF is a real phase difference, so the policy sees a slightly laggier,
+smoother accel in the air than it trained against. ⚠️ **Unverified operator recollection (2026-08-22)**:
+that this filter is *disabled* when autoc/xiao is driving INAV. Reading `acceleration.c` `accUpdate()`, the
+LPF is applied **unconditionally** whenever `acc_lpf_hz != 0` — it is not gated on flight mode or MSP
+override, so the recollection may concern the gyro/PID path instead. **Resolve it by reading the bench FC's
+actual setting (`get acc_lpf_hz`) rather than from source or memory**, and record the answer here.
 
 ## Gyro & Accelerometer Conventions (021, 2026-03-28)
 
@@ -448,16 +614,24 @@ yaw_rate   = -gyroADC[2]    // negate to match aerospace RHR (nose right = posit
 
 ### Blackbox Accelerometer: accSmooth[0-2] (VERIFIED bench 2026-03-30)
 
-| Index | Axis | At rest (level) | Nose up 90° | Right wing down 90° | Units |
+⚠️ **Axis labels corrected 2026-08-11** (041). The rows are as measured; the *interpretation* below them
+was wrong — INAV's frame is **FLU**, and the reading is proper acceleration (points UP at rest), not the
+gravity direction. See "Accelerometer as an INTERFACE quantity (041)" above for the derivation and for the
+FRD conversion. The measured numbers never changed.
+
+| Index | Axis (INAV FLU) | At rest (level) | Nose up 90° | Right wing down 90° | Units |
 |-------|------|-----------------|-------------|---------------------|-------|
 | [0] | X body (forward) | ~0 | **+1G** | ~0 | acc_1G scale |
-| [1] | Y body (right) | ~0 | ~0 | **+1G** | acc_1G scale |
-| [2] | Z body (down) | **+1G** | ~0 | ~0 | acc_1G scale |
+| [1] | Y body (**left**) | ~0 | ~0 | **+1G** | acc_1G scale |
+| [2] | Z body (**up**) | **+1G** | ~0 | ~0 | acc_1G scale |
 
-- **Frame**: Body-frame, board-alignment-corrected (same as gyro)
-- **At level rest**: accel ≈ [0, 0, +1G] (gravity points down in body frame = +Z) ✓ verified
-- **Nose up**: accel ≈ [+1G, 0, 0] (gravity pulls along nose = +X) ✓ verified
-- **Right wing down**: accel ≈ [0, +1G, 0] (gravity pulls toward right wing = +Y) ✓ verified
+- **Frame**: Body-frame **FLU**, board-alignment-corrected (same pipeline as gyro)
+- **The reading is the reaction, pointing UP** — a MEMS accelerometer at rest reads +1 G on whichever axis
+  points at the sky. Every row below is that one rule.
+- **At level rest**: accel ≈ [0, 0, +1G] — body +Z (up) is the skyward axis ✓ verified
+- **Nose up**: accel ≈ [+1G, 0, 0] — body +X (forward) is the skyward axis ✓ verified
+- **Right wing down**: accel ≈ [0, +1G, 0] — body +Y (**left**) is the skyward axis ✓ verified
+- **In aerospace FRD** (after the msplink y/z flip): `[0,0,−1]`, `[+1,0,0]`, `[0,−1,0]` respectively
 - **acc_1G scale**: ~2050 counts = 1G on this hardware (bench measurement)
 - **In turns**: centripetal acceleration adds to gravity vector (useful, not noise)
 
@@ -733,3 +907,124 @@ Gyro rates are in **rad/s**, unscaled. The NN learns the natural scale from trai
 - `gyrR` = r (yaw rate, rad/s)
 Typical range: ±10 rad/s (≈ ±560 deg/s at max roll rate).
 No normalization by max rate — avoids baking INAV rate config into the NN.
+
+## Altitude DATUM as an INTERFACE quantity (041, 2026-08-17)
+
+⚠️ **New status, and filed here for the same reason the accelerometer was** (see the 041 section above):
+altitude is about to become an NN input (`SPECIFIC_ENERGY`), and the moment a quantity crosses the
+sim↔flight boundary its **datum** is as load-bearing as its units and its frame. This project has already
+paid once this month for an unstated frame convention; a datum is the same hazard wearing different
+clothes.
+
+### The three candidate datums, and why only one works
+
+| datum | sim | flight | verdict |
+|---|---|---|---|
+| **virtual-frame z** | engage-relative, z ≈ 0 at start | same | ❌ arbitrary offset; "energy" would be measured from wherever the run happened to begin |
+| **AGL** | `-(pos.z + SIM_INITIAL_ALTITUDE)` — ground-referenced, the sim knows the ground | ❌ **not available** — `resolveEngageArena` centres the band on the engage point precisely because the aircraft has no ground reference | ❌ **sim-only**. Would train against a quantity flight cannot reproduce |
+| **height above the arena floor ("hard deck")** | `floor_agl_m` = **25 m AGL** | `floor_z_ned = z_engage + down_m` | ✅ **defined identically in both**, because both carry an explicit floor |
+
+### Why the hard deck is the RIGHT answer, not merely the available one
+
+**Operator 2026-08-17**: *"elevation above a datum is more energy — would be weird for elevation to go
+negative with velocity positive… specific energy is arguably above the arena floor."*
+
+That objection is the strongest argument FOR this datum. With the hard deck:
+
+```
+Es = h_hd + v²/2g          h_hd = height above the arena floor
+```
+
+**`Es` is non-negative in every VALID state, and `Es < 0` is definitionally out of bounds** — below the
+floor is an egress, not a flight condition. So the variable never has to represent a nonsensical
+combination, and no clamping is needed to keep it sane. (Measured on the 041 t1 run: **0 of 129 519 ticks
+below the deck**.) A datum that put the zero anywhere else — engage point, ground, sea level — would allow
+"negative height, positive speed" states that are physically fine but semantically confusing, exactly the
+weirdness the operator named.
+
+It also makes energy and containment **one concern instead of two**: running out of energy and hitting the
+floor become the same failure.
+
+### ✅ RESOLVED 2026-08-18 — placement is now identical, by construction
+
+The placement gap below was real and is closed. It used to read:
+
+> sim placed the floor **20 m below** engage (5–100 m AGL band, engage at 25 m AGL) while flight placed it
+> **47.5 m below** (`resolveEngageArena`, K = 47.5). Same 95 m band, different placement — a live
+> sim-to-real gap affecting `DIST_TO_BOUNDARY`, which TA01 measured as the **third most important input**.
+
+**Now: ONE arena, radius 70 m, vertically ASYMMETRIC — `+50 m up / −30 m down` about the arm point.**
+In sim that lands at floor **25** / arm **55** / ceiling **105** m AGL.
+
+⭐ `resolveEngageArena(...).virtual_arena` is an **exact identity** on the training `FlightArena`, at any
+engage altitude and any asymmetry, because it derives the up and down extents separately from where the arm
+point sits inside the band. Sim and flight stopped agreeing by convention and now agree by construction.
+`tests/arena_tests.cc` and `tests/arena_recenter_tests.cc` assert it.
+
+⚠️ **The band is asymmetric on purpose, and sized to the CHASE, not the rabbit.** The M1 rabbit climbs
+34.98 m above the arm point and descends 2.74 m below it; the chase manoeuvres, bleeds energy and settles.
+A first cut at +60/−10 (sized to the rabbit) killed 16 of 16 scenarios on the deck within 4.9 s.
+
+⛔ **The arena is RELATIVE, not absolute.** Radius about the arm point, floor and ceiling at ∓extent. The AGL
+figures are only where the band lands *in sim*, where the ground is known. Keeping it above terrain and
+inside the site's 400 ft working envelope are **arm-time operator responsibilities** — nothing in the code
+enforces an absolute altitude, and nothing should.
+
+📐 **Every hop in the eleven-stage chain, measured**:
+[`specs/041-m2-depth/toolchain-datum-validation.md`](../specs/041-m2-depth/toolchain-datum-validation.md).
+⚠️ That file is feature-scoped and will age out with 041 — **this section is the durable home**; fold
+anything still load-bearing back here before the feature closes.
+
+**Standing guidance until it is resolved**: normalise altitude-derived inputs by the **band**
+(`ceiling − floor`, 95 m in both), so a slot means *"fraction of my usable vertical band"* rather than
+metres from a differently-placed floor. That makes the *inputs* agree while the *geometry* still differs —
+a mitigation, and it should be labelled as one wherever it is used.
+
+## Units at the CRRCSim boundary (041, 2026-08-18)
+
+⚠️ **CRRCSim is FOOT-native; autoc is METRE-native. The bridge converts, and the conversion is easy to
+forget because both units appear in the same files.** Operator 2026-08-18: *"Check CRRCSim unit of measure.
+It is both feet and meters… This is silly but hey we aren't crashing probes into mars quite yet."*
+
+| side | units | frame |
+|---|---|---|
+| CRRCSim FDM (`eom01`) | **feet, ft/s** — `v_P_CG_Rwy`, `v_V_local_rel_ground`, `getAccel`, `getGravity` | north/east/down |
+| autoc `AircraftState` | **metres, m/s** | NED, but **virtual** — engage-relative; the origin sits at **55 m AGL** in sim (`SIM_INITIAL_ALTITUDE = −55`) |
+| conversion | `FEET_TO_METERS = 0.3048`, `inputdev_autoc.h:53` | applied at the bridge, both directions |
+
+**Both directions appear**: FDM→autoc multiplies (`vGround(0) * FEET_TO_METERS`), autoc→FDM divides
+(`entryAltOffset / FEET_TO_METERS`). A missing conversion is therefore a 3.28× error in one direction and
+0.305× in the other — large enough to be obvious in a trajectory, **but not always obvious in a scalar**.
+
+### ⭐ Worked example — the `82` that looked like a discrepancy
+
+`crrcsim/autoc_config.xml` carried `<launch altitude="82">`. 041 briefly recorded this as an **open
+reconciliation** against `SIM_INITIAL_ALTITUDE = −25`, on the assumption both were metres. They are not —
+and the full arithmetic is worth having, because it is what the launch value is *derived from*:
+
+```
+crrc_main.cpp:  Altitude = launch.altitude + zLow + groundHeight       (all FEET)
+                zLow        = 0.125 ft   hb1_streamer.xml <wheels units="0">, max wheel z
+                groundHeight= −0.1  ft   BuiltinSceneryDavis::getHeight(), a flat plane
+    82 + 0.125 − 0.1 = 82.025 ft × 0.3048 = 25.0012 m   vs  25 m  → agree to 1.2 mm
+```
+
+**The launch altitude is in CRRCSim's native FEET and it matched the autoc virtual origin exactly.** There
+was never a discrepancy — only a unit assumption, plus two unstated terms. Kept here rather than deleted,
+because the *shape* of the mistake (comparing two numbers without checking they share a unit) is what this
+section exists to prevent.
+
+⚠️ **CURRENT VALUE: `<launch altitude="180.421">`** — inverting the same formula for a 55 m origin. And
+there are **TWO** files carrying it: `crrcsim/autoc_config.xml` (headless training worker) and
+`crrcsim/autoc_config-eval.xml` (**visual** worker, `scripts/crrcsim-visual.sh`). When the frame moved,
+only the first was updated; the visual craft then spawned at 25.0012 m AGL against a 25 m hard deck —
+**1.2 mm of clearance** — and every scenario floor-egressed within a second, which read as a broken policy.
+`ArenaDatum.EveryCrrcsimLaunchAltitudeMatchesTheVirtualOrigin` now parses **both** files and checks each
+against `SIM_INITIAL_ALTITUDE`.
+
+### One consequence worth keeping
+
+`autoc/eval/specific_force.h` deliberately takes gravity as a **parameter in the caller's units** rather
+than assuming 9.81, precisely so the ft-native FDM path stays unit-free: `(a_world − g_world)/g` is
+dimensionless whichever unit both sides are in. Prefer that pattern for any new FDM-derived quantity —
+including `Es`/`Ps`, where the altitude and speed terms must share a unit before they are added.

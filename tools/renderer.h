@@ -103,6 +103,11 @@ public:
   void nextTest();
   void previousTest();
   void showAllFlight();
+  // 041 P2-3 — rebuild/hide the containment cylinder. Shown ONLY while focused
+  // AND playing, and only for the FOCUSED arena: drawing 294 translucent tubes
+  // every frame was the render cost, and the arena is only meaningful for the
+  // one scenario being watched. Cheap — it builds one tube and two rings.
+  void updateArenaCylinder();
   void togglePlaybackAnimation();
   void updatePlaybackAnimation();
   void pausePlaybackAnimation();
@@ -225,6 +230,13 @@ private:
   vtkSmartPointer<vtkAppendPolyData> actuals;
   vtkSmartPointer<vtkAppendPolyData> segmentGaps;
   vtkSmartPointer<vtkAppendPolyData> planeData;
+  // 041 P2-3 — the containment cylinder, one per arena cell. Geometry comes
+  // from the dmp's recorded FlightArena, never from the live .ini, so a replay
+  // always shows the arena the run was actually flown in.
+  vtkSmartPointer<vtkAppendPolyData> arenaCylinders;
+  vtkSmartPointer<vtkAppendPolyData> arenaRings;   // solid top/bottom outlines
+  vtkSmartPointer<vtkActor> arenaActor;
+  vtkSmartPointer<vtkActor> arenaRingActor;
   vtkSmartPointer<vtkAppendPolyData> blackboxTapes;
   vtkSmartPointer<vtkAppendPolyData> blackboxHighlightTapes;  // For highlighted test spans
   vtkSmartPointer<vtkAppendPolyData> xiaoVecArrows;  // For xiao vec vectors

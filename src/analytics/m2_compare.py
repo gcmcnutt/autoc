@@ -8,9 +8,10 @@ per-run scenario count + course difficulty, cadence). The comparable measures ar
                                  10 Hz tick 100 ms — raw tick-streak is ~2× at 20 Hz)
 `best` is shown only as a faint reference with a "not comparable" caption.
 
-Each run's cadence is read from the log's ControlIntervalMsec (default 100 ms =
-10 Hz for pre-037 runs that don't print it). Pure `#NNGen` parsing — no dmp/S3,
-so it works after the run buckets are decommissioned.
+Each run's cadence is read from its own log's ControlIntervalMsec (041 T009,
+shared `cadence.py`). A log that does not state its cadence is an ERROR, not a
+10 Hz assumption -- pass --tick-sec for such runs. Pure `#NNGen` parsing -- no
+dmp/S3, so it works after the run buckets are decommissioned.
 
 Usage:
   python3 src/analytics/m2_compare.py \
@@ -28,28 +29,30 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from cadence import CadenceUnknown, tick_sec_from_log   # 041 T009
+
 NNGEN = re.compile(
     r"#NNGen gen=(\d+) best=([-\d.]+) avg=([-\d.]+) worst=([-\d.]+) "
     r"bestSigma=([\d.]+) avgMaxStreak=([\d.]+) pctInStreak=([\d.]+)")
 
 
-def load(path):
+def load(path, tick_sec_override=None):
     """Parse a run .log → dict of arrays + cadence (sec/tick)."""
     g, best, streak, pct = [], [], [], []
-    ctrl_msec = None
     with open(path) as f:
         for line in f:
-            if ctrl_msec is None and "ControlIntervalMsec" in line:
-                mm = re.search(r"ControlIntervalMsec[ =:]+(\d+)", line)
-                if mm:
-                    ctrl_msec = int(mm.group(1))
             m = NNGEN.search(line)
             if m:
                 g.append(int(m.group(1)))
                 best.append(float(m.group(2)))
                 streak.append(float(m.group(6)))
                 pct.append(float(m.group(7)))
-    tick_sec = (ctrl_msec or 100) / 1000.0   # default 100 ms = 10 Hz (pre-037)
+    # 041 T009 — cadence comes from the log via the shared helper. The previous
+    # `(ctrl_msec or 100)/1000` silently assumed 10 Hz whenever the config print
+    # was missing, which halves every streak-second in a 20 Hz run and reads as
+    # a competence difference in a CROSS-RUN comparison plot — the one place the
+    # error is least visible. It now raises instead.
+    tick_sec = tick_sec_from_log(path, tick_sec_override)
     return {"gen": np.array(g), "best": np.array(best),
             "streak_s": np.array(streak) * tick_sec, "pct": np.array(pct),
             "tick_sec": tick_sec}
@@ -68,14 +71,22 @@ def main():
                    help="NAME:LOG (repeatable)")
     p.add_argument("--title", default="M2 (tracker) runs — comparable axes")
     p.add_argument("-o", "--out", required=True)
+    p.add_argument("--tick-sec", type=float, default=None,
+                   help="control cadence (sec/tick) for runs whose log predates the "
+                        "config print. Normally omitted -- the log is authoritative, "
+                        "and a value disagreeing with it is an error (041 T009).")
     args = p.parse_args()
 
     runs = []
     for name, path in args.run:
         try:
-            d = load(path)
+            d = load(path, args.tick_sec)
         except OSError as e:
             print(f"skip {name}: {e}", file=sys.stderr); continue
+        except CadenceUnknown as e:
+            # Not skippable: a missing cadence in a CROSS-RUN plot would put two
+            # runs on axes that differ by 2x with nothing on the figure saying so.
+            sys.exit(f"{name}: {e}")
         if len(d["gen"]) == 0:
             print(f"skip {name}: no #NNGen lines", file=sys.stderr); continue
         runs.append((name, d))

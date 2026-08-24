@@ -6,6 +6,7 @@
 #include "autoc/eval/fitness_computer.h"
 #include "autoc/rpc/crash_reason.h"
 #include "autoc/eval/aircraft_state.h"   // AircraftState (computeSpanPredictionError)
+#include "autoc/eval/arena.h"            // 041 P2-4 — ArenaEgressKind attribution
 #include "autoc/rpc/protocol.h"          // CameraViewSample
 
 // Forward declaration — full definition in rpc/protocol.h
@@ -23,7 +24,8 @@ struct EvalResults;
 // - `stability_score` (027 v4): time pitch/roll surfaces spend off-center.
 //   Σ_t (|out_pt_t| - 1) + (|out_rl_t| - 1) over completed ticks. Each tick
 //   contributes -2 (both surfaces centered, ideal) to 0 (both saturated, worst).
-// - `energy_score` (035 FR-001b/R1): convex throttle-command integral.
+// - `energy_score` (035 FR-001b/R1, restored 041 P2-7): convex throttle-command
+//   integral — the term that de-pegged throttle 0.93 -> 0.72 at 035.
 //   Σ_t ((out_th_t + 1) / 2)² over completed ticks — out_th∈[-1,1] mapped to a
 //   [0,1] throttle fraction, squared (super-linear). Each tick contributes
 //   0 (idle) to 1 (full throttle). ≥0, lower = better. (Replaces the 027 v3
@@ -73,7 +75,15 @@ struct TrackerDiag {
 struct ScenarioScore {
     gp_fitness score;            // Tracking (negated accumulated points, lower = better)
     gp_fitness stability_score;  // Per-tick (|out_pt|-1) + (|out_rl|-1) summed; lower = better
-    gp_fitness energy_score;     // Per-tick (out_th - 1) / 2 summed; lower = better
+    // Convex integral of commanded THROTTLE POWER — 035 FR-001b, restored at
+    // 041 P2-7 after the Es-destroyed variant re-pegged throttle at 1.000.
+    // Always >= 0; lower = better.
+    //
+    // ⚠️ It charges for power SPENT, not for energy lost. That distinction is
+    // the whole point: Es-destroyed rewarded full throttle (throttle raises Es)
+    // and charged manoeuvring instead. See the accumulation site for the
+    // 034-vs-035 evidence.
+    gp_fitness energy_score;
     // 038 US3 — aux span/closure-predictor error (tracker-only; 0 in pathgen and
     // when no CEP-visible (t, t+horizon) pairs exist). Mean |predicted_span −
     // realized_span| over the kSpanPredictHorizonsMsec lookaheads + the closure
@@ -81,7 +91,22 @@ struct ScenarioScore {
     // touched by applyCrashPenalty. Beats-persistence is a US3-gate check.
     gp_fitness prediction_score;
     bool crashed;
-    CrashReason crashReason;     // 030 M11.wrap diagnostics — full terminate reason mirror of `crashed` (which is just isCrash(crashReason))
+    CrashReason crashReason;
+
+    // 041 P2-4 — WHICH BOUND was crossed, for M1 as well as M2.
+    //
+    // ⛔ `CrashReason::Eval` lumps floor, ceiling and wall into one number, so
+    // the per-gen `#GenCrash eval=` count could not answer the question the 041
+    // asymmetric band makes important: with only 10 m below the arm point, is a
+    // run dying because the DECK is too tight, or because the policy is being
+    // drawn down onto it by a target flying near it? Those call for opposite
+    // responses — widen the band, or leave it and let the policy learn — and
+    // widening in response to the second removes the lesson.
+    //
+    // Attributed parent-side from the terminal position against the RECORDED
+    // arena, so it costs no worker change and no wire change. NONE when the
+    // scenario did not end on egress.
+    autoc::eval::ArenaEgressKind egress_kind;     // 030 M11.wrap diagnostics — full terminate reason mirror of `crashed` (which is just isCrash(crashReason))
     int steps_completed;
     int steps_total;
 
@@ -97,6 +122,7 @@ struct ScenarioScore {
         : score(0.0), stability_score(0.0), energy_score(0.0),
           prediction_score(0.0),
           crashed(false), crashReason(CrashReason::None),
+          egress_kind(autoc::eval::ArenaEgressKind::NONE),
           steps_completed(0), steps_total(0),
           maxStreak(0), totalStreakSteps(0), maxMultiplier(1.0) {}
 };
@@ -123,8 +149,9 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults);
 // camera view. Getting it wrong scores every forecast one tick late and nothing
 // else notices — which is exactly what happened from 038 US3 until 2026-08-02.
 // See SpanPrediction.PerfectPredictorScoresExactlyZero.
-gp_fitness computeSpanPredictionError(const std::vector<AircraftState>& states,
-                                      const std::vector<CameraViewSample>& cams);
+// 041 T022 — takes ONE series. Previously two parallel vectors reconciled with
+// a `- 1` offset inside; see the definition for what that cost.
+gp_fitness computeSpanPredictionError(const std::vector<EvalTick>& ticks);
 
 // Aggregate: sum of per-scenario scores (already negated, lower is better).
 double aggregateRawFitness(const std::vector<ScenarioScore>& scores);

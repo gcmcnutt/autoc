@@ -1,0 +1,10 @@
+regime,axis,dCtrl,mean_abs_u,ticks
+tracking,pitch,0.411501,0.621681,40935
+tracking,roll,0.345486,0.462281,40935
+tracking,throttle,0.336254,0.664715,40935
+intercept,pitch,0.337602,0.621226,50251
+intercept,roll,0.304976,0.388412,50251
+intercept,throttle,0.163970,0.778620,50251
+patrol,pitch,0.076828,0.749045,41276
+patrol,roll,0.202644,0.404602,41276
+patrol,throttle,0.096373,0.884534,41276

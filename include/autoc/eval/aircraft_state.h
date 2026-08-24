@@ -30,13 +30,110 @@
 #define SIM_INITIAL_VELOCITY static_cast<gp_scalar>(20.0f)
 #define SIM_THROTTLE_SCALE static_cast<gp_scalar>(10.0f)
 #define SIM_CRASH_PENALTY static_cast<gp_scalar>(300.0f)  // Large penalty to ensure path completion
-#define SIM_INITIAL_ALTITUDE static_cast<gp_scalar>(-25.0f)
+// 041 P2-3 (operator 2026-08-18) — the virtual origin is where the craft
+// ENTERS and where the xiao ARMS, and it sits at the EXACT VERTICAL CENTRE of
+// the arena cylinder: floor 25 m AGL, ceiling 105 m AGL ⇒ arm 55 m AGL
+// (up-extent +50, down-extent −30).
+//
+// ⚠️ Settled at 35 through three corrections, all from measurement:
+//   * the max-extent cross-check (operator ask: *"make sure the pathgen paths
+//     range fit in the arena with room to spare"*) found the SpiralClimb rabbit
+//     topping out **3 cm** under the then-ceiling — a coincidence, not a
+//     clearance, and the chase has to fly ABOVE the rabbit to track it;
+//   * then sizing against the **site's 400 ft AGL working envelope** (121.92 m),
+//     which got SpiralClimb shrunk 50 → 35 m (see SIM_PATH_HEIGHT_BOUNDS and
+//     SpiralClimb's climbAmount);
+//   * ⭐ then the band stopped being SYMMETRIC at all. Measured from the cylinder
+//     centre the M1 rabbit climbs **34.98 m** and descends **2.74 m** — so a ±K
+//     band spent half its height on airspace nothing ever enters while being
+//     tight at the top. Operator: *"Maybe we should go back to non uniform
+//     vertical extent for arena. 60m up and 10 down?"* The arm point is
+//     therefore NO LONGER the vertical centre.
+//   * ⛔ then the t2 SMOKE MEASURED that 10 m below the arm is not survivable:
+//     **16 of 16 scenarios terminated on the deck** (terminal AGL 25.01–25.51
+//     against a 25 m deck), mean survival 4.9 s of a 272-step path, and the
+//     elite sat frozen at −161.468690 for 11 straight generations because
+//     nothing lived long enough to generate gradient. Meanwhile the ceiling was
+//     never approached — 48.07 m reached of a 95 m ceiling, 13 m of 60 used.
+//     The band had been sized to the RABBIT (which flies flat and never
+//     descends) while the CHASE is the thing being contained. Settled at
+//     **+50 / −30** (operator 2026-08-18).
+//
+// ⛔ **400 ft IS NOT AN ARENA CONSTRAINT, AND IS NOT ENCODED AS ONE.** Operator
+// 2026-08-18: *"if operator arms a path at 100m then it is on them to not go
+// above 400ft… Not the models problem. Is operator."* The arena is a purely
+// RELATIVE band — radius R about the arm origin, ceiling and floor at ±K — and
+// where that band lands in the real world is chosen at ARM TIME. Staying under
+// 400 ft and staying above terrain are both operator responsibilities, on the
+// same footing. The AGL numbers below are simply where the relative band sits
+// IN SIM, where the ground is known; nothing in the code enforces an absolute
+// altitude and nothing should.
+// arena_path_fit_tests measures all of this from the generator itself, every
+// build, instead of trusting numbers someone once wrote down.
+//
+// Was −25. The move exists because "entry at the centre of the cylinder" and
+// "the hard deck is above the ground" were not BOTH satisfiable at 25 m: the M1
+// targets climb to 74.98 m AGL (measured), and a band centred on 25 m that
+// reaches 75 m needs its floor 25 m underground.
+//
+// ⚠️ THIS IS NOT THE RETRACTED "ORIGIN → HARD DECK" PROPOSAL. z = 0 is still the
+// entry point, so nothing about what a recorded z MEANS has changed and no dmp
+// reader's frame shifts. The paths are still generated about the origin and the
+// craft still starts on it — the whole scene simply sits 35 m higher over the
+// terrain. Operator: *"Pilot responsible for that being way above terrain so
+// that bottom of cyl is above ground. So really sim should do identical."*
+//
+// ⛔ MUST STAY CONSISTENT WITH THE ARENA. −SIM_INITIAL_ALTITUDE is where the arm
+// point sits inside the FlightArena band, and `resolveEngageArena` derives the
+// up/down extents from exactly that. If this and the arena bounds move
+// independently, the sim trains in one band and the aircraft flies another. It
+// is a runtime value, so this cannot be a static_assert — arena_tests.cc pins
+// it instead, and that test is the thing that fails if either moves alone.
+//
+// ⛔ MUST STAY CONSISTENT WITH crrcsim/autoc_config.xml. `<launch altitude>` is
+// in FEET and measured to the aircraft's LOWEST POINT above the terrain, so it
+// is 80 m / 0.3048 − zLow(0.125 ft) + ground(0.1 ft) = 262.442 ft. See
+// specs/041-m2-depth/toolchain-datum-validation.md for the measured chain.
+#define SIM_INITIAL_ALTITUDE static_cast<gp_scalar>(-55.0f)
 #define SIM_INITIAL_THROTTLE static_cast<gp_scalar>(0.0f)
 #define SIM_INITIAL_LOCATION_DITHER static_cast<gp_scalar>(30.0f)
 #define SIM_PATH_BOUNDS static_cast<gp_scalar>(40.0f)
+// 041 P2-3 — the VERTICAL half of the path-generation bound, split out from
+// SIM_PATH_BOUNDS because the arena is not a cube: the half-band K and the
+// radius R are independent, and only the vertical was tight.
+//
+// ⚠️ IT IS NOT THE REALIZED EXTENT. `localRandomPointInCylinder` places CONTROL
+// POINTS inside this bound, but the path is a uniform Catmull-Rom spline
+// (`cubicInterpolate`) which OVERSHOOTS its own control hull by exactly 1/8 at
+// t = ½. So the realized envelope is 1.125x this: 30 m of draw becomes
+// **33.75 m** above entry, and 40 m of radius becomes **45 m**. Sizing an arena
+// off the draw rather than off the realized bound is short by 12.5% — see the
+// derivation in tests/arena_path_fit_tests.cc.
+//
+// 30 m chosen so the random path clears the ceiling by 16.25 m (arm + 33.75
+// against the +50 up-extent), comfortably behind the analytic paths.
+// Was implicitly SIM_PATH_BOUNDS (40 ⇒ 45 m realized ⇒ only 3 m of margin),
+// which would have made the SEEDED path the binding one the moment SpiralClimb
+// stopped being.
+#define SIM_PATH_HEIGHT_BOUNDS static_cast<gp_scalar>(30.0f)
 #define SIM_PATH_RADIUS_LIMIT static_cast<gp_scalar>(70.0f)
-#define SIM_MIN_ELEVATION static_cast<gp_scalar>(-7.0f)
-#define SIM_MAX_ELEVATION static_cast<gp_scalar>(-120.0f)
+// 041 P2-3 — SIM_MIN_ELEVATION / SIM_MAX_ELEVATION are GONE, deliberately and
+// without a compatibility shim, so that every site that used them has to be
+// visited rather than silently keeping the old envelope.
+//
+// They encoded a THIRD arena. M1 terminated on 70 / 7 / 120 (these macros) while
+// telling its own network about `FlightArena`'s 80 / 5 / 100 — an input cylinder
+// 10 m wider and 20 m shorter than the one that actually killed it. TA01 ranks
+// DIST_TO_BOUNDARY the third most important input in the vector, so the policy
+// was leaning hard on a boundary signal wrong in both directions.
+//
+// Both modes now terminate on `autoc::eval::checkArenaBounds` against the one
+// `FlightArena` the gather also reads. What the network is told and what ends
+// the scenario are the same cylinder, by construction.
+//
+// SIM_PATH_RADIUS_LIMIT survives because it is a different quantity — a
+// PATH-GENERATION bound (how far out a rabbit may be placed), not a containment
+// envelope. It is not the arena and must not be conflated with it again.
 
 #define SIM_TOTAL_TIME_MSEC (100 * 1000)
 // 037 OUTCOME — cadence returned 50 → 100 ms (back to 10 Hz; operator
@@ -356,6 +453,85 @@ struct AircraftState {
     gp_vec3 getGyroRates() const { return gyroRates_; }
     void setGyroRates(const gp_vec3& rates) { gyroRates_ = rates; }
 
+    // 041 T039 — body-frame SPECIFIC FORCE in g (what an accelerometer reads,
+    // gravity included), completing the 6-DOF inertial block beside the gyro.
+    //
+    // Aerospace body FRD, so steady level flight is [0, 0, -1]: body +z points
+    // DOWN and the measured reaction points UP. ⚠️ Do NOT "fix" that against
+    // INAV's bench table (level reads +1 g on its normal axis) — INAV's frame
+    // is FLU and msplink flips y/z at the boundary, exactly as it already does
+    // for the quat and the gyro. Same physical fact, two frames. Settled
+    // 2026-08-11; derivation in docs/COORDINATE_CONVENTIONS.md.
+    //
+    // ⚠️ SPECIFIC force, not FDM kinematic acceleration. The latter reads ~0 in
+    // level flight and would put a constant 1 g error in the load axis —
+    // invisible in sim, wrong in the air.
+    //
+    // WHY IT LIVES HERE rather than being computed in the gather: on hardware
+    // `acc.accADCf` arrives already finished in the same MSP round trip as the
+    // quat and gyro, and the xiao's gather does no transformation — it copies.
+    // The sim matches that shape (spec.md § Clarifications, 2026-08-10): the
+    // worker computes it via autoc/eval/specific_force.h, stores it here, and
+    // both gathers only copy. A gather-side computation would be a sim-only
+    // code path with no hardware counterpart.
+    //
+    // Stored UNSCALED (g). kAccelScale_g is applied at the NN slot write.
+    gp_vec3 getSpecificForceG() const { return specificForceG_; }
+    void setSpecificForceG(const gp_vec3& sf_g) { specificForceG_ = sf_g; }
+
+    // 041 T037/T038 — envelope occupancy, as the NN sees it.
+    //
+    // `inEnvelope` is the OBSERVABLE scoring-envelope condition (FR-015), never
+    // the fitness machinery's internal streak counter. `envelopeSecs` is
+    // min(consecutive_seconds / FitStreakRampSec, 1), already normalized.
+    //
+    // Both are computed ONCE per tick by the stepper, before the NN evaluates,
+    // and the same value feeds the NN input and (M1) the fitness accumulation.
+    // Two independent computations of this quantity are forbidden — the
+    // disagreement they permit is the failure class 041 exists to remove.
+    // Accumulator mechanics: autoc/eval/envelope_state.h.
+    bool getInEnvelope() const { return inEnvelope_; }
+    void setInEnvelope(bool inside) { inEnvelope_ = inside; }
+
+    gp_scalar getEnvelopeSecs() const { return envelopeSecs_; }
+    void setEnvelopeSecs(gp_scalar secs) { envelopeSecs_ = secs; }
+
+    // ------------------------------------------------------------------
+    // 041 P2-2 — the three new observations. Same WHY-IT-LIVES-HERE rule as
+    // the specific force above: the PRODUCER computes, both gathers COPY. On
+    // hardware every one of these is derivable from what the xiao already has
+    // (position, velocity, the arena it resolved at engage, and — for M1 and
+    // for M2 phase 1 — the virtual target), so none of them needs a sim-only
+    // code path, and none of them may acquire one.
+    // ------------------------------------------------------------------
+
+    // Specific energy `Es = h_hd + v²/2g`, in METRES, UNSCALED.
+    // kEnergyScale_m is applied at the NN slot write, so every other consumer —
+    // dmp-dump, the Ps objective axis, the flight log — reads plain metres.
+    // Datum is height above the arena FLOOR; see autoc/eval/energy_state.h for
+    // why that and not AGL.
+    gp_scalar getSpecificEnergy() const { return specificEnergyM_; }
+    void setSpecificEnergy(gp_scalar es_m) { specificEnergyM_ = es_m; }
+
+    // Outward radial velocity toward the cylinder wall, in METRES PER SECOND,
+    // UNSCALED (kCruiseSpeed_mps is applied at the slot write). POSITIVE =
+    // closing on the wall. Complements — does not replace — the along-velocity
+    // DIST_TO_BOUNDARY: distance says where the wall is, this says whether it
+    // is getting closer, and distance is saturated above 0.99 on 83% of ticks
+    // where this still spans ±17 m/s.
+    gp_scalar getBoundaryClosureRate() const { return boundaryClosureRateMps_; }
+    void setBoundaryClosureRate(gp_scalar mps) { boundaryClosureRateMps_ = mps; }
+
+    // ∂score/∂position in the BODY frame, already multiplied by the streak
+    // multiplier, UNSCALED (per metre). The improvement direction: which way to
+    // move to score more, weighted by how much reward is currently at stake.
+    //
+    // ⚠️ The slot encoding is a direction-preserving tanh of the NORM applied
+    // at the gather (see kScoreGradScale) — this carries the raw vector, so a
+    // recorded column and an analysis can recover the true magnitude.
+    gp_vec3 getScoreGradBody() const { return scoreGradBody_; }
+    void setScoreGradBody(const gp_vec3& g) { scoreGradBody_ = g; }
+
     // NN I/O capture — record what the NN actually saw and produced.
     //
     // 030 M9.preA (2026-05-07): Two parallel input slots — `nnInputs_` for
@@ -541,6 +717,24 @@ struct AircraftState {
     // Body-frame angular rates (rad/s, standard aerospace RHR)
     gp_vec3 gyroRates_ = gp_vec3::Zero();
 
+    // 041 T037-T039 — the observation half of the 6-DOF inertial block, plus
+    // envelope occupancy. Set by the stepper each tick BEFORE the NN gathers.
+    //
+    // ⚠️ DELIBERATELY NOT SERIALIZED. These are NN INPUTS, and every NN input
+    // is already recorded per tick through nnInputs_ / trackerInputs_ (the
+    // honest-capture block). Adding them to the archive would create a second
+    // recorded copy of the same numbers that could disagree with the first —
+    // the exact parallel-definition shape US1 exists to retire. Readers wanting
+    // accel or envelope read the NN input columns, which are what the policy
+    // actually saw.
+    gp_vec3 specificForceG_ = gp_vec3::Zero();  // body FRD, g, gravity included
+    bool inEnvelope_ = false;
+    gp_scalar envelopeSecs_ = 0;                // already normalized to [0, 1]
+    // 041 P2-2 — all UNSCALED; NN normalization happens at the slot writes.
+    gp_scalar specificEnergyM_ = 0;             // Es, metres above the hard deck + v²/2g
+    gp_scalar boundaryClosureRateMps_ = 0;      // + = outward, toward the wall
+    gp_vec3 scoreGradBody_ = gp_vec3::Zero();   // ∂score/∂position, body frame, × multiplier
+
     // NN I/O capture — actual values presented to/produced by the neural net.
     // Pathgen-mode populates nnInputs_ (33 floats); tracker-mode populates
     // trackerInputs_ (45 floats). The other stays zero-initialized. Mode
@@ -649,6 +843,21 @@ struct AircraftState {
       }
       ar(rabbitOdometer_, rabbitSpeed_);
       ar(pidInternals_);
+
+      // 041 P2-4 — honest-recording audit at this schema-bump boundary
+      // (memory:feedback_honest_dmp_recording says to do one at EVERY bump;
+      // v=1's gyroRates_ gap is what that rule was written for).
+      //
+      // These three are UNSCALED sources of NN slots, and each is recorded
+      // separately from the slot for a reason that is not redundancy:
+      //   * under an ablation mask the slot is ZEROED before recording — by
+      //     design, so the dmp describes the network that actually ran — which
+      //     would erase the quantity from the record entirely;
+      //   * SCORE_GRAD's slot is a tanh of the norm, so near saturation the
+      //     magnitude is not recoverable from it at any precision;
+      //   * dmp-dump derives Ps by differencing Es across ticks, and that has
+      //     to be the true Es, not a de-normalized slot.
+      ar(specificEnergyM_, boundaryClosureRateMps_, scoreGradBody_);
     }
 #endif
 };

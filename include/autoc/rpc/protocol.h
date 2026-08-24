@@ -7,8 +7,11 @@
 #include <cstdint>
 #include <arpa/inet.h>
 
+#include <optional>                       // 041 T020 — EvalTick tracker members
+
 #include <cereal/cereal.hpp>
 #include <cereal/types/vector.hpp>
+#include <cereal/types/optional.hpp>       // 041 T020
 #include <cereal/types/string.hpp>
 #include <cereal/archives/binary.hpp>
 
@@ -233,6 +236,59 @@ struct WorkerInit {
   // run regardless (draw-and-discard, same convention as wind above).
   bool servoModelEnabled = false;
 
+  // 041 T035 (FR-018a) — the fitness cone, primed to the worker so the step
+  // score can be computed IN the tick path. The worker has no ConfigManager, so
+  // without these it cannot score a tick at all. RPC-only struct, so adding
+  // fields is a same-rebuild change with no version bump.
+  //
+  // ⚠️ NO in-class initializers, per Constitution VII and the T016 precedent: a
+  // plausible default here would be invisible until a training run had already
+  // spent hours scoring against the wrong cone. Populated explicitly in
+  // src/autoc.cc; the worker fail-louds on a zeroed cone.
+  double fitDistScaleBehind;
+  double fitDistScaleAhead;
+  double fitConeAngleDeg;
+  double fitStreakThreshold;
+  double fitStreakRampSec;
+  // 041 P2-2 — needed by the worker to weight SCORE_GRAD_* by the streak
+  // multiplier the tick earns. Same no-default rule as the cone above.
+  double fitStreakMultiplierMax;
+  // 041 US4 ablation gate for the accel channels (T068 matrix).
+  //
+  // ⚠️ `enableEnvelopeInputs` is GONE at 041 P2-2 — IN_ENVELOPE and
+  // ENVELOPE_SECS are no longer NN inputs, so a gate on "populate the envelope
+  // inputs" gated nothing. The envelope ACCUMULATOR is now populated
+  // unconditionally in both modes: M2's perception estimator is built on it and
+  // the tracking metrics are read from its recorded trace. Removed rather than
+  // left inert, per the no-vestigial-knob rule — a config key that does nothing
+  // is a question someone will have to answer later by reading the source.
+  int enableAccelInputs;
+  double accelScaleG;
+  // 041 T038 — M2 direct-perception envelope estimator thresholds (FR-018b).
+  // M2 cannot see the along/lateral geometry M1 thresholds on, so its flag is
+  // inferred from the beacon pair: both visible, separation in [lo, hi], pair
+  // centroid near boresight. Same no-default rule as the cone above — a
+  // plausible guess here would train a whole run against a wrong envelope.
+  double envelopeSpanLo;
+  double envelopeSpanHi;
+  double envelopeCentroidRadius;
+
+  // 041 T049 — NN input ablation mask. One byte per input slot of the ACTIVE
+  // mode (1 = force this column to 0.0); EMPTY means no ablation, which is the
+  // training path and every historical caller.
+  //
+  // ⚠️ It lives on WorkerInit, not on EvalData, because the mask is
+  // scenario-invariant: masking must be applied identically in every scenario
+  // and every tick or the comparison stops being one-variable. Putting it
+  // per-eval would make a per-scenario mask *expressible*, and the whole value
+  // of the instrument is that it cannot vary.
+  //
+  // ⚠️ Applied in the worker, immediately before the forward pass — see
+  // NNControllerBackend. It must NOT be applied in the gather: the recorded
+  // inputs then describe what the net actually saw, which is what makes an
+  // ablated dmp readable by the same analytics as an unablated one.
+  std::vector<uint8_t> nnInputMask;  // raw-ok: per-slot flag buffer
+
   template<class Archive>
   void serialize(Archive& ar) {
     int m = static_cast<int>(mode);
@@ -244,7 +300,15 @@ struct WorkerInit {
        cepGateThreshold,
        enableWindVariations,    // 034 Phase 7 -- appended, no version bump
        controlIntervalMsec,     // 037 T001 -- appended, no version bump
-       servoModelEnabled);      // 037 servo v2 -- appended, no version bump
+       servoModelEnabled,       // 037 servo v2 -- appended, no version bump
+       // 041 T035 -- fitness cone + US4 gates, appended, no version bump
+       fitDistScaleBehind, fitDistScaleAhead, fitConeAngleDeg,
+       fitStreakThreshold, fitStreakRampSec, fitStreakMultiplierMax,
+       enableAccelInputs, accelScaleG,
+       // 041 T038 -- M2 envelope estimator, appended, no version bump
+       envelopeSpanLo, envelopeSpanHi, envelopeCentroidRadius,
+       // 041 T049 -- ablation mask, appended, no version bump
+       nnInputMask);
     mode = static_cast<Mode>(m);
   }
 };
@@ -408,12 +472,118 @@ struct RecordedRunConfig {
   double hullCrashPenaltyFactor = 0.0;
   double oobCrashPenaltyWeight = 0.0;
 
+  // 041 T043 — the US4 observation knobs. Recorded because a dmp must be able
+  // to answer "were ACCEL_* and the envelope slots POPULATED or ABLATED in this
+  // run?" — which is exactly what the T068 ablation matrix asks of it. Without
+  // these a zeroed accel column is ambiguous between "ablated on purpose" and
+  // "silently broken", and that ambiguity is unresolvable after the fact.
+  int    enableAccelInputs = 0;
+  double accelScaleG = 0.0;
+  // M2 direct-perception envelope estimator thresholds (FR-018b). Recorded for
+  // the same reason: the M2 flag is an ESTIMATE, so its thresholds are part of
+  // what the run means.
+  double envelopeSpanLo = 0.0;
+  double envelopeSpanHi = 0.0;
+  double envelopeCentroidRadius = 0.0;
+
+  // 041 P2-4 — THE ARENA THE RUN WAS FLOWN IN.
+  //
+  // ⛔ It was not recorded, and the arena moved THREE TIMES in a single day
+  // (80/5/100 → 70/10/110 → 70/25/121 → 70/25/95 → 70/25/105, the last two
+  // asymmetric about the arm point). A dmp that cannot
+  // say which cylinder contained it cannot answer "was this egress the deck
+  // being tight, or the policy being baited toward it" — and cannot even be
+  // compared against another run without someone remembering which .ini was
+  // live. Every other self-describing field here exists for the same reason.
+  //
+  // Also what makes `Es` reconstructible post-hoc: the datum is height above
+  // the FLOOR, so a reader without the floor cannot recompute it.
+  autoc::eval::FlightArena flightArena;
+
   template<class Archive>
   void serialize(Archive& ar) {
     ar(fitDistScaleBehind, fitDistScaleAhead, fitConeAngleDeg,
        fitStreakThreshold, fitStreakRampSec, fitStreakMultiplierMax,
        simTimeStepMsec, cadenceTickScale,
-       enableHullCrashPenalty, hullCrashPenaltyFactor, oobCrashPenaltyWeight);
+       enableHullCrashPenalty, hullCrashPenaltyFactor, oobCrashPenaltyWeight,
+       // 041 T043 — appended; EvalResults' version bump at T044 is what makes
+       // older dmps fail loud rather than mis-read this tail.
+       enableAccelInputs, accelScaleG,
+       envelopeSpanLo, envelopeSpanHi, envelopeCentroidRadius,
+       // 041 P2-4 — appended; the EvalResults v4 bump is what makes older dmps
+       // fail loud rather than mis-read this tail.
+       flightArena);
+  }
+};
+
+// ===========================================================================
+// 041 T020 (US1, FR-002) — ONE TICK, ONE RECORD.
+//
+// Replaces the parallel `aircraftStateList` / `cameraViewList` /
+// `targetTrajectoryList`, which were documented as "parallel … per-tick
+// indexing" but were NOT 1:1: the recorder pushes an initial aircraft state
+// before the tick loop, so the state list ran one longer and tick k's view was
+// `cams[k-1]`. That offset produced a live scoring bug (`prediction_score` one
+// tick late, 1b290f2) and a second in the objective (targets read one tick
+// ahead, 2026-08-03). Grouping makes the pairing unrepresentable rather than
+// asserted — the `stepIndex - 1` clamp is DELETED at T022, not relocated.
+//
+// ⚠️ Tracker members are `std::optional`, deliberately: in pathgen mode there
+// is no camera and no target, and "absent" must not be readable as a
+// zero-filled sample that looks like data. Costs one byte per tick per member.
+// Named EvalTick, not TickRecord: `TickRecord` is already taken by the xiao
+// flight-log on-disk format (xiao/include/flight_log_format.h:189), which is
+// versioned and consumed by the renderer's log loader. Two different "tick
+// records" in one translation unit is precisely the kind of ambiguity this
+// feature is trying to remove.
+struct EvalTick {
+  AircraftState state;
+  std::optional<CameraViewSample> cameraView;      // tracker only
+  std::optional<CopiedTargetSample> targetSample;  // tracker only
+
+  // 041 T035 (FR-018a) — THE STEP SCORE, COMPUTED ONCE, AT THE TICK.
+  //
+  // Previously derived post-hoc in computeScenarioScores by re-deriving the
+  // geometry from recorded state. That made the number the policy is REWARDED
+  // by a different computation from any number the policy could SEE — and 041
+  // exists because the policy could not see it at all. Computing it in the tick
+  // path and recording it makes the reward and the observation the same number
+  // by construction rather than by two implementations agreeing.
+  //
+  // `stepScore` is the raw geometric step score (the Lorentzian, in [0, 1]);
+  // the streak multiplier is still applied downstream in the objective, since
+  // that is a pure function of this sequence and stays deterministic.
+  // `envelopeSecs` is the external accumulator: seconds continuously at or above
+  // FitStreakThreshold, reset on envelope EXIT only, normalised LINEARLY against
+  // FitStreakRampSec and clamped to 1.
+  float stepScore = 0.0f;      // raw-ok: recorded per-tick scalar, cereal byte-format
+  float envelopeSecs = 0.0f;   // raw-ok: recorded per-tick scalar, cereal byte-format
+
+  EvalTick() = default;
+  explicit EvalTick(const AircraftState& s) : state(s) {}
+
+  // True when this tick was inside the scoring envelope. Derived, never stored:
+  // a stored flag could disagree with the score it is supposed to summarise.
+  bool inEnvelope(float streakThreshold) const { return stepScore >= streakThreshold; }
+
+  template<class Archive>
+  void serialize(Archive& ar) {
+    ar(state, cameraView, targetSample, stepScore, envelopeSecs);
+  }
+};
+
+// One scenario's ticks, with the pre-loop initial state as a NAMED FIELD beside
+// the list (research.md R5) — explicitly NOT `ticks[0]` carrying sentinel
+// members, which would recreate the very hazard being retired as "slot 0 is
+// special". `ticks[k]` is tick k+1 in the objective's 1-based `stepIndex`; the
+// initial state is reachable only through its own name.
+struct ScenarioTicks {
+  AircraftState initialState;
+  std::vector<EvalTick> ticks;
+
+  template<class Archive>
+  void serialize(Archive& ar) {
+    ar(initialState, ticks);
   }
 };
 
@@ -422,7 +592,8 @@ struct EvalResults {
   uint64_t gpHash = 0;  // FNV-1a hash of gp buffer for verification
   std::vector<CrashReason> crashReasonList;
   std::vector<std::vector<Path>> pathList;
-  std::vector<std::vector<AircraftState>> aircraftStateList;
+  // 041 T020 — the grouped per-tick record. Indexed [scenario].ticks[tick].
+  std::vector<ScenarioTicks> tickList;
   ScenarioMetadata scenario;
   std::vector<ScenarioMetadata> scenarioList;
   std::vector<std::vector<DebugSample>> debugSamples;  // Debug snapshots per path (only populated for elite reeval)
@@ -431,13 +602,10 @@ struct EvalResults {
   int workerPid = 0;
   int workerEvalCounter = 0;  // Incremented per evaluation on the worker
 
-  // 030 M8a — Tracker-mode v=2 fields (FR-015). Empty in pathgen-mode dmps;
-  // populated by TrackerStepper at M8b. cameraViewList[scenario][tick]
-  // and targetTrajectoryList[scenario][tick] parallel aircraftStateList's
-  // per-scenario per-tick indexing. arenaEgressCount + hullStrikeCount
-  // are per-scenario telemetry counters wired by M7.
-  std::vector<std::vector<CameraViewSample>> cameraViewList;
-  std::vector<std::vector<CopiedTargetSample>> targetTrajectoryList;
+  // 041 T020 — cameraViewList / targetTrajectoryList are GONE; their per-tick
+  // contents live in EvalTick above, where they cannot drift out of step with
+  // the state. arenaEgressCount + hullStrikeCount stay per-SCENARIO counters
+  // (M7) — they were never per-tick and are not affected.
   std::vector<int> arenaEgressCount;  // M7 — per-scenario count of arena egress events
   std::vector<int> hullStrikeCount;   // M7 — per-scenario count of crash-hull p_crash fires
 
@@ -454,9 +622,53 @@ struct EvalResults {
   // (T010) in preference to the live .ini.
   RecordedRunConfig runConfig;
 
+  // 041 T044 (Constitution V; research.md R6) — the reader's schema version, in
+  // one place so the check below and CEREAL_CLASS_VERSION cannot drift apart.
+  // 041 P2-4 — v3 → v4. The break is REAL, not bookkeeping: the NN input
+  // vector changed shape in both modes (42→45, 63→66), the tracker vector was
+  // REORDERED, and AircraftState now carries Es / boundary-closure /
+  // score-gradient. A v3 dmp read by this binary would decode a differently
+  // shaped tick stream and every number in it would look plausible.
+  //
+  // ⚠️ The pre-break comparator CSVs had to be extracted BEFORE this bump —
+  // see specs/041-m2-depth/measure/README.md. After it, the t1 dmps are
+  // unreadable by any current binary, permanently.
+  static constexpr std::uint32_t kSchemaVersion = 4;
+
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
-    ar(gp, gpHash, crashReasonList, pathList, aircraftStateList,
+    // 041 T044 — FAIL LOUD ON ANY VERSION MISMATCH, naming BOTH numbers.
+    //
+    // ⚠️ Cereal does NOT do this for you. It reads the stored version and hands
+    // it straight to this function; nothing rejects a mismatch. The old comment
+    // claiming "v=3+ dmps fail loudly via cereal's class-version mechanism" was
+    // wrong, and the failure it promised is what actually happened instead:
+    // the `version >= 2` branch below runs against a payload with a different
+    // tail, reads a garbage length, and the process dies inside the allocator
+    // as `vector::_M_default_append` — a stack trace that names neither the
+    // artifact nor the schema, and sent one diagnosis down a memory-corruption
+    // path it never belonged on.
+    //
+    // No migration, no shim (FR-005 / the greenfield policy): 041's contract
+    // break orphans every earlier dmp by design. The ONLY requirement is that a
+    // reader says so in one line instead of crashing.
+    //
+    // Both directions are errors and both are worth distinguishing: an OLDER
+    // artifact means "re-bake or check out the matching code", a NEWER one
+    // means "your binary is stale".
+    if (version != kSchemaVersion) {
+      throw std::runtime_error(
+          std::string("EvalResults schema mismatch: artifact is v") +
+          std::to_string(version) + ", this reader expects v" +
+          std::to_string(kSchemaVersion) +
+          (version < kSchemaVersion
+               ? " — the artifact predates the 041 contract break (FR-005) and"
+                 " cannot be read; re-bake it, or check out the code that"
+                 " produced it. There is deliberately no migration path."
+               : " — the artifact is NEWER than this binary; rebuild."));
+    }
+
+    ar(gp, gpHash, crashReasonList, pathList, tickList,
        scenario, scenarioList, debugSamples, physicsTrace,
        workerId, workerPid, workerEvalCounter);
     if (version >= 2) {
@@ -465,7 +677,7 @@ struct EvalResults {
       // population. Constitution V loud-fail behavior for v=3 lands via
       // cereal's class-version mechanism (verified in
       // tests/tracker_dmp_roundtrip_tests.cc).
-      ar(cameraViewList, targetTrajectoryList, arenaEgressCount, hullStrikeCount);
+      ar(arenaEgressCount, hullStrikeCount);
 
       // 033 §2.A — master-seed provenance. Appended at end of v=2 block per
       // project no-cereal-versioning policy; old dmps are orphaned by the
@@ -483,7 +695,7 @@ struct EvalResults {
     gpHash = 0;
     crashReasonList.clear();
     pathList.clear();
-    aircraftStateList.clear();
+    tickList.clear();
     scenario = ScenarioMetadata();
     scenarioList.clear();
     debugSamples.clear();
@@ -492,8 +704,6 @@ struct EvalResults {
     workerPid = 0;
     workerEvalCounter = 0;
     // 030 M8a — tracker-mode v=2 fields.
-    cameraViewList.clear();
-    targetTrajectoryList.clear();
     arenaEgressCount.clear();
     hullStrikeCount.clear();
     // 033 §2.A — provenance header reset to "no-context" default.
@@ -505,7 +715,7 @@ struct EvalResults {
   void dump(std::ostream& os) {
     char buf[512];
     snprintf(buf, sizeof(buf), "EvalResults: crash[%zu] paths[%zu] states[%zu]\n Paths:\n",
-      crashReasonList.size(), pathList.size(), aircraftStateList.size());
+      crashReasonList.size(), pathList.size(), tickList.size());
     os << buf;
 
     // 033 cleanup: windSeed display swapped for scenarioSeed (the new
@@ -543,9 +753,9 @@ struct EvalResults {
       }
     }
     os << " Aircraft States:\n";
-    for (size_t i = 0; i < aircraftStateList.size(); i++) {
-      for (size_t j = 0; j < aircraftStateList.at(i).size(); j++) {
-        AircraftState aircraftState = aircraftStateList.at(i).at(j);
+    for (size_t i = 0; i < tickList.size(); i++) {
+      for (size_t j = 0; j < tickList.at(i).ticks.size(); j++) {
+        AircraftState aircraftState = tickList.at(i).ticks.at(j).state;
         gp_quat orientQuatF = aircraftState.getOrientation();
         if (!std::isnan(orientQuatF.norm()) && std::abs(orientQuatF.norm() - 1.0f) > 1e-6f) {
           orientQuatF.normalize();
@@ -574,11 +784,23 @@ struct EvalResults {
   }
 };
 // 030 M8a — bumped 1 → 2 for tracker-mode dmp output (FR-015a + Constitution V).
-// v=1 dmps still readable: cameraViewList / targetTrajectoryList /
-// arenaEgressCount / hullStrikeCount remain empty when reading v=1.
-// v=3+ dmps fail loudly via cereal's class-version mechanism — caller
-// should treat as a Constitution V "schema mismatch" loud-fail trigger.
-CEREAL_CLASS_VERSION(EvalResults, 2)
+//
+// 041 T044 — bumped 2 → 3 for the contract break (FR-005): the grouped per-tick
+// record (EvalTick), the five new NN input slots, and the US4 knobs added to
+// RecordedRunConfig. Every pre-041 dmp is orphaned BY DESIGN — no migration, no
+// shim, one owed re-bake.
+//
+// ⚠️ The version check that enforces this lives in EvalResults::serialize, NOT
+// here. Cereal's class-version mechanism records and forwards the version; it
+// does not reject a mismatch, which is why the previous "v=3+ fails loudly via
+// cereal" note was wrong and mismatches died in the allocator instead.
+//
+// ⚠️ Keep this in step with EvalResults::kSchemaVersion — the static_assert
+// below makes a one-sided edit a compile error rather than a runtime surprise.
+CEREAL_CLASS_VERSION(EvalResults, 4)
+static_assert(EvalResults::kSchemaVersion == 4,
+              "EvalResults::kSchemaVersion and CEREAL_CLASS_VERSION(EvalResults, N) "
+              "must agree — bump both or neither.");
 
 struct WorkerContext {
   std::unique_ptr<TcpSocket> socket;

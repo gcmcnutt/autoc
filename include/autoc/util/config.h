@@ -201,6 +201,18 @@ struct AutocConfig {
     double fitStreakRampSec = 5.0;       // Seconds to reach max multiplier
     double fitStreakMultiplierMax = 5.0; // Maximum streak multiplier
 
+    // --- 041 US4: envelope occupancy + specific-force inputs ---
+    // Ablation gates, so the T068 matrix can turn each half off without a
+    // rebuild. Default ON: they are what the feature exists to test.
+    int enableAccelInputs = 1;           // ACCEL_X/Y/Z populated
+    double accelScaleG = 8.0;            // must match kAccelScale_g (nn_inputs.h)
+    // M2 direct-perception envelope estimator (FR-018b). Reserved: read by
+    // gather_tracker_inputs only. In-envelope ⇔ both beacons CEP-visible AND
+    // pair separation within [lo, hi] AND pair centroid within the radius.
+    double envelopeSpanLo = 0.02;        // rad, pair span lower bound (far edge)
+    double envelopeSpanHi = 0.35;        // rad, pair span upper bound (near edge)
+    double envelopeCentroidRadius = 0.5; // rad, max pair-centroid offset from boresight
+
     // --- Variable rabbit speed ---
     double rabbitSpeedNominal = 16.0;
     double rabbitSpeedSigma = 0.0;
@@ -249,9 +261,16 @@ struct AutocConfig {
     double crashHullProbability = 0.10;
 
     // --- Tracker arena (FR-016) ---
-    double flightArenaRadius = 80.0;        // m horizontal
-    double flightArenaFloorAGL = 5.0;       // m AGL hard floor
-    double flightArenaCeilingAGL = 100.0;   // m AGL ceiling
+    double flightArenaRadius = 70.0;        // m horizontal
+    // 041 P2-3 — ONE arena for BOTH modes and BOTH sides (operator 2026-08-18:
+    // *"Should be the same for both. 70m radius. Hat of perhaps 10 (bottom of
+    // cyl) top at 100m above bottom is fine."*). The entry / arm point sits at
+    // 55 m AGL = −SIM_INITIAL_ALTITUDE — 30 m above the deck, NOT the centre — which is
+    // what makes resolveEngageArena an identity on the virtual arena.
+    // ⛔ Moving floor or ceiling without moving SIM_INITIAL_ALTITUDE breaks that
+    // — arena_tests.cc pins the relationship.
+    double flightArenaFloorAGL = 25.0;      // m AGL hard deck = arm − 30 (asymmetric band)
+    double flightArenaCeilingAGL = 105.0;   // m AGL ceiling = arm + 50 (asymmetric band)
 
     // --- Camera config (FR-003) ---
     int cameraCount = 1;
@@ -259,11 +278,15 @@ struct AutocConfig {
     // as pixels × deg/px, so field and resolution cannot disagree. The former
     // CameraFOVHorizontalDeg / CameraFOVVerticalDeg keys are retired: they let
     // a config declare a field its own grid contradicted.
-    // 320 × 240 @ 0.375°/px ⇒ exactly 120° × 90°. All three ASSUMED pending
-    // the lens/sensor decision (contracts/config-surface.md).
-    int cameraPixelsH = 320;
-    int cameraPixelsV = 240;
-    double cameraDegPerPixel = 0.375;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to gp_scalar at the WorkerInit boundary
+    // 320 × 200 @ 0.304°/px ⇒ 97.3° H × 60.8° V. All three now MEASURED, not
+    // assumed: 041 T041d takes them from 031's 2026-08-16 ruled-mat calibration
+    // of the flight optic (1.8 mm fisheye on OV9281 — equidistant confirmed,
+    // 0.076°/px native, 95° × 61° by tape). The sim grid is that sensor binned
+    // 4×, so grid AND pitch both trace to hardware. Full derivation and the
+    // retired-estimate history in include/autoc/eval/camera_config.h.
+    int cameraPixelsH = 320;      // the grid the sensor delivers (4x bin of 1280); 320 x 0.304 = 97.3 H
+    int cameraPixelsV = 200;   // 041 T041a: 240 → 200 (1.6 aspect). See camera_config.h.
+    double cameraDegPerPixel = 0.304;  // raw-ok: ini-loaded config-struct field — inih::GetReal returns double; cast to gp_scalar at the WorkerInit boundary
     // 040 T017 — CameraFrameRateHz / CameraLatencyMs retired. Sensor cadence
     // follows ControlIntervalMsec (037); latency emerges from the acquisition
     // state machine (US4). See include/autoc/eval/camera_config.h.
@@ -450,6 +473,11 @@ struct AutocConfig {
     X(double,         fitStreakThreshold,        "FitStreakThreshold") \
     X(double,         fitStreakRampSec,          "FitStreakRampSec") \
     X(double,         fitStreakMultiplierMax,    "FitStreakMultiplierMax") \
+    X(int,            enableAccelInputs,         "EnableAccelInputs") \
+    X(double,         accelScaleG,               "AccelScaleG") \
+    X(double,         envelopeSpanLo,            "EnvelopeSpanLo") \
+    X(double,         envelopeSpanHi,            "EnvelopeSpanHi") \
+    X(double,         envelopeCentroidRadius,    "EnvelopeCentroidRadius") \
     X(double,         rabbitSpeedNominal,        "RabbitSpeedNominal") \
     X(double,         rabbitSpeedSigma,          "RabbitSpeedSigma") \
     X(double,         rabbitSpeedMin,            "RabbitSpeedMin") \
@@ -526,6 +554,13 @@ struct AutocConfig {
     X(double,         airframePropAxisZ,         "AirframePropAxisZ") \
     X(double,         airframePropRadius,        "AirframePropRadius") \
     X(double,         airframePropAttenuation,   "AirframePropAttenuation")
+
+// 041 T006 -- turn inih's bare "cannot parse" into a diagnosis. `error` is
+// INIReader::ParseError()'s value: a positive value is the 1-based line number
+// of the first bad line, -1 is a file-open failure, -2 is allocation failure.
+// Split out of ConfigManager::initialize() so it is reachable from a test
+// without the exit(1) that follows it in production (T007).
+void reportIniParseError(const std::string& filename, int error, std::ostream& out);
 
 class ConfigManager {
 public:

@@ -22,7 +22,7 @@ import struct
 import sys
 import zlib
 
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 MAGIC = 0x314C4641  # "AFL1" little-endian
 
 # Record type bytes (flight_log_format.h RecordType)
@@ -45,14 +45,21 @@ REASON_NAMES = {
     7: "missing local state", 8: "autoc cancelled",
 }
 
-NUM_INPUTS, NUM_OUTPUTS = 37, 3
+# v4 (041 P5-3): the NN input block grew 37 -> 45. MUST track PathgenInput in
+# include/autoc/nn/nn_inputs.h and kNumInputs in xiao/include/flight_log_format.h
+# — INPUT_NAMES below is the readable copy of that enum and is length-checked.
+NUM_INPUTS, NUM_OUTPUTS = 45, 3
 NUM_SCALED = NUM_INPUTS + NUM_OUTPUTS + 9  # v2: + pos[3], vel[3], rabbit[3]
+# Telemetry scale-table bases, DERIVED (were literal 40/43/46, sized for 37).
+SCALE_POS_BASE = NUM_INPUTS + NUM_OUTPUTS
+SCALE_VEL_BASE = SCALE_POS_BASE + 3
+SCALE_RABBIT_BASE = SCALE_VEL_BASE + 3
 
 # Wire structs — little-endian, packed (raw-ok: hardware byte layout; this
 # decode boundary is where values return to float domain).
-FILE_HDR = struct.Struct("<BIB8s8s96sH49fI")  # 320 B (v3: + program[96])
+FILE_HDR = struct.Struct(f"<BIB8s8s96sH{NUM_SCALED}fI")  # 352 B at v4
 ENGAGE_HDR = struct.Struct("<BIH3fffh")       # 29 B
-TICK_REC = struct.Struct("<BIH37h3h3h3h3hBb3HB")  # 114 B (v2: +pos/vel/rabbit)
+TICK_REC = struct.Struct(f"<BIH{NUM_INPUTS}h3h3h3h3hBb3HB")  # 130 B at v4
 EVENT_REC = struct.Struct("<BIBI")            # 10 B
 SUMMARY_REC = struct.Struct("<BIH5I13I3I2II")  # 103 B
 FLIGHT_REC = struct.Struct("<BI3h3h4h")       # 25 B armed-not-engaged breadcrumb
@@ -74,8 +81,16 @@ INPUT_NAMES = (
     + [f"dist_{i}" for i in range(6)]
     + ["closing_rate", "quat_w", "quat_x", "quat_y", "quat_z", "airspeed",
        "gyro_p", "gyro_q", "gyro_r",
-       "dist_to_boundary", "inward_body_x", "inward_body_y", "inward_body_z"]
+       # 041: five channels inserted BEFORE dist_to_boundary — the reason the
+       # v3 table silently mis-labelled everything from slot 33 on.
+       "accel_x", "accel_y", "accel_z",
+       "specific_energy", "boundary_closure_rate",
+       "dist_to_boundary", "inward_body_x", "inward_body_y", "inward_body_z",
+       "score_grad_x", "score_grad_y", "score_grad_z"]
 )
+assert len(INPUT_NAMES) == NUM_INPUTS, (
+    f"INPUT_NAMES has {len(INPUT_NAMES)} entries but the wire carries "
+    f"{NUM_INPUTS}; every column after the mismatch would be mislabelled")
 OUTPUT_NAMES = ["out_roll", "out_pitch", "out_throttle"]
 TELEM_NAMES = ["pos_n", "pos_e", "pos_d", "vel_n", "vel_e", "vel_d",
                "rabbit_n", "rabbit_e", "rabbit_d"]  # v2, scale slots 40..48
@@ -138,7 +153,7 @@ def decode(blob):
                 fail(f"format_version {version} not supported (decoder is v{FORMAT_VERSION}) "
                      f"— refusing best-effort parse")
             # CRC over the scale floats exactly as stored (little-endian bytes)
-            scale_bytes = raw[120:120 + 4 * NUM_SCALED]  # v3: program[96] precedes scales
+            scale_bytes = raw[120:120 + 4 * NUM_SCALED]  # program[96] precedes scales
             if zlib.crc32(scale_bytes) & 0xFFFFFFFF != crc:
                 fail("scale_table_crc mismatch — header corrupt; refusing to decode")
             scales = scale_vals
@@ -172,12 +187,18 @@ def decode(blob):
                 fail("TickRecord before FileHeader — stream corrupt")
             f = TICK_REC.unpack(raw)
             ts, counter = f[1], f[2]
-            q_in = f[3:3 + NUM_INPUTS]
-            q_out = f[40:43]
-            q_telem = f[43:52]  # pos[3], vel[3], rabbit[3]
-            reset, path_idx = f[52], f[53]
-            rc = f[54:57]
-            valid = f[57]
+            # DERIVED offsets. These were literal 40/43/52/54/57, sized for a
+            # 37-slot input block: at 45 slots they read the outputs as inputs
+            # and the telemetry as outputs, so pos/vel/rabbit decoded to frozen
+            # nonsense (caught by the synthetic-v4 round-trip, 2026-08-22).
+            _o = 3 + NUM_INPUTS                  # first output field
+            _t = _o + NUM_OUTPUTS                # pos[3], vel[3], rabbit[3]
+            q_in = f[3:_o]
+            q_out = f[_o:_t]
+            q_telem = f[_t:_t + 9]
+            reset, path_idx = f[_t + 9], f[_t + 10]
+            rc = f[_t + 11:_t + 14]
+            valid = f[_t + 14]
             row = {"timestamp_ms": ts, "tick_counter": counter}
             if current is not None:
                 row["span_id"] = current["engage"]["span_id"]
@@ -212,10 +233,12 @@ def decode(blob):
             f = FLIGHT_REC.unpack(raw)
             flight_states.append({
                 "timestamp_ms": f[1],
-                "pos_raw_n": f[2] / scales[40], "pos_raw_e": f[3] / scales[41],
-                "pos_raw_d": f[4] / scales[42],
-                "vel_n": f[5] / scales[43], "vel_e": f[6] / scales[44],
-                "vel_d": f[7] / scales[45],
+                "pos_raw_n": f[2] / scales[SCALE_POS_BASE],
+                "pos_raw_e": f[3] / scales[SCALE_POS_BASE + 1],
+                "pos_raw_d": f[4] / scales[SCALE_POS_BASE + 2],
+                "vel_n": f[5] / scales[SCALE_VEL_BASE],
+                "vel_e": f[6] / scales[SCALE_VEL_BASE + 1],
+                "vel_d": f[7] / scales[SCALE_VEL_BASE + 2],
                 "quat_w": f[8] / 32767.0, "quat_x": f[9] / 32767.0,
                 "quat_y": f[10] / 32767.0, "quat_z": f[11] / 32767.0,
             })
@@ -287,6 +310,13 @@ def report(header, spans, events, warnings, flight_states, out=sys.stderr):
             p("    WARNING: no span summary (disengage record missing?)")
     for w in warnings:
         p(f"  WARNING: {w}")
+    # ⚠️ Units, stated every run. The NN input columns are POST-SCALE NN units,
+    # exactly as the policy consumed them -- NOT physical. Reading one as
+    # physical is the bug that made the renderer draw every chase vector 26x too
+    # short (041, 2026-08-22). pos/vel/rabbit ARE physical (m, m/s).
+    p("  NOTE: NN input columns are POST-SCALE NN units, not physical -- "
+      "dist = m/26, gyro = rad/s/6, accel = g/8, airspeed & bClR = m/s/13, "
+      "closing_rate = m/s/16. pos/vel/rabbit ARE physical.")
     p(f"  totals: {len(spans)} spans, {sum(len(s['ticks']) for s in spans)} ticks, "
       f"{total_gaps} gaps, {len(flight_states)} flight-state breadcrumbs")
 

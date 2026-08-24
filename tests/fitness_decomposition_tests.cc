@@ -7,6 +7,82 @@
 #include "autoc/eval/fitness_decomposition.h"
 #include "autoc/eval/aircraft_state.h"
 #include "autoc/util/config.h"
+#include "autoc/eval/fitness_computer.h"
+#include <algorithm>
+
+
+// ---------------------------------------------------------------------------
+// 041 T035/T036 — the POST-HOC reference computation of the per-tick step score.
+//
+// The eval tick path (inputdev_autoc.cpp) now computes and records
+// EvalTick::stepScore, and computeScenarioScores READS it rather than
+// re-deriving it. Hand-built fixtures have no worker, so they fill it here.
+//
+// This function is deliberately a faithful transcription of what the worker
+// does, from the same recorded state — which makes it two things at once:
+//   1. the fixture filler, so every test below keeps its original meaning;
+//   2. the REFERENCE for T036, which measures worker-recorded against this and
+//      reports the delta instead of asserting an equality it cannot promise.
+// If the two ever disagree materially, the objective moved and T036 says so.
+// ---------------------------------------------------------------------------
+void fillStepScores(EvalResults& r) {
+    const AutocConfig& cfg = ConfigManager::getConfig();
+    int rampSteps = static_cast<int>(cfg.fitStreakRampSec / (SIM_TIME_STEP_MSEC / 1000.0));
+    if (rampSteps < 1) rampSteps = 1;
+    FitnessComputer scorer(cfg.fitDistScaleBehind, cfg.fitDistScaleAhead,
+                           cfg.fitConeAngleDeg, cfg.fitStreakThreshold,
+                           rampSteps, cfg.fitStreakMultiplierMax);
+
+    for (size_t i = 0; i < r.tickList.size(); ++i) {
+        auto& ticks = r.tickList[i].ticks;
+        const std::vector<Path>* path =
+            (i < r.pathList.size() && !r.pathList[i].empty()) ? &r.pathList[i] : nullptr;
+        gp_vec3 prevTangent = gp_vec3::UnitX();
+        double accumMsec = 0.0;
+
+        for (auto& tick : ticks) {
+            gp_vec3 rabbit = gp_vec3::Zero();
+            gp_vec3 tangent = prevTangent;
+            bool haveGeometry = false;
+
+            if (tick.targetSample.has_value()) {
+                rabbit = tick.targetSample->trail_rabbit_position;
+                const gp_vec3 vel = tick.targetSample->velocity;
+                const double vn = vel.norm();
+                if (vn > 0.01) { tangent = vel / vn; prevTangent = tangent; }
+                haveGeometry = true;
+            } else if (path != nullptr) {
+                const int pIdx = std::clamp(tick.state.getThisPathIndex(), 0,
+                                            static_cast<int>(path->size()) - 1);
+                rabbit = path->at(pIdx).start;
+                if (pIdx + 1 < static_cast<int>(path->size())) {
+                    gp_vec3 t = path->at(pIdx + 1).start - path->at(pIdx).start;
+                    const double tn = t.norm();
+                    if (tn > 0.01) { tangent = t / tn; prevTangent = tangent; }
+                }
+                haveGeometry = true;
+            }
+
+            float score = 0.0f;
+            if (haveGeometry) {
+                const gp_vec3 offset = tick.state.getPosition() - rabbit;
+                const double along = offset.dot(tangent);
+                const double lateralDist = (offset - along * tangent).norm();
+                score = static_cast<float>(scorer.decomposeStepScore(along, lateralDist).score);
+            }
+            tick.stepScore = score;
+
+            if (score >= static_cast<float>(cfg.fitStreakThreshold)) {
+                accumMsec += static_cast<double>(SIM_TIME_STEP_MSEC);
+            } else {
+                accumMsec = 0.0;
+            }
+            const double rampMsec = cfg.fitStreakRampSec * 1000.0;
+            tick.envelopeSecs = (rampMsec > 0.0)
+                ? static_cast<float>(std::min(1.0, accumMsec / rampMsec)) : 0.0f;
+        }
+    }
+}
 
 // Initialize ConfigManager for tests (uses defaults from AutocConfig)
 class FitnessDecomp022Test : public ::testing::Test {
@@ -23,6 +99,19 @@ protected:
         }
     }
 };
+
+
+// 041 T020 — adapts the legacy pathgen fixtures, which build a flat state vector
+// whose slot 0 is the pre-loop pose, to the grouped record. Identical content
+// and identical ordering, so every pathgen assertion in this file is unchanged.
+static ScenarioTicks toScenarioTicks(const std::vector<AircraftState>& states) {
+    ScenarioTicks sc;
+    if (states.empty()) return sc;
+    sc.initialState = states.front();
+    sc.ticks.reserve(states.size() - 1);
+    for (size_t k = 1; k < states.size(); ++k) sc.ticks.emplace_back(states[k]);
+    return sc;
+}
 
 // ============================================================
 // Helper: build a straight-line path in VIRTUAL coordinates.
@@ -67,7 +156,8 @@ static EvalResults makeStraightPath(int numSteps, double aircraftOffsetAlong, do
         state.setThrottleCommand(0.0f);
         states.push_back(state);
     }
-    results.aircraftStateList.push_back(states);
+    results.tickList.push_back(toScenarioTicks(states));
+    fillStepScores(results);   // 041 T035 — the objective READS the score now
     results.crashReasonList.push_back(crash ? CrashReason::Eval : CrashReason::None);
     results.scenarioList.push_back(ScenarioMetadata());
 
@@ -202,7 +292,8 @@ TEST_F(FitnessDecomp022Test, ThreeShortStreaks) {
         state.setSimTimeMsec(static_cast<float>(i * 100.0));
         states.push_back(state);
     }
-    results.aircraftStateList.push_back(states);
+    results.tickList.push_back(toScenarioTicks(states));
+    fillStepScores(results);   // 041 T035 — the objective READS the score now
     results.crashReasonList.push_back(CrashReason::None);
     results.scenarioList.push_back(ScenarioMetadata());
 
@@ -235,7 +326,8 @@ TEST_F(FitnessDecomp022Test, MultiScenarioAggregate) {
             state.setSimTimeMsec(static_cast<float>(i * 100.0));
             states.push_back(state);
         }
-        results.aircraftStateList.push_back(states);
+        results.tickList.push_back(toScenarioTicks(states));
+    fillStepScores(results);   // 041 T035 — the objective READS the score now
         results.crashReasonList.push_back(CrashReason::None);
         results.scenarioList.push_back(ScenarioMetadata());
     }
@@ -308,9 +400,37 @@ CameraViewSample camWithSpan(double span) {
     return cv;
 }
 
+
+// 041 T022 — translates the legacy two-vector fixture into the grouped series.
+// This is now the ONLY place in the codebase that writes `cams[k - 1]`: the
+// offset survives solely as a statement about how the OLD fixtures were laid
+// out, and no production path can reach it.
+static std::vector<EvalTick> zipTicks(const std::vector<AircraftState>& states,
+                                      const std::vector<CameraViewSample>& cams) {
+    std::vector<EvalTick> out;
+    for (size_t k = 1; k < states.size(); ++k) {
+        EvalTick t(states[k]);
+        if (k - 1 < cams.size()) t.cameraView = cams[k - 1];
+        out.push_back(t);
+    }
+    return out;
+}
+
 }  // namespace
 
-TEST(SpanPrediction, PerfectPredictorScoresExactlyZero) {
+// 041 T019 — converted from a bare TEST() to TEST_F so the ConfigManager
+// fixture applies. A bare TEST() runs on struct defaults rather than the
+// fixture's config, which is trap 2 of the zero-answer block: the test still
+// passes, so nothing tells you it was measuring a different configuration from
+// every other test in this file.
+//
+// ⚠️ T019's task note says this pairing is "currently wrong" and expects the
+// test to be RED until T022. That premise is STALE: commit 1b290f2 (2026-08-02,
+// "prediction_score was scored ONE TICK LATE since 038 US3") already fixed it,
+// before 041 was specced. Both tests below are green today and must STAY green
+// through T020-T022 -- their value now is as a regression gate on the grouped
+// record, not as evidence of a pending fix.
+TEST_F(FitnessDecomp022Test, PerfectPredictorScoresExactlyZero) {
     constexpr int kTicks = 12;               // ticks 1..11 have camera views
     const double dt = SIM_TIME_STEP_MSEC / 1000.0;
 
@@ -336,13 +456,13 @@ TEST(SpanPrediction, PerfectPredictorScoresExactlyZero) {
         states[k].setNNData(NNInputs{}, out, TRACKER_NN_OUTPUT_COUNT);
     }
 
-    const gp_fitness err = computeSpanPredictionError(states, cams);
+    const gp_fitness err = computeSpanPredictionError(zipTicks(states, cams));
     EXPECT_LT(static_cast<double>(err), 1e-4)
         << "a perfect predictor must score ~0. A non-zero result here means the "
            "state<->cameraView tick pairing is off, NOT that the predictor is bad.";
 }
 
-TEST(SpanPrediction, AOneTickShiftIsDetectable) {
+TEST_F(FitnessDecomp022Test, AOneTickShiftIsDetectable) {
     // Teeth for the test above: prove the assertion is actually sensitive to the
     // bug it guards, or PerfectPredictorScoresExactlyZero would have passed on
     // the old code too.
@@ -373,8 +493,8 @@ TEST(SpanPrediction, AOneTickShiftIsDetectable) {
         states[k].setNNData(NNInputs{}, out, TRACKER_NN_OUTPUT_COUNT);
     }
 
-    const double good = static_cast<double>(computeSpanPredictionError(states, aligned));
-    const double bad = static_cast<double>(computeSpanPredictionError(states, shifted));
+    const double good = static_cast<double>(computeSpanPredictionError(zipTicks(states, aligned)));
+    const double bad = static_cast<double>(computeSpanPredictionError(zipTicks(states, shifted)));
 
     EXPECT_LT(good, 1e-4) << "sanity: the aligned pairing is the zero case";
     EXPECT_GT(bad, good * 100.0)
@@ -453,9 +573,19 @@ TEST_F(FitnessDecomp022Test, TrackerObjectiveUsesTheTargetFromTheSameTick) {
             states.push_back(st);
         }
 
-        r.aircraftStateList.push_back(states);
-        r.targetTrajectoryList.push_back(targets);
+        // 041 T020 — same content, grouped. `states[0]` is the pre-loop pose
+        // and `targets[j]` was tick j+1's, so the zip is states[k] with
+        // targets[k-1]; that offset now exists only in this fixture translation.
+        ScenarioTicks sc;
+        sc.initialState = states.at(0);
+        for (size_t k = 1; k < states.size(); ++k) {
+            EvalTick t(states[k]);
+            if (k - 1 < targets.size()) t.targetSample = targets[k - 1];
+            sc.ticks.push_back(t);
+        }
+        r.tickList.push_back(std::move(sc));
         r.crashReasonList.push_back(CrashReason::None);
+        fillStepScores(r);   // 041 T035
         return r;
     };
 
@@ -474,4 +604,379 @@ TEST_F(FitnessDecomp022Test, TrackerObjectiveUsesTheTargetFromTheSameTick) {
            "aligned=" << a[0].score << " shifted=" << b[0].score
            << " -- an inversion means targetTrajectoryList is being read one tick "
               "out (the 030-2026-08-03 bug).";
+}
+
+// ===========================================================================
+// 041 T017-T019 (FR-003, SC-001) — THE ZERO-ANSWER PATTERN.
+//
+// Construct data whose correct answer is EXACTLY 0, assert exactly 0, and pair
+// every such test with a shifted-input companion proving the assertion has
+// teeth. Written BEFORE the T020-T028 grouped-record refactor and required to
+// pass IDENTICALLY after it.
+//
+// ⚠️ THE POINT OF `TickFixture` BELOW. These tests must not encode the storage
+// layout, or the refactor invalidates them exactly when they are needed most.
+// Today the per-tick series are parallel lists with an offset — the recorder
+// pushes an initial aircraft state before the tick loop, so `cams[j]` and
+// `targets[j]` are tick j+1's — and after T020 they become
+// `tickList[i][k] = {state, cameraView, targetSample}` with no offset at all.
+// Everything that knows about the offset lives in this one helper. At T022 the
+// helper changes; not one assertion below does.
+//
+// ⚠️ TWO FIXTURE TRAPS, both already paid for once:
+//   1. An EMPTY pathList makes computeScenarioScores SKIP the scenario
+//      (`if (path.empty() || ...) continue;`), so every variant scores 0 and a
+//      comparison looks passed without ever running. `TickFixture` always lays
+//      a path.
+//   2. A bare TEST() misses the ConfigManager fixture and runs on defaults.
+//      All of these are TEST_F(FitnessDecomp022Test, ...).
+// ===========================================================================
+
+namespace {
+
+// Builds a single-scenario tracker EvalResults, addressed BY TICK.
+// Tick indices are 1-based, matching `stepIndex` in the objective: tick 1 is
+// the first stepped tick. Tick 0 is the pre-loop initial state and is never
+// addressable here — which is the property T020's separately-named initial
+// field is meant to make structural.
+struct TickFixture {
+    int ticks;
+    std::vector<Path> path;
+    AircraftState initialState;                 // pre-loop; NOT a tick
+    std::vector<EvalTick> records;              // records[k-1] is tick k
+    // 041 T020/T022 — the storage changed here and NOWHERE ELSE. It was three
+    // parallel vectors with an offset; it is now one grouped series plus a named
+    // initial state. Not one assertion in this file needed touching, which is
+    // what the setters below were for.
+    std::vector<AircraftState> states;          // kept: the [0] = initial view the
+                                                // tests use to park the pre-loop pose
+
+    explicit TickFixture(int n) : ticks(n), records(n), states(n + 1) {
+        // Trap 1: a non-empty path, or the scenario is silently skipped.
+        for (int j = 0; j <= n; ++j) {
+            path.push_back(Path(gp_vec3(static_cast<gp_scalar>(-0.85 * j), 0.0f, 0.0f),
+                                gp_vec3::UnitX(), 0.85 * j, 0.0));
+        }
+        for (int k = 0; k <= n; ++k) {
+            states[k].setSimTimeMsec(k * SIM_TIME_STEP_MSEC);
+            states[k].setThisPathIndex(0);
+            states[k].setVelocity(gp_vec3(static_cast<gp_scalar>(-13.0), 0.0f, 0.0f));
+            // Nose down the target's line of travel, or the tail-chase cone term
+            // zeroes every score and the test measures nothing.
+            states[k].setOrientation(gp_quat(Eigen::AngleAxis<gp_scalar>(
+                static_cast<gp_scalar>(M_PI), gp_vec3::UnitZ())));
+        }
+    }
+
+    // ---- the ONLY places that know the storage layout -----------------------
+    void setTargetAtTick(int tick, const CopiedTargetSample& t) { records.at(tick - 1).targetSample = t; }
+    void setViewAtTick(int tick, const CameraViewSample& c)     { records.at(tick - 1).cameraView = c; }
+    void setChaseAtTick(int tick, const gp_vec3& p)             { states.at(tick).setPosition(p); }
+    // -------------------------------------------------------------------------
+
+    EvalResults build() const {
+        EvalResults r;
+        r.pathList.push_back(path);
+        ScenarioTicks sc;
+        sc.initialState = states.at(0);          // the pre-loop pose, by name
+        sc.ticks = records;
+        for (size_t k = 0; k < sc.ticks.size(); ++k) {
+            sc.ticks[k].state = states.at(k + 1);  // tick k+1's pose
+        }
+        r.tickList.push_back(std::move(sc));
+        r.crashReasonList.push_back(CrashReason::None);
+        fillStepScores(r);   // 041 T035
+        return r;
+    }
+};
+
+CameraViewSample visibleView() {
+    CameraViewSample cv{};
+    cv.beacon_left.cep = 0.05f;      // below kCepSentinelThreshold => visible
+    cv.beacon_right.cep = 0.05f;
+    return cv;
+}
+
+CameraViewSample blindView() {
+    CameraViewSample cv{};
+    cv.beacon_left.cep = 9.0f;       // above threshold => not visible
+    cv.beacon_right.cep = 9.0f;
+    return cv;
+}
+
+// A target advancing steadily along -X, with its trail rabbit 3.048 m behind.
+CopiedTargetSample targetAtTick(int tick, double stepM = 0.85) {
+    CopiedTargetSample t;
+    t.position = gp_vec3(static_cast<gp_scalar>(-stepM * tick), 0.0f, 0.0f);
+    t.velocity = gp_vec3(static_cast<gp_scalar>(-13.0), 0.0f, 0.0f);
+    t.trail_rabbit_position = t.position + gp_vec3(static_cast<gp_scalar>(3.048), 0.0f, 0.0f);
+    return t;
+}
+
+}  // namespace
+
+// --- T017: the M2 objective ------------------------------------------------
+
+TEST_F(FitnessDecomp022Test, T017_TrackerObjectiveScoresExactlyZeroForAPerfectTailChase) {
+    // THE ZERO CASE. A chase sitting exactly on this tick's trail rabbit, nose
+    // down the line of travel, is a perfect tail-chase: zero positional error
+    // every tick. Any non-zero error here is a PAIRING fault, not a tracking
+    // one -- there is nothing else in the fixture that could produce it.
+    constexpr int kTicks = 16;
+    TickFixture f(kTicks);
+    for (int k = 1; k <= kTicks; ++k) {
+        const auto t = targetAtTick(k);
+        f.setTargetAtTick(k, t);
+        f.setChaseAtTick(k, t.trail_rabbit_position);   // exactly on the rabbit
+        f.setViewAtTick(k, visibleView());
+    }
+    // Tick 0 is the pre-loop initial state; park it on tick 1's rabbit so it is
+    // never the thing under test.
+    f.states[0].setPosition(targetAtTick(1).trail_rabbit_position);
+
+    EvalResults r = f.build();   // lvalue: computeScenarioScores takes a mutable ref
+    const auto scores = computeScenarioScores(r);
+    ASSERT_EQ(scores.size(), 1u);
+
+    // A chase sitting on the rabbit is exactly the trail distance behind the
+    // target, every tick -- so the median range is 3.048 EXACTLY. This is the
+    // pairing-sensitive exact answer: reading a neighbouring tick's target moves
+    // it by a full 0.85 m of target travel.
+    EXPECT_NEAR(static_cast<double>(scores[0].tracker_diag.range_med), 3.048, 1e-4)
+        << "a chase parked on THIS tick's rabbit is exactly the trail distance "
+           "behind THIS tick's target; a different value means the objective is "
+           "reading another tick's target (the 030..2026-08-03 off-by-one).";
+
+    // And every tick is inside the fitness ramp -- exactly all of them, not
+    // all-but-one from dropping a tick at either end of the series.
+    EXPECT_EQ(static_cast<double>(scores[0].tracker_diag.in_fit_ramp_frac), 1.0)
+        << "a perfect tail-chase is in the fit ramp on every tick";
+}
+
+TEST_F(FitnessDecomp022Test, T017_TrackerObjectiveScoresExactlyZeroWhenNoCreditIsEarned) {
+    // The LITERAL zero: a chase parked far outside the cone earns no step points
+    // on any tick, so the accumulated (negated) score is exactly 0.0. Not -0.0001
+    // from a stray half-credit tick, and not a small positive from a sign slip.
+    constexpr int kTicks = 16;
+    TickFixture f(kTicks);
+    for (int k = 1; k <= kTicks; ++k) {
+        f.setTargetAtTick(k, targetAtTick(k));
+        // 500 m off to the side: far outside any cone or distance term.
+        f.setChaseAtTick(k, targetAtTick(k).trail_rabbit_position
+                            + gp_vec3(0.0f, static_cast<gp_scalar>(500.0), 0.0f));
+        f.setViewAtTick(k, blindView());
+    }
+    f.states[0].setPosition(targetAtTick(1).trail_rabbit_position
+                            + gp_vec3(0.0f, static_cast<gp_scalar>(500.0), 0.0f));
+
+    EvalResults r = f.build();
+    const auto scores = computeScenarioScores(r);
+    ASSERT_EQ(scores.size(), 1u);
+
+    // The EXACT assertion: not one tick of these 16 reaches the fit threshold.
+    // A count over a count -- no epsilon anywhere.
+    EXPECT_EQ(static_cast<double>(scores[0].tracker_diag.in_fit_ramp_frac), 0.0)
+        << "a chase 500 m off-axis is in the fit ramp on exactly zero ticks";
+
+    // And the documented non-assertion: the score is near zero but NOT zero.
+    // Pinned as strictly-less-than-zero so that if the objective ever gains a
+    // hard cutoff (making an exact zero reachable), this test fails and someone
+    // revisits the comment above rather than finding it quietly stale.
+    EXPECT_LT(static_cast<double>(scores[0].score), 0.0)
+        << "the Lorentzian never reaches zero; if this now passes as exactly 0, "
+           "the objective gained a cutoff and the comment above needs updating";
+}
+
+TEST_F(FitnessDecomp022Test, T017_TrackerObjectiveOneTickShiftIsVisiblyWorse) {
+    // TEETH. Same fixture, chase parked on the NEXT tick's rabbit. If the
+    // objective were reading one tick out, this would be the one scoring zero.
+    constexpr int kTicks = 16;
+    auto buildWithShift = [&](int shift) {
+        TickFixture f(kTicks);
+        for (int k = 1; k <= kTicks; ++k) {
+            f.setTargetAtTick(k, targetAtTick(k));
+            f.setChaseAtTick(k, targetAtTick(k + shift).trail_rabbit_position);
+            f.setViewAtTick(k, visibleView());
+        }
+        f.states[0].setPosition(targetAtTick(1).trail_rabbit_position);
+        EvalResults r = f.build();
+        return computeScenarioScores(r);
+    };
+
+    const auto aligned = buildWithShift(0);
+    const auto shifted = buildWithShift(1);
+    ASSERT_EQ(aligned.size(), 1u);
+    ASSERT_EQ(shifted.size(), 1u);
+
+    const double a = static_cast<double>(aligned[0].tracker_diag.range_med);
+    const double b = static_cast<double>(shifted[0].tracker_diag.range_med);
+    EXPECT_NEAR(a, 3.048, 1e-4) << "sanity: the aligned case is the exact case";
+    EXPECT_GT(std::abs(b - a), 0.5)
+        << "a one-tick shift is 0.85 m of target travel and must be plainly "
+           "visible; if it is not, the exact-answer test above has no teeth. "
+           "aligned=" << a << " shifted=" << b;
+}
+
+// --- T018: vis_frac --------------------------------------------------------
+
+TEST_F(FitnessDecomp022Test, T018_VisFracIsExactlyZeroWhenNothingIsEverVisible) {
+    // THE ZERO CASE for the visibility diagnostic. Every tick blind => exactly
+    // 0.0, not 0.0-ish and not 1/N from an off-by-one reading past the end.
+    constexpr int kTicks = 12;
+    TickFixture f(kTicks);
+    for (int k = 1; k <= kTicks; ++k) {
+        f.setTargetAtTick(k, targetAtTick(k));
+        f.setChaseAtTick(k, targetAtTick(k).trail_rabbit_position);
+        f.setViewAtTick(k, blindView());
+    }
+    f.states[0].setPosition(targetAtTick(1).trail_rabbit_position);
+
+    EvalResults r = f.build();   // lvalue: computeScenarioScores takes a mutable ref
+    const auto scores = computeScenarioScores(r);
+    ASSERT_EQ(scores.size(), 1u);
+    EXPECT_EQ(static_cast<double>(scores[0].tracker_diag.vis_frac), 0.0)
+        << "no beacon is ever within CEP threshold, so vis_frac must be exactly 0";
+}
+
+TEST_F(FitnessDecomp022Test, T018_VisFracIsExactlyOneWhenEverythingIsVisible) {
+    constexpr int kTicks = 12;
+    TickFixture f(kTicks);
+    for (int k = 1; k <= kTicks; ++k) {
+        f.setTargetAtTick(k, targetAtTick(k));
+        f.setChaseAtTick(k, targetAtTick(k).trail_rabbit_position);
+        f.setViewAtTick(k, visibleView());
+    }
+    f.states[0].setPosition(targetAtTick(1).trail_rabbit_position);
+
+    EvalResults r = f.build();   // lvalue: computeScenarioScores takes a mutable ref
+    const auto scores = computeScenarioScores(r);
+    ASSERT_EQ(scores.size(), 1u);
+    // Exactly 1.0. A reader that misses the last tick lands on 11/12 = 0.9166,
+    // which an EXPECT_NEAR with a loose tolerance would wave through.
+    EXPECT_EQ(static_cast<double>(scores[0].tracker_diag.vis_frac), 1.0)
+        << "every tick has both beacons inside CEP threshold, so vis_frac must "
+           "be exactly 1 -- a value just under it means a tick is being dropped "
+           "at one end of the series";
+}
+
+TEST_F(FitnessDecomp022Test, T018_VisFracCountsTheTickItIsPairedWith) {
+    // TEETH, and the reason a PREFIX pattern is used rather than an alternating
+    // one: alternating visibility has the same FRACTION under a one-tick shift,
+    // so it would pass either way. A prefix moves the count by exactly one.
+    constexpr int kTicks = 12;
+    constexpr int kVisibleThrough = 5;
+    TickFixture f(kTicks);
+    for (int k = 1; k <= kTicks; ++k) {
+        f.setTargetAtTick(k, targetAtTick(k));
+        f.setChaseAtTick(k, targetAtTick(k).trail_rabbit_position);
+        f.setViewAtTick(k, (k <= kVisibleThrough) ? visibleView() : blindView());
+    }
+    f.states[0].setPosition(targetAtTick(1).trail_rabbit_position);
+
+    EvalResults r = f.build();   // lvalue: computeScenarioScores takes a mutable ref
+    const auto scores = computeScenarioScores(r);
+    ASSERT_EQ(scores.size(), 1u);
+    EXPECT_NEAR(static_cast<double>(scores[0].tracker_diag.vis_frac),
+                static_cast<double>(kVisibleThrough) / kTicks, 1e-6)
+        << "vis_frac must count the view paired with each tick; being one tick "
+           "out reads " << (kVisibleThrough - 1) << "/" << kTicks << " or "
+        << (kVisibleThrough + 1) << "/" << kTicks;
+}
+
+// ===========================================================================
+// 041 T036 (FR-018a) — the step score moved INTO the tick loop.
+//
+// ⚠️ The task originally said "bit-identical". The operator reframed it
+// (spec.md § Clarifications, "what bit-identical actually has to mean"): the
+// gate is DETERMINISM plus "materially the same or better", because asserting
+// `==` and then loosening the tolerance when it fails is the anti-pattern this
+// task exists to prevent.
+//
+// ⚠️ What these CANNOT prove, stated so nobody assumes otherwise: the fixtures
+// fill stepScore with fillStepScores(), the post-hoc reference. A true
+// worker-vs-post-hoc comparison needs a dmp produced by the eval path — that is
+// the operator-run eval-vs-training bitwise gate, which performs exactly that
+// comparison end to end. What IS proved here is that the objective genuinely
+// READS the recorded series, and does so deterministically.
+// ===========================================================================
+
+TEST_F(FitnessDecomp022Test, T036_ScoringIsDeterministic) {
+    // Obligation 1 — determinism. An equality assertion, and the one thing
+    // everything downstream depends on (the bitwise gate, ablation deltas,
+    // cross-run comparison).
+    EvalResults a = makeStraightPath(40, 0.0, 0.0);
+    EvalResults b = makeStraightPath(40, 0.0, 0.0);
+    const auto s1 = computeScenarioScores(a);
+    const auto s2 = computeScenarioScores(b);
+    ASSERT_EQ(s1.size(), s2.size());
+    for (size_t i = 0; i < s1.size(); ++i) {
+        EXPECT_EQ(static_cast<double>(s1[i].score), static_cast<double>(s2[i].score))
+            << "scenario " << i << " scored differently on two identical inputs";
+    }
+
+    // Re-scoring the SAME object twice must also be stable — the objective
+    // carries streak state and must reset it per call.
+    EvalResults c = makeStraightPath(40, 0.0, 0.0);
+    const auto first = computeScenarioScores(c);
+    const auto second = computeScenarioScores(c);
+    ASSERT_EQ(first.size(), second.size());
+    for (size_t i = 0; i < first.size(); ++i) {
+        EXPECT_EQ(static_cast<double>(first[i].score), static_cast<double>(second[i].score))
+            << "re-scoring the same EvalResults changed the answer at " << i
+            << " — streak state is leaking across calls";
+    }
+}
+
+TEST_F(FitnessDecomp022Test, T036_TheObjectiveActuallyReadsTheRecordedScore) {
+    // THE TEETH, and the most important assertion here. If computeScenarioScores
+    // still re-derived the geometry, perturbing the RECORDED series would change
+    // nothing and the "relocation" would be a fiction — the policy would observe
+    // one number and be rewarded by another, the exact gap 041 exists to close.
+    EvalResults baseline = makeStraightPath(40, 0.0, 0.0);
+    const auto before = computeScenarioScores(baseline);
+    ASSERT_FALSE(before.empty());
+
+    EvalResults perturbed = makeStraightPath(40, 0.0, 0.0);
+    ASSERT_FALSE(perturbed.tickList.empty());
+    ASSERT_GT(perturbed.tickList[0].ticks.size(), 10u);
+    // Halve one tick's recorded score. Geometry is untouched, so a re-deriving
+    // objective would be blind to this.
+    perturbed.tickList[0].ticks[5].stepScore *= 0.5f;
+    const auto after = computeScenarioScores(perturbed);
+
+    EXPECT_NE(static_cast<double>(before[0].score), static_cast<double>(after[0].score))
+        << "perturbing the RECORDED step score did not move the fitness — the "
+           "objective is still re-deriving it, so the recorded series and the "
+           "scored series are two different numbers again";
+}
+
+TEST_F(FitnessDecomp022Test, T036_RecordedSeriesMatchesThePostHocReference) {
+    // Obligation 2 — MEASURE and report, do not assert-and-loosen. The max
+    // per-tick delta is surfaced in the message so a future divergence is
+    // diagnosable rather than merely red.
+    //
+    // Exact equality is expected HERE because both sides read the same
+    // float-rounded AircraftState: the relocation reads the very object that
+    // gets serialized, so there is no double-precision path to diverge from.
+    // If that ever stops being true, this is where it surfaces.
+    EvalResults r = makeStraightPath(40, 1.5, 0.8);
+    std::vector<float> recorded;
+    for (const auto& tick : r.tickList[0].ticks) recorded.push_back(tick.stepScore);
+
+    fillStepScores(r);   // recompute the reference over the same states
+
+    ASSERT_EQ(recorded.size(), r.tickList[0].ticks.size());
+    double maxDelta = 0.0;
+    size_t worstTick = 0;
+    for (size_t k = 0; k < recorded.size(); ++k) {
+        const double d = std::abs(static_cast<double>(recorded[k]) -
+                                  static_cast<double>(r.tickList[0].ticks[k].stepScore));
+        if (d > maxDelta) { maxDelta = d; worstTick = k; }
+    }
+    EXPECT_EQ(maxDelta, 0.0)
+        << "recorded step score diverges from the post-hoc reference; max delta "
+        << maxDelta << " at tick " << worstTick
+        << ". A non-zero value is not automatically a failure — the gate is "
+           "'materially the same or better' — but it MUST be explained, not "
+           "absorbed by widening this tolerance.";
 }

@@ -207,9 +207,9 @@ TEST(SituationalInputs, GatherTrackerWritesBAndA) {
     gather_tracker_inputs(chase, history, FlightArena{}, kCepSentinelThreshold, sa, out);
 
     // (B) inward_body matches the standalone helper (yaw case → +body-y).
-    EXPECT_NEAR(out.inward_body_x, 0.0f, 1e-5);
-    EXPECT_NEAR(out.inward_body_y, 1.0f, 1e-5);
-    EXPECT_NEAR(out.inward_body_z, 0.0f, 1e-5);
+    EXPECT_NEAR(out.common.inward_body_x, 0.0f, 1e-5);
+    EXPECT_NEAR(out.common.inward_body_y, 1.0f, 1e-5);
+    EXPECT_NEAR(out.common.inward_body_z, 0.0f, 1e-5);
     // (A) visible now → time_since_seen 0.
     EXPECT_FLOAT_EQ(out.time_since_seen, 0.0f);
 }
@@ -226,12 +226,12 @@ TEST(SituationalInputs, GatherPathgenWritesBOnly) {
     gather_pathgen_inputs(provider, chase, FlightArena{}, in);
 
     // Level, east of axis → inward along -body-x.
-    EXPECT_NEAR(in.inward_body_x, -1.0f, 1e-5);
-    EXPECT_NEAR(in.inward_body_y,  0.0f, 1e-5);
-    EXPECT_NEAR(in.inward_body_z,  0.0f, 1e-5);
+    EXPECT_NEAR(in.common.inward_body_x, -1.0f, 1e-5);
+    EXPECT_NEAR(in.common.inward_body_y,  0.0f, 1e-5);
+    EXPECT_NEAR(in.common.inward_body_z,  0.0f, 1e-5);
     // dist_to_boundary is the tanh-saturated ray distance ⇒ (0, 1).
-    EXPECT_GE(in.dist_to_boundary, 0.0f);
-    EXPECT_LT(in.dist_to_boundary, 1.0f);
+    EXPECT_GE(in.common.dist_to_boundary, 0.0f);
+    EXPECT_LT(in.common.dist_to_boundary, 1.0f);
 }
 
 }  // namespace
