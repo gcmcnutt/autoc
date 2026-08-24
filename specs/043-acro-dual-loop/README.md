@@ -97,9 +97,27 @@ the configuration that already works.
 | `gyro_lpf` 25 → 100 Hz | 4.8 ms | measured roll-off is steeper than PT1 alone (dynamic notch at 30 Hz, Q 250) |
 | xiao loop 20 → 35 Hz | 10.7 ms | MSP-capped, not CPU-capped (eval is 1.6 ms) |
 
-## ⚠️ Open, and it matters
+## ⚠️ Open, and it matters — pin the actuator model first
 
 The **30 ms actuator figure is from the 037 model, not measured on this airframe**, and it is the largest
-single term in the budget. If it is wrong the crossover estimate moves. Pin it before committing to the
-architecture change — a bench servo step-response would do it, and `servo_pwm_rate = 50` says at least
-10 ms of it is real.
+single term in the budget. If it is wrong the crossover estimate moves. `servo_pwm_rate = 50` says at
+least 10 ms of it is real, but the rest is modelled, not observed.
+
+⭐ **Servo response is ALREADY a variation class** (`craftServoSlew`, `craftThrustTau` in
+`ScenarioMetadata`; the first-order servo tau draw was removed 2026-06-12 when v2 went to PWM-latch+slew).
+So the sim can already express a spread of actuator responses — what is missing is knowing where the real
+airframe sits inside that spread.
+
+⚠️ **Operator 2026-08-23: the 2nd flight article will make this apparent** — two airframes give the first
+real read on servo-response spread rather than a single sample. Until then the variation range is an
+assumption.
+
+⭐ **And some earlier figures probably have not changed** — the 037-era actuator and latency constants were
+measured on this same airframe and much of it is unmodified. This is a **fine-tune of the sim model**, not
+a re-derivation. ⛔ Do not treat every constant as suspect; find the ones the flight data actually
+contradicts and leave the rest alone.
+
+**Pre-work, then, is threefold** (all before modelling ACRO):
+1. xiao log self-sufficiency (§ Order of work item 1),
+2. a bench servo step-response to pin the actuator term,
+3. a pass over the 037 constants asking *which of these does the 041-t7 flight actually contradict?*
