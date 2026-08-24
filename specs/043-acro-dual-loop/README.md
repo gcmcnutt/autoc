@@ -202,10 +202,10 @@ those is enough before committing to the architecture change.**
 | *crrcsim `mod_inputdev` — link `autoc_common` instead of cherry-picking sources* | we are opening `inputdev_autoc.cpp` for item 5; the AWSSDK link fix (`17e6c3e`) already moved the parent in this direction |
 | *Type-Safe NN Sensor Interface* | item 4 edits the sensor interface; six stale-label bugs in 041 were all "a caller was not updated" |
 | *Simulator Sampling Time Variation* | the 20 Hz ZOH is 25 ms of the 81.6 ms budget — varying it is directly on-topic |
-| ⛔ *460800 baud-raise (039 T021, closed-not-run)* | worth ~5 ms — but **GATED on transport error visibility first**, see below |
+| ⚠️ *460800 baud-raise (039 T021, closed-not-run)* | ⛔ **NOT on 043's path** — deferred until there is an ACRO signal, on the cleaner-wired 2nd article. See § Transport. |
 | ⚠️ *Renderer playback enhancements / streak overlay / X-display portability* | only if the renderer is genuinely opened; otherwise leave — 043 is a control-loop feature |
 
-## ⛔ GATE ON THE BAUD RAISE — transport errors are invisible today
+## ⚠️ Transport: DEFERRED, and deliberately so — model the latency, do not chase it
 
 Operator 2026-08-23: *"baud raise should be gated on checksums on the transport of course."* Correct, and
 the situation is worse than "unmonitored".
@@ -230,11 +230,39 @@ so there is room to hide a lot of retries.
 fetch-time creep**, which reads as jitter. That is the same failure shape 041 hit six times: a real error
 rendered as something benign.
 
-**Gate, in order:**
-1. Count CRC failures, framing errors and timeouts; expose them in `SpanSummary` beside the existing
-   `PipelineStats` (they are already logged per span, so the carrier exists).
-2. Establish the error rate **at 115200** as the baseline — it may not be zero now.
-3. Only then raise to 460800, and compare error rate as well as latency.
+⭐ **BUT THE BAUD RAISE IS NOT ON 043'S PATH.** Operator 2026-08-23: *"seems we can live with the latency
+for now, we simulate it — and once we get some signal on acro perf we can perhaps speed up the transport."*
+
+That is the right call and it follows from the feature's own premise:
+
+* ⭐ **Latency that is faithfully modelled is a property, not a defect.** The 13 ms MSP fetch is part of
+  the 81.6 ms budget 043 exists to model. If the sim carries it, the NN trains against it and the
+  aircraft flies what it trained on. Removing 5 ms while the sim still ignores it would *widen* the
+  sim-real gap, not close it.
+* ⭐ **The physical layer is about to change anyway.** The 2nd flight article is being built and wired
+  more cleanly, so today's harness is not the one that matters. Measuring error rate on hardware being
+  replaced spends effort on a moving target.
+* ⭐ **ACRO changes the requirement.** If the inner loop damps the plant to ~24 °/s as 039 measured, the
+  outer loop's latency sensitivity drops sharply — the fast stabilization no longer depends on the link.
+  **The right time to ask "is the transport fast enough" is AFTER there is an ACRO signal**, because the
+  answer may be "comfortably, already".
+
+**So: measured evidence says nothing is broken at 115200 today.** The 2026-08-23 flight logged
+`state_valid` on every tick — **1,682 of 1,682 valid, zero fetch failures across four spans**.
+
+⚠️ ⛔ **Two limits on that reassurance, recorded so it is not over-read:**
+1. `state_valid` is `false` only on FULL TIMEOUT. A frame that was corrupted and silently re-read still
+   logs `1`. So it proves **zero total losses**, not zero errors — retries stay hidden inside `fetch`.
+2. It only covers **INAV → xiao**. The `xiao → INAV` direction carries `MSP_SET_RAW_RC` — the CONTROL
+   OUTPUTS — and is uninstrumented on both ends. INAV drops a bad frame to `MSP_IDLE` with no counter and
+   **holds the previous RC values**, so a lost command flies stale surfaces with nothing recording it.
+   ⭐ `rc_sent[3]` is already logged, so a **sequence number the xiao knows it sent** would expose gaps
+   from the log alone, without a fork change.
+
+**If and when the transport is revisited** (post-ACRO-signal, on the new article): instrument first, keep
+the counters in permanently as a standing harness-health signal, baseline at 115200, then step
+**230400 before 460800** — a 2× step with counters running gives the error-rate *slope*, where a single
+4× jump gives one point and no gradient.
 
 ⭐ This also retro-fits the 039 T021 conclusion. It was closed **not-run** because *"115200 proved
 sufficient in flight (zero overruns)"* — but zero *overruns* is not zero *errors*, and with retries hidden
