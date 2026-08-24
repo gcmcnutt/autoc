@@ -268,3 +268,76 @@ the counters in permanently as a standing harness-health signal, baseline at 115
 sufficient in flight (zero overruns)"* — but zero *overruns* is not zero *errors*, and with retries hidden
 inside `fetch` the two are not the same measurement. The lever is still unexercised, and now so is its
 safety check.
+
+---
+
+## ⭐ MODELLING THE CONFIG *RATES* IS THE KEY PART
+
+Operator 2026-08-23: *"modelling the config **rates** is key."*
+
+⛔ **The gains are the easy half; the rates are what make the model right.** A crrcsim ACRO model that
+implements `fw_p_roll = 15` and stops there will be wrong, because the loop's behaviour is set as much by
+*when* things happen as by *how hard*. The rates that must be modelled, all readable from
+[`xiao/inav-hb1.cfg`](../../xiao/inav-hb1.cfg) and the flight's own blackbox header:
+
+| rate | value on the flying config | why it matters |
+|---|---|---|
+| `looptime` | **500 µs = 2 kHz** | the inner loop's actual cadence — the whole reason it can damp what a 20 Hz loop cannot |
+| `servo_pwm_rate` | **50 Hz** | ⚠️ 20 ms period ⇒ ~10 ms ZOH. Real, measured, and part of the 30 ms actuator term |
+| `motor_pwm_rate` | 16 kHz | not in the control path but pins the ESC model |
+| `gyro_lpf_hz` | **25** (PT1) | 6.4 ms group delay INSIDE the inner loop |
+| `acc_lpf_hz` | **15** (BIQUAD) | 15 ms — the largest sensor delay, on the channel 041 added |
+| `dynamicGyroNotchMinHz` / Q | **30 / 250** | measured roll-off is steeper than PT1 alone; the notch is doing real work above 10 Hz |
+| `dterm_lpf_hz` / type | 10 / biquad | D-term filtering shapes the inner loop's own phase margin |
+| MSP `TASK_SERIAL` | **100 Hz, LOW priority** | the fetch-time tail comes from here, not from payload size |
+| xiao control loop | **20 Hz** | 25 ms ZOH — the outer loop's own contribution |
+
+⭐ **These are cascaded rates, not one rate.** 2 kHz PID inside a 50 Hz servo inside a 20 Hz outer loop,
+with sensor filters at 15–25 Hz feeding the innermost one. Getting the *ratios* right matters more than
+getting any single constant exactly right — a model with all the right gains and one wrong rate will
+oscillate somewhere the real aircraft does not.
+
+⚠️ **`servo_pwm_rate = 50` deserves its own look.** It is the one rate that is plainly low for a control
+surface, it is ~10 ms of the largest term in the phase budget, and raising it is a config change. ⛔ Check
+the servos are digital first.
+
+Constants go in the existing XML per the operator's scoping, so the ones we might change stay changeable
+without a rebuild.
+
+## 🔬 RESEARCH PHASE — are the two loops at arm's length?
+
+Operator 2026-08-23: *"we have a plan research phase to note if we need other feedback into the RNN
+regarding this — or are the two loops at arm's length? e.g. we feedback our command outputs and we see
+actual filtered rates and accel coming back — anything else needed?"*
+
+⭐ **This is the central design question of the feature and it should be answered BEFORE the sim work, not
+after.** It decides the NN's input and output contracts, and everything downstream is built on them.
+
+**What the NN would have today, unchanged:**
+* it **commands** rates (the new action space),
+* it **observes** the resulting filtered `GYRO_P/Q/R` and `ACCEL_*` coming back,
+* plus everything else in the existing 45.
+
+So there is already a closed observation loop: command out, consequence in. **The question is whether that
+is sufficient**, and it is genuinely open. Candidates to evaluate, none pre-judged:
+
+1. ⭐ **Its own previous command** (efference copy). The NN sees the *result* of its last setpoint but not
+   the setpoint itself. With inner-loop lag, result-at-time-t reflects a command from 2–3 ticks ago, and
+   the network currently has to infer that from recurrent state. ⚠️ Note the RNN *may already* encode
+   this — `W_hh` effective rank is 11.2–11.4 of 16, so there is unused capacity, but "unused" is not
+   "unable".
+2. **Rate-tracking error** — commanded rate minus achieved rate. If the inner loop is saturating or
+   rate-limited, this is the only channel that would reveal it, and it is exactly what a human pilot
+   feels as "the aircraft isn't following."
+3. **Inner-loop health** — I-term accumulation or output saturation from INAV. ⛔ Would need a new MSP
+   field; do not add speculatively.
+4. **Nothing.** ⭐ **The genuine possibility, and the cheapest outcome.** If the inner loop tracks
+   setpoints well, it is a near-ideal actuator and the outer loop needs no visibility into it at all —
+   that is the definition of "at arm's length", and it is what the 039 measurement (24 °/s, *"on a rail"*)
+   hints at.
+
+⛔ **Answer it with the sim once ACRO is modelled, not by adding inputs first.** 041's lesson was that
+inputs added on reasoning rather than measurement got de-weighted — the eight added there are *still*
+unproven (T068). The discipline that worked was: measure the spread, find what is unreachable, fix that.
+⭐ Cheapest experiment: model ACRO, train with the CURRENT 45 inputs, and only then ablate/add — a
+rate-tracking-error input either earns its keep against that baseline or it does not.
