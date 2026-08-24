@@ -135,6 +135,26 @@ D1 requirements hardening (2026-08-04) + the LIFCL sizing datum (s3 N=63 = 3524 
   · reference docs <https://digilent.com/reference/programmable-logic/zybo-z7/start>
 - Lattice PSG + EVN UG: archived in-repo at [`firmware/beacon-receiver/`](../../firmware/beacon-receiver/)
 
+## Lens candidates queued (2026-08-17) — the "wider single fisheye" arm of the topology fork
+- [x] **ORDERED 2026-08-17 — ELP-L156 1.56 mm "192°" M12 fisheye + 650/850/940 filter set** (AliExpress
+  item 3256809401762535, ~$8): on the OV9281 predicts
+  **~110–115° H × ~70° V** (vs the 1.8 mm's measured 95×61) — probably just UNDER 120° given the same
+  label-vs-real slop the 1.8 showed (measured 2.25 mm vs "1.8"), and ~½ the light per pixel (0.8 mm pupil).
+  Cheap enough to measure on the ruled mat like the 1.8; verify it's fisheye (f·θ) not rectilinear, and
+  NOT "IR-cut". Reality check: 120° H on a 1/4″ chip needs ~1.1–1.2 mm TRUE focal length — the birded
+  pair stays the physics-honest 120°+ route; this lens tests how far a single optic gets.
+  **Listing confirmed (ELP-L156, 2026-08-17): the box INCLUDES all three filters — 650 nm IR-block, 850 nm
+  IR-pass, 940 nm IR-pass** (separate discs; expect them to seat in the holder's square well or against
+  the lens rear). Use the 850; keep the 650 for daylight-visible reference frames; 940 = spare/unused.
+  Marketing text is AI boilerplate (13×10×9 cm / 0.1 kg = the shipping box) — the hard facts (1.56 mm,
+  M12, manual focus, 3 filters) are what matter. **BUY: the ELP-L156 = the wider-fisheye experiment AND
+  the 850 filter in one ~$8 item; C-27 squares now pure insurance.**
+  Original filter-option guidance (still true if a variant listing forces a choice):
+  choose the **"850nm / IR-pass" variant** — NOT "IR-cut/650nm/day" (blocks 850, poison) and not the bare
+  "IR/no filter" one. On these fisheyes the filter is usually glued to the lens's rear face (stays with the
+  lens; the holder's square well stays free for other glass). If a bandwidth is stated, ~30–50 nm is right;
+  a "10nm" option would be the WRONG one (LED linewidth). This makes the separate C-27 squares optional.
+
 ## Explicitly NOT in this order
 - Thorlabs 10 nm filter (deferred to 040, front-mounted — order-03 C-14 rationale).
 - m12lenses PT-02120 fisheye (production-FOV question; analysis runs the 16 mm).
@@ -168,8 +188,10 @@ passband blue-shift on top of the 52 % corner illumination — characterize unfi
 **Total ≈ $110–145.** Post-order: the 22-pin Zero flex (+$6) only if InnoMaker's included cabling
 doesn't cover the Zero (O4-1 verify (a)) — **MOOT, both cables shipped.**
 **ORDER-04 ARRIVAL STATUS 2026-08-16: ALL IN HAND** — cameras ×2 (08-13), Pi 3A+ (08-15), 1.8 mm
-fisheye (08-16); 2.8 mm 850 nm-integrated lens on hand from the earlier buy. Nothing outstanding on
-this order except the DEFERRED 412s (order-03 C-26, not needed for ground tests). NOT bought: Zybo (conditional), 120° single lens (physics),
+fisheye (08-16); 2.8 mm 850 nm-integrated lens on hand from the earlier buy. **In transit (2026-08-17)**:
+ELP-L156 1.56 mm + filter set (AliExpress). 412s ordered on order-03 C-26. **Deferred**: Pi 5 (held until
+042 proves the tracker — HIGH-FPS-PLAN), Zybo (conditional), B0264 UVC shield (optional), Quanmin squares
+(insurance). NOT bought: Zybo (conditional), 120° single lens (physics),
 Thorlabs 10 nm (doesn't exist integrated / anti-optimal), second bird-pair set (waits on static range +
 training topology).
 

@@ -288,7 +288,7 @@ main loop:
 - **Cutoff response time** ≈ 500 ms debounce (vs supervisor's µs). Acceptable — battery sag is a seconds-scale phenomenon, not µs.
 - **Hang-while-driving-HIGH window**: ≤ 250 ms (WDT period) of "LEDs stay on past true cutoff threshold." At 306 mA worst-case continuous LED draw, that's ≤ 0.02 mAh per hang event ≈ ≤ 0.02 % of a 100 mAh pack. Negligible.
 
-**BOM impact (target pod, `cad/beacon-pod/`)**:
+**BOM impact (target pod — now `cad/beacon-eval/`, the built sheet; the original `cad/beacon-pod/` project was removed 2026-08-17)**:
 
 - **REMOVE**: U3 supervisor (was MCP1316T-29HE / TPS3839K33 / APX803-31SAG candidates in the original BOM). Saves 1 SOT-23 footprint + sourcing line.
 - **REMOVE**: supervisor decoupling cap (per spec FR-1.2.1 BOM table line "Supervisor decoupling 100 nF"). Saves 1 0603 footprint.

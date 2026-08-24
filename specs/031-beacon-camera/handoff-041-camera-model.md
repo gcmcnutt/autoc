@@ -25,6 +25,15 @@ Outdoor/flight caveat that does NOT change training: this lens is unfiltered (br
 filtered 2.8 mm on hand) — it affects photon budget/daylight range, not geometry, so the sim camera
 model above stands regardless.
 
+## Beacon identity convention (operator 2026-08-17) — carry into 041
+
+**Code A = PORT (left, body −y) · Code B = STARBOARD (right, body +y)**, coloured red/green per the
+aviation nav-light convention (the renderer already uses it). The sim currently distinguishes the two
+beacons by WAVELENGTH (850 L / 940 R); the physical pods will be same-wavelength (850) with different
+Gold codes — so 041's L/R discriminator should become **code identity**, not wavelength. The live bench
+tracker (`firmware/beacon-receiver/pi/beacon_track.py` + `beacon_display.py`) already emits/renders it
+this way. Bench emitter as flashed = code B (starboard).
+
 ## The original ask (2026-08-10, now superseded by the measured numbers above)
 
 1. **Projection: pinhole → equidistant (f·θ).** The flight optic is a fisheye-class 1.8 mm on the
