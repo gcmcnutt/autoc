@@ -121,3 +121,86 @@ contradicts and leave the rest alone.
 1. xiao log self-sufficiency (§ Order of work item 1),
 2. a bench servo step-response to pin the actuator term,
 3. a pass over the 037 constants asking *which of these does the 041-t7 flight actually contradict?*
+
+---
+
+## ⭐ THIS FEATURE WAS ALREADY PREDICTED — 039 wrap, 2026-07-13
+
+⛔ **Read the backlog entry *"Pitch marginal-stability levers — choose after the next articles fly"*
+before designing anything here.** It was written after the FIRST 20 Hz flight, gated on `n>1` flight
+articles, and it names this feature as one of its four levers:
+
+> **Architectural**: NN over INAV's rate loop (acro+override instead of manual+override) — the untuned PID
+> already damps this plant to 24 °/s. Changes the action space (setpoints, not surfaces); sim must match;
+> **a feature of its own, NOT a tweak.**
+
+⭐ **And it already measured the case**, pitch-rate RMS by regime on the 2026-07-13 flight:
+
+| regime | pitch-rate RMS |
+|---|---:|
+| INAV **acro**, untuned PID | **24 °/s** — *"on a rail"* |
+| pilot MANUAL | 50 °/s — *"on edge"* |
+| **NN-direct** (`MANUAL\|MSPRCOVERRIDE`, raw surfaces) | **141 °/s** |
+
+⭐ **The inner loop is 5.9× better than what autoc does today, measured, on this airframe.** That entry
+also concluded the oscillation is *"closed-loop plant sensitivity, not command roughness"* — the NN's
+pitch commands were the CALM axis — which is the same conclusion 041's phase budget reached independently
+two flights later.
+
+⚠️ **The gate has now fired**: `n>1` articles exist and the 041-t7 flight is the second data point. ⛔ The
+2026-07-13 decision *"NO sim recalibration from this n=1 airframe"* was correct then and is now expired —
+but see the actuator note below: fine-tune what the data contradicts, not everything.
+
+⭐ **The other three levers stay on the table and are cheaper**: forward CG ballast (hardware), sim
+static-margin match (with a stated acceptance test — reproduce ~141 °/s pitch RMS vs ~95 roll replaying
+the recorded 20 Hz command stream), and a static-margin craft-variation axis. ⚠️ **Consider whether one of
+those is enough before committing to the architecture change.**
+
+---
+
+## Pre-work, as scoped by the operator 2026-08-23
+
+1. **xiao log fidelity** — see § Order of work item 1.
+   ⭐ **Sweep in**: backlog *"[NEXT] Export RC Commands to Xiao Log"* (`xiao/src/msplink.cpp`) — *"log RC
+   commands throughout entire flight for full playback visualization"*. That entry IS this pre-work item,
+   filed earlier and unactioned. `FlightStateRecord` carrying only pos/vel/quat is the same gap.
+2. **Analysis of INAV acro mode** — what the 2 kHz rate loop actually does to a setpoint, and what the
+   `fw_*` gains mean for the plant. Config of record is `xiao/inav-hb1.cfg`, `platform_type = AIRPLANE`.
+3. **Change `autoc=y` to force ACRO, and unforce it** — today it forces MANUAL.
+   ⚠️ **Sweep in**: backlog *"[NEXT / 023 follow-up] INAV Fork Patch: mspOverrideInit First-Frame Bug
+   (C1)"* — MSPRCOVERRIDE engage pays a **200 ms floor** even at `failsafe_recovery_delay = 0`, because
+   pre-connection ticks keep bumping `validRxDataFailedAt`. We are touching the override path anyway, and
+   200 ms of engage latency matters more in a dual-loop design than it did before.
+4. **IMU variations** — accel, rate core axis, a quat transform, and light scaling variation on all axes.
+   ⭐ **Sweep in**: backlog *"5th PRNG class slot: mount-alignment 6-DOF first"*. It was scoped for the
+   CAMERA, but the machinery is identical and the operator's framing is explicit: *"similar to the m2
+   camera work"*. Doing IMU first makes the camera case a second consumer of a proven slot rather than
+   the pathfinder.
+   ⭐ **These fold into the existing 294 scenarios** — operator: *"the training regiment doesn't really
+   need bigger population."* They are static-per-scenario like craft variations, not a new axis count.
+   ⚠️ **Motivation is measured**: the 041-t7 sensor audit found `accel_y` **1.70σ** off sim at matched
+   distance — sim sits at exactly 0.000 (perfectly symmetric, no mount error) while real carries a
+   constant lateral bias. The real IMU is foam-taped to the underside of the upper surface; the operator
+   estimates **±5° in all directions**, and similar for GPS.
+5. **crrcsim implementation of the intended ACRO filtering**, constants in the existing XML.
+   ⛔ **Sweep in as a WARNING, not a task**: backlog *"[ABANDONED] INAV pt3 RC Smoothing Filter in CRRCSim
+   (023 Phase 9a)"*. That attempt replicated INAV's pt3 smoother at 333 Hz in `inputdev_autoc.cpp`, and
+   **test6 at a 40 Hz cutoff stunted training** — best stuck at −2225 through 55 gens vs −4410 baseline,
+   `pctInStreak` 3% vs 12%. Conclusion recorded: *"the filter changes dynamics enough that the GA can't
+   find productive policies."*
+   ⚠️ **That is not a reason to skip this**, because ACRO is a rate CONTROLLER, not a command smoother —
+   it should make the plant easier, where the pt3 filter made it harder. But it is direct evidence that
+   adding filtering to crrcsim can silently destroy trainability, so the acceptance test must include
+   *"does a known-good genome still train"*, not only *"does it fly."*
+
+## Other backlog items worth sweeping while these components are open
+
+| item | why now |
+|---|---|
+| ⭐ *Formal input normalization — measured statistics, not hand-derived constants* | HIGH VALUE / LOW COST, and IMU variations touch the input path anyway. Would also close 044's Gate 2 by construction. |
+| *`nnextractor -g` takes the FILE number; `dmp-dump --gen` takes the GENERATION* | a live footgun — cost real time during 041 analysis |
+| *crrcsim `mod_inputdev` — link `autoc_common` instead of cherry-picking sources* | we are opening `inputdev_autoc.cpp` for item 5; the AWSSDK link fix (`17e6c3e`) already moved the parent in this direction |
+| *Type-Safe NN Sensor Interface* | item 4 edits the sensor interface; six stale-label bugs in 041 were all "a caller was not updated" |
+| *Simulator Sampling Time Variation* | the 20 Hz ZOH is 25 ms of the 81.6 ms budget — varying it is directly on-topic |
+| *460800 baud-raise (039 T021, closed-not-run)* | worth ~5 ms of the budget and still untested |
+| ⚠️ *Renderer playback enhancements / streak overlay / X-display portability* | only if the renderer is genuinely opened; otherwise leave — 043 is a control-loop feature |
