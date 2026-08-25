@@ -256,7 +256,16 @@ waiting for real hardware.
   capture). Every °/s in this feature assumes a uniform 0.304 °/M2 px across a 97.3° ultra-wide field; that
   degrades toward the edge, so off-axis rates are not strictly comparable to on-axis ones. Owed before the
   envelope publishes absolute °/s (spec §3.2).
-- [ ] T077 [US3] **Moving-target fixture — pendulum** (operator idea, 2026-08-22). Hang the emitter and
+- [X] T077 [US3] **Moving-target fixture — pendulum** — **BUILT AND MEASURED 2026-08-25**, results in
+  [results/stage1-pendulum.md](results/stage1-pendulum.md). Operator added a **pole occlusion**, so the one
+  fixture carries the rate axis AND a reacquisition dataset (63 occlusions in 60 s). Headline: the tracker
+  is **present on 49% of ticks but carries a MEASURED fix on 11%** — it coasts. The knee is a smooth
+  roll-off, not a cliff: **63% decode at 0.9 °/s → 14% at 5.9 °/s**, with bearing error riding the same
+  curve (0.32° at 0.9 °/s = the §3 bar, 0.86° at 5.9). Reacquisition after occlusion is **p50 363 ms,
+  p90 1295 ms, 54% inside the 400 ms bar, 0 never-recovered**. Rig as measured: 1.8 s period (~0.80 m
+  strings), **66.6 °/s per metre of release at 3 m**. Still owed: clips at 30/45 cm release to extend the
+  sustained-dwell axis to the ~19 °/s engagement rate. Original sizing follows.
+  (Original) Hang the emitter and
   swing it: a known analytic trajectory with REAL curvature, which is exactly what distinguishes TBD from a
   linear model, for the price of a piece of string. Sizing: a **1.0 m pendulum at 3 m range gives a 2.0 s
   period, peak 20.9 °/s and peak 65 °/s²** — dead centre of the band where the tracker currently scores
