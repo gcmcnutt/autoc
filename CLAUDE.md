@@ -1,6 +1,6 @@
 # autoc Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-08-07
+Auto-generated from all feature plans. Last updated: 2026-08-24
 
 ## Toolchains & Build Environment
 
@@ -53,6 +53,8 @@ decoder-gateware change.
 - file-based — `data.dat` (per-tick trace), `data.stc` (per-gen), S3 `autoc-m2` / `autoc-eval` (040-camera-redo)
 - C++17 (autoc, crrcsim, tools), Python 3.11 (analytics only) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp serialization), inih (ini), (041-m2-depth)
 - file-based — `data.dat` (per-tick trace), `data.stc` (per-gen), per-mode S3 buckets (041-m2-depth)
+- C++17 (autoc, crrcsim), C (INAV fork), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analysis) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp), inih (ini), GoogleTest, CRRCSim LaRCSim FDM, INAV MSP (043-acro-dual-loop)
+- file-based — `data.dat` (per-tick trace), `data.stc` (per-gen), S3 `autoc-m1`; xiao QSPI flash log (043-acro-dual-loop)
 
 - C++17 + Eigen, cereal (serialization), inih (config), GoogleTest (015-nn-training-improvements)
 
@@ -71,28 +73,46 @@ tests/
 
 C++17: Follow standard conventions
 
-## Active feature — 041 m2-depth (specced, ready to implement)
+## Active feature — 043 acro-dual-loop (planned, ready for `/speckit.tasks`)
 
-**Start here**: [`specs/041-m2-depth/tasks.md`](specs/041-m2-depth/tasks.md) — it opens with a READ-FIRST
-block giving the document order and which document governs. 109 tasks across 9 phases.
+**Start here**: [`specs/043-acro-dual-loop/spec.md`](specs/043-acro-dual-loop/spec.md) — read its
+**§ What ACRO is** first; the whole feature is downstream of that definition. Then
+[`plan.md`](specs/043-acro-dual-loop/plan.md) and [`research.md`](specs/043-acro-dual-loop/research.md).
 
-Two things a fresh context should know before touching anything:
-- **`spec.md` § Clarifications governs.** 11 decisions across two clarify sessions live there, several
-  reversing earlier ones. `hypothesis.md` is the derivation-of-record but is **superseded where it
-  conflicts** (it says so at the top) — read it for *why*, never for *what*.
-- **T011a must precede T044.** The version bump makes the pinned comparator dmps unreadable; extract their
-  per-tick CSVs first or the prior-M1 baseline and the blind-gap distribution are lost permanently.
+**What it is**: the NN commands **rotation rates** into INAV's 2 kHz ACRO loop instead of surface
+deflections at 20 Hz. Fixes the 2–5 Hz pitch/roll oscillation measured on the 041-t7 flight, which the
+phase budget (81.6 ms = 147° at 5 Hz, 67% of it the 20 Hz ZOH + actuator) says no cheaper lever reaches.
 
-Three build surfaces this feature, not two: autoc/crrcsim, xiao, and **INAV** (two targets — bench
-`MAMBAF722_2022A`, flight `MATEKF722MINI`, bench first; disconnect the GPS before flashing). **All
-gear-attached work sits in Phase 6**, triggered by a decent M1 read at T067 (operator decision 2026-08-10):
-INAV bring-up T001/T001a and the xiao board tasks T074/T075/T078. Xiao *host compiles* (T002 baseline, T046
-codegen, T045's gate) stay early — no board needed, and T045 compiles the generated forward pass.
+Four things a fresh context must know before touching anything:
+
+- ⛔ **ACRO is RATE control — implicitly NOT ANGLE.** `pidLevel`'s self-levelling term runs only under
+  ANGLE/HORIZON/ANGLEHOLD; ACRO never reads `attitude.raw[]`. Zero command means *stop rotating*, there is
+  **no self-levelling and no recovery beyond the envelope**, and upset recovery stays the policy's job.
+  Building "zero command holds attitude" as a goal produces ANGLE and trains the policy on a safety net the
+  aircraft lacks (FR-019a).
+- ⭐ **INAV's fw loop is NOT a PID.** A stable planform does not need one the way an unstable quad does, so
+  the loop is **feed-forward dominant** (`kFF` 1.61 roll / 2.26 pitch vs `kP` 0.484) with P and D
+  **attenuated by a Gaussian in the setpoint** (σ 61.2 °/s roll, 20.4 °/s pitch). Loop gain is *highest at
+  zero commanded rate*. See research.md R1.
+- ⛔ **Plan Phase 1 (FR-057) must precede any `ScenarioMetadata` change.** The new IMU craft axes break the
+  wire format and orphan the `retain=keep` 041-t7 baseline — extract from it first or it is lost
+  permanently. Same failure mode as 041's T011a.
+- **`spec.md` governs**; `README.md` is the derivation-of-record, superseded where it conflicts.
+  ⛔ Execution order comes from **spec.md § Execution order**, *not* from the P1/P2/P3 story priorities —
+  one bake carries everything, so every story is upstream of the bake.
+
+Three build surfaces: autoc/crrcsim, xiao, and **INAV** (bench `MAMBAF722_2022A` first, then flight
+`MATEKF722MINI`; disconnect the GPS before flashing). ⚠️ New files in `crrcsim/src/mod_cntrl/` plus the
+`mod_inputdev` → `autoc_common` link both touch CMakeLists ⇒ **clean `scripts/rebuild-perf.sh`** per
+Constitution IV, operator-driven.
+
+**041 is CLOSED** (2026-08-23, wrap = [`specs/041-m2-depth/outcome.md`](specs/041-m2-depth/outcome.md)) —
+best M1 in project history, flown. Its t7 run is 043's baseline of record.
 
 ## Recent Changes
+- 043-acro-dual-loop: Added C++17 (autoc, crrcsim), C (INAV fork), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analysis) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp), inih (ini), GoogleTest, CRRCSim LaRCSim FDM, INAV MSP
 - 041-m2-depth: Added C++17 (autoc, crrcsim, tools), Python 3.11 (analytics only) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp serialization), inih (ini),
 - 040-camera-redo: Added C++17 (autoc + crrcsim); Python 3.11 (analysis/plots only) + Eigen (vec3/quat), cereal (dmp + EvalData wire), inih (ini), GoogleTest, CRRCSim
-- 039-xiao-20hz-flight: Added C++17 (autoc tools/desktop reader), C++ (xiao, PlatformIO arduino-mbed, + nn2cpp codegen (`tools/nn2cpp.cc`), xiao QSPI flash logger + BLE stack,
 
 
 <!-- MANUAL ADDITIONS START -->

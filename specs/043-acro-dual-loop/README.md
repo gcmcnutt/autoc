@@ -1,5 +1,26 @@
 # 043 — ACRO dual-loop (seed)
 
+> ⭐ **[`spec.md`](spec.md) now GOVERNS** (written 2026-08-23 from this document). This README is the
+> **derivation-of-record** — read it for *why*, and `spec.md` for *what*. Where they conflict, `spec.md`
+> wins; its § Clarifications carries the operator decisions taken since.
+>
+> Three questions this document left open were closed before planning: the "materially smoother" bar is
+> **subjective first** (041 AC-1 pattern); the yaw question **dissolved — this airframe has no rudder**
+> (verified in the `smix` mixer and the FDM servo model); and 043 ships **one bake with everything**.
+>
+> ⭐ **And two attributes this document does not yet carry, which govern the crrcsim work** (operator
+> 2026-08-23):
+> 1. Inputs and outputs are **unchanged in count, magnitude and polarity** — only the outputs'
+>    *interpretation* changes. A zero command means **zero commanded rotation RATE**, so the inner loop's
+>    I-term **buries the craft-balance variations**; they resurface through the energy channel and at
+>    physical limits. A P/PD-only inner-loop model would look correct and mis-model the entire variation
+>    regime. See `spec.md` FR-019, FR-059/FR-059a, SC-012/SC-013.
+> 2. ⛔ **ACRO is RATE control — and therefore implicitly NOT ANGLE.** `pidLevel`'s self-levelling term
+>    runs only under ANGLE/HORIZON/ANGLEHOLD; **ACRO never reads attitude at all**. So zero command means
+>    *stop rotating*, there is **no self-levelling and no recovery behaviour beyond the envelope**, and
+>    upset recovery stays the policy's job exactly as under MANUAL. `spec.md` § **What ACRO is** carries
+>    the definition and everything that follows from it — read that section first.
+
 **Created 2026-08-23** after the 041-t7 flight. Repurposes the 043 slot: the M2 tracking work that used to
 live here moved to [044](../044-m2-tracking/README.md), which is waiting on 042's camera parameters anyway.
 

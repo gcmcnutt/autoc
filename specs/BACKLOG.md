@@ -2890,3 +2890,27 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 - ~~Upper-Level Intercept Director~~ — superseded by entry variation training
 - ~~Future State Predictor NN~~ — superseded by temporal history + forecast inputs
 - ~~Behavioral Cloning Bootstrap~~ — not needed, direct NN training working
+
+### [043 framing, filed 2026-08-25] A dedicated fast inner loop — xiao-hosted or other AHRS, replacing INAV in the control path
+
+Operator 2026-08-25, while scoping 043: *"isn't clear we really want the added complexity of INAV in here —
+it's there for safety and, sure, a FF system… sure, xiao or some other AHRS can replace INAV to be
+dedicated inside our fast loop — but for now, this experiment is to see if offloading basic stability over
+to a high speed loop helps and how much."*
+
+- **What 043 actually tests** is architectural: does a high-speed inner rate loop fix the 2–5 Hz
+  oscillation, and by how much. INAV is the fast loop that already exists and already carries the safety
+  case — not a finding that it is the right host.
+- **Why a dedicated loop might win**: removes the MSP round trip (13 ms mean) from the picture entirely,
+  removes a whole firmware's worth of complexity from the control path, and lets the rate loop and the
+  policy share one clock and one IMU frame. The xiao already has an LSM6DS3 (see
+  [project_xiao_imu_crosscheck]) and already runs the 20 Hz loop.
+- **Why not now**: INAV's fixed-wing loop is *tuned and flying*, and 043's whole premise is to change one
+  thing. Replacing the host and the architecture in one step would make the result unattributable.
+- **What 043 must produce to make this decidable**: ⭐ **the magnitude** (043 SC-001a) — how much the
+  offload helped. A large win argues for investing in a dedicated loop; a small one argues the bottleneck
+  is elsewhere.
+- **Keep the seam clean meanwhile**: 043's action space and policy contract are vendor-neutral by
+  construction (rate setpoint out; rates and accels back). Do not entangle INAV specifics into them.
+- **Trigger**: a decisive 043 magnitude, plus the safety story for whatever would host the loop —
+  INAV currently owns arming, failsafe and the pilot's override.
