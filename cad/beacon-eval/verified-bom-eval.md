@@ -25,7 +25,7 @@
 > | L1 | 22 µH B82464 | **4.7 µH SPM4020T-4R7M-LR** (order-03 C-9) |
 > | R1 sense | 3.74 Ω (51 mA) | **0.62 Ω CRL1206 (306 mA)** |
 > | D1 Schottky | SS1030 SOD-123 (the ONLY part bought — MBR130 was the original spec, out of stock 2026-06-18, substituted like-for-like; the sheet's "MBR130" label was stale) | same SS1030 |
-> | MCU | XNANO ATtiny416 dev board via J1 | **bare ATtiny412 SOIC-8** (order-03 C-26), serial-UPDI header, `-DBOOT_HALF_RATE` per cube |
+> | MCU | XNANO ATtiny416 dev board via J1 | **bare ATtiny412 SOIC-8** (order-03 C-26 — **✔ ×10 on hand 2026-08-24**), serial-UPDI header, `-DBOOT_HALF_RATE` per cube |
 > | Input net | as drawn | + damped bulk leg (3–4× 10 µF electrolytic) + 4.7 µF ceramic at VIN (the 4.7 µH bring-up lesson) |
 >
 > No separate flight sheet yet — the topology is identical; a `beacon-flight` sheet gets drawn when the

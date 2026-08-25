@@ -14,6 +14,8 @@ the rest of that cart was never submitted). Follow-on to [Order 01](verified-bom
 26-Jul-2026, 6 lines) landed — closes C-1/C-10/C-12, closes C-4 (see qty caveat), adds an SMD 1 k to C-2.
 ⚠ **C-9 short-shipped: 9 of 10 inductors — 1 BACKORDERED, arriving as a separate shipment** (packlist line 4,
 `445-174477-1-ND`); watch for the second box and update C-9 when it lands.
+**DK-4 receipt 2026-08-24**: **DK order 4** (ordered 17-Aug-2026, 1 line) landed — **ATtiny412 SOIC-8 ×10**,
+closing **C-26**, the last open line on this order. Fill in the invoice/packlist + lot number at unboxing.
 
 > **History**: the **1S 150 mAh bench LiPo** came via Amazon (was O2-14, ✔ — bench substitute; flight uses
 > SPMX1501S50). The **SMT3U proto boards** (DK order 2) turned out SOIC-footprint-only — WRONG for SOT-23
@@ -96,7 +98,7 @@ test**; (4) stop stalling on missing passives (kits).
 - [X] **C-13** *(O2-1)* ~~Sense resistor 3.74 Ω 1 % 1206~~ — **✔ CLOSED: DK order 2 delivered ×10**
   (`541-3.74FFCT-ND`, 1/4 W); field 0.62 Ω also confirmed ×10 in order 1 (`CRL1206-FW-R620ELF`, 1/2 W).
   - [X] received — notes: packlists 128637262 line 1 / 127789318 line 6.
-- [X] **C-26** *(NEW 2026-08-07; **DECIDED 2026-08-10: ATtiny412**; **ORDERED 2026-08-17** — gates the two-cube build)* **Bare flight MCU = ATTINY412
+- [X] **C-26** *(NEW 2026-08-07; **DECIDED 2026-08-10: ATtiny412**; **ORDERED 2026-08-17**; **✔ RECEIVED 2026-08-24** — the two-cube build is UNBLOCKED)* **Bare flight MCU = ATTINY412
   SOIC-8 ×10** (sweet-spot qty, ~$0.60 ea) — operator call: minimal pod, back to the original design
   target (schematic.md/verified-bom were 412 from the start). Consequences, accepted: **no TOSC pins →
   the crystal path is FORECLOSED for the pod → RC-osc is committed** (the decoder side already carries
@@ -104,7 +106,12 @@ test**; (4) stop stalling on missing passives (kits).
   closes as MOOT** — the RC-vs-crystal study's only purpose was this decision. Firmware: 416→412 is a
   pin remap (same core/peripherals); SOIC-8→DIP adapters ✔ on hand (C-15); programming = serial UPDI
   (TTL-232R-3V3 + 1–4.7 k + `pymcuprog`), no new hardware.
-  - [ ] received — notes:
+  - [X] received — notes: **×10 landed 2026-08-24 (DigiKey — DK order 4; record invoice/packlist +
+    lot here at unboxing)**. Q3's "none owned" answer is now stale: **10 bare 412s on hand.** Next:
+    UPDI bring-up on the SOIC-8→DIP adapters (C-15 ✔ on hand) — TTL-232R-3V3 + 1–4.7 k + `pymcuprog`,
+    then rebuild the eval firmware with `board = ATtiny412` per
+    [`verified-bom-eval.md`](verified-bom-eval.md) "Firmware portability" (pins restricted to
+    PA0/1/2/3/6/7, so it is a rebuild, not a port).
 
 ## D — Daylight receiver / 100 m optics (Option C selected 2026-07-24)
 - [ ] **C-14** *(O3-11 = O2-13 merged; **DECIDED 2026-07-26 → BUDGET M12 STACK**)* **850 nm bandpass
@@ -282,11 +289,12 @@ carries RC drift: per-beacon DPLL, +2.6 % skew bench-verified.)
 - ~~F_CPU 20→10 MHz~~ **DONE** (ca1fe78) · ~~BOD fuse~~ **DONE** (0x48) · ~~firmware UVLO~~ **DONE &
   verified 3.48 V** (07d195f) — all three closed since the original Order-03 draft.
 
-## Still outstanding (updated 2026-08-17 — ALL ORDERED except deferrals)
+## Still outstanding (updated 2026-08-24 — NOTHING OUTSTANDING on this order except deferrals)
 
-**Placed today**: **C-26 ATtiny412 SOIC-8 ×10** (DigiKey — the two-cube build unblocks on arrival) and the
-**ELP-L156 1.56 mm fisheye + 650/850/940 filters** (AliExpress, order-04). **In hand**: everything else on
-this order (sections A/B/C/D/E closed; DK fully closed 2026-08-07).
+**✔ C-26 ATtiny412 SOIC-8 ×10 RECEIVED 2026-08-24** (DigiKey; ordered 08-17) — **this order's last open
+line closes; the two-cube build is unblocked.** Still in transit but belonging to **order-04**: the
+**ELP-L156 1.56 mm fisheye + 650/850/940 filters** (AliExpress, ordered 08-17). **In hand**: everything
+else on this order (sections A/B/C/D/E closed; DK fully closed 2026-08-07).
 **Deferred by decision (no buy)**: C-11 Luxeonstar stars (only if hand-mounting the bare L1IZ fails at
 build time — 20 dies on hand), C-15 TSSOP adapters (OPA381 path dormant), C-21/22/23 crystals (moot —
 412/RC committed), C-24 flight pack (150 mAh = flight), C-25 1N4148 (drawer), C-27 850 squares (insurance).
