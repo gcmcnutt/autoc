@@ -34,7 +34,7 @@
 
 **Purpose**: establish clean build baselines and resolve the two cheap unknowns that shape later work.
 
-- [ ] T001 Verify clean baseline build of autoc + crrcsim via `bash scripts/rebuild.sh` from repo root; record the test count in `specs/043-acro-dual-loop/baseline.md`
+- [ ] T001 Verify clean baseline build of autoc + crrcsim via `bash scripts/rebuild.sh` from repo root; record the test count in `specs/043-acro-dual-loop/baseline.md`. ⭐ **Measured 2026-08-25**: 47 suites ran / 501 tests / 0 failures, **plus** the 2 suites T021a wires in (7 more tests) = **508 passing**; one suite skipped by design (`source_dmp_s3_integration_tests`, needs `AUTOC_S3_TESTS=1`)
 - [ ] T002 [P] Verify xiao host compile via `~/.platformio/penv/bin/pio run -e xiaoblesense_arduinocore_mbed` from `xiao/`; record result in `specs/043-acro-dual-loop/baseline.md`
 - [ ] T003 [P] Confirm the **as-run** FDM substep by logging `Global::dt` at scenario init in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`; record the value and the 333 Hz-vs-2 kHz phase justification (research.md addendum) in `specs/043-acro-dual-loop/baseline.md`
 
@@ -98,12 +98,13 @@ draws reach the FDM and replay from the recorded seed.
 **Independent test**: each item verifiable alone; any item not done is recorded as deferred.
 
 - [ ] T021 [P] [US6] Make `crrcsim/src/mod_inputdev/CMakeLists.txt` link `autoc_common` instead of cherry-picking individual source files; remove the cherry-pick lines (FR-072)
+- [ ] T021a [US6] ⛔ Add `shared_input_block_tests` and `nn_input_scaling_tests` to the `run_autoc_tests` ALL-target `DEPENDS` list in `CMakeLists.txt`. ⚠️ **Found 2026-08-25 by the pre-implement `rebuild-perf.sh`**: both are registered via `add_test(NAME ...)` — so the script's gate self-check counts them — but neither is in the ALL target, so `make` never runs them. Gate expected **49** suites, **47** ran. Both pass when invoked by hand (4/4 and 3/3), so nothing was broken — the coverage was **invisible**, which is exactly the failure GUARD 3 exists to catch. ⭐ Directly relevant here: `nn_input_scaling_tests` covers the constants T023 changes and `shared_input_block_tests` covers the craft tail T024 touches (Constitution II/IV)
 - [ ] T022 [P] [US6] Resolve the `nnextractor -g` (FILE number) vs `dmp-dump --gen` (GENERATION) footgun — make them agree or make each state which it takes, in `tools/` (FR-071)
 - [ ] T023 [US6] Formal input normalization from **measured** statistics rather than hand-derived constants, in `include/autoc/nn/nn_inputs.h` and its consumers (FR-070)
 - [ ] T024 [US6] Type-safe NN sensor interface — name input columns by enum at the call sites the new axes touch, in `include/autoc/nn/nn_inputs.h` (FR-073)
 - [ ] T025 [US6] Simulator sampling-time variation (20 Hz tick dither) in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp` (FR-074)
 - [ ] T026 [US6] Record any FR-07x item **not** done as deferred in `specs/043-acro-dual-loop/outcome.md`, and append it to `specs/BACKLOG.md` (FR-076, Constitution X)
-- [ ] T027 [US6] ⛔ Clean `bash scripts/rebuild-perf.sh` — REQUIRED after the T021 CMakeLists change, not an incremental reconfigure (Constitution IV). **Operator-driven; ask first.**
+- [ ] T027 [US6] ⛔ Clean `bash scripts/rebuild-perf.sh` — REQUIRED after the T021/T021a `CMakeLists.txt` changes, not an incremental reconfigure. ⭐ **Verify the gate self-check now reports 49 of 49 suites** — it read 47 before T021a (Constitution IV). **Operator-driven; ask first.**
 
 **Checkpoint**: build coherent, tests green, format break fully absorbed.
 
@@ -265,7 +266,7 @@ Phase 1 (setup)
 | constraint | why |
 |---|---|
 | **T004/T005 before T011** | the format break orphans the pinned baseline. **Permanent if violated.** |
-| **T027 after T021** | CMakeLists change requires a clean `rebuild-perf.sh` (Constitution IV) |
+| **T027 after T021 + T021a** | both edit `CMakeLists.txt`; a clean `rebuild-perf.sh` is required, and T021a is what makes its 49-suite self-check pass (Constitution IV) |
 | ⛔ **T037a after T036** | ⭐ a **SECOND** mandatory clean rebuild — T036 adds a target to `mod_cntrl/CMakeLists.txt`. T027 does not cover it (Constitution IV) |
 | **T019a after T011** | the fail-loud test needs the format break to have happened |
 | **T050a after T046–T050** | re-runs the trainability gate if the plant changed under it |
@@ -280,7 +281,7 @@ Phase 1 (setup)
 - **Phase 1**: T002, T003 with T001
 - **Phase 2**: T006 alongside T004/T005
 - **Phase 3 tests**: T017–T020 (incl. T019a) together once T010–T016 land
-- **Phase 4**: T021, T022 together; T023/T024 after (both touch `nn_inputs.h`)
+- **Phase 4**: T021, T022 together; T021a after T021 (same file); T023/T024 after (both touch `nn_inputs.h`)
 - **Phase 5 tests**: T028–T033a written together, before T034–T042
 - **Phase 11**: T078, T079, T080 together
 
