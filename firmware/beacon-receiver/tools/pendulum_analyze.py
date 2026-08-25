@@ -13,7 +13,8 @@ the three questions the pendulum rig was built to answer:
                proxy for SUSTAINED rate, which is the honest axis. (Rate bins are still printed, marked
                as the contaminated view, because the contrast between the two is itself the lesson.)
   --reacquire  recovery after each pole occlusion: occlusion end -> next MEASURED fix, against the
-               400 ms relock bar of spec §3.
+               400 ms relock bar of spec §3. NB this counts any measured fix, including a false one —
+               cross-read it against the false share that --rate reports.
 
 MEASURED FIX vs PRESENT is the distinction that matters and the reason this tool exists. `n>=1` only
 means the tracker is REPORTING a track; it may be coasting on a stale velocity with no fresh decode at
@@ -117,10 +118,18 @@ def _match(tr, tt, rate, ts):
     return key, rate[key], tr[bisect.bisect_left(tt, key)]
 
 
-def do_rate(tr, tt, rate, ticks, block, limit_s):
+def do_rate(tr, tt, rate, ticks, block, limit_s, max_err):
+    """Decode rate per time block, splitting MEASURED fixes into on-beacon and FALSE.
+
+    A MEASURED fix only means a correlation passed — it does NOT mean the correlation passed ON THE
+    BEACON. Scoring against truth is the only way to tell, and the difference is not small: on the
+    30 cm clip 25% of measured fixes land >20 M2 px away, almost all of them on the mains-flicker
+    window (120 Hz — the same rate as our chip clock). Counting those as decodes overstates the
+    tracker by a third. `on-beacon` below is the number to quote.
+    """
     t0 = tr[0]["t_us"]
     print("\n=== decode rate vs SUSTAINED rate (time blocks — the honest axis) ===")
-    print("  block       rate p50   ticks   measured fix   present   bearing err p50")
+    print("  block       rate p50   ticks   on-beacon fix    false    present   bearing err p50")
     blocks = {}
     for t in ticks:
         el = (t["t_us"] - t0) / 1e6
@@ -130,22 +139,30 @@ def do_rate(tr, tt, rate, ticks, block, limit_s):
         if not m:
             continue
         _key, r, tp = m
-        d = blocks.setdefault(int(el // block), dict(n=0, meas=0, pres=0, err=[], rs=[]))
+        d = blocks.setdefault(int(el // block), dict(n=0, good=0, false=0, pres=0, err=[], rs=[]))
         d["n"] += 1
         d["rs"].append(r)
         d["pres"] += t["present"]
         if t["measured"]:
-            d["meas"] += 1
-            d["err"].append(math.hypot(t["x"] - tp["x"], t["y"] - tp["y"]))
+            e = math.hypot(t["x"] - tp["x"], t["y"] - tp["y"])
+            if e <= max_err:
+                d["good"] += 1
+                d["err"].append(e)
+            else:
+                d["false"] += 1
     for b in sorted(blocks):
         d = blocks[b]
         d["rs"].sort()
         d["err"].sort()
         e = ("%.2f M2 px = %.2f deg" % (d["err"][len(d["err"]) // 2], d["err"][len(d["err"]) // 2] * DEG_PER_M2_PX)
              if d["err"] else "--")
-        print("  %4d-%4ds  %8.1f   %5d   %4d (%3.0f%%)    %3.0f%%      %s"
+        print("  %4d-%4ds  %8.1f   %5d   %4d (%3.0f%%)     %4d     %3.0f%%      %s"
               % (b * block, (b + 1) * block, d["rs"][len(d["rs"]) // 2], d["n"],
-                 d["meas"], pct(d["meas"], d["n"]), pct(d["pres"], d["n"]), e))
+                 d["good"], pct(d["good"], d["n"]), d["false"], pct(d["pres"], d["n"]), e))
+    tot_g = sum(d["good"] for d in blocks.values())
+    tot_f = sum(d["false"] for d in blocks.values())
+    print("  TOTAL measured fixes: %d on-beacon, %d false (>%.0f M2 px) — false share %.1f%%"
+          % (tot_g, tot_f, max_err, pct(tot_f, tot_g + tot_f)))
     print("\n=== the same data binned by INSTANTANEOUS rate (contaminated — see the docstring) ===")
     BINS = [(0, 1), (1, 2), (2, 3), (3, 5), (5, 8), (8, 1e9)]
     st = {b: dict(n=0, meas=0) for b in BINS}
@@ -211,6 +228,8 @@ def main():
     ap.add_argument("--block", type=float, default=20.0, help="seconds per reporting block")
     ap.add_argument("--limit", type=float, default=0.0,
                     help="ignore ticks after this many seconds (e.g. where the pod hit UVLO)")
+    ap.add_argument("--max-err", type=float, default=20.0,
+                    help="M2 px beyond which a MEASURED fix is counted as FALSE, not a decode")
     ap.add_argument("--decay", action="store_true")
     ap.add_argument("--rate", action="store_true")
     ap.add_argument("--reacquire", action="store_true")
@@ -227,7 +246,7 @@ def main():
             raise SystemExit("--rate/--reacquire need --track")
         ticks = load_ticks(a.track)
         if a.rate:
-            do_rate(tr, tt, rate, ticks, a.block, a.limit)
+            do_rate(tr, tt, rate, ticks, a.block, a.limit, a.max_err)
         if a.reacquire:
             do_reacquire(tr, ticks)
 

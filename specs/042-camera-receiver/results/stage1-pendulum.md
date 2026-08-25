@@ -50,30 +50,62 @@ overstated performance by **4.5×**, and that distinction is now built into the 
 Decay makes time a proxy for *sustained* rate, which is the axis that matters. A pendulum passes through
 low rate instantly, so an instantaneous-rate bin mixes "sustained slow" with "just arrived from fast":
 
-| sustained rate | ticks | measured fix | present | bearing err p50 |
-|---|---|---|---|---|
-| 5.9 °/s | 336 | **14%** | 62% | 0.86° |
-| 4.4 | 400 | 18% | 79% | 0.47° |
-| 3.7 | 400 | 26% | 76% | 0.88° |
-| 2.8 | 400 | 26% | 72% | 0.55° |
-| 2.4 | 400 | 30% | 70% | 0.50° |
-| 1.9 | 400 | 40% | 77% | 0.48° |
-| 1.7 | 400 | 38% | 86% | 0.41° |
-| 1.5 | 400 | 39% | 83% | 0.47° |
-| 1.3 | 400 | 50% | 87% | 0.41° |
-| 0.9 | 400 | 56% | 95% | 0.32° |
-| 0.9 | 201 | **63%** | 90% | 0.34° |
+Fixes are split **on-beacon vs false** (>20 M2 px from truth) — see the false-lock section below; on
+this clip the false share is small (3.8%) so the curve is unaffected, but the split has to be shown.
+
+| sustained rate | ticks | on-beacon fix | false | present | bearing err p50 |
+|---|---|---|---|---|---|
+| 5.9 °/s | 336 | **12%** | 5 | 62% | 0.78° |
+| 4.4 | 400 | 16% | 8 | 79% | 0.44° |
+| 3.7 | 400 | 22% | 18 | 76% | 0.61° |
+| 2.8 | 400 | 26% | 0 | 72% | 0.55° |
+| 2.4 | 400 | 30% | 2 | 70% | 0.50° |
+| 1.9 | 400 | 40% | 2 | 77% | 0.48° |
+| 1.7 | 400 | 35% | 13 | 86% | 0.38° |
+| 1.5 | 400 | 37% | 7 | 83% | 0.45° |
+| 1.3 | 400 | 50% | 1 | 87% | 0.41° |
+| 0.9 | 400 | 56% | 0 | 95% | 0.32° |
+| 0.9 | 201 | **63%** | 0 | 90% | 0.34° |
 
 **Three things this settles.**
 
 1. **The knee is a smooth roll-off, not a cliff.** Decode rate roughly halves per doubling of angular
-   rate: 63% at 0.9 °/s down to 14% at 5.9 °/s. The "1–2 °/s knee" from `pan2` is confirmed and given a
+   rate: 63% at 0.9 °/s down to 12% at 5.9 °/s. The "1–2 °/s knee" from `pan2` is confirmed and given a
    shape — 1.9 °/s is where roughly 40% of ticks decode.
 2. **Bearing accuracy rides the same curve** — 0.32° at 0.9 °/s, which is exactly the §3 bar of 0.3°,
    degrading to 0.86° at 5.9 °/s. **The spec bar is met only at the very bottom of the rate range.**
 3. **The gap to the mission is now a number.** The engagement is ~19 °/s (10 m/s at 30 m) and hand motion
-   is 15–18 °/s. At 5.9 °/s we decode 14% of ticks. That is the gap T081/T082/T050 have to close, and
+   is 15–18 °/s. At 5.9 °/s we decode 12% of ticks. That is the gap T081/T082/T050 have to close, and
    these clips are the fixture that will say whether they did.
+
+## A MEASURED fix is not necessarily a fix ON THE BEACON
+
+Found by watching [`track_overlay.py`](../../../firmware/beacon-receiver/tools/track_overlay.py) — the
+x strip chart showed the estimate excursing to **+127 M2 px**, which is not on the pendulum at all, it is
+the **window**. Scored against truth:
+
+| clip | on-beacon fixes | false (>20 M2 px) | false share |
+|---|---|---|---|
+| `pend60` (30 cm, fast) | 86 | 25 | **22.5%** |
+| `pend15cm` (slow) | 1413 | 56 | 3.8% |
+
+**On the fast clip, nearly a quarter of the tracker's "decodes" are not on the beacon**, and almost all of
+them land at x>60 M2 px — the window region. `BCN_F_MEASURED_FIX` means *a correlation passed*, not *a
+correlation passed on the beacon*, and only truth can tell the two apart.
+
+The mechanism is almost certainly **T085's**: the window is a saturated, flat, mains-flicker region at
+**120 Hz — the same rate as our chip clock** — and `quality_q8()` is a pure ratio `|corr|*256/energy` whose
+denominator collapses on a saturated flat, so noise-level correlation scores arbitrarily high. This is the
+rung-1 lamp defect, now caught on a moving-target fixture with independent truth and a quantified cost.
+
+It also **raises the stakes on the pattern that killed both T085 attempts** — a gate validated against a
+distribution collected with the gate disabled. This fixture gives the end-to-end validation those attempts
+lacked: false share and on-beacon decode rate are now both measurable on the same clip, so a candidate
+gate can be scored on whether it cuts the former without cutting the latter.
+
+Note the rate dependence: 22.5% false on the fast clip vs 3.8% on the slow one. When the beacon is decoding
+well the tracker stays on it; false locks fill the vacuum left when coherence fails. **So this is a
+consequence of the rate limit as well as a defect in its own right**, and fixing either one helps.
 
 ## Reacquisition — what the pole bought
 
@@ -87,6 +119,9 @@ p90 170 ms / max 424 ms:
 | max | 2492 ms |
 | within the 400 ms bar (§3) | **34 of 63 = 54%** |
 | never recovered | **0** |
+
+⚠️ These count **any** measured fix, including the false ones above — and this is the clip with a 22.5%
+false share, so read the recovery figures as an **upper bound** on true reacquisition.
 
 So the median just squeaks inside the bar and **the tail is 3× over it** — and that is with the beacon
 re-emerging at a completely predictable place, phase unchanged, after ≤424 ms. This is the strongest
