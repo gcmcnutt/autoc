@@ -45,7 +45,47 @@ MAGIC = 0x42434E52
 HDR = 52
 FRAME_HDR = 40
 SRC_FPS = 288.0
-MEASURED_FIX = 0x40
+# BcnRecord flags (src/core/record.h) — same set and same colours as live_view.py, deliberately: a
+# convention that differs between the live view and the replay view is worse than no convention.
+F_LOCK, F_HOLD, F_EXTRAP = 0x02, 0x04, 0x08
+F_MULTIPATH, F_SATURATED, F_MEASURED, F_AGC = 0x10, 0x20, 0x40, 0x80
+MEASURED_FIX = F_MEASURED
+
+C_LOCKED = (120, 255, 120)   # green   — CONFIRMED and decoding THIS tick
+C_COAST  = (80, 200, 255)    # amber   — CONFIRMED but extrapolating
+C_STALE  = (80, 80, 255)     # red     — candidate, not a confirmed track
+C_MIRROR = (255, 120, 255)   # magenta — MULTIPATH_SUSPECT
+C_APERTURE = (70, 70, 70)
+PRED_C = (255, 200, 60)      # prediction cross — same as live_view.py
+SCALE_NATIVE_PER_PLANE = (4.0, 2.0, 1.0)
+
+
+def track_state(flags):
+    if flags & F_MULTIPATH:
+        return C_MIRROR, "MIRROR"
+    if flags & F_LOCK:
+        if flags & F_MEASURED:
+            return C_LOCKED, "LOCKED"
+        return C_COAST, "HOLD" if flags & F_HOLD else "COAST"
+    return C_STALE, "CAND"
+
+
+def flag_names(flags):
+    out = [n for b, n in ((F_LOCK, "LOCK"), (F_HOLD, "HOLD"), (F_EXTRAP, "EXTRAP"),
+                          (F_MULTIPATH, "MIRROR"), (F_SATURATED, "SAT"),
+                          (F_MEASURED, "MEAS"), (F_AGC, "AGC")) if flags & b]
+    return "|".join(out) if out else "-"
+
+
+def read_scale_extents(path):
+    try:
+        for raw in open(path):
+            k, _, v = raw.partition("=")
+            if k.strip() == "scale_extents":
+                return [int(x) for x in v.split(";")[0].split("#")[0].split(",")]
+    except (OSError, TypeError):
+        pass
+    return [24, 12, 6]
 DEG_PER_M2_PX = 0.304
 
 # BGR. First colour is the first --track, and so on.
@@ -149,6 +189,8 @@ def main():
                          "stretch either hides the background or blows out every window. 0.45 shows both.")
     ap.add_argument("--scale", type=int, default=2, help="image upscale factor")
     ap.add_argument("--window", type=float, default=10.0, help="strip-chart window, seconds")
+    ap.add_argument("--config", default=None,
+                    help="ini to read scale_extents from, so the aperture box matches the run")
     a = ap.parse_args()
 
     f, w, h, fsz = open_clip(a.clip)
@@ -163,6 +205,11 @@ def main():
             name, path = "track%d" % (i + 1), spec
         tracks.append(dict(name=name, colour=PALETTE[i % len(PALETTE)], ticks=load_track(path)))
         tracks[-1]["tt"] = [t["t_us"] for t in tracks[-1]["ticks"]]
+    if len(tracks) == 1:
+        # With one run the image ring is coloured BY STATE, so leaving the chart trace red would make
+        # red mean two different things on the same screen. Neutral grey for the single-run case.
+        tracks[0]["colour"] = (220, 220, 220)
+    extents = read_scale_extents(a.config)
     truth = load_truth(a.truth) if a.truth else []
     truth_t = [p["t_us"] for p in truth]
 
@@ -208,25 +255,50 @@ def main():
             trk = tick["trk"] if tick else None
             if trk:
                 px, py = m2_to_px(trk["x"], trk["y"], a.scale)
-                r = max(4, int(round(trk["cep"] * 2 * a.scale)))
-                cv2.circle(img, (px, py), r, t["colour"], -1 if tick["measured"] else 1, cv2.LINE_AA)
+                flags = trk["flags"]
+                st_colour, label = track_state(flags)
+                # With ONE run, colour carries the lifecycle state (same language as live_view.py).
+                # With several, colour has to identify the run instead — that is the point of an A/B —
+                # so the state moves to the fill and the label.
+                colour = st_colour if len(tracks) == 1 else t["colour"]
+                sc = min(trk["scale"], len(extents) - 1)
+                ap_m2 = extents[sc] * SCALE_NATIVE_PER_PLANE[min(sc, 2)] / 2.0
+                apx = ap_m2 * 2 * a.scale / 2.0          # M2 px -> native -> image
+                cv2.rectangle(img, (int(px - apx), int(py - apx)), (int(px + apx), int(py + apx)),
+                              C_APERTURE, 1)
+                r = max(3, int(round(trk["cep"] * 2 * a.scale)))
+                cv2.circle(img, (px, py), r, colour, 2 if tick["measured"] else 1, cv2.LINE_AA)
+                cv2.circle(img, (px, py), 2, colour, -1, cv2.LINE_AA)
+                if flags & F_SATURATED:
+                    cv2.drawMarker(img, (px, py), colour, cv2.MARKER_SQUARE, r * 2 + 8, 1)
                 qx, qy = m2_to_px(trk["xp"], trk["yp"], a.scale)
-                cv2.drawMarker(img, (qx, qy), t["colour"], cv2.MARKER_TILTED_CROSS, 9, 1, cv2.LINE_AA)
+                cv2.drawMarker(img, (qx, qy), PRED_C, cv2.MARKER_TILTED_CROSS, 9, 1, cv2.LINE_AA)
                 hist[t["name"]]["x"].append((el, trk["x"]))
                 hist[t["name"]]["y"].append((el, trk["y"]))
                 hist[t["name"]]["cep"].append((el, trk["cep"]))
-                state = "MEASURED" if tick["measured"] else "coast"
-                txt = "%-8s %-8s q %.2f  lh %.2f  cep %.2f  sc %d" % (
-                    t["name"], state, trk["q"], trk["lh"], trk["cep"], trk["scale"])
+                txt = "%-8s %-6s q %.2f lh %.2f cep %.2f sc%d ap%.0f  %s" % (
+                    t["name"], label, trk["q"], trk["lh"], trk["cep"], trk["scale"], ap_m2,
+                    flag_names(flags))
             else:
-                txt = "%-8s %-8s --" % (t["name"], "NO TRACK")
-            cv2.putText(img, txt, (8, y_text), cv2.FONT_HERSHEY_SIMPLEX, 0.48, t["colour"], 1, cv2.LINE_AA)
-            y_text += 20
+                colour = C_STALE if len(tracks) == 1 else t["colour"]
+                txt = "%-8s %-6s --" % (t["name"], "NOTRK")
+            cv2.putText(img, txt, (8, y_text), cv2.FONT_HERSHEY_SIMPLEX, 0.46, colour, 1, cv2.LINE_AA)
+            y_text += 19
 
         cv2.putText(img, "t %6.2fs   frame %6d   %.2fx" % (el, i, a.speed),
                     (8, oh - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (200, 200, 200), 1, cv2.LINE_AA)
-        cv2.putText(img, "solid = MEASURED fix    hollow = coasting", (8, oh - 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1, cv2.LINE_AA)
+        lx = 8
+        if len(tracks) == 1:
+            for c, lab in ((C_LOCKED, "LOCKED"), (C_COAST, "coast"), (C_STALE, "cand"),
+                           (C_MIRROR, "mirror")):
+                cv2.circle(img, (lx + 5, oh - 34), 5, c, 2, cv2.LINE_AA)
+                cv2.putText(img, lab, (lx + 14, oh - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, c, 1, cv2.LINE_AA)
+                lx += 14 + 8 * len(lab) + 10
+            cv2.putText(img, "ring = CEP   box = aperture", (lx + 6, oh - 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (150, 150, 150), 1, cv2.LINE_AA)
+        else:
+            cv2.putText(img, "colour = run (A/B)   bold ring = MEASURED fix   box = aperture",
+                        (8, oh - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1, cv2.LINE_AA)
 
         canvas = np.zeros((canvas_h, ow, 3), np.uint8)
         canvas[:oh] = img
