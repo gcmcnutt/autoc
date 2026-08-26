@@ -199,7 +199,17 @@ waiting for real hardware.
   with small cep and low q is weak-but-located, and the right response is longer integration (the AGC loop
   already does this) rather than a wider aperture. Likely the dominant remaining cause of churn, and
   independent of the promotion gate: that one gets a track STARTED, this is what stops it STAYING.
-- [ ] T085 [US2] **Restore the min-energy gate — q has no floor and saturated lamps score arbitrarily high**
+- [ ] T085 [US2] **False locks on lights — PARTLY RE-DIAGNOSED 2026-08-26, see
+  [results/stage1-pendulum.md](results/stage1-pendulum.md).** Absolute floors on corr/energy are
+  MEASURED DEAD (beacon spans 118x across clips and overlaps the lamp outright — that is why the
+  first attempt zeroed the fiducial clip). `energy/level` separates the *constant* lamp (p95 0.88 vs
+  beacon median 1.9–22.6) and a gate now exists at PROMOTION in `bank.c` — deliberately not on the
+  per-tick path, which is where the second attempt's feedback loop lived — but it is **DEFAULTED OFF
+  and UNVALIDATED**, and the beacon's own low tail (lit60 p05 0.06) sits below the lamp's p95, so it
+  is not free. ⚠️ **Operator saw crosshairs jump to the OVERHEAD LIGHTS live — possibly a genuine
+  temporal code match with the position misattributed, which no aperture-sum gate can catch.** Settle
+  that before tuning anything. Original description follows.
+  (Original) **Restore the min-energy gate — q has no floor and saturated lamps score arbitrarily high**
   ([results/stage1-noise-ladder-rung1.md](results/stage1-noise-ladder-rung1.md)). `corr.c`'s
   `quality_q8()` is a pure ratio `|corr|*256/energy`, and `devs()` guards only against division by zero
   (`energy | 1`). On a **saturated flat** region the deviations collapse, energy → ~1, and noise-level corr

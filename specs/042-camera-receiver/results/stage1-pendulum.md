@@ -107,6 +107,46 @@ Note the rate dependence: 22.5% false on the fast clip vs 3.8% on the slow one. 
 well the tracker stays on it; false locks fill the vacuum left when coherence fails. **So this is a
 consequence of the rate limit as well as a defect in its own right**, and fixing either one helps.
 
+## Operator observation, 2026-08-26 (live) — temporal match, spatial attribution wrong
+
+Watching the new live crosshairs, the operator saw them **jump to the overhead lights**:
+
+> *"even though most of the code comes from the beacon pretty far away, the tracker sees a light edge
+> and it matches partial code … that is temporal match but spatial is a bit far out."*
+
+**This is not the same statement as the measured lamp defect above, and it may not be the same
+mechanism.** Recorded now, unmeasured, so the next session starts from the observation rather than from
+a reconstruction of it.
+
+What it adds: the earlier analysis treated the false lock as *"a flat source fakes a code match"*. This
+says the code match may be **genuine** — carried by the beacon — while only the **position** is
+misattributed. Temporal evidence and spatial evidence would then be coming from different sources, which
+no gate on the aperture-sum statistics can catch, because on those statistics the window really is
+carrying the code.
+
+Three candidate mechanisms, and they are distinguishable:
+
+1. **Split attribution.** `track.c` adopts phase from the aperture-SUM correlation, then takes the peak
+   of a per-pixel `|corr|` surface *at that phase*. A bright pixel carries more variance, so if anything
+   bright sits in the aperture it can win the surface even when the code energy came from elsewhere.
+   Test: for a false fix, compare the aperture-sum corr against the per-pixel corr at the winning pixel.
+2. **120 Hz mains against a 120 Hz chip clock.** Our chip rate and mains flicker are the same frequency —
+   the pod runs 120.0077 Hz, a 64 ppm offset, so a lamp's flicker holds nearly constant phase across a
+   258 ms word instead of averaging out. That is exactly the condition under which a non-code source
+   produces a stable, code-like bin pattern. Test: measure a lamp region's per-chip bin pattern directly.
+3. **A different source than the one I characterised.** The lamp I measured on `pend1m` at native
+   (422,108) is **constant** — p2p 25, values 186±7 — and a constant source cannot match a code
+   temporally. The overhead lights in the live scene may be a genuinely different, genuinely flickering
+   source. The live scene is not the `pend1m` scene.
+
+⚠️ **Do not assume (3) away.** The measured `mod_depth` separation (lamp p95 0.88 vs beacon median
+1.9–22.6) was derived from the constant lamp on `pend1m`. If the live overhead lights flicker, they are a
+different population and that separation has not been tested against them. This is the same trap that
+killed both T085 attempts — a threshold read off a population that was not the one that matters.
+
+**First measurement next session**: record a short live clip of the current scene with the lights in
+frame, and run the `--diag` split on it. That says which of the three it is before any more gate design.
+
 ## Reacquisition — what the pole bought
 
 On the 30 cm clip, **63 occlusions in 60 s** (one per crossing), duty 11.5%, duration p50 76 ms /
