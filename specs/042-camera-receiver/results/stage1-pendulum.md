@@ -144,8 +144,40 @@ Three candidate mechanisms, and they are distinguishable:
 different population and that separation has not been tested against them. This is the same trap that
 killed both T085 attempts — a threshold read off a population that was not the one that matters.
 
-**First measurement next session**: record a short live clip of the current scene with the lights in
-frame, and run the `--diag` split on it. That says which of the three it is before any more gate design.
+**Confirmed the same evening, by the cheapest possible experiment** — operator turned the overhead lights
+off:
+
+> *"with the overhead lights off the crosshairs only show up at segments of the actual pendulum, and not
+> yet continuous."*
+
+Two things follow, and they matter more than the gate design did.
+
+**1. The false locks are the overhead lights, and they are REMOVABLE.** That makes the two problems
+experimentally separable, which they were not this morning:
+
+| lights | what the rig measures |
+|---|---|
+| **off** | the coherence limit, uncontaminated — decode rate vs °/s with no competing source |
+| **on** | false-lock susceptibility, with a known, characterised decoy present |
+
+That is the same discipline as the noise ladder (change one thing), and it means **the coherence work no
+longer has to wait on T085**. Run lights-off to measure tracking; switch them on to test a gate. The
+sequencing argument for doing T085 first — "don't tune against a 10%-contaminated metric" — dissolves,
+because the contamination now has a light switch.
+
+**2. "Not yet continuous" corroborates the offline numbers.** Lights-off, the crosshairs appear on
+*segments* of the swing — which is exactly the measured 79–92% decode at 0.7–1.4 °/s falling to 6–14% at
+8–12.5 °/s, seen live. The live impression and the replay analysis agree, which is a useful check on both.
+
+**Still open**: which mechanism the lights use to score a code match at all. Candidate (3) is now the
+leading one — they are a genuinely different, genuinely flickering source, not the constant lamp measured
+on `pend1m` — and candidate (2), 120 Hz mains against our 120 Hz chip clock, is the obvious reason a
+flickering lamp would hold phase across a word. **`mod_depth` has never been tested against this
+population**, so the measured separation does not transfer to it.
+
+**First measurement next session**: a short clip with the lights ON, through the `--diag` split, to see
+whether they flicker and whether their bin pattern is code-like. That decides whether the promotion gate
+is aimed at anything real.
 
 ## Reacquisition — what the pole bought
 
