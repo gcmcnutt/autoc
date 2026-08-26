@@ -7,6 +7,7 @@
  * the record before transport. Replay leaves it 0 and reports no deadline stats: there is no deadline
  * to miss when time is virtual. p99 and max are tracked, not mean (§11.1: the tail is the spec).
  */
+#include <string>
 #include "config.h"
 #include "engine.h"
 #include "frame.h"
@@ -37,8 +38,9 @@ struct Ctx {
     std::vector<int32_t> margins;      /* live deadline margins, for p99/max reporting */
     uint32_t misses = 0;
     uint32_t emitted = 0;
-    const Engine *eng = nullptr;       /* for the --field-map side channel (below) */
+    const Engine *eng = nullptr;       /* for the --field-map / --preview side channels (below) */
     bool field_map = false;
+    bool preview = false;
 };
 
 /* --field-map: write the engine's coarse contrast map as its OWN JSON line on stdout, right after the
@@ -57,6 +59,41 @@ static void emit_field_line(const Engine *eng)
         n += snprintf(buf + n, sizeof buf - (size_t)n, "%s%u", i ? "," : "", f[i]);
     n += snprintf(buf + n, sizeof buf - (size_t)n, "]}\n");
     if (write(1, buf, (size_t)n) != (ssize_t)n) { /* scope went away; not fatal */ }
+}
+
+/* --preview: the same side-channel idea as --field-map, but a plane you can actually look at. Base64
+ * rather than a JSON array of ints -- 320x200 as decimal text is ~200 KB per tick against 85 KB encoded,
+ * and this is meant to run live at 20 Hz. Same rules otherwise: its own line, keyed on "preview_b64",
+ * ignored by any consumer that does not know it, and never part of BcnRecord. */
+static void emit_preview_line(const Engine *eng)
+{
+    static const char B64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    unsigned w = 0, h = 0;
+    const uint8_t *p = engine_preview_map(eng, &w, &h);
+    size_t n, i, o = 0;
+    if (!p || !w || !h) return;
+    n = (size_t)w * h;
+    {
+        /* 4 chars per 3 bytes, plus the header and slack */
+        std::string buf;
+        buf.resize(64 + ((n + 2) / 3) * 4 + 8);
+        o = (size_t)snprintf(&buf[0], buf.size(), "{\"preview_w\":%u,\"preview_h\":%u,\"preview_b64\":\"", w, h);
+        for (i = 0; i + 2 < n; i += 3) {
+            uint32_t v = ((uint32_t)p[i] << 16) | ((uint32_t)p[i + 1] << 8) | p[i + 2];
+            buf[o++] = B64[(v >> 18) & 63]; buf[o++] = B64[(v >> 12) & 63];
+            buf[o++] = B64[(v >> 6) & 63];  buf[o++] = B64[v & 63];
+        }
+        if (i < n) {                                   /* 1 or 2 trailing bytes */
+            uint32_t v = (uint32_t)p[i] << 16;
+            int two = (i + 1 < n);
+            if (two) v |= (uint32_t)p[i + 1] << 8;
+            buf[o++] = B64[(v >> 18) & 63]; buf[o++] = B64[(v >> 12) & 63];
+            buf[o++] = two ? B64[(v >> 6) & 63] : '=';
+            buf[o++] = '=';
+        }
+        buf[o++] = '"'; buf[o++] = '}'; buf[o++] = '\n';
+        if (write(1, buf.data(), o) != (ssize_t)o) { /* viewer went away; not fatal */ }
+    }
 }
 
 static uint64_t boottime_us()
@@ -84,6 +121,7 @@ static void emit_cb(const BcnRecord *rec, void *user)
     }
     for (BcnEmitter *e : c->sinks) bcn_emitter_send(e, &r);
     if (c->field_map && c->eng) emit_field_line(c->eng);
+    if (c->preview && c->eng) emit_preview_line(c->eng);
     c->emitted++;
 }
 
@@ -95,6 +133,7 @@ static void usage()
         "                     [--record-mode continuous|ring|burst]   (default: [record] mode in the ini)\n"
         "                     [--seed B:<x_m2>:<y_m2>]   (bench helper; acquisition normally seeds)\n"
         "                     [--field-map]              (viewfinder for the scope; use with --emit json:-)\n"
+        "                     [--preview]                (M2 plane as base64 for live_view.py; --emit json:-)\n"
         "  <sink> ::= binary:<path> | json:- | tcp:<host>:<port> | serial:<dev>[:<baud>]\n");
 }
 
@@ -104,6 +143,7 @@ int main(int argc, char **argv)
     const char *record_mode = nullptr;   /* NULL = take [record] mode from the ini */
     const char *seed_spec = nullptr;
     bool field_map = false;
+    bool preview = false;
     long duration_s = 0;
     char err[BCN_ERR_MAX];
     BcnConfig cfg;
@@ -122,6 +162,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--duration") && i + 1 < argc) duration_s = atol(argv[++i]);
         else if (!strcmp(argv[i], "--seed")     && i + 1 < argc) seed_spec = argv[++i];
         else if (!strcmp(argv[i], "--field-map"))                field_map = true;
+        else if (!strcmp(argv[i], "--preview"))                  preview = true;
         else { usage(); return 1; }
     }
     if (!ini) { usage(); return 1; }
@@ -187,10 +228,19 @@ int main(int argc, char **argv)
     }
 
     if (field_map) { engine_field_enable(eng, 1); ctx.eng = eng; ctx.field_map = true; }
+    if (preview) {
+        if (engine_preview_enable(eng, 1) != 0) {
+            fprintf(stderr, "beacon_trackd: --preview unsupported for [camera] mode %s "
+                            "(max %dx%d after /%d)\n",
+                    cfg.camera_mode, BCN_PREVIEW_MAX_W, BCN_PREVIEW_MAX_H, BCN_PREVIEW_DIV);
+            return 1;
+        }
+        ctx.eng = eng; ctx.preview = true;
+    }
 
-    fprintf(stderr, "beacon_trackd: source=%s emit=%s%s%s%s\n", source, emit_spec,
+    fprintf(stderr, "beacon_trackd: source=%s emit=%s%s%s%s%s\n", source, emit_spec,
             record_path ? " record=" : "", record_path ? record_path : "",
-            field_map ? " field-map=on" : "");
+            field_map ? " field-map=on" : "", preview ? " preview=on" : "");
 
     uint64_t t0 = 0;
     uint32_t nframes = 0;

@@ -41,6 +41,9 @@ struct Engine {
     uint8_t  field_on;                               /* debug field map requested (engine_field_enable) */
     uint8_t  field_valid;
     uint8_t  field[BCN_FIELD_W * BCN_FIELD_H];       /* coarse point-source contrast, for the scope     */
+    uint8_t  preview_on;                             /* graphical preview requested (engine_preview_*)  */
+    uint8_t  preview_valid;
+    uint8_t  preview[BCN_PREVIEW_MAX_W * BCN_PREVIEW_MAX_H];  /* 2x2 max-pooled frame, for the viewer  */
 };
 
 /* Coarse point-source contrast for the operator's scope. Per cell: max - mean, clamped to 0..255.
@@ -80,6 +83,46 @@ void engine_field_enable(Engine *e, int on) { e->field_on = on ? 1u : 0u; }
 const uint8_t *engine_field_map(const Engine *e)
 {
     return (e->field_on && e->field_valid) ? e->field : NULL;
+}
+
+/* 2x2 MAX pool of the frame. Max, not mean: the beacon is a few saturated pixels, and averaging it with
+ * three dark neighbours quarters it -- it would fade out of the display exactly when it matters most.
+ * Same tick-gated cost model as field_update(). */
+static void preview_update(Engine *e, const FrameView *fv)
+{
+    const unsigned d = BCN_PREVIEW_DIV;
+    unsigned pw = fv->w / d, ph = fv->h / d, py, px;
+    if (!pw || !ph || pw > BCN_PREVIEW_MAX_W || ph > BCN_PREVIEW_MAX_H) return;
+    for (py = 0; py < ph; py++) {
+        const uint8_t *r0 = fv->data + (size_t)(py * d) * fv->stride;
+        const uint8_t *r1 = r0 + fv->stride;
+        uint8_t *o = e->preview + (size_t)py * pw;
+        for (px = 0; px < pw; px++) {
+            unsigned sx = px * d;
+            uint8_t a = r0[sx], b = r0[sx + 1], c = r1[sx], g = r1[sx + 1];
+            uint8_t m = a > b ? a : b;
+            uint8_t n = c > g ? c : g;
+            o[px] = m > n ? m : n;
+        }
+    }
+    e->preview_valid = 1u;
+}
+
+int engine_preview_enable(Engine *e, int on)
+{
+    if (on && ((unsigned)e->frame_w / BCN_PREVIEW_DIV > BCN_PREVIEW_MAX_W ||
+               (unsigned)e->frame_h / BCN_PREVIEW_DIV > BCN_PREVIEW_MAX_H))
+        return -1;                       /* fail loud rather than silently rescaling the viewfinder */
+    e->preview_on = on ? 1u : 0u;
+    return 0;
+}
+
+const uint8_t *engine_preview_map(const Engine *e, unsigned *w, unsigned *h)
+{
+    if (!e->preview_on || !e->preview_valid) return NULL;
+    if (w) *w = (unsigned)e->frame_w / BCN_PREVIEW_DIV;
+    if (h) *h = (unsigned)e->frame_h / BCN_PREVIEW_DIV;
+    return e->preview;
 }
 
 int engine_open(Engine **out, const BcnConfig *cfg, EngineEmit emit, void *user,
@@ -304,6 +347,7 @@ void engine_frame(Engine *e, const FrameView *fv)
     /* tick boundaries crossed by this frame's timestamp (usually 0 or 1; catches up after gaps) */
     tk = (fv->t_us - e->t0_us) / TICK_US;
     if (e->field_on && e->last_tick < tk) field_update(e, fv);   /* once per tick, not per frame */
+    if (e->preview_on && e->last_tick < tk) preview_update(e, fv);       /* same gate, same reason */
     while (e->last_tick < tk) {
         e->last_tick++;
         tick(e, e->t0_us + e->last_tick * TICK_US);
