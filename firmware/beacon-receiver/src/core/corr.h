@@ -32,6 +32,10 @@ typedef struct {
     uint16_t q_q8;     /* 256 * |corr| / energy, clamped; scale-free quality                           */
     uint8_t phase;     /* best phase 0..30 (chip index of template start within the window)            */
     uint8_t code_id;   /* search only: 0 = A, 1 = B                                                    */
+    int32_t level;     /* q8 mean that devs() removed — the DC the window sat on. Kept because q is
+                        * |corr|/energy and BOTH collapse together on a flat source, so the ratio alone
+                        * cannot tell a strong match from a weak one; the level is the third number
+                        * needed to say which (T085). Nothing in the tracker reads it.               */
 } CorrResult;
 
 /* T032: the two entry points differ ~60x and the CHEAP one is the common path — keep them separate.

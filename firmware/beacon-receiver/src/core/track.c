@@ -220,6 +220,9 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
         corr_template(cfg->code_b_bits, tb);
         corr_search(wsum, wcnt, K, ta, tb, &ap);
     }
+    t->last_corr = ap.corr;             /* see track.h — the promotion gate reads energy/level */
+    t->last_energy = ap.energy;
+    t->last_level = ap.level;
 
     if (ap.code_id == t->code_id && ap.q_q8 >= cfg->q_drop_q8) {
         /* T036, the DPLL's phase half: adopt/track the absolute phase. A drift of ±1 chip between

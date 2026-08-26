@@ -24,7 +24,7 @@ int64_t corr_chip_at(uint64_t t_us, uint64_t epoch_us, uint32_t chip_hz_q8)
 /* Mean-removal setup shared by both paths: per-bin mean value in q8 (sum*256/count), window mean of
  * those, deviations. Missing bins (count 0) are excluded from both mean and MAC. */
 static void devs(const int32_t *bins, const uint8_t *counts, uint16_t W,
-                 int32_t *dev /* caller scratch, W entries */, int32_t *energy_out)
+                 int32_t *dev /* caller scratch, W entries */, int32_t *energy_out, int32_t *level_out)
 {
     int64_t total = 0;
     uint32_t present = 0;
@@ -49,6 +49,7 @@ static void devs(const int32_t *bins, const uint8_t *counts, uint16_t W,
         }
     }
     *energy_out = energy > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)(energy | 1);   /* |1: never /0 */
+    if (level_out) *level_out = mean_q8;
 }
 
 /* The window can exceed one code (W up to 124 = 4 words); template repeats with period 31. */
@@ -77,12 +78,13 @@ void corr_search(const int32_t *bins, const uint8_t *counts, uint16_t W,
 {
     int32_t dev[MAX_W];
     int32_t energy;
+    int32_t level = 0;
     int32_t best = 0;
     uint8_t best_ph = 0, best_code = 0;
     uint8_t code, ph;
 
     if (W > MAX_W) W = MAX_W;
-    devs(bins, counts, W, dev, &energy);
+    devs(bins, counts, W, dev, &energy, &level);
     for (code = 0; code < 2; code++) {
         const int8_t *t = code ? tmpl_b : tmpl_a;
         for (ph = 0; ph < CORR_N; ph++) {
@@ -93,6 +95,7 @@ void corr_search(const int32_t *bins, const uint8_t *counts, uint16_t W,
     }
     out->corr = best;
     out->energy = energy;
+    out->level = level;
     out->q_q8 = quality_q8(best, energy);
     out->phase = best_ph;
     out->code_id = best_code;
@@ -103,11 +106,13 @@ void corr_track(const int32_t *bins, const uint8_t *counts, uint16_t W,
 {
     int32_t dev[MAX_W];
     int32_t energy;
+    int32_t level = 0;
 
     if (W > MAX_W) W = MAX_W;
-    devs(bins, counts, W, dev, &energy);
+    devs(bins, counts, W, dev, &energy, &level);
     out->corr = mac_phase(dev, W, tmpl, phase);
     out->energy = energy;
+    out->level = level;
     out->q_q8 = quality_q8(out->corr, energy);
     out->phase = phase;
     out->code_id = 0xFF;   /* track does not decide identity */

@@ -54,6 +54,7 @@ static const KeySpec SPECS[] = {
     {"bank",   "q_drop",               T_Q8_16,  F(q_drop_q8), 0, 0},
     {"bank",   "lock_health_lock",     T_Q8_16,  F(lock_health_lock_q8), 0, 0},
     {"bank",   "lock_health_drop",     T_Q8_16,  F(lock_health_drop_q8), 0, 0},
+    {"bank",   "min_mod_depth",        T_Q8_16,  F(min_mod_depth_q8), 0, 0},
     {"bank",   "hold_max_age_ms",      T_U16,    F(hold_max_age_ms), 0, 0},
     {"bank",   "hold_max_cep_px",      T_Q8_16,  F(hold_max_cep_px_q8), 0, 0},
 

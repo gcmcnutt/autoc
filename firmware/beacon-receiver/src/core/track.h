@@ -77,6 +77,16 @@ typedef struct {
     int64_t  hp_energy;                /* running local-floor accumulator for lock_health normalisation */
     uint32_t hp_n;
 
+    /* Last aperture-window correlator result. q is a pure ratio |corr|/energy, so it cannot tell
+     * "strong signal, perfectly matched" from "almost no signal, and what there is happens to line up"
+     * -- that second case is exactly how a flat lamp scores well (T085). Keeping the numerator and the
+     * DC level the window sat on lets the promotion gate ask the question q cannot: is this modulated
+     * at all? MEASURED across every fixture: lamp energy/level p95 0.88 / max 2.04, against a beacon
+     * median of 1.9 (lit60, the worst) to 22.6 (pend1m). */
+    int32_t  last_corr;
+    int32_t  last_energy;
+    int32_t  last_level;
+
     /* lock-health EWMA internals */
     int32_t  lh_acc_q8;
     uint16_t peak_px;                  /* aperture index of the last measured peak — lock_health watches

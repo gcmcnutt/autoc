@@ -41,6 +41,7 @@ struct Ctx {
     const Engine *eng = nullptr;       /* for the --field-map / --preview side channels (below) */
     bool field_map = false;
     bool preview = false;
+    bool diag = false;
 };
 
 /* --field-map: write the engine's coarse contrast map as its OWN JSON line on stdout, right after the
@@ -96,6 +97,32 @@ static void emit_preview_line(const Engine *eng)
     }
 }
 
+/* --diag: per-slot correlator internals as their own JSON line. q is |corr|/energy, so on its own it
+ * cannot distinguish "strong and matched" from "nearly nothing, and what there is lines up" -- the
+ * second is how a flat lamp scores well (T085). This publishes both halves plus the slot role so a
+ * harness can measure the two populations instead of guessing a threshold for them. Side channel, same
+ * rules as --field-map and --preview: never part of BcnRecord. */
+static void emit_diag_line(const Engine *eng)
+{
+    const Bank *b = engine_bank(eng);
+    char buf[2048];
+    int n = snprintf(buf, sizeof buf, "{\"diag\":[");
+    int first = 1;
+    for (unsigned i = 0; i < b->max_slots && n < (int)sizeof buf - 128; i++) {
+        const BankSlot *s = &b->slots[i];
+        if (!s->used) continue;
+        n += snprintf(buf + n, sizeof buf - (size_t)n,
+                      "%s{\"slot\":%u,\"code\":%u,\"role\":%u,\"state\":%u,\"corr\":%d,"
+                      "\"energy\":%d,\"level\":%d,\"q\":%.3f,\"x\":%.2f,\"y\":%.2f,\"scale\":%u}",
+                      first ? "" : ",", i, s->trk.code_id, s->role, s->trk.state,
+                      s->trk.last_corr, s->trk.last_energy, s->trk.last_level, s->trk.q_q8 / 256.0,
+                      s->trk.x_q8 / 256.0, s->trk.y_q8 / 256.0, s->trk.scale);
+        first = 0;
+    }
+    n += snprintf(buf + n, sizeof buf - (size_t)n, "]}\n");
+    if (write(1, buf, (size_t)n) != (ssize_t)n) { /* consumer went away; not fatal */ }
+}
+
 static uint64_t boottime_us()
 {
     struct timespec ts;
@@ -122,6 +149,7 @@ static void emit_cb(const BcnRecord *rec, void *user)
     for (BcnEmitter *e : c->sinks) bcn_emitter_send(e, &r);
     if (c->field_map && c->eng) emit_field_line(c->eng);
     if (c->preview && c->eng) emit_preview_line(c->eng);
+    if (c->diag && c->eng) emit_diag_line(c->eng);
     c->emitted++;
 }
 
@@ -134,6 +162,7 @@ static void usage()
         "                     [--seed B:<x_m2>:<y_m2>]   (bench helper; acquisition normally seeds)\n"
         "                     [--field-map]              (viewfinder for the scope; use with --emit json:-)\n"
         "                     [--preview]                (M2 plane as base64 for live_view.py; --emit json:-)\n"
+        "                     [--diag]                   (per-slot corr/energy for T085 work; --emit json:-)\n"
         "  <sink> ::= binary:<path> | json:- | tcp:<host>:<port> | serial:<dev>[:<baud>]\n");
 }
 
@@ -144,6 +173,7 @@ int main(int argc, char **argv)
     const char *seed_spec = nullptr;
     bool field_map = false;
     bool preview = false;
+    bool diag = false;
     long duration_s = 0;
     char err[BCN_ERR_MAX];
     BcnConfig cfg;
@@ -163,6 +193,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--seed")     && i + 1 < argc) seed_spec = argv[++i];
         else if (!strcmp(argv[i], "--field-map"))                field_map = true;
         else if (!strcmp(argv[i], "--preview"))                  preview = true;
+        else if (!strcmp(argv[i], "--diag"))                     diag = true;
         else { usage(); return 1; }
     }
     if (!ini) { usage(); return 1; }
@@ -237,6 +268,7 @@ int main(int argc, char **argv)
         }
         ctx.eng = eng; ctx.preview = true;
     }
+    if (diag) { ctx.eng = eng; ctx.diag = true; }
 
     fprintf(stderr, "beacon_trackd: source=%s emit=%s%s%s%s%s\n", source, emit_spec,
             record_path ? " record=" : "", record_path ? record_path : "",

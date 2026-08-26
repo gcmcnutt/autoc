@@ -90,6 +90,34 @@ void bank_tick(Bank *b, const BcnConfig *cfg)
          * the lifecycle uses — while q, the trusted full-word statistic, does the affirming. When
          * lock_health earns its vote (spec §2.6 wants it driving this — earned, not assumed) this goes
          * back to lock_health_lock. */
+        /* T085 -- the min-modulation gate, and WHY IT SITS HERE rather than on the per-tick measured-fix
+         * path where its two predecessors put it.
+         *
+         * q is |corr|/energy. Both collapse together on a flat source, so a constant ceiling lamp -- no
+         * code on it whatsoever -- scores a perfectly respectable q and gets CONFIRMED. Measured on
+         * pend1m: 10% of all measured fixes were on a lamp 100 M2 px from the beacon.
+         *
+         * energy/level asks the question q cannot: is this window MODULATED at all? Measured across
+         * every fixture: lamp p95 0.88, max 2.04, against a beacon median of 1.9 (lit60, the worst clip
+         * we have) to 22.6 (pend1m). Absolute floors on corr or energy were measured too and are NOT
+         * usable -- the beacon spans 118x across clips (1.2e7 at fiducial exposure to 1.4e9 in the
+         * dark) and overlaps the lamp outright, which is exactly why the 2026-08-22 attempt silently
+         * zeroed the fiducial clip.
+         *
+         * PROMOTION, not every tick. The second 2026-08-22 attempt used this same statistic on the
+         * per-tick path and died in a feedback loop: it rejected a young track's weak early ticks, so
+         * the track never established, so the strong fixes that dominate the distribution never came
+         * into existence. Gating promotion instead leaves a candidate free to accumulate evidence and
+         * never kills an established track on a momentary dip -- it only refuses to CONFIRM something
+         * that is not modulating. A lamp is 100+ M2 px from the beacon, far beyond anything a track can
+         * walk in a tick, so a false lock has to arrive as its own confirmed slot; this is the door it
+         * comes through. */
+        if (s->trk.state == TRK_CANDIDATE && cfg->min_mod_depth_q8 &&
+            s->trk.last_level > 0 &&
+            (int64_t)s->trk.last_energy * 256 < (int64_t)cfg->min_mod_depth_q8 * s->trk.last_level) {
+            s->promote_streak = 0u;
+            continue;
+        }
         if (s->trk.state == TRK_CANDIDATE &&
             s->trk.q_q8 >= cfg->q_lock_q8 && s->trk.lock_health_q8 >= cfg->lock_health_drop_q8) {
             if (++s->promote_streak >= 3u) {

@@ -50,6 +50,7 @@ typedef struct {
     uint16_t alpha_q8, beta_q8;      /* alpha-beta centering gains                                     */
     uint16_t q_lock_q8, q_drop_q8;
     uint16_t lock_health_lock_q8, lock_health_drop_q8;
+    uint16_t min_mod_depth_q8;         /* T085: promotion floor on energy/level (q8). 0 disables.     */
     /* These two MUST equal the spec §3.1 validity bounds. The HOLD state machine and the envelope scorer
      * read the same two numbers from the same place so they cannot drift apart. */
     uint16_t hold_max_age_ms;

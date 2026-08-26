@@ -30,6 +30,7 @@ static const struct { const char *sec, *key, *val; } KEYS[] = {
     {"bank",   "q_drop",                   "0.30"},
     {"bank",   "lock_health_lock",         "0.60"},
     {"bank",   "lock_health_drop",         "0.35"},
+    {"bank",   "min_mod_depth",            "0.0"},
     {"bank",   "hold_max_age_ms",          "150"},
     {"bank",   "hold_max_cep_px",          "3.0"},
     {"agc",    "exposure_target_lo",       "40"},
@@ -55,6 +56,18 @@ static const struct { const char *sec, *key, *val; } KEYS[] = {
 static const char *TMP = "test_config_tmp.ini";
 
 /* Write the config, optionally omitting one key, optionally overriding one value. */
+/* Look the key up by NAME. The overrides below used to index KEYS positionally, which meant adding any
+ * new key silently shifted them onto a different setting and the test failed somewhere unrelated --
+ * exactly what happened when [bank] min_mod_depth landed. */
+static int key_idx(const char *section, const char *key)
+{
+    size_t i;
+    for (i = 0; i < sizeof KEYS / sizeof KEYS[0]; i++)
+        if (!strcmp(KEYS[i].sec, section) && !strcmp(KEYS[i].key, key))
+            return (int)i;
+    return -1;
+}
+
 static void write_ini(const char *path, int omit, int override_idx, const char *override_val)
 {
     FILE *f = fopen(path, "w");
@@ -113,11 +126,11 @@ int main(void)
     CHECK(err[0] != '\0', "missing file must produce a message");
 
     /* Range validation: max_slots may not exceed the wire's fixed shape, and roi_driven is a flag. */
-    write_ini(TMP, -1, 11, "99");    /* bank.max_slots */
+    write_ini(TMP, -1, key_idx("bank", "max_slots"), "99");
     err[0] = '\0';
     CHECK(bcn_config_load(TMP, &c, err, sizeof err) != 0, "max_slots > BCN_MAX_TRACKS must fail");
     CHECK_STR_HAS(err, "max_slots");
-    write_ini(TMP, -1, 25, "2");     /* agc.roi_driven */
+    write_ini(TMP, -1, key_idx("agc", "roi_driven"), "2");
     err[0] = '\0';
     CHECK(bcn_config_load(TMP, &c, err, sizeof err) != 0, "roi_driven must be 0 or 1");
     CHECK_STR_HAS(err, "roi_driven");
