@@ -27,7 +27,11 @@ void printUsage(const char* progName) {
   std::cout << "Usage: " << progName << " [OPTIONS]\n";
   std::cout << "Options:\n";
   std::cout << "  -k, --keyname KEYNAME    Specify run key name (autoc-timestamp)\n";
-  std::cout << "  -g, --generation GEN     Specify generation number (default: latest)\n";
+  std::cout << "  -g, --generation GEN     Actual generation number, e.g. 800 (default: latest).\n";
+  std::cout << "                           Same numbering as `dmp-dump --gen`.\n";
+  std::cout << "                           ⚠️ CHANGED in 043 (T022): -g used to take the FILE number\n";
+  std::cout << "                           (10000-gen); it now takes the actual generation. Old\n";
+  std::cout << "                           `-g 9995`-style invocations must be revisited.\n";
   std::cout << "  -o, --output FILE        Output NN weight file (default: nn_weights.dat)\n";
   std::cout << "  -i, --config FILE        Use specified config file (default: autoc.ini)\n";
   std::cout << "  -h, --help               Show this help message\n";
@@ -39,7 +43,7 @@ void printUsage(const char* progName) {
   std::cout << "Examples:\n";
   std::cout << "  " << progName << "                          # Extract latest run, latest generation\n";
   std::cout << "  " << progName << " -k autoc-20250101-12345  # Extract specific run\n";
-  std::cout << "  " << progName << " -g 50                    # Extract generation 50\n";
+  std::cout << "  " << progName << " -g 800                   # Extract generation 800 (actual gen, like dmp-dump --gen)\n";
   std::cout << "  " << progName << " -o my_weights.dat        # Custom output file\n";
 }
 
@@ -98,30 +102,27 @@ int main(int argc, char** argv) {
       computedKeyName = autoc::findLatestRun(*s3_client, bucket);
     }
     if (specifiedGeneration >= 0) {
-      // -g passes the raw FILE gen number (10000 - actualGen), as before.
-      //
-      // ⚠️ Resolve against what is actually in the bucket rather than
-      // synthesizing the extension. Every dmp is zstd-compressed
-      // (`gen<N>.dmp.zst`), so the old hardcoded `.dmp` could never find one —
-      // `-g` was simply broken, and its error ("The specified key does not
-      // exist") looked like a wrong gen number rather than a wrong suffix.
-      const std::string wanted = "gen" + std::to_string(specifiedGeneration) + ".dmp";
+      // 043 T022 — `-g` takes the ACTUAL generation and now AGREES with
+      // `dmp-dump --gen` (both take the actual gen). It previously took the raw
+      // FILE number (10000 - actualGen), a footgun with no upside: two tools
+      // over the same dmps interpreted the same flag differently. Resolve the
+      // actualGen decoded from each key via the shared extractGenNumber (which
+      // inverts the 10000-N reverse-sort encoding), so this matches whatever
+      // dmp-dump would select for the same --gen.
       const auto keys = autoc::listRunGenKeys(*s3_client, bucket, computedKeyName);
       for (const auto& k : keys) {
-        const std::string base = k.substr(k.find_last_of('/') + 1);
-        if (base == wanted || base == wanted + ".zst") { keyName = k; break; }
+        if (autoc::extractGenNumber(k) == specifiedGeneration) { keyName = k; break; }
       }
       if (keyName.empty()) {
-        std::cerr << "nnextractor: no dmp for gen " << specifiedGeneration
+        std::cerr << "nnextractor: no dmp for generation " << specifiedGeneration
                   << " under " << computedKeyName << " (" << keys.size()
                   << " gen objects present)." << std::endl;
         if (!keys.empty()) {
-          std::cerr << "  first: " << keys.front() << "\n  last : "
-                    << keys.back() << std::endl;
+          // listRunGenKeys is ascending by actualGen, so front=lowest, back=highest.
+          std::cerr << "  actualGen present: " << autoc::extractGenNumber(keys.front())
+                    << " .. " << autoc::extractGenNumber(keys.back())
+                    << " (same numbering dmp-dump --gen uses)." << std::endl;
         }
-        std::cerr << "  NOTE: -g takes the FILE number (10000 - actualGen), "
-                     "unlike dmp-dump --gen which takes the actual generation."
-                  << std::endl;
         return 1;
       }
     } else {

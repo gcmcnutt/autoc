@@ -58,6 +58,11 @@ struct AutocConfig {
 
     // --- Scenarios ---
     int windScenarioCount = 1;
+    // 043 T008a (FR-058) — pre-run regiment gate. When > 0, autoc FATALs if
+    // paths × winds != this value, so a silent regiment bump (e.g. WindScenarios
+    // edited) cannot reach a 27 h bake. 0 = disabled (other experiments are
+    // free to vary the regiment). 043's autoc.ini pins it at 294 (6 × 49).
+    int expectedScenarioCount = 0;
     int randomPathSeedB = 67890;
     // 034 FR-011 — int64_t (not int) so the operator can paste a logged
     // `effectiveMasterSeed` (uint64-surfaced, may exceed 2^31-1; `time(NULL)`
@@ -183,6 +188,16 @@ struct AutocConfig {
     double craftRollEffSigma = 0.05;   // ±5% roll authority
     double craftServoSlewSigma = 4.0;    // /s, servo slew sigma (autoc [-1,1] units, center ≈24.2)
     double craftThrustTauSigma = 0.060;  // s, thrust lag tau sigma (center 0.150s)
+    // 043 US5 -- IMU imperfection + pitch-damping craft axes (append; draw order
+    // frozen). One sigma per GROUP; 2.5σ is the intended physical limit via the
+    // pipeline-wide nextGaussian truncation (no bespoke clips). The FDM feeds the
+    // SAME IMU to INAV's rate feedback and the policy's observation, so these
+    // rotate/scale/bias both loops consistently (contracts/craft-imu-axes.md).
+    double craftImuMisalignSigma = 2.0;  // deg;      2.5σ = ±5° foam-tape IMU mount
+    double craftGyroScaleSigma   = 0.02; // fraction; 2.5σ = ±5% gyro cal tolerance
+    double craftAccelScaleSigma  = 0.02; // fraction; 2.5σ = ±5% accel cal tolerance
+    double craftAccelBiasSigma   = 0.04; // g; from 041-t7 audit (accel_y ~1.7σ; provisional on acc_1G scale)
+    double craftCmQSigma         = 0.32; // Cm_q width; center -4.2, clamp [-5.0,-3.6] (2.5σ reaches -5.0)
 
     // --- Variation landscape ramp ---
     int variationRampStep = 0;
@@ -427,6 +442,7 @@ struct AutocConfig {
     X(std::string,    s3Profile,                 "S3Profile") \
     X(int,            evaluateMode,              "EvaluateMode") \
     X(int,            windScenarioCount,         "WindScenarios") \
+    X(int,            expectedScenarioCount,     "ExpectedScenarioCount") \
     X(int,            randomPathSeedB,           "RandomPathSeedB") \
     X(int64_t,        seed,                      "Seed") \
     X(int,            demeticGrouping,           "DemeticGrouping") \
@@ -464,6 +480,11 @@ struct AutocConfig {
     X(double,         craftRollEffSigma,         "CraftRollEffSigma") \
     X(double,         craftServoSlewSigma,       "CraftServoSlewSigma") \
     X(double,         craftThrustTauSigma,       "CraftThrustTauSigma") \
+    X(double,         craftImuMisalignSigma,     "CraftImuMisalignSigma") \
+    X(double,         craftGyroScaleSigma,       "CraftGyroScaleSigma") \
+    X(double,         craftAccelScaleSigma,      "CraftAccelScaleSigma") \
+    X(double,         craftAccelBiasSigma,       "CraftAccelBiasSigma") \
+    X(double,         craftCmQSigma,             "CraftCmQSigma") \
     X(int,            variationRampStep,         "VariationRampStep") \
     X(std::string,    selectionMode,             "SelectionMode") \
     X(std::string,    lexicaseEpsilonMode,       "LexicaseEpsilonMode") \

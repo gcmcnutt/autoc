@@ -1,0 +1,4132 @@
+run:
+  bucket: autoc-m1
+  key: autoc-9223370249590214474-2026-08-20T22:22:41.333Z/gen9200.dmp.zst
+  gen: 800
+  mode: pathgen
+  gp_hash: db3f29634e910761
+  scenario_count: 294
+  ramp_scale: 1
+  arena:
+    radius_m: 70
+    floor_agl_m: 25
+    ceiling_agl_m: 105
+    arm_agl_m: 55
+    up_m: 50
+    down_m: 30
+scenarios:
+  - idx: 0
+    scenario_seed: 1372816057784447234
+    path_variant: 0
+    wind_variant: 0
+    seeds: {wind: 1578813110, rabbit: 987968074, entry: 1037551125, craft: 16739541, camera: 580532339}
+    wind_dir_offset_deg: -55.719
+    crash_reason: RabbitComplete
+    score: -200.436
+    energy_score_m_destroyed: 76.6615
+    stability_score: -167.868
+    max_streak: 100
+    streak_steps: 158
+    max_multiplier: 5
+    steps: 308/513
+  - idx: 1
+    scenario_seed: 6899476126401646913
+    path_variant: 0
+    wind_variant: 1
+    seeds: {wind: 1144659436, rabbit: 1248881493, entry: 597610019, craft: 85396998, camera: 1177371865}
+    wind_dir_offset_deg: -8.27729
+    crash_reason: RabbitComplete
+    score: -314.21
+    energy_score_m_destroyed: 63.7997
+    stability_score: -192.898
+    max_streak: 100
+    streak_steps: 225
+    max_multiplier: 5
+    steps: 333/513
+  - idx: 2
+    scenario_seed: 2825076762968332152
+    path_variant: 0
+    wind_variant: 2
+    seeds: {wind: 680910662, rabbit: 1001348067, entry: 510615481, craft: 1250066732, camera: 1975706966}
+    wind_dir_offset_deg: 4.26277
+    crash_reason: RabbitComplete
+    score: -389.968
+    energy_score_m_destroyed: 53.7523
+    stability_score: -172.151
+    max_streak: 100
+    streak_steps: 295
+    max_multiplier: 5
+    steps: 320/513
+  - idx: 3
+    scenario_seed: 3483920563077355038
+    path_variant: 0
+    wind_variant: 3
+    seeds: {wind: 594345873, rabbit: 1435595310, entry: 471403967, craft: 404167445, camera: 1825288247}
+    wind_dir_offset_deg: 7.68375
+    crash_reason: RabbitComplete
+    score: -423.237
+    energy_score_m_destroyed: 63.6519
+    stability_score: -197.932
+    max_streak: 100
+    streak_steps: 282
+    max_multiplier: 5
+    steps: 344/513
+  - idx: 4
+    scenario_seed: 2349497632805637570
+    path_variant: 0
+    wind_variant: 4
+    seeds: {wind: 1898530595, rabbit: 105715520, entry: 572720648, craft: 1241411777, camera: 804201679}
+    wind_dir_offset_deg: -11.5255
+    crash_reason: RabbitComplete
+    score: -265.517
+    energy_score_m_destroyed: 66.4414
+    stability_score: -181.603
+    max_streak: 100
+    streak_steps: 178
+    max_multiplier: 5
+    steps: 347/513
+  - idx: 5
+    scenario_seed: 6721077760633543962
+    path_variant: 0
+    wind_variant: 5
+    seeds: {wind: 1819684038, rabbit: 1592068704, entry: 898619242, craft: 227244829, camera: 2136155430}
+    wind_dir_offset_deg: -30.3255
+    crash_reason: RabbitComplete
+    score: -289.425
+    energy_score_m_destroyed: 69.6608
+    stability_score: -209.101
+    max_streak: 100
+    streak_steps: 222
+    max_multiplier: 5
+    steps: 362/513
+  - idx: 6
+    scenario_seed: 8937515117511684321
+    path_variant: 0
+    wind_variant: 6
+    seeds: {wind: 1093083346, rabbit: 552987976, entry: 60857286, craft: 2031907057, camera: 164939016}
+    wind_dir_offset_deg: 72.8768
+    crash_reason: RabbitComplete
+    score: -456.495
+    energy_score_m_destroyed: 59.2652
+    stability_score: -205.342
+    max_streak: 100
+    streak_steps: 302
+    max_multiplier: 5
+    steps: 338/513
+  - idx: 7
+    scenario_seed: 522907231713731717
+    path_variant: 0
+    wind_variant: 7
+    seeds: {wind: 585627148, rabbit: 1480815647, entry: 1458905942, craft: 417490211, camera: 683431733}
+    wind_dir_offset_deg: -16.6518
+    crash_reason: RabbitComplete
+    score: -208.737
+    energy_score_m_destroyed: 70.3829
+    stability_score: -201.815
+    max_streak: 100
+    streak_steps: 189
+    max_multiplier: 5
+    steps: 347/513
+  - idx: 8
+    scenario_seed: 8671416298435507192
+    path_variant: 0
+    wind_variant: 8
+    seeds: {wind: 1537929297, rabbit: 1022902344, entry: 1575035400, craft: 1170238659, camera: 1180457901}
+    wind_dir_offset_deg: -5.69043
+    crash_reason: RabbitComplete
+    score: -360.277
+    energy_score_m_destroyed: 66.8783
+    stability_score: -187.933
+    max_streak: 100
+    streak_steps: 252
+    max_multiplier: 5
+    steps: 314/513
+  - idx: 9
+    scenario_seed: 1142685198031298650
+    path_variant: 0
+    wind_variant: 9
+    seeds: {wind: 1273413013, rabbit: 1495122442, entry: 572473053, craft: 27171767, camera: 1643340187}
+    wind_dir_offset_deg: -3.97936
+    crash_reason: RabbitComplete
+    score: -358.433
+    energy_score_m_destroyed: 52.4383
+    stability_score: -216.828
+    max_streak: 100
+    streak_steps: 238
+    max_multiplier: 5
+    steps: 359/513
+  - idx: 10
+    scenario_seed: 1971419247310256305
+    path_variant: 0
+    wind_variant: 10
+    seeds: {wind: 883287837, rabbit: 1046852289, entry: 169144762, craft: 53980608, camera: 800264957}
+    wind_dir_offset_deg: 47.4372
+    crash_reason: RabbitComplete
+    score: -253.683
+    energy_score_m_destroyed: 85.561
+    stability_score: -197.752
+    max_streak: 100
+    streak_steps: 173
+    max_multiplier: 5
+    steps: 373/513
+  - idx: 11
+    scenario_seed: 3670022483799973270
+    path_variant: 0
+    wind_variant: 11
+    seeds: {wind: 1737600139, rabbit: 1427508790, entry: 969020801, craft: 1261769764, camera: 2104565477}
+    wind_dir_offset_deg: -38.75
+    crash_reason: RabbitComplete
+    score: -356.948
+    energy_score_m_destroyed: 62.1896
+    stability_score: -188.18
+    max_streak: 100
+    streak_steps: 250
+    max_multiplier: 5
+    steps: 323/513
+  - idx: 12
+    scenario_seed: 7688452487896473008
+    path_variant: 0
+    wind_variant: 12
+    seeds: {wind: 2007674068, rabbit: 792914612, entry: 180195371, craft: 901983191, camera: 1547153483}
+    wind_dir_offset_deg: 54.85
+    crash_reason: RabbitComplete
+    score: -339.792
+    energy_score_m_destroyed: 61.1836
+    stability_score: -177.446
+    max_streak: 100
+    streak_steps: 236
+    max_multiplier: 5
+    steps: 313/513
+  - idx: 13
+    scenario_seed: 4011865545253231967
+    path_variant: 0
+    wind_variant: 13
+    seeds: {wind: 634181969, rabbit: 218437614, entry: 57358624, craft: 651718121, camera: 597473888}
+    wind_dir_offset_deg: 94.6763
+    crash_reason: RabbitComplete
+    score: -253.449
+    energy_score_m_destroyed: 68.9216
+    stability_score: -179.133
+    max_streak: 100
+    streak_steps: 205
+    max_multiplier: 5
+    steps: 323/513
+  - idx: 14
+    scenario_seed: 3789750694247066780
+    path_variant: 0
+    wind_variant: 14
+    seeds: {wind: 1815836838, rabbit: 567471146, entry: 1245771081, craft: 778767657, camera: 192330312}
+    wind_dir_offset_deg: -64.2443
+    crash_reason: RabbitComplete
+    score: -103.849
+    energy_score_m_destroyed: 80.3617
+    stability_score: -171.725
+    max_streak: 54
+    streak_steps: 130
+    max_multiplier: 3.16
+    steps: 365/513
+  - idx: 15
+    scenario_seed: 541941602529964112
+    path_variant: 0
+    wind_variant: 15
+    seeds: {wind: 602060639, rabbit: 172910318, entry: 1432507936, craft: 1764628903, camera: 462918458}
+    wind_dir_offset_deg: -50.1734
+    crash_reason: RabbitComplete
+    score: -332.206
+    energy_score_m_destroyed: 66.4351
+    stability_score: -212.459
+    max_streak: 100
+    streak_steps: 253
+    max_multiplier: 5
+    steps: 395/513
+  - idx: 16
+    scenario_seed: 4360664689364221335
+    path_variant: 0
+    wind_variant: 16
+    seeds: {wind: 1127622268, rabbit: 1333981766, entry: 336671291, craft: 1451131012, camera: 923482406}
+    wind_dir_offset_deg: 24.2605
+    crash_reason: RabbitComplete
+    score: -290.194
+    energy_score_m_destroyed: 60.9516
+    stability_score: -184.906
+    max_streak: 100
+    streak_steps: 208
+    max_multiplier: 5
+    steps: 318/513
+  - idx: 17
+    scenario_seed: 5602860482450168670
+    path_variant: 0
+    wind_variant: 17
+    seeds: {wind: 254938979, rabbit: 1078157999, entry: 1646068331, craft: 469466701, camera: 1379680827}
+    wind_dir_offset_deg: 5.4663
+    crash_reason: RabbitComplete
+    score: -206.193
+    energy_score_m_destroyed: 66.7957
+    stability_score: -160.176
+    max_streak: 100
+    streak_steps: 168
+    max_multiplier: 5
+    steps: 307/513
+  - idx: 18
+    scenario_seed: 4604073340633537088
+    path_variant: 0
+    wind_variant: 18
+    seeds: {wind: 501439739, rabbit: 709455932, entry: 225574863, craft: 982121583, camera: 141941821}
+    wind_dir_offset_deg: 52.8612
+    crash_reason: RabbitComplete
+    score: -320.619
+    energy_score_m_destroyed: 65.2032
+    stability_score: -188.717
+    max_streak: 100
+    streak_steps: 218
+    max_multiplier: 5
+    steps: 318/513
+  - idx: 19
+    scenario_seed: 23474514959772328
+    path_variant: 0
+    wind_variant: 19
+    seeds: {wind: 228232200, rabbit: 405417090, entry: 2017359926, craft: 187531084, camera: 669383659}
+    wind_dir_offset_deg: 76.1882
+    crash_reason: RabbitComplete
+    score: -309.839
+    energy_score_m_destroyed: 70.102
+    stability_score: -188.79
+    max_streak: 100
+    streak_steps: 201
+    max_multiplier: 5
+    steps: 347/513
+  - idx: 20
+    scenario_seed: 1508799420374340868
+    path_variant: 0
+    wind_variant: 20
+    seeds: {wind: 492961381, rabbit: 1620013491, entry: 1201702203, craft: 1686251896, camera: 992599575}
+    wind_dir_offset_deg: -31.4282
+    crash_reason: RabbitComplete
+    score: -299.116
+    energy_score_m_destroyed: 61.6294
+    stability_score: -181.562
+    max_streak: 100
+    streak_steps: 223
+    max_multiplier: 5
+    steps: 312/513
+  - idx: 21
+    scenario_seed: 1046160042527564447
+    path_variant: 0
+    wind_variant: 21
+    seeds: {wind: 1129755162, rabbit: 1211692984, entry: 767420972, craft: 84828662, camera: 1660512220}
+    wind_dir_offset_deg: -30.0472
+    crash_reason: RabbitComplete
+    score: -317.291
+    energy_score_m_destroyed: 64.9552
+    stability_score: -186.669
+    max_streak: 100
+    streak_steps: 234
+    max_multiplier: 5
+    steps: 311/513
+  - idx: 22
+    scenario_seed: 7021168939247077446
+    path_variant: 0
+    wind_variant: 22
+    seeds: {wind: 1704366260, rabbit: 1365219890, entry: 698634701, craft: 1859943130, camera: 1465998101}
+    wind_dir_offset_deg: -19.5113
+    crash_reason: RabbitComplete
+    score: -319.944
+    energy_score_m_destroyed: 54.0817
+    stability_score: -218.787
+    max_streak: 100
+    streak_steps: 231
+    max_multiplier: 5
+    steps: 358/513
+  - idx: 23
+    scenario_seed: 685816628871160926
+    path_variant: 0
+    wind_variant: 23
+    seeds: {wind: 1958101840, rabbit: 188679582, entry: 273955795, craft: 2063365866, camera: 442169826}
+    wind_dir_offset_deg: 68.8876
+    crash_reason: RabbitComplete
+    score: -324.743
+    energy_score_m_destroyed: 73.0535
+    stability_score: -184.314
+    max_streak: 100
+    streak_steps: 248
+    max_multiplier: 5
+    steps: 358/513
+  - idx: 24
+    scenario_seed: 2268064893567775213
+    path_variant: 0
+    wind_variant: 24
+    seeds: {wind: 332104929, rabbit: 71602904, entry: 1042590961, craft: 629010986, camera: 1865503920}
+    wind_dir_offset_deg: -112.5
+    crash_reason: RabbitComplete
+    score: -186.835
+    energy_score_m_destroyed: 68.2009
+    stability_score: -146.609
+    max_streak: 100
+    streak_steps: 186
+    max_multiplier: 5
+    steps: 292/513
+  - idx: 25
+    scenario_seed: 3198107936082274104
+    path_variant: 0
+    wind_variant: 25
+    seeds: {wind: 737091275, rabbit: 623872029, entry: 763529978, craft: 1241218224, camera: 51139404}
+    wind_dir_offset_deg: -43.5147
+    crash_reason: RabbitComplete
+    score: -121.685
+    energy_score_m_destroyed: 75.0642
+    stability_score: -138.376
+    max_streak: 100
+    streak_steps: 106
+    max_multiplier: 5
+    steps: 275/513
+  - idx: 26
+    scenario_seed: 1531470155383293489
+    path_variant: 0
+    wind_variant: 26
+    seeds: {wind: 1027051643, rabbit: 2384611, entry: 1290924290, craft: 673417591, camera: 80570522}
+    wind_dir_offset_deg: -112.5
+    crash_reason: RabbitComplete
+    score: -142.665
+    energy_score_m_destroyed: 68.119
+    stability_score: -181.652
+    max_streak: 70
+    streak_steps: 172
+    max_multiplier: 3.8
+    steps: 341/513
+  - idx: 27
+    scenario_seed: 8894528855787889623
+    path_variant: 0
+    wind_variant: 27
+    seeds: {wind: 1611998755, rabbit: 869437207, entry: 330505776, craft: 188299733, camera: 1265617539}
+    wind_dir_offset_deg: 34.3303
+    crash_reason: RabbitComplete
+    score: -208.329
+    energy_score_m_destroyed: 70.1156
+    stability_score: -157.38
+    max_streak: 100
+    streak_steps: 189
+    max_multiplier: 5
+    steps: 318/513
+  - idx: 28
+    scenario_seed: 1603248775526708418
+    path_variant: 0
+    wind_variant: 28
+    seeds: {wind: 643358190, rabbit: 782170223, entry: 1228836526, craft: 1522132759, camera: 864911231}
+    wind_dir_offset_deg: -57.4341
+    crash_reason: RabbitComplete
+    score: -328.109
+    energy_score_m_destroyed: 54.9118
+    stability_score: -181.44
+    max_streak: 100
+    streak_steps: 252
+    max_multiplier: 5
+    steps: 297/513
+  - idx: 29
+    scenario_seed: 4915452249660151462
+    path_variant: 0
+    wind_variant: 29
+    seeds: {wind: 873567078, rabbit: 2115013293, entry: 286604376, craft: 590179922, camera: 56953760}
+    wind_dir_offset_deg: 5.24885
+    crash_reason: RabbitComplete
+    score: -314.001
+    energy_score_m_destroyed: 80.7748
+    stability_score: -193.744
+    max_streak: 100
+    streak_steps: 220
+    max_multiplier: 5
+    steps: 346/513
+  - idx: 30
+    scenario_seed: 4044094869620342529
+    path_variant: 0
+    wind_variant: 30
+    seeds: {wind: 1189776233, rabbit: 1533371422, entry: 53050213, craft: 986324499, camera: 1157437239}
+    wind_dir_offset_deg: 36.4687
+    crash_reason: RabbitComplete
+    score: -324.435
+    energy_score_m_destroyed: 62.0958
+    stability_score: -193.375
+    max_streak: 100
+    streak_steps: 209
+    max_multiplier: 5
+    steps: 351/513
+  - idx: 31
+    scenario_seed: 6441738160190340503
+    path_variant: 0
+    wind_variant: 31
+    seeds: {wind: 1454386955, rabbit: 1324800728, entry: 1687900922, craft: 1135838682, camera: 664027265}
+    wind_dir_offset_deg: 9.91044
+    crash_reason: RabbitComplete
+    score: -287.781
+    energy_score_m_destroyed: 69.305
+    stability_score: -182.039
+    max_streak: 100
+    streak_steps: 205
+    max_multiplier: 5
+    steps: 313/513
+  - idx: 32
+    scenario_seed: 8301378852104992112
+    path_variant: 0
+    wind_variant: 32
+    seeds: {wind: 1876466223, rabbit: 188303620, entry: 1453246916, craft: 2128552981, camera: 1025855136}
+    wind_dir_offset_deg: -44.0218
+    crash_reason: RabbitComplete
+    score: -253.01
+    energy_score_m_destroyed: 67.5966
+    stability_score: -171.468
+    max_streak: 100
+    streak_steps: 216
+    max_multiplier: 5
+    steps: 312/513
+  - idx: 33
+    scenario_seed: 5429192307521909002
+    path_variant: 0
+    wind_variant: 33
+    seeds: {wind: 1408062925, rabbit: 748025125, entry: 130768217, craft: 858164274, camera: 1635603271}
+    wind_dir_offset_deg: 60.5751
+    crash_reason: RabbitComplete
+    score: -411.053
+    energy_score_m_destroyed: 58.1211
+    stability_score: -202.947
+    max_streak: 100
+    streak_steps: 275
+    max_multiplier: 5
+    steps: 343/513
+  - idx: 34
+    scenario_seed: 1883404008016212857
+    path_variant: 0
+    wind_variant: 34
+    seeds: {wind: 1755123512, rabbit: 1189689955, entry: 1663613378, craft: 1277873520, camera: 2059891139}
+    wind_dir_offset_deg: 7.54864
+    crash_reason: RabbitComplete
+    score: -177.87
+    energy_score_m_destroyed: 77.035
+    stability_score: -162.388
+    max_streak: 100
+    streak_steps: 140
+    max_multiplier: 5
+    steps: 308/513
+  - idx: 35
+    scenario_seed: 5572084185472128782
+    path_variant: 0
+    wind_variant: 35
+    seeds: {wind: 40024356, rabbit: 1427889823, entry: 34511921, craft: 1625112166, camera: 359223723}
+    wind_dir_offset_deg: 40.4226
+    crash_reason: RabbitComplete
+    score: -385.693
+    energy_score_m_destroyed: 64.1697
+    stability_score: -202.712
+    max_streak: 100
+    streak_steps: 259
+    max_multiplier: 5
+    steps: 352/513
+  - idx: 36
+    scenario_seed: 4191864489375242583
+    path_variant: 0
+    wind_variant: 36
+    seeds: {wind: 2003480128, rabbit: 210699690, entry: 202183798, craft: 1448421290, camera: 1118994211}
+    wind_dir_offset_deg: 80.3308
+    crash_reason: RabbitComplete
+    score: -422.516
+    energy_score_m_destroyed: 52.1568
+    stability_score: -199.878
+    max_streak: 100
+    streak_steps: 276
+    max_multiplier: 5
+    steps: 349/513
+  - idx: 37
+    scenario_seed: 2589934932175098601
+    path_variant: 0
+    wind_variant: 37
+    seeds: {wind: 568384489, rabbit: 236594447, entry: 332516391, craft: 605932283, camera: 229960553}
+    wind_dir_offset_deg: 53.1068
+    crash_reason: RabbitComplete
+    score: -316.748
+    energy_score_m_destroyed: 74.2044
+    stability_score: -204.316
+    max_streak: 100
+    streak_steps: 222
+    max_multiplier: 5
+    steps: 345/513
+  - idx: 38
+    scenario_seed: 7422519029067157299
+    path_variant: 0
+    wind_variant: 38
+    seeds: {wind: 2039045764, rabbit: 1160081093, entry: 490861031, craft: 1165750050, camera: 1406661209}
+    wind_dir_offset_deg: 6.69789
+    crash_reason: RabbitComplete
+    score: -396.38
+    energy_score_m_destroyed: 50.2923
+    stability_score: -198.596
+    max_streak: 100
+    streak_steps: 283
+    max_multiplier: 5
+    steps: 322/513
+  - idx: 39
+    scenario_seed: 3103556494852378178
+    path_variant: 0
+    wind_variant: 39
+    seeds: {wind: 209160966, rabbit: 1088365239, entry: 438511561, craft: 1792736199, camera: 20538770}
+    wind_dir_offset_deg: 14.88
+    crash_reason: RabbitComplete
+    score: -324.4
+    energy_score_m_destroyed: 58.503
+    stability_score: -181.751
+    max_streak: 100
+    streak_steps: 226
+    max_multiplier: 5
+    steps: 319/513
+  - idx: 40
+    scenario_seed: 5628554792453255166
+    path_variant: 0
+    wind_variant: 40
+    seeds: {wind: 387229617, rabbit: 263178719, entry: 1534172844, craft: 83785929, camera: 718871458}
+    wind_dir_offset_deg: -20.4155
+    crash_reason: RabbitComplete
+    score: -299.378
+    energy_score_m_destroyed: 60.4203
+    stability_score: -170.911
+    max_streak: 100
+    streak_steps: 196
+    max_multiplier: 5
+    steps: 332/513
+  - idx: 41
+    scenario_seed: 5337352943134618356
+    path_variant: 0
+    wind_variant: 41
+    seeds: {wind: 96807835, rabbit: 86587413, entry: 657835861, craft: 1701641789, camera: 848782716}
+    wind_dir_offset_deg: -39.3776
+    crash_reason: RabbitComplete
+    score: -262.648
+    energy_score_m_destroyed: 57.7998
+    stability_score: -207.792
+    max_streak: 100
+    streak_steps: 191
+    max_multiplier: 5
+    steps: 378/513
+  - idx: 42
+    scenario_seed: 7503948985134932240
+    path_variant: 0
+    wind_variant: 42
+    seeds: {wind: 896419119, rabbit: 1399289846, entry: 317007175, craft: 1432359550, camera: 1044339238}
+    wind_dir_offset_deg: 24.9674
+    crash_reason: RabbitComplete
+    score: -375.249
+    energy_score_m_destroyed: 54.7531
+    stability_score: -228.454
+    max_streak: 100
+    streak_steps: 278
+    max_multiplier: 5
+    steps: 381/513
+  - idx: 43
+    scenario_seed: 5694716298894612846
+    path_variant: 0
+    wind_variant: 43
+    seeds: {wind: 86757710, rabbit: 288307760, entry: 1209850400, craft: 2018361882, camera: 1308308926}
+    wind_dir_offset_deg: -82.9904
+    crash_reason: RabbitComplete
+    score: -248.451
+    energy_score_m_destroyed: 60.5909
+    stability_score: -175.636
+    max_streak: 100
+    streak_steps: 205
+    max_multiplier: 5
+    steps: 342/513
+  - idx: 44
+    scenario_seed: 5986951593384048180
+    path_variant: 0
+    wind_variant: 44
+    seeds: {wind: 110817473, rabbit: 2035958153, entry: 294382155, craft: 221711806, camera: 1339574425}
+    wind_dir_offset_deg: 9.56899
+    crash_reason: RabbitComplete
+    score: -246.793
+    energy_score_m_destroyed: 62.8872
+    stability_score: -212.167
+    max_streak: 100
+    streak_steps: 181
+    max_multiplier: 5
+    steps: 384/513
+  - idx: 45
+    scenario_seed: 6936453418678080844
+    path_variant: 0
+    wind_variant: 45
+    seeds: {wind: 1635951806, rabbit: 1760959942, entry: 1599644728, craft: 1528653756, camera: 2107344956}
+    wind_dir_offset_deg: -0.909081
+    crash_reason: RabbitComplete
+    score: -296.245
+    energy_score_m_destroyed: 61.7061
+    stability_score: -183.101
+    max_streak: 100
+    streak_steps: 203
+    max_multiplier: 5
+    steps: 355/513
+  - idx: 46
+    scenario_seed: 6184054137761575427
+    path_variant: 0
+    wind_variant: 46
+    seeds: {wind: 516999299, rabbit: 165700242, entry: 1287280154, craft: 860987789, camera: 490542428}
+    wind_dir_offset_deg: -82.4265
+    crash_reason: RabbitComplete
+    score: -182.925
+    energy_score_m_destroyed: 63.5239
+    stability_score: -187.146
+    max_streak: 100
+    streak_steps: 196
+    max_multiplier: 5
+    steps: 344/513
+  - idx: 47
+    scenario_seed: 3802884501808849488
+    path_variant: 0
+    wind_variant: 47
+    seeds: {wind: 1659563475, rabbit: 1206017684, entry: 1692921488, craft: 817927957, camera: 713562252}
+    wind_dir_offset_deg: 11.5213
+    crash_reason: RabbitComplete
+    score: -373.561
+    energy_score_m_destroyed: 55.4191
+    stability_score: -206.975
+    max_streak: 100
+    streak_steps: 250
+    max_multiplier: 5
+    steps: 335/513
+  - idx: 48
+    scenario_seed: 2690578479321202066
+    path_variant: 0
+    wind_variant: 48
+    seeds: {wind: 1839710621, rabbit: 1927615547, entry: 1758612021, craft: 2079783428, camera: 512839385}
+    wind_dir_offset_deg: 8.77178
+    crash_reason: RabbitComplete
+    score: -427.803
+    energy_score_m_destroyed: 63.9785
+    stability_score: -220
+    max_streak: 100
+    streak_steps: 259
+    max_multiplier: 5
+    steps: 380/513
+  - idx: 49
+    scenario_seed: 7861545472192419843
+    path_variant: 1
+    wind_variant: 0
+    seeds: {wind: 554517625, rabbit: 884100167, entry: 1604128073, craft: 1048351904, camera: 1690100076}
+    wind_dir_offset_deg: -1.1365
+    crash_reason: RabbitComplete
+    score: -523.379
+    energy_score_m_destroyed: 90.9571
+    stability_score: -269.191
+    max_streak: 100
+    streak_steps: 330
+    max_multiplier: 5
+    steps: 418/620
+  - idx: 50
+    scenario_seed: 131789999303270467
+    path_variant: 1
+    wind_variant: 1
+    seeds: {wind: 20375012, rabbit: 2122177573, entry: 368697089, craft: 1180200430, camera: 1008768914}
+    wind_dir_offset_deg: 3.27177
+    crash_reason: RabbitComplete
+    score: -416.428
+    energy_score_m_destroyed: 101.292
+    stability_score: -222.393
+    max_streak: 100
+    streak_steps: 282
+    max_multiplier: 5
+    steps: 392/620
+  - idx: 51
+    scenario_seed: 4093845776568015574
+    path_variant: 1
+    wind_variant: 2
+    seeds: {wind: 212032963, rabbit: 136095371, entry: 307177368, craft: 1531631840, camera: 1981033371}
+    wind_dir_offset_deg: 65.633
+    crash_reason: RabbitComplete
+    score: -355.579
+    energy_score_m_destroyed: 97.0981
+    stability_score: -239.728
+    max_streak: 100
+    streak_steps: 285
+    max_multiplier: 5
+    steps: 383/620
+  - idx: 52
+    scenario_seed: 1238112401525433556
+    path_variant: 1
+    wind_variant: 3
+    seeds: {wind: 1548054910, rabbit: 170095951, entry: 871668240, craft: 650517369, camera: 618032565}
+    wind_dir_offset_deg: -83.9449
+    crash_reason: RabbitComplete
+    score: -366.623
+    energy_score_m_destroyed: 92.2867
+    stability_score: -235.354
+    max_streak: 100
+    streak_steps: 297
+    max_multiplier: 5
+    steps: 403/620
+  - idx: 53
+    scenario_seed: 2084897595919366366
+    path_variant: 1
+    wind_variant: 4
+    seeds: {wind: 373050780, rabbit: 883821285, entry: 1027116933, craft: 1006514554, camera: 794006406}
+    wind_dir_offset_deg: -59.3582
+    crash_reason: RabbitComplete
+    score: -372.809
+    energy_score_m_destroyed: 95.6526
+    stability_score: -223.381
+    max_streak: 100
+    streak_steps: 301
+    max_multiplier: 5
+    steps: 404/620
+  - idx: 54
+    scenario_seed: 8203407126768068083
+    path_variant: 1
+    wind_variant: 5
+    seeds: {wind: 314754302, rabbit: 58109317, entry: 381197925, craft: 1165150179, camera: 367575579}
+    wind_dir_offset_deg: 52.9262
+    crash_reason: RabbitComplete
+    score: -168.179
+    energy_score_m_destroyed: 116.396
+    stability_score: -191.177
+    max_streak: 94
+    streak_steps: 166
+    max_multiplier: 4.76
+    steps: 375/620
+  - idx: 55
+    scenario_seed: 6429270889651949584
+    path_variant: 1
+    wind_variant: 6
+    seeds: {wind: 1478961986, rabbit: 27665338, entry: 1846185811, craft: 958899575, camera: 178857387}
+    wind_dir_offset_deg: 83.7101
+    crash_reason: RabbitComplete
+    score: -312.847
+    energy_score_m_destroyed: 101.938
+    stability_score: -211.911
+    max_streak: 100
+    streak_steps: 250
+    max_multiplier: 5
+    steps: 350/620
+  - idx: 56
+    scenario_seed: 7866283808529310078
+    path_variant: 1
+    wind_variant: 7
+    seeds: {wind: 1296507171, rabbit: 1729210467, entry: 176577314, craft: 200929151, camera: 1014898069}
+    wind_dir_offset_deg: 25.74
+    crash_reason: RabbitComplete
+    score: -417.014
+    energy_score_m_destroyed: 94.4869
+    stability_score: -248.612
+    max_streak: 100
+    streak_steps: 299
+    max_multiplier: 5
+    steps: 445/620
+  - idx: 57
+    scenario_seed: 3349534615562379837
+    path_variant: 1
+    wind_variant: 8
+    seeds: {wind: 420898827, rabbit: 2011977497, entry: 217822112, craft: 411232640, camera: 1419416219}
+    wind_dir_offset_deg: 13.0512
+    crash_reason: RabbitComplete
+    score: -524.746
+    energy_score_m_destroyed: 82.4543
+    stability_score: -280.214
+    max_streak: 100
+    streak_steps: 333
+    max_multiplier: 5
+    steps: 427/620
+  - idx: 58
+    scenario_seed: 6945784230475674074
+    path_variant: 1
+    wind_variant: 9
+    seeds: {wind: 681112534, rabbit: 8493144, entry: 1950661094, craft: 1793682112, camera: 583548606}
+    wind_dir_offset_deg: 112.5
+    crash_reason: RabbitComplete
+    score: -214.356
+    energy_score_m_destroyed: 85.5942
+    stability_score: -231.912
+    max_streak: 100
+    streak_steps: 210
+    max_multiplier: 5
+    steps: 416/620
+  - idx: 59
+    scenario_seed: 5360700123767875835
+    path_variant: 1
+    wind_variant: 10
+    seeds: {wind: 1035891055, rabbit: 1487879157, entry: 971697279, craft: 1609020482, camera: 986625573}
+    wind_dir_offset_deg: -36.8226
+    crash_reason: RabbitComplete
+    score: -371.602
+    energy_score_m_destroyed: 103.656
+    stability_score: -243.306
+    max_streak: 100
+    streak_steps: 286
+    max_multiplier: 5
+    steps: 417/620
+  - idx: 60
+    scenario_seed: 185799143600174294
+    path_variant: 1
+    wind_variant: 11
+    seeds: {wind: 526262283, rabbit: 622602330, entry: 1750915312, craft: 2066614220, camera: 477159529}
+    wind_dir_offset_deg: 28.2314
+    crash_reason: RabbitComplete
+    score: -256.812
+    energy_score_m_destroyed: 116.44
+    stability_score: -230.781
+    max_streak: 100
+    streak_steps: 222
+    max_multiplier: 5
+    steps: 415/620
+  - idx: 61
+    scenario_seed: 1211174718875680277
+    path_variant: 1
+    wind_variant: 12
+    seeds: {wind: 1501736037, rabbit: 1989737542, entry: 414777807, craft: 749480716, camera: 1674124674}
+    wind_dir_offset_deg: 6.14344
+    crash_reason: RabbitComplete
+    score: -256.272
+    energy_score_m_destroyed: 100.787
+    stability_score: -243.683
+    max_streak: 100
+    streak_steps: 221
+    max_multiplier: 5
+    steps: 488/620
+  - idx: 62
+    scenario_seed: 6250475595725158488
+    path_variant: 1
+    wind_variant: 13
+    seeds: {wind: 1781181547, rabbit: 611680298, entry: 667002155, craft: 1786188181, camera: 1768741648}
+    wind_dir_offset_deg: -26.4758
+    crash_reason: RabbitComplete
+    score: -476.017
+    energy_score_m_destroyed: 87.5563
+    stability_score: -206.647
+    max_streak: 100
+    streak_steps: 311
+    max_multiplier: 5
+    steps: 371/620
+  - idx: 63
+    scenario_seed: 661533450527820939
+    path_variant: 1
+    wind_variant: 14
+    seeds: {wind: 586654326, rabbit: 1671601004, entry: 301511706, craft: 774884607, camera: 1732184698}
+    wind_dir_offset_deg: 20.23
+    crash_reason: RabbitComplete
+    score: -379.282
+    energy_score_m_destroyed: 110.617
+    stability_score: -234.959
+    max_streak: 100
+    streak_steps: 285
+    max_multiplier: 5
+    steps: 428/620
+  - idx: 64
+    scenario_seed: 25180669091332420
+    path_variant: 1
+    wind_variant: 15
+    seeds: {wind: 880719597, rabbit: 1629390775, entry: 733528650, craft: 451092414, camera: 1345219261}
+    wind_dir_offset_deg: -18.1857
+    crash_reason: RabbitComplete
+    score: -481.068
+    energy_score_m_destroyed: 82.2639
+    stability_score: -210.884
+    max_streak: 100
+    streak_steps: 326
+    max_multiplier: 5
+    steps: 362/620
+  - idx: 65
+    scenario_seed: 8105908546788600534
+    path_variant: 1
+    wind_variant: 16
+    seeds: {wind: 1045909787, rabbit: 1918270954, entry: 1657329188, craft: 728932257, camera: 1916905199}
+    wind_dir_offset_deg: 2.91178
+    crash_reason: RabbitComplete
+    score: -324.425
+    energy_score_m_destroyed: 95.1552
+    stability_score: -257.958
+    max_streak: 100
+    streak_steps: 265
+    max_multiplier: 5
+    steps: 426/620
+  - idx: 66
+    scenario_seed: 2169214229802576271
+    path_variant: 1
+    wind_variant: 17
+    seeds: {wind: 2088427425, rabbit: 1155391054, entry: 1731255044, craft: 86105919, camera: 1037959104}
+    wind_dir_offset_deg: 17.3088
+    crash_reason: RabbitComplete
+    score: -471.946
+    energy_score_m_destroyed: 108.198
+    stability_score: -245.307
+    max_streak: 100
+    streak_steps: 358
+    max_multiplier: 5
+    steps: 462/620
+  - idx: 67
+    scenario_seed: 688485749115548719
+    path_variant: 1
+    wind_variant: 18
+    seeds: {wind: 1863274446, rabbit: 1210679212, entry: 1223756641, craft: 1124139682, camera: 729797426}
+    wind_dir_offset_deg: -43.5818
+    crash_reason: RabbitComplete
+    score: -373.355
+    energy_score_m_destroyed: 104.917
+    stability_score: -201.77
+    max_streak: 100
+    streak_steps: 275
+    max_multiplier: 5
+    steps: 351/620
+  - idx: 68
+    scenario_seed: 8453420217033081163
+    path_variant: 1
+    wind_variant: 19
+    seeds: {wind: 1439647228, rabbit: 640525868, entry: 1502108369, craft: 635222691, camera: 1063005395}
+    wind_dir_offset_deg: -21.829
+    crash_reason: RabbitComplete
+    score: -497.045
+    energy_score_m_destroyed: 102.787
+    stability_score: -268.544
+    max_streak: 100
+    streak_steps: 308
+    max_multiplier: 5
+    steps: 414/620
+  - idx: 69
+    scenario_seed: 7837208382813682872
+    path_variant: 1
+    wind_variant: 20
+    seeds: {wind: 1666041052, rabbit: 352524589, entry: 54016791, craft: 399370903, camera: 72159594}
+    wind_dir_offset_deg: 84.3608
+    crash_reason: RabbitComplete
+    score: -329.374
+    energy_score_m_destroyed: 103.146
+    stability_score: -257.609
+    max_streak: 100
+    streak_steps: 255
+    max_multiplier: 5
+    steps: 441/620
+  - idx: 70
+    scenario_seed: 4093452928674116079
+    path_variant: 1
+    wind_variant: 21
+    seeds: {wind: 1784520556, rabbit: 727710212, entry: 909629473, craft: 1273644621, camera: 1937653975}
+    wind_dir_offset_deg: -58.6629
+    crash_reason: RabbitComplete
+    score: -537.932
+    energy_score_m_destroyed: 85.8022
+    stability_score: -267.115
+    max_streak: 100
+    streak_steps: 369
+    max_multiplier: 5
+    steps: 440/620
+  - idx: 71
+    scenario_seed: 4346150745122555510
+    path_variant: 1
+    wind_variant: 22
+    seeds: {wind: 1907094399, rabbit: 1172238180, entry: 1062571977, craft: 912476819, camera: 1278929979}
+    wind_dir_offset_deg: -49.4552
+    crash_reason: RabbitComplete
+    score: -457.122
+    energy_score_m_destroyed: 89.8016
+    stability_score: -265.911
+    max_streak: 100
+    streak_steps: 358
+    max_multiplier: 5
+    steps: 441/620
+  - idx: 72
+    scenario_seed: 2004836450575424363
+    path_variant: 1
+    wind_variant: 23
+    seeds: {wind: 1412411139, rabbit: 187265713, entry: 744562000, craft: 465985808, camera: 857219290}
+    wind_dir_offset_deg: -56.631
+    crash_reason: RabbitComplete
+    score: -457.966
+    energy_score_m_destroyed: 85.096
+    stability_score: -215.264
+    max_streak: 100
+    streak_steps: 306
+    max_multiplier: 5
+    steps: 352/620
+  - idx: 73
+    scenario_seed: 4935016423531668281
+    path_variant: 1
+    wind_variant: 24
+    seeds: {wind: 468942220, rabbit: 1832262240, entry: 1016585345, craft: 1589854545, camera: 1393132503}
+    wind_dir_offset_deg: -24.9886
+    crash_reason: RabbitComplete
+    score: -426.634
+    energy_score_m_destroyed: 84.709
+    stability_score: -220.006
+    max_streak: 100
+    streak_steps: 274
+    max_multiplier: 5
+    steps: 371/620
+  - idx: 74
+    scenario_seed: 588641727707369984
+    path_variant: 1
+    wind_variant: 25
+    seeds: {wind: 167568673, rabbit: 1283999781, entry: 1427892584, craft: 167788152, camera: 1141052355}
+    wind_dir_offset_deg: -23.2384
+    crash_reason: RabbitComplete
+    score: -460.735
+    energy_score_m_destroyed: 89.5625
+    stability_score: -220.236
+    max_streak: 100
+    streak_steps: 303
+    max_multiplier: 5
+    steps: 376/620
+  - idx: 75
+    scenario_seed: 9218392994960464190
+    path_variant: 1
+    wind_variant: 26
+    seeds: {wind: 77664995, rabbit: 1608009630, entry: 1583912562, craft: 182996161, camera: 807447520}
+    wind_dir_offset_deg: -2.66976
+    crash_reason: RabbitComplete
+    score: -302.883
+    energy_score_m_destroyed: 112.684
+    stability_score: -246.867
+    max_streak: 100
+    streak_steps: 246
+    max_multiplier: 5
+    steps: 463/620
+  - idx: 76
+    scenario_seed: 1637924046834329886
+    path_variant: 1
+    wind_variant: 27
+    seeds: {wind: 511294201, rabbit: 1800305147, entry: 309007688, craft: 1836179033, camera: 1105539312}
+    wind_dir_offset_deg: 16.5169
+    crash_reason: RabbitComplete
+    score: -528.922
+    energy_score_m_destroyed: 95.9438
+    stability_score: -261.827
+    max_streak: 100
+    streak_steps: 350
+    max_multiplier: 5
+    steps: 423/620
+  - idx: 77
+    scenario_seed: 1106722388431934938
+    path_variant: 1
+    wind_variant: 28
+    seeds: {wind: 871434221, rabbit: 91604455, entry: 169818132, craft: 345969173, camera: 1445110811}
+    wind_dir_offset_deg: 99.0136
+    crash_reason: RabbitComplete
+    score: -295.319
+    energy_score_m_destroyed: 91.6884
+    stability_score: -256.551
+    max_streak: 100
+    streak_steps: 270
+    max_multiplier: 5
+    steps: 446/620
+  - idx: 78
+    scenario_seed: 7094116806511020225
+    path_variant: 1
+    wind_variant: 29
+    seeds: {wind: 2131203620, rabbit: 125831485, entry: 927858719, craft: 749283017, camera: 720930833}
+    wind_dir_offset_deg: -97.3012
+    crash_reason: RabbitComplete
+    score: -459.812
+    energy_score_m_destroyed: 92.781
+    stability_score: -222.526
+    max_streak: 100
+    streak_steps: 324
+    max_multiplier: 5
+    steps: 392/620
+  - idx: 79
+    scenario_seed: 5735106691864514936
+    path_variant: 1
+    wind_variant: 30
+    seeds: {wind: 1985455698, rabbit: 2031799842, entry: 1432014692, craft: 1577567896, camera: 1009785196}
+    wind_dir_offset_deg: -7.47032
+    crash_reason: RabbitComplete
+    score: -189.02
+    energy_score_m_destroyed: 101.014
+    stability_score: -213.007
+    max_streak: 78
+    streak_steps: 226
+    max_multiplier: 4.12
+    steps: 426/620
+  - idx: 80
+    scenario_seed: 828058679556028194
+    path_variant: 1
+    wind_variant: 31
+    seeds: {wind: 1669935881, rabbit: 1528737959, entry: 1876940675, craft: 1615739642, camera: 1057167236}
+    wind_dir_offset_deg: 26.0559
+    crash_reason: RabbitComplete
+    score: -432.047
+    energy_score_m_destroyed: 104.66
+    stability_score: -245.007
+    max_streak: 100
+    streak_steps: 331
+    max_multiplier: 5
+    steps: 429/620
+  - idx: 81
+    scenario_seed: 799043465663634761
+    path_variant: 1
+    wind_variant: 32
+    seeds: {wind: 1932226187, rabbit: 980516173, entry: 2104090650, craft: 1320681285, camera: 406763393}
+    wind_dir_offset_deg: 55.852
+    crash_reason: RabbitComplete
+    score: -434.827
+    energy_score_m_destroyed: 102.526
+    stability_score: -238.217
+    max_streak: 100
+    streak_steps: 289
+    max_multiplier: 5
+    steps: 394/620
+  - idx: 82
+    scenario_seed: 2187717382355870779
+    path_variant: 1
+    wind_variant: 33
+    seeds: {wind: 1980876835, rabbit: 48835963, entry: 1571209214, craft: 1160007895, camera: 1252487667}
+    wind_dir_offset_deg: -14.1603
+    crash_reason: RabbitComplete
+    score: -435.218
+    energy_score_m_destroyed: 99.7239
+    stability_score: -225.128
+    max_streak: 100
+    streak_steps: 283
+    max_multiplier: 5
+    steps: 398/620
+  - idx: 83
+    scenario_seed: 4185873230424548204
+    path_variant: 1
+    wind_variant: 34
+    seeds: {wind: 1358334299, rabbit: 1184236825, entry: 428580082, craft: 1279166671, camera: 57073650}
+    wind_dir_offset_deg: 15.2867
+    crash_reason: RabbitComplete
+    score: -526.302
+    energy_score_m_destroyed: 101.153
+    stability_score: -275.614
+    max_streak: 100
+    streak_steps: 323
+    max_multiplier: 5
+    steps: 452/620
+  - idx: 84
+    scenario_seed: 3236490916086199235
+    path_variant: 1
+    wind_variant: 35
+    seeds: {wind: 1687692305, rabbit: 1803105710, entry: 203514500, craft: 1258228122, camera: 797172608}
+    wind_dir_offset_deg: 22.015
+    crash_reason: RabbitComplete
+    score: -596.289
+    energy_score_m_destroyed: 104.945
+    stability_score: -305.969
+    max_streak: 100
+    streak_steps: 370
+    max_multiplier: 5
+    steps: 472/620
+  - idx: 85
+    scenario_seed: 5030484371691003669
+    path_variant: 1
+    wind_variant: 36
+    seeds: {wind: 1085214421, rabbit: 816714820, entry: 136284594, craft: 851226213, camera: 1735909672}
+    wind_dir_offset_deg: 57.6155
+    crash_reason: RabbitComplete
+    score: -455.182
+    energy_score_m_destroyed: 92.9365
+    stability_score: -261.18
+    max_streak: 100
+    streak_steps: 353
+    max_multiplier: 5
+    steps: 491/620
+  - idx: 86
+    scenario_seed: 7184721216482155408
+    path_variant: 1
+    wind_variant: 37
+    seeds: {wind: 2131837831, rabbit: 675059608, entry: 2032961837, craft: 1688100515, camera: 32974150}
+    wind_dir_offset_deg: 64.5925
+    crash_reason: RabbitComplete
+    score: -370.932
+    energy_score_m_destroyed: 97.4995
+    stability_score: -225.388
+    max_streak: 100
+    streak_steps: 293
+    max_multiplier: 5
+    steps: 378/620
+  - idx: 87
+    scenario_seed: 1910679927436931226
+    path_variant: 1
+    wind_variant: 38
+    seeds: {wind: 1864815334, rabbit: 428956215, entry: 108129891, craft: 1152706251, camera: 982148251}
+    wind_dir_offset_deg: 76.6634
+    crash_reason: RabbitComplete
+    score: -233.248
+    energy_score_m_destroyed: 83.3399
+    stability_score: -214.656
+    max_streak: 100
+    streak_steps: 239
+    max_multiplier: 5
+    steps: 387/620
+  - idx: 88
+    scenario_seed: 5791619587568914002
+    path_variant: 1
+    wind_variant: 39
+    seeds: {wind: 403036420, rabbit: 916671647, entry: 1904009549, craft: 439815473, camera: 309362941}
+    wind_dir_offset_deg: 44.4036
+    crash_reason: RabbitComplete
+    score: -354.489
+    energy_score_m_destroyed: 89.3436
+    stability_score: -232.994
+    max_streak: 100
+    streak_steps: 296
+    max_multiplier: 5
+    steps: 404/620
+  - idx: 89
+    scenario_seed: 4090258135031887396
+    path_variant: 1
+    wind_variant: 40
+    seeds: {wind: 408994305, rabbit: 746929784, entry: 944653981, craft: 1872040100, camera: 1283284987}
+    wind_dir_offset_deg: -60.7364
+    crash_reason: RabbitComplete
+    score: -445.69
+    energy_score_m_destroyed: 79.5476
+    stability_score: -246.376
+    max_streak: 100
+    streak_steps: 335
+    max_multiplier: 5
+    steps: 419/620
+  - idx: 90
+    scenario_seed: 3911124986590516673
+    path_variant: 1
+    wind_variant: 41
+    seeds: {wind: 234537183, rabbit: 1958057256, entry: 184048965, craft: 87741876, camera: 550344512}
+    wind_dir_offset_deg: 16.5934
+    crash_reason: RabbitComplete
+    score: -494.871
+    energy_score_m_destroyed: 93.07
+    stability_score: -251.657
+    max_streak: 100
+    streak_steps: 301
+    max_multiplier: 5
+    steps: 416/620
+  - idx: 91
+    scenario_seed: 6782475315265169819
+    path_variant: 1
+    wind_variant: 42
+    seeds: {wind: 1527223557, rabbit: 1789685731, entry: 947769585, craft: 1941505494, camera: 77862147}
+    wind_dir_offset_deg: -25.3302
+    crash_reason: RabbitComplete
+    score: -453.264
+    energy_score_m_destroyed: 104.286
+    stability_score: -252.102
+    max_streak: 100
+    streak_steps: 294
+    max_multiplier: 5
+    steps: 419/620
+  - idx: 92
+    scenario_seed: 5137802798235586908
+    path_variant: 1
+    wind_variant: 43
+    seeds: {wind: 674451599, rabbit: 601046809, entry: 626446269, craft: 470617492, camera: 1094938366}
+    wind_dir_offset_deg: -18.5876
+    crash_reason: RabbitComplete
+    score: -415.942
+    energy_score_m_destroyed: 96.2806
+    stability_score: -234.928
+    max_streak: 100
+    streak_steps: 280
+    max_multiplier: 5
+    steps: 383/620
+  - idx: 93
+    scenario_seed: 1072691625012862116
+    path_variant: 1
+    wind_variant: 44
+    seeds: {wind: 862700579, rabbit: 1564249932, entry: 235955405, craft: 1697574714, camera: 2095500915}
+    wind_dir_offset_deg: 27.605
+    crash_reason: RabbitComplete
+    score: -291.791
+    energy_score_m_destroyed: 110.543
+    stability_score: -228.135
+    max_streak: 100
+    streak_steps: 242
+    max_multiplier: 5
+    steps: 441/620
+  - idx: 94
+    scenario_seed: 2180773398756992347
+    path_variant: 1
+    wind_variant: 45
+    seeds: {wind: 1189233169, rabbit: 1088932842, entry: 2067472210, craft: 1091005526, camera: 1186270165}
+    wind_dir_offset_deg: 50.9768
+    crash_reason: RabbitComplete
+    score: -301.873
+    energy_score_m_destroyed: 98.6228
+    stability_score: -278.559
+    max_streak: 100
+    streak_steps: 248
+    max_multiplier: 5
+    steps: 491/620
+  - idx: 95
+    scenario_seed: 3421563605048290170
+    path_variant: 1
+    wind_variant: 46
+    seeds: {wind: 1604707470, rabbit: 1099137080, entry: 715005898, craft: 1840011421, camera: 1415146818}
+    wind_dir_offset_deg: -25.9142
+    crash_reason: RabbitComplete
+    score: -523.35
+    energy_score_m_destroyed: 90.6961
+    stability_score: -273.202
+    max_streak: 100
+    streak_steps: 368
+    max_multiplier: 5
+    steps: 452/620
+  - idx: 96
+    scenario_seed: 1874571561907485531
+    path_variant: 1
+    wind_variant: 47
+    seeds: {wind: 1266053933, rabbit: 599773517, entry: 1440393900, craft: 175907981, camera: 103810613}
+    wind_dir_offset_deg: -34.299
+    crash_reason: RabbitComplete
+    score: -537.274
+    energy_score_m_destroyed: 102.056
+    stability_score: -263.42
+    max_streak: 100
+    streak_steps: 353
+    max_multiplier: 5
+    steps: 433/620
+  - idx: 97
+    scenario_seed: 3999541549991656954
+    path_variant: 1
+    wind_variant: 48
+    seeds: {wind: 1820113318, rabbit: 839007114, entry: 318301121, craft: 1615401153, camera: 1897833893}
+    wind_dir_offset_deg: 36.7889
+    crash_reason: RabbitComplete
+    score: -477.735
+    energy_score_m_destroyed: 104.723
+    stability_score: -220.811
+    max_streak: 100
+    streak_steps: 319
+    max_multiplier: 5
+    steps: 371/620
+  - idx: 98
+    scenario_seed: 8865352754907371937
+    path_variant: 2
+    wind_variant: 0
+    seeds: {wind: 446328929, rabbit: 1187785055, entry: 2053982299, craft: 607056686, camera: 818926591}
+    wind_dir_offset_deg: 47.1205
+    crash_reason: RabbitComplete
+    score: -327.176
+    energy_score_m_destroyed: 94.1949
+    stability_score: -219.584
+    max_streak: 100
+    streak_steps: 252
+    max_multiplier: 5
+    steps: 415/662
+  - idx: 99
+    scenario_seed: 865820460720886788
+    path_variant: 2
+    wind_variant: 1
+    seeds: {wind: 696283628, rabbit: 40447991, entry: 402338438, craft: 1584120877, camera: 1648634938}
+    wind_dir_offset_deg: 48.333
+    crash_reason: RabbitComplete
+    score: -436.442
+    energy_score_m_destroyed: 70.1457
+    stability_score: -249.26
+    max_streak: 100
+    streak_steps: 313
+    max_multiplier: 5
+    steps: 452/662
+  - idx: 100
+    scenario_seed: 8141903330631376914
+    path_variant: 2
+    wind_variant: 2
+    seeds: {wind: 1504984134, rabbit: 2012321598, entry: 1795535954, craft: 2023526261, camera: 1489944583}
+    wind_dir_offset_deg: 8.3527
+    crash_reason: RabbitComplete
+    score: -470.53
+    energy_score_m_destroyed: 83.4941
+    stability_score: -232.679
+    max_streak: 100
+    streak_steps: 342
+    max_multiplier: 5
+    steps: 417/662
+  - idx: 101
+    scenario_seed: 6884016537844935098
+    path_variant: 2
+    wind_variant: 3
+    seeds: {wind: 1707109409, rabbit: 635779155, entry: 6791728, craft: 1425987944, camera: 570707533}
+    wind_dir_offset_deg: 70.1292
+    crash_reason: RabbitComplete
+    score: -459.769
+    energy_score_m_destroyed: 82.8382
+    stability_score: -241.666
+    max_streak: 100
+    streak_steps: 343
+    max_multiplier: 5
+    steps: 481/662
+  - idx: 102
+    scenario_seed: 8270659700309071159
+    path_variant: 2
+    wind_variant: 4
+    seeds: {wind: 1020662539, rabbit: 831590595, entry: 945281521, craft: 2099252382, camera: 1848364180}
+    wind_dir_offset_deg: -57.6111
+    crash_reason: RabbitComplete
+    score: -392.397
+    energy_score_m_destroyed: 83.1324
+    stability_score: -254.792
+    max_streak: 100
+    streak_steps: 297
+    max_multiplier: 5
+    steps: 509/662
+  - idx: 103
+    scenario_seed: 8307290956066270328
+    path_variant: 2
+    wind_variant: 5
+    seeds: {wind: 729688088, rabbit: 1894401401, entry: 501371117, craft: 1691970664, camera: 17859240}
+    wind_dir_offset_deg: 2.33523
+    crash_reason: RabbitComplete
+    score: -281.528
+    energy_score_m_destroyed: 106.208
+    stability_score: -229.976
+    max_streak: 100
+    streak_steps: 231
+    max_multiplier: 5
+    steps: 436/662
+  - idx: 104
+    scenario_seed: 3417229406053741426
+    path_variant: 2
+    wind_variant: 6
+    seeds: {wind: 257693642, rabbit: 904509558, entry: 1090847061, craft: 2126940738, camera: 510684575}
+    wind_dir_offset_deg: -59.0556
+    crash_reason: RabbitComplete
+    score: -358.489
+    energy_score_m_destroyed: 85.2244
+    stability_score: -206.467
+    max_streak: 100
+    streak_steps: 270
+    max_multiplier: 5
+    steps: 407/662
+  - idx: 105
+    scenario_seed: 624491380826605514
+    path_variant: 2
+    wind_variant: 7
+    seeds: {wind: 1721978672, rabbit: 1130435330, entry: 1831827807, craft: 1520906472, camera: 1800353570}
+    wind_dir_offset_deg: 30.7181
+    crash_reason: RabbitComplete
+    score: -376.379
+    energy_score_m_destroyed: 100.314
+    stability_score: -224.218
+    max_streak: 100
+    streak_steps: 289
+    max_multiplier: 5
+    steps: 419/662
+  - idx: 106
+    scenario_seed: 1652376827906789711
+    path_variant: 2
+    wind_variant: 8
+    seeds: {wind: 1148524052, rabbit: 966683140, entry: 89685277, craft: 2018457362, camera: 1622256712}
+    wind_dir_offset_deg: 54.868
+    crash_reason: RabbitComplete
+    score: -469.998
+    energy_score_m_destroyed: 77.7899
+    stability_score: -221.67
+    max_streak: 100
+    streak_steps: 337
+    max_multiplier: 5
+    steps: 408/662
+  - idx: 107
+    scenario_seed: 5192586686030593875
+    path_variant: 2
+    wind_variant: 9
+    seeds: {wind: 1612386118, rabbit: 240483757, entry: 1242322112, craft: 1797309524, camera: 1736177851}
+    wind_dir_offset_deg: -82.7913
+    crash_reason: RabbitComplete
+    score: -91.9682
+    energy_score_m_destroyed: 98.8328
+    stability_score: -192.256
+    max_streak: 32
+    streak_steps: 94
+    max_multiplier: 2.28
+    steps: 405/662
+  - idx: 108
+    scenario_seed: 2739968087411798878
+    path_variant: 2
+    wind_variant: 10
+    seeds: {wind: 209862473, rabbit: 591071284, entry: 134215922, craft: 1926091510, camera: 1206265992}
+    wind_dir_offset_deg: 66.7137
+    crash_reason: RabbitComplete
+    score: -369.106
+    energy_score_m_destroyed: 77.633
+    stability_score: -224.476
+    max_streak: 100
+    streak_steps: 286
+    max_multiplier: 5
+    steps: 427/662
+  - idx: 109
+    scenario_seed: 1738470820837161354
+    path_variant: 2
+    wind_variant: 11
+    seeds: {wind: 1581604194, rabbit: 424914077, entry: 411098370, craft: 1380519990, camera: 515387233}
+    wind_dir_offset_deg: 29.1041
+    crash_reason: RabbitComplete
+    score: -281.182
+    energy_score_m_destroyed: 92.1058
+    stability_score: -234.546
+    max_streak: 100
+    streak_steps: 238
+    max_multiplier: 5
+    steps: 465/662
+  - idx: 110
+    scenario_seed: 1996364961870011557
+    path_variant: 2
+    wind_variant: 12
+    seeds: {wind: 1317257563, rabbit: 496519550, entry: 1577697530, craft: 824897069, camera: 2112118672}
+    wind_dir_offset_deg: -7.3968
+    crash_reason: RabbitComplete
+    score: -524.647
+    energy_score_m_destroyed: 87.0652
+    stability_score: -239.493
+    max_streak: 100
+    streak_steps: 317
+    max_multiplier: 5
+    steps: 451/662
+  - idx: 111
+    scenario_seed: 6102653843071306188
+    path_variant: 2
+    wind_variant: 13
+    seeds: {wind: 988854559, rabbit: 879395620, entry: 2144206418, craft: 718668819, camera: 411728311}
+    wind_dir_offset_deg: 60.0811
+    crash_reason: RabbitComplete
+    score: -341.893
+    energy_score_m_destroyed: 86.9569
+    stability_score: -231.338
+    max_streak: 100
+    streak_steps: 268
+    max_multiplier: 5
+    steps: 416/662
+  - idx: 112
+    scenario_seed: 3370858766553058745
+    path_variant: 2
+    wind_variant: 14
+    seeds: {wind: 1825910987, rabbit: 1525413303, entry: 306260777, craft: 236540619, camera: 2029152297}
+    wind_dir_offset_deg: 23.236
+    crash_reason: RabbitComplete
+    score: -300.767
+    energy_score_m_destroyed: 91.6549
+    stability_score: -284.88
+    max_streak: 100
+    streak_steps: 235
+    max_multiplier: 5
+    steps: 502/662
+  - idx: 113
+    scenario_seed: 6643918858241451731
+    path_variant: 2
+    wind_variant: 15
+    seeds: {wind: 1433745121, rabbit: 1355243922, entry: 185020301, craft: 1877945345, camera: 720041331}
+    wind_dir_offset_deg: 36.9803
+    crash_reason: RabbitComplete
+    score: -333.708
+    energy_score_m_destroyed: 99.6726
+    stability_score: -243.57
+    max_streak: 100
+    streak_steps: 263
+    max_multiplier: 5
+    steps: 504/662
+  - idx: 114
+    scenario_seed: 6239979000737116330
+    path_variant: 2
+    wind_variant: 16
+    seeds: {wind: 1316422937, rabbit: 1010477197, entry: 948702076, craft: 1856621968, camera: 63977077}
+    wind_dir_offset_deg: -51.5604
+    crash_reason: RabbitComplete
+    score: -327.911
+    energy_score_m_destroyed: 97.0549
+    stability_score: -241.246
+    max_streak: 100
+    streak_steps: 284
+    max_multiplier: 5
+    steps: 441/662
+  - idx: 115
+    scenario_seed: 7409326641788056278
+    path_variant: 2
+    wind_variant: 17
+    seeds: {wind: 1556553188, rabbit: 221096712, entry: 1713143009, craft: 1973392410, camera: 1692893131}
+    wind_dir_offset_deg: 28.3015
+    crash_reason: RabbitComplete
+    score: -261.026
+    energy_score_m_destroyed: 97.1039
+    stability_score: -209.009
+    max_streak: 100
+    streak_steps: 218
+    max_multiplier: 5
+    steps: 426/662
+  - idx: 116
+    scenario_seed: 3190906023913502348
+    path_variant: 2
+    wind_variant: 18
+    seeds: {wind: 964707566, rabbit: 1363516838, entry: 94990195, craft: 394116500, camera: 1987426374}
+    wind_dir_offset_deg: 41.2189
+    crash_reason: RabbitComplete
+    score: -114.296
+    energy_score_m_destroyed: 113.062
+    stability_score: -192.317
+    max_streak: 74
+    streak_steps: 119
+    max_multiplier: 3.96
+    steps: 420/662
+  - idx: 117
+    scenario_seed: 5021894089297506857
+    path_variant: 2
+    wind_variant: 19
+    seeds: {wind: 1663890108, rabbit: 1751005468, entry: 2123567202, craft: 875485491, camera: 229446748}
+    wind_dir_offset_deg: 28.6649
+    crash_reason: RabbitComplete
+    score: -255.453
+    energy_score_m_destroyed: 113.824
+    stability_score: -236.943
+    max_streak: 100
+    streak_steps: 201
+    max_multiplier: 5
+    steps: 465/662
+  - idx: 118
+    scenario_seed: 9159303525859631400
+    path_variant: 2
+    wind_variant: 20
+    seeds: {wind: 910149078, rabbit: 585693812, entry: 403786297, craft: 606762315, camera: 1641729579}
+    wind_dir_offset_deg: 27.5091
+    crash_reason: RabbitComplete
+    score: -190.249
+    energy_score_m_destroyed: 102.397
+    stability_score: -216.729
+    max_streak: 100
+    streak_steps: 133
+    max_multiplier: 5
+    steps: 442/662
+  - idx: 119
+    scenario_seed: 3989037228270609763
+    path_variant: 2
+    wind_variant: 21
+    seeds: {wind: 961222489, rabbit: 639089437, entry: 883624272, craft: 107036998, camera: 2084759423}
+    wind_dir_offset_deg: -59.4412
+    crash_reason: RabbitComplete
+    score: -394.815
+    energy_score_m_destroyed: 76.4436
+    stability_score: -264.792
+    max_streak: 100
+    streak_steps: 267
+    max_multiplier: 5
+    steps: 463/662
+  - idx: 120
+    scenario_seed: 6635336886703077064
+    path_variant: 2
+    wind_variant: 22
+    seeds: {wind: 845387106, rabbit: 1196733432, entry: 209391772, craft: 1492183430, camera: 437345503}
+    wind_dir_offset_deg: 39.7852
+    crash_reason: RabbitComplete
+    score: -322.665
+    energy_score_m_destroyed: 95.649
+    stability_score: -260.671
+    max_streak: 100
+    streak_steps: 248
+    max_multiplier: 5
+    steps: 510/662
+  - idx: 121
+    scenario_seed: 3951418155440512231
+    path_variant: 2
+    wind_variant: 23
+    seeds: {wind: 1812204574, rabbit: 1328114656, entry: 593245885, craft: 2025165737, camera: 1172195640}
+    wind_dir_offset_deg: -7.23897
+    crash_reason: RabbitComplete
+    score: -137.153
+    energy_score_m_destroyed: 107.147
+    stability_score: -200.767
+    max_streak: 61
+    streak_steps: 173
+    max_multiplier: 3.44
+    steps: 416/662
+  - idx: 122
+    scenario_seed: 2734525929021379727
+    path_variant: 2
+    wind_variant: 24
+    seeds: {wind: 789163763, rabbit: 1659073287, entry: 1166472853, craft: 1937346470, camera: 1181077461}
+    wind_dir_offset_deg: -31.1269
+    crash_reason: RabbitComplete
+    score: -520.624
+    energy_score_m_destroyed: 78.5288
+    stability_score: -282.854
+    max_streak: 100
+    streak_steps: 333
+    max_multiplier: 5
+    steps: 501/662
+  - idx: 123
+    scenario_seed: 4493103163002940709
+    path_variant: 2
+    wind_variant: 25
+    seeds: {wind: 1335621297, rabbit: 21577253, entry: 26010768, craft: 1435332280, camera: 659584719}
+    wind_dir_offset_deg: 112.5
+    crash_reason: RabbitComplete
+    score: -288.238
+    energy_score_m_destroyed: 79.7314
+    stability_score: -203.343
+    max_streak: 100
+    streak_steps: 232
+    max_multiplier: 5
+    steps: 389/662
+  - idx: 124
+    scenario_seed: 6231798329683277014
+    path_variant: 2
+    wind_variant: 26
+    seeds: {wind: 1630298989, rabbit: 1624253704, entry: 1870077461, craft: 1034018286, camera: 1281759932}
+    wind_dir_offset_deg: 23.1342
+    crash_reason: RabbitComplete
+    score: -74.4815
+    energy_score_m_destroyed: 126.078
+    stability_score: -222.647
+    max_streak: 44
+    streak_steps: 53
+    max_multiplier: 2.76
+    steps: 414/662
+  - idx: 125
+    scenario_seed: 5184275369193237553
+    path_variant: 2
+    wind_variant: 27
+    seeds: {wind: 1167036091, rabbit: 1208120557, entry: 121489015, craft: 1765886755, camera: 1051150234}
+    wind_dir_offset_deg: 45.219
+    crash_reason: RabbitComplete
+    score: -268.858
+    energy_score_m_destroyed: 87.9368
+    stability_score: -211.324
+    max_streak: 100
+    streak_steps: 268
+    max_multiplier: 5
+    steps: 417/662
+  - idx: 126
+    scenario_seed: 4969454588504865241
+    path_variant: 2
+    wind_variant: 28
+    seeds: {wind: 1734277302, rabbit: 2092117488, entry: 1037279426, craft: 1933942641, camera: 83604974}
+    wind_dir_offset_deg: -10.2216
+    crash_reason: RabbitComplete
+    score: -400.41
+    energy_score_m_destroyed: 109.037
+    stability_score: -234.763
+    max_streak: 100
+    streak_steps: 319
+    max_multiplier: 5
+    steps: 486/662
+  - idx: 127
+    scenario_seed: 3223475640216550946
+    path_variant: 2
+    wind_variant: 29
+    seeds: {wind: 455040560, rabbit: 800130244, entry: 593616829, craft: 603650738, camera: 1766651502}
+    wind_dir_offset_deg: -10.4415
+    crash_reason: RabbitComplete
+    score: -415.738
+    energy_score_m_destroyed: 86.582
+    stability_score: -221.334
+    max_streak: 100
+    streak_steps: 310
+    max_multiplier: 5
+    steps: 427/662
+  - idx: 128
+    scenario_seed: 350322057845882619
+    path_variant: 2
+    wind_variant: 30
+    seeds: {wind: 1344960736, rabbit: 2021554999, entry: 824437049, craft: 1381329722, camera: 947254959}
+    wind_dir_offset_deg: -11.6576
+    crash_reason: RabbitComplete
+    score: -390.69
+    energy_score_m_destroyed: 83.609
+    stability_score: -237.998
+    max_streak: 100
+    streak_steps: 333
+    max_multiplier: 5
+    steps: 425/662
+  - idx: 129
+    scenario_seed: 806376399429809772
+    path_variant: 2
+    wind_variant: 31
+    seeds: {wind: 1746589826, rabbit: 1576993273, entry: 1189445774, craft: 614170562, camera: 615451467}
+    wind_dir_offset_deg: -33.3364
+    crash_reason: RabbitComplete
+    score: -390.439
+    energy_score_m_destroyed: 85.3295
+    stability_score: -213.667
+    max_streak: 100
+    streak_steps: 306
+    max_multiplier: 5
+    steps: 406/662
+  - idx: 130
+    scenario_seed: 7919683848750984040
+    path_variant: 2
+    wind_variant: 32
+    seeds: {wind: 2131367317, rabbit: 1585198431, entry: 2123636544, craft: 2075209526, camera: 916831584}
+    wind_dir_offset_deg: 34.9589
+    crash_reason: RabbitComplete
+    score: -384.686
+    energy_score_m_destroyed: 96.4405
+    stability_score: -235.2
+    max_streak: 100
+    streak_steps: 297
+    max_multiplier: 5
+    steps: 428/662
+  - idx: 131
+    scenario_seed: 8473925250572302334
+    path_variant: 2
+    wind_variant: 33
+    seeds: {wind: 2009657115, rabbit: 2027295881, entry: 917161608, craft: 1932596863, camera: 1693548193}
+    wind_dir_offset_deg: -13.6908
+    crash_reason: RabbitComplete
+    score: -497.871
+    energy_score_m_destroyed: 80.631
+    stability_score: -224.404
+    max_streak: 100
+    streak_steps: 357
+    max_multiplier: 5
+    steps: 436/662
+  - idx: 132
+    scenario_seed: 7087355994588559562
+    path_variant: 2
+    wind_variant: 34
+    seeds: {wind: 1914450571, rabbit: 1927215037, entry: 1752946634, craft: 1336310720, camera: 1088460181}
+    wind_dir_offset_deg: 8.46419
+    crash_reason: RabbitComplete
+    score: -237.043
+    energy_score_m_destroyed: 97.5396
+    stability_score: -190.923
+    max_streak: 100
+    streak_steps: 238
+    max_multiplier: 5
+    steps: 342/662
+  - idx: 133
+    scenario_seed: 26064967699034949
+    path_variant: 2
+    wind_variant: 35
+    seeds: {wind: 999100703, rabbit: 1549773834, entry: 1539897769, craft: 1553733788, camera: 1564792720}
+    wind_dir_offset_deg: -7.46213
+    crash_reason: RabbitComplete
+    score: -227.479
+    energy_score_m_destroyed: 101.888
+    stability_score: -228.412
+    max_streak: 100
+    streak_steps: 215
+    max_multiplier: 5
+    steps: 502/662
+  - idx: 134
+    scenario_seed: 3503621616947508500
+    path_variant: 2
+    wind_variant: 36
+    seeds: {wind: 270854850, rabbit: 554021414, entry: 553819103, craft: 1525483057, camera: 1525872464}
+    wind_dir_offset_deg: -3.66782
+    crash_reason: RabbitComplete
+    score: -399.247
+    energy_score_m_destroyed: 98.833
+    stability_score: -233.607
+    max_streak: 100
+    streak_steps: 293
+    max_multiplier: 5
+    steps: 428/662
+  - idx: 135
+    scenario_seed: 7971264842504402962
+    path_variant: 2
+    wind_variant: 37
+    seeds: {wind: 979299375, rabbit: 1350092861, entry: 646257822, craft: 1163869440, camera: 822049073}
+    wind_dir_offset_deg: -13.6315
+    crash_reason: RabbitComplete
+    score: -427.071
+    energy_score_m_destroyed: 87.9033
+    stability_score: -232.371
+    max_streak: 100
+    streak_steps: 316
+    max_multiplier: 5
+    steps: 436/662
+  - idx: 136
+    scenario_seed: 6282468700678583264
+    path_variant: 2
+    wind_variant: 38
+    seeds: {wind: 471688231, rabbit: 1240973107, entry: 1103998579, craft: 1308706604, camera: 50037885}
+    wind_dir_offset_deg: -46.9119
+    crash_reason: RabbitComplete
+    score: -463.316
+    energy_score_m_destroyed: 75.376
+    stability_score: -223.978
+    max_streak: 100
+    streak_steps: 304
+    max_multiplier: 5
+    steps: 414/662
+  - idx: 137
+    scenario_seed: 6083572158363587721
+    path_variant: 2
+    wind_variant: 39
+    seeds: {wind: 1842730883, rabbit: 1689794553, entry: 201503862, craft: 839485339, camera: 1927863626}
+    wind_dir_offset_deg: 25.8823
+    crash_reason: RabbitComplete
+    score: -280.532
+    energy_score_m_destroyed: 88.2533
+    stability_score: -233.029
+    max_streak: 100
+    streak_steps: 228
+    max_multiplier: 5
+    steps: 398/662
+  - idx: 138
+    scenario_seed: 1064212048793136649
+    path_variant: 2
+    wind_variant: 40
+    seeds: {wind: 1651690953, rabbit: 1296113741, entry: 2065303760, craft: 1644454279, camera: 2014457548}
+    wind_dir_offset_deg: 43.8917
+    crash_reason: RabbitComplete
+    score: -581.428
+    energy_score_m_destroyed: 84.3968
+    stability_score: -236.721
+    max_streak: 100
+    streak_steps: 406
+    max_multiplier: 5
+    steps: 461/662
+  - idx: 139
+    scenario_seed: 2277561303985569695
+    path_variant: 2
+    wind_variant: 41
+    seeds: {wind: 1503332536, rabbit: 1744929479, entry: 887278175, craft: 390929657, camera: 626666858}
+    wind_dir_offset_deg: -24.7722
+    crash_reason: RabbitComplete
+    score: -470.995
+    energy_score_m_destroyed: 88.9117
+    stability_score: -256.734
+    max_streak: 100
+    streak_steps: 309
+    max_multiplier: 5
+    steps: 464/662
+  - idx: 140
+    scenario_seed: 7088904004099410794
+    path_variant: 2
+    wind_variant: 42
+    seeds: {wind: 1231442852, rabbit: 630559932, entry: 1472748641, craft: 750999423, camera: 1969186273}
+    wind_dir_offset_deg: -27.6253
+    crash_reason: RabbitComplete
+    score: -402.644
+    energy_score_m_destroyed: 94.665
+    stability_score: -244.404
+    max_streak: 100
+    streak_steps: 314
+    max_multiplier: 5
+    steps: 448/662
+  - idx: 141
+    scenario_seed: 6809394782753903451
+    path_variant: 2
+    wind_variant: 43
+    seeds: {wind: 1309861584, rabbit: 2114986290, entry: 1130626210, craft: 308378052, camera: 1507790735}
+    wind_dir_offset_deg: -7.74601
+    crash_reason: RabbitComplete
+    score: -258.982
+    energy_score_m_destroyed: 85.7704
+    stability_score: -220.62
+    max_streak: 100
+    streak_steps: 208
+    max_multiplier: 5
+    steps: 444/662
+  - idx: 142
+    scenario_seed: 4452970288428921158
+    path_variant: 2
+    wind_variant: 44
+    seeds: {wind: 409354688, rabbit: 963108401, entry: 1479634415, craft: 274230892, camera: 310187624}
+    wind_dir_offset_deg: -21.2921
+    crash_reason: RabbitComplete
+    score: -440.15
+    energy_score_m_destroyed: 102.026
+    stability_score: -239.581
+    max_streak: 100
+    streak_steps: 312
+    max_multiplier: 5
+    steps: 451/662
+  - idx: 143
+    scenario_seed: 5631486271576069507
+    path_variant: 2
+    wind_variant: 45
+    seeds: {wind: 113213208, rabbit: 1716365400, entry: 755122140, craft: 1260879409, camera: 2075912212}
+    wind_dir_offset_deg: -17.9462
+    crash_reason: RabbitComplete
+    score: -453.025
+    energy_score_m_destroyed: 76.17
+    stability_score: -250.507
+    max_streak: 100
+    streak_steps: 303
+    max_multiplier: 5
+    steps: 437/662
+  - idx: 144
+    scenario_seed: 4210012444141097918
+    path_variant: 2
+    wind_variant: 46
+    seeds: {wind: 327522098, rabbit: 44583344, entry: 303983930, craft: 2000008726, camera: 146378214}
+    wind_dir_offset_deg: 78.4333
+    crash_reason: RabbitComplete
+    score: -187.795
+    energy_score_m_destroyed: 99.1371
+    stability_score: -227.326
+    max_streak: 100
+    streak_steps: 207
+    max_multiplier: 5
+    steps: 477/662
+  - idx: 145
+    scenario_seed: 3610140367428622164
+    path_variant: 2
+    wind_variant: 47
+    seeds: {wind: 2146351314, rabbit: 1175728579, entry: 2043897640, craft: 1289269966, camera: 274438726}
+    wind_dir_offset_deg: 47.1103
+    crash_reason: RabbitComplete
+    score: -411.287
+    energy_score_m_destroyed: 101.39
+    stability_score: -212.178
+    max_streak: 100
+    streak_steps: 302
+    max_multiplier: 5
+    steps: 431/662
+  - idx: 146
+    scenario_seed: 875345164553753019
+    path_variant: 2
+    wind_variant: 48
+    seeds: {wind: 1702041658, rabbit: 823506392, entry: 1554742262, craft: 852717293, camera: 697388354}
+    wind_dir_offset_deg: -10.131
+    crash_reason: RabbitComplete
+    score: -466.285
+    energy_score_m_destroyed: 75.6192
+    stability_score: -251.829
+    max_streak: 100
+    streak_steps: 329
+    max_multiplier: 5
+    steps: 461/662
+  - idx: 147
+    scenario_seed: 4596585889387323685
+    path_variant: 3
+    wind_variant: 0
+    seeds: {wind: 1173880468, rabbit: 880561086, entry: 420357235, craft: 1638593829, camera: 445033355}
+    wind_dir_offset_deg: 20.0733
+    crash_reason: RabbitComplete
+    score: -23.4996
+    energy_score_m_destroyed: 48.862
+    stability_score: -76.7489
+    max_streak: 21
+    streak_steps: 34
+    max_multiplier: 1.84
+    steps: 137/125
+  - idx: 148
+    scenario_seed: 2339911153763871178
+    path_variant: 3
+    wind_variant: 1
+    seeds: {wind: 2044089070, rabbit: 1939852908, entry: 1910261927, craft: 1600643331, camera: 340095288}
+    wind_dir_offset_deg: 15.5903
+    crash_reason: RabbitComplete
+    score: -14.8072
+    energy_score_m_destroyed: 44.2809
+    stability_score: -69.1001
+    max_streak: 5
+    streak_steps: 14
+    max_multiplier: 1.2
+    steps: 121/125
+  - idx: 149
+    scenario_seed: 842728139868875875
+    path_variant: 3
+    wind_variant: 2
+    seeds: {wind: 1497530193, rabbit: 832904636, entry: 2098328869, craft: 219141097, camera: 1802931812}
+    wind_dir_offset_deg: 61.2441
+    crash_reason: RabbitComplete
+    score: -29.7483
+    energy_score_m_destroyed: 39.9113
+    stability_score: -92.9096
+    max_streak: 29
+    streak_steps: 29
+    max_multiplier: 2.16
+    steps: 158/125
+  - idx: 150
+    scenario_seed: 3843213566251470385
+    path_variant: 3
+    wind_variant: 3
+    seeds: {wind: 1025073264, rabbit: 1140816017, entry: 406796586, craft: 2035018285, camera: 23170514}
+    wind_dir_offset_deg: 18.788
+    crash_reason: RabbitComplete
+    score: -16.439
+    energy_score_m_destroyed: 40.8931
+    stability_score: -61.1462
+    max_streak: 7
+    streak_steps: 13
+    max_multiplier: 1.28
+    steps: 132/125
+  - idx: 151
+    scenario_seed: 5110149254603670412
+    path_variant: 3
+    wind_variant: 4
+    seeds: {wind: 413503999, rabbit: 1538520511, entry: 1644105927, craft: 231543685, camera: 1340319647}
+    wind_dir_offset_deg: 3.59346
+    crash_reason: RabbitComplete
+    score: -20.9752
+    energy_score_m_destroyed: 43.366
+    stability_score: -85.6065
+    max_streak: 18
+    streak_steps: 18
+    max_multiplier: 1.72
+    steps: 137/125
+  - idx: 152
+    scenario_seed: 8019775379021242284
+    path_variant: 3
+    wind_variant: 5
+    seeds: {wind: 177007466, rabbit: 1637443520, entry: 753042438, craft: 1803315576, camera: 1744021598}
+    wind_dir_offset_deg: -19.5789
+    crash_reason: RabbitComplete
+    score: -74.5881
+    energy_score_m_destroyed: 37.3243
+    stability_score: -86.1924
+    max_streak: 76
+    streak_steps: 79
+    max_multiplier: 4.04
+    steps: 152/125
+  - idx: 153
+    scenario_seed: 6946066681428427
+    path_variant: 3
+    wind_variant: 6
+    seeds: {wind: 1563263260, rabbit: 2000435174, entry: 1404096799, craft: 425201562, camera: 1403384923}
+    wind_dir_offset_deg: -9.62435
+    crash_reason: RabbitComplete
+    score: -38.3476
+    energy_score_m_destroyed: 45.4053
+    stability_score: -94.8366
+    max_streak: 37
+    streak_steps: 37
+    max_multiplier: 2.48
+    steps: 165/125
+  - idx: 154
+    scenario_seed: 2984724237537704115
+    path_variant: 3
+    wind_variant: 7
+    seeds: {wind: 1334135290, rabbit: 1304977354, entry: 424037483, craft: 1046702336, camera: 1520698087}
+    wind_dir_offset_deg: 14.5505
+    crash_reason: RabbitComplete
+    score: -28.8638
+    energy_score_m_destroyed: 43.5315
+    stability_score: -93.8694
+    max_streak: 27
+    streak_steps: 39
+    max_multiplier: 2.08
+    steps: 139/125
+  - idx: 155
+    scenario_seed: 5341521981600553682
+    path_variant: 3
+    wind_variant: 8
+    seeds: {wind: 1605664453, rabbit: 49023239, entry: 2021274422, craft: 165606564, camera: 1060316710}
+    wind_dir_offset_deg: 112.5
+    crash_reason: RabbitComplete
+    score: -22.2994
+    energy_score_m_destroyed: 30.7144
+    stability_score: -65.4173
+    max_streak: 12
+    streak_steps: 12
+    max_multiplier: 1.48
+    steps: 159/125
+  - idx: 156
+    scenario_seed: 1026693945336520073
+    path_variant: 3
+    wind_variant: 9
+    seeds: {wind: 1101689394, rabbit: 1511187113, entry: 788610327, craft: 713967895, camera: 1126692489}
+    wind_dir_offset_deg: -25.326
+    crash_reason: RabbitComplete
+    score: -22.437
+    energy_score_m_destroyed: 40.5892
+    stability_score: -80.4525
+    max_streak: 15
+    streak_steps: 26
+    max_multiplier: 1.6
+    steps: 133/125
+  - idx: 157
+    scenario_seed: 7856964829499603933
+    path_variant: 3
+    wind_variant: 10
+    seeds: {wind: 1759723536, rabbit: 2046632818, entry: 175061090, craft: 25724445, camera: 499136629}
+    wind_dir_offset_deg: 12.16
+    crash_reason: RabbitComplete
+    score: -39.7522
+    energy_score_m_destroyed: 39.1462
+    stability_score: -89.1577
+    max_streak: 38
+    streak_steps: 49
+    max_multiplier: 2.52
+    steps: 172/125
+  - idx: 158
+    scenario_seed: 6611524124234776592
+    path_variant: 3
+    wind_variant: 11
+    seeds: {wind: 306485512, rabbit: 347305569, entry: 1529772717, craft: 286136565, camera: 1630795258}
+    wind_dir_offset_deg: -20.0995
+    crash_reason: RabbitComplete
+    score: -52.2479
+    energy_score_m_destroyed: 35.9633
+    stability_score: -86.0044
+    max_streak: 60
+    streak_steps: 62
+    max_multiplier: 3.4
+    steps: 147/125
+  - idx: 159
+    scenario_seed: 4928019624126362450
+    path_variant: 3
+    wind_variant: 12
+    seeds: {wind: 1022445371, rabbit: 991328187, entry: 24808576, craft: 1386380717, camera: 2098182493}
+    wind_dir_offset_deg: 55.763
+    crash_reason: RabbitComplete
+    score: -21.6532
+    energy_score_m_destroyed: 42.7093
+    stability_score: -75.0837
+    max_streak: 16
+    streak_steps: 31
+    max_multiplier: 1.64
+    steps: 128/125
+  - idx: 160
+    scenario_seed: 3107602431729615797
+    path_variant: 3
+    wind_variant: 13
+    seeds: {wind: 1032394104, rabbit: 190281902, entry: 310133223, craft: 332304196, camera: 1100485673}
+    wind_dir_offset_deg: 60.8796
+    crash_reason: RabbitComplete
+    score: -17.0355
+    energy_score_m_destroyed: 43.5822
+    stability_score: -79.4556
+    max_streak: 6
+    streak_steps: 7
+    max_multiplier: 1.24
+    steps: 130/125
+  - idx: 161
+    scenario_seed: 6529468412316418527
+    path_variant: 3
+    wind_variant: 14
+    seeds: {wind: 2007300129, rabbit: 2069857966, entry: 289716464, craft: 489924480, camera: 1054653316}
+    wind_dir_offset_deg: 8.07634
+    crash_reason: RabbitComplete
+    score: -26.3926
+    energy_score_m_destroyed: 39.7288
+    stability_score: -93.439
+    max_streak: 20
+    streak_steps: 20
+    max_multiplier: 1.8
+    steps: 164/125
+  - idx: 162
+    scenario_seed: 4156834400389083758
+    path_variant: 3
+    wind_variant: 15
+    seeds: {wind: 1294660550, rabbit: 637797703, entry: 807358121, craft: 1598116682, camera: 782789288}
+    wind_dir_offset_deg: -49.8305
+    crash_reason: RabbitComplete
+    score: -52.4763
+    energy_score_m_destroyed: 37.6829
+    stability_score: -87.2273
+    max_streak: 51
+    streak_steps: 66
+    max_multiplier: 3.04
+    steps: 143/125
+  - idx: 163
+    scenario_seed: 9159324803366750318
+    path_variant: 3
+    wind_variant: 16
+    seeds: {wind: 1362068164, rabbit: 1033007892, entry: 1901155039, craft: 88716671, camera: 360033723}
+    wind_dir_offset_deg: 40.8735
+    crash_reason: RabbitComplete
+    score: -32.6823
+    energy_score_m_destroyed: 37.9652
+    stability_score: -80.0416
+    max_streak: 35
+    streak_steps: 35
+    max_multiplier: 2.4
+    steps: 158/125
+  - idx: 164
+    scenario_seed: 6301825960027627938
+    path_variant: 3
+    wind_variant: 17
+    seeds: {wind: 1581875785, rabbit: 649981356, entry: 513952806, craft: 1284808282, camera: 1800338709}
+    wind_dir_offset_deg: 4.6571
+    crash_reason: RabbitComplete
+    score: -30.0954
+    energy_score_m_destroyed: 38.7563
+    stability_score: -67.2572
+    max_streak: 38
+    streak_steps: 41
+    max_multiplier: 2.52
+    steps: 140/125
+  - idx: 165
+    scenario_seed: 7025177750009753917
+    path_variant: 3
+    wind_variant: 18
+    seeds: {wind: 387533042, rabbit: 2024905012, entry: 1471641047, craft: 973420624, camera: 1044744744}
+    wind_dir_offset_deg: -6.09872
+    crash_reason: RabbitComplete
+    score: -32.3484
+    energy_score_m_destroyed: 40.0821
+    stability_score: -86.9439
+    max_streak: 30
+    streak_steps: 48
+    max_multiplier: 2.2
+    steps: 145/125
+  - idx: 166
+    scenario_seed: 1397739700259203673
+    path_variant: 3
+    wind_variant: 19
+    seeds: {wind: 358707385, rabbit: 3535574, entry: 1014484441, craft: 1108848970, camera: 1366213042}
+    wind_dir_offset_deg: -112.5
+    crash_reason: RabbitComplete
+    score: -54.9378
+    energy_score_m_destroyed: 32.3658
+    stability_score: -81.3706
+    max_streak: 62
+    streak_steps: 62
+    max_multiplier: 3.48
+    steps: 154/125
+  - idx: 167
+    scenario_seed: 277005283104810803
+    path_variant: 3
+    wind_variant: 20
+    seeds: {wind: 497209251, rabbit: 510516149, entry: 750179054, craft: 1023859920, camera: 553546262}
+    wind_dir_offset_deg: -44.525
+    crash_reason: RabbitComplete
+    score: -17.3099
+    energy_score_m_destroyed: 42.2187
+    stability_score: -77.7615
+    max_streak: 9
+    streak_steps: 15
+    max_multiplier: 1.36
+    steps: 132/125
+  - idx: 168
+    scenario_seed: 7819833960351540783
+    path_variant: 3
+    wind_variant: 21
+    seeds: {wind: 2122793578, rabbit: 39103386, entry: 2068903540, craft: 1463259252, camera: 102719815}
+    wind_dir_offset_deg: 112.5
+    crash_reason: RabbitComplete
+    score: -8.83586
+    energy_score_m_destroyed: 21.4903
+    stability_score: -60.3785
+    max_streak: 12
+    streak_steps: 12
+    max_multiplier: 1.48
+    steps: 152/125
+  - idx: 169
+    scenario_seed: 7815496250181741880
+    path_variant: 3
+    wind_variant: 22
+    seeds: {wind: 416703313, rabbit: 1353784021, entry: 581099481, craft: 1969133884, camera: 140531050}
+    wind_dir_offset_deg: -5.57477
+    crash_reason: RabbitComplete
+    score: -20.782
+    energy_score_m_destroyed: 37.4223
+    stability_score: -78.7676
+    max_streak: 16
+    streak_steps: 17
+    max_multiplier: 1.64
+    steps: 138/125
+  - idx: 170
+    scenario_seed: 1432209244616133135
+    path_variant: 3
+    wind_variant: 23
+    seeds: {wind: 1969363365, rabbit: 480390166, entry: 385282680, craft: 771863260, camera: 1917631657}
+    wind_dir_offset_deg: 33.3798
+    crash_reason: RabbitComplete
+    score: -17.503
+    energy_score_m_destroyed: 35.299
+    stability_score: -73.3861
+    max_streak: 0
+    streak_steps: 0
+    max_multiplier: 1
+    steps: 147/125
+  - idx: 171
+    scenario_seed: 5190689474574035002
+    path_variant: 3
+    wind_variant: 24
+    seeds: {wind: 441285824, rabbit: 417715711, entry: 831123998, craft: 2044497851, camera: 197284089}
+    wind_dir_offset_deg: -61.6829
+    crash_reason: RabbitComplete
+    score: -104.072
+    energy_score_m_destroyed: 32.8019
+    stability_score: -87.5811
+    max_streak: 88
+    streak_steps: 99
+    max_multiplier: 4.52
+    steps: 169/125
+  - idx: 172
+    scenario_seed: 9208063370850121077
+    path_variant: 3
+    wind_variant: 25
+    seeds: {wind: 664448311, rabbit: 916152336, entry: 458668385, craft: 1972695412, camera: 260357378}
+    wind_dir_offset_deg: 13.3121
+    crash_reason: RabbitComplete
+    score: -34.9287
+    energy_score_m_destroyed: 46.6834
+    stability_score: -91.7828
+    max_streak: 38
+    streak_steps: 43
+    max_multiplier: 2.52
+    steps: 153/125
+  - idx: 173
+    scenario_seed: 5816942662196434147
+    path_variant: 3
+    wind_variant: 26
+    seeds: {wind: 1980407858, rabbit: 1033167313, entry: 1006631542, craft: 2146166860, camera: 861884133}
+    wind_dir_offset_deg: -53.3504
+    crash_reason: RabbitComplete
+    score: -36.19
+    energy_score_m_destroyed: 36.7745
+    stability_score: -84.0337
+    max_streak: 34
+    streak_steps: 42
+    max_multiplier: 2.36
+    steps: 137/125
+  - idx: 174
+    scenario_seed: 6855061821394334780
+    path_variant: 3
+    wind_variant: 27
+    seeds: {wind: 1811728321, rabbit: 1961226210, entry: 681288562, craft: 2063089791, camera: 655383}
+    wind_dir_offset_deg: -7.85665
+    crash_reason: RabbitComplete
+    score: -40.5774
+    energy_score_m_destroyed: 37.5922
+    stability_score: -79.8837
+    max_streak: 40
+    streak_steps: 43
+    max_multiplier: 2.6
+    steps: 149/125
+  - idx: 175
+    scenario_seed: 7511013214137156324
+    path_variant: 3
+    wind_variant: 28
+    seeds: {wind: 547551145, rabbit: 1760076666, entry: 1912701872, craft: 1267627841, camera: 1411958940}
+    wind_dir_offset_deg: 21.9349
+    crash_reason: RabbitComplete
+    score: -24.7894
+    energy_score_m_destroyed: 38.9272
+    stability_score: -88.0579
+    max_streak: 7
+    streak_steps: 15
+    max_multiplier: 1.28
+    steps: 161/125
+  - idx: 176
+    scenario_seed: 3262930782809079186
+    path_variant: 3
+    wind_variant: 29
+    seeds: {wind: 309283865, rabbit: 135133471, entry: 1119942702, craft: 838664, camera: 1828444298}
+    wind_dir_offset_deg: -104.591
+    crash_reason: RabbitComplete
+    score: -34.7108
+    energy_score_m_destroyed: 40.3297
+    stability_score: -79.5454
+    max_streak: 40
+    streak_steps: 40
+    max_multiplier: 2.6
+    steps: 152/125
+  - idx: 177
+    scenario_seed: 2192307564278260996
+    path_variant: 3
+    wind_variant: 30
+    seeds: {wind: 600702102, rabbit: 1166963848, entry: 2015845998, craft: 123156594, camera: 657214078}
+    wind_dir_offset_deg: 46.0271
+    crash_reason: RabbitComplete
+    score: -16.4444
+    energy_score_m_destroyed: 42.3385
+    stability_score: -76.5522
+    max_streak: 9
+    streak_steps: 10
+    max_multiplier: 1.36
+    steps: 163/125
+  - idx: 178
+    scenario_seed: 5611210400739957541
+    path_variant: 3
+    wind_variant: 31
+    seeds: {wind: 691350979, rabbit: 307232929, entry: 2066133224, craft: 881321730, camera: 630181760}
+    wind_dir_offset_deg: 86.1068
+    crash_reason: RabbitComplete
+    score: -43.3124
+    energy_score_m_destroyed: 34.1222
+    stability_score: -87.9596
+    max_streak: 47
+    streak_steps: 49
+    max_multiplier: 2.88
+    steps: 149/125
+  - idx: 179
+    scenario_seed: 4880142615290750602
+    path_variant: 3
+    wind_variant: 32
+    seeds: {wind: 1240898938, rabbit: 1818754074, entry: 1798933047, craft: 648361645, camera: 1785778064}
+    wind_dir_offset_deg: 13.5731
+    crash_reason: RabbitComplete
+    score: -37.4606
+    energy_score_m_destroyed: 36.895
+    stability_score: -84.9133
+    max_streak: 38
+    streak_steps: 44
+    max_multiplier: 2.52
+    steps: 133/125
+  - idx: 180
+    scenario_seed: 5937074612696905064
+    path_variant: 3
+    wind_variant: 33
+    seeds: {wind: 956762545, rabbit: 101497313, entry: 966597016, craft: 227360967, camera: 1299801887}
+    wind_dir_offset_deg: -105.414
+    crash_reason: RabbitComplete
+    score: -30.2907
+    energy_score_m_destroyed: 37.4007
+    stability_score: -61.8062
+    max_streak: 26
+    streak_steps: 41
+    max_multiplier: 2.04
+    steps: 125/125
+  - idx: 181
+    scenario_seed: 2524601698010855582
+    path_variant: 3
+    wind_variant: 34
+    seeds: {wind: 752542992, rabbit: 1316877827, entry: 1493635917, craft: 1830868776, camera: 324677658}
+    wind_dir_offset_deg: -14.9264
+    crash_reason: RabbitComplete
+    score: -79.8316
+    energy_score_m_destroyed: 42.4757
+    stability_score: -90.4183
+    max_streak: 75
+    streak_steps: 78
+    max_multiplier: 4
+    steps: 169/125
+  - idx: 182
+    scenario_seed: 9103850721602608526
+    path_variant: 3
+    wind_variant: 35
+    seeds: {wind: 1714355191, rabbit: 357087616, entry: 1272561114, craft: 1175295106, camera: 447075280}
+    wind_dir_offset_deg: -71.1213
+    crash_reason: RabbitComplete
+    score: -70.2498
+    energy_score_m_destroyed: 39.6373
+    stability_score: -92.1337
+    max_streak: 73
+    streak_steps: 75
+    max_multiplier: 3.92
+    steps: 169/125
+  - idx: 183
+    scenario_seed: 8835680532483597968
+    path_variant: 3
+    wind_variant: 36
+    seeds: {wind: 575077603, rabbit: 1197353291, entry: 65834503, craft: 1768980400, camera: 60632739}
+    wind_dir_offset_deg: 47.709
+    crash_reason: RabbitComplete
+    score: -24.2581
+    energy_score_m_destroyed: 40.9397
+    stability_score: -78.1032
+    max_streak: 22
+    streak_steps: 24
+    max_multiplier: 1.88
+    steps: 169/125
+  - idx: 184
+    scenario_seed: 6093166102142409559
+    path_variant: 3
+    wind_variant: 37
+    seeds: {wind: 291079538, rabbit: 1862360124, entry: 25114890, craft: 1140078282, camera: 1302812400}
+    wind_dir_offset_deg: 23.9417
+    crash_reason: RabbitComplete
+    score: -38.482
+    energy_score_m_destroyed: 32.5277
+    stability_score: -72.786
+    max_streak: 40
+    streak_steps: 40
+    max_multiplier: 2.6
+    steps: 131/125
+  - idx: 185
+    scenario_seed: 4972418149246481425
+    path_variant: 3
+    wind_variant: 38
+    seeds: {wind: 503944524, rabbit: 1358848435, entry: 232291917, craft: 951004520, camera: 1328746648}
+    wind_dir_offset_deg: 33.4648
+    crash_reason: RabbitComplete
+    score: -20.2253
+    energy_score_m_destroyed: 45.3452
+    stability_score: -81.9905
+    max_streak: 14
+    streak_steps: 25
+    max_multiplier: 1.56
+    steps: 134/125
+  - idx: 186
+    scenario_seed: 3870666743112170764
+    path_variant: 3
+    wind_variant: 39
+    seeds: {wind: 1457150033, rabbit: 1557352752, entry: 162144910, craft: 1466540942, camera: 1746871574}
+    wind_dir_offset_deg: 32.0708
+    crash_reason: RabbitComplete
+    score: -38.8927
+    energy_score_m_destroyed: 36.5366
+    stability_score: -80.4248
+    max_streak: 33
+    streak_steps: 44
+    max_multiplier: 2.32
+    steps: 171/125
+  - idx: 187
+    scenario_seed: 8781149801496189388
+    path_variant: 3
+    wind_variant: 40
+    seeds: {wind: 1007293836, rabbit: 1903505829, entry: 1894551117, craft: 1285861212, camera: 1086715211}
+    wind_dir_offset_deg: 16.3112
+    crash_reason: RabbitComplete
+    score: -55.4104
+    energy_score_m_destroyed: 42.1747
+    stability_score: -87.5363
+    max_streak: 53
+    streak_steps: 63
+    max_multiplier: 3.12
+    steps: 193/125
+  - idx: 188
+    scenario_seed: 5049849508098598221
+    path_variant: 3
+    wind_variant: 41
+    seeds: {wind: 799011748, rabbit: 289787588, entry: 1775667437, craft: 728048716, camera: 69686881}
+    wind_dir_offset_deg: 41.7568
+    crash_reason: RabbitComplete
+    score: -37.9027
+    energy_score_m_destroyed: 47.6148
+    stability_score: -98.1295
+    max_streak: 32
+    streak_steps: 35
+    max_multiplier: 2.28
+    steps: 188/125
+  - idx: 189
+    scenario_seed: 7660654702609238031
+    path_variant: 3
+    wind_variant: 42
+    seeds: {wind: 291726142, rabbit: 862327103, entry: 716059112, craft: 1140096887, camera: 53410708}
+    wind_dir_offset_deg: -30.4052
+    crash_reason: RabbitComplete
+    score: -44.4016
+    energy_score_m_destroyed: 38.4215
+    stability_score: -97.9981
+    max_streak: 44
+    streak_steps: 64
+    max_multiplier: 2.76
+    steps: 153/125
+  - idx: 190
+    scenario_seed: 4227990322732999267
+    path_variant: 3
+    wind_variant: 43
+    seeds: {wind: 1857243060, rabbit: 2127421598, entry: 99957518, craft: 1801080216, camera: 1215141388}
+    wind_dir_offset_deg: 5.90074
+    crash_reason: RabbitComplete
+    score: -13.979
+    energy_score_m_destroyed: 46.4195
+    stability_score: -65.3543
+    max_streak: 15
+    streak_steps: 15
+    max_multiplier: 1.6
+    steps: 117/125
+  - idx: 191
+    scenario_seed: 2786099054306279905
+    path_variant: 3
+    wind_variant: 44
+    seeds: {wind: 1725703654, rabbit: 550415104, entry: 419804500, craft: 727326408, camera: 1710379412}
+    wind_dir_offset_deg: 24.9122
+    crash_reason: RabbitComplete
+    score: -21.0148
+    energy_score_m_destroyed: 40.8579
+    stability_score: -80.489
+    max_streak: 16
+    streak_steps: 19
+    max_multiplier: 1.64
+    steps: 132/125
+  - idx: 192
+    scenario_seed: 4335890543496353738
+    path_variant: 3
+    wind_variant: 45
+    seeds: {wind: 797905493, rabbit: 576843658, entry: 547248316, craft: 27119889, camera: 1286620896}
+    wind_dir_offset_deg: -2.21272
+    crash_reason: RabbitComplete
+    score: -16.069
+    energy_score_m_destroyed: 36.9302
+    stability_score: -77.4714
+    max_streak: 11
+    streak_steps: 11
+    max_multiplier: 1.44
+    steps: 140/125
+  - idx: 193
+    scenario_seed: 1244812718153633024
+    path_variant: 3
+    wind_variant: 46
+    seeds: {wind: 942893485, rabbit: 642999917, entry: 667843416, craft: 1592508619, camera: 658919737}
+    wind_dir_offset_deg: -26.1043
+    crash_reason: RabbitComplete
+    score: -19.365
+    energy_score_m_destroyed: 51.5398
+    stability_score: -81.3622
+    max_streak: 13
+    streak_steps: 18
+    max_multiplier: 1.52
+    steps: 147/125
+  - idx: 194
+    scenario_seed: 1503173602823212957
+    path_variant: 3
+    wind_variant: 47
+    seeds: {wind: 1212448617, rabbit: 735359516, entry: 781995573, craft: 1388240964, camera: 1699852256}
+    wind_dir_offset_deg: -43.2633
+    crash_reason: RabbitComplete
+    score: -73.9053
+    energy_score_m_destroyed: 35.3041
+    stability_score: -91.3167
+    max_streak: 74
+    streak_steps: 77
+    max_multiplier: 3.96
+    steps: 153/125
+  - idx: 195
+    scenario_seed: 2347278660257828619
+    path_variant: 3
+    wind_variant: 48
+    seeds: {wind: 1339288521, rabbit: 948487903, entry: 108211673, craft: 805437879, camera: 1247911921}
+    wind_dir_offset_deg: 54.6274
+    crash_reason: RabbitComplete
+    score: -28.2536
+    energy_score_m_destroyed: 44.3786
+    stability_score: -78.8013
+    max_streak: 26
+    streak_steps: 26
+    max_multiplier: 2.04
+    steps: 165/125
+  - idx: 196
+    scenario_seed: 1282168375531474526
+    path_variant: 4
+    wind_variant: 0
+    seeds: {wind: 634143988, rabbit: 532540410, entry: 878876520, craft: 709050435, camera: 2126665646}
+    wind_dir_offset_deg: -63.193
+    crash_reason: RabbitComplete
+    score: -251.644
+    energy_score_m_destroyed: 114.754
+    stability_score: -278.369
+    max_streak: 99
+    streak_steps: 272
+    max_multiplier: 4.96
+    steps: 518/893
+  - idx: 197
+    scenario_seed: 4249786362789057171
+    path_variant: 4
+    wind_variant: 1
+    seeds: {wind: 1693019361, rabbit: 1247388246, entry: 1531528080, craft: 1267401705, camera: 1233566319}
+    wind_dir_offset_deg: -10.7497
+    crash_reason: RabbitComplete
+    score: -359.251
+    energy_score_m_destroyed: 117.223
+    stability_score: -263.214
+    max_streak: 100
+    streak_steps: 275
+    max_multiplier: 5
+    steps: 507/893
+  - idx: 198
+    scenario_seed: 7235998694370452868
+    path_variant: 4
+    wind_variant: 2
+    seeds: {wind: 1595499419, rabbit: 1146422188, entry: 439337405, craft: 854862630, camera: 1175735625}
+    wind_dir_offset_deg: 14.1833
+    crash_reason: RabbitComplete
+    score: -176.231
+    energy_score_m_destroyed: 122.254
+    stability_score: -221.26
+    max_streak: 81
+    streak_steps: 173
+    max_multiplier: 4.24
+    steps: 460/893
+  - idx: 199
+    scenario_seed: 8268218675456448308
+    path_variant: 4
+    wind_variant: 3
+    seeds: {wind: 1686255458, rabbit: 1164540877, entry: 1020729795, craft: 1930621324, camera: 821585592}
+    wind_dir_offset_deg: -49.1528
+    crash_reason: RabbitComplete
+    score: -341.317
+    energy_score_m_destroyed: 121.136
+    stability_score: -295.133
+    max_streak: 100
+    streak_steps: 320
+    max_multiplier: 5
+    steps: 552/893
+  - idx: 200
+    scenario_seed: 1230119605190057874
+    path_variant: 4
+    wind_variant: 4
+    seeds: {wind: 1704437601, rabbit: 513954007, entry: 1342781753, craft: 2066565309, camera: 263660295}
+    wind_dir_offset_deg: -53.6557
+    crash_reason: RabbitComplete
+    score: -399.507
+    energy_score_m_destroyed: 115.05
+    stability_score: -302.787
+    max_streak: 100
+    streak_steps: 358
+    max_multiplier: 5
+    steps: 538/893
+  - idx: 201
+    scenario_seed: 5157962282739864308
+    path_variant: 4
+    wind_variant: 5
+    seeds: {wind: 1803627689, rabbit: 1777642692, entry: 1586302353, craft: 1723964231, camera: 338589704}
+    wind_dir_offset_deg: -1.96519
+    crash_reason: RabbitComplete
+    score: -409.916
+    energy_score_m_destroyed: 138.371
+    stability_score: -343.79
+    max_streak: 100
+    streak_steps: 294
+    max_multiplier: 5
+    steps: 625/893
+  - idx: 202
+    scenario_seed: 7695418167766512277
+    path_variant: 4
+    wind_variant: 6
+    seeds: {wind: 729820820, rabbit: 1859056832, entry: 1633180283, craft: 1120759323, camera: 765245309}
+    wind_dir_offset_deg: 1.59381
+    crash_reason: RabbitComplete
+    score: -340.468
+    energy_score_m_destroyed: 117.58
+    stability_score: -261.163
+    max_streak: 100
+    streak_steps: 264
+    max_multiplier: 5
+    steps: 517/893
+  - idx: 203
+    scenario_seed: 938635111634471575
+    path_variant: 4
+    wind_variant: 7
+    seeds: {wind: 419553128, rabbit: 1478250478, entry: 42201022, craft: 1271035606, camera: 551942436}
+    wind_dir_offset_deg: 38.5704
+    crash_reason: RabbitComplete
+    score: -372.432
+    energy_score_m_destroyed: 128.998
+    stability_score: -288.584
+    max_streak: 100
+    streak_steps: 270
+    max_multiplier: 5
+    steps: 568/893
+  - idx: 204
+    scenario_seed: 9027070734073916442
+    path_variant: 4
+    wind_variant: 8
+    seeds: {wind: 1012368413, rabbit: 2045276438, entry: 1273235167, craft: 1500252764, camera: 1257626910}
+    wind_dir_offset_deg: -11.7205
+    crash_reason: RabbitComplete
+    score: -570.692
+    energy_score_m_destroyed: 106.008
+    stability_score: -273.787
+    max_streak: 100
+    streak_steps: 383
+    max_multiplier: 5
+    steps: 514/893
+  - idx: 205
+    scenario_seed: 4457284345947992592
+    path_variant: 4
+    wind_variant: 9
+    seeds: {wind: 1387293738, rabbit: 1073462597, entry: 480101324, craft: 1474976027, camera: 894966679}
+    wind_dir_offset_deg: 8.75539
+    crash_reason: RabbitComplete
+    score: -197.385
+    energy_score_m_destroyed: 114.88
+    stability_score: -214.841
+    max_streak: 100
+    streak_steps: 221
+    max_multiplier: 5
+    steps: 448/893
+  - idx: 206
+    scenario_seed: 266987992526548203
+    path_variant: 4
+    wind_variant: 10
+    seeds: {wind: 854867034, rabbit: 1388321109, entry: 1273564257, craft: 205886978, camera: 1963480369}
+    wind_dir_offset_deg: -35.0281
+    crash_reason: RabbitComplete
+    score: -428.129
+    energy_score_m_destroyed: 106.86
+    stability_score: -253.429
+    max_streak: 100
+    streak_steps: 337
+    max_multiplier: 5
+    steps: 492/893
+  - idx: 207
+    scenario_seed: 8722103596087162989
+    path_variant: 4
+    wind_variant: 11
+    seeds: {wind: 459776884, rabbit: 1793959466, entry: 1086801658, craft: 124820755, camera: 1531034770}
+    wind_dir_offset_deg: -26.9559
+    crash_reason: RabbitComplete
+    score: -305.935
+    energy_score_m_destroyed: 120.564
+    stability_score: -265.961
+    max_streak: 100
+    streak_steps: 272
+    max_multiplier: 5
+    steps: 474/893
+  - idx: 208
+    scenario_seed: 3083135355852227218
+    path_variant: 4
+    wind_variant: 12
+    seeds: {wind: 1956945224, rabbit: 192243468, entry: 507605141, craft: 1966832588, camera: 723821478}
+    wind_dir_offset_deg: 8.43721
+    crash_reason: RabbitComplete
+    score: -251.467
+    energy_score_m_destroyed: 137.088
+    stability_score: -267.788
+    max_streak: 100
+    streak_steps: 259
+    max_multiplier: 5
+    steps: 545/893
+  - idx: 209
+    scenario_seed: 5814205395087528412
+    path_variant: 4
+    wind_variant: 13
+    seeds: {wind: 1557947554, rabbit: 956544841, entry: 330125764, craft: 1172093304, camera: 511713522}
+    wind_dir_offset_deg: 32.5209
+    crash_reason: RabbitComplete
+    score: -221.68
+    energy_score_m_destroyed: 134.154
+    stability_score: -241.61
+    max_streak: 100
+    streak_steps: 209
+    max_multiplier: 5
+    steps: 482/893
+  - idx: 210
+    scenario_seed: 7957364280173471734
+    path_variant: 4
+    wind_variant: 14
+    seeds: {wind: 624831464, rabbit: 1979260276, entry: 1472811413, craft: 1633582988, camera: 1232379555}
+    wind_dir_offset_deg: -7.12769
+    crash_reason: RabbitComplete
+    score: -263.761
+    energy_score_m_destroyed: 113.375
+    stability_score: -260.912
+    max_streak: 100
+    streak_steps: 296
+    max_multiplier: 5
+    steps: 523/893
+  - idx: 211
+    scenario_seed: 1062901877916839962
+    path_variant: 4
+    wind_variant: 15
+    seeds: {wind: 202044363, rabbit: 1160205346, entry: 46226653, craft: 171257730, camera: 1117327527}
+    wind_dir_offset_deg: 49.4456
+    crash_reason: RabbitComplete
+    score: -253.365
+    energy_score_m_destroyed: 125.904
+    stability_score: -278.892
+    max_streak: 100
+    streak_steps: 260
+    max_multiplier: 5
+    steps: 525/893
+  - idx: 212
+    scenario_seed: 2475436549581322110
+    path_variant: 4
+    wind_variant: 16
+    seeds: {wind: 1308363933, rabbit: 688835220, entry: 1275598119, craft: 1745675465, camera: 389546382}
+    wind_dir_offset_deg: -56.313
+    crash_reason: RabbitComplete
+    score: -502.737
+    energy_score_m_destroyed: 110.455
+    stability_score: -288.99
+    max_streak: 100
+    streak_steps: 384
+    max_multiplier: 5
+    steps: 510/893
+  - idx: 213
+    scenario_seed: 4904355097677857769
+    path_variant: 4
+    wind_variant: 17
+    seeds: {wind: 1755951438, rabbit: 352316608, entry: 751984175, craft: 112026184, camera: 252104718}
+    wind_dir_offset_deg: -50.2937
+    crash_reason: RabbitComplete
+    score: -222.933
+    energy_score_m_destroyed: 111.26
+    stability_score: -254.254
+    max_streak: 93
+    streak_steps: 253
+    max_multiplier: 4.72
+    steps: 485/893
+  - idx: 214
+    scenario_seed: 2331299634665879198
+    path_variant: 4
+    wind_variant: 18
+    seeds: {wind: 955166772, rabbit: 381350122, entry: 2069400625, craft: 1835729170, camera: 865038909}
+    wind_dir_offset_deg: 81.3816
+    crash_reason: RabbitComplete
+    score: -441.756
+    energy_score_m_destroyed: 105.744
+    stability_score: -289.978
+    max_streak: 100
+    streak_steps: 350
+    max_multiplier: 5
+    steps: 535/893
+  - idx: 215
+    scenario_seed: 7563094937985486647
+    path_variant: 4
+    wind_variant: 19
+    seeds: {wind: 31542848, rabbit: 38910085, entry: 1328005557, craft: 1769378997, camera: 2121439350}
+    wind_dir_offset_deg: -93.1607
+    crash_reason: RabbitComplete
+    score: -249.562
+    energy_score_m_destroyed: 103.922
+    stability_score: -241.056
+    max_streak: 84
+    streak_steps: 254
+    max_multiplier: 4.36
+    steps: 543/893
+  - idx: 216
+    scenario_seed: 5757716394702260487
+    path_variant: 4
+    wind_variant: 20
+    seeds: {wind: 1267762475, rabbit: 1468425813, entry: 389682794, craft: 568885101, camera: 779316182}
+    wind_dir_offset_deg: 16.3693
+    crash_reason: RabbitComplete
+    score: -478.588
+    energy_score_m_destroyed: 106.253
+    stability_score: -275.549
+    max_streak: 100
+    streak_steps: 353
+    max_multiplier: 5
+    steps: 505/893
+  - idx: 217
+    scenario_seed: 5807014969937914734
+    path_variant: 4
+    wind_variant: 21
+    seeds: {wind: 1610453399, rabbit: 1435485376, entry: 1607230794, craft: 495942005, camera: 1616310246}
+    wind_dir_offset_deg: -0.399402
+    crash_reason: RabbitComplete
+    score: -281.217
+    energy_score_m_destroyed: 121.612
+    stability_score: -239.475
+    max_streak: 100
+    streak_steps: 207
+    max_multiplier: 5
+    steps: 475/893
+  - idx: 218
+    scenario_seed: 6483782840683815593
+    path_variant: 4
+    wind_variant: 22
+    seeds: {wind: 1271928923, rabbit: 723574403, entry: 985972405, craft: 1341376941, camera: 826878314}
+    wind_dir_offset_deg: -64.1415
+    crash_reason: RabbitComplete
+    score: -258.61
+    energy_score_m_destroyed: 129.56
+    stability_score: -275.838
+    max_streak: 100
+    streak_steps: 240
+    max_multiplier: 5
+    steps: 520/893
+  - idx: 219
+    scenario_seed: 1882611577644004811
+    path_variant: 4
+    wind_variant: 23
+    seeds: {wind: 465762218, rabbit: 801724635, entry: 247053498, craft: 542710167, camera: 9461504}
+    wind_dir_offset_deg: 47.3326
+    crash_reason: RabbitComplete
+    score: -337.768
+    energy_score_m_destroyed: 102.21
+    stability_score: -252.062
+    max_streak: 100
+    streak_steps: 278
+    max_multiplier: 5
+    steps: 464/893
+  - idx: 220
+    scenario_seed: 8736329162246097380
+    path_variant: 4
+    wind_variant: 24
+    seeds: {wind: 1524241488, rabbit: 1723637381, entry: 1741082530, craft: 2022280285, camera: 1474979203}
+    wind_dir_offset_deg: 11.1101
+    crash_reason: RabbitComplete
+    score: -228.695
+    energy_score_m_destroyed: 128.798
+    stability_score: -251.883
+    max_streak: 100
+    streak_steps: 245
+    max_multiplier: 5
+    steps: 515/893
+  - idx: 221
+    scenario_seed: 3603017232287896675
+    path_variant: 4
+    wind_variant: 25
+    seeds: {wind: 40157666, rabbit: 1420445892, entry: 1485771316, craft: 155835777, camera: 1861059773}
+    wind_dir_offset_deg: -14.6054
+    crash_reason: RabbitComplete
+    score: -439.942
+    energy_score_m_destroyed: 107.756
+    stability_score: -271.769
+    max_streak: 100
+    streak_steps: 339
+    max_multiplier: 5
+    steps: 520/893
+  - idx: 222
+    scenario_seed: 1277619872440146477
+    path_variant: 4
+    wind_variant: 26
+    seeds: {wind: 411990025, rabbit: 1471925555, entry: 1822004410, craft: 1929595872, camera: 714115981}
+    wind_dir_offset_deg: 22.6641
+    crash_reason: RabbitComplete
+    score: -287.427
+    energy_score_m_destroyed: 124.52
+    stability_score: -253.934
+    max_streak: 100
+    streak_steps: 268
+    max_multiplier: 5
+    steps: 503/893
+  - idx: 223
+    scenario_seed: 4253024896869820182
+    path_variant: 4
+    wind_variant: 27
+    seeds: {wind: 1605048693, rabbit: 390443337, entry: 773834255, craft: 422767187, camera: 2005269883}
+    wind_dir_offset_deg: -53.0335
+    crash_reason: RabbitComplete
+    score: -328.609
+    energy_score_m_destroyed: 121.035
+    stability_score: -253.891
+    max_streak: 100
+    streak_steps: 284
+    max_multiplier: 5
+    steps: 490/893
+  - idx: 224
+    scenario_seed: 7398585200847537878
+    path_variant: 4
+    wind_variant: 28
+    seeds: {wind: 1921704909, rabbit: 2061530174, entry: 2025794468, craft: 1456898683, camera: 161855137}
+    wind_dir_offset_deg: 12.0493
+    crash_reason: RabbitComplete
+    score: -272.573
+    energy_score_m_destroyed: 123.529
+    stability_score: -262.972
+    max_streak: 100
+    streak_steps: 230
+    max_multiplier: 5
+    steps: 499/893
+  - idx: 225
+    scenario_seed: 5051596189997048525
+    path_variant: 4
+    wind_variant: 29
+    seeds: {wind: 1187123394, rabbit: 179715226, entry: 1347224013, craft: 1750533069, camera: 795231543}
+    wind_dir_offset_deg: -69.6681
+    crash_reason: RabbitComplete
+    score: -375.915
+    energy_score_m_destroyed: 104.192
+    stability_score: -280.766
+    max_streak: 100
+    streak_steps: 331
+    max_multiplier: 5
+    steps: 564/893
+  - idx: 226
+    scenario_seed: 8411899487636204596
+    path_variant: 4
+    wind_variant: 30
+    seeds: {wind: 377565470, rabbit: 1916573928, entry: 1344565728, craft: 133993007, camera: 1903179780}
+    wind_dir_offset_deg: -15.0632
+    crash_reason: RabbitComplete
+    score: -278.979
+    energy_score_m_destroyed: 129.945
+    stability_score: -215.613
+    max_streak: 100
+    streak_steps: 232
+    max_multiplier: 5
+    steps: 493/893
+  - idx: 227
+    scenario_seed: 7601643969733779485
+    path_variant: 4
+    wind_variant: 31
+    seeds: {wind: 1292627776, rabbit: 1298011711, entry: 1340416809, craft: 1724986776, camera: 305735518}
+    wind_dir_offset_deg: -32.073
+    crash_reason: RabbitComplete
+    score: -583.934
+    energy_score_m_destroyed: 108.841
+    stability_score: -278.107
+    max_streak: 100
+    streak_steps: 411
+    max_multiplier: 5
+    steps: 506/893
+  - idx: 228
+    scenario_seed: 4871467175623606881
+    path_variant: 4
+    wind_variant: 32
+    seeds: {wind: 1701649261, rabbit: 1209463628, entry: 528359846, craft: 942334494, camera: 1577232767}
+    wind_dir_offset_deg: 1.19984
+    crash_reason: RabbitComplete
+    score: -257.476
+    energy_score_m_destroyed: 124.573
+    stability_score: -225.508
+    max_streak: 100
+    streak_steps: 235
+    max_multiplier: 5
+    steps: 462/893
+  - idx: 229
+    scenario_seed: 8480101012654240252
+    path_variant: 4
+    wind_variant: 33
+    seeds: {wind: 1830010284, rabbit: 1834083266, entry: 872501864, craft: 88192180, camera: 812132426}
+    wind_dir_offset_deg: -21.0087
+    crash_reason: RabbitComplete
+    score: -332.262
+    energy_score_m_destroyed: 135.903
+    stability_score: -289.625
+    max_streak: 100
+    streak_steps: 252
+    max_multiplier: 5
+    steps: 554/893
+  - idx: 230
+    scenario_seed: 4817028186168709421
+    path_variant: 4
+    wind_variant: 34
+    seeds: {wind: 414224171, rabbit: 1942204771, entry: 1620407509, craft: 893992258, camera: 216399453}
+    wind_dir_offset_deg: 0.577708
+    crash_reason: RabbitComplete
+    score: -268.804
+    energy_score_m_destroyed: 128.068
+    stability_score: -261.463
+    max_streak: 100
+    streak_steps: 223
+    max_multiplier: 5
+    steps: 482/893
+  - idx: 231
+    scenario_seed: 916909136167358142
+    path_variant: 4
+    wind_variant: 35
+    seeds: {wind: 1442104348, rabbit: 1136564803, entry: 1354875704, craft: 1738122046, camera: 850677823}
+    wind_dir_offset_deg: -34.5132
+    crash_reason: RabbitComplete
+    score: -450.609
+    energy_score_m_destroyed: 107.532
+    stability_score: -271.49
+    max_streak: 100
+    streak_steps: 356
+    max_multiplier: 5
+    steps: 492/893
+  - idx: 232
+    scenario_seed: 5816265437026779742
+    path_variant: 4
+    wind_variant: 36
+    seeds: {wind: 2139251624, rabbit: 2063976109, entry: 1981922268, craft: 1120808425, camera: 987964304}
+    wind_dir_offset_deg: 11.2103
+    crash_reason: RabbitComplete
+    score: -440.144
+    energy_score_m_destroyed: 101.844
+    stability_score: -268.129
+    max_streak: 100
+    streak_steps: 332
+    max_multiplier: 5
+    steps: 485/893
+  - idx: 233
+    scenario_seed: 8408752712268014973
+    path_variant: 4
+    wind_variant: 37
+    seeds: {wind: 1994714635, rabbit: 145865546, entry: 1624376100, craft: 1335803836, camera: 242982734}
+    wind_dir_offset_deg: 4.19089
+    crash_reason: RabbitComplete
+    score: -462.443
+    energy_score_m_destroyed: 114.998
+    stability_score: -303.572
+    max_streak: 100
+    streak_steps: 335
+    max_multiplier: 5
+    steps: 553/893
+  - idx: 234
+    scenario_seed: 4056325832697204402
+    path_variant: 4
+    wind_variant: 38
+    seeds: {wind: 1603390272, rabbit: 1941181832, entry: 1634242921, craft: 875750693, camera: 146110608}
+    wind_dir_offset_deg: 1.39647
+    crash_reason: RabbitComplete
+    score: -365.92
+    energy_score_m_destroyed: 136.887
+    stability_score: -279.505
+    max_streak: 100
+    streak_steps: 266
+    max_multiplier: 5
+    steps: 550/893
+  - idx: 235
+    scenario_seed: 2400252297776461762
+    path_variant: 4
+    wind_variant: 39
+    seeds: {wind: 1559319629, rabbit: 615984109, entry: 110349177, craft: 905678407, camera: 1677782318}
+    wind_dir_offset_deg: 67.3763
+    crash_reason: RabbitComplete
+    score: -395.441
+    energy_score_m_destroyed: 102.985
+    stability_score: -248.478
+    max_streak: 100
+    streak_steps: 348
+    max_multiplier: 5
+    steps: 478/893
+  - idx: 236
+    scenario_seed: 6207786439555727368
+    path_variant: 4
+    wind_variant: 40
+    seeds: {wind: 1748120518, rabbit: 303099160, entry: 93465349, craft: 1950202879, camera: 1150022317}
+    wind_dir_offset_deg: 85.6079
+    crash_reason: RabbitComplete
+    score: -220.016
+    energy_score_m_destroyed: 106.037
+    stability_score: -250.688
+    max_streak: 92
+    streak_steps: 214
+    max_multiplier: 4.68
+    steps: 488/893
+  - idx: 237
+    scenario_seed: 2845631322332056400
+    path_variant: 4
+    wind_variant: 41
+    seeds: {wind: 1482325078, rabbit: 1306205745, entry: 1737640975, craft: 1251219699, camera: 1796002201}
+    wind_dir_offset_deg: 16.2856
+    crash_reason: RabbitComplete
+    score: -460.285
+    energy_score_m_destroyed: 114.991
+    stability_score: -271.214
+    max_streak: 100
+    streak_steps: 359
+    max_multiplier: 5
+    steps: 504/893
+  - idx: 238
+    scenario_seed: 7430342414955991880
+    path_variant: 4
+    wind_variant: 42
+    seeds: {wind: 305879949, rabbit: 1180945054, entry: 445292019, craft: 527226326, camera: 2060765396}
+    wind_dir_offset_deg: 13.02
+    crash_reason: RabbitComplete
+    score: -325.64
+    energy_score_m_destroyed: 112.712
+    stability_score: -270.868
+    max_streak: 100
+    streak_steps: 274
+    max_multiplier: 5
+    steps: 513/893
+  - idx: 239
+    scenario_seed: 9070097231503542796
+    path_variant: 4
+    wind_variant: 43
+    seeds: {wind: 2009358455, rabbit: 495580903, entry: 1365424780, craft: 1998945303, camera: 353494109}
+    wind_dir_offset_deg: -50.6042
+    crash_reason: RabbitComplete
+    score: -428.789
+    energy_score_m_destroyed: 110.221
+    stability_score: -318.681
+    max_streak: 100
+    streak_steps: 353
+    max_multiplier: 5
+    steps: 575/893
+  - idx: 240
+    scenario_seed: 8763240587318157668
+    path_variant: 4
+    wind_variant: 44
+    seeds: {wind: 2013702291, rabbit: 1870974700, entry: 1394969115, craft: 56914833, camera: 704319230}
+    wind_dir_offset_deg: -13.9302
+    crash_reason: RabbitComplete
+    score: -459.351
+    energy_score_m_destroyed: 118.374
+    stability_score: -287.276
+    max_streak: 100
+    streak_steps: 343
+    max_multiplier: 5
+    steps: 538/893
+  - idx: 241
+    scenario_seed: 466822306393055425
+    path_variant: 4
+    wind_variant: 45
+    seeds: {wind: 1176156782, rabbit: 1238848183, entry: 1611007231, craft: 252222437, camera: 944461584}
+    wind_dir_offset_deg: 0.0544447
+    crash_reason: RabbitComplete
+    score: -440.7
+    energy_score_m_destroyed: 111.846
+    stability_score: -306.148
+    max_streak: 100
+    streak_steps: 322
+    max_multiplier: 5
+    steps: 578/893
+  - idx: 242
+    scenario_seed: 5947814756542722230
+    path_variant: 4
+    wind_variant: 46
+    seeds: {wind: 1919832334, rabbit: 1864775523, entry: 654723081, craft: 1768493699, camera: 189408885}
+    wind_dir_offset_deg: -8.07776
+    crash_reason: RabbitComplete
+    score: -282.26
+    energy_score_m_destroyed: 121.192
+    stability_score: -250.367
+    max_streak: 100
+    streak_steps: 230
+    max_multiplier: 5
+    steps: 516/893
+  - idx: 243
+    scenario_seed: 3617238563561482004
+    path_variant: 4
+    wind_variant: 47
+    seeds: {wind: 214527428, rabbit: 287331154, entry: 1312742408, craft: 1588804539, camera: 100416758}
+    wind_dir_offset_deg: -68.9631
+    crash_reason: RabbitComplete
+    score: -334.78
+    energy_score_m_destroyed: 102.838
+    stability_score: -297.701
+    max_streak: 100
+    streak_steps: 324
+    max_multiplier: 5
+    steps: 505/893
+  - idx: 244
+    scenario_seed: 3254841979990734353
+    path_variant: 4
+    wind_variant: 48
+    seeds: {wind: 357620631, rabbit: 1231924415, entry: 253767388, craft: 358863660, camera: 1104635158}
+    wind_dir_offset_deg: 34.9309
+    crash_reason: RabbitComplete
+    score: -479.496
+    energy_score_m_destroyed: 102.714
+    stability_score: -279.242
+    max_streak: 100
+    streak_steps: 343
+    max_multiplier: 5
+    steps: 510/893
+  - idx: 245
+    scenario_seed: 7752586373323610994
+    path_variant: 5
+    wind_variant: 0
+    seeds: {wind: 819414703, rabbit: 1613318067, entry: 129437349, craft: 1040344456, camera: 1709634128}
+    wind_dir_offset_deg: 31.6041
+    crash_reason: RabbitComplete
+    score: -415.162
+    energy_score_m_destroyed: 214.682
+    stability_score: -402.909
+    max_streak: 100
+    streak_steps: 412
+    max_multiplier: 5
+    steps: 828/610
+  - idx: 246
+    scenario_seed: 3379590288385992705
+    path_variant: 5
+    wind_variant: 1
+    seeds: {wind: 392908363, rabbit: 1651503716, entry: 847931102, craft: 1591396469, camera: 661418262}
+    wind_dir_offset_deg: -25.7352
+    crash_reason: RabbitComplete
+    score: -174.321
+    energy_score_m_destroyed: 234.146
+    stability_score: -417.978
+    max_streak: 38
+    streak_steps: 210
+    max_multiplier: 2.52
+    steps: 881/610
+  - idx: 247
+    scenario_seed: 7363392058037877112
+    path_variant: 5
+    wind_variant: 2
+    seeds: {wind: 1685366934, rabbit: 1224271813, entry: 222203530, craft: 1453263512, camera: 782174850}
+    wind_dir_offset_deg: 37.949
+    crash_reason: RabbitComplete
+    score: -329.333
+    energy_score_m_destroyed: 224.431
+    stability_score: -392.511
+    max_streak: 100
+    streak_steps: 290
+    max_multiplier: 5
+    steps: 789/610
+  - idx: 248
+    scenario_seed: 812122984228650589
+    path_variant: 5
+    wind_variant: 3
+    seeds: {wind: 1499817824, rabbit: 1737474640, entry: 1811997502, craft: 2069960379, camera: 938327093}
+    wind_dir_offset_deg: 16.2691
+    crash_reason: RabbitComplete
+    score: -303.509
+    energy_score_m_destroyed: 220.469
+    stability_score: -429.018
+    max_streak: 76
+    streak_steps: 330
+    max_multiplier: 4.04
+    steps: 839/610
+  - idx: 249
+    scenario_seed: 6087345273704477580
+    path_variant: 5
+    wind_variant: 4
+    seeds: {wind: 1886465339, rabbit: 1819295128, entry: 2146346917, craft: 963480992, camera: 137621753}
+    wind_dir_offset_deg: 25.9026
+    crash_reason: RabbitComplete
+    score: -171.397
+    energy_score_m_destroyed: 225.258
+    stability_score: -453.348
+    max_streak: 35
+    streak_steps: 225
+    max_multiplier: 2.4
+    steps: 832/610
+  - idx: 250
+    scenario_seed: 7995347454358278830
+    path_variant: 5
+    wind_variant: 5
+    seeds: {wind: 1045300859, rabbit: 441994877, entry: 284674722, craft: 1933132156, camera: 1762872832}
+    wind_dir_offset_deg: 53.761
+    crash_reason: RabbitComplete
+    score: -170.41
+    energy_score_m_destroyed: 242.077
+    stability_score: -418.408
+    max_streak: 71
+    streak_steps: 164
+    max_multiplier: 3.84
+    steps: 798/610
+  - idx: 251
+    scenario_seed: 728743368121696218
+    path_variant: 5
+    wind_variant: 6
+    seeds: {wind: 845539895, rabbit: 2129560310, entry: 258509414, craft: 1627934124, camera: 1286488580}
+    wind_dir_offset_deg: 4.23547
+    crash_reason: RabbitComplete
+    score: -305.989
+    energy_score_m_destroyed: 200.872
+    stability_score: -411.847
+    max_streak: 92
+    streak_steps: 366
+    max_multiplier: 4.68
+    steps: 782/610
+  - idx: 252
+    scenario_seed: 6124877451927107215
+    path_variant: 5
+    wind_variant: 7
+    seeds: {wind: 2107783672, rabbit: 1345403546, entry: 1921600039, craft: 1294317698, camera: 1267857987}
+    wind_dir_offset_deg: 34.3328
+    crash_reason: RabbitComplete
+    score: -289.077
+    energy_score_m_destroyed: 229.895
+    stability_score: -416.314
+    max_streak: 92
+    streak_steps: 312
+    max_multiplier: 4.68
+    steps: 794/610
+  - idx: 253
+    scenario_seed: 8423456730276114736
+    path_variant: 5
+    wind_variant: 8
+    seeds: {wind: 810660725, rabbit: 2104324488, entry: 1870857148, craft: 15583817, camera: 627153957}
+    wind_dir_offset_deg: 6.25322
+    crash_reason: Eval
+    score: -0.988563
+    energy_score_m_destroyed: 4.14418
+    stability_score: -68.0197
+    max_streak: 0
+    streak_steps: 0
+    max_multiplier: 1
+    steps: 193/610
+  - idx: 254
+    scenario_seed: 8678483993515293845
+    path_variant: 5
+    wind_variant: 9
+    seeds: {wind: 2109289123, rabbit: 1000584769, entry: 172679722, craft: 1038826655, camera: 1458306055}
+    wind_dir_offset_deg: 48.6301
+    crash_reason: RabbitComplete
+    score: -149.676
+    energy_score_m_destroyed: 216.167
+    stability_score: -418.442
+    max_streak: 55
+    streak_steps: 142
+    max_multiplier: 3.2
+    steps: 778/610
+  - idx: 255
+    scenario_seed: 4440333493626100749
+    path_variant: 5
+    wind_variant: 10
+    seeds: {wind: 419003684, rabbit: 725842918, entry: 967793973, craft: 23613845, camera: 1697579085}
+    wind_dir_offset_deg: -63.0645
+    crash_reason: RabbitComplete
+    score: -184.699
+    energy_score_m_destroyed: 211.762
+    stability_score: -394.216
+    max_streak: 46
+    streak_steps: 247
+    max_multiplier: 2.84
+    steps: 807/610
+  - idx: 256
+    scenario_seed: 3067934937124907590
+    path_variant: 5
+    wind_variant: 11
+    seeds: {wind: 418864814, rabbit: 464900089, entry: 2135568616, craft: 375155995, camera: 1572923141}
+    wind_dir_offset_deg: 78.583
+    crash_reason: RabbitComplete
+    score: -217.039
+    energy_score_m_destroyed: 249.285
+    stability_score: -430.081
+    max_streak: 92
+    streak_steps: 215
+    max_multiplier: 4.68
+    steps: 812/610
+  - idx: 257
+    scenario_seed: 3079382897388730982
+    path_variant: 5
+    wind_variant: 12
+    seeds: {wind: 815696622, rabbit: 378972817, entry: 1131144261, craft: 1692897756, camera: 1819844232}
+    wind_dir_offset_deg: -82.5254
+    crash_reason: RabbitComplete
+    score: -180.093
+    energy_score_m_destroyed: 226.909
+    stability_score: -380.374
+    max_streak: 48
+    streak_steps: 218
+    max_multiplier: 2.92
+    steps: 755/610
+  - idx: 258
+    scenario_seed: 8162523629503369664
+    path_variant: 5
+    wind_variant: 13
+    seeds: {wind: 1727436098, rabbit: 425357195, entry: 326010878, craft: 110926722, camera: 867065691}
+    wind_dir_offset_deg: 46.7908
+    crash_reason: RabbitComplete
+    score: -246.697
+    energy_score_m_destroyed: 218.986
+    stability_score: -427.082
+    max_streak: 77
+    streak_steps: 315
+    max_multiplier: 4.08
+    steps: 817/610
+  - idx: 259
+    scenario_seed: 6280240815973472788
+    path_variant: 5
+    wind_variant: 14
+    seeds: {wind: 33268757, rabbit: 1745884838, entry: 1906255877, craft: 1498132011, camera: 1965973903}
+    wind_dir_offset_deg: 22.0267
+    crash_reason: RabbitComplete
+    score: -165.544
+    energy_score_m_destroyed: 240.048
+    stability_score: -390.435
+    max_streak: 55
+    streak_steps: 178
+    max_multiplier: 3.2
+    steps: 733/610
+  - idx: 260
+    scenario_seed: 5788242457630819468
+    path_variant: 5
+    wind_variant: 15
+    seeds: {wind: 853482285, rabbit: 1117095187, entry: 2134879154, craft: 1453874145, camera: 193269335}
+    wind_dir_offset_deg: 51.3771
+    crash_reason: RabbitComplete
+    score: -194.606
+    energy_score_m_destroyed: 211.9
+    stability_score: -447.328
+    max_streak: 55
+    streak_steps: 222
+    max_multiplier: 3.2
+    steps: 832/610
+  - idx: 261
+    scenario_seed: 4738393013910781559
+    path_variant: 5
+    wind_variant: 16
+    seeds: {wind: 2139595469, rabbit: 1481848928, entry: 1944289212, craft: 1306727611, camera: 1158830897}
+    wind_dir_offset_deg: 32.0927
+    crash_reason: RabbitComplete
+    score: -208.178
+    energy_score_m_destroyed: 222.153
+    stability_score: -381.883
+    max_streak: 47
+    streak_steps: 252
+    max_multiplier: 2.88
+    steps: 789/610
+  - idx: 262
+    scenario_seed: 3398738687570513383
+    path_variant: 5
+    wind_variant: 17
+    seeds: {wind: 359147589, rabbit: 1925270035, entry: 207551913, craft: 727179168, camera: 1045408313}
+    wind_dir_offset_deg: 17.2634
+    crash_reason: RabbitComplete
+    score: -192.658
+    energy_score_m_destroyed: 232.336
+    stability_score: -416.209
+    max_streak: 75
+    streak_steps: 196
+    max_multiplier: 4
+    steps: 806/610
+  - idx: 263
+    scenario_seed: 7908674899208374259
+    path_variant: 5
+    wind_variant: 18
+    seeds: {wind: 616908542, rabbit: 1783981580, entry: 480603480, craft: 2092228186, camera: 2085815290}
+    wind_dir_offset_deg: 4.48895
+    crash_reason: RabbitComplete
+    score: -208.666
+    energy_score_m_destroyed: 222.456
+    stability_score: -412.803
+    max_streak: 55
+    streak_steps: 250
+    max_multiplier: 3.2
+    steps: 818/610
+  - idx: 264
+    scenario_seed: 8849076490615576361
+    path_variant: 5
+    wind_variant: 19
+    seeds: {wind: 1676959903, rabbit: 1282887695, entry: 1433480453, craft: 1464356776, camera: 1541693291}
+    wind_dir_offset_deg: -22.6128
+    crash_reason: RabbitComplete
+    score: -228.708
+    energy_score_m_destroyed: 206.615
+    stability_score: -383.188
+    max_streak: 55
+    streak_steps: 298
+    max_multiplier: 3.2
+    steps: 733/610
+  - idx: 265
+    scenario_seed: 176871449078701256
+    path_variant: 5
+    wind_variant: 20
+    seeds: {wind: 709342842, rabbit: 1209058414, entry: 295627675, craft: 214665610, camera: 515063535}
+    wind_dir_offset_deg: 31.2671
+    crash_reason: RabbitComplete
+    score: -153.112
+    energy_score_m_destroyed: 232.61
+    stability_score: -395
+    max_streak: 73
+    streak_steps: 149
+    max_multiplier: 3.92
+    steps: 788/610
+  - idx: 266
+    scenario_seed: 1809586455935058403
+    path_variant: 5
+    wind_variant: 21
+    seeds: {wind: 220218765, rabbit: 135952665, entry: 2008550630, craft: 155765974, camera: 639082807}
+    wind_dir_offset_deg: 96.8475
+    crash_reason: RabbitComplete
+    score: -203.625
+    energy_score_m_destroyed: 243.015
+    stability_score: -382.433
+    max_streak: 77
+    streak_steps: 214
+    max_multiplier: 4.08
+    steps: 819/610
+  - idx: 267
+    scenario_seed: 8495526569655082806
+    path_variant: 5
+    wind_variant: 22
+    seeds: {wind: 823345266, rabbit: 219480057, entry: 985000796, craft: 1685479136, camera: 197923614}
+    wind_dir_offset_deg: -92.7107
+    crash_reason: RabbitComplete
+    score: -219.173
+    energy_score_m_destroyed: 218.562
+    stability_score: -430.094
+    max_streak: 55
+    streak_steps: 269
+    max_multiplier: 3.2
+    steps: 816/610
+  - idx: 268
+    scenario_seed: 1242618285177290264
+    path_variant: 5
+    wind_variant: 23
+    seeds: {wind: 1074494811, rabbit: 913979437, entry: 797359459, craft: 2136523855, camera: 1388341177}
+    wind_dir_offset_deg: -40.5811
+    crash_reason: RabbitComplete
+    score: -253.392
+    energy_score_m_destroyed: 229.545
+    stability_score: -411.165
+    max_streak: 58
+    streak_steps: 322
+    max_multiplier: 3.32
+    steps: 830/610
+  - idx: 269
+    scenario_seed: 4138536964048918202
+    path_variant: 5
+    wind_variant: 24
+    seeds: {wind: 498634563, rabbit: 592274997, entry: 256587676, craft: 1205515947, camera: 1095894878}
+    wind_dir_offset_deg: 52.7577
+    crash_reason: RabbitComplete
+    score: -217.894
+    energy_score_m_destroyed: 239.091
+    stability_score: -420.589
+    max_streak: 81
+    streak_steps: 241
+    max_multiplier: 4.24
+    steps: 833/610
+  - idx: 270
+    scenario_seed: 3810037562470562186
+    path_variant: 5
+    wind_variant: 25
+    seeds: {wind: 581131990, rabbit: 1390892176, entry: 827487888, craft: 472007448, camera: 1617511385}
+    wind_dir_offset_deg: -31.4986
+    crash_reason: RabbitComplete
+    score: -201.861
+    energy_score_m_destroyed: 231.323
+    stability_score: -403.285
+    max_streak: 55
+    streak_steps: 238
+    max_multiplier: 3.2
+    steps: 790/610
+  - idx: 271
+    scenario_seed: 6956304302018805454
+    path_variant: 5
+    wind_variant: 26
+    seeds: {wind: 516693695, rabbit: 446275087, entry: 736261520, craft: 1372957717, camera: 549127240}
+    wind_dir_offset_deg: -43.8874
+    crash_reason: RabbitComplete
+    score: -209.216
+    energy_score_m_destroyed: 213.117
+    stability_score: -384.275
+    max_streak: 69
+    streak_steps: 245
+    max_multiplier: 3.76
+    steps: 777/610
+  - idx: 272
+    scenario_seed: 5875085868499979299
+    path_variant: 5
+    wind_variant: 27
+    seeds: {wind: 494414116, rabbit: 878024325, entry: 374934883, craft: 1637044024, camera: 796323845}
+    wind_dir_offset_deg: 27.4384
+    crash_reason: RabbitComplete
+    score: -268.74
+    energy_score_m_destroyed: 211.052
+    stability_score: -397.135
+    max_streak: 81
+    streak_steps: 309
+    max_multiplier: 4.24
+    steps: 776/610
+  - idx: 273
+    scenario_seed: 2067476452277886451
+    path_variant: 5
+    wind_variant: 28
+    seeds: {wind: 1761557444, rabbit: 376892712, entry: 1654127215, craft: 785316158, camera: 614925974}
+    wind_dir_offset_deg: 10.6448
+    crash_reason: RabbitComplete
+    score: -188.419
+    energy_score_m_destroyed: 231.964
+    stability_score: -427.61
+    max_streak: 76
+    streak_steps: 205
+    max_multiplier: 4.04
+    steps: 787/610
+  - idx: 274
+    scenario_seed: 2859043762586249019
+    path_variant: 5
+    wind_variant: 29
+    seeds: {wind: 94572412, rabbit: 1702149777, entry: 1747551347, craft: 745933230, camera: 84636081}
+    wind_dir_offset_deg: 11.9591
+    crash_reason: RabbitComplete
+    score: -317.623
+    energy_score_m_destroyed: 233.023
+    stability_score: -430.428
+    max_streak: 100
+    streak_steps: 387
+    max_multiplier: 5
+    steps: 840/610
+  - idx: 275
+    scenario_seed: 3999814442395785706
+    path_variant: 5
+    wind_variant: 30
+    seeds: {wind: 1627241602, rabbit: 70013823, entry: 1645473302, craft: 1811592900, camera: 1866770060}
+    wind_dir_offset_deg: 11.9377
+    crash_reason: RabbitComplete
+    score: -276.6
+    energy_score_m_destroyed: 214.329
+    stability_score: -445.927
+    max_streak: 69
+    streak_steps: 348
+    max_multiplier: 3.76
+    steps: 886/610
+  - idx: 276
+    scenario_seed: 6944619460908898958
+    path_variant: 5
+    wind_variant: 31
+    seeds: {wind: 1579869911, rabbit: 461201617, entry: 1847769405, craft: 91154257, camera: 2060630591}
+    wind_dir_offset_deg: 50.4172
+    crash_reason: RabbitComplete
+    score: -196.377
+    energy_score_m_destroyed: 226.815
+    stability_score: -428.077
+    max_streak: 69
+    streak_steps: 212
+    max_multiplier: 3.76
+    steps: 848/610
+  - idx: 277
+    scenario_seed: 2685802153571621716
+    path_variant: 5
+    wind_variant: 32
+    seeds: {wind: 19259704, rabbit: 1972236280, entry: 1719916723, craft: 382342913, camera: 600291105}
+    wind_dir_offset_deg: 5.8344
+    crash_reason: RabbitComplete
+    score: -194.358
+    energy_score_m_destroyed: 241.694
+    stability_score: -412.35
+    max_streak: 66
+    streak_steps: 231
+    max_multiplier: 3.64
+    steps: 795/610
+  - idx: 278
+    scenario_seed: 3610666289937365940
+    path_variant: 5
+    wind_variant: 33
+    seeds: {wind: 1090871040, rabbit: 1136947400, entry: 495862668, craft: 2081601213, camera: 212309593}
+    wind_dir_offset_deg: 6.07035
+    crash_reason: RabbitComplete
+    score: -152.33
+    energy_score_m_destroyed: 254.136
+    stability_score: -345.702
+    max_streak: 42
+    streak_steps: 161
+    max_multiplier: 2.68
+    steps: 757/610
+  - idx: 279
+    scenario_seed: 3720110439946782993
+    path_variant: 5
+    wind_variant: 34
+    seeds: {wind: 1657588326, rabbit: 352880773, entry: 67505479, craft: 824284310, camera: 450916394}
+    wind_dir_offset_deg: 83.7413
+    crash_reason: RabbitComplete
+    score: -251.738
+    energy_score_m_destroyed: 227.524
+    stability_score: -417.437
+    max_streak: 100
+    streak_steps: 262
+    max_multiplier: 5
+    steps: 801/610
+  - idx: 280
+    scenario_seed: 1760298897414333511
+    path_variant: 5
+    wind_variant: 35
+    seeds: {wind: 1192104408, rabbit: 100073556, entry: 959899573, craft: 1205120611, camera: 1339983645}
+    wind_dir_offset_deg: -104.963
+    crash_reason: RabbitComplete
+    score: -182.492
+    energy_score_m_destroyed: 226.671
+    stability_score: -375.442
+    max_streak: 48
+    streak_steps: 217
+    max_multiplier: 2.92
+    steps: 809/610
+  - idx: 281
+    scenario_seed: 8817023188871448160
+    path_variant: 5
+    wind_variant: 36
+    seeds: {wind: 916077338, rabbit: 1133407221, entry: 1406573919, craft: 1886660497, camera: 502348711}
+    wind_dir_offset_deg: -28.5792
+    crash_reason: RabbitComplete
+    score: -419.588
+    energy_score_m_destroyed: 199.754
+    stability_score: -421.429
+    max_streak: 100
+    streak_steps: 433
+    max_multiplier: 5
+    steps: 865/610
+  - idx: 282
+    scenario_seed: 5686306911819283293
+    path_variant: 5
+    wind_variant: 37
+    seeds: {wind: 1326786131, rabbit: 888525020, entry: 447842536, craft: 1236664554, camera: 1431750475}
+    wind_dir_offset_deg: 15.3847
+    crash_reason: RabbitComplete
+    score: -179.132
+    energy_score_m_destroyed: 243.184
+    stability_score: -362.716
+    max_streak: 74
+    streak_steps: 187
+    max_multiplier: 3.96
+    steps: 747/610
+  - idx: 283
+    scenario_seed: 2397009228159259999
+    path_variant: 5
+    wind_variant: 38
+    seeds: {wind: 921428769, rabbit: 1754295382, entry: 2017216018, craft: 1830882604, camera: 992169046}
+    wind_dir_offset_deg: 26.5503
+    crash_reason: RabbitComplete
+    score: -215.86
+    energy_score_m_destroyed: 234.496
+    stability_score: -408.481
+    max_streak: 78
+    streak_steps: 239
+    max_multiplier: 4.12
+    steps: 787/610
+  - idx: 284
+    scenario_seed: 7942758429041171323
+    path_variant: 5
+    wind_variant: 39
+    seeds: {wind: 1817849910, rabbit: 1103705543, entry: 48467730, craft: 976103247, camera: 1688620757}
+    wind_dir_offset_deg: 51.3632
+    crash_reason: RabbitComplete
+    score: -216.639
+    energy_score_m_destroyed: 253.079
+    stability_score: -454.417
+    max_streak: 67
+    streak_steps: 257
+    max_multiplier: 3.68
+    steps: 819/610
+  - idx: 285
+    scenario_seed: 1067718611172874648
+    path_variant: 5
+    wind_variant: 40
+    seeds: {wind: 1080190039, rabbit: 950423409, entry: 1195224978, craft: 409252736, camera: 336750703}
+    wind_dir_offset_deg: -53.8242
+    crash_reason: RabbitComplete
+    score: -154.771
+    energy_score_m_destroyed: 245.384
+    stability_score: -388.324
+    max_streak: 34
+    streak_steps: 182
+    max_multiplier: 2.36
+    steps: 811/610
+  - idx: 286
+    scenario_seed: 6590561916353508967
+    path_variant: 5
+    wind_variant: 41
+    seeds: {wind: 519601888, rabbit: 1241222335, entry: 249581485, craft: 164602765, camera: 1998059062}
+    wind_dir_offset_deg: 35.0812
+    crash_reason: RabbitComplete
+    score: -187.101
+    energy_score_m_destroyed: 213.84
+    stability_score: -429.054
+    max_streak: 54
+    streak_steps: 213
+    max_multiplier: 3.16
+    steps: 805/610
+  - idx: 287
+    scenario_seed: 3888384457578600302
+    path_variant: 5
+    wind_variant: 42
+    seeds: {wind: 904889237, rabbit: 90979247, entry: 55173822, craft: 415839482, camera: 457987113}
+    wind_dir_offset_deg: 111.287
+    crash_reason: RabbitComplete
+    score: -244.55
+    energy_score_m_destroyed: 218.138
+    stability_score: -414.096
+    max_streak: 79
+    streak_steps: 284
+    max_multiplier: 4.16
+    steps: 738/610
+  - idx: 288
+    scenario_seed: 988164537514352858
+    path_variant: 5
+    wind_variant: 43
+    seeds: {wind: 1999966608, rabbit: 260783883, entry: 1897161226, craft: 576897578, camera: 1002536989}
+    wind_dir_offset_deg: 68.5927
+    crash_reason: RabbitComplete
+    score: -355.711
+    energy_score_m_destroyed: 206.803
+    stability_score: -434.301
+    max_streak: 100
+    streak_steps: 376
+    max_multiplier: 5
+    steps: 863/610
+  - idx: 289
+    scenario_seed: 4253831204437325205
+    path_variant: 5
+    wind_variant: 44
+    seeds: {wind: 445514495, rabbit: 528947087, entry: 1371757394, craft: 590394176, camera: 1809274006}
+    wind_dir_offset_deg: -48.4103
+    crash_reason: RabbitComplete
+    score: -297.666
+    energy_score_m_destroyed: 216.533
+    stability_score: -431.138
+    max_streak: 73
+    streak_steps: 378
+    max_multiplier: 3.92
+    steps: 818/610
+  - idx: 290
+    scenario_seed: 1834817108270075922
+    path_variant: 5
+    wind_variant: 45
+    seeds: {wind: 1852648275, rabbit: 1523370504, entry: 482558010, craft: 1950065348, camera: 953714357}
+    wind_dir_offset_deg: 5.89758
+    crash_reason: Eval
+    score: -198.193
+    energy_score_m_destroyed: 195.14
+    stability_score: -413.915
+    max_streak: 69
+    streak_steps: 227
+    max_multiplier: 3.76
+    steps: 813/610
+  - idx: 291
+    scenario_seed: 3759209716876975528
+    path_variant: 5
+    wind_variant: 46
+    seeds: {wind: 1574861826, rabbit: 1381582693, entry: 273516218, craft: 171897322, camera: 1926301901}
+    wind_dir_offset_deg: 29.4197
+    crash_reason: RabbitComplete
+    score: -253.272
+    energy_score_m_destroyed: 222.007
+    stability_score: -416.657
+    max_streak: 84
+    streak_steps: 287
+    max_multiplier: 4.36
+    steps: 765/610
+  - idx: 292
+    scenario_seed: 8687994253210808255
+    path_variant: 5
+    wind_variant: 47
+    seeds: {wind: 1613920570, rabbit: 1295572251, entry: 1696843734, craft: 1170103687, camera: 1107675430}
+    wind_dir_offset_deg: 11.2859
+    crash_reason: RabbitComplete
+    score: -176.627
+    energy_score_m_destroyed: 243.574
+    stability_score: -424.336
+    max_streak: 41
+    streak_steps: 231
+    max_multiplier: 2.64
+    steps: 821/610
+  - idx: 293
+    scenario_seed: 1225890969088114856
+    path_variant: 5
+    wind_variant: 48
+    seeds: {wind: 91638701, rabbit: 1822906798, entry: 391610433, craft: 1276150449, camera: 489909484}
+    wind_dir_offset_deg: 10.6164
+    crash_reason: RabbitComplete
+    score: -318.046
+    energy_score_m_destroyed: 237.12
+    stability_score: -445.869
+    max_streak: 100
+    streak_steps: 283
+    max_multiplier: 5
+    steps: 896/610

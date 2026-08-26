@@ -523,14 +523,20 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
             || (gCraftSigmas.craftPitchEffSigma > 0.0)
             || (gCraftSigmas.craftRollEffSigma  > 0.0)
             || (gCraftSigmas.craftServoSlewSigma > 0.0)   // 037 actuator dynamics
-            || (gCraftSigmas.craftThrustTauSigma > 0.0));
+            || (gCraftSigmas.craftThrustTauSigma > 0.0)
+            || (gCraftSigmas.craftImuMisalignSigma > 0.0) // 043 US5 IMU axes + cmQ
+            || (gCraftSigmas.craftGyroScaleSigma  > 0.0)
+            || (gCraftSigmas.craftAccelScaleSigma > 0.0)
+            || (gCraftSigmas.craftAccelBiasSigma  > 0.0)
+            || (gCraftSigmas.craftCmQSigma        > 0.0));
 
     {
         std::ostringstream hdr;
         hdr << "Scenario       ScenarioSeed  Heading°   Roll°   Pitch°  Speed%  WindDir°  North°  East°  Down°";
         if (any_craft_active) {
             hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svSlew   thrTau   pwmPh    CraftSeed"
-                << "   camYaw  camPit  camRol   camDx   camDy   camDz  camWng   CamSeed";
+                << "   camYaw  camPit  camRol   camDx   camDy   camDz  camWng   CamSeed"
+                << "   misR  misP  misY    gyX    gyY    gyZ    acX    acY    acZ     abX     abY     abZ     cmQ";
         }
         *logger.info() << hdr.str() << endl;
     }
@@ -538,7 +544,8 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
         std::ostringstream sep;
         sep << "--------  -----------------  --------  ------  ------  ------  --------  ------  -----  -----";
         if (any_craft_active) {
-            sep << "  --------  -------  -------  -------  -------  -------  -------  -------  -------  -------  -----------";
+            sep << "  --------  -------  -------  -------  -------  -------  -------  -------  -------  -------  -----------"
+                << "  ----  ----  ----  -----  -----  -----  -----  -----  -----  ------  ------  ------  ------";
         }
         *logger.info() << sep.str() << endl;
     }
@@ -608,7 +615,25 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
                  << " " << setw(7) << sv.cameraDeltas.mountTranslation.z()
                  << " " << setw(7) << sv.cameraDeltas.wingThicknessDelta
                  << "  0x" << hex << setw(8) << setfill('0') << sv.cameraSeed << dec << setfill(' ')
-                 << std::dec << std::setfill(' ');
+                 << std::dec << std::setfill(' ')
+                 // 043 US5 — IMU imperfection axes (deg / fraction / g) + cmQ.
+                 << "  " << setprecision(2)
+                 << setw(6) << static_cast<double>(cd.craftImuMisalignRoll)   // deg
+                 << setw(6) << static_cast<double>(cd.craftImuMisalignPitch)  // deg
+                 << setw(6) << static_cast<double>(cd.craftImuMisalignYaw)    // deg
+                 << setprecision(3)
+                 << setw(7) << static_cast<double>(cd.craftGyroScaleX)
+                 << setw(7) << static_cast<double>(cd.craftGyroScaleY)
+                 << setw(7) << static_cast<double>(cd.craftGyroScaleZ)
+                 << setw(7) << static_cast<double>(cd.craftAccelScaleX)
+                 << setw(7) << static_cast<double>(cd.craftAccelScaleY)
+                 << setw(7) << static_cast<double>(cd.craftAccelScaleZ)
+                 << setprecision(4)
+                 << setw(8) << static_cast<double>(cd.craftAccelBiasX)        // g
+                 << setw(8) << static_cast<double>(cd.craftAccelBiasY)        // g
+                 << setw(8) << static_cast<double>(cd.craftAccelBiasZ)        // g
+                 << setprecision(2)
+                 << setw(7) << static_cast<double>(cd.craftCmQ);              // Cm_q
         }
 
         *logger.info() << line.str() << endl;
@@ -1045,6 +1070,22 @@ static WorkerInit buildWorkerInit() {
                 meta.craftServoSlew = cd.craftServoSlew;
                 meta.craftThrustTau = cd.craftThrustTau;
                 meta.craftServoPwmPhase = cd.craftServoPwmPhase;  // 037 servo v2
+                // 043 US5 — IMU imperfection axes + pitch damping (full
+                // magnitude; NOT ramped, so the worker's applyVariationScale
+                // leaves them untouched — FR-055).
+                meta.craftImuMisalignRoll  = cd.craftImuMisalignRoll;
+                meta.craftImuMisalignPitch = cd.craftImuMisalignPitch;
+                meta.craftImuMisalignYaw   = cd.craftImuMisalignYaw;
+                meta.craftGyroScaleX = cd.craftGyroScaleX;
+                meta.craftGyroScaleY = cd.craftGyroScaleY;
+                meta.craftGyroScaleZ = cd.craftGyroScaleZ;
+                meta.craftAccelScaleX = cd.craftAccelScaleX;
+                meta.craftAccelScaleY = cd.craftAccelScaleY;
+                meta.craftAccelScaleZ = cd.craftAccelScaleZ;
+                meta.craftAccelBiasX = cd.craftAccelBiasX;
+                meta.craftAccelBiasY = cd.craftAccelBiasY;
+                meta.craftAccelBiasZ = cd.craftAccelBiasZ;
+                meta.craftCmQ = cd.craftCmQ;
                 meta.craftSeed = gScenarioVariations[idx].craftSeed;
                 // (033 cleanup) rabbitSpeedSeed assignment removed — field
                 // deleted from ScenarioMetadata + ScenarioVariations.
@@ -1960,6 +2001,12 @@ int main(int argc, char** argv)
   // 037 actuator-dynamics sigmas (servo slew / thrust lag tau).
   gCraftSigmas.craftServoSlewSigma = cfg.craftServoSlewSigma;
   gCraftSigmas.craftThrustTauSigma = cfg.craftThrustTauSigma;
+  // 043 US5 IMU imperfection + pitch-damping sigmas.
+  gCraftSigmas.craftImuMisalignSigma = cfg.craftImuMisalignSigma;
+  gCraftSigmas.craftGyroScaleSigma   = cfg.craftGyroScaleSigma;
+  gCraftSigmas.craftAccelScaleSigma  = cfg.craftAccelScaleSigma;
+  gCraftSigmas.craftAccelBiasSigma   = cfg.craftAccelBiasSigma;
+  gCraftSigmas.craftCmQSigma         = cfg.craftCmQSigma;
 
   // Initialize global rabbit speed config.
   // EnableRabbitSpeedVariations=0 forces sigma=0 regardless of the .ini value
@@ -2004,6 +2051,20 @@ int main(int argc, char** argv)
       static_cast<size_t>(std::max(cfg.simNumPathsPerGen, 1)) *
       static_cast<size_t>(windScenarioCount);
   populateScenarioSeedTable(totalScenarioCount);
+
+  // 043 T008a (FR-058) — regiment pre-run gate. If ExpectedScenarioCount is set
+  // (043 pins 294 = 6 paths × 49 winds), a mismatch is FATAL so a silent bump to
+  // SimNumPathsPerGeneration / WindScenarios cannot reach a bake. 0 = disabled.
+  if (cfg.expectedScenarioCount > 0 &&
+      totalScenarioCount != static_cast<size_t>(cfg.expectedScenarioCount)) {
+    *logger.info() << "FATAL ERROR: scenario regiment = " << totalScenarioCount
+                   << " (" << std::max(cfg.simNumPathsPerGen, 1) << " paths × "
+                   << windScenarioCount << " winds) but ExpectedScenarioCount = "
+                   << cfg.expectedScenarioCount << " — the regiment changed "
+                      "(FR-058). Fix SimNumPathsPerGeneration/WindScenarios or "
+                      "update ExpectedScenarioCount deliberately." << endl;
+    exit(1);
+  }
 
   // 038 t7 — chase-shares-source-airspace guard (Constitution V loud-fail).
   // The swap in chaseScenarioSeedAt() pairs source scenario i with chase

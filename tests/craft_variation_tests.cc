@@ -277,3 +277,222 @@ TEST(CraftVariation, ScenarioMetadataRoundTripsAllCraftFields) {
     EXPECT_EQ(dst.windVariantIndex, src.windVariantIndex);
     EXPECT_EQ(dst.scenarioSequence, src.scenarioSequence);
 }
+
+// ============================================================================
+// 043 US5 — IMU imperfection axes + craftCmQ pitch damping.
+// ============================================================================
+
+namespace {
+// The six pre-043 additive/multiplicative sigmas + the two 037 actuator sigmas,
+// all non-zero, so a draw exercises every pre-existing axis.
+CraftSigmas preExistingSigmas() {
+    CraftSigmas s;
+    s.craftCGSigma = 0.03; s.craftDragSigma = 0.05; s.craftTrimSigma = 0.01;
+    s.craftThrustSigma = 0.05; s.craftPitchEffSigma = 0.05; s.craftRollEffSigma = 0.05;
+    s.craftServoSlewSigma = 4.0; s.craftThrustTauSigma = 0.06;
+    return s;
+}
+}  // namespace
+
+// T017 — σ=0 on every NEW axis is a bit-identical no-op: the new fields sit at
+// nominal (0 misalign / 1.0 scale / 0 bias / -4.2 cmQ) AND — because the new
+// draws are appended at the BOTTOM — every pre-existing draw keeps its value
+// whether the new sigmas are 0 or not (draw order frozen; FR-053, SC-009).
+TEST(CraftVariationImu, ZeroSigmaNewAxesAreNominalNoOp) {
+    CraftSigmas s = preExistingSigmas();  // new-axis sigmas stay 0.0 (defaults)
+    ClassPRNG prng(0x0043A5A5u);
+    CraftDeltas d = generateCraftFromClassPRNG(prng, s);
+
+    EXPECT_EQ(d.craftImuMisalignRoll,  static_cast<gp_scalar>(0.0));
+    EXPECT_EQ(d.craftImuMisalignPitch, static_cast<gp_scalar>(0.0));
+    EXPECT_EQ(d.craftImuMisalignYaw,   static_cast<gp_scalar>(0.0));
+    EXPECT_EQ(d.craftGyroScaleX, static_cast<gp_scalar>(1.0));
+    EXPECT_EQ(d.craftGyroScaleY, static_cast<gp_scalar>(1.0));
+    EXPECT_EQ(d.craftGyroScaleZ, static_cast<gp_scalar>(1.0));
+    EXPECT_EQ(d.craftAccelScaleX, static_cast<gp_scalar>(1.0));
+    EXPECT_EQ(d.craftAccelScaleY, static_cast<gp_scalar>(1.0));
+    EXPECT_EQ(d.craftAccelScaleZ, static_cast<gp_scalar>(1.0));
+    EXPECT_EQ(d.craftAccelBiasX, static_cast<gp_scalar>(0.0));
+    EXPECT_EQ(d.craftAccelBiasY, static_cast<gp_scalar>(0.0));
+    EXPECT_EQ(d.craftAccelBiasZ, static_cast<gp_scalar>(0.0));
+    EXPECT_EQ(d.craftCmQ, static_cast<gp_scalar>(-4.2));
+}
+
+// T017/SC-009 — the appended draws do NOT disturb any pre-existing draw. Same
+// seed, new sigmas 0 vs. >0: every pre-existing field is bit-identical.
+TEST(CraftVariationImu, AppendedDrawsLeavePreExistingUnchanged) {
+    constexpr uint32_t kSeed = 0x5EED0043u;
+    CraftSigmas without = preExistingSigmas();       // new sigmas = 0
+    CraftSigmas with = preExistingSigmas();           // new sigmas > 0
+    with.craftImuMisalignSigma = 2.0; with.craftGyroScaleSigma = 0.02;
+    with.craftAccelScaleSigma = 0.02; with.craftAccelBiasSigma = 0.04;
+    with.craftCmQSigma = 0.32;
+
+    ClassPRNG pa(kSeed), pb(kSeed);
+    CraftDeltas a = generateCraftFromClassPRNG(pa, without);
+    CraftDeltas b = generateCraftFromClassPRNG(pb, with);
+
+    // Every pre-existing axis identical bit-for-bit (drawn before the new tail).
+    EXPECT_EQ(a.craftCGDelta, b.craftCGDelta);
+    EXPECT_EQ(a.craftDragDelta, b.craftDragDelta);
+    EXPECT_EQ(a.craftTrimDelta, b.craftTrimDelta);
+    EXPECT_EQ(a.craftThrustScale, b.craftThrustScale);
+    EXPECT_EQ(a.craftPitchEffDelta, b.craftPitchEffDelta);
+    EXPECT_EQ(a.craftRollEffDelta, b.craftRollEffDelta);
+    EXPECT_EQ(a.craftServoSlew, b.craftServoSlew);
+    EXPECT_EQ(a.craftThrustTau, b.craftThrustTau);
+    EXPECT_EQ(a.craftServoPwmPhase, b.craftServoPwmPhase);
+    // And the new axes actually moved off nominal in `b`.
+    EXPECT_NE(b.craftImuMisalignRoll, static_cast<gp_scalar>(0.0));
+    EXPECT_NE(b.craftCmQ, static_cast<gp_scalar>(-4.2));
+}
+
+// T018 — σ>0 replays identically from the same scenarioSeed (new axes too), and
+// the five pre-existing class sub-seeds are unchanged by the metadata growth.
+TEST(CraftVariationImu, NewAxesReplayFromScenarioSeedAndSubSeedsStable) {
+    CraftSigmas s = preExistingSigmas();
+    s.craftImuMisalignSigma = 2.0; s.craftGyroScaleSigma = 0.02;
+    s.craftAccelScaleSigma = 0.02; s.craftAccelBiasSigma = 0.04; s.craftCmQSigma = 0.32;
+
+    constexpr uint64_t kScenarioSeed = 0xABCDEF1234567890ull;
+    const auto subA = deriveClassSubSeeds(kScenarioSeed);
+    const auto subB = deriveClassSubSeeds(kScenarioSeed);
+    // The five class sub-seeds are a frozen cascade — growing ScenarioMetadata
+    // must not touch them.
+    EXPECT_EQ(subA.wind, subB.wind);
+    EXPECT_EQ(subA.rabbit, subB.rabbit);
+    EXPECT_EQ(subA.entry, subB.entry);
+    EXPECT_EQ(subA.craft, subB.craft);
+    EXPECT_EQ(subA.camera, subB.camera);
+
+    ClassPRNG pa(subA.craft), pb(subB.craft);
+    CraftDeltas a = generateCraftFromClassPRNG(pa, s);
+    CraftDeltas b = generateCraftFromClassPRNG(pb, s);
+    EXPECT_EQ(a.craftImuMisalignRoll,  b.craftImuMisalignRoll);
+    EXPECT_EQ(a.craftGyroScaleY,       b.craftGyroScaleY);
+    EXPECT_EQ(a.craftAccelBiasZ,       b.craftAccelBiasZ);
+    EXPECT_EQ(a.craftCmQ,              b.craftCmQ);
+}
+
+// T019 — craftCmQ centres at -4.2 with σ=0 and clamps to [-5.0, -3.6]; at
+// σ=0.32 the ±2.5σ truncation reaches exactly -5.0 and never leaves the range.
+TEST(CraftVariationImu, CraftCmQCentersAndClamps) {
+    using autoc::eval::kCraftCmQCenter;
+    using autoc::eval::kCraftCmQMin;
+    using autoc::eval::kCraftCmQMax;
+    EXPECT_EQ(kCraftCmQCenter, static_cast<gp_scalar>(-4.2));
+    EXPECT_EQ(kCraftCmQMin, static_cast<gp_scalar>(-5.0));
+    EXPECT_EQ(kCraftCmQMax, static_cast<gp_scalar>(-3.6));
+
+    // σ=0 → exactly the center.
+    { CraftSigmas z; ClassPRNG p(0x1u);
+      EXPECT_EQ(generateCraftFromClassPRNG(p, z).craftCmQ, kCraftCmQCenter); }
+
+    // σ=0.32 over many seeds: every draw in-range; the min approaches -5.0
+    // (2.5σ = 0.8 below center) — proving the clamp/reach are both correct.
+    CraftSigmas s; s.craftCmQSigma = 0.32;
+    gp_scalar lo = kCraftCmQMax, hi = kCraftCmQMin;
+    for (uint32_t seed = 1; seed <= 5000; ++seed) {
+        ClassPRNG p(seed);
+        gp_scalar v = generateCraftFromClassPRNG(p, s).craftCmQ;
+        EXPECT_GE(v, kCraftCmQMin);
+        EXPECT_LE(v, kCraftCmQMax);
+        lo = std::min(lo, v); hi = std::max(hi, v);
+    }
+    EXPECT_LT(lo, static_cast<gp_scalar>(-4.9));   // reaches near the -5.0 floor
+    EXPECT_GT(hi, static_cast<gp_scalar>(-3.7));   // reaches near the -3.6 ceiling
+}
+
+// T020 — craftCGDelta and craftCmQ are INDEPENDENT draws: they do not
+// double-count the static/dynamic pitch split. Turning craftCmQSigma on (it is
+// drawn well after CG) must not change the CG draw at all (FR-052b).
+TEST(CraftVariationImu, CgAndCmQAreIndependentDraws) {
+    constexpr uint32_t kSeed = 0xC0FFEEu;
+    CraftSigmas base; base.craftCGSigma = 0.05;                 // cmQ sigma = 0
+    CraftSigmas withCmQ = base; withCmQ.craftCmQSigma = 0.32;   // add only cmQ
+
+    ClassPRNG pa(kSeed), pb(kSeed);
+    CraftDeltas a = generateCraftFromClassPRNG(pa, base);
+    CraftDeltas b = generateCraftFromClassPRNG(pb, withCmQ);
+
+    // CG is drawn first, so enabling cmQ cannot shift it.
+    EXPECT_EQ(a.craftCGDelta, b.craftCGDelta);
+    // cmQ moved only in `b`.
+    EXPECT_EQ(a.craftCmQ, static_cast<gp_scalar>(-4.2));
+    EXPECT_NE(b.craftCmQ, static_cast<gp_scalar>(-4.2));
+}
+
+// T016 (FR-055) — applyVariationScale leaves the new IMU/cmQ fields UNTOUCHED
+// at any scale: craft is diversity, not difficulty, so it is never ramped.
+TEST(CraftVariationImu, NewAxesAreNotRamped) {
+    ScenarioMetadata original = makeMetaWithDraws();
+    original.craftImuMisalignRoll = static_cast<gp_scalar>(3.1);
+    original.craftGyroScaleY = static_cast<gp_scalar>(1.04);
+    original.craftAccelBiasZ = static_cast<gp_scalar>(-0.05);
+    original.craftCmQ = static_cast<gp_scalar>(-4.8);
+
+    for (gp_scalar scale : {static_cast<gp_scalar>(0.0),
+                            static_cast<gp_scalar>(0.5),
+                            static_cast<gp_scalar>(1.0)}) {
+        ScenarioMetadata m = original;
+        applyVariationScale(m, scale);
+        EXPECT_EQ(m.craftImuMisalignRoll, original.craftImuMisalignRoll);
+        EXPECT_EQ(m.craftGyroScaleY, original.craftGyroScaleY);
+        EXPECT_EQ(m.craftAccelBiasZ, original.craftAccelBiasZ);
+        EXPECT_EQ(m.craftCmQ, original.craftCmQ);
+    }
+}
+
+// The new IMU axes inherit the pipeline-wide ±2.5σ truncation (kGaussianSigmaClamp
+// in ClassPRNG::nextGaussian) — same hard limit every other Gaussian variation
+// uses, so no "occasional 5σ" outlier is possible. Assert the 2.5σ envelopes
+// explicitly (contracts/craft-imu-axes.md: 2.5σ = the intended hard limit).
+TEST(CraftVariationImu, NewAxesRespectTwoPointFiveSigmaLimit) {
+    CraftSigmas s;
+    s.craftImuMisalignSigma = 2.0;   // 2.5σ = ±5.0 deg
+    s.craftGyroScaleSigma   = 0.02;  // 2.5σ = ±5%  -> [0.95, 1.05]
+    s.craftAccelScaleSigma  = 0.02;  // 2.5σ = ±5%
+    s.craftAccelBiasSigma   = 0.04;  // 2.5σ = ±0.10 g
+    for (uint32_t seed = 1; seed <= 20000; ++seed) {
+        ClassPRNG p(seed);
+        CraftDeltas d = generateCraftFromClassPRNG(p, s);
+        for (gp_scalar m : {d.craftImuMisalignRoll, d.craftImuMisalignPitch,
+                            d.craftImuMisalignYaw}) {
+            EXPECT_LE(std::abs(m), static_cast<gp_scalar>(5.0));
+        }
+        for (gp_scalar g : {d.craftGyroScaleX, d.craftGyroScaleY, d.craftGyroScaleZ,
+                            d.craftAccelScaleX, d.craftAccelScaleY, d.craftAccelScaleZ}) {
+            EXPECT_GE(g, static_cast<gp_scalar>(0.95));
+            EXPECT_LE(g, static_cast<gp_scalar>(1.05));
+        }
+        for (gp_scalar b : {d.craftAccelBiasX, d.craftAccelBiasY, d.craftAccelBiasZ}) {
+            EXPECT_LE(std::abs(b), static_cast<gp_scalar>(0.10));
+        }
+    }
+}
+
+// T019a (Constitution V read-side contract) — a pre-043 dmp FAILS LOUD on load,
+// never a silent truncation or default-init. The 043 break appended 13 trailing
+// scalars to ScenarioMetadata; a pre-043 wire is exactly the new wire minus that
+// tail. Truncating it and loading into the current struct must THROW (cereal
+// runs out of bytes reading the new fields) — a clear failure, not a quiet
+// default-init of craftCmQ to -4.2. (The live-S3 fixture variant — one object
+// from the T004 extract's source prefix — belongs in the AUTOC_S3_TESTS suite.)
+TEST(CraftVariationImu, PreBreakDmpFailsLoudOnLoad) {
+    ScenarioMetadata src = makeMetaWithDraws();
+    src.scenarioSeed = 0x0123456789ABCDEFull;
+    std::stringstream buf(std::ios::in | std::ios::out | std::ios::binary);
+    { cereal::BinaryOutputArchive oa(buf); oa(src); }
+
+    // Drop the 13 appended gp_scalar (the 043 tail) to emulate a pre-043 wire.
+    std::string bytes = buf.str();
+    ASSERT_GT(bytes.size(), 13 * sizeof(gp_scalar));
+    bytes.resize(bytes.size() - 13 * sizeof(gp_scalar));
+
+    std::stringstream shortBuf(bytes, std::ios::in | std::ios::binary);
+    ScenarioMetadata dst;
+    // Loud failure: cereal throws reading past the truncated end. It must NOT
+    // silently succeed with dst.craftCmQ default-initialized.
+    EXPECT_THROW({ cereal::BinaryInputArchive ia(shortBuf); ia(dst); },
+                 std::exception);
+}

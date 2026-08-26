@@ -250,7 +250,10 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // 041 P2-2 RETIRED EnableEnvelopeInputs -> 147: IN_ENVELOPE and ENVELOPE_SECS
     // are no longer NN inputs, so a knob named "enable the envelope inputs"
     // gated nothing. Removed rather than left inert.
-    EXPECT_EQ(n, 147u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // 043 US5 added 5 craft IMU/pitch-damping sigmas -> 152: CraftImuMisalignSigma,
+    // CraftGyroScaleSigma, CraftAccelScaleSigma, CraftAccelBiasSigma, CraftCmQSigma.
+    // 043 T008a added ExpectedScenarioCount (regiment pre-run gate) -> 153.
+    EXPECT_EQ(n, 153u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

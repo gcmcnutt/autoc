@@ -218,7 +218,13 @@ does not exist** — the signature is `computeScenarioScores(EvalResults&)`. A s
 very feature that was never built; delete it or implement it, but it should not keep claiming both.
 
 
-### [041 P3-4 tooling, filed 2026-08-18] `nnextractor -g` takes the FILE number; `dmp-dump --gen` takes the GENERATION
+### [041 P3-4 tooling, filed 2026-08-18 · ✅ RESOLVED 2026-08-25 by 043 T022] `nnextractor -g` takes the FILE number; `dmp-dump --gen` takes the GENERATION
+
+✅ **DONE (043 T022).** `nnextractor -g` now takes the **actual generation**, resolving against
+`extractGenNumber` (the shared 10000-N decoder) so it agrees with `dmp-dump --gen`. `--help` records that
+the meaning CHANGED and the misleading `-g 50 # generation 50` example is corrected. Kept below for the
+history; no further work.
+
 
 ⛔ **Same flag name, opposite meaning, on two tools used in the same breath.** The dmp filename encodes
 `10000 − actual_gen`, and the two readers disagree about which side of that the operator is expected to do:
@@ -243,6 +249,17 @@ a one-line note in the tool's `--help` recording that the meaning CHANGED, since
 behaviour for years.
 
 Related: [reference_dmp_filename_gen_encoding](../.claude/projects/-home-gmcnutt-autoc/memory/reference_dmp_filename_gen_encoding.md).
+
+### [043 T025 / FR-074, filed 2026-08-25 · DEFERRED from 043 Phase 4] Simulator sampling-time variation (20 Hz tick dither)
+
+⚠️ **Deferred, not dropped.** 043's Phase-4 housekeeping did the build-hygiene + tooling items (T021/T021a/T022)
+but held T025 back: real hardware jitters the sensor→command cadence around the nominal 20 Hz, and dithering the
+sim tick would model that. It is **not** open-file housekeeping — it is a new **determinism-affecting** variation
+feature (the dither must be per-scenario seeded and bit-replayable, drawn draw-and-discard so toggling shifts no
+other class), and it changes trained results, so it carries bake risk. It is also the FR-074 member of the 043
+implementation-strategy cut list (cut T023/T024/T025 first if the path tightens). Land it as its own change with
+its own determinism check, ideally alongside the Phase-5 plant work where the inner-loop cadence is already under
+review. Owner call on whether it rides the 043 bake or waits.
 
 
 ### [041 TA03 follow-up, filed 2026-08-17 · ⚠️ DOWNGRADED 2026-08-18] The virtual coordinate origin sits half-way up the band

@@ -246,6 +246,29 @@ different effective controllers. ⛔ Still no config change (gains and rates sta
 the plan must **document the per-axis effective gain curve**, because it is a likely contributor to the
 per-axis behaviour differences 041 reported. **Owner**: Phase 4, as model documentation.
 
+### ✅ The per-axis effective gain curve (T042, documented 2026-08-25)
+
+The P and D paths are attenuated by `aP = aD = exp(−rateTarget²/2σ²)` (research.md R1), and σ scales with
+`maxRate`: σ_roll = 61.2 °/s, σ_pitch = 20.4 °/s. So at the **same commanded rate** the two axes retain
+very different fractions of their P/D authority (FF is unattenuated on both):
+
+| commanded rate | roll `aP` (σ=61.2) | pitch `aP` (σ=20.4) |
+|---:|---:|---:|
+| 0 °/s | 1.000 | 1.000 |
+| 20 °/s | 0.948 | 0.618 |
+| 40 °/s | 0.806 | 0.146 |
+| 88 °/s (measured mean \|rate\|) | **0.356** | **9e-5 ≈ 0** |
+
+⭐ **The two axes run materially different controllers.** Roll still has **36%** of its P/D at the
+airframe's typical 88 °/s, so it retains closed-loop stiffness across the working range. Pitch collapses to
+**essentially pure feed-forward above ~40 °/s** — beyond that the pitch axis is running open-loop on `kFF`
+with almost no P/D disturbance rejection. This is a strong candidate explanation for the per-axis behaviour
+differences 041 reported, and it is a property of the *config* (roll_rate 36 vs pitch_rate 12), which 043
+does not change. ⚠️ It also means the pitch-axis fidelity of the modelled loop rests almost entirely on the
+airframe's open-loop pitch response being right — see Finding 1a. The curve is realised in
+`include/autoc/control/inav_fw_rate.h` (`inavFwRateDamping`) and asserted by the contract test
+`InavFwRate.AttenuationCurveMatchesGaussian`.
+
 ## R11 — INAV phase-delay parameters
 
 ⭐ Reframing stands and R1 strengthens it: with `aP = aD = 1.0` at zero commanded rate, the loop is at
@@ -321,6 +344,37 @@ within a factor of six of the control band and does contribute phase.
 **Action**: read the notch centre frequency from the 041-t7 blackbox (it is logged) before deciding.
 Cheap, and it converts an assumption into a measurement. Until then: **model as absent, flagged.**
 
+#### ✅ Resolved (T006, 2026-08-25) — model the notch as ABSENT, and it is now a *measurement*
+
+Read from the 041-t7 flight blackbox header (`flight-results/flight-20260823/blackbox_log_2026-08-23_151941.TXT`):
+
+```
+H gyro_lpf:0                    (hardware LPF off)
+H gyro_lpf_hz:25                (the PT1 that IS modelled in-loop, FR-013)
+H dynamicGyroNotchQ:250         (raw; /100 in dynamic_gyro_notch.c:43 ⇒ effective Q = 2.5 — the tasks.md
+                                 hint is right, outcome.md's "Q 250" was the raw setting)
+H dynamicGyroNotchMinHz:30      (the notch-centre FLOOR — it can never sit below 30 Hz)
+H acc_notch_hz:0                (accel notch off)
+H rpm_gyro_filter_enabled:0     (RPM notch OFF — no second notch to worry about)
+```
+
+The notch centre **cannot go below 30 Hz** by config, so the worst case for control-band relevance is the
+notch pinned at exactly 30 Hz. Biquad-notch response there (Q = 2.5) at the frequencies the inner loop
+actually controls:
+
+| f | \|H\| | phase |
+|---|---:|---:|
+| 2 Hz | −0.00 dB | −1.5° |
+| 5 Hz (top of the oscillation band) | −0.02 dB | **−3.9°** |
+| 10 Hz (post-fix crossover) | −0.10 dB | −8.5° |
+
+⭐ **Decision**: **do NOT model the dynamic gyro notch in `Cntrl_InavFwRate`.** Even at its 30 Hz floor it
+adds **< 4°** of phase at 5 Hz against a **147°** budget, and in flight it tracks the prop/vibration peak
+*upward* from that floor (into the hundreds of Hz), where it contributes even less. The README's
+"steeper than PT1" roll-off is not reachable into the 2–5 Hz band by a Q-2.5 notch centred ≥ 30 Hz. This
+converts addendum-D's flag into a measurement: **absent, with the reason recorded** (T039 lists it in the
+deliberately-absent set).
+
 ## Is 333 Hz enough? — yes, and here is the arithmetic
 
 The controller runs at the FDM substep (`Global::dt` = 0.002777 s, ms-quantized ⇒ ~333 Hz) against INAV's
@@ -344,6 +398,25 @@ Two supporting details:
 
 ⚠️ **Confirm the as-run `Global::dt`** rather than assuming the default, and record the justification.
 Sub-stepping the controller inside the FDM step is the fallback, and is not expected to be needed.
+
+### ✅ Confirmed (T003, 2026-08-25) — the as-run substep is **200 Hz, not 333 Hz**
+
+`Global::dt` is **not** the 0.002777 default. The autoc configs override it: `crrcsim/autoc_config.xml:165`
+and `crrcsim/autoc_config-eval.xml:166` both set `<flightModel dt="0.005" />`. Rounded to integer ms
+(`crrc_main.cpp:499`) that is a no-op ⇒ **`Global::dt = 0.005 s = 200 Hz`**. See
+[baseline.md](baseline.md) T003 for the full derivation. Re-running the ZOH-phase arithmetic at 200 Hz:
+
+| frequency | 200 Hz | 2 kHz | **difference** |
+|---|---:|---:|---:|
+| 5 Hz (the oscillation band) | 4.5° | 0.45° | **4.1°** |
+| 10 Hz (predicted crossover after fixes) | 9.0° | 0.9° | **8.1°** |
+| 30 Hz | 27.0° | 2.7° | 24.3° |
+
+⭐ **Conclusion unchanged**: in the 5 Hz band the extra phase is **~4°** against a **147°** budget — still
+negligible, so the "airplane has nothing to say above ~20 Hz" reasoning still holds and sub-stepping is
+still not needed. But every **discrete constant** in `Cntrl_InavFwRate` (integrator `dt`, the 25 Hz PT1
+`alpha`, the D `kD/dt`) must be computed from **dt = 0.005 s**, not 0.003 s — Phase 5 (T034/T035/T038)
+uses 5 ms.
 
 ## Which knobs deserve VARIATION rather than a pinned value?
 

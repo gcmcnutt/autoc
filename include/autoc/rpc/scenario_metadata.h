@@ -95,6 +95,25 @@ struct ScenarioMetadata {
     // [0, 0.020)); the real command dead-time. Appended after craftSeed so
     // the wire prefix is preserved (greenfield growth, no version bump).
     gp_scalar craftServoPwmPhase = static_cast<gp_scalar>(0.0);
+    // 043 US5 — IMU imperfection axes + pitch damping (craftCmQ). Appended LAST
+    // so the wire prefix is preserved; this is the greenfield break that orphans
+    // every pre-043 dmp (Constitution V loud-fail; FR-057 extraction from the
+    // 041-t7 baseline completed first — see specs/043-acro-dual-loop/artifacts/
+    // t7-extract/). No cereal version bump (project practice). Defaults are
+    // no-op: 0 misalign/bias, 1.0 scales, craftCmQ at its -4.2 center.
+    gp_scalar craftImuMisalignRoll  = static_cast<gp_scalar>(0.0);  // deg
+    gp_scalar craftImuMisalignPitch = static_cast<gp_scalar>(0.0);  // deg
+    gp_scalar craftImuMisalignYaw   = static_cast<gp_scalar>(0.0);  // deg
+    gp_scalar craftGyroScaleX = static_cast<gp_scalar>(1.0);
+    gp_scalar craftGyroScaleY = static_cast<gp_scalar>(1.0);
+    gp_scalar craftGyroScaleZ = static_cast<gp_scalar>(1.0);
+    gp_scalar craftAccelScaleX = static_cast<gp_scalar>(1.0);
+    gp_scalar craftAccelScaleY = static_cast<gp_scalar>(1.0);
+    gp_scalar craftAccelScaleZ = static_cast<gp_scalar>(1.0);
+    gp_scalar craftAccelBiasX = static_cast<gp_scalar>(0.0);  // g
+    gp_scalar craftAccelBiasY = static_cast<gp_scalar>(0.0);  // g
+    gp_scalar craftAccelBiasZ = static_cast<gp_scalar>(0.0);  // g
+    gp_scalar craftCmQ = static_cast<gp_scalar>(-4.2);        // pitch damping (absolute + clamp)
     // 040 US6 — CAMERA VARIATION DELIBERATELY DOES **NOT** LIVE HERE.
     //
     // It was put here first, and that broke the pinned M1 source: this struct is
@@ -133,7 +152,14 @@ struct ScenarioMetadata {
            craftPitchEffDelta, craftRollEffDelta,
            craftServoSlew, craftThrustTau,  // 037 actuator dynamics (servoTau removed 2026-06-12)
            craftSeed,
-           craftServoPwmPhase);  // 037 servo v2 -- appended, no version bump
+           craftServoPwmPhase,  // 037 servo v2 -- appended, no version bump
+           // 043 US5 -- IMU axes + craftCmQ appended LAST (greenfield break,
+           // no version bump; pre-043 dmps fail-loud on length mismatch).
+           craftImuMisalignRoll, craftImuMisalignPitch, craftImuMisalignYaw,
+           craftGyroScaleX, craftGyroScaleY, craftGyroScaleZ,
+           craftAccelScaleX, craftAccelScaleY, craftAccelScaleZ,
+           craftAccelBiasX, craftAccelBiasY, craftAccelBiasZ,
+           craftCmQ);
     }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)

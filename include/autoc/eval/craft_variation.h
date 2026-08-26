@@ -58,6 +58,17 @@ constexpr gp_scalar kCraftThrustTauCenter = static_cast<gp_scalar>(0.150);  // s
 constexpr gp_scalar kCraftThrustTauMin    = static_cast<gp_scalar>(0.050);  // s
 constexpr gp_scalar kCraftThrustTauMax    = static_cast<gp_scalar>(0.300);  // s
 
+// 043 US5 -- craftCmQ pitch-damping axis (FR-052b). ABSOLUTE physical value +
+// clamp, like craftServoSlew above -- NOT a delta. Center + clamp pre-derived
+// in crrcsim/models/hb1_streamer.xml: "Cm_q range -3.6 (no streamer) to -5.0
+// (25 ft streamer)". The clamp is mandatory: a 2.5-sigma draw could otherwise
+// leave the physical range. ⛔ This is the DYNAMIC pitch-damping side only;
+// the static-margin side is already carried by craftCGDelta (CG vs neutral
+// point) -- see contracts/craft-imu-axes.md.
+constexpr gp_scalar kCraftCmQCenter = static_cast<gp_scalar>(-4.2);
+constexpr gp_scalar kCraftCmQMin    = static_cast<gp_scalar>(-5.0);
+constexpr gp_scalar kCraftCmQMax    = static_cast<gp_scalar>(-3.6);
+
 /**
  * Sigma parameters for craft variation draws. All in their respective
  * intrinsic units (NOT fractions of nominal except where noted) so the
@@ -92,6 +103,15 @@ struct CraftSigmas {
     // pure slew, no lag term; the dead draw is gone.)
     double craftServoSlewSigma = 0.0; // raw-ok: ini config-struct field (double per inih::GetReal)
     double craftThrustTauSigma = 0.0; // raw-ok: ini config-struct field (double per inih::GetReal)
+    // 043 US5 -- IMU imperfection + pitch-damping axes. One sigma per GROUP
+    // (all three misalign axes share craftImuMisalignSigma, etc.); the FDM feeds
+    // the SAME FC IMU to INAV's rate feedback and the policy's observation, so
+    // the axes must be consistent across both loops (contracts/craft-imu-axes.md).
+    double craftImuMisalignSigma = 0.0; // raw-ok: ini config-struct field. deg; 2.5σ = ±5° foam-tape mount
+    double craftGyroScaleSigma   = 0.0; // raw-ok: ini config-struct field. fraction; 2.5σ = ±5% cal tolerance
+    double craftAccelScaleSigma  = 0.0; // raw-ok: ini config-struct field. fraction; 2.5σ = ±5%
+    double craftAccelBiasSigma   = 0.0; // raw-ok: ini config-struct field. g; from the 041-t7 audit (accel_y ~1.7σ)
+    double craftCmQSigma         = 0.0; // raw-ok: ini config-struct field. Cm_q Gaussian width (center/clamp above)
 };
 
 /**
@@ -120,6 +140,23 @@ struct CraftDeltas {
     // frame; this is the operator's "0-20 ms PWM lag jitter" (constant within
     // a scenario -- command instants are periodic, so the phase IS the lag).
     gp_scalar craftServoPwmPhase = static_cast<gp_scalar>(0.0);  // s, [0, 0.020)
+    // 043 US5 -- IMU imperfection axes (deg / fraction / g) + pitch damping.
+    // Misalign/bias are ADDITIVE (default 0 = perfect), gyro/accel scale are
+    // MULTIPLICATIVE (default 1.0 = nominal), craftCmQ is an ABSOLUTE value
+    // (default = center). Appended last so draw order is frozen.
+    gp_scalar craftImuMisalignRoll  = static_cast<gp_scalar>(0.0);  // deg
+    gp_scalar craftImuMisalignPitch = static_cast<gp_scalar>(0.0);  // deg
+    gp_scalar craftImuMisalignYaw   = static_cast<gp_scalar>(0.0);  // deg
+    gp_scalar craftGyroScaleX = static_cast<gp_scalar>(1.0);
+    gp_scalar craftGyroScaleY = static_cast<gp_scalar>(1.0);
+    gp_scalar craftGyroScaleZ = static_cast<gp_scalar>(1.0);
+    gp_scalar craftAccelScaleX = static_cast<gp_scalar>(1.0);
+    gp_scalar craftAccelScaleY = static_cast<gp_scalar>(1.0);
+    gp_scalar craftAccelScaleZ = static_cast<gp_scalar>(1.0);
+    gp_scalar craftAccelBiasX = static_cast<gp_scalar>(0.0);  // g
+    gp_scalar craftAccelBiasY = static_cast<gp_scalar>(0.0);  // g
+    gp_scalar craftAccelBiasZ = static_cast<gp_scalar>(0.0);  // g
+    gp_scalar craftCmQ = kCraftCmQCenter;                     // pitch damping (absolute + clamp)
 };
 
 /**
@@ -164,6 +201,31 @@ inline CraftDeltas generateCraftFromClassPRNG(
     // draw-and-discard convention as the wind-class gating.
     d.craftServoPwmPhase = static_cast<gp_scalar>(craftPRNG.nextDouble())
         * kCraftServoPwmFrameSec;
+    // 043 US5 -- IMU imperfection axes + pitch damping, APPENDED at the bottom
+    // (draw order frozen; every draw above keeps its value). Drawn
+    // UNCONDITIONALLY at their own sigma so sigma=0 is a bit-identical no-op
+    // (gaussian(0)=0 for the additive axes; 1.0+gaussian(0)=1.0 for the scales;
+    // center+gaussian(0)=center for cmQ) and toggling never shifts a draw --
+    // same draw-and-discard convention as the servo/PWM axes above. 2.5-sigma
+    // truncation is intrinsic to nextGaussian; no bespoke clip constants.
+    d.craftImuMisalignRoll  = static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftImuMisalignSigma));
+    d.craftImuMisalignPitch = static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftImuMisalignSigma));
+    d.craftImuMisalignYaw   = static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftImuMisalignSigma));
+    d.craftGyroScaleX = static_cast<gp_scalar>(1.0 + craftPRNG.nextGaussian(sigmas.craftGyroScaleSigma));
+    d.craftGyroScaleY = static_cast<gp_scalar>(1.0 + craftPRNG.nextGaussian(sigmas.craftGyroScaleSigma));
+    d.craftGyroScaleZ = static_cast<gp_scalar>(1.0 + craftPRNG.nextGaussian(sigmas.craftGyroScaleSigma));
+    d.craftAccelScaleX = static_cast<gp_scalar>(1.0 + craftPRNG.nextGaussian(sigmas.craftAccelScaleSigma));
+    d.craftAccelScaleY = static_cast<gp_scalar>(1.0 + craftPRNG.nextGaussian(sigmas.craftAccelScaleSigma));
+    d.craftAccelScaleZ = static_cast<gp_scalar>(1.0 + craftPRNG.nextGaussian(sigmas.craftAccelScaleSigma));
+    d.craftAccelBiasX = static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftAccelBiasSigma));
+    d.craftAccelBiasY = static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftAccelBiasSigma));
+    d.craftAccelBiasZ = static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftAccelBiasSigma));
+    {
+        // craftCmQ -- absolute center + clamp, like craftServoSlew (FR-052b).
+        gp_scalar cmq = kCraftCmQCenter
+            + static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftCmQSigma));
+        d.craftCmQ = std::min(kCraftCmQMax, std::max(kCraftCmQMin, cmq));
+    }
     return d;
 }
 

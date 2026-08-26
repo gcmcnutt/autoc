@@ -261,6 +261,9 @@ if(ENABLE_AUTOC_TESTS)
 
   add_executable(craft_variation_tests tests/craft_variation_tests.cc)
   target_link_libraries(craft_variation_tests GTest::gtest GTest::gtest_main autoc_common)
+  # 043 US2 — pure INAV fw-rate loop core (header-only; contract tests T028-T033a).
+  add_executable(inav_fw_rate_tests tests/inav_fw_rate_tests.cc)
+  target_link_libraries(inav_fw_rate_tests GTest::gtest GTest::gtest_main autoc_common)
 
   # 034 US3 — run-id prefix routing test (T034).
   add_executable(run_id_prefix_tests tests/run_id_prefix_tests.cc)
@@ -368,6 +371,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME scenario_prng_tests COMMAND scenario_prng_tests)
   add_test(NAME camera_variation_tests COMMAND camera_variation_tests)
   add_test(NAME craft_variation_tests COMMAND craft_variation_tests)
+  add_test(NAME inav_fw_rate_tests COMMAND inav_fw_rate_tests)
   add_test(NAME run_id_prefix_tests COMMAND run_id_prefix_tests)
   add_test(NAME s3_run_selector_tests COMMAND s3_run_selector_tests)
   add_test(NAME dmp_dump_tests COMMAND dmp_dump_tests)
@@ -409,6 +413,7 @@ if(ENABLE_AUTOC_TESTS)
             scenario_prng_tests
             camera_variation_tests
             craft_variation_tests
+            inav_fw_rate_tests
             run_id_prefix_tests
             s3_run_selector_tests
             dmp_dump_tests
@@ -423,6 +428,16 @@ if(ENABLE_AUTOC_TESTS)
             arena_recenter_tests
             nn2cpp_unroll_tests
             flightlog_roundtrip_tests
+            # 043 T021a — these two were registered via add_executable + add_test
+            # (so ctest ran them) but were in NEITHER this DEPENDS list NOR the
+            # COMMAND chain below, so `make` (i.e. scripts/rebuild-perf.sh, the
+            # pre-run gate) never built or ran them — the same invisible-coverage
+            # failure the 040 note above records for nn_telemetry_tests. Both must
+            # be in DEPENDS *and* COMMAND. nn_input_scaling_tests covers the input
+            # constants T023 concerns; shared_input_block_tests covers the craft
+            # tail the new axes extend.
+            shared_input_block_tests
+            nn_input_scaling_tests
     COMMAND nn_evaluator_tests --gtest_brief=1
     COMMAND nn_serialization_tests --gtest_brief=1
     COMMAND nn_population_tests --gtest_brief=1
@@ -471,10 +486,14 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND scenario_prng_tests --gtest_brief=1
     COMMAND camera_variation_tests --gtest_brief=1
     COMMAND craft_variation_tests --gtest_brief=1
+    COMMAND inav_fw_rate_tests --gtest_brief=1
     COMMAND run_id_prefix_tests --gtest_brief=1
     COMMAND s3_run_selector_tests --gtest_brief=1
     COMMAND dmp_dump_tests --gtest_brief=1
     COMMAND energy_metric_tests --gtest_brief=1
+    # 043 T021a — run the two suites that `make` previously built-but-skipped.
+    COMMAND shared_input_block_tests --gtest_brief=1
+    COMMAND nn_input_scaling_tests --gtest_brief=1
   )
 endif()
 
