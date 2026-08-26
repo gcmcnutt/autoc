@@ -266,6 +266,17 @@ def main():
                 apx = ap_m2 * 2 * a.scale / 2.0          # M2 px -> native -> image
                 cv2.rectangle(img, (int(px - apx), int(py - apx)), (int(px + apx), int(py + apx)),
                               C_APERTURE, 1)
+                if label == "LOCKED":
+                    # Full-span crosshairs on a measured fix -- these ARE the coordinates being
+                    # emitted. Absence means coasting. Same rule as live_view.py.
+                    ov = img.copy()
+                    cv2.line(ov, (0, py), (ow, py), C_LOCKED, 1, cv2.LINE_AA)
+                    cv2.line(ov, (px, 0), (px, oh), C_LOCKED, 1, cv2.LINE_AA)
+                    cv2.addWeighted(ov, 0.55, img, 0.45, 0, img)
+                    cv2.putText(img, "y %+.2f" % trk["y"], (ow - 96, max(14, py - 6)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_LOCKED, 1, cv2.LINE_AA)
+                    cv2.putText(img, "x %+.2f" % trk["x"], (min(px + 6, ow - 86), oh - 46),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_LOCKED, 1, cv2.LINE_AA)
                 r = max(3, int(round(trk["cep"] * 2 * a.scale)))
                 cv2.circle(img, (px, py), r, colour, 2 if tick["measured"] else 1, cv2.LINE_AA)
                 cv2.circle(img, (px, py), 2, colour, -1, cv2.LINE_AA)

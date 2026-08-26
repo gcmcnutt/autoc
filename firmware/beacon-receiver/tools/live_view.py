@@ -29,6 +29,9 @@ numbers sit in the HUD:
     ring    the CEP, at true scale — the tracker's own claimed accuracy
     box     the APERTURE the correlator actually integrated over
     square  drawn around a track whose peak is SATURATED (flat-top centroid in use)
+    CROSSHAIRS full-span green lines, drawn ONLY while LOCKED -- these ARE the coordinates being
+            emitted this tick. No crosshair means the tracker is coasting and the numbers are
+            extrapolated, which is the distinction a small ring on a large field hides.
     cross   the prediction (xp, yp)
 
 An INSET in the top-right magnifies the primary track (default x8 over 32 M2 px). At scale 2 the
@@ -118,6 +121,10 @@ def main():
     ap.add_argument("--gamma", type=float, default=0.45,
                     help="display gamma; the scene runs ~0.02-4 ADU against a 255 beacon, so a linear "
                          "stretch shows a black frame with one dot")
+    ap.add_argument("--every", type=int, default=1,
+                    help="composite every Nth tick. Raw bgr24 at 20 Hz costs w*h*3*20 B/s -- 138 MB/s at "
+                         "--scale 6, over a ~113 MB/s ssh link -- so a big window needs a lower frame "
+                         "rate, not a smaller one. Remember to divide ffplay's -framerate by the same N.")
     ap.add_argument("--inset", type=int, default=8, help="magnification of the track inset (1 = off)")
     ap.add_argument("--inset-m2", type=int, default=32, help="inset crop size in M2 px")
     ap.add_argument("--print-cmd", action="store_true")
@@ -125,9 +132,12 @@ def main():
 
     W, H = 320 * a.scale, 200 * a.scale
     if a.print_cmd:
-        print("ssh pi@<pi> 'cd ~/autoc-beacon/firmware/beacon-receiver && tools/live_view.py "
-              "--config %s --scale %d' \\\n  | ffplay -f rawvideo -pixel_format bgr24 "
-              "-video_size %dx%d -framerate 20 -i -" % (a.config, a.scale, W, H))
+        fps = 20.0 / max(1, a.every)
+        print("ssh pi@<pi> 'cd ~/autoc-beacon/firmware/beacon-receiver && "
+              "~/cv/bin/python tools/live_view.py --config %s --scale %d --every %d' \\\n"
+              "  | ffplay -f rawvideo -pixel_format bgr24 -video_size %dx%d -framerate %g -i -"
+              % (a.config, a.scale, a.every, W, H, fps))
+        print("# stream cost: %.1f MB/s" % (W * H * 3 * fps / 1e6))
         return 0
 
     lut = np.array([min(255, int((v / 255.0) ** a.gamma * 255.0 + 0.5)) for v in range(256)], np.uint8)
@@ -139,6 +149,7 @@ def main():
     plane = None
     rec = None
     nframes = 0
+    nticks = 0
     try:
         for line in proc.stdout:
             line = line.strip()
@@ -184,6 +195,21 @@ def main():
                                   (int(px - ap_m2 * a.scale / 2), int(py - ap_m2 * a.scale / 2)),
                                   (int(px + ap_m2 * a.scale / 2), int(py + ap_m2 * a.scale / 2)),
                                   C_APERTURE, 1)
+
+                    # LOCKED gets full-span crosshairs. A 6 px ring on a 1920 px field is easy to
+                    # lose; lines that cross the whole frame are not, and they read at a glance from
+                    # across the room. Drawn ONLY for a measured fix, so the crosshair means exactly
+                    # "these are the coordinates being emitted right now" -- if it is not there, the
+                    # tracker is coasting and the numbers are extrapolated.
+                    if label == "LOCKED":
+                        ov = img.copy()
+                        cv2.line(ov, (0, py), (W, py), C_LOCKED, 1, cv2.LINE_AA)
+                        cv2.line(ov, (px, 0), (px, H), C_LOCKED, 1, cv2.LINE_AA)
+                        cv2.addWeighted(ov, 0.55, img, 0.45, 0, img)   # a guide, not a wall
+                        cv2.putText(img, "y %+.2f" % t["y"], (W - 96, max(14, py - 6)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_LOCKED, 1, cv2.LINE_AA)
+                        cv2.putText(img, "x %+.2f" % t["x"], (min(px + 6, W - 86), H - 46),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_LOCKED, 1, cv2.LINE_AA)
 
                     # CEP ring: the tracker's own claimed accuracy, at true scale
                     cep_r = max(3, int(round(t["cep"] * a.scale)))
@@ -248,6 +274,9 @@ def main():
                 lx += 14 + 8 * len(txt) + 10
             cv2.putText(img, "ring = CEP   box = aperture", (lx + 6, H - 32),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.4, DIM_C, 1, cv2.LINE_AA)
+            nticks += 1
+            if a.every > 1 and (nticks % a.every):
+                continue
             try:
                 out.write(img.tobytes())
                 out.flush()
