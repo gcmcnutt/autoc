@@ -293,7 +293,14 @@ waiting for real hardware.
   loop with the emitter on a flatcar. Do this only if T077 leaves the velocity/acceleration behaviours
   entangled.
 
-- [ ] T079 [US3] **Field phase — preprogrammed quad flights** (operator idea, 2026-08-22): put the emitter
+- [ ] T079 [US3] **Field phase — preprogrammed quad flights** — ⚠️ **READ
+  [results/stage1-indoor-range-ladder.md](results/stage1-indoor-range-ladder.md) FIRST**: the indoor
+  ladder reached 16.7 m with 71–97% decode and NO range-driven degradation, so indoor testing is
+  exhausted and the far-field cells are untouched. It also found that a **specular reflection carries
+  the beacon's own code** and cost 84 points of decode at one station — no filter or amplitude gate
+  can reject that, only §9's mirror rule. Whether it survives outdoors is a field question.
+  Original description follows.
+  (Original) **Field phase — preprogrammed quad flights** (operator idea, 2026-08-22): put the emitter
   and/or the receiver on large quads flying **waypoint missions**, for *"honest and somewhat repeatable"*
   field tests. Payload is not a problem — §7.1 already decoupled the verification airframe from the flight
   article, and the Pi 5 + camera + NVMe is ~100–130 g.

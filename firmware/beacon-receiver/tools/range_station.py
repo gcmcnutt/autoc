@@ -54,7 +54,16 @@ def photometry(shutter, gain, w, h, seconds):
     mx = a.max(axis=0)                      # a coded emitter is dark on ~half its chips
     bg = float(np.median(a))
     peak = int(mx.max())
-    m = mx >= max(peak * 0.15, bg + 3)
+    # Take ONLY the connected blob containing the peak. A global threshold looks fine on a black
+    # hallway and fails silently the moment house lights raise the floor: at 16.69 m a 0.15*peak cut
+    # fell below the max-projection noise and selected all 256000 pixels, reporting the whole frame as
+    # the emitter. Flood-filling from the peak cannot do that.
+    thr = max(peak * 0.35, bg + 6)
+    lab = (mx >= thr).astype(np.uint8)
+    import cv2 as _cv
+    nlab, comp = _cv.connectedComponents(lab, 8)
+    py, px_ = np.unravel_index(int(mx.argmax()), mx.shape)
+    m = comp == comp[py, px_] if nlab > 1 else lab.astype(bool)
     ys, xs = np.nonzero(m)
     cx = float((xs * (mx[m] - bg)).sum() / max((mx[m] - bg).sum(), 1e-9)) if m.sum() else 0.0
     cy = float((ys * (mx[m] - bg)).sum() / max((mx[m] - bg).sum(), 1e-9)) if m.sum() else 0.0
