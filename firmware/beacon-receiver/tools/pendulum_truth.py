@@ -38,6 +38,10 @@ import numpy as np
 MAGIC = 0x42434E52
 HDR = 52
 FRAME_HDR = 40                 # <IIQIHH: rec_bytes, seq, t_us, exposure_us, gain_q8, flags
+# Angular scale of the M2 grid. MEASURED per lens, not assumed: 0.304 for the 2.31 mm
+# lens every pendulum clip was shot on (three independent methods agreed to 1.4%), and
+# 0.548 for the 1.26 mm IR-bandpass lens. Override with --deg-per-px; a clip analysed
+# under the wrong constant reports every rate wrong by the ratio, silently.
 DEG_PER_M2_PX = 0.304
 
 # Default ROI = the swept arc measured on the 2026-08-25 rig (beacon at rest native ~305,272),
@@ -137,6 +141,7 @@ def extract(path, out, roi, min_peak):
 
 
 def main():
+    global DEG_PER_M2_PX
     ap = argparse.ArgumentParser()
     ap.add_argument("clip")
     ap.add_argument("--arc", action="store_true", help="map the swept arc and exit (do this first)")
@@ -145,7 +150,11 @@ def main():
     ap.add_argument("--roi", default=",".join(str(v) for v in DEFAULT_ROI),
                     help="X0,X1,Y0,Y1 in native px — MEASURE it with --arc, do not guess")
     ap.add_argument("--min-peak", type=int, default=100)
+    ap.add_argument("--deg-per-px", type=float, default=DEG_PER_M2_PX,
+                    help="M2 angular scale of the lens this clip was shot on: 0.304 = 2.31 mm, "
+                         "0.548 = 1.26 mm IR bandpass. Wrong value => every rate wrong by the ratio")
     a = ap.parse_args()
+    DEG_PER_M2_PX = a.deg_per_px
     if a.arc:
         map_arc(a.clip, a.step)
         return

@@ -86,6 +86,10 @@ def read_scale_extents(path):
     except (OSError, TypeError):
         pass
     return [24, 12, 6]
+# Angular scale of the M2 grid. MEASURED per lens, not assumed: 0.304 for the 2.31 mm
+# lens every pendulum clip was shot on (three independent methods agreed to 1.4%), and
+# 0.548 for the 1.26 mm IR-bandpass lens. Override with --deg-per-px; a clip analysed
+# under the wrong constant reports every rate wrong by the ratio, silently.
 DEG_PER_M2_PX = 0.304
 
 # BGR. First colour is the first --track, and so on.
@@ -174,6 +178,7 @@ def draw_chart(canvas, y0, label, series, window, t_now, lo=None, hi=None):
 
 
 def main():
+    global DEG_PER_M2_PX
     ap = argparse.ArgumentParser()
     ap.add_argument("clip")
     ap.add_argument("--out", required=True)
@@ -191,8 +196,12 @@ def main():
     ap.add_argument("--window", type=float, default=10.0, help="strip-chart window, seconds")
     ap.add_argument("--config", default=None,
                     help="ini to read scale_extents from, so the aperture box matches the run")
+    ap.add_argument("--deg-per-px", type=float, default=DEG_PER_M2_PX,
+                    help="M2 angular scale of the lens this clip was shot on: 0.304 = 2.31 mm, "
+                         "0.548 = 1.26 mm IR bandpass. Wrong value => every rate wrong by the ratio")
     a = ap.parse_args()
 
+    DEG_PER_M2_PX = a.deg_per_px
     f, w, h, fsz = open_clip(a.clip)
     f.seek(0, 2)
     n_frames = (f.tell() - HDR) // fsz

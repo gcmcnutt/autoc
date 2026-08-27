@@ -31,6 +31,10 @@ import csv
 import json
 import math
 
+# Angular scale of the M2 grid. MEASURED per lens, not assumed: 0.304 for the 2.31 mm
+# lens every pendulum clip was shot on (three independent methods agreed to 1.4%), and
+# 0.548 for the 1.26 mm IR-bandpass lens. Override with --deg-per-px; a clip analysed
+# under the wrong constant reports every rate wrong by the ratio, silently.
 DEG_PER_M2_PX = 0.304
 MEASURED_FIX = 0x40
 OCCLUSION_FRAMES = 8      # >=8 missing frames (28 ms) is longer than any code-dark run at 288 fps
@@ -222,6 +226,7 @@ def do_reacquire(tr, ticks):
 
 
 def main():
+    global DEG_PER_M2_PX
     ap = argparse.ArgumentParser()
     ap.add_argument("--truth", required=True)
     ap.add_argument("--track", help="beacon_trackd --emit json:- output over the same clip")
@@ -233,7 +238,11 @@ def main():
     ap.add_argument("--decay", action="store_true")
     ap.add_argument("--rate", action="store_true")
     ap.add_argument("--reacquire", action="store_true")
+    ap.add_argument("--deg-per-px", type=float, default=DEG_PER_M2_PX,
+                    help="M2 angular scale of the lens this clip was shot on: 0.304 = 2.31 mm, "
+                         "0.548 = 1.26 mm IR bandpass. Wrong value => every rate wrong by the ratio")
     a = ap.parse_args()
+    DEG_PER_M2_PX = a.deg_per_px
     if not (a.decay or a.rate or a.reacquire):
         a.decay = a.rate = a.reacquire = True
     tr = load_truth(a.truth)
