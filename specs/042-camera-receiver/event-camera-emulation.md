@@ -320,3 +320,54 @@ was never recorded, and 8.15 m was one of the healthy stations.
 (mirror, glass, or the hallway geometry that produced the 4.83 m null), recorded to a clip. That would
 validate stage 4 **and** the §9 mirror rule against a known-truth mirror pair — which has never been
 done. T055 was unit-tested against *injected* pairs, never against a real reflection.
+
+
+## 8. A 200 s capture with pinned exposure — the operating point, measured
+
+`/data/event200.bcnr`, 57579 frames, 0 seq gaps, recorded with `beacon-event.ini`: **exposure pinned at
+53 µs and gain pinned at 1.0**, matching what `event_view` ran at. The bench config's AGC would have used
+gain 2.0 and a drifting exposure, doubling the noise and making the event rate move for reasons unrelated
+to the scene.
+
+### The noise floor is a CLIFF, not a tail
+
+| thr | events/frame |
+|---|---|
+| 5 | 1055 |
+| **8** | **30.7** |
+| 10 | 19.4 |
+| 40 | 7.5 |
+
+**A 34× drop between 5 and 8.** The noise is a sharply-bounded population at |Δ| ≤ 7 with almost nothing
+between it and the signal. That is why an earlier reading of "12500 events/frame" looked alarming: thr=5
+sits *inside* the noise population. **Set the threshold just above the cliff** — here 8–10 — and the same
+scene that looked hopeless gives ~20 events/frame.
+
+The adaptive servo independently settled on 8, which validates rate-targeting as the control.
+
+**And it is stationary**: 1670.5 events/frame at t=10 s against 1670.4 at t=180 s. No drift across 200 s,
+so a fixed threshold above the cliff is viable and the servo is insurance rather than a necessity.
+
+### The integration window trades margin against trail length
+
+| window | leader weight | margin over 2nd | cluster span |
+|---|---|---|---|
+| 74 fr (0.26 s) | 65 | 1.6× | 16 px |
+| 150 fr (0.52 s) | 467 | **8×** | 17 px |
+| 300 fr (1.04 s) | 1385 | **12×** | 31 px |
+| 900 fr (3.1 s) | — | phases scatter, cluster fragments | — |
+
+**A moving beacon does not make a blob, it makes a TRAIL**, and the flood-fill chains along it. A longer
+window buys events and margin right up until the trail is long enough that its phase votes become
+inconsistent and the cluster breaks apart. At 300 frames the span is 31 native px — the beacon moved
+15.5 M2 px in 1.04 s, about **8 °/s**.
+
+**So the event detector inherits the same integration-window-versus-motion trade as the correlator.** It
+removes the acquisition lottery; it does **not** escape the coherence limit. And the centroid of a trail
+lags the true position, which matters when handing a fix to the tracker.
+
+### The clutter is persistent, not transient
+
+40–56 clusters survive in this room at thr=10, and they are still there at t=180 s. The leader beats them
+**8–12×**, so they lose decisively on weight — but they are a permanent feature of a lit indoor scene,
+not noise that averages away. That is the question the live view could not answer.
