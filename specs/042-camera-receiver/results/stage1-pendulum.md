@@ -235,3 +235,75 @@ fixture can deliver, since a bigger release simply starts the same decay higher 
 
 One long clip per release beats several short ones: decay sweeps every rate below the peak for free, and
 a fresh battery is the binding constraint (210 s per charge, measured).
+
+---
+
+# Re-run on the flight optics — 1.26 mm + 850 nm bandpass (2026-08-27)
+
+Same rig, same room, **the actual flight optical configuration** for the first time: 1.26 mm lens with
+the IR bandpass, five co-aligned emitters at 50 mA. `beaconpi5:/data/pend_ir.bcnr`, 240 s, 69094 frames,
+0 seq gaps, exposure pinned at 53 µs throughout. Swing was harder than the previous run — **20.6°
+span, p90 15.9 °/s, peak 38.1 °/s** against 11.8° and p90 22.9 before.
+
+⚠️ **Analysed at `--deg-per-px 0.548`, not 0.304.** The scale is per-lens now. Using the old constant
+would report every rate 81 % low with no error anywhere.
+
+## A prediction was made before the run, and it held
+
+The coherence limit is **pixels traversed per 258 ms word**, not degrees. A lens with 80 % coarser pixels
+should therefore tolerate ~1.8× the angular rate for the same smear. Measured:
+
+| decode level | 2.31 mm lens | **1.26 mm IR** | shift |
+|---|---|---|---|
+| 50 % | 1.30 °/s | **3.67 °/s** | **2.8×** |
+| 30 % | 2.40 °/s | 5.05 °/s | 2.1× |
+| 20 % | 3.93 °/s | 8.77 °/s | 2.2× |
+
+**Predicted 1.80× from pixel scale alone; measured 2.1–2.8×.** The extra is almost certainly the
+bandpass: false locks fell **10 % → 1.2 %** and the background went to zero, so the correlator is working
+on a cleaner signal as well as a slower-moving one. Two separate improvements compounding.
+
+## At matched rate, the improvement is large — and the cost is visible
+
+| rate | 2.31 mm decode / bearing | **1.26 mm IR decode / bearing** |
+|---|---|---|
+| ~1.9 °/s | 40 % / 0.48° | **98 % / 0.44°** |
+| ~2.4 °/s | 30 % / 0.50° | **94 % / 0.48°** |
+| ~3.7 °/s | 22 % / 0.61° | 48 % / **0.90°** |
+| ~5.9 °/s | 12 % / 0.78° | 24 % / **1.22°** |
+
+At 2 °/s this configuration decodes **98 % of ticks** where the old one managed 40 %, and bearing is *no
+worse* despite pixels being 80 % coarser — because far more fixes are real measurements rather than
+coasting extrapolations.
+
+**Above ~3.7 °/s the coarser pixels start to cost**: 0.90° against 0.61°, then 1.22° against 0.78°. So
+the lens buys rate tolerance and coverage and spends angular precision, and it spends it exactly where
+the estimate is already struggling. Against the §3 0.3° bar, this configuration does not meet it at any
+rate measured here — the best block is 0.44° at 2.1 °/s.
+
+## Full curve
+
+| sustained rate | ticks | on-beacon fix | false | present | bearing err |
+|---|---|---|---|---|---|
+| 16.5 °/s | 400 | 13 % | 0 | 68 % | 1.58° |
+| 12.4 | 400 | 15 % | 0 | 70 % | 1.65° |
+| 9.5 | 400 | 19 % | 1 | 68 % | 1.44° |
+| 7.3 | 400 | 22 % | 14 | 71 % | 1.17° |
+| 5.8 | 400 | 24 % | 4 | 79 % | 1.22° |
+| 4.8 | 400 | 32 % | 0 | 76 % | 0.75° |
+| 3.9 | 400 | 48 % | 8 | 82 % | 0.90° |
+| 3.2 | 400 | 54 % | 0 | 84 % | 0.79° |
+| 2.7 | 400 | 80 % | 0 | 95 % | 0.59° |
+| 2.4 | 400 | 94 % | 0 | 99 % | 0.48° |
+| 2.1 | 400 | **98 %** | 0 | 100 % | 0.44° |
+
+Total 2139 on-beacon fixes against 27 false — **1.2 % false share**, versus 10 % on the previous lens.
+The arc map shows a single isolated arc with nothing else in the entire frame: **no specular
+contamination in this room**, unlike the hallway range ladder.
+
+## Where this leaves the mission gap
+
+The engagement is ~19 °/s. This configuration gives **13 % decode at 16.5 °/s** — still hard, but the
+whole curve has moved 2–3× and it is now measured on the optics that will actually fly rather than on a
+stand-in. The remaining gap is what T081/T082/T050 exist to close, and this clip is the fixture that
+will say whether they do.
