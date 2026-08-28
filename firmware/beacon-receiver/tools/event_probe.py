@@ -149,7 +149,10 @@ def decode_from_events(clip, start, count, thr, code, chip_hz, top):
         w = sum(m[0] for m in member)
         cx = sum(m[0] * m[2] for m in member) / w
         cy = sum(m[0] * m[3] for m in member) / w
-        clusters.append((w, ph, cx, cy, len(member), sum(m[4] for m in member)))
+        xs_ = [m[2] for m in member]; ys_ = [m[3] for m in member]
+        span = max(max(xs_) - min(xs_), max(ys_) - min(ys_)) + 1
+        dens = len(member) / float(span * span)          # compactness: 1.0 = a filled square
+        clusters.append((w, ph, cx, cy, len(member), sum(m[4] for m in member), dens, span))
     clusters.sort(reverse=True)
 
     print("STAGE 2 -- code correlation on the event stream (%d frames, thr %d, %d coords touched)"
@@ -163,10 +166,36 @@ def decode_from_events(clip, start, count, thr, code, chip_hz, top):
               % (len(rows)-top, w[len(w)//2], w[int(len(w)*.9)], w[-1]))
     print()
     print("STAGE 3 -- clustered into targets (adjacency + phase agreement): %d cluster(s)" % len(clusters))
-    print("   weight  phase   centroid native(x,y)   px   events    M2 centre-rel")
-    for w_, ph, cx, cy, npx_, ev in clusters[:top]:
-        print("   %6d   %3d    (%7.2f,%7.2f)  %4d  %6d    (%+.2f,%+.2f)"
-              % (w_, ph, cx, cy, npx_, ev, cx/2-320, cy/2-200))
+    print("   weight  phase   centroid native(x,y)   px   events   dens  span   M2 centre-rel")
+    for w_, ph, cx, cy, npx_, ev, dn, sp in clusters[:top]:
+        print("   %6d   %3d    (%7.2f,%7.2f)  %4d  %6d  %.2f  %4d   (%+.2f,%+.2f)"
+              % (w_, ph, cx, cy, npx_, ev, dn, sp, cx/2-320, cy/2-200))
+
+    # STAGE 4 -- SAME-PHASE GROUPS (operator, 2026-08-27: "stragglers could be specular reflection or
+    # lens flare -- so one more pass to find the densest point cloud may be needed").
+    #
+    # This is the case phase clustering CANNOT split. A specular reflection travels a path longer by
+    # centimetres, i.e. nanoseconds, so it carries the SAME code at the SAME phase -- it is not a
+    # different emitter and no temporal test separates it. Two clusters sharing a phase are therefore
+    # either two reflections of one beacon or a beacon and its mirror, and the discriminator has to be
+    # amplitude/density, which is exactly what spec section 9's mirror rule already arbitrates.
+    #
+    # So the detector's job stops here: surface the group and rank it. Deciding which member is real is
+    # the mirror rule's job, and it already flags the lower member MULTIPATH_SUSPECT and KEEPS it rather
+    # than deleting it.
+    byphase = {}
+    for c in clusters:
+        byphase.setdefault(c[1], []).append(c)
+    multi = {k: v for k, v in byphase.items() if len(v) > 1}
+    if multi:
+        print()
+        print("STAGE 4 -- same-phase groups: candidate MIRROR PAIRS (a reflection shares the phase)")
+        for ph, group in sorted(multi.items(), key=lambda kv: -sum(g[0] for g in kv[1]))[:3]:
+            print("   phase %d: %d clusters" % (ph, len(group)))
+            for w_, _p, cx, cy, npx_, ev, dn, sp in group[:4]:
+                lead = group[0][0]
+                print("      weight %6d (%4.1f%% of leader)  px %4d  dens %.2f  native(%.1f,%.1f)"
+                      % (w_, 100.0 * w_ / lead if lead else 0, npx_, dn, cx, cy))
     return rows, clusters
 
 

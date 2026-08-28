@@ -291,3 +291,32 @@ range-fed-forward control. The event path may not need either.
 
 **Not yet tested**: a genuinely close, heavily bloomed target. The clip used here is at pendulum range.
 That is the next cheap experiment — and the existing near-field range-ladder clips may already answer it.
+
+
+## 7. Reflections share the phase — the one case clustering cannot solve
+
+Operator: *"stragglers could be specular reflection or lens flare — so one more pass to find the densest
+point cloud may be needed."*
+
+Correct, and it exposes a limit in §5's clustering that is worth stating precisely. **A specular
+reflection travels a path longer by centimetres — nanoseconds — so it carries the SAME code at the SAME
+phase.** Phase agreement, which cleanly separates two different emitters, is *blind* to a reflection of
+one emitter. Two clusters sharing a phase are therefore either two reflections or a beacon and its
+mirror, and no temporal test distinguishes them.
+
+That leaves **amplitude and density**, which is exactly what spec §9's mirror-pair rule already
+arbitrates — and it flags the lower member `MULTIPATH_SUSPECT` and **keeps** it rather than deleting it.
+
+**So the detector's job stops at surfacing the group.** `event_probe.py` now reports same-phase groups
+(stage 4) with weight, pixel count and compactness, and leaves the decision to the mirror rule.
+Duplicating that arbitration inside the detector would be a second place to get it wrong.
+
+**⚠️ Stage 4 is UNTESTED against a real reflection.** On `rng_8m.bcnr` it finds a single dominant cluster
+(weight 149 vs 2, a 75× margin, 13 coordinates touched) and **no mirror pairs — because that clip has
+none.** The five modulating sources found live during the range ladder were at the 38 ft station, which
+was never recorded, and 8.15 m was one of the healthy stations.
+
+**The experiment that would settle it**, and it is cheap: beacon plus a deliberate reflective surface
+(mirror, glass, or the hallway geometry that produced the 4.83 m null), recorded to a clip. That would
+validate stage 4 **and** the §9 mirror rule against a known-truth mirror pair — which has never been
+done. T055 was unit-tested against *injected* pairs, never against a real reflection.
