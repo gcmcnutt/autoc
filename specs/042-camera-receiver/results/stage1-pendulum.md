@@ -307,3 +307,28 @@ The engagement is ~19 °/s. This configuration gives **13 % decode at 16.5 °/s*
 whole curve has moved 2–3× and it is now measured on the optics that will actually fly rather than on a
 stand-in. The remaining gap is what T081/T082/T050 exist to close, and this clip is the fixture that
 will say whether they do.
+
+## Live observation, 2026-08-27 — the two-target case is a long way off
+
+Operator, watching the live view on the flight optics: *"the track is interesting and the green line mode
+is clean, but not very often — we are a ways off from decoding two at high rate across the screen (recall
+our attitude and target can be in different directions where the span is large)."*
+
+The measured curve agrees, and it is worth stating as a requirement rather than an impression. Green
+crosshairs fire only on a MEASURED fix, so their duty cycle IS the decode column above: **98 % at 2.1 °/s
+but 13 % at 16.5 °/s.** For a single slow target the display is nearly solid; for a fast one it flickers,
+and that is not a display artefact, it is the coherence limit made visible.
+
+**Two targets makes it structurally harder, not just twice as hard**, for reasons specific to the current
+architecture:
+
+- Acquisition is a **top-3 seeded lottery** on a coarse plane, throttled to ~1 pass in 25 frames. A
+  second target far from the first must win a seed slot on its own merits across a 145° field.
+- The per-frame path is **ROI-proportional by design** (9 KB of apertures against a 256 KB frame), so
+  wide angular separation is not free the way it would be for a full-field detector.
+- Both tracks are then subject to the same rate limit independently, and the engagement geometry —
+  attitude and target in different directions — is exactly the case that maximises the span between them.
+
+This is the concrete requirement behind [event-camera-emulation.md](../event-camera-emulation.md): a
+detector that treats every pixel as a candidate on every frame has no seeding lottery and no preference
+for the strongest blinker, which is what the two-target wide-span case needs.
