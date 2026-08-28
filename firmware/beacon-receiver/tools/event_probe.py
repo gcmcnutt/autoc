@@ -54,17 +54,143 @@ def frames(path, start, count):
         yield t_us, np.frombuffer(d[FRAME_HDR:], dtype=np.uint8).reshape(h, w)
 
 
+CODE_B = "0100011001100111100101001011110"
+CODE_A = "0000000100011011000011001110011"
+
+
+def decode_from_events(clip, start, count, thr, code, chip_hz, top):
+    """STAGE 2: correlate the EVENT STREAM, per coordinate, against the code.
+
+    This is the whole point of the two-stage model. Stage 1 gives a sparse list of (coord, sign); the
+    only thing left is to ask which coordinates carry sign flips that line up with chip transitions.
+
+    The matched quantity is the TRANSITION, not the level: at a chip boundary the expected change is
+    code[k] - code[k-1], which is -1, 0 or +1. Frames inside a chip expect 0 and carry no information, so
+    they are skipped -- that is the same fact T082 records as "5 of 12 frames straddle a boundary", seen
+    from the detector side. Score = sum(observed_sign * expected_delta) over transition frames only.
+
+    Phase is searched over all 31 here because this is a COLD prototype. In the receiver phase would be
+    receiver-global (T081) and this collapses to a single evaluation.
+    """
+    n = len(code)
+    bits = [1 if c == "1" else 0 for c in code]
+    acc = {}                                   # coord -> per-phase score
+    seen = {}                                  # coord -> event count
+    prev = None
+    t0 = None
+    nf = 0
+    for t_us, fr in frames(clip, start, count + 1):
+        f = fr.astype(np.int16)
+        if prev is None:
+            prev, t0 = f, t_us
+            continue
+        d = f - prev
+        prev = f
+        ys, xs = np.nonzero(np.abs(d) >= thr)
+        if len(xs):
+            sgn = np.sign(d[ys, xs])
+            # chip index at this frame and the previous one, per candidate phase
+            c_now = (t_us - t0) * chip_hz / 1e6
+            c_prv = c_now - chip_hz / 288.0
+            for ph in range(n):
+                k1 = int((c_now + ph) % n)
+                k0 = int((c_prv + ph) % n)
+                if k1 == k0:
+                    continue                   # no boundary crossed at this phase: no information
+                exp = bits[k1] - bits[k0]      # -1, 0 or +1
+                if exp == 0:
+                    continue
+                for x, y, sg in zip(xs, ys, sgn):
+                    key = (int(x), int(y))
+                    a = acc.get(key)
+                    if a is None:
+                        a = acc[key] = [0] * n
+                        seen[key] = 0
+                    a[ph] += int(sg) * exp
+            for x, y in zip(xs, ys):
+                seen[(int(x), int(y))] = seen.get((int(x), int(y)), 0) + 1
+        nf += 1
+    rows = []
+    for k, a in acc.items():
+        best = max(range(n), key=lambda i: a[i])
+        rows.append((a[best], best, k[0], k[1], seen[k]))
+    rows.sort(reverse=True)
+
+    # STAGE 3 -- cluster the point cloud (operator, 2026-08-27: "we do need to figure out how to find
+    # near neighbors when close in as a point cloud").
+    #
+    # A target is not one pixel. At range it is a handful; close in the bloom spreads it over many, and
+    # the operator's judgement is that bloom is ACCEPTABLE -- an event is a DELTA, and a saturated core
+    # still swings 255->0 when the code goes dark, so saturation costs nothing here the way it wrecked
+    # the centroid-based photometry. That is a real simplification: it is an argument for dropping
+    # exposure control from this path entirely.
+    #
+    # Cluster in (x, y, PHASE) rather than (x, y) alone. Phase is the strong axis: every pixel of one
+    # emitter votes the same phase, while noise pixels scatter. Two beacons close together but running
+    # different codes/phases separate cleanly on it, where a purely spatial clustering would merge them.
+    good = [r for r in rows if r[0] > 0]
+    used, clusters = set(), []
+    bysc = sorted(good, reverse=True)
+    for sc, ph, x, y, ev in bysc:
+        if (x, y) in used:
+            continue
+        member = [(sc, ph, x, y, ev)]
+        used.add((x, y))
+        grew = True
+        while grew:                       # flood-fill: adjacency in space AND agreement in phase
+            grew = False
+            for s2, p2, x2, y2, e2 in bysc:
+                if (x2, y2) in used or abs(p2 - ph) > 1:
+                    continue
+                if any(abs(x2 - mx) <= 2 and abs(y2 - my) <= 2 for _, _, mx, my, _ in member):
+                    member.append((s2, p2, x2, y2, e2))
+                    used.add((x2, y2))
+                    grew = True
+        w = sum(m[0] for m in member)
+        cx = sum(m[0] * m[2] for m in member) / w
+        cy = sum(m[0] * m[3] for m in member) / w
+        clusters.append((w, ph, cx, cy, len(member), sum(m[4] for m in member)))
+    clusters.sort(reverse=True)
+
+    print("STAGE 2 -- code correlation on the event stream (%d frames, thr %d, %d coords touched)"
+          % (nf, thr, len(acc)))
+    print("   score  phase  native(x,y)   events   M2 centre-rel")
+    for sc, ph, x, y, ev in rows[:top]:
+        print("   %5d   %3d   (%4d,%4d)   %6d   (%+.1f,%+.1f)" % (sc, ph, x, y, ev, x/2-320, y/2-200))
+    if len(rows) > top:
+        w = sorted(r[0] for r in rows)
+        print("   ... %d more; score distribution p50 %d p90 %d max %d"
+              % (len(rows)-top, w[len(w)//2], w[int(len(w)*.9)], w[-1]))
+    print()
+    print("STAGE 3 -- clustered into targets (adjacency + phase agreement): %d cluster(s)" % len(clusters))
+    print("   weight  phase   centroid native(x,y)   px   events    M2 centre-rel")
+    for w_, ph, cx, cy, npx_, ev in clusters[:top]:
+        print("   %6d   %3d    (%7.2f,%7.2f)  %4d  %6d    (%+.2f,%+.2f)"
+              % (w_, ph, cx, cy, npx_, ev, cx/2-320, cy/2-200))
+    return rows, clusters
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("clip")
     ap.add_argument("--start", type=int, default=0, help="first frame index")
     ap.add_argument("--frames", type=int, default=600)
     ap.add_argument("--thresholds", default="3,5,10,20,40")
+    ap.add_argument("--decode", action="store_true", help="run STAGE 2: correlate events against the code")
+    ap.add_argument("--decode-thr", type=int, default=5)
+    ap.add_argument("--code", default="B")
+    ap.add_argument("--chip-hz", type=float, default=120.0)
+    ap.add_argument("--top", type=int, default=8)
     ap.add_argument("--beacon-roi", default=None,
                     help="X0,X1,Y0,Y1 native — events inside are 'on beacon', outside are 'elsewhere'")
     a = ap.parse_args()
     thr = [int(t) for t in a.thresholds.split(",")]
     roi = tuple(int(v) for v in a.beacon_roi.split(",")) if a.beacon_roi else None
+
+    if a.decode:
+        decode_from_events(a.clip, a.start, a.frames, a.decode_thr,
+                           CODE_B if a.code.upper() == "B" else CODE_A, a.chip_hz, a.top)
+        return 0
 
     prev = None
     npx = None

@@ -238,3 +238,56 @@ what the two-target wide-span case needs.
 **Still prerequisites**, unchanged: [T081](sync-first-acquisition.md) makes phase receiver-global so
 "events that line up with our locked code" means something, and [T082](tasks.md) weights the 42 % of
 frames that straddle a chip boundary rather than discarding them (worth 2.34 dB).
+
+
+## 5. The full three-stage detector, prototyped offline and working
+
+`event_probe.py --decode` on `pend_ir.bcnr`, 300 frames of the slow part, threshold 5 ADU:
+
+**Stage 2 — per-coordinate code correlation.** 76 coordinates touched out of 256000. The matched quantity
+is the TRANSITION, not the level: at a chip boundary the expected change is `code[k]-code[k-1]` ∈ {-1,0,+1},
+and frames inside a chip carry no information and are skipped. Top scorers:
+
+```
+score  phase  native(x,y)
+   21     27   (354, 197)
+   21     27   (354, 196)
+   21     27   (351, 197)
+   21     27   (351, 196)
+   ...        p50 score 9, max 21
+```
+
+**Every top pixel independently votes phase 27.** That unanimity is a far stronger discriminator than
+score alone — a noise pixel scores 9 at a random phase; the beacon's pixels agree.
+
+**Stage 3 — cluster the point cloud** (operator: *"we do need to figure out how to find near neighbors
+when close in as a point cloud"*). Flood-fill on **adjacency AND phase agreement**:
+
+```
+weight  phase   centroid native(x,y)   px   events
+   773     27    ( 351.33, 195.68)     59    2766     <- the beacon
+    13     16    ( 350.00, 194.08)      2     118
+    11     13    ( 349.00, 193.00)      1      77
+```
+
+**59× margin**, 59 pixels collapsing to one sub-pixel centroid, stragglers are single pixels at scattered
+phases. **Phase is the right clustering axis**: spatial adjacency alone would merge two nearby beacons,
+while phase agreement separates them — so the same mechanism handles the close-in point cloud *and* the
+two-target case.
+
+## 6. Exposure control may be droppable on this path
+
+Operator: *"this probably doesn't need much exposure control — close in bloom should be ok."*
+
+The reason it holds: **an event is a delta, and a saturated core still swings 255 → 0 when the code goes
+dark.** Saturation costs the event detector nothing — in sharp contrast to the centroid photometry it
+wrecked during the [range ladder](results/stage1-indoor-range-ladder.md), where a clipped blob's centroid
+drifted 10 px and the flux sum became a lower bound.
+
+If that survives a close-range test it retires the reactive AGC, which has been a known defect since
+`lit60` (it sat pinned at 53 µs while the beacon struggled) and which
+[ac-coupling-and-exposure.md](ac-coupling-and-exposure.md) already argued should be replaced by
+range-fed-forward control. The event path may not need either.
+
+**Not yet tested**: a genuinely close, heavily bloomed target. The clip used here is at pendulum range.
+That is the next cheap experiment — and the existing near-field range-ladder clips may already answer it.
