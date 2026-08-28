@@ -6,6 +6,8 @@
  * failure. (4, deadline budget, belongs to beacon_trackd.)
  */
 #define _GNU_SOURCE
+#include <pthread.h>
+#include <time.h>
 #include "config.h"
 #include "frame.h"
 #include "sink_record.h"
@@ -59,10 +61,63 @@ static void usage(void)
         "  SIGUSR1 = dump the ring now (ring mode). SIGINT/SIGTERM = finish cleanly.\n");
 }
 
+/* --read-bench N: time a FULL-FRAME read of the capture buffer with N threads.
+ *
+ * WHY THIS EXISTS. research.md measured the dmabuf mmap as WRITE-COMBINE, one uncached 256 KB frame read
+ * costing ~4 ms against a 3.47 ms frame period. That single number is what forced the whole receiver to
+ * be ROI-proportional, and it is what blocks a full-field per-frame ("event camera") detector -- the
+ * arithmetic is cheap (reduce2 NEON is 0.65 ms) but touching every pixel is not.
+ *
+ * The number was measured single-threaded, and that may understate what the hardware can do: a
+ * write-combine read is LATENCY-bound rather than bandwidth-bound, because uncached reads do not
+ * prefetch. Several threads can therefore have several misses outstanding at once and hide latency that
+ * one thread cannot. If that holds, 4 cores buy something a bandwidth model says they should not, and the
+ * event detector becomes affordable WITHOUT a smaller sensor mode -- which matters now that 320x200 is
+ * confirmed broken in this pipeline.
+ *
+ * The sum is returned and printed so the optimiser cannot delete the loads. Reads only; nothing here
+ * touches the recorder or the frame contract. */
+typedef struct { const uint8_t *base; size_t off, len; uint64_t sum; } BenchSlice;
+
+static void *bench_slice(void *arg)
+{
+    BenchSlice *s = (BenchSlice *)arg;
+    const uint8_t *p = s->base + s->off;
+    uint64_t acc = 0;
+    size_t i;
+    for (i = 0; i < s->len; i++) acc += p[i];   /* byte-wise: the WC penalty is per cache line, not per op */
+    s->sum = acc;
+    return NULL;
+}
+
+static double bench_read_ms(const uint8_t *base, size_t bytes, int nthreads, uint64_t *sum_out)
+{
+    pthread_t th[8];
+    BenchSlice sl[8];
+    struct timespec a, b;
+    size_t chunk;
+    int i;
+    if (nthreads < 1) nthreads = 1;
+    if (nthreads > 8) nthreads = 8;
+    chunk = bytes / (size_t)nthreads;
+    clock_gettime(CLOCK_MONOTONIC, &a);
+    for (i = 0; i < nthreads; i++) {
+        sl[i].base = base; sl[i].off = (size_t)i * chunk; sl[i].sum = 0;
+        sl[i].len = (i == nthreads - 1) ? bytes - (size_t)i * chunk : chunk;
+        if (nthreads == 1) bench_slice(&sl[i]);
+        else pthread_create(&th[i], NULL, bench_slice, &sl[i]);
+    }
+    if (nthreads > 1) for (i = 0; i < nthreads; i++) pthread_join(th[i], NULL);
+    clock_gettime(CLOCK_MONOTONIC, &b);
+    for (i = 0; i < nthreads; i++) *sum_out += sl[i].sum;
+    return (double)(b.tv_sec - a.tv_sec) * 1e3 + (double)(b.tv_nsec - a.tv_nsec) / 1e6;
+}
+
 int main(int argc, char **argv)
 {
     const char *ini = NULL, *mode = NULL, *out_path = NULL, *trigger = NULL;
     long duration_s = 0;
+    int read_bench = 0;          /* --read-bench N: WC full-frame read timing, N threads */
     long ring_seconds = -1, burst_frames = -1, burst_every = -1;
     char err[BCN_ERR_MAX];
     BcnConfig cfg;
@@ -80,6 +135,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--out")          && i + 1 < argc) out_path = argv[++i];
         else if (!strcmp(argv[i], "--trigger")      && i + 1 < argc) trigger = argv[++i];
         else if (!strcmp(argv[i], "--duration")     && i + 1 < argc) duration_s = atol(argv[++i]);
+        else if (!strcmp(argv[i], "--read-bench")   && i + 1 < argc) read_bench = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--ring-seconds") && i + 1 < argc) ring_seconds = atol(argv[++i]);
         else if (!strcmp(argv[i], "--burst-frames") && i + 1 < argc) burst_frames = atol(argv[++i]);
         else if (!strcmp(argv[i], "--burst-every")  && i + 1 < argc) burst_every = atol(argv[++i]);
@@ -128,6 +184,10 @@ int main(int argc, char **argv)
             cfg.exposure_min_us ? "manual exposure" : "?", cfg.fps);
 
     rc = 0;
+    {
+    int bench_n = 0, bench_cnt[3] = {0,0,0};
+    double bench_ms[3] = {0,0,0};
+    uint64_t bench_sum = 0;
     for (;;) {
         FrameView fv;
         FrameStatus st;
@@ -145,6 +205,33 @@ int main(int argc, char **argv)
         st = src->next(src, &fv);
         if (st == FRAME_END) break;
         if (st == FRAME_ERROR) { rc = 3; break; }
+
+        if (read_bench && bench_n < 40) {
+            /* Every frame for the first 40: sweep 1,2,4 threads round-robin so each count sees a
+             * comparable mix of frames rather than a privileged warm-up. */
+            static const int counts[3] = {1, 2, 4};
+            int nt = counts[bench_n % 3];
+            uint64_t sum = 0;
+            double ms = bench_read_ms(fv.data, (size_t)fv.stride * fv.h, nt, &sum);
+            bench_ms[bench_n % 3] += ms;
+            bench_cnt[bench_n % 3]++;
+            bench_sum += sum;
+            bench_n++;
+            if (bench_n == 40) {
+                int k;
+                fprintf(stderr, "beacon_record: WC full-frame read, %ux%u stride %u = %zu bytes\n",
+                        fv.w, fv.h, fv.stride, (size_t)fv.stride * fv.h);
+                for (k = 0; k < 3; k++)
+                    if (bench_cnt[k])
+                        fprintf(stderr, "beacon_record:   %d thread%s : %.3f ms  (%.0f MB/s)  n=%d\n",
+                                counts[k], counts[k] == 1 ? " " : "s",
+                                bench_ms[k] / bench_cnt[k],
+                                ((double)fv.stride * fv.h / 1e6) / (bench_ms[k] / bench_cnt[k] / 1e3),
+                                bench_cnt[k]);
+                fprintf(stderr, "beacon_record:   frame period at %u fps = %.2f ms   (sink %llu)\n",
+                        cfg.fps, 1000.0 / (double)cfg.fps, (unsigned long long)bench_sum);
+            }
+        }
 
         if (have_prev && fv.seq != prev_seq + 1u) gaps++;
         prev_seq = fv.seq; have_prev = 1;
@@ -167,6 +254,7 @@ int main(int argc, char **argv)
         if (duration_s > 0 && fv.t_us - t0_us >= (uint64_t)duration_s * 1000000ull) break;
     }
 
+    }
     src->close(src);
     {
         BcnRecorderStats s;

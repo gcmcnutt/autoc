@@ -151,3 +151,90 @@ Before building anything: **record one pendulum clip at 320×200** and check two
 
 If both come back acceptable, the event detector has a home. If the decode collapses without the fine
 scale, the idea still stands but needs a dual-stream capture, which is a much larger change.
+
+
+---
+
+# MEASURED, 2026-08-27 — the idea holds, and the numbers are better than the estimate
+
+## 1. Threads do not buy the write-combine read (my hypothesis, refuted)
+
+I argued above that a WC read is latency-bound rather than bandwidth-bound, so several threads could hide
+what one cannot. **Measured with `beacon_record --read-bench`, that is wrong:**
+
+| threads | 640×400 read | throughput |
+|---|---|---|
+| 1 | 3.211 ms | 80 MB/s |
+| 2 | 3.207 ms | 80 MB/s |
+| 4 | 3.184 ms | 80 MB/s |
+
+Flat. It is a hard **80 MB/s bandwidth wall** and **4 cores buy nothing**. Operator called this
+("me is an issue yes"); the latency-hiding theory was mine and it did not survive contact.
+
+At 640×400 the read is **96 % of the 3.33 ms frame period**, which leaves nothing for anything else.
+
+## 2. 320×200 is broken in this pipeline; 640×200 is not
+
+The 320×200 mode the analysis above proposed **does not stream**. `rpicam-vid` fails identically to our
+app — the sensor format is selected, a few frames trickle out, then "Camera frontend has timed out". So
+the mode is advertised by the driver and not usable through this PiSP/CFE path. **The proposed route was
+blocked by a driver issue, not by anything in the design.**
+
+**640×200 works and is the practical answer:**
+
+| mode | bytes | WC read | % of frame |
+|---|---|---|---|
+| 640×400 | 256 000 | 3.21 ms | **96 %** |
+| **640×200** | 128 000 | **1.29 ms** | **39 %** |
+
+Half the bytes and slightly better throughput (99 vs 80 MB/s), streaming cleanly at 0 seq gaps. It is a
+**crop, not a bin**, so horizontal scale is unchanged and **the fine scale survives** — the objection
+raised against 320×200 does not apply. The cost is half the vertical field (~147° × 45° instead of
+147° × 90°), which is the wrong axis to give up for "attitude and target in different directions" and is
+a judgement about the engagement rather than something the bench can settle.
+
+## 3. The event list is PURE SIGNAL — measured on `pend_ir.bcnr`
+
+`event_probe.py` over the flight-optics pendulum clip, threshold in ADU of frame-to-frame delta:
+
+| thr | fast (~16 °/s) | slow (~2 °/s) | on-beacon |
+|---|---|---|---|
+| **3** | **18.8 ev/frame** — 1 in 13 600 | **12.9** — 1 in 19 800 | **100.0 %** |
+| 5 | 17.3 | 10.9 | 100.0 % |
+| 10 | 14.6 | 8.6 | 100.0 % |
+| 40 | 7.4 | 6.1 | 100.0 % |
+
+**A ~13 600× search-space reduction with ZERO false events, at a 3 ADU threshold sitting essentially on
+the noise floor.** It holds at both ends of the swing, which matters: a moving target fires events on
+both edges of its motion while a stationary one only blinks the code, and both give a sparse pure list.
+
+## 4. The physical filter is what buys the aggressive threshold
+
+The same probe on the **unfiltered** clip (`pend1m.bcnr`, 2.31 mm lens, cluttered scene):
+
+| thr | filtered | unfiltered |
+|---|---|---|
+| 3 | 18.8 | **66.1** |
+| 5 | 17.3 | 56.7 |
+| 10 | 14.6 | 36.5 |
+
+**3.5× more events at the low threshold, and the extras are clutter.** To recover comparable sparsity
+without the filter you would have to raise the threshold to 20–40 — exactly the wrong direction, because
+a high threshold is what loses a far-field target. So: **the filter buys the low threshold, and the low
+threshold buys range.** That is the quantified form of the operator's "aggressive across wide ranges".
+
+## The resulting cost model
+
+```
+  stage 1   O(pixels)   1.29 ms @ 640x200   (WC read dominates; the compare is ~0.33 ms)
+  stage 2   O(events)   ~19 coordinates      negligible
+                        ---------
+                        ~1.6 ms of a 3.33 ms frame  =  under half a core
+```
+
+No seeding lottery, no top-3 cap, no ROI, no preference for the strongest blinker — which is precisely
+what the two-target wide-span case needs.
+
+**Still prerequisites**, unchanged: [T081](sync-first-acquisition.md) makes phase receiver-global so
+"events that line up with our locked code" means something, and [T082](tasks.md) weights the 42 % of
+frames that straddle a chip boundary rather than discarding them (worth 2.34 dB).
