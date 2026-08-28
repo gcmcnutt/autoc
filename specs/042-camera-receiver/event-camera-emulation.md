@@ -371,3 +371,74 @@ lags the true position, which matters when handing a fix to the tracker.
 40–56 clusters survive in this room at thr=10, and they are still there at t=180 s. The leader beats them
 **8–12×**, so they lose decisively on weight — but they are a permanent feature of a lit indoor scene,
 not noise that averages away. That is the question the live view could not answer.
+
+
+## 9. Outdoor adaptation — and a flaw in the rate-targeting servo (operator, 2026-08-27)
+
+**Operator**: *"outdoor, AGC is tricky — prob during scene init we DO want to adjust the threshold, but
+during flight if the sun comes into view, that is ok, we don't want to adjust down. Again, the beacon is
+constant illumination, the noise background floor rises and falls, so not sure we need much exposure
+control vs the delta threshold and only a little."*
+
+That framing exposes something wrong with the `--target-events` servo built above, and it is worth
+recording before anyone relies on it in the field.
+
+### Rate-targeting is confounded by the thing it is looking for
+
+The servo raises the threshold when the event rate rises. But **a real target arriving raises the event
+rate**, so the servo responds by raising the threshold and suppressing the target it is supposed to find.
+It cannot distinguish "the sun came into view" from "the beacon appeared", because both look like more
+events. That is the operator's *"we don't want to adjust down"* in its precise form: the control variable
+is wrong.
+
+**The threshold should track the NOISE FLOOR, not the event rate.** The floor is measurable independently
+of any target — e.g. a high percentile of |Δ| over the field excluding confirmed tracks — and it is
+immune to a target appearing. The measured cliff makes this easy: the noise population is sharply bounded
+at |Δ| ≤ 7 with almost nothing between it and the signal, so "just above the floor" is a well-defined
+place to sit rather than a compromise.
+
+### Asymmetric adaptation: free at init, slew-limited in flight
+
+The operator's split is the right shape and has precedent in this codebase (the DPLL rate loop is parked
+for exactly this class of reason — a loop that adapts freely on a noisy statistic destabilises).
+
+- **Scene init**: adapt freely. The floor is unknown and could be anything from 0.02 ADU (dark, filtered)
+  to whatever the sky gives.
+- **In flight**: slew-limit hard, and asymmetrically. Letting the threshold rise slowly is safe; letting
+  it *fall* fast on a transient is what loses a target. A sun transit should cost margin, not lock.
+
+### Exposure control probably is not needed, and there is a reason
+
+**The beacon is a constant-brightness source**, so at fixed exposure and gain its frame-to-frame delta is
+a **constant** — a known quantity that only range changes. The background is what varies. Exposure control
+would move both, coupling a disturbance into the one quantity that was stable. The event detector wants a
+*fixed* exposure and a *tracking* threshold, which is the opposite of an AGC.
+
+This also matches §6: an event is a delta, so a saturated core still swings 255 → 0 and bloom costs
+nothing. Exposure control was there to prevent saturation, and saturation is not a problem on this path.
+
+### The hard limit is physics, not tuning — and sky was never measured
+
+An event needs the beacon's delta to clear the background's shot noise (√2 worse for a difference of two
+frames). At 5 σ:
+
+| beacon delta | max tolerable background |
+|---|---|
+| 255 ADU | 1300 ADU |
+| 96 | 184 |
+| 46 | **42** |
+| 20 | 8 |
+| 10 | **2** |
+
+Against the indoor range ladder's measured deltas (53 µs, gain 1): at 2.54 m the beacon tolerates a
+background of 1300 ADU; at 8.15 m only **42**; and a far-field target at delta 10 tolerates **2 ADU**.
+
+**Indoor backgrounds ran 0.02 (dark, filtered) to 4.3 (lit room)** — enormous margin everywhere. **Sky was
+never measured**, and it is the case where the background is large *and* structureless. So the honest
+position is that nothing here predicts outdoor behaviour: the detector could have ample margin or none,
+and which one depends on a single number we have not got.
+
+**The one measurement that would settle it**: point this camera at the sky through the bandpass at 53 µs
+and read the background level. That is a five-minute experiment requiring no beacon, no pendulum and no
+flight, and it converts the entire outdoor risk from speculation into arithmetic against the table above.
+It should happen before the field campaign, not during it.
