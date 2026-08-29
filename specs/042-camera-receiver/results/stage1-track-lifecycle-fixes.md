@@ -117,10 +117,28 @@ guard's own last fix is the older of the two, which aged the precision track pre
 **earlier** than no rescue at all (golden: death moved f425 → f400). The guard must be
 `if (g->last_fix_us > s->trk.last_fix_us)` — evidence only accumulates.
 
-Even monotone, it was not a win *yet*: the rescued track survives but cannot re-establish, so it lingers
-in HOLD holding a slot while `have_confirmed` (which the engine tests across all roles, guards included)
-suppresses acquisition. Retry this **on top of** the evidence split, which is what makes a rescued track
-able to correlate again — the two were never separable, and that is why it failed alone.
+**Tried monotone, on top of the evidence split, and it is STILL a net loss.** I expected the split to
+unblock it — a rescued track can now correlate through the widen — and predicted a win. Measured on
+`pend_ir`, it is not:
+
+| | evidence split | + monotone guard rescue |
+|---|---|---|
+| on-beacon fixes | **1770** | 1722 |
+| false share | **1.0 %** | 1.3 % |
+| within the 400 ms bar | **8/9** | 7/9 |
+| relock p90 | **867 ms** | 1021 ms |
+
+So the prediction was wrong and the mechanism is not simply "the rescue needs a correlatable track".
+The likely reason, unverified: keeping the precision track alive holds a slot **and** keeps a CONFIRMED
+track in the bank, and `engine.c` tests `have_confirmed` across *all* roles — so acquisition stays
+suppressed while a rescued-but-not-recovering track coasts. On this fixture **dying and re-acquiring
+cleanly beats being rescued**, which is a real statement about the current acquisition path being fast
+(0.40 s) rather than about the rescue being wrong in principle.
+
+**Do not try this a third time without first changing what it competes with.** The two candidates:
+make `have_confirmed` role-aware so a HOLD-ing precision track does not suppress acquisition, or land
+T081 (phase-known re-detection at 0.39 ms), after which the comparison is completely different because
+re-acquisition stops being the expensive option. Reverted; not in the tree.
 
 ## What this does and does not move
 

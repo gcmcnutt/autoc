@@ -359,8 +359,12 @@ Each stage isolates ONE new thing; do not skip, because a failure two stages up 
     inflated only in HOLD, so a CONFIRMED track that fell behind the gate rejected every measurement
     forever. This had been failing `beacon_golden_test_replay_parity` since `6452bd6`, undetected.
   - **Still open, found here**: the guard rescue does not transfer `last_fix_us`, so a rescued track dies
-    of old age on the next tick. Must be MONOTONE (an unconditional copy kills it earlier than no rescue).
-    Retry on top of the evidence split — it failed alone because the rescued track could not re-correlate.
+    of old age on the next tick — spec §2.4's "2 ticks instead of 1+ s" never survives to be spent. Fixing
+    it MEASURED WORSE, twice (unconditional copy: kills tracks earlier still, golden death f425 -> f400;
+    monotone on top of the evidence split: 1770 -> 1722 fixes, false 1.0 -> 1.3 %, bar 8/9 -> 7/9). On
+    this fixture dying and re-acquiring beats being rescued. **Do not retry until what it competes with
+    changes**: make `have_confirmed` role-aware (a HOLD-ing precision should not suppress acquisition), or
+    land T081 and re-measure, since phase-known re-detection at 0.39 ms changes the comparison entirely.
 
 - [ ] ~~T076 [P] [US2] **Two `track.c` correctness fixes**~~ (bugs, not tuning — do them opportunistically, do
   NOT schedule a tuning phase; the measured knee is 1–2 °/s and these move it to maybe 2–3, against 15–18 °/s
