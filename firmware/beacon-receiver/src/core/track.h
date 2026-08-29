@@ -65,6 +65,30 @@ typedef struct {
     uint16_t age_ms;                   /* staleness of the measurement behind the prediction            */
     uint64_t last_fix_us;
 
+    /* T076(b): the chip window is TWO kinds of evidence with DIFFERENT lifetimes across a scale change,
+     * and conflating them is what made widening fatal.
+     *
+     *   apsum[b]  TEMPORAL evidence — total aperture flux in chip b. This is what q, the phase search
+     *             and identity re-verification are computed from, and it is scale-INDEPENDENT in
+     *             meaning: "how much light the aperture saw in this chip". A widen changes the
+     *             aperture's area but not the question, so this SURVIVES a widen. That is what lets a
+     *             widened track keep correlating instead of starting a 258 ms rebuild against a 150 ms
+     *             age bound.
+     *
+     *   bins[p]   SPATIAL evidence — the per-pixel surface the position centroid is taken from. It is
+     *             aperture-RELATIVE, so on a widen it is meaningless: the samples were collected on a
+     *             different plane, about a stale centre. Carrying it across (the first attempt at this
+     *             fix, 2026-08-29, measured on pend_ir) re-binned it into the centre of the new
+     *             aperture, so the position surface peaked at the aperture centre no matter where the
+     *             beacon was — the "measured fix" just re-reported the prediction. Bearing error at
+     *             12.4 deg/s went 1.46 -> 2.60 deg and the false-lock share went 1.0 -> 1.7 %, while
+     *             relock got genuinely faster. Right mechanism, wrong currency. So this is DISCARDED on
+     *             a widen and rebuilt from fresh frames.
+     *
+     * Hence two window starts. first_chip bounds apsum; px_first_chip bounds bins. */
+    int32_t  apsum[TRK_WIN];
+    int64_t  px_first_chip;
+
     /* aperture sampling: per-pixel chip bins. bins[(py*E+px)*TRK_WIN + b] */
     uint16_t native_w, native_h;       /* frame geometry — needed to convert centre-origin M2 coords
                                         * to top-left plane px and back (parsed from cfg at seed)       */
@@ -115,14 +139,6 @@ void track_frame(Track *t, const BcnConfig *cfg, const int32_t *roi, int16_t roi
  * length, refresh q/lock_health/extent/scintillation, run the lifecycle bounds. dt_us = time since the
  * previous tick. Returns 1 if a record-worthy state remains (anything but DEAD). */
 int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us);
-
-/* T076(b), EXPOSED FOR TESTS ONLY (tests/unit/test_track.c) — the widen re-binning. Nothing outside
- * track.c calls this in production; it is public because the identity it must satisfy is worth asserting
- * directly rather than inferring from a fixture that happens to widen. That identity: a coarse pixel is
- * EXACTLY the sum of the r x r fine pixels covering the same native area, with both apertures centred on
- * the same predicted position, so the transform is a pure scale about the centre and loses nothing.
- * Pixels of the new plane with no old coverage are left at 0 — they carry no evidence. */
-void track_rebin_coarser(Track *t, uint8_t E_old, uint8_t E_new, uint8_t r);
 
 /* Where the engine should extract the NEXT frame's ROI, in plane px of the track's scale. */
 void track_roi_center(const Track *t, int16_t *cx, int16_t *cy);

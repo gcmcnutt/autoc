@@ -83,7 +83,6 @@ set(BR_TESTS
   unit/test_kernels
   unit/test_corr
   unit/test_bank
-  unit/test_track
   equivalence/test_kernels_neon
   golden/test_record_vectors
   golden/test_replay_parity
