@@ -32,7 +32,12 @@ import sys
 import numpy as np
 
 
-def photometry(shutter, gain, w, h, seconds):
+def photometry(shutter, gain, w, h, seconds, at=None):
+    """`at` = (x, y) in NATIVE px, from the tracker. Without it this falls back to the frame maximum,
+    which is right indoors on a black background and WRONG outdoors: the brightest blob in a sunlit
+    scene is the ground, not the beacon. Measured at 10 m against foliage, the fallback reported peak
+    255 for the driveway while the beacon was a dim source the tracker could barely hold. Same class of
+    error as oracle.py's brightest-pixel warning, which finds the ceiling light."""
     cmd = ["rpicam-vid", "-n", "-t", str(int(seconds * 1000)), "--codec", "mjpeg", "--framerate", "10",
            "--width", str(w), "--height", str(h), "--denoise", "off",
            "--shutter", str(shutter), "--gain", str(gain), "-o", "-"]
@@ -58,12 +63,24 @@ def photometry(shutter, gain, w, h, seconds):
     # hallway and fails silently the moment house lights raise the floor: at 16.69 m a 0.15*peak cut
     # fell below the max-projection noise and selected all 256000 pixels, reporting the whole frame as
     # the emitter. Flood-filling from the peak cannot do that.
-    thr = max(peak * 0.35, bg + 6)
-    lab = (mx >= thr).astype(np.uint8)
     import cv2 as _cv
-    nlab, comp = _cv.connectedComponents(lab, 8)
-    py, px_ = np.unravel_index(int(mx.argmax()), mx.shape)
-    m = comp == comp[py, px_] if nlab > 1 else lab.astype(bool)
+    if at is not None:
+        # Measure a fixed aperture AT THE TRACKER'S POSITION. No thresholding, no blob search: a dim
+        # beacon does not win a brightest-blob contest against sunlit ground, and searching would find
+        # the ground instead. peak/sum here are the beacon's, whatever else is in frame.
+        ax, ay = int(round(at[0])), int(round(at[1]))
+        y0, y1 = max(0, ay - 12), min(mx.shape[0], ay + 13)
+        x0, x1 = max(0, ax - 12), min(mx.shape[1], ax + 13)
+        m = np.zeros_like(mx, bool)
+        m[y0:y1, x0:x1] = True
+        peak = int(mx[y0:y1, x0:x1].max())
+        bg = float(np.median(a[:, y0:y1, x0:x1]))
+    else:
+        thr = max(peak * 0.35, bg + 6)
+        lab = (mx >= thr).astype(np.uint8)
+        nlab, comp = _cv.connectedComponents(lab, 8)
+        py, px_ = np.unravel_index(int(mx.argmax()), mx.shape)
+        m = comp == comp[py, px_] if nlab > 1 else lab.astype(bool)
     ys, xs = np.nonzero(m)
     cx = float((xs * (mx[m] - bg)).sum() / max((mx[m] - bg).sum(), 1e-9)) if m.sum() else 0.0
     cy = float((ys * (mx[m] - bg)).sum() / max((mx[m] - bg).sum(), 1e-9)) if m.sum() else 0.0
@@ -82,7 +99,10 @@ def tracking(trackd, config, seconds):
     first = next(((t["t_us"] - ticks[0]["t_us"]) / 1e6 for t in ticks if t["n"] >= 1), None)
     q = sorted(t["tracks"][0]["q"] for t in pres) or [0]
     cep = sorted(t["tracks"][0]["cep"] for t in pres) or [0]
-    return dict(ticks=len(ticks), present=100.0 * len(pres) / len(ticks),
+    xs = [t["tracks"][0]["x"] for t in pres]
+    ys = [t["tracks"][0]["y"] for t in pres]
+    return dict(x=(sum(xs) / len(xs)) if xs else None, y=(sum(ys) / len(ys)) if ys else None,
+                ticks=len(ticks), present=100.0 * len(pres) / len(ticks),
                 measured=100.0 * len(meas) / len(ticks),
                 first_lock=first if first is not None else -1.0,
                 q50=q[len(q) // 2], cep50=cep[len(cep) // 2])
@@ -102,14 +122,6 @@ def main():
     ap.add_argument("--note", default="")
     a = ap.parse_args()
 
-    print("station %.2f m -- photometry ..." % a.range)
-    p = photometry(a.shutter, a.gain, a.width, a.height, 2.0)
-    if p:
-        state = "SATURATED (sum is a LOWER BOUND)" if p["sat"] else "clean"
-        print("   peak %3d  area %5d  sum %10.0f  bg %.2f  frame mean %.2f   %s"
-              % (p["peak"], p["area"], p["total"], p["bg"], p["frame_mean"], state))
-    else:
-        print("   no frames")
     print("station %.2f m -- tracking %.0f s ..." % (a.range, a.seconds))
     t = tracking(a.trackd, a.config, a.seconds)
     if t:
@@ -117,7 +129,19 @@ def main():
               % (t["first_lock"], t["present"], t["measured"], t["q50"], t["cep50"]))
     else:
         print("   NO TRACK AT ALL")
-
+    at = None
+    if t and t.get("x") is not None:
+        at = ((t["x"] + 320) * (a.width / 640.0), (t["y"] + 200) * (a.height / 400.0))
+        print("station %.2f m -- photometry AT the tracked position (%.0f,%.0f) ..." % (a.range, *at))
+    else:
+        print("station %.2f m -- photometry (no track; falling back to brightest blob) ..." % a.range)
+    p = photometry(a.shutter, a.gain, a.width, a.height, 2.0, at)
+    if p:
+        state = "SATURATED (sum is a LOWER BOUND)" if p["sat"] else "clean"
+        print("   peak %3d  area %5d  sum %10.0f  bg %.2f  frame mean %.2f   %s"
+              % (p["peak"], p["area"], p["total"], p["bg"], p["frame_mean"], state))
+    else:
+        print("   no frames")
     row = dict(range_m=a.range, note=a.note)
     row.update({("ph_" + k): v for k, v in (p or {}).items()})
     row.update({("tr_" + k): v for k, v in (t or {}).items()})

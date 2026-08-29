@@ -95,3 +95,54 @@ somewhere around 10–20 m** — much sooner than sky-backed.
 
 Worth doing with the camera static, so ego-motion is not confounded into the result. Then repeat with a
 deliberate pan to measure what motion costs on top.
+
+
+---
+
+# Beacon against sunlit foliage, 10 m (2026-08-29)
+
+The measurement §4 asked for. Camera static, beacon at ~10 m, moved between backgrounds rather than
+between ranges — so background is the **only** variable.
+
+| beacon aim / background | local bg | **MEASURED** | q p50 | first lock |
+|---|---|---|---|---|
+| at camera, transition zone | 11.6 ADU | **97 %** | 1.00 | 0.40 s |
+| at camera, **in foliage** | **68 ADU** (p90 124) | **33 %** | 0.82 | 1.70 s |
+| **aimed away**, in foliage | 68 | **3 %** | 0.59 | 3.10 s |
+
+**Sunlit foliage costs two thirds of the decode rate** at a range where sky-backed detection is
+effortless. Same beacon, same range, same camera.
+
+The mechanism is in the local event floor around the beacon: **1186 events/frame (full-frame equivalent)
+even at threshold 100**, barely falling from 2428 at threshold 20 — the wind-driven foliage plateau,
+now surrounding the target rather than sitting elsewhere in frame.
+
+**But the code is doing real work.** 33 % decode while surrounded by ~1200 competing events per frame,
+because foliage events are at random phases and the beacon's are coherent. That was genuinely uncertain
+beforehand: stage 1 contributes almost nothing here (indoors it gave a 13600× reduction with a *pure*
+list; here the beacon is *inside* the event population by amplitude), so detection rests entirely on
+stage 2.
+
+## Two errors of mine, both worth recording
+
+**A prediction built on a datum I had already flagged as bad.** I predicted foliage-backed failure at
+10–20 m from the indoor ladder's "delta 46 at 8.15 m". That came from the one station whose photometry I
+had already noted was erratic — the sequence ran 46 → 130 → 96 as range *increased*. Using it as a
+prediction anyway was careless. The beacon is far brighter: saturated at 10 m outdoors.
+
+**The photometry aperture was in the wrong place.** `range_station` took the brightest blob in frame,
+which is the beacon indoors on a black background and is **sunlit ground** outdoors. It reported peak 255
+throughout — the driveway, not the beacon — so the intensity axis stayed unmeasured even though the
+operator's angling trick worked exactly as intended. Same class of error as `oracle.py`'s brightest-pixel
+warning, which finds the ceiling light.
+
+**Fixed**: photometry now measures a fixed aperture **at the tracker's reported position**, with no
+threshold and no blob search, because a dim beacon does not win a brightest-blob contest against sunlit
+ground. Tracking runs first so the position is available.
+
+## What is still unmeasured
+
+The beacon was saturated in every capture, so **its delta is unknown and the failure point cannot be
+extrapolated**. 10 m is also short. Both point at the same conclusion: **this needs the field**, at
+30–100 m, where the beacon comes off the rail and the margin becomes measurable rather than merely
+present.
