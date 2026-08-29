@@ -69,6 +69,85 @@ void track_seed(Track *t, const BcnConfig *cfg, uint8_t code_id, uint8_t scale,
     t->cep_q8 = (uint16_t)(4u << 8);
 }
 
+/* ---- T076(b): move the chip window onto a COARSER plane instead of throwing it away --------------
+ *
+ * Widening used to memset bins+counts and set first_chip = last_chip + 1, i.e. discard every sample the
+ * track had ever collected. That is the expensive half of a defect whose cheap half is arithmetic:
+ * rebuilding a 31-chip window takes 258 ms at 120 Hz, and hold_max_age_ms is 150 — so a track that
+ * widened on HOLD entry was structurally incapable of re-establishing before the age bound killed it.
+ * The widen is supposed to be the RECOVERY move (spec 2.2's spatial fast-gear) and it was instead the
+ * thing that guaranteed death.
+ *
+ * The evidence does not need rebuilding, because a coarse pixel is EXACTLY the sum of the r x r fine
+ * pixels covering the same native area. extract() gives each plane pixel the sum of f x f native pixels
+ * normalised by exposure x gain, so summing r x r pixels of the f_old plane reproduces one pixel of the
+ * f_new = r * f_old plane bit for bit. This is a re-binning, not an approximation.
+ *
+ * Two things make it cheap. counts[] is per-CHIP and shared by every pixel, so it carries over
+ * untouched — which is what keeps window()'s "8 populated chips" test satisfied across the move. And
+ * the transform is separable per chip bin, so it needs one E_old^2 scratch column (2.3 KB) rather than
+ * a copy of the whole 285 KB bin array; no aliasing, no static buffer, no allocation.
+ *
+ * NOT done for the CLIMB (finer plane): a coarse pixel genuinely cannot be split into four, and
+ * fabricating the split would invent spatial detail the sensor never delivered — the position surface
+ * is what the ladder climbs FOR. A climb only happens on a strong, tight, settled track (see the climb
+ * gate below), which is exactly the track that can afford to rebuild. */
+void track_rebin_coarser(Track *t, uint8_t E_old, uint8_t E_new, uint8_t r)
+{
+    int32_t col[TRK_MAX_EXTENT * TRK_MAX_EXTENT];
+    uint16_t b, i, n_old = (uint16_t)((uint16_t)E_old * E_old), n_new = (uint16_t)((uint16_t)E_new * E_new);
+    int16_t nx, ny;
+    uint8_t dx, dy;
+
+    for (b = 0; b < TRK_WIN; b++) {
+        for (i = 0; i < n_old; i++) col[i] = t->bins[(size_t)i * TRK_WIN + b];
+        for (i = 0; i < n_new; i++) t->bins[(size_t)i * TRK_WIN + b] = 0;
+        for (ny = 0; ny < (int16_t)E_new; ny++) {
+            /* the old-plane pixel the top-left corner of this new pixel lands on; both apertures are
+             * centred on the same predicted position, so the mapping is a pure scale about the centre */
+            int16_t oy0 = (int16_t)(E_old / 2 + (ny - E_new / 2) * r);
+            for (nx = 0; nx < (int16_t)E_new; nx++) {
+                int16_t ox0 = (int16_t)(E_old / 2 + (nx - E_new / 2) * r);
+                int32_t acc = 0;
+                for (dy = 0; dy < r; dy++) {
+                    int16_t oy = (int16_t)(oy0 + dy);
+                    if (oy < 0 || oy >= (int16_t)E_old) continue;
+                    for (dx = 0; dx < r; dx++) {
+                        int16_t ox = (int16_t)(ox0 + dx);
+                        if (ox < 0 || ox >= (int16_t)E_old) continue;
+                        acc += col[oy * (int16_t)E_old + ox];
+                    }
+                }
+                /* Pixels outside the old aperture stay 0. That is the honest value — they carry no
+                 * evidence — and it costs nothing: a bin column of zeros correlates to 0, so such a
+                 * pixel simply never wins the position surface. */
+                t->bins[((size_t)(uint16_t)(ny * (int16_t)E_new + nx)) * TRK_WIN + b] = acc;
+            }
+        }
+    }
+}
+
+/* Move a track to `want` (a scale index), preserving the chip window when widening. Returns nothing;
+ * the caller has already decided the move is allowed (dwell, gates). */
+static void set_scale(Track *t, const BcnConfig *cfg, uint8_t want)
+{
+    uint8_t E_old = t->extent, f_old = scale_factor(t->scale), f_new = scale_factor(want);
+    uint8_t E_new = (uint8_t)cfg->scale_extents[want];
+    if (E_new > TRK_MAX_EXTENT) E_new = TRK_MAX_EXTENT;
+
+    if (want < t->scale && f_new > f_old && (f_new % f_old) == 0u) {
+        track_rebin_coarser(t, E_old, E_new, (uint8_t)(f_new / f_old));   /* widen: keep the evidence */
+    } else {
+        memset(t->bins, 0, sizeof t->bins);                         /* climb: the detail is not there */
+        memset(t->counts, 0, sizeof t->counts);
+        t->first_chip = t->last_chip + 1;
+    }
+    t->scale = want;
+    t->extent = E_new;
+    t->peak_px = (uint16_t)((E_new / 2u) * E_new + E_new / 2u);
+    t->ladder_dwell = 6;
+}
+
 void track_roi_center(const Track *t, int16_t *cx, int16_t *cy)
 {
     uint8_t f = scale_factor(t->scale);
@@ -431,16 +510,12 @@ lifecycle:
             t->state = TRK_HOLD;
             /* Entering HOLD at a fine scale is how a track dies BLIND: the aperture that lost the
              * beacon is the last place to keep staring. Widen immediately — the spatial version of
-             * s7's unlocked fast-gear (and the cheap half of the guard's job). */
-            if (t->scale > 0u) {
-                t->scale--;
-                t->extent = (uint8_t)cfg->scale_extents[t->scale];
-                if (t->extent > TRK_MAX_EXTENT) t->extent = TRK_MAX_EXTENT;
-                memset(t->bins, 0, sizeof t->bins);
-                memset(t->counts, 0, sizeof t->counts);
-                t->first_chip = t->last_chip + 1;
-                t->ladder_dwell = 6;
-            }
+             * s7's unlocked fast-gear (and the cheap half of the guard's job).
+             *
+             * T076(b): this widen now KEEPS the chip window (set_scale -> rebin_coarser). It used to
+             * clear it, which meant the recovery move started a 258 ms window rebuild against a 150 ms
+             * age bound — HOLD could not possibly succeed, and this site is where that bit hardest. */
+            if (t->scale > 0u) set_scale(t, cfg, (uint8_t)(t->scale - 1u));
         }
         break;
     case TRK_HOLD:
@@ -473,16 +548,7 @@ lifecycle:
             want = (uint8_t)(t->scale + 1u);   /* strong + tight + settled: climb toward fine         */
         else if (t->q_q8 < cfg->q_drop_q8 && t->scale > 0u)
             want = (uint8_t)(t->scale - 1u);   /* weak: widen                                         */
-        if (want != t->scale) {
-            t->scale = want;
-            t->extent = (uint8_t)cfg->scale_extents[want];
-            if (t->extent > TRK_MAX_EXTENT) t->extent = TRK_MAX_EXTENT;
-            memset(t->bins, 0, sizeof t->bins);        /* new plane: the window restarts              */
-            memset(t->counts, 0, sizeof t->counts);
-            t->first_chip = t->last_chip + 1;
-            t->peak_px = (uint16_t)((t->extent / 2u) * t->extent + t->extent / 2u);
-            t->ladder_dwell = 6;                       /* ~300 ms before the next move                */
-        }
+        if (want != t->scale) set_scale(t, cfg, want);  /* widening keeps the window; climbing rebuilds */
     }
 
     return t->state != TRK_DEAD;

@@ -116,6 +116,14 @@ void track_frame(Track *t, const BcnConfig *cfg, const int32_t *roi, int16_t roi
  * previous tick. Returns 1 if a record-worthy state remains (anything but DEAD). */
 int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us);
 
+/* T076(b), EXPOSED FOR TESTS ONLY (tests/unit/test_track.c) — the widen re-binning. Nothing outside
+ * track.c calls this in production; it is public because the identity it must satisfy is worth asserting
+ * directly rather than inferring from a fixture that happens to widen. That identity: a coarse pixel is
+ * EXACTLY the sum of the r x r fine pixels covering the same native area, with both apertures centred on
+ * the same predicted position, so the transform is a pure scale about the centre and loses nothing.
+ * Pixels of the new plane with no old coverage are left at 0 — they carry no evidence. */
+void track_rebin_coarser(Track *t, uint8_t E_old, uint8_t E_new, uint8_t r);
+
 /* Where the engine should extract the NEXT frame's ROI, in plane px of the track's scale. */
 void track_roi_center(const Track *t, int16_t *cx, int16_t *cy);
 
