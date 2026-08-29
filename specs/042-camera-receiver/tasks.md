@@ -345,7 +345,24 @@ Each stage isolates ONE new thing; do not skip, because a failure two stages up 
 | 4. both moving | the real engagement | both rigs | |
 | **5. field, preprogrammed quads** | **sky background** + real range/SNR; settles the AHRS question | T079 | long lead time |
 
-- [ ] T076 [P] [US2] **Two `track.c` correctness fixes** (bugs, not tuning — do them opportunistically, do
+- [X] T076 [P] [US2] **DONE 2026-08-29 (and it was three, not two)** — see
+  [results/stage1-track-lifecycle-fixes.md](results/stage1-track-lifecycle-fixes.md). Measured on
+  `pend_ir.bcnr`: on-beacon fixes **1555 -> 1770 (+14 %)**, false share **1.7 % -> 1.0 %**, largest gains
+  at 2-5 deg/s where the beacon IS decodable and the lifecycle was discarding it. Does not move the
+  coherence limit (16.5 deg/s still 12 %).
+  - (a) the age bound vs the 258 ms window rebuild: fixed via (b), not by moving the bound.
+  - (b) the widen discarding evidence: fixed, but NOT by re-binning. First attempt did re-bin and bought
+    relock (209 -> 88 ms) with bearing (1.46 -> 2.60 deg at 12.4 deg/s) — it placed the preserved
+    evidence at the aperture centre, so the position surface re-reported the stale prediction. Replaced
+    by a TEMPORAL/SPATIAL evidence split: `apsum` survives a widen, per-pixel `bins` do not.
+  - (c) **NEW, and the one that was actually killing tracks**: the innovation gate was a LATCH — `cep`
+    inflated only in HOLD, so a CONFIRMED track that fell behind the gate rejected every measurement
+    forever. This had been failing `beacon_golden_test_replay_parity` since `6452bd6`, undetected.
+  - **Still open, found here**: the guard rescue does not transfer `last_fix_us`, so a rescued track dies
+    of old age on the next tick. Must be MONOTONE (an unconditional copy kills it earlier than no rescue).
+    Retry on top of the evidence split — it failed alone because the rescued track could not re-correlate.
+
+- [ ] ~~T076 [P] [US2] **Two `track.c` correctness fixes**~~ (bugs, not tuning — do them opportunistically, do
   NOT schedule a tuning phase; the measured knee is 1–2 °/s and these move it to maybe 2–3, against 15–18 °/s
   of hand motion): (a) `hold_max_age_ms = 150` kills a track before the 258 ms needed to rebuild a
   `integration_min_chips = 31` window, so HOLD is arithmetically incapable of recovering; (b) widening the
