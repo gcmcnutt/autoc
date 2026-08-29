@@ -384,6 +384,27 @@ lifecycle:
     if (!measured_this_tick) {
         t->x_q8 += (int32_t)(((int64_t)t->vx_q8 * dt_us) / 1000000);
         t->y_q8 += (int32_t)(((int64_t)t->vy_q8 * dt_us) / 1000000);
+        /* UNCERTAINTY GROWS WHENEVER WE COAST — in CONFIRMED exactly as in HOLD, and this placement is
+         * the whole point (2026-08-29). It used to live in the TRK_HOLD case alone, which made the
+         * innovation gate above a LATCH: gate = 4*cep, cep frozen while CONFIRMED, so a state that had
+         * fallen further behind than the gate rejected every subsequent measurement, was therefore never
+         * corrected, and fell further behind still. Positive feedback — rejecting a fix is evidence the
+         * state is WRONG, and the old code answered that evidence by rejecting harder.
+         *
+         * Caught on the golden clip: a PRECISION track sat frozen at x=45 with v stuck at (4.1, 21.1)
+         * for 350 ms, mf=0 every tick, while the beacon walked to x=65 — cep still reporting 1.0 px. It
+         * escaped only when q finally decayed enough to force HOLD, ~7 ticks of a dead track later, and
+         * on the third occurrence it did not escape at all. This is also why a coasting track could
+         * report a confident cep it had no evidence for: cep is the number the scorer and the §3.1
+         * validity bound both read, and a flywheeling track's uncertainty is genuinely growing.
+         *
+         * Same growth law as HOLD used (12.5 % + 0.03 px per tick), so HOLD behaviour is unchanged
+         * except that a MEASURED tick in HOLD no longer inflates — the centroid spread sets cep there,
+         * which is the honest value. */
+        {
+            uint32_t grow = (uint32_t)t->cep_q8 + ((uint32_t)t->cep_q8 >> 3) + 8u;
+            t->cep_q8 = grow > 0xFFFF ? 0xFFFF : (uint16_t)grow;
+        }
     }
     {
         uint32_t chip_us = t->chip_hz_q8 ? (uint32_t)((256ull * 1000000ull) / t->chip_hz_q8) : 8696u;
@@ -423,11 +444,8 @@ lifecycle:
         }
         break;
     case TRK_HOLD:
-        /* cep inflates while extrapolating — uncertainty grows with velocity and time */
-        {
-            uint32_t grow = (uint32_t)t->cep_q8 + ((uint32_t)t->cep_q8 >> 3) + 8u;
-            t->cep_q8 = grow > 0xFFFF ? 0xFFFF : (uint16_t)grow;
-        }
+        /* cep inflation moved to the coast block above — it applies to CONFIRMED too, and for the same
+         * reason. See the comment there. */
         if (t->measured_fix && t->q_q8 >= cfg->q_lock_q8) {
             t->state = TRK_CONFIRMED;
         } else if (t->age_ms > cfg->hold_max_age_ms || t->cep_q8 > cfg->hold_max_cep_px_q8) {
