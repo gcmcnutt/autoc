@@ -247,7 +247,12 @@ waiting for real hardware.
   ⚠️ **Scope**: this fixes SEEDING, not CONFIRMATION. A seeded candidate still needs a coherent word, and the
   code match still degrades 5–20× under motion — so expect a large gain static and only partial gain moving.
   It does **not** substitute for T071/T050.
-- [ ] T071 [US3] **Ego-motion registration** — per-frame global shift estimate on a reduce4 plane, in
+- [ ] T071 [US3] **Ego-motion registration** — ⚠️ **NOW LOAD-BEARING FOR THE EVENT DETECTOR TOO**,
+  see [results/stage1-outdoor-sky.md](results/stage1-outdoor-sky.md): measured outdoors, panning gives
+  **3635 events/frame across 45 of 64 cells** while the SUN IN FRAME gives only 37 across 14. Ego-motion
+  beats the sun by 100x and is field-wide, and in all-attitude flight it is constant rather than
+  occasional. The event architecture does NOT route around this. Original description follows.
+  (Original) **Ego-motion registration** — per-frame global shift estimate on a reduce4 plane, in
   `firmware/beacon-receiver/src/core/`. THE enabling piece: it turns the moving-camera case back into the
   static-camera case for detection, and removes the V² term from the velocity search (compute-budget.md).
   Independently testable: registered consecutive frames of `pan2.bcnr` must differ far less than unregistered
