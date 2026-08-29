@@ -442,3 +442,73 @@ and which one depends on a single number we have not got.
 and read the background level. That is a five-minute experiment requiring no beacon, no pendulum and no
 flight, and it converts the entire outdoor risk from speculation into arithmetic against the table above.
 It should happen before the field campaign, not during it.
+
+
+## 10. The direction, after a day outdoors (operator, 2026-08-29)
+
+> *"We continue with a high performance tracker perhaps with event camera and accurate phase detection.
+> Is working good with static scene. When camera and target are moving it'll be fun. Ego motion can maybe
+> help and clearly we have this info. Imagine down the line we are arcing past a tree line where target is
+> between trees and chase…"*
+
+### Where it actually stands
+
+**Static scenes are done.** Event detection gives a 13600× search-space cut with a pure list against a
+dark background, 8–12× cluster margin in a lit room, and the code correlation still carries 33 % decode
+even when the beacon is buried *inside* the event population against sunlit foliage. Phase detection is
+the part doing the work, and it is unambiguous — every pixel of one emitter votes the same phase.
+
+**Moving is the frontier, and it is two problems stacked.** Measured today: ego-motion produces 3635
+events/frame across 45 of 64 cells, against 37 for the sun. A moving target additionally makes a *trail*
+rather than a blob, and the trail sets a hard ceiling on the integration window — which is the
+correlator's coherence limit reappearing in event form.
+
+### Ego-motion is INFORMATION, not only noise — and this reframes T071
+
+The operator's *"ego motion can maybe help and clearly we have this info"* is the important line.
+
+T071 is written as ego-motion **estimation**: recover a global shift from imagery, per frame. But the
+airframe already knows its own attitude rate. That makes the shift **predictable feed-forward** rather
+than something to be estimated from a field that may have no texture to estimate from — which is exactly
+the sky case §2.3 flags, and exactly where image-based registration has nothing to work with.
+
+Three consequences worth designing around:
+
+1. **Register before differencing, using attitude.** Field-wide events cancel by construction rather
+   than by estimation, leaving only genuinely moving or modulating sources. That is the difference
+   between 3635 events/frame and something close to the static floor.
+2. **The residual becomes the signal.** What does *not* cancel after attitude-predicted registration is
+   either a moving object or a bad attitude estimate — both worth knowing, and separable because one is
+   local and one is global.
+3. **It settles §2.3's open question.** The spec leaves AHRS as "optional feed-forward or flight-article
+   requirement", with [T079](tasks.md) deciding it in the field. This is the argument that it is
+   **feed-forward and load-bearing**, and today's 100× ego-motion measurement is the evidence.
+
+### The design case: arcing past a treeline, target between the trees
+
+The operator's scenario is the right one to design against because it stacks every hard thing measured
+today, and they interact:
+
+| what happens | what it does | measured today |
+|---|---|---|
+| the chase **arcs** | continuous ego-motion, field-wide events | 3635 ev/frame, 45/64 cells |
+| target passes **behind trunks** | repeated occlusion, forced re-acquisition | pole clip: p50 363 ms, p90 1295 ms |
+| background **alternates** sky ↔ foliage | the operating point changes several times a second | 1.2 ADU vs 68 ADU; decode 97 % vs 33 % |
+| trees **move** in wind | a large-amplitude event population that no threshold removes | plateau to thr 120 |
+| target is **moving** | trails, and the coherence limit | 13 % decode at 16.5 °/s |
+
+The alternating background is the part with no precedent in anything measured so far. **A threshold or an
+exposure that adapts on a one-second timescale would be chasing the trees**, and the operator's earlier
+instinct — adapt at scene init, resist during flight — is the right shape. It also argues for tracking the
+noise floor *locally* rather than globally: the sky half of the frame and the foliage half want different
+thresholds simultaneously, and a single global number serves neither.
+
+### What that implies for build order
+
+Unchanged as prerequisites: **T081** (receiver-global phase) and **T082** (straddler weighting). Promoted
+by today's measurements: **T071**, now load-bearing for both the correlator *and* the event detector, and
+better framed as attitude feed-forward than as image-based estimation.
+
+**A treeline-arc fixture** is worth building before the flight campaign — a camera on a pan head arcing
+past a hedge with the beacon behind it, which is a driveway experiment rather than an airfield one, and
+reproduces four of the five rows above.
