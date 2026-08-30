@@ -316,9 +316,16 @@ static void tick(Engine *e, uint64_t tick_end_us)
             if (!s->used || s->role != BANK_ROLE_PRECISION) continue;
             if (t->state != TRK_CONFIRMED && t->state != TRK_HOLD) continue;
             if (t->measured_fix && t->q_q8 >= e->cfg.q_fix_q8) continue;   /* aperture succeeded */
+            /* Acceptance is q_fix, NOT q_lock, and the difference was measured (pend5 swing 2,
+             * 2026-08-30): a trail fix REPLACES the state, so a marginal hypothesis teleports the
+             * track. At 1.5 ft the angular rate ran to 115 deg/s -- 79 % of frames beyond the grid --
+             * so the best IN-GRID hypothesis was always wrong, scored 0.55-0.68, cleared q_lock, and
+             * scattered the track across the field. q_fix (0.75) is the bar that separates real from
+             * junk (on-beacon p05 0.86 vs off-target p95 0.67); below it, HOLD's honest coast beats a
+             * confident teleport. */
             if (trail_search(&e->trail, t->tmpl, t->epoch_us, t->chip_hz_q8, tick_end_us,
                              e->frame_w, e->frame_h, t->m2_div, &fx) &&
-                fx.q_q8 >= e->cfg.q_lock_q8)
+                fx.q_q8 >= e->cfg.q_fix_q8)
                 track_apply_trail_fix(t, &e->cfg, fx.x_q8, fx.y_q8, fx.vx_q8, fx.vy_q8,
                                       fx.q_q8, tick_end_us, dt_us);
             break;                                 /* one precision trail per engine (one ring) */
