@@ -19,13 +19,13 @@ int bcn_emit_json(int fd, const BcnRecord *r)
         n += snprintf(buf + n, sizeof buf - (size_t)n,
             "%s{\"code\":\"%s\",\"x\":%.2f,\"y\":%.2f,\"vx\":%.1f,\"vy\":%.1f,"
             "\"xp\":%.2f,\"yp\":%.2f,\"cep\":%.2f,\"q\":%.2f,\"lh\":%.2f,"
-            "\"chip_hz\":%.2f,\"scale\":%u,\"tint\":%u,\"age_ms\":%u,\"flags\":%u}",
+            "\"chip_hz\":%.2f,\"phase\":%u,\"scale\":%u,\"tint\":%u,\"age_ms\":%u,\"flags\":%u}",
             k ? "," : "",
             t->code_id ? "B" : "A",                     /* B = STARBOARD/green, A = PORT/red */
             t->x / 256.0, t->y / 256.0, t->vx / 256.0, t->vy / 256.0,
             t->x_pred / 256.0, t->y_pred / 256.0, t->cep / 256.0,
             t->q / 256.0, t->lock_health / 256.0,
-            t->chip_hz / 256.0, t->scale, t->t_int_chips, t->age_ms, t->flags);
+            t->chip_hz / 256.0, t->chip_phase, t->scale, t->t_int_chips, t->age_ms, t->flags);
         if ((size_t)n >= sizeof buf - 200) break;
     }
     n += snprintf(buf + n, sizeof buf - (size_t)n, "]}\n");
