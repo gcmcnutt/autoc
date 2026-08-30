@@ -35,21 +35,32 @@ free where it works).
 widening grid+crop at quadratic cost); the event detector owns the transit case. They meet in the
 middle, which is what the layered-estimator plan already assumed.
 
-## The second source — a REAL code-carrying reflection, and the mirror rule's first live engagement
+## The "second source" — RETRACTED: it was the beacon at the right swing extreme
 
-From ~84 s a second saturating source appears at native (400–450, 144–176), drifting smoothly
-(448,144) → (400,176) over 26 s. Measured: **it carries code B as strongly as the beacon does** (corr
-ratio 0.27 vs 0.29). At 45 cm the beacon floods nearby surfaces — this is an illumination patch /
-diffuse reflection, i.e. *"reflections share the phase"* (event-camera-emulation.md §7) made real. The
-tracker locked it at **q = 0.97** at t = 80.
+The first pass concluded a second code-carrying source at native (400–450, 144–176) — a reflection or
+illumination patch. **Wrong, and the operator's question ("was it lens flare?") prompted the test that
+settled it.** Three measurements, in order of decisiveness:
 
-The mirror-pair rule (T055) engaged for the first time against a real reflection: `MULTIPATH_SUSPECT`
-flags fired on 8–16 ticks/bucket at 112–118 s. **But the geometric half of the rule is inverted here**:
-"the upper track keeps CONFIRMED" assumed ground reflections below the beacon, and this patch sits
-UPPER-RIGHT of the true beacon — so the rule would keep the reflection and flag the truth. Recorded as a
-known limitation: at close range (and near structures) the arbiter needs amplitude/track-history, not
-geometry. Stage 4's "surface the group, let the rule decide" design stands; the rule itself needs work
-before the field.
+1. Only **36 of 5182** frames show the "beacon region" and the "source2 region" bright simultaneously —
+   and those 36 sit exactly at the analysis-box boundary (x ≈ 395). The two appearances are mutually
+   exclusive in time.
+2. Brightness in the two regions is *anti*-correlated (−0.18) — when one is lit the other is dark.
+3. The decisive one: the per-frame argmax trajectory through 92–97 s is **one continuous sweep**,
+   x 237 → 424 and back every ~1.9 s, with y RISING at the extremes — a pendulum arc, exactly.
+
+So "source2" was the beacon itself at the right extreme of the close swing; the smooth (448,144) →
+(400,176) "drift" was the extreme retreating as the swing decayed. Neither a reflection nor lens flare —
+an artifact of splitting one trajectory across two analysis boxes. (A ghost flare would also have failed
+the geometry test: a point-reflection through the optical centre lands in the LOWER half here.)
+
+The `MULTIPATH_SUSPECT` flags at 112–118 s are then two tracks on ONE emitter — a stale coasting
+CONFIRMED track paired with the freshly re-acquired beacon — which is the mirror rule doing double duty
+as a stale-track detector. The real-reflection test of T055/stage 4 therefore REMAINS UNDONE (the
+deliberate-mirror experiment from event-camera-emulation.md §7 is still the way to do it), and the
+"upper keeps CONFIRMED" concern raised here is withdrawn along with the claim that prompted it.
+
+**Analysis trap recorded**: two regions that are never bright in the same frame are not two sources —
+check trajectory continuity before declaring a second object.
 
 ## Swing 3 (112–152 s, sideways + pole) — the emitter's angle limit, visible as the ladder's choice
 
