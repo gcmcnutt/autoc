@@ -394,7 +394,19 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
                 peak_q8 = qpk;
                 (void)peak_q8;
 
-                t->measured_fix = t->evidence_chips > 0 || t->lock_health_q8 >= cfg->lock_health_drop_q8;
+                /* A FIX MUST BE WORTH BELIEVING (q_fix). Measured on pend_ir against fiducial truth,
+                 * with honest 64-bit q: on-beacon fixes sit at q p05 0.86 / p50 1.00, while fixes that
+                 * landed >20 M2 px away sit at p50 0.45 / p95 0.67 — cleanly bimodal. Those bad fixes are
+                 * not a competing source (they are scattered, not clustered on a lamp); they are the
+                 * tracker still reporting a measurement after it has lost a FAST target, which is the
+                 * coherence limit leaking into the wire contract. Gating here keeps 98 % of real fixes
+                 * and removes 100 % of the off-target ones at 0.75.
+                 *
+                 * This is the gate T085 looked for and could not find, and the reason it could not is
+                 * that q railed to 1.00 on 75 % of slot-ticks before corr.c was widened — the separation
+                 * genuinely was not visible in the data it was measured on. */
+                t->measured_fix = t->q_q8 >= cfg->q_fix_q8 &&
+                                  (t->evidence_chips > 0 || t->lock_health_q8 >= cfg->lock_health_drop_q8);
                 t->last_fix_us = now_us;
 measurement_rejected: ;
             }

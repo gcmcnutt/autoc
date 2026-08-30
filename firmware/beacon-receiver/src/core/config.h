@@ -49,6 +49,13 @@ typedef struct {
     uint8_t  n_scales;
     uint16_t alpha_q8, beta_q8;      /* alpha-beta centering gains                                     */
     uint16_t q_lock_q8, q_drop_q8;
+    /* The quality a measurement must reach to COUNT AS A FIX (set BCN_F_MEASURED_FIX and refresh
+     * last_fix_us). Distinct from q_lock, which is a LIFECYCLE bar: q_lock says "this track deserves to
+     * be CONFIRMED", q_fix says "this tick's position is worth believing". Before the correlator was
+     * widened to 64 bits q could not carry this job -- it railed to 1.00 on 75 % of slot-ticks -- which
+     * is why T085 concluded that no floor on q, corr or energy could separate good fixes from bad. On
+     * honest q the separation is clean and measured (results/stage1-track-lifecycle-fixes.md). */
+    uint16_t q_fix_q8;
     uint16_t lock_health_lock_q8, lock_health_drop_q8;
     uint16_t min_mod_depth_q8;         /* T085: promotion floor on energy/level (q8). 0 disables.     */
     /* These two MUST equal the spec §3.1 validity bounds. The HOLD state machine and the envelope scorer

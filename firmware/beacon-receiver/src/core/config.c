@@ -52,6 +52,7 @@ static const KeySpec SPECS[] = {
     {"bank",   "beta",                 T_Q8_16,  F(beta_q8), 0, 0},
     {"bank",   "q_lock",               T_Q8_16,  F(q_lock_q8), 0, 0},
     {"bank",   "q_drop",               T_Q8_16,  F(q_drop_q8), 0, 0},
+    {"bank",   "q_fix",                T_Q8_16,  F(q_fix_q8), 0, 0},
     {"bank",   "lock_health_lock",     T_Q8_16,  F(lock_health_lock_q8), 0, 0},
     {"bank",   "lock_health_drop",     T_Q8_16,  F(lock_health_drop_q8), 0, 0},
     {"bank",   "min_mod_depth",        T_Q8_16,  F(min_mod_depth_q8), 0, 0},
@@ -284,6 +285,11 @@ static int validate(const BcnConfig *c, char *err, size_t errlen)
     if (c->integration_min_chips == 0u || c->integration_min_chips > c->integration_max_chips) {
         snprintf(err, errlen, "config: [agc] integration_min_chips (%u) must be 1..integration_max_chips (%u)",
                  (unsigned)c->integration_min_chips, (unsigned)c->integration_max_chips);
+        return -1;
+    }
+    if (c->q_fix_q8 && c->q_fix_q8 < c->q_drop_q8) {
+        snprintf(err, errlen, "config: [bank] q_fix (%.3f) is below q_drop (%.3f) — a fix that would not "
+                 "even hold the track cannot be worth believing", c->q_fix_q8 / 256.0, c->q_drop_q8 / 256.0);
         return -1;
     }
     if (c->q_drop_q8 > c->q_lock_q8) {

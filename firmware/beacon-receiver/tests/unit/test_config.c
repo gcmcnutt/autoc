@@ -28,6 +28,7 @@ static const struct { const char *sec, *key, *val; } KEYS[] = {
     {"bank",   "beta",                     "0.08"},
     {"bank",   "q_lock",                   "0.55"},
     {"bank",   "q_drop",                   "0.30"},
+    {"bank",   "q_fix",                    "0.75"},
     {"bank",   "lock_health_lock",         "0.60"},
     {"bank",   "lock_health_drop",         "0.35"},
     {"bank",   "min_mod_depth",            "0.0"},

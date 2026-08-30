@@ -30,7 +30,7 @@ static void write_ini(uint32_t burst_frames, uint32_t burst_every, const char *m
         "[code]\nn_chips = 31\nchip_hz_nominal = 115.0\nchip_hz_candidates = 115.0,200.0\n"
         "code_a = 0000000100011011000011001110011\ncode_b = 0100011001100111100101001011110\n"
         "[bank]\nmax_slots = 16\nscale_extents = 24,12,6\nalpha = 0.35\nbeta = 0.08\n"
-        "q_lock = 0.55\nq_drop = 0.30\nlock_health_lock = 0.60\nlock_health_drop = 0.35\n"
+        "q_lock = 0.55\nq_drop = 0.30\nq_fix = 0.75\nlock_health_lock = 0.60\nlock_health_drop = 0.35\n"
         "min_mod_depth = 0.0\n"
         "hold_max_age_ms = 150\nhold_max_cep_px = 3.0\n"
         "[agc]\nexposure_target_lo = 40\nexposure_target_hi = 200\nintegration_min_chips = 31\n"
