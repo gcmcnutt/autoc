@@ -157,3 +157,82 @@ Bearing still fails the §3 0.3 ° bar at every rate on this lens: best block 0.
    weak-but-located track cuts SNR by √k, which cuts q, which widens further.
 3. **T081 sync-first / receiver-global phase** — still the largest single win available, and still the
    event detector's prerequisite.
+
+---
+
+# Held-out validation — `pend3.bcnr`, and the aperture floor (2026-08-29 evening)
+
+Everything above was measured on `pend_ir.bcnr`, and the aperture extents were CHOSEN on it. `pend3` is a
+fresh capture recorded after the fact, so it is the honest test of whether any of this generalises.
+
+**The clip**: `beaconpi5:/data/pend3.bcnr`, 240 s, 69091 frames, **0 seq gaps**, exposure pinned 45 µs /
+gain 1.0, recorded live through `live_view.py --record` (so it is also the proof that watching and
+recording coexist). Only **3 dropped frames** in 69091 (0.004 %), found by the dt-spread test — seq
+counts *delivered* frames, so a drop leaves no gap and dt is the only witness (042 trap #2).
+
+Bigger release than `pend_ir`: **peak p90 26.1 °/s, 47.2 cm amplitude at 3 m**, so it brackets the
+~19 °/s engagement rate from above, and the decay sweeps everything below it. It also produced **50 pole
+occlusions** against `pend_ir`'s 9 — the reacquisition axis is finally statistically meaningful.
+
+Truth: `beaconpi5:/data/pend3_truth.csv`, ROI `278,382,163,208` from `--arc` (native x 298..362,
+y 183..188 — a single isolated arc, 17.5° span at 0.548 °/M2 px). 36640 position samples (53 %).
+
+## The result replicates
+
+| instantaneous rate | old `24,12,6` | new `24,16,10` |
+|---|---|---|
+| 0–1 °/s | 61 % | **76 %** |
+| 1–2 | 54 % | **72 %** |
+| 2–3 | 50 % | **63 %** |
+| 3–5 | 44 % | **52 %** |
+| 5–8 | 27 % | **33 %** |
+| ≥8 | 12 % | **16 %** |
+| total on-beacon fixes | 2058 | **2593 (+26 %)** |
+| false share | 0.1 % | 0.2 % |
+| present / measured | 78 % / 43 % | **86 % / 54 %** |
+| relock p50 / p90 | 146 / 542 ms | **74 / 481 ms** |
+| within the 400 ms bar | 40/50 (80 %) | **45/50 (90 %)** |
+
+Every rate bin improves, on data the change was not fitted to. The relock numbers now rest on 50
+occlusions rather than 9, and **90 % inside the §3 bar** is the first time that has been measured
+honestly.
+
+## Why the FINE aperture was the floor
+
+`scale_extents` is in PLANE px and the plane pixel is 4/2/1 native, so `24,12,6` gave angular coverage of
+**96 / 24 / 6 native px** — every climb shrinks the net 4× per axis. At FINE that is a 6×6 native = 3×3
+M2 px aperture, **half-width 1.5 M2 px**, against alpha-beta innovations that routinely run 1–2 M2 px.
+
+The loop could not stay inside its own net. Measured on a STATIC beacon: velocity ramps from 1.6 to
+**6.7 M2 px/s on a stationary target**, the ROI centre follows `xp = x + v·dt`, and the aperture walks off
+in ~4 ticks. The track then dies at **q = 1.00** — the correlation is perfect, the *position measurement*
+has failed, and `hold_max_age_ms` finishes it. That is the ~2 s dropout cycle the operator was seeing as
+"not yet continuous".
+
+**It plateaus, which is what makes this a floor rather than a knob** (pend_ir, total fixes / false):
+`24,16,10` → 2306/2, `24,20,10` → 2321/4, `24,24,18` → 2258/5, but pushing FINE the *other* way is worse
+again — `24,20,14` → 2174/6. The requirement is "big enough to contain the loop's wander", not "bigger".
+
+Rule to keep: **the aperture half-width must comfortably exceed the loop's positional wander at every
+rung of the ladder.** Cost is ROI-proportional and negligible — a MEDIUM aperture goes 576 → 1024 native
+px per slot per frame against a 256000 px frame, steady state two slots.
+
+## Where the tracker now stands, end to end
+
+Static beacon, live: **LOCK 97 %, measured 79 %, 0/500 deadline misses** (median margin 38.97 ms of the
+50 ms tick), against 82 % / 60 % this morning.
+
+Moving, held-out: mid-rate decode roughly **doubled** off the morning baseline (3–5 °/s ran 44 % on the
+old config here; `pend_ir` gave 50 % pre-gate-fix and 76 % after both changes).
+
+**Unchanged: the coherence limit.** ≥8 °/s is 16 %, and the engagement is ~19 °/s. Nothing in this
+session's work touches that — it is T081/T082/T050's, and the gains here are all "stop losing tracks we
+had already decoded".
+
+## Open, and now the top of the list
+
+**`energy` rails at INT32_MAX on 56 % of slot-ticks** at this operating point, so `q = |corr|·256/energy`
+is not a meaningful ratio there — it is why q flips 0.87 → 0.51 → 1.00 on consecutive ticks of a *static*
+target. `extract()`'s `(sum << 14)` normalisation was scaled for a dimmer, longer-exposure regime; at
+45 µs with a bright close beacon the per-bin aperture sums reach ~10⁹ before `devs()` multiplies by
+another 256. q is load-bearing for promotion, HOLD entry and the ladder, and it is currently lying.
