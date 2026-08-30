@@ -389,3 +389,58 @@ no accumulated per-pixel window — so it does not have the chicken-and-egg at a
 **Recommendation**: stop trying to improve the correlator's motion handling. The next indoor gain at
 ≥8 °/s comes from hypothesis-based detection (T050 / the event path), not from better bookkeeping around
 an aperture that is already doing the right thing.
+
+---
+
+# THE PHYSICS CEILING IS 100 % — oracle trail decode settles the coherence limit (2026-08-30)
+
+Operator's direction: *"let's see how far stationary chase and moving target can go"* — with attitude
+estimators layered later. `tools/trail_decode.py` measures the ceiling of that case by cheating with
+truth: sample the clip along the fiducial trajectory (a ±4 px box that follows the beacon exactly), build
+the along-track amplitude series, correlate against the Gold code in sliding one-word windows. That is
+decode-along-track with an ORACLE for the velocity search. The control is the same correlation with the
+box FROZEN at each window's start — what a static aperture sees over one word, on the same photons.
+
+## The result, on both clips independently
+
+`pend4` (and `pend3` within a point everywhere):
+
+| rate bin | windows | **TRAIL decode / q p50** | FROZEN decode / q p50 | real tracker |
+|---|---|---|---|---|
+| 0–2 °/s | 1237 | **100.0 % / 1.00** | 100.0 % / 1.00 | ~95 % |
+| 2–5 | 1155 | **100.0 % / 1.00** | 99.7 % / 1.00 | ~80 % |
+| 5–8 | 533 | **100.0 % / 1.00** | 80.9 % / 0.71 | 48 % |
+| 8–12 | 376 | **100.0 % / 1.00** | 47.1 % / 0.57 | ~18 % |
+| 12–18 | 305 | **100.0 % / 1.00** | 30.2 % / 0.58 | ~18 % |
+| **18–40** | 177 | **100.0 % / 1.00** | 22.0 % / 0.60 | — |
+
+**Three things this settles.**
+
+1. **The code survives motion perfectly.** Along the true trail, decode is 100.0 % with q p50 = 1.00 at
+   every rate measured, including 18–40 °/s — twice the engagement rate. There is no smear penalty, no
+   exposure-sampling penalty, no LED-edge penalty large enough to dent a word. The photons are fine.
+
+2. **The coherence limit is 100 % velocity acquisition and 0 % physics.** The frozen control reproduces
+   the tracker's collapse from the same photons (22 % at 18–40 °/s against the tracker's 18 % at ≥8),
+   which both validates the methodology and localises the entire gap: the only thing the tracker lacks at
+   high rate is knowing where to look next.
+
+3. **The hypothesis search is guaranteed to have a signal to find.** If a (position, velocity) candidate
+   is right, its q is ~1.00 — not marginal, SATURATED. A wrong candidate scores like the frozen control's
+   tail (~0.6 at best). The discriminator between right and wrong velocity is enormous, which is exactly
+   what makes a search cheap: coarse steps, early rejection, no fine tuning.
+
+## What to build, and the arithmetic that says it is small
+
+Velocity quantisation: a hypothesis is good enough when its trail error stays inside the box over one
+word — dv × 0.258 s ≤ 2 M2 px → **dv ≈ 8 M2 px/s ≈ 4.4 °/s per step**. Covering ±19 °/s needs ~9 steps
+per axis = **~81 velocity hypotheses per candidate position**, each costing one 74-sample trail
+correlation (~2.3 k MAC including the phase search). With the event stage nominating a handful of
+candidate positions (measured: ~19 events/frame, pure list), the whole search is well under a millisecond
+on one core — against the 36 ms tick margin.
+
+Data structure: a ring of ~74 reduce4 planes (160×100 × 74 = **1.2 MB**) — reduce4 is already NEON'd at
+0.45 ms/frame, and the beacon saturates even 4×4-binned. No new capture path, no WC-read problem.
+
+This is T050 with the V² term removed by the event stage's nomination — the "candidates who changed
+polarity at expected time compared to motion estimates" formulation, exactly.
