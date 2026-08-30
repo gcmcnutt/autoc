@@ -95,6 +95,17 @@ static void set_scale(Track *t, const BcnConfig *cfg, uint8_t want)
     t->ladder_dwell = 6;
 }
 
+void track_retune(Track *t, uint32_t new_chip_hz_q8, uint64_t now_us)
+{
+    int64_t chip_now;
+    if (!new_chip_hz_q8 || new_chip_hz_q8 == t->chip_hz_q8) return;
+    chip_now = corr_chip_at(now_us, t->epoch_us, t->chip_hz_q8);
+    /* epoch_new = now - chip_now * 256e6 / hz_q8. chip_now < 2^20 for any run, so the product fits. */
+    t->epoch_us = now_us - (uint64_t)((chip_now * 256000000LL) / (int64_t)new_chip_hz_q8);
+    t->chip_hz_q8 = new_chip_hz_q8;
+    /* last_chip/first_chip are absolute and, by construction above, still name the same instants. */
+}
+
 void track_roi_center(const Track *t, int16_t *cx, int16_t *cy)
 {
     uint8_t f = scale_factor(t->scale);

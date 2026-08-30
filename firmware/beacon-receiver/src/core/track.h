@@ -140,6 +140,20 @@ void track_frame(Track *t, const BcnConfig *cfg, const int32_t *roi, int16_t roi
  * previous tick. Returns 1 if a record-worthy state remains (anything but DEAD). */
 int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us);
 
+/* T083 — adopt a new chip rate WITHOUT moving any historical chip index.
+ *
+ * This is the operation both previous attempts at closing the rate loop got wrong, and it is why they
+ * diverged rather than converged. corr_chip_at() computes chips = (t - epoch) * hz, so changing hz alone
+ * rebases the chip index of EVERY past sample: at t - epoch = 240 s, a 0.01 Hz nudge moves the index by
+ * 2.4 chips, which relabels the whole bin ring at once. The journal records the symptom -- "naive dhz
+ * walked 115->109 Hz", "the epoch re-anchor sprayed 112..129 Hz".
+ *
+ * The fix is that rate and epoch must move TOGETHER, chosen so that chip_at(now) is invariant:
+ *     epoch_new = now - chip_now * 1e6 / hz_new
+ * Past samples then shift only by the tiny amount the correction itself implies over the window
+ * (a 0.02 Hz change over a 258 ms window is 0.005 chip), instead of by the whole epoch-to-now lever. */
+void track_retune(Track *t, uint32_t new_chip_hz_q8, uint64_t now_us);
+
 /* Where the engine should extract the NEXT frame's ROI, in plane px of the track's scale. */
 void track_roi_center(const Track *t, int16_t *cx, int16_t *cy);
 

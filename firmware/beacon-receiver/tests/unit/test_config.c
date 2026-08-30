@@ -18,6 +18,7 @@ static const struct { const char *sec, *key, *val; } KEYS[] = {
     {"camera", "gain_min_q8",              "256"},
     {"camera", "gain_max_q8",              "4096"},
     {"code",   "n_chips",                  "31"},
+    {"code",   "rate_track",               "1"},
     {"code",   "chip_hz_nominal",          "115.0"},
     {"code",   "chip_hz_candidates",       "110.0,115.0,120.0,200.0"},
     {"code",   "code_a",                   "0000000100011011000011001110011"},

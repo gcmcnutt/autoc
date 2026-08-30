@@ -40,6 +40,9 @@ typedef struct {
     uint32_t chip_hz_nominal_q8;
     uint32_t chip_hz_candidates_q8[BCN_MAX_CHIP_CANDIDATES];
     uint8_t  n_chip_hz_candidates;
+    /* T083: track the emitter's period instead of trusting chip_hz_nominal. 0 = off (the historical
+     * behaviour: the constant is believed forever and a drifting pod is invisible). */
+    uint8_t  rate_track;
     uint32_t code_a_bits;            /* chip 0 in bit (n_chips-1), MSB-first — matches gold_codes.h     */
     uint32_t code_b_bits;
 

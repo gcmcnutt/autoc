@@ -37,6 +37,28 @@ struct Engine {
     int32_t  warm_x_q8, warm_y_q8;
     uint32_t warm_chip_hz_q8;
     uint8_t  warm_valid;
+    /* ---- T083: the RECEIVER-GLOBAL chip clock, and the loop that measures it -----------------------
+     * There is one emitter and one clock, so rate and phase are properties of the RECEIVER, not of a
+     * track. That is why this lives here and not in Track: a per-track loop would estimate the same
+     * number several times from less evidence each, and new seeds would start from the stale config
+     * value while established tracks had moved on. (It is also the groundwork T081 needs, for the same
+     * reason.)
+     *
+     * THE DISCRIMINATOR is the one measured offline on three clips across two days: the tracked
+     * chip_phase, unwrapped, is a clean linear ramp whose slope IS the frequency error, with a residual
+     * of 0.27-0.36 chip. Accumulating wrapped phase steps over a few seconds gives a drift in chips/s,
+     * and chips/s IS Hz. Measured drift at the old nominal was 0.718-0.792 chip/s.
+     *
+     * WHY IT IS SLOW AND DEADBANDED. The two previous attempts ran per-tick off a noisy statistic and
+     * diverged. Over RATE_WIN_US the true drift is large against the 0.3-chip noise (0.72 chip/s x 5 s
+     * = 3.6 chips), so a windowed estimate has ample SNR while a per-tick one has none. */
+    uint32_t chip_hz_q8;            /* the receiver's clock — seeds and retunes both use THIS          */
+    int32_t  rate_acc_chips;        /* accumulated wrapped phase steps since the window opened         */
+    uint64_t rate_t0_us;
+    uint16_t rate_obs;
+    uint8_t  rate_prev_phase;
+    uint8_t  rate_prev_valid;
+    uint32_t rate_corrections;
     int32_t  roi[TRK_MAX_EXTENT * TRK_MAX_EXTENT];   /* scratch: one aperture                         */
     uint8_t  field_on;                               /* debug field map requested (engine_field_enable) */
     uint8_t  field_valid;
@@ -146,12 +168,72 @@ int engine_open(Engine **out, const BcnConfig *cfg, EngineEmit emit, void *user,
     e->user = user;
     e->frame_w = (uint16_t)w;
     e->frame_h = (uint16_t)h;
+    e->chip_hz_q8 = cfg->chip_hz_nominal_q8;
     bank_init(&e->bank, &e->cfg);
     agc_init(&e->agc, &e->cfg);
     acquire_init(&e->acq, &e->cfg);
     sched_init(&e->sched, &e->cfg, cfg->fps ? 1000000u / cfg->fps : 3617u);
     *out = e;
     return 0;
+}
+
+uint32_t engine_chip_hz_q8(const Engine *e) { return e->chip_hz_q8; }
+uint32_t engine_rate_corrections(const Engine *e) { return e->rate_corrections; }
+
+/* ---- T083: measure the emitter's period and steer the receiver clock onto it -----------------------
+ * Called once per tick, after bank_tick, so every track is in a settled state before any retune. */
+#define RATE_WIN_US      5000000u   /* 5 s of accumulation — 3.6 chips of drift vs 0.3 chip of noise  */
+#define RATE_MIN_OBS     40u        /* ticks that actually contributed a phase step                   */
+#define RATE_DEADBAND_Q8 5          /* 0.02 Hz — below this, stop chasing the residual                */
+#define RATE_SLEW_Q8     64         /* 0.25 Hz per correction, so no single step can teleport phase   */
+
+static void rate_track(Engine *e, uint64_t now_us)
+{
+    const Track *best = NULL;
+    int i;
+    if (!e->cfg.rate_track) return;
+
+    for (i = 0; i < e->bank.max_slots; i++) {                 /* the strongest confirmed witness */
+        const BankSlot *s = &e->bank.slots[i];
+        if (!s->used || s->trk.state != TRK_CONFIRMED || s->trk.chip_phase == 0xFF) continue;
+        if (!best || s->trk.q_q8 > best->q_q8) best = &s->trk;
+    }
+    if (!best) { e->rate_prev_valid = 0u; return; }           /* blind: hold the estimate, do not guess */
+
+    if (e->rate_prev_valid) {
+        int d = (int)best->chip_phase - (int)e->rate_prev_phase;
+        if (d >  CORR_N / 2) d -= CORR_N;                     /* wrap to the shortest step */
+        if (d < -CORR_N / 2) d += CORR_N;
+        e->rate_acc_chips += d;
+        e->rate_obs++;
+    } else {
+        e->rate_t0_us = now_us;
+        e->rate_acc_chips = 0;
+        e->rate_obs = 0;
+    }
+    e->rate_prev_phase = best->chip_phase;
+    e->rate_prev_valid = 1u;
+
+    if (now_us - e->rate_t0_us >= RATE_WIN_US) {
+        uint64_t el = now_us - e->rate_t0_us;
+        if (e->rate_obs >= RATE_MIN_OBS) {
+            /* chips/s, in q8: acc * 256 * 1e6 / elapsed_us. acc is small, so this cannot overflow. */
+            int32_t drift_q8 = (int32_t)(((int64_t)e->rate_acc_chips * 256 * 1000000) / (int64_t)el);
+            if (drift_q8 > RATE_DEADBAND_Q8 || drift_q8 < -RATE_DEADBAND_Q8) {
+                if (drift_q8 >  RATE_SLEW_Q8) drift_q8 =  RATE_SLEW_Q8;
+                if (drift_q8 < -RATE_SLEW_Q8) drift_q8 = -RATE_SLEW_Q8;
+                e->chip_hz_q8 = (uint32_t)((int32_t)e->chip_hz_q8 + drift_q8);
+                for (i = 0; i < e->bank.max_slots; i++)       /* one clock: every track moves together */
+                    if (e->bank.slots[i].used)
+                        track_retune(&e->bank.slots[i].trk, e->chip_hz_q8, now_us);
+                e->rate_corrections++;
+            }
+        }
+        e->rate_t0_us = now_us;
+        e->rate_acc_chips = 0;
+        e->rate_obs = 0;
+        e->rate_prev_valid = 0u;      /* phase indices moved under the retune; re-observe before using */
+    }
 }
 
 void engine_controls(const Engine *e, uint32_t *exposure_us, uint16_t *gain_q8)
@@ -163,8 +245,9 @@ const Bank *engine_bank(const Engine *e) { return &e->bank; }
 
 int engine_seed(Engine *e, uint8_t code_id, int32_t x_q8, int32_t y_q8, uint32_t chip_hz_q8)
 {
+    (void)chip_hz_q8;   /* one emitter, one clock: seeds adopt the RECEIVER's estimate (T083) */
     return bank_seed(&e->bank, &e->cfg, code_id, TRK_SCALE_MEDIUM, x_q8, y_q8,
-                     chip_hz_q8, e->epoch_us, e->t0_us + e->frame_idx * 3617u);
+                     e->chip_hz_q8, e->epoch_us, e->t0_us + e->frame_idx * 3617u);
 }
 
 /* Extract one aperture at scale factor f centred at plane px (cx,cy): each plane pixel is the sum of
@@ -217,6 +300,7 @@ static void tick(Engine *e, uint64_t tick_end_us)
         t->saturated = 0;              /* re-detected each tick from raw peaks in extract()            */
     }
     bank_tick(&e->bank, &e->cfg);
+    rate_track(e, tick_end_us);                   /* T083 — after the bank settles, before we report */
     agc_exposure(&e->agc, &e->cfg, e->roi_peak);
     e->roi_peak = 0;
 
@@ -322,9 +406,11 @@ void engine_frame(Engine *e, const FrameView *fv)
                         if (wy < 0) wy = -wy;
                         if (e->warm_valid && wx < (8 << 8) && wy < (8 << 8))
                             hz = e->warm_chip_hz_q8;   /* warm reacquire: inherit the proven rate    */
-                        else
-                            hz = acquire_next_rate_q8(&e->acq, &e->cfg,
-                                                      e->pending[k].x_q8, e->pending[k].y_q8);
+                        else {
+                            (void)acquire_next_rate_q8(&e->acq, &e->cfg,
+                                                       e->pending[k].x_q8, e->pending[k].y_q8);
+                            hz = e->chip_hz_q8;   /* the receiver's tracked clock, not the constant */
+                        }
                         bank_seed(&e->bank, &e->cfg, 1u /* bench: code B; two-code seeds try both when
                                   the cube lands */, TRK_SCALE_MEDIUM,
                                   e->pending[k].x_q8, e->pending[k].y_q8, hz,

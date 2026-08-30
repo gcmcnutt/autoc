@@ -15,7 +15,7 @@ static void write_ini(void)
     fprintf(f,
         "[camera]\nmode = 640x400\nfps = 250\nexposure_min_us = 200\nexposure_max_us = 3000\n"
         "gain_min_q8 = 1024\ngain_max_q8 = 4096\n"
-        "[code]\nn_chips = 31\nchip_hz_nominal = 115.0\nchip_hz_candidates = 115.0\n"
+        "[code]\nn_chips = 31\nrate_track = 1\nchip_hz_nominal = 115.0\nchip_hz_candidates = 115.0\n"
         "code_a = 0000000100011011000011001110011\ncode_b = 0100011001100111100101001011110\n"
         "[bank]\nmax_slots = 8\nscale_extents = 24,12,6\nalpha = 0.35\nbeta = 0.08\n"
         "q_lock = 0.55\nq_drop = 0.30\nq_fix = 0.75\nlock_health_lock = 0.60\nlock_health_drop = 0.35\n"

@@ -40,6 +40,7 @@ static const KeySpec SPECS[] = {
     {"camera", "gain_max_q8",          T_U16,    F(gain_max_q8), 0, 0},
 
     {"code",   "n_chips",              T_U8,     F(n_chips), 0, 0},
+    {"code",   "rate_track",           T_FLAG,   F(rate_track), 0, 0},
     {"code",   "chip_hz_nominal",      T_Q8_32,  F(chip_hz_nominal_q8), 0, 0},
     {"code",   "chip_hz_candidates",   T_Q8LIST, F(chip_hz_candidates_q8), BCN_MAX_CHIP_CANDIDATES,
                                                  F(n_chip_hz_candidates)},

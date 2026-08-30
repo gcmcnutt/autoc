@@ -135,3 +135,66 @@ sampled at a systematically different sub-chip position rather than uniformly. T
    why K = 124 stays broken even at the corrected rate.
 3. **Exposure as a range lever**, with T082 folded in, since straddling only becomes real there.
 4. **T081** after (1), when its invariant is true.
+
+---
+
+# T083 built and measured — the loop converges, and it does NOT unlock long integration (2026-08-30)
+
+Operator: *"is this setup told the chip rate or does it discover and continually update its pll?"* It was
+**told**, and it never updated: `acquire_next_rate_q8()` returned the config constant unconditionally, and
+the DPLL's rate half was parked with only the phase half running. The phase loop then *masked* the rate
+error by re-indexing a chip whenever it drifted — which is exactly the +0.718 chip/s ramp measured above.
+A drifting pod was structurally invisible.
+
+## The design, and why the two 2026-08-19 attempts diverged
+
+They adjusted `chip_hz` alone. `corr_chip_at()` computes `chips = (t - epoch) * hz`, so changing `hz`
+rebases the chip index of **every past sample**: at `t - epoch` = 240 s, a 0.01 Hz nudge moves the index
+by 2.4 chips and relabels the whole bin ring at once. That is a structural trap, not a gain-tuning
+problem, and it is why "naive dhz walked 115→109" and the repair "sprayed 112..129".
+
+`track_retune()` moves rate and epoch **together**, chosen so `chip_at(now)` is invariant:
+
+    epoch_new = now - chip_now * 1e6 / hz_new
+
+Past samples then shift only by what the correction itself implies over the window (a 0.02 Hz change over
+258 ms is 0.005 chip) instead of by the whole epoch-to-now lever.
+
+The estimator is **receiver-global** — one emitter, one clock — so it lives in the Engine, not in Track.
+That is also the groundwork T081 needs. It is deliberately slow: 5 s accumulation, 0.02 Hz deadband,
+0.25 Hz slew cap. Over 5 s the true drift is 3.6 chips against 0.3 chip of noise, so a windowed estimate
+has the SNR a per-tick one never had.
+
+## It converges, and stays bounded
+
+| clip | residual drift after t = 30 s | was |
+|---|---|---|
+| `pend3` | **+0.0257 chip/s** | +0.718 |
+| `pend_ir` | **+0.0118 chip/s** | +0.743 |
+
+A **28–60× reduction**, with `chip_hz` staying inside 120.5–121.0 across every clip. Half-chip drift now
+takes **19–42 s** instead of 0.7 s.
+
+## What it buys, honestly: almost nothing today, and the prerequisite for tomorrow
+
+`pend3`, on-beacon fixes:
+
+| | Kmax = 31 | Kmax = 124 |
+|---|---|---|
+| `rate_track = 0` | 3537 | 3399 |
+| `rate_track = 1` | **3561** (+0.7 %) | 3438 (+1.1 %) |
+
+**+1 %. That is the whole direct gain**, and it is worth stating plainly rather than dressing up.
+
+**More importantly: correcting the rate does NOT unlock long integration.** K = 124 remains *worse* than
+K = 31 (3438 vs 3561) even with the rate tracked to 0.026 chip/s — which over a 1.03 s window is 0.027
+chip, far too small to matter. So the rate was **not** what was breaking long integration. There is a
+second mechanism, and the operator has named the candidate: *"since we only integrate a small fraction of
+the frame time that is another edge variable that can resonate with 2.4 frames per chip."* At 2.3992
+frames/chip the 45 µs sample walks the chip on a 12-frame / 5-chip cycle, so each chip is sampled at a
+systematically different sub-chip position rather than uniformly. **That is the next measurement**, and it
+is offline on `static_ir`.
+
+**Where T083 does pay is T081.** Its invariant — "phase survives blind, so re-detection costs one 0.39 ms
+correlation" — needed 65 s and had 0.7. It now has 19–42 s. That is the difference between sync-first
+being impossible and being merely bounded, and it is the reason to keep this on by default even at +1 %.

@@ -86,6 +86,11 @@ int  engine_preview_enable(Engine *e, int on);
  * set to frame_w/BCN_PREVIEW_DIV and frame_h/BCN_PREVIEW_DIV. */
 const uint8_t *engine_preview_map(const Engine *e, unsigned *w, unsigned *h);
 
+/* T083 — the receiver's current chip-rate estimate (q8) and how many corrections it has applied.
+ * Exposed for the app's telemetry and for tests; the loop itself is internal to engine.c. */
+uint32_t engine_chip_hz_q8(const Engine *e);
+uint32_t engine_rate_corrections(const Engine *e);
+
 void engine_close(Engine *e);
 
 #ifdef __cplusplus
