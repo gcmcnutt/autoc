@@ -345,3 +345,47 @@ free but is harder to get right; measure the memmove version first.
 
 **This is the next indoor step**, and it is the first thing measured all session that plausibly moves the
 ≥8 °/s band rather than the lifecycle around it.
+
+## Attempt 3 — shift the bins with the aperture. WRONG PREMISE, and it rules out the whole class.
+
+The reasoning in §"What that tells us" above is **incorrect** and is corrected here rather than deleted,
+because the correction is the useful part.
+
+Implemented: shift `bins[]` by the same (dx, dy) whenever the ROI centre moves, so `bins[p]` keeps meaning
+a fixed patch of sky. Result on the golden clip: the track reaches **q = 1.00 with lock_health 0.02–0.36**
+and can never promote — `lock_health` collapsed, because the shift was smearing the beacon's own
+accumulated history across pixels.
+
+**Why it is wrong.** The per-pixel bins are **aperture-relative**, and the aperture *follows the target*.
+So a tracked beacon already sits at an approximately FIXED bin index — the aperture-relative indexing
+**is** the motion compensation, and it is already doing its job. Sky-locking the bins actively undoes it:
+it holds the grid still and lets the beacon walk across it, which is the very smear I set out to remove.
+
+The residual smear in the existing scheme is therefore **not** the target's transit (7.8 M2 px per word at
+16.5 °/s). It is only the **quantisation** of the ROI centre — `m2_q8_to_plane_px()` truncates to a whole
+plane pixel, so the beacon dithers ±0.5 plane px within the aperture. That is a much smaller error, and it
+is why all three attempts to "fix the bookkeeping" made things worse rather than better.
+
+## What the three failures establish
+
+| attempt | result | why |
+|---|---|---|
+| ROI based on `xr` | v ran to 48.5 vs true 30 | `v*tau` in the aperture ⇒ positive feedback through v |
+| mean-preserving ROI follow | pend4 −24 % fixes | more re-centrings ⇒ more quantisation jumps |
+| sky-locked bin shift | lock_health collapse | undoes the compensation the aperture already provides |
+
+**The aperture bookkeeping is not the coherence limit.** It is already motion-compensated, correctly, by
+construction. What actually limits high rate is a **chicken-and-egg on velocity**: the aperture follows
+the *prediction*, the prediction needs a velocity, and the velocity comes from fixes that are themselves
+failing at high rate. The tracker can only ever REFINE a velocity it already has; it cannot acquire one.
+
+That is precisely the gap **T050 decode-along-track** exists to fill — hypothesise velocities and test
+them, so a lock is not a prerequisite for a lock. And it is exactly the operator's framing of the event
+formulation (2026-08-30): *"moving apertures vs event camera has candidates who changed polarity at
+expected time compared to motion estimates."* An event detector tests (position, velocity, code-phase)
+hypotheses against the **timing of polarity changes** along a trail, which needs no established track and
+no accumulated per-pixel window — so it does not have the chicken-and-egg at all.
+
+**Recommendation**: stop trying to improve the correlator's motion handling. The next indoor gain at
+≥8 °/s comes from hypothesis-based detection (T050 / the event path), not from better bookkeeping around
+an aperture that is already doing the right thing.
