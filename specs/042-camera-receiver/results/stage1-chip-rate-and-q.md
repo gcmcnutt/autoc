@@ -273,3 +273,75 @@ dominates. On the 240 s `pend3` the K = 124 penalty is only ~3 % (3438 vs 3561).
 — the far-field case it exists for — is **untested**, because every clip we own has a strong beacon
 (saturated, or 208 p2p at 8 m). Not "broken"; unproven, and mildly costly where it is not needed.
 Testing it needs a genuinely weak target, which is a range/outdoor fixture, not a bench one.
+
+---
+
+# Attacking the coherence limit: two failed attempts that locate the real defect (2026-08-30)
+
+Indoors is now excellent below ~3 °/s (100 % decode, 0.20–0.26° bearing, zero false locks) and **18 % at
+≥8 °/s**. That band is the entire remaining indoor gap, so this is where the work went.
+
+## The mechanism, measured
+
+The ROI centre is `xp`, updated **once per tick (50 ms)** and frozen for the ~12 frames in between, while
+`track_frame` deposits `roi[p]` into `bins[p]` — an **aperture-relative** index. So the beacon walks
+across a stationary bin grid and the per-pixel chip bins accumulate a trail rather than a point:
+
+| rate | drift within one tick | over a 258 ms word |
+|---|---|---|
+| 8 °/s | 0.7 M2 px | 3.8 |
+| 16.5 °/s | **1.5 M2 px** | 7.8 |
+| 19 °/s | 1.7 M2 px | 8.9 |
+
+against a FINE aperture **5 M2 px across**.
+
+## Attempt 1 — base the ROI on `xr`. BLEW UP, exactly as this file already warned.
+
+`xr = x + v*tau` is the tracker's own "where it is NOW", so centring there looks strictly more correct.
+It is not: the aperture position becomes a function of `v`, the measurement is taken inside that
+aperture, and `v` grows from its own output. Golden clip: **velocity 48.5 M2 px/s against a true 30**,
+position error 7.4 px, lock_health 75.
+
+`track.c` already carries this warning — *"v*tau added to z (positive feedback through v, 3x blowup)"* —
+and this is the same loop entered through the **ROI** instead of through **z**. Recorded here because the
+existing note only names the `z` route.
+
+## Attempt 2 — mean-preserving intra-tick smoothing. Also worse, and this is the informative one.
+
+Sweep the centre through `xp` at the tick's midpoint, so the tick-average aperture is unchanged and only
+the sawtooth goes. No `v*tau` anywhere. Golden improved (4/17 → 2/17 failing) but was still wrong, and on
+the real clips it is clearly harmful:
+
+| | baseline | ROI-follow |
+|---|---|---|
+| `pend4` fixes | **2932** | 2218 (−24 %) |
+| `pend4` 5–8 °/s | **48 %** | 30 % |
+| `pend3` fixes | **3561** | 2877 (−19 %) |
+| `pend3` 5–8 °/s | **55 %** | 36 % |
+
+Reverted.
+
+## What that tells us — the missing operation is a BIN SHIFT
+
+`m2_q8_to_plane_px()` truncates to an integer plane pixel, so re-centring the ROI moves the bin-to-sky
+mapping in **whole-pixel jumps**. Every jump invalidates the accumulated per-pixel window, because
+`bins[p]` silently changes which patch of sky it means. Moving the ROI *more often* therefore corrupts
+the window *more often* — which is exactly the ordering measured above.
+
+The current code gets away with one jump per tick. It does **not** get away with it for free: that jump
+is already corrupting the window at every tick boundary, and at high rate the jumps are larger.
+
+So the fix is not to move the aperture less, nor more smoothly — it is to **shift the bin array by the
+same (dx, dy) whenever the ROI centre moves**, so `bins[p]` keeps meaning the same sky. Then the ROI can
+follow the target continuously *and* the window stays coherent, which is the actual content of
+"decode along track" for a case where the velocity is already known.
+
+`track_frame` already records `roi_cx`/`roi_cy` every frame and **never reads them** — the hook is
+sitting there unused.
+
+Cost: shifting `E*E*TRK_WIN` int32 on a move. At E = 16 that is 127 KB, and at high rate the ROI moves
+~30 times/s, so ~4 MB/s — affordable against the ~36 ms of tick margin. A rotating origin would make it
+free but is harder to get right; measure the memmove version first.
+
+**This is the next indoor step**, and it is the first thing measured all session that plausibly moves the
+≥8 °/s band rather than the lifecycle around it.
