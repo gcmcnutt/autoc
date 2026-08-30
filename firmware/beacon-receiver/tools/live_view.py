@@ -127,6 +127,16 @@ def main():
                          "rate, not a smaller one. Remember to divide ffplay's -framerate by the same N.")
     ap.add_argument("--inset", type=int, default=8, help="magnification of the track inset (1 = off)")
     ap.add_argument("--inset-m2", type=int, default=32, help="inset crop size in M2 px")
+    ap.add_argument("--record", metavar="PATH",
+                    help="ALSO record raw frames to PATH while you watch. The camera is single-access, so "
+                         "watching and recording cannot be two processes -- without this you have to "
+                         "choose one, and a pendulum session wants both: the live view to aim and confirm "
+                         "the swing, the clip to score against truth afterwards.")
+    ap.add_argument("--record-mode", default="continuous",
+                    help="continuous | ring | burst. Continuous by default and DELIBERATELY so: burst "
+                         "islands cannot be correlated across, which is how pan1 became unable to measure "
+                         "reacquisition at all (042 trap #1).")
+    ap.add_argument("--duration", type=int, help="stop after N seconds (passed through to beacon_trackd)")
     ap.add_argument("--print-cmd", action="store_true")
     a = ap.parse_args()
 
@@ -144,6 +154,10 @@ def main():
     extents = read_scale_extents(a.config)
 
     cmd = [a.trackd, "--config", a.config, "--source", a.source, "--emit", "json:-", "--preview"]
+    if a.record:
+        cmd += ["--record", a.record, "--record-mode", a.record_mode]
+    if a.duration:
+        cmd += ["--duration", str(a.duration)]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=sys.stderr, bufsize=1 << 20)
     out = sys.stdout.buffer
     plane = None
