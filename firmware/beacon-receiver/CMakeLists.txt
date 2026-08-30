@@ -19,6 +19,7 @@ add_library(beacon_core STATIC
   src/core/sched.c
   src/core/engine.c
   src/core/acquire.c
+  src/core/trail.c
 )
 set_target_properties(beacon_core PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
 target_include_directories(beacon_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)

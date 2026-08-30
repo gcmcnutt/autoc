@@ -444,3 +444,41 @@ Data structure: a ring of ~74 reduce4 planes (160×100 × 74 = **1.2 MB**) — r
 
 This is T050 with the V² term removed by the event stage's nomination — the "candidates who changed
 polarity at expected time compared to motion estimates" formulation, exactly.
+
+---
+
+# THE TRAIL SEARCH IS LIVE IN core/ — 100 % decode at every rate, on replay (2026-08-30)
+
+Prototype validated first (`trail_search_proto.py`, no oracle): 100 % locked and on-beacon at 0–40 °/s,
+err p50 0.5–0.85 M2 px. Then implemented in C: `src/core/trail.c` + `track_apply_trail_fix()` + engine
+wiring + `[trail]` config. The design point that keeps both worlds: **the aperture path stays
+authoritative whenever it measures** (it has the sub-pixel centroid); the trail search fires only on
+ticks where the aperture failed — exactly where the coherence limit lives. A trail fix replaces
+(position, velocity) outright — it measured both — so there is no alpha-beta feedback path, which is
+what made the two failed ROI experiments unstable.
+
+`pend4`, replay, trail on vs off (`pend3` within a point everywhere):
+
+| block | rate | decode off → **on** | bearing on |
+|---|---|---|---|
+| 0–20 s | 14.7 °/s | 39 % → **98 %** | 0.74° |
+| 20–40 s | 12.3 | 17 % → **100 %** | 0.77° |
+| 40–60 s | 8.9 | 14 % → **100 %** | 0.84° |
+| 60–80 s | 6.4 | 29 % → **100 %** | 0.79° |
+| every block below | ≤4.7 | → **100 %** | 0.19–0.80° |
+
+| | trail off | **trail on** |
+|---|---|---|
+| total on-beacon fixes | 2859 | **4192 (+47 %)** |
+| false locks | 0 | **0** |
+| by instantaneous rate, ≥8 °/s | ~18 % | **100 % (924/924)** |
+| relock after occlusion | p50 40 ms, 89 % in bar | **p50 27 / p90 46 / max 50 ms, 47/47 (100 %)** |
+| MEASURED fix overall | 61 % | **89 %** (rest = occlusions + UVLO tail + cold start) |
+
+Live sanity (beacon off): 0/400 deadline misses, median margin 39.1 ms — the ring feed and search cost
+nothing measurable; the search only runs when a precision track exists and its aperture failed.
+
+**The coherence limit is closed indoors, on replay.** 18 % → 100 % at ≥8 °/s, with zero false locks and
+byte-identical replay parity (the golden runs with trail enabled). What remains before "field": the same
+number live at the bench (the crosshair demo), then the outdoor axes — range/weak-target SNR, ego-motion,
+background clutter — which are different problems and were never this one.

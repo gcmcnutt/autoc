@@ -33,6 +33,7 @@ static void write_ini(void)
         "integration_max_chips = 124\nroi_driven = 1\n"
         "[record]\nmode = continuous\npath = %s\nring_seconds = 1\nburst_frames = 4\nburst_every = 8\n"
         "trigger = manual\n"
+        "[trail]\nenable = 1\ncrop_px = 96\nring_frames = 80\nvmax = 64.0\nvstep = 8.0\ncandidates = 5\n"
         "[sched]\nacquire_cost_us_per_pass = 12000\nacquire_passes_max = 2\n"
         "[sync]\nfiducial_enabled = 0\nfiducial_period_s = 10\nmsp_uart = /dev/null\nmsp_baud = 115200\n",
         W, H, OUT);

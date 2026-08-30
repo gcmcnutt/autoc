@@ -106,6 +106,27 @@ void track_retune(Track *t, uint32_t new_chip_hz_q8, uint64_t now_us)
     /* last_chip/first_chip are absolute and, by construction above, still name the same instants. */
 }
 
+void track_apply_trail_fix(Track *t, const BcnConfig *cfg, int32_t x_q8, int32_t y_q8,
+                           int32_t vx_q8, int32_t vy_q8, uint16_t q_q8, uint64_t now_us, uint32_t dt_us)
+{
+    t->x_q8 = x_q8;                     /* the trail fix IS a now-position: candidates are nominated
+                                         * from the most recent frames, so no tau correction applies  */
+    t->y_q8 = y_q8;
+    t->vx_q8 = vx_q8;
+    t->vy_q8 = vy_q8;
+    t->state_t_us = now_us;
+    t->q_q8 = q_q8;
+    t->cep_q8 = (uint16_t)(1u << 8);    /* measured err p50 0.5-0.85 M2 px (trail_search_proto)       */
+    t->measured_fix = q_q8 >= cfg->q_fix_q8;
+    if (t->measured_fix) t->last_fix_us = now_us;
+    t->xr_q8 = x_q8;
+    t->yr_q8 = y_q8;
+    t->xp_q8 = x_q8 + (int32_t)(((int64_t)vx_q8 * dt_us) / 1000000);
+    t->yp_q8 = y_q8 + (int32_t)(((int64_t)vy_q8 * dt_us) / 1000000);
+    t->age_ms = 0;
+    if (t->state == TRK_HOLD && q_q8 >= cfg->q_lock_q8) t->state = TRK_CONFIRMED;
+}
+
 void track_roi_center(const Track *t, int16_t *cx, int16_t *cy)
 {
     uint8_t f = scale_factor(t->scale);

@@ -37,6 +37,7 @@ static void write_ini(uint32_t burst_frames, uint32_t burst_every, const char *m
         "integration_max_chips = 124\nroi_driven = 1\n"
         "[record]\nmode = %s\npath = %s\nring_seconds = 1\nburst_frames = %u\nburst_every = %u\n"
         "trigger = manual\n"
+        "[trail]\nenable = 1\ncrop_px = 96\nring_frames = 80\nvmax = 64.0\nvstep = 8.0\ncandidates = 5\n"
         "[sched]\nacquire_cost_us_per_pass = 12000\nacquire_passes_max = 2\n"
         "[sync]\nfiducial_enabled = 0\nfiducial_period_s = 10\nmsp_uart = /dev/null\nmsp_baud = 115200\n",
         W, H, mode, OUT, burst_frames, burst_every);

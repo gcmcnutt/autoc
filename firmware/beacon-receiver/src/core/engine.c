@@ -7,6 +7,7 @@
  */
 #include "engine.h"
 #include "acquire.h"
+#include "trail.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +20,7 @@ struct Engine {
     Agc agc;
     Sched sched;
     Acquire acq;
+    Trail trail;
     EngineEmit emit;
     void *user;
 
@@ -172,6 +174,7 @@ int engine_open(Engine **out, const BcnConfig *cfg, EngineEmit emit, void *user,
     bank_init(&e->bank, &e->cfg);
     agc_init(&e->agc, &e->cfg);
     acquire_init(&e->acq, &e->cfg);
+    trail_init(&e->trail, &e->cfg);
     sched_init(&e->sched, &e->cfg, cfg->fps ? 1000000u / cfg->fps : 3617u);
     *out = e;
     return 0;
@@ -300,6 +303,27 @@ static void tick(Engine *e, uint64_t tick_end_us)
         t->saturated = 0;              /* re-detected each tick from raw peaks in extract()            */
     }
     bank_tick(&e->bank, &e->cfg);
+
+    /* Trail search (T050-lite): when the aperture path failed to measure this tick, test velocity
+     * hypotheses against the ring. The aperture stays authoritative when it works — it has the
+     * sub-pixel centroid — so this fires exactly where the coherence limit lives. Measured ceiling and
+     * search recovery are both 100 % out to 40 °/s (results/stage1-chip-rate-and-q.md). */
+    if (e->cfg.trail_enable) {
+        for (i = 0; i < e->bank.max_slots; i++) {
+            BankSlot *s = &e->bank.slots[i];
+            Track *t = &s->trk;
+            TrailFix fx;
+            if (!s->used || s->role != BANK_ROLE_PRECISION) continue;
+            if (t->state != TRK_CONFIRMED && t->state != TRK_HOLD) continue;
+            if (t->measured_fix && t->q_q8 >= e->cfg.q_fix_q8) continue;   /* aperture succeeded */
+            if (trail_search(&e->trail, t->tmpl, t->epoch_us, t->chip_hz_q8, tick_end_us,
+                             e->frame_w, e->frame_h, t->m2_div, &fx) &&
+                fx.q_q8 >= e->cfg.q_lock_q8)
+                track_apply_trail_fix(t, &e->cfg, fx.x_q8, fx.y_q8, fx.vx_q8, fx.vy_q8,
+                                      fx.q_q8, tick_end_us, dt_us);
+            break;                                 /* one precision trail per engine (one ring) */
+        }
+    }
     rate_track(e, tick_end_us);                   /* T083 — after the bank settles, before we report */
     agc_exposure(&e->agc, &e->cfg, e->roi_peak);
     e->roi_peak = 0;
@@ -346,6 +370,27 @@ void engine_frame(Engine *e, const FrameView *fv)
         if (peak >= 250u) t->saturated = 1;               /* spec §5: flat-top estimator engages      */
         if (peak > e->roi_peak) e->roi_peak = peak;
         track_frame(t, &e->cfg, e->roi, cx, cy, fv->t_us);
+    }
+
+    /* Trail ring (T050-lite): a crop follows the precision track so the per-tick velocity-hypothesis
+     * search has one word of history to correlate trails against. ROI-proportional: ~9 KB/frame. */
+    if (e->cfg.trail_enable) {
+        const Track *pt = NULL;
+        for (i = 0; i < e->bank.max_slots; i++) {
+            const BankSlot *s = &e->bank.slots[i];
+            if (s->used && s->role == BANK_ROLE_PRECISION && s->trk.state != TRK_DEAD &&
+                (!pt || s->trk.q_q8 > pt->q_q8)) pt = &s->trk;
+        }
+        if (pt) {
+            /* M2 centre-origin q8 -> native px */
+            int16_t cx = (int16_t)(((pt->xp_q8 * pt->m2_div) >> 8) + (int32_t)(e->frame_w / 2u));
+            int16_t cy = (int16_t)(((pt->yp_q8 * pt->m2_div) >> 8) + (int32_t)(e->frame_h / 2u));
+            trail_frame(&e->trail, fv, cx, cy);
+        } else if (e->warm_valid) {
+            int16_t cx = (int16_t)(((e->warm_x_q8 * 2) >> 8) + (int32_t)(e->frame_w / 2u));
+            int16_t cy = (int16_t)(((e->warm_y_q8 * 2) >> 8) + (int32_t)(e->frame_h / 2u));
+            trail_frame(&e->trail, fv, cx, cy);
+        }
     }
 
     /* Acquisition (US3-lite): when nothing is CONFIRMED, spend the sched budget on blink-detect

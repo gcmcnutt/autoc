@@ -73,6 +73,12 @@ static const KeySpec SPECS[] = {
     {"record", "burst_every",          T_U32,    F(burst_every), 0, 0},
     {"record", "trigger",              T_STR,    F(record_trigger), sizeof(((BcnConfig*)0)->record_trigger), 0},
 
+    {"trail",  "enable",               T_FLAG,   F(trail_enable), 0, 0},
+    {"trail",  "crop_px",              T_U16,    F(trail_crop_px), 0, 0},
+    {"trail",  "ring_frames",          T_U16,    F(trail_ring_frames), 0, 0},
+    {"trail",  "vmax",                 T_Q8_16,  F(trail_vmax_q8), 0, 0},
+    {"trail",  "vstep",                T_Q8_16,  F(trail_vstep_q8), 0, 0},
+    {"trail",  "candidates",           T_U8,     F(trail_cands), 0, 0},
     {"sched",  "acquire_cost_us_per_pass", T_U32, F(acquire_cost_us_per_pass), 0, 0},
     {"sched",  "acquire_passes_max",   T_U32,    F(acquire_passes_max), 0, 0},
 
@@ -291,6 +297,11 @@ static int validate(const BcnConfig *c, char *err, size_t errlen)
     if (c->q_fix_q8 && c->q_fix_q8 < c->q_drop_q8) {
         snprintf(err, errlen, "config: [bank] q_fix (%.3f) is below q_drop (%.3f) — a fix that would not "
                  "even hold the track cannot be worth believing", c->q_fix_q8 / 256.0, c->q_drop_q8 / 256.0);
+        return -1;
+    }
+    if (c->trail_enable && (c->trail_crop_px > 96 || c->trail_ring_frames > 80 ||
+                            c->trail_vstep_q8 == 0 || c->trail_cands == 0)) {
+        snprintf(err, errlen, "config: [trail] crop_px <= 96, ring_frames <= 80, vstep > 0, candidates >= 1");
         return -1;
     }
     if (c->q_drop_q8 > c->q_lock_q8) {

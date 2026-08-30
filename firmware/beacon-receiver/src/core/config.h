@@ -78,6 +78,14 @@ typedef struct {
     uint32_t burst_frames, burst_every;
     char     record_trigger[16];     /* manual | gpio                                                  */
 
+    /* ---- [trail] — the velocity-hypothesis trail search (results/stage1-chip-rate-and-q.md) */
+    uint8_t  trail_enable;
+    uint16_t trail_crop_px;          /* native px per side, <= TRAIL_CROP_MAX                          */
+    uint16_t trail_ring_frames;      /* <= TRAIL_RING_MAX; one code word (~74) with margin             */
+    uint16_t trail_vmax_q8;          /* velocity grid extent, M2 px/s q8                               */
+    uint16_t trail_vstep_q8;         /* grid step; 8 M2 px/s keeps trail error inside the box per word */
+    uint8_t  trail_cands;            /* nominated candidates per search                                */
+
     /* ---- [sched] — the cost model R3's replay virtualisation replays against */
     uint32_t acquire_cost_us_per_pass;
     uint32_t acquire_passes_max;

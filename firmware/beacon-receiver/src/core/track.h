@@ -154,6 +154,14 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us);
  * (a 0.02 Hz change over a 258 ms window is 0.005 chip), instead of by the whole epoch-to-now lever. */
 void track_retune(Track *t, uint32_t new_chip_hz_q8, uint64_t now_us);
 
+/* Apply a TRAIL FIX — a (position, velocity) measurement from the trail search, which measures BOTH
+ * directly (the hypothesis that scored q IS a velocity), so this is a state REPLACEMENT, not an
+ * alpha-beta innovation. That is what makes it safe where the two 2026-08-30 ROI experiments were not:
+ * nothing here feeds v back into where the next measurement is taken from — the trail search nominates
+ * candidates from the DATA (brightest-of-12), so a wrong v cannot steer the next search off the beacon. */
+void track_apply_trail_fix(Track *t, const BcnConfig *cfg, int32_t x_q8, int32_t y_q8,
+                           int32_t vx_q8, int32_t vy_q8, uint16_t q_q8, uint64_t now_us, uint32_t dt_us);
+
 /* Where the engine should extract the NEXT frame's ROI, in plane px of the track's scale. */
 void track_roi_center(const Track *t, int16_t *cx, int16_t *cy);
 
