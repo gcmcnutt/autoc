@@ -198,3 +198,78 @@ is offline on `static_ir`.
 **Where T083 does pay is T081.** Its invariant — "phase survives blind, so re-detection costs one 0.39 ms
 correlation" — needed 65 s and had 0.7. It now has 19–42 s. That is the difference between sync-first
 being impossible and being merely bounded, and it is the reason to keep this on by default even at +1 %.
+
+---
+
+# Verification of `pend4`, and the sub-chip measurement (2026-08-30, operator away from bench)
+
+## `pend4.bcnr` — the first clip recorded with the whole stack live
+
+69093 frames, **0 seq gaps, 1 dropped frame** (0.0014 %), 240 s requested / **214 s of beacon** (clean
+stop at full amplitude = the pod's UVLO, not a fade). Truth: `/data/pend4_truth.csv`, ROI
+`279,380,164,208` from `--arc`. 32722 position samples (47 %).
+
+| block | rate | decode | bearing |
+|---|---|---|---|
+| 100–120 s | 3.3 °/s | **100 %** | 0.59° |
+| 120–140 s | 2.2 | **100 %** | 0.37° |
+| 140–160 s | 1.5 | **100 %** | 0.34° |
+| 160–180 s | 1.0 | **100 %** | **0.26°** |
+| 180–200 s | 0.7 | **100 %** | **0.22°** |
+| 200–220 s | 0.5 | 96 % | **0.20°** |
+
+**2932 on-beacon fixes, ZERO false.** Relock p50 40 ms, 42/47 (89 %) inside the 400 ms bar.
+
+Two firsts: four consecutive blocks at **100 % decode**, and bearing **inside the §3 0.3° bar** (0.20–0.26°
+below 1 °/s) — previously the best block anywhere was 0.44°. The "overall present 79 %" the analyser
+prints includes the 26 s after UVLO with no beacon in the room; the per-block table is the honest view.
+
+Unchanged: **≥8 °/s is 18 %.**
+
+## The sub-chip sampling phase — operator's "edge variable"
+
+*"since we only integrate a small fraction of the frame time that is another edge variable that can
+resonate with 2.4 frames per chip."*
+
+**The resonance does not occur at the actual rate**, and the reason is a near miss. Lock-up to 5 sampling
+positions needs exactly 2.400 frames/chip (12 frames = 5 chips). The measured ratio is
+287.85 / 120.794 = **2.383**, whose per-frame sub-chip advance (0.4196) does not close, so the sampling
+phase walks the chip uniformly:
+
+    sub-chip positions visited: 101 distinct to 0.01
+    histogram over 10 bins:     [866, 866, 862, 863, 866, 862, 863, 865, 863, 862]
+
+Flat. So the concern is well founded in principle and **we are accidentally safe from it** — which is
+worth knowing, because retuning the pod toward a "nicer" 2.400 ratio would *create* the resonance.
+
+**The edge effect itself is real, and asymmetric** (`static_ir`, lit chips only):
+
+| sub-chip position | amplitude vs lit mean |
+|---|---|
+| 0.0–0.1 (chip start) | **−3.5 %** |
+| 0.2–0.8 (middle) | +1.3 … +1.8 % |
+| 0.9–1.0 (chip end) | **−6.0 %** |
+
+A sample landing on a boundary catches the LED transition and is attenuated, more at the end than the
+start — so the fall is slower than the rise, or the assumed boundary sits slightly early. Cost is ~5–8 %
+on ~20 % of samples. Real, modest, and **not** what limits long integration.
+
+## Correcting an overstatement: "K = 124 has never been usable"
+
+That was measured only on a **saturated** beacon (`static_ir` peaks at 255), where long integration has no
+SNR to add and only costs. That is the wrong regime to judge a far-field feature in. Re-tested on the
+unsaturated `rng_8m` (peak-to-peak 208, not railed):
+
+| K | LOCK | MEASURED | q p10 |
+|---|---|---|---|
+| 31 | **90 %** | **88 %** | 0.93 |
+| 62 | 74 % | 57 % | 0.47 |
+| 124 | 86 % | 51 % | 0.36 |
+
+Still worse — but `rng_8m` is only 5 s, so a 1.03 s window spends a fifth of the clip filling, and that
+dominates. On the 240 s `pend3` the K = 124 penalty is only ~3 % (3438 vs 3561).
+
+**The honest statement**: long integration costs a few percent where signal is ample, and its *benefit*
+— the far-field case it exists for — is **untested**, because every clip we own has a strong beacon
+(saturated, or 208 p2p at 8 m). Not "broken"; unproven, and mildly costly where it is not needed.
+Testing it needs a genuinely weak target, which is a range/outdoor fixture, not a bench one.
