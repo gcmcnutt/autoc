@@ -122,10 +122,19 @@ def main():
                     help="display gamma; the scene runs ~0.02-4 ADU against a 255 beacon, so a linear "
                          "stretch shows a black frame with one dot")
     ap.add_argument("--every", type=int, default=1,
-                    help="composite every Nth tick. Raw bgr24 at 20 Hz costs w*h*3*20 B/s -- 138 MB/s at "
-                         "--scale 6, over a ~113 MB/s ssh link -- so a big window needs a lower frame "
-                         "rate, not a smaller one. Remember to divide ffplay's -framerate by the same N.")
+                    help="composite every Nth tick. Raw bgr24 at 20 Hz costs w*h*3*20 B/s, so a big "
+                         "window needs a LOWER FRAME RATE, not a smaller one. Remember to divide "
+                         "ffplay's -framerate by the same N. MEASURED link budget (2026-08-29, beaconpi5 "
+                         "direct gigabit, 1000Mb/s full duplex): ssh sustains 115 MB/s, so --scale 3 = "
+                         "34.6 MB/s (30%), 4 = 61.4 (53%), 5 = 96.0 (83%, marginal), 6 = 138 -- OVER the "
+                         "link, use --every 2 there.")
     ap.add_argument("--inset", type=int, default=8, help="magnification of the track inset (1 = off)")
+    # MEASURED COST (2026-08-29, Pi 5, 640x400, beacon off, 20 s each): beacon_trackd alone reports
+    # deadline margin min/median 34.77/39.05 ms; with this view AND --record it is 31.36/35.51 ms,
+    # 0/400 misses either way and 0 seq gaps. So the view costs ~3.5 ms of the 50 ms tick (matching
+    # engine.h's per-tick preview figure) and the recording adds essentially nothing on top -- it goes
+    # to NVMe, not the link. Fine for decode-rate work; per engine.h, turn it OFF for an envelope run
+    # where the margin is itself the measurement.
     ap.add_argument("--inset-m2", type=int, default=32, help="inset crop size in M2 px")
     ap.add_argument("--record", metavar="PATH",
                     help="ALSO record raw frames to PATH while you watch. The camera is single-access, so "
