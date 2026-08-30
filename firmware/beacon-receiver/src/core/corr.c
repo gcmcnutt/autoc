@@ -23,63 +23,80 @@ int64_t corr_chip_at(uint64_t t_us, uint64_t epoch_us, uint32_t chip_hz_q8)
 
 /* Mean-removal setup shared by both paths: per-bin mean value in q8 (sum*256/count), window mean of
  * those, deviations. Missing bins (count 0) are excluded from both mean and MAC. */
+/* 64-BIT THROUGHOUT, and that is the whole point (2026-08-29). These accumulators used to be int32 with
+ * saturating clamps, and at the real operating point BOTH of them railed: measured on static_ir.bcnr,
+ * corr railed on 73 % of slot-ticks and energy on 80 %, the SAME 73 % railing together. When both rail,
+ * q = |corr|*256/energy = 2^31*256/2^31 = 256 exactly -- so 75 % of slot-ticks reported q = 1.00 and
+ * 98 % of those readings were the double-saturation artifact rather than a measurement. q gates
+ * promotion, HOLD entry and the scale ladder, so it was lying to three consumers at once, and it is why
+ * q flipped 0.87 / 0.51 / 1.00 on consecutive ticks of a STATIC target.
+ *
+ * The magnitudes are structural, not a corner case. extract() forms (sum << 14) / (exposure_us*gain/256);
+ * at 45 us / gain 1.0 that is a x364 multiplier, and the aperture SUM over ~1000 native px at ~2.4
+ * frames per chip reaches ~1e9 per bin before devs() multiplies by another 256. There is no int32 that
+ * holds it. Widening costs one extra scratch array (124 * 8 B) and nothing measurable in time.
+ *
+ * dev[] is int64 too: (bins[k] * 256) / counts[k] was itself computed in int64 and then TRUNCATED into an
+ * int32 slot, which is the same overflow one step earlier. */
 static void devs(const int32_t *bins, const uint8_t *counts, uint16_t W,
-                 int32_t *dev /* caller scratch, W entries */, int32_t *energy_out, int32_t *level_out)
+                 int64_t *dev /* caller scratch, W entries */, int64_t *energy_out, int64_t *level_out)
 {
     int64_t total = 0;
     uint32_t present = 0;
     uint16_t k;
-    int32_t mean_q8;
+    int64_t mean_q8;
     int64_t energy = 0;
 
     for (k = 0; k < W; k++) {
         if (counts[k]) {
-            dev[k] = (int32_t)(((int64_t)bins[k] * 256) / counts[k]);   /* per-bin mean, q8 */
+            dev[k] = ((int64_t)bins[k] * 256) / counts[k];              /* per-bin mean, q8 */
             total += dev[k];
             present++;
         }
     }
-    mean_q8 = present ? (int32_t)(total / (int64_t)present) : 0;
+    mean_q8 = present ? total / (int64_t)present : 0;
     for (k = 0; k < W; k++) {
         if (counts[k]) {
             dev[k] -= mean_q8;
-            energy += dev[k] < 0 ? -(int64_t)dev[k] : (int64_t)dev[k];
+            energy += dev[k] < 0 ? -dev[k] : dev[k];
         } else {
             dev[k] = 0;    /* excluded: contributes nothing to any phase */
         }
     }
-    *energy_out = energy > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)(energy | 1);   /* |1: never /0 */
+    *energy_out = energy | 1;                          /* |1: never /0. No clamp -- see above. */
     if (level_out) *level_out = mean_q8;
 }
 
 /* The window can exceed one code (W up to 124 = 4 words); template repeats with period 31. */
 #define MAX_W 124
 
-static int32_t mac_phase(const int32_t *dev, uint16_t W, const int8_t *tmpl, uint8_t phase)
+static int64_t mac_phase(const int64_t *dev, uint16_t W, const int8_t *tmpl, uint8_t phase)
 {
     int64_t acc = 0;
     uint16_t k;
     uint8_t c = phase;
     for (k = 0; k < W; k++) {
-        acc += tmpl[c] > 0 ? (int64_t)dev[k] : -(int64_t)dev[k];
+        acc += tmpl[c] > 0 ? dev[k] : -dev[k];
         c = (uint8_t)(c + 1u == CORR_N ? 0u : c + 1u);
     }
-    return acc > 0x7FFFFFFF ? 0x7FFFFFFF : acc < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)acc;
+    return acc;                    /* no clamp: |acc| <= W * max|dev|, which int64 holds comfortably */
 }
 
-static uint16_t quality_q8(int32_t corr, int32_t energy)
+/* q is |corr|/energy in q8 and is BOUNDED BY 1.0 by construction: |sum of +-dev| <= sum of |dev|. It is
+ * clamped to 0xFFFF only against the degenerate all-excluded window, where energy is the |1 guard. */
+static uint16_t quality_q8(int64_t corr, int64_t energy)
 {
-    int64_t q = ((int64_t)(corr < 0 ? -corr : corr) * 256) / energy;
+    int64_t q = ((corr < 0 ? -corr : corr) * 256) / energy;
     return q > 0xFFFF ? 0xFFFF : (uint16_t)q;
 }
 
 void corr_search(const int32_t *bins, const uint8_t *counts, uint16_t W,
                  const int8_t tmpl_a[CORR_N], const int8_t tmpl_b[CORR_N], CorrResult *out)
 {
-    int32_t dev[MAX_W];
-    int32_t energy;
-    int32_t level = 0;
-    int32_t best = 0;
+    int64_t dev[MAX_W];
+    int64_t energy;
+    int64_t level = 0;
+    int64_t best = 0;
     uint8_t best_ph = 0, best_code = 0;
     uint8_t code, ph;
 
@@ -88,8 +105,8 @@ void corr_search(const int32_t *bins, const uint8_t *counts, uint16_t W,
     for (code = 0; code < 2; code++) {
         const int8_t *t = code ? tmpl_b : tmpl_a;
         for (ph = 0; ph < CORR_N; ph++) {
-            int32_t c = mac_phase(dev, W, t, ph);
-            int32_t a = c < 0 ? -c : c;
+            int64_t c = mac_phase(dev, W, t, ph);
+            int64_t a = c < 0 ? -c : c;
             if (a > (best < 0 ? -best : best)) { best = c; best_ph = ph; best_code = code; }
         }
     }
@@ -104,9 +121,9 @@ void corr_search(const int32_t *bins, const uint8_t *counts, uint16_t W,
 void corr_track(const int32_t *bins, const uint8_t *counts, uint16_t W,
                 const int8_t tmpl[CORR_N], uint8_t phase, CorrResult *out)
 {
-    int32_t dev[MAX_W];
-    int32_t energy;
-    int32_t level = 0;
+    int64_t dev[MAX_W];
+    int64_t energy;
+    int64_t level = 0;
 
     if (W > MAX_W) W = MAX_W;
     devs(bins, counts, W, dev, &energy, &level);

@@ -27,12 +27,14 @@ void corr_template(uint32_t code_bits, int8_t out[CORR_N]);
 int64_t corr_chip_at(uint64_t t_us, uint64_t epoch_us, uint32_t chip_hz_q8);
 
 typedef struct {
-    int32_t corr;      /* peak correlation (signed; sign folds into polarity)                          */
-    int32_t energy;    /* L1 energy of the mean-removed window — the q denominator                     */
+    int64_t corr;      /* peak correlation (signed; sign folds into polarity). 64-BIT: at the real
+                        * operating point the int32 version RAILED on 73 % of slot-ticks (corr.c)      */
+    int64_t energy;    /* L1 energy of the mean-removed window — the q denominator. 64-bit for the
+                        * same reason: it railed on 80 %, and when both rail q reads exactly 1.00     */
     uint16_t q_q8;     /* 256 * |corr| / energy, clamped; scale-free quality                           */
     uint8_t phase;     /* best phase 0..30 (chip index of template start within the window)            */
     uint8_t code_id;   /* search only: 0 = A, 1 = B                                                    */
-    int32_t level;     /* q8 mean that devs() removed — the DC the window sat on. Kept because q is
+    int64_t level;     /* q8 mean that devs() removed — the DC the window sat on. Kept because q is
                         * |corr|/energy and BOTH collapse together on a flat source, so the ratio alone
                         * cannot tell a strong match from a weak one; the level is the third number
                         * needed to say which (T085). Nothing in the tracker reads it.               */

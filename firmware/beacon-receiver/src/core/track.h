@@ -107,9 +107,9 @@ typedef struct {
      * DC level the window sat on lets the promotion gate ask the question q cannot: is this modulated
      * at all? MEASURED across every fixture: lamp energy/level p95 0.88 / max 2.04, against a beacon
      * median of 1.9 (lit60, the worst) to 22.6 (pend1m). */
-    int32_t  last_corr;
-    int32_t  last_energy;
-    int32_t  last_level;
+    int64_t  last_corr;
+    int64_t  last_energy;
+    int64_t  last_level;
 
     /* lock-health EWMA internals */
     int32_t  lh_acc_q8;

@@ -275,8 +275,10 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
 
     /* ---- position measurement: per-pixel |corr| surface at the known phase ---- */
     {
-        int32_t surf[TRK_MAX_EXTENT * TRK_MAX_EXTENT];
-        int32_t peak = 0;
+        /* 64-bit like the correlator it is filled from: truncating the per-pixel corr into an int32
+         * surface would reintroduce, one step later, exactly the saturation corr.c now avoids. */
+        int64_t surf[TRK_MAX_EXTENT * TRK_MAX_EXTENT];
+        int64_t peak = 0;
         uint16_t peak_p = (uint16_t)((E / 2u) * E + E / 2u);
         /* The SPATIAL window can be younger than the temporal one — a widen keeps apsum and restarts
          * bins — so it gets its own clamp and therefore its own phase. counts[] is pixel-independent,
@@ -300,7 +302,7 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
             t->peak_px = peak_p;
             /* 3×3 centroid around the peak. SATURATED (spec §5): amplitude is a lie once the peak
              * rails, so switch to a flat-top estimator — binarise the weights at 70 % of peak. */
-            int32_t wx = 0, wy = 0, wt = 0;
+            int64_t wx = 0, wy = 0, wt = 0;
             int64_t m2s_w = 0;                   /* second moment with the SAME weights as the centroid */
             int32_t px = (int32_t)(peak_p % E), py = (int32_t)(peak_p / E);
             int32_t peak_q8;
@@ -309,17 +311,17 @@ int track_tick(Track *t, const BcnConfig *cfg, uint64_t now_us, uint32_t dt_us)
             for (dy = -1; dy <= 1; dy++) {
                 for (dx = -1; dx <= 1; dx++) {
                     int32_t xx = px + dx, yy = py + dy;
-                    int32_t wgt;
+                    int64_t wgt;
                     if (xx < 0 || yy < 0 || xx >= E || yy >= E) continue;
                     wgt = surf[yy * E + xx];
                     if (t->saturated) wgt = wgt * 10 >= peak * 7 ? 1 : 0;
                     wx += wgt * xx; wy += wgt * yy; wt += wgt;
-                    m2s_w += (int64_t)wgt * (dx * dx + dy * dy);
+                    m2s_w += wgt * (dx * dx + dy * dy);
                 }
             }
             if (wt > 0) {
-                int32_t mx_q8 = (int32_t)(((int64_t)wx << 8) / wt);
-                int32_t my_q8 = (int32_t)(((int64_t)wy << 8) / wt);
+                int32_t mx_q8 = (int32_t)((wx << 8) / wt);
+                int32_t my_q8 = (int32_t)((wy << 8) / wt);
                 /* ROI coords -> plane px q8 -> M2 q8 (roi centre pixel index E/2 sits AT roi_cx) */
                 int32_t plane_x_q8 = ((int32_t)t->roi_cx << 8) + mx_q8 - ((int32_t)(E / 2u) << 8);
                 int32_t plane_y_q8 = ((int32_t)t->roi_cy << 8) + my_q8 - ((int32_t)(E / 2u) << 8);

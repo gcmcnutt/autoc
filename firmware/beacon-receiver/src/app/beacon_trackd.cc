@@ -113,9 +113,10 @@ static void emit_diag_line(const Engine *eng)
         if (!s->used) continue;
         n += snprintf(buf + n, sizeof buf - (size_t)n,
                       "%s{\"slot\":%u,\"code\":%u,\"role\":%u,\"state\":%u,\"corr\":%d,"
-                      "\"energy\":%d,\"level\":%d,\"q\":%.3f,\"x\":%.2f,\"y\":%.2f,\"scale\":%u}",
+                      "\"energy\":%lld,\"level\":%lld,\"q\":%.3f,\"x\":%.2f,\"y\":%.2f,\"scale\":%u}",
                       first ? "" : ",", i, s->trk.code_id, s->role, s->trk.state,
-                      s->trk.last_corr, s->trk.last_energy, s->trk.last_level, s->trk.q_q8 / 256.0,
+                      (long long)s->trk.last_corr, (long long)s->trk.last_energy,
+                      (long long)s->trk.last_level, s->trk.q_q8 / 256.0,
                       s->trk.x_q8 / 256.0, s->trk.y_q8 / 256.0, s->trk.scale);
         first = 0;
     }

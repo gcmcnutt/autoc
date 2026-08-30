@@ -114,7 +114,7 @@ void bank_tick(Bank *b, const BcnConfig *cfg)
          * comes through. */
         if (s->trk.state == TRK_CANDIDATE && cfg->min_mod_depth_q8 &&
             s->trk.last_level > 0 &&
-            (int64_t)s->trk.last_energy * 256 < (int64_t)cfg->min_mod_depth_q8 * s->trk.last_level) {
+            s->trk.last_energy * 256 < (int64_t)cfg->min_mod_depth_q8 * s->trk.last_level) {
             s->promote_streak = 0u;
             continue;
         }
