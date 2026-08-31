@@ -29,11 +29,30 @@ the 043 implementation strategy names.
 - **2026-08-25 (T015 split, operator)**: `craftCmQ → Cm_q` + Global carriers landed; the IMU
   **observation-transform** is **folded into Phase 5** (needs a sensed copy distinct from the truth
   fitness uses; also feeds `Cntrl_InavFwRate`). See `variation-inventory.md`.
-- **2026-08-25 (T037, correction)**: the `<controllers>` node lives in the **global** config
-  (`autoc_config.xml` + `autoc_config-eval.xml`), NOT `hb1_streamer.xml` — `crrc_fdm.cpp:38` reads
-  controllers from the global cfg (model-independent). The literal task placement would have created a
-  controller that never loads. `data-model.md` §3 anticipated this; 043 does no per-scenario gain
-  variation, so the global path is correct.
+- **2026-08-25 → superseded 2026-08-30 (T037)**: the node first went in the **global** config because
+  `crrc_fdm.cpp:38` reads controllers there and `fdm_larcsim` had no per-model path (the literal task
+  placement would have created a controller that never loads). ⭐ **Superseded by the operator decision
+  below** — the per-model path now exists.
+- **⭐ 2026-08-30 (operator): `<controllers>` MOVED to the model file** (`hb1_streamer.xml`, inside
+  `<config>`), and `fdm_larcsim` gained the per-model load following the `fdm_mcopter01` pattern
+  (`data-model.md` §3's named recipe). Rationale — *"we will likely make changes and even run this on
+  different models as we go — retrain and all"*:
+  * ⛔ **Kills a real footgun.** Under the global config, loading ANY other airframe silently inherited
+    hb1's INAV gains. Verified fixed: `hb1_streamer.xml` → `[FDM] model-local controllers loaded: 1`;
+    stock `zagi-xs.xml` → `none (no <config><controllers> node) — direct stick→surface`.
+  * **Cohesion**: one file is the whole plant — aero, mass, `Cm_q`, *and* the FC tune it flies behind.
+  * **Unblocks per-scenario/per-craft gain variation** later: the list is per-FDM-instance, so gains can
+    vary like `craftCmQ` already does. (Impossible under the load-once global env.)
+  * ⭐ **Makes the load VISIBLE.** `fdm_larcsim` now logs the outcome either way and **fail-louds** if a
+    `<controllers>` node is present but constructs nothing (unknown name / missing gain key). That closes
+    the one invisible-failure mode of this feature — previously a bad node meant `LoadList` printed an
+    XMLException and the sim silently flew MANUAL. The node stays optional, because "no controllers" is
+    the correct pre-043 behaviour for every stock model (not a silent fallback default).
+  * Owned/reset correctly: rebuilt on every `LoadFromXML` (no `ReloadParams` duplication), deleted in the
+    destructor, and `Reset()` at each `initAirplaneState` — ⛔ required for determinism, or a worker's
+    second scenario would start from the previous scenario's integrator/filter state.
+  * Runs per substep after the global `ControllerCallback` and **before** the 037 servo model, so servo
+    lag still lands inside the rate loop.
 - **2026-08-25 (T040/T041)**: no `getInputData` change — `ControllerCallback` auto-routes
   `pInputsFromUser`→controller, so the NN→rate-setpoint conversion lives in the adapter/core. ACRO is
   **always-on**, replacing MANUAL outright (Constitution III, no dual path).

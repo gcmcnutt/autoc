@@ -12,9 +12,11 @@ ACRO rate loop before the T044/T045 gates and the bake. All need an X display
 | `autoc-043-smoke-m1-eval.ini` | **visual** eval companion (`crrcsim-visual.sh`, DISPLAY :1) — replays a smoke genome so you see the flow. Seed + `NNWeightFile` are placeholders until the smoke runs. |
 
 ⭐ **The 043 change is not an ini knob.** `Cntrl_InavFwRate` loads from the
-`<controllers>` node in the **global** `crrcsim/autoc_config.xml` (headless
-workers) and `crrcsim/autoc_config-eval.xml` (video on), so every path gets the
-rate loop automatically.
+`<config><controllers>` node in the **model file**
+`crrcsim/models/hb1_streamer.xml` (moved there 2026-08-30, the `fdm_mcopter01`
+per-model pattern). So the rate loop follows the *airframe*, not the run config:
+every path (headless worker, visual eval, manual fly) gets it automatically, and
+loading a different model cannot silently inherit hb1's INAV gains.
 
 ⭐ **crrcsim is parameterised by OVERRIDES, not per-use config copies** (see
 `scripts/crrcsim-visual.sh`): the visual worker is just the same launch with
@@ -31,10 +33,11 @@ scripts/generate_pngs.sh m1 logs/autoc-043-t1-smoke.log     # monitor
 ```
 
 **Watch:**
-- The crrcsim worker log (`/tmp/crrcsim/…`) must NOT print
-  `"XMLException when initializing controllers"` — that means a gain key didn't
-  parse and the sim **silently fell back to MANUAL** (the one invisible-failure
-  mode; `LoadList` catches + prints but does not abort).
+- The crrcsim worker log (`/tmp/crrcsim/…`) must print
+  **`[FDM] model-local controllers loaded: 1`**. If it says `none (no
+  <config><controllers> node)` the chase is flying MANUAL — wrong model, or the
+  node was lost. A present-but-broken node (unknown name / missing gain key) is
+  now **fatal**, not silent.
 - `[AUTOC] cadence: … dt=0.005 …` (200 Hz substep, T003).
 - Best fitness should climb about as solidly as the basic-m1 baseline. A flat /
   stalled climb = the ACRO plant may be hard to train → that's the **T044**

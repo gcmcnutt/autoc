@@ -36,10 +36,16 @@ extraction from the pinned 041-t7 run must complete first** — permanent if mis
 
 ## 3. Model XML — new `<controllers>` node
 
-`crrcsim/models/hb1_streamer.xml`. Carries every constant in
+`crrcsim/models/hb1_streamer.xml`, inside `<config>`. Carries every constant in
 [contracts/inav-fw-rate-loop.md](contracts/inav-fw-rate-loop.md) so they change without a rebuild (FR-014).
-⚠️ Controllers currently load from the **global** config (`crrc_fdm.cpp:38`), not per-model — if
-per-scenario gain variation is ever wanted, follow the `fdm_mcopter01` per-model pattern instead.
+
+✅ **RESOLVED 2026-08-30** (operator): this section previously warned that controllers load from the
+**global** config (`crrc_fdm.cpp:38`), not per-model, and said to *"follow the `fdm_mcopter01` per-model
+pattern"* if per-scenario gain variation were ever wanted. That is now done — `fdm_larcsim` loads its own
+`<config><controllers>` (owned, rebuilt on `LoadFromXML`, `Reset()` at each `initAirplaneState`, run per
+substep before the servo model). Consequences: another airframe cannot inherit hb1's gains, per-scenario
+gain variation is reachable, and a present-but-broken node is fail-loud instead of a silent MANUAL fallback.
+See [outcome.md](outcome.md) for the full rationale.
 
 ## 4. `Cntrl_InavFwRate` — new controller state
 
