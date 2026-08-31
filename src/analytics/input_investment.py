@@ -143,18 +143,21 @@ def input_names(mode_header="nn_inputs.h"):
 _reported_fetch_error = False
 
 
-def elite_weights(run_prefix, file_gen, ini, tmp):
+def elite_weights(run_prefix, gen, ini, tmp):
     """nnextractor -> nn2cpp -> (topo, recurrent, weights) for one generation.
 
-    ⚠️ nnextractor's -g takes the FILE number (10000 - actualGen), NOT the
-    actual generation — the opposite of dmp-dump --gen. Caller converts.
+    ⚠️ CHANGED by 043 T022 (2026-08-25): nnextractor's -g now takes the ACTUAL
+    generation, agreeing with `dmp-dump --gen`. It used to take the FILE number
+    (10000 - actualGen) and this caller converted. The conversion is REMOVED —
+    passing 10000-g now asks for a generation that does not exist and every gen
+    silently skips ("no dmp/genome"), which is exactly how this broke.
     """
     run_id = run_prefix.rstrip("/").split("/")[-1]
-    dat = os.path.join(tmp, f"g{file_gen}.dat")
-    cpp = os.path.join(tmp, f"g{file_gen}.cpp")
+    dat = os.path.join(tmp, f"g{gen}.dat")
+    cpp = os.path.join(tmp, f"g{gen}.cpp")
     try:
         subprocess.run([os.path.join(REPO, "build", "nnextractor"),
-                        "-k", run_id, "-g", str(file_gen), "-o", dat, "-i", ini],
+                        "-k", run_id, "-g", str(gen), "-o", dat, "-i", ini],
                        check=True, capture_output=True, timeout=180)
         # ⚠️ 041 7bee3a1 CHANGED THIS CLI: -i is the INI, -w is the weights. It
         # used to be `-i <weights>`. The call site was not updated, so every
@@ -264,7 +267,7 @@ def main():
                 kept.append(g)
                 rows.append(cache_rows[g])
                 continue
-            parsed = elite_weights(args.run, 10000 - g, args.config, tmp)
+            parsed = elite_weights(args.run, g, args.config, tmp)   # 043 T022: actual gen, no 10000-g conversion
             if parsed is None:
                 print(f"  [{k}/{len(gens)}] gen {g}: no dmp/genome — skipped", file=sys.stderr)
                 continue
