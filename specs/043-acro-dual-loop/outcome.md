@@ -57,6 +57,138 @@ the 043 implementation strategy names.
   `pInputsFromUser`→controller, so the NN→rate-setpoint conversion lives in the adapter/core. ACRO is
   **always-on**, replacing MANUAL outright (Constitution III, no dual path).
 
+## ⭐ Model validation against the 041-t7 flight (2026-08-30)
+
+The 2026-08-23 flight was launched and landed in **ACRO**, so its blackbox carries INAV's own
+rate-loop internals — `axisRate` (setpoint), `axisP/axisI/axisD/axisF` (per-term contributions),
+`gyroADC`, `rcCommand`, `servo[]`. That makes it ground truth for the model, not just a behaviour
+comparison. Analysis over the ACRO-only samples (`flightModeFlags == ARM`, 6,271 samples @ 59 Hz;
+`ARM|MANUAL` segments excluded — MANUAL bypasses the PID).
+
+### 1. Every contract constant confirmed from the aircraft's own log
+
+`rollPID:15,3,7,50` and `pitchPID:15,5,5,70` → applying the contract's divisors (/31, /4, /1905, /31)
+reproduces **all eight gains exactly**: kP 0.484 both; kI 0.750/1.250; kD 0.003675/0.002625;
+**kFF 1.613/2.258**. Also `rates:36,12,4` (⇒ maxRate 360/120 ✓), `dterm_lpf_hz:10` + `type:2` (PT2 ✓),
+`tpa_rate:0` ✓, `axisAccelerationLimitRollPitch:0` ✓ — i.e. every "deliberately not modelled" item
+(T039) is confirmed off on the real aircraft.
+
+### 2. Term-by-term: the implementation is correct
+
+Feeding the real `rcCommand` + `gyroADC` into the model and comparing against INAV's own recorded terms:
+
+| | roll | pitch |
+|---|---|---|
+| setpoint chain (`rcCommand/500 × maxRate` vs `axisRate`) | max err **0.96 °/s**, r = 0.99997 | 0.96 °/s, r = 0.99992 |
+| **FF** vs `axisF` | mean err **0.21**, r = **0.99998** | 0.46, r = **0.99994** |
+| **P** (incl. Gaussian attenuation) vs `axisP` | mean err **0.53**, r = 0.99917 | 0.52, r = 0.99848 |
+
+Residuals are at blackbox integer-quantisation level. ⭐ The 0.999 P-correlation independently
+confirms the **Gaussian setpoint attenuation** is right — a wrong attenuation could not track `axisP`.
+
+### 3. The pitch authority ceiling is HARDWARE-REAL, not a sim artifact
+
+INAV's own `axisF[1]` maxes at **270** of the ±500 budget on the real aircraft (model: 271). So at full
+pitch stick ACRO commands only **54%** of available elevator, versus roll's 100% (FF 581 → clipped to
+500). This is `maxRate × kFF`: 120×2.258 = 271 vs 360×1.613 = 581. Nothing rescues it — P and D are
+attenuated to ~0 at full stick, and the I-term is **locked**: INAV's `pid.c:767` refreshes
+`targetOverThresholdTimeMs = millis()` every iteration while `|rateTarget| > 0.2·maxRate`, so *holding*
+the stick keeps the lock engaged permanently (`aI = 0`). Verified against the fork's source; the model
+matches this behaviour.
+
+⚠️ Pitch **authority per unit command** is nearly right (sim 0.368 vs real 0.439 °/s per PID unit,
+**0.84×**), so full pitch command still rotates the sim at ~100 °/s vs real ~119. The airframe is not
+the problem.
+
+### 4. ⛔ The finding that matters for the bake: WHERE the policy operates
+
+σ scales with maxRate, so the attenuation depends **only on stick fraction** `f`:
+
+> **aP = aD = exp(−17.33 · f²)** — half authority at **f = 20%**; `aP ≈ 0` at full stick, *regardless of
+> the `rates` setting*. (Lowering `rates` would make a given physical rate a LARGER fraction and
+> attenuate MORE — the obvious lever is backwards.)
+
+| | \|cmd rate\| | \|achieved\| | saturated | **aP** | in linear band |
+|---|---:|---:|---:|---:|---:|
+| **human pilot, real ACRO** | 16.5 / 13.4 °/s | 31.7 / 25.6 | 0.0 / 2.6% | **0.909 / 0.816** | **91.6 / 81.2%** |
+| 043 smoke NN, gen 63 | 311 / 108 °/s | 206 / 103 | 60.8 / 72.6% | 0.037 / 0.035 | 2.9 / 2.7% |
+| ratio (roll/pitch) | 18.9× / 8.0× | 6.5× / 4.0× | | | |
+
+⭐ **The human flies where the loop has ~85% of its P/D authority — fully closed and actively damping.
+The policy commands 8–19× more rate and lives at the attenuation floor, where the loop is pure
+feed-forward.** Bang-bang commanding is endemic in autoc (037, 041), but its *consequence* is new: under
+MANUAL, pegging meant full surface; under ACRO, pegging **bypasses the inner loop**.
+
+⛔ **Open pre-bake question (owner decision).** 043's premise is that the fast inner loop damps the
+2–5 Hz oscillation; that damping lives in P/D. If the baked policy operates at aP ≈ 0.03, ACRO becomes a
+bang-bang *rate* command and the oscillation may well survive. The lever is **ours** — the action space
+is FR-016, needing no INAV config change and so no FR-012a bench burden: map the NN tanh onto a
+*fraction* of maxRate (`×0.25` ⇒ f ≤ 0.25, aP ≥ 0.34, max 90/30 °/s — still ~3× what the pilot used, and
+achieved rates land in the real aircraft's measured range). Proposed test: a short A/B smoke,
+current mapping vs 0.25×, judged on fitness climb **and** the rate-spectrum/aggressiveness measures.
+This also supplies direct evidence for T061/FR-030's leading candidate (rate-tracking error as an NN
+input): the policy achieves 57% of what it commands and has no channel that reports it.
+
+### 5. Subjective validation — the operator flew it
+
+Manual flight in the sim (video config, USB stick, ACRO loop active) initially felt wrong — *"no pitch
+for climb at all"*. Root cause was **input binding, not the controller**: crrcsim's shared axes parser
+(`inputdev.cpp:710-731`) defaults ELEVATOR polarity to **−1 for mouse but +1 for joystick**, and every
+axis other than aileron/elevator defaults to `-1` (unmapped). ⚠️ `bindings->getChild("axes", true)`
+creates the node when absent, so a missing binding fails *silently* into these defaults. After
+recalibration the operator's verdict: **"NOW it feels about right"** — the model reproduces real ACRO
+feel to a pilot who has flown this airframe in ACRO. Command/surface ranges confirmed against
+`docs/COORDINATE_CONVENTIONS.md:315-317` (pitch `−pitch/2`, roll `roll/2`, throttle `(thr/2)+0.5`).
+
+## The action-space experiment — A/B/C (2026-08-30)
+
+Three arms, each flown manually by the operator (who has flown this airframe in real ACRO) and
+scored against the 041-t7 flight data. The knob added for the experiment is `commandScale`
+(per-axis XML attribute on `<InavFwRate>`, adapter-side — the action space is FR-016, ours; the
+validated `inav_fw_rate.h` core was deliberately left untouched).
+
+| arm | change | full-stick pitch | aP at a useful 58 °/s pitch | operator verdict |
+|---|---|---:|---:|---|
+| **A** | baseline (`commandScale` 1.0, `pitch_rate` 12) | 120 °/s / **54%** elevator | 0.016 | marginal — "no pitch for climb" |
+| **B** | `commandScale` 0.35 | 42 °/s / **19%** | — | ⛔ **"more sluggish"** — rejected |
+| **C** | `pitch_rate` 12 → **24** (maxRate 120 → 240) | 240 °/s / **100%** | **0.363** | ✅ **"feels about right … ACRO is felt for sure"** |
+
+### Why B failed and C worked — the coupling, stated once
+
+Surface authority is `FF = commanded_rate × kFF`; damping is `aP = exp(−17.33·f²)` where `f` is the
+commanded *fraction* of maxRate. **`commandScale` lowers the rate, so it lowers authority and
+damping together** — it can only trade one for the other (arm B: damping bought with 19% elevator).
+⭐ **`maxRate` is the only knob that decouples them**: raising it leaves `FF` at a given physical rate
+unchanged while shrinking `f`, so authority and damping both improve. Arm C gets 100% elevator
+*and* 22× the P/D authority at normal flying rates.
+
+### The root cause, localised
+
+`pitch_rate = 12` is **below INAV's own default of 20** (allowed range 4–180) and caused both symptoms
+at once. Full-stick FF = 120 × 2.258 = 271 of the **fixed** ±500 `pidSumLimit` (hard-coded in
+`getPidSumLimit`, not configurable), and σ ∝ maxRate put every useful pitch rate at the attenuation
+floor. ⭐ **Roll was never broken**: at 360 °/s a useful 95 °/s is already f = 0.26 → aP = 0.30.
+Design note — full stick exactly fills the ±500 budget at `rate = 500/(10·kFF)`: **roll 31, pitch 22**.
+We run roll 36, so the top **14% of roll stick is clipped dead range** (operator 2026-08-30: *"the roll
+is a bit hot"*). Lowering roll toward 31 would remove the dead band at a small damping cost
+(aP 0.30 → 0.20 at 95 °/s) — not done, recorded as an option.
+
+### ⛔ Gate before the bake — the sim now models an aircraft that does not exist
+
+Arm C is **sim-only**: `xiao/inav-hb1.cfg` still has `pitch_rate = 12`. Baking against arm C and then
+flying `pitch_rate 12` would diverge *precisely in the axis this feature exists to fix*. So before the
+27 h bake, one of:
+1. **Commit to the INAV change** — `pitch_rate 12 → 24` on the flight FC, changed identically in sim,
+   bench-verified, folded into the config of record (FR-012a discipline). ⚠️ This is a deviation from
+   the spec's "gains and rates stay as-is" and is an operator decision (2026-08-30: *"xiao and inav
+   need updating for this so we will consider"*); **or**
+2. bake on arm A's config and accept the 54% pitch ceiling.
+
+⚠️ **T050a also applies**: arm C is a material plant change, so the T044 trainability gate should be
+re-run on arm C (a ~70 min smoke) before committing 27 h. Arm A's trainability result (best −1576.9
+at gen 328, 16/16 scenarios, past the basic-m1 400-gen baseline of −1320) was measured on a plant the
+bake would no longer use.
+
 ## Phase-5 model gates (US2)
 
 - **T037a ✅ (2026-08-25)**: second clean `rebuild-perf.sh` after the `mod_cntrl`/top-level CMakeLists
