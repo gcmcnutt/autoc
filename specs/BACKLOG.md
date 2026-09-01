@@ -114,6 +114,27 @@ Hardware binds at step 3 (PPO sample counts) and step 4 (larger contexts), not b
 
 ---
 
+### [043 Phase 8 / FR-030, filed 2026-08-31 · DEFERRED from 043] Arm's-length inputs — does the outer loop need to see the inner loop?
+
+⚠️ **Deferred by the operator 2026-08-31**, after the 043-t2 bake was already running. 043's plan had
+T062 (the verdict) as a hard predecessor of T064 (the bake), because a "yes" changes the NN input vector.
+That ordering was not honoured — the bake launched without the question being settled.
+
+**The candidate**: rate-tracking error as a 46th input. The Gaussian attenuation means loop authority
+*falls* as commanded rate rises, so a large setpoint is tracked worse and nothing in the current 45
+reports it. Measured on the arm-A smoke, the policy achieved only 57% of what it commanded.
+
+⭐ **The case weakened while it sat.** The motivation was a policy pegged at the attenuation floor
+(aP ~0.035). The production bake does NOT peg — roll 0.2% / pitch 6.0% of ticks at full command, aP 0.290
+roll / 0.122 pitch. The inner loop is closed and damping, so the policy is not obviously blind to
+something it needs. The earlier saturation was substantially a smoke-config artifact (16 scenarios, one
+longSequential path, ramp off).
+
+**How to settle it cheaply**: rather than 043's prescribed separate 45-input baseline (T060), the t2 bake
+itself is the baseline — measure rate-tracking error over its dmps and ask whether it carries information
+the existing 45 do not. Only add the input if that says yes; it costs an input-vector change plus a
+re-bake and a xiao forward-pass regeneration.
+
 ## 041 deferrals
 
 ### [041 P2-8 follow-up, filed 2026-08-20 · ⭐ HIGH VALUE, LOW COST] Formal input normalization — measured statistics, not hand-derived constants
