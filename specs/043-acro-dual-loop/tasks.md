@@ -144,7 +144,7 @@ ACRO-flown segments; separately confirm a known-good genome still trains.
 ### Gates
 
 - [X] T043 [US2] ⛔ Run the **all-attitude zero-command sweep BEFORE autoc is connected** — in sim across the attitude sphere — so a hold failure is attributable to the model (FR-019, SC-014 part 1)
-- [ ] T044 [US2] ⛔ **Trainability gate (SC-004)**: seed a short run from a known-good genome and confirm the GA improves rather than stalling — the 023-Phase-9a guard. Launch per Constitution IX via `scripts/train.sh`
+- [~] T044 [US2] ⛔ **Trainability gate (SC-004)**: seed a short run from a known-good genome and confirm the GA improves rather than stalling — the 023-Phase-9a guard. Launch per Constitution IX via `scripts/train.sh` ⭐ **Satisfied by evidence, not in the prescribed form (2026-08-31)**: the arm-A smoke climbed −182 → −1577 by gen 328 (16/16 scenarios, past the basic-m1 400-gen baseline of −1320), and the production bake itself is climbing strongly on arm C (gen 248: best −63,107, pctInStreak 43.7% vs 041-t7 FINAL 38.3%). ⚠️ No separate seeded-from-known-good short run was done, and the arm-A evidence predates the arm-C plant change (T050a).
 - [ ] T045 [US2] Verify determinism: identical seed + config reproduce identical trajectories, and the eval-vs-training bitwise gate holds (FR-015). **Operator-driven; ask first**
 
 **Checkpoint**: SC-012, SC-004 and SC-014 part 1 pass. The model is trustworthy enough to build on.
@@ -212,10 +212,10 @@ because a "yes" changes the input vector.
 
 **Goal**: one M1 trained against the rate-commanded plant.
 
-- [ ] T064 [US4] ⛔ Constitution IX **pre-run build gate**: clean build + relevant tests pass before committing compute; ⚠️ re-confirm the T008a regiment check (294 scenarios, population unchanged). **Operator-driven; ask first**
-- [ ] T065 [US4] Launch the production M1 bake via `bash scripts/train.sh autoc.ini <unique-logfile>` — ⛔ detached, never via a harness background task (FR-060, Constitution IX). **Operator-driven**
-- [ ] T066 [US4] ⛔ Do **not** rebuild autoc while the run is in progress — overwriting `build/bin/autoc` breaks worker re-execs
-- [ ] T067 [US4] Monitor via `scripts/generate_pngs.sh m1 <log>` for the per-gen report set (⛔ not by hand-calling the analytics scripts — that loses the incremental S3 cache)
+- [X] T064 [US4] ⛔ Constitution IX **pre-run build gate**: clean build + relevant tests pass before committing compute; ⚠️ re-confirm the T008a regiment check (294 scenarios, population unchanged). **Operator-driven; ask first** ✅ **DONE 2026-08-30**: clean `rebuild-perf.sh` 50/50 suites, 0 failures, immediately before launch; regiment re-confirmed at 294.
+- [X] T065 [US4] Launch the production M1 bake via `bash scripts/train.sh autoc.ini <unique-logfile>` — ⛔ detached, never via a harness background task (FR-060, Constitution IX). **Operator-driven** ✅ **LAUNCHED 2026-08-30 21:27** detached via `scripts/train.sh autoc.ini logs/autoc-043-t2-m1-acro.log`. Run `autoc-9223370248704297747-2026-08-31T04:27:58.060Z`, master seed 1788150478, pop 5000 × 800 gens × 294 scenarios. ⚠️ Trains against **arm C** (pitch maxRate 240) — see T051b.
+- [~] T066 [US4] ⛔ Do **not** rebuild autoc while the run is in progress — overwriting `build/bin/autoc` breaks worker re-execs ⏳ **IN FORCE** while the bake runs.
+- [X] T067 [US4] Monitor via `scripts/generate_pngs.sh m1 <log>` for the per-gen report set (⛔ not by hand-calling the analytics scripts — that loses the incremental S3 cache) ✅ Report packages generated at gens 115 / 178 / 248 via the wrapper; committed + pushed to `specs/043-acro-dual-loop/`. Evolution chart overlays 041-t7 + 038-t5.
 - [ ] T068 [US4] Pin the run `retain=keep` and write `specs/043-acro-dual-loop/artifacts/MANIFEST.md` with the S3 prefix, master seed, commits, `autoc.ini.as-run`, and ⛔ the **input scale constants** — without them the genome loads clean and flies wrong (FR-061, Constitution VIII)
 
 **Checkpoint**: a pinned, manifested M1 exists.
