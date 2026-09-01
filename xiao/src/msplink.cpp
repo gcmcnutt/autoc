@@ -1033,9 +1033,27 @@ static void performMspSendLocked()
   state.command_buffer.channel[0] = cached_roll_cmd;
   state.command_buffer.channel[1] = cached_pitch_cmd;
   state.command_buffer.channel[2] = cached_throttle_cmd;
-  // CH6 (index 5) = 1000 → forces MANUAL mode (no INAV stabilization)
-  // msp_override_channels bitmask must include bit 5 (CLI: set msp_override_channels = 47)
-  state.command_buffer.channel[5] = 1000;
+  // 043 T053 — CH6 (index 5) = 1500 selects **ACRO**: the mid-band.
+  //
+  // Was 1000, which put RC6 in the low band and gave MANUAL (no INAV
+  // stabilization) — the NN drove the surfaces directly. 043 hands the inner
+  // loop to INAV's fixed-wing ACRO rate controller instead, so the NN commands
+  // ROTATION RATES and INAV closes the loop at 2 kHz.
+  //
+  // Bands on the config of record, confirmed on the bench with the INAV
+  // Configurator (2026-08-31): RC6 > 1200 and < 1600 => ACRO. Low band
+  // (900–1200) => MANUAL; high band (1800–2100) => ANGLE. 1500 sits safely
+  // mid-band, clear of both edges.
+  //
+  // ⛔ ACRO is RATE control: zero command means "stop rotating", NOT
+  // "self-level". There is no attitude reference and no recovery beyond the
+  // envelope — upset recovery stays the policy's (and the pilot's) job.
+  //
+  // msp_override_channels bitmask must include bit 5 (CLI: set
+  // msp_override_channels = 47). ⭐ It does NOT include bit 7, so MANUAL's own
+  // switch (aux 4 on RC8) stays with the pilot — that is deliberate: the pilot
+  // must be able to grab MANUAL mid-engagement as an escape.
+  state.command_buffer.channel[5] = 1500;
   msp.send(MSP_SET_RAW_RC, &state.command_buffer, sizeof(state.command_buffer));
 }
 
