@@ -91,7 +91,13 @@ INPUT_NAMES = (
 assert len(INPUT_NAMES) == NUM_INPUTS, (
     f"INPUT_NAMES has {len(INPUT_NAMES)} entries but the wire carries "
     f"{NUM_INPUTS}; every column after the mismatch would be mislabelled")
-OUTPUT_NAMES = ["out_roll", "out_pitch", "out_throttle"]
+# 043 (2026-09-01) — ORDER FIX: the NN output vector is PITCH-first.
+# tools/dmp_dump.cc names the same three slots "out_pt,out_rl,out_th", and the
+# xiao maps slot0 -> 1500 - x*500 (the INVERTED pitch transform per
+# docs/COORDINATE_CONVENTIONS.md) and slot1 -> 1500 + x*500 (roll). This file
+# had them swapped, so every decoded log reported roll as pitch and vice versa.
+# Caught on the 043 bench run: out_roll correlated -1.0000 with rc_pitch.
+OUTPUT_NAMES = ["out_pitch", "out_roll", "out_throttle"]
 TELEM_NAMES = ["pos_n", "pos_e", "pos_d", "vel_n", "vel_e", "vel_d",
                "rabbit_n", "rabbit_e", "rabbit_d"]  # v2, scale slots 40..48
 
