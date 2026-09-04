@@ -29,6 +29,72 @@
 
 ---
 
+## 043 deferrals (filed 2026-09-04, from the t2 post-bake eval)
+
+### [043 t2 eval, filed 2026-09-04 · ⭐ HIGH VALUE] The streak multiplier outbids the crash cost, so M1 buys tracking with altitude
+
+**Measured on the finished 043-t2 bake (gen 800).** Crash rate ran 4–7% against 041-t7's 0.7%, and it is
+**100% `egFloor` / `egRadius` — `hullStrike=0` for all 800 generations**. The aircraft is descending
+through the 25 m AGL arena deck, not hitting ground.
+
+⛔ **M1 charges NOTHING for that.** `EnableHullCrashPenalty = 0` and `OobCrashPenaltyWeight = 0.0`
+(`autoc.ini`; the comment says "M1 keeps score-stop"), so `applyCrashPenalty()` returns on its first line
+for every M1 genome. The entire cost of an arena egress is the points forgone from the bust tick to the
+end of that scenario.
+
+⭐ **And the streak rule makes the trade actively favour pressing on.** `FitStreakMultiplierMax = 5.0`
+ramped over `FitStreakRampSec = 5.0` s, with the counter reset to **0** on a cliff the instant
+`stepPoints < 0.5` (`fitness_computer.cc:64-71`) — no decay. Breaking a streak costs the whole 5 s climb
+back from 1× to 5×; busting the floor costs only the scenario tail. **Late in a scenario a floor bust is
+cheaper than backing off.**
+
+Why now and not before: ACRO lets the policy *hold* a commanded descent (zero pitch rate ≠ return to
+level), and the energy objective rewards spending altitude for airspeed. Altitude became a cheap,
+precisely-spendable resource with nothing pushing back.
+
+**Lever**: `OobCrashPenaltyWeight` already exists — curriculum-ramped, smooth, never clamps to 0. Turning
+it on for M1 *states the envelope constraint* rather than tuning the streak coefficient. ⛔ Per
+[feedback_clear_objectives_not_tuning], the fix is making the objective clear, NOT dialing the multiplier
+down — the multiplier is doing its job (pctInStreak 54.6% vs t7's 51.3%).
+
+⚠️ Operator framing (2026-09-04): *"now that this thing trains super good we get to the point where the
+streak overwhelms some crash — hence higher crash rate."* Confirmed structurally, not just correlationally.
+
+---
+
+### [043 t2 eval, filed 2026-09-04 · ⭐ HIGH VALUE] It is excellent on the six paths we train, and does not generalize to the patrol/intercept start
+
+**The decisive measurement**, gen-800 genome, identical config, ONLY `PathGeneratorMethod` changed:
+
+| generator | first-tick dist to rabbit | median ticks | terminal AGL (floor 25) | completed |
+|---|---:|---:|---:|---:|
+| `aeroStandard` (trained) | **0.2 m** | 418 | 54.7 m | **279/294 (94.9%)** |
+| `random` | **30.9 m** (min 25.1) | 80 | **25.4 m** | 83/294 (28.2%) |
+
+⭐ **`random` not co-locating the rabbit is INTENTIONAL — it is the real patrol → intercept case**
+(operator 2026-09-04). So this is not a harness defect; it is the generalization gap stated plainly. The
+policy starts 25–39 m behind, never enters the scoring cone, dives to close, and lands on the deck.
+
+Score comparison on random courses (same 49-scenario harness, 038-t5 genome vs 043-t2):
+
+| genome | avg score | avg strkSteps |
+|---|---:|---:|
+| 038-t5 (`autoc-038-t10-m1-random49-eval`) | 141.7 | 127.1 |
+| 038-t5 (`autoc-040-t5-m1-novel-eval`) | 155.2 | 151.5 |
+| **043-t2 gen800** | **94.3** | **95.1** |
+
+⛔ Two confounds, recorded so the number is not over-read: (1) those older evals ran a **different arena**
+— radius 80, floor **5 m AGL** — so their 0% crash rate is substantially the floor being 20 m lower, not
+better airmanship; (2) 043-t2's random scores are depressed by early termination (fewer ticks ⇒ less
+accumulated score). A clean comparator would be **per-tick score rate**, not per-scenario totals.
+
+⚠️ Operator framing: *"it is so good, but only for the paths we have, including a single patrol/intercept
+hard coded case."* History: there used to be many random courses, then two, then one seed; there was even
+a period of training on `random` alone. **Hardening candidate**: put random/patrol-intercept geometry back
+into the TRAINING mix rather than only the eval mix.
+
+---
+
 ## Post-041 direction (roadmap, filed 2026-08-16)
 
 ### [operator 2026-08-16] M2 is TWO-FOLD, and M3 forks after it
