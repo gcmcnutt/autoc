@@ -95,6 +95,54 @@ into the TRAINING mix rather than only the eval mix.
 
 ---
 
+#### ⭐ UPDATE 2026-09-04 — the mechanism is OOD SATURATION, and the geometry is exonerated
+
+**Not the arena.** Pinned-seed sweep, `random`, arena the only variable — floor **25 → −25 m AGL** (80 m
+below engage) and radius 70 → 90: completion **26.2 / 26.5 / 25.5 / 26.2 / 26.5%**. Flat.
+⛔ Retracts the earlier claim in this file's sibling entries that the old 0%-crash random evals were
+"substantially the 5 m floor". They were not. (⚠️ The first attempt at this sweep was invalid twice over:
+it ran `Seed = -1` so each arena drew a DIFFERENT scenario table, and it ran against the M1 arena bug
+below. Only the pinned-seed post-fix numbers are valid.)
+
+**Not the entry move either** — it went the helpful direction: 037 had **20 m** below engage (engage 25,
+floor 5) and completed 100%; today has **30 m** (engage 55, floor 25) and completes 26%.
+
+**Not where `random` is placed** — rabbit radius med 25.0 / **max 42.0** against a 70 m cylinder, and
+rabbit AGL med 72.7 / **min 54.0** against a 25 m floor. It never even descends below engage.
+
+⭐ **It is the policy railing on an unseen initial condition.** Of 294 random scenarios, **218 die on the
+floor at 3.8 s**, mid-cylinder (radius 31 of 70) — the ones visible at the cylinder EDGE are only the 38
+long 49 s flights. Through those 3.8 s the policy commands sustained nose-down (`out_pt` median **−0.927**,
+`gyrQ` −0.141 rad/s, signs agreeing 82% — the ACRO rate loop tracks fine) and descends at **9.3 m/s** while
+the rabbit sits ABOVE it at 54–87 m AGL.
+
+| pitch command railed (\|out_pt\|>0.95) | |
+|---|---:|
+| `aeroStandard` (trained) | 2.3% |
+| `random`, survivors | 1.1% |
+| **`random`, floor-dying** | **33.5%** (33.2% on the nose-down rail) |
+
+**15× the in-distribution rail rate.** Handed a target 29 m away instead of 0.2 m, the network pegs one
+output and holds it into the ground — the same policy whose in-distribution command stream is the smoothest
+ever measured (pitch `<|Δ|>` 0.235 → 0.109). Compounds with ACRO exactly as `spec.md` § What ACRO is warns:
+zero pitch command means *keep descending*, there is no self-levelling, and training never required the
+policy to learn recovery because the rabbit was always already glued to it.
+
+#### ✅ DECISION 2026-09-04 (operator) — 043-t2 IS FLYABLE; this is next-run work
+
+The real flight puts the rabbit **right ahead** — first-tick distance 0.2 m, i.e. the `aeroStandard`
+geometry, which is the **94.9%** case. The 26% case is patrol/intercept, which this article does not fly.
+So this does **not** block the 043-t2 flight. It blocks the patrol/intercept ambition.
+
+⛔ **OPEN ROUTING QUESTION**: fix it in a 043 follow-on, or accept and move to **M2 / 044**? Inputs to that
+call — the two candidate fixes are cheap and independent:
+1. `OobCrashPenaltyWeight` > 0 (the sibling entry above) — makes the deck cost something.
+2. Put `random` / cold-start geometry back into the TRAINING mix — makes the state distribution cover it.
+⚠️ Neither is tuning: (1) states the envelope constraint, (2) fixes a coverage hole. But both need a bake,
+so the cost is a run either way.
+
+---
+
 ### [043 t2 eval, filed 2026-09-04 · ⭐ HIGH VALUE, config correctness] Move off hand-rolled ini to a standard, validated config format
 
 ⛔ **The config format fails silently in three separate ways, and all three bit on the same afternoon.**
@@ -118,6 +166,14 @@ behaviour in the next bake. That is an operator decision, not a cleanup.
 `autoc-eval.ini` was missing all five 043 craft-IMU sigmas; the eval ran on compiled defaults that
 *happened* to match `autoc.ini`, so it was accidentally correct. The next time a default and an ini
 disagree, the eval silently measures a different aircraft than the one trained.
+
+**2b. A key can be read into config and still never reach the sim.** `FlightArena{Radius,FloorAGL,
+CeilingAGL}` were **dead keys for M1** until 2026-09-04 (fixed, `54c3dd8`): `buildWorkerInit()` assigned
+them below the tracker-only early return, so pathgen workers ran the compiled default `{70, 25, 105}`.
+The startup echo AND the dmp's `RecordedRunConfig` both reported the *ini* value — `autoc.cc:176` even
+claimed "the recorded cylinder is the enforced one" — so log, dmp and config all asserted an arena the sim
+was not enforcing, and it hid because the defaults happened to equal the ini. ⛔ A validated format does not
+catch this one; it argues for **echoing what the WORKER received**, not what the parent parsed.
 
 **3. A typo'd key is ignored entirely.** Nothing reads keys the X-macro does not name, so
 `CraftCmQSigmaa = 0.5` parses fine, changes nothing, and reports nothing.
