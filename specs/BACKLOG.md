@@ -95,6 +95,62 @@ into the TRAINING mix rather than only the eval mix.
 
 ---
 
+### [043 t2 eval, filed 2026-09-04 · ⭐ HIGH VALUE, config correctness] Move off hand-rolled ini to a standard, validated config format
+
+⛔ **The config format fails silently in three separate ways, and all three bit on the same afternoon.**
+This is not a style complaint — a config that lies is indistinguishable from a code bug, and costs a run
+to find.
+
+**1. Inline `#` silently poisons string values.** inih ships
+`INI_INLINE_COMMENT_PREFIXES ";"` — only `;` terminates a value inline. A trailing `#` becomes *part of the
+string*. Numeric keys survive it (`atoi` stops at the `#`), which is exactly why it hid for months.
+
+Live case, found 2026-09-04: `autoc.ini:32` reads `LexicaseEpsilonMode = mad        # 035 FR-003 …`, and
+`autoc.cc:1775` tests `cfg.lexicaseEpsilonMode == "mad"` → **false**. Since `eb769dd` (2026-06-05) **every
+run has used `constant` epsilon while its config said `mad`** — 035-t6, 038-t5, 041-t7 and 043-t2 all log
+the identical poisoned value. The run's own startup echo looks correct at a glance, which is what made it
+survive: `LexicaseEpsilonMode: mad        # 035 FR-003 …`.
+⚠️ Not yet fixed deliberately — flipping those 5 lines to `;` ACTIVATES MAD and changes selection
+behaviour in the next bake. That is an operator decision, not a cleanup.
+
+**2. A missing key is silent.** `config.cc:112` is
+`config->field = readIniField<type>(reader, key, config->field)` — absent ⇒ keep the compiled default.
+`autoc-eval.ini` was missing all five 043 craft-IMU sigmas; the eval ran on compiled defaults that
+*happened* to match `autoc.ini`, so it was accidentally correct. The next time a default and an ini
+disagree, the eval silently measures a different aircraft than the one trained.
+
+**3. A typo'd key is ignored entirely.** Nothing reads keys the X-macro does not name, so
+`CraftCmQSigmaa = 0.5` parses fine, changes nothing, and reports nothing.
+
+**Requirements for the replacement**
+- ⛔ **Unambiguous comment syntax** — one comment character, and strings that can contain it must be quoted.
+- ⛔ **Fail loud on unknown keys** (catches typos and stale keys after a rename) and on **type mismatch**.
+- ⭐ **Explicit missing-key policy per field**: required vs defaulted, declared in one place — never
+  "silently inherit whatever the struct initialiser said".
+- **Typed values** — no `atoi`-stops-at-junk semantics.
+- **Echo the PARSED value, not the raw line**, at startup. The current echo prints the poisoned string and
+  looks right.
+
+**Candidate: TOML** (`toml++`, header-only). `#` is *the* comment character, strings are quoted, values are
+typed, and the file stays diff-friendly and hand-editable — which the ini format was chosen for and TOML
+keeps. YAML is more expressive than this needs and brings its own footguns; JSON has no comments, which is
+a non-starter for files whose comments carry the derivation.
+
+⭐ **The migration is mechanical.** All **153** keys are already enumerated with their C++ types in one
+place — `AUTOC_CONFIG_FIELDS` in `include/autoc/util/config.h:~440-600`. The same X-macro that reads them
+can generate the schema, the unknown-key check, and a one-shot `.ini → .toml` converter. The blast radius
+is the parser and the config files, not the call sites.
+
+**Cheap interim mitigation if the full move is deferred**: keep inih, but (a) add
+`INI_INLINE_COMMENT_PREFIXES ";#"`, (b) add an unknown-key pass over the X-macro name list that dies on a
+miss, (c) echo parsed values. That kills all three failure modes without a format change — but leaves the
+untyped `atoi` semantics.
+
+⚠️ **Related**: `[040 wrap] A baseline's WEIGHTS expire when the dmp schema moves` is the same family —
+a stored artifact whose meaning drifts out from under its label.
+
+---
+
 ## Post-041 direction (roadmap, filed 2026-08-16)
 
 ### [operator 2026-08-16] M2 is TWO-FOLD, and M3 forks after it
