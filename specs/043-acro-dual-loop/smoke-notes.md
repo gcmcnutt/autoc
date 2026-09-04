@@ -6,10 +6,17 @@ ACRO rate loop before the T044/T045 gates and the bake. All need an X display
 
 ## Files prepared
 
-| file | what |
+⛔ **DELETED 2026-09-04 — the three `autoc-043-*.ini` files are gone.** Per-feature configs go stale the
+moment `autoc.ini` moves, and a stale config silently evaluates a different aircraft than the one trained
+(that is exactly how `autoc-eval.ini` drifted into being a novel-path harness while still claiming to
+mirror training). The commands below are kept for provenance; recreate a one-off by patching a **copy** of
+`autoc.ini` / `autoc-eval.ini` in a temp dir rather than adding a tracked file.
+
+| file (deleted) | what it was |
 |---|---|
 | `autoc-043-smoke-m1.ini` | M1 smoke: basic-m1 shape (1 path × 16 winds, pop 3000, 400 gens) + the new craft IMU/CmQ σ + `ExpectedScenarioCount=16`. ACRO is always-on via `autoc_config.xml`. |
-| `autoc-043-smoke-m1-eval.ini` | **visual** eval companion (`crrcsim-visual.sh`, DISPLAY :1) — replays a smoke genome so you see the flow. Seed + `NNWeightFile` are placeholders until the smoke runs. |
+| `autoc-043-smoke-m1-eval.ini` | **visual** eval companion (`crrcsim-visual.sh`, DISPLAY :1) — replays a smoke genome. |
+| `autoc-043-t2-eval.ini` | the T045 determinism mirror. Superseded: `autoc-eval.ini` now mirrors `autoc.ini` exactly, and `scripts/eval_suite.sh <nn01> 0 <master_seed>` runs that gate directly. |
 
 ⭐ **The 043 change is not an ini knob.** `Cntrl_InavFwRate` loads from the
 `<config><controllers>` node in the **model file**

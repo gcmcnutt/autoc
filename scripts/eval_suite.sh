@@ -1,9 +1,13 @@
 #!/bin/bash
 # eval_suite.sh — Automated regression eval for trained NN weights
 #
-# Usage: ./scripts/eval_suite.sh <weights_file> [tier]
-#   weights_file: path to gen*.dmp file (local or S3 key)
+# Usage: ./scripts/eval_suite.sh <weights_file> [tier] [master_seed]
+#   weights_file: NN01 weight file from `nnextractor -g <gen>` (NOT a gen*.dmp --
+#                 runNNEvaluation calls nn_detect_format and exit(1)s on a dmp)
 #   tier: 0 (repro), 1 (quick), 2 (generalization), 3 (stress), all (default)
+#   master_seed: REQUIRED for a meaningful tier 0. The bake's "Effective master
+#                 seed" from its run log; without it tier 0 draws a novel table
+#                 and cannot reproduce the stored fitness.
 #
 # IMPORTANT: autoc-eval.ini is the single source of truth for all sigmas/params.
 # It MUST match autoc.ini training config exactly. Tier overrides only change
@@ -12,7 +16,7 @@
 # Results stored in: eval-results/<timestamp>/
 #   ├── config.txt          # combined config used
 #   ├── tier0-repro/        # exact seed repro — must match stored fitness bitwise
-#   ├── tier1-aeroStandard/ # 5 paths × 49 winds = 245 flights, novel seed
+#   ├── tier1-aeroStandard/ # 6 paths × 49 winds = 294 flights, novel seed (matches the bake)
 #   ├── tier2-progressive/  # 1 path × 49 winds
 #   ├── tier2-long/         # 1 path × 49 winds
 #   ├── tier2-random/       # 12 paths × 12 winds = 144 flights
@@ -28,14 +32,17 @@ EVAL_BASE_INI=autoc-eval.ini
 RESULTS_ROOT=eval-results
 
 usage() {
-    echo "Usage: $0 <weights_file> [tier]"
+    echo "Usage: $0 <weights_file> [tier] [master_seed]"
+    echo "  weights_file: NN01 file from nnextractor (NOT a gen*.dmp)"
     echo "  tier: 0 (repro), 1, 2, 3, all (default: all)"
+    echo "  master_seed: the bake master seed — required for a real tier 0"
     exit 1
 }
 
 [[ $# -lt 1 ]] && usage
 WEIGHTS_FILE="$1"
 TIER="${2:-all}"
+MASTER_SEED="${3:-}"
 
 [[ ! -f "$WEIGHTS_FILE" ]] && { echo "Error: weights file not found: $WEIGHTS_FILE"; exit 1; }
 [[ ! -x "$AUTOC" ]] && { echo "Error: $AUTOC not found or not executable"; exit 1; }
@@ -99,7 +106,7 @@ run_eval() {
 
     # Extract S3 key for renderer visualization
     local s3_key
-    s3_key=$(grep "S3 upload:" "$outdir/console.log" 2>/dev/null | head -1 | awk '{print $NF}' | sed 's|/gen[0-9]*\.dmp$||')
+    s3_key=$(grep "S3 upload:" "$outdir/console.log" 2>/dev/null | head -1 | awk '{print $NF}' | sed -E 's|/gen[0-9]+\.dmp(\.zst)?$||')
 
     # Extract summary stats from log
     local ok_count=0 crash_count=0 total=0
@@ -168,9 +175,18 @@ run_tier0() {
     echo "  TIER 0: Reproducibility"
     echo "=============================="
 
-    # Use autoc-eval.ini as-is — it should be configured to match training exactly
-    # (same seed, same sigmas, same paths). The pass criterion is bitwise fitness match.
-    make_eval_ini "$RESULTS_DIR/tier0-repro.ini"
+    # autoc-eval.ini mirrors autoc.ini exactly, so the ONLY thing tier 0 must
+    # pin is the scenario table — i.e. the bake's master seed. Without it the
+    # base Seed=-1 draws a NOVEL table and "repro" compares two different
+    # scenario sets, which can never match bitwise.
+    if [[ -n "$MASTER_SEED" ]]; then
+        make_eval_ini "$RESULTS_DIR/tier0-repro.ini" "Seed = $MASTER_SEED"
+    else
+        echo "  [warn] no master_seed given — tier 0 will run a NOVEL scenario table" >&2
+        echo "         and CANNOT reproduce the stored fitness. Pass the bake's" >&2
+        echo "         \"Effective master seed\" as arg 3 for a real determinism gate." >&2
+        make_eval_ini "$RESULTS_DIR/tier0-repro.ini"
+    fi
 
     local outdir="${RESULTS_DIR}/tier0-repro"
     mkdir -p "$outdir"
@@ -180,7 +196,7 @@ run_tier0() {
 
     # Extract S3 key for renderer visualization
     local s3_key
-    s3_key=$(grep "S3 upload:" "$outdir/console.log" 2>/dev/null | head -1 | awk '{print $NF}' | sed 's|/gen[0-9]*\.dmp$||')
+    s3_key=$(grep "S3 upload:" "$outdir/console.log" 2>/dev/null | head -1 | awk '{print $NF}' | sed -E 's|/gen[0-9]+\.dmp(\.zst)?$||')
 
     # Extract eval vs stored fitness (035 FR-P05 format: autoc emits
     # "NN_EVAL_SAME: fitness=X" on a bitwise match, else
@@ -253,10 +269,16 @@ run_tier1() {
     echo "=============================="
 
     # Same geometry and sigmas as training, but novel random seed.
-    # 5 paths × 49 winds = 245 flights.
-    # All sigmas come from autoc-eval.ini base (which must match autoc.ini).
-    # Only override: Seed=-1 for novel scenario table.
+    # 6 paths × 49 winds = 294 flights, matching the bake.
+    # All sigmas come from autoc-eval.ini base (which mirrors autoc.ini).
+    #
+    # ⛔ PathGeneratorMethod is STATED, not inherited. It used to be inherited,
+    # and when the base ini was repurposed for M2 novel-path work it silently
+    # became `random` — so "tier1-aeroStandard / same geometry as training" was
+    # in fact testing the un-trained patrol/intercept start for weeks, and read
+    # as a catastrophic failure that was really a config drift.
     make_eval_ini "$RESULTS_DIR/tier1-aero.ini" \
+        "PathGeneratorMethod = aeroStandard" \
         "Seed = -1"
 
     run_eval "tier1-aeroStandard" "$RESULTS_DIR/tier1-aero.ini"

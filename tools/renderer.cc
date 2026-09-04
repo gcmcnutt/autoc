@@ -719,16 +719,34 @@ bool Renderer::updateGenerationDisplay(int newGen) {
     cellData->SetNumberOfComponents(4);
     cellData->SetNumberOfTuples(planeSource->GetOutput()->GetNumberOfCells());
 
+    // 043 — tint the arena floor by how the scenario ENDED, so a wall of
+    // arenas reads at a glance. Two colours only, because there are only two
+    // things to tell apart:
+    //   YELLOW = CrashReason::Eval — arena egress (OOB: too low / high / far).
+    //            The soft bound; the aircraft flew out of the training box.
+    //   RED    = every other crash terminator (HullStrike, Sim, Boot) — the
+    //            aircraft hit something or the run failed outright.
+    // Normal ends (RabbitComplete, TimeLimit, None) keep the plain
+    // white/black checker, so an untinted arena means "flew it clean".
+    //
+    // ⚠️ Captured HERE, outside the cell loop, because that loop shadows `i`
+    // with its own cell index — the scenario index is only correct up here.
+    unsigned char lightRGB[4] = { 255, 255, 255, 100 };
+    unsigned char darkRGB[4]  = {   0,   0,   0, 100 };
+    if (i < static_cast<int>(evalResults.crashReasonList.size())) {
+      const CrashReason endedAs = evalResults.crashReasonList[i];
+      if (isCrash(endedAs)) {
+        const bool oob = (endedAs == CrashReason::Eval);
+        // Light squares carry the hue; dark squares get a muted version of it
+        // so the checker pattern still reads instead of going flat.
+        lightRGB[0] = 255; lightRGB[1] = oob ? 215 :  40; lightRGB[2] = oob ? 0 : 40;
+        darkRGB[0]  =  95; darkRGB[1]  = oob ?  75 :   0; darkRGB[2]  = 0;
+      }
+    }
+
     // checkerboard
-    for (int i = 0; i < planeSource->GetOutput()->GetNumberOfCells(); i++) {
-      if (i % 2 ^ (i / 10) % 2) {
-        unsigned char rgb[4] = { 255, 255, 255, 100 };
-        cellData->InsertTypedTuple(i, rgb);
-      }
-      else {
-        unsigned char rgb[4] = { 0, 0, 0, 100 };
-        cellData->InsertTypedTuple(i, rgb);
-      }
+    for (int c = 0; c < planeSource->GetOutput()->GetNumberOfCells(); c++) {
+      cellData->InsertTypedTuple(c, (c % 2 ^ (c / 10) % 2) ? lightRGB : darkRGB);
     }
     planeSource->GetOutput()->GetCellData()->SetScalars(cellData);
     planeSource->Update();
