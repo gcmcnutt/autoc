@@ -1097,6 +1097,30 @@ static WorkerInit buildWorkerInit() {
         }
     }
 
+    // ⛔ 2026-09-04 — THE ARENA IS MODE-INDEPENDENT AND MUST BE SET BEFORE THE
+    // TRACKER-ONLY EARLY RETURN BELOW.
+    //
+    // It used to be assigned down in the tracker tail, so every M1 (pathgen)
+    // worker returned here first and ran on the DEFAULT-CONSTRUCTED
+    // FlightArena{70, 25, 105} from arena.h — i.e. FlightArenaRadius /
+    // FlightArenaFloorAGL / FlightArenaCeilingAGL were DEAD KEYS for M1.
+    //
+    // It hid because the defaults happen to equal autoc.ini's values, so the
+    // enforced cylinder was accidentally the intended one; and because the
+    // startup echo, and RecordedRunConfig (set separately from cfg, ~line 177),
+    // both reported the INI value — so the log and the dmp asserted an arena
+    // the sim was not necessarily enforcing. Changing the ini silently did
+    // nothing, which is how it was finally caught: three M1 evals run at
+    // FlightArenaFloorAGL=5 all still terminated at exactly 25.0 m AGL.
+    //
+    // ⚠️ It also desynced the EGRESS CLASSIFIER: fitness_decomposition.cc:463
+    // attributes FLOOR/CEILING/RADIUS against runConfig.flightArena (the ini
+    // value) while the egress itself fired against the default — so whenever
+    // the two disagreed the reported egress KIND was wrong too.
+    init.flightArena.radius_m      = static_cast<gp_scalar>(cfg.flightArenaRadius);
+    init.flightArena.floor_agl_m   = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
+    init.flightArena.ceiling_agl_m = static_cast<gp_scalar>(cfg.flightArenaCeilingAGL);
+
     if (init.mode != Mode::TRACKER) {
         return init;
     }
@@ -1134,9 +1158,8 @@ static WorkerInit buildWorkerInit() {
     // thrust line's body-frame position is not yet measured (checklist A1b).
     init.airframeObstruction = airframeObstructionFromConfig(cfg);
 
-    init.flightArena.radius_m = static_cast<gp_scalar>(cfg.flightArenaRadius);
-    init.flightArena.floor_agl_m = static_cast<gp_scalar>(cfg.flightArenaFloorAGL);
-    init.flightArena.ceiling_agl_m = static_cast<gp_scalar>(cfg.flightArenaCeilingAGL);
+    // (flightArena moved ABOVE the tracker-only early return — it is
+    //  mode-independent and M1 was silently missing it. See the note there.)
 
     init.crashHullRadius = static_cast<gp_scalar>(cfg.crashHullRadius);
     init.trailDistance = static_cast<gp_scalar>(cfg.trailDistance);
