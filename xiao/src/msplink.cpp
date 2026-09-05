@@ -851,6 +851,25 @@ void mspUpdateState()
       // consistent direction cosines instead of zeros (023 resetHistory).
       // Same pattern as CRRCSim engage — uses path[0].start as target,
       // path tangent as singularity fallback.
+      //
+      // ⛔ 043 (2026-09-05) — express the craft in the ENGAGE frame FIRST.
+      // resetHistory() computes path[0].start - aircraft_state.position, and
+      // flight_path is generated at canonical (0,0,0) while
+      // aircraft_state.position still holds the ABSOLUTE NED position from the
+      // last MSP update: the frame conversion below only runs on the NEXT
+      // update (see `position_rel = position_raw - test_origin_offset`). The
+      // prefill therefore seeded every history slot with ||test_origin_offset||
+      // — 162-210 m in flight against kTargetDistScale_m = 26, i.e. 6-8x the
+      // trained input range, in 5 of the 6 lag slots for a full 800 ms, driving
+      // a freshly-reset RECURRENT hidden state. Measured on the 2026-09-05
+      // flight: stale dist == ||origin|| to within the craft's own offset on
+      // all four engagements (see specs/043-acro-dual-loop/flight-analysis.md).
+      // ⚠️ The bench could not catch it: the fault scales with distance from
+      // the NED datum, and a static bench sits ~5 m from it.
+      // CRRCSim gets this right by assigning aircraftState = initialState
+      // before its prefill (inputdev_autoc.cpp) — this mirrors that ordering.
+      aircraft_state.setPosition(neuVectorToNedMeters(state.autoc_state.pos) -
+                                 test_origin_offset);
       if (!flight_path.empty()) {
         gp_vec3 pathStart = flight_path[0].start;
         gp_vec3 tangent;

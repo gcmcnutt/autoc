@@ -223,3 +223,100 @@ comparison that SC-002 and SC-003 need is against a flight where the prefill is 
 
 ⚠️ **Add a non-static engage check to the bench protocol.** The bench passed every gate and could not have
 caught this, because the fault scales with distance from the NED datum.
+
+---
+
+# Addendum (2026-09-05) — streak, and how far the rate model is off
+
+## 9. ⭐ Is streak measured, or fed to the model? — **Neither, since 041 P2-2**
+
+⛔ **`streak` is NOT an NN input, and has not been one since 041.** It was deliberately removed and replaced
+by `score_grad`. From `include/autoc/nn/nn_inputs.h:264`:
+
+> Operator: *"streak was a crude proxy for rewarding in-track range."* A binary flag is a **STATE LABEL** —
+> a controller can only switch on it. A gradient is an **IMPROVEMENT DIRECTION**: which way to move, in
+> body axes, to score more, **weighted by the streak multiplier** so it carries how much reward is
+> currently at stake.
+
+So streak reaches the policy through exactly one channel: `score_grad_x/y/z`, the spatial gradient of the
+step score scaled by the streak multiplier. Streak itself is a **fitness-side** quantity only.
+
+### The cone constants are NOT broken
+
+Flown genome (baked into the firmware) vs `autoc.ini` — identical on every term:
+
+| | behind | ahead | cone half-angle | streak threshold | ramp |
+|---|---:|---:|---:|---:|---:|
+| `autoc.ini` | 7.0 m | 2.0 m | 45.0° | 0.5 | 5.0 s |
+| flown firmware | 7.000 | 2.000 | 45.000 | 0.500 | 5.000 |
+
+⇒ **No threshold, slope or orientation was broken.** The geometry the policy flew is the geometry it
+trained against.
+
+### ⛔ But the guidance signal has NO long-range component, and this flight lived at long range
+
+`|score_grad|` against distance, measured from the sim (which spans both regimes):
+
+| distance | 0–2 m | 2–4 | 4–6 | 6–8 | 8–10 | 10–15 | 15–20 | **20–30** | **30–60** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| median \|sg\| | 0.703 | 0.526 | 0.144 | 0.071 | 0.048 | 0.029 | 0.015 | **0.006** | **0.001** |
+| fraction ≈ 0 | 1.3% | 0.0% | 0.0% | 0.0% | 5.8% | 4.0% | 6.6% | **92.2%** | **100%** |
+
+⭐ **Beyond ~20 m the gradient is dead** — 92% of ticks carry no usable direction at all. That is inherent
+to a Lorentzian with `distScaleBehind = 7 m`; it is not a bug, but it means **the reward field gives no
+way home once you are outside it.**
+
+Where each run spent its time:
+
+| | 0–4 m | 4–8 m | 8–15 m | 15–30 m | >30 m |
+|---|---:|---:|---:|---:|---:|
+| sim gen 800 | **47.9%** | 31.0% | 13.1% | 7.0% | 1.0% |
+| **REAL** | 8.1% | 27.0% | 31.7% | **22.5%** | **10.8%** |
+
+Sim is inside 8 m — where the gradient is strong — **78.9%** of the time. The flight managed **35.1%**, and
+spent **a third of the flight beyond 15 m**, where the signal is nearly gone.
+
+Measured `|score_grad|` in flight is **7× weaker than sim** (median 0.0271 vs 0.1895) and **26.8% of ticks
+are at ≈ 0** against sim's 5.1%. Per span:
+
+| span | median \|sg\| | ticks ≈ 0 | median dist |
+|---|---:|---:|---:|
+| 1 | 0.0038 | **72.7%** | 14.8 m |
+| 2 | 0.0129 | 42.7% | 14.2 m |
+| 3 | 0.0478 | 1.6% | 8.6 m |
+| 4 | 0.0228 | 42.6% | 12.8 m |
+
+⭐ **Span 1 flew three-quarters of its life with no improvement direction at all** — and span 1 is the one
+that dove. ⭐ Span 3, the only span that stayed near 8 m, is also the only one with a live gradient (1.6%
+dead) — and it has the best 3–5 Hz number in §2 (15.2%).
+
+⇒ **The failure is self-reinforcing.** Corrupted prefill pushes the craft off the rabbit → distance passes
+~15 m → `score_grad` collapses → the policy has no direction to recover on → distance grows. The answer to
+*"the craft never got close"* is that after the first second it had nothing telling it how.
+
+## 10. How far off is the rate model, exactly?
+
+Commanded rate → achieved body rate, both sides, lag-swept:
+
+| | best lag | r | slope (delivered fraction) |
+|---|---:|---:|---:|
+| **sim** ROLL | ~150 ms | +0.78 | **0.74** |
+| **REAL** ROLL | **84 ms** | +0.72 … +0.79 | **0.51 … 0.61** |
+| **sim** PITCH | ~100 ms | +0.66 | **0.43** |
+| **REAL** PITCH | **68 ms** | +0.46 … +0.77 | **0.26 … 0.67** |
+
+⚠️ The sim is sampled at 20 Hz, so its lag resolves only to ±50 ms; the real side is blackbox-native
+59 Hz (±17 ms). Treat the sim lag as coarse.
+
+⭐ **The error runs in both directions, which is why it is worth fixing rather than trimming.** The real
+aircraft is **faster** than the model (84 ms vs ~150 ms in roll) but has **less authority** (delivers
+0.51–0.61 of commanded rate against the model's 0.74). The *correlation* is comparable (~0.78 both), so
+the model has the right shape and the wrong constants: **too laggy, too strong.**
+
+A policy trained against a loop that is slower and more powerful than reality will command as though its
+inputs will be followed, and get about **75–80%** of the roll rate it expects, **68 ms sooner** than it
+learned to expect it. That is a plausible contributor to the throttle chatter in §5 and the pitch energy
+at 1–3 Hz in §2, independent of the prefill bug.
+
+⇒ **Route to Phase 6 (T046–T050a), which never ran.** This is exactly the actuator/plant pinning
+SC-010 called for, and it now has measured numbers to hit instead of assumed ones.
