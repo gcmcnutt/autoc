@@ -320,3 +320,102 @@ at 1–3 Hz in §2, independent of the prefill bug.
 
 ⇒ **Route to Phase 6 (T046–T050a), which never ran.** This is exactly the actuator/plant pinning
 SC-010 called for, and it now has measured numbers to hit instead of assumed ones.
+
+---
+
+# Addendum 2 — playback reconstruction, and where the responsiveness work should go
+
+## 11. Renderer / xiao playback: streak is RECONSTRUCTIBLE, not stored
+
+| | stepScore | streak flag | multiplier | score_grad |
+|---|---|---|---|---|
+| **sim** (dmp) | ✅ `stpPt` | derived from `stpPt ≥ 0.5` | ✅ `mult` | ✅ `sgX/Y/Z` (+ `sgx/y/z` raw) |
+| **xiao** (v4 log) | ❌ | ❌ | ❌ | ✅ `score_grad_x/y/z` (post-multiplier, tanh'd) |
+
+The xiao *computes* all of it on board (`msplink.cpp` — `score_envelope.advance(stepScore >= threshold)`)
+but logs only the gradient. ⭐ **It does not need to log the rest**: the v4 log carries `pos_n/e/d` and
+`rabbit_n/e/d`, and the cone constants are baked into the firmware, so the renderer can rebuild the exact
+surface. `FitnessComputer` is compiled into the xiao firmware precisely so the objective has ONE definition
+(041 P5-3) — the renderer should call it rather than re-implement the Lorentzian.
+
+Reconstructed for this flight (tangent from successive rabbit positions):
+
+| span | stepScore median | **in-streak** |
+|---|---:|---:|
+| 1 | 0.024 | **3.0%** |
+| 2 | 0.113 | 4.0% |
+| 3 | 0.277 | **17.3%** |
+| 4 | 0.177 | 4.4% |
+| **whole flight** | | **9.8%** |
+| **sim gen 800** (recorded `stpPt`) | 0.549 | **54.6%** |
+
+⇒ **9.8% real against 54.6% sim.** That is the tracking result stated in the objective's own currency.
+
+## 12. ⚠️ Correction — the bearing signal never degrades
+
+An earlier claim in §9 that the policy has "no way home" beyond 20 m was **wrong**, and the operator caught
+it. Measured over this flight:
+
+| range | 0–4 m | 4–8 | 8–15 | 15–30 | >30 |
+|---|---:|---:|---:|---:|---:|
+| median \|target\| (direction cosines) | 1.0000 | 1.0000 | 1.0000 | 1.0000 | **1.0000** |
+| median \|score_grad\| | 0.162 | 0.088 | 0.028 | 0.011 | 0.0005 |
+
+⭐ `target_x/y/z` are **unit direction cosines at every range**, and `dist` is linear (not tanh) precisely
+so the ratio structure survives at all ranges (041 P2-8). The policy always knows **where** the target is
+and **how far**. What decays is only *how much reward is at stake* — `score_grad` is a **quantitative
+nudge**, not the navigation signal. Operator's framing, and it is the correct one.
+
+## 13. Responsiveness: what this flight can and cannot pin
+
+⛔ **In-flight actuator identification is not available from this log.** Fitting elevon deflection (common
+= pitch, differential = roll) against achieved rate *and* against angular acceleration gives r = 0.03–0.19
+in both modes. Cause: `blackbox_rate_denom` drops **96.87%** of loop iterations (299,398 of 309,057), so
+the 59 Hz record cannot support a derivative-based plant fit. ⇒ **Raise the blackbox rate before the next
+flight if in-air actuator identification is wanted**, or accept that T046's bench step-response is the
+instrument for this — which is what the plan already said.
+
+What this flight *does* pin, cleanly, is the **closed loop** (both sides lag-swept, §10): real roll 84 ms
+/ gain 0.51–0.61 against the model's ~150 ms / 0.74, r ≈ 0.78 on both.
+
+### The controller model is NOT the gap
+
+`crrcsim/src/mod_cntrl/cntrl_inavfwrate/` models INAV's fixed-wing rate loop **including the
+`pidSumLimit` clamp** (`cntrl_inavfwrate.cpp:85-88`), the FF-dominant gains and the Gaussian P/D
+attenuation. ⇒ The 0.74-vs-0.55 authority gap is **not** an un-modelled controller behaviour. It is
+airframe aero or actuator — i.e. exactly Phase 6's territory, not `cntrl_inavfwrate`'s.
+
+## 14. ⭐ Are we a broken record? — the guard is already written, and it says wait
+
+Operator, commit `2c691aa` (2026-08-23), *before* this feature was planned:
+
+> `craftServoSlew` and `craftThrustTau` are **ALREADY variation classes** in `ScenarioMetadata`… The sim
+> can express a spread of actuator responses today; what is missing is knowing **where the real airframe
+> sits inside it**. The **2nd flight article** is what makes the spread measurable — two airframes give a
+> real read rather than a single sample.
+>
+> ⛔ And this is a **FINE-TUNE, not a re-derivation.** The 037-era actuator and latency constants were
+> measured on this same airframe and much is unmodified. Do not treat every constant as suspect; find the
+> ones the flight data actually contradicts and leave the rest alone.
+
+The prescribed pre-work — xiao log self-sufficiency, a bench servo step-response to pin the 30 ms term,
+and a pass over the 037 constants — **is Phase 6 (T046–T050a), which never ran** before the bake.
+
+⇒ **We are not repeating ourselves; we are arriving at the step we skipped.** The sim latency model
+(`gComputeLatencyMsec`, staged-command application in `inputdev_autoc.cpp:1545`) and servo v2 (PWM latch +
+slew, `ServoModelEnabled = 1`) both already exist and were measured on this airframe.
+
+### Recommended order — ⛔ do NOT tune `hb1_streamer.xml` or the latency constants yet
+
+1. **Reflash and re-fly** with the prefill fix. Every closed-loop number above was measured while the
+   policy was being driven out of distribution; they are contaminated as a tuning target.
+2. **Run T046** — bench servo step-response. Deterministic, weather-free, and the 30 ms actuator term is
+   the largest purely-modelled term in the phase budget.
+3. **Raise `blackbox_rate_denom`** for the next flight so the plant is measurable in the air at all.
+4. **Then** compare across MANUAL / ACRO / the 041-t7 and 039 records, and fine-tune only the constants
+   the data contradicts.
+5. **Train last.** ⛔ Baking now would spend 800 generations against constants we are about to change —
+   and the 043-t2 bake already cost that once.
+
+⚠️ `n = 1` article and `n = 1` flight. The repo's own standard for moving the actuator constants is the
+**second article**. Nothing here is strong enough to overturn 037-era numbers measured on this airframe.
