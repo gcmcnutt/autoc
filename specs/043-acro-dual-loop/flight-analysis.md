@@ -503,3 +503,76 @@ sharply: 043's ACRO model is not where the sim↔real gap lives.
    side, and it is a *fidelity* fix rather than a tuning change, so it does not need the 2nd article.
 3. **`servo_pwm_rate`** — check first (T050), because if the servos are digital it changes the plant on
    both sides before anything is tuned to the old one.
+
+---
+
+# Addendum 4 — the servo IS identified, and T050 is answerable from the repo
+
+## 19. ⭐ The article's servo: **Power HD DSM-44 digital micro**
+
+Recorded by the operator 2026-06-11 in `specs/037-20hz-control-loop/finding.md:79`, and it is the source
+of the whole servo v2 model (`include/autoc/eval/craft_variation.h:32`,
+`crrcsim/src/global.h:116`):
+
+> **DATASHEET CHECK (operator 2026-06-11)**: the actual craft servo is a **Power HD DSM-44 digital
+> micro** — transit spec **0.07 s / 60°** (no-load)… Span for 1000–2000 µs **CONFIRMED 90°**.
+
+⇒ **T050 is answered: the servos are DIGITAL.** `servo_pwm_rate = 50` is therefore *not* a hardware
+constraint — the "unavoidable for standard analog servos" line in
+[`docs/inav-signal-path-audit.md:78`](../../docs/inav-signal-path-audit.md) and
+`specs/023-ood-and-engage-fixes/research.md:76` is **wrong for this article** and should be corrected.
+
+037 already knew what this implies (`finding.md:336`):
+
+> `pwmPh [0,20)` ms assumes a 50 Hz analog frame — **a digital servo driven at 200–333 Hz has [0,3..5) ms
+> dead-time; set it from the actual flown `servo_pwm_rate`** (**the single least-realistic number in the
+> table**).
+
+⭐ ⇒ Raising `servo_pwm_rate` to 200–333 Hz converts a **0–20 ms (10 ms mean)** dead-time into
+**0–5 ms (2.5 ms mean)** — roughly **7.5 ms off the 81.6 ms phase budget**, on both sides, for a CLI
+change. It is the cheapest lever left and it is available now. ⚠️ Confirm the DSM-44's accepted frame
+rate before raising it; digital micros vary, and an over-driven servo browns out or buzzes.
+
+## 20. ⛔ The modelled slew may be shifted FAST of the real servo
+
+`kServoTransitSecPer60Deg = 0.055` in `craft_variation.h`, but the datasheet figure recorded in
+`finding.md` is **0.07**. Working both through the same 90° span / 2.0-unit conversion:
+
+| source | s/60° | full-span transit | slew (autoc units/s) |
+|---|---:|---:|---:|
+| `craft_variation.h` (the flown model) | 0.055 | 82.5 ms | **24.24** ← model centre |
+| `finding.md` datasheet, **no-load** | 0.070 | 105.0 ms | **19.05** |
+| same, with the operator's **1.5× aero derate** | 0.105 | 157.5 ms | **12.70** |
+
+Model clamp is **[16, 32]** (= 0.083 … 0.042 s/60°).
+
+⚠️ Two things fall out, and both point the same way as the flight:
+
+1. The model **centre is 27% faster** than the repo's own recorded no-load datasheet number.
+2. The **loaded** case (12.70) sits **below the clamp floor of 16** — so under aero load the modelled
+   spread may not *contain* the real servo at all.
+
+⭐ This is consistent with the measured flight result in §10: the real aircraft delivers **0.51–0.61** of
+commanded rate against the sim model's **0.74**. A servo slower than the modelled spread produces exactly
+that signature.
+
+⛔ **I am not asserting the constant is wrong.** 0.055 may have been chosen deliberately during the t8→t9
+unit-bug correction, where the whole question was whether the model was too slow — and t9 proved a
+datasheet-honest servo does *not* cap tracking. The discrepancy is between two records in this repo, and
+**only a loaded bench step-response settles which is right**.
+
+⇒ That measurement is **T046** — and it has now been deferred three times: **018 T273g** (*"Bench servo
+step response characterization"*, still open), **037 t11** (*"Still open: a loaded bench step test"*), and
+**043 T046** (skipped before the bake). ⭐ **That — not the sim tuning — is where we have been a broken
+record.** The repo has asked for the same measurement for three features running and never taken it.
+
+### Revised recommendation
+
+Ahead of any `hb1_streamer.xml` change, and ahead of any retrain:
+
+1. **T046 / T273g — loaded bench servo step-response on the DSM-44.** Settles 0.055 vs 0.070, settles
+   whether the clamp floor needs to move, and is the only item here that three features have asked for.
+2. **Confirm the DSM-44's max frame rate, then raise `servo_pwm_rate`** — ~7.5 ms of phase for a CLI edit,
+   applied identically in sim (`kCraftServoPwmFrameSec`) per FR-012a discipline.
+3. Model the **NN sensor filtering** (§16) — 21 ms accel, 6.4 ms gyro, currently un-modelled.
+4. Only then revisit aero constants, and prefer the 2nd article per `2c691aa`.
