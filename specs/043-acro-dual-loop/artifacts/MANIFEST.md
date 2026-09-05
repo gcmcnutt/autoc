@@ -29,6 +29,8 @@ Written 2026-09-04. Facts verified against S3 and git at that date; each row say
 | Topology | **45 → 32 → 16r → 3**, 2307 weights |
 | Scenarios completed | 281 / 294 (per T068 task note) |
 | `nn_weights.dat` | 9371 bytes, sha256 `3af8e3ab787b75a5…` |
+| ⭐ **`weight_id`** | **`3af8e3ab787b75a5`** — sha256[0..7] of `nn_weights.dat`, emitted as `generatedNNWeightId` and written into every flight-log header. **This is the field that proves the flown firmware carries THIS genome.** (Sept-1 bench ran gen 554 = `610e0eba3506b149`.) |
+| `firmware_id` | `95dd8904c0ae04b8` — hash of the generated code text |
 
 Extract with:
 
