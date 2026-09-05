@@ -1,6 +1,6 @@
 # 043 — bench verification (2026-09-01)
 
-Rig: `MAMBAF722_2022A`, INAV 8.0.0 (63cffaf4), stock firmware (no fork build — see below).
+Rig: `MAMBAF722_2022A`, INAV 8.0.0 (63cffaf4), built **Aug 22 2026 12:11:07** from the fork `~/inav` branch `autoc` — ⛔ **NOT stock** (corrected 2026-09-04). The fork carries MSP override, the quaternion MSP reply, and the timestamp export the clock-join depends on. What 043 established is that **no NEW build is needed**, not that the firmware is stock.
 Logs: `eval-results/bench-20260901/` (INAV blackbox + xiao flash log, clock-joined).
 Genome: 043-t2 bake **gen 554**, fitness −87,763.77, `weight_id=610e0eba3506b149`.
 
@@ -56,7 +56,7 @@ sampling and clock residual. Both events coincide because until MSP data goes li
 sending while the pilot still has control, so the NN's 0.8 s history buffers are primed at takeover.
 An earlier attempt to zero it (INAV fork commit 52374cb37) was **reverted** (c412bfd76) — it would
 have handed over on an unprimed buffer, and the flying behaviour depends on the delay.
-⇒ **No custom INAV build is needed at all**; the FC runs stock 8.0.0 with a CLI config change only.
+⇒ **No NEW INAV build is needed**; the FCs keep the existing `~/inav@autoc` build (rev `63cffaf4`, Aug 22 2026) that also flew 041-t7, and 043 needs a **CLI config change only**. ⛔ Corrected 2026-09-04 — this line previously read *"the FC runs stock 8.0.0"*, which is wrong: the firmware is a custom fork build and always has been. Fork verified unchanged: HEAD `67ba0919e` (2025-11-13), clean tree, reflog shows no movement since, and no 2026 commits on any branch. ⚠️ The hashes this file cites for the T057 fork change and its revert (`52374cb37` / `c412bfd76`) do **not** exist in `~/inav` — that change never landed there.
 
 ## ⛔ Bug found and fixed: xiao log decoder had roll/pitch swapped
 
@@ -66,3 +66,19 @@ and the xiao maps slot0 through the inverted pitch transform. Caught here becaus
 correlated **−1.0000** with `rc_pitch`. The **firmware was correct**; only the desktop decoder's
 labels were wrong. ⚠️ Any earlier analysis reading `out_roll`/`out_pitch` from a xiao log had the two
 axes transposed. Same stale-label class as the 041 catalogue.
+
+## ⛔ What is NOT covered here — the flight article
+
+Every result above is the **bench** board, `MAMBAF722_2022A`. Both Sept-1 CLI captures in `xiao/` are that
+same board, five minutes apart, showing the rate load: `INAV_8.0.0_cli_20260901_184527.txt` has roll 18 /
+pitch 9 (before) and `…185027.txt` has **36 / 24** (after). The bench rig was given the flight rates so it
+could show the arm-C signature, which is why T056 reads as bench-verified despite being scoped to the
+flight article.
+
+⛔ **There is no Sept-1 dump of the flight article (`MATEKF722MINI`).** `xiao/inav-hb1.cfg` is an **Apr 2
+2026** dump with the `pitch_rate 24` line hand-edited in (commit `f4a21a5` changed that one line and left
+the version header stale), so it is the config **of record**, not evidence of what is loaded on the
+aircraft. ⇒ Flight setup must CLI `pitch_rate = 24` into control_profile 1 on the MATEKF722MINI and pull a
+**fresh dump** to prove it (T069 rate-parity gate: `rates 36,24,3` against the model's `maxRate` 360/240).
+The 043-t2 bake trains against pitch 240 °/s; flying an FC still at 120 °/s diverges precisely in the axis
+this feature exists to fix.
