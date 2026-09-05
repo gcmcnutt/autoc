@@ -82,3 +82,80 @@ aircraft. ⇒ Flight setup must CLI `pitch_rate = 24` into control_profile 1 on 
 **fresh dump** to prove it (T069 rate-parity gate: `rates 36,24,3` against the model's `maxRate` 360/240).
 The 043-t2 bake trains against pitch 240 °/s; flying an FC still at 120 °/s diverges precisely in the axis
 this feature exists to fix.
+
+---
+
+# 043 — bench verification #2 (2026-09-04), FLIGHT ARTICLE
+
+⭐ First bench cycle on the **flight article** (`MATEKF722MINI`, fork build `38ff0d29e`, Aug 22 2026
+16:25:46) and on the **flown genome** (gen 800). Supersedes nothing in the Sept-1 record above — that was
+the bench rig on gen 554 — but it is the run that clears T069.
+
+Logs: `eval-results/bench-20260904/`. Genome: 043-t2 **gen 800**, fitness −88,013.840878,
+`weight_id=3af8e3ab787b75a5` (Sept-1 was gen 554 = `610e0eba3506b149`).
+
+## Gates
+
+| task | result |
+|---|---|
+| **flash identity** | ✅ `weight_id=3af8e3ab787b75a5`, `program=…/gen9200.dmp.zst`, topology `45→32→16r→3`. The flown genome is on the aircraft. |
+| **T051b** sim↔FC rate parity ⭐ | ✅ **on the flight article** — blackbox header `H rates:36,24,4` against model `maxRate` 360/240. Roll 36, pitch 24. (Yaw 4 vs the bench rig's 3; immaterial, see below.) |
+| **T053** ACRO, not MANUAL | ✅ **1044** samples `ARM\|MSPRCOVERRIDE` with no MANUAL (Sept-1: 1014). The 138 `ARM\|MANUAL\|MSPRCOVERRIDE` are the 783 ms handover window and the release. |
+| **T056** arm-C signature | ✅ `axisF[1]` mean **+504**, max **+541** — saturating the fixed ±500 `pidSumLimit`, the thing `pitch_rate 12` could not reach (capped 270). Servos `servo[0]` 1294–2000, `servo[1]` 1000–1593. |
+| **T056** no yaw surface | ✅ `axisRate[2]` and `axisF[2]` **exactly 0.0** across all 1044 engaged samples (FR-018). |
+| **T054** release | ✅ path complete 17.0 s → "pilot has control" → servo reset → re-arm allowed. |
+| **recordings** | ✅ flash logger armed → archived flight #1 → finalized. v4 log, 341 ticks, 0 gaps, 276 breadcrumbs. Blackbox 1832 I-frames @ **59 Hz** (T058 unchanged). |
+| **SC-006** loop health | ✅ 341 ticks, **0 overruns / 0 resyncs / 0 drops**, maxLate 20 ms, avgLate 0.68 ms. MSP cadence avg **50.0 ms** = 20 Hz. |
+
+⚠️ One number to watch, not act on: pipeline max **41.3 → 47.4 ms** of a 50 ms budget (5% margin);
+MSP interval max 69.7 ms. Zero overruns and zero drops, so healthy — but it is the tightest figure here.
+NN eval itself is only 3.16 ms (202,223 cycles @ 64 MHz).
+
+## ⛔ The policy railed nose-down for the entire engagement — and it is the KNOWN OOD mode
+
+`axisRate[1]` (pitch setpoint) held **+223.1 °/s mean, sd 16, range +130…+240, ZERO sign flips** across
+1044 samples. INAV's pitch convention is nose-down = + (`xiao/include/MSP.h`), so this is a sustained
+**93%-of-maximum nose-down rate command** for 17 s.
+
+⭐ **This is the OOD-saturation mechanism already documented in `specs/BACKLOG.md`, reproduced on the
+bench**, not a new fault:
+
+| | `out_pt` |
+|---|---|
+| BACKLOG, `random` floor-dying scenarios | median **−0.927**, sustained nose-down |
+| this bench run | median **−0.942**, **99%** one-directional |
+
+The trigger is the same class of unseen initial condition. On a bench the aircraft is **static** — the
+policy is fed `airspeed ≈ 0.2 m/s` against a trained cruise of 13 m/s, and every other channel is frozen
+(`specific_energy` sd 0.0011, `dist_to_boundary` sd 0.0039, `score_grad` ≈ 0). Only `dist_*` and
+`closing_rate` move at all, and those only because the rabbit runs away from a craft that cannot follow.
+
+⛔ **Therefore no control-character conclusion transfers from this run to flight, in either direction.**
+The bench verifies plumbing. It cannot exercise the policy, and this run is a demonstration of why.
+
+⚠️ gen 800 is **more** railed than gen 554 here, not less: pitch sign-flips **3 → 0**, `axisRate[1]`
+sd **94 → 16**. Read as OOD behaviour hardening with training, which is what the BACKLOG entry describes.
+
+## ⭐ The throttle decision — the channels are COORDINATED, which is the encouraging part
+
+Throttle sat at rail-low for 15 of 17 s (`rcData[3]` mean 1137, min 1000) with one full-power block at
+t = 15.3–16.1 s. Structure is **identical** to gen 554 — both genomes make exactly **4 rail transitions =
+0.24 Hz**. This is not throttle bang-bang; it is a slow, decisive schedule.
+
+⭐ The throttle is not saturating independently of pitch — it moves *with* it:
+
+| | `out_pitch` mean | `\|pitch\|` railed |
+|---|---|---|
+| throttle RAIL-HIGH (n=39) | **−0.831** | **10%** |
+| throttle RAIL-LOW (n=250) | **−0.942** | **41%** |
+
+`corr(throttle, pitch) = +0.244`. Throttle comes up exactly as pitch backs off the nose-down rail.
+⭐ **Nose-down + throttle idle is a coherent dive; pitch easing + throttle full is a coherent pull-out.**
+The policy is executing one coordinated manoeuvre, not two independently pegged channels — and it is the
+textbook response to the low-energy state it believes it is in. That is the sense in which the throttle
+decision is *good*: the channel is live and correlated, not stuck at a rail.
+
+⚠️ Do not over-read it. `corr = +0.244` is modest, the throttle-high block is 39 samples, and the only
+genuinely varying inputs are time-confounded (`dist_*` grows monotonically as the rabbit departs), so
+input→output attribution is not available from this run. What is established is that the throttle channel
+**responds**, and responds in phase with pitch.
