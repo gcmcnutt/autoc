@@ -419,3 +419,87 @@ slew, `ServoModelEnabled = 1`) both already exist and were measured on this airf
 
 ⚠️ `n = 1` article and `n = 1` flight. The repo's own standard for moving the actuator constants is the
 **second article**. Nothing here is strong enough to overturn 037-era numbers measured on this airframe.
+
+---
+
+# Addendum 3 — INAV hb1 config audit against the sim dynamics
+
+Source: `xiao/inav-hb1.cfg` (the 2026-09-04 flight-article capture) vs
+`crrcsim/models/hb1_streamer.xml` + `crrcsim/src/mod_cntrl/cntrl_inavfwrate/`.
+
+## 15. ⭐ The rate controller is a PARAMETER-EXACT replica — no gap here
+
+Every gain converts with **one consistent scale factor per term, across both axes**:
+
+| axis | term | FC | sim model | ratio |
+|---|---|---:|---:|---:|
+| roll | P / I / D / FF | 15 / 3 / 7 / 50 | 0.484 / 0.750 / 0.003675 / 1.613 | 0.0322667 / 0.25 / 0.000525 / 0.03226 |
+| pitch | P / I / D / FF | 15 / 5 / 5 / 70 | 0.484 / 1.250 / 0.002625 / 2.258 | 0.0322667 / 0.25 / 0.000525 / 0.032257 |
+
+And every structural parameter matches outright:
+
+| | FC | sim |
+|---|---|---|
+| `gyro_main_lpf_hz` / `gyroLpfHz` | 25 | **25** ✅ |
+| `dterm_lpf_hz` / `dtermLpfHz` | 10 | **10** ✅ |
+| `fw_iterm_lock_rate_threshold` | 40 | **40** ✅ |
+| `pid_iterm_limit_percent` / `itermLimitPct` | 33 | **33** ✅ |
+| `pidSumLimit` | ±500 | **500** ✅ |
+| rates → `maxRate` | 36 / 24 | **360 / 240** ✅ |
+| `rate_accel_limit_roll_pitch` | **0** (no setpoint accel limit) | n/a — correctly absent |
+| `servo_pwm_rate` 50 Hz | 50 | modelled as servo v2 PWM latch, 50 Hz, 0–20 ms ✅ |
+
+⛔ **`fw_reference_airspeed = 1500` is NOT a rate-loop gain scaler.** INAV uses it only for the
+coordinated-turn calculation in TURN_ASSIST (`settings.yaml:1997`), and TURN_ASSIST never appears in this
+flight's mode flags. It is at the default and is irrelevant here. ⇒ The airspeed-scaling hypothesis for the
+0.74-vs-0.55 authority gap is **dead**.
+
+⇒ **The controller is exonerated.** The gap is airframe aero, actuator, or the measurement — Phase 6.
+
+## 16. ⛔ Found one real divergence: the sim feeds the NN UNFILTERED sensors
+
+| channel | real (what the NN gets) | sim (what the NN gets) |
+|---|---|---|
+| gyro | `gyro.gyroADCf` — post `gyro_main_lpf_hz = 25` PT1 **+ dynamic notch** (2D, Q 250, ≥30 Hz) | `eom01->getOmegaBody()` — **raw FDM body rates** |
+| accel | `acc.accADCf` — post `acc_lpf_hz = 15` **BIQUAD** | `computeSpecificForce(...)` — **raw**, unfiltered |
+
+The controller's *internal* gyro filtering is modelled (`gyroLpfHz = 25` inside `cntrl_inavfwrate`), but
+the **NN's own sensor inputs** are not. Un-modelled lag on the policy's input vector:
+
+| filter | group delay | phase @3 Hz | phase @5 Hz | gain @5 Hz |
+|---|---:|---:|---:|---:|
+| `gyro_main_lpf_hz = 25` (PT1) | **6.4 ms** | 6.8° | 11.3° | 0.981 |
+| `acc_lpf_hz = 15` (biquad) | **21.2 ms** | 22.6° | 36.9° | 0.900 |
+
+⭐ **21 ms on the accelerometer channel is 42% of a 20 Hz tick**, and accel is one of the 041 P5-1 inputs
+the whole feature depends on. The policy trained on an accel signal that responds instantly and flies one
+that lags a fifth of a tick and is 10% attenuated at 5 Hz.
+
+⚠️ **This does not explain the 1.56× accel magnitude — it argues the opposite.** The real channel is
+*low-passed* and still reads higher, so the airframe genuinely pulls more g than the model. The filter
+finding and the magnitude finding are independent.
+
+## 17. Two config items still unexamined, both cheap
+
+- ⛔ **T050 never ran: are the servos digital?** `servo_pwm_rate = 50` costs 10 ms mean / 20 ms max
+  quantisation. The sim models it faithfully, so it is not a *divergence* — but if the servos are digital,
+  raising it buys up to **20 ms of the 81.6 ms phase budget for free, on both sides**. This is the single
+  cheapest phase lever left and it has never been checked.
+- **`gyro_main_lpf_hz = 25` is aggressive** for a fixed wing and is an FR-012a/T048 candidate — matched in
+  sim, so again not a divergence, but 6.4 ms of the budget sits there.
+
+## 18. Verdict on "is it the sim, or INAV?"
+
+**Neither, on the controller.** The INAV rate loop and its sim replica agree on every gain, every filter
+frequency, every limit, and the rate scaling. ⭐ That is a genuinely good result and it narrows the search
+sharply: 043's ACRO model is not where the sim↔real gap lives.
+
+**What is left, ranked:**
+
+1. **Airframe aero / actuator constants** (`hb1_streamer.xml` FDM block) — the 0.74-vs-0.55 authority gap
+   and the 1.56× body accel both point here. ⇒ Phase 6, and the operator's `2c691aa` rule applies: change
+   only what the data contradicts, and prefer the 2nd article over an n=1 read.
+2. **The un-modelled NN sensor filtering** (§16) — 21 ms on accel, 6.4 ms on gyro. Cheap to add on the sim
+   side, and it is a *fidelity* fix rather than a tuning change, so it does not need the 2nd article.
+3. **`servo_pwm_rate`** — check first (T050), because if the servos are digital it changes the plant on
+   both sides before anything is tuned to the old one.
