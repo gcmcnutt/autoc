@@ -159,3 +159,44 @@ decision is *good*: the channel is live and correlated, not stuck at a rail.
 genuinely varying inputs are time-confounded (`dist_*` grows monotonically as the rabbit departs), so
 input→output attribution is not available from this run. What is established is that the throttle channel
 **responds**, and responds in phase with pitch.
+
+## Clock join (xiao ↔ INAV) — T071 method rehearsed on the bench
+
+Four `INAV_CLOCK` anchors give `inav_ms = A·xiao_ms + B` with **A = 1.000508090 (+508 ppm)**,
+B = +62889.6 ms, max anchor residual **11.3 ms**. **341/341** xiao ticks matched a blackbox sample within
+30 ms (median skew **4.2 ms**, max 8.5 ms).
+
+⚠️ The ppm is per-pairing, not a constant: Sept-1 was **+1348 ppm** (bench rig), 041-t7 in flight was
+**−970 ppm**. Different FC ⇒ different relative drift. The fit must be redone for every log.
+
+## ⭐ ACRO confirmed *during* autoc — by time-join, not by inference
+
+Mode flag at every one of the 341 engaged ticks, after joining:
+
+| flags | ticks | |
+|---|---:|---|
+| `ARM\|MSPRCOVERRIDE` (pure ACRO) | **325** | **95.3%** |
+| `ARM\|MANUAL\|MSPRCOVERRIDE` | 15 | 4.4% |
+| `ARM\|MANUAL` | 1 | 0.3% |
+
+⭐ The 16 non-pure ticks are **contiguous from tick 0**, spanning 0.00–0.73 s = **800 ms** — the T057
+engage-latency window (measured 783 ms), where the xiao is computing and sending while the pilot still
+holds the aircraft and the NN history buffers prime. **From tick 16 to the end, every single tick is pure
+ACRO.** The operator's "I heard ACRO during autoc" is confirmed against the flag, not just the announcement.
+
+## End-to-end authority, pure-ACRO ticks only (n = 325)
+
+| link | r | slope | nominal |
+|---|---:|---:|---:|
+| `out_pitch` → `axisRate[1]` | **−0.890** | −298 °/s/unit | −240 |
+| `out_roll` → `axisRate[0]` | **+0.895** | +304 °/s/unit | +360 |
+| `out_throttle` → `rcData[3]` | **+0.980** | +490 µs/unit | ±500 band |
+
+Signs correct on every axis; the NN is steering the FC's rate loop end to end.
+
+⛔ **Read the magnitudes with care, and the pitch one not at all.** Over the ACRO window `out_pitch` has
+sd **0.048** and range **0.189** — the policy pinned it (see the OOD section above), so its slope is a
+narrow-range extrapolation, not a gain measurement. `out_roll` (sd 0.465, range 1.78) and `out_throttle`
+(sd 0.654, range 2.0) *are* well-conditioned: roll's 84% of nominal is the errors-in-variables attenuation
+from the 20 Hz ↔ 60 Hz join already described for Sept-1, and throttle's +490 µs/unit against a ±500 band
+is essentially exact.
