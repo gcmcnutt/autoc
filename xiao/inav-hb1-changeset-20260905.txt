@@ -1,0 +1,99 @@
+# INAV flight-article change set — 2026-09-05, post first-ACRO-flight
+# Target: MATEKF722MINI, fork build 38ff0d29e, control_profile 1
+# Rationale + evidence: docs/inav-acro-path-audit.md §1 and §5
+#
+# ⛔ DO NOT hand-edit xiao/inav-hb1.cfg to apply these.
+#    That file became a GENUINE FLIGHT-ARTICLE CAPTURE on 2026-09-04, replacing
+#    an Apr-2 dump that had pitch_rate hand-edited in. Hand-editing recreates
+#    exactly the problem T051a just escaped. Apply via CLI, then pull a FRESH
+#    dump over inav-hb1.cfg so the config of record stays a real capture.
+#
+# ⚠️ inav-hb1.cfg is CRLF. Anchored `sed` silently no-ops on it. Another reason
+#    to re-dump rather than edit.
+
+# ---------------------------------------------------------------------------
+# 1. rc_expo 20 -> 0   ⭐ the largest measured sim<->real divergence
+# ---------------------------------------------------------------------------
+# fc_core.c:397 picks the expo BY FLIGHT MODE: manual_rc_expo (0) under MANUAL,
+# stabilized rc_expo (20) under ACRO. Moving the NN from MANUAL to ACRO in 043
+# therefore made the action space NON-LINEAR without anyone changing a knob.
+#
+# Confirmed from the 2026-09-05 blackbox by fitting rcData -> rcCommand:
+#   ACRO   n=3051 -> best fit expo=20 (residual 4.4 roll / 2.8 pitch counts)
+#   MANUAL n= 969 -> best fit expo=0  (residual 0.6 / 0.9)
+#
+# Effect: every command short of FULL deflection is attenuated to 80-88% of
+# linear. Full stick is unaffected -- which is why the T056 bench arm-C check
+# (full pitch => ~100% elevator) passed and hid this.
+#
+# The sim models commandScale x maxRate, i.e. LINEAR. Setting rc_expo = 0 moves
+# the AIRCRAFT onto the action space the genome actually trained against,
+# instead of teaching the sim a knob that exists only for human thumbs.
+#
+# INAV default is 70; profile 1 was already lowered to 20. Range is [0,100].
+# ⓘ Leaves MANUAL feel untouched -- that is governed by manual_rc_expo, = 0.
+
+control_profile 1
+set rc_expo = 0
+
+# rc_yaw_expo stays at 30: yaw is provably unused on this airframe
+# (axisRate[2] = axisF[2] = 0.0 across all 1044 engaged bench samples and all
+# four flight spans). Changing it would be noise in the diff.
+
+# ---------------------------------------------------------------------------
+# 2. setpoint_kalman_enabled ON -> OFF
+# ---------------------------------------------------------------------------
+# ⚠️ MISNAMED: it is not a setpoint filter. gyro.c:506-510 applies
+# gyroKalmanUpdate() to gyroADCf, and that value becomes gyro.gyroADCf[axis] --
+# which is BOTH what the PID rate loop reads as its measurement AND what
+# MSP2_AUTOC_STATE ships to the xiao as the NN's gyro input.
+#
+# So it sits in the control loop and in the policy's observation, as an
+# input-adaptive IIR with STATE-DEPENDENT (non-constant) group delay, on top of
+# the 25 Hz PT1 and the dynamic notch. The sim models neither it nor the notch.
+#
+# docs/inav-signal-path-audit.md:18 already concluded "almost certainly
+# misconfigured ... NOT required for flight" -- and it was never acted on.
+#
+# ⓘ INAV default is ON. This is a deliberate deviation: an adaptive filter with
+#    variable delay is the wrong thing to put in front of a policy that trained
+#    on an instantaneous gyro.
+
+set setpoint_kalman_enabled = OFF
+
+save
+
+# ---------------------------------------------------------------------------
+# NOT changing, and why
+# ---------------------------------------------------------------------------
+# rc_filter_auto = OFF        ⛔ MUST STAY OFF. If ON, the cutoff derives from
+#                             the RC update rate; at our 20 Hz MSP override that
+#                             computes ~7.7 Hz => PT3 group delay ~62 ms on all
+#                             four channels -- comparable to the ENTIRE 81.6 ms
+#                             phase budget 043 exists to attack.
+# rc_filter_lpf_hz = 250      PT3 on all 4 sticks incl. throttle, ~1.9 ms. Real
+#                             but negligible against a 50 ms command step.
+# thr_expo = 0, tpa_rate = 0  throttle curve already linear, TPA already inert.
+# rate_dynamics_* 100/100/0/0 ACRO-only code path but INERT at these values.
+#                             ⚠️ Latent: touching any of the six makes an
+#                             un-modelled setpoint filter appear in the flown
+#                             path and in no sim.
+# servo_pwm_rate = 50         Digital servo (Power HD DSM-44) so 50 Hz is a
+#                             CHOICE, and 200-333 Hz would buy ~7.5 ms. Deferred
+#                             to T046 -- do not move the plant before the bench
+#                             step-response measures it.
+# roll_rate 36 / pitch_rate 24  arm C, matches model maxRate 360/240. Frozen.
+
+# ---------------------------------------------------------------------------
+# After applying
+# ---------------------------------------------------------------------------
+# 1. Pull a fresh CLI dump; replace xiao/inav-hb1.cfg with it (a capture, not
+#    an edit). Confirm the diff is exactly rc_expo and setpoint_kalman_enabled
+#    plus the expected gyro_zero/ins_gravity calibration drift.
+# 2. Bench-verify: re-assert the T051b rate-parity gate (rates 36,24,x) and the
+#    arm-C signature. ⚠️ With expo removed, MID-stick response changes; full
+#    stick does not. So the arm-C full-deflection check will look IDENTICAL --
+#    verify expo took by fitting rcData->rcCommand on a bench blackbox, not by
+#    eye.
+# 3. ⛔ FR-012a: both changes alter what the genome sees. They belong in the
+#    SAME flight as the xiao prefill fix (07ad93b), before any retrain.
