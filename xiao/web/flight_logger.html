@@ -438,17 +438,20 @@
     // is derived from FL_NUM_IN/FL_NUM_OUT rather than written as a literal --
     // the v3 code hardcoded 81/87/105/40 and would have silently decoded the
     // outputs as inputs and the telemetry as outputs against a v4 file.
-    const FL_MAGIC = 0x314C4641, FL_VERSION = 4;
-    const FL_NUM_IN = 45, FL_NUM_OUT = 3, FL_NUM_SCALED = FL_NUM_IN + FL_NUM_OUT + 9;
+    const FL_MAGIC = 0x314C4641, FL_VERSION = 5;
+    const FL_NUM_IN = 45, FL_NUM_OUT = 3, FL_NUM_SCALED = FL_NUM_IN + FL_NUM_OUT + 10;
     // Derived record geometry (must match xiao/include/flight_log_format.h).
     const FL_TICK_IN = 7;                              // type+ts+counter
     const FL_TICK_OUT = FL_TICK_IN + 2 * FL_NUM_IN;    // outputs
     const FL_TICK_TELEM = FL_TICK_OUT + 2 * FL_NUM_OUT;// pos/vel/rabbit
     const FL_TICK_TAIL = FL_TICK_TELEM + 18;           // reset, path, rc[3], valid
-    const FL_TICK_SIZE = FL_TICK_TAIL + 1 + 1 + 6 + 1;
-    const FL_HDR_SCALES = 120;                         // type..tick_ms
+    const FL_TICK_STEP = FL_TICK_TAIL + 9;             // v5: step_score
+    const FL_TICK_SIZE = FL_TICK_TAIL + 1 + 1 + 6 + 1 + 2;
+    const FL_HDR_CONE = 120;                           // v5: 6 cone floats
+    const FL_HDR_SCALES = FL_HDR_CONE + 24;            // type..tick_ms..cone
     const FL_HDR_SIZE = FL_HDR_SCALES + 4 * FL_NUM_SCALED + 4;
     const FL_SCALE_TELEM = FL_NUM_IN + FL_NUM_OUT;     // first telemetry scale slot
+    const FL_SCALE_STEP = FL_SCALE_TELEM + 9;          // v5: step_score scale slot
     const FL_SIZES = { 1: FL_HDR_SIZE, 2: 29, 3: FL_TICK_SIZE, 4: 10, 5: 103, 6: 25 };
     const FL_EVENTS = { 1: 'ARM', 2: 'DISARM', 3: 'ENGAGE', 4: 'DISENGAGE',
                         5: 'FETCH_TIMEOUT', 6: 'LOG_DROP', 7: 'FLASH_FULL',
@@ -492,12 +495,23 @@
           if (magic !== FL_MAGIC) throw new Error('bad magic — not a flight log');
           if (version !== FL_VERSION) throw new Error(
             `format_version ${version} unsupported (decoder is v${FL_VERSION})`);
-          // v3 layout: program[96] at 22, tick_ms at 118, scales at 120
-          const scaleBytes = bytes.subarray(pos + 120, pos + 120 + 4 * FL_NUM_SCALED);
-          if (crc32(scaleBytes) !== dv.getUint32(pos + 120 + 4 * FL_NUM_SCALED, true))
+          // layout: program[96] at 22, tick_ms at 118, v5 cone[6] at 120, scales after
+          const scaleBytes = bytes.subarray(pos + FL_HDR_SCALES, pos + FL_HDR_SCALES + 4 * FL_NUM_SCALED);
+          if (crc32(scaleBytes) !== dv.getUint32(pos + FL_HDR_SCALES + 4 * FL_NUM_SCALED, true))
             throw new Error('scale_table_crc mismatch — refusing to decode');
           scales = [];
-          for (let i = 0; i < FL_NUM_SCALED; i++) scales.push(dv.getFloat32(pos + 120 + 4 * i, true));
+          for (let i = 0; i < FL_NUM_SCALED; i++)
+            scales.push(dv.getFloat32(pos + FL_HDR_SCALES + 4 * i, true));
+          // v5 — the fitness cone this flight was scored against, from the
+          // constants nn2cpp baked into the firmware. Carried so a replay never
+          // depends on an autoc.ini that may have moved since the flight.
+          const cone = {
+            dist_scale_behind:    dv.getFloat32(pos + FL_HDR_CONE +  0, true),
+            dist_scale_ahead:     dv.getFloat32(pos + FL_HDR_CONE +  4, true),
+            cone_angle_deg:       dv.getFloat32(pos + FL_HDR_CONE +  8, true),
+            streak_threshold:     dv.getFloat32(pos + FL_HDR_CONE + 12, true),
+            streak_ramp_sec:      dv.getFloat32(pos + FL_HDR_CONE + 16, true),
+            streak_multiplier_max:dv.getFloat32(pos + FL_HDR_CONE + 20, true) };
           const hex = (o, n) => Array.from(bytes.subarray(pos + o, pos + o + n))
             .map(b => b.toString(16).padStart(2, '0')).join('');
           const progBytes = bytes.subarray(pos + 22, pos + 118);
@@ -505,7 +519,7 @@
           const program = new TextDecoder().decode(
             progEnd < 0 ? progBytes : progBytes.subarray(0, progEnd));
           header = { firmware_id: hex(6, 8), weight_id: hex(14, 8), program,
-                     tick_ms: dv.getUint16(pos + 118, true) };
+                     tick_ms: dv.getUint16(pos + 118, true), cone };
         } else if (t === 2) {                            // EngageHeader
           cur = { engage: {
                     ts: dv.getUint32(pos + 1, true),
@@ -534,6 +548,10 @@
           row.rc_pitch = dv.getUint16(pos + FL_TICK_TAIL + 4, true);
           row.rc_throttle = dv.getUint16(pos + FL_TICK_TAIL + 6, true);
           row.state_valid = dv.getUint8(pos + FL_TICK_TAIL + 8);
+          // v5 — the score the FIRMWARE computed for this tick. Stored, not
+          // re-derived: the segment tangent is not in the log and approximating
+          // it flips the in-streak call on ~1% of ticks.
+          row.step_score = dv.getInt16(pos + FL_TICK_STEP, true) / scales[FL_SCALE_STEP];
           if (cur) cur.ticks.push(row);
         } else if (t === 4) {                            // EventRecord
           const code = dv.getUint8(pos + 5);
@@ -562,6 +580,10 @@
     function showDecodeSummary(d) {
       let out = `decoded v${FL_VERSION}  tick=${d.header.tick_ms}ms  fw=${d.header.firmware_id}  wt=${d.header.weight_id}  breadcrumbs=${d.flightStates}\n`;
       out += `program: ${d.header.program}\n`;
+      const c = d.header.cone;
+      out += `cone: behind=${c.dist_scale_behind} ahead=${c.dist_scale_ahead} ` +
+             `angle=${c.cone_angle_deg}deg streak>=${c.streak_threshold} ` +
+             `ramp=${c.streak_ramp_sec}s multMax=${c.streak_multiplier_max}\n`;
       for (const ev of d.events) {
         const annot = ev.name === 'DISENGAGE_REASON'
           ? `  (${FL_REASONS[ev.value] || '?'})` : '';
@@ -594,7 +616,7 @@
       const cols = ['span_id', 'timestamp_ms', 'tick_counter']
         .concat(FL_INPUT_NAMES, FL_OUTPUT_NAMES, FL_TELEM_NAMES,
                 ['recurrent_reset', 'path_index', 'rc_roll', 'rc_pitch', 'rc_throttle',
-                 'state_valid']);
+                 'state_valid', 'step_score']);
       const lines = [cols.join(',')];
       for (const s of d.spans)
         for (const row of s.ticks)
