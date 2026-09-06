@@ -200,3 +200,65 @@ narrow-range extrapolation, not a gain measurement. `out_roll` (sd 0.465, range 
 (sd 0.654, range 2.0) *are* well-conditioned: roll's 84% of nominal is the errors-in-variables attenuation
 from the 20 Hz ↔ 60 Hz join already described for Sept-1, and throttle's +490 µs/unit against a ±500 band
 is essentially exact.
+
+---
+
+# 043 — bench verification #3 (2026-09-05 evening): pre-flight gate for the re-fly
+
+Flight article `MATEKF722MINI`, INAV `38ff0d29e`, genome gen 800
+(`weight_id=3af8e3ab787b75a5`). Logs: `eval-results/bench-20260905/` — ⚠️ the blackbox card holds **two**
+logs; the bench is **log 2** (29.3 s), log 1 is the 2026-09-05 flight.
+
+Verifies the three changes going into the re-fly: the engage-prefill fix, `rc_expo = 0`, and the gyro
+Kalman OFF — plus the v5 log format.
+
+## Gates
+
+| check | result |
+|---|---|
+| ⭐ **engage prefill (the flight's root cause)** | ✅ **FIXED.** `dist[0..4] = 0.00 m` at tick 0. The bug would have seeded them with ‖origin‖ = **6.13 m** here (162–210 m in flight). All six slots now hold the correct engage geometry. |
+| ⭐ **`rc_expo = 0`** | ✅ **TOOK.** Fitting `rcData → rcCommand` over 1042 pure-ACRO samples: best fit **expo 0**, residual **0.98** roll / **1.24** pitch, against expo20 at 25.88 / 13.68. Yesterday's flight fit expo=20. **The action space is linear again — it now matches the sim.** |
+| **rate parity (T051b)** | ✅ `H rates:36,24,4` vs model `maxRate` 360/240. |
+| **ACRO** | ✅ 1042 samples `ARM\|MSPRCOVERRIDE`; 209 `ARM\|MANUAL\|MSPRCOVERRIDE` = the T057 priming window. |
+| **v5 log format** | ✅ end to end — firmware writes it, `flightlog_decode.py` and the **BLE web downloader** both read it, cone constants shown in the header (`behind=7 ahead=2 angle=45 streak>=0.5 ramp=5s multMax=5`), `step_score` populated. |
+| **loop health** | ✅ 341 ticks, **0** overruns / resyncs / drops, maxLate **11 ms** (was 20), avgLate 0.49 ms. |
+
+⚠️ Verifying expo by measurement was necessary, not pedantic: expo only bends **mid**-stick, so the
+arm-C full-deflection check looks identical either way and would have told us nothing.
+
+## ⭐ Unexpected: the gyro Kalman was costing ~10 ms of loop latency
+
+Same board, same INAV build, same xiao cadence. The only changes were `rc_expo` (a lookup — no CPU cost)
+and `setpoint_kalman_enabled = OFF`:
+
+| xiao MSP pipeline (ms) | fetch min/avg/max | eval | send | **TOTAL** | maxLate |
+|---|---|---|---|---|---|
+| bench 2026-09-04 — Kalman **ON** | 7.3 / **13.0** / 35.4 | 1.1/1.6/10.2 | 3.9/5.7/9.0 | 12.7 / **20.5** / 47.4 | 20 ms |
+| bench 2026-09-05 — Kalman **OFF** | 2.1 / **2.9** / 26.7 | 1.1/1.6/7.4 | 3.9/5.4/9.1 | 7.3 / **9.9** / 37.7 | 11 ms |
+
+⭐ **Sensor→command total: 20.5 → 9.9 ms (−10.6 ms)**, essentially all of it in `fetch` — the MSP
+round-trip to the FC. Mechanism: `gyroKalmanUpdate()` runs per axis at gyro rate on an F722; removing it
+frees enough CPU that the MSP task services the request sooner. ⇒ **~13% of the 81.6 ms phase budget, from
+a change made purely for modelling fidelity.**
+
+⚠️ Strongly suggested, not proven — one bench run with the Kalman toggled back ON would confirm it
+cleanly. Nothing else in the diff plausibly explains a 10 ms MSP round-trip change.
+
+⛔ **Consequence for the sim**: `COMPUTE_LATENCY_MSEC_DEFAULT = 30` (`inputdev_autoc.h:57`, "bench-measured
+fetch 12 + eval 5 + send 12") is now **3× the measured 9.9 ms**. Combined with §10's finding that the sim's
+rate loop is also laggier than real (~150 ms vs 84 ms), the picture is consistent: **the sim is
+systematically slower than the aircraft**, and a policy trained on a sluggish plant flying a snappier one
+is under-damped — which is the 2–5 Hz problem 043 exists to fix. ⇒ Do not bake before this is re-pinned.
+
+## v5 earns its 2 bytes — measured on this log
+
+Logged `step_score` vs reconstructing it from positions (what a v4 log forces):
+
+```
+|error|  median 0.00008   mean 0.00396   p95 0.0113   max 0.637
+in-streak classification disagreements: 2 / 341 = 0.59%
+```
+
+⭐ The tail is exactly as predicted from the sim study (max 0.79, ~1% disagreement). The logged value is
+now ground truth; reconstruction is a lookalike. ⓘ Bench span occupancy 4.4% in-streak — meaningless on a
+static rig (the craft cannot follow), reported only to show the channel is live.
