@@ -6666,6 +6666,12 @@ void printUsage(const char* progName) {
   std::cout << "  " << progName << "                                    # Render sim arenas from S3\n";
   std::cout << "  " << progName << " -x flight_001.bin                 # Play back a xiao flight log\n";
   std::cout << "\n";
-  std::cout << "Note: the binary log carries a format_version; a renderer built before a\n";
-  std::cout << "format change will REJECT a newer log rather than mis-parse it. Rebuild.\n";
+  std::cout << "Note: the binary log carries a format_version and the renderer refuses any\n";
+  std::cout << "mismatch in EITHER direction rather than mis-parse it.\n";
+  std::cout << "  newer log, older renderer -> rebuild.\n";
+  std::cout << "  OLDER log, newer renderer -> the format moved on; replay it with the\n";
+  std::cout << "    matching code, e.g.  git worktree add /tmp/r <pre-bump-commit>\n";
+  std::cout << "    (same convention as a pre-038 dmp). Do NOT write a converter: fields\n";
+  std::cout << "    a newer format records honestly cannot be back-filled without\n";
+  std::cout << "    inventing them. v4 -> v5 (043) is the current boundary.\n";
 }

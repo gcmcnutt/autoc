@@ -576,3 +576,34 @@ Ahead of any `hb1_streamer.xml` change, and ahead of any retrain:
    applied identically in sim (`kCraftServoPwmFrameSec`) per FR-012a discipline.
 3. Model the **NN sensor filtering** (§16) — 21 ms accel, 6.4 ms gyro, currently un-modelled.
 4. Only then revisit aero constants, and prefer the 2nd article per `2c691aa`.
+
+
+---
+
+## ⚠️ Rendering this flight after the v5 log bump (2026-09-05)
+
+The 2026-09-05 flight log is **v4**. The renderer shares `flight_log_format.h`, so once 043 bumped the
+format to v5 it refuses this file:
+
+```
+flight log: format_version 4 unsupported (renderer is v5)
+```
+
+⭐ That is correct behaviour — loud-fail beats mis-parse — but it means **3D playback of this flight needs
+the pre-bump build**. Same convention the dmp path already uses (*"a pre-038 dmp is replayed by checking
+out the matching code"*). `3da6e22` is the last pre-v5 commit:
+
+```bash
+git worktree add /tmp/renderer-v4 3da6e22
+cmake -S /tmp/renderer-v4 -B /tmp/renderer-v4/build
+cmake --build /tmp/renderer-v4/build --target renderer -j8
+/tmp/renderer-v4/build/renderer -x flight-results/flight-20260905/flight_log_2026-09-05T18-39-32_flight_001.bin
+```
+
+ⓘ **The analysis is unaffected.** Every number in this document came from `xiao_ticks.csv` and the decoded
+blackbox CSV, both committed alongside the raw logs. Only the visual playback needs the older binary.
+
+⛔ **Do not write a v4→v5 converter.** It would have to back-fill `step_score` by reconstructing it from
+positions — a value measured to disagree with the firmware's own on **0.59%** of ticks on the bench and up
+to 0.637 absolute — into a field documented as *"as the firmware computed it"*. That is precisely the
+lookalike-vs-recorded confusion v5 exists to end, and it would be invisible to a later reader.
