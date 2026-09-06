@@ -59,7 +59,7 @@ constexpr uint32_t kMagic = 0x314C4641u;
 // table's telemetry bases moved with it. TickRecord and FileHeader both change
 // width, so a v3 file MUST NOT be parsed by a v4 reader — the version check in
 // validateFileHeader is what enforces that.
-constexpr uint8_t kFormatVersion = 4;
+constexpr uint8_t kFormatVersion = 5;  // 043: cone constants + per-tick step_score
 
 enum RecordType : uint8_t {
   kPad = 0x00,          // buffer word-alignment filler — skipped, never emitted
@@ -132,14 +132,15 @@ static_assert(kNumInputs == static_cast<int>(PathgenInput::COUNT),
 // pos (virtual/engage-relative NED m), vel (NED m/s), rabbit (ground-truth
 // target position, virtual NED m — the path-follow "rabbit" the dir/dist
 // inputs were computed against).
-constexpr int kNumScaledFields = kNumInputs + kNumOutputs + 9;
+constexpr int kNumScaledFields = kNumInputs + kNumOutputs + 10;
 // DERIVED — these were literals (40/43/46) sized for a 37-slot input block,
 // which put them 8 fields inside the input region once the NN grew.
 constexpr int kScalePosBase = kNumInputs + kNumOutputs;  // pos_n/e/d
 constexpr int kScaleVelBase = kScalePosBase + 3;         // vel_n/e/d
 constexpr int kScaleRabbitBase = kScaleVelBase + 3;      // rabbit_n/e/d
+constexpr int kScaleStepScoreBase = kScaleRabbitBase + 3;  // v5: step_score
 
-static_assert(kScaleRabbitBase + 3 == kNumScaledFields,
+static_assert(kScaleStepScoreBase + 1 == kNumScaledFields,
               "telemetry bases must tile the scale table exactly");
 
 constexpr float kScaleUnit = 32767.0f;  // [-1,1]-bounded: unit vecs, quat, tanh, outputs
@@ -213,6 +214,10 @@ inline void defaultScaleTable(float out[kNumScaledFields]) {
     out[kScaleVelBase + i] = kScaleSpeed;             // vel (NED m/s)
     out[kScaleRabbitBase + i] = kScalePosM;           // rabbit (virtual NED m)
   }
+  // v5 (043): the objective's own step score, bounded [0,1] by construction
+  // (1/(1 + dist² + angle²)), so kScaleUnit gives 1/32767 resolution — far
+  // finer than the 0.5 streak threshold needs.
+  out[kScaleStepScoreBase] = kScaleUnit;
 }
 
 // Hardening: every slot must be assigned. A zero scale encodes every sample to
@@ -256,6 +261,18 @@ struct FileHeader {
                                        //   truncated if longer) — human-readable identity
                                        //   behind weight_id, e.g. "default:autoc-m1/.../genNNNN.dmp.zst"
   uint16_t tick_ms;                    // control tick (50 at 20 Hz) — rate self-describing
+  // v5 (043): the fitness cone, so a flight log replays its own score without
+  // reading the live autoc.ini. Same reason the dmp carries RecordedRunConfig
+  // (038 P0-B): an ini that drifted after the flight would silently rescore it.
+  // ⚠️ These are the constants BAKED INTO THE FIRMWARE by nn2cpp
+  // (generatedNNProgramConeConstants), i.e. the ones the flown genome trained
+  // against — not whatever autoc.ini says today.
+  float cone_dist_scale_behind;        // m
+  float cone_dist_scale_ahead;         // m
+  float cone_angle_deg;                // half-decay angle from the tail-chase line
+  float cone_streak_threshold;         // min stepPoints to hold a streak
+  float cone_streak_ramp_sec;          // seconds to the max multiplier
+  float cone_streak_multiplier_max;
   float scales[kNumScaledFields];      // the quantization table used by THIS file
   uint32_t scale_table_crc;            // crc32 over `scales` bytes
 };
@@ -285,6 +302,29 @@ struct TickRecord {
   int8_t path_index;               // selected path (0-5) this span
   uint16_t rc_sent[3];             // raw MSP channel values sent (roll, pitch, throttle)
   uint8_t state_valid;             // MSP2_AUTOC_STATE fetch success this tick
+  // v5 (043): the objective's step score for THIS tick, as the firmware
+  // computed it (scale kScaleStepScoreBase).
+  //
+  // ⭐ Why this is stored and not derived. Everything else the score needs —
+  // craft position, rabbit position, the cone constants above — is already in
+  // the log, but the SEGMENT TANGENT is not, and reconstructing it from
+  // successive rabbit positions is an approximation. Measured against the sim's
+  // recorded stpPt over 12,590 ticks: median error 0.005 but p95 0.029, max
+  // 0.79, 2.2% of ticks beyond 0.05, and **0.96% of ticks flip the in-streak
+  // classification**. The renderer's contract is that its number IS the
+  // recorded fitness, not a lookalike (renderer.cc replayScore) — a 1%
+  // disagreement breaks that.
+  //
+  // ⓘ The streak state and multiplier are deliberately NOT stored: they are a
+  // deterministic accumulator over step_score given the threshold and ramp
+  // above, so they reconstruct EXACTLY. Log what cannot be derived; derive the
+  // rest.
+  //
+  // ⚠️ SEMANTICS ARE MODE-SPECIFIC. In pathgen/M1 the rabbit is generated
+  // onboard and is GROUND TRUTH, so this is the true score. A future tracker/M2
+  // flight scores against an ESTIMATED target position — a different quantity.
+  // Do not pool them; give M2 its own field or record both.
+  int16_t step_score;
 };
 
 struct EventRecord {
@@ -346,9 +386,12 @@ static_assert(sizeof(TickRecord) * kBudgetTicks <= (kFlashLogRegionBytes * 7u) /
               "70% of the flash log region. Either shrink the record or "
               "re-argue the flight-duration budget — do NOT just raise this.");
 static_assert(sizeof(TickRecord) ==
-                  1 + 4 + 2 + 2 * kNumInputs + 2 * kNumOutputs + 18 + 1 + 1 + 6 + 1,
+                  1 + 4 + 2 + 2 * kNumInputs + 2 * kNumOutputs + 18 + 1 + 1 + 6 + 1
+                  + 2 /* v5 step_score */,
               "TickRecord must be packed (no compiler padding)");
-static_assert(sizeof(FileHeader) == 1 + 4 + 1 + 8 + 8 + 96 + 2 + 4 * kNumScaledFields + 4,
+static_assert(sizeof(FileHeader) == 1 + 4 + 1 + 8 + 8 + 96 + 2
+                  + 6 * 4 /* v5 cone constants */
+                  + 4 * kNumScaledFields + 4,
               "FileHeader must be packed");
 static_assert(sizeof(EngageHeader) == 1 + 4 + 2 + 12 + 4 + 4 + 2,
               "EngageHeader must be packed");
@@ -373,9 +416,14 @@ inline float decodeScaled(int16_t raw, float scale) {
   return static_cast<float>(raw) / scale;
 }
 
+struct ConeConstantsLog {
+  float distScaleBehind, distScaleAhead, coneAngleDeg;
+  float streakThreshold, streakRampSec, streakMultiplierMax;
+};
+
 inline void initFileHeader(FileHeader& h, const uint8_t firmware_id[8],
                            const uint8_t weight_id[8], const char* program,
-                           uint16_t tick_ms) {
+                           uint16_t tick_ms, const ConeConstantsLog& cone) {
   memset(&h, 0, sizeof(h));
   h.type = kFileHeader;
   h.magic = kMagic;
@@ -385,6 +433,12 @@ inline void initFileHeader(FileHeader& h, const uint8_t firmware_id[8],
   // NUL-padded via the memset; silently truncated to 95 chars + NUL.
   strncpy(h.program, program, sizeof(h.program) - 1);
   h.tick_ms = tick_ms;
+  h.cone_dist_scale_behind    = cone.distScaleBehind;
+  h.cone_dist_scale_ahead     = cone.distScaleAhead;
+  h.cone_angle_deg            = cone.coneAngleDeg;
+  h.cone_streak_threshold     = cone.streakThreshold;
+  h.cone_streak_ramp_sec      = cone.streakRampSec;
+  h.cone_streak_multiplier_max= cone.streakMultiplierMax;
   defaultScaleTable(h.scales);
   h.scale_table_crc = crc32(h.scales, sizeof(h.scales));
 }
@@ -407,6 +461,7 @@ inline ValidateResult validateFileHeader(const FileHeader& h) {
 inline void encodeTick(const float inputs[kNumInputs],
                        const float outputs[kNumOutputs], const float pos[3],
                        const float vel[3], const float rabbit[3],
+                       float step_score,
                        const float scales[kNumScaledFields], TickRecord& rec) {
   for (int i = 0; i < kNumInputs; i++)
     rec.inputs[i] = encodeScaled(inputs[i], scales[i]);
@@ -417,6 +472,7 @@ inline void encodeTick(const float inputs[kNumInputs],
     rec.vel[i] = encodeScaled(vel[i], scales[kScaleVelBase + i]);
     rec.rabbit[i] = encodeScaled(rabbit[i], scales[kScaleRabbitBase + i]);
   }
+  rec.step_score = encodeScaled(step_score, scales[kScaleStepScoreBase]);
 }
 
 inline void decodeTick(const TickRecord& rec, const float scales[kNumScaledFields],

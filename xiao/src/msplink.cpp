@@ -28,6 +28,11 @@ static std::vector<Path> flight_path;
 static AircraftState aircraft_state;
 static Path gp_path_segment; // Current path segment for NN evaluator
 
+// 043 v5 log — step score for the tick currently being evaluated. Written in
+// the observation block, read by the flightLogTick call at the end of the same
+// tick; not state that survives a tick.
+static float g_tickStepScore = 0.0f;
+
 // Test origin anchoring (captured at autoc enable; aircraft_state is expressed relative to this origin)
 static gp_vec3 test_origin_offset(0.0f, 0.0f, 0.0f);
 static bool test_origin_set = false;
@@ -481,6 +486,13 @@ static void mspUpdateNavControl()
           1.0 /* multiplier unused: raw step score only, as in the sim */);
 
       gp_vec3 scoreGradBody = gp_vec3::Zero();
+      // 043 v5 log — the score this tick, hoisted so flightLogTick can STORE it
+      // rather than have the desktop reader re-derive it. The segment tangent
+      // below is not in the log, and reconstructing it from successive rabbit
+      // positions flips the in-streak call on ~1% of ticks (see
+      // flight_log_format.h TickRecord::step_score). 0.0 when there is no
+      // active segment, which is the same "no score" the sim records.
+      g_tickStepScore = 0.0f;
       const int segIdx = current_path_index;
       if (segIdx >= 0 && segIdx < (int)flight_path.size()) {
         gp_vec3 rabbitSeg = flight_path[segIdx].start;
@@ -494,6 +506,7 @@ static void mspUpdateNavControl()
         const double along = offset.dot(segTangent);
         const double lateralDist = (offset - along * segTangent).norm();
         const double stepScore = scorer.decomposeStepScore(along, lateralDist).score;
+        g_tickStepScore = static_cast<float>(stepScore);
 
         // One accumulator for the tick, advanced with the wall-clock interval
         // (ms-based so a cadence change re-derives rather than rescales).
@@ -565,7 +578,7 @@ static void mspUpdateNavControl()
     const float rabbit_t[3] = {(float)targetPos.x(), (float)targetPos.y(), (float)targetPos.z()};
     flightLogTick(current_time, in, out, pos_t, vel_t, rabbit_t, nn_warmup_tick,
                   (int8_t)selected_path_index, rc_sent,
-                  state.autoc_state_valid);
+                  state.autoc_state_valid, g_tickStepScore);
     nn_warmup_tick = false;
   }
 }
@@ -688,8 +701,16 @@ void mspUpdateState()
         // 039 US3: FileHeader opens the flight file (identity + scale table);
         // span ids restart per flight.
         span_id_counter = 0;
+        // 043 v5 — the log carries the cone it was scored against, from the
+        // constants nn2cpp BAKED IN, so a replay never depends on the live ini.
+        const autoc::eval::ConeConstants& hdrCone = generatedNNProgramConeConstants();
+        const flightlog::ConeConstantsLog coneLog{
+            (float)hdrCone.distScaleBehind, (float)hdrCone.distScaleAhead,
+            (float)hdrCone.coneAngleDeg, (float)hdrCone.streakThreshold,
+            (float)hdrCone.streakRampSec, (float)hdrCone.streakMultiplierMax};
         flightLogBeginFile(generatedNNFirmwareId, generatedNNWeightId,
-                           generatedNNProgramSource, MSP_LOOP_INTERVAL_MSEC);
+                           generatedNNProgramSource, MSP_LOOP_INTERVAL_MSEC,
+                           coneLog);
         flightLogEvent(flightlog::kEventArm, flashLoggerGetCurrentFlightNumber());
         // v3 arm→disarm self-containment: INAV clock anchor pair + initial
         // failsafe/servo states (transitions are logged as they happen).

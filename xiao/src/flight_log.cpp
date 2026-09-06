@@ -41,9 +41,10 @@ static void flushDropNotice(uint32_t timestamp_ms) {
 }
 
 void flightLogBeginFile(const uint8_t firmware_id[8], const uint8_t weight_id[8],
-                        const char* program, uint16_t tick_ms) {
+                        const char* program, uint16_t tick_ms,
+                        const ConeConstantsLog& cone) {
   FileHeader h;
-  initFileHeader(h, firmware_id, weight_id, program, tick_ms);
+  initFileHeader(h, firmware_id, weight_id, program, tick_ms, cone);
   memcpy(g_scales, h.scales, sizeof(g_scales));
   g_scalesInit = true;
   g_pendingDropNotice = 0;
@@ -89,7 +90,8 @@ uint16_t flightLogTick(uint32_t timestamp_ms, const float inputs[kNumInputs],
                        const float outputs[kNumOutputs], const float pos[3],
                        const float vel[3], const float rabbit[3],
                        bool recurrent_reset, int8_t path_index,
-                       const uint16_t rc_sent[3], bool state_valid) {
+                       const uint16_t rc_sent[3], bool state_valid,
+                       float step_score) {
   const uint16_t counter = g_tickCounter++;
   if (!g_scalesInit) {
     // FileHeader never got written (flash uninitialized) — nothing to encode
@@ -102,7 +104,7 @@ uint16_t flightLogTick(uint32_t timestamp_ms, const float inputs[kNumInputs],
   rec.type = kTick;
   rec.timestamp_ms = timestamp_ms;
   rec.tick_counter = counter;
-  encodeTick(inputs, outputs, pos, vel, rabbit, g_scales, rec);
+  encodeTick(inputs, outputs, pos, vel, rabbit, step_score, g_scales, rec);
   rec.recurrent_reset = recurrent_reset ? 1 : 0;
   rec.path_index = path_index;
   rec.rc_sent[0] = rc_sent[0];

@@ -27,6 +27,10 @@
 
 #include "flight_log_format.h"
 
+// 043 v5 — the fitness cone the header now carries. Values mirror autoc.ini so
+// a failure reads against the real numbers rather than placeholders.
+static const flightlog::ConeConstantsLog kTestCone{7.0f, 2.0f, 45.0f, 0.5f, 5.0f, 5.0f};
+
 using namespace flightlog;
 
 namespace {
@@ -43,7 +47,8 @@ TEST(FlightLogFormat, TickRecordBudget) {
   // could only be "fixed" by raising a magic number, so the contract is now
   // stated as the FLIGHT-DURATION constraint the header enforces.
   EXPECT_EQ(sizeof(TickRecord),
-            1u + 4u + 2u + 2u * kNumInputs + 2u * kNumOutputs + 18u + 1u + 1u + 6u + 1u)
+            1u + 4u + 2u + 2u * kNumInputs + 2u * kNumOutputs + 18u + 1u + 1u + 6u + 1u
+                + 2u /* v5 step_score */)
       << "packed layout grew padding, or kNumInputs drifted from the NN vector";
   // Two 4-minute spans at 20 Hz must fit in 70% of the flash log region.
   EXPECT_LE(sizeof(TickRecord) * kBudgetTicks, (kFlashLogRegionBytes * 7u) / 10u);
@@ -127,7 +132,7 @@ TEST(FlightLogFormat, RoundTripWithinQuantizationStep) {
   TickRecord rec;
   std::memset(&rec, 0, sizeof(rec));
   rec.type = kTick;
-  encodeTick(inputs, outputs, pos, vel, rabbit, t.scales, rec);
+  encodeTick(inputs, outputs, pos, vel, rabbit, /*step_score=*/0.375f, t.scales, rec);
 
   float back_in[kNumInputs], back_out[kNumOutputs];
   float back_pos[3], back_vel[3], back_rabbit[3];
@@ -153,7 +158,7 @@ TEST(FlightLogFormat, FileHeaderValidatesCleanAndRejectsVersionBump) {
   uint8_t fw[8] = {1, 2, 3, 4, 5, 6, 7, 8};
   uint8_t wt[8] = {9, 10, 11, 12, 13, 14, 15, 16};
   FileHeader h;
-  initFileHeader(h, fw, wt, "test:program/gen0000.dmp.zst", /*tick_ms=*/50);
+  initFileHeader(h, fw, wt, "test:program/gen0000.dmp.zst", /*tick_ms=*/50, kTestCone);
 
   EXPECT_EQ(validateFileHeader(h), ValidateResult::kOk);
   EXPECT_EQ(h.magic, kMagic);
@@ -179,7 +184,7 @@ TEST(FlightLogFormat, FileHeaderValidatesCleanAndRejectsVersionBump) {
 TEST(FlightLogFormat, ScaleTableCrcLoudFail) {
   uint8_t fw[8] = {0}, wt[8] = {0};
   FileHeader h;
-  initFileHeader(h, fw, wt, "test:program/gen0000.dmp.zst", 50);
+  initFileHeader(h, fw, wt, "test:program/gen0000.dmp.zst", 50, kTestCone);
   ASSERT_EQ(validateFileHeader(h), ValidateResult::kOk);
 
   // Corrupt one scale entry: the stored CRC no longer matches.
@@ -188,7 +193,7 @@ TEST(FlightLogFormat, ScaleTableCrcLoudFail) {
 
   // Corrupt the CRC itself over an intact table: same loud failure.
   FileHeader h2;
-  initFileHeader(h2, fw, wt, "test:program/gen0000.dmp.zst", 50);
+  initFileHeader(h2, fw, wt, "test:program/gen0000.dmp.zst", 50, kTestCone);
   h2.scale_table_crc ^= 0xDEADBEEF;
   EXPECT_EQ(validateFileHeader(h2), ValidateResult::kBadScaleCrc);
 }
@@ -219,7 +224,7 @@ TEST(FlightLogFormat, SaturationNeverWraps) {
 TEST(FlightLogFormat, StreamWalkSkipsPaddingAndFailsLoudOnUnknownType) {
   uint8_t fw[8] = {0xAA}, wt[8] = {0xBB};
   FileHeader fh;
-  initFileHeader(fh, fw, wt, "test:program/gen0000.dmp.zst", 50);
+  initFileHeader(fh, fw, wt, "test:program/gen0000.dmp.zst", 50, kTestCone);
 
   EngageHeader eh;
   std::memset(&eh, 0, sizeof(eh));
@@ -241,7 +246,7 @@ TEST(FlightLogFormat, StreamWalkSkipsPaddingAndFailsLoudOnUnknownType) {
   tick.timestamp_ms = 120050;
   tick.tick_counter = 0;
   tick.recurrent_reset = 1;
-  encodeTick(in, out, pos, vel, rabbit, t.scales, tick);
+  encodeTick(in, out, pos, vel, rabbit, /*step_score=*/0.375f, t.scales, tick);
 
   EventRecord ev;
   ev.type = kEvent;

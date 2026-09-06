@@ -22,7 +22,7 @@ import struct
 import sys
 import zlib
 
-FORMAT_VERSION = 4
+FORMAT_VERSION = 5
 MAGIC = 0x314C4641  # "AFL1" little-endian
 
 # Record type bytes (flight_log_format.h RecordType)
@@ -49,17 +49,18 @@ REASON_NAMES = {
 # include/autoc/nn/nn_inputs.h and kNumInputs in xiao/include/flight_log_format.h
 # — INPUT_NAMES below is the readable copy of that enum and is length-checked.
 NUM_INPUTS, NUM_OUTPUTS = 45, 3
-NUM_SCALED = NUM_INPUTS + NUM_OUTPUTS + 9  # v2: + pos[3], vel[3], rabbit[3]
+NUM_SCALED = NUM_INPUTS + NUM_OUTPUTS + 10  # v2: + pos[3], vel[3], rabbit[3]; v5: + step_score
 # Telemetry scale-table bases, DERIVED (were literal 40/43/46, sized for 37).
 SCALE_POS_BASE = NUM_INPUTS + NUM_OUTPUTS
 SCALE_VEL_BASE = SCALE_POS_BASE + 3
 SCALE_RABBIT_BASE = SCALE_VEL_BASE + 3
+SCALE_STEP_SCORE_BASE = SCALE_RABBIT_BASE + 3  # v5
 
 # Wire structs — little-endian, packed (raw-ok: hardware byte layout; this
 # decode boundary is where values return to float domain).
-FILE_HDR = struct.Struct(f"<BIB8s8s96sH{NUM_SCALED}fI")  # 352 B at v4
+FILE_HDR = struct.Struct(f"<BIB8s8s96sH6f{NUM_SCALED}fI")  # v5: +6 cone floats
 ENGAGE_HDR = struct.Struct("<BIH3fffh")       # 29 B
-TICK_REC = struct.Struct(f"<BIH{NUM_INPUTS}h3h3h3h3hBb3HB")  # 130 B at v4
+TICK_REC = struct.Struct(f"<BIH{NUM_INPUTS}h3h3h3h3hBb3HBh")  # v5: +step_score
 EVENT_REC = struct.Struct("<BIBI")            # 10 B
 SUMMARY_REC = struct.Struct("<BIH5I13I3I2II")  # 103 B
 FLIGHT_REC = struct.Struct("<BI3h3h4h")       # 25 B armed-not-engaged breadcrumb
@@ -152,14 +153,17 @@ def decode(blob):
         if t == T_FILE:
             f = FILE_HDR.unpack(raw)
             (_, magic, version, fw_id, wt_id, program, tick_ms), rest = f[:7], f[7:]
-            scale_vals, crc = rest[:NUM_SCALED], rest[NUM_SCALED]
+            cone_vals = rest[:6]                      # v5 fitness cone
+            scale_vals, crc = rest[6:6 + NUM_SCALED], rest[6 + NUM_SCALED]
             if magic != MAGIC:
                 fail(f"bad magic 0x{magic:08x} (want 0x{MAGIC:08x}) — not a flight log")
             if version != FORMAT_VERSION:
                 fail(f"format_version {version} not supported (decoder is v{FORMAT_VERSION}) "
                      f"— refusing best-effort parse")
             # CRC over the scale floats exactly as stored (little-endian bytes)
-            scale_bytes = raw[120:120 + 4 * NUM_SCALED]  # program[96] precedes scales
+            # program[96] then tick_ms(2) then the 6 v5 cone floats precede scales
+            _scale_off = 1 + 4 + 1 + 8 + 8 + 96 + 2 + 24
+            scale_bytes = raw[_scale_off:_scale_off + 4 * NUM_SCALED]
             if zlib.crc32(scale_bytes) & 0xFFFFFFFF != crc:
                 fail("scale_table_crc mismatch — header corrupt; refusing to decode")
             scales = scale_vals
@@ -169,6 +173,17 @@ def decode(blob):
                 "weight_id": wt_id.hex(),
                 "program": program.split(b"\x00", 1)[0].decode(errors="replace"),
                 "tick_ms": tick_ms,
+                # v5 — the cone the flight was scored against, from the constants
+                # nn2cpp baked into the firmware. Replay uses THESE, never the
+                # live autoc.ini, which may have drifted since the flight.
+                "cone": {
+                    "dist_scale_behind": cone_vals[0],
+                    "dist_scale_ahead": cone_vals[1],
+                    "cone_angle_deg": cone_vals[2],
+                    "streak_threshold": cone_vals[3],
+                    "streak_ramp_sec": cone_vals[4],
+                    "streak_multiplier_max": cone_vals[5],
+                },
             }
 
         elif t == T_ENGAGE:
@@ -205,6 +220,7 @@ def decode(blob):
             reset, path_idx = f[_t + 9], f[_t + 10]
             rc = f[_t + 11:_t + 14]
             valid = f[_t + 14]
+            step_score_q = f[_t + 15]  # v5
             row = {"timestamp_ms": ts, "tick_counter": counter}
             if current is not None:
                 row["span_id"] = current["engage"]["span_id"]
@@ -221,6 +237,13 @@ def decode(blob):
                 "recurrent_reset": reset, "path_index": path_idx,
                 "rc_roll": rc[0], "rc_pitch": rc[1], "rc_throttle": rc[2],
                 "state_valid": valid,
+                # v5 — the score the FIRMWARE computed for this tick, not a
+                # desktop re-derivation. The segment tangent it used is not in
+                # the log, so reconstructing flips the in-streak call on ~1% of
+                # ticks. In pathgen/M1 the rabbit is ground truth, so this is
+                # the true score; a tracker/M2 flight would be scoring against
+                # an ESTIMATE and must not be pooled with it.
+                "step_score": step_score_q / scales[SCALE_STEP_SCORE_BASE],
             })
             (current["ticks"] if current is not None else spans_orphan(spans)).append(row)
 
@@ -332,7 +355,7 @@ def write_csv(spans, path):
     cols = (["span_id", "timestamp_ms", "tick_counter"] + INPUT_NAMES + OUTPUT_NAMES
             + TELEM_NAMES
             + ["recurrent_reset", "path_index", "rc_roll", "rc_pitch", "rc_throttle",
-               "state_valid"])
+               "state_valid", "step_score"])
     with open(path, "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols)
         w.writeheader()

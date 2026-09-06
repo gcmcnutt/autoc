@@ -19,7 +19,8 @@
 // flashLoggerBeginFlight() succeeds (arm transition). program = nn2cpp
 // program-source string (v3 provenance; truncated to 95 chars in the header).
 void flightLogBeginFile(const uint8_t firmware_id[8], const uint8_t weight_id[8],
-                        const char* program, uint16_t tick_ms);
+                        const char* program, uint16_t tick_ms,
+                        const flightlog::ConeConstantsLog& cone);
 
 // Sparse console-class event into the log (also independently logPrint'd to
 // the console by the caller when human-relevant).
@@ -40,7 +41,8 @@ uint16_t flightLogTick(uint32_t timestamp_ms, const float inputs[flightlog::kNum
                        const float outputs[flightlog::kNumOutputs],
                        const float pos[3], const float vel[3], const float rabbit[3],
                        bool recurrent_reset, int8_t path_index,
-                       const uint16_t rc_sent[3], bool state_valid);
+                       const uint16_t rc_sent[3], bool state_valid,
+                       float step_score);
 
 // Span end: caller fills the loopStats/pipeline fields; this layer stamps
 // type/span bookkeeping + the ticks_logged/ticks_dropped counters and writes.
