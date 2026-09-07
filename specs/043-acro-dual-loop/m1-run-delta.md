@@ -1,0 +1,74 @@
+# What changes for the next M1 bake, versus 043-t2
+
+**Baseline**: `043-t2` = `autoc-m1/autoc-9223370248704297747-2026-08-31T04:27:58.060Z/`, gen 800,
+fitness −88,013.84, flown 2026-09-05 and 2026-09-06.
+See [artifacts/MANIFEST.md](artifacts/MANIFEST.md) for its full pinning.
+
+⛔ **Every item below is determinism-affecting or plant-affecting.** The next run is **not** comparable
+tick-for-tick with t2, and is not meant to be — these are fidelity corrections, not tuning. Judge it on
+fixed-eval and per-axis measures, per [project_late_run_fitness_interpretation](../../.claude/projects/-home-gmcnutt-autoc/memory/project_late_run_fitness_interpretation.md).
+
+---
+
+## A. Sim plant — DONE, in the tree now
+
+| # | change | was | now | evidence |
+|---|---|---|---|---|
+| A1 | `COMPUTE_LATENCY_MSEC_DEFAULT` | **30 ms** | **10 ms** | flight-measured 2026-09-05: fetch 2.9 + eval 1.6 + send 5.4 = **9.9 ms**. The old value predated current firmware. |
+| A2 | NN **gyro** input | raw FDM | **25 Hz PT1** (~6.4 ms) | `gyro_main_lpf_hz = 25`; the article filters before the policy sees it |
+| A3 | NN **accel** input | raw | **15 Hz biquad** (~21.2 ms) | `acc_lpf_hz = 15`; 42% of a 20 Hz tick on the 041 P5-1 channel |
+
+⭐ A1–A3 all push the same way: the sim **sees later and acts sooner** than it used to, which is the
+direction three independent measurements demanded (§6 latency, §7 rate-loop, §9 peak timing).
+
+## B. Aircraft config — APPLIED to the FC, ⚠️ NOT yet in the config of record
+
+| # | change | status |
+|---|---|---|
+| B1 | `rc_expo` **20 → 0** | ✅ applied; 09-05 bench fits expo **0** (residual 0.98/1.24 vs 25.9/13.7). Makes the *aircraft* linear, matching what the sim always assumed. |
+| B2 | `setpoint_kalman_enabled` **ON → OFF** | ✅ applied; removed an adaptive filter from both the rate loop and the NN's gyro. ⭐ Also bought **10.6 ms** of loop latency, which is what A1 records. |
+
+⛔ **`xiao/inav-hb1.cfg` still reads `rc_expo = 20` and Kalman `ON`.** The changeset was applied to the FC
+but **the fresh dump was never pulled**, so the config of record is stale — the exact failure T051a fixed
+two weeks ago. ⇒ **Pull a dump before the bake**, or the run's manifest will describe an aircraft that
+does not exist.
+
+## C. Firmware — DONE
+
+| # | change | note |
+|---|---|---|
+| C1 | engage-prefill frame fix | the 2026-09-05 root cause: 5 of 6 history slots seeded with ‖origin‖ (162–210 m) for 800 ms into a fresh recurrent state |
+| C2 | flight log **v4 → v5** | cone constants in header + `step_score` per tick; all three readers updated |
+
+⚠️ C1 changes what the *policy* sees at engage but **not** what training sees — the sim never had the bug.
+So it improves flight, not the bake.
+
+---
+
+## D. ⛔ Open, and gating in my view
+
+| # | item | why it gates |
+|---|---|---|
+| D1 | **Pitch peak timing**: sim peaks at **85 ms**, real at **133–166 ms** | The one *measured* plant defect still unfixed. Candidates: `Cmq`, `Cm_alpha`, pitch inertia. |
+| D2 | **Second airframe** | Everything rests on `n = 1` with a **known-asymmetric wing and nose-heavy CG**. The stall cycle is exactly the kind of thing that is an *article* property. A bake tuned to this article may be tuned to its defects. |
+| D3 | Fresh `inav-hb1.cfg` dump | see B — cheap, and the manifest depends on it |
+
+⚠️ **My read**: D1 and D2 are the difference between a bake that closes 043 and one that has to be
+re-run. A1–A3 are unambiguous and worth having regardless, but the *pitch* channel — the one 043 exists
+to fix — still has a measured, unexplained 50–80 ms timing error, and we have one aircraft's word for
+what "correct" even looks like. ⭐ **The second wing is cheaper than an 800-generation bake** (~43 h), and
+it is the only thing that can tell us whether the stall cycle is the design or the article.
+
+⇒ Recommendation: **fly the second article first**, then decide D1 with two data points, then bake.
+If the schedule does not allow that, bake with A+B+C and treat the pitch result as provisional — but
+record in the manifest that it was baked against a plant with a known 50–80 ms pitch-timing error.
+
+## E. Not changing, and why
+
+- **Rate-loop gains, `pidSumLimit`, filters, `servo_pwm_rate`, rates 36/24** — the config audit found the
+  sim is a **parameter-exact replica** of the FC rate loop. Nothing to fix.
+- **Roll model** — within ~17% gain and ~10% rise. Leave it.
+- **`craftServoSlew` / clamp `[16,32]`** — T046's bench step-response never ran, so the 0.055-vs-0.070
+  s/60° conflict is still open. ⛔ Do **not** move these on an in-flight guess; per `2c691aa` this is a
+  fine-tune wanting the second article.
+- **`rc_filter_auto`** — stays OFF. At 20 Hz MSP it would compute ~7.7 Hz / 62 ms.
