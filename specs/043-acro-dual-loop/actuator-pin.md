@@ -180,3 +180,44 @@ the trace says *why*, not just *that*.
 + slew); the sim applies its own servo model. So compare **command → body rate end-to-end** on both sides
 — the composite — exactly as §1/§2 did. Splitting actuator from airframe is what the bench rig was for and
 is not what this comparison needs.
+
+
+---
+
+# ⛔ CORRECTION (2026-09-07, later) — §2's frequency table was window-limited
+
+Re-running §1/§2 through the reusable tool
+([`step_response.py`](step_response.py), which now runs on **both** sides) exposed a
+methodology fault in the table above and in its commit message.
+
+**What was wrong.** §2 used a 0.60 s post-step window and read the frequency from
+peak→trough→peak. For three of the four bands the trough was **sitting on the window edge**, so the
+"period" was an artefact of where the window ended, not a measured ring. Widened to 0.90 s, those bands
+show the response still decaying with no second peak at all.
+
+⚠️ **A second confound, also mine**: past ~0.5 s the averaged real response mixes in the **pilot releasing
+the stick**. The real steps had no controlled hold duration. So anything read from the late part of that
+average is suspect on principle. (The sim test controls this exactly — `holdSec = 0.8` — which is one more
+reason the sim side is the better instrument.)
+
+**What survives, and is now measured robustly.** For a second-order step, time to first peak is
+`t_pk = π/ω_d`, so `ω_d = π/t_pk`. That needs **only the peak** — the single most reliable feature here —
+and is immune to both the window edge and the stick release:
+
+| band | n | peak | t_peak | **f = π/t_pk** | peak-to-peak (corroboration) |
+|---|---:|---:|---:|---:|---|
+| slow <12 | 12 | 52.6 | 166 ms | **3.01 Hz** | — (no ring in window) |
+| mid 12–17 | 14 | 48.5 | 149 ms | **3.35 Hz** | 2.87 Hz ✅ agrees within 15% |
+| fast ≥17 | 13 | 64.2 | 133 ms | **3.76 Hz** | — (no ring in window) |
+
+⭐ **The headline stands and is now better supported**: pitch overshoots hard (peak at 133–166 ms, well
+inside any plausible hold, so this part was never at risk) and the short-period frequency **rises
+monotonically with airspeed, 3.01 → 3.35 → 3.76 Hz** — the trend physics demands. The one band with an
+independent estimate agrees.
+
+⛔ **What is NOT established**: a damping ratio. The ζ ≈ 0.18 quoted in §2 came from a log-decrement on the
+degenerate fast-band trough and should be **disregarded**. Damping needs either the sim (where the hold is
+controlled) or a real sortie with held steps.
+
+⇒ §3's conclusion is unchanged — the NN excites the airframe's own ~3 Hz mode — and §3's recommended sim
+comparison is now the way to pin the damping the real data cannot.
