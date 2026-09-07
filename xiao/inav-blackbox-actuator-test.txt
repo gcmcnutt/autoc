@@ -1,0 +1,79 @@
+# INAV blackbox config for the T046-alt in-flight actuator identification
+# Target: MATEKF722MINI.  ⛔ TEST-ONLY — revert block at the bottom.
+# Rationale: specs/043-acro-dual-loop/T046-alt-inflight.md
+#
+# Measured loop = 525 us (1905 Hz actual), so logged rate = 1905 / rate_denom.
+# Today: denom 32 -> 59 Hz, 105 B/frame, 8.4 kB/s total, 96.87% of iterations dropped.
+
+# ---------------------------------------------------------------------------
+# 1. STRIP the field set — keep only what a step response needs
+# ---------------------------------------------------------------------------
+# Blackbox is DELTA-ENCODED: constant/zero fields (PID terms in MANUAL,
+# temperatures, flags) are nearly free. What costs is what changes every frame.
+# These six groups are the active ones — ~33 of 92 fields, est. ~58 of 105 B.
+
+blackbox -NAV_POS      # 18 fields, the single biggest — navPos/navVel/navTgt/EPH/EPV
+blackbox -MAG          #  3 fields
+blackbox -QUAT         #  4 fields
+blackbox -RC_DATA      #  4 fields — RC_COMMAND (post-expo/deadband) is the one we want
+blackbox -MOTORS       #  1 field
+blackbox -GYRO_RAW     #  3 extra — gyroADC is core and is the as-flown filtered signal
+
+# KEPT, and why:
+#   ACC          raw accelerometer — half the point of the test
+#   SERVOS       servo[0..1] — the elevon command
+#   RC_COMMAND   the pilot's step input
+#   (core)       time, gyroADC[0..2], flightModeFlags, BaroAlt, vbat
+
+# ---------------------------------------------------------------------------
+# 2. RATE — start here, and qualify on the bench before flying
+# ---------------------------------------------------------------------------
+set blackbox_rate_denom = 4
+save
+
+# rate = 1905 / denom.  Estimated stripped frame ~47-55 B.
+#
+#   denom | rate    | est. kB/s | vs today's PROVEN 8.4 kB/s
+#   ------+---------+-----------+---------------------------
+#     32  |  59 Hz  |   ~3      | 0.4x   (today's set = 8.4)
+#     16  | 119 Hz  |   ~6      | 0.7x
+#      8  | 238 Hz  |  ~12      | 1.4x   <- safe fallback
+#      4  | 476 Hz  |  ~24      | 2.8x   <- START HERE
+#      2  | 953 Hz  |  ~48      | 5.7x   <- probably too much for SPIFLASH
+#
+# ⭐ Why 476 Hz and not 238: the binding requirement is DEAD-TIME resolution.
+#    Servo dead time is 0-20 ms (the 50 Hz PWM latch). At 238 Hz that is only
+#    ~5 samples across the window; at 476 Hz it is ~10. Slew and settling are
+#    well resolved either way (full-span transit is 82-105 ms).
+
+# ---------------------------------------------------------------------------
+# 3. BENCH QUALIFICATION — ~30 min, before the flight
+# ---------------------------------------------------------------------------
+# ⛔ blackbox_device = SPIFLASH is bandwidth-limited (page-program stalls, not
+#    capacity). Do NOT guess the ceiling — it is self-diagnosing.
+#
+#   for denom in 4, 8 (and 2 if you are curious):
+#     - set blackbox_rate_denom = <n>; save
+#     - arm on the bench WITH THE MOTOR RUNNING at flight-ish throttle
+#       (props off or restrained) so the FC is realistically loaded
+#     - log ~30 s, disarm, download, decode
+#     - read: "Data rate", "frames failed to decode", bytes/frame
+#
+# ⭐ Fly ONE NOTCH BELOW the first setting that shows losses.
+# ⓘ Today already shows 4-5 failed frames per flight (0.04%), so the bar is
+#    "no worse than today and no gaps", not zero.
+
+# ---------------------------------------------------------------------------
+# 4. ⛔ REVERT — before any tracking / NN flight
+# ---------------------------------------------------------------------------
+# NAV_POS and QUAT are what the sim-vs-real position and attitude comparison
+# rides on. flight-analysis would be blind without them.
+#
+#   blackbox NAV_POS
+#   blackbox MAG
+#   blackbox QUAT
+#   blackbox RC_DATA
+#   blackbox MOTORS
+#   blackbox GYRO_RAW
+#   set blackbox_rate_denom = 32
+#   save
