@@ -350,3 +350,74 @@ to trim and therefore sits closer to the stall boundary on every pull.
    servos, and — if it is less nose-heavy or less asymmetric — a direct test of whether this cycle is a
    property of *this* article rather than of the design. ⚠️ Until then, `n = 1` airframe, and the
    BACKLOG rule about the second article applies with more force than before, not less.
+
+---
+
+# §9 — STALL PROBE RUN: the sim DOES break down, and §7 was wrong
+
+Ran the §8 experiment: large-amplitude pitch pulses, **both directions**, three power settings, from an
+auto-trimmed state, 900 ft launch for headroom. `artifacts/stallprobe-sim-20260907.csv`.
+
+## Result — the asymmetry reproduces
+
+| direction | n (level start) | rate peak | **rebound** | **CL peak → min** |
+|---|---:|---:|---:|---|
+| amp −ve (nose-up sense) | 2 of 4 | **85 ms** | **19–46%** (mean 22.4) | **1.10 → 0.31–0.48**, collapse **57–72%** |
+| amp +ve | 3 of 4 | ~1500 ms | **~0%** | 0.45–0.69, no early break |
+| **REAL nose-up** | 20 | **133–166 ms** | **26–35%** | (load factor collapse 53%) |
+
+⭐ **`flight_cl` reaches 1.10 and then collapses 57–72%.** That is a wing stalling, recorded directly
+rather than inferred from load factor as the blackbox forced. And the rate rebound — **19–46% sim vs
+26–35% real** — overlaps. **The sim has the mechanism, in the right direction, at roughly the right
+strength.**
+
+## ⛔ Correcting §7 again
+
+§7 concluded *"the sim has NO pitch short period"* / *"the dynamics do not exist."* **That was wrong**, and
+§8 correctly diagnosed why before this run: the ±0.15 near-trim matrix never approached the stall
+boundary, so it measured the sim's *linear* regime and pronounced on a *nonlinear* phenomenon. At stall
+amplitudes the sim behaves qualitatively like the aircraft.
+
+**What the gap actually is, now that both sides are measured in the same regime:** the sim reaches its
+rate peak at **85 ms** — exactly when the input ramp ends — while the real aircraft peaks at
+**133–166 ms**, 50–80 ms *after* the input stops. ⇒ The sim's pitch response is **too fast to peak**, not
+missing dynamics. That is a much narrower and more tractable defect, and it is consistent with §6's
+independent finding that the sim is systematically quicker than the real plant.
+
+## ⚠️ Confidence, stated plainly
+
+- **n is small**: only 5 of 8 cells began within 3 m/s of level, and the nose-up group that did is **n=2**.
+  The direction and the presence of the CL break are solid; the 22.4% mean is not a precise number.
+- Trim converges but not tightly — three cells still had 5–10 m/s of descent at the step.
+- ⇒ The claim that survives is **qualitative**: the sim stalls, in the same direction, with a comparable
+  rebound. The claim that does **not** yet survive is any quantitative match of damping or frequency.
+
+## Three real bugs this harness found by being run
+
+Each was invisible until the thing was actually executed at scale, and each is now fixed and commented:
+
+1. **No trim ⇒ ground.** First run pitched to −34° and flew into the ground in 6.75 s. Open-loop step
+   tests need what the pilot was silently providing.
+2. **Trim clamp starved trim.** Clamping the trim datum to `0.5 − |amplitude|` left 0.15 of authority at
+   large amplitude — not enough to hold level, so it dove during *settle*. ⇒ Trim now has priority and the
+   **pulse** is reduced to the remaining room (and says so).
+3. ⭐ **The trim integrator had the sign backwards.** crrcsim's elevator is inverted (`pitchCmd =
+   −2·elevator`), so nose-up is **negative** elevator. The integrator added where it should subtract,
+   driving nose-down while the aircraft sank. Symptom: 5–12 m/s of descent still present after a 4 s trim.
+   ⚠️ Same inverted convention that silently cancelled the pitch average in `step_response.py` — **that
+   sign has now caused two separate defects; treat it as a known trap.**
+
+## ⇒ Where this leaves the sim-fidelity list, revised
+
+| finding | status | priority |
+|---|---|---|
+| sim compute latency 30 ms vs measured **9.9 ms** | measured, unambiguous | ⭐ **high — do it** |
+| NN sensor filtering un-modelled (accel ~21 ms, gyro ~6.4 ms) | measured | ⭐ high, and cheap |
+| pitch **peak timing** 85 ms sim vs 133–166 ms real | measured, both regimes | medium — narrow defect |
+| roll gain/rise | within ~17% / ~10% | low — leave it |
+| ~~"sim lacks pitch dynamics"~~ | ⛔ **retracted twice; it stalls** | — |
+
+⭐ **The second airframe is now the highest-value single data point.** This whole thread rests on `n = 1`
+aircraft with a known-asymmetric wing and a nose-heavy CG, and the stall cycle is exactly the kind of
+behaviour that is an *article* property rather than a *design* property. Different planform and different
+servos would separate those two in one flight.

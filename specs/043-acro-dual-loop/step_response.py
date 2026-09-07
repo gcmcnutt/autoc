@@ -81,7 +81,10 @@ def detect(rows, ax, thresh, dt):
             i += 1
     return out
 
-def average(rows, ax, steps, dt, keep=lambda s: True):
+def average(rows, ax, steps, dt, keep=lambda s: True, sign=0):
+    """sign: 0 = pool both directions (⚠️ ASSUMES A SYMMETRIC AIRFRAME —
+    the 2026-09-07 article stalls nose-up and not nose-down, and pooling hid
+    it completely); +1 / -1 = one direction only, NOT sign-normalised."""
     """Mean step response, normalised per 100 command counts, baseline removed."""
     # 0.9 s post-window: at 2.2-3.3 Hz the short period needs ~2 cycles, and a
     # 0.6 s window put the trough on the edge and manufactured a fake period.
@@ -90,8 +93,10 @@ def average(rows, ax, steps, dt, keep=lambda s: True):
     for k, d in steps:
         if k - PRE < 0 or k + POST >= len(rows): continue
         if not keep(rows[k]["speed"]): continue
+        if sign and (d > 0) != (sign > 0): continue
         base = st.mean(rows[k - PRE + j]["rate"][ax] for j in range(PRE))
-        sgn = 1.0 if d > 0 else -1.0
+        sgn = 1.0 if not sign else 1.0   # one direction: keep the true sign
+        if not sign: sgn = 1.0 if d > 0 else -1.0
         row = [(rows[k - PRE + j]["rate"][ax] - base) * sgn / abs(d) * 100.0
                for j in range(PRE + POST)]
         if not any(math.isnan(x) for x in row): stack.append(row)
@@ -148,6 +153,11 @@ def main():
     ap.add_argument("csvfile", help="blackbox CSV (real) or Cntrl_StepTest CSV (sim)")
     ap.add_argument("--thresh", type=float, default=250.0,
                     help="step detection threshold in command counts (default 250)")
+    ap.add_argument("--split-sign", action="store_true",
+                    help="report each command direction SEPARATELY instead of "
+                         "sign-normalising. ⭐ REQUIRED for pitch on an asymmetric "
+                         "airframe: the 2026-09-07 article stalls nose-up only, and "
+                         "pooling averages that away entirely.")
     a = ap.parse_args()
 
     rows, side = load(a.csvfile)
@@ -162,11 +172,14 @@ def main():
     for ax, nm in ((0, "ROLL"), (1, "PITCH")):
         steps = detect(rows, ax, a.thresh, dt)
         print(f"\n{'='*66}\n{nm}: {len(steps)} step events\n{'='*66}")
-        for bn, f in bands:
-            avg, n, PRE = average(rows, ax, steps, dt, f)
-            if avg is None: continue
-            print(f"  --- {bn} (n={n}) ---")
-            report(avg, PRE, dt, nm)
+        signs = [(+1, "cmd +ve"), (-1, "cmd -ve")] if a.split_sign else [(0, "pooled")]
+        for sg, sname in signs:
+            for bn, f in bands:
+                avg, n, PRE = average(rows, ax, steps, dt, f, sg)
+                if avg is None: continue
+                print(f"  --- {sname} | {bn} (n={n}) ---")
+                # one-directional averages keep their true sign; report on |x|
+                report([abs(x) for x in avg] if sg else avg, PRE, dt, nm)
 
 if __name__ == "__main__":
     main()
