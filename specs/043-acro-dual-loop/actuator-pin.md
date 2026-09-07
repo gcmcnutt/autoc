@@ -98,3 +98,85 @@ instead of bounding it at ±17 ms.
 ⚠️ What that does **not** change: the 2026-09-05 reasoning for keeping the *flight* at 59 Hz still holds
 on its own terms — everything 043 is judged on was already well sampled there, and the high rate buys
 resolution only for this actuator work.
+
+---
+
+# Addendum — the 2026-09-07 anomaly log, and how to run this same test in the sim
+
+## 5. `…114406` (3 logs, arm/disarm, no flight): the FC was fine; the STALLS garble telemetry
+
+Operator report: *"the telemetry link goes crazy as if corrupted data … acro, disarm, failsafe, gps
+incessant messages"*, so the sortie was abandoned before flight. Hypothesis offered: loop timeout /
+schedule overrun.
+
+⭐ **The FC's control path was healthy.** Across all three logs: `FAILSAFE` never set, and log 02 shows
+only **2 mode transitions in 20.1 s** (`ARM` → `ARM|MANUAL` → `MANUAL`) — a normal arm/ACRO/MANUAL/disarm
+sequence, not the flapping the TX was announcing.
+
+⛔ **But the scheduler does stall, and only at the high blackbox rate:**
+
+| log | rate | intervals >1.5× nominal | >3× | **max stall** |
+|---|---:|---:|---:|---:|
+| `…103927` ×2 | 59 Hz | **0.00%** | 0.00% | 17.5 ms (= 1.04× nominal) |
+| `…104749` | 484 Hz | 0.01% | 0.01% | **16.5 ms** (8×) |
+| `…114406` ×3 | ~481 Hz | 0.02–0.07% | 0.01–0.07% | **10.5–12.3 ms** (5–6×) |
+
+At 59 Hz there is **literally not one** interval beyond 1.5× nominal. At 481 Hz the SPIFLASH write
+occasionally blocks the scheduler for **10–16 ms** — rare (≤0.07%), harmless to the blackbox itself
+(0.01% of samples lost, §4), but **long enough to corrupt a timing-sensitive telemetry frame**, which the
+TX then reads as spurious mode/failsafe/GPS events.
+
+⇒ Consistent with everything observed: blackbox data intact, FC modes stable, TX shouting.
+⚠️ **Mechanism, not proof.** Falsifying test, cheap: fly the same rate with telemetry disabled (or drop to
+240 Hz) and see whether the TX quiets. ⇒ Practical rule for now: **the high rate is for
+instrumentation sorties, not for flights where telemetry matters.**
+
+## 6. ⭐ Running this identical step test in the sim — the instrument already exists
+
+The comparison in §3 needs the sim's own step response. It does **not** need new physics logging:
+`PhysicsTraceEntry` (`include/autoc/eval/aircraft_state.h:881`) already records, per FDM substep, in
+**native SI doubles**:
+
+| field | units | why it matters here |
+|---|---|---|
+| `omegaBody[3]` | **rad/s** | the body rates — the sim's counterpart to blackbox `gyroADC` |
+| `omegaDotBody[3]` | rad/s² | angular acceleration, free rather than differentiated |
+| `alpha`, `beta` | **rad** | ⭐ AoA — the state that *drives* the short period. The blackbox cannot give this. |
+| `vRelWind` | m/s | true airspeed, i.e. the load-sweep variable |
+| `Cl, Cm, Cn` | — | ⭐ moment coefficients: `Cm` vs `alpha` **is** the static-margin/damping question |
+| `momentBody[3]`, `forceBody[3]` | N·m, N | |
+| control inputs (`TSimInputs`) | — | the commanded step |
+| `density`, `gravity` | SI | |
+
+**Rate**: `Global::dt = 0.002777 s`, rounded to ms ⇒ **3 ms/step = 333 Hz**. Comparable to the 481 Hz
+blackbox and far better than the 59 Hz flight log this measurement came from — so the sim side can resolve
+dead-time the real side could only bound.
+
+### What blocks it, and it is small
+
+1. ⛔ **`MAX_TRACE_STEPS = 35`** (`fdm_larcsim.cpp:75`) — ~105 ms, set for RNG-divergence debugging. A step
+   response needs ~600 ms ⇒ **200 steps**. ⚠️ Do not raise it globally for a bake: the trace is per
+   scenario and 294 × 200 × ~400 B is large, which is exactly why the cap exists. Make it configurable and
+   raise it only for the test.
+2. **The collector is autoc-specific.** The FDM fills `gCurrentPhysicsTrace` **unconditionally**
+   (`fdm_larcsim.cpp:956`), but only `inputdev_autoc` resets the counter and drains it into
+   `evalResults.physicsTrace`. A hand-flown GUI session fills 35 steps once at startup and then stops.
+   ⇒ Needs a small **CSV sink**: write each entry as it is produced when a flag is set. No buffering, no
+   cap, no dependence on autoc mode. That is the whole change.
+
+⇒ Then hand-fly the §1/§2 protocol in CRRCSim — MANUAL, sharp roll/pitch steps at 10/15/20 m/s — and run
+the same averaging script. ⭐ `Cm` and `alpha` come along for free, so if the sim's short period is wrong
+the trace says *why*, not just *that*.
+
+### Unit mapping for the comparison
+
+| quantity | real (blackbox) | sim (`PhysicsTraceEntry`) |
+|---|---|---|
+| body rate | `gyroADC[0..2]`, **deg/s** | `omegaBody[0..2]`, **rad/s** ⇒ ×57.2958 |
+| command | `rcCommand[0..1]`, ±500 counts | `TSimInputs` aileron/elevator, ±0.5 ⇒ ×1000 for counts |
+| airspeed | `navVel` magnitude, cm/s | `vRelWind`, m/s |
+
+⚠️ One asymmetry to respect: the real `rcCommand → surface` path carries the **actuator** (50 Hz PWM latch
++ slew); the sim applies its own servo model. So compare **command → body rate end-to-end** on both sides
+— the composite — exactly as §1/§2 did. Splitting actuator from airframe is what the bench rig was for and
+is not what this comparison needs.
