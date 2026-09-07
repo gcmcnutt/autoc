@@ -14,6 +14,30 @@
 // work depends on. The policy trained on sensors that respond instantly and flew
 // sensors that lag.
 //
+// ⛔⛔ NOT WIRED IN — AND WHY. An attempt to apply these at the sensor-gather
+// point was BACKED OUT 2026-09-07 before it could reach a bake. That gather runs
+// ONLY on the 20 Hz eval cadence (`shouldEval` in inputdev_autoc::getInputData),
+// so a 25 Hz or 15 Hz filter sits far above the 10 Hz Nyquist and is not a model
+// of anything: measured k = 0.887 (gyro) and 0.825 (accel), i.e. near
+// pass-through, contributing a few ms of delay by accident rather than by design.
+//
+// The real chain is: filter at 2 kHz on the FC, THEN sample at 20 Hz over MSP.
+// Its effect on the SAMPLED value is a GROUP DELAY, not a filter that can be
+// re-run at the sample rate.
+//
+// ⭐ TWO CORRECT IMPLEMENTATIONS, either acceptable:
+//   (a) Filter at FDM SUBSTEP rate (dt = 5 ms, 200 Hz) and let the 20 Hz gather
+//       read the filtered state — this mirrors the real chain exactly. A
+//       Controller runs every FDM step (that is how Cntrl_StepTest works), so a
+//       small Cntrl_SensorLpf could hold the filter state and publish it.
+//   (b) Model it as a per-channel pure delay of 6.4 ms (gyro) / 21.2 ms (accel).
+//       ⚠️ Both are SUB-TICK at 20 Hz, so this only works if folded into the
+//       existing staged-command latency path, which already carries sub-tick
+//       delay — it cannot be done with a tick-granular ring buffer.
+//
+// The classes below are correct and tested-by-construction; they are kept for
+// whichever approach lands. ⚠️ Do NOT wire them into a 20 Hz path.
+//
 // ⓘ NOT modelled, deliberately:
 //   - the dynamic gyro notch (2D, Q 250, >= 30 Hz): above the band of interest
 //     and its phase contribution below 10 Hz is negligible.

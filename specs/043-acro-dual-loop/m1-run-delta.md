@@ -15,11 +15,21 @@ fixed-eval and per-axis measures, per [project_late_run_fitness_interpretation](
 | # | change | was | now | evidence |
 |---|---|---|---|---|
 | A1 | `COMPUTE_LATENCY_MSEC_DEFAULT` | **30 ms** | **10 ms** | flight-measured 2026-09-05: fetch 2.9 + eval 1.6 + send 5.4 = **9.9 ms**. The old value predated current firmware. |
-| A2 | NN **gyro** input | raw FDM | **25 Hz PT1** (~6.4 ms) | `gyro_main_lpf_hz = 25`; the article filters before the policy sees it |
-| A3 | NN **accel** input | raw | **15 Hz biquad** (~21.2 ms) | `acc_lpf_hz = 15`; 42% of a 20 Hz tick on the 041 P5-1 channel |
+| A2 | NN **gyro** input | raw FDM | ⛔ **still raw — see below** | `gyro_main_lpf_hz = 25` (~6.4 ms) |
+| A3 | NN **accel** input | raw | ⛔ **still raw — see below** | `acc_lpf_hz = 15` (~21.2 ms, 42% of a tick) |
 
-⭐ A1–A3 all push the same way: the sim **sees later and acts sooner** than it used to, which is the
-direction three independent measurements demanded (§6 latency, §7 rate-loop, §9 peak timing).
+⛔ **A2/A3 were implemented and then BACKED OUT on 2026-09-07, before any bake.** The sensor gather runs
+only on the **20 Hz** eval cadence, so 25 Hz and 15 Hz filters sit far above the 10 Hz Nyquist — measured
+k = 0.887 / 0.825, i.e. near pass-through adding a few ms by accident rather than by design. The real
+chain is *filter at 2 kHz, then sample at 20 Hz*, whose effect on the sampled value is a **group delay**,
+not a filter that can be re-run at the sample rate.
+
+⇒ The filter classes are kept in `include/autoc/eval/sensor_lpf.h` with both correct implementations
+written up: (a) filter at FDM substep rate (5 ms) and let the gather read the filtered state — a
+`Controller` runs every FDM step, which is how `Cntrl_StepTest` works; or (b) a per-channel sub-tick delay
+folded into the existing staged-command latency path. ⚠️ **A2/A3 are therefore OPEN, not done.**
+
+⭐ A1 alone still pushes the right way — the sim now **acts sooner** than it used to, matching §6.
 
 ## B. Aircraft config — APPLIED to the FC, ⚠️ NOT yet in the config of record
 
@@ -52,6 +62,7 @@ So it improves flight, not the bake.
 | D1 | **Pitch peak timing**: sim peaks at **85 ms**, real at **133–166 ms** | The one *measured* plant defect still unfixed. Candidates: `Cmq`, `Cm_alpha`, pitch inertia. |
 | D2 | **Second airframe** | Everything rests on `n = 1` with a **known-asymmetric wing and nose-heavy CG**. The stall cycle is exactly the kind of thing that is an *article* property. A bake tuned to this article may be tuned to its defects. |
 | D3 | Fresh `inav-hb1.cfg` dump | see B — cheap, and the manifest depends on it |
+| D4 | **A2/A3 sensor-path delay** | backed out as un-modelled-at-20-Hz; the accel term is 21 ms on the channel 041 P5-1 added. Needs the FDM-rate or sub-tick-delay implementation. |
 
 ⚠️ **My read**: D1 and D2 are the difference between a bake that closes 043 and one that has to be
 re-run. A1–A3 are unambiguous and worth having regardless, but the *pitch* channel — the one 043 exists
