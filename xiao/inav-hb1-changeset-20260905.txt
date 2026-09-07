@@ -97,3 +97,42 @@ save
 #    eye.
 # 3. ⛔ FR-012a: both changes alter what the genome sees. They belong in the
 #    SAME flight as the xiao prefill fix (07ad93b), before any retrain.
+
+
+# ===========================================================================
+# 2026-09-07 — RELOADING inav-hb1.cfg to unwind the actuator-test blackbox
+# ===========================================================================
+# Only TWO commits have applied config to this FC since the 2026-09-04 capture:
+#   fe661e4  blackbox field strip + blackbox_rate_denom = 4   <- UNWIND
+#   3da6e22  rc_expo = 0, setpoint_kalman_enabled = OFF        <- KEEP
+#
+# ✅ THE RELOAD HANDLES THE BLACKBOX COMPLETELY. inav-hb1.cfg carries the field
+#    groups EXPLICITLY (lines 138-152: `blackbox -NAV_ACC`, `blackbox NAV_POS`,
+#    …), so re-applying the dump restores all six groups the actuator test
+#    disabled, and blackbox_rate_denom back to 32. Nothing to do by hand.
+#
+# ⛔ BUT THE RELOAD ALSO UNDOES BOTH FIXES. The checked-in dump predates them:
+#    it still reads `rc_expo = 20` (line 1915) and
+#    `setpoint_kalman_enabled = ON` (line 1341). Re-apply AFTER the reload:
+
+control_profile 1
+set rc_expo = 0
+set setpoint_kalman_enabled = OFF
+save
+
+# ---------------------------------------------------------------------------
+# Cross-check: the fresh dump should differ from inav-hb1.cfg in EXACTLY these
+# ---------------------------------------------------------------------------
+#   set rc_expo = 0                     (was 20, control_profile 1 / line 1915)
+#   set setpoint_kalman_enabled = OFF   (was ON, line 1341)
+#   set gyro_zero_x / _y / _z           calibration drift — expected, do not chase
+#   set ins_gravity_cmss                calibration drift — expected
+#
+# ⭐ ANYTHING ELSE IN THAT DIFF IS A SIGNAL, not noise. The firmware banner
+#    should be unchanged (38ff0d29, Aug 22 2026) — a different hash means the
+#    board was reflashed and the rate-parity gate must be re-asserted.
+#
+# ⚠️ AND THEN COMMIT THE FRESH DUMP OVER inav-hb1.cfg. It has been stale since
+#    2026-09-05: the config of record currently describes an aircraft that does
+#    not exist, which is the exact failure T051a fixed. A bake manifest written
+#    against it would be wrong. This is item B/D3 in m1-run-delta.md.
