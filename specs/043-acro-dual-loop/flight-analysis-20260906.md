@@ -279,3 +279,70 @@ placement, shielding, or interference rather than the sky.
 GPS vertical weight is only 0.2 against baro's 0.35. But it degrades the horizontal solution the whole
 tracking metric rides on, and it is worth a look before the next flight: check the GPS antenna's ground
 plane and its separation from the video TX / ESC.
+
+---
+
+## 9. ⭐ Is the estimator problem caused by ACRO? — Mostly NO: it is caused by the NN flying hard
+
+The operator noted these are the first two ACRO flights *and* the first two showing this. Testable — the
+2026-08-23 (041-t7 era) flight is the control: **the NN flying, but through MANUAL** (direct surface).
+
+| flight | segment | n | gap med | **gap p90** | accVib | load med |
+|---|---|---:|---:|---:|---:|---:|
+| **041-t7 08-23** | `ARM\|MANUAL` (pilot) | 222 | 2.9 m | **3.0 m** | **574** | 0.99 g |
+| **041-t7 08-23** | `ARM\|MANUAL\|MSPRCOVERRIDE` (**NN**) | 4962 | 3.4 m | **9.8 m** | **4326** | 2.68 g |
+| 043 09-05 | `ARM\|MANUAL` (pilot) | 969 | 0.7 m | 7.8 m | 1538 | 0.98 g |
+| 043 09-05 | `ARM\|MSPRCOVERRIDE` (**NN, ACRO**) | 3051 | 5.5 m | **21.8 m** | 4370 | 2.32 g |
+| 043 09-06 | `ARM\|MSPRCOVERRIDE` (**NN, ACRO**) | 3994 | 3.2 m | **14.0 m** | 4795 | 2.93 g |
+
+⇒ **The hypothesis is half right.** The 041-t7 flight — pre-ACRO — *already* shows it: with the NN
+engaged, `accVib` jumps 574 → 4326 and the estimator's p90 gap goes 3.0 → 9.8 m. So it is **not ACRO**.
+
+⭐ **The driver is that the NN pulls ~3× the g the pilot does** (2.3–2.9 g median vs 0.98–0.99 g), and
+vibration follows. ACRO does make it *worse* — p90 14–22 m vs 041's 9.8 m — consistent with the NN
+commanding rates harder now that it can. But the mechanism is airframe loading, not the flight mode.
+
+ⓘ Why it was not noticed before: 041-t7's 9.8 m p90 never produced a visible discontinuity. The resets
+need the gap to reach ~50 m, which only happens with the higher ACRO-era loading.
+
+### ⭐ The rubber bands are a real variable — and the operator's plan may backfire
+
+Baseline vibration measured on **pilot-flown** segments only (which removes the NN-aggression term):
+
+| flight | `ARM\|MANUAL` accVib median |
+|---|---:|
+| 2026-08-23 | **574** |
+| 2026-09-05 | **1538** |
+| 2026-09-06 (fresh bands) | **~4546** (n=109, small) |
+
+⚠️ **Fresh bands appear to make vibration WORSE, not better.** The stretched bands were acting as a
+**soft mount** — a vibration isolator between wing/motor and the fuselage carrying the FC. Replacing them
+restores rigid coupling and pushes more energy into the accelerometer, which is precisely what the
+vertical estimator cannot tolerate.
+
+⛔ So *"fresh bands more often"* fixes wing shift at 10 g but is likely to **degrade the estimator**. The
+resolution is both: fresh bands for structure **and** a proper soft-mount for the FC, rather than relying
+on a stretched band as an accidental isolator. ⚠️ This also confounds any 09-05 → 09-06 comparison that
+touches vibration or the baro.
+
+## 10. Is the tracking gap real, or measurement error? — REAL
+
+The rabbit is virtual and placed in the *estimated* world frame, so estimator error enters the measured
+distance. Decomposing:
+
+| | total median | **horizontal** | vertical | vertical share |
+|---|---:|---:|---:|---:|
+| 09-05 | 11.1 m | **10.1 m** | 2.8 m | 0.29 |
+| 09-06 | 11.4 m | **10.8 m** | 3.1 m | 0.30 |
+
+⇒ The error is **overwhelmingly horizontal**, where GPS `eph` is only **2.2–2.4 m**. The bad vertical
+estimate contributes ~3 m and is not what makes the number 11 m.
+
+⭐ **So the flat-tracking conclusion in §3 stands on its own.** The policy genuinely tracks at ~10 m
+horizontal where the sim tracks at 4.1 m total with a perfect world frame. That is a policy / sim-fidelity
+gap, not an instrumentation artifact.
+
+⭐ It also sharpens the operator's own point: **M1 and M2-virtual fly against a virtual target, so world
+position accuracy is part of the fitness signal itself** — but at today's numbers the horizontal solution
+(2.4 m) is good enough that it is not the limiter. The vertical estimate is the broken one, and it feeds
+`specific_energy` and `dist_to_boundary` rather than the tracking distance.
