@@ -27,14 +27,25 @@ def load(path):
     if "rate_p" in cols:                      # sim (Cntrl_StepTest)
         side = "sim"
         for r in rows:
+            # ⛔ The auto-trim integrator moves the elevator during the "trim"
+            # phase. That is not a commanded step and must not be detected as
+            # one -- mark those rows not-manual so the detector skips them.
+            _live = r.get("phase") not in ("trim",)
             out.append(dict(
                 t=float(r["t_s"]),
                 # to blackbox units so every number below is directly comparable:
                 # surface +-0.5 -> +-500 counts, rad/s -> deg/s
-                cmd=[float(r["cmd_aileron"]) * 1000.0, float(r["cmd_elevator"]) * 1000.0],
+                # ⛔ PITCH SIGN: crrcsim's elevator is INVERTED relative to the
+                # rate it produces (+elevator -> -rate_q), which is why
+                # cntrl_inavfwrate carries `pitchCmd = -2*elevator`. The
+                # blackbox has command and gyro same-sense. Negate here so both
+                # sides express "command in the sense of the rate it commands";
+                # without this the sign-normalised average cancels itself.
+                cmd=[float(r["cmd_aileron"]) * 1000.0, -float(r["cmd_elevator"]) * 1000.0],
                 rate=[float(r["rate_p"]) * RAD2DEG, float(r["rate_q"]) * RAD2DEG],
-                speed=float(r["v_rel_airmass"]),
-                manual=True))
+                # ⚠️ crrcsim carries velocities in FT/S; the real side is m/s.
+                speed=float(r["v_rel_airmass"]) * 0.3048,
+                manual=_live))
     else:                                     # real (blackbox)
         side = "real"
         rows = [{k.strip(): v for k, v in r.items()} for r in rows]

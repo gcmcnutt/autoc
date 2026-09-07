@@ -221,3 +221,69 @@ controlled) or a real sortie with held steps.
 
 ⇒ §3's conclusion is unchanged — the NN excites the airframe's own ~3 Hz mode — and §3's recommended sim
 comparison is now the way to pin the damping the real data cannot.
+
+---
+
+# §7 — SIM vs REAL, measured (2026-09-07): the sim has NO pitch short period
+
+Ran the §3 comparison. Sim side: `Cntrl_StepTest` on `hb1_streamer_steptest.xml`, MANUAL-equivalent
+(no `InavFwRate` in the chain), 13 cells / 85.7 s at **200 Hz** (`autoc_config.xml` sets
+`flightModel dt="0.005"`), airspeed **9.6–26.7 m/s** (median 17.6) against the real flight's 8–25
+(median 14.3). 12 of 13 cells clean; cell 10 clipped and is excluded.
+
+## ROLL — the sim is close
+
+| | sim | real |
+|---|---:|---:|
+| steady gain (deg/s per 100 counts) | 156 (fast band 172) | 133 (fast band 165) |
+| 63% of final | 120 ms | 133 ms |
+
+⇒ Within ~17% on gain and ~10% on rise. **Roll is not the problem.**
+
+## ⛔ PITCH — the sim tracks the input; the real aircraft has dynamics
+
+Raw trace, one clean mid-power cell, against the real averaged response:
+
+| | **sim** | **real** |
+|---|---|---|
+| peak | **85 ms** — exactly the end of the 85 ms ramp | **133–166 ms** — *after* the input stops moving |
+| peak/steady | **2.8×** | **~2.5×** |
+| after the peak | monotonic decay, **settled by ~175 ms** | **rings at ~3 Hz**, still oscillating at 500 ms |
+| short-period freq | none observable | **3.01 → 3.35 → 3.77 Hz**, rising with airspeed |
+
+⭐ **The overshoot MAGNITUDE matches (2.8 vs 2.5) but the DYNAMICS do not exist.** The sim's pitch rate
+peaks when the surface stops moving and then relaxes — a quasi-static response with strong damping. The
+real aircraft keeps building rate for another ~60–80 ms after the input stops, then rings.
+
+⇒ **§3's hypothesis is confirmed.** The ~3 Hz pitch energy the NN produces in flight is an airframe mode
+the **sim does not have**. A policy trained in that sim cannot learn to avoid exciting a resonance that
+does not exist in its world, which is why the oscillation appeared only in the air.
+
+⛔ **This outranks the latency constants.** §6 listed the sim as ~20 ms too slow on compute and ~66 ms too
+slow on the rate loop; those are real, but they are *tuning* against a plant whose pitch dynamics are
+structurally absent. ⇒ **Fix the short period first.** The candidates are in the FDM aero block —
+pitch damping (`Cmq`), static margin (`Cm_alpha`), and pitch inertia — and `PhysicsTraceEntry` already
+records `alpha`, `Cm` and `momentBody`, so the diagnosis is available without new instrumentation.
+
+## ⚠️ Reading limits of this run — stated so the next person does not over-trust it
+
+1. ⛔ **The averaged sim pitch numbers from `step_response.py` are NOT reliable**; the raw per-cell trace
+   above is. The ALL band mixes cells with different trim datums and both step polarities, and the
+   frequency estimator then reports nonsense (16.7 Hz). ⇒ **Tool gap: the sim side needs a per-cell mode**
+   rather than pooled averaging. Roll pooled fine because its cells share a trim; pitch does not.
+2. The real side is a **pilot ramp with no controlled hold**; the sim holds exactly 0.8 s. Comparisons
+   past ~0.5 s on the real side include the stick release.
+3. `n = 1` airframe, `n = 1` sim model. This says the *shape* differs, which is a structural claim and
+   robust; it does not pin a damping ratio on either side.
+4. Two bugs were found by running it, both now fixed and worth remembering: **`v_rel_airmass` is ft/s**
+   (crrcsim carries velocities in feet), and **crrcsim's elevator sign is inverted** relative to the rate
+   it produces (`+elevator → −rate_q`, which is why `cntrl_inavfwrate` carries `pitchCmd = −2·elevator`).
+   Un-fixed, the second silently cancels the sign-normalised pitch average to zero.
+
+## Regression-test candidate
+
+⭐ The operator's note — *"at some point we put this in regression tests on each build"* — is well aimed,
+and the ROLL numbers are ready for it now: gain and 63% time are stable, pooled cleanly, and would catch
+an FDM or servo-model regression immediately. ⇒ Suggested gate once the per-cell fix lands: assert roll
+gain and 63% time inside a band, and assert the pitch peak/steady ratio, per cell. ⛔ Do **not** gate on
+the pitch *frequency* until the sim actually has one — that is the open finding, not a regression.
