@@ -190,3 +190,92 @@ flights, and it corrupts NN inputs directly. It needs its own item:
 ⚠️ **It does not explain the flat tracking** in §3 — the resets are too few and too late in each span. But
 it is a real, measured corruption of the policy's energy channel, and it will keep degrading any
 sim↔real energy comparison until it is fixed.
+
+---
+
+## 8. Baro and GPS — the operator's questions, answered and one left open
+
+### The baro IS configured, and the fusion is entirely stock
+
+`baro_hardware = SPL06` — a real barometer, present and selected. Every vertical-fusion weight sits at the
+**INAV default**, so nothing here has been tuned for this airframe:
+
+| setting | value | INAV default |
+|---|---:|---:|
+| `inav_w_z_baro_p` | 0.350 | **0.35** |
+| `inav_w_z_baro_v` | 0.100 | **0.1** |
+| `inav_w_z_gps_p` | 0.200 | **0.2** |
+| `inav_w_acc_bias` | 0.010 | **0.01** |
+| `inav_baro_epv` | 100 | **100** |
+
+⇒ The estimator is running INAV's out-of-the-box vertical fusion on an airframe whose accelerometer sees
+`accVib` 4452 and whose baro has never been characterised. That is the whole problem in one line.
+
+### ⛔ The physics, for scale
+
+Dynamic pressure as apparent altitude (1 hPa ≈ 8.3 m):
+
+| airspeed | 10 | 13 | **15** | 18 | 20 | 25 m/s |
+|---|---:|---:|---:|---:|---:|---:|
+| apparent altitude error at FULL ram | 5.1 | 8.6 | **11.4** | 16.5 | 20.3 | 31.8 m |
+
+⭐ A flying wing at cruise carries **~11 m of altitude error for every unit of dynamic pressure the static
+port sees**. The operator's "not tested in all attitude for accuracy" is exactly the right worry.
+
+### What the data shows — and it differs between the two flights
+
+`BaroAlt − GPS_altitude` in **level flight only** (`|vz| < 1 m/s`, which removes any baro/GPS lag
+confound — and note that isolating level flight made 09-05 *stronger*, not weaker):
+
+| speed bin | 0–6 | 6–10 | 10–14 | 14–18 | 18–30 m/s | corr |
+|---|---:|---:|---:|---:|---:|---:|
+| **09-05** | −0.7 | −2.8 | −7.9 | −9.4 | **−13.5 m** | **−0.685** |
+| **09-06** | −0.1 | +3.5 | +3.8 | +2.0 | +2.3 m | −0.086 |
+
+⭐ 09-05 is a textbook ram-pressure signature: monotonic, ~13 m of swing, and the sign (baro reads low as
+speed rises) says the port sees **positive** pressure. At ~20 m/s full ram would be 20.3 m, so the port
+would be seeing roughly **two-thirds of dynamic pressure** — i.e. barely a static port at all.
+
+⛔ **But it does not reproduce on 09-06**, same aircraft, and I cannot resolve why from the logs:
+
+- **Wind is ruled out** — fitting groundspeed against course gives 3.1 m/s (09-05) vs 2.1 m/s (09-06),
+  similar, and both flights show the same mean airspeed ~13.3 m/s.
+- **Vertical-rate lag is ruled out** — restricting to level flight *strengthened* the 09-05 correlation.
+- ⚠️ **Speed and altitude are collinear** — `corr(speed, baroAlt)` is **+0.68 / +0.75** in these flights
+  (the aircraft flies faster when higher), and on 09-05 the divergence correlates with altitude
+  (−0.507) almost as well as with speed (−0.683). **The two cannot be separated from flight data.**
+
+⇒ Something real differs between the flights and the logs cannot say what. **This needs a ground test, not
+more flying.**
+
+### ⭐ Two ground tests that settle it, ~20 minutes, no flying
+
+Both answer the operator's question directly and neither needs weather:
+
+1. **Ram test.** FC powered, airframe stationary, blow air over it at ~15 m/s from the front (leaf blower
+   or a car window) and watch `BaroAlt` on the Configurator. A good static port moves **< 1 m**. If it
+   swings 5–10 m, the port is exposed and 09-05's signature is real.
+2. **Attitude test.** FC powered, stationary, no airflow. Rotate the airframe through pitch and roll
+   (±30°, ±60°, inverted) and watch `BaroAlt`. It must not move. Movement means the port is
+   pressure-coupled to orientation — which on a flying wing usually means it is venting into the fuselage
+   rather than to a static source.
+
+⇒ If either fails, the fix is mechanical (relocate/shield the port, or foam-damp the FC bay), not a
+fusion-weight change. ⛔ Do not tune `inav_w_z_baro_p` first: leaning harder on a baro that is reading
+airspeed would trade one error for another.
+
+### GPS — 09-06 was materially worse, and 7 is the ceiling not the average
+
+| | sats min / med / max | 3D fix | hdop med | epv max |
+|---|---|---:|---:|---:|
+| **09-05** | 7 / **10** / 11 | 100% | 1.78 | 448 |
+| **09-06** | 5 / **7** / **7** | 100% | 2.25 | 551 |
+
+⚠️ **Note the max: 09-06 never exceeded 7 satellites for the whole flight**, and dipped to 5. That is not
+normal sky variation — a healthy receiver under open sky wanders. A flat ceiling at 7 points at antenna
+placement, shielding, or interference rather than the sky.
+
+ⓘ No loss of 3D fix in either flight (100% both), so this did not cause the estimator resets directly —
+GPS vertical weight is only 0.2 against baro's 0.35. But it degrades the horizontal solution the whole
+tracking metric rides on, and it is worth a look before the next flight: check the GPS antenna's ground
+plane and its separation from the video TX / ESC.
