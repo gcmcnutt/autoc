@@ -130,3 +130,63 @@ the ACRO model (§15 of `flight-analysis.md` showed the controller is a paramete
 
 ⚠️ The vertical estimator (`accVib` 4452, gap max −57.8 m, one reset) is unaddressed and feeds
 `specific_energy` and `dist_to_boundary` directly. It is its own problem and it did not improve.
+
+---
+
+## 7. ⛔ The span-3 discontinuity — the SAME vertical-estimator failure, second flight running
+
+Operator spotted it in the chase trace. It is the Z channel again, and it is INAV's vertical estimator
+resetting, not GPS.
+
+**Span 3, tick 489 of 499 (t = 24.45 s):**
+
+| | before | after | |
+|---|---:|---:|---|
+| `pos_d` | +10.12 m | **−22.44 m** | **32.6 m step** |
+| horizontal step | | 0.77 m | ⇐ normal; the fault is Z-only |
+| `vel_d` | −3.62 | −9.40 | |
+| ⭐ `specific_energy` | 25.5 m | **62.4 m** | ⭐ **+36.9 m = +0.254 in NN units** |
+| `airspeed` | 10.51 m/s | 13.99 | (derived from \|v\|, so it inherits the bad `vel_d`) |
+
+⛔ **That Es step is 56% of the entire range that channel covers across the whole flight**
+(+0.089 … +0.545), injected in a single tick, into an input the policy uses for energy and throttle.
+
+The INAV trace shows the same build-up as 2026-09-05: `navPos[2]` drifting away from `BaroAlt` (58 m vs
+114 m — reading **56 m LOW** this time), `navEPV` climbing monotonically 842 → **999** (the ceiling), then
+at the step `navPos[2]` snaps 66.1 → 98.4 m and **`navEPV` resets 999 → 471**. Classic reject-and-
+reinitialise.
+
+⚠️ Note the sign flipped between flights — 09-05 drifted **high** and corrected down, 09-06 drifted **low**
+and corrected up. Not a fixed bias; consistent with accelerometer-driven vertical-velocity drift under
+vibration.
+
+### It is not just the resets — the altitude is wrong for a fifth of every flight
+
+| \|navPos[2] − BaroAlt\| | 09-05 | 09-06 | in Es NN units |
+|---|---:|---:|---:|
+| median | 1.8 m | 3.1 m | — |
+| p90 | 14.4 m | 8.5 m | — |
+| max | 85.8 m | 57.8 m | — |
+| **> 5 m** | **28.8%** of flight | **21.8%** | 0.034 |
+| **> 10 m** | **15.0%** | **8.6%** | 0.069 |
+| **> 20 m** | **5.9%** | **2.7%** | 0.138 |
+
+⇒ The discrete resets are rare and land near the end of a flight, so they corrupt a handful of ticks. The
+**continuous drift is the bigger problem**: for roughly a fifth of every flight the policy's altitude —
+and therefore `specific_energy`, `dist_to_boundary`, and the engage-arena floor/ceiling geometry — is off
+by more than 5 m, and for ~1 tick in 10 by more than 10 m.
+
+⭐ **`accVib` is the common factor**: median **2714** (09-05) → **4452** (09-06), peaks over 6000, and the
+vertical fusion leans on the accelerometer. Higher vibration this flight, worse drift per unit time.
+
+⛔ **This is not a 043 problem and no 043 lever touches it.** It predates the ACRO work, it appears on both
+flights, and it corrupts NN inputs directly. It needs its own item:
+
+1. **Chase the vibration first** — `accVib` 4452 median is mechanical (prop balance, motor mount, FC
+   soft-mount). Everything downstream is fusion trying to cope with a bad accelerometer.
+2. `ins_gravity_cmss = 972.092` is still ~0.7% below true g — a standing bias on the same signal.
+3. Only then consider leaning the vertical fusion harder on the baro.
+
+⚠️ **It does not explain the flat tracking** in §3 — the resets are too few and too late in each span. But
+it is a real, measured corruption of the policy's energy channel, and it will keep degrading any
+sim↔real energy comparison until it is fixed.
