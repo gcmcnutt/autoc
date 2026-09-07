@@ -287,3 +287,66 @@ and the ROLL numbers are ready for it now: gain and 63% time are stable, pooled 
 an FDM or servo-model regression immediately. ⇒ Suggested gate once the per-cell fix lands: assert roll
 gain and 63% time inside a band, and assert the pitch peak/steady ratio, per cell. ⛔ Do **not** gate on
 the pitch *frequency* until the sim actually has one — that is the open finding, not a regression.
+
+---
+
+# ⛔ §8 — RETRACTION: it is not a short period, it is a STALL CYCLE (operator, 2026-09-07)
+
+Operator: *"this particular craft appears to stall on hard pitch up — and is nose heavy … the wing is
+asymmetric and not that great."* Splitting the pitch steps by DIRECTION — which §2 and §7 did not do,
+because sign-normalised averaging silently **assumes the airframe is symmetric** — shows they are right.
+
+## Three independent signatures, all pointing the same way
+
+**1. It happens in ONE direction only.** Averaged separately (n=19 down, n=20 up):
+
+| | peak | after the peak |
+|---|---|---|
+| nose-DOWN (cmd +ve) | +49 @151 ms | smooth monotonic decay — **no ring** |
+| nose-UP (cmd −ve) | −59 @151 ms | collapses to −10 @302 ms, then **swings BACK to −31 @504 ms** |
+
+A linear short period is a property of the linearised airframe and appears in **both** directions.
+
+**2. The load factor collapses.** `accSmooth[2]` through the nose-up response: rises to **+8229 @235 ms**,
+falls to **+3848 @370 ms** (−53%), recovers to **+5564 @504 ms**. ⭐ Lift breaking down at peak AoA and
+re-attaching as the nose drops. Airspeed barely moves (+0.4 then back), so this is an **AoA** event, not
+an energy one.
+
+**3. ⭐ The frequency depends on AMPLITUDE — which a linear mode's cannot.**
+
+| nose-up steps | mean step | peak | recovery | 2nd dip | rebound | implied freq |
+|---|---:|---:|---:|---:|---:|---:|
+| smaller half (n=11) | 226 counts | −66 @168 ms | −13 @386 ms | −31 @655 ms | **26%** | **2.05 Hz** |
+| larger half (n=12) | 351 counts | −64 @134 ms | −14 @319 ms | −37 @470 ms | **35%** | **2.98 Hz** |
+
+## What this retracts, and what survives
+
+⛔ **RETRACTED**: the §2/§7 framing of a "lightly damped **short period** at ~3 Hz", and with it the §7
+headline *"the sim has NO pitch short period."* That comparison used ±0.15 surface around trim and
+**never approached stall**, so it did not test the phenomenon at all. The `f = π/t_peak` numbers in the
+§2 correction (3.01 → 3.35 → 3.77 Hz) describe the *first* peak of a nonlinear response; they are not a
+modal frequency and the airspeed trend in them is confounded with step amplitude.
+
+✅ **SURVIVES**: (a) roll is first-order and the sim matches it within ~17% gain / ~10% rise;
+(b) the sim's near-trim pitch response is quasi-static — it peaks with the input and settles by ~175 ms
+with **no rebound at all**, where even the *smaller* real steps rebound 26%;
+(c) whatever it is, the real aircraft has pitch behaviour at 2–3 Hz that the sim did not reproduce in the
+regime tested.
+
+⭐ **And the reframing is more useful than what it replaces.** The 2026-09-05 flight had the NN **railed in
+pitch** (38% saturation in span 4) with 67% of its pitch-rate power at 1–3 Hz. A policy repeatedly
+commanding hard pitch-up into a stall/recovery cycle is a far more specific and actionable story than
+"excites a resonance" — and it is consistent with a **nose-heavy** aircraft, which needs more up-elevator
+to trim and therefore sits closer to the stall boundary on every pull.
+
+## ⇒ What to test next, revised
+
+1. ⛔ **Re-run the sim comparison at LARGE nose-up amplitude**, to stall, one direction. That is the
+   experiment §7 should have been. `PhysicsTraceEntry` records `alpha`, `CL` and `Cm`, so the sim can be
+   asked directly whether its wing breaks down at the same AoA.
+2. **Split by direction everywhere.** ⚠️ `step_response.py` sign-normalises and therefore assumes symmetry —
+   it must gain a `--split-sign` mode before it is trusted on pitch again, on either side.
+3. ⭐ **The second wing is now a high-value data point, not just a spare.** Different planform, different
+   servos, and — if it is less nose-heavy or less asymmetric — a direct test of whether this cycle is a
+   property of *this* article rather than of the design. ⚠️ Until then, `n = 1` airframe, and the
+   BACKLOG rule about the second article applies with more force than before, not less.
