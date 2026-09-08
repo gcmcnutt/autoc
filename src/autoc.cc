@@ -280,9 +280,14 @@ static void applyCrashPenalty(std::vector<ScenarioScore>& scores) {
   // the objective unchanged and nothing to show it. They are different failures
   // and deserve different rules (operator 2026-09-07: "M1 OOB is not as bad as
   // hull crash — we should not use the same ruleset").
-  //   hull  = ground strike. SEVERE, geometric, factor^K. Enabled by its flag.
-  //   OOB   = left the arena cylinder. GENTLE, exponential in the FRACTION.
-  //           Enabled by its own weight being > 0; no separate flag needed.
+  //   hull = chase intersected the TARGET hull. ⛔ TRACKER-MODE ONLY
+  //          (crash_reason.h:29) — structurally impossible in M1, which has no
+  //          target to hit. Severe, geometric, factor^K. Enabled by its flag.
+  //   OOB  = left the arena cylinder, INCLUDING THE HARD DECK at the bottom.
+  //          That deck is not the ground: a real ground impact is
+  //          CrashReason::Sim, which this function does not price at all.
+  //          Gentle, exponential in the FRACTION. Enabled by its own weight
+  //          being > 0; no separate flag needed.
   const bool hullOn = c.enableHullCrashPenalty;
   const bool oobOn  = c.oobCrashPenaltyWeight > 0.0;
   if (!hullOn && !oobOn) return;

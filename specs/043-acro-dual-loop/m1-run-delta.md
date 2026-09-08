@@ -37,9 +37,9 @@ folded into the existing staged-command latency path. ⚠️ **A2/A3 are therefo
 
 | setting | was | now |
 |---|---:|---:|
-| `EnableHullCrashPenalty` | 0 | **1** |
-| `HullCrashPenaltyFactor` | 0.5 | **0.75** |
-| `OobCrashPenaltyWeight` | 0.0 | **1.0** ⭐ |
+| `EnableHullCrashPenalty` | 0 | **0** — unchanged; tracker-only, impossible in M1 |
+| `HullCrashPenaltyFactor` | 0.5 | 0.75 (M2-only, inert here) |
+| `OobCrashPenaltyWeight` | 0.0 | **10.0** ⭐ = 29/30 per crash |
 
 On t2, an arena egress cost M1 **only** the points forgone to the end of that scenario, while breaking a
 streak cost the whole 5 s climb back from 1× to 5× — so late in a scenario, **busting the floor was
