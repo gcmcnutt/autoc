@@ -31,6 +31,36 @@
 
 ## 043 deferrals (filed 2026-09-04, from the t2 post-bake eval)
 
+### [operator 2026-09-07 · LOW COST, needs open ground] Compass calibration is under-covered on one axis
+
+**Measured, not suspected.** A magnetometer sees the *same field magnitude in every direction*, so a good
+calibration lands the three per-axis gains close together. The 2026-09-07 attempt made that worse:
+
+| | maggain (x, y, z) | spread |
+|---|---|---:|
+| before (in the config of record) | 1409, 1347, 1370 | **4.5%** |
+| 2026-09-07 attempt | 1344, **1179**, 1388 | **16.0%** |
+
+`magzero_x` also moved 158 counts. ⇒ Under-covered rotation on the Y axis, not a better fit. **Reverted
+2026-09-07**; the config of record keeps the 4.5%-spread values.
+
+⛔ **Why it matters here**: `mag_hardware = QMC5883` is active with `inav_auto_mag_decl = ON`, so the
+compass sets the AHRS heading → the **quaternion** → and `quat_w/x/y/z` are **4 of the NN's 45 inputs**. A
+mis-scaled axis produces heading error that varies with attitude, which lands directly in the policy's
+input vector. ⚠️ Second path: heading also feeds the nav estimator — the one that diverged **85 m** from
+baro and force-reset three times on the 2026-09-05 flight.
+
+**To do it properly** (operator: needs a long cable and outdoors): full continuous tumble through every
+orientation on all three axes, well away from the battery, ESC leads and any steel. ⭐ **Then check the
+gains land within ~5% of each other.** If Y stays low after thorough coverage, that is a real soft-iron
+effect from something in the airframe rather than a procedure problem — which is worth knowing either way,
+and would be a finding rather than a retry.
+
+ⓘ Contrast with the accel, done the same day: that one **succeeded** —
+`ins_gravity_cmss 1014.233 → 980.104`, +0.04% from true g, best on record. The difference was six-position
+placement, and it is why `acczero_z` moved −150 → −68 while the gains barely changed.
+
+
 ### [043 t2 eval, filed 2026-09-04 · ⭐ HIGH VALUE] The streak multiplier outbids the crash cost, so M1 buys tracking with altitude
 
 **Measured on the finished 043-t2 bake (gen 800).** Crash rate ran 4–7% against 041-t7's 0.7%, and it is

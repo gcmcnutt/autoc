@@ -136,3 +136,31 @@ save
 #    2026-09-05: the config of record currently describes an aircraft that does
 #    not exist, which is the exact failure T051a fixed. A bake manifest written
 #    against it would be wrong. This is item B/D3 in m1-run-delta.md.
+
+
+# ===========================================================================
+# 2026-09-07 — REVERT the compass calibration, KEEP the accel
+# ===========================================================================
+# ✅ The accel recal is a genuine improvement and STAYS:
+#      ins_gravity_cmss  1014.233 -> 980.104  (+0.04% from true g 979.7)
+#      acczero_z             -150 ->     -68  <- the actual fix; gains barely moved
+#
+# ⚠️ The compass recal made per-axis gain isotropy WORSE, so it goes back. A
+#    magnetometer sees the same field magnitude in every direction, so the three
+#    gains should be close:
+#      before  (1409, 1347, 1370)  spread  4.5%
+#      after   (1344, 1179, 1388)  spread 16.0%   <- Y down 12.5%
+#    That is under-covered rotation on one axis, not a better fit. Needs a long
+#    cable and open ground away from steel/battery/ESC leads — deferred.
+
+set magzero_x = -271
+set magzero_y = -393
+set magzero_z = -510
+set maggain_x = 1409
+set maggain_y = 1347
+set maggain_z = 1370
+save
+
+# After this, the diff vs the committed dump should be exactly:
+#   gyro_zero_x/y/z, acczero_x/y/z, accgain_x/y/z, ins_gravity_cmss
+# i.e. the accel recal only — no mag lines, no rc_expo, no kalman, no rates.
