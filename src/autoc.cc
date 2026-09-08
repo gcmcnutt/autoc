@@ -273,7 +273,19 @@ static float computeVariationScale() {
 // See specs/038-accurate-m2/t12-retro.md.
 static void applyCrashPenalty(std::vector<ScenarioScore>& scores) {
   const AutocConfig& c = ConfigManager::getConfig();
-  if (!c.enableHullCrashPenalty || scores.empty()) return;
+  if (scores.empty()) return;
+  // ⛔ 043 T084a (2026-09-07) — THE TWO GATES ARE INDEPENDENT. They were not:
+  // `EnableHullCrashPenalty` used to short-circuit the WHOLE function, so
+  // `OobCrashPenaltyWeight` alone was a SILENT NO-OP — a run would finish with
+  // the objective unchanged and nothing to show it. They are different failures
+  // and deserve different rules (operator 2026-09-07: "M1 OOB is not as bad as
+  // hull crash — we should not use the same ruleset").
+  //   hull  = ground strike. SEVERE, geometric, factor^K. Enabled by its flag.
+  //   OOB   = left the arena cylinder. GENTLE, exponential in the FRACTION.
+  //           Enabled by its own weight being > 0; no separate flag needed.
+  const bool hullOn = c.enableHullCrashPenalty;
+  const bool oobOn  = c.oobCrashPenaltyWeight > 0.0;
+  if (!hullOn && !oobOn) return;
   int khull = 0, koob = 0;
   for (const auto& s : scores) {
     if (s.crashReason == CrashReason::HullStrike) ++khull;
@@ -281,9 +293,9 @@ static void applyCrashPenalty(std::vector<ScenarioScore>& scores) {
   }
   const double scale = static_cast<double>(computeVariationScale());  // [0..1] curriculum ramp
   double mult = 1.0;
-  if (khull > 0)
+  if (hullOn && khull > 0)
     mult *= std::pow(c.hullCrashPenaltyFactor, static_cast<double>(khull) * scale);
-  if (c.oobCrashPenaltyWeight > 0.0 && koob > 0) {
+  if (oobOn && koob > 0) {
     const double frac = static_cast<double>(koob) / static_cast<double>(scores.size());
     mult *= std::exp(-c.oobCrashPenaltyWeight * scale * frac);
   }

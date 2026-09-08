@@ -39,7 +39,7 @@ folded into the existing staged-command latency path. ⚠️ **A2/A3 are therefo
 |---|---:|---:|
 | `EnableHullCrashPenalty` | 0 | **1** |
 | `HullCrashPenaltyFactor` | 0.5 | **0.75** |
-| `OobCrashPenaltyWeight` | 0.0 | **2.0** |
+| `OobCrashPenaltyWeight` | 0.0 | **1.0** ⭐ |
 
 On t2, an arena egress cost M1 **only** the points forgone to the end of that scenario, while breaking a
 streak cost the whole 5 s climb back from 1× to 5× — so late in a scenario, **busting the floor was
@@ -49,8 +49,17 @@ cheaper than backing off**. Measured: crash 4–7% vs 041-t7's 0.7%, **100% `egF
 ⛔ **Two-line change, not one**: `applyCrashPenalty()` returns early on `!enableHullCrashPenalty`
 (`autoc.cc:276`) and that gate covers the **OOB branch too** — the weight alone is a silent no-op.
 
-⇒ ⛔ **Raw fitness is NOT comparable to t2's −88,013.84.** Judge on crash rate, `pctInStreak`, and the
-per-axis measures.
+⭐ **The gates are now independent** (T084a). Hull and OOB are different failures: hull is a ground strike
+and stays **severe**; OOB is a soft failure and gets a **soft price**. `w = 1.0` is *defined*, not tuned —
+the marginal global cost of one egress is `1 − exp(−1/294) = 0.340%`, **exactly one average scenario**, so
+the rule reads *"you lose the scenario you busted, plus one more."*
+
+Ramped by `variationScale`, which is **0.0 through gen 40** and full only at **gen 761** — so early
+generations, when everything crashes, are essentially unpenalised. Late run: 5% OOB → ×0.951, 1% → ×0.990.
+
+⇒ ⚠️ Raw fitness is comparable to t2 **only for a crash-free genome** (zero crashes → ×1.000 exactly).
+Any genome that busts is scored on a different objective, so judge the run on **crash rate**,
+`pctInStreak`, and per-axis measures.
 
 ## B. Aircraft config — APPLIED to the FC, ⚠️ NOT yet in the config of record
 
