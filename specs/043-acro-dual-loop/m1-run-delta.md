@@ -31,6 +31,27 @@ folded into the existing staged-command latency path. ⚠️ **A2/A3 are therefo
 
 ⭐ A1 alone still pushes the right way — the sim now **acts sooner** than it used to, matching §6.
 
+## A′. ⭐ OBJECTIVE — M1 now pays for leaving the arena (T084)
+
+⛔ **This is the biggest change in the list, and the only one that touches the objective.**
+
+| setting | was | now |
+|---|---:|---:|
+| `EnableHullCrashPenalty` | 0 | **1** |
+| `HullCrashPenaltyFactor` | 0.5 | **0.75** |
+| `OobCrashPenaltyWeight` | 0.0 | **2.0** |
+
+On t2, an arena egress cost M1 **only** the points forgone to the end of that scenario, while breaking a
+streak cost the whole 5 s climb back from 1× to 5× — so late in a scenario, **busting the floor was
+cheaper than backing off**. Measured: crash 4–7% vs 041-t7's 0.7%, **100% `egFloor`/`egRadius`**,
+`hullStrike = 0`.
+
+⛔ **Two-line change, not one**: `applyCrashPenalty()` returns early on `!enableHullCrashPenalty`
+(`autoc.cc:276`) and that gate covers the **OOB branch too** — the weight alone is a silent no-op.
+
+⇒ ⛔ **Raw fitness is NOT comparable to t2's −88,013.84.** Judge on crash rate, `pctInStreak`, and the
+per-axis measures.
+
 ## B. Aircraft config — APPLIED to the FC, ⚠️ NOT yet in the config of record
 
 | # | change | status |

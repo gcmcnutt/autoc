@@ -61,7 +61,12 @@ and would be a finding rather than a retry.
 placement, and it is why `acczero_z` moved −150 → −68 while the gains barely changed.
 
 
-### [043 t2 eval, filed 2026-09-04 · ⭐ HIGH VALUE] The streak multiplier outbids the crash cost, so M1 buys tracking with altitude
+### [043 t2 eval, filed 2026-09-04 · ✅ PROMOTED 2026-09-07 INTO THE 043 RUN — see tasks.md T084] The streak multiplier outbids the crash cost, so M1 buys tracking with altitude
+
+⭐ **NO LONGER DEFERRED.** Operator 2026-09-07: *"what about the lack of care of crashing given the rest
+track? that should be part of this run, not a separate feature."* Applied to `autoc.ini` as T084 — see
+that task for the settings and the gotcha that `EnableHullCrashPenalty` gates the OOB branch too. The
+analysis below stands as the derivation.
 
 **Measured on the finished 043-t2 bake (gen 800).** Crash rate ran 4–7% against 041-t7's 0.7%, and it is
 **100% `egFloor` / `egRadius` — `hullStrike=0` for all 800 generations**. The aircraft is descending
