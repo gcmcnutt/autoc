@@ -295,11 +295,18 @@ run_tier2() {
 
     # All sigmas inherited from autoc-eval.ini base (matches training).
     # Only override: path type, dimensions, and novel seed.
+    #
+    # ⛔ ExpectedScenarioCount MUST be restated by every tier that changes the
+    # regiment. It is the FR-058 guard (added in 043 `82e45f6`) and it aborts
+    # fail-loud when paths×winds disagrees with it — inherited 294 from the base
+    # vs a 1×49 tier is a FATAL ERROR, not a warning. Tiers 0/1 only survive
+    # untouched because they happen to run the training regiment (6×49=294).
 
     # Progressive distance (novel geometry)
     make_eval_ini "$RESULTS_DIR/tier2-prog.ini" \
         "PathGeneratorMethod = progressiveDistance" \
         "SimNumPathsPerGeneration = 1" \
+        "ExpectedScenarioCount = 49" \
         "Seed = -1"
     run_eval "tier2-progressive" "$RESULTS_DIR/tier2-prog.ini"
 
@@ -307,6 +314,7 @@ run_tier2() {
     make_eval_ini "$RESULTS_DIR/tier2-long.ini" \
         "PathGeneratorMethod = longSequential" \
         "SimNumPathsPerGeneration = 1" \
+        "ExpectedScenarioCount = 49" \
         "Seed = -1"
     run_eval "tier2-long" "$RESULTS_DIR/tier2-long.ini"
 
@@ -315,6 +323,7 @@ run_tier2() {
         "PathGeneratorMethod = random" \
         "SimNumPathsPerGeneration = 12" \
         "WindScenarios = 12" \
+        "ExpectedScenarioCount = 144" \
         "RandomPathSeedB = 99999" \
         "Seed = -1"
     run_eval "tier2-random" "$RESULTS_DIR/tier2-random.ini"
@@ -338,6 +347,7 @@ run_tier3() {
         "PathGeneratorMethod = random" \
         "SimNumPathsPerGeneration = 12" \
         "WindScenarios = 12" \
+        "ExpectedScenarioCount = 144" \
         "RandomPathSeedB = 99999" \
         "Seed = -1" \
         "EntryConeSigma = 21.6" \
@@ -352,6 +362,7 @@ run_tier3() {
         "PathGeneratorMethod = longSequential" \
         "SimNumPathsPerGeneration = 1" \
         "WindScenarios = 1" \
+        "ExpectedScenarioCount = 1" \
         "Seed = 42" \
         "EnableEntryVariations = 0" \
         "EnableWindVariations = 0" \
