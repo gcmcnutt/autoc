@@ -178,6 +178,66 @@ so the cost is a run either way.
 
 ---
 
+#### ⭐ UPDATE 2026-09-11 — 043-t3 ran candidate (1) ALONE. It bought most of the gap, and the saturation MIGRATED.
+
+t3 = t2 + `OobCrashPenaltyWeight 0 → 10.0` (plus plant/aircraft alignment: latency 30→10 ms, `rc_expo`
+20→0, gyro Kalman off). ⛔ Candidate (2) was **NOT** activated — the training mix is still 6 `aeroStandard`
+paths, and `EntryPositionRadiusSigma` / `EntryPositionAltSigma` are still **0.0**, so every one of the 294
+training scenarios still starts the rabbit **glued at ~0.3 m**. Entry-geometry diversity in the regiment
+is literally one sample. This gap is untouched by t3.
+
+**Candidate (1) alone moved cold-start completion from ~28–34% to 84.7%.**
+
+| | 043-t2 | **043-t3** |
+|---|---:|---:|
+| `random` completion | 83/294 (28.2%) · 49/144 (34.0%) on the 12×12 tier | **122/144 (84.7%)** |
+| `aeroStandard` completion | 279/294 (94.9%) | **294/294 (100%)** |
+
+⭐ **The OOD pitch saturation this entry diagnosed is GONE**, measured the same way:
+
+| pitch railed (\|out_pt\|>0.95) | 043-t2 | **043-t3** |
+|---|---:|---:|
+| `aeroStandard` (trained) | 2.3% | 1.2% |
+| `random`, survivors | 1.1% | 1.0% |
+| `random`, floor-dying / crashed | **33.5%** | **0.0%** |
+
+⚠️ **But the saturation MIGRATED to throttle** — it did not resolve. The residual 22 failures rail the
+*other* axis:
+
+| throttle at idle (`out_th` < −0.9) | 043-t3 |
+|---|---:|
+| `aeroStandard` (trained) | 6.9% |
+| `random`, survivors | 8.5% |
+| **`random`, crashed** | **100.0%** |
+
+Every crashed tick is at idle throttle. The aircraft no longer pitches into the deck; it now **glides**
+— throttle pinned at −0.99 from tick 1, `dist` growing monotonically (38 → 75 m), `maxStrk=0`, descending
+into the floor at ~150 ticks having never entered the cone. Same OOD story, different axis, and consistent
+with [project_bangbang_axis_migration](../.claude/projects/-home-gmcnutt-autoc/memory/project_bangbang_axis_migration.md):
+the railed axis moves when the pressure on the previous one is priced.
+
+**Aggravating factor, not the cause**: crash rate rises monotonically with initial heading error (0% below
+60°, 3.8% at 60–120°, 17.9% at 120–150°, **72.2% above 150°**). ⛔ Heading is NOT sufficient on its own —
+`aeroStandard` carries the same heading spread (median 106°, 13.9% above 150°) at **zero** crashes, because
+at 0.3 m range the heading barely matters. **Range at t=0 is the discriminator**; heading only bites once
+you are far enough away to have to turn and close.
+
+⇒ **Routing input**: (1) is banked and did the heavy lifting. What remains is squarely (2), and it is
+cheaper than this entry assumed — it does **not** need `random` in the training mix or a pathgen change.
+`aeroStandard` / `progressiveDistance` / `longSequential` all anchor path[0] at (0,0,0) (only
+`GenerateRandom` does not), so **dithering entry position — some standoff distance plus attitude — covers
+the geometry using the existing generators and the already-plumbed
+`EntryPositionRadiusSigma` / `EntryPositionAltSigma` knobs** (they flow through `VariationSigmas::fromDegrees`,
+`src/autoc.cc:2010`, as meters). Operator 2026-09-11: *"we can dither the entry position up to any attitude
+and some distance. Prob enough."*
+
+⚠️ **Eval-threshold caveat for whoever reads the next suite run**: `run_eval()` fails tier2-random /
+tier3-stress below 95%. That bar has never been met by any M1 genome (t2 28%, t3 85%) and describes the
+trained geometry, not this one. Treat those two tiers as an **acquisition probe with its own baseline**
+(t3's 84.7% is the number to beat) rather than a pass/fail gate, until the threshold is re-derived.
+
+---
+
 ### [043 t2 eval, filed 2026-09-04 · ⭐ HIGH VALUE, config correctness] Move off hand-rolled ini to a standard, validated config format
 
 ⛔ **The config format fails silently in three separate ways, and all three bit on the same afternoon.**
