@@ -253,7 +253,11 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // 043 US5 added 5 craft IMU/pitch-damping sigmas -> 152: CraftImuMisalignSigma,
     // CraftGyroScaleSigma, CraftAccelScaleSigma, CraftAccelBiasSigma, CraftCmQSigma.
     // 043 T008a added ExpectedScenarioCount (regiment pre-run gate) -> 153.
-    EXPECT_EQ(n, 153u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // 043 t4 added RandomPathSeedA + AeroStandardPath3 (T100) and the 9 wind-
+    // envelope keys WindSpeed{Min,Max}Mps, WindTurbIntensity{Min,Max},
+    // WindGustLengthScale{Min,Max}, ThermalStrengthScale{Min,Max},
+    // ThermalCountMax (T087/T087a/T087b/T088) → 164.
+    EXPECT_EQ(n, 164u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

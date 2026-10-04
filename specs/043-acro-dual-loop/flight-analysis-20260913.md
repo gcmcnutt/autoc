@@ -362,3 +362,182 @@ python3 specs/043-acro-dual-loop/pitch_spectrum.py \
 
 ⚠️ The 041-t7 **xiao** log is format v4 and will not decode with the v5 decoder — by design. Everything
 in §5's t7 column comes from its blackbox alone, with spans found from `mspOverrideFlags`.
+
+---
+
+# ADDENDUM (2026-09-13) — sim comparison, the wind model measured, and a Z survey across every flight
+
+Four questions from the operator after the flight. Two of the answers **correct this document**: §3's prop
+attribution does not survive a historical comparison, and §5.5's candidate list narrows once the sim is
+checked. Stated up front so nobody acts on the originals.
+
+## A1. ⛔ The ~2.1 Hz pitch oscillation is ABSENT in the sim
+
+§5 never checked the sim. Checked here against **t3's exact training scenario table** (tier0 of the
+2026-09-12 eval, `autoc-eval/autoc-9223370247675601006-2026-09-12T02:12:54.801Z/`, bitwise-verified
+against the stored fitness — i.e. the sim the genome was actually shaped by).
+
+⭐ **Method equivalence first.** Same Hann-Welch band-share definition as `pitch_spectrum.py`, same
+**20 Hz** stream on both sides (xiao flight log vs sim dmp), same unit (the NN input slot, rad/s ÷ 6). The
+script reproduces this document's own xiao figures **exactly** (56.2 / 80.7 / 46.6%), so the two columns
+below are directly comparable.
+
+| | **flight 09-13** (spans 1 / 2 / 3) | **sim, t3 training table** (294 scenarios) |
+|---|---|---|
+| `gyro_q` power in 2–3 Hz | **56.2 / 34.9 / 80.7%** | median **10.7%** (p10 4.3, p90 20.9) |
+| `gyro_q` peak | **2.19 Hz** | pooled 0.31 Hz; only **4.8%** of scenarios peak in 1.5–3.5 Hz |
+| `out_pitch` power in 2–3 Hz | 21.5 / 15.8 / 46.6% | median **5.0%** (p90 10.4) |
+| pitch-rate RMS, same unit | 128–143 | 63 ⇒ **flight ≈ 2× sim** |
+
+⚠️ The absolute RMS values do not reconcile with §5.1's blackbox 12.7–13.3 °/s (≈10× apart). Both columns
+share the identical unit path, so the **ratio** is sound; the absolute scale is not relied on.
+
+### What this rules out
+
+§5.5 left three candidates. The sim result settles two:
+
+- ⛔ **The RNN's own recurrent dynamics — RULED OUT.** Same network in sim; an intrinsic oscillation would
+  appear there regardless of plant.
+- ⛔ **A limit cycle set by the 50 ms tick alone — RULED OUT.** The sim runs the identical tick.
+- ✅ **What remains is a property of the real plant the sim lacks.**
+
+### Reconciliation with `actuator-pin.md` §7 — and a correction to how this should be fixed
+
+[`actuator-pin.md`](actuator-pin.md) §7 already measured the missing piece: **the sim has no pitch short
+period.** Overshoot magnitude matches (2.8× sim vs 2.5× real), but the real aircraft keeps building rate
+60–80 ms after the input stops and **rings at 3.01 → 3.77 Hz, rising with airspeed**, while the sim relaxes
+monotonically and is settled by ~175 ms.
+
+This is **D1**, and it reconciles with §5.5's "not the short-period mode" finding rather than contradicting
+it: the **open-loop** short period is ~3–3.8 Hz and speed-dependent; the **closed-loop** oscillation is
+2.1 Hz and speed-independent. A lightly damped plant resonance adds phase lag and gain peaking near its
+frequency — §5.4 measured exactly that, a **~1.6× resonant peak** — and pulls the NN↔airframe loop's
+crossover *below* the open-loop mode. Speed-independence then follows from a delay-dominated crossing.
+
+⛔ **Correction for the fix.** It is tempting to read D1 as "the sim is ~65 ms too slow" and add delay.
+That is the wrong lever: the sim is missing a **lightly damped resonance**, not lag. The fix is in the FDM
+aero block — recentre `Cm_q` (pitch damping), `Cm_alpha` (static margin) and/or pitch inertia so the sim
+**rings at ~3 Hz with the real 133–166 ms peak timing**. ⭐ Note `CraftCmQSigma = 0.32` already exists
+(centre −4.2, clamp [−5.0, −3.6]): pitch damping is *already* a variation axis, but it varies around a
+centre that produces no ringing at all, so no draw ever reaches the real aircraft.
+
+⇒ **"It seems inherent" is right, with one refinement: it is inherent to the *real* airframe + this
+controller, not to the policy.** No amount of training in the current sim can remove it, because the
+resonance the policy would have to learn to avoid does not exist there.
+
+## A2. The sim's wind model, measured
+
+§2 correctly found wind *speed* fixed. The full picture, from the per-tick record and the source:
+
+| component | sim | source |
+|---|---|---|
+| mean speed | **3.66 m/s (8.2 mph) on every tick of every scenario** — no speed variation at all | `autoc_config.xml:100` `velocity="12"` ft/s |
+| direction | σ 45°, drawn **once per scenario**; constant within it (median within-scenario SD **0.00°**) | `windDirectionOffset` |
+| **turbulence** | ⭐ **MIL-HDBK-1797 Dryden, low-altitude spec** — σ_u **0.57**, σ_w **0.37 m/s** at 55 m | `windfield.cpp:866` |
+| turbulence intensity | **always exactly 15.7%** — `sigw = 0.1·V_wind`, so gust σ is slaved to the one fixed speed | same |
+| gust spectrum | corner frequencies **0.010 Hz** (horizontal, L_u 211 m) and **0.075 Hz** (vertical, L_w 28 m) — slow drift, not sharp gusts | same |
+| thermals | `arena_thermals`: 0–5 cells in a 300×300 m box, strength 2.0 ± 0.5 m/s, radius 20 ± 5 m. Only **~10%** of scenarios fly through one (max 2.8 m/s vertical) | `autoc_config.xml:87` |
+
+⚠️ **Recording limit.** The dmp's `wN/wE/wD` is `getLastLocalAirmass()` — steady wind **plus thermals**,
+but **not** turbulence, which lives in a separate `gustBody` channel the pathgen CSV does not expose. The
+per-tick figures above therefore describe steady + thermal only; the turbulence row comes from the model
+source. (This partly resolves `specs/BACKLOG.md` § "`wind_velocity` not recorded in the dmp".)
+
+## A3. Are the variations as large as 10–20 mph? No — not even the bottom of it
+
+| | mean wind | gust σ vs sim |
+|---|---|---:|
+| **sim, every scenario** | **8.2 mph** | 1.00× |
+| flight, INAV median | 9.4 mph | 1.15× |
+| flight, INAV p90 | 13.9 mph | 1.69× |
+| flight, INAV max | 15.0 mph | 1.83× |
+| operator, 10 mph | 10 mph | 1.22× |
+| **operator, 20 mph** | **20 mph** | **2.44×** |
+
+The trained wind sits **below the entire range** the operator reported. INAV's estimate is heavily
+filtered and very likely understates gust peaks; the operator's 10–20 mph ground read is the better
+number. And the **shape** is also wrong, not just the size: real near-ground gusts at 10–20 mph carry far
+more high-frequency energy than a 0.01 Hz Dryden corner.
+
+## A4. ⛔ The Z divergence is ACRO-specific, NN-engaged only — and it is NOT the prop
+
+§3 concluded `accVib` is "the variable that moved", comparing t3 against t7 only. Surveyed across **every
+decoded flight** instead, with the altitude-estimate gap `|navPos[2] − BaroAlt|` split by who was flying:
+
+| flight | mode | **engaged** gap p95 / **max** | pilot-flown gap p95 / max | engaged `accVib` | wind m/s |
+|---|---|---|---|---:|---:|
+| 03-22 | MANUAL | 15.5 / 27.2 m | 5.0 / 11.8 m | 5248 | 2.53 |
+| 04-03 | MANUAL | 10.2 / 12.5 m | 16.9 / 29.8 m | 3999 | 4.18 |
+| 04-07 | MANUAL | 20.6 / 34.1 m | 26.0 / 32.2 m | 5628 | 3.82 |
+| 04-17 | MANUAL | 12.0 / 18.9 m | 18.2 / 25.5 m | 5954 | **6.35** |
+| 04-22 | MANUAL | 14.5 / 26.2 m | 7.6 / 11.2 m | 5598 | 3.03 |
+| 04-26 | MANUAL | 12.9 / 42.7 m | 26.8 / 40.7 m | 6455 | 1.48 |
+| 05-03 | MANUAL | 10.7 / 16.5 m | 4.5 / 8.3 m | **6654** | 2.13 |
+| 05-17 | MANUAL | 29.0 / 32.6 m | 13.9 / 34.5 m | 5557 | 2.75 |
+| 07-20 | MANUAL | 8.6 / 14.9 m | 4.0 / 10.0 m | 3833 | 2.59 |
+| 08-23 (t7) | MANUAL | 12.8 / 20.4 m | 6.5 / 19.7 m | 4328 | 1.12 |
+| **09-05** | **ACRO** | 27.2 / **85.8 m** | 12.6 / 45.3 m | 4474 | 2.00 |
+| **09-06** | **ACRO** | 29.5 / **57.8 m** | 8.6 / 23.2 m | 4809 | 1.26 |
+| **09-13** | **ACRO** | 60.2 / **93.2 m** | 42.5 / 119.0 m | 4661 | 4.18 |
+
+⭐ **All three ACRO flights exceed the engaged maximum of every one of the ten MANUAL flights (≤ 42.7 m)** —
+including the two **calm** days (2.0, 1.3 m/s). And on 09-05 / 09-06 the **pilot-flown** segments sit inside
+the MANUAL envelope. ⇒ the divergence is tied to **the NN flying in ACRO**, not to the airframe, sensors or
+day.
+
+### ⛔ It is not vibration, wind, or vertical speed
+
+- **Vibration**: ACRO engaged `accVib` (4474–4809) is *below* much of the MANUAL era — 05-03 ran **6654**
+  and 04-26 **6455** with small gaps. §3's r = 0.75 within one flight is real, but vibration is not what
+  differs between the flights that diverge and the ones that do not.
+- **Wind**: 04-17 was the windiest flight on record (6.35 m/s) and stayed at 18.9 m max.
+- **Vertical speed**: engaged `vz` SD is 5.19–7.48 m/s in ACRO against 4.92–8.86 in MANUAL; `|vz|` p95
+  10.3–13.5 against 9.7–18.2. ACRO does not fly bigger vertical excursions.
+
+⇒ **§6's #1 "Balance the prop" is still cheap and worth doing, but should not be expected to fix Z.** ⭐ It
+does make a good **discriminating experiment**: balance the prop, fly ACRO engaged. §3 predicts the
+divergence goes away; this survey predicts it persists.
+
+### Why it never appeared before — two separate reasons
+
+1. **In the sim: there is no INAV estimator in the loop.** The NN receives perfect `pos_d` / `vel_d` from the
+   FDM. Any behaviour that destabilises the *real* vertical estimator is invisible to training by
+   construction.
+2. **In earlier flights: it only appears when the NN flies ACRO.** ⚠️ The mechanism is **open**. ACRO arrived
+   together with a new genome/action space and the 09-04 accel recalibration (`ins_gravity_cmss` 948.6 →
+   972.1), and this data cannot fully separate the three. The pilot-flown segments being normal argues
+   against the recalibration acting alone.
+
+⚠️ **A load-factor test was attempted and discarded.** `|accSmooth|` gives a median of **3.2 g for 80% of
+engaged time** — physically impossible for this airframe; the magnitude is inflated by prop vibration
+which, at 59 Hz, is aliased and cannot be filtered out.
+
+⚠️ **CORRECTION 2026-10-04**: an earlier draft of this paragraph said *"the blackbox logs no attitude"*. That
+is wrong — this log carries **`quaternion[0..3]`** (`blackbox QUAT` is on in `inav-hb1.cfg`), and the xiao
+v5 log carries `quat_w..z` at 20 Hz. What was **missing** is the estimator-side evidence: `navAcc` (field
+`NAV_ACC` is off), the dynamic-notch peak frequencies (`PEAKS_R/P/Y` off), and any `debug[]` payload
+(`debug_mode = NONE`). ⭐ The decisive instrument for the Z mechanism is **`debug_mode = VIBE`**, which logs
+per-axis vibration levels, the accel clip count, and the position estimator's **`accWeightFactor`** /
+`accWeightScaled` (`navigation_pos_estimator.c:367-373`) — i.e. *how much the estimator trusts the
+accelerometer, per tick*. If vibration is the mechanism, that weight collapses during the engaged spans;
+if it stays high while `|navPos[2] − baro|` diverges, the mechanism is elsewhere. See `tasks.md` T097.
+
+### Survey hygiene — for anyone re-running this
+
+- First log of each flight (`.01.csv`) only; 04-03, 04-07, 04-26, 05-03, 07-20 also carry a `.02`.
+- **Excluded**: 03-20 (pre-043 — reads "ACRO" only because its mode string lacks `MANUAL`); 03-27 (a
+  `21474859 m` int-overflow sentinel in the baro field).
+- ⚠️ **Duplicate logs on disk**: `flight-20260713` ≡ `flight-20260720` and `flight-20260906` ≡
+  `flight-20260907` hold byte-identical blackbox files. Counted once. Any survey that globs the
+  directories will double-count them.
+
+## A5. Revised ordering of § 6
+
+1. ⭐ **D1 — fit the pitch short period** (A1). It is the only item that can remove the 2.1 Hz oscillation,
+   and no bake against the current plant will.
+2. ⭐ **Wind speed + entry geometry in training** (A2, A3) — see `tasks.md` t4 prep.
+3. ⭐ **Calm-air, 500 Hz, attitude-logged flight** on the existing t3 genome — resolves §5.5's >30 Hz question,
+   gives D1 a real damping ratio, and gives the Z mechanism the attitude trace it lacks.
+4. **Balance the prop** — cheap; run it *before* item 3 so that flight doubles as the A4 discriminator.
+5. `blackbox_rate_denom 4` + `save` on the bench, header read back (unchanged from § 6).
+6. Static port re-site; `ins_gravity_cmss` (unchanged from § 6).

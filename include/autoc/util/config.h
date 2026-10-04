@@ -64,6 +64,8 @@ struct AutocConfig {
     // free to vary the regiment). 043's autoc.ini pins it at 294 (6 × 49).
     int expectedScenarioCount = 0;
     int randomPathSeedB = 67890;
+    int randomPathSeedA = 12345;                 // 043 T100 -- second random course (slot 3 when AeroStandardPath3=randomA)
+    std::string aeroStandardPath3 = "fortyFive"; // 043 T100 -- "fortyFive" (historical) | "randomA"
     // 034 FR-011 — int64_t (not int) so the operator can paste a logged
     // `effectiveMasterSeed` (uint64-surfaced, may exceed 2^31-1; `time(NULL)`
     // does after 2038) into `Seed=N` and reproduce the run without truncation.
@@ -96,6 +98,16 @@ struct AutocConfig {
     double entryRollSigma = 22.5;     // degrees: roll around body axis
     double entrySpeedSigma = 0.06;    // fraction (2.5sigma = 15% speed delta)
     double windDirectionSigma = 45.0;
+    // 043 t4 T087/T087a/T087b/T088 -- wind envelope; ALL default OFF (no change)
+    double windSpeedMinMps = -1.0;        // <0 = OFF; else per-scenario uniform [min,max] m/s, ramped
+    double windSpeedMaxMps = -1.0;
+    double windTurbIntensityMin = 1.0;    // multiplier on T_Wind::turbulence; 1/1 = OFF
+    double windTurbIntensityMax = 1.0;
+    double windGustLengthScaleMin = 1.0;  // multiplier on Dryden L_u/L_v/L_w; 1/1 = OFF
+    double windGustLengthScaleMax = 1.0;
+    double thermalStrengthScaleMin = 1.0; // multiplier on arena-thermal strength; 1/1 = OFF
+    double thermalStrengthScaleMax = 1.0;
+    int    thermalCountMax = 0;           // 0 = keep autoc_config.xml count_max
 
     // --- Entry position variations ---
     double entryPositionRadiusSigma = 0.0;
@@ -444,6 +456,8 @@ struct AutocConfig {
     X(int,            windScenarioCount,         "WindScenarios") \
     X(int,            expectedScenarioCount,     "ExpectedScenarioCount") \
     X(int,            randomPathSeedB,           "RandomPathSeedB") \
+    X(int,            randomPathSeedA,           "RandomPathSeedA") \
+    X(std::string,     aeroStandardPath3,         "AeroStandardPath3") \
     X(int64_t,        seed,                      "Seed") \
     X(int,            demeticGrouping,           "DemeticGrouping") \
     X(int,            demeSize,                  "DemeSize") \
@@ -456,6 +470,15 @@ struct AutocConfig {
     X(double,         entryRollSigma,            "EntryRollSigma") \
     X(double,         entrySpeedSigma,           "EntrySpeedSigma") \
     X(double,         windDirectionSigma,        "WindDirectionSigma") \
+    X(double,         windSpeedMinMps,           "WindSpeedMinMps") \
+    X(double,         windSpeedMaxMps,           "WindSpeedMaxMps") \
+    X(double,         windTurbIntensityMin,      "WindTurbIntensityMin") \
+    X(double,         windTurbIntensityMax,      "WindTurbIntensityMax") \
+    X(double,         windGustLengthScaleMin,    "WindGustLengthScaleMin") \
+    X(double,         windGustLengthScaleMax,    "WindGustLengthScaleMax") \
+    X(double,         thermalStrengthScaleMin,   "ThermalStrengthScaleMin") \
+    X(double,         thermalStrengthScaleMax,   "ThermalStrengthScaleMax") \
+    X(int,            thermalCountMax,           "ThermalCountMax") \
     X(double,         entryPositionRadiusSigma,  "EntryPositionRadiusSigma") \
     X(double,         entryPositionAltSigma,     "EntryPositionAltSigma") \
     X(int,            enableCraftVariations,     "EnableCraftVariations") \

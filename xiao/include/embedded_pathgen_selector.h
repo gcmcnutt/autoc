@@ -16,7 +16,13 @@ constexpr gp_scalar EMBEDDED_MAX_PATH_LENGTH_M = 2000.0f;
 // Maximum segments based on measured density (0.4m straight, 0.02 rad turns):
 // At 2.5x density vs original, Path 4 needs ~892 segments
 #define MAX_EMBEDDED_PATH_SEGMENTS 1000  // Increased for finer temporal resolution
-#define EMBEDDED_PATH_SEED 67890         // Matches autoc.ini RandomPathSeedB
+// 043 T100a (operator 2026-10-03): the FLIGHT seeds are intentionally independent of
+// autoc.ini (sim trains RandomPathSeedB=13337 / RandomPathSeedA=12345). A different
+// random course in the air is a generalization test by design, not a defect; a
+// per-activation seed is a backlog candidate. Path TYPE per slot stays mirrored.
+#define EMBEDDED_PATH_SEED 67890         // slot 5 (SeededRandomB) -- NOT required to match autoc.ini
+#define EMBEDDED_PATH_SEED_A 24680       // slot 3 (SeededRandomA) when EMBEDDED_PATH3_RANDOM_A
+#define EMBEDDED_PATH3_RANDOM_A 1        // mirrors autoc.ini AeroStandardPath3=randomA (1) | fortyFive (0)
 #define NUM_SEGMENTS_PER_PATH 16         // For random path control points
 #define AERO_STANDARD_RANDOM_PATH_SECONDS 15  // Match trainer path duration limit
 
@@ -230,6 +236,58 @@ private:
 public:
   EmbeddedPathSelector() : segment_count(0), was_truncated(false) {}
 
+  // 043 T100 -- shared body for the two seeded random courses (slot 5 = B, slot 3 = A).
+  // Identical to the desktop generator; only the seed differs between A and B.
+  void appendSeededRandom(unsigned int seed, const gp_vec3& entryPoint) {
+    gp_scalar odometer_unused = static_cast<gp_scalar>(0); (void)odometer_unused;
+    // Generate seeded random path using desktop-compatible mt19937
+    std::mt19937 rng(seed);
+
+    gp_vec3 controlPoints[NUM_SEGMENTS_PER_PATH];
+    for (int i = 0; i < NUM_SEGMENTS_PER_PATH; ++i) {
+      // ⛔ 041 P2-3 — was height=100.0f here against the DESKTOP's 40, so the
+      // xiao generated a completely different random rabbit: an analytic
+      // envelope of entry + 112.5 m against the sim's entry + 45 m. A live
+      // sim/flight divergence in the target itself, found by the max-extent
+      // cross-check. Both sides now use SIM_PATH_BOUNDS / SIM_PATH_HEIGHT_BOUNDS.
+      controlPoints[i] = localRandomPointInCylinder(rng, SIM_PATH_BOUNDS, SIM_PATH_HEIGHT_BOUNDS, static_cast<gp_scalar>(0.0f));
+    }
+
+    // Generate smooth path through control points
+    gp_scalar odometer = static_cast<gp_scalar>(0);
+    gp_vec3 lastPoint;
+    gp_vec3 lastDirection;
+    bool first = true;
+
+    for (int i = 1; i < NUM_SEGMENTS_PER_PATH - 3; ++i) {
+      for (gp_scalar t = 0; t <= static_cast<gp_scalar>(1.0); t += static_cast<gp_scalar>(0.02f)) {
+        if (segment_count >= MAX_EMBEDDED_PATH_SEGMENTS) return;
+
+        gp_vec3 interpolatedPoint = cubicInterpolate(controlPoints[i - 1], controlPoints[i],
+                                                     controlPoints[i + 1], controlPoints[i + 2], t);
+        if (!first) {
+          gp_scalar newDistance = (interpolatedPoint - lastPoint).norm();
+          gp_vec3 newDirection = (interpolatedPoint - lastPoint).normalized();
+
+          segments[segment_count++] = Path(interpolatedPoint, gp_vec3::UnitX(), odometer, static_cast<gp_scalar>(0.0f));
+
+          odometer += newDistance;
+          lastDirection = newDirection;
+
+          // Stop at max path length
+          if (odometer > EMBEDDED_MAX_PATH_LENGTH_M) {
+            return;
+          }
+        } else {
+          first = false;
+          lastDirection = (interpolatedPoint - entryPoint).normalized();
+        }
+        lastPoint = interpolatedPoint;
+      }
+    }
+  }
+
+
   // Generate selected path at canonical origin (0,0,0)
   // Paths generate in canonical coordinate frame; craft at virtual (0,0,0) when armed
   // WARNING: If path exceeds MAX_EMBEDDED_PATH_SEGMENTS, it will be truncated
@@ -291,6 +349,11 @@ public:
       }
 
       case FortyFiveDegreeAngledLoop: {
+#if EMBEDDED_PATH3_RANDOM_A
+        // 043 T100 -- slot 3 is the SECOND random course (mirrors AeroStandardPath3=randomA)
+        appendSeededRandom(EMBEDDED_PATH_SEED_A, entryPoint);
+        break;
+#endif
         const gp_scalar cos45 = std::sqrt(static_cast<gp_scalar>(2.0f)) / static_cast<gp_scalar>(2.0f);
         const gp_scalar sin45 = cos45;
         gp_scalar loopRadius = static_cast<gp_scalar>(15.0f);
@@ -363,52 +426,7 @@ public:
       }
 
       case SeededRandomB: {
-        // Generate seeded random path using desktop-compatible mt19937
-        std::mt19937 rng(seed);
-
-        gp_vec3 controlPoints[NUM_SEGMENTS_PER_PATH];
-        for (int i = 0; i < NUM_SEGMENTS_PER_PATH; ++i) {
-          // ⛔ 041 P2-3 — was height=100.0f here against the DESKTOP's 40, so the
-          // xiao generated a completely different random rabbit: an analytic
-          // envelope of entry + 112.5 m against the sim's entry + 45 m. A live
-          // sim/flight divergence in the target itself, found by the max-extent
-          // cross-check. Both sides now use SIM_PATH_BOUNDS / SIM_PATH_HEIGHT_BOUNDS.
-          controlPoints[i] = localRandomPointInCylinder(rng, SIM_PATH_BOUNDS, SIM_PATH_HEIGHT_BOUNDS, static_cast<gp_scalar>(0.0f));
-        }
-
-        // Generate smooth path through control points
-        gp_scalar odometer = static_cast<gp_scalar>(0);
-        gp_vec3 lastPoint;
-        gp_vec3 lastDirection;
-        bool first = true;
-
-        for (int i = 1; i < NUM_SEGMENTS_PER_PATH - 3; ++i) {
-          for (gp_scalar t = 0; t <= static_cast<gp_scalar>(1.0); t += static_cast<gp_scalar>(0.02f)) {
-            if (segment_count >= MAX_EMBEDDED_PATH_SEGMENTS) goto exitLoop;
-
-            gp_vec3 interpolatedPoint = cubicInterpolate(controlPoints[i - 1], controlPoints[i],
-                                                         controlPoints[i + 1], controlPoints[i + 2], t);
-            if (!first) {
-              gp_scalar newDistance = (interpolatedPoint - lastPoint).norm();
-              gp_vec3 newDirection = (interpolatedPoint - lastPoint).normalized();
-
-              segments[segment_count++] = Path(interpolatedPoint, gp_vec3::UnitX(), odometer, static_cast<gp_scalar>(0.0f));
-
-              odometer += newDistance;
-              lastDirection = newDirection;
-
-              // Stop at max path length
-              if (odometer > EMBEDDED_MAX_PATH_LENGTH_M) {
-                goto exitLoop;
-              }
-            } else {
-              first = false;
-              lastDirection = (interpolatedPoint - entryPoint).normalized();
-            }
-            lastPoint = interpolatedPoint;
-          }
-        }
-      exitLoop:
+        appendSeededRandom(seed, entryPoint);
         break;
       }
     }

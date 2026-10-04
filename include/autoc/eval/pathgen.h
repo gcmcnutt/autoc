@@ -20,6 +20,16 @@
 
 #define NUM_SEGMENTS_PER_PATH 16
 
+// 043 T100 -- aeroStandard slot 3 is switchable: the historical 45-degree loop
+// (median 7.7 s -- a fifth of the random path) or a SECOND seeded random course
+// so 2/6 of the regiment has a random entry. Kept as a switch (default =
+// historical) so a pinned run's eval ini reproduces the path set it trained on.
+// Storage lives in pathgen.cc; set from autoc.ini before generateSmoothPaths.
+enum class AeroStandardPath3 { FortyFiveLoop = 0, SeededRandomA = 1 };
+void setAeroStandardOptions(AeroStandardPath3 path3, unsigned int seedA);
+AeroStandardPath3 aeroStandardPath3();
+unsigned int aeroStandardSeedA();
+
 // Maximum path length in meters (geometry-only paths have no timing)
 constexpr gp_scalar MAX_PATH_LENGTH_M = 2000.0f;
 
@@ -382,6 +392,46 @@ public:
       }
 
       case AeroStandardPathType::FortyFiveDegreeAngledLoop: {
+        // 043 T100 -- slot 3 switch. randomA duplicates the SeededRandomB
+        // generator body with RandomPathSeedA so the two random courses differ
+        // only by seed; the historical loop below is unchanged.
+        if (aeroStandardPath3() == AeroStandardPath3::SeededRandomA) {
+          std::mt19937 rng(aeroStandardSeedA());  // 043 T100 -- second seed, same generator
+          std::vector<gp_vec3> controlPoints;
+          int numPoints = NUM_SEGMENTS_PER_PATH;
+          for (int i = 0; i < numPoints; ++i) {
+            controlPoints.push_back(localRandomPointInCylinder(rng, radius, height, 0.0f));
+          }
+          gp_scalar odometer = 0;
+          gp_scalar turnmeter = 0;
+          gp_vec3 lastPoint;
+          gp_vec3 lastDirection;
+          bool first = true;
+          // ⚠️ `height` is the CONTROL-POINT bound, not the realized one: the
+          // Catmull-Rom interpolation below overshoots it by 1/8. See
+          // SIM_PATH_HEIGHT_BOUNDS and tests/arena_path_fit_tests.cc.
+          for (size_t i = 1; i < controlPoints.size() - 3; ++i) {
+            for (gp_scalar t = 0; t <= 1; t += static_cast<gp_scalar>(0.02f)) {
+              gp_vec3 interpolatedPoint = cubicInterpolate(controlPoints[i - 1], controlPoints[i],
+                                                           controlPoints[i + 1], controlPoints[i + 2], t);
+              if (!first) {
+                gp_scalar newDistance = (interpolatedPoint - lastPoint).norm();
+                gp_vec3 newDirection = (interpolatedPoint - lastPoint).normalized();
+                gp_scalar dVector = lastDirection.dot(newDirection);
+                gp_scalar dAngle = std::acos(std::clamp(dVector / (lastDirection.norm() * newDirection.norm()), -1.0f, 1.0f));
+                path.push_back(Path(interpolatedPoint, gp_vec3::UnitX(), odometer, turnmeter));
+                odometer += newDistance;
+                turnmeter += dAngle;
+                lastDirection = newDirection;
+              } else {
+                first = false;
+                lastDirection = (interpolatedPoint - entryPoint).normalized();
+              }
+              lastPoint = interpolatedPoint;
+            }
+          }
+          break;
+        }
         const gp_scalar cos45 = std::sqrt(2.0f) / 2.0f;
         const gp_scalar sin45 = std::sqrt(2.0f) / 2.0f;
         gp_scalar loopRadius = 15.0f;

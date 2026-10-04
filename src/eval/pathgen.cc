@@ -1,5 +1,12 @@
 #include "autoc/eval/pathgen.h"
 #include "autoc/util/rng.h"
+
+// 043 T100 -- aeroStandard slot-3 option storage (see pathgen.h).
+static AeroStandardPath3 gAeroPath3 = AeroStandardPath3::FortyFiveLoop;
+static unsigned int gAeroSeedA = 12345u;
+void setAeroStandardOptions(AeroStandardPath3 path3, unsigned int seedA) { gAeroPath3 = path3; gAeroSeedA = seedA; }
+AeroStandardPath3 aeroStandardPath3() { return gAeroPath3; }
+unsigned int aeroStandardSeedA() { return gAeroSeedA; }
 #include <cmath>
 #include <iostream>
 #include <ctime>

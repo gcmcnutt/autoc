@@ -243,6 +243,12 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(arena_path_fit_tests tests/arena_path_fit_tests.cc)
   target_link_libraries(arena_path_fit_tests GTest::gtest GTest::gtest_main autoc_common)
 
+  # 043 t4 -- wind envelope contract + aeroStandard slot-3 switch
+  add_executable(wind_variation_tests tests/wind_variation_tests.cc)
+  target_link_libraries(wind_variation_tests GTest::gtest GTest::gtest_main autoc_common)
+  add_executable(aero_path3_tests tests/aero_path3_tests.cc)
+  target_link_libraries(aero_path3_tests GTest::gtest GTest::gtest_main autoc_common)
+
   add_executable(trail_rabbit_tests tests/trail_rabbit_tests.cc)
   target_link_libraries(trail_rabbit_tests GTest::gtest GTest::gtest_main autoc_common)
 
@@ -365,6 +371,8 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME tracker_stepper_init_tests COMMAND tracker_stepper_init_tests)
   add_test(NAME arena_tests COMMAND arena_tests)
   add_test(NAME arena_path_fit_tests COMMAND arena_path_fit_tests)
+  add_test(NAME wind_variation_tests COMMAND wind_variation_tests)
+  add_test(NAME aero_path3_tests COMMAND aero_path3_tests)
   add_test(NAME trail_rabbit_tests COMMAND trail_rabbit_tests)
   add_test(NAME crash_hull_tests COMMAND crash_hull_tests)
   add_test(NAME derived_features_tests COMMAND derived_features_tests)
@@ -407,6 +415,8 @@ if(ENABLE_AUTOC_TESTS)
             tracker_stepper_init_tests
             arena_tests
             arena_path_fit_tests
+            wind_variation_tests
+            aero_path3_tests
             trail_rabbit_tests
             crash_hull_tests
             derived_features_tests

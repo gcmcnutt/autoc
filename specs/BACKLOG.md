@@ -29,6 +29,59 @@
 
 ---
 
+## 043 deferrals (filed 2026-09-13, from the t3 flight)
+
+### [043 t3 flight, filed 2026-09-13 · ⏳ TRIGGER: after solid M2 results] NN pathology handling — the policy is tuned for close tracking, not for when things go wrong
+
+Operator 2026-09-13: *"we've so finely tuned for close tracking, things like loss of signal result in idle
+throttle, or other out of bounds."* Off-nominal handling is a **distinct capability** from tracking, and
+nothing in the current objective asks for it. Every pathology below is already **measured**, not hypothetical:
+
+| pathology | what the policy does | evidence |
+|---|---|---|
+| far / cold-start entry | **throttle rails at idle**, glides into the floor, never enters the cone | t3 eval: **100.0%** of crashed ticks at `out_th` < −0.9 (BACKLOG § patrol/intercept → UPDATE 2026-09-11) |
+| static / OOD airspeed | **pitch rails nose-down** for the whole engagement | t2 bench T069: 93% of max |
+| estimator fault | handed a **36 m and an 87 m `pos_d` step in one tick**; boundary input rails; **pilot rescue** | 09-13 span 2 (flight-analysis-20260913 §3) |
+| vertical estimator divergence | altitude estimate drifts up to 93 m from baro while engaged | 09-13 ADDENDUM A4 — all three ACRO flights |
+| loss of signal (M2 camera) | idle-throttle / out-of-bounds | operator observation |
+
+⭐ **Why after M2, not now** (operator): these are robustness properties of a policy that must first be
+*good*. Consistent with [project_sensor_modality_vs_fault](../../.claude/projects/-home-gmcnutt-autoc/memory/project_sensor_modality_vs_fault.md) — fault-robustness is a later-era problem than extracting information from nominal sensing.
+
+Candidate approaches — **options, not decisions**:
+1. **Input plausibility gating** — reject physically impossible steps (a 36 m / 22.7 m/s single-tick `pos_d`
+   jump is not flight) before they reach the network.
+2. **Train with injected faults** — estimator resets, dropouts, stale inputs, as a variation class.
+3. **Supervisory fallback** — detect the pathology and hand control back to INAV (ANGLE / RTH) rather
+   than expecting the policy to recover. Pairs with § "Failsafe Refinement and Bench Verification".
+4. **Objective terms** — the t3 crash price shows a priced constraint moves behaviour exactly as intended;
+   an off-nominal recovery case could be priced the same way.
+
+⚠️ **Candidate for EARLIER promotion — flagged, not decided**: item 1 for the *estimator* pathology. Unlike
+the others it has already produced a **pilot rescue**, and gating an obviously non-physical input step is
+cheap and does not require retraining. The operator may want it before M2 on safety grounds even if the
+rest waits.
+
+### [043 t3 flight, filed 2026-09-13 · ⭐ early-days hardware] Pitot tube — give the policy true airspeed
+
+Operator 2026-09-13: *"at some point a pitot tube is prob something for early days indeed."*
+
+⭐ **Direct relevance to the wind defect.** The `AIRSPEED` NN input is **groundspeed on both sides** —
+`msplink.cpp:1144` `setRelVel(velocity.norm())` and `inputdev_autoc.cpp:897` `v = velocity_vector.norm()`
+("ground speed magnitude"). In wind, groundspeed ≠ airspeed, so the policy **cannot distinguish wind from
+its own motion**. The ~25 m one-sided downwind tracking bias on 09-13 (flight-analysis-20260913 §2) is what
+that costs. A pitot gives:
+- a **true-airspeed** input the sim can already produce (the FDM has TAS);
+- a much better **INAV wind estimate** — today's is heavily filtered and understates gust peaks
+  (ADDENDUM A3);
+- stall-margin awareness, relevant to the stall cycle in `actuator-pin.md` §8/§9.
+
+⚠️ **Cost**: hardware + INAV config + an MSP field + a changed NN input semantic ⇒ `kNNHistoryLayoutVersion`
+bump and a retrain. ⭐ Overlaps the static-port re-site (flight-analysis-20260913 §6 #5) — a pitot-static
+head could solve both, and the static port is chronically eating ~4.5 m RMS of altitude in flight.
+
+---
+
 ## 043 deferrals (filed 2026-09-04, from the t2 post-bake eval)
 
 ### [operator 2026-09-07 · LOW COST, needs open ground] Compass calibration is under-covered on one axis
@@ -2503,7 +2556,13 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 - **Type-domain grep audit** (T028/T046, Principle VI): grep `src/eval/ src/nn/` for float/double drift on
   the 037-touched paths; confirm `gp_scalar`/`gp_fitness` convention. Cleanup, non-blocking.
 
-### `wind_velocity` not recorded in the dmp (honest-recording gap)
+### `wind_velocity` not recorded in the dmp (honest-recording gap) · ⚠️ PARTLY RESOLVED (status 2026-09-13)
+
+> ⭐ **Status 2026-09-13**: 038 P0-D-3 now sets it from `eom01->getLastLocalAirmass()`
+> (`inputdev_autoc.cpp:~955`), and the dmp's `wN,wE,wD` columns carry real values — the 09-13 ADDENDUM A2
+> used them. ⚠️ **But that is steady wind + thermals only.** Turbulence lives in a separate `gustBody`
+> channel (`getLastGustBody()`, recorded in `PhysicsTraceEntry`) that the pathgen CSV does not expose, so
+> the realized **gusty** wind is still not auditable per tick. The remaining gap is gusts, not the steady wind.
 
 - **Found 2026-06-16** (wind-study): `AircraftState::wind_velocity` is serialized but **never set** in
   the crrcsim→AircraftState record path — it is **zero in every dmp** (M1 + M2). The actual wind lives

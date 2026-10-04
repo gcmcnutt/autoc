@@ -30,6 +30,7 @@
 
 #include "autoc/util/socket_wrapper.h"
 #include "autoc/eval/aircraft_state.h"
+#include "autoc/eval/wind_variation.h"  // 043 t4 -- wind envelope (RPC-only)
 #include "autoc/eval/arena.h"               // FlightArena (030 M7a)
 #include "autoc/eval/beacon_config.h"
 #include "autoc/eval/camera_config.h"
@@ -236,6 +237,16 @@ struct WorkerInit {
   // run regardless (draw-and-discard, same convention as wind above).
   bool servoModelEnabled = false;
 
+  // 043 t4 (T087) -- per-scenario WIND ENVELOPE ranges: speed, turbulence
+  // intensity, gust length scale, thermal strength/count. HERE and not in
+  // ScenarioMetadata for the same load-bearing reason as cameraVariations:
+  // WorkerInit is RPC-only and never persisted, so adding it orphans no dmp.
+  // All ranges default to OFF (no change) -- with the ini keys absent the
+  // worker realizes the base wind exactly and t3's tier0 stays bitwise.
+  // The worker draws from the scenario's wind subseed AFTER drawnWindSeed
+  // (draw-and-discard), so the thermal/gust seed stream is unchanged.
+  autoc::eval::WindVariationConfig windVariation;
+
   // 041 T035 (FR-018a) — the fitness cone, primed to the worker so the step
   // score can be computed IN the tick path. The worker has no ConfigManager, so
   // without these it cannot score a tick at all. RPC-only struct, so adding
@@ -308,7 +319,9 @@ struct WorkerInit {
        // 041 T038 -- M2 envelope estimator, appended, no version bump
        envelopeSpanLo, envelopeSpanHi, envelopeCentroidRadius,
        // 041 T049 -- ablation mask, appended, no version bump
-       nnInputMask);
+       nnInputMask,
+       // 043 t4 T087 -- wind envelope ranges, appended, no version bump
+       windVariation);
     mode = static_cast<Mode>(m);
   }
 };

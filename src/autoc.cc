@@ -986,6 +986,22 @@ static WorkerInit buildWorkerInit() {
     // worker gates the fdm_larcsim servo block on it.
     init.servoModelEnabled = (cfg.servoModelEnabled != 0);
 
+    // 043 t4 (T087) -- wind envelope ranges, RPC-only. Defaults are OFF so an
+    // ini without the keys realizes the base wind exactly (t3 tier0 bitwise).
+    init.windVariation.windSpeedMinMps      = cfg.windSpeedMinMps;
+    init.windVariation.windSpeedMaxMps      = cfg.windSpeedMaxMps;
+    init.windVariation.turbIntensityMin     = cfg.windTurbIntensityMin;
+    init.windVariation.turbIntensityMax     = cfg.windTurbIntensityMax;
+    init.windVariation.gustLengthScaleMin   = cfg.windGustLengthScaleMin;
+    init.windVariation.gustLengthScaleMax   = cfg.windGustLengthScaleMax;
+    init.windVariation.thermalStrengthMin   = cfg.thermalStrengthScaleMin;
+    init.windVariation.thermalStrengthMax   = cfg.thermalStrengthScaleMax;
+    init.windVariation.thermalCountMax      = cfg.thermalCountMax;
+    if (init.windVariation.anyEnabled() && !init.enableWindVariations) {
+      throw std::runtime_error("Wind envelope keys are set but EnableWindVariations=0 -- "
+                               "they would be silently ignored. Enable it or clear the keys.");
+    }
+
     // 041 T035 (FR-018a) — the fitness cone, primed so the worker can score a
     // tick IN the tick path rather than leaving it to be re-derived post-hoc.
     // These have NO in-class defaults (Constitution VII): a plausible default
@@ -2196,6 +2212,24 @@ int main(int argc, char** argv)
   };
 
   // Generate initial paths using pre-fetched gPathSeed (single PRNG architecture)
+  // 043 T100 -- slot-3 switch + second random seed. Parsed fail-loud: a typo
+  // must not silently fall back to the historical loop.
+  {
+    // inih strips only ';' inline comments, so a trailing "# ..." would ride along
+    // in a string value; trim at '#'/';' and whitespace before comparing.
+    std::string p3s = cfg.aeroStandardPath3;
+    { const auto cut = p3s.find_first_of("#;"); if (cut != std::string::npos) p3s.erase(cut);
+      const auto b = p3s.find_first_not_of(" \t"); const auto e = p3s.find_last_not_of(" \t");
+      p3s = (b == std::string::npos) ? std::string() : p3s.substr(b, e - b + 1); }
+    AeroStandardPath3 p3;
+    if (p3s == "fortyFive")    p3 = AeroStandardPath3::FortyFiveLoop;
+    else if (p3s == "randomA") p3 = AeroStandardPath3::SeededRandomA;
+    else throw std::runtime_error("AeroStandardPath3 must be 'fortyFive' or 'randomA', got '" +
+                                  cfg.aeroStandardPath3 + "'");
+    setAeroStandardOptions(p3, static_cast<unsigned int>(cfg.randomPathSeedA));
+    *logger.info() << "AeroStandardPath3: " << p3s
+                   << " (RandomPathSeedA=" << cfg.randomPathSeedA << ")" << std::endl;
+  }
   generationPaths = generateSmoothPaths(const_cast<char*>(cfg.generatorMethod.c_str()),
                                         cfg.simNumPathsPerGen,
                                         // 041 P2-3 — radius and HEIGHT are separate bounds now:
