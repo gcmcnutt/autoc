@@ -11,9 +11,15 @@ Stiff wind — operator called 290–300°; INAV's own estimator says **from 307
 band share and amplitude — and t7 flew with INAV's rate loop BYPASSED. The oscillation is therefore not
 produced by the rate loop, and the 043 phase-budget thesis does not explain it.**
 
-Two independent problems sit alongside it: **prop imbalance** (`accVib` is a direct function of motor
-output, r = 0.75) feeding the vertical-estimator resets, and **wind speed is not a variation class**,
-which shows up as a one-sided downwind tracking bias.
+Two independent problems sit alongside it: **prop-driven vibration** (`accVib` is a direct function of
+motor output, r = 0.75) feeding the vertical-estimator resets, and **wind speed is not a variation
+class**, which shows up as a one-sided downwind tracking bias.
+
+> ⛔ **Superseded attribution (2026-10-04).** This document calls the vibration *imbalance*. A bench
+> order analysis shows it is **2/rev blade-pass**, not 1/rev imbalance — the shaft order is a median
+> 7.6 % of the blade-pass line. The `accVib` correlation and the whole causal chain in § 3 stand; only
+> the mechanism name changes, and with it the remedy: **balancing the prop will not help.** See
+> [`vibration-analysis-20261004.md`](vibration-analysis-20261004.md).
 
 ---
 
@@ -116,7 +122,23 @@ The gap is in the **environment distribution**, not the input vector.
 
 ---
 
-## 3. ⭐ Prop imbalance — measurable, and it drives the estimator resets
+## 3. ⭐ Prop vibration — measurable, and it drives the estimator resets
+
+> ⛔ **Superseded — read [`vibration-analysis-20261004.md`](vibration-analysis-20261004.md) §§ 4, 5.1 and
+> 5.2 before acting on this section.** The `accVib`-vs-throttle numbers below are correct, but **`accVib`
+> is NOT the cause of the estimator resets.** An all-flights survey (29 logs, re-decoded from source)
+> finds the two *highest*-vibration logs carrying `navPos[2]` were **never engaged and had zero jumps**
+> (2026-09-07 `103927` #2 at 2.63 g, 2026-04-03 #2 at 2.32 g), while 2026-09-05 had **3 jumps at
+> 1.33 g** — the lowest of the group. Vibration does not separate.
+>
+> What *does*: **every one of the 24 jumps in the repo is inside an autoc engage span or within 10.3 s
+> of one**, and `navEPV` reaching `inav_max_eph_epv = 1000` cm (what "EPV pinned at 999" is) separates
+> troubled from clean flights **20/20**. The real amplifier candidate — `navPos` corrections scaled by
+> `1.0f/accWeight` — is documented in § 5.1 but demoted to a contributing gain, not the trigger.
+>
+> The *label* "imbalance" is wrong: the energy is 2/rev blade-pass (intrinsic to a 2-blade prop), with
+> 1/rev imbalance a median 7.6 % of it. ⇒ Do **not** spend time balancing the prop on the strength of
+> § 3. The lever is `accVib` below 2048 (1.0 g), via FC soft-mounting or less throttle railing.
 
 `accVib` against motor output, this flight, whole armed period:
 
@@ -170,6 +192,12 @@ Max per-tick step in the NN input stream: **span 1 = 0.75 m, span 2 = 86.69 m, s
 The pilot pulled it 0.14 s after the second step. ⭐ **The rescue was correct and immediate.**
 
 ### The static port is chronically noisy, but it is NOT what changed
+
+> ⭐ **Re-confirmed 2026-10-04 by a different test.** The 1 s moving-mean residual below high-passes away
+> a slow airspeed-dependent bias, so it could not see one. Measuring that bias directly (baro vs GPS
+> vs V²) gives **4.9 m on t3 against 4.1 m on t7** — still the same between the two flights, and still
+> 20× too small for the +93/+119 m excursions.
+> [`vibration-analysis-20261004.md`](vibration-analysis-20261004.md) § 5.1.
 
 Baro residual about a 1 s moving mean:
 
@@ -316,7 +344,9 @@ and it lives in the command, not the response.
   rate-command/ACRO control, across two genomes, and across a 3.5× wind change — and is absent in MANUAL
   segments of the same flight. **It is not INAV's rate loop, and it is not the phase budget 043 targeted.**
 - The OOD nose-down rail is gone (pitch railing ≤0.3%).
-- Prop imbalance is quantified and is the proximate driver of the vertical-estimator resets.
+- Prop vibration is quantified and is the proximate driver of the vertical-estimator resets.
+  ⛔ Re-attributed 2026-10-04 to 2/rev **blade-pass**, not imbalance —
+  [`vibration-analysis-20261004.md`](vibration-analysis-20261004.md).
 - Wind speed has no variation class, and the cost is a ~25 m one-sided downwind tracking bias.
 - The engage prefill and action-space fixes from 09-06 have held: 0 gaps, 0 overruns, 0 drops.
 

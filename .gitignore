@@ -7,8 +7,16 @@ logs/
 # (data.stc retired in 034 T052 — autoc no longer produces root .stc, and the
 #  stale pre-T052 root data.stc/eval-data.stc were deleted, so no ignore rule
 #  is needed. Committed reference snapshots live under specs/.)
-# Ignore CSVs in root (decoded blackbox) but not in flight-results/
+# Ignore CSVs in root (decoded blackbox)
 /*.csv
+# Decoded blackbox artifacts are regenerable from the .TXT with blackbox_decode,
+# so they are NOT tracked (operator 2026-10-04). The .TXT is the source of truth.
+# Pre-existing decoded CSVs in older flight-results/ dirs stay tracked -- these
+# rules only stop new ones being added.
+flight-results/**/*.01.csv
+flight-results/**/*.01.gps.csv
+flight-results/**/*.01.gps.gpx
+flight-results/**/*.01.event
 nn_weights.dat
 nohup.out
 core.*
