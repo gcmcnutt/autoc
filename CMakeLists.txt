@@ -248,6 +248,8 @@ if(ENABLE_AUTOC_TESTS)
   target_link_libraries(wind_variation_tests GTest::gtest GTest::gtest_main autoc_common)
   add_executable(aero_path3_tests tests/aero_path3_tests.cc)
   target_link_libraries(aero_path3_tests GTest::gtest GTest::gtest_main autoc_common)
+  add_executable(excess_rotation_tests tests/excess_rotation_tests.cc)
+  target_link_libraries(excess_rotation_tests GTest::gtest GTest::gtest_main autoc_common)
 
   add_executable(trail_rabbit_tests tests/trail_rabbit_tests.cc)
   target_link_libraries(trail_rabbit_tests GTest::gtest GTest::gtest_main autoc_common)
@@ -373,6 +375,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME arena_path_fit_tests COMMAND arena_path_fit_tests)
   add_test(NAME wind_variation_tests COMMAND wind_variation_tests)
   add_test(NAME aero_path3_tests COMMAND aero_path3_tests)
+  add_test(NAME excess_rotation_tests COMMAND excess_rotation_tests)
   add_test(NAME trail_rabbit_tests COMMAND trail_rabbit_tests)
   add_test(NAME crash_hull_tests COMMAND crash_hull_tests)
   add_test(NAME derived_features_tests COMMAND derived_features_tests)
@@ -417,6 +420,7 @@ if(ENABLE_AUTOC_TESTS)
             arena_path_fit_tests
             wind_variation_tests
             aero_path3_tests
+            excess_rotation_tests
             trail_rabbit_tests
             crash_hull_tests
             derived_features_tests

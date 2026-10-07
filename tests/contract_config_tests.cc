@@ -256,8 +256,9 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // 043 t4 added RandomPathSeedA + AeroStandardPath3 (T100) and the 9 wind-
     // envelope keys WindSpeed{Min,Max}Mps, WindTurbIntensity{Min,Max},
     // WindGustLengthScale{Min,Max}, ThermalStrengthScale{Min,Max},
-    // ThermalCountMax (T087/T087a/T087b/T088) → 164.
-    EXPECT_EQ(n, 164u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // ThermalCountMax (T087/T087a/T087b/T088) → 164; 043 T102 added
+    // EnableExcessRotationAxis → 165.
+    EXPECT_EQ(n, 165u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

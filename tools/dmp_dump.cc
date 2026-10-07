@@ -403,7 +403,8 @@ int doRunSummary(const Aws::S3::S3Client& s3, const std::string& bucket,
                  "path0_rollrate,path1_rollrate,path2_rollrate,path3_rollrate,"
                  "path4_rollrate,path5_rollrate,"
                  "path0_pitchrate,path1_pitchrate,path2_pitchrate,path3_pitchrate,"
-                 "path4_pitchrate,path5_pitchrate,scenarios\n";
+                 "path4_pitchrate,path5_pitchrate,scenarios,"
+                 "mean_excess_rot,rot_ratio\n";   // 043 T102 — appended
   }
   for (size_t i = 0; i < keys.size(); i += stride) {
     const std::string& k = keys[i];
@@ -420,9 +421,10 @@ int doRunSummary(const Aws::S3::S3Client& s3, const std::string& bucket,
       continue;
     }
     const auto sc = computeScenarioScores(r);
-    double me = 0, ms = 0, mk = 0; int cr = 0;
+    double me = 0, ms = 0, mk = 0; int cr = 0; double mcr = 0, mpr = 0;   // 043 T102
     for (const auto& s : sc) { me += s.energy_score; ms += s.stability_score;
-                               mk += s.maxStreak; if (s.crashed) cr++; }
+                               mk += s.maxStreak; if (s.crashed) cr++;
+                               mcr += s.craft_rotation; mpr += s.path_rotation; }
     const double N = sc.empty() ? 1.0 : static_cast<double>(sc.size());
     const AxisAggr ag = computeAggr(r);
     const PerPathRates pp = computePerPathRates(r);
@@ -432,7 +434,7 @@ int doRunSummary(const Aws::S3::S3Client& s3, const std::string& bucket,
            ag.dctrl[0], ag.dctrl[1], ag.dctrl[2], ag.mag[0], ag.mag[1], ag.mag[2]);
     for (int p = 0; p < kMaxPaths; ++p) printf("%.3f,", pp.roll[p]);
     for (int p = 0; p < kMaxPaths; ++p) printf("%.3f,", pp.pitch[p]);
-    printf("%zu\n", sc.size());
+    printf("%zu,%.4f,%.4f\n", sc.size(), (mcr - mpr) / N, (mpr > 1e-9 ? mcr / mpr : 0.0));   // 043 T102
     fflush(stdout);
     if ((i / stride) % 10 == 0)
       std::cerr << "  ... gen " << gen << " (" << (i + 1) << "/" << keys.size() << ")\n";
@@ -639,6 +641,8 @@ int main(int argc, char** argv) {
       // the unit is stated rather than left to the name.
       std::cout << "    energy_score_m_destroyed: " << s.energy_score << "\n";
       std::cout << "    stability_score: " << s.stability_score << "\n";
+      std::cout << "    excess_rotation_rad: " << s.excess_rotation << "  (craft " << s.craft_rotation
+                << " / path " << s.path_rotation << ")\n";   // 043 T102
       std::cout << "    max_streak: " << s.maxStreak << "\n";
       // 037 T005 — streak_steps + max_multiplier complete the per-scenario
       // reconstructability set: with these, the dmp carries everything the

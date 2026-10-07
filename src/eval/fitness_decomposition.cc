@@ -1,4 +1,5 @@
 #include "autoc/eval/fitness_decomposition.h"
+#include "autoc/eval/excess_rotation.h"  // 043 T102
 #include "autoc/eval/energy_state.h"   // 041 P2-5 — Ps, one definition shared with the input and the reader
 #include "autoc/rpc/protocol.h"
 #include "autoc/autoc.h"
@@ -149,6 +150,7 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         // rewards.
         gp_fitness stabilityAccum = 0.0;
         gp_fitness energyAccum = 0.0;
+        autoc::eval::ExcessRotationAccum rotAccum;   // 043 T102
 
         // Previous tangent for last-waypoint fallback
         gp_vec3 prevTangent = gp_vec3::UnitX();
@@ -250,6 +252,11 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
                 }
             }
 
+            // 043 T102 — excess rotation over the path's demand. `tangent` is the
+            // path direction in pathgen mode and the TARGET's velocity direction in
+            // tracker mode, so the demand is whatever the thing being tracked
+            // actually did; ‖ω‖ is the airframe's rotation. dt = the tick spacing.
+            rotAccum.step(tangent, stepState.getGyroRates(), SIM_TIME_STEP_MSEC / 1000.0);
             // Decompose aircraft-rabbit offset into along-track and cross-track
             gp_vec3 offset = aircraftPosition - rabbitPosition;
             double along = offset.dot(tangent);
@@ -432,6 +439,9 @@ std::vector<ScenarioScore> computeScenarioScores(EvalResults& evalResults) {
         result.score = -accumulatedScore;       // Negate: lower = better
         result.stability_score = stabilityAccum; // Already negative; lower = better
         result.energy_score = energyAccum;       // 041 P2-7: convex throttle-power integral; >= 0, lower = better
+        result.excess_rotation = rotAccum.excess();        // 043 T102: rad over the path's demand; lower = better
+        result.craft_rotation = rotAccum.craft_rotation;
+        result.path_rotation = rotAccum.path_rotation;
         result.crashed = isCrash(crashReason);
         result.crashReason = crashReason;
 

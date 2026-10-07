@@ -1407,6 +1407,8 @@ static void runNNEvaluation(
                    << " maxStrk=" << sc.maxStreak
                    << " strkSteps=" << sc.totalStreakSteps
                    << " maxMult=" << std::setprecision(1) << sc.maxMultiplier
+                   << " exRot=" << std::setprecision(1) << sc.excess_rotation      // 043 T102 (rad)
+                   << " rotRatio=" << std::setprecision(2) << (sc.path_rotation > 1e-9 ? sc.craft_rotation / sc.path_rotation : 0.0)
                    << endl;
     // 030 M11.wrap T088 + 327-330 — tracker-mode per-scenario diagnostics.
     // Emitted as indented continuation line; suppressed in pathgen mode.
@@ -1672,6 +1674,7 @@ static void runNNEvolution(
     double pctInStreak = 0.0;
     double totalStability = 0.0;
     double totalEnergy = 0.0;
+    double totalCraftRot = 0.0, totalPathRot = 0.0;   // 043 T102
     if (!bestScores.empty()) {
       double streakSum = 0.0, totalStrkSteps = 0.0, totalSteps = 0.0;
       for (const auto& sc : bestScores) {
@@ -1680,6 +1683,8 @@ static void runNNEvolution(
         totalSteps += sc.steps_completed;
         totalStability += sc.stability_score;
         totalEnergy += sc.energy_score;
+        totalCraftRot += sc.craft_rotation;
+        totalPathRot += sc.path_rotation;
       }
       avgMaxStreak = streakSum / bestScores.size();
       pctInStreak = (totalSteps > 0) ? 100.0 * totalStrkSteps / totalSteps : 0.0;
@@ -1707,6 +1712,11 @@ static void runNNEvolution(
          // a cross-run plot that mixes the two is comparing throttle effort
          // with energy waste.
          << " energy=" << std::setprecision(2) << totalEnergy
+         // 043 T102 — elite's rotation over the path's demand, summed over scenarios (rad),
+         // and the ratio craft/path (t3 pre-pressure median 4.9×). Reported whether or
+         // not the axis is selecting, so the baseline is visible on every run.
+         << " excessRot=" << std::setprecision(1) << (totalCraftRot - totalPathRot)
+         << " rotRatio=" << std::setprecision(2) << (totalPathRot > 1e-9 ? totalCraftRot / totalPathRot : 0.0)
          << " whh_xh_ratio=" << std::setprecision(4) << whh_xh_ratio
          << " w_xh0_cv=" << std::setprecision(4) << blockStats.w_xh0_cv
          << " w_xh1_cv=" << std::setprecision(4) << blockStats.w_xh1_cv
@@ -1833,9 +1843,11 @@ static void runNNEvolution(
         // EnablePredictorHead ablation gate is on (tracker-only; harmless in
         // pathgen where prediction_score is 0 for all candidates).
         const bool includePredAxis = (cfg.enablePredictorHead != 0);
-        evoParams.select = [allScores, useMadEps, includePredAxis](const NNPopulation&) {
+        // 043 T102 — excess rotation over the path's demand, co-equal case per scenario.
+        const bool includeRotAxis = (cfg.enableExcessRotationAxis != 0);
+        evoParams.select = [allScores, useMadEps, includePredAxis, includeRotAxis](const NNPopulation&) {
           return lexicase_select(allScores, static_cast<int>(allScores.size()), useMadEps,
-                                 0.05, includePredAxis);
+                                 0.05, includePredAxis, includeRotAxis);
         };
       } else if (selMode == SelectionMode::MINIMAX) {
         // Recompute fitness as minimax for tournament selection

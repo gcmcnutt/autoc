@@ -84,6 +84,14 @@ struct ScenarioScore {
     // and charged manoeuvring instead. See the accumulation site for the
     // 034-vs-035 evidence.
     gp_fitness energy_score;
+    // 043 T102 — EXCESS ROTATION over the path's demand (autoc/eval/excess_rotation.h):
+    // craft_rotation = Σ‖ω_body‖·dt, path_rotation = Σ∠(tangent_t, tangent_{t−1}),
+    // excess_rotation = craft − path; rad; lower = better. A lexicase axis gated on
+    // EnableExcessRotationAxis. ScenarioScore is post-hoc (not in the dmp), so these
+    // fields are schema-safe. Measured 4.9× (craft/path) on 043-t3 before pressure.
+    gp_fitness excess_rotation = 0;
+    gp_fitness craft_rotation = 0;
+    gp_fitness path_rotation = 0;
     // 038 US3 — aux span/closure-predictor error (tracker-only; 0 in pathgen and
     // when no CEP-visible (t, t+horizon) pairs exist). Mean |predicted_span −
     // realized_span| over the kSpanPredictHorizonsMsec lookaheads + the closure

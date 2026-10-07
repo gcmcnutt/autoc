@@ -60,7 +60,7 @@ namespace {
 
 int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
                     int pop_size, bool use_mad_epsilon, double epsilon,
-                    bool include_prediction_axis) {
+                    bool include_prediction_axis, bool include_excess_rotation_axis) {
     if (pop_size <= 0) return 0;
     int num_scenarios = all_scores.empty() ? 0 : static_cast<int>(all_scores[0].size());
     if (num_scenarios == 0) {
@@ -80,7 +80,8 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
     // tests need no ConfigManager). Separate lexicase axis — NOT scalar-
     // composited (sidesteps the 033 collapse), per FR-003.
     std::vector<TestCase> pool;
-    pool.reserve(static_cast<size_t>(num_scenarios) * (include_prediction_axis ? 3 : 2));
+    pool.reserve(static_cast<size_t>(num_scenarios) *
+                 (2 + (include_prediction_axis ? 1 : 0) + (include_excess_rotation_axis ? 1 : 0)));
     for (int s = 0; s < num_scenarios; s++) {
         pool.push_back({s, &ScenarioScore::score,           0.5});
         // 035 FR-008: stability_score axis stays OFF — it's a control-amplitude
@@ -93,6 +94,14 @@ int lexicase_select(const std::vector<std::vector<ScenarioScore>>& all_scores,
         pool.push_back({s, &ScenarioScore::energy_score,    0.5});
         if (include_prediction_axis) {
             pool.push_back({s, &ScenarioScore::prediction_score, 0.5});
+        }
+        // 043 T102: excess rotation over the path's demand — a CO-EQUAL case from
+        // gen 0 (035 lesson: a tie-break axis is effectively absent). Parameter-free:
+        // the path (or the target's own motion) sets the baseline. Not Δ=0-gameable
+        // (015) and not throttle-gameable (041 Es-destroyed). OFF by default so the
+        // pinned runs reproduce bitwise.
+        if (include_excess_rotation_axis) {
+            pool.push_back({s, &ScenarioScore::excess_rotation, 0.5});
         }
     }
 

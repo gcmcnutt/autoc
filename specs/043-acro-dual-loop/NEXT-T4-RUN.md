@@ -53,7 +53,36 @@ perfect threshold marker is the signature of a **threshold-crossing race**, not 
 conditions are present on *every* engaged flight; whether `navEPV` crosses 1000 decides whether it
 becomes a reset. Removing the ±7 g excitation is the lever — not more forensics.
 
-## 3. Suggested t4 shape — operator to confirm
+## 3. Suggested t4 shape — ✅ CONFIRMED 2026-10-05/06 (operator)
+
+⭐ **Objective-side change chosen: T102, the excess-rotation lexicase axis** — the craft's rotation minus what
+the path demands, per scenario, co-equal from gen 0, no tunable parameter. Derivation and the history of the
+alternatives (015's `Σ|Δu|` exploit, 041's Es-destroyed exploit, fixed g-caps = tuning, lookahead = cheating)
+in [tempered-control-first-principles.md](tempered-control-first-principles.md). Implemented and gated
+2026-10-06 (53/53 tests; t3 reproduces bitwise with the key absent). ⚠️ The sim-visibility caveat below
+is why the **jerk** term (item 1) was not chosen: the sim's pitch command has ~10% of its power at 2–3 Hz
+against 56–81% in flight (t3 ADDENDUM A1) — until D1 lands, a reversal term trains on a tone the sim does
+not make. The rotation measure has signal in today's sim: the t3 genome rotates **5.1×** the path's demand
+(straight-and-level 6.1×).
+
+### What changed, t3 → t4 (the delta of record; details in tasks.md Phase 10b)
+
+| | 043-t3 (flown 09-13) | **043-t4** |
+|---|---|---|
+| **objective** | tracking + throttle energy; OOB crash price 10.0 | **+ excess-rotation axis** (`EnableExcessRotationAxis = 1`, T102); energy + crash price unchanged |
+| **wind speed** | 3.66 m/s on every tick | **uniform 0–8 m/s per scenario** (T087), ramped |
+| **wind direction** | σ 45° about 330° | **σ 60°** about 330° |
+| **turbulence** | Dryden, TI fixed 15.7%, L fixed | **TI ×0.5–2.0** (T087a), **length scale ×0.25–1.0** (T088) per scenario |
+| **thermals** | 0–5 cells, 2.0±0.5 m/s, ~10% exposure | **count_max 8, strength ×0.5–1.5** (T087b) — 25–47% exposure in smoke |
+| **courses** | 5 analytic + 1 random (slot 5), 45° loop in slot 3 (7.7 s) | **slot 3 = second random course** `SeededRandomA` (T100): 2/6 random-entry, 45 s |
+| **entry geometry** | latched 0.1–1.1 m on 5 paths | unchanged (dither deferred to t5+, T085/T086) |
+| **pitch plant (D1)** | no short period in sim | **unchanged unless T096 lands before launch** — t4 flight not to be judged on pitch if so |
+| **wire / dmps** | — | no format change; t2/t3 dmps readable; all new keys OFF in code |
+| **what is NOT comparable** | — | raw fitness (new regiment); compare crash rate, `pctInStreak` by wind bin, `rotRatio` vs 5.10×, cold-start completion vs 84.7% |
+
+Aircraft side is unchanged from the t3 flight except the logging/estimator config in § 3 below (GPS_ONLY,
+VIBE, rate 1/2) — none of which the bake sees.
+
 
 **Objective side (the real fix).** The bake currently prices tracking error and crashes but nothing for
 **control thrash**. Candidates, in rough order of directness:

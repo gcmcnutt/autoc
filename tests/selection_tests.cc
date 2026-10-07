@@ -294,3 +294,53 @@ TEST(Selection035MadEpsilon, ConstantFloorIsHalf) {
     EXPECT_GT(c[1], 100) << "ind1(-4.6) within the 0.5 floor";
     EXPECT_EQ(c[2], 0) << "ind2(-4.0) outside the 0.5 floor";
 }
+
+// ---------------------------------------------------------------------------
+// 043 T102 — excess-rotation axis (EnableExcessRotationAxis). Gated: OFF must
+// leave the pool exactly as before; ON adds a co-equal per-scenario case.
+static std::vector<std::vector<ScenarioScore>> makeScoresWithRotation(
+    int pop_size, int num_scenarios,
+    const std::vector<std::vector<double>>& tracking,
+    const std::vector<std::vector<double>>& excess_rotation) {
+    std::vector<std::vector<ScenarioScore>> all(pop_size);
+    for (int i = 0; i < pop_size; i++) {
+        all[i].resize(num_scenarios);
+        for (int s = 0; s < num_scenarios; s++) {
+            all[i][s].score = tracking[i][s];
+            all[i][s].energy_score = 0.0;              // equal → pass-through
+            all[i][s].excess_rotation = excess_rotation[i][s];
+        }
+    }
+    return all;
+}
+
+TEST(Selection043, RotationAxisOffIsIgnored) {
+    auto scores = makeScoresWithRotation(2, 2,
+        /*tracking*/ {{-50.0, -50.0}, {-50.0, -50.0}},
+        /*excess*/   {{ 10.0,  10.0}, { 90.0,  90.0}});
+    std::map<int, int> counts;
+    for (int i = 0; i < 2000; i++) counts[lexicase_select(scores, 2, false, 0.05, false, /*rot=*/false)]++;
+    // Identical on every ACTIVE case → ties resolve randomly, roughly even.
+    EXPECT_GT(counts[1], 600) << "smooth=" << counts[0] << " wandering=" << counts[1];
+}
+
+TEST(Selection043, RotationAxisOnPrefersLessExcess) {
+    auto scores = makeScoresWithRotation(2, 2,
+        /*tracking*/ {{-50.0, -50.0}, {-50.0, -50.0}},
+        /*excess*/   {{ 10.0,  10.0}, { 90.0,  90.0}});
+    std::map<int, int> counts;
+    for (int i = 0; i < 2000; i++) counts[lexicase_select(scores, 2, false, 0.05, false, /*rot=*/true)]++;
+    EXPECT_GT(counts[0], counts[1] * 3) << "smooth=" << counts[0] << " wandering=" << counts[1];
+}
+
+TEST(Selection043, RotationTradeoffBothSurvive) {
+    // A tracks better but wanders; B tracks worse but rotates only as the path
+    // demands. Lexicase must keep both alive — this is the "not dull" property.
+    auto scores = makeScoresWithRotation(2, 2,
+        /*tracking*/ {{-100.0, -100.0}, {-30.0, -30.0}},
+        /*excess*/   {{  90.0,   90.0}, { 10.0,  10.0}});
+    std::map<int, int> counts;
+    for (int i = 0; i < 2000; i++) counts[lexicase_select(scores, 2, false, 0.05, false, /*rot=*/true)]++;
+    EXPECT_GT(counts[0], 200) << "A (tracks-better) wins = " << counts[0];
+    EXPECT_GT(counts[1], 200) << "B (rotates-less) wins = " << counts[1];
+}

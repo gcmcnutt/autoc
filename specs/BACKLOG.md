@@ -1859,6 +1859,7 @@ flip to re-enable) or "investigate before retraining":
   cadence7 plateau — failure mode not yet diagnosed.
 
 ### [NEXT — 028] C2 stability lexicase axis (027 v4)
+> ⭐ **SUPERSEDED 2026-10-05 → 043 T102 (excess rotation over the path's demand).** The amplitude form `Σ(|out|−1)` was the wrong quantity; the rate form `Σ|Δu|` was tried as a lexicase dimension in 015 and reverted (pegged output ⇒ Δ=0 ⇒ "perfectly smooth"); fixed-cap load forms are parameter tuning. The parameter-free measure is the craft's rotation **minus what the path demands** (measured 4.9× on t3) — see `043-acro-dual-loop/tempered-control-first-principles.md` § 6. This also realises the deferred "Path-Relative Smoothness" entry below.
 
 - `Σ_t (|out_pt|-1)+(|out_rl|-1)` per scenario, on `ScenarioScore`.
 - Plumbed in `src/eval/fitness_decomposition.cc` and

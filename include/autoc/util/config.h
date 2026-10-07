@@ -183,6 +183,7 @@ struct AutocConfig {
     // prediction_score LEXICASE AXIS (isolates the objective from the topology
     // change). 0 = baseline (aux head is dead weight, unscored); 1 = US3 bake.
     int enablePredictorHead = 0;
+    int enableExcessRotationAxis = 0;  // 043 T102 — lexicase axis: craft rotation minus the path's demand (default OFF)
     // 038 t7 — tracker-only: derive the CHASE's per-scenario variation seed
     // from the M1 SOURCE's recorded scenarioSeed instead of a fresh M2 seed, so
     // the chase flies the SAME realized wind/thermal/gust + entry + craft +
@@ -492,6 +493,7 @@ struct AutocConfig {
     X(double,         cameraAmbientSigmaFrac,    "CameraAmbientSigmaFrac") \
     X(int,            enableHullCrashPenalty,    "EnableHullCrashPenalty") \
     X(int,            enablePredictorHead,       "EnablePredictorHead") \
+    X(int,            enableExcessRotationAxis,  "EnableExcessRotationAxis") \
     X(int,            trackerChaseUseSourceScenarioSeed, "TrackerChaseUseSourceScenarioSeed") \
     X(double,         hullCrashPenaltyFactor,    "HullCrashPenaltyFactor") \
     X(double,         oobCrashPenaltyWeight,     "OobCrashPenaltyWeight") \
