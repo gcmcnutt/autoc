@@ -110,6 +110,27 @@ Read: the regiment `rotRatio` is **below t3's dashed curve by ~1.7× at gen 134*
 cleaner — the first sign the tie-break buys smoothness without costing tracking. ⚠️ Elite-level numbers jump with each new elite
 (5.05 at gens 110–120, 6.14 from 121); the slope read proper is from gen 150 on, and the straight line is still the worst path.
 
+### 5d. Gen 215 read (2026-10-09 ~16:00 PDT): tracking ahead of t3, `rotRatio` just under t3's curve — margin narrowed
+
+| gen | t3 avg | **t5 avg** | t3 pct | t4 pct | **t5 pct** | t3 rot | t4 rot | **t5 rot** |
+|---|---|---|---|---|---|---|---|---|
+| 150 | −12607 | −10937 | 29.7 | 17.9 | 31.9 | 7.63 | 9.24 | **6.21** |
+| 175 | −14653 | −12111 | 33.7 | 24.6 | 31.8 | 6.94 | 8.29 | **6.76** |
+| 200 | −14232 | −14457 | 36.1 | 26.8 | 32.8 | 6.15 | 8.02 | **5.95** |
+| 215 | −14917 | **−15979** | 35.7 | 28.1 | **37.2** | 6.15 | 7.56 | **5.89** |
+
+Per path at 215 (score/step, pct, rot): Straight 0.80 / 62 % / **6.1×**, Spiral 0.66 / 60 % / 6.3×, HighPerch 0.47 / 46 % / **7.4× (now the worst)**,
+Fig-8 0.49 / 47 % / 5.0×, randomA 0.25 / 26 % / 6.0×, RandomB 0.19 / 19 % / 5.5×; 0/294 crashes. Crash-gens 135–215: t5 25 = t3 25 (t4 11).
+Longest stall 16; `NN_ELITE_SAME` 215/215; `tbBitePct` 86–93 %, `tbMeanIn` 6–10. Wall clock 480 s/gen vs t3 415 s at the same gen
+(+16 % — longer flights plus the tie-break pass; not a concern). Wind (ramp 5/18, realized 2.7–4.8 m/s): 2–4 → 4–6 bin costs
+0.52 → 0.37 score/step and 41.5 → 29.7 % `pctInStreak`; `rotRatio` flat across bins (5.9 / 5.9).
+
+Honest read: **tracking is level-to-ahead of t3** on every measure, and the **straight line is no longer the worst path** (T106
+item: 6.1× vs HighPerch 7.4×). But the `rotRatio` **margin over t3's curve narrowed** from ~1.7× at gen 134 to 0.2–0.4× here —
+t3's own curve dropped fast through 150–200 (7.63 → 6.15) and t5 got there earlier rather than lower. Still below at every
+checkpoint; the bar at 800 is 4.55×. If t5 merely tracks t3's curve from here, the tie-break is real (bite ~90 %) but its
+*marginal* smoothing is small — the demand-side question (§ 9 item 4 of the first-principles doc), not a knob.
+
 ## 6. ⚠️ What this run does NOT fix (unchanged from t4 § 6)
 
 D1 pitch short period absent from the sim; D2 n = 1 airframe; D4 sensor-path delay un-modelled; entry dither
