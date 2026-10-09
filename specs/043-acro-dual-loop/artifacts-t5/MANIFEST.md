@@ -7,12 +7,12 @@ because of it). Handoff: [`NEXT-T5-RUN.md`](../NEXT-T5-RUN.md). Fields marked �
 
 | Field | Value |
 |---|---|
-| S3 prefix | ⏳ `s3://autoc-m1/autoc-<id>-<launch time>/` (from the log's "Run ID") |
+| S3 prefix | `s3://autoc-m1/autoc-9223370245346926812-2026-10-09T01:04:08.995Z/` |
 | Retention | uploads as `retain=expire` — **pin `retain=keep` on all objects at the end and verify by sampling** (t4: 413/413, 22 sampled) |
-| Master seed | ⏳ (`Seed = -1`; logged as "Effective master seed" — the only record of it) |
+| Master seed | **1791507848** (`Seed = -1`; logged as "Effective master seed" — the only record of it) |
 | Regiment | pop **5000** × **800** generations × **294** scenarios (6 paths × 49 winds; `ExpectedScenarioCount = 294`) — **identical to t4** |
 | Launch command | `bash scripts/train.sh autoc.ini logs/autoc-043-t5-m1-condrot.log` (Xvfb `:2` must be up — it does not autostart) |
-| Launched | ⏳ |
+| Launched | **2026-10-08 18:04 PDT**, pid 838074, detached via `scripts/train.sh`; startup log confirms `ExcessRotationAxisMode: conditional`, `AeroStandardPath3: randomA`, 20 workers, no errors |
 | Variation ramp | `VariationRampStep = 40` ⇒ env classes (incl. the wind envelope) at scale 0 through gen 40, 1.0 from gen 761 — identical to t4 |
 | Completed / stopped | ⏳ |
 
@@ -59,6 +59,24 @@ smoothness order only genomes that already track equally well. No weight, no thr
 | ≥ gen 150 | `rotRatio` vs t3's dashed curve | **below** it at matched gens (t3: 8.0 @150, 6.3 @250, 5.85 @396, **4.55 @800**) | merely on it = pressure real but not enough → demand side next, not a knob |
 | any 40-gen ramp window | elite replaced? | yes (t3: every ≤ 26 gens) | frozen a full window = the t4 stall signature |
 | end | T106 | straight line no longer the worst path; calm-bin `pctInStreak` and per-path lines within noise of t3; crashes ≤ t3; `rotRatio` clearly under 4.55× | |
+
+### 5a. ✅ Gen 2–5 call (2026-10-08 18:15 PDT): the tie-break has leverage
+
+| gen | selections | casesPerSel | tbPerSel | **tbMeanIn** | tbMeanOut | **tbBitePct** |
+|---|---|---|---|---|---|---|
+| 1 | 8929 | 2.44 | 0.66 | 8.2 | 1.54 | 87.4 |
+| 2 | 8876 | 2.19 | 0.50 | 35.4 | 1.31 | 95.5 |
+| 3 | 8889 | 2.18 | 0.49 | 75.1 | 1.33 | 96.3 |
+| 4 | 8900 | 2.14 | 0.53 | 63.4 | 1.21 | 98.7 |
+| 5 | 8951 | 2.16 | 0.47 | 59.0 | 1.26 | 95.9 |
+
+Reading: a selection event resolves in ~2 cases; **half of them run a tie-break, which chooses among 35–75
+genomes that track the scenario equally well and removes all but ~1.3 of them 96–99 % of the time.** That is the
+opposite of 035's "tie-break effectively absent" (constant epsilon, ~1 survivor): under MAD epsilon the
+equal-tracker set is large and the rotation pressure inside it is near-total. Whether it is *enough* is the slope
+question (§ 5, ≥ gen 150). Population average gens 1–5: t5 −1085 → −1145, t4 −1092 → −1129 (same regiment,
+same shape so far — gen 1 is random init, so t5-vs-t4 is the fair pair; t3's −1372 → −1462 is a different
+regiment at gen 1). **Next call: gen 40** (t3 −4.2k / 5 %; t4 −1.4k / 1.6 %). Determinism: `NN_ELITE_SAME` 5/5.
 
 ## 6. ⚠️ What this run does NOT fix (unchanged from t4 § 6)
 
