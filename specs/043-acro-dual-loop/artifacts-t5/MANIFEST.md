@@ -93,6 +93,23 @@ the dilution is gone; tracking is being selected for. Elite crash-free by gen 40
 the elites are still crash-dominated; the slope question opens at ~gen 150. Tie-break still live: `tbBitePct`
 88–95 %, `tbMeanIn` 17–41 (the equal-tracker set is narrowing as the population spreads — healthy).
 
+### 5c. Gen 134 read (2026-10-09 06:30 PDT): first separation on `rotRatio`, tracking level with t3
+
+| gen | t3 avg | t5 avg | t3 pct | t5 pct | t3 rot (post-hoc) | t4 rot | **t5 rot** |
+|---|---|---|---|---|---|---|---|
+| 75 | −7882 | −7702 | 10.5 | 13.2 | 8.60 | 9.51 | **7.78** |
+| 100 | −9198 | −9391 | 17.1 | 22.0 | 8.88 | 9.73 | **6.46** |
+| 134 | −11676 | −9863 | 26.0 | 27.2 | 7.85 | 9.15 | **6.14** |
+
+Per path at 134: Straight 0.51 / 48 % / 7.4×, Spiral 0.43 / 43 % / 6.2×, HighPerch 0.37 / 34 % / 7.4×, Fig-8 0.31 / 27 % / 4.9×,
+randomA 0.20 / 20 % / 6.1×, RandomB 0.16 / 14 % / 5.0×; 0/294 crashes. Crash-gens 60–134: t5 **25** vs t3 32 / t4 29; longest
+elite stall 16 gens; `NN_ELITE_SAME` 134/134; `tbBitePct` 85–92 %, `tbMeanIn` 8–17. Per-axis aggressiveness (elite, 294 scenarios):
+pitch ⟨|Δ|⟩ 0.326 / ⟨|out|⟩ 0.653, roll 0.310 / 0.333, throttle 0.256 / 0.800 — baseline for the later gens.
+
+Read: the regiment `rotRatio` is **below t3's dashed curve by ~1.7× at gen 134** (6.14 vs 7.85) with `pctInStreak` level and crashes
+cleaner — the first sign the tie-break buys smoothness without costing tracking. ⚠️ Elite-level numbers jump with each new elite
+(5.05 at gens 110–120, 6.14 from 121); the slope read proper is from gen 150 on, and the straight line is still the worst path.
+
 ## 6. ⚠️ What this run does NOT fix (unchanged from t4 § 6)
 
 D1 pitch short period absent from the sim; D2 n = 1 airframe; D4 sensor-path delay un-modelled; entry dither
