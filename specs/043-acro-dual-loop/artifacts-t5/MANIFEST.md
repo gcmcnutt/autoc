@@ -78,6 +78,21 @@ question (§ 5, ≥ gen 150). Population average gens 1–5: t5 −1085 → −1
 same shape so far — gen 1 is random init, so t5-vs-t4 is the fair pair; t3's −1372 → −1462 is a different
 regiment at gen 1). **Next call: gen 40** (t3 −4.2k / 5 %; t4 −1.4k / 1.6 %). Determinism: `NN_ELITE_SAME` 5/5.
 
+### 5b. ✅ Gen 40 call (2026-10-08 19:40 PDT): the population converges on tracking again
+
+| gen | t3 avg | t4 avg | **t5 avg** | t3 pct | t4 pct | **t5 pct** |
+|---|---|---|---|---|---|---|
+| 20 | −1858 | −1115 | **−1603** | 1.1 | 0.7 | **1.7** |
+| 30 | −2828 | −1168 | **−2937** | 2.9 | 0.9 | **3.2** |
+| 40 | −4163 | −1391 | **−4292** | 5.0 | 1.6 | **5.6** |
+| 49 | −5374 | −1634 | **−5034** | 8.0 | 2.9 | **8.3** |
+
+t5's population average is on t3's trajectory (−4292 vs −4163 at gen 40) and **3× t4's** on the identical regiment —
+the dilution is gone; tracking is being selected for. Elite crash-free by gen 40 (294/294; t3 needed ~gen 60, t4
+~gen 60). `rotRatio` 9.4× at gen 49 ≈ t3's 9.3× (gen 46) and t4's 9.6× — no separation yet, as expected while
+the elites are still crash-dominated; the slope question opens at ~gen 150. Tie-break still live: `tbBitePct`
+88–95 %, `tbMeanIn` 17–41 (the equal-tracker set is narrowing as the population spreads — healthy).
+
 ## 6. ⚠️ What this run does NOT fix (unchanged from t4 § 6)
 
 D1 pitch short period absent from the sim; D2 n = 1 airframe; D4 sensor-path delay un-modelled; entry dither
