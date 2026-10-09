@@ -367,7 +367,20 @@ run_tier3() {
         "EnableEntryVariations = 0" \
         "EnableWindVariations = 0" \
         "EnableRabbitSpeedVariations = 0" \
-        "RabbitSpeedNominal = 12.0"
+        "RabbitSpeedNominal = 12.0" \
+        "WindSpeedMinMps = -1" \
+        "WindSpeedMaxMps = -1" \
+        "WindTurbIntensityMin = 1" \
+        "WindTurbIntensityMax = 1" \
+        "WindGustLengthScaleMin = 1" \
+        "WindGustLengthScaleMax = 1" \
+        "ThermalStrengthScaleMin = 1" \
+        "ThermalStrengthScaleMax = 1" \
+        "ThermalCountMax = 0"
+    # ^ 043 t4+: the eval base ini carries the wind ENVELOPE keys (T087–T088); with
+    #   EnableWindVariations=0 autoc fails loud ("keys set but would be ignored"),
+    #   which is right — so the quiet tier clears them to their OFF values instead.
+    #   (Found 2026-10-07 at the t4 close-out: tier3-quiet aborted on exactly this.)
     run_eval "tier3-quiet" "$RESULTS_DIR/tier3-quiet.ini"
 }
 

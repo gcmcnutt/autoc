@@ -235,6 +235,8 @@ static RabbitSpeedConfig gRabbitSpeedConfig = RabbitSpeedConfig::defaultConfig()
 static int gCurrentGeneration = 0;      // Updated at start of each generation
 static int gTotalGenerations = 1;       // Set from config at startup
 static int gVariationRampStep = 0;      // Set from config at startup (0 = disabled)
+// 043 t5 — validated once at startup (fail-loud), read by the per-gen lexicase lambda.
+static ExcessRotationAxisMode gExcessRotationAxisMode = ExcessRotationAxisMode::Off;
 static float gEvalVariationScaleOverride = -1.0f;  // >=0 = use this instead of computing
 
 /**
@@ -1843,11 +1845,12 @@ static void runNNEvolution(
         // EnablePredictorHead ablation gate is on (tracker-only; harmless in
         // pathgen where prediction_score is 0 for all candidates).
         const bool includePredAxis = (cfg.enablePredictorHead != 0);
-        // 043 T102 — excess rotation over the path's demand, co-equal case per scenario.
-        const bool includeRotAxis = (cfg.enableExcessRotationAxis != 0);
-        evoParams.select = [allScores, useMadEps, includePredAxis, includeRotAxis](const NNPopulation&) {
+        // 043 T102/t5 — excess rotation over the path's demand; mode validated at
+        // startup (gExcessRotationAxisMode): t4 = independent, t5+ = conditional.
+        const ExcessRotationAxisMode rotAxisMode = gExcessRotationAxisMode;
+        evoParams.select = [allScores, useMadEps, includePredAxis, rotAxisMode](const NNPopulation&) {
           return lexicase_select(allScores, static_cast<int>(allScores.size()), useMadEps,
-                                 0.05, includePredAxis, includeRotAxis);
+                                 0.05, includePredAxis, rotAxisMode);
         };
       } else if (selMode == SelectionMode::MINIMAX) {
         // Recompute fitness as minimax for tournament selection
@@ -1860,6 +1863,26 @@ static void runNNEvolution(
       // SUM mode: evoParams.select stays nullptr → default tournament
 
       nn_evolve_generation(pop, evoParams);
+
+      // 043 t5 — selection telemetry for the breed that just produced gen+1.
+      // tbBitePct ≈ 0 or tbMeanIn ≈ 1 means the Conditional tie-break has no
+      // leverage (035's "a tie-break is effectively absent") — call it early.
+      {
+        const LexicaseStats ls = drainLexicaseStats();
+        if (ls.selections > 0) {
+          const double n = static_cast<double>(ls.selections);
+          const double tb = static_cast<double>(std::max(1L, ls.tiebreaks_applied));
+          *logger.info() << "#GenSel gen=" << gen
+                         << " selections=" << ls.selections
+                         << " casesPerSel=" << std::fixed << std::setprecision(2) << ls.cases_applied / n
+                         << " tbApplied=" << ls.tiebreaks_applied
+                         << " tbPerSel=" << std::setprecision(2) << ls.tiebreaks_applied / n
+                         << " tbBitePct=" << std::setprecision(1) << 100.0 * ls.tiebreaks_bit / tb
+                         << " tbMeanIn=" << std::setprecision(2) << ls.tiebreak_in / tb
+                         << " tbMeanOut=" << std::setprecision(2) << ls.tiebreak_out / tb
+                         << endl;
+        }
+      }
     }
   }
 
@@ -2241,6 +2264,19 @@ int main(int argc, char** argv)
     setAeroStandardOptions(p3, static_cast<unsigned int>(cfg.randomPathSeedA));
     *logger.info() << "AeroStandardPath3: " << p3s
                    << " (RandomPathSeedA=" << cfg.randomPathSeedA << ")" << std::endl;
+  }
+  // 043 t5 — ExcessRotationAxisMode: required with the axis on, forbidden with it off.
+  // t4 ran "independent" (its as-run ini predates the key and now fails here on
+  // purpose — restate the mode to replay it); t5+ runs "conditional".
+  {
+    if (cfg.enableExcessRotationAxis != 0) {
+      gExcessRotationAxisMode = parseExcessRotationAxisMode(cfg.excessRotationAxisMode);  // throws
+    } else if (!cfg.excessRotationAxisMode.empty()) {
+      throw std::runtime_error("ExcessRotationAxisMode='" + cfg.excessRotationAxisMode +
+                               "' is set but EnableExcessRotationAxis=0 — remove one of them");
+    }
+    *logger.info() << "ExcessRotationAxisMode: "
+                   << excessRotationAxisModeToString(gExcessRotationAxisMode) << std::endl;
   }
   generationPaths = generateSmoothPaths(const_cast<char*>(cfg.generatorMethod.c_str()),
                                         cfg.simNumPathsPerGen,

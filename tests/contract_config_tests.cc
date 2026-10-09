@@ -257,8 +257,9 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // envelope keys WindSpeed{Min,Max}Mps, WindTurbIntensity{Min,Max},
     // WindGustLengthScale{Min,Max}, ThermalStrengthScale{Min,Max},
     // ThermalCountMax (T087/T087a/T087b/T088) → 164; 043 T102 added
-    // EnableExcessRotationAxis → 165.
-    EXPECT_EQ(n, 165u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // EnableExcessRotationAxis → 165; 043 t5 added ExcessRotationAxisMode
+    // (independent | conditional, required when the axis is on) → 166.
+    EXPECT_EQ(n, 166u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
 }
 

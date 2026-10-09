@@ -184,6 +184,11 @@ struct AutocConfig {
     // change). 0 = baseline (aux head is dead weight, unscored); 1 = US3 bake.
     int enablePredictorHead = 0;
     int enableExcessRotationAxis = 0;  // 043 T102 — lexicase axis: craft rotation minus the path's demand (default OFF)
+    // 043 t5 — HOW the axis enters the pool: "independent" (t4: standalone co-equal case —
+    // diluted tracking, on record) | "conditional" (t5: tie-break inside the score case).
+    // REQUIRED when EnableExcessRotationAxis=1 and must be UNSET when 0 — fail-loud both ways,
+    // so t4's as-run ini cannot silently mean something else at a later HEAD.
+    std::string excessRotationAxisMode = "";
     // 038 t7 — tracker-only: derive the CHASE's per-scenario variation seed
     // from the M1 SOURCE's recorded scenarioSeed instead of a fresh M2 seed, so
     // the chase flies the SAME realized wind/thermal/gust + entry + craft +
@@ -494,6 +499,7 @@ struct AutocConfig {
     X(int,            enableHullCrashPenalty,    "EnableHullCrashPenalty") \
     X(int,            enablePredictorHead,       "EnablePredictorHead") \
     X(int,            enableExcessRotationAxis,  "EnableExcessRotationAxis") \
+    X(std::string,    excessRotationAxisMode,    "ExcessRotationAxisMode") \
     X(int,            trackerChaseUseSourceScenarioSeed, "TrackerChaseUseSourceScenarioSeed") \
     X(double,         hullCrashPenaltyFactor,    "HullCrashPenaltyFactor") \
     X(double,         oobCrashPenaltyWeight,     "OobCrashPenaltyWeight") \

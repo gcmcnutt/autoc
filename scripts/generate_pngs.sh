@@ -226,6 +226,57 @@ fi
 run energy_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
     "${ENERGY_CACHE[@]}" --label "$NAME" --total-gens "$TOTAL_GENS" \
     -o "$OUT/${NAME}_energy_progress.png"
+# tracking_by_path_progress (043 t4, 2026-10-06) — TRACKING OVER GENERATIONS, ONE LINE
+# PER PATH: mean score, crashes, rotRatio (the T102 axis quantity, t3 ref 5.10x) and
+# median max_streak, per path_variant, from `dmp-dump --meta-only` per sampled gen.
+# t4 changed the regiment per path (slot 3 = second random course; wind envelope
+# differs per scenario) and added an axis whose baseline is per path, so the
+# regiment-wide mean hides the trade the operator cares about ("worse tracking but
+# closer in general"). Incremental cache keyed like the others. No rebuild needed:
+# everything it reads is already emitted. Mode-agnostic → COMMON set.
+BYPATH_CACHE="$CACHE_DIR/${SAFE}__dmp${DSIG}_bypath_v2.csv"   # v2: per-step score + pctInStreak
+P3="$(grep -E '^[[:space:]]*AeroStandardPath3' "$INI" | head -1 | sed -E 's/.*=[[:space:]]*([A-Za-z0-9]+).*/\1/')"
+# 043 t5 — reference overlay: the FIRST --compare run's own per-path trajectory (its
+# post-hoc rotRatio etc. from its pinned dmps) as a dashed line on every panel. The
+# verdict on a rotation axis is the SLOPE at matched gens — t3's rotRatio fell
+# 10.2→5.85 over gens 50–396 with no axis — not the flat 5.10x line. The reference
+# cache is built ONCE (≈10 min for 800 gens at stride 5) and keyed by the compare
+# NAME, so every later pass is free; it is NOT keyed by the dmp-dump signature
+# (the fields it uses have been stable since 043 T102 — rebuild it by deleting the file).
+BYPATH_REF=()
+if [[ ${#COMPARE[@]} -ge 2 ]]; then
+  REFNAME="${COMPARE[1]%%:*}"; REFLOG="${COMPARE[1]#*:}"
+  REFCACHE="$CACHE_DIR/ref__${REFNAME}_bypath_v2.csv"
+  if [[ ! -s "$REFCACHE" ]]; then
+    REFRUN="$(grep -E 'Run ID:' "$REFLOG" 2>/dev/null | tail -1 | sed -E 's/.*Run ID:[[:space:]]*//')"
+    REFGEN="$(grep -c '#NNGen' "$REFLOG" 2>/dev/null || echo 0)"
+    if [[ -n "$REFRUN" && "$REFGEN" -gt 0 ]]; then
+      echo "  [ref] building per-path reference cache for $REFNAME ($REFGEN gens, one-time) ..."
+      python3 "$AN/tracking_by_path_progress.py" --run "s3://$BUCKET/$REFRUN/" --gens "1-$REFGEN" --stride "$STRIDE" \
+          -i "$INI" --label "$REFNAME" --total-gens "$TOTAL_GENS" --cache "$REFCACHE" -o "$TMP/ref_bypath.png" >/dev/null \
+          || echo "  [ref] reference cache build failed — overlay skipped" >&2
+    fi
+  fi
+  [[ -s "$REFCACHE" ]] && BYPATH_REF=( --ref "$REFNAME:$REFCACHE" )
+fi
+run tracking_by_path_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
+    --label "$NAME" --total-gens "$TOTAL_GENS" --cache "$BYPATH_CACHE" --path3 "${P3:-FortyFive}" \
+    "${BYPATH_REF[@]}" -o "$OUT/${NAME}_tracking_by_path.png"
+# tracking_by_wind (043 t4, 2026-10-06, pre-staged for the next run) — SNAPSHOT of the
+# latest gen: every scenario binned by the wind it actually flew in (median ‖wN,wE‖
+# over its ticks; 0–2/2–4/4–6/6+ m/s), with tracking score, crash count, in-streak
+# fraction, rotRatio per bin and a paths × wind-bins score heatmap. t4's regiment
+# spans 0–8 m/s, so the regiment-wide numbers average calm with 15 kt; the 09-13
+# flight's wind failure was a one-sided downwind bias, which this is built to see.
+# Needs the per-scenario meta for the latest gen → one --meta-only fetch (same as
+# the m2 score_by_path step). Mode-agnostic → COMMON set. Until the ramp is past
+# ~gen 80 the bins are degenerate and the panel says so.
+if "$DMP" "$RUN" --meta-only -i "$INI" >"$TMP/meta.yaml" 2>"$TMP/meta.err"; then
+  run tracking_by_wind.py --csv "$TICK" --meta "$TMP/meta.yaml" --label "$NAME" --gen "$GEN" \
+      --path3 "${P3:-FortyFive}" -o "$OUT/${NAME}_tracking_by_wind.png"
+else
+  echo "  [plot] tracking_by_wind skipped (meta fetch failed: $(head -c 200 "$TMP/meta.err"))" >&2
+fi
 
 # --- m2 (tracker) adds: gen_diag, intercept_analysis (A/B-capable), rnn_capacity ---
 if [[ "$MODE" == "m2" ]]; then

@@ -319,7 +319,7 @@ TEST(Selection043, RotationAxisOffIsIgnored) {
         /*tracking*/ {{-50.0, -50.0}, {-50.0, -50.0}},
         /*excess*/   {{ 10.0,  10.0}, { 90.0,  90.0}});
     std::map<int, int> counts;
-    for (int i = 0; i < 2000; i++) counts[lexicase_select(scores, 2, false, 0.05, false, /*rot=*/false)]++;
+    for (int i = 0; i < 2000; i++) counts[lexicase_select(scores, 2, false, 0.05, false, ExcessRotationAxisMode::Off)]++;
     // Identical on every ACTIVE case → ties resolve randomly, roughly even.
     EXPECT_GT(counts[1], 600) << "smooth=" << counts[0] << " wandering=" << counts[1];
 }
@@ -329,7 +329,7 @@ TEST(Selection043, RotationAxisOnPrefersLessExcess) {
         /*tracking*/ {{-50.0, -50.0}, {-50.0, -50.0}},
         /*excess*/   {{ 10.0,  10.0}, { 90.0,  90.0}});
     std::map<int, int> counts;
-    for (int i = 0; i < 2000; i++) counts[lexicase_select(scores, 2, false, 0.05, false, /*rot=*/true)]++;
+    for (int i = 0; i < 2000; i++) counts[lexicase_select(scores, 2, false, 0.05, false, ExcessRotationAxisMode::Independent)]++;
     EXPECT_GT(counts[0], counts[1] * 3) << "smooth=" << counts[0] << " wandering=" << counts[1];
 }
 
@@ -340,7 +340,85 @@ TEST(Selection043, RotationTradeoffBothSurvive) {
         /*tracking*/ {{-100.0, -100.0}, {-30.0, -30.0}},
         /*excess*/   {{  90.0,   90.0}, { 10.0,  10.0}});
     std::map<int, int> counts;
-    for (int i = 0; i < 2000; i++) counts[lexicase_select(scores, 2, false, 0.05, false, /*rot=*/true)]++;
+    for (int i = 0; i < 2000; i++) counts[lexicase_select(scores, 2, false, 0.05, false, ExcessRotationAxisMode::Independent)]++;
     EXPECT_GT(counts[0], 200) << "A (tracks-better) wins = " << counts[0];
     EXPECT_GT(counts[1], 200) << "B (rotates-less) wins = " << counts[1];
+}
+
+// ---------------------------------------------------------------------------
+// 043 t5 — ExcessRotationAxisMode::Conditional: the rotation case is a tie-break
+// INSIDE the score case. Pinned, in order: (1) the t4 failure mode is gone — a
+// passive flyer can never be selected on rotation; (2) among genomes that track
+// equally, less excess rotation wins; (3) tracking is never traded away — the
+// Independent-mode "both survive" trade (test above) does NOT hold here, by
+// design; (4) the mode string parses strictly.
+#include <stdexcept>
+
+TEST(Selection043Conditional, PassiveFlyerCannotWinOnRotation) {
+    // A tracks (−1000/scenario) and rotates 50 rad; B never follows the path
+    // (−10) and rotates 1 rad — the genome t4's pool kept selecting. MAD epsilon
+    // as in the bakes.
+    auto scores = makeScoresWithRotation(2, 4,
+        /*tracking*/ {{-1000.0, -1000.0, -1000.0, -1000.0}, {-10.0, -10.0, -10.0, -10.0}},
+        /*excess*/   {{   50.0,    50.0,    50.0,    50.0}, {  1.0,   1.0,   1.0,   1.0}});
+    std::map<int, int> ind, cond;
+    for (int i = 0; i < 2000; i++) ind[lexicase_select(scores, 2, /*mad=*/true, 0.05, false, ExcessRotationAxisMode::Independent)]++;
+    for (int i = 0; i < 2000; i++) cond[lexicase_select(scores, 2, /*mad=*/true, 0.05, false, ExcessRotationAxisMode::Conditional)]++;
+    // Independent: whichever non-energy case shuffles first decides → B wins ~half.
+    EXPECT_GT(ind[1], 500) << "independent: the passive flyer should win a large share (t4 dilution) — got " << ind[1];
+    // Conditional: every score case removes B before rotation is ever consulted.
+    EXPECT_EQ(cond[1], 0) << "conditional: the passive flyer must never be selected — got " << cond[1];
+}
+
+TEST(Selection043Conditional, EqualTrackersBreakOnLessExcess) {
+    auto scores = makeScoresWithRotation(2, 2,
+        /*tracking*/ {{-50.0, -50.0}, {-50.0, -50.0}},
+        /*excess*/   {{ 10.0,  10.0}, { 90.0,  90.0}});
+    std::map<int, int> off, cond;
+    for (int i = 0; i < 2000; i++) off[lexicase_select(scores, 2, /*mad=*/true, 0.05, false, ExcessRotationAxisMode::Off)]++;
+    for (int i = 0; i < 2000; i++) cond[lexicase_select(scores, 2, /*mad=*/true, 0.05, false, ExcessRotationAxisMode::Conditional)]++;
+    EXPECT_GT(off[1], 600) << "off: identical on every active case → roughly even — got " << off[1];
+    EXPECT_EQ(cond[0], 2000) << "conditional: equal trackers → the smoother one every time — got " << cond[0];
+}
+
+TEST(Selection043Conditional, NeverTradesTrackingForSmoothness) {
+    // The Independent-mode trade (RotationTradeoffBothSurvive): A tracks better
+    // but wanders, B tracks worse but is smooth. Conditional keeps A every time —
+    // B's smoothness buys nothing while it is outside epsilon on tracking.
+    auto scores = makeScoresWithRotation(2, 2,
+        /*tracking*/ {{-100.0, -100.0}, {-30.0, -30.0}},
+        /*excess*/   {{  90.0,   90.0}, { 10.0,  10.0}});
+    std::map<int, int> cond;
+    for (int i = 0; i < 2000; i++) cond[lexicase_select(scores, 2, /*mad=*/true, 0.05, false, ExcessRotationAxisMode::Conditional)]++;
+    EXPECT_EQ(cond[0], 2000) << "A (tracks-better) must win every time — got " << cond[0];
+}
+
+TEST(Selection043Conditional, TelemetryCountsTiebreakBites) {
+    auto scores = makeScoresWithRotation(2, 2,
+        /*tracking*/ {{-50.0, -50.0}, {-50.0, -50.0}},
+        /*excess*/   {{ 10.0,  10.0}, { 90.0,  90.0}});
+    (void)drainLexicaseStats();
+    for (int i = 0; i < 100; i++) (void)lexicase_select(scores, 2, /*mad=*/true, 0.05, false, ExcessRotationAxisMode::Off);
+    LexicaseStats off = drainLexicaseStats();
+    EXPECT_EQ(off.selections, 100);
+    EXPECT_EQ(off.tiebreaks_applied, 0) << "Off must never run a tie-break";
+    for (int i = 0; i < 100; i++) (void)lexicase_select(scores, 2, /*mad=*/true, 0.05, false, ExcessRotationAxisMode::Conditional);
+    LexicaseStats cond = drainLexicaseStats();
+    EXPECT_EQ(cond.selections, 100);
+    // Equal trackers: the first score case (whenever it shuffles up) tie-breaks 2 → 1,
+    // after which the selection is decided; so exactly one tie-break per selection, all biting.
+    EXPECT_EQ(cond.tiebreaks_applied, 100);
+    EXPECT_EQ(cond.tiebreaks_bit, 100);
+    EXPECT_EQ(cond.tiebreak_in, 200);
+    EXPECT_EQ(cond.tiebreak_out, 100);
+    EXPECT_EQ(drainLexicaseStats().selections, 0) << "drain must reset";
+}
+
+TEST(Selection043Conditional, ModeParsesStrictly) {
+    EXPECT_EQ(parseExcessRotationAxisMode("conditional"), ExcessRotationAxisMode::Conditional);
+    EXPECT_EQ(parseExcessRotationAxisMode("independent"), ExcessRotationAxisMode::Independent);
+    EXPECT_EQ(parseExcessRotationAxisMode(" conditional   # t5 "), ExcessRotationAxisMode::Conditional);  // inih leaves '#'
+    EXPECT_THROW(parseExcessRotationAxisMode(""), std::runtime_error);        // no default when the axis is on
+    EXPECT_THROW(parseExcessRotationAxisMode("1"), std::runtime_error);
+    EXPECT_THROW(parseExcessRotationAxisMode("Conditional"), std::runtime_error);
 }

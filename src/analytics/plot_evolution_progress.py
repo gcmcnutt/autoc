@@ -80,10 +80,16 @@ NNGEN_RE = re.compile(
     r"\s+pctInStreak=(\d+\.?\d*)"
     r"(?:\s+stability=(-?\d+\.?\d*))?"
     r"(?:\s+(?:energy|smoothness)=(-?\d+\.?\d*))?"
-    r"(?:\s+whh_xh_ratio=(-?\d+\.?\d*|nan))?"
-    r"(?:\s+w_xh0_cv=(-?\d+\.?\d*|nan))?"
-    r"(?:\s+w_xh1_cv=(-?\d+\.?\d*|nan))?"
-    r"(?:\s+w_hh_cv=(-?\d+\.?\d*|nan))?"
+    # 043 T102 — excess rotation over the path's demand (rad) and craft/path ratio
+    # for the elite. These sit BETWEEN energy= and whh_xh_ratio= in the log; as
+    # positional optional groups they broke the whh/cv match on every t4 line, so
+    # the two are NAMED and the loader below reads by name.
+    r"(?:\s+excessRot=(?P<excessRot>-?\d+\.?\d*|nan))?"
+    r"(?:\s+rotRatio=(?P<rotRatio>-?\d+\.?\d*|nan))?"
+    r"(?:\s+whh_xh_ratio=(?P<whh>-?\d+\.?\d*|nan))?"
+    r"(?:\s+w_xh0_cv=(?P<cv0>-?\d+\.?\d*|nan))?"
+    r"(?:\s+w_xh1_cv=(?P<cv1>-?\d+\.?\d*|nan))?"
+    r"(?:\s+w_hh_cv=(?P<cvh>-?\d+\.?\d*|nan))?"
 )
 
 LOG_GEN_RE = re.compile(
@@ -128,7 +134,7 @@ def _parse_float_or_nan(s):
 def load_stc(path: Path):
     rows = dict(gens=[], best=[], avg=[], worst=[], sigma=[],
                 streak=[], pct=[], stability=[], energy=[],
-                whh_xh_ratio=[], w_xh0_cv=[], w_xh1_cv=[], w_hh_cv=[])
+                whh_xh_ratio=[], w_xh0_cv=[], w_xh1_cv=[], w_hh_cv=[], excessRot=[], rotRatio=[])
     for line in path.read_text().splitlines():
         m = NNGEN_RE.search(line)
         if not m:
@@ -142,10 +148,12 @@ def load_stc(path: Path):
         rows["pct"].append(float(m.group(7)))
         rows["stability"].append(_parse_float_or_nan(m.group(8)) if m.group(8) is not None else 0.0)
         rows["energy"].append(_parse_float_or_nan(m.group(9)) if m.group(9) is not None else 0.0)
-        rows["whh_xh_ratio"].append(_parse_float_or_nan(m.group(10)))
-        rows["w_xh0_cv"].append(_parse_float_or_nan(m.group(11)))
-        rows["w_xh1_cv"].append(_parse_float_or_nan(m.group(12)))
-        rows["w_hh_cv"].append(_parse_float_or_nan(m.group(13)))
+        rows["whh_xh_ratio"].append(_parse_float_or_nan(m.group("whh")))
+        rows["w_xh0_cv"].append(_parse_float_or_nan(m.group("cv0")))
+        rows["w_xh1_cv"].append(_parse_float_or_nan(m.group("cv1")))
+        rows["w_hh_cv"].append(_parse_float_or_nan(m.group("cvh")))
+        rows["excessRot"].append(_parse_float_or_nan(m.group("excessRot")))  # 043 T102
+        rows["rotRatio"].append(_parse_float_or_nan(m.group("rotRatio")))
     return rows
 
 
@@ -315,8 +323,8 @@ def main():
         left_rows, 1, left=0.05, right=0.48, top=0.95, bottom=0.05,
         hspace=0.30, height_ratios=left_heights)
     gs_right = fig.add_gridspec(
-        3, 1, left=0.55, right=0.98, top=0.95, bottom=0.05,
-        hspace=0.30, height_ratios=[3, 2, 2])
+        4, 1, left=0.55, right=0.98, top=0.95, bottom=0.05,
+        hspace=0.30, height_ratios=[3, 2, 2, 2])
     ax_fit       = fig.add_subplot(gs_left[0])
     ax_streak    = fig.add_subplot(gs_left[1], sharex=ax_fit)
     ax_stability = fig.add_subplot(gs_left[2], sharex=ax_fit)
@@ -325,6 +333,7 @@ def main():
     ax_sigma     = fig.add_subplot(gs_right[0])
     ax_ratio     = fig.add_subplot(gs_right[1], sharex=ax_sigma)
     ax_cv        = fig.add_subplot(gs_right[2], sharex=ax_sigma)
+    ax_rot       = fig.add_subplot(gs_right[3], sharex=ax_sigma)   # 043 T102
 
     compare_colors = ["tab:blue", "tab:green", "tab:purple", "tab:orange"]
 
@@ -390,6 +399,30 @@ def main():
     ax_energy.set_ylabel("Σ energy_score")
     ax_energy.grid(True, linewidth=0.4, alpha=0.4)
     ax_energy.legend(loc="upper right", framealpha=0.9, fontsize=9)
+
+    # --- Panel 9 (043 T102): elite rotation over the path's demand ---
+    # rotRatio = Σ craft rotation / Σ path direction change over the elite's 294
+    # scenarios. 1.0 would be "rotate exactly as much as the path turns" (a
+    # perfect pilot sits above 1 — roll-in/out is real). No fixed reference line:
+    # a flat number reads as a target and none exists — the comparison is a
+    # reference run's own trajectory at matched gens (tracking_by_path --ref; t3
+    # fell 11.8x → 4.55x with no rotation axis). Pre-T102 logs carry no field →
+    # NaN → the compare overlay is simply absent.
+    rr = f.get("rotRatio", [])
+    if rr and any(not math.isnan(v) for v in rr):
+        ax_rot.plot(f["gens"], rr, "tab:brown", linewidth=1.6,
+                    label=f"{focus_name} rotRatio (final {rr[-1]:.2f}x)")
+        ax_rot.axhline(y=1.0, color="gray", linestyle=":", linewidth=0.7, alpha=0.6,
+                       label="1.0x = path demand")
+        ax_rot.set_ylabel("craft / path rotation")
+        ax_rot.set_ylim(bottom=0)
+        ax_rot.legend(loc="upper right", framealpha=0.9, fontsize=9)
+    else:
+        ax_rot.text(0.5, 0.5, "no rotRatio in log (pre-043-T102 run)",
+                    transform=ax_rot.transAxes, ha="center", va="center", color="gray")
+        ax_rot.set_yticks([])
+    ax_rot.grid(True, linewidth=0.4, alpha=0.4)
+    ax_rot.set_xlabel("Generation")
 
     # --- Panel 5 (left col, optional): crash rate from .log file ---
     if ax_crash is not None and crash_data is not None and crash_data["gens"]:

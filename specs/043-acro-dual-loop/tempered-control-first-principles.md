@@ -268,3 +268,32 @@ asks). Crash price multiplies all of it. Nothing else changed. Why this should n
 
 ⚠️ With wind now 0–8 m/s, scenario difficulty varies far more than in t3; the per-case MAD epsilon absorbs
 that per scenario, which is what it is for. Report t4 binned by realized wind, not pooled.
+
+## 10. What t4 taught (gen 396, 2026-10-07) — § 9 item 1 was wrong, and why
+
+The precedent did not carry. 035's energy case was tolerable at **one half** of the pool; a third
+non-tracking case took tracking to **one third** of the selection starts, and the other two thirds are
+winnable without being on the path at all: `path_rotation` is identical for every genome on a scenario,
+so the standalone rotation case is won by whoever rotates least — a passive flyer, on every scenario.
+§ 9 item 2 ("the axis cannot be satisfied by lagging") was true of a *single* case and false of the
+pool: lexicase is order-sensitive, and whenever a rotation case shuffled to the front it culled the
+trackers before any tracking case was seen. The population never converged: pop-avg fitness was a third
+of t3's by gen 40 **under identical wind**, flat from gen 200; the elite was never replaced after gen 281
+(t4 MANIFEST § 6b). Determinism was the operator's first suspect and is cleared — `NN_ELITE_SAME` 405/405,
+the check re-flies the elite on an arbitrary worker and compares bitwise.
+
+**The measure survives; its place in the pool does not.** t5 makes the rotation case a **tie-break inside
+every score case** (`ExcessRotationAxisMode = conditional`): survivors within MAD on `score` for the
+scenario, then within MAD on `excess_rotation` *among those*. The pool is back to two cases per scenario
+(score⊕rotation, energy) — the t3 tracking share — and a genome that is not on the path is removed before
+it is ever compared on smoothness. This is the operator's sentence made structural: *"mostly about
+tracking as close as possible; a smooth line should fly smooth."* It is not a weight or an epsilon;
+nothing was tuned. What it gives up, deliberately: the Independent-mode "tracks-worse-but-smoother
+survives" trade (`Selection043.RotationTradeoffBothSurvive`) — pinned as *not* holding in Conditional by
+`Selection043Conditional.NeverTradesTrackingForSmoothness`.
+
+Residual honesty: a tie-break only bites where several genomes track a scenario within one MAD of each
+other. Early in a run that set is large and the pressure is real; late, if the elite becomes isolated on
+tracking, the rotation pressure fades — which is the right order of priorities, and the per-path
+`rotRatio` panel will show whether it was enough. If it was not, the next lever is still a measurement
+question (demand side, § 9 item 4), not a knob.
