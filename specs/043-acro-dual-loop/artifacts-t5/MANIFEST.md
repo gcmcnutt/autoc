@@ -131,6 +131,35 @@ t3's own curve dropped fast through 150–200 (7.63 → 6.15) and t5 got there e
 checkpoint; the bar at 800 is 4.55×. If t5 merely tracks t3's curve from here, the tie-break is real (bite ~90 %) but its
 *marginal* smoothing is small — the demand-side question (§ 9 item 4 of the first-principles doc), not a knob.
 
+### 5e. Gen 330 read (2026-10-10 ~09:00 PDT): tracking ahead of t3; `rotRatio` ON t3's curve, not under it
+
+| gen | t3 avg | **t5 avg** | t3 best | **t5 best** | t3 pct | t4 pct | **t5 pct** | t3 rot | t4 rot | **t5 rot** |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 250 | −17214 | −18034 | −57778 | −75217 | 42.0 | 31.9 | 41.2 | 6.50 | 7.33 | **5.40** |
+| 275 | −20418 | −20863 | −65798 | −79694 | 43.6 | 33.3 | 43.1 | 5.97 | 7.17 | **5.37** |
+| 300 | −21012 | −23185 | −66563 | −81916 | 44.4 | 32.6 | 45.1 | 5.94 | 7.22 | **5.82** |
+| 330 | −22570 | **−25458** | −68460 | **−86511** | 46.5 | 32.0 | 46.0 | 5.06 | 7.23 | **5.22** |
+
+(t5's best −86.5k is a number t3 first reached at gen 621 — but the regiments differ, so this is shape, not a comparison.)
+Per path at 330 (score/step, pct, rot): Straight 0.94 / 68 % / 5.8×, Spiral 0.81 / 65 % / 5.1×, Fig-8 0.68 / 59 % / **4.4×**, HighPerch 0.68 / 57 % / **6.7× (worst)**,
+randomA 0.35 / 37 % / 5.3×, RandomB 0.23 / 24 % / 4.9×. Wind (ramp 8/18, realized 2.1–5.5 m/s): 2–4 → 4–6 bin 0.69 → 0.50 score/step,
+52 → 38 % `pctInStreak`; `rotRatio` flat across bins (5.2 / 5.2). `NN_ELITE_SAME` 330/330; `tbBitePct` 89–95 %, `tbMeanIn` 5–7; longest stall still 16;
+wall clock 521 s/gen vs t3 433 (+20 %).
+
+**Crashes — the one t5-specific signal so far.** Crash-gens 216–330: **t5 36 vs t4 17 (same regiment) vs t3 11**. Detail: 28 gens with 1 crash, 8 with 2;
+30 of the 36 are an *unchanged* elite — i.e. ~5 crash-carrying elites persisting 3–20 gens each (a 1-in-294 OOB is penalised mildly by design, so such an elite
+stays until something beats it). Types: `egRadius` 28 + `egFloor` 16 (t4's window was all `egFloor`). The current elite's one crash: **RandomB**, `Eval`/OOB-radius,
+621/610 steps, 4–6 m/s bin — the long cold-start course overrun at its end, blown out of the arena. Hypothesis to test later, not now: the tie-break can
+prefer, among equal trackers, a genome that is smoother *because it commits less*, and that genome is the one that fails to recover at the arena edge in wind.
+Watch whether crash-carrying elites become more frequent as the ramp opens (steps at 361/401/441).
+
+**Smoothness, honestly**: t5 was under t3's curve by 1.1× at 250 and 0.6× at 275, level at 300, and **0.16× above at 325–330** (5.22 vs 5.06). Over
+gens 240–330 t5's elite `rotRatio` wandered 5.10 → 6.69 → 5.22 while t3's curve fell 6.5 → 5.1. **Through gen 330 the tie-break has not separated t5
+from t3's natural decline** — tracking is as good or better, crashes slightly worse, rotation equal. The mechanism is unambiguously active (bite ~90 %);
+its marginal effect on the *elite's* rotation is not visible above t3's own trend. Remaining room: t3 ended at 4.55×; t5 must get clearly under that.
+If the gap is still ~0 at gen 500, the conclusion is that selection on tracking already extracts most of the available smoothness under this measure,
+and the next lever is the demand side (first-principles § 9 item 4) or a load-based companion measure — not a weight.
+
 ## 6. ⚠️ What this run does NOT fix (unchanged from t4 § 6)
 
 D1 pitch short period absent from the sim; D2 n = 1 airframe; D4 sensor-path delay un-modelled; entry dither
