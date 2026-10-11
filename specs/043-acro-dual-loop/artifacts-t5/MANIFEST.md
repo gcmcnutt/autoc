@@ -160,6 +160,35 @@ its marginal effect on the *elite's* rotation is not visible above t3's own tren
 If the gap is still ~0 at gen 500, the conclusion is that selection on tracking already extracts most of the available smoothness under this measure,
 and the next lever is the demand side (first-principles § 9 item 4) or a load-based companion measure — not a weight.
 
+### 5f. Gen 411 read (2026-10-10 evening): `rotRatio` back under t3's curve; early-snapshot candidate extracted
+
+| gen | t3 avg | **t5 avg** | t3 pct | **t5 pct** | t3 rot | **t5 rot** |
+|---|---|---|---|---|---|---|
+| 350 | −24984 | −26911 | 48.2 | 47.6 | 5.66 | **4.95** |
+| 375 | −25653 | −27317 | 47.9 | 47.6 | 6.09 | **4.96** |
+| 400 | −27708 | −30504 | 49.9 | 48.0 | 5.40 | **4.55** |
+| 411 | −26858 | −31919 | 49.7 | 47.5 | 5.40 | **4.74** |
+
+After the gen-330 convergence (§ 5e) the two curves separated again: t5 **4.55× at gens 385–400 — t3's gen-800 endpoint, reached at
+half the generations** — and 4.74× at 411 vs t3's 5.40×. `pctInStreak` 47.5–48.0 vs t3 49.7–49.9 (within seed noise); pop-avg ahead.
+Crash-gens 331–411: t5 **14** vs t3 4 (t4 0 to 413) — all from the gen-401+ elite carrying one OOB (293/294) after the ramp step at 401.
+`NN_ELITE_SAME` 411/411.
+
+**Early-snapshot candidate — operator 2026-10-10: "bake overnight, then decode on 400 or beyond."** Extracted now so it is in hand:
+`artifacts-t5/nn_weights-t5-g400.dat` sha256 **`116ce3245c594de7`**, fitness **−95573.667378**, σ 0.0955 — the elite of gens **385–400,
+294/294 crash-free for all 16 generations it held**, `rotRatio` 4.55×, `pctInStreak` 48.0 %, trained under ramp 0.47 (wind 1.9–5.7 m/s,
+dir σ 60°, turb/gust/thermals at ~half envelope). ⛔ Not the gen-401+ elite (one OOB on RandomB). If a later crash-free elite with
+≥ this `pctInStreak` and ≤ this `rotRatio` appears overnight, prefer it; otherwise g400. `nn_weights.dat` still holds t3 (`a5d097da18bf33ed`).
+
+**Flight-prep chain for the snapshot** (t3 record, MANIFEST-t3 § 10): copy → `nn_weights.dat`; eval suite (tier0 must reproduce
+−95573.667378 bitwise; ⚠️ spawns a second autoc + 20 workers — tiers 0–1 only while the bake runs, or accept the contention);
+`nn2cpp -w nn_weights.dat -i autoc.ini` → `xiao/src/generated/nn_program_generated.cpp`; `pio run -e xiaoblesense_arduinocore_mbed`
+(⭐ this flash also makes **slot 3 a random course** — `EMBEDDED_PATH3_RANDOM_A 1`, seed 24680, never flown); flash + identity check
+(`weight_id=116ce3245c594de7`); **INAV: no firmware, no rates** (parity 36/24 ↔ 360/240 unchanged) but **restore the autoc-flight
+blackbox fields** from the Sortie-A vibration set (T097 Sortie B: `QUAT`+`ATTI`+`NAV_ACC` on, keep `VIBE`+`PEAKS`, `rate_denom 4`,
+`save`, power-cycle, header read-back, `flash_info` + erase); T069 bench verify (identity, rate parity after flash, ACRO purity,
+static-airspeed rail watch-item).
+
 ## 6. ⚠️ What this run does NOT fix (unchanged from t4 § 6)
 
 D1 pitch short period absent from the sim; D2 n = 1 airframe; D4 sensor-path delay un-modelled; entry dither
