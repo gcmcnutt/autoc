@@ -236,3 +236,12 @@ deferred (cold-start content = the two random courses); AIRSPEED = groundspeed o
 | extracted genome sha256 (⛔ never overwrite `nn_weights.dat` = t3 `a5d097da18bf33ed` without backing it up) | ⏳ |
 | eval suite (`eval_suite.sh <t5.dat> all <master seed>`) | ⏳ |
 | determinism (`NN_ELITE_SAME` count) | ⏳ |
+
+### 5h. Flight 2026-10-11 — gen 512 flown (not a § 5g candidate)
+
+The operator cut **gen 512** from the live run after the gen-485 read and flew it the same morning:
+`weight_id=1731d937e3af9c1c`, `firmware_id=c3eb28e6b938dd1a`, program `…2026-10-09T01:04:08.995Z/gen9512.dmp.zst`.
+⚠️ No `.dat` for it is in `artifacts-t5/` and `nn_weights.dat` in the repo hashes `3af8e3ab787b75a5` — the
+flight article was built off-repo; extract and hash it here, then eval-suite it for the record. Result:
+best-tracking ACRO flight to date (median error 10–15 m, 4 spans, 0 gaps, no Z steps), pitch cycle unchanged.
+Full read: [`../flight-analysis-20261011.md`](../flight-analysis-20261011.md).

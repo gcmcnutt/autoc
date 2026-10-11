@@ -187,12 +187,14 @@ def rate_loop_gain(rows, idx, fs, f0, lo=OSC_LO, hi=OSC_HI):
     mg, ms = st.mean(gb), st.mean(sb)
     cov = sum((gb[i] - mg) * (sb[i] - ms) for i in range(len(gb)))
     den = math.sqrt(sum((v - mg) ** 2 for v in gb) * sum((v - ms) ** 2 for v in sb))
-    # blackbox gyro/axisRate are deci-deg/s
+    # blackbox gyroADC/axisRate are deg/s (blackbox.c: lrintf(gyro.gyroADCf[i]); decoder gyroScale 1 =>
+    # raw). Earlier revisions divided by 10 -- every deg/s figure in flight-analysis-20260906/-20260913
+    # is 10x low. Cross-checked 2026-10-11 against the xiao gyro_q stream (rad/s/6): 147 vs 147.5 deg/s.
     print("   @%.2f Hz: gyro %5.1f deg/s | setpoint %5.1f deg/s | GAIN %.2f | "
           "phase %+6.1f deg (%+.0f ms) | r %.2f | full-band gyro RMS %.1f deg/s"
-          % (f0, ga / 10, sa / 10, (ga / sa) if sa else float("nan"),
+          % (f0, ga, sa, (ga / sa) if sa else float("nan"),
              phase, 1000 * phase / 360 / f0, cov / den if den else float("nan"),
-             st.pstdev(gyro) / 10))
+             st.pstdev(gyro)))
 
 
 def main():
