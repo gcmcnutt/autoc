@@ -19,7 +19,7 @@ it (log 1 = the morning flight, 9.76 MB; log 2 = this one, 3.37 MB). Decode with
 of any ACRO span), the ~2 Hz pitch cycle is unchanged for the fifth flight, and the vertical estimator is now
 read directly — `navEPV` peaked at 541 cm against the 1000 cm cap, the 20/20 jump marker reads CLEAN for the
 first time on an engaged ACRO flight.** Two corrections to the record below: the 16-tick engage dead-time
-(§ 5) and a second 10× unit slip in two helper scripts (§ 2).
+(§ 5) and a second 10× unit slip in three helper scripts (§ 2).
 
 ---
 
@@ -202,10 +202,14 @@ Three things follow:
 2. **"Hand off level" means level at tick 16, not at the switch.** Span 1 was level at the switch and nose-high
    at override because the pilot kept flying through the 0.75 s hold. The procedural fix is "hold the
    attitude you want the NN to receive for a full second after the switch".
-3. The rabbit holds at the origin for the same 16 ticks while the craft covers ~10 m at 13 m/s, so **every span
-   begins with the target ~10 m behind the craft** — by construction, and absent from the sim's latched-level
-   entry ([`NEXT-T4-RUN.md`](NEXT-T4-RUN.md)). Entry dither (T085/T086) should model the hold, not just the
-   attitude. Span 2, entered level, shows what the policy does with that: a 2-tick dip and a clean recovery.
+3. ⚠️ *Corrected 2026-10-11 (operator question).* The rabbit does **not** hold at the origin during the window:
+   it leaves at tick 0 at ~0.6 m/tick, the craft follows it, and at takeover (tick 16) the rabbit is 10.2 m out
+   and **2.6 / 2.6 / 4.3 m ahead** of the craft (morning: 5.4 / 4.9 / 6.4 m ahead). The geometry at hand-off is
+   benign. The `dist_0 = 0` seen through the window is the `resetHistory` prefill (every lag slot seeded with
+   zero distance) flushing out of the 0.8 s ring — which is exactly what the hold is for. The sim's 750 ms
+   engage window ([`inputdev_autoc.h:67`](../../crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.h#L67))
+   models the same thing; what it does not model is a pilot flying through it (item 2). Span 2, entered level,
+   shows what the policy does with a clean hand-off: a 2-tick dip and a clean recovery.
 
 ---
 
@@ -250,8 +254,9 @@ rate-denominator was confirmed from the header (`P interval:1/8`), not the Confi
 1. ⭐ **Record g512** — `.dat` + hash into `artifacts-t5/`, eval suite, MANIFEST § 5h. Still open after two
    flights on it.
 2. ⭐ **D1** (T093–T096). The only pitch-cycle lever left; now five flights deep.
-3. **Entry dither models the 0.8 s hold** (target ~10 m behind at hand-off), not just attitude — § 5 item 3.
-   Procedural: hold the hand-off attitude for a second *after* the switch.
+3. **Entry dither perturbs attitude / `vel_d` *through* the 0.75 s window**, not just at tick 0 — § 5 item 2.
+   Procedural: hold the hand-off attitude for a second *after* the switch. (Rabbit geometry at hand-off is
+   fine — § 5 item 3 as corrected.)
 4. Windy-day flight on g512.
 5. `GPS_ONLY` decision (unchanged); `flash_erase` before the next session.
 

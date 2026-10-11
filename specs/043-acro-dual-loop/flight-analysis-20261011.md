@@ -192,8 +192,9 @@ contributor to `pos_d`, and this flight's engaged baro residual RMS is 3.0–3.6
 ## 5. ⚠️ The nose-down rail is an entry transient, not the 09-05 OOD hold
 
 Spans 1–3 were handed off **nose-high and climbing**: pitch +30° / +7° / +26°, `vel_d` −4.6 / −3.8 / −4.6
-m/s. The rabbit holds at the origin for the first 16 ticks (0.8 s), so the NN sees a target below and
-behind it and rails `out_pitch = −1.0` for **20 / 14 / 23 ticks** (0.7–1.15 s), pitching through to
+m/s. ⚠️ *(Erratum, see header: the rabbit does NOT hold — it leaves at tick 0 and is 5–6 m ahead of the craft at
+tick 16; the zero `dist_0` is the history prefill flushing. The nose-high entry, not the rabbit geometry, is what the
+NN reacts to.)* The NN rails `out_pitch = −1.0` for **20 / 14 / 23 ticks** (of which only the last ≈ 6 / 3 / 7 are applied) (0.7–1.15 s), pitching through to
 −16° / −18° / −34° before it settles ([`f1011_xiao_entry.py`](f1011_xiao_entry.py)). Span 4 entered at +28°
 climbing 7.4 m/s but the randomA rabbit starts 22 m *above* and 38 m away, so it pulled up instead.
 
