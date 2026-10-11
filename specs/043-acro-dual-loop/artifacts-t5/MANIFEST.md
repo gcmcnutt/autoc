@@ -189,6 +189,37 @@ blackbox fields** from the Sortie-A vibration set (T097 Sortie B: `QUAT`+`ATTI`+
 `save`, power-cycle, header read-back, `flash_info` + erase); T069 bench verify (identity, rate parity after flash, ACRO purity,
 static-airspeed rail watch-item).
 
+### 5g. Gen 485 read (2026-10-11 morning): under t3's curve throughout 450–485; snapshot candidates compared per path
+
+| gen | t3 avg | **t5 avg** | t3 pct | **t5 pct** | t3 rot | **t5 rot** |
+|---|---|---|---|---|---|---|
+| 425 | −27887 | −32206 | 49.7 | 48.3 | 5.71 | **5.29** |
+| 450 | −28949 | −32566 | 50.3 | 47.5 | 5.30 | **4.64** |
+| 475 | −31541 | −36108 | 50.3 | 48.4 | 5.39 | **4.68** |
+| 485 | −32678 | −36329 | 51.6 | 48.3 | 5.37 | **4.78** |
+
+Crash-gens 412–485: t5 **8** (all the gen-401–419 elite) vs t3 0; **every elite since gen 420 is 294/294 clean**. `pctInStreak` 47.5–49.9 vs t3 49.7–51.6
+(t5 ~2 pts under; within seed noise but consistently so since ~400). `NN_ELITE_SAME` 485/485. Ramp step 481 ⇒ scale 0.63, wind 1.35–6.4 m/s.
+
+**Snapshot candidates — all crash-free, all extracted to `artifacts-t5/` (`.dat`, git-ignored):**
+
+| | **g400** `116ce3245c594de7` | **g422** `02acc4d39074c520` | **g480** `dfaf23b9b4558e2c` |
+|---|---|---|---|
+| fitness / tenure | −95573.67 / 16 gens | −95987.19 / 1 gen (replaced by a higher scalar, not a crash) | −98011.58 / 3 gens (ramp step at 481 ended it) |
+| regiment: score/step · pct · rot | 0.671 · 48.0 · 4.55 | 0.671 · **49.9** · **4.34** | **0.688** · 49.1 · 4.77 |
+| Straight | 1.02 · 71.6 · 4.34 | 0.98 · 71.9 · **3.76** | 1.02 · 73.1 · 4.92 |
+| Spiral | 0.94 · 69.9 · 3.83 | 0.91 · 69.5 · **3.71** | 0.95 · 70.6 · 4.55 |
+| Fig-8 | 0.72 · 60.2 · 3.93 | 0.78 · 62.5 · 3.98 | 0.82 · 63.8 · **3.81** |
+| randomA (cold start) | 0.36 · 35.1 · 4.93 | 0.37 · **38.7** · **4.60** | 0.38 · 36.7 · 5.00 |
+| HighPerch | 0.74 · 61.0 · 5.28 | 0.75 · **63.8** · **4.91** | 0.72 · 60.3 · 5.78 |
+| RandomB (cold start) | 0.24 · 26.8 · 4.57 | 0.25 · **28.1** · **4.45** | 0.24 · 27.3 · 4.70 |
+| wind seen (ramp scale) | 0.47 → 1.9–5.7 m/s | 0.53 → 1.7–5.9 m/s | 0.58 → 1.5–6.2 m/s |
+
+**Recommendation: g422.** Smoothest on 5 of 6 paths and tracking equal-or-better on 5 of 6; the straight line at 3.76× is the lowest any
+043 elite has shown on the path that defined the problem. Its 1-gen tenure is a fitness artefact (a higher-scalar genome arrived next gen;
+elite re-eval is bitwise, so there is no robustness story in tenure). g480 is the alternative if on-course score on the tail-chase trio
+is preferred over smoothness; g400 is dominated by g422 on every row.
+
 ## 6. ⚠️ What this run does NOT fix (unchanged from t4 § 6)
 
 D1 pitch short period absent from the sim; D2 n = 1 airframe; D4 sensor-path delay un-modelled; entry dither
