@@ -45,5 +45,5 @@ for si,(a,b) in enumerate(spans,1):
             if len(peaks)==4: break
         # RMS above 20 Hz for gyro (deg/s)
         hi_rms = math.sqrt(sum(p[k] for k in range(1,len(p)) if fr[k]>=20)/tot)*st.pstdev(x)
-        unit = 1/10 if key.startswith("gyro") else 1/2048
+        unit = 1.0 if key.startswith("gyro") else 1/2048  # deg/s as logged, no /10 (flight-analysis-20261011b.md s2)
         print("   %-12s %s | >20Hz RMS %.2f | peaks>20Hz: %s" % (key, shares, hi_rms*unit, ", ".join("%.0f Hz(%.1f%%)"%(fr[k],100*p[k]/tot) for k in peaks)))

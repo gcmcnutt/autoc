@@ -245,3 +245,9 @@ The operator cut **gen 512** from the live run after the gen-485 read and flew i
 flight article was built off-repo; extract and hash it here, then eval-suite it for the record. Result:
 best-tracking ACRO flight to date (median error 10–15 m, 4 spans, 0 gaps, no Z steps), pitch cycle unchanged.
 Full read: [`../flight-analysis-20261011.md`](../flight-analysis-20261011.md).
+
+**Second flight, same article, 2026-10-11 afternoon** (log 2 in the same flash; NAV_POS restored, rate 1/8): 3 spans,
+Straight / Fig-8 / RandomB, all path-complete, 1585 ticks, 0 gaps. Straight 8.1 m median, Fig-8 0.344 / 25.5 % in-streak
+(best ACRO span to date), RandomB 0.163 (sim g422 0.25). `navEPV` max 541 cm — estimator seen clean directly. Pitch cycle
+unchanged. Full read: [`../flight-analysis-20261011b.md`](../flight-analysis-20261011b.md). The `.dat` / hash / eval-suite
+step above is still open.

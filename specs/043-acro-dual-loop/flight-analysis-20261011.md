@@ -20,6 +20,13 @@ median per span (t3 flew in 4.2).
 unit slip in the earlier docs is corrected below (§ 2). The vertical estimator never stepped: zero jumps
 above 5 m anywhere in the flight, the NN's `pos_d` input moved at most 1.3 m per tick.**
 
+> ⚠️ **Erratum (afternoon flight, same day)** — see [`flight-analysis-20261011b.md`](flight-analysis-20261011b.md):
+> (1) § 2's rate-loop medians and § 3's `gyroADC[1] > 20 Hz RMS` are **10× low** (the `f1011_bb_*` scripts still
+> divided by 10; the § 2 table itself is right) — setpoint median ≈ −140 °/s, gyro median −40…−70 °/s, > 20 Hz RMS
+> 1.9–2.1 °/s. (2) § 5's 20 / 14 / 23-tick entry rails include the 16 ticks before INAV applies the MSP override
+> (0.72–0.77 s, the T057 783 ms hold); the *applied* rail was ≈ 6 / 3 / 7 ticks and the hand-off attitude that
+> matters is the one at tick 16.
+
 ---
 
 ## 0. Spans

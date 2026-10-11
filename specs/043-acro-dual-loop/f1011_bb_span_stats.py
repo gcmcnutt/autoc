@@ -50,7 +50,7 @@ for name,a,b in segs:
     wd = [ (math.degrees(math.atan2(w[1][i], w[0][i]))+180)%360 for i in range(a,b+1)]
     print("%-16s %7.1f | %6.0f %6.0f | %7.0f %5.1f | %7.2f %5.2f %7.2f | %6.1f %6.1f %6.1f | %6.2f %6.0f | %6.2f" % (
         name, t[b]-t[a], st.median(av), q(av,.9), st.median(mo), 100*sum(1 for v in mo if v>1900)/len(mo),
-        q(az,.99), max(az), q(ax,.99), st.pstdev(gq[sl])/10, st.pstdev(sq[sl])/10, st.pstdev(gp[sl])/10,
+        q(az,.99), max(az), q(ax,.99), st.pstdev(gq[sl]), st.pstdev(sq[sl]), st.pstdev(gp[sl]),  # deg/s as logged, no /10 (flight-analysis-20261011b.md s2)
         st.median(ws), st.median(wd), st.median(vbat[sl])))
 print()
 print("--- VIBE debug[] per segment: med / max ---")
