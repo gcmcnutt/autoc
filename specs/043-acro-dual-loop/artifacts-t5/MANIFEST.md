@@ -220,6 +220,51 @@ Crash-gens 412–485: t5 **8** (all the gen-401–419 elite) vs t3 0; **every el
 elite re-eval is bitwise, so there is no robustness story in tenure). g480 is the alternative if on-course score on the tail-chase trio
 is preferred over smoothness; g400 is dominated by g422 on every row.
 
+### 5h. ⭐ FLOWN: gen 488 (`1731d937e3af9c1c`) — two flights 2026-10-11; the flight baseline of record for t5
+
+| | |
+|---|---|
+| genome | **gen 488** elite (held gens 482–490, 294/294 clean, `rotRatio` 4.78×, `pctInStreak` 48.3 %, fitness −95067.305736, σ 0.0955), decoded 2026-10-11 08:02 from `gen9512.dmp.zst` ⛔ *mis-labelled "g512" in the two flight docs — 10000 − 9512 = 488; errata added 10-12, the docs keep "g512" as the genome's nickname* |
+| provenance | `nn_weights.dat` == `nnextractor -g 488` from S3 **byte-for-byte** (10-12); gen 512's elite is `2c139f9d2b9c3181` (−99998.44), a different genome |
+| archived | `artifacts-t5/nn_weights-t5-g488.dat`; `weight_id=1731d937e3af9c1c`, `firmware_id=c3eb28e6b938dd1a`; `nn2cpp` header dated 2026-10-11T15:03:09Z; slot 3 random (`EMBEDDED_PATH3_RANDOM_A 1`) — first flight with it |
+| trained under | ramp scale 0.63 (step at 481): wind 1.35–6.4 m/s, dir σ 60°, turb/gust/thermals at 63 % of envelope |
+| eval (10-12, `eval-results/2026-10-12T14:54:25Z` + `…54:55Z`) | **tier0 bitwise** −95067.305736, 294/294 · **tier1 292/294 (99.3 %)** on a novel seed, score 298.5 / strk 89.7 / mult 4.59 (t3 gen-800: 294/294, 297.9 / 82.3 / 4.29) · tiers 2–3 deferred until the bake ends (second autoc + 20 workers) |
+| flights | [10-11 morning](../flight-analysis-20261011.md) (4 spans, Straight/Spiral/HighPerch/randomA) + [afternoon](../flight-analysis-20261011b.md) (3 spans, Straight/Fig-8/RandomB) — all six t5 paths flown; 0 gaps/overruns/drops over 3515 ticks; wind 1.8–2.9 m/s |
+| flight result, in one line | **best-tracking ACRO genome flown**: median error 8–15 m (t3 25–34), `step_score` 3× t3, Fig-8 span 25 % in-streak, roll rail 0 %, throttle rail halved (42–59 % vs 85–90), downwind bias gone (calm day — windy test owed); **`navEPV` max 541 cm, zero estimator steps**; ⛔ **pitch cycle unchanged for the fifth flight** (±200 °/s, ±7 g, 2 Hz, gain 1.4–1.5, −64 ms) — the t5 axis moved sim `rotRatio` 5.1 → 4.5–4.8× and the aircraft's pitch-rate RMS not at all; roll flipping halved (5–10 Hz share 13–20 % vs 30–37 %). **D1 stands alone.** |
+
+Per-path sim numbers for THIS genome (gen 488, from its dmp meta — the docs compared against g422's): see the per-path cache
+(`tracking_by_path` at gen 488: regiment 0.69 score/step, 48.3 %, 4.78×). The § 5g candidate table is superseded for flight purposes:
+**g488 is the baseline of record until something beats it in the air.** Later crash-free elites with better sim numbers exist
+(§ 5i) and are archived; a windy-day flight on g488 ranks above swapping genomes.
+
+### 5i. Gen 639 read (2026-10-12): under t3's curve 525–600, level at 625–639; new candidates archived
+
+| gen | t3 avg | **t5 avg** | t3 pct | **t5 pct** | t3 rot | **t5 rot** |
+|---|---|---|---|---|---|---|
+| 500 | −33830 | −36956 | 51.0 | 48.7 | 4.76 | 5.38 |
+| 550 | −37370 | −40345 | 53.3 | 50.5 | 5.50 | **4.22** |
+| 600 | −39237 | −41654 | 53.4 | 50.6 | 4.89 | **4.85** |
+| 639 | −40960 | −44008 | 54.5 | 50.0 | 5.02 | 4.98 |
+
+Crash-gens 486–639: t5 **2** (one elite, gens 602–603) vs t3 0; `NN_ELITE_SAME` 639/639; ramp 0.79 ⇒ wind 0.8–7.1 m/s. `pctInStreak`
+runs 2–4 pts under t3's (t3 54.5 at 639) — consistent since ~400 and the regiment is harder (t3 flew 3.66 m/s fixed). Smoothness:
+t5's `rotRatio` oscillates 4.2–5.4 with the elite of the moment; against t3's 4.8–5.5 it is under at most checkpoints, level at others —
+**the sim margin is real but modest (~0.3–0.8×), and the flight says it did not reach the pitch axis in the air.**
+
+Crash-free elites since 549, all extracted to `artifacts-t5/` (per-path pct / rot; score/step):
+
+| | g422 `02acc4d3…` | **g550** `9b1c1054…` | g560 `422cc6bd…` | g576 `121aa7d0…` | g622 `f3581a01…` |
+|---|---|---|---|---|---|
+| regiment | 49.9 / 4.34; 0.671 | **50.5 / 4.22; 0.687** | 49.6 / 4.32; 0.703 | 49.0 / 4.37; 0.691 | 49.6 / 4.51; 0.707 |
+| Straight | 71.9 / 3.76 | 73.2 / **3.67** | 74.0 / 3.69 | 72.6 / 3.78 | 74.6 / 4.41 |
+| Fig-8 | 62.5 / 3.98 | 64.6 / 3.62 | 65.1 / **3.40** | 64.6 / 3.45 | 62.4 / 3.77 |
+| HighPerch | **63.8** / 4.91 | 59.5 / 4.94 | 59.8 / 5.19 | 59.8 / 5.16 | 61.4 / 5.51 |
+| cold start (randomA / RandomB) | 38.7 / 28.1 | **40.5 / 28.8** | 38.4 / 27.2 | 37.0 / 27.5 | 38.3 / 27.7 |
+| wind seen (scale) | 0.53 | 0.68 | 0.68 | 0.74 | 0.79 |
+
+g550 dominates g422 (smoother on 5/6, tracks ≥ on 5/6) and the flown g488 on every sim row — but the flight evidence says the sim's
+`rotRatio` differences of this size do not show up as pitch smoothness in the air (D1), so a genome swap buys tracking, not the cycle.
+
 ## 6. ⚠️ What this run does NOT fix (unchanged from t4 § 6)
 
 D1 pitch short period absent from the sim; D2 n = 1 airframe; D4 sensor-path delay un-modelled; entry dither

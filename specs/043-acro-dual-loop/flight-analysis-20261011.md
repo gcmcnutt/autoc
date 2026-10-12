@@ -5,10 +5,15 @@ Genome **t5 gen 512** (`weight_id=1731d937e3af9c1c`, `firmware_id=c3eb28e6b938dd
 ([`artifacts-t5/MANIFEST.md`](artifacts-t5/MANIFEST.md)). Dmp names are `10000 − gen`
 ([`autoc.cc:1639`](../../src/autoc.cc#L1639)), so `gen9512` is gen 512.
 
-⚠️ **Provenance.** This is *not* one of the three § 5g snapshot candidates (g400 / g422 / g480); it was
-cut from the live run after the gen-485 read. `nn_weights.dat` in this checkout hashes `3af8e3ab787b75a5`,
-not `1731d937…`, and no `.dat` for it sits in `artifacts-t5/` — the flight article was built off-repo.
-Record it (MANIFEST § 5h) and run the eval suite on it for the record before any further flight.
+⚠️ **Provenance — CORRECTED 2026-10-12.** ⛔ `gen9512.dmp` is **gen 488**, not 512: dmp names are `10000 − gen`
+and 10000 − 9512 = 488 (the line above inverted the subtraction — the exact footgun `reference_dmp_filename_gen_encoding`
+records). Proven on 10-12: `nnextractor -g 488` from S3 reproduces `nn_weights.dat` **byte-for-byte** (sha
+`1731d937e3af9c1c`, fitness −95067.305736 = the `#NNGen best=` of gens 482–490); gen 512's elite is a different
+genome (`2c139f9d2b9c3181`, −99998.44). **"g512" throughout this document and its sibling means this gen-488
+genome.** It is the elite that held gens 482–490 (9 gens, 294/294 clean, `rotRatio` 4.78×, `pctInStreak` 48.3 %,
+cut right after the ramp step at 481 ⇒ trained under scale 0.63, wind 1.35–6.4 m/s) — not one of the § 5g
+candidates, which were tabulated at the same time it was decoded. Archived as `artifacts-t5/nn_weights-t5-g488.dat`;
+eval tier0 **bitwise** −95067.305736, tier1 292/294 on a novel seed (MANIFEST § 5h).
 
 Logs: `flight-results/flight-20261011/`. **4 spans, 1930 ticks, 0 gaps, 0 overruns, 0 resyncs, 0 drops.**
 Blackbox at **966 Hz** (`P interval 1/2`, the 2026-10-04 bench config left in place — § 6), 213 s,

@@ -2,8 +2,10 @@
 
 Second flight of the day on the same article as [`flight-analysis-20261011.md`](flight-analysis-20261011.md)
 (the "morning flight" below): **t5 gen 512**, `weight_id=1731d937e3af9c1c`, `firmware_id=c3eb28e6b938dd1a`,
-program `…2026-10-09T01:04:08.995Z/gen9512.dmp.zst`. ⚠️ Provenance unchanged — no `.dat` for `1731d937…`
-in `artifacts-t5/` yet (MANIFEST § 5h step 1 is still open).
+program `…2026-10-09T01:04:08.995Z/gen9512.dmp.zst`. ⚠️ **Provenance corrected 2026-10-12: `gen9512` = gen
+488** (10000 − 9512), not 512 — see the morning doc's header; "g512" here names that gen-488 genome. Archived as
+`artifacts-t5/nn_weights-t5-g488.dat` (byte-identical to the S3 extract), eval tier0 bitwise, tier1 292/294
+(MANIFEST § 5h — step 1 closed).
 
 Logs: `flight-results/flight-20261011/blackbox_log_2026-10-11_143538.TXT` and
 `flight_log_2026-10-11T21-42-19_flight_002.bin`. **3 spans, 1585 ticks, 0 gaps, 0 overruns, 0 resyncs,
