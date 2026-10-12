@@ -297,3 +297,46 @@ other. Early in a run that set is large and the pressure is real; late, if the e
 tracking, the rotation pressure fades — which is the right order of priorities, and the per-path
 `rotRatio` panel will show whether it was enough. If it was not, the next lever is still a measurement
 question (demand side, § 9 item 4), not a knob.
+
+## 11. What the t5 flights taught (2026-10-11/12) — sim-to-real, sampling rate, or objective?
+
+Operator 2026-10-12: *"The big answer here is whether the pitch oscillation is sim to real, or sampling rate, or
+objective mismatch. We have worked hard to try energy and so on which are impacted. Maybe we are missing the point."*
+
+**The measurement that separates them** — the same genome (gen 488, `1731d937e3af9c1c`) in both worlds
+([sim_pitch_spectrum.py](sim_pitch_spectrum.py) on its dmp; flight-analysis-20261011/b for the air):
+
+| | sim (20 Hz dmp) | flight (two flights) |
+|---|---|---|
+| pitch-rate RMS | **61–96 °/s** per path | **124–153 °/s** |
+| spectrum | broadband — 2–3 Hz 7–10 %, 5–10 Hz 17–29 %, peaks < 1 Hz; **no 2 Hz tone** | **2–3 Hz 31–63 %**, peak 2.0–2.3 Hz, loop gain 1.4–1.5, −64 ms |
+| pitch command | mean \|out\| 0.43 (≈ 100 °/s); **at the cap 0–1.3 %** of ticks; 2.3–3.3 flips/s | setpoint median 114–138 °/s; **p5/p95 at the ±240 cap** |
+| axis mix | roll 107 > pitch 81 > yaw 57 °/s — the sim's excess rotation is **roll-led** | problem axis is **pitch**; roll flipping *halved* vs t3 |
+| g-load | — | ±7 g |
+
+**Resolution.**
+
+1. *Sampling rate alone* — no. Same 20 Hz, same ZOH, same cap, same policy, and the sim does not cycle. Worse: the sim's
+   loop carries **more** pure delay than the aircraft, not less — the pending command is applied at frame top, frames are
+   50 ms, so the "10 ms" latency is honoured at +50 and the gyro first sees a command two ticks (100 ms) after the sample
+   that produced it (tasks T111). The 2 kHz inner loop that 043 built was aimed at the wrong loop: the oscillation is the
+   **outer** loop (NN → rate setpoint) limit-cycling; the NN is the relay and the inner loop follows it faithfully (FF 98–100 %).
+2. *Objective alone* — no, but it is half the story. The policy is aggressive in **both** worlds (~100 °/s mean command,
+   81 °/s RMS in the sim): that is what the objective produced because the sim plant forgives it. The objectives priced what
+   the sim exhibits — broadband, roll-led aggression — and got exactly that in the air (roll flipping halved, throttle rail
+   halved, tracking 3×). **They cannot price a 2 Hz pitch mode the sim never produces.** That is the point we were missing:
+   three bakes refined the objective in a world where the symptom does not exist.
+3. *Sim-to-real* — the discriminating fact. Same relay, same cadence, same cap → incoherent and moderate in the sim,
+   coherent at the cap and ±7 g in the air. A saturating, high-gain policy in a loop with enough phase lag limit-cycles at
+   the frequency where the loop phase reaches −180°, with amplitude set by the saturation level (±240 °/s at 14 m/s ≈ ±7 g).
+   The difference between the worlds is therefore in the **plant + actuator phase and gain in the 1–3 Hz band** — the real
+   airframe's short period (rings at 3–3.8 Hz; the sim settles in 175 ms with `Cm_q` tuned on gain), the servo, the filter
+   chain — not in compute delay (the sim has more) and not in the objective (which cannot see it).
+
+**Unified**: the policy is a relay (an objective outcome) and the flight plant turns the relay into a 2 Hz limit cycle (a
+sim-to-real outcome). Either the sim must exhibit the cycle — then every objective already in the pool will select against
+it — or the policy must be made structurally non-relay (lower cap, slew limit), which 023 showed costs training when done
+bluntly. The diagnostic that decides which, and in what order, is tasks **Phase 10c** (T111–T115): honest sub-step latency in
+the sim, a latency sweep on gen 488 with a three-way decision tree, open-loop replay of the flight's command stream, and the
+second flight article to put an uncertainty band on "real" (D1 fit with n = 2; the same genome on a second airframe tells us
+whether the cycle's frequency follows the airframe). ⛔ No t6 until that decision is made.

@@ -71,6 +71,15 @@ no longer the worst path; and on tracking only if calm-bin `pctInStreak` (`track
 per-path lines are within noise of t3's, crashes ≤ t3. The `#GenSel` bite rate says whether the pressure
 exists; the slope against the dashed line says whether it is enough.
 
+## 2b. When t5 stops — the order of work (operator 2026-10-12)
+
+1. t5 close-out as § 1 step 1 (pin, record, extract the final elite; g488 is already the flight baseline of record — MANIFEST § 5h).
+2. **Phase 10c diagnostic before any t6** (tasks T111–T115, evidence in first-principles § 11): crrcsim sub-step latency fix →
+   operator `rebuild-perf.sh` (new eval baselines; the t3 gate number will move) → latency sweep 10/50/100/150 ms on gen 488 →
+   `sim_pitch_spectrum.py` → the three-way decision (relay+phase / masking tick / resonance). Second flight article: doublets on
+   both airframes (D1 with n = 2) and gen 488 on article #2.
+3. Only then decide t6's content: honest latency only, D1 model, or a non-relay action space.
+
 ## 3. Open alongside (unchanged from t4)
 
 D1 (T093–T096), the prop-balance/instrumented flight (T097/T098), `sample_elite.sh` (T107), T101 six

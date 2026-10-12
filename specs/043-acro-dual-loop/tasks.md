@@ -368,6 +368,48 @@ pitot's case (`BACKLOG.md` § Pitot tube). Record it in the t4 MANIFEST at launc
 - [ ] T108 [t4, during the bake] **Compute parity at matched gens** (operator 2026-10-06: *"did we add significantly to the compute per cycle?"*). Gen 1: t3 112.50 s vs t4 113.31 s; gen 2: 107.68 vs 106.71; identical 1,470,294 sims/gen ⇒ **no measurable cost** at launch. Re-check `#GenSimStats durationSec` at gens 50/100/200/400 against `logs/autoc-043-t3-m1-crashcost.log`; profile (perf on a worker) only if t4 is >10% slower at a matched gen — the added per-tick work is one norm + one acos in the scorer and four PRNG draws + `setVelocity` per scenario.
 - [ ] T092 [t4] ⛔ **MANDATORY once T096 lands**: re-run the **T044 trainability gate** against the re-fit plant before the bake (T050a discipline). A plant that rings may need the smoothness/rate terms re-checked.
 
+### Phase 10c — the pitch-cycle diagnostic: which world to fix (planned 2026-10-12, RUNS AFTER t5 STOPS)
+
+Operator 2026-10-12: *"The big answer here is whether the pitch oscillation is sim to real, or sampling rate, or objective
+mismatch … Maybe we are missing the point."* and *"we are building a second flight article which will help scope 'real'.
+Let's plan the sim diagnostic run for after we stop this training run."* Evidence and the resolution of the three
+hypotheses: [tempered-control-first-principles.md § 11](tempered-control-first-principles.md). ⛔ **No t6 bake until T112's
+decision is made** — another objective iteration in a sim that does not exhibit the cycle cannot price it.
+
+- [X] T111 ✅ **Latency geometry of the sim — audited 2026-10-12.** Code: the NN's pending command is applied only at frame top
+  (`inputdev_autoc.cpp` ~L393, the 037 T017 placement) and frames are **50 ms** (`cycleLengthMs=50, framesPerEval=1, dt=5 ms` per the
+  worker logs), so `readyTime = t + 10 ms` is honoured at **t + 50**: the configured 10 ms (`COMPUTE_LATENCY_MSEC_DEFAULT`, "flight-measured
+  9.9 ms") is **one full tick by construction**, and `AUTOC_COMPUTE_LATENCY_MSEC` can only add 50 ms quanta. Empirical (gen 488 dmp,
+  [sim_pitch_spectrum.py](sim_pitch_spectrum.py)): gyro best-correlates with `out_pt` **2 ticks later** on all six paths (applied at +1,
+  first visible in the sample at +2). Flight: command applied ~10 ms after the sample, so the next sample already carries ~40 ms of
+  response. ⇒ **the sim loop has ~one tick MORE pure delay than the aircraft** — the opposite of "the sim lacks lag". The 039 "latency
+  30 → 10 ms" change moved a number the frame quantisation swallowed.
+- [ ] T112 [after t5] ⭐ **Latency sweep on the flown genome (gen 488, `artifacts-t5/nn_weights-t5-g488.dat`), eval mode, Seed 1791507848.**
+  (a) crrcsim change first: honour `gComputeLatencyMsec` at the **5 ms physics sub-step** (apply the pending command inside the sub-step
+  loop when `simTime ≥ readyTime`, not at frame top) — ⚠️ a determinism-affecting change ⇒ operator `rebuild-perf.sh`; every pinned
+  run's eval number moves (t3 gate `−88026.619367` will NOT reproduce; record the new value as the baseline, same as 037 T017 did).
+  (b) Sweep `AUTOC_COMPUTE_LATENCY_MSEC` = **10** (flight-like) / **50** (as trained) / **100** / **150** through `build/autoc -i <eval ini>`
+  (the env reaches the workers — `scripts/crrcsim.sh` inherits it), one eval per setting (~20 s each), dmp from `autoc-eval`.
+  (c) `sim_pitch_spectrum.py` on each: pitch RMS, 2–3 Hz share, peak Hz, cap %, flips/s, lag; plus `pctInStreak`, crashes, `|acZ|` p99
+  from the same CSV. Compare against the flight row (RMS 124–153 deg/s, 2–3 Hz 31–63 %, peak 2.0–2.3 Hz, setpoint at the cap).
+  **Decision tree**: (i) the 2 Hz cap-riding cycle appears as lag INCREASES → relay-plus-phase confirmed, and the phase the sim is missing
+  is in the plant/actuator (D1 + servo), not compute — quantify it as the lag that reproduces the flight amplitude, then T093–T096;
+  (ii) it appears at **10 ms** (less lag) → the sim's extra tick was *masking* the relay; the fix in (a) alone makes the cycle visible to
+  the existing objectives → retrain (t6) with honest latency, nothing else changed; (iii) no setting produces it → phase is not the
+  pacing element, the short-period **resonance** is → D1 proper is mandatory before any further objective work.
+- [ ] T113 [after T112] **Open-loop replay**: feed the 10-11 flight's recorded `out_*` stream (xiao log, 20 Hz) through the sim's rate-loop
+  + airframe with the policy out of the loop; compare sim gyro/`acZ` against the blackbox. Isolates "the plant responds differently to
+  the same commands" from "the policy sees different inputs". Needs a small playback harness (029's playback library is the
+  starting point); design before building.
+- [ ] T114 [second flight article, D2] ⭐ **Scope "real" with n = 2.** (a) MANUAL held pitch doublets on BOTH articles (T095) → short-period
+  frequency/damping per airframe → D1 fit with an uncertainty band instead of a point; (b) fly gen 488 on article #2: if the cycle
+  reproduces at the same frequency/amplitude the mechanism is loop-generic (relay + phase); if the frequency shifts with the airframe
+  the short period is the pacing element — either way the answer scopes what the sim must model. (c) Rate-parity gate on article #2
+  before its first ACRO flight (T051b: FC `rates` ↔ model `maxRate`).
+- [ ] T115 [optional, after T112] **Relay-amplitude test in flight**: lower the pitch rate cap on the aircraft AND in the model's `maxRate`
+  (parity), fly gen 488: a relay limit cycle's amplitude scales with the saturation level, its frequency does not. Cheap, but it changes
+  the aircraft the genome was trained on — only after T112 says the mechanism is a relay.
+
 ### Deferred from t4 (operator 2026-10-03) — entry geometry
 
 Operator: *"we do have true random entry on the random path — and the other shorter paths are more or less
