@@ -340,3 +340,16 @@ bluntly. The diagnostic that decides which, and in what order, is tasks **Phase 
 the sim, a latency sweep on gen 488 with a three-way decision tree, open-loop replay of the flight's command stream, and the
 second flight article to put an uncertainty band on "real" (D1 fit with n = 2; the same genome on a second airframe tells us
 whether the cycle's frequency follows the airframe). ⛔ No t6 until that decision is made.
+
+**Addendum, t5 complete (2026-10-13) — the measure's own verdict.** With the bake finished, the gen-800 elites of t3 and t5 were
+evaluated in each other's air (t5 MANIFEST § 7a). Under identical conditions the conditional axis reduced **roll** rotation 6–10 %
+and yaw 8 % — the largest axes, where `Σ‖ω‖·dt` is cheapest to cut — and total rotation 7 %; **pitch-rate RMS rose 3–5 %**, and the
+pitch command flipped **~24 % more often** with its energy moved from 2–5 Hz into 5–10 Hz. That is the formula's optimum: the sim
+plant low-passes a command that flips every tick (and the loop carries an extra tick of delay, tasks T111), so dithering produces
+*less* integrated body rotation than a held command at equal tracking. The flights mirror it line for line — roll flipping halved,
+pitch cycle unchanged. Two consequences for whatever comes after Phase 10c: (1) a rotation integral can never be the pitch-smoothness
+objective while the plant hides the cost of dithering — the plant has to be made honest first, after which the *existing* measures
+(rotation, energy, load) will see the cycle; (2) if a command-side measure is ever reintroduced it belongs where t5 put rotation —
+as a tie-break inside the tracking case — where 015's "pegged command is smooth" exploit cannot win, because a pegged command does
+not track. The real gains of t4/t5 — crash-free selection, the wind envelope, the second cold-start course — stand on their own:
+tier2-random 84.7 → 100 %, flight median error 25–34 → 8–15 m.

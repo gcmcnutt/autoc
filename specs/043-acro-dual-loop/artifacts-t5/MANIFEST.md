@@ -270,17 +270,54 @@ g550 dominates g422 (smoother on 5/6, tracks ≥ on 5/6) and the flown g488 on e
 D1 pitch short period absent from the sim; D2 n = 1 airframe; D4 sensor-path delay un-modelled; entry dither
 deferred (cold-start content = the two random courses); AIRSPEED = groundspeed on both sides (pitot is backlog).
 
-## 7. Post-run (fill in at the end, BEFORE extraction)
+## 7. Post-run — COMPLETED 2026-10-13 09:31 PDT (gen 800, 4 d 15 h, 1.176 B sims, 2931 sims/s)
 
 | Field | Value |
 |---|---|
-| final gen fitness / `pctInStreak` / `avgMaxStreak` / crashes / `rotRatio` | ⏳ |
-| per path (score/step, pctInStreak, rotRatio) | ⏳ |
-| `#GenSel` summary (bite rate trajectory) | ⏳ |
-| `retain=keep` pinned + sampled | ⏳ |
-| extracted genome sha256 (⛔ never overwrite `nn_weights.dat` = t3 `a5d097da18bf33ed` without backing it up) | ⏳ |
-| eval suite (`eval_suite.sh <t5.dat> all <master seed>`) | ⏳ |
-| determinism (`NN_ELITE_SAME` count) | ⏳ |
+| gen 800 fitness / `pctInStreak` / `avgMaxStreak` / crashes / `rotRatio` | **−102383.462075** / **51.1 %** / 91.4 / **0/294** / **4.75×** (t3 gen 800 on its own regiment: −88026.62 / 54.6 % / — / 0/294 / 4.55× post-hoc; **fitness not comparable** — regiment + objective differ) |
+| per path at 800 (score/step, pct, rot) | Straight 1.04 / 73 % / 4.8×, Spiral 0.99 / 69 % / 4.3×, Fig-8 0.80 / 60 % / 3.5×, HighPerch 0.72 / 59 % / 5.4×, randomA 0.40 / 38 % / 4.9×, RandomB 0.27 / 26 % / 4.5× (from the gen-782 panel; gen 800 within noise) |
+| `#GenSel` | tie-break applied on ~half of selections throughout; `tbBitePct` 85–99 % all run; `tbMeanIn` 35–75 (gen 2–5) → 17–41 (40–50) → 8–17 (134) → 5–7 (300+) — the equal-tracker set narrows as the population converges, as expected; never inert |
+| determinism | `NN_ELITE_SAME` **800/800**, 0 diverged, 0 errors |
+| crash-carrying elites | gens 60–134: 25 crash-gens (t3 32) · 135–215: 25 (25) · 216–330: 36 (11) · 331–411: 14 (4) · 412–485: 8 (0) · 486–639: 2 (0) · 640–800: 1 (0) — slightly more mid-run than t3 (§ 5e), clean from 682 |
+| `retain=keep` | ✅ all **800** objects tagged (0 failures), verified by sampling 24 incl. gen 1, gen 800 and the flown gen 488 |
+| extracted genomes (`artifacts-t5/`, git-ignored `.dat`) | **g800 `630d0deee6ba3956`** (−102383.462075, σ 0.0546) · **g488 `1731d937e3af9c1c` (FLOWN, § 5h)** · candidates g400 `116ce324…`, g422 `02acc4d3…`, g480 `dfaf23b9…`, g550 `9b1c1054…`, g560 `422cc6bd…`, g576 `121aa7d0…`, g622 `f3581a01…`. `nn_weights.dat` holds g488 (the flight article); t3 is backed up as `artifacts/nn_weights-t3-a5d097da.dat` |
+| eval suite g800 (`eval-results/2026-10-13T23:38:54Z`) | **7/7 PASS**: tier0 **bitwise** · tier1 292/294 (score 293.8 / strk 88.5 / mult 4.54; t3 gen 800: 294/294, 297.9 / 82.3 / 4.29) · tier2-progressive 49/49 (1242.7) · tier2-long 49/49 (237.1) · **tier2-random 144/144, score 245.3** (t3: 122/144, 43.2) · **tier3-stress 144/144, 225.7** (t3: 122/144, 44.3) · tier3-quiet 1/1 (260.0; t3 255.3) |
+| eval suite g488 (flown; `…T23:40:21Z`) | 7/7 PASS: tier0 bitwise −95067.305736 · tier1 293/294 · tier2-progressive 49/49 · tier2-long 49/49 · tier2-random 142/144 (197.9) · tier3-stress 143/144 (200.8) · tier3-quiet 1/1 |
+
+### 7a. ⭐ Did the conditional excess-rotation axis help? — same-air cross-evaluation (2026-10-13)
+
+The gen-800 elites of t3 and t5 were each evaluated in **both** regiments ([sim_pitch_spectrum.py](../sim_pitch_spectrum.py); 294 scenarios
+each; t3 in t5's air = `autoc-eval` run `…23:36:04.304Z`, t5 in t3's air = `…23:35:43.535Z`). Medians over the five shared paths
+(Straight, Spiral, Fig-8, HighPerch, RandomB):
+
+| same air → | **t3's air** (3.66 m/s fixed, σ 45°) | | **t5's air** (0–8 m/s envelope, full scale) | |
+|---|---|---|---|---|
+| genome | t3 g800 | **t5 g800** | t3 g800 | **t5 g800** |
+| pitch-rate RMS (°/s) | 70 | 74 (**+5 %**) | 77 | 79 (**+3 %**) |
+| roll-rate RMS (°/s) | 97 | **87 (−10 %)** | 108 | **101 (−6 %)** |
+| yaw-rate RMS (°/s) | 58 | 57 | 62 | **57 (−8 %)** |
+| pitch command: flips/s | 2.2 | **2.7 (+23 %)** | 2.5 | **3.1 (+24 %)** |
+| pitch command at the cap (%) | 0.2–1.2 | 0.7–1.3 | 0.3–1.4 | 0.6–1.5 |
+| pitch-rate power in 5–10 Hz | 8–17 % | **20–39 %** | 11–17 % | **24–36 %** |
+| pitch-rate power in 2–3 Hz | 10–17 % | 6–9 % | 13–21 % | 8–10 % |
+| regiment `rotRatio` | 4.55 (post-hoc) | — | **5.10** (T102 baseline) | **4.75** (−7 %) |
+
+**Verdict.** The axis did what its formula says and not what we wanted. `Σ‖ω‖·dt` is dominated by the largest axis, so the cheapest
+rotation to give up was **roll** (−6 to −10 %) and yaw (−8 %): total rotation fell 7 % under identical air. **Pitch-rate magnitude did not
+fall at all (+3–5 %)** — and the pitch *command* became **more** bang-bang: ~24 % more sign flips per second, with the pitch-rate energy
+shifted from 2–5 Hz into 5–10 Hz (doubled). That is not a side effect, it is the optimum of the measure: the sim plant (which also carries
+an extra tick of pure delay, tasks T111) low-passes a command that flips every tick, so **fast dithering yields *less* integrated body
+rotation than a held command at the same tracking** — the tie-break rewards dithering. Each of these sim findings has its flight twin:
+roll flipping **halved** in the air (5–10 Hz share 13–20 % vs t3's 30–37 %), throttle rail halved, tracking 3× — and the **pitch cycle
+unchanged** (±200 °/s, ±7 g, 2 Hz, fifth flight). So: *tracking and generalisation — yes, substantially* (tier2-random 84.7 → 100 %, median
+flight error 25–34 → 8–15 m; those are the envelope + second course + crash-free selection, not the axis); *roll smoothness — yes, the axis;*
+*pitch, the axis that hurts the aircraft — no, and the measure cannot see why, because the sim does not produce the cycle* (first-principles
+§ 11, Phase 10c).
+
+Per-axis aggressiveness panel, gen 800 elites in their own regiments (`per_axis_aggressiveness.png`, 294 scenarios; tick-to-tick
+⟨|Δ|⟩ / mean ⟨|out|⟩): **pitch 0.127 / 0.432 vs t3 0.107 / 0.403 (+19 % / +7 %)**, **roll 0.157 / 0.245 vs 0.193 / 0.297 (−19 % / −18 %)**,
+throttle 0.186 / 0.645 vs 0.157 / 0.598 (+18 % / +8 %). Own-regiment numbers carry the wind confound, but the sign on every axis matches
+the same-air table above: the axis bought roll calm with pitch (and throttle) activity.
 
 ### 5h. Flight 2026-10-11 — gen 512 flown (not a § 5g candidate)
 
