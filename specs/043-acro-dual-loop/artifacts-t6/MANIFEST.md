@@ -113,6 +113,37 @@ costs tracking (g488 lost 8 pts to it), so plain tracking selection — not only
 trackers exist in the population. If at gen ~300 the elite is still at the cap 50 % of the time, the measure (or the action space) is next,
 not the plant.
 
+### 5c. ✅ Gen 100 call (2026-10-14): the relay is coming off, on t5's schedule
+
+| gen | t5 avg | **t6 avg** | t5 pct | **t6 pct** | t5 rot | t6 rot | t6 elite complete |
+|---|---|---|---|---|---|---|---|
+| 60 | −6340 | −6541 | 13.4 | 9.6 | 7.72 | 8.64 | 294 |
+| 80 | −8124 | −9280 | 14.6 | 13.3 | 7.90 | 7.13 | 291 |
+| 100 | −9391 | **−11203** | 22.0 | 19.3 | 6.46 | 6.67 | 293 |
+
+Pop-avg 19 % ahead of t5, `pctInStreak` ~3 pts behind (within the gen-to-gen jitter of a single elite), 32 error-ish log lines are all
+startup/benign (0 DIVERGED), 465 s/gen.
+
+**The relay panel** ([`autoc-043-t6-m1-plant_pitch_cycle.png`](../autoc-043-t6-m1-plant_pitch_cycle.png), new this call — elite
+pitch-rate RMS, cap % per axis, flips/s, band shares per sampled gen, t5 dashed from a one-off 161-gen cache):
+
+| elite | pitch cap % | roll cap % | throttle cap % | pitch flips/s | pitch RMS (its own plant) |
+|---|---|---|---|---|---|
+| t5 gen 96 → 101 → 106 | 46 → 19 → **7** | 8 → 1 → 0 | 49 → 46 → 37 | 4.2 → 4.6 → 3.6 | 153 → 126 → 101 |
+| **t6 gen 94 → 96 → 100** | 52 → 27 → **31** | 41 → 43 → **19** | 48 → 50 → 41 | 5.8 → 5.5 → 4.1 | 132 → 139 → 129 |
+| t5 gen 486 (flown g488 ±) | 0.4 | 0.2 | 31 | 2.9 | 81 |
+
+Per-path at gen 100 (`sim_pitch_spectrum`): cap 26–39 % (was 44–56 at 92), flips 3.9–4.6 (5.1–6.0), RMS 113–144 °/s (118–152), peak
+1.4–2.0 Hz with the 3–5 Hz share down to 29–37 % — the elite is holding the setpoint shorter and the cycle is sliding down toward the
+aircraft's 2 Hz, which is what the honest plant should produce.
+
+Two readings. (1) **t5 came off the cap at exactly this point too** — 46 % at 96, 7 % at 106, and never above 38 % again — so the relay
+phase is the *takeoff* strategy on either plant and t6 is on the same clock, two or three gens behind. (2) ⚠️ **Level, not shape, is the
+new information**: t5's dashed RMS is measured on the stiff plant that hid the cycle — its gen-486 elite reads 81 °/s there and flew at
+124–153. t6's solid line is honest. So the exit test for this run is not "cap % → 1 %" (t5 did that and still rang in flight) but
+**pitch RMS well below the 124–153 band while tracking holds**, and that is a gen-200+ read. Watch for the t5 pattern of brief cap
+relapses (gen 121–136, 260, 310) — each was a new elite re-finding tracking the crude way before smoothing again.
+
 ## 6. Post-run
 
 ⏳

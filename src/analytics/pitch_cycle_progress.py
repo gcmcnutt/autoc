@@ -155,7 +155,9 @@ def main():
         ax.plot(gg, [src[g][key] for g in gg], color=color, linestyle=style, linewidth=lw, label=label)
     ax = axes[0]
     line(ax, "q_rms", "tab:red", f"{a.label} pitch-rate RMS")
-    if ref: line(ax, "q_rms", "tab:red", f"{ref_label} (reference)", "--", ref, rg, 1.3)
+    # The reference run's RMS is measured on ITS plant: t5's stiff plant hid ~30 % of the pitch rate
+    # (g488: 85 deg/s there, 105-123 on the honest plant, 124-153 in flight). Compare shapes, not levels.
+    if ref: line(ax, "q_rms", "tab:red", f"{ref_label} (reference, on its own plant — level not comparable)", "--", ref, rg, 1.3)
     ax.axhspan(124, 153, color="tab:red", alpha=0.08, label="g488 in flight: 124–153 deg/s")
     ax.set_ylabel("elite pitch-rate RMS (deg/s)"); ax.legend(fontsize=8, loc="upper right"); ax.grid(alpha=.3)
     ax = axes[1]
