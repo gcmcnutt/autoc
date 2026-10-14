@@ -29,7 +29,8 @@ aircraft's is ~3 Hz / ζ 0.2–0.3. t6 is **t5's regiment, objective and pool on
 | `Global::craftCmQ` default | hard-coded −4.2, overrode the xml in non-autoc runs | NaN (unset) + xml fallback |
 | objective, pool, courses, wind, seeds policy | | **unchanged** |
 
-Commits: ⏳ autoc / crrcsim (filled at launch). Build: clean `scripts/rebuild-perf.sh`, `PERFORMANCE_BUILD=ON`, ctest 53/53.
+Commits: autoc **`290b098`** (+ the record commit that follows it), crrcsim **`7f345c5`**. `autoc.ini` as-run snapshot [`autoc.ini.as-run`](autoc.ini.as-run), sha256 `344330b996958ab3…`.
+Build: clean `scripts/rebuild-perf.sh` 2026-10-13 21:06 (`PERFORMANCE_BUILD=ON`), ctest **53/53**.
 
 ## 3. Gates run before launch (actuator-pin § "The t6 plant")
 
@@ -39,8 +40,8 @@ Commits: ⏳ autoc / crrcsim (filled at launch). Build: clean `scripts/rebuild-p
 | **gen 488 reproduces its own flights** | RMS **105–123 °/s** (flight 124–153), peak **1.9–2.3 Hz** (2.0–2.3), 2–3 Hz share 24–47 % (31–63 %), closed-loop \|H\| 1.34 at 2.5 Hz (1.5–1.6), tracking 48 → 40 %, 3 crashes — the sim now exhibits the cycle |
 | roll preserved | gen 488 roll FRF t5 vs t6 plant within ~15 % at 0.5–2.5 Hz |
 | new eval baselines (plant changed; expected) | t3 genome **−54922.067792** (was −88026.619367); gen 488 **−65928.363124** (was −95067.305736) |
-| cross-build determinism | ⏳ re-run on the clean binary |
-| **T092 trainability** | ⚠️ **open** — basic-m1 smoke (full variations from gen 1): old plant takes off at gen ~13, new plant flat through 25; 80-gen run in progress (tasks T092) |
+| cross-build determinism | ✅ incremental build vs clean `rebuild-perf.sh`: t3 genome **−54922.067792**, gen 488 **−65928.363124** — identical to the last digit |
+| **T092 trainability** | ✅ **passes, ~2× slower start** — basic-m1 smoke (pop 3000, 16 winds, full variations from gen 1, Seed 4242, same binary): old plant takes off at gen 13 (−835 at 25); new plant flat to gen 26, then −621 (40) → −799 (50) → −1029 (64–80), 16/16 complete from gen 42, `pctInStreak` 10.4 % at 80 |
 
 ## 4. ⛔ What is and is not comparable
 
