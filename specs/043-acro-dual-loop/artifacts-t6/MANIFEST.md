@@ -144,6 +144,67 @@ new information**: t5's dashed RMS is measured on the stiff plant that hid the c
 **pitch RMS well below the 124–153 band while tracking holds**, and that is a gen-200+ read. Watch for the t5 pattern of brief cap
 relapses (gen 121–136, 260, 310) — each was a new elite re-finding tracking the crude way before smoothing again.
 
+### 5d. Gen 180 read (2026-10-14 evening): tracking well ahead of t5, relay half off, roll still dithering
+
+| gen | t5 avg | **t6 avg** | t5 pct | **t6 pct** | t5 rot | t6 rot | t6 elite complete | t6 s/gen | t5 s/gen |
+|---|---|---|---|---|---|---|---|---|---|
+| 120 | −9885 | −12519 | 27.3 | 25.2 | 5.05 | 6.62 | 290 | 457 | 422 |
+| 140 | −10257 | −14528 | 29.7 | 28.4 | 6.16 | 7.03 | 292 | 497 | 417 |
+| 160 | −10626 | −17877 | 31.9 | 31.8 | 6.21 | 5.67 | 294 | 506 | 422 |
+| 180 | −12496 | **−18142** | 32.3 | **33.6** | 6.43 | 6.10 | 292 | 505 | 451 |
+
+Population average **45 % ahead of t5** at 180; `pctInStreak` has crossed t5's (33.6 vs 32.3); per-path score/step 0.423 vs t5's
+0.42 at the same gen; 16 elite replacements in 100–180; `NN_ELITE_SAME` 181/181; 0 DIVERGED. Crash-carrying elites remain frequent
+(50 of gens 101–180 carry 1–4 crashes; 2/294 at 180) — the lightly damped plant departs more readily and the price is small.
+
+**Relay panel, gen 100 → 180 (elite medians over 294 scenarios; t5 at the same gens in brackets)**
+
+| | gen 100 | gen 140 | gen 160 | **gen 180** | t5 @181 |
+|---|---|---|---|---|---|
+| pitch-rate RMS °/s | 129 | 133 | 109 | **108** | 128 (stiff plant, understated) |
+| pitch ticks at cap % | 31 | 63 | 14 | **13.5** | 6 |
+| roll ticks at cap % | 19 | 53 | 18 | **18** | 5 |
+| throttle ticks at cap % | 41 | 43 | 47 | **45** | 40 |
+| pitch flips/s | 4.1 | 6.0 | 6.0 | **4.9** | 4.5 |
+| roll flips/s | 7.4 | 8.5 | 8.9 | **7.9** | 6.1 |
+| 2–3 Hz / 3–5 Hz share % | 18 / 32 | 16 / 46 | 24 / 21 | **16 / 25** | 9 / 38 |
+
+Reading: the pitch relay is half off (cap 52 → 13.5 %, RMS 132 → 108 °/s, 3–5 Hz share 46 → 25 %) with the t5-style relapses
+(gen 106, 126–131, 141) each undone within ~5 gens. Pitch RMS **108 is already below the flight band (124–153) and below g488's
+105–123 on this plant only marginally** — the exit asks for "well below", so this is the number to keep watching. **Roll is the
+laggard**: 18 % at the cap and ~8 flips/s where t5 was at 5 % / 6 flips at the same gen — the lighter `I_xx` (0.0069 vs 0.024) makes
+roll cheap to dither; the tie-break sees it (excess rotation counts all axes), tracking does not much. Throttle at the cap 45 % is
+the familiar un-lagged-actuator bang-bang (037 pattern), unchanged from t5.
+
+**Why generations are slow (asked 2026-10-14; log-only analysis, all five bakes have identical 1,470,294 sims/gen on this host)**
+
+| run | plateau s/gen | sims/s at plateau | elite ticks/flight | gen-1 s |
+|---|---|---|---|---|
+| 041-t7 | 333 | 4408 | (dmp unreadable, old schema) | 102 |
+| 043-t2 | 310 | 4726 | 438–445 | 107 |
+| 043-t3 | 465 | 3163 | 445 | 112 |
+| 043-t5 | 577 | 2548 | 570 | 110 |
+| **043-t6** | 505 @180, rising | 2900 | 570 | 108 |
+
+- **Within a run, gen time tracks the population average**: corr(dur, pop-avg) = −0.87 (t5), −0.91 (t6), −0.89 (041-t7); the mechanism
+  is flight length — a flight ends at a crash/egress or at path completion, so as more of the 5000 fly the whole course the tick count
+  per generation rises until everyone completes. Gen-1 costs are identical across all five runs (102–112 s): per-sim overhead has not
+  changed, it is all per-tick.
+- **t3 → t5 (+24 %) is the path swap**: FortyFive → randomA took the elite's flight from 445 to 570 ticks (+28 %). Fully explained.
+- **t2 → t3 (+50 %) is NOT flight length** — same courses, same 445 ticks/flight, same arena (70/25/105 in both inis) — it is a
+  **+47 % per-tick cost** (8.1 → 11.9 µs core-time per 20 Hz tick). The change set between the two bakes that runs per tick: the INAV
+  rate loop moved from once per 50 ms frame (`crrc_fdm.cpp`) into the 5 ms physics loop (`fdm_larcsim.cpp`, 10× the calls, two `exp()`
+  each — physically right, cost unmeasured) and per-tick `stepScore`/`envelopeSecs` added to every sim's `EvalResults`. Unresolved;
+  a step-test A/B with and without the `<controllers>` node settles it in minutes once the box is free.
+- **t5 → t6**: same elite ticks (570); t6 is 12 % slower than t5 *at the same gen* because its population flies longer sooner
+  (pop-avg +45 %). Expect the plateau at or just above t5's 577 s.
+- **Fixed overheads measured live (1 s CPU samples over gen 182)**: the parent runs at **161 % of a core for the whole eval phase**
+  (deserialising ~1.7 G `EvalTick`s/gen and scoring parent-side), the 20 workers get **84 % of a core each** on a box that is 96 % busy
+  (my analytics took another ~0.8 core), and there is a **25 s single-threaded parent phase between generations** (selection ~1 s;
+  the rest is dmp serialise/zstd/S3 + data.dat). So ~15 % of the generation is contention and ~5 % is serial — recoverable by moving
+  scoring to the workers (the standing backlog item) and overlapping the dmp write with the next dispatch; neither touches results.
+  Analytics passes cost ~2 % (gens 94–97 during a 25-min cache build: 473–488 s vs 464–475 around them).
+
 ## 6. Post-run
 
 ⏳
