@@ -83,7 +83,46 @@ Candidate operating points (analytic, before any measurement — to show the tar
 5. **Flight on article 2 with gen 488** (T114): same frequency ⇒ loop-generic; shifted ⇒ airframe-specific — either way it
    bounds how far a single-article fit can be trusted.
 
-## 4. What this does and does not claim
+## 4. The streamer — how much accuracy the no-streamer craft needs (operator 2026-10-13)
+
+The launch configuration tows a 20–25 ft crepe streamer that can be cut at any time, so the aircraft the policy flies is
+*two* plants per sortie. The model is literally `hb1_streamer.xml` ("mimic the real test article towing a ~25 ft streamer";
+`Cm_q −4.2` = "streamer damping", variation class `CraftCmQSigma` spanning −3.6 no-streamer … −5.0 streamer). ⚠️ Neither the
+bench step tests (actuator-pin § 2) nor the 10-11 flight docs record the streamer state, so the 3 Hz / ζ 0.2–0.3 and the FRF
+column above are of **unknown configuration** — most likely streamer-on (launch config). From here every span gets a streamer
+flag (T119).
+
+**What the streamer does, physically.** It is a trailing drag force D_s applied through the tail attachment at arm l_t behind
+the CG; the streamer is not rigid, so it adds **no inertia** (`I_yy` is unaffected — measure it bare) and acts only through that
+tension:
+
+- static margin: ΔCm_α ≈ −D_s·l_t / (q̄ S c̄) — restoring (weathervane)
+- pitch damping: ΔCm_q ≈ −2·D_s·l_t² / (q̄ S c̄²)
+- trim: a rearward tension at the tail, plus whatever vertical offset the attachment has from the CG
+
+With q̄ S c̄ = 2.5 N·m, q̄ S c̄² = 0.446 N·m², l_t ≈ 0.25 m and a crepe streamer's drag at 13 m/s somewhere in **1–3 N** (flapping
+ribbons are draggy; the throttle delta before/after the cut will say), the streamer adds **ΔCm_α −0.1 … −0.3** and **ΔCm_q −0.3
+… −0.8**. On the fitted plant of § 2 (`Cm_a −0.9`, `Cm_q −1.0`, ζ 0.34) that moves f_n by a few % and ζ by roughly **+0.03 …
++0.10** — the streamer-on aircraft is the *better-damped* one, the bare aircraft the *least* damped, i.e. the one the relay locks
+onto most readily. The file's assumed 1.4-unit spread (−3.6 → −5.0) would need ~5 N of drag at the tail; that number predates
+any measurement and should not be carried.
+
+**Accuracy the bare craft actually needs.** The policy does not need an exact ζ; it needs the sim to present a resonance **in the
+right band** (f_n within ~±15 %, i.e. 2.5–3.5 Hz at cruise, with the right growth with airspeed — that is `I_yy`, `Cm_a` and
+mass, none of which the streamer touches) and a damping **range** whose *low end is the bare aircraft*. So:
+
+- `I_yy`: measure bare, once per article, to ~±10 % — the frequency placement rests on it.
+- ζ bare: know it to about **±0.05** (a log-decrement over 3 ring-down cycles gives that) — this sets the low end of the
+  `CraftCmQSigma` class, which is where the hard case lives.
+- ζ with streamer: the same flight, before the cut; its *difference* from bare is the measurement of D_s·l_t, and the class's
+  high end. Precision beyond ±0.05 buys nothing: article-to-article spread (T114, n = 2) and airspeed already move ζ by that much.
+- Re-centre `CraftCmQSigma` on the **bare** value and let the class span bare → streamer-on (plus the article spread), rather than
+  centring on a streamer value with the bare case 2.5 σ out as today.
+
+In short: the streamer is a bounded, directly measurable perturbation that belongs in the variation class; the thing that must
+be *right* is the bare aircraft's mode placement, and "right" means band and slope, not the third decimal.
+
+## 5. What this does and does not claim
 
 - It claims the dominant sim-to-real gap in pitch is the short-period placement, and names a first-order, *measurable* cause.
 - It does not claim the numbers in § 2 are the fit; they show the target is reachable with physically plausible values. The

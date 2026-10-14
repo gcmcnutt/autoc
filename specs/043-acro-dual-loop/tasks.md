@@ -491,6 +491,10 @@ Order (each step gates the next; numbering kept from Phase 10c/D1 for traceabili
   (< 10°), the strings long (≥ 1 m) and the attachment points on the measurement axis's perpendicular through the CG; record m, L, D,
   T and the CG station in `actuator-pin.md`. Expect `I_yy` 0.006–0.010 kg·m² (0.0013 is a 5 cm radius of gyration); `I_xx` should land
   near the file's 0.024 — if it does not, the method is off, not the file.
+- [ ] T119 ⭐ **Streamer state is a logged variable from now on** (operator 2026-10-13: the launch config tows a 20–25 ft crepe streamer, cut at any time). Every flight doc records streamer on/off **per span** and the cut time (INAV clock); the bench-step and 10-11 FRF numbers are retroactively marked "configuration unknown — likely streamer-on". Rationale and the physics (ΔCm_α ≈ −D_s l_t/(q̄Sc̄), ΔCm_q ≈ −2 D_s l_t²/(q̄Sc̄²), no inertia change): proposal § 4.
+- [ ] T095 ⭐ **amended**: doublets **before AND after the streamer cut** in the same sortie — the difference is the streamer term (D_s·l_t) and the two ζ values are the ends of the `CraftCmQSigma` class; the bare set is the one that matters (least damped = the relay's favourite). Also note the throttle delta across the cut (a direct D_s estimate).
+- [ ] T116 ⭐ **amended**: measure `I_yy` **bare** (the streamer adds drag, not inertia) — the frequency placement needs ~±10 % on `I_yy`; ζ to ±0.05 is sufficient (article spread and airspeed move it by that much).
+- [ ] T096 ⭐ **amended**: fit `Cm_a`/`Cm_q` to the **bare** aircraft and re-centre `CraftCmQSigma` on that value, with the class spanning bare → streamer-on → article-2 spread; drop the file's un-measured −3.6 … −5.0 range.
 - [ ] T117 [t6] bake on the honest plant — see item 7.
 - [ ] T118 [exit] flight-proven smoother control — see item 9.
 
