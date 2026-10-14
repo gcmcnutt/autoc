@@ -29,6 +29,38 @@
 
 ---
 
+## 043 deferrals (filed 2026-10-13, at the close of 043 — outcome: [043 outcome](043-acro-dual-loop/outcome.md))
+
+> **Routing at close**: **045 sim-pitch-fidelity** ([seed](045-sim-pitch-fidelity/README.md)) before **044 M2 tracking** —
+> M2 inherits the plant, and the plant's pitch short period is 6.9 Hz / ζ 0.81 where the aircraft's is ~3 Hz / ζ 0.2–0.3.
+> The flight baseline of record is 043-t5 gen 488 (`1731d937e3af9c1c`).
+
+### [043 close · t6+ content] Entry dither, heading decoupling, per-scenario path library, six random courses (T085 / T086 / T089 / T101)
+Hand-off attitude is not a variation class: the first second of every flown span is out of distribution by construction
+(flight-analysis-20261011b § 5 — hold the hand-off attitude for a full second *after* the switch, procedurally, until then).
+Plumbing for position dither exists end to end and is untested; heading is capped by the 45° pitch cone. Six shorter random
+courses once cold-start eval shows 2/6 is not enough (t5 tier2-random is 144/144, so not urgent).
+
+### [043 close · ⛔ only after the plant is honest] Command-side smoothness measures (T103 / T104) and the relay-amplitude flight (T115)
+The t5 lesson (MANIFEST-t5 § 7a, first-principles § 11): any measure goes **as a tie-break inside the tracking case**, never
+standalone (t4 stalled on a standalone case; 015's pegged-command exploit cannot win a tie-break because a pegged command does
+not track), and no smoothness measure can see the pitch cycle until the sim exhibits it. A lower pitch-rate cap mirrored on
+both sides is the cheap flight test of the relay hypothesis once 045 says the mechanism is a relay.
+
+### [043 close · flights owed] Windy-day flight on gen 488; `inav_default_alt_sensor = GPS_ONLY` decision; `flash_erase` before every session
+Two calm days (1.8–2.9 m/s) showed no downwind bias; the envelope-trained genome has not been tested in the wind it was
+trained for. `GPS_ONLY` was recommended 10-04 and never applied; the baro remains the heaviest `pos_d` contributor
+(engaged residual RMS 3.0–3.7 m vs 0.3–1.3 manual). Two flights were nearly lost to an unerased flash / unsaved rate change.
+
+### [043 close · spec debt] Observability audit (SC-008 / SC-013, T079 / T080), FR-056 craft-realism review at n = 2 (T047a), INAV phase-delay parameters (T048–T050), roll dead-band (T051c)
+The variation-inventory was never completed to "observable / absorbed / observable-only-at-limits" per axis. The FR-056 review
+is best done on article 2 (T114). The INAV filter/phase candidates dropped in priority: the FRF shows plant phase matching to
+2.5 Hz. Roll full-stick FF = 581 against the ±500 budget clips the top 14 % of stick; decide before the next retune.
+
+### [043 close · hardware] Prop balance (T097 / T098) and pitot (T099)
+Vibration is **excluded** as the Z-estimator cause after five flights (`accClipCount` 0, `navEPV` 541 cm clean with `accVib` at
+its all-time high); balance the prop for its own sake, not as an experiment. Pitot: the policy still flies on groundspeed.
+
 ## 043 deferrals (filed 2026-09-13, from the t3 flight)
 
 ### [043 t3 flight, filed 2026-09-13 · ⏳ TRIGGER: after solid M2 results] NN pathology handling — the policy is tuned for close tracking, not for when things go wrong

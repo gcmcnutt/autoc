@@ -35,18 +35,18 @@ namespace eval {
 
 struct WindVariationConfig {
   // Wind speed, metres per second. min < 0 ⇒ OFF (keep the sim's base speed).
-  double windSpeedMinMps = -1.0;
-  double windSpeedMaxMps = -1.0;
+  double windSpeedMinMps = -1.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double windSpeedMaxMps = -1.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
   // Dryden turbulence intensity multiplier on T_Wind::turbulence. 1/1 ⇒ OFF.
-  double turbIntensityMin = 1.0;
-  double turbIntensityMax = 1.0;
+  double turbIntensityMin = 1.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double turbIntensityMax = 1.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
   // Multiplier on the Dryden length scales L_u/L_v/L_w. 1/1 ⇒ OFF. Smaller =
   // gusts that change faster within a scenario (0.25 ⇒ ~0.04 Hz corner at 13 m/s).
-  double gustLengthScaleMin = 1.0;
-  double gustLengthScaleMax = 1.0;
+  double gustLengthScaleMin = 1.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double gustLengthScaleMax = 1.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
   // Multiplier on arena-thermal strength_mean/strength_sigma. 1/1 ⇒ OFF.
-  double thermalStrengthMin = 1.0;
-  double thermalStrengthMax = 1.0;
+  double thermalStrengthMin = 1.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double thermalStrengthMax = 1.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
   // Override for arena-thermal count_max (0 ⇒ keep the XML value).
   int thermalCountMax = 0;
 
@@ -72,10 +72,10 @@ struct WindVariationConfig {
 
 // The four uniform [0,1) draws, in a fixed order. Always drawn.
 struct WindDraws {
-  double uSpeed = 0.0;
-  double uTurb = 0.0;
-  double uGust = 0.0;
-  double uThermal = 0.0;
+  double uSpeed = 0.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double uTurb = 0.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double uGust = 0.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double uThermal = 0.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
 };
 
 inline WindDraws drawWindVariation(autoc::util::ClassPRNG& prng) {
@@ -88,46 +88,46 @@ inline WindDraws drawWindVariation(autoc::util::ClassPRNG& prng) {
 }
 
 struct WindRealization {
-  double windSpeedMps = 0.0;        // absolute, to be written back in ft/s by the caller
-  double turbIntensity = 1.0;       // absolute T_Wind::turbulence value
-  double gustLengthScale = 1.0;     // multiplier applied in calculate_gust
-  double thermalStrengthScale = 1.0;// multiplier applied at thermal spawn
+  double windSpeedMps = 0.0;        // absolute, to be written back in ft/s by the caller  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double turbIntensity = 1.0;       // absolute T_Wind::turbulence value  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double gustLengthScale = 1.0;     // multiplier applied in calculate_gust  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double thermalStrengthScale = 1.0;// multiplier applied at thermal spawn  // raw-ok: SI config/draw realised host-side, never in the NN byte format
   int thermalCountMaxTarget = 0;    // 0 ⇒ keep XML; ramp applied where the XML value is known
-  double rampScale = 1.0;           // the variationScale used, for the count ramp
+  double rampScale = 1.0;           // the variationScale used, for the count ramp  // raw-ok: SI config/draw realised host-side, never in the NN byte format
 };
 
-inline double lerp(double a, double b, double u) { return a + (b - a) * u; }
+inline double lerp(double a, double b, double u) { return a + (b - a) * u; }  // raw-ok: SI config/draw realised host-side, never in the NN byte format
 
 // base* are the sim's unmodified values (captured once at worker start).
 // variationScale is the per-eval curriculum ramp in [0,1]. enabled is the
 // master EnableWindVariations gate: when false everything returns base.
 inline WindRealization realizeWindVariation(const WindVariationConfig& cfg,
                                             const WindDraws& d,
-                                            double baseWindSpeedMps,
-                                            double baseTurbIntensity,
-                                            double variationScale,
+                                            double baseWindSpeedMps,  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+                                            double baseTurbIntensity,  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+                                            double variationScale,  // raw-ok: SI config/draw realised host-side, never in the NN byte format
                                             bool enabled) {
   WindRealization r;
   r.windSpeedMps = baseWindSpeedMps;
   r.turbIntensity = baseTurbIntensity;
-  const double vs = std::clamp(variationScale, 0.0, 1.0);
+  const double vs = std::clamp(variationScale, 0.0, 1.0);  // raw-ok: SI config/draw realised host-side, never in the NN byte format
   r.rampScale = vs;
   if (!enabled) return r;
 
   if (cfg.speedEnabled()) {
-    const double target = lerp(cfg.windSpeedMinMps, cfg.windSpeedMaxMps, d.uSpeed);
+    const double target = lerp(cfg.windSpeedMinMps, cfg.windSpeedMaxMps, d.uSpeed);  // raw-ok: SI config/draw realised host-side, never in the NN byte format
     r.windSpeedMps = std::max(0.0, lerp(baseWindSpeedMps, target, vs));
   }
   if (cfg.turbEnabled()) {
-    const double target = baseTurbIntensity * lerp(cfg.turbIntensityMin, cfg.turbIntensityMax, d.uTurb);
+    const double target = baseTurbIntensity * lerp(cfg.turbIntensityMin, cfg.turbIntensityMax, d.uTurb);  // raw-ok: SI config/draw realised host-side, never in the NN byte format
     r.turbIntensity = std::max(0.0, lerp(baseTurbIntensity, target, vs));
   }
   if (cfg.gustScaleEnabled()) {
-    const double target = lerp(cfg.gustLengthScaleMin, cfg.gustLengthScaleMax, d.uGust);
+    const double target = lerp(cfg.gustLengthScaleMin, cfg.gustLengthScaleMax, d.uGust);  // raw-ok: SI config/draw realised host-side, never in the NN byte format
     r.gustLengthScale = std::max(0.05, lerp(1.0, target, vs));
   }
   if (cfg.thermalStrengthEnabled()) {
-    const double target = lerp(cfg.thermalStrengthMin, cfg.thermalStrengthMax, d.uThermal);
+    const double target = lerp(cfg.thermalStrengthMin, cfg.thermalStrengthMax, d.uThermal);  // raw-ok: SI config/draw realised host-side, never in the NN byte format
     r.thermalStrengthScale = std::max(0.0, lerp(1.0, target, vs));
   }
   if (cfg.thermalCountEnabled()) {
@@ -137,9 +137,9 @@ inline WindRealization realizeWindVariation(const WindVariationConfig& cfg,
 }
 
 // Ramp the thermal count where the XML base is known (crrcsim side).
-inline int rampedThermalCountMax(int xmlCountMax, int target, double rampScale) {
+inline int rampedThermalCountMax(int xmlCountMax, int target, double rampScale) {  // raw-ok: SI config/draw realised host-side, never in the NN byte format
   if (target <= 0) return xmlCountMax;
-  const double v = lerp(static_cast<double>(xmlCountMax), static_cast<double>(target),
+  const double v = lerp(static_cast<double>(xmlCountMax), static_cast<double>(target),  // raw-ok: SI config/draw realised host-side, never in the NN byte format
                         std::clamp(rampScale, 0.0, 1.0));
   return static_cast<int>(std::lround(v));
 }

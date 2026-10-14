@@ -73,7 +73,26 @@ tests/
 
 C++17: Follow standard conventions
 
-## Active feature — 043 acro-dual-loop (planned, ready for `/speckit.tasks`)
+## Active feature — 045 sim-pitch-fidelity (seeded 2026-10-13, not started) — then 044 M2 tracking
+
+**Start here**: [`specs/045-sim-pitch-fidelity/README.md`](specs/045-sim-pitch-fidelity/README.md), then the proposal of
+record [`specs/043-acro-dual-loop/sim-pitch-fidelity-proposal.md`](specs/043-acro-dual-loop/sim-pitch-fidelity-proposal.md)
+and the evidence in [`tempered-control-first-principles.md § 11`](specs/043-acro-dual-loop/tempered-control-first-principles.md).
+
+**Why it exists**: five ACRO flights on three genomes show the same 2 Hz, ±200 °/s, ±7 g pitch cycle; the same genomes do
+not cycle in the sim. The closed inner loop's frequency response matches to 1 Hz in gain and 2.5 Hz in phase, then the
+aircraft resonates at 2.5 Hz where the sim keeps rising to 6 Hz: model short period **6.9 Hz / ζ 0.81** vs real **~3 Hz /
+ζ 0.2–0.3**, first-order cause `I_yy = 0.0013` in `hb1_streamer.xml`. ⛔ **No objective work and no M2 until the corrected
+sim reproduces the cycle with 043-t5 gen 488** — three bakes proved an objective cannot price what the plant hides.
+Order: measure `I_yy` on both articles → doublets → fit `Cm_a`/`Cm_q` → sub-step latency (today one 50 ms frame by
+construction) → per-cell step test → FRF match → gen 488 cycles in sim → T092 trainability gate. Flight baseline of record:
+043-t5 gen 488 (`1731d937e3af9c1c`), in the aircraft.
+
+**043 is CLOSED** (2026-10-13, wrap = [`specs/043-acro-dual-loop/outcome.md`](specs/043-acro-dual-loop/outcome.md)):
+the dual loop flies and tracks 3× better than anything before it; the pitch cycle is unchanged because it is the outer
+loop's relay against a resonance the sim lacks. Deferrals are in `specs/BACKLOG.md` under "043 deferrals (filed 2026-10-13)".
+
+## Prior feature — 043 acro-dual-loop (CLOSED 2026-10-13; the notes below remain true of the architecture)
 
 **Start here**: [`specs/043-acro-dual-loop/spec.md`](specs/043-acro-dual-loop/spec.md) — read its
 **§ What ACRO is** first; the whole feature is downstream of that definition. Then

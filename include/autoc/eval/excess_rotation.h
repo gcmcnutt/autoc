@@ -33,24 +33,24 @@ namespace autoc {
 namespace eval {
 
 struct ExcessRotationAccum {
-  double craft_rotation = 0.0;  // rad
-  double path_rotation = 0.0;   // rad
+  double craft_rotation = 0.0;  // rad  // raw-ok: rad integral over ~1e4 ticks, host-side scorer only
+  double path_rotation = 0.0;   // rad  // raw-ok: rad integral over ~1e4 ticks, host-side scorer only
   bool have_prev = false;
   gp_vec3 prev_tangent = gp_vec3::Zero();
 
   // One recorded tick. `tangent` must be unit length (the scorer normalises it
   // before calling); `gyro_body` is rad/s; `dt` is the tick spacing in seconds.
-  void step(const gp_vec3& tangent, const gp_vec3& gyro_body, double dt) {
+  void step(const gp_vec3& tangent, const gp_vec3& gyro_body, double dt) {  // raw-ok: rad integral over ~1e4 ticks, host-side scorer only
     if (have_prev) {
-      const double c = std::clamp(static_cast<double>(tangent.dot(prev_tangent)), -1.0, 1.0);
+      const double c = std::clamp(static_cast<double>(tangent.dot(prev_tangent)), -1.0, 1.0);  // raw-ok: rad integral over ~1e4 ticks, host-side scorer only
       path_rotation += std::acos(c);
     }
     prev_tangent = tangent;
     have_prev = true;
-    craft_rotation += static_cast<double>(gyro_body.norm()) * dt;
+    craft_rotation += static_cast<double>(gyro_body.norm()) * dt;  // raw-ok: rad integral over ~1e4 ticks, host-side scorer only
   }
 
-  double excess() const { return craft_rotation - path_rotation; }
+  double excess() const { return craft_rotation - path_rotation; }  // raw-ok: rad integral over ~1e4 ticks, host-side scorer only
 };
 
 }  // namespace eval

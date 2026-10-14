@@ -1,208 +1,102 @@
-# 043 — outcome (⚠️ IN PROGRESS — feature not closed)
+# 043 — outcome
 
-This file is the running record of what landed, what deferred, and why. It is completed at close-out
-(T081). Until then it accumulates the deferral/decision records the tasks require (T026, etc.).
+**Scope:** the NN commands **rotation rates** into INAV's 2 kHz ACRO loop instead of surface deflections at 20 Hz, to
+remove the 2–5 Hz pitch/roll oscillation measured on the 041-t7 flight; one bake carries everything.
+**Verdict: the architecture works and the aircraft tracks better than it ever has — and the pitch oscillation is
+unchanged, because it was never the inner loop.** Closed 2026-10-13 after five bakes (t1–t5) and five ACRO flights.
+Spec of record: [spec.md](spec.md); the run records: [artifacts-t3](artifacts-t3/MANIFEST.md),
+[artifacts-t4](artifacts-t4/MANIFEST.md), [artifacts-t5](artifacts-t5/MANIFEST.md).
 
-## US6 (Phase 4) housekeeping — status & deferrals (T026 · FR-076)
+---
 
-The FR-07x "housekeeping on the opened surfaces" items, each done or recorded deferred:
+## 1. Result
 
-| FR | task | status |
-|---|---|---|
-| **FR-072** | T021 — `mod_inputdev` links `autoc_common` (no cherry-pick) | ✅ **Already satisfied** (done in 030 M1, `mod_inputdev/CMakeLists.txt:26-30`). Verified no autoc-source cherry-picking remains. |
-| **FR-071** | T022 — `nnextractor -g` vs `dmp-dump --gen` footgun | ✅ **DONE**. `nnextractor -g` now takes the actual generation (via shared `extractGenNumber`), agreeing with `dmp-dump --gen`; `--help` records the meaning CHANGED. BACKLOG entry marked resolved. |
-| (build) | T021a — two suites missing from the `make` ALL target | ✅ **DONE**. `shared_input_block_tests` + `nn_input_scaling_tests` added to both the `run_autoc_tests` `DEPENDS` list and the `COMMAND` chain — `make` now builds+runs them (verified locally). The 49/49 gate self-check is re-confirmed by the operator's T027 clean `rebuild-perf.sh`. |
-| **FR-070** | T023 — formal **measured** input normalization (not hand-derived constants) | ⚠️ **DEFERRED** — already filed in `specs/BACKLOG.md` (*"[041 P2-8 follow-up … HIGH VALUE, LOW COST] Formal input normalization — measured statistics"*). It changes the NN input scaling → **bake-affecting** and needs its own validation (041's P2-8 rescale took multiple runs to trust); it is also cut-list item #1. Not pulled into 043's bake. |
-| **FR-073** | T024 — type-safe NN sensor interface (name input columns by enum at the sites the new axes touch) | ⚠️ **RESEQUENCED to Phase 5** — the "sites the new axes touch" are the **observation-path** sites whose IMU transform is itself deferred to Phase 5 (see T015). Doing the enum-naming there keeps it with the code it hardens, rather than refactoring sites that do not yet exist. |
-| **FR-074** | T025 — simulator sampling-time variation (20 Hz tick dither) | ⚠️ **DEFERRED** — new determinism-affecting variation feature (per-scenario seeded, replayable), not open-file housekeeping; cut-list item. Filed in `specs/BACKLOG.md` (043 T025 entry). Owner call on whether it rides the 043 bake. |
+| | 041-t7 (flown 08-23, surfaces @ 20 Hz) | **043-t5 gen 488 (flown 10-11, rates @ 20 Hz → ACRO)** | |
+|---|---|---|---|
+| flight median tracking error | — (t3: 25–34 m) | **8–15 m** | ~3× tighter than t3 |
+| flight `step_score` | — (t3: 0.06–0.08) | **0.16–0.34** | 3× |
+| throttle +rail in flight | 68 % | **42–59 %** (t3 85–90) | halved vs t3 |
+| roll railing in flight | — | **0.0–0.3 %** | |
+| one-sided downwind bias | — | **gone** (+0.4 … +5 m; t3 +25–27 m) | calm days only |
+| vertical estimator | 6 resets on t3 | **`navEPV` max 541 cm, zero steps** | first ACRO flight seen clean |
+| loop health | 0 overruns | **0 gaps / overruns / resyncs over 3515 ticks** | |
+| **pitch cycle** | 2.0–2.2 Hz | **2.0–2.3 Hz, ±200 °/s, ±7 g — unchanged** | ⛔ five flights, three genomes, two architectures |
+| sim, trained regiment: `pctInStreak` / crashes | 38.3 % / 2.7 % | **51.1 % / 0/294** (t5 gen 800; t3 54.6 % on a calmer regiment) | |
+| sim cold-start generalisation (tier2-random) | — | **144/144, score 245** (t3 122/144, 43) | |
 
-⭐ **Net**: the true housekeeping (build coherence + the tooling footgun) is done and verified; the three
-bake-affecting / Phase-5-coupled items (T023/T024/T025) are deferred with rationale, exactly the cut order
-the 043 implementation strategy names.
+⭐ **What improved, improved together**: tracking, crash rate, throttle discipline, estimator health and cold-start
+generalisation. Those are the crash cost (t3), the wind envelope and the second random course (t4/t5), and crash-free
+selection — not the rate architecture by itself, and not the smoothness objective.
 
-## Decisions of record so far
+⛔ **What did not**: the pitch cycle's amplitude, frequency and loop gain are the same as before 043 existed. SC-001 is
+**not met on pitch**; it is met on roll (tick-to-tick roll flipping halved in the air, 5–10 Hz share 13–20 % vs 30–37 %).
 
-- **2026-08-25 (T003)**: as-run FDM substep is **200 Hz** (`Global::dt = 0.005 s`), not the assumed
-  ~333 Hz. Phase-5 discrete constants use 5 ms. See `baseline.md` / `research.md`.
-- **2026-08-25 (T006)**: the dynamic gyro notch is **modelled as absent** — effective Q = 2.5, ≥30 Hz
-  floor ⇒ < 4° phase at 5 Hz. See `research.md` addendum D.
-- **2026-08-25 (T015 split, operator)**: `craftCmQ → Cm_q` + Global carriers landed; the IMU
-  **observation-transform** is **folded into Phase 5** (needs a sensed copy distinct from the truth
-  fitness uses; also feeds `Cntrl_InavFwRate`). See `variation-inventory.md`.
-- **2026-08-25 → superseded 2026-08-30 (T037)**: the node first went in the **global** config because
-  `crrc_fdm.cpp:38` reads controllers there and `fdm_larcsim` had no per-model path (the literal task
-  placement would have created a controller that never loads). ⭐ **Superseded by the operator decision
-  below** — the per-model path now exists.
-- **⭐ 2026-08-30 (operator): `<controllers>` MOVED to the model file** (`hb1_streamer.xml`, inside
-  `<config>`), and `fdm_larcsim` gained the per-model load following the `fdm_mcopter01` pattern
-  (`data-model.md` §3's named recipe). Rationale — *"we will likely make changes and even run this on
-  different models as we go — retrain and all"*:
-  * ⛔ **Kills a real footgun.** Under the global config, loading ANY other airframe silently inherited
-    hb1's INAV gains. Verified fixed: `hb1_streamer.xml` → `[FDM] model-local controllers loaded: 1`;
-    stock `zagi-xs.xml` → `none (no <config><controllers> node) — direct stick→surface`.
-  * **Cohesion**: one file is the whole plant — aero, mass, `Cm_q`, *and* the FC tune it flies behind.
-  * **Unblocks per-scenario/per-craft gain variation** later: the list is per-FDM-instance, so gains can
-    vary like `craftCmQ` already does. (Impossible under the load-once global env.)
-  * ⭐ **Makes the load VISIBLE.** `fdm_larcsim` now logs the outcome either way and **fail-louds** if a
-    `<controllers>` node is present but constructs nothing (unknown name / missing gain key). That closes
-    the one invisible-failure mode of this feature — previously a bad node meant `LoadList` printed an
-    XMLException and the sim silently flew MANUAL. The node stays optional, because "no controllers" is
-    the correct pre-043 behaviour for every stock model (not a silent fallback default).
-  * Owned/reset correctly: rebuilt on every `LoadFromXML` (no `ReloadParams` duplication), deleted in the
-    destructor, and `Reset()` at each `initAirplaneState` — ⛔ required for determinism, or a worker's
-    second scenario would start from the previous scenario's integrator/filter state.
-  * Runs per substep after the global `ControllerCallback` and **before** the 037 servo model, so servo
-    lag still lands inside the rate loop.
-- **2026-08-25 (T040/T041)**: no `getInputData` change — `ControllerCallback` auto-routes
-  `pInputsFromUser`→controller, so the NN→rate-setpoint conversion lives in the adapter/core. ACRO is
-  **always-on**, replacing MANUAL outright (Constitution III, no dual path).
+## 2. What actually caused it — and what did not
 
-## ⭐ Model validation against the 041-t7 flight (2026-08-30)
+1. **The oscillation is the outer loop, not the inner one.** The NN is a saturating relay (setpoint p5/p95 at the ±240 °/s cap,
+   FF 98–100 % of the rate-loop output); the 2 kHz inner loop follows it faithfully. Moving the rate loop onto INAV removed a
+   phase budget that was not the binding one. The −64 ms setpoint→gyro lag at 2 Hz is ZOH + actuator, as the spec budgeted.
+2. **The sim does not exhibit the cycle, so no objective could price it.** Same genome, both worlds
+   ([first-principles § 11](tempered-control-first-principles.md)): pitch-rate RMS 61–96 °/s broadband in the sim vs 124–153 °/s
+   concentrated at 2 Hz in the air; the command at the cap 0–1.3 % of ticks vs rail-to-rail. Energy, excess rotation and
+   crash cost each did what they could see — roll, throttle, altitude — and pitch was invisible.
+3. **Why the sim lacks it — measured, not argued** ([proposal § 1](sim-pitch-fidelity-proposal.md)): the closed inner loop's
+   frequency response agrees between sim and aircraft to 1 Hz in gain and to 2.5 Hz in phase; the aircraft then peaks |H| 1.6
+   at 2.5 Hz and rolls off, the sim keeps rising to 1.54 at 6 Hz. The model file's short period is **6.9 Hz / ζ 0.81** against
+   the aircraft's **~3.0 Hz / ζ 0.2–0.3**, and `I_yy = 0.0013 kg·m²` (a 5 cm pitch radius of gyration) is the first-order cause.
+4. **The t4 lesson on objectives**: a standalone rotation case is won by a passive flyer (t4 stalled from gen 281); as a
+   tie-break inside the tracking case (t5) it bit on ~half of selections and cut roll/yaw rotation 6–10 % — and made the pitch
+   command ~24 % *more* bang-bang, because `Σ‖ω‖·dt` rewards dithering that the sim plant low-passes (MANIFEST-t5 § 7a).
+5. **Not the cause**: vibration / accelerometer clipping (excluded in flight, `accClipCount` 0 with `accVib` at an all-time high),
+   anything above 20 Hz but blade-pass (966 Hz log), compute latency (the sim carries *more* than the aircraft — one frame,
+   tasks T111), sampling rate alone (same 20 Hz in both worlds; the sim does not cycle).
 
-The 2026-08-23 flight was launched and landed in **ACRO**, so its blackbox carries INAV's own
-rate-loop internals — `axisRate` (setpoint), `axisP/axisI/axisD/axisF` (per-term contributions),
-`gyroADC`, `rcCommand`, `servo[]`. That makes it ground truth for the model, not just a behaviour
-comparison. Analysis over the ACRO-only samples (`flightModeFlags == ARM`, 6,271 samples @ 59 Hz;
-`ARM|MANUAL` segments excluded — MANUAL bypasses the PID).
+## 3. Sim-to-real
 
-### 1. Every contract constant confirmed from the aircraft's own log
+| axis | state at close |
+|---|---|
+| tracking | flight / sim per-path ratio 0.29 (Straight) … 0.65 (RandomB): the gap shrinks as the path gets harder — it lives in the dynamics, not the geometry |
+| roll | close; the axis moved both worlds the same way |
+| throttle | sim rail halved and flight rail halved |
+| **pitch dynamics** | **the one structural gap** — mode placement (§ 2 item 3). Fixing it is the successor feature. |
+| latency | sim applies NN commands one frame (50 ms) late by construction; the aircraft ~10 ms (T111) |
+| entry | hand-off attitude is not a variation class; the first second of every span is out of distribution (T085/T086 deferred) |
+| wind | the 0–8 m/s envelope reproduces the flight brittleness in sim (`pctInStreak` 60 → 27 % calm → 6+ m/s); windy-day flight on a t4/t5 genome still owed |
 
-`rollPID:15,3,7,50` and `pitchPID:15,5,5,70` → applying the contract's divisors (/31, /4, /1905, /31)
-reproduces **all eight gains exactly**: kP 0.484 both; kI 0.750/1.250; kD 0.003675/0.002625;
-**kFF 1.613/2.258**. Also `rates:36,12,4` (⇒ maxRate 360/120 ✓), `dterm_lpf_hz:10` + `type:2` (PT2 ✓),
-`tpa_rate:0` ✓, `axisAccelerationLimitRollPitch:0` ✓ — i.e. every "deliberately not modelled" item
-(T039) is confirmed off on the real aircraft.
+## 4. Verified, not assumed
 
-### 2. Term-by-term: the implementation is correct
+- Determinism: `NN_ELITE_SAME` 800/800 on t3, 413/413 on t4, 800/800 on t5; eval tier0 bitwise on every flown genome; the
+  t3 gate `−88026.619367` reproduced across the t4 and t5 code changes (axis off).
+- Provenance: every flown genome re-extracted from S3 and hashed (`a5d097da…` t3, `1731d937…` t5 g488 — byte-identical);
+  the one mis-label (gen9512 = gen **488**, not 512) caught and corrected in the record.
+- Wind reset path audited to the Dryden integrator; the t4 stall was selection, not non-determinism.
+- Unit slips found and fixed on both sides: flight gyro ÷10 in three scripts; sim gyro columns are rad/s ÷ 6.
 
-Feeding the real `rcCommand` + `gyroADC` into the model and comparing against INAV's own recorded terms:
+## 5. Spec success criteria
 
-| | roll | pitch |
-|---|---|---|
-| setpoint chain (`rcCommand/500 × maxRate` vs `axisRate`) | max err **0.96 °/s**, r = 0.99997 | 0.96 °/s, r = 0.99992 |
-| **FF** vs `axisF` | mean err **0.21**, r = **0.99998** | 0.46, r = **0.99994** |
-| **P** (incl. Gaussian attenuation) vs `axisP` | mean err **0.53**, r = 0.99917 | 0.52, r = 0.99848 |
+| SC | status |
+|---|---|
+| SC-001 smoother in the air | **not met on pitch**; met on roll (flipping halved) |
+| SC-001a magnitude stated | met — roll 5–10 Hz share 30–37 → 13–20 %; pitch 0 % change |
+| SC-002 emulation divergence measured | met at close — the FRF and short-period numbers above |
+| SC-003 tracking does not regress | met, 3× better |
+| SC-004 trainability survives | met (t3, t5 trained; t4's failure was the objective, not the plant) |
+| SC-005 041 agreement holds | partially re-verified (T071 clock-join routine; the formal cross-validation was not repeated) |
+| SC-006 loop health | met |
+| SC-008 / SC-013 variation regime legible, no dead sigma | **not completed** (T079/T080 → BACKLOG) |
+| SC-009 IMU axes free when off | met (bitwise gates) |
+| SC-010 actuator measured | pitch and roll step tests yes; servo bench step (T046) no |
+| SC-011 arm's-length answered | met — D1 stands alone; the inner loop was not the lever |
+| SC-012 zero command → zero rate | met (T043) |
+| SC-014 flies sensibly, recovery is the policy's | met — five flights, all spans ended cleanly |
 
-Residuals are at blackbox integer-quantisation level. ⭐ The 0.999 P-correlation independently
-confirms the **Gaussian setpoint attenuation** is right — a wrong attenuation could not track `axisP`.
+## 6. Carried forward
 
-### 3. The pitch authority ceiling is HARDWARE-REAL, not a sim artifact
-
-INAV's own `axisF[1]` maxes at **270** of the ±500 budget on the real aircraft (model: 271). So at full
-pitch stick ACRO commands only **54%** of available elevator, versus roll's 100% (FF 581 → clipped to
-500). This is `maxRate × kFF`: 120×2.258 = 271 vs 360×1.613 = 581. Nothing rescues it — P and D are
-attenuated to ~0 at full stick, and the I-term is **locked**: INAV's `pid.c:767` refreshes
-`targetOverThresholdTimeMs = millis()` every iteration while `|rateTarget| > 0.2·maxRate`, so *holding*
-the stick keeps the lock engaged permanently (`aI = 0`). Verified against the fork's source; the model
-matches this behaviour.
-
-⚠️ Pitch **authority per unit command** is nearly right (sim 0.368 vs real 0.439 °/s per PID unit,
-**0.84×**), so full pitch command still rotates the sim at ~100 °/s vs real ~119. The airframe is not
-the problem.
-
-### 4. ⛔ The finding that matters for the bake: WHERE the policy operates
-
-σ scales with maxRate, so the attenuation depends **only on stick fraction** `f`:
-
-> **aP = aD = exp(−17.33 · f²)** — half authority at **f = 20%**; `aP ≈ 0` at full stick, *regardless of
-> the `rates` setting*. (Lowering `rates` would make a given physical rate a LARGER fraction and
-> attenuate MORE — the obvious lever is backwards.)
-
-| | \|cmd rate\| | \|achieved\| | saturated | **aP** | in linear band |
-|---|---:|---:|---:|---:|---:|
-| **human pilot, real ACRO** | 16.5 / 13.4 °/s | 31.7 / 25.6 | 0.0 / 2.6% | **0.909 / 0.816** | **91.6 / 81.2%** |
-| 043 smoke NN, gen 63 | 311 / 108 °/s | 206 / 103 | 60.8 / 72.6% | 0.037 / 0.035 | 2.9 / 2.7% |
-| ratio (roll/pitch) | 18.9× / 8.0× | 6.5× / 4.0× | | | |
-
-⭐ **The human flies where the loop has ~85% of its P/D authority — fully closed and actively damping.
-The policy commands 8–19× more rate and lives at the attenuation floor, where the loop is pure
-feed-forward.** Bang-bang commanding is endemic in autoc (037, 041), but its *consequence* is new: under
-MANUAL, pegging meant full surface; under ACRO, pegging **bypasses the inner loop**.
-
-⛔ **Open pre-bake question (owner decision).** 043's premise is that the fast inner loop damps the
-2–5 Hz oscillation; that damping lives in P/D. If the baked policy operates at aP ≈ 0.03, ACRO becomes a
-bang-bang *rate* command and the oscillation may well survive. The lever is **ours** — the action space
-is FR-016, needing no INAV config change and so no FR-012a bench burden: map the NN tanh onto a
-*fraction* of maxRate (`×0.25` ⇒ f ≤ 0.25, aP ≥ 0.34, max 90/30 °/s — still ~3× what the pilot used, and
-achieved rates land in the real aircraft's measured range). Proposed test: a short A/B smoke,
-current mapping vs 0.25×, judged on fitness climb **and** the rate-spectrum/aggressiveness measures.
-This also supplies direct evidence for T061/FR-030's leading candidate (rate-tracking error as an NN
-input): the policy achieves 57% of what it commands and has no channel that reports it.
-
-### 5. Subjective validation — the operator flew it
-
-Manual flight in the sim (video config, USB stick, ACRO loop active) initially felt wrong — *"no pitch
-for climb at all"*. Root cause was **input binding, not the controller**: crrcsim's shared axes parser
-(`inputdev.cpp:710-731`) defaults ELEVATOR polarity to **−1 for mouse but +1 for joystick**, and every
-axis other than aileron/elevator defaults to `-1` (unmapped). ⚠️ `bindings->getChild("axes", true)`
-creates the node when absent, so a missing binding fails *silently* into these defaults. After
-recalibration the operator's verdict: **"NOW it feels about right"** — the model reproduces real ACRO
-feel to a pilot who has flown this airframe in ACRO. Command/surface ranges confirmed against
-`docs/COORDINATE_CONVENTIONS.md:315-317` (pitch `−pitch/2`, roll `roll/2`, throttle `(thr/2)+0.5`).
-
-## The action-space experiment — A/B/C (2026-08-30)
-
-Three arms, each flown manually by the operator (who has flown this airframe in real ACRO) and
-scored against the 041-t7 flight data. The knob added for the experiment is `commandScale`
-(per-axis XML attribute on `<InavFwRate>`, adapter-side — the action space is FR-016, ours; the
-validated `inav_fw_rate.h` core was deliberately left untouched).
-
-| arm | change | full-stick pitch | aP at a useful 58 °/s pitch | operator verdict |
-|---|---|---:|---:|---|
-| **A** | baseline (`commandScale` 1.0, `pitch_rate` 12) | 120 °/s / **54%** elevator | 0.016 | marginal — "no pitch for climb" |
-| **B** | `commandScale` 0.35 | 42 °/s / **19%** | — | ⛔ **"more sluggish"** — rejected |
-| **C** | `pitch_rate` 12 → **24** (maxRate 120 → 240) | 240 °/s / **100%** | **0.363** | ✅ **"feels about right … ACRO is felt for sure"** |
-
-### Why B failed and C worked — the coupling, stated once
-
-Surface authority is `FF = commanded_rate × kFF`; damping is `aP = exp(−17.33·f²)` where `f` is the
-commanded *fraction* of maxRate. **`commandScale` lowers the rate, so it lowers authority and
-damping together** — it can only trade one for the other (arm B: damping bought with 19% elevator).
-⭐ **`maxRate` is the only knob that decouples them**: raising it leaves `FF` at a given physical rate
-unchanged while shrinking `f`, so authority and damping both improve. Arm C gets 100% elevator
-*and* 22× the P/D authority at normal flying rates.
-
-### The root cause, localised
-
-`pitch_rate = 12` is **below INAV's own default of 20** (allowed range 4–180) and caused both symptoms
-at once. Full-stick FF = 120 × 2.258 = 271 of the **fixed** ±500 `pidSumLimit` (hard-coded in
-`getPidSumLimit`, not configurable), and σ ∝ maxRate put every useful pitch rate at the attenuation
-floor. ⭐ **Roll was never broken**: at 360 °/s a useful 95 °/s is already f = 0.26 → aP = 0.30.
-Design note — full stick exactly fills the ±500 budget at `rate = 500/(10·kFF)`: **roll 31, pitch 22**.
-We run roll 36, so the top **14% of roll stick is clipped dead range** (operator 2026-08-30: *"the roll
-is a bit hot"*). Lowering roll toward 31 would remove the dead band at a small damping cost
-(aP 0.30 → 0.20 at 95 °/s) — not done, recorded as an option.
-
-### ⛔ Gate before the bake — the sim now models an aircraft that does not exist
-
-Arm C is **sim-only**: `xiao/inav-hb1.cfg` still has `pitch_rate = 12`. Baking against arm C and then
-flying `pitch_rate 12` would diverge *precisely in the axis this feature exists to fix*. So before the
-27 h bake, one of:
-1. **Commit to the INAV change** — `pitch_rate 12 → 24` on the flight FC, changed identically in sim,
-   bench-verified, folded into the config of record (FR-012a discipline). ⚠️ This is a deviation from
-   the spec's "gains and rates stay as-is" and is an operator decision (2026-08-30: *"xiao and inav
-   need updating for this so we will consider"*); **or**
-2. bake on arm A's config and accept the 54% pitch ceiling.
-
-⚠️ **T050a also applies**: arm C is a material plant change, so the T044 trainability gate should be
-re-run on arm C (a ~70 min smoke) before committing 27 h. Arm A's trainability result (best −1576.9
-at gen 328, 16/16 scenarios, past the basic-m1 400-gen baseline of −1320) was measured on a plant the
-bake would no longer use.
-
-## Phase-5 model gates (US2)
-
-- **T037a ✅ (2026-08-25)**: second clean `rebuild-perf.sh` after the `mod_cntrl`/top-level CMakeLists
-  changes — **50/50 suites, 0 failures**, binaries present. Constitution IV satisfied with the controller
-  compiled in.
-- **T043 ✅ (SC-014 part 1)**: all-attitude zero-command sweep, model standing alone
-  (`tests/inav_fw_rate_tests.cc::AllAttitudeZeroCommandSweep`). Across a bank×pitch grid over the sphere,
-  zero command **nulls body rate** at every attitude (|residual rate| < 2 °/s from a 20 °/s disturbance)
-  and **holds attitude WITHOUT self-levelling** (mean restore fraction < 0.15). A contrast ANGLE outer
-  loop on the same core+plant restores bank (> 0.8), and the ACRO residual is **not** sign-correlated with
-  bank — so the FR-019a discriminator is proven, not trivially true. ⚠️ This is the model-level sweep; the
-  full crrcsim-FDM attitude behaviour is additionally exercised by the operator's T044 training run.
-- **T044 ⏳ trainability (SC-004)** — operator-driven: seed a short run from a known-good genome and
-  confirm the GA improves rather than stalls. **Not yet run.**
-- **T045 ⏳ determinism (FR-015)** — operator-driven: identical seed+config reproduce identical
-  trajectories, and the eval-vs-training bitwise ScenarioScore gate holds. The `rebuild-perf.sh` clean
-  build passed, but the eval-vs-training comparison itself is a separate run. **Not yet run.**
+| item | to |
+|---|---|
+| **Pitch short period in the sim** (measure `I_yy` on both articles, fit `Cm_a`/`Cm_q`, honest sub-step latency, latency sweep, open-loop replay, gen 488 on article 2) | **045 sim-pitch-fidelity** — must precede M2, which inherits the plant |
+| entry dither / heading / path library; six random courses | BACKLOG (t6+ content) |
+| command-side smoothness measures (tie-break only, after the plant is honest); relay-amplitude flight | BACKLOG |
+| windy-day flight on g488; `GPS_ONLY` decision; `flash_erase` discipline | BACKLOG |
+| observability audit (SC-008/013), FR-056 n = 2 review, INAV phase-delay params, roll dead-band, pitot | BACKLOG |
+| M2 tracking and its two gates | **044** (after 045) |
