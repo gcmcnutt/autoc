@@ -28,6 +28,8 @@ import sys
 
 import numpy as np
 
+PIXFMT = "gray"   # set from --track in main(); frames() reads it
+
 
 def probe(video):
     out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
@@ -47,7 +49,7 @@ def frames(video, width, crop, start, end):
     cmd = ["ffmpeg", "-v", "error"]
     if start is not None: cmd += ["-ss", str(start)]
     if end is not None: cmd += ["-to", str(end)]
-    cmd += ["-i", video, "-vf", ",".join(vf), "-pix_fmt", "gray", "-f", "rawvideo", "-"]
+    cmd += ["-i", video, "-vf", ",".join(vf), "-pix_fmt", PIXFMT, "-f", "rawvideo", "-"]
     p = subprocess.run(cmd, capture_output=True, check=True)
     raw = np.frombuffer(p.stdout, dtype=np.uint8)
     # height after scale: need it — probe one frame's size via ffprobe of the same filter is awkward; infer
@@ -71,27 +73,50 @@ def main():
     ap.add_argument("--start", type=float, default=None); ap.add_argument("--end", type=float, default=None)
     ap.add_argument("--dark-frac", type=float, default=0.02, help="fraction of darkest pixels tracked")
     ap.add_argument("--band", default="1.0,2.5", help="Hz band the twist is read in (sway sits below it)")
+    ap.add_argument("--track", default="dark", choices=["dark", "yellow", "bright"],
+                    help="what to follow: darkest pixels (black pod), yellow tape/elevon, or brightest pixels")
     ap.add_argument("--dump", default=None, help="write the per-frame trace CSV")
     a = ap.parse_args()
 
     W, H, fps_p, dur = probe(a.video)
     fps = a.fps or fps_p
+    # phone videos carry a rotation tag and ffmpeg auto-rotates on decode: find the DISPLAYED size by
+    # decoding one frame, rather than trusting the stored width/height
+    one = subprocess.run(["ffmpeg", "-v", "error", "-i", a.video, "-frames:v", "1", "-pix_fmt", "gray", "-f", "rawvideo", "-"],
+                         capture_output=True).stdout
+    if len(one) == W * H:
+        # ambiguous between WxH and HxW; use the rotation side data
+        rot = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                              "stream_side_data=rotation:stream_tags=rotate", "-of", "default=nw=1:nk=1", a.video],
+                             capture_output=True, text=True).stdout.strip().split()
+        if any(abs(int(float(r))) % 180 == 90 for r in rot if r.lstrip("-").replace(".", "").isdigit()):
+            W, H = H, W
     crop = tuple(int(v) for v in a.crop.split(",")) if a.crop else None
     cw, ch = (crop[2], crop[3]) if crop else (W, H)
     sw = a.width; sh = int(round(ch * sw / cw / 2)) * 2
+    global PIXFMT
+    PIXFMT = "gray" if a.track == "dark" or a.track == "bright" else "rgb24"
+    ch = 1 if PIXFMT == "gray" else 3
     raw = frames(a.video, sw, crop, a.start, a.end)
-    n = len(raw) // (sw * sh)
+    n = len(raw) // (sw * sh * ch)
     if n < 30:
-        sys.exit(f"only {n} frames decoded (expected ~{sw}x{sh} gray) — check --crop/--width")
-    F = raw[: n * sw * sh].reshape(n, sh, sw).astype(np.float32)
-    print(f"{a.video}: {W}x{H} @ {fps:.2f} fps, {dur:.1f} s; decoded {n} frames at {sw}x{sh}")
+        sys.exit(f"only {n} frames decoded (expected ~{sw}x{sh}x{ch}) — check --crop/--width")
+    F = raw[: n * sw * sh * ch].reshape(n, sh, sw, ch).astype(np.float32)
+    print(f"{a.video}: {W}x{H} @ {fps:.2f} fps, {dur:.1f} s; decoded {n} frames at {sw}x{sh}, tracking '{a.track}'")
 
-    # per-frame centroid (x and y) of the darkest pixels; the twist may show on either image axis
-    # depending on where the camera is, so take the axis with the larger detrended motion
+    # per-frame centroid (x and y) of the tracked pixels; the twist may show on either image axis
+    # depending on where the camera is, so take the axis whose estimators agree (see below)
     k = max(20, int(a.dark_frac * sw * sh))
     cx = np.empty(n); cy = np.empty(n)
     for i in range(n):
-        f = F[i].ravel()
+        if a.track == "yellow":
+            R, G, B = F[i, :, :, 0], F[i, :, :, 1], F[i, :, :, 2]
+            score = -(R + G - 2.0 * B)            # most negative = most yellow
+        elif a.track == "bright":
+            score = -F[i, :, :, 0]
+        else:
+            score = F[i, :, :, 0]
+        f = score.ravel()
         idx = np.argpartition(f, k)[:k]
         cx[i] = np.mean(idx % sw); cy[i] = np.mean(idx // sw)
     t = np.arange(n) / fps

@@ -465,3 +465,31 @@ doublets. Candidate after the fit: `Cm_a −0.8`, `Cm_q −0.8` ⇒ 2.1 / 2.6 / 
 a repeat. **Still to do**: `I_xx` with the dowel spanwise, nose down (expected 1.45 s at L 1 m / D 0.6 m for the file's 0.024 —
 with this rig's converging strings the tool computes the right expectation from the geometry) — the method check; a second video for
 repeatability; article 2.
+
+### `I_xx` — article 1, same day (nose down), provisional
+
+**Rig**: same strings and dowel (24 g), dowel taped **spanwise at station 13 in** (the wing/elevon junction), aircraft **nose down**;
+CG at station 8 in ⇒ the CG hangs **5 in (0.127 m) below the dowel** on the vertical rotation axis (so the measured axis still
+passes through the CG — no parallel-axis term). Video `IMG_4401.MOV` (portrait, 59.96 fps, 13.3 s; hand off the rig by 4 s).
+Tracked the yellow fin (`--track yellow --start 4`).
+
+**Modes present** (spectrum, both image axes): **1.33 s** = string sway (2π√(h/g) = 1.331); **1.55 s** = across-plane swing
+with the CG 0.127 m below the dowel (2π√(0.567/g) = 1.51); **0.71 s on the image-y axis** = the fast mode of the double pendulum
+the CG offset creates (fin moving along the nose–tail direction); **0.63 s on the image-x axis** = the twist about the vertical
+(fin sweeping sideways). Nothing at the **1.10 s** the file's `I_xx 0.024` would require.
+
+| axis | band | zero-crossings | autocorr | FFT (interp.) |
+|---|---|---|---|---|
+| **x (twist)** | 1.2–1.9 Hz | **0.624 s (14 cycles)** | **0.634 s** | **0.630 s** |
+| y (CG-offset mode) | 1.2–1.9 Hz | 0.714 s | 0.684 s | 0.740 s |
+
+**Result**: T = 0.630 s ⇒ `I_total` 0.0084 − dowel 0.0015 ⇒ **`I_xx` ≈ 0.0069 kg·m² [0.0068–0.0070]**, radius of gyration **11.6 cm**
+— **~3.5× smaller than the file's 0.024**, and smaller than `I_yy`. Plausible for this airframe: the span is light foam, and the
+battery, motor pod and electronics sit on the centreline, spread along the chord. A flat body's `I_zz ≈ I_xx + I_yy ≈ 0.016` (file: 0.026).
+⇒ **Both inertias in the model file are wrong, in opposite directions** (pitch 7× low, roll ~3.5× high); the tuned damping
+derivatives absorbed the errors where they could (roll's first-order response can be matched with any `I_xx` by moving `Cl_p`;
+pitch's resonance cannot be produced from a 0.0013 inertia by any `Cm_q`).
+
+**Provisional because** the twist had to be told apart from a neighbouring mode 12 % away. **Clean repeat**: move the dowel to the
+**CG station (8 in)** for the nose-down hang — the CG-offset modes then vanish, as they did in the `I_yy` rig, and the twist stands
+alone in the 1–2 Hz band. Expected twist for 0.0069: **0.63 s**; for the file's 0.024: 1.10 s.
