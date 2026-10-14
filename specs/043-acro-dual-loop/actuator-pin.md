@@ -493,3 +493,52 @@ pitch's resonance cannot be produced from a 0.0013 inertia by any `Cm_q`).
 **Provisional because** the twist had to be told apart from a neighbouring mode 12 % away. **Clean repeat**: move the dowel to the
 **CG station (8 in)** for the nose-down hang — the CG-offset modes then vanish, as they did in the `I_yy` rig, and the twist stands
 alone in the 1–2 Hz band. Expected twist for 0.0069: **0.63 s**; for the file's 0.024: 1.10 s.
+
+---
+
+## The t6 plant on the step test and on gen 488 (2026-10-13 evening) — and two sim bugs it exposed
+
+**Bug 1 — `Global::craftCmQ = -4.2` hard-coded in crrcsim (`global.cpp`).** The FDM overwrites the model xml's `Cm_q` with this
+carrier at every init. In autoc runs the inputdev sets it per scenario (class centre + draw), so training was consistent; in every
+**non-autoc** run — the step test, a GUI flight — the xml's `Cm_q` was silently ignored and −4.2 used. Fixed: the carrier starts
+**NaN (unset)** and the FDM keeps the xml's `Cm_q` (`nominal_Cm_q`) unless autoc has set it. The § 7 step-test numbers above were
+taken with −4.2 regardless of what the file said — which happened to be the file's value then, so § 7 stands.
+
+**Bug 2 — the step-test harness's trim loop was tuned for the quasi-static plant.** `trimGain 0.010` integrating vertical speed
+wound the elevator to −0.43 on the new plant (slower, oscillatory pitch; `Cm_de` ×1.8 at the first trial point), the aircraft
+departed in a dive, and **the FDM overflowed** (airspeed 10⁹⁵ m/s within one 60 ms interval) in 4 of 13 cells. `trimGain 0.004`,
+`trimSec 6.0` ⇒ no departure, no overflow. ⚠️ The overflow is a robustness note for the record: in autoc runs OOB/floor terminate a
+departed scenario before NaN (no non-finite values in any eval dmp), but departed flight on the low-inertia plant reaches |q| of
+2500–5000 °/s, which is numerical, not physical. Policies that avoid departure are selected either way.
+
+**Step test, new plant** (`I_yy 0.0094`, `I_xx 0.0069`, `Cm_a −0.55`, `Cm_q −1.0` honest, roll/yaw rescaled; retuned harness; same binary):
+
+| | old plant (this harness, today) | **new plant** | aircraft (§ 2) |
+|---|---|---|---|
+| pitch peak time | **50 ms** (quasi-static) | **135–155 ms** | 133–166 ms |
+| pitch peak/steady | 2.2× | 1.3–1.7× | ~2.5× |
+| ring | none | still decaying at the window edge (ζ ≈ 0.35 analytic) | ~3 Hz, ζ 0.2–0.3 |
+| roll steady gain / 63 % | 181 °/s per 100 counts / 160 ms | 92 / 110 ms | 133 / 134 ms |
+
+The harness's roll gain is not a reliable comparator (cells inherit the previous cell's state); the closed-loop **roll FRF of gen 488**
+is: t5 plant |H| 1.20 / 0.87 / 0.88 / 0.74 / 0.71 at 0.5 / 1 / 1.5 / 2 / 2.5 Hz vs t6 plant 1.15 / 1.05 / 0.75 / 0.68 / 0.66 — roll is
+preserved to first order by the inertia-ratio rescaling, as intended. The remaining pitch gap is damping: the sim peaks lower
+(1.3–1.7× vs 2.5×) and does not ring inside 0.8 s — the lift-curve term floors ζ near 0.3 with `CL_a 4.7` (proposal § 2); the
+doublets decide whether `CL_a` moves.
+
+**Gen 488 (the flown genome) on the candidate plants — the sanity check against its own two flights:**
+
+| plant | pitch RMS °/s | peak Hz | 2–3 Hz share | closed-loop \|H\| 2.0 / 2.5 / 3.0 Hz | phase 2.0 / 2.5 | tracking pct / crashes |
+|---|---|---|---|---|---|---|
+| t5 plant (I_yy 0.0013) | 61–96 | < 1 | 7–10 % | 0.95 / 1.04 / 1.17 | −48 / −64 | 48.3 % / 0 |
+| `Cm_a −1.0`, frame-top latency | **188–214** | 3.0–3.3 | 31–41 % | 1.54 / 1.87 / 2.23 (peak 2.64 @ 4 Hz) | −55 / −76 | 24.3 % / 25 |
+| `Cm_a −0.70`, frame-top | 146–180 | 2.5–2.8 | ~35 % | 1.35 / 1.71 / 2.05 | −66 / −87 | 28.1 % / 9 |
+| `Cm_a −0.55`, frame-top | 129–153 | 2.3–2.5 | ~30 % | 1.30 / 1.61 / 1.75 | −72 / −94 | 29.0 % / 4 |
+| **`Cm_a −0.55` + sub-step latency (t6)** | **105–123** | **1.9–2.3** | **24–47 %** | **1.23 / 1.34 / 1.46** (peak 1.46 @ 3 Hz) | **−65 / −83** | **39.9 % / 3** |
+| **aircraft, 10-11 flights** | **124–153** | **2.0–2.3** | **31–63 %** | **1.3–1.5 / 1.5–1.6 / roll-off** | **−48 / −60** | — |
+
+⇒ With the measured inertia alone (`Cm_a` back at its original −0.55 — only the inertia and `Cm_q` were wrong) and the honest sub-step
+latency, **the sim now reproduces the flown genome's behaviour**: a ~2 Hz cap-reaching pitch cycle of the right amplitude (within ~15 %),
+the right peak frequency, a closed-loop resonance of the right height, and the tracking degradation that goes with it. Residuals: the
+sim's resonance sits ~0.5 Hz high and ~20° more lagged at 2–2.5 Hz than the aircraft, and is somewhat less sharply damped-then-ringing
+than the bench steps show. Those are the doublets' job (T095) and the servo's (T046); none of them is a knob.

@@ -215,7 +215,7 @@ struct AutocConfig {
     double craftGyroScaleSigma   = 0.02; // fraction; 2.5σ = ±5% gyro cal tolerance
     double craftAccelScaleSigma  = 0.02; // fraction; 2.5σ = ±5% accel cal tolerance
     double craftAccelBiasSigma   = 0.04; // g; from 041-t7 audit (accel_y ~1.7σ; provisional on acc_1G scale)
-    double craftCmQSigma         = 0.32; // Cm_q width; center -4.2, clamp [-5.0,-3.6] (2.5σ reaches -5.0)
+    double craftCmQSigma         = 0.6;  // Cm_q width; 043 t6: center -1.0, clamp [-2.0,-0.2] (2.5σ reaches the clamps)
 
     // --- Variation landscape ramp ---
     int variationRampStep = 0;

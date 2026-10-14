@@ -65,9 +65,9 @@ constexpr gp_scalar kCraftThrustTauMax    = static_cast<gp_scalar>(0.300);  // s
 // leave the physical range. ⛔ This is the DYNAMIC pitch-damping side only;
 // the static-margin side is already carried by craftCGDelta (CG vs neutral
 // point) -- see contracts/craft-imu-axes.md.
-constexpr gp_scalar kCraftCmQCenter = static_cast<gp_scalar>(-4.2);
-constexpr gp_scalar kCraftCmQMin    = static_cast<gp_scalar>(-5.0);
-constexpr gp_scalar kCraftCmQMax    = static_cast<gp_scalar>(-3.6);
+constexpr gp_scalar kCraftCmQCenter = static_cast<gp_scalar>(-1.0);   // 043 t6: re-centred on the measured-inertia fit (was -4.2 against I_yy 0.0013)
+constexpr gp_scalar kCraftCmQMin    = static_cast<gp_scalar>(-2.0);   // 043 t6 (was -5.0)
+constexpr gp_scalar kCraftCmQMax    = static_cast<gp_scalar>(-0.2);   // 043 t6 (was -3.6)
 
 /**
  * Sigma parameters for craft variation draws. All in their respective

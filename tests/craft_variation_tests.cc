@@ -295,7 +295,7 @@ CraftSigmas preExistingSigmas() {
 }  // namespace
 
 // T017 — σ=0 on every NEW axis is a bit-identical no-op: the new fields sit at
-// nominal (0 misalign / 1.0 scale / 0 bias / -4.2 cmQ) AND — because the new
+// nominal (0 misalign / 1.0 scale / 0 bias / kCraftCmQCenter cmQ) AND — because the new
 // draws are appended at the BOTTOM — every pre-existing draw keeps its value
 // whether the new sigmas are 0 or not (draw order frozen; FR-053, SC-009).
 TEST(CraftVariationImu, ZeroSigmaNewAxesAreNominalNoOp) {
@@ -315,7 +315,7 @@ TEST(CraftVariationImu, ZeroSigmaNewAxesAreNominalNoOp) {
     EXPECT_EQ(d.craftAccelBiasX, static_cast<gp_scalar>(0.0));
     EXPECT_EQ(d.craftAccelBiasY, static_cast<gp_scalar>(0.0));
     EXPECT_EQ(d.craftAccelBiasZ, static_cast<gp_scalar>(0.0));
-    EXPECT_EQ(d.craftCmQ, static_cast<gp_scalar>(-4.2));
+    EXPECT_EQ(d.craftCmQ, autoc::eval::kCraftCmQCenter);   // 043 t6: -1.0 (was -4.2)
 }
 
 // T017/SC-009 — the appended draws do NOT disturb any pre-existing draw. Same
@@ -344,7 +344,7 @@ TEST(CraftVariationImu, AppendedDrawsLeavePreExistingUnchanged) {
     EXPECT_EQ(a.craftServoPwmPhase, b.craftServoPwmPhase);
     // And the new axes actually moved off nominal in `b`.
     EXPECT_NE(b.craftImuMisalignRoll, static_cast<gp_scalar>(0.0));
-    EXPECT_NE(b.craftCmQ, static_cast<gp_scalar>(-4.2));
+    EXPECT_NE(b.craftCmQ, autoc::eval::kCraftCmQCenter);
 }
 
 // T018 — σ>0 replays identically from the same scenarioSeed (new axes too), and
@@ -374,23 +374,27 @@ TEST(CraftVariationImu, NewAxesReplayFromScenarioSeedAndSubSeedsStable) {
     EXPECT_EQ(a.craftCmQ,              b.craftCmQ);
 }
 
-// T019 — craftCmQ centres at -4.2 with σ=0 and clamps to [-5.0, -3.6]; at
-// σ=0.32 the ±2.5σ truncation reaches exactly -5.0 and never leaves the range.
+// T019 — craftCmQ centres at the fitted value with σ=0 and clamps to the class
+// range; at the ini σ the ±2.5σ truncation reaches the clamps and never leaves
+// the range. 043 t6 (2026-10-13): centre -4.2 → -1.0, clamp [-5.0,-3.6] → [-2.0,-0.2],
+// σ 0.32 → 0.6, after the measured I_yy (0.0094, was 0.0013) made the old
+// streamer-era damping values meaningless (sim-pitch-fidelity-proposal.md § 2b).
 TEST(CraftVariationImu, CraftCmQCentersAndClamps) {
     using autoc::eval::kCraftCmQCenter;
     using autoc::eval::kCraftCmQMin;
     using autoc::eval::kCraftCmQMax;
-    EXPECT_EQ(kCraftCmQCenter, static_cast<gp_scalar>(-4.2));
-    EXPECT_EQ(kCraftCmQMin, static_cast<gp_scalar>(-5.0));
-    EXPECT_EQ(kCraftCmQMax, static_cast<gp_scalar>(-3.6));
+    EXPECT_EQ(kCraftCmQCenter, static_cast<gp_scalar>(-1.0));   // 043 t6 (was -4.2)
+    EXPECT_EQ(kCraftCmQMin, static_cast<gp_scalar>(-2.0));      // 043 t6 (was -5.0)
+    EXPECT_EQ(kCraftCmQMax, static_cast<gp_scalar>(-0.2));      // 043 t6 (was -3.6)
 
     // σ=0 → exactly the center.
     { CraftSigmas z; ClassPRNG p(0x1u);
       EXPECT_EQ(generateCraftFromClassPRNG(p, z).craftCmQ, kCraftCmQCenter); }
 
-    // σ=0.32 over many seeds: every draw in-range; the min approaches -5.0
-    // (2.5σ = 0.8 below center) — proving the clamp/reach are both correct.
-    CraftSigmas s; s.craftCmQSigma = 0.32;
+    // σ=0.6 over many seeds: every draw in-range; 2.5σ = 1.5 overshoots both
+    // clamps (-2.5 / +0.5), so the extremes must sit AT the clamps — proving the
+    // clamp and the reach are both correct.
+    CraftSigmas s; s.craftCmQSigma = 0.6;
     gp_scalar lo = kCraftCmQMax, hi = kCraftCmQMin;
     for (uint32_t seed = 1; seed <= 5000; ++seed) {
         ClassPRNG p(seed);
@@ -399,8 +403,8 @@ TEST(CraftVariationImu, CraftCmQCentersAndClamps) {
         EXPECT_LE(v, kCraftCmQMax);
         lo = std::min(lo, v); hi = std::max(hi, v);
     }
-    EXPECT_LT(lo, static_cast<gp_scalar>(-4.9));   // reaches near the -5.0 floor
-    EXPECT_GT(hi, static_cast<gp_scalar>(-3.7));   // reaches near the -3.6 ceiling
+    EXPECT_LT(lo, static_cast<gp_scalar>(-1.95));   // reaches the -2.0 floor
+    EXPECT_GT(hi, static_cast<gp_scalar>(-0.25));   // reaches the -0.2 ceiling
 }
 
 // T020 — craftCGDelta and craftCmQ are INDEPENDENT draws: they do not
@@ -418,8 +422,8 @@ TEST(CraftVariationImu, CgAndCmQAreIndependentDraws) {
     // CG is drawn first, so enabling cmQ cannot shift it.
     EXPECT_EQ(a.craftCGDelta, b.craftCGDelta);
     // cmQ moved only in `b`.
-    EXPECT_EQ(a.craftCmQ, static_cast<gp_scalar>(-4.2));
-    EXPECT_NE(b.craftCmQ, static_cast<gp_scalar>(-4.2));
+    EXPECT_EQ(a.craftCmQ, autoc::eval::kCraftCmQCenter);   // 043 t6: -1.0 (was -4.2)
+    EXPECT_NE(b.craftCmQ, autoc::eval::kCraftCmQCenter);
 }
 
 // T016 (FR-055) — applyVariationScale leaves the new IMU/cmQ fields UNTOUCHED

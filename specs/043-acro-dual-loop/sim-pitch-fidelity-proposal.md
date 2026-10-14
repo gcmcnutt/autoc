@@ -110,6 +110,25 @@ gen 488 give T112's answer without the sweep.
 (`ExcessRotationAxisMode = conditional`, same regiment, same seeds policy) on the new plant. The conditional rotation tie-break
 stays — on a plant that cycles, it can finally see pitch.
 
+### ✅ What was actually applied for t6 (2026-10-13 evening, after the ladder ran) — record in [actuator-pin.md](actuator-pin.md) § "The t6 plant"
+
+| item | proposed above | **applied** | why it moved |
+|---|---|---|---|
+| `Mass`, `I_yy`, `I_xx`, `I_zz` | 0.510 / 0.0094 / 0.0069 / 0.016 | **as proposed** | — |
+| `Cm_a` / `Cm_de` | −1.00 / −0.65 | **−0.55 / −0.36 (the original values)** | the closed-loop FRF of gen 488 chose it: −1.0 put the resonance at 3–4 Hz with \|H\| 2.6 (flight 2.5 Hz, 1.6); −0.55 lands peak height, cycle amplitude and frequency on the flight column. Only the inertia and `Cm_q` were wrong. |
+| `Cm_q` | −1.0 | **−1.0** | — |
+| roll `Cl_*` × 0.2875, yaw `Cn_*` × 0.615 | as proposed | **as proposed** | roll FRF of gen 488 unchanged to first order (verified) |
+| `kCraftCmQCenter` −1.0, clamp [−2.0, −0.2], `CraftCmQSigma` 0.6 | as proposed | **as proposed** | tests re-pinned |
+| sub-step latency (T112a) | separate, evaluated separately | **included** — evaluated separately first | it closed ~30 % of the amplitude gap and 10–15° of phase; and gen 488 tracks *better* with it (29 → 40 % `pctInStreak`), i.e. the policy had been fighting a tick it never had in the air |
+| `Global::craftCmQ` default | — | **NaN (unset) + xml fallback in the FDM** | found by the ladder: the hard-coded −4.2 silently overrode the xml in every non-autoc run |
+| step-test harness | — | `trimGain` 0.004, `trimSec` 6.0 | the old gain departed the new plant and overflowed the FDM |
+
+Result of the sanity check (step 3 of the ladder, the flown genome against its own flights): **the sim now cycles like the aircraft** —
+pitch-rate RMS 105–123 °/s (flight 124–153), peak 1.9–2.3 Hz (2.0–2.3), 2–3 Hz share 24–47 % (31–63 %), closed-loop \|H\| 1.34 at 2.5 Hz
+(1.5–1.6), tracking degraded to 40 % with 3 crashes. Residuals: resonance ~0.5 Hz high, ~20° extra lag at 2–2.5 Hz, ring less sharp than
+the bench steps (ζ ≈ 0.35 vs 0.2–0.3). Baselines on the t6 plant for the record: t3 genome −54922.067792 (was −88026.619367 on its own
+plant), gen 488 −65928.363124 (was −95067.305736).
+
 ### Ladder before launch (hours, not days) and the flight sanity check
 
 1. Apply the xml + class constants; operator `rebuild-perf.sh`; ctest. New eval baselines (the t3 gate number moves — record it).
