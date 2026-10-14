@@ -10,11 +10,11 @@ aircraft's is ~3 Hz / ζ 0.2–0.3. t6 is **t5's regiment, objective and pool on
 
 | Field | Value |
 |---|---|
-| S3 prefix | ⏳ |
-| Master seed | ⏳ (`Seed = -1`) |
+| S3 prefix | `s3://autoc-m1/autoc-9223370244903245464-2026-10-14T04:18:50.343Z/` |
+| Master seed | **1791951530** (`Seed = -1`; logged as "Effective master seed" — the only record of it) |
 | Regiment / pool / ini | **identical to t5**: pop 5000 × 800 gens × 294 scenarios, wind envelope 0–8 m/s, `randomA` slot 3, `ExcessRotationAxisMode = conditional`, ramp 40. The only ini change is `CraftCmQSigma 0.32 → 0.6` (class re-centred in code). |
 | Launch command | `bash scripts/train.sh autoc.ini logs/autoc-043-t6-m1-plant.log` (Xvfb `:2` up) |
-| Launched | ⏳ |
+| Launched | **2026-10-13 21:18 PDT**, pid 2146100, detached via `scripts/train.sh`; startup log confirms `ExcessRotationAxisMode: conditional`, `AeroStandardPath3: randomA`, 20 workers, no errors; `autoc.ini` sha `344330b996958ab3` = as-run |
 
 ## 2. What changed vs t5 — the plant, and only the plant
 
