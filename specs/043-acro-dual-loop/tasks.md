@@ -502,7 +502,7 @@ Order (each step gates the next; numbering kept from Phase 10c/D1 for traceabili
   file's 0.024. Error budget: T and D enter squared (10-period video timing → < 0.5 %; D to 2 mm → ~3 %), L linear; keep the CG within 1 cm of the
   string midpoint (0.51 kg × (1 cm)² = 0.00005) and the wing plane plumb (a 15° tilt mixes in ~7 % of `I_zz` ≈ 0.0018 — a 20 % error on `I_yy`).
   Record in `actuator-pin.md` § "Inertia measurement": article, date, m, L, D, 3 × T, bar m/D, CG station, photo.
-- [ ] T117 [t6] bake on the honest plant — see item 7.
+- [ ] T117 [t6] bake on the honest plant — see item 7. ⭐ **PROPOSED PLANT 2026-10-13** ([proposal § 2b](sim-pitch-fidelity-proposal.md)): `Mass` 0.510, **`I_yy` 0.0094, `I_xx` 0.0069, `I_zz` 0.016**; pitch `Cm_a` −1.00, `Cm_q` −1.0, `Cm_de` −0.65 (ratio kept) ⇒ short period 2.3 / 2.9 / 3.5 Hz, ζ 0.35; roll `Cl_*` × 0.2875 and yaw `Cn_*` × 0.615 so roll/yaw dynamics are **unchanged from t5**; `kCraftCmQCenter` −1.0, clamp [−2.0, −0.2], `CraftCmQSigma` 0.6. Latency sub-step fix as a **separate** commit evaluated separately. Ladder: rebuild → step test (peak 133–166 ms, ring ~3 Hz) → **gen 488 in the new sim must show the 2 Hz cycle** (the sanity check against the flights already flown) → latency fix, repeat → T092 smoke → launch. ⛔ Not applied yet — operator go.
 - [ ] T118 [exit] flight-proven smoother control — see item 9.
 
 ## Phase 11: Polish and cross-cutting

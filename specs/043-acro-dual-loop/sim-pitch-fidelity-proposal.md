@@ -69,6 +69,66 @@ Candidate operating points (analytic, before any measurement — to show the tar
 | 0.0078 | −0.90 | −0.5 | 3.8 | 2.3 / 3.0 / 3.6 | 0.26 |
 | 0.0100 | −1.10 | −0.5 | 3.8 | 2.3 / 2.9 / 3.5 | 0.26 |
 
+## 2b. ⭐ The t6 plant — proposed 2026-10-13 from the provisional inertias (operator: "we have time for a full training run")
+
+Measured on article 1 ([actuator-pin.md § Inertia](actuator-pin.md)): `I_yy` 0.0094 [0.0090–0.0095], `I_xx` 0.0069 (provisional,
+[0.0068–0.0070]), flight mass 0.510 kg bare. Article 2 is not built, so the article spread is unknown; the streamer state of the
+flight data is unknown; the doublets are not flown. So this is a **"one thing changes" plant**: pitch gets the measured inertia and a
+short period placed in the aircraft's band; roll and yaw keep **exactly the dynamics t5 trained on** (their derivatives were tuned
+against the wrong inertias and matched the aircraft's roll response — rescaling them by the inertia ratio preserves that match
+bit-for-bit in the linear regime). One run, one flight, one comparison.
+
+**`crrcsim/models/hb1_streamer.xml`** (and `hb1_streamer_steptest.xml`, which shares the block):
+
+| block | key | now | **t6** | why |
+|---|---|---|---|---|
+| `mass_inertia` | `Mass` | 0.515 | **0.510** | measured |
+| | `I_yy` | 0.0013 | **0.0094** | measured (bifilar) |
+| | `I_xx` | 0.024 | **0.0069** | measured (provisional) |
+| | `I_zz` | 0.026 | **0.016** | flat-body estimate `I_xx + I_yy`; not measured |
+| pitch `m` | `Cm_a` | −0.55 | **−1.00** | places f_n at 2.3 / 2.9 / 3.5 Hz (11 / 14 / 17 m/s) vs aircraft 2.7 / 3.0 / 3.3 |
+| | `Cm_q` | −4.2 | **−1.0** | with the real inertia `Cm_q` is a weak lever on ζ (0.32–0.38 over −0.3…−1.8); −1.0 is a physical mid value |
+| | `Cm_de` | −0.36 | **−0.65** | keeps `Cm_de/Cm_a` ⇒ steady pitch rate per elevator unchanged (arm-C 331 °/s full stick; low-frequency \|H\| 0.48 already matches) |
+| | `Cm_0`, `CL_a`, stall block | unchanged | unchanged | ζ lands at **0.35** with `CL_a 4.7`; the aircraft's 0.2–0.3 is of unknown streamer state — leave for the doublets (T095) rather than touch lift/trim now |
+| roll `l` | `Cl_b, Cl_p, Cl_r, Cl_da` | −0.05, −0.47, 0.05, 0.22 | **× 0.2875** (= 0.0069/0.024) → −0.0144, −0.135, 0.0144, 0.0633 | preserves the roll time constant and steady rate t5 trained on (the composite 134 ms response matched flight) |
+| yaw `n` | `Cn_b, Cn_p, Cn_r, Cn_da` | 0.07, −0.008, −0.04, −0.010 | **× 0.615** (= 0.016/0.026) → 0.043, −0.0049, −0.0246, −0.0062 | preserves yaw dynamics (unmeasured either way) |
+
+⚠️ The rescaled roll derivatives are physically small (`Cl_p −0.135`); that is the sim telling us the aircraft's 134 ms roll rise is
+probably actuator-dominated, not airframe-dominated — the servo/airframe split is T046's job, not t6's. Nothing in pitch depends on it.
+
+**`include/autoc/eval/craft_variation.h`** — the pitch-damping class (operator: "pitch damping is a variation to add to craft
+variations"; it exists, re-centre it): `kCraftCmQCenter` −4.2 → **−1.0**, `kCraftCmQMin/Max` [−5.0, −3.6] → **[−2.0, −0.2]**;
+`CraftCmQSigma` 0.32 → **0.6** (2.5 σ reaches the clamps). ⚠️ With the real inertia this class spans only ζ ≈ 0.31–0.39 — honest but
+narrow. The lever that actually spreads the mode is `Cm_a` (frequency) and `CL_a` (damping); a `CraftCmASigma` class is the right
+addition once the doublets say what the spread is (BACKLOG, not t6). Compile-time constants ⇒ rebuild.
+
+**Latency (T111/T112a)** — apply the pending NN command at the 5 ms physics sub-step instead of the 50 ms frame top. **Separate
+commit, evaluated separately** (see the ladder): the plant change alone first, then the latency fix on top — two 20-second evals of
+gen 488 give T112's answer without the sweep.
+
+**Not in t6** (so the comparison stays clean): entry dither, course changes, pool changes, any objective change. t6 = t5's ini
+(`ExcessRotationAxisMode = conditional`, same regiment, same seeds policy) on the new plant. The conditional rotation tie-break
+stays — on a plant that cycles, it can finally see pitch.
+
+### Ladder before launch (hours, not days) and the flight sanity check
+
+1. Apply the xml + class constants; operator `rebuild-perf.sh`; ctest. New eval baselines (the t3 gate number moves — record it).
+2. **Step test** on the shared block (T093/T094 harness): pitch peak **133–166 ms** (was 85), overshoot ~2.5×, ring at ~3 Hz, frequency
+   rising with airspeed. Roll step unchanged from t5's sim.
+3. **Gen 488 in the new sim, eval mode** (`sim_pitch_spectrum.py`, `frf_pitch_compare.py --sim`): does the flown genome now show the
+   **2 Hz cap-riding cycle** (2–3 Hz share toward the flight's 31–63 %, cap % up from 0–1 %) and does the closed-loop \|H\| peak land at
+   ~2.5 Hz / 1.5–1.6? ⭐ **This is the sanity check of the sim against a flight we already have** — no new sortie needed for it. If the sim
+   now reproduces g488's flight behaviour, the plant is close enough to train on. If not, stop; the remaining candidates are latency
+   (step 4) and the resonance damping (`CL_a`).
+4. Add the sub-step latency fix; repeat step 3. Keep it if it moves g488 toward the flight; T112's decision tree applies.
+5. **T092 trainability smoke** (T044 recipe: basic-m1, pop 3000, single `longSequential`, 16 winds, ~30 gens) — a plant that rings
+   must still be learnable.
+6. Launch **t6** (`logs/autoc-043-t6-m1-plant.log`), MANIFEST first; early calls at gens 5 / 40 as in t5.
+7. **Flight sanity check, decided after step 3 and the first t6 panels**: fly the t6 genome on article 1 with the g488 flights as the
+   baseline (same scripts): pitch-rate RMS, 2–3 Hz share, setpoint at the cap, tracking error. If step 3 showed the sim cycling with g488
+   and t6's genome does not cycle in the sim, the flight tells us whether "does not cycle in the honest sim" transfers — which is the
+   feature's exit criterion (T118).
+
 ## 3. Validation ladder (no step skipped)
 
 1. **Plant alone**: the step-test harness (`hb1_streamer_steptest.xml`, T093/T094) must give peak **133–166 ms**, overshoot
