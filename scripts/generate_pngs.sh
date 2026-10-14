@@ -262,6 +262,21 @@ fi
 run tracking_by_path_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
     --label "$NAME" --total-gens "$TOTAL_GENS" --cache "$BYPATH_CACHE" --path3 "${P3:-FortyFive}" \
     "${BYPATH_REF[@]}" -o "$OUT/${NAME}_tracking_by_path.png"
+# pitch_cycle_progress (043 t6, 2026-10-14) — THE RELAY OVER GENERATIONS: the elite's pitch-rate
+# RMS, % of ticks at the command cap (pitch/roll/throttle), command flips/s and the 2–3 / 3–5 Hz
+# shares, per sampled gen, from the tick CSV (one S3 fetch per gen, cached). On the honest plant
+# this is the in-run proxy for the feature's flight exit. Reference overlay from the FIRST --compare
+# run's cache (`ref__<NAME>_pitchcycle_v1.csv`); ⚠️ NOT auto-built here — 160 tick-CSV fetches is
+# ~30 min — build it once by hand with the same script against the pinned prefix.
+PCYC_CACHE="$CACHE_DIR/${SAFE}__dmp${DSIG}_pitchcycle_v1.csv"
+PCYC_REF=()
+if [[ ${#COMPARE[@]} -ge 2 ]]; then
+  PCYC_REFCACHE="$CACHE_DIR/ref__${COMPARE[1]%%:*}_pitchcycle_v1.csv"
+  [[ -s "$PCYC_REFCACHE" ]] && PCYC_REF=( --ref "${COMPARE[1]%%:*}:$PCYC_REFCACHE" )
+fi
+run pitch_cycle_progress.py --run "$RUN" --gens "1-$GEN" --stride "$STRIDE" -i "$INI" \
+    --label "$NAME" --total-gens "$TOTAL_GENS" --cache "$PCYC_CACHE" "${PCYC_REF[@]}" \
+    -o "$OUT/${NAME}_pitch_cycle.png"
 # tracking_by_wind (043 t4, 2026-10-06, pre-staged for the next run) — SNAPSHOT of the
 # latest gen: every scenario binned by the wind it actually flew in (median ‖wN,wE‖
 # over its ticks; 0–2/2–4/4–6/6+ m/s), with tracking score, crash count, in-streak

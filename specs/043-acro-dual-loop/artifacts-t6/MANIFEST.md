@@ -98,6 +98,13 @@ departs more easily; watch whether that settles as it did in t5. Pace 470 s/gen 
 | pitch energy | 3–3.6 Hz peak, 3–5 Hz share 35–55 % | 1.9–2.3 Hz | 2.0–2.3 Hz |
 | closed-loop \|H\| 2.5 Hz / phase | 1.34 / −102° | 1.34 / −83° | 1.5–1.6 / −60° |
 
+**Matched-generation check (same script on t5's gen-92 dmp)** — this is the early-training character on *either* plant, not a
+t6 artefact: t5's gen-92 elite was at the pitch cap **43.9 %** of ticks (|out| 0.72, 3.7 flips/s) and ended at **1.4 %** (0.42, 2.9) by
+the flown gen 488. t6 at 92 is harsher by degree — pitch cap 50.8 %, 5.5 flips/s, and **roll** at the cap 45 % (t5: 7 %), throttle 55 %
+(43 %). So the verdict is the **slope**: t5 shed the relay from 44 % → 1.4 % over ~400 gens on a plant where only the tie-break could
+see it; on this plant the relay also costs tracking, so t6 should shed it at least as fast. `pitch_cycle_progress.py` (cap %, flips/s,
+pitch RMS per generation, t5 dashed) is the panel for it.
+
 Reading, stated plainly: the population that evolves *on* the ringing plant goes straight to **relay control at the cap** — the pitch
 setpoint is pinned at ±240 °/s half the time and flips 5–6×/s, which is how one tracks tightly on a lightly damped airframe early, and it
 tracks as well as t5 did. The plant now *shows* this (RMS at flight level, a 3–3.6 Hz cycle); whether the objective *prices* it is the
