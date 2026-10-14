@@ -211,7 +211,7 @@ def main():
             rg = sorted(ref)
             rys = [ref[g]["all"][key] / (NPATH if key == "crashes" else 1) for g in rg]
             ax.plot(rg, rys, color="tab:red", linestyle="--", linewidth=1.6, alpha=0.8,
-                    label=f"{ref_label} regiment (no rotation axis)")
+                    label=f"{ref_label} regiment (reference run)")
         ax.set_ylabel(title); ax.grid(True, linewidth=0.4, alpha=0.4)
         ax.set_xlim(0, a.total_gens)
         if key == "rot_ratio":

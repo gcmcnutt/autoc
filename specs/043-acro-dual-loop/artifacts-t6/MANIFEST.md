@@ -59,6 +59,21 @@ Build: clean `scripts/rebuild-perf.sh` 2026-10-13 21:06 (`PERFORMANCE_BUILD=ON`)
 | gen ≥ 100 | `sim_pitch_spectrum` of the elite: pitch RMS and 2–3 Hz share **falling** with gens while `pctInStreak` rises | RMS stuck at g488's 105–123 °/s = the objective still cannot see it |
 | exit (T118) | the t6 genome **in flight**: pitch-rate RMS well under 124–153 °/s, 2–3 Hz share well under 31–63 %, setpoint off the cap, tracking within noise of g488 | |
 
+### 5a. ✅ Gen 2–5 and gen 40 calls (2026-10-13/14)
+
+| gen | t5 avg | **t6 avg** | t5 pct | **t6 pct** | t6 elite complete | note |
+|---|---|---|---|---|---|---|
+| 5 | −1145 | −1142 | 0.6 | 0.9 | 109/294 | `#GenSel` bite 96–97 %, `tbMeanIn` 12–122 — the tie-break has leverage on this plant too |
+| 10 | −1187 | −1155 | 0.4 | 0.9 | 109/294 | |
+| 20 | −1603 | **−1164** | 1.7 | 0.9 | 109/294 | the slow start the smoke predicted: elite unchanged, population flat |
+| 30 | −2937 | −1394 | 3.2 | 0.8 | 258/294 | takeoff between 25 and 30 (smoke: gen 27) |
+| 40 | −4292 | **−2943** | 5.6 | 4.8 | **294/294** | slope 30→40 now steeper than t5's (+1549 vs +1355); ~8 gens behind t5, far above t4's −1391 |
+
+Reading: healthy — the honest plant costs ~8 generations at the start, exactly the smoke's pattern, then climbs at least as fast; the
+elite is crash-free at 40 as t5's was; 11 elite replacements in 40 gens; `NN_ELITE_SAME` 40/40; `rotRatio` 9.4 vs t5 9.1 (crash-dominated
+regime, no read yet). Pace 237 s/gen at gen 40 vs t5's 313 at the same gen (identical 1,470,294 sims/gen) — t6 is *faster* so far, the usual
+weaker-population-flies-shorter effect; no compute concern from the sub-step hook.
+
 ## 6. Post-run
 
 ⏳
