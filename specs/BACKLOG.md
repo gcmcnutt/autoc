@@ -29,11 +29,12 @@
 
 ---
 
-## 043 deferrals (filed 2026-10-13, at the close of 043 — outcome: [043 outcome](043-acro-dual-loop/outcome.md))
+## 043 deferrals (filed 2026-10-13, at the t5 checkpoint — [checkpoint-20261013.md](043-acro-dual-loop/checkpoint-20261013.md); 043 continues)
 
-> **Routing at close**: **045 sim-pitch-fidelity** ([seed](045-sim-pitch-fidelity/README.md)) before **044 M2 tracking** —
-> M2 inherits the plant, and the plant's pitch short period is 6.9 Hz / ζ 0.81 where the aircraft's is ~3 Hz / ζ 0.2–0.3.
-> The flight baseline of record is 043-t5 gen 488 (`1731d937e3af9c1c`).
+> **Routing (operator 2026-10-13)**: 043 is **not closed** — its intent (smoother control) is unmet, so sim pitch fidelity
+> continues inside 043 as **Phase 10e** (measure `I_yy`, fit the short period, honest latency, t6, a flight that shows the
+> cycle reduced = the exit). **044 M2 tracking** follows that exit and inherits the plant (today 6.9 Hz / ζ 0.81 in pitch where
+> the aircraft is ~3 Hz / ζ 0.2–0.3). The flight baseline of record is 043-t5 gen 488 (`1731d937e3af9c1c`).
 
 ### [043 close · t6+ content] Entry dither, heading decoupling, per-scenario path library, six random courses (T085 / T086 / T089 / T101)
 Hand-off attitude is not a variation class: the first second of every flown span is out of distribution by construction
@@ -45,7 +46,7 @@ courses once cold-start eval shows 2/6 is not enough (t5 tier2-random is 144/144
 The t5 lesson (MANIFEST-t5 § 7a, first-principles § 11): any measure goes **as a tie-break inside the tracking case**, never
 standalone (t4 stalled on a standalone case; 015's pegged-command exploit cannot win a tie-break because a pegged command does
 not track), and no smoothness measure can see the pitch cycle until the sim exhibits it. A lower pitch-rate cap mirrored on
-both sides is the cheap flight test of the relay hypothesis once 045 says the mechanism is a relay.
+both sides is the cheap flight test of the relay hypothesis once Phase 10e's latency sweep says the mechanism is a relay.
 
 ### [043 close · flights owed] Windy-day flight on gen 488; `inav_default_alt_sensor = GPS_ONLY` decision; `flash_erase` before every session
 Two calm days (1.8–2.9 m/s) showed no downwind bias; the envelope-trained genome has not been tested in the wind it was

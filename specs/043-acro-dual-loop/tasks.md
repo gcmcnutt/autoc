@@ -443,25 +443,65 @@ entries at 0.1–1.1 m. That is **accepted coverage for t4**; the items below ar
 
 ---
 
-## Phase 10d — closing triage (2026-10-13; operator: "we will stop this feature before we move to M2")
+## Phase 10d — checkpoint triage (2026-10-13)
 
-Open items as of t5's completion, sorted by what should happen to them when 043 closes. Nothing here is deleted; deferrals go
-to `specs/BACKLOG.md` in order (T082).
+⚠️ First written as a *closing* triage; the operator re-scoped the same day — *"sim pitch fidelity continues in 043 as we haven't
+really improved in 043 for the intent — smoother control … 043 should have a much better flight-proven exit"* — so the "CARRY"
+row below is **Phase 10e inside 043**, and 044 M2 follows 043's exit. Open items as of t5's completion:
 
 | disposition | tasks | note |
 |---|---|---|
 | **CLOSE in 043** (writing, no new runs) | T081 outcome.md · T082 BACKLOG deferrals · T083 CLAUDE.md pointer · T073 (the quantified answer is in hand: pitch null across t7/t3/t5 — write it) · T078 type-domain grep · T107 / T108 (reports done; `sample_elite.sh` was never needed — close as done-enough) · T074 (answered by 10-11: downwind bias gone on calm days; windy still owed → BACKLOG line) · T075 (throttle rail 85–90 → 42–59 % on t5; close with that number) · T071 (clock-join is now routine in the 10-11 scripts; close) · T106 (**not met on pitch**, met on roll — record the verdict, MANIFEST-t5 § 7a) |
-| **CARRY as the sim-fidelity feature that must precede M2** (D1 + Phase 10c; proposal: [sim-pitch-fidelity-proposal.md](sim-pitch-fidelity-proposal.md)) | **T116** I_yy on both articles · T095 doublets on both articles · T096 fit · T093 per-cell step tool · T112 latency sub-step + sweep · T113 open-loop replay · T114 article-2 flights · T092 trainability gate · T047 (static-margin / pitch-damping review — subsumed by T096) · T046 servo bench step · T050a | M2 inherits this plant; a tracker trained on a 6.9 Hz / ζ 0.81 pitch mode will carry the same 2 Hz cycle into the air. This is the one block that should not wait. |
+| **CONTINUE IN 043 — Phase 10e** (D1 + Phase 10c + t6 + the flight exit; proposal: [sim-pitch-fidelity-proposal.md](sim-pitch-fidelity-proposal.md)) | **T116** I_yy on both articles · T095 doublets on both articles · T096 fit · T093 per-cell step tool · T112 latency sub-step + sweep · T113 open-loop replay · T114 article-2 flights · T092 trainability gate · T047 (static-margin / pitch-damping review — subsumed by T096) · T046 servo bench step · T050a | M2 inherits this plant; a tracker trained on a 6.9 Hz / ζ 0.81 pitch mode will carry the same 2 Hz cycle into the air. This is the one block that should not wait. |
 | **DEFER to BACKLOG** | T085 / T086 / T089 entry dither & heading & path library (t6+ content) · T101 six random courses · T103 / T104 command-side measures (⛔ with the § 11 lesson: tie-break only, and only once the plant is honest) · T115 relay-amplitude flight · T047a FR-056 n = 2 review (do with T114) · T048 / T049 / T050 INAV phase-delay params (FRF says plant phase matches to 2.5 Hz — low priority) · T051c roll dead-band · T079 / T080 observability audit · T098 / T097 prop-balance sortie (vibration is excluded as the Z cause after five flights — close the question, keep the balance) · T099 pitot |
+
+## Phase 10e — sim pitch fidelity → t6 → the flight-proven exit (operator 2026-10-13)
+
+The feature's intent is smoother control in the air; five flights say it is unmet and § 11 of the first-principles doc says why:
+the sim's pitch short period is 6.9 Hz / ζ 0.81 where the aircraft's is ~3 Hz / ζ 0.2–0.3, so no objective could see the cycle.
+This phase makes the plant honest, bakes on it, and exits only on a flight measurement. Proposal of record:
+[sim-pitch-fidelity-proposal.md](sim-pitch-fidelity-proposal.md); tools `frf_pitch_compare.py`, `sim_pitch_spectrum.py`.
+Order (each step gates the next; numbering kept from Phase 10c/D1 for traceability):
+
+1. **T116** measure `I_yy` on article 1 AND article 2 — bifilar pendulum (procedure in T116a below). Also `I_xx` as a method check
+   against the file's 0.024, and the CG station. A measurement, not a fit; do it first.
+2. **T095** MANUAL held pitch doublets on both articles, blackbox 1/4 or 1/8 with `H P interval` read back.
+3. **T096** fit `Cm_a` / `Cm_q` (and `CL_a` only if ζ demands it), keep `Cm_de/Cm_a`, re-centre `CraftCmQSigma`; **T093** per-cell
+   step tool for the check (peak 133–166 ms, ring ~3 Hz, f rising with V).
+4. **T112** apply the NN command at the 5 ms sub-step (today one 50 ms frame by construction, T111) + the 10/50/100/150 ms sweep.
+5. **Validation**: `frf_pitch_compare.py --sim` matches the flight column (|H| peak 1.5–1.6 at ~2.5 Hz, roll-off above 3 Hz, phase
+   −48° at 2 Hz, low-frequency bins unchanged); **gen 488 shows the 2 Hz cap-riding cycle in the corrected sim** — ⛔ if it does
+   not, stop and run T113 (open-loop replay) before any bake.
+6. **T092** trainability gate on the new plant (T044 discipline). ⚠️ Every pinned eval number moves; record the new baselines.
+7. **T117 t6 bake** on the honest plant — same t5 regiment and pool (conditional rotation tie-break stays; it is now able to see
+   pitch), operator `rebuild-perf.sh` first, MANIFEST before launch, early calls at gens 5/40 as in t5.
+8. **T114** article-2 work in parallel: rate-parity gate, gen 488 flown on article 2 (does the cycle's frequency follow the airframe?),
+   FR-056 review at n = 2 (T047a).
+9. **T118 ⭐ EXIT CRITERION — flight-proven smoother control.** On the t6 genome's engaged spans, against the g488 flights
+   (10-11, same measurement scripts): pitch-rate RMS **well under 124–153 °/s** and 2–3 Hz band share **well under 31–63 %**
+   (target: within 1.5× of the MANUAL stretches' 3–16 %), setpoint no longer riding the ±240 cap at p5/p95, `|az|` p99 under 5 g;
+   **with** median tracking error within noise of g488's 8–15 m and no new crash mode. Then write outcome.md (T081), final
+   BACKLOG pass (T082), CLAUDE.md → 044 (T083).
+
+- [ ] T116a **Bifilar-pendulum procedure** (so it is done the same way on both articles): hang the aircraft in flight trim (battery in,
+  CG as flown) from two parallel strings of equal length **L** attached at two points symmetric about the CG and **D** apart, with the
+  axis to be measured **vertical** — for `I_yy` the span is vertical (one wingtip up), strings on the nose and tail line; for `I_xx`
+  the nose points down, strings at the wingtips. Twist a few degrees about the vertical axis, release, time ≥ 10 periods (phone video
+  at 60 fps is fine), repeat 3×. Then **`I = m·g·D²·T² / (16·π²·L)`** (m from a kitchen scale, T the period). Keep the amplitude small
+  (< 10°), the strings long (≥ 1 m) and the attachment points on the measurement axis's perpendicular through the CG; record m, L, D,
+  T and the CG station in `actuator-pin.md`. Expect `I_yy` 0.006–0.010 kg·m² (0.0013 is a 5 cm radius of gyration); `I_xx` should land
+  near the file's 0.024 — if it does not, the method is off, not the file.
+- [ ] T117 [t6] bake on the honest plant — see item 7.
+- [ ] T118 [exit] flight-proven smoother control — see item 9.
 
 ## Phase 11: Polish and cross-cutting
 
 - [X] T078 [P] ✅ **RUN 2026-10-13** on the t4/t5 touched files (`selection.{h,cc}`, `excess_rotation.h`, `wind_variation.h`, `fitness_decomposition.cc`) — see the commit for the hit list and annotations. Run the Constitution VI type-domain grep on the touched paths; annotate `// raw-ok:` or convert. ⛔ No milestone is done with unannotated raw `float`/`double` in its diff
 - [ ] T079 [P] Complete the FR-059 **observability audit** — mark every variation axis observable, absorbed, or observable-only-at-limits, with the measurement behind it, in `specs/043-acro-dual-loop/variation-inventory.md`. ⚠️ Verdicts are **sim verdicts, provisional on the flight** (SC-013)
 - [ ] T080 [P] Check FR-059a — does the regiment actually reach the aero/power limits where the buried axes reappear? ⭐ The mechanism is **hold-attitude-and-descend**, not rate saturation
-- [X] T081 ✅ **DONE 2026-10-13** → [outcome.md](outcome.md). Write `specs/043-acro-dual-loop/outcome.md` — the result, what caused it, what did not, and every deferral
-- [X] T082 ✅ **DONE 2026-10-13** — five entries under "043 deferrals (filed 2026-10-13, at the close of 043)" + routing note (045 before 044). Append deferrals to `specs/BACKLOG.md` in order (Constitution X)
-- [X] T083 ✅ **DONE 2026-10-13** — CLAUDE.md § Active feature → **045 sim-pitch-fidelity** ([seed](../045-sim-pitch-fidelity/README.md)), then 044. Update `CLAUDE.md` § Active feature to point at whatever follows 043
+- [ ] T081 ⏳ **CHECKPOINT written 2026-10-13** → [checkpoint-20261013.md](checkpoint-20261013.md) (operator re-scoped the same day: 043 continues through Phase 10e; the outcome is written at the flight-proven exit, T118). Write `specs/043-acro-dual-loop/outcome.md` — the result, what caused it, what did not, and every deferral
+- [ ] T082 ⏳ **PARTIAL 2026-10-13** — five entries filed under "043 deferrals (filed 2026-10-13, at the t5 checkpoint)"; the final pass happens at the Phase 10e exit. Append deferrals to `specs/BACKLOG.md` in order (Constitution X)
+- [ ] T083 ⏳ **CLAUDE.md updated 2026-10-13 to the Phase 10e state** (043 still active; 044 after the exit). Final pointer at the exit. Update `CLAUDE.md` § Active feature to point at whatever follows 043
 
 ---
 

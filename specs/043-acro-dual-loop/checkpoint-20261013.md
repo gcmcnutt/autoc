@@ -1,9 +1,14 @@
-# 043 — outcome
+# 043 — checkpoint 2026-10-13 (after t5 and the fifth ACRO flight) — NOT the outcome; 043 continues
+
+> ⚠️ Written as "outcome" on 2026-10-13 and **re-scoped the same day** (operator): *"sim pitch fidelity continues in 043 as we
+> haven't really improved in 043 for the intent — smoother control. 043 should have a much better flight-proven exit."* So this is
+> the mid-feature record; the outcome is written when a flight shows the pitch cycle reduced (tasks Phase 10e, T118). 044 M2
+> follows that exit.
 
 **Scope:** the NN commands **rotation rates** into INAV's 2 kHz ACRO loop instead of surface deflections at 20 Hz, to
 remove the 2–5 Hz pitch/roll oscillation measured on the 041-t7 flight; one bake carries everything.
-**Verdict: the architecture works and the aircraft tracks better than it ever has — and the pitch oscillation is
-unchanged, because it was never the inner loop.** Closed 2026-10-13 after five bakes (t1–t5) and five ACRO flights.
+**State at this checkpoint: the architecture works and the aircraft tracks better than it ever has — and the pitch oscillation is
+unchanged, because it was never the inner loop.** Five bakes (t1–t5) and five ACRO flights so far.
 Spec of record: [spec.md](spec.md); the run records: [artifacts-t3](artifacts-t3/MANIFEST.md),
 [artifacts-t4](artifacts-t4/MANIFEST.md), [artifacts-t5](artifacts-t5/MANIFEST.md).
 
@@ -94,9 +99,9 @@ selection — not the rate architecture by itself, and not the smoothness object
 
 | item | to |
 |---|---|
-| **Pitch short period in the sim** (measure `I_yy` on both articles, fit `Cm_a`/`Cm_q`, honest sub-step latency, latency sweep, open-loop replay, gen 488 on article 2) | **045 sim-pitch-fidelity** — must precede M2, which inherits the plant |
+| **Pitch short period in the sim** (measure `I_yy` on both articles, fit `Cm_a`/`Cm_q`, honest sub-step latency, latency sweep, open-loop replay, gen 488 on article 2) → **t6 bake on the honest plant → a flight that shows the cycle reduced** | **043 Phase 10e** — this IS the feature's exit; M2 inherits the plant |
 | entry dither / heading / path library; six random courses | BACKLOG (t6+ content) |
 | command-side smoothness measures (tie-break only, after the plant is honest); relay-amplitude flight | BACKLOG |
 | windy-day flight on g488; `GPS_ONLY` decision; `flash_erase` discipline | BACKLOG |
 | observability audit (SC-008/013), FR-056 n = 2 review, INAV phase-delay params, roll dead-band, pitot | BACKLOG |
-| M2 tracking and its two gates | **044** (after 045) |
+| M2 tracking and its two gates | **044** (after 043's flight-proven exit) |
