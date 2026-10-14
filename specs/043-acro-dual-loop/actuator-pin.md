@@ -421,3 +421,47 @@ Each was invisible until the thing was actually executed at scale, and each is n
 aircraft with a known-asymmetric wing and a nose-heavy CG, and the stall cycle is exactly the kind of
 behaviour that is an *article* property rather than a *design* property. Different planform and different
 servos would separate those two in one flight.
+
+---
+
+## Inertia measurement — article 1, 2026-10-13 (tasks T116 / T116a)
+
+**Why**: the model file carries `I_yy = 0.0013 kg·m²` against `I_xx 0.024` — a 5 cm pitch radius of gyration — and the sim's
+pitch short period comes out at 6.9 Hz / ζ 0.81 where the aircraft's is ~3 Hz / ζ 0.2–0.3
+([sim-pitch-fidelity-proposal.md](sim-pitch-fidelity-proposal.md) § 1). Measure before fitting.
+
+**Rig** (operator photos in the session; bifilar pendulum, strings converge upward): a 24 g dowel taped along the nose–tail line
+through the CG, wing plane vertical (span = rotation axis = pitch), strings from the dowel ends (**34¼ in** apart) up to a bar
+where they are **2 × 6⅜ = 12¾ in** apart; string length **20.4 in** ⇒ vertical height h = 0.440 m. Aircraft **bare, flight
+configuration, 510 g** (battery, prop, the two body-to-tail sticks — those are airframe, not rig). Video `IMG_4397.MOV`
+(1920×1080, 59.96 fps, 9.7 s, 583 frames) in `flight-results/inertia-20261013/`.
+
+**Formula** (converging strings; reduces to the textbook one when parallel):
+`I_total = m_total · g · r_t · r_b · T² / (4π² h)`, r_t = 0.162 m, r_b = 0.435 m ⇒ `I_total = m_total × 0.0397 × T²`.
+Rig term subtracted: `I_rig = m_dowel · d² / 12 = 0.024 × 0.87² / 12 = 0.0015` (0.0017 if the dowel is a full 36 in — within the quoted range).
+
+**Period** ([bifilar_period.py](bifilar_period.py), darkest-pixel centroid of the black pod, both image axes): the rig also sways as a
+plain pendulum at **1.25–1.28 s** (2π√(h/g) = 1.33 s), so the twist is read in the 1.0–2.5 Hz band:
+
+| crop | axis | zero-crossings | autocorr | FFT (interp.) |
+|---|---|---|---|---|
+| pod | y | 0.703 s (13 cycles) | 0.717 s | 0.721 s |
+| whole craft | y | 0.706 s (13 cycles) | 0.717 s | 0.719 s |
+
+⇒ **T_twist = 0.71 ± 0.015 s** (the full-frame or un-banded estimators lock onto the sway or the cabinets — 1.2 s / 2.5 s — and are wrong).
+
+**Result** (canonical command: `bifilar_period.py flight-results/inertia-20261013/IMG_4397.MOV --m-craft 0.510 --m-rig 0.024
+--d-top-in 12.75 --d-bot-in 34.25 --ls-in 20.4 --crop 0,500,960,580` → axis y, T = 0.717 s, range 0.703–0.721): `I_total` 0.0109,
+minus the dowel ⇒ **`I_yy` = 0.0094 kg·m² [0.0090–0.0095]**, radius of gyration **13.6 cm**. Seven times the file's value; inside
+the 0.006–0.010 predicted from the airframe's geometry. (Sway in the tool's low band reads 0.9–1.05 s because the band edge biases
+the interpolation; the explicit spectrum put it at 1.25–1.28 s — diagnostic only.)
+
+**What it does to the sim's pitch mode, on its own** (`frf_pitch_compare.py --model`, `Cm_a −0.55`, `Cm_q −4.2` unchanged):
+short period **2.0 / 2.6 / 3.1 Hz at 11 / 14 / 17 m/s, ζ 0.59** (was 5.4 / 6.9 / 8.3 Hz, ζ 0.81). The frequency band is now right
+(aircraft 2.7 / 3.0 / 3.3); the damping is still ~2× the aircraft's — that is the `Cm_q` (and `Cm_a`) fit, T095/T096, which needs the
+doublets. Candidate after the fit: `Cm_a −0.8`, `Cm_q −0.8` ⇒ 2.1 / 2.6 / 3.2 Hz, ζ 0.37; with `CL_a 3.8` and `Cm_q −0.5` ⇒ ζ 0.30.
+
+**Caveats**: n = 1 video, 13 cycles, small twist amplitude (~6–8 px at 320 px width); the ±0.015 s spread is the estimator spread, not
+a repeat. **Still to do**: `I_xx` with the dowel spanwise, nose down (expected 1.45 s at L 1 m / D 0.6 m for the file's 0.024 —
+with this rig's converging strings the tool computes the right expectation from the geometry) — the method check; a second video for
+repeatability; article 2.
