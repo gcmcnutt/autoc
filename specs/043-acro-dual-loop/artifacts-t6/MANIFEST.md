@@ -74,6 +74,38 @@ elite is crash-free at 40 as t5's was; 11 elite replacements in 40 gens; `NN_ELI
 regime, no read yet). Pace 237 s/gen at gen 40 vs t5's 313 at the same gen (identical 1,470,294 sims/gen) — t6 is *faster* so far, the usual
 weaker-population-flies-shorter effect; no compute concern from the sub-step hook.
 
+### 5b. Gen 92 read (2026-10-14 morning): tracking has caught t5 — and the early elite is a full relay
+
+| gen | t5 avg | **t6 avg** | t5 pct | **t6 pct** | t5 rot | t6 rot | t6 elite complete |
+|---|---|---|---|---|---|---|---|
+| 50 | −5228 | −4590 | 8.3 | 8.6 | 9.42 | 7.81 | 293 |
+| 70 | −6718 | −7860 | 13.4 | 12.4 | 7.72 | 7.08 | 286 |
+| 90 | −8422 | **−10198** | 16.6 | 16.8 | 8.88 | 6.55 | 293 |
+| 92 | −8663 | **−10310** | 17.2 | 16.5 | 7.63 | 7.08 | 291 |
+
+Population average passed t5's at ~gen 60 and is 19 % ahead at 92; `pctInStreak` level; 29 elite replacements; `NN_ELITE_SAME` 92/92;
+tie-break bite 89 %, `tbMeanIn` 6. Crash-carrying elites are frequent (45 of gens 41–92 carry 1–8 crashes) — the lightly damped plant
+departs more easily; watch whether that settles as it did in t5. Pace 470 s/gen at 92 (t5 ~330) — the population now flies long.
+
+**First `sim_pitch_spectrum` read of the elite (gen 92)** — the number that was blind on the old plant:
+
+| | **t6 elite gen 92** | flown g488 on this plant | g488 in flight |
+|---|---|---|---|
+| pitch-rate RMS | **118–152 °/s** | 105–123 | 124–153 |
+| mean \|pitch cmd\| | **179–191 °/s** | 115–121 | setpoint median 114–138 |
+| ticks at the cap | **44–56 %** | 0–1.8 % | p5/p95 at the cap |
+| command flips/s | **5.1–6.0** | ~3 | — |
+| pitch energy | 3–3.6 Hz peak, 3–5 Hz share 35–55 % | 1.9–2.3 Hz | 2.0–2.3 Hz |
+| closed-loop \|H\| 2.5 Hz / phase | 1.34 / −102° | 1.34 / −83° | 1.5–1.6 / −60° |
+
+Reading, stated plainly: the population that evolves *on* the ringing plant goes straight to **relay control at the cap** — the pitch
+setpoint is pinned at ±240 °/s half the time and flips 5–6×/s, which is how one tracks tightly on a lightly damped airframe early, and it
+tracks as well as t5 did. The plant now *shows* this (RMS at flight level, a 3–3.6 Hz cycle); whether the objective *prices* it is the
+question of the next 100–300 generations: **cap %, flips/s and pitch RMS must fall while `pctInStreak` rises**. On this plant the relay also
+costs tracking (g488 lost 8 pts to it), so plain tracking selection — not only the tie-break — pushes against it once smoother equal
+trackers exist in the population. If at gen ~300 the elite is still at the cap 50 % of the time, the measure (or the action space) is next,
+not the plant.
+
 ## 6. Post-run
 
 ⏳
