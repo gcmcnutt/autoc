@@ -495,6 +495,13 @@ Order (each step gates the next; numbering kept from Phase 10c/D1 for traceabili
 - [ ] T095 ⭐ **amended**: doublets **before AND after the streamer cut** in the same sortie — the difference is the streamer term (D_s·l_t) and the two ζ values are the ends of the `CraftCmQSigma` class; the bare set is the one that matters (least damped = the relay's favourite). Also note the throttle delta across the cut (a direct D_s estimate).
 - [ ] T116 ⭐ **amended**: measure `I_yy` **bare** (the streamer adds drag, not inertia) — the frequency placement needs ~±10 % on `I_yy`; ζ to ±0.05 is sufficient (article spread and airspeed move it by that much).
 - [ ] T096 ⭐ **amended**: fit `Cm_a`/`Cm_q` to the **bare** aircraft and re-centre `CraftCmQSigma` on that value, with the class spanning bare → streamer-on → article-2 spread; drop the file's un-measured −3.6 … −5.0 range.
+  ⭐ **Numbers for T116a (operator 2026-10-13: flight mass 510 g bare, no streamer; model has 0.515 → set 0.510 at fit time)**. Rig with a light
+  stiff bar (0.5–0.8 m) taped along the axis **perpendicular** to the one being measured, through the CG, strings at the bar ends; the bar's own
+  `m_bar·D²/12` is subtracted. Expected periods with L = 1.0 m: **`I_yy`** (bar nose–tail, wing plane vertical, D = 0.30 m): **1.7 s** if I ≈ 0.008,
+  **0.67 s** if the file's 0.0013 were true — one swing tells which world; **`I_xx`** check (bar spanwise, nose down, D = 0.60 m): **1.45 s** for the
+  file's 0.024. Error budget: T and D enter squared (10-period video timing → < 0.5 %; D to 2 mm → ~3 %), L linear; keep the CG within 1 cm of the
+  string midpoint (0.51 kg × (1 cm)² = 0.00005) and the wing plane plumb (a 15° tilt mixes in ~7 % of `I_zz` ≈ 0.0018 — a 20 % error on `I_yy`).
+  Record in `actuator-pin.md` § "Inertia measurement": article, date, m, L, D, 3 × T, bar m/D, CG station, photo.
 - [ ] T117 [t6] bake on the honest plant — see item 7.
 - [ ] T118 [exit] flight-proven smoother control — see item 9.
 
