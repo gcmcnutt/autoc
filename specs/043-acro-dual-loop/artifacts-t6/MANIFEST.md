@@ -245,6 +245,13 @@ command-slew case (T103/T104, parked in BACKLOG "only after the plant is honest"
 
 Generation time 539 s at 275 (t5 492 at the same gen, plateau 577); the per-gen record is in § 5d.
 
+**Why the chatter survives (same day, T120 → [policy-temporal-view.md](../policy-temporal-view.md))**: the input vector has no history
+of the craft's own rotation — only the target bearing at 800/400/200/100/50/0 ms — and the 1.5–4 Hz pitch command is computed from
+that bearing and its 50/100 ms differences, in flight exactly as in sim (gyro contributes ΔR² 0.003). The policy is a P+short-lead
+attitude loop through a 100–150 ms rate lag; it limit-cycles where its gain crosses 1 and has only amplitude to give back. The
+gen-275 elite's recurrent state has become a damper (zeroing it doubles the band power; in g488 it *carried* the cycle). The next
+bake's lever is T121 (own-rotation history slots), not the measure.
+
 ## 6. Post-run
 
 ⏳
