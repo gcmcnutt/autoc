@@ -205,6 +205,46 @@ the familiar un-lagged-actuator bang-bang (037 pattern), unchanged from t5.
   scoring to the workers (the standing backlog item) and overlapping the dmp write with the next dispatch; neither touches results.
   Analytics passes cost ~2 % (gens 94–97 during a 25-min cache build: 473–488 s vs 464–475 around them).
 
+### 5e. Gen 275 read (2026-10-15 morning): off the rail, but the cycle has plateaued at g488's level — the first warning
+
+| gen | t5 avg | **t6 avg** | t5 pct | **t6 pct** | t5 rot | t6 rot | t6 elite complete | t6 s/gen | t5 s/gen |
+|---|---|---|---|---|---|---|---|---|---|
+| 200 | −14457 | −20000 | 32.8 | 33.4 | 5.95 | 5.54 | 294 | 512 | 471 |
+| 220 | −17216 | −21420 | 38.6 | 35.5 | 6.14 | 5.78 | 294 | 519 | 500 |
+| 240 | −17747 | −22023 | 40.4 | 39.5 | 5.10 | 5.17 | 294 | 521 | 480 |
+| 260 | −19759 | −23343 | 40.8 | 38.3 | 5.16 | 5.59 | 294 | 530 | 498 |
+| 275 | −20863 | **−23931** | **43.1** | 40.7 | 5.37 | 5.13 | 294 | 539 | 492 |
+
+Tracking: pop-avg still ahead of t5 (+15 %, the gap closing as t5's own curve steepened here), `pctInStreak` 2.4 pts **behind** t5 at the same
+gen, score/step 0.536 vs t5 ~0.57, crash-free elite (0/294, 18 crash-carrying elites in 181–275 vs 50 in the previous 80), 13 elite
+replacements, bite 92 %, 0 DIVERGED. The flat-path / random-course split is the same as t5's (StraightAndLevel 0.78, SeededRandomB 0.21).
+
+**Relay panel, gen 180 → 275 (t5 at 271 in brackets):**
+
+| | 180 | 201 | 231 | 251 | **275** | t5 @271 |
+|---|---|---|---|---|---|---|
+| pitch-rate RMS °/s | 108 | 106 | 108 | 110 | **101** | 115 (stiff plant) |
+| pitch / roll / throttle at cap % | 13.5 / 18 / 45 | 8 / 12 / 43 | 4.5 / 2.5 / 38 | 7 / 7.5 / 37 | **9 / 7 / 49** | 3.5 / 0.3 / 44 |
+| pitch / roll flips/s | 4.9 / 7.9 | 5.7 / 8.1 | 5.9 / 5.1 | 5.3 / 6.4 | **7.3 / 8.1** | 4.8 / 5.5 |
+| mean \|pitch cmd\| (×240 °/s) | 0.54 | 0.54 | 0.55 | 0.54 | **0.56** | 0.50 |
+| 2–3 Hz / 3–5 Hz share % | 16 / 25 | 24 / 19 | 27 / 22 | 22 / 23 | **26 / 17** | 4 / 27 |
+
+Per path at 275 (`sim_pitch_spectrum`): RMS 78 (StraightAndLevel) → 111 (SeededRandomB), cap 5–11 %, flips 6.4–8.0/s, lag 2 ticks,
+peak 2.0–2.2 Hz on the two flat courses.
+
+**Reading, plainly.** The *amplitude* relay is gone — pitch and roll at the cap are single digits, where t5 was at the same gen. But the
+*cycle* is not: elite pitch-rate RMS has sat at **100–110 °/s for 75 generations** (gens 200–275), which is g488's own level on this
+plant (105–123), the mean pitch command has not moved (0.54–0.56 of the cap, t5 0.50), the sign-flip rate is **rising** (4.9 → 7.3/s;
+t5 4.8), and the 2–3 Hz share is at 26 % against the flight band's 31–63 %. What evolution found is a smaller, faster dither rather than
+a slower hand — it took the setpoint off the rail (which the tie-break and the crash price both see) and kept the reversal rate (which
+nothing prices directly; excess rotation is a magnitude integral, and a ±130 °/s chatter at 7 Hz integrates to little). This is the § 5
+gen ≥ 100 "stop-and-rethink" row half-triggered: RMS stuck at g488's level. Half, because t5's own reference curve kept falling from 115
+to 85 over gens 300–800 on its plant, so there may be slope to come, and the easy courses are already below g488 (78 vs ~105). **Call at
+gen ~350**: if the elite's pitch RMS is still ≥ 100 and flips/s have not turned down, the measure is next — a reversal-rate or
+command-slew case (T103/T104, parked in BACKLOG "only after the plant is honest" — the plant is now honest) — not more generations.
+
+Generation time 539 s at 275 (t5 492 at the same gen, plateau 577); the per-gen record is in § 5d.
+
 ## 6. Post-run
 
 ⏳
