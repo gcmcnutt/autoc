@@ -226,3 +226,47 @@ rewards damping is still the gen-350 question.
 craft history (the target's stays), no history for accel x/y, no explicit command history in the first step. Companion fidelity item
 for the same build: the sim still does not model the FC's sensor filter delays (gyro ~6.4 ms, accel ~21 ms — `sensor_lpf.h`, option (a):
 filter at the 5 ms FDM sub-step). With accel z differences becoming inputs, the 21 ms accel lag is no longer negligible.
+
+## 7. T121 layout — the M1 input vector before and after (proposal B)
+
+Layout choice: the eight new slots are **appended at the end of the shared craft block** (`CraftCommonInputs` 20 → 28), so every
+existing slot keeps its index (M1 0–44, M2 0–65), the block stays the last one in both modes as the static_asserts require, and M2
+inherits the history with no second change. Names follow the target's lag-slot convention, where `_TM2` = 100 ms and `_TM1` = 50 ms
+(display `gyrQ-2`, `gyrQ-1`), oldest first per signal. Lags come from their own constant table, `{100, 50, 0}` ms, even though they
+coincide with entries 3–4 of the target table, so a future retiming of the target window cannot silently move them.
+(Rejected: arrays beside each "now" slot — cosmetic, and it renumbers every slot after the gyro.)
+
+| input | before slot(s) | after slot(s) | time view before | time view after |
+|---|---|---|---|---|
+| target direction x | 0–5 | 0–5 | 800/400/200/100/50/0 ms | unchanged |
+| target direction y | 6–11 | 6–11 | 800/400/200/100/50/0 ms | unchanged |
+| target direction z | 12–17 | 12–17 | 800/400/200/100/50/0 ms | unchanged |
+| range to rabbit | 18–23 | 18–23 | 800/400/200/100/50/0 ms | unchanged |
+| closing rate | 24 | 24 | 50 ms difference of range | unchanged |
+| attitude quaternion w/x/y/z | 25–28 | 25–28 | now | now |
+| airspeed | 29 | 29 | now | now |
+| **gyro p** | 30 | 30, **45–46** | now | **100 / 50 / 0 ms** |
+| **gyro q** | 31 | 31, **47–48** | now | **100 / 50 / 0 ms** |
+| **gyro r** | 32 | 32, **49–50** | now | **100 / 50 / 0 ms** |
+| accel x | 33 | 33 | now | now — aliases 21–24 % on a 50 ms difference |
+| accel y | 34 | 34 | now | now — aliases 17–35 % |
+| **accel z** | 35 | 35, **51–52** | now | **100 / 50 / 0 ms** |
+| specific energy | 36 | 36 | now | now |
+| boundary closure rate | 37 | 37 | now | now |
+| distance to boundary | 38 | 38 | now | now |
+| inward vector x/y/z | 39–41 | 39–41 | now | now |
+| score gradient x/y/z | 42–44 | 42–44 | now | now |
+| recurrent state (16) | — | — | holds the previous command exactly | unchanged |
+
+| | before | after |
+|---|---|---|
+| M1 inputs / weights | 45 / 2307 | **53 / 2563** (+256, +11 %) |
+| M2 inputs / weights | 66 / 2979 | **74 / 3235** (+256, +9 %) |
+| signals with history | 4 (target x/y/z, range) | 8 (+ gyro p/q/r, accel z) |
+| lagged slots | 20 | 28 |
+| `CraftCommonInputs` | 20 floats | 28 floats |
+
+Touch points of the format break: `nn_inputs.h` (struct, both enums, the shared metadata macro, static_asserts — the xiao compiles this
+same header), `topology.h` weight-count assert (2307 → 2563), the gather (record gyro/accel z in the history ring before the NN runs, sim
+and xiao alike), the flight-log format version (input block and scale table derive from the enum by name; +8 scale entries), dmp /
+data.dat headers and the analytics that assume 45 inputs, and the FR-057 baseline extraction **before** the bump.
