@@ -286,6 +286,11 @@ elite dropped to 80 °/s with tracking up. Decision: **the run continues unchang
 and the next lever (T121 craft-sensor history) belongs to the next bake, not to a mid-run change. The t6 elite from here on is a
 **T118 flight candidate** against g488 whenever the operator chooses to fly.
 
+**Operator decision 2026-10-15 (gen 379): keep t6 running; no stop for T121.** A flight test is targeted ~2.5 days out, so it flies a
+**t6 genome on the current 45-input firmware**, not the T121 slots. At 551 s/gen the run reaches gen 800 in ~2.7 days; leaving
+~8 h for extraction, eval suite, nn2cpp, xiao build and bench check puts the flight snapshot at **≈ gen 708–728** (or the
+final elite if the flight slips). T121 (craft-sensor history) is built after the flight, on its own branch, with the filter-delay model first.
+
 ## 6. Post-run
 
 ⏳
