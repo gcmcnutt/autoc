@@ -161,3 +161,68 @@ local ring buffer — no link traffic, and the forward pass (1.6 ms measured in 
 **format break**: `NNInputs` on the xiao, nn2cpp, data.dat / dmp readers, the renderer, the flight-log decoder, and the FR-057
 baseline extraction — paid once, the same whether 2 or 6 slots are added, so one break should carry everything wanted.
 The M2 vector (66 slots) shares the identical 20-slot craft block, so the same gap carries into 044 unless closed here.
+
+## 6. Which signals get history, at which lags — and does the memory cover the previous command? (2026-10-15, operator)
+
+Tools: [`sensor_alias_budget.py`](sensor_alias_budget.py) (blackbox, ~1 kHz, engaged spans), [`history_lag_study.py`](history_lag_study.py)
+(out-of-sample R² of predicting the body rate 100/150 ms ahead — when a command issued now lands — from inputs available before
+the decision; flight = fit one 10-11 flight, test the other; sim = g488 on the t6 plant, even/odd scenarios).
+
+**Aliasing is not the constraint for gyro or accel z.** The FC's filters (gyro PT1 25 Hz + dynamic notch ≥ 30 Hz; accel biquad 15 Hz)
+remove the vibration, which lives above 100 Hz in the raw gyro. Share of folded (aliased) variance in what the policy's 20 Hz point
+samples carry, both flights:
+
+| channel | sample | 50 ms difference | 100 ms difference |
+|---|---|---|---|
+| gyro q / p / r (filtered, = what the xiao gets) | 0.1–0.3 % | 0.5–1.4 % | 0.1–0.3 % |
+| gyro q **raw** (for contrast) | 5–9 % | 28–49 % | 7–15 % |
+| accel z | 0.2 % | 1.3–1.6 % | 0.2 % |
+| accel x | 2–3 % | 21–24 % | 7–9 % |
+| accel y | 3–10 % | 17–35 % | 5–12 % |
+
+Gyro pitch puts 83–87 % of its power in 1–4 Hz (the cycle). Accel x and y alias badly on differences and carry nothing for prediction
+(below) — **no history for them**.
+
+**Which lags.** Pitch, flight (sim in brackets), R² of the pitch rate 100 ms ahead from pitch-rate history alone:
+now 0.11 (0.00) → 0/50 ms 0.54 (0.16) → 0/50/100 0.54 (0.17) → 0…150 0.54 (0.19) → 0…300 0.56 (0.18); 0/100/200 (skipping 50) 0.50
+(0.08) — the worst; the target's log set 0/50/100/200/400/800 0.57 (0.17). Roll needs the 100 ms lag (0.09 → 0.19 flight).
+Physics: for a 2.5–3 Hz mode a 50 ms lag is ~50° of phase, 100 ms is ~quadrature (the best-conditioned pair for amplitude + phase),
+200 ms is a half period (an inverted copy) and 400 ms a full period (an identical copy — blind). **Uniform 50/100 ms is the set.**
+
+**The short-period state is already observable today.** It is second-order (q, α), and accel z measures α through lift: pitch rate +
+accel z **now** predict the rate 100 ms ahead at 0.52 flight (0.18 sim) — the same as all six sensors now (0.52) or two gyro samples
+(0.54). Adding the previous command, which the recurrent layer holds exactly by construction (o_{t−1} = tanh(W3 h_{t−1} + b3)), lifts
+it to **0.76 flight (0.32 sim)**. Whole proposals, each including that remembered command:
+
+| proposal | + slots | + weights | pitch flt +100 / +150 | pitch sim +100 / +150 | roll flt +100 / +150 | roll sim +100 / +150 |
+|---|---|---|---|---|---|---|
+| today: six sensors now | 0 | 0 | 0.759 / 0.625 | 0.322 / 0.198 | 0.484 / 0.224 | 0.672 / 0.476 |
+| A: gyro p, q, r at 0/50/100 | 6 | 192 | 0.761 / 0.619 | 0.416 / 0.230 | 0.498 / 0.295 | 0.681 / 0.527 |
+| **B: A + accel z at 0/50/100** | **8** | **256 (+11 %)** | **0.770 / 0.636** | **0.441 / 0.259** | **0.500 / 0.299** | **0.682 / 0.529** |
+| C: gyro + accel z at 0/50/100/150 | 12 | 384 | 0.775 / 0.646 | 0.441 / 0.257 | 0.503 / 0.300 | 0.681 / 0.531 |
+| D: all six on the target's log lags | 30 | 960 (+42 %) | 0.799 / 0.668 | 0.468 / 0.268 | 0.540 / 0.318 | 0.702 / 0.557 |
+| E: B + explicit own command t−2, t−3 | 12 | 384 | 0.777 / 0.644 | 0.476 / 0.286 | 0.503 / 0.308 | 0.695 / 0.538 |
+
+**The memory and the previous command** — R² of decoding the policy's command at t−j from h(t−1), the state the recurrent layer
+receives at tick t:
+
+| genome | j = 1 | 2 | 3 | 4 | 6 |
+|---|---|---|---|---|---|
+| g488 pitch / roll | 1.00 / 1.00 | 0.65 / 0.53 | 0.31 / 0.16 | 0.14 / 0.09 | 0.14 / 0.01 |
+| t6 gen 275 pitch / roll | 1.00 / 1.00 | 0.35 / 0.17 | 0.45 / −0.05 | 0.35 / 0.06 | 0.19 / 0.01 |
+
+The previous command is there exactly; 100–150 ms back (the commands currently in flight through the rate loop) only partly. Making
+them explicit (E vs B) is worth +0.03 in sim, +0.01 in flight — optional, not first.
+
+**⚠️ Correction to § 4 item 1.** § 4 said the policy "cannot be asked to stop a cycle whose phase budget it cannot observe". That was
+too strong: the short-period state is observable from today's inputs (pitch rate + accel z now) plus the memory's previous command,
+at R² 0.76 in flight. What history adds is an *easier and more robust* estimate — modest in the clean flight air (+0.01–0.04), larger
+in the turbulent training environment where learning happens (+0.12 at 100 ms, 0.32 → 0.44), and a one-layer path for rate-difference
+(derivative / phase-lead) terms that today must be built through the recurrent layer. The policy's command does not use the gyro
+(ΔR² 0.003, § 2) although the information is present, so history is an **enabler**, not by itself the fix; whether selection then
+rewards damping is still the gen-350 question.
+
+**Recommendation → T121: proposal B** — gyro p, q, r and accel z at 50 and 100 ms (+8 slots, +256 weights), a second lag table for
+craft history (the target's stays), no history for accel x/y, no explicit command history in the first step. Companion fidelity item
+for the same build: the sim still does not model the FC's sensor filter delays (gyro ~6.4 ms, accel ~21 ms — `sensor_lpf.h`, option (a):
+filter at the 5 ms FDM sub-step). With accel z differences becoming inputs, the 21 ms accel lag is no longer negligible.
