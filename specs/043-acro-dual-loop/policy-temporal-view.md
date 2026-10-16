@@ -103,3 +103,61 @@ the 2–3.5 Hz cycle, in flight and now in the sim.
    cycle, worth closing when the latency model is next touched.
 
 t6 continues to 350 unchanged (the gen-275 call stands) — this analysis changes what the next bake carries, not this one.
+
+## 5. Reference: the full M1 input vector (verified in code 2026-10-15)
+
+Source of truth: `NNInputs` / `PathgenInput` in [`nn_inputs.h`](../../include/autoc/nn/nn_inputs.h); one gather,
+`gather_pathgen_inputs` → `writeCraftCommonInputs` in [`evaluator.cc`](../../src/nn/evaluator.cc), called verbatim by the
+nn2cpp-generated xiao program (sim and flight cannot differ in slot meaning). History ring: `AircraftState::recordErrorHistory`,
+17 ticks deep, written once per 20 Hz tick by crrcsim (`inputdev_autoc.cpp`) and by the xiao (`msplink.cpp`) **before** the NN runs.
+Lags in ticks: {16, 8, 4, 2, 1, 0}. σ = slot standard deviation over the t6 gen-275 elite's 294 scenarios.
+
+| slots | input | units → NN scale | time view | σ |
+|---|---|---|---|---|
+| 0–5 | `target_x` — unit vector to the rabbit, body x (forward) | direction cosine, raw | lags 800/400/200/100/50/0 ms | 0.44 |
+| 6–11 | `target_y` — body y (right) | direction cosine | same six lags | 0.34 |
+| 12–17 | `target_z` — body z (down) | direction cosine | same six lags | 0.29 |
+| 18–23 | `dist` — range to the rabbit | m ÷ 26 | same six lags | 0.27 |
+| 24 | `closing_rate` — (dist 50 ms ago − dist now) / 50 ms | m/s ÷ 16 | derived: a 50 ms difference of the history | 0.35 |
+| 25–28 | `quat_w/x/y/z` — attitude q_EB | unit quaternion | now only | 0.32–0.63 |
+| 29 | `airspeed` | m/s ÷ 13 | now only | 0.20 |
+| 30–32 | `gyro_p/q/r` — body rates | rad/s ÷ 6 | **now only** | 0.33 / 0.27 / 0.18 |
+| 33–35 | `accel_x/y/z` — body specific force incl. gravity | g ÷ 8 | now only | 0.07 / 0.01 / 0.25 |
+| 36 | `specific_energy` — h above the deck + v²/2g | m ÷ 145 | now only | 0.09 |
+| 37 | `boundary_closure_rate` — outward radial speed | m/s ÷ 13 | now only | 0.71 |
+| 38 | `dist_to_boundary` — along the velocity ray | tanh(m ÷ 20) | now only | 0.03 |
+| 39–41 | `inward_body_x/y/z` — unit vector to the arena centre | body frame | now only | 0.48–0.61 |
+| 42–44 | `score_grad_x/y/z` — ∂score/∂position × streak multiplier | tanh(‖g‖ ÷ 0.78), direction kept | now only | 0.13–0.22 |
+| — | recurrent state h (layer 2, 16 units) | tanh | whatever it learns; ρ(W_hh) ≈ 3 | — |
+| — | the policy's own previous command | — | **not an input** | — |
+
+Two properties that matter for the history question:
+
+- **The target history is stored in the body frame of the tick it was recorded in**, not re-rotated into the current frame. A
+  difference such as `target_x[now] − target_x[−50 ms]` is therefore target motion *plus* the craft's own rotation over 50 ms —
+  the policy's only view of its own recent rotation, and it is confounded with the target's.
+- `closing_rate` uses `kNNHistoryRecentGapSec` = 50 ms since layout v3 (t10); the comment above it in the gather still says 100 ms
+  (stale from v2) — the code is right, the comment is not.
+
+**What each lag adds** — 1 − r² between the lag slot and the 0 ms slot, median over scenarios (the share of that slot's variance
+the "now" slot does not already carry):
+
+| signal | 50 ms | 100 ms | 200 ms | 400 ms | 800 ms |
+|---|---|---|---|---|---|
+| `target_x` | 0.03 | 0.08 | 0.19 | 0.41 | 0.72 |
+| `target_y` | 0.03 | 0.11 | 0.33 | 0.71 | 0.94 |
+| `target_z` | 0.06 | 0.17 | 0.40 | 0.66 | 0.91 |
+| `dist` | 0.00 | 0.01 | 0.04 | 0.16 | 0.46 |
+| `gyro_q` (hypothetical history) | **0.53** | **0.93** | 0.99 | 0.99 | 1.00 |
+| `gyro_p` (hypothetical history) | **0.37** | **0.73** | 0.84 | 0.96 | 0.99 |
+
+The history budget (24 of 45 slots) is spent on the slowest signals in the vector — the 50/100 ms target and range slots are
+83–100 % redundant with "now" — while the fastest signal, pitch rate, which decorrelates within 100 ms because it *is* the 2–3 Hz
+cycle, has no history at all.
+
+**Cost of adding slots.** Topology 45 → 32 → 16r → 3 = 2307 weights; every input slot costs one row into the 32-unit layer,
+**+32 weights (+1.4 %)**. Gyro is already delivered to the xiao over MSP every tick (`setGyroRates`), so a gyro history is a
+local ring buffer — no link traffic, and the forward pass (1.6 ms measured in flight) grows by ~1 %. The real cost is the
+**format break**: `NNInputs` on the xiao, nn2cpp, data.dat / dmp readers, the renderer, the flight-log decoder, and the FR-057
+baseline extraction — paid once, the same whether 2 or 6 slots are added, so one break should carry everything wanted.
+The M2 vector (66 slots) shares the identical 20-slot craft block, so the same gap carries into 044 unless closed here.
