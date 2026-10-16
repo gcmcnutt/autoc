@@ -41,7 +41,12 @@ def load(path):
         if len(row) < len(h): continue
         spans[int(float(row[idx["S"]]))].append([float(row[idx[c]]) for c in ("P", "Q", "R", "AX", "AY", "AZ", "UPT", "URL")])
     cols = {c: i for i, c in enumerate(("P", "Q", "R", "AX", "AY", "AZ", "UPT", "URL"))}
-    return {s: np.array(v) for s, v in spans.items() if len(v) > 60}, cols
+    # departed flights (a tumble, body rate > 15 rad/s = 2.5 NN units) are not the regime the policy controls, and a few of them
+    # dominate any least-squares fit — excluded, and counted
+    out = {s: np.array(v) for s, v in spans.items() if len(v) > 60}
+    keep = {s: A for s, A in out.items() if np.abs(A[:, :3]).max() <= 2.5}
+    if len(keep) < len(out): print(f"  ({path.split('/')[-1]}: {len(out) - len(keep)} departed scenario(s) excluded)")
+    return keep, cols
 
 
 def design(spans, cols, feats, target, k):

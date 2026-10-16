@@ -270,3 +270,77 @@ Touch points of the format break: `nn_inputs.h` (struct, both enums, the shared 
 same header), `topology.h` weight-count assert (2307 → 2563), the gather (record gyro/accel z in the history ring before the NN runs, sim
 and xiao alike), the flight-log format version (input block and scale table derive from the enum by name; +8 scale entries), dmp /
 data.dat headers and the analytics that assume 45 inputs, and the FR-057 baseline extraction **before** the bump.
+
+## 8. Erratum, and the prediction: what the T121 slots should do for pitch smoothness (2026-10-15 evening)
+
+### 8a. ⚠️ Erratum — the "g488 on the honest plant" sim columns in §§ 2, 3 and 6 used the wrong file
+
+The scratch file used as "g488 on the t6 plant" was the **first proposed plant** (`Cm_a` −1.0 / `Cm_de` −0.65, the variant the FRF ladder
+rejected for overshoot: RMS 188–214 °/s, peak ~3 Hz), not the applied t6 plant (RMS 105–123 °/s — the MANIFEST § 3 gate). Re-run on the
+correct file, with **departed flights excluded** (body rate > 15 rad/s; 4–5 of 294 g488 scenarios tumbled, peak 71 rad/s, and a few of them
+dominated every least-squares fit — all analysis scripts now drop them and say so). Corrected values; **every conclusion stands**:
+
+| where | was | corrected |
+|---|---|---|
+| § 2 g488 sim: band R² / bearing 0–100 ms ΔR² / gyro ΔR² / accel ΔR² | 0.79 / 0.14 / 0.002 / 0.06 | 0.76 / 0.11 / 0.011 / 0.05 |
+| § 2 g488 sim: cmd→gyro peak / phase 2–3 Hz | +2 ticks (0.59) / +80° | +2 ticks (0.64) / +83° |
+| § 3 g488 replay: band variance with memory zeroed / history frozen / gyro zeroed | ×0.2 / ×1.6 / ×1.1 | ×0.17 / ×1.6 / ×1.12 |
+| § 6 pitch-rate-only lags, sim R² +100 ms: now / 0,50 / 0,50,100 / 0…150 / 0,100,200 / log set | 0.00 / 0.16 / 0.17 / 0.19 / 0.08 / 0.17 | 0.02 / 0.22 / **0.32** / 0.32 / 0.14 / 0.32 |
+| § 6 whole proposals, pitch sim +100 ms: today / A / **B** / C / D / E | 0.32 / 0.42 / 0.44 / 0.44 / 0.47 / 0.48 | 0.37 / 0.45 / **0.50** / 0.51 / 0.53 / 0.53 |
+| § 6 short-period table, sim: q+a_z now / six now / + cmd t−1 / q, a_z at 0/50/100 | 0.18 / 0.19 / 0.32 / 0.26 | 0.17 / 0.21 / 0.37 / **0.40** |
+| § 6 memory decode g488, pitch cmd t−2 / t−3 / t−4; roll t−2 / t−3 | 0.65 / 0.31 / 0.14; 0.53 / 0.16 | 0.82 / 0.60 / 0.46; 0.49 / 0.21 |
+
+The correction strengthens § 6 in one place: in the sim the **100 ms** lag matters as much as the 50 ms one (0.22 → 0.32), and q + a_z
+history *without any command* already beats today's inputs plus the remembered command (0.40 vs 0.37).
+
+### 8b. Is the proposed history already inside the network? ([`rate_history_availability.py`](rate_history_availability.py))
+
+Partial R² of the craft's own pitch rate 50 / 100 ms ago, and of its derivative dq = q(t−1) − q(t−2), **beyond the gyro-now input**:
+
+| available today from | t6 gen-370 elite (sim) | g488 (sim, t6 plant) | g488 flight 1 / 2 |
+|---|---|---|---|
+| recurrent state h(t−1) | 0.04 / 0.05 / **0.01** | 0.04 / 0.06 / **0.11** | 0.11 / 0.10 / 0.04; ≈ 0 |
+| bearing history, linear (one layer) | 0.27 / 0.37 / **0.18** | 0.51 / 0.55 / **0.48** | 0.70 / 0.80 / 0.52; 0.70 / 0.80 / 0.55 |
+| bearing history, exact cross-product geometry | 0.54 / 0.60 / 0.15 | 0.73 / 0.76 / 0.38 | 0.67 / 0.72 / 0.41; 0.70 / 0.75 / 0.46 |
+
+The memory holds the previous **command** exactly but **none of the rate history** (≤ 0.11). The rate history leaks into the bearing slots
+(they are body-frame), but for the current elite only 18 % of the rate derivative is linearly recoverable there. And in the identified
+plant the policy's own commands explain **48 %** of the 1.5–4 Hz pitch rate; the other half is the air and the airframe's ringing. The
+memory knows what the policy *asked for*; the slots show what the airframe *did*, 50 and 100 ms ago — the phase of its response.
+
+### 8c. What the slots buy, at equal tracking ([`damping_frontier.py`](damping_frontier.py))
+
+Pitch-plane closed loop on a plant identified from the t6-plant sim (ARX(4,5), one-step R² 0.85; |q/setpoint| 1.23 ∠−66° at 2.5 Hz,
+1.29 ∠−89° at 3 Hz), the air = recorded residuals, the demand = the slow (< 0.6 Hz) attitude actually flown, the bearing's weakness as a
+rate sensor = white noise calibrated to the measured decodability. Linear controllers, clipped at the cap, optimized per input set
+(nested, so a larger set never loses); held-out scenarios. **The air alone, with no feedback, makes 41.7 °/s RMS of 1.5–4 Hz pitch rate**;
+every controller sits above that floor — the excess is the cycle the controller itself adds.
+
+| bearing decodability | tracking error | 1.5–4 Hz pitch rate, today → +gyro history | change | command activity (Δu RMS), today → +history |
+|---|---|---|---|---|
+| 0.27 (like the gen-370 elite) | 7.4° | 59.4 → 54.4 °/s | −8 % | 0.83 → 0.68 |
+| | 8.9° | 63.8 → 53.7 | **−16 %** | 0.15 → 0.11 |
+| | 10.3° | 55.4 → 52.7 | −5 % | 0.093 → 0.085 |
+| 0.64 (like g488) | 7.0° | 60.4 → 55.3 | −8 % | 0.31 → 0.10 |
+| | 8.2° | 61.6 → 53.2 | **−14 %** | 0.12 → 0.075 |
+| | 9.3° | 57.5 → 51.5 | −11 % | 0.089 → 0.066 |
+
+Measured above the air's floor, the slots remove **~40–50 % of the controller-made cycle energy** at mid tracking levels (e.g. 63.8 → 53.7
+°/s is 2331 → 1145 (°/s)² of excess) and **25–70 % of the command activity**. Explicit command history (t−2, t−3) adds little on top
+(C ≈ A in pitch rate; D ≈ B) — consistent with § 6. The model leaves accel z out (B here is gyro-only), so it understates B slightly.
+
+### 8d. The prediction
+
+1. **The command-in-memory point is right and does not make the slots redundant**: the memory has the command, not the response, and
+   half of the cycle-band response is not the command's doing.
+2. **Ceiling, linear and idealized: at equal tracking, 10–15 % less 1.5–4 Hz pitch rate (about half of the cycle the controller adds above
+   the air), and much calmer commands.** The benefit grows as tracking is pushed tighter — exactly where selection pushes.
+3. **At the gen-370 operating point the information gain is small** (prediction R² 0.335 → 0.349): this elite already flies smooth, and
+   its residual pitch motion is mostly air the 100–150 ms lag cannot answer. Its remaining excess is **command dither** (5–9 sign flips/s),
+   which is where the slots act most (command activity −25–70 % in the model).
+4. **Expected in a bake with the slots**: the smooth regime reached sooner (the derivative becomes a one-weight path at O(1) scale instead
+   of a ~20× weight on body-frame bearing differences or a construction through the recurrent layer — t6 needed ~370 generations and a
+   memory-built damper to get here), a lower command-dither floor, and the same or slightly tighter tracking. Not expected: a large further
+   drop in pitch-rate RMS below what t6 is reaching on its own — the air sets that floor.
+5. What would falsify it: a T121 smoke that does not reach t6's gen-370 pitch RMS / flips faster than t6 did, or an elite that spends
+   the new information on tighter tracking with the same dither (the conditional tie-break is the guard against that).

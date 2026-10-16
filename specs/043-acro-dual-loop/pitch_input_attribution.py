@@ -74,6 +74,7 @@ def main():
     for s, rows in sc.items():
         A = np.array(rows)
         if len(A) < 80: continue
+        if np.abs(A[:, 1 + names.index("gyrP"):1 + names.index("gyrR") + 1]).max() > 2.5: continue  # departed flight (>15 rad/s)
         y, x = A[:, 0], A[:, 1:]
         Y.append(y); X.append(x)
         Yb.append(bandpass(y, lo, hi)); Xb.append(np.column_stack([bandpass(x[:, j], lo, hi) for j in range(x.shape[1])]))

@@ -252,6 +252,40 @@ attitude loop through a 100–150 ms rate lag; it limit-cycles where its gain cr
 gen-275 elite's recurrent state has become a damper (zeroing it doubles the band power; in g488 it *carried* the cycle). The next
 bake's lever is T121 (own-rotation history slots), not the measure.
 
+### 5f. Gen 370 read (2026-10-15 evening): the cycle is coming down, and t6 now beats the flown genome on equal footing
+
+| gen | t5 avg | **t6 avg** | t5 pct | **t6 pct** | t5 rot | t6 rot | t6 elite complete | t6 s/gen | t5 s/gen |
+|---|---|---|---|---|---|---|---|---|---|
+| 300 | −23185 | −26089 | 45.1 | 41.0 | 5.82 | 5.75 | 294 | 544 | 508 |
+| 325 | −25643 | −24625 | 43.2 | 39.9 | 5.52 | 5.00 | 294 | 529 | 527 |
+| 350 | −26911 | −26545 | 47.6 | 40.5 | 4.95 | 5.92 | 294 | 534 | 527 |
+| 370 | −27270 | **−28405** | 47.6 | **43.1** | 4.96 | **4.12** | 294 | 549 | 522 |
+
+16 elite replacements in 276–370, 11 crash-carrying elites (0/294 at 370), bite 92 %, 0 DIVERGED. Score/step 0.565 vs t5's ~0.645 at
+the same gen; `rotRatio` now **below** t5's (4.1 vs 5.0).
+
+**Relay panel (elite medians over 294 scenarios; t5 @371 for reference, on its stiff plant):**
+
+| | 275 | 311 | 346 | **370** | t5 @371 |
+|---|---|---|---|---|---|
+| pitch-rate RMS °/s | 101 | 87 | 104 | **80** | 88 |
+| pitch / roll / throttle at cap % | 9 / 7 / 49 | 2.4 / 3.0 / 30 | 1.8 / 3.8 / 30 | **5 / 1 / 26** | 2.0 / 2.2 / 26 |
+| pitch / roll flips/s | 7.3 / 8.1 | 5.0 / 5.4 | 6.9 / 9.0 | **7.3 / 7.1** | 3.1 / 5.5 |
+| 2–3 Hz / 3–5 Hz share % | 26 / 17 | 13 / 16 | 20 / 21 | **17 / 8** | 13 / 28 |
+
+Per path at 370 (`sim_pitch_spectrum`): RMS 54–89 °/s, mean \|cmd\| 87–101 °/s, cap 4–6 %, 2–3 Hz share 15–22 %, 3–5 Hz 7–11 %,
+spectral peak at manoeuvre frequencies (0.2–0.6 Hz) — the cycle is no longer the dominant pitch motion.
+
+**Equal footing with the flown genome** (both flying the t6 plant, which reproduces g488's flights): g488 = RMS 105–123 °/s,
+`pctInStreak` 40 %; **t6 gen 370 = RMS 54–89 °/s (≈ −30 %), `pctInStreak` 43.1 %**. The first 043 genome that out-tracks *and*
+out-smooths the flown baseline on the plant that matches the air. What remains: command sign flips 5–9/s (t5 3/s) — small-amplitude
+dither around zero that the airframe filters (3–5 Hz share 8 %) — and a tracking gap to t5's stiff-plant numbers (−4.5 pts).
+
+**The gen-350 call (§ 5e).** At 350 the elite read 104 °/s with 6.9 flips/s — by the letter, the stop-and-rethink row. At 366 a new
+elite dropped to 80 °/s with tracking up. Decision: **the run continues unchanged to 800**; the RMS is still falling on t5's schedule,
+and the next lever (T121 craft-sensor history) belongs to the next bake, not to a mid-run change. The t6 elite from here on is a
+**T118 flight candidate** against g488 whenever the operator chooses to fly.
+
 ## 6. Post-run
 
 ⏳
