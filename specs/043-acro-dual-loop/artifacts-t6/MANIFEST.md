@@ -291,6 +291,32 @@ and the next lever (T121 craft-sensor history) belongs to the next bake, not to 
 ~8 h for extraction, eval suite, nn2cpp, xiao build and bench check puts the flight snapshot at **≈ gen 708–728** (or the
 final elite if the flight slips). T121 (craft-sensor history) is built after the flight, on its own branch, with the filter-delay model first.
 
+### 5g. Gen 435 read (2026-10-16 morning): pitch control has plateaued; selection is trading smoothness for tracking
+
+| gen | t5 avg | **t6 avg** | t5 pct | **t6 pct** | t5 rot | t6 rot | t6 elite complete | t6 s/gen |
+|---|---|---|---|---|---|---|---|---|
+| 370 | −27270 | −28405 | 47.6 | 43.1 | 4.96 | 4.12 | 294 | 549 |
+| 390 | −28801 | −29919 | 48.0 | 43.7 | 4.55 | 4.87 | 294 | 541 |
+| 410 | −31427 | −30508 | 47.5 | 43.4 | 4.74 | 4.76 | 293 | 554 |
+| 435 | −33671 | **−31631** | 48.3 | **43.4** | 5.29 | 4.96 | 294 | 549 |
+
+**Relay panel, elite medians:** after the gen 366–375 elite (80 °/s, the smoothest of the run) every elite has sat at **87–96 °/s**;
+pitch at the cap 0.7–2.3 %, throttle at the cap back to 33–40 %, pitch flips 6.4–7.6/s (unchanged), 2–3 Hz share 14–29 %, 3–5 Hz 11–18 %.
+t5 over the same gens: 84–102 °/s, flips 3.1–3.8/s.
+
+| elite (t6 plant) | pitch RMS by path | 3–5 Hz share | flips/s | score/step | `pctInStreak` | fitness | genome sha |
+|---|---|---|---|---|---|---|---|
+| g488 (flown) | 105–123 | — | ~3 | — | 40 % | −65928 (eval) | `1731d937e3af9c1c` |
+| **t6 gen 370** | **54–89** | **7–11 %** | 5.2–8.9 | 0.565 | 43.1 % | −81227 | `6108e4f667efc11c` |
+| t6 gen 435 | 62–107 | 15–22 % | 5.8–8.5 | **0.597** | 43.4 % | **−86210** | `4190c5302dc75552` |
+
+Reading: tracking per step is still creeping up (0.565 → 0.597, crash-free) while `pctInStreak` is flat and the pitch RMS has given back
+~10 °/s with `rotRatio` 4.1 → 5.0 — the newer elites buy tracking with a little more motion, which is what the lexicase cases reward; the
+tie-break only ranks equal trackers. Still ~20 % smoother than g488 on the same plant (median ~86 vs ~112 °/s), but **no longer improving**.
+⚠️ **Flight-candidate consequence:** the best fitness is not the smoothest genome. Both genomes are archived (git-ignored `.dat` in this
+directory). Before the T118 flight, run the eval suite on the gen-370 elite, the flight-window elite (≈ gen 710–730) and the final one, and
+choose on pitch smoothness at matched tracking, not on fitness.
+
 ## 6. Post-run
 
 ⏳
