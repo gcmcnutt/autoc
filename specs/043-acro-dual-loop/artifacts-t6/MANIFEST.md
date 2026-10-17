@@ -365,6 +365,27 @@ The gen-525 elite completes all six; the windiest arena costs it 0–23 pts of s
 and SeededRandomB) and adds 0–35 °/s of pitch-rate RMS (worst on StraightAndLevel and HighPerchSplitS). Smaller gust length = gusts
 that change faster within the run (SpiralClimb arena 64 has the fastest and the strongest turbulence of the six).
 
+### 5j. Gen 621 read (2026-10-17 midday): tracking keeps climbing, pitch smoothness holds its plateau
+
+| gen | t5 avg | t6 avg | t5 pct | **t6 pct** | t5 rot | t6 rot | t6 best | t6 elite complete |
+|---|---|---|---|---|---|---|---|---|
+| 525 | −37481 | −34855 | 49.2 | 43.4 | 4.97 | 4.62 | −87488 | 294 |
+| 560 | −39996 | −36771 | 49.6 | 45.8 | 4.32 | 4.87 | −92546 | 294 |
+| 561 (step 14) | −39377 | −35210 | 49.0 | 45.0 | 4.37 | 4.92 | −89965 | 294 |
+| 600 | −41653 | −39171 | 50.6 | **47.8** | 4.85 | 4.90 | −93831 | 294 |
+| 601 (step 15) | −40153 | −37244 | 46.9 | 46.4 | 5.06 | 4.97 | −88712 | 294 |
+| 621 | −40834 | −38578 | 49.6 | **46.6** | 4.51 | 5.02 | −92414 | 294 |
+
+Streak gap to t5 down to ~3 pts; **no crash-carrying elite since gen 525**; each ramp step costs ~1 pt for a few gens. 560 s/gen: gen 715
+≈ 2026-10-18 01:45, gen 800 ≈ 2026-10-18 15:00.
+
+**Relay panel, gens 521–621 (elite medians):** pitch-rate RMS 84–98 °/s, pitch flips 4.8–6.4/s, 2–3 Hz share 11–21 %, 3–5 Hz 8–20 %,
+mean \|cmd\| 0.36–0.48 of the cap, throttle at the cap 31–45 %. The calmest elite of the stretch is still gen 522–526 (4.8 flips/s, 11 %);
+the current one (since gen 613, `pctInStreak` 46.6 %, genome `5525f3a75ad06c62`) is back at 6.1 flips/s, 21 % at 2–3 Hz, RMS 75–103 by path.
+t5 over the same gens calmed to ~2 flips/s on its plant; t6 has not shown that late calming yet. Against g488 on the same plant it
+remains ~20 % smoother (median ~87 vs ~112 °/s by path) with 6–7 pts more streak. Flight shortlist: gen 370 / 500 / 522 / 621 + the
+snapshot-window elite — still to be chosen on smoothness at matched tracking (T122).
+
 ## 6. Post-run
 
 ⏳
