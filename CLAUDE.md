@@ -73,24 +73,21 @@ tests/
 
 C++17: Follow standard conventions
 
-## Active feature — 043 acro-dual-loop — Phase 10e: sim pitch fidelity → t6 → flight-proven exit (state 2026-10-13)
+## Active feature — 043 acro-dual-loop — Phase 10f: t6 flight test, then wrap (state 2026-10-16)
 
-**State**: five bakes (t1–t5) and five ACRO flights. The dual loop flies and tracks 3× better than anything before it
-(checkpoint: [`specs/043-acro-dual-loop/checkpoint-20261013.md`](specs/043-acro-dual-loop/checkpoint-20261013.md)), and
-**the feature's intent — smoother control — is not met**: the 2 Hz, ±200 °/s, ±7 g pitch cycle is unchanged across three
-genomes, because it is the outer loop's relay against a resonance the sim lacks. **043 is not closed**; its exit is a
-flight that shows the cycle reduced (tasks Phase 10e, T118). 044 M2 follows that exit — it inherits this plant.
+**State**: six bakes (t1–t6). t6 trains on the **honest pitch plant** (measured `I_yy` 0.0094, `Cm_q` −1.0, NN command applied at
+the 5 ms sub-step), on which the flown t5 gen 488 reproduces its own 2 Hz flight cycle. On that plant t6 elites out-track **and**
+out-smooth gen 488 (`pctInStreak` 43–46 % vs 40 %, pitch-rate RMS 54–100 vs 105–123 °/s by path). **Plan (operator 2026-10-16):
+fly a t6 genome this week, then wrap 043 on that flight, good or bad** — tasks Phase 10f (T122 candidate selection on smoothness,
+not fitness → T123 build/bench on the current 45-input firmware → T124 flight → T125 analysis → T118 verdict → T081 outcome).
+Next feature, decided at the wrap: **044 M2**, or an **intermediate feature testing craft-sensor history** (T121, BACKLOG).
 
-**Start here**: [`tasks.md` Phase 10c–10e](specs/043-acro-dual-loop/tasks.md), the proposal of record
-[`sim-pitch-fidelity-proposal.md`](specs/043-acro-dual-loop/sim-pitch-fidelity-proposal.md), and the evidence in
-[`tempered-control-first-principles.md § 11`](specs/043-acro-dual-loop/tempered-control-first-principles.md).
-Measured: the closed inner loop's frequency response matches sim↔aircraft to 1 Hz in gain and 2.5 Hz in phase, then the
-aircraft resonates at 2.5 Hz (|H| 1.6) where the sim keeps rising to 6 Hz — model short period **6.9 Hz / ζ 0.81** vs real
-**~3 Hz / ζ 0.2–0.3**, first-order cause `I_yy = 0.0013` in `hb1_streamer.xml`. ⛔ **No further objective work until the
-corrected sim reproduces the cycle with t5 gen 488** — three bakes proved an objective cannot price what the plant hides.
-Order: measure `I_yy` on both articles (bifilar pendulum) → doublets → fit `Cm_a`/`Cm_q` → sub-step latency (today one 50 ms
-frame by construction) → per-cell step test → FRF match → gen 488 cycles in sim → T092 gate → t6 → flight. Flight baseline
-of record: t5 gen 488 (`1731d937e3af9c1c`), in the aircraft. ⛔ `gen9512.dmp` = gen 488, not 512.
+**Start here**: [`tasks.md` Phase 10f](specs/043-acro-dual-loop/tasks.md),
+[`artifacts-t6/MANIFEST.md`](specs/043-acro-dual-loop/artifacts-t6/MANIFEST.md) §§ 5f–5h (run state, flight shortlist with
+genome hashes), [`policy-temporal-view.md`](specs/043-acro-dual-loop/policy-temporal-view.md) (what the policy sees in time;
+the T121 case and prediction). How the plant was made honest: [`sim-pitch-fidelity-proposal.md`](specs/043-acro-dual-loop/sim-pitch-fidelity-proposal.md),
+`actuator-pin.md` § Inertia measurement. ⛔ No rebuilds while t6 runs. Flight baseline of record: t5 gen 488
+(`1731d937e3af9c1c`), in the aircraft. ⛔ `gen9512.dmp` = gen 488, not 512.
 
 ## 043 background (the notes below remain true of the architecture)
 

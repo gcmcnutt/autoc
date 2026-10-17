@@ -1,6 +1,6 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-08-23
+**Last Updated**: 2026-10-16
 
 > ✅ **041 CLOSED 2026-08-23** — [outcome](041-m2-depth/outcome.md). Best M1 ever (−81,413, +47% on the
 > all-time record), flown, with load and throttle saturation DOWN alongside. Cause was **input scaling**
@@ -35,6 +35,29 @@
 > continues inside 043 as **Phase 10e** (measure `I_yy`, fit the short period, honest latency, t6, a flight that shows the
 > cycle reduced = the exit). **044 M2 tracking** follows that exit and inherits the plant (today 6.9 Hz / ζ 0.81 in pitch where
 > the aircraft is ~3 Hz / ζ 0.2–0.3). The flight baseline of record is 043-t5 gen 488 (`1731d937e3af9c1c`).
+
+> **Update (operator 2026-10-16)**: t6 runs on the honest pitch plant and its elites out-track and out-smooth the flown gen 488 on
+> it. **043 wraps on one flight of a t6 genome this week, good or bad** (tasks Phase 10f). The next feature, decided at the wrap:
+> **044 M2**, or the **intermediate feedback feature** below (T121).
+
+### [043 wrap plan · next-feature candidate, filed 2026-10-16] Craft-sensor history in the input vector (T121) — an intermediate feature before or alongside M2
+Evidence: [policy-temporal-view.md](043-acro-dual-loop/policy-temporal-view.md) §§ 4–8. The input vector carries history of the
+*target* only; no craft sensor has history. The short-period state is observable today (pitch rate + accel z now + the remembered
+command: R² 0.76 in flight), but the rate *derivative* — the damping term — is mostly not: memory holds ≤ 0.11 of it, the body-frame
+bearing history 0.18 (linear) for the current elite. Proposal B: **gyro p, q, r and accel z at 50 and 100 ms** (+8 slots, +256
+weights; the shared craft block carries it into M2). Aliasing is not a constraint for those channels (≤ 1.6 % folded on 50 ms
+differences, both 10-11 flights); accel x/y alias 17–35 % and get no history. Identified-plant prediction: 10–15 % less 1.5–4 Hz
+pitch rate at equal tracking and 25–70 % calmer commands; in a bake, the smooth regime sooner and a lower dither floor rather than a
+big RMS drop. **Falsifier**: a smoke that is not faster than t6 to t6's gen-370 smoothness. Companion item for the same build: the FC
+sensor filter delays at the FDM sub-step (`sensor_lpf.h` option a: gyro ~6.4 ms, accel ~21 ms). Wire-format change → FR-057
+extraction first, xiao `NNInputs` in lockstep, flight-log version bump. The operator's caveat stands: the hidden layer *can* compute
+this already — the feature tests whether making it explicit changes what evolution finds.
+
+### [043 wrap plan · Phase 10e leftovers, filed 2026-10-16] Article-2 inertia and flights, the clean `I_xx` repeat, per-cell step sweep, doublets and the `Cm_a`/`Cm_q` fit (T114 / T116 / T093 / T095 / T096 / T047a)
+`I_yy` = 0.0094 kg·m² is measured on article 1; `I_xx` 0.0069 is provisional (re-hang with the dowel at CG station 8"). Article 2 is
+not built: its bifilar numbers, its flights with gen 488 (does the cycle's frequency follow the airframe?) and the FR-056 review at
+n = 2 wait for it. The step test was run at the nominal cell only; a speed sweep checks f rising with V. Doublets before and after a
+streamer cut (bare vs streamer-on ζ) and the formal fit are optional in the 043 flight; the FRF already places the plant to 2.5 Hz.
 
 ### [043 close · t6+ content] Entry dither, heading decoupling, per-scenario path library, six random courses (T085 / T086 / T089 / T101)
 Hand-off attitude is not a variation class: the first second of every flown span is out of distribution by construction

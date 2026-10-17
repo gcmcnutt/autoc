@@ -503,18 +503,70 @@ Order (each step gates the next; numbering kept from Phase 10c/D1 for traceabili
   string midpoint (0.51 kg × (1 cm)² = 0.00005) and the wing plane plumb (a 15° tilt mixes in ~7 % of `I_zz` ≈ 0.0018 — a 20 % error on `I_yy`).
   Record in `actuator-pin.md` § "Inertia measurement": article, date, m, L, D, 3 × T, bar m/D, CG station, photo.
 - [ ] T117 [t6] bake on the honest plant — see item 7. ⭐ **PROPOSED PLANT 2026-10-13** ([proposal § 2b](sim-pitch-fidelity-proposal.md)): `Mass` 0.510, **`I_yy` 0.0094, `I_xx` 0.0069, `I_zz` 0.016**; pitch `Cm_a` −1.00, `Cm_q` −1.0, `Cm_de` −0.65 (ratio kept) ⇒ short period 2.3 / 2.9 / 3.5 Hz, ζ 0.35; roll `Cl_*` × 0.2875 and yaw `Cn_*` × 0.615 so roll/yaw dynamics are **unchanged from t5**; `kCraftCmQCenter` −1.0, clamp [−2.0, −0.2], `CraftCmQSigma` 0.6. Latency sub-step fix as a **separate** commit evaluated separately. Ladder: rebuild → step test (peak 133–166 ms, ring ~3 Hz) → **gen 488 in the new sim must show the 2 Hz cycle** (the sanity check against the flights already flown) → latency fix, repeat → T092 smoke → launch. ✅ **APPLIED 2026-10-13 evening (operator go: "proceed up to the launch of t6")** — with one change from the proposal found by the ladder: **`Cm_a` stays at −0.55 / `Cm_de` −0.36** (the FRF of gen 488 chose it; −1.0 overshot the aircraft's resonance), so the t6 plant differs from t5's in exactly: the three inertias + mass, `Cm_q` −4.2 → −1.0 (class re-centred), the roll/yaw rescale that holds those axes constant, and the sub-step latency. Two sim bugs fixed on the way (`Global::craftCmQ` hard-coded −4.2; step-test trim gain). **Ladder result**: gen 488 on the t6 plant cycles like its own flights (RMS 105–123 vs 124–153 °/s, peak 1.9–2.3 Hz, \|H\| 1.34 at 2.5 Hz vs 1.5–1.6) — proposal § 2b "applied" table, actuator-pin § "The t6 plant". New eval baselines: t3 genome −54922.067792, gen 488 −65928.363124 (plant changed; expected). ctest 53/53. T092 smoke ✅ (trains, ~2× slower start), final clean `rebuild-perf.sh` ✅ (21:06, ctest 53/53), cross-build determinism ✅ (both baselines bitwise). ⭐ 🚀 **t6 LAUNCHED 2026-10-13 21:18 PDT** (operator: "Proceed with training") — pid 2146100, seed **1791951530**, prefix `autoc-9223370244903245464-2026-10-14T04:18:50.343Z`, log `logs/autoc-043-t6-m1-plant.log`, commits `d326538` / crrcsim `7f345c5`. ⛔ **No rebuilds while it runs.** MANIFEST: [artifacts-t6/MANIFEST.md](artifacts-t6/MANIFEST.md). Launch: `bash scripts/train.sh autoc.ini logs/autoc-043-t6-m1-plant.log`; monitor with `--compare 043-t5-condrot:logs/autoc-043-t5-m1-condrot.log`.
-- [ ] T118 [exit] flight-proven smoother control — see item 9.
+- [ ] T118 [exit] flight-proven smoother control — see item 9. → **executed by Phase 10f** (T122–T125, operator 2026-10-16: one flight, then wrap, good or bad).
 - [x] T120 ✅ **The policy's temporal view vs the 1–4 Hz cycle** (operator ask 2026-10-15, at t6 gen 275) → [policy-temporal-view.md](policy-temporal-view.md). Found: the input vector carries history of the *target* only (lags 800/400/200/100/50/0 ms — the 400/800 ms slots are blind at 2.5 Hz); **no craft-sensor history at all**; the 1.5–4 Hz pitch command is computed from the target bearing and its 50/100 ms differences **in sim and in flight alike** (flight R² 0.90–0.92, gyro ΔR² 0.003); the gyro follows the command at +2 ticks (sim) / +2–3 (flight); the recurrent state is not an oscillator — it is the loop's integrator in g488 and has become a damper in the t6 gen-275 elite. The cycle is a P+short-lead attitude loop through a 100–150 ms rate lag, limit-cycling where its gain crosses 1. Tools: `pitch_input_attribution.py`, `nn_replay_probe.py` (exact replay, R² 1.000).
-- [ ] T121 ⭐ **Craft-sensor history slots** (T120 §§ 4–6; operator 2026-10-15). Measured choice = **proposal B**: gyro p, q, r and accel z at **50 and 100 ms** (+8 slots, +256 weights, +11 %), on a second lag table for craft history (the target's {800…0} table stays). No history for accel x/y (they alias 17–35 % on 50 ms differences and add nothing); no explicit command history first (the recurrent layer holds the previous command exactly; t−2/t−3 add +0.01–0.03). Aliasing is not a constraint for gyro or accel z (folded variance ≤ 1.6 % on 50 ms differences, both 10-11 flights). ⚠️ Revised framing: the short-period state is already observable today (pitch rate + accel z now + remembered command, R² 0.76 flight); history makes it easier and more robust to extract (+0.13 in the turbulent sim, corrected § 8a), it does not supply missing information — so it is an enabler, and the gen-350 call on a measure stands. Same build: model the FC sensor filter delays at the FDM sub-step (`sensor_lpf.h` option a; gyro ~6.4 ms, accel ~21 ms). Wire-format change (xiao `NNInputs` in lockstep; FR-057 extraction rule before the bump). ⭐ **Prediction (§ 8, 2026-10-15)**: memory holds the command but not the rate history (≤ 0.11), the policy's commands explain only 48 % of the 1.5–4 Hz pitch rate; in an identified-plant closed loop the slots buy ~10–15 % less 1.5–4 Hz pitch rate at equal tracking (≈ half of the controller-made cycle above the air's floor) and 25–70 % less command activity; in a bake, expect the smooth regime sooner and a lower command-dither floor rather than a large further RMS drop. Falsifier: a T121 smoke that is not faster than t6 to t6's gen-370 RMS / flips.
+- [ ] T121 ⭐ **Craft-sensor history slots** (T120 §§ 4–6; operator 2026-10-15). Measured choice = **proposal B**: gyro p, q, r and accel z at **50 and 100 ms** (+8 slots, +256 weights, +11 %), on a second lag table for craft history (the target's {800…0} table stays). No history for accel x/y (they alias 17–35 % on 50 ms differences and add nothing); no explicit command history first (the recurrent layer holds the previous command exactly; t−2/t−3 add +0.01–0.03). Aliasing is not a constraint for gyro or accel z (folded variance ≤ 1.6 % on 50 ms differences, both 10-11 flights). ⚠️ Revised framing: the short-period state is already observable today (pitch rate + accel z now + remembered command, R² 0.76 flight); history makes it easier and more robust to extract (+0.13 in the turbulent sim, corrected § 8a), it does not supply missing information — so it is an enabler, and the gen-350 call on a measure stands. Same build: model the FC sensor filter delays at the FDM sub-step (`sensor_lpf.h` option a; gyro ~6.4 ms, accel ~21 ms). Wire-format change (xiao `NNInputs` in lockstep; FR-057 extraction rule before the bump). ⭐ **Prediction (§ 8, 2026-10-15)**: memory holds the command but not the rate history (≤ 0.11), the policy's commands explain only 48 % of the 1.5–4 Hz pitch rate; in an identified-plant closed loop the slots buy ~10–15 % less 1.5–4 Hz pitch rate at equal tracking (≈ half of the controller-made cycle above the air's floor) and 25–70 % less command activity; in a bake, expect the smooth regime sooner and a lower command-dither floor rather than a large further RMS drop. Falsifier: a T121 smoke that is not faster than t6 to t6's gen-370 RMS / flips. → **DEFERRED 2026-10-16** (operator: wrap 043 on the t6 flight) to BACKLOG as the candidate *intermediate feature* — "tests additional feedback (although the hidden layer already CAN compute this)".
+
+## Phase 10f — flight test and wrap (operator 2026-10-16)
+
+Operator: *"this controller is learning — and potentially smoother on a more accurate sim — we will let this one bake for a flight
+test this week — then maybe call this feature a wrap … update tasks toward a feature completion with a flight test — good or bad."*
+So **043 ends on one flight of a t6 genome, whatever it shows**. T118's thresholds (Phase 10e item 9) are the pre-registered verdict;
+a "not met" flight is a result recorded the same way, and it routes the next feature.
+
+State going in (MANIFEST-t6 §§ 5f–5h): on the t6 plant — which reproduces g488's flights — t6 elites out-track **and** out-smooth the
+flown g488 (`pctInStreak` 43–46 % vs 40 %, pitch-rate RMS 54–100 vs 105–123 °/s by path); command dither of 4.8–7 flips/s remains;
+~550 s/gen; variation-ramp step 18 at gen 720; the run reaches gen 800 about 2.7 days after gen 378 (2026-10-15 evening).
+
+- [ ] T122 **Flight snapshot and candidate selection.** Candidates: **gen 370** (`6108e4f667efc11c`, smoothest RMS), **gen 500**
+  (`e537584e26b18b9a`, best streak 46 %), **gen 522** (`4b330b61827dd09b`, calmest commands: 4.8 flips/s), and the **snapshot-window
+  elite** (≈ gen 710–719 — taken *before* the gen-720 ramp step, or a few gens after it once the ranking settles). Eval suite
+  (`scripts/eval_suite.sh`, seed 1791951530) on each; choose on **pitch smoothness at matched tracking** — per-path
+  `sim_pitch_spectrum.py` RMS / 2–3 Hz share / flips, `pctInStreak`, crash-free on every tier — **not on fitness** (§ 5g: the best
+  fitness is not the smoothest genome). Table and pick → MANIFEST-t6 § 6.
+- [ ] T123 **Flight build and bench** on the **current 45-input firmware** (no T121 changes on this path): `nnextractor` → `nn2cpp` →
+  xiao build → flight-article bench cycle as in T069 (gates pass, `weight_id` recorded, ACRO confirmed by the clock join);
+  `flash_erase` before the session; FC config of record unchanged from 10-11 (diff the CLI dump).
+- [ ] T124 **Flight protocol** — the 10-11 field procedure, so the scripts compare like with like: engaged spans on the same paths;
+  hold the hand-off attitude a full second after the switch; **streamer on/off per span and the cut time** (T119); wind recorded.
+  Optional in the same sortie if time allows: **g488 control spans in the same air** (the strongest comparison; costs a field reflash),
+  MANUAL doublets before and after the streamer cut (T095).
+- [ ] T125 **Post-flight analysis** → `flight-analysis-2026MMDD.md` with the 10-11 scripts: per engaged span pitch-rate RMS, 2–3 Hz
+  share, setpoint p5/p95 against the ±240 °/s cap, `|az|` p99, pitch command flips/s, median tracking error, crash / failsafe modes;
+  table against the g488 flights (10-11, and same-day spans if flown); plus the forward plant-honesty check — does the flown
+  genome's flight spectrum match its t6-plant sim spectrum?
+- [ ] T118 **verdict** against Phase 10e item 9 — *met* (pitch RMS well under 124–153 °/s, 2–3 Hz share well under 31–63 %, off the
+  cap at p5/p95, `|az|` p99 < 5 g, tracking within noise of g488's 8–15 m, no new crash mode), *partly met*, or *not met* — each with
+  the measured numbers.
+- [ ] T117 **close-out**, in parallel with the flight work: t6 finishes (≈ gen 800) → `retain=keep` on the S3 prefix → final elite
+  extracted → eval suite → MANIFEST-t6 § 6. If the flight slips past gen 800, the final elite joins the T122 shortlist.
+- [ ] **Wrap, after T118 — good or bad**: **T081** outcome.md (the result, what caused it, what did not, every deferral), **T082** final
+  BACKLOG pass, **T083** CLAUDE.md → the next feature. **Routing question for the wrap (operator decides):** **044 M2** — inherits the
+  t6 plant and genome lineage — **or an intermediate feature that tests additional feedback** (T121 craft-sensor history: the hidden
+  layer can already compute it, T120 § 8, so it is an enabler judged by speed to smoothness, not a missing-information fix). A
+  "not met" flight weighs toward feedback / fidelity work before M2; a "met" flight toward M2.
+
+Disposition of the remaining Phase 10e items (operator 2026-10-16: wrap on this flight):
+
+| task | disposition |
+|---|---|
+| T112 sub-step latency · T092 trainability gate · T117 t6 bake | ✅ done (t6) |
+| T116 `I_yy` article 1 | ✅ 0.0094 kg·m² measured; `I_xx` 0.0069 provisional — the clean repeat (dowel at CG station 8") → BACKLOG |
+| T116 article 2 · T114 article-2 flights · T047a FR-056 review at n = 2 | → BACKLOG (article 2 not built yet) |
+| T095 doublets · T096 `Cm_a`/`Cm_q` fit | optional in the T124 sortie; otherwise → BACKLOG (the FRF already places the plant to 2.5 Hz) |
+| T093 per-cell step tool | step test done at the nominal cell (plant ladder); the per-cell speed sweep → BACKLOG |
+| T113 open-loop replay | not needed — gen 488 reproduced its own flights on the t6 plant |
+| T119 streamer logging | ✅ applies to the T124 flight |
+| T121 craft-sensor history (+ FC sensor filter-delay model) | → BACKLOG as the intermediate-feature candidate |
 
 ## Phase 11: Polish and cross-cutting
 
 - [X] T078 [P] ✅ **RUN 2026-10-13** on the t4/t5 touched files (`selection.{h,cc}`, `excess_rotation.h`, `wind_variation.h`, `fitness_decomposition.cc`) — see the commit for the hit list and annotations. Run the Constitution VI type-domain grep on the touched paths; annotate `// raw-ok:` or convert. ⛔ No milestone is done with unannotated raw `float`/`double` in its diff
 - [ ] T079 [P] Complete the FR-059 **observability audit** — mark every variation axis observable, absorbed, or observable-only-at-limits, with the measurement behind it, in `specs/043-acro-dual-loop/variation-inventory.md`. ⚠️ Verdicts are **sim verdicts, provisional on the flight** (SC-013)
 - [ ] T080 [P] Check FR-059a — does the regiment actually reach the aero/power limits where the buried axes reappear? ⭐ The mechanism is **hold-attitude-and-descend**, not rate saturation
-- [ ] T081 ⏳ **CHECKPOINT written 2026-10-13** → [checkpoint-20261013.md](checkpoint-20261013.md) (operator re-scoped the same day: 043 continues through Phase 10e; the outcome is written at the flight-proven exit, T118). Write `specs/043-acro-dual-loop/outcome.md` — the result, what caused it, what did not, and every deferral
-- [ ] T082 ⏳ **PARTIAL 2026-10-13** — five entries filed under "043 deferrals (filed 2026-10-13, at the t5 checkpoint)"; the final pass happens at the Phase 10e exit. Append deferrals to `specs/BACKLOG.md` in order (Constitution X)
-- [ ] T083 ⏳ **CLAUDE.md updated 2026-10-13 to the Phase 10e state** (043 still active; 044 after the exit). Final pointer at the exit. Update `CLAUDE.md` § Active feature to point at whatever follows 043
+- [ ] T081 ⏳ **CHECKPOINT written 2026-10-13** → [checkpoint-20261013.md](checkpoint-20261013.md) (operator re-scoped the same day: 043 continues through Phase 10e; the outcome is written at the flight-proven exit, T118). Write `specs/043-acro-dual-loop/outcome.md` — the result, what caused it, what did not, and every deferral. ⏩ **2026-10-16: written after the Phase 10f flight, good or bad.**
+- [ ] T082 ⏳ **PARTIAL 2026-10-13** — five entries filed under "043 deferrals (filed 2026-10-13, at the t5 checkpoint)"; the final pass happens at the Phase 10e exit. Append deferrals to `specs/BACKLOG.md` in order (Constitution X). ⏩ **2026-10-16: Phase 10e leftovers + T121 filed** ("043 wrap plan" entries); final pass after the flight.
+- [ ] T083 ⏳ **CLAUDE.md updated 2026-10-13 to the Phase 10e state** (043 still active; 044 after the exit). Final pointer at the exit. Update `CLAUDE.md` § Active feature to point at whatever follows 043. ⏩ **2026-10-16: pointer moved to Phase 10f**; final move at the wrap (044 M2 or the T121 intermediate feature).
 
 ---
 
