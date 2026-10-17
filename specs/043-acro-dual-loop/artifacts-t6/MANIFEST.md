@@ -317,6 +317,31 @@ tie-break only ranks equal trackers. Still ~20 % smoother than g488 on the same 
 directory). Before the T118 flight, run the eval suite on the gen-370 elite, the flight-window elite (≈ gen 710–730) and the final one, and
 choose on pitch smoothness at matched tracking, not on fitness.
 
+### 5h. Gen 523 read (2026-10-16 evening): through ramp step 13 (gen 520, variations +5 % → 65 %) — a calmer elite takes over
+
+| gen | t6 best | t6 avg | t6 pct | t6 rot | | t5 best | t5 pct |
+|---|---|---|---|---|---|---|---|
+| 480 | −88909 | −33593 | 45.7 | 5.08 | | −98011 | 49.1 |
+| 500–520 (one elite) | −90692 | −34411 … −35442 | **46.0** | 4.69 | | −97542 … −99998 | 48.7 … 49.5 |
+| 521 (same elite, harder air) | −87056 | −34418 | 45.0 | 4.78 | | −98970 | 49.2 |
+| 522–523 (**new elite**) | −87488 | −34447 | 43.4 | 4.62 | | −98970 | 49.2 |
+
+Before the step `pctInStreak` had climbed 43.4 → 46.0 (gap to t5 3.5 pts). The step cost the standing elite 4 % fitness and 1 pt of streak
+(t5's step: 1 % and 0.3 pt) and changed the winner on the next generation. All elites 294/294, 0 DIVERGED, ~550 s/gen.
+
+| elite (t6 plant) | pitch RMS by path | median: flips/s | 2–3 / 3–5 Hz % | mean \|cmd\| °/s | roll flips/s | streak | genome sha |
+|---|---|---|---|---|---|---|---|
+| g488 (flown) | 105–123 | ~3 | — | 115–121 | — | 40 % | `1731d937e3af9c1c` |
+| gen 370 | 54–89 | 7.3 | 17 / 8 | 87–101 | 7.1 | 43.1 % | `6108e4f667efc11c` |
+| gen 435 | 62–107 | 6.9 | 20 / 17 | 98–115 | 7.6 | 43.4 % | `4190c5302dc75552` |
+| gen 500 (to 521) | 60–100 | 6.0 | 16 / 8.5 | 80–103 | 8.5 | **46.0 %** | `e537584e26b18b9a` |
+| **gen 522–523** | **56–98** | **4.8** | **11 / 10** | **73–92** | 7.2 | 43.4 % | `4b330b61827dd09b` |
+
+Reading: the step re-ranked the population toward a **calmer** pitch controller — the lowest command flip rate since gen ~100, the lowest
+mean command and 2–3 Hz share of the run — at the same pitch-rate RMS and 2.6 pts less streak. Harsher air makes chatter cost more on
+this plant, so the ramp itself is pushing toward smoothness. The flight shortlist is now **gen 370, gen 500, gen 523 and the flight-window
+elite**; all four genomes except the last are archived here (git-ignored `.dat`). Choose on pitch smoothness at matched tracking.
+
 ## 6. Post-run
 
 ⏳
