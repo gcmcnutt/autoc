@@ -53,6 +53,25 @@ sensor filter delays at the FDM sub-step (`sensor_lpf.h` option a: gyro ~6.4 ms,
 extraction first, xiao `NNInputs` in lockstep, flight-log version bump. The operator's caveat stands: the hidden layer *can* compute
 this already — the feature tests whether making it explicit changes what evolution finds.
 
+### [043 t6 finding, filed 2026-10-16 · ⚠️ CORRECTNESS, fix at a baseline boundary] The per-class scenario PRNG streams are shifted copies of one sequence — variation classes are not independent
+Found while reproducing the wind draws: `ScenarioRootPRNG` and `ClassPRNG` are both Park–Miller with **output = new state**, and
+`deriveClassSubSeeds` seeds each `ClassPRNG` with a root output. So a class stream simply continues the root sequence: the wind class's
+draws are, in order, the rabbit, entry, craft and camera **sub-seeds** (verified on t6 scenario 0: wind-class `next()` = the rabbit
+sub-seed; uSpeed·2³¹ = the entry sub-seed; uTurb·2³¹ = the craft sub-seed; uGust·2³¹ = the camera sub-seed), and every class's k-th
+draw is the next class's (k−1)-th. Consequences: the entry pose's first gaussian pair is built from the same two numbers as the wind
+turbulence and gust draws; the craft class's first draw equals the gust draw; etc. — the 294 scenarios' variation combinations lie on a
+lower-dimensional set than intended, contrary to the header's "independent stream per variation class". Determinism is unaffected.
+Present since the 033 §2.A PRNG chain. **Fix**: pass each sub-seed through a mixing hash (splitmix32 / murmur3 finalizer) before seeding
+`ClassPRNG`, or use a different generator for the class streams; add a unit test that no class stream contains another class's
+sub-seed in its first N draws. Changes every scenario's draws ⇒ new eval baselines and no cross-version replay (expected per the
+replay-scope rule), so land it with the next format break or feature start (T121 build or 044), not mid-run.
+
+### [043 t6, filed 2026-10-16 · small] Log the wind-envelope draws in the startup scenario table
+The table logs entry pose, airspeed %, the wind **direction** draw and the craft/camera/IMU draws, but not the wind **speed /
+turbulence / gust-length / thermal** draws (they are drawn in the worker from `WindVariationConfig`, RPC-only). autoc can compute them
+from the scenario seeds with the same pure functions (`deriveClassSubSeeds` → `ClassPRNG(wind)` → skip one → `drawWindVariation`)
+and print the full-strength values as four more columns. Until then: `specs/043-acro-dual-loop/wind_draws.cc`.
+
 ### [043 wrap plan · Phase 10e leftovers, filed 2026-10-16] Article-2 inertia and flights, the clean `I_xx` repeat, per-cell step sweep, doublets and the `Cm_a`/`Cm_q` fit (T114 / T116 / T093 / T095 / T096 / T047a)
 `I_yy` = 0.0094 kg·m² is measured on article 1; `I_xx` 0.0069 is provisional (re-hang with the dowel at CG station 8"). Article 2 is
 not built: its bifilar numbers, its flights with gen 488 (does the cycle's frequency follow the airframe?) and the FR-056 review at

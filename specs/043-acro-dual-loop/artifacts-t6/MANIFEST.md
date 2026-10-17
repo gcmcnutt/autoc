@@ -317,7 +317,7 @@ tie-break only ranks equal trackers. Still ~20 % smoother than g488 on the same 
 directory). Before the T118 flight, run the eval suite on the gen-370 elite, the flight-window elite (≈ gen 710–730) and the final one, and
 choose on pitch smoothness at matched tracking, not on fitness.
 
-### 5h. Gen 523 read (2026-10-16 evening): through ramp step 13 (gen 520, variations +5 % → 65 %) — a calmer elite takes over
+### 5h. Gen 523 read (2026-10-16 evening): through ramp step 13 (variation scale 12/19 → 13/19 = 0.632 → 0.684, effective gen 521) — a calmer elite takes over
 
 | gen | t6 best | t6 avg | t6 pct | t6 rot | | t5 best | t5 pct |
 |---|---|---|---|---|---|---|---|
@@ -341,6 +341,29 @@ Reading: the step re-ranked the population toward a **calmer** pitch controller 
 mean command and 2–3 Hz share of the run — at the same pitch-rate RMS and 2.6 pts less streak. Harsher air makes chatter cost more on
 this plant, so the ramp itself is pushing toward smoothness. The flight shortlist is now **gen 370, gen 500, gen 523 and the flight-window
 elite**; all four genomes except the last are archived here (git-ignored `.dat`). Choose on pitch smoothness at matched tracking.
+
+### 5i. The windiest arena on each path (2026-10-16, gen 525)
+
+Wind speed / turbulence / gust-length / thermal are per-scenario draws made **in the worker** from the scenario's wind stream and are not
+logged; the log's scenario table carries the **direction** draw (`WindDir°` = full-strength offset from the 330° base — the dmp's
+`wind_dir_offset_deg` is that × the current ramp) but its `Speed%` column is the **entry airspeed** variation (±15 %, r = −0.07 with the
+wind draw). Exact draws reproduced with [`wind_draws.cc`](../wind_draws.cc) (it matches the dmp's wind sub-seeds) and ranked with
+[`windiest_scenarios.py --draws`](../windiest_scenarios.py); the realized-wind ranking from the elite's own ticks picks the same arena on
+every path. Ramp: s = 13/19 = 0.684 now (wind flown = 3.66 + s·(draw − 3.66) m/s), steps at gens 561, 601, 641, 681, 721, **full strength
+from gen 761**.
+
+| path | arena | wind # | speed draw (full) | flown now | from, full strength | turbulence × | gust length × | elite streak (path median) | pitch RMS (path median) |
+|---|---|---|---|---|---|---|---|---|---|
+| StraightAndLevel | **46** | 46 | 7.98 m/s | 6.61 | 356° | 0.94 | 1.00 | 42 % (65 %) | 91 (56) °/s |
+| SpiralClimb | **64** | 15 | 7.78 | 6.48 | 100° | 1.77 | 0.29 | 58 % (68 %) | 74 (67) |
+| HorizFigure8 | **120** | 22 | 7.98 | 6.62 | 22° | 1.65 | 0.99 | 44 % (48 %) | 99 (82) |
+| randomA | **150** | 3 | 8.00 | 6.63 | 51° | 0.52 | 0.44 | 38 % (36 %) | 98 (93) |
+| HighPerchSplitS | **229** | 33 | 7.98 | 6.61 | 22° | 0.89 | 0.92 | 48 % (53 %) | 110 (86) |
+| SeededRandomB | **281** | 36 | 7.79 | 6.48 | 120° | 1.16 | 0.90 | 14 % (27 %) | 98 (98) |
+
+The gen-525 elite completes all six; the windiest arena costs it 0–23 pts of streak against the path median (worst on StraightAndLevel
+and SeededRandomB) and adds 0–35 °/s of pitch-rate RMS (worst on StraightAndLevel and HighPerchSplitS). Smaller gust length = gusts
+that change faster within the run (SpiralClimb arena 64 has the fastest and the strongest turbulence of the six).
 
 ## 6. Post-run
 

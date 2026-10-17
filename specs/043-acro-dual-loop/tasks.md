@@ -516,11 +516,11 @@ a "not met" flight is a result recorded the same way, and it routes the next fea
 
 State going in (MANIFEST-t6 §§ 5f–5h): on the t6 plant — which reproduces g488's flights — t6 elites out-track **and** out-smooth the
 flown g488 (`pctInStreak` 43–46 % vs 40 %, pitch-rate RMS 54–100 vs 105–123 °/s by path); command dither of 4.8–7 flips/s remains;
-~550 s/gen; variation-ramp step 18 at gen 720; the run reaches gen 800 about 2.7 days after gen 378 (2026-10-15 evening).
+~550 s/gen; the variation ramp moves in 1/19 steps that take effect at gens 561, 601, 641, 681, **721** and **761** (full strength); the run reaches gen 800 about 2.7 days after gen 378 (2026-10-15 evening).
 
 - [ ] T122 **Flight snapshot and candidate selection.** Candidates: **gen 370** (`6108e4f667efc11c`, smoothest RMS), **gen 500**
   (`e537584e26b18b9a`, best streak 46 %), **gen 522** (`4b330b61827dd09b`, calmest commands: 4.8 flips/s), and the **snapshot-window
-  elite** (≈ gen 710–719 — taken *before* the gen-720 ramp step, or a few gens after it once the ranking settles). Eval suite
+  elite** (≈ gen 710–720 — taken *before* the ramp step that takes effect at gen 721, or a few gens after it once the ranking settles). Eval suite
   (`scripts/eval_suite.sh`, seed 1791951530) on each; choose on **pitch smoothness at matched tracking** — per-path
   `sim_pitch_spectrum.py` RMS / 2–3 Hz share / flips, `pctInStreak`, crash-free on every tier — **not on fitness** (§ 5g: the best
   fitness is not the smoothest genome). Table and pick → MANIFEST-t6 § 6.
