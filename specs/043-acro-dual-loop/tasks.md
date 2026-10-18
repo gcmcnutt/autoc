@@ -547,7 +547,10 @@ flown g488 (`pctInStreak` 43–46 % vs 40 %, pitch-rate RMS 54–100 vs 105–12
   share, setpoint p5/p95 against the ±240 °/s cap, `|az|` p99, pitch command flips/s, median tracking error, crash / failsafe modes;
   table against the g488 flights (10-11, and same-day spans if flown); plus the forward plant-honesty check — does the flown
   genome's flight spectrum match its t6-plant sim spectrum?
-- [ ] T118 **verdict** against Phase 10e item 9 — *met* (pitch RMS well under 124–153 °/s, 2–3 Hz share well under 31–63 %, off the
+- [x] T124/T125 ✅ **flown 2026-10-18** (two flights, gen-752 elite) → [flight-analysis-20261018.md](flight-analysis-20261018.md).
+- [x] T118 ✅ **verdict 2026-10-18: PARTLY MET** — pitch RMS 146 → 107 °/s, 2–3 Hz share 49 → 22 %, command off the cap, tracking level
+  with g488; \|a_z\| p99 7.1 g (5 g line missed); roll regressed (RMS +22 %, 3–5 Hz share 26 → 47 %). Flight airframe FRF confirms
+  `I_yy` within ~10 % of the bifilar 0.0094 (old 0.0013 rejected) and shows the sim roll mode ~4.5× too slow (`Cl_p/I_xx`). Original text: **verdict** against Phase 10e item 9 — *met* (pitch RMS well under 124–153 °/s, 2–3 Hz share well under 31–63 %, off the
   cap at p5/p95, `|az|` p99 < 5 g, tracking within noise of g488's 8–15 m, no new crash mode), *partly met*, or *not met* — each with
   the measured numbers.
 - [ ] T117 **close-out**, in parallel with the flight work: t6 finishes (≈ gen 800) → `retain=keep` on the S3 prefix → final elite
