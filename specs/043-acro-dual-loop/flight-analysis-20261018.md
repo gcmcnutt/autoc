@@ -4,8 +4,8 @@ Genome `7faeea2d022cbb95` (t6 elite, created gen 750; picked by T122 in one equa
 flight 1 = blackbox log 1 + `flight_log_2026-10-18T19-56-02_flight_001.bin` (4 engaged spans, 68 s); flight 2 = blackbox log 2 +
 `flight_log_2026-10-18T20-20-32_flight_002.bin` (3 spans, 85 s), more wind, from ~350° (operator). FC config of record
 `xiao/inav-hb1.cfg` @ 91abd4d (10-11 loop, altitude GPS, blackbox 1/8 with SERVOS + ATTI). Operator: *"subjectively the pitch
-oscillation is reduced, some increase in roll oscillation — in general fairly good flight."* ⚠️ Streamer state per span not recorded
-(T119) — needed for the damping reading in § 3.
+oscillation is reduced, some increase in roll oscillation — in general fairly good flight."* Streamer (T119, operator): **full streamer on both flights, all spans** (damp grass at
+launch, slightly drier later; may have stretched or relaxed).
 
 ## 1. The exit measures (xiao logs, same code as the 10-11 g488 flights; medians over engaged spans)
 
@@ -43,8 +43,9 @@ The flight's airframe peaks at 2.0–2.5 Hz (|H| ×1.6 of the 1 Hz value, −58�
 bifilar inertia**: with the model's stiffness, `Cm_a/I_yy` from flight is −64 against the model's −59, i.e. an implied `I_yy` of
 0.0086 — within 9 % of the 0.0094 measured on the pendulum; the old 0.0013 is rejected outright. The fit wants **more pitch damping**
 than the model (ζ ≈ 0.55 vs 0.46; `Cm_q` ≈ −3.5 vs −1.0) — the `I_yy`-free fit gets there by shrinking `I_yy` to 0.007, the free-
-coefficient fit by raising `Cm_q`. A streamer-on flight (T119: ΔCm_q ≈ −2 D_s l_t²/(q̄Sc̄²)) would read exactly this way; the state is
-needed to decide between the two.
+coefficient fit by raising `Cm_q`. **Both flights towed the full streamer**, and the streamer adds pitch damping and no inertia (T119: ΔCm_q ≈ −2 D_s l_t²/(q̄Sc̄²)) —
+so read it as `I_yy` ≈ 0.009 (stiffness placement) with streamer-on `Cm_q` ≈ −3.5. The flown configuration is therefore *more*
+damped than the t6 `CraftCmQ` class (centre −1.0, clamp −2.0…−0.2, the bare aircraft); the class should span bare → streamer-on.
 
 ## 3. Roll — the sim's roll mode is ~4.5× too slow, which explains the roll regression
 

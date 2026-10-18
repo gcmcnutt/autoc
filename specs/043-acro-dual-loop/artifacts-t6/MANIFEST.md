@@ -421,6 +421,16 @@ flight wind, streamer state and the unmodelled FC sensor-filter delays differ.
 **Pick (T122): the gen-752 elite** — created at gen 750, genome `7faeea2d022cbb95`, archived as `nn_weights-t6-g752.dat` (operator
 2026-10-18: *"we'll grab this generation and try it"*). Fly the archived original, not the eval copy.
 
-## 6. Post-run
+## 6. Post-run (closed 2026-10-18)
 
-⏳
+| field | value |
+|---|---|
+| finished | gen 800, 2026-10-18 15:26 PDT, 410,854 s (4.76 days), 1.176 G sims |
+| gen 800 | best −93924.534457, pop-avg −37593, `pctInStreak` 46.7 %, `rotRatio` 4.78, 294/294 complete |
+| final elite | `nn_weights-t6-g800.dat`, sha `809fe847aca4af5a` |
+| flown elite | gen 752 (created 750), `7faeea2d022cbb95` — the 043 exit flight, 2026-10-18 ([analysis](../flight-analysis-20261018.md)) |
+| `retain=keep` | ✅ all 800 objects tagged, 0 failures; verified by sampling 9 incl. gen 1, gen 800 and the flown gen 752 (`gen9248`) |
+| eval suite (seed 1791951530) on gen 800 | tier0 **PASS bitwise** (−93924.534457 = training); tier1 294/294; tier2-progressive 48/49; tier2-long 49/49; tier2-random 144/144; tier3-stress 140/144; tier3-quiet 1/1 — all PASS |
+
+Verdict on the run: on the honest pitch plant t6 out-tracked and out-smoothed the flown t5 genome, and its gen-752 elite halved the 2 Hz
+pitch cycle in the air (T118 partly met: pitch ✓, load ✗, roll regressed — the sim roll mode is ~4.5× too slow, flight-analysis § 3).

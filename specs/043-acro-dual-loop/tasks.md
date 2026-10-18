@@ -553,7 +553,7 @@ flown g488 (`pctInStreak` 43–46 % vs 40 %, pitch-rate RMS 54–100 vs 105–12
   `I_yy` within ~10 % of the bifilar 0.0094 (old 0.0013 rejected) and shows the sim roll mode ~4.5× too slow (`Cl_p/I_xx`). Original text: **verdict** against Phase 10e item 9 — *met* (pitch RMS well under 124–153 °/s, 2–3 Hz share well under 31–63 %, off the
   cap at p5/p95, `|az|` p99 < 5 g, tracking within noise of g488's 8–15 m, no new crash mode), *partly met*, or *not met* — each with
   the measured numbers.
-- [ ] T117 **close-out**, in parallel with the flight work: t6 finishes (≈ gen 800) → `retain=keep` on the S3 prefix → final elite
+- [x] T117 ✅ **closed 2026-10-18** (MANIFEST-t6 § 6: gen 800, retain=keep 800/800, eval suite all PASS, tier0 bitwise). Original: **close-out**, in parallel with the flight work: t6 finishes (≈ gen 800) → `retain=keep` on the S3 prefix → final elite
   extracted → eval suite → MANIFEST-t6 § 6. If the flight slips past gen 800, the final elite joins the T122 shortlist.
 - [ ] **Wrap, after T118 — good or bad**: **T081** outcome.md (the result, what caused it, what did not, every deferral), **T082** final
   BACKLOG pass, **T083** CLAUDE.md → the next feature. **Routing question for the wrap (operator decides):** **044 M2** — inherits the
