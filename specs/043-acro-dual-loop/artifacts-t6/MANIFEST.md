@@ -386,6 +386,41 @@ t5 over the same gens calmed to ~2 flips/s on its plant; t6 has not shown that l
 remains ~20 % smoother (median ~87 vs ~112 °/s by path) with 6–7 pts more streak. Flight shortlist: gen 370 / 500 / 522 / 621 + the
 snapshot-window elite — still to be chosen on smoothness at matched tracking (T122).
 
+### 5k. T122 — the flight candidates in ONE environment (2026-10-18): gen 752 wins on both axes; the predicted flight
+
+**Method.** Eval tier 0 with one never-trained seed (20261018) for every candidate, on weights copies whose stored `variation_scale` is
+forced to **1.0** ([`set_eval_scale.py`](../set_eval_scale.py)). Eval otherwise flies each genome at its own save-time ramp value —
+g370 0.47, g500 0.63, g523 0.68, g621 0.79, g752 0.95, and the flown **g488 0.63** — so the cross-generation numbers in §§ 5f–5j and the
+gen-488 honesty check were *not* on identical air (the operator's point: fitness and training dmps do not compare generations). Metrics
+by [`candidate_compare.py`](../candidate_compare.py); the same code run on the 10-11 xiao logs calibrates sim → flight through g488.
+
+| candidate (full strength, 294 scenarios) | pitch RMS °/s | 2–3 Hz % | 3–5 Hz % | flips/s | cap % | cmd p5 / p95 °/s | \|a_z\| p99 g | streak % | crashes |
+|---|---|---|---|---|---|---|---|---|---|
+| t5 g488 (flown) | 117 | 29 | 23 | 2.8 | 1.5 | −133 / 197 | 6.25 | 33.4 | 1 |
+| t6 g370 | 87 | 19 | 10 | 6.3 | 6.3 | −176 / 208 | 5.78 | 36.0 | 1 |
+| t6 g500 | 93 | 17 | 9 | 5.6 | 0.6 | −151 / 159 | 5.93 | 40.3 | 1 |
+| t6 g523 | 89 | 11 | 11 | 4.7 | 0.9 | −137 / 149 | 5.94 | 39.8 | **6** |
+| t6 g621 | 95 | 20 | 12 | 6.1 | 0.8 | −146 / 162 | 6.29 | 42.5 | 1 |
+| **t6 g752** | **78** | **13** | **5** | **4.6** | **0.4** | **−99 / 142** | **5.57** | **46.2** | 1 |
+
+Calm subset (exact wind draw ≤ 3 m/s, n = 106, like the 10-11 days): g752 RMS 70 / 2–3 Hz 10 % / \|a_z\| p99 4.92 g / streak 56.1 % vs
+g488 112 / 30 % / 5.40 g / 39.3 %. Windy (≥ 6 m/s, n = 78): g752 87 / 15 % / 6.18 g / 35.1 % vs g488 125 / 27 % / 7.16 g / 25.0 %.
+
+**The generalization question.** The latest elite is better *in equivalent air* on every pitch measure and on tracking — not
+over-specialized, not peaked early. The elites that looked smooth earlier were selected in milder air: gen 523 (the calmest at its own
+0.68) leaves the arena 6× at full strength, and gen 370 rides the cap 6.3 % with the widest command spread. Every single crash here is
+an arena exit (OOB), in a different scenario per genome.
+
+**Predicted flight for g752** (flight(g488) × sim(g752) / sim(g488), calm subset as the field-day proxy; g488 flew 146 °/s, 49 %,
+2.8 flips/s, 6.6 g): pitch-rate RMS **≈ 91 °/s**, 2–3 Hz share **≈ 17 %**, flips ≈ 4.8/s, \|a_z\| p99 ≈ 6.0 g; command p5 ≈ −165 °/s
+(g488 flew −227 … −239, on the cap) and p95 ≈ 140 (198). Against T118: pitch RMS ✓ well under 124–153; 2–3 Hz ✓ (within 1.5× of MANUAL's
+3–16 %); off the cap ✓; tracking ✓ (calm streak +17 pts in sim); **\|a_z\| p99 < 5 g ✗ likely** (≈ 6.0, g488 6.6). Residual risk: the
+higher command flip rate (small-amplitude dither the airframe filters). Caveats: one-genome calibration with a proportional mapping;
+flight wind, streamer state and the unmodelled FC sensor-filter delays differ.
+
+**Pick (T122): the gen-752 elite** — created at gen 750, genome `7faeea2d022cbb95`, archived as `nn_weights-t6-g752.dat` (operator
+2026-10-18: *"we'll grab this generation and try it"*). Fly the archived original, not the eval copy.
+
 ## 6. Post-run
 
 ⏳

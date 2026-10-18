@@ -518,7 +518,10 @@ State going in (MANIFEST-t6 §§ 5f–5h): on the t6 plant — which reproduces 
 flown g488 (`pctInStreak` 43–46 % vs 40 %, pitch-rate RMS 54–100 vs 105–123 °/s by path); command dither of 4.8–7 flips/s remains;
 ~550 s/gen; the variation ramp moves in 1/19 steps that take effect at gens 561, 601, 641, 681, **721** and **761** (full strength); the run reaches gen 800 about 2.7 days after gen 378 (2026-10-15 evening).
 
-- [ ] T122 **Flight snapshot and candidate selection.** Candidates: **gen 370** (`6108e4f667efc11c`, smoothest RMS), **gen 500**
+- [x] T122 ✅ **2026-10-18 — PICK: the gen-752 elite** (`7faeea2d022cbb95`): in ONE environment (tier 0, seed 20261018, every genome at
+  variation scale 1.0 via `set_eval_scale.py`) it is best on every pitch measure *and* tracking (RMS 78 °/s, 2–3 Hz 13 %, streak 46.2 %;
+  g488 117 / 29 % / 33.4 %); predicted flight ≈ 91 °/s and 17 % vs g488's flown 146 / 49 %; \|a_z\| p99 ≈ 6.0 g likely misses the 5 g line.
+  MANIFEST-t6 § 5k. Original task text follows. **Flight snapshot and candidate selection.** Candidates: **gen 370** (`6108e4f667efc11c`, smoothest RMS), **gen 500**
   (`e537584e26b18b9a`, best streak 46 %), **gen 522** (`4b330b61827dd09b`, calmest commands: 4.8 flips/s), and the **snapshot-window
   elite** (≈ gen 710–720 — taken *before* the ramp step that takes effect at gen 721, or a few gens after it once the ranking settles). Eval suite
   (`scripts/eval_suite.sh`, seed 1791951530) on each; choose on **pitch smoothness at matched tracking** — per-path
