@@ -92,7 +92,8 @@ both sides is the cheap flight test of the relay hypothesis once Phase 10e's lat
 
 ### [043 close · flights owed] Windy-day flight on gen 488; `inav_default_alt_sensor = GPS_ONLY` decision; `flash_erase` before every session
 Two calm days (1.8–2.9 m/s) showed no downwind bias; the envelope-trained genome has not been tested in the wind it was
-trained for. `GPS_ONLY` was recommended 10-04 and never applied; the baro remains the heaviest `pos_d` contributor
+trained for. `GPS_ONLY` was recommended 10-04, set in the post-10-11 capture, and **reverted to `GPS` for the 043 exit flight** (2026-10-17)
+so that flight compares like with like against g488 — decide it after the wrap, with Galileo enabled and a same-day A/B; the baro remains the heaviest `pos_d` contributor
 (engaged residual RMS 3.0–3.7 m vs 0.3–1.3 manual). Two flights were nearly lost to an unerased flash / unsaved rate change.
 
 ### [043 close · spec debt] Observability audit (SC-008 / SC-013, T079 / T080), FR-056 craft-realism review at n = 2 (T047a), INAV phase-delay parameters (T048–T050), roll dead-band (T051c)

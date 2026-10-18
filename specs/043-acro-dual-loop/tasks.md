@@ -526,9 +526,18 @@ flown g488 (`pctInStreak` 43–46 % vs 40 %, pitch-rate RMS 54–100 vs 105–12
   fitness is not the smoothest genome). Table and pick → MANIFEST-t6 § 6.
 - [ ] T123 **Flight build and bench** on the **current 45-input firmware** (no T121 changes on this path): `nnextractor` → `nn2cpp` →
   xiao build → flight-article bench cycle as in T069 (gates pass, `weight_id` recorded, ACRO confirmed by the clock join);
-  `flash_erase` before the session; FC config of record unchanged from 10-11 (diff the CLI dump).
+  `flash_erase` before the session; FC config of record unchanged from 10-11 (diff the CLI dump). ⭐ **Reviewed 2026-10-17** — the
+  loop is frozen at the 10-11 values, which convert exactly to the sim's `InavFwRate` gains (`fw_p/i/d/ff` roll 15/3/7/50 → 0.484/0.75/
+  0.0037/1.61, pitch 15/5/5/70 → 0.484/1.25/0.0026/2.26; `rates` 36,24,4; `rc_expo` 0; setpoint Kalman OFF; gyro 25 Hz PT1 + dynamic
+  notch, acc 15 Hz biquad, D-term 10 Hz PT2; `servo_lpf_hz` 0; servo 50 Hz; failsafe DROP). Changes for this flight: **altitude source
+  back to `GPS`** (the post-10-11 `GPS_ONLY` was never flown and would change the policy's vertical bearing inputs against the g488
+  baseline), blackbox **1/8 with `SERVOS` and `ATTI` re-enabled** (elevon activity and attitude; ~20 KB/s ⇒ ~11 min in the space the
+  10-11 session used), debug `VIBE` as flown. Config of record = `xiao/inav-hb1.cfg` at the commit that records this review.
 - [ ] T124 **Flight protocol** — the 10-11 field procedure, so the scripts compare like with like: engaged spans on the same paths;
   hold the hand-off attitude a full second after the switch; **streamer on/off per span and the cut time** (T119); wind recorded.
+  **Boot level and untouched**: INAV's boot gravity calibration measures the *vertical* acceleration through the attitude estimate, so a
+  tilted boot reads low (the last two saved values, 932.5 and 943.5 cm/s², imply ~17° of attitude error — bench boots); if booted tilted,
+  let it settle level and run the gyro-calibration stick command, which restarts the gravity calibration.
   Optional in the same sortie if time allows: **g488 control spans in the same air** (the strongest comparison; costs a field reflash),
   MANUAL doublets before and after the streamer cut (T095).
 - [ ] T125 **Post-flight analysis** → `flight-analysis-2026MMDD.md` with the 10-11 scripts: per engaged span pitch-rate RMS, 2–3 Hz
