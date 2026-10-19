@@ -22,7 +22,7 @@
 >    the definition and everything that follows from it — read that section first.
 
 **Created 2026-08-23** after the 041-t7 flight. Repurposes the 043 slot: the M2 tracking work that used to
-live here moved to [044](../044-m2-tracking/README.md), which is waiting on 042's camera parameters anyway.
+live here moved to [044](../045-m2-tracking/README.md), which is waiting on 042's camera parameters anyway.
 
 ⛔ **This runs BEFORE any M2 training.** M2 inherits whatever control architecture M1 lands on; training a
 tracker on top of a control loop we already know oscillates would bake the problem in one milestone deeper.

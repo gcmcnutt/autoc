@@ -1,4 +1,9 @@
-# 044 — M2 tracking (seed)
+# 045 — M2 tracking (seed)
+
+> ⚠️ **RENUMBERED 044 → 045 on 2026-10-18** (operator, at the 043 wrap): one more M1 feature goes first —
+> [044](../044-m1-craft-history/README.md), craft-sensor history in the input vector plus the roll-plant correction the
+> 2026-10-18 flight measured. M2 inherits both (the craft block is shared with the tracker vector) and the honest pitch plant
+> from 043. Nothing below was started.
 
 > ⚠️ **RENUMBERED 043 → 044 on 2026-08-23.** The 043 slot was repurposed for
 > [ACRO dual-loop](../043-acro-dual-loop/README.md), which must land first: the 041-t7 flight oscillates at

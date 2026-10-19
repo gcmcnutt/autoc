@@ -1,6 +1,12 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-10-16
+**Last Updated**: 2026-10-18
+
+> ✅ **043 CLOSED 2026-10-18** — [outcome](043-acro-dual-loop/outcome.md). The ACRO dual loop flies and tracks ~3× better than
+> t3; the 2 Hz pitch cycle was the sim's missing resonance (`I_yy` 7× too small) — measured, made honest, and **halved in the air** on the
+> t6 exit flight, which also confirmed the inertia within ~10 % and exposed a roll mode ~4.5× too slow in the sim. **Routing (operator
+> 2026-10-18): 044 = one more M1** — [craft-sensor history + roll plant](044-m1-craft-history/README.md); **M2 renumbered to
+> [045](045-m2-tracking/README.md)**. Order: **044 → 045**.
 
 > ✅ **041 CLOSED 2026-08-23** — [outcome](041-m2-depth/outcome.md). Best M1 ever (−81,413, +47% on the
 > all-time record), flown, with load and throttle saturation DOWN alongside. Cause was **input scaling**
@@ -9,7 +15,7 @@
 
 > **Routing (2026-08-17)**: **041 rescoped** to *"a fresh full M1 toolchain, flown"* — better M1 with
 > energy observation + objective, unified datum, proven by a real flight. M2 moved to
-> **[044](044-m2-tracking/README.md)**; camera/physics follow-ups to **042** (child of 031).
+> **[044](045-m2-tracking/README.md)**; camera/physics follow-ups to **042** (child of 031).
 >
 > ⭐ **REVISED 2026-08-23 after the 041-t7 flight**: a new **[043 ACRO dual-loop](043-acro-dual-loop/README.md)**
 > inserts BEFORE M2. The flight oscillates at 2-5 Hz, and the phase budget says an 81.6 ms loop delay at
@@ -40,7 +46,7 @@
 > it. **043 wraps on one flight of a t6 genome this week, good or bad** (tasks Phase 10f). The next feature, decided at the wrap:
 > **044 M2**, or the **intermediate feedback feature** below (T121).
 
-### [043 wrap plan · next-feature candidate, filed 2026-10-16] Craft-sensor history in the input vector (T121) — an intermediate feature before or alongside M2
+### [043 wrap plan · ✅ PROMOTED 2026-10-18 → 044 R1/R2] Craft-sensor history in the input vector (T121)
 Evidence: [policy-temporal-view.md](043-acro-dual-loop/policy-temporal-view.md) §§ 4–8. The input vector carries history of the
 *target* only; no craft sensor has history. The short-period state is observable today (pitch rate + accel z now + the remembered
 command: R² 0.76 in flight), but the rate *derivative* — the damping term — is mostly not: memory holds ≤ 0.11 of it, the body-frame
@@ -53,7 +59,7 @@ sensor filter delays at the FDM sub-step (`sensor_lpf.h` option a: gyro ~6.4 ms,
 extraction first, xiao `NNInputs` in lockstep, flight-log version bump. The operator's caveat stands: the hidden layer *can* compute
 this already — the feature tests whether making it explicit changes what evolution finds.
 
-### [043 t6 finding, filed 2026-10-16 · ⚠️ CORRECTNESS, fix at a baseline boundary] The per-class scenario PRNG streams are shifted copies of one sequence — variation classes are not independent
+### [043 t6 finding, filed 2026-10-16 · ⚠️ CORRECTNESS · ✅ PROMOTED 2026-10-18 → 044 R6] The per-class scenario PRNG streams are shifted copies of one sequence — variation classes are not independent
 Found while reproducing the wind draws: `ScenarioRootPRNG` and `ClassPRNG` are both Park–Miller with **output = new state**, and
 `deriveClassSubSeeds` seeds each `ClassPRNG` with a root output. So a class stream simply continues the root sequence: the wind class's
 draws are, in order, the rabbit, entry, craft and camera **sub-seeds** (verified on t6 scenario 0: wind-class `next()` = the rabbit
@@ -66,11 +72,15 @@ Present since the 033 §2.A PRNG chain. **Fix**: pass each sub-seed through a mi
 sub-seed in its first N draws. Changes every scenario's draws ⇒ new eval baselines and no cross-version replay (expected per the
 replay-scope rule), so land it with the next format break or feature start (T121 build or 044), not mid-run.
 
-### [043 t6, filed 2026-10-16 · small] Log the wind-envelope draws in the startup scenario table
+### [043 t6, filed 2026-10-16 · small · ✅ PROMOTED 2026-10-18 → 044 R6] Log the wind-envelope draws in the startup scenario table
 The table logs entry pose, airspeed %, the wind **direction** draw and the craft/camera/IMU draws, but not the wind **speed /
 turbulence / gust-length / thermal** draws (they are drawn in the worker from `WindVariationConfig`, RPC-only). autoc can compute them
 from the scenario seeds with the same pure functions (`deriveClassSubSeeds` → `ClassPRNG(wind)` → skip one → `drawWindVariation`)
 and print the full-strength values as four more columns. Until then: `specs/043-acro-dual-loop/wind_draws.cc`.
+
+### [043 wrap, filed 2026-10-18] Servo bench step (T046), `servo_pwm_rate` above 50 Hz (T048/T050), and the per-tick cost of the INAV loop
+The 10-18 airframe ID absorbs servo lag into a fitted 25–40 ms delay; a bench step (T046) would separate it. The 50 Hz servo update
+is up to 20 ms of actuator delay; if the DSM-44 accepts a faster rate it is worth ~9° at 2.5 Hz — model it in the sim first (T049).
 
 ### [043 wrap plan · Phase 10e leftovers, filed 2026-10-16] Article-2 inertia and flights, the clean `I_xx` repeat, per-cell step sweep, doublets and the `Cm_a`/`Cm_q` fit (T114 / T116 / T093 / T095 / T096 / T047a)
 `I_yy` = 0.0094 kg·m² is measured on article 1; `I_xx` 0.0069 is provisional (re-hang with the dowel at CG station 8"). Article 2 is
