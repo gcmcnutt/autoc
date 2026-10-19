@@ -42,7 +42,8 @@ so the damping term is mostly out of its reach ([policy-temporal-view.md](../043
   shared 28-float craft block (M1 and M2): `quat w,x,y,z · airspeed · gyro_p[3] · gyro_q[3] · gyro_r[3] · accel_x · accel_y ·
   accel_z[3] · specific_energy · boundary_closure_rate · dist_to_boundary · inward x,y,z · score_grad x,y,z`; enum names
   `GYRO_Q_TM2 / GYRO_Q_TM1 / GYRO_Q`, display `gyrQ-2 / gyrQ-1 / gyrQ`. Because M2 shares this block, it is designed now so 045 does
-  not need a second craft-block break. *Accept*: one metadata table drives every name; the two enums' shared tails asserted identical.
+  not need a second craft-block break — **M2 keeps the same craft history** (operator 2026-10-18: *"history should remain, even for
+  M2 — M2 is the ultimate goal"*); accel x/y stay out for M2 too, on the same aliasing evidence. *Accept*: one metadata table drives every name; the two enums' shared tails asserted identical.
 - **FR-004 Format break, completely.** Every consumer moves in one change (code scan 2026-10-18, 39 files):
   - automatic via the enum (verify): `nn_inputs.h`, `topology.h`, `evaluator.cc`, `aircraft_state.h`, `mode.{h,cc}`, `input_mask.h`,
     `craft_observations.h`, `envelope_state.h`, `tracker_stepper.h`, `inputdev_autoc.cpp`, `autoc.cc`, `dmp_dump.cc`, `nn2cpp.cc`,
@@ -59,7 +60,7 @@ so the damping term is mostly out of its reach ([policy-temporal-view.md](../043
 ### Plant
 
 - **FR-006 Roll mode, partly toward the flight, as a class.** New `CraftClP` variation class (like `CraftCmQ`): centre `Cl_p` ≈ −0.36
-  (roll corner ~3 Hz at 15 m/s with `I_xx` 0.0069), clamp ≈ [−0.18, −0.60] (1.5 … 5 Hz; the 10-18 flight sits near 5 Hz). **`Cl_da`
+  (roll corner **~3 Hz** at 15 m/s — operator 2026-10-18: *"part way to 5 Hz, 3 sounds about right"* with `I_xx` 0.0069), clamp ≈ [−0.18, −0.60] (1.5 … 5 Hz; the 10-18 flight sits near 5 Hz). **`Cl_da`
   scales with `Cl_p`** so the steady roll rate per aileron (p_ss = Cl_da·2V/(|Cl_p|·b)) is unchanged — only the mode's speed was wrong,
   and INAV's roll feed-forward was tuned on the real aircraft. *Accept (honesty ladder, before any bake)*: step test; closed-loop roll
   FRF vs the 10-18 flight; **t6 gen 752 on the new plant shows a higher 3–5 Hz roll share** than on the t6 plant, moving toward the
@@ -81,8 +82,15 @@ so the damping term is mostly out of its reach ([policy-temporal-view.md](../043
 
 - **FR-012 Attribution smokes.** Two smoke runs on the new plant before the bake: plant-only (45 inputs) and plant + history (53).
   *Falsifier for FR-001*: plant + history is not faster to the same pitch / roll smoothness.
-- **FR-013 One bake** (`autoc-044-t1-…`), t6 regiment; MANIFEST before launch; PNG set gains **roll** panels (cap %, flips/s, 3–5 Hz
+- **FR-013 One bake** (`autoc-044-t1-…`), t6 regiment, **800 generations** (operator: *"still seems to help"*; t6's best
+  equal-environment elite came at gen 750); MANIFEST before launch; PNG set gains **roll** panels (cap %, flips/s, 3–5 Hz
   share) next to pitch, since roll is now an exit measure.
+- **FR-015 Profile before the bake** (operator: *"we haven't profiled in a while — additional compute has crept in"*). Generation time
+  went 310 s (043-t2) → 465 (t3) → ~560 s (t5/t6) at identical sims/gen: t3 → t5 is the longer random course (real work), but **t2 → t3
+  is +47 % per tick at equal flight length** (candidates: the INAV rate loop moved into the 5 ms physics loop, per-tick `EvalTick`
+  payload); live sampling showed the parent at 161 % of a core during eval and a 25 s single-threaded phase between generations
+  (BACKLOG "Trim EvalResults"). *Accept*: a per-tick cost A/B and a parent-side profile recorded; take only changes that leave results
+  **bitwise identical** (e.g. overlap the dmp write with the next dispatch); anything larger goes back to BACKLOG.
 - **FR-014 Flight candidate by equal environment** (T122 method: fixed never-trained seed, full variation strength), then the 043
   flight procedure: frozen FC config, blackbox 1/8 with SERVOS + ATTI, streamer state per span, level boot, flash erased.
 
@@ -91,6 +99,9 @@ so the damping term is mostly out of its reach ([policy-temporal-view.md](../043
 - **SC-001** 3–5 Hz **roll** RMS down (baseline 97 °/s).
 - **SC-002** 3–5 Hz **pitch** RMS down (baseline 56 °/s), 2–3 Hz pitch RMS not worse (51 °/s).
 - **SC-003** Tracking no regression (median distance to rabbit 9–14 m); no new crash or failsafe mode.
+- **SC-005** Oscillatory load down: \|a_z\| RMS in the 1.5–5 Hz band below the 10-18 flight's **1.88 g** (g488: 2.35 g). The total
+  \|a_z\| p99 (10-18: 7.0 g) is **watched, not gated** — 043's 5 g line measured tracking turns more than oscillation: gen 752's
+  oscillatory load fell 20 % while its slow-manoeuvre p99 rose 4.7 → 6.4 g because it tracks tighter.
 - **SC-004** The roll honesty check holds in flight: `airframe_id.py` roll corner lies inside the `CraftClP` class range.
 
 ## Non-goals
@@ -98,9 +109,9 @@ so the damping term is mostly out of its reach ([policy-temporal-view.md](../043
 M2 / camera (→ 045, which also absorbs the camera work from the other repos); any INAV change; objective or selection changes;
 article 2 (fly it only if it is ready and its FC config is frozen to the same gains).
 
-## Open questions for the operator
+## Operator answers (2026-10-18)
 
-1. Roll class centre at ~3 Hz ("not the full way") — or closer to the flight's 5 Hz?
-2. The \|a_z\| p99 < 5 g line: drop it, raise it, or keep it as a watched number (043 showed it does not move with pitch smoothing)?
-3. Full 800-gen bake, or shorter to reach M2 sooner (t6 reached its best equal-environment elite late, gen 750)?
-4. Should accel x/y history stay out even for M2, given the tracker shares the craft block (FR-003)?
+1. Roll class centre: **~3 Hz** ("part way to 5 Hz") → FR-006.
+2. The 5 g line: replaced by the oscillatory-load criterion SC-005; total p99 watched.
+3. Bake length: **800 generations**; profile first → FR-013, FR-015.
+4. Craft history stays **in M2** through the shared block; accel x/y stay out on the evidence → FR-003.
