@@ -1,101 +1,106 @@
-# 044 — M1 craft-sensor history + roll plant (seed, 2026-10-18)
+# 044 — M1 craft-sensor history + roll plant (requirements draft, 2026-10-18)
 
-**Status: not started.** Created at the 043 wrap (operator 2026-10-18): *"we talked about the next one being an M2 run but we prob
-should do one more M1 with roll adjustments (probably not the full way) and gyro/accel history … ok to rearrange the NN inputs so they
-are adjacent … ok to rename 044 to not be M2."* M2 moved to [045](../045-m2-tracking/README.md). Predecessor:
+**Status: not started — requirements for operator review.** Created at the 043 wrap. Operator: *"one more M1 with roll adjustments
+(probably not the full way) and gyro/accel history … ok to rearrange the NN inputs so they are adjacent … the craft is already pretty
+smooth and we do want to get going again on M2 based on all the M1 updates, AND based on real-world camera work in the other repos."*
+So 044 is deliberately **lean: one bake, one flight**, then [045 M2](../045-m2-tracking/README.md). Predecessor:
 [043 outcome](../043-acro-dual-loop/outcome.md).
+
+## Decisions already made (not reopened in 044)
+
+- **INAV stays the bridge** (operator 2026-10-18): failsafe, estimation (AHRS / GPS / baro), pilot modes, logging and the ACRO fast
+  loop remain on INAV through 044 and 045. Embedding GPS / IMU / the fast loop on the companion (xiao or successor) is a later
+  hardware step that should also shorten the lag; no ACRO-vs-direct experiment in 044.
+- **Objective, selection and regiment are unchanged from t6** (conditional excess-rotation tie-break, 294 scenarios, wind envelope,
+  ramp 40) — 044 changes what the policy sees and what the plant does, nothing else, so the flight compares against t6 gen 752.
+- **FC config of record is frozen** at `xiao/inav-hb1.cfg` 91abd4d (the 10-18 flight).
 
 ## Why
 
-The 043 exit flight (2026-10-18, t6 gen 752) halved the 2 Hz pitch cycle once the sim's pitch plant was honest — and showed two things
-left: (1) the remaining pitch excess is **3–5 Hz command dither** (pitch 3–5 Hz RMS 29 → 56 °/s while 2–3 Hz fell 103 → 51 °/s), and
-(2) **roll oscillation rose** (3–5 Hz roll share 26 → 50 %) because the sim's roll mode is ~4.5× too slow, so selection never paid for
-roll dither. 043's analysis ([policy-temporal-view.md](../043-acro-dual-loop/policy-temporal-view.md) §§ 4–8) also found that the
-policy has **no history of any craft sensor**; its memory holds its previous command but not what the airframe did, and the rate
-derivative — the damping term — is mostly unavailable to it. 044 gives the policy that signal and fixes the plant term that hid roll.
+The 043 exit flight (t6 gen 752, full streamer) halved the 2 Hz pitch cycle once the sim's pitch plant was honest, and left two
+things: (1) the remaining pitch excess is **3–5 Hz command dither** (3–5 Hz pitch RMS 29 → 56 °/s while 2–3 Hz fell 103 → 51 °/s);
+(2) **roll oscillation rose** (3–5 Hz roll RMS 58 → 97 °/s) because the sim's roll mode is ~4.5× too slow, so selection never paid for
+roll dither. And the policy has **no history of any craft sensor**: its memory holds its previous command, not what the airframe did,
+so the damping term is mostly out of its reach ([policy-temporal-view.md](../043-acro-dual-loop/policy-temporal-view.md) §§ 4–8).
 
-## Requirements
+## Functional requirements
 
-### R1. Craft-sensor history in the input vector
+### Inputs
 
-| | decision | evidence |
-|---|---|---|
-| signals | **gyro p, q, r and accel z** | gyro: the damping term on all three axes (roll now first-class; yaw adds a little to pitch prediction through coupling). accel z: the short-period's α state (pitch rate + a_z *now* already predict the rate 100 ms ahead as well as two gyro samples). |
-| not accel x / y | **no history** | in flight they alias 17–35 % of a 50 ms difference (the FC's 15 Hz accel filter passes vibration the 20 Hz sample folds down) — the sim has none, so it would be a sim-to-real gap fed straight into the inputs; and they predict nothing (accel y: lateral specific force σ 0.009; accel x: slow speed changes already carried by airspeed and Es). |
-| lags | **50 and 100 ms**, a craft-only table `{100, 50, 0}` | first 50 ms lag carries most of the gain (flight pitch R² 0.11 → 0.54); 100 ms is needed for roll (0.09 → 0.19) and in sim for pitch; 150 / 200 ms add ≤ 0.02. Physics: for a 2.5–3 Hz pitch mode 50 ms ≈ 50°, 100 ms ≈ quadrature; for 3–5 Hz roll dither 50 ms = 54–90° (the useful one), 100 ms is near-inverted at 5 Hz; 200 ms is a half period and 400 ms an identical copy at 2.5 Hz. |
-| explicit command history | **no** | the recurrent state holds the previous command exactly (o₍t−1₎ = tanh(W₃ h₍t−1₎ + b)); t−2/t−3 add +0.01–0.03. |
-| cost | +8 slots → **53 M1 / 74 M2 inputs**, +256 weights (2307 → 2563) | xiao: gyro / accel already arrive every tick (local ring buffer, no link cost); forward pass +~1 %. |
+- **FR-001 Craft-sensor history.** The input vector carries **gyro p, q, r and accel z at 100 ms and 50 ms** in addition to their
+  current values (+8 slots: M1 45 → **53**, M2 66 → **74**; weights 2307 → 2563). The signal list and the lag table
+  (`{100, 50, 0}` ms, a craft-only table separate from the target's `{800 … 0}`) are each **one constant**.
+  *Accept*: slot counts and weight count asserted; changing a lag or adding a signal is a one-constant edit plus the format break.
+  *Why these*: 50 ms carries most of the gain on both axes, 100 ms is needed for roll; longer lags added ≤ 0.02–0.04 R²; accel x/y
+  alias 17–35 % on a 50 ms difference in flight (a sim-to-real gap) and predicted nothing; the recurrent state already holds the
+  previous command exactly, so no command history.
+- **FR-002 One recording point, both sides.** Craft history is recorded at the same point as the target history (before the NN
+  runs, once per 20 Hz tick) by the same code in the sim and on the xiao, from the same values the gather writes; at engage / scenario
+  start it is pre-filled with the current reading, as the target history is. *Accept*: a unit test drives a known sequence and checks
+  every lag slot; sim and xiao gathers produce identical vectors from identical state.
+- **FR-003 Layout clean-up.** Each sensor's history sits **next to its current value, oldest first** (as the target arrays do). The
+  shared 28-float craft block (M1 and M2): `quat w,x,y,z · airspeed · gyro_p[3] · gyro_q[3] · gyro_r[3] · accel_x · accel_y ·
+  accel_z[3] · specific_energy · boundary_closure_rate · dist_to_boundary · inward x,y,z · score_grad x,y,z`; enum names
+  `GYRO_Q_TM2 / GYRO_Q_TM1 / GYRO_Q`, display `gyrQ-2 / gyrQ-1 / gyrQ`. Because M2 shares this block, it is designed now so 045 does
+  not need a second craft-block break. *Accept*: one metadata table drives every name; the two enums' shared tails asserted identical.
+- **FR-004 Format break, completely.** Every consumer moves in one change (code scan 2026-10-18, 39 files):
+  - automatic via the enum (verify): `nn_inputs.h`, `topology.h`, `evaluator.cc`, `aircraft_state.h`, `mode.{h,cc}`, `input_mask.h`,
+    `craft_observations.h`, `envelope_state.h`, `tracker_stepper.h`, `inputdev_autoc.cpp`, `autoc.cc`, `dmp_dump.cc`, `nn2cpp.cc`,
+    `renderer.cc`, `xiao/src/msplink.cpp`;
+  - `xiao/include/flight_log_format.h`: 8 scale entries by name and a **log-version bump** (old decoders must refuse new logs);
+  - hand-maintained name lists: `src/analytics/flightlog_decode.py` (`INPUT_NAMES`), `xiao/web/flight_logger.html`,
+    `src/analytics/input_investment.py`;
+  - the 14 tests with counts / indices; the 043 analysis scripts ported to read columns by name;
+  - historical scripts (023 … 039) untouched — they read old logs.
+  *Accept*: clean `rebuild-perf.sh`, all tests pass, xiao builds, a bench flight log round-trips through both decoders.
+- **FR-005 Preserve what the new build cannot read.** Before the break: tag the last 45-input commit; archive tick CSVs and eval
+  results for t5 g488, t6 g752 and t6 g800. *Accept*: those artifacts readable from the archive or by checking out the tag.
 
-**Will we regret two lags and four signals?** Unlikely, and cheap to revisit: the measured gain beyond {50, 100} is ≤ 0.02–0.04 R²,
-accel x/y would add noise, and the recurrent layer extends memory where needed. The lag table and the signal list must each be **one
-constant** so a later change is a one-line edit plus the (unavoidable) format break. Revisit trigger: the 044 smoke shows the slots
-used heavily at 100 ms (gain still rising at the last lag), or a future airframe adds yaw control (then accel y earns a look).
+### Plant
 
-Prediction carried from 043 (§ 8): at equal tracking, ~10–15 % less 1.5–4 Hz pitch rate and 25–70 % calmer commands; in a bake, the
-smooth regime sooner and a lower dither floor rather than a big RMS drop. **Falsifier**: a plant+history smoke that is not faster than
-a plant-only smoke to the same smoothness.
+- **FR-006 Roll mode, partly toward the flight, as a class.** New `CraftClP` variation class (like `CraftCmQ`): centre `Cl_p` ≈ −0.36
+  (roll corner ~3 Hz at 15 m/s with `I_xx` 0.0069), clamp ≈ [−0.18, −0.60] (1.5 … 5 Hz; the 10-18 flight sits near 5 Hz). **`Cl_da`
+  scales with `Cl_p`** so the steady roll rate per aileron (p_ss = Cl_da·2V/(|Cl_p|·b)) is unchanged — only the mode's speed was wrong,
+  and INAV's roll feed-forward was tuned on the real aircraft. *Accept (honesty ladder, before any bake)*: step test; closed-loop roll
+  FRF vs the 10-18 flight; **t6 gen 752 on the new plant shows a higher 3–5 Hz roll share** than on the t6 plant, moving toward the
+  flight's 50 %.
+- **FR-007 Pitch damping spans the streamer.** Re-centre `CraftCmQ` to cover bare → streamer-on (≈ −0.5 … −4, centre ≈ −2; the 10-18
+  airframe fit gives streamer-on ≈ −3.5, the t6 class covered −2.0 … −0.2). *Accept*: class range and centre recorded with the fit.
+- **FR-008 FC sensor filter delays.** Model the FC's gyro PT1 25 Hz (~6.4 ms) and accel biquad 15 Hz (~21 ms) at the 5 ms FDM sub-step
+  (`sensor_lpf.h` option a). *Accept*: step input shows the expected group delays; g752 eval moves by a recorded, small amount.
 
-### R2. Input layout clean-up (format break; allowed — 044 starts new baselines anyway)
+### Baseline-boundary fixes (044 starts new baselines anyway)
 
-History sits **next to its current value, oldest first**, as the target arrays already do. Proposed 28-float craft block (shared by M1
-and M2): `quat w,x,y,z · airspeed · gyro_p[3] · gyro_q[3] · gyro_r[3] · accel_x · accel_y · accel_z[3] · specific_energy ·
-boundary_closure_rate · dist_to_boundary · inward x,y,z · score_grad x,y,z` (names `GYRO_Q_TM2 / _TM1 / GYRO_Q`, display `gyrQ-2`,
-`gyrQ-1`, `gyrQ`). Code scan 2026-10-18 — 39 files reference the layout:
+- **FR-009 Independent variation streams.** Hash each class sub-seed before seeding `ClassPRNG` (class streams are currently shifted
+  copies of one Park–Miller sequence). *Accept*: unit test — no class stream contains another class's sub-seed in its first N draws.
+- **FR-010 Log the wind-envelope draws** (speed, turbulence, gust length, thermal) as columns of the startup scenario table.
+- **FR-011 Explicit eval variation scale.** An ini key sets eval's variation scale (default: the weights file's stored value, as
+  today) so generations can be compared on equal air without patching weights.
 
-- **Follow the enum automatically** (verify, don't rewrite): `nn_inputs.h` (struct, both enums, `CRAFT_COMMON_INPUT_META`, asserts),
-  `topology.h` (weight-count assert), `evaluator.cc` (gather), `aircraft_state.h` (history ring — extend to craft sensors, recorded at
-  the same point as the target history, sim and xiao), `mode.{h,cc}`, `input_mask.h`, `craft_observations.h`, `envelope_state.h`,
-  `tracker_stepper.h`, `inputdev_autoc.cpp`, `autoc.cc` (data.dat header), `dmp_dump.cc`, `nn2cpp.cc`, `renderer.cc`,
-  `xiao/include/flight_log_format.h` (scales indexed by name — add 8 entries, **bump the log version**), `xiao/src/msplink.cpp`.
-- **Hand-maintained copies — must be edited**: `src/analytics/flightlog_decode.py` (`INPUT_NAMES`, length-checked),
-  `xiao/web/flight_logger.html` (BLE downloader, the third decoder), `src/analytics/input_investment.py`.
-- **Tests with counts / indices** (14): `nn_layout`, `nn_sensor_interface`, `shared_input_block`, `contract_evaluator`, `nn_evaluator`,
-  `nn2cpp_unroll`, `input_mask`, `gather_tracker_inputs`, `flightlog_roundtrip`, `recording_fidelity`, `arena`, `predictor_head`, …
-- **043 analysis scripts** assume 45 inputs at fixed offsets — port them to read columns by name.
-- **Historical scripts** (023/024/027/029/037/039) stay as they are; they read old logs.
-- ⛔ Before the break (the FR-057 lesson): keep a readable copy of what the new build cannot read — tag the last 45-input commit, and
-  archive tick CSVs + eval results of the flown genomes (t5 g488, t6 g752) and the t6 final.
+### Process
 
-### R3. Roll plant — partly toward the flight, as a variation class
+- **FR-012 Attribution smokes.** Two smoke runs on the new plant before the bake: plant-only (45 inputs) and plant + history (53).
+  *Falsifier for FR-001*: plant + history is not faster to the same pitch / roll smoothness.
+- **FR-013 One bake** (`autoc-044-t1-…`), t6 regiment; MANIFEST before launch; PNG set gains **roll** panels (cap %, flips/s, 3–5 Hz
+  share) next to pitch, since roll is now an exit measure.
+- **FR-014 Flight candidate by equal environment** (T122 method: fixed never-trained seed, full variation strength), then the 043
+  flight procedure: frozen FC config, blackbox 1/8 with SERVOS + ATTI, streamer state per span, level boot, flash erased.
 
-Flight: roll subsidence corner **~5 Hz** at 15 m/s; model 1.1 Hz (`Cl_p` −0.135 at `I_xx` 0.0069). Corner ∝ |Cl_p|/I_xx, so at the
-measured `I_xx`: 1.5 Hz ↔ −0.18, **3 Hz ↔ −0.36**, 5 Hz ↔ −0.60. Operator: *"probably not the full way"* → a **`CraftClP` class**
-like `CraftCmQ`: centre ≈ −0.36 (3 Hz), clamp ≈ [−0.18, −0.60] so training spans the old sim and the flight. ⚠️ **Scale `Cl_da` with
-`Cl_p`** so the steady roll rate per aileron (p_ss = Cl_da·2V/(|Cl_p|·b)) is unchanged — the INAV roll feed-forward was tuned on the
-real aircraft and the closed-loop roll gain matched before; only the mode's speed is wrong. Honesty ladder before any bake (as pitch in
-043): step test; closed-loop roll FRF vs the 10-18 flight; **gen 752 on the new plant shows its flight roll 3–5 Hz rise**.
+## Success criteria (the 044 flight vs the 10-18 t6 gen-752 flight, same streamer and FC config, scripts of record)
 
-### R4. Pitch damping class spans the streamer
+- **SC-001** 3–5 Hz **roll** RMS down (baseline 97 °/s).
+- **SC-002** 3–5 Hz **pitch** RMS down (baseline 56 °/s), 2–3 Hz pitch RMS not worse (51 °/s).
+- **SC-003** Tracking no regression (median distance to rabbit 9–14 m); no new crash or failsafe mode.
+- **SC-004** The roll honesty check holds in flight: `airframe_id.py` roll corner lies inside the `CraftClP` class range.
 
-Both 10-18 flights towed the full streamer; the flight fit gives streamer-on `Cm_q` ≈ −3.5 against the bare −1.0 the t6 class is centred
-on (clamp −2.0 … −0.2). Re-centre `CraftCmQ` to span bare → streamer-on (≈ −0.5 … −4), weighted toward how it is flown.
+## Non-goals
 
-### R5. Sim fidelity rider: FC sensor filter delays
+M2 / camera (→ 045, which also absorbs the camera work from the other repos); any INAV change; objective or selection changes;
+article 2 (fly it only if it is ready and its FC config is frozen to the same gains).
 
-Model the FC's gyro PT1 25 Hz (~6.4 ms) and accel biquad 15 Hz (~21 ms) at the 5 ms FDM sub-step (`sensor_lpf.h` option a). With
-accel z differences becoming inputs, the 21 ms accel lag is no longer negligible.
+## Open questions for the operator
 
-### R6. Baseline-boundary fixes (044 starts new baselines, so land them here)
-
-- **Scenario PRNG independence**: class streams are shifted copies of one Park–Miller sequence (BACKLOG); hash sub-seeds before
-  seeding `ClassPRNG`; unit test that no class stream contains another's sub-seed.
-- **Log the wind-envelope draws** (speed, turbulence, gust length, thermal) in the startup scenario table.
-- **Explicit eval variation scale** (ini key) instead of reusing the weights file's save-time ramp value — 043 T122 had to patch copies
-  of the weights (`set_eval_scale.py`) to compare generations on equal air.
-
-### R7. Procedure carried from 043
-
-Equal-environment candidate selection (T122 method) before any flight; FC config frozen to the sim's gains (diff the CLI dump);
-blackbox 1/8 with SERVOS + ATTI (the airframe ID needs servos); streamer state per span (T119); boot level and still; flash erased.
-
-## Exit
-
-A flight of the 044 genome against the 10-18 t6 flight, same streamer and FC config, scripts of record (`candidate_compare.py`,
-`airframe_id.py`): absolute **3–5 Hz pitch RMS and 3–5 Hz roll RMS down**, 2–3 Hz pitch RMS no worse, tracking no regression, no new
-crash mode. Decide the `|a_z|` p99 line before the bake (043 showed it does not move with pitch smoothing at this tracking aggression).
-
-## Order (each gates the next)
-
-1. Archive / tag for the format break (R2 ⛔). 2. Plant on the 45-input build: R3 + R4 + R5 with the honesty ladder. 3. R6 fixes →
-new eval baselines, determinism gates. 4. R1 + R2 format break (xiao, log version, decoders, tests). 5. Two smokes — plant-only (45
-inputs) vs plant + history (53) — for attribution and the falsifier. 6. Bake `autoc-044-t1-…`. 7. Candidate selection, flight, analysis.
+1. Roll class centre at ~3 Hz ("not the full way") — or closer to the flight's 5 Hz?
+2. The \|a_z\| p99 < 5 g line: drop it, raise it, or keep it as a watched number (043 showed it does not move with pitch smoothing)?
+3. Full 800-gen bake, or shorter to reach M2 sooner (t6 reached its best equal-environment elite late, gen 750)?
+4. Should accel x/y history stay out even for M2, given the tracker shares the craft block (FR-003)?
