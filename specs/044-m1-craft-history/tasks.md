@@ -242,10 +242,10 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
 **Goal**: one 800-gen bake, equal-environment pick, flight, verdict.
 **Independent test**: the flight analysed with the reference scripts; SC-001…005 each reported with its number.
 
-- [ ] T048 [US3] Write `specs/044-m1-craft-history/artifacts-t1/MANIFEST.md` before launch (pattern of `artifacts-t6/MANIFEST.md`): regiment,
+- [X] T048 [US3] Write `specs/044-m1-craft-history/artifacts-t1/MANIFEST.md` before launch (pattern of `artifacts-t6/MANIFEST.md`): regiment,
   what changed vs t6, gates run, as-run ini snapshot, seed policy, early calls (gens 5 / 40 / 100) and stop-and-rethink rows; pre-run gate
   (clean build + ctest) per Constitution IX; smoke B finished
-- [ ] T049 [US3] Launch: `bash scripts/train.sh autoc.ini logs/autoc-044-t1-m1-history.log`; record pid, effective master seed, S3 prefix in
+- [X] T049 [US3] Launch: `bash scripts/train.sh autoc.ini logs/autoc-044-t1-m1-history.log`; record pid, effective master seed, S3 prefix in
   the MANIFEST; monitor with `scripts/generate_pngs.sh m1 logs/autoc-044-t1-m1-history.log --compare 043-t6-plant:logs/autoc-043-t6-m1-plant.log`
 - [ ] T050 [US3] Close-out at gen 800: `retain=keep` on every object (verify by sampling incl. gen 1 / 800), extract the final elite,
   eval suite with the run's seed (tier 0 bitwise), MANIFEST § Post-run

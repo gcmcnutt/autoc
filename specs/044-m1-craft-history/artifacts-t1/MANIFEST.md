@@ -1,4 +1,4 @@
-# 044-t1 — `autoc-044-t1-m1-history` — MANIFEST (written BEFORE launch; draft 2026-10-19, T048)
+# 044-t1 — `autoc-044-t1-m1-history` — MANIFEST (written before launch 2026-10-19; launched 2026-10-20)
 
 Pattern of record: [`../../043-acro-dual-loop/artifacts-t6/MANIFEST.md`](../../043-acro-dual-loop/artifacts-t6/MANIFEST.md). Why t1
 exists: the 2026-10-18 t6 flight halved the 2 Hz pitch cycle but left 3–5 Hz dither in pitch and **doubled** it in roll, because the
@@ -7,15 +7,15 @@ pool** with three changes — a partly honest roll plant, streamer-spanning pitc
 fixes. Spec: [`../spec.md`](../spec.md); evidence: [`../honesty.md`](../honesty.md), [`../profile.md`](../profile.md),
 [`../MANIFEST.md`](../MANIFEST.md) (gates, baselines, smokes).
 
-## 1. The run  *(fill at launch — T049)*
+## 1. The run
 
 | Field | Value |
 |---|---|
-| S3 prefix | *(from the log)* |
-| Master seed | *(`Seed = -1`; the "Effective master seed" log line is the only record of it)* |
+| S3 prefix | `s3://autoc-m1/autoc-9223370244339188361-2026-10-20T16:59:47.446Z/` |
+| Master seed | **1792515587** (`Seed = -1`; logged as "Effective master seed" — the only record of it) |
 | Regiment / pool / ini | **identical to t6** except the keys in § 2: pop 5000 × 800 gens × 294 scenarios (6 × 49, `ExpectedScenarioCount 294`), wind envelope 0–8 m/s, `randomA` slot 3, `ExcessRotationAxisMode = conditional`, ramp 40 |
 | Launch command | `bash scripts/train.sh autoc.ini logs/autoc-044-t1-m1-history.log` |
-| Launched | *(date, pid; startup log: 53,32,16r,3 / 2563 weights, scenario table with `clP windMps turbX gustLx thermX`, 20 workers, no errors)* |
+| Launched | **2026-10-20 09:59 PDT**, pid 3279118, detached via `scripts/train.sh`; startup log: topology `53,32,16r,3` (2563 weights), 294 scenarios (first `0x2842893059ea1d1e`), `AeroStandardPath3: randomA`, `ExcessRotationAxisMode: conditional`, scenario table with `cmQ clP windMps turbX gustLx thermX`, 20 workers, no errors |
 
 ## 2. What changed vs t6
 
@@ -30,7 +30,7 @@ fixes. Spec: [`../spec.md`](../spec.md); evidence: [`../honesty.md`](../honesty.
 | formats | dmp v4, NN01 v1, flight log v5 | **dmp v6, NN01 v2 (layout signature), flight log v6 (slot names in the header)** |
 | objective, pool, courses, wind envelope, seed policy | | **unchanged** |
 
-Commits *(fill at launch)*: autoc `…`, crrcsim `…`; `autoc.ini` as-run snapshot `autoc.ini.as-run` + sha256.
+Commits: autoc **`a2dadea`** (launch; + the record commit that follows), crrcsim **`54d2485`**. `autoc.ini` as-run snapshot [`autoc.ini.as-run`](autoc.ini.as-run), sha256 `f71f686f5e0f4677…`.
 
 ## 3. Gates before launch
 
@@ -42,7 +42,16 @@ Commits *(fill at launch)*: autoc `…`, crrcsim `…`; `autoc.ini` as-run snaps
 | 53-input baseline (T046) | eval-vs-training bitwise: `NN_EVAL_SAME -5.443911` on a 3-gen smoke-regiment run |
 | ctest / xiao | 55/55; `pio run` SUCCESS with a 53-input program |
 | attribution (SC-006) | **not met** — history arm no smoother in 200 gens (late medians 3–5 Hz roll 132 vs 94 °/s, pitch 86 vs 78); early pitch advantage gens 51–101; bake keeps history (clarification 1) — `../MANIFEST.md` § SC-006 |
-| ⛔ **pre-run gate at launch** (Constitution IX) | clean `scripts/rebuild-perf.sh` + `ctest` on the launch commit — **after both smokes have finished** (no rebuild while a run trains) |
+| **pre-run gate at launch** (Constitution IX) | ✅ clean `scripts/rebuild-perf.sh` 2026-10-20 09:54 on `a2dadea` (no run training), ctest **55/55**, input-layout gate clean (169 files) |
+
+## 3a. First generations
+
+| gen | best | pop avg | pctInStreak | `#GenSel` bite | gen time (serial tail) | mean ticks / sim |
+|---|---|---|---|---|---|---|
+| 1 | −3358 | −1093 | 0.4 % | 95.8 % | 107.8 s (2.3 s) | 85.6 |
+| 2 | −4286 | −1094 | 0.3 % | 95.8 % | 103.1 s (2.6 s) | 81.6 |
+
+`NN_ELITE_SAME` gens 1–2; `uploadWaitSec` ≈ 0 (the async upload keeps up); per-tick cost 16.8 µs.
 
 ## 4. What is and is not comparable
 
