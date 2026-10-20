@@ -35,8 +35,8 @@ No NEEDS CLARIFICATION remain (spec clarified; plan-level unknowns resolved in [
 | I Testing-first | tests before code for: the index-free check and layout-signature refusals, history ring + pre-fill, sim/xiao vector equality, layout asserts, stream independence, `craftClP` draw/clamp + `Cl_da` scaling, eval-scale key validation, flight-log v6 round trip | ✅ |
 | II Build stability | `rebuild.sh` + ctest + xiao `pio run` at every commit | ✅ |
 | III No compatibility shims | one clean format break; all callers updated; `recordErrorHistory` signature change forces both call sites | ✅ |
-| IV Unified build | header-only additions expected; any CMakeLists change → clean `rebuild-perf.sh` (operator) | ✅ |
-| V Versioned artifacts | dmp schema 4 → 5, flight log 5 → 6, layout marker v3 → v4; old readers fail loud | ✅ |
+| IV Unified build | new C++ tests go into already-registered targets; the one CMakeLists edit (two Python ctests, R14) is followed at once by a clean `rebuild-perf.sh` (operator) | ✅ |
+| V Versioned artifacts | dmp schema 4 → 5 (`craftClP`) → 6 (layout), NN01 1 → 2 and flight log 5 → 6 (gate), layout marker v3 → v4; each bump at the commit that changes the format; old readers fail loud; `043-final` reads the 043 artifacts | ✅ |
 | VI Type-domain discipline | new eval/nn code uses `gp_scalar`/`gp_vec3`; raw floats only in NN byte-format structs with `// raw-ok:`; grep audit at close | ✅ |
 | VII No silent fallback defaults | `craftClP` follows `craftCmQ` (wire-struct default, NaN-unset in crrcsim, never a silent value); `EvalVariationScale` explicit −1 sentinel, validated | ✅ |
 | VIII Artifact retention | bake + flown genome + 043 eval dumps pinned `retain=keep`, prefixes in the MANIFEST / outcome | ✅ |
@@ -85,16 +85,18 @@ tests/                     the 14 layout tests + new tests listed under Principl
 
 ## Execution order (gates)
 
-1. **Preserve** — pin 043 eval dumps; tag `044-last-45in` at step 4's end (FR-005).
-2. **Profile** — per-tick A/B, parent profile → `profile.md`; bitwise-neutral speed-ups only (FR-015).
-3. **Plant** on the 45-input build — `craftClP` + `Cl_da` scaling, CmQ re-centre, sensor filters; **roll honesty ladder passes**
-   (FR-006…008, research R11).
-4. **Baseline fixes** — stream independence, wind-draw columns, `EvalVariationScale`; new tier-0 baselines (FR-009…011). → tag.
-5. **Smoke A** (plant only, 45 inputs) (FR-012).
-6. **Format break** — **index-free gate first** (check added to ctest, existing literal hits fixed, flight-log header name table,
-   layout signature in NN01 / nn2cpp / logs — FR-016), then layout v4, recording on both targets, versions, `nnextractor` / `nn2cpp` /
-   xiao regenerate and build, decoders, tests, script ports (FR-001…004); the gate passes again after the break.
-7. **Smoke B** (plant + history) → SC-006 recorded.
+1. **Preserve** — tag `043-final` (reads every 043 artifact); pin the 043 eval dumps incl. t5 gen 488; confirm the t5 run pin (FR-005, R12).
+2. **Baseline fixes** — stream independence, wind-draw columns, `EvalVariationScale`; post-fix reference replays (FR-009…011).
+   First, because the honesty ladder's equal-environment eval needs `EvalVariationScale`.
+3. **Profile** — per-tick A/B, parent profile → `profile.md`; speed-ups judged against the post-fix references (FR-015).
+4. **Plant** on the 45-input build — `craftClP` + `Cl_da` scaling (dmp schema 4 → 5), CmQ re-centre, sensor filters; **roll honesty
+   ladder passes** (FR-006…008, R11); new tier-0 baselines → tag `044-last-45in`.
+5. **Smoke A** (plant only, 45 inputs) from a worktree at the tag, so step 6 can rebuild the main tree meanwhile (FR-012).
+6. **Format break, in two steps.** (6a) **Index-free gate on the 45-input layout** — the one CMakeLists edit (two Python ctests) + clean
+   rebuild, literal hits removed, layout signature, NN01 v2, flight-log v6 header name table, decoders reading names from the artifact;
+   gate green (FR-016). (6b) **Layout change** — layout v4, recording on both targets, dmp schema 5 → 6, xiao regenerate and build,
+   tests; gate green again, and the list of files the layout change touched is the evidence it "just works" (FR-001…004).
+7. **Smoke B** (plant + history) → SC-006 recorded (needs smoke A finished).
 8. **Bake** `autoc-044-t1-…`, 800 gens, MANIFEST first (FR-013).
 9. **Pick → fly → judge** (FR-014, SC-001…005); miss on SC-001/002 → another cycle; 045 waits.
 

@@ -70,8 +70,8 @@ Scenario table gains `windMps, turbX, gustLx, thermX` — full-strength values o
 
 | artifact | before | after |
 |---|---|---|
-| `EvalResults` (dmp) `kSchemaVersion` | 4 | **5** |
-| xiao flight log `kFormatVersion` | 5 | **6** |
+| `EvalResults` (dmp) `kSchemaVersion` | 4 | **5** at `craftClP` (US2), **6** at the layout change (US1) |
+| xiao flight log `kFormatVersion` | 5 | **6** (name table + signature; at the index-free gate, 45 inputs) |
 | NN input layout marker | v3 | **v4** (+ layout signature) |
-| NN01 genome file `NN_FORMAT_VERSION` | 1 | **2** (adds layout signature) |
+| NN01 genome file `NN_FORMAT_VERSION` | 1 | **2** (adds layout signature; at the index-free gate) |
 | `data.dat` header | 45 inputs | 53 (derived from the metadata table) |

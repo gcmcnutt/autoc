@@ -5,12 +5,15 @@ All commands from the repo root on branch `044-m1-craft-history` (autoc and crrc
 ## 0. Preserve (before any layout change)
 
 ```bash
-git tag 044-last-45in                     # at the last 45-input commit (after plant + fixes, before the layout break)
+git tag 043-final 8cd5a5d                 # the 043 close state: reads every 043 dmp / NN01 v1 genome / v5 log (US2 changes the dmp)
+git tag 044-last-45in                     # later, at the last 45-input commit (after fixes + plant, before the layout break)
 # pin the 043 eval dumps the new build cannot read (keys recorded in the 044 MANIFEST)
 aws s3api put-object-tagging --bucket autoc-eval --key <run-id>/<file> --tagging 'TagSet=[{Key=retain,Value=keep}]'
 ```
 
-## 1. Profile (FR-015)
+## 1. Baseline fixes first, then profile (FR-009…011, FR-015)
+
+The stream fix changes every draw: take the post-fix reference replays before judging any speed-up (tasks T012).
 
 ```bash
 perf stat -e task-clock -- ./build/autoc -i <tier1-eval.ini>           # per-tick cost, with / without the controller node
@@ -30,18 +33,24 @@ python3 specs/043-acro-dual-loop/airframe_id.py <bb.csv> --V 15      # flight re
 ```
 Pass: roll 3–5 Hz share rises toward the flight's 50 %.
 
-## 3. Baseline fixes (FR-009…011) → new baselines
+## 3. New baselines → tag
 
-Unit tests for stream independence; scenario table shows `clP windMps turbX gustLx thermX`; `EvalVariationScale` honoured.
-Record the new tier-0 baselines (eval vs training bitwise).
+Scenario table shows `clP windMps turbX gustLx thermX`; `EvalVariationScale` honoured. Record the new tier-0 baselines (eval vs
+training bitwise), then `git tag 044-last-45in`.
 
-## 4. Smoke A (plant only, 45 inputs) — launch detached
+## 4. Smoke A (plant only, 45 inputs) — from its own worktree, launch detached
 
 ```bash
+git worktree add ../autoc-044-smokeA 044-last-45in && git -C ../autoc-044-smokeA submodule update --init
+cd ../autoc-044-smokeA && bash scripts/rebuild-perf.sh
 bash scripts/train.sh specs/044-m1-craft-history/smoke.ini logs/autoc-044-smokeA-plant.log
+# when done: copy the log to the main tree's logs/, then git worktree remove ../autoc-044-smokeA
 ```
+The main tree stays free to rebuild for step 5.
 
-## 5. Format break (FR-001…004), then Smoke B (plant + history)
+## 5. Format break in two steps (FR-016, then FR-001…004), then Smoke B (plant + history)
+
+(5a) index-free gate green on the 45-input layout — one CMakeLists edit + clean rebuild; (5b) the layout change, gate green again.
 
 ```bash
 bash scripts/rebuild-perf.sh && (cd build && ctest)

@@ -32,8 +32,10 @@ thresholds) is in [README.md](README.md) and the 043 documents it cites; this fi
   sub-step); the 20 Hz gather reads the filtered values. Filter state resets with the scenario and seeds from the first sample (no
   start transient), per `sensor_lpf.h` (option a, its classes already written and kept for this).
 - **Rationale**: mirrors the real chain (filter at the fast rate, then sample) — the 2026-09 attempt failed only because it filtered at
-  the 20 Hz gather. Header-only classes in an already-linked target: no CMake change expected (if one appears, Constitution IV's clean
-  `rebuild-perf.sh` applies).
+  the 20 Hz gather. Header-only: the filters are wrapped in one `FcSensorFilterChain` (gyro ×3, accel ×3) in `sensor_lpf.h`, which
+  inputdev holds per scenario; its tests (delays, seeding, the 20 Hz read returning the filtered value) live in the already-registered
+  `tick_rescale_tests`, so no CMake change. 044's only `CMakeLists.txt` edit is the two Python ctests of R14 (one edit, one clean
+  `rebuild-perf.sh`, Constitution IV).
 - **Alternatives**: pure delays folded into the staged-command latency path (rejected — sub-tick delay on sensors, not commands, and a
   filter also shapes noise); filtering in autoc at the gather (rejected — the documented Nyquist failure).
 
@@ -76,20 +78,26 @@ thresholds) is in [README.md](README.md) and the 043 documents it cites; this fi
 ## R8. Layout and versions (FR-003, FR-004)
 
 - **Decision**: craft block 20 → 28 floats in the order of spec FR-003; enum names `GYRO_P_TM2, GYRO_P_TM1, GYRO_P, …, ACCEL_Z_TM2,
-  ACCEL_Z_TM1, ACCEL_Z`; `CRAFT_COMMON_INPUT_META` regenerated; M1 53 inputs / 2563 weights, M2 74 / 3235. Version bumps:
-  `EvalResults::kSchemaVersion` 4 → **5** (metadata gains `craftClP`, ticks carry the wider input vector), flight log `kFormatVersion`
-  5 → **6** (8 new scale entries by name), NN input layout marker bumped; all readers fail loud on the old version (Constitution V).
-- **Rationale**: a single format break carrying every layout change; name-indexed consumers follow automatically, the three
-  hand-maintained name lists are edited in the same change (README code scan).
+  ACCEL_Z_TM1, ACCEL_Z`; `CRAFT_COMMON_INPUT_META` regenerated; M1 53 inputs / 2563 weights, M2 74 / 3235. Version bumps, each at the
+  commit that changes the format: `EvalResults::kSchemaVersion` 4 → **5** when `ScenarioMetadata` gains `craftClP` (US2 — the metadata
+  is serialized in the dmp) and 5 → **6** at the layout change (the per-tick input count check already refuses a 45-wide dump; the bump
+  names the cause); NN01 `NN_FORMAT_VERSION` 1 → **2** and flight log `kFormatVersion` 5 → **6** in the index-free gate (R14), on the
+  45-input layout; NN input layout marker v3 → v4 at the layout change (which changes the layout signature, so NN01 and the log need no
+  second bump). All readers fail loud on the old version (Constitution V).
+- **Rationale**: the gate makes every consumer read names, count and signature from the artifact before the layout moves, so the layout
+  change itself is one header plus the recording sites; the three hand-maintained name lists are removed in the gate step (README code
+  scan).
 
 ## R9. Attribution smokes (FR-012, SC-006)
 
 - **Decision**: both arms on the new plant **and** the new PRNG (R1–R4 land first), same seed, `autoc.ini` regiment scaled down:
   population 3000, 6 paths × 16 winds (96 scenarios), **200 generations**, variation ramp step 10. Arm A = last 45-input build (plant
   only); arm B = after the layout break (plant + history). Metric per generation from the elite's tick dump: median 3–5 Hz roll-rate
-  RMS, median pitch-rate RMS and 3–5 Hz share, `pctInStreak`. **SC-006 outcome** = the first generation at which arm B's elite is at or
-  below arm A's best-of-run smoothness on both axes with `pctInStreak` ≥ arm A's at the same generation; recorded either way (the bake
-  keeps history regardless — clarification 1).
+  RMS, median pitch-rate RMS and 3–5 Hz share, `pctInStreak`. **SC-006 outcome**: G_A = the generation of arm A's best-of-run
+  smoothness (both axes); G_B = the first generation at which arm B's elite is at or below that on both axes with `pctInStreak` ≥ arm A's
+  at the same generation; **met if G_B < G_A**. Recorded either way (the bake keeps history regardless — clarification 1). Same air:
+  `RandomPathSeedB` is fixed and the scenario seed table is drawn apart from the weight-init stream, so the arms' different weight counts
+  do not move the scenarios. Arm A runs from a worktree at `044-last-45in` so US1 work can rebuild the main tree meanwhile.
 - **Rationale**: same air for both arms; 200 gens covers t6's takeoff and relay-shedding phase (relay came off by gen ~100–150 at
   full scale); 96 scenarios keeps each smoke to roughly a day on the box.
 - **Alternatives**: full-regiment smokes (too slow for an A/B); basic-m1 single path (too narrow to see roll on random courses).
@@ -98,25 +106,32 @@ thresholds) is in [README.md](README.md) and the 043 documents it cites; this fi
 
 - **Decision**: (a) **per-tick cost A/B** — time a fixed tier-1 eval of one genome with `perf stat` / `perf record` on a worker, with
   and without the INAV rate-loop controller node in the model (same build), and with the per-tick `EvalTick` payload trimmed in a
-  throwaway build; (b) **parent profile** — `perf record -g` on autoc across one training generation (smoke config), attributing time
-  to deserialize / scoring / selection / dmp write. Record both in `profile.md`. Adopt only changes that leave a tier-0 replay bitwise
-  identical (e.g. overlapping the dmp upload with the next generation's dispatch); everything else → BACKLOG.
+  throwaway build (scratch worktree); (b) **parent profile** — `perf record -g` on autoc across one training generation (smoke config,
+  launched with `scripts/train.sh`), attributing time to deserialize / scoring / selection / dmp write. Record both in `profile.md`.
+  Adopt only changes that leave the **post-stream-fix** tier-0 reference replays bitwise identical (R4 changes every draw, so the
+  pre-fix baseline no longer applies; e.g. overlapping the dmp upload with the next generation's dispatch); everything else → BACKLOG.
+  **Stopping rule**: if (a) does not account for the +47 %, the unexplained remainder is recorded and backlogged; the bake is not held.
 - **Rationale**: answers the open t2 → t3 +47 % per tick question and the parent's 161 % CPU / 25 s serial phase, without risking
   results before a bake.
 
 ## R11. Roll honesty ladder (FR-006 acceptance)
 
 - **Decision**: three checks on the 45-input build before the smokes: (1) **step test** (`Cntrl_StepTest`) roll steps at 15 m/s at
-  class centre and both clamps → corner ≈ 3 / 5 / 1.5 Hz and steady roll rate per aileron equal to the t6 plant's; (2) **closed-loop
-  roll FRF** of g752 (setpoint → roll rate) on the new plant vs the 10-18 flight blackbox; (3) **g752 equal-environment eval** (fixed
-  seed, scale 1.0) on t6 vs new plant: 3–5 Hz roll share rises toward the flight's 50 %.
+  class centre and both clamps — **pass**: corner within ±20 % of 3 / 5 / 1.5 Hz, steady roll rate per aileron within ±5 % of the t6
+  plant's, rate-loop roll output unsaturated at the fast clamp; (2) **closed-loop roll FRF** of g752 (setpoint → roll rate) on the new
+  plant vs the 10-18 flight blackbox, 1–6 Hz — **recorded, not gated**; (3) **g752 equal-environment eval** (fixed seed, scale 1.0) on
+  t6 (`043-final`) vs new plant — **gate**: 3–5 Hz roll share higher on the new plant, calm and all (toward the flight's 50 %).
+  **On a failure of (1) or (3)**: no baselines or smokes; revise the class (centre, σ, `Cl_da` scaling) in R1 and re-run the ladder.
 - **Rationale**: the 043 pitch ladder pattern — prove the plant reproduces the known genome's real behaviour before training on it.
 
 ## R12. Preservation before the break (FR-005)
 
-- **Decision**: tag the last 45-input commit **`044-last-45in`** (local tag; operator pushes); pin `retain=keep` on the 043 T122 /
-  exit-flight eval dumps in `autoc-eval` (they upload as `retain=expire`) and on the t6 g800 eval-suite dumps; record their keys in the
-  044 MANIFEST. The tagged build reads them; no copies in git (≈ 120 MB per tick CSV).
+- **Decision**: two local tags (operator pushes). **`043-final`** = `8cd5a5d` (crrcsim `7f345c5`), the 043 close code state — the
+  build that reads every 043 dmp (schema 4), NN01 v1 genome and v5 flight log; it is needed because US2's `craftClP` changes the dmp
+  before the layout break. **`044-last-45in`** = the last 45-input commit (after the plant and baseline fixes) — the build that reads
+  smoke A and 044's 45-input baselines. Pin `retain=keep` on the 043 T122 / exit-flight eval dumps in `autoc-eval` (they upload as
+  `retain=expire`), the t6 g800 eval-suite dumps and the t5 gen 488 eval dumps, and confirm the t5 training run's pin (t6's is
+  verified); record every key in the 044 MANIFEST. No copies in git (≈ 120 MB per tick CSV).
 - **Rationale**: Constitution VIII (pin what matters, provenance in the repo) plus the FR-057 lesson from 041/043.
 
 ## R13. Run reporting (FR-013)
@@ -132,7 +147,8 @@ thresholds) is in [README.md](README.md) and the 043 documents it cites; this fi
   `NUM_INPUTS = 45` + name list, the web decoder's `FL_NUM_IN = 45` + offsets) and after it. (b) Flight log v6 header carries the
   ordered slot-name table; both decoders build their columns from it. (c) **Layout signature** = FNV-1a 64 of the ordered slot display
   names + layout version, computed from the one metadata table; NN01 genome format version bumps and stores it; `nnextractor` and
-  `nn2cpp` refuse a genome whose signature ≠ the tree's (and whose input count ≠ `NN_INPUT_COUNT`); `nn2cpp` emits it as a
+  `nn2cpp` refuse — through one shared `checkGenomeLayout()` — a genome whose signature ≠ the tree's (and whose input count ≠
+  `NN_INPUT_COUNT`); `nn2cpp` emits it as a
   `static_assert` beside the existing count and scale-signature asserts; the flight log header stores it and decoders check it.
 - **Rationale**: today the C++ side is already index-free (enum + metadata table; nn2cpp asserts count and scales), so the residual
   risk is the hand-maintained decoder copies and a same-count reorder that no count check sees. Names and signature travelling with the
