@@ -1,10 +1,13 @@
 #include "autoc/nn/serialization.h"
+#include "autoc/nn/topology.h"
+#include <cstdio>
 #include <cstring>
 
 // Binary format layout (spec 027 bumped layout to carry recurrent flags):
 // [0..3]   char[4]   magic "NN01"
-// [4..7]   uint32_t  format version
-// [8..11]  uint32_t  num_layers
+// [4..7]   uint32_t  format version (2)
+// [8..15]  uint64_t  input-layout signature (044 FR-016; v2+)
+// [16..19] uint32_t  num_layers
 // [12..]   uint32_t[num_layers]  topology
 //          uint8_t[num_layers]   recurrent flags (0/1, one byte per layer)
 //          uint32_t  num_weights
@@ -46,6 +49,13 @@ bool nn_serialize(const NNGenome& genome, std::vector<uint8_t>& out) {
 
     // Version
     write_val(out, NN_FORMAT_VERSION);
+
+    // 044 FR-016 — the layout this genome belongs to, stamped from THIS build
+    // for its input width (a genome is only ever serialized by a build that can
+    // evaluate it; foreign genomes are refused by nn_check_genome_layout first).
+    const uint64_t sig = genome.topology.empty()
+        ? 0ull : nn_layout_signature_for_inputs(genome.topology.front());
+    write_val(out, sig);
 
     // Topology
     uint32_t num_layers = static_cast<uint32_t>(genome.topology.size());
@@ -104,6 +114,10 @@ bool nn_deserialize(const uint8_t* data, size_t size, NNGenome& genome) {
     if (!read_val(ptr, remaining, version)) return false;
     if (version != NN_FORMAT_VERSION) return false;
 
+    // 044 FR-016 — the layout signature as the FILE states it (checked by
+    // nn_check_genome_layout, not here, so the caller can name both values).
+    if (!read_val(ptr, remaining, genome.layout_signature)) return false;
+
     // Topology
     uint32_t num_layers;
     if (!read_val(ptr, remaining, num_layers)) return false;
@@ -152,6 +166,36 @@ bool nn_deserialize(const uint8_t* data, size_t size, NNGenome& genome) {
     }
 
     return true;
+}
+
+uint64_t nn_layout_signature_for_inputs(int inputCount) {
+    if (inputCount == NN_INPUT_COUNT) return kNNInputLayoutSignature;
+    if (inputCount == TRACKER_NN_INPUT_COUNT) return kTrackerInputLayoutSignature;
+    return 0ull;
+}
+
+std::string nn_check_genome_layout(const NNGenome& genome) {
+    if (genome.topology.empty()) return "genome has no topology";
+    const int width = genome.topology.front();
+    const uint64_t want = nn_layout_signature_for_inputs(width);
+    char buf[320];
+    if (want == 0ull) {
+        std::snprintf(buf, sizeof(buf),
+                      "genome input width %d matches no input layout of this build "
+                      "(pathgen %d, tracker %d) -- it was trained on another layout",
+                      width, NN_INPUT_COUNT, TRACKER_NN_INPUT_COUNT);
+        return buf;
+    }
+    if (genome.layout_signature != want) {
+        std::snprintf(buf, sizeof(buf),
+                      "genome input layout signature %016llx != this build's %016llx "
+                      "(%d inputs) -- same count, different slot order/names/version; "
+                      "use the build that trained it (043 genomes: tag 043-final)",
+                      static_cast<unsigned long long>(genome.layout_signature),
+                      static_cast<unsigned long long>(want), width);
+        return buf;
+    }
+    return "";
 }
 
 bool nn_detect_format(const uint8_t* data, size_t size) {

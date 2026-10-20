@@ -297,11 +297,11 @@ int main(int argc, char* argv[]) {
                 printTarget("last  ", *t0.back().targetSample);
         }
 
-        // 032 phase 1 — per-tick derived perceptual features (slots 45..53
+        // 032 phase 1 — per-tick derived perceptual features (beacon span / rate / tilt
         // of TrackerInputs). Serialized into AircraftState at dmp v=2.
         // Smoke verification: confirm non-trivial values across ticks.
         if (!t0.empty()) {
-            std::cout << "\nScenario 0 derived perceptual features (032 phase 1 — slots 45..53):\n";
+            std::cout << "\nScenario 0 derived perceptual features (032 phase 1 — beacon span, span rate, target tilt):\n";
             printDerivedFeatures("first ", t0.front().state.getTrackerInputs());
             if (t0.size() >= 3)
                 printDerivedFeatures("middle", t0[t0.size() / 2].state.getTrackerInputs());

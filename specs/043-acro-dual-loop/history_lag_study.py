@@ -135,14 +135,14 @@ def main():
         print(f"  {name:44s} {nslots:6d} | {row[0]:9.3f} {row[1]:6.3f} {row[2]:9.3f} {row[3]:6.3f} | {row[4]:8.3f} {row[5]:6.3f} {row[6]:8.3f} {row[7]:6.3f}")
 
     if a.nn:
-        from nn_replay_probe import Net, parse_nn_cpp
+        from nn_replay_probe import Net, parse_nn_cpp, input_block
         net = Net(*parse_nn_cpp(a.nn))
-        r = csv.reader(open(a.sim)); h = next(r); i0 = h.index("rbHhd") + 1; iS = h.index("scenario")
+        r = csv.reader(open(a.sim)); h = next(r); i0, i1, _ = input_block(h); iS = h.index("scenario")
         X = defaultdict(list)
         for row in r:
             if len(row) < len(h): continue
             s = int(row[iS])
-            if s % 12 == 0: X[s].append([float(v) for v in row[i0:i0 + 45]])
+            if s % 12 == 0: X[s].append([float(v) for v in row[i0:i1]])
         Hs, Os = [], []
         for s, rows in X.items():
             out, H = net.run(np.array(rows, np.float32)); Hs.append(H); Os.append(out)

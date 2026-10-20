@@ -116,3 +116,27 @@ Tag `044-last-45in` = the commit that records this section (local; operator push
 | regiment | smoke.ini: pop 3000, 6 paths × 16 winds = 96 scenarios, 200 gens, ramp step 10 (full strength from gen 191), seed **20261019** |
 | S3 prefix | `s3://autoc-m1/autoc-9223370244385275114-2026-10-20T04:11:40.693Z/` (`retain=expire`; the smoke is evidence, not a milestone) |
 | log | worktree `logs/autoc-044-smokeA-plant.log` → copy to the main tree's `logs/` at the end, then `git worktree remove ../autoc-044-smokeA` |
+
+## § Index-free gate green on the 45-input layout (T028–T038) — 2026-10-19
+
+- One `CMakeLists.txt` edit (ctests `input_layout_literals`, `flightlog_decode_py`; fixture dir for the round trip) + clean
+  `rebuild-perf.sh` (with smoke A training from its worktree — every running binary verified to be the worktree's).
+- Gate (`scripts/check_input_layout_literals.py`): first run 5 hits (both decoders' `45`, three 043 scripts); widened to slice/range
+  bounds, it also found `row[i0:i0 + 45]` ×2 and **`A[:, 1 + 30:1 + 33]` — the gyro slots by position** in
+  `rate_history_availability.py`. Now **clean (168 files)**.
+- Layout signature: FNV-1a 64 over the slot **enum names** + `kNNHistoryLayoutVersion` (display labels are cosmetic). Layout v3
+  (45 inputs) = **`20bd7c41f6a62220`**. NN01 v2 stores it at [8..15]; `nn_check_genome_layout` (one function) is called by
+  `nnextractor`, `nn2cpp` (pathgen-only) and eval mode; `nn2cpp` emits `kGeneratedLayoutSignature` + `static_assert`.
+- Flight log v6: header = type/magic/version, then `num_inputs`, `num_outputs`, `layout_version`, `layout_signature`, the slot-name
+  table (24 B each), then the v5 body. Both decoders size every record from the header and verify the names hash to the signature;
+  both still read v5 (a frozen description). **Decoded columns = lowercased enum names for v5 and v6 alike** — v5 values identical to
+  the old decoder on both 10-18 logs; 24 target/dist columns renamed (`target_x_0` → `target_x_tm5`, …). Web decoder also fixed for
+  the pitch-first output order (the 043 Python fix never reached it). Tested in node: same values as Python.
+- ctest **55/55**; xiao `pio run` SUCCESS with `nn_program_generated.cpp` from t6 g752 restamped as NN01 v2 (layout v3 = its own
+  layout; `weight_id` therefore differs from the 043 flight file). ⚠️ **Hardware bench log not taken** (no bench in this session):
+  the decoders were proven on the v6 fixture written by the same `flight_log_format.h`; the operator's pre-flight bench (T052)
+  confirms on hardware.
+- 043 scripts ported to read the input block by name (`nn_replay_probe.input_block`): `rate_history_availability` output identical
+  to the pre-port script; `pitch_input_attribution` runs on sim and flight CSVs.
+- ⚠️ Consequence: NN01 v1 genomes inside the smoke-A / T026 dmps are refused by this build's tools (by design); analyse smoke A with
+  the worktree's binaries (`dmp-dump` now prints `rampSc` NaN, not a silent 1.0, for an unreadable genome).

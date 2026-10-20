@@ -9,7 +9,7 @@ genome (dmp-dump --csv-only):
   1. The policy's temporal apparatus, stated: the only history the input vector carries is the TARGET
      representation at lags {800,400,200,100,50,0} ms (tgX/Y/Z, ds); the craft block (quat, airspeed, gyro,
      accel, Es, …) is INSTANTANEOUS. Anything else about the past lives in the 16-unit recurrent state.
-  2. A linear surrogate of the pitch output: out_pt ~ 45 inputs (pooled over scenarios), R² overall and R²
+  2. A linear surrogate of the pitch output: out_pt ~ all inputs (pooled over scenarios), R² overall and R²
      of the 1.5–4 Hz band of out_pt, then group-ablation ΔR² in that band — which slot GROUP carries the
      cycle: target history (and which lags), gyro, quaternion, accel, the rest.
   3. The loop seen from the policy: lagged correlation out_pt(t) ↔ gyrQ(t+k), k = −6..+6 ticks, and the
@@ -22,10 +22,13 @@ Usage: pitch_input_attribution.py tick.csv [--band 1.5 4] [--label NAME]
 """
 import argparse, csv, sys
 import numpy as np
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nn_replay_probe import input_block
 from collections import defaultdict
 
 FS = 20.0
-INPUT_COLS = 45          # tgX-5 .. sgZ, contiguous after rbHhd
 GROUPS = {
     "target dir history (tgX/Y/Z, 6 lags)": lambda n: n.startswith(("tgX", "tgY", "tgZ")),
     "  of which lag 0/50/100 ms": lambda n: n.startswith(("tgX", "tgY", "tgZ")) and n[-2:] in ("-1", "-2", "X0", "Y0", "Z0"),
@@ -48,26 +51,16 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument("csv"); ap.add_argument("--band", nargs=2, type=float, default=[1.5, 4.0]); ap.add_argument("--label", default="run")
     a = ap.parse_args(); lo, hi = a.band
     r = csv.reader(open(a.csv)); h = [c.strip() for c in next(r)]
-    if "target_x_0" in h:
-        # xiao flight log (flightlog_decode.py): same 45 slots, names differ; target_*_5 is NOW (lag index 5 = 0 ms)
-        XMAP = {}
-        for ax, tg in (("x", "tgX"), ("y", "tgY"), ("z", "tgZ")):
-            for k in range(6): XMAP[f"target_{ax}_{k}"] = f"{tg}-{5-k}" if k < 5 else f"{tg}0"
-        for k in range(6): XMAP[f"dist_{k}"] = f"ds-{5-k}" if k < 5 else "ds0"
-        XMAP.update({"closing_rate": "dd/dt", "quat_w": "qw", "quat_x": "qx", "quat_y": "qy", "quat_z": "qz", "airspeed": "vel",
-                     "gyro_p": "gyrP", "gyro_q": "gyrQ", "gyro_r": "gyrR", "accel_x": "acX", "accel_y": "acY", "accel_z": "acZ",
-                     "specific_energy": "Es", "boundary_closure_rate": "bClR", "dist_to_boundary": "dBnd", "inward_body_x": "inX",
-                     "inward_body_y": "inY", "inward_body_z": "inZ", "score_grad_x": "sgX", "score_grad_y": "sgY", "score_grad_z": "sgZ"})
-        i0 = h.index("target_x_0"); names = [XMAP[c] for c in h[i0:i0 + INPUT_COLS]]
+    i0, i1, names = input_block(h)   # 044 FR-016: by name, sim or flight CSV alike
+    if "tick_counter" in h:
         iS, iP = h.index("span_id"), h.index("out_pitch")
     else:
-        i0 = h.index("rbHhd") + 1; names = h[i0:i0 + INPUT_COLS]
         iS, iP = h.index("scenario"), h.index("out_pt")
     assert names[0] == "tgX-5" and names[-1] == "sgZ", names
     sc = defaultdict(list)
     for row in r:
         if len(row) < len(h): continue
-        sc[int(row[iS])].append([float(row[iP])] + [float(v) for v in row[i0:i0 + INPUT_COLS]])
+        sc[int(row[iS])].append([float(row[iP])] + [float(v) for v in row[i0:i1]])
     print(f"{a.label}: {len(sc)} scenarios")
     # --- pooled linear surrogate
     Y, X, Yb, Xb, lagc = [], [], [], [], defaultdict(list)
@@ -90,7 +83,7 @@ def main():
         Xm1 = np.column_stack([Xm, np.ones(len(y))]); b, *_ = np.linalg.lstsq(Xm1, y, rcond=None)
         res = y - Xm1 @ b; return 1 - res.var() / y.var()
     R_all = r2(X, Y); R_band = r2(Xb, Yb)
-    print(f"linear surrogate out_pt ~ 45 inputs: R² = {R_all:.3f} (all frequencies), R² = {R_band:.3f} in {lo}-{hi} Hz band")
+    print(f"linear surrogate out_pt ~ {len(names)} inputs: R² = {R_all:.3f} (all frequencies), R² = {R_band:.3f} in {lo}-{hi} Hz band")
     print(f"ablation ΔR² (band): how much of the policy's {lo}-{hi} Hz pitch command each slot group explains")
     for g, pred in GROUPS.items():
         keep = [j for j, n in enumerate(names) if not pred(n)]

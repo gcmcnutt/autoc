@@ -290,12 +290,15 @@ std::string readLocalFile(const std::string& path) {
 }
 
 // rampSc: the variation_scale baked into the elite genome at save time.
+// 044: NaN — not 1.0 — when the genome cannot be read (e.g. an NN01 v1 genome
+// in a pre-044-gate dmp): a plausible 1.0 would be a silent fallback
+// (Constitution VII) that reads as "full strength" in every downstream plot.
 float genomeVariationScale(const EvalResults& r) {
-  if (r.gp.empty()) return 1.0f;
+  if (r.gp.empty()) return std::nanf("");
   const auto* bytes = reinterpret_cast<const uint8_t*>(r.gp.data());
-  if (!nn_detect_format(bytes, r.gp.size())) return 1.0f;
+  if (!nn_detect_format(bytes, r.gp.size())) return std::nanf("");
   NNGenome g;
-  if (!nn_deserialize(bytes, r.gp.size(), g)) return 1.0f;
+  if (!nn_deserialize(bytes, r.gp.size(), g)) return std::nanf("");
   return g.variation_scale;
 }
 

@@ -264,3 +264,56 @@ TEST_F(Nn2cppUnrollTest, UnrolledRecurrentMatchesTableDrivenBitExact) {
 }
 
 }  // namespace
+
+// ============================================================================
+// 044 FR-016 (c) — the generated firmware carries and ASSERTS the input-layout
+// signature, and nn2cpp refuses a genome from another layout. A same-count
+// reorder passes every count check; only the signature sees it.
+// ============================================================================
+
+namespace {
+std::string runNn2cpp(const std::string& genome, const std::string& outCpp, int& rc) {
+    std::ostringstream cmd;
+    cmd << NN2CPP_BIN << " -w " << genome << " -i " << AUTOC_SOURCE_DIR << "/autoc.ini"
+        << " -u -f nnGenerated -o " << outCpp;
+    std::string out;
+    rc = runCmd(cmd.str(), out);
+    return out;
+}
+}  // namespace
+
+TEST_F(Nn2cppUnrollTest, GeneratedFileAssertsTheLayoutSignature_044) {
+    const std::string cpp = dir_ + "/gen_sig.cpp";
+    generate(/*unrolled=*/true, cpp);
+    const std::string src = readFile(cpp);
+    char hex[32];
+    std::snprintf(hex, sizeof(hex), "0x%016llxull", static_cast<unsigned long long>(kNNInputLayoutSignature));
+    EXPECT_NE(src.find(std::string("kGeneratedLayoutSignature = ") + hex), std::string::npos) << hex;
+    EXPECT_NE(src.find("static_assert(kGeneratedLayoutSignature == kNNInputLayoutSignature"),
+              std::string::npos);
+    // ...and it compiles against this tree (the assert holds).
+    compileHarness(cpp, dir_ + "/harness_sig");
+}
+
+TEST_F(Nn2cppUnrollTest, RefusesAGenomeFromAnotherLayout_044) {
+    std::string bytes = readFile(dir_ + "/fixture.dat");
+    ASSERT_GT(bytes.size(), 16u);
+    bytes[8] = static_cast<char>(bytes[8] ^ 0x01);   // NN01 v2 [8..15] = layout signature
+    writeFile(dir_ + "/foreign.dat", bytes);
+    int rc = 0;
+    const std::string out = runNn2cpp(dir_ + "/foreign.dat", dir_ + "/gen_foreign.cpp", rc);
+    EXPECT_NE(rc, 0) << out;
+    EXPECT_NE(out.find("layout"), std::string::npos) << out;
+}
+
+TEST_F(Nn2cppUnrollTest, RefusesANonPathgenGenome_044) {
+    NNGenome g = makeFixtureGenome();
+    g.topology[0] = TRACKER_NN_INPUT_COUNT;        // an M2 genome: wrong firmware
+    g.weights.resize(nn_weight_count(g.topology, g.recurrent), 0.1f);
+    std::vector<uint8_t> buf;
+    ASSERT_TRUE(nn_serialize(g, buf));
+    writeFile(dir_ + "/tracker.dat", std::string(buf.begin(), buf.end()));
+    int rc = 0;
+    const std::string out = runNn2cpp(dir_ + "/tracker.dat", dir_ + "/gen_tracker.cpp", rc);
+    EXPECT_NE(rc, 0) << out;
+}

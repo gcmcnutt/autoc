@@ -24,7 +24,43 @@ import numpy as np
 from collections import defaultdict
 
 FS = 20.0
-INPUT_COLS = 45
+# 044 FR-016 — the input block is located BY NAME, never by a literal width (a 45 here
+# silently read the wrong columns once the layout grew to 53).
+_CRAFT_DISPLAY = {
+    "closing_rate": "dd/dt", "quat_w": "qw", "quat_x": "qx", "quat_y": "qy", "quat_z": "qz",
+    "airspeed": "vel", "gyro_p": "gyrP", "gyro_q": "gyrQ", "gyro_r": "gyrR",
+    "accel_x": "acX", "accel_y": "acY", "accel_z": "acZ", "specific_energy": "Es",
+    "boundary_closure_rate": "bClR", "dist_to_boundary": "dBnd",
+    "inward_body_x": "inX", "inward_body_y": "inY", "inward_body_z": "inZ",
+    "score_grad_x": "sgX", "score_grad_y": "sgY", "score_grad_z": "sgZ",
+}
+
+
+def display_name(col):
+    """Decoded-flight column (lowercased slot enum name) -> the dmp-dump display name, so sim and
+    flight CSVs index the same way: target_x_tm5 -> tgX-5, target_x_now -> tgX0, dist_tm1 -> ds-1,
+    gyro_q -> gyrQ, gyro_q_tm2 -> gyrQ-2 (044 history slots)."""
+    m = re.fullmatch(r"target_([xyz])_(?:tm(\d)|now)", col)
+    if m:
+        return f"tg{m.group(1).upper()}" + (f"-{m.group(2)}" if m.group(2) else "0")
+    m = re.fullmatch(r"dist_(?:tm(\d)|now)", col)
+    if m:
+        return f"ds-{m.group(1)}" if m.group(1) else "ds0"
+    m = re.fullmatch(r"(.+)_tm(\d)", col)
+    if m and m.group(1) in _CRAFT_DISPLAY:
+        return f"{_CRAFT_DISPLAY[m.group(1)]}-{m.group(2)}"
+    return _CRAFT_DISPLAY[col]
+
+
+def input_block(h):
+    """The NN input columns of a tick CSV, BY NAME: a dmp-dump sim CSV writes them from the metadata
+    table between `rbHhd` and `Es_m`; a decoded flight CSV names them from the log header between
+    `tick_counter` and `out_pitch`. Returns (i0, i1, display_names) — names in dmp-dump spelling."""
+    if "tick_counter" in h and "out_pitch" in h:
+        i0, i1 = h.index("tick_counter") + 1, h.index("out_pitch")
+        return i0, i1, [display_name(c) for c in h[i0:i1]]
+    i0, i1 = h.index("rbHhd") + 1, h.index("Es_m")
+    return i0, i1, list(h[i0:i1])
 
 
 def parse_nn_cpp(path):
@@ -76,13 +112,13 @@ def main():
     ap.add_argument("--band", nargs=2, type=float, default=[1.5, 4.0]); a = ap.parse_args(); lo, hi = a.band
     net = Net(*parse_nn_cpp(a.nn))
     r = csv.reader(open(a.csv)); h = next(r)
-    i0 = h.index("rbHhd") + 1; names = h[i0:i0 + INPUT_COLS]; iS, iP = h.index("scenario"), h.index("out_pt")
+    i0, i1, names = input_block(h); iS, iP = h.index("scenario"), h.index("out_pt")
     sc = defaultdict(list)
     for row in r:
         if len(row) < len(h): continue
         s = int(row[iS])
         if s % max(1, 294 // a.scenarios) == 0 and len(sc) <= a.scenarios:
-            sc[s].append([float(row[iP])] + [float(v) for v in row[i0:i0 + INPUT_COLS]])
+            sc[s].append([float(row[iP])] + [float(v) for v in row[i0:i1]])
     tg = [j for j, n in enumerate(names) if n.startswith(("tgX", "tgY", "tgZ", "ds"))]
     tg_now = {n[:-1] if n.endswith("0") else n.split("-")[0]: j for j, n in enumerate(names) if n in ("tgX0", "tgY0", "tgZ0", "ds0")}
     gy = [names.index(n) for n in ("gyrP", "gyrQ", "gyrR")]

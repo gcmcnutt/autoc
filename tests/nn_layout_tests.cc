@@ -108,3 +108,45 @@ TEST(NNLayout, OldLayoutStreamFailsLoud) {
 }
 
 }  // namespace
+
+// ============================================================================
+// 044 FR-016 (c) — the layout SIGNATURE: FNV-1a 64 over the ordered slot display
+// names + the layout version, computed at compile time from the ONE metadata
+// table. It travels in the NN01 genome, the generated firmware and the flight
+// log header, so a same-count reorder — which no count check sees — fails loud.
+// ============================================================================
+
+namespace {
+constexpr SensorInputMeta kSigA[] = {{"A", "a", 7}, {"B", "b", 7}, {"C", "c", 7}};
+constexpr SensorInputMeta kSigReordered[] = {{"A", "a", 7}, {"C", "c", 7}, {"B", "b", 7}};
+constexpr SensorInputMeta kSigRenamed[] = {{"A", "a", 7}, {"BB", "b", 7}, {"C", "c", 7}};
+// The signature hashes the ENUM name; display labels are cosmetic.
+constexpr SensorInputMeta kSigRelabelled[] = {{"A", "a", 7}, {"B", "bee", 7}, {"C", "c", 7}};
+// "AB" + "C" must not collide with "A" + "BC" (names are separated, not concatenated).
+constexpr SensorInputMeta kSigJoin1[] = {{"AB", "x", 7}, {"C", "y", 7}};
+constexpr SensorInputMeta kSigJoin2[] = {{"A", "x", 7}, {"BC", "y", 7}};
+}  // namespace
+
+TEST(NNLayoutSignature, StableForAFixedTableAndSensitiveToOrderNamesAndVersion_044) {
+    constexpr uint64_t a = nnLayoutSignature(kSigA, 3, 4);
+    static_assert(a == nnLayoutSignature(kSigA, 3, 4), "signature must be a pure function");
+    EXPECT_NE(a, nnLayoutSignature(kSigReordered, 3, 4));   // same count, reordered
+    EXPECT_NE(a, nnLayoutSignature(kSigRenamed, 3, 4));     // same count, renamed
+    EXPECT_EQ(a, nnLayoutSignature(kSigRelabelled, 3, 4));  // display label only
+    EXPECT_NE(a, nnLayoutSignature(kSigA, 3, 5));           // layout version bump
+    EXPECT_NE(nnLayoutSignature(kSigJoin1, 2, 4), nnLayoutSignature(kSigJoin2, 2, 4));
+    EXPECT_NE(a, 0u);
+}
+
+TEST(NNLayoutSignature, BuildSignaturesComeFromTheMetadataTables_044) {
+    EXPECT_EQ(kNNInputLayoutSignature,
+              nnLayoutSignature(kPathgenInputMeta, static_cast<size_t>(PathgenInput::COUNT),
+                                kNNHistoryLayoutVersion));
+    EXPECT_EQ(kTrackerInputLayoutSignature,
+              nnLayoutSignature(kTrackerInputMeta, static_cast<size_t>(TrackerInput::COUNT),
+                                kNNHistoryLayoutVersion));
+    EXPECT_NE(kNNInputLayoutSignature, kTrackerInputLayoutSignature);
+    // Slot (enum) names fit the fixed-width name field the flight log carries.
+    for (const auto& m : kPathgenInputMeta) EXPECT_LT(std::strlen(m.name), kNNSlotNameLen);
+    for (const auto& m : kTrackerInputMeta) EXPECT_LT(std::strlen(m.name), kNNSlotNameLen);
+}

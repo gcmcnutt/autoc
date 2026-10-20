@@ -168,6 +168,15 @@ int main(int argc, char** argv) {
     std::cerr << "Error deserializing NN genome from archive" << std::endl;
     return 1;
   }
+  // 044 FR-016 — refuse a genome trained on another input layout (incl. a
+  // same-count reorder) BEFORE re-serializing it, which would restamp it.
+  {
+    const std::string layoutErr = nn_check_genome_layout(genome);
+    if (!layoutErr.empty()) {
+      std::cerr << "Error: " << layoutErr << std::endl;
+      return 1;
+    }
+  }
 
   // Set provenance: profile:bucket/key
   std::string profile = ConfigManager::getConfig().s3Profile;

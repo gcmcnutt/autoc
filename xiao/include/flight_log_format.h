@@ -59,7 +59,14 @@ constexpr uint32_t kMagic = 0x314C4641u;
 // table's telemetry bases moved with it. TickRecord and FileHeader both change
 // width, so a v3 file MUST NOT be parsed by a v4 reader — the version check in
 // validateFileHeader is what enforces that.
-constexpr uint8_t kFormatVersion = 5;  // 043: cone constants + per-tick step_score
+// v5 (043): cone constants + per-tick step_score.
+// v6 (044 FR-016): the INPUT LAYOUT travels with the log — FileHeader gains, right
+// after format_version, the input/output counts, the layout version, the layout
+// signature and the ordered slot-name table. Every variable-width part of the
+// stream (the header's scale table, every TickRecord) is sized by num_inputs /
+// num_outputs, so a decoder reads the fixed prefix, then the names, then sizes
+// everything else FROM THE FILE — no compiled-in or hand-copied slot list.
+constexpr uint8_t kFormatVersion = 6;
 
 enum RecordType : uint8_t {
   kPad = 0x00,          // buffer word-alignment filler — skipped, never emitted
@@ -255,6 +262,12 @@ struct FileHeader {
   uint8_t type;                        // kFileHeader
   uint32_t magic;                      // kMagic
   uint8_t format_version;              // kFormatVersion; reader loud-fails on mismatch
+  // v6 (044 FR-016) — the layout, before anything whose width depends on it.
+  uint16_t num_inputs;                 // input-block width (kNumInputs)
+  uint16_t num_outputs;                // output-block width (kNumOutputs)
+  uint16_t layout_version;             // kNNHistoryLayoutVersion
+  uint64_t layout_signature;           // kNNInputLayoutSignature (recomputable from the names)
+  char input_names[kNumInputs][kNNSlotNameLen];  // slot (enum) names in slot order, NUL-padded
   uint8_t firmware_id[8];              // SHA-256[0..7] of generated NN source (nn2cpp)
   uint8_t weight_id[8];                // SHA-256[0..7] of the weight file (nn2cpp)
   char program[96];                    // v3: nn2cpp program-source string (NUL-padded,
@@ -389,7 +402,9 @@ static_assert(sizeof(TickRecord) ==
                   1 + 4 + 2 + 2 * kNumInputs + 2 * kNumOutputs + 18 + 1 + 1 + 6 + 1
                   + 2 /* v5 step_score */,
               "TickRecord must be packed (no compiler padding)");
-static_assert(sizeof(FileHeader) == 1 + 4 + 1 + 8 + 8 + 96 + 2
+static_assert(sizeof(FileHeader) == 1 + 4 + 1
+                  + 2 + 2 + 2 + 8 + kNumInputs * kNNSlotNameLen /* v6 layout */
+                  + 8 + 8 + 96 + 2
                   + 6 * 4 /* v5 cone constants */
                   + 4 * kNumScaledFields + 4,
               "FileHeader must be packed");
@@ -428,6 +443,12 @@ inline void initFileHeader(FileHeader& h, const uint8_t firmware_id[8],
   h.type = kFileHeader;
   h.magic = kMagic;
   h.format_version = kFormatVersion;
+  h.num_inputs = static_cast<uint16_t>(kNumInputs);
+  h.num_outputs = static_cast<uint16_t>(kNumOutputs);
+  h.layout_version = static_cast<uint16_t>(kNNHistoryLayoutVersion);
+  h.layout_signature = kNNInputLayoutSignature;
+  for (int i = 0; i < kNumInputs; i++)   // NUL-padded via the memset
+    strncpy(h.input_names[i], kPathgenInputMeta[i].name, kNNSlotNameLen - 1);
   memcpy(h.firmware_id, firmware_id, 8);
   memcpy(h.weight_id, weight_id, 8);
   // NUL-padded via the memset; silently truncated to 95 chars + NUL.
@@ -443,11 +464,38 @@ inline void initFileHeader(FileHeader& h, const uint8_t firmware_id[8],
   h.scale_table_crc = crc32(h.scales, sizeof(h.scales));
 }
 
-enum class ValidateResult { kOk, kBadMagic, kBadVersion, kBadScaleCrc };
+// 044 FR-016 — the signature a header's OWN name table + layout version hash to
+// (same FNV-1a 64 as nnLayoutSignature in nn_inputs.h), so a decoder holding
+// only the file can verify the table it is about to build columns from.
+inline uint64_t headerLayoutSignature(const FileHeader& h) {
+  uint64_t s = 0xcbf29ce484222325ull;
+  const int n = h.num_inputs < kNumInputs ? h.num_inputs : kNumInputs;
+  for (int i = 0; i < n; i++) {
+    for (size_t k = 0; k < kNNSlotNameLen && h.input_names[i][k] != '\0'; k++) {
+      s ^= static_cast<uint8_t>(h.input_names[i][k]);
+      s *= 0x100000001b3ull;
+    }
+    s *= 0x100000001b3ull;   // NUL separator (xor 0, multiply)
+  }
+  const uint32_t v = h.layout_version;
+  for (int b = 0; b < 4; b++) {
+    s ^= static_cast<uint8_t>((v >> (8 * b)) & 0xFFu);
+    s *= 0x100000001b3ull;
+  }
+  return s;
+}
+
+enum class ValidateResult { kOk, kBadMagic, kBadVersion, kBadScaleCrc, kBadLayout };
 
 inline ValidateResult validateFileHeader(const FileHeader& h) {
   if (h.magic != kMagic) return ValidateResult::kBadMagic;
   if (h.format_version != kFormatVersion) return ValidateResult::kBadVersion;
+  // v6 — a log from another input layout (count, order, names or version).
+  if (h.num_inputs != kNumInputs || h.num_outputs != kNumOutputs ||
+      h.layout_version != kNNHistoryLayoutVersion ||
+      h.layout_signature != kNNInputLayoutSignature ||
+      headerLayoutSignature(h) != h.layout_signature)
+    return ValidateResult::kBadLayout;
   if (crc32(h.scales, sizeof(h.scales)) != h.scale_table_crc)
     return ValidateResult::kBadScaleCrc;
   // A CRC-clean table can still be WRONG: an unassigned slot is 0, which

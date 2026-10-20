@@ -430,29 +430,16 @@
     }
 
     // ------------------------------------------------------------------
-    // 039 US3 — in-browser decoder for the v1 binary flight log. Implements
-    // specs/039-xiao-20hz-flight/contracts/flight-log-format.md (same wire
-    // format as xiao/include/flight_log_format.h; loud-fail on version/CRC).
+    // 039 US3 — in-browser decoder for the binary flight log (v5 / v6). Same
+    // wire format as xiao/include/flight_log_format.h; loud-fail on version/CRC.
     // ------------------------------------------------------------------
-    // v4 (041 P5-3): the NN input block grew 37 -> 45 slots. EVERY offset below
-    // is derived from FL_NUM_IN/FL_NUM_OUT rather than written as a literal --
-    // the v3 code hardcoded 81/87/105/40 and would have silently decoded the
-    // outputs as inputs and the telemetry as outputs against a v4 file.
-    const FL_MAGIC = 0x314C4641, FL_VERSION = 5;
-    const FL_NUM_IN = 45, FL_NUM_OUT = 3, FL_NUM_SCALED = FL_NUM_IN + FL_NUM_OUT + 10;
-    // Derived record geometry (must match xiao/include/flight_log_format.h).
-    const FL_TICK_IN = 7;                              // type+ts+counter
-    const FL_TICK_OUT = FL_TICK_IN + 2 * FL_NUM_IN;    // outputs
-    const FL_TICK_TELEM = FL_TICK_OUT + 2 * FL_NUM_OUT;// pos/vel/rabbit
-    const FL_TICK_TAIL = FL_TICK_TELEM + 18;           // reset, path, rc[3], valid
-    const FL_TICK_STEP = FL_TICK_TAIL + 9;             // v5: step_score
-    const FL_TICK_SIZE = FL_TICK_TAIL + 1 + 1 + 6 + 1 + 2;
-    const FL_HDR_CONE = 120;                           // v5: 6 cone floats
-    const FL_HDR_SCALES = FL_HDR_CONE + 24;            // type..tick_ms..cone
-    const FL_HDR_SIZE = FL_HDR_SCALES + 4 * FL_NUM_SCALED + 4;
-    const FL_SCALE_TELEM = FL_NUM_IN + FL_NUM_OUT;     // first telemetry scale slot
-    const FL_SCALE_STEP = FL_SCALE_TELEM + 9;          // v5: step_score scale slot
-    const FL_SIZES = { 1: FL_HDR_SIZE, 2: 29, 3: FL_TICK_SIZE, 4: 10, 5: 103, 6: 25 };
+    // v6 (044 FR-016): the header carries the INPUT LAYOUT — counts, layout
+    // version, layout signature and the ordered slot-name table — so every
+    // offset below is computed from the FILE (flLayout), never from a compiled-
+    // in width or name list. v5 (the 043 flights) is read from the frozen
+    // description FL_V5_INPUT_NAMES. Columns are the lowercased slot (enum)
+    // names, identical to src/analytics/flightlog_decode.py.
+    const FL_MAGIC = 0x314C4641, FL_VERSIONS = [5, 6], FL_SLOT_NAME_LEN = 24;
     const FL_EVENTS = { 1: 'ARM', 2: 'DISARM', 3: 'ENGAGE', 4: 'DISENGAGE',
                         5: 'FETCH_TIMEOUT', 6: 'LOG_DROP', 7: 'FLASH_FULL',
                         8: 'DISENGAGE_REASON', 9: 'FAILSAFE', 10: 'SERVO_SWITCH',
@@ -460,66 +447,119 @@
     const FL_REASONS = { 0: 'unknown', 1: 'servo switch', 2: 'failsafe', 3: 'disarmed',
                          4: 'timeout', 5: 'path complete', 6: 'MSP state failure',
                          7: 'missing local state', 8: 'autoc cancelled' };
-    const FL_INPUT_NAMES = [].concat(
-      [...Array(6)].map((_, i) => 'target_x_' + i),
-      [...Array(6)].map((_, i) => 'target_y_' + i),
-      [...Array(6)].map((_, i) => 'target_z_' + i),
-      [...Array(6)].map((_, i) => 'dist_' + i),
+    // FROZEN v5 format description (043 flights, input layout v3). v5 files
+    // carry no name table, so this list IS the v5 contract; it never changes.
+    const FL_HIST = ['tm5', 'tm4', 'tm3', 'tm2', 'tm1', 'now'];
+    const FL_V5_INPUT_NAMES = [].concat(
+      ...['x', 'y', 'z'].map(a => FL_HIST.map(t => `target_${a}_${t}`)),
+      FL_HIST.map(t => 'dist_' + t),
       ['closing_rate', 'quat_w', 'quat_x', 'quat_y', 'quat_z', 'airspeed',
-       'gyro_p', 'gyro_q', 'gyro_r',
-       // 041: five slots inserted BEFORE dist_to_boundary.
-       'accel_x', 'accel_y', 'accel_z',
-       'specific_energy', 'boundary_closure_rate',
-       'dist_to_boundary', 'inward_body_x', 'inward_body_y', 'inward_body_z',
+       'gyro_p', 'gyro_q', 'gyro_r', 'accel_x', 'accel_y', 'accel_z',
+       'specific_energy', 'boundary_closure_rate', 'dist_to_boundary',
+       'inward_body_x', 'inward_body_y', 'inward_body_z',
        'score_grad_x', 'score_grad_y', 'score_grad_z']);
-    if (FL_INPUT_NAMES.length !== FL_NUM_IN)
-      throw new Error(`FL_INPUT_NAMES has ${FL_INPUT_NAMES.length} entries, wire carries ${FL_NUM_IN}`);
-    const FL_OUTPUT_NAMES = ['out_roll', 'out_pitch', 'out_throttle'];
+    const FL_V5_NUM_OUT = 3;
+    // 043 ORDER FIX (as in flightlog_decode.py): the NN output vector is PITCH-first.
+    const FL_OUTPUT_NAMES = ['out_pitch', 'out_roll', 'out_throttle'];
     const FL_TELEM_NAMES = ['pos_n', 'pos_e', 'pos_d', 'vel_n', 'vel_e', 'vel_d',
-                            'rabbit_n', 'rabbit_e', 'rabbit_d'];  // scale slots FL_SCALE_TELEM..+8
+                            'rabbit_n', 'rabbit_e', 'rabbit_d'];  // scale slots after the outputs
+
+    // Everything whose width depends on the input layout, built from the header.
+    function flLayout(version, names, nOut, layoutVersion, signature) {
+      const nIn = names.length, nScaled = nIn + nOut + 10;
+      const prefix = 6 + (version >= 6 ? 14 + FL_SLOT_NAME_LEN * nIn : 0);
+      const L = { version, names, nIn, nOut, nScaled, prefix, layoutVersion, signature,
+                  columns: names.map(n => n.toLowerCase()) };
+      L.tickIn = 7;                          // type + ts + counter
+      L.tickOut = L.tickIn + 2 * nIn;        // outputs
+      L.tickTelem = L.tickOut + 2 * nOut;    // pos/vel/rabbit
+      L.tickTail = L.tickTelem + 18;         // reset, path, rc[3], valid
+      L.tickStep = L.tickTail + 9;           // v5: step_score
+      L.tickSize = L.tickTail + 1 + 1 + 6 + 1 + 2;
+      L.hdrFw = prefix; L.hdrWt = prefix + 8; L.hdrProg = prefix + 16;
+      L.hdrTick = prefix + 112; L.hdrCone = prefix + 114; L.hdrScales = prefix + 138;
+      L.hdrSize = L.hdrScales + 4 * nScaled + 4;
+      L.scaleTelem = nIn + nOut; L.scaleStep = L.scaleTelem + 9;
+      L.sizes = { 1: L.hdrSize, 2: 29, 3: L.tickSize, 4: 10, 5: 103, 6: 25 };
+      return L;
+    }
+
+    // FNV-1a 64 over slot names + NUL, then the layout version (4 B LE) —
+    // the same hash as nnLayoutSignature (nn_inputs.h).
+    function flLayoutSignature(names, layoutVersion) {
+      const P = 0x100000001b3n, M = (1n << 64n) - 1n;
+      let h = 0xcbf29ce484222325n;
+      for (const n of names) {
+        for (const b of new TextEncoder().encode(n)) h = ((h ^ BigInt(b)) * P) & M;
+        h = (h * P) & M;
+      }
+      for (let k = 0; k < 4; k++) h = ((h ^ BigInt((layoutVersion >> (8 * k)) & 0xff)) * P) & M;
+      return h;
+    }
+
+    function flReadLayout(bytes, dv, pos) {
+      const magic = dv.getUint32(pos + 1, true);
+      const version = dv.getUint8(pos + 5);
+      if (magic !== FL_MAGIC) throw new Error('bad magic — not a flight log');
+      if (!FL_VERSIONS.includes(version)) throw new Error(
+        `format_version ${version} unsupported (decoder reads v${FL_VERSIONS.join('/')})`);
+      if (version === 5) return flLayout(5, FL_V5_INPUT_NAMES, FL_V5_NUM_OUT, null, null);
+      const nIn = dv.getUint16(pos + 6, true), nOut = dv.getUint16(pos + 8, true);
+      const lver = dv.getUint16(pos + 10, true), sig = dv.getBigUint64(pos + 12, true);
+      const names = [];
+      for (let i = 0; i < nIn; i++) {
+        const nb = bytes.subarray(pos + 20 + FL_SLOT_NAME_LEN * i, pos + 20 + FL_SLOT_NAME_LEN * (i + 1));
+        const end = nb.indexOf(0);
+        names.push(new TextDecoder().decode(end < 0 ? nb : nb.subarray(0, end)));
+      }
+      if (flLayoutSignature(names, lver) !== sig)
+        throw new Error('v6 slot-name table does not hash to its layout signature — header corrupt');
+      return flLayout(6, names, nOut, lver, sig);
+    }
 
     function decodeFlightLog(bytes) {
       const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      let pos = 0, header = null, scales = null, flightStates = 0;
+      let pos = 0, header = null, scales = null, flightStates = 0, L = null;
       const spans = [], events = [];
       let cur = null;
       while (pos < bytes.length) {
         const t = bytes[pos];
         if (t === 0) { pos++; continue; }               // padding
-        const size = FL_SIZES[t];
+        if (!L) {
+          if (t !== 1) throw new Error(`record type 0x${t.toString(16)} before the FileHeader at ${pos}`);
+          L = flReadLayout(bytes, dv, pos);
+        }
+        const size = L.sizes[t];
         if (!size) throw new Error(`unknown record type 0x${t.toString(16)} at ${pos}`);
         if (pos + size > bytes.length) throw new Error(`truncated record at ${pos}`);
         if (t === 1) {                                   // FileHeader
-          const magic = dv.getUint32(pos + 1, true);
-          const version = dv.getUint8(pos + 5);
-          if (magic !== FL_MAGIC) throw new Error('bad magic — not a flight log');
-          if (version !== FL_VERSION) throw new Error(
-            `format_version ${version} unsupported (decoder is v${FL_VERSION})`);
-          // layout: program[96] at 22, tick_ms at 118, v5 cone[6] at 120, scales after
-          const scaleBytes = bytes.subarray(pos + FL_HDR_SCALES, pos + FL_HDR_SCALES + 4 * FL_NUM_SCALED);
-          if (crc32(scaleBytes) !== dv.getUint32(pos + FL_HDR_SCALES + 4 * FL_NUM_SCALED, true))
+          const scaleBytes = bytes.subarray(pos + L.hdrScales, pos + L.hdrScales + 4 * L.nScaled);
+          if (crc32(scaleBytes) !== dv.getUint32(pos + L.hdrScales + 4 * L.nScaled, true))
             throw new Error('scale_table_crc mismatch — refusing to decode');
           scales = [];
-          for (let i = 0; i < FL_NUM_SCALED; i++)
-            scales.push(dv.getFloat32(pos + FL_HDR_SCALES + 4 * i, true));
+          for (let i = 0; i < L.nScaled; i++)
+            scales.push(dv.getFloat32(pos + L.hdrScales + 4 * i, true));
           // v5 — the fitness cone this flight was scored against, from the
           // constants nn2cpp baked into the firmware. Carried so a replay never
           // depends on an autoc.ini that may have moved since the flight.
           const cone = {
-            dist_scale_behind:    dv.getFloat32(pos + FL_HDR_CONE +  0, true),
-            dist_scale_ahead:     dv.getFloat32(pos + FL_HDR_CONE +  4, true),
-            cone_angle_deg:       dv.getFloat32(pos + FL_HDR_CONE +  8, true),
-            streak_threshold:     dv.getFloat32(pos + FL_HDR_CONE + 12, true),
-            streak_ramp_sec:      dv.getFloat32(pos + FL_HDR_CONE + 16, true),
-            streak_multiplier_max:dv.getFloat32(pos + FL_HDR_CONE + 20, true) };
+            dist_scale_behind:    dv.getFloat32(pos + L.hdrCone +  0, true),
+            dist_scale_ahead:     dv.getFloat32(pos + L.hdrCone +  4, true),
+            cone_angle_deg:       dv.getFloat32(pos + L.hdrCone +  8, true),
+            streak_threshold:     dv.getFloat32(pos + L.hdrCone + 12, true),
+            streak_ramp_sec:      dv.getFloat32(pos + L.hdrCone + 16, true),
+            streak_multiplier_max:dv.getFloat32(pos + L.hdrCone + 20, true) };
           const hex = (o, n) => Array.from(bytes.subarray(pos + o, pos + o + n))
             .map(b => b.toString(16).padStart(2, '0')).join('');
-          const progBytes = bytes.subarray(pos + 22, pos + 118);
+          const progBytes = bytes.subarray(pos + L.hdrProg, pos + L.hdrProg + 96);
           const progEnd = progBytes.indexOf(0);
           const program = new TextDecoder().decode(
             progEnd < 0 ? progBytes : progBytes.subarray(0, progEnd));
-          header = { firmware_id: hex(6, 8), weight_id: hex(14, 8), program,
-                     tick_ms: dv.getUint16(pos + 118, true), cone };
+          header = { version: L.version, firmware_id: hex(L.hdrFw, 8), weight_id: hex(L.hdrWt, 8),
+                     program, tick_ms: dv.getUint16(pos + L.hdrTick, true), cone,
+                     num_inputs: L.nIn,
+                     layout_signature: L.signature === null ? '(v5: frozen layout v3)'
+                                                            : L.signature.toString(16).padStart(16, '0') };
         } else if (t === 2) {                            // EngageHeader
           cur = { engage: {
                     ts: dv.getUint32(pos + 1, true),
@@ -536,22 +576,22 @@
           const row = { span_id: cur ? cur.engage.span_id : -1,
                         timestamp_ms: dv.getUint32(pos + 1, true),
                         tick_counter: dv.getUint16(pos + 5, true) };
-          for (let i = 0; i < FL_NUM_IN; i++)
-            row[FL_INPUT_NAMES[i]] = dv.getInt16(pos + FL_TICK_IN + 2 * i, true) / scales[i];
-          for (let i = 0; i < FL_NUM_OUT; i++)
-            row[FL_OUTPUT_NAMES[i]] = dv.getInt16(pos + FL_TICK_OUT + 2 * i, true) / scales[FL_NUM_IN + i];
-          for (let i = 0; i < 9; i++)   // v2: pos[3], vel[3], rabbit[3] at 87..105
-            row[FL_TELEM_NAMES[i]] = dv.getInt16(pos + FL_TICK_TELEM + 2 * i, true) / scales[FL_SCALE_TELEM + i];
-          row.recurrent_reset = dv.getUint8(pos + FL_TICK_TAIL);
-          row.path_index = dv.getInt8(pos + FL_TICK_TAIL + 1);
-          row.rc_roll = dv.getUint16(pos + FL_TICK_TAIL + 2, true);
-          row.rc_pitch = dv.getUint16(pos + FL_TICK_TAIL + 4, true);
-          row.rc_throttle = dv.getUint16(pos + FL_TICK_TAIL + 6, true);
-          row.state_valid = dv.getUint8(pos + FL_TICK_TAIL + 8);
+          for (let i = 0; i < L.nIn; i++)
+            row[L.columns[i]] = dv.getInt16(pos + L.tickIn + 2 * i, true) / scales[i];
+          for (let i = 0; i < L.nOut; i++)
+            row[FL_OUTPUT_NAMES[i]] = dv.getInt16(pos + L.tickOut + 2 * i, true) / scales[L.nIn + i];
+          for (let i = 0; i < FL_TELEM_NAMES.length; i++)   // v2: pos[3], vel[3], rabbit[3]
+            row[FL_TELEM_NAMES[i]] = dv.getInt16(pos + L.tickTelem + 2 * i, true) / scales[L.scaleTelem + i];
+          row.recurrent_reset = dv.getUint8(pos + L.tickTail);
+          row.path_index = dv.getInt8(pos + L.tickTail + 1);
+          row.rc_roll = dv.getUint16(pos + L.tickTail + 2, true);
+          row.rc_pitch = dv.getUint16(pos + L.tickTail + 4, true);
+          row.rc_throttle = dv.getUint16(pos + L.tickTail + 6, true);
+          row.state_valid = dv.getUint8(pos + L.tickTail + 8);
           // v5 — the score the FIRMWARE computed for this tick. Stored, not
           // re-derived: the segment tangent is not in the log and approximating
           // it flips the in-streak call on ~1% of ticks.
-          row.step_score = dv.getInt16(pos + FL_TICK_STEP, true) / scales[FL_SCALE_STEP];
+          row.step_score = dv.getInt16(pos + L.tickStep, true) / scales[L.scaleStep];
           if (cur) cur.ticks.push(row);
         } else if (t === 4) {                            // EventRecord
           const code = dv.getUint8(pos + 5);
@@ -574,11 +614,12 @@
         pos += size;
       }
       if (!header) throw new Error('no FileHeader — not a valid flight log');
-      return { header, spans, events, flightStates };
+      return { header, spans, events, flightStates, columns: L.columns };
     }
 
     function showDecodeSummary(d) {
-      let out = `decoded v${FL_VERSION}  tick=${d.header.tick_ms}ms  fw=${d.header.firmware_id}  wt=${d.header.weight_id}  breadcrumbs=${d.flightStates}\n`;
+      let out = `decoded v${d.header.version}  tick=${d.header.tick_ms}ms  fw=${d.header.firmware_id}  wt=${d.header.weight_id}  breadcrumbs=${d.flightStates}\n`;
+      out += `layout: ${d.header.num_inputs} inputs, signature ${d.header.layout_signature}\n`;
       out += `program: ${d.header.program}\n`;
       const c = d.header.cone;
       out += `cone: behind=${c.dist_scale_behind} ahead=${c.dist_scale_ahead} ` +
@@ -614,7 +655,7 @@
       try { d = decodeFlightLog(lastDownload); }
       catch (e) { log('CSV export failed: ' + e.message); return; }
       const cols = ['span_id', 'timestamp_ms', 'tick_counter']
-        .concat(FL_INPUT_NAMES, FL_OUTPUT_NAMES, FL_TELEM_NAMES,
+        .concat(d.columns, FL_OUTPUT_NAMES, FL_TELEM_NAMES,
                 ['recurrent_reset', 'path_index', 'rc_roll', 'rc_pitch', 'rc_throttle',
                  'state_valid', 'step_score']);
       const lines = [cols.join(',')];

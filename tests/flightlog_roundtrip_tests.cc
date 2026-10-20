@@ -22,7 +22,11 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "flight_log_format.h"
@@ -343,6 +347,90 @@ TEST(FlightLogFormat, StreamWalkSkipsPaddingAndFailsLoudOnUnknownType) {
   StreamWalker wt2(trunc.data(), trunc.size());
   while (wt2.next(v)) {}
   EXPECT_TRUE(wt2.failed());
+}
+
+// ---------------------------------------------------------------------------
+// 044 FR-016 (b)/(c) — v6: the layout travels WITH the log. The header carries
+// the input/output counts, the layout version, the layout signature and the
+// ordered slot-name table, so a decoder builds its columns from the file and
+// never from a compiled-in or hand-copied list. A same-count reorder changes
+// the signature; validateFileHeader refuses a header from another layout.
+// ---------------------------------------------------------------------------
+
+TEST(FlightLogFormatV6, HeaderCarriesTheLayout_044) {
+  EXPECT_EQ(kFormatVersion, 6);
+  uint8_t fw[8] = {0}, wt[8] = {0};
+  FileHeader h;
+  initFileHeader(h, fw, wt, "test:program/gen0000.dmp.zst", 50, kTestCone);
+  ASSERT_EQ(validateFileHeader(h), ValidateResult::kOk);
+  EXPECT_EQ(h.num_inputs, kNumInputs);
+  EXPECT_EQ(h.num_outputs, kNumOutputs);
+  EXPECT_EQ(h.layout_version, kNNHistoryLayoutVersion);
+  EXPECT_EQ(h.layout_signature, kNNInputLayoutSignature);
+  for (int i = 0; i < kNumInputs; i++) {
+    EXPECT_STREQ(h.input_names[i], kPathgenInputMeta[i].name) << "slot " << i;
+    EXPECT_EQ(h.input_names[i][kNNSlotNameLen - 1], '\0');
+  }
+  // The names hash back to the signature (a decoder can verify the table).
+  EXPECT_EQ(headerLayoutSignature(h), h.layout_signature);
+}
+
+TEST(FlightLogFormatV6, HeaderFromAnotherLayoutIsRefused_044) {
+  uint8_t fw[8] = {0}, wt[8] = {0};
+  FileHeader h;
+  initFileHeader(h, fw, wt, "test:program/gen0000.dmp.zst", 50, kTestCone);
+  FileHeader sig = h;  sig.layout_signature ^= 1;               // same count, other layout
+  EXPECT_EQ(validateFileHeader(sig), ValidateResult::kBadLayout);
+  FileHeader cnt = h;  cnt.num_inputs = static_cast<uint16_t>(kNumInputs + 1);
+  EXPECT_EQ(validateFileHeader(cnt), ValidateResult::kBadLayout);
+  FileHeader swapped = h;                                      // a reordered name table
+  std::swap(swapped.input_names[0], swapped.input_names[1]);
+  EXPECT_EQ(validateFileHeader(swapped), ValidateResult::kBadLayout);
+}
+
+// Writes the v6 fixture the Python decoder's ctest (flightlog_decode_py) reads:
+// header, one span of 5 ticks with a known pattern, a summary. Inputs are
+// i/100 + tick/1000 so a decoder that mis-maps a column reads a wrong value.
+TEST(FlightLogFormatV6, WritesTheDecoderFixture_044) {
+  uint8_t fw[8] = {1}, wt[8] = {2};
+  FileHeader h;
+  initFileHeader(h, fw, wt, "fixture:044/flightlog_v6", 50, kTestCone);
+  std::vector<uint8_t> out;
+  auto put = [&out](const void* p, size_t n) {
+    const uint8_t* b = static_cast<const uint8_t*>(p);
+    out.insert(out.end(), b, b + n);
+  };
+  put(&h, sizeof(h));
+  EngageHeader e{};
+  e.type = kEngageHeader; e.engage_timestamp_ms = 1000; e.span_id = 1; e.path_index = 2;
+  put(&e, sizeof(e));
+  for (int k = 0; k < 5; k++) {
+    float in[kNumInputs], o[kNumOutputs] = {0.1f, -0.2f, 0.3f};
+    float pos[3] = {1.0f, 2.0f, -3.0f}, vel[3] = {10.0f, 0.0f, 0.0f}, rab[3] = {5.0f, 0.0f, -3.0f};
+    for (int i = 0; i < kNumInputs; i++) in[i] = 0.01f * i + 0.001f * k;
+    TickRecord t{};
+    t.type = kTick; t.timestamp_ms = 1000 + 50u * k; t.tick_counter = static_cast<uint16_t>(k);
+    encodeTick(in, o, pos, vel, rab, 0.5f, h.scales, t);
+    put(&t, sizeof(t));
+  }
+  SpanSummary ss{};
+  ss.type = kSpanSummary; ss.timestamp_ms = 1300; ss.span_id = 1; ss.ticks = 5; ss.ticks_logged = 5;
+  put(&ss, sizeof(ss));
+
+  // Walks back cleanly through the shared walker.
+  StreamWalker w(out.data(), out.size());
+  RecordView rv; int n = 0;
+  while (w.next(rv)) n++;
+  EXPECT_FALSE(w.failed());
+  EXPECT_EQ(n, 1 + 1 + 5 + 1);
+
+  const std::string dir = FLIGHTLOG_FIXTURE_DIR;
+  std::string mk = "mkdir -p '" + dir + "'";
+  ASSERT_EQ(std::system(mk.c_str()), 0);
+  FILE* f = std::fopen((dir + "/flightlog_v6.bin").c_str(), "wb");
+  ASSERT_NE(f, nullptr);
+  ASSERT_EQ(std::fwrite(out.data(), 1, out.size(), f), out.size());
+  std::fclose(f);
 }
 
 }  // namespace

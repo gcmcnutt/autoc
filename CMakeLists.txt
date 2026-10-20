@@ -333,6 +333,10 @@ if(ENABLE_AUTOC_TESTS)
   add_executable(flightlog_roundtrip_tests tests/flightlog_roundtrip_tests.cc)
   target_link_libraries(flightlog_roundtrip_tests GTest::gtest GTest::gtest_main)
   target_include_directories(flightlog_roundtrip_tests PRIVATE xiao/include)
+  # 044 FR-016 (b) — the round trip also writes a v6 fixture that the Python
+  # decoder's ctest (flightlog_decode_py, below) must read by its header alone.
+  target_compile_definitions(flightlog_roundtrip_tests PRIVATE
+    FLIGHTLOG_FIXTURE_DIR="${CMAKE_BINARY_DIR}/fixtures")
 
   # 039 T003/T004 -- nn2cpp unrolled-recurrent emission equivalence (D6).
   # Drives the real nn2cpp binary + g++ harness compiles; paths injected here.
@@ -397,6 +401,22 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME nn2cpp_unroll_tests COMMAND nn2cpp_unroll_tests)
   add_test(NAME arena_recenter_tests COMMAND arena_recenter_tests)
   add_test(NAME flightlog_roundtrip_tests COMMAND flightlog_roundtrip_tests)
+
+  # 044 FR-016 — the index-free layout gate. (a) No literal input index or count
+  # in any hand-written consumer: the layout lives in include/autoc/nn/nn_inputs.h
+  # and nowhere else. (b) The Python decoder builds its columns from the v6 log
+  # header (slot names, count, layout signature): it must decode the v6 fixture
+  # the C++ round trip writes AND a real v5 flight log, by header alone.
+  find_program(AUTOC_PYTHON3 python3 REQUIRED)
+  add_test(NAME input_layout_literals
+           COMMAND ${AUTOC_PYTHON3} ${CMAKE_SOURCE_DIR}/scripts/check_input_layout_literals.py
+                   --root ${CMAKE_SOURCE_DIR})
+  add_test(NAME flightlog_decode_py
+           COMMAND ${AUTOC_PYTHON3} ${CMAKE_SOURCE_DIR}/src/analytics/flightlog_decode.py --check
+                   ${CMAKE_BINARY_DIR}/fixtures/flightlog_v6.bin
+                   ${CMAKE_SOURCE_DIR}/flight-results/flight-20261018/flight_log_2026-10-18T19-56-02_flight_001.bin)
+  set_tests_properties(flightlog_roundtrip_tests PROPERTIES FIXTURES_SETUP flightlog_v6)
+  set_tests_properties(flightlog_decode_py PROPERTIES FIXTURES_REQUIRED flightlog_v6)
 
   # Run all tests after build
   add_custom_target(run_autoc_tests ALL

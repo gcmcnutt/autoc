@@ -590,3 +590,53 @@ static_assert(
     static_cast<int>(TrackerInput::SCORE_GRAD_Z) - static_cast<int>(TrackerInput::QUAT_W) ==
     static_cast<int>(PathgenInput::SCORE_GRAD_Z) - static_cast<int>(PathgenInput::QUAT_W),
     "PathgenInput and TrackerInput must lay out CraftCommonInputs identically");
+
+// ============================================================================
+// 044 FR-016 (c) — INPUT-LAYOUT SIGNATURE, derived from the metadata tables.
+// ----------------------------------------------------------------------------
+// FNV-1a 64 over each slot's ENUM NAME (SensorInputMeta::name, e.g. "GYRO_Q") —
+// the canonical identifier; display names are cosmetic — followed by a NUL
+// separator, in slot order, then the layout version as 4 little-endian bytes. It travels with every
+// artifact that is only meaningful against ONE layout — the NN01 genome file,
+// the nn2cpp-generated firmware (static_assert) and the flight-log header — so a
+// genome, firmware or log from a different layout fails loudly, INCLUDING a
+// same-count reorder that every count check passes. Decoders that only have the
+// names (the flight log carries them) can recompute it. Changing a slot name,
+// the order or kNNHistoryLayoutVersion changes the signature: that is the point.
+// ============================================================================
+constexpr size_t kNNSlotNameLen = 24;  // flight-log slot-name field (23 chars + NUL)
+
+constexpr uint64_t nnLayoutSignature(const SensorInputMeta* meta, size_t n, uint32_t version) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (size_t i = 0; i < n; ++i) {
+        for (const char* p = meta[i].name; *p != '\0'; ++p) {
+            h ^= static_cast<uint8_t>(*p);
+            h *= 0x100000001b3ull;
+        }
+        h ^= 0u;                       // NUL separator ("ab"+"c" != "a"+"bc")
+        h *= 0x100000001b3ull;
+    }
+    for (int b = 0; b < 4; ++b) {
+        h ^= static_cast<uint8_t>((version >> (8 * b)) & 0xFFu);
+        h *= 0x100000001b3ull;
+    }
+    return h;
+}
+
+constexpr bool nnSlotNamesFit(const SensorInputMeta* meta, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        size_t len = 0;
+        for (const char* p = meta[i].name; *p != '\0'; ++p) ++len;
+        if (len >= kNNSlotNameLen) return false;
+    }
+    return true;
+}
+
+constexpr uint64_t kNNInputLayoutSignature = nnLayoutSignature(
+    kPathgenInputMeta, static_cast<size_t>(PathgenInput::COUNT), kNNHistoryLayoutVersion);
+constexpr uint64_t kTrackerInputLayoutSignature = nnLayoutSignature(
+    kTrackerInputMeta, static_cast<size_t>(TrackerInput::COUNT), kNNHistoryLayoutVersion);
+
+static_assert(nnSlotNamesFit(kPathgenInputMeta, static_cast<size_t>(PathgenInput::COUNT)) &&
+              nnSlotNamesFit(kTrackerInputMeta, static_cast<size_t>(TrackerInput::COUNT)),
+              "every slot (enum) name must fit the flight log's kNNSlotNameLen-byte name field");

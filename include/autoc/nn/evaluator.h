@@ -45,8 +45,13 @@ struct NNGenome {
     float mutation_sigma;             // Per-individual mutation step size (self-adaptive)
     float variation_scale;            // computeVariationScale() at save time — eval uses directly
     std::string source;               // Provenance: "bucket/key" from S3 extraction
+    // 044 FR-016 — input-layout signature as read from an NN01 v2 file (0 until
+    // deserialized). nn_serialize stamps the CURRENT build's value; consumers of
+    // external genomes check this with nn_check_genome_layout.
+    uint64_t layout_signature;
 
-    NNGenome() : fitness(0.0), generation(0), mutation_sigma(0.1f), variation_scale(1.0f) {}
+    NNGenome() : fitness(0.0), generation(0), mutation_sigma(0.1f), variation_scale(1.0f),
+                 layout_signature(0) {}
 };
 
 // Compute total weight+bias count from topology (feedforward only).

@@ -1374,6 +1374,16 @@ static void runNNEvaluation(
     }
   }
 
+  // 044 FR-016 — refuse a genome trained on another input layout, including a
+  // same-count reorder the topology check above cannot see.
+  {
+    const std::string layoutErr = nn_check_genome_layout(genome);
+    if (!layoutErr.empty()) {
+      *logger.error() << "NN layout mismatch: " << layoutErr << endl;
+      exit(1);
+    }
+  }
+
   {
     std::ostringstream topo;
     for (size_t i = 0; i < genome.topology.size(); i++) {

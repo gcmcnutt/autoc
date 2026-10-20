@@ -21,32 +21,40 @@ import numpy as np
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from nn_replay_probe import Net, parse_nn_cpp
+from nn_replay_probe import Net, parse_nn_cpp, input_block
 
 DT = 0.05
 
 
 def load(path, every):
     r = csv.reader(open(path)); h = [c.strip() for c in next(r)]
-    if "target_x_0" in h:   # xiao flight log: 45 inputs from target_x_0; out_pitch is the logged command
-        i0, iS, iP = h.index("target_x_0"), h.index("span_id"), h.index("out_pitch")
+    i0, i1, names = input_block(h)   # 044: by name (flight CSV: out_pitch is the logged command)
+    if "tick_counter" in h:
+        iS, iP = h.index("span_id"), h.index("out_pitch")
     else:
-        i0, iS, iP = h.index("rbHhd") + 1, h.index("scenario"), h.index("out_pt")
+        iS, iP = h.index("scenario"), h.index("out_pt")
+    global IDX
+    IDX = {n: j for j, n in enumerate(names)}
     sc = defaultdict(list)
     for row in r:
         if len(row) < len(h): continue
         s = int(float(row[iS]))
         if s % every: continue
-        sc[s].append([float(row[iP])] + [float(v) for v in row[i0:i0 + 45]])
+        sc[s].append([float(row[iP])] + [float(v) for v in row[i0:i1]])
     out = {s: np.array(v, np.float32) for s, v in sc.items() if len(v) > 40}
-    # departed flights (body rate > 15 rad/s = 2.5 NN units in slots 30-32) excluded — a tumble is not the controlled regime
-    return {s: A for s, A in out.items() if np.abs(A[:, 1 + 30:1 + 33]).max() <= 2.5}
+    # departed flights (body rate > 15 rad/s = 2.5 NN units on gyrP/Q/R) excluded — a tumble is not the controlled regime
+    gyro = [1 + IDX[n] for n in ("gyrP", "gyrQ", "gyrR")]
+    return {s: A for s, A in out.items() if np.abs(A[:, gyro]).max() <= 2.5}
 
 
-# slot indices in the 45-vector (PathgenInput order)
-TGX, TGY, TGZ, DS = range(0, 6), range(6, 12), range(12, 18), range(18, 24)
-NOW, L1, L2 = 5, 4, 3          # array index: 5 = now, 4 = 50 ms, 3 = 100 ms
-GYRO_Q, GYRO_P, GYRO_R = 31, 30, 32
+# 044 FR-016 — slot indices BY NAME from the CSV header (IDX, set in load()), not positions.
+IDX = {}
+LAGS = ("-5", "-4", "-3", "-2", "-1", "0")   # array index: 5 = now, 4 = 50 ms, 3 = 100 ms
+NOW, L1, L2 = 5, 4, 3
+
+
+def slots(prefix):
+    return [IDX[f"{prefix}{l}"] for l in LAGS]
 GS = 6.0                        # kGyroScale_radps
 
 
@@ -82,7 +90,8 @@ def main():
     for s, A in data.items():
         X = A[:, 1:]; out, H = net.run(X)
         fid.append(1 - ((out[:, 0] - A[:, 0]) ** 2).mean() / max(A[:, 0].var(), 1e-9))
-        q = X[:, GYRO_Q] * GS
+        TGX, TGY, TGZ, DS = slots("tgX"), slots("tgY"), slots("tgZ"), slots("ds")
+        q = X[:, IDX["gyrQ"]] * GS
         d = [np.column_stack([X[:, TGX[k]], X[:, TGY[k]], X[:, TGZ[k]]]) for k in range(6)]
         geo1 = -np.cross(d[NOW], d[NOW] - d[L1]) / DT      # omega_perp over (t-1, t]
         geo2 = -np.cross(d[L1], d[L1] - d[L2]) / DT        # omega_perp over (t-2, t-1]

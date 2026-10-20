@@ -162,7 +162,7 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
 
 ### 5a — index-free gate, on the 45-input layout (FR-016)
 
-- [ ] T028 [US1] Write `scripts/check_input_layout_literals.py` — scans hand-written consumers (`src/`, `include/`, `tools/`, `xiao/src`,
+- [X] T028 [US1] Write `scripts/check_input_layout_literals.py` — scans hand-written consumers (`src/`, `include/`, `tools/`, `xiao/src`,
   `xiao/include`, `xiao/web`, `src/analytics/`, the ported 043 scripts; excluding `xiao/src/generated/` and historical `specs/0[2-3]*`
   scripts) for literal input indices into the input vector / flat view and literal input counts. Then the **one `CMakeLists.txt` edit of
   044**: register ctest `input_layout_literals` (that script) and ctest `flightlog_decode_py` (`python3 src/analytics/flightlog_decode.py
@@ -170,29 +170,29 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
   `FIXTURES_REQUIRED` and a compile definition for the path, plus the v5 xiao log in `flight-results/flight-20261018/`). Operator clean
   `bash scripts/rebuild-perf.sh` (Constitution IV). Both fail now: literal hits in `src/analytics/flightlog_decode.py` (`NUM_INPUTS = 45`,
   name list) and `xiao/web/flight_logger.html` (`FL_NUM_IN = 45`, offsets); no v6 fixture yet
-- [ ] T029 [P] [US1] `tests/nn_layout_tests.cc`: `kNNInputLayoutSignature` stable for a fixed table, different for any reorder, rename or
+- [X] T029 [P] [US1] `tests/nn_layout_tests.cc`: `kNNInputLayoutSignature` stable for a fixed table, different for any reorder, rename or
   layout-version change; metadata table length = enum COUNT (on today's 45 / 66 layout)
-- [ ] T030 [P] [US1] `tests/nn_serialization_tests.cc`: NN01 v2 round trip carries `layout_signature`; a v1 file is refused with a version
+- [X] T030 [P] [US1] `tests/nn_serialization_tests.cc`: NN01 v2 round trip carries `layout_signature`; a v1 file is refused with a version
   error; `checkGenomeLayout()` — the one function `nnextractor` and `nn2cpp` both call — refuses a genome whose signature differs (naming
   both) or whose `topology[0] != NN_INPUT_COUNT` (contracts/nn01-genome.md)
-- [ ] T031 [P] [US1] `tests/flightlog_roundtrip_tests.cc`: v6 header carries the ordered name table and signature; inputs round-trip by name;
+- [X] T031 [P] [US1] `tests/flightlog_roundtrip_tests.cc`: v6 header carries the ordered name table and signature; inputs round-trip by name;
   a v5 log still decodes on the v5 path; the test writes the v6 fixture for `flightlog_decode_py` (contracts/flight-log-v6.md)
-- [ ] T032 [P] [US1] `tests/nn2cpp_unroll_tests.cc`: generated code contains and asserts `kGeneratedLayoutSignature ==
+- [X] T032 [P] [US1] `tests/nn2cpp_unroll_tests.cc`: generated code contains and asserts `kGeneratedLayoutSignature ==
   kNNInputLayoutSignature`; `nn2cpp` refuses a genome with a mismatched signature or input count
-- [ ] T033 [US1] Layout signature in `include/autoc/nn/nn_inputs.h`: `constexpr` FNV-1a 64 `kNNInputLayoutSignature` over the ordered display
+- [X] T033 [US1] Layout signature in `include/autoc/nn/nn_inputs.h`: `constexpr` FNV-1a 64 `kNNInputLayoutSignature` over the ordered display
   names of the metadata table + the layout marker (research R14)
-- [ ] T034 [US1] NN01 v2: `NN_FORMAT_VERSION` 2 and a `layout_signature` field in `include/autoc/nn/serialization.h`,
+- [X] T034 [US1] NN01 v2: `NN_FORMAT_VERSION` 2 and a `layout_signature` field in `include/autoc/nn/serialization.h`,
   `src/nn/serialization.cc`, `NNGenome` in `include/autoc/nn/evaluator.h` (stamped on save); `checkGenomeLayout()` there;
   `tools/nnextractor.cc` and `tools/nn2cpp.cc` call it; `nn2cpp` emits `kGeneratedLayoutSignature` with a `static_assert` beside the count
   and scale-signature asserts (FR-004, FR-016)
-- [ ] T035 [US1] Flight log v6 in `xiao/include/flight_log_format.h`: `kFormatVersion = 6`; header gains the ordered slot-name table and the
+- [X] T035 [US1] Flight log v6 in `xiao/include/flight_log_format.h`: `kFormatVersion = 6`; header gains the ordered slot-name table and the
   layout signature (CRC-guarded with the scale table), filled from the metadata table (contracts/flight-log-v6.md)
-- [ ] T036 [US1] Decoders read names / count / signature from the v6 header and keep the v5 path: `src/analytics/flightlog_decode.py`
+- [X] T036 [US1] Decoders read names / count / signature from the v6 header and keep the v5 path: `src/analytics/flightlog_decode.py`
   (no `NUM_INPUTS` / literal `INPUT_NAMES` for v6; add the `--check <file>…` mode the ctest uses), `xiao/web/flight_logger.html` (no
   `FL_NUM_IN` / fixed offsets for v6), `src/analytics/input_investment.py` by name
-- [ ] T037 [P] [US1] Port the 043 analysis scripts to read input columns by name (no `INPUT_COLS = 45` / `rbHhd` offsets):
+- [X] T037 [P] [US1] Port the 043 analysis scripts to read input columns by name (no `INPUT_COLS = 45` / `rbHhd` offsets):
   `specs/043-acro-dual-loop/{candidate_compare,pitch_input_attribution,nn_replay_probe,rate_history_availability,history_lag_study,sim_pitch_spectrum,windiest_scenarios,airframe_id}.py`
-- [ ] T038 [US1] **Gate green on 45 inputs**: incremental build, `ctest` all green including `input_layout_literals` and
+- [X] T038 [US1] **Gate green on 45 inputs**: incremental build, `ctest` all green including `input_layout_literals` and
   `flightlog_decode_py`; regenerate `xiao/src/generated/nn_program_generated.cpp` with `build/nn2cpp` from a v2 test genome, `pio run`;
   a bench v6 log decodes in the Python decoder and (by hand) the web decoder; commit
 

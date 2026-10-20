@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "autoc/nn/serialization.h"
 #include "autoc/nn/topology.h"
+#include <cstdio>
 #include <cstring>
 
 // ============================================================
@@ -176,4 +177,76 @@ TEST(NNSerialization, RejectsGarbageData) {
 TEST(NNSerialization, RejectsEmptyData) {
     NNGenome restored;
     EXPECT_FALSE(nn_deserialize(nullptr, 0, restored));
+}
+
+// ============================================================
+// 044 FR-016 (c) — NN01 v2 carries the input-layout signature; genome tools refuse
+// a genome from another layout (incl. a same-count reorder) through ONE check.
+// ============================================================
+
+namespace {
+NNGenome pathgenGenome() {
+    NNGenome g;
+    g.topology = {NN_INPUT_COUNT, 4, NN_OUTPUT_COUNT};
+    g.recurrent = {0, 0, 0};
+    g.weights.resize(nn_weight_count(g.topology), 0.25f);
+    return g;
+}
+}  // namespace
+
+TEST(NNSerializationV2, FormatVersionIsTwo_044) {
+    EXPECT_EQ(NN_FORMAT_VERSION, 2u);
+}
+
+TEST(NNSerializationV2, RoundTripCarriesTheLayoutSignature_044) {
+    std::vector<uint8_t> buf;
+    ASSERT_TRUE(nn_serialize(pathgenGenome(), buf));
+    NNGenome back;
+    ASSERT_TRUE(nn_deserialize(buf.data(), buf.size(), back));
+    EXPECT_EQ(back.layout_signature, kNNInputLayoutSignature);
+    EXPECT_EQ(nn_check_genome_layout(back), "");
+}
+
+TEST(NNSerializationV2, VersionOneFileIsRefused_044) {
+    std::vector<uint8_t> buf;
+    ASSERT_TRUE(nn_serialize(pathgenGenome(), buf));
+    const uint32_t v1 = 1;
+    std::memcpy(buf.data() + 4, &v1, sizeof(v1));   // [4..7] format version
+    NNGenome back;
+    EXPECT_FALSE(nn_deserialize(buf.data(), buf.size(), back));
+}
+
+TEST(NNSerializationV2, CheckRefusesForeignSignatureNamingBoth_044) {
+    std::vector<uint8_t> buf;
+    ASSERT_TRUE(nn_serialize(pathgenGenome(), buf));
+    NNGenome back;
+    ASSERT_TRUE(nn_deserialize(buf.data(), buf.size(), back));
+    back.layout_signature ^= 0x1ull;                  // same count, different layout
+    const std::string err = nn_check_genome_layout(back);
+    ASSERT_FALSE(err.empty());
+    char want[32];
+    std::snprintf(want, sizeof(want), "%016llx", static_cast<unsigned long long>(kNNInputLayoutSignature));
+    EXPECT_NE(err.find(want), std::string::npos) << err;
+    std::snprintf(want, sizeof(want), "%016llx", static_cast<unsigned long long>(back.layout_signature));
+    EXPECT_NE(err.find(want), std::string::npos) << err;
+}
+
+TEST(NNSerializationV2, CheckRefusesWrongInputCount_044) {
+    NNGenome g = pathgenGenome();
+    g.topology[0] = NN_INPUT_COUNT + 1;
+    g.layout_signature = kNNInputLayoutSignature;
+    EXPECT_FALSE(nn_check_genome_layout(g).empty());
+}
+
+TEST(NNSerializationV2, TrackerGenomeChecksAgainstTheTrackerTable_044) {
+    NNGenome g;
+    g.topology = {TRACKER_NN_INPUT_COUNT, 4, 7};
+    g.recurrent = {0, 0, 0};
+    g.weights.resize(nn_weight_count(g.topology), 0.1f);
+    std::vector<uint8_t> buf;
+    ASSERT_TRUE(nn_serialize(g, buf));
+    NNGenome back;
+    ASSERT_TRUE(nn_deserialize(buf.data(), buf.size(), back));
+    EXPECT_EQ(back.layout_signature, kTrackerInputLayoutSignature);
+    EXPECT_EQ(nn_check_genome_layout(back), "");
 }

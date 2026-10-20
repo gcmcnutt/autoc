@@ -115,6 +115,21 @@ static void emitConeContract(std::stringstream& code, const BakedCone& c) {
 // meaningful — but a genome carried across a scale change and regenerated with
 // a matching-era nn2cpp would still pass. Closing that needs the scales inside
 // the genome file, which is a format change and is not this task.
+// 044 FR-016 (c) — the genome's input-layout signature, baked and ASSERTED in
+// the generated file. The count assert above cannot see a same-count reorder
+// (slots renamed or moved); this one can, at firmware compile time, against the
+// nn_inputs.h the firmware is actually built with.
+static void emitLayoutSignature(std::stringstream& code, const NNGenome& genome) {
+    char hex[32];
+    std::snprintf(hex, sizeof(hex), "0x%016llxull", static_cast<unsigned long long>(genome.layout_signature));
+    code << "// 044 FR-016 layout-signature guard — see tools/nn2cpp.cc.\n";
+    code << "constexpr uint64_t kGeneratedLayoutSignature = " << hex << ";\n";
+    code << "static_assert(kGeneratedLayoutSignature == kNNInputLayoutSignature,\n";
+    code << "    \"Generated genome's input-layout signature != the compiled nn_inputs.h \"\n";
+    code << "    \"(same count, different slot order / names / layout version). \"\n";
+    code << "    \"REGENERATE with tools/nn2cpp from a genome trained on this layout.\");\n";
+}
+
 static void emitScaleSignature(std::stringstream& code) {
     struct S { const char* name; float value; };
     const S sig[] = {
@@ -323,6 +338,7 @@ std::string generatePortableCode(const NNGenome& genome, const std::string& func
     code << "    \"would read PAST THE END of nn_weights and fly on garbage. \"\n";
     code << "    \"REGENERATE with tools/nn2cpp -- never relax this.\");\n";
     emitScaleSignature(code);
+    emitLayoutSignature(code, genome);
     // ⚠️ There is deliberately NO companion assert on the weight count against
     // NN_WEIGHT_COUNT. That would assert "this genome has the project's current
     // standard hidden widths", which is a different and weaker claim — it would
@@ -474,6 +490,7 @@ std::string generateUnrolledCode(const NNGenome& genome, const std::string& func
     code << "    \"forward pass would read PAST THE END of nn_weights and fly on \"\n";
     code << "    \"garbage. REGENERATE with tools/nn2cpp -- never relax this.\");\n";
     emitScaleSignature(code);
+    emitLayoutSignature(code, genome);
     // (No companion weight-count assert — see the rationale at the same guard in
     // generateNNProgramCode above.)
     code << "\n";
@@ -714,6 +731,21 @@ int main(int argc, char** argv) {
     if (!nn_deserialize(data.data(), data.size(), genome)) {
         std::cerr << "Error deserializing NN genome" << std::endl;
         return 1;
+    }
+    // 044 FR-016 — the genome must belong to this tree's input layout, and to
+    // the PATHGEN (M1) layout: the generated file is the xiao's M1 controller.
+    {
+        const std::string layoutErr = nn_check_genome_layout(genome);
+        if (!layoutErr.empty()) {
+            std::cerr << "Error: " << layoutErr << std::endl;
+            return 1;
+        }
+        if (genome.topology.front() != NN_INPUT_COUNT) {
+            std::cerr << "Error: genome input width " << genome.topology.front()
+                      << " is not the pathgen (M1) layout's " << NN_INPUT_COUNT
+                      << " -- nn2cpp generates the xiao M1 controller" << std::endl;
+            return 1;
+        }
     }
 
     // Generate code. 039 D6: -u covers recurrent genomes too (persistent
