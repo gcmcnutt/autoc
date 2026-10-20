@@ -1,6 +1,6 @@
 # autoc Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-08-24
+Auto-generated from all feature plans. Last updated: 2026-10-19
 
 ## Toolchains & Build Environment
 
@@ -55,6 +55,8 @@ decoder-gateware change.
 - file-based — `data.dat` (per-tick trace), `data.stc` (per-gen), per-mode S3 buckets (041-m2-depth)
 - C++17 (autoc, crrcsim), C (INAV fork), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analysis) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp), inih (ini), GoogleTest, CRRCSim LaRCSim FDM, INAV MSP (043-acro-dual-loop)
 - file-based — `data.dat` (per-tick trace), `data.stc` (per-gen), S3 `autoc-m1`; xiao QSPI flash log (043-acro-dual-loop)
+- C++17 (autoc, crrcsim, xiao firmware), Python 3.11 (analytics) + Eigen, cereal, inih, GoogleTest, CRRCSim LaRCSim FDM, INAV MSP (unchanged), PlatformIO (xiao) (044-m1-craft-history)
+- files — dmp (S3 `autoc-m1` / `autoc-eval`), data.dat, xiao flight log, blackbox CSV (044-m1-craft-history)
 
 - C++17 + Eigen, cereal (serialization), inih (config), GoogleTest (015-nn-training-improvements)
 
@@ -121,9 +123,9 @@ Constitution IV, operator-driven.
 best M1 in project history, flown. Its t7 run is 043's baseline of record.
 
 ## Recent Changes
+- 044-m1-craft-history: Added C++17 (autoc, crrcsim, xiao firmware), Python 3.11 (analytics) + Eigen, cereal, inih, GoogleTest, CRRCSim LaRCSim FDM, INAV MSP (unchanged), PlatformIO (xiao)
 - 043-acro-dual-loop: Added C++17 (autoc, crrcsim), C (INAV fork), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analysis) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp), inih (ini), GoogleTest, CRRCSim LaRCSim FDM, INAV MSP
 - 041-m2-depth: Added C++17 (autoc, crrcsim, tools), Python 3.11 (analytics only) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp serialization), inih (ini),
-- 040-camera-redo: Added C++17 (autoc + crrcsim); Python 3.11 (analysis/plots only) + Eigen (vec3/quat), cereal (dmp + EvalData wire), inih (ini), GoogleTest, CRRCSim
 
 
 <!-- MANUAL ADDITIONS START -->
