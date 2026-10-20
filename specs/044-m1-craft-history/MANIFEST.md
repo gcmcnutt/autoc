@@ -1,0 +1,91 @@
+# 044 — MANIFEST (run record, preservation, baselines)
+
+Living record for 044's gates, baselines and smokes. The bake gets its own `artifacts-t1/MANIFEST.md` (T048).
+
+## § Preservation (T001, FR-005) — 2026-10-19
+
+**Tags (local; operator pushes)**
+
+| tag | commit | crrcsim | reads |
+|---|---|---|---|
+| `043-final` | `8cd5a5d` | `7f345c5` | every 043 artifact: dmp schema 4, NN01 v1 genomes, xiao flight log v5 |
+| `044-last-45in` | *(T026)* | | 044 smoke A and the 45-input baselines (dmp schema 5) |
+
+**Training runs (`autoc-m1`)** — already pinned by 043, re-verified by sampling 2026-10-19:
+
+| run | prefix | check |
+|---|---|---|
+| t5 (flown gen 488) | `autoc-9223370245346926812-2026-10-09T01:04:08.995Z/` | `gen9999` (gen 1), `gen9512` (gen 488), `gen9200` (gen 800): all `retain=keep` |
+| t6 (flown gen 752) | see `../043-acro-dual-loop/artifacts-t6/MANIFEST.md` § 6 | 800/800 tagged, verified at the 043 close |
+
+**Evaluation dumps (`autoc-eval`)** — 29 objects re-tagged `retain=keep` (0 failures; 6 sampled, all `keep`). Columns: local
+`eval-results/<run>/`, genome, S3 key.
+
+| eval run | genome | key |
+|---|---|---|
+| 2026-10-12T14:54:25Z | `nn_weights-t5-g488.dat` | `autoc-9223370245037909718-2026-10-12T14:54:26.089Z/gen9999.dmp.zst` |
+| 2026-10-12T14:54:55Z | `nn_weights-t5-g488.dat` | `autoc-9223370245037880519-2026-10-12T14:54:55.288Z/gen9999.dmp.zst` |
+| 2026-10-13T23:38:54Z | `nn_weights-t5-g800.dat` | `autoc-9223370244919954306-2026-10-13T23:40:21.501Z/gen9999.dmp.zst` |
+| 2026-10-13T23:38:54Z | `nn_weights-t5-g800.dat` | `autoc-9223370244919970360-2026-10-13T23:40:05.447Z/gen9999.dmp.zst` |
+| 2026-10-13T23:38:54Z | `nn_weights-t5-g800.dat` | `autoc-9223370244919984968-2026-10-13T23:39:50.839Z/gen9999.dmp.zst` |
+| 2026-10-13T23:38:54Z | `nn_weights-t5-g800.dat` | `autoc-9223370244919988227-2026-10-13T23:39:47.580Z/gen9999.dmp.zst` |
+| 2026-10-13T23:38:54Z | `nn_weights-t5-g800.dat` | `autoc-9223370244919997980-2026-10-13T23:39:37.827Z/gen9999.dmp.zst` |
+| 2026-10-13T23:38:54Z | `nn_weights-t5-g800.dat` | `autoc-9223370244920019171-2026-10-13T23:39:16.636Z/gen9999.dmp.zst` |
+| 2026-10-13T23:38:54Z | `nn_weights-t5-g800.dat` | `autoc-9223370244920041253-2026-10-13T23:38:54.554Z/gen9999.dmp.zst` |
+| 2026-10-13T23:40:21Z | `nn_weights-t5-g488.dat` | `autoc-9223370244919866925-2026-10-13T23:41:48.882Z/gen9999.dmp.zst` |
+| 2026-10-13T23:40:21Z | `nn_weights-t5-g488.dat` | `autoc-9223370244919882500-2026-10-13T23:41:33.307Z/gen9999.dmp.zst` |
+| 2026-10-13T23:40:21Z | `nn_weights-t5-g488.dat` | `autoc-9223370244919898801-2026-10-13T23:41:17.006Z/gen9999.dmp.zst` |
+| 2026-10-13T23:40:21Z | `nn_weights-t5-g488.dat` | `autoc-9223370244919902521-2026-10-13T23:41:13.286Z/gen9999.dmp.zst` |
+| 2026-10-13T23:40:21Z | `nn_weights-t5-g488.dat` | `autoc-9223370244919912136-2026-10-13T23:41:03.671Z/gen9999.dmp.zst` |
+| 2026-10-13T23:40:21Z | `nn_weights-t5-g488.dat` | `autoc-9223370244919932573-2026-10-13T23:40:43.234Z/gen9999.dmp.zst` |
+| 2026-10-13T23:40:21Z | `nn_weights-t5-g488.dat` | `autoc-9223370244919953811-2026-10-13T23:40:21.996Z/gen9999.dmp.zst` |
+| 2026-10-18T14:51:31Z | `t5-g488-s1.dat` | `autoc-9223370244519684015-2026-10-18T14:51:31.792Z/gen9999.dmp.zst` |
+| 2026-10-18T14:52:00Z | `t6-g752-s1.dat` | `autoc-9223370244519655067-2026-10-18T14:52:00.740Z/gen9999.dmp.zst` |
+| 2026-10-18T14:52:33Z | `t6-g621-s1.dat` | `autoc-9223370244519622541-2026-10-18T14:52:33.266Z/gen9999.dmp.zst` |
+| 2026-10-18T14:53:03Z | `t6-g523-s1.dat` | `autoc-9223370244519592681-2026-10-18T14:53:03.126Z/gen9999.dmp.zst` |
+| 2026-10-18T14:53:31Z | `t6-g500-s1.dat` | `autoc-9223370244519564253-2026-10-18T14:53:31.554Z/gen9999.dmp.zst` |
+| 2026-10-18T14:54:01Z | `t6-g370-s1.dat` | `autoc-9223370244519534587-2026-10-18T14:54:01.220Z/gen9999.dmp.zst` |
+| 2026-10-18T22:35:14Z | `nn_weights-t6-g800.dat` | `autoc-9223370244491770418-2026-10-18T22:36:45.389Z/gen9999.dmp.zst` |
+| 2026-10-18T22:35:14Z | `nn_weights-t6-g800.dat` | `autoc-9223370244491784781-2026-10-18T22:36:31.026Z/gen9999.dmp.zst` |
+| 2026-10-18T22:35:14Z | `nn_weights-t6-g800.dat` | `autoc-9223370244491799626-2026-10-18T22:36:16.181Z/gen9999.dmp.zst` |
+| 2026-10-18T22:35:14Z | `nn_weights-t6-g800.dat` | `autoc-9223370244491802820-2026-10-18T22:36:12.987Z/gen9999.dmp.zst` |
+| 2026-10-18T22:35:14Z | `nn_weights-t6-g800.dat` | `autoc-9223370244491812515-2026-10-18T22:36:03.292Z/gen9999.dmp.zst` |
+| 2026-10-18T22:35:14Z | `nn_weights-t6-g800.dat` | `autoc-9223370244491834975-2026-10-18T22:35:40.832Z/gen9999.dmp.zst` |
+| 2026-10-18T22:35:14Z | `nn_weights-t6-g800.dat` | `autoc-9223370244491861538-2026-10-18T22:35:14.269Z/gen9999.dmp.zst` |
+
+The `/tmp/.../evalcand/*-s1.dat` genomes of the 10-18 T122 runs are the archived `artifacts-t6/` / `artifacts-t5/` genomes with
+`variation_scale` patched to 1.0 by `set_eval_scale.py` (seed 20261018).
+
+## § Starting point (T005) — 2026-10-19
+
+Branch head `68ec066` (crrcsim `7f345c5`), still 45 inputs and the t6 plant.
+
+| gate | result |
+|---|---|
+| clean `scripts/rebuild-perf.sh` | OK, 5 min 02 s |
+| `ctest` | 53/53 passed |
+| xiao `pio run` | SUCCESS (RAM 53.5 %, flash 45.5 %) |
+| t6 g800 tier 0, seed 1791951530 | **PASS bitwise**: `-93924.534457` = stored, 294/294 |
+
+## § Post-stream-fix reference (T012) — 2026-10-19
+
+Build: US4 fixes in (fmix32 class sub-seeds, wind direction from its own wind-stream slots, `EvalVariationScale`, wind-draw columns),
+45 inputs, t6 plant. Every scenario draw changed by design, so these **replace T005's numbers as the reference for any speed-up
+judged before the plant change** (T013/T014). Each run twice: identical.
+
+| genome | tier 0 seed | scale | fitness | completed |
+|---|---|---|---|---|
+| t6 g800 | 1791951530 | stored (1.0) | `-82017.470057` | 291/294 |
+| t6 g752 | 20261018 | stored (0.9474) | `-77966.093110` | 290/294 |
+| t6 g752 | 20261018 | `EvalVariationScale = 1.0` | `-75353.709790` | 290/294 |
+
+`eval_suite.sh` gained a 4th argument `[eval_scale]` (FR-011) that sets `EvalVariationScale` on every tier; the log line
+`EvalVariationScale: stored 0.9474, used 1.0000 (EvalVariationScale override)` confirms it.
+
+**Second draw-reuse defect fixed alongside FR-009** (found while implementing T011): autoc drew the per-scenario wind *direction* from
+a fresh `ClassPRNG(wind)`, i.e. wind-stream draws [0..1] — the same values the worker used as the gust seed [0] and the wind-**speed**
+draw [1], so direction was a function of speed (shared Box–Muller input). The direction now comes from slots [5..], after the worker's
+gust seed and four envelope draws (`drawWindClass`, `wind_variation.h`); test `ScenarioDrawsMatchTheWorkerChain_044`.
+
+**Bitwise-neutral speed-up adopted (T014)**: async elite-dmp upload — smoke gens 1–14 best/avg/worst identical to the sync build,
+generation time −25 %. Details in `profile.md`.

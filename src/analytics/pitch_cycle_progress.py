@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-pitch_cycle_progress.py — THE RELAY, OVER GENERATIONS (043 t6, 2026-10-14).
+pitch_cycle_progress.py — THE RELAY, OVER GENERATIONS (043 t6, 2026-10-14; roll rows 044).
 
 WHY: the t6 plant has the aircraft's pitch short period (I_yy 0.0094, ~2.6-3 Hz), so for the first
 time a genome that drives the pitch setpoint rail-to-rail pays for it in the sim the way it does in
@@ -16,10 +16,11 @@ scenarios of:
   pitch:    RMS body pitch rate (deg/s; gyrQ is rad/s ÷ 6), mean |out_pt| (×240 = deg/s setpoint),
             % of ticks at the cap (|out| > 0.9), sign flips per second, share of pitch-rate power in
             2-3 Hz and in 3-5 Hz (Welch at the 20 Hz tick rate)
-  roll:     mean |out_rl|, cap %, flips/s
+  roll:     mean |out_rl|, cap %, flips/s; RMS body roll rate and its 3-5 Hz share (044 T004 — roll is
+            the axis the 043 exit flight left oscillating; SC-001 judges 3-5 Hz roll-rate RMS)
   throttle: cap %
 
-Four panels, run solid + `--ref` run dashed (t5 is the reference for t6; its cache is built once with
+Five panels, run solid + `--ref` run dashed (t5 is the reference for t6; its cache is built once with
 this same script against its pinned prefix, as the per-path report does).
 
 Usage:
@@ -43,7 +44,8 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 DMP = os.path.join(REPO, "build", "dmp-dump")
 GYRO_SCALE = 6.0
 FS = 20.0
-COLS = ["gen", "q_rms", "pt_abs", "pt_cap", "pt_flips", "pt_23", "pt_35", "rl_abs", "rl_cap", "rl_flips", "th_cap", "n"]
+COLS = ["gen", "q_rms", "pt_abs", "pt_cap", "pt_flips", "pt_23", "pt_35", "rl_abs", "rl_cap", "rl_flips", "th_cap",
+        "p_rms", "rl_35", "n"]
 
 
 def welch_share(x, lo, hi, nseg=128):
@@ -65,21 +67,22 @@ def summarize_csv(text):
     first, last = {}, {}
     for i, n in enumerate(h):
         first.setdefault(n, i); last[n] = i
-    need = ["scenario", "out_pt", "out_rl", "out_th", "gyrQ"]
+    need = ["scenario", "out_pt", "out_rl", "out_th", "gyrQ", "gyrP"]
     if any(c not in first for c in need):
         return None
-    iS, iP, iR, iT, iQ = first["scenario"], first["out_pt"], first["out_rl"], first["out_th"], last["gyrQ"]
+    iS, iP, iR, iT, iQ, iRP = first["scenario"], first["out_pt"], first["out_rl"], first["out_th"], last["gyrQ"], last["gyrP"]
     sc = defaultdict(list)
     for row in r:
         if len(row) < len(h):
             continue
-        sc[int(row[iS])].append((float(row[iP]), float(row[iR]), float(row[iT]), float(row[iQ])))
+        sc[int(row[iS])].append((float(row[iP]), float(row[iR]), float(row[iT]), float(row[iQ]), float(row[iRP])))
     acc = defaultdict(list)
     for s, rows in sc.items():
         A = np.array(rows)
         if len(A) < 40:
             continue
         pt, rl, th, q = A[:, 0], A[:, 1], A[:, 2], np.degrees(A[:, 3] * GYRO_SCALE)
+        rp = np.degrees(A[:, 4] * GYRO_SCALE)
         dur = len(A) / FS
         acc["q_rms"].append(float(np.sqrt(np.mean(q ** 2))))
         acc["pt_abs"].append(float(np.mean(np.abs(pt)))); acc["pt_cap"].append(100 * float(np.mean(np.abs(pt) > 0.9)))
@@ -88,6 +91,7 @@ def summarize_csv(text):
         acc["rl_abs"].append(float(np.mean(np.abs(rl)))); acc["rl_cap"].append(100 * float(np.mean(np.abs(rl) > 0.9)))
         acc["rl_flips"].append(float(np.sum(np.sign(rl[1:]) != np.sign(rl[:-1])) / dur))
         acc["th_cap"].append(100 * float(np.mean(np.abs(th) > 0.9)))
+        acc["p_rms"].append(float(np.sqrt(np.mean(rp ** 2)))); acc["rl_35"].append(welch_share(rp, 3, 5))
     if not acc["q_rms"]:
         return None
     out = {k: float(np.nanmedian(v)) for k, v in acc.items()}
@@ -100,7 +104,8 @@ def load_cache(path):
     if path and os.path.exists(path):
         with open(path) as f:
             for row in csv.DictReader(f):
-                data[int(row["gen"])] = {k: float(row[k]) for k in COLS[1:]}
+                # a pre-044 reference cache has no roll-rate columns: those plot as gaps
+                data[int(row["gen"])] = {k: float(row[k]) if k in row else math.nan for k in COLS[1:]}
     return data
 
 
@@ -150,7 +155,7 @@ def main():
         ref_label, ref_path = a.ref.split(":", 1); ref = load_cache(ref_path)
     rg = sorted(ref)
 
-    fig, axes = plt.subplots(4, 1, figsize=(14, 14), sharex=True)
+    fig, axes = plt.subplots(5, 1, figsize=(14, 17), sharex=True)
     def line(ax, key, color, label, style="-", src=data, gg=gens, lw=1.8):
         ax.plot(gg, [src[g][key] for g in gg], color=color, linestyle=style, linewidth=lw, label=label)
     ax = axes[0]
@@ -175,11 +180,23 @@ def main():
     if ref: line(ax, "pt_23", "tab:purple", f"{ref_label} 2–3 Hz", "--", ref, rg, 1.3)
     ax.axhspan(31, 63, color="tab:purple", alpha=0.08, label="g488 in flight, 2–3 Hz share 31–63 %")
     ax.set_ylabel("share of pitch-rate power (%)"); ax.set_ylim(0, 100); ax.legend(fontsize=8, ncol=3, loc="upper right"); ax.grid(alpha=.3)
+    ax = axes[4]
+    line(ax, "p_rms", "tab:blue", f"{a.label} roll-rate RMS (deg/s, left)")
+    if ref: line(ax, "p_rms", "tab:blue", f"{ref_label} roll-rate RMS", "--", ref, rg, 1.3)
+    ax.set_ylabel("elite roll-rate RMS (deg/s)"); ax.grid(alpha=.3)
+    ax2 = ax.twinx()
+    ax2.plot(gens, [data[g]["rl_35"] for g in gens], color="tab:orange", linewidth=1.8, label=f"{a.label} roll 3–5 Hz share (%, right)")
+    if ref: ax2.plot(rg, [ref[g]["rl_35"] for g in rg], color="tab:orange", linestyle="--", linewidth=1.3, label=f"{ref_label} roll 3–5 Hz share")
+    ax2.axhline(50, color="tab:orange", alpha=0.3, linestyle=":", label="t6 g752 in flight: 3–5 Hz roll share ~50 %")
+    ax2.set_ylim(0, 100); ax2.set_ylabel("share of roll-rate power, 3–5 Hz (%)")
+    h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, fontsize=8, ncol=2, loc="upper right")
     for ax in axes: ax.set_xlim(0, a.total_gens)
     axes[-1].set_xlabel("generation")
     last = data[gens[-1]]
     fig.suptitle(f"{a.label} — the relay over generations  (gen {gens[-1]}: pitch RMS {last['q_rms']:.0f} deg/s, cap {last['pt_cap']:.0f} %, "
-                 f"{last['pt_flips']:.1f} flips/s, 2–3 Hz {last['pt_23']:.0f} %)", fontsize=12)
+                 f"{last['pt_flips']:.1f} flips/s, 2–3 Hz {last['pt_23']:.0f} %; roll RMS {last['p_rms']:.0f} deg/s, 3–5 Hz {last['rl_35']:.0f} %)",
+                 fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.97)); fig.savefig(a.out, dpi=110); print(f"wrote {a.out}")
     return 0
 
