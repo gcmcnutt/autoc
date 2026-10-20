@@ -200,3 +200,17 @@ the run report against t6, and whether the early pitch advantage reappears at fu
 
 Smoke A's log is copied to `logs/autoc-044-smokeA-plant.log`; the worktree is removed (rebuild tag `044-last-45in` to read smoke A's
 v5 dmps again).
+
+## § Flight-side readiness check (2026-10-20, bake running, no `build/` rebuild)
+
+- `nn2cpp` on the bake's gen-20 elite (`nnextractor` → NN01 v2, signature `a505f1be760da67d`): 53 → 32 → 16r → 3, 2563 weights,
+  count + scale + layout-signature asserts emitted; xiao `pio run` SUCCESS with it (RAM 53.6 %, flash 45.8 %).
+- xiao per-tick order = the sim's: `convertMSPStateToAircraftState` (gyro, specific force) → `recordErrorHistory(…, craftSampleNow())`
+  → `generatedNNProgram` (gather is the shared `gather_pathgen_inputs`); `resetHistory` at every engage clears the craft ring.
+- History is counted in ticks: NN eval every tick (`MSP_NN_EVAL_DIVISOR 1`), and the 10-18 flights show **0 overruns / 0 resyncs**
+  over 7 spans, so 1 / 2 ticks back = 50 / 100 ms on the aircraft as in the sim. (A resync would stretch a lag; it is logged.)
+- INAV fork sends `gyro.gyroADCf` / `acc.accADCf` (post-LPF) in `MSP2_AUTOC_STATE` — the filtered signals the sim now models
+  (FR-008). No INAV change.
+- Cost: 10-18 flight NN eval ~200 k DWT cycles, 1.5 ms mean / 8.6 ms max per tick; layout v4 adds ~11 % MACs (~+0.2 ms) against a
+  50 ms tick.
+- Still owed on hardware (T052 bench): a v6 log through both decoders and the engage / reboot history pre-fill on the real board.
