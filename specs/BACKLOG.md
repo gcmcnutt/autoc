@@ -78,6 +78,21 @@ turbulence / gust-length / thermal** draws (they are drawn in the worker from `W
 from the scenario seeds with the same pure functions (`deriveClassSubSeeds` → `ClassPRNG(wind)` → skip one → `drawWindVariation`)
 and print the full-strength values as four more columns. Until then: `specs/043-acro-dual-loop/wind_draws.cc`.
 
+### [044 implementation, filed 2026-10-19] Sim sensor-path gaps found while wiring the FC filters; accel x/y history trigger; roll step-gain coupling
+- **043 US5 IMU-imperfection axes are drawn but never applied.** `craftImuMisalign*`, `craftGyroScale*`, `craftAccelScale*`,
+  `craftAccelBias*` reach `Global::` per scenario and nothing reads them (043 T015 deferred the "sensed copy" to a later phase). The
+  044 `FcSensorFilterChain` (inputdev, per sub-step) is now the natural place: apply misalign/scale/bias to the raw IMU sample before
+  filtering, so the policy and (if desired) the rate loop see the same sensed IMU. Until then the scenario table's IMU columns describe
+  draws with no effect.
+- **The sim's INAV rate loop reads the raw FDM rate**; the aircraft's loop reads the 25 Hz-filtered gyro (~6 ms). 044 FR-008 scoped the
+  POLICY's signals. If the loop's phase ever matters, feed `Cntrl_InavFwRate` from the same chain.
+- **Accel x / y history** — not given history in 044 (they alias heavily in flight and predicted nothing, README). Revisit trigger: an
+  ablation or attribution showing the policy leans on accel_x/y now values, or the M2 phase needing longitudinal energy cues.
+- **Roll step gain under the class** — `Cl_da/|Cl_p|` is held exactly, but the full-FDM step gain rises 13–20 % at the class centre
+  (lateral–directional coupling, `honesty.md` rung 1). It moves toward the aircraft (~1330 deg/s per unit at 14 m/s, 2026-09-07); check
+  against the 044 flight's roll FRF before any re-tune. The closed-loop roll FRF also lags the flight by ~35–50° at 3 Hz, largely the
+  logging point (sim 20 Hz command vs FC 240 Hz `axisRate`) — log the sim setpoint after the latency if this needs to be closed.
+
 ### [044 T013/T014, filed 2026-10-19] Training throughput — worker idle in the per-job round trip; the per-tick payload
 `specs/044-m1-craft-history/profile.md`. After the async dmp upload (adopted in 044, −25 % generation time on the smoke) the workers
 are busy ~16.4 of 20 cores; the rest is the request/response per job — each worker waits while its parent RPC thread deserializes

@@ -265,9 +265,9 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
 
 ## Phase 7: Polish & cross-cutting
 
-- [ ] T055 [P] Constitution VI audit on touched paths: `grep -nE '\b(float|double)\b' src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/
+- [X] T055 [P] Constitution VI audit on touched paths: `grep -nE '\b(float|double)\b' src/eval/ src/nn/ include/autoc/eval/ include/autoc/nn/
   | grep -v '// raw-ok:'` — annotate or convert every new hit
-- [ ] T056 [P] File deferrals in `specs/BACKLOG.md` (Constitution X): profiling speed-ups that were not bitwise-neutral and any unexplained
+- [X] T056 [P] File deferrals in `specs/BACKLOG.md` (Constitution X): profiling speed-ups that were not bitwise-neutral and any unexplained
   per-tick cost (T013); the accel x/y history revisit trigger; anything the honesty ladder left open
 - [ ] T057 When SC-001 and SC-002 pass: `specs/044-m1-craft-history/outcome.md` citing every pinned S3 prefix (the bake, the flown genome,
   the 043 preservation keys from T001) and both tags (Constitution VIII.2), final BACKLOG pass, `CLAUDE.md` § Active feature → 045, memory

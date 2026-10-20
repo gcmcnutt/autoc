@@ -164,3 +164,13 @@ Tag `044-last-45in` = the commit that records this section (local; operator push
   until the bake supplies a real one. xiao `pio run` SUCCESS with a 53-input generated program (RAM 53.6 %, flash 45.8 %); `nn2cpp`
   refuses the 45-input g752 by name. Both decoders read the 53-input v6 fixture and the v5 10-18 logs. ⚠️ Hardware bench log still
   owed at the pre-flight bench (T052).
+
+## § Smoke B — plant + history, 53 inputs (T047) — launched 2026-10-19 22:04 PDT
+
+| field | value |
+|---|---|
+| tree | main tree at `fb4d3ba` (crrcsim `54d2485`), the T046 clean build |
+| launch | `bash scripts/train.sh specs/044-m1-craft-history/smoke.ini logs/autoc-044-smokeB-history.log` (detached) |
+| S3 prefix | `s3://autoc-m1/autoc-9223370244382121270-2026-10-20T05:04:14.537Z/` |
+| same air as A | identical scenario seed table (first `0x47f0c932034184e8`, last `0x2de4297d30eb3c6d`), PathSeed 13337, scenario 0 row identical |
+| note | runs concurrently with smoke A (shared CPUs: both slower, results unaffected) |

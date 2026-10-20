@@ -104,7 +104,7 @@ constexpr double kAccelLpfHz = 15.0;  // acc_lpf_hz, BIQUAD
 // its input (no start transient). dt has no default (Constitution VII).
 class FcSensorFilterChain {
  public:
-  explicit FcSensorFilterChain(double dtSec) {
+  explicit FcSensorFilterChain(double dtSec) {  // raw-ok: filter config in the double-based Pt1Filter/BiquadFilter above
     for (int a = 0; a < 3; ++a) {
       gyro_[a].configure(kGyroLpfHz, dtSec);
       accel_[a].configure(kAccelLpfHz, dtSec);
@@ -117,8 +117,8 @@ class FcSensorFilterChain {
   // One FC-rate sample: body rates (rad/s) and body specific force (g).
   void step(const gp_vec3& gyroRadS, const gp_vec3& specificForceG) {
     for (int a = 0; a < 3; ++a) {
-      gyroOut_[a] = static_cast<gp_scalar>(gyro_[a].apply(static_cast<double>(gyroRadS[a])));
-      accelOut_[a] = static_cast<gp_scalar>(accel_[a].apply(static_cast<double>(specificForceG[a])));
+      gyroOut_[a] = static_cast<gp_scalar>(gyro_[a].apply(static_cast<double>(gyroRadS[a])));        // raw-ok: filter state is double (Pt1Filter); gp_scalar at the boundary
+      accelOut_[a] = static_cast<gp_scalar>(accel_[a].apply(static_cast<double>(specificForceG[a])));  // raw-ok: filter state is double (BiquadFilter); gp_scalar at the boundary
     }
     seeded_ = true;
   }
