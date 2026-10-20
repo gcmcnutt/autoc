@@ -9,7 +9,7 @@ Living record for 044's gates, baselines and smokes. The bake gets its own `arti
 | tag | commit | crrcsim | reads |
 |---|---|---|---|
 | `043-final` | `8cd5a5d` | `7f345c5` | every 043 artifact: dmp schema 4, NN01 v1 genomes, xiao flight log v5 |
-| `044-last-45in` | *(T026)* | | 044 smoke A and the 45-input baselines (dmp schema 5) |
+| `044-last-45in` | (the T026 record commit) | `1cb45c3` | 044 smoke A and the 45-input baselines (dmp schema 5) |
 
 **Training runs (`autoc-m1`)** — already pinned by 043, re-verified by sampling 2026-10-19:
 
@@ -89,3 +89,20 @@ gust seed and four envelope draws (`drawWindClass`, `wind_variation.h`); test `S
 
 **Bitwise-neutral speed-up adopted (T014)**: async elite-dmp upload — smoke gens 1–14 best/avg/worst identical to the sync build,
 generation time −25 %. Details in `profile.md`.
+
+## § New baselines on the 044 plant (T026) — 2026-10-19
+
+Build: US4 + US2 (fmix32 streams, wind slots, `EvalVariationScale`, async upload, craftClP class + `Cl_da` scaling, CmQ −2.25,
+FC sensor filters at the sub-step), **45 inputs**, dmp schema v5. Clean `rebuild-perf.sh` OK; ctest 53/53; xiao `pio run` SUCCESS.
+Honesty ladder: `honesty.md` (rungs 2–3 match the 2026-10-18 flight; rung-1 steady-gain line explained, not re-tuned).
+
+| tier-0 baseline (stored scale) | seed | fitness | completed | repeat |
+|---|---|---|---|---|
+| t6 g800 | 1791951530 | `-69975.152740` | 290/294 | identical ×2 |
+| t6 g752 | 20261018 | `-67058.096781` | 293/294 | identical ×2 |
+
+**Eval-vs-training bitwise gate**: 3-generation training run of the smoke regiment on this build (`logs/autoc-044-T026-gate.log`,
+seed 20261019, prefix `autoc-9223370244385741393-2026-10-20T04:03:54.414Z`; `NN_ELITE_SAME` gens 1–3), gen-3 elite extracted with
+`nnextractor` and re-evaluated in eval mode with the smoke regiment and the run's seed: **`NN_EVAL_SAME: fitness=-70.392779`** = stored.
+
+Tag `044-last-45in` = the commit that records this section (local; operator pushes).

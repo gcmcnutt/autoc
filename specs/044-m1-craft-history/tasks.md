@@ -139,7 +139,7 @@ delays modelled — all on the 45-input build. No `CMakeLists.txt` change in thi
   `Cl_da` scaling) in research R1 and re-run the ladder; no baselines or smokes on a plant that failed it. Record in `honesty.md`
 - [X] T025 [US2] Plant change in `crrcsim` committed on `044-m1-craft-history` and the submodule pointer bumped in autoc (submodule first,
   parent second)
-- [ ] T026 [US2] Gate-confirming clean `bash scripts/rebuild-perf.sh`, `ctest`, xiao build; take the **new tier-0 baselines** (t6 g752
+- [X] T026 [US2] Gate-confirming clean `bash scripts/rebuild-perf.sh`, `ctest`, xiao build; take the **new tier-0 baselines** (t6 g752
   and g800 replays on the new plant + PRNG) and the eval-vs-training bitwise gate; replay one quiet tier (variations off) twice →
   identical (edge case "variation off"); record in `MANIFEST.md`; then `git tag 044-last-45in` (local; operator pushes) (FR-005,
   research R12)
