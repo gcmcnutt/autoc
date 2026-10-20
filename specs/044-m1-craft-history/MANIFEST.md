@@ -106,3 +106,13 @@ seed 20261019, prefix `autoc-9223370244385741393-2026-10-20T04:03:54.414Z`; `NN_
 `nnextractor` and re-evaluated in eval mode with the smoke regiment and the run's seed: **`NN_EVAL_SAME: fitness=-70.392779`** = stored.
 
 Tag `044-last-45in` = the commit that records this section (local; operator pushes).
+
+## § Smoke A — plant only, 45 inputs (T027) — launched 2026-10-19 21:11 PDT
+
+| field | value |
+|---|---|
+| tree | worktree `/home/gmcnutt/autoc-044-smokeA` at tag `044-last-45in` (`ca49edd`, crrcsim `1cb45c3`), own clean `rebuild-perf.sh` (ctest 53/53); the main tree's `build/` stays free for US1 |
+| launch | `bash scripts/train.sh specs/044-m1-craft-history/smoke.ini logs/autoc-044-smokeA-plant.log` (from the worktree, detached) |
+| regiment | smoke.ini: pop 3000, 6 paths × 16 winds = 96 scenarios, 200 gens, ramp step 10 (full strength from gen 191), seed **20261019** |
+| S3 prefix | `s3://autoc-m1/autoc-9223370244385275114-2026-10-20T04:11:40.693Z/` (`retain=expire`; the smoke is evidence, not a milestone) |
+| log | worktree `logs/autoc-044-smokeA-plant.log` → copy to the main tree's `logs/` at the end, then `git worktree remove ../autoc-044-smokeA` |

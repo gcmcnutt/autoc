@@ -143,7 +143,7 @@ delays modelled — all on the 45-input build. No `CMakeLists.txt` change in thi
   and g800 replays on the new plant + PRNG) and the eval-vs-training bitwise gate; replay one quiet tier (variations off) twice →
   identical (edge case "variation off"); record in `MANIFEST.md`; then `git tag 044-last-45in` (local; operator pushes) (FR-005,
   research R12)
-- [ ] T027 [US2] **Smoke A** (plant only, 45 inputs) from its own worktree, so the main tree's `build/` stays free for US1:
+- [X] T027 [US2] **Smoke A** (plant only, 45 inputs) from its own worktree, so the main tree's `build/` stays free for US1:
   `git worktree add ../autoc-044-smokeA 044-last-45in && git -C ../autoc-044-smokeA submodule update --init`, operator clean
   `bash scripts/rebuild-perf.sh` there, then from `../autoc-044-smokeA`: `bash scripts/train.sh specs/044-m1-craft-history/smoke.ini
   logs/autoc-044-smokeA-plant.log` (detached; Constitution IX). Record seed, prefix and worktree path in `MANIFEST.md`; when it finishes,
