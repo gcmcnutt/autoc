@@ -20,7 +20,7 @@ inward_body_x, inward_body_y, inward_body_z, score_grad_x, score_grad_y, score_g
 
 - Scales unchanged per signal (gyro ÷ 6 rad/s, accel ÷ 8 g) — history slots use their signal's scale.
 - `NNInputs` = 25 target + 28 craft = **53**; `TrackerInputs` = 46 target + 28 craft = **74**.
-- Weights: M1 53·32+32 + 32·16+16 + 16·3+3 + 16·16 = **2563**; M2 74·… = **3235**.
+- Weights: M1 53·32+32 + 32·16+16 + 16·3+3 + 16·16 = **2563**; M2 74·32+32 + 528 + 16·7+7 + 256 = **3303** (7 outputs; an earlier draft said 3303, computed with 3).
 - Invariants (static_assert): struct sizes; craft block last in both enums; the two enums' craft tails identical; metadata table
   length = enum COUNT.
 

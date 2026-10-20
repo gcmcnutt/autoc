@@ -365,6 +365,24 @@ static void writeCraftCommonInputs(const AircraftState& state,
         out.gyro_r = static_cast<float>(gyro.z()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
     }
 
+    // 044 FR-001/002 — craft-sensor HISTORY from the craft ring (what the gather
+    // read on those ticks), same scales as the current values above. Lag ticks
+    // from the one definition, kNNCraftHistoryLagsMsec.
+    {
+        constexpr int kLagTm2 = kNNCraftHistoryLagsMsec[0] / SIM_TIME_STEP_MSEC;  // 100 ms
+        constexpr int kLagTm1 = kNNCraftHistoryLagsMsec[1] / SIM_TIME_STEP_MSEC;  // 50 ms
+        const AircraftState::CraftSample c2 = state.getHistoricalCraft(kLagTm2);
+        const AircraftState::CraftSample c1 = state.getHistoricalCraft(kLagTm1);
+        out.gyro_p_tm2 = static_cast<float>(c2.gyroRadS.x()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
+        out.gyro_p_tm1 = static_cast<float>(c1.gyroRadS.x()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
+        out.gyro_q_tm2 = static_cast<float>(c2.gyroRadS.y()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
+        out.gyro_q_tm1 = static_cast<float>(c1.gyroRadS.y()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
+        out.gyro_r_tm2 = static_cast<float>(c2.gyroRadS.z()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
+        out.gyro_r_tm1 = static_cast<float>(c1.gyroRadS.z()) / kGyroScale_radps;  // raw-ok: NN-byte-format slot write
+        out.accel_z_tm2 = static_cast<float>(c2.accelZ_g) / kAccelScale_g;        // raw-ok: NN-byte-format slot write
+        out.accel_z_tm1 = static_cast<float>(c1.accelZ_g) / kAccelScale_g;        // raw-ok: NN-byte-format slot write
+    }
+
     // Body-frame specific force, g → NN units.
     {
         const gp_vec3 sf = state.getSpecificForceG();

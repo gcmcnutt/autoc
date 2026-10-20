@@ -179,7 +179,18 @@ constexpr float kNNHistoryRecentGapSec =
 //   v1 = uniform one-tick lags {5,4,3,2,1,0} (pre-037, 100 ms grid)
 //   v2 = ms-based log-spaced lags {1600,800,400,200,100,0} (1.6 s window)
 //   v3 = ms-based log-spaced lags {800,400,200,100,50,0}   (t10, 0.8 s window)
-constexpr uint32_t kNNHistoryLayoutVersion = 3;
+//   v4 = 044: + craft-sensor history (gyro p/q/r + accel z at 100 / 50 ms)
+//        beside each current value in the craft block (53 M1 / 74 M2 inputs)
+constexpr uint32_t kNNHistoryLayoutVersion = 4;
+
+// 044 FR-001 — craft-sensor HISTORY lags, oldest first, ending at now. ONE
+// definition: the ring depth (aircraft_state.h), the gather and the slot names
+// (*_TM2 = lag [0], *_TM1 = lag [1]) all follow it. Which signals carry history
+// is the CraftSample struct (aircraft_state.h): body rates p/q/r and body normal
+// specific force z — longitudinal / lateral accel alias heavily in flight and
+// predict nothing (044 README), and the recurrent state already holds the
+// previous command. Changing a lag is one edit here + a format break.
+constexpr int kNNCraftHistoryLagsMsec[3] = {100, 50, 0};
 
 // CONSTITUTIONAL NOTE -- SERIALIZATION CONTRACT
 // Field declaration order IS the on-disk byte order for cereal, data.dat,
@@ -207,7 +218,7 @@ constexpr uint32_t kNNHistoryLayoutVersion = 3;
 // Field declaration order IS the on-disk byte order for cereal, data.dat,
 // nn2cpp, and analysis tooling. This sub-struct is embedded as the LAST member
 // of both mode structs, so each mode's layout is [target representation][common]
-// and the common block occupies the final 20 slots in both.
+// and the common block occupies the final NN_COMMON_INPUT_COUNT slots in both.
 // DO NOT add padding or non-float members.
 struct CraftCommonInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xiao-firmware-locked contract
     float quat_w;            // raw-ok: NN-byte-format buffer — attitude q_EB, aerospace FRD, unit norm
@@ -215,8 +226,18 @@ struct CraftCommonInputs {  // raw-ok: NN-byte-format struct, all members fp32 b
     float quat_y;            // raw-ok: NN-byte-format buffer
     float quat_z;            // raw-ok: NN-byte-format buffer
     float airspeed;          // raw-ok: NN-byte-format buffer — ÷ kCruiseSpeed_mps (041 P2-8)
+    // 044 FR-001/003 — each rate's HISTORY sits beside its current value, oldest
+    // first (as target_x[] does): _tm2 = kNNCraftHistoryLagsMsec[0] (100 ms),
+    // _tm1 = [1] (50 ms), then now. Read from AircraftState's craft ring — the
+    // values the gather used on those ticks (sim: FC-filtered, FR-008).
+    float gyro_p_tm2;        // raw-ok: NN-byte-format buffer — 100 ms ago
+    float gyro_p_tm1;        // raw-ok: NN-byte-format buffer — 50 ms ago
     float gyro_p;            // raw-ok: NN-byte-format buffer — rad/s ÷ kGyroScale_radps, body, aerospace RHR
+    float gyro_q_tm2;        // raw-ok: NN-byte-format buffer
+    float gyro_q_tm1;        // raw-ok: NN-byte-format buffer
     float gyro_q;            // raw-ok: NN-byte-format buffer
+    float gyro_r_tm2;        // raw-ok: NN-byte-format buffer
+    float gyro_r_tm1;        // raw-ok: NN-byte-format buffer
     float gyro_r;            // raw-ok: NN-byte-format buffer
     // The other half of the IMU. Body-frame specific force INCLUDING gravity
     // (a_world - g_world rotated into body), scaled by kAccelScale_g — NOT FDM
@@ -225,6 +246,8 @@ struct CraftCommonInputs {  // raw-ok: NN-byte-format struct, all members fp32 b
     // shared with dmp-dump so reader and input cannot disagree.
     float accel_x;           // raw-ok: NN-byte-format buffer — longitudinal
     float accel_y;           // raw-ok: NN-byte-format buffer — lateral
+    float accel_z_tm2;       // raw-ok: NN-byte-format buffer — 100 ms ago (044)
+    float accel_z_tm1;       // raw-ok: NN-byte-format buffer — 50 ms ago (044)
     float accel_z;           // raw-ok: NN-byte-format buffer — normal, the load axis
     // ----- 041 P2-2 — the observation the energy objective had no way to see --
     // TA03 found the vector carried AIRSPEED but no altitude/height term at all,
@@ -280,10 +303,11 @@ struct CraftCommonInputs {  // raw-ok: NN-byte-format struct, all members fp32 b
     float score_grad_z;      // raw-ok: NN-byte-format buffer
 };
 
-static_assert(sizeof(CraftCommonInputs) == 20 * sizeof(float),
-              "CraftCommonInputs must be contiguous float[20] with no padding "
-              "(4 quat + 1 airspeed + 3 gyro + 3 accel + 1 Es + 1 closure-rate "
-              "+ 1 dist-to-boundary + 3 inward + 3 score-grad)");
+static_assert(sizeof(CraftCommonInputs) == 28 * sizeof(float),
+              "CraftCommonInputs must be contiguous float[28] with no padding "
+              "(4 quat + 1 airspeed + 3x3 gyro p/q/r with 2-lag history + 2 accel "
+              "+ 3 accel_z with history + 1 Es + 1 closure-rate + 1 dist-to-boundary "
+              "+ 3 inward + 3 score-grad). 20 before 044.");
 static_assert(alignof(CraftCommonInputs) == alignof(float),
               "CraftCommonInputs must be float-aligned for matrix multiply");
 
@@ -305,16 +329,17 @@ struct NNInputs {
     float target_z[6];   // body-frame unit-vec z component (NEW)
     float dist[6];       // m ÷ kTargetDistScale_m (041 P2-8), distance to rabbit
     float closing_rate;  // m/s ÷ kClosingRateScale_mps (041 P2-8), + = approaching
-    // ----- CRAFT STATE (20 slots) — one definition, shared with TrackerInputs
+    // ----- CRAFT STATE (28 slots) — one definition, shared with TrackerInputs
     CraftCommonInputs common;
 };
 
-static_assert(sizeof(NNInputs) == 45 * sizeof(float),
-              "NNInputs layout must be contiguous float[45] with no padding "
-              "(25 M1 target representation + 20 CraftCommonInputs). History: "
+static_assert(sizeof(NNInputs) == 53 * sizeof(float),
+              "NNInputs layout must be contiguous float[53] with no padding "
+              "(25 M1 target representation + 28 CraftCommonInputs). History: "
               "33 pre-038; 37 at 038 FR-P0H; 42 at 041 US4; 45 at 041 P2-2 "
               "(-IN_ENVELOPE -ENVELOPE_SECS +SPECIFIC_ENERGY "
-              "+BOUNDARY_CLOSURE_RATE +SCORE_GRAD_X/Y/Z)");
+              "+BOUNDARY_CLOSURE_RATE +SCORE_GRAD_X/Y/Z); 53 at 044 (+8 craft "
+              "history: gyro p/q/r and accel z at 100/50 ms)");
 static_assert(alignof(NNInputs) == alignof(float),
               "NNInputs must be float-aligned for matrix multiply");
 static_assert(offsetof(NNInputs, common) == 25 * sizeof(float),
@@ -367,18 +392,21 @@ struct SensorInputMeta {
 // each other's slots and every value is plausible.
 // ----------------------------------------------------------------------------
 
-// PathgenInput — 45 inputs: 25 M1 target representation + 20 craft common.
+// PathgenInput — 53 inputs: 25 M1 target representation + 28 craft common.
 enum class PathgenInput : uint16_t {
     TARGET_X_TM5 = 0, TARGET_X_TM4, TARGET_X_TM3, TARGET_X_TM2, TARGET_X_TM1, TARGET_X_NOW,
     TARGET_Y_TM5,     TARGET_Y_TM4, TARGET_Y_TM3, TARGET_Y_TM2, TARGET_Y_TM1, TARGET_Y_NOW,
     TARGET_Z_TM5,     TARGET_Z_TM4, TARGET_Z_TM3, TARGET_Z_TM2, TARGET_Z_TM1, TARGET_Z_NOW,
     DIST_TM5,         DIST_TM4,     DIST_TM3,     DIST_TM2,     DIST_TM1,     DIST_NOW,
     CLOSING_RATE,
-    // ----- CraftCommonInputs (25..44) — shared tail, see note above -----
+    // ----- CraftCommonInputs (25..52) — shared tail, see note above -----
     QUAT_W, QUAT_X, QUAT_Y, QUAT_Z,
     AIRSPEED,
-    GYRO_P, GYRO_Q, GYRO_R,
-    ACCEL_X, ACCEL_Y, ACCEL_Z,
+    GYRO_P_TM2, GYRO_P_TM1, GYRO_P,
+    GYRO_Q_TM2, GYRO_Q_TM1, GYRO_Q,
+    GYRO_R_TM2, GYRO_R_TM1, GYRO_R,
+    ACCEL_X, ACCEL_Y,
+    ACCEL_Z_TM2, ACCEL_Z_TM1, ACCEL_Z,
     SPECIFIC_ENERGY,
     BOUNDARY_CLOSURE_RATE,
     DIST_TO_BOUNDARY,
@@ -394,8 +422,11 @@ enum class PathgenInput : uint16_t {
     {"QUAT_W", "qw", 8}, {"QUAT_X", "qx", 8},                      \
     {"QUAT_Y", "qy", 8}, {"QUAT_Z", "qz", 8},                      \
     {"AIRSPEED", "vel", 8},                                        \
-    {"GYRO_P", "gyrP", 7}, {"GYRO_Q", "gyrQ", 7}, {"GYRO_R", "gyrR", 7}, \
-    {"ACCEL_X", "acX", 7}, {"ACCEL_Y", "acY", 7}, {"ACCEL_Z", "acZ", 7}, \
+    {"GYRO_P_TM2", "gyrP-2", 7}, {"GYRO_P_TM1", "gyrP-1", 7}, {"GYRO_P", "gyrP", 7}, \
+    {"GYRO_Q_TM2", "gyrQ-2", 7}, {"GYRO_Q_TM1", "gyrQ-1", 7}, {"GYRO_Q", "gyrQ", 7}, \
+    {"GYRO_R_TM2", "gyrR-2", 7}, {"GYRO_R_TM1", "gyrR-1", 7}, {"GYRO_R", "gyrR", 7}, \
+    {"ACCEL_X", "acX", 7}, {"ACCEL_Y", "acY", 7},                  \
+    {"ACCEL_Z_TM2", "acZ-2", 7}, {"ACCEL_Z_TM1", "acZ-1", 7}, {"ACCEL_Z", "acZ", 7}, \
     {"SPECIFIC_ENERGY", "Es", 8},                                  \
     {"BOUNDARY_CLOSURE_RATE", "bClR", 8},                          \
     {"DIST_TO_BOUNDARY", "dBnd", 8},                               \
@@ -424,12 +455,12 @@ static_assert(static_cast<int>(PathgenInput::COUNT) == NN_INPUT_COUNT,
               "PathgenInput::COUNT must equal NN_INPUT_COUNT (NNInputs struct size)");
 static_assert(static_cast<int>(PathgenInput::QUAT_W) ==
               static_cast<int>(PathgenInput::COUNT) - NN_COMMON_INPUT_COUNT,
-              "The CraftCommonInputs block must be the LAST 20 slots of "
+              "The CraftCommonInputs block must be the LAST NN_COMMON_INPUT_COUNT slots of "
               "PathgenInput — offsetof(NNInputs, common) says so and the flat "
               "float view the forward pass uses depends on it");
 
 // ----------------------------------------------------------------------------
-// TrackerInput — 66 inputs: 46 M2 target representation + 20 craft common.
+// TrackerInput — 74 inputs: 46 M2 target representation + 28 craft common.
 //
 // M2 target representation (46):
 //   36 beacon (left + right x 6 history slots x {x, y, CEP})
@@ -470,11 +501,14 @@ enum class TrackerInput : uint16_t {
     // (038 US3, 2026-07-05: EXIT_DIR_SIN/COS removed — redundant with the beacon
     //  history inside the 0.8 s window, stale beyond it; low-value hand-built cue.)
     TIME_SINCE_SEEN,
-    // ----- CraftCommonInputs (46..65) — shared tail, identical to PathgenInput
+    // ----- CraftCommonInputs (46..73) — shared tail, identical to PathgenInput
     QUAT_W, QUAT_X, QUAT_Y, QUAT_Z,
     AIRSPEED,
-    GYRO_P, GYRO_Q, GYRO_R,
-    ACCEL_X, ACCEL_Y, ACCEL_Z,
+    GYRO_P_TM2, GYRO_P_TM1, GYRO_P,
+    GYRO_Q_TM2, GYRO_Q_TM1, GYRO_Q,
+    GYRO_R_TM2, GYRO_R_TM1, GYRO_R,
+    ACCEL_X, ACCEL_Y,
+    ACCEL_Z_TM2, ACCEL_Z_TM1, ACCEL_Z,
     SPECIFIC_ENERGY,
     BOUNDARY_CLOSURE_RATE,
     DIST_TO_BOUNDARY,
@@ -509,12 +543,12 @@ constexpr SensorInputMeta kTrackerInputMeta[] = {
 static_assert(static_cast<size_t>(TrackerInput::COUNT) ==
               sizeof(kTrackerInputMeta) / sizeof(SensorInputMeta),
               "TrackerInput enum count must match kTrackerInputMeta length");
-static_assert(static_cast<int>(TrackerInput::COUNT) == 66,
-              "TrackerInput::COUNT must equal 66 (46 M2 target representation + "
-              "20 CraftCommonInputs). History: 58 pre-041; 63 at 041 US4; 66 at "
-              "041 P2-2. ⚠️ This count changes ONCE MORE after the M2 phase "
-              "(66 + N innovation channels, FR-005a) -- that second change is "
-              "legal, see contracts/nn-input-layout.md");
+static_assert(static_cast<int>(TrackerInput::COUNT) == 74,
+              "TrackerInput::COUNT must equal 74 (46 M2 target representation + "
+              "28 CraftCommonInputs). History: 58 pre-041; 63 at 041 US4; 66 at "
+              "041 P2-2; 74 at 044 (craft history). ⚠️ This count changes ONCE "
+              "MORE after the M2 phase (+ N innovation channels, FR-005a) -- that "
+              "change is legal, see contracts/nn-input-layout.md");
 
 // 030 M6d — Tracker-mode NN input storage struct (FR-006 + FR-016).
 //
@@ -561,15 +595,15 @@ struct TrackerInputs {  // raw-ok: NN-byte-format struct, all members fp32 by xi
     // reset per scenario/engage in the stepper.
     float time_since_seen;   // raw-ok: NN-byte-format buffer — tanh(ticks_lost·scale), [0,1); 0 = visible now
 
-    // ----- CRAFT STATE (20 slots) — one definition, shared with NNInputs -----
+    // ----- CRAFT STATE (28 slots) — one definition, shared with NNInputs -----
     // The RNN receives identical input channels in both modes; only the SOURCE
     // of a channel may differ (see CraftCommonInputs for which, and why).
     CraftCommonInputs common;
 };
 
-static_assert(sizeof(TrackerInputs) == 66 * sizeof(float),
-              "TrackerInputs layout must be contiguous float[66] with no padding "
-              "(46 M2 target representation + 20 CraftCommonInputs)");
+static_assert(sizeof(TrackerInputs) == 74 * sizeof(float),
+              "TrackerInputs layout must be contiguous float[74] with no padding "
+              "(46 M2 target representation + 28 CraftCommonInputs; 66 before 044)");
 static_assert(alignof(TrackerInputs) == alignof(float),
               "TrackerInputs must be float-aligned for matrix multiply");
 static_assert(static_cast<int>(TrackerInput::COUNT) ==
@@ -579,7 +613,7 @@ static_assert(offsetof(TrackerInputs, common) == 46 * sizeof(float),
               "CraftCommonInputs must start at slot 46 in TrackerInputs");
 static_assert(static_cast<int>(TrackerInput::QUAT_W) ==
               static_cast<int>(TrackerInput::COUNT) - NN_COMMON_INPUT_COUNT,
-              "The CraftCommonInputs block must be the LAST 20 slots of "
+              "The CraftCommonInputs block must be the LAST NN_COMMON_INPUT_COUNT slots of "
               "TrackerInput, exactly as it is of PathgenInput");
 
 // ⚠️ The one assertion that pins the two enums' shared tails to each other.

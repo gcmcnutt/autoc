@@ -130,8 +130,9 @@ int main() {
         float n = dir.norm();
         if (n > 1e-3f) dir = dir / n;
         float dist = 20.0f + 15.0f * frand();
-        st.recordErrorHistory(dir, dist, static_cast<unsigned long>(t) * 50u);
         st.setGyroRates(gp_vec3(frand(), frand(), frand()));
+        st.setSpecificForceG(gp_vec3(0.2f * frand(), 0.2f * frand(), -1.0f + 0.5f * frand()));
+        st.recordErrorHistory(dir, dist, static_cast<unsigned long>(t) * 50u, st.craftSampleNow());
         st.setRelVel(15.0f + 5.0f * frand());
         gp_quat q(1.0f + 0.1f * frand(), 0.2f * frand(), 0.2f * frand(), 0.2f * frand());
         q.normalize();
@@ -144,6 +145,30 @@ int main() {
         memcpy(bits, out, sizeof(bits));
         printf("%d %08x %08x %08x\n", t, bits[0], bits[1], bits[2]);
     }
+
+    // 044 T041 — the craft-history slots reach the generated forward pass: two
+    // states with the SAME current reading and a DIFFERENT past must differ.
+    auto probe = [&](float pastQ) {
+        AircraftState a;
+        a.setPosition(gp_vec3(10.0f, -5.0f, -30.0f));
+        a.setOrientation(q0);
+        a.setVelocity(gp_vec3(18.0f, 1.0f, -0.5f));
+        a.setRelVel(18.0f);
+        a.resetHistory(gp_vec3(30.0f, 0.0f, -35.0f), gp_vec3(1.0f, 0.0f, 0.0f));
+        const gp_vec3 d0(1.0f, 0.0f, 0.0f);
+        for (int k = 0; k < 2; ++k) {
+            a.setGyroRates(gp_vec3(0.0f, pastQ, 0.0f));
+            a.recordErrorHistory(d0, 25.0f, 50u * k, a.craftSampleNow());
+        }
+        a.setGyroRates(gp_vec3(0.0f, 0.3f, 0.0f));
+        a.recordErrorHistory(d0, 25.0f, 100u, a.craftSampleNow());
+        generatedNNProgramReset();
+        nnGenerated(provider, a, 0.0f);
+        uint32_t b;
+        memcpy(&b, a.getNNOutputs(), sizeof(b));
+        return b;
+    };
+    printf("HIST %08x %08x\n", probe(0.0f), probe(2.0f));
     return 0;
 }
 )HARNESS";
@@ -259,8 +284,15 @@ TEST_F(Nn2cppUnrollTest, UnrolledRecurrentMatchesTableDrivenBitExact) {
 
     std::istringstream lines(outU);
     std::vector<std::string> v;
-    for (std::string l; std::getline(lines, l);) v.push_back(l);
+    std::string hist;
+    for (std::string l; std::getline(lines, l);) {
+        if (l.rfind("HIST ", 0) == 0) hist = l; else v.push_back(l);
+    }
     ASSERT_EQ(v.size(), 24u) << "harness did not run all 24 ticks";
+    // 044 T041: same current reading, different past -> different command.
+    ASSERT_FALSE(hist.empty()) << "harness printed no HIST probe";
+    EXPECT_NE(hist.substr(5, 8), hist.substr(14, 8))
+        << "craft-history slots do not reach the generated forward pass: " << hist;
 }
 
 }  // namespace

@@ -198,8 +198,11 @@ TEST(GatherTrackerInputs, LayoutIsContiguousFloatArray) {
     // Slot 46 is the first CraftCommonInputs slot, quat_w (identity = 1.0).
     EXPECT_FLOAT_EQ(flat[46], 1.0f);
     // And the sub-struct really is embedded there, not merely coincident.
+    // (044: craft slots are reached by ENUM NAME — the block grew 20 -> 28 and a
+    // literal flat[59] silently pointed at a different slot.)
     EXPECT_EQ(offsetof(TrackerInputs, common), 46u * sizeof(float));
-    EXPECT_FLOAT_EQ(flat[59], out.common.dist_to_boundary);
+    EXPECT_FLOAT_EQ(flat[static_cast<int>(TrackerInput::DIST_TO_BOUNDARY)], out.common.dist_to_boundary);
+    EXPECT_FLOAT_EQ(flat[static_cast<int>(TrackerInput::GYRO_Q)], out.common.gyro_q);
 }
 
 // ============================================================================

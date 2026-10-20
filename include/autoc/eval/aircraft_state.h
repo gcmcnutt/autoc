@@ -577,13 +577,49 @@ struct AircraftState {
     // ("1 sec at 10 Hz") pre-037, then 33 at the 1.6 s window.
     static constexpr int HISTORY_SIZE = (kNNHistoryLagsMsec[0] / SIM_TIME_STEP_MSEC) + 1;
 
-    // Record current target direction and distance to history (call before NN eval each tick)
-    void recordErrorHistory(const gp_vec3& targetDir, gp_scalar distance, unsigned long timeMs) {
-      targetDirHistory_[historyIndex_] = targetDir;
-      distHistory_[historyIndex_] = distance;
-      timeHistory_[historyIndex_] = timeMs;
-      historyIndex_ = (historyIndex_ + 1) % HISTORY_SIZE;
-      if (historyCount_ < HISTORY_SIZE) historyCount_++;
+    // 044 FR-001/002 — CRAFT-SENSOR HISTORY. Which signals carry history is this
+    // struct (body rates p/q/r and body normal specific force z); the lags are
+    // kNNCraftHistoryLagsMsec (nn_inputs.h). Physical units — the gather applies
+    // the NN scales at the slot write, as it does for the current values.
+    struct CraftSample {
+      gp_vec3 gyroRadS;     // body rates, rad/s (sim: FC-filtered at the sub-step, FR-008)
+      gp_scalar accelZ_g;   // body specific force z, g, gravity included
+    };
+    static_assert(kNNCraftHistoryLagsMsec[0] % SIM_TIME_STEP_MSEC == 0 &&
+                  kNNCraftHistoryLagsMsec[1] % SIM_TIME_STEP_MSEC == 0,
+                  "craft history lags must be whole decision ticks");
+    static constexpr int CRAFT_HISTORY_SIZE = (kNNCraftHistoryLagsMsec[0] / SIM_TIME_STEP_MSEC) + 1;
+
+    // This tick's craft sample: exactly the sensor values the gather reads.
+    CraftSample craftSampleNow() const { return {gyroRates_, specificForceG_.z()}; }
+
+    // ONE recording point per decision tick, both targets (sim inputdev, xiao
+    // msplink): the target ring AND the craft ring. The craft sample is a
+    // required argument so neither call site can record one ring and not the
+    // other (call before NN eval each tick, after the sensors are set).
+    void recordErrorHistory(const gp_vec3& targetDir, gp_scalar distance, unsigned long timeMs,
+                            const CraftSample& craft) {
+      pushTargetHistory(targetDir, distance, timeMs);
+      recordCraftHistory(craft);
+    }
+
+    // Tracker (M2) paths have no M1 target ring but share the craft block, so
+    // they record the craft ring directly, once per tick, before the gather.
+    void recordCraftHistory(const CraftSample& craft) {
+      craftHistory_[craftHistoryIndex_] = craft;
+      craftHistoryIndex_ = (craftHistoryIndex_ + 1) % CRAFT_HISTORY_SIZE;
+      if (craftHistoryCount_ < CRAFT_HISTORY_SIZE) craftHistoryCount_++;
+    }
+
+    // Craft sample n ticks ago (0 = this tick). Clamped to the oldest sample
+    // recorded since the last reset, so right after a reset every lag reads the
+    // CURRENT reading (FR-002: never zero, never the previous span); with nothing
+    // recorded yet it is the current sensor values.
+    CraftSample getHistoricalCraft(int n) const {
+      if (craftHistoryCount_ == 0) return craftSampleNow();
+      n = CLAMP_DEF(n, 0, craftHistoryCount_ - 1);
+      const int idx = (craftHistoryIndex_ - 1 - n + CRAFT_HISTORY_SIZE) % CRAFT_HISTORY_SIZE;
+      return craftHistory_[idx];
     }
 
     // Get historical target direction unit vector (n=0 is most recent, n=1 is one tick ago, etc.)
@@ -614,6 +650,8 @@ struct AircraftState {
     void clearHistory() {
       historyIndex_ = 0;
       historyCount_ = 0;
+      craftHistoryIndex_ = 0;   // 044: the craft ring restarts with the span
+      craftHistoryCount_ = 0;
     }
 
     // Pre-fill all history slots with the current geometry so the NN starts
@@ -635,8 +673,12 @@ struct AircraftState {
       gp_vec3 dir = computeTargetDir(target_local, distance, tangent_body);
 
       for (int h = 0; h < HISTORY_SIZE; h++) {
-        recordErrorHistory(dir, distance, 0);
+        pushTargetHistory(dir, distance, 0);
       }
+      // 044 FR-002: the craft ring is left EMPTY, not pre-filled here — the sensor
+      // values at reset time may predate the first gather. The first tick's
+      // recordErrorHistory supplies the current reading and getHistoricalCraft
+      // clamps every lag to it, which is the pre-fill, from the right values.
     }
 
     void advanceState(gp_scalar dt) {
@@ -754,6 +796,21 @@ struct AircraftState {
     unsigned long timeHistory_[HISTORY_SIZE] = {0};
     int historyIndex_ = 0;   // Next write position (ring buffer)
     int historyCount_ = 0;   // Valid samples (0 to HISTORY_SIZE)
+
+    // 044 FR-001 — craft-sensor history ring (see CraftSample). Not serialized:
+    // the dmp records the GATHERED inputs, history slots included.
+    CraftSample craftHistory_[CRAFT_HISTORY_SIZE] = {};
+    int craftHistoryIndex_ = 0;
+    int craftHistoryCount_ = 0;
+
+    // Target ring only (the resetHistory pre-fill; recordErrorHistory adds the craft ring).
+    void pushTargetHistory(const gp_vec3& targetDir, gp_scalar distance, unsigned long timeMs) {
+      targetDirHistory_[historyIndex_] = targetDir;
+      distHistory_[historyIndex_] = distance;
+      timeHistory_[historyIndex_] = timeMs;
+      historyIndex_ = (historyIndex_ + 1) % HISTORY_SIZE;
+      if (historyCount_ < HISTORY_SIZE) historyCount_++;
+    }
 
 #ifndef ARDUINO
     friend class cereal::access;

@@ -198,31 +198,31 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
 
 ### 5b — the layout change (FR-001…003)
 
-- [ ] T039 [P] [US1] `tests/nn_layout_tests.cc`: `NNInputs` 53 / `TrackerInputs` 74 floats; craft tail order per data-model.md and last in
-  both enums; the two enums' craft tails identical; weight counts 2563 / 3235 (FR-003)
-- [ ] T040 [P] [US1] `tests/tick_rescale_tests.cc` (existing target): `recordErrorHistory` with craft samples fills the ring; after a known
+- [X] T039 [P] [US1] `tests/nn_layout_tests.cc`: `NNInputs` 53 / `TrackerInputs` 74 floats; craft tail order per data-model.md and last in
+  both enums; the two enums' craft tails identical; weight counts 2563 / 3303 (FR-003)
+- [X] T040 [P] [US1] `tests/tick_rescale_tests.cc` (existing target): `recordErrorHistory` with craft samples fills the ring; after a known
   sequence the 100 / 50 / 0 ms slots hold the expected values; `resetHistory` pre-fills every slot with the current reading; no slot reads
   zero after reset (FR-001, FR-002)
-- [ ] T041 [P] [US1] `tests/nn2cpp_unroll_tests.cc`: the generated gather and the sim gather produce identical vectors, history included,
+- [X] T041 [P] [US1] `tests/nn2cpp_unroll_tests.cc`: the generated gather and the sim gather produce identical vectors, history included,
   from identical `AircraftState` (US1 acceptance 2)
-- [ ] T042 [US1] Update the remaining count / index tests in `tests/` (`shared_input_block_tests.cc`, `nn_sensor_interface_tests.cc`,
+- [X] T042 [US1] Update the remaining count / index tests in `tests/` (`shared_input_block_tests.cc`, `nn_sensor_interface_tests.cc`,
   `contract_evaluator_tests.cc`, `nn_evaluator_tests.cc`, `input_mask_tests.cc`, `gather_tracker_inputs_tests.cc`,
   `recording_fidelity_tests.cc`, `arena_tests.cc`, `predictor_head_tests.cc`)
-- [ ] T043 [US1] Layout v4 in `include/autoc/nn/nn_inputs.h`: `CraftCommonInputs` 28 floats in data-model.md order; `PathgenInput` /
+- [X] T043 [US1] Layout v4 in `include/autoc/nn/nn_inputs.h`: `CraftCommonInputs` 28 floats in data-model.md order; `PathgenInput` /
   `TrackerInput` craft tails; regenerate `CRAFT_COMMON_INPUT_META` (display `gyrP-2 … acZ`); `kNNCraftHistoryLagsMsec = {100, 50, 0}` and
   the craft signal list as single constants; layout marker v4; update static_asserts; `include/autoc/nn/topology.h` weight asserts
-  2563 / 3235 (FR-001, FR-003)
-- [ ] T044 [US1] Recording: craft ring in `include/autoc/eval/aircraft_state.h`; `recordErrorHistory(targetDir, dist, timeMs,
+  2563 / 3303 (FR-001, FR-003)
+- [X] T044 [US1] Recording: craft ring in `include/autoc/eval/aircraft_state.h`; `recordErrorHistory(targetDir, dist, timeMs,
   craftSample)` and pre-fill in `resetHistory`; fill history slots in `writeCraftCommonInputs` in `src/nn/evaluator.cc`; update every
   caller — `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`, `xiao/src/msplink.cpp`, the tracker paths
   (`include/autoc/eval/tracker_stepper.h`, `src/eval/tracker_stepper.cc`, crrcsim tracker helper) — values are the ones the gather uses
   (sim: `FcSensorFilterChain` output from T021); confirm `xiao/src/msplink.cpp` calls `resetHistory` at engage and after a companion
   reboot (research R7, FR-002)
-- [ ] T045 [US1] Versions and readers: `EvalResults::kSchemaVersion` 5 → **6** and its static_assert in `include/autoc/rpc/protocol.h`
+- [X] T045 [US1] Versions and readers: `EvalResults::kSchemaVersion` 5 → **6** and its static_assert in `include/autoc/rpc/protocol.h`
   (the input width changed; the existing count check already refuses a 45-wide dump, the bump names the cause); verify the enum-driven
   consumers compile and print the new columns — `tools/dmp_dump.cc`, data.dat header in `src/autoc.cc`, `tools/renderer.cc`,
   `include/autoc/nn/input_mask.h`, `src/nn/mode.cc`, `include/autoc/eval/craft_observations.h`, `include/autoc/eval/envelope_state.h`
-- [ ] T046 [US1] Gate-confirming clean `bash scripts/rebuild-perf.sh`, `ctest` all green (the gate still passes; `flightlog_decode_py`
+- [X] T046 [US1] Gate-confirming clean `bash scripts/rebuild-perf.sh`, `ctest` all green (the gate still passes; `flightlog_decode_py`
   decodes the 53-input v6 fixture and the v5 log); regenerate the xiao code from a 53-input v2 test genome, `pio run`; bench: a 53-input v6
   log decodes in both decoders, and an engage plus a companion reboot mid-log show history pre-filled (no zero rows); new tier-0 baselines
   on the 53-input build. **"Just works" check**: list the files T043–T045 changed beyond `nn_inputs.h`, `topology.h`, the recording sites

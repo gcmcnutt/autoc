@@ -76,14 +76,16 @@ constexpr int NN_WEIGHT_COUNT =
     (NN_RECURRENT[1] ? NN_HIDDEN1_SIZE * NN_HIDDEN1_SIZE : 0) +
     (NN_RECURRENT[2] ? NN_HIDDEN2_SIZE * NN_HIDDEN2_SIZE : 0) +
     (NN_RECURRENT[3] ? NN_OUTPUT_COUNT  * NN_OUTPUT_COUNT  : 0);
-static_assert(NN_WEIGHT_COUNT == 2307,
+static_assert(NN_WEIGHT_COUNT == 2563,
               "Weight count arithmetic inconsistent. History: 028 = 1923 at 33 in; "
               "038 FR-P0H 33→37 in (+4×32 = 128) = 2051; "
               "041 US4 37→42 in (+5×32 = 160) = 2211; "
               "041 P2-2 42→45 in (net +3: −IN_ENVELOPE −ENVELOPE_SECS "
               "+SPECIFIC_ENERGY +BOUNDARY_CLOSURE_RATE +SCORE_GRAD_X/Y/Z, "
               "+3×32 = 96) = 2307 "
-              "(45·32+32 + 32·16+16 + 16·3+3 + 16·16 = 1472+528+51+256). "
+              "(45·32+32 + 32·16+16 + 16·3+3 + 16·16 = 1472+528+51+256); "
+              "044 45→53 in (+8 craft history, +8×32 = 256) = 2563 "
+              "(53·32+32 = 1728, +528+51+256). "
               "RECOMPUTE this when the input count moves — never relax it.");
 
 // Total recurrent hidden-state floats across all recurrent layers.
@@ -95,7 +97,7 @@ constexpr int NN_HIDDEN_STATE_COUNT =
 
 // Topology as comma-separated string (for config logging/validation).
 // Recurrent layers marked with a trailing 'r'.
-constexpr const char* NN_TOPOLOGY_STRING = "45,32,16r,3";  // 041 P2-2: 42 → 45 inputs
+constexpr const char* NN_TOPOLOGY_STRING = "53,32,16r,3";  // 044: 45 → 53 inputs (craft history)
 // ⚠️ DISPLAY ONLY, and it was STALE at "42" from 041 gen-1 through t7 launch —
 // P2-2 moved the input count 42 → 45 and updated NN_WEIGHT_COUNT (which the
 // static_assert above proves) but not this string. Every run log since then has
@@ -152,12 +154,13 @@ constexpr int TRACKER_NN_WEIGHT_COUNT =
     (TRACKER_NN_RECURRENT[1] ? TRACKER_NN_HIDDEN1_SIZE * TRACKER_NN_HIDDEN1_SIZE : 0) +
     (TRACKER_NN_RECURRENT[2] ? TRACKER_NN_HIDDEN2_SIZE * TRACKER_NN_HIDDEN2_SIZE : 0) +
     (TRACKER_NN_RECURRENT[3] ? TRACKER_NN_OUTPUT_COUNT  * TRACKER_NN_OUTPUT_COUNT  : 0);
-static_assert(TRACKER_NN_WEIGHT_COUNT == 3047,
+static_assert(TRACKER_NN_WEIGHT_COUNT == 3303,
               "Tracker weight count arithmetic inconsistent. History: 2787 at 60 in / 3 out; "
               "038 US3 = 2791 at 58 in / 7 out; "
               "041 US4 58→63 in (+5×32 = 160) = 2951; "
               "041 P2-2 63→66 in (same net +3 as pathgen, +3×32 = 96) = 3047 "
-              "(66·32+32 + 32·16+16 + 16·7+7 + 16·16 = 2144+528+119+256). "
+              "(66·32+32 + 32·16+16 + 16·7+7 + 16·16 = 2144+528+119+256); "
+              "044 66→74 in (+8 craft history, +8×32 = 256) = 3303. "
               "⚠️ Moves AGAIN after the M2 phase: +N innovation inputs (FR-005a), and "
               "the output count becomes 3 if the predictor head is retired at T088 "
               "(which would reclaim 16·4+4 = 68 output weights). RECOMPUTE, never relax.");
@@ -167,7 +170,7 @@ constexpr int TRACKER_NN_HIDDEN_STATE_COUNT =
     (TRACKER_NN_RECURRENT[2] ? TRACKER_NN_HIDDEN2_SIZE : 0) +
     (TRACKER_NN_RECURRENT[3] ? TRACKER_NN_OUTPUT_COUNT  : 0);
 
-constexpr const char* TRACKER_NN_TOPOLOGY_STRING = "66,32,16r,7";  // 041 P2-2: 63 → 66 inputs
+constexpr const char* TRACKER_NN_TOPOLOGY_STRING = "74,32,16r,7";  // 044: 66 → 74 inputs (craft history)
 
 // ============================================================================
 // 041 P2-8 follow-up (2026-08-20) — MAKE THE DISPLAY STRINGS UNABLE TO GO STALE.

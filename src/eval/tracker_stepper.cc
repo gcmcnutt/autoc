@@ -282,7 +282,9 @@ CrashReason TrackerStepper::stepOnce() {
     // beacons) must proxy it from span-based range estimation.
     state_.setScoreGradBody(gp_vec3::Zero());
 
-    // Step 2: gather tracker NN inputs.
+    // Step 2: gather tracker NN inputs. 044 FR-001: the shared craft block's
+    // history ring is recorded here, once per tick, from this tick's sensors.
+    state_.recordCraftHistory(state_.craftSampleNow());
     TrackerInputs inputs = {};
     gather_tracker_inputs(state_, history_, arena_,
                           static_cast<float>(cep_gate_threshold_),  // raw-ok: gp_scalar→NN-byte-format boundary (gather takes float)

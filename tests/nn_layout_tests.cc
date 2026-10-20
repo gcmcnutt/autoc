@@ -150,3 +150,51 @@ TEST(NNLayoutSignature, BuildSignaturesComeFromTheMetadataTables_044) {
     for (const auto& m : kPathgenInputMeta) EXPECT_LT(std::strlen(m.name), kNNSlotNameLen);
     for (const auto& m : kTrackerInputMeta) EXPECT_LT(std::strlen(m.name), kNNSlotNameLen);
 }
+
+// ============================================================================
+// 044 FR-001 / FR-003 — layout v4: craft-sensor history (gyro p/q/r + accel z at
+// 100 / 50 ms) sits beside its current value, oldest first, in the craft block
+// M1 and M2 share. 25 + 28 = 53 (M1), 46 + 28 = 74 (M2).
+// ============================================================================
+
+TEST(NNLayoutV4, CountsAndWeights_044) {
+    EXPECT_EQ(NN_COMMON_INPUT_COUNT, 28);
+    EXPECT_EQ(NN_INPUT_COUNT, 53);
+    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 53);
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 74);
+    EXPECT_EQ(NN_WEIGHT_COUNT, 2563);
+    EXPECT_EQ(kNNHistoryLayoutVersion, 4u);
+}
+
+TEST(NNLayoutV4, CraftTailOrderAndHistoryAdjacency_044) {
+    const char* kTail[] = {
+        "QUAT_W", "QUAT_X", "QUAT_Y", "QUAT_Z", "AIRSPEED",
+        "GYRO_P_TM2", "GYRO_P_TM1", "GYRO_P",
+        "GYRO_Q_TM2", "GYRO_Q_TM1", "GYRO_Q",
+        "GYRO_R_TM2", "GYRO_R_TM1", "GYRO_R",
+        "ACCEL_X", "ACCEL_Y", "ACCEL_Z_TM2", "ACCEL_Z_TM1", "ACCEL_Z",
+        "SPECIFIC_ENERGY", "BOUNDARY_CLOSURE_RATE", "DIST_TO_BOUNDARY",
+        "INWARD_BODY_X", "INWARD_BODY_Y", "INWARD_BODY_Z",
+        "SCORE_GRAD_X", "SCORE_GRAD_Y", "SCORE_GRAD_Z"};
+    constexpr int kTailLen = sizeof(kTail) / sizeof(kTail[0]);
+    static_assert(kTailLen == NN_COMMON_INPUT_COUNT, "tail table length");
+    const int m1Base = static_cast<int>(PathgenInput::QUAT_W);
+    const int m2Base = static_cast<int>(TrackerInput::QUAT_W);
+    EXPECT_EQ(m1Base + kTailLen, static_cast<int>(PathgenInput::COUNT));   // craft block LAST
+    EXPECT_EQ(m2Base + kTailLen, static_cast<int>(TrackerInput::COUNT));
+    for (int i = 0; i < kTailLen; ++i) {
+        EXPECT_STREQ(kPathgenInputMeta[m1Base + i].name, kTail[i]) << "M1 slot " << m1Base + i;
+        EXPECT_STREQ(kTrackerInputMeta[m2Base + i].name, kTail[i]) << "M2 slot " << m2Base + i;
+        EXPECT_STREQ(kPathgenInputMeta[m1Base + i].display_name,
+                     kTrackerInputMeta[m2Base + i].display_name);
+    }
+    // The enum, the struct and the table agree on where each history slot lives.
+    EXPECT_EQ(offsetof(CraftCommonInputs, gyro_q_tm2) / sizeof(float),
+              static_cast<size_t>(static_cast<int>(PathgenInput::GYRO_Q_TM2) - m1Base));
+    EXPECT_EQ(offsetof(CraftCommonInputs, accel_z) / sizeof(float),
+              static_cast<size_t>(static_cast<int>(PathgenInput::ACCEL_Z) - m1Base));
+    // One definition of the lags: 100 / 50 / 0 ms, integral ticks.
+    EXPECT_EQ(kNNCraftHistoryLagsMsec[0], 100);
+    EXPECT_EQ(kNNCraftHistoryLagsMsec[1], 50);
+    EXPECT_EQ(kNNCraftHistoryLagsMsec[2], 0);
+}

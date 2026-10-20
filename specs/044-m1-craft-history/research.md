@@ -81,7 +81,7 @@ thresholds) is in [README.md](README.md) and the 043 documents it cites; this fi
 ## R8. Layout and versions (FR-003, FR-004)
 
 - **Decision**: craft block 20 → 28 floats in the order of spec FR-003; enum names `GYRO_P_TM2, GYRO_P_TM1, GYRO_P, …, ACCEL_Z_TM2,
-  ACCEL_Z_TM1, ACCEL_Z`; `CRAFT_COMMON_INPUT_META` regenerated; M1 53 inputs / 2563 weights, M2 74 / 3235. Version bumps, each at the
+  ACCEL_Z_TM1, ACCEL_Z`; `CRAFT_COMMON_INPUT_META` regenerated; M1 53 inputs / 2563 weights, M2 74 / 3303. Version bumps, each at the
   commit that changes the format: `EvalResults::kSchemaVersion` 4 → **5** when `ScenarioMetadata` gains `craftClP` (US2 — the metadata
   is serialized in the dmp) and 5 → **6** at the layout change (the per-tick input count check already refuses a 45-wide dump; the bump
   names the cause); NN01 `NN_FORMAT_VERSION` 1 → **2** and flight log `kFormatVersion` 5 → **6** in the index-free gate (R14), on the

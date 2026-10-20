@@ -539,7 +539,8 @@ static void mspUpdateNavControl()
 
     // Record direction cosines to temporal history before NN evaluation
     aircraft_state.setRabbitPosition(targetPos);
-    aircraft_state.recordErrorHistory(dir, dist_now, millis());
+    aircraft_state.recordErrorHistory(dir, dist_now, millis(),
+                                      aircraft_state.craftSampleNow());  // 044 FR-002
 
     // Run NN: gathers 37 inputs (038 contract), forward pass, sets
     // pitch/roll/throttle commands. T019: the first eval after boot is

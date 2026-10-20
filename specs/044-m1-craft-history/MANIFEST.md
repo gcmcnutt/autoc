@@ -140,3 +140,27 @@ Tag `044-last-45in` = the commit that records this section (local; operator push
   to the pre-port script; `pitch_input_attribution` runs on sim and flight CSVs.
 - ⚠️ Consequence: NN01 v1 genomes inside the smoke-A / T026 dmps are refused by this build's tools (by design); analyse smoke A with
   the worktree's binaries (`dmp-dump` now prints `rampSc` NaN, not a silent 1.0, for an unreadable genome).
+
+## § Layout v4 — the format break (T039–T046) — 2026-10-19
+
+- **53 inputs (M2 74)**; layout v4 signature **`a505f1be760da67d`**; weights 2563 (M2 **3303** — 7 outputs; the data model's earlier
+  3235 assumed 3, corrected); dmp schema **6**; `kNNHistoryLayoutVersion` 4. History slots are scalar fields beside each current value
+  (`gyro_q_tm2`, `gyro_q_tm1`, `gyro_q`), so every existing `common.gyro_q` reference kept meaning "now".
+- Recording: `AircraftState::CraftSample` (gyro rad/s, accel z g) in a 3-deep ring; `recordErrorHistory` takes the sample as a REQUIRED
+  argument (crrcsim inputdev + xiao msplink); tracker paths call `recordCraftHistory` before their gather. Lagged reads clamp to the
+  oldest sample since the reset, so the first tick after a reset reads the current value in every lag (FR-002) — verified in the dmp:
+  tick 1 `gyrQ-2 = gyrQ-1 = gyrQ`, tick 2 `gyrQ-1` = tick 1's `gyrQ`.
+- **"Just works" check** — files the layout change touched beyond `nn_inputs.h`, `topology.h`, the recording sites and the tests:
+  1. `include/autoc/rpc/protocol.h` — the planned schema bump (not an index).
+  2. `xiao/include/flight_log_format.h` — ONE enum-range start: the gyro scale loop began at `GYRO_P` and skipped the two P lags.
+     Caught on the first build by the `scaleTableComplete` hardening (an unassigned scale = 0); fixed to `GYRO_P_TM2`. A pattern gate
+     cannot see a range bound reliably; the completeness check (test + runtime `validateFileHeader`) is the guard for it.
+  No other hand-written consumer needed an edit (dmp-dump, renderer, data.dat header, nn2cpp, nnextractor, both log decoders,
+  `input_investment.py`, the ported 043 scripts). Tests that pinned positions (`nn_sensor_interface_tests` anchors, header text, count
+  pins) moved deliberately; `gather_tracker_inputs_tests` had a literal `flat[59]` → now by enum name.
+- Gates: clean `rebuild-perf.sh` (smoke A on worktree binaries); ctest **55/55**; input-layout gate clean (168 files);
+  **eval-vs-training bitwise** on a 3-gen 53-input smoke-regiment run (`logs/autoc-044-T046-gate.log`, prefix
+  `autoc-9223370244382345856-2026-10-20T05:00:29.951Z`): **`NN_EVAL_SAME: fitness=-5.443911`** = stored — the 53-input baseline
+  until the bake supplies a real one. xiao `pio run` SUCCESS with a 53-input generated program (RAM 53.6 %, flash 45.8 %); `nn2cpp`
+  refuses the 45-input g752 by name. Both decoders read the 53-input v6 fixture and the v5 10-18 logs. ⚠️ Hardware bench log still
+  owed at the pre-flight bench (T052).

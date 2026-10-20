@@ -30,8 +30,9 @@ TEST(PredictorHead, TrackerOutputLayout) {
     // of asserting both: the predictor's fate is decided later at T088, and if
     // the head is retired the trailing 7 becomes 3 and this test is where that
     // has to be stated.
-    EXPECT_STREQ(TRACKER_NN_TOPOLOGY_STRING, "66,32,16r,7");
-    EXPECT_EQ(TRACKER_NN_WEIGHT_COUNT, 3047);   // 041 P2-2: 66 in / 7 out (was 2951 at 63 in)
+    // 044 — 66 → 74 inputs (+8 craft history in the shared block).
+    EXPECT_STREQ(TRACKER_NN_TOPOLOGY_STRING, "74,32,16r,7");
+    EXPECT_EQ(TRACKER_NN_WEIGHT_COUNT, 3303);   // 044: 74 in / 7 out (3047 at 66 in, 2951 at 63)
     // Pathgen output head is untouched (predictor is tracker-only, M2-direct).
     EXPECT_EQ(NN_OUTPUT_COUNT, 3);
 }

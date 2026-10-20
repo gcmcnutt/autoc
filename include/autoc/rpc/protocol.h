@@ -649,7 +649,11 @@ struct EvalResults {
   // 044 US2 — v4 → v5: ScenarioMetadata (serialized in scenario + scenarioList)
   // gained craftClP. A v4 dmp read by this binary would mis-frame every
   // scenario record after the first. The 043 dmps are read by tag `043-final`.
-  static constexpr std::uint32_t kSchemaVersion = 5;
+  // 044 US1 — v5 → v6: the NN input vector grew 45 → 53 (M2 66 → 74) with the
+  // craft-sensor history (layout v4). AircraftState's count check already
+  // refuses a 45-wide tick; the bump names the cause. v5 dmps (smoke A, the
+  // 45-input baselines) are read by tag `044-last-45in`.
+  static constexpr std::uint32_t kSchemaVersion = 6;
 
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
@@ -680,7 +684,8 @@ struct EvalResults {
           (version < kSchemaVersion
                ? " — the artifact predates this binary's schema and cannot be"
                  " read; re-bake it, or check out the code that produced it"
-                 " (043 artifacts: tag 043-final). There is deliberately no"
+                 " (043 artifacts: tag 043-final; 044 pre-history: 044-last-45in)."
+                 " There is deliberately no"
                  " migration path."
                : " — the artifact is NEWER than this binary; rebuild."));
     }
@@ -814,8 +819,8 @@ struct EvalResults {
 //
 // ⚠️ Keep this in step with EvalResults::kSchemaVersion — the static_assert
 // below makes a one-sided edit a compile error rather than a runtime surprise.
-CEREAL_CLASS_VERSION(EvalResults, 5)
-static_assert(EvalResults::kSchemaVersion == 5,
+CEREAL_CLASS_VERSION(EvalResults, 6)
+static_assert(EvalResults::kSchemaVersion == 6,
               "EvalResults::kSchemaVersion and CEREAL_CLASS_VERSION(EvalResults, N) "
               "must agree — bump both or neither.");
 

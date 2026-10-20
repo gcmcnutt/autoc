@@ -30,12 +30,14 @@ TEST(NNSensorInterface, PathgenInputCountMatchesNNInputs) {
     // ENVELOPE_SECS are REMOVED (ablation: zeroing IN_ENVELOPE *improves*
     // path-5 score by 0.3%, ENVELOPE_SECS costs 0.2%, both inside noise) and
     // SPECIFIC_ENERGY, BOUNDARY_CLOSURE_RATE and SCORE_GRAD_X/Y/Z are added.
-    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 45);
+    // 044: 45 → 53 — craft-sensor history (gyro p/q/r + accel z at 100/50 ms)
+    // beside each current value in the shared craft block.
+    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 53);
     EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), NN_INPUT_COUNT);
-    EXPECT_EQ(pathgen_meta_size(), 45u);
+    EXPECT_EQ(pathgen_meta_size(), 53u);
 }
 
-TEST(NNSensorInterface, TrackerInputCountIs66) {
+TEST(NNSensorInterface, TrackerInputCountIs74) {
     // 030 M7a Session 2026-05-07 Q1: was 48 with HOME_X/Y/Z/HOME_DIST,
     // then 45 with single DIST_TO_BOUNDARY_ALONG_VEL.
     // 032 phase 1: 45 + 9 derived (span[6] + span_rate + tilt sin/cos) = 54.
@@ -45,9 +47,10 @@ TEST(NNSensorInterface, TrackerInputCountIs66) {
     // 041 P2-2: 63 → 66, the SAME net +3 as pathgen — which is the point. The
     // craft block is one struct now, so the modes cannot take different slot
     // changes; 46 M2 target representation + 20 CraftCommonInputs = 66.
-    // ⚠️ Moves once more to 66 + N after T088 (FR-005a).
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 66);
-    EXPECT_EQ(tracker_meta_size(), 66u);
+    // 044: 66 → 74, the same +8 craft history as pathgen (one shared block).
+    // ⚠️ Moves once more to 74 + N after T088 (FR-005a).
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 74);
+    EXPECT_EQ(tracker_meta_size(), 74u);
 }
 
 TEST(NNSensorInterface, PathgenMetaWellFormed) {
@@ -78,33 +81,38 @@ TEST(NNSensorInterface, PathgenAnchorPositions) {
     // explicit, traceable update — not a silent index shift.
     //
     // 041 P2-1/P2-2: 25 M1 target representation + 20 CraftCommonInputs = 45.
+    // 044: the craft block grew to 28 (gyro p/q/r and accel z each with 100/50 ms
+    // history beside the current value) = 53.
     EXPECT_EQ(static_cast<int>(PathgenInput::TARGET_X_TM5), 0);
     EXPECT_EQ(static_cast<int>(PathgenInput::TARGET_X_NOW), 5);
     EXPECT_EQ(static_cast<int>(PathgenInput::TARGET_Y_TM5), 6);
     EXPECT_EQ(static_cast<int>(PathgenInput::TARGET_Z_TM5), 12);
     EXPECT_EQ(static_cast<int>(PathgenInput::DIST_TM5), 18);
     EXPECT_EQ(static_cast<int>(PathgenInput::CLOSING_RATE), 24);
-    // ----- CraftCommonInputs, slots 25..44 -----
+    // ----- CraftCommonInputs, slots 25..52 (044 layout v4) -----
     EXPECT_EQ(static_cast<int>(PathgenInput::QUAT_W), 25);
     EXPECT_EQ(static_cast<int>(PathgenInput::AIRSPEED), 29);
-    EXPECT_EQ(static_cast<int>(PathgenInput::GYRO_P), 30);
-    EXPECT_EQ(static_cast<int>(PathgenInput::GYRO_R), 32);
-    EXPECT_EQ(static_cast<int>(PathgenInput::ACCEL_X), 33);
-    EXPECT_EQ(static_cast<int>(PathgenInput::ACCEL_Z), 35);
-    EXPECT_EQ(static_cast<int>(PathgenInput::SPECIFIC_ENERGY), 36);
-    EXPECT_EQ(static_cast<int>(PathgenInput::BOUNDARY_CLOSURE_RATE), 37);
-    EXPECT_EQ(static_cast<int>(PathgenInput::DIST_TO_BOUNDARY), 38);
-    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_X), 39);
-    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_Z), 41);
-    EXPECT_EQ(static_cast<int>(PathgenInput::SCORE_GRAD_X), 42);
-    EXPECT_EQ(static_cast<int>(PathgenInput::SCORE_GRAD_Y), 43);
-    EXPECT_EQ(static_cast<int>(PathgenInput::SCORE_GRAD_Z), 44);
-    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 45);
+    EXPECT_EQ(static_cast<int>(PathgenInput::GYRO_P_TM2), 30);
+    EXPECT_EQ(static_cast<int>(PathgenInput::GYRO_P), 32);
+    EXPECT_EQ(static_cast<int>(PathgenInput::GYRO_Q_TM2), 33);
+    EXPECT_EQ(static_cast<int>(PathgenInput::GYRO_R), 38);
+    EXPECT_EQ(static_cast<int>(PathgenInput::ACCEL_X), 39);
+    EXPECT_EQ(static_cast<int>(PathgenInput::ACCEL_Z_TM2), 41);
+    EXPECT_EQ(static_cast<int>(PathgenInput::ACCEL_Z), 43);
+    EXPECT_EQ(static_cast<int>(PathgenInput::SPECIFIC_ENERGY), 44);
+    EXPECT_EQ(static_cast<int>(PathgenInput::BOUNDARY_CLOSURE_RATE), 45);
+    EXPECT_EQ(static_cast<int>(PathgenInput::DIST_TO_BOUNDARY), 46);
+    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_X), 47);
+    EXPECT_EQ(static_cast<int>(PathgenInput::INWARD_BODY_Z), 49);
+    EXPECT_EQ(static_cast<int>(PathgenInput::SCORE_GRAD_X), 50);
+    EXPECT_EQ(static_cast<int>(PathgenInput::SCORE_GRAD_Y), 51);
+    EXPECT_EQ(static_cast<int>(PathgenInput::SCORE_GRAD_Z), 52);
+    EXPECT_EQ(static_cast<int>(PathgenInput::COUNT), 53);
 }
 
 TEST(NNSensorInterface, TrackerAnchorPositions) {
     // 041 P2-1: 46 M2 target representation (36 beacon + 9 derived + 1
-    // time-since-seen) + 20 CraftCommonInputs = 66.
+    // time-since-seen) + 20 CraftCommonInputs = 66; 044: + 8 history = 74.
     //
     // ⚠️ This enum was REORDERED at 041 P2-1. Pre-041 the craft slots were split
     // by the target block (quat at 36, then span/tilt, then inward at 55). A
@@ -123,18 +131,20 @@ TEST(NNSensorInterface, TrackerAnchorPositions) {
     // 038 FR-P0H (A) — the target-lost cue, tracker-only, so it belongs to the
     // TARGET block and not to the shared one.
     EXPECT_EQ(static_cast<int>(TrackerInput::TIME_SINCE_SEEN), 45);
-    // ----- CraftCommonInputs, slots 46..65 -----
+    // ----- CraftCommonInputs, slots 46..73 (044 layout v4) -----
     EXPECT_EQ(static_cast<int>(TrackerInput::QUAT_W), 46);
     EXPECT_EQ(static_cast<int>(TrackerInput::AIRSPEED), 50);
-    EXPECT_EQ(static_cast<int>(TrackerInput::GYRO_P), 51);
-    EXPECT_EQ(static_cast<int>(TrackerInput::ACCEL_X), 54);
-    EXPECT_EQ(static_cast<int>(TrackerInput::SPECIFIC_ENERGY), 57);
-    EXPECT_EQ(static_cast<int>(TrackerInput::BOUNDARY_CLOSURE_RATE), 58);
-    EXPECT_EQ(static_cast<int>(TrackerInput::DIST_TO_BOUNDARY), 59);
-    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_X), 60);
-    EXPECT_EQ(static_cast<int>(TrackerInput::SCORE_GRAD_X), 63);
-    EXPECT_EQ(static_cast<int>(TrackerInput::SCORE_GRAD_Z), 65);
-    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 66);
+    EXPECT_EQ(static_cast<int>(TrackerInput::GYRO_P_TM2), 51);
+    EXPECT_EQ(static_cast<int>(TrackerInput::GYRO_P), 53);
+    EXPECT_EQ(static_cast<int>(TrackerInput::ACCEL_X), 60);
+    EXPECT_EQ(static_cast<int>(TrackerInput::ACCEL_Z), 64);
+    EXPECT_EQ(static_cast<int>(TrackerInput::SPECIFIC_ENERGY), 65);
+    EXPECT_EQ(static_cast<int>(TrackerInput::BOUNDARY_CLOSURE_RATE), 66);
+    EXPECT_EQ(static_cast<int>(TrackerInput::DIST_TO_BOUNDARY), 67);
+    EXPECT_EQ(static_cast<int>(TrackerInput::INWARD_BODY_X), 68);
+    EXPECT_EQ(static_cast<int>(TrackerInput::SCORE_GRAD_X), 71);
+    EXPECT_EQ(static_cast<int>(TrackerInput::SCORE_GRAD_Z), 73);
+    EXPECT_EQ(static_cast<int>(TrackerInput::COUNT), 74);
 }
 
 // 041 P2-1 — the assertion the refactor exists to make possible.
@@ -258,7 +268,7 @@ TEST(NNSensorInterface, PathgenMetaWalkProducesExistingHeaderText) {
         "  tgZ-5  tgZ-4  tgZ-3  tgZ-2  tgZ-1   tgZ0"
         "   ds-5   ds-4   ds-3   ds-2   ds-1    ds0"
         "  dd/dt"
-        // ----- CraftCommonInputs, slots 25..44 (041 P2-1) -----
+        // ----- CraftCommonInputs, slots 25..52 (041 P2-1; 044 history) -----
         // ⚠️ This walk no longer describes a LIVE output format: the per-step
         // data.dat writer was retired at 035 FR-P05 and the dmp is the training
         // trace. The test still earns its keep as a drift guard between the enum
@@ -267,8 +277,8 @@ TEST(NNSensorInterface, PathgenMetaWalkProducesExistingHeaderText) {
         // specs/019-improved-crrcsim/sim_response.py, which reads HISTORICAL
         // data.dat files frozen at the 021-era layout (see T047).
         "      qw      qx      qy      qz"
-        "     vel   gyrP   gyrQ   gyrR"
-        "    acX    acY    acZ"
+        "     vel gyrP-2 gyrP-1   gyrP gyrQ-2 gyrQ-1   gyrQ gyrR-2 gyrR-1   gyrR"
+        "    acX    acY  acZ-2  acZ-1    acZ"
         "      Es    bClR    dBnd"
         "    inX    inY    inZ"
         "    sgX    sgY    sgZ";

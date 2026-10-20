@@ -39,7 +39,8 @@ TEST(TickRescale, ClosingRateUsesActualLagDt) {
   for (int k = 0; k < n; ++k) {
     const double dist = 500.0 - kClosingRate_mps * stepSec * k;
     st.recordErrorHistory(gp_vec3::UnitX(), static_cast<gp_scalar>(dist),
-                          static_cast<unsigned long>(k) * SIM_TIME_STEP_MSEC);
+                          static_cast<unsigned long>(k) * SIM_TIME_STEP_MSEC,
+                          st.craftSampleNow());
   }
 
   Path dummy{};
@@ -128,6 +129,85 @@ TEST(FcSensorFilters, TwentyHzReadReturnsFilteredValue_044) {
   EXPECT_GT(g, 0.4f); EXPECT_LT(g, 0.99f);                // PT1: 1-(1-k)^4 ≈ 0.96
   EXPECT_GT(a, 0.05f); EXPECT_LT(a, 0.9f);                // biquad lags further
   EXPECT_LT(a, g);
+}
+
+// ---------------------------------------------------------------------------
+// 044 FR-001 / FR-002 — craft-sensor history. One recording point per decision
+// tick (recordErrorHistory, with the tick's craft sample = the values the
+// gather uses); the gather reads the 100 / 50 ms slots from the ring.
+// ---------------------------------------------------------------------------
+
+namespace {
+AircraftState craftState() {
+  AircraftState st{0, 20.0f, gp_vec3(20.0f, 0.0f, 0.0f), gp_quat::Identity(),
+                   gp_vec3::Zero(), 0.0f, 0.0f, 0.0f, 0};
+  st.setRelVel(15.0f);
+  return st;
+}
+void tickWith(AircraftState& st, int k, float q, float az) {
+  st.setGyroRates(gp_vec3(0.1f * k, q, -0.05f * k));
+  st.setSpecificForceG(gp_vec3(0.0f, 0.0f, az));
+  st.recordErrorHistory(gp_vec3::UnitX(), 30.0f,
+                        static_cast<unsigned long>(k) * SIM_TIME_STEP_MSEC, st.craftSampleNow());
+}
+NNInputs gatherNow(AircraftState& st) {
+  Path dummy{};
+  SinglePathProvider provider(dummy);
+  NNInputs in{};
+  gather_pathgen_inputs(provider, st, autoc::eval::FlightArena{}, in);
+  return in;
+}
+}  // namespace
+
+TEST(CraftHistory, SlotsHoldTheReadingsAt100And50AndNow_044) {
+  static_assert(kNNCraftHistoryLagsMsec[0] % SIM_TIME_STEP_MSEC == 0 &&
+                kNNCraftHistoryLagsMsec[1] % SIM_TIME_STEP_MSEC == 0,
+                "craft history lags must be whole decision ticks");
+  AircraftState st = craftState();
+  const int lag1 = kNNCraftHistoryLagsMsec[1] / SIM_TIME_STEP_MSEC;   // 50 ms
+  const int lag2 = kNNCraftHistoryLagsMsec[0] / SIM_TIME_STEP_MSEC;   // 100 ms
+  const int n = 6;
+  for (int k = 0; k < n; ++k) tickWith(st, k, 0.5f * k, -1.0f - 0.25f * k);
+  const NNInputs in = gatherNow(st);
+  const auto q = [](int k) { return (0.5f * k) / kGyroScale_radps; };
+  const auto az = [](int k) { return (-1.0f - 0.25f * k) / kAccelScale_g; };
+  const int now = n - 1;
+  EXPECT_FLOAT_EQ(in.common.gyro_q, q(now));
+  EXPECT_FLOAT_EQ(in.common.gyro_q_tm1, q(now - lag1));
+  EXPECT_FLOAT_EQ(in.common.gyro_q_tm2, q(now - lag2));
+  EXPECT_FLOAT_EQ(in.common.accel_z, az(now));
+  EXPECT_FLOAT_EQ(in.common.accel_z_tm1, az(now - lag1));
+  EXPECT_FLOAT_EQ(in.common.accel_z_tm2, az(now - lag2));
+  EXPECT_FLOAT_EQ(in.common.gyro_p_tm2, (0.1f * (now - lag2)) / kGyroScale_radps);
+  EXPECT_FLOAT_EQ(in.common.gyro_r_tm1, (-0.05f * (now - lag1)) / kGyroScale_radps);
+}
+
+// FR-002: after a reset (scenario start, engage, companion reboot) every history
+// slot holds the CURRENT reading on the first tick — never zero (a zero gyro
+// history reads as a violent rate step) and never a value from the last span.
+TEST(CraftHistory, ResetMeansEverySlotIsTheCurrentReading_044) {
+  AircraftState st = craftState();
+  for (int k = 0; k < 5; ++k) tickWith(st, k, 2.0f, -3.0f);       // a previous span
+  st.resetHistory(gp_vec3(60.0f, 0.0f, 0.0f), gp_vec3(1.0f, 0.0f, 0.0f));
+  tickWith(st, 0, 0.7f, -1.1f);                                    // first tick after reset
+  const NNInputs in = gatherNow(st);
+  EXPECT_FLOAT_EQ(in.common.gyro_q_tm2, in.common.gyro_q);
+  EXPECT_FLOAT_EQ(in.common.gyro_q_tm1, in.common.gyro_q);
+  EXPECT_FLOAT_EQ(in.common.accel_z_tm2, in.common.accel_z);
+  EXPECT_FLOAT_EQ(in.common.accel_z_tm1, in.common.accel_z);
+  EXPECT_FLOAT_EQ(in.common.gyro_q, 0.7f / kGyroScale_radps);
+  EXPECT_NE(in.common.accel_z_tm2, 0.0f);
+}
+
+// A gather with no recorded tick at all (a path that gathers before its first
+// record) reads the current sensor values in the history slots, not zeros.
+TEST(CraftHistory, EmptyRingReadsTheCurrentSensors_044) {
+  AircraftState st = craftState();
+  st.setGyroRates(gp_vec3(0.3f, -0.4f, 0.2f));
+  st.setSpecificForceG(gp_vec3(0.0f, 0.0f, -1.2f));
+  const NNInputs in = gatherNow(st);
+  EXPECT_FLOAT_EQ(in.common.gyro_q_tm2, -0.4f / kGyroScale_radps);
+  EXPECT_FLOAT_EQ(in.common.accel_z_tm1, -1.2f / kAccelScale_g);
 }
 
 }  // namespace

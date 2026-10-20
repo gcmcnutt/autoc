@@ -31,9 +31,11 @@
 // 044 US2 (2026-10-19) is the 4 → 5 bump: ScenarioMetadata (serialized in every
 // dmp's scenario records) gained craftClP. 044's layout change is the next one
 // (5 → 6); each lands with artifacts on its side of it (smoke A / the bake).
-TEST(CerealVersionAnchor, EvalResultsAtVersion5) {
-    EXPECT_EQ(cereal::detail::Version<EvalResults>::version, 5u)
-        << "EvalResults schema version drifted from 5 (the 044 US2 craftClP "
+// 044 US1 (2026-10-19) is the 5 → 6 bump: the NN input vector grew 45 → 53
+// (layout v4, craft-sensor history).
+TEST(CerealVersionAnchor, EvalResultsAtVersion6) {
+    EXPECT_EQ(cereal::detail::Version<EvalResults>::version, 6u)
+        << "EvalResults schema version drifted from 6 (the 044 US1 layout-v4 "
            "bump). If this is intentional, update this anchor test alongside the "
            "CEREAL_CLASS_VERSION(EvalResults, ...) edit in protocol.h AND "
            "EvalResults::kSchemaVersion. Do NOT bump intra-development per "

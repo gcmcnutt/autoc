@@ -49,10 +49,11 @@ TEST(SharedInputBlock, CountsAgreeWithTheStructs) {
     EXPECT_EQ(static_cast<int>(sizeof(TrackerInputs) / sizeof(float)),
               static_cast<int>(TrackerInput::COUNT));
     // 041: M1 = 25 target + 20 shared; M2 = 46 tracker + 20 shared.
+    // 044: the shared block grew 20 -> 28 (craft-sensor history) — 53 / 74.
     constexpr int kCommon = sizeof(CraftCommonInputs) / sizeof(float);
-    EXPECT_EQ(20, kCommon);
-    EXPECT_EQ(45, NN_INPUT_COUNT);
-    EXPECT_EQ(66, static_cast<int>(TrackerInput::COUNT));
+    EXPECT_EQ(28, kCommon);
+    EXPECT_EQ(53, NN_INPUT_COUNT);
+    EXPECT_EQ(74, static_cast<int>(TrackerInput::COUNT));
 }
 
 // ⚠️ The scale constants are shared by REFERENCE, not by copy — assert they are

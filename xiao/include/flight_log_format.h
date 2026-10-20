@@ -197,10 +197,14 @@ inline void defaultScaleTable(float out[kNumScaledFields]) {
        i <= static_cast<int>(PathgenInput::QUAT_Z); i++)
     out[i] = kScaleUnit;                              // quat w,x,y,z
   out[static_cast<int>(PathgenInput::AIRSPEED)] = kScaleNN8;   // m/s / 13
-  for (int i = static_cast<int>(PathgenInput::GYRO_P);
+  // 044: the gyro block is now p/q/r each with its 100/50 ms history, first
+  // slot GYRO_P_TM2 (the old GYRO_P..GYRO_R range missed the two P lags — the
+  // scaleTableComplete hardening caught it on the first build).
+  for (int i = static_cast<int>(PathgenInput::GYRO_P_TM2);
        i <= static_cast<int>(PathgenInput::GYRO_R); i++)
-    out[i] = kScaleNN8;                               // rad/s / 6
+    out[i] = kScaleNN8;                               // rad/s / 6, now and history
   // 041: specific force, in NN units (g / kAccelScale_g) — see kScaleNN4.
+  // 044: ACCEL_X, ACCEL_Y, then ACCEL_Z with its 100/50 ms history.
   for (int i = static_cast<int>(PathgenInput::ACCEL_X);
        i <= static_cast<int>(PathgenInput::ACCEL_Z); i++)
     out[i] = kScaleNN4;
