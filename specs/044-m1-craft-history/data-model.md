@@ -73,5 +73,5 @@ Scenario table gains `windMps, turbX, gustLx, thermX` — full-strength values o
 | `EvalResults` (dmp) `kSchemaVersion` | 4 | **5** |
 | xiao flight log `kFormatVersion` | 5 | **6** |
 | NN input layout marker | v3 | **v4** (+ layout signature) |
-| NN01 genome file format version | current | **+1** (adds layout signature) |
+| NN01 genome file `NN_FORMAT_VERSION` | 1 | **2** (adds layout signature) |
 | `data.dat` header | 45 inputs | 53 (derived from the metadata table) |
