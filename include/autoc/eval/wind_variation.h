@@ -87,6 +87,44 @@ inline WindDraws drawWindVariation(autoc::util::ClassPRNG& prng) {
   return d;
 }
 
+// 044 FR-009 / FR-010 — the wind class's ONE draw order, shared by both sides:
+//   [0]     gust/thermal seed            (worker: CRRC_Random seed)
+//   [1..4]  envelope draws               (worker: drawWindVariation)
+//   [5..]   direction offset Gaussian    (autoc: windDirectionOffset)
+// Before 044 autoc drew the direction from a fresh ClassPRNG(wind), i.e. from
+// draws [0..1] -- the same values the worker used as the gust seed and as the
+// SPEED draw, so the wind direction was a function of the wind speed (they
+// shared a Box-Muller input). Every consumer now reads its own slots.
+struct WindClassDraws {
+  uint32_t gustSeed = 0;
+  WindDraws envelope;
+  double directionOffset = 0.0;  // rad, N(0, sigma) truncated  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+};
+
+inline WindClassDraws drawWindClass(autoc::util::ClassPRNG& windPRNG, double directionSigma) {  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  WindClassDraws d;
+  d.gustSeed = windPRNG.next();
+  d.envelope = drawWindVariation(windPRNG);
+  d.directionOffset = windPRNG.nextGaussian(directionSigma);
+  return d;
+}
+
+inline WindClassDraws windClassDrawsForScenario(uint64_t scenarioSeed, double directionSigma) {  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  autoc::util::ClassPRNG windPRNG(autoc::util::deriveClassSubSeeds(scenarioSeed).wind);
+  return drawWindClass(windPRNG, directionSigma);
+}
+
+// 044 FR-010 — the full-strength envelope targets the scenario table logs
+// (columns windMps / turbX / gustLx / thermX). windMps is NaN when the speed
+// range is off (the sim keeps its base speed); the rest are multipliers (1.0 =
+// unchanged). Flown value = base + variationScale * (target - base).
+struct WindEnvelopeTargets {
+  double windMps = 0.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double turbX = 1.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double gustLx = 1.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+  double thermX = 1.0;  // raw-ok: SI config/draw realised host-side, never in the NN byte format
+};
+
 struct WindRealization {
   double windSpeedMps = 0.0;        // absolute, to be written back in ft/s by the caller  // raw-ok: SI config/draw realised host-side, never in the NN byte format
   double turbIntensity = 1.0;       // absolute T_Wind::turbulence value  // raw-ok: SI config/draw realised host-side, never in the NN byte format
@@ -134,6 +172,16 @@ inline WindRealization realizeWindVariation(const WindVariationConfig& cfg,
     r.thermalCountMaxTarget = cfg.thermalCountMax;
   }
   return r;
+}
+
+inline WindEnvelopeTargets windEnvelopeTargets(const WindVariationConfig& cfg, const WindDraws& d) {
+  WindEnvelopeTargets t;
+  t.windMps = cfg.speedEnabled() ? lerp(cfg.windSpeedMinMps, cfg.windSpeedMaxMps, d.uSpeed)
+                                 : std::nan("");
+  t.turbX = lerp(cfg.turbIntensityMin, cfg.turbIntensityMax, d.uTurb);
+  t.gustLx = lerp(cfg.gustLengthScaleMin, cfg.gustLengthScaleMax, d.uGust);
+  t.thermX = lerp(cfg.thermalStrengthMin, cfg.thermalStrengthMax, d.uThermal);
+  return t;
 }
 
 // Ramp the thermal count where the XML base is known (crrcsim side).

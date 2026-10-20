@@ -57,6 +57,9 @@ thresholds) is in [README.md](README.md) and the 043 documents it cites; this fi
   startup scenario table: `windMps turbX gustLx thermX`.
 - **Rationale**: the draws are deterministic functions of data autoc already holds; no RPC change. (043's `wind_draws.cc` does the same
   offline and becomes unnecessary.)
+- **Addendum (implementation, 2026-10-19)**: the wind class now has one documented draw order — [0] gust/thermal seed, [1..4]
+  envelope, [5..] direction (`drawWindClass`). Before, autoc drew the direction from [0..1], sharing the speed draw; fixed with FR-009
+  (same baseline reset). Logged targets: `windMps` is NaN when the speed range is off.
 
 ## R6. Explicit eval variation scale (FR-011)
 

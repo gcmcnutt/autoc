@@ -32,19 +32,10 @@ std::vector<uint64_t> buildScenarioSeedTable(uint64_t masterSeed, size_t M) {
     return table;
 }
 
-// Helper: derive the 5 class sub-seeds from a scenarioSeed in append-only order.
-struct ClassSubSeeds {
-    uint32_t wind, rabbit, entry, craft, camera;
-};
-ClassSubSeeds deriveSubSeeds(uint64_t scenarioSeed) {
-    ScenarioRootPRNG root(scenarioSeed);
-    ClassSubSeeds s;
-    s.wind = root.next();
-    s.rabbit = root.next();
-    s.entry = root.next();
-    s.craft = root.next();
-    s.camera = root.next();
-    return s;
+// Helper: the production derivation (044: was a local copy of the pre-fmix32
+// chain, which would have kept testing the old derivation after it changed).
+autoc::util::ClassSubSeeds deriveSubSeeds(uint64_t scenarioSeed) {
+    return autoc::util::deriveClassSubSeeds(scenarioSeed);
 }
 
 }  // namespace
@@ -172,6 +163,58 @@ TEST(ClassPRNGIndependence, AdvancingRabbitDoesNotAffectEntry) {
     }
 }
 
+// 044 FR-009 — class streams must not reproduce each other's draws. Before
+// 044 every class sub-seed was a raw ScenarioRootPRNG output and every stream
+// is Park-Miller with output == state, so a ClassPRNG seeded with root draw k
+// simply CONTINUED the root sequence: the wind stream's first draw was the
+// rabbit sub-seed, its second the entry sub-seed, and so on -- wind draw n+1
+// == rabbit draw n. mixClassSubSeed (murmur3 fmix32) puts each class at an
+// unrelated point of the cycle. Checked over 10 000 scenario seeds: no class's
+// first 64 draws contain another class's sub-seed or first draw.
+TEST(ClassPRNGIndependence, ClassStreamsDoNotReproduceEachOther_044) {
+    auto table = buildScenarioSeedTable(20261019, 10000);
+    constexpr int kDraws = 64;
+    int overlaps = 0;
+    for (uint64_t seed : table) {
+        const auto s = deriveSubSeeds(seed);
+        const uint32_t subs[5] = {s.wind, s.rabbit, s.entry, s.craft, s.camera};
+        uint32_t firstDraw[5];
+        std::set<uint32_t> drawn[5];
+        for (int c = 0; c < 5; ++c) {
+            ClassPRNG p(subs[c]);
+            for (int i = 0; i < kDraws; ++i) {
+                const uint32_t v = p.next();
+                if (i == 0) firstDraw[c] = v;
+                drawn[c].insert(v);
+            }
+        }
+        for (int a = 0; a < 5; ++a) {
+            for (int b = 0; b < 5; ++b) {
+                if (a == b) continue;
+                if (drawn[a].count(subs[b]) || drawn[a].count(firstDraw[b])) ++overlaps;
+            }
+        }
+    }
+    EXPECT_EQ(overlaps, 0) << "class streams overlap: one class's draws reproduce "
+                              "another's (Park-Miller continuation, 044 FR-009)";
+}
+
+// The mixed sub-seed must be a valid Park-Miller state: in [1, 2^31 - 2].
+// 0 sticks at 0 and 2^31 - 1 (the modulus) steps to 0.
+TEST(ClassPRNGIndependence, MixedSubSeedIsValidParkMillerState_044) {
+    using autoc::util::mixClassSubSeed;
+    for (uint32_t x : {0u, 1u, 0x7FFFFFFEu, 0x7FFFFFFFu, 0x80000000u, 0xFFFFFFFFu, 12345u}) {
+        const uint32_t m = mixClassSubSeed(x);
+        EXPECT_GE(m, 1u);
+        EXPECT_LE(m, 0x7FFFFFFEu);
+    }
+    for (uint32_t x = 1; x < 200000; x += 7) {
+        const uint32_t m = mixClassSubSeed(x);
+        ASSERT_GE(m, 1u);
+        ASSERT_LE(m, 0x7FFFFFFEu);
+    }
+}
+
 // ============================================================================
 // D3 — Cross-mode equivalence: M1 K and M2 K with same master seed get
 // SAME class sub-seed tuple. (Downstream consumers may DRAW differently
@@ -204,13 +247,15 @@ TEST(D5AppendOnlyContract, AddingSixthClassDoesNotPerturbFirstFive) {
 
     // "Future" derivation: 5 class sub-seeds + 1 hypothetical 6th
     // (sim-tick jitter or similar). New slot must APPEND, not prepend.
+    // 044: each slot is the mixed root draw (mixClassSubSeed), slot by slot.
+    using autoc::util::mixClassSubSeed;
     ScenarioRootPRNG root(scenarioSeed);
-    const uint32_t future_wind   = root.next();
-    const uint32_t future_rabbit = root.next();
-    const uint32_t future_entry  = root.next();
-    const uint32_t future_craft  = root.next();
-    const uint32_t future_camera = root.next();
-    /*const uint32_t future_jitter =*/ root.next();  // new class — APPENDED
+    const uint32_t future_wind   = mixClassSubSeed(root.next());
+    const uint32_t future_rabbit = mixClassSubSeed(root.next());
+    const uint32_t future_entry  = mixClassSubSeed(root.next());
+    const uint32_t future_craft  = mixClassSubSeed(root.next());
+    const uint32_t future_camera = mixClassSubSeed(root.next());
+    /*const uint32_t future_jitter =*/ mixClassSubSeed(root.next());  // new class — APPENDED
 
     EXPECT_EQ(today.wind,   future_wind);
     EXPECT_EQ(today.rabbit, future_rabbit);

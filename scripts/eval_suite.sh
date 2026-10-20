@@ -1,13 +1,18 @@
 #!/bin/bash
 # eval_suite.sh — Automated regression eval for trained NN weights
 #
-# Usage: ./scripts/eval_suite.sh <weights_file> [tier] [master_seed]
+# Usage: ./scripts/eval_suite.sh <weights_file> [tier] [master_seed] [eval_scale]
 #   weights_file: NN01 weight file from `nnextractor -g <gen>` (NOT a gen*.dmp --
 #                 runNNEvaluation calls nn_detect_format and exit(1)s on a dmp)
 #   tier: 0 (repro), 1 (quick), 2 (generalization), 3 (stress), all (default)
 #   master_seed: REQUIRED for a meaningful tier 0. The bake's "Effective master
 #                 seed" from its run log; without it tier 0 draws a novel table
 #                 and cannot reproduce the stored fitness.
+#   eval_scale:  044 FR-011 — optional EvalVariationScale for every tier: 0..1
+#                 evaluates at that variation strength instead of the weights
+#                 file's stored one (equal-environment candidate comparison uses
+#                 1.0); omit (or -1) for the stored scale. ⚠️ A tier 0 with an
+#                 override is not a repro of the bake and is not expected to match.
 #
 # IMPORTANT: autoc-eval.ini is the single source of truth for all sigmas/params.
 # It MUST match autoc.ini training config exactly. Tier overrides only change
@@ -32,10 +37,11 @@ EVAL_BASE_INI=autoc-eval.ini
 RESULTS_ROOT=eval-results
 
 usage() {
-    echo "Usage: $0 <weights_file> [tier] [master_seed]"
+    echo "Usage: $0 <weights_file> [tier] [master_seed] [eval_scale]"
     echo "  weights_file: NN01 file from nnextractor (NOT a gen*.dmp)"
     echo "  tier: 0 (repro), 1, 2, 3, all (default: all)"
     echo "  master_seed: the bake master seed — required for a real tier 0"
+    echo "  eval_scale: EvalVariationScale for every tier (0..1; default: the stored scale)"
     exit 1
 }
 
@@ -43,6 +49,7 @@ usage() {
 WEIGHTS_FILE="$1"
 TIER="${2:-all}"
 MASTER_SEED="${3:-}"
+EVAL_SCALE="${4:-}"
 
 [[ ! -f "$WEIGHTS_FILE" ]] && { echo "Error: weights file not found: $WEIGHTS_FILE"; exit 1; }
 [[ ! -x "$AUTOC" ]] && { echo "Error: $AUTOC not found or not executable"; exit 1; }
@@ -57,6 +64,7 @@ cp "$WEIGHTS_FILE" "$RESULTS_DIR/weights.dmp"
 echo "Weights: $WEIGHTS_FILE" > "$RESULTS_DIR/config.txt"
 echo "Timestamp: $TIMESTAMP" >> "$RESULTS_DIR/config.txt"
 echo "Tier: $TIER" >> "$RESULTS_DIR/config.txt"
+[[ -n "$EVAL_SCALE" ]] && echo "EvalVariationScale: $EVAL_SCALE" >> "$RESULTS_DIR/config.txt"
 echo "" >> "$RESULTS_DIR/config.txt"
 
 # Generate a complete eval INI by copying the base eval config and patching keys.
@@ -80,6 +88,14 @@ make_eval_ini() {
             echo "$kv" >> "$outfile"
         fi
     done
+    # 044 FR-011 — an explicit eval strength applies to every tier (last write wins).
+    if [[ -n "$EVAL_SCALE" ]]; then
+        if grep -q "^EvalVariationScale " "$outfile" 2>/dev/null; then
+            sed -i "s|^EvalVariationScale .*|EvalVariationScale = ${EVAL_SCALE}|" "$outfile"
+        else
+            echo "EvalVariationScale = ${EVAL_SCALE}" >> "$outfile"
+        fi
+    fi
     echo "# Auto-patched by eval_suite.sh — $TIMESTAMP" >> "$outfile"
 }
 

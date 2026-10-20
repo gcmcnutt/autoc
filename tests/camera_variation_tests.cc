@@ -160,9 +160,12 @@ TEST(CameraVariation, CameraDrawIsIndependentOfTheOtherVariationClasses) {
     // And the camera slot must be the LAST derived, per the append-only
     // contract — if a future class is inserted before it, every prior bake's
     // camera draws change silently.
+    // (044 FR-009: each slot is the mixed root draw, mixClassSubSeed.)
+    using autoc::util::mixClassSubSeed;
     autoc::util::ScenarioRootPRNG root(0x0318fceb14b1dfd5ULL);
-    const uint32_t s0 = root.next(), s1 = root.next(), s2 = root.next(),
-                   s3 = root.next(), s4 = root.next();
+    const uint32_t s0 = mixClassSubSeed(root.next()), s1 = mixClassSubSeed(root.next()),
+                   s2 = mixClassSubSeed(root.next()), s3 = mixClassSubSeed(root.next()),
+                   s4 = mixClassSubSeed(root.next());
     EXPECT_EQ(s0, sub.wind);
     EXPECT_EQ(s1, sub.rabbit);
     EXPECT_EQ(s2, sub.entry);

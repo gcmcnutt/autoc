@@ -128,3 +128,48 @@ TEST(WindVariation, SpeedNeverGoesNegative) {
   const auto r = realizeWindVariation(c, WindDraws{0.0, 0.0, 0.0, 0.0}, kBaseSpeedMps, kBaseTurb, 1.0, true);
   EXPECT_GE(r.windSpeedMps, 0.0);
 }
+
+// 044 FR-010 / FR-009 — the wind class has ONE draw order, used by both sides:
+//   [0] gust/thermal seed (worker), [1..4] envelope draws (worker),
+//   [5..] direction offset Gaussian (autoc).
+// windClassDrawsForScenario is what autoc logs in the scenario table, so it
+// must equal what the worker realises: the worker's chain is reproduced here
+// verbatim (deriveClassSubSeeds -> ClassPRNG(wind) -> next() -> draws).
+// Before 044 autoc drew the direction from draws [0..1], so the direction
+// shared its Box-Muller input with the speed draw [1] -- wind direction was a
+// function of wind speed. The direction now comes strictly after the envelope.
+TEST(WindVariation, ScenarioDrawsMatchTheWorkerChain_044) {
+  const double kDirSigma = 3.14159265358979 / 2.0;
+  for (uint64_t seed : {0x1234ull, 0xDEADBEEFCAFEBABEull, 0x528b9fe8256d2c31ull}) {
+    const auto got = autoc::eval::windClassDrawsForScenario(seed, kDirSigma);
+
+    ClassPRNG worker(autoc::util::deriveClassSubSeeds(seed).wind);
+    const uint32_t workerGustSeed = worker.next();
+    const WindDraws w = drawWindVariation(worker);
+    EXPECT_EQ(got.gustSeed, workerGustSeed);
+    EXPECT_EQ(got.envelope.uSpeed, w.uSpeed);
+    EXPECT_EQ(got.envelope.uTurb, w.uTurb);
+    EXPECT_EQ(got.envelope.uGust, w.uGust);
+    EXPECT_EQ(got.envelope.uThermal, w.uThermal);
+    // direction = the NEXT draws after the envelope, never a reused one
+    EXPECT_EQ(got.directionOffset, worker.nextGaussian(kDirSigma));
+  }
+}
+
+// The logged full-strength targets: speed in m/s when the speed range is on
+// (NaN = the sim's base speed), multipliers otherwise -- the scenario-table
+// columns windMps / turbX / gustLx / thermX.
+TEST(WindVariation, FullStrengthTargetsAreTheRangeLerps_044) {
+  const auto cfg = t4Config();
+  WindDraws d; d.uSpeed = 0.25; d.uTurb = 0.5; d.uGust = 1.0; d.uThermal = 0.0;
+  const auto t = autoc::eval::windEnvelopeTargets(cfg, d);
+  EXPECT_DOUBLE_EQ(t.windMps, 2.0);
+  EXPECT_DOUBLE_EQ(t.turbX, 1.25);
+  EXPECT_DOUBLE_EQ(t.gustLx, cfg.gustLengthScaleMax);
+  EXPECT_DOUBLE_EQ(t.thermX, cfg.thermalStrengthMin);
+  const auto off = autoc::eval::windEnvelopeTargets(WindVariationConfig{}, d);
+  EXPECT_TRUE(std::isnan(off.windMps));
+  EXPECT_DOUBLE_EQ(off.turbX, 1.0);
+  EXPECT_DOUBLE_EQ(off.gustLx, 1.0);
+  EXPECT_DOUBLE_EQ(off.thermX, 1.0);
+}

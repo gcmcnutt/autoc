@@ -131,6 +131,27 @@ private:
     double gaussianCache_;
 };
 
+// 044 FR-009 — turn one ScenarioRootPRNG draw into a class sub-seed. Every
+// stream here is Park-Miller with output == state, so seeding a ClassPRNG with
+// a raw root draw just CONTINUES the root sequence: before 044 the wind
+// stream's first draw WAS the rabbit sub-seed and wind draw n+1 == rabbit draw
+// n, i.e. the classes were shifted copies of one sequence. murmur3's 32-bit
+// finalizer (a bijection with full avalanche) puts each class at an unrelated
+// point of the cycle; the result is then reduced into a valid Park-Miller
+// state [1, 2^31 - 2] (0 sticks at 0 and the modulus 2^31 - 1 steps to 0).
+// Generator, period and determinism are unchanged; every scenario draw moves,
+// so 044 takes new baselines (research R4).
+inline uint32_t mixClassSubSeed(uint32_t rootDraw) {
+    uint32_t h = rootDraw;
+    h ^= h >> 16;
+    h *= 0x85EBCA6Bu;
+    h ^= h >> 13;
+    h *= 0xC2B2AE35u;
+    h ^= h >> 16;
+    h %= 0x7FFFFFFFu;
+    return h == 0u ? kSeedZeroSentinel : h;
+}
+
 // Derive the 5 class sub-seeds from a scenarioSeed. Pure function;
 // deterministic; identical output for identical input across processes
 // (autoc-side prefetch + crrcsim worker (all workers) see the
@@ -138,11 +159,11 @@ private:
 inline ClassSubSeeds deriveClassSubSeeds(uint64_t scenarioSeed) {
     ScenarioRootPRNG root(scenarioSeed);
     ClassSubSeeds s;
-    s.wind   = root.next();
-    s.rabbit = root.next();
-    s.entry  = root.next();
-    s.craft  = root.next();
-    s.camera = root.next();
+    s.wind   = mixClassSubSeed(root.next());
+    s.rabbit = mixClassSubSeed(root.next());
+    s.entry  = mixClassSubSeed(root.next());
+    s.craft  = mixClassSubSeed(root.next());
+    s.camera = mixClassSubSeed(root.next());
     return s;
 }
 

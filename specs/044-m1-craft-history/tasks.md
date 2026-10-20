@@ -23,25 +23,25 @@ are registered in one `CMakeLists.txt` edit (T028); the index-free gate goes gre
 
 ## Phase 1: Setup
 
-- [ ] T001 Preserve 043 (FR-005): (a) `git tag 043-final 8cd5a5d` — the 043 close code state (crrcsim `7f345c5`), the build that reads
+- [X] T001 Preserve 043 (FR-005): (a) `git tag 043-final 8cd5a5d` — the 043 close code state (crrcsim `7f345c5`), the build that reads
   every 043 dmp, NN01 genome and v5 flight log; local tag, operator pushes. (b) Pin `retain=keep` in `autoc-eval` on the six T122
   candidate evals (seed 20261018), the t6 g800 eval-suite runs (`eval-results/2026-10-18T22:35:14Z/`, keys in each tier's
   `console.log` "S3 upload:") and every t5 gen 488 eval dump used in 043 (the flight-calibration evals behind `g488-lat-tick.csv`).
   (c) Verify `retain=keep` on the t5 training run in `autoc-m1` by sampling gen 1, gen 488 (`gen9512`) and the last gen (t6 is already
   verified, `artifacts-t6/MANIFEST.md` § 6). Record every key and the tag in a new `specs/044-m1-craft-history/MANIFEST.md`
   § Preservation
-- [ ] T002 [P] Create `specs/044-m1-craft-history/smoke.ini` from `autoc.ini`: `PopulationSize = 3000`, `WindScenarios = 16`,
+- [X] T002 [P] Create `specs/044-m1-craft-history/smoke.ini` from `autoc.ini`: `PopulationSize = 3000`, `WindScenarios = 16`,
   `NumberOfGenerations = 200`, `VariationRampStep = 10`, a fixed `Seed` (recorded in the header comment), all other keys identical —
   in particular `SimNumPathsPerGeneration = 6` and `RandomPathSeedB = 13337`, so both smoke arms fly the same courses and scenarios
   (the scenario seed table is drawn apart from the weight-init stream); string keys keep comments on their own line (research R9)
-- [ ] T003 [P] Create `specs/044-m1-craft-history/profile.md` and `specs/044-m1-craft-history/honesty.md` skeletons (sections per research
+- [X] T003 [P] Create `specs/044-m1-craft-history/profile.md` and `specs/044-m1-craft-history/honesty.md` skeletons (sections per research
   R10 / R11, with the R11 pass criteria written in)
-- [ ] T004 [P] Extend `src/analytics/pitch_cycle_progress.py` with roll rows — elite roll-rate RMS and 3–5 Hz roll share per sampled
+- [X] T004 [P] Extend `src/analytics/pitch_cycle_progress.py` with roll rows — elite roll-rate RMS and 3–5 Hz roll share per sampled
   generation (it already logs roll cap and flips); bump its cache name to `_pitchcycle_v2` (research R13, FR-013)
 
 ## Phase 2: Foundational (blocking)
 
-- [ ] T005 On the branch head (still 45 inputs, unchanged plant): clean `bash scripts/rebuild-perf.sh`, `cd build && ctest`,
+- [X] T005 On the branch head (still 45 inputs, unchanged plant): clean `bash scripts/rebuild-perf.sh`, `cd build && ctest`,
   `~/.platformio/penv/bin/pio run -e xiaoblesense_arduinocore_mbed -d xiao`, and the t6 g800 tier-0 replay
   (`./scripts/eval_suite.sh specs/043-acro-dual-loop/artifacts-t6/nn_weights-t6-g800.dat 0 1791951530` → `−93924.534457` bitwise);
   record in `specs/044-m1-craft-history/MANIFEST.md` § Starting point
@@ -56,32 +56,32 @@ bitwise identical.
 
 ### Tests (write first, see them fail)
 
-- [ ] T006 [P] [US4] In `tests/scenario_prng_tests.cc` add `ClassStreamsIndependent`: for 10 000 scenario seeds, no class's first 64
+- [X] T006 [P] [US4] In `tests/scenario_prng_tests.cc` add `ClassStreamsIndependent`: for 10 000 scenario seeds, no class's first 64
   `ClassPRNG` draws contain another class's sub-seed or first draw (fails today — the wind stream's first draw IS the rabbit sub-seed)
-- [ ] T007 [P] [US4] In `tests/contract_config_tests.cc` add `EvalVariationScale` (default −1; −1 and 0…1 accepted; anything else a startup
+- [X] T007 [P] [US4] In `tests/contract_config_tests.cc` add `EvalVariationScale` (default −1; −1 and 0…1 accepted; anything else a startup
   error) and `CraftClPSigma`; raise the contract key count by 2 (contracts/config-keys.md)
-- [ ] T008 [P] [US4] In `tests/wind_variation_tests.cc` add a test that the autoc-side wind-draw helper returns exactly the worker's
+- [X] T008 [P] [US4] In `tests/wind_variation_tests.cc` add a test that the autoc-side wind-draw helper returns exactly the worker's
   `drawWindVariation` values for a given scenario seed (after skipping the gust-seed draw)
 
 ### Implementation
 
-- [ ] T009 [US4] Mix sub-seeds: in `include/autoc/util/scenario_prng.h` `deriveClassSubSeeds`, pass each root output through murmur3
+- [X] T009 [US4] Mix sub-seeds: in `include/autoc/util/scenario_prng.h` `deriveClassSubSeeds`, pass each root output through murmur3
   `fmix32`, then the zero guard (`kSeedZeroSentinel`); no other generator change (research R4, FR-009)
-- [ ] T010 [US4] `EvalVariationScale`: X-macro entry in `include/autoc/util/config.h`; in `src/autoc.cc` eval path, when ≥ 0 override
+- [X] T010 [US4] `EvalVariationScale`: X-macro entry in `include/autoc/util/config.h`; in `src/autoc.cc` eval path, when ≥ 0 override
   `gEvalVariationScaleOverride` after reading the weights file, log stored and used values, validate at startup; add the key (own line)
   to `autoc-eval.ini` with `−1` (research R6, FR-011)
-- [ ] T011 [US4] Wind-draw columns: add a helper in `include/autoc/eval/wind_variation.h` (scenario seed → `WindDraws` via
+- [X] T011 [US4] Wind-draw columns: add a helper in `include/autoc/eval/wind_variation.h` (scenario seed → `WindDraws` via
   `deriveClassSubSeeds` → `ClassPRNG(wind)` → skip one → `drawWindVariation`) and append `windMps turbX gustLx thermX` (full-strength
   values) to the scenario table in `src/autoc.cc` (contracts/scenario-table.md, research R5, FR-010)
-- [ ] T012 [US4] `cmake --build build && (cd build && ctest)` (T006–T008 now pass). Every scenario draw has changed (expected), so take
+- [X] T012 [US4] `cmake --build build && (cd build && ctest)` (T006–T008 now pass). Every scenario draw has changed (expected), so take
   the **post-fix reference replays** on this build — t6 g800 tier 0 seed 1791951530 and t6 g752 tier 0 seed 20261018 — and record them
   in `MANIFEST.md` § Post-stream-fix reference; T013/T014 judge speed-ups against these, not T005's
-- [ ] T013 [US4] Per-tick cost (research R10a, FR-015), on a fixed tier-1 eval of t6 g800: (a) `perf stat` with the stock model vs a copy
+- [X] T013 [US4] Per-tick cost (research R10a, FR-015), on a fixed tier-1 eval of t6 g800: (a) `perf stat` with the stock model vs a copy
   of `crrcsim/models/hb1_streamer.xml` whose `<controllers>` node is removed (same build), counting rate-loop calls per tick; (b) a
   throwaway build with the per-tick `EvalTick` payload trimmed, built in a scratch worktree so `build/` is untouched; (c) if (a) + (b)
   do not account for the +47 % t2 → t3 per-tick cost, record the unexplained remainder and file it in `specs/BACKLOG.md` — the bake is
   not held for it. Record all in `specs/044-m1-craft-history/profile.md`
-- [ ] T014 [US4] Parent profile (research R10b): launch `bash scripts/train.sh specs/044-m1-craft-history/smoke.ini
+- [X] T014 [US4] Parent profile (research R10b): launch `bash scripts/train.sh specs/044-m1-craft-history/smoke.ini
   logs/autoc-044-profile.log` (detached, Constitution IX), `perf record -g -p $(pgrep -x autoc)` across one generation, then stop the
   run; attribute time to deserialize / scoring / selection / dmp write in `profile.md`; adopt only changes that keep the T012 reference
   replays bitwise identical; file the rest in `specs/BACKLOG.md`

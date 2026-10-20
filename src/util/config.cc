@@ -131,6 +131,15 @@ void ConfigManager::initialize(const std::string& filename, std::ostream& out) {
         exit(1);
     }
 
+    // === 044 FR-011 — EvalVariationScale: -1 or [0, 1] ====================
+    if (!evalVariationScaleValid(config->evalVariationScale)) {
+        out << "FATAL ERROR: EvalVariationScale = " << config->evalVariationScale
+            << " is invalid; use -1 (the weights file's stored variation_scale) "
+            << "or a strength in [0, 1]. Per specs/044-m1-craft-history/"
+            << "contracts/config-keys.md." << std::endl;
+        exit(1);
+    }
+
     // === 032 PHASE 1 — CepGateThreshold range validation ===============
     // (Parsed above via the macro; loud-fail on out-of-range here.)
     if (config->cepGateThreshold < 0.0 || config->cepGateThreshold > 2.0) {

@@ -78,6 +78,15 @@ turbulence / gust-length / thermal** draws (they are drawn in the worker from `W
 from the scenario seeds with the same pure functions (`deriveClassSubSeeds` → `ClassPRNG(wind)` → skip one → `drawWindVariation`)
 and print the full-strength values as four more columns. Until then: `specs/043-acro-dual-loop/wind_draws.cc`.
 
+### [044 T013/T014, filed 2026-10-19] Training throughput — worker idle in the per-job round trip; the per-tick payload
+`specs/044-m1-craft-history/profile.md`. After the async dmp upload (adopted in 044, −25 % generation time on the smoke) the workers
+are busy ~16.4 of 20 cores; the rest is the request/response per job — each worker waits while its parent RPC thread deserializes
+~520 B/tick of `EvalTick` records and runs `computeScenarioScores` (~9 % of a core per thread). Fixes, in order of size: pipeline the
+next job before handling the result; score worker-side and return only scenario scores + the elite's ticks (`EvalResultsLite`, the
+older "fitness to worker" item). Check bitwise on the tier-0 replay and the per-gen fitness diff. Also: the 043 t2 → t3 "+47 % per
+tick" is most likely population flight length (crash penalty), not tick cost — confirm on the 044 bake's `#GenTiming
+meanTicksPerSim`.
+
 ### [043 wrap, filed 2026-10-18] Servo bench step (T046), `servo_pwm_rate` above 50 Hz (T048/T050), and the per-tick cost of the INAV loop
 The 10-18 airframe ID absorbs servo lag into a fitted 25–40 ms delay; a bench step (T046) would separate it. The 50 Hz servo update
 is up to 20 ms of actuator delay; if the DSM-44 accepts a faster rate it is worth ~9° at 2.5 Hz — model it in the sim first (T049).

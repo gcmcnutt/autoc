@@ -14,6 +14,7 @@
 #include <vector>
 #include <type_traits>
 #include <cstdint>
+#include <cmath>
 #include <sstream>
 
 #include "autoc/util/config.h"  // 034 FR-010 — AUTOC_CONFIG_FIELDS macro
@@ -259,8 +260,43 @@ TEST(ContractConfig, ConfigFieldsMacroCount) {
     // ThermalCountMax (T087/T087a/T087b/T088) → 164; 043 T102 added
     // EnableExcessRotationAxis → 165; 043 t5 added ExcessRotationAxisMode
     // (independent | conditional, required when the axis is on) → 166.
-    EXPECT_EQ(n, 166u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
+    // 044 added CraftClPSigma (the roll-damping craft axis, FR-006) and
+    // EvalVariationScale (explicit eval strength, FR-011) → 168.
+    EXPECT_EQ(n, 168u) << "AUTOC_CONFIG_FIELDS field count changed — update the "
                          "expected count and confirm parse+print still match";
+}
+
+// ============================================================
+// 044 FR-011 — EvalVariationScale: explicit eval strength
+// ============================================================
+// -1 (the default) keeps today's behaviour: evaluate at the variation_scale
+// stored in the weights file. 0..1 overrides it so genomes saved at different
+// ramp steps can be compared in ONE environment (replaces 043's weights-copy
+// patch, set_eval_scale.py). Anything else is a startup error.
+TEST(ContractConfig, EvalVariationScaleDefaultAndRange_044) {
+    AutocConfig cfg;
+    EXPECT_EQ(cfg.evalVariationScale, -1.0);
+    EXPECT_TRUE(evalVariationScaleValid(-1.0));
+    EXPECT_TRUE(evalVariationScaleValid(0.0));
+    EXPECT_TRUE(evalVariationScaleValid(0.5));
+    EXPECT_TRUE(evalVariationScaleValid(1.0));
+    EXPECT_FALSE(evalVariationScaleValid(-0.5));
+    EXPECT_FALSE(evalVariationScaleValid(-2.0));
+    EXPECT_FALSE(evalVariationScaleValid(1.01));
+    EXPECT_FALSE(evalVariationScaleValid(std::nan("")));
+}
+
+// 044 FR-006 — CraftClPSigma: the roll-damping axis width, a macro field
+// like every craft sigma (parsed AND auto-printed), default 0.10.
+TEST(ContractConfig, CraftClPSigmaKey_044) {
+    AutocConfig cfg;
+    EXPECT_DOUBLE_EQ(cfg.craftClPSigma, 0.10);
+    std::set<std::string> keys;
+#define X(type, field, key) keys.insert(key);
+    AUTOC_CONFIG_FIELDS(X)
+#undef X
+    EXPECT_EQ(keys.count("CraftClPSigma"), 1u);
+    EXPECT_EQ(keys.count("EvalVariationScale"), 1u);
 }
 
 // ============================================================

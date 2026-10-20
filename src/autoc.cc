@@ -17,6 +17,7 @@ From skeleton/skeleton.cc
 #include <numeric>
 #include <sstream>
 #include <thread>
+#include <future>
 #include <chrono>
 #include <memory>
 #include <cstdint>
@@ -332,6 +333,9 @@ static void applyCrashPenalty(std::vector<ScenarioScore>& scores) {
  */
 struct ScenarioVariations {
     VariationOffsets entryOffsets;              // Heading, roll, pitch, speed, windDir
+    // 044 FR-010 — full-strength wind-envelope targets, LOGGED ONLY (the worker
+    // realises the same draws from the same wind-class slots; see wind_variation.h).
+    autoc::eval::WindEnvelopeTargets windTargets;
     // 034 US4 — full-magnitude craft draw + the class sub-seed that produced
     // it. Copied to ScenarioMetadata at per-eval construction; the worker
     // scales via applyVariationScale() before passing to the FDM.
@@ -345,6 +349,22 @@ struct ScenarioVariations {
 
 // Global pre-computed table (indexed by wind scenario index 0..N-1)
 static std::vector<ScenarioVariations> gScenarioVariations;
+
+// 043 t4 (T087) wind envelope ranges, one mapping from the ini for the WorkerInit
+// (realised worker-side) and the 044 scenario-table columns (logged parent-side).
+static autoc::eval::WindVariationConfig windVariationConfigFromIni(const AutocConfig& cfg) {
+    autoc::eval::WindVariationConfig w;
+    w.windSpeedMinMps      = cfg.windSpeedMinMps;
+    w.windSpeedMaxMps      = cfg.windSpeedMaxMps;
+    w.turbIntensityMin     = cfg.windTurbIntensityMin;
+    w.turbIntensityMax     = cfg.windTurbIntensityMax;
+    w.gustLengthScaleMin   = cfg.windGustLengthScaleMin;
+    w.gustLengthScaleMax   = cfg.windGustLengthScaleMax;
+    w.thermalStrengthMin   = cfg.thermalStrengthScaleMin;
+    w.thermalStrengthMax   = cfg.thermalStrengthScaleMax;
+    w.thermalCountMax      = cfg.thermalCountMax;
+    return w;
+}
 static unsigned int gPathSeed = 0;        // Derived from GPrand() or RandomPathSeedB override
 static bool gPathSeedFromOverride = false;// True if RandomPathSeedB was used
 
@@ -466,16 +486,18 @@ static void prefetchAllVariations(int numScenarios, const VariationSigmas& sigma
         }
 
         // Wind-class windDirectionOffset (static per-scenario rotation of
-        // base wind heading). Drawn from windPRNG; advance regardless of
-        // enableWind to honor draw-and-discard semantics. NOTE: this is
-        // separate from the worker-side windPRNG.next() that seeds
-        // CRRC_Random — both use windPRNG seeded identically from
-        // subseeds.wind, but their draws are independent (different
-        // ClassPRNG instances at different consumer sites).
+        // base wind heading), drawn regardless of enableWind (draw-and-
+        // discard). 044 FR-009: taken from its OWN slots of the wind stream,
+        // after the worker's gust seed [0] and envelope draws [1..4] --
+        // before 044 it was drawn from [0..1] by a fresh ClassPRNG, sharing
+        // the speed draw [1] and so coupling direction to speed. The
+        // envelope targets are logged in the scenario table (044 FR-010).
         autoc::util::ClassPRNG windPRNG(subseeds.wind);
-        const double drawnWindDir =
-            windDirectionOffsetFromClassPRNG(windPRNG, sigmas.windDirectionSigma);
-        sv.entryOffsets.windDirectionOffset = enableWind ? drawnWindDir : 0.0;
+        const autoc::eval::WindClassDraws windDraw =
+            autoc::eval::drawWindClass(windPRNG, sigmas.windDirectionSigma);
+        sv.entryOffsets.windDirectionOffset = enableWind ? windDraw.directionOffset : 0.0;
+        sv.windTargets = autoc::eval::windEnvelopeTargets(
+            windVariationConfigFromIni(ConfigManager::getConfig()), windDraw.envelope);
 
         // 034 US4 — craft-class draws. The PRNG is ALWAYS advanced (draw-
         // and-discard semantics matching entry/wind) so toggling
@@ -557,6 +579,8 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
                 << "   camYaw  camPit  camRol   camDx   camDy   camDz  camWng   CamSeed"
                 << "   misR  misP  misY    gyX    gyY    gyZ    acX    acY    acZ     abX     abY     abZ     cmQ";
         }
+        // 044 FR-010 — full-strength wind-envelope draws (windMps "nan" = base speed).
+        hdr << "  windMps  turbX gustLx thermX";
         *logger.info() << hdr.str() << endl;
     }
     {
@@ -566,6 +590,7 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
             sep << "  --------  -------  -------  -------  -------  -------  -------  -------  -------  -------  -----------"
                 << "  ----  ----  ----  -----  -----  -----  -----  -----  -----  ------  ------  ------  ------";
         }
+        sep << "  -------  -----  -----  -----";
         *logger.info() << sep.str() << endl;
     }
 
@@ -654,6 +679,12 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
                  << setprecision(2)
                  << setw(7) << static_cast<double>(cd.craftCmQ);              // Cm_q
         }
+        // 044 FR-010 — wind-envelope draws at full strength.
+        line << std::dec << std::setfill(' ') << std::fixed << std::setprecision(2)
+             << "  " << std::setw(7) << sv.windTargets.windMps
+             << "  " << std::setw(5) << sv.windTargets.turbX
+             << "  " << std::setw(5) << sv.windTargets.gustLx
+             << "  " << std::setw(5) << sv.windTargets.thermX;
 
         *logger.info() << line.str() << endl;
     }
@@ -666,6 +697,12 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
 std::atomic_ulong nanDetector = 0;
 std::atomic<uint64_t> globalScenarioCounter{0};
 std::atomic<uint64_t> globalSimRunCounter{0};
+// 044 FR-015 — stepped ticks returned by the population evaluation this
+// generation (reset per gen; #GenTiming reports it). Per-gen cost scales with
+// the POPULATION's flight length, not the elite's, so a cost-per-tick figure
+// needs this count.
+static std::atomic<uint64_t> gGenTickCounter{0};
+static std::atomic<uint64_t> gGenSimCounter{0};   // scenario flights, same scope
 
 static bool bitwiseEqual(double a, double b) {
   return std::memcmp(&a, &b, sizeof(double)) == 0;
@@ -990,15 +1027,7 @@ static WorkerInit buildWorkerInit() {
 
     // 043 t4 (T087) -- wind envelope ranges, RPC-only. Defaults are OFF so an
     // ini without the keys realizes the base wind exactly (t3 tier0 bitwise).
-    init.windVariation.windSpeedMinMps      = cfg.windSpeedMinMps;
-    init.windVariation.windSpeedMaxMps      = cfg.windSpeedMaxMps;
-    init.windVariation.turbIntensityMin     = cfg.windTurbIntensityMin;
-    init.windVariation.turbIntensityMax     = cfg.windTurbIntensityMax;
-    init.windVariation.gustLengthScaleMin   = cfg.windGustLengthScaleMin;
-    init.windVariation.gustLengthScaleMax   = cfg.windGustLengthScaleMax;
-    init.windVariation.thermalStrengthMin   = cfg.thermalStrengthScaleMin;
-    init.windVariation.thermalStrengthMax   = cfg.thermalStrengthScaleMax;
-    init.windVariation.thermalCountMax      = cfg.thermalCountMax;
+    init.windVariation = windVariationConfigFromIni(cfg);
     if (init.windVariation.anyEnabled() && !init.enableWindVariations) {
       throw std::runtime_error("Wind envelope keys are set but EnableWindVariations=0 -- "
                                "they would be silently ignored. Enable it or clear the keys.");
@@ -1359,6 +1388,16 @@ static void runNNEvaluation(
   // training. No recomputation from ramp globals needed (which would require
   // matching NumberOfGenerations and VariationRampStep between train/eval configs).
   gEvalVariationScaleOverride = genome.variation_scale;
+  // 044 FR-011 — EvalVariationScale >= 0 overrides the stored scale so genomes
+  // saved at different ramp steps fly ONE environment (validated at startup:
+  // -1 or [0, 1]). Both values are logged so a summary is never ambiguous.
+  if (cfg.evalVariationScale >= 0.0) {
+    gEvalVariationScaleOverride = static_cast<float>(cfg.evalVariationScale);
+  }
+  *logger.info() << "  EvalVariationScale: stored " << std::fixed << std::setprecision(4)
+                 << genome.variation_scale << ", used " << gEvalVariationScaleOverride
+                 << (cfg.evalVariationScale >= 0.0 ? " (EvalVariationScale override)" : " (stored)")
+                 << endl;
 
   // Serialize genome for RPC (same format the worker expects)
   std::vector<uint8_t> nnData;
@@ -1524,8 +1563,30 @@ static void runNNEvolution(
 
   *logger.info() << "Population initialized." << endl;
 
+  // 044 FR-015 (profile.md) — the elite dmp's compress + S3 upload ran on THIS
+  // thread every generation, and zstd level 19 on a full-regiment elite dump
+  // (~87 MB, 294 scenarios) takes ~24 s while every worker sits idle. It now
+  // runs on one background slot overlapping the next generation's evaluation:
+  // the blob is serialized here (so bestResults is free immediately), the
+  // previous upload is joined before the next starts (one in flight), and the
+  // join rethrows any upload failure, so a failed upload still stops the run
+  // (fail-fast, Constitution VII) one generation later. The stored bytes are
+  // unchanged and nothing in the evolution reads them: bitwise-neutral.
+  std::future<void> pendingUpload;
+  auto joinUpload = [&pendingUpload]() {
+    if (pendingUpload.valid()) pendingUpload.get();
+  };
+  using GenClock = std::chrono::steady_clock;
+  auto secsSince = [](GenClock::time_point t0) {
+    return std::chrono::duration<double>(GenClock::now() - t0).count();
+  };
+
   // Generation loop (start at 1 like GP — gen0 is Xavier baseline, not stored)
   for (int gen = 1; gen <= numGens; gen++) {
+    const auto tGenStart = GenClock::now();
+    double evalSec = 0.0, reevalSec = 0.0, dmpSerializeSec = 0.0, uploadWaitSec = 0.0;
+    gGenTickCounter.store(0, std::memory_order_relaxed);
+    gGenSimCounter.store(0, std::memory_order_relaxed);
 
     // RAMP_LANDSCAPE: Update current generation for variation scaling
     gCurrentGeneration = gen;
@@ -1555,6 +1616,12 @@ static void runNNEvolution(
         sendRPC(*context.socket, *evalDataPtr);
         context.evalResults = receiveRPC<EvalResults>(*context.socket);
         globalSimRunCounter.fetch_add(context.evalResults.pathList.size(), std::memory_order_relaxed);
+        {
+          uint64_t ticks = 0;
+          for (const auto& st : context.evalResults.tickList) ticks += st.ticks.size();
+          gGenTickCounter.fetch_add(ticks, std::memory_order_relaxed);
+          gGenSimCounter.fetch_add(context.evalResults.tickList.size(), std::memory_order_relaxed);
+        }
 
         // Compute decomposed fitness then aggregate
         genome.scenario_scores = computeScenarioScores(context.evalResults);
@@ -1567,6 +1634,7 @@ static void runNNEvolution(
 
     // Wait for all evaluations to complete
     threadPool->wait_for_tasks();
+    evalSec = secsSince(tGenStart);
 
     // Find best individual
     int bestIdx = 0;
@@ -1589,6 +1657,7 @@ static void runNNEvolution(
 
     // Re-evaluate best individual and log per-step data to data.dat
     {
+      const auto tReevalStart = GenClock::now();
       NNGenome& bestGenome = pop.individuals[bestIdx];
       bestGenome.variation_scale = static_cast<float>(computeVariationScale());
       std::vector<uint8_t> nnData;
@@ -1634,16 +1703,26 @@ static void runNNEvolution(
       bestResults.gpHash = hashByteVector(bestResults.gp);
       stampEvalResultsProvenance(bestResults);  // 033 §2.A + §2.B
 
+      reevalSec = secsSince(tReevalStart);
+
       // Save to S3 as cereal-serialized EvalResults
       {
+        const auto tDmpStart = GenClock::now();
         std::string keyName = startTime + "/gen" + std::to_string(10000 - gen) + ".dmp.zst";  // 035 FR-P09
         auto s3Client = ConfigManager::getS3Client();
         if (s3Client) {
           std::ostringstream oss(std::ios::binary);
           { cereal::BinaryOutputArchive oa(oss); oa(bestResults); }
+          dmpSerializeSec = secsSince(tDmpStart);
           // FR-P09/P10 compress+tag+upload via the shared S3 dmp I/O — throws on
-          // failure (fail-fast, Constitution VII).
-          autoc::s3PutDmpBlob(*s3Client, cfg.s3Bucket, keyName, oss.str());
+          // failure, rethrown by joinUpload (fail-fast, Constitution VII).
+          const auto tWait = GenClock::now();
+          joinUpload();
+          uploadWaitSec = secsSince(tWait);
+          pendingUpload = std::async(std::launch::async,
+              [s3Client, bucket = cfg.s3Bucket, keyName, blob = oss.str()]() {
+                autoc::s3PutDmpBlob(*s3Client, bucket, keyName, blob);
+              });
         }
       }
     }
@@ -1884,7 +1963,28 @@ static void runNNEvolution(
         }
       }
     }
+
+    // 044 FR-015 — where the generation's wall time went (profile.md). evalSec =
+    // dispatch to last result (workers busy); everything after it is serial on
+    // this thread with the workers idle. uploadWaitSec > 0 means the previous
+    // generation's background dmp upload was still running.
+    *logger.info() << "#GenTiming gen=" << gen
+                   << std::fixed << std::setprecision(2)
+                   << " totalSec=" << secsSince(tGenStart)
+                   << " evalSec=" << evalSec
+                   << " reevalSec=" << reevalSec
+                   << " dmpSerializeSec=" << dmpSerializeSec
+                   << " uploadWaitSec=" << uploadWaitSec
+                   << " popTicks=" << gGenTickCounter.load(std::memory_order_relaxed)
+                   << " meanTicksPerSim=" << std::setprecision(1)
+                   << static_cast<double>(gGenTickCounter.load(std::memory_order_relaxed))
+                      / std::max<double>(1.0, static_cast<double>(gGenSimCounter.load(std::memory_order_relaxed)))
+                   << " evalUsPerTick=" << std::setprecision(2)
+                   << 1e6 * evalSec * cfg.evalThreads
+                      / std::max<double>(1.0, static_cast<double>(gGenTickCounter.load(std::memory_order_relaxed)))
+                   << endl;
   }
+  joinUpload();  // the last generation's dmp is on S3 before the run reports done
 
   *logger.info() << "NN evolution complete! Best fitness: "
                  << std::fixed << std::setprecision(2) << pop.best_fitness << endl;

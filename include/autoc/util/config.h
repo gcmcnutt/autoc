@@ -216,6 +216,14 @@ struct AutocConfig {
     double craftAccelScaleSigma  = 0.02; // fraction; 2.5σ = ±5% accel cal tolerance
     double craftAccelBiasSigma   = 0.04; // g; from 041-t7 audit (accel_y ~1.7σ; provisional on acc_1G scale)
     double craftCmQSigma         = 0.6;  // Cm_q width; 043 t6: center -1.0, clamp [-2.0,-0.2] (2.5σ reaches the clamps)
+    double craftClPSigma         = 0.10; // 044 FR-006: roll damping Cl_p width; center -0.36 (~3 Hz roll corner), clamp [-0.60,-0.18]
+
+    // --- 044 FR-011: explicit evaluation strength ---
+    // -1 = evaluate at the variation_scale stored in the weights file (the
+    // pre-044 behaviour); 0..1 overrides it, so genomes saved at different ramp
+    // steps can be judged in ONE environment. Validated at startup
+    // (evalVariationScaleValid); ignored outside eval mode.
+    double evalVariationScale    = -1.0;
 
     // --- Variation landscape ramp ---
     int variationRampStep = 0;
@@ -516,6 +524,8 @@ struct AutocConfig {
     X(double,         craftAccelScaleSigma,      "CraftAccelScaleSigma") \
     X(double,         craftAccelBiasSigma,       "CraftAccelBiasSigma") \
     X(double,         craftCmQSigma,             "CraftCmQSigma") \
+    X(double,         craftClPSigma,             "CraftClPSigma") \
+    X(double,         evalVariationScale,        "EvalVariationScale") \
     X(int,            variationRampStep,         "VariationRampStep") \
     X(std::string,    selectionMode,             "SelectionMode") \
     X(std::string,    lexicaseEpsilonMode,       "LexicaseEpsilonMode") \
@@ -613,6 +623,12 @@ struct AutocConfig {
 // Split out of ConfigManager::initialize() so it is reachable from a test
 // without the exit(1) that follows it in production (T007).
 void reportIniParseError(const std::string& filename, int error, std::ostream& out);
+
+// 044 FR-011 — EvalVariationScale is -1 (use the weights file's stored scale)
+// or a strength in [0, 1]; anything else (incl. NaN) is a startup error.
+inline bool evalVariationScaleValid(double v) {
+    return v == -1.0 || (v >= 0.0 && v <= 1.0);
+}
 
 class ConfigManager {
 public:
