@@ -100,7 +100,7 @@ struct ScenarioMetadata {
     // every pre-043 dmp (Constitution V loud-fail; FR-057 extraction from the
     // 041-t7 baseline completed first — see specs/043-acro-dual-loop/artifacts/
     // t7-extract/). No cereal version bump (project practice). Defaults are
-    // no-op: 0 misalign/bias, 1.0 scales, craftCmQ at its -4.2 center.
+    // no-op: 0 misalign/bias, 1.0 scales, craftCmQ at its center.
     gp_scalar craftImuMisalignRoll  = static_cast<gp_scalar>(0.0);  // deg
     gp_scalar craftImuMisalignPitch = static_cast<gp_scalar>(0.0);  // deg
     gp_scalar craftImuMisalignYaw   = static_cast<gp_scalar>(0.0);  // deg
@@ -113,7 +113,11 @@ struct ScenarioMetadata {
     gp_scalar craftAccelBiasX = static_cast<gp_scalar>(0.0);  // g
     gp_scalar craftAccelBiasY = static_cast<gp_scalar>(0.0);  // g
     gp_scalar craftAccelBiasZ = static_cast<gp_scalar>(0.0);  // g
-    gp_scalar craftCmQ = static_cast<gp_scalar>(-4.2);        // pitch damping (absolute + clamp)
+    gp_scalar craftCmQ = static_cast<gp_scalar>(-2.25);       // pitch damping (absolute + clamp) = kCraftCmQCenter (044)
+    // 044 FR-006 — roll damping Cl_p (absolute + clamp), appended LAST. Default =
+    // kCraftClPCenter (pinned by craft_variation_tests). Serialized in every dmp's
+    // scenarioList, hence EvalResults schema v5.
+    gp_scalar craftClP = static_cast<gp_scalar>(-0.36);
     // 040 US6 — CAMERA VARIATION DELIBERATELY DOES **NOT** LIVE HERE.
     //
     // It was put here first, and that broke the pinned M1 source: this struct is
@@ -159,7 +163,8 @@ struct ScenarioMetadata {
            craftGyroScaleX, craftGyroScaleY, craftGyroScaleZ,
            craftAccelScaleX, craftAccelScaleY, craftAccelScaleZ,
            craftAccelBiasX, craftAccelBiasY, craftAccelBiasZ,
-           craftCmQ);
+           craftCmQ,
+           craftClP);  // 044 FR-006 -- appended LAST (EvalResults schema v5)
     }
 };
 CEREAL_CLASS_VERSION(ScenarioMetadata, 1)

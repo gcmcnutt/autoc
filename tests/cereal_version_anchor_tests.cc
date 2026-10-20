@@ -28,9 +28,12 @@
 // The anchor did its job: it failed the moment the bump landed and named the
 // edit to make. That is the whole reason it exists, so it is re-anchored here
 // rather than loosened.
-TEST(CerealVersionAnchor, EvalResultsAtVersion4) {
-    EXPECT_EQ(cereal::detail::Version<EvalResults>::version, 4u)
-        << "EvalResults schema version drifted from 4 (the 041 P2-4 contract-break "
+// 044 US2 (2026-10-19) is the 4 → 5 bump: ScenarioMetadata (serialized in every
+// dmp's scenario records) gained craftClP. 044's layout change is the next one
+// (5 → 6); each lands with artifacts on its side of it (smoke A / the bake).
+TEST(CerealVersionAnchor, EvalResultsAtVersion5) {
+    EXPECT_EQ(cereal::detail::Version<EvalResults>::version, 5u)
+        << "EvalResults schema version drifted from 5 (the 044 US2 craftClP "
            "bump). If this is intentional, update this anchor test alongside the "
            "CEREAL_CLASS_VERSION(EvalResults, ...) edit in protocol.h AND "
            "EvalResults::kSchemaVersion. Do NOT bump intra-development per "

@@ -1,42 +1,30 @@
 // 043 §6/§9 — the NN's own sensor path, as the FLIGHT ARTICLE actually delivers it.
+// 044 FR-008 — WIRED IN, at the FDM sub-step (option (a) below).
 //
 // ⛔ WHY THIS EXISTS. Measured 2026-09-05 (docs/inav-acro-path-audit.md §6): the
 // real aircraft filters the gyro and accelerometer BEFORE they reach the policy,
 // and the sim did not model any of it — it handed the NN raw FDM state.
 //
-//   channel | real (what the NN gets)                  | sim (before this)
-//   --------|------------------------------------------|-------------------
-//   gyro    | gyro.gyroADCf: gyro_main_lpf_hz = 25 PT1 | raw getOmegaBody()
-//   accel   | acc.accADCf:   acc_lpf_hz = 15 BIQUAD    | raw specific force
+//   channel | real (what the NN gets)                  | sim (044)
+//   --------|------------------------------------------|---------------------------
+//   gyro    | gyro.gyroADCf: gyro_main_lpf_hz = 25 PT1 | FcSensorFilterChain, 5 ms
+//   accel   | acc.accADCf:   acc_lpf_hz = 15 BIQUAD    | FcSensorFilterChain, 5 ms
 //
-// Un-modelled group delay on the policy's OWN INPUTS: ~6.4 ms gyro, ~21.2 ms
-// accel. 21 ms is 42% of a 20 Hz tick, on the channel the whole 041 P5-1 accel
-// work depends on. The policy trained on sensors that respond instantly and flew
-// sensors that lag.
+// Low-frequency group delay on the policy's OWN INPUTS: gyro PT1 rc =
+// 1/(2*pi*25) = 6.4 ms; accel biquad (Q 0.707) 2*zeta/wn = sqrt2/(2*pi*15) =
+// 15.0 ms (14.7 ms at the 200 Hz sub-step). ⚠️ An earlier note said ~21 ms for
+// the accel: that is 2/(2*pi*fc), the CRITICALLY-damped figure, not this
+// Butterworth's (044, tick_rescale_tests FcSensorFilters.GroupDelaysAtTheSubstep).
 //
-// ⛔⛔ NOT WIRED IN — AND WHY. An attempt to apply these at the sensor-gather
-// point was BACKED OUT 2026-09-07 before it could reach a bake. That gather runs
-// ONLY on the 20 Hz eval cadence (`shouldEval` in inputdev_autoc::getInputData),
-// so a 25 Hz or 15 Hz filter sits far above the 10 Hz Nyquist and is not a model
-// of anything: measured k = 0.887 (gyro) and 0.825 (accel), i.e. near
-// pass-through, contributing a few ms of delay by accident rather than by design.
-//
-// The real chain is: filter at 2 kHz on the FC, THEN sample at 20 Hz over MSP.
-// Its effect on the SAMPLED value is a GROUP DELAY, not a filter that can be
-// re-run at the sample rate.
-//
-// ⭐ TWO CORRECT IMPLEMENTATIONS, either acceptable:
-//   (a) Filter at FDM SUBSTEP rate (dt = 5 ms, 200 Hz) and let the 20 Hz gather
-//       read the filtered state — this mirrors the real chain exactly. A
-//       Controller runs every FDM step (that is how Cntrl_StepTest works), so a
-//       small Cntrl_SensorLpf could hold the filter state and publish it.
-//   (b) Model it as a per-channel pure delay of 6.4 ms (gyro) / 21.2 ms (accel).
-//       ⚠️ Both are SUB-TICK at 20 Hz, so this only works if folded into the
-//       existing staged-command latency path, which already carries sub-tick
-//       delay — it cannot be done with a tick-granular ring buffer.
-//
-// The classes below are correct and tested-by-construction; they are kept for
-// whichever approach lands. ⚠️ Do NOT wire them into a 20 Hz path.
+// ⛔ WHY IT MUST RUN AT THE SUB-STEP. An attempt to apply these at the 20 Hz
+// sensor-gather point was BACKED OUT 2026-09-07: a 25 Hz or 15 Hz filter run at
+// 20 Hz sits far above the 10 Hz Nyquist and is not a model of anything
+// (measured k = 0.887 gyro / 0.825 accel, near pass-through). The real chain is
+// filter at the FC rate, THEN sample at 20 Hz over MSP; its effect on the
+// SAMPLED value is a group delay. 044 does exactly that: crrcsim steps one
+// FcSensorFilterChain per scenario after every 5 ms FDM sub-step
+// (autoc_sensor_substep, called from fdm_larcsim) and the 20 Hz gather reads
+// its output. ⚠️ Do NOT run these filters on a 20 Hz path.
 //
 // ⓘ NOT modelled, deliberately:
 //   - the dynamic gyro notch (2D, Q 250, >= 30 Hz): above the band of interest
@@ -45,6 +33,9 @@
 //     because an input-adaptive filter with state-dependent group delay does not
 //     belong in front of a trained policy. Modelling it would re-introduce what
 //     the config change removed.
+//   - INAV's own rate loop reads the same filtered gyro on the aircraft; the sim's
+//     Cntrl_InavFwRate still reads the raw FDM rate (FR-008 scopes the POLICY's
+//     signals; see BACKLOG if the loop's 6 ms ever matters).
 #ifndef AUTOC_SENSOR_LPF_H
 #define AUTOC_SENSOR_LPF_H
 
@@ -106,6 +97,41 @@ class BiquadFilter {
 // The article's measured constants (xiao/inav-hb1.cfg).
 constexpr double kGyroLpfHz = 25.0;   // gyro_main_lpf_hz, PT1
 constexpr double kAccelLpfHz = 15.0;  // acc_lpf_hz, BIQUAD
+
+// 044 FR-008 — the three gyro axes and three accel axes as the FC filters them,
+// stepped once per FDM sub-step (dt) and read at the decision tick. Per-scenario
+// state: reset() at scenario start, and the first step() seeds every filter from
+// its input (no start transient). dt has no default (Constitution VII).
+class FcSensorFilterChain {
+ public:
+  explicit FcSensorFilterChain(double dtSec) {
+    for (int a = 0; a < 3; ++a) {
+      gyro_[a].configure(kGyroLpfHz, dtSec);
+      accel_[a].configure(kAccelLpfHz, dtSec);
+    }
+  }
+  void reset() {
+    for (int a = 0; a < 3; ++a) { gyro_[a].reset(); accel_[a].reset(); }
+    seeded_ = false;
+  }
+  // One FC-rate sample: body rates (rad/s) and body specific force (g).
+  void step(const gp_vec3& gyroRadS, const gp_vec3& specificForceG) {
+    for (int a = 0; a < 3; ++a) {
+      gyroOut_[a] = static_cast<gp_scalar>(gyro_[a].apply(static_cast<double>(gyroRadS[a])));
+      accelOut_[a] = static_cast<gp_scalar>(accel_[a].apply(static_cast<double>(specificForceG[a])));
+    }
+    seeded_ = true;
+  }
+  bool seeded() const { return seeded_; }
+  gp_vec3 gyro() const { return gyroOut_; }
+  gp_vec3 accel() const { return accelOut_; }
+ private:
+  Pt1Filter gyro_[3];
+  BiquadFilter accel_[3];
+  gp_vec3 gyroOut_ = gp_vec3::Zero();
+  gp_vec3 accelOut_ = gp_vec3::Zero();
+  bool seeded_ = false;
+};
 
 }}  // namespace autoc::eval
 #endif

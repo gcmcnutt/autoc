@@ -15,7 +15,8 @@
 // and different units (m for CG, rad for trim, fraction for the rest). The
 // math is small and inline so a header is sufficient.
 
-#include <algorithm>               // std::min / std::max (clamp of dynamics axes)
+#include <algorithm>
+#include <cmath>               // std::min / std::max (clamp of dynamics axes)
 
 #include "autoc/types.h"            // gp_scalar
 #include "autoc/util/scenario_prng.h"  // autoc::util::ClassPRNG
@@ -65,9 +66,47 @@ constexpr gp_scalar kCraftThrustTauMax    = static_cast<gp_scalar>(0.300);  // s
 // leave the physical range. ⛔ This is the DYNAMIC pitch-damping side only;
 // the static-margin side is already carried by craftCGDelta (CG vs neutral
 // point) -- see contracts/craft-imu-axes.md.
-constexpr gp_scalar kCraftCmQCenter = static_cast<gp_scalar>(-1.0);   // 043 t6: re-centred on the measured-inertia fit (was -4.2 against I_yy 0.0013)
-constexpr gp_scalar kCraftCmQMin    = static_cast<gp_scalar>(-2.0);   // 043 t6 (was -5.0)
-constexpr gp_scalar kCraftCmQMax    = static_cast<gp_scalar>(-0.2);   // 043 t6 (was -3.6)
+// 044 FR-007 (operator 2026-10-19): centred at the MIDPOINT of the bare aircraft
+// (-1.0, the 043 t6 value the gen-488 FRF chose) and streamer-on (-3.5, the free-Cm
+// fit of the 2026-10-18 flight at I_yy 0.0094), spanning both; σ 0.5 puts 2.5σ on
+// the clamps. (043 t6: -1.0 in [-2.0, -0.2]; earlier -4.2 against I_yy 0.0013.)
+constexpr gp_scalar kCraftCmQCenter = static_cast<gp_scalar>(-2.25);
+constexpr gp_scalar kCraftCmQMin    = static_cast<gp_scalar>(-3.5);
+constexpr gp_scalar kCraftCmQMax    = static_cast<gp_scalar>(-1.0);
+
+// 044 FR-006 -- craftClP roll-damping axis. ABSOLUTE Cl_p + clamp, like craftCmQ.
+// The 2026-10-18 flight put the aircraft's roll corner near 5 Hz against the t6
+// sim's 1.1 Hz (Cl_p -0.135 at I_xx 0.0069); the class goes PART WAY (operator:
+// "part way to 5 Hz"): centre -0.36 = ~3.0 Hz at 15 m/s, clamps -0.60 (~5.0 Hz)
+// and -0.18 (~1.5 Hz); corner = q S b^2 |Cl_p| / (2 V I_xx) / 2pi, linear in Cl_p.
+// σ 0.10: 2.5σ reaches the fast clamp; the slow clamp bites. Aileron authority
+// scales with it (craftRollCoefficients) so the steady roll rate per aileron --
+// what INAV's roll feed-forward is tuned against -- is the same for every draw.
+constexpr gp_scalar kCraftClPCenter = static_cast<gp_scalar>(-0.36);
+constexpr gp_scalar kCraftClPMin    = static_cast<gp_scalar>(-0.60);
+constexpr gp_scalar kCraftClPMax    = static_cast<gp_scalar>(-0.18);
+
+/**
+ * 044 FR-006 -- the roll coefficients the FDM applies for a scenario.
+ *   Cl_p  = craftClP (absolute)
+ *   Cl_da = nominalClda * (craftClP / nominalClp) * (1 + craftRollEffDelta)
+ * so p_ss = Cl_da * 2V / (|Cl_p| b) equals the model's for every draw and the
+ * roll-effectiveness variation still applies on top. NaN craftClP (no autoc
+ * carrier: the step test, non-autoc runs) keeps the model's nominal Cl_p.
+ * The nominal pair is the model xml's (hb1_streamer.xml: -0.135 / 0.0633), so
+ * the ratio has one source. Raw double: FDM-side SCALAR math, not NN data.
+ */
+struct RollCoefficients {
+    double Cl_p;   // raw-ok: FDM aero coefficient (crrcsim SCALAR domain)
+    double Cl_da;  // raw-ok: FDM aero coefficient (crrcsim SCALAR domain)
+};
+inline RollCoefficients craftRollCoefficients(double craftClP, double craftRollEffDelta,  // raw-ok: FDM aero coefficients
+                                              double nominalClp, double nominalClda) {   // raw-ok: FDM aero coefficients
+    if (std::isnan(craftClP)) {
+        return {nominalClp, nominalClda * (1.0 + craftRollEffDelta)};
+    }
+    return {craftClP, nominalClda * (craftClP / nominalClp) * (1.0 + craftRollEffDelta)};
+}
 
 /**
  * Sigma parameters for craft variation draws. All in their respective
@@ -112,6 +151,7 @@ struct CraftSigmas {
     double craftAccelScaleSigma  = 0.0; // raw-ok: ini config-struct field. fraction; 2.5σ = ±5%
     double craftAccelBiasSigma   = 0.0; // raw-ok: ini config-struct field. g; from the 041-t7 audit (accel_y ~1.7σ)
     double craftCmQSigma         = 0.0; // raw-ok: ini config-struct field. Cm_q Gaussian width (center/clamp above)
+    double craftClPSigma         = 0.0; // raw-ok: ini config-struct field. 044 Cl_p Gaussian width (center/clamp above)
 };
 
 /**
@@ -157,6 +197,7 @@ struct CraftDeltas {
     gp_scalar craftAccelBiasY = static_cast<gp_scalar>(0.0);  // g
     gp_scalar craftAccelBiasZ = static_cast<gp_scalar>(0.0);  // g
     gp_scalar craftCmQ = kCraftCmQCenter;                     // pitch damping (absolute + clamp)
+    gp_scalar craftClP = kCraftClPCenter;                     // 044 roll damping (absolute + clamp)
 };
 
 /**
@@ -225,6 +266,13 @@ inline CraftDeltas generateCraftFromClassPRNG(
         gp_scalar cmq = kCraftCmQCenter
             + static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftCmQSigma));
         d.craftCmQ = std::min(kCraftCmQMax, std::max(kCraftCmQMin, cmq));
+    }
+    // 044 FR-006 -- craftClP roll damping, APPENDED LAST (every draw above keeps
+    // its value); drawn unconditionally at its own sigma (sigma 0 = the centre).
+    {
+        gp_scalar clp = kCraftClPCenter
+            + static_cast<gp_scalar>(craftPRNG.nextGaussian(sigmas.craftClPSigma));
+        d.craftClP = std::min(kCraftClPMax, std::max(kCraftClPMin, clp));
     }
     return d;
 }

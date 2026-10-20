@@ -646,7 +646,10 @@ struct EvalResults {
   // ⚠️ The pre-break comparator CSVs had to be extracted BEFORE this bump —
   // see specs/041-m2-depth/measure/README.md. After it, the t1 dmps are
   // unreadable by any current binary, permanently.
-  static constexpr std::uint32_t kSchemaVersion = 4;
+  // 044 US2 — v4 → v5: ScenarioMetadata (serialized in scenario + scenarioList)
+  // gained craftClP. A v4 dmp read by this binary would mis-frame every
+  // scenario record after the first. The 043 dmps are read by tag `043-final`.
+  static constexpr std::uint32_t kSchemaVersion = 5;
 
   template<class Archive>
   void serialize(Archive& ar, const std::uint32_t version) {
@@ -675,9 +678,10 @@ struct EvalResults {
           std::to_string(version) + ", this reader expects v" +
           std::to_string(kSchemaVersion) +
           (version < kSchemaVersion
-               ? " — the artifact predates the 041 contract break (FR-005) and"
-                 " cannot be read; re-bake it, or check out the code that"
-                 " produced it. There is deliberately no migration path."
+               ? " — the artifact predates this binary's schema and cannot be"
+                 " read; re-bake it, or check out the code that produced it"
+                 " (043 artifacts: tag 043-final). There is deliberately no"
+                 " migration path."
                : " — the artifact is NEWER than this binary; rebuild."));
     }
 
@@ -810,8 +814,8 @@ struct EvalResults {
 //
 // ⚠️ Keep this in step with EvalResults::kSchemaVersion — the static_assert
 // below makes a one-sided edit a compile error rather than a runtime surprise.
-CEREAL_CLASS_VERSION(EvalResults, 4)
-static_assert(EvalResults::kSchemaVersion == 4,
+CEREAL_CLASS_VERSION(EvalResults, 5)
+static_assert(EvalResults::kSchemaVersion == 5,
               "EvalResults::kSchemaVersion and CEREAL_CLASS_VERSION(EvalResults, N) "
               "must agree — bump both or neither.");
 

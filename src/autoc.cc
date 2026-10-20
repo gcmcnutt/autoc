@@ -569,7 +569,8 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
             || (gCraftSigmas.craftGyroScaleSigma  > 0.0)
             || (gCraftSigmas.craftAccelScaleSigma > 0.0)
             || (gCraftSigmas.craftAccelBiasSigma  > 0.0)
-            || (gCraftSigmas.craftCmQSigma        > 0.0));
+            || (gCraftSigmas.craftCmQSigma        > 0.0)
+            || (gCraftSigmas.craftClPSigma        > 0.0));   // 044 roll damping
 
     {
         std::ostringstream hdr;
@@ -577,7 +578,7 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
         if (any_craft_active) {
             hdr << "       cgU     drag    trimD    thrSc   pitEff   rolEff   svSlew   thrTau   pwmPh    CraftSeed"
                 << "   camYaw  camPit  camRol   camDx   camDy   camDz  camWng   CamSeed"
-                << "   misR  misP  misY    gyX    gyY    gyZ    acX    acY    acZ     abX     abY     abZ     cmQ";
+                << "   misR  misP  misY    gyX    gyY    gyZ    acX    acY    acZ     abX     abY     abZ     cmQ    clP";
         }
         // 044 FR-010 — full-strength wind-envelope draws (windMps "nan" = base speed).
         hdr << "  windMps  turbX gustLx thermX";
@@ -588,7 +589,7 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
         sep << "--------  -----------------  --------  ------  ------  ------  --------  ------  -----  -----";
         if (any_craft_active) {
             sep << "  --------  -------  -------  -------  -------  -------  -------  -------  -------  -------  -----------"
-                << "  ----  ----  ----  -----  -----  -----  -----  -----  -----  ------  ------  ------  ------";
+                << "  ----  ----  ----  -----  -----  -----  -----  -----  -----  ------  ------  ------  ------  -----";
         }
         sep << "  -------  -----  -----  -----";
         *logger.info() << sep.str() << endl;
@@ -677,7 +678,9 @@ static void logPrefetchedVariations(int numScenarios, int64_t seed) {
                  << setw(8) << static_cast<double>(cd.craftAccelBiasY)        // g
                  << setw(8) << static_cast<double>(cd.craftAccelBiasZ)        // g
                  << setprecision(2)
-                 << setw(7) << static_cast<double>(cd.craftCmQ);              // Cm_q
+                 << setw(7) << static_cast<double>(cd.craftCmQ)               // Cm_q
+                 << setprecision(3)
+                 << setw(7) << static_cast<double>(cd.craftClP);              // 044 Cl_p
         }
         // 044 FR-010 — wind-envelope draws at full strength.
         line << std::dec << std::setfill(' ') << std::fixed << std::setprecision(2)
@@ -1150,6 +1153,7 @@ static WorkerInit buildWorkerInit() {
                 meta.craftAccelBiasY = cd.craftAccelBiasY;
                 meta.craftAccelBiasZ = cd.craftAccelBiasZ;
                 meta.craftCmQ = cd.craftCmQ;
+                meta.craftClP = cd.craftClP;   // 044 FR-006
                 meta.craftSeed = gScenarioVariations[idx].craftSeed;
                 // (033 cleanup) rabbitSpeedSeed assignment removed — field
                 // deleted from ScenarioMetadata + ScenarioVariations.
@@ -2198,6 +2202,14 @@ int main(int argc, char** argv)
   gCraftSigmas.craftAccelScaleSigma  = cfg.craftAccelScaleSigma;
   gCraftSigmas.craftAccelBiasSigma   = cfg.craftAccelBiasSigma;
   gCraftSigmas.craftCmQSigma         = cfg.craftCmQSigma;
+  // 044 FR-006 — roll damping. Required when craft variations are on: a zero
+  // width would silently train every scenario on the class centre only.
+  gCraftSigmas.craftClPSigma         = cfg.craftClPSigma;
+  if (cfg.craftClPSigma < 0.0 || (cfg.enableCraftVariations != 0 && cfg.craftClPSigma <= 0.0)) {
+    throw std::runtime_error("CraftClPSigma = " + std::to_string(cfg.craftClPSigma) +
+                             " is invalid: must be > 0 with EnableCraftVariations = 1 (>= 0 otherwise). "
+                             "Per specs/044-m1-craft-history/contracts/config-keys.md.");
+  }
 
   // Initialize global rabbit speed config.
   // EnableRabbitSpeedVariations=0 forces sigma=0 regardless of the .ini value

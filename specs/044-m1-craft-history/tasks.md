@@ -98,46 +98,46 @@ delays modelled — all on the 45-input build. No `CMakeLists.txt` change in thi
 
 ### Tests (write first, see them fail)
 
-- [ ] T015 [P] [US2] In `tests/craft_variation_tests.cc` add `craftClP` draw tests (centre −0.36, clamp [−0.60, −0.18], σ from
+- [X] T015 [P] [US2] In `tests/craft_variation_tests.cc` add `craftClP` draw tests (centre −0.36, clamp [−0.60, −0.18], σ from
   `CraftClPSigma`) and re-pin `craftCmQ` to centre −2.25, clamp [−3.5, −1.0] (via the named constants)
-- [ ] T016 [P] [US2] In `tests/craft_variation_tests.cc` test the roll-coefficient helper `craftRollCoefficients(craftClP,
+- [X] T016 [P] [US2] In `tests/craft_variation_tests.cc` test the roll-coefficient helper `craftRollCoefficients(craftClP,
   craftRollEffDelta)` → `{Cl_p, Cl_da}`: `Cl_p == craftClP`; `Cl_da / |Cl_p|` equals the t6 reference ratio 0.0633/0.135 × (1 + delta)
   across the clamp (steady roll rate per aileron unchanged); NaN `craftClP` returns the reference pair × (1 + delta). The FDM calls
   this helper (T020), so the test covers what the FDM applies
-- [ ] T017 [P] [US2] In `tests/tick_rescale_tests.cc` (existing target — no CMakeLists change) test `FcSensorFilterChain`: gyro PT1
-  25 Hz ×3 and accel biquad 15 Hz ×3 stepped at 5 ms give low-frequency group delays ≈ 6.4 ms and ≈ 21 ms; the first sample seeds the
+- [X] T017 [P] [US2] In `tests/tick_rescale_tests.cc` (existing target — no CMakeLists change) test `FcSensorFilterChain`: gyro PT1
+  25 Hz ×3 and accel biquad 15 Hz ×3 stepped at 5 ms give low-frequency group delays ≈ 6.4 ms and ≈ 15 ms (not 21 ms — corrected at implementation); the first sample seeds the
   state; `reset` re-seeds; reading the chain every 4th sub-step (the 20 Hz gather) returns the filtered value at that sub-step, not
   the raw one
 
 ### Implementation
 
-- [ ] T018 [US2] `craftClP` axis: constants and draw in `include/autoc/eval/craft_variation.h` (`kCraftClPCenter/Min/Max`,
+- [X] T018 [US2] `craftClP` axis: constants and draw in `include/autoc/eval/craft_variation.h` (`kCraftClPCenter/Min/Max`,
   `craftClPSigma`, `craftRollCoefficients` with named refs −0.135 / 0.0633); `CraftClPSigma` in `include/autoc/util/config.h`;
   append `craftClP` LAST in `include/autoc/rpc/scenario_metadata.h` (and its `serialize`); draw, copy to metadata, `clP` scenario-table
   column and startup validation in `src/autoc.cc`; `CraftClPSigma = 0.10` in `autoc.ini` and `autoc-eval.ini`. `ScenarioMetadata` is
   serialized in the dmp, so bump `EvalResults::kSchemaVersion` 4 → **5** and its static_assert in `include/autoc/rpc/protocol.h`, with
   the honest-recording audit at the bump (research R1, R8, FR-006)
-- [ ] T019 [US2] Re-centre pitch damping: `kCraftCmQCenter −2.25`, clamp [−3.5, −1.0] in `include/autoc/eval/craft_variation.h`;
+- [X] T019 [US2] Re-centre pitch damping: `kCraftCmQCenter −2.25`, clamp [−3.5, −1.0] in `include/autoc/eval/craft_variation.h`;
   `CraftCmQSigma = 0.5` in `include/autoc/util/config.h`, `autoc.ini`, `autoc-eval.ini` (research R2, FR-007)
-- [ ] T020 [US2] crrcsim roll: `Global::craftClP` (NaN = unset) in `crrcsim/src/global.h` / `global.cpp`; set per scenario next to
+- [X] T020 [US2] crrcsim roll: `Global::craftClP` (NaN = unset) in `crrcsim/src/global.h` / `global.cpp`; set per scenario next to
   `craftCmQ` in `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp`; in `crrcsim/src/mod_fdm/fdm_larcsim/fdm_larcsim.{h,cpp}`
   add `nominal_Cl_p` beside `nominal_Cl_da` and set `Cl_p` / `Cl_da` from `craftRollCoefficients` — no inline formula (research R1)
-- [ ] T021 [US2] Sensor filters at the sub-step: `FcSensorFilterChain` in `include/autoc/eval/sensor_lpf.h` (built on its `Pt1Filter` /
+- [X] T021 [US2] Sensor filters at the sub-step: `FcSensorFilterChain` in `include/autoc/eval/sensor_lpf.h` (built on its `Pt1Filter` /
   `BiquadFilter`); `crrcsim/src/mod_inputdev/inputdev_autoc/inputdev_autoc.cpp` holds one per scenario, steps it in
   `autoc_apply_pending_substep` from the FDM body rates / specific force, has the 20 Hz gather read its output, resets it per scenario
   (research R3, FR-008)
-- [ ] T022 [US2] Honesty ladder 1 — step test: roll steps at 15 m/s with `crrcsim/models/hb1_streamer_steptest.xml` at `craftClP` centre
+- [X] T022 [US2] Honesty ladder 1 — step test: roll steps at 15 m/s with `crrcsim/models/hb1_streamer_steptest.xml` at `craftClP` centre
   and both clamps. **Pass**: roll corner within ±20 % of 3 / 5 / 1.5 Hz; steady roll rate per aileron within ±5 % of the t6 plant's at all
   three; at the fast clamp the rate loop's roll output stays below saturation for the step sizes used (record max |servo|). Record in
   `specs/044-m1-craft-history/honesty.md` (research R11)
-- [ ] T023 [US2] Honesty ladder 2 — closed-loop roll FRF of t6 g752 (setpoint → roll rate) on the new plant against the 2026-10-18 flight
+- [X] T023 [US2] Honesty ladder 2 — closed-loop roll FRF of t6 g752 (setpoint → roll rate) on the new plant against the 2026-10-18 flight
   blackbox: new script `specs/044-m1-craft-history/roll_frf_compare.py` (pattern of `specs/043-acro-dual-loop/frf_pitch_compare.py`,
   departed scenarios excluded); magnitude and phase 1–6 Hz, t6 plant vs new plant vs flight. **Recorded, not gated**, in `honesty.md`
-- [ ] T024 [US2] Honesty ladder 3 — equal-environment eval of t6 g752 (`EvalVariationScale = 1.0`, seed 20261018) on the t6 build
+- [X] T024 [US2] Honesty ladder 3 — equal-environment eval of t6 g752 (`EvalVariationScale = 1.0`, seed 20261018) on the t6 build
   (`043-final`) vs the new plant; `specs/043-acro-dual-loop/candidate_compare.py` 3–5 Hz roll share, calm and all. **Gate**: higher on
   the new plant in both subsets (toward the flight's 50 %). **If T022 or T024 fails**: stop before T025 — revise the class (centre, σ,
   `Cl_da` scaling) in research R1 and re-run the ladder; no baselines or smokes on a plant that failed it. Record in `honesty.md`
-- [ ] T025 [US2] Plant change in `crrcsim` committed on `044-m1-craft-history` and the submodule pointer bumped in autoc (submodule first,
+- [X] T025 [US2] Plant change in `crrcsim` committed on `044-m1-craft-history` and the submodule pointer bumped in autoc (submodule first,
   parent second)
 - [ ] T026 [US2] Gate-confirming clean `bash scripts/rebuild-perf.sh`, `ctest`, xiao build; take the **new tier-0 baselines** (t6 g752
   and g800 replays on the new plant + PRNG) and the eval-vs-training bitwise gate; replay one quiet tier (variations off) twice →

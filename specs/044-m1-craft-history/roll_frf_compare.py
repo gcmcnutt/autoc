@@ -70,13 +70,15 @@ def flight_frf(path, nseg):
                 pass
     t, sp, gy, fl = map(np.array, (t, sp, gy, fl))
     fs = 1e6 / np.median(np.diff(t))
-    print(f"\nFLIGHT {path}: {len(t)} samples at {fs:.0f} Hz (engaged spans > 5 s)")
+    if nseg <= 0:   # ~4 s segments at whatever rate the log was taken (1/8 rate = 240 Hz)
+        nseg = 1 << int(round(math.log2(4.0 * fs)))
+    print(f"\nFLIGHT {path}: {len(t)} samples at {fs:.0f} Hz (engaged spans > 5 s, {nseg}-sample segments)")
     mask = fl == 2
     e = np.diff(mask.astype(int)); st = list(np.where(e == 1)[0] + 1); en = list(np.where(e == -1)[0] + 1)
     if mask[0]: st = [0] + st
     if mask[-1]: en = en + [len(mask)]
     for s0, s1 in zip(st, en):
-        if (t[s1 - 1] - t[s0]) > 5e6:
+        if (t[s1 - 1] - t[s0]) > 5e6 and (s1 - s0) >= nseg:
             fr, H, coh = frf(sp[s0:s1], gy[s0:s1], fs, nseg)
             print(f"  engaged {t[s0]/1e6:6.1f}-{t[s1-1]/1e6:6.1f}s: {fmt(fr, H, coh, FREQS)}")
 
@@ -118,7 +120,7 @@ def main():
     ap.add_argument("--flight", help="blackbox CSV (blackbox_decode --stdout)")
     ap.add_argument("--sim", action="append", default=[], help="LABEL:dmp-dump tick CSV (repeatable)")
     ap.add_argument("--maxrate", type=float, default=360.0, help="sim roll maxRate, deg/s")
-    ap.add_argument("--nseg-flight", type=int, default=4096)
+    ap.add_argument("--nseg-flight", type=int, default=0, help="FFT segment (0 = ~4 s at the log rate)")
     ap.add_argument("--clp", action="append", type=float, default=[], help="Cl_p for the model rows (repeatable)")
     ap.add_argument("--V", type=float, default=15.0)
     a = ap.parse_args()

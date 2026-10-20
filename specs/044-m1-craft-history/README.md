@@ -67,7 +67,7 @@ so the damping term is mostly out of its reach ([policy-temporal-view.md](../043
   flight's 50 %.
 - **FR-007 Pitch damping spans the streamer.** Re-centre `CraftCmQ` to cover bare → streamer-on (≈ −0.5 … −4, centre ≈ −2; the 10-18
   airframe fit gives streamer-on ≈ −3.5, the t6 class covered −2.0 … −0.2). *Accept*: class range and centre recorded with the fit.
-- **FR-008 FC sensor filter delays.** Model the FC's gyro PT1 25 Hz (~6.4 ms) and accel biquad 15 Hz (~21 ms) at the 5 ms FDM sub-step
+- **FR-008 FC sensor filter delays.** Model the FC's gyro PT1 25 Hz (~6.4 ms) and accel biquad 15 Hz (~15 ms; ~21 ms was a mis-derivation, corrected in 044 T017) at the 5 ms FDM sub-step
   (`sensor_lpf.h` option a). *Accept*: step input shows the expected group delays; g752 eval moves by a recorded, small amount.
 
 ### Baseline-boundary fixes (044 starts new baselines anyway)

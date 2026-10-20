@@ -202,7 +202,8 @@ bit-for-bit identical.
   and the streamer-on damping measured in the 2026-10-18 flight (≈ −2 in model units) and span **bare (≈ −1.0) through streamer-on
   (≈ −3.5)**.
 - **FR-008 Flight-controller sensor delays.** The simulator MUST reproduce the flight controller's gyro and accelerometer filter delays
-  (~6 ms and ~21 ms) on the signals the policy reads.
+  (~6 ms and ~15 ms — corrected 2026-10-19 from ~21 ms, the critically-damped figure; the Q 0.707 biquad's is 2ζ/ωn) on the signals
+  the policy reads.
 
 ### Functional Requirements — baseline-boundary fixes
 

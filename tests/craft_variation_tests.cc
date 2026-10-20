@@ -249,6 +249,7 @@ TEST(CraftVariation, ScenarioMetadataRoundTripsAllCraftFields) {
     src.pathVariantIndex = 3;
     src.windVariantIndex = 17;
     src.scenarioSequence = 42;
+    src.craftClP = static_cast<gp_scalar>(-0.52);   // 044 — appended LAST
 
     std::stringstream buf;
     {
@@ -276,6 +277,7 @@ TEST(CraftVariation, ScenarioMetadataRoundTripsAllCraftFields) {
     EXPECT_EQ(dst.pathVariantIndex, src.pathVariantIndex);
     EXPECT_EQ(dst.windVariantIndex, src.windVariantIndex);
     EXPECT_EQ(dst.scenarioSequence, src.scenarioSequence);
+    EXPECT_EQ(dst.craftClP, src.craftClP);
 }
 
 // ============================================================================
@@ -383,17 +385,20 @@ TEST(CraftVariationImu, CraftCmQCentersAndClamps) {
     using autoc::eval::kCraftCmQCenter;
     using autoc::eval::kCraftCmQMin;
     using autoc::eval::kCraftCmQMax;
-    EXPECT_EQ(kCraftCmQCenter, static_cast<gp_scalar>(-1.0));   // 043 t6 (was -4.2)
-    EXPECT_EQ(kCraftCmQMin, static_cast<gp_scalar>(-2.0));      // 043 t6 (was -5.0)
-    EXPECT_EQ(kCraftCmQMax, static_cast<gp_scalar>(-0.2));      // 043 t6 (was -3.6)
+    // 044 FR-007: centred at the midpoint of bare (-1.0) and streamer-on (-3.5,
+    // the 2026-10-18 flight fit), spanning both (043 t6 was -1.0 in [-2.0, -0.2]).
+    EXPECT_EQ(kCraftCmQCenter, static_cast<gp_scalar>(-2.25));
+    EXPECT_EQ(kCraftCmQMin, static_cast<gp_scalar>(-3.5));
+    EXPECT_EQ(kCraftCmQMax, static_cast<gp_scalar>(-1.0));
 
     // σ=0 → exactly the center.
     { CraftSigmas z; ClassPRNG p(0x1u);
       EXPECT_EQ(generateCraftFromClassPRNG(p, z).craftCmQ, kCraftCmQCenter); }
 
     // σ=0.6 over many seeds: every draw in-range; 2.5σ = 1.5 overshoots both
-    // clamps (-2.5 / +0.5), so the extremes must sit AT the clamps — proving the
-    // clamp and the reach are both correct.
+    // clamps (-3.75 / -0.75), so the extremes must sit AT the clamps — proving the
+    // clamp and the reach are both correct. (The operating σ is 0.5: 2.5σ = the
+    // clamps exactly.)
     CraftSigmas s; s.craftCmQSigma = 0.6;
     gp_scalar lo = kCraftCmQMax, hi = kCraftCmQMin;
     for (uint32_t seed = 1; seed <= 5000; ++seed) {
@@ -403,8 +408,85 @@ TEST(CraftVariationImu, CraftCmQCentersAndClamps) {
         EXPECT_LE(v, kCraftCmQMax);
         lo = std::min(lo, v); hi = std::max(hi, v);
     }
-    EXPECT_LT(lo, static_cast<gp_scalar>(-1.95));   // reaches the -2.0 floor
-    EXPECT_GT(hi, static_cast<gp_scalar>(-0.25));   // reaches the -0.2 ceiling
+    EXPECT_LT(lo, static_cast<gp_scalar>(-3.45));   // reaches the -3.5 floor
+    EXPECT_GT(hi, static_cast<gp_scalar>(-1.05));   // reaches the -1.0 ceiling
+}
+
+// ============================================================================
+// 044 US2 (FR-006) — craftClP roll-damping axis + roll-authority scaling.
+// ============================================================================
+
+// Absolute Cl_p, Gaussian about a centre on a ~3 Hz roll corner at 15 m/s
+// (I_xx 0.0069), clamped to the ~5 Hz .. ~1.5 Hz span. APPENDED as the last
+// craft draw so every earlier draw keeps its value.
+TEST(CraftVariationRoll, CraftClPCentersAndClamps_044) {
+    using autoc::eval::kCraftClPCenter;
+    using autoc::eval::kCraftClPMin;
+    using autoc::eval::kCraftClPMax;
+    EXPECT_EQ(kCraftClPCenter, static_cast<gp_scalar>(-0.36));
+    EXPECT_EQ(kCraftClPMin, static_cast<gp_scalar>(-0.60));
+    EXPECT_EQ(kCraftClPMax, static_cast<gp_scalar>(-0.18));
+
+    { CraftSigmas z; ClassPRNG p(0x1u);
+      EXPECT_EQ(generateCraftFromClassPRNG(p, z).craftClP, kCraftClPCenter); }
+
+    // σ 0.10: 2.5σ = 0.25 reaches -0.61 (fast clamp -0.60) and -0.11 (slow clamp
+    // -0.18 bites), so both clamps are reached over many seeds.
+    CraftSigmas s; s.craftClPSigma = 0.10;
+    gp_scalar lo = kCraftClPMax, hi = kCraftClPMin;
+    for (uint32_t seed = 1; seed <= 5000; ++seed) {
+        ClassPRNG p(seed);
+        const gp_scalar v = generateCraftFromClassPRNG(p, s).craftClP;
+        EXPECT_GE(v, kCraftClPMin);
+        EXPECT_LE(v, kCraftClPMax);
+        lo = std::min(lo, v); hi = std::max(hi, v);
+    }
+    EXPECT_LT(lo, static_cast<gp_scalar>(-0.58));
+    EXPECT_EQ(hi, kCraftClPMax);
+}
+
+// The wire struct's defaults are the class centres (a meta built without a draw
+// — e.g. craft variations off — describes the nominal craft, not a stale value).
+TEST(CraftVariationRoll, MetadataDefaultsAreTheClassCentres_044) {
+    const ScenarioMetadata m;
+    EXPECT_EQ(m.craftClP, autoc::eval::kCraftClPCenter);
+    EXPECT_EQ(m.craftCmQ, autoc::eval::kCraftCmQCenter);
+}
+
+// Appended last: turning craftClPSigma on changes NO earlier draw.
+TEST(CraftVariationRoll, CraftClPAppendedLeavesEarlierDrawsUnchanged_044) {
+    CraftSigmas base = preExistingSigmas(); base.craftCmQSigma = 0.5;
+    CraftSigmas withClP = base; withClP.craftClPSigma = 0.10;
+    ClassPRNG pa(0xC0FFEEu), pb(0xC0FFEEu);
+    const CraftDeltas a = generateCraftFromClassPRNG(pa, base);
+    const CraftDeltas b = generateCraftFromClassPRNG(pb, withClP);
+    EXPECT_EQ(a.craftCGDelta, b.craftCGDelta);
+    EXPECT_EQ(a.craftRollEffDelta, b.craftRollEffDelta);
+    EXPECT_EQ(a.craftServoPwmPhase, b.craftServoPwmPhase);
+    EXPECT_EQ(a.craftCmQ, b.craftCmQ);
+    EXPECT_EQ(a.craftClP, autoc::eval::kCraftClPCenter);
+    EXPECT_NE(b.craftClP, autoc::eval::kCraftClPCenter);
+}
+
+// FR-006: aileron authority scales WITH roll damping so the steady roll rate
+// per aileron, p_ss = Cl_da * 2V / (|Cl_p| * b), is unchanged for every draw;
+// craftRollEffDelta still applies on top. The FDM sets Cl_p / Cl_da from this
+// helper and nothing else, so this test covers what the FDM applies. NaN
+// craftClP (non-autoc runs, e.g. the step test without a carrier) keeps the
+// model's nominal pair.
+TEST(CraftVariationRoll, RollCoefficientsKeepSteadyRollRatePerAileron_044) {
+    using autoc::eval::craftRollCoefficients;
+    const double nomClp = -0.135, nomClda = 0.0633;   // hb1_streamer.xml (t6)
+    for (double clp : {-0.60, -0.48, -0.36, -0.24, -0.18}) {
+        for (double eff : {0.0, 0.05, -0.05}) {
+            const auto rc = craftRollCoefficients(clp, eff, nomClp, nomClda);
+            EXPECT_DOUBLE_EQ(rc.Cl_p, clp);
+            EXPECT_NEAR(rc.Cl_da / std::abs(rc.Cl_p), (nomClda / std::abs(nomClp)) * (1.0 + eff), 1e-12);
+        }
+    }
+    const auto unset = craftRollCoefficients(std::nan(""), 0.05, nomClp, nomClda);
+    EXPECT_DOUBLE_EQ(unset.Cl_p, nomClp);
+    EXPECT_DOUBLE_EQ(unset.Cl_da, nomClda * 1.05);
 }
 
 // T020 — craftCGDelta and craftCmQ are INDEPENDENT draws: they do not
