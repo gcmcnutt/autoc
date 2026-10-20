@@ -41,7 +41,7 @@ Commits *(fill at launch)*: autoc `…`, crrcsim `…`; `autoc.ini` as-run snaps
 | index-free gate | clean (168 files); layout change touched only the layout header, topology, recording sites, schema bump and one flight-log scale range |
 | 53-input baseline (T046) | eval-vs-training bitwise: `NN_EVAL_SAME -5.443911` on a 3-gen smoke-regiment run |
 | ctest / xiao | 55/55; `pio run` SUCCESS with a 53-input program |
-| attribution (SC-006) | *(smokes A / B — `../MANIFEST.md` § SC-006; the bake keeps history either way)* |
+| attribution (SC-006) | **not met** — history arm no smoother in 200 gens (late medians 3–5 Hz roll 132 vs 94 °/s, pitch 86 vs 78); early pitch advantage gens 51–101; bake keeps history (clarification 1) — `../MANIFEST.md` § SC-006 |
 | ⛔ **pre-run gate at launch** (Constitution IX) | clean `scripts/rebuild-perf.sh` + `ctest` on the launch commit — **after both smokes have finished** (no rebuild while a run trains) |
 
 ## 4. What is and is not comparable

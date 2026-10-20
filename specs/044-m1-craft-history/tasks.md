@@ -227,7 +227,7 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
   log decodes in both decoders, and an engage plus a companion reboot mid-log show history pre-filled (no zero rows); new tier-0 baselines
   on the 53-input build. **"Just works" check**: list the files T043–T045 changed beyond `nn_inputs.h`, `topology.h`, the recording sites
   and the tests — each one is a missed index, fixed and added to the gate's patterns; record in `MANIFEST.md`
-- [ ] T047 [US1] **Smoke B** (plant + history) from the main tree: `bash scripts/train.sh specs/044-m1-craft-history/smoke.ini
+- [X] T047 [US1] **Smoke B** (plant + history) from the main tree: `bash scripts/train.sh specs/044-m1-craft-history/smoke.ini
   logs/autoc-044-smokeB-history.log`; when both have finished, `scripts/generate_pngs.sh m1 logs/autoc-044-smokeB-history.log --compare
   smokeA:logs/autoc-044-smokeA-plant.log` and record **SC-006**: A's generation of best smoothness (pitch and roll), B's first generation
   at or below that on both axes with `pctInStreak` ≥ A's at the same generation; met if B's generation is earlier. Recorded either way —

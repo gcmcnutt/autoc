@@ -174,3 +174,29 @@ Tag `044-last-45in` = the commit that records this section (local; operator push
 | S3 prefix | `s3://autoc-m1/autoc-9223370244382121270-2026-10-20T05:04:14.537Z/` |
 | same air as A | identical scenario seed table (first `0x47f0c932034184e8`, last `0x2de4297d30eb3c6d`), PathSeed 13337, scenario 0 row identical |
 | note | runs concurrently with smoke A (shared CPUs: both slower, results unaffected) |
+
+## § SC-006 — attribution result (T047) — 2026-10-20
+
+Both smokes completed 200 generations, `NN_ELITE_DIVERGED` 0 in each. Final elites: A (plant only, 45 in) −14060.83, pctInStreak 23.0 %;
+B (plant + history, 53 in) −12411.17, 22.1 %. Summaries: `smokes/pcyc-smokeA.csv`, `smokes/pcyc-smokeB.csv` (pitch_cycle_progress v2,
+stride 5; A built with the `044-last-45in` worktree's tools), report `smokes/pcyc-smokeB.png` (A dashed). Calculator `sc006.py`
+(tracking floor 0.5 × A's best pctInStreak = 12.2 %).
+
+**SC-006: NOT met.** A's best 3–5 Hz RMS: pitch 61.1 °/s (gen 176), roll 45.3 °/s (gen 161) → G_A = 176; B never reaches both at
+matched tracking.
+
+| | gen 51 | 76 | 101 | 126 | 151 | 176 | 200 | gens 151–200 median |
+|---|---|---|---|---|---|---|---|---|
+| A 3–5 Hz pitch / roll (°/s) | 94 / 166 | 87 / 181 | 101 / 129 | 78 / 131 | 87 / 156 | 61 / 94 | 83 / 70 | **78 / 94** |
+| B 3–5 Hz pitch / roll (°/s) | 78 / 196 | 71 / 161 | 75 / 148 | 87 / 163 | 93 / 134 | 86 / 132 | 99 / 150 | **86 / 132** |
+| pctInStreak A / B (%) | 7.5 / 8.0 | 10.0 / 13.3 | 16.5 / 15.9 | 18.5 / 18.9 | 20.0 / 19.8 | 22.3 / 21.0 | 23.0 / 22.1 | **22.9 / 20.8** |
+
+Reading: with history the elite was smoother in **pitch through gens 51–101** and then lost that; late, it is rougher in roll and a
+little behind on tracking. Caveats: one seed per arm, one elite per sampled generation (A's own roll swings 70–156 °/s between
+neighbouring samples), 200 generations, and B carries 256 more weights to fit — "no advantage shown in the smoke", not "history hurts".
+Both arms sit well above the flight target for roll (SC-001 < 82 °/s), which the honest roll plant now charges. **The bake carries the
+history inputs regardless** (clarification 1, FR-012); the smoke is recorded as evidence. Worth watching in the bake: the roll rows of
+the run report against t6, and whether the early pitch advantage reappears at full scale.
+
+Smoke A's log is copied to `logs/autoc-044-smokeA-plant.log`; the worktree is removed (rebuild tag `044-last-45in` to read smoke A's
+v5 dmps again).
