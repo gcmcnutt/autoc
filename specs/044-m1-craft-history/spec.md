@@ -32,8 +32,9 @@ honest, and confirmed the measured pitch inertia within ~10 %. It left two thing
 
 And the policy has **no history of any of its own sensors**: it remembers its previous command, not what the airframe did, so the
 damping term is largely out of its reach. 044 gives the policy that history, makes the roll airframe partly honest, and proves the
-result in one flight. It is deliberately **lean — one bake, one flight** — so M2 ([045](../045-m2-tracking/README.md)) can start on the
-updated M1 stack; M2 is the ultimate goal and inherits everything here.
+result in flight. It is planned as **one bake and one flight**, but **045 M2 does not start until the roll and pitch criteria
+(SC-001, SC-002) are met in flight** — further bake / flight cycles inside 044 if needed. M2 ([045](../045-m2-tracking/README.md))
+is the ultimate goal and inherits everything here.
 
 ### Decisions already made (not reopened)
 
@@ -41,6 +42,16 @@ updated M1 stack; M2 is the ultimate goal and inherits everything here.
   loop stay on the flight controller. Embedding the IMU / GPS / fast loop on the companion computer is a later hardware step.
 - **Objective, selection and training regime are unchanged from t6**, so the 044 flight compares cleanly with the t6 flight.
 - **The flight-controller configuration is frozen** at the 2026-10-18 configuration of record.
+
+## Clarifications
+
+### Session 2026-10-19
+
+- Q: If the attribution smokes falsify the history inputs, what does the bake carry? → A: Bake with history regardless; the smoke result is recorded as evidence.
+- Q: If the 044 flight misses its success criteria, what happens? → A: Hold 045 until the roll and pitch criteria (SC-001, SC-002) are met in flight.
+- Q: How much improvement counts as meeting SC-001 / SC-002? → A: At least 15 % below the reference flight (above the ~3 % flight-to-flight spread).
+- Q: Where does the pitch damping class centre? → A: At the midpoint (≈ −2 in model units), spanning bare (≈ −1.0) to streamer-on (≈ −3.5).
+- Q: What flight conditions make the acceptance flight valid? → A: Any conditions; compare as flown (wind recorded with the results).
 
 ---
 
@@ -57,7 +68,7 @@ to damp the airframe rather than dither against it.
 layout that M2 inherits.
 
 **Independent Test**: a smoke run with the history inputs against a smoke run without them, on the same plant, reaches the same
-pitch / roll smoothness faster (the falsifier: if not, the input change failed).
+pitch / roll smoothness faster (the falsifier: if not, the input change failed — recorded as evidence; the bake keeps the inputs).
 
 **Acceptance Scenarios**:
 
@@ -97,7 +108,7 @@ it with the 043 procedure, and judges it against the 2026-10-18 flight.
 **Why this priority**: the feature exists to produce a flight-proven improvement; everything else serves this.
 
 **Independent Test**: the flight is analyzed with the same scripts as the reference flight and each success criterion is reported as
-met / not met with its number.
+met / not met with its number. A miss on SC-001 or SC-002 starts another bake / flight cycle; 045 is held until both pass.
 
 **Acceptance Scenarios**:
 
@@ -172,8 +183,9 @@ bit-for-bit identical.
   ~5 Hz; the t6 simulator 1.1 Hz). Aileron authority MUST scale with roll damping so the steady roll rate per aileron is unchanged.
   A roll honesty check (step response; closed-loop roll response against the 2026-10-18 flight; gen 752 showing more 3–5 Hz roll on
   the new plant) MUST pass before any bake.
-- **FR-007 Pitch damping spans the streamer.** The pitch damping class MUST cover the bare aircraft through the streamer-on damping
-  measured in the 2026-10-18 flight (about 3.5× the bare value), weighted toward how the aircraft is flown.
+- **FR-007 Pitch damping spans the streamer.** The pitch damping class MUST be centred at the **midpoint** between the bare aircraft
+  and the streamer-on damping measured in the 2026-10-18 flight (≈ −2 in model units) and span **bare (≈ −1.0) through streamer-on
+  (≈ −3.5)**.
 - **FR-008 Flight-controller sensor delays.** The simulator MUST reproduce the flight controller's gyro and accelerometer filter delays
   (~6 ms and ~21 ms) on the signals the policy reads.
 
@@ -189,8 +201,11 @@ bit-for-bit identical.
 ### Functional Requirements — process
 
 - **FR-012 Attribution smokes.** Two short training runs on the new plant MUST precede the bake: plant only (45 inputs) and plant plus
-  history (53). They decide whether the history inputs earn their place (User Story 1's falsifier).
-- **FR-013 One bake.** One full **800-generation** bake on the t6 regiment with the new plant and inputs; its run record (manifest) is
+  history (53). They test whether the history inputs earn their place (User Story 1's falsifier); the result is recorded either way, and the
+  bake carries the history inputs **regardless** (the layout break is needed for M2, and a short smoke can understate a learnability gain).
+- **FR-013 Bake until the flight passes.** One full **800-generation** bake on the t6 regiment with the new plant and inputs is the
+  plan; if its flight misses SC-001 or SC-002, 044 continues with a corrective bake and flight (cause analysed first, one change at a
+  time where possible) and 045 waits. Each bake's run record (manifest) is
   written before launch, and the run report gains roll smoothness panels beside pitch.
 - **FR-014 Fair pick, frozen procedure.** The flight candidate MUST be chosen in one identical full-strength environment (never-trained
   scenarios), then flown with the 043 procedure: frozen flight-controller configuration, servo and attitude logging, streamer state per
@@ -213,12 +228,14 @@ bit-for-bit identical.
 ## Success Criteria *(mandatory)*
 
 Measured on the 044 flight against the 2026-10-18 reference flight, same aircraft, streamer configuration and flight-controller
-configuration, with the reference flight's analysis scripts.
+configuration, with the reference flight's analysis scripts. The acceptance flight is valid in **any conditions** and is compared as
+flown; wind speed and direction are recorded with the results.
 
 ### Measurable Outcomes
 
-- **SC-001**: 3–5 Hz roll-rate RMS **below 97 °/s**.
-- **SC-002**: 3–5 Hz pitch-rate RMS **below 56 °/s**, and 2–3 Hz pitch-rate RMS **no higher than 51 °/s**.
+- **SC-001**: 3–5 Hz roll-rate RMS **at least 15 % below the reference: < 82 °/s** (reference 97 °/s).
+- **SC-002**: 3–5 Hz pitch-rate RMS **at least 15 % below the reference: < 48 °/s** (reference 56 °/s), and 2–3 Hz pitch-rate RMS
+  **no higher than 51 °/s**. (15 % sits well above the ~3 % spread between the two reference flights.)
 - **SC-003**: Tracking does not regress — median distance to the target within the reference flight's 9–14 m — and no new crash or
   failsafe mode appears.
 - **SC-004**: The roll response corner identified from the flight lies **inside the roll damping class range** (the plant change is
@@ -230,7 +247,8 @@ configuration, with the reference flight's analysis scripts.
 
 ## Assumptions
 
-- Article 1 flies, with the full streamer, at ~15 m/s median airspeed, in calm-to-moderate wind like the reference flight.
+- Article 1 flies, with the full streamer, at ~15 m/s median airspeed; flight-day wind is recorded but does not invalidate the
+  acceptance flight.
 - The roll inertia (0.0069 kg·m²) stays provisional; the roll requirement fixes the measured *ratio* of roll damping to inertia, not
   the inertia.
 - The t6 training regiment (population, 294 scenarios, wind envelope, variation ramp) is reused unchanged.
