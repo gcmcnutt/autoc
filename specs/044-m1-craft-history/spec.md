@@ -52,6 +52,8 @@ is the ultimate goal and inherits everything here.
 - Q: How much improvement counts as meeting SC-001 / SC-002? → A: At least 15 % below the reference flight (above the ~3 % flight-to-flight spread).
 - Q: Where does the pitch damping class centre? → A: At the midpoint (≈ −2 in model units), spanning bare (≈ −1.0) to streamer-on (≈ −3.5).
 - Q: What flight conditions make the acceptance flight valid? → A: Any conditions; compare as flown (wind recorded with the results).
+- Operator direction (planning, 2026-10-19): genome extraction, firmware code generation and the companion firmware are in scope, and the
+  layout change must "just work" with no hard-coded input indices — enforced by a gate (FR-016).
 
 ---
 
@@ -78,6 +80,10 @@ pitch / roll smoothness faster (the falsifier: if not, the input change failed �
    two input vectors are identical, history included.
 3. **Given** a flight log recorded with the new layout, **When** an old decoder reads it, **Then** it refuses the file with a version
    error rather than mis-reading columns.
+4. **Given** a genome trained on one layout, **When** firmware is generated or built for a different layout (even with the same input
+   count), **Then** generation or the build fails with a layout-signature error.
+5. **Given** the finished format break, **When** the test suite runs, **Then** the index-free check finds no literal input index or
+   count in any hand-written consumer.
 
 ---
 
@@ -146,7 +152,8 @@ bit-for-bit identical.
   reading, never left at zero (a zero gyro history reads as a violent rate step).
 - **Departed flights**: a tumbling scenario produces body rates far outside the training range; analyses that fit models to flight or
   simulator data exclude them, as 043's tools do.
-- **Old artifacts**: 45-input genomes and data cannot be evaluated by the new build; they must stay readable from an archive or a tagged
+- **Old artifacts**: 45-input genomes and data cannot be evaluated by the new build — extraction and code generation refuse them by
+  layout signature rather than mis-wiring them; they must stay readable from an archive or a tagged
   build.
 - **Roll class extremes**: at the fast end of the class, scaling aileron authority with roll damping must not leave the inner loop
   saturating; the step test covers both ends.
@@ -170,9 +177,17 @@ bit-for-bit identical.
 - **FR-003 Adjacent layout, shared with M2.** Each sensor's history MUST sit next to its current value, oldest first (as the target
   history already does), in the craft block shared by the M1 and M2 input vectors. M2 keeps the same craft history; the block is
   designed now so 045 needs no second break of it.
-- **FR-004 Complete format break.** Every consumer of the input layout MUST move in one change: simulator, companion firmware, flight
-  log (with a format-version bump so old decoders refuse new logs), training and dump formats, the three hand-maintained decoders /
-  name lists, the tests, and 043's analysis scripts (ported to read by name). Historical scripts of earlier features stay unchanged.
+- **FR-004 Complete format break.** Every consumer of the input layout MUST move in one change: simulator, **genome extraction,
+  firmware code generation and the companion firmware**, flight log (with a format-version bump so old decoders refuse new logs),
+  training and dump formats, the decoders, the tests, and 043's analysis scripts (ported to read by name). Historical scripts of
+  earlier features stay unchanged.
+- **FR-016 Index-free layout gate.** The layout change MUST work by renaming and reordering in one place. (a) No hand-written
+  consumer — C++, Python or browser decoder — may index input slots or state input counts with literal numbers; an automated check
+  in the test suite enforces this and runs **before** the break (fixing what it finds) and **after** it. (b) Slot names and count travel
+  **with the artifacts**: the flight log header carries the ordered slot-name table, and decoders derive names and count from it
+  instead of keeping their own lists. (c) A **layout signature** (hash of the ordered slot names and the layout version) is carried in
+  the genome file, emitted and asserted by the generated firmware, and written in the flight log header; a genome, firmware or log
+  from a different layout MUST fail loudly at extraction, code generation, firmware build or decode — including a same-count reorder.
 - **FR-005 Preserve the past before breaking it.** Before the break, the last 45-input build MUST be tagged and the data and evaluation
   results of the flown genomes (t5 gen 488, t6 gen 752) and the t6 final elite archived.
 

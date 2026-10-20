@@ -60,11 +60,18 @@ Scenario table gains `windMps, turbX, gustLx, thermX` — full-strength values o
 |---|---|---|---|
 | `EvalVariationScale` | double | −1 | −1 = weights file's stored scale (today); 0…1 overrides; anything else rejected at startup |
 
+## Layout signature (new)
+
+- `kNNInputLayoutSignature` = FNV-1a 64 over the ordered slot display names + layout version, derived from the metadata table.
+- Carried in: NN01 genome file (format version bump, new u64 field), generated firmware (`static_assert`), flight log v6 header.
+- Checked by: `nnextractor`, `nn2cpp` (refuse mismatch or count ≠ `NN_INPUT_COUNT`), firmware build, both log decoders.
+
 ## Versioned artifacts
 
 | artifact | before | after |
 |---|---|---|
 | `EvalResults` (dmp) `kSchemaVersion` | 4 | **5** |
 | xiao flight log `kFormatVersion` | 5 | **6** |
-| NN input layout marker | v3 | **v4** |
+| NN input layout marker | v3 | **v4** (+ layout signature) |
+| NN01 genome file format version | current | **+1** (adds layout signature) |
 | `data.dat` header | 45 inputs | 53 (derived from the metadata table) |

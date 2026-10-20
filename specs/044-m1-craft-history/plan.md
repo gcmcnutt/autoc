@@ -32,7 +32,7 @@ No NEEDS CLARIFICATION remain (spec clarified; plan-level unknowns resolved in [
 
 | principle | how 044 complies | status |
 |---|---|---|
-| I Testing-first | tests before code for: history ring + pre-fill, sim/xiao vector equality, layout asserts, stream independence, `craftClP` draw/clamp + `Cl_da` scaling, eval-scale key validation, flight-log v6 round trip | ✅ |
+| I Testing-first | tests before code for: the index-free check and layout-signature refusals, history ring + pre-fill, sim/xiao vector equality, layout asserts, stream independence, `craftClP` draw/clamp + `Cl_da` scaling, eval-scale key validation, flight-log v6 round trip | ✅ |
 | II Build stability | `rebuild.sh` + ctest + xiao `pio run` at every commit | ✅ |
 | III No compatibility shims | one clean format break; all callers updated; `recordErrorHistory` signature change forces both call sites | ✅ |
 | IV Unified build | header-only additions expected; any CMakeLists change → clean `rebuild-perf.sh` (operator) | ✅ |
@@ -54,10 +54,10 @@ specs/044-m1-craft-history/
 ├── README.md            # derivation of record + code scan
 ├── spec.md              # governs (clarified 2026-10-19)
 ├── plan.md              # this file
-├── research.md          # Phase 0 (R1–R13)
+├── research.md          # Phase 0 (R1–R14)
 ├── data-model.md        # Phase 1
 ├── quickstart.md        # Phase 1 operator runbook
-├── contracts/           # nn-input-layout-v4, flight-log-v6, config-keys, scenario-table
+├── contracts/           # nn-input-layout-v4, flight-log-v6, nn01-genome, config-keys, scenario-table
 ├── checklists/requirements.md
 └── tasks.md             # Phase 2 (/speckit.tasks — not created here)
 ```
@@ -73,7 +73,8 @@ include/autoc/rpc/         scenario_metadata.h (craftClP), protocol.h (schema 5)
 src/                       autoc.cc (draw/log/eval scale), nn/evaluator.cc (gather), nn/mode.cc, util/scenario_prng.cc
 crrcsim/src/               global.{h,cpp} (craftClP), mod_fdm/fdm_larcsim (Cl_p/Cl_da), mod_inputdev/inputdev_autoc (record,
                            sensor filters at sub-step, tracker helper)
-tools/                     dmp_dump.cc, nn2cpp.cc, renderer.cc
+tools/                     dmp_dump.cc, nn2cpp.cc (layout signature assert), nnextractor.cc (signature/count refusal), renderer.cc
+src/nn/serialization.cc    NN01 version bump + layout signature
 xiao/                      include/flight_log_format.h (v6), src/msplink.cpp (record), web/flight_logger.html (decoder)
 src/analytics/             flightlog_decode.py (INPUT_NAMES v4), input_investment.py, pitch_cycle_progress.py (+roll)
 specs/043-acro-dual-loop/  analysis scripts ported to read columns by name
@@ -90,7 +91,9 @@ tests/                     the 14 layout tests + new tests listed under Principl
    (FR-006…008, research R11).
 4. **Baseline fixes** — stream independence, wind-draw columns, `EvalVariationScale`; new tier-0 baselines (FR-009…011). → tag.
 5. **Smoke A** (plant only, 45 inputs) (FR-012).
-6. **Format break** — layout v4, recording on both targets, versions, decoders, tests, script ports (FR-001…004).
+6. **Format break** — **index-free gate first** (check added to ctest, existing literal hits fixed, flight-log header name table,
+   layout signature in NN01 / nn2cpp / logs — FR-016), then layout v4, recording on both targets, versions, `nnextractor` / `nn2cpp` /
+   xiao regenerate and build, decoders, tests, script ports (FR-001…004); the gate passes again after the break.
 7. **Smoke B** (plant + history) → SC-006 recorded.
 8. **Bake** `autoc-044-t1-…`, 800 gens, MANIFEST first (FR-013).
 9. **Pick → fly → judge** (FR-014, SC-001…005); miss on SC-001/002 → another cycle; 045 waits.

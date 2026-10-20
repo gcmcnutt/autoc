@@ -123,3 +123,19 @@ thresholds) is in [README.md](README.md) and the 043 documents it cites; this fi
 
 - **Decision**: extend `pitch_cycle_progress.py` with roll rows (roll-rate RMS, 3–5 Hz roll share) — it already logs roll cap and
   flips — and port the 043 analysis scripts to read columns by name.
+
+## R14. Index-free layout gate (FR-016, operator direction 2026-10-19)
+
+- **Decision**: (a) a test-suite check (ctest) that scans hand-written consumers — `src/`, `include/`, `tools/`, `xiao/src`,
+  `xiao/include`, `xiao/web`, `src/analytics/` and the 044-ported scripts (generated files excluded) — for literal input indices into the
+  input vector or its flat view and for literal input counts; it runs before the break (today's hits: the Python decoder's
+  `NUM_INPUTS = 45` + name list, the web decoder's `FL_NUM_IN = 45` + offsets) and after it. (b) Flight log v6 header carries the
+  ordered slot-name table; both decoders build their columns from it. (c) **Layout signature** = FNV-1a 64 of the ordered slot display
+  names + layout version, computed from the one metadata table; NN01 genome format version bumps and stores it; `nnextractor` and
+  `nn2cpp` refuse a genome whose signature ≠ the tree's (and whose input count ≠ `NN_INPUT_COUNT`); `nn2cpp` emits it as a
+  `static_assert` beside the existing count and scale-signature asserts; the flight log header stores it and decoders check it.
+- **Rationale**: today the C++ side is already index-free (enum + metadata table; nn2cpp asserts count and scales), so the residual
+  risk is the hand-maintained decoder copies and a same-count reorder that no count check sees. Names and signature travelling with the
+  artifact make the next layout change a one-place edit.
+- **Alternatives**: generating the Python / JS name lists from the C++ table at build time (works, but still a copy per decoder; the
+  header table makes old and new logs self-describing); a count-only check (misses reorders — the 041 scale lesson one level down).
