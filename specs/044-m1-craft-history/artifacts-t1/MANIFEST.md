@@ -77,3 +77,43 @@ generation time 102 s (gen 5), 237 s (40), 465 s (100), 550–575 s (400–800) 
 
 `retain=keep` on every object (verify by sampling incl. gen 1 / gen 800), final-elite extraction, eval suite with the run's seed
 (tier 0 bitwise), then the equal-environment candidate pick (T051, `eval_suite.sh … 0 <never-trained seed> 1.0`).
+
+## 7. Finished — 2026-10-25
+
+800 generations, `NN_ELITE_DIVERGED` 0 over the whole run. Final elite **−103751.666151**, pctInStreak **49.5 %** (t6 at gen 800:
+−93924.534457, 46.7 %). Smoothness on the training curves (each elite at its own variation strength) flat from ~gen 550.
+
+### Pre-flight gate estimate (T051 prep)
+
+Equal environment: tier 0, seed **20261018**, `EvalVariationScale 1.0`, the 044 plant — the same environment t6 g752 (flown
+2026-10-18) was evaluated in during the honesty ladder. `../gate_estimate.py`; departed scenarios excluded; medians over scenarios.
+Flight prediction = candidate sim × (g752 flight ÷ g752 sim) per metric.
+
+| genome (sim, equal env) | roll 3–5 Hz | pitch 3–5 Hz | pitch 2–3 Hz | load 1.5–5 Hz | in-streak |
+|---|---|---|---|---|---|
+| t6 g752 (flown reference) | 112.7 °/s | 27.4 | 20.1 | 0.84 g | 36.1 % |
+| **t1 g800 (final)** | **31.0** | **17.9** | 21.5 | **0.58** | **52.0 %** |
+| t1 g396 | 26.8 | 31.0 | 26.4 | 0.75 | 40.6 % |
+| t1 g606 | 31.2 | 29.5 | 24.7 | 0.73 | 50.7 % |
+| t1 g541 | 34.7 | 29.2 | 30.5 | 0.94 | 46.4 % |
+
+sim→flight ratios from g752: roll 0.86, pitch 3–5 Hz 2.05, pitch 2–3 Hz 2.53, load 2.24.
+
+| predicted flight | roll 3–5 Hz (SC-001 < 82) | pitch 3–5 Hz (SC-002 < 48) | pitch 2–3 Hz (SC-002 ≤ 51) | load (SC-005 < 1.88) |
+|---|---|---|---|---|
+| g752 (measured) | 97 | 56 | 51 | 1.88 |
+| **g800** | **27 ✅** | **37 ✅** | **54 — borderline** | **1.30 ✅** |
+| g396 / g606 / g541 | 23–30 ✅ | 60–63 ✗ | 63–77 ✗ | 1.6–2.1 |
+
+Reading:
+- **Roll — very likely passes.** −72 % against the flown genome on the same plant and environment; the roll calibration (0.86) is close to
+  1 because the honesty ladder fitted it.
+- **Pitch 3–5 Hz — likely passes** (−35 % in sim). **Pitch 2–3 Hz — borderline**: g800 is no better than g752 in that band in sim
+  (21.5 vs 20.1), predicted 54 vs the ≤ 51 gate. The pitch ratios (2.0–2.5) say the sim still shows about half the pitch activity the
+  aircraft does, so the pitch predictions are the least certain.
+- **Load passes; tracking better** (52 vs 36 % in-streak on the same plant).
+- **The mid-run "smooth" elites are not smoother in an equal environment** — their training-curve smoothness came from easier
+  scenarios (lower variation strength). g800 is the best candidate on every metric but pitch 2–3 Hz.
+- **Attribution**: this compares t1 (trained on the honest roll plant, with history) against t6 (trained on the old plant). It cannot
+  separate the plant from the history inputs; the smokes (same plant, ±history) found no smoothness advantage from history, so the
+  roll gain is most plausibly the plant.
