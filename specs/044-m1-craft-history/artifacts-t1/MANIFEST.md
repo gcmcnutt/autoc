@@ -73,10 +73,21 @@ generation time 102 s (gen 5), 237 s (40), 465 s (100), 550–575 s (400–800) 
 | gen ≥ 100 | 3–5 Hz roll and pitch rate RMS **falling** with gens while `pctInStreak` rises | roll 3–5 Hz RMS stuck near g752's 112 °/s on the new plant |
 | exit (T054) | the flight: SC-001 roll 3–5 Hz < 82 °/s, SC-002 pitch 3–5 Hz < 48 and 2–3 Hz ≤ 51 °/s, SC-003–005 | a miss on SC-001/002 → another bake / flight cycle; 045 waits |
 
-## 6. Close-out  *(T050)*
+## 6. Close-out  *(T050, closed 2026-10-30)*
 
-`retain=keep` on every object (verify by sampling incl. gen 1 / gen 800), final-elite extraction, eval suite with the run's seed
-(tier 0 bitwise), then the equal-environment candidate pick (T051, `eval_suite.sh … 0 <never-trained seed> 1.0`).
+| field | value |
+|---|---|
+| finished | gen 800, 2026-10-25 03:18 PDT, 407,899 s (4.72 days), 1.176 G sims; `#GenTiming` gen 800 559 s, 16.0 µs/tick |
+| gen 800 | best −103751.666151, pop-avg −36062, `pctInStreak` 49.5 %, `rotRatio` 4.27, 294/294 complete (0 crashes) |
+| final elite | `nn_weights-t1-g800.dat` (created gen 730), sha256 `a5ed3521ea1e70b7…` = xiao `weight_id`; extracted with `nnextractor -g 800` from `gen9200.dmp.zst` |
+| `retain=keep` | ✅ all 800 objects re-tagged (were `expire`), 0 failures; verified by sampling 6 incl. gen 1 (`gen9999`), gen 730 (`gen9270`) and gen 800 (`gen9200`) |
+| eval suite (seed 1792515587) on gen 800 | `eval-results/2026-10-30T15:08:39Z/`: tier0 **PASS bitwise** (−103751.666151 = training); tier1 294/294; tier2-progressive 49/49; tier2-long 49/49; tier2-random 144/144; tier3-stress 143/144; tier3-quiet 1/1 — all PASS |
+| eval dumps pinned | `retain=keep` on the 7 suite dumps above and the 4 gate-estimate evals of § 7 (`autoc-eval`, 11 objects, 0 failures) |
+
+Build: the bake's binary (`build/autoc` from the 2026-10-20 pre-run gate on `a2dadea`; no code change since). ⚠️ The host rebooted
+2026-10-25 17:49 and nothing restarted the `:2` X server the workers render to — the first suite attempt aborted with every worker
+logging `Failed to initialize headless OpenGL context`. Restarted with `Xvfb :2 -screen 0 1280x1024x24 +extension GLX -nolisten tcp`;
+tier 0 bitwise confirms the display setup does not touch the numbers.
 
 ## 7. Finished — 2026-10-25
 
@@ -117,3 +128,25 @@ Reading:
 - **Attribution**: this compares t1 (trained on the honest roll plant, with history) against t6 (trained on the old plant). It cannot
   separate the plant from the history inputs; the smokes (same plant, ±history) found no smoothness advantage from history, so the
   roll gain is most plausibly the plant.
+
+The four gate-estimate evals (seed 20261018, `EvalVariationScale 1.0`): g800 `eval-results/2026-10-25T16:29:22Z/` (created gen 730),
+g396 `…16:29:59Z/` (389), g606 `…16:30:29Z/` (605), g541 `…16:30:58Z/` (538).
+
+## 8. Pick  *(T051, 2026-10-30)*
+
+**The gen-800 final elite** (`nn_weights-t1-g800.dat`, `a5ed3521ea1e70b7`). Selection rule FR-014 — smoothness at matched tracking,
+in one environment — is met by § 7: the finalists (final elite + the run report's smoothest mid-run elites g396 / g541 / g606) were
+evaluated at tier 0, seed 20261018 (never trained on), `EvalVariationScale 1.0`, calibrated against the 10-18 flight through g752.
+g800 is best on roll, pitch 3–5 Hz, load and tracking; no finalist is better on pitch 2–3 Hz (g800 21.5 °/s vs 24.7–30.5). The
+mid-run elites' training-curve smoothness came from lower variation strength, not from the policy. Risk carried into the flight:
+pitch 2–3 Hz predicted 54 vs the SC-002 ≤ 51 °/s line.
+
+## 9. Flight build  *(T052)*
+
+| step | state |
+|---|---|
+| `nn2cpp` | ✅ 2026-10-30 `build/nn2cpp -u -i artifacts-t1/autoc.ini.as-run -w artifacts-t1/nn_weights-t1-g800.dat -o xiao/src/generated/nn_program_generated.cpp` (as-run ini == `autoc.ini` on every effective key); arena 70/25/105, cone 7/2/45/0.5/5/5; layout-signature static_assert `a505f1be760da67d` passes; `weight_id` a5ed3521ea1e70b7 |
+| xiao `pio run` | ✅ SUCCESS — RAM 53.6 %, flash 45.8 % |
+| flash + bench cycle (article 1) | ⏳ hardware not attached |
+| FC CLI dump diff vs `xiao/inav-hb1.cfg` @ 91abd4d | ⏳ (the file is unchanged since 91abd4d) |
+| `flash_erase` | ⏳ |

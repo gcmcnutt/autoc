@@ -247,13 +247,14 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
   (clean build + ctest) per Constitution IX; smoke B finished
 - [X] T049 [US3] Launch: `bash scripts/train.sh autoc.ini logs/autoc-044-t1-m1-history.log`; record pid, effective master seed, S3 prefix in
   the MANIFEST; monitor with `scripts/generate_pngs.sh m1 logs/autoc-044-t1-m1-history.log --compare 043-t6-plant:logs/autoc-043-t6-m1-plant.log`
-- [ ] T050 [US3] Close-out at gen 800: `retain=keep` on every object (verify by sampling incl. gen 1 / 800), extract the final elite,
+- [X] T050 [US3] Close-out at gen 800: `retain=keep` on every object (verify by sampling incl. gen 1 / 800), extract the final elite,
   eval suite with the run's seed (tier 0 bitwise), MANIFEST § Post-run
-- [ ] T051 [US3] Candidate selection: finalists (final elite + smoothest / best-tracking elites from the run report) evaluated in one
+- [X] T051 [US3] Candidate selection: finalists (final elite + smoothest / best-tracking elites from the run report) evaluated in one
   environment (tier 0, fixed never-trained seed, `EvalVariationScale = 1.0`); `candidate_compare.py` with the 10-18 flight as calibration;
-  pick on smoothness at matched tracking; recorded in the MANIFEST (FR-014)
+  pick on smoothness at matched tracking; recorded in the MANIFEST (FR-014). **Done 2026-10-30: g800** (`gate_estimate.py`, artifacts-t1 § 7–8)
 - [ ] T052 [US3] Flight build and bench: `build/nnextractor -k <prefix> -g <gen>` → `build/nn2cpp` → `xiao/src/generated/` → `pio run` /
-  flash; bench cycle; diff the FC CLI dump against `xiao/inav-hb1.cfg` @ 91abd4d (must be identical); `flash_erase`
+  flash; bench cycle; diff the FC CLI dump against `xiao/inav-hb1.cfg` @ 91abd4d (must be identical); `flash_erase`. *2026-10-30: nn2cpp + `pio run` done
+  on g800 (artifacts-t1 § 9); flash / bench / CLI diff / erase wait for the article-1 hardware*
 - [ ] T053 [US3] Fly with the 043 procedure (blackbox 1/8 with SERVOS + ATTI, streamer state per span, wind recorded, level boot); logs to
   `flight-results/flight-<YYYYMMDD>/`
 - [ ] T054 [US3] Analyse in `specs/044-m1-craft-history/flight-analysis-<YYYYMMDD>.md`: `candidate_compare.py` (flight mode) and
