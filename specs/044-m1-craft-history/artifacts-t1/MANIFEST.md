@@ -147,6 +147,7 @@ pitch 2–3 Hz predicted 54 vs the SC-002 ≤ 51 °/s line.
 |---|---|
 | `nn2cpp` | ✅ 2026-10-30 `build/nn2cpp -u -i artifacts-t1/autoc.ini.as-run -w artifacts-t1/nn_weights-t1-g800.dat -o xiao/src/generated/nn_program_generated.cpp` (as-run ini == `autoc.ini` on every effective key); arena 70/25/105, cone 7/2/45/0.5/5/5; layout-signature static_assert `a505f1be760da67d` passes; `weight_id` a5ed3521ea1e70b7 |
 | xiao `pio run` | ✅ SUCCESS — RAM 53.6 %, flash 45.8 % |
-| flash + bench cycle (article 1) | ⏳ hardware not attached |
-| FC CLI dump diff vs `xiao/inav-hb1.cfg` @ 91abd4d | ⏳ (the file is unchanged since 91abd4d) |
+| xiao flash (article 1) | ✅ 2026-11-07 `pio run -t upload --upload-port /dev/ttyACM1`, 24 s DFU (normal length, not the erased-app signature); bootloader-resident after, needs one reset |
+| bench cycle | ⏳ |
+| FC CLI dump diff vs `xiao/inav-hb1.cfg` @ 91abd4d | ✅ 2026-11-07 `dump all` from article 1: firmware `INAV/MATEKF722MINI 8.0.0 (38ff0d29)` = the 10-18 build; identical except `gyro_zero_x/y/z` and `ins_gravity_cmss`, which `init_gyro_cal = ON` rewrites at every boot (`navigation_pos_estimator.c:414-421`). Blackbox per the 043 procedure: SPIFLASH, 1/8, SERVOS + ATTI + ACC + GYRO_RAW + MOTORS + RC_COMMAND + NAV_POS |
 | `flash_erase` | ⏳ |
