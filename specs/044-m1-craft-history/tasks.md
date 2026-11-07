@@ -252,11 +252,20 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
 - [X] T051 [US3] Candidate selection: finalists (final elite + smoothest / best-tracking elites from the run report) evaluated in one
   environment (tier 0, fixed never-trained seed, `EvalVariationScale = 1.0`); `candidate_compare.py` with the 10-18 flight as calibration;
   pick on smoothness at matched tracking; recorded in the MANIFEST (FR-014). **Done 2026-10-30: g800** (`gate_estimate.py`, artifacts-t1 § 7–8)
-- [ ] T052 [US3] Flight build and bench: `build/nnextractor -k <prefix> -g <gen>` → `build/nn2cpp` → `xiao/src/generated/` → `pio run` /
-  flash; bench cycle; diff the FC CLI dump against `xiao/inav-hb1.cfg` @ 91abd4d (must be identical); `flash_erase`. *2026-10-30: nn2cpp + `pio run` done
-  on g800 (artifacts-t1 § 9); flash / bench / CLI diff / erase wait for the article-1 hardware*
+- [X] T052 [US3] Flight build and bench: `build/nnextractor -k <prefix> -g <gen>` → `build/nn2cpp` → `xiao/src/generated/` → `pio run` /
+  flash; bench cycle; diff the FC CLI dump against `xiao/inav-hb1.cfg` @ 91abd4d (must be identical); `flash_erase`. **Done 2026-11-07**
+  (artifacts-t1 § 9): g800 unrolled (`nn2cpp` default since `78e7d6e`) flashed on article 1, boot `weight_id a5ed3521ea1e70b7`; CLI dump
+  identical to 91abd4d except the per-boot gyro/gravity calibration, firmware 38ff0d29 = the 10-18 build (no INAV reflash); bench
+  `eval-results/bench-20261107/` joined by `bench_join.py` — 341/341 ticks, 0 overruns, rates 36,24,4, 340/341 pure ACRO, yaw 0,
+  command → rate r 0.97–0.98 at +60 ms, craft history exact one/two-tick lag and pre-filled at engage; both logs erased for the flight
 - [ ] T053 [US3] Fly with the 043 procedure (blackbox 1/8 with SERVOS + ATTI, streamer state per span, wind recorded, level boot); logs to
-  `flight-results/flight-<YYYYMMDD>/`
+  `flight-results/flight-<YYYYMMDD>/`. ⏳ **Ready 2026-11-07.** Field checklist: `get blackbox_rate_denom` = 8 and the Configurator
+  Blackbox tab left closed (it has reverted the rate three times); boot level and untouched (gravity is recalibrated at every boot — the
+  bench boot read 905.7 cm/s², ~20° tilted); **full streamer, as on 10-18** (the SC comparison is against that flight as flown), state
+  per span and any cut time; the same paths as 10-18; hold the hand-off attitude ≥ 1 s after the switch; wind speed / direction /
+  gustiness; pilot ready on the first span (bench showed throttle at a rail 43 % and occasional pitch steps — static-airspeed OOD, but
+  pitch 2–3 Hz is the predicted borderline). Optional: MANUAL pitch doublets before / after a streamer cut. After: header
+  `P interval:1/8`, both logs into the flight directory
 - [ ] T054 [US3] Analyse in `specs/044-m1-craft-history/flight-analysis-<YYYYMMDD>.md`: `candidate_compare.py` (flight mode) and
   `airframe_id.py` vs the 10-18 reference; SC-001 (roll 3–5 Hz < 82 °/s), SC-002 (pitch 3–5 Hz < 48, 2–3 Hz ≤ 51 °/s), SC-003, SC-004 (roll
   corner inside the class), SC-005 (1.5–5 Hz load < 1.88 g); **a miss on SC-001 or SC-002 opens another bake / flight cycle (append tasks);

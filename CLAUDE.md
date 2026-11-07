@@ -75,7 +75,12 @@ tests/
 
 C++17: Follow standard conventions
 
-## Active feature — 044 M1 craft-sensor history + roll plant (seed, not started; state 2026-10-18)
+## Active feature — 044 M1 craft-sensor history + roll plant (flight-ready, T053 next; state 2026-11-07)
+
+**State 2026-11-07**: bake t1 done (800 gens, all eval tiers PASS, tier 0 bitwise); pick **g800** (`a5ed3521ea1e70b7`,
+[`artifacts-t1/MANIFEST.md`](specs/044-m1-craft-history/artifacts-t1/MANIFEST.md) § 7–9); flashed on article 1 and benched
+(T052 ✅). Next: **T053 fly** → **T054 analyse** (SC-001…005 vs the 10-18 flight; pitch 2–3 Hz is the predicted borderline).
+Setup background below is from the seed.
 
 **043 is CLOSED** (2026-10-18, [`outcome.md`](specs/043-acro-dual-loop/outcome.md)): the honest pitch plant (measured `I_yy`
 0.0094) halved the 2 Hz pitch cycle in the air on the t6 exit flight, and that flight confirmed the inertia within ~10 % — but roll
