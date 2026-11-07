@@ -169,7 +169,7 @@ def elite_weights(run_prefix, gen, ini, tmp):
         # wrong; the failure was invisible only because this except-block
         # swallows CalledProcessError into a skip.
         subprocess.run([os.path.join(REPO, "build", "nn2cpp"),
-                        "-w", dat, "-i", ini, "-o", cpp],
+                        "-p", "-w", dat, "-i", ini, "-o", cpp],
                        check=True, capture_output=True, timeout=180)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         # ⛔ SAY WHY. A bare `return None` renders upstream as "no dmp/genome —

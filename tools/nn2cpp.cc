@@ -29,16 +29,18 @@ void printUsage(const char* progName) {
     std::cout << "  -w, --weights FILE   Input NN weight file (required, NN01 format)\n";
     std::cout << "  -o, --output FILE    Output C++ source file (default: nn_program_generated.cpp)\n";
     std::cout << "  -f, --function NAME  Generated function name (default: generatedNNProgram)\n";
-    std::cout << "  -u, --unrolled       Generate unrolled layer code (default: use nn_forward)\n";
+    std::cout << "  -p, --portable       Emit the table-driven nn_forward form instead of the\n";
+    std::cout << "                       unrolled one (default: unrolled -- the flight form).\n";
+    std::cout << "                       Bit-identical outputs; analytics that parse\n";
+    std::cout << "                       nn_topology[] / nn_recurrent[] need -p.\n";
     std::cout << "  --help               Show this help message\n";
     std::cout << "\n";
     std::cout << "Generates C++ source with embedded NN weights for desktop and embedded deployment.\n";
     std::cout << "The generated function has the same signature as generatedGPProgram().\n";
     std::cout << "\n";
     std::cout << "Examples:\n";
-    std::cout << "  " << progName << " -i nn_weights.dat\n";
-    std::cout << "  " << progName << " -i nn_weights.dat -o my_nn.cpp -f myNNFunction\n";
-    std::cout << "  " << progName << " -i nn_weights.dat -u   # unrolled layer loops\n";
+    std::cout << "  " << progName << " -w nn_weights.dat -i autoc.ini -o xiao/src/generated/nn_program_generated.cpp\n";
+    std::cout << "  " << progName << " -w nn_weights.dat -i autoc.ini -p -o /tmp/nn.cpp   # for analytics\n";
 }
 
 // 038 P0-D FR-P0H (B): pathgen NN inputs now include arena-awareness
@@ -617,7 +619,7 @@ int main(int argc, char** argv) {
         {"input", required_argument, 0, 'w'},   // legacy spelling of --weights
         {"output", required_argument, 0, 'o'},
         {"function", required_argument, 0, 'f'},
-        {"unrolled", no_argument, 0, 'u'},
+        {"portable", no_argument, 0, 'p'},
         {"ini", required_argument, 0, 'i'},
         {"config", required_argument, 0, 'i'},   // convention alias
         {"weights", required_argument, 0, 'w'},
@@ -628,7 +630,7 @@ int main(int argc, char** argv) {
     std::string inputFile;
     std::string outputFile = "nn_program_generated.cpp";
     std::string functionName = "generatedNNProgram";
-    bool unrolled = false;
+    bool unrolled = true;  // 044: the xiao form is the default; -p for analytics
     // Both are filled from the ini below -- no initializers, so a missed
     // assignment is a compile-time complaint rather than a plausible default.
     BakedArena arena{};
@@ -637,13 +639,13 @@ int main(int argc, char** argv) {
     int option_index = 0;
     int c;
 
-    while ((c = getopt_long(argc, argv, "i:w:o:f:uh", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "i:w:o:f:ph", long_options, &option_index)) != -1) {
         switch (c) {
             case 'i': iniFile = optarg; break;
             case 'w': inputFile = optarg; break;
             case 'o': outputFile = optarg; break;
             case 'f': functionName = optarg; break;
-            case 'u': unrolled = true; break;
+            case 'p': unrolled = false; break;
             case 'h': printUsage(argv[0]); return 0;
             case '?': printUsage(argv[0]); return 1;
             default: break;
@@ -748,7 +750,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Generate code. 039 D6: -u covers recurrent genomes too (persistent
+    // Generate code. 039 D6: unrolled covers recurrent genomes too (persistent
     // static state registers + straight-line MACs) — the pre-039 table-driven
     // fallback is gone.
     std::string code;

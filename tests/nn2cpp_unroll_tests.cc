@@ -1,7 +1,7 @@
 // 039 T003/T004 — nn2cpp unrolled-recurrent emission equivalence (D6).
 //
 // Drives the REAL nn2cpp binary over a fixture recurrent genome and checks:
-//   1. `-u` on a recurrent genome emits genuinely UNROLLED code (no
+//   1. the default (unrolled) emission on a recurrent genome emits genuinely UNROLLED code (no
 //      table-driven fallback — the pre-039 behavior at nn2cpp.cc:356-361).
 //   2. The unrolled and table-driven emissions produce BIT-IDENTICAL
 //      per-tick outputs across a multi-tick sequence including an
@@ -216,7 +216,7 @@ class Nn2cppUnrollTest : public ::testing::Test {
         // has to be absolute.
         cmd << NN2CPP_BIN << " -w " << dir_ << "/fixture.dat"
             << " -i " << AUTOC_SOURCE_DIR << "/autoc.ini"
-            << (unrolled ? " -u" : "")
+            << (unrolled ? "" : " -p")
             << " -f nnGenerated -o " << outCpp;
         std::string out;
         int rc = runCmd(cmd.str(), out);
@@ -251,15 +251,15 @@ TEST_F(Nn2cppUnrollTest, UnrolledRecurrentMatchesTableDrivenBitExact) {
     generate(/*unrolled=*/true, unrolledCpp);
     generate(/*unrolled=*/false, portableCpp);
 
-    // --- 1. The -u emission must be genuinely unrolled, not the
+    // --- 1. The default (unrolled) emission must be genuinely unrolled, not the
     //        table-driven fallback (pre-039 nn2cpp falls back with a
     //        warning when the genome has a recurrent layer).
     const std::string unrolledSrc = readFile(unrolledCpp);
     ASSERT_NE(unrolledSrc.find("(unrolled)"), std::string::npos)
-        << "-u on a recurrent genome fell back to table-driven emission "
+        << "default emission on a recurrent genome fell back to table-driven emission "
            "(no '(unrolled)' marker in the generated header comment)";
     ASSERT_EQ(unrolledSrc.find("nn_forward_recurrent"), std::string::npos)
-        << "-u emission still calls the table-driven nn_forward_recurrent";
+        << "default emission still calls the table-driven nn_forward_recurrent";
     // Recurrent unrolling needs persistent state registers + a reset hook.
     ASSERT_NE(unrolledSrc.find("generatedNNProgramReset"), std::string::npos)
         << "unrolled emission lacks the generatedNNProgramReset() hook";
@@ -307,7 +307,7 @@ namespace {
 std::string runNn2cpp(const std::string& genome, const std::string& outCpp, int& rc) {
     std::ostringstream cmd;
     cmd << NN2CPP_BIN << " -w " << genome << " -i " << AUTOC_SOURCE_DIR << "/autoc.ini"
-        << " -u -f nnGenerated -o " << outCpp;
+        << " -f nnGenerated -o " << outCpp;
     std::string out;
     rc = runCmd(cmd.str(), out);
     return out;
