@@ -1,6 +1,7 @@
 > ▶ **044 CLOSED 2026-11-08** ([outcome](../044-m1-craft-history/outcome.md)) — 045 is next. Inherits layout v4 (53 M1 / 74 tracker
 > inputs, craft history in the shared block), the honest pitch + roll plant, flight log v6 and NN01 v2. Open from 044: SC-002 pitch in
-> flight ([BACKLOG](../BACKLOG.md) § 044 close); a BLE downloader fix is filed for 045.
+> flight ([BACKLOG](../BACKLOG.md) § 044 close); a BLE downloader fix is filed for 045. ⛔ **Front task first:** the dmp cache ([below](#-front-task--write-through-dmp-cache-on-the-training-box-filed-2026-10-25)).
+
 
 # 045 — M2 tracking (seed)
 
@@ -16,6 +17,42 @@
 
 **Created 2026-08-17** when 041 was scoped down to *"a fresh full M1 toolchain, flown"*. This holds the M2
 work moved out of it. **Not started.**
+
+## ⛔ FRONT TASK — write-through dmp cache on the training box (filed 2026-10-25)
+
+**Must land in the build that runs 045's first smoke/bake.** It's independent of the M2 content, so it can merge on its own
+ahead of everything else.
+
+**Why.** Egress is the biggest item on the AWS bill: **Oct 2026 = 378 GB / $25.04** out of $32.33 (Aug was the same, 380 GB).
+S3 access logs for October attribute **all of it** to `autoc-generator` `GET`s on `autoc-m1` from the home IP, using
+`aws-sdk-cpp`. That's `scripts/generate_pngs.sh` running **on the training box**, about twice a day. The box uploads each
+dmp and then downloads it again **2–7 times** to plot it. Each report pass keeps its own incremental CSV cache, but each one
+does its own S3 fetch. Every gen: `run-summary` + `input_investment`. Every 5th gen: + `dynamics`, `energy`,
+`tracking_by_path`, `pitch_cycle`, plus the latest-gen `--csv-only` / `--meta-only`. **150 GB of unique dmps → 422 GB
+transferred (2.8×)**, ~143 MB per gen against a ~51 MB `.dmp.zst`. ⚠️ M2 is worse: `predictor_analysis` adds another
+per-stride pass, and `rnn_capacity` / `source_dmp_loader` also read from S3.
+
+**Design (operator 2026-10-25).** S3 stays the **archive of record and is written immediately**, so other hosts (renderer
+on the WSL box, etc.) can read any gen as soon as it exists. Reporters on the training box read the **local copy**.
+- **One chokepoint.** Every C++ reader/writer goes through `s3GetDmpBlob` / `s3PutDmpBlob` in
+  `src/util/s3_run_selector.cc`. The Python reports shell out to `dmp-dump` / `nnextractor`, which use the same calls.
+  Change those two functions and nothing else needs to change.
+- **Write-through (`s3PutDmpBlob`).** After the S3 put succeeds, write the same **compressed** bytes to
+  `<cache>/<bucket>/<key>` (tmp file + rename, so a reader never sees a partial file).
+- **Read-through (`s3GetDmpBlob`).** Local hit → read it. Miss → S3 `GET`, then fill the cache, so other hosts and
+  `--compare` reference runs also fetch each key at most once.
+- **No invalidation needed.** Keys are unique per run-id + gen and never rewritten.
+- **Constitution VII.** The cache dir is configured explicitly (one name, e.g. `AUTOC_DMP_CACHE`, which needs to be an
+  env var because the Python reports spawn the tools). Unset = no cache, and startup logs that once. Configured but
+  unwritable, or a cached entry that fails to inflate = **fail loud with the path**, never silently go back to S3.
+- **Eviction.** A sweep matching the S3 lifecycle: drop `retain=expire` runs after 30 days, keep `retain=keep`
+  milestones. One 800-gen run is ~40 GB; the box has 3.2 TB free.
+- ⚠️ Rebuilding `dmp-dump` changes `generate_pngs.sh`'s `DSIG` cache key and forces one full re-read of the current run.
+  Runs written before the cache existed aren't in it, so that re-read costs one S3 `GET` per key (once).
+
+**Accept.** For one report cycle on a run baked with the cache: S3 access logs show **zero** `GET.OBJECT` from the training
+box for gens that host wrote, and ≤ 1 per key for anything else. The month's `USW2-DataTransfer-Out-Bytes` stays under
+the 100 GB free tier. Logs: `s3://autoc-s3-access-logs/{m1,m2,eval}/` (90-day expiry).
 
 ## Why M2 moved
 

@@ -65,6 +65,22 @@ time (up to a tick stale), so the map is biased by up to 50 ms. The sim models 1
 `autoc_state.timestamp_us` (or its ms) to the v6 tick record, re-join, and settle whether the aircraft carries tens of ms the sim does
 not — at 2.5 Hz every 10 ms is 9° of phase, in the band SC-002 missed.
 
+---
+
+## Infrastructure
+
+### [filed 2026-10-25 · 💸 COST · ✅ PROMOTED → 045 FRONT TASK] Write-through dmp cache — reporters re-download every dmp 2–7× from S3
+
+Oct 2026 egress = 378 GB / $25.04 of a $32.33 bill. S3 access logs attribute it to `generate_pngs.sh` on the training box:
+each report pass fetches the same dmp separately (150 GB unique → 422 GB transferred). Fix: write-through + read-through
+local cache in `s3PutDmpBlob` / `s3GetDmpBlob`. S3 stays the immediate archive for other hosts; the training box's
+reporters read local. Full design + acceptance:
+[045 README § FRONT TASK](045-m2-tracking/README.md#-front-task--write-through-dmp-cache-on-the-training-box-filed-2026-10-25).
+Supersedes the 2026-07-06 *Trainer-populated (write-through) analytics cache* entry further down (same re-fetch tax,
+narrower fix: the trainer appending run-summary rows only). Caching at the blob level covers every report pass, not just run-summary.
+
+---
+
 ## 043 deferrals (filed 2026-10-13, at the t5 checkpoint — [checkpoint-20261013.md](043-acro-dual-loop/checkpoint-20261013.md); 043 continues)
 
 > **Routing (operator 2026-10-13)**: 043 is **not closed** — its intent (smoother control) is unmet, so sim pitch fidelity
@@ -1942,7 +1958,12 @@ environment/perception question, which is what t7 was built to answer. Not a def
 - Files: `src/util/config.cc` (load + `ParseError()` line-number surfacing), `include/autoc/util/config.h`,
   `tests/contract_tracker_config_tests.cc` (decouple from production ini), the six `autoc*.ini`.
 
-### [BACKLOG — pre-work for the feature after 039] Trainer-populated (write-through) analytics cache — kill the S3 re-fetch tax
+### [BACKLOG — pre-work for the feature after 039 · ✅ SUPERSEDED 2026-10-25] Trainer-populated (write-through) analytics cache — kill the S3 re-fetch tax
+
+> ✅ **SUPERSEDED 2026-10-25** by the blob-level write-through/read-through dmp cache, now
+> [045 FRONT TASK](045-m2-tracking/README.md#-front-task--write-through-dmp-cache-on-the-training-box-filed-2026-10-25)
+> (indexed under § Infrastructure at the top). That cache sits under every report pass, so a trainer-side run-summary row no longer
+> saves an S3 fetch. Kept for the history.
 
 > **Scheduling (operator 2026-07-06)**: NOT an 038 item. Slate as pre-work / early task for the feature
 > *after* 039 (touches the trainer hot-path + analytics format + generate_pngs; wants its own careful
