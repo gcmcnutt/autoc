@@ -50,6 +50,29 @@ bands** (a compliant wing mount). Cheapest discriminator: **fresh bands, re-fly 
 sortie, rerun `airframe_id.py` + `flight_gates.py`** ([flight-analysis-20261108.md](044-m1-craft-history/flight-analysis-20261108.md)).
 If the airframe returns to the 10-18 fit and pitch 2–3 Hz drops, the miss was the airframe; if not, it is the policy (gate_estimate
 already showed g800 no better than g752 at 2–3 Hz in sim) and a pitch-side change is the next M1 lever. 045 may fly first (operator).
+**Update 2026-11-09**: span 1 of 11-08 was flown on a faulted nav estimate (item below). Without it, SC-005 passes (1.79 g) and pitch
+3–5 Hz passes mean-removed (−15.4 %), but **pitch 2–3 Hz is still +36 %** (spans 2–4 each 70–76 °/s) — this gate is unchanged
+([flight-analysis § 7](044-m1-craft-history/flight-analysis-20261108.md#7-the-gates-without-span-1)). Re-fly with `flight_gates.py --drop`
+for any span whose nav estimate faulted.
+
+### [044 flight analysis, filed 2026-11-09 · ✅ PROMOTED 2026-11-09 → 045 PRE-TASK N2/N3] Nav-estimator integrity — the 11-08 span 1 was flown on a faulted estimate and nothing noticed
+> ✅ **Promoted 2026-11-09** into the [045 PRE-TASK](045-m2-tracking/README.md#-pre-task--navigation--attitude-integrity-filed-2026-11-09) (N1 measure, N2 GPS/sensor hygiene incl. `gps_dyn_model` AIR_4G, N3 detection, N4 xiao-owned span-local inertial frame, N5 sim parity). That section governs; the text below is the filing record.
+11-08 span 1: GPS (GPS constellation only, 5–7 sats, HDOP 2.5–3.5) fell to 5 < `gps_min_sats = 6` in a climb/reversal; INAV's horizontal
+estimate coasted on the accelerometer (north velocity wrong by ~25 m/s), went invalid at `inav_max_eph_epv` and froze for 2.3 s
+(`inav_allow_dead_reckoning = OFF`), then **reset 105 m** to GPS; near the end of the span the altitude estimate **hard-reset 26 m** (and
+31 m back after disengage) through the GPS↔baro fade. The policy flew ~4.7 of 17 s on it
+([flight-analysis § 6](044-m1-craft-history/flight-analysis-20261108.md#6-span-1-was-flown-on-a-faulted-nav-estimate-added-2026-11-09)).
+10-18 flight 1 span 1 shows the same vertical family (−82 / +101 / −52 m steps). Three parts:
+1. **GPS quality** — enable Galileo (± GLONASS) on the u-blox; GPS-only leaves 5–7 sats and one dropout below `gps_min_sats` per
+   aggressive manoeuvre. Joined with the 043 item's `GPS_ONLY` decision (§ 043 close · flights owed): `GPS_ONLY` removes the
+   GPS↔baro fade that produced both Z resets, but only with enough satellites for a usable GPS vertical (EPV was 6–8 m). ⚠️ Changes the
+   estimator, so it is a config-of-record change; weigh it against the SC-002 re-fly, which wants g800 "as-is".
+2. **Make the fault visible to the xiao** — `MSP2_AUTOC_STATE` carries no estimator validity; `state_valid` only means the fetch
+   succeeded. Add EPH / EPV and the XY / Z valid bits (INAV fork + `msp_autoc_state_t` + flight log), then disengage (new
+   `DisengageReason`) or at least log the tick when either goes invalid or the estimate steps. The NN-pathology item (after M2) is the
+   policy's *robustness*; this is *detection*, and belongs now.
+3. **Analysis** — have `flight_gates.py` / `bench_join.py` flag spans with nav steps or frozen velocity (the check is ~10 lines on the
+   tick CSV) instead of finding them by eye; `--drop` exists for excluding them.
 
 ### [operator 2026-11-08 · ⏳ for 045 · field workflow] BLE flight-log downloader — resume a partial download, and find out why it is so slow
 Field download of a 300 kB xiao flight log took **~10 minutes** (~0.5 kB/s). BLE 4.2/5 with a sane MTU and connection interval should
@@ -170,18 +193,23 @@ standalone (t4 stalled on a standalone case; 015's pegged-command exploit cannot
 not track), and no smoothness measure can see the pitch cycle until the sim exhibits it. A lower pitch-rate cap mirrored on
 both sides is the cheap flight test of the relay hypothesis once Phase 10e's latency sweep says the mechanism is a relay.
 
-### [043 close · flights owed] Windy-day flight on gen 488; `inav_default_alt_sensor = GPS_ONLY` decision; `flash_erase` before every session
+### [043 close · flights owed] Windy-day flight on gen 488; `inav_default_alt_sensor = GPS_ONLY` decision (✅ → 045 N2); `flash_erase` before every session
+> The `GPS_ONLY` + Galileo decision is **promoted 2026-11-09 → [045 PRE-TASK](045-m2-tracking/README.md#-pre-task--navigation--attitude-integrity-filed-2026-11-09) N2**. The windy-day flight and `flash_erase` stay here.
 Two calm days (1.8–2.9 m/s) showed no downwind bias; the envelope-trained genome has not been tested in the wind it was
 trained for. `GPS_ONLY` was recommended 10-04, set in the post-10-11 capture, and **reverted to `GPS` for the 043 exit flight** (2026-10-17)
 so that flight compares like with like against g488 — decide it after the wrap, with Galileo enabled and a same-day A/B; the baro remains the heaviest `pos_d` contributor
 (engaged residual RMS 3.0–3.7 m vs 0.3–1.3 manual). Two flights were nearly lost to an unerased flash / unsaved rate change.
+**2026-11-09**: still `GPS` on 11-08, and the GPS↔baro fade hard-reset the altitude twice (−26 / +31 m) in and just after span 1, while
+GPS-only satellites (5–7) also cost a 2.3 s horizontal outage → now part of the 044 **nav-estimator integrity** item (⛔ before the next
+flight).
 
 ### [043 close · spec debt] Observability audit (SC-008 / SC-013, T079 / T080), FR-056 craft-realism review at n = 2 (T047a), INAV phase-delay parameters (T048–T050), roll dead-band (T051c)
 The variation-inventory was never completed to "observable / absorbed / observable-only-at-limits" per axis. The FR-056 review
 is best done on article 2 (T114). The INAV filter/phase candidates dropped in priority: the FRF shows plant phase matching to
 2.5 Hz. Roll full-stick FF = 581 against the ±500 budget clips the top 14 % of stick; decide before the next retune.
 
-### [043 close · hardware] Prop balance (T097 / T098) and pitot (T099)
+### [043 close · hardware] Prop balance (T097 / T098; ✅ → 045 N2) and pitot (T099)
+> Prop balance / Z-vibration source **promoted 2026-11-09 → [045 PRE-TASK](045-m2-tracking/README.md#-pre-task--navigation--attitude-integrity-filed-2026-11-09) N2**: Z vibration pins INAV's accWeight at its 0.30 floor in every 11-08 span. Pitot stays here.
 Vibration is **excluded** as the Z-estimator cause after five flights (`accClipCount` 0, `navEPV` 541 cm clean with `accVib` at
 its all-time high); balance the prop for its own sake, not as an experiment. Pitot: the policy still flies on groundspeed.
 
@@ -200,6 +228,8 @@ nothing in the current objective asks for it. Every pathology below is already *
 | estimator fault | handed a **36 m and an 87 m `pos_d` step in one tick**; boundary input rails; **pilot rescue** | 09-13 span 2 (flight-analysis-20260913 §3) |
 | vertical estimator divergence | altitude estimate drifts up to 93 m from baro while engaged | 09-13 ADDENDUM A4 — all three ACRO flights |
 | loss of signal (M2 camera) | idle-throttle / out-of-bounds | operator observation |
+
+🔗 **2026-11-09**: *detecting* estimator faults (and not flying on them) is promoted to [045 PRE-TASK](045-m2-tracking/README.md#-pre-task--navigation--attitude-integrity-filed-2026-11-09) N3/N4. The policy's *robustness* to them stays here.
 
 ⭐ **Why after M2, not now** (operator): these are robustness properties of a policy that must first be
 *good*. Consistent with [project_sensor_modality_vs_fault](../../.claude/projects/-home-gmcnutt-autoc/memory/project_sensor_modality_vs_fault.md) — fault-robustness is a later-era problem than extracting information from nominal sensing.
@@ -240,7 +270,8 @@ head could solve both, and the static port is chronically eating ~4.5 m RMS of a
 
 ## 043 deferrals (filed 2026-09-04, from the t2 post-bake eval)
 
-### [operator 2026-09-07 · LOW COST, needs open ground] Compass calibration is under-covered on one axis
+### [operator 2026-09-07 · LOW COST, needs open ground · ✅ PROMOTED 2026-11-09 → 045 N2] Compass calibration is under-covered on one axis
+> ✅ **Promoted 2026-11-09 → [045 PRE-TASK](045-m2-tracking/README.md#-pre-task--navigation--attitude-integrity-filed-2026-11-09) N2.** 11-08: attitude/heading error ±10–25° in manoeuvres, during which INAV's AHRS runs on gyro + mag.
 
 **Measured, not suspected.** A magnetometer sees the *same field magnitude in every direction*, so a good
 calibration lands the three per-axis gains close together. The 2026-09-07 attempt made that worse:
@@ -3213,12 +3244,14 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 - Log RC commands throughout entire flight for full playback visualization
 - Location: xiao/src/msplink.cpp
 
-### [ACTIVE → 021] Xiao Onboard IMU as AHRS Cross-Check
+### [021 · never built · ✅ PROMOTED 2026-11-09 → 045 N4] Xiao Onboard IMU as AHRS Cross-Check
+> ✅ **Promoted 2026-11-09 → [045 PRE-TASK](045-m2-tracking/README.md#-pre-task--navigation--attitude-integrity-filed-2026-11-09) N4**, revived as the **primary** span-local inertial frame (GPS as soft cross-check, INAV as safety fallback), not only a cross-check. 021 never implemented it (no IMU code in `xiao/src`).
 - Moved to [specs/021-xiao-ahrs-crosscheck/spec.md](021-xiao-ahrs-crosscheck/spec.md)
 - P0 blocker: Mar 27 flight showed uncontrolled rotation — cannot tell if AHRS or gain mismatch
 - LSM6DS3 + Madgwick on Xiao, log alongside INAV quat, compare post-flight
 
-### [DEFERRED] GPS Dropout Handling During NN Control
+### [DEFERRED · ✅ PROMOTED 2026-11-09 → 045 N3] GPS Dropout Handling During NN Control
+> ✅ **Promoted 2026-11-09 → [045 PRE-TASK](045-m2-tracking/README.md#-pre-task--navigation--attitude-integrity-filed-2026-11-09) N3.** It happened on 11-08: frozen position, zero velocity for 2.3 s, then a 105 m reset; nothing flagged it.
 - What happens when GPS drops out during NN-active control? Position freezes, NN sees stale data
 - Need: xiao detects stale position (no update for N ms) and either disables autoc or flags it
 - Also consider MSP communication loss detection and safe fallback
@@ -3425,6 +3458,7 @@ M2 a cleaner first-pass CEP. Builds on the item above.
 - ~~Behavioral Cloning Bootstrap~~ — not needed, direct NN training working
 
 ### [043 framing, filed 2026-08-25] A dedicated fast inner loop — xiao-hosted or other AHRS, replacing INAV in the control path
+> 🔗 **2026-11-09**: [045 PRE-TASK](045-m2-tracking/README.md#-pre-task--navigation--attitude-integrity-filed-2026-11-09) N4 builds the xiao IMU frame this would run on (navigation only; the inner loop stays a separate, later step).
 
 Operator 2026-08-25, while scoping 043: *"isn't clear we really want the added complexity of INAV in here —
 it's there for safety and, sure, a FF system… sure, xiao or some other AHRS can replace INAV to be

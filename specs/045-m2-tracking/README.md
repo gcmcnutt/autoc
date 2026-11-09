@@ -1,6 +1,8 @@
 > ▶ **044 CLOSED 2026-11-08** ([outcome](../044-m1-craft-history/outcome.md)) — 045 is next. Inherits layout v4 (53 M1 / 74 tracker
 > inputs, craft history in the shared block), the honest pitch + roll plant, flight log v6 and NN01 v2. Open from 044: SC-002 pitch in
-> flight ([BACKLOG](../BACKLOG.md) § 044 close); a BLE downloader fix is filed for 045. ⛔ **Front task first:** the dmp cache ([below](#-front-task--write-through-dmp-cache-on-the-training-box-filed-2026-10-25)).
+> flight ([BACKLOG](../BACKLOG.md) § 044 close); a BLE downloader fix is filed for 045. ⛔ **Front tasks first:** the dmp cache ([below](#-front-task--write-through-dmp-cache-on-the-training-box-filed-2026-10-25))
+> and **navigation & attitude integrity** ([below](#-pre-task--navigation--attitude-integrity-filed-2026-11-09)) — phase 1 flies a virtual target, so it
+> depends on the nav frame exactly as M1 does.
 
 
 # 045 — M2 tracking (seed)
@@ -53,6 +55,79 @@ on the WSL box, etc.) can read any gen as soon as it exists. Reporters on the tr
 **Accept.** For one report cycle on a run baked with the cache: S3 access logs show **zero** `GET.OBJECT` from the training
 box for gens that host wrote, and ≤ 1 per key for anything else. The month's `USW2-DataTransfer-Out-Bytes` stays under
 the 100 GB free tier. Logs: `s3://autoc-s3-access-logs/{m1,m2,eval}/` (90-day expiry).
+
+## ⛔ PRE-TASK — navigation & attitude integrity (filed 2026-11-09)
+
+**Gates the first 045 flight; N4/N5 decide what the 045 bake trains on.** Pulled in from BACKLOG (each source item is marked
+promoted there).
+
+### Why — the frame the policy flies in is not trustworthy
+
+**Operator 2026-11-09:** *"during M1 we fly against a virtual path all inside the system. This assumes some level of stability of
+attitude/position is accurate. Over 17 seconds dead reckoning should be easy to do with built-in IMUs in these boxes. Sure the GPS
+can be used as a cross check, but once we get to M2, which is tracking a real, not virtual target, relative direction is clean and
+the IMU really devolves to a stability engine with rough position tracking as a safety mechanism. Right now the problem is our
+self-referential virtual path assumes the craft attitude is stable, and any offset from that/drift winds up tilting the whole target
+path. Eventually not using INAV other than as a safety fallback seems good."*
+
+- **M1 and 045 phase 1 are self-referential.** The path or target is defined in the nav frame anchored at engage, so a *smooth* drift
+  of the estimate is harmless: the path drifts with it. What hurts is **discontinuities** (resets, freezes) and **tilt** (an
+  attitude error rotates the path against gravity, which the energy objective and the floor both see). Phase 2 (a real target)
+  takes its direction from the camera, and the inertial frame becomes stability plus a rough position for the safety envelope.
+- **INAV's estimator has failed under the NN on every ACRO-era flight**: 09-05 85 m, 09-06 58 m, 09-13 93 m vertical divergence
+  ([flight-analysis-20260913 A4](../043-acro-dual-loop/flight-analysis-20260913.md)); 10-18 flight 1 span 1 −82 / +101 / −52 m
+  vertical steps; 11-08 span 1 a 2.3 s horizontal freeze, a 105 m horizontal reset and a 26 m altitude reset
+  ([flight-analysis-20261108 § 6](../044-m1-craft-history/flight-analysis-20261108.md#6-span-1-was-flown-on-a-faulted-nav-estimate-added-2026-11-09)).
+  **The sim feeds the NN perfect state**, so none of this is visible in training.
+- **Why INAV's coast failed on 11-08 is attitude under load, not the accelerometer.** No clipping; no fixed misalignment (best-fit
+  heading offset 0° median over the flight). But the GPS-out window averaged **4.4 g**: at that load each 1° of attitude error puts
+  ~0.75 m/s² into the wrong horizontal axis, and the IMU-integrated velocity change came out ~85° rotated from GPS (+14 m/s east vs
+  +23 m/s north). Dead-reckoning error grows with manoeuvre severity (2.3 s windows, p50 2.9 → 11 m/s as max pitch goes < 30° →
+  > 70°; best-fit offset scatter ±10–25°). That points at INAV's AHRS during sustained pulls (`ahrs_acc_ignore_rate 15` ⇒ gyro + mag
+  only) and the under-calibrated QMC5883. ⚠️ The reference is 10 Hz GPS velocity from a 5–7-sat receiver, so the evidence is
+  indirect. Two INAV design points made it worse: when GPS stops correcting, horizontal velocity **decays to zero** at
+  `inav_w_xy_res_v` 0.5/s **÷ accWeight**, and Z vibration holds accWeight at its 0.30 floor in every span (≈ 1.7/s decay); with
+  `inav_allow_dead_reckoning = OFF` the estimate then freezes.
+- ⚠️ **The quaternion is 4 of the policy's inputs.** If attitude is off 10–25° in hard manoeuvres, the policy sees that exactly when
+  it matters.
+- ⚠️ **"Dead reckoning should be easy" holds for attitude and velocity over 17 s, not for double-integrated position at these
+  loads.** Gyro bias ~0.1 °/s ≈ 1.7° over a span; 1° of tilt at 4 g sustained ≈ 100 m of position over 17 s. For a virtual path
+  that is acceptable **if it is smooth**, which is the design target: **span-local, continuous, gravity-correct; never reset inside a
+  span.** N1 measures whether the IMUs deliver it.
+
+### The tasks
+
+- **N1 — Measure first (offline, existing logs, no flight).** From the 250 Hz blackbox gyro/accel on 11-08 and 10-18: propagate
+  attitude **gyro-only from engage** (initialized from INAV's attitude) and compare it with INAV's attitude and with the GPS-derived
+  specific-force direction over each span. Report attitude drift at 17 s, then velocity and position drift for a span-local inertial
+  propagator, against INAV's estimate including its faults. This sizes N4 and tells whether INAV's AHRS or the raw IMU is the
+  better attitude source in manoeuvres. Tools exist in the 11-09 analysis (earth-frame rotation, sign/lag fit, INAV-rule replay).
+- **N2 — GPS / sensor hygiene (config + bench; helps INAV as the fallback either way).**
+  - Galileo on (± GLONASS): GPS-only gives 5–7 sats, and every drop below `gps_min_sats = 6` on 11-08 came in a pull.
+  - `gps_dyn_model` AIR_2G → **AIR_4G**: the aircraft is above 2 g for 45 % of airborne time and above 4 g for 14 %; every sat drop
+    followed a 2.7–3.9 g mean (peaks 5–7.5 g).
+  - **Mag tumble calibration** (BACKLOG § compass, 4.5 % gain spread; the 09-07 retry made it 16 %).
+  - `inav_default_alt_sensor` = `GPS_ONLY` decision (BACKLOG § 043 close · flights owed): removes the GPS↔baro fade that produced
+    the 11-08 altitude resets, but only with enough sats for a usable GPS vertical.
+  - **Z vibration source** (prop balance, BACKLOG § 043 hardware): it pins INAV's accWeight at the floor. The 09-13 survey showed
+    vibration is not the Z-divergence cause, so this is hygiene, not the fix.
+  - ⚠️ Each of these changes the flight config of record: one A/B-able change set, recorded.
+- **N3 — Detection now (needed whatever N4 decides).** Add EPH / EPV and the XY / Z valid bits to `MSP2_AUTOC_STATE` (INAV fork +
+  `msp_autoc_state_t` + flight log v7). The xiao disengages (new `DisengageReason`) or at least flags the tick on invalid, frozen
+  (stale) or stepped estimates. Today `state_valid` only means *the fetch succeeded*. Absorbs the old *GPS dropout handling during
+  NN control* item. `flight_gates.py` / `bench_join.py` flag such spans automatically (`--drop` exists).
+- **N4 — A span-local inertial frame owned by the xiao (the architecture step).** At engage, take INAV's attitude / velocity /
+  position once. Then propagate on the **xiao's own IMU** (the LSM6DS3 on the board: 021's never-built "AHRS cross-check",
+  revived as the primary). It must run at IMU rate, not the 20 Hz MSP tick. GPS becomes a **soft cross-check**: a slow
+  complementary correction, or a consistency monitor that flags and disengages. **No hard resets inside a span.** INAV stays the
+  safety fallback (arming, failsafe, pilot override, return). Owed: IMU-to-airframe alignment calibration (the xiao board's mount),
+  boot/arm gyro bias calibration, vibration isolation, temperature drift. Scope from N1's numbers. The same IMU is what a future
+  xiao-hosted inner loop would use (BACKLOG § *dedicated fast inner loop*; keep that a separate step).
+- **N5 — Sim parity.** Whatever estimator flies, the sim must hand the policy *that estimator's* errors (span-local drift at N1's
+  measured rates, attitude error under load), not perfect FDM state. If N4 is adopted, this lands **before the 045 bake**.
+
+**Accept (before the first 045 flight):** N1 reported; N2 config set and recorded; N3 flying (fault → flag or disengage, verified on
+the bench by blocking GPS). N4 / N5 adopted or explicitly deferred, with the N1 numbers that justify the choice.
 
 ## Why M2 moved
 

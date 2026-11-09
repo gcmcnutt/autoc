@@ -11,8 +11,9 @@ lines, and — robust to the form — against the reference flight computed by T
 rad/s ÷ 6 → deg/s) and accel z (g ÷ 8). Also per span: rate RMS, band shares, command sign flips/s and % of ticks at the cap
 (|out| > 0.9) per axis, |a_z| p99, median distance to the rabbit.
 
-Usage: flight_gates.py REFLABEL:xiao.csv[,xiao2.csv] LABEL:xiao.csv [...]   (first set = reference; comma-joined CSVs pool
-       spans, e.g. two flights of one day)
+Usage: flight_gates.py REFLABEL:xiao.csv[,xiao2.csv] LABEL:xiao.csv [...] [--drop FILE.csv#SPAN ...]   (first set = reference;
+       comma-joined CSVs pool spans, e.g. two flights of one day; --drop excludes a span by the name the table prints, e.g. a span
+       flown on a faulted nav estimate — 11-08 span 1, flight-analysis-20261108.md § 6)
 """
 import argparse
 import collections
@@ -51,7 +52,7 @@ def band_rms_raw(x, lo, hi):
     return float(math.sqrt(np.mean(np.asarray(x, float) ** 2) * share(x, lo, hi) / 100))
 
 
-def load_spans(paths):
+def load_spans(paths, drop=()):
     spans = []
     for path in paths:
         by = collections.OrderedDict()
@@ -59,7 +60,9 @@ def load_spans(paths):
             for r in csv.DictReader(f):
                 by.setdefault(r["span_id"], []).append(r)
         for sid, rows in by.items():
-            spans.append((f"{path.rsplit('/', 1)[-1]}#{sid}", rows))
+            name = f"{path.rsplit('/', 1)[-1]}#{sid}"
+            if name not in drop:
+                spans.append((name, rows))
     return spans
 
 
@@ -86,13 +89,14 @@ def span_metrics(rows):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     ap.add_argument("sets", nargs="+", metavar="LABEL:csv[,csv]")
+    ap.add_argument("--drop", action="append", default=[], metavar="FILE.csv#SPAN", help="exclude this span (repeatable)")
     args = ap.parse_args()
     cols = ("ticks", "path", "roll35", "pitch35", "pitch23", "roll35_m", "pitch35_m", "pitch23_m", "az_osc_m", "prms", "qrms", "p_s35", "q_s23", "q_s35",
             "flips_rl", "flips_pt", "flips_th", "cap_rl", "cap_pt", "cap_th", "az99", "dist")
     meds = {}
     for spec in args.sets:
         label, paths = spec.split(":", 1)
-        spans = [(n, span_metrics(r)) for n, r in load_spans(paths.split(","))]
+        spans = [(n, span_metrics(r)) for n, r in load_spans(paths.split(","), args.drop)]
         print(f"\n== {label}")
         print(f"{'span':34s}" + "".join(f"{c:>9s}" for c in cols))
         for n, m in spans:

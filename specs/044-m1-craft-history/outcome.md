@@ -31,6 +31,12 @@ from the M2 side in [045](../045-m2-tracking/README.md)**; SC-002 is carried ope
 | sim, regiment gen 800 (`pctInStreak`) | 46.7 % (t6, its plant) | **49.5 %**, 0 crashes, 0 divergences | — |
 | eval suite on the flown genome | all PASS, tier 0 bitwise | **all PASS, tier 0 bitwise** (tier1 294/294, tier3-stress 143/144) | — |
 
+> **Addendum 2026-11-09 — span 1 was flown on a faulted nav estimate** (GPS fell below `gps_min_sats`; the horizontal estimate
+> coasted, froze for 2.3 s and reset 105 m; altitude hard-reset 26 m — [flight-analysis § 6](flight-analysis-20261108.md#6-span-1-was-flown-on-a-faulted-nav-estimate-added-2026-11-09)).
+> Gates without it ([§ 7](flight-analysis-20261108.md#7-the-gates-without-span-1)): roll 3–5 Hz 40 (PASS), distance 8.6 m (PASS),
+> load **1.79 g — SC-005 PASS**, pitch 3–5 Hz 50.4 raw / 42.1 mean-removed (MISS / PASS by form), **pitch 2–3 Hz 70.7, +36 % — SC-002
+> still MISS**. The exit verdict (partly met, SC-002 open) stands.
+
 The operator's "moved bang-bang to roll" impression is the roll energy moving **down** (0.25–2 Hz +20 to +70 %: larger, slower swings,
 very visible from the ground) while the roll *command* got calmer on every measure.
 
