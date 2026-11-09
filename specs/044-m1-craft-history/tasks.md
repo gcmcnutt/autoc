@@ -258,7 +258,7 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
   identical to 91abd4d except the per-boot gyro/gravity calibration, firmware 38ff0d29 = the 10-18 build (no INAV reflash); bench
   `eval-results/bench-20261107/` joined by `bench_join.py` — 341/341 ticks, 0 overruns, rates 36,24,4, 340/341 pure ACRO, yaw 0,
   command → rate r 0.97–0.98 at +60 ms, craft history exact one/two-tick lag and pre-filled at engage; both logs erased for the flight
-- [ ] T053 [US3] Fly with the 043 procedure (blackbox 1/8 with SERVOS + ATTI, streamer state per span, wind recorded, level boot); logs to
+- [X] T053 [US3] Fly with the 043 procedure (blackbox 1/8 with SERVOS + ATTI, streamer state per span, wind recorded, level boot); logs to
   `flight-results/flight-<YYYYMMDD>/`. ⏳ **Ready 2026-11-07.** Field checklist: `get blackbox_rate_denom` = 8 and the Configurator
   Blackbox tab left closed (it has reverted the rate three times); boot level and untouched (gravity is recalibrated at every boot — the
   bench boot read 905.7 cm/s², ~20° tilted); **full streamer, as on 10-18** (the SC comparison is against that flight as flown), state
@@ -266,10 +266,19 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
   gustiness; pilot ready on the first span (bench showed throttle at a rail 43 % and occasional pitch steps — static-airspeed OOD, but
   pitch 2–3 Hz is the predicted borderline). Optional: MANUAL pitch doublets before / after a streamer cut. After: header
   `P interval:1/8`, both logs into the flight directory
-- [ ] T054 [US3] Analyse in `specs/044-m1-craft-history/flight-analysis-<YYYYMMDD>.md`: `candidate_compare.py` (flight mode) and
+  **Flown 2026-11-08**: 1 flight, 4 spans (paths 0 / 2 / 4 / 1), 1635 ticks, 0 overruns / gaps / drops, blackbox 1/8 —
+  `flight-results/flight-20261108/`. ⚠️ streamer state and wind still to record
+- [X] T054 [US3] Analyse in `specs/044-m1-craft-history/flight-analysis-<YYYYMMDD>.md`: `candidate_compare.py` (flight mode) and
   `airframe_id.py` vs the 10-18 reference; SC-001 (roll 3–5 Hz < 82 °/s), SC-002 (pitch 3–5 Hz < 48, 2–3 Hz ≤ 51 °/s), SC-003, SC-004 (roll
   corner inside the class), SC-005 (1.5–5 Hz load < 1.88 g); **a miss on SC-001 or SC-002 opens another bake / flight cycle (append tasks);
   045 waits** (clarification 2)
+  **Done 2026-11-08** → [flight-analysis-20261108.md](flight-analysis-20261108.md): SC-001 **PASS** (roll 3–5 Hz −60 %), SC-002
+  **MISS** (pitch 3–5 Hz −11 % vs −15 % needed; 2–3 Hz **+35 %**, 70 vs ≤ 51), SC-003 PASS (9.1 m), SC-004 PASS (2.97 Hz, class centre),
+  SC-005 marginal (1.90 vs < 1.88; no rise). ⚠️ The airframe fit shows bare-airframe pitch damping on 11-08 (`Cm_q` −1.1 vs 10-18's
+  streamer-on −3.5) — confounds SC-002
+- [ ] T058 [US3] SC-002 miss → cause analysis before any corrective bake (clarification 2; one change at a time): record the 11-08
+  streamer state / wind / airframe changes (flight-analysis § 4); if the flight was bare-airframe, decide between a same-configuration
+  re-fly of g800 and a corrective bake; then append the cycle's tasks. 045 waits
 
 ---
 

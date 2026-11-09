@@ -1,6 +1,6 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-10-18
+**Last Updated**: 2026-11-08
 
 > ✅ **043 CLOSED 2026-10-18** — [outcome](043-acro-dual-loop/outcome.md). The ACRO dual loop flies and tracks ~3× better than
 > t3; the 2 Hz pitch cycle was the sim's missing resonance (`I_yy` 7× too small) — measured, made honest, and **halved in the air** on the
@@ -34,6 +34,22 @@
 > *(Prior routing, 2026-07-10, 038 wrap: 039 xiao, then M2-depth items → 040.)*
 
 ---
+
+## 044 deferrals (filed 2026-11-08, from the acceptance flight)
+
+### [operator 2026-11-08 · ⏳ for 045 · field workflow] BLE flight-log downloader — resume a partial download, and find out why it is so slow
+Field download of a 300 kB xiao flight log took **~10 minutes** (~0.5 kB/s). BLE 4.2/5 with a sane MTU and connection interval should
+move that in seconds, so something is fundamentally wrong in the transport, not just slow. (1) **Resume**: continue from the last
+acknowledged offset after a drop instead of restarting. (2) **Harden / speed up the transport**: measure first — negotiated ATT MTU,
+connection interval, notifications vs read-per-chunk, write-with-response round trips, QSPI read size, any per-chunk delay or
+flush — then fix the dominant cost. Applies to `xiao/web/flight_logger.html` and the xiao BLE service.
+
+### [044 flight analysis, filed 2026-11-08 · small] Log the INAV sample time on every tick — measure the real command transport delay
+`bench_join.py` finds the xiao PWM → FC `rcCommand` correlation peaking with the xiao clock shifted +60–70 ms (bench and flight), but
+the clock map cannot resolve it: the tick timestamp is taken after the fetch and the `INAV_CLOCK` anchors carry the last fetch's INAV
+time (up to a tick stale), so the map is biased by up to 50 ms. The sim models 10 ms (`COMPUTE_LATENCY_MSEC_DEFAULT`). Add
+`autoc_state.timestamp_us` (or its ms) to the v6 tick record, re-join, and settle whether the aircraft carries tens of ms the sim does
+not — at 2.5 Hz every 10 ms is 9° of phase, in the band SC-002 missed.
 
 ## 043 deferrals (filed 2026-10-13, at the t5 checkpoint — [checkpoint-20261013.md](043-acro-dual-loop/checkpoint-20261013.md); 043 continues)
 
