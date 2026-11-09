@@ -101,7 +101,12 @@ path. Eventually not using INAV other than as a safety fallback seems good."*
   attitude **gyro-only from engage** (initialized from INAV's attitude) and compare it with INAV's attitude and with the GPS-derived
   specific-force direction over each span. Report attitude drift at 17 s, then velocity and position drift for a span-local inertial
   propagator, against INAV's estimate including its faults. This sizes N4 and tells whether INAV's AHRS or the raw IMU is the
-  better attitude source in manoeuvres. Tools exist in the 11-09 analysis (earth-frame rotation, sign/lag fit, INAV-rule replay).
+  better attitude source in manoeuvres. Starting tools, from the 11-09 analysis (numpy; `blackbox_decode` first):
+  [`nav_span_scan.py`](nav_span_scan.py) (xiao CSV: frozen / stepped estimates per span),
+  [`nav_accel_fit.py`](nav_accel_fit.py) (earth-frame IMU vs GPS: sign / lag fit, heading-offset sweep, vibration and accWeight;
+  writes `align.npz`), [`nav_dead_reckon.py`](nav_dead_reckon.py) (windowed dead reckoning binned by manoeuvre, and the INAV
+  no-GPS rule replay), [`nav_heading_check.py`](nav_heading_check.py) (heading vs GPS course, for N2's mag check). 11-08 reproduces
+  with `nav_accel_fit.py DIR --air 355 535 --window 378.4 383.2` then `nav_dead_reckon.py DIR --replay 378.47 380.76`.
 - **N2 — GPS / sensor hygiene (config + bench; helps INAV as the fallback either way).**
   - Galileo on (± GLONASS): GPS-only gives 5–7 sats, and every drop below `gps_min_sats = 6` on 11-08 came in a pull.
   - `gps_dyn_model` AIR_2G → **AIR_4G**: the aircraft is above 2 g for 45 % of airborne time and above 4 g for 14 %; every sat drop
