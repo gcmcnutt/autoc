@@ -75,23 +75,16 @@ tests/
 
 C++17: Follow standard conventions
 
-## Active feature — 044 M1 craft-sensor history + roll plant (flight-ready, T053 next; state 2026-11-07)
+## Active feature — 045 M2 tracking (seed, not started; state 2026-11-08)
 
-**State 2026-11-07**: bake t1 done (800 gens, all eval tiers PASS, tier 0 bitwise); pick **g800** (`a5ed3521ea1e70b7`,
-[`artifacts-t1/MANIFEST.md`](specs/044-m1-craft-history/artifacts-t1/MANIFEST.md) § 7–9); flashed on article 1 and benched
-(T052 ✅). Next: **T053 fly** → **T054 analyse** (SC-001…005 vs the 10-18 flight; pitch 2–3 Hz is the predicted borderline).
-Setup background below is from the seed.
+**044 is CLOSED** (2026-11-08, [`outcome.md`](specs/044-m1-craft-history/outcome.md), **partly met**): the honest roll plant cut 3–5 Hz
+roll 60 % in the air and tracking improved, but pitch moved into 2–3 Hz (+35 %) and SC-002 missed; the flight's airframe fit changed
+vs 10-18 with nothing configured differently (wing bands suspected), so the miss is unattributed — carried in
+[`specs/BACKLOG.md`](specs/BACKLOG.md) § 044 close. **Next: [045](specs/045-m2-tracking/README.md) M2** — operator: work the gates from
+the M2 side. Inherits the 53/74-input layout v4 (craft history in the shared block), the honest pitch + roll plant, flight log v6, NN01
+v2. Flight baseline of record: **044-t1 g800** (`a5ed3521ea1e70b7`, flown 11-08). `nn2cpp` emits unrolled by default (`-p` for analytics).
 
-**043 is CLOSED** (2026-10-18, [`outcome.md`](specs/043-acro-dual-loop/outcome.md)): the honest pitch plant (measured `I_yy`
-0.0094) halved the 2 Hz pitch cycle in the air on the t6 exit flight, and that flight confirmed the inertia within ~10 % — but roll
-oscillation rose because the sim's roll mode is ~4.5× too slow. **Next: [044](specs/044-m1-craft-history/README.md)** — one more M1:
-gyro p/q/r + accel z history at 50/100 ms (+8 slots), the input layout cleaned so history sits next to its current value, a partial
-roll correction as a `CraftClP` class (scale `Cl_da` with `Cl_p`), the pitch damping class widened to the streamer, FC sensor delays,
-and the baseline-boundary fixes (PRNG class independence, wind-draw logging, explicit eval scale). **M2 is
-[045](specs/045-m2-tracking/README.md)** (renumbered). Flight baseline of record: **t6 gen 752** (`7faeea2d022cbb95`, flown 10-18,
-full streamer). ⛔ Before 044's format break: tag the last 45-input commit and archive what the new build cannot read (044 R2).
-
-## 043 background (the notes below remain true of the architecture)
+## 043 background (the notes below remain true of the architecture; 044 added the roll plant and craft history)
 
 **Start here**: [`specs/043-acro-dual-loop/spec.md`](specs/043-acro-dual-loop/spec.md) — read its
 **§ What ACRO is** first; the whole feature is downstream of that definition. Then
@@ -128,7 +121,7 @@ Constitution IV, operator-driven.
 best M1 in project history, flown. Its t7 run is 043's baseline of record.
 
 ## Recent Changes
-- 044-m1-craft-history: Added C++17 (autoc, crrcsim, xiao firmware), Python 3.11 (analytics) + Eigen, cereal, inih, GoogleTest, CRRCSim LaRCSim FDM, INAV MSP (unchanged), PlatformIO (xiao)
+- 044-m1-craft-history (CLOSED 2026-11-08): Added C++17 (autoc, crrcsim, xiao firmware), Python 3.11 (analytics) + Eigen, cereal, inih, GoogleTest, CRRCSim LaRCSim FDM, INAV MSP (unchanged), PlatformIO (xiao)
 - 043-acro-dual-loop: Added C++17 (autoc, crrcsim), C (INAV fork), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analysis) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp), inih (ini), GoogleTest, CRRCSim LaRCSim FDM, INAV MSP
 - 041-m2-depth: Added C++17 (autoc, crrcsim, tools), Python 3.11 (analytics only) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp serialization), inih (ini),
 

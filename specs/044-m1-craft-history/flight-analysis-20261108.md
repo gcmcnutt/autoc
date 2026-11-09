@@ -4,7 +4,7 @@ Genome t1 g800 (`a5ed3521ea1e70b7`, created gen 730, unrolled build), article 1,
 (`xiao/inav-hb1.cfg` @ 91abd4d), blackbox `1/8`, rates `36,24,4`. One flight: xiao `flight_log_2026-11-09T00-14-08_flight_001.bin`
 (4 engaged spans, 1635 ticks, 82 s; paths 0 StraightAndLevel, 2, 4, 1; 0 overruns / gaps / drops) + blackbox
 `blackbox_log_2026-11-08_160651` (3:15, 250 Hz). Operator: *"fairly decent, a bit less bang-bang … we did seem to move bang-bang to
-roll"*. ⚠️ **Streamer state and wind not yet recorded** — see § 4; the pitch result depends on it.
+roll"*. Streamer full as on 10-18, light to no wind, no configuration change (operator, § 4).
 
 Reference: the two 10-18 t6 g752 flights (7 spans), recomputed by the same code. Scripts: [`flight_gates.py`](flight_gates.py) (xiao
 ticks, 20 Hz, the criteria), [`bench_join.py`](bench_join.py) (xiao ↔ blackbox), [`../043-acro-dual-loop/airframe_id.py`](../043-acro-dual-loop/airframe_id.py)
@@ -73,12 +73,13 @@ the policy cannot be judged on SC-002 until the configuration is known. The `Cra
 bare edge of what g800 trained on. The roll corner also halved (5.05 → 2.97 Hz) on the same airframe — not explained yet (a streamer
 should add little roll damping; CG, battery or wing changes would). The 11-08 corner happens to sit on the class centre (3.24 Hz).
 
-## 4. Open — needed before the cause analysis
+## 4. Operator answers (2026-11-08) and what they mean
 
-1. **Streamer state per span** (and length) on 11-08 — the pitch-damping fit says *bare or much reduced*. If bare, SC-002 is a
-   different-configuration comparison and the next step may be a same-configuration re-fly rather than a bake.
-2. **Wind** (speed / direction / gusts).
-3. **Anything changed on the airframe since 10-18** (battery, CG, wing, servo linkage) — the roll corner moved 5 → 3 Hz.
+**Same streamer, light to no wind, nothing changed** — except that the rubber bands holding the wing on may be oxidized. So the
+configuration of record was the same as 10-18, yet the airframe fit (§ 3) shows bare-level pitch damping and a roll corner halved:
+**something physical changed**, and a compliant wing mount (wing moving relative to the fuselage-mounted FC) is a plausible cause of
+both. Not measured. SC-002 therefore stands as a **miss with an unresolved cause** (airframe vs policy). Operator decision: close 044,
+carry SC-002 to the backlog — re-fly g800 on fresh bands with an airframe re-ID before any corrective bake ([outcome.md](outcome.md) § 4).
 
 ## 5. Join and loop health
 

@@ -1,3 +1,7 @@
+> ▶ **044 CLOSED 2026-11-08** ([outcome](../044-m1-craft-history/outcome.md)) — 045 is next. Inherits layout v4 (53 M1 / 74 tracker
+> inputs, craft history in the shared block), the honest pitch + roll plant, flight log v6 and NN01 v2. Open from 044: SC-002 pitch in
+> flight ([BACKLOG](../BACKLOG.md) § 044 close); a BLE downloader fix is filed for 045.
+
 # 045 — M2 tracking (seed)
 
 > ⚠️ **RENUMBERED 044 → 045 on 2026-10-18** (operator, at the 043 wrap): one more M1 feature goes first —

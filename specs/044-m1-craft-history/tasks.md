@@ -267,7 +267,7 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
   pitch 2–3 Hz is the predicted borderline). Optional: MANUAL pitch doublets before / after a streamer cut. After: header
   `P interval:1/8`, both logs into the flight directory
   **Flown 2026-11-08**: 1 flight, 4 spans (paths 0 / 2 / 4 / 1), 1635 ticks, 0 overruns / gaps / drops, blackbox 1/8 —
-  `flight-results/flight-20261108/`. ⚠️ streamer state and wind still to record
+  `flight-results/flight-20261108/`. Full streamer as on 10-18, light / no wind, no configuration change (wing bands possibly oxidized)
 - [X] T054 [US3] Analyse in `specs/044-m1-craft-history/flight-analysis-<YYYYMMDD>.md`: `candidate_compare.py` (flight mode) and
   `airframe_id.py` vs the 10-18 reference; SC-001 (roll 3–5 Hz < 82 °/s), SC-002 (pitch 3–5 Hz < 48, 2–3 Hz ≤ 51 °/s), SC-003, SC-004 (roll
   corner inside the class), SC-005 (1.5–5 Hz load < 1.88 g); **a miss on SC-001 or SC-002 opens another bake / flight cycle (append tasks);
@@ -276,9 +276,10 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
   **MISS** (pitch 3–5 Hz −11 % vs −15 % needed; 2–3 Hz **+35 %**, 70 vs ≤ 51), SC-003 PASS (9.1 m), SC-004 PASS (2.97 Hz, class centre),
   SC-005 marginal (1.90 vs < 1.88; no rise). ⚠️ The airframe fit shows bare-airframe pitch damping on 11-08 (`Cm_q` −1.1 vs 10-18's
   streamer-on −3.5) — confounds SC-002
-- [ ] T058 [US3] SC-002 miss → cause analysis before any corrective bake (clarification 2; one change at a time): record the 11-08
-  streamer state / wind / airframe changes (flight-analysis § 4); if the flight was bare-airframe, decide between a same-configuration
-  re-fly of g800 and a corrective bake; then append the cycle's tasks. 045 waits
+- [X] T058 [US3] SC-002 miss → cause analysis ⏩ **dispositioned 2026-11-08**: operator answers (same streamer, light / no wind, no
+  change; wing bands possibly oxidized) rule out a configuration difference, yet the airframe fit changed (pitch `Cm_q` −3.5 → −1.1, roll
+  corner 5.05 → 2.97 Hz) — cause unresolved between airframe and policy. **Operator: close 044, gates continue from the M2 side in 045**;
+  re-fly g800 on fresh bands + airframe re-ID carried to BACKLOG § 044 close (no corrective cycle appended)
 
 ---
 
@@ -288,9 +289,9 @@ header, its asserts and the recording sites; smoke B vs smoke A gives SC-006.
   | grep -v '// raw-ok:'` — annotate or convert every new hit
 - [X] T056 [P] File deferrals in `specs/BACKLOG.md` (Constitution X): profiling speed-ups that were not bitwise-neutral and any unexplained
   per-tick cost (T013); the accel x/y history revisit trigger; anything the honesty ladder left open
-- [ ] T057 When SC-001 and SC-002 pass: `specs/044-m1-craft-history/outcome.md` citing every pinned S3 prefix (the bake, the flown genome,
-  the 043 preservation keys from T001) and both tags (Constitution VIII.2), final BACKLOG pass, `CLAUDE.md` § Active feature → 045, memory
-  pointer updated
+- [X] T057 Outcome and close ⏩ **closed 2026-11-08 by operator decision with SC-002 open** (the task's "when SC-001 and SC-002
+  pass" condition was not met — recorded, not waived): [outcome.md](outcome.md) cites every pinned S3 prefix and both tags; BACKLOG § 044
+  close carries SC-002 / SC-005; `CLAUDE.md` § Active feature → 045; memory pointer updated
 
 ---
 

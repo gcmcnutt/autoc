@@ -2,6 +2,11 @@
 
 **Last Updated**: 2026-11-08
 
+> ✅ **044 CLOSED 2026-11-08** — [outcome](044-m1-craft-history/outcome.md), **partly met**. The roll-plant correction worked in the air
+> (3–5 Hz roll −60 %, tracking 12.2 → 9.1 m) but pitch moved into 2–3 Hz (+35 %) and **SC-002 missed**; the flight's airframe fit
+> changed vs 10-18 with nothing configured differently (wing bands suspected), so the miss is not yet attributed. **Routing (operator
+> 2026-11-08): 045 M2** — gates worked from the M2 side; SC-002 carried below.
+
 > ✅ **043 CLOSED 2026-10-18** — [outcome](043-acro-dual-loop/outcome.md). The ACRO dual loop flies and tracks ~3× better than
 > t3; the 2 Hz pitch cycle was the sim's missing resonance (`I_yy` 7× too small) — measured, made honest, and **halved in the air** on the
 > t6 exit flight, which also confirmed the inertia within ~10 % and exposed a roll mode ~4.5× too slow in the sim. **Routing (operator
@@ -36,6 +41,15 @@
 ---
 
 ## 044 deferrals (filed 2026-11-08, from the acceptance flight)
+
+### [044 close, filed 2026-11-08 · ⭐ OPEN GATE] SC-002 pitch missed in flight — separate airframe from policy before any corrective bake
+11-08 g800 flight: pitch 2–3 Hz RMS 52 → **70 °/s** (+35 %, line ≤ 51), 3–5 Hz −11 % (needed −15 %); SC-005 load level (1.90 vs
+< 1.88). The same flight's airframe FRF differs from 10-18 with the same streamer, no wind and no configuration change: pitch `Cm_q`
+−3.5 → −1.1 (ζ 0.55 → 0.38, |H| peak 1.61 → 2.21 at 2.9 Hz) and roll corner 5.05 → 2.97 Hz. Operator suspects **oxidized wing-retention
+bands** (a compliant wing mount). Cheapest discriminator: **fresh bands, re-fly g800 as-is, MANUAL pitch/roll doublets in the same
+sortie, rerun `airframe_id.py` + `flight_gates.py`** ([flight-analysis-20261108.md](044-m1-craft-history/flight-analysis-20261108.md)).
+If the airframe returns to the 10-18 fit and pitch 2–3 Hz drops, the miss was the airframe; if not, it is the policy (gate_estimate
+already showed g800 no better than g752 at 2–3 Hz in sim) and a pitch-side change is the next M1 lever. 045 may fly first (operator).
 
 ### [operator 2026-11-08 · ⏳ for 045 · field workflow] BLE flight-log downloader — resume a partial download, and find out why it is so slow
 Field download of a 300 kB xiao flight log took **~10 minutes** (~0.5 kB/s). BLE 4.2/5 with a sane MTU and connection interval should
