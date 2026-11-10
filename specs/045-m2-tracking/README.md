@@ -1,8 +1,32 @@
+> 📘 **[spec.md](spec.md) governs from 2026-11-10** (execution order, requirements, acceptance). This README is the derivation of
+> record and is superseded where it conflicts.
+>
 > ▶ **044 CLOSED 2026-11-08** ([outcome](../044-m1-craft-history/outcome.md)) — 045 is next. Inherits layout v4 (53 M1 / 74 tracker
-> inputs, craft history in the shared block), the honest pitch + roll plant, flight log v6 and NN01 v2. Open from 044: SC-002 pitch in
-> flight ([BACKLOG](../BACKLOG.md) § 044 close); a BLE downloader fix is filed for 045. ⛔ **Front tasks first:** the dmp cache ([below](#-front-task--write-through-dmp-cache-on-the-training-box-filed-2026-10-25))
-> and **navigation & attitude integrity** ([below](#-pre-task--navigation--attitude-integrity-filed-2026-11-09)) — phase 1 flies a virtual target, so it
-> depends on the nav frame exactly as M1 does.
+> inputs, craft history in the shared block), the honest pitch + roll plant, flight log v6 and NN01 v2.
+> ⛔ **M2 does not proceed until [PHASE 0](#-phase-0--pre-m2-general-improvement-and-a-re-fly-operator-2026-11-10) closes**: two front tasks
+> (dmp cache, BLE downloader), the navigation & attitude pre-tasks, and **a re-fly of the current model** with the GPS / blackbox / INAV
+> changes, for a cleaner signal. Phase 1 flies a virtual target, so it depends on the nav frame exactly as M1 does.
+> The 044 SC-002 pitch 2–3 Hz miss is **backlog, not a 045 gate** (operator 2026-11-10: close enough; M2 fidelity work comes before
+> fine-tuning basic control).
+
+## ⛔ PHASE 0 — pre-M2: general improvement and a re-fly (operator 2026-11-10)
+
+*"The pre-work is general improvement and we probably need another flight on the most recent model with GPS, blackbox, INAV
+adjustments to get a better signal … all this is before the M2 proceeds."*
+
+Order:
+1. **Front tasks**: [F1 dmp cache](#-front-task--write-through-dmp-cache-on-the-training-box-filed-2026-10-25) and
+   [F2 BLE downloader](#-front-task-f2--ble-flight-log-downloader-filed-2026-11-08-promoted-2026-11-10).
+2. **Pre-tasks**: [N1–N6](#-pre-task--navigation--attitude-integrity-filed-2026-11-09), plus **extra blackbox fields** (B1, below), whatever N1
+   shows is missing.
+3. **Re-fly the flight baseline of record (044-t1 g800)** with N2's GPS / INAV config, N3's advisory logging and B1's blackbox
+   fields. The goal is a clean nav and attitude signal on a known policy. **Article 2** (`xiao/inav-hb1-art2.cfg`,
+   `cad/article2-harness/`) flies in the same window if the weather allows.
+4. Then the **M2 core**: camera parameters from 042 ([Gate 1](#gate-1--the-042-camera-parameters-must-have-landed)), lock down the
+   signal-realism model, and [Gate 2](#gate-2---audit-the-46-tracker-specific-input-scales) (⚠️ **needs discussion** before it is acted on).
+
+- **B1 — Additional blackbox fields (scope from N1).** Log the estimator internals that N1 has to infer today: at least the nav
+  position and velocity estimate and its validity, EPH/EPV, accWeight and sat count. These must be in the re-fly's log.
 
 
 # 045 — M2 tracking (seed)
@@ -56,6 +80,14 @@ on the WSL box, etc.) can read any gen as soon as it exists. Reporters on the tr
 box for gens that host wrote, and ≤ 1 per key for anything else. The month's `USW2-DataTransfer-Out-Bytes` stays under
 the 100 GB free tier. Logs: `s3://autoc-s3-access-logs/{m1,m2,eval}/` (90-day expiry).
 
+## ⛔ FRONT TASK F2 — BLE flight-log downloader (filed 2026-11-08, promoted 2026-11-10)
+
+Field workflow, needed before the Phase 0 re-fly. A 300 kB xiao flight log took **~10 minutes** to download in the field
+(~0.5 kB/s). BLE should move that in seconds, so the transport is broken, not just slow. (1) **Resume** a dropped download from the
+last acknowledged offset instead of restarting. (2) **Measure, then fix the dominant cost**: negotiated ATT MTU, connection interval,
+notify vs read-per-chunk, write-with-response round trips, QSPI read size, any per-chunk delay or flush. Surfaces:
+`xiao/web/flight_logger.html` and the xiao BLE service. Filing record: [BACKLOG](../BACKLOG.md) § 044 deferrals.
+
 ## ⛔ PRE-TASK — navigation & attitude integrity (filed 2026-11-09)
 
 **Gates the first 045 flight; N4/N5 decide what the 045 bake trains on.** Pulled in from BACKLOG (each source item is marked
@@ -107,20 +139,40 @@ path. Eventually not using INAV other than as a safety fallback seems good."*
   writes `align.npz`), [`nav_dead_reckon.py`](nav_dead_reckon.py) (windowed dead reckoning binned by manoeuvre, and the INAV
   no-GPS rule replay), [`nav_heading_check.py`](nav_heading_check.py) (heading vs GPS course, for N2's mag check). 11-08 reproduces
   with `nav_accel_fit.py DIR --air 355 535 --window 378.4 383.2` then `nav_dead_reckon.py DIR --replay 378.47 380.76`.
-- **N2 — GPS / sensor hygiene (config + bench; helps INAV as the fallback either way).**
-  - Galileo on (± GLONASS): GPS-only gives 5–7 sats, and every drop below `gps_min_sats = 6` on 11-08 came in a pull.
-  - `gps_dyn_model` AIR_2G → **AIR_4G**: the aircraft is above 2 g for 45 % of airborne time and above 4 g for 14 %; every sat drop
-    followed a 2.7–3.9 g mean (peaks 5–7.5 g).
-  - **Mag tumble calibration** (BACKLOG § compass, 4.5 % gain spread; the 09-07 retry made it 16 %).
-  - `inav_default_alt_sensor` = `GPS_ONLY` decision (BACKLOG § 043 close · flights owed): removes the GPS↔baro fade that produced
-    the 11-08 altitude resets, but only with enough sats for a usable GPS vertical.
-  - **Z vibration source** (prop balance, BACKLOG § 043 hardware): it pins INAV's accWeight at the floor. The 09-13 survey showed
-    vibration is not the Z-divergence cause, so this is hygiene, not the fix.
-  - ⚠️ Each of these changes the flight config of record: one A/B-able change set, recorded.
-- **N3 — Detection now (needed whatever N4 decides).** Add EPH / EPV and the XY / Z valid bits to `MSP2_AUTOC_STATE` (INAV fork +
-  `msp_autoc_state_t` + flight log v7). The xiao disengages (new `DisengageReason`) or at least flags the tick on invalid, frozen
-  (stale) or stepped estimates. Today `state_valid` only means *the fetch succeeded*. Absorbs the old *GPS dropout handling during
-  NN control* item. `flight_gates.py` / `bench_join.py` flag such spans automatically (`--drop` exists).
+- **N2 — INAV configuration review for all-attitude flight (operator 2026-11-10: "a LOT").** The config of record
+  ([`xiao/inav-hb1.cfg`](../../xiao/inav-hb1.cfg), frozen at 91abd4d) is mostly INAV's defaults for a cruising airplane. The 043/044
+  analyses show it does not hold up in sustained high-g, all-attitude flight. This is a full review, not just the GPS items. It is
+  sorted by what each setting touches, because that decides whether the g800 re-fly is still a test of the same policy:
+
+  | class | what changing it does | settings (current value) | 044/043 evidence |
+  |---|---|---|---|
+  | **A — inside the ACRO rate loop** | changes the **plant g800 was trained on**; the sim must change with it | `gyro_main_lpf_hz` 25 PT1 (sim matches: `gyroLpfHz`), dynamic notch (2D, Q 250, ≥ 30 Hz), `fw_*` rate gains | 25 Hz is aggressive for a fixed wing (6.4 ms, 11° at 5 Hz) |
+  | **B — NN observation path** | changes **what the policy sees**; N5 must match it | `acc_lpf_hz` 15 BIQUAD (21 ms; no sim model found), AHRS: `ahrs_dcm_kp/ki` 2000/50, `ahrs_acc_ignore_rate` 15 °/s / `_slope` 5, `ahrs_inertia_comp_method` ADAPTIVE, `ahrs_gps_yaw_weight` 100, mag cal + `align_mag_*` | quaternion off 10–25° in pulls; at ≥ 15 °/s the accelerometer is ignored, so gyro + an under-calibrated QMC5883 carry attitude through every manoeuvre |
+  | **C — nav estimator / GPS only** | changes the **nav frame** (path anchor, position/velocity inputs), not the plant | constellations (Galileo/GLONASS/BeiDou all OFF), `gps_dyn_model` AIR_2G, `gps_min_sats` 6, `inav_max_eph_epv` 1000 cm, `inav_allow_dead_reckoning` OFF, `inav_allow_gps_fix_estimation` OFF, `inav_default_alt_sensor` GPS with `inav_w_z_baro_p` 0.35 > `inav_w_z_gps_p` 0.20, `inav_w_xy_res_v` / `_z_res_v` 0.5, `inav_w_acc_bias` 0.01, `inav_baro_epv` 100 | 5–7 sats, every drop in a pull above 2.7 g; EPV/EPH at the 1000 cm cap marks every jump flight; 2.3 s freeze, then a 105 m XY reset; 26 m Z reset through the baro/GPS fade; baro is the heaviest Z input |
+  | **D — fallback / safety** | what INAV does **after** autoc (N6) | `failsafe_procedure` DROP, RTH block, `nav_extra_arming_safety` | DROP needs no altitude estimate; RTH needs the full estimator |
+  | **E — logging** | evidence only | blackbox 1/8, `-NAV_ACC -MAG -QUAT -RC_DATA` (B1) | N1 has to infer EPH/EPV and accWeight today |
+  | **hardware** | — | Z vibration / prop balance (BACKLOG § 043 hardware), mag tumble calibration (BACKLOG § compass; 4.5 % gain spread, 16 % after the 09-07 retry) | vibration pins accWeight at its 0.30 floor; the 09-13 survey showed it is not the Z-divergence cause |
+
+  - ⭐ **For the g800 re-fly: class C, D, E and hardware are free to change. A and B are not**, unless the sim changes with them (N5)
+    and g800 is re-evaluated, or retrained, on the new plant. Otherwise the re-fly no longer tests the policy it is meant to measure.
+    B is the hard one. Better attitude is the point of the work, but it moves the quaternion the policy has learned on.
+  - ⚠️ **Article 1's GPS receiver is not recorded anywhere in the repo**, and multi-constellation support is not confirmed for it.
+    Article 2's Matek M10Q-5883 (u-blox M10) does support it. First step, on the bench: CLI `status` prints the u-blox
+    `HW Version`, the protocol version and a `GNSS Capabilities` block (`Galileo/BeiDou/Glonass active/default`, `Max concurrent`).
+    Record it here. ⛔ **INAV fails silently on this**: if the receiver NAKs the GNSS config, `gps_ublox.c` (~L1108) resets all
+    three `gps_ublox_use_*` back to their defaults. So setting `gps_ublox_use_galileo = ON` proves nothing. Confirm with `status`
+    after a reboot, and with the sat count. If article 1 cannot use more than GPS, the sat-count fix is a receiver swap
+    (e.g. the same M10Q as article 2), which is hardware, not config.
+  - Candidate C changes already argued: Galileo (± GLONASS), receiver permitting (above); AIR_4G (above 2 g for 45 % of airborne time, above 4 g for 14 %);
+    `GPS_ONLY` (BACKLOG § 043 close; needs enough sats for a usable GPS vertical); review the EPH/EPV cap and dead reckoning together,
+    since together they produce the freeze and the reset.
+  - Each setting is read in the INAV 8.0 fork source before it changes (units, and what it actually gates). The result is one
+    recorded change set per class, A/B-able against the 11-08 and 10-18 logs.
+- **N3 — Detection, ADVISORY ONLY (operator 2026-11-10: no change to operations).** Add EPH / EPV and the XY / Z valid bits to
+  `MSP2_AUTOC_STATE` (INAV fork + `msp_autoc_state_t` + flight log v7). The xiao **flags the tick** on invalid, frozen (stale) or
+  stepped estimates. **No new disengage.** The goal is the xiao's own IMU during autoc (N4), so INAV's estimate is being measured
+  here, not made into a flight gate. Today `state_valid` only means *the fetch succeeded*. Absorbs the old *GPS dropout handling
+  during NN control* item. `flight_gates.py` / `bench_join.py` flag such spans automatically (`--drop` exists).
 - **N4 — A span-local inertial frame owned by the xiao (the architecture step).** At engage, take INAV's attitude / velocity /
   position once. Then propagate on the **xiao's own IMU** (the LSM6DS3 on the board: 021's never-built "AHRS cross-check",
   revived as the primary). It must run at IMU rate, not the 20 Hz MSP tick. GPS becomes a **soft cross-check**: a slow
@@ -128,11 +180,22 @@ path. Eventually not using INAV other than as a safety fallback seems good."*
   safety fallback (arming, failsafe, pilot override, return). Owed: IMU-to-airframe alignment calibration (the xiao board's mount),
   boot/arm gyro bias calibration, vibration isolation, temperature drift. Scope from N1's numbers. The same IMU is what a future
   xiao-hosted inner loop would use (BACKLOG § *dedicated fast inner loop*; keep that a separate step).
+- **N6 — INAV's role during autoc: a simpler mode with sensible gates (study; operator 2026-11-10).** Autoc still depends on INAV
+  for ACRO, so N4 alone does not take INAV's estimator out of the loop. Separate what each dependency actually needs:
+  - **The ACRO rate loop** needs gyro rates only. `pidLevel` does not run in ACRO and ACRO never reads `attitude.raw[]` (043 spec
+    § What ACRO is), so it should be immune to nav-estimator faults. *Verify this in the fork*, including anything the autoc
+    MSP-override path pulls from nav or attitude.
+  - **The nav estimator → xiao** (the MSP state) is replaced by N4.
+  - **The safety fallback** (failsafe, RTH, pilot override, any nav-mode gates) is where INAV still consumes its own estimate.
+  The study question: configure INAV during autoc as a gyro rate loop plus simple, estimator-independent gates (e.g. attitude or
+  rate limits, an altitude floor from baro, link-loss failsafe), so a nav fault cannot change how the aircraft flies. Keep its full
+  estimator only for the fallback after disengage. N2's config changes feed this.
 - **N5 — Sim parity.** Whatever estimator flies, the sim must hand the policy *that estimator's* errors (span-local drift at N1's
   measured rates, attitude error under load), not perfect FDM state. If N4 is adopted, this lands **before the 045 bake**.
 
-**Accept (before the first 045 flight):** N1 reported; N2 config set and recorded; N3 flying (fault → flag or disengage, verified on
-the bench by blocking GPS). N4 / N5 adopted or explicitly deferred, with the N1 numbers that justify the choice.
+**Accept (before the Phase 0 re-fly):** N1 reported; N2 config set and recorded; N3 logging (fault → flagged tick, verified on the
+bench by blocking GPS); B1 fields in the blackbox; the N6 dependency map written. N4 / N5 / N6 adopted or explicitly deferred, with the
+N1 numbers that justify the choice.
 
 ## Why M2 moved
 
@@ -234,6 +297,9 @@ Check before launching: the 042 camera constants are merged, and `beacon_config.
 parameters are the 042 values, not 040's.
 
 ### Gate 2 — ⚠️ AUDIT THE 46 TRACKER-SPECIFIC INPUT SCALES
+
+> 💬 **Needs discussion (operator 2026-11-10)** before it is acted on. Layout v4 now has 74 tracker inputs, so the 46 / 20 split
+> below predates 044's craft history.
 
 ⭐ **M2 inherits the shared block's normalization automatically and completely.** `TrackerInputs` embeds
 `CraftCommonInputs` (the same struct M1 uses), and `gather_tracker_inputs` calls the same

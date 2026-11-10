@@ -42,7 +42,8 @@
 
 ## 044 deferrals (filed 2026-11-08, from the acceptance flight)
 
-### [044 close, filed 2026-11-08 · ⭐ OPEN GATE] SC-002 pitch missed in flight — separate airframe from policy before any corrective bake
+### [044 close, filed 2026-11-08 · ⭐ OPEN GATE · deferred behind 045 M2 fidelity work] SC-002 pitch missed in flight — separate airframe from policy before any corrective bake
+> **Operator 2026-11-10**: not a 045 gate. The pitch result is close, and M2 fidelity work comes before fine-tuning basic control.
 11-08 g800 flight: pitch 2–3 Hz RMS 52 → **70 °/s** (+35 %, line ≤ 51), 3–5 Hz −11 % (needed −15 %); SC-005 load level (1.90 vs
 < 1.88). The same flight's airframe FRF differs from 10-18 with the same streamer, no wind and no configuration change: pitch `Cm_q`
 −3.5 → −1.1 (ζ 0.55 → 0.38, |H| peak 1.61 → 2.21 at 2.9 Hz) and roll corner 5.05 → 2.97 Hz. Operator suspects **oxidized wing-retention
@@ -74,7 +75,8 @@ estimate coasted on the accelerometer (north velocity wrong by ~25 m/s), went in
 3. **Analysis** — have `flight_gates.py` / `bench_join.py` flag spans with nav steps or frozen velocity (the check is ~10 lines on the
    tick CSV) instead of finding them by eye; `--drop` exists for excluding them.
 
-### [operator 2026-11-08 · ⏳ for 045 · field workflow] BLE flight-log downloader — resume a partial download, and find out why it is so slow
+### [operator 2026-11-08 · field workflow · ✅ PROMOTED 2026-11-10 → 045 FRONT TASK F2] BLE flight-log downloader — resume a partial download, and find out why it is so slow
+> ✅ **Promoted 2026-11-10** to [045 FRONT TASK F2](045-m2-tracking/README.md#-front-task-f2--ble-flight-log-downloader-filed-2026-11-08-promoted-2026-11-10). That section governs; the text below is the filing record.
 Field download of a 300 kB xiao flight log took **~10 minutes** (~0.5 kB/s). BLE 4.2/5 with a sane MTU and connection interval should
 move that in seconds, so something is fundamentally wrong in the transport, not just slow. (1) **Resume**: continue from the last
 acknowledged offset after a drop instead of restarting. (2) **Harden / speed up the transport**: measure first — negotiated ATT MTU,
@@ -650,7 +652,8 @@ re-bake and a xiao forward-pass regeneration.
 
 ## 041 deferrals
 
-### [041 P2-8 follow-up, filed 2026-08-20 · ⭐ HIGH VALUE, LOW COST] Formal input normalization — measured statistics, not hand-derived constants
+### [041 P2-8 follow-up, filed 2026-08-20 · ⭐ HIGH VALUE, LOW COST · partly → 045 (quick domain check only)] Formal input normalization — measured statistics, not hand-derived constants
+> 🔗 **2026-11-10**: 045 does only a quick input-domain check of every input ([spec.md](045-m2-tracking/spec.md) FR-022), changing a constant only where an input is saturated or dead; M1 inputs stay roughly as they are. **This formal item stays here.**
 
 **Trigger**: P2-8 fixed input scaling **by hand**, and the hand-fix was the third swing at the same problem.
 
