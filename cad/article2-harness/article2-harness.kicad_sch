@@ -1,0 +1,1844 @@
+(kicad_sch
+	(version 20260306)
+	(generator "autoc-article2")
+	(generator_version "10.0")
+	(uuid "2a1f0c64-0000-4000-8000-a17c1e020001")
+	(paper "A3")
+	(title_block
+		(title "Article 2 - FC / xiao / GPS / ESC harness")
+		(company "autoc")
+		(comment 1 "Interconnect only - net labels, no drawn wires")
+		(comment 2 "Grounds are 4 distinct wires, bonded only inside modules")
+		(comment 3 "PROPOSED - not built, not verified on hardware")
+	)
+	(lib_symbols
+	  (symbol "article2-harness:FC_HGLRC_SpecterF722Lite"
+	    (exclude_from_sim no)
+	    (in_bom yes)
+	    (on_board yes)
+	    (property "Reference" "U"
+	      (at 0 27.94 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Value" "Specter F722 Lite"
+	      (at 0 -27.94 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Footprint" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Datasheet" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Description" "HGLRC Specter F722 Lite. STM32F722, ICM42688P, DPS310, 16 MB flash, onboard ELRS on UART2 (short-connect pad), 5V 2A BEC, 2-6S. Unit 1 = TOP face pads, unit 2 = BOTTOM face pads. BAT_B feeds both the regulator and the vbat divider (ADC ch 1, PC2). Only M1-M4 have pads. UART5 has no pads; UART6 is RX-only."
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (symbol "FC_HGLRC_SpecterF722Lite_1_1"
+	      (unit_name "TOP face")
+	      (rectangle
+	        (start -33.02 20.32)
+	        (end 33.02 -20.32)
+	        (stroke (width 0.254) (type default))
+	        (fill (type background))
+	      )
+	      (pin input line
+	        (at -35.56 6.35 0)
+	        (length 2.54)
+	        (name "CAM" (effects (font (size 1.27 1.27))))
+	        (number "CAM" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_out line
+	        (at -35.56 3.81 0)
+	        (length 2.54)
+	        (name "5V_T1" (effects (font (size 1.27 1.27))))
+	        (number "5V_T1" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at -35.56 1.27 0)
+	        (length 2.54)
+	        (name "VTX" (effects (font (size 1.27 1.27))))
+	        (number "VTX" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin input line
+	        (at -35.56 -1.27 0)
+	        (length 2.54)
+	        (name "RX1" (effects (font (size 1.27 1.27))))
+	        (number "RX1" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin output line
+	        (at -35.56 -3.81 0)
+	        (length 2.54)
+	        (name "TX1" (effects (font (size 1.27 1.27))))
+	        (number "TX1" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_out line
+	        (at -35.56 -6.35 0)
+	        (length 2.54)
+	        (name "GND_T1" (effects (font (size 1.27 1.27))))
+	        (number "GND_T1" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at -7.62 22.86 270)
+	        (length 2.54)
+	        (name "BAT_T" (effects (font (size 1.27 1.27))))
+	        (number "BAT_T" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at -2.54 22.86 270)
+	        (length 2.54)
+	        (name "VIN" (effects (font (size 1.27 1.27))))
+	        (number "VIN" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_out line
+	        (at 2.54 22.86 270)
+	        (length 2.54)
+	        (name "5V_T2" (effects (font (size 1.27 1.27))))
+	        (number "5V_T2" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at 7.62 22.86 270)
+	        (length 2.54)
+	        (name "GND_T2" (effects (font (size 1.27 1.27))))
+	        (number "GND_T2" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin input line
+	        (at 35.56 5.08 180)
+	        (length 2.54)
+	        (name "RX2" (effects (font (size 1.27 1.27))))
+	        (number "RX2" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin output line
+	        (at 35.56 2.54 180)
+	        (length 2.54)
+	        (name "TX2" (effects (font (size 1.27 1.27))))
+	        (number "TX2" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at 35.56 0 180)
+	        (length 2.54)
+	        (name "ES-5V" (effects (font (size 1.27 1.27))))
+	        (number "ES5V" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at 35.56 -2.54 180)
+	        (length 2.54)
+	        (name "5V_T3" (effects (font (size 1.27 1.27))))
+	        (number "5V_T3" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at 35.56 -5.08 180)
+	        (length 2.54)
+	        (name "GND_T3" (effects (font (size 1.27 1.27))))
+	        (number "GND_T3" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin output line
+	        (at -17.78 -22.86 90)
+	        (length 2.54)
+	        (name "LED" (effects (font (size 1.27 1.27))))
+	        (number "LED" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at -12.7 -22.86 90)
+	        (length 2.54)
+	        (name "BB-" (effects (font (size 1.27 1.27))))
+	        (number "BBM" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at -7.62 -22.86 90)
+	        (length 2.54)
+	        (name "5V_T4" (effects (font (size 1.27 1.27))))
+	        (number "5V_T4" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at -2.54 -22.86 90)
+	        (length 2.54)
+	        (name "GND_T4" (effects (font (size 1.27 1.27))))
+	        (number "GND_T4" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at 2.54 -22.86 90)
+	        (length 2.54)
+	        (name "BAT_T2" (effects (font (size 1.27 1.27))))
+	        (number "BAT_T2" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin passive line
+	        (at 7.62 -22.86 90)
+	        (length 2.54)
+	        (name "GND_T5" (effects (font (size 1.27 1.27))))
+	        (number "GND_T5" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin input line
+	        (at 12.7 -22.86 90)
+	        (length 2.54)
+	        (name "RX3" (effects (font (size 1.27 1.27))))
+	        (number "RX3" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin output line
+	        (at 17.78 -22.86 90)
+	        (length 2.54)
+	        (name "TX3" (effects (font (size 1.27 1.27))))
+	        (number "TX3" (effects (font (size 1.27 1.27))))
+	      )
+	    )
+	    (symbol "FC_HGLRC_SpecterF722Lite_2_1"
+	      (unit_name "BOTTOM face")
+	      (rectangle
+	        (start -30.48 15.24)
+	        (end 30.48 -15.24)
+	        (stroke (width 0.254) (type default))
+	        (fill (type background))
+	      )
+	      (pin power_in line
+	        (at -17.78 17.78 270)
+	        (length 2.54)
+	        (name "BAT_B" (effects (font (size 1.27 1.27))))
+	        (number "BAT_B" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_in line
+	        (at -12.7 17.78 270)
+	        (length 2.54)
+	        (name "GND_B" (effects (font (size 1.27 1.27))))
+	        (number "GND_B" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin output line
+	        (at -7.62 17.78 270)
+	        (length 2.54)
+	        (name "M1" (effects (font (size 1.27 1.27))))
+	        (number "M1" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin output line
+	        (at -2.54 17.78 270)
+	        (length 2.54)
+	        (name "M2" (effects (font (size 1.27 1.27))))
+	        (number "M2" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin output line
+	        (at 2.54 17.78 270)
+	        (length 2.54)
+	        (name "M3" (effects (font (size 1.27 1.27))))
+	        (number "M3" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin output line
+	        (at 7.62 17.78 270)
+	        (length 2.54)
+	        (name "M4" (effects (font (size 1.27 1.27))))
+	        (number "M4" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin input line
+	        (at 12.7 17.78 270)
+	        (length 2.54)
+	        (name "CR" (effects (font (size 1.27 1.27))))
+	        (number "CR" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin input line
+	        (at 17.78 17.78 270)
+	        (length 2.54)
+	        (name "RX6" (effects (font (size 1.27 1.27))))
+	        (number "RX6" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_out line
+	        (at -12.7 -17.78 90)
+	        (length 2.54)
+	        (name "5V_B" (effects (font (size 1.27 1.27))))
+	        (number "5V_B" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_out line
+	        (at -7.62 -17.78 90)
+	        (length 2.54)
+	        (name "GND_B2" (effects (font (size 1.27 1.27))))
+	        (number "GND_B2" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin output line
+	        (at -2.54 -17.78 90)
+	        (length 2.54)
+	        (name "TX4" (effects (font (size 1.27 1.27))))
+	        (number "TX4" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin input line
+	        (at 2.54 -17.78 90)
+	        (length 2.54)
+	        (name "RX4" (effects (font (size 1.27 1.27))))
+	        (number "RX4" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at 7.62 -17.78 90)
+	        (length 2.54)
+	        (name "SDA" (effects (font (size 1.27 1.27))))
+	        (number "SDA" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at 12.7 -17.78 90)
+	        (length 2.54)
+	        (name "SCL" (effects (font (size 1.27 1.27))))
+	        (number "SCL" (effects (font (size 1.27 1.27))))
+	      )
+	    )
+	  )
+	  (symbol "article2-harness:MCU_Seeed_XIAO_nRF52840"
+	    (exclude_from_sim no)
+	    (in_bom yes)
+	    (on_board yes)
+	    (property "Reference" "U"
+	      (at 0 19.05 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Value" "XIAO nRF52840"
+	      (at 0 -19.05 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Footprint" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Datasheet" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Description" "Seeed XIAO nRF52840. Serial1 = D6 (TX) / D7 (RX). Powered from the FC TOP-face 5V pad. WARNING: the 5V pin IS USB VBUS, wired straight through - FC rail plus a powered USB cable backfeeds the host port."
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (symbol "MCU_Seeed_XIAO_nRF52840_1_1"
+	      (rectangle
+	        (start -11.43 11.43)
+	        (end 11.43 -11.43)
+	        (stroke (width 0.254) (type default))
+	        (fill (type background))
+	      )
+	      (pin bidirectional line
+	        (at -13.97 7.62 0)
+	        (length 2.54)
+	        (name "D0/A0" (effects (font (size 1.27 1.27))))
+	        (number "1" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at -13.97 5.08 0)
+	        (length 2.54)
+	        (name "D1/A1" (effects (font (size 1.27 1.27))))
+	        (number "2" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at -13.97 2.54 0)
+	        (length 2.54)
+	        (name "D2/A2" (effects (font (size 1.27 1.27))))
+	        (number "3" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at -13.97 0 0)
+	        (length 2.54)
+	        (name "D3/A3" (effects (font (size 1.27 1.27))))
+	        (number "4" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at -13.97 -2.54 0)
+	        (length 2.54)
+	        (name "D4/SDA" (effects (font (size 1.27 1.27))))
+	        (number "5" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at -13.97 -5.08 0)
+	        (length 2.54)
+	        (name "D5/SCL" (effects (font (size 1.27 1.27))))
+	        (number "6" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at -13.97 -7.62 0)
+	        (length 2.54)
+	        (name "D6/TX" (effects (font (size 1.27 1.27))))
+	        (number "7" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_in line
+	        (at 13.97 7.62 180)
+	        (length 2.54)
+	        (name "5V/VBUS" (effects (font (size 1.27 1.27))))
+	        (number "14" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_in line
+	        (at 13.97 5.08 180)
+	        (length 2.54)
+	        (name "GND" (effects (font (size 1.27 1.27))))
+	        (number "13" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_out line
+	        (at 13.97 2.54 180)
+	        (length 2.54)
+	        (name "3V3" (effects (font (size 1.27 1.27))))
+	        (number "12" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at 13.97 0 180)
+	        (length 2.54)
+	        (name "D10/MOSI" (effects (font (size 1.27 1.27))))
+	        (number "11" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at 13.97 -2.54 180)
+	        (length 2.54)
+	        (name "D9/MISO" (effects (font (size 1.27 1.27))))
+	        (number "10" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at 13.97 -5.08 180)
+	        (length 2.54)
+	        (name "D8/SCK" (effects (font (size 1.27 1.27))))
+	        (number "9" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at 13.97 -7.62 180)
+	        (length 2.54)
+	        (name "D7/RX" (effects (font (size 1.27 1.27))))
+	        (number "8" (effects (font (size 1.27 1.27))))
+	      )
+	    )
+	  )
+	  (symbol "article2-harness:GPS_Matek_M10Q_5883"
+	    (exclude_from_sim no)
+	    (in_bom yes)
+	    (on_board yes)
+	    (property "Reference" "U"
+	      (at 0 17.78 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Value" "M10Q-5883"
+	      (at 0 -17.78 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Footprint" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Datasheet" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Description" "Matek M10Q-5883 GNSS + QMC5883L compass. 4-9 V, 13 mA, 9600 baud default. FORWARD connector (ahead of the front-facing arrow), left to right: red 5V, yellow RX, blue TX, green CL, white DA, black GND. RX is before TX - confirmed on the module, not inferred."
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (symbol "GPS_Matek_M10Q_5883_1_1"
+	      (rectangle
+	        (start -15.24 10.16)
+	        (end 15.24 -10.16)
+	        (stroke (width 0.254) (type default))
+	        (fill (type background))
+	      )
+	      (pin power_in line
+	        (at -17.78 6.35 0)
+	        (length 2.54)
+	        (name "5V (red)" (effects (font (size 1.27 1.27))))
+	        (number "1" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin input line
+	        (at -17.78 3.81 0)
+	        (length 2.54)
+	        (name "RX (yellow)" (effects (font (size 1.27 1.27))))
+	        (number "2" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin output line
+	        (at -17.78 1.27 0)
+	        (length 2.54)
+	        (name "TX (blue)" (effects (font (size 1.27 1.27))))
+	        (number "3" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at -17.78 -1.27 0)
+	        (length 2.54)
+	        (name "CL (green)" (effects (font (size 1.27 1.27))))
+	        (number "4" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin bidirectional line
+	        (at -17.78 -3.81 0)
+	        (length 2.54)
+	        (name "DA (white)" (effects (font (size 1.27 1.27))))
+	        (number "5" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_in line
+	        (at -17.78 -6.35 0)
+	        (length 2.54)
+	        (name "GND (black)" (effects (font (size 1.27 1.27))))
+	        (number "6" (effects (font (size 1.27 1.27))))
+	      )
+	    )
+	  )
+	  (symbol "article2-harness:ESC_40A_BLHeli_SBEC"
+	    (exclude_from_sim no)
+	    (in_bom yes)
+	    (on_board yes)
+	    (property "Reference" "U"
+	      (at 0 15.24 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Value" "ESC 40A + SBEC"
+	      (at 0 -15.24 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Footprint" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Datasheet" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Description" "~40 A BLHeli ESC with SBEC (5 V, ~3 A), drawn as its three real connectors. BAT- and BEC_GND are separate wires, common ONLY inside the ESC - that internal tie is the harness star ground. Phase order is arbitrary; swap any two to reverse the motor."
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (symbol "ESC_40A_BLHeli_SBEC_1_1"
+	      (unit_name "J_PACK")
+	      (rectangle
+	        (start -13.97 6.35)
+	        (end 13.97 -6.35)
+	        (stroke (width 0.254) (type default))
+	        (fill (type background))
+	      )
+	      (pin power_in line
+	        (at -16.51 1.27 0)
+	        (length 2.54)
+	        (name "BAT+ (60A)" (effects (font (size 1.27 1.27))))
+	        (number "1" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_in line
+	        (at -16.51 -1.27 0)
+	        (length 2.54)
+	        (name "BAT- (60A)" (effects (font (size 1.27 1.27))))
+	        (number "2" (effects (font (size 1.27 1.27))))
+	      )
+	    )
+	    (symbol "ESC_40A_BLHeli_SBEC_2_1"
+	      (unit_name "J_CTRL")
+	      (rectangle
+	        (start -13.97 7.62)
+	        (end 13.97 -7.62)
+	        (stroke (width 0.254) (type default))
+	        (fill (type background))
+	      )
+	      (pin input line
+	        (at -16.51 0 0)
+	        (length 2.54)
+	        (name "SIG" (effects (font (size 1.27 1.27))))
+	        (number "3" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_out line
+	        (at 16.51 1.27 180)
+	        (length 2.54)
+	        (name "BEC+5V" (effects (font (size 1.27 1.27))))
+	        (number "4" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_out line
+	        (at 16.51 -1.27 180)
+	        (length 2.54)
+	        (name "BEC_GND" (effects (font (size 1.27 1.27))))
+	        (number "5" (effects (font (size 1.27 1.27))))
+	      )
+	    )
+	    (symbol "ESC_40A_BLHeli_SBEC_3_1"
+	      (unit_name "J_PHASE")
+	      (rectangle
+	        (start -12.7 7.62)
+	        (end 12.7 -7.62)
+	        (stroke (width 0.254) (type default))
+	        (fill (type background))
+	      )
+	      (pin power_out line
+	        (at 15.24 2.54 180)
+	        (length 2.54)
+	        (name "A" (effects (font (size 1.27 1.27))))
+	        (number "6" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_out line
+	        (at 15.24 0 180)
+	        (length 2.54)
+	        (name "B" (effects (font (size 1.27 1.27))))
+	        (number "7" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_out line
+	        (at 15.24 -2.54 180)
+	        (length 2.54)
+	        (name "C" (effects (font (size 1.27 1.27))))
+	        (number "8" (effects (font (size 1.27 1.27))))
+	      )
+	    )
+	  )
+	  (symbol "article2-harness:Servo_Goteck_GS5010MG"
+	    (exclude_from_sim no)
+	    (in_bom yes)
+	    (on_board yes)
+	    (property "Reference" "U"
+	      (at 0 13.97 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Value" "GS-5010MG"
+	      (at 0 -13.97 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Footprint" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Datasheet" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Description" "Goteck GS-5010MG, 1.4 kg.cm @ 6 V metal-gear micro, 4.8-6 V. V+ AND GND both come from the ESC BEC; only SIG comes from the FC."
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (symbol "Servo_Goteck_GS5010MG_1_1"
+	      (rectangle
+	        (start -8.89 6.35)
+	        (end 8.89 -6.35)
+	        (stroke (width 0.254) (type default))
+	        (fill (type background))
+	      )
+	      (pin input line
+	        (at -11.43 2.54 0)
+	        (length 2.54)
+	        (name "SIG" (effects (font (size 1.27 1.27))))
+	        (number "1" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_in line
+	        (at -11.43 0 0)
+	        (length 2.54)
+	        (name "V+" (effects (font (size 1.27 1.27))))
+	        (number "2" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_in line
+	        (at -11.43 -2.54 0)
+	        (length 2.54)
+	        (name "GND" (effects (font (size 1.27 1.27))))
+	        (number "3" (effects (font (size 1.27 1.27))))
+	      )
+	    )
+	  )
+	  (symbol "article2-harness:Motor_BLDC_3ph"
+	    (exclude_from_sim no)
+	    (in_bom yes)
+	    (on_board yes)
+	    (property "Reference" "U"
+	      (at 0 13.97 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Value" "BLDC motor"
+	      (at 0 -13.97 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Footprint" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Datasheet" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Description" "3-phase brushless outrunner."
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (symbol "Motor_BLDC_3ph_1_1"
+	      (rectangle
+	        (start -8.89 6.35)
+	        (end 8.89 -6.35)
+	        (stroke (width 0.254) (type default))
+	        (fill (type background))
+	      )
+	      (pin power_in line
+	        (at -11.43 2.54 0)
+	        (length 2.54)
+	        (name "A" (effects (font (size 1.27 1.27))))
+	        (number "1" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_in line
+	        (at -11.43 0 0)
+	        (length 2.54)
+	        (name "B" (effects (font (size 1.27 1.27))))
+	        (number "2" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_in line
+	        (at -11.43 -2.54 0)
+	        (length 2.54)
+	        (name "C" (effects (font (size 1.27 1.27))))
+	        (number "3" (effects (font (size 1.27 1.27))))
+	      )
+	    )
+	  )
+	  (symbol "article2-harness:Battery_LiPo_3S"
+	    (exclude_from_sim no)
+	    (in_bom yes)
+	    (on_board yes)
+	    (property "Reference" "U"
+	      (at 0 13.97 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Value" "3S LiPo"
+	      (at 0 -13.97 0)
+	      (effects (font (size 1.27 1.27)))
+	    )
+	    (property "Footprint" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Datasheet" ""
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (property "Description" "3S LiPo pack, XT60."
+	      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+	    )
+	    (symbol "Battery_LiPo_3S_1_1"
+	      (rectangle
+	        (start -8.89 6.35)
+	        (end 8.89 -6.35)
+	        (stroke (width 0.254) (type default))
+	        (fill (type background))
+	      )
+	      (pin power_out line
+	        (at 11.43 1.27 180)
+	        (length 2.54)
+	        (name "+" (effects (font (size 1.27 1.27))))
+	        (number "1" (effects (font (size 1.27 1.27))))
+	      )
+	      (pin power_out line
+	        (at 11.43 -1.27 180)
+	        (length 2.54)
+	        (name "-" (effects (font (size 1.27 1.27))))
+	        (number "2" (effects (font (size 1.27 1.27))))
+	      )
+	    )
+	  )
+	)
+	(text "ARTICLE 2 HARNESS  -  net labels, not drawn wires.  Netlist of record: harness-spec.md S6."
+		(at 130.81 36.83 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "2a566460-c1d8-4f6e-85fd-6b577f977e2b")
+	)
+	(text "PROPOSED / NOT BUILT.  Items marked (!) in harness-spec.md S8 are unverified."
+		(at 130.81 41.91 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "b8f3bce5-6297-4e1d-8c3c-9187bfd0ebb5")
+	)
+	(text "U1 jumpers: ELRS short-connect pad = BRIDGED (internal RX on UART2)."
+		(at 120.65 118.11 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "4bd3693b-589b-4af9-869b-e83f8eead498")
+	)
+	(text "UART1 = xiao MSP   UART2 = ELRS CRSF   UART3 = spare   UART4 = GPS"
+		(at 120.65 123.19 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "f6ece387-be19-47e3-8c1c-af3b3c29ed86")
+	)
+	(text "UART5 has no pads.  UART6 is RX-only.  M1-M4 are the only output pads."
+		(at 120.65 128.27 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "ce86a3f8-20c6-4a62-8a2e-a784cbd75b75")
+	)
+	(text "U1 unit 1 = TOP face pads.  U1 unit 2 = BOTTOM face pads (ESC row + GPS row)."
+		(at 120.65 135.89 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "8043fb3c-5aa8-4986-8746-3b6d59cf1cac")
+	)
+	(text "(!) XIAO 5V pin IS USB VBUS. FC rail plus a"
+		(at 297.18 101.6 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "b11b6051-b5bd-4a68-8fb7-5039bd86cf5a")
+	)
+	(text "powered USB cable backfeeds the host port."
+		(at 297.18 106.68 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "f44fa4b7-8c54-4665-843f-235724ebc6da")
+	)
+	(text "GPS FORWARD connector, left to right:"
+		(at 297.18 199.39 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "b8a4bc14-bfcd-4805-86d1-292ba4be8100")
+	)
+	(text "red 5V | yellow RX | blue TX | green CL | white DA | black GND"
+		(at 297.18 204.47 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "cbc6f916-43c8-4415-8048-3903d29712b9")
+	)
+	(text "(RX before TX - confirmed on the module.)"
+		(at 297.18 209.55 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "818e37f2-8066-40da-8d69-04860777958c")
+	)
+	(text "M1,M2 = TIM8 -> timer_output_mode 7 SERVOS @ 50 Hz"
+		(at 107.95 203.2 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "a69630e7-bd67-44f8-82e2-d2960596d1e4")
+	)
+	(text "M3 = TIM1 -> timer_output_mode 0 MOTORS, STANDARD (400 Hz)"
+		(at 107.95 208.28 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "5a6b4462-b638-4670-8b9f-c774fd9e9550")
+	)
+	(text "GROUND TOPOLOGY  -  star point is the ESC pack-negative pad.  Four distinct WIRES, bonded only INSIDE a module:"
+		(at 20.32 251.46 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "c6127a14-cd51-46e5-87d2-bb16e0f8855f")
+	)
+	(text "   GND_PACK   BT1 -  ->  U4 BAT-(60A).   U1 GND_B taps the same pads.   Carries motor return (0-40 A)."
+		(at 20.32 256.54 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "8db1a563-5c63-4db7-87a5-0b077286df18")
+	)
+	(text "   GND_BEC    U4 BEC_GND  ->  S1/S2 GND.   Carries servo return (~2 A peak).   Bonded to GND_PACK INSIDE U4."
+		(at 20.32 261.62 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "1e829f2e-5e77-449d-84df-8a217550cca9")
+	)
+	(text "   GND_XIAO   U1 GND_T1 -> U2 GND.      GND_GPS   U1 GND_B2 -> U3 GND.      Both bonded to GND_PACK INSIDE U1."
+		(at 20.32 266.7 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "1d4af9b1-0943-40b3-8f41-158574de1643")
+	)
+	(text "(!) Do NOT take servo V+/GND from the FC - that routes servo return through the gyro's own voltage reference."
+		(at 20.32 274.32 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "df7e9811-bae7-43c6-845d-db4f5dbd067b")
+	)
+	(text "(!) Do NOT land the ESC lead's BEC_GND on an FC pad - same problem, plus a loop.  Split the lead: only SIG goes to U1."
+		(at 20.32 279.4 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "ff6c5658-4c50-4755-80cb-2b0e0bc57957")
+	)
+	(symbol
+		(lib_id "article2-harness:Battery_LiPo_3S")
+		(at 48.26 63.5 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "2920c2b3-4b23-4963-8723-aad441075dab")
+		(property "Reference" "BT1"
+			(at 48.26 53.34 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(property "Value" "3S LiPo"
+			(at 48.26 73.66 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(pin "1"
+			(uuid "298c70bd-97d1-4c0a-8ae3-58c73ddf99f2")
+		)
+		(pin "2"
+			(uuid "97ebb7c5-8a2a-4d96-8d9c-cc0961a0e8c1")
+		)
+		(instances
+			(project "article2-harness"
+				(path "/2a1f0c64-0000-4000-8000-a17c1e020001"
+					(reference "BT1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "article2-harness:ESC_40A_BLHeli_SBEC")
+		(at 48.26 104.14 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "6fb152c4-2c54-4ea2-8575-bf1674712abe")
+		(property "Reference" "U4"
+			(at 48.26 93.98 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(property "Value" "ESC 40A + SBEC"
+			(at 48.26 114.3 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(pin "1"
+			(uuid "7120a63d-c177-46db-8d38-2538d2e22e3a")
+		)
+		(pin "2"
+			(uuid "a056bb37-964d-4396-8f28-884f136432d2")
+		)
+		(instances
+			(project "article2-harness"
+				(path "/2a1f0c64-0000-4000-8000-a17c1e020001"
+					(reference "U4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "article2-harness:ESC_40A_BLHeli_SBEC")
+		(at 48.26 149.86 0)
+		(unit 2)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "c629cda8-7465-48ad-8b41-65efda98bde2")
+		(property "Reference" "U4"
+			(at 48.26 138.43 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(property "Value" "ESC 40A + SBEC"
+			(at 48.26 161.29 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(pin "3"
+			(uuid "33b81c24-be8c-4fa5-82e7-a174a630b4c1")
+		)
+		(pin "4"
+			(uuid "ebe10b1c-adc2-44dd-82de-182cd27e2998")
+		)
+		(pin "5"
+			(uuid "e35cb75a-c756-4b90-8b62-8c6fccbf1eaf")
+		)
+		(instances
+			(project "article2-harness"
+				(path "/2a1f0c64-0000-4000-8000-a17c1e020001"
+					(reference "U4")
+					(unit 2)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "article2-harness:ESC_40A_BLHeli_SBEC")
+		(at 48.26 194.31 0)
+		(unit 3)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "e6e3ceba-16bb-4ac3-829a-be51bf412252")
+		(property "Reference" "U4"
+			(at 48.26 182.88 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(property "Value" "ESC 40A + SBEC"
+			(at 48.26 205.74 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(pin "6"
+			(uuid "948e1a48-04ae-413d-8a47-133c66c62096")
+		)
+		(pin "7"
+			(uuid "969140d5-83fc-4cac-848a-e2a721a71d99")
+		)
+		(pin "8"
+			(uuid "3f7e1842-ca0f-4bb8-8493-c24ffbbf7333")
+		)
+		(instances
+			(project "article2-harness"
+				(path "/2a1f0c64-0000-4000-8000-a17c1e020001"
+					(reference "U4")
+					(unit 3)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "article2-harness:Motor_BLDC_3ph")
+		(at 48.26 228.6 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "4e5c5b39-0d8f-4ca6-8d2a-2a7349821880")
+		(property "Reference" "MOT1"
+			(at 48.26 218.44 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(property "Value" "BLDC motor"
+			(at 48.26 238.76 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(pin "1"
+			(uuid "ec19ff41-6e34-48cf-8c2f-a0d28110d7fa")
+		)
+		(pin "2"
+			(uuid "b5261c85-5a6c-40f4-80bf-58cf22b5fdc5")
+		)
+		(pin "3"
+			(uuid "71136ce1-86ad-4fb1-8684-87872781ff21")
+		)
+		(instances
+			(project "article2-harness"
+				(path "/2a1f0c64-0000-4000-8000-a17c1e020001"
+					(reference "MOT1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "article2-harness:FC_HGLRC_SpecterF722Lite")
+		(at 205.74 71.12 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "e460b439-5d40-43ff-8299-846cdbb59825")
+		(property "Reference" "U1"
+			(at 205.74 46.99 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(property "Value" "Specter F722 Lite"
+			(at 205.74 95.25 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(pin "CAM"
+			(uuid "ce6c0ff4-c164-4e4c-840b-c656de73a01d")
+		)
+		(pin "5V_T1"
+			(uuid "4b03ad1d-198c-4de0-8b89-9459b3e5c0a5")
+		)
+		(pin "VTX"
+			(uuid "2535f2dd-4708-47a0-89d3-aa8bfd57a52f")
+		)
+		(pin "RX1"
+			(uuid "e7503eb9-537e-4726-8b09-3c6dbfff2234")
+		)
+		(pin "TX1"
+			(uuid "96310324-444c-496e-8656-6e7e0afcc0f4")
+		)
+		(pin "GND_T1"
+			(uuid "f3295bde-99f0-43ba-8009-da59875648d7")
+		)
+		(pin "BAT_T"
+			(uuid "38c6276c-6e7c-4021-8276-81b22eb8ab7b")
+		)
+		(pin "VIN"
+			(uuid "1e3da6a7-abc7-4479-82d6-8cf60afe1101")
+		)
+		(pin "5V_T2"
+			(uuid "37306567-5194-4787-8efb-effca5c8fc5a")
+		)
+		(pin "GND_T2"
+			(uuid "a16db112-2d18-4a72-80b1-199916c2da10")
+		)
+		(pin "RX2"
+			(uuid "857fd4f6-8c14-40f4-8ae5-890fca8c7ca0")
+		)
+		(pin "TX2"
+			(uuid "9e3fc6b0-3d8d-4304-81b7-b66c164b15d8")
+		)
+		(pin "ES5V"
+			(uuid "3583a92f-a793-400b-8c89-748719793d36")
+		)
+		(pin "5V_T3"
+			(uuid "fb7f7a4a-1d2e-4dea-818b-1836199c97f0")
+		)
+		(pin "GND_T3"
+			(uuid "b650f068-8a7e-43c8-80a2-2da35e024b04")
+		)
+		(pin "LED"
+			(uuid "16fbd85d-f7e6-4d26-8b8c-c009b6b279b1")
+		)
+		(pin "BBM"
+			(uuid "97429a6d-bac3-41ba-8531-f653aa5621bf")
+		)
+		(pin "5V_T4"
+			(uuid "db4f66f7-a0f3-40f5-85e9-a51fa15f8050")
+		)
+		(pin "GND_T4"
+			(uuid "3f941098-d4e4-4bf9-8231-e03c37c5fc55")
+		)
+		(pin "BAT_T2"
+			(uuid "66cb82e2-4a4a-4f38-8957-f6e20667e3a4")
+		)
+		(pin "GND_T5"
+			(uuid "74101981-9914-4a11-86c1-7867a37c4e95")
+		)
+		(pin "RX3"
+			(uuid "3b9486e3-f539-4aff-80b4-425c894efc55")
+		)
+		(pin "TX3"
+			(uuid "dccf8176-c7cd-4225-8f55-22aa6ccb5b44")
+		)
+		(instances
+			(project "article2-harness"
+				(path "/2a1f0c64-0000-4000-8000-a17c1e020001"
+					(reference "U1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "article2-harness:FC_HGLRC_SpecterF722Lite")
+		(at 205.74 180.34 0)
+		(unit 2)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "91cf2b70-35a9-45d8-8e0c-4d9bc05ec88b")
+		(property "Reference" "U1"
+			(at 205.74 161.29 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(property "Value" "Specter F722 Lite"
+			(at 205.74 199.39 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(pin "BAT_B"
+			(uuid "6afc4aa2-b796-40a5-87e1-e4acf43f1653")
+		)
+		(pin "GND_B"
+			(uuid "d92ade1f-c46e-44bb-8548-537b46ff1ed8")
+		)
+		(pin "M1"
+			(uuid "02199c8e-455d-45f2-8f9c-c5578feeee1d")
+		)
+		(pin "M2"
+			(uuid "401c853d-5dfa-4a8d-822f-bca19409dae3")
+		)
+		(pin "M3"
+			(uuid "b19be201-546c-4ce6-836c-ccda8780b8bb")
+		)
+		(pin "M4"
+			(uuid "e5bc05f8-bd40-4ca0-8592-823ea34a8950")
+		)
+		(pin "CR"
+			(uuid "abbddad5-4611-47e3-83dc-3ad1367d371d")
+		)
+		(pin "RX6"
+			(uuid "aef9e274-e87e-4985-881a-b2c07db2d495")
+		)
+		(pin "5V_B"
+			(uuid "543868c1-af82-4318-85f7-30342248c28e")
+		)
+		(pin "GND_B2"
+			(uuid "cbfb7c5f-6997-49f0-83f1-4782563d27ab")
+		)
+		(pin "TX4"
+			(uuid "86321bf2-6370-4d87-8584-02a6c7329328")
+		)
+		(pin "RX4"
+			(uuid "dd7ec761-9af8-4031-84f4-04413d4e7c63")
+		)
+		(pin "SDA"
+			(uuid "17a6f5a9-a13d-41c5-8728-ad7db412113c")
+		)
+		(pin "SCL"
+			(uuid "4eaa90d3-d96d-4ccf-8217-49624e9caf98")
+		)
+		(instances
+			(project "article2-harness"
+				(path "/2a1f0c64-0000-4000-8000-a17c1e020001"
+					(reference "U1")
+					(unit 2)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "article2-harness:MCU_Seeed_XIAO_nRF52840")
+		(at 355.6 78.74 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "c606a9c9-976d-4da3-8228-829eff1d9236")
+		(property "Reference" "U2"
+			(at 355.6 63.5 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(property "Value" "XIAO nRF52840"
+			(at 355.6 93.98 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(pin "1"
+			(uuid "15c88b4f-964e-47e2-84b9-03fc3ceee175")
+		)
+		(pin "2"
+			(uuid "36ce0a21-a9fd-4913-8493-155972a05dfc")
+		)
+		(pin "3"
+			(uuid "f18037c0-a5a6-470b-81e3-0fed90c6619e")
+		)
+		(pin "4"
+			(uuid "e59003b8-043d-4001-8371-32d6e7a04600")
+		)
+		(pin "5"
+			(uuid "6786f88f-fdaa-412c-81ec-e90da45dc3db")
+		)
+		(pin "6"
+			(uuid "18a2f7a0-5b78-4c0d-8891-f3945eef9f8d")
+		)
+		(pin "7"
+			(uuid "48e79810-5679-4cef-8cad-07c7c41af8c2")
+		)
+		(pin "14"
+			(uuid "7d13fed8-f02e-4034-8ecc-c01f3ce84c89")
+		)
+		(pin "13"
+			(uuid "33cafac8-ea52-4c32-83cd-d1835c0d9981")
+		)
+		(pin "12"
+			(uuid "06e8a6e1-21e8-4b5c-8cf3-cf35937ad413")
+		)
+		(pin "11"
+			(uuid "81d69094-6de2-42b5-812c-1080ace8bc8a")
+		)
+		(pin "10"
+			(uuid "3dfc605f-0e26-4722-847d-9fe526b844d4")
+		)
+		(pin "9"
+			(uuid "94dc73e6-e8ec-44fb-8fd7-a33fbf3cf335")
+		)
+		(pin "8"
+			(uuid "1622f047-72fc-40e3-8295-b27ae53fdd6e")
+		)
+		(instances
+			(project "article2-harness"
+				(path "/2a1f0c64-0000-4000-8000-a17c1e020001"
+					(reference "U2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "article2-harness:GPS_Matek_M10Q_5883")
+		(at 355.6 173.99 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "8f4ed30d-19e7-4d1d-8f72-36b0901bfd07")
+		(property "Reference" "U3"
+			(at 355.6 160.02 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(property "Value" "M10Q-5883"
+			(at 355.6 187.96 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(pin "1"
+			(uuid "d9d64d58-5370-4fab-8c98-86d99d765897")
+		)
+		(pin "2"
+			(uuid "e32c7675-ee3f-466d-84ff-30fda837a68a")
+		)
+		(pin "3"
+			(uuid "bb707b56-2009-44c9-8913-8d285ef448c3")
+		)
+		(pin "4"
+			(uuid "5cf110c1-680b-413c-8341-66cfed906297")
+		)
+		(pin "5"
+			(uuid "65aec59b-93c4-4e70-8740-c734b87f86bd")
+		)
+		(pin "6"
+			(uuid "fc878981-261e-4697-8fcc-378aff43bc91")
+		)
+		(instances
+			(project "article2-harness"
+				(path "/2a1f0c64-0000-4000-8000-a17c1e020001"
+					(reference "U3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "article2-harness:Servo_Goteck_GS5010MG")
+		(at 180.34 231.14 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "6513f899-46d1-4bfa-8e4c-dd7540ec1563")
+		(property "Reference" "S1"
+			(at 180.34 220.98 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(property "Value" "GS-5010MG"
+			(at 180.34 241.3 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(pin "1"
+			(uuid "26659e8a-491c-4d74-8e3f-87530fd34248")
+		)
+		(pin "2"
+			(uuid "a48bf3ad-01ed-4b16-8e51-50343bac5943")
+		)
+		(pin "3"
+			(uuid "042fcb46-5b22-4267-8c3e-09e6b0762192")
+		)
+		(instances
+			(project "article2-harness"
+				(path "/2a1f0c64-0000-4000-8000-a17c1e020001"
+					(reference "S1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "article2-harness:Servo_Goteck_GS5010MG")
+		(at 266.7 231.14 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "5fa98f1e-5e1f-4fce-89a4-9d384313a4ce")
+		(property "Reference" "S2"
+			(at 266.7 220.98 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(property "Value" "GS-5010MG"
+			(at 266.7 241.3 0)
+			(effects (font (size 1.27 1.27)))
+		)
+		(pin "1"
+			(uuid "2809d087-0edd-4da0-82bd-8f11a64fa1d7")
+		)
+		(pin "2"
+			(uuid "6686dbd3-4fc8-4a4e-8ee2-67563a20aff1")
+		)
+		(pin "3"
+			(uuid "44e55ea1-e0f0-4bbf-83d3-5dc19d78cdb9")
+		)
+		(instances
+			(project "article2-harness"
+				(path "/2a1f0c64-0000-4000-8000-a17c1e020001"
+					(reference "S2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(label "VBAT"
+		(at 59.69 62.23 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "cde21457-ddec-4828-8a44-843c8bf91ef3")
+	)
+	(label "VBAT"
+		(at 31.75 102.87 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "4ec8a8de-0521-4c18-8258-3a9df03dcca1")
+	)
+	(label "VBAT"
+		(at 187.96 162.56 90)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "9b49fe22-f913-4c02-80fe-6ca22c1d301e")
+	)
+	(label "GND_PACK"
+		(at 59.69 64.77 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "63c9148a-b5dc-4e67-8fe1-03ae8a627bb9")
+	)
+	(label "GND_PACK"
+		(at 31.75 105.41 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "702bfe48-8145-4d52-8d6b-9a28903469ff")
+	)
+	(label "GND_PACK"
+		(at 193.04 162.56 90)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "420d4090-67e6-4ad2-8058-bce3498f90f4")
+	)
+	(label "GND_BEC"
+		(at 64.77 151.13 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "4c426b46-a1b5-4c30-8a5a-1f565bed6ab3")
+	)
+	(label "GND_BEC"
+		(at 168.91 233.68 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "7526b3db-2e15-4ac1-8659-a90715b9b0bb")
+	)
+	(label "GND_BEC"
+		(at 255.27 233.68 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "42bfaca8-76d0-42ec-8c43-79807a03c2af")
+	)
+	(label "5V_BEC"
+		(at 64.77 148.59 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "029e7443-d71f-45b2-8a39-7812c39d4b3e")
+	)
+	(label "5V_BEC"
+		(at 168.91 231.14 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "53cbd760-c454-4aff-81d1-823e7ec6243f")
+	)
+	(label "5V_BEC"
+		(at 255.27 231.14 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "d217af04-519f-487f-888f-092e07ecd9b5")
+	)
+	(label "PHASE_A"
+		(at 63.5 191.77 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "114776fb-b7f1-465f-879f-2ace8a4594e3")
+	)
+	(label "PHASE_A"
+		(at 36.83 226.06 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "a3b4e372-7fd2-4145-8f6f-466337f84f9a")
+	)
+	(label "PHASE_B"
+		(at 63.5 194.31 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "4fc97d51-1a7c-4383-8614-b10211026792")
+	)
+	(label "PHASE_B"
+		(at 36.83 228.6 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "b4f082af-558a-48b8-845d-723388879667")
+	)
+	(label "PHASE_C"
+		(at 63.5 196.85 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "4b612b6b-7db7-4b7a-8c6a-289a89b10cbe")
+	)
+	(label "PHASE_C"
+		(at 36.83 231.14 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "b9e63668-a3a2-494e-8713-d55552b8ffb7")
+	)
+	(label "THROTTLE"
+		(at 208.28 162.56 90)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "09768699-4857-43f3-8931-d2f0801e9675")
+	)
+	(label "THROTTLE"
+		(at 31.75 149.86 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "9818d662-b592-476d-8d34-e03f3136fb3d")
+	)
+	(label "SERVO1"
+		(at 198.12 162.56 90)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "cd5b5869-3e57-499f-8139-c7a4f71719e1")
+	)
+	(label "SERVO1"
+		(at 168.91 228.6 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "a4dfaed1-3aa1-4d17-8aa9-3ebb68c80ab6")
+	)
+	(label "SERVO2"
+		(at 203.2 162.56 90)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "ab318425-06ed-4de3-8c5f-825ba675cebb")
+	)
+	(label "SERVO2"
+		(at 255.27 228.6 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "2663e62c-71d1-4a47-8fa6-7afa12e57e43")
+	)
+	(label "5V_XIAO"
+		(at 170.18 67.31 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "94de3eec-b169-46c3-843d-0b88344627e5")
+	)
+	(label "5V_XIAO"
+		(at 369.57 71.12 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "19d11ace-e672-4d55-887f-f33197491802")
+	)
+	(label "GND_XIAO"
+		(at 170.18 77.47 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "9088a480-1b7f-4cfc-8cc0-75a8ad9cecd6")
+	)
+	(label "GND_XIAO"
+		(at 369.57 73.66 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "f915ee10-669c-4aa9-8b37-d467df970bf5")
+	)
+	(label "XIAO_TX"
+		(at 170.18 72.39 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "794ab006-cfa5-448d-86c5-f33f4ae7921d")
+	)
+	(label "XIAO_TX"
+		(at 341.63 86.36 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "7ee56f9b-e76f-42cc-8f0b-d898ea43ccd7")
+	)
+	(label "XIAO_RX"
+		(at 170.18 74.93 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "5a3115fe-6313-45bd-828a-1a456ca1ad36")
+	)
+	(label "XIAO_RX"
+		(at 369.57 86.36 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left bottom)
+		)
+		(uuid "20bab3b6-3d2f-489a-80bc-84dfe487a24e")
+	)
+	(label "5V_GPS"
+		(at 193.04 198.12 270)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "91911909-90a4-472f-847c-da821dad3992")
+	)
+	(label "5V_GPS"
+		(at 337.82 167.64 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "89063cfc-fb16-4d11-8a04-b12f28f08536")
+	)
+	(label "GND_GPS"
+		(at 198.12 198.12 270)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "7186456f-8caf-49e4-88d7-3e769c22b198")
+	)
+	(label "GND_GPS"
+		(at 337.82 180.34 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "d284acaf-4adc-41bb-8487-3b90ad9cdabd")
+	)
+	(label "GPS_RX"
+		(at 203.2 198.12 270)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "51b5afff-5d6a-4968-838a-f16620bda60c")
+	)
+	(label "GPS_RX"
+		(at 337.82 170.18 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "8e588c4c-4fce-43e6-89e5-0987c72de960")
+	)
+	(label "GPS_TX"
+		(at 208.28 198.12 270)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "242e5bd3-610b-49eb-8083-f0b86e82e4f7")
+	)
+	(label "GPS_TX"
+		(at 337.82 172.72 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "17a1980d-da61-458e-89b3-911c4830c9a7")
+	)
+	(label "I2C_SCL"
+		(at 218.44 198.12 270)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "1106d25d-dacd-4e52-898d-58cf230a0b98")
+	)
+	(label "I2C_SCL"
+		(at 337.82 175.26 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "fa100b56-cd34-4254-8dfa-608c6b5c63ec")
+	)
+	(label "I2C_SDA"
+		(at 213.36 198.12 270)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "f2fd17ba-a033-497e-8c78-75ccb15c500b")
+	)
+	(label "I2C_SDA"
+		(at 337.82 177.8 180)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right bottom)
+		)
+		(uuid "6174f842-8396-4b20-8824-9b61e55677bf")
+	)
+	(no_connect
+		(at 170.18 64.77)
+		(uuid "3e6564b0-d2ee-4b8f-8c20-8bef039274c8")
+	)
+	(no_connect
+		(at 170.18 69.85)
+		(uuid "6693c081-fbd6-45f5-8b37-54b2d7e4228e")
+	)
+	(no_connect
+		(at 241.3 66.04)
+		(uuid "11612db3-aa7f-4941-8584-2cb923e3aead")
+	)
+	(no_connect
+		(at 241.3 68.58)
+		(uuid "7cf35ffb-a97c-4b81-8646-1f18d45c9984")
+	)
+	(no_connect
+		(at 241.3 71.12)
+		(uuid "1bbeea78-3528-4253-8458-d6fd74df055c")
+	)
+	(no_connect
+		(at 241.3 73.66)
+		(uuid "3f451c61-d8c8-4cb5-8212-a87c4da53911")
+	)
+	(no_connect
+		(at 241.3 76.2)
+		(uuid "a61c12fb-2d3e-4908-8548-b00a6924cb40")
+	)
+	(no_connect
+		(at 198.12 48.26)
+		(uuid "6a3c52e1-6f45-4576-88d3-9a57e5928f61")
+	)
+	(no_connect
+		(at 203.2 48.26)
+		(uuid "78bfcbd7-336d-4463-8a14-0f389843772f")
+	)
+	(no_connect
+		(at 208.28 48.26)
+		(uuid "bac9c1e9-217b-4e01-89d7-7bc1aadd3fe3")
+	)
+	(no_connect
+		(at 213.36 48.26)
+		(uuid "a191d5ab-1a75-4d06-818a-c5529c241313")
+	)
+	(no_connect
+		(at 187.96 93.98)
+		(uuid "3abee0e4-5596-4bb5-880c-096abe769f7c")
+	)
+	(no_connect
+		(at 193.04 93.98)
+		(uuid "02423954-7a58-4ec6-8188-a53de8482ccc")
+	)
+	(no_connect
+		(at 198.12 93.98)
+		(uuid "16a29072-3b90-4124-81d9-b841031961c5")
+	)
+	(no_connect
+		(at 203.2 93.98)
+		(uuid "28a41597-3682-49c2-8ec6-13ccf4c33945")
+	)
+	(no_connect
+		(at 208.28 93.98)
+		(uuid "2d145a22-7d76-4dc9-8004-f65c547c4374")
+	)
+	(no_connect
+		(at 213.36 93.98)
+		(uuid "c12d33cb-85dd-447c-8098-b31672b7b95f")
+	)
+	(no_connect
+		(at 218.44 93.98)
+		(uuid "f8fa9a4a-4cbb-4cfd-83e6-9ee8117950fa")
+	)
+	(no_connect
+		(at 223.52 93.98)
+		(uuid "8fc2f26b-c40a-4171-8976-e13244295aa6")
+	)
+	(no_connect
+		(at 213.36 162.56)
+		(uuid "1aae716e-f0d0-4597-8037-ea7b075fc68f")
+	)
+	(no_connect
+		(at 218.44 162.56)
+		(uuid "08353e5c-53ba-4255-83d2-4829c69a0045")
+	)
+	(no_connect
+		(at 223.52 162.56)
+		(uuid "b1802fdb-b413-47f2-87a0-f86ed17805d2")
+	)
+	(no_connect
+		(at 341.63 71.12)
+		(uuid "8acf6ff4-554c-4fbd-8253-2e3b68e78840")
+	)
+	(no_connect
+		(at 341.63 73.66)
+		(uuid "f0c667a8-d02f-4be7-8460-6959ecaa0fbc")
+	)
+	(no_connect
+		(at 341.63 76.2)
+		(uuid "bb393e16-6aac-4133-8c37-6a922a1cf355")
+	)
+	(no_connect
+		(at 341.63 78.74)
+		(uuid "68691364-c2ca-46fa-8d2f-851aeb4ccc0f")
+	)
+	(no_connect
+		(at 341.63 81.28)
+		(uuid "e53713bd-613b-40c7-82dc-be4867f9eddc")
+	)
+	(no_connect
+		(at 341.63 83.82)
+		(uuid "5bcc3ef8-0a99-4827-83ff-e3b4ff3ffaf8")
+	)
+	(no_connect
+		(at 369.57 76.2)
+		(uuid "44681a65-7c8f-48c5-8459-f78636b231b0")
+	)
+	(no_connect
+		(at 369.57 83.82)
+		(uuid "ef44bd87-d6f6-4f6a-8ef4-9e4a5499b34f")
+	)
+	(no_connect
+		(at 369.57 81.28)
+		(uuid "1eed69e9-ff58-4b24-82cc-67f955489190")
+	)
+	(no_connect
+		(at 369.57 78.74)
+		(uuid "c4ddc3d3-32dd-4eb7-88a8-fa0fd0549ed8")
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+)

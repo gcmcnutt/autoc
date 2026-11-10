@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "filename": "article2-harness.kicad_pro",
+    "version": 3
+  },
+  "libraries": {
+    "pinned_footprint_libs": [],
+    "pinned_symbol_libs": []
+  },
+  "schematic": {
+    "legacy_lib_dir": "",
+    "legacy_lib_list": []
+  },
+  "sheets": [
+    [
+      "2a1f0c64-0000-4000-8000-a17c1e020001",
+      "article2-harness"
+    ]
+  ],
+  "text_variables": {},
+  "erc": {
+    "erc_exclusions": [],
+    "meta": {
+      "version": 0
+    }
+  },
+  "net_settings": {
+    "classes": [
+      {
+        "name": "Default",
+        "wire_width": 6,
+        "bus_width": 12
+      }
+    ],
+    "meta": {
+      "version": 4
+    }
+  },
+  "boards": [],
+  "cvpcb": {
+    "equivalence_files": []
+  },
+  "pcbnew": {
+    "page_layout_descr_file": ""
+  }
+}

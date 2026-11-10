@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "article2-harness")(type "KiCad")(uri "${KIPRJMOD}/article2-harness.kicad_sym")(options "")(descr "Article 2 harness module symbols (FC, xiao, GPS, ESC, servo, motor, pack)"))
+)

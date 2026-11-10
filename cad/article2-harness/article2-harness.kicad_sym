@@ -1,0 +1,682 @@
+(kicad_symbol_lib
+  (version 20241209)
+  (generator "autoc-article2")
+  (generator_version "10.0")
+  (symbol "FC_HGLRC_SpecterF722Lite"
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "U"
+      (at 0 27.94 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "Specter F722 Lite"
+      (at 0 -27.94 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Datasheet" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Description" "HGLRC Specter F722 Lite. STM32F722, ICM42688P, DPS310, 16 MB flash, onboard ELRS on UART2 (short-connect pad), 5V 2A BEC, 2-6S. Unit 1 = TOP face pads, unit 2 = BOTTOM face pads. BAT_B feeds both the regulator and the vbat divider (ADC ch 1, PC2). Only M1-M4 have pads. UART5 has no pads; UART6 is RX-only."
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (symbol "FC_HGLRC_SpecterF722Lite_1_1"
+      (unit_name "TOP face")
+      (rectangle
+        (start -33.02 20.32)
+        (end 33.02 -20.32)
+        (stroke (width 0.254) (type default))
+        (fill (type background))
+      )
+      (pin input line
+        (at -35.56 6.35 0)
+        (length 2.54)
+        (name "CAM" (effects (font (size 1.27 1.27))))
+        (number "CAM" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_out line
+        (at -35.56 3.81 0)
+        (length 2.54)
+        (name "5V_T1" (effects (font (size 1.27 1.27))))
+        (number "5V_T1" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at -35.56 1.27 0)
+        (length 2.54)
+        (name "VTX" (effects (font (size 1.27 1.27))))
+        (number "VTX" (effects (font (size 1.27 1.27))))
+      )
+      (pin input line
+        (at -35.56 -1.27 0)
+        (length 2.54)
+        (name "RX1" (effects (font (size 1.27 1.27))))
+        (number "RX1" (effects (font (size 1.27 1.27))))
+      )
+      (pin output line
+        (at -35.56 -3.81 0)
+        (length 2.54)
+        (name "TX1" (effects (font (size 1.27 1.27))))
+        (number "TX1" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_out line
+        (at -35.56 -6.35 0)
+        (length 2.54)
+        (name "GND_T1" (effects (font (size 1.27 1.27))))
+        (number "GND_T1" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at -7.62 22.86 270)
+        (length 2.54)
+        (name "BAT_T" (effects (font (size 1.27 1.27))))
+        (number "BAT_T" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at -2.54 22.86 270)
+        (length 2.54)
+        (name "VIN" (effects (font (size 1.27 1.27))))
+        (number "VIN" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_out line
+        (at 2.54 22.86 270)
+        (length 2.54)
+        (name "5V_T2" (effects (font (size 1.27 1.27))))
+        (number "5V_T2" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at 7.62 22.86 270)
+        (length 2.54)
+        (name "GND_T2" (effects (font (size 1.27 1.27))))
+        (number "GND_T2" (effects (font (size 1.27 1.27))))
+      )
+      (pin input line
+        (at 35.56 5.08 180)
+        (length 2.54)
+        (name "RX2" (effects (font (size 1.27 1.27))))
+        (number "RX2" (effects (font (size 1.27 1.27))))
+      )
+      (pin output line
+        (at 35.56 2.54 180)
+        (length 2.54)
+        (name "TX2" (effects (font (size 1.27 1.27))))
+        (number "TX2" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at 35.56 0 180)
+        (length 2.54)
+        (name "ES-5V" (effects (font (size 1.27 1.27))))
+        (number "ES5V" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at 35.56 -2.54 180)
+        (length 2.54)
+        (name "5V_T3" (effects (font (size 1.27 1.27))))
+        (number "5V_T3" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at 35.56 -5.08 180)
+        (length 2.54)
+        (name "GND_T3" (effects (font (size 1.27 1.27))))
+        (number "GND_T3" (effects (font (size 1.27 1.27))))
+      )
+      (pin output line
+        (at -17.78 -22.86 90)
+        (length 2.54)
+        (name "LED" (effects (font (size 1.27 1.27))))
+        (number "LED" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at -12.7 -22.86 90)
+        (length 2.54)
+        (name "BB-" (effects (font (size 1.27 1.27))))
+        (number "BBM" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at -7.62 -22.86 90)
+        (length 2.54)
+        (name "5V_T4" (effects (font (size 1.27 1.27))))
+        (number "5V_T4" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at -2.54 -22.86 90)
+        (length 2.54)
+        (name "GND_T4" (effects (font (size 1.27 1.27))))
+        (number "GND_T4" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at 2.54 -22.86 90)
+        (length 2.54)
+        (name "BAT_T2" (effects (font (size 1.27 1.27))))
+        (number "BAT_T2" (effects (font (size 1.27 1.27))))
+      )
+      (pin passive line
+        (at 7.62 -22.86 90)
+        (length 2.54)
+        (name "GND_T5" (effects (font (size 1.27 1.27))))
+        (number "GND_T5" (effects (font (size 1.27 1.27))))
+      )
+      (pin input line
+        (at 12.7 -22.86 90)
+        (length 2.54)
+        (name "RX3" (effects (font (size 1.27 1.27))))
+        (number "RX3" (effects (font (size 1.27 1.27))))
+      )
+      (pin output line
+        (at 17.78 -22.86 90)
+        (length 2.54)
+        (name "TX3" (effects (font (size 1.27 1.27))))
+        (number "TX3" (effects (font (size 1.27 1.27))))
+      )
+    )
+    (symbol "FC_HGLRC_SpecterF722Lite_2_1"
+      (unit_name "BOTTOM face")
+      (rectangle
+        (start -30.48 15.24)
+        (end 30.48 -15.24)
+        (stroke (width 0.254) (type default))
+        (fill (type background))
+      )
+      (pin power_in line
+        (at -17.78 17.78 270)
+        (length 2.54)
+        (name "BAT_B" (effects (font (size 1.27 1.27))))
+        (number "BAT_B" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_in line
+        (at -12.7 17.78 270)
+        (length 2.54)
+        (name "GND_B" (effects (font (size 1.27 1.27))))
+        (number "GND_B" (effects (font (size 1.27 1.27))))
+      )
+      (pin output line
+        (at -7.62 17.78 270)
+        (length 2.54)
+        (name "M1" (effects (font (size 1.27 1.27))))
+        (number "M1" (effects (font (size 1.27 1.27))))
+      )
+      (pin output line
+        (at -2.54 17.78 270)
+        (length 2.54)
+        (name "M2" (effects (font (size 1.27 1.27))))
+        (number "M2" (effects (font (size 1.27 1.27))))
+      )
+      (pin output line
+        (at 2.54 17.78 270)
+        (length 2.54)
+        (name "M3" (effects (font (size 1.27 1.27))))
+        (number "M3" (effects (font (size 1.27 1.27))))
+      )
+      (pin output line
+        (at 7.62 17.78 270)
+        (length 2.54)
+        (name "M4" (effects (font (size 1.27 1.27))))
+        (number "M4" (effects (font (size 1.27 1.27))))
+      )
+      (pin input line
+        (at 12.7 17.78 270)
+        (length 2.54)
+        (name "CR" (effects (font (size 1.27 1.27))))
+        (number "CR" (effects (font (size 1.27 1.27))))
+      )
+      (pin input line
+        (at 17.78 17.78 270)
+        (length 2.54)
+        (name "RX6" (effects (font (size 1.27 1.27))))
+        (number "RX6" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_out line
+        (at -12.7 -17.78 90)
+        (length 2.54)
+        (name "5V_B" (effects (font (size 1.27 1.27))))
+        (number "5V_B" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_out line
+        (at -7.62 -17.78 90)
+        (length 2.54)
+        (name "GND_B2" (effects (font (size 1.27 1.27))))
+        (number "GND_B2" (effects (font (size 1.27 1.27))))
+      )
+      (pin output line
+        (at -2.54 -17.78 90)
+        (length 2.54)
+        (name "TX4" (effects (font (size 1.27 1.27))))
+        (number "TX4" (effects (font (size 1.27 1.27))))
+      )
+      (pin input line
+        (at 2.54 -17.78 90)
+        (length 2.54)
+        (name "RX4" (effects (font (size 1.27 1.27))))
+        (number "RX4" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at 7.62 -17.78 90)
+        (length 2.54)
+        (name "SDA" (effects (font (size 1.27 1.27))))
+        (number "SDA" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at 12.7 -17.78 90)
+        (length 2.54)
+        (name "SCL" (effects (font (size 1.27 1.27))))
+        (number "SCL" (effects (font (size 1.27 1.27))))
+      )
+    )
+  )
+  (symbol "MCU_Seeed_XIAO_nRF52840"
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "U"
+      (at 0 19.05 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "XIAO nRF52840"
+      (at 0 -19.05 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Datasheet" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Description" "Seeed XIAO nRF52840. Serial1 = D6 (TX) / D7 (RX). Powered from the FC TOP-face 5V pad. WARNING: the 5V pin IS USB VBUS, wired straight through - FC rail plus a powered USB cable backfeeds the host port."
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (symbol "MCU_Seeed_XIAO_nRF52840_1_1"
+      (rectangle
+        (start -11.43 11.43)
+        (end 11.43 -11.43)
+        (stroke (width 0.254) (type default))
+        (fill (type background))
+      )
+      (pin bidirectional line
+        (at -13.97 7.62 0)
+        (length 2.54)
+        (name "D0/A0" (effects (font (size 1.27 1.27))))
+        (number "1" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at -13.97 5.08 0)
+        (length 2.54)
+        (name "D1/A1" (effects (font (size 1.27 1.27))))
+        (number "2" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at -13.97 2.54 0)
+        (length 2.54)
+        (name "D2/A2" (effects (font (size 1.27 1.27))))
+        (number "3" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at -13.97 0 0)
+        (length 2.54)
+        (name "D3/A3" (effects (font (size 1.27 1.27))))
+        (number "4" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at -13.97 -2.54 0)
+        (length 2.54)
+        (name "D4/SDA" (effects (font (size 1.27 1.27))))
+        (number "5" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at -13.97 -5.08 0)
+        (length 2.54)
+        (name "D5/SCL" (effects (font (size 1.27 1.27))))
+        (number "6" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at -13.97 -7.62 0)
+        (length 2.54)
+        (name "D6/TX" (effects (font (size 1.27 1.27))))
+        (number "7" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_in line
+        (at 13.97 7.62 180)
+        (length 2.54)
+        (name "5V/VBUS" (effects (font (size 1.27 1.27))))
+        (number "14" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_in line
+        (at 13.97 5.08 180)
+        (length 2.54)
+        (name "GND" (effects (font (size 1.27 1.27))))
+        (number "13" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_out line
+        (at 13.97 2.54 180)
+        (length 2.54)
+        (name "3V3" (effects (font (size 1.27 1.27))))
+        (number "12" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at 13.97 0 180)
+        (length 2.54)
+        (name "D10/MOSI" (effects (font (size 1.27 1.27))))
+        (number "11" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at 13.97 -2.54 180)
+        (length 2.54)
+        (name "D9/MISO" (effects (font (size 1.27 1.27))))
+        (number "10" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at 13.97 -5.08 180)
+        (length 2.54)
+        (name "D8/SCK" (effects (font (size 1.27 1.27))))
+        (number "9" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at 13.97 -7.62 180)
+        (length 2.54)
+        (name "D7/RX" (effects (font (size 1.27 1.27))))
+        (number "8" (effects (font (size 1.27 1.27))))
+      )
+    )
+  )
+  (symbol "GPS_Matek_M10Q_5883"
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "U"
+      (at 0 17.78 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "M10Q-5883"
+      (at 0 -17.78 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Datasheet" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Description" "Matek M10Q-5883 GNSS + QMC5883L compass. 4-9 V, 13 mA, 9600 baud default. FORWARD connector (ahead of the front-facing arrow), left to right: red 5V, yellow RX, blue TX, green CL, white DA, black GND. RX is before TX - confirmed on the module, not inferred."
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (symbol "GPS_Matek_M10Q_5883_1_1"
+      (rectangle
+        (start -15.24 10.16)
+        (end 15.24 -10.16)
+        (stroke (width 0.254) (type default))
+        (fill (type background))
+      )
+      (pin power_in line
+        (at -17.78 6.35 0)
+        (length 2.54)
+        (name "5V (red)" (effects (font (size 1.27 1.27))))
+        (number "1" (effects (font (size 1.27 1.27))))
+      )
+      (pin input line
+        (at -17.78 3.81 0)
+        (length 2.54)
+        (name "RX (yellow)" (effects (font (size 1.27 1.27))))
+        (number "2" (effects (font (size 1.27 1.27))))
+      )
+      (pin output line
+        (at -17.78 1.27 0)
+        (length 2.54)
+        (name "TX (blue)" (effects (font (size 1.27 1.27))))
+        (number "3" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at -17.78 -1.27 0)
+        (length 2.54)
+        (name "CL (green)" (effects (font (size 1.27 1.27))))
+        (number "4" (effects (font (size 1.27 1.27))))
+      )
+      (pin bidirectional line
+        (at -17.78 -3.81 0)
+        (length 2.54)
+        (name "DA (white)" (effects (font (size 1.27 1.27))))
+        (number "5" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_in line
+        (at -17.78 -6.35 0)
+        (length 2.54)
+        (name "GND (black)" (effects (font (size 1.27 1.27))))
+        (number "6" (effects (font (size 1.27 1.27))))
+      )
+    )
+  )
+  (symbol "ESC_40A_BLHeli_SBEC"
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "U"
+      (at 0 15.24 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "ESC 40A + SBEC"
+      (at 0 -15.24 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Datasheet" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Description" "~40 A BLHeli ESC with SBEC (5 V, ~3 A), drawn as its three real connectors. BAT- and BEC_GND are separate wires, common ONLY inside the ESC - that internal tie is the harness star ground. Phase order is arbitrary; swap any two to reverse the motor."
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (symbol "ESC_40A_BLHeli_SBEC_1_1"
+      (unit_name "J_PACK")
+      (rectangle
+        (start -13.97 6.35)
+        (end 13.97 -6.35)
+        (stroke (width 0.254) (type default))
+        (fill (type background))
+      )
+      (pin power_in line
+        (at -16.51 1.27 0)
+        (length 2.54)
+        (name "BAT+ (60A)" (effects (font (size 1.27 1.27))))
+        (number "1" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_in line
+        (at -16.51 -1.27 0)
+        (length 2.54)
+        (name "BAT- (60A)" (effects (font (size 1.27 1.27))))
+        (number "2" (effects (font (size 1.27 1.27))))
+      )
+    )
+    (symbol "ESC_40A_BLHeli_SBEC_2_1"
+      (unit_name "J_CTRL")
+      (rectangle
+        (start -13.97 7.62)
+        (end 13.97 -7.62)
+        (stroke (width 0.254) (type default))
+        (fill (type background))
+      )
+      (pin input line
+        (at -16.51 0 0)
+        (length 2.54)
+        (name "SIG" (effects (font (size 1.27 1.27))))
+        (number "3" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_out line
+        (at 16.51 1.27 180)
+        (length 2.54)
+        (name "BEC+5V" (effects (font (size 1.27 1.27))))
+        (number "4" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_out line
+        (at 16.51 -1.27 180)
+        (length 2.54)
+        (name "BEC_GND" (effects (font (size 1.27 1.27))))
+        (number "5" (effects (font (size 1.27 1.27))))
+      )
+    )
+    (symbol "ESC_40A_BLHeli_SBEC_3_1"
+      (unit_name "J_PHASE")
+      (rectangle
+        (start -12.7 7.62)
+        (end 12.7 -7.62)
+        (stroke (width 0.254) (type default))
+        (fill (type background))
+      )
+      (pin power_out line
+        (at 15.24 2.54 180)
+        (length 2.54)
+        (name "A" (effects (font (size 1.27 1.27))))
+        (number "6" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_out line
+        (at 15.24 0 180)
+        (length 2.54)
+        (name "B" (effects (font (size 1.27 1.27))))
+        (number "7" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_out line
+        (at 15.24 -2.54 180)
+        (length 2.54)
+        (name "C" (effects (font (size 1.27 1.27))))
+        (number "8" (effects (font (size 1.27 1.27))))
+      )
+    )
+  )
+  (symbol "Servo_Goteck_GS5010MG"
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "U"
+      (at 0 13.97 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "GS-5010MG"
+      (at 0 -13.97 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Datasheet" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Description" "Goteck GS-5010MG, 1.4 kg.cm @ 6 V metal-gear micro, 4.8-6 V. V+ AND GND both come from the ESC BEC; only SIG comes from the FC."
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (symbol "Servo_Goteck_GS5010MG_1_1"
+      (rectangle
+        (start -8.89 6.35)
+        (end 8.89 -6.35)
+        (stroke (width 0.254) (type default))
+        (fill (type background))
+      )
+      (pin input line
+        (at -11.43 2.54 0)
+        (length 2.54)
+        (name "SIG" (effects (font (size 1.27 1.27))))
+        (number "1" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_in line
+        (at -11.43 0 0)
+        (length 2.54)
+        (name "V+" (effects (font (size 1.27 1.27))))
+        (number "2" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_in line
+        (at -11.43 -2.54 0)
+        (length 2.54)
+        (name "GND" (effects (font (size 1.27 1.27))))
+        (number "3" (effects (font (size 1.27 1.27))))
+      )
+    )
+  )
+  (symbol "Motor_BLDC_3ph"
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "U"
+      (at 0 13.97 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "BLDC motor"
+      (at 0 -13.97 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Datasheet" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Description" "3-phase brushless outrunner."
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (symbol "Motor_BLDC_3ph_1_1"
+      (rectangle
+        (start -8.89 6.35)
+        (end 8.89 -6.35)
+        (stroke (width 0.254) (type default))
+        (fill (type background))
+      )
+      (pin power_in line
+        (at -11.43 2.54 0)
+        (length 2.54)
+        (name "A" (effects (font (size 1.27 1.27))))
+        (number "1" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_in line
+        (at -11.43 0 0)
+        (length 2.54)
+        (name "B" (effects (font (size 1.27 1.27))))
+        (number "2" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_in line
+        (at -11.43 -2.54 0)
+        (length 2.54)
+        (name "C" (effects (font (size 1.27 1.27))))
+        (number "3" (effects (font (size 1.27 1.27))))
+      )
+    )
+  )
+  (symbol "Battery_LiPo_3S"
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "U"
+      (at 0 13.97 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "3S LiPo"
+      (at 0 -13.97 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Datasheet" ""
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (property "Description" "3S LiPo pack, XT60."
+      (at 0 0 0) (effects (font (size 1.27 1.27))) (hide yes)
+    )
+    (symbol "Battery_LiPo_3S_1_1"
+      (rectangle
+        (start -8.89 6.35)
+        (end 8.89 -6.35)
+        (stroke (width 0.254) (type default))
+        (fill (type background))
+      )
+      (pin power_out line
+        (at 11.43 1.27 180)
+        (length 2.54)
+        (name "+" (effects (font (size 1.27 1.27))))
+        (number "1" (effects (font (size 1.27 1.27))))
+      )
+      (pin power_out line
+        (at 11.43 -1.27 180)
+        (length 2.54)
+        (name "-" (effects (font (size 1.27 1.27))))
+        (number "2" (effects (font (size 1.27 1.27))))
+      )
+    )
+  )
+)
